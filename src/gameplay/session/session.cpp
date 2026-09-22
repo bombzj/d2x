@@ -26,7 +26,7 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
     Fingerprint fingerprint;
     fingerprint.add(content_.profile);
     // Bump this rules revision when state interpretation or compiled rules change.
-    fingerprint.add("d2x-session-rules-v6-act1-room-activation");
+    fingerprint.add("d2x-session-rules-v18-rogue-melee");
     auto members = archives.used;
     for (const auto &member : members) {
         fingerprint.add(member);

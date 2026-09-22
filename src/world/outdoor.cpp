@@ -1,6 +1,10 @@
 #include "outdoor.hpp"
 #include "generation_seed.hpp"
 #include "map.hpp"
+#include "outdoor_cliffs.hpp"
+#include "outdoor_paths.hpp"
+#include "outdoor_river.hpp"
+#include "outdoor_substitution.hpp"
 #include <algorithm>
 #include <numeric>
 #include <set>
@@ -56,6 +60,7 @@ class Wilderness {
         return false;
     }
     void borders() {
+        auto cliffs = outdoorCliffEdges(position_);
         // The normal rectangular perimeter is the straight/corner subset of the native LUT.
         for (int y = 0; y < height_; ++y)
             for (int x = 0; x < width_; ++x) {
@@ -84,6 +89,17 @@ class Wilderness {
                     id = 11;
                 else if (x == 0 && y == height_ - 1)
                     id = 8;
+                auto cliff = cliffs[y * width_ + x];
+                if (id == 5 && (cliff & 2))
+                    id = 16;
+                else if (id == 6 && (cliff & 4))
+                    id = 17;
+                else if (id == 8 && (cliff & 2))
+                    id = 18;
+                else if (id == 9 && (cliff & 6))
+                    id = (cliff & 6) == 6 ? 19 : (cliff & 2) ? 20 : 21;
+                else if (id == 10 && (cliff & 4))
+                    id = 22;
                 for (const auto &b : position_.boundaries)
                     if (b.side == side && (side % 2 ? y : x) * 8 == b.start) {
                         id = straight[side];
@@ -100,9 +116,6 @@ class Wilderness {
                 throw std::runtime_error("Graveyard does not fit original outdoor bounds");
             return;
         }
-        // Original cave entrance is mandatory; decorative placements may exhaust free cells.
-        if (!random(id == 2 ? 52 : 51, 1))
-            throw std::runtime_error("No room for the native cave entrance");
         auto cottage = [&](int base) {
             random(base);
             if (seed_.below(4)) {
@@ -132,7 +145,8 @@ class Wilderness {
             random(30);
             break;
         case 4:
-            random(160);
+            if (!random(160))
+                throw std::runtime_error("No room for the native Cairn Stones");
             random(45);
             random(162);
             cottage(47);
@@ -142,7 +156,8 @@ class Wilderness {
         // Trees2 DS1 refers to an absent (style 1, sequence 14) shadow in its native
         // Dt1Mask. Defer this optional decoration instead of drawing substitute art.
         case 5:
-            random(161);
+            if (!random(161))
+                throw std::runtime_error("No room for the native Tree of Inifuss");
             random(41);
             cottage(48);
             camp(43);
@@ -167,6 +182,143 @@ class Wilderness {
         }
     }
 
+    void river() {
+        if (!(position_.flags & 28))
+            return;
+        std::vector<OutdoorCell> cells(size_t(width_) * height_);
+        for (const auto &piece : result_.pieces)
+            cells[(piece.y / 8) * width_ + piece.x / 8] = {piece.preset, piece.variant};
+        for (const auto &blank : result_.blankAreas)
+            for (int row = blank.y / 8; row < (blank.y + blank.height) / 8; ++row)
+                for (int column = blank.x / 8; column < (blank.x + blank.width) / 8; ++column)
+                    cells[row * width_ + column].blank = true;
+        for (size_t index = 0; index < cells.size(); ++index)
+            cells[index].levelLink = occupied_[index] < 0 && !cells[index].blank;
+        if (!placeOutdoorRiver(width_, height_, position_.flags, cells, seed_))
+            return;
+        result_.pieces.clear();
+        std::fill(occupied_.begin(), occupied_.end(), 0);
+        for (int row = 0; row < height_; ++row)
+            for (int column = 0; column < width_; ++column) {
+                const auto &cell = cells[row * width_ + column];
+                if (cell.preset) {
+                    if (!place(cell.preset, column, row, cell.variant))
+                        throw std::runtime_error("Outdoor river overlap");
+                } else if (cell.levelLink || cell.blank)
+                    occupied_[row * width_ + column] = -1;
+            }
+    }
+    bool cliffEntrance() {
+        bool available = std::any_of(result_.pieces.begin(), result_.pieces.end(),
+                                      [](const auto &piece) { return piece.preset == 16 || piece.preset == 17; });
+        if (!available)
+            return false;
+        bool transpose = (seed_.next() & 1) != 0;
+        for (int row = 0; row < height_; ++row)
+            for (int column = 0; column < width_; ++column) {
+                int x = transpose ? row : column, y = transpose ? column : row;
+                if (x >= width_ || y >= height_)
+                    continue;
+                auto found = std::find_if(result_.pieces.begin(), result_.pieces.end(),
+                                           [&](const auto &piece) { return piece.x == x * 8 && piece.y == y * 8 &&
+                                               (piece.preset == 16 || piece.preset == 17); });
+                if (found == result_.pieces.end())
+                    continue;
+                int preset = found->preset == 16 ? 25 : 24;
+                result_.pieces.erase(found);
+                occupied_[y * width_ + x] = 0;
+                if (!place(preset, x, y))
+                    throw std::runtime_error("Cannot place original cliff entrance");
+                return true;
+            }
+        return false;
+    }
+    void townTransitions() {
+        auto replace = [&](int preset, int x, int y, int variant) {
+            const auto &record = catalog_.presets().at(preset);
+            int columns = record.width / 8, rows = record.height / 8;
+            if (x < 0 || y < 0 || x + columns > width_ || y + rows > height_)
+                throw std::runtime_error("Town transition exceeds original outdoor bounds");
+            std::erase_if(result_.pieces, [&](const auto &piece) {
+                return piece.x < (x + columns) * 8 && piece.x + piece.width > x * 8 &&
+                       piece.y < (y + rows) * 8 && piece.y + piece.height > y * 8;
+            });
+            for (int row = y; row < y + rows; ++row)
+                for (int column = x; column < x + columns; ++column)
+                    occupied_[row * width_ + column] = 0;
+            if (!place(preset, x, y, variant))
+                throw std::runtime_error("Cannot place original town transition");
+        };
+        if (position_.flags & 0x80)
+            replace(3, 0, 0, 1);
+        if (position_.flags & 0x100)
+            replace(3, width_ - 7, 0, 2);
+        if (position_.flags & 0x200)
+            replace(2, 0, 1, 1);
+        if (position_.flags & 0x400)
+            replace(2, 0, height_ - 6, 1);
+    }
+    void secondaryBorders(Archives &archives, int firstType, int lastType) {
+        if (position_.level == 17)
+            return;
+        std::vector<OutdoorCell> cells(size_t(width_) * height_);
+        for (const auto &piece : result_.pieces) {
+            if (piece.preset >= 4 && piece.preset <= 23)
+                cells[(piece.y / 8) * width_ + piece.x / 8] = {piece.preset, piece.variant};
+            else
+                for (int row = piece.y / 8; row < (piece.y + piece.height) / 8; ++row)
+                    for (int column = piece.x / 8; column < (piece.x + piece.width) / 8; ++column)
+                        cells[row * width_ + column] = {piece.preset, piece.variant, false, true};
+        }
+        for (int row = 0; row < height_; ++row)
+            for (int column = 0; column < width_; ++column) {
+                auto &cell = cells[row * width_ + column];
+                cell.blank = std::any_of(result_.blankAreas.begin(), result_.blankAreas.end(),
+                                          [&](const auto &blank) {
+                                              return column * 8 >= blank.x && row * 8 >= blank.y &&
+                                                     column * 8 < blank.x + blank.width &&
+                                                     row * 8 < blank.y + blank.height;
+                                          });
+                if (occupied_[row * width_ + column] < 0 && !cell.blank)
+                    cell.levelLink = true;
+                for (const auto &boundary : position_.boundaries) {
+                    int lateral = (boundary.side % 2 ? row : column) * 8;
+                    bool edge = boundary.side == 0   ? row == height_ - 1
+                                : boundary.side == 1 ? column == 0
+                                : boundary.side == 2 ? row == 0
+                                                     : column == width_ - 1;
+                    if (edge && lateral >= boundary.start && lateral < boundary.end)
+                        cell.levelLink = true;
+                }
+            }
+        for (int type = firstType; type <= lastType; ++type)
+            for (const auto &record : catalog_.substitutions())
+                if (record.type == type)
+                    applyOutdoorBorder(record, decodeDs1(archives.read(record.file)), width_, height_, cells,
+                                       seed_);
+        std::erase_if(result_.pieces, [](const auto &piece) {
+            return piece.preset >= 4 && piece.preset <= 23;
+        });
+        result_.blankAreas.clear();
+        std::fill(occupied_.begin(), occupied_.end(), 0);
+        for (int row = 0; row < height_; ++row)
+            for (int column = 0; column < width_; ++column) {
+                const auto &cell = cells[row * width_ + column];
+                if (cell.preset > 23 || (cell.preset > 0 && cell.preset < 4)) {
+                    occupied_[row * width_ + column] = cell.preset;
+                    continue;
+                }
+                if (cell.preset) {
+                    if (!place(cell.preset, column, row, cell.variant))
+                        throw std::runtime_error("Secondary outdoor border overlap");
+                } else if (cell.blank || cell.levelLink) {
+                    occupied_[row * width_ + column] = -1;
+                    if (cell.blank)
+                        result_.blankAreas.push_back({column * 8, row * 8, 8, 8});
+                }
+            }
+    }
+
   public:
     Wilderness(const WorldCatalog &catalog, OutdoorPosition position, uint32_t seed)
         : catalog_(catalog), position_(std::move(position)), seed_([&] {
@@ -183,10 +335,18 @@ class Wilderness {
         result_.baseFloor = 0x40002; // DRLGOUTPLACE_InitOutdoorRoomGrids: native Act I grass.
         result_.tileLibraries = catalog.terrainLibraries(2, 0x44103);
         result_.boundaries = position_.boundaries;
-        result_.ds1 = "outdoor-v1/" + std::to_string(position_.level) + "/" + std::to_string(seed);
+        result_.ds1 = "outdoor-v6/" + std::to_string(position_.level) + "/" + std::to_string(seed);
     }
-    MapRecipe build() {
+    MapRecipe build(Archives &archives) {
         borders();
+        secondaryBorders(archives, 0, 0);
+        river();
+        townTransitions();
+        if (position_.level != 17 && !cliffEntrance() && !random(position_.level == 2 ? 52 : 51, 1))
+            throw std::runtime_error("No room for the native cave entrance");
+        secondaryBorders(archives, 1, 3);
+        if (position_.level != 17)
+            generateOutdoorPaths(result_, occupied_, seed_);
         specialPresets();
         return std::move(result_);
     }
@@ -232,7 +392,7 @@ std::map<int, MapRecipe> generateAct1Outdoors(Archives &archives, const WorldCat
     for (const auto &[id, p] : layout) {
         auto recipe = id == 1    ? catalog.preset(1, 1, p.direction)
                       : id == 26 ? catalog.preset(165, catalog.level(26).levelType)
-                                 : Wilderness(catalog, p, seed).build();
+                                 : Wilderness(catalog, p, seed).build(archives);
         recipe.width = p.width;
         recipe.height = p.height;
         recipe.worldX = p.x;
@@ -244,8 +404,8 @@ std::map<int, MapRecipe> generateAct1Outdoors(Archives &archives, const WorldCat
 }
 std::vector<MapRecipe> outdoorTemplates(const WorldCatalog &catalog) {
     std::vector<MapRecipe> result;
-    for (int id = 4; id <= 163; ++id) {
-        if (!(id <= 15 || (id >= 29 && id <= 52) || id == 108 || id >= 160) || id == 40)
+    for (int id = 2; id <= 163; ++id) {
+        if (!(id <= 52 || id == 108 || id >= 160) || id == 40)
             continue;
         const auto &preset = catalog.presets().at(id);
         for (int v = 0; v < 6; ++v)
@@ -262,6 +422,17 @@ std::vector<std::string> outdoorMissing(Archives &archives, const WorldCatalog &
     for (const auto &path : catalog.terrainLibraries(2, 0x44103))
         if (!archives.contains(path))
             result.insert(path);
+    for (int type = 0; type <= 3; ++type) {
+        bool found = false;
+        for (const auto &record : catalog.substitutions())
+            if (record.type == type) {
+                found = true;
+                if (!archives.contains(record.file))
+                    result.insert(record.file);
+            }
+        if (!found)
+            result.insert("LvlSub border type " + std::to_string(type));
+    }
     return {result.begin(), result.end()};
 }
 } // namespace d2x

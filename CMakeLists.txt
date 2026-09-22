@@ -20,8 +20,14 @@ add_library(d2x_navigation src/world/navigation.cpp src/world/room_activation.cp
 target_link_libraries(d2x_navigation PUBLIC d2x_core)
 add_library(d2x_world src/world/map.cpp src/world/map_assembly.cpp src/world/maze.cpp src/world/outdoor.cpp src/world/outdoor_layout.cpp src/world/region.cpp src/world/region_catalog.cpp src/world/exits.cpp src/world/world_report.cpp)
 target_sources(d2x_world PRIVATE
+  src/world/outdoor_substitution.cpp
+  src/world/outdoor_river.cpp
+  src/world/outdoor_paths.cpp
+  src/world/outdoor_cliffs.cpp
+  src/world/cow_level.cpp
   src/world/maze/generation.cpp src/world/maze/resources.cpp
-  src/world/maze/cave.cpp src/world/maze/crypt.cpp)
+  src/world/maze/cave.cpp src/world/maze/crypt.cpp src/world/maze/barracks.cpp
+  src/world/maze/jail.cpp src/world/maze/catacombs.cpp)
 target_link_libraries(d2x_world PUBLIC d2x_content d2x_navigation)
 
 add_library(d2x_items

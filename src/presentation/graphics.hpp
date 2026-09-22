@@ -11,6 +11,7 @@ struct Sprite {
 struct GpuAnimation {
     int directions = 0, count = 0;
     std::vector<Sprite> frames;
+    bool completeComposite = false;
     const Sprite *frame(int direction, int index) const {
         if (frames.empty() || directions <= 0 || count <= 0 || direction < 0 || index < 0)
             return nullptr;

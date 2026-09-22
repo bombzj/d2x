@@ -46,7 +46,12 @@ void Map::load(Archives &a, TileLibraryCache &cache, const MapRecipe &recipe) {
                 bool authored = std::any_of(recipe.pieces.begin(), recipe.pieces.end(), [&](const auto &p) {
                     return x >= p.x && y >= p.y && x < p.x + p.width && y < p.y + p.height;
                 });
-                if (!authored)
+                bool blank =
+                    std::any_of(recipe.blankAreas.begin(), recipe.blankAreas.end(), [&](const auto &area) {
+                        return x >= area.x && y >= area.y && x < area.x + area.width &&
+                               y < area.y + area.height;
+                    });
+                if (!authored && !blank)
                     rooms.push_back({x * 5, y * 5, 40, 40, true});
             }
     tiles.clear();
@@ -85,9 +90,15 @@ void Map::load(Archives &a, TileLibraryCache &cache, const MapRecipe &recipe) {
                 int idx = tileIndex(c, x, y);
                 if (idx < 0) {
                     unresolved++;
-                    if (unresolved < 4)
+                    if (unresolved < 4) {
                         std::cerr << "Missing tile " << c.key() << " orientation " << c.orientation << " in "
-                                  << ds1 << '\n';
+                                  << ds1 << " at=" << x << ',' << y << " hidden=" << c.hidden() << '\n';
+                        for (const auto &piece : recipe.pieces)
+                            if (x >= piece.x && x <= piece.x + piece.width && y >= piece.y &&
+                                y <= piece.y + piece.height)
+                                std::cerr << "  preset=" << piece.preset << " variant=" << piece.variant
+                                          << " source=" << piece.ds1 << '\n';
+                    }
                     return;
                 }
                 const auto &t = *tiles[idx];
@@ -123,7 +134,10 @@ void Map::load(Archives &a, TileLibraryCache &cache, const MapRecipe &recipe) {
             bool opening =
                 std::any_of(recipe.boundaries.begin(), recipe.boundaries.end(), [&](const auto &b) {
                     int t = b.side % 2 ? y : x;
-                    bool edge = b.side == 1   ? x < 2
+                    int plane = b.coordinate(width / 5, height / 5) * 5;
+                    int normal = b.side % 2 ? x : y;
+                    bool edge = b.plane >= 0  ? normal >= plane - 2 && normal < plane + 2
+                                : b.side == 1 ? x < 2
                                 : b.side == 2 ? y < 2
                                 : b.side == 3 ? x >= width - 2
                                               : y >= height - 2;

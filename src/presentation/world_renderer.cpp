@@ -135,11 +135,10 @@ void SceneView::drawActors() const {
         } else if (item.type == 2) {
             auto &e = sim.area.enemies[item.index];
             std::string mode = e.hp <= 0 ? "dt" : (e.pos - sim.player.pos).length() < 1.8f ? "a1" : "wl";
-            auto *anim = &assets_.fallen.at(mode);
+            const auto &animations = assets_.monsterAnimations.at(e.kind);
+            auto *anim = &animations.at(mode);
             if (anim->frames.empty())
-                anim = &assets_.fallen.at("nu");
-            if (e.kind == MonsterKind::Zombie && !assets_.zombie.at(mode).frames.empty())
-                anim = &assets_.zombie.at(mode);
+                anim = &animations.at("nu");
             DrawEllipse(int(item.p.x), int(item.p.y), 12, 5, {0, 0, 0, 100});
             if (!anim->frames.empty())
                 sprite(anim->frame(direction(sim.player.pos - e.pos, anim->directions),

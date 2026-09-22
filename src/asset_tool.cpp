@@ -2,6 +2,7 @@
 #include "content/monster_catalog.hpp"
 #include "resources/archive.hpp"
 #include "resources/formats.hpp"
+#include "world/cow_level.hpp"
 #include "world/maze.hpp"
 #include "world/outdoor.hpp"
 #include "world/population.hpp"
@@ -21,13 +22,53 @@ int main(int argc, char **argv) {
                    "  ... item <code>\n  ... drops <monster-class>\n  ... maps [Act-I-level-ID]\n"
                    "  ... presets [name-filter]\n  ... maze <level-ID> [map-seed] [difficulty:0-2]\n"
                    "  ... outdoor <level-ID> [map-seed]\n"
+                   "  ... substitutions <LvlSub-type>\n"
                    "  ... population <level-ID> [normal|nightmare|hell] [seed]\n";
             return 0;
         }
         d2x::Archives a;
         a.mountDirectory(argv[1]);
         std::string command = argv[2];
-        if ((command == "maze" || command == "outdoor") && argc >= 4 && argc <= 6) {
+        if (command == "substitutions" && argc == 4) {
+            d2x::WorldCatalog catalog(a);
+            int type = std::stoi(argv[3]);
+            for (const auto &record : catalog.substitutions()) {
+                if (record.type != type)
+                    continue;
+                d2x::MapData data;
+                try {
+                    data = d2x::decodeDs1(a.read(record.file));
+                } catch (const std::exception &error) {
+                    throw std::runtime_error(record.file + ": " + error.what());
+                }
+                std::cout << record.name << " " << record.file << " version=" << data.version
+                          << " method=" << data.substitutionMethod
+                          << " groups=" << data.substitutionGroups.size() << '\n';
+                for (const auto &group : data.substitutionGroups) {
+                    std::cout << "  group " << group.x << ',' << group.y << " size=" << group.width << 'x'
+                              << group.height << " variants=" << group.variants << '\n';
+                    for (int variant = 0; variant <= group.variants; ++variant) {
+                        std::cout << "    " << (variant ? "replace" : "match") << ' ' << variant << '\n';
+                        for (int row = 0; row < group.height; ++row) {
+                            for (int column = 0; column < group.width; ++column) {
+                                int x = group.x + variant * (group.width + 1) + column;
+                                int y = group.y + row;
+                                if (x >= data.width)
+                                    throw std::runtime_error("Substitution variant exceeds DS1 bounds");
+                                auto index = size_t(y) * data.width + x;
+                                auto wall = data.walls.empty() ? 0u : data.walls.front()[index].value;
+                                auto floor = data.floors.front()[index].value;
+                                if (wall & 1)
+                                    std::cout << ' ' << int((wall >> 8) & 255) - 1;
+                                else
+                                    std::cout << ((floor & 2) ? " ." : " _");
+                            }
+                            std::cout << '\n';
+                        }
+                    }
+                }
+            }
+        } else if ((command == "maze" || command == "outdoor") && argc >= 4 && argc <= 6) {
             d2x::WorldCatalog catalog(a);
             uint32_t seed = d2x::defaultMapSeed;
             if (argc >= 5) {
@@ -36,10 +77,11 @@ int main(int argc, char **argv) {
                 if (error != std::errc{} || end != value.data() + value.size())
                     throw std::runtime_error("Map seed expects uint32");
             }
-            auto recipe =
-                command == "maze"
-                    ? d2x::generateMaze(catalog, std::stoi(argv[3]), seed, argc == 6 ? std::stoi(argv[5]) : 0)
-                    : d2x::generateAct1Outdoors(a, catalog, seed).at(std::stoi(argv[3]));
+            auto recipe = command == "maze" ? d2x::generateMaze(catalog, std::stoi(argv[3]), seed,
+                                                                argc == 6 ? std::stoi(argv[5]) : 0)
+                          : std::stoi(argv[3]) == 39
+                              ? d2x::generateCowLevel(a, catalog, seed)
+                              : d2x::generateAct1Outdoors(a, catalog, seed).at(std::stoi(argv[3]));
             std::cout << recipe.ds1 << " rooms=" << recipe.pieces.size() << '\n';
             for (const auto &room : recipe.pieces)
                 std::cout << "  room " << room.x << ',' << room.y << " size=" << room.width << 'x'

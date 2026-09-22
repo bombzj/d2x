@@ -1,4 +1,5 @@
 #include "world_report.hpp"
+#include "cow_level.hpp"
 #include "maze.hpp"
 #include "outdoor.hpp"
 #include <set>
@@ -22,8 +23,14 @@ void writeWorldReport(std::ostream &out, Archives &archives, const WorldCatalog 
         }
         if (supportsMaze(id)) {
             available.recipe = generateMaze(catalog, id, defaultMapSeed, 0);
-            available.missing = mazeMissing(archives, catalog);
+            available.missing = mazeMissing(archives, catalog, id);
             available.reason.clear();
+        }
+        if (id == 39) {
+            available.missing = cowLevelMissing(archives, catalog);
+            available.reason.clear();
+            if (available.missing.empty())
+                available.recipe = generateCowLevel(archives, catalog, defaultMapSeed);
         }
         ready += available.ready();
         const char *kind = level.generation == GenerationKind::Preset ? "preset"
@@ -31,7 +38,8 @@ void writeWorldReport(std::ostream &out, Archives &archives, const WorldCatalog 
                                                                       : "outdoor";
         out << id << " | " << level.name << " | " << kind << " | type=" << level.levelType
             << " size=" << level.width << 'x' << level.height << " | "
-            << (available.ready()          ? (supportsMaze(id)       ? "GENERATED MAZE READY"
+            << (available.ready()          ? (id == 39               ? "GENERATED COW TERRAIN / QUEST PORTAL PENDING"
+                                              : supportsMaze(id)     ? "GENERATED MAZE READY"
                                               : outdoor.contains(id) ? "CONNECTED OUTDOOR READY"
                                                                      : "PRESET TERRAIN READY")
                 : available.reason.empty() ? "MISSING RESOURCES"
@@ -76,9 +84,12 @@ void writeWorldReport(std::ostream &out, Archives &archives, const WorldCatalog 
         throw std::runtime_error("Unknown Act I level");
     out << "\n"
         << ready << '/' << count << " levels have supported terrain and its DS1/DT1 files (variant 0).\n"
-        << "Levels 1..26 form the implemented Act I exploration route when all resources are present.\n"
-        << "Outdoor terrain currently implements the rectangular border/preset branch; roads, rivers and "
-           "LvlSub remain pending.\n"
+        << "Levels 1..37 form the implemented Act I exploration route when all resources are present.\n"
+        << "Cow terrain uses four secondary border substitutions. Main-route terrain has three secondary "
+           "border passes, river/bridge presets and native dirt floor tiles with adapted path routing.\n"
+          << "Cliff contours, cliff entrances and town transition presets are implemented; full LvlSub "
+              "themes, native path routing and quest portals remain incomplete. Terrain availability is "
+              "not full Act I feature parity.\n"
         << "Missing " << allMissing.size()
         << " known files. Maze/outdoor lists cover LevelType DT1s; exact DS1 demand depends on unimplemented "
            "generation.\n";

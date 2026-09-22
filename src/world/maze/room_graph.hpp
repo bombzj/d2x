@@ -3,13 +3,14 @@
 // Room graph rules follow the original branch; full engine RNG consumption is not reproduced.
 #pragma once
 #include "family.hpp"
-#include "world/maze.hpp"
 #include "world/generation_seed.hpp"
+#include "world/maze.hpp"
 
 namespace d2x::maze {
 struct Chamber {
     int x = 0, y = 0, mask = 0, preset = 0;
     bool fixed = false;
+    int variant = -1;
     Seed seed;
     explicit Chamber(uint32_t value) : seed(value) { seed.next(); }
 };
@@ -21,6 +22,8 @@ class RoomMaze {
     FamilyRules family_;
     int base_;
     std::vector<Chamber> rooms_;
+    void placeBarracks(int direction);
+    void initializeCatacombs(int level);
     void pick(int i) { rooms_[i].preset = base_ + rooms_[i].mask; }
     void link(int a, int b, int direction) {
         rooms_[a].mask |= bits[direction];
@@ -75,8 +78,12 @@ class RoomMaze {
               Seed world(seed);
               return world.next() + uint32_t(level);
           }()),
-          family_(catalog.level(level).levelType == 3 ? caveRules(level) : cryptRules(level)),
+          family_(level == 28                           ? barracksRules()
+                  : level >= 29 && level <= 31          ? jailRules(level)
+                  : level >= 34 && level <= 36          ? catacombsRules(level)
+                  : catalog.level(level).levelType == 3 ? caveRules(level)
+                                                        : cryptRules(level)),
           base_(family_.base) {}
-    MapRecipe build(int level, uint32_t seed, int difficulty);
+    MapRecipe build(int level, uint32_t seed, int difficulty, int entranceDirection = 0);
 };
-}
+} // namespace d2x::maze

@@ -5,10 +5,9 @@
 
 namespace d2x {
 void linkLevelExits(std::vector<Region> &regions, const WorldCatalog &catalog) {
-    // Levels 1..26 form the implemented route; later indoor families remain separate.
     for (auto &region : regions) {
         int id = int(region.definition.id);
-        if (id < 1 || id > 25)
+        if (id < 1 || (id > 25 && (id < 28 || id > 37)))
             continue;
         const auto &level = catalog.level(id);
         const auto &data = region.map.data;
@@ -56,17 +55,28 @@ void linkLevelExits(std::vector<Region> &regions, const WorldCatalog &catalog) {
             exit.destination = target->definition.id;
             exit.name = target->definition.name;
             const auto &r = region.recipe;
+            int plane = b.coordinate(r.width, r.height) * 5;
             int best = -1;
             float score = 1e9f;
             for (int t = b.start * 5 + 2; t < b.end * 5 - 2; ++t) {
-                Vec pos{b.side == 1   ? .5f
-                        : b.side == 3 ? r.width * 5 - .5f
+                Vec pos{b.side == 1   ? plane + .5f
+                        : b.side == 3 ? plane - .5f
                                       : t + .5f,
-                        b.side == 2   ? .5f
-                        : b.side == 0 ? r.height * 5 - .5f
+                        b.side == 2   ? plane + .5f
+                        : b.side == 0 ? plane - .5f
                                       : t + .5f};
                 if (!region.map.grid.walkable(pos))
                     continue;
+                int sourceId = int(region.definition.id);
+                if ((sourceId >= 26 && sourceId <= 28 && b.destination >= 26 && b.destination <= 28) ||
+                    (sourceId == 32 && b.destination == 33) || (sourceId == 33 && b.destination == 32)) {
+                    Vec across = pos + Vec{float((r.worldX - target->recipe.worldX) * 5),
+                                           float((r.worldY - target->recipe.worldY) * 5)};
+                    constexpr int outwardX[]{0, -1, 0, 1}, outwardY[]{1, 0, -1, 0};
+                    across = across + Vec{float(outwardX[b.side]), float(outwardY[b.side])};
+                    if (!target->map.grid.walkable(across))
+                        continue;
+                }
                 float value = std::abs(t - (b.start + b.end) * 2.5f);
                 if (value < score) {
                     score = value;
@@ -104,7 +114,9 @@ void linkLevelExits(std::vector<Region> &regions, const WorldCatalog &catalog) {
         }
         if (!region.exits.empty() && !region.definition.safe)
             region.map.spawn = region.exits.front().arrival;
-        if (!region.recipe.pieces.empty()) {
+        if (!region.recipe.pieces.empty() || int(region.definition.id) == 26 ||
+            int(region.definition.id) == 27 || int(region.definition.id) == 32 ||
+            int(region.definition.id) == 33) {
             for (const auto &exit : region.exits)
                 if (exit.enabled && region.map.grid.path(region.map.spawn, exit.arrival).empty())
                     throw std::runtime_error("Disconnected original level exit: " + region.map.path +

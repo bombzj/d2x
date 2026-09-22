@@ -64,6 +64,7 @@ WorldCatalog::WorldCatalog(Archives &archives) {
                 record.height = number("SizeY");
                 record.offsetX = number("OffsetX");
                 record.offsetY = number("OffsetY");
+                record.depend = number("Depend");
                 record.subtype = number("SubType", -1);
                 record.theme = number("SubTheme", -1);
                 record.waypoint = number("Waypoint", -1);

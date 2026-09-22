@@ -1,4 +1,5 @@
 #include "scene_assets.hpp"
+#include "world/cow_level.hpp"
 #include "world/outdoor.hpp"
 #include <iostream>
 
@@ -26,11 +27,25 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
     hero.emplace("dt", graphics_.composite("chars", "ba", "dt", "hth"));
     if (hero.at("nu").frames.empty() || hero.at("rn").frames.empty())
         throw std::runtime_error("Barbarian animations missing; supply the classic MPQ resources.");
-    for (auto mode : {"nu", "wl", "a1", "dt"}) {
-        fallen.emplace(
-            mode, graphics_.composite("monsters", monsterDefinition(MonsterKind::Fallen).token, mode, "hth"));
-        zombie.emplace(
-            mode, graphics_.composite("monsters", monsterDefinition(MonsterKind::Zombie).token, mode, "hth"));
+    for (int index = 0; index < int(MonsterKind::Count); ++index) {
+        auto kind = MonsterKind(index);
+        const auto &definition = monsterDefinition(kind);
+        std::array<const char *, 16> equipment;
+        equipment.fill("");
+        if (kind == MonsterKind::Skeleton || kind == MonsterKind::CorruptRogue) {
+            equipment[5] = "axe";
+            equipment[7] = "buc";
+            equipment[8] = "lit";
+            equipment[9] = "lit";
+        }
+        for (auto mode : {"nu", "wl", "a1", "dt"}) {
+            auto animation =
+                graphics_.composite("monsters", definition.token, mode, definition.weapon, &equipment);
+            if (animation.frames.empty() || !animation.completeComposite)
+                throw std::runtime_error("Monster animation incomplete: " + std::string(definition.token) +
+                                         mode);
+            monsterAnimations[kind].emplace(mode, std::move(animation));
+        }
     }
     fireball = graphics_.single("data/global/missiles/fireball.dcc");
     fireburst = graphics_.single("data/global/missiles/shamanfireballexplodefinal.dcc");
@@ -92,10 +107,22 @@ void SceneAssets::collectMapVariants(Archives &archives, const WorldCatalog &cat
                                      const MonsterCatalog &monsters) {
     collectMazeResources(archives, catalog);
     std::vector<RegionPlan> plans;
+    if (cowLevelMissing(archives, catalog).empty()) {
+        collectCowLevelResources(archives, catalog);
+        for (auto recipe : cowLevelTemplates(catalog)) {
+            RegionDefinition definition;
+            definition.id = RegionId(30000 + recipe.preset);
+            definition.mapPath = recipe.ds1;
+            plans.push_back({std::move(definition), std::move(recipe)});
+        }
+    }
     for (auto recipe : outdoorTemplates(catalog)) {
         for (const auto &path : recipe.tileLibraries)
             archives.read(path);
         archives.read(recipe.ds1);
+        if ((recipe.preset == 26 || recipe.preset == 27) &&
+            decodeDs1(archives.read(recipe.ds1)).objects.empty())
+            continue;
         RegionDefinition definition;
         definition.id = RegionId(20000 + recipe.preset);
         definition.mapPath = recipe.ds1;
@@ -105,8 +132,8 @@ void SceneAssets::collectMapVariants(Archives &archives, const WorldCatalog &cat
         archives.read(path);
     // Include every generated-room object appearance, not only this seed's selection.
     for (int id : mazePresets())
-        for (int variant = 0; variant < catalog.presets().at(id).files; ++variant) {
-            auto recipe = catalog.preset(id, id < 108 ? 3 : 4, variant);
+        for (int variant = 0; variant < mazePresetVariants(catalog, id); ++variant) {
+            auto recipe = catalog.preset(id, mazePresetType(id), variant);
             RegionDefinition definition;
             definition.id = RegionId(10000 + id);
             definition.mapPath = recipe.ds1;

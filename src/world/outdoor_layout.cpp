@@ -113,6 +113,27 @@ std::map<int, OutdoorPosition> layoutAct1(const WorldCatalog &catalog, uint32_t 
             throw std::runtime_error("Cannot place original Act I outdoor links");
         for (int i = 1; i < int(ids.size()); ++i)
             connect(positions[parents[i]], positions[i]);
+        if (wilderness) {
+            struct RiverRule {
+                int level, excludeFirst, excludeSecond, direction, nextDirection;
+                uint32_t flags;
+            };
+            constexpr RiverRule rules[]{{0, 2, 3, 1, 0, 4},  {0, 2, 3, 2, 3, 4},   {0, 3, 17, 2, 1, 8},
+                                        {0, 3, 17, 3, 0, 8}, {0, 3, 17, 1, 1, 16}, {0, 3, 17, 3, 3, 16},
+                                        {2, 0, 0, 0, 0, 8},  {2, 0, 0, 2, 2, 8},   {2, 0, 0, 3, 0, 8},
+                                        {2, 0, 0, 3, 2, 8}, {2, 0, 0, 0, 1, 0x400},
+                                        {2, 0, 0, 1, 1, 0x400}, {2, 0, 0, 2, 1, 0x200},
+                                        {2, 0, 0, 2, 2, 0x80}, {2, 0, 0, 3, 2, 0x100}};
+            for (size_t index = 0; index < positions.size(); ++index) {
+                auto &position = positions[index];
+                int next = index + 1 < positions.size() ? positions[index + 1].direction : -1;
+                for (const auto &rule : rules)
+                    if ((!rule.level || rule.level == position.level) &&
+                        position.level != rule.excludeFirst && position.level != rule.excludeSecond &&
+                        position.direction == rule.direction && next == rule.nextDirection)
+                        position.flags |= rule.flags;
+            }
+        }
         for (auto &p : positions)
             result.emplace(p.level, std::move(p));
     };

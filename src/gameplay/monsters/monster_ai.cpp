@@ -3,42 +3,67 @@
 
 namespace d2x {
 void Simulation::updateMonsters(float dt) {
-    auto &p = state_.player;
-    for (auto &e : state_.area.enemies) {
-        if (e.hp <= 0 || !active(e.pos))
+    auto &player = state_.player;
+    for (auto &enemy : state_.area.enemies) {
+        if (enemy.hp <= 0 || !active(enemy.pos))
             continue;
-        e.chill = std::max(0.f, e.chill - dt);
-        e.stun = std::max(0.f, e.stun - dt);
-        e.attack -= dt;
-        if (e.stun > 0)
+        enemy.chill = std::max(0.f, enemy.chill - dt);
+        enemy.stun = std::max(0.f, enemy.stun - dt);
+        enemy.attack = std::max(0.f, enemy.attack - dt);
+        enemy.rethink = std::max(0.f, enemy.rethink - dt);
+        if (player.dead || player.hp <= 0) {
+            enemy.route.clear();
             continue;
-        const auto &def = monsterDefinition(e.kind);
-        auto delta = p.pos - e.pos;
-        float distance = delta.length();
-        if (distance > 1.4f && distance < def.sightRange) {
-            e.rethink -= dt;
-            Vec heading = delta.unit();
-            if (!grid_->segment(e.pos, p.pos)) {
-                if (e.rethink <= 0) {
-                    e.route = grid_->path(e.pos, p.pos);
-                    e.rethink = .7f;
-                }
-                if (!e.route.empty()) {
-                    if ((e.route.front() - e.pos).length() < .25f)
-                        e.route.pop_front();
-                    if (!e.route.empty())
-                        heading = (e.route.front() - e.pos).unit();
-                }
-            }
-            float speed = def.speed * (e.chill > 0 ? .42f : 1.f);
-            auto next = e.pos + heading * dt * speed;
-            if (grid_->segment(e.pos, next))
-                e.pos = next;
         }
-        if (distance < def.attackRange && e.attack <= 0 && p.leapTime <= 0) {
-            p.hp = std::max(0.f, p.hp - def.damage);
-            p.hitTime = .16f;
-            e.attack = def.attackInterval * (e.chill > 0 ? 2.f : 1.f);
+        if (enemy.stun > 0)
+            continue;
+        const auto &definition = monsterDefinition(enemy.kind);
+        auto delta = player.pos - enemy.pos;
+        float distance = delta.length();
+        if (distance >= definition.sightRange) {
+            enemy.route.clear();
+            enemy.rethink = 0;
+            continue;
+        }
+        bool clear = grid_->segment(enemy.pos, player.pos);
+        if (distance >= definition.attackRange || !clear) {
+            Vec destination = player.pos;
+            if (clear) {
+                enemy.route.clear();
+                enemy.rethink = 0;
+            } else {
+                while (!enemy.route.empty() && (enemy.route.front() - enemy.pos).length() < .25f)
+                    enemy.route.pop_front();
+                if (!enemy.route.empty() && !grid_->segment(enemy.pos, enemy.route.front())) {
+                    enemy.route.clear();
+                    enemy.rethink = 0;
+                }
+                if (enemy.rethink <= 0) {
+                    enemy.route = grid_->path(enemy.pos, player.pos);
+                    enemy.rethink = .7f;
+                }
+                if (enemy.route.empty())
+                    continue;
+                destination = enemy.route.front();
+            }
+            auto offset = destination - enemy.pos;
+            float speed = definition.speed * (enemy.chill > 0 ? .42f : 1.f);
+            auto next = enemy.pos + offset.unit() * std::min(speed * dt, offset.length());
+            if (grid_->segment(enemy.pos, next))
+                enemy.pos = next;
+            else {
+                enemy.route.clear();
+                enemy.rethink = 0;
+            }
+        } else {
+            enemy.route.clear();
+            enemy.rethink = 0;
+        }
+        if ((player.pos - enemy.pos).length() < definition.attackRange && enemy.attack <= 0 &&
+            player.leapTime <= 0 && grid_->segment(enemy.pos, player.pos)) {
+            player.hp = std::max(0.f, player.hp - definition.damage);
+            player.hitTime = .16f;
+            enemy.attack = definition.attackInterval * (enemy.chill > 0 ? 2.f : 1.f);
         }
     }
 }

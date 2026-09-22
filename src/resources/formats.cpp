@@ -114,8 +114,10 @@ std::vector<Tile> decodeDt1(const Bytes &b) {
         auto nb = r.u32();
         if (nb > 8192)
             throw std::runtime_error("Invalid DT1 blocks");
-        if (w <= 0 || h == 0 || nb == 0)
+        if (w <= 0 || h == 0 || nb == 0) {
+            result.push_back(std::move(t));
             continue;
+        }
         struct Block {
             int x, y, format;
             uint32_t len, off;
@@ -201,6 +203,7 @@ MapData decodeDs1(const Bytes &b) {
     if (m.version >= 8)
         m.act = std::min(int(r.u32()), 4);
     int tags = m.version >= 10 ? r.u32() : 0;
+    m.substitutionMethod = tags;
     int files = r.u32();
     if (files < 0 || files > 256)
         throw std::runtime_error("Invalid DS1 dependencies");
@@ -261,6 +264,26 @@ MapData decodeDs1(const Bytes &b) {
         if (m.version >= 6)
             o.flags = r.u32();
         m.objects.push_back(o);
+    }
+    if (m.version >= 12 && (tags == 1 || tags == 2)) {
+        if (m.version >= 18)
+            r.skip(4);
+        int groups = r.u32();
+        if (groups < 0 || groups > 65536)
+            throw std::runtime_error("Invalid DS1 substitution group count");
+        for (int index = 0; index < groups; ++index) {
+            SubstitutionGroup group;
+            group.x = r.u32();
+            group.y = r.u32();
+            group.width = r.u32();
+            group.height = r.u32();
+            if (m.version >= 13)
+                group.variants = r.u32();
+            if (group.x < 0 || group.y < 0 || group.width <= 0 || group.height <= 0 || group.variants < 0 ||
+                int64_t(group.x) + group.width > m.width || int64_t(group.y) + group.height > m.height)
+                throw std::runtime_error("Invalid DS1 substitution group bounds");
+            m.substitutionGroups.push_back(group);
+        }
     }
     return m;
 }

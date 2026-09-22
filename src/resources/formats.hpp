@@ -100,12 +100,17 @@ struct MapObject {
     int type = 0, id = 0, x = 0, y = 0;
     uint32_t flags = 0;
 };
+struct SubstitutionGroup {
+    int x = 0, y = 0, width = 0, height = 0, variants = 0;
+};
 struct MapData {
     int version = 0, width = 0, height = 0, act = 0;
+    int substitutionMethod = 0;
     std::vector<std::string> dependencies;
     std::vector<std::vector<MapCell>> floors, walls;
     std::vector<MapCell> shadows;
     std::vector<uint32_t> substitutions;
+    std::vector<SubstitutionGroup> substitutionGroups;
     std::vector<MapObject> objects;
 };
 MapData decodeDs1(const Bytes &data);

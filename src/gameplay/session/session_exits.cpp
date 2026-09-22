@@ -8,10 +8,13 @@ bool atBoundary(const LevelExit &exit, const MapRecipe &recipe, Vec pos) {
         return false;
     const auto &b = *exit.boundary;
     float lateral = b.side % 2 ? pos.y : pos.x;
-    float depth = b.side == 1   ? pos.x
-                  : b.side == 2 ? pos.y
-                  : b.side == 3 ? recipe.width * 5 - pos.x
-                                : recipe.height * 5 - pos.y;
+    float plane = b.coordinate(recipe.width, recipe.height) * 5.f;
+    float depth = b.side == 1   ? pos.x - plane
+                  : b.side == 2 ? pos.y - plane
+                  : b.side == 3 ? plane - pos.x
+                                : plane - pos.y;
+    if (b.plane >= 0 && depth < -.8f)
+        return false;
     return depth <= .8f && lateral >= b.start * 5 && lateral < b.end * 5;
 }
 } // namespace
@@ -110,10 +113,11 @@ void GameSession::updateExit() {
                     Vec translated =
                         p.pos + Vec{float((a.worldX - b.worldX) * 5), float((a.worldY - b.worldY) * 5)};
                     int side = back.boundary->side;
+                    float plane = back.boundary->coordinate(b.width, b.height) * 5.f;
                     if (side % 2)
-                        translated.x = side == 1 ? .5f : b.width * 5 - .5f;
+                        translated.x = side == 1 ? plane + .5f : plane - .5f;
                     else
-                        translated.y = side == 2 ? .5f : b.height * 5 - .5f;
+                        translated.y = side == 2 ? plane + .5f : plane - .5f;
                     if (destination->map.grid.walkable(translated) &&
                         destination->map.grid.segment(back.arrival, translated))
                         arrival = translated;

@@ -1,3 +1,4 @@
+#include "cow_level.hpp"
 #include "outdoor.hpp"
 #include "region.hpp"
 #include <algorithm>
@@ -45,7 +46,6 @@ WorldPlan planWorld(Archives &archives, const WorldCatalog &catalog, WorldSelect
                                      "--level-type for room previews");
     }
     WorldPlan result;
-    auto missingMaze = mazeMissing(archives, catalog);
     auto missingOutdoor = outdoorMissing(archives, catalog);
     auto outdoors = missingOutdoor.empty() ? generateAct1Outdoors(archives, catalog, selection.seed)
                                            : std::map<int, MapRecipe>{};
@@ -60,15 +60,26 @@ WorldPlan planWorld(Archives &archives, const WorldCatalog &catalog, WorldSelect
             entry.status = "Connected outdoor terrain";
             entry.missing.clear();
             result.regions.push_back(makeRegion(*entry.destination, level.name, outdoors.at(id), id == 1));
+        } else if (id == 39) {
+            entry.missing = cowLevelMissing(archives, catalog);
+            entry.status = entry.missing.empty() ? "Generated cow terrain / quest portal unavailable"
+                                                 : "Missing original cow level resources";
+            if (entry.missing.empty()) {
+                entry.destination = RegionId(id);
+                result.regions.push_back(makeRegion(*entry.destination, level.name,
+                                                    generateCowLevel(archives, catalog, selection.seed)));
+            }
         } else if (supportsMaze(id)) {
+            auto missingMaze = mazeMissing(archives, catalog, id);
             entry.missing = missingMaze;
             entry.status =
                 missingMaze.empty() ? "Generated maze / linked stairs" : "Missing original maze resources";
             if (missingMaze.empty()) {
                 entry.destination = RegionId(id);
-                result.regions.push_back(
-                    makeRegion(*entry.destination, level.name,
-                               generateMaze(catalog, id, selection.seed, selection.difficulty)));
+                result.regions.push_back(makeRegion(
+                    *entry.destination, level.name,
+                    generateMaze(catalog, id, selection.seed, selection.difficulty,
+                                 selection.level == 27 && !selection.preset ? selection.variant : 0)));
             }
         } else if (available.ready()) {
             entry.destination = RegionId(id);
@@ -78,6 +89,47 @@ WorldPlan planWorld(Archives &archives, const WorldCatalog &catalog, WorldSelect
             entry.status = "Missing MPQ resources";
         result.entries.push_back(std::move(entry));
     }
+    auto court = std::find_if(result.regions.begin(), result.regions.end(),
+                              [](const auto &region) { return int(region.definition.id) == 27; });
+    auto barracks = std::find_if(result.regions.begin(), result.regions.end(),
+                                 [](const auto &region) { return int(region.definition.id) == 28; });
+    if (court != result.regions.end()) {
+        auto terrain = decodeDs1(archives.read(court->recipe.ds1));
+        auto &recipe = court->recipe;
+        recipe.width = terrain.width - 1;
+        recipe.height = terrain.height - 1;
+    }
+    for (int dependentId : {27, 33}) {
+        const auto &level = catalog.level(dependentId);
+        int parentId = dependentId == 27 ? 26 : 32;
+        auto dependent = std::find_if(result.regions.begin(), result.regions.end(), [&](const auto &region) {
+            return int(region.definition.id) == dependentId;
+        });
+        auto parent = std::find_if(result.regions.begin(), result.regions.end(),
+                                   [&](const auto &region) { return int(region.definition.id) == parentId; });
+        if (dependent == result.regions.end() || parent == result.regions.end())
+            continue;
+        for (auto *recipe : {&dependent->recipe, &parent->recipe})
+            if (!recipe->width || !recipe->height) {
+                auto terrain = decodeDs1(archives.read(recipe->ds1));
+                recipe->width = terrain.width - 1;
+                recipe->height = terrain.height - 1;
+            }
+        auto &child = dependent->recipe;
+        auto &base = parent->recipe;
+        if (level.depend != parentId || level.offsetY + child.height != 0)
+            throw std::runtime_error("Unsupported dependent preset geometry");
+        child.worldX = base.worldX + level.offsetX;
+        child.worldY = base.worldY + level.offsetY;
+        int start = std::max(child.worldX, base.worldX);
+        int end = std::min(child.worldX + child.width, base.worldX + base.width);
+        if (start >= end)
+            throw std::runtime_error("Dependent presets have no shared boundary");
+        child.boundaries.push_back({parentId, 0, start - child.worldX, end - child.worldX});
+        base.boundaries.push_back({dependentId, 2, start - base.worldX, end - base.worldX});
+    }
+    if (court != result.regions.end() && barracks != result.regions.end())
+        connectBarracks(court->recipe, barracks->recipe, court->recipe.width, court->recipe.height);
     auto preview = [&](int id, int type, int variant) {
         auto recipe = catalog.preset(id, type, variant);
         auto missing = catalog.missing(archives, recipe);

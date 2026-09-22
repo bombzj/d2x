@@ -8,7 +8,7 @@
 namespace d2x {
 enum class Skill { Fireball, FrostNova, Whirlwind, Teleport, Leap, WarCry, Count };
 constexpr size_t skillCount = size_t(Skill::Count);
-enum class MonsterKind { Fallen, Zombie };
+enum class MonsterKind { Fallen, Zombie, Skeleton, CorruptRogue, Count };
 // Native Levels.txt IDs. Template previews occupy a separate range (10000 + Def).
 enum class RegionId { Encampment = 1 };
 enum class Interaction { None, Talk, Heal, Travel, Stash };
@@ -23,6 +23,7 @@ struct MonsterDefinition {
     MonsterKind id;
     const char *token;
     float maxLife, speed, damage, attackInterval, sightRange, attackRange;
+    const char *weapon = "hth";
 };
 struct PlayerRules {
     float maxLife = 250, maxMana = 150, maxStamina = 100;

@@ -21,6 +21,20 @@ MapData assembleMap(Archives &archives, const MapRecipe &recipe) {
     result.substitutions.resize(cells);
     if (recipe.baseFloor)
         result.floors.emplace_back(cells, MapCell{recipe.baseFloor, 0});
+    for (const auto &blank : recipe.blankAreas) {
+        if (!recipe.baseFloor || blank.x < 0 || blank.y < 0 || blank.width < 1 || blank.height < 1 ||
+            int64_t(blank.x) + blank.width > recipe.width || int64_t(blank.y) + blank.height > recipe.height)
+            throw std::runtime_error("Invalid outdoor blank area");
+        for (int row = blank.y; row < blank.y + blank.height; ++row)
+            for (int column = blank.x; column < blank.x + blank.width; ++column)
+                result.floors.front()[size_t(row) * result.width + column] = {};
+    }
+    for (const auto &floor : recipe.floorOverrides) {
+        if (!recipe.baseFloor || floor.x < 0 || floor.y < 0 || floor.x >= recipe.width ||
+            floor.y >= recipe.height)
+            throw std::runtime_error("Invalid outdoor floor override");
+        result.floors.front()[size_t(floor.y) * result.width + floor.x] = {floor.value, 0};
+    }
     for (const auto &piece : recipe.pieces) {
         auto source = decodeDs1(archives.read(piece.ds1));
         if (source.width != piece.width + 1 || source.height != piece.height + 1)

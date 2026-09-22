@@ -21,7 +21,8 @@ class SceneAssets {
     std::array<SkillIcon, skillCount> skillIcons;
     Sprite attackIcon;
     std::vector<std::vector<Sprite>> regionTiles;
-    std::map<std::string, GpuAnimation> propAnimations, hero, fallen, zombie;
+    std::map<std::string, GpuAnimation> propAnimations, hero;
+    std::map<MonsterKind, std::map<std::string, GpuAnimation>> monsterAnimations;
     std::map<std::string, GpuAnimation> itemGround, itemIcons;
     GpuAnimation fireball, fireburst, panel, cursor, inventoryPanel, storagePanel, beltPanel, beltSocket,
         orbs, globeOverlap, runButton, button;

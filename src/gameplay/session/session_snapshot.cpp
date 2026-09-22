@@ -129,7 +129,7 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
         int dead = 0;
         std::set<std::string> spawnKeys;
         auto validateIdentity = [&](MonsterKind kind, const MonsterIdentity &identity) {
-            require(kind == MonsterKind::Fallen || kind == MonsterKind::Zombie, "monster kind");
+            require(int(kind) >= 0 && int(kind) < int(MonsterKind::Count), "monster kind");
             auto source = monsterContent_.find(identity.monster);
             require(source && source->hostile(), "original monster identity");
             require(kind == monsterImplementation(identity.monster).kind, "monster implementation");

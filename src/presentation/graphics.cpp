@@ -101,6 +101,7 @@ GpuAnimation Graphics::composite(const std::string &type, const std::string &tok
     GpuAnimation gpu;
     gpu.directions = cof.directions;
     gpu.count = cof.frames;
+    gpu.completeComposite = parts.size() == size_t(cof.layers);
     for (int d = 0; d < cof.directions; d++)
         for (int f = 0; f < cof.frames; f++) {
             IndexedFrame merged;
