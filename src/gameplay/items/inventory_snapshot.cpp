@@ -46,6 +46,7 @@ void InventoryService::validateSnapshot(const InventoryState &state, const Playe
                     int(item.quality) <= int(ItemQuality::Unique),
                 "item parameters");
         auto location = std::get_if<ContainerLocation>(&item.location);
+        require(!location || !def->equipment.isType("gold"), "gold must be on ground or in wallet");
         if (!location)
             continue; // GameSession checks the region and world position.
         auto found = state.containers.find(location->container);

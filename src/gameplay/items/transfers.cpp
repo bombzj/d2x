@@ -18,7 +18,9 @@ InventoryResult prepared(EntityId item, unsigned quantity) {
 }
 } // namespace
 InventoryResult InventoryService::createItem(std::string_view code, unsigned quantity,
-                                             const ItemDestination &destination) {
+                                             const ItemDestination &destination, unsigned level) {
+    if (level < 1 || level > 99)
+        return failure(InventoryError::InvalidRequest);
     auto definition = catalog_.find(code);
     if (!definition)
         return failure(InventoryError::UnknownDefinition);
@@ -30,6 +32,7 @@ InventoryResult InventoryService::createItem(std::string_view code, unsigned qua
     ItemInstance instance;
     instance.definition = definition->code;
     instance.quantity = quantity;
+    instance.level = level;
     instance.durability = definition->maxDurability;
     instance.location = location;
     uint64_t nextRandom = state_.creationRandom;

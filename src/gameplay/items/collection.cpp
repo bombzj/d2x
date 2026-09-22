@@ -26,6 +26,8 @@ InventoryResult InventoryService::planTransfer(const TransferItem &command,
     if (auto error = checkDestinationAccess(AutoPlace{backpack}, access); error != InventoryError::None)
         return failure(error);
     const auto &definition = *catalog_.find(source.definition);
+    if (definition.equipment.isType("gold"))
+        return failure(InventoryError::RestrictedItem);
     unsigned remaining = source.quantity;
     std::vector<std::pair<EntityId, unsigned>> merges;
     if (definition.maxStack > 1 && source.quality == ItemQuality::Normal)

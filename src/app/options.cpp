@@ -27,6 +27,8 @@ AppOptions parseOptions(int argc, char **argv) {
             explicitMpq = true;
         } else if (arg == "--map")
             options.world.map = value();
+        else if (arg == "--debug-pipe")
+            options.debugPipe = value();
         else if (arg == "--level")
             options.world.level = number();
         else if (arg == "--preset")

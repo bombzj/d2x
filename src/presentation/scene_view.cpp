@@ -99,6 +99,8 @@ void SceneView::advance(float dt) {
                     }
                 } else if constexpr (std::is_same_v<T, InteractionFailed>) {
                     notice(value.reason, true);
+                } else if constexpr (std::is_same_v<T, LootDeferred>) {
+                    notice("Loot deferred: " + value.reason, true);
                 } else if constexpr (std::is_same_v<T, ItemUsed>) {
                     assets_.audio.play("drink");
                     const auto *def = session_.inventory().catalog().find(value.definition);

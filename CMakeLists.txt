@@ -41,6 +41,8 @@ add_library(d2x_items
 target_link_libraries(d2x_items PUBLIC d2x_core)
 add_library(d2x_content src/content/classic_data.cpp src/content/lod_data.cpp src/content/world_catalog.cpp src/content/monster_catalog.cpp)
 target_sources(d2x_content PRIVATE src/content/equipment_data.cpp)
+target_sources(d2x_content PRIVATE src/content/monster_loot.cpp)
+target_sources(d2x_content PRIVATE src/content/item_quality.cpp)
 target_link_libraries(d2x_content PUBLIC d2x_resources d2x_items)
 
 # Rules and state compile without raylib, StormLib, a window or an archive.
@@ -49,6 +51,7 @@ add_library(d2x_gameplay
   src/gameplay/combat/combat.cpp src/gameplay/skills/casting.cpp src/gameplay/monsters/monster_ai.cpp src/gameplay/loot/loot.cpp src/gameplay/consumables/potions.cpp)
 target_sources(d2x_gameplay PRIVATE src/gameplay/monsters/monster_spawn.cpp src/gameplay/monsters/monster_activation.cpp)
 target_sources(d2x_gameplay PRIVATE src/gameplay/loot/treasure.cpp)
+target_sources(d2x_gameplay PRIVATE src/gameplay/loot/quality.cpp)
 target_sources(d2x_gameplay PRIVATE
   src/gameplay/skills/definitions.cpp
   src/gameplay/skills/fireball.cpp src/gameplay/skills/frost_nova.cpp
@@ -73,7 +76,12 @@ add_library(d2x_presentation
 target_link_libraries(d2x_presentation PUBLIC d2x_session raylib)
 
 add_executable(d2x src/main.cpp src/app/application.cpp src/app/options.cpp src/app/input.cpp)
+target_sources(d2x PRIVATE src/app/debug_pipe.cpp src/app/debug_commands.cpp)
 target_link_libraries(d2x PRIVATE d2x_presentation d2x_persistence)
+target_link_libraries(d2x PRIVATE nlohmann_json::nlohmann_json)
+if(WIN32)
+  target_link_libraries(d2x PRIVATE advapi32)
+endif()
 add_executable(d2x_assets src/asset_tool.cpp)
 target_link_libraries(d2x_assets PRIVATE d2x_content d2x_world d2x_population d2x_persistence raylib)
 foreach(target IN ITEMS d2x_resources d2x_navigation d2x_world d2x_items d2x_content d2x_gameplay d2x_population d2x_session d2x_persistence d2x_presentation d2x d2x_assets)

@@ -28,7 +28,11 @@
 
 扩展入口：
 
-- `gameplay/loot/treasure.cpp` 执行类型化 TC 的单人递归选择，不依赖 MPQ 或 GPU；`content/lod_data.cpp` 导入原表并生成自动类别。`d2x_assets <MPQ> treasure <TC-name> [seed] [monster-level]` 调用同一选择器输出原权重与路径，仅查询、不创建物品。`session_loot.cpp` 的死亡结算仍待接品质和实例生成，不将查询结果直接当作掉落实例。
+- `app/debug_pipe.*` 为 Windows 本机当前用户 ACL 的非阻塞传输，`debug_commands.*` 在主线程解析 JSON、只读查询或提交 GameCommand；不把 Win32 带入玩法。`DebugKill` 复用正常死亡链，命令入口限制活着的可见激活目标；默认不开启。脚本 `scripts/Send-D2XCommand.ps1` 为通用调用入口，详见 [调试协议](../DEBUG_PIPE.md)。
+- 金币地面实例仍由 InventoryService 拥有，GameSession 在正常拾取距离／通路检查后 consume 并增加 PlayerState.gold，余额按原实例保留；UI 只读显示钱包。普通容器拒绝金币，快照同时校验钱包和地面归属。
+- `content/monster_loot.*` 将真实怪物身份及原表解析为死亡 TC 入口、等级与暂缓原因，供 `session_loot.cpp` 和 `d2x_assets <MPQ> loot-entry <monster> <rank> <difficulty> <level-ID> [superunique-ID]` 共用。会话在已结算 ID 检查后解析并输出诊断，仍由 LootSystem 记录死亡，不直接创建普通物品替代缺失品质。
+- `gameplay/loot/treasure.cpp` 执行类型化 TC 的单人递归选择，不依赖 MPQ 或 GPU；`content/lod_data.cpp` 导入原表并生成自动类别。`d2x_assets <MPQ> treasure <TC-name> [seed] [monster-level]` 仅查询选择路径。`gameplay/loot/quality.*` 执行品质请求，`content/item_quality.*` 适配原 ItemRatio 并在 TC 叶子调用品质规则、规划支持的消耗品批次；会话提交随机状态与死亡 ID，再调用库存创建支持的普通实例。LootDeferred 只通知暂缓原因，不持久化为待补发请求。
+- 现有资源工具 `quality <code> <item-level> <MF> [seed] [unique set rare magic modifiers]` 输出品质请求与各次分母／掷骰；`loot-plan <TC> <item-level> <seed> [upgrade-level]` 调用游戏共用规划器，显示候选／暂缓原因，不创建物品或会话。二者不代替实际击杀拾取验收。
 - `gameplay/model`：共享命令、事件、状态及规则类型；不执行会话协调。
 - `content/equipment_data.*` 将原 ItemTypes／物品字段转换为只读装备规则；`gameplay/items/equipment_rules.*` 定义部位和类型查询，`equipment.cpp` 规划基础穿脱与左右手冲突。InventoryService 保持实例唯一归属；GameSession 提供可信角色需求，不接受 UI 指定属性。
 - `EquipItem` 提交实例版本及目标部位，空部位表示卸下，可指定背包／私人箱／地面目的地；穿戴时不能同时指定目的地。通用 Move／Transfer 不允许直接修改装备容器。腰带仍走 EquipBelt 原子缩容，二者共用需求校验；会话额外验证地面目的地碰撞与通路。表现层按原面板坐标显示部位，按真实库存加载原图，动态角色外观尚未接入。

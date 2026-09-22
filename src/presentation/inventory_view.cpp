@@ -89,6 +89,7 @@ void SceneView::drawInventory(Vec mouse) const {
     auto armorText = "Defense " + std::to_string(stats.defense) + "  Block " +
                      std::to_string(stats.blockChance) + "%";
     painter_.label(armorText, int(panel.x + 195), 539, 10, parchment);
+    painter_.label("Gold " + std::to_string(session_.state().player.gold), int(panel.x + 20), 555, 10, gold);
     if (!ui.split && !ui.drag) {
         if (auto item = inventory.item(hovered))
             drawItemTooltip(*item, {panel.x - 12, mouse.y});

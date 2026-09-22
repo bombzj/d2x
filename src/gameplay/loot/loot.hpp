@@ -8,6 +8,7 @@
 #include <optional>
 #include <string>
 #include <vector>
+#include <functional>
 
 namespace d2x {
 struct TreasureClass {
@@ -28,8 +29,9 @@ struct TreasureRoll {
     unsigned noDrops = 0;
     std::vector<TreasureSelection> selections;
 };
+using TreasureVisitor = std::function<bool(const TreasureSelection &, uint64_t &)>;
 TreasureRoll selectTreasure(std::span<const TreasureClass> classes, std::string_view root, uint64_t seed,
-                           int level = 0);
+                           int level = 0, const TreasureVisitor &visitor = {});
 struct LootRequest {
     EntityId source;
     MonsterIdentity identity;
@@ -37,9 +39,16 @@ struct LootRequest {
     int difficulty = 0;
 };
 struct LootDrop {
-    std::string_view code;
+    std::string code;
     unsigned quantity;
     Vec offset;
+    unsigned level = 1;
+};
+struct LootPlan {
+    uint64_t randomState = 0;
+    unsigned noDrops = 0;
+    std::string deferred;
+    std::vector<LootDrop> drops;
 };
 struct LootState {
     uint64_t randomState = 0;
@@ -52,13 +61,15 @@ class LootSystem {
   public:
     static constexpr uint64_t defaultSeed = 0xd2;
     explicit LootSystem(uint64_t seed = defaultSeed) : randomState_(seed) {}
+    bool settled(EntityId source) const { return settled_.contains(source); }
+    uint64_t randomState() const { return randomState_; }
     LootState snapshot() const { return {randomState_, settled_}; }
     void restore(LootState state) noexcept {
         randomState_ = state.randomState;
         settled_.swap(state.settled);
     }
     static constexpr std::string_view unavailableReason =
-        "Monster loot unavailable: original drop execution and item quality rules are not implemented.";
-    std::vector<LootDrop> settle(LootRequest request);
+        "Monster loot partial: normal consumables, quivers and gold; unsupported batches are deferred.";
+    std::vector<LootDrop> settle(LootRequest request, LootPlan plan);
 };
 } // namespace d2x

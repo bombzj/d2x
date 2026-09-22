@@ -96,6 +96,7 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
     require(player.dead == (player.hp == 0), "player death state");
     skill(player.lastSkill);
     require(player.nextWeapon < 2, "active melee hand");
+    require(player.gold <= unsigned(equipmentActor().level) * 10000, "gold carrying limit");
     // Inactive leap endpoints may belong to a previously visited region. Only an
     // active leap uses them for movement; otherwise require finite values only.
     for (auto point : {player.leapStart, player.leapEnd}) {

@@ -7,7 +7,7 @@
 
 namespace d2x {
 TreasureRoll selectTreasure(std::span<const TreasureClass> classes, std::string_view root, uint64_t seed,
-                           int level) {
+                           int level, const TreasureVisitor &visitor) {
     std::map<std::string_view, const TreasureClass *, std::less<>> lookup;
     for (const auto &record : classes)
         if (!lookup.emplace(record.name, &record).second)
@@ -28,6 +28,7 @@ TreasureRoll selectTreasure(std::span<const TreasureClass> classes, std::string_
     result.randomState = seed;
     std::vector<std::string> path;
     unsigned work = 0;
+    bool stopped = false;
     std::function<void(const TreasureClass &, std::array<int, 4>)> visit;
     visit = [&](const TreasureClass &record, std::array<int, 4> quality) {
         if (path.size() >= 64 || std::find(path.begin(), path.end(), record.name) != path.end())
@@ -50,7 +51,7 @@ TreasureRoll selectTreasure(std::span<const TreasureClass> classes, std::string_
             quality[index] = std::max(quality[index], record.quality[index].value_or(0));
         path.push_back(record.name);
         const int picks = std::max(std::abs(*record.picks), 1);
-        for (int pick = 0; pick < picks; ++pick) {
+        for (int pick = 0; pick < picks && !stopped; ++pick) {
             if (++work > 10000 || result.selections.size() >= 4096)
                 throw std::runtime_error("Treasure selection exceeds supported work budget");
             int64_t selected = pick;
@@ -76,8 +77,11 @@ TreasureRoll selectTreasure(std::span<const TreasureClass> classes, std::string_
                 auto child = lookup.find(code);
                 if (child != lookup.end())
                     visit(*child->second, quality);
-                else
+                else {
                     result.selections.push_back({code, quality, path});
+                    if (visitor)
+                        stopped = !visitor(result.selections.back(), result.randomState);
+                }
                 break;
             }
         }

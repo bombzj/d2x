@@ -11,6 +11,9 @@ struct MoveTo {
 struct Attack {
     EntityId target;
 };
+struct DebugKill {
+    EntityId target;
+};
 struct CastSkill {
     Skill skill;
     Vec target;
@@ -35,5 +38,5 @@ struct PickupItem {
 using GameCommand =
     std::variant<MoveTo, Attack, CastSkill, ToggleRun, Interact, Travel, RestartArea, MoveItem, SwapItems,
                  SplitStack, MergeStacks, PickupItem, StopMoving, EquipBelt, UseItem, UseBeltColumn,
-                 CloseStorage, TransferItem, UseExit, EquipItem>;
+                 CloseStorage, TransferItem, UseExit, EquipItem, DebugKill>;
 } // namespace d2x

@@ -15,8 +15,11 @@ ClassicData loadClassicData(Archives &archives) {
     const char *treasureName = legacy ? "treasureclass" : "treasureclassex";
     tables.emplace(treasureName,
                    DataTable(archives.read(std::string("data/global/excel/") + treasureName + ".txt")));
-    if (lod)
+    if (lod) {
         tables.emplace("itemtypes", DataTable(archives.read("data/global/excel/itemtypes.txt")));
+        if (archives.contains("data/global/excel/itemratio.txt"))
+            tables.emplace("itemratio", DataTable(archives.read("data/global/excel/itemratio.txt")));
+    }
     const auto &tc = tables.at(treasureName);
     if (legacy && (!tc.has("NumCodes") || !tc.has("Code30")))
         throw std::runtime_error("Mixed legacy monster / treasure table schemas");

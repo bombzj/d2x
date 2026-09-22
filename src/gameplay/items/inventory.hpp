@@ -68,7 +68,7 @@ class InventoryService {
     EntityId createContainer(ContainerSpec specification);
     PlayerContainers createPlayerContainers(EntityId player);
     InventoryResult createItem(std::string_view definition, unsigned quantity,
-                               const ItemDestination &destination);
+                               const ItemDestination &destination, unsigned level = 1);
     InventoryResult move(const MoveItem &command, const InventoryAccess &access);
     InventoryResult swap(const SwapItems &command, const InventoryAccess &access);
     InventoryResult split(const SplitStack &command, const InventoryAccess &access);

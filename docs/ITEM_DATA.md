@@ -6,7 +6,7 @@
 
 `d2x_assets assets/mpq2 drops fallen1` 可查看实际分支。例如普通沉沦魔 TC1 指向 Act 1 H2H A，原表为 Picks=1、NoDrop=100，四个分支权重依次 21／16／21／2。这些是原表权重，不是完整最终物品掉率。
 
-当前 `d2x_assets assets/mpq2 treasure "Act 1 Champ A" [seed] [monster-level]` 执行单人 TC 选择，包含正负 Picks、NoDrop、递归、四项品质修正继承，以及从 ItemTypes／物品原表生成的 160 个自动类别；指定等级时仅升级根 TC。输出原权重、最终入口、选择路径和随机状态，区分基础物品与未解析 token。尚未执行品质生成、条目附加参数、六件实例创建上限、金币和数量，也没有接入死亡生成；不能将查询路径当作完整最终掉率或逐随机流原版复现。现有游戏仍不生成怪物物品，详见核心 STATUS。
+当前 `d2x_assets assets/mpq2 treasure "Act 1 Champ A" [seed] [monster-level]` 执行单人 TC 选择，包含正负 Picks、NoDrop、递归、四项品质修正继承，以及从 ItemTypes／物品原表生成的 160 个自动类别；指定等级时仅升级根 TC。此查询不创建实例，也不执行品质。新增 `quality` 查询执行原 ItemRatio 品质请求，`loot-plan` 调用游戏共用消耗品规划器，在每个叶子判定品质并限制最多六件支持候选。游戏已接普通非堆叠药水／卷轴批次生成；金币、堆叠数量、条目附加参数、暗金／套装／词缀实例仍暂缓。不能将查询路径当作完整最终掉率或逐随机流原版复现，详见核心 STATUS。
 
 以下保留旧 1.04 试玩适配器的说明。两种结构分别识别，启动使用同一套 MPQ，不混表；读取更多数据不表示全部装备和资料片玩法已经实现。
 
@@ -39,7 +39,7 @@
 
 当前 1.04 表中，基础 `Fallen` 与 `Zombie` 在普通难度都引用 **1 / 70 / 90 / 0**：Gold、Act1A-HtH、Act1-junk、Null。Act1A-HtH 有 `clb ssd jav sbw tkf hax spc cap qui buc lea lgl lbt lbl`。Act1-junk 中 `hp1` 出现三次，箭矢、弩矢也有重复槽位。它们是原始选择数据，不能据此直接给出“击杀后掉某件物品的最终百分比”。类别选择、掉落次数、空掉落及品质生成仍涉及对应版本的引擎规则。
 
-**旧代码的“20% 不掉落、另有 20% 再掉一件”和沉沦魔／僵尸两套权重已删除。当前暂停怪物物品生成，仍记录死亡已结算 ID；随机数状态不因未实现的掉落而推进。** 拾取、地面物品、整理和容器功能保留；可丢弃初始物品后拾取。没有用普通物品替代本应生成的金币、词缀或其他缺失内容。
+**旧代码的“20% 不掉落、另有 20% 再掉一件”和自定怪物权重已删除。** 当前 LoD 支持普通消耗品、箭袋原堆叠数量、金币等级随机数量及 TC mul/256 倍率；钱包拾取不占背包，实际击杀、箭袋／金币拾取和保存恢复已有证据，见核心基线。未知品质实例整批暂缓、不替换、不重抽，保留已消费随机状态并记录死亡，显示明确原因，不等同于原 NoDrop。旧 1.04 生成仍关闭。金币经济、投掷武器与完整品质未实现。
 
 资料片年代的表结构不同：`monstats.txt`、`superuniques.txt` 等提供入口，`TreasureClassEx.txt` 包含 `Picks`、`NoDrop`、`ItemN/ProbN` 和品质修正，类别还可嵌套。正 Picks 的普通一次选择，在尚未应用人数等修正时，条目权重通常按 `ProbN / (NoDrop + 所有条目权重之和)` 参与选择；这是该层的选择权重，不是最终暗金掉率。负 Picks、递归类别、品质、MF、难度及人数必须按对应版本分别处理。[OpenDiablo2 表读取实现](https://github.com/OpenDiablo2/OpenDiablo2/blob/master/d2core/d2records/treasure_class_loader.go)、[D2MOO 物品生成实现](https://github.com/ThePhrozenKeep/D2MOO/blob/master/source/D2Game/src/ITEMS/Items.cpp)
 

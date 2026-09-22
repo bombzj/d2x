@@ -148,6 +148,8 @@ InventoryError InventoryService::checkPlacement(const ItemDefinition &definition
         return InventoryError::None;
     }
     const auto &position = std::get<ContainerLocation>(location);
+    if (definition.equipment.isType("gold"))
+        return InventoryError::RestrictedItem;
     auto c = container(position.container);
     if (!c)
         return InventoryError::UnknownContainer;

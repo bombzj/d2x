@@ -1,6 +1,8 @@
 #include "application.hpp"
 #include "input.hpp"
 #include "options.hpp"
+#include "debug_pipe.hpp"
+#include "debug_commands.hpp"
 #include "persistence/save_file.hpp"
 #include "presentation/controller.hpp"
 #include <algorithm>
@@ -66,6 +68,7 @@ int runGame(int argc, char **argv) {
                      "--map-seed <uint32> --seed <uint64> --inventory --skills --stash --screenshot <png> "
                      "--frames N --hidden --pack "
                      "<new.mpq> --save <file.d2xsave> --load <file.d2xsave>\n"
+                     "--debug-pipe <name>: opt-in local Windows debug commands (starts paused).\n"
                      "F11: save; Ctrl+F11: load. Default slot: saves/quick.d2xsave\n";
         return 0;
     }
@@ -118,9 +121,21 @@ int runGame(int argc, char **argv) {
     }
     SceneController controller(session, view);
     RenderTarget target;
+    DebugPipe debugPipe(options.debugPipe);
+    bool debugPaused = !options.debugPipe.empty(), debugQuit = false;
+    if (debugPaused && options.hidden)
+        SetTargetFPS(60);
+    if (!options.debugPipe.empty())
+        std::cout << "Debug pipe ready: " << options.debugPipe << " (paused)\n" << std::flush;
     float accumulator = 0;
     int frames = 0;
     while (!WindowShouldClose()) {
+        debugPipe.poll([&](const std::string &request) {
+            return debugCommand(request, session, view, debugPaused, debugQuit, savePath,
+                                [&](const std::string &path) { target.save(path); });
+        });
+        if (debugQuit)
+            break;
         float dt = std::min(GetFrameTime(), .1f);
         auto viewport = currentViewport();
         auto input = pollInput(viewport);
@@ -144,7 +159,7 @@ int runGame(int argc, char **argv) {
             }
         } else if (!controller.handle(input, dt))
             break;
-        if (view.ui().blocksWorld() || persistenceInput)
+        if (view.ui().blocksWorld() || persistenceInput || debugPaused)
             accumulator = 0;
         else
             accumulator += dt;

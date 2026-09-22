@@ -37,13 +37,16 @@
 ## 物品与存档
 
 - LoD 掉落数据含 852 个原表 TC 和 160 个 ItemTypes 自动类别；怪物 TC 引用在生成类别后重新按名称解析，不把运行时数组下标存入存档。自动类别使用原 weapons/armor/misc 行顺序和主类型 rarity，排除任务物品及不允许生成的条目，投掷药剂不混入其他类别。
-- `selectTreasure` 只消费类型化 TC 与调用方种子，返回选择路径、品质修正、NoDrop 次数及后续随机状态；查询不改变会话随机状态。当前单人 NoDrop 未做人数缩放；旧 1.04 数据不套用 LoD 算法。死亡结算仍只记录 ID，不生成物品或推进掉落随机状态，因此本阶段保留 v7／规则 v24。
+- `selectTreasure` 消费类型化 TC 与调用方种子，可在叶子回调中执行品质判定并停止遍历；纯查询不改变会话状态。单人 NoDrop 未做人数缩放，旧 1.04 数据不套用 LoD 算法。`planConsumableLoot` 最多规划六件支持消耗品；遇未知实例整批暂缓并丢弃候选，保留已消费随机状态而不重抽。入口本身无法解析时不抽取。死亡 ID 仍只结算一次，暂缓批次不会补发。
+- ItemRatio 在 LoD 源存在时读取并纳入内容指纹；缺表时游戏显示暂缓原因，不补造比例。品质请求规则独立于存档 ItemQuality，超强／劣质等尚不能创建的品质不会被编码成普通。`createItem` 接受可信物品等级参数，掉落实例使用解析后的等级，初始物品仍为等级 1。
+- `resolveMonsterLoot` 只读真实身份、MonStats、SuperUniques 和 Levels，返回 Ready／Empty／Deferred、基础 TC 名称、物品等级及 TC 升级等级；不读取替身 MonsterKind。普通难度升级等级固定为零，噩梦／地狱仅非 boss／非 noRatio 怪物可升级。任务条件缺失和随从等级归属不明明确暂缓，不当作 NoDrop；死亡日志不编码到存档，已结算 ID 仍按原语义保存。
 - `ItemDefinition` 是只读原表定义；`ItemInstance` 是带稳定 ID 的实例。
 - 位置由地面区域或容器格子唯一确定；转移通过 `InventoryService`，禁止 UI 直接改归属。
 - 私人箱访问权是临时交互状态，不能通过存档恢复远程访问。
-- `.d2xsave` v7 保存地图种子、难度、原怪物身份、待生成计划、已创建单位、物品、ID 和随机状态；PlayerContainers 追加装备容器 ID，ContainerKind 追加 Equipment，旧枚举值不重排。玩家保存战斗随机状态与下次攻击手，怪物独立保存命中随机状态；物品保存掷骰防御，库存保存创建随机状态。
+- `.d2xsave` v8 在玩家字段末尾追加 gold 钱包，其余物品数量、等级、ID、掉落随机状态及已结算 ID 沿用显式编码。金币地面物品使用 quantity，禁止放入普通容器；拾取最多补到角色等级乘 10000，余额留地面，满额拒绝。当前等级仍为 1，钱包上限 10000。
 - 读取先完整校验，再提交状态。地图配置、内容／规则指纹不匹配则拒绝；旧 v1–v6 不迁移。防具实例防御必须落在原基础范围，非防具不得带防御值；装备派生结果在恢复提交前重算验证，不单独编码。
-- 当前会话规则标识为 `d2x-session-rules-v24-equipment-combat-random`。装备仍以 ContainerLocation 为唯一归属，Equipment 的 cell.x 表示部位而非背包矩形，cell.y 固定为零；腰带槽继续使用原 BeltEquipment，禁止在新容器复制腰带。读档检查装备定义、普通品质、需求、职业及手部组合，失败不替换现场。普通野外配方身份为 `outdoor-v6`，牛场为 `cow-v1`。
+- 当前规则标识为 `d2x-session-rules-v26-gold-stack-loot`，格式 v8，旧 v1–v7 不迁移。金币基础数量为物品等级加 [0,5 倍等级) 随机值，支持 TC 的 gld,mul=N 按 N/256 整数缩放；当前超过原 gld.maxstack 的金币堆明确暂缓，不截断金额。箭袋按 minstack/maxstack，其他已支持普通消耗品按 minstack/spawnstack（无效 spawnstack 回退 maxstack）生成，随机上界不含。数量使用会话掉落随机流，是项目适配，不宣称原物品独立种子流一致。
+- 装备 ContainerLocation 的 cell.x 表示部位而非背包矩形，cell.y 固定零；腰带仍使用 BeltEquipment。读档校验钱包上限、金币位置、数量、部位、普通品质、需求、职业与手部组合。普通野外配方身份 outdoor-v6、牛场 cow-v1 不变。金币加成、银行、死亡扣金和投掷武器实例仍暂缓。
 - LoD ItemTypes 导入 BodyLoc、Class、Equiv1/2、Shoots/Quiver 与双手标记；StaffMods 不作为职业限制。旧数字 ItemTypes 格式未适配完整装备规则时明确拒绝穿戴。需求当前取原 Barbarian 初始力量／敏捷和等级 1，不包含成长或装备加成；复杂品质与投掷药剂不进入普通穿戴事务。
 - 普通武器消费原基础伤害与 StrBonus／DexBonus，盾牌消费 block 及 CharStats.BlockFactor。普通难度普通怪物 A1 准确率按 noRatio 直接取 A1TH，否则取 MonLvl 的 L-TH 乘 A1TH 百分比；缺原数据时不猜值。当前仅接命中率，不改变已有 MVP 怪物生命、伤害、速度及技能。
 - 非堆叠普通装备耐久变化增加实例版本并发布 DurabilityChanged，立即重算派生属性。玩家随机流负责伤害、格挡和耐久，怪物随机流负责自身命中；种子分配是本项目适配，不保证原版全局随机顺序一致。

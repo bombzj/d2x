@@ -1,5 +1,8 @@
 #include "gameplay/session/session.hpp"
+#include "content/monster_loot.hpp"
+#include "content/item_quality.hpp"
 #include <algorithm>
+#include <iostream>
 #include <stdexcept>
 
 namespace d2x {
@@ -10,7 +13,33 @@ void GameSession::settleDeaths() {
         if (auto death = std::get_if<EnemyDied>(&event))
             deaths.push_back(*death);
     for (const auto &death : deaths) {
-        auto drops = loot_.settle({death.victim, death.identity, death.region, death.difficulty});
+        if (loot_.settled(death.victim))
+            continue;
+        LootRequest request{death.victim, death.identity, death.region, death.difficulty};
+        const auto entry = resolveMonsterLoot(content_, monsterContent_, worldContent_, request);
+        std::cout << "Monster loot entry: id=" << death.victim.value << " monster=" << death.identity.monster
+                  << " rank=" << monsterRankName(death.identity.rank);
+        LootPlan plan;
+        plan.randomState = loot_.randomState();
+        if (entry.status == LootEntryStatus::Ready) {
+            auto ratios = content_.tables.find("itemratio");
+            if (ratios == content_.tables.end())
+                plan.deferred = "Missing original ItemRatio table";
+            else
+                plan = planConsumableLoot(content_, ratios->second, entry.treasureClass, entry.itemLevel,
+                                          entry.upgradeLevel, plan.randomState);
+            std::cout << " TC=" << entry.treasureClass << " itemLevel=" << entry.itemLevel
+                      << " upgradeLevel=" << entry.upgradeLevel << " drops=" << plan.drops.size()
+                      << " NoDrop=" << plan.noDrops << " deferred=" << plan.deferred << '\n';
+        } else {
+            if (entry.status == LootEntryStatus::Deferred)
+                plan.deferred = entry.reason;
+            std::cout << (entry.status == LootEntryStatus::Empty ? " empty: " : " deferred: ")
+                      << entry.reason << '\n';
+        }
+        if (!plan.deferred.empty())
+            simulation_.emit(LootDeferred{death.victim, plan.deferred});
+        auto drops = loot_.settle(request, std::move(plan));
         spawnLoot(drops, death.region, death.position);
     }
 }
@@ -27,7 +56,7 @@ void GameSession::spawnLoot(std::span<const LootDrop> drops, RegionId id, Vec or
         Vec position = grid.nearest(origin + drop.offset);
         if (!grid.segment(origin, position))
             position = origin;
-        auto result = inventory_.createItem(drop.code, drop.quantity, GroundLocation{id, position});
+        auto result = inventory_.createItem(drop.code, drop.quantity, GroundLocation{id, position}, drop.level);
         if (!result)
             throw std::logic_error("Invalid loot definition or placement");
         publishInventory(std::move(result), {});
@@ -97,6 +126,24 @@ void GameSession::updatePickup() {
         map().grid.segment(player.pos, ground->position)) {
         auto definition = item->definition;
         unsigned quantity = item->quantity;
+        if (inventory_.catalog().find(definition)->equipment.isType("gold")) {
+            unsigned capacity = unsigned(equipmentActor().level) * 10000;
+            unsigned amount = std::min(quantity, capacity - player.gold);
+            if (!amount) {
+                cancelPickup();
+                simulation_.emit(PickupFailed{handle.id, "Gold carrying limit reached."});
+                return;
+            }
+            auto result = inventory_.consume(handle, amount, access);
+            if (result)
+                simulation_.state_.player.gold += amount;
+            bool collected = bool(result);
+            cancelPickup();
+            publishInventory(std::move(result), handle.id);
+            if (collected)
+                simulation_.emit(ItemPickedUp{handle.id, std::move(definition), amount});
+            return;
+        }
         auto beltSlot = inventory_.beltSpace(playerContainers_.belt, definition, true);
         auto result =
             beltSlot ? inventory_.move(MoveItem{handle, ContainerLocation{playerContainers_.belt, *beltSlot}},

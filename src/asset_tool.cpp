@@ -1,5 +1,7 @@
 #include "content/classic_data.hpp"
 #include "content/monster_catalog.hpp"
+#include "content/monster_loot.hpp"
+#include "content/item_quality.hpp"
 #include "resources/archive.hpp"
 #include "resources/formats.hpp"
 #include "persistence/save_file.hpp"
@@ -27,16 +29,112 @@ int main(int argc, char **argv) {
                    "  ... substitutions <LvlSub-type>\n"
                    "  ... save-info <d2xsave>\n"
                    "  ... treasure <TC-name> [seed] [monster-level]\n"
+                   "  ... quality <item-code> <item-level> <MF> [seed] [unique set rare magic modifiers]\n"
+                   "  ... loot-plan <TC-name> <item-level> <seed> [upgrade-level]\n"
+                   "  ... loot-entry <monster> <normal|champion|unique|minion|boss|superunique> <difficulty:0-2> <level-ID> [superunique-ID]\n"
                    "  ... population <level-ID> [normal|nightmare|hell] [seed]\n";
             return 0;
         }
         d2x::Archives a;
         a.mountDirectory(argv[1]);
         std::string command = argv[2];
-        if (command == "save-info" && argc == 4) {
+        if (command == "loot-plan" && (argc == 6 || argc == 7)) {
+            auto data = d2x::loadClassicData(a);
+            auto ratios = data.tables.find("itemratio");
+            if (ratios == data.tables.end())
+                throw std::runtime_error("Missing original ItemRatio table");
+            auto integer = [](std::string_view text) {
+                int value = 0;
+                auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), value);
+                if (error != std::errc{} || end != text.data() + text.size() || value < 0 || value > 99)
+                    throw std::runtime_error("Invalid loot plan level");
+                return value;
+            };
+            auto text = std::string_view(argv[5]);
+            uint64_t seed = 0;
+            auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), seed);
+            if (error != std::errc{} || end != text.data() + text.size())
+                throw std::runtime_error("Invalid loot plan seed");
+            auto plan = d2x::planConsumableLoot(data, ratios->second, argv[3], integer(argv[4]),
+                                               argc == 7 ? integer(argv[6]) : 0, seed);
+            std::cout << "TC=" << argv[3] << " seed=" << seed << " next=" << plan.randomState
+                      << " NoDrop=" << plan.noDrops << " drops=" << plan.drops.size()
+                      << " deferred=" << plan.deferred << '\n';
+            for (const auto &drop : plan.drops)
+                std::cout << "  " << drop.code << " quantity=" << drop.quantity << " level="
+                          << drop.level << " offset=" << drop.offset.x << ',' << drop.offset.y << '\n';
+            std::cout << "Shared consumable planner; no session state or items were created.\n";
+        } else if (command == "quality" && (argc == 6 || argc == 7 || argc == 11)) {
+            auto data = d2x::loadClassicData(a);
+            d2x::DataTable ratios(a.read("data/global/excel/itemratio.txt"));
+            auto rules = d2x::loadItemQualityRules(data, ratios, argv[3]);
+            auto integer = [](std::string_view text) {
+                int value = 0;
+                auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), value);
+                if (error != std::errc{} || end != text.data() + text.size())
+                    throw std::runtime_error("Invalid quality argument");
+                return value;
+            };
+            uint64_t seed = (uint64_t(666) << 32) | 210;
+            if (argc >= 7) {
+                auto text = std::string_view(argv[6]);
+                auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), seed);
+                if (error != std::errc{} || end != text.data() + text.size())
+                    throw std::runtime_error("Invalid quality seed");
+            }
+            std::array<int, 4> modifiers{};
+            if (argc == 11)
+                for (size_t index = 0; index < modifiers.size(); ++index)
+                    modifiers[index] = integer(argv[7 + index]);
+            auto result = d2x::rollItemQuality(rules, integer(argv[4]), integer(argv[5]), modifiers, seed);
+            std::cout << "Item=" << argv[3] << " baseLevel=" << rules.baseLevel
+                      << " requestedQuality=" << d2x::dropQualityName(result.quality)
+                      << " seed=" << seed << " next=" << result.randomState << '\n';
+            for (const auto &check : result.checks)
+                std::cout << "  " << d2x::dropQualityName(check.quality) << " chance=" << check.chance
+                          << " roll=" << check.roll << " threshold=128\n";
+            std::cout << "Quality request only; unique/set availability, affixes and instance generation "
+                         "are not executed.\n";
+        } else if (command == "loot-entry" && (argc == 7 || argc == 8)) {
+            auto data = d2x::loadClassicData(a);
+            d2x::MonsterCatalog monsters(a, data.tables.at("monstats"));
+            d2x::WorldCatalog world(a);
+            d2x::LootRequest request;
+            request.identity.monster = argv[3];
+            const std::pair<std::string_view, d2x::MonsterRank> ranks[] = {
+                {"normal", d2x::MonsterRank::Normal}, {"champion", d2x::MonsterRank::Champion},
+                {"unique", d2x::MonsterRank::Unique}, {"minion", d2x::MonsterRank::Minion},
+                {"boss", d2x::MonsterRank::Boss}, {"superunique", d2x::MonsterRank::SuperUnique}};
+            auto rank = std::find_if(std::begin(ranks), std::end(ranks),
+                                      [&](const auto &entry) { return entry.first == argv[4]; });
+            if (rank == std::end(ranks))
+                throw std::runtime_error("Unknown loot rank");
+            request.identity.rank = rank->second;
+            if (argc == 8)
+                request.identity.superUnique = argv[7];
+            if ((argc == 8) != (request.identity.rank == d2x::MonsterRank::SuperUnique))
+                throw std::runtime_error("Super unique rank requires exactly one super unique ID");
+            auto integer = [](std::string_view text) {
+                int value = 0;
+                auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), value);
+                if (error != std::errc{} || end != text.data() + text.size())
+                    throw std::runtime_error("Invalid loot entry integer");
+                return value;
+            };
+            request.difficulty = integer(argv[5]);
+            request.region = d2x::RegionId(integer(argv[6]));
+            auto entry = d2x::resolveMonsterLoot(data, monsters, world, request);
+            std::cout << "Monster=" << request.identity.monster << " rank=" << argv[4]
+                      << " itemLevel=" << entry.itemLevel << " upgradeLevel=" << entry.upgradeLevel
+                      << " TC=" << entry.treasureClass << '\n';
+            std::cout << (entry.status == d2x::LootEntryStatus::Ready ? "Ready"
+                         : entry.status == d2x::LootEntryStatus::Empty ? "Empty" : "Deferred")
+                      << ": " << entry.reason << '\n';
+        } else if (command == "save-info" && argc == 4) {
             auto snapshot = d2x::loadSave(argv[3]);
             auto data = d2x::loadClassicData(a);
-            std::cout << "Save format=7 region=" << int(snapshot.world.area.region)
+            std::cout << "Save format=8 region=" << int(snapshot.world.area.region)
+                      << " gold=" << snapshot.world.player.gold
                       << " time=" << snapshot.world.time << " life=" << snapshot.world.player.hp
                       << " combatRandom=" << snapshot.world.player.combatRandom
                       << " creationRandom=" << snapshot.inventory.creationRandom << '\n';
@@ -286,7 +384,7 @@ int main(int argc, char **argv) {
                     }
                 }
                 std::cout << "Raw source records only. Use treasure for single-player TC selection. "
-                             "Quality and item generation remain unimplemented; monster loot is disabled.\n";
+                             "Use quality or loot-plan for the supported quality and consumable branches.\n";
             }
         } else if (command == "list") {
             for (auto &name : a.list(argc > 3 ? argv[3] : "*"))

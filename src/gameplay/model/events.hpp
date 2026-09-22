@@ -66,7 +66,12 @@ struct PickupFailed {
     EntityId item;
     std::string reason;
 };
+struct LootDeferred {
+    EntityId source;
+    std::string reason;
+};
 using GameEvent = std::variant<SkillCast, MeleeAttack, EnemyDied, PlayerDied, RegionEntered, ObjectInteracted,
                                ItemChange, InventoryRejected, InventoryApplied, ItemPickedUp, PickupFailed,
-                               ItemUsed, BeltEquipped, StorageOpened, StorageClosed, InteractionFailed>;
+                               ItemUsed, BeltEquipped, StorageOpened, StorageClosed, InteractionFailed,
+                               LootDeferred>;
 } // namespace d2x
