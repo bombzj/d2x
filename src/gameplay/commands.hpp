@@ -23,6 +23,9 @@ struct Interact {
 struct Travel {
     RegionId destination;
 };
+struct UseExit {
+    int slot = 0;
+};
 struct RestartArea {};
 struct CloseStorage {};
 struct PickupItem {
@@ -31,5 +34,5 @@ struct PickupItem {
 // UI supplies intentions; only the gameplay layer changes authoritative state.
 using GameCommand = std::variant<MoveTo, Attack, CastSkill, ToggleRun, Interact, Travel, RestartArea,
                                  MoveItem, SwapItems, SplitStack, MergeStacks, PickupItem, StopMoving,
-                                 EquipBelt, UseItem, UseBeltColumn, CloseStorage, TransferItem>;
+                                 EquipBelt, UseItem, UseBeltColumn, CloseStorage, TransferItem, UseExit>;
 } // namespace d2x

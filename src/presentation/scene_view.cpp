@@ -40,6 +40,7 @@ void SceneView::notice(std::string text, bool error) {
 void SceneView::sessionRestored() {
     view_.inventory = {};
     view_.travelMenu = view_.help = false;
+    view_.skillPicker.reset();
     view_.dialogue.clear();
     view_.camera = project(session_.state().player.pos);
     view_.clickAge = 10;
@@ -57,9 +58,6 @@ void SceneView::advance(float dt) {
             [&](const auto &value) {
                 using T = std::decay_t<decltype(value)>;
                 if constexpr (std::is_same_v<T, SkillCast>) {
-                    auto slot = std::find(view_.hotbar.begin(), view_.hotbar.end(), value.skill);
-                    if (slot != view_.hotbar.end())
-                        view_.selected = int(slot - view_.hotbar.begin());
                     view_.heroTime = 0;
                     assets_.audio.play(std::to_string(int(value.skill)));
                 } else if constexpr (std::is_same_v<T, MeleeAttack>) {
@@ -68,6 +66,7 @@ void SceneView::advance(float dt) {
                 } else if constexpr (std::is_same_v<T, EnemyDied>)
                     assets_.audio.play("impact");
                 else if constexpr (std::is_same_v<T, RegionEntered>) {
+                    view_.skillPicker.reset();
                     view_.inventory.cancelGesture();
                     view_.inventory.pending = {};
                     view_.inventory.open = false;
@@ -80,6 +79,7 @@ void SceneView::advance(float dt) {
                     view_.heroTime = 0;
                     view_.travelMenu = false;
                 } else if constexpr (std::is_same_v<T, PlayerDied>) {
+                    view_.skillPicker.reset();
                     view_.inventory.cancelGesture();
                     view_.inventory.open = false;
                     view_.inventory.storage = {};

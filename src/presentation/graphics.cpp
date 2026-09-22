@@ -7,8 +7,8 @@ Color color(Pixel p) {
     return {p.r, p.g, p.b, p.a};
 }
 } // namespace
-Graphics::Graphics(Archives &a)
-    : palette(decodePalette(a.read("data/global/palette/act1/pal.dat"))), archives(a) {}
+Graphics::Graphics(Archives &a, const std::string &palettePath)
+    : palette(decodePalette(a.read(palettePath))), archives(a) {}
 Graphics::~Graphics() {
     for (auto t : textures)
         UnloadTexture(t);

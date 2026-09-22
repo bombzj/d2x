@@ -45,7 +45,7 @@ SessionSnapshot GameSession::snapshot() const {
     result.containers = playerContainers_;
     result.loot = loot_.snapshot();
     // Automatic walking to a transient pickup/interaction does not outlive that request.
-    if (pickup_.id || pendingInteraction_) {
+    if (pickup_.id || pendingInteraction_ || pendingExit_) {
         result.world.player.route.clear();
         result.world.player.attackTarget = {};
         result.world.player.moving = false;
@@ -54,6 +54,8 @@ SessionSnapshot GameSession::snapshot() const {
     return result;
 }
 int GameSession::validateSnapshot(const SessionSnapshot &s) const {
+    require(s.world.mapSeed == state().mapSeed, "map seed differs; reopen with --load or --map-seed");
+    require(s.world.population.difficulty == state().population.difficulty, "map difficulty differs");
     require(s.contentFingerprint == contentFingerprint_, "MPQ content or gameplay rules differ");
     require(s.world.population.difficulty >= 0 && s.world.population.difficulty <= 2,
             "population difficulty");
@@ -118,21 +120,19 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
         require(area.region == regions_[index].definition.id, "area identity");
         require(area.enemies.size() <= 65536 && area.missiles.size() <= 65536 && area.effects.size() <= 65536,
                 "too many actors");
-        require(area.initialized || (area.enemies.empty() && area.missiles.empty() && area.effects.empty() &&
-                                     area.kills == 0),
+        require(area.initialized || (area.enemies.empty() && area.pendingSpawns.empty() &&
+                                     area.missiles.empty() && area.effects.empty() && area.kills == 0),
                 "uninitialized area has actors");
         if (active)
             require(area.initialized, "active area is uninitialized");
         const auto &areaGrid = regions_[index].map.grid;
         int dead = 0;
         std::set<std::string> spawnKeys;
-        for (const auto &enemy : area.enemies) {
-            registerId(enemy.id);
-            require(enemy.kind == MonsterKind::Fallen || enemy.kind == MonsterKind::Zombie, "monster kind");
-            const auto &identity = enemy.identity;
+        auto validateIdentity = [&](MonsterKind kind, const MonsterIdentity &identity) {
+            require(kind == MonsterKind::Fallen || kind == MonsterKind::Zombie, "monster kind");
             auto source = monsterContent_.find(identity.monster);
             require(source && source->hostile(), "original monster identity");
-            require(enemy.kind == monsterImplementation(identity.monster).kind, "monster implementation");
+            require(kind == monsterImplementation(identity.monster).kind, "monster implementation");
             require(int(identity.rank) >= 0 && int(identity.rank) <= int(MonsterRank::Boss), "monster rank");
             require(identity.origin == SpawnOrigin::Density || identity.origin == SpawnOrigin::Preset,
                     "monster spawn origin");
@@ -146,6 +146,18 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
                         "super unique identity");
             } else
                 require(identity.rank != MonsterRank::SuperUnique, "missing super unique identity");
+        };
+        require(area.pendingSpawns.size() <= 65536, "too many deferred spawns");
+        std::set<uint32_t> pendingGroups;
+        for (const auto &spawn : area.pendingSpawns) {
+            validateIdentity(spawn.kind, spawn.identity);
+            position(spawn.position, areaGrid, true);
+            pendingGroups.insert(spawn.identity.group);
+        }
+        for (const auto &enemy : area.enemies) {
+            registerId(enemy.id);
+            require(!pendingGroups.contains(enemy.identity.group), "partially instantiated monster group");
+            validateIdentity(enemy.kind, enemy.identity);
             position(enemy.pos, areaGrid, true);
             scalar(enemy.hp, 0, monsterDefinition(enemy.kind).maxLife);
             for (auto timer : {enemy.chill, enemy.stun, enemy.deathAge, enemy.hitFlash})
@@ -181,8 +193,9 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
     for (size_t i = 0; i < regions_.size(); ++i) {
         if (int(i) == current) {
             const auto &unused = s.inactiveAreas[i];
-            require(!unused.initialized && unused.enemies.empty() && unused.missiles.empty() &&
-                        unused.effects.empty() && unused.kills == 0 && unused.region == s.world.area.region,
+            require(!unused.initialized && unused.pendingSpawns.empty() && unused.enemies.empty() &&
+                        unused.missiles.empty() && unused.effects.empty() && unused.kills == 0 &&
+                        unused.region == s.world.area.region,
                     "duplicate active area");
             validateArea(s.world.area, i, true);
         } else
@@ -219,6 +232,7 @@ void GameSession::restore(SessionSnapshot s) {
     static_assert(std::is_nothrow_move_assignable_v<InventoryState>);
     simulation_.state_ = std::move(s.world);
     simulation_.grid_ = &regions_[current].map.grid;
+    simulation_.rooms_ = &regions_[current].map.activation;
     simulation_.events_.clear();
     inventory_.state_ = std::move(s.inventory);
     inactiveAreas_.swap(s.inactiveAreas);
@@ -229,6 +243,8 @@ void GameSession::restore(SessionSnapshot s) {
     pending_.clear();
     pickup_ = {};
     pendingInteraction_ = {};
+    pendingExit_.reset();
+    boundaryMoveTarget_.reset();
     storage_ = {};
 }
 } // namespace d2x

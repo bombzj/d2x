@@ -18,16 +18,18 @@ void Simulation::clearActions() {
 AreaState Simulation::leaveArea() {
     return std::move(state_.area);
 }
-void Simulation::enterArea(const Grid &grid, Vec spawn, AreaState area,
+void Simulation::enterArea(const Grid &grid, const RoomLayout &rooms, Vec spawn, AreaState area,
                            std::span<const MonsterSpawn> monsters) {
     grid_ = &grid;
+    rooms_ = &rooms;
     state_.area = std::move(area);
     clearActions();
     state_.player.pos = state_.player.previous = grid.nearest(spawn);
     if (!state_.area.initialized) {
-        spawnEnemies(monsters);
+        state_.area.pendingSpawns.assign(monsters.begin(), monsters.end());
         state_.area.initialized = true;
     }
+    activateMonsters();
     emit(RegionEntered{state_.area.region});
 }
 void Simulation::restartArea(Vec spawn, std::span<const MonsterSpawn> monsters) {
@@ -36,7 +38,7 @@ void Simulation::restartArea(Vec spawn, std::span<const MonsterSpawn> monsters) 
     state_.player.cooldown.fill(0);
     AreaState area;
     area.region = id;
-    enterArea(*grid_, spawn, std::move(area), monsters);
+    enterArea(*grid_, *rooms_, spawn, std::move(area), monsters);
 }
 void Simulation::heal() {
     auto &p = state_.player;
@@ -51,8 +53,7 @@ void Simulation::heal() {
 }
 void Simulation::spawnEnemies(std::span<const MonsterSpawn> spawns) {
     auto &area = state_.area;
-    area.enemies.clear();
-    area.enemies.reserve(spawns.size());
+    area.enemies.reserve(area.enemies.size() + spawns.size());
     for (const auto &spawn : spawns) {
         Enemy enemy;
         enemy.id = ids_.allocate();
@@ -103,6 +104,8 @@ void Simulation::tick(float dt, Vec keyboard) {
     if (p.dead)
         p.deathTime += dt;
     for (auto &e : state_.area.enemies) {
+        if (!active(e.pos))
+            continue;
         e.hitFlash = std::max(0.f, e.hitFlash - dt);
         if (e.hp <= 0)
             e.deathAge += dt;
@@ -110,6 +113,7 @@ void Simulation::tick(float dt, Vec keyboard) {
     if (!p.dead) {
         updatePotions(dt);
         updatePlayer(dt, keyboard);
+        activateMonsters();
         updateMonsters(dt);
         if (p.hp <= 0) {
             p.dead = true;
@@ -123,7 +127,8 @@ void Simulation::tick(float dt, Vec keyboard) {
         }
     }
     updateMissiles(dt);
-    if (!p.dead && !state_.area.enemies.empty() && state_.area.kills == int(state_.area.enemies.size()))
+    if (!p.dead && state_.area.pendingSpawns.empty() && !state_.area.enemies.empty() &&
+        state_.area.kills == int(state_.area.enemies.size()))
         state_.message = "Area cleared. F2: travel onward. R: repopulate the area.";
     for (auto &e : state_.area.effects)
         e.age += dt;

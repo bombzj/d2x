@@ -59,6 +59,11 @@ AppOptions parseOptions(int argc, char **argv) {
                 options.population.difficulty = 2;
             else
                 throw std::runtime_error("--difficulty expects normal, nightmare or hell");
+        } else if (arg == "--map-seed") {
+            auto seed = value();
+            auto [end, error] = std::from_chars(seed.data(), seed.data() + seed.size(), options.world.seed);
+            if (error != std::errc{} || end != seed.data() + seed.size())
+                throw std::runtime_error("--map-seed requires an unsigned 32-bit decimal integer");
         } else if (arg == "--population-seed") {
             auto seed = value();
             auto [end, error] =
@@ -76,6 +81,8 @@ AppOptions parseOptions(int argc, char **argv) {
             options.stash = true;
         else if (arg == "--inventory")
             options.inventory = true;
+        else if (arg == "--skills")
+            options.skills = true;
         else if (arg == "--help")
             options.help = true;
         else
@@ -92,7 +99,7 @@ AppOptions parseOptions(int argc, char **argv) {
     if (!explicitMpq) {
         auto discover = [](const std::filesystem::path &root) -> std::string {
             for (const auto *candidate :
-                 {"assets/mpq2/d2x-act1.mpq", "assets/mpq2", "assets/mpq/d2x-mvp.mpq", "assets/mpq"}) {
+                 {"assets/mpq2", "assets/mpq2/d2x-act1.mpq", "assets/mpq/d2x-mvp.mpq", "assets/mpq"}) {
                 auto path = root / candidate;
                 if (std::filesystem::is_regular_file(path) ||
                     (std::filesystem::is_directory(path) &&

@@ -41,6 +41,7 @@ class Planner {
     std::set<std::string> diagnostics_;
     std::vector<uint8_t> occupied_;
     uint32_t group_ = 0;
+    const Map::RoomBounds *densityRoom_ = nullptr;
     static constexpr size_t maxActors = 8192;
 
     void diagnostic(std::string message) { diagnostics_.insert(std::move(message)); }
@@ -48,12 +49,16 @@ class Planner {
         if (!map_.grid.walkable(p))
             return false;
         if (protectArrival) {
-            // No linked warps yet. Protect the current inspection arrival using the
-            // squared WarpDist field; do not reinterpret it as a linear radius.
+            // Protect original warp arrivals where available; WarpDist is squared.
             Vec delta = p - map_.spawn;
             int distance = level_ ? std::max(0, level_->population.warpDistanceSquared) : 0;
-            if (delta.x * delta.x + delta.y * delta.y < distance)
+            if (map_.warpArrivals.empty() && delta.x * delta.x + delta.y * delta.y < distance)
                 return false;
+            for (auto arrival : map_.warpArrivals) {
+                delta = p - arrival;
+                if (delta.x * delta.x + delta.y * delta.y < distance)
+                    return false;
+            }
         }
         int x = int(p.x), y = int(p.y);
         for (int dy = -1; dy <= 1; ++dy)
@@ -82,8 +87,10 @@ class Planner {
     }
     std::optional<Vec> randomPosition() {
         for (int attempt = 0; attempt < 20; ++attempt) {
-            Vec pos{float(random_.below(uint32_t(map_.grid.width))) + .5f,
-                    float(random_.below(uint32_t(map_.grid.height))) + .5f};
+            int x = densityRoom_ ? densityRoom_->x : 0, y = densityRoom_ ? densityRoom_->y : 0;
+            int w = densityRoom_ ? densityRoom_->width : map_.grid.width;
+            int h = densityRoom_ ? densityRoom_->height : map_.grid.height;
+            Vec pos{x + float(random_.below(uint32_t(w))) + .5f, y + float(random_.below(uint32_t(h))) + .5f};
             if (valid(pos, true))
                 return pos;
         }
@@ -304,43 +311,53 @@ class Planner {
         int density = std::clamp(p.density[settings_.difficulty], 0, 10000);
         if (density == 0 || roster_.empty())
             return;
-        // Original loop operates on DRLG room rectangles in subtiles. This adapter
-        // has one whole DS1 rectangle (excluding the DS1's extra border tile).
-        result_.densityTrials = ((map_.data.width - 1) * 5 / 3) * ((map_.data.height - 1) * 5) / 3;
-        for (int trial = 0; trial < result_.densityTrials; ++trial) {
-            if (random_.below(100000) > uint32_t(density))
+        // Generated maps use actual room footprints, excluding empty gaps and DS1 border rows.
+        auto rooms = map_.rooms;
+        if (rooms.empty())
+            rooms.push_back({0, 0, (map_.data.width - 1) * 5, (map_.data.height - 1) * 5, true});
+        for (const auto &room : rooms) {
+            if (!room.populate)
                 continue;
-            auto monster = choose(false);
-            if (!monster)
-                continue;
-            bool boss = result_.eliteGroups < p.uniqueMin[settings_.difficulty] ||
-                        (result_.eliteGroups < p.uniqueMax[settings_.difficulty] && random_.below(100) <= 5);
-            auto key = "density." + std::to_string(trial);
-            ++group_;
-            if (boss) {
-                auto selected = choose(true);
+            densityRoom_ = &room;
+            int trials = (room.width / 3) * room.height / 3;
+            for (int trial = 0; trial < trials; ++trial) {
+                ++result_.densityTrials;
+                if (random_.below(100000) > uint32_t(density))
+                    continue;
+                auto monster = choose(false);
+                if (!monster)
+                    continue;
+                bool boss =
+                    result_.eliteGroups < p.uniqueMin[settings_.difficulty] ||
+                    (result_.eliteGroups < p.uniqueMax[settings_.difficulty] && random_.below(100) <= 5);
+                auto key = "density." + std::to_string(result_.densityTrials - 1);
+                ++group_;
+                if (boss) {
+                    auto selected = choose(true);
+                    auto pos = randomPosition();
+                    if (selected && pos)
+                        elite(*selected, *pos, SpawnOrigin::Density, key);
+                    continue;
+                }
+                if (monster->sparse && random_.below(100) > uint32_t(monster->sparse))
+                    continue;
+                int count = monster->base == "fallen1" || monster->base == "scarab1"
+                                ? 1
+                                : random_.between(monster->minGroup, monster->maxGroup);
+                if (!count)
+                    continue;
                 auto pos = randomPosition();
-                if (selected && pos)
-                    elite(*selected, *pos, SpawnOrigin::Density, key);
-                continue;
-            }
-            if (monster->sparse && random_.below(100) > uint32_t(monster->sparse))
-                continue;
-            int count = monster->base == "fallen1" || monster->base == "scarab1"
-                            ? 1
-                            : random_.between(monster->minGroup, monster->maxGroup);
-            if (!count)
-                continue;
-            auto pos = randomPosition();
-            if (!pos)
-                continue;
-            for (int member = 0; member < count; ++member) {
-                auto memberKey = key + "." + std::to_string(member);
-                auto point = add(*monster, *pos, 3, MonsterRank::Normal, SpawnOrigin::Density, memberKey);
-                if (point)
-                    party(*monster, *point, SpawnOrigin::Density, memberKey);
+                if (!pos)
+                    continue;
+                for (int member = 0; member < count; ++member) {
+                    auto memberKey = key + "." + std::to_string(member);
+                    auto point = add(*monster, *pos, 3, MonsterRank::Normal, SpawnOrigin::Density, memberKey);
+                    if (point)
+                        party(*monster, *point, SpawnOrigin::Density, memberKey);
+                }
             }
         }
+        densityRoom_ = nullptr;
     }
 
   public:
@@ -401,7 +418,7 @@ void writePopulationReport(std::ostream &out, const PopulationPlan &plan, const 
     out << "  Selected roster:";
     for (const auto &code : plan.roster)
         out << ' ' << code;
-    out << "\n  Actors=" << plan.spawns.size() << " eliteGroups=" << plan.eliteGroups
+    out << "\n  PlannedActors=" << plan.spawns.size() << " eliteGroups=" << plan.eliteGroups
         << " trials=" << plan.densityTrials << " rejected=" << plan.rejectedPlacements
         << " friendlyIgnored=" << plan.ignoredFriendly << '\n';
     std::map<std::string, int> counts;
@@ -418,6 +435,7 @@ void writePopulationReport(std::ostream &out, const PopulationPlan &plan, const 
         out << "  " << count << " x " << name << '\n';
     for (const auto &message : plan.diagnostics)
         out << "  " << message << '\n';
-    out << "  Placement: DS1 scene adapter; original DRLG rooms/seed streams and elite modifiers pending.\n";
+    out << "  Plan only; runtime creates nearby room groups. Original population seed streams and elite "
+           "modifiers pending.\n";
 }
 } // namespace d2x

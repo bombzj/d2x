@@ -1,3 +1,4 @@
+#include "outdoor.hpp"
 #include "region.hpp"
 #include <algorithm>
 
@@ -9,8 +10,8 @@ RegionPlan makeRegion(RegionId id, std::string name, MapRecipe recipe, bool town
     definition.name = std::move(name);
     definition.mapPath = recipe.ds1;
     definition.safe = town;
-    // This arrival is only known for TownN1. Other files choose a walkable point;
-    // actual reciprocal warp placement belongs to the future DRLG implementation.
+    // TownN1 has a known town-centre arrival. Other variants use inspectionArrival;
+    // travel uses reciprocal boundary/warp arrivals instead.
     if (town && recipe.variant == 0) {
         definition.arrival = {140.5f, 64.5f};
         definition.customArrival = true;
@@ -44,13 +45,32 @@ WorldPlan planWorld(Archives &archives, const WorldCatalog &catalog, WorldSelect
                                      "--level-type for room previews");
     }
     WorldPlan result;
+    auto missingMaze = mazeMissing(archives, catalog);
+    auto missingOutdoor = outdoorMissing(archives, catalog);
+    auto outdoors = missingOutdoor.empty() ? generateAct1Outdoors(archives, catalog, selection.seed)
+                                           : std::map<int, MapRecipe>{};
     for (const auto &[id, level] : catalog.levels()) {
         if (level.act != 0)
             continue;
         auto available = catalog.availability(
             archives, id, id == selection.level && !selection.preset ? selection.variant : 0);
         WorldEntry entry{id, level.name, available.reason, available.missing, {}};
-        if (available.ready()) {
+        if (outdoors.contains(id)) {
+            entry.destination = RegionId(id);
+            entry.status = "Connected outdoor terrain";
+            entry.missing.clear();
+            result.regions.push_back(makeRegion(*entry.destination, level.name, outdoors.at(id), id == 1));
+        } else if (supportsMaze(id)) {
+            entry.missing = missingMaze;
+            entry.status =
+                missingMaze.empty() ? "Generated maze / linked stairs" : "Missing original maze resources";
+            if (missingMaze.empty()) {
+                entry.destination = RegionId(id);
+                result.regions.push_back(
+                    makeRegion(*entry.destination, level.name,
+                               generateMaze(catalog, id, selection.seed, selection.difficulty)));
+            }
+        } else if (available.ready()) {
             entry.destination = RegionId(id);
             entry.status = "Preset terrain ready";
             result.regions.push_back(makeRegion(*entry.destination, level.name, *available.recipe, id == 1));

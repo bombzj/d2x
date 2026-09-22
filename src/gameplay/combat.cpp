@@ -4,7 +4,7 @@
 namespace d2x {
 void Simulation::damage(Vec pos, float radius, float amount, EntityId source, float chill) {
     for (auto &e : state_.area.enemies) {
-        if (e.hp <= 0 || (e.pos - pos).length() > radius)
+        if (e.hp <= 0 || !active(e.pos) || (e.pos - pos).length() > radius)
             continue;
         e.hp = std::max(0.f, e.hp - amount);
         e.hitFlash = .12f;
@@ -24,7 +24,7 @@ void Simulation::updateMissiles(float dt) {
         auto next = m.pos + m.velocity * dt;
         bool hit = !grid_->segment(m.pos, next);
         for (const auto &e : area.enemies)
-            if (e.hp > 0 && (e.pos - next).length() < 1.3f)
+            if (e.hp > 0 && active(e.pos) && (e.pos - next).length() < 1.3f)
                 hit = true;
         m.pos = next;
         m.remaining -= dt;

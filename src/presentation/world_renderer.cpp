@@ -1,47 +1,62 @@
 #include "scene_view.hpp"
 #include <algorithm>
 namespace d2x {
+namespace {
+std::vector<std::pair<int, Vec>> terrainRegions(const GameSession &session) {
+    std::vector<std::pair<int, Vec>> result{{session.regionIndex(), {}}};
+    const auto &origin = session.region().recipe;
+    for (int i = 0; i < int(session.regions().size()); ++i) {
+        const auto &r = session.regions()[i];
+        if (i == session.regionIndex())
+            continue;
+        if (std::any_of(origin.boundaries.begin(), origin.boundaries.end(),
+                        [&](const auto &b) { return b.destination == int(r.definition.id); }))
+            result.push_back({i,
+                              {float((r.recipe.worldX - origin.worldX) * 5),
+                               float((r.recipe.worldY - origin.worldY) * 5)}});
+    }
+    return result;
+}
+} // namespace
 void SceneView::drawTerrain() const {
-    const auto &map = session_.map();
-    const int region = session_.regionIndex();
-    const auto &tiles = assets_.regionTiles[region];
+    for (const auto &[region, offset] : terrainRegions(session_)) {
+        const auto &map = session_.regions()[region].map;
+        const auto &tiles = assets_.regionTiles[region];
 
-    // All floors precede occluders. Walls and entities use the same projected depth.
-    for (int sum = 0; sum < map.data.width + map.data.height; sum++)
-        for (int y = 0; y < map.data.height; y++) {
-            int x = sum - y;
-            if (x < 0 || x >= map.data.width)
-                continue;
-            Vec p = screen({x * 5.f, y * 5.f});
-            if (p.x < -300 || p.x > W + 300 || p.y < -200 || p.y > H)
-                continue;
-            for (auto &layer : map.data.floors) {
-                auto &cell = layer[y * map.data.width + x];
-                if (!cell.present())
+        // All floors precede occluders. Walls and entities use the same projected depth.
+        for (int sum = 0; sum < map.data.width + map.data.height; sum++)
+            for (int y = 0; y < map.data.height; y++) {
+                int x = sum - y;
+                if (x < 0 || x >= map.data.width)
                     continue;
-                int idx = map.tileIndex(cell, x, y);
-                if (idx >= 0)
-                    sprite(&tiles[idx], p);
+                Vec p = screen(Vec{x * 5.f, y * 5.f} + offset);
+                if (p.x < -300 || p.x > W + 300 || p.y < -200 || p.y > H)
+                    continue;
+                for (auto &layer : map.data.floors) {
+                    auto &cell = layer[y * map.data.width + x];
+                    if (!cell.present())
+                        continue;
+                    int idx = map.tileIndex(cell, x, y);
+                    if (idx >= 0)
+                        sprite(&tiles[idx], p);
+                }
+                auto &c = map.data.shadows[y * map.data.width + x];
+                if (c.present()) {
+                    int idx = map.tileIndex(c, x, y);
+                    if (idx >= 0)
+                        sprite(&tiles[idx], p, {20, 22, 25, 100});
+                }
             }
-            auto &c = map.data.shadows[y * map.data.width + x];
-            if (c.present()) {
-                int idx = map.tileIndex(c, x, y);
-                if (idx >= 0)
-                    sprite(&tiles[idx], p, {20, 22, 25, 100});
-            }
-        }
+    }
 }
 void SceneView::drawActors() const {
-    const auto &map = session_.map();
     const auto &sim = session_.state();
-    const int region = session_.regionIndex();
-    const auto &tiles = assets_.regionTiles[region];
-    const auto &props = session_.region().objects;
 
     struct Item {
         float depth;
         int type, index;
         Vec p;
+        int region = -1;
     };
     std::vector<Item> draw;
     const auto groundItems = session_.inventory().groundItems(sim.area.region);
@@ -50,38 +65,44 @@ void SceneView::drawActors() const {
         auto p = screen(std::get<GroundLocation>(item.location).position);
         draw.push_back({p.y - .1f, 4, i, p});
     }
-    for (int y = 0; y < map.data.height; y++)
-        for (int x = 0; x < map.data.width; x++) {
-            Vec p = screen({x * 5.f, y * 5.f});
-            if (p.x < -350 || p.x > W + 350 || p.y < -150 || p.y > H + 400)
-                continue;
-            for (auto &layer : map.data.walls) {
-                auto &cell = layer[y * map.data.width + x];
-                if (!cell.present() || cell.orientation == 10 || cell.orientation == 11)
+    for (const auto &[region, offset] : terrainRegions(session_)) {
+        const auto &map = session_.regions()[region].map;
+        for (int y = 0; y < map.data.height; y++)
+            for (int x = 0; x < map.data.width; x++) {
+                Vec p = screen(Vec{x * 5.f, y * 5.f} + offset);
+                if (p.x < -350 || p.x > W + 350 || p.y < -150 || p.y > H + 400)
                     continue;
-                int idx = map.tileIndex(cell, x, y);
-                if (idx >= 0)
-                    draw.push_back({p.y + 64, 0, idx, p});
+                for (auto &layer : map.data.walls) {
+                    auto &cell = layer[y * map.data.width + x];
+                    if (!cell.present())
+                        continue;
+                    int idx = map.tileIndex(cell, x, y);
+                    if (idx >= 0)
+                        draw.push_back({p.y + 64, 0, idx, p, region});
+                }
             }
+        const auto &props = session_.regions()[region].objects;
+        for (int i = 0; i < int(props.size()); i++) {
+            const auto &prop = props[i];
+            if (!visible(prop))
+                continue;
+            auto p = screen(prop.pos + offset);
+            draw.push_back({p.y, 3, i, p, region});
         }
+    }
     for (int i = 0; i < int(sim.area.enemies.size()); i++) {
-        auto &e = sim.area.enemies[i];
+        const auto &e = sim.area.enemies[i];
+        if (!session_.active(e.pos))
+            continue;
         auto p = screen(e.pos);
         draw.push_back({e.hp > 0 ? p.y : -100000.f, 2, i, p});
-    }
-    for (int i = 0; i < int(props.size()); i++) {
-        auto &prop = props[i];
-        if (!visible(prop))
-            continue;
-        auto p = screen(prop.pos);
-        draw.push_back({p.y, 3, i, p});
     }
     draw.push_back({screen(sim.player.pos).y, 1, 0, screen(sim.player.pos)});
     std::stable_sort(draw.begin(), draw.end(), [](auto &a, auto &b) { return a.depth < b.depth; });
     for (auto item : draw) {
         if (item.type == 0) {
             Color tint = WHITE;
-            auto &s = tiles[item.index];
+            auto &s = assets_.regionTiles[item.region][item.index];
             auto hp = screen(sim.player.pos);
             if (hp.y < item.depth && std::abs(hp.x - item.p.x) < 90 && hp.y > item.p.y + s.y)
                 tint = {255, 255, 255, 125};
@@ -144,7 +165,7 @@ void SceneView::drawActors() const {
         } else if (item.type == 4) {
             drawGroundItem(groundItems[item.index]);
         } else {
-            auto &p = props[item.index];
+            auto &p = session_.regions()[item.region].objects[item.index];
             auto &anim = assets_.propAnimations.at(p.key);
             sprite(anim.frame(p.facing % std::max(1, anim.directions), int(view_.animationTime * 12)),
                    item.p);
@@ -253,7 +274,7 @@ void SceneView::drawMinimap(bool large) const {
                     DrawPixel(int(p.x), int(p.y), {173, 152, 100, uint8_t(large ? 200 : 140)});
             }
     for (auto &e : sim.area.enemies)
-        if (e.hp > 0) {
+        if (e.hp > 0 && session_.active(e.pos)) {
             auto p = (project(e.pos) - project(sim.player.pos)) * scale + center;
             DrawCircleV(rv(p), 1.4f, {207, 53, 35, 255});
         }

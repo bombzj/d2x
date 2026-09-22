@@ -62,6 +62,8 @@ WorldCatalog::WorldCatalog(Archives &archives) {
                 record.name = table.value(row, "LevelName");
                 record.width = number("SizeX");
                 record.height = number("SizeY");
+                record.offsetX = number("OffsetX");
+                record.offsetY = number("OffsetY");
                 record.subtype = number("SubType", -1);
                 record.theme = number("SubTheme", -1);
                 record.waypoint = number("Waypoint", -1);
@@ -137,6 +139,8 @@ WorldCatalog::WorldCatalog(Archives &archives) {
                 }
                 MazeRecord record{number("Level"), number("Rooms"), number("SizeX"), number("SizeY"),
                                   number("Merge")};
+                record.difficultyRooms = {record.rooms, number("Rooms(N)", record.rooms),
+                                          number("Rooms(H)", record.rooms)};
                 if (record.level)
                     insert(mazes_, record.level, record);
             } else if (kind == "lvlsub") {
@@ -195,9 +199,8 @@ const LevelRecord &WorldCatalog::level(int id) const {
     return found->second;
 }
 std::vector<std::string> WorldCatalog::typeLibraries(int levelType) const {
-    const auto &files = types_.at(levelType);
     std::vector<std::string> result;
-    for (const auto &file : files)
+    for (const auto &file : types_.at(levelType))
         if (!file.empty())
             result.push_back(file);
     return result;
@@ -210,16 +213,24 @@ MapRecipe WorldCatalog::preset(int id, int levelType, int variant) const {
     const auto &record = presets_.at(id);
     if (variant < 0 || variant >= 6 || record.variants[variant].empty())
         throw std::runtime_error("This LvlPrest variant has no DS1 file");
-    MapRecipe recipe{id, variant, levelType, record.variants[variant], {}, record.fillBlanks};
+    MapRecipe recipe;
+    recipe.preset = id;
+    recipe.variant = variant;
+    recipe.levelType = levelType;
+    recipe.ds1 = record.variants[variant];
+    recipe.fillBlanks = record.fillBlanks;
+    recipe.tileLibraries = terrainLibraries(levelType, record.dt1Mask);
+    return recipe;
+}
+std::vector<std::string> WorldCatalog::terrainLibraries(int levelType, uint32_t mask) const {
+    std::vector<std::string> result;
     const auto &files = types_.at(levelType);
     for (int i = 0; i < 32; ++i)
-        if ((record.dt1Mask & (uint32_t(1) << i)) && !files[i].empty())
-            recipe.tileLibraries.push_back(files[i]);
-    // Engine-wide libraries are independent of the LvlPrest mask. D2MOO's
-    // DRLGROOMTILE_LoadDT1FilesForRoom documents this original loading rule.
+        if ((mask & (uint32_t(1) << i)) && !files[i].empty())
+            result.push_back(files[i]);
     for (auto file : {"act1/outdoors/blank.dt1", "act1/barracks/inviswal.dt1", "act1/barracks/warp.dt1"})
-        recipe.tileLibraries.push_back(member(file));
-    return recipe;
+        result.push_back(member(file));
+    return result;
 }
 std::vector<std::string> WorldCatalog::missing(Archives &archives, const MapRecipe &recipe) const {
     std::vector<std::string> result;

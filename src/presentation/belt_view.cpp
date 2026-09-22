@@ -83,12 +83,10 @@ void SceneView::drawBelt(Vec mouse) const {
     int rows = ui.open || ui.beltExpanded ? belt->spec.rows : 1;
     auto bounds = beltBounds(rows);
     for (int row = rows - 1; row >= 0; --row) {
-        if (auto sprite = assets_.beltPanel.frame(0, 0)) {
+        if (auto sprite = assets_.beltPanel.frame(0, 0); sprite && row > 0) {
             auto t = sprite->texture;
             DrawTexturePro(t, {0, 0, float(t.width), float(t.height)},
-                           {bounds.x, H - 62.f - row * 32 * inventoryScale, t.width * inventoryScale,
-                            t.height * inventoryScale},
-                           {0, 0}, 0, WHITE);
+                           hudRect(424, 42 + row * 32, float(t.width), float(t.height)), {0, 0}, 0, WHITE);
         }
         for (int column = 0; column < 4; ++column) {
             auto box = beltSlot({column, row});
@@ -100,10 +98,9 @@ void SceneView::drawBelt(Vec mouse) const {
             if (CheckCollisionPointRec(rv(mouse), box))
                 DrawRectangleLinesEx(box, 1, parchment);
             if (row == 0)
-                painter_.label(std::to_string(column + 1), int(box.x + 14), H - 19, 10, gold);
+                painter_.label(std::to_string(column + 1), int(box.x + box.width / 2 - 3), H - 13, 10, gold);
         }
     }
-    painter_.label("[B] BELT " + std::to_string(belt->spec.rows * 4), 177, int(bounds.y - 18), 10, gold);
     if (ui.drag && ui.drag->moved) {
         auto drop = inventoryDrop(session_, ui, mouse);
         if (beltCell(mouse, rows)) {

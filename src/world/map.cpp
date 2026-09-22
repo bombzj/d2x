@@ -1,4 +1,5 @@
 #include "map.hpp"
+#include "map_assembly.hpp"
 #include <algorithm>
 #include <iostream>
 namespace d2x {
@@ -34,13 +35,29 @@ std::shared_ptr<const std::vector<Tile>> TileLibraryCache::load(const std::strin
 void Map::load(Archives &a, TileLibraryCache &cache, const MapRecipe &recipe) {
     const auto &ds1 = recipe.ds1;
     path = name = ds1;
-    data = decodeDs1(a.read(ds1));
+    data = assembleMap(a, recipe);
+    rooms.clear();
+    warpArrivals.clear();
+    for (const auto &piece : recipe.pieces)
+        rooms.push_back({piece.x * 5, piece.y * 5, piece.width * 5, piece.height * 5, piece.populate});
+    if (recipe.baseFloor)
+        for (int y = 0; y < recipe.height; y += 8)
+            for (int x = 0; x < recipe.width; x += 8) {
+                bool authored = std::any_of(recipe.pieces.begin(), recipe.pieces.end(), [&](const auto &p) {
+                    return x >= p.x && y >= p.y && x < p.x + p.width && y < p.y + p.height;
+                });
+                if (!authored)
+                    rooms.push_back({x * 5, y * 5, 40, 40, true});
+            }
     tiles.clear();
     libraries.clear();
     lookup.clear();
     unresolved = 0;
     std::set<std::string> loaded;
-    for (const auto &file : recipe.tileLibraries) {
+    auto files = recipe.tileLibraries;
+    for (const auto &piece : recipe.pieces)
+        files.insert(files.end(), piece.tileLibraries.begin(), piece.tileLibraries.end());
+    for (const auto &file : files) {
         if (!loaded.insert(normalize(file)).second)
             continue;
         auto library = cache.load(file);
@@ -61,7 +78,9 @@ void Map::load(Archives &a, TileLibraryCache &cache, const MapRecipe &recipe) {
     for (int y = 0; y < data.height; y++)
         for (int x = 0; x < data.width; x++) {
             auto apply = [&](const MapCell &c, bool floor) {
-                if (!c.occupied() || c.orientation == 10 || c.orientation == 11)
+                if (!c.occupied())
+                    return;
+                if ((c.orientation == 10 || c.orientation == 11) && ((c.value >> 20) & 63) >= 8)
                     return;
                 int idx = tileIndex(c, x, y);
                 if (idx < 0) {
@@ -90,19 +109,37 @@ void Map::load(Archives &a, TileLibraryCache &cache, const MapRecipe &recipe) {
             for (auto &l : data.walls)
                 apply(l[y * data.width + x], false);
             const auto &shadow = data.shadows[y * data.width + x];
-            if (shadow.present() && tileIndex(shadow, x, y) < 0)
+            if (shadow.present() && tileIndex(shadow, x, y) < 0) {
                 ++unresolved;
+                if (unresolved < 4)
+                    std::cerr << "Missing shadow " << shadow.key() << " at=" << x << ',' << y << " in " << ds1
+                              << '\n';
+            }
         }
     for (int y = 0; y < grid.height; y++)
-        for (int x = 0; x < grid.width; x++)
-            if (x < 2 || y < 2 || x >= grid.width - 2 || y >= grid.height - 2)
+        for (int x = 0; x < grid.width; x++) {
+            int width = recipe.width ? recipe.width * 5 : grid.width;
+            int height = recipe.height ? recipe.height * 5 : grid.height;
+            bool opening =
+                std::any_of(recipe.boundaries.begin(), recipe.boundaries.end(), [&](const auto &b) {
+                    int t = b.side % 2 ? y : x;
+                    bool edge = b.side == 1   ? x < 2
+                                : b.side == 2 ? y < 2
+                                : b.side == 3 ? x >= width - 2
+                                              : y >= height - 2;
+                    return edge && t >= b.start * 5 && t < b.end * 5;
+                });
+            if (x >= width || y >= height ||
+                (!opening && (x < 2 || y < 2 || x >= width - 2 || y >= height - 2)))
                 grid.blocked[y * grid.width + x] = 1;
+        }
     if (unresolved)
         throw std::runtime_error("Unresolved DT1 cells in " + ds1 +
                                  "; map disabled, no substitute tiles generated");
     if (std::find(grid.blocked.begin(), grid.blocked.end(), 0) == grid.blocked.end())
         throw std::runtime_error("No walkable floor in " + ds1);
     spawn = grid.inspectionArrival();
+    activation = RoomLayout(grid.width, grid.height, rooms);
     std::cout << "Map " << ds1 << ": " << data.width << "x" << data.height << ", " << tiles.size()
               << " tiles, " << unresolved << " unresolved cells\n";
 }

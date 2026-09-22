@@ -58,42 +58,4 @@ void diamond(Vec p, float radius, Color c) {
     DrawLineV(rv(p + Vec{0, radius * .5f}), rv(p + Vec{-radius, 0}), c);
     DrawLineV(rv(p + Vec{-radius, 0}), rv(p + Vec{0, -radius * .5f}), c);
 }
-void icon(int id, Vec p, bool hot, float t) {
-    auto c = hot ? WHITE : gold;
-    if (id == 0) {
-        for (int i = 7; i >= 0; i--)
-            DrawCircle(int(p.x - i * 2), int(p.y + i), float(2 + i * .3f),
-                       {uint8_t(230 - i * 12), uint8_t(55 + i * 7), 15, 255});
-        DrawCircleV(rv(p), 6, {255, 184, 75, 255});
-        DrawCircleV(rv(p), 2, WHITE);
-    }
-    if (id == 1) {
-        for (int i = 0; i < 8; i++) {
-            float a = i * pi / 4;
-            Vec v{std::cos(a), std::sin(a)};
-            DrawLineEx(rv(p + v * 3), rv(p + v * 13), 2, {119, 203, 248, 255});
-        }
-        DrawCircleLines(int(p.x), int(p.y), 6, {196, 231, 255, 255});
-    }
-    if (id == 2) {
-        for (int i = 0; i < 3; i++)
-            DrawRing(rv(p), 6.f + i * 3, 7.f + i * 3, i * 115 + int(t * 40) % 20,
-                     i * 115 + 200 + int(t * 40) % 20, 15, c);
-    }
-    if (id == 3) {
-        DrawEllipseLines(int(p.x), int(p.y), 8, 14, {126, 174, 255, 255});
-        DrawEllipseLines(int(p.x), int(p.y), 5, 10, {199, 224, 255, 255});
-    }
-    if (id == 4) {
-        DrawLineEx(rv(p + Vec{-12, 10}), rv(p + Vec{0, -10}), 3, gold);
-        DrawLineEx(rv(p + Vec{0, -10}), rv(p + Vec{12, 10}), 3, gold);
-        DrawCircleV(rv(p + Vec{0, -10}), 3, WHITE);
-    }
-    if (id == 5) {
-        for (int i = 0; i < 3; i++)
-            DrawRing(rv(p), float(3 + i * 4), float(4 + i * 4), -65, 65, 16, {213, 168, 80, 255});
-        DrawCircleV(rv(p + Vec{-5, 0}), 4, gold);
-    }
-}
-
 } // namespace d2x

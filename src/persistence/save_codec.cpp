@@ -14,6 +14,7 @@ void fields(Codec &, Restoration &);
 void fields(Codec &, PlayerState &);
 void fields(Codec &, Enemy &);
 void fields(Codec &, MonsterIdentity &);
+void fields(Codec &, MonsterSpawn &);
 void fields(Codec &, PopulationSettings &);
 void fields(Codec &, Missile &);
 void fields(Codec &, Effect &);
@@ -139,7 +140,7 @@ class Codec {
         }
     }
 };
-// Explicit schema, never compiler struct layout. Field order is save version 2.
+// Explicit schema, never compiler struct layout. Field order is save version 3.
 void fields(Codec &a, EntityId &v) {
     a(v.value);
 }
@@ -161,6 +162,9 @@ void fields(Codec &a, Enemy &v) {
 void fields(Codec &a, MonsterIdentity &v) {
     a(v.monster, v.superUnique, v.spawnKey, v.rank, v.origin, v.group);
 }
+void fields(Codec &a, MonsterSpawn &v) {
+    a(v.identity, v.kind, v.position);
+}
 void fields(Codec &a, PopulationSettings &v) {
     a(v.seed, v.difficulty);
 }
@@ -171,10 +175,10 @@ void fields(Codec &a, Effect &v) {
     a(v.pos, v.skill, v.age, v.duration);
 }
 void fields(Codec &a, AreaState &v) {
-    a(v.region, v.enemies, v.missiles, v.effects, v.kills, v.initialized);
+    a(v.region, v.enemies, v.pendingSpawns, v.missiles, v.effects, v.kills, v.initialized);
 }
 void fields(Codec &a, WorldState &v) {
-    a(v.population, v.player, v.area, v.time, v.message);
+    a(v.mapSeed, v.population, v.player, v.area, v.time, v.message);
 }
 void fields(Codec &a, Cell &v) {
     a(v.x, v.y);
@@ -232,7 +236,7 @@ Bytes encodeSave(SessionSnapshot snapshot) {
     Codec body;
     body(snapshot);
     auto bytes = body.take();
-    uint32_t version = 2, size = uint32_t(bytes.size()), crc = checksum(bytes);
+    uint32_t version = 3, size = uint32_t(bytes.size()), crc = checksum(bytes);
     Codec header;
     header(version, size, crc);
     auto headerBytes = header.take();
@@ -251,9 +255,8 @@ SessionSnapshot decodeSave(std::span<const uint8_t> bytes) {
     Codec header(bytes.subspan(sizeof(magic), 12));
     uint32_t version = 0, size = 0, crc = 0;
     header(version, size, crc);
-    if (version != 2)
-        throw std::runtime_error(
-            "Unsupported D2X save version; MPQ population requires a new version-2 game");
+    if (version != 3)
+        throw std::runtime_error("Unsupported D2X save version; generated maps require a new version-3 game");
     auto payload = bytes.subspan(headerSize);
     if (size != payload.size() || crc != checksum(payload))
         throw std::runtime_error("Save checksum or length mismatch");

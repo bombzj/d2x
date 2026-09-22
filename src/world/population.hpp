@@ -12,8 +12,8 @@ struct PopulationPlan {
     uint32_t sceneSeed = 0;
 };
 // Content + terrain -> immutable spawn instructions. No entity allocation or renderer dependencies.
-// Current placement adapter treats a DS1 scene as one population room. A future DRLG
-// provider will supply original room bounds, seed streams and linked warp coordinates.
+// Generated maps supply room footprints and linked warp arrivals. Complete presets
+// retain the scene adapter; exact original population seed streams remain pending.
 PopulationPlan planPopulation(const MonsterCatalog &catalog, const LevelRecord *level,
                               const PresetRecord &preset, const Map &map, PopulationSettings settings);
 void writePopulationReport(std::ostream &out, const PopulationPlan &plan, const LevelRecord *level,

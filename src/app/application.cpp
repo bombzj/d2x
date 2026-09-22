@@ -63,7 +63,8 @@ int runGame(int argc, char **argv) {
                      "--preset <LvlPrest Def> --level-type <LvlTypes ID> "
                      "--map <complete preset DS1> --region <scene index> "
                      "--difficulty <normal|nightmare|hell> --population-seed <uint32> "
-                     "--seed <uint64> --inventory --stash --screenshot <png> --frames N --hidden --pack "
+                     "--map-seed <uint32> --seed <uint64> --inventory --skills --stash --screenshot <png> "
+                     "--frames N --hidden --pack "
                      "<new.mpq> --save <file.d2xsave> --load <file.d2xsave>\n"
                      "F11: save; Ctrl+F11: load. Default slot: saves/quick.d2xsave\n";
         return 0;
@@ -80,6 +81,12 @@ int runGame(int argc, char **argv) {
     DrawText("Loading classic maps and animations...", GetScreenWidth() / 2 - 180, GetScreenHeight() / 2 + 20,
              18, parchment);
     EndDrawing();
+    std::optional<SessionSnapshot> restored;
+    if (!options.load.empty()) {
+        restored = loadSave(options.load);
+        options.world.seed = restored->world.mapSeed;
+        options.population = restored->world.population;
+    }
     GameSession session(archives, options.world, options.region, options.lootSeed, options.population);
     std::cout << "MPQ data: " << session.content().profile << ", "
               << session.inventory().catalog().entries().size() << " items, "
@@ -87,7 +94,7 @@ int runGame(int argc, char **argv) {
               << " treasure classes\n"
               << LootSystem::unavailableReason << '\n';
     if (!options.load.empty()) {
-        session.restore(loadSave(options.load));
+        session.restore(std::move(*restored));
         std::cout << "Loaded " << options.load << '\n';
     }
     const std::string savePath = !options.save.empty()   ? options.save
@@ -96,6 +103,8 @@ int runGame(int argc, char **argv) {
     SceneView view(archives, session);
     view.ui().travelMenu = options.maps;
     view.ui().inventory.open = options.inventory;
+    if (options.skills && !options.inventory && !options.stash && !options.maps)
+        view.ui().skillPicker = true;
     if (options.stash) {
         bool found = false;
         for (const auto &object : session.region().objects)

@@ -1,10 +1,11 @@
 #include "scene_assets.hpp"
+#include "world/outdoor.hpp"
 #include <iostream>
 
 namespace d2x {
 SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
-    : graphics_(archives), audio(archives) {
-    font.glyphs = graphics_.single("data/local/font/latin/font16.dc6");
+    : graphics_(archives), uiGraphics_(archives, "data/global/palette/sky/pal.dat"), audio(archives) {
+    font.glyphs = uiGraphics_.single("data/local/font/latin/font16.dc6");
     auto tbl = archives.read("data/local/font/latin/font16.tbl", false);
     if (tbl.size() >= 3596 && !font.glyphs.frames.empty()) {
         for (int i = 0; i < 256; ++i) {
@@ -33,8 +34,8 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
     }
     fireball = graphics_.single("data/global/missiles/fireball.dcc");
     fireburst = graphics_.single("data/global/missiles/shamanfireballexplodefinal.dcc");
-    panel = graphics_.single("data/global/ui/panel/ctrlpnl7.dc6");
-    cursor = graphics_.single("data/global/ui/cursor/gaunt.dc6");
+    panel = uiGraphics_.single("data/global/ui/panel/800ctrlpnl7.dc6");
+    cursor = uiGraphics_.single("data/global/ui/cursor/gaunt.dc6");
     inventoryPanel = graphics_.single("data/global/ui/panel/invchar.dc6");
     storagePanel = graphics_.single("data/global/ui/panel/bank.dc6");
     if (storagePanel.frames.size() < 4)
@@ -42,9 +43,13 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
             "Original bank.dc6 is missing; update the compact MPQ or provide classic resources.");
     beltPanel = graphics_.single("data/global/ui/panel/ctrlpnl_popbelt.dc6");
     beltSocket = graphics_.single("data/global/ui/panel/inv_belt.dc6");
-    orbs = graphics_.single("data/global/ui/panel/hlthmana.dc6");
+    orbs = uiGraphics_.single("data/global/ui/panel/hlthmana.dc6");
+    globeOverlap = uiGraphics_.single("data/global/ui/panel/overlap.dc6");
+    runButton = uiGraphics_.single("data/global/ui/panel/runbutton.dc6");
+    if (panel.frames.size() < 6 || orbs.frames.size() < 2 || globeOverlap.frames.size() < 2)
+        throw std::runtime_error("Classic HUD resources missing; rebuild the compact MPQ from mpq2.");
     button = graphics_.single("data/global/ui/panel/mediumbuttonblank.dc6");
-    barbarianIcons = graphics_.single("data/global/ui/spells/baskillicon.dc6");
+    loadSkillIcons(archives, session.content());
     // Preserve the source tables alongside their extracted metadata in compact packs.
     for (auto table : {"belts", "charstats", "skills"})
         archives.read(std::string("data/global/excel/") + table + ".txt");
@@ -68,6 +73,7 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
         itemIcons.emplace(code, std::move(icon));
     }
     graphics_.releaseDecoded();
+    uiGraphics_.releaseDecoded();
 }
 void SceneAssets::loadProps(const Region &region) {
     for (const auto &object : region.objects) {
@@ -84,7 +90,28 @@ void SceneAssets::loadProps(const Region &region) {
 }
 void SceneAssets::collectMapVariants(Archives &archives, const WorldCatalog &catalog,
                                      const MonsterCatalog &monsters) {
+    collectMazeResources(archives, catalog);
     std::vector<RegionPlan> plans;
+    for (auto recipe : outdoorTemplates(catalog)) {
+        for (const auto &path : recipe.tileLibraries)
+            archives.read(path);
+        archives.read(recipe.ds1);
+        RegionDefinition definition;
+        definition.id = RegionId(20000 + recipe.preset);
+        definition.mapPath = recipe.ds1;
+        plans.push_back({std::move(definition), std::move(recipe)});
+    }
+    for (const auto &path : catalog.terrainLibraries(2, 0x44103))
+        archives.read(path);
+    // Include every generated-room object appearance, not only this seed's selection.
+    for (int id : mazePresets())
+        for (int variant = 0; variant < catalog.presets().at(id).files; ++variant) {
+            auto recipe = catalog.preset(id, id < 108 ? 3 : 4, variant);
+            RegionDefinition definition;
+            definition.id = RegionId(10000 + id);
+            definition.mapPath = recipe.ds1;
+            plans.push_back({std::move(definition), std::move(recipe)});
+        }
     for (const auto &[id, preset] : catalog.presets()) {
         if (preset.level <= 0)
             continue;

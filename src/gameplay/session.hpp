@@ -23,11 +23,17 @@ class GameSession {
     PlayerContainers playerContainers_;
     StorageAccess storage_;
     EntityId pendingInteraction_;
+    std::optional<int> pendingExit_;
+    std::optional<Vec> boundaryMoveTarget_;
     std::vector<Region> regions_;
     std::vector<AreaState> inactiveAreas_;
     std::vector<GameCommand> pending_;
     int current_ = -1;
-    void enter(RegionId id);
+    void enter(RegionId id, std::optional<Vec> arrival = {});
+    void beginExit(int slot);
+    bool routeBoundaryMove(Vec target);
+    void updateExit();
+    void cancelExit();
     PopulationPlan population(const Region &region) const;
     void interact(EntityId object);
     void updateInteraction();
@@ -57,6 +63,7 @@ class GameSession {
     GameSession(const GameSession &) = delete;
     GameSession &operator=(const GameSession &) = delete;
     const WorldState &state() const { return simulation_.state(); }
+    bool active(Vec position) const { return simulation_.active(position); }
     const ClassicData &content() const { return content_; }
     const WorldCatalog &worldContent() const { return worldContent_; }
     const MonsterCatalog &monsterContent() const { return monsterContent_; }

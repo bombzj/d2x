@@ -11,9 +11,9 @@
 
 素材属于 Blizzard Entertainment。试玩包的公开下载与本项目代码的开源许可是两件事；仓库忽略所有 MPQ、下载缓存和导出的原版图片。请保留代码与素材各自的权利说明。
 
-物品定义由 `src/content/classic_data.cpp` 从上述试玩 MPQ 的 `misc.txt`、`weapons.txt`、`armor.txt` 在运行时导入，包含类型、基础参数、容器字段和图形路径；同时读取 `monstats.txt` 和旧 `treasureclass.txt`。原表仍属于游戏资源，并非本项目自造数据。包裹／储物箱尺寸依据 `inventory.txt` Barbarian / Bank Page 1，表中的 gridRows 对应横格数，gridCols 对应纵格数。精简包保留 34 种物品的原图形，已删除自定掉落权重，尚未实现原版掉落生成。详见 [原版物品数据](ITEM_DATA.md)。
+物品定义由 `src/content/classic_data.cpp` 与 `lod_data.cpp` 从当前 MPQ 的 `misc.txt`、`weapons.txt`、`armor.txt` 运行时导入；正式包读取命名类型和 `TreasureClassEx`，旧试玩适配保留。原表属于游戏资源。包裹／储物箱尺寸依据 `inventory.txt` Barbarian / Bank Page 1；当前加载 34 种物品美术，自定掉落权重已删除，原版生成尚未执行。详见 [原版物品数据](ITEM_DATA.md)。
 
-包裹面板使用同一试玩版的 `data/global/ui/panel/invchar.dc6`，按其中右侧面板分块拼接原版石框和背包格子，完整保留上方装备区域，物品详情以悬停提示呈现。没有引入重制版资源；该 DC6 与物品图标一样保留暴雪素材权利说明。
+包裹面板读取当前 MPQ 的 `data/global/ui/panel/invchar.dc6`，按右侧面板分块拼接原版石框和格子，保留上方装备区域，物品详情以悬停提示呈现。该 DC6 与物品图标保留暴雪素材权利说明。
 
 ## 实际使用的开源项目
 
@@ -23,11 +23,14 @@
 | [StormLib](https://github.com/ladislav-zezula/StormLib) | MPQ 挂载、读取、压缩打包 | v9.30 / `86f9b99ffe4d3417dad16d00541cf6f2e3d7bf79` | MIT，附带库保留各自许可 |
 | [DGEngine](https://github.com/dgcor/DGEngine) | DCC 解码器的直接改造来源 | `ae6dcabf4f824d617dc4b15ead1f0ef206c9a106`，`src/Resources/ImageContainers/DCCImageContainer.cpp` | Diablo 格式代码使用 GPL-3.0 |
 | [Worldstone](https://github.com/Lectem/Worldstone) | DGEngine DCC 解码器的上游算法 | 由 DGEngine 说明和代码引用 | GPL-3.0 |
-| [OpenDiablo2](https://github.com/OpenDiablo2/OpenDiablo2) | 第一幕对象预设数据 | `d2core/d2records/object_lookup_record_data.go` | GPL-3.0 |
+| [OpenDiablo2](https://github.com/OpenDiablo2/OpenDiablo2) | 第一幕对象预设数据、经典 HUD 布局参考 | `d2core/d2records/object_lookup_record_data.go` | GPL-3.0 |
+| [D2MOO](https://github.com/ThePhrozenKeep/D2MOO) | Cave／Crypt 迷宫、矩形户外布局／边界及人口规则适配 | `5596f5cb6c5251a0a07c6637d26458b06099d516` | MIT，见 [许可](licenses/D2MOO.txt) |
 
 `src/resources/dcc.cpp` 已标注改动：C++ 索引帧接口、一次性解码所有方向、输入范围检查。`src/resources/presets.hpp` 从 OpenDiablo2 的第一幕数据筛选生成。项目整体使用根目录 `LICENSE` 的 GPL-3.0 文本；相关许可保存在 `docs/licenses`。
 
 ## 格式研究参考
+
+本轮世界生成代码依据 D2MOO 的 `DrlgMaze`、`DrlgOutPlace`、`DrlgOutWild`、`DrlgOutdoors`、`DrlgRoomTile` 和 `DrlgDrlgVer` 适配；附近房间策略参考 `DrlgActivate`。这是实际代码适配来源，不是完整 DRLG 或逐种子等价实现。当前入口见 [地图](ACT1_MAPS.md) 与 [数据生命周期](baseline/DATA.md)。
 
 - [D2MOO](https://github.com/ThePhrozenKeep/D2MOO/tree/5596f5cb6c5251a0a07c6637d26458b06099d516)，固定提交 `5596f5cb6c5251a0a07c6637d26458b06099d516`，MIT，Copyright 2020–2025 The Phrozen Keep community。共有 DT1、隐藏空白瓦片和变体权重解释依据 DrlgRoomTile.cpp；生成边界参考 DrlgDrlg.cpp、DrlgPreset.cpp、DrlgMaze.cpp。许可见 [D2MOO.txt](licenses/D2MOO.txt)。没有移植完整 DRLG，也未执行参考仓库的游戏代码。
 
@@ -38,9 +41,11 @@
 - [OpenDiablo2 MPQ Viewer](https://github.com/OpenDiablo2/MpqViewer)，其 `listfile.go` 引用 Zezula 的 Diablo II LOD 文件名表。开发时用于发现实际资源路径；运行时使用明确路径和本项目 MPQ 的内置文件名表。
 
 
-腰带阶段还使用同包 `ctrlpnl_popbelt.dc6`、`inv_belt.dc6`、`hlthmana.dc6`、`mediumbuttonblank.dc6`、`baskillicon.dc6` 以及 `potiondrink.wav`、`belt.wav`。腰带容量、自动入带及起始消耗品根据 `belts.txt`、`misc.txt`、`charstats.txt` 提取；技能图标帧取自 `skills.txt`。这些原始表随精简 MPQ 保留。物品、自动入带标志和腰带容量已使用运行时导入；起始消耗品及技能图标映射仍是按原表提取的配置，并非支持任意 MOD。
+腰带阶段还使用同包 `ctrlpnl_popbelt.dc6`、`inv_belt.dc6`、`hlthmana.dc6`、`mediumbuttonblank.dc6`、`baskillicon.dc6` 以及 `potiondrink.wav`、`belt.wav`。腰带容量、自动入带及起始消耗品根据 `belts.txt`、`misc.txt`、`charstats.txt` 提取；技能图标帧取自 `skills.txt`。这些原始表随精简 MPQ 保留。物品、自动入带标志和腰带容量已使用运行时导入；起始消耗品仍是按原表提取的配置；技能图标已改为运行时读取 Skills / SkillDesc，并非支持任意 MOD。
 
 药剂恢复量与基本行为参考 [暴雪 Arreat Summit 药剂资料](https://classic.battle.net/diablo2exp/items/potions.shtml)。该说明包含资料片年代的规则，不是经典试玩 1.04 的逐帧规范；项目使用的持续时长、混用队列和耐力增强详见 [腰带与物品使用](BELT_AND_CONSUMABLES.md)，不可据此宣称完整复刻。
 
 
-私人储物箱使用同一试玩版的 `data/global/ui/panel/bank.dc6`、原 DS1 私人箱实体及 b6 COF/DCC，格子数据取自 `inventory.txt` Bank Page 1，操作距离从 MPQ `objects.txt` bank 记录读取。本轮未加入自制箱子素材、箱子地图位置或新的掉落权重。补充 MPQ 的文件清单、版本边界和官方游戏获取参考见 [MPQ 资源](MPQ_RESOURCES.md)。
+私人储物箱读取当前 MPQ 的 `data/global/ui/panel/bank.dc6`、原 DS1 私人箱实体及 b6 COF/DCC；格子取自 `inventory.txt` Bank Page 1，操作距离取自 `objects.txt` bank 记录。文件清单与版本边界见 [MPQ 资源](MPQ_RESOURCES.md)。
+
+经典 HUD 的面板分块、球体偏移和 Sky 调色板用法参考 OpenDiablo2 的 [hud.go](https://github.com/OpenDiablo2/OpenDiablo2/blob/master/d2game/d2player/hud.go) 与 [globeWidget.go](https://github.com/OpenDiablo2/OpenDiablo2/blob/master/d2game/d2player/globeWidget.go)（2026-09-22 查阅，GPL-3.0）。本项目以 C++ 实现独立的布局、绘制与输入控制，素材来自用户完整 MPQ；路径和映射见 [CLASSIC_HUD.md](CLASSIC_HUD.md)。

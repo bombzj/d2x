@@ -91,7 +91,10 @@ struct MapCell {
         return (value & 0x80000000u) != 0 ||
                (orientation == 0 && ((value >> 20) & 63) == 30 && ((value >> 8) & 255) <= 1);
     }
-    bool present() const { return occupied() && !hidden(); }
+    bool present() const {
+        return occupied() && !hidden() &&
+               !((orientation == 10 || orientation == 11) && ((value >> 20) & 63) >= 8);
+    }
 };
 struct MapObject {
     int type = 0, id = 0, x = 0, y = 0;

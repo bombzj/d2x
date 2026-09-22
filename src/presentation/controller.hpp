@@ -11,9 +11,11 @@ class SceneController {
     bool inventoryClick_ = false;
     bool inventoryRight_ = false;
     bool releaseAfterLoad_ = false;
+    bool skillGesture_ = false;
     Vec movement_;
     void click(Vec mouse);
     bool handleInventory(const FrameInput &input);
+    bool handleSkills(const FrameInput &input);
     void toggleInventory();
     bool queueInventory(GameCommand command, EntityId source);
 
@@ -24,6 +26,7 @@ class SceneController {
         repeatClick_ = 0;
         pickupClick_ = inventoryClick_ = inventoryRight_ = false;
         movement_ = {};
+        skillGesture_ = false;
         releaseAfterLoad_ = true;
     }
     Vec movement() const { return movement_; }

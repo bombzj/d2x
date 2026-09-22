@@ -1,22 +1,39 @@
 #include "world_report.hpp"
+#include "maze.hpp"
+#include "outdoor.hpp"
 #include <set>
 
 namespace d2x {
 void writeWorldReport(std::ostream &out, Archives &archives, const WorldCatalog &catalog, int selected) {
     std::set<std::string> allMissing;
     int count = 0, ready = 0;
+    auto outdoor = outdoorMissing(archives, catalog).empty()
+                       ? generateAct1Outdoors(archives, catalog, defaultMapSeed)
+                       : std::map<int, MapRecipe>{};
     for (const auto &[id, level] : catalog.levels()) {
         if (level.act != 0 || (selected && id != selected))
             continue;
         ++count;
         auto available = catalog.availability(archives, id);
+        if (outdoor.contains(id)) {
+            available.recipe = outdoor.at(id);
+            available.missing.clear();
+            available.reason.clear();
+        }
+        if (supportsMaze(id)) {
+            available.recipe = generateMaze(catalog, id, defaultMapSeed, 0);
+            available.missing = mazeMissing(archives, catalog);
+            available.reason.clear();
+        }
         ready += available.ready();
         const char *kind = level.generation == GenerationKind::Preset ? "preset"
                            : level.generation == GenerationKind::Maze ? "maze"
                                                                       : "outdoor";
         out << id << " | " << level.name << " | " << kind << " | type=" << level.levelType
             << " size=" << level.width << 'x' << level.height << " | "
-            << (available.ready()          ? "PRESET TERRAIN READY"
+            << (available.ready()          ? (supportsMaze(id)       ? "GENERATED MAZE READY"
+                                              : outdoor.contains(id) ? "CONNECTED OUTDOOR READY"
+                                                                     : "PRESET TERRAIN READY")
                 : available.reason.empty() ? "MISSING RESOURCES"
                                            : available.reason)
             << '\n';
@@ -58,10 +75,10 @@ void writeWorldReport(std::ostream &out, Archives &archives, const WorldCatalog 
     if (!count)
         throw std::runtime_error("Unknown Act I level");
     out << "\n"
-        << ready << '/' << count << " levels have a complete preset's DS1/DT1 files (variant 0).\n"
-        << "Terrain availability does not imply populated monsters, doors, quests or functional warps.\n"
-        << "Maze/outdoor templates require engine generation; Vis is not the complete outdoor adjacency "
-           "graph.\n"
+        << ready << '/' << count << " levels have supported terrain and its DS1/DT1 files (variant 0).\n"
+        << "Levels 1..26 form the implemented Act I exploration route when all resources are present.\n"
+        << "Outdoor terrain currently implements the rectangular border/preset branch; roads, rivers and "
+           "LvlSub remain pending.\n"
         << "Missing " << allMissing.size()
         << " known files. Maze/outdoor lists cover LevelType DT1s; exact DS1 demand depends on unimplemented "
            "generation.\n";

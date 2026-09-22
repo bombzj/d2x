@@ -1,6 +1,7 @@
 #pragma once
 #include "container_grid.hpp"
 #include "gameplay/session.hpp"
+#include "hud_layout.hpp"
 
 namespace d2x {
 struct InventoryDrag {
@@ -43,19 +44,17 @@ inline Rectangle inventoryButton(int index) {
     return {inventoryBounds().x + 19 + index * 123, 501, 116, 28};
 }
 inline Rectangle inventoryToggle() {
-    return {734, H - 20.f, 183, 20};
+    return hudMenuButton();
 }
 inline Rectangle equippedBeltBounds() {
     auto p = inventoryBounds();
     return {p.x + 136 * inventoryScale, p.y + 179 * inventoryScale, 52 * inventoryScale, 25 * inventoryScale};
 }
 inline Rectangle beltSlot(Cell cell) {
-    return {175 + (1 + 31 * cell.x) * inventoryScale, H - 62.f + (1 - 32 * cell.y) * inventoryScale,
-            29 * inventoryScale, 29 * inventoryScale};
+    return hudRect(425 + 31 * cell.x, 41 + 32 * cell.y, 29, 29);
 }
 inline Rectangle beltBounds(int rows) {
-    return {175, H - 62.f - (rows - 1) * 32 * inventoryScale, 125 * inventoryScale,
-            rows * 32 * inventoryScale};
+    return hudRect(424, 42 + (rows - 1) * 32, 125, rows * 32);
 }
 inline std::optional<Cell> beltCell(Vec mouse, int rows) {
     for (int y = 0; y < rows; ++y)

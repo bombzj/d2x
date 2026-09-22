@@ -11,6 +11,7 @@ class Simulation {
     friend class GameSession;
     EntityIds &ids_;
     const Grid *grid_ = nullptr; // Borrowed from GameSession's stable region storage.
+    const RoomLayout *rooms_ = nullptr;
     WorldState state_;
     std::vector<GameEvent> events_;
     Enemy *findEnemy(EntityId id);
@@ -23,11 +24,13 @@ class Simulation {
     void updateMonsters(float dt);
     void updateMissiles(float dt);
     void spawnEnemies(std::span<const MonsterSpawn> spawns);
+    void activateMonsters();
     void clearActions();
 
   public:
     explicit Simulation(EntityIds &ids);
     const WorldState &state() const { return state_; }
+    bool active(Vec position) const { return rooms_ && rooms_->nearby(state_.player.pos, position); }
     std::span<const GameEvent> events() const { return events_; }
     void beginTick() { events_.clear(); }
     template <class Event> void emit(Event event) {
@@ -36,7 +39,8 @@ class Simulation {
     void execute(const GameCommand &command);
     void tick(float dt, Vec keyboard);
     AreaState leaveArea();
-    void enterArea(const Grid &grid, Vec spawn, AreaState area, std::span<const MonsterSpawn> monsters);
+    void enterArea(const Grid &grid, const RoomLayout &rooms, Vec spawn, AreaState area,
+                   std::span<const MonsterSpawn> monsters);
     void restartArea(Vec spawn, std::span<const MonsterSpawn> monsters);
     void heal();
     void applyPotion(const PotionDefinition &potion);

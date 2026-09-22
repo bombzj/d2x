@@ -1,88 +1,9 @@
 #include "scene_view.hpp"
 #include <algorithm>
 namespace d2x {
-void SceneView::orb(int x, int y, float value, Color light, Color dark, const std::string &text) const {
-
-    (void)dark;
-    if (auto sprite = assets_.orbs.frame(0, light.r > light.b ? 0 : 1)) {
-        auto t = sprite->texture;
-        Rectangle source{0, 0, float(t.width), float(t.height)};
-        Rectangle bounds{x - 40.f, y - 40.f, 80, 80};
-        DrawTexturePro(t, source, bounds, {0, 0}, 0, {24, 24, 24, 255});
-        float fraction = std::clamp(value, 0.f, 1.f);
-        if (fraction > 0) {
-            source.y = t.height * (1 - fraction);
-            source.height = t.height * fraction;
-            bounds.y += 80 * (1 - fraction);
-            bounds.height = 80 * fraction;
-            DrawTexturePro(t, source, bounds, {0, 0}, 0, WHITE);
-        }
-    }
-    painter_.label(text, x - painter_.measure(text, 10) / 2, y + 47, 10);
-}
 void SceneView::drawHud() const {
     const auto &sim = session_.state();
-
-    DrawRectangleGradientV(0, H - HUD, W, HUD, {24, 24, 21, 255}, {7, 9, 10, 255});
-    DrawLine(0, H - HUD, W, H - HUD, {131, 113, 79, 255});
-    for (int i = 0; i < W; i += 32) {
-        DrawLine(i, H - HUD + 5, i + 20, H - HUD + 5, {49, 45, 34, 255});
-        DrawLine(i, H - 7, i + 20, H - 7, {48, 41, 28, 255});
-    }
-    orb(77, H - 59, sim.player.hp / playerRules().maxLife, {180, 20, 14, 255}, {47, 3, 3, 255},
-        std::to_string(int(sim.player.hp)) + " / " + std::to_string(int(playerRules().maxLife)));
-    orb(W - 77, H - 59, sim.player.mana / playerRules().maxMana, {21, 74, 199, 255}, {4, 7, 50, 255},
-        std::to_string(int(sim.player.mana)) + " / " + std::to_string(int(playerRules().maxMana)));
-    if (assets_.panel.frames.size() >= 5) {
-        sprite(&assets_.panel.frames[0], {18, H - 104.f});
-        sprite(&assets_.panel.frames[4], {W - 135.f, H - 104.f});
-    }
-    painter_.label("LIFE", 59, H - HUD + 7, 10, gold);
-    painter_.label("MANA", W - 93, H - HUD + 7, 10, gold);
-    int occupied = 0;
-    const auto &inventory = session_.inventory();
-    const auto &backpack = inventory.container(session_.playerContainers().backpack)->spec;
-    const int capacity = backpack.columns * backpack.rows;
-    for (auto id : inventory.contents(session_.playerContainers().backpack)) {
-        const auto &definition = *inventory.catalog().find(inventory.item(id)->definition);
-        occupied += definition.width * definition.height;
-    }
-    painter_.label("[I] BACKPACK " + std::to_string(occupied) + " / " + std::to_string(capacity), 738, H - 17,
-                   10, occupied == capacity ? Color{220, 115, 95, 255} : gold);
-    painter_.label("STAMINA", 738, H - 43, 10, {149, 142, 119, 255});
-    DrawRectangle(797, H - 42, 110, 6, {42, 38, 22, 255});
-    DrawRectangle(797, H - 42, int(110 * sim.player.stamina / playerRules().maxStamina), 6,
-                  {163, 139, 66, 255});
-    for (int i = 0; i < int(hotbarSlots); i++) {
-        const auto &skill = skillDefinition(view_.hotbar[i]);
-        float cooldown = sim.player.cooldown[size_t(skill.id)];
-        auto cost = std::to_string(int(skill.manaCost)) + " MP";
-        int x = int(skillSlot(i).x);
-        frame({float(x), H - 94.f, 56, 60}, i == view_.selected ? gold : Color{65, 64, 56, 255});
-        int original = skill.id == Skill::Whirlwind ? 50
-                       : skill.id == Skill::Leap    ? 34
-                       : skill.id == Skill::WarCry  ? 56
-                                                    : -1;
-        if (original >= 0 && size_t(original) < assets_.barbarianIcons.frames.size()) {
-            auto t = assets_.barbarianIcons.frames[original].texture;
-            DrawTexturePro(t, {0, 0, float(t.width), float(t.height)}, {x + 3.f, H - 91.f, 50, 50}, {0, 0}, 0,
-                           WHITE);
-        } else
-            icon(int(skill.id), {x + 28.f, H - 66.f}, i == view_.selected, sim.time);
-        painter_.label("F" + std::to_string(i + 5), x + 7, H - 89, 10, gold);
-        if (cooldown > 0) {
-            DrawRectangle(x + 5, H - 90, 52, 52, {0, 0, 0, 155});
-            painter_.label(TextFormat("%.1f", cooldown), x + 22, H - 70, 14);
-        }
-        painter_.label(skill.shortName, x + (62 - painter_.measure(skill.shortName, 8)) / 2, H - 28, 8,
-                       {172, 162, 138, 255});
-        painter_.label(cost, x + 18, H - 16, 8, {92, 126, 174, 255});
-    }
-    painter_.label("MONSTERS SLAIN", 738, H - HUD + 19, 10, {132, 128, 111, 255});
-    painter_.label(std::to_string(sim.area.kills) + " / " + std::to_string(sim.area.enemies.size()), 738,
-                   H - HUD + 38, 24, gold);
-    painter_.label(sim.player.running ? "RUN  [SPACE]" : "WALK [SPACE]", 738, H - 30, 10,
-                   {169, 157, 121, 255});
+    drawControlPanel();
     painter_.label("D2X", 22, 20, 20, gold);
     painter_.label("CLASSIC ENGINE / C++", 72, 24, 10, {154, 149, 129, 255});
     int worldWidth = view_.inventory.open && !view_.inventory.storage ? int(inventoryBounds().x) : W;
@@ -94,10 +15,6 @@ void SceneView::drawHud() const {
     painter_.label("F1 Help     M Sound", W - 204, 207, 10, {153, 144, 118, 255});
     if (!sim.message.empty())
         painter_.centered(sim.message, H - HUD - 35, 16, {218, 176, 95, 255});
-    if (!view_.help)
-        painter_.label(
-            "LMB Move / Attack / Pick up   ALT Item names   I Inventory   1-4 Potions   F5-F10 Skills", 23,
-            H - HUD - 22, 10, {188, 181, 158, 255});
     if (!view_.dialogue.empty()) {
         frame({W / 2.f - 285, H - HUD - 97.f, 570, 52});
         painter_.centered(view_.dialogue, H - HUD - 78, 14, gold);
@@ -122,9 +39,9 @@ void SceneView::drawHelp() const {
                            "Hold Alt                   Show ground item names",
                            "I                          Open / close inventory",
                            "W A S D                    Move in screen directions",
-                           "Right click                Cast selected skill",
+                           "Right click                Cast; click slot to choose",
                            "1 through 4 / B            Drink belt potion / Expand belt",
-                           "F5 through F10             Cast skill at cursor",
+                           "F5 through F10             Select right-button skill",
                            "Space                      Toggle walk / run",
                            "Tab / F2                   Automap / Map catalog",
                            "F3 / F4                    Collision / Walk to stash",
@@ -162,6 +79,7 @@ void SceneView::draw(Vec mouse) const {
     drawActors();
     drawMagic();
     drawLootLabels(mouse);
+    drawExitHint(mouse);
     EndScissorMode();
     DrawRectangleGradientV(0, 0, W, 105, {0, 0, 0, 145}, {0, 0, 0, 0});
     if (!view_.inventory.open)
@@ -171,7 +89,8 @@ void SceneView::draw(Vec mouse) const {
     drawHud();
     if (!view_.blocksWorld() && !view_.inventory.open && mouse.y < H - HUD) {
         for (const auto &enemy : sim.area.enemies) {
-            if (enemy.hp <= 0 || (screen(enemy.pos) - Vec{0, 25} - mouse).length() >= 24)
+            if (enemy.hp <= 0 || !session_.active(enemy.pos) ||
+                (screen(enemy.pos) - Vec{0, 25} - mouse).length() >= 24)
                 continue;
             const auto &identity = enemy.identity;
             auto title = identity.superUnique.empty() ? identity.monster : identity.superUnique;
@@ -199,7 +118,7 @@ void SceneView::draw(Vec mouse) const {
         DrawRectangle(0, 0, W, H, {0, 0, 0, 175});
         frame({W / 2.f - 345, 55, 690, 545});
         painter_.centered("ACT I MAP CATALOG", 76, 24, gold);
-        painter_.centered("Select available terrain / original level links pending", 112, 14);
+        painter_.centered("Developer catalog / Outdoors, caves and Tower connect in the world", 112, 14);
         const auto &entries = session_.worldEntries();
         int pages = (int(entries.size()) + worldPageSize - 1) / worldPageSize;
         for (int i = 0; i < worldPageSize && view_.travelPage * worldPageSize + i < int(entries.size());
@@ -226,15 +145,7 @@ void SceneView::draw(Vec mouse) const {
         painter_.centered(
             std::to_string(view_.travelPage + 1) + " / " + std::to_string(pages) + "   PgUp / PgDn", 554, 14);
     }
-    if (mouse.y >= H - HUD && !view_.help && !view_.travelMenu && !view_.inventory.drag) {
-        for (int i = 0; i < int(hotbarSlots); i++)
-            if (CheckCollisionPointRec(rv(mouse), skillSlot(i))) {
-                const auto &skill = skillDefinition(view_.hotbar[i]);
-                frame({W / 2.f - 230, H - HUD - 85.f, 460, 65});
-                painter_.centered(skill.name, H - HUD - 72, 18, gold);
-                painter_.centered(skill.description, H - HUD - 45, 12);
-            }
-    }
+    drawSkillControls(mouse);
     drawInventoryCursor(mouse);
     if (!assets_.cursor.frames.empty())
         sprite(assets_.cursor.frame(0, 0), mouse);

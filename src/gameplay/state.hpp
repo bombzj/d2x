@@ -46,6 +46,7 @@ struct Effect {
 struct AreaState {
     RegionId region = RegionId::Encampment;
     std::vector<Enemy> enemies;
+    std::vector<MonsterSpawn> pendingSpawns;
     std::vector<Missile> missiles;
     std::vector<Effect> effects;
     int kills = 0;
@@ -53,6 +54,7 @@ struct AreaState {
 };
 // Player combat state survives travel. GameSession separately owns inventory/container state.
 struct WorldState {
+    uint32_t mapSeed = 210;
     PopulationSettings population;
     PlayerState player;
     AreaState area;

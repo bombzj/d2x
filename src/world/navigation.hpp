@@ -3,6 +3,23 @@
 #include "core/math.hpp"
 #include <deque>
 namespace d2x {
+struct RoomBounds {
+    int x, y, width, height;
+    bool populate;
+};
+// Immutable spatial room index. Activity is derived from the observer's room and
+// touching neighbours, following DRLG's InRoom / InSight / OutOfSight model.
+class RoomLayout {
+    int width_ = 0, height_ = 0;
+    std::vector<RoomBounds> rooms_;
+    std::vector<int> cells_;
+    int roomAt(Vec point) const;
+
+  public:
+    RoomLayout() = default;
+    RoomLayout(int width, int height, std::vector<RoomBounds> rooms);
+    bool nearby(Vec observer, Vec point) const;
+};
 struct Grid {
     int width = 0, height = 0;
     Bytes blocked;

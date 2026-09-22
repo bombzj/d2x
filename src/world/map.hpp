@@ -14,6 +14,7 @@ class TileLibraryCache {
     std::shared_ptr<const std::vector<Tile>> load(const std::string &path);
 };
 struct Map {
+    using RoomBounds = d2x::RoomBounds;
     MapData data;
     std::vector<std::shared_ptr<const std::vector<Tile>>> libraries;
     std::vector<const Tile *> tiles;
@@ -21,6 +22,9 @@ struct Map {
     Grid grid;
     std::string name, path;
     Vec spawn;
+    std::vector<RoomBounds> rooms;
+    RoomLayout activation;
+    std::vector<Vec> warpArrivals;
     int unresolved = 0;
     void load(Archives &archives, TileLibraryCache &cache, const MapRecipe &recipe);
     int tileIndex(const MapCell &c, int x, int y) const;

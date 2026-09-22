@@ -18,7 +18,7 @@ std::vector<ContainerGrid> inventoryGrids(const GameSession &session, const Inve
     int rows = ui.open || ui.beltExpanded ? session.inventory().container(c.belt)->spec.rows : 1;
     auto belt = beltSlot({0, 0});
     std::vector<ContainerGrid> grids{
-        {c.belt, {belt.x, belt.y}, {31 * inventoryScale, -32 * inventoryScale}, 4, rows, inventoryCellSize}};
+        {c.belt, {belt.x, belt.y}, {31 * hudScale, -32 * hudScale}, 4, rows, 29 * hudScale}};
     if (ui.open) {
         auto p = inventoryGrid();
         grids.push_back(
@@ -103,7 +103,7 @@ InventoryDrop inventoryDrop(const GameSession &session, const InventoryUi &ui, V
             drop.command = TransferItem{source->handle(), target};
             drop.description = "Transfer whole item";
         } else if (!inventorySurface(ui, mouse) && mouse.x >= 0 && mouse.x < W && mouse.y >= 0 &&
-                   mouse.y < H - HUD) {
+                   !hudSurface(mouse)) {
             if (auto ground = session.dropLocation()) {
                 drop.command = MoveItem{source->handle(), *ground};
                 drop.description = "Drop at your feet";

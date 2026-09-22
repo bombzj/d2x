@@ -5,7 +5,7 @@ namespace d2x {
 void Simulation::updateMonsters(float dt) {
     auto &p = state_.player;
     for (auto &e : state_.area.enemies) {
-        if (e.hp <= 0)
+        if (e.hp <= 0 || !active(e.pos))
             continue;
         e.chill = std::max(0.f, e.chill - dt);
         e.stun = std::max(0.f, e.stun - dt);

@@ -1,9 +1,11 @@
 #include "content/classic_data.hpp"
 #include "content/monster_catalog.hpp"
-#include "content/world_report.hpp"
 #include "resources/archive.hpp"
 #include "resources/formats.hpp"
+#include "world/maze.hpp"
+#include "world/outdoor.hpp"
 #include "world/population.hpp"
+#include "world/world_report.hpp"
 #include <algorithm>
 #include <charconv>
 #include <fstream>
@@ -17,14 +19,60 @@ int main(int argc, char **argv) {
                 << "d2x_assets <archive-or-folder> list [wildcard]\n  ... extract <member> <destination>\n  "
                    "... preview <dc6-or-dcc-member> <sheet.png>\n  ... pack <manifest.txt> <new.mpq>\n"
                    "  ... item <code>\n  ... drops <monster-class>\n  ... maps [Act-I-level-ID]\n"
-                   "  ... presets [name-filter]\n"
+                   "  ... presets [name-filter]\n  ... maze <level-ID> [map-seed] [difficulty:0-2]\n"
+                   "  ... outdoor <level-ID> [map-seed]\n"
                    "  ... population <level-ID> [normal|nightmare|hell] [seed]\n";
             return 0;
         }
         d2x::Archives a;
         a.mountDirectory(argv[1]);
         std::string command = argv[2];
-        if (command == "population" && argc >= 4 && argc <= 6) {
+        if ((command == "maze" || command == "outdoor") && argc >= 4 && argc <= 6) {
+            d2x::WorldCatalog catalog(a);
+            uint32_t seed = d2x::defaultMapSeed;
+            if (argc >= 5) {
+                std::string value = argv[4];
+                auto [end, error] = std::from_chars(value.data(), value.data() + value.size(), seed);
+                if (error != std::errc{} || end != value.data() + value.size())
+                    throw std::runtime_error("Map seed expects uint32");
+            }
+            auto recipe =
+                command == "maze"
+                    ? d2x::generateMaze(catalog, std::stoi(argv[3]), seed, argc == 6 ? std::stoi(argv[5]) : 0)
+                    : d2x::generateAct1Outdoors(a, catalog, seed).at(std::stoi(argv[3]));
+            std::cout << recipe.ds1 << " rooms=" << recipe.pieces.size() << '\n';
+            for (const auto &room : recipe.pieces)
+                std::cout << "  room " << room.x << ',' << room.y << " size=" << room.width << 'x'
+                          << room.height << " preset=" << room.preset << " variant=" << room.variant << " "
+                          << room.ds1 << '\n';
+            d2x::TileLibraryCache cache(a);
+            d2x::Map map;
+            map.load(a, cache, recipe);
+            for (const auto &b : recipe.boundaries) {
+                std::cout << "  boundary -> " << b.destination << " side=" << b.side << " span=" << b.start
+                          << ':' << b.end << '\n';
+                for (int depth : {3, 8, 15, 25, 35}) {
+                    std::cout << "    depth " << depth << ' ';
+                    for (int t = b.start * 5; t < b.end * 5; ++t) {
+                        int x = b.side == 1 ? depth : b.side == 3 ? recipe.width * 5 - depth : t;
+                        int y = b.side == 2 ? depth : b.side == 0 ? recipe.height * 5 - depth : t;
+                        std::cout << (map.grid.walkable(x, y) ? '.' : '#');
+                    }
+                    std::cout << '\n';
+                }
+            }
+            for (const auto &layer : map.data.walls)
+                for (int y = 0; y < map.data.height; ++y)
+                    for (int x = 0; x < map.data.width; ++x) {
+                        const auto &cell = layer[y * map.data.width + x];
+                        if (cell.occupied() && (cell.orientation == 10 || cell.orientation == 11))
+                            std::cout
+                                << "  warp marker " << x << ',' << y << " style=" << ((cell.value >> 20) & 63)
+                                << " sequence=" << ((cell.value >> 8) & 255) << " type=" << cell.orientation
+                                << " hidden=" << cell.hidden() << " tile=" << map.tileIndex(cell, x, y)
+                                << '\n';
+                    }
+        } else if (command == "population" && argc >= 4 && argc <= 6) {
             d2x::PopulationSettings settings;
             if (argc >= 5) {
                 std::string difficulty = argv[4];

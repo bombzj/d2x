@@ -10,19 +10,23 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
     : content_(loadClassicData(archives)), worldContent_(archives),
       monsterContent_(archives, content_.tables.at("monstats")), loot_(lootSeed) {
     simulation_.state_.population = population;
+    simulation_.state_.mapSeed = selection.seed;
     playerContainers_ = inventory_.createPlayerContainers(state().player.id);
     // Original Barbarian charstats.txt starter consumables (equipment is separate).
     for (int column = 0; column < 4; ++column)
         inventory_.createItem("hp1", 1, ContainerLocation{playerContainers_.belt, {column, 0}});
     inventory_.createItem("tsc", 1, AutoPlace{playerContainers_.backpack});
     inventory_.createItem("isc", 1, AutoPlace{playerContainers_.backpack});
-    auto plan = planWorld(archives, worldContent_, selection);
+    auto worldSelection = selection;
+    worldSelection.difficulty = population.difficulty;
+    auto plan = planWorld(archives, worldContent_, worldSelection);
     regions_ = loadRegions(archives, ids_, plan.regions, monsterContent_);
+    linkLevelExits(regions_, worldContent_);
     worldEntries_ = std::move(plan.entries);
     Fingerprint fingerprint;
     fingerprint.add(content_.profile);
     // Bump this rules revision when state interpretation or compiled rules change.
-    fingerprint.add("d2x-session-rules-v3-mpq-population");
+    fingerprint.add("d2x-session-rules-v6-act1-room-activation");
     auto members = archives.used;
     for (const auto &member : members) {
         fingerprint.add(member);
@@ -38,7 +42,7 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
         throw std::out_of_range("--region exceeds the available scene count; prefer --level <Levels.txt ID>");
     enter(startRegion < 0 ? plan.start : regions_[startRegion].definition.id);
 }
-void GameSession::enter(RegionId id) {
+void GameSession::enter(RegionId id, std::optional<Vec> arrival) {
     auto found = std::find_if(regions_.begin(), regions_.end(),
                               [id](const Region &r) { return r.definition.id == id; });
     if (found == regions_.end())
@@ -47,12 +51,15 @@ void GameSession::enter(RegionId id) {
     if (current_ >= 0)
         inactiveAreas_[current_] = simulation_.leaveArea();
     current_ = index;
+    cancelExit();
     cancelPickup();
     cancelInteraction();
     closeStorage();
     auto plan = inactiveAreas_[current_].initialized ? PopulationPlan{} : population(*found);
-    simulation_.enterArea(found->map.grid, found->map.spawn, std::move(inactiveAreas_[current_]),
-                          plan.spawns);
+    simulation_.enterArea(found->map.grid, found->map.activation, arrival.value_or(found->map.spawn),
+                          std::move(inactiveAreas_[current_]), plan.spawns);
+    std::cout << "Room activation: created=" << state().area.enemies.size()
+              << " deferred=" << state().area.pendingSpawns.size() << '\n';
 }
 PopulationPlan GameSession::population(const Region &region) const {
     const auto level = worldContent_.levels().find(int(region.definition.id));
@@ -91,12 +98,22 @@ void GameSession::tick(float dt, Vec keyboard) {
         std::visit(
             [&](const auto &intent) {
                 using T = std::decay_t<decltype(intent)>;
-                if constexpr (std::is_same_v<T, Travel>) {
+                if constexpr (std::is_same_v<T, UseExit>) {
+                    beginExit(intent.slot);
+                } else if constexpr (std::is_same_v<T, Travel>) {
                     if (!state().player.dead) {
                         enter(intent.destination);
                         transitioned = true;
                     }
+                } else if constexpr (std::is_same_v<T, MoveTo>) {
+                    if (!routeBoundaryMove(intent.position)) {
+                        cancelExit();
+                        cancelPickup();
+                        cancelInteraction();
+                        simulation_.execute(command);
+                    }
                 } else if constexpr (std::is_same_v<T, RestartArea>) {
+                    cancelExit();
                     cancelPickup();
                     const auto &r = region();
                     auto plan = population(r);
@@ -105,6 +122,7 @@ void GameSession::tick(float dt, Vec keyboard) {
                     closeStorage();
                     transitioned = true;
                 } else if constexpr (std::is_same_v<T, PickupItem>) {
+                    cancelExit();
                     cancelInteraction();
                     beginPickup(intent.item);
                 } else if constexpr (std::is_same_v<T, UseItem>)
@@ -114,6 +132,7 @@ void GameSession::tick(float dt, Vec keyboard) {
                 else if constexpr (std::is_same_v<T, CloseStorage>)
                     closeStorage();
                 else if constexpr (std::is_same_v<T, Interact>) {
+                    cancelExit();
                     cancelPickup();
                     interact(intent.target);
                 } else if constexpr (std::is_same_v<T, MoveItem> || std::is_same_v<T, SwapItems> ||
@@ -123,6 +142,7 @@ void GameSession::tick(float dt, Vec keyboard) {
                 else {
                     if constexpr (std::is_same_v<T, MoveTo> || std::is_same_v<T, Attack> ||
                                   std::is_same_v<T, CastSkill> || std::is_same_v<T, StopMoving>) {
+                        cancelExit();
                         cancelPickup();
                         cancelInteraction();
                     }
@@ -135,6 +155,7 @@ void GameSession::tick(float dt, Vec keyboard) {
             break;
     }
     if (!transitioned && keyboard.length() > .1f) {
+        cancelExit();
         cancelPickup();
         cancelInteraction();
     }
@@ -142,6 +163,7 @@ void GameSession::tick(float dt, Vec keyboard) {
     settleDeaths();
     updatePickup();
     updateInteraction();
+    updateExit();
     validateStorage();
 }
 } // namespace d2x

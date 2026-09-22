@@ -7,8 +7,8 @@ if(-not (Test-Path -LiteralPath $exe)){& (Join-Path $PSScriptRoot 'build.ps1');$
 if(-not $Mpq){
     $fullPack=Join-Path $projectRoot 'assets/mpq2/d2x-act1.mpq'
     $fullSource=Join-Path $projectRoot 'assets/mpq2'
-    if(Test-Path -LiteralPath $fullPack){$Mpq=$fullPack}
-    elseif(Get-ChildItem -LiteralPath $fullSource -Filter '*.mpq' -ErrorAction SilentlyContinue){$Mpq=$fullSource}
+    if(Test-Path -LiteralPath (Join-Path $fullSource 'd2data.mpq')){$Mpq=$fullSource}
+    elseif(Test-Path -LiteralPath $fullPack){$Mpq=$fullPack}
     elseif(-not (Get-ChildItem -LiteralPath (Join-Path $projectRoot 'assets/mpq') -Filter '*.mpq' -ErrorAction SilentlyContinue)){& (Join-Path $PSScriptRoot 'fetch-demo.ps1')}
 }
 Push-Location $projectRoot

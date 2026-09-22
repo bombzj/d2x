@@ -5,14 +5,23 @@ namespace d2x {
 void SceneController::click(Vec mouse) {
     auto &ui = view_.ui();
     ui.dialogue.clear();
+    if (const auto *exit = view_.exitAt(mouse)) {
+        session_.submit(UseExit{exit->slot});
+        pickupClick_ = true;
+        return;
+    }
     if (auto item = view_.lootAt(mouse, true)) {
         session_.submit(PickupItem{*item});
         pickupClick_ = true;
         return;
     }
     for (const auto &enemy : session_.state().area.enemies) {
-        if (enemy.hp > 0 && (view_.screen(enemy.pos) - Vec{0, 25} - mouse).length() < 24) {
-            session_.submit(Attack{enemy.id});
+        if (enemy.hp > 0 && session_.active(enemy.pos) &&
+            (view_.screen(enemy.pos) - Vec{0, 25} - mouse).length() < 24) {
+            if (ui.leftSkill)
+                session_.submit(CastSkill{*ui.leftSkill, enemy.pos});
+            else
+                session_.submit(Attack{enemy.id});
             return;
         }
     }
@@ -51,14 +60,18 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
     movement_ = {};
     if (!input.focused) {
         ui.inventory.cancelGesture();
+        ui.skillPicker.reset();
         return true;
     }
     repeatClick_ -= elapsed;
-    if (input.help)
+    if (input.help) {
+        ui.skillPicker.reset();
         ui.help = !ui.help;
+    }
     if (input.automap)
         ui.automap = !ui.automap;
     if (input.travel) {
+        ui.skillPicker.reset();
         session_.submit(CloseStorage{});
         ui.inventory.storage = {};
         ui.travelMenu = !ui.travelMenu;
@@ -104,6 +117,7 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
     if (input.run)
         session_.submit(ToggleRun{});
     if (input.restart) {
+        ui.skillPicker.reset();
         ui.inventory.storage = {};
         ui.help = ui.pause = ui.travelMenu = false;
         ui.inventory.cancelGesture();
@@ -111,7 +125,10 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
         session_.submit(RestartArea{});
     }
     if (input.escape) {
-        if (ui.help)
+        if (ui.skillPicker) {
+            ui.skillPicker.reset();
+            skillGesture_ = true;
+        } else if (ui.help)
             ui.help = false;
         else if (ui.travelMenu)
             ui.travelMenu = false;
@@ -156,34 +173,42 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
         return true;
     }
     if (ui.blocksWorld()) {
+        ui.skillPicker.reset();
         ui.inventory.cancelGesture();
         return true;
     }
-    if (input.expandBelt)
+    if (input.expandBelt) {
+        ui.skillPicker.reset();
         ui.inventory.beltExpanded = !ui.inventory.beltExpanded;
+    }
     if (!ui.inventory.drag && !ui.inventory.split)
         for (int i = 0; i < 4; ++i)
             if (input.belt[i])
                 session_.submit(UseBeltColumn{i});
-    if (handleInventory(input))
+    if (handleSkills(input) || handleInventory(input))
         return true;
     movement_ = unproject(input.movement).unit();
     if (!input.insideViewport)
         return true;
-    if (input.mouse.y < H - HUD) {
+    if (!hudSurface(input.mouse)) {
         if (input.leftPressed || (input.leftHeld && !pickupClick_ && repeatClick_ <= 0)) {
-            click(input.mouse);
+            if (input.shift && ui.leftSkill)
+                session_.submit(CastSkill{*ui.leftSkill, view_.world(input.mouse)});
+            else
+                click(input.mouse);
             repeatClick_ = 1.f / 6.f;
         }
-        if (input.rightHeld && !inventoryRight_)
-            session_.submit(CastSkill{ui.hotbar.at(ui.selected), view_.world(input.mouse)});
-        for (int i = 0; i < int(hotbarSlots); ++i)
-            if (input.skills[i])
-                session_.submit(CastSkill{ui.hotbar[i], view_.world(input.mouse)});
-    } else if (input.leftPressed) {
-        for (int i = 0; i < int(hotbarSlots); ++i)
-            if (CheckCollisionPointRec(rv(input.mouse), skillSlot(i)))
-                ui.selected = i;
+        if (input.rightHeld && !inventoryRight_) {
+            if (ui.rightSkill)
+                session_.submit(CastSkill{*ui.rightSkill, view_.world(input.mouse)});
+            else
+                for (const auto &enemy : session_.state().area.enemies)
+                    if (enemy.hp > 0 && session_.active(enemy.pos) &&
+                        (view_.screen(enemy.pos) - Vec{0, 25} - input.mouse).length() < 24) {
+                        session_.submit(Attack{enemy.id});
+                        break;
+                    }
+        }
     }
     return true;
 }

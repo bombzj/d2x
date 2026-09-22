@@ -3,7 +3,7 @@
 #include "graphics.hpp"
 #include <numbers>
 namespace d2x {
-inline constexpr int W = 1066, H = 680, HUD = 106;
+inline constexpr int W = 1066, H = 680, HUD = 74;
 inline constexpr float pi = std::numbers::pi_v<float>;
 inline constexpr Color gold{196, 164, 102, 255}, parchment{209, 196, 162, 255};
 inline Vector2 rv(Vec v) {
@@ -27,10 +27,6 @@ int direction(Vec look, int count);
 void sprite(const Sprite *sprite, Vec position, Color tint = WHITE);
 void frame(Rectangle bounds, Color border = gold);
 void diamond(Vec position, float radius, Color color);
-void icon(int id, Vec position, bool hot, float time);
-inline Rectangle skillSlot(int i) {
-    return {355.f + i * 61, H - 94.f, 56, 60};
-}
 inline constexpr int worldPageSize = 8;
 inline Rectangle travelSlot(int i) {
     return {W / 2.f - 325, 144.f + i * 49, 650, 44};

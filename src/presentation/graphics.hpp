@@ -25,7 +25,8 @@ class Graphics {
     Archives &archives;
 
   public:
-    explicit Graphics(Archives &archives);
+    explicit Graphics(Archives &archives,
+                      const std::string &palettePath = "data/global/palette/act1/pal.dat");
     ~Graphics();
     Graphics(const Graphics &) = delete;
     Graphics &operator=(const Graphics &) = delete;
