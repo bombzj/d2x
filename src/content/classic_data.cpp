@@ -1,4 +1,5 @@
 #include "classic_data.hpp"
+#include "equipment_data.hpp"
 #include <algorithm>
 #include <stdexcept>
 
@@ -64,6 +65,8 @@ ClassicData loadClassicData(Archives &archives) {
             base.level = number("level");
             base.cost = number("cost");
             base.speed = number("speed");
+            base.strengthBonus = number("strbonus");
+            base.dexterityBonus = number("dexbonus");
             base.block = number("block");
             base.sockets = number("gemsockets");
             base.rarity = number("rarity");
@@ -115,6 +118,8 @@ ClassicData loadClassicData(Archives &archives) {
         if (item.beltRows < 1 || item.beltRows > 4)
             throw std::runtime_error("Missing original belt layout: " + std::string(shape));
     }
+    if (lod)
+        loadEquipmentDefinitions(items, tables.at("itemtypes"), tables);
     ClassicData data{ItemCatalog(std::move(items)),
                      std::move(tables),
                      {},

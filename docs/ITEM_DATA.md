@@ -4,7 +4,9 @@
 
 地图阶段新增 `lod-named-txt-v1` 适配器，用户完整包实际导入 659 条物品、734 条怪物、852 条 TreasureClassEx，并读取 `itemtypes.txt`。物品 type 保留命名类型；腰带容量由 armor.belt 指向 belts.txt 的原始行。TC 保留 Picks、NoDrop、group、level、四种品质修正和 Item1–10/Prob1–10，怪物按名称引用 TC，空引用保持为空。
 
-`d2x_assets assets/mpq2 drops fallen1` 可查看实际分支。例如普通沉沦魔 TC1 指向 Act 1 H2H A，原表为 Picks=1、NoDrop=100，四个分支权重依次 21／16／21／2。这些是原表权重，不是完整最终物品掉率；递归 TC、自动类别、玩家数修正、品质和物品生成仍未执行。
+`d2x_assets assets/mpq2 drops fallen1` 可查看实际分支。例如普通沉沦魔 TC1 指向 Act 1 H2H A，原表为 Picks=1、NoDrop=100，四个分支权重依次 21／16／21／2。这些是原表权重，不是完整最终物品掉率。
+
+当前 `d2x_assets assets/mpq2 treasure "Act 1 Champ A" [seed] [monster-level]` 执行单人 TC 选择，包含正负 Picks、NoDrop、递归、四项品质修正继承，以及从 ItemTypes／物品原表生成的 160 个自动类别；指定等级时仅升级根 TC。输出原权重、最终入口、选择路径和随机状态，区分基础物品与未解析 token。尚未执行品质生成、条目附加参数、六件实例创建上限、金币和数量，也没有接入死亡生成；不能将查询路径当作完整最终掉率或逐随机流原版复现。现有游戏仍不生成怪物物品，详见核心 STATUS。
 
 以下保留旧 1.04 试玩适配器的说明。两种结构分别识别，启动使用同一套 MPQ，不混表；读取更多数据不表示全部装备和资料片玩法已经实现。
 

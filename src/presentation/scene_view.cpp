@@ -38,6 +38,7 @@ void SceneView::notice(std::string text, bool error) {
     view_.noticeTime = 4;
 }
 void SceneView::sessionRestored() {
+    assets_.loadInventoryArt(session_.inventory());
     view_.inventory = {};
     view_.travelMenu = view_.help = false;
     view_.skillPicker.reset();
@@ -129,6 +130,8 @@ void SceneView::advance(float dt) {
                         name += " x" + std::to_string(value.quantity);
                     notice("Picked up: " + name, false);
                 } else if constexpr (std::is_same_v<T, ItemChange>) {
+                    if (value.kind == ItemChangeKind::Created)
+                        assets_.loadInventoryArt(session_.inventory());
                     landingAge_.erase(value.item);
                     if (value.after)
                         if (auto ground = std::get_if<GroundLocation>(&*value.after);
@@ -155,6 +158,7 @@ void SceneView::advance(float dt) {
         return location && (location->container == session_.playerContainers().backpack ||
                             location->container == session_.playerContainers().belt ||
                             location->container == session_.playerContainers().beltEquipment ||
+                            location->container == session_.playerContainers().equipment ||
                             location->container == view_.inventory.storage);
     };
     if (!inBackpack(view_.inventory.selected))

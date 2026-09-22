@@ -2,6 +2,57 @@
 #include <type_traits>
 
 namespace d2x {
+EquipmentActor GameSession::equipmentActor() const {
+    const auto &characters = content_.tables.at("charstats");
+    for (size_t row = 0; row < characters.rows().size(); ++row)
+        if (characters.value(row, "class") == "Barbarian") {
+            auto strength = characters.number(row, "str");
+            auto dexterity = characters.number(row, "dex");
+            if (!strength || !dexterity || *strength < 0 || *dexterity < 0)
+                throw std::runtime_error("Invalid Barbarian equipment attributes");
+            auto block = characters.number(row, "BlockFactor");
+            if (!block || *block < 0)
+                throw std::runtime_error("Invalid Barbarian block factor");
+            return {"bar", *strength, *dexterity, 1, *block};
+        }
+    throw std::runtime_error("Missing Barbarian character definition");
+}
+void GameSession::createStarterEquipment() {
+    if (content_.profile != "lod-named-txt-v1")
+        return;
+    const auto &characters = content_.tables.at("charstats");
+    const auto actor = equipmentActor();
+    InventoryAccess access;
+    access.actor = state().player.id;
+    for (size_t row = 0; row < characters.rows().size(); ++row) {
+        if (characters.value(row, "class") != "Barbarian")
+            continue;
+        for (int index = 1; index <= 10; ++index) {
+            auto field = "item" + std::to_string(index);
+            auto body = characters.value(row, field + "loc");
+            if (body.empty())
+                continue;
+            auto bodySlot = equipmentSlotFromCode(body);
+            if (!bodySlot)
+                throw std::runtime_error("Unsupported starter body location");
+            auto code = characters.value(row, field);
+            int quantity = characters.number(row, field + "count").value_or(0);
+            if (quantity <= 0)
+                throw std::runtime_error("Invalid starter equipment quantity");
+            auto created =
+                inventory_.createItem(code, unsigned(quantity), AutoPlace{playerContainers_.backpack});
+            if (!created)
+                throw std::runtime_error("Cannot create original starter equipment: " + std::string(code));
+            auto handle = inventory_.item(created.item)->handle();
+            auto slot = *bodySlot;
+            auto equipped = slot == EquipmentSlot::Belt
+                                ? inventory_.equipBelt(EquipBelt{handle}, playerContainers_, access, actor)
+                                : inventory_.equip(EquipItem{handle, slot}, playerContainers_, access, actor);
+            if (!equipped)
+                throw std::runtime_error("Cannot equip original starter item: " + std::string(code));
+        }
+    }
+}
 bool GameSession::inventorySourceAllowed(EntityId id) const {
     const auto *item = inventory_.item(id);
     if (item)
@@ -40,9 +91,11 @@ InventoryError GameSession::previewInventory(const GameCommand &command) const {
                 if (!inventorySourceAllowed(intent.item.id))
                     return InventoryError::AccessDenied;
                 return inventory_.preview(intent, inventoryAccess());
-            } else if constexpr (std::is_same_v<T, EquipBelt>)
-                return inventory_.preview(intent, playerContainers_, inventoryAccess());
-            else if constexpr (std::is_same_v<T, UseItem>) {
+            } else if constexpr (std::is_same_v<T, EquipItem> || std::is_same_v<T, EquipBelt>) {
+                if (intent.destination && !inventoryDestinationAllowed(*intent.destination))
+                    return InventoryError::InvalidLocation;
+                return inventory_.preview(intent, playerContainers_, inventoryAccess(), equipmentActor());
+            } else if constexpr (std::is_same_v<T, UseItem>) {
                 auto error = inventory_.previewDrink(intent.item, inventoryAccess());
                 if (error != InventoryError::None)
                     return error;
@@ -60,10 +113,11 @@ void GameSession::executeInventory(const GameCommand &command) {
             using T = std::decay_t<decltype(intent)>;
             if constexpr (std::is_same_v<T, MoveItem> || std::is_same_v<T, SwapItems> ||
                           std::is_same_v<T, SplitStack> || std::is_same_v<T, MergeStacks> ||
-                          std::is_same_v<T, EquipBelt> || std::is_same_v<T, TransferItem>) {
+                          std::is_same_v<T, EquipBelt> || std::is_same_v<T, TransferItem> ||
+                          std::is_same_v<T, EquipItem>) {
                 EntityId requested;
                 if constexpr (std::is_same_v<T, MoveItem> || std::is_same_v<T, EquipBelt> ||
-                              std::is_same_v<T, TransferItem>)
+                              std::is_same_v<T, TransferItem> || std::is_same_v<T, EquipItem>)
                     requested = intent.item.id;
                 else if constexpr (std::is_same_v<T, SwapItems>)
                     requested = intent.first.id;
@@ -82,8 +136,13 @@ void GameSession::executeInventory(const GameCommand &command) {
                     publishInventory(inventory_.split(intent, inventoryAccess()), requested);
                 else if constexpr (std::is_same_v<T, TransferItem>)
                     publishInventory(inventory_.transfer(intent, inventoryAccess()), requested);
+                else if constexpr (std::is_same_v<T, EquipItem>)
+                    publishInventory(
+                        inventory_.equip(intent, playerContainers_, inventoryAccess(), equipmentActor()),
+                        requested);
                 else if constexpr (std::is_same_v<T, EquipBelt>) {
-                    auto result = inventory_.equipBelt(intent, playerContainers_, inventoryAccess());
+                    auto result =
+                        inventory_.equipBelt(intent, playerContainers_, inventoryAccess(), equipmentActor());
                     bool applied = bool(result);
                     publishInventory(std::move(result), requested);
                     if (applied)

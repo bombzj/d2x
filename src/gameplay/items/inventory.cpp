@@ -22,6 +22,11 @@ EntityId InventoryService::itemAt(EntityId id, Cell cell) const {
         auto location = std::get_if<ContainerLocation>(&instance.location);
         if (!location || location->container != id)
             continue;
+        if (c->spec.kind == ContainerKind::Equipment) {
+            if (location->cell == cell)
+                return key;
+            continue;
+        }
         const auto &def = *catalog_.find(instance.definition);
         if (cell.x >= location->cell.x && cell.x < location->cell.x + def.width &&
             cell.y >= location->cell.y && cell.y < location->cell.y + def.height)
@@ -52,6 +57,10 @@ EntityId InventoryService::createContainer(ContainerSpec specification) {
     if (specification.kind == ContainerKind::Belt && (specification.columns != 4 || specification.rows > 4))
         throw std::invalid_argument("Belt must have four columns and one to four rows");
     switch (specification.kind) {
+    case ContainerKind::Equipment:
+        if (specification.columns != int(EquipmentSlot::Count) || specification.rows != 1)
+            throw std::invalid_argument("Invalid equipment container dimensions");
+        break;
     case ContainerKind::BeltEquipment:
     case ContainerKind::Backpack:
     case ContainerKind::Belt:
@@ -72,6 +81,7 @@ PlayerContainers InventoryService::createPlayerContainers(EntityId player) {
     result.belt = createContainer({player, ContainerKind::Belt, 4, 1});
     result.stash = createContainer({player, ContainerKind::Stash, 6, 4});
     result.beltEquipment = createContainer({player, ContainerKind::BeltEquipment, 2, 1});
+    result.equipment = createContainer({player, ContainerKind::Equipment, int(EquipmentSlot::Count), 1});
     return result;
 }
 bool InventoryService::overlaps(const ItemDefinition &a, const ItemLocation &aPosition,
@@ -106,7 +116,7 @@ InventoryError InventoryService::checkAccess(const ItemLocation &location,
         auto c = container(std::get<ContainerLocation>(location).container);
         if (!c)
             return InventoryError::UnknownContainer;
-        if (c->spec.kind == ContainerKind::BeltEquipment)
+        if (c->spec.kind == ContainerKind::BeltEquipment || c->spec.kind == ContainerKind::Equipment)
             return InventoryError::RestrictedItem;
         if (c->spec.kind == ContainerKind::Chest)
             return access.openContainer == c->id ? InventoryError::None : InventoryError::AccessDenied;
@@ -141,7 +151,7 @@ InventoryError InventoryService::checkPlacement(const ItemDefinition &definition
     auto c = container(position.container);
     if (!c)
         return InventoryError::UnknownContainer;
-    if (c->spec.kind == ContainerKind::BeltEquipment)
+    if (c->spec.kind == ContainerKind::BeltEquipment || c->spec.kind == ContainerKind::Equipment)
         return InventoryError::RestrictedItem;
     if (c->spec.kind == ContainerKind::Belt &&
         (!definition.beltAllowed || definition.width != 1 || definition.height != 1))
@@ -192,6 +202,12 @@ InventoryError InventoryService::resolve(const ItemDefinition &def, const ItemDe
 }
 const char *inventoryErrorText(InventoryError error) {
     switch (error) {
+    case InventoryError::RequirementsNotMet:
+        return "Equipment requirements are not met.";
+    case InventoryError::WrongClass:
+        return "This equipment is for another class.";
+    case InventoryError::UnsupportedEquipment:
+        return "This equipment's rules are not implemented yet.";
     case InventoryError::UnsupportedUse:
         return "This item cannot be used yet.";
     case InventoryError::None:

@@ -95,6 +95,7 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
         scalar(cooldown);
     require(player.dead == (player.hp == 0), "player death state");
     skill(player.lastSkill);
+    require(player.nextWeapon < 2, "active melee hand");
     // Inactive leap endpoints may belong to a previously visited region. Only an
     // active leap uses them for movement; otherwise require finite values only.
     for (auto point : {player.leapStart, player.leapEnd}) {
@@ -206,6 +207,22 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
                             [&](const Enemy &e) { return e.id == player.attackTarget; }),
                 "attack target");
     inventory_.validateSnapshot(s.inventory, s.containers, player.id);
+    EntityIds validationIds;
+    InventoryService equipmentInventory(validationIds, inventory_.catalog());
+    equipmentInventory.state_ = s.inventory;
+    InventoryAccess equipmentAccess;
+    equipmentAccess.actor = player.id;
+    if (auto belt = equipmentInventory.equipped(s.containers, EquipmentSlot::Belt))
+        require(equipmentInventory.equipmentRequirements(equipmentInventory.item(belt)->handle(),
+                                                         equipmentActor()) == InventoryError::None,
+                "belt requirements");
+    for (auto id : equipmentInventory.contents(s.containers.equipment)) {
+        const auto &item = *equipmentInventory.item(id);
+        auto slot = EquipmentSlot(std::get<ContainerLocation>(item.location).cell.x);
+        auto result = equipmentInventory.planEquipment(EquipItem{item.handle(), slot}, s.containers,
+                                                       equipmentAccess, equipmentActor(), nullptr);
+        require(bool(result) && result.changes.empty(), "equipment requirements or hand combination");
+    }
     for (const auto &[id, container] : s.inventory.containers)
         registerId(id);
     for (const auto &[id, item] : s.inventory.items) {
@@ -227,10 +244,15 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
 }
 void GameSession::restore(SessionSnapshot s) {
     int current = validateSnapshot(s);
+    EntityIds validationIds;
+    InventoryService equipmentInventory(validationIds, inventory_.catalog());
+    equipmentInventory.state_ = s.inventory;
+    auto equipmentStats = deriveEquipmentStats(equipmentInventory, s.containers, equipmentActor());
     // All allocation and validation precedes this no-throw commit.
     static_assert(std::is_nothrow_move_assignable_v<WorldState>);
     static_assert(std::is_nothrow_move_assignable_v<InventoryState>);
     simulation_.state_ = std::move(s.world);
+    simulation_.equipmentStats_ = equipmentStats;
     simulation_.grid_ = &regions_[current].map.grid;
     simulation_.rooms_ = &regions_[current].map.activation;
     simulation_.events_.clear();

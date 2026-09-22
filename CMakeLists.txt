@@ -31,11 +31,16 @@ target_sources(d2x_world PRIVATE
 target_link_libraries(d2x_world PUBLIC d2x_content d2x_navigation)
 
 add_library(d2x_items
+  src/gameplay/items/equipment_rules.cpp
+  src/gameplay/items/equipment.cpp
+  src/gameplay/items/equipment_stats.cpp
+  src/gameplay/items/durability.cpp
   src/gameplay/items/definitions.cpp
   src/gameplay/items/inventory.cpp src/gameplay/items/transfers.cpp src/gameplay/items/collection.cpp
   src/gameplay/items/preview.cpp src/gameplay/items/belt.cpp src/gameplay/items/inventory_snapshot.cpp)
 target_link_libraries(d2x_items PUBLIC d2x_core)
 add_library(d2x_content src/content/classic_data.cpp src/content/lod_data.cpp src/content/world_catalog.cpp src/content/monster_catalog.cpp)
+target_sources(d2x_content PRIVATE src/content/equipment_data.cpp)
 target_link_libraries(d2x_content PUBLIC d2x_resources d2x_items)
 
 # Rules and state compile without raylib, StormLib, a window or an archive.
@@ -43,6 +48,7 @@ add_library(d2x_gameplay
   src/gameplay/model/definitions.cpp src/gameplay/simulation/simulation.cpp src/gameplay/player/movement.cpp
   src/gameplay/combat/combat.cpp src/gameplay/skills/casting.cpp src/gameplay/monsters/monster_ai.cpp src/gameplay/loot/loot.cpp src/gameplay/consumables/potions.cpp)
 target_sources(d2x_gameplay PRIVATE src/gameplay/monsters/monster_spawn.cpp src/gameplay/monsters/monster_activation.cpp)
+target_sources(d2x_gameplay PRIVATE src/gameplay/loot/treasure.cpp)
 target_sources(d2x_gameplay PRIVATE
   src/gameplay/skills/definitions.cpp
   src/gameplay/skills/fireball.cpp src/gameplay/skills/frost_nova.cpp
@@ -69,7 +75,7 @@ target_link_libraries(d2x_presentation PUBLIC d2x_session raylib)
 add_executable(d2x src/main.cpp src/app/application.cpp src/app/options.cpp src/app/input.cpp)
 target_link_libraries(d2x PRIVATE d2x_presentation d2x_persistence)
 add_executable(d2x_assets src/asset_tool.cpp)
-target_link_libraries(d2x_assets PRIVATE d2x_content d2x_world d2x_population raylib)
+target_link_libraries(d2x_assets PRIVATE d2x_content d2x_world d2x_population d2x_persistence raylib)
 foreach(target IN ITEMS d2x_resources d2x_navigation d2x_world d2x_items d2x_content d2x_gameplay d2x_population d2x_session d2x_persistence d2x_presentation d2x d2x_assets)
   if(MSVC)
     target_compile_options(${target} PRIVATE /W4 /utf-8)

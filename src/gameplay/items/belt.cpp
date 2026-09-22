@@ -38,7 +38,8 @@ std::optional<Cell> InventoryService::beltSpace(EntityId belt, std::string_view 
     return std::nullopt;
 }
 InventoryResult InventoryService::planBelt(const EquipBelt &command, const PlayerContainers &containers,
-                                           const InventoryAccess &access, InventoryState *replacement) const {
+                                           const InventoryAccess &access, const EquipmentActor &actor,
+                                           InventoryState *replacement) const {
     if (auto error = checkHandle(command.item); error != InventoryError::None)
         return failure(error);
     if (!access.alive || !access.actor)
@@ -61,6 +62,11 @@ InventoryResult InventoryService::planBelt(const EquipBelt &command, const Playe
     if (!definition->beltRows)
         return failure(InventoryError::RestrictedItem);
     bool removing = location->container == containers.beltEquipment;
+    if (!removing && command.destination)
+        return failure(InventoryError::InvalidRequest);
+    if (!removing)
+        if (auto error = equipmentRequirements(command.item, actor); error != InventoryError::None)
+            return failure(error);
     int rows = removing ? 1 : definition->beltRows;
     // Plan against a private snapshot. No IDs are allocated, and failed previews
     // or capacity changes never mutate live items, revisions or container sizes.
@@ -81,10 +87,13 @@ InventoryResult InventoryService::planBelt(const EquipBelt &command, const Playe
         return true;
     };
     if (removing) {
-        auto space = draft.findSpace(containers.backpack, source.definition);
-        if (!space)
-            return failure(InventoryError::NoSpace);
-        if (!relocate(source.id, ContainerLocation{containers.backpack, *space}))
+        ItemDestination target = command.destination.value_or(AutoPlace{containers.backpack});
+        if (auto error = draft.checkDestinationAccess(target, access); error != InventoryError::None)
+            return failure(error);
+        ItemLocation destination;
+        if (auto error = draft.resolve(*definition, target, destination, source.id); error != InventoryError::None)
+            return failure(error);
+        if (!relocate(source.id, destination))
             return failure(InventoryError::RevisionExhausted);
     } else {
         auto previous = itemAt(containers.beltEquipment, {0, 0});
@@ -116,13 +125,13 @@ InventoryResult InventoryService::planBelt(const EquipBelt &command, const Playe
     return result;
 }
 InventoryError InventoryService::preview(const EquipBelt &command, const PlayerContainers &containers,
-                                         const InventoryAccess &access) const {
-    return planBelt(command, containers, access, nullptr).error;
+                                         const InventoryAccess &access, const EquipmentActor &actor) const {
+    return planBelt(command, containers, access, actor, nullptr).error;
 }
 InventoryResult InventoryService::equipBelt(const EquipBelt &command, const PlayerContainers &containers,
-                                            const InventoryAccess &access) {
+                                            const InventoryAccess &access, const EquipmentActor &actor) {
     InventoryState next;
-    auto result = planBelt(command, containers, access, &next);
+    auto result = planBelt(command, containers, access, actor, &next);
     if (result)
         state_ = std::move(next);
     return result;

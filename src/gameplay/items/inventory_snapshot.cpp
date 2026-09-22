@@ -11,12 +11,13 @@ void InventoryService::validateSnapshot(const InventoryState &state, const Playe
         if (!condition)
             throw std::runtime_error(std::string("Invalid save inventory: ") + reason);
     };
-    const std::array ids{containers.backpack, containers.belt, containers.stash, containers.beltEquipment};
+    const std::array ids{containers.backpack, containers.belt, containers.stash, containers.beltEquipment,
+                         containers.equipment};
     const std::array kinds{ContainerKind::Backpack, ContainerKind::Belt, ContainerKind::Stash,
-                           ContainerKind::BeltEquipment};
-    const std::array widths{10, 4, 6, 2}, heights{4, 0, 4, 1};
+                           ContainerKind::BeltEquipment, ContainerKind::Equipment};
+    const std::array widths{10, 4, 6, 2, int(EquipmentSlot::Count)}, heights{4, 0, 4, 1, 1};
     std::set<EntityId> unique(ids.begin(), ids.end());
-    require(unique.size() == 4 && state.containers.size() == 4, "player container set");
+    require(unique.size() == ids.size() && state.containers.size() == ids.size(), "player container set");
     std::map<EntityId, std::vector<bool>> occupied;
     for (size_t i = 0; i < ids.size(); ++i) {
         auto found = state.containers.find(ids[i]);
@@ -33,6 +34,12 @@ void InventoryService::validateSnapshot(const InventoryState &state, const Playe
         require(bool(id) && id == item.id && !state.containers.contains(id), "item ID");
         auto def = catalog_.find(item.definition);
         require(def != nullptr, "unknown definition");
+        if (def->family == ItemFamily::Armor)
+            require(def->base.minDefense && def->base.maxDefense &&
+                        item.defense >= *def->base.minDefense && item.defense <= *def->base.maxDefense,
+                    "rolled armor defense");
+        else
+            require(item.defense == 0, "defense on non-armor item");
         require(item.quantity > 0 && item.quantity <= def->maxStack &&
                     item.durability <= def->maxDurability && item.revision > 0 && item.level > 0 &&
                     item.level <= 99 && int(item.quality) >= 0 &&
@@ -45,6 +52,16 @@ void InventoryService::validateSnapshot(const InventoryState &state, const Playe
         require(found != state.containers.end(), "item container reference");
         const auto &c = found->second.spec;
         auto cell = location->cell;
+        if (c.kind == ContainerKind::Equipment) {
+            require(cell.y == 0 && cell.x >= 0 && cell.x < int(EquipmentSlot::Count) &&
+                        EquipmentSlot(cell.x) != EquipmentSlot::Belt &&
+                        def->equipment.fits(EquipmentSlot(cell.x)) && item.quality == ItemQuality::Normal,
+                    "equipment slot eligibility");
+            auto &cells = occupied.at(location->container);
+            require(!cells[size_t(cell.x)], "overlapping equipment");
+            cells[size_t(cell.x)] = true;
+            continue;
+        }
         require(cell.x >= 0 && cell.y >= 0 && def->width <= c.columns && def->height <= c.rows &&
                     cell.x <= c.columns - def->width && cell.y <= c.rows - def->height,
                 "item rectangle");

@@ -87,8 +87,31 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
         itemGround.emplace(code, std::move(ground));
         itemIcons.emplace(code, std::move(icon));
     }
+    loadInventoryArt(session.inventory());
     graphics_.releaseDecoded();
     uiGraphics_.releaseDecoded();
+}
+void SceneAssets::loadInventoryArt(const InventoryService &inventory) {
+    for (const auto &[id, item] : inventory.state().items) {
+        const auto &definition = *inventory.catalog().find(item.definition);
+        if (auto icon = itemIcons.find(item.definition);
+            icon == itemIcons.end() || icon->second.frames.empty()) {
+            auto image = graphics_.single(definition.icon);
+            if (image.frames.empty())
+                throw std::runtime_error("Original inventory art missing: " + item.definition);
+            itemIcons.insert_or_assign(item.definition, std::move(image));
+        }
+        if (auto ground = itemGround.find(item.definition);
+            ground == itemGround.end() || ground->second.frames.empty()) {
+            auto image = graphics_.single(definition.groundAnimation);
+            if (image.frames.empty())
+                throw std::runtime_error("Original ground art missing: " + item.definition);
+            for (auto &frame : image.frames)
+                frame.y -= frame.texture.height;
+            itemGround.insert_or_assign(item.definition, std::move(image));
+        }
+    }
+    graphics_.releaseDecoded();
 }
 void SceneAssets::loadProps(const Region &region) {
     for (const auto &object : region.objects) {

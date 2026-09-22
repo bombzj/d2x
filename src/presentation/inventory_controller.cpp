@@ -41,6 +41,8 @@ bool SceneController::queueInventory(GameCommand command, EntityId source) {
         ui.pendingMessage = "Stacks merged.";
     else if (std::holds_alternative<EquipBelt>(command))
         ui.pendingMessage = "Belt equipment changed.";
+    else if (std::holds_alternative<EquipItem>(command))
+        ui.pendingMessage = "Equipment changed.";
     else if (std::holds_alternative<TransferItem>(command))
         ui.pendingMessage = "Item transferred.";
     else if (std::holds_alternative<UseItem>(command))
@@ -145,24 +147,45 @@ bool SceneController::handleInventory(const FrameInput &input) {
             break;
         }
     }
-    bool equipment = ui.open && CheckCollisionPointRec(rv(input.mouse), equippedBeltBounds());
+    auto equipmentSlot = ui.open ? equipmentAt(input.mouse) : std::nullopt;
+    bool equipment = equipmentSlot.has_value();
     bool inBelt = CheckCollisionPointRec(rv(input.mouse), beltBounds(rows));
     if (!input.insideViewport || (!inBelt && !inventorySurface(ui, input.mouse)))
         return inventoryClick_;
     if (input.rightHeld)
         inventoryRight_ = true;
     EntityId hovered = hitGrid     ? inventory.itemAt(hitGrid->container, *cell)
-                       : equipment ? inventory.itemAt(containers.beltEquipment, {0, 0})
+                       : equipment ? inventory.equipped(containers, *equipmentSlot)
                                    : EntityId{};
+    auto changeEquipment = [&](const ItemInstance &item) {
+        const auto &definition = *inventory.catalog().find(item.definition);
+        auto location = std::get_if<ContainerLocation>(&item.location);
+        if (definition.beltRows)
+            return queueInventory(EquipBelt{item.handle()}, item.id);
+        if (location && location->container == containers.equipment)
+            return queueInventory(EquipItem{item.handle(), std::nullopt}, item.id);
+        std::optional<EquipmentSlot> candidate;
+        for (int index = 0; index < int(EquipmentSlot::Count); ++index) {
+            auto slot = EquipmentSlot(index);
+            if (slot == EquipmentSlot::Belt || !definition.equipment.fits(slot))
+                continue;
+            if (!candidate)
+                candidate = slot;
+            if (!inventory.equipped(containers, slot)) {
+                candidate = slot;
+                break;
+            }
+        }
+        if (candidate)
+            return queueInventory(EquipItem{item.handle(), candidate}, item.id);
+        return queueInventory(UseItem{item.handle()}, item.id);
+    };
     if (input.rightPressed && !ui.pending) {
         if (auto item = inventory.item(hovered)) {
-            auto def = inventory.catalog().find(item->definition);
             if (hitGrid && hitGrid->container == ui.storage)
                 view_.notice("Move this item to your backpack before using it.", true);
-            else if (def->beltRows)
-                queueInventory(EquipBelt{item->handle()}, item->id);
             else
-                queueInventory(UseItem{item->handle()}, item->id);
+                changeEquipment(*item);
         } else
             ui.selected = {};
         return true;
@@ -181,7 +204,7 @@ bool SceneController::handleInventory(const FrameInput &input) {
                     EntityId target = hitGrid->container == ui.storage ? backpack : ui.storage;
                     queueInventory(TransferItem{item->handle(), target}, item->id);
                 } else if (equipment || def->beltRows)
-                    queueInventory(EquipBelt{item->handle()}, item->id);
+                    changeEquipment(*item);
                 else if (hitGrid && hitGrid->container == backpack && def->beltAllowed) {
                     auto space = inventory.beltSpace(containers.belt, def->code, false);
                     if (space)
@@ -191,13 +214,18 @@ bool SceneController::handleInventory(const FrameInput &input) {
                         view_.notice("No suitable belt column has room.", true);
                 } else
                     queueInventory(MoveItem{item->handle(), AutoPlace{backpack}}, item->id);
-            } else if (!equipment && !input.leftReleased) {
+            } else if (!input.leftReleased) {
                 const auto &location = std::get<ContainerLocation>(item->location);
-                auto bounds = hitGrid->itemBounds(location.cell, *def);
-                ui.drag = InventoryDrag{item->handle(),
-                                        {cell->x - location.cell.x, cell->y - location.cell.y},
-                                        input.mouse,
-                                        input.mouse - Vec{bounds.x, bounds.y}};
+                if (equipment)
+                    ui.drag = InventoryDrag{item->handle(), {}, input.mouse,
+                                            {def->width * inventoryCellSize / 2,
+                                             def->height * inventoryCellSize / 2}};
+                else {
+                    auto bounds = hitGrid->itemBounds(location.cell, *def);
+                    ui.drag = InventoryDrag{item->handle(),
+                                            {cell->x - location.cell.x, cell->y - location.cell.y},
+                                            input.mouse, input.mouse - Vec{bounds.x, bounds.y}};
+                }
             }
         }
         return true;
@@ -207,20 +235,33 @@ bool SceneController::handleInventory(const FrameInput &input) {
     const auto *item = inventory.item(ui.selected);
     if (!item)
         return true;
+    auto location = std::get_if<ContainerLocation>(&item->location);
+    bool worn = location && (location->container == containers.equipment ||
+                             location->container == containers.beltEquipment);
+    auto relocate = [&](ItemDestination destination) {
+        if (worn) {
+            if (location->container == containers.beltEquipment)
+                return queueInventory(EquipBelt{item->handle(), std::move(destination)}, item->id);
+            return queueInventory(EquipItem{item->handle(), std::nullopt, std::move(destination)}, item->id);
+        }
+        return queueInventory(MoveItem{item->handle(), std::move(destination)}, item->id);
+    };
     if (ui.storage && CheckCollisionPointRec(rv(input.mouse), storageTransfer())) {
         auto at = std::get_if<ContainerLocation>(&item->location);
-        if (at)
+        if (worn)
+            relocate(AutoPlace{ui.storage});
+        else if (at)
             queueInventory(TransferItem{item->handle(), at->container == ui.storage ? backpack : ui.storage},
                            item->id);
     } else if (CheckCollisionPointRec(rv(input.mouse), inventoryButton(0)))
-        queueInventory(MoveItem{item->handle(), AutoPlace{backpack}}, item->id);
+        relocate(AutoPlace{backpack});
     else if (CheckCollisionPointRec(rv(input.mouse), inventoryButton(1))) {
-        if (item->quantity > 1)
+        if (!worn && item->quantity > 1)
             ui.split = SplitDialog{item->handle(), std::max(1u, item->quantity / 2),
                                    std::get<ContainerLocation>(item->location).container};
     } else if (CheckCollisionPointRec(rv(input.mouse), inventoryButton(2))) {
         if (auto ground = session_.dropLocation())
-            queueInventory(MoveItem{item->handle(), *ground}, item->id);
+            relocate(*ground);
         else
             view_.notice("Cannot drop an item here.", true);
     }

@@ -1,4 +1,5 @@
 #pragma once
+#include "equipment_rules.hpp"
 #include <map>
 #include <optional>
 #include <string>
@@ -12,6 +13,7 @@ struct ItemBaseStats {
     std::optional<int> minDamage, maxDamage, twoHandMin, twoHandMax, throwMin, throwMax;
     std::optional<int> minDefense, maxDefense, requiredStrength, requiredDexterity, requiredLevel;
     std::optional<int> level, cost, speed, block, sockets, rarity, spawnable;
+    std::optional<int> strengthBonus, dexterityBonus;
     std::string sourceTable;
     size_t sourceRow = 0;
 };
@@ -25,6 +27,7 @@ struct ItemDefinition {
     bool autoBelt = false;
     int beltRows = 0; // Zero is not an equippable belt; row zero is the ready row.
     ItemBaseStats base;
+    EquipmentDefinition equipment;
 };
 // Immutable once constructed. Instance IDs and definition codes are different identities.
 class ItemCatalog {

@@ -57,6 +57,7 @@ void Simulation::spawnEnemies(std::span<const MonsterSpawn> spawns) {
     for (const auto &spawn : spawns) {
         Enemy enemy;
         enemy.id = ids_.allocate();
+        enemy.combatRandom = (uint64_t(666) << 32) | (state_.population.seed ^ uint32_t(enemy.id.value));
         enemy.identity = spawn.identity;
         enemy.kind = spawn.kind;
         enemy.pos = spawn.position;

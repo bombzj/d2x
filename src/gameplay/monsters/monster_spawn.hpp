@@ -25,6 +25,10 @@ struct MonsterImplementation {
     MonsterKind kind;
     bool substitute;
 };
+struct MonsterAccuracy {
+    int level = 1;
+    int attackRating = 0;
+};
 // Explicit implementation registry: add real actors here as their behaviour/assets land.
 MonsterImplementation monsterImplementation(const std::string &code);
 const char *monsterRankName(MonsterRank rank);

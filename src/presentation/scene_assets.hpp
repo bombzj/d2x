@@ -27,6 +27,7 @@ class SceneAssets {
     GpuAnimation fireball, fireburst, panel, cursor, inventoryPanel, storagePanel, beltPanel, beltSocket,
         orbs, globeOverlap, runButton, button;
     SceneAssets(Archives &archives, const GameSession &session);
+    void loadInventoryArt(const InventoryService &inventory);
     void collectMapVariants(Archives &archives, const WorldCatalog &catalog, const MonsterCatalog &monsters);
 };
 } // namespace d2x

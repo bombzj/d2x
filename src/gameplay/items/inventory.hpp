@@ -22,7 +22,11 @@ class InventoryService {
                   const ItemLocation &bPosition) const;
     InventoryResult planTransfer(const TransferItem &command, const InventoryAccess &access) const;
     InventoryResult planBelt(const EquipBelt &command, const PlayerContainers &containers,
-                             const InventoryAccess &access, InventoryState *replacement) const;
+                             const InventoryAccess &access, const EquipmentActor &actor,
+                             InventoryState *replacement) const;
+    InventoryResult planEquipment(const EquipItem &command, const PlayerContainers &containers,
+                                  const InventoryAccess &access, const EquipmentActor &actor,
+                                  InventoryState *replacement) const;
 
   public:
     InventoryService(EntityIds &ids, ItemCatalog catalog) : ids_(ids), catalog_(std::move(catalog)) {}
@@ -45,9 +49,17 @@ class InventoryService {
     InventoryError preview(const SplitStack &command, const InventoryAccess &access) const;
     InventoryError preview(const MergeStacks &command, const InventoryAccess &access) const;
     InventoryError preview(const EquipBelt &command, const PlayerContainers &containers,
-                           const InventoryAccess &access) const;
+                           const InventoryAccess &access, const EquipmentActor &actor) const;
     InventoryResult equipBelt(const EquipBelt &command, const PlayerContainers &containers,
-                              const InventoryAccess &access);
+                              const InventoryAccess &access, const EquipmentActor &actor);
+    InventoryError equipmentRequirements(ItemHandle item, const EquipmentActor &actor) const;
+    EntityId equipped(const PlayerContainers &containers, EquipmentSlot slot) const;
+    InventoryError preview(const EquipItem &command, const PlayerContainers &containers,
+                           const InventoryAccess &access, const EquipmentActor &actor) const;
+    InventoryResult equip(const EquipItem &command, const PlayerContainers &containers,
+                          const InventoryAccess &access, const EquipmentActor &actor);
+    InventoryResult wearEquipment(const PlayerContainers &containers, EntityId weapon, bool defending,
+                    uint64_t &randomState);
     std::optional<Cell> beltSpace(EntityId belt, std::string_view code, bool automaticPickup) const;
     InventoryError previewDrink(ItemHandle item, const InventoryAccess &access) const;
     InventoryResult drink(ItemHandle item, const InventoryAccess &access);

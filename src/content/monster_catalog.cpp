@@ -1,4 +1,6 @@
 #include "monster_catalog.hpp"
+#include <algorithm>
+#include <limits>
 #include <stdexcept>
 
 namespace d2x {
@@ -16,6 +18,9 @@ MonsterCatalog::MonsterCatalog(Archives &archives, const DataTable &stats) {
     if (!diagnostics_.empty())
         return;
     DataTable extended(archives.read("data/global/excel/monstats2.txt"));
+    std::optional<DataTable> levels;
+    if (archives.contains("data/global/excel/monlvl.txt"))
+        levels.emplace(archives.read("data/global/excel/monlvl.txt"));
     std::map<std::string, size_t, std::less<>> extendedRows;
     for (size_t row = 0; row < extended.rows().size(); ++row)
         extendedRows.emplace(extended.value(row, "Id"), row);
@@ -40,6 +45,19 @@ MonsterCatalog::MonsterCatalog(Archives &archives, const DataTable &stats) {
         m.partyMax = n("PartyMax");
         m.sparse = n("sparsePopulate");
         m.normalLevel = n("Level");
+        if (auto attack = stats.number(row, "A1TH"); attack && *attack >= 0 && m.normalLevel > 0) {
+            if (n("noRatio"))
+                m.normalAttackRating = *attack;
+            else if (levels && !levels->rows().empty()) {
+                const auto levelRow = std::min(size_t(m.normalLevel), levels->rows().size() - 1);
+                if (auto base = levels->number(levelRow, "L-TH"); base && *base >= 0) {
+                    const auto rating = int64_t(*base) * *attack / 100;
+                    if (rating > std::numeric_limits<int>::max())
+                        throw std::runtime_error("Monster attack rating overflow: " + m.id);
+                    m.normalAttackRating = int(rating);
+                }
+            }
+        }
         m.alignment = n("Align");
         m.enabled = n("enabled") != 0;
         m.randomSpawn = n("isSpawn") != 0;

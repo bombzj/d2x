@@ -2,6 +2,30 @@
 #include <algorithm>
 
 namespace d2x {
+Rectangle equipmentBounds(EquipmentSlot slot) {
+    constexpr std::array<Rectangle, size_t(EquipmentSlot::Count)> bounds{{{135, 8, 54, 51},
+                                                                          {209, 35, 23, 24},
+                                                                          {133, 77, 56, 82},
+                                                                          {20, 47, 55, 112},
+                                                                          {251, 47, 55, 112},
+                                                                          {95, 180, 23, 24},
+                                                                          {209, 180, 23, 24},
+                                                                          {136, 179, 52, 25},
+                                                                          {252, 182, 54, 52},
+                                                                          {21, 181, 54, 53}}};
+    if (size_t(slot) >= bounds.size())
+        return {};
+    auto box = bounds[size_t(slot)];
+    auto panel = inventoryBounds();
+    return {panel.x + box.x * inventoryScale, panel.y + box.y * inventoryScale, box.width * inventoryScale,
+            box.height * inventoryScale};
+}
+std::optional<EquipmentSlot> equipmentAt(Vec mouse) {
+    for (int index = 0; index < int(EquipmentSlot::Count); ++index)
+        if (CheckCollisionPointRec(rv(mouse), equipmentBounds(EquipmentSlot(index))))
+            return EquipmentSlot(index);
+    return std::nullopt;
+}
 std::optional<Cell> inventoryCell(Vec mouse) {
     auto grid = inventoryGrid();
     if (!CheckCollisionPointRec(rv(mouse), grid))
@@ -56,16 +80,34 @@ InventoryDrop inventoryDrop(const GameSession &session, const InventoryUi &ui, V
     auto sourceGrid = std::find_if(grids.begin(), grids.end(), [&](const auto &grid) {
         return location && grid.container == location->container;
     });
-    if (sourceGrid == grids.end()) {
+    const auto &containers = session.playerContainers();
+    bool equipped = location && (location->container == containers.equipment ||
+                                  location->container == containers.beltEquipment);
+    if (sourceGrid == grids.end() && !equipped) {
         drop.error = InventoryError::AccessDenied;
         drop.description = inventoryErrorText(drop.error);
         return drop;
     }
     const auto &definition = *inventory.catalog().find(source->definition);
-    if (ui.open && definition.beltRows && CheckCollisionPointRec(rv(mouse), equippedBeltBounds())) {
-        drop.command = EquipBelt{source->handle()};
-        drop.bounds = equippedBeltBounds();
-        drop.description = "Equip belt";
+    auto removeTo = [&](ItemDestination destination) {
+        if (location->container == containers.beltEquipment)
+            drop.command.emplace(std::in_place_type<EquipBelt>, source->handle(), std::move(destination));
+        else
+            drop.command.emplace(std::in_place_type<EquipItem>, source->handle(), std::nullopt,
+                                 std::move(destination));
+    };
+    if (auto slot = ui.open ? equipmentAt(mouse) : std::nullopt) {
+        if (*slot == EquipmentSlot::Belt) {
+            if (location->container == containers.beltEquipment) {
+                drop.bounds = equipmentBounds(*slot);
+                drop.description = "Release to cancel";
+                return drop;
+            }
+            drop.command.emplace(std::in_place_type<EquipBelt>, source->handle());
+        } else
+            drop.command.emplace(std::in_place_type<EquipItem>, source->handle(), *slot);
+        drop.bounds = equipmentBounds(*slot);
+        drop.description = "Equip item";
     } else {
         for (const auto &grid : grids) {
             auto cell = grid.cellAt(mouse);
@@ -73,6 +115,11 @@ InventoryDrop inventoryDrop(const GameSession &session, const InventoryUi &ui, V
                 continue;
             Cell origin{cell->x - ui.drag->grab.x, cell->y - ui.drag->grab.y};
             drop.bounds = grid.itemBounds(origin, definition);
+            if (equipped) {
+                removeTo(ContainerLocation{grid.container, origin});
+                drop.description = "Unequip item";
+                break;
+            }
             auto target = inventory.item(inventory.itemAt(grid.container, *cell));
             if (target && target->id != source->id) {
                 auto targetCell = std::get<ContainerLocation>(target->location).cell;
@@ -92,6 +139,28 @@ InventoryDrop inventoryDrop(const GameSession &session, const InventoryUi &ui, V
             }
             break;
         }
+    }
+    if (equipped && !drop.command) {
+        if (ui.open && CheckCollisionPointRec(rv(mouse), inventoryButton(0))) {
+            removeTo(AutoPlace{containers.backpack});
+            drop.description = "Unequip item";
+        } else if (ui.storage && CheckCollisionPointRec(rv(mouse), storageTransfer())) {
+            removeTo(AutoPlace{ui.storage});
+            drop.description = "Store equipment";
+        } else if (!inventorySurface(ui, mouse) && mouse.x >= 0 && mouse.x < W && mouse.y >= 0 &&
+                   !hudSurface(mouse)) {
+            if (auto ground = session.dropLocation()) {
+                removeTo(*ground);
+                drop.description = "Drop equipment";
+            } else
+                drop.error = InventoryError::InvalidLocation;
+        } else
+            drop.description = "Release to cancel";
+        if (drop.command)
+            drop.error = session.previewInventory(*drop.command);
+        if (drop.error != InventoryError::None)
+            drop.description = inventoryErrorText(drop.error);
+        return drop;
     }
     if (!drop.command) {
         if (ui.open && CheckCollisionPointRec(rv(mouse), inventoryButton(0))) {

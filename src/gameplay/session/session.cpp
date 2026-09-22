@@ -11,12 +11,30 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
       monsterContent_(archives, content_.tables.at("monstats")), loot_(lootSeed) {
     simulation_.state_.population = population;
     simulation_.state_.mapSeed = selection.seed;
+    inventory_.state_.creationRandom = (uint64_t(666) << 32) | uint32_t(lootSeed);
     playerContainers_ = inventory_.createPlayerContainers(state().player.id);
-    // Original Barbarian charstats.txt starter consumables (equipment is separate).
+    // Original Barbarian charstats.txt starter consumables.
     for (int column = 0; column < 4; ++column)
         inventory_.createItem("hp1", 1, ContainerLocation{playerContainers_.belt, {column, 0}});
     inventory_.createItem("tsc", 1, AutoPlace{playerContainers_.backpack});
     inventory_.createItem("isc", 1, AutoPlace{playerContainers_.backpack});
+    createStarterEquipment();
+    simulation_.equipmentStats_ = deriveEquipmentStats(inventory_, playerContainers_, equipmentActor());
+    simulation_.wearEquipment_ = [this](EntityId weapon, bool defending) {
+        auto result = inventory_.wearEquipment(playerContainers_, weapon, defending,
+                                               simulation_.state_.player.combatRandom);
+        if (!result || !result.changes.empty())
+            publishInventory(std::move(result), {});
+    };
+    simulation_.state_.player.combatRandom = (uint64_t(666) << 32) | selection.seed;
+    simulation_.monsterAccuracy_ = [this](const Enemy &enemy) -> std::optional<MonsterAccuracy> {
+        if (state().population.difficulty != 0 || enemy.identity.rank != MonsterRank::Normal)
+            return std::nullopt;
+        const auto *record = monsterContent_.find(enemy.identity.monster);
+        if (!record || record->boss || !record->normalAttackRating)
+            return std::nullopt;
+        return MonsterAccuracy{record->normalLevel, *record->normalAttackRating};
+    };
     auto worldSelection = selection;
     worldSelection.difficulty = population.difficulty;
     auto plan = planWorld(archives, worldContent_, worldSelection);
@@ -26,7 +44,7 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
     Fingerprint fingerprint;
     fingerprint.add(content_.profile);
     // Bump this rules revision when state interpretation or compiled rules change.
-    fingerprint.add("d2x-session-rules-v18-rogue-melee");
+    fingerprint.add("d2x-session-rules-v24-equipment-combat-random");
     auto members = archives.used;
     for (const auto &member : members) {
         fingerprint.add(member);
@@ -82,6 +100,7 @@ void GameSession::publishInventory(InventoryResult result, EntityId requested) {
     if (!result)
         simulation_.emit(InventoryRejected{requested, result.error});
     else {
+        simulation_.equipmentStats_ = deriveEquipmentStats(inventory_, playerContainers_, equipmentActor());
         for (const auto &change : result.changes)
             simulation_.emit(change);
         if (requested)
@@ -137,7 +156,8 @@ void GameSession::tick(float dt, Vec keyboard) {
                     interact(intent.target);
                 } else if constexpr (std::is_same_v<T, MoveItem> || std::is_same_v<T, SwapItems> ||
                                      std::is_same_v<T, SplitStack> || std::is_same_v<T, MergeStacks> ||
-                                     std::is_same_v<T, EquipBelt> || std::is_same_v<T, TransferItem>)
+                                     std::is_same_v<T, EquipBelt> || std::is_same_v<T, TransferItem> ||
+                                     std::is_same_v<T, EquipItem>)
                     executeInventory(command);
                 else {
                     if constexpr (std::is_same_v<T, MoveTo> || std::is_same_v<T, Attack> ||

@@ -40,20 +40,18 @@ void SceneView::drawInventory(Vec mouse) const {
     painter_.label("X", int(inventoryClose().x + 7), int(inventoryClose().y + 6), 12, gold);
     auto hoverCell = inventoryCell(mouse);
     EntityId hovered = hoverCell ? inventory.itemAt(backpack, *hoverCell) : EntityId{};
-    auto equipped = inventory.item(inventory.itemAt(session_.playerContainers().beltEquipment, {0, 0}));
-    if (equipped)
-        drawItemIcon(*equipped, equippedBeltBounds());
-    else if (auto socket = assets_.beltSocket.frame(0, 0)) {
-        auto texture = socket->texture;
-        DrawTexturePro(texture, {0, 0, float(texture.width), float(texture.height)}, equippedBeltBounds(),
-                       {0, 0}, 0, WHITE);
-    }
-    if (CheckCollisionPointRec(rv(mouse), equippedBeltBounds())) {
-        DrawRectangleLinesEx(equippedBeltBounds(), 1, parchment);
+    for (int index = 0; index < int(EquipmentSlot::Count); ++index) {
+        auto slot = EquipmentSlot(index);
+        auto bounds = equipmentBounds(slot);
+        auto equipped = inventory.item(inventory.equipped(session_.playerContainers(), slot));
         if (equipped)
-            hovered = equipped->id;
-        else
-            painter_.label("Drop a belt here to equip", int(panel.x - 220), int(mouse.y - 20), 12, gold);
+            drawItemIcon(*equipped, bounds,
+                         ui.drag && ui.drag->moved && ui.drag->item.id == equipped->id ? Fade(WHITE, .3f) : WHITE);
+        if (CheckCollisionPointRec(rv(mouse), bounds)) {
+            DrawRectangleLinesEx(bounds, 1, parchment);
+            if (equipped)
+                hovered = equipped->id;
+        }
     }
     auto drop = inventoryDrop(session_, ui, mouse);
     std::string hint = ui.pending                  ? "Moving item..."
@@ -79,8 +77,18 @@ void SceneView::drawInventory(Vec mouse) const {
             enabled ? CheckCollisionPointRec(rv(mouse), box) ? parchment : gold : Color{85, 83, 71, 255};
         itemButton(box, buttons[i], color);
     }
-    painter_.label("RMB Use / Equip   Shift-click Belt   Ctrl-drag Swap", int(panel.x + 20), 539, 10,
-                   parchment);
+    const auto &stats = session_.equipmentStats();
+    std::string damageText = "Damage ";
+    for (int index = 0; index < stats.weaponCount; ++index) {
+        if (index)
+            damageText += " / ";
+        const auto &weapon = stats.weapons[index];
+        damageText += std::to_string(weapon.minimum / 256) + "-" + std::to_string(weapon.maximum / 256);
+    }
+    painter_.label(damageText, int(panel.x + 20), 539, 10, parchment);
+    auto armorText = "Defense " + std::to_string(stats.defense) + "  Block " +
+                     std::to_string(stats.blockChance) + "%";
+    painter_.label(armorText, int(panel.x + 195), 539, 10, parchment);
     if (!ui.split && !ui.drag) {
         if (auto item = inventory.item(hovered))
             drawItemTooltip(*item, {panel.x - 12, mouse.y});

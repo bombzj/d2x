@@ -50,13 +50,16 @@ void SceneView::drawItemTooltip(const ItemInstance &item, Vec anchor) const {
     if (definition.maxDurability)
         lines.push_back("Durability: " + std::to_string(item.durability) + " / " +
                         std::to_string(definition.maxDurability));
+    if (definition.maxDurability && !item.durability)
+        lines.push_back("Broken");
     const auto &base = definition.base;
+    if (!definition.equipment.requiredClass.empty())
+        lines.push_back("Class: " + definition.equipment.requiredClass);
     if (definition.family == ItemFamily::Weapon && base.minDamage && base.maxDamage)
         lines.push_back("Base damage: " + std::to_string(*base.minDamage) + " - " +
                         std::to_string(*base.maxDamage));
     if (definition.family == ItemFamily::Armor && base.minDefense && base.maxDefense)
-        lines.push_back("Base defense range: " + std::to_string(*base.minDefense) + " - " +
-                        std::to_string(*base.maxDefense));
+        lines.push_back("Defense: " + std::to_string(item.defense));
     if (base.requiredStrength && *base.requiredStrength > 0)
         lines.push_back("Required strength: " + std::to_string(*base.requiredStrength));
     if (base.requiredDexterity && *base.requiredDexterity > 0)

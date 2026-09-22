@@ -4,7 +4,9 @@
 #include "gameplay/consumables/potions.hpp"
 #include "gameplay/model/state.hpp"
 #include "world/navigation.hpp"
+#include "gameplay/items/equipment_stats.hpp"
 #include <span>
+#include <functional>
 
 namespace d2x {
 class Simulation {
@@ -14,12 +16,17 @@ class Simulation {
     const Grid *grid_ = nullptr; // Borrowed from GameSession's stable region storage.
     const RoomLayout *rooms_ = nullptr;
     WorldState state_;
+    EquipmentStats equipmentStats_;
+    std::function<void(EntityId, bool)> wearEquipment_;
+    std::function<std::optional<MonsterAccuracy>(const Enemy &)> monsterAccuracy_;
     std::vector<GameEvent> events_;
     Enemy *findEnemy(EntityId id);
     void moveTo(Vec target);
     void attackEnemy(EntityId target);
     bool cast(Skill skill, Vec target);
     void damage(Vec pos, float radius, float amount, EntityId source, float chill = 0);
+    void damageEnemy(Enemy &enemy, float amount, EntityId source, float chill = 0);
+    void meleeDamage(Enemy &enemy);
     void updatePotions(float dt);
     void updatePlayer(float dt, Vec keyboard);
     void updateMonsters(float dt);

@@ -21,6 +21,8 @@ struct PlayerState {
     EntityId attackTarget;
     Skill lastSkill = Skill::Fireball;
     bool running = true, moving = false, dead = false;
+    uint64_t combatRandom = (uint64_t(666) << 32) | 210;
+    unsigned nextWeapon = 0;
 };
 struct Enemy {
     EntityId id;
@@ -30,6 +32,7 @@ struct Enemy {
     float hp = 100, chill = 0, attack = 0;
     float stun = 0, deathAge = 0, hitFlash = 0, rethink = 0;
     std::deque<Vec> route;
+    uint64_t combatRandom = (uint64_t(666) << 32) | 210;
 };
 struct Missile {
     EntityId id, owner;

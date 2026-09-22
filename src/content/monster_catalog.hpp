@@ -3,6 +3,7 @@
 #include "resources/data_table.hpp"
 #include <array>
 #include <map>
+#include <optional>
 #include <set>
 
 namespace d2x {
@@ -10,6 +11,7 @@ struct MonsterRecord {
     std::string id, base, next, name, token, ai, spawn;
     int index = -1, rarity = 0, minGroup = 0, maxGroup = 0, partyMin = 0, partyMax = 0;
     int sparse = 0, alignment = 0, normalLevel = 0;
+    std::optional<int> normalAttackRating;
     bool enabled = false, randomSpawn = false, ranged = false, placeSpawn = false;
     bool killable = false, npc = false, critter = false, inert = false, boss = false;
     std::array<std::string, 2> minions;

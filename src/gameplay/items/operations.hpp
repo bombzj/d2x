@@ -1,4 +1,5 @@
 #pragma once
+#include "equipment_rules.hpp"
 #include "state.hpp"
 #include <optional>
 
@@ -21,10 +22,13 @@ enum class InventoryError {
     StackFull,
     InvalidRequest,
     RevisionExhausted,
-    UnsupportedUse
+    UnsupportedUse,
+    RequirementsNotMet,
+    WrongClass,
+    UnsupportedEquipment
 };
 const char *inventoryErrorText(InventoryError error);
-enum class ItemChangeKind { Created, Moved, QuantityChanged, Removed };
+enum class ItemChangeKind { Created, Moved, QuantityChanged, Removed, DurabilityChanged };
 struct ItemChange {
     EntityId item;
     uint64_t revision;
@@ -49,6 +53,12 @@ struct TransferItem {
 };
 struct EquipBelt {
     ItemHandle item; // Backpack -> equipped, or equipped -> backpack.
+    std::optional<ItemDestination> destination = std::nullopt;
+};
+struct EquipItem {
+    ItemHandle item;
+    std::optional<EquipmentSlot> slot;
+    std::optional<ItemDestination> destination = std::nullopt;
 };
 struct UseItem {
     ItemHandle item;

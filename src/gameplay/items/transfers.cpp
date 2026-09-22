@@ -32,11 +32,21 @@ InventoryResult InventoryService::createItem(std::string_view code, unsigned qua
     instance.quantity = quantity;
     instance.durability = definition->maxDurability;
     instance.location = location;
+    uint64_t nextRandom = state_.creationRandom;
+    if (definition->family == ItemFamily::Armor) {
+        auto minimum = definition->base.minDefense;
+        auto maximum = definition->base.maxDefense;
+        if (!minimum || !maximum || *minimum < 0 || *maximum < *minimum || *maximum > 1000000)
+            return failure(InventoryError::UnsupportedEquipment);
+        nextRandom = uint64_t(uint32_t(nextRandom)) * 0x6ac690c5ULL + (nextRandom >> 32);
+        instance.defense = *minimum + uint32_t(nextRandom) % uint32_t(*maximum - *minimum + 1);
+    }
     instance.id = ids_.allocate();
     auto result = prepared(instance.id, quantity);
     result.changes.push_back(
         {instance.id, instance.revision, ItemChangeKind::Created, std::nullopt, location, quantity});
     state_.items.emplace(instance.id, std::move(instance));
+    state_.creationRandom = nextRandom;
     return result;
 }
 InventoryResult InventoryService::move(const MoveItem &command, const InventoryAccess &access) {

@@ -20,6 +20,12 @@ void Simulation::attackEnemy(EntityId target) {
     auto *e = findEnemy(target);
     if (p.dead || !e || e->hp <= 0)
         return;
+    if (equipmentStats_.weapons[0].ranged) {
+        p.attackTarget = {};
+        p.route.clear();
+        state_.message = "Ranged weapon attacks are not implemented yet.";
+        return;
+    }
     p.attackTarget = target;
     p.route = grid_->path(p.pos, e->pos);
 }
@@ -39,15 +45,15 @@ void Simulation::updatePlayer(float dt, Vec keyboard) {
     }
     if (p.attackTarget) {
         auto *e = findEnemy(p.attackTarget);
-        if (!e || e->hp <= 0)
+        if (!e || e->hp <= 0 || equipmentStats_.weapons[0].ranged)
             p.attackTarget = {};
-        else if ((e->pos - p.pos).length() < rules.meleeRange) {
+        else if ((e->pos - p.pos).length() < rules.meleeRange && grid_->segment(p.pos, e->pos)) {
             p.route.clear();
             if (p.castTime <= 0 && p.meleeTime <= 0 && p.leapTime <= 0 && p.spinTime <= 0) {
                 p.look = (e->pos - p.pos).unit();
                 p.meleeTime = rules.meleeDuration;
                 emit(MeleeAttack{p.id, e->id});
-                damage(e->pos, rules.meleeRadius, rules.meleeDamage, p.id);
+                meleeDamage(*e);
             }
         } else if (p.route.empty())
             p.route = grid_->path(p.pos, e->pos);

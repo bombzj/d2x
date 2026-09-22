@@ -39,10 +39,11 @@ struct ItemInstance {
     ItemQuality quality = ItemQuality::Normal;
     unsigned level = 1;
     uint64_t revision = 1;
+    int defense = 0;
     ItemLocation location;
     ItemHandle handle() const { return {id, revision}; }
 };
-enum class ContainerKind { Backpack, Belt, Stash, Chest, BeltEquipment };
+enum class ContainerKind { Backpack, Belt, Stash, Chest, BeltEquipment, Equipment };
 struct ContainerSpec {
     EntityId owner;
     ContainerKind kind = ContainerKind::Backpack;
@@ -53,10 +54,11 @@ struct ContainerState {
     ContainerSpec spec;
 };
 struct PlayerContainers {
-    EntityId backpack, belt, stash, beltEquipment;
+    EntityId backpack, belt, stash, beltEquipment, equipment;
 };
 // Location is authoritative. Occupancy is derived, never a second mutable copy.
 struct InventoryState {
+    uint64_t creationRandom = (uint64_t(666) << 32) | 210;
     std::map<EntityId, ItemInstance> items;
     std::map<EntityId, ContainerState> containers;
 };

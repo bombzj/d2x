@@ -2,6 +2,8 @@
 #include "content/monster_catalog.hpp"
 #include "resources/archive.hpp"
 #include "resources/formats.hpp"
+#include "persistence/save_file.hpp"
+#include "gameplay/items/equipment_stats.hpp"
 #include "world/cow_level.hpp"
 #include "world/maze.hpp"
 #include "world/outdoor.hpp"
@@ -23,13 +25,37 @@ int main(int argc, char **argv) {
                    "  ... presets [name-filter]\n  ... maze <level-ID> [map-seed] [difficulty:0-2]\n"
                    "  ... outdoor <level-ID> [map-seed]\n"
                    "  ... substitutions <LvlSub-type>\n"
+                   "  ... save-info <d2xsave>\n"
+                   "  ... treasure <TC-name> [seed] [monster-level]\n"
                    "  ... population <level-ID> [normal|nightmare|hell] [seed]\n";
             return 0;
         }
         d2x::Archives a;
         a.mountDirectory(argv[1]);
         std::string command = argv[2];
-        if (command == "substitutions" && argc == 4) {
+        if (command == "save-info" && argc == 4) {
+            auto snapshot = d2x::loadSave(argv[3]);
+            auto data = d2x::loadClassicData(a);
+            std::cout << "Save format=7 region=" << int(snapshot.world.area.region)
+                      << " time=" << snapshot.world.time << " life=" << snapshot.world.player.hp
+                      << " combatRandom=" << snapshot.world.player.combatRandom
+                      << " creationRandom=" << snapshot.inventory.creationRandom << '\n';
+            for (const auto &[id, item] : snapshot.inventory.items) {
+                auto location = std::get_if<d2x::ContainerLocation>(&item.location);
+                if (!location || (location->container != snapshot.containers.equipment &&
+                                  location->container != snapshot.containers.beltEquipment))
+                    continue;
+                const auto *definition = data.items.find(item.definition);
+                auto slot = location->container == snapshot.containers.beltEquipment
+                                ? d2x::EquipmentSlot::Belt : d2x::EquipmentSlot(location->cell.x);
+                std::cout << "  " << d2x::equipmentSlotCode(slot) << " " << item.definition
+                          << " id=" << id.value << " revision=" << item.revision
+                          << " durability=" << item.durability << '/'
+                          << (definition ? definition->maxDurability : 0)
+                          << " defense=" << item.defense << '\n';
+            }
+            std::cout << "Decoded snapshot only; full gameplay validation occurs on --load.\n";
+        } else if (command == "substitutions" && argc == 4) {
             d2x::WorldCatalog catalog(a);
             int type = std::stoi(argv[3]);
             for (const auto &record : catalog.substitutions()) {
@@ -164,6 +190,46 @@ int main(int argc, char **argv) {
                                   << (a.contains(preset.variants[variant]) ? "DS1 present" : "DS1 missing")
                                   << "]\n";
             }
+        } else if (command == "treasure" && argc >= 4 && argc <= 6) {
+            auto data = d2x::loadClassicData(a);
+            if (data.profile != "lod-named-txt-v1")
+                throw std::runtime_error("Treasure selection requires the LoD named table profile");
+            uint64_t seed = (uint64_t(666) << 32) | 210;
+            if (argc >= 5) {
+                auto text = std::string_view(argv[4]);
+                auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), seed);
+                if (error != std::errc{} || end != text.data() + text.size())
+                    throw std::runtime_error("Invalid treasure seed");
+            }
+            int level = 0;
+            if (argc == 6) {
+                auto text = std::string_view(argv[5]);
+                auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), level);
+                if (error != std::errc{} || end != text.data() + text.size() || level < 0 || level > 99)
+                    throw std::runtime_error("Invalid monster level (0-99)");
+            }
+            auto roll = d2x::selectTreasure(data.treasures, argv[3], seed, level);
+            std::cout << "Single-player TC selection: " << argv[3] << " seed=" << seed
+                      << " level=" << level << " next=" << roll.randomState
+                      << " NoDrop=" << roll.noDrops << '\n';
+            const auto &root = *std::find_if(data.treasures.begin(), data.treasures.end(),
+                                             [&](const auto &record) { return record.name == roll.root; });
+            std::cout << "Resolved root: " << root.name << " Picks=" << root.picks.value_or(1)
+                      << " NoDropWeight=" << root.noDrop.value_or(0) << '\n';
+            for (size_t index = 0; index < root.codes.size(); ++index)
+                std::cout << "  " << root.codes[index] << " weight=" << root.weights[index] << '\n';
+            for (const auto &selection : roll.selections) {
+                for (const auto &step : selection.path)
+                    std::cout << step << " -> ";
+                std::cout << selection.code
+                          << (data.items.find(selection.code) ? " [base item]" : " [unresolved token]")
+                          << " quality(U/S/R/M)=";
+                for (auto quality : selection.quality)
+                    std::cout << quality << ' ';
+                std::cout << '\n';
+            }
+            std::cout << "Selection only: unresolved tokens, item creation, quality and the six-item "
+                         "creation limit are not executed.\n";
         } else if ((command == "item" || command == "drops") && argc == 4) {
             auto data = d2x::loadClassicData(a);
             std::cout << "Data profile: " << data.profile << '\n';
@@ -171,6 +237,20 @@ int main(int argc, char **argv) {
                 auto item = data.items.find(argv[3]);
                 if (!item)
                     throw std::runtime_error("Unknown item code");
+                const auto &equipment = item->equipment;
+                std::cout << "Equipment rules: "
+                          << (equipment.known ? "original ItemTypes" : "unverified profile")
+                          << " class=" << (equipment.requiredClass.empty() ? "any" : equipment.requiredClass)
+                          << " twoHanded=" << equipment.twoHanded
+                          << " oneOrTwoHanded=" << equipment.oneOrTwoHanded << " shoots=" << equipment.shoots
+                          << " quiver=" << equipment.quiver << " slots=";
+                for (size_t index = 0; index < equipment.slots.size(); ++index)
+                    if (equipment.slots[index])
+                        std::cout << d2x::equipmentSlotCode(d2x::EquipmentSlot(index)) << ' ';
+                std::cout << " types=";
+                for (const auto &type : equipment.types)
+                    std::cout << type << ' ';
+                std::cout << '\n';
                 const auto &table = data.tables.at(item->base.sourceTable);
                 const auto &row = table.rows().at(item->base.sourceRow);
                 std::cout << item->base.sourceTable << ".txt row " << item->base.sourceRow << '\n';
@@ -205,8 +285,8 @@ int main(int argc, char **argv) {
                         std::cout << '\n';
                     }
                 }
-                std::cout << "Raw source records only. Recursive selection, NoDrop execution and quality "
-                             "generation remain unimplemented; monster loot is disabled.\n";
+                std::cout << "Raw source records only. Use treasure for single-player TC selection. "
+                             "Quality and item generation remain unimplemented; monster loot is disabled.\n";
             }
         } else if (command == "list") {
             for (auto &name : a.list(argc > 3 ? argv[3] : "*"))

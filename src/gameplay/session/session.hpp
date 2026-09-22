@@ -1,8 +1,8 @@
 #pragma once
 #include "content/classic_data.hpp"
-#include "gameplay/model/interaction.hpp"
 #include "gameplay/items/inventory.hpp"
 #include "gameplay/loot/loot.hpp"
+#include "gameplay/model/interaction.hpp"
 #include "gameplay/session/session_snapshot.hpp"
 #include "gameplay/simulation/simulation.hpp"
 #include "world/population.hpp"
@@ -44,6 +44,8 @@ class GameSession {
     void closeStorage();
     void spawnLoot(std::span<const LootDrop> drops, RegionId region, Vec origin);
     InventoryAccess inventoryAccess() const;
+    EquipmentActor equipmentActor() const;
+    void createStarterEquipment();
     bool inventoryDestinationAllowed(const ItemDestination &destination) const;
     bool inventorySourceAllowed(EntityId item) const;
     void publishInventory(InventoryResult result, EntityId requested);
@@ -73,6 +75,7 @@ class GameSession {
     // Validate completely before replacing live state; a rejected load changes nothing.
     void restore(SessionSnapshot snapshot);
     const InventoryService &inventory() const { return inventory_; }
+    const EquipmentStats &equipmentStats() const { return simulation_.equipmentStats_; }
     const PlayerContainers &playerContainers() const { return playerContainers_; }
     StorageAccess storage() const;
     const WorldObject *object(EntityId id) const;

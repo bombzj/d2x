@@ -61,9 +61,33 @@ void Simulation::updateMonsters(float dt) {
         }
         if ((player.pos - enemy.pos).length() < definition.attackRange && enemy.attack <= 0 &&
             player.leapTime <= 0 && grid_->segment(enemy.pos, player.pos)) {
+            enemy.attack = definition.attackInterval * (enemy.chill > 0 ? 2.f : 1.f);
+            if (!(player.running && player.moving) && monsterAccuracy_) {
+                if (auto accuracy = monsterAccuracy_(enemy)) {
+                    const int64_t divisor = int64_t(accuracy->attackRating) + equipmentStats_.defense;
+                    const int64_t factor = divisor ? int64_t(100) * accuracy->attackRating / divisor : 100;
+                    const auto chance = std::clamp(int64_t(2) * accuracy->level * factor /
+                                                       (int64_t(accuracy->level) + equipmentStats_.level),
+                                                   int64_t(5), int64_t(95));
+                    enemy.combatRandom = uint64_t(uint32_t(enemy.combatRandom)) * 0x6ac690c5ULL +
+                                         (enemy.combatRandom >> 32);
+                    if (uint32_t(enemy.combatRandom) % 100 >= chance)
+                        continue;
+                }
+            }
+            int block = equipmentStats_.blockChance;
+            if (player.running && player.moving)
+                block /= 3;
+            if (block > 0) {
+                player.combatRandom = uint64_t(uint32_t(player.combatRandom)) * 0x6ac690c5ULL +
+                                      (player.combatRandom >> 32);
+                if (uint32_t(player.combatRandom) % 100 < unsigned(block))
+                    continue;
+            }
             player.hp = std::max(0.f, player.hp - definition.damage);
             player.hitTime = .16f;
-            enemy.attack = definition.attackInterval * (enemy.chill > 0 ? 2.f : 1.f);
+            if (wearEquipment_)
+                wearEquipment_({}, true);
         }
     }
 }

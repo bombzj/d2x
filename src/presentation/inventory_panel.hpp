@@ -50,6 +50,8 @@ inline Rectangle equippedBeltBounds() {
     auto p = inventoryBounds();
     return {p.x + 136 * inventoryScale, p.y + 179 * inventoryScale, 52 * inventoryScale, 25 * inventoryScale};
 }
+Rectangle equipmentBounds(EquipmentSlot slot);
+std::optional<EquipmentSlot> equipmentAt(Vec mouse);
 inline Rectangle beltSlot(Cell cell) {
     return hudRect(425 + 31 * cell.x, 41 + 32 * cell.y, 29, 29);
 }
