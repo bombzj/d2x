@@ -1,6 +1,6 @@
 #pragma once
 #include "content/monster_catalog.hpp"
-#include "gameplay/monster_spawn.hpp"
+#include "gameplay/monsters/monster_spawn.hpp"
 #include "map.hpp"
 #include <iosfwd>
 

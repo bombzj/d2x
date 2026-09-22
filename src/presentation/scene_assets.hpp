@@ -1,6 +1,6 @@
 #pragma once
 #include "audio.hpp"
-#include "gameplay/session.hpp"
+#include "gameplay/session/session.hpp"
 #include "primitives.hpp"
 
 namespace d2x {

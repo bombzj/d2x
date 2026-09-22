@@ -10,7 +10,7 @@
 | `world/population.*` | 内容和地图 → 生成指令；不分配 ID | `planPopulation`、`PopulationPlan` |
 | `gameplay` | 25 Hz 战斗状态和规则；不依赖 MPQ／raylib | `Simulation`、`WorldState`、`GameCommand` |
 | `gameplay/items` | 物品／容器唯一状态及事务 | `InventoryService` |
-| `gameplay/session*` | 区域生命周期、出口、交互、死亡与存档协调 | `GameSession` |
+| `gameplay/session` | 区域生命周期、出口、交互、死亡与存档协调 | `GameSession` |
 | `persistence` | 值快照、编码、版本、文件替换和备份 | `SessionSnapshot`、`encodeSave/decodeSave` |
 | `presentation` | GPU、音效、只读绘制、屏幕命中 | `SceneAssets`、`SceneView`、`SceneController` |
 | `app` | 参数、输入、窗口、固定步调度 | `application.cpp`、`options.cpp` |
@@ -28,8 +28,13 @@
 
 扩展入口：
 
+- `gameplay/model`：共享命令、事件、状态及规则类型；不执行会话协调。
+- `gameplay/simulation`：固定步调度与模拟生命周期；`combat`、`player`、`monsters`、`consumables`、`loot` 分别持有对应实现。
+- `gameplay/skills`：`casting.cpp` 统一施放门禁、扣费、冷却和事件；注册表绑定校验与效果，六种即时效果各有独立实现，数值在本目录 `definitions.cpp`。持续效果仍由角色／战斗更新执行；当前固定技能 ID 与状态结构不是完整原版技能系统。
+- `world/maze`：`room_graph.hpp` 持有房间连接与特殊房放置，`generation.cpp` 编排增长、主题替换及配方输出，`cave.cpp`／`crypt.cpp` 提供已实现家族规则，`resources.cpp` 负责资源枚举与收集。`world/maze.hpp` 保留公共入口。家族配置不消费随机数；不得随意调整生成各阶段或变体选择的随机数调用顺序。
+
 - 新地图家族：新增 `world` 生成器，返回 `MapRecipe`，接 `region_catalog`；不修改 DS1 解码器来硬塞布局。
-- 新怪物：`monster_spawn.*` 注册实际实现，再接 AI 和 `SceneAssets`；死亡保留原始身份。
+- 新怪物：`gameplay/monsters/monster_spawn.*` 注册实际实现，再接 AI 和 `SceneAssets`；死亡保留原始身份。
 - 新物品效果：从 `content` 导入定义，在玩法／事务服务执行；HUD 仅展示结果。
 - 新 UI：布局、绘制、命中分开；技能图标经 `Skills → SkillDesc → DC6`。
 - 修改持久状态：同步 `state`、`save_codec`、`session_snapshot` 与规则指纹。

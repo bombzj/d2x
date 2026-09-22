@@ -1,6 +1,6 @@
 #pragma once
 #include "container_grid.hpp"
-#include "gameplay/session.hpp"
+#include "gameplay/session/session.hpp"
 #include "hud_layout.hpp"
 
 namespace d2x {

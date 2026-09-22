@@ -1,7 +1,7 @@
 #pragma once
 #include "content/monster_catalog.hpp"
 #include "core/id.hpp"
-#include "gameplay/definitions.hpp"
+#include "gameplay/model/definitions.hpp"
 #include "map.hpp"
 #include "maze.hpp"
 

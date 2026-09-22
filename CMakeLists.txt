@@ -19,6 +19,9 @@ target_link_libraries(d2x_resources PUBLIC d2x_core PRIVATE storm)
 add_library(d2x_navigation src/world/navigation.cpp src/world/room_activation.cpp)
 target_link_libraries(d2x_navigation PUBLIC d2x_core)
 add_library(d2x_world src/world/map.cpp src/world/map_assembly.cpp src/world/maze.cpp src/world/outdoor.cpp src/world/outdoor_layout.cpp src/world/region.cpp src/world/region_catalog.cpp src/world/exits.cpp src/world/world_report.cpp)
+target_sources(d2x_world PRIVATE
+  src/world/maze/generation.cpp src/world/maze/resources.cpp
+  src/world/maze/cave.cpp src/world/maze/crypt.cpp)
 target_link_libraries(d2x_world PUBLIC d2x_content d2x_navigation)
 
 add_library(d2x_items
@@ -31,13 +34,18 @@ target_link_libraries(d2x_content PUBLIC d2x_resources d2x_items)
 
 # Rules and state compile without raylib, StormLib, a window or an archive.
 add_library(d2x_gameplay
-  src/gameplay/definitions.cpp src/gameplay/simulation.cpp src/gameplay/movement.cpp
-  src/gameplay/combat.cpp src/gameplay/skills.cpp src/gameplay/monster_ai.cpp src/gameplay/loot.cpp src/gameplay/potions.cpp)
-target_sources(d2x_gameplay PRIVATE src/gameplay/monster_spawn.cpp src/gameplay/monster_activation.cpp)
+  src/gameplay/model/definitions.cpp src/gameplay/simulation/simulation.cpp src/gameplay/player/movement.cpp
+  src/gameplay/combat/combat.cpp src/gameplay/skills/casting.cpp src/gameplay/monsters/monster_ai.cpp src/gameplay/loot/loot.cpp src/gameplay/consumables/potions.cpp)
+target_sources(d2x_gameplay PRIVATE src/gameplay/monsters/monster_spawn.cpp src/gameplay/monsters/monster_activation.cpp)
+target_sources(d2x_gameplay PRIVATE
+  src/gameplay/skills/definitions.cpp
+  src/gameplay/skills/fireball.cpp src/gameplay/skills/frost_nova.cpp
+  src/gameplay/skills/whirlwind.cpp src/gameplay/skills/teleport.cpp
+  src/gameplay/skills/leap.cpp src/gameplay/skills/war_cry.cpp)
 target_link_libraries(d2x_gameplay PUBLIC d2x_navigation)
 add_library(d2x_population src/world/population.cpp)
 target_link_libraries(d2x_population PUBLIC d2x_content d2x_gameplay)
-add_library(d2x_session src/gameplay/session.cpp src/gameplay/session_loot.cpp src/gameplay/session_inventory.cpp src/gameplay/session_consumables.cpp src/gameplay/session_interaction.cpp src/gameplay/session_snapshot.cpp src/gameplay/session_exits.cpp)
+add_library(d2x_session src/gameplay/session/session.cpp src/gameplay/session/session_loot.cpp src/gameplay/session/session_inventory.cpp src/gameplay/session/session_consumables.cpp src/gameplay/session/session_interaction.cpp src/gameplay/session/session_snapshot.cpp src/gameplay/session/session_exits.cpp)
 target_link_libraries(d2x_session PUBLIC d2x_gameplay d2x_world d2x_content d2x_population)
 add_library(d2x_persistence src/persistence/save_codec.cpp src/persistence/save_file.cpp)
 target_link_libraries(d2x_persistence PUBLIC d2x_gameplay d2x_items)

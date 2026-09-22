@@ -1,5 +1,5 @@
 #pragma once
-#include "gameplay/session_snapshot.hpp"
+#include "gameplay/session/session_snapshot.hpp"
 #include <filesystem>
 
 namespace d2x {

@@ -1,6 +1,6 @@
 #pragma once
 #include "core/math.hpp"
-#include "gameplay/definitions.hpp"
+#include "gameplay/model/definitions.hpp"
 #include <array>
 
 namespace d2x {

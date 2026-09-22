@@ -1,6 +1,6 @@
 #pragma once
 #include "core/bytes.hpp"
-#include "gameplay/session_snapshot.hpp"
+#include "gameplay/session/session_snapshot.hpp"
 #include <span>
 
 namespace d2x {

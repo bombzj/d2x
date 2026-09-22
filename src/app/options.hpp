@@ -1,5 +1,5 @@
 #pragma once
-#include "gameplay/loot.hpp"
+#include "gameplay/loot/loot.hpp"
 #include "world/region.hpp"
 #include <string>
 
