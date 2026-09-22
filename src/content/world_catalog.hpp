@@ -1,0 +1,82 @@
+#pragma once
+#include "resources/archive.hpp"
+#include <array>
+#include <map>
+#include <optional>
+
+namespace d2x {
+enum class GenerationKind { None, Maze, Preset, Outdoor };
+struct LevelPopulation {
+    bool supported = false, rangedFirst = false;
+    int types = 0, warpDistanceSquared = 0;
+    std::array<int, 3> density{}, uniqueMin{}, uniqueMax{}, level{};
+    std::vector<std::string> normal, nightmareHell, unique;
+    std::array<std::string, 4> critters;
+    std::array<int, 4> critterChance{}, critterAmount{};
+};
+struct LevelRecord {
+    int id = 0, act = 0, levelType = 0;
+    GenerationKind generation = GenerationKind::None;
+    std::string name;
+    int width = 0, height = 0, subtype = -1, theme = -1, waypoint = -1;
+    std::array<int, 8> visible{}, warps{}, objectGroups{}, objectProbabilities{};
+    LevelPopulation population;
+};
+struct PresetRecord {
+    int id = 0, level = 0, width = 0, height = 0, files = 0;
+    std::string name;
+    uint32_t dt1Mask = 0;
+    bool fillBlanks = false, killEdge = false, populate = false;
+    std::array<std::string, 6> variants;
+};
+struct MazeRecord {
+    int level = 0, rooms = 0, width = 0, height = 0, merge = 0;
+};
+struct SubstitutionRecord {
+    int type = 0, gridSize = 0, borderType = 0;
+    std::string name, file;
+    uint32_t dt1Mask = 0;
+    std::array<int, 5> probability{}, trials{}, maximum{};
+};
+struct WarpRecord {
+    int id = 0, selectX = 0, selectY = 0, selectWidth = 0, selectHeight = 0;
+    int exitX = 0, exitY = 0, offsetX = 0, offsetY = 0;
+    std::string name, direction;
+};
+struct MapRecipe {
+    int preset = 0, variant = 0, levelType = 0;
+    std::string ds1;
+    std::vector<std::string> tileLibraries;
+    bool fillBlanks = false;
+};
+// A catalog entry is not proof that the runtime can generate the corresponding level.
+struct LevelAvailability {
+    std::optional<MapRecipe> recipe;
+    std::vector<std::string> missing;
+    std::string reason;
+    bool ready() const { return recipe.has_value() && missing.empty() && reason.empty(); }
+};
+class WorldCatalog {
+    std::map<int, LevelRecord> levels_;
+    std::map<int, PresetRecord> presets_;
+    std::map<int, std::array<std::string, 32>> types_;
+    std::map<int, MazeRecord> mazes_;
+    std::vector<SubstitutionRecord> substitutions_;
+    std::map<int, std::vector<WarpRecord>> warps_;
+    std::vector<std::string> diagnostics_;
+
+  public:
+    explicit WorldCatalog(Archives &archives);
+    const auto &levels() const { return levels_; }
+    const auto &presets() const { return presets_; }
+    const auto &mazes() const { return mazes_; }
+    const auto &substitutions() const { return substitutions_; }
+    const auto &warps() const { return warps_; }
+    const auto &diagnostics() const { return diagnostics_; }
+    const LevelRecord &level(int id) const;
+    MapRecipe preset(int id, int levelType, int variant = 0) const;
+    std::vector<std::string> missing(Archives &archives, const MapRecipe &recipe) const;
+    LevelAvailability availability(Archives &archives, int levelId, int variant = 0) const;
+    std::vector<std::string> typeLibraries(int levelType) const;
+};
+} // namespace d2x

@@ -1,0 +1,234 @@
+#include "inventory.hpp"
+#include <algorithm>
+#include <cmath>
+#include <limits>
+#include <stdexcept>
+#include <type_traits>
+
+namespace d2x {
+const ItemInstance *InventoryService::item(EntityId id) const {
+    auto found = state_.items.find(id);
+    return found == state_.items.end() ? nullptr : &found->second;
+}
+const ContainerState *InventoryService::container(EntityId id) const {
+    auto found = state_.containers.find(id);
+    return found == state_.containers.end() ? nullptr : &found->second;
+}
+EntityId InventoryService::itemAt(EntityId id, Cell cell) const {
+    auto c = container(id);
+    if (!c || cell.x < 0 || cell.y < 0 || cell.x >= c->spec.columns || cell.y >= c->spec.rows)
+        return {};
+    for (const auto &[key, instance] : state_.items) {
+        auto location = std::get_if<ContainerLocation>(&instance.location);
+        if (!location || location->container != id)
+            continue;
+        const auto &def = *catalog_.find(instance.definition);
+        if (cell.x >= location->cell.x && cell.x < location->cell.x + def.width &&
+            cell.y >= location->cell.y && cell.y < location->cell.y + def.height)
+            return key;
+    }
+    return {};
+}
+std::vector<EntityId> InventoryService::contents(EntityId id) const {
+    std::vector<EntityId> result;
+    for (const auto &[key, instance] : state_.items)
+        if (auto location = std::get_if<ContainerLocation>(&instance.location);
+            location && location->container == id)
+            result.push_back(key);
+    return result;
+}
+std::vector<EntityId> InventoryService::groundItems(RegionId region) const {
+    std::vector<EntityId> result;
+    for (const auto &[key, instance] : state_.items)
+        if (auto location = std::get_if<GroundLocation>(&instance.location);
+            location && location->region == region)
+            result.push_back(key);
+    return result;
+}
+EntityId InventoryService::createContainer(ContainerSpec specification) {
+    if (!specification.owner || specification.columns < 1 || specification.rows < 1 ||
+        specification.columns > 64 || specification.rows > 64)
+        throw std::invalid_argument("Invalid inventory container");
+    if (specification.kind == ContainerKind::Belt && (specification.columns != 4 || specification.rows > 4))
+        throw std::invalid_argument("Belt must have four columns and one to four rows");
+    switch (specification.kind) {
+    case ContainerKind::BeltEquipment:
+    case ContainerKind::Backpack:
+    case ContainerKind::Belt:
+    case ContainerKind::Stash:
+    case ContainerKind::Chest:
+        break;
+    default:
+        throw std::invalid_argument("Unknown inventory container kind");
+    }
+    auto id = ids_.allocate();
+    state_.containers.emplace(id, ContainerState{id, specification});
+    return id;
+}
+PlayerContainers InventoryService::createPlayerContainers(EntityId player) {
+    // Classic demo inventory.txt: Barbarian gridRows=10/gridCols=4, Bank Page 1=6/4.
+    PlayerContainers result;
+    result.backpack = createContainer({player, ContainerKind::Backpack, 10, 4});
+    result.belt = createContainer({player, ContainerKind::Belt, 4, 1});
+    result.stash = createContainer({player, ContainerKind::Stash, 6, 4});
+    result.beltEquipment = createContainer({player, ContainerKind::BeltEquipment, 2, 1});
+    return result;
+}
+bool InventoryService::overlaps(const ItemDefinition &a, const ItemLocation &aPosition,
+                                const ItemDefinition &b, const ItemLocation &bPosition) const {
+    auto left = std::get_if<ContainerLocation>(&aPosition);
+    auto right = std::get_if<ContainerLocation>(&bPosition);
+    return left && right && left->container == right->container && left->cell.x < right->cell.x + b.width &&
+           left->cell.x + a.width > right->cell.x && left->cell.y < right->cell.y + b.height &&
+           left->cell.y + a.height > right->cell.y;
+}
+InventoryError InventoryService::checkHandle(ItemHandle handle) const {
+    auto source = item(handle.id);
+    if (!source)
+        return InventoryError::UnknownItem;
+    if (source->revision != handle.revision)
+        return InventoryError::SourceChanged;
+    if (source->revision == std::numeric_limits<uint64_t>::max())
+        return InventoryError::RevisionExhausted;
+    return InventoryError::None;
+}
+InventoryError InventoryService::checkAccess(const ItemLocation &location,
+                                             const InventoryAccess &access) const {
+    if (!access.actor || !access.alive)
+        return InventoryError::AccessDenied;
+    if (auto ground = std::get_if<GroundLocation>(&location)) {
+        if (!std::isfinite(ground->position.x) || !std::isfinite(ground->position.y) ||
+            !std::isfinite(access.position.x) || !std::isfinite(access.position.y) ||
+            !std::isfinite(access.reach) || access.reach < 0 || ground->region != access.region ||
+            (ground->position - access.position).length() > access.reach)
+            return InventoryError::AccessDenied;
+    } else {
+        auto c = container(std::get<ContainerLocation>(location).container);
+        if (!c)
+            return InventoryError::UnknownContainer;
+        if (c->spec.kind == ContainerKind::BeltEquipment)
+            return InventoryError::RestrictedItem;
+        if (c->spec.kind == ContainerKind::Chest)
+            return access.openContainer == c->id ? InventoryError::None : InventoryError::AccessDenied;
+        if (c->spec.owner != access.actor)
+            return InventoryError::AccessDenied;
+        if (c->spec.kind == ContainerKind::Stash && access.openContainer != c->id)
+            return InventoryError::AccessDenied;
+    }
+    return InventoryError::None;
+}
+InventoryError InventoryService::checkDestinationAccess(const ItemDestination &destination,
+                                                        const InventoryAccess &access) const {
+    return std::visit(
+        [&](const auto &value) {
+            if constexpr (std::is_same_v<std::decay_t<decltype(value)>, AutoPlace>)
+                return checkAccess(ContainerLocation{value.container, {}}, access);
+            else
+                return checkAccess(value, access);
+        },
+        destination);
+}
+InventoryError InventoryService::checkPlacement(const ItemDefinition &definition,
+                                                const ItemLocation &location, EntityId ignore,
+                                                EntityId alsoIgnore) const {
+    if (auto ground = std::get_if<GroundLocation>(&location)) {
+        if (!std::isfinite(ground->position.x) || !std::isfinite(ground->position.y) ||
+            ground->position.x < 0 || ground->position.y < 0)
+            return InventoryError::InvalidLocation;
+        return InventoryError::None;
+    }
+    const auto &position = std::get<ContainerLocation>(location);
+    auto c = container(position.container);
+    if (!c)
+        return InventoryError::UnknownContainer;
+    if (c->spec.kind == ContainerKind::BeltEquipment)
+        return InventoryError::RestrictedItem;
+    if (c->spec.kind == ContainerKind::Belt &&
+        (!definition.beltAllowed || definition.width != 1 || definition.height != 1))
+        return InventoryError::RestrictedItem;
+    if (position.cell.x < 0 || position.cell.y < 0 || definition.width > c->spec.columns ||
+        definition.height > c->spec.rows || position.cell.x > c->spec.columns - definition.width ||
+        position.cell.y > c->spec.rows - definition.height)
+        return InventoryError::OutOfBounds;
+    for (const auto &[id, other] : state_.items) {
+        if (id == ignore || id == alsoIgnore)
+            continue;
+        if (overlaps(definition, location, *catalog_.find(other.definition), other.location))
+            return InventoryError::Occupied;
+    }
+    return InventoryError::None;
+}
+std::optional<Cell> InventoryService::findSpace(EntityId id, std::string_view code, EntityId ignore) const {
+    auto c = container(id);
+    auto def = catalog_.find(code);
+    if (!c || !def)
+        return std::nullopt;
+    for (int y = 0; y <= c->spec.rows - def->height; ++y)
+        for (int x = 0; x <= c->spec.columns - def->width; ++x)
+            if (checkPlacement(*def, ContainerLocation{id, {x, y}}, ignore) == InventoryError::None)
+                return Cell{x, y};
+    return std::nullopt;
+}
+InventoryError InventoryService::resolve(const ItemDefinition &def, const ItemDestination &destination,
+                                         ItemLocation &location, EntityId ignore) const {
+    return std::visit(
+        [&](const auto &value) {
+            if constexpr (std::is_same_v<std::decay_t<decltype(value)>, AutoPlace>) {
+                auto c = container(value.container);
+                if (!c)
+                    return InventoryError::UnknownContainer;
+                if (c->spec.kind == ContainerKind::Belt &&
+                    (!def.beltAllowed || def.width != 1 || def.height != 1))
+                    return InventoryError::RestrictedItem;
+                auto slot = findSpace(value.container, def.code, ignore);
+                if (!slot)
+                    return InventoryError::NoSpace;
+                location = ContainerLocation{value.container, *slot};
+            } else
+                location = value;
+            return checkPlacement(def, location, ignore);
+        },
+        destination);
+}
+const char *inventoryErrorText(InventoryError error) {
+    switch (error) {
+    case InventoryError::UnsupportedUse:
+        return "This item cannot be used yet.";
+    case InventoryError::None:
+        return "";
+    case InventoryError::UnknownDefinition:
+        return "Unknown item type.";
+    case InventoryError::UnknownItem:
+        return "That item is no longer available.";
+    case InventoryError::UnknownContainer:
+        return "That container is not available.";
+    case InventoryError::InvalidQuantity:
+        return "Invalid item quantity.";
+    case InventoryError::InvalidLocation:
+        return "Cannot place an item there.";
+    case InventoryError::OutOfBounds:
+        return "That item does not fit there.";
+    case InventoryError::Occupied:
+        return "That space is occupied.";
+    case InventoryError::NoSpace:
+        return "Not enough room.";
+    case InventoryError::RestrictedItem:
+        return "That item is not allowed in this container.";
+    case InventoryError::AccessDenied:
+        return "You cannot access that item or container here.";
+    case InventoryError::SourceChanged:
+        return "That item has changed. Select it again.";
+    case InventoryError::NotStackable:
+        return "That item cannot be stacked.";
+    case InventoryError::IncompatibleStack:
+        return "Those items cannot be combined.";
+    case InventoryError::StackFull:
+        return "That stack is full.";
+    case InventoryError::InvalidRequest:
+        return "Invalid item operation.";
+    case InventoryError::RevisionExhausted:
+        return "That item cannot be changed further.";
+    }
+    return "Item operation failed.";
+}
+} // namespace d2x

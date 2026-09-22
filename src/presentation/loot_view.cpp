@@ -1,0 +1,128 @@
+#include "scene_view.hpp"
+#include <algorithm>
+
+namespace d2x {
+namespace {
+Color itemColor(ItemQuality quality) {
+    switch (quality) {
+    case ItemQuality::Magic:
+        return {120, 150, 255, 255};
+    case ItemQuality::Rare:
+        return {255, 230, 100, 255};
+    case ItemQuality::Set:
+        return {90, 220, 90, 255};
+    case ItemQuality::Unique:
+        return gold;
+    default:
+        return {225, 224, 215, 255};
+    }
+}
+} // namespace
+Rectangle SceneView::lootBounds(const ItemInstance &item) const {
+    auto p = screen(std::get<GroundLocation>(item.location).position);
+    auto animation = assets_.itemGround.find(item.definition);
+    if (animation != assets_.itemGround.end())
+        if (auto frame = animation->second.frame(0, animation->second.count - 1))
+            return {p.x + frame->x - 5, p.y + frame->y - 5, float(frame->texture.width + 10),
+                    float(frame->texture.height + 10)};
+    return {p.x - 12, p.y - 10, 24, 20};
+}
+void SceneView::drawGroundItem(EntityId id) const {
+    const auto &item = *session_.inventory().item(id);
+    auto p = screen(std::get<GroundLocation>(item.location).position);
+    if (p.x < -80 || p.x > W + 80 || p.y < -80 || p.y > H - HUD + 80)
+        return;
+    if (id == session_.pickupTarget())
+        diamond(p, 15, gold);
+    auto animation = assets_.itemGround.find(item.definition);
+    if (animation != assets_.itemGround.end() && animation->second.count > 0) {
+        const auto &anim = animation->second;
+        auto age = landingAge_.find(id);
+        int index =
+            age == landingAge_.end() ? anim.count - 1 : std::min(anim.count - 1, int(age->second * 25));
+        sprite(anim.frame(0, index), p);
+    } else {
+        // Older compact packs remain playable, with a visible fallback for missing graphics.
+        diamond(p, 7, itemColor(item.quality));
+        DrawCircleV(rv(p), 2, parchment);
+    }
+}
+std::vector<SceneView::LootLabel> SceneView::lootLabels(Vec mouse) const {
+    std::vector<LootLabel> layout, visible;
+    const auto &inventory = session_.inventory();
+    for (auto id : inventory.groundItems(session_.region().definition.id)) {
+        const auto &item = *inventory.item(id);
+        auto ground = screen(std::get<GroundLocation>(item.location).position);
+        if (ground.x < 0 || ground.x > W || ground.y < 70 || ground.y > H - HUD - 38)
+            continue;
+        const auto *definition = inventory.catalog().find(item.definition);
+        std::string text = definition->name;
+        if (item.quantity > 1)
+            text += " x" + std::to_string(item.quantity);
+        float width = float(painter_.measure(text, 14) + 14);
+        Rectangle box{std::clamp(ground.x - width / 2, 4.f, W - width - 4), ground.y - 30, width, 22};
+        bool placed = false;
+        // Alternate rows above and below the drop; drawing and clicking use this same layout.
+        for (int step = 0; step < 42; ++step) {
+            int row = step == 0 ? 0 : (step % 2 ? -(step + 1) / 2 : step / 2);
+            box.y = ground.y - 30 + row * 24;
+            if (box.y < 68 || box.y + box.height > H - HUD - 36)
+                continue;
+            if (std::none_of(layout.begin(), layout.end(),
+                             [&](const LootLabel &other) { return CheckCollisionRecs(box, other.bounds); })) {
+                placed = true;
+                break;
+            }
+        }
+        if (!placed)
+            continue;
+        LootLabel label{item.handle(), std::move(text), box, ground, itemColor(item.quality)};
+        layout.push_back(label);
+        bool recent = landingAge_.contains(id) && landingAge_.at(id) < 3;
+        if (view_.showLoot || recent || id == session_.pickupTarget() ||
+            CheckCollisionPointRec(rv(mouse), box) || CheckCollisionPointRec(rv(mouse), lootBounds(item)))
+            visible.push_back(std::move(label));
+    }
+    return visible;
+}
+std::optional<ItemHandle> SceneView::lootAt(Vec mouse, bool labelsOnly) const {
+    for (const auto &label : lootLabels(mouse))
+        if (CheckCollisionPointRec(rv(mouse), label.bounds))
+            return label.item;
+    if (!labelsOnly) {
+        std::optional<ItemHandle> closest;
+        float distance = 1000;
+        const auto &inventory = session_.inventory();
+        for (auto id : inventory.groundItems(session_.region().definition.id)) {
+            const auto &item = *inventory.item(id);
+            if (!CheckCollisionPointRec(rv(mouse), lootBounds(item)))
+                continue;
+            auto p = screen(std::get<GroundLocation>(item.location).position);
+            float candidate = (p - mouse).length();
+            if (candidate < distance) {
+                closest = item.handle();
+                distance = candidate;
+            }
+        }
+        return closest;
+    }
+    return std::nullopt;
+}
+void SceneView::drawLootLabels(Vec mouse) const {
+    for (const auto &label : lootLabels(mouse)) {
+        bool hot = CheckCollisionPointRec(rv(mouse), label.bounds) ||
+                   CheckCollisionPointRec(rv(mouse), lootBounds(*session_.inventory().item(label.item.id)));
+        bool selected = label.item.id == session_.pickupTarget();
+        if (hot || selected) {
+            DrawLineV(rv(label.ground),
+                      {label.bounds.x + label.bounds.width / 2, label.bounds.y + label.bounds.height},
+                      Fade(gold, .55f));
+            diamond(label.ground, 12, gold);
+        }
+        DrawRectangleRec(label.bounds, hot ? Color{48, 42, 24, 238} : Color{8, 9, 10, 205});
+        if (hot || selected)
+            DrawRectangleLinesEx(label.bounds, 1, gold);
+        painter_.label(label.text, int(label.bounds.x + 7), int(label.bounds.y + 3), 14, label.color);
+    }
+}
+} // namespace d2x

@@ -1,0 +1,15 @@
+/build*/
+/external/
+/reference/
+/downloads/
+/assets/mpq/*
+!/assets/mpq/.gitkeep
+/artifacts/
+/dist/
+/saves/
+*.d2xsave
+*.d2xsave.bak
+*.d2xsave.lock/
+*.log
+*.mpq
+*.MPQ

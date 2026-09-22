@@ -1,0 +1,92 @@
+#include "region.hpp"
+#include "resources/presets.hpp"
+#include <algorithm>
+#include <iostream>
+#include <stdexcept>
+
+namespace d2x {
+namespace {
+void appearanceKey(WorldObject &object) {
+    const auto &a = object.appearance;
+    object.key = a.category + a.token + a.mode + a.weapon;
+    for (const auto &part : a.equipment)
+        object.key += ":" + part;
+}
+void classify(WorldObject &object, const Table &objectRows) {
+    const auto &token = object.appearance.token;
+    static const std::map<std::string, std::string> names = {
+        {"gh", "Gheed"},    {"ps", "Akara"},        {"rc", "Kashya"},      {"ci", "Charsi"},
+        {"wa", "Warriv"},   {"dc", "Deckard Cain"}, {"rg", "Rogue Scout"}, {"b6", "Private Stash"},
+        {"wp", "Waypoint"}, {"ck", "Chicken"},      {"cw", "Cow"}};
+    if (auto it = names.find(token); it != names.end())
+        object.name = it->second;
+    if (token == "b6") {
+        object.interaction = Interaction::Stash;
+        auto record = std::find_if(objectRows.begin(), objectRows.end(), [](const auto &row) {
+            auto token = row.find("Token");
+            return token != row.end() && (token->second == "b6" || token->second == "B6");
+        });
+        if (record == objectRows.end())
+            throw std::runtime_error("MPQ objects.txt lacks the bank definition");
+        object.reach = float(std::stoi(record->at("OperateRange")));
+        if (object.reach <= 0)
+            throw std::runtime_error("Invalid bank interaction range in objects.txt");
+    } else if (token == "wp" || token == "wa")
+        object.interaction = Interaction::Travel;
+    else if (token == "ps")
+        object.interaction = Interaction::Heal;
+    else if (!object.name.empty() && token != "ck" && token != "cw")
+        object.interaction = Interaction::Talk;
+    object.flame = token == "rb" || token == "to";
+}
+} // namespace
+std::vector<Region> loadRegions(Archives &archives, EntityIds &ids, const std::vector<RegionPlan> &plans,
+                                const MonsterCatalog &monsters) {
+    auto objectRows = decodeTable(archives.read("data/global/excel/objects.txt"));
+    TileLibraryCache cache(archives);
+    std::vector<Region> regions;
+    regions.reserve(plans.size());
+    for (const auto &plan : plans) {
+        Region region;
+        region.definition = plan.definition;
+        region.recipe = plan.recipe;
+        region.map.load(archives, cache, plan.recipe);
+        if (region.definition.customArrival)
+            region.map.spawn = region.map.grid.nearest(region.definition.arrival);
+        for (size_t index = 0; index < region.map.data.objects.size(); ++index) {
+            const auto &source = region.map.data.objects[index];
+            if (source.type == 1 && monsters.supported()) {
+                auto unit = monsters.preset(region.map.data.act, source.id, region.map.data.version);
+                auto monster = monsters.find(unit.id);
+                // Hostile presets and placement markers belong to the population system.
+                // Keep friendly NPC/critter appearances in the static object pipeline.
+                if (unit.kind != MonsterPresetKind::Monster || (monster && monster->hostile()))
+                    continue;
+            }
+            auto preset = std::find_if(std::begin(presets), std::end(presets), [&](const auto &p) {
+                return p.type == source.type && p.id == source.id;
+            });
+            if (preset == std::end(presets)) {
+                ++region.unsupportedObjects;
+                continue;
+            }
+            WorldObject object;
+            object.id = ids.allocate();
+            object.contentKey = "ds1." + std::to_string(index);
+            object.pos = {source.x + .5f, source.y + .5f};
+            object.accessPoint = region.map.grid.nearest(object.pos);
+            object.appearance = {preset->category, preset->token, preset->mode, preset->weapon, {}};
+            for (size_t i = 0; i < object.appearance.equipment.size(); ++i)
+                object.appearance.equipment[i] = preset->gear[i];
+            classify(object, objectRows);
+            appearanceKey(object);
+            object.facing = (source.x + source.y) % 8;
+            region.objects.push_back(std::move(object));
+        }
+        std::cout << "  DS1 objects: " << region.objects.size() << " appearances, "
+                  << region.unsupportedObjects << " records await original unit rules\n";
+        regions.push_back(std::move(region));
+    }
+    return regions;
+}
+} // namespace d2x

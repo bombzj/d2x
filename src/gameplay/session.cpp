@@ -1,0 +1,147 @@
+#include "session.hpp"
+#include "core/fingerprint.hpp"
+#include <algorithm>
+#include <iostream>
+#include <type_traits>
+
+namespace d2x {
+GameSession::GameSession(Archives &archives, const WorldSelection &selection, int startRegion,
+                         uint64_t lootSeed, PopulationSettings population)
+    : content_(loadClassicData(archives)), worldContent_(archives),
+      monsterContent_(archives, content_.tables.at("monstats")), loot_(lootSeed) {
+    simulation_.state_.population = population;
+    playerContainers_ = inventory_.createPlayerContainers(state().player.id);
+    // Original Barbarian charstats.txt starter consumables (equipment is separate).
+    for (int column = 0; column < 4; ++column)
+        inventory_.createItem("hp1", 1, ContainerLocation{playerContainers_.belt, {column, 0}});
+    inventory_.createItem("tsc", 1, AutoPlace{playerContainers_.backpack});
+    inventory_.createItem("isc", 1, AutoPlace{playerContainers_.backpack});
+    auto plan = planWorld(archives, worldContent_, selection);
+    regions_ = loadRegions(archives, ids_, plan.regions, monsterContent_);
+    worldEntries_ = std::move(plan.entries);
+    Fingerprint fingerprint;
+    fingerprint.add(content_.profile);
+    // Bump this rules revision when state interpretation or compiled rules change.
+    fingerprint.add("d2x-session-rules-v3-mpq-population");
+    auto members = archives.used;
+    for (const auto &member : members) {
+        fingerprint.add(member);
+        fingerprint.add(archives.read(member));
+    }
+    contentFingerprint_ = fingerprint.value();
+    for (const auto &region : regions_) {
+        AreaState area;
+        area.region = region.definition.id;
+        inactiveAreas_.push_back(std::move(area));
+    }
+    if (startRegion < -1 || startRegion >= int(regions_.size()))
+        throw std::out_of_range("--region exceeds the available scene count; prefer --level <Levels.txt ID>");
+    enter(startRegion < 0 ? plan.start : regions_[startRegion].definition.id);
+}
+void GameSession::enter(RegionId id) {
+    auto found = std::find_if(regions_.begin(), regions_.end(),
+                              [id](const Region &r) { return r.definition.id == id; });
+    if (found == regions_.end())
+        return;
+    int index = int(found - regions_.begin());
+    if (current_ >= 0)
+        inactiveAreas_[current_] = simulation_.leaveArea();
+    current_ = index;
+    cancelPickup();
+    cancelInteraction();
+    closeStorage();
+    auto plan = inactiveAreas_[current_].initialized ? PopulationPlan{} : population(*found);
+    simulation_.enterArea(found->map.grid, found->map.spawn, std::move(inactiveAreas_[current_]),
+                          plan.spawns);
+}
+PopulationPlan GameSession::population(const Region &region) const {
+    const auto level = worldContent_.levels().find(int(region.definition.id));
+    const auto *record = level == worldContent_.levels().end() ? nullptr : &level->second;
+    const auto &preset = worldContent_.presets().at(region.recipe.preset);
+    auto plan = planPopulation(monsterContent_, record, preset, region.map, state().population);
+    writePopulationReport(std::cout, plan, record, preset, state().population);
+    return plan;
+}
+bool GameSession::inventoryDestinationAllowed(const ItemDestination &destination) const {
+    if (auto ground = std::get_if<GroundLocation>(&destination))
+        return ground->region == region().definition.id && std::isfinite(ground->position.x) &&
+               std::isfinite(ground->position.y) && ground->position.x >= 0 && ground->position.y >= 0 &&
+               ground->position.x < map().grid.width && ground->position.y < map().grid.height &&
+               map().grid.walkable(ground->position) &&
+               map().grid.segment(state().player.pos, ground->position);
+    return true;
+}
+void GameSession::publishInventory(InventoryResult result, EntityId requested) {
+    if (!result)
+        simulation_.emit(InventoryRejected{requested, result.error});
+    else {
+        for (const auto &change : result.changes)
+            simulation_.emit(change);
+        if (requested)
+            simulation_.emit(InventoryApplied{requested, result.item, result.transferred});
+    }
+}
+void GameSession::tick(float dt, Vec keyboard) {
+    simulation_.beginTick();
+    validateStorage();
+    auto commands = std::move(pending_);
+    pending_.clear();
+    bool transitioned = false;
+    for (const auto &command : commands) {
+        std::visit(
+            [&](const auto &intent) {
+                using T = std::decay_t<decltype(intent)>;
+                if constexpr (std::is_same_v<T, Travel>) {
+                    if (!state().player.dead) {
+                        enter(intent.destination);
+                        transitioned = true;
+                    }
+                } else if constexpr (std::is_same_v<T, RestartArea>) {
+                    cancelPickup();
+                    const auto &r = region();
+                    auto plan = population(r);
+                    simulation_.restartArea(r.map.spawn, plan.spawns);
+                    cancelInteraction();
+                    closeStorage();
+                    transitioned = true;
+                } else if constexpr (std::is_same_v<T, PickupItem>) {
+                    cancelInteraction();
+                    beginPickup(intent.item);
+                } else if constexpr (std::is_same_v<T, UseItem>)
+                    useItem(intent.item);
+                else if constexpr (std::is_same_v<T, UseBeltColumn>)
+                    useBeltColumn(intent.column);
+                else if constexpr (std::is_same_v<T, CloseStorage>)
+                    closeStorage();
+                else if constexpr (std::is_same_v<T, Interact>) {
+                    cancelPickup();
+                    interact(intent.target);
+                } else if constexpr (std::is_same_v<T, MoveItem> || std::is_same_v<T, SwapItems> ||
+                                     std::is_same_v<T, SplitStack> || std::is_same_v<T, MergeStacks> ||
+                                     std::is_same_v<T, EquipBelt> || std::is_same_v<T, TransferItem>)
+                    executeInventory(command);
+                else {
+                    if constexpr (std::is_same_v<T, MoveTo> || std::is_same_v<T, Attack> ||
+                                  std::is_same_v<T, CastSkill> || std::is_same_v<T, StopMoving>) {
+                        cancelPickup();
+                        cancelInteraction();
+                    }
+                    simulation_.execute(command);
+                }
+            },
+            command);
+        // A click queued in the previous region must not affect the new region.
+        if (transitioned)
+            break;
+    }
+    if (!transitioned && keyboard.length() > .1f) {
+        cancelPickup();
+        cancelInteraction();
+    }
+    simulation_.tick(dt, transitioned ? Vec{} : keyboard);
+    settleDeaths();
+    updatePickup();
+    updateInteraction();
+    validateStorage();
+}
+} // namespace d2x

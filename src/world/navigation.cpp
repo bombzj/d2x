@@ -1,0 +1,140 @@
+#include "navigation.hpp"
+#include <algorithm>
+#include <limits>
+#include <queue>
+#include <stdexcept>
+namespace d2x {
+bool Grid::segment(Vec a, Vec b) const {
+    auto delta = b - a;
+    int steps = std::max(1, int(delta.length() * 5));
+    Vec prev = a;
+    for (int i = 0; i <= steps; i++) {
+        auto p = a + delta * (float(i) / steps);
+        if (!walkable(p))
+            return false;
+        if (int(p.x) != int(prev.x) && int(p.y) != int(prev.y) &&
+            (!walkable(int(p.x), int(prev.y)) || !walkable(int(prev.x), int(p.y))))
+            return false;
+        prev = p;
+    }
+    return true;
+}
+Vec Grid::nearest(Vec p) const {
+    int px = std::clamp(int(p.x), 0, std::max(0, width - 1)),
+        py = std::clamp(int(p.y), 0, std::max(0, height - 1));
+    for (int radius = 0; radius < std::max(width, height); radius++)
+        for (int y = py - radius; y <= py + radius; y++)
+            for (int x = px - radius; x <= px + radius; x++)
+                if ((std::abs(x - px) == radius || std::abs(y - py) == radius) && walkable(x, y))
+                    return {x + .5f, y + .5f};
+    return p;
+}
+Vec Grid::inspectionArrival() const {
+    Bytes visited(blocked.size());
+    std::vector<int> component;
+    size_t largest = 0;
+    Vec result{};
+    for (int start = 0; start < int(blocked.size()); ++start) {
+        if (blocked[start] || visited[start])
+            continue;
+        component.clear();
+        component.push_back(start);
+        visited[start] = 1;
+        float best = std::numeric_limits<float>::infinity();
+        Vec point{};
+        for (size_t cursor = 0; cursor < component.size(); ++cursor) {
+            int index = component[cursor], x = index % width, y = index / width;
+            bool interior = true;
+            for (int dy = -1; dy <= 1; ++dy)
+                for (int dx = -1; dx <= 1; ++dx)
+                    interior &= walkable(x + dx, y + dy);
+            float dx = x + .5f - width * .5f, dy = y + .5f - height * .5f;
+            float score = dx * dx + dy * dy + (interior ? 0.f : float(width * width + height * height));
+            if (score < best) {
+                best = score;
+                point = {x + .5f, y + .5f};
+            }
+            for (const auto &[ox, oy] : {std::pair{-1, 0}, {1, 0}, {0, -1}, {0, 1}}) {
+                if (!walkable(x + ox, y + oy))
+                    continue;
+                int next = (y + oy) * width + x + ox;
+                if (!visited[next]) {
+                    visited[next] = 1;
+                    component.push_back(next);
+                }
+            }
+        }
+        if (component.size() > largest) {
+            largest = component.size();
+            result = point;
+        }
+    }
+    if (!largest)
+        throw std::runtime_error("No walkable scene arrival");
+    return result;
+}
+std::deque<Vec> Grid::path(Vec from, Vec to) const {
+    std::deque<Vec> out;
+    if (!walkable(from) || !walkable(to))
+        return out;
+    if (segment(from, to)) {
+        out.push_back(to);
+        return out;
+    }
+    int start = int(from.y) * width + int(from.x), goal = int(to.y) * width + int(to.x);
+    std::vector<float> costs(blocked.size(), std::numeric_limits<float>::infinity());
+    std::vector<int> parents(blocked.size(), -1);
+    Bytes closed(blocked.size());
+    using Entry = std::pair<float, int>;
+    std::priority_queue<Entry, std::vector<Entry>, std::greater<Entry>> open;
+    auto heuristic = [&](int id) {
+        int dx = std::abs(id % width - goal % width), dy = std::abs(id / width - goal / width);
+        return std::max(dx, dy) + .41421356f * std::min(dx, dy);
+    };
+    costs[start] = 0;
+    open.emplace(heuristic(start), start);
+    while (!open.empty()) {
+        int cur = open.top().second;
+        open.pop();
+        if (closed[cur])
+            continue;
+        if (cur == goal)
+            break;
+        closed[cur] = 1;
+        for (int dy = -1; dy <= 1; dy++)
+            for (int dx = -1; dx <= 1; dx++) {
+                if (!dx && !dy)
+                    continue;
+                int x = cur % width + dx, y = cur / width + dy;
+                if (!walkable(x, y))
+                    continue;
+                if (dx && dy && (!walkable(x - dx, y) || !walkable(x, y - dy)))
+                    continue;
+                int next = y * width + x;
+                float cost = costs[cur] + (dx && dy ? 1.41421356f : 1.f);
+                if (cost < costs[next]) {
+                    costs[next] = cost;
+                    parents[next] = cur;
+                    open.emplace(cost + heuristic(next), next);
+                }
+            }
+    }
+    if (start != goal && parents[goal] < 0)
+        return out;
+    for (int cur = goal; cur != start; cur = parents[cur])
+        out.push_front({cur % width + .5f, cur / width + .5f});
+    out.push_back(to);
+    // String-pull only across segments checked against the same collision grid.
+    std::deque<Vec> smooth;
+    Vec anchor = from;
+    while (!out.empty()) {
+        size_t far = 0;
+        while (far + 1 < out.size() && segment(anchor, out[far + 1]))
+            far++;
+        anchor = out[far];
+        smooth.push_back(anchor);
+        out.erase(out.begin(), out.begin() + far + 1);
+    }
+    return smooth;
+}
+} // namespace d2x

@@ -1,0 +1,423 @@
+#include "population.hpp"
+// Population rules adapted with reference to D2MOO (MIT), commit 5596f5cb6c5251a0a07c6637d26458b06099d516.
+// Copyright (c) 2020-2025 The Phrozen Keep community. See docs/licenses/D2MOO.txt.
+// Spatial placement and RNG remain project adapters; see docs/MONSTER_POPULATION.md.
+#include <algorithm>
+#include <ostream>
+#include <set>
+#include <stdexcept>
+
+namespace d2x {
+namespace {
+// Defined unsigned arithmetic/modulo keeps plans reproducible across C++ platforms.
+// This is a project seed stream, not the original game's multi-stream RNG.
+class Random {
+    uint64_t state_;
+
+  public:
+    explicit Random(uint32_t seed) : state_(seed) {}
+    uint32_t below(uint32_t bound) {
+        state_ += 0x9e3779b97f4a7c15ULL;
+        uint64_t x = state_;
+        x = (x ^ (x >> 30)) * 0xbf58476d1ce4e5b9ULL;
+        x = (x ^ (x >> 27)) * 0x94d049bb133111ebULL;
+        return bound ? uint32_t((x ^ (x >> 31)) % bound) : 0;
+    }
+    int between(int first, int last) {
+        if (first < 0 || last < first || last > 1024)
+            throw std::runtime_error("Invalid MPQ monster group range");
+        return first + int(below(uint32_t(last - first + 1)));
+    }
+};
+class Planner {
+    const MonsterCatalog &catalog_;
+    const LevelRecord *level_;
+    const PresetRecord &preset_;
+    const Map &map_;
+    PopulationSettings settings_;
+    PopulationPlan result_;
+    Random random_;
+    std::vector<const MonsterRecord *> roster_;
+    std::set<std::string> diagnostics_;
+    std::vector<uint8_t> occupied_;
+    uint32_t group_ = 0;
+    static constexpr size_t maxActors = 8192;
+
+    void diagnostic(std::string message) { diagnostics_.insert(std::move(message)); }
+    bool valid(Vec p, bool protectArrival) const {
+        if (!map_.grid.walkable(p))
+            return false;
+        if (protectArrival) {
+            // No linked warps yet. Protect the current inspection arrival using the
+            // squared WarpDist field; do not reinterpret it as a linear radius.
+            Vec delta = p - map_.spawn;
+            int distance = level_ ? std::max(0, level_->population.warpDistanceSquared) : 0;
+            if (delta.x * delta.x + delta.y * delta.y < distance)
+                return false;
+        }
+        int x = int(p.x), y = int(p.y);
+        for (int dy = -1; dy <= 1; ++dy)
+            for (int dx = -1; dx <= 1; ++dx) {
+                int xx = x + dx, yy = y + dy;
+                if (xx >= 0 && yy >= 0 && xx < map_.grid.width && yy < map_.grid.height &&
+                    occupied_[size_t(yy) * map_.grid.width + xx])
+                    return false;
+            }
+        return true;
+    }
+    std::optional<Vec> near(Vec center, int radius, bool protectArrival) {
+        if (valid(center, protectArrival))
+            return center;
+        // Bounded local adjustment only: never move a fixed boss to a remote chamber.
+        std::vector<Vec> candidates;
+        for (int y = -radius; y <= radius; ++y)
+            for (int x = -radius; x <= radius; ++x) {
+                Vec p = center + Vec{float(x), float(y)};
+                if (valid(p, protectArrival) && map_.grid.segment(center, p))
+                    candidates.push_back(p);
+            }
+        if (candidates.empty())
+            return {};
+        return candidates[random_.below(uint32_t(candidates.size()))];
+    }
+    std::optional<Vec> randomPosition() {
+        for (int attempt = 0; attempt < 20; ++attempt) {
+            Vec pos{float(random_.below(uint32_t(map_.grid.width))) + .5f,
+                    float(random_.below(uint32_t(map_.grid.height))) + .5f};
+            if (valid(pos, true))
+                return pos;
+        }
+        ++result_.rejectedPlacements;
+        return {};
+    }
+    const MonsterRecord *lookup(std::string_view code) {
+        auto monster = catalog_.find(code);
+        if (!monster)
+            diagnostic("Unresolved MonStats identity: " + std::string(code));
+        return monster;
+    }
+    std::optional<Vec> add(const MonsterRecord &monster, Vec pos, int radius, MonsterRank rank,
+                           SpawnOrigin origin, const std::string &key, const std::string &unique = {}) {
+        if (!monster.hostile()) {
+            ++result_.ignoredFriendly;
+            return {};
+        }
+        if (result_.spawns.size() >= maxActors) {
+            diagnostic("Population safety limit reached (8192 actors); remaining placements skipped.");
+            return {};
+        }
+        auto location = near(pos, radius, origin == SpawnOrigin::Density);
+        if (!location) {
+            ++result_.rejectedPlacements;
+            return {};
+        }
+        occupied_[size_t(int(location->y)) * map_.grid.width + int(location->x)] = 1;
+        result_.spawns.push_back({{monster.id, unique, key, rank, origin, group_},
+                                  monsterImplementation(monster.id).kind,
+                                  *location});
+        return location;
+    }
+    void party(const MonsterRecord &leader, Vec pos, SpawnOrigin origin, const std::string &key) {
+        if (leader.minions[0].empty() || leader.partyMax <= 0)
+            return;
+        int count = random_.between(leader.partyMin, leader.partyMax);
+        int classes = leader.minions[1].empty() ? 1 : 2;
+        for (int i = 0; i < count; ++i)
+            if (auto minion = lookup(leader.minions[i % classes]))
+                // The original creation flag 64 suppresses further party recursion.
+                add(*minion, pos, 4, MonsterRank::Minion, origin, key + ".party." + std::to_string(i));
+    }
+    const MonsterRecord *choose(bool elite) {
+        const MonsterRecord *monster = nullptr;
+        if (elite && settings_.difficulty == 0 && level_) {
+            const auto &pool = level_->population.unique;
+            if (!pool.empty())
+                monster = lookup(pool[random_.below(uint32_t(pool.size()))]);
+        } else {
+            uint32_t total = 0;
+            for (auto entry : roster_)
+                total += uint32_t(std::max(0, entry->rarity));
+            if (total) {
+                uint32_t roll = random_.below(total);
+                for (auto entry : roster_) {
+                    auto weight = uint32_t(std::max(0, entry->rarity));
+                    if (roll < weight) {
+                        monster = entry;
+                        break;
+                    }
+                    roll -= weight;
+                }
+            }
+        }
+        if (monster && monster->placeSpawn && !monster->spawn.empty() &&
+            random_.below(100) > uint32_t(elite ? 0 : 20))
+            monster = lookup(monster->spawn);
+        return monster && monster->hostile() ? monster : nullptr;
+    }
+    void selectRoster() {
+        if (!level_ || !level_->population.supported)
+            return;
+        const auto &p = level_->population;
+        auto pool = settings_.difficulty == 0 ? p.normal : p.nightmareHell;
+        int count = std::min({std::max(p.types, 0), 13, int(pool.size())});
+        for (int i = 0; i < count; ++i) {
+            size_t index = random_.below(uint32_t(pool.size()));
+            if (i == 0 && p.rangedFirst)
+                for (int attempt = 0; attempt < 20; ++attempt) {
+                    auto candidate = lookup(pool[index]);
+                    if (candidate && candidate->ranged)
+                        break;
+                    index = random_.below(uint32_t(pool.size()));
+                }
+            auto monster = lookup(pool[index]);
+            pool.erase(pool.begin() + index);
+            if (monster && monster->randomSpawn && monster->hostile()) {
+                roster_.push_back(monster);
+                result_.roster.push_back(monster->id);
+            }
+        }
+    }
+    void elite(const MonsterRecord &monster, Vec pos, SpawnOrigin origin, const std::string &key,
+               const SuperUniqueRecord *unique = nullptr, bool forceChampion = false) {
+        auto rank = unique ? MonsterRank::SuperUnique
+                    : forceChampion || random_.below(100) < uint32_t(catalog_.championChance())
+                        ? MonsterRank::Champion
+                        : MonsterRank::Unique;
+        auto leader = add(monster, pos, 4, rank, origin, key + ".leader", unique ? unique->id : "");
+        if (!leader)
+            return;
+        ++result_.eliteGroups;
+        int low = 3, high = 6; // Original random unique minion group range.
+        if (rank == MonsterRank::Champion) {
+            low = 1;
+            high = 3;
+        }
+        if (unique) {
+            low = unique->minGroup;
+            high = unique->maxGroup;
+            if (low && high) {
+                low += settings_.difficulty;
+                high += settings_.difficulty;
+            }
+        }
+        auto minion = rank == MonsterRank::Champion || monster.minions[0].empty()
+                          ? &monster
+                          : lookup(monster.minions[0]);
+        int count = random_.between(low, high);
+        for (int i = 0; minion && i < count; ++i)
+            add(*minion, *leader, 4, rank == MonsterRank::Champion ? rank : MonsterRank::Minion, origin,
+                key + ".minion." + std::to_string(i));
+    }
+    const MonsterRecord *classVariant(const std::string &base) {
+        if (!level_)
+            return nullptr;
+        auto result = lookup(base);
+        // D2Common_11063 uses the NORMAL level roster, including in N/H. If the
+        // family is absent, advance NextInClass up to normal area level + 1.
+        for (const auto &code : level_->population.normal) {
+            auto candidate = lookup(code);
+            if (candidate && candidate->base == base) {
+                result = candidate;
+                break;
+            }
+        }
+        if (result && result->id == base && !level_->population.normal.empty()) {
+            bool inPool = std::find(level_->population.normal.begin(), level_->population.normal.end(),
+                                    base) != level_->population.normal.end();
+            std::set<std::string> visited;
+            while (!inPool && !result->next.empty() && visited.insert(result->id).second) {
+                auto next = lookup(result->next);
+                if (!next || next->normalLevel > level_->population.level[0] + 1)
+                    break;
+                result = next;
+            }
+        }
+        // Original Act I preset overrides: Black Marsh, Tamoe Highland, Pit 1/2.
+        if (base == "fallen1") {
+            if (level_->id == 6)
+                result = lookup("fallen2");
+            if (level_->id == 7 || level_->id == 12 || level_->id == 16)
+                result = lookup("fallen3");
+        } else if (base == "fallenshaman1") {
+            if (level_->id == 6 || level_->id == 7)
+                result = lookup("fallenshaman2");
+            if (level_->id == 12 || level_->id == 16)
+                result = lookup("fallenshaman3");
+        }
+        return result;
+    }
+    void fixed() {
+        for (size_t i = 0; i < map_.data.objects.size(); ++i) {
+            const auto &o = map_.data.objects[i];
+            if (o.type != 1)
+                continue;
+            if (o.flags & 1u) {
+                diagnostic("DS1 presets with already-spawned flag skipped.");
+                continue;
+            }
+            auto unit = catalog_.preset(map_.data.act, o.id, map_.data.version);
+            std::string key = "ds1." + std::to_string(i);
+            Vec pos{o.x + .5f, o.y + .5f};
+            ++group_;
+            const MonsterRecord *monster = nullptr;
+            if (unit.kind == MonsterPresetKind::SuperUnique) {
+                auto unique = catalog_.superUnique(unit.id);
+                elite(*catalog_.find(unique->monster), pos, SpawnOrigin::Preset, key, unique);
+                continue;
+            }
+            if (unit.kind == MonsterPresetKind::Monster)
+                monster = lookup(unit.id);
+            else if (unit.kind == MonsterPresetKind::Place) {
+                if (unit.id == "place_nothing" || unit.id == "place_npc_pack")
+                    continue;
+                if (unit.id == "place_unique_pack" || unit.id == "place_champion") {
+                    if (auto selected = choose(true))
+                        elite(*selected, pos, SpawnOrigin::Preset, key, nullptr, unit.id == "place_champion");
+                    else
+                        diagnostic("Deferred " + unit.id + ": no parent level monster pool.");
+                    continue;
+                }
+                if (unit.id == "place_bloodraven")
+                    monster = lookup("bloodraven");
+                // These markers need native level class-chain selection, not DS1 filenames.
+                else if (level_ && (unit.id == "place_fallen" || unit.id == "place_fallenshaman")) {
+                    auto base = unit.id == "place_fallen" ? "fallen1" : "fallenshaman1";
+                    monster = classVariant(base);
+                    if (!monster)
+                        diagnostic("Deferred " + unit.id + ": native class-chain rule required.");
+                } else
+                    diagnostic("Deferred MonPlace rule: " + unit.id);
+            } else
+                diagnostic("Unknown DS1 monster preset " + std::to_string(o.id));
+            if (!monster)
+                continue;
+            auto point = add(*monster, pos, 4, monster->boss ? MonsterRank::Boss : MonsterRank::Normal,
+                             SpawnOrigin::Preset, key);
+            if (point)
+                party(*monster, *point, SpawnOrigin::Preset, key);
+        }
+    }
+    void density() {
+        if (!level_ || !level_->population.supported || !preset_.populate)
+            return;
+        const auto &p = level_->population;
+        int density = std::clamp(p.density[settings_.difficulty], 0, 10000);
+        if (density == 0 || roster_.empty())
+            return;
+        // Original loop operates on DRLG room rectangles in subtiles. This adapter
+        // has one whole DS1 rectangle (excluding the DS1's extra border tile).
+        result_.densityTrials = ((map_.data.width - 1) * 5 / 3) * ((map_.data.height - 1) * 5) / 3;
+        for (int trial = 0; trial < result_.densityTrials; ++trial) {
+            if (random_.below(100000) > uint32_t(density))
+                continue;
+            auto monster = choose(false);
+            if (!monster)
+                continue;
+            bool boss = result_.eliteGroups < p.uniqueMin[settings_.difficulty] ||
+                        (result_.eliteGroups < p.uniqueMax[settings_.difficulty] && random_.below(100) <= 5);
+            auto key = "density." + std::to_string(trial);
+            ++group_;
+            if (boss) {
+                auto selected = choose(true);
+                auto pos = randomPosition();
+                if (selected && pos)
+                    elite(*selected, *pos, SpawnOrigin::Density, key);
+                continue;
+            }
+            if (monster->sparse && random_.below(100) > uint32_t(monster->sparse))
+                continue;
+            int count = monster->base == "fallen1" || monster->base == "scarab1"
+                            ? 1
+                            : random_.between(monster->minGroup, monster->maxGroup);
+            if (!count)
+                continue;
+            auto pos = randomPosition();
+            if (!pos)
+                continue;
+            for (int member = 0; member < count; ++member) {
+                auto memberKey = key + "." + std::to_string(member);
+                auto point = add(*monster, *pos, 3, MonsterRank::Normal, SpawnOrigin::Density, memberKey);
+                if (point)
+                    party(*monster, *point, SpawnOrigin::Density, memberKey);
+            }
+        }
+    }
+
+  public:
+    Planner(const MonsterCatalog &catalog, const LevelRecord *level, const PresetRecord &preset,
+            const Map &map, PopulationSettings settings, uint32_t seed)
+        : catalog_(catalog), level_(level), preset_(preset), map_(map), settings_(settings), random_(seed),
+          occupied_(map.grid.blocked.size()) {
+        result_.sceneSeed = seed;
+    }
+    PopulationPlan run() {
+        if (!catalog_.supported()) {
+            result_.diagnostics = catalog_.diagnostics();
+            return result_;
+        }
+        for (const auto &message : catalog_.diagnostics())
+            diagnostic(message);
+        if (level_ && level_->id == 1)
+            return result_; // Town is never a hostile population.
+        selectRoster();
+        fixed();
+        density();
+        if (!level_)
+            diagnostic("Template preview: no native level roster/density; fixed presets only.");
+        if (level_ && !level_->population.supported)
+            diagnostic("Unsupported Levels population schema.");
+        result_.diagnostics.assign(diagnostics_.begin(), diagnostics_.end());
+        return std::move(result_);
+    }
+};
+} // namespace
+PopulationPlan planPopulation(const MonsterCatalog &catalog, const LevelRecord *level,
+                              const PresetRecord &preset, const Map &map, PopulationSettings settings) {
+    if (settings.difficulty < 0 || settings.difficulty > 2)
+        throw std::runtime_error("Population difficulty must be 0..2");
+    uint32_t seed = 2166136261u ^ settings.seed;
+    for (unsigned char c : normalize(map.path))
+        seed = (seed ^ c) * 16777619u;
+    seed = (seed ^ uint32_t(level ? level->id : 10000 + preset.id)) * 16777619u;
+    seed = (seed ^ uint32_t(settings.difficulty)) * 16777619u;
+    return Planner(catalog, level, preset, map, settings, seed).run();
+}
+void writePopulationReport(std::ostream &out, const PopulationPlan &plan, const LevelRecord *level,
+                           const PresetRecord &preset, PopulationSettings settings) {
+    out << "Population: " << (level ? level->name : preset.name) << " | difficulty=" << settings.difficulty
+        << " seed=" << settings.seed << " sceneSeed=" << plan.sceneSeed << " Populate=" << preset.populate
+        << '\n';
+    if (level) {
+        const auto &p = level->population;
+        out << "  NumMon=" << p.types << " MonDen=" << p.density[settings.difficulty]
+            << " MonUMin/Max=" << p.uniqueMin[settings.difficulty] << '/' << p.uniqueMax[settings.difficulty]
+            << " WarpDist(squared)=" << p.warpDistanceSquared << " areaLevel=" << p.level[settings.difficulty]
+            << '\n';
+        for (int i = 0; i < 4; ++i)
+            if (!p.critters[i].empty())
+                out << "  Ambient rule (deferred, never an enemy): " << p.critters[i]
+                    << " cpct=" << p.critterChance[i] << " camt=" << p.critterAmount[i] << '\n';
+    }
+    out << "  Selected roster:";
+    for (const auto &code : plan.roster)
+        out << ' ' << code;
+    out << "\n  Actors=" << plan.spawns.size() << " eliteGroups=" << plan.eliteGroups
+        << " trials=" << plan.densityTrials << " rejected=" << plan.rejectedPlacements
+        << " friendlyIgnored=" << plan.ignoredFriendly << '\n';
+    std::map<std::string, int> counts;
+    for (const auto &spawn : plan.spawns) {
+        auto label = spawn.identity.monster + " [" + monsterRankName(spawn.identity.rank) + "]";
+        if (!spawn.identity.superUnique.empty())
+            label += " " + spawn.identity.superUnique;
+        label += spawn.identity.origin == SpawnOrigin::Preset ? " (DS1)" : " (density)";
+        if (monsterImplementation(spawn.identity.monster).substitute)
+            label += " -> Fallen substitute";
+        ++counts[label];
+    }
+    for (const auto &[name, count] : counts)
+        out << "  " << count << " x " << name << '\n';
+    for (const auto &message : plan.diagnostics)
+        out << "  " << message << '\n';
+    out << "  Placement: DS1 scene adapter; original DRLG rooms/seed streams and elite modifiers pending.\n";
+}
+} // namespace d2x
