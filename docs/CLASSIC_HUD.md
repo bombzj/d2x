@@ -20,7 +20,7 @@
 
 ## 传送点菜单
 
-普通传送点菜单使用运行时 MPQ 的 `800borderframe.dc6`、`waygatebackground.dc6`、`waygateicons.dc6` 和 `expwaygatetabs.dc6`（没有资料片页签时读取 `waygatetabs.dc6`），在左侧显示原边框、九个目的地槽位、激活／未激活图标与关闭格。目的地名称来自 `Levels.txt`，顺序由其 `Waypoint` 字段决定；实际可选与否仍由会话的激活记录控制。当前仅第一幕有可到达区域，其余原页签只展示，不允许选择。F2 开发目录继续使用独立界面与自由传送命令。此项尚未构建或运行，边框拼接和命中坐标仍待画面验收。
+普通传送点菜单使用运行时 MPQ 的 `800borderframe.dc6`、`waygatebackground.dc6`、`waygateicons.dc6` 和 `expwaygatetabs.dc6`（没有资料片页签时读取 `waygatetabs.dc6`），在左侧显示原边框、九个目的地槽位、激活／未激活图标与关闭格。目的地名称来自 `Levels.txt`，顺序由其 `Waypoint` 字段决定；实际可选与否仍由会话的激活记录控制。当前仅第一幕有可到达区域，其余原页签只展示，不允许选择。F2 开发目录继续使用独立界面与自由传送命令。此项随 Windows 构建通过，尚未打开菜单作画面验收。
 
 | 技能记录 | 图集 | 当前 MPQ 帧（从 0 起） |
 | --- | --- | --- |

@@ -4,15 +4,18 @@ namespace d2x {
 void SceneView::drawHud() const {
     const auto &sim = session_.state();
     drawControlPanel();
-    painter_.label("D2X", 22, 20, 20, gold);
-    painter_.label("CLASSIC ENGINE / C++", 72, 24, 10, {154, 149, 129, 255});
-    int worldWidth = view_.inventory.open && !view_.inventory.storage ? int(inventoryBounds().x) : W;
-    const auto &regionName = session_.region().definition.name;
-    painter_.label(regionName, (worldWidth - painter_.measure(regionName, 20)) / 2, 20, 20, gold);
-    const std::string subtitle = "ACT I  /  ORIGINAL MPQ ASSETS";
-    painter_.label(subtitle, (worldWidth - painter_.measure(subtitle, 10)) / 2, 46, 10, {137, 136, 112, 255});
-    painter_.label("F2 Catalog   TAB Map", W - 204, 191, 10, {153, 144, 118, 255});
-    painter_.label("F1 Help     M Sound", W - 204, 207, 10, {153, 144, 118, 255});
+    if (!view_.npcMenu && view_.dialogue.empty() && !view_.shopOpen) {
+        painter_.label("D2X", 22, 20, 20, gold);
+        painter_.label("CLASSIC ENGINE / C++", 72, 24, 10, {154, 149, 129, 255});
+        int worldWidth = view_.inventory.open && !view_.inventory.storage ? int(inventoryBounds().x) : W;
+        const auto &regionName = session_.region().definition.name;
+        painter_.label(regionName, (worldWidth - painter_.measure(regionName, 20)) / 2, 20, 20, gold);
+        const std::string subtitle = "ACT I  /  ORIGINAL MPQ ASSETS";
+        painter_.label(subtitle, (worldWidth - painter_.measure(subtitle, 10)) / 2, 46, 10,
+                       {137, 136, 112, 255});
+        painter_.label("F2 Catalog   TAB Map", W - 204, 191, 10, {153, 144, 118, 255});
+        painter_.label("F1 Help     M Sound", W - 204, 207, 10, {153, 144, 118, 255});
+    }
     if (!sim.message.empty())
         painter_.centered(sim.message, H - HUD - 35, 16, {218, 176, 95, 255});
     if (view_.noticeTime > 0) {
@@ -78,7 +81,7 @@ void SceneView::draw(Vec mouse) const {
     drawExitHint(mouse);
     EndScissorMode();
     DrawRectangleGradientV(0, 0, W, 105, {0, 0, 0, 145}, {0, 0, 0, 0});
-    if (!view_.inventory.open)
+    if (!view_.inventory.open && !view_.npcMenu && view_.dialogue.empty())
         drawMinimap(false);
     if (view_.automap)
         drawMinimap(true);

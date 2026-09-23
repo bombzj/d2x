@@ -11,4 +11,4 @@
 
 已核实：`npc.txt` 主要是交易价格字段；`a1npc.txt` 包含 Akara 等 NPC 的长篇原始文本与声音引用；`monstats.txt` 中部分营地 NPC 为 `AI=Npc` 且有不同 `Velocity`。DS1 的路径记录位于单位与替换组之后。`townw1.ds1` v18 有 5 个单位各自 3–6 个节点，动作 1–4；`townn1.ds1` 亦有 5 个带路径单位。当前会话没有任务进度，不能据此播放任务分支对话。当前营地里的凯恩是 DS1 外观对象，尚未由任务系统替换为 `cain2` 实体；正式救援任务、出现时机和任务奖励未实现，现阶段只提供交谈中的付费鉴定。
 
-当前界面调整：交互菜单缩至 NPC 附近，Talk、Trade、Identify Items、Gossip、Cancel 按当前服务显示；Talk／Gossip 的原 MPQ 正文在画面顶部的小型半透明字幕框显示，场景和底栏保持可见。长文可用滚轮／PgUp／PgDn 阅读，点击或 Esc 返回菜单；鉴定服务位于菜单，不嵌在字幕框。原版截图用于核对几何和交互层级；菜单边框与字幕框目前仍是程序绘制的近似样式，原版逐字自动滚动／声音时序尚未核实。此界面改动尚未构建或运行，前述长对话截图属于旧面板。
+当前界面调整：交互菜单缩至 NPC 附近，Talk、Trade、Identify Items、Gossip、Cancel 按当前服务显示；Talk／Gossip 的原 MPQ 正文在画面顶部的小型半透明字幕框显示，场景和底栏保持可见。正文使用运行时 MPQ 的 `FontFormal12`，普通界面仍使用 `Font16`。长文可用滚轮／PgUp／PgDn 阅读，点击或 Esc 返回菜单；鉴定服务位于菜单，不嵌在字幕框。[英文原版对话截图](https://www.swordsandsoftware.com/images/d2tristram/screenshot58.jpg)用于核对字幕框尺寸和位置。Windows 构建、Akara 菜单与对话画面截取通过，当前截图及参考链接位于忽略的 `artifacts/ui-review-20260923/`；前述长对话截图属于旧面板。菜单边框与字幕框仍是程序绘制的近似样式，原版逐字自动滚动／声音时序尚未核实。

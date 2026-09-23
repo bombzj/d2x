@@ -4,7 +4,8 @@
 
 namespace d2x {
 SceneView::SceneView(Archives &archives, const GameSession &session)
-    : session_(session), assets_(archives, session), painter_(assets_.font) {
+    : session_(session), assets_(archives, session), painter_(assets_.font),
+      speechPainter_(assets_.speechFont) {
     view_.camera = project(session_.state().player.pos);
     view_.portalRevision = session_.state().portal.revision;
 }

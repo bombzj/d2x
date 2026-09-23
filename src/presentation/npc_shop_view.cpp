@@ -8,9 +8,11 @@ constexpr float scale = 1.25f;
 Rectangle panelBounds() { return {16, 20, 400, 540}; }
 Rectangle shopGrid() { return {16 + 14 * scale, 20 + 62 * scale,
                                10 * inventoryCellSize, 8 * inventoryCellSize}; }
-Rectangle tabBounds(int index) { return {22 + index * 127.f, 35, 117, 40}; }
-Rectangle backButton() { return {348, 519, 50, 39}; }
-Rectangle pageButton(bool next) { return {next ? 293.f : 232.f, 519, 53, 35}; }
+Rectangle tabBounds(int index) { return {16 + index * 80 * scale, 20, 80 * scale, 28 * scale}; }
+Rectangle shopButton(int index) { return {16 + (112 + index * 52) * scale, 20 + 400 * scale,
+                                         32 * scale, 32 * scale}; }
+Rectangle backButton() { return shopButton(3); }
+Rectangle pageButton(bool next) { return {next ? 92.f : 34.f, 520, 48, 34}; }
 Rectangle confirmBounds() { return {89, 178, 265, 248}; }
 Rectangle confirmButton(bool yes) {
     auto bounds = confirmBounds();
@@ -104,9 +106,10 @@ std::optional<uint32_t> SceneView::clickNpcShop(Vec mouse) {
         view_.inventory.open = false;
         return {};
     }
-    for (int index = 0; index < 3; ++index)
+    for (int index = 0; index < 4; ++index)
         if (CheckCollisionPointRec(rv(mouse), tabBounds(index))) {
-            view_.shopCategory = index;
+            if (index == 2) return {}; // Magic stock is not implemented yet.
+            view_.shopCategory = index == 3 ? 2 : index;
             view_.shopPage = 0;
             return {};
         }
@@ -137,15 +140,18 @@ void SceneView::drawNpcShop(Vec mouse) const {
                             panel.y + (index / 2) * 256 * scale,
                             tile.width * scale, tile.height * scale}, {0, 0}, 0, WHITE);
         }
-    const char *labels[] = {"ARMOR", "WEAPONS", "MISC"};
-    for (int index = 0; index < 3; ++index) {
+    const char *labels[] = {"Armor", "Weapons", "Magic", "Misc"};
+    for (int index = 0; index < 4; ++index) {
         auto tab = tabBounds(index);
-        if (auto sprite = assets_.vendorTabs.frame(0, view_.shopCategory == index ? index + 4 : index)) {
+        bool selected = index == (view_.shopCategory == 2 ? 3 : view_.shopCategory);
+        if (auto sprite = assets_.vendorTabs.frame(0, selected ? index + 4 : index)) {
             const auto &texture = sprite->texture;
             DrawTexturePro(texture, {0, 0, float(texture.width), float(texture.height)},
                            tab, {0, 0}, 0, WHITE);
         }
-        painter_.label(labels[index], int(tab.x) + 16, int(tab.y) + 10, 13, gold);
+        painter_.label(labels[index], int(tab.x + (tab.width - painter_.measure(labels[index], 13)) / 2),
+                       int(tab.y) + 9, 13,
+                       index == 2 ? Color{105, 101, 94, 255} : gold);
     }
     auto items = placements(session_, view_.dialogueObject, view_.shopCategory);
     const VendorOffer *hovered = nullptr;
@@ -167,12 +173,22 @@ void SceneView::drawNpcShop(Vec mouse) const {
         label += "  " + std::to_string(hovered->price) + " GOLD";
         painter_.label(label, 36, 460, 13, gold);
     }
-    frame(pageButton(false)); frame(pageButton(true)); frame(backButton());
-    painter_.label("<", 250, 526, 17, gold);
-    painter_.label(">", 313, 526, 17, gold);
-    painter_.label("X", 365, 526, 17, gold);
-    painter_.label(std::to_string(view_.shopPage + 1) + " / " +
-                   std::to_string(maximumPage(items) + 1), 174, 526, 13, gold);
+    painter_.label("GOLD: " + std::to_string(session_.state().player.gold), 43, 473, 13, parchment);
+    const int buttonFrames[] = {2, 4, 6, 10};
+    for (int index = 0; index < 4; ++index) {
+        auto sprite = assets_.vendorButtons.frame(0, buttonFrames[index]);
+        if (!sprite) continue;
+        const auto &texture = sprite->texture;
+        DrawTexturePro(texture, {0, 0, float(texture.width), float(texture.height)},
+                       shopButton(index), {0, 0}, 0,
+                       index == 1 || index == 2 ? Color{125, 125, 125, 255} : WHITE);
+    }
+    if (maximumPage(items) > 0) {
+        painter_.label("<", 48, 528, 15, gold);
+        painter_.label(">", 106, 528, 15, gold);
+        painter_.label(std::to_string(view_.shopPage + 1) + "/" +
+                       std::to_string(maximumPage(items) + 1), 54, 552, 11, gold);
+    }
     if (!view_.dialogueStatus.empty())
         painter_.label(view_.dialogueStatus, 28, 488, 12, gold);
     if (view_.shopConfirm) {

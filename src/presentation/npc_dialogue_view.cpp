@@ -3,14 +3,14 @@
 
 namespace d2x {
 namespace {
-constexpr int visibleLines = 6;
+constexpr int visibleLines = 5;
 constexpr int textSize = 18;
-constexpr int lineHeight = 24;
+constexpr int lineHeight = 27;
 Rectangle speechBounds() { return {(W - 540.f) / 2, 8, 540, 170}; }
 int textWidth() { return int(speechBounds().width) - 32; }
 
 std::string fontText(std::string text) {
-    // The original Font16 DC6 is byte-indexed. Keep MPQ text intact in content;
+    // The original Latin DC6 font is byte-indexed. Keep MPQ text intact in content;
     // normalize only punctuation that this renderer cannot address as UTF-8.
     for (auto [from, to] : {std::pair{"\xe2\x80\x99", "'"}, {"\xe2\x80\x98", "'"},
                             {"\xe2\x80\x9c", "\""}, {"\xe2\x80\x9d", "\""},
@@ -58,7 +58,7 @@ void SceneView::openNpcDialogue(EntityId object, std::string speaker, std::strin
                     wordEnd = paragraph.size();
                 auto word = paragraph.substr(wordAt, wordEnd - wordAt);
                 auto candidate = line.empty() ? word : line + ' ' + word;
-                if (!line.empty() && painter_.measure(candidate, textSize) > textWidth()) {
+                if (!line.empty() && speechPainter_.measure(candidate, textSize) > textWidth()) {
                     view_.dialogueLines.push_back(std::move(line));
                     line = std::move(word);
                 } else
@@ -101,15 +101,15 @@ void SceneView::drawNpcDialogue() const {
     auto bounds = speechBounds();
     DrawRectangleRec(bounds, {0, 0, 0, 200});
     DrawRectangleLinesEx(bounds, 1, gold);
-    BeginScissorMode(int(bounds.x) + 14, int(bounds.y) + 12,
-                     textWidth() + 4, visibleLines * lineHeight);
+    BeginScissorMode(int(bounds.x) + 14, int(bounds.y) + 8,
+                     textWidth() + 4, int(bounds.height) - 16);
     for (int row = 0; row < visibleLines; ++row) {
         auto index = view_.dialogueScroll + row;
         if (index >= int(view_.dialogueLines.size()))
             break;
-        painter_.label(view_.dialogueLines[size_t(index)], int(bounds.x) + 16,
-                       int(bounds.y) + 13 + row * lineHeight,
-                       textSize, {230, 226, 212, 255});
+        speechPainter_.label(view_.dialogueLines[size_t(index)], int(bounds.x) + 16,
+                             int(bounds.y) + 1 + row * lineHeight,
+                             textSize, {230, 226, 212, 255});
     }
     EndScissorMode();
 }

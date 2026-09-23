@@ -4,17 +4,24 @@
 #include <algorithm>
 
 namespace d2x {
+namespace {
+void loadFont(Graphics &graphics, Archives &archives, ClassicFont &font, std::string_view name) {
+    auto path = "data/local/font/latin/" + std::string(name);
+    font.glyphs = graphics.single(path + ".dc6");
+    auto tbl = archives.read(path + ".tbl", false);
+    if (tbl.size() < 3596 || font.glyphs.frames.empty())
+        throw std::runtime_error("Original UI font is missing: " + path);
+    for (int i = 0; i < 256; ++i) {
+        font.widths[i] = tbl[12 + i * 14 + 3];
+        font.indices[i] = tbl[12 + i * 14 + 8];
+    }
+    font.ready = true;
+}
+} // namespace
 SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
     : graphics_(archives), uiGraphics_(archives, "data/global/palette/sky/pal.dat"), audio(archives) {
-    font.glyphs = uiGraphics_.single("data/local/font/latin/font16.dc6");
-    auto tbl = archives.read("data/local/font/latin/font16.tbl", false);
-    if (tbl.size() >= 3596 && !font.glyphs.frames.empty()) {
-        for (int i = 0; i < 256; ++i) {
-            font.widths[i] = tbl[12 + i * 14 + 3];
-            font.indices[i] = tbl[12 + i * 14 + 8];
-        }
-        font.ready = true;
-    }
+    loadFont(uiGraphics_, archives, font, "font16");
+    loadFont(uiGraphics_, archives, speechFont, "fontformal12");
     for (const auto &region : session.regions()) {
         std::vector<Sprite> tiles;
         for (const auto &tile : region.map.tiles)
@@ -75,9 +82,11 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
     inventoryPanel = graphics_.single("data/global/ui/panel/invchar.dc6");
     vendorPanel = graphics_.single("data/global/ui/panel/buysell.dc6");
     vendorTabs = graphics_.single("data/global/ui/panel/buyselltabs.dc6");
+    vendorButtons = graphics_.single("data/global/ui/panel/buysellbtn.dc6");
     vendorConfirm = graphics_.single("data/global/ui/menu/dialogbackground.dc6");
     if (!session.content().vendors.empty() &&
         (vendorPanel.frames.size() < 4 || vendorTabs.frames.size() < 8 ||
+         vendorButtons.frames.size() < 16 ||
          vendorConfirm.frames.empty()))
         throw std::runtime_error("Original vendor UI artwork is missing");
     waypointBorder = graphics_.single("data/global/ui/panel/800borderframe.dc6");

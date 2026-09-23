@@ -36,6 +36,7 @@ class SceneView {
     const GameSession &session_;
     SceneAssets assets_;
     UiPainter painter_;
+    UiPainter speechPainter_;
     ViewState view_;
     std::map<EntityId, float> landingAge_;
     std::map<EntityId, Vec> monsterPositions_, monsterLooks_;

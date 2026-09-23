@@ -17,7 +17,7 @@ class SceneAssets {
 
   public:
     SoundBank audio;
-    ClassicFont font;
+    ClassicFont font, speechFont;
     struct SkillIcon {
         Sprite sprite;
         bool leftAllowed = false;
@@ -32,7 +32,7 @@ class SceneAssets {
     std::array<GpuAnimation, 2> townPortalAnimations;
     std::array<ObjectAnimationRule, 2> townPortalRules;
     GpuAnimation fireball, fireburst, panel, cursor, inventoryPanel, vendorPanel, vendorTabs,
-        vendorConfirm, waypointBorder, waypointPanel, waypointTabs, waypointIcons,
+        vendorButtons, vendorConfirm, waypointBorder, waypointPanel, waypointTabs, waypointIcons,
         storagePanel, beltPanel, beltSocket, orbs,
         globeOverlap, runButton, button;
     SceneAssets(Archives &archives, const GameSession &session);
