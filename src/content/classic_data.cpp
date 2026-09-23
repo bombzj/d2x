@@ -14,7 +14,7 @@
 namespace d2x {
 ClassicData loadClassicData(Archives &archives) {
     std::map<std::string, DataTable, std::less<>> tables;
-    for (auto name : {"misc", "weapons", "armor", "armtype", "belts", "monstats", "charstats", "skills", "experience"})
+    for (auto name : {"misc", "weapons", "armor", "armtype", "belts", "monstats", "charstats", "skills", "experience", "inventory"})
         tables.emplace(name, DataTable(archives.read(std::string("data/global/excel/") + name + ".txt")));
     const auto &armtype = tables.at("armtype");
     if (!armtype.has("Token"))
@@ -32,6 +32,7 @@ ClassicData loadClassicData(Archives &archives) {
     tables.emplace(treasureName,
                    DataTable(archives.read(std::string("data/global/excel/") + treasureName + ".txt")));
     if (lod) {
+        tables.emplace("monlvl", DataTable(archives.read("data/global/excel/monlvl.txt")));
         if (archives.contains("data/global/excel/npc.txt"))
             tables.emplace("npc", DataTable(archives.read("data/global/excel/npc.txt")));
         tables.emplace("itemtypes", DataTable(archives.read("data/global/excel/itemtypes.txt")));
@@ -152,6 +153,28 @@ ClassicData loadClassicData(Archives &archives) {
         loadEquipmentDefinitions(items, tables.at("itemtypes"), tables);
     ClassicData data{ItemCatalog(std::move(items)), std::move(tables),
                      legacy ? "classic-1.04-txt-v1" : "lod-named-txt-v1"};
+    const auto &inventory = data.tables.at("inventory");
+    const auto stashName = lod ? "Big Bank Page 1" : "Bank Page 1";
+    size_t stashRow = 0;
+    for (; stashRow < inventory.rows().size(); ++stashRow)
+        if (inventory.value(stashRow, "class") == stashName) break;
+    if (stashRow == inventory.rows().size())
+        throw std::runtime_error("MPQ inventory.txt lacks the original stash layout");
+    auto requiredGrid = [&](std::string_view field) {
+        auto value = inventory.number(stashRow, field);
+        if (!value) throw std::runtime_error("Invalid MPQ stash layout field: " + std::string(field));
+        return *value;
+    };
+    data.stashLayout = {requiredGrid("gridX"), requiredGrid("gridY"),
+                        requiredGrid("gridLeft"), requiredGrid("gridTop"),
+                        requiredGrid("gridBoxWidth"), lod};
+    if (data.stashLayout.columns < 1 || data.stashLayout.rows < 1 ||
+        data.stashLayout.columns > 16 || data.stashLayout.rows > 16 ||
+        data.stashLayout.left < 0 || data.stashLayout.top < 0 ||
+        data.stashLayout.cellSize < 1 || data.stashLayout.cellSize != requiredGrid("gridBoxHeight") ||
+        data.stashLayout.left + data.stashLayout.columns * data.stashLayout.cellSize > 320 ||
+        data.stashLayout.top + data.stashLayout.rows * data.stashLayout.cellSize > 432)
+        throw std::runtime_error("Unsupported MPQ stash grid geometry");
     data.characters = loadCharacterDefinitions(data.tables.at("charstats"));
     for (const auto &character : data.characters)
         data.experienceByClass.emplace(character.name,

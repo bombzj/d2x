@@ -53,11 +53,11 @@
 - [OpenDiablo2 MPQ Viewer](https://github.com/OpenDiablo2/MpqViewer)，其 `listfile.go` 引用 Zezula 的 Diablo II LOD 文件名表。开发时用于发现实际资源路径；运行时使用明确路径和本项目 MPQ 的内置文件名表。
 
 
-腰带阶段还使用同包 `ctrlpnl_popbelt.dc6`、`inv_belt.dc6`、`hlthmana.dc6`、`mediumbuttonblank.dc6`、`baskillicon.dc6` 以及 `potiondrink.wav`、`belt.wav`。腰带容量、自动入带及起始消耗品根据 `belts.txt`、`misc.txt`、`charstats.txt` 提取；技能图标帧取自 `skills.txt`。这些原始表随精简 MPQ 保留。物品、自动入带标志和腰带容量已使用运行时导入；起始消耗品仍是按原表提取的配置；技能图标已改为运行时读取 Skills / SkillDesc，并非支持任意 MOD。
+腰带阶段还使用 `ctrlpnl_popbelt.dc6`、`inv_belt.dc6`、`hlthmana.dc6`、`mediumbuttonblank.dc6`、`baskillicon.dc6` 以及 `potiondrink.wav`、`belt.wav`。腰带容量、自动入带及起始消耗品根据原 MPQ 的 `belts.txt`、`misc.txt`、`charstats.txt` 提取；技能图标帧取自 `skills.txt`。物品、自动入带标志和腰带容量已使用运行时导入；起始消耗品仍是按原表提取的配置；技能图标已改为运行时读取 Skills / SkillDesc，并非支持任意 MOD。
 
 药剂恢复量与基本行为参考 [暴雪 Arreat Summit 药剂资料](https://classic.battle.net/diablo2exp/items/potions.shtml)。该说明包含资料片年代的规则，不是经典试玩 1.04 的逐帧规范；项目使用的持续时长、混用队列和耐力增强详见 [腰带与物品使用](BELT_AND_CONSUMABLES.md)，不可据此宣称完整复刻。
 
 
-私人储物箱读取当前 MPQ 的 `data/global/ui/panel/bank.dc6`、原 DS1 私人箱实体及 b6 COF/DCC；格子取自 `inventory.txt` Bank Page 1，操作距离取自 `objects.txt` bank 记录。文件清单与版本边界见 [MPQ 资源](MPQ_RESOURCES.md)。
+私人储物箱读取当前 MPQ 的原 DS1 私人箱实体及 b6 COF/DCC；资料片面板为 `data/global/ui/panel/tradestash.dc6`，格子取自 `inventory.txt` Big Bank Page 1；经典模式面板为 `bank.dc6`，格子取自 Bank Page 1。操作距离取自 `objects.txt` bank 记录。文件清单与版本边界见 [MPQ 资源](MPQ_RESOURCES.md)。
 
 经典 HUD 的面板分块、球体偏移和 Sky 调色板用法参考 OpenDiablo2 的 [hud.go](https://github.com/OpenDiablo2/OpenDiablo2/blob/master/d2game/d2player/hud.go) 与 [globeWidget.go](https://github.com/OpenDiablo2/OpenDiablo2/blob/master/d2game/d2player/globeWidget.go)（2026-09-22 查阅，GPL-3.0）。本项目以 C++ 实现独立的布局、绘制与输入控制，素材来自用户完整 MPQ；路径和映射见 [CLASSIC_HUD.md](CLASSIC_HUD.md)。

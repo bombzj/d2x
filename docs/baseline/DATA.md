@@ -38,7 +38,7 @@
 
 ## 物品与存档
 
-- 当前格式 v17，规则 `d2x-session-rules-v43-character-classes`，拒绝 v1–v16，亦拒绝不同内容／规则指纹。玩家保存职业、四维已分配点及未用点数，必须等于按该职业运行时 MPQ `CharStats.StatPerLevel` 计算的等级总点数；等级与经验按该职业 `Experience.txt` 列校验。派生属性、装备词缀和资源上限在恢复前从 MPQ 定义与快照库存重算。物品保存品质原行、等级要求、展示属性值与词缀行，掉落状态保存限量暗金记录。WorldState 包含 TownPortalState 和 waypoints；临时走近请求不保存。
+- 当前格式 v18，规则 `d2x-session-rules-v45-monster-experience-big-stash`，拒绝 v1–v17，亦拒绝不同内容／规则指纹。玩家保存职业、四维已分配点及未用点数，必须等于按该职业运行时 MPQ `CharStats.StatPerLevel` 计算的等级总点数；等级与经验按该职业 `Experience.txt` 列校验。派生属性、装备词缀和资源上限在恢复前从 MPQ 定义与快照库存重算；私人箱尺寸按 `inventory.txt` 当前模式校验。物品保存品质原行、等级要求、展示属性值与词缀行，掉落状态保存限量暗金记录。WorldState 包含 TownPortalState 和 waypoints；临时走近请求不保存。
 - 调试 Travel 不修改解锁记录；普通 WaypointTravel 重新校验源点与目标，不相信 UI 已禁用按钮。传送点 NU／OP（Operating）／ON（Opened）的帧数、速率、循环和起帧来自 Objects.FrameCnt／FrameDelta／CycleAnim／Start；当前难度与角色都固定在同一 SessionSnapshot 中，不提供跨难度迁移。
 - 野外传送点固定分组通过 MapPiece.substitutionGroup 裁剪原图层和分组内部原对象，保持每格 DT1 资源作用域；非完整通用 LvlSub。回城蓝门使用原 TP 资源，不写入静态地图对象列表，不分配临时地图对象 ID。
 
@@ -49,8 +49,8 @@
 - `ItemDefinition` 是只读原表定义；`ItemInstance` 是带稳定 ID 的实例。
 - 位置由地面区域或容器格子唯一确定；转移通过 `InventoryService`，禁止 UI 直接改归属。
 - 私人箱访问权是临时交互状态，不能通过存档恢复远程访问。
-- `.d2xsave` 当前 v17 显式编码玩家职业、经验、等级、已分配属性与未用点数、钱包、物品数量／等级／品质原行／已鉴定标志／展示属性、NPC 原路径运动、商人随机货品已售 slot、ID、掉落随机状态及已结算 ID。金币地面物品使用 quantity，禁止放入普通容器；拾取最多补到角色等级乘 10000，余额留地面，满额拒绝。各职业等级阈值来自运行时 MPQ `Experience.txt`，成长来自 `CharStats.txt`。
-- 读取先完整校验，再提交状态。地图配置、内容／规则指纹不匹配则拒绝；旧 v1–v14 不迁移。防具实例防御必须落在原基础范围，非防具不得带防御值；装备派生结果在恢复提交前重算验证，不单独编码。
+- `.d2xsave` 当前 v18 显式编码玩家职业、经验、等级、已分配属性与未用点数、钱包、物品数量／等级／品质原行／已鉴定标志／展示属性、NPC 原路径运动、商人随机货品已售 slot、ID、掉落随机状态及已结算 ID。金币地面物品使用 quantity，禁止放入普通容器；拾取最多补到角色等级乘 10000，余额留地面，满额拒绝。各职业等级阈值来自运行时 MPQ `Experience.txt`，成长来自 `CharStats.txt`；击杀经验按 `MonStats`／`MonLvl`／`Experience` 及原引擎等级差规则结算。
+- 读取先完整校验，再提交状态。地图配置、内容／规则指纹不匹配则拒绝；旧 v1–v17 不迁移。防具实例防御必须落在原基础范围，非防具不得带防御值；装备派生结果在恢复提交前重算验证，不单独编码。
 - 金币基础数量为物品等级加 [0,5 倍等级) 随机值，支持 TC 的 gld,mul=N 按 N/256 整数缩放；当前超过原 gld.maxstack 的金币堆明确暂缓，不截断金额。箭袋按 minstack/maxstack，其他已支持普通消耗品按 minstack/spawnstack（无效 spawnstack 回退 maxstack）生成，随机上界不含。数量使用会话掉落随机流，是项目适配，不宣称原物品独立种子流一致。
 - 装备 ContainerLocation 的 cell.x 表示部位而非背包矩形，cell.y 固定零；腰带仍使用 BeltEquipment。读档校验钱包上限、金币位置、数量、部位、品质原行及属性展示值、需求、职业与手部组合。普通野外配方身份 outdoor-v6、牛场 cow-v1 不变。金币加成、银行、死亡扣金及投掷攻击／数量损耗仍暂缓。
 - LoD ItemTypes 导入 BodyLoc、Class、Equiv1/2、Shoots/Quiver 与双手标记；StaffMods 不作为职业限制。旧数字 ItemTypes 格式未适配完整装备规则时明确拒绝穿戴。需求取当前职业由 `CharStats` 与已分配点派生的实际力量／敏捷和等级，受支持的直接装备加值进入需求闭包；有原装备部位的品质物品可穿戴，投掷药剂不进入普通穿戴事务。

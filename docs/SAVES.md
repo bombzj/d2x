@@ -1,6 +1,6 @@
 # 存档
 
-项目格式 `.d2xsave` v17，不支持原版 `.d2s`。旧 v1–v16 明确拒绝，不静默迁移。v17 增加当前职业身份；四维已分配点与未用点数按该职业运行时 MPQ `CharStats.StatPerLevel` 校验总点数，经验按对应 `Experience.txt` 列校验；恢复时从原表及库存重算资源上限和战斗属性。此前商人已售货品、物品状态与 NPC 运动继续保存。本轮修改尚未按交接约定构建或运行验收。
+项目格式 `.d2xsave` v18，不支持原版 `.d2s`。旧 v1–v17 明确拒绝，不静默迁移。玩家职业、四维分配点与未用点数按运行时 MPQ `CharStats.StatPerLevel` 校验，等级经验按 `Experience.txt` 校验；恢复时从原表及库存重算资源上限和战斗属性。储物箱尺寸按 `inventory.txt` 的当前模式校验。击杀经验使用 `MonStats`／`MonLvl`／`Experience` 计算，不新增存档字段；经验和等级沿用既有字段。商人已售货品、物品状态与 NPC 运动继续保存。
 
 ## 操作
 
@@ -29,4 +29,4 @@
 - 同目录临时文件与备份后替换；Windows 用 MoveFileExW，其他系统用 rename。目录锁防止并发写同一路径。
 - 意外退出遗留锁时，先关闭相关进程并保留临时文件，再人工处理。不承诺断电持久性或防作弊。
 
-当前未追加最终提交后的恢复、快捷键组合或 Linux 检查，见 [交接状态](baseline/DEVELOPMENT.md)。
+当前 Windows 构建、击杀经验、资料片储物箱截图及 v18 存读档已冒烟；Linux 运行仍待验收，见 [交接状态](baseline/DEVELOPMENT.md)。

@@ -1,6 +1,6 @@
 # 开发与交接
 
-本轮角色属性按 [角色属性实施计划](../CHARACTER_ATTRIBUTES.md) 接入，当前存档 v17／规则 v43。Windows Release 构建、完整 MPQ 的七职业外观、升级加点、生命／法力／耐力变化、存读档及角色面板截图已冒烟；未新增测试脚本／用例，键鼠完整交互与 Linux 运行仍待验收。原 MPQ 的 `CharStats`、`Experience`、`Properties`、`MonStats`／`MonLvl`、`invchar.dc6`、`level.dc6` 和 `skillpoints.dc6` 已核对。用户角色／技能面板参考截图保存在忽略的 `artifacts/character-skill-layout-reference-cn.png`，本轮面板图为 `artifacts/character-panel-final.png`。
+角色属性按 [角色属性实施计划](../CHARACTER_ATTRIBUTES.md) 接入，当前存档 v18／规则 v45。Windows Release 构建、完整 MPQ 的七职业外观、玩家击杀经验升级、生命／法力／耐力变化、v18 存读档、角色面板与 6×8 储物箱截图已冒烟；未新增测试脚本／用例，键鼠完整交互与 Linux 运行仍待验收。原 MPQ 的 `CharStats`、`Experience`、`Properties`、`MonStats`／`MonLvl`、`inventory.txt`、`tradestash.dc6`、`invchar.dc6`、`level.dc6` 和 `skillpoints.dc6` 已核对。角色／技能面板参考截图保存在忽略的 `artifacts/character-skill-layout-reference-cn.png`，本轮储物箱截图为 `artifacts/stash-lod-6x8-20260924.png`。
 
 ## 当前交接状态
 
@@ -35,7 +35,7 @@
 - `d2x_assets assets/mpq2 substitutions 6` 明确拒绝 `data/global/tiles/act1/outdoors/trees.ds1: Truncated game resource`。原文件声明的分组数量超过尾部完整记录数，详见 STATUS；此次核对 `d2exp.mpq`、`Patch_D2.mpq` 和 `d2x-act1.mpq` 均无另一份。通用主题执行暂缓，不修改原资源、不猜补分组。
 - 后半幕此前已验证三个回廊朝向、两组种子／难度和独立包启动，现有全地图加载仍执行出口关联及区域内部出口可达性检查。完整键鼠往返、门交互和 Linux 运行仍待确认。
 - 原始五个 MPQ 未改动。旧 `d2x-act1.mpq` 仍是 HUD 阶段的精简包，不含本轮全部生成模板。
-- 当前默认启动直接读取完整 `assets/mpq2`。本轮运行目录 `dist/d2x-character-attributes-runtime-20260923/` 含 EXE、五个原始 MPQ 与启动说明；旧包仅作历史保留，今后不再制作精简包或 ZIP。
+- 当前默认启动直接读取完整 `assets/mpq2`。本机可用 `Play.cmd` 或 `build/bin/d2x.exe`；旧包仅作历史保留。
 
 ## 构建入口
 

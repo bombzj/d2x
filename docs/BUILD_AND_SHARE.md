@@ -1,8 +1,8 @@
-# Linux 构建与最小源码分发
+# 构建与运行
 
 ## Linux 支持状态
 
-核心代码使用 C++20、标准文件系统、raylib 和 StormLib。存档替换单独区分 Windows 的 MoveFileExW 与其他系统的 rename；玩法、数据和存档编码不依赖 Win32。两个依赖都有 Linux 构建支持，MPQ 内容不区分系统，可复用同一个 `d2x-act1.mpq`。CMake 只在 Windows 定义相关宏，只对 MinGW 使用 Windows 静态链接选项。
+核心代码使用 C++20、标准文件系统、raylib 和 StormLib。存档替换单独区分 Windows 的 MoveFileExW 与其他系统的 rename；玩法、数据和存档编码不依赖 Win32。两个依赖都有 Linux 构建支持，运行时读取 `assets/mpq2` 的原始 MPQ。CMake 只在 Windows 定义相关宏，只对 MinGW 使用 Windows 静态链接选项。
 
 目前 Windows 已实际编译和运行。Linux 已完成源码及依赖配置检查，但开发机器没有可用的 Linux/WSL 环境，**尚未在 Linux 实际编译或运行**。下面使用 X11 后端；Wayland 桌面需要 XWayland。运行游戏需要图形桌面和支持 OpenGL 3.3 的驱动。
 
@@ -19,7 +19,7 @@ sudo apt install build-essential cmake ninja-build git \
   libgl1-mesa-dev libglu1-mesa-dev libxcursor-dev libxinerama-dev
 ```
 
-进入解压后的 `d2x` 根目录，执行：
+进入项目根目录，执行：
 
 ```bash
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
@@ -32,33 +32,10 @@ cmake --build build --parallel
 
 游戏内由营地步行进入连续野外，点击洞口／楼梯旅行；`F2` 是开发用区域目录，独立区域也可用 `--level 38` 等参数查看。`F5–F10` 选择技能，右键施放，`1–4` 饮药，`B` 展开腰带。原表人口计划按附近房间创建敌人；未实现类型使用保留真实身份的沉沦魔替身。按 `I` 整理，F11 保存、Ctrl+F11 读取。营地内 F4 走近原版私人储物箱。
 
-## 最少发哪些文件
+## Windows 运行
 
-若对方可以联网获取编译依赖：
+在项目根目录使用 `Play.cmd`，或运行 `build/bin/d2x.exe`。程序默认读取 `assets/mpq2` 中的原始 MPQ；其他位置可用 `--mpq <目录>` 指定。MPQ 不参与编译，但运行时必须可用。源码入口为 `CMakeLists.txt`、`cmake/` 和 `src/`；许可和素材来源见 `LICENSE`、[第三方说明](THIRD_PARTY.md) 及 `docs/licenses/`。
 
-```text
-d2x/
-  CMakeLists.txt
-  cmake/                       # Dependencies.cmake
-  src/                         # 完整模块目录，含 resources/presets.hpp
-  LICENSE
-  docs/
-    THIRD_PARTY.md
-    licenses/                  # 保留代码来源和许可
-    BUILD_AND_SHARE.md         # 本说明
-  assets/mpq2/                 # 编译不需要；运行本轮地图使用完整源 MPQ
-```
-
-`CMakeLists.txt`、完整 `cmake` 和 `src` 是编译输入。`LICENSE`、`docs/THIRD_PARTY.md`、`docs/licenses` 保留源码的许可及来源。MPQ 不参与编译；EXE 默认直接读取完整 `assets/mpq2`，该目录必须随运行环境提供。旧精简包只作历史保留，今后不再制作或分发精简 MPQ。
-
-协作交接另附 `README.md`、`BASELINE.md`、`AGENTS.md` 和 `docs/baseline`。Windows 可附带 `Play.cmd` 和 `scripts`，方便构建、启动；Linux 按上述命令执行。
-
-无需发送 `build`、`.git`、`reference`、`downloads`、`artifacts`、`saves`、`tests`、日志、已有 EXE 或工作目录里的旧压缩包。`external` 在联网编译时也可省略。
-
-如果编译机器不能访问 GitHub，再增加当前固定版本的 `external/raylib` 和 `external/stormlib` 源码目录，保留其构建文件、源码、附带库和许可；可以不含其中的 `.git` 与构建缓存。CMake 会优先使用这两个目录。系统编译器、CMake 和上述开发库仍需提前安装。
-
-历史源码压缩包仅用于旧阶段交接。当前运行包包含 Windows EXE 和原始 MPQ 目录；MPQ 素材的权利说明见 [第三方说明](THIRD_PARTY.md)，与 GPL-3.0 源码许可分别保留。
-
-本轮运行目录为 `dist/d2x-character-attributes-runtime-20260923/`：根目录 `d2x.exe`，`assets/mpq2/` 内为 `d2char.mpq`、`d2data.mpq`、`d2exp.mpq`、`d2sfx.mpq`、`Patch_D2.mpq`，另含 `README.txt` 和 `LICENSE`。直接运行 EXE 即读取旁边的原始 MPQ，不制作 ZIP。完整原文件清单见 [MPQ 资源](MPQ_RESOURCES.md)。当前存档格式 v17、规则 v43，旧档不迁移；存档不属于编译输入。
+如果编译机器不能访问 GitHub，CMake 可使用 `external/raylib` 和 `external/stormlib` 的固定版本源码；系统编译器、CMake 和开发库仍需安装。当前存档格式 v18、规则 v45，旧档不迁移。原 MPQ 文件清单见 [MPQ 资源](MPQ_RESOURCES.md)。
 
 依赖说明依据 [raylib 官方 Linux 构建文档](https://github.com/raysan5/raylib/wiki/Working-on-GNU-Linux)、[StormLib 官方源码](https://github.com/ladislav-zezula/StormLib) 及本项目固定版本的 CMake 配置。

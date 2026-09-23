@@ -102,10 +102,11 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
     if (waypointBorder.frames.size() < 10 || waypointPanel.frames.size() < 4 ||
         waypointTabs.frames.size() < 8 || waypointIcons.frames.size() < 4)
         throw std::runtime_error("Original waypoint menu artwork is missing");
-    storagePanel = graphics_.single("data/global/ui/panel/bank.dc6");
+    storagePanel = graphics_.single(session.content().stashLayout.expansion
+        ? "data/global/ui/panel/tradestash.dc6"
+        : "data/global/ui/panel/bank.dc6");
     if (storagePanel.frames.size() < 4)
-        throw std::runtime_error(
-            "Original bank.dc6 is missing; update the compact MPQ or provide classic resources.");
+        throw std::runtime_error("Original stash panel artwork is missing from the mounted MPQ");
     beltPanel = graphics_.single("data/global/ui/panel/ctrlpnl_popbelt.dc6");
     beltSocket = graphics_.single("data/global/ui/panel/inv_belt.dc6");
     orbs = uiGraphics_.single("data/global/ui/panel/hlthmana.dc6");

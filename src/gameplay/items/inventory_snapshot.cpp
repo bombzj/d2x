@@ -15,7 +15,8 @@ void InventoryService::validateSnapshot(const InventoryState &state, const Playe
                          containers.equipment};
     const std::array kinds{ContainerKind::Backpack, ContainerKind::Belt, ContainerKind::Stash,
                            ContainerKind::BeltEquipment, ContainerKind::Equipment};
-    const std::array widths{10, 4, 6, 2, int(EquipmentSlot::Count)}, heights{4, 0, 4, 1, 1};
+    const std::array widths{10, 4, stashDimensions_.x, 2, int(EquipmentSlot::Count)};
+    const std::array heights{4, 0, stashDimensions_.y, 1, 1};
     std::set<EntityId> unique(ids.begin(), ids.end());
     require(unique.size() == ids.size() && state.containers.size() == ids.size(), "player container set");
     std::map<EntityId, std::vector<bool>> occupied;

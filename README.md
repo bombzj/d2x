@@ -11,7 +11,7 @@
 - 七职业 COF/DCC 人物及装备外观、MPQ 成长和共用四维加点；A* 与 WASD、六种演示技能；MPQ 经典底栏与角色面板。
 - 怪物按原表生成计划，附近房间成组创建，远处休眠；未实现类型保留真实身份并使用沉沦魔替身。
 - 物品原表、TC 掉落、拾取、包裹、腰带、药剂和私人箱；各品质装备可查看与穿戴，首批明确的直接属性已参与派生，其余效果待核实。
-- v17 会话存档，包含职业身份、等级经验、属性分配、地图、怪物及物品；旧档不迁移。
+- v18 会话存档，包含职业身份、等级经验、属性分配、地图、怪物及物品；旧档不迁移。玩家击杀怪物会按 MPQ 数据取得经验；资料片私人箱为 6×8 格。
 
 完整限制见 [能力基线](docs/baseline/STATUS.md)。
 
@@ -23,9 +23,9 @@ Windows 使用 `scripts/build.ps1`，启动示例（默认读取 `assets/mpq2`�
 .\build\bin\d2x.exe --level 1 --map-seed 210
 ```
 
-本机可用 `Play.cmd`。EXE 默认直接读取完整 `assets/mpq2`；原始 MPQ 保留。其他位置可显式传 `--mpq <目录>`。运行目录在 `dist/d2x-character-attributes-runtime-20260923/`，不制作 ZIP。
+本机可用 `Play.cmd`。EXE 默认直接读取完整 `assets/mpq2`；其他位置可显式传 `--mpq <目录>`。
 
-Windows Release 构建、完整 MPQ 下七职业外观、角色面板截图、升级加点和 v17 存读档冒烟已通过；Linux 使用原生 CMake，尚未实际编译运行。见 [构建与分发](docs/BUILD_AND_SHARE.md)。
+Windows Release 构建、完整 MPQ 下七职业外观、角色面板、击杀经验升级、6×8 储物箱截图和 v18 存读档冒烟已通过；Linux 使用原生 CMake，尚未实际编译运行。见 [构建与运行](docs/BUILD_AND_SHARE.md)。
 
 ## 操作
 

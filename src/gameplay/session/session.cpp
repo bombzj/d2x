@@ -93,7 +93,7 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
     Fingerprint fingerprint;
     fingerprint.add(content_.profile);
     // Bump this rules revision when state interpretation or compiled rules change.
-    fingerprint.add("d2x-session-rules-v43-character-classes");
+    fingerprint.add("d2x-session-rules-v45-monster-experience-big-stash");
     auto members = archives.used;
     for (const auto &member : members) {
         fingerprint.add(member);
@@ -123,6 +123,18 @@ const CharacterDefinition &GameSession::definitionFor(std::string_view name) con
     if (found == content_.characters.end())
         throw std::runtime_error("Unknown MPQ character class: " + std::string(name));
     return *found;
+}
+void GameSession::grantExperience(uint64_t amount) {
+    auto &player = simulation_.state_.player;
+    if (!amount || player.dead) return;
+    const auto &thresholds = experienceThresholds();
+    player.experience += std::min(amount, thresholds.back() - player.experience);
+    int before = player.level;
+    while (size_t(player.level + 1) < thresholds.size() &&
+           player.experience >= thresholds[size_t(player.level + 1)])
+        ++player.level;
+    player.unspentAttributes += (player.level - before) * characterDefinition_.statPerLevel;
+    refreshCharacter(true);
 }
 void GameSession::enter(RegionId id, std::optional<Vec> arrival) {
     auto found = std::find_if(regions_.begin(), regions_.end(),
@@ -244,17 +256,7 @@ void GameSession::tick(float dt, Vec keyboard) {
                     if (intent.amount && intent.amount <= limit - player.gold)
                         player.gold += intent.amount;
                 } else if constexpr (std::is_same_v<T, DebugGrantExperience>) {
-                    auto &player = simulation_.state_.player;
-                    if (intent.amount && !player.dead) {
-                        const auto &thresholds = experienceThresholds();
-                        player.experience += std::min(intent.amount, thresholds.back() - player.experience);
-                        int before = player.level;
-                        while (size_t(player.level + 1) < thresholds.size() &&
-                               player.experience >= thresholds[size_t(player.level + 1)])
-                            ++player.level;
-                        player.unspentAttributes += (player.level - before) * characterDefinition_.statPerLevel;
-                        refreshCharacter(true);
-                    }
+                    grantExperience(intent.amount);
                 } else if constexpr (std::is_same_v<T, AllocateAttribute>) {
                     auto &player = simulation_.state_.player;
                     if (!player.dead && allocateAttribute(player.allocated, player.unspentAttributes, intent.attribute))

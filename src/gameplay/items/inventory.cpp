@@ -75,11 +75,11 @@ EntityId InventoryService::createContainer(ContainerSpec specification) {
     return id;
 }
 PlayerContainers InventoryService::createPlayerContainers(EntityId player) {
-    // Classic demo inventory.txt: Barbarian gridRows=10/gridCols=4, Bank Page 1=6/4.
+    // The stash dimensions are adapted from the mounted MPQ inventory.txt by content.
     PlayerContainers result;
     result.backpack = createContainer({player, ContainerKind::Backpack, 10, 4});
     result.belt = createContainer({player, ContainerKind::Belt, 4, 1});
-    result.stash = createContainer({player, ContainerKind::Stash, 6, 4});
+    result.stash = createContainer({player, ContainerKind::Stash, stashDimensions_.x, stashDimensions_.y});
     result.beltEquipment = createContainer({player, ContainerKind::BeltEquipment, 2, 1});
     result.equipment = createContainer({player, ContainerKind::Equipment, int(EquipmentSlot::Count), 1});
     return result;

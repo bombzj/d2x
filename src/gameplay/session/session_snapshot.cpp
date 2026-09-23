@@ -293,7 +293,8 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
     inventory_.validateSnapshot(s.inventory, s.containers, player.id);
     validateItemProperties(s);
     EntityIds validationIds;
-    InventoryService equipmentInventory(validationIds, inventory_.catalog());
+    InventoryService equipmentInventory(validationIds, inventory_.catalog(),
+                                        {content_.stashLayout.columns, content_.stashLayout.rows});
     equipmentInventory.state_ = s.inventory;
     auto base = deriveCharacterAttributes(characterDefinition, player.level, player.allocated);
     EquipmentActor baseActor{characterDefinition.code, base.strength, base.dexterity, player.level, base.blockFactor};
@@ -344,7 +345,8 @@ void GameSession::restore(SessionSnapshot s) {
     int current = validateSnapshot(s);
     const auto &characterDefinition = definitionFor(s.world.player.characterClass);
     EntityIds validationIds;
-    InventoryService equipmentInventory(validationIds, inventory_.catalog());
+    InventoryService equipmentInventory(validationIds, inventory_.catalog(),
+                                        {content_.stashLayout.columns, content_.stashLayout.rows});
     equipmentInventory.state_ = s.inventory;
     auto base = deriveCharacterAttributes(characterDefinition, s.world.player.level,
                                            s.world.player.allocated);

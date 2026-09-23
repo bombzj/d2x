@@ -19,7 +19,8 @@ class GameSession {
     std::vector<WorldEntry> worldEntries_;
     uint64_t contentFingerprint_ = 0;
     Simulation simulation_{ids_};
-    InventoryService inventory_{ids_, content_.items};
+    InventoryService inventory_{ids_, content_.items, {content_.stashLayout.columns,
+                                                       content_.stashLayout.rows}};
     LootSystem loot_;
     ItemHandle pickup_{};
     PlayerContainers playerContainers_;
@@ -63,6 +64,7 @@ class GameSession {
     EquipmentActor equipmentActor(const PlayerState &player) const;
     const CharacterDefinition &definitionFor(std::string_view name) const;
     void refreshCharacter(bool fillGains = false);
+    void grantExperience(uint64_t amount);
     void createStarterEquipment();
     bool inventoryDestinationAllowed(const ItemDestination &destination) const;
     bool inventorySourceAllowed(EntityId item) const;

@@ -51,12 +51,13 @@ std::vector<ContainerGrid> inventoryGrids(const GameSession &session, const Inve
     if (ui.storage && session.storage().container == ui.storage) {
         auto p = storageBounds();
         const auto &spec = session.inventory().container(ui.storage)->spec;
+        const auto &layout = session.content().stashLayout;
         grids.push_back({ui.storage,
-                         {p.x + 74 * inventoryScale, p.y + 273 * inventoryScale},
-                         {inventoryCellSize, inventoryCellSize},
+                         {p.x + layout.left * inventoryScale, p.y + layout.top * inventoryScale},
+                         {layout.cellSize * inventoryScale, layout.cellSize * inventoryScale},
                          spec.columns,
                          spec.rows,
-                         inventoryCellSize});
+                         layout.cellSize * inventoryScale});
     }
     return grids;
 }

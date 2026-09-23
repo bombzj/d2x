@@ -377,6 +377,7 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
                     ? "Target must be a living created monster in the current region; player must be alive"
                     : "Target must be a living visible active monster; player must be alive");
             std::set<EntityId> priorItems;
+            const auto experienceBefore = session.state().player.experience;
             if (direct)
                 for (const auto &entry : session.inventory().state().items)
                     priorItems.insert(entry.first);
@@ -402,6 +403,9 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
                 }
             }
             result["killed"] = id.value;
+            result["experienceGained"] = session.state().player.experience - experienceBefore;
+            result["experience"] = session.state().player.experience;
+            result["level"] = session.state().player.level;
         } else if (command == "pickup") {
             const auto *item = session.inventory().item(entity());
             if (!item || !std::holds_alternative<GroundLocation>(item->location))

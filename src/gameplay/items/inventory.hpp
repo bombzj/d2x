@@ -8,6 +8,7 @@ class InventoryService {
     EntityIds &ids_;
     ItemCatalog catalog_;
     InventoryState state_;
+    Cell stashDimensions_;
     void validateSnapshot(const InventoryState &state, const PlayerContainers &containers,
                           EntityId player) const;
     InventoryError checkHandle(ItemHandle handle) const;
@@ -29,7 +30,8 @@ class InventoryService {
                                   InventoryState *replacement) const;
 
   public:
-    InventoryService(EntityIds &ids, ItemCatalog catalog) : ids_(ids), catalog_(std::move(catalog)) {}
+    InventoryService(EntityIds &ids, ItemCatalog catalog, Cell stashDimensions)
+        : ids_(ids), catalog_(std::move(catalog)), stashDimensions_(stashDimensions) {}
     InventoryService(const InventoryService &) = delete;
     InventoryService &operator=(const InventoryService &) = delete;
     const InventoryState &state() const { return state_; }

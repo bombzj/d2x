@@ -16,7 +16,11 @@ void SceneView::drawStorage(Vec mouse) const {
                         tile.width * inventoryScale, tile.height * inventoryScale},
                        {0, 0}, 0, WHITE);
     }
-    painter_.label("PRIVATE STASH", int(panel.x + 94), 302, 16, gold);
+    const auto &layout = session_.content().stashLayout;
+    if (layout.expansion)
+        painter_.label("PRIVATE STASH", int(panel.x + 98), int(panel.y + 24 * inventoryScale), 14, gold);
+    else
+        painter_.label("PRIVATE STASH", int(panel.x + 94), 302, 16, gold);
     const auto &inventory = session_.inventory();
     for (const auto &grid : inventoryGrids(session_, ui)) {
         if (grid.container != ui.storage)
@@ -32,7 +36,8 @@ void SceneView::drawStorage(Vec mouse) const {
         auto def = inventory.catalog().find(inventory.item(id)->definition);
         used += def->width * def->height;
     }
-    painter_.label(std::to_string(used) + " / 24", int(panel.x + 160), 326, 12, gold);
+    painter_.label(std::to_string(used) + " / " + std::to_string(layout.columns * layout.rows),
+                   int(panel.x + 160), layout.expansion ? int(panel.y + 52 * inventoryScale) : 326, 12, gold);
     itemButton(storageTransfer(), "TRANSFER SELECTED", inventory.item(ui.selected) ? gold : GRAY);
     painter_.label("X", int(storageClose().x + 15), int(storageClose().y + 15), 12, gold);
     painter_.label("Shift-click: transfer   I / Esc: close", int(panel.x + 60), 544, 10, gold);

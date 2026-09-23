@@ -22,6 +22,10 @@ struct ClassicMonsterData {
     std::string name, token;
     std::array<std::array<std::optional<unsigned>, 4>, 3> treasureClasses{};
 };
+struct StashLayout {
+    int columns = 0, rows = 0, left = 0, top = 0, cellSize = 0;
+    bool expansion = false;
+};
 // Version-specific MPQ adapter. Rules consume typed records, not archive handles or TXT cells.
 struct ClassicData {
     ClassicData(ItemCatalog itemCatalog, std::map<std::string, DataTable, std::less<>> sourceTables,
@@ -31,6 +35,7 @@ struct ClassicData {
     ItemCatalog items;
     std::map<std::string, DataTable, std::less<>> tables;
     std::vector<CharacterDefinition> characters;
+    StashLayout stashLayout;
     // Class name -> level-indexed cumulative XP thresholds from Experience.txt.
     std::map<std::string, std::vector<uint64_t>, std::less<>> experienceByClass;
     std::vector<ClassicTreasureClass> treasures;

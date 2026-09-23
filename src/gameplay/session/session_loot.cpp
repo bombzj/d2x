@@ -1,5 +1,6 @@
 #include "gameplay/session/session.hpp"
 #include "content/monster_loot.hpp"
+#include "content/monster_experience.hpp"
 #include "content/item_quality.hpp"
 #include <algorithm>
 #include <iostream>
@@ -46,6 +47,15 @@ void GameSession::settleDeaths() {
             simulation_.emit(LootDeferred{death.victim, plan.deferred});
         auto drops = loot_.settle(request, std::move(plan));
         spawnLoot(drops, death.region, death.position);
+        if (death.killer == state().player.id) {
+            auto experience = resolveMonsterExperience(content_, monsterContent_, worldContent_,
+                {death.identity, death.region, death.difficulty, state().player.level});
+            if (experience.deferred.empty())
+                grantExperience(experience.amount);
+            else
+                std::cout << "Monster experience deferred: id=" << death.victim.value
+                          << " reason=" << experience.deferred << '\n';
+        }
     }
 }
 void GameSession::spawnLoot(std::span<const LootDrop> drops, RegionId id, Vec origin) {

@@ -1,6 +1,6 @@
 # 项目基线
 
-更新：2026-09-23。供维护者和协作 agent 从当前代码继续工作。
+更新：2026-09-24。供维护者和协作 agent 从当前代码继续工作。
 
 资源与规则数据以运行时挂载的原 MPQ 为准；`resources` 解码、`content` 类型化适配，玩法只接收只读定义。不要把抽取后的表当作另一个需维护的数据源，也不要在玩法或界面写死物品名、数值、概率与资源路径。原 MPQ 未记载的引擎规则单独实现并注明来源；未核实的规则暂缓。既有模块仍有历史硬编码，按 [实施清单](docs/ITEM_COMPLETION.md) 逐项清理。
 
@@ -23,4 +23,4 @@
 - 成长与战斗属性：[角色属性实施计划](docs/CHARACTER_ATTRIBUTES.md)。
 - 工程：[构建与分发](docs/BUILD_AND_SHARE.md)、[MPQ 清单](docs/MPQ_RESOURCES.md)、[第三方许可](docs/THIRD_PARTY.md)。
 
-当前工作：地图补全已提交为 `2fdc3aa`；角色与战斗属性按 [角色属性实施计划](docs/CHARACTER_ATTRIBUTES.md) 完成首批实现，涵盖运行时 MPQ 全职业 `CharStats`／`Experience` 成长、共用加点、调试切换、直接装备词缀、普通近战命中和原 `invchar` 左面板。存档 v17、规则 v43，旧档不迁移。Windows 构建、七职业外观、升级加点、存读档及角色面板截图冒烟已完成；键鼠和完整战斗仍待验收。运行目录直接带原始 MPQ，不再制作 ZIP。Buff、技能规则、非直接属性函数及完整怪物属性仍待后续阶段。
+当前工作：角色与战斗属性首批实现包括运行时 MPQ 全职业 `CharStats`／`Experience` 成长、共用加点、调试切换、直接装备词缀、普通近战命中和原 `invchar` 左面板。玩家击杀怪物按 MPQ `MonStats`／`MonLvl`／`Experience` 及已核实的引擎等级差规则结算经验；资料片私人箱按 MPQ `Big Bank Page 1` 使用 6×8 格和原 `tradestash.dc6`。存档 v18、规则 v45，旧档不迁移。Windows 构建、击杀升级、储物箱截图和存读档冒烟已完成；键鼠和完整战斗仍待验收。运行时直接读取原始 MPQ。Buff、技能规则、非直接属性函数及完整怪物属性仍待后续阶段。
