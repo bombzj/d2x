@@ -14,7 +14,8 @@ int chooseAttackMode(Enemy &enemy, const MonsterAiProfile &rules) {
 void Simulation::beginMonsterAttack(Enemy &enemy) {
     enemy.attackMode = 1;
     const auto ai = monsterAi_ ? monsterAi_(enemy) : std::nullopt;
-    if (ai && (ai->kind == MonsterAiKind::Brute || ai->kind == MonsterAiKind::Skeleton) &&
+    if (ai && (ai->kind == MonsterAiKind::Brute || ai->kind == MonsterAiKind::Skeleton ||
+               ai->kind == MonsterAiKind::Zombie) &&
         monsterAttackTiming_ &&
         monsterAttackTiming_(enemy, 2) && monsterNormalCombat_ &&
         monsterAccuracy_ && monsterAccuracy_(enemy, 2))

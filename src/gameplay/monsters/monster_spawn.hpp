@@ -42,7 +42,7 @@ struct MonsterNormalCombat {
     int minDamage = 0, maxDamage = 0;
     std::optional<std::pair<int, int>> attack2Damage;
 };
-enum class MonsterAiKind { Skeleton, Brute };
+enum class MonsterAiKind { Skeleton, Brute, Zombie };
 struct MonsterAiProfile {
     MonsterAiKind kind;
     std::array<int, 8> params{};

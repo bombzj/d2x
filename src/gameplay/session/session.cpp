@@ -97,6 +97,8 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
             return profile;
         if (profile->kind == MonsterAiKind::Brute && enemy.kind == MonsterKind::Brute)
             return profile;
+        if (profile->kind == MonsterAiKind::Zombie && enemy.kind == MonsterKind::Zombie)
+            return profile;
         return std::nullopt;
     };
     simulation_.monsterAttackTiming_ = [this](const Enemy &enemy, int mode)
@@ -146,7 +148,7 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
     Fingerprint fingerprint;
     fingerprint.add(content_.profile);
     // Bump this rules revision when state interpretation or compiled rules change.
-    fingerprint.add("d2x-session-rules-v54-skeleton-a2-attack");
+    fingerprint.add("d2x-session-rules-v55-zombie-a2-attack");
     auto members = archives.used;
     for (const auto &member : members) {
         fingerprint.add(member);
