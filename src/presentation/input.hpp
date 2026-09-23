@@ -10,7 +10,7 @@ struct FrameInput {
     Vec mouse, movement;
     bool insideViewport = false;
     bool leftPressed = false, leftHeld = false, leftReleased = false, rightHeld = false, rightPressed = false;
-    bool inventory = false, shift = false, control = false, enter = false, focused = true;
+    bool inventory = false, character = false, shift = false, control = false, enter = false, focused = true;
     int quantityDelta = 0, pageDelta = 0;
     bool showLoot = false;
     bool help = false, automap = false, travel = false, collision = false;
@@ -18,7 +18,7 @@ struct FrameInput {
     bool expandBelt = false, storage = false;
     bool save = false, load = false;
     bool debugGold = false, debugExperience = false;
-    bool debugAttributes = false, debugTalents = false;
+    bool debugAttributes = false, debugTalents = false, debugCharacter = false;
     std::array<bool, 4> belt{};
     std::array<bool, hotbarSlots> skills{};
 };

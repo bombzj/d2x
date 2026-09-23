@@ -54,12 +54,12 @@ void SceneView::drawControlPanel() const {
         imageAt(&part, hudRect(offsets[i], float(part.texture.height), float(part.texture.width),
                                float(part.texture.height)));
     }
-    orb(false, player.hp / playerRules().maxLife);
-    orb(true, player.mana / playerRules().maxMana);
+    orb(false, player.hp / session_.characterStats().maxLife);
+    orb(true, player.mana / session_.characterStats().maxMana);
     drawSkillIcon(view_.leftSkill, hudSkillSlot(false));
     drawSkillIcon(view_.rightSkill, hudSkillSlot(true));
     auto stamina = hudStamina();
-    stamina.width *= std::clamp(player.stamina / playerRules().maxStamina, 0.f, 1.f);
+    stamina.width *= std::clamp(player.stamina / session_.characterStats().maxStamina, 0.f, 1.f);
     DrawRectangleRec(stamina, {170, 136, 68, 175});
     imageAt(assets_.runButton.frame(0, player.running ? 2 : 0), hudRunButton());
     // Experience and unspent attribute/skill points are not implemented. Their
@@ -113,7 +113,7 @@ void SceneView::drawSkillControls(Vec mouse) const {
             continue;
         const auto &p = session_.state().player;
         auto text = std::string(mana ? "Mana: " : "Life: ") + std::to_string(int(mana ? p.mana : p.hp)) +
-                    " / " + std::to_string(int(mana ? playerRules().maxMana : playerRules().maxLife));
+                    " / " + std::to_string(mana ? session_.characterStats().maxMana : session_.characterStats().maxLife);
         auto globe = hudGlobe(mana);
         painter_.label(text, int(globe.x + (globe.width - painter_.measure(text, 12)) / 2), int(globe.y - 20),
                        12, parchment);
@@ -124,7 +124,8 @@ void SceneView::drawSkillControls(Vec mouse) const {
     if (CheckCollisionPointRec(rv(mouse), hudMenuButton()))
         hint = "Backpack [I]";
     if (CheckCollisionPointRec(rv(mouse), hudStamina()))
-        hint = "Stamina: " + std::to_string(int(session_.state().player.stamina)) + " / 100";
+        hint = "Stamina: " + std::to_string(int(session_.state().player.stamina)) + " / " +
+               std::to_string(session_.characterStats().maxStamina);
     if (!hint.empty())
         painter_.centered(hint, H - HUD - 24, 12, parchment);
 }

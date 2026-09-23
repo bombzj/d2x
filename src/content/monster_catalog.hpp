@@ -12,6 +12,7 @@ struct MonsterRecord {
     int index = -1, rarity = 0, minGroup = 0, maxGroup = 0, partyMin = 0, partyMax = 0;
     int sparse = 0, alignment = 0, normalLevel = 0;
     std::optional<int> normalAttackRating;
+    std::optional<int> normalDefense;
     std::optional<int> walkVelocity;
     bool enabled = false, randomSpawn = false, ranged = false, placeSpawn = false;
     bool killable = false, npc = false, critter = false, inert = false, boss = false;

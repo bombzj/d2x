@@ -4,7 +4,6 @@
 namespace d2x {
 void Simulation::applyPotion(const PotionDefinition &potion) {
     auto &p = state_.player;
-    const auto &rules = playerRules();
     switch (potion.kind) {
     case PotionKind::Healing:
         p.healing.push_back({potion.amount, potion.amount / potion.seconds});
@@ -13,11 +12,11 @@ void Simulation::applyPotion(const PotionDefinition &potion) {
         p.manaRestoration.push_back({potion.amount, potion.amount / potion.seconds});
         break;
     case PotionKind::Rejuvenation:
-        p.hp = std::min(rules.maxLife, p.hp + rules.maxLife * potion.amount);
-        p.mana = std::min(rules.maxMana, p.mana + rules.maxMana * potion.amount);
+        p.hp = std::min(float(characterStats_.maxLife), p.hp + characterStats_.maxLife * potion.amount);
+        p.mana = std::min(float(characterStats_.maxMana), p.mana + characterStats_.maxMana * potion.amount);
         break;
     case PotionKind::Stamina:
-        p.stamina = rules.maxStamina;
+        p.stamina = characterStats_.maxStamina;
         p.staminaBoost += potion.seconds;
         break;
     }
@@ -39,11 +38,11 @@ void Simulation::updatePotions(float dt) {
         if (value >= maximum)
             queue.clear();
     };
-    restore(p.healing, p.hp, playerRules().maxLife);
-    restore(p.manaRestoration, p.mana, playerRules().maxMana);
+    restore(p.healing, p.hp, float(characterStats_.maxLife));
+    restore(p.manaRestoration, p.mana, float(characterStats_.maxMana));
     if (p.staminaBoost > 0) {
         p.staminaBoost = std::max(0.f, p.staminaBoost - dt);
-        p.stamina = playerRules().maxStamina;
+        p.stamina = characterStats_.maxStamina;
     }
 }
 } // namespace d2x

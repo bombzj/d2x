@@ -5,7 +5,8 @@
 
 namespace d2x {
 AffixGenerationResult rollAffixItem(const ClassicData &data, const ItemDefinition &item,
-                                    ItemQuality quality, int itemLevel, uint64_t seed) {
+                                    ItemQuality quality, int itemLevel, uint64_t seed,
+                                    std::string_view characterClass) {
     AffixGenerationResult result;
     result.randomState = seed;
     result.generation.quality = quality;
@@ -43,7 +44,7 @@ AffixGenerationResult rollAffixItem(const ClassicData &data, const ItemDefinitio
     }
     auto append = [&](bool prefix, bool force) {
         const auto &records = prefix ? data.magicPrefixes : data.magicSuffixes;
-        auto roll = rollMagicAffix(records, std::span<const std::string>(item.equipment.types), "bar",
+        auto roll = rollMagicAffix(records, std::span<const std::string>(item.equipment.types), characterClass,
                                    affixLevel, magicLevel, quality == ItemQuality::Rare, socketable,
                                    std::span<const int>(usedGroups), force,
                                    result.randomState);

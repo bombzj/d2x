@@ -31,6 +31,17 @@
 
 ## 格式研究参考
 
+本地 `reference/` 下有四份忽略提交的参考仓库，优先在本机核对，再按需要查其他来源：
+
+| 本地目录 | 固定提交 | 适用范围 |
+| --- | --- | --- |
+| `reference/d2moo/` | `5596f5c` | D2Common／D2Game 的规则、地图生成、掉落与 NPC；此快照没有 D2Client 角色属性／技能面板布局实现 |
+| `reference/opend2/` | `0578244` | DT1、DS1、COF、字体结构及旧客户端菜单；不是 OpenDiablo2，游戏内角色面板尚无可用布局 |
+| `reference/dgengine/` | `ae6dcab` | DCC、DS1、DT1 解码实现；项目目标为 Diablo I，引擎 UI 不可直接用于本作布局 |
+| `reference/dgengine-core/` | `dd600ab` | DGEngine 的通用 2D 引擎组件；不提供 Diablo II 规则或面板布局 |
+
+角色面板布局本轮另与 [OpenDiablo2 的 hero_stats_panel.go](https://github.com/OpenDiablo2/OpenDiablo2/blob/master/d2game/d2player/hero_stats_panel.go) 核对；该仓库不在当前 `reference/` 目录。坐标仍以用户截图及当前 MPQ 图框核对，运行时图像只从 MPQ 加载。引用、改编和权利按下方各项目说明保留。
+
 本轮世界生成代码依据 D2MOO 的 `DrlgMaze`、`DrlgOutPlace`、`DrlgOutWild`、`DrlgOutdoors`、`DrlgRoomTile` 和 `DrlgDrlgVer` 适配；附近房间策略参考 `DrlgActivate`。这是实际代码适配来源，不是完整 DRLG 或逐种子等价实现。当前入口见 [地图](ACT1_MAPS.md) 与 [数据生命周期](baseline/DATA.md)。
 
 - [D2MOO](https://github.com/ThePhrozenKeep/D2MOO/tree/5596f5cb6c5251a0a07c6637d26458b06099d516)，固定提交 `5596f5cb6c5251a0a07c6637d26458b06099d516`，MIT，Copyright 2020–2025 The Phrozen Keep community。共有 DT1、隐藏空白瓦片和变体权重解释依据 DrlgRoomTile.cpp；生成边界参考 DrlgDrlg.cpp、DrlgPreset.cpp、DrlgMaze.cpp。许可见 [D2MOO.txt](licenses/D2MOO.txt)。没有移植完整 DRLG，也未执行参考仓库的游戏代码。

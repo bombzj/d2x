@@ -8,7 +8,7 @@
 
 `d2x_assets assets/mpq2 drops fallen1` 可查看实际分支。例如普通沉沦魔 TC1 指向 Act 1 H2H A，原表为 Picks=1、NoDrop=100，四个分支权重依次 21／16／21／2。这些是原表权重，不是完整最终物品掉率。
 
-当前 `d2x_assets assets/mpq2 treasure "Act 1 Champ A" [seed] [monster-level]` 执行单人 TC 选择，包含正负 Picks、NoDrop、递归、四项品质修正继承，以及从 ItemTypes／物品原表生成的 160 个自动类别；指定等级时仅升级根 TC。此查询不创建实例，也不执行品质。`quality` 查询执行原 ItemRatio 品质请求；`special <unique|set> <code> <level> <seed>` 查询原 UniqueItems／SetItems 合格行；`loot-plan` 调用游戏共用物品规划器，在每个叶子判定品质并限制最多六件支持候选。源码现可规划普通消耗品、基础装备与投掷堆叠、魔法／稀有词缀、套装／暗金及优质／劣质展示实例，并按原引擎品质顺序在候选生成失败时尝试低品质；属性目前仅展示，暂不参与战斗。投掷攻击／损耗和未核实使用效果的杂项仍不执行效果。本轮新增源码尚未构建或运行，不能将查询路径当作完整最终掉率或逐随机流原版复现，详见核心 STATUS。
+当前 `d2x_assets assets/mpq2 treasure "Act 1 Champ A" [seed] [monster-level]` 执行单人 TC 选择，包含正负 Picks、NoDrop、递归、四项品质修正继承，以及从 ItemTypes／物品原表生成的 160 个自动类别；指定等级时仅升级根 TC。此查询不创建实例，也不执行品质。`quality` 查询执行原 ItemRatio 品质请求；`special <unique|set> <code> <level> <seed>` 查询原 UniqueItems／SetItems 合格行；`loot-plan` 调用游戏共用物品规划器，在每个叶子判定品质并限制最多六件支持候选。源码可规划普通消耗品、基础装备与投掷堆叠、魔法／稀有词缀、套装／暗金及优质／劣质展示实例。角色属性阶段已接明确的直接加值，其他 Properties 函数仍只展示；本轮 Windows 构建及角色属性冒烟通过，具体物品交互仍待验收。投掷攻击／损耗和未核实使用效果的杂项仍不执行效果。查询路径不等于最终掉率或逐随机流原版复现，详见核心 STATUS。
 
 以下保留旧 1.04 试玩适配器的说明。两种结构分别识别，启动使用同一套 MPQ，不混表；读取更多数据不表示全部装备和资料片玩法已经实现。
 

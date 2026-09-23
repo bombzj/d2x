@@ -20,7 +20,7 @@
 
 ## 1. 原表盘点（已完成）
 
-当前 `assets/mpq2` 含 UniqueItems、SetItems、Sets、MagicPrefix／Suffix、RarePrefix／Suffix、QualityItems、LowQualityItems、Properties 和 ItemStatCost 原 TXT。首批七表按文本物理行计有 403、128、33、670、748、269、359 条数据行；包含空行和版本标记，不能直接当作可生成数量。UniqueItems 有 `code`、`lvl`、`rarity`、`enabled`、`nolimit` 及 12 组属性；SetItems 有 `item`、`lvl`、`rarity`、套装 ID、基础与部分加成；魔法词缀有等级、组、频率、适用／排除类型及三组属性。Properties 给出属性函数到 ItemStatCost 的映射。当前按原表保存与展示属性，完整属性函数效果留到战斗系统阶段。
+当前 `assets/mpq2` 含 UniqueItems、SetItems、Sets、MagicPrefix／Suffix、RarePrefix／Suffix、QualityItems、LowQualityItems、Properties 和 ItemStatCost 原 TXT。首批七表按文本物理行计有 403、128、33、670、748、269、359 条数据行；包含空行和版本标记，不能直接当作可生成数量。UniqueItems 有 `code`、`lvl`、`rarity`、`enabled`、`nolimit` 及 12 组属性；SetItems 有 `item`、`lvl`、`rarity`、套装 ID、基础与部分加成；魔法词缀有等级、组、频率、适用／排除类型及三组属性。Properties 给出属性函数到 ItemStatCost 的映射。角色属性阶段已接 `func1=1` 的明确直接加值，其余属性函数仍只展示。
 
 盘点时 `vps` 的基础定义、原图、耐力药效已接通；当时掉落生成只接受 potion／scroll／quiver／gold 分支。第 2 项随后放开有据可依的普通基础实例。
 
@@ -58,7 +58,7 @@ Windows Release 构建通过。直接读取完整 `assets/mpq2` 完成新游戏 
 
 ## 后续收尾顺序
 
-按下面顺序逐项收尾；前一项的代码、数据边界和文档完成后再进入下一项。装备展示属性不参与角色数值或战斗计算。
+按下面顺序逐项收尾；前一项的代码、数据边界和文档完成后再进入下一项。直接加值的当前范围见 [角色属性实施计划](CHARACTER_ATTRIBUTES.md)，其他装备展示属性暂不参与数值或战斗计算。
 
 | 顺序 | 本轮工作 | 当前状态 |
 | --- | --- | --- |

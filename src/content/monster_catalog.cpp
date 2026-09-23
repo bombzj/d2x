@@ -61,6 +61,19 @@ MonsterCatalog::MonsterCatalog(Archives &archives, const DataTable &stats) {
                 }
             }
         }
+        if (auto armor = stats.number(row, "AC"); armor && *armor >= 0 && m.normalLevel > 0) {
+            if (n("noRatio"))
+                m.normalDefense = *armor;
+            else if (levels && !levels->rows().empty()) {
+                const auto levelRow = std::min(size_t(m.normalLevel), levels->rows().size() - 1);
+                if (auto base = levels->number(levelRow, "L-AC"); base && *base >= 0) {
+                    const auto defense = int64_t(*base) * *armor / 100;
+                    if (defense > std::numeric_limits<int>::max())
+                        throw std::runtime_error("Monster defense overflow: " + m.id);
+                    m.normalDefense = int(defense);
+                }
+            }
+        }
         m.alignment = n("Align");
         m.enabled = n("enabled") != 0;
         m.randomSpawn = n("isSpawn") != 0;

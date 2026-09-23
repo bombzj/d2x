@@ -32,7 +32,7 @@ void Simulation::attackEnemy(EntityId target) {
 void Simulation::updatePlayer(float dt, Vec keyboard) {
     auto &p = state_.player;
     const auto &rules = playerRules();
-    p.mana = std::min(rules.maxMana, p.mana + dt * rules.manaRegen);
+    p.mana = std::min(float(characterStats_.maxMana), p.mana + dt * characterStats_.manaRegen);
     Vec step;
     float remaining = 0;
     bool followingRoute = false;
@@ -93,7 +93,7 @@ void Simulation::updatePlayer(float dt, Vec keyboard) {
     p.stamina =
         std::clamp(p.stamina + dt * (!safeZone_ && p.moving && p.running && p.staminaBoost <= 0 ? -rules.staminaDrain
                                                                                   : rules.staminaRegen),
-                   0.f, rules.maxStamina);
+                   0.f, float(characterStats_.maxStamina));
     if (p.spinTime > 0) {
         const auto &skill = skillDefinition(Skill::Whirlwind);
         damage(p.pos, skill.radius, dt * skill.damage, p.id);

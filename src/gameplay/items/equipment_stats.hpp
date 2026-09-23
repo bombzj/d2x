@@ -14,5 +14,5 @@ struct EquipmentStats {
     int level = 1;
 };
 EquipmentStats deriveEquipmentStats(const InventoryService &inventory, const PlayerContainers &containers,
-                                    const EquipmentActor &actor);
+                                    const EquipmentActor &actor, int bonusDefense = 0);
 } // namespace d2x

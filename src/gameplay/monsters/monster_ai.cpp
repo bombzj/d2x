@@ -1,4 +1,5 @@
 #include "gameplay/simulation/simulation.hpp"
+#include "gameplay/combat/accuracy.hpp"
 #include <algorithm>
 
 namespace d2x {
@@ -65,11 +66,8 @@ void Simulation::updateMonsters(float dt) {
             enemy.attack = definition.attackInterval * (enemy.chill > 0 ? 2.f : 1.f);
             if (!(player.running && player.moving) && monsterAccuracy_) {
                 if (auto accuracy = monsterAccuracy_(enemy)) {
-                    const int64_t divisor = int64_t(accuracy->attackRating) + equipmentStats_.defense;
-                    const int64_t factor = divisor ? int64_t(100) * accuracy->attackRating / divisor : 100;
-                    const auto chance = std::clamp(int64_t(2) * accuracy->level * factor /
-                                                       (int64_t(accuracy->level) + equipmentStats_.level),
-                                                   int64_t(5), int64_t(95));
+                    const auto chance = physicalHitChance(accuracy->level, accuracy->attackRating,
+                                                           equipmentStats_.level, equipmentStats_.defense);
                     enemy.combatRandom = uint64_t(uint32_t(enemy.combatRandom)) * 0x6ac690c5ULL +
                                          (enemy.combatRandom >> 32);
                     if (uint32_t(enemy.combatRandom) % 100 >= chance)

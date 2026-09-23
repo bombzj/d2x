@@ -13,6 +13,7 @@ namespace d2x {
 class GameSession {
     EntityIds ids_;
     ClassicData content_;
+    CharacterDefinition characterDefinition_;
     WorldCatalog worldContent_;
     MonsterCatalog monsterContent_;
     std::vector<WorldEntry> worldEntries_;
@@ -59,7 +60,9 @@ class GameSession {
     void spawnLoot(std::span<const LootDrop> drops, RegionId region, Vec origin);
     InventoryAccess inventoryAccess() const;
     EquipmentActor equipmentActor() const;
-    EquipmentActor equipmentActor(int level) const;
+    EquipmentActor equipmentActor(const PlayerState &player) const;
+    const CharacterDefinition &definitionFor(std::string_view name) const;
+    void refreshCharacter(bool fillGains = false);
     void createStarterEquipment();
     bool inventoryDestinationAllowed(const ItemDestination &destination) const;
     bool inventorySourceAllowed(EntityId item) const;
@@ -90,12 +93,18 @@ class GameSession {
     const MonsterCatalog &monsterContent() const { return monsterContent_; }
     const auto &worldEntries() const { return worldEntries_; }
     uint64_t contentFingerprint() const { return contentFingerprint_; }
-    uint64_t maximumExperience() const { return content_.experienceThresholds.back(); }
+    const std::vector<uint64_t> &experienceThresholds() const {
+        return content_.experienceByClass.at(state().player.characterClass);
+    }
+    uint64_t maximumExperience() const { return experienceThresholds().back(); }
     SessionSnapshot snapshot() const;
     // Validate completely before replacing live state; a rejected load changes nothing.
     void restore(SessionSnapshot snapshot);
     const InventoryService &inventory() const { return inventory_; }
     const EquipmentStats &equipmentStats() const { return simulation_.equipmentStats_; }
+    const CharacterAttributes &characterStats() const { return simulation_.characterStats_; }
+    const std::string &characterName() const { return characterDefinition_.name; }
+    const std::string &characterAppearance() const { return characterDefinition_.appearance; }
     const PlayerContainers &playerContainers() const { return playerContainers_; }
     StorageAccess storage() const;
     const WorldObject *object(EntityId id) const;

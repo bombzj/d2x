@@ -6,6 +6,7 @@
 #include "gameplay/loot/affix.hpp"
 #include "gameplay/loot/grade.hpp"
 #include "gameplay/loot/special.hpp"
+#include "gameplay/character/attributes.hpp"
 #include "npc_dialogue.hpp"
 #include "vendor_data.hpp"
 #include "resources/archive.hpp"
@@ -29,8 +30,9 @@ struct ClassicData {
           profile(std::move(sourceProfile)) {}
     ItemCatalog items;
     std::map<std::string, DataTable, std::less<>> tables;
-    // Index is level; values are cumulative XP thresholds from Experience.txt.
-    std::vector<uint64_t> experienceThresholds;
+    std::vector<CharacterDefinition> characters;
+    // Class name -> level-indexed cumulative XP thresholds from Experience.txt.
+    std::map<std::string, std::vector<uint64_t>, std::less<>> experienceByClass;
     std::vector<ClassicTreasureClass> treasures;
     std::vector<ClassicMonsterData> monsters;
     NpcDialogues npcDialogues;

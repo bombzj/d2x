@@ -17,6 +17,7 @@ FrameInput pollInput(const Viewport &viewport) {
     input.leftReleased = IsMouseButtonReleased(MOUSE_BUTTON_LEFT);
     input.rightPressed = IsMouseButtonPressed(MOUSE_BUTTON_RIGHT);
     input.inventory = IsKeyPressed(KEY_I);
+    input.character = IsKeyPressed(KEY_C);
     input.storage = IsKeyPressed(KEY_F4);
     input.shift = IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT);
     input.control = IsKeyDown(KEY_LEFT_CONTROL) || IsKeyDown(KEY_RIGHT_CONTROL);
@@ -30,6 +31,8 @@ FrameInput pollInput(const Viewport &viewport) {
         input.debugExperience = IsKeyPressed(KEY_E);
         input.debugAttributes = IsKeyPressed(KEY_A);
         input.debugTalents = IsKeyPressed(KEY_T);
+        input.debugCharacter = input.character;
+        input.character = false;
     }
     input.rightHeld = IsMouseButtonDown(MOUSE_BUTTON_RIGHT);
     input.movement = {float(IsKeyDown(KEY_D) - IsKeyDown(KEY_A)), float(IsKeyDown(KEY_S) - IsKeyDown(KEY_W))};

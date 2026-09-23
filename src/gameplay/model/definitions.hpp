@@ -26,10 +26,9 @@ struct MonsterDefinition {
     const char *weapon = "hth";
 };
 struct PlayerRules {
-    float maxLife = 250, maxMana = 150, maxStamina = 100;
-    float manaRegen = 7, walkSpeed = 5, runSpeed = 9, spinSpeed = 8;
+    float walkSpeed = 5, runSpeed = 9, spinSpeed = 8;
     float staminaDrain = 7, staminaRegen = 14;
-    float meleeDamage = 34, meleeRange = 2, meleeRadius = 1.2f, meleeDuration = .48f;
+    float meleeRange = 2, meleeRadius = 1.2f, meleeDuration = .48f;
 };
 struct RegionDefinition {
     RegionId id;

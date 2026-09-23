@@ -44,6 +44,8 @@ add_library(d2x_items
 target_link_libraries(d2x_items PUBLIC d2x_core)
 add_library(d2x_content src/content/classic_data.cpp src/content/lod_data.cpp src/content/world_catalog.cpp src/content/monster_catalog.cpp)
 target_sources(d2x_content PRIVATE src/content/character_progression.cpp)
+target_sources(d2x_content PRIVATE src/content/character_attributes.cpp)
+target_sources(d2x_content PRIVATE src/content/equipment_modifiers.cpp)
 target_sources(d2x_content PRIVATE src/content/equipment_data.cpp)
 target_sources(d2x_content PRIVATE src/content/item_appearance.cpp)
 target_sources(d2x_content PRIVATE src/content/monster_loot.cpp)
@@ -63,6 +65,8 @@ target_link_libraries(d2x_content PUBLIC d2x_resources d2x_items)
 add_library(d2x_gameplay
   src/gameplay/model/definitions.cpp src/gameplay/simulation/simulation.cpp src/gameplay/player/movement.cpp
   src/gameplay/combat/combat.cpp src/gameplay/skills/casting.cpp src/gameplay/monsters/monster_ai.cpp src/gameplay/loot/loot.cpp src/gameplay/consumables/potions.cpp)
+target_sources(d2x_gameplay PRIVATE src/gameplay/character/attributes.cpp)
+target_sources(d2x_gameplay PRIVATE src/gameplay/combat/accuracy.cpp)
 target_sources(d2x_gameplay PRIVATE src/gameplay/monsters/monster_spawn.cpp src/gameplay/monsters/monster_activation.cpp)
 target_sources(d2x_gameplay PRIVATE src/gameplay/loot/treasure.cpp)
 target_sources(d2x_gameplay PRIVATE src/gameplay/loot/quality.cpp)
@@ -92,6 +96,7 @@ add_library(d2x_presentation
   src/presentation/exit_view.cpp src/presentation/waypoint_view.cpp
   src/presentation/world_renderer.cpp src/presentation/hud.cpp src/presentation/npc_dialogue_view.cpp src/presentation/npc_menu_view.cpp src/presentation/npc_shop_view.cpp src/presentation/controller.cpp
   src/presentation/loot_view.cpp src/presentation/inventory_panel.cpp
+  src/presentation/character_panel.cpp
   src/presentation/container_view.cpp src/presentation/storage_view.cpp src/presentation/belt_view.cpp src/presentation/inventory_view.cpp src/presentation/inventory_controller.cpp)
 target_link_libraries(d2x_presentation PUBLIC d2x_session raylib)
 

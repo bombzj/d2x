@@ -62,7 +62,11 @@ void GameSession::validateItemProperties(const SessionSnapshot &snapshot) const 
                 requireItem(found->level <= affixLevel &&
                                 (!found->maxLevel || affixLevel <= found->maxLevel) &&
                                 (item.quality != ItemQuality::Rare || found->rareAllowed) &&
-                                (found->characterClass.empty() || found->characterClass == "bar") &&
+                                (found->characterClass.empty() ||
+                                 std::any_of(content_.characters.begin(), content_.characters.end(),
+                                     [&](const auto &character) {
+                                         return character.code == found->characterClass;
+                                     })) &&
                                 std::any_of(found->includedTypes.begin(), found->includedTypes.end(), matches) &&
                                 !std::any_of(found->excludedTypes.begin(), found->excludedTypes.end(), matches),
                             "affix eligibility");

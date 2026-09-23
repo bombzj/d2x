@@ -1,9 +1,11 @@
 #pragma once
 #include "core/id.hpp"
 #include "gameplay/model/definitions.hpp"
+#include "gameplay/character/attributes.hpp"
 #include "gameplay/monsters/monster_spawn.hpp"
 #include <deque>
 #include <map>
+#include <string>
 
 namespace d2x {
 struct Restoration {
@@ -11,9 +13,10 @@ struct Restoration {
 };
 struct PlayerState {
     EntityId id;
+    std::string characterClass = "Barbarian";
     Vec pos, previous, look{1, 0};
     std::deque<Vec> route;
-    float hp = 250, mana = 150, stamina = 100;
+    float hp = 0, mana = 0, stamina = 0;
     float castTime = 0, spinTime = 0, leapTime = 0, hitTime = 0, deathTime = 0, meleeTime = 0;
     Vec leapStart, leapEnd;
     std::array<float, skillCount> cooldown{};
@@ -27,6 +30,8 @@ struct PlayerState {
     unsigned gold = 0;
     uint64_t experience = 0;
     int level = 1;
+    AttributeAllocation allocated;
+    int unspentAttributes = 0;
 };
 struct Enemy {
     EntityId id;

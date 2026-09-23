@@ -9,6 +9,7 @@
 | `world` | 地图计划、拼接、图层、共享 DT1、出口 | `planWorld`、`MapRecipe`、`Map`、`Region` |
 | `world/population.*` | 内容和地图 → 生成指令；不分配 ID | `planPopulation`、`PopulationPlan` |
 | `gameplay` | 25 Hz 战斗状态和规则；不依赖 MPQ／raylib | `Simulation`、`WorldState`、`GameCommand` |
+| `gameplay/character` | 角色已分配点、类型化成长与派生资源／战斗快照；不读 MPQ | `deriveCharacterAttributes` |
 | `gameplay/items` | 物品／容器唯一状态及事务 | `InventoryService` |
 | `gameplay/npc` | NPC 路径移动、凯恩鉴定与商店购买 | `advanceNpcPaths`、`planCainIdentification`、`planVendorStock`、`buyVendorItem` |
 | `gameplay/quest`（待建立） | 任务进度、门槛和对话分支；当前无任务状态，暂不建空模块 | 后续任务实现时接入 |
@@ -23,6 +24,7 @@
 
 - `d2x_gameplay → d2x_navigation`；玩法不链接 StormLib 或 raylib。
 - 原 MPQ 是内容数据的唯一运行时来源；`content` 在加载时解析原 TXT 并提供类型化只读定义。提取文件仅供人工核对，不随源码维护或提交。算法常量与 MPQ 内容字段应分开记录。
+- `content/character_attributes.*` 从 `CharStats.txt` 导入各职业起点与增长，`content/character_progression.*` 从 `Experience.txt` 导入各职业阈值；职业代码与原人物图形 token 在适配层匹配，不存放成长数值。`content/equipment_modifiers.*` 将装备实例的原 Properties 直接属性解译为 MPQ 无关的 `CharacterModifiers`。会话按需求闭包重算角色／装备快照；UI 只读显示，普通命中公式在 `gameplay/combat/accuracy.*`。
 - `d2x_world → content/navigation`；生成器只产出资源配方，不创建 GPU 对象。
 - `d2x_population → content/gameplay`；怪物计划与实体创建分离。
 - `GameSession` 持有区域、模拟、物品服务和掉落状态。`Simulation` 借用稳定区域网格与房间索引。

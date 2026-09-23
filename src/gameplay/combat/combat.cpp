@@ -1,4 +1,5 @@
 #include "gameplay/simulation/simulation.hpp"
+#include "gameplay/combat/accuracy.hpp"
 #include <algorithm>
 
 namespace d2x {
@@ -23,6 +24,15 @@ void Simulation::meleeDamage(Enemy &enemy) {
     player.nextWeapon = (player.nextWeapon + 1) % equipmentStats_.weaponCount;
     player.combatRandom = uint64_t(uint32_t(player.combatRandom)) * 0x6ac690c5ULL +
                           (player.combatRandom >> 32);
+    if (monsterDefense_)
+        if (auto defense = monsterDefense_(enemy)) {
+            if (uint32_t(player.combatRandom) % 100 >=
+                unsigned(physicalHitChance(player.level, characterStats_.attackRating,
+                                           defense->level, defense->defense)))
+                return;
+            player.combatRandom = uint64_t(uint32_t(player.combatRandom)) * 0x6ac690c5ULL +
+                                  (player.combatRandom >> 32);
+        }
     auto range = uint32_t(weapon.maximum - weapon.minimum);
     auto damage = weapon.minimum + (range ? uint32_t(player.combatRandom) % range : 0);
     damageEnemy(enemy, float(damage) / 256.f, player.id);

@@ -31,7 +31,8 @@ class SceneAssets {
     std::map<std::string, GpuAnimation> itemGround, itemIcons;
     std::array<GpuAnimation, 2> townPortalAnimations;
     std::array<ObjectAnimationRule, 2> townPortalRules;
-    GpuAnimation fireball, fireburst, panel, cursor, inventoryPanel, vendorPanel, vendorTabs,
+    GpuAnimation fireball, fireburst, panel, cursor, inventoryPanel, attributeButtons,
+        attributePoints, vendorPanel, vendorTabs,
         vendorButtons, vendorConfirm, waypointBorder, waypointPanel, waypointTabs, waypointIcons,
         storagePanel, beltPanel, beltSocket, orbs,
         globeOverlap, runButton, button;

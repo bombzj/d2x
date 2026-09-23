@@ -8,7 +8,7 @@
 namespace d2x {
 LootPlan planItemLoot(const ClassicData &data, const DataTable &ratios, std::string_view root,
                       int itemLevel, int upgradeLevel, uint64_t seed,
-                      const std::set<size_t> &usedUniques) {
+                      const std::set<size_t> &usedUniques, std::string_view characterClass) {
     if (data.profile != "lod-named-txt-v1" || itemLevel < 1 || itemLevel > 99 ||
         upgradeLevel < 0 || upgradeLevel > 99)
         throw std::runtime_error("Unsupported item loot profile or level");
@@ -98,7 +98,7 @@ LootPlan planItemLoot(const ClassicData &data, const DataTable &ratios, std::str
                     auto generated = rollAffixItem(data, *item,
                                                    requested == DropQuality::Magic ? ItemQuality::Magic
                                                                                    : ItemQuality::Rare,
-                                                   itemLevel, random);
+                                                   itemLevel, random, characterClass);
                     random = generated.randomState;
                     if (generated.deferred.empty()) {
                         generation = std::move(generated.generation);

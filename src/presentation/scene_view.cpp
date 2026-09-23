@@ -47,6 +47,7 @@ void SceneView::sessionRestored() {
     assets_.loadInventoryArt(session_);
     assets_.loadHeroEquipment(session_);
     view_.inventory = {};
+    view_.characterOpen = false;
     view_.travelMenu = view_.help = false;
     view_.skillPicker.reset();
     view_.dialogue.clear();

@@ -165,7 +165,7 @@ void SceneView::drawItemTooltip(const ItemInstance &item, Vec anchor) const {
             for (const auto &bonus : special->setBonuses)
                 lines.push_back(bonus.condition + ": " + propertyText(bonus.property, std::nullopt));
     if (specialItem(item) || !item.affixes.empty() || item.gradeRow >= 0)
-        lines.push_back("Listed properties are not active in combat yet");
+        lines.push_back("Some property effects are reserved for later systems");
     }
     constexpr size_t rowsPerColumn = 28;
     constexpr int rowHeight = 18;

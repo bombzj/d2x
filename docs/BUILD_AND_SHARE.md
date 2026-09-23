@@ -59,6 +59,6 @@ d2x/
 
 历史源码压缩包仅用于旧阶段交接。当前运行包包含 Windows EXE 和原始 MPQ 目录；MPQ 素材的权利说明见 [第三方说明](THIRD_PARTY.md)，与 GPL-3.0 源码许可分别保留。
 
-本次运行包为 `dist/d2x-act1-runtime-20260923.zip`：根目录 `d2x.exe`，`assets/mpq2/` 内为 `d2char.mpq`、`d2data.mpq`、`d2exp.mpq`、`d2sfx.mpq`、`Patch_D2.mpq`，另含 `README.txt` 和 `LICENSE`。ZIP 中没有精简 MPQ；解压后直接运行 EXE 即读取旁边的 `assets/mpq2`。完整原文件清单见 [MPQ 资源](MPQ_RESOURCES.md)。当前存档格式为 v15、规则 v40，旧档不迁移；存档不属于编译输入。
+本轮运行目录为 `dist/d2x-character-attributes-runtime-20260923/`：根目录 `d2x.exe`，`assets/mpq2/` 内为 `d2char.mpq`、`d2data.mpq`、`d2exp.mpq`、`d2sfx.mpq`、`Patch_D2.mpq`，另含 `README.txt` 和 `LICENSE`。直接运行 EXE 即读取旁边的原始 MPQ，不制作 ZIP。完整原文件清单见 [MPQ 资源](MPQ_RESOURCES.md)。当前存档格式 v17、规则 v43，旧档不迁移；存档不属于编译输入。
 
 依赖说明依据 [raylib 官方 Linux 构建文档](https://github.com/raysan5/raylib/wiki/Working-on-GNU-Linux)、[StormLib 官方源码](https://github.com/ladislav-zezula/StormLib) 及本项目固定版本的 CMake 配置。

@@ -1,4 +1,5 @@
 #include "gameplay/session/session.hpp"
+#include "content/equipment_modifiers.hpp"
 #include <algorithm>
 #include <cmath>
 #include <set>
@@ -142,9 +143,17 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
     scalar(player.look.x, -1.001f, 1.001f);
     scalar(player.look.y, -1.001f, 1.001f);
     route(player.route, grid);
-    scalar(player.hp, 0, playerRules().maxLife);
-    scalar(player.mana, 0, playerRules().maxMana);
-    scalar(player.stamina, 0, playerRules().maxStamina);
+    const auto &characterDefinition = definitionFor(player.characterClass);
+    require(player.level >= 1 && player.level <= 255 &&
+                player.allocated.strength >= 0 && player.allocated.dexterity >= 0 &&
+                player.allocated.vitality >= 0 && player.allocated.energy >= 0 &&
+                player.unspentAttributes >= 0 &&
+                allocatedPoints(player.allocated) + player.unspentAttributes ==
+                    int64_t(player.level - 1) * characterDefinition.statPerLevel,
+            "character attribute allocation");
+    scalar(player.hp);
+    scalar(player.mana);
+    scalar(player.stamina);
     for (auto timer : {player.castTime, player.spinTime, player.leapTime, player.hitTime, player.deathTime,
                        player.meleeTime, player.staminaBoost})
         scalar(timer);
@@ -154,7 +163,7 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
     skill(player.lastSkill);
     require(player.nextWeapon < 2, "active melee hand");
     require(player.gold <= unsigned(player.level) * 10000, "gold carrying limit");
-    const auto &thresholds = content_.experienceThresholds;
+    const auto &thresholds = content_.experienceByClass.at(player.characterClass);
     require(player.level >= 1 && size_t(player.level) < thresholds.size() &&
                 player.experience <= thresholds.back() &&
                 player.experience >= thresholds[size_t(player.level)] &&
@@ -286,17 +295,26 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
     EntityIds validationIds;
     InventoryService equipmentInventory(validationIds, inventory_.catalog());
     equipmentInventory.state_ = s.inventory;
+    auto base = deriveCharacterAttributes(characterDefinition, player.level, player.allocated);
+    EquipmentActor baseActor{characterDefinition.code, base.strength, base.dexterity, player.level, base.blockFactor};
+    auto modifiers = resolveEquipmentModifiers(content_, equipmentInventory, s.containers, baseActor);
+    auto characterStats = deriveCharacterAttributes(characterDefinition, player.level, player.allocated,
+                                                     modifiers);
+    require(player.hp <= characterStats.maxLife && player.mana <= characterStats.maxMana &&
+                player.stamina <= characterStats.maxStamina, "character resource maximum");
+    EquipmentActor actor{characterDefinition.code, characterStats.strength, characterStats.dexterity,
+                         player.level, characterStats.blockFactor};
     InventoryAccess equipmentAccess;
     equipmentAccess.actor = player.id;
-    if (auto belt = equipmentInventory.equipped(s.containers, EquipmentSlot::Belt))
-        require(equipmentInventory.equipmentRequirements(equipmentInventory.item(belt)->handle(),
-                                                         equipmentActor(player.level)) == InventoryError::None,
-                "belt requirements");
+    // A reset or later temporary stat loss can leave equipment in place but inactive.
     for (auto id : equipmentInventory.contents(s.containers.equipment)) {
         const auto &item = *equipmentInventory.item(id);
         auto slot = EquipmentSlot(std::get<ContainerLocation>(item.location).cell.x);
+        if (equipmentInventory.equipmentRequirements(item.handle(), actor) !=
+            InventoryError::None)
+            continue;
         auto result = equipmentInventory.planEquipment(EquipItem{item.handle(), slot}, s.containers,
-                                                       equipmentAccess, equipmentActor(player.level), nullptr);
+                                                       equipmentAccess, actor, nullptr);
         require(bool(result) && result.changes.empty(), "equipment requirements or hand combination");
     }
     for (const auto &[id, container] : s.inventory.containers)
@@ -324,15 +342,26 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
 }
 void GameSession::restore(SessionSnapshot s) {
     int current = validateSnapshot(s);
+    const auto &characterDefinition = definitionFor(s.world.player.characterClass);
     EntityIds validationIds;
     InventoryService equipmentInventory(validationIds, inventory_.catalog());
     equipmentInventory.state_ = s.inventory;
-    auto equipmentStats = deriveEquipmentStats(equipmentInventory, s.containers,
-                                               equipmentActor(s.world.player.level));
+    auto base = deriveCharacterAttributes(characterDefinition, s.world.player.level,
+                                           s.world.player.allocated);
+    EquipmentActor baseActor{characterDefinition.code, base.strength, base.dexterity, s.world.player.level, base.blockFactor};
+    auto modifiers = resolveEquipmentModifiers(content_, equipmentInventory, s.containers, baseActor);
+    auto characterStats = deriveCharacterAttributes(characterDefinition, s.world.player.level,
+                                                     s.world.player.allocated, modifiers);
+    EquipmentActor actor{characterDefinition.code, characterStats.strength, characterStats.dexterity,
+                         s.world.player.level, characterStats.blockFactor};
+    auto equipmentStats = deriveEquipmentStats(equipmentInventory, s.containers, actor, modifiers.defense);
+    CharacterDefinition restoredDefinition = characterDefinition;
     // All allocation and validation precedes this no-throw commit.
     static_assert(std::is_nothrow_move_assignable_v<WorldState>);
     static_assert(std::is_nothrow_move_assignable_v<InventoryState>);
     simulation_.state_ = std::move(s.world);
+    characterDefinition_ = std::move(restoredDefinition);
+    simulation_.characterStats_ = characterStats;
     simulation_.equipmentStats_ = equipmentStats;
     simulation_.grid_ = &regions_[current].map.grid;
     simulation_.rooms_ = &regions_[current].map.activation;

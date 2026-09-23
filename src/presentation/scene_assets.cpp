@@ -31,7 +31,7 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
     }
     loadHeroEquipment(session);
     if (hero.at("nu").frames.empty() || hero.at("rn").frames.empty())
-        throw std::runtime_error("Barbarian animations missing; supply the classic MPQ resources.");
+        throw std::runtime_error("Character animations missing; supply the classic MPQ resources.");
     for (int index = 0; index < int(MonsterKind::Count); ++index) {
         auto kind = MonsterKind(index);
         const auto &definition = monsterDefinition(kind);
@@ -80,6 +80,10 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
     panel = uiGraphics_.single("data/global/ui/panel/800ctrlpnl7.dc6");
     cursor = uiGraphics_.single("data/global/ui/cursor/gaunt.dc6");
     inventoryPanel = graphics_.single("data/global/ui/panel/invchar.dc6");
+    attributeButtons = graphics_.single("data/global/ui/panel/level.dc6");
+    attributePoints = graphics_.single("data/global/ui/panel/skillpoints.dc6");
+    if (attributeButtons.frames.size() < 3 || attributePoints.frames.empty())
+        throw std::runtime_error("Original character attribute UI artwork is missing");
     vendorPanel = graphics_.single("data/global/ui/panel/buysell.dc6");
     vendorTabs = graphics_.single("data/global/ui/panel/buyselltabs.dc6");
     vendorButtons = graphics_.single("data/global/ui/panel/buysellbtn.dc6");

@@ -2,6 +2,7 @@
 #include "debug_inventory.hpp"
 #include "persistence/save_file.hpp"
 #include <nlohmann/json.hpp>
+#include <algorithm>
 #include <cmath>
 #include <set>
 #include <stdexcept>
@@ -49,8 +50,19 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
         } else if (command == "status") {
             const auto &state = session.state();
             result["player"] = {{"x", state.player.pos.x}, {"y", state.player.pos.y},
-                {"hp", state.player.hp}, {"gold", state.player.gold},
+                {"hp", state.player.hp}, {"maxHp", session.characterStats().maxLife},
+                {"mana", state.player.mana}, {"maxMana", session.characterStats().maxMana},
+                {"stamina", state.player.stamina}, {"maxStamina", session.characterStats().maxStamina},
+                {"gold", state.player.gold},
+                {"class", state.player.characterClass},
                 {"experience", state.player.experience}, {"level", state.player.level},
+                {"unspentAttributes", state.player.unspentAttributes},
+                {"strength", session.characterStats().strength},
+                {"dexterity", session.characterStats().dexterity},
+                {"vitality", session.characterStats().vitality},
+                {"energy", session.characterStats().energy},
+                {"attackRating", session.characterStats().attackRating},
+                {"defense", session.equipmentStats().defense},
                 {"dead", state.player.dead}};
             result["region"] = int(state.area.region);
             result["kills"] = state.area.kills;
@@ -208,6 +220,43 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
             session.tick(0);
             result["experience"] = session.state().player.experience;
             result["level"] = session.state().player.level;
+            result["unspentAttributes"] = session.state().player.unspentAttributes;
+        } else if (command == "allocate-attribute") {
+            auto name = request.at("attribute").get<std::string>();
+            Attribute attribute;
+            if (name == "strength") attribute = Attribute::Strength;
+            else if (name == "dexterity") attribute = Attribute::Dexterity;
+            else if (name == "vitality") attribute = Attribute::Vitality;
+            else if (name == "energy") attribute = Attribute::Energy;
+            else throw std::runtime_error("Unknown attribute");
+            if (session.state().player.dead || session.state().player.unspentAttributes <= 0)
+                throw std::runtime_error("No attribute point available");
+            session.submit(AllocateAttribute{attribute});
+            session.tick(0);
+            result["unspentAttributes"] = session.state().player.unspentAttributes;
+        } else if (command == "reset-attributes") {
+            if (session.state().player.dead) throw std::runtime_error("Dead player cannot reset attributes");
+            session.submit(DebugResetAttributes{});
+            session.tick(0);
+            result["unspentAttributes"] = session.state().player.unspentAttributes;
+        } else if (command == "switch-character") {
+            if (session.state().player.dead)
+                throw std::runtime_error("Switch character while alive");
+            std::string name = request.value("class", std::string{});
+            if (!name.empty() &&
+                std::none_of(session.content().characters.begin(), session.content().characters.end(),
+                    [&](const auto &entry) { return entry.name == name; }))
+                throw std::runtime_error("Unknown MPQ character class");
+            session.submit(DebugSwitchCharacter{name});
+            session.tick(0);
+            view.advance(0);
+            result["class"] = session.characterName();
+            result["appearance"] = session.characterAppearance();
+            result["level"] = session.state().player.level;
+            result["unspentAttributes"] = session.state().player.unspentAttributes;
+        } else if (command == "character-panel") {
+            view.ui().characterOpen = request.value("open", true);
+            result["open"] = view.ui().characterOpen;
         } else if (command == "objects") {
             result["objects"] = Json::array();
             for (const auto &object : session.region().objects) {

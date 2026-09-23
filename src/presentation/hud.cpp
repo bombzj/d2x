@@ -39,7 +39,7 @@ void SceneView::drawHelp() const {
     painter_.centered("Diablo II classic resource simulation", 178, 12);
     const char *lines[] = {"Left click / hold          Move / Attack / Talk / Pick up",
                            "Hold Alt                   Show ground item names",
-                           "I                          Open / close inventory",
+                           "I / C                      Inventory / Character",
                            "W A S D                    Move in screen directions",
                            "Right click                Cast; click slot to choose",
                            "1 through 4 / B            Drink belt potion / Expand belt",
@@ -55,7 +55,7 @@ void SceneView::drawHelp() const {
     for (int i = 0; i < int(std::size(lines)); i++)
         painter_.label(lines[i], W / 2 - 194, 216 + i * 23, 12,
                        i < 4 ? parchment : Color{150, 148, 132, 255});
-    painter_.centered("Ctrl+Alt+G/E: gold/XP   A/T: reset slots reserved", 575, 11, gold);
+    painter_.centered("Ctrl+Alt+G/E: gold/XP   A: reset attributes   C: next class   T: talents reserved", 575, 11, gold);
 }
 void SceneView::draw(Vec mouse) const {
     const auto &map = session_.map();
@@ -105,6 +105,7 @@ void SceneView::draw(Vec mouse) const {
         }
     }
     drawStorage(mouse);
+    drawCharacter(mouse);
     drawInventory(mouse);
     drawBelt(mouse);
     if (view_.pause)

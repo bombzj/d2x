@@ -1,4 +1,5 @@
 #include "classic_data.hpp"
+#include "character_attributes.hpp"
 #include "character_progression.hpp"
 #include "equipment_data.hpp"
 #include "item_appearance.hpp"
@@ -151,7 +152,10 @@ ClassicData loadClassicData(Archives &archives) {
         loadEquipmentDefinitions(items, tables.at("itemtypes"), tables);
     ClassicData data{ItemCatalog(std::move(items)), std::move(tables),
                      legacy ? "classic-1.04-txt-v1" : "lod-named-txt-v1"};
-    data.experienceThresholds = barbarianExperienceThresholds(data.tables.at("experience"));
+    data.characters = loadCharacterDefinitions(data.tables.at("charstats"));
+    for (const auto &character : data.characters)
+        data.experienceByClass.emplace(character.name,
+            experienceThresholds(data.tables.at("experience"), character.name));
     data.armorTypes = std::move(armorTypes);
     data.vendors = loadVendorData(data.tables, data.items);
     if (archives.contains("data/local/docs/eng/a1npc.txt"))

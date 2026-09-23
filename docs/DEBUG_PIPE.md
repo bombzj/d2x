@@ -74,6 +74,15 @@ if ($target) {
 
 `item` 只读查询单件实例的品质原行、词缀行、属性掷值、位置及从 MPQ 适配的外观 token；`status` 同时给出本局出现过的暗金原行数量（含不限量行）和当前人物合成缺资源提示，便于对照穿脱与恢复前后的状态。
 
+调试职业可在角色存活时切换。`Ctrl+Alt+C` 按 MPQ `CharStats` 的职业顺序循环；管道省略 `class` 也循环，指定原表职业名则直达：
+
+```powershell
+.\scripts\Send-D2XCommand.ps1 -Command switch-character
+.\scripts\Send-D2XCommand.ps1 -Command switch-character -Arguments @{ class = 'Sorceress' }
+```
+
+切换后等级、经验和属性分配归零，生命／法力／耐力回满；背包、装备与世界保留，超出一级携带上限的金币裁剪。`status.player.class` 和响应 `class` 可核对职业；职业成长及经验阈值始终从挂载的 MPQ 读取。原技能快捷栏仍是 MVP 通用技能，不等于职业技能树。
+
 营地商人可先从 `objects` 取会话对象 ID，再按正常交互进入菜单；`shop` 给出可买 slot，`buy` 使用同一购买事务。`talk` 用于单独查看原 MPQ 对话，购买不要求先 Talk。
 
 ```powershell
@@ -106,7 +115,11 @@ $offers = (.\scripts\Send-D2XCommand.ps1 -Command shop -Arguments @{ id = $vendo
 | shop | 商人对象 `id` | 查询原 MPQ 货架报价、常驻／已售状态；该 NPC 菜单已打开时进入货架界面 |
 | buy | 商人对象 `id`、货架 `slot` | 需先正常交谈且在范围内；按报价扣金币并正式创建背包物品，随机货品售出后不可重购 |
 | grant-gold | `amount` | 增加钱包金币，仍遵守当前角色等级对应的携带上限，便于检验需付费的 NPC 服务 |
-| grant-experience | `amount` | 增加经验并依照运行时 MPQ `Experience.txt` 的野蛮人阈值升级；达到 `MaxLvl` 时封顶 |
+| grant-experience | `amount` | 增加经验并依照运行时 MPQ `Experience.txt` 的当前职业阈值升级；达到 `MaxLvl` 时封顶 |
+| allocate-attribute | `attribute`：`strength`／`dexterity`／`vitality`／`energy` | 正式分配一个未用属性点；角色面板和装备需求同步刷新 |
+| reset-attributes | 无 | 调试重置四维已分配点；等级、经验和装备槽不变，需求不足的装备停用 |
+| switch-character | 可选 `class`：MPQ `CharStats.class` 原名 | 存活时指定职业或循环下一职业；重置成长状态，保留物品和世界 |
+| character-panel | 可选 `open` 布尔值，默认 true | 打开或关闭角色面板，便于结合 `screenshot` 对照职业外观和数值 |
 | use | `id` | 正常物品预览和使用，返回 `used`；支持背包回城卷轴，城镇使用拒绝 |
 | portal | `revision` | 正常走近当前蓝门；需使用 status 中当前版本，营地返程关闭双端点 |
 | kill | `id` | 仅击杀存活且当前屏幕范围内、已激活的指定怪物，玩家须存活；使用正常死亡事件及掉落结算 |

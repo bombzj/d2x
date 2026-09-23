@@ -1,24 +1,37 @@
 #include "gameplay/session/session.hpp"
+#include "content/equipment_modifiers.hpp"
+#include <algorithm>
 #include <type_traits>
 
 namespace d2x {
 EquipmentActor GameSession::equipmentActor() const {
-    return equipmentActor(state().player.level);
+    return equipmentActor(state().player);
 }
-EquipmentActor GameSession::equipmentActor(int level) const {
-    const auto &characters = content_.tables.at("charstats");
-    for (size_t row = 0; row < characters.rows().size(); ++row)
-        if (characters.value(row, "class") == "Barbarian") {
-            auto strength = characters.number(row, "str");
-            auto dexterity = characters.number(row, "dex");
-            if (!strength || !dexterity || *strength < 0 || *dexterity < 0)
-                throw std::runtime_error("Invalid Barbarian equipment attributes");
-            auto block = characters.number(row, "BlockFactor");
-            if (!block || *block < 0)
-                throw std::runtime_error("Invalid Barbarian block factor");
-            return {"bar", *strength, *dexterity, level, *block};
-        }
-    throw std::runtime_error("Missing Barbarian character definition");
+EquipmentActor GameSession::equipmentActor(const PlayerState &player) const {
+    auto base = deriveCharacterAttributes(characterDefinition_, player.level, player.allocated);
+    EquipmentActor baseActor{characterDefinition_.code, base.strength, base.dexterity, player.level, base.blockFactor};
+    auto modifiers = resolveEquipmentModifiers(content_, inventory_, playerContainers_, baseActor);
+    auto stats = deriveCharacterAttributes(characterDefinition_, player.level, player.allocated, modifiers);
+    return {characterDefinition_.code, stats.strength, stats.dexterity, player.level, stats.blockFactor};
+}
+void GameSession::refreshCharacter(bool fillGains) {
+    auto &player = simulation_.state_.player;
+    const auto previous = simulation_.characterStats_;
+    auto base = deriveCharacterAttributes(characterDefinition_, player.level, player.allocated);
+    EquipmentActor baseActor{characterDefinition_.code, base.strength, base.dexterity, player.level, base.blockFactor};
+    auto modifiers = resolveEquipmentModifiers(content_, inventory_, playerContainers_, baseActor);
+    auto current = deriveCharacterAttributes(characterDefinition_, player.level, player.allocated, modifiers);
+    if (fillGains) {
+        if (player.hp > 0) player.hp += current.maxLife - previous.maxLife;
+        player.mana += current.maxMana - previous.maxMana;
+        player.stamina += current.maxStamina - previous.maxStamina;
+    }
+    player.hp = std::clamp(player.hp, 0.f, float(current.maxLife));
+    player.mana = std::clamp(player.mana, 0.f, float(current.maxMana));
+    player.stamina = std::clamp(player.stamina, 0.f, float(current.maxStamina));
+    simulation_.characterStats_ = current;
+    EquipmentActor actor{characterDefinition_.code, current.strength, current.dexterity, player.level, current.blockFactor};
+    simulation_.equipmentStats_ = deriveEquipmentStats(inventory_, playerContainers_, actor, modifiers.defense);
 }
 void GameSession::createStarterEquipment() {
     const bool legacy = content_.profile == "classic-1.04-txt-v1";
@@ -27,52 +40,49 @@ void GameSession::createStarterEquipment() {
     InventoryAccess access;
     access.actor = state().player.id;
     int beltColumn = 0;
-    for (size_t row = 0; row < characters.rows().size(); ++row) {
-        if (characters.value(row, "class") != "Barbarian")
+    const size_t row = characterDefinition_.sourceRow;
+    for (int index = 1; index <= 10; ++index) {
+        auto field = "item" + std::to_string(index);
+        auto body = characters.value(row, field + "loc");
+        auto code = characters.value(row, field);
+        int quantity = characters.number(row, field + "count").value_or(0);
+        if (code.empty() || code == "0") {
+            if (quantity)
+                throw std::runtime_error("Starter item count without definition");
             continue;
-        for (int index = 1; index <= 10; ++index) {
-            auto field = "item" + std::to_string(index);
-            auto body = characters.value(row, field + "loc");
-            auto code = characters.value(row, field);
-            int quantity = characters.number(row, field + "count").value_or(0);
-            if (code.empty() || code == "0") {
-                if (quantity)
-                    throw std::runtime_error("Starter item count without definition");
-                continue;
-            }
-            if (quantity <= 0)
-                throw std::runtime_error("Invalid starter equipment quantity");
-            if (body.empty() || (legacy && body == "0")) {
-                const auto *definition = inventory_.catalog().find(code);
-                if (!definition)
-                    throw std::runtime_error("Unknown original starter item: " + std::string(code));
-                for (int count = 0; count < quantity; ++count) {
-                    ItemDestination destination = AutoPlace{playerContainers_.backpack};
-                    auto belt = inventory_.container(playerContainers_.belt);
-                    if (definition->beltAllowed && belt && beltColumn < belt->spec.columns)
-                        destination = ContainerLocation{playerContainers_.belt, {beltColumn++, 0}};
-                    if (!inventory_.createItem(code, 1, destination))
-                        throw std::runtime_error("Cannot create original starter item: " + std::string(code));
-                }
-                continue;
-            }
-            if (legacy)
-                continue; // Numeric 1.04 equipment locations have no verified slot adapter.
-            auto bodySlot = equipmentSlotFromCode(body);
-            if (!bodySlot)
-                throw std::runtime_error("Unsupported starter body location");
-            auto created =
-                inventory_.createItem(code, unsigned(quantity), AutoPlace{playerContainers_.backpack});
-            if (!created)
-                throw std::runtime_error("Cannot create original starter equipment: " + std::string(code));
-            auto handle = inventory_.item(created.item)->handle();
-            auto slot = *bodySlot;
-            auto equipped = slot == EquipmentSlot::Belt
-                                ? inventory_.equipBelt(EquipBelt{handle}, playerContainers_, access, actor)
-                                : inventory_.equip(EquipItem{handle, slot}, playerContainers_, access, actor);
-            if (!equipped)
-                throw std::runtime_error("Cannot equip original starter item: " + std::string(code));
         }
+        if (quantity <= 0)
+            throw std::runtime_error("Invalid starter equipment quantity");
+        if (body.empty() || (legacy && body == "0")) {
+            const auto *definition = inventory_.catalog().find(code);
+            if (!definition)
+                throw std::runtime_error("Unknown original starter item: " + std::string(code));
+            for (int count = 0; count < quantity; ++count) {
+                ItemDestination destination = AutoPlace{playerContainers_.backpack};
+                auto belt = inventory_.container(playerContainers_.belt);
+                if (definition->beltAllowed && belt && beltColumn < belt->spec.columns)
+                    destination = ContainerLocation{playerContainers_.belt, {beltColumn++, 0}};
+                if (!inventory_.createItem(code, 1, destination))
+                    throw std::runtime_error("Cannot create original starter item: " + std::string(code));
+            }
+            continue;
+        }
+        if (legacy)
+            continue; // Numeric 1.04 equipment locations have no verified slot adapter.
+        auto bodySlot = equipmentSlotFromCode(body);
+        if (!bodySlot)
+            throw std::runtime_error("Unsupported starter body location");
+        auto created =
+            inventory_.createItem(code, unsigned(quantity), AutoPlace{playerContainers_.backpack});
+        if (!created)
+            throw std::runtime_error("Cannot create original starter equipment: " + std::string(code));
+        auto handle = inventory_.item(created.item)->handle();
+        auto slot = *bodySlot;
+        auto equipped = slot == EquipmentSlot::Belt
+                            ? inventory_.equipBelt(EquipBelt{handle}, playerContainers_, access, actor)
+                            : inventory_.equip(EquipItem{handle, slot}, playerContainers_, access, actor);
+        if (!equipped)
+            throw std::runtime_error("Cannot equip original starter item: " + std::string(code));
     }
 }
 bool GameSession::inventorySourceAllowed(EntityId id) const {

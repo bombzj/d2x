@@ -1,4 +1,5 @@
 #include "controller.hpp"
+#include "character_panel.hpp"
 #include <algorithm>
 
 namespace d2x {
@@ -99,8 +100,18 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
                 view_.notice(amount ? "Experience +" + std::to_string(amount) : "Maximum level reached.");
             }
         }
-        if (input.debugAttributes)
-            view_.notice("Attribute allocation is reserved for progression.");
+        if (input.debugAttributes) {
+            session_.submit(DebugResetAttributes{});
+            view_.notice("Allocated attribute points returned.");
+        }
+        if (input.debugCharacter) {
+            if (session_.state().player.dead)
+                view_.notice("Switch character while alive.", true);
+            else {
+                session_.submit(DebugSwitchCharacter{});
+                view_.notice("Switching character; level and attributes reset.");
+            }
+        }
         if (input.debugTalents)
             view_.notice("Skill allocation is reserved for progression.");
     }
@@ -170,6 +181,10 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
         inventoryRight_ = input.rightHeld;
         return true;
     }
+    if (input.character && !ui.blocksWorld()) {
+        ui.characterOpen = !ui.characterOpen;
+        return true;
+    }
     if (input.insideViewport && input.leftPressed && !ui.blocksWorld() &&
         CheckCollisionPointRec(rv(input.mouse), inventoryToggle())) {
         inventoryClick_ = true;
@@ -191,6 +206,7 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
         ui.inventory.cancelGesture();
         ui.inventory.open = false;
         session_.submit(RestartArea{});
+        ui.characterOpen = false;
     }
     if (input.escape) {
         if (ui.skillPicker) {
@@ -204,6 +220,8 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
             ui.inventory.cancelGesture();
         else if (ui.inventory.open)
             toggleInventory();
+        else if (ui.characterOpen)
+            ui.characterOpen = false;
         else
             return false;
         inventoryClick_ = input.leftHeld || input.leftReleased;
@@ -252,6 +270,17 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
     if (ui.blocksWorld()) {
         ui.skillPicker.reset();
         ui.inventory.cancelGesture();
+        return true;
+    }
+    if (ui.characterOpen && input.insideViewport &&
+        CheckCollisionPointRec(rv(input.mouse), characterBounds())) {
+        if (input.leftPressed) {
+            if (CheckCollisionPointRec(rv(input.mouse), characterClose()))
+                ui.characterOpen = false;
+            else if (session_.state().player.unspentAttributes > 0)
+                if (auto attribute = characterAttributeAt(input.mouse))
+                    session_.submit(AllocateAttribute{*attribute});
+        }
         return true;
     }
     if (input.expandBelt) {

@@ -29,6 +29,10 @@ struct MonsterAccuracy {
     int level = 1;
     int attackRating = 0;
 };
+struct MonsterDefense {
+    int level = 1;
+    int defense = 0;
+};
 // Explicit implementation registry: add real actors here as their behaviour/assets land.
 MonsterImplementation monsterImplementation(const std::string &code);
 const char *monsterRankName(MonsterRank rank);

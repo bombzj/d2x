@@ -5,7 +5,7 @@
 
 namespace d2x {
 EquipmentStats deriveEquipmentStats(const InventoryService &inventory, const PlayerContainers &containers,
-                                    const EquipmentActor &actor) {
+                                    const EquipmentActor &actor, int bonusDefense) {
     EquipmentStats result;
     result.level = std::max(1, actor.level);
     int count = 0;
@@ -21,7 +21,7 @@ EquipmentStats deriveEquipmentStats(const InventoryService &inventory, const Pla
     };
     auto right = usable(EquipmentSlot::RightHand);
     auto left = usable(EquipmentSlot::LeftHand);
-    result.defense = actor.dexterity / 4;
+    result.defense = actor.dexterity / 4 + bonusDefense;
     for (int index = 0; index < int(EquipmentSlot::Count); ++index) {
         auto item = usable(EquipmentSlot(index));
         if (!item)

@@ -18,8 +18,10 @@ class Simulation {
     bool safeZone_ = false;
     WorldState state_;
     EquipmentStats equipmentStats_;
+    CharacterAttributes characterStats_;
     std::function<void(EntityId, bool)> wearEquipment_;
     std::function<std::optional<MonsterAccuracy>(const Enemy &)> monsterAccuracy_;
+    std::function<std::optional<MonsterDefense>(const Enemy &)> monsterDefense_;
     std::function<std::optional<float>(const Enemy &)> monsterWalkSpeed_;
     std::vector<GameEvent> events_;
     Enemy *findEnemy(EntityId id);

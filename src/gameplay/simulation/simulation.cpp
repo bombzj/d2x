@@ -43,9 +43,9 @@ void Simulation::restartArea(Vec spawn, std::span<const MonsterSpawn> monsters) 
 }
 void Simulation::heal() {
     auto &p = state_.player;
-    p.hp = playerRules().maxLife;
-    p.mana = playerRules().maxMana;
-    p.stamina = playerRules().maxStamina;
+    p.hp = characterStats_.maxLife;
+    p.mana = characterStats_.maxMana;
+    p.stamina = characterStats_.maxStamina;
     p.healing.clear();
     p.manaRestoration.clear();
     p.staminaBoost = 0;

@@ -1,7 +1,10 @@
 #include "gameplay/session/session.hpp"
+#include "content/character_attributes.hpp"
 #include "core/fingerprint.hpp"
 #include <algorithm>
 #include <iostream>
+#include <iterator>
+#include <stdexcept>
 #include <type_traits>
 
 namespace d2x {
@@ -9,12 +12,15 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
                          uint64_t lootSeed, PopulationSettings population)
     : content_(loadClassicData(archives)), worldContent_(archives),
       monsterContent_(archives, content_.tables.at("monstats")), loot_(lootSeed) {
+    characterDefinition_ = definitionFor(state().player.characterClass);
     simulation_.state_.population = population;
     simulation_.state_.mapSeed = selection.seed;
     inventory_.state_.creationRandom = (uint64_t(666) << 32) | uint32_t(lootSeed);
     playerContainers_ = inventory_.createPlayerContainers(state().player.id);
+    refreshCharacter();
+    simulation_.heal();
     createStarterEquipment();
-    simulation_.equipmentStats_ = deriveEquipmentStats(inventory_, playerContainers_, equipmentActor());
+    refreshCharacter();
     simulation_.wearEquipment_ = [this](EntityId weapon, bool defending) {
         auto result = inventory_.wearEquipment(playerContainers_, weapon, defending,
                                                simulation_.state_.player.combatRandom);
@@ -29,6 +35,14 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
         if (!record || record->boss || !record->normalAttackRating)
             return std::nullopt;
         return MonsterAccuracy{record->normalLevel, *record->normalAttackRating};
+    };
+    simulation_.monsterDefense_ = [this](const Enemy &enemy) -> std::optional<MonsterDefense> {
+        if (state().population.difficulty != 0 || enemy.identity.rank != MonsterRank::Normal)
+            return std::nullopt;
+        const auto *record = monsterContent_.find(enemy.identity.monster);
+        if (!record || record->boss || !record->normalDefense)
+            return std::nullopt;
+        return MonsterDefense{record->normalLevel, *record->normalDefense};
     };
     auto worldSelection = selection;
     simulation_.monsterWalkSpeed_ = [this](const Enemy &enemy) -> std::optional<float> {
@@ -79,7 +93,7 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
     Fingerprint fingerprint;
     fingerprint.add(content_.profile);
     // Bump this rules revision when state interpretation or compiled rules change.
-    fingerprint.add("d2x-session-rules-v40-act1-outdoor-shrines");
+    fingerprint.add("d2x-session-rules-v43-character-classes");
     auto members = archives.used;
     for (const auto &member : members) {
         fingerprint.add(member);
@@ -102,6 +116,13 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
     if (startRegion < -1 || startRegion >= int(regions_.size()))
         throw std::out_of_range("--region exceeds the available scene count; prefer --level <Levels.txt ID>");
     enter(startRegion < 0 ? plan.start : regions_[startRegion].definition.id);
+}
+const CharacterDefinition &GameSession::definitionFor(std::string_view name) const {
+    auto found = std::find_if(content_.characters.begin(), content_.characters.end(),
+                              [name](const auto &entry) { return entry.name == name; });
+    if (found == content_.characters.end())
+        throw std::runtime_error("Unknown MPQ character class: " + std::string(name));
+    return *found;
 }
 void GameSession::enter(RegionId id, std::optional<Vec> arrival) {
     auto found = std::find_if(regions_.begin(), regions_.end(),
@@ -144,7 +165,7 @@ void GameSession::publishInventory(InventoryResult result, EntityId requested) {
     if (!result)
         simulation_.emit(InventoryRejected{requested, result.error});
     else {
-        simulation_.equipmentStats_ = deriveEquipmentStats(inventory_, playerContainers_, equipmentActor());
+        refreshCharacter();
         for (const auto &change : result.changes)
             simulation_.emit(change);
         if (requested)
@@ -225,13 +246,52 @@ void GameSession::tick(float dt, Vec keyboard) {
                 } else if constexpr (std::is_same_v<T, DebugGrantExperience>) {
                     auto &player = simulation_.state_.player;
                     if (intent.amount && !player.dead) {
-                        const auto &thresholds = content_.experienceThresholds;
+                        const auto &thresholds = experienceThresholds();
                         player.experience += std::min(intent.amount, thresholds.back() - player.experience);
+                        int before = player.level;
                         while (size_t(player.level + 1) < thresholds.size() &&
                                player.experience >= thresholds[size_t(player.level + 1)])
                             ++player.level;
-                        simulation_.equipmentStats_ =
-                            deriveEquipmentStats(inventory_, playerContainers_, equipmentActor());
+                        player.unspentAttributes += (player.level - before) * characterDefinition_.statPerLevel;
+                        refreshCharacter(true);
+                    }
+                } else if constexpr (std::is_same_v<T, AllocateAttribute>) {
+                    auto &player = simulation_.state_.player;
+                    if (!player.dead && allocateAttribute(player.allocated, player.unspentAttributes, intent.attribute))
+                        refreshCharacter(true);
+                } else if constexpr (std::is_same_v<T, DebugResetAttributes>) {
+                    auto &player = simulation_.state_.player;
+                    if (!player.dead && allocatedPoints(player.allocated)) {
+                        player.unspentAttributes += allocatedPoints(player.allocated);
+                        player.allocated = {};
+                        refreshCharacter();
+                    }
+                } else if constexpr (std::is_same_v<T, DebugSwitchCharacter>) {
+                    auto &player = simulation_.state_.player;
+                    if (!player.dead) {
+                        std::string target = intent.name;
+                        if (target.empty()) {
+                            auto found = std::find_if(content_.characters.begin(), content_.characters.end(),
+                                [&](const auto &entry) { return entry.name == player.characterClass; });
+                            target = (std::next(found) == content_.characters.end()
+                                          ? content_.characters.front() : *std::next(found)).name;
+                        }
+                        const auto &definition = definitionFor(target);
+                        cancelExit(); cancelPickup(); cancelInteraction(); closeStorage();
+                        simulation_.stopWalking();
+                        player.characterClass = definition.name;
+                        characterDefinition_ = definition;
+                        player.level = 1; player.experience = 0;
+                        player.allocated = {}; player.unspentAttributes = 0;
+                        player.gold = std::min(player.gold, 10000u);
+                        player.castTime = player.spinTime = player.leapTime = 0;
+                        player.hitTime = player.meleeTime = 0;
+                        player.attackTarget = {};
+                        player.cooldown.fill(0);
+                        player.healing.clear(); player.manaRestoration.clear();
+                        player.staminaBoost = 0;
+                        refreshCharacter();
+                        simulation_.heal();
                     }
                 } else if constexpr (std::is_same_v<T, MoveItem> || std::is_same_v<T, SwapItems> ||
                                      std::is_same_v<T, SplitStack> || std::is_same_v<T, MergeStacks> ||

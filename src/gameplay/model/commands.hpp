@@ -2,6 +2,8 @@
 #include "core/id.hpp"
 #include "gameplay/items/operations.hpp"
 #include "gameplay/model/definitions.hpp"
+#include "gameplay/character/attributes.hpp"
+#include <string>
 #include <variant>
 
 namespace d2x {
@@ -40,6 +42,9 @@ struct DebugGrantGold {
 struct DebugGrantExperience {
     uint64_t amount = 0;
 };
+struct AllocateAttribute { Attribute attribute = Attribute::Strength; };
+struct DebugResetAttributes {};
+struct DebugSwitchCharacter { std::string name; }; // Empty name cycles MPQ CharStats order.
 struct Travel {
     RegionId destination;
 };
@@ -60,7 +65,7 @@ struct PickupItem {
 };
 // UI supplies intentions; only the gameplay layer changes authoritative state.
 using GameCommand =
-    std::variant<MoveTo, Attack, CastSkill, ToggleRun, Interact, IdentifyWithCain, EndNpcConversation, BuyVendorItem, DebugGrantGold, DebugGrantExperience, Travel, RestartArea, MoveItem, SwapItems,
+    std::variant<MoveTo, Attack, CastSkill, ToggleRun, Interact, IdentifyWithCain, EndNpcConversation, BuyVendorItem, DebugGrantGold, DebugGrantExperience, AllocateAttribute, DebugResetAttributes, DebugSwitchCharacter, Travel, RestartArea, MoveItem, SwapItems,
                  SplitStack, MergeStacks, PickupItem, StopMoving, EquipBelt, UseItem, UseBeltColumn,
                  CloseStorage, TransferItem, UseExit, EquipItem, DebugKill, UseTownPortal, WaypointTravel>;
 } // namespace d2x

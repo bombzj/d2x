@@ -13,6 +13,7 @@ struct ViewState {
     Vec camera, clickAt;
     float clickAge = 10, zoom = 1;
     bool help = false, automap = false, debug = false, pause = false, travelMenu = false;
+    bool characterOpen = false;
     bool showLoot = false, shopOpen = false, npcMenu = false;
     int shopPage = 0;
     int shopCategory = 0;
@@ -68,6 +69,7 @@ class SceneView {
     void drawHelp() const;
     void drawExitHint(Vec mouse) const;
     void drawInventory(Vec mouse) const;
+    void drawCharacter(Vec mouse) const;
     void drawStorage(Vec mouse) const;
     void drawContainerGrid(const ContainerGrid &grid, Vec mouse) const;
     void drawBelt(Vec mouse) const;
