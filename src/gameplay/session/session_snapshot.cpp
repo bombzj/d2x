@@ -286,6 +286,11 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
                 scalar(timer);
             scalar(enemy.attack, -1.e9f);
             scalar(enemy.rethink, -1.e9f);
+            scalar(enemy.aiWait, 0, 65535.f / 25.f);
+            auto ai = simulation_.monsterAi_ ? simulation_.monsterAi_(enemy) : std::nullopt;
+            if (!ai || ai->kind != MonsterAiKind::Skeleton)
+                require(enemy.aiWait == 0 && !enemy.aiPursuing,
+                        "unexpected monster AI state");
             route(enemy.route, areaGrid);
             if (enemy.hp == 0) {
                 ++dead;

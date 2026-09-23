@@ -413,8 +413,10 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
                 Json entry = {{"id", enemy.id.value}, {"monster", enemy.identity.monster},
                     {"rank", monsterRankName(enemy.identity.rank)}, {"hp", enemy.hp},
                     {"maxHp", enemy.maxHp}, {"x", enemy.pos.x},
-                    {"y", enemy.pos.y}, {"visible", visible(enemy)}, {"active", session.active(enemy.pos)}};
+                    {"y", enemy.pos.y}, {"visible", visible(enemy)}, {"active", session.active(enemy.pos)},
+                    {"aiWait", enemy.aiWait}, {"aiPursuing", enemy.aiPursuing}};
                 const auto *record = session.monsterContent().find(enemy.identity.monster);
+                if (record) entry["sourceAi"] = record->ai;
                 if (record && record->walkVelocity)
                     entry["sourceVelocity"] = *record->walkVelocity;
                 result["monsters"].push_back(std::move(entry));

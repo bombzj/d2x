@@ -1,5 +1,6 @@
 #pragma once
 #include "gameplay/model/definitions.hpp"
+#include <array>
 #include <cstdint>
 
 namespace d2x {
@@ -37,6 +38,11 @@ struct MonsterDefense {
 struct MonsterNormalCombat {
     int minLife = 0, maxLife = 0;
     int minDamage = 0, maxDamage = 0;
+};
+enum class MonsterAiKind { Skeleton, Brute };
+struct MonsterAiProfile {
+    MonsterAiKind kind;
+    std::array<int, 8> params{};
 };
 // Explicit implementation registry: add real actors here as their behaviour/assets land.
 MonsterImplementation monsterImplementation(const std::string &code);

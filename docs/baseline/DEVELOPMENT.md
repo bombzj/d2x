@@ -1,6 +1,6 @@
 # 开发与交接
 
-当前源码存档 v23／规则 v50。怪物阶段的已完成范围和下一项见 [怪物实施计划](../MONSTERS.md)：普通近战怪物按运行时 MPQ 原表计算生命和 A1 伤害，`brute1` 使用原 `YE` 外观。Windows Release 构建通过；邪恶洞窟实际创建 7 只 `brute1`，其中一只最大生命 14 保存／恢复不变，正式死亡掉落结算成功且本次为 NoDrop。原图截图在忽略的 `artifacts/monster-smoke/brute1-den.png`。完整六 MPQ 运行目录 `dist/d2x-runtime-20260924-v23-monsters/` 已独立启动 5 帧并生成 `artifacts/monster-smoke/packaged-den.png`；日志确认 `YE` 四动作各 1/1 组件。AI、精英、远程及不同难度数值仍待后续逐项实现；未写测试脚本／用例，不生成 ZIP。此前七职业技能树与女巫技能的完成范围见 [技能树实施](../SKILLS.md)，战斗效果仍待逐项实机验收。
+当前源码存档 v24／规则 v51。怪物阶段的当前范围见 [怪物实施计划](../MONSTERS.md)：普通骷髅按运行时 MPQ `aip1–aip3` 决定接近、停顿和攻击，`Brute` 按原 AI 规则随失血加速。Windows Release 构建通过；Crypt 的骷髅实际进入 0.6 秒停顿，保存／恢复成功。完整六 MPQ 运行目录 `dist/d2x-runtime-20260924-v24-monster-ai/` 已独立启动 Crypt 和邪恶洞窟各 5 帧并生成 `artifacts/monster-smoke/packaged-v24-crypt.png` 与 `packaged-v24-den.png`；日志确认两种怪物原攻击动作图层加载。受伤 Brute 的速度变化和完整攻击动作／出伤帧仍待定向交互验收；未写测试脚本／用例，不生成 ZIP。此前 v23 怪物画面与掉落现场仍保留在 `artifacts/monster-smoke/`，旧存档不兼容。
 
 ## 当前交接状态
 

@@ -16,6 +16,7 @@ struct MonsterRecord {
     std::optional<int> normalDefense;
     std::optional<int> walkVelocity;
     std::optional<MonsterNormalCombat> normalCombat;
+    std::array<std::optional<MonsterAiProfile>, 3> aiProfiles;
     bool enabled = false, randomSpawn = false, ranged = false, placeSpawn = false;
     bool killable = false, npc = false, critter = false, inert = false, boss = false;
     std::array<std::string, 2> minions;

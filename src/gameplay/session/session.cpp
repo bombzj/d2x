@@ -83,6 +83,20 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
         const auto *record = monsterContent_.find(identity.monster);
         return record && !record->boss ? record->normalCombat : std::nullopt;
     };
+    simulation_.monsterAi_ = [this](const Enemy &enemy)
+        -> std::optional<MonsterAiProfile> {
+        if (enemy.identity.rank != MonsterRank::Normal)
+            return std::nullopt;
+        const auto *record = monsterContent_.find(enemy.identity.monster);
+        if (!record || record->boss) return std::nullopt;
+        auto profile = record->aiProfiles.at(state().population.difficulty);
+        if (!profile) return std::nullopt;
+        if (profile->kind == MonsterAiKind::Skeleton && enemy.kind == MonsterKind::Skeleton)
+            return profile;
+        if (profile->kind == MonsterAiKind::Brute && enemy.kind == MonsterKind::Brute)
+            return profile;
+        return std::nullopt;
+    };
     worldSelection.difficulty = population.difficulty;
     auto plan = planWorld(archives, worldContent_, worldSelection);
     regions_ = loadRegions(archives, ids_, plan.regions, monsterContent_);
@@ -125,7 +139,7 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
     Fingerprint fingerprint;
     fingerprint.add(content_.profile);
     // Bump this rules revision when state interpretation or compiled rules change.
-    fingerprint.add("d2x-session-rules-v50-original-normal-monster-combat");
+    fingerprint.add("d2x-session-rules-v51-skeleton-ai");
     auto members = archives.used;
     for (const auto &member : members) {
         fingerprint.add(member);
