@@ -72,10 +72,17 @@ void GameSession::createStarterEquipment() {
         auto bodySlot = equipmentSlotFromCode(body);
         if (!bodySlot)
             throw std::runtime_error("Unsupported starter body location");
-        auto created =
-            inventory_.createItem(code, unsigned(quantity), AutoPlace{playerContainers_.backpack});
+        const auto *definition = inventory_.catalog().find(code);
+        if (!definition) throw std::runtime_error("Unknown original starter equipment: " + std::string(code));
+        auto created = inventory_.createItem(code,
+            definition->maxStack > 1 ? definition->maxStack : unsigned(quantity),
+            AutoPlace{playerContainers_.backpack});
         if (!created)
             throw std::runtime_error("Cannot create original starter equipment: " + std::string(code));
+        if (index == 1)
+            if (const auto *tree = content_.skills.tree(characterDefinition_.code);
+                tree && tree->starterSkill)
+                inventory_.state_.items.at(created.item).grantedSkill = *tree->starterSkill;
         auto handle = inventory_.item(created.item)->handle();
         auto slot = *bodySlot;
         auto equipped = slot == EquipmentSlot::Belt

@@ -5,6 +5,8 @@ namespace d2x {
 void Simulation::stopWalking() {
     state_.player.route.clear();
     state_.player.attackTarget = {};
+    state_.player.throwAttack = false;
+    state_.player.leftHandAttack = false;
     state_.player.moving = false;
 }
 void Simulation::moveTo(Vec target) {
@@ -12,21 +14,26 @@ void Simulation::moveTo(Vec target) {
     if (p.dead || p.leapTime > 0 || p.spinTime > 0)
         return;
     p.attackTarget = {};
+    p.throwAttack = false;
+    p.leftHandAttack = false;
     p.route = grid_->path(p.pos, target);
     state_.message = p.route.empty() ? "That path is blocked" : "";
 }
-void Simulation::attackEnemy(EntityId target) {
+void Simulation::attackEnemy(EntityId target, bool thrown, bool leftHand) {
     auto &p = state_.player;
     auto *e = findEnemy(target);
     if (p.dead || !e || e->hp <= 0)
         return;
-    if (equipmentStats_.weapons[0].ranged) {
-        p.attackTarget = {};
-        p.route.clear();
-        state_.message = "Ranged weapon attacks are not implemented yet.";
+    if ((thrown || leftHand) && std::none_of(equipmentStats_.weapons.begin(),
+            equipmentStats_.weapons.begin() + equipmentStats_.weaponCount,
+            [=](const WeaponDamage &weapon) { return (!thrown || weapon.throwable) &&
+                (!leftHand || weapon.leftHand); })) {
+        state_.message = thrown ? "A throwing weapon is required." : "A left-hand weapon is required.";
         return;
     }
     p.attackTarget = target;
+    p.throwAttack = thrown;
+    p.leftHandAttack = leftHand;
     p.route = grid_->path(p.pos, e->pos);
 }
 void Simulation::updatePlayer(float dt, Vec keyboard) {
@@ -47,22 +54,47 @@ void Simulation::updatePlayer(float dt, Vec keyboard) {
     }
     if (p.attackTarget) {
         auto *e = findEnemy(p.attackTarget);
-        if (!e || e->hp <= 0 || equipmentStats_.weapons[0].ranged)
+        if (!e || e->hp <= 0)
             p.attackTarget = {};
-        else if ((e->pos - p.pos).length() < rules.meleeRange && grid_->segment(p.pos, e->pos)) {
-            p.route.clear();
-            if (p.castTime <= 0 && p.meleeTime <= 0 && p.leapTime <= 0 && p.spinTime <= 0) {
-                p.look = (e->pos - p.pos).unit();
-                p.meleeTime = rules.meleeDuration;
-                emit(MeleeAttack{p.id, e->id});
-                meleeDamage(*e);
+        else {
+            const WeaponDamage *weapon = &equipmentStats_.weapons[0];
+            bool foundSelected = false;
+            if (p.throwAttack || p.leftHandAttack)
+                for (int index = 0; index < equipmentStats_.weaponCount; ++index)
+                    if ((!p.throwAttack || equipmentStats_.weapons[index].throwable) &&
+                        (!p.leftHandAttack || equipmentStats_.weapons[index].leftHand)) {
+                        weapon = &equipmentStats_.weapons[index];
+                        foundSelected = true;
+                        break;
+                    }
+            if ((p.throwAttack || p.leftHandAttack) && !foundSelected) {
+                p.attackTarget = {};
+                p.throwAttack = false;
+                p.leftHandAttack = false;
+                state_.message = "The selected weapon is no longer equipped.";
+            } else {
+                const bool projectile = p.throwAttack || weapon->ranged;
+                const float range = projectile ? weapon->missileSpeed * weapon->missileLifetime : rules.meleeRange;
+                if ((e->pos - p.pos).length() < range && grid_->segment(p.pos, e->pos)) {
+                    p.route.clear();
+                    if (p.castTime <= 0 && p.meleeTime <= 0 && p.leapTime <= 0 && p.spinTime <= 0) {
+                        p.look = (e->pos - p.pos).unit();
+                        if (!projectile || firePhysicalProjectile(*e, *weapon, p.throwAttack)) {
+                            p.meleeTime = rules.meleeDuration;
+                            emit(MeleeAttack{p.id, e->id});
+                            if (!projectile) meleeDamage(*e, p.leftHandAttack);
+                        }
+                    }
+                } else if (p.route.empty())
+                    p.route = grid_->path(p.pos, e->pos);
             }
-        } else if (p.route.empty())
-            p.route = grid_->path(p.pos, e->pos);
+        }
     }
     if (keyboard.length() > .1f && p.spinTime <= 0 && p.leapTime <= 0 && p.castTime <= 0) {
         p.route.clear();
         p.attackTarget = {};
+        p.throwAttack = false;
+        p.leftHandAttack = false;
         step = keyboard.unit();
     } else if (!p.route.empty() && p.castTime <= 0 && p.leapTime <= 0 && p.meleeTime <= 0) {
         while (!p.route.empty() && (p.route.front() - p.pos).length() < .01f)

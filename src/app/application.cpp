@@ -108,7 +108,7 @@ int runGame(int argc, char **argv) {
     view.ui().travelMenu = options.maps;
     view.ui().inventory.open = options.inventory;
     if (options.skills && !options.inventory && !options.stash && !options.maps)
-        view.ui().skillPicker = true;
+        view.ui().skillTreeOpen = true;
     if (options.stash) {
         bool found = false;
         for (const auto &object : session.region().objects)

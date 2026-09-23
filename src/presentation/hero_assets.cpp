@@ -87,10 +87,15 @@ void SceneAssets::loadHeroEquipment(const GameSession &session) {
         std::map<std::string, GpuAnimation> animations;
         const auto baseEquipment = pointers(baseParts);
         const auto equipment = pointers(parts);
-        for (auto mode : {"nu", "wl", "rn", "a1", "sc", "gh", "dt"}) {
+        for (auto mode : {"nu", "wl", "rn", "a1", "th", "sc", "gh", "dt"}) {
             const bool death = std::string_view(mode) == "dt";
             auto animation = graphics_.composite("chars", appearance, mode, death ? "hth" : weapon,
                                                   death ? &baseEquipment : &equipment);
+            // TH is only authored for weapon classes that can throw. Other equipped
+            // weapon classes keep their complete A1 appearance without a false error.
+            if (std::string_view(mode) == "th" &&
+                (animation.frames.empty() || !animation.completeComposite))
+                animation = graphics_.composite("chars", appearance, "a1", weapon, &equipment);
             if (animation.frames.empty() || !animation.completeComposite) {
                 if (!death && heroFailure_.empty())
                     heroFailure_ = "Equipment appearance unavailable: " + std::string(mode) + weapon;

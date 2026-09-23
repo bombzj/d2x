@@ -16,10 +16,10 @@ bool SkillSystem::cast(Simulation &simulation, Skill id, Vec target) {
         const char *failure;
     };
     static constexpr std::array<Implementation, skillCount> implementations{{
-        {fireball, nullptr, nullptr},
-        {frostNova, nullptr, nullptr},
+        {nullptr, nullptr, nullptr}, // Sorceress spells use the MPQ-derived original cast path.
+        {nullptr, nullptr, nullptr},
         {whirlwind, nullptr, nullptr},
-        {teleport, clearGround, "Teleport needs clear ground within range"},
+        {nullptr, nullptr, nullptr},
         {leap, clearGround, "Leap needs clear ground within range"},
         {warCry, nullptr, nullptr},
     }};
@@ -44,6 +44,7 @@ bool SkillSystem::cast(Simulation &simulation, Skill id, Vec target) {
     p.mana -= skill.manaCost;
     p.cooldown[index] = skill.cooldown;
     p.castTime = skill.castDuration;
+    p.lastCastDuration = skill.castDuration;
     auto aim = (target - p.pos).unit();
     if (aim.length() > 0)
         p.look = aim;

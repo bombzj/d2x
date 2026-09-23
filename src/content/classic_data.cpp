@@ -5,9 +5,11 @@
 #include "item_appearance.hpp"
 #include "item_affixes.hpp"
 #include "item_properties.hpp"
+#include "item_projectiles.hpp"
 #include "item_consumables.hpp"
 #include "item_grades.hpp"
 #include "special_items.hpp"
+#include "sorceress_data.hpp"
 #include <algorithm>
 #include <stdexcept>
 
@@ -33,6 +35,7 @@ ClassicData loadClassicData(Archives &archives) {
                    DataTable(archives.read(std::string("data/global/excel/") + treasureName + ".txt")));
     if (lod) {
         tables.emplace("monlvl", DataTable(archives.read("data/global/excel/monlvl.txt")));
+        tables.emplace("missiles", DataTable(archives.read("data/global/excel/missiles.txt")));
         if (archives.contains("data/global/excel/npc.txt"))
             tables.emplace("npc", DataTable(archives.read("data/global/excel/npc.txt")));
         tables.emplace("itemtypes", DataTable(archives.read("data/global/excel/itemtypes.txt")));
@@ -86,6 +89,8 @@ ClassicData loadClassicData(Archives &archives) {
             base.twoHandMax = number("2handmaxdam");
             base.throwMin = number("minmisdam");
             base.throwMax = number("maxmisdam");
+            if (auto id = number("missiletype"); id && *id >= 0)
+                base.projectile = ItemBaseStats::Projectile{*id};
             base.minDefense = number("minac");
             base.maxDefense = number("maxac");
             base.requiredStrength = number("reqstr");
@@ -151,6 +156,8 @@ ClassicData loadClassicData(Archives &archives) {
     loadItemAppearances(items, tables, armorTypes);
     if (lod)
         loadEquipmentDefinitions(items, tables.at("itemtypes"), tables);
+    if (lod)
+        loadItemProjectiles(items, tables.at("missiles"), archives);
     ClassicData data{ItemCatalog(std::move(items)), std::move(tables),
                      legacy ? "classic-1.04-txt-v1" : "lod-named-txt-v1"};
     const auto &inventory = data.tables.at("inventory");
@@ -176,6 +183,30 @@ ClassicData loadClassicData(Archives &archives) {
         data.stashLayout.top + data.stashLayout.rows * data.stashLayout.cellSize > 432)
         throw std::runtime_error("Unsupported MPQ stash grid geometry");
     data.characters = loadCharacterDefinitions(data.tables.at("charstats"));
+    if (lod) {
+        data.tables.emplace("skilldesc", DataTable(archives.read("data/global/excel/skilldesc.txt")));
+        ClassicStrings strings(archives);
+        data.skills = loadSkillCatalog(data.tables.at("skills"), data.tables.at("skilldesc"),
+                                       data.tables.at("charstats"), data.characters, strings);
+        const DataTable overlays(archives.read("data/global/excel/overlay.txt"));
+        const DataTable sounds(archives.read("data/global/excel/sounds.txt"));
+        loadSorceressEffects(data.skills, data.tables.at("skills"), data.tables.at("missiles"),
+                             overlays, sounds, archives);
+        const DataTable levels(archives.read("data/global/excel/levels.txt"));
+        for (size_t row = 0; row < levels.rows().size(); ++row)
+            if (auto id = levels.number(row, "Id"); id && *id > 0)
+                if (auto allowed = levels.number(row, "Teleport"))
+                    data.teleportByLevel.emplace(*id, *allowed);
+        const DataTable difficulties(archives.read("data/global/excel/difficultylevels.txt"));
+        if (difficulties.rows().size() < data.staticFieldMinimum.size())
+            throw std::runtime_error("Missing original Static Field difficulty limits");
+        for (size_t index = 0; index < data.staticFieldMinimum.size(); ++index) {
+            auto value = difficulties.number(index, "StaticFieldMin");
+            if (!value || *value < 0 || *value > 100)
+                throw std::runtime_error("Invalid original Static Field difficulty limit");
+            data.staticFieldMinimum[index] = *value;
+        }
+    }
     for (const auto &character : data.characters)
         data.experienceByClass.emplace(character.name,
             experienceThresholds(data.tables.at("experience"), character.name));

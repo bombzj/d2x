@@ -1,5 +1,6 @@
 #include "controller.hpp"
 #include "character_panel.hpp"
+#include "skill_tree.hpp"
 #include <algorithm>
 
 namespace d2x {
@@ -26,7 +27,7 @@ void SceneController::click(Vec mouse) {
         if (enemy.hp > 0 && session_.active(enemy.pos) &&
             (view_.screen(enemy.pos) - Vec{0, 25} - mouse).length() < 24) {
             if (ui.leftSkill)
-                session_.submit(CastSkill{*ui.leftSkill, enemy.pos});
+                session_.submit(UseClassSkill{*ui.leftSkill, enemy.pos, enemy.id});
             else
                 session_.submit(Attack{enemy.id});
             return;
@@ -109,11 +110,13 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
                 view_.notice("Switch character while alive.", true);
             else {
                 session_.submit(DebugSwitchCharacter{});
-                view_.notice("Switching character; level and attributes reset.");
+                view_.notice("Switching character; level, attributes and skills reset.");
             }
         }
-        if (input.debugTalents)
-            view_.notice("Skill allocation is reserved for progression.");
+        if (input.debugTalents) {
+            session_.submit(DebugResetSkills{});
+            view_.notice("Allocated skill points returned.");
+        }
     }
     if (ui.shopOpen) {
         if (input.escape) {
@@ -156,6 +159,7 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
         ui.travelMenu = !ui.travelMenu;
         ui.inventory.cancelGesture();
         ui.inventory.open = false;
+        ui.skillTreeOpen = false;
     }
     if (input.storage && !ui.blocksWorld()) {
         if (ui.inventory.storage)
@@ -185,6 +189,17 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
         ui.characterOpen = !ui.characterOpen;
         return true;
     }
+    if (input.skillTree && !ui.blocksWorld()) {
+        if (!session_.content().skills.tree(session_.characterCode())) {
+            view_.notice("This MPQ profile has no skill tree layout.", true);
+            return true;
+        }
+        bool opening = !ui.skillTreeOpen;
+        if (opening && ui.inventory.open) toggleInventory();
+        ui.skillTreeOpen = opening;
+        ui.skillPicker.reset();
+        return true;
+    }
     if (input.insideViewport && input.leftPressed && !ui.blocksWorld() &&
         CheckCollisionPointRec(rv(input.mouse), inventoryToggle())) {
         inventoryClick_ = true;
@@ -207,6 +222,7 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
         ui.inventory.open = false;
         session_.submit(RestartArea{});
         ui.characterOpen = false;
+        ui.skillTreeOpen = false;
     }
     if (input.escape) {
         if (ui.skillPicker) {
@@ -222,6 +238,8 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
             toggleInventory();
         else if (ui.characterOpen)
             ui.characterOpen = false;
+        else if (ui.skillTreeOpen)
+            ui.skillTreeOpen = false;
         else
             return false;
         inventoryClick_ = input.leftHeld || input.leftReleased;
@@ -283,6 +301,26 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
         }
         return true;
     }
+    if (ui.skillTreeOpen && input.insideViewport &&
+        CheckCollisionPointRec(rv(input.mouse), skillTreeBounds())) {
+        if (input.leftPressed) {
+            if (CheckCollisionPointRec(rv(input.mouse), skillTreeClose()))
+                ui.skillTreeOpen = false;
+            else {
+                bool switched = false;
+                for (int page = 1; page <= 3; ++page)
+                    if (CheckCollisionPointRec(rv(input.mouse), skillTreeTab(page))) {
+                        ui.skillPage = page;
+                        switched = true;
+                        break;
+                    }
+                if (!switched)
+                    if (auto skill = view_.skillAt(input.mouse))
+                        session_.submit(AllocateSkill{*skill});
+            }
+        }
+        return true;
+    }
     if (input.expandBelt) {
         ui.skillPicker.reset();
         ui.inventory.beltExpanded = !ui.inventory.beltExpanded;
@@ -299,21 +337,23 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
     if (!hudSurface(input.mouse)) {
         if (input.leftPressed || (input.leftHeld && !pickupClick_ && repeatClick_ <= 0)) {
             if (input.shift && ui.leftSkill)
-                session_.submit(CastSkill{*ui.leftSkill, view_.world(input.mouse)});
+                session_.submit(UseClassSkill{*ui.leftSkill, view_.world(input.mouse), {}});
             else
                 click(input.mouse);
             repeatClick_ = 1.f / 6.f;
         }
         if (input.rightHeld && !inventoryRight_) {
+            EntityId target;
+            for (const auto &enemy : session_.state().area.enemies)
+                if (enemy.hp > 0 && session_.active(enemy.pos) &&
+                    (view_.screen(enemy.pos) - Vec{0, 25} - input.mouse).length() < 24) {
+                    target = enemy.id;
+                    break;
+                }
             if (ui.rightSkill)
-                session_.submit(CastSkill{*ui.rightSkill, view_.world(input.mouse)});
-            else
-                for (const auto &enemy : session_.state().area.enemies)
-                    if (enemy.hp > 0 && session_.active(enemy.pos) &&
-                        (view_.screen(enemy.pos) - Vec{0, 25} - input.mouse).length() < 24) {
-                        session_.submit(Attack{enemy.id});
-                        break;
-                    }
+                session_.submit(UseClassSkill{*ui.rightSkill, view_.world(input.mouse), target});
+            else if (target)
+                session_.submit(Attack{target});
         }
     }
     return true;

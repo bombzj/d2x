@@ -56,6 +56,7 @@ SessionSnapshot GameSession::snapshot() const {
     if (pickup_.id || pendingInteraction_ || pendingExit_ || pendingPortal_) {
         result.world.player.route.clear();
         result.world.player.attackTarget = {};
+        result.world.player.throwAttack = result.world.player.leftHandAttack = false;
         result.world.player.moving = false;
     }
     validateSnapshot(result);
@@ -151,6 +152,32 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
                 allocatedPoints(player.allocated) + player.unspentAttributes ==
                     int64_t(player.level - 1) * characterDefinition.statPerLevel,
             "character attribute allocation");
+    require(player.unspentSkills >= 0 && player.skillRanks.size() <= 30,
+            "character skill allocation");
+    int learned = 0;
+    for (const auto &[id, rank] : player.skillRanks) {
+        const auto *entry = content_.skills.find(id);
+        require(entry && entry->classCode == characterDefinition.code &&
+                    rank > 0 && rank <= entry->maximumRank &&
+                    player.level >= entry->requiredLevel, "character skill identity or rank");
+        learned += rank;
+        for (int prerequisite : entry->prerequisites) {
+            auto found = player.skillRanks.find(prerequisite);
+            require(found != player.skillRanks.end() && found->second > 0,
+                    "character skill prerequisite");
+        }
+    }
+    require(learned + player.unspentSkills == player.level - 1,
+            "character skill point total");
+    for (const auto &key : player.skillHotkeys) {
+        require(key.skill >= -2 && key.skill < 4096, "skill hotkey id");
+        if (key.skill >= 0) {
+            const auto *entry = content_.skills.find(key.skill);
+            require(entry && !entry->passive && (key.right || entry->leftAllowed) &&
+                        (entry->classCode.empty() || entry->classCode == characterDefinition.code),
+                    "skill hotkey identity");
+        }
+    }
     scalar(player.hp);
     scalar(player.mana);
     scalar(player.stamina);
@@ -161,6 +188,7 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
         scalar(cooldown);
     require(player.dead == (player.hp == 0), "player death state");
     skill(player.lastSkill);
+    scalar(player.lastCastDuration, 0.001f, 10.f);
     require(player.nextWeapon < 2, "active melee hand");
     require(player.gold <= unsigned(player.level) * 10000, "gold carrying limit");
     const auto &thresholds = content_.experienceByClass.at(player.characterClass);
@@ -264,6 +292,24 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
             scalar(missile.velocity.y, -100000, 100000);
             scalar(missile.remaining);
             skill(missile.skill);
+            require(missile.physical ? missile.missileId >= 0 && missile.damage >= 0 &&
+                    missile.radius == 0 && missile.chill == 0 :
+                    missile.missileId >= 0 || (missile.damage == 0 && missile.radius == 0 && missile.chill == 0),
+                    "projectile identity");
+            scalar(missile.damage);
+            scalar(missile.radius);
+            scalar(missile.chill);
+            if (missile.physical)
+                require(std::any_of(content_.items.entries().begin(), content_.items.entries().end(),
+                    [&](const auto &pair) { return pair.second.base.projectile &&
+                        pair.second.base.projectile->id == missile.missileId; }),
+                    "unknown original weapon missile");
+            else if (missile.missileId >= 0)
+                require(std::any_of(content_.skills.skills.begin(), content_.skills.skills.end(),
+                    [&](const auto &pair) { return pair.second.originalEffect &&
+                        pair.second.originalEffect->effect == missile.skill &&
+                        pair.second.originalEffect->missileId == missile.missileId; }),
+                    "unknown original skill missile");
         }
         for (const auto &effect : area.effects) {
             // A missile impact may be just outside the collision grid at a map edge.
@@ -322,6 +368,17 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
         registerId(id);
     for (const auto &[id, item] : s.inventory.items) {
         registerId(id);
+        if (item.grantedSkill >= 0) {
+            bool originalStarter = false;
+            const auto &characters = content_.tables.at("charstats");
+            for (const auto &character : content_.characters) {
+                const auto *tree = content_.skills.tree(character.code);
+                originalStarter |= tree && tree->starterSkill == item.grantedSkill &&
+                    characters.value(character.sourceRow, "item1") == item.definition &&
+                    item.quality == ItemQuality::Normal && item.level == 1 && item.quantity == 1;
+            }
+            require(originalStarter, "original starter skill item");
+        }
         if (auto ground = std::get_if<GroundLocation>(&item.location)) {
             auto region = std::find_if(regions_.begin(), regions_.end(),
                                        [&](const auto &r) { return r.definition.id == ground->region; });

@@ -22,7 +22,11 @@ class SceneAssets {
         Sprite sprite;
         bool leftAllowed = false;
     };
-    std::array<SkillIcon, skillCount> skillIcons;
+    std::map<int, SkillIcon> skillIcons;
+    std::map<int, GpuAnimation> projectileAnimations;
+    int frostNovaMissileId = -1;
+    float frostNovaVelocity = 0;
+    std::map<std::string, GpuAnimation> skillTrees;
     Sprite attackIcon;
     std::vector<std::vector<Sprite>> regionTiles;
     std::map<std::string, GpuAnimation> propAnimations, npcWalkAnimations, hero;
@@ -31,7 +35,7 @@ class SceneAssets {
     std::map<std::string, GpuAnimation> itemGround, itemIcons;
     std::array<GpuAnimation, 2> townPortalAnimations;
     std::array<ObjectAnimationRule, 2> townPortalRules;
-    GpuAnimation fireball, fireburst, panel, cursor, inventoryPanel, attributeButtons,
+    GpuAnimation fireball, fireburst, teleportOverlay, panel, cursor, inventoryPanel, attributeButtons,
         attributePoints, vendorPanel, vendorTabs,
         vendorButtons, vendorConfirm, waypointBorder, waypointPanel, waypointTabs, waypointIcons,
         storagePanel, beltPanel, beltSocket, orbs,

@@ -16,8 +16,8 @@ void SceneView::drawHud() const {
         const std::string subtitle = "ACT I  /  ORIGINAL MPQ ASSETS";
         painter_.label(subtitle, (worldWidth - painter_.measure(subtitle, 10)) / 2, 46, 10,
                        {137, 136, 112, 255});
-        painter_.label("F2 Catalog   TAB Map", W - 204, 191, 10, {153, 144, 118, 255});
-        painter_.label("F1 Help     M Sound", W - 204, 207, 10, {153, 144, 118, 255});
+        painter_.label("Ctrl+F2 Map   TAB Map", W - 204, 191, 10, {153, 144, 118, 255});
+        painter_.label("Ctrl+F1 Help  M Sound", W - 204, 207, 10, {153, 144, 118, 255});
     }
     if (!sim.message.empty())
         painter_.centered(sim.message, H - HUD - 35, 16, {218, 176, 95, 255});
@@ -39,23 +39,24 @@ void SceneView::drawHelp() const {
     painter_.centered("Diablo II classic resource simulation", 178, 12);
     const char *lines[] = {"Left click / hold          Move / Attack / Talk / Pick up",
                            "Hold Alt                   Show ground item names",
-                           "I / C                      Inventory / Character",
+                           "I / C / T                  Inventory / Character / Skills",
                            "W A S D                    Move in screen directions",
                            "Right click                Cast; click slot to choose",
                            "1 through 4 / B            Drink belt potion / Expand belt",
-                           "F5 through F10             Select right-button skill",
+                           "Hover skill, F1-F8         Bind selected mouse skill",
+                           "F1 through F8              Select bound mouse skill",
                            "Space                      Toggle walk / run",
-                           "Tab / F2                   Automap / Map catalog",
-                           "F3 / F4                    Collision / Walk to stash",
+                           "Tab / Ctrl+F2              Automap / Map catalog",
+                           "Ctrl+F3 / Ctrl+F4          Collision / Walk to stash",
                            "P / M                      Pause / Mute",
                            "R                          Restore life",
                            "F11 / Ctrl + F11           Save game / Load game",
                            "F12                        Save screenshot",
-                           "F1                         Close this panel"};
+                           "Ctrl+F1                   Close this panel"};
     for (int i = 0; i < int(std::size(lines)); i++)
         painter_.label(lines[i], W / 2 - 194, 216 + i * 23, 12,
                        i < 4 ? parchment : Color{150, 148, 132, 255});
-    painter_.centered("Ctrl+Alt+G/E: gold/XP   A: reset attributes   C: next class   T: talents reserved", 575, 11, gold);
+    painter_.centered("Ctrl+Alt+G/E: gold/XP   A: reset attributes   C: next class   T: reset skills", 575, 11, gold);
 }
 void SceneView::draw(Vec mouse) const {
     const auto &map = session_.map();
@@ -106,6 +107,7 @@ void SceneView::draw(Vec mouse) const {
     }
     drawStorage(mouse);
     drawCharacter(mouse);
+    drawSkillTree(mouse);
     drawInventory(mouse);
     drawBelt(mouse);
     if (view_.pause)

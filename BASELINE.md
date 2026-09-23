@@ -20,7 +20,7 @@
 - NPC：[对话、服务与原路径移动](docs/NPC_COMPLETION.md)。
 - NPC 交易：[购买实施顺序与限制](docs/NPC_TRADE.md)。
 - 界面与保存：[经典 HUD](docs/CLASSIC_HUD.md)、[存档](docs/SAVES.md)。
-- 成长与战斗属性：[角色属性实施计划](docs/CHARACTER_ATTRIBUTES.md)。
+- 成长与战斗属性：[角色属性实施计划](docs/CHARACTER_ATTRIBUTES.md)、[七职业技能树](docs/SKILLS.md)。
 - 工程：[构建与分发](docs/BUILD_AND_SHARE.md)、[MPQ 清单](docs/MPQ_RESOURCES.md)、[第三方许可](docs/THIRD_PARTY.md)。
 
-当前工作：角色与战斗属性首批实现包括运行时 MPQ 全职业 `CharStats`／`Experience` 成长、共用加点、调试切换、直接装备词缀、普通近战命中和原 `invchar` 左面板。玩家击杀怪物按 MPQ `MonStats`／`MonLvl`／`Experience` 及已核实的引擎等级差规则结算经验；资料片私人箱按 MPQ `Big Bank Page 1` 使用 6×8 格和原 `tradestash.dc6`。存档 v18、规则 v45，旧档不迁移。Windows 构建、击杀升级、储物箱截图和存读档冒烟已完成；键鼠和完整战斗仍待验收。运行时直接读取原始 MPQ。Buff、技能规则、非直接属性函数及完整怪物属性仍待后续阶段。
+当前工作：七职业技能树和出生通用动作已接入源码，运行时从原 MPQ 读取节点、页签、图标、门槛与 `CharStats` 的初始技能。普通近战、弓／弩与投掷的基础攻击已接。女巫传送、火弹、火球、冰霜新星、静电力场接入原技能／弹体表的法力、等级伤害、协同与资源。F1–F8 通过悬停左右技能菜单图标绑定，按键切换对应鼠标技能并随存档保存；存档 v22、规则 v49，旧档不迁移。Windows Release 构建、七职业三页技能树截图、女巫技能菜单、快捷键存读档及完整 MPQ 分发目录已冒烟；远程战斗和女巫技能效果仍待逐项实机验收。运行时直接读取原始 MPQ；Buff、非直接装备属性与完整怪物规则仍待后续阶段。

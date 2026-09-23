@@ -21,6 +21,12 @@ struct ItemBaseStats {
     std::optional<int> minDefense, maxDefense, requiredStrength, requiredDexterity, requiredLevel;
     std::optional<int> level, magicLevel, cost, speed, block, sockets, rarity, spawnable;
     std::optional<int> strengthBonus, dexterityBonus;
+    struct Projectile {
+        int id = -1;
+        float speed = 0, lifetime = 0;
+        std::string art;
+    };
+    std::optional<Projectile> projectile;
     std::string sourceTable;
     size_t sourceRow = 0;
 };

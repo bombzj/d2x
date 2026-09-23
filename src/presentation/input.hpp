@@ -4,13 +4,13 @@
 #include <array>
 
 namespace d2x {
-inline constexpr size_t hotbarSlots = 6;
+inline constexpr size_t hotbarSlots = 8;
 // Device-independent snapshot. Only app/input.cpp knows physical key codes.
 struct FrameInput {
     Vec mouse, movement;
     bool insideViewport = false;
     bool leftPressed = false, leftHeld = false, leftReleased = false, rightHeld = false, rightPressed = false;
-    bool inventory = false, character = false, shift = false, control = false, enter = false, focused = true;
+    bool inventory = false, character = false, skillTree = false, shift = false, control = false, enter = false, focused = true;
     int quantityDelta = 0, pageDelta = 0;
     bool showLoot = false;
     bool help = false, automap = false, travel = false, collision = false;

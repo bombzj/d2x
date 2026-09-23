@@ -1,0 +1,34 @@
+#pragma once
+#include "gameplay/model/definitions.hpp"
+#include <array>
+#include <map>
+#include <string>
+#include <vector>
+
+namespace d2x {
+// Typed values imported from Skills.txt and Missiles.txt. No archive data enters gameplay.
+struct OriginalSkillSpec {
+    Skill effect = Skill::Fireball;
+    int mana = 0, minimumMana = 0, manaPerLevel = 0, manaShift = 8;
+    int minimumDamage = 0, maximumDamage = 0, hitShift = 8;
+    std::array<int, 5> minimumPerLevel{}, maximumPerLevel{};
+    int synergyPercent = 0;
+    std::vector<int> synergySkills;
+    int coldFrames = 0;
+    int staticPercent = 0, staticRange = 0, staticRangePerLevel = 0;
+    int missileId = -1;
+    float missileVelocity = 0, missileLifetime = 0, impactRadius = 0;
+    std::string missileArt, visualArt, castSoundArt;
+    int visualFrames = 0;
+};
+struct OriginalSkillCast {
+    Skill effect = Skill::Fireball;
+    float manaCost = 0, minimumDamage = 0, maximumDamage = 0;
+    float coldDuration = 0, missileVelocity = 0, missileLifetime = 0, impactRadius = 0;
+    int missileId = -1;
+    float staticPercent = 0, staticRadius = 0;
+    float visualDuration = 0;
+};
+OriginalSkillCast resolveOriginalSkill(const OriginalSkillSpec &spec, int rank,
+                                       const std::map<int, int> &learned);
+} // namespace d2x

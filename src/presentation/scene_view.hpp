@@ -6,10 +6,11 @@
 namespace d2x {
 struct ViewState {
     InventoryUi inventory;
-    std::array<Skill, hotbarSlots> hotbar{Skill::Fireball, Skill::FrostNova, Skill::Whirlwind,
-                                          Skill::Teleport, Skill::Leap,      Skill::WarCry};
-    std::optional<Skill> leftSkill, rightSkill = Skill::Fireball;
+    std::optional<int> leftSkill, rightSkill;
     std::optional<bool> skillPicker; // false: left button, true: right button
+    bool skillTreeOpen = false;
+    int skillPage = 3;
+    std::string skillClass;
     Vec camera, clickAt;
     float clickAge = 10, zoom = 1;
     bool help = false, automap = false, debug = false, pause = false, travelMenu = false;
@@ -65,7 +66,8 @@ class SceneView {
     void drawWaypointMenu(Vec mouse) const;
     void drawControlPanel() const;
     void drawSkillControls(Vec mouse) const;
-    void drawSkillIcon(std::optional<Skill> skill, Rectangle bounds) const;
+    void drawSkillIcon(std::optional<int> skill, Rectangle bounds) const;
+    void drawSkillTree(Vec mouse) const;
     void drawHelp() const;
     void drawExitHint(Vec mouse) const;
     void drawInventory(Vec mouse) const;
@@ -91,8 +93,9 @@ class SceneView {
     bool visible(const WorldObject &object) const;
     const WorldObject *objectAt(Vec mouse) const;
     const std::string &heroAppearanceError() const { return assets_.heroAppearanceError(); }
-    bool leftSkillAllowed(Skill skill) const { return assets_.skillIcons.at(size_t(skill)).leftAllowed; }
-    std::vector<std::optional<Skill>> skillChoices(bool right) const;
+    bool leftSkillAllowed(int skill) const;
+    std::vector<std::optional<int>> skillChoices(bool right) const;
+    std::optional<int> skillAt(Vec mouse) const;
     std::optional<ItemHandle> lootAt(Vec mouse, bool labelsOnly = false) const;
     void toggleMute() { assets_.audio.muted = !assets_.audio.muted; }
     void advance(float dt);

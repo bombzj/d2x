@@ -18,9 +18,10 @@ FrameInput pollInput(const Viewport &viewport) {
     input.rightPressed = IsMouseButtonPressed(MOUSE_BUTTON_RIGHT);
     input.inventory = IsKeyPressed(KEY_I);
     input.character = IsKeyPressed(KEY_C);
-    input.storage = IsKeyPressed(KEY_F4);
+    input.skillTree = IsKeyPressed(KEY_T);
     input.shift = IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT);
     input.control = IsKeyDown(KEY_LEFT_CONTROL) || IsKeyDown(KEY_RIGHT_CONTROL);
+    input.storage = input.control && IsKeyPressed(KEY_F4);
     input.enter = IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_KP_ENTER);
     input.quantityDelta =
         int(GetMouseWheelMove()) + int(IsKeyPressed(KEY_RIGHT)) - int(IsKeyPressed(KEY_LEFT));
@@ -33,16 +34,17 @@ FrameInput pollInput(const Viewport &viewport) {
         input.debugTalents = IsKeyPressed(KEY_T);
         input.debugCharacter = input.character;
         input.character = false;
+        input.skillTree = false;
     }
     input.rightHeld = IsMouseButtonDown(MOUSE_BUTTON_RIGHT);
     input.movement = {float(IsKeyDown(KEY_D) - IsKeyDown(KEY_A)), float(IsKeyDown(KEY_S) - IsKeyDown(KEY_W))};
     if (input.control && input.showLoot)
         input.movement = {};
-    input.help = IsKeyPressed(KEY_F1);
+    input.help = input.control && IsKeyPressed(KEY_F1);
     input.automap = IsKeyPressed(KEY_TAB);
-    input.travel = IsKeyPressed(KEY_F2);
+    input.travel = input.control && IsKeyPressed(KEY_F2);
     input.pageDelta = int(IsKeyPressed(KEY_PAGE_DOWN)) - int(IsKeyPressed(KEY_PAGE_UP));
-    input.collision = IsKeyPressed(KEY_F3);
+    input.collision = input.control && IsKeyPressed(KEY_F3);
     input.pause = IsKeyPressed(KEY_P);
     input.mute = IsKeyPressed(KEY_M);
     input.run = IsKeyPressed(KEY_SPACE);
@@ -52,7 +54,7 @@ FrameInput pollInput(const Viewport &viewport) {
     input.save = IsKeyPressed(KEY_F11) && !input.control;
     input.load = IsKeyPressed(KEY_F11) && input.control;
     for (int i = 0; i < int(hotbarSlots); ++i)
-        input.skills[i] = IsKeyPressed(KEY_F5 + i);
+        input.skills[i] = !input.control && IsKeyPressed(KEY_F1 + i);
     for (int i = 0; i < 4; ++i)
         input.belt[i] = IsKeyPressed(KEY_ONE + i);
     input.expandBelt = IsKeyPressed(KEY_B);

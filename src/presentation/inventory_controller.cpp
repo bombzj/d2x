@@ -5,6 +5,7 @@ namespace d2x {
 void SceneController::toggleInventory() {
     auto &ui = view_.ui();
     ui.skillPicker.reset();
+    ui.skillTreeOpen = false;
     if (!ui.inventory.open && session_.state().player.dead) {
         view_.notice("Recover before opening your inventory.", true);
         return;

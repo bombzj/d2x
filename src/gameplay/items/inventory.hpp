@@ -77,6 +77,8 @@ class InventoryService {
     InventoryResult split(const SplitStack &command, const InventoryAccess &access);
     InventoryResult merge(const MergeStacks &command, const InventoryAccess &access);
     InventoryResult consume(ItemHandle item, unsigned quantity, const InventoryAccess &access);
+    // Trusted combat consumption; ordinary UI consume cannot address equipment slots.
+    InventoryResult consumeEquipped(EntityId item, const PlayerContainers &containers);
     // All-or-nothing pickup: fill compatible stacks, then place the remainder in a free rectangle.
     InventoryResult collect(ItemHandle item, EntityId backpack, const InventoryAccess &access);
 };

@@ -43,9 +43,9 @@ EquipmentStats deriveEquipmentStats(const InventoryService &inventory, const Pla
         const auto &definition = *inventory.catalog().find(item->definition);
         if (!definition.equipment.isType("weap"))
             continue;
-        bool twoHands = !definition.equipment.isType("miss") && definition.equipment.twoHanded &&
+        bool twoHands = definition.equipment.isType("miss") || (definition.equipment.twoHanded &&
                         (!definition.equipment.oneOrTwoHanded || actor.characterClass != "bar" ||
-                         !(item == right ? left : right));
+                         !(item == right ? left : right)));
         auto minimum = twoHands ? definition.base.twoHandMin : definition.base.minDamage;
         auto maximum = twoHands ? definition.base.twoHandMax : definition.base.maxDamage;
         if (!minimum || !maximum || *minimum < 0 || *maximum < *minimum)
@@ -58,7 +58,30 @@ EquipmentStats deriveEquipmentStats(const InventoryService &inventory, const Pla
         high += high * std::max<int64_t>(bonus, -90) / 100;
         if (low < 0 || high < low || high > std::numeric_limits<int>::max())
             throw std::runtime_error("Equipment damage exceeds supported range");
-        result.weapons[count++] = {item->id, int(low), int(high), definition.equipment.isType("miss")};
+        auto &weapon = result.weapons[count++];
+        weapon = {item->id, int(low), int(high), definition.equipment.isType("miss")};
+        weapon.leftHand = item == left;
+        weapon.throwable = definition.equipment.isType("thro");
+        if (weapon.ranged || weapon.throwable) {
+            if (!definition.base.projectile)
+                throw std::runtime_error("Missing original weapon projectile: " + definition.code);
+            weapon.missileId = definition.base.projectile->id;
+            weapon.missileSpeed = definition.base.projectile->speed;
+            weapon.missileLifetime = definition.base.projectile->lifetime;
+        }
+        if (weapon.throwable) {
+            auto tmin = definition.base.throwMin;
+            auto tmax = definition.base.throwMax;
+            if (!tmin || !tmax || *tmin < 0 || *tmax < *tmin)
+                throw std::runtime_error("Unverified original throw damage: " + definition.code);
+            const int64_t scale = std::max<int64_t>(10, 100 + bonus);
+            const int64_t throwLow = int64_t(*tmin) * 256 * scale / 100;
+            const int64_t throwHigh = int64_t(*tmax) * 256 * scale / 100;
+            if (throwLow < 0 || throwHigh < throwLow || throwHigh > std::numeric_limits<int>::max())
+                throw std::runtime_error("Equipment throw damage exceeds supported range");
+            weapon.throwMinimum = int(throwLow);
+            weapon.throwMaximum = int(throwHigh);
+        }
     }
     if (count)
         result.weaponCount = count;

@@ -11,6 +11,10 @@ namespace d2x {
 struct Restoration {
     float remaining, rate;
 };
+struct SkillHotkey {
+    int skill = -2; // -2 unbound, -1 ordinary attack, otherwise MPQ skill ID.
+    bool right = true;
+};
 struct PlayerState {
     EntityId id;
     std::string characterClass = "Barbarian";
@@ -23,7 +27,10 @@ struct PlayerState {
     std::deque<Restoration> healing, manaRestoration;
     float staminaBoost = 0;
     EntityId attackTarget;
+    bool throwAttack = false;
+    bool leftHandAttack = false;
     Skill lastSkill = Skill::Fireball;
+    float lastCastDuration = .32f;
     bool running = true, moving = false, dead = false;
     uint64_t combatRandom = (uint64_t(666) << 32) | 210;
     unsigned nextWeapon = 0;
@@ -32,6 +39,9 @@ struct PlayerState {
     int level = 1;
     AttributeAllocation allocated;
     int unspentAttributes = 0;
+    std::map<int, int> skillRanks;
+    int unspentSkills = 0;
+    std::array<SkillHotkey, 8> skillHotkeys{};
 };
 struct Enemy {
     EntityId id;
@@ -48,6 +58,10 @@ struct Missile {
     Vec pos, velocity;
     float remaining = 2;
     Skill skill = Skill::Fireball;
+    bool physical = false;
+    int missileId = -1;
+    float damage = 0;
+    float radius = 0, chill = 0;
 };
 struct Effect {
     Vec pos;

@@ -8,6 +8,7 @@
 #include "gameplay/loot/special.hpp"
 #include "gameplay/character/attributes.hpp"
 #include "npc_dialogue.hpp"
+#include "skill_data.hpp"
 #include "vendor_data.hpp"
 #include "resources/archive.hpp"
 #include "resources/data_table.hpp"
@@ -35,6 +36,9 @@ struct ClassicData {
     ItemCatalog items;
     std::map<std::string, DataTable, std::less<>> tables;
     std::vector<CharacterDefinition> characters;
+    SkillCatalog skills;
+    std::map<int, int> teleportByLevel;
+    std::array<int, 3> staticFieldMinimum{};
     StashLayout stashLayout;
     // Class name -> level-indexed cumulative XP thresholds from Experience.txt.
     std::map<std::string, std::vector<uint64_t>, std::less<>> experienceByClass;

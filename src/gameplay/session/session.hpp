@@ -106,7 +106,10 @@ class GameSession {
     const EquipmentStats &equipmentStats() const { return simulation_.equipmentStats_; }
     const CharacterAttributes &characterStats() const { return simulation_.characterStats_; }
     const std::string &characterName() const { return characterDefinition_.name; }
+    const std::string &characterCode() const { return characterDefinition_.code; }
     const std::string &characterAppearance() const { return characterDefinition_.appearance; }
+    bool skillAvailable(int id) const;
+    int effectiveSkillRank(int id) const;
     const PlayerContainers &playerContainers() const { return playerContainers_; }
     StorageAccess storage() const;
     const WorldObject *object(EntityId id) const;

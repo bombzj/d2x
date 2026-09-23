@@ -45,6 +45,9 @@ target_link_libraries(d2x_items PUBLIC d2x_core)
 add_library(d2x_content src/content/classic_data.cpp src/content/lod_data.cpp src/content/world_catalog.cpp src/content/monster_catalog.cpp)
 target_sources(d2x_content PRIVATE src/content/character_progression.cpp)
 target_sources(d2x_content PRIVATE src/content/character_attributes.cpp)
+target_sources(d2x_content PRIVATE src/content/string_table.cpp src/content/skill_data.cpp)
+target_sources(d2x_content PRIVATE src/content/sorceress_data.cpp)
+target_sources(d2x_content PRIVATE src/content/item_projectiles.cpp)
 target_sources(d2x_content PRIVATE src/content/monster_experience.cpp)
 target_sources(d2x_content PRIVATE src/content/equipment_modifiers.cpp)
 target_sources(d2x_content PRIVATE src/content/equipment_data.cpp)
@@ -68,6 +71,9 @@ add_library(d2x_gameplay
   src/gameplay/combat/combat.cpp src/gameplay/skills/casting.cpp src/gameplay/monsters/monster_ai.cpp src/gameplay/loot/loot.cpp src/gameplay/consumables/potions.cpp)
 target_sources(d2x_gameplay PRIVATE src/gameplay/character/attributes.cpp)
 target_sources(d2x_gameplay PRIVATE src/gameplay/combat/accuracy.cpp)
+target_sources(d2x_gameplay PRIVATE src/gameplay/combat/physical_projectiles.cpp)
+target_sources(d2x_gameplay PRIVATE src/gameplay/skills/original.cpp)
+target_sources(d2x_gameplay PRIVATE src/gameplay/skills/original_cast.cpp)
 target_sources(d2x_gameplay PRIVATE src/gameplay/monsters/monster_spawn.cpp src/gameplay/monsters/monster_activation.cpp)
 target_sources(d2x_gameplay PRIVATE src/gameplay/loot/treasure.cpp)
 target_sources(d2x_gameplay PRIVATE src/gameplay/loot/quality.cpp)
@@ -82,7 +88,7 @@ target_link_libraries(d2x_gameplay PUBLIC d2x_navigation)
 target_link_libraries(d2x_content PUBLIC d2x_gameplay)
 add_library(d2x_population src/world/population.cpp)
 target_link_libraries(d2x_population PUBLIC d2x_content d2x_gameplay)
-add_library(d2x_session src/gameplay/session/session.cpp src/gameplay/session/session_loot.cpp src/gameplay/session/session_inventory.cpp src/gameplay/session/session_consumables.cpp src/gameplay/session/session_interaction.cpp src/gameplay/session/session_snapshot.cpp src/gameplay/session/session_exits.cpp)
+add_library(d2x_session src/gameplay/session/session.cpp src/gameplay/session/session_skills.cpp src/gameplay/session/session_loot.cpp src/gameplay/session/session_inventory.cpp src/gameplay/session/session_consumables.cpp src/gameplay/session/session_interaction.cpp src/gameplay/session/session_snapshot.cpp src/gameplay/session/session_exits.cpp)
 target_sources(d2x_session PRIVATE src/gameplay/npc/identification.cpp src/gameplay/npc/service.cpp src/gameplay/npc/movement.cpp)
 target_sources(d2x_session PRIVATE src/gameplay/npc/store.cpp src/gameplay/npc/purchase.cpp)
 target_sources(d2x_session PRIVATE src/gameplay/session/session_item_snapshot.cpp)
@@ -94,6 +100,7 @@ add_library(d2x_presentation
   src/presentation/graphics.cpp src/presentation/audio.cpp src/presentation/primitives.cpp
   src/presentation/scene_assets.cpp src/presentation/hero_assets.cpp src/presentation/scene_view.cpp
   src/presentation/skill_assets.cpp src/presentation/hud_controls.cpp src/presentation/skill_controller.cpp
+  src/presentation/skill_tree_view.cpp
   src/presentation/exit_view.cpp src/presentation/waypoint_view.cpp
   src/presentation/world_renderer.cpp src/presentation/hud.cpp src/presentation/npc_dialogue_view.cpp src/presentation/npc_menu_view.cpp src/presentation/npc_shop_view.cpp src/presentation/controller.cpp
   src/presentation/loot_view.cpp src/presentation/inventory_panel.cpp

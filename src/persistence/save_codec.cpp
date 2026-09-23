@@ -11,6 +11,7 @@ class Codec;
 void fields(Codec &, EntityId &);
 void fields(Codec &, Vec &);
 void fields(Codec &, Restoration &);
+void fields(Codec &, SkillHotkey &);
 void fields(Codec &, PlayerState &);
 void fields(Codec &, Enemy &);
 void fields(Codec &, MonsterIdentity &);
@@ -143,7 +144,7 @@ class Codec {
         }
     }
 };
-// Explicit schema, never compiler struct layout. Player field order is save version 18.
+// Explicit schema, never compiler struct layout. Player/item field order is save version 22.
 void fields(Codec &a, EntityId &v) {
     a(v.value);
 }
@@ -153,14 +154,17 @@ void fields(Codec &a, Vec &v) {
 void fields(Codec &a, Restoration &v) {
     a(v.remaining, v.rate);
 }
+void fields(Codec &a, SkillHotkey &v) {
+    a(v.skill, v.right);
+}
 void fields(Codec &a, AttributeAllocation &v) {
     a(v.strength, v.dexterity, v.vitality, v.energy);
 }
 void fields(Codec &a, PlayerState &v) {
     a(v.id, v.characterClass, v.pos, v.previous, v.look, v.route, v.hp, v.mana, v.stamina, v.castTime, v.spinTime, v.leapTime,
       v.hitTime, v.deathTime, v.meleeTime, v.leapStart, v.leapEnd, v.cooldown, v.healing, v.manaRestoration,
-    v.staminaBoost, v.attackTarget, v.lastSkill, v.running, v.moving, v.dead, v.combatRandom, v.nextWeapon, v.gold,
-    v.experience, v.level, v.allocated, v.unspentAttributes);
+    v.staminaBoost, v.attackTarget, v.throwAttack, v.leftHandAttack, v.lastSkill, v.lastCastDuration, v.running, v.moving, v.dead, v.combatRandom, v.nextWeapon, v.gold,
+    v.experience, v.level, v.allocated, v.unspentAttributes, v.skillRanks, v.unspentSkills, v.skillHotkeys);
 }
 void fields(Codec &a, Enemy &v) {
     a(v.id, v.kind, v.identity, v.pos, v.hp, v.chill, v.attack, v.stun, v.deathAge, v.hitFlash, v.rethink,
@@ -176,7 +180,8 @@ void fields(Codec &a, PopulationSettings &v) {
     a(v.seed, v.difficulty);
 }
 void fields(Codec &a, Missile &v) {
-    a(v.id, v.owner, v.pos, v.velocity, v.remaining, v.skill);
+    a(v.id, v.owner, v.pos, v.velocity, v.remaining, v.skill, v.physical, v.missileId,
+      v.damage, v.radius, v.chill);
 }
 void fields(Codec &a, Effect &v) {
     a(v.pos, v.skill, v.age, v.duration);
@@ -204,7 +209,7 @@ void fields(Codec &a, PlayerContainers &v) {
 }
 void fields(Codec &a, ItemInstance &v) {
     a(v.id, v.definition, v.quantity, v.durability, v.quality, v.identified, v.level, v.revision, v.defense,
-      v.specialRow, v.requiredLevel, v.gradeRow, v.rarePrefixRow, v.rareSuffixRow,
+      v.specialRow, v.requiredLevel, v.gradeRow, v.rarePrefixRow, v.rareSuffixRow, v.grantedSkill,
       v.propertyRolls, v.affixes);
     uint32_t kind = uint32_t(v.location.index());
     a(kind);
@@ -254,7 +259,7 @@ Bytes encodeSave(SessionSnapshot snapshot) {
     Codec body;
     body(snapshot);
     auto bytes = body.take();
-    uint32_t version = 18, size = uint32_t(bytes.size()), crc = checksum(bytes);
+    uint32_t version = 22, size = uint32_t(bytes.size()), crc = checksum(bytes);
     Codec header;
     header(version, size, crc);
     auto headerBytes = header.take();
@@ -273,8 +278,8 @@ SessionSnapshot decodeSave(std::span<const uint8_t> bytes) {
     Codec header(bytes.subspan(sizeof(magic), 12));
     uint32_t version = 0, size = 0, crc = 0;
     header(version, size, crc);
-    if (version != 18)
-        throw std::runtime_error("Unsupported D2X save version; monster experience and stash layout require a new version-18 game");
+    if (version != 22)
+        throw std::runtime_error("Unsupported D2X save version; skill hotkeys require a new version-22 game");
     auto payload = bytes.subspan(headerSize);
     if (size != payload.size() || crc != checksum(payload))
         throw std::runtime_error("Save checksum or length mismatch");

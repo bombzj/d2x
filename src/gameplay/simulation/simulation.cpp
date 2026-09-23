@@ -11,6 +11,7 @@ void Simulation::clearActions() {
     auto &p = state_.player;
     p.route.clear();
     p.attackTarget = {};
+    p.throwAttack = p.leftHandAttack = false;
     p.castTime = p.spinTime = p.leapTime = p.meleeTime = p.hitTime = 0;
     p.moving = false;
     state_.message.clear();
@@ -80,7 +81,7 @@ void Simulation::execute(const GameCommand &command) {
             if constexpr (std::is_same_v<T, MoveTo>)
                 moveTo(intent.position);
             else if constexpr (std::is_same_v<T, Attack>)
-                attackEnemy(intent.target);
+                attackEnemy(intent.target, intent.thrown, intent.leftHand);
             else if constexpr (std::is_same_v<T, DebugKill>) {
                 if (!state_.player.dead)
                     if (auto enemy = findEnemy(intent.target);
@@ -130,6 +131,8 @@ void Simulation::tick(float dt, Vec keyboard) {
             p.staminaBoost = 0;
             p.route.clear();
             p.attackTarget = {};
+            p.throwAttack = false;
+            p.leftHandAttack = false;
             state_.message = "You have died. Press R to return.";
             emit(PlayerDied{p.id});
         }

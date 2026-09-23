@@ -60,6 +60,7 @@ struct ItemInstance {
     int32_t specialRow = -1, requiredLevel = 0;
     int32_t gradeRow = -1;
     int32_t rarePrefixRow = -1, rareSuffixRow = -1;
+    int32_t grantedSkill = -1; // Original CharStats.StartSkill on the first starter item.
     std::vector<int32_t> propertyRolls;
     std::vector<ItemAffixInstance> affixes;
     ItemLocation location;

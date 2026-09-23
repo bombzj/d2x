@@ -23,8 +23,14 @@ inline Rectangle hudStamina() {
 inline Rectangle hudMenuButton() {
     return hudRect(393, 39, 16, 32);
 }
-inline Rectangle hudPickerSlot(bool right, int index) {
-    return hudRect(right ? 683 - (index + 1) * 48 : 117 + index * 48, 108, 48, 48);
+inline Rectangle hudPickerSlot(bool right, int index, int count) {
+    constexpr float side = 45;
+    constexpr int columns = 6;
+    int rows = (count + columns - 1) / columns;
+    float left = right ? W - 20 - columns * side : 20;
+    return {left + (index % columns) * side,
+            float(H - HUD) - rows * side + (index / columns) * side,
+            side, side};
 }
 inline bool hudSurface(Vec mouse) {
     return mouse.y >= H - HUD || CheckCollisionPointRec(rv(mouse), hudRect(0, 104, 117, 104)) ||

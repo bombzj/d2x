@@ -37,4 +37,19 @@ void SoundBank::play(const std::string &name) {
     if (enabled && !muted && it != sounds.end())
         PlaySound(it->second);
 }
+void SoundBank::registerOriginal(Archives &archives, std::string key, std::string_view path) {
+    auto found = sounds.find(key);
+    if (found != sounds.end()) {
+        UnloadSound(found->second);
+        sounds.erase(found);
+    }
+    if (!enabled) return;
+    auto bytes = archives.read(std::string(path));
+    Wave wave = LoadWaveFromMemory(".wav", bytes.data(), int(bytes.size()));
+    if (!wave.data) return;
+    auto sound = LoadSoundFromWave(wave);
+    UnloadWave(wave);
+    SetSoundVolume(sound, .45f);
+    sounds.emplace(std::move(key), sound);
+}
 } // namespace d2x

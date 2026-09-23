@@ -52,6 +52,7 @@ void InventoryService::validateSnapshot(const InventoryState &state, const Playe
                     item.specialRow >= -1 && item.gradeRow >= -1 &&
                     item.rarePrefixRow >= -1 && item.rareSuffixRow >= -1 &&
                     item.requiredLevel >= 0 && item.requiredLevel <= 99 &&
+                    item.grantedSkill >= -1 &&
                     item.propertyRolls.size() <= 16 && item.affixes.size() <= 6 &&
                     (item.quality != ItemQuality::Normal ||
                      (item.specialRow == -1 && item.gradeRow == -1 &&

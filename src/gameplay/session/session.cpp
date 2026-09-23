@@ -36,6 +36,31 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
             return std::nullopt;
         return MonsterAccuracy{record->normalLevel, *record->normalAttackRating};
     };
+    simulation_.spendProjectile_ = [this](EntityId weapon, bool thrown) {
+        const auto *item = inventory_.item(weapon);
+        if (!item) return false;
+        EntityId spent = weapon;
+        if (!thrown) {
+            const auto *definition = inventory_.catalog().find(item->definition);
+            if (!definition || definition->equipment.shoots.empty()) return false;
+            spent = {};
+            for (auto slot : {EquipmentSlot::RightHand, EquipmentSlot::LeftHand}) {
+                auto candidate = inventory_.equipped(playerContainers_, slot);
+                const auto *quiver = inventory_.item(candidate);
+                if (candidate == weapon || !quiver) continue;
+                const auto *type = inventory_.catalog().find(quiver->definition);
+                if (type && type->equipment.isType(definition->equipment.shoots)) {
+                    spent = candidate;
+                    break;
+                }
+            }
+            if (!spent) return false;
+        }
+        auto result = inventory_.consumeEquipped(spent, playerContainers_);
+        bool applied = bool(result);
+        if (applied) publishInventory(std::move(result), {});
+        return applied;
+    };
     simulation_.monsterDefense_ = [this](const Enemy &enemy) -> std::optional<MonsterDefense> {
         if (state().population.difficulty != 0 || enemy.identity.rank != MonsterRank::Normal)
             return std::nullopt;
@@ -93,7 +118,7 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
     Fingerprint fingerprint;
     fingerprint.add(content_.profile);
     // Bump this rules revision when state interpretation or compiled rules change.
-    fingerprint.add("d2x-session-rules-v45-monster-experience-big-stash");
+    fingerprint.add("d2x-session-rules-v49-persistent-skill-hotkeys");
     auto members = archives.used;
     for (const auto &member : members) {
         fingerprint.add(member);
@@ -134,6 +159,7 @@ void GameSession::grantExperience(uint64_t amount) {
            player.experience >= thresholds[size_t(player.level + 1)])
         ++player.level;
     player.unspentAttributes += (player.level - before) * characterDefinition_.statPerLevel;
+    player.unspentSkills += player.level - before;
     refreshCharacter(true);
 }
 void GameSession::enter(RegionId id, std::optional<Vec> arrival) {
@@ -261,6 +287,27 @@ void GameSession::tick(float dt, Vec keyboard) {
                     auto &player = simulation_.state_.player;
                     if (!player.dead && allocateAttribute(player.allocated, player.unspentAttributes, intent.attribute))
                         refreshCharacter(true);
+                } else if constexpr (std::is_same_v<T, AllocateSkill>) {
+                    auto &player = simulation_.state_.player;
+                    const auto *entry = content_.skills.find(intent.id);
+                    if (!entry || entry->classCode != characterDefinition_.code || player.dead ||
+                        player.unspentSkills <= 0 || player.level < entry->requiredLevel)
+                        return;
+                    const auto current = player.skillRanks.find(intent.id);
+                    if (current != player.skillRanks.end() && current->second >= entry->maximumRank) return;
+                    for (int prerequisite : entry->prerequisites)
+                        if (!player.skillRanks.contains(prerequisite)) return;
+                    ++player.skillRanks[intent.id];
+                    --player.unspentSkills;
+                } else if constexpr (std::is_same_v<T, BindSkillHotkey>) {
+                    auto &keys = simulation_.state_.player.skillHotkeys;
+                    if (intent.index >= keys.size() || intent.skill < -2 ||
+                        (intent.skill >= 0 && (!skillAvailable(intent.skill) ||
+                            content_.skills.find(intent.skill)->passive ||
+                            (!intent.right && !content_.skills.find(intent.skill)->leftAllowed)))) return;
+                    for (auto &key : keys)
+                        if (key.skill == intent.skill && key.right == intent.right) key.skill = -2;
+                    keys[intent.index] = {intent.skill, intent.right};
                 } else if constexpr (std::is_same_v<T, DebugResetAttributes>) {
                     auto &player = simulation_.state_.player;
                     if (!player.dead && allocatedPoints(player.allocated)) {
@@ -268,6 +315,46 @@ void GameSession::tick(float dt, Vec keyboard) {
                         player.allocated = {};
                         refreshCharacter();
                     }
+                } else if constexpr (std::is_same_v<T, DebugResetSkills>) {
+                    auto &player = simulation_.state_.player;
+                    if (!player.dead) {
+                        player.skillRanks.clear();
+                        player.unspentSkills = player.level - 1;
+                    }
+                } else if constexpr (std::is_same_v<T, UseClassSkill>) {
+                    const auto *entry = content_.skills.find(intent.id);
+                    const auto &player = state().player;
+                    if (!entry || entry->passive || player.dead || !skillAvailable(intent.id)) return;
+                    if (entry->classCode.empty()) {
+                        if (!intent.enemy) return;
+                        cancelExit(); cancelPickup(); cancelInteraction();
+                        if (entry->sourceName == "Throw" || entry->sourceName == "Left Hand Throw")
+                            simulation_.execute(Attack{intent.enemy, true,
+                                entry->sourceName == "Left Hand Throw"});
+                        else if (entry->sourceName == "Kick" || entry->sourceName == "Left Hand Swing")
+                            simulation_.execute(Attack{intent.enemy, false,
+                                entry->sourceName == "Left Hand Swing"});
+                        return; // Unsummon has no target until summoned allies exist.
+                    }
+                    if (entry->originalEffect) {
+                        const int rank = effectiveSkillRank(intent.id);
+                        const auto resolved = resolveOriginalSkill(*entry->originalEffect, rank,
+                                                                    player.skillRanks);
+                        const int levelId = int(region().definition.id);
+                        const bool teleportAllowed = content_.teleportByLevel.contains(levelId) &&
+                            content_.teleportByLevel.at(levelId) != 0;
+                        cancelExit(); cancelPickup(); cancelInteraction();
+                        simulation_.castOriginal(resolved, intent.target, teleportAllowed,
+                            content_.staticFieldMinimum.at(size_t(state().population.difficulty)));
+                        return;
+                    }
+                    auto effect = implementedSkillEffect(*entry);
+                    if (!effect && !intent.enemy) return;
+                    cancelExit(); cancelPickup(); cancelInteraction();
+                    if (effect)
+                        simulation_.execute(CastSkill{*effect, intent.target});
+                    else
+                        simulation_.execute(Attack{intent.enemy});
                 } else if constexpr (std::is_same_v<T, DebugSwitchCharacter>) {
                     auto &player = simulation_.state_.player;
                     if (!player.dead) {
@@ -285,10 +372,13 @@ void GameSession::tick(float dt, Vec keyboard) {
                         characterDefinition_ = definition;
                         player.level = 1; player.experience = 0;
                         player.allocated = {}; player.unspentAttributes = 0;
+                        player.skillRanks.clear(); player.unspentSkills = 0;
+                        player.skillHotkeys = {};
                         player.gold = std::min(player.gold, 10000u);
                         player.castTime = player.spinTime = player.leapTime = 0;
                         player.hitTime = player.meleeTime = 0;
                         player.attackTarget = {};
+                        player.throwAttack = player.leftHandAttack = false;
                         player.cooldown.fill(0);
                         player.healing.clear(); player.manaRestoration.clear();
                         player.staminaBoost = 0;

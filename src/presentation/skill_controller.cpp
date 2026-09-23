@@ -13,16 +13,27 @@ bool SceneController::handleSkills(const FrameInput &input) {
             return true;
         skillGesture_ = false;
     }
-    // Classic hotkeys select a mouse-button skill; they do not cast on keypress.
+    // In the open picker, F1-F8 bind the hovered icon. Otherwise they select
+    // the saved skill for its original mouse button without casting it.
+    const auto &hotkeys = session_.state().player.skillHotkeys;
     for (size_t i = 0; i < input.skills.size(); ++i) {
         if (!input.skills[i])
             continue;
-        auto skill = ui.hotbar[i];
-        if (ui.skillPicker && !*ui.skillPicker) {
-            if (view_.leftSkillAllowed(skill))
-                ui.leftSkill = skill;
-        } else
-            ui.rightSkill = skill;
+        if (ui.skillPicker) {
+            if (!input.insideViewport) continue;
+            bool right = *ui.skillPicker;
+            const auto choices = view_.skillChoices(right);
+            for (size_t slot = 0; slot < choices.size(); ++slot)
+                if (CheckCollisionPointRec(rv(input.mouse), hudPickerSlot(right, int(slot), int(choices.size())))) {
+                    session_.submit(BindSkillHotkey{unsigned(i), choices[slot].value_or(-1), right});
+                    break;
+                }
+        } else if (hotkeys[i].skill != -2) {
+            auto skill = hotkeys[i].skill;
+            if (skill >= 0 && !session_.skillAvailable(skill)) continue;
+            (hotkeys[i].right ? ui.rightSkill : ui.leftSkill) =
+                skill < 0 ? std::nullopt : std::optional<int>{skill};
+        }
     }
     if (!input.insideViewport)
         return ui.skillPicker.has_value();
@@ -31,7 +42,7 @@ bool SceneController::handleSkills(const FrameInput &input) {
         if (input.leftPressed) {
             const auto choices = view_.skillChoices(right);
             for (size_t i = 0; i < choices.size(); ++i)
-                if (CheckCollisionPointRec(rv(input.mouse), hudPickerSlot(right, int(i)))) {
+                if (CheckCollisionPointRec(rv(input.mouse), hudPickerSlot(right, int(i), int(choices.size())))) {
                     (right ? ui.rightSkill : ui.leftSkill) = choices[i];
                     break;
                 }
@@ -46,6 +57,7 @@ bool SceneController::handleSkills(const FrameInput &input) {
         for (bool right : {false, true})
             if (CheckCollisionPointRec(rv(input.mouse), hudSkillSlot(right))) {
                 ui.skillPicker = right;
+                ui.skillTreeOpen = false;
                 ui.inventory.beltExpanded = false;
                 skillGesture_ = true;
                 session_.submit(StopMoving{});

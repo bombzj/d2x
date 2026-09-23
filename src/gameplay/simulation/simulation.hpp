@@ -5,6 +5,7 @@
 #include "gameplay/model/state.hpp"
 #include "world/navigation.hpp"
 #include "gameplay/items/equipment_stats.hpp"
+#include "gameplay/skills/original.hpp"
 #include <span>
 #include <functional>
 
@@ -20,18 +21,22 @@ class Simulation {
     EquipmentStats equipmentStats_;
     CharacterAttributes characterStats_;
     std::function<void(EntityId, bool)> wearEquipment_;
+    std::function<bool(EntityId, bool)> spendProjectile_;
     std::function<std::optional<MonsterAccuracy>(const Enemy &)> monsterAccuracy_;
     std::function<std::optional<MonsterDefense>(const Enemy &)> monsterDefense_;
     std::function<std::optional<float>(const Enemy &)> monsterWalkSpeed_;
     std::vector<GameEvent> events_;
     Enemy *findEnemy(EntityId id);
     void moveTo(Vec target);
-    void attackEnemy(EntityId target);
+    void attackEnemy(EntityId target, bool thrown, bool leftHand);
+    bool firePhysicalProjectile(const Enemy &enemy, const WeaponDamage &weapon, bool thrown);
     bool cast(Skill skill, Vec target);
+    bool castOriginal(const OriginalSkillCast &skill, Vec target, bool teleportAllowed,
+                      int staticFieldMinimum);
     void damage(Vec pos, float radius, float amount, EntityId source, float chill = 0);
     void damageEnemy(Enemy &enemy, float amount, EntityId source, float chill = 0,
                      bool ignoreActivation = false);
-    void meleeDamage(Enemy &enemy);
+    void meleeDamage(Enemy &enemy, bool leftHand = false);
     void updatePotions(float dt);
     void updatePlayer(float dt, Vec keyboard);
     void updateMonsters(float dt);

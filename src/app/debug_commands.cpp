@@ -57,6 +57,7 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
                 {"class", state.player.characterClass},
                 {"experience", state.player.experience}, {"level", state.player.level},
                 {"unspentAttributes", state.player.unspentAttributes},
+                {"unspentSkills", state.player.unspentSkills},
                 {"strength", session.characterStats().strength},
                 {"dexterity", session.characterStats().dexterity},
                 {"vitality", session.characterStats().vitality},
@@ -221,6 +222,7 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
             result["experience"] = session.state().player.experience;
             result["level"] = session.state().player.level;
             result["unspentAttributes"] = session.state().player.unspentAttributes;
+            result["unspentSkills"] = session.state().player.unspentSkills;
         } else if (command == "allocate-attribute") {
             auto name = request.at("attribute").get<std::string>();
             Attribute attribute;
@@ -239,6 +241,68 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
             session.submit(DebugResetAttributes{});
             session.tick(0);
             result["unspentAttributes"] = session.state().player.unspentAttributes;
+        } else if (command == "skills") {
+            const auto &player = session.state().player;
+            const auto &tree = session.content().skills;
+            const auto *classTree = tree.tree(session.characterCode());
+            result["unspent"] = player.unspentSkills;
+            result["skills"] = Json::array();
+            result["common"] = Json::array();
+            result["hotkeys"] = Json::array();
+            for (const auto &key : player.skillHotkeys)
+                result["hotkeys"].push_back({{"id", key.skill}, {"right", key.right}});
+            if (classTree) {
+                for (int id : classTree->commonSkills)
+                    if (const auto *entry = tree.find(id))
+                        result["common"].push_back({{"id", id}, {"name", entry->name},
+                            {"available", session.skillAvailable(id)}});
+                if (classTree->starterSkill)
+                    result["starter"] = {{"id", *classTree->starterSkill},
+                        {"available", session.skillAvailable(*classTree->starterSkill)}};
+            }
+            for (const auto &[id, entry] : tree.skills) {
+                if (entry.classCode != session.characterCode()) continue;
+                const auto learned = player.skillRanks.find(id);
+                result["skills"].push_back({{"id", id}, {"name", entry.name},
+                    {"page", entry.page}, {"row", entry.row}, {"column", entry.column},
+                    {"requiredLevel", entry.requiredLevel}, {"prerequisites", entry.prerequisites},
+                    {"rank", learned == player.skillRanks.end() ? 0 : learned->second},
+                    {"available", session.skillAvailable(id)},
+                    {"leftAllowed", entry.leftAllowed}, {"passive", entry.passive}});
+            }
+        } else if (command == "bind-skill-hotkey") {
+            int key = request.at("key").get<int>();
+            int id = request.at("id").get<int>();
+            bool right = request.value("right", true);
+            if (key < 1 || key > 8) throw std::runtime_error("Skill hotkey must be F1..F8");
+            session.submit(BindSkillHotkey{unsigned(key - 1), id, right});
+            session.tick(0);
+            const auto &binding = session.state().player.skillHotkeys[size_t(key - 1)];
+            if (binding.skill != id || (id != -2 && binding.right != right))
+                throw std::runtime_error("Skill cannot be bound to this mouse button");
+            result["key"] = key;
+            result["id"] = binding.skill;
+            result["right"] = binding.right;
+        } else if (command == "skill-picker") {
+            bool open = request.value("open", true);
+            if (open) view.ui().skillPicker = request.value("right", true);
+            else view.ui().skillPicker.reset();
+            result["open"] = open;
+            result["right"] = view.ui().skillPicker.value_or(true);
+        } else if (command == "learn-skill") {
+            int id = request.at("id").get<int>();
+            int before = session.state().player.unspentSkills;
+            session.submit(AllocateSkill{id});
+            session.tick(0);
+            if (session.state().player.unspentSkills != before - 1)
+                throw std::runtime_error("Skill point unavailable or prerequisite missing");
+            result["unspent"] = session.state().player.unspentSkills;
+            result["rank"] = session.state().player.skillRanks.at(id);
+        } else if (command == "reset-skills") {
+            session.submit(DebugResetSkills{});
+            session.tick(0);
+            view.advance(0);
+            result["unspent"] = session.state().player.unspentSkills;
         } else if (command == "switch-character") {
             if (session.state().player.dead)
                 throw std::runtime_error("Switch character while alive");
@@ -254,9 +318,17 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
             result["appearance"] = session.characterAppearance();
             result["level"] = session.state().player.level;
             result["unspentAttributes"] = session.state().player.unspentAttributes;
+            result["unspentSkills"] = session.state().player.unspentSkills;
         } else if (command == "character-panel") {
             view.ui().characterOpen = request.value("open", true);
             result["open"] = view.ui().characterOpen;
+        } else if (command == "skill-tree") {
+            int page = request.value("page", view.ui().skillPage);
+            if (page < 1 || page > 3) throw std::runtime_error("Skill page must be 1..3");
+            view.ui().skillPage = page;
+            view.ui().skillTreeOpen = request.value("open", true);
+            result["open"] = view.ui().skillTreeOpen;
+            result["page"] = page;
         } else if (command == "objects") {
             result["objects"] = Json::array();
             for (const auto &object : session.region().objects) {

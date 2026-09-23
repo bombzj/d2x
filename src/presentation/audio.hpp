@@ -1,6 +1,8 @@
 #pragma once
 #include "resources/archive.hpp"
 #include <map>
+#include <string>
+#include <string_view>
 #include <raylib.h>
 namespace d2x {
 class SoundBank {
@@ -14,5 +16,6 @@ class SoundBank {
     SoundBank(const SoundBank &) = delete;
     SoundBank &operator=(const SoundBank &) = delete;
     void play(const std::string &name);
+    void registerOriginal(Archives &archives, std::string key, std::string_view path);
 };
 } // namespace d2x

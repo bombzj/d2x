@@ -8,6 +8,7 @@ SceneView::SceneView(Archives &archives, const GameSession &session)
       speechPainter_(assets_.speechFont) {
     view_.camera = project(session_.state().player.pos);
     view_.portalRevision = session_.state().portal.revision;
+    view_.skillClass = session_.characterCode();
 }
 Vec SceneView::screen(Vec p) const {
     float centerX = view_.inventory.storage ? W * .5f
@@ -26,7 +27,8 @@ std::string playerAnimationMode(const PlayerState &p) {
            : p.leapTime > 0                    ? "a1"
            : p.hitTime > 0 && p.spinTime <= 0  ? "gh"
            : p.castTime > 0                    ? "sc"
-           : p.spinTime > 0 || p.meleeTime > 0 ? "a1"
+           : p.spinTime > 0                 ? "a1"
+           : p.meleeTime > 0                ? (p.throwAttack ? "th" : "a1")
            : p.moving                          ? (p.running && p.stamina > 0 ? "rn" : "wl")
                                                : "nu";
 }
@@ -48,6 +50,11 @@ void SceneView::sessionRestored() {
     assets_.loadHeroEquipment(session_);
     view_.inventory = {};
     view_.characterOpen = false;
+    view_.skillTreeOpen = false;
+    view_.skillClass = session_.characterCode();
+    view_.skillPage = 3;
+    view_.leftSkill.reset();
+    view_.rightSkill.reset();
     view_.travelMenu = view_.help = false;
     view_.skillPicker.reset();
     view_.dialogue.clear();
@@ -62,6 +69,21 @@ void SceneView::sessionRestored() {
     landingAge_.clear();
 }
 void SceneView::advance(float dt) {
+    const auto &player = session_.state().player;
+    if (view_.skillClass != session_.characterCode()) {
+        view_.skillClass = session_.characterCode();
+        view_.skillPage = 3;
+        view_.leftSkill.reset();
+        view_.rightSkill.reset();
+        view_.skillPicker.reset();
+    }
+    auto learned = [&](std::optional<int> id) {
+        if (!id) return true;
+        auto entry = session_.content().skills.find(*id);
+        return entry && !entry->passive && session_.skillAvailable(*id);
+    };
+    if (!learned(view_.leftSkill)) view_.leftSkill.reset();
+    if (!learned(view_.rightSkill)) view_.rightSkill.reset();
     assets_.loadHeroEquipment(session_);
     if (!assets_.heroAppearanceError().empty() && view_.lootNotice != assets_.heroAppearanceError())
         notice(assets_.heroAppearanceError(), true);
@@ -95,6 +117,7 @@ void SceneView::advance(float dt) {
                 else if constexpr (std::is_same_v<T, RegionEntered>) {
                     view_.waypointSource = {};
                     view_.skillPicker.reset();
+                    view_.skillTreeOpen = false;
                     view_.inventory.cancelGesture();
                     view_.inventory.pending = {};
                     view_.inventory.open = false;
@@ -110,11 +133,13 @@ void SceneView::advance(float dt) {
                     view_.travelMenu = false;
                 } else if constexpr (std::is_same_v<T, PlayerDied>) {
                     view_.skillPicker.reset();
+                    view_.skillTreeOpen = false;
                     view_.inventory.cancelGesture();
                     view_.inventory.open = false;
                     view_.inventory.storage = {};
                 } else if constexpr (std::is_same_v<T, StorageOpened>) {
                     auto &ui = view_.inventory;
+                    view_.skillTreeOpen = false;
                     ui.cancelGesture();
                     ui.open = true;
                     ui.storage = value.container;
@@ -197,7 +222,6 @@ void SceneView::advance(float dt) {
             },
             event);
     }
-    const auto &player = session_.state().player;
     auto inBackpack = [&](EntityId id) {
         auto *item = session_.inventory().item(id);
         auto location = item ? std::get_if<ContainerLocation>(&item->location) : nullptr;

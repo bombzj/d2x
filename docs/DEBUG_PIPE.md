@@ -81,7 +81,18 @@ if ($target) {
 .\scripts\Send-D2XCommand.ps1 -Command switch-character -Arguments @{ class = 'Sorceress' }
 ```
 
-切换后等级、经验和属性分配归零，生命／法力／耐力回满；背包、装备与世界保留，超出一级携带上限的金币裁剪。`status.player.class` 和响应 `class` 可核对职业；职业成长及经验阈值始终从挂载的 MPQ 读取。原技能快捷栏仍是 MVP 通用技能，不等于职业技能树。
+切换后等级、经验、属性和技能分配归零，生命／法力／耐力回满；背包、装备与世界保留，超出一级携带上限的金币裁剪。`status.player.class` 和响应 `class` 可核对职业；职业成长、经验阈值和技能树始终从挂载的 MPQ 读取。
+
+技能调试入口使用正式升级、分配和存档状态。先通过 `skills` 查看当前职业的原技能 ID、前置及 F1–F8 绑定，再用 `grant-experience` 获得升级技能点；`learn-skill` 遵守等级、前置和最大等级。`reset-skills` 与 `Ctrl+Alt+T` 归还已分配点，`skill-tree` 可指定 1–3 页打开界面并配合 `screenshot` 查看。`skill-picker` 打开左右技能菜单，`bind-skill-hotkey` 通过正式会话命令绑定或清除快捷键，便于复查存档。
+
+```powershell
+.\scripts\Send-D2XCommand.ps1 -Command switch-character -Arguments @{ class = 'Sorceress' }
+.\scripts\Send-D2XCommand.ps1 -Command skills | ConvertTo-Json -Depth 6
+.\scripts\Send-D2XCommand.ps1 -Command grant-experience -Arguments @{ amount = 10000 }
+.\scripts\Send-D2XCommand.ps1 -Command learn-skill -Arguments @{ id = 36 }
+.\scripts\Send-D2XCommand.ps1 -Command skill-tree -Arguments @{ page = 3 }
+.\scripts\Send-D2XCommand.ps1 -Command reset-skills
+```
 
 营地商人可先从 `objects` 取会话对象 ID，再按正常交互进入菜单；`shop` 给出可买 slot，`buy` 使用同一购买事务。`talk` 用于单独查看原 MPQ 对话，购买不要求先 Talk。
 
@@ -115,11 +126,17 @@ $offers = (.\scripts\Send-D2XCommand.ps1 -Command shop -Arguments @{ id = $vendo
 | shop | 商人对象 `id` | 查询原 MPQ 货架报价、常驻／已售状态；该 NPC 菜单已打开时进入货架界面 |
 | buy | 商人对象 `id`、货架 `slot` | 需先正常交谈且在范围内；按报价扣金币并正式创建背包物品，随机货品售出后不可重购 |
 | grant-gold | `amount` | 增加钱包金币，仍遵守当前角色等级对应的携带上限，便于检验需付费的 NPC 服务 |
-| grant-experience | `amount` | 增加经验并依照运行时 MPQ `Experience.txt` 的当前职业阈值升级；达到 `MaxLvl` 时封顶 |
+| grant-experience | `amount` | 增加经验并依照运行时 MPQ `Experience.txt` 的当前职业阈值升级；达到 `MaxLvl` 时封顶；每升一级增加一个未用技能点 |
 | allocate-attribute | `attribute`：`strength`／`dexterity`／`vitality`／`energy` | 正式分配一个未用属性点；角色面板和装备需求同步刷新 |
 | reset-attributes | 无 | 调试重置四维已分配点；等级、经验和装备槽不变，需求不足的装备停用 |
+| skills | 无 | 返回当前职业 MPQ 技能节点、页／行／列、等级门槛、前置、等级和剩余点数 |
+| bind-skill-hotkey | `key` 1–8、`id` 原技能 ID；`-1` 普攻、`-2` 清除；可选 `right` 布尔值 | 用正式会话规则绑定 F1–F8，拒绝不可用、被动或不允许左键的技能 |
+| learn-skill | 技能 `id` | 按正式分配命令学习或升级技能；拒绝等级、前置或点数不满足的请求 |
+| reset-skills | 无 | 清空已分配技能并归还升级所得技能点；不会重置等级或经验 |
 | switch-character | 可选 `class`：MPQ `CharStats.class` 原名 | 存活时指定职业或循环下一职业；重置成长状态，保留物品和世界 |
 | character-panel | 可选 `open` 布尔值，默认 true | 打开或关闭角色面板，便于结合 `screenshot` 对照职业外观和数值 |
+| skill-tree | 可选 `open` 布尔值和 `page` 1–3 | 打开或关闭当前职业技能树并切到指定页，便于结合 `screenshot` 查看布局 |
+| skill-picker | 可选 `open`、`right` 布尔值，默认 true | 打开或关闭左／右技能菜单，便于结合 `screenshot` 查看图标与快捷键标签 |
 | use | `id` | 正常物品预览和使用，返回 `used`；支持背包回城卷轴，城镇使用拒绝 |
 | portal | `revision` | 正常走近当前蓝门；需使用 status 中当前版本，营地返程关闭双端点 |
 | kill | `id` | 仅击杀存活且当前屏幕范围内、已激活的指定怪物，玩家须存活；使用正常死亡事件及掉落结算 |
@@ -144,12 +161,12 @@ kill 和 drop 都不进行攻击命中／伤害计算，因此用于验证死亡
 
 ## 当前证据与限制
 
-当前源码为格式 v15／规则 v40，旧档不迁移。v10／规则 v30 的传送现场 `artifacts/waypoint-state-v10.d2xsave` 仅是历史证据，不能按当前格式读取。status 增加 portal、waypoints 和 travelMenu；objects 中 Waypoint 返回 activated 及原 fps。新游戏包括营地全部未激活；travel 自由传送不激活，waypoint 不能绕过解锁。F2 是独立开发目录，不是游戏传送点菜单。原三态动画、首次交互、锁定目的地拒绝及解锁保存恢复曾在 v10 实际验证，本轮未重新运行。
+当前源码为格式 v22／规则 v49，旧档不迁移。技能树与女巫技能菜单已构建截图，快捷键已完成存读档冒烟；基础远程攻击和女巫战斗效果待逐项实机验收。v10／规则 v30 的传送现场 `artifacts/waypoint-state-v10.d2xsave` 仅是历史证据，不能按当前格式读取。status 增加 portal、waypoints 和 travelMenu；objects 中 Waypoint 返回 activated 及原 fps。新游戏包括营地全部未激活；travel 自由传送不激活，waypoint 不能绕过解锁。Ctrl+F2 是独立开发目录，不是游戏传送点菜单。原三态动画、首次交互、锁定目的地拒绝及解锁保存恢复曾在 v10 实际验证，本轮未重新运行。
 
 新增 `drop`、`item-move`、`item` 及物品命令回执已完成源码和协议文档。Windows Release 构建后，实际调用 `item` 查询初始手斧、`equip` 卸下和重新装备，以及对当前区域指定怪物 `drop`；后者生成 6 件地面物品、无暂缓原因，已结算数从 0 到 1。拾取、药水使用和头盔胸甲图层仍待定向验收。
 
 在原洞窟地图种子 210、掉落种子 10 下，通过正常移动接近后击杀四个可见普通怪物，得到箭袋 `aqv`（数量 196、等级 2）、金币 5、法力药水及一次 NoDrop。箭袋正常入包保留数量与等级；金币正常拾取后地面实例消失、钱包变为 5、不占背包。重复击杀同 ID 被拒绝；管道保存／恢复后金币 5、箭袋 196、击杀和结算数 4、随机状态保持。现场 `artifacts/gold-pipe-v8.d2xsave`，截图 `artifacts/gold-wallet-v8.png`，均不提交。
 
-上述金币现场使用历史存档 v8／规则 v26，不能按当前 v15／规则 v40 恢复。六件上限、钱包满额部分拾取、跨用户 ACL 拒绝及 Linux 构建尚未实际验证。金币仓库存取／死亡掉金、装备金币加成和投掷武器消耗仍未实现；当前品质展示实例见 [物品补全](ITEM_COMPLETION.md)。
+上述金币现场使用历史存档 v8／规则 v26，不能按当前 v22／规则 v49 恢复。六件上限、钱包满额部分拾取、跨用户 ACL 拒绝及 Linux 构建尚未实际验证。金币仓库存取／死亡掉金和装备金币加成仍未实现；投掷基础消耗已接源码但未运行验收。当前品质展示实例见 [物品补全](ITEM_COMPLETION.md)。
 
 另有历史 v27 视觉现场 `artifacts/visual-v27.d2xsave`；status 包含 look／routePoints，monsters 包含可用的原 sourceVelocity。view 会改变当前屏幕范围，因此 kill 的可见约束按调试相机计算，但仍要求单位已激活；drop 不受该约束。

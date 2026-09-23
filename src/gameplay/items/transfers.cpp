@@ -1,5 +1,6 @@
 #include "inventory.hpp"
 #include <algorithm>
+#include <limits>
 
 namespace d2x {
 namespace {
@@ -189,6 +190,26 @@ InventoryResult InventoryService::consume(ItemHandle handle, unsigned quantity,
         source.quantity = remaining;
         ++source.revision;
     }
+    return result;
+}
+InventoryResult InventoryService::consumeEquipped(EntityId id, const PlayerContainers &containers) {
+    if (id != equipped(containers, EquipmentSlot::RightHand) &&
+        id != equipped(containers, EquipmentSlot::LeftHand))
+        return failure(InventoryError::AccessDenied);
+    const auto *source = item(id);
+    if (!source || source->quantity == 0 || source->revision == std::numeric_limits<uint64_t>::max())
+        return failure(InventoryError::InvalidRequest);
+    auto result = prepared(id, 1);
+    const unsigned remaining = source->quantity - 1;
+    result.changes.push_back({id, source->revision + 1,
+        remaining ? ItemChangeKind::QuantityChanged : ItemChangeKind::Removed,
+        source->location,
+        remaining ? std::optional<ItemLocation>{source->location} : std::nullopt, remaining});
+    if (remaining) {
+        auto &instance = state_.items.at(id);
+        instance.quantity = remaining;
+        ++instance.revision;
+    } else state_.items.erase(id);
     return result;
 }
 } // namespace d2x

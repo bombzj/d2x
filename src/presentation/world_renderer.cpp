@@ -188,9 +188,9 @@ void SceneView::drawActors() const {
             if (mode == "sc")
                 frame =
                     std::min(anim->count - 1,
-                             int((skillDefinition(sim.player.lastSkill).castDuration - sim.player.castTime) /
-                                 skillDefinition(sim.player.lastSkill).castDuration * anim->count));
-            if (mode == "a1" && sim.player.meleeTime > 0)
+                             int((sim.player.lastCastDuration - sim.player.castTime) /
+                                 sim.player.lastCastDuration * anim->count));
+            if ((mode == "a1" || mode == "th") && sim.player.meleeTime > 0)
                 frame = std::min(anim->count - 1, int((playerRules().meleeDuration - sim.player.meleeTime) /
                                                       playerRules().meleeDuration * anim->count));
             auto f = anim->frame(direction(look, anim->directions), frame);
@@ -270,6 +270,34 @@ void SceneView::drawMagic() const {
     const auto &sim = session_.state();
     const auto &props = session_.region().objects;
 
+    for (const auto &missile : sim.area.missiles) {
+        if (missile.missileId < 0) continue;
+        auto found = assets_.projectileAnimations.find(missile.missileId);
+        if (found == assets_.projectileAnimations.end()) continue;
+        const auto &animation = found->second;
+        sprite(animation.frame(direction(missile.velocity, animation.directions),
+                               int(view_.animationTime * 25)), screen(missile.pos));
+    }
+    for (const auto &effect : sim.area.effects)
+        if (effect.skill == Skill::Teleport && !assets_.teleportOverlay.frames.empty()) {
+            const int frame = std::min(assets_.teleportOverlay.count - 1,
+                int(effect.age / effect.duration * assets_.teleportOverlay.count));
+            sprite(assets_.teleportOverlay.frame(0, frame), screen(effect.pos));
+        }
+    if (auto found = assets_.projectileAnimations.find(assets_.frostNovaMissileId);
+        found != assets_.projectileAnimations.end())
+        for (const auto &effect : sim.area.effects)
+            if (effect.skill == Skill::FrostNova) {
+                const int count = std::clamp(int(assets_.frostNovaVelocity), 1, 64);
+                for (int index = 0; index < count; ++index) {
+                    const float angle = float(index) * 2.f * pi / float(count);
+                    const Vec heading{std::cos(angle), std::sin(angle)};
+                    const Vec point = effect.pos + heading * (assets_.frostNovaVelocity * effect.age);
+                    sprite(found->second.frame(direction(heading, found->second.directions),
+                                               int(view_.animationTime * 25)), screen(point));
+                }
+            }
+
     BeginBlendMode(BLEND_ADDITIVE);
     for (auto &prop : props)
         if (prop.flame) {
@@ -278,6 +306,7 @@ void SceneView::drawMagic() const {
             DrawCircleGradient(int(p.x), int(p.y) - 15, 65 + flicker, {126, 65, 12, 35}, {0, 0, 0, 0});
         }
     for (auto &m : sim.area.missiles) {
+        if (m.physical || m.missileId >= 0) continue;
         auto p = screen(m.pos);
         auto v = project(m.velocity).unit();
         for (int i = 12; i >= 0; i--)
@@ -301,27 +330,6 @@ void SceneView::drawMagic() const {
                 sprite(assets_.fireburst.frame(
                            0, std::min(assets_.fireburst.count - 1, int(t * assets_.fireburst.count))),
                        p);
-        }
-        if (e.skill == Skill::FrostNova) {
-            for (int i = 0; i < 64; i++) {
-                float angle = i * 2 * pi / 64;
-                Vec offset{std::cos(angle) * 8 * t, std::sin(angle) * 8 * t};
-                auto q = screen(e.pos + offset);
-                auto v = project(offset).unit();
-                DrawLineEx(rv(q - v * (8 + 14 * t)), rv(q), 2, {135, 215, 255, uint8_t(alpha * 255)});
-                DrawCircleV(rv(q), 2, {209, 246, 255, uint8_t(alpha * 200)});
-            }
-            DrawEllipseLines(int(p.x), int(p.y), 128 * t, 64 * t, {130, 197, 240, uint8_t(alpha * 220)});
-        }
-        if (e.skill == Skill::Teleport) {
-            for (int i = 0; i < 3; i++)
-                DrawEllipseLines(int(p.x), int(p.y) - 25, 10 + i * 10 + t * 15, 32 + i * 4,
-                                 {93, 164, 255, uint8_t(alpha * 230)});
-            for (int i = 0; i < 30; i++) {
-                float ang = i * 2.4f + e.age * 6;
-                DrawCircle(int(p.x + std::cos(ang) * (10 + t * 25)), int(p.y - 20 + std::sin(ang) * 40), 2,
-                           {133, 192, 255, uint8_t(alpha * 220)});
-            }
         }
         if (e.skill == Skill::WarCry || e.skill == Skill::Leap) {
             for (int j = 0; j < 3; j++) {

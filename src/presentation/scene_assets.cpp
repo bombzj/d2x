@@ -113,10 +113,47 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
     globeOverlap = uiGraphics_.single("data/global/ui/panel/overlap.dc6");
     runButton = uiGraphics_.single("data/global/ui/panel/runbutton.dc6");
     if (panel.frames.size() < 6 || orbs.frames.size() < 2 || globeOverlap.frames.size() < 2)
-        throw std::runtime_error("Classic HUD resources missing; rebuild the compact MPQ from mpq2.");
+        throw std::runtime_error("Classic HUD resources are missing from the mounted MPQ.");
     button = graphics_.single("data/global/ui/panel/mediumbuttonblank.dc6");
     loadSkillIcons(archives, session.content());
-    // Preserve the source tables alongside their extracted metadata in compact packs.
+    for (const auto &[code, item] : session.content().items.entries())
+        if (item.base.projectile && !item.base.projectile->art.empty() &&
+            !projectileAnimations.contains(item.base.projectile->id)) {
+            auto animation = graphics_.single(item.base.projectile->art);
+            if (animation.frames.empty())
+                throw std::runtime_error("Original MPQ missile art is missing: " + code);
+            projectileAnimations.emplace(item.base.projectile->id, std::move(animation));
+        }
+    for (const auto &[id, skill] : session.content().skills.skills)
+        if (skill.originalEffect && skill.originalEffect->missileId >= 0 &&
+            !projectileAnimations.contains(skill.originalEffect->missileId)) {
+            auto animation = graphics_.single(skill.originalEffect->missileArt);
+            if (animation.frames.empty())
+                throw std::runtime_error("Original MPQ skill missile art is missing: " + skill.sourceName);
+            projectileAnimations.emplace(skill.originalEffect->missileId, std::move(animation));
+        }
+    for (const auto &[id, skill] : session.content().skills.skills)
+        if (skill.originalEffect && skill.originalEffect->effect == Skill::Teleport) {
+            teleportOverlay = graphics_.single(skill.originalEffect->visualArt);
+            if (teleportOverlay.frames.empty())
+                throw std::runtime_error("Original MPQ Teleport overlay is missing");
+        }
+    for (const auto &[id, skill] : session.content().skills.skills)
+        if (skill.originalEffect && skill.originalEffect->effect == Skill::FrostNova) {
+            frostNovaMissileId = skill.originalEffect->missileId;
+            frostNovaVelocity = skill.originalEffect->missileVelocity;
+        }
+    for (const auto &[id, skill] : session.content().skills.skills)
+        if (skill.originalEffect)
+            audio.registerOriginal(archives, std::to_string(int(skill.originalEffect->effect)),
+                                   skill.originalEffect->castSoundArt);
+    for (const auto &tree : session.content().skills.classes) {
+        auto art = graphics_.single("data/global/ui/spells/skltree_" + tree.backgroundToken + "_back.dc6");
+        if (art.frames.size() < 16)
+            throw std::runtime_error("Original MPQ skill tree background is missing: " + tree.classCode);
+        skillTrees.emplace(tree.classCode, std::move(art));
+    }
+    // Keep the runtime source tables available for the original HUD rules.
     for (auto table : {"belts", "charstats", "skills"})
         archives.read(std::string("data/global/excel/") + table + ".txt");
     loadInventoryArt(session);

@@ -1,6 +1,6 @@
 # 开发与交接
 
-角色属性按 [角色属性实施计划](../CHARACTER_ATTRIBUTES.md) 接入，当前存档 v18／规则 v45。Windows Release 构建、完整 MPQ 的七职业外观、玩家击杀经验升级、生命／法力／耐力变化、v18 存读档、角色面板与 6×8 储物箱截图已冒烟；未新增测试脚本／用例，键鼠完整交互与 Linux 运行仍待验收。2026-09-24 另制作忽略目录 `dist/d2x-runtime-20260924/`，含 EXE、许可证、说明与五个完整原始 MPQ；从该目录启动复核储物箱 48 格、v18 保存读取及野外击杀获得 18 经验，未制作 ZIP 或资源裁剪包。原 MPQ 的 `CharStats`、`Experience`、`Properties`、`MonStats`／`MonLvl`、`inventory.txt`、`tradestash.dc6`、`invchar.dc6`、`level.dc6` 和 `skillpoints.dc6` 已核对。角色／技能面板参考截图保存在忽略的 `artifacts/character-skill-layout-reference-cn.png`，打包目录本次储物箱截图为 `dist/d2x-runtime-20260924/artifacts/debug-pipe.png`。
+当前源码的七职业技能树及出生动作见 [技能树实施](../SKILLS.md)：每职业 30 节点，MPQ 原背景、图标、页签、等级／前置门槛和 `CharStats` 通用技能；普通近战、弓／弩、投掷及初始装备授予技能已接。女巫传送、火弹、火球、冰霜新星、静电力场的原法力／等级伤害／弹体适配已接。F1–F8 悬停绑定左右鼠标技能，存档 v22／规则 v49。用户明确要求构建、打包和冒烟；Windows Release 构建、七职业三页技能树截图、女巫右技能菜单截图、快捷键存读档与完整 MPQ 分发目录启动均通过。弓／弩／投掷及女巫战斗效果仍待逐项实机验收；未新增测试脚本／用例。新运行目录为忽略的 `dist/d2x-runtime-20260924-v22/`，EXE 直接读取其中六个完整原始 MPQ，不生成 ZIP。技能树参考截图在忽略的 `artifacts/character-skill-layout-reference-cn.png`；本轮截图在 `artifacts/skill-smoke/`。
 
 ## 当前交接状态
 

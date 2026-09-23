@@ -16,10 +16,13 @@ void SceneView::drawCharacter(Vec mouse) const {
                            {0, 0}, 0, WHITE);
         }
     const auto close = characterClose();
-    const auto &closeTexture = assets_.vendorButtons.frames[
-        CheckCollisionPointRec(rv(mouse), close) ? 11 : 10].texture;
-    DrawTexturePro(closeTexture, {0, 0, float(closeTexture.width), float(closeTexture.height)},
-                   close, {0, 0}, 0, WHITE);
+    const Color cross = CheckCollisionPointRec(rv(mouse), close)
+        ? Color{232, 216, 179, 255} : Color{153, 150, 140, 255};
+    const float inset = close.width * .27f;
+    DrawLineEx({close.x + inset, close.y + inset},
+               {close.x + close.width - inset, close.y + close.height - inset}, 3, cross);
+    DrawLineEx({close.x + close.width - inset, close.y + inset},
+               {close.x + inset, close.y + close.height - inset}, 3, cross);
 
     // invchar.dc6 supplies the boxes; inventory.txt only describes the other half's item slots.
     // Coordinates are in the original 320 x 432 character art, before inventoryScale.
