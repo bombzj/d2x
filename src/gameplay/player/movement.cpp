@@ -74,8 +74,8 @@ void Simulation::updatePlayer(float dt, Vec keyboard) {
             step = delta.unit();
         }
     }
-    float speed = p.spinTime > 0               ? rules.spinSpeed
-                  : p.running && p.stamina > 0 ? rules.runSpeed
+    float speed = p.spinTime > 0                              ? rules.spinSpeed
+                  : p.running && (safeZone_ || p.stamina > 0) ? rules.runSpeed
                                                : rules.walkSpeed;
     if (step.length() > .1f) {
         float distance = followingRoute ? std::min(dt * speed, remaining) : dt * speed;
@@ -91,7 +91,7 @@ void Simulation::updatePlayer(float dt, Vec keyboard) {
             p.route.clear();
     }
     p.stamina =
-        std::clamp(p.stamina + dt * (p.moving && p.running && p.staminaBoost <= 0 ? -rules.staminaDrain
+        std::clamp(p.stamina + dt * (!safeZone_ && p.moving && p.running && p.staminaBoost <= 0 ? -rules.staminaDrain
                                                                                   : rules.staminaRegen),
                    0.f, rules.maxStamina);
     if (p.spinTime > 0) {

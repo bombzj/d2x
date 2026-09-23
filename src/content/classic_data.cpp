@@ -1,4 +1,5 @@
 #include "classic_data.hpp"
+#include "character_progression.hpp"
 #include "equipment_data.hpp"
 #include "item_appearance.hpp"
 #include "item_affixes.hpp"
@@ -12,7 +13,7 @@
 namespace d2x {
 ClassicData loadClassicData(Archives &archives) {
     std::map<std::string, DataTable, std::less<>> tables;
-    for (auto name : {"misc", "weapons", "armor", "armtype", "belts", "monstats", "charstats", "skills"})
+    for (auto name : {"misc", "weapons", "armor", "armtype", "belts", "monstats", "charstats", "skills", "experience"})
         tables.emplace(name, DataTable(archives.read(std::string("data/global/excel/") + name + ".txt")));
     const auto &armtype = tables.at("armtype");
     if (!armtype.has("Token"))
@@ -150,6 +151,7 @@ ClassicData loadClassicData(Archives &archives) {
         loadEquipmentDefinitions(items, tables.at("itemtypes"), tables);
     ClassicData data{ItemCatalog(std::move(items)), std::move(tables),
                      legacy ? "classic-1.04-txt-v1" : "lod-named-txt-v1"};
+    data.experienceThresholds = barbarianExperienceThresholds(data.tables.at("experience"));
     data.armorTypes = std::move(armorTypes);
     data.vendors = loadVendorData(data.tables, data.items);
     if (archives.contains("data/local/docs/eng/a1npc.txt"))

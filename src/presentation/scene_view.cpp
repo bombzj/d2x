@@ -216,6 +216,8 @@ void SceneView::advance(float dt) {
     view_.animationTime += dt;
     view_.heroTime += dt;
     auto mode = playerAnimationMode(player);
+    if (mode == "wl" && session_.region().definition.safe && player.running)
+        mode = "rn";
     if (mode != view_.heroMode) {
         view_.heroMode = mode;
         view_.heroTime = 0;
@@ -225,7 +227,8 @@ void SceneView::advance(float dt) {
     view_.stepClock -= dt;
     if (player.moving && view_.stepClock <= 0) {
         assets_.audio.play("step");
-        view_.stepClock = player.running && player.stamina > 0 ? .28f : .42f;
+        view_.stepClock = player.running && (session_.region().definition.safe || player.stamina > 0)
+                              ? .28f : .42f;
     }
 }
 std::vector<WorldEntry> SceneView::travelEntries() const {

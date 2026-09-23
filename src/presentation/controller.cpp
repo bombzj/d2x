@@ -31,13 +31,10 @@ void SceneController::click(Vec mouse) {
             return;
         }
     }
-    for (const auto &object : session_.region().objects) {
-        if (view_.visible(object) && object.interaction != Interaction::None &&
-            (view_.screen(object.pos) - Vec{0, 25} - mouse).length() < 28) {
-            session_.submit(Interact{object.id});
-            pickupClick_ = true;
-            return;
-        }
+    if (const auto *object = view_.objectAt(mouse)) {
+        session_.submit(Interact{object->id});
+        pickupClick_ = true;
+        return;
     }
     if (auto item = view_.lootAt(mouse)) {
         session_.submit(PickupItem{*item});
@@ -84,6 +81,28 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
             ui.npcMenu = false;
         }
         return true;
+    }
+    if (!ui.blocksWorld()) {
+        if (input.debugGold) {
+            unsigned capacity = unsigned(session_.state().player.level) * 10000;
+            unsigned amount = std::min(1000u, capacity - session_.state().player.gold);
+            if (amount) session_.submit(DebugGrantGold{amount});
+            view_.notice(amount ? "Gold +" + std::to_string(amount) : "Gold wallet is full.");
+        }
+        if (input.debugExperience) {
+            auto remaining = session_.maximumExperience() - session_.state().player.experience;
+            auto amount = std::min<uint64_t>(1000, remaining);
+            if (session_.state().player.dead)
+                view_.notice("Experience requires a living player.", true);
+            else {
+                if (amount) session_.submit(DebugGrantExperience{amount});
+                view_.notice(amount ? "Experience +" + std::to_string(amount) : "Maximum level reached.");
+            }
+        }
+        if (input.debugAttributes)
+            view_.notice("Attribute allocation is reserved for progression.");
+        if (input.debugTalents)
+            view_.notice("Skill allocation is reserved for progression.");
     }
     if (ui.shopOpen) {
         if (input.escape) {

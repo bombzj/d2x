@@ -49,7 +49,9 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
         } else if (command == "status") {
             const auto &state = session.state();
             result["player"] = {{"x", state.player.pos.x}, {"y", state.player.pos.y},
-                {"hp", state.player.hp}, {"gold", state.player.gold}, {"dead", state.player.dead}};
+                {"hp", state.player.hp}, {"gold", state.player.gold},
+                {"experience", state.player.experience}, {"level", state.player.level},
+                {"dead", state.player.dead}};
             result["region"] = int(state.area.region);
             result["kills"] = state.area.kills;
             result["paused"] = paused;
@@ -193,11 +195,19 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
         } else if (command == "grant-gold") {
             unsigned amount = request.at("amount").get<unsigned>();
             unsigned before = session.state().player.gold;
-            if (!amount || amount > 10000 - before)
+            if (!amount || amount > unsigned(session.state().player.level) * 10000 - before)
                 throw std::runtime_error("Gold grant exceeds the current wallet limit");
             session.submit(DebugGrantGold{amount});
             session.tick(0);
             result["gold"] = session.state().player.gold;
+        } else if (command == "grant-experience") {
+            uint64_t amount = request.at("amount").get<uint64_t>();
+            if (!amount || session.state().player.dead)
+                throw std::runtime_error("Experience grant requires a living player and positive amount");
+            session.submit(DebugGrantExperience{amount});
+            session.tick(0);
+            result["experience"] = session.state().player.experience;
+            result["level"] = session.state().player.level;
         } else if (command == "objects") {
             result["objects"] = Json::array();
             for (const auto &object : session.region().objects) {

@@ -15,6 +15,7 @@ class Simulation {
     EntityIds &ids_;
     const Grid *grid_ = nullptr; // Borrowed from GameSession's stable region storage.
     const RoomLayout *rooms_ = nullptr;
+    bool safeZone_ = false;
     WorldState state_;
     EquipmentStats equipmentStats_;
     std::function<void(EntityId, bool)> wearEquipment_;
@@ -49,7 +50,7 @@ class Simulation {
     void execute(const GameCommand &command);
     void tick(float dt, Vec keyboard);
     AreaState leaveArea();
-    void enterArea(const Grid &grid, const RoomLayout &rooms, Vec spawn, AreaState area,
+    void enterArea(const Grid &grid, const RoomLayout &rooms, Vec spawn, bool safeZone, AreaState area,
                    std::span<const MonsterSpawn> monsters);
     void restartArea(Vec spawn, std::span<const MonsterSpawn> monsters);
     void heal();

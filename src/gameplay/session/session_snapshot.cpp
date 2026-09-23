@@ -153,7 +153,14 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
     require(player.dead == (player.hp == 0), "player death state");
     skill(player.lastSkill);
     require(player.nextWeapon < 2, "active melee hand");
-    require(player.gold <= unsigned(equipmentActor().level) * 10000, "gold carrying limit");
+    require(player.gold <= unsigned(player.level) * 10000, "gold carrying limit");
+    const auto &thresholds = content_.experienceThresholds;
+    require(player.level >= 1 && size_t(player.level) < thresholds.size() &&
+                player.experience <= thresholds.back() &&
+                player.experience >= thresholds[size_t(player.level)] &&
+                (size_t(player.level + 1) == thresholds.size() ||
+                 player.experience < thresholds[size_t(player.level + 1)]),
+            "player experience and level");
     // Inactive leap endpoints may belong to a previously visited region. Only an
     // active leap uses them for movement; otherwise require finite values only.
     for (auto point : {player.leapStart, player.leapEnd}) {
@@ -283,13 +290,13 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
     equipmentAccess.actor = player.id;
     if (auto belt = equipmentInventory.equipped(s.containers, EquipmentSlot::Belt))
         require(equipmentInventory.equipmentRequirements(equipmentInventory.item(belt)->handle(),
-                                                         equipmentActor()) == InventoryError::None,
+                                                         equipmentActor(player.level)) == InventoryError::None,
                 "belt requirements");
     for (auto id : equipmentInventory.contents(s.containers.equipment)) {
         const auto &item = *equipmentInventory.item(id);
         auto slot = EquipmentSlot(std::get<ContainerLocation>(item.location).cell.x);
         auto result = equipmentInventory.planEquipment(EquipItem{item.handle(), slot}, s.containers,
-                                                       equipmentAccess, equipmentActor(), nullptr);
+                                                       equipmentAccess, equipmentActor(player.level), nullptr);
         require(bool(result) && result.changes.empty(), "equipment requirements or hand combination");
     }
     for (const auto &[id, container] : s.inventory.containers)
@@ -320,7 +327,8 @@ void GameSession::restore(SessionSnapshot s) {
     EntityIds validationIds;
     InventoryService equipmentInventory(validationIds, inventory_.catalog());
     equipmentInventory.state_ = s.inventory;
-    auto equipmentStats = deriveEquipmentStats(equipmentInventory, s.containers, equipmentActor());
+    auto equipmentStats = deriveEquipmentStats(equipmentInventory, s.containers,
+                                               equipmentActor(s.world.player.level));
     // All allocation and validation precedes this no-throw commit.
     static_assert(std::is_nothrow_move_assignable_v<WorldState>);
     static_assert(std::is_nothrow_move_assignable_v<InventoryState>);
@@ -328,6 +336,7 @@ void GameSession::restore(SessionSnapshot s) {
     simulation_.equipmentStats_ = equipmentStats;
     simulation_.grid_ = &regions_[current].map.grid;
     simulation_.rooms_ = &regions_[current].map.activation;
+    simulation_.safeZone_ = regions_[current].definition.safe;
     simulation_.events_.clear();
     inventory_.state_ = std::move(s.inventory);
     inactiveAreas_.swap(s.inactiveAreas);

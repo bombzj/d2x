@@ -79,7 +79,7 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
     Fingerprint fingerprint;
     fingerprint.add(content_.profile);
     // Bump this rules revision when state interpretation or compiled rules change.
-    fingerprint.add("d2x-session-rules-v38-vendor-purchase");
+    fingerprint.add("d2x-session-rules-v39-experience-town-spawn");
     auto members = archives.used;
     for (const auto &member : members) {
         fingerprint.add(member);
@@ -118,6 +118,7 @@ void GameSession::enter(RegionId id, std::optional<Vec> arrival) {
     closeStorage();
     auto plan = inactiveAreas_[current_].initialized ? PopulationPlan{} : population(*found);
     simulation_.enterArea(found->map.grid, found->map.activation, arrival.value_or(found->map.spawn),
+                          found->definition.safe,
                           std::move(inactiveAreas_[current_]), plan.spawns);
     std::cout << "Room activation: created=" << state().area.enemies.size()
               << " deferred=" << state().area.pendingSpawns.size() << '\n';
@@ -221,6 +222,17 @@ void GameSession::tick(float dt, Vec keyboard) {
                     unsigned limit = unsigned(equipmentActor().level) * 10000;
                     if (intent.amount && intent.amount <= limit - player.gold)
                         player.gold += intent.amount;
+                } else if constexpr (std::is_same_v<T, DebugGrantExperience>) {
+                    auto &player = simulation_.state_.player;
+                    if (intent.amount && !player.dead) {
+                        const auto &thresholds = content_.experienceThresholds;
+                        player.experience += std::min(intent.amount, thresholds.back() - player.experience);
+                        while (size_t(player.level + 1) < thresholds.size() &&
+                               player.experience >= thresholds[size_t(player.level + 1)])
+                            ++player.level;
+                        simulation_.equipmentStats_ =
+                            deriveEquipmentStats(inventory_, playerContainers_, equipmentActor());
+                    }
                 } else if constexpr (std::is_same_v<T, MoveItem> || std::is_same_v<T, SwapItems> ||
                                      std::is_same_v<T, SplitStack> || std::is_same_v<T, MergeStacks> ||
                                      std::is_same_v<T, EquipBelt> || std::is_same_v<T, TransferItem> ||

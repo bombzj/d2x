@@ -7,6 +7,7 @@ namespace d2x {
 struct Sprite {
     Texture2D texture{};
     int x = 0, y = 0;
+    int hitX = 0, hitY = 0, hitWidth = 0, hitHeight = 0;
 };
 struct GpuAnimation {
     int directions = 0, count = 0;

@@ -25,8 +25,16 @@ FrameInput pollInput(const Viewport &viewport) {
         int(GetMouseWheelMove()) + int(IsKeyPressed(KEY_RIGHT)) - int(IsKeyPressed(KEY_LEFT));
     input.focused = IsWindowFocused();
     input.showLoot = IsKeyDown(KEY_LEFT_ALT) || IsKeyDown(KEY_RIGHT_ALT);
+    if (input.control && input.showLoot) {
+        input.debugGold = IsKeyPressed(KEY_G);
+        input.debugExperience = IsKeyPressed(KEY_E);
+        input.debugAttributes = IsKeyPressed(KEY_A);
+        input.debugTalents = IsKeyPressed(KEY_T);
+    }
     input.rightHeld = IsMouseButtonDown(MOUSE_BUTTON_RIGHT);
     input.movement = {float(IsKeyDown(KEY_D) - IsKeyDown(KEY_A)), float(IsKeyDown(KEY_S) - IsKeyDown(KEY_W))};
+    if (input.control && input.showLoot)
+        input.movement = {};
     input.help = IsKeyPressed(KEY_F1);
     input.automap = IsKeyPressed(KEY_TAB);
     input.travel = IsKeyPressed(KEY_F2);

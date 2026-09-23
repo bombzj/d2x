@@ -42,6 +42,7 @@ add_library(d2x_items
   src/gameplay/items/preview.cpp src/gameplay/items/belt.cpp src/gameplay/items/inventory_snapshot.cpp)
 target_link_libraries(d2x_items PUBLIC d2x_core)
 add_library(d2x_content src/content/classic_data.cpp src/content/lod_data.cpp src/content/world_catalog.cpp src/content/monster_catalog.cpp)
+target_sources(d2x_content PRIVATE src/content/character_progression.cpp)
 target_sources(d2x_content PRIVATE src/content/equipment_data.cpp)
 target_sources(d2x_content PRIVATE src/content/item_appearance.cpp)
 target_sources(d2x_content PRIVATE src/content/monster_loot.cpp)

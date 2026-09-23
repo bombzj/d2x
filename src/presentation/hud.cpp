@@ -7,6 +7,9 @@ void SceneView::drawHud() const {
     if (!view_.npcMenu && view_.dialogue.empty() && !view_.shopOpen) {
         painter_.label("D2X", 22, 20, 20, gold);
         painter_.label("CLASSIC ENGINE / C++", 72, 24, 10, {154, 149, 129, 255});
+        painter_.label("LV " + std::to_string(sim.player.level) + "  XP " +
+                           std::to_string(sim.player.experience),
+                       22, 48, 10, {154, 149, 129, 255});
         int worldWidth = view_.inventory.open && !view_.inventory.storage ? int(inventoryBounds().x) : W;
         const auto &regionName = session_.region().definition.name;
         painter_.label(regionName, (worldWidth - painter_.measure(regionName, 20)) / 2, 20, 20, gold);
@@ -52,7 +55,7 @@ void SceneView::drawHelp() const {
     for (int i = 0; i < int(std::size(lines)); i++)
         painter_.label(lines[i], W / 2 - 194, 216 + i * 23, 12,
                        i < 4 ? parchment : Color{150, 148, 132, 255});
-    painter_.centered("Monster loot awaits original drop rules.", 575, 12, gold);
+    painter_.centered("Ctrl+Alt+G/E: gold/XP   A/T: reset slots reserved", 575, 11, gold);
 }
 void SceneView::draw(Vec mouse) const {
     const auto &map = session_.map();

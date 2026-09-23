@@ -41,6 +41,7 @@ Windows Release 构建、完整 MPQ 的短帧新游戏和 v12 读档冒烟已通
 | F11、Ctrl+F11 | 保存、读取；默认 `saves/quick.d2xsave` |
 | P、M、R | 暂停、静音、重置当前区 |
 | F1、F3、F12 | 帮助、碰撞网格、截图 |
+| Ctrl+Alt+G／E／A／T | 调试：加金币／经验；属性点／技能点重置入口预留 |
 
 参数包括 `--level`、`--map-seed`、`--difficulty normal|nightmare|hell`、`--population-seed`、`--save/--load`。`--seed` 仅控制预留掉落随机状态；模板查看使用 `--preset <Def> --level-type <ID>`。
 

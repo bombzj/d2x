@@ -17,6 +17,8 @@ struct FrameInput {
     bool pause = false, mute = false, run = false, restart = false, escape = false, screenshot = false;
     bool expandBelt = false, storage = false;
     bool save = false, load = false;
+    bool debugGold = false, debugExperience = false;
+    bool debugAttributes = false, debugTalents = false;
     std::array<bool, 4> belt{};
     std::array<bool, hotbarSlots> skills{};
 };

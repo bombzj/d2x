@@ -11,12 +11,6 @@ RegionPlan makeRegion(RegionId id, std::string name, MapRecipe recipe, bool town
     definition.name = std::move(name);
     definition.mapPath = recipe.ds1;
     definition.safe = town;
-    // TownN1 has a known town-centre arrival. Other variants use inspectionArrival;
-    // travel uses reciprocal boundary/warp arrivals instead.
-    if (town && recipe.variant == 0) {
-        definition.arrival = {140.5f, 64.5f};
-        definition.customArrival = true;
-    }
     return {std::move(definition), std::move(recipe)};
 }
 std::string failure(const WorldEntry &entry) {

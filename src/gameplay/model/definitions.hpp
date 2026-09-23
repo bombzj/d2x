@@ -35,8 +35,6 @@ struct RegionDefinition {
     RegionId id;
     std::string name, mapPath;
     bool safe = false;
-    Vec arrival{};
-    bool customArrival = false;
 };
 const SkillDefinition &skillDefinition(Skill id);
 const MonsterDefinition &monsterDefinition(MonsterKind id);

@@ -18,6 +18,68 @@ std::vector<std::pair<int, Vec>> terrainRegions(const GameSession &session) {
     return result;
 }
 } // namespace
+const Sprite *SceneView::objectSprite(const WorldObject &object, RegionId region) const {
+    if (auto waypoint = assets_.waypointAnimations.find(object.key);
+        waypoint != assets_.waypointAnimations.end()) {
+        auto activated = session_.state().waypoints.find(region);
+        size_t mode = 0;
+        float elapsed = 0;
+        if (activated != session_.state().waypoints.end()) {
+            elapsed = std::max(0.f, session_.state().time - activated->second);
+            const float duration = object.animationRules[1].frames / object.waypointFps[1];
+            mode = elapsed < duration ? 1 : 2;
+            if (mode == 2) elapsed -= duration;
+        }
+        const auto &animation = waypoint->second[mode];
+        const auto &rule = object.animationRules[mode];
+        int frame = rule.start + int(elapsed * object.waypointFps[mode]);
+        if (rule.cycle)
+            frame = rule.start + (frame - rule.start) % rule.frames;
+        else
+            frame = std::min(frame, rule.start + rule.frames - 1);
+        return animation.frame(object.facing % std::max(1, animation.directions), frame);
+    }
+    auto found = assets_.propAnimations.find(object.key);
+    if (found == assets_.propAnimations.end()) return nullptr;
+    const auto *animation = &found->second;
+    if (!object.npcRoute.empty())
+        if (auto walk = assets_.npcWalkAnimations.find(object.key);
+            walk != assets_.npcWalkAnimations.end())
+            animation = &walk->second;
+    const auto &rule = object.animationRules[object.animationMode];
+    int frame = 0;
+    if (object.appearance.category == "objects") {
+        frame = rule.start;
+        if (rule.fps > 0) {
+            frame += int(view_.animationTime * rule.fps);
+            if (rule.cycle)
+                frame = rule.start + (frame - rule.start) % rule.frames;
+            else
+                frame = std::min(frame, rule.start + rule.frames - 1);
+        }
+    } else
+        frame = int(view_.animationTime * 12);
+    int facing = object.npcLook.length() > .01f
+                     ? direction(object.npcLook, std::max(1, animation->directions)) : object.facing;
+    return animation->frame(facing % std::max(1, animation->directions), frame);
+}
+const WorldObject *SceneView::objectAt(Vec mouse) const {
+    const WorldObject *nearest = nullptr;
+    float nearestDepth = -1;
+    for (const auto &object : session_.region().objects) {
+        if (object.interaction == Interaction::None) continue;
+        auto sprite = objectSprite(object, session_.region().definition.id);
+        if (!sprite || !sprite->hitWidth || !sprite->hitHeight) continue;
+        Vec origin = screen(object.pos);
+        Rectangle bounds{origin.x + sprite->hitX, origin.y + sprite->hitY,
+                         float(sprite->hitWidth), float(sprite->hitHeight)};
+        if (CheckCollisionPointRec(rv(mouse), bounds) && origin.y > nearestDepth) {
+            nearest = &object;
+            nearestDepth = origin.y;
+        }
+    }
+    return nearest;
+}
 void SceneView::drawTerrain() const {
     for (const auto &[region, offset] : terrainRegions(session_)) {
         const auto &map = session_.regions()[region].map;
@@ -197,48 +259,7 @@ void SceneView::drawActors() const {
             drawGroundItem(groundItems[item.index]);
         } else {
             auto &p = session_.regions()[item.region].objects[item.index];
-            if (auto animations = assets_.waypointAnimations.find(p.key); animations != assets_.waypointAnimations.end()) {
-                auto activated = sim.waypoints.find(session_.regions()[item.region].definition.id);
-                size_t mode = 0;
-                float elapsed = 0;
-                if (activated != sim.waypoints.end()) {
-                    elapsed = std::max(0.f, sim.time - activated->second);
-                    const float duration = p.animationRules[1].frames / p.waypointFps[1];
-                    mode = elapsed < duration ? 1 : 2;
-                    if (mode == 2) elapsed -= duration;
-                }
-                const auto &animation = animations->second[mode];
-                const auto &rule = p.animationRules[mode];
-                int frame = rule.start + int(elapsed * p.waypointFps[mode]);
-                if (rule.cycle)
-                    frame = rule.start + (frame - rule.start) % rule.frames;
-                else
-                    frame = std::min(frame, rule.start + rule.frames - 1);
-                sprite(animation.frame(p.facing % std::max(1, animation.directions), frame), item.p);
-            } else {
-                const auto *anim = &assets_.propAnimations.at(p.key);
-                if (!p.npcRoute.empty())
-                    if (auto walk = assets_.npcWalkAnimations.find(p.key);
-                        walk != assets_.npcWalkAnimations.end())
-                        anim = &walk->second;
-                const auto &rule = p.animationRules[p.animationMode];
-                int frame = 0;
-                if (p.appearance.category == "objects") {
-                    frame = rule.start;
-                    if (rule.fps > 0) {
-                        frame += int(view_.animationTime * rule.fps);
-                        if (rule.cycle)
-                            frame = rule.start + (frame - rule.start) % rule.frames;
-                        else
-                            frame = std::min(frame, rule.start + rule.frames - 1);
-                    }
-                } else {
-                    frame = int(view_.animationTime * 12);
-                }
-                int facing = p.npcLook.length() > .01f
-                                 ? direction(p.npcLook, std::max(1, anim->directions)) : p.facing;
-                sprite(anim->frame(facing % std::max(1, anim->directions), frame), item.p);
-            }
+            sprite(objectSprite(p, session_.regions()[item.region].definition.id), item.p);
             if (!p.name.empty() && p.name != "Chicken" && p.name != "Cow" && p.name != "Rogue Scout")
                 painter_.label(p.name, int(item.p.x) - painter_.measure(p.name, 10) / 2, int(item.p.y) - 80,
                                10, gold);

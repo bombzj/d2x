@@ -27,13 +27,28 @@ Sprite Graphics::upload(const IndexedFrame &f) {
     if (auto found = textureCache.find(hash); found != textureCache.end())
         return found->second;
     std::vector<Color> pixels(f.pixels.size());
-    for (size_t i = 0; i < pixels.size(); i++)
+    int left = f.width, top = f.height, right = -1, bottom = -1;
+    for (size_t i = 0; i < pixels.size(); i++) {
         pixels[i] = color(palette[f.pixels[i]]);
+        if (pixels[i].a) {
+            int x = int(i % size_t(f.width)), y = int(i / size_t(f.width));
+            left = std::min(left, x);
+            top = std::min(top, y);
+            right = std::max(right, x);
+            bottom = std::max(bottom, y);
+        }
+    }
     Image img{pixels.data(), f.width, f.height, 1, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8};
     auto t = LoadTextureFromImage(img);
     SetTextureFilter(t, TEXTURE_FILTER_POINT);
     textures.push_back(t);
     Sprite result{t, f.x, f.y};
+    if (right >= left) {
+        result.hitX = f.x + left;
+        result.hitY = f.y + top;
+        result.hitWidth = right - left + 1;
+        result.hitHeight = bottom - top + 1;
+    }
     textureCache.emplace(hash, result);
     return result;
 }

@@ -59,6 +59,7 @@ class GameSession {
     void spawnLoot(std::span<const LootDrop> drops, RegionId region, Vec origin);
     InventoryAccess inventoryAccess() const;
     EquipmentActor equipmentActor() const;
+    EquipmentActor equipmentActor(int level) const;
     void createStarterEquipment();
     bool inventoryDestinationAllowed(const ItemDestination &destination) const;
     bool inventorySourceAllowed(EntityId item) const;
@@ -89,6 +90,7 @@ class GameSession {
     const MonsterCatalog &monsterContent() const { return monsterContent_; }
     const auto &worldEntries() const { return worldEntries_; }
     uint64_t contentFingerprint() const { return contentFingerprint_; }
+    uint64_t maximumExperience() const { return content_.experienceThresholds.back(); }
     SessionSnapshot snapshot() const;
     // Validate completely before replacing live state; a rejected load changes nothing.
     void restore(SessionSnapshot snapshot);

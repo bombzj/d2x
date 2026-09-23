@@ -11,6 +11,7 @@
 #include "resources/archive.hpp"
 #include "resources/data_table.hpp"
 #include <array>
+#include <cstdint>
 #include <set>
 #include <utility>
 
@@ -28,6 +29,8 @@ struct ClassicData {
           profile(std::move(sourceProfile)) {}
     ItemCatalog items;
     std::map<std::string, DataTable, std::less<>> tables;
+    // Index is level; values are cumulative XP thresholds from Experience.txt.
+    std::vector<uint64_t> experienceThresholds;
     std::vector<ClassicTreasureClass> treasures;
     std::vector<ClassicMonsterData> monsters;
     NpcDialogues npcDialogues;

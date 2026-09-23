@@ -156,7 +156,8 @@ void fields(Codec &a, Restoration &v) {
 void fields(Codec &a, PlayerState &v) {
     a(v.id, v.pos, v.previous, v.look, v.route, v.hp, v.mana, v.stamina, v.castTime, v.spinTime, v.leapTime,
       v.hitTime, v.deathTime, v.meleeTime, v.leapStart, v.leapEnd, v.cooldown, v.healing, v.manaRestoration,
-    v.staminaBoost, v.attackTarget, v.lastSkill, v.running, v.moving, v.dead, v.combatRandom, v.nextWeapon, v.gold);
+    v.staminaBoost, v.attackTarget, v.lastSkill, v.running, v.moving, v.dead, v.combatRandom, v.nextWeapon, v.gold,
+    v.experience, v.level);
 }
 void fields(Codec &a, Enemy &v) {
     a(v.id, v.kind, v.identity, v.pos, v.hp, v.chill, v.attack, v.stun, v.deathAge, v.hitFlash, v.rethink,
@@ -250,7 +251,7 @@ Bytes encodeSave(SessionSnapshot snapshot) {
     Codec body;
     body(snapshot);
     auto bytes = body.take();
-    uint32_t version = 14, size = uint32_t(bytes.size()), crc = checksum(bytes);
+    uint32_t version = 15, size = uint32_t(bytes.size()), crc = checksum(bytes);
     Codec header;
     header(version, size, crc);
     auto headerBytes = header.take();
@@ -269,8 +270,8 @@ SessionSnapshot decodeSave(std::span<const uint8_t> bytes) {
     Codec header(bytes.subspan(sizeof(magic), 12));
     uint32_t version = 0, size = 0, crc = 0;
     header(version, size, crc);
-    if (version != 14)
-        throw std::runtime_error("Unsupported D2X save version; vendor stock requires a new version-14 game");
+    if (version != 15)
+        throw std::runtime_error("Unsupported D2X save version; experience requires a new version-15 game");
     auto payload = bytes.subspan(headerSize);
     if (size != payload.size() || crc != checksum(payload))
         throw std::runtime_error("Save checksum or length mismatch");

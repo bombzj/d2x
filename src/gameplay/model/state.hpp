@@ -25,6 +25,8 @@ struct PlayerState {
     uint64_t combatRandom = (uint64_t(666) << 32) | 210;
     unsigned nextWeapon = 0;
     unsigned gold = 0;
+    uint64_t experience = 0;
+    int level = 1;
 };
 struct Enemy {
     EntityId id;

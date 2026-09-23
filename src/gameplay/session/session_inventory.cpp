@@ -3,6 +3,9 @@
 
 namespace d2x {
 EquipmentActor GameSession::equipmentActor() const {
+    return equipmentActor(state().player.level);
+}
+EquipmentActor GameSession::equipmentActor(int level) const {
     const auto &characters = content_.tables.at("charstats");
     for (size_t row = 0; row < characters.rows().size(); ++row)
         if (characters.value(row, "class") == "Barbarian") {
@@ -13,7 +16,7 @@ EquipmentActor GameSession::equipmentActor() const {
             auto block = characters.number(row, "BlockFactor");
             if (!block || *block < 0)
                 throw std::runtime_error("Invalid Barbarian block factor");
-            return {"bar", *strength, *dexterity, 1, *block};
+            return {"bar", *strength, *dexterity, level, *block};
         }
     throw std::runtime_error("Missing Barbarian character definition");
 }

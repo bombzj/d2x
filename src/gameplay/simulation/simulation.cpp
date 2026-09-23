@@ -18,10 +18,11 @@ void Simulation::clearActions() {
 AreaState Simulation::leaveArea() {
     return std::move(state_.area);
 }
-void Simulation::enterArea(const Grid &grid, const RoomLayout &rooms, Vec spawn, AreaState area,
+void Simulation::enterArea(const Grid &grid, const RoomLayout &rooms, Vec spawn, bool safeZone, AreaState area,
                            std::span<const MonsterSpawn> monsters) {
     grid_ = &grid;
     rooms_ = &rooms;
+    safeZone_ = safeZone;
     state_.area = std::move(area);
     clearActions();
     state_.player.pos = state_.player.previous = grid.nearest(spawn);
@@ -38,7 +39,7 @@ void Simulation::restartArea(Vec spawn, std::span<const MonsterSpawn> monsters) 
     state_.player.cooldown.fill(0);
     AreaState area;
     area.region = id;
-    enterArea(*grid_, *rooms_, spawn, std::move(area), monsters);
+    enterArea(*grid_, *rooms_, spawn, safeZone_, std::move(area), monsters);
 }
 void Simulation::heal() {
     auto &p = state_.player;
