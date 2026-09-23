@@ -1,6 +1,6 @@
 # 开发与交接
 
-角色属性按 [角色属性实施计划](../CHARACTER_ATTRIBUTES.md) 接入，当前存档 v18／规则 v45。Windows Release 构建、完整 MPQ 的七职业外观、玩家击杀经验升级、生命／法力／耐力变化、v18 存读档、角色面板与 6×8 储物箱截图已冒烟；未新增测试脚本／用例，键鼠完整交互与 Linux 运行仍待验收。原 MPQ 的 `CharStats`、`Experience`、`Properties`、`MonStats`／`MonLvl`、`inventory.txt`、`tradestash.dc6`、`invchar.dc6`、`level.dc6` 和 `skillpoints.dc6` 已核对。角色／技能面板参考截图保存在忽略的 `artifacts/character-skill-layout-reference-cn.png`，本轮储物箱截图为 `artifacts/stash-lod-6x8-20260924.png`。
+角色属性按 [角色属性实施计划](../CHARACTER_ATTRIBUTES.md) 接入，当前存档 v18／规则 v45。Windows Release 构建、完整 MPQ 的七职业外观、玩家击杀经验升级、生命／法力／耐力变化、v18 存读档、角色面板与 6×8 储物箱截图已冒烟；未新增测试脚本／用例，键鼠完整交互与 Linux 运行仍待验收。2026-09-24 另制作忽略目录 `dist/d2x-runtime-20260924/`，含 EXE、许可证、说明与五个完整原始 MPQ；从该目录启动复核储物箱 48 格、v18 保存读取及野外击杀获得 18 经验，未制作 ZIP 或资源裁剪包。原 MPQ 的 `CharStats`、`Experience`、`Properties`、`MonStats`／`MonLvl`、`inventory.txt`、`tradestash.dc6`、`invchar.dc6`、`level.dc6` 和 `skillpoints.dc6` 已核对。角色／技能面板参考截图保存在忽略的 `artifacts/character-skill-layout-reference-cn.png`，打包目录本次储物箱截图为 `dist/d2x-runtime-20260924/artifacts/debug-pipe.png`。
 
 ## 当前交接状态
 
