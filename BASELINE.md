@@ -21,6 +21,7 @@
 - NPC 交易：[购买实施顺序与限制](docs/NPC_TRADE.md)。
 - 界面与保存：[经典 HUD](docs/CLASSIC_HUD.md)、[存档](docs/SAVES.md)。
 - 成长与战斗属性：[角色属性实施计划](docs/CHARACTER_ATTRIBUTES.md)、[七职业技能树](docs/SKILLS.md)。
+- 怪物：[人口与替身](docs/MONSTER_POPULATION.md)、[分步实施与数值范围](docs/MONSTERS.md)。
 - 工程：[构建与分发](docs/BUILD_AND_SHARE.md)、[MPQ 清单](docs/MPQ_RESOURCES.md)、[第三方许可](docs/THIRD_PARTY.md)。
 
-当前工作：七职业技能树和出生通用动作已接入源码，运行时从原 MPQ 读取节点、页签、图标、门槛与 `CharStats` 的初始技能。普通近战、弓／弩与投掷的基础攻击已接。女巫传送、火弹、火球、冰霜新星、静电力场接入原技能／弹体表的法力、等级伤害、协同与资源。F1–F8 通过悬停左右技能菜单图标绑定，按键切换对应鼠标技能并随存档保存；存档 v22、规则 v49，旧档不迁移。Windows Release 构建、七职业三页技能树截图、女巫技能菜单、快捷键存读档及完整 MPQ 分发目录已冒烟；远程战斗和女巫技能效果仍待逐项实机验收。运行时直接读取原始 MPQ；Buff、非直接装备属性与完整怪物规则仍待后续阶段。
+当前工作：怪物公共近战数值开始改为按真实身份读取运行时 MPQ。普通难度普通级别非 Boss 近战怪物使用原 `MonStats`／`MonLvl` 生命与 A1 伤害区间；实例最大生命写入 v23 存档，规则 v50。`brute1` 使用 MPQ `YE` 四套原动画，不再显示沉沦魔替身；其他变体仍待逐项实现。AI 决策、攻击帧、精英／首领和远程行为尚未完成，范围与顺序见 [怪物实施计划](docs/MONSTERS.md)。此前七职业技能树、基础远程攻击、五项女巫技能与 F1–F8 绑定已接；运行时继续直接读取原始 MPQ，旧档不迁移。

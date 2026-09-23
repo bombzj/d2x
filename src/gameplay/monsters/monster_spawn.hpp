@@ -33,6 +33,11 @@ struct MonsterDefense {
     int level = 1;
     int defense = 0;
 };
+// Resolved from the original MonStats and MonLvl tables for an ordinary melee monster.
+struct MonsterNormalCombat {
+    int minLife = 0, maxLife = 0;
+    int minDamage = 0, maxDamage = 0;
+};
 // Explicit implementation registry: add real actors here as their behaviour/assets land.
 MonsterImplementation monsterImplementation(const std::string &code);
 const char *monsterRankName(MonsterRank rank);

@@ -10,6 +10,8 @@ MonsterImplementation monsterImplementation(const std::string &code) {
         return {MonsterKind::Skeleton, false};
     if (code == "corruptrogue1")
         return {MonsterKind::CorruptRogue, false};
+    if (code == "brute1")
+        return {MonsterKind::Brute, false};
     return {MonsterKind::Fallen, true};
 }
 const char *monsterRankName(MonsterRank rank) {

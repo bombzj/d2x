@@ -225,10 +225,10 @@ void SceneView::drawActors() const {
                     DrawCircle(int(item.p.x + std::cos(angle) * 9), int(item.p.y - 50 + std::sin(angle) * 4),
                                2, gold);
                 }
-            if (e.hp > 0 && e.hp < monsterDefinition(e.kind).maxLife) {
+            if (e.hp > 0 && e.hp < e.maxHp) {
                 DrawRectangle(int(item.p.x) - 18, int(item.p.y) - 54, 36, 3, {35, 15, 12, 255});
                 DrawRectangle(int(item.p.x) - 18, int(item.p.y) - 54,
-                              int(36 * e.hp / monsterDefinition(e.kind).maxLife), 3, {176, 47, 25, 255});
+                              int(36 * e.hp / e.maxHp), 3, {176, 47, 25, 255});
             }
         } else if (item.type == 5) {
             size_t mode = 1;

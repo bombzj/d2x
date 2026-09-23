@@ -1,6 +1,7 @@
 #pragma once
 #include "resources/archive.hpp"
 #include "resources/data_table.hpp"
+#include "gameplay/monsters/monster_spawn.hpp"
 #include <array>
 #include <map>
 #include <optional>
@@ -14,6 +15,7 @@ struct MonsterRecord {
     std::optional<int> normalAttackRating;
     std::optional<int> normalDefense;
     std::optional<int> walkVelocity;
+    std::optional<MonsterNormalCombat> normalCombat;
     bool enabled = false, randomSpawn = false, ranged = false, placeSpawn = false;
     bool killable = false, npc = false, critter = false, inert = false, boss = false;
     std::array<std::string, 2> minions;

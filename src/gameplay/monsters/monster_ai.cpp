@@ -83,7 +83,15 @@ void Simulation::updateMonsters(float dt) {
                 if (uint32_t(player.combatRandom) % 100 < unsigned(block))
                     continue;
             }
-            player.hp = std::max(0.f, player.hp - definition.damage);
+            float damage = definition.damage;
+            if (monsterNormalCombat_)
+                if (auto combat = monsterNormalCombat_(enemy.identity)) {
+                    enemy.combatRandom = uint64_t(uint32_t(enemy.combatRandom)) * 0x6ac690c5ULL +
+                                         (enemy.combatRandom >> 32);
+                    const auto range = unsigned(combat->maxDamage - combat->minDamage + 1);
+                    damage = float(combat->minDamage + uint32_t(enemy.combatRandom) % range);
+                }
+            player.hp = std::max(0.f, player.hp - damage);
             player.hitTime = .16f;
             if (wearEquipment_)
                 wearEquipment_({}, true);

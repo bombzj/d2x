@@ -25,6 +25,7 @@ class Simulation {
     std::function<std::optional<MonsterAccuracy>(const Enemy &)> monsterAccuracy_;
     std::function<std::optional<MonsterDefense>(const Enemy &)> monsterDefense_;
     std::function<std::optional<float>(const Enemy &)> monsterWalkSpeed_;
+    std::function<std::optional<MonsterNormalCombat>(const MonsterIdentity &)> monsterNormalCombat_;
     std::vector<GameEvent> events_;
     Enemy *findEnemy(EntityId id);
     void moveTo(Vec target);

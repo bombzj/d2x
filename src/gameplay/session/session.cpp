@@ -76,6 +76,13 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
             return std::nullopt;
         return float((*record->walkVelocity << 8) * 75 / 100) * 25.f / 4096.f;
     };
+    simulation_.monsterNormalCombat_ = [this](const MonsterIdentity &identity)
+        -> std::optional<MonsterNormalCombat> {
+        if (state().population.difficulty != 0 || identity.rank != MonsterRank::Normal)
+            return std::nullopt;
+        const auto *record = monsterContent_.find(identity.monster);
+        return record && !record->boss ? record->normalCombat : std::nullopt;
+    };
     worldSelection.difficulty = population.difficulty;
     auto plan = planWorld(archives, worldContent_, worldSelection);
     regions_ = loadRegions(archives, ids_, plan.regions, monsterContent_);
@@ -118,7 +125,7 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
     Fingerprint fingerprint;
     fingerprint.add(content_.profile);
     // Bump this rules revision when state interpretation or compiled rules change.
-    fingerprint.add("d2x-session-rules-v49-persistent-skill-hotkeys");
+    fingerprint.add("d2x-session-rules-v50-original-normal-monster-combat");
     auto members = archives.used;
     for (const auto &member : members) {
         fingerprint.add(member);

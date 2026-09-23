@@ -1,6 +1,6 @@
 # 开发与交接
 
-当前源码的七职业技能树及出生动作见 [技能树实施](../SKILLS.md)：每职业 30 节点，MPQ 原背景、图标、页签、等级／前置门槛和 `CharStats` 通用技能；普通近战、弓／弩、投掷及初始装备授予技能已接。女巫传送、火弹、火球、冰霜新星、静电力场的原法力／等级伤害／弹体适配已接。F1–F8 悬停绑定左右鼠标技能，存档 v22／规则 v49。用户明确要求构建、打包和冒烟；Windows Release 构建、七职业三页技能树截图、女巫右技能菜单截图、快捷键存读档与完整 MPQ 分发目录启动均通过。弓／弩／投掷及女巫战斗效果仍待逐项实机验收；未新增测试脚本／用例。新运行目录为忽略的 `dist/d2x-runtime-20260924-v22/`，EXE 直接读取其中六个完整原始 MPQ，不生成 ZIP。技能树参考截图在忽略的 `artifacts/character-skill-layout-reference-cn.png`；本轮截图在 `artifacts/skill-smoke/`。
+当前源码存档 v23／规则 v50。怪物阶段的已完成范围和下一项见 [怪物实施计划](../MONSTERS.md)：普通近战怪物按运行时 MPQ 原表计算生命和 A1 伤害，`brute1` 使用原 `YE` 外观。Windows Release 构建通过；邪恶洞窟实际创建 7 只 `brute1`，其中一只最大生命 14 保存／恢复不变，正式死亡掉落结算成功且本次为 NoDrop。原图截图在忽略的 `artifacts/monster-smoke/brute1-den.png`。完整六 MPQ 运行目录 `dist/d2x-runtime-20260924-v23-monsters/` 已独立启动 5 帧并生成 `artifacts/monster-smoke/packaged-den.png`；日志确认 `YE` 四动作各 1/1 组件。AI、精英、远程及不同难度数值仍待后续逐项实现；未写测试脚本／用例，不生成 ZIP。此前七职业技能树与女巫技能的完成范围见 [技能树实施](../SKILLS.md)，战斗效果仍待逐项实机验收。
 
 ## 当前交接状态
 
@@ -14,7 +14,7 @@
 
 - Play.cmd 现默认开启 d2x-debug 并正常运行，支持 -DebugPaused、-PipeName、-NoDebugPipe；实际通过 Play.cmd 启动和默认客户端 status 验证 paused=false，随后正常退出。直接 EXE 的 --debug-pipe 仍默认暂停，新增 --debug-run 显式恢复启动模式，详见调试协议。
 - 历史视觉／移动阶段 v8／规则 v27，最后提交 a2fc351。Windows 构建通过；管道短路径从 (379.5,181.5) 到 (380.5,181.5)，20 步后到达，再推进 20 步坐标与朝向不变，routePoints=0。原斧盾卸下、空手组合、重新装备和保存／恢复通过，场景 `artifacts/visual-v27.d2xsave`；截图 `visual-equipped-v27.png`、`visual-unarmed-v27.png`、`visual-flavie-v27.png` 保留于 artifacts。
-- 原 NPC 查询确认 Flavie、native.navi.0.16、坐标 (20,100)、renderable=true；怪物行走读取原 Velocity，生命／伤害等仍为 MVP。洞口缺块尚未定位，未改地图／DT1 隐藏语义；完整方向、所有装备组合和怪物速度位移量仍未全面验收。所有调试实例已退出，原资源未改动。
+- 历史 NPC 查询确认 Flavie、native.navi.0.16、坐标 (20,100)、renderable=true；当时怪物行走读取原 Velocity、生命／伤害仍为 MVP。洞口缺块尚未定位，未改地图／DT1 隐藏语义；完整方向、所有装备组合和怪物速度位移量仍未全面验收。该次调试实例已退出，原资源未改动。当前怪物数值范围见本页首段。
 - 历史掉落阶段 v8／规则 v26：最后提交 `dfa9029` 后接入死亡入口、品质请求、金币钱包、普通消耗品／箭袋数量和 Windows 调试管道；未知品质实例整批暂缓。该阶段不代表当前格式或完整掉落可用。
 - 本轮实际通过通用脚本调用管道：普通怪物四次击杀、四个已结算 ID；箭袋 aqv 数量 196、等级 2 正常入包；金币 5 正常入钱包、不占格，地面金币消失；重复击杀拒绝。保存／恢复后金币、箭袋、结算数及随机状态保持。现场 `artifacts/gold-pipe-v8.d2xsave`，截图 `artifacts/gold-wallet-v8.png`；原冠军金币 TC 种子 0、等级 4 的 mul=1280 输出 20 金币，旧 v7 明确拒绝。调试实例已正常退出；满钱包边界、六件上限及跨用户拒绝未实际验证。
 - 最新用户明确授权新增命名管道和 PowerShell 调用入口。使用 [调试协议](../DEBUG_PIPE.md) 和 `scripts/Send-D2XCommand.ps1`，不是专用测试程序；Win32 仅位于 app，主线程处理命令，默认不监听。固定 JSON 3.11.3 依赖及 SHA256，首次构建需下载或提供 FetchContent 缓存。

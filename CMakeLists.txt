@@ -49,6 +49,7 @@ target_sources(d2x_content PRIVATE src/content/string_table.cpp src/content/skil
 target_sources(d2x_content PRIVATE src/content/sorceress_data.cpp)
 target_sources(d2x_content PRIVATE src/content/item_projectiles.cpp)
 target_sources(d2x_content PRIVATE src/content/monster_experience.cpp)
+target_sources(d2x_content PRIVATE src/content/monster_combat.cpp)
 target_sources(d2x_content PRIVATE src/content/equipment_modifiers.cpp)
 target_sources(d2x_content PRIVATE src/content/equipment_data.cpp)
 target_sources(d2x_content PRIVATE src/content/item_appearance.cpp)

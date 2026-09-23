@@ -1,4 +1,5 @@
 #include "monster_catalog.hpp"
+#include "monster_combat.hpp"
 #include <algorithm>
 #include <limits>
 #include <stdexcept>
@@ -45,6 +46,7 @@ MonsterCatalog::MonsterCatalog(Archives &archives, const DataTable &stats) {
         m.partyMax = n("PartyMax");
         m.sparse = n("sparsePopulate");
         m.normalLevel = n("Level");
+        m.normalCombat = loadMonsterNormalCombat(stats, row, levels ? &*levels : nullptr);
         m.walkVelocity = stats.number(row, "Velocity");
         if (m.walkVelocity && (*m.walkVelocity < 0 || *m.walkVelocity > 255))
             throw std::runtime_error("Unsupported monster Velocity: " + m.id);

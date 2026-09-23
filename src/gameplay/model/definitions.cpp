@@ -23,6 +23,9 @@ const MonsterDefinition &monsterDefinition(MonsterKind id) {
                                          fallen.sightRange,
                                          fallen.attackRange,
                                          "1hs"};
+    static const MonsterDefinition brute{MonsterKind::Brute, "ye", fallen.maxLife,
+                                         fallen.speed, fallen.damage, fallen.attackInterval,
+                                         fallen.sightRange, fallen.attackRange};
     switch (id) {
     case MonsterKind::Fallen:
         return fallen;
@@ -32,6 +35,8 @@ const MonsterDefinition &monsterDefinition(MonsterKind id) {
         return skeleton;
     case MonsterKind::CorruptRogue:
         return rogue;
+    case MonsterKind::Brute:
+        return brute;
     case MonsterKind::Count:
         break;
     }

@@ -272,7 +272,16 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
             require(!pendingGroups.contains(enemy.identity.group), "partially instantiated monster group");
             validateIdentity(enemy.kind, enemy.identity);
             position(enemy.pos, areaGrid, true);
-            scalar(enemy.hp, 0, monsterDefinition(enemy.kind).maxLife);
+            scalar(enemy.maxHp, 1, float((1 << 23) - 1));
+            if (simulation_.monsterNormalCombat_) {
+                if (auto combat = simulation_.monsterNormalCombat_(enemy.identity))
+                    require(enemy.maxHp >= combat->minLife && enemy.maxHp <= combat->maxLife &&
+                                enemy.maxHp == std::floor(enemy.maxHp), "original monster life roll");
+                else
+                    require(enemy.maxHp == monsterDefinition(enemy.kind).maxLife,
+                            "pending monster life fallback");
+            }
+            scalar(enemy.hp, 0, enemy.maxHp);
             for (auto timer : {enemy.chill, enemy.stun, enemy.deathAge, enemy.hitFlash})
                 scalar(timer);
             scalar(enemy.attack, -1.e9f);

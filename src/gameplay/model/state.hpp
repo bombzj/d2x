@@ -48,7 +48,7 @@ struct Enemy {
     MonsterKind kind = MonsterKind::Fallen;
     MonsterIdentity identity;
     Vec pos;
-    float hp = 100, chill = 0, attack = 0;
+    float hp = 100, maxHp = 100, chill = 0, attack = 0;
     float stun = 0, deathAge = 0, hitFlash = 0, rethink = 0;
     std::deque<Vec> route;
     uint64_t combatRandom = (uint64_t(666) << 32) | 210;

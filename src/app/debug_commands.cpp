@@ -411,7 +411,8 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
                 if (request.value("visible", true) && !visible(enemy))
                     continue;
                 Json entry = {{"id", enemy.id.value}, {"monster", enemy.identity.monster},
-                    {"rank", monsterRankName(enemy.identity.rank)}, {"hp", enemy.hp}, {"x", enemy.pos.x},
+                    {"rank", monsterRankName(enemy.identity.rank)}, {"hp", enemy.hp},
+                    {"maxHp", enemy.maxHp}, {"x", enemy.pos.x},
                     {"y", enemy.pos.y}, {"visible", visible(enemy)}, {"active", session.active(enemy.pos)}};
                 const auto *record = session.monsterContent().find(enemy.identity.monster);
                 if (record && record->walkVelocity)
