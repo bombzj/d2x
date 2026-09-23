@@ -44,6 +44,12 @@ SessionSnapshot GameSession::snapshot() const {
     result.inventory = inventory_.state();
     result.containers = playerContainers_;
     result.loot = loot_.snapshot();
+    for (const auto &region : regions_)
+        for (const auto &object : region.objects)
+            if (!object.npcPath.empty())
+                result.npcMotions.push_back({object.id, object.pos, object.npcLook,
+                                             object.npcRoute, object.npcWait,
+                                             object.npcTarget, object.npcRandom});
     // Automatic walking to a transient pickup/interaction does not outlive that request.
     if (pickup_.id || pendingInteraction_ || pendingExit_ || pendingPortal_) {
         result.world.player.route.clear();
@@ -79,6 +85,31 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
     for (const auto &region : regions_)
         for (const auto &object : region.objects)
             registerId(object.id);
+    size_t movingNpcs = 0;
+    for (const auto &region : regions_)
+        for (const auto &object : region.objects)
+            movingNpcs += !object.npcPath.empty();
+    require(s.npcMotions.size() == movingNpcs, "NPC motion count");
+    std::set<EntityId> seenNpcs;
+    for (const auto &motion : s.npcMotions) {
+        const Region *home = nullptr;
+        const WorldObject *object = nullptr;
+        for (const auto &region : regions_)
+            for (const auto &candidate : region.objects)
+                if (candidate.id == motion.id) {
+                    home = &region;
+                    object = &candidate;
+                }
+        require(object && home && !object->npcPath.empty() && seenNpcs.insert(motion.id).second,
+                "NPC motion identity");
+        position(motion.position, home->map.grid, true);
+        scalar(motion.look.x, -1, 1);
+        scalar(motion.look.y, -1, 1);
+        scalar(motion.wait, 0, 10);
+        require(motion.target >= -1 && motion.target < int(object->npcPath.size()),
+                "NPC path target");
+        route(motion.route, home->map.grid);
+    }
     const auto &grid = regions_[current].map.grid;
     const auto &portal = s.world.portal;
     if (portal.revision) {
@@ -293,11 +324,25 @@ void GameSession::restore(SessionSnapshot s) {
     inactiveAreas_.swap(s.inactiveAreas);
     playerContainers_ = s.containers;
     loot_.restore(std::move(s.loot));
+    for (auto &motion : s.npcMotions)
+        for (auto &region : regions_)
+            for (auto &object : region.objects)
+                if (object.id == motion.id) {
+                    object.pos = motion.position;
+                    object.accessPoint = region.map.grid.nearest(motion.position);
+                    object.npcLook = motion.look;
+                    object.npcRoute.swap(motion.route);
+                    object.npcWait = motion.wait;
+                    object.npcTarget = motion.target;
+                    object.npcRandom = motion.random;
+                }
     ids_.next_ = s.nextEntityId;
     current_ = current;
     pending_.clear();
     pickup_ = {};
     pendingInteraction_ = {};
+    pendingInteractionRepath_ = false;
+    engagedNpc_ = {};
     pendingPortal_.reset();
     pendingExit_.reset();
     boundaryMoveTarget_.reset();

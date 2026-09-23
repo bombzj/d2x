@@ -4,6 +4,7 @@
 #include "gameplay/model/definitions.hpp"
 #include "map.hpp"
 #include "maze.hpp"
+#include <deque>
 
 namespace d2x {
 struct ObjectAppearance {
@@ -28,6 +29,16 @@ struct WorldObject {
     int animationMode = 0;
     std::array<ObjectAnimationRule, 8> animationRules{};
     std::array<float, 3> waypointFps{};
+    // Authored DS1 map AI path and current NPC motion. Only NPCs with original
+    // path nodes and a MonStats walking AI may move.
+    struct NpcPathNode { Vec position; int action = 1; };
+    std::string npcClass;
+    std::vector<NpcPathNode> npcPath;
+    std::deque<Vec> npcRoute;
+    Vec npcLook;
+    float npcVelocity = 0, npcWait = 0;
+    int npcTarget = -1;
+    uint64_t npcRandom = 0;
 };
 struct LevelExit {
     int slot = 0, warp = 0;

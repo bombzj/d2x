@@ -285,6 +285,27 @@ MapData decodeDs1(const Bytes &b) {
             m.substitutionGroups.push_back(group);
         }
     }
+    if (m.version >= 14 && r.pos < b.size()) {
+        int paths = r.u32();
+        if (paths < 0 || paths > 65536)
+            throw std::runtime_error("Invalid DS1 path count");
+        for (int index = 0; index < paths; ++index) {
+            int nodes = r.u32();
+            int x = r.u32(), y = r.u32();
+            if (nodes < 0 || nodes > 4096)
+                throw std::runtime_error("Invalid DS1 path node count");
+            auto object = std::find_if(m.objects.begin(), m.objects.end(),
+                                       [&](const auto &entry) { return entry.x == x && entry.y == y; });
+            for (int node = 0; node < nodes; ++node) {
+                MapObject::PathNode point;
+                point.x = r.u32();
+                point.y = r.u32();
+                point.action = m.version >= 15 ? r.u32() : 1;
+                if (object != m.objects.end())
+                    object->path.push_back(point);
+            }
+        }
+    }
     return m;
 }
 Table decodeTable(const Bytes &data) {

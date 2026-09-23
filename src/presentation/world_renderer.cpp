@@ -216,7 +216,11 @@ void SceneView::drawActors() const {
                     frame = std::min(frame, rule.start + rule.frames - 1);
                 sprite(animation.frame(p.facing % std::max(1, animation.directions), frame), item.p);
             } else {
-                auto &anim = assets_.propAnimations.at(p.key);
+                const auto *anim = &assets_.propAnimations.at(p.key);
+                if (!p.npcRoute.empty())
+                    if (auto walk = assets_.npcWalkAnimations.find(p.key);
+                        walk != assets_.npcWalkAnimations.end())
+                        anim = &walk->second;
                 const auto &rule = p.animationRules[p.animationMode];
                 int frame = 0;
                 if (p.appearance.category == "objects") {
@@ -231,7 +235,9 @@ void SceneView::drawActors() const {
                 } else {
                     frame = int(view_.animationTime * 12);
                 }
-                sprite(anim.frame(p.facing % std::max(1, anim.directions), frame), item.p);
+                int facing = p.npcLook.length() > .01f
+                                 ? direction(p.npcLook, std::max(1, anim->directions)) : p.facing;
+                sprite(anim->frame(facing % std::max(1, anim->directions), frame), item.p);
             }
             if (!p.name.empty() && p.name != "Chicken" && p.name != "Cow" && p.name != "Rogue Scout")
                 painter_.label(p.name, int(item.p.x) - painter_.measure(p.name, 10) / 2, int(item.p.y) - 80,

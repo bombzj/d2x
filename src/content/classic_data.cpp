@@ -149,6 +149,8 @@ ClassicData loadClassicData(Archives &archives) {
     ClassicData data{ItemCatalog(std::move(items)), std::move(tables),
                      legacy ? "classic-1.04-txt-v1" : "lod-named-txt-v1"};
     data.armorTypes = std::move(armorTypes);
+    if (archives.contains("data/local/docs/eng/a1npc.txt"))
+        data.npcDialogues = loadActOneNpcDialogues(archives);
     loadItemConsumables(data);
     if (lod) {
         loadPropertyData(data);

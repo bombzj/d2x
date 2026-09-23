@@ -71,7 +71,7 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
     Fingerprint fingerprint;
     fingerprint.add(content_.profile);
     // Bump this rules revision when state interpretation or compiled rules change.
-    fingerprint.add("d2x-session-rules-v33-equipment-appearance-and-unique-batch");
+    fingerprint.add("d2x-session-rules-v37-npc-interaction-routing");
     auto members = archives.used;
     for (const auto &member : members) {
         fingerprint.add(member);
@@ -201,6 +201,16 @@ void GameSession::tick(float dt, Vec keyboard) {
                     cancelExit();
                     cancelPickup();
                     interact(intent.target);
+                } else if constexpr (std::is_same_v<T, IdentifyWithCain>) {
+                    identifyWithCain(intent.target);
+                } else if constexpr (std::is_same_v<T, EndNpcConversation>) {
+                    if (engagedNpc_ == intent.target)
+                        engagedNpc_ = {};
+                } else if constexpr (std::is_same_v<T, DebugGrantGold>) {
+                    auto &player = simulation_.state_.player;
+                    unsigned limit = unsigned(equipmentActor().level) * 10000;
+                    if (intent.amount && intent.amount <= limit - player.gold)
+                        player.gold += intent.amount;
                 } else if constexpr (std::is_same_v<T, MoveItem> || std::is_same_v<T, SwapItems> ||
                                      std::is_same_v<T, SplitStack> || std::is_same_v<T, MergeStacks> ||
                                      std::is_same_v<T, EquipBelt> || std::is_same_v<T, TransferItem> ||
@@ -227,6 +237,7 @@ void GameSession::tick(float dt, Vec keyboard) {
         cancelInteraction();
     }
     simulation_.tick(dt, transitioned ? Vec{} : keyboard);
+    advanceNpcPaths(dt);
     settleDeaths();
     updatePickup();
     updateInteraction();

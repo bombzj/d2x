@@ -1,5 +1,7 @@
 #include "gameplay/session/session.hpp"
 #include <algorithm>
+#include <cmath>
+#include <limits>
 
 namespace d2x {
 const WorldObject *GameSession::object(EntityId id) const {
@@ -12,6 +14,38 @@ bool GameSession::canReach(const WorldObject &object) const {
     return !player.dead && (player.pos - object.pos).length() <= object.reach &&
            (player.pos - object.accessPoint).length() <= object.reach &&
            map().grid.segment(player.pos, object.accessPoint);
+}
+std::optional<Vec> GameSession::interactionApproach(const WorldObject &object) const {
+    const auto &grid = map().grid;
+    const Vec from = state().player.pos;
+    std::optional<Vec> best;
+    float bestCost = std::numeric_limits<float>::infinity();
+    const int radius = int(std::ceil(object.reach));
+    const int centerX = int(object.accessPoint.x), centerY = int(object.accessPoint.y);
+    for (int y = centerY - radius; y <= centerY + radius; ++y)
+        for (int x = centerX - radius; x <= centerX + radius; ++x) {
+            if (!grid.walkable(x, y))
+                continue;
+            Vec candidate{x + .5f, y + .5f};
+            if ((candidate - object.pos).length() > object.reach ||
+                (candidate - object.accessPoint).length() > object.reach ||
+                !grid.segment(candidate, object.accessPoint))
+                continue;
+            auto path = grid.path(from, candidate);
+            if (path.empty() && (from - candidate).length() > .01f)
+                continue;
+            float cost = 0;
+            Vec previous = from;
+            for (auto step : path) {
+                cost += (step - previous).length();
+                previous = step;
+            }
+            if (cost < bestCost) {
+                best = candidate;
+                bestCost = cost;
+            }
+        }
+    return best;
 }
 StorageAccess GameSession::storage() const {
     auto target = object(storage_.object);
@@ -35,6 +69,8 @@ void GameSession::cancelInteraction() {
     if (pendingInteraction_ || pendingPortal_)
         simulation_.stopWalking();
     pendingInteraction_ = {};
+    pendingInteractionRepath_ = false;
+    engagedNpc_ = {};
     pendingPortal_.reset();
 }
 void GameSession::interact(EntityId id) {
@@ -48,8 +84,12 @@ void GameSession::interact(EntityId id) {
         closeStorage();
     pendingInteraction_ = id;
     simulation_.stopWalking();
-    if (!canReach(*target))
-        simulation_.execute(MoveTo{target->accessPoint});
+    if (!canReach(*target)) {
+        if (target->npcPath.empty())
+            simulation_.execute(MoveTo{target->accessPoint});
+        else if (auto approach = interactionApproach(*target))
+            simulation_.execute(MoveTo{*approach});
+    }
     updateInteraction();
 }
 void GameSession::updateInteraction() {
@@ -67,6 +107,14 @@ void GameSession::updateInteraction() {
         cancelInteraction();
         completeInteraction(*target);
     } else if (player.route.empty()) {
+        if (!target->npcPath.empty() && !pendingInteractionRepath_) {
+            pendingInteractionRepath_ = true;
+            if (auto approach = interactionApproach(*target)) {
+                simulation_.execute(MoveTo{*approach});
+                if (!state().player.route.empty())
+                    return;
+            }
+        }
         simulation_.emit(InteractionFailed{target->id, "Cannot reach that object."});
         cancelInteraction();
     }
@@ -87,6 +135,10 @@ void GameSession::completeInteraction(const WorldObject &object) {
         simulation_.heal();
         [[fallthrough]];
     case Interaction::Talk:
+        if (introSpeech(content_.npcDialogues, object.name))
+            engagedNpc_ = object.id;
+        simulation_.emit(ObjectInteracted{object.id, object.interaction, object.name});
+        break;
     case Interaction::Travel:
         simulation_.emit(ObjectInteracted{object.id, object.interaction, object.name});
         break;

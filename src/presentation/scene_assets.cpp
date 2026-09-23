@@ -136,12 +136,18 @@ void SceneAssets::loadInventoryArt(const GameSession &session) {
 }
 void SceneAssets::loadProps(const Region &region) {
     for (const auto &object : region.objects) {
-        if (propAnimations.contains(object.key))
-            continue;
         const auto &appearance = object.appearance;
         std::array<const char *, 16> equipment;
         for (size_t i = 0; i < equipment.size(); ++i)
             equipment[i] = appearance.equipment[i].c_str();
+        if (!object.npcPath.empty() && !npcWalkAnimations.contains(object.key)) {
+            auto walk = graphics_.composite(appearance.category, appearance.token, "wl",
+                                             appearance.weapon, &equipment);
+            if (!walk.frames.empty() && walk.completeComposite)
+                npcWalkAnimations.emplace(object.key, std::move(walk));
+        }
+        if (propAnimations.contains(object.key))
+            continue;
         if (object.name == "Waypoint" && object.interaction == Interaction::Travel) {
             std::array<GpuAnimation, 3> animations;
             // Objects.txt modes are NU, OP (operating), ON (opened).

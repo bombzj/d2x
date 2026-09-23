@@ -70,6 +70,23 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
         return true;
     }
     repeatClick_ -= elapsed;
+    if (!ui.dialogue.empty()) {
+        if (input.escape) {
+            session_.submit(EndNpcConversation{ui.dialogueObject});
+            ui.dialogue.clear();
+            ui.dialogueLines.clear();
+        } else {
+            if (input.pageDelta)
+                view_.scrollNpcDialogue(-input.pageDelta * 3);
+            if (input.insideViewport && input.leftPressed) {
+                if (view_.clickNpcDialogue(input.mouse))
+                    session_.submit(IdentifyWithCain{ui.dialogueObject});
+                else if (ui.dialogue.empty())
+                    session_.submit(EndNpcConversation{ui.dialogueObject});
+            }
+        }
+        return true;
+    }
     if (input.help) {
         ui.skillPicker.reset();
         ui.help = !ui.help;

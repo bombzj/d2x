@@ -44,6 +44,10 @@ void InventoryService::validateSnapshot(const InventoryState &state, const Playe
                     item.durability <= def->maxDurability && item.revision > 0 && item.level > 0 &&
                     item.level <= 99 && int(item.quality) >= 0 &&
                     int(item.quality) <= int(ItemQuality::Inferior) &&
+                    (item.identified || (item.quality == ItemQuality::Magic ||
+                                         item.quality == ItemQuality::Rare ||
+                                         item.quality == ItemQuality::Set ||
+                                         item.quality == ItemQuality::Unique)) &&
                     item.specialRow >= -1 && item.gradeRow >= -1 &&
                     item.rarePrefixRow >= -1 && item.rareSuffixRow >= -1 &&
                     item.requiredLevel >= 0 && item.requiredLevel <= 99 &&

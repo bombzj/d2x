@@ -53,6 +53,7 @@ struct ItemInstance {
     std::string definition;
     unsigned quantity = 1, durability = 0;
     ItemQuality quality = ItemQuality::Normal;
+    bool identified = true;
     unsigned level = 1;
     uint64_t revision = 1;
     int defense = 0;

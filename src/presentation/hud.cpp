@@ -15,10 +15,6 @@ void SceneView::drawHud() const {
     painter_.label("F1 Help     M Sound", W - 204, 207, 10, {153, 144, 118, 255});
     if (!sim.message.empty())
         painter_.centered(sim.message, H - HUD - 35, 16, {218, 176, 95, 255});
-    if (!view_.dialogue.empty()) {
-        frame({W / 2.f - 285, H - HUD - 97.f, 570, 52});
-        painter_.centered(view_.dialogue, H - HUD - 78, 14, gold);
-    }
     if (view_.noticeTime > 0) {
         int width = painter_.measure(view_.lootNotice, 14) + 32;
         float centerX =
@@ -147,6 +143,8 @@ void SceneView::draw(Vec mouse) const {
             std::to_string(view_.travelPage + 1) + " / " + std::to_string(pages) + "   PgUp / PgDn", 554, 14);
     }
     drawSkillControls(mouse);
+    if (!view_.dialogue.empty())
+        drawNpcDialogue();
     drawInventoryCursor(mouse);
     if (!assets_.cursor.frames.empty())
         sprite(assets_.cursor.frame(0, 0), mouse);

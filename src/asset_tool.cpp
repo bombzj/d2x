@@ -4,6 +4,7 @@
 #include "content/item_quality.hpp"
 #include "resources/archive.hpp"
 #include "resources/formats.hpp"
+#include "resources/text.hpp"
 #include "persistence/save_file.hpp"
 #include "gameplay/items/equipment_stats.hpp"
 #include "world/cow_level.hpp"
@@ -21,7 +22,7 @@ int main(int argc, char **argv) {
     try {
         if (argc < 3) {
             std::cout
-                << "d2x_assets <archive-or-folder> list [wildcard]\n  ... extract <member> <destination>\n  "
+                << "d2x_assets <archive-or-folder> list [wildcard]\n  ... text <txt-member>\n  ... hex <member> [byte-count]\n  ... ds1-paths <ds1-member>\n  ... extract <member> <destination>\n  "
                    "... preview <dc6-or-dcc-member> <sheet.png>\n  ... pack <manifest.txt> <new.mpq>\n"
                    "  ... item <code>\n  ... drops <monster-class>\n  ... maps [Act-I-level-ID]\n"
                    "  ... presets [name-filter]\n  ... maze <level-ID> [map-seed] [difficulty:0-2]\n"
@@ -167,7 +168,7 @@ int main(int argc, char **argv) {
         } else if (command == "save-info" && argc == 4) {
             auto snapshot = d2x::loadSave(argv[3]);
             auto data = d2x::loadClassicData(a);
-            std::cout << "Save format=12 region=" << int(snapshot.world.area.region)
+            std::cout << "Save format=13 region=" << int(snapshot.world.area.region)
                       << " gold=" << snapshot.world.player.gold
                       << " time=" << snapshot.world.time << " life=" << snapshot.world.player.hp
                       << " combatRandom=" << snapshot.world.player.combatRandom
@@ -423,6 +424,40 @@ int main(int argc, char **argv) {
         } else if (command == "list") {
             for (auto &name : a.list(argc > 3 ? argv[3] : "*"))
                 std::cout << name << '\n';
+        } else if (command == "text" && argc == 4) {
+            std::string member = d2x::normalize(argv[3]);
+            if (!member.ends_with(".txt"))
+                throw std::runtime_error("text requires an original MPQ .txt member");
+            auto bytes = a.read(member);
+            if (bytes.size() > 4 * 1024 * 1024)
+                throw std::runtime_error("MPQ text member exceeds display limit");
+            std::cout << d2x::decodeText(bytes);
+        } else if (command == "hex" && (argc == 4 || argc == 5)) {
+            size_t count = argc == 5 ? size_t(std::stoul(argv[4])) : 128;
+            if (count > 512)
+                throw std::runtime_error("hex byte-count must be 0..512");
+            auto bytes = a.read(argv[3]);
+            constexpr char digits[] = "0123456789abcdef";
+            for (size_t index = 0; index < std::min(count, bytes.size()); ++index) {
+                const auto value = bytes[index];
+                std::cout << digits[value >> 4] << digits[value & 15]
+                          << (index % 16 == 15 ? '\n' : ' ');
+            }
+            if (count && std::min(count, bytes.size()) % 16)
+                std::cout << '\n';
+        } else if (command == "ds1-paths" && argc == 4) {
+            std::string member = d2x::normalize(argv[3]);
+            if (!member.ends_with(".ds1"))
+                throw std::runtime_error("ds1-paths requires an original MPQ DS1 member");
+            auto map = d2x::decodeDs1(a.read(member));
+            std::cout << member << " version=" << map.version << " objects=" << map.objects.size() << '\n';
+            for (const auto &object : map.objects)
+                if (!object.path.empty()) {
+                    std::cout << "  type=" << object.type << " id=" << object.id << " at="
+                              << object.x << ',' << object.y << " nodes=" << object.path.size() << '\n';
+                    for (const auto &node : object.path)
+                        std::cout << "    " << node.x << ',' << node.y << " action=" << node.action << '\n';
+                }
         } else if (command == "extract" && argc == 5) {
             auto b = a.read(argv[3]);
             d2x::writeFile(argv[4], b);

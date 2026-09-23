@@ -122,6 +122,8 @@ void SceneView::advance(float dt) {
                     }
                 } else if constexpr (std::is_same_v<T, InteractionFailed>) {
                     notice(value.reason, true);
+                    if (!view_.dialogue.empty())
+                        view_.dialogueStatus = value.reason;
                 } else if constexpr (std::is_same_v<T, LootDeferred>) {
                     notice("Loot deferred: " + value.reason, true);
                 } else if constexpr (std::is_same_v<T, ItemUsed>) {
@@ -173,12 +175,21 @@ void SceneView::advance(float dt) {
                         view_.waypointSource = value.name == "Waypoint" ? value.object : EntityId{};
                         view_.travelPage = 0;
                         view_.travelMenu = true;
-                    } else if (value.interaction == Interaction::Heal)
-                        view_.dialogue = "Akara: Your wounds are healed. Go in peace.";
-                    else if (value.interaction == Interaction::Stash)
-                        view_.dialogue = "Private Stash";
-                    else
-                        view_.dialogue = value.name + ": Welcome, traveler. The wilderness awaits.";
+                    } else if (value.interaction == Interaction::Heal ||
+                               value.interaction == Interaction::Talk) {
+                        if (const auto *speech = introSpeech(session_.content().npcDialogues, value.name))
+                        {
+                            openNpcDialogue(value.object, value.name, speech->text);
+                            view_.dialogueGossipTurn = value.name == "Deckard Cain" ? 1 : 0;
+                        }
+                        else
+                            notice("Original dialogue unavailable for " + value.name + ".", true);
+                    }
+                } else if constexpr (std::is_same_v<T, ItemsIdentified>) {
+                    view_.dialogueStatus = value.count
+                        ? "Identified " + std::to_string(value.count) + " item(s) for " +
+                              std::to_string(value.goldSpent) + " gold."
+                        : "No unidentified items in your inventory.";
                 }
             },
             event);

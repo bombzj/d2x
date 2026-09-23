@@ -58,6 +58,10 @@ InventoryResult InventoryService::createItem(std::string_view code, unsigned qua
     instance.quantity = quantity;
     instance.level = level;
     instance.quality = generation.quality;
+    instance.identified = generation.quality != ItemQuality::Magic &&
+                          generation.quality != ItemQuality::Rare &&
+                          generation.quality != ItemQuality::Set &&
+                          generation.quality != ItemQuality::Unique;
     instance.specialRow = generation.specialRow;
     instance.requiredLevel = generation.requiredLevel;
     instance.gradeRow = generation.gradeRow;

@@ -23,6 +23,8 @@ class GameSession {
     PlayerContainers playerContainers_;
     StorageAccess storage_;
     EntityId pendingInteraction_;
+    bool pendingInteractionRepath_ = false;
+    EntityId engagedNpc_;
     std::optional<uint64_t> pendingPortal_;
     std::optional<Vec> townPortalArrival_;
     float portalReach_ = 0;
@@ -43,7 +45,10 @@ class GameSession {
     void updateInteraction();
     void cancelInteraction();
     void completeInteraction(const WorldObject &object);
+    void identifyWithCain(EntityId npc);
+    void advanceNpcPaths(float dt);
     bool canReach(const WorldObject &object) const;
+    std::optional<Vec> interactionApproach(const WorldObject &object) const;
     bool travelWaypoint(const WaypointTravel &command);
     void validateStorage();
     void closeStorage();

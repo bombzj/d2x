@@ -4,6 +4,15 @@
 #include "gameplay/model/state.hpp"
 
 namespace d2x {
+struct NpcMotionState {
+    EntityId id;
+    Vec position;
+    Vec look;
+    std::deque<Vec> route;
+    float wait = 0;
+    int target = -1;
+    uint64_t random = 0;
+};
 // Value-only boundary between the live session and persistence. No UI, archive,
 // grid pointers, pending commands, or storage access grants cross this boundary.
 struct SessionSnapshot {
@@ -14,5 +23,6 @@ struct SessionSnapshot {
     InventoryState inventory;
     PlayerContainers containers;
     LootState loot;
+    std::vector<NpcMotionState> npcMotions;
 };
 } // namespace d2x

@@ -1,0 +1,156 @@
+#include "scene_view.hpp"
+#include "gameplay/npc/identification.hpp"
+#include <algorithm>
+
+namespace d2x {
+namespace {
+constexpr int visibleLines = 14;
+constexpr int textSize = 17;
+constexpr int lineHeight = 24;
+constexpr int left = 210;
+constexpr int textWidth = 640;
+Rectangle previousButton() { return {225, 535, 142, 36}; }
+Rectangle nextButton() { return {699, 535, 142, 36}; }
+Rectangle closeButton() { return {463, 535, 140, 36}; }
+Rectangle identifyButton() { return {368, 579, 330, 31}; }
+Rectangle gossipButton(bool cain) { return cain ? Rectangle{698, 579, 150, 31}
+                                               : Rectangle{368, 579, 330, 31}; }
+
+std::string fontText(std::string text) {
+    // The original Font16 DC6 is byte-indexed. Keep MPQ text intact in content;
+    // normalize only punctuation that this renderer cannot address as UTF-8.
+    for (auto [from, to] : {std::pair{"\xe2\x80\x99", "'"}, {"\xe2\x80\x98", "'"},
+                            {"\xe2\x80\x9c", "\""}, {"\xe2\x80\x9d", "\""},
+                            {"\xe2\x80\xa6", "..."}, {"\xe2\x80\x94", "--"},
+                            {"\xe2\x80\x93", "-"}}) {
+        size_t at = 0;
+        while ((at = text.find(from, at)) != std::string::npos) {
+            text.replace(at, std::char_traits<char>::length(from), to);
+            at += std::char_traits<char>::length(to);
+        }
+    }
+    return text;
+}
+} // namespace
+
+void SceneView::openNpcDialogue(EntityId object, std::string speaker, std::string text) {
+    view_.dialogueObject = object;
+    view_.dialogueSpeaker = std::move(speaker);
+    view_.dialogue = std::move(text);
+    view_.dialogueStatus.clear();
+    view_.dialogueScroll = 0;
+    view_.dialogueLines.clear();
+    auto rendered = fontText(view_.dialogue);
+    size_t start = 0;
+    while (start <= rendered.size()) {
+        size_t end = rendered.find('\n', start);
+        if (end == std::string::npos)
+            end = rendered.size();
+        auto paragraph = rendered.substr(start, end - start);
+        if (paragraph.empty())
+            view_.dialogueLines.emplace_back();
+        else {
+            std::string line;
+            size_t wordAt = 0;
+            while (wordAt < paragraph.size()) {
+                while (wordAt < paragraph.size() && paragraph[wordAt] == ' ')
+                    ++wordAt;
+                if (wordAt == paragraph.size())
+                    break;
+                size_t wordEnd = paragraph.find(' ', wordAt);
+                if (wordEnd == std::string::npos)
+                    wordEnd = paragraph.size();
+                auto word = paragraph.substr(wordAt, wordEnd - wordAt);
+                auto candidate = line.empty() ? word : line + ' ' + word;
+                if (!line.empty() && painter_.measure(candidate, textSize) > textWidth) {
+                    view_.dialogueLines.push_back(std::move(line));
+                    line = std::move(word);
+                } else
+                    line = std::move(candidate);
+                wordAt = wordEnd + 1;
+            }
+            if (!line.empty())
+                view_.dialogueLines.push_back(std::move(line));
+        }
+        if (end == rendered.size())
+            break;
+        start = end + 1;
+    }
+}
+
+void SceneView::scrollNpcDialogue(int amount) {
+    view_.dialogueScroll = std::clamp(view_.dialogueScroll + amount, 0,
+                                      std::max(0, int(view_.dialogueLines.size()) - visibleLines));
+}
+
+bool SceneView::clickNpcDialogue(Vec mouse) {
+    if (view_.dialogueSpeaker == "Deckard Cain" &&
+        CheckCollisionPointRec(rv(mouse), identifyButton()))
+        return true;
+    const bool cain = view_.dialogueSpeaker == "Deckard Cain";
+    if (CheckCollisionPointRec(rv(mouse), gossipButton(cain))) {
+        showNextNpcGossip();
+        return false;
+    }
+    if (CheckCollisionPointRec(rv(mouse), closeButton())) {
+        view_.dialogue.clear();
+        view_.dialogueLines.clear();
+    } else if (CheckCollisionPointRec(rv(mouse), previousButton()))
+        scrollNpcDialogue(-visibleLines + 2);
+    else if (CheckCollisionPointRec(rv(mouse), nextButton()))
+        scrollNpcDialogue(visibleLines - 2);
+    return false;
+}
+
+bool SceneView::showNextNpcGossip() {
+    if (view_.dialogue.empty())
+        return false;
+    const auto *speech = gossipSpeech(session_.content().npcDialogues,
+                                      view_.dialogueSpeaker, view_.dialogueGossipTurn);
+    if (!speech)
+        return false;
+    ++view_.dialogueGossipTurn;
+    openNpcDialogue(view_.dialogueObject, view_.dialogueSpeaker, speech->text);
+    return true;
+}
+
+void SceneView::drawNpcDialogue() const {
+    DrawRectangle(0, 0, W, H, {0, 0, 0, 175});
+    frame({179, 71, 708, 545});
+    painter_.centered(view_.dialogueSpeaker, 91, 24, gold);
+    DrawLine(left, 131, left + textWidth, 131, gold);
+    BeginScissorMode(left, 145, textWidth, visibleLines * lineHeight);
+    for (int row = 0; row < visibleLines; ++row) {
+        auto index = view_.dialogueScroll + row;
+        if (index >= int(view_.dialogueLines.size()))
+            break;
+        painter_.label(view_.dialogueLines[size_t(index)], left, 146 + row * lineHeight,
+                       textSize, parchment);
+    }
+    EndScissorMode();
+    for (auto [bounds, label] : {std::pair{previousButton(), "< PREVIOUS"},
+                               {closeButton(), "CLOSE"}, {nextButton(), "NEXT >"}}) {
+        frame(bounds);
+        painter_.label(label, int(bounds.x) + 17, int(bounds.y) + 9, 14, gold);
+    }
+    auto count = std::max(1, int(view_.dialogueLines.size()) - visibleLines + 1);
+    painter_.centered(std::to_string(view_.dialogueScroll + 1) + " / " + std::to_string(count) +
+                          "   Scroll or PgUp / PgDn",
+                      509, 12);
+    if (view_.dialogueSpeaker == "Deckard Cain") {
+        const auto plan = planCainIdentification(session_.inventory().state(),
+                                                  session_.playerContainers());
+        frame(identifyButton());
+        auto label = "IDENTIFY ALL  " + std::to_string(plan.items.size()) + " / " +
+                     std::to_string(plan.cost) + " GOLD";
+        painter_.label(label, int(identifyButton().x) + 13, int(identifyButton().y) + 8, 14, gold);
+    }
+    if (gossipSpeech(session_.content().npcDialogues, view_.dialogueSpeaker, 0)) {
+        auto button = gossipButton(view_.dialogueSpeaker == "Deckard Cain");
+        frame(button);
+        painter_.label("GOSSIP", int(button.x) + 14, int(button.y) + 8, 14, gold);
+    }
+    if (!view_.dialogueStatus.empty())
+        painter_.centered(view_.dialogueStatus, 619, 14, gold);
+}
+} // namespace d2x

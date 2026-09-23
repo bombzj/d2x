@@ -25,7 +25,7 @@ class SceneAssets {
     std::array<SkillIcon, skillCount> skillIcons;
     Sprite attackIcon;
     std::vector<std::vector<Sprite>> regionTiles;
-    std::map<std::string, GpuAnimation> propAnimations, hero;
+    std::map<std::string, GpuAnimation> propAnimations, npcWalkAnimations, hero;
     std::map<std::string, std::array<GpuAnimation, 3>> waypointAnimations;
     std::map<MonsterKind, std::map<std::string, GpuAnimation>> monsterAnimations;
     std::map<std::string, GpuAnimation> itemGround, itemIcons;

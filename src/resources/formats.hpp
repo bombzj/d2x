@@ -100,6 +100,10 @@ struct MapCell {
 struct MapObject {
     int type = 0, id = 0, x = 0, y = 0;
     uint32_t flags = 0;
+    struct PathNode {
+        int x = 0, y = 0, action = 1;
+    };
+    std::vector<PathNode> path;
 };
 struct SubstitutionGroup {
     int x = 0, y = 0, width = 0, height = 0, variants = 0;

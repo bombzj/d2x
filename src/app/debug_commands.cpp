@@ -109,13 +109,65 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
         } else if (command == "interact") {
             auto id = entity();
             if (!session.object(id)) throw std::runtime_error("Unknown object");
-            session.submit(Interact{id}); step();
+            int ticks = request.value("ticks", 1);
+            if (ticks < 1 || ticks > 250) throw std::runtime_error("ticks must be 1..250");
+            session.submit(Interact{id});
+            result["opened"] = false;
+            for (int tick = 0; tick < ticks; ++tick) {
+                step();
+                result["ticks"] = tick + 1;
+                for (const auto &event : session.events()) {
+                    if (auto failed = std::get_if<InteractionFailed>(&event); failed && failed->object == id)
+                        throw std::runtime_error(failed->reason);
+                    if (auto opened = std::get_if<ObjectInteracted>(&event); opened && opened->object == id)
+                        result["opened"] = true;
+                }
+                if (result["opened"].get<bool>() || session.interactionTarget() != id)
+                    break;
+            }
+            result["queued"] = session.interactionTarget() == id;
+            if (result["opened"].get<bool>() && !view.ui().dialogue.empty()) {
+                result["speaker"] = view.ui().dialogueSpeaker;
+                result["dialogue"] = view.ui().dialogue;
+                result["lines"] = view.ui().dialogueLines.size();
+            }
+        } else if (command == "identify") {
+            auto id = entity();
+            session.submit(IdentifyWithCain{id});
+            session.tick(0);
+            view.advance(0);
+            bool applied = false;
+            for (const auto &event : session.events()) {
+                if (auto failed = std::get_if<InteractionFailed>(&event); failed && failed->object == id)
+                    throw std::runtime_error(failed->reason);
+                if (auto done = std::get_if<ItemsIdentified>(&event); done && done->npc == id) {
+                    result["identified"] = done->count;
+                    result["goldSpent"] = done->goldSpent;
+                    applied = true;
+                }
+            }
+            if (!applied) throw std::runtime_error("Cain identification produced no result");
+        } else if (command == "gossip") {
+            if (!view.showNextNpcGossip())
+                throw std::runtime_error("No active NPC dialogue or original generic gossip");
+            result["speaker"] = view.ui().dialogueSpeaker;
+            result["dialogue"] = view.ui().dialogue;
+            result["lines"] = view.ui().dialogueLines.size();
+        } else if (command == "grant-gold") {
+            unsigned amount = request.at("amount").get<unsigned>();
+            unsigned before = session.state().player.gold;
+            if (!amount || amount > 10000 - before)
+                throw std::runtime_error("Gold grant exceeds the current wallet limit");
+            session.submit(DebugGrantGold{amount});
+            session.tick(0);
+            result["gold"] = session.state().player.gold;
         } else if (command == "objects") {
             result["objects"] = Json::array();
             for (const auto &object : session.region().objects) {
                 Json entry = {{"id", object.id.value}, {"name", object.name},
                     {"key", object.contentKey}, {"x", object.pos.x}, {"y", object.pos.y},
-                    {"renderable", view.visible(object)}};
+                    {"renderable", view.visible(object)}, {"npcClass", object.npcClass},
+                    {"pathNodes", object.npcPath.size()}, {"sourceVelocity", object.npcVelocity}};
                 if (object.name == "Waypoint") {
                     entry["activated"] = session.waypointUnlocked(session.state().area.region);
                     entry["fps"] = object.waypointFps;
@@ -206,7 +258,8 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
                     continue;
                 Json entry = {{"id", id.value}, {"revision", item.revision}, {"code", item.definition},
                     {"quantity", item.quantity}, {"level", item.level}, {"durability", item.durability},
-                    {"quality", qualityName(item.quality)}, {"specialRow", item.specialRow}};
+                    {"quality", qualityName(item.quality)}, {"identified", item.identified},
+                    {"specialRow", item.specialRow}};
                 if (ground) { entry["x"] = ground->position.x; entry["y"] = ground->position.y; }
                 else {
                     const auto &location = std::get<ContainerLocation>(item.location);

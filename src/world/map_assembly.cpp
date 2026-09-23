@@ -62,6 +62,15 @@ MapData assembleMap(Archives &archives, const MapRecipe &recipe) {
             for (auto &object : source.objects) {
                 object.x -= group.x * 5;
                 object.y -= group.y * 5;
+                for (auto &node : object.path) {
+                    node.x -= group.x * 5;
+                    node.y -= group.y * 5;
+                }
+                if (std::any_of(object.path.begin(), object.path.end(), [&](const auto &node) {
+                        return node.x < 0 || node.y < 0 ||
+                               node.x >= piece.width * 5 || node.y >= piece.height * 5;
+                    }))
+                    object.path.clear();
             }
             source.width = piece.width + 1;
             source.height = piece.height + 1;
@@ -109,6 +118,10 @@ MapData assembleMap(Archives &archives, const MapRecipe &recipe) {
         for (auto object : source.objects) {
             object.x += piece.x * 5;
             object.y += piece.y * 5;
+            for (auto &node : object.path) {
+                node.x += piece.x * 5;
+                node.y += piece.y * 5;
+            }
             result.objects.push_back(object);
         }
     }

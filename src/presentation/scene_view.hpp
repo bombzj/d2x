@@ -19,11 +19,15 @@ struct ViewState {
     float animationTime = 0, heroTime = 0, stepClock = 0;
     uint64_t portalRevision = 0;
     float portalAnimationStarted = -1;
-    std::string heroMode = "nu", dialogue;
+    std::string heroMode = "nu", dialogue, dialogueSpeaker, dialogueStatus;
+    EntityId dialogueObject;
+    std::vector<std::string> dialogueLines;
+    int dialogueScroll = 0;
+    size_t dialogueGossipTurn = 0;
     std::string lootNotice;
     float noticeTime = 0;
     bool noticeError = false;
-    bool blocksWorld() const { return pause || travelMenu || help; }
+    bool blocksWorld() const { return pause || travelMenu || help || !dialogue.empty(); }
 };
 class SceneView {
     const GameSession &session_;
@@ -49,6 +53,7 @@ class SceneView {
     void drawMagic() const;
     void drawMinimap(bool large) const;
     void drawHud() const;
+    void drawNpcDialogue() const;
     void drawControlPanel() const;
     void drawSkillControls(Vec mouse) const;
     void drawSkillIcon(std::optional<Skill> skill, Rectangle bounds) const;
@@ -82,6 +87,10 @@ class SceneView {
     void advance(float dt);
     void draw(Vec mouse) const;
     void notice(std::string text, bool error = false);
+    void openNpcDialogue(EntityId object, std::string speaker, std::string text);
+    void scrollNpcDialogue(int amount);
+    bool clickNpcDialogue(Vec mouse);
+    bool showNextNpcGossip();
     void sessionRestored();
     void collectMapVariants(Archives &archives) {
         assets_.collectMapVariants(archives, session_.worldContent(), session_.monsterContent());

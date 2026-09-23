@@ -113,6 +113,27 @@ std::vector<Region> loadRegions(Archives &archives, EntityIds &ids, const std::v
             object.contentKey = "ds1." + std::to_string(index);
             object.pos = {source.x + .5f, source.y + .5f};
             object.accessPoint = region.map.grid.nearest(object.pos);
+            if (source.type == 1 && monsters.supported()) {
+                auto unit = monsters.preset(region.map.data.act, source.id, region.map.data.version);
+                if (const auto *monster = monsters.find(unit.id)) {
+                    object.npcClass = monster->id;
+                    if (monster->npc && monster->ai == "Npc" && monster->walkVelocity &&
+                        *monster->walkVelocity > 0 && region.map.grid.walkable(object.pos)) {
+                        // Original path stores MonStats.Velocity << 8 in a 16.16
+                        // position. Unit direction length is 4096, so one
+                        // 25 Hz tick advances Velocity / 16 subtiles.
+                        object.npcVelocity = float(*monster->walkVelocity) * 25.f / 16.f;
+                        for (const auto &node : source.path)
+                            if ((node.action == 1 || node.action == 3) && node.x > 0 && node.y > 0) {
+                                Vec position{node.x + .5f, node.y + .5f};
+                                if (region.map.grid.walkable(position) &&
+                                    !region.map.grid.path(region.map.spawn, position).empty())
+                                    object.npcPath.push_back({position, node.action});
+                            }
+                        object.npcWait = 20.f / 25.f;
+                    }
+                }
+            }
             object.appearance = {preset->category, preset->token, preset->mode, preset->weapon, {}};
             for (size_t i = 0; i < object.appearance.equipment.size(); ++i)
                 object.appearance.equipment[i] = preset->gear[i];

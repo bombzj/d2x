@@ -29,6 +29,7 @@ void fields(Codec &, ItemAffixInstance &);
 void fields(Codec &, InventoryState &);
 void fields(Codec &, PlayerContainers &);
 void fields(Codec &, LootState &);
+void fields(Codec &, NpcMotionState &);
 void fields(Codec &, SessionSnapshot &);
 class Codec {
     Bytes output_;
@@ -142,7 +143,7 @@ class Codec {
         }
     }
 };
-// Explicit schema, never compiler struct layout. Field order is save version 12.
+// Explicit schema, never compiler struct layout. Field order is save version 13.
 void fields(Codec &a, EntityId &v) {
     a(v.value);
 }
@@ -198,7 +199,7 @@ void fields(Codec &a, PlayerContainers &v) {
     a(v.backpack, v.belt, v.stash, v.beltEquipment, v.equipment);
 }
 void fields(Codec &a, ItemInstance &v) {
-    a(v.id, v.definition, v.quantity, v.durability, v.quality, v.level, v.revision, v.defense,
+    a(v.id, v.definition, v.quantity, v.durability, v.quality, v.identified, v.level, v.revision, v.defense,
       v.specialRow, v.requiredLevel, v.gradeRow, v.rarePrefixRow, v.rareSuffixRow,
       v.propertyRolls, v.affixes);
     uint32_t kind = uint32_t(v.location.index());
@@ -227,9 +228,12 @@ void fields(Codec &a, InventoryState &v) {
 void fields(Codec &a, LootState &v) {
     a(v.randomState, v.settled, v.usedUniques);
 }
+void fields(Codec &a, NpcMotionState &v) {
+    a(v.id, v.position, v.look, v.route, v.wait, v.target, v.random);
+}
 void fields(Codec &a, SessionSnapshot &v) {
     a(v.contentFingerprint, v.nextEntityId, v.maps, v.world, v.inactiveAreas, v.inventory, v.containers,
-      v.loot);
+      v.loot, v.npcMotions);
 }
 uint32_t checksum(std::span<const uint8_t> bytes) {
     uint32_t crc = 0xffffffffu;
@@ -246,7 +250,7 @@ Bytes encodeSave(SessionSnapshot snapshot) {
     Codec body;
     body(snapshot);
     auto bytes = body.take();
-    uint32_t version = 12, size = uint32_t(bytes.size()), crc = checksum(bytes);
+    uint32_t version = 13, size = uint32_t(bytes.size()), crc = checksum(bytes);
     Codec header;
     header(version, size, crc);
     auto headerBytes = header.take();
@@ -265,8 +269,8 @@ SessionSnapshot decodeSave(std::span<const uint8_t> bytes) {
     Codec header(bytes.subspan(sizeof(magic), 12));
     uint32_t version = 0, size = 0, crc = 0;
     header(version, size, crc);
-    if (version != 12)
-        throw std::runtime_error("Unsupported D2X save version; item properties require a new version-12 game");
+    if (version != 13)
+        throw std::runtime_error("Unsupported D2X save version; NPC identification requires a new version-13 game");
     auto payload = bytes.subspan(headerSize);
     if (size != payload.size() || crc != checksum(payload))
         throw std::runtime_error("Save checksum or length mismatch");

@@ -14,6 +14,10 @@ const SpecialItemRecord *SceneView::specialItem(const ItemInstance &item) const 
     return found == records.end() ? nullptr : &*found;
 }
 std::string SceneView::itemName(const ItemInstance &item) const {
+    if (!item.identified) {
+        const auto *definition = session_.inventory().catalog().find(item.definition);
+        return definition ? definition->name : item.definition;
+    }
     if (auto special = specialItem(item))
         return special->name;
     const auto *definition = session_.inventory().catalog().find(item.definition);
@@ -64,7 +68,9 @@ void SceneView::drawItemTooltip(const ItemInstance &item, Vec anchor) const {
     std::vector<std::string> lines{itemName(item)};
     const char *qualities[] = {"Normal", "Magic", "Rare", "Set", "Unique", "Superior", "Inferior"};
     auto quality = size_t(item.quality);
-    lines.push_back(std::string(quality < std::size(qualities) ? qualities[quality] : "Unknown") +
+    lines.push_back((item.identified
+                         ? std::string(quality < std::size(qualities) ? qualities[quality] : "Unknown")
+                         : std::string("Unidentified")) +
                     " / Item level " + std::to_string(item.level));
     if (auto potion = session_.content().potion(item.definition)) {
         switch (potion->kind) {
@@ -119,6 +125,9 @@ void SceneView::drawItemTooltip(const ItemInstance &item, Vec anchor) const {
         lines.push_back("Required dexterity: " + std::to_string(*base.requiredDexterity));
     if (int level = std::max(base.requiredLevel.value_or(0), item.requiredLevel); level > 0)
         lines.push_back("Required level: " + std::to_string(level));
+    if (!item.identified) {
+        lines.push_back("Ask Deckard Cain to identify this item");
+    } else {
     auto propertyText = [](const PropertyRange &property, std::optional<int32_t> value) {
         std::string line = property.code;
         if (!property.parameter.empty())
@@ -157,6 +166,7 @@ void SceneView::drawItemTooltip(const ItemInstance &item, Vec anchor) const {
                 lines.push_back(bonus.condition + ": " + propertyText(bonus.property, std::nullopt));
     if (specialItem(item) || !item.affixes.empty() || item.gradeRow >= 0)
         lines.push_back("Listed properties are not active in combat yet");
+    }
     constexpr size_t rowsPerColumn = 28;
     constexpr int rowHeight = 18;
     const size_t columns = (lines.size() + rowsPerColumn - 1) / rowsPerColumn;
