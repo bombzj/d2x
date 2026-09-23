@@ -109,6 +109,56 @@ class Wilderness {
                     throw std::runtime_error("Outdoor border overlap");
             }
     }
+    void waypoint(Archives &archives) {
+        const int waypointId = catalog_.level(position_.level).waypoint;
+        if (waypointId < 0 || waypointId == 255)
+            return;
+        std::vector<int> cells;
+        for (int row = 1; row < height_ - 1; ++row)
+            for (int column = 1; column < width_ - 1; ++column)
+                if (!occupied_[row * width_ + column])
+                    cells.push_back(row * width_ + column);
+        for (size_t index = 0; index < cells.size(); ++index)
+            std::swap(cells[seed_.below(int(cells.size()))], cells[seed_.below(int(cells.size()))]);
+        if (position_.level == 3)
+            for (const auto &boundary : position_.boundaries)
+                if (boundary.destination == 2) {
+                    const int lateral = boundary.start / 8;
+                    const int targetX = boundary.side == 1 ? 1 : boundary.side == 3 ? width_ - 2 : lateral;
+                    const int targetY = boundary.side == 2 ? 1 : boundary.side == 0 ? height_ - 2 : lateral;
+                    std::stable_sort(cells.begin(), cells.end(), [&](int left, int right) {
+                        auto distance = [&](int cell) {
+                            return std::abs(cell % width_ - targetX) + std::abs(cell / width_ - targetY);
+                        };
+                        return distance(left) < distance(right);
+                    });
+                }
+        for (const auto &record : catalog_.substitutions()) {
+            if (record.type != 4 || record.gridSize != 1)
+                continue;
+            const auto pattern = decodeDs1(archives.read(record.file));
+            for (size_t index = 0; index < pattern.substitutionGroups.size(); ++index) {
+                const auto &group = pattern.substitutionGroups[index];
+                if (group.variants != 0 || group.width > 7 || group.height > 7 || cells.empty())
+                    continue;
+                int cell = cells.front();
+                MapPiece piece;
+                piece.x = (cell % width_) * 8 + 1;
+                piece.y = (cell / width_) * 8 + 1;
+                piece.width = group.width;
+                piece.height = group.height;
+                piece.ds1 = record.file;
+                piece.tileLibraries = result_.tileLibraries;
+                auto libraries = catalog_.terrainLibraries(2, record.dt1Mask);
+                piece.tileLibraries.insert(piece.tileLibraries.end(), libraries.begin(), libraries.end());
+                piece.substitutionGroup = int(index);
+                result_.pieces.push_back(std::move(piece));
+                occupied_[cell] = -1;
+                return;
+            }
+        }
+        throw std::runtime_error("No valid original waypoint placement for level " + std::to_string(position_.level));
+    }
     void specialPresets() {
         int id = position_.level;
         if (id == 17) {
@@ -345,6 +395,7 @@ class Wilderness {
         if (position_.level != 17 && !cliffEntrance() && !random(position_.level == 2 ? 52 : 51, 1))
             throw std::runtime_error("No room for the native cave entrance");
         secondaryBorders(archives, 1, 3);
+        waypoint(archives);
         if (position_.level != 17)
             generateOutdoorPaths(result_, occupied_, seed_);
         specialPresets();
@@ -422,7 +473,7 @@ std::vector<std::string> outdoorMissing(Archives &archives, const WorldCatalog &
     for (const auto &path : catalog.terrainLibraries(2, 0x44103))
         if (!archives.contains(path))
             result.insert(path);
-    for (int type = 0; type <= 3; ++type) {
+    for (int type = 0; type <= 4; ++type) {
         bool found = false;
         for (const auto &record : catalog.substitutions())
             if (record.type == type) {

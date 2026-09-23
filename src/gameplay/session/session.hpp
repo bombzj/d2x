@@ -23,6 +23,10 @@ class GameSession {
     PlayerContainers playerContainers_;
     StorageAccess storage_;
     EntityId pendingInteraction_;
+    std::optional<uint64_t> pendingPortal_;
+    std::optional<Vec> townPortalArrival_;
+    float portalReach_ = 0;
+    bool portalResources_ = false;
     std::optional<int> pendingExit_;
     std::optional<Vec> boundaryMoveTarget_;
     std::vector<Region> regions_;
@@ -40,6 +44,7 @@ class GameSession {
     void cancelInteraction();
     void completeInteraction(const WorldObject &object);
     bool canReach(const WorldObject &object) const;
+    bool travelWaypoint(const WaypointTravel &command);
     void validateStorage();
     void closeStorage();
     void spawnLoot(std::span<const LootDrop> drops, RegionId region, Vec origin);
@@ -52,6 +57,9 @@ class GameSession {
     void executeInventory(const GameCommand &command);
     void settleDeaths();
     void useItem(ItemHandle item);
+    void beginPortal(uint64_t revision);
+    void updatePortal();
+    InventoryError previewPortalScroll(ItemHandle item) const;
     void useBeltColumn(int column);
     void beginPickup(ItemHandle item);
     void updatePickup();
@@ -81,6 +89,8 @@ class GameSession {
     const WorldObject *object(EntityId id) const;
     EntityId interactionTarget() const { return pendingInteraction_; }
     EntityId pickupTarget() const { return pickup_.id; }
+    std::optional<Vec> portalPosition() const;
+    bool waypointUnlocked(RegionId region) const { return state().waypoints.contains(region); }
     InventoryError previewInventory(const GameCommand &command) const;
     std::optional<GroundLocation> dropLocation() const;
     const Map &map() const { return regions_.at(current_).map; }

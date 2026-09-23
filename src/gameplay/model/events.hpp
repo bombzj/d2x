@@ -70,8 +70,11 @@ struct LootDeferred {
     EntityId source;
     std::string reason;
 };
+struct WaypointActivated {
+    EntityId object;
+};
 using GameEvent = std::variant<SkillCast, MeleeAttack, EnemyDied, PlayerDied, RegionEntered, ObjectInteracted,
                                ItemChange, InventoryRejected, InventoryApplied, ItemPickedUp, PickupFailed,
                                ItemUsed, BeltEquipped, StorageOpened, StorageClosed, InteractionFailed,
-                               LootDeferred>;
+                               LootDeferred, WaypointActivated>;
 } // namespace d2x

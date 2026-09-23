@@ -20,6 +20,22 @@ void classify(WorldObject &object, const Table &objectRows) {
         {"wp", "Waypoint"}, {"ck", "Chicken"},      {"cw", "Cow"}};
     if (auto it = names.find(token); it != names.end())
         object.name = it->second;
+    if (object.appearance.category == "objects")
+        for (const auto &row : objectRows) {
+            auto sourceToken = row.find("Token");
+            auto operation = row.find("OperateFn");
+            if (sourceToken != row.end() && operation != row.end() && operation->second == "23" &&
+                normalize(sourceToken->second) == normalize(token)) {
+                object.name = "Waypoint";
+                object.interaction = Interaction::Travel;
+                object.reach = float(std::stoi(row.at("OperateRange")));
+                for (size_t index = 0; index < object.waypointFps.size(); ++index)
+                    object.waypointFps[index] = float(std::stoi(row.at("FrameDelta" + std::to_string(index)))) * 25.f / 256.f;
+                if (object.reach <= 0)
+                    throw std::runtime_error("Invalid original waypoint interaction range");
+                return;
+            }
+        }
     if (token == "b6") {
         object.interaction = Interaction::Stash;
         auto record = std::find_if(objectRows.begin(), objectRows.end(), [](const auto &row) {

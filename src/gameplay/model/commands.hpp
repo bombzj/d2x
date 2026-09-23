@@ -26,11 +26,18 @@ struct Interact {
 struct Travel {
     RegionId destination;
 };
+struct WaypointTravel {
+    EntityId source;
+    RegionId destination;
+};
 struct UseExit {
     int slot = 0;
 };
 struct RestartArea {};
 struct CloseStorage {};
+struct UseTownPortal {
+    uint64_t revision;
+};
 struct PickupItem {
     ItemHandle item;
 };
@@ -38,5 +45,5 @@ struct PickupItem {
 using GameCommand =
     std::variant<MoveTo, Attack, CastSkill, ToggleRun, Interact, Travel, RestartArea, MoveItem, SwapItems,
                  SplitStack, MergeStacks, PickupItem, StopMoving, EquipBelt, UseItem, UseBeltColumn,
-                 CloseStorage, TransferItem, UseExit, EquipItem, DebugKill>;
+                 CloseStorage, TransferItem, UseExit, EquipItem, DebugKill, UseTownPortal, WaypointTravel>;
 } // namespace d2x

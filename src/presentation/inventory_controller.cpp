@@ -46,7 +46,7 @@ bool SceneController::queueInventory(GameCommand command, EntityId source) {
     else if (std::holds_alternative<TransferItem>(command))
         ui.pendingMessage = "Item transferred.";
     else if (std::holds_alternative<UseItem>(command))
-        ui.pendingMessage = "Potion used.";
+        ui.pendingMessage = "Item used.";
     else {
         const auto &move = std::get<MoveItem>(command);
         ui.pendingMessage = std::holds_alternative<GroundLocation>(move.destination)

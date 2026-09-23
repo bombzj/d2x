@@ -28,6 +28,9 @@
 
 扩展入口：
 
+- Travel 为开发目录／管道自由传送；WaypointTravel 为游戏传送，GameSession 校验两端激活与源点距离。SceneView.waypointSource 区分专用菜单与 F2 目录，首次交互发 WaypointActivated 而非直接开菜单。WorldState.waypoints 保存激活时间，表现层从 Objects.FrameDelta 和原 nu/on/op 计算动画阶段。
+- 回城卷轴 UseItem 在 session_consumables 中规划端点、消耗库存并替换 TownPortalState；UseTownPortal 走近后切区，营地返回关闭。蓝门仅作为状态派生图像，不混入静态 Region.objects；快照校验端点和原营地标记。原野外传送点固定 LvlSub 片段由 outdoor 和 map_assembly 负责。
+
 - `SceneAssets::loadHeroEquipment` 按原手部物品组件与动作类别构造角色动画并缓存，空组件用 nil 明确跳过；穿脱与读档重建表现，GPU 状态不入存档。`Graphics::composite` 将 COF 顺序方向映射到 DCC 方向，缺角色武器图不替换为默认斧。怪物实际位移及面向缓存在 SceneView，不改变战斗状态编码。
 - `region.cpp` 在 DS1 对象后补原规则要求的 Navi 中立单位，位置来自血腥荒地边界预设中心；新增对象改变实体分配，因此同步规则指纹。`GameSession` 通过类型化回调向 Simulation 提供真实怪物基础行走速度，玩法仍不读取 MPQ。
 - `app/debug_pipe.*` 为 Windows 本机当前用户 ACL 的非阻塞传输，`debug_commands.*` 在主线程解析 JSON、只读查询或提交 GameCommand；不把 Win32 带入玩法。`DebugKill` 复用正常死亡链，命令入口限制活着的可见激活目标；默认不开启。脚本 `scripts/Send-D2XCommand.ps1` 为通用调用入口，详见 [调试协议](../DEBUG_PIPE.md)。

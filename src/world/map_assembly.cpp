@@ -38,6 +38,34 @@ MapData assembleMap(Archives &archives, const MapRecipe &recipe) {
     for (size_t pieceIndex = 0; pieceIndex < recipe.pieces.size(); ++pieceIndex) {
         const auto &piece = recipe.pieces[pieceIndex];
         auto source = decodeDs1(archives.read(piece.ds1));
+        if (piece.substitutionGroup >= 0) {
+            const auto group = source.substitutionGroups.at(size_t(piece.substitutionGroup));
+            if (group.width != piece.width || group.height != piece.height || group.variants != 0)
+                throw std::runtime_error("Invalid fixed substitution piece: " + piece.ds1);
+            auto crop = [&](auto &layer) {
+                using Cell = typename std::decay_t<decltype(layer)>::value_type;
+                std::vector<Cell> output(size_t(piece.width + 1) * (piece.height + 1));
+                for (int row = 0; row < group.height; ++row)
+                    for (int column = 0; column < group.width; ++column)
+                        output[size_t(row) * (piece.width + 1) + column] =
+                            layer.at(size_t(group.y + row) * source.width + group.x + column);
+                layer = std::move(output);
+            };
+            for (auto &layer : source.floors) crop(layer);
+            for (auto &layer : source.walls) crop(layer);
+            crop(source.shadows);
+            if (!source.substitutions.empty()) crop(source.substitutions);
+            std::erase_if(source.objects, [&](const auto &object) {
+                return object.x <= group.x * 5 || object.y <= group.y * 5 ||
+                       object.x >= (group.x + group.width) * 5 || object.y >= (group.y + group.height) * 5;
+            });
+            for (auto &object : source.objects) {
+                object.x -= group.x * 5;
+                object.y -= group.y * 5;
+            }
+            source.width = piece.width + 1;
+            source.height = piece.height + 1;
+        }
         if (source.width != piece.width + 1 || source.height != piece.height + 1)
             throw std::runtime_error("DS1 room dimensions disagree with LvlMaze: " + piece.ds1);
         if (!result.version) {

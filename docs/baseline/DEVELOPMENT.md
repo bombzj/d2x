@@ -2,6 +2,9 @@
 
 ## 当前交接状态
 
+- 当前传送改动在提交 b7cb503 之后，尚未再次提交。格式 v10／规则 v30：默认种子下第一幕九个传送点均可绘制；新游戏激活表为空，调试 travel 不解锁；实际交互激活营地和冰冷之原，第二次交互开菜单，已开启点往返、未开启目标拒绝、保存恢复保留激活记录均通过。截图 waypoint-inactive-v10.png、waypoint-activating-v10.png、waypoint-active-v10.png、waypoint-menu-v10.png 位于 artifacts。
+- 回城卷轴已验证野外消耗一张、回营地、营地保存读档、返回原位置关闭门、旧门拒绝；城镇使用拒绝且卷轴不消耗。此前 v9 中间现场不兼容最终 v10。传送点模板是当前生成适配；多种子、回城门重开替换、远距离／死亡门禁尚未全面实测。所有代理调试实例已正常退出，未关闭用户游戏。
+
 - Play.cmd 现默认开启 d2x-debug 并正常运行，支持 -DebugPaused、-PipeName、-NoDebugPipe；实际通过 Play.cmd 启动和默认客户端 status 验证 paused=false，随后正常退出。直接 EXE 的 --debug-pipe 仍默认暂停，新增 --debug-run 显式恢复启动模式，详见调试协议。
 - 最新任务为四项视觉／移动缺陷，当前格式 v8／规则 v27，最后提交 a2fc351，本轮未提交。Windows 构建通过；管道短路径从 (379.5,181.5) 到 (380.5,181.5)，20 步后到达，再推进 20 步坐标与朝向不变，routePoints=0。原斧盾卸下、空手组合、重新装备和保存／恢复通过，场景 `artifacts/visual-v27.d2xsave`；截图 `visual-equipped-v27.png`、`visual-unarmed-v27.png`、`visual-flavie-v27.png` 保留于 artifacts。
 - 原 NPC 查询确认 Flavie、native.navi.0.16、坐标 (20,100)、renderable=true；怪物行走读取原 Velocity，生命／伤害等仍为 MVP。洞口缺块尚未定位，未改地图／DT1 隐藏语义；完整方向、所有装备组合和怪物速度位移量仍未全面验收。所有调试实例已退出，原资源未改动。

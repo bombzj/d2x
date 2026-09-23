@@ -98,6 +98,10 @@ void SceneView::drawActors() const {
         draw.push_back({e.hp > 0 ? p.y : -100000.f, 2, i, p});
     }
     draw.push_back({screen(sim.player.pos).y, 1, 0, screen(sim.player.pos)});
+    if (auto position = session_.portalPosition()) {
+        auto point = screen(*position);
+        draw.push_back({point.y, 5, 0, point});
+    }
     std::stable_sort(draw.begin(), draw.end(), [](auto &a, auto &b) { return a.depth < b.depth; });
     for (auto item : draw) {
         if (item.type == 0) {
@@ -164,13 +168,32 @@ void SceneView::drawActors() const {
                 DrawRectangle(int(item.p.x) - 18, int(item.p.y) - 54,
                               int(36 * e.hp / monsterDefinition(e.kind).maxLife), 3, {176, 47, 25, 255});
             }
+        } else if (item.type == 5) {
+            sprite(assets_.townPortal.frame(0, int(view_.animationTime * 25)), item.p);
+            const std::string name = sim.area.region == RegionId::Encampment ? "Return Portal" : "Rogue Encampment";
+            painter_.label(name, int(item.p.x) - painter_.measure(name, 12) / 2, int(item.p.y) - 100, 12, gold);
         } else if (item.type == 4) {
             drawGroundItem(groundItems[item.index]);
         } else {
             auto &p = session_.regions()[item.region].objects[item.index];
-            auto &anim = assets_.propAnimations.at(p.key);
-            sprite(anim.frame(p.facing % std::max(1, anim.directions), int(view_.animationTime * 12)),
-                   item.p);
+            if (auto animations = assets_.waypointAnimations.find(p.key); animations != assets_.waypointAnimations.end()) {
+                auto activated = sim.waypoints.find(session_.regions()[item.region].definition.id);
+                size_t mode = 0;
+                float elapsed = 0;
+                if (activated != sim.waypoints.end()) {
+                    elapsed = std::max(0.f, sim.time - activated->second);
+                    const float duration = animations->second[1].count / p.waypointFps[1];
+                    mode = elapsed < duration ? 1 : 2;
+                    if (mode == 2) elapsed -= duration;
+                }
+                const auto &animation = animations->second[mode];
+                int frame = mode == 0 ? 0 : int(elapsed * p.waypointFps[mode]);
+                if (mode == 1) frame = std::min(frame, animation.count - 1);
+                sprite(animation.frame(p.facing % std::max(1, animation.directions), frame), item.p);
+            } else {
+                auto &anim = assets_.propAnimations.at(p.key);
+                sprite(anim.frame(p.facing % std::max(1, anim.directions), int(view_.animationTime * 12)), item.p);
+            }
             if (!p.name.empty() && p.name != "Chicken" && p.name != "Cow" && p.name != "Rogue Scout")
                 painter_.label(p.name, int(item.p.x) - painter_.measure(p.name, 10) / 2, int(item.p.y) - 80,
                                10, gold);

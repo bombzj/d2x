@@ -96,6 +96,9 @@ InventoryError GameSession::previewInventory(const GameCommand &command) const {
                     return InventoryError::InvalidLocation;
                 return inventory_.preview(intent, playerContainers_, inventoryAccess(), equipmentActor());
             } else if constexpr (std::is_same_v<T, UseItem>) {
+                const auto *source = inventory_.item(intent.item.id);
+                if (source && source->definition == "tsc")
+                    return previewPortalScroll(intent.item);
                 auto error = inventory_.previewDrink(intent.item, inventoryAccess());
                 if (error != InventoryError::None)
                     return error;

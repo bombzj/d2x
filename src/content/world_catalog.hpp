@@ -51,6 +51,7 @@ struct MapPiece {
     std::vector<std::string> tileLibraries;
     bool fillBlanks = false;
     bool populate = true;
+    int substitutionGroup = -1;
 };
 struct MapRecipe {
     int preset = 0, variant = 0, levelType = 0;

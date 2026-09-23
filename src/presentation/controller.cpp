@@ -5,6 +5,12 @@ namespace d2x {
 void SceneController::click(Vec mouse) {
     auto &ui = view_.ui();
     ui.dialogue.clear();
+    if (auto portal = session_.portalPosition(); portal &&
+        (view_.screen(*portal) - Vec{0, 40} - mouse).length() < 45) {
+        session_.submit(UseTownPortal{session_.state().portal.revision});
+        pickupClick_ = true;
+        return;
+    }
     if (const auto *exit = view_.exitAt(mouse)) {
         session_.submit(UseExit{exit->slot});
         pickupClick_ = true;
@@ -71,6 +77,8 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
     if (input.automap)
         ui.automap = !ui.automap;
     if (input.travel) {
+        ui.waypointSource = {};
+        ui.travelPage = 0;
         ui.skillPicker.reset();
         session_.submit(CloseStorage{});
         ui.inventory.storage = {};
@@ -143,7 +151,7 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
         return true;
     }
     if (ui.travelMenu && !ui.help) {
-        const auto &entries = session_.worldEntries();
+        const auto entries = view_.travelEntries();
         int pages = (int(entries.size()) + worldPageSize - 1) / worldPageSize;
         int delta = input.pageDelta;
         if (input.insideViewport && input.leftPressed) {
@@ -163,7 +171,10 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
                                  true);
                     return true;
                 }
-                session_.submit(Travel{*entry.destination});
+                if (ui.waypointSource)
+                    session_.submit(WaypointTravel{ui.waypointSource, *entry.destination});
+                else
+                    session_.submit(Travel{*entry.destination});
                 ui.travelMenu = false;
                 // Opening a paused travel panel does not trap its queued transition.
                 ui.pause = false;

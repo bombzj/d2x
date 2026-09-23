@@ -20,6 +20,7 @@ struct WorldObject {
     float reach = 4;
     bool flame = false;
     int facing = 0;
+    std::array<float, 3> waypointFps{};
 };
 struct LevelExit {
     int slot = 0, warp = 0;

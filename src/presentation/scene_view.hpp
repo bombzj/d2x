@@ -14,6 +14,7 @@ struct ViewState {
     float clickAge = 10, zoom = 1;
     bool help = false, automap = false, debug = false, pause = false, travelMenu = false;
     bool showLoot = false;
+    EntityId waypointSource;
     int travelPage = 0;
     float animationTime = 0, heroTime = 0, stepClock = 0;
     std::string heroMode = "nu", dialogue;
@@ -80,6 +81,7 @@ class SceneView {
     void collectMapVariants(Archives &archives) {
         assets_.collectMapVariants(archives, session_.worldContent(), session_.monsterContent());
     }
+    std::vector<WorldEntry> travelEntries() const;
 };
 std::string playerAnimationMode(const PlayerState &player);
 } // namespace d2x

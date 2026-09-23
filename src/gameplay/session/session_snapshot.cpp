@@ -45,7 +45,7 @@ SessionSnapshot GameSession::snapshot() const {
     result.containers = playerContainers_;
     result.loot = loot_.snapshot();
     // Automatic walking to a transient pickup/interaction does not outlive that request.
-    if (pickup_.id || pendingInteraction_ || pendingExit_) {
+    if (pickup_.id || pendingInteraction_ || pendingExit_ || pendingPortal_) {
         result.world.player.route.clear();
         result.world.player.attackTarget = {};
         result.world.player.moving = false;
@@ -80,6 +80,23 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
         for (const auto &object : region.objects)
             registerId(object.id);
     const auto &grid = regions_[current].map.grid;
+    const auto &portal = s.world.portal;
+    if (portal.revision) {
+        auto field = std::find_if(regions_.begin(), regions_.end(),
+                                  [&](const auto &region) { return region.definition.id == portal.field; });
+        auto town = std::find_if(regions_.begin(), regions_.end(),
+                                 [](const auto &region) { return region.definition.id == RegionId::Encampment; });
+        require(field != regions_.end() && town != regions_.end() && !field->definition.safe &&
+                    int(portal.field) >= 2 && int(portal.field) <= 39, "portal region");
+        position(portal.fieldPosition, field->map.grid, true);
+        position(portal.townPosition, town->map.grid, true);
+        require(townPortalArrival_ && portal.townPosition.x == townPortalArrival_->x &&
+                    portal.townPosition.y == townPortalArrival_->y && portalResources_ && portalReach_ > 0,
+                "portal town marker or resources");
+    } else
+        require(!portal.active && portal.field == RegionId::Encampment &&
+                    portal.fieldPosition.x == 0 && portal.fieldPosition.y == 0 &&
+                    portal.townPosition.x == 0 && portal.townPosition.y == 0, "empty portal state");
     position(player.pos, grid, player.leapTime <= 0);
     position(player.previous, grid);
     scalar(player.look.x, -1.001f, 1.001f);
@@ -116,6 +133,16 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
     restorations(player.healing);
     restorations(player.manaRestoration);
     scalar(s.world.time);
+    require(s.world.waypoints.size() <= regions_.size(), "waypoint count");
+    for (const auto &[id, activated] : s.world.waypoints) {
+        scalar(activated, 0, s.world.time);
+        auto destination = std::find_if(regions_.begin(), regions_.end(),
+                                         [&](const auto &region) { return region.definition.id == id; });
+        require(destination != regions_.end() &&
+                    std::any_of(destination->objects.begin(), destination->objects.end(), [](const auto &object) {
+                        return object.name == "Waypoint" && object.interaction == Interaction::Travel;
+                    }), "activated waypoint region");
+    }
     require(s.world.message.size() <= 4096, "message too large");
     std::set<EntityId> deadEnemies;
     auto validateArea = [&](const AreaState &area, size_t index, bool active) {
@@ -266,6 +293,7 @@ void GameSession::restore(SessionSnapshot s) {
     pending_.clear();
     pickup_ = {};
     pendingInteraction_ = {};
+    pendingPortal_.reset();
     pendingExit_.reset();
     boundaryMoveTarget_.reset();
     storage_ = {};

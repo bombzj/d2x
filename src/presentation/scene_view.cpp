@@ -38,6 +38,7 @@ void SceneView::notice(std::string text, bool error) {
     view_.noticeTime = 4;
 }
 void SceneView::sessionRestored() {
+    view_.waypointSource = {};
     monsterPositions_.clear();
     monsterLooks_.clear();
     movingMonsters_.clear();
@@ -85,6 +86,7 @@ void SceneView::advance(float dt) {
                 } else if constexpr (std::is_same_v<T, EnemyDied>)
                     assets_.audio.play("impact");
                 else if constexpr (std::is_same_v<T, RegionEntered>) {
+                    view_.waypointSource = {};
                     view_.skillPicker.reset();
                     view_.inventory.cancelGesture();
                     view_.inventory.pending = {};
@@ -120,7 +122,8 @@ void SceneView::advance(float dt) {
                 } else if constexpr (std::is_same_v<T, LootDeferred>) {
                     notice("Loot deferred: " + value.reason, true);
                 } else if constexpr (std::is_same_v<T, ItemUsed>) {
-                    assets_.audio.play("drink");
+                    if (value.definition != "tsc")
+                        assets_.audio.play("drink");
                     const auto *def = session_.inventory().catalog().find(value.definition);
                     notice("Used: " + (def ? def->name : value.definition), false);
                 } else if constexpr (std::is_same_v<T, BeltEquipped>) {
@@ -158,10 +161,14 @@ void SceneView::advance(float dt) {
                             ground && ground->region == session_.region().definition.id &&
                             (value.kind == ItemChangeKind::Created || value.kind == ItemChangeKind::Moved))
                             landingAge_[value.item] = 0;
+                } else if constexpr (std::is_same_v<T, WaypointActivated>) {
+                    notice("Waypoint activated.", false);
                 } else if constexpr (std::is_same_v<T, ObjectInteracted>) {
-                    if (value.interaction == Interaction::Travel)
+                    if (value.interaction == Interaction::Travel) {
+                        view_.waypointSource = value.name == "Waypoint" ? value.object : EntityId{};
+                        view_.travelPage = 0;
                         view_.travelMenu = true;
-                    else if (value.interaction == Interaction::Heal)
+                    } else if (value.interaction == Interaction::Heal)
                         view_.dialogue = "Akara: Your wounds are healed. Go in peace.";
                     else if (value.interaction == Interaction::Stash)
                         view_.dialogue = "Private Stash";
@@ -197,5 +204,21 @@ void SceneView::advance(float dt) {
         assets_.audio.play("step");
         view_.stepClock = player.running && player.stamina > 0 ? .28f : .42f;
     }
+}
+std::vector<WorldEntry> SceneView::travelEntries() const {
+    if (!view_.waypointSource)
+        return session_.worldEntries();
+    std::vector<WorldEntry> entries;
+    for (const auto &region : session_.regions()) {
+        if (std::none_of(region.objects.begin(), region.objects.end(), [](const auto &object) {
+                return object.name == "Waypoint" && object.interaction == Interaction::Travel;
+            }))
+            continue;
+        const bool unlocked = session_.waypointUnlocked(region.definition.id);
+        entries.push_back({int(region.definition.id), region.definition.name,
+                            unlocked ? "Activated" : "Not activated", {},
+                            unlocked ? std::optional<RegionId>{region.definition.id} : std::nullopt});
+    }
+    return entries;
 }
 } // namespace d2x

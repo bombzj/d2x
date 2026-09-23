@@ -33,17 +33,63 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
             result["region"] = int(state.area.region);
             result["kills"] = state.area.kills;
             result["paused"] = paused;
+            result["travelMenu"] = view.ui().travelMenu;
             auto snapshot = session.snapshot();
             result["lootRandom"] = snapshot.loot.randomState;
             result["settled"] = snapshot.loot.settled.size();
             result["look"] = {state.player.look.x, state.player.look.y};
             result["routePoints"] = state.player.route.size();
+            result["waypoints"] = Json::array();
+            for (const auto &[region, time] : state.waypoints)
+                result["waypoints"].push_back({{"level", int(region)}, {"activatedAt", time}});
+            result["portal"] = {{"active", state.portal.active}, {"revision", state.portal.revision},
+                {"field", int(state.portal.field)}, {"fieldPosition", {state.portal.fieldPosition.x, state.portal.fieldPosition.y}},
+                {"townPosition", {state.portal.townPosition.x, state.portal.townPosition.y}}};
+        } else if (command == "waypoint") {
+            session.submit(WaypointTravel{entity(), RegionId(request.at("level").get<int>())});
+            step();
+            for (const auto &event : session.events())
+                if (auto rejected = std::get_if<InteractionFailed>(&event))
+                    throw std::runtime_error(rejected->reason);
+            result["region"] = int(session.state().area.region);
+        } else if (command == "travel") {
+            int level = request.at("level").get<int>();
+            bool available = false;
+            for (const auto &entry : session.worldEntries())
+                available |= entry.destination && int(*entry.destination) == level;
+            if (!available || session.state().player.dead)
+                throw std::runtime_error("Unavailable map catalog destination");
+            session.submit(Travel{RegionId(level)}); step();
+        } else if (command == "use") {
+            const auto *item = session.inventory().item(entity());
+            if (!item) throw std::runtime_error("Unknown item");
+            GameCommand intent = UseItem{item->handle()};
+            if (auto error = session.previewInventory(intent); error != InventoryError::None)
+                throw std::runtime_error(inventoryErrorText(error));
+            session.submit(intent); step();
+        } else if (command == "portal") {
+            if (!session.portalPosition() || session.state().player.dead)
+                throw std::runtime_error("No usable portal in this region");
+            auto revision = request.at("revision").get<uint64_t>();
+            if (revision != session.state().portal.revision)
+                throw std::runtime_error("Stale portal revision");
+            session.submit(UseTownPortal{revision}); step();
+        } else if (command == "interact") {
+            auto id = entity();
+            if (!session.object(id)) throw std::runtime_error("Unknown object");
+            session.submit(Interact{id}); step();
         } else if (command == "objects") {
             result["objects"] = Json::array();
-            for (const auto &object : session.region().objects)
-                result["objects"].push_back({{"id", object.id.value}, {"name", object.name},
+            for (const auto &object : session.region().objects) {
+                Json entry = {{"id", object.id.value}, {"name", object.name},
                     {"key", object.contentKey}, {"x", object.pos.x}, {"y", object.pos.y},
-                    {"renderable", view.visible(object)}});
+                    {"renderable", view.visible(object)}};
+                if (object.name == "Waypoint") {
+                    entry["activated"] = session.waypointUnlocked(session.state().area.region);
+                    entry["fps"] = object.waypointFps;
+                }
+                result["objects"].push_back(std::move(entry));
+            }
             result["pieces"] = Json::array();
             for (const auto &piece : session.region().recipe.pieces)
                 if (piece.preset <= 7 || piece.preset == 51 || piece.preset == 52)

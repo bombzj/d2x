@@ -32,9 +32,10 @@ void GameSession::validateStorage() {
         closeStorage();
 }
 void GameSession::cancelInteraction() {
-    if (pendingInteraction_)
+    if (pendingInteraction_ || pendingPortal_)
         simulation_.stopWalking();
     pendingInteraction_ = {};
+    pendingPortal_.reset();
 }
 void GameSession::interact(EntityId id) {
     if (pendingInteraction_ == id)
@@ -71,6 +72,12 @@ void GameSession::updateInteraction() {
     }
 }
 void GameSession::completeInteraction(const WorldObject &object) {
+    if (object.name == "Waypoint" && object.interaction == Interaction::Travel) {
+        if (simulation_.state_.waypoints.emplace(region().definition.id, state().time).second) {
+            simulation_.emit(WaypointActivated{object.id});
+            return;
+        }
+    }
     switch (object.interaction) {
     case Interaction::Stash:
         storage_ = {object.id, playerContainers_.stash};
@@ -86,5 +93,26 @@ void GameSession::completeInteraction(const WorldObject &object) {
     case Interaction::None:
         break;
     }
+}
+bool GameSession::travelWaypoint(const WaypointTravel &command) {
+    const auto *source = object(command.source);
+    if (!source || source->name != "Waypoint" || source->interaction != Interaction::Travel ||
+        !canReach(*source) || !waypointUnlocked(region().definition.id) ||
+        !waypointUnlocked(command.destination) || state().player.castTime > 0 ||
+        state().player.meleeTime > 0 || state().player.leapTime > 0 || state().player.spinTime > 0) {
+        simulation_.emit(InteractionFailed{command.source, "Waypoint unavailable or not activated."});
+        return false;
+    }
+    for (const auto &destination : regions_)
+        if (destination.definition.id == command.destination)
+            for (const auto &target : destination.objects)
+                if (target.name == "Waypoint" && target.interaction == Interaction::Travel) {
+                    if (command.destination == region().definition.id)
+                        return false;
+                    enter(command.destination, target.accessPoint);
+                    return true;
+                }
+    simulation_.emit(InteractionFailed{command.source, "Destination waypoint is missing."});
+    return false;
 }
 } // namespace d2x

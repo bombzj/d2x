@@ -46,11 +46,37 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
     auto plan = planWorld(archives, worldContent_, worldSelection);
     regions_ = loadRegions(archives, ids_, plan.regions, monsterContent_);
     linkLevelExits(regions_, worldContent_);
+    for (const auto &region : regions_)
+        if (region.definition.id == RegionId::Encampment)
+            for (const auto &layer : region.map.data.walls)
+                for (size_t index = 0; index < layer.size(); ++index) {
+                    const auto &cell = layer[index];
+                    if (cell.occupied() && (cell.orientation == 10 || cell.orientation == 11) &&
+                        ((cell.value >> 20) & 63) == 33) {
+                        Vec point{float(index % region.map.data.width * 5 + 3),
+                                  float(index / region.map.data.width * 5 + 3)};
+                        auto arrival = region.map.grid.nearest(point);
+                        if (region.map.grid.walkable(arrival) && (arrival - point).length() <= 5)
+                            townPortalArrival_ = arrival;
+                    }
+                }
+    DataTable portalObjects(archives.read("data/global/excel/objects.txt"));
+    for (size_t row = 0; row < portalObjects.rows().size(); ++row)
+        if (portalObjects.number(row, "Id").value_or(-1) == 59 &&
+            portalObjects.number(row, "OperateFn").value_or(0) == 15)
+            portalReach_ = float(portalObjects.number(row, "OperateRange").value_or(0));
+    portalResources_ = true;
+    for (auto file : {"data/global/objects/tp/cof/tpophth.cof",
+                      "data/global/objects/tp/hd/tphdlitophth.dcc",
+                      "data/global/objects/tp/tr/tptrlitophth.dcc"}) {
+        if (archives.contains(file)) archives.read(file);
+        else portalResources_ = false;
+    }
     worldEntries_ = std::move(plan.entries);
     Fingerprint fingerprint;
     fingerprint.add(content_.profile);
     // Bump this rules revision when state interpretation or compiled rules change.
-    fingerprint.add("d2x-session-rules-v27-movement-native-npc");
+    fingerprint.add("d2x-session-rules-v30-waypoint-activation");
     auto members = archives.used;
     for (const auto &member : members) {
         fingerprint.add(member);
@@ -125,9 +151,21 @@ void GameSession::tick(float dt, Vec keyboard) {
                 using T = std::decay_t<decltype(intent)>;
                 if constexpr (std::is_same_v<T, UseExit>) {
                     beginExit(intent.slot);
+                } else if constexpr (std::is_same_v<T, UseTownPortal>) {
+                    beginPortal(intent.revision);
+                } else if constexpr (std::is_same_v<T, WaypointTravel>) {
+                    transitioned = travelWaypoint(intent);
                 } else if constexpr (std::is_same_v<T, Travel>) {
                     if (!state().player.dead) {
-                        enter(intent.destination);
+                        std::optional<Vec> arrival;
+                        for (const auto &destination : regions_)
+                            if (destination.definition.id == intent.destination)
+                                for (const auto &object : destination.objects)
+                                    if (object.name == "Waypoint" && object.interaction == Interaction::Travel) {
+                                        arrival = object.accessPoint;
+                                        break;
+                                    }
+                        enter(intent.destination, arrival);
                         transitioned = true;
                     }
                 } else if constexpr (std::is_same_v<T, MoveTo>) {
@@ -189,6 +227,7 @@ void GameSession::tick(float dt, Vec keyboard) {
     settleDeaths();
     updatePickup();
     updateInteraction();
+    updatePortal();
     updateExit();
     validateStorage();
 }

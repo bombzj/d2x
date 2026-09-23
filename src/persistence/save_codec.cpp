@@ -20,6 +20,7 @@ void fields(Codec &, Missile &);
 void fields(Codec &, Effect &);
 void fields(Codec &, AreaState &);
 void fields(Codec &, WorldState &);
+void fields(Codec &, TownPortalState &);
 void fields(Codec &, Cell &);
 void fields(Codec &, ContainerSpec &);
 void fields(Codec &, ContainerState &);
@@ -140,7 +141,7 @@ class Codec {
         }
     }
 };
-// Explicit schema, never compiler struct layout. Field order is save version 8.
+// Explicit schema, never compiler struct layout. Field order is save version 10.
 void fields(Codec &a, EntityId &v) {
     a(v.value);
 }
@@ -178,7 +179,10 @@ void fields(Codec &a, AreaState &v) {
     a(v.region, v.enemies, v.pendingSpawns, v.missiles, v.effects, v.kills, v.initialized);
 }
 void fields(Codec &a, WorldState &v) {
-    a(v.mapSeed, v.population, v.player, v.area, v.time, v.message);
+    a(v.mapSeed, v.population, v.player, v.area, v.time, v.message, v.portal, v.waypoints);
+}
+void fields(Codec &a, TownPortalState &v) {
+    a(v.active, v.revision, v.field, v.fieldPosition, v.townPosition);
 }
 void fields(Codec &a, Cell &v) {
     a(v.x, v.y);
@@ -236,7 +240,7 @@ Bytes encodeSave(SessionSnapshot snapshot) {
     Codec body;
     body(snapshot);
     auto bytes = body.take();
-    uint32_t version = 8, size = uint32_t(bytes.size()), crc = checksum(bytes);
+    uint32_t version = 10, size = uint32_t(bytes.size()), crc = checksum(bytes);
     Codec header;
     header(version, size, crc);
     auto headerBytes = header.take();
@@ -255,8 +259,8 @@ SessionSnapshot decodeSave(std::span<const uint8_t> bytes) {
     Codec header(bytes.subspan(sizeof(magic), 12));
     uint32_t version = 0, size = 0, crc = 0;
     header(version, size, crc);
-    if (version != 8)
-        throw std::runtime_error("Unsupported D2X save version; gold wallet requires a new version-8 game");
+    if (version != 10)
+        throw std::runtime_error("Unsupported D2X save version; waypoint activation requires a new version-10 game");
     auto payload = bytes.subspan(headerSize);
     if (size != payload.size() || crc != checksum(payload))
         throw std::runtime_error("Save checksum or length mismatch");

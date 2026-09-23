@@ -3,6 +3,7 @@
 #include "gameplay/model/definitions.hpp"
 #include "gameplay/monsters/monster_spawn.hpp"
 #include <deque>
+#include <map>
 
 namespace d2x {
 struct Restoration {
@@ -57,6 +58,12 @@ struct AreaState {
     bool initialized = false;
 };
 // Player combat state survives travel. GameSession separately owns inventory/container state.
+struct TownPortalState {
+    bool active = false;
+    uint64_t revision = 0;
+    RegionId field = RegionId::Encampment;
+    Vec fieldPosition, townPosition;
+};
 struct WorldState {
     uint32_t mapSeed = 210;
     PopulationSettings population;
@@ -64,5 +71,7 @@ struct WorldState {
     AreaState area;
     float time = 0;
     std::string message;
+    TownPortalState portal;
+    std::map<RegionId, float> waypoints;
 };
 } // namespace d2x

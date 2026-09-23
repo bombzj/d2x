@@ -133,7 +133,7 @@ int main(int argc, char **argv) {
         } else if (command == "save-info" && argc == 4) {
             auto snapshot = d2x::loadSave(argv[3]);
             auto data = d2x::loadClassicData(a);
-            std::cout << "Save format=8 region=" << int(snapshot.world.area.region)
+            std::cout << "Save format=10 region=" << int(snapshot.world.area.region)
                       << " gold=" << snapshot.world.player.gold
                       << " time=" << snapshot.world.time << " life=" << snapshot.world.player.hp
                       << " combatRandom=" << snapshot.world.player.combatRandom

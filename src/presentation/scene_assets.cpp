@@ -46,6 +46,9 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
         }
     }
     fireball = graphics_.single("data/global/missiles/fireball.dcc");
+    townPortal = graphics_.composite("objects", "tp", "op", "hth");
+    if (townPortal.frames.empty() || !townPortal.completeComposite)
+        throw std::runtime_error("Original town portal animation is missing or incomplete");
     fireburst = graphics_.single("data/global/missiles/shamanfireballexplodefinal.dcc");
     panel = uiGraphics_.single("data/global/ui/panel/800ctrlpnl7.dc6");
     cursor = uiGraphics_.single("data/global/ui/cursor/gaunt.dc6");
@@ -195,6 +198,20 @@ void SceneAssets::loadProps(const Region &region) {
         std::array<const char *, 16> equipment;
         for (size_t i = 0; i < equipment.size(); ++i)
             equipment[i] = appearance.equipment[i].c_str();
+        if (object.name == "Waypoint" && object.interaction == Interaction::Travel) {
+            std::array<GpuAnimation, 3> animations;
+            const char *modes[] = {"nu", "on", "op"};
+            for (size_t index = 0; index < animations.size(); ++index) {
+                animations[index] = graphics_.composite(appearance.category, appearance.token, modes[index],
+                                                        appearance.weapon, &equipment);
+                if (animations[index].frames.empty() || !animations[index].completeComposite ||
+                    object.waypointFps[index] <= 0)
+                    throw std::runtime_error("Original waypoint animation unavailable: " + appearance.token + modes[index]);
+            }
+            propAnimations.emplace(object.key, animations[0]);
+            waypointAnimations.emplace(object.key, std::move(animations));
+            continue;
+        }
         propAnimations.emplace(object.key,
                                graphics_.composite(appearance.category, appearance.token, appearance.mode,
                                                    appearance.weapon, &equipment));

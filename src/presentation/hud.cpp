@@ -117,9 +117,10 @@ void SceneView::draw(Vec mouse) const {
     if (view_.travelMenu) {
         DrawRectangle(0, 0, W, H, {0, 0, 0, 175});
         frame({W / 2.f - 345, 55, 690, 545});
-        painter_.centered("ACT I MAP CATALOG", 76, 24, gold);
-        painter_.centered("Developer catalog / Outdoors, caves and Tower connect in the world", 112, 14);
-        const auto &entries = session_.worldEntries();
+        painter_.centered(view_.waypointSource ? "ACT I WAYPOINTS" : "ACT I MAP CATALOG", 76, 24, gold);
+        if (!view_.waypointSource)
+            painter_.centered("Developer catalog / Outdoors, caves and Tower connect in the world", 112, 14);
+        const auto entries = travelEntries();
         int pages = (int(entries.size()) + worldPageSize - 1) / worldPageSize;
         for (int i = 0; i < worldPageSize && view_.travelPage * worldPageSize + i < int(entries.size());
              i++) {
