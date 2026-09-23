@@ -55,7 +55,9 @@ void Archives::mountDirectory(const std::filesystem::path &p) {
             paths.push_back(e.path());
     auto priority = [](const auto &p) {
         auto s = normalize(p.filename().string());
-        return s == "patch_d2.mpq" ? 3 : s == "d2exp.mpq" ? 2 : s == "d2x-mvp.mpq" ? 1 : 0;
+        // Historical compact packs must not shadow the original game archives.
+        return s == "patch_d2.mpq" ? 3 : s == "d2exp.mpq" ? 2
+               : s == "d2x-mvp.mpq" || s == "d2x-act1.mpq" ? -1 : 0;
     };
     std::sort(paths.begin(), paths.end(), [&](auto &a, auto &b) {
         return priority(a) == priority(b) ? a < b : priority(a) < priority(b);

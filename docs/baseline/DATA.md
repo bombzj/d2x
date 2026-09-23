@@ -38,7 +38,7 @@
 
 ## 物品与存档
 
-- 当前格式 v15，规则 `d2x-session-rules-v39-experience-town-spawn`，拒绝 v1–v14，亦拒绝不同内容／规则指纹。物品保存品质原行、等级要求、展示属性值与词缀行，掉落状态保存限量暗金记录。WorldState 包含 TownPortalState（active、revision、field、双端点）及 waypoints（RegionId 到激活时间）。新游戏解锁表为空；激活时间须在当前时间内且目的地区域含真实传送点；蓝门端点须可行走且营地端匹配原标记。临时走近门请求不保存，相关自动路径在快照中清除。
+- 当前格式 v15，规则 `d2x-session-rules-v40-act1-outdoor-shrines`，拒绝 v1–v14，亦拒绝不同内容／规则指纹。物品保存品质原行、等级要求、展示属性值与词缀行，掉落状态保存限量暗金记录。WorldState 包含 TownPortalState（active、revision、field、双端点）及 waypoints（RegionId 到激活时间）。新游戏解锁表为空；激活时间须在当前时间内且目的地区域含真实传送点；蓝门端点须可行走且营地端匹配原标记。临时走近门请求不保存，相关自动路径在快照中清除。
 - 调试 Travel 不修改解锁记录；普通 WaypointTravel 重新校验源点与目标，不相信 UI 已禁用按钮。传送点 NU／OP（Operating）／ON（Opened）的帧数、速率、循环和起帧来自 Objects.FrameCnt／FrameDelta／CycleAnim／Start；当前难度与角色都固定在同一 SessionSnapshot 中，不提供跨难度迁移。
 - 野外传送点固定分组通过 MapPiece.substitutionGroup 裁剪原图层和分组内部原对象，保持每格 DT1 资源作用域；非完整通用 LvlSub。回城蓝门使用原 TP 资源，不写入静态地图对象列表，不分配临时地图对象 ID。
 

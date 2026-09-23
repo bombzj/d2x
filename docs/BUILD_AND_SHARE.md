@@ -49,7 +49,7 @@ d2x/
   assets/mpq2/                 # 编译不需要；运行本轮地图使用完整源 MPQ
 ```
 
-`CMakeLists.txt`、完整 `cmake` 和 `src` 是编译输入。`LICENSE`、`docs/THIRD_PARTY.md`、`docs/licenses` 保留源码的许可及来源。MPQ 不参与编译；EXE 默认直接读取完整 `assets/mpq2`，该目录必须随运行环境提供。已有精简包是历史产物。
+`CMakeLists.txt`、完整 `cmake` 和 `src` 是编译输入。`LICENSE`、`docs/THIRD_PARTY.md`、`docs/licenses` 保留源码的许可及来源。MPQ 不参与编译；EXE 默认直接读取完整 `assets/mpq2`，该目录必须随运行环境提供。旧精简包只作历史保留，今后不再制作或分发精简 MPQ。
 
 协作交接另附 `README.md`、`BASELINE.md`、`AGENTS.md` 和 `docs/baseline`。Windows 可附带 `Play.cmd` 和 `scripts`，方便构建、启动；Linux 按上述命令执行。
 
@@ -57,8 +57,8 @@ d2x/
 
 如果编译机器不能访问 GitHub，再增加当前固定版本的 `external/raylib` 和 `external/stormlib` 源码目录，保留其构建文件、源码、附带库和许可；可以不含其中的 `.git` 与构建缓存。CMake 会优先使用这两个目录。系统编译器、CMake 和上述开发库仍需提前安装。
 
-项目提供的精简分发包是源码、说明、Windows 便捷脚本与现有 MPQ，不含编译产物或测试脚本。MPQ 素材的权利说明见 [第三方说明](THIRD_PARTY.md)，与 GPL-3.0 源码许可分别保留。
+历史源码压缩包仅用于旧阶段交接。当前运行包包含 Windows EXE 和原始 MPQ 目录；MPQ 素材的权利说明见 [第三方说明](THIRD_PARTY.md)，与 GPL-3.0 源码许可分别保留。
 
-本次按用户要求只提交源码和文档，不生成新分发包或精简 MPQ。`dist/d2x-source-classic-hud-20260922.zip` 及 13.19 MiB／397 个资源的 `d2x-act1.mpq` 均为历史 HUD 产物，不代表本次基线。完整源文件清单见 [MPQ 资源](MPQ_RESOURCES.md)。当前存档格式为版本 12，旧档不迁移；存档不属于编译输入。
+本次运行包为 `dist/d2x-act1-runtime-20260923.zip`：根目录 `d2x.exe`，`assets/mpq2/` 内为 `d2char.mpq`、`d2data.mpq`、`d2exp.mpq`、`d2sfx.mpq`、`Patch_D2.mpq`，另含 `README.txt` 和 `LICENSE`。ZIP 中没有精简 MPQ；解压后直接运行 EXE 即读取旁边的 `assets/mpq2`。完整原文件清单见 [MPQ 资源](MPQ_RESOURCES.md)。当前存档格式为 v15、规则 v40，旧档不迁移；存档不属于编译输入。
 
 依赖说明依据 [raylib 官方 Linux 构建文档](https://github.com/raysan5/raylib/wiki/Working-on-GNU-Linux)、[StormLib 官方源码](https://github.com/ladislav-zezula/StormLib) 及本项目固定版本的 CMake 配置。

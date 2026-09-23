@@ -4,6 +4,7 @@
 #include "outdoor_cliffs.hpp"
 #include "outdoor_paths.hpp"
 #include "outdoor_river.hpp"
+#include "outdoor_shrines.hpp"
 #include "outdoor_substitution.hpp"
 #include <algorithm>
 #include <numeric>
@@ -396,6 +397,7 @@ class Wilderness {
             throw std::runtime_error("No room for the native cave entrance");
         secondaryBorders(archives, 1, 3);
         waypoint(archives);
+        placeAct1OutdoorShrines(archives, catalog_, catalog_.level(position_.level), occupied_, result_, seed_);
         if (position_.level != 17)
             generateOutdoorPaths(result_, occupied_, seed_);
         specialPresets();
@@ -473,7 +475,7 @@ std::vector<std::string> outdoorMissing(Archives &archives, const WorldCatalog &
     for (const auto &path : catalog.terrainLibraries(2, 0x44103))
         if (!archives.contains(path))
             result.insert(path);
-    for (int type = 0; type <= 4; ++type) {
+    for (int type = 0; type <= 5; ++type) {
         bool found = false;
         for (const auto &record : catalog.substitutions())
             if (record.type == type) {
@@ -482,7 +484,13 @@ std::vector<std::string> outdoorMissing(Archives &archives, const WorldCatalog &
                     result.insert(record.file);
             }
         if (!found)
-            result.insert("LvlSub border type " + std::to_string(type));
+            result.insert("LvlSub type " + std::to_string(type));
+    }
+    for (int id = 2; id <= 7; ++id) {
+        const int type = catalog.level(id).shrineSubstitution;
+        if (type < 0 || std::count_if(catalog.substitutions().begin(), catalog.substitutions().end(),
+                                      [&](const auto &record) { return record.type == type; }) < 4)
+            result.insert("Levels.SubShrine / LvlSub rows for level " + std::to_string(id));
     }
     return {result.begin(), result.end()};
 }

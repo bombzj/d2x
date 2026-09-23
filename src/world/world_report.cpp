@@ -87,8 +87,8 @@ void writeWorldReport(std::ostream &out, Archives &archives, const WorldCatalog 
         << "Levels 1..37 form the implemented Act I exploration route when all resources are present.\n"
         << "Cow terrain uses four secondary border substitutions. Main-route terrain has three secondary "
            "border passes, river/bridge presets and native dirt floor tiles with adapted path routing.\n"
-          << "Cliff contours, cliff entrances and town transition presets are implemented; full LvlSub "
-              "themes, native path routing and quest portals remain incomplete. Terrain availability is "
+          << "Cliff contours, cliff entrances, town transitions and Act I shrine substitutions are implemented; "
+              "general LvlSub themes, native path routing and quest portals remain incomplete. Terrain availability is "
               "not full Act I feature parity.\n"
         << "Missing " << allMissing.size()
         << " known files. Maze/outdoor lists cover LevelType DT1s; exact DS1 demand depends on unimplemented "

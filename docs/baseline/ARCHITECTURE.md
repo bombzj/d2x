@@ -54,6 +54,7 @@
 - 新地图家族：新增 `world` 生成器，返回 `MapRecipe`，接 `region_catalog`；不修改 DS1 解码器来硬塞布局。
 - `world/cow_level.*`：独立牛场轮廓、四类二级边界、专属预设及隔离资源清单；不构造任务传送门。
 - `world/outdoor_substitution.*`：消费原 DS1 分组，按 BordType 扫描宏格，区分空地、外部空白与受保护连接；目前限 GridSize=1 的二级边界，不等于通用 LvlSub 主题执行器。
+- `world/outdoor_shrines.*`：根据 `Levels.SubShrine` 指向的原 LvlSub 记录，把类型 5 固定分组及对象放到第一幕野外可用宏格；不持有 MPQ 或玩法状态。
 - `world/outdoor_river.*`：原河岸变体表与桥位选择；`outdoor_layout` 提供已核实方向组合对应的河流标志。`world/outdoor_paths.*`：宏格路径适配、道路占用、原栅格化及地板转换表；不读取设备或修改玩法状态。
 - `world/outdoor_cliffs.*`：将接触区间拆成边界段，选择无连接的悬崖段；`outdoor` 负责悬崖原预设及洞口扫描、营地固定槽位过渡，随后执行受保护的二级边界替换。
 - `d2x_assets <MPQ> substitutions <Type>` 查询原模板分组及匹配／替换宏格编码；打包从牛场和野外资源清单收集模板及全变体，纯河水模板不作为可行走独立区域初始化。

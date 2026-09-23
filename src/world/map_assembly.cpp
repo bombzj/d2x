@@ -56,7 +56,7 @@ MapData assembleMap(Archives &archives, const MapRecipe &recipe) {
             crop(source.shadows);
             if (!source.substitutions.empty()) crop(source.substitutions);
             std::erase_if(source.objects, [&](const auto &object) {
-                return object.x <= group.x * 5 || object.y <= group.y * 5 ||
+                return object.x < group.x * 5 || object.y < group.y * 5 ||
                        object.x >= (group.x + group.width) * 5 || object.y >= (group.y + group.height) * 5;
             });
             for (auto &object : source.objects) {

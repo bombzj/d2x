@@ -79,7 +79,7 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
     Fingerprint fingerprint;
     fingerprint.add(content_.profile);
     // Bump this rules revision when state interpretation or compiled rules change.
-    fingerprint.add("d2x-session-rules-v39-experience-town-spawn");
+    fingerprint.add("d2x-session-rules-v40-act1-outdoor-shrines");
     auto members = archives.used;
     for (const auto &member : members) {
         fingerprint.add(member);
