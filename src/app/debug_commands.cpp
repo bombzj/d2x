@@ -415,7 +415,8 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
                     {"maxHp", enemy.maxHp}, {"x", enemy.pos.x},
                     {"y", enemy.pos.y}, {"visible", visible(enemy)}, {"active", session.active(enemy.pos)},
                     {"aiWait", enemy.aiWait}, {"aiPursuing", enemy.aiPursuing},
-                    {"attackRemaining", enemy.attack}, {"impactRemaining", enemy.attackImpact}};
+                    {"attackMode", enemy.attackMode}, {"attackRemaining", enemy.attack},
+                    {"impactRemaining", enemy.attackImpact}};
                 const auto *record = session.monsterContent().find(enemy.identity.monster);
                 if (record) entry["sourceAi"] = record->ai;
                 if (record && record->walkVelocity)
@@ -424,6 +425,11 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
                     entry["attackDuration"] = timing->duration;
                     entry["attackImpact"] = timing->impact;
                     entry["attackFrames"] = timing->frames;
+                }
+                if (auto timing = session.monsterContent().attackTiming(enemy.kind, 2)) {
+                    entry["attack2Duration"] = timing->duration;
+                    entry["attack2Impact"] = timing->impact;
+                    entry["attack2Frames"] = timing->frames;
                 }
                 result["monsters"].push_back(std::move(entry));
             }

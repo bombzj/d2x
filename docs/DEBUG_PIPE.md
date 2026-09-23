@@ -59,6 +59,8 @@ if ($target) {
 
 响应的 `drops` 列出本次地面物品 ID、代码、数量、品质、原特殊行号和坐标；`deferred` 给出无法结算的原因。`drops=[]` 且 `deferred=null` 也可能是原 TC 的 NoDrop。这里的 ID 是 `monsters` 返回的会话实体 ID，不是 MonStats 怪物类型代码；尚未创建的刷怪计划没有可用实体 ID。
 
+`monsters` 同时返回当前 `attackMode`、`attackRemaining`、`impactRemaining` 及已实现外观的 `attackDuration/attackImpact/attackFrames`；Brute 另有 `attack2Duration/attack2Impact/attack2Frames`。这些时序从挂载 MPQ 的 `AnimData.d2` 读取，可在暂停状态逐帧 `step`，确认 A2 模式与命中事件以及存读档恢复。
+
 物品操作复用游戏的事务与访问校验。以下调用可分别使用，不要求按顺序执行：
 
 ```powershell
@@ -161,12 +163,12 @@ kill 和 drop 都不进行攻击命中／伤害计算，因此用于验证死亡
 
 ## 当前证据与限制
 
-当前源码为格式 v25／规则 v52，旧档不迁移。技能树与女巫技能菜单已构建截图，快捷键已完成存读档冒烟；基础远程攻击和女巫战斗效果待逐项实机验收。v10／规则 v30 的传送现场 `artifacts/waypoint-state-v10.d2xsave` 仅是历史证据，不能按当前格式读取。status 增加 portal、waypoints 和 travelMenu；objects 中 Waypoint 返回 activated 及原 fps。新游戏包括营地全部未激活；travel 自由传送不激活，waypoint 不能绕过解锁。Ctrl+F2 是独立开发目录，不是游戏传送点菜单。原三态动画、首次交互、锁定目的地拒绝及解锁保存恢复曾在 v10 实际验证，本轮未重新运行。
+当前源码为格式 v26／规则 v53，旧档不迁移。技能树与女巫技能菜单已构建截图，快捷键已完成存读档冒烟；基础远程攻击和女巫战斗效果待逐项实机验收。v10／规则 v30 的传送现场 `artifacts/waypoint-state-v10.d2xsave` 仅是历史证据，不能按当前格式读取。status 增加 portal、waypoints 和 travelMenu；objects 中 Waypoint 返回 activated 及原 fps。新游戏包括营地全部未激活；travel 自由传送不激活，waypoint 不能绕过解锁。Ctrl+F2 是独立开发目录，不是游戏传送点菜单。原三态动画、首次交互、锁定目的地拒绝及解锁保存恢复曾在 v10 实际验证，本轮未重新运行。
 
 新增 `drop`、`item-move`、`item` 及物品命令回执已完成源码和协议文档。Windows Release 构建后，实际调用 `item` 查询初始手斧、`equip` 卸下和重新装备，以及对当前区域指定怪物 `drop`；后者生成 6 件地面物品、无暂缓原因，已结算数从 0 到 1。拾取、药水使用和头盔胸甲图层仍待定向验收。
 
 在原洞窟地图种子 210、掉落种子 10 下，通过正常移动接近后击杀四个可见普通怪物，得到箭袋 `aqv`（数量 196、等级 2）、金币 5、法力药水及一次 NoDrop。箭袋正常入包保留数量与等级；金币正常拾取后地面实例消失、钱包变为 5、不占背包。重复击杀同 ID 被拒绝；管道保存／恢复后金币 5、箭袋 196、击杀和结算数 4、随机状态保持。现场 `artifacts/gold-pipe-v8.d2xsave`，截图 `artifacts/gold-wallet-v8.png`，均不提交。
 
-上述金币现场使用历史存档 v8／规则 v26，不能按当前 v25／规则 v52 恢复。六件上限、钱包满额部分拾取、跨用户 ACL 拒绝及 Linux 构建尚未实际验证。金币仓库存取／死亡掉金和装备金币加成仍未实现；投掷基础消耗已接源码但未运行验收。当前品质展示实例见 [物品补全](ITEM_COMPLETION.md)。
+上述金币现场使用历史存档 v8／规则 v26，不能按当前 v26／规则 v53 恢复。六件上限、钱包满额部分拾取、跨用户 ACL 拒绝及 Linux 构建尚未实际验证。金币仓库存取／死亡掉金和装备金币加成仍未实现；投掷基础消耗已接源码但未运行验收。当前品质展示实例见 [物品补全](ITEM_COMPLETION.md)。
 
 另有历史 v27 视觉现场 `artifacts/visual-v27.d2xsave`；status 包含 look／routePoints，monsters 包含可用的原 sourceVelocity。view 会改变当前屏幕范围，因此 kill 的可见约束按调试相机计算，但仍要求单位已激活；drop 不受该约束。

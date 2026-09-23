@@ -287,17 +287,23 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
             scalar(enemy.attack, 0, 40);
             scalar(enemy.attackDuration, 0, 40);
             scalar(enemy.attackImpact, -1, 40);
+            require(enemy.attackMode == 1 || enemy.attackMode == 2,
+                    "unknown monster attack mode");
             require(enemy.attack <= enemy.attackDuration &&
                         (enemy.attackImpact == -1 ||
                          (enemy.attackImpact >= 0 && enemy.attackImpact <= enemy.attack)),
                     "monster attack phase");
             if (enemy.attack == 0)
-                require(enemy.attackDuration == 0 && enemy.attackImpact == -1,
+                require(enemy.attackDuration == 0 && enemy.attackImpact == -1 && enemy.attackMode == 1,
                         "idle monster attack phase");
             else {
+                if (enemy.attackMode == 2)
+                    require(enemy.kind == MonsterKind::Brute &&
+                                monsterContent_.attackTiming(enemy.kind, 2),
+                            "unsupported monster A2 mode");
                 float duration = monsterDefinition(enemy.kind).attackInterval;
                 if (simulation_.monsterAttackTiming_)
-                    if (auto timing = simulation_.monsterAttackTiming_(enemy))
+                    if (auto timing = simulation_.monsterAttackTiming_(enemy, enemy.attackMode))
                         duration = timing->duration;
                 require(std::abs(enemy.attackDuration - duration) < .001f ||
                             std::abs(enemy.attackDuration - duration * 2) < .001f,

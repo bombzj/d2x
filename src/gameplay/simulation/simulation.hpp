@@ -22,12 +22,12 @@ class Simulation {
     CharacterAttributes characterStats_;
     std::function<void(EntityId, bool)> wearEquipment_;
     std::function<bool(EntityId, bool)> spendProjectile_;
-    std::function<std::optional<MonsterAccuracy>(const Enemy &)> monsterAccuracy_;
+    std::function<std::optional<MonsterAccuracy>(const Enemy &, int)> monsterAccuracy_;
     std::function<std::optional<MonsterDefense>(const Enemy &)> monsterDefense_;
     std::function<std::optional<float>(const Enemy &)> monsterWalkSpeed_;
     std::function<std::optional<MonsterNormalCombat>(const MonsterIdentity &)> monsterNormalCombat_;
     std::function<std::optional<MonsterAiProfile>(const Enemy &)> monsterAi_;
-    std::function<std::optional<MonsterAttackTiming>(const Enemy &)> monsterAttackTiming_;
+    std::function<std::optional<MonsterAttackTiming>(const Enemy &, int)> monsterAttackTiming_;
     std::vector<GameEvent> events_;
     Enemy *findEnemy(EntityId id);
     void moveTo(Vec target);

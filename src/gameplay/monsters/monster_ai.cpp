@@ -18,11 +18,13 @@ void Simulation::updateMonsters(float dt) {
             enemy.aiPursuing = false;
             enemy.attack = enemy.attackDuration = 0;
             enemy.attackImpact = -1;
+            enemy.attackMode = 1;
             continue;
         }
         if (enemy.stun > 0) {
             enemy.attack = enemy.attackDuration = 0;
             enemy.attackImpact = -1;
+            enemy.attackMode = 1;
             continue;
         }
         if (enemy.attack > 0) {
@@ -37,6 +39,7 @@ void Simulation::updateMonsters(float dt) {
             if (enemy.attack == 0) {
                 enemy.attackDuration = 0;
                 enemy.attackImpact = -1;
+                enemy.attackMode = 1;
             }
             continue;
         }

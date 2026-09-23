@@ -2,6 +2,7 @@
 #include "world/cow_level.hpp"
 #include "world/outdoor.hpp"
 #include <algorithm>
+#include <string_view>
 
 namespace d2x {
 namespace {
@@ -43,7 +44,8 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
             equipment[8] = "lit";
             equipment[9] = "lit";
         }
-        for (auto mode : {"nu", "wl", "a1", "dt"}) {
+        for (auto mode : {"nu", "wl", "a1", "dt", "a2"}) {
+            if (std::string_view(mode) == "a2" && kind != MonsterKind::Brute) continue;
             auto animation =
                 graphics_.composite("monsters", definition.token, mode, definition.weapon, &equipment);
             if (animation.frames.empty() || !animation.completeComposite)
@@ -55,6 +57,11 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
             timing && monsterAnimations[kind].at("a1").count != timing->frames)
             throw std::runtime_error("Monster AnimData/COF frame mismatch: " +
                                      std::string(definition.token));
+        if (kind == MonsterKind::Brute)
+            if (auto timing = session.monsterContent().attackTiming(kind, 2);
+                timing && monsterAnimations[kind].at("a2").count != timing->frames)
+                throw std::runtime_error("Monster A2 AnimData/COF frame mismatch: " +
+                                         std::string(definition.token));
     }
     fireball = graphics_.single("data/global/missiles/fireball.dcc");
     const auto objectRows = decodeTable(archives.read("data/global/excel/objects.txt"));

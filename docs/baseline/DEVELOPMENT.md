@@ -1,6 +1,6 @@
 # 开发与交接
 
-当前源码存档 v25／规则 v52。怪物阶段的当前范围见 [怪物实施计划](../MONSTERS.md)：普通骷髅按运行时 MPQ 参数决定接近／停顿／攻击，Brute 随失血加速，A1 动作和命中帧按原 `AnimData.d2`。Windows Release 构建通过；Crypt 实际攻击中途保存恢复，命中事件前玩家生命保持 55，事件后降为 52。完整六 MPQ 运行目录 `dist/d2x-runtime-20260924-v25-monster-frames/` 已独立短帧启动 Crypt、邪恶洞窟和冰冷之原，截图在 `artifacts/monster-smoke/packaged-v25-*.png`。A2、AI 逐帧调度和受伤 Brute 速度变化仍待后续定向验收；未写测试脚本／用例，不生成 ZIP。历史 v23／v24 怪物现场保留在忽略的 `artifacts/monster-smoke/`，旧存档不兼容。
+当前源码存档 v26／规则 v53。怪物阶段的当前范围见 [怪物实施计划](../MONSTERS.md)：普通骷髅按运行时 MPQ 参数决定接近／停顿／攻击，Brute 随失血加速并按 `aip4` 选择 A1／A2；动作时长和命中帧按原 `AnimData.d2`。Windows Release 构建通过；一级角色面对 Brute A2 的命名管道现场，v26 保存恢复保留模式 2 与 0.36 秒命中倒计时，8 tick 后仍有 0.04 秒且生命 49，2 tick 后事件结算，生命降至 45。完整六 MPQ 运行目录 `dist/d2x-runtime-20260924-v26-brute-a2/` 已独立短帧启动邪恶洞窟，原 A2 COF 与 `AnimData.d2` 帧数一致，截图在 `artifacts/monster-smoke/packaged-v26-den.png` 和 `brute-a2-v26.png`。AI 逐帧调度和受伤 Brute 速度变化仍待后续定向验收；未写测试脚本／用例，不生成 ZIP。历史 v23–v25 怪物现场保留在忽略的 `artifacts/monster-smoke/`，旧存档不兼容。
 
 ## 当前交接状态
 

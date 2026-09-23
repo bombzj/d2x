@@ -5,5 +5,5 @@
 
 namespace d2x {
 std::optional<MonsterAttackTiming> loadMonsterAttackTiming(const AnimDataTable &animations,
-                                                           const MonsterDefinition &monster);
+                                                           const MonsterDefinition &monster, int mode);
 } // namespace d2x

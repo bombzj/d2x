@@ -13,6 +13,7 @@ struct MonsterRecord {
     int index = -1, rarity = 0, minGroup = 0, maxGroup = 0, partyMin = 0, partyMax = 0;
     int sparse = 0, alignment = 0, normalLevel = 0;
     std::optional<int> normalAttackRating;
+    std::optional<int> normalAttackRating2;
     std::optional<int> normalDefense;
     std::optional<int> walkVelocity;
     std::optional<MonsterNormalCombat> normalCombat;
@@ -37,6 +38,7 @@ class MonsterCatalog {
     bool supported_ = false;
     std::map<std::string, MonsterRecord, std::less<>> monsters_;
     std::map<MonsterKind, MonsterAttackTiming> attacks_;
+    std::map<MonsterKind, MonsterAttackTiming> attacks2_;
     std::map<int, std::string> indices_;
     std::set<std::string, std::less<>> ambiguous_;
     std::map<std::string, SuperUniqueRecord, std::less<>> uniques_;
@@ -51,9 +53,10 @@ class MonsterCatalog {
     int championChance() const { return championChance_; }
     const auto &diagnostics() const { return diagnostics_; }
     const auto &monsters() const { return monsters_; }
-    const MonsterAttackTiming *attackTiming(MonsterKind kind) const {
-        auto found = attacks_.find(kind);
-        return found == attacks_.end() ? nullptr : &found->second;
+    const MonsterAttackTiming *attackTiming(MonsterKind kind, int mode = 1) const {
+        const auto &source = mode == 2 ? attacks2_ : attacks_;
+        auto found = source.find(kind);
+        return found == source.end() ? nullptr : &found->second;
     }
     const MonsterRecord *find(std::string_view id) const;
     const SuperUniqueRecord *superUnique(std::string_view id) const;

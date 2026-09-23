@@ -50,6 +50,7 @@ struct Enemy {
     Vec pos;
     float hp = 100, maxHp = 100, chill = 0, attack = 0;
     float attackDuration = 0, attackImpact = -1;
+    int attackMode = 1;
     float stun = 0, deathAge = 0, hitFlash = 0, rethink = 0;
     float aiWait = 0;
     bool aiPursuing = false;

@@ -15,6 +15,7 @@ void Simulation::damageEnemy(Enemy &enemy, float amount, EntityId source, float 
         enemy.route.clear();
         enemy.attack = enemy.attackDuration = 0;
         enemy.attackImpact = -1;
+        enemy.attackMode = 1;
         ++state_.area.kills;
         emit(EnemyDied{enemy.id, source, enemy.kind, state_.area.region, enemy.pos, enemy.identity,
                        state_.population.difficulty});

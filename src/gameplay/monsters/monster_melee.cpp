@@ -1,11 +1,21 @@
 #include "gameplay/simulation/simulation.hpp"
 #include "gameplay/combat/accuracy.hpp"
+#include "gameplay/monsters/brute_ai.hpp"
 #include <algorithm>
+#include <tuple>
 
 namespace d2x {
 void Simulation::beginMonsterAttack(Enemy &enemy) {
+    enemy.attackMode = 1;
+    const auto ai = monsterAi_ ? monsterAi_(enemy) : std::nullopt;
+    if (ai && ai->kind == MonsterAiKind::Brute && monsterAttackTiming_ &&
+        monsterAttackTiming_(enemy, 2) && monsterNormalCombat_ &&
+        monsterAccuracy_ && monsterAccuracy_(enemy, 2))
+        if (auto combat = monsterNormalCombat_(enemy.identity);
+            combat && combat->attack2Damage)
+            enemy.attackMode = bruteAttackMode(enemy, *ai);
     const float chillScale = enemy.chill > 0 ? 2.f : 1.f;
-    if (auto timing = monsterAttackTiming_ ? monsterAttackTiming_(enemy) : std::nullopt) {
+    if (auto timing = monsterAttackTiming_ ? monsterAttackTiming_(enemy, enemy.attackMode) : std::nullopt) {
         enemy.attackDuration = timing->duration * chillScale;
         enemy.attackImpact = timing->impact * chillScale;
     } else {
@@ -25,7 +35,7 @@ void Simulation::resolveMonsterAttack(Enemy &enemy) {
         !grid_->segment(enemy.pos, player.pos))
         return;
     if (!(player.running && player.moving) && monsterAccuracy_)
-        if (auto accuracy = monsterAccuracy_(enemy)) {
+        if (auto accuracy = monsterAccuracy_(enemy, enemy.attackMode)) {
             const auto chance = physicalHitChance(accuracy->level, accuracy->attackRating,
                                                    equipmentStats_.level, equipmentStats_.defense);
             enemy.combatRandom = uint64_t(uint32_t(enemy.combatRandom)) * 0x6ac690c5ULL +
@@ -42,10 +52,13 @@ void Simulation::resolveMonsterAttack(Enemy &enemy) {
     float damage = monsterDefinition(enemy.kind).damage;
     if (monsterNormalCombat_)
         if (auto combat = monsterNormalCombat_(enemy.identity)) {
+            int minimum = combat->minDamage, maximum = combat->maxDamage;
+            if (enemy.attackMode == 2 && combat->attack2Damage)
+                std::tie(minimum, maximum) = *combat->attack2Damage;
             enemy.combatRandom = uint64_t(uint32_t(enemy.combatRandom)) * 0x6ac690c5ULL +
                                  (enemy.combatRandom >> 32);
-            const auto range = unsigned(combat->maxDamage - combat->minDamage + 1);
-            damage = float(combat->minDamage + uint32_t(enemy.combatRandom) % range);
+            const auto range = unsigned(maximum - minimum + 1);
+            damage = float(minimum + uint32_t(enemy.combatRandom) % range);
         }
     player.hp = std::max(0.f, player.hp - damage);
     player.hitTime = .16f;

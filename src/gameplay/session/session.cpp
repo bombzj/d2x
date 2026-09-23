@@ -28,13 +28,15 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
             publishInventory(std::move(result), {});
     };
     simulation_.state_.player.combatRandom = (uint64_t(666) << 32) | selection.seed;
-    simulation_.monsterAccuracy_ = [this](const Enemy &enemy) -> std::optional<MonsterAccuracy> {
+    simulation_.monsterAccuracy_ = [this](const Enemy &enemy, int mode) -> std::optional<MonsterAccuracy> {
         if (state().population.difficulty != 0 || enemy.identity.rank != MonsterRank::Normal)
             return std::nullopt;
         const auto *record = monsterContent_.find(enemy.identity.monster);
-        if (!record || record->boss || !record->normalAttackRating)
+        if (!record || record->boss)
             return std::nullopt;
-        return MonsterAccuracy{record->normalLevel, *record->normalAttackRating};
+        auto rating = mode == 2 ? record->normalAttackRating2 : record->normalAttackRating;
+        if (!rating) return std::nullopt;
+        return MonsterAccuracy{record->normalLevel, *rating};
     };
     simulation_.spendProjectile_ = [this](EntityId weapon, bool thrown) {
         const auto *item = inventory_.item(weapon);
@@ -97,9 +99,9 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
             return profile;
         return std::nullopt;
     };
-    simulation_.monsterAttackTiming_ = [this](const Enemy &enemy)
+    simulation_.monsterAttackTiming_ = [this](const Enemy &enemy, int mode)
         -> std::optional<MonsterAttackTiming> {
-        const auto *timing = monsterContent_.attackTiming(enemy.kind);
+        const auto *timing = monsterContent_.attackTiming(enemy.kind, mode);
         return timing ? std::optional<MonsterAttackTiming>(*timing) : std::nullopt;
     };
     worldSelection.difficulty = population.difficulty;
@@ -144,7 +146,7 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
     Fingerprint fingerprint;
     fingerprint.add(content_.profile);
     // Bump this rules revision when state interpretation or compiled rules change.
-    fingerprint.add("d2x-session-rules-v52-monster-a1-action-frame");
+    fingerprint.add("d2x-session-rules-v53-brute-a2-attack");
     auto members = archives.used;
     for (const auto &member : members) {
         fingerprint.add(member);

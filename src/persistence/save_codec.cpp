@@ -144,7 +144,7 @@ class Codec {
         }
     }
 };
-// Explicit schema, never compiler struct layout. Player/item field order is save version 25.
+// Explicit schema, never compiler struct layout. Player/item field order is save version 26.
 void fields(Codec &a, EntityId &v) {
     a(v.value);
 }
@@ -168,6 +168,7 @@ void fields(Codec &a, PlayerState &v) {
 }
 void fields(Codec &a, Enemy &v) {
     a(v.id, v.kind, v.identity, v.pos, v.hp, v.maxHp, v.chill, v.attack, v.attackDuration, v.attackImpact,
+            v.attackMode,
             v.stun, v.deathAge, v.hitFlash, v.rethink,
             v.aiWait, v.aiPursuing, v.route, v.combatRandom);
 }
@@ -260,7 +261,7 @@ Bytes encodeSave(SessionSnapshot snapshot) {
     Codec body;
     body(snapshot);
     auto bytes = body.take();
-    uint32_t version = 25, size = uint32_t(bytes.size()), crc = checksum(bytes);
+    uint32_t version = 26, size = uint32_t(bytes.size()), crc = checksum(bytes);
     Codec header;
     header(version, size, crc);
     auto headerBytes = header.take();
@@ -279,8 +280,8 @@ SessionSnapshot decodeSave(std::span<const uint8_t> bytes) {
     Codec header(bytes.subspan(sizeof(magic), 12));
     uint32_t version = 0, size = 0, crc = 0;
     header(version, size, crc);
-    if (version != 25)
-        throw std::runtime_error("Unsupported D2X save version; monster action frames require a new version-25 game");
+    if (version != 26)
+        throw std::runtime_error("Unsupported D2X save version; monster A2 mode requires a new version-26 game");
     auto payload = bytes.subspan(headerSize);
     if (size != payload.size() || crc != checksum(payload))
         throw std::runtime_error("Save checksum or length mismatch");

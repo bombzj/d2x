@@ -2,6 +2,8 @@
 #include "gameplay/model/definitions.hpp"
 #include <array>
 #include <cstdint>
+#include <optional>
+#include <utility>
 
 namespace d2x {
 enum class MonsterRank { Normal, Minion, Champion, Unique, SuperUnique, Boss };
@@ -38,6 +40,7 @@ struct MonsterDefense {
 struct MonsterNormalCombat {
     int minLife = 0, maxLife = 0;
     int minDamage = 0, maxDamage = 0;
+    std::optional<std::pair<int, int>> attack2Damage;
 };
 enum class MonsterAiKind { Skeleton, Brute };
 struct MonsterAiProfile {

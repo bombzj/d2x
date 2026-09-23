@@ -34,6 +34,15 @@ std::optional<MonsterNormalCombat> loadMonsterNormalCombat(const DataTable &stat
     const auto maxDamage = scaled(*highDamage, damageRatio);
     if (minLife < 1 || maxLife > (1 << 23) - 1 || minDamage < 0 || maxDamage > 1000000)
         return std::nullopt;
-    return MonsterNormalCombat{int(minLife), int(maxLife), int(minDamage), int(maxDamage)};
+    MonsterNormalCombat combat{int(minLife), int(maxLife), int(minDamage), int(maxDamage), std::nullopt};
+    const auto lowDamage2 = stats.number(row, "A2MinD");
+    const auto highDamage2 = stats.number(row, "A2MaxD");
+    if (lowDamage2 && highDamage2 && *lowDamage2 >= 0 && *highDamage2 >= *lowDamage2) {
+        const auto minimum = scaled(*lowDamage2, damageRatio);
+        const auto maximum = scaled(*highDamage2, damageRatio);
+        if (minimum >= 0 && maximum <= 1000000)
+            combat.attack2Damage = std::pair{int(minimum), int(maximum)};
+    }
+    return combat;
 }
 } // namespace d2x

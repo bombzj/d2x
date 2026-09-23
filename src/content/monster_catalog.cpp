@@ -24,8 +24,10 @@ MonsterCatalog::MonsterCatalog(Archives &archives, const DataTable &stats) {
     if (archives.contains("data/global/animdata.d2")) {
         AnimDataTable animations(archives.read("data/global/animdata.d2"));
         for (int kind = 0; kind < int(MonsterKind::Count); ++kind)
-            if (auto timing = loadMonsterAttackTiming(animations, monsterDefinition(MonsterKind(kind))))
+            if (auto timing = loadMonsterAttackTiming(animations, monsterDefinition(MonsterKind(kind)), 1))
                 attacks_.emplace(MonsterKind(kind), *timing);
+        if (auto timing = loadMonsterAttackTiming(animations, monsterDefinition(MonsterKind::Brute), 2))
+            attacks2_.emplace(MonsterKind::Brute, *timing);
     }
     std::optional<DataTable> levels;
     if (archives.contains("data/global/excel/monlvl.txt"))
@@ -60,19 +62,24 @@ MonsterCatalog::MonsterCatalog(Archives &archives, const DataTable &stats) {
         m.walkVelocity = stats.number(row, "Velocity");
         if (m.walkVelocity && (*m.walkVelocity < 0 || *m.walkVelocity > 255))
             throw std::runtime_error("Unsupported monster Velocity: " + m.id);
-        if (auto attack = stats.number(row, "A1TH"); attack && *attack >= 0 && m.normalLevel > 0) {
+        auto attackRating = [&](std::string_view field) -> std::optional<int> {
+            auto attack = stats.number(row, field);
+            if (!attack || *attack < 0 || m.normalLevel <= 0) return std::nullopt;
             if (n("noRatio"))
-                m.normalAttackRating = *attack;
-            else if (levels && !levels->rows().empty()) {
+                return *attack;
+            if (levels && !levels->rows().empty()) {
                 const auto levelRow = std::min(size_t(m.normalLevel), levels->rows().size() - 1);
                 if (auto base = levels->number(levelRow, "L-TH"); base && *base >= 0) {
                     const auto rating = int64_t(*base) * *attack / 100;
                     if (rating > std::numeric_limits<int>::max())
                         throw std::runtime_error("Monster attack rating overflow: " + m.id);
-                    m.normalAttackRating = int(rating);
+                    return int(rating);
                 }
             }
-        }
+            return std::nullopt;
+        };
+        m.normalAttackRating = attackRating("A1TH");
+        m.normalAttackRating2 = attackRating("A2TH");
         if (auto armor = stats.number(row, "AC"); armor && *armor >= 0 && m.normalLevel > 0) {
             if (n("noRatio"))
                 m.normalDefense = *armor;
