@@ -414,11 +414,17 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
                     {"rank", monsterRankName(enemy.identity.rank)}, {"hp", enemy.hp},
                     {"maxHp", enemy.maxHp}, {"x", enemy.pos.x},
                     {"y", enemy.pos.y}, {"visible", visible(enemy)}, {"active", session.active(enemy.pos)},
-                    {"aiWait", enemy.aiWait}, {"aiPursuing", enemy.aiPursuing}};
+                    {"aiWait", enemy.aiWait}, {"aiPursuing", enemy.aiPursuing},
+                    {"attackRemaining", enemy.attack}, {"impactRemaining", enemy.attackImpact}};
                 const auto *record = session.monsterContent().find(enemy.identity.monster);
                 if (record) entry["sourceAi"] = record->ai;
                 if (record && record->walkVelocity)
                     entry["sourceVelocity"] = *record->walkVelocity;
+                if (auto timing = session.monsterContent().attackTiming(enemy.kind)) {
+                    entry["attackDuration"] = timing->duration;
+                    entry["attackImpact"] = timing->impact;
+                    entry["attackFrames"] = timing->frames;
+                }
                 result["monsters"].push_back(std::move(entry));
             }
         } else if (command == "ground" || command == "inventory") {

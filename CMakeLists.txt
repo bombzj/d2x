@@ -15,7 +15,7 @@ if(WIN32)
   target_compile_definitions(d2x_core INTERFACE NOMINMAX WIN32_LEAN_AND_MEAN)
 endif()
 
-add_library(d2x_resources src/resources/archive.cpp src/resources/formats.cpp src/resources/dcc.cpp src/resources/data_table.cpp src/resources/text.cpp)
+add_library(d2x_resources src/resources/archive.cpp src/resources/formats.cpp src/resources/dcc.cpp src/resources/data_table.cpp src/resources/text.cpp src/resources/anim_data.cpp)
 target_link_libraries(d2x_resources PUBLIC d2x_core PRIVATE storm)
 
 add_library(d2x_navigation src/world/navigation.cpp src/world/room_activation.cpp)
@@ -51,6 +51,7 @@ target_sources(d2x_content PRIVATE src/content/item_projectiles.cpp)
 target_sources(d2x_content PRIVATE src/content/monster_experience.cpp)
 target_sources(d2x_content PRIVATE src/content/monster_combat.cpp)
 target_sources(d2x_content PRIVATE src/content/monster_ai_data.cpp)
+target_sources(d2x_content PRIVATE src/content/monster_animation.cpp)
 target_sources(d2x_content PRIVATE src/content/equipment_modifiers.cpp)
 target_sources(d2x_content PRIVATE src/content/equipment_data.cpp)
 target_sources(d2x_content PRIVATE src/content/item_appearance.cpp)
@@ -70,7 +71,10 @@ target_link_libraries(d2x_content PUBLIC d2x_resources d2x_items)
 # Rules and state compile without raylib, StormLib, a window or an archive.
 add_library(d2x_gameplay
   src/gameplay/model/definitions.cpp src/gameplay/simulation/simulation.cpp src/gameplay/player/movement.cpp
-  src/gameplay/combat/combat.cpp src/gameplay/skills/casting.cpp src/gameplay/monsters/monster_ai.cpp src/gameplay/monsters/skeleton_ai.cpp src/gameplay/monsters/brute_ai.cpp src/gameplay/loot/loot.cpp src/gameplay/consumables/potions.cpp)
+  src/gameplay/combat/combat.cpp src/gameplay/skills/casting.cpp
+  src/gameplay/monsters/monster_ai.cpp src/gameplay/monsters/monster_melee.cpp
+  src/gameplay/monsters/skeleton_ai.cpp src/gameplay/monsters/brute_ai.cpp
+  src/gameplay/loot/loot.cpp src/gameplay/consumables/potions.cpp)
 target_sources(d2x_gameplay PRIVATE src/gameplay/character/attributes.cpp)
 target_sources(d2x_gameplay PRIVATE src/gameplay/combat/accuracy.cpp)
 target_sources(d2x_gameplay PRIVATE src/gameplay/combat/physical_projectiles.cpp)

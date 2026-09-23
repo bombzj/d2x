@@ -284,7 +284,25 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
             scalar(enemy.hp, 0, enemy.maxHp);
             for (auto timer : {enemy.chill, enemy.stun, enemy.deathAge, enemy.hitFlash})
                 scalar(timer);
-            scalar(enemy.attack, -1.e9f);
+            scalar(enemy.attack, 0, 40);
+            scalar(enemy.attackDuration, 0, 40);
+            scalar(enemy.attackImpact, -1, 40);
+            require(enemy.attack <= enemy.attackDuration &&
+                        (enemy.attackImpact == -1 ||
+                         (enemy.attackImpact >= 0 && enemy.attackImpact <= enemy.attack)),
+                    "monster attack phase");
+            if (enemy.attack == 0)
+                require(enemy.attackDuration == 0 && enemy.attackImpact == -1,
+                        "idle monster attack phase");
+            else {
+                float duration = monsterDefinition(enemy.kind).attackInterval;
+                if (simulation_.monsterAttackTiming_)
+                    if (auto timing = simulation_.monsterAttackTiming_(enemy))
+                        duration = timing->duration;
+                require(std::abs(enemy.attackDuration - duration) < .001f ||
+                            std::abs(enemy.attackDuration - duration * 2) < .001f,
+                        "original monster attack duration");
+            }
             scalar(enemy.rethink, -1.e9f);
             scalar(enemy.aiWait, 0, 65535.f / 25.f);
             auto ai = simulation_.monsterAi_ ? simulation_.monsterAi_(enemy) : std::nullopt;

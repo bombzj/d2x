@@ -51,6 +51,10 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
                                          mode);
             monsterAnimations[kind].emplace(mode, std::move(animation));
         }
+        if (auto timing = session.monsterContent().attackTiming(kind);
+            timing && monsterAnimations[kind].at("a1").count != timing->frames)
+            throw std::runtime_error("Monster AnimData/COF frame mismatch: " +
+                                     std::string(definition.token));
     }
     fireball = graphics_.single("data/global/missiles/fireball.dcc");
     const auto objectRows = decodeTable(archives.read("data/global/excel/objects.txt"));

@@ -36,6 +36,7 @@ struct MonsterPreset {
 class MonsterCatalog {
     bool supported_ = false;
     std::map<std::string, MonsterRecord, std::less<>> monsters_;
+    std::map<MonsterKind, MonsterAttackTiming> attacks_;
     std::map<int, std::string> indices_;
     std::set<std::string, std::less<>> ambiguous_;
     std::map<std::string, SuperUniqueRecord, std::less<>> uniques_;
@@ -50,6 +51,10 @@ class MonsterCatalog {
     int championChance() const { return championChance_; }
     const auto &diagnostics() const { return diagnostics_; }
     const auto &monsters() const { return monsters_; }
+    const MonsterAttackTiming *attackTiming(MonsterKind kind) const {
+        auto found = attacks_.find(kind);
+        return found == attacks_.end() ? nullptr : &found->second;
+    }
     const MonsterRecord *find(std::string_view id) const;
     const SuperUniqueRecord *superUnique(std::string_view id) const;
     MonsterPreset preset(int act, int index, int ds1Version) const;

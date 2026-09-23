@@ -97,6 +97,11 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
             return profile;
         return std::nullopt;
     };
+    simulation_.monsterAttackTiming_ = [this](const Enemy &enemy)
+        -> std::optional<MonsterAttackTiming> {
+        const auto *timing = monsterContent_.attackTiming(enemy.kind);
+        return timing ? std::optional<MonsterAttackTiming>(*timing) : std::nullopt;
+    };
     worldSelection.difficulty = population.difficulty;
     auto plan = planWorld(archives, worldContent_, worldSelection);
     regions_ = loadRegions(archives, ids_, plan.regions, monsterContent_);
@@ -139,7 +144,7 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
     Fingerprint fingerprint;
     fingerprint.add(content_.profile);
     // Bump this rules revision when state interpretation or compiled rules change.
-    fingerprint.add("d2x-session-rules-v51-skeleton-ai");
+    fingerprint.add("d2x-session-rules-v52-monster-a1-action-frame");
     auto members = archives.used;
     for (const auto &member : members) {
         fingerprint.add(member);

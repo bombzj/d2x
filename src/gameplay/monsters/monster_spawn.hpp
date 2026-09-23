@@ -44,6 +44,11 @@ struct MonsterAiProfile {
     MonsterAiKind kind;
     std::array<int, 8> params{};
 };
+struct MonsterAttackTiming {
+    float duration = 0;
+    float impact = 0;
+    int frames = 0;
+};
 // Explicit implementation registry: add real actors here as their behaviour/assets land.
 MonsterImplementation monsterImplementation(const std::string &code);
 const char *monsterRankName(MonsterRank rank);

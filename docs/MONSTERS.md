@@ -8,6 +8,7 @@
 2. **单个普通怪物外观：已完成。** `brute1` 使用 MPQ `YE` 的 NU/WL/A1/DT COF/DCC；原 `MonStats2` 只有躯干组件，四种动作资源均在本机 MPQ 中。该身份从沉沦魔类型替身切换为原外观，仍沿用公共近战决策。`brute2` 等不同变体继续为替身。
 3. **骷髅 AI 决策：已完成基础分支。** `content/monster_ai_data.*` 从挂载 MPQ 的 `MonStats.AI/aip1–aip8` 按难度读取参数；`gameplay/monsters/skeleton_ai.*` 对原 `AI=Skeleton` 的普通骷髅使用接近几率、停顿帧数和近身攻击几率。追击和停顿状态写入 v24 存档并校验。A1／A2 动作选择、逐帧 AI 调度仍待后续。
 4. **Brute 受伤加速：已完成基础分支。** `gameplay/monsters/brute_ai.*` 按本地 D2MOO 的 `AITHINK_Fn007_Brute`，从当前生命百分比计算原 AI 的 40% 下限和最高 60% 行走速度加成；只对 MPQ `AI=Brute` 且已实现外观的普通怪物应用。该 AI 的 A1／A2 选择、近身盘绕与停顿仍待完成。
-5. **下一项候选：攻击动作与出伤帧。** 读取运行时 `AnimData.d2` 的速度和帧标记，同步 A1／A2 演出与结算，并核对 `MonStats2` 模式及 COF/DCC 是否完整；当前 COF 解码只保存图层顺序，不提供出伤时机。完成后再逐种处理更多 AI、远程弹体与技能、尸体复活、各难度与等级缩放、抗性和元素伤害、精英／首领词缀和 Boss 特性。
+5. **A1 动作与出伤帧：已完成基础分支。** `resources/anim_data.*` 从挂载 MPQ 解码 `AnimData.d2`；`content/monster_animation.*` 按已实现外观的 token／武器类选取原 A1 速度、帧数和事件 1。`gameplay/monsters/monster_melee.cpp` 在原事件帧重新检查玩家距离／通路并结算命中；画面按相同动作时长推进，v25 存档保存动作剩余与待出伤时间。原表无有效记录时明确沿用旧即时攻击适配。
+6. **下一项候选：A2 与专属动作。** 先核对 `MonStats2` 的模式、各怪物 A2 COF/DCC 和原 AI 中 A1／A2 选择参数，再逐种接入第二攻击动作。随后处理更多 AI、远程弹体与技能、尸体复活、各难度与等级缩放、抗性和元素伤害、精英／首领词缀和 Boss 特性。
 
-当前数值计算依据本地 `reference/d2moo/source/D2Common/src/DataTbls/MonsterTbls.cpp` 的 `DATATBLS_CalculateMonsterStatsByLevel` 和 `reference/d2moo/source/D2Game/src/MONSTER/Monster.cpp` 的生命掷骰；AI 规则核对 `reference/d2moo/source/D2Game/src/AI/AiThink.cpp` 的 Skeleton 与 Brute 分支。区间和 AI 参数始终从用户挂载的 MPQ 读取，参考仓库不作为运行时数据源。当前攻击触发时刻、目标选择、AI 调度和随机流仍是项目适配，不能视为原版逐帧复刻。
+当前数值计算依据本地 `reference/d2moo/source/D2Common/src/DataTbls/MonsterTbls.cpp` 的 `DATATBLS_CalculateMonsterStatsByLevel` 和 `reference/d2moo/source/D2Game/src/MONSTER/Monster.cpp` 的生命掷骰；AI 规则核对 `reference/d2moo/source/D2Game/src/AI/AiThink.cpp` 的 Skeleton 与 Brute 分支，动作帧核对 `reference/d2moo/source/D2Common/src/DataTbls/AnimTbls.cpp` 与 `Units.cpp`。区间、AI 参数和动作时序始终从用户挂载的 MPQ 读取，参考仓库不作为运行时数据源。当前目标选择、AI 调度、A2 和随机流仍是项目适配，不能视为原版逐帧复刻。

@@ -1,6 +1,7 @@
 #include "monster_catalog.hpp"
 #include "monster_combat.hpp"
 #include "monster_ai_data.hpp"
+#include "monster_animation.hpp"
 #include <algorithm>
 #include <limits>
 #include <stdexcept>
@@ -20,6 +21,12 @@ MonsterCatalog::MonsterCatalog(Archives &archives, const DataTable &stats) {
     if (!diagnostics_.empty())
         return;
     DataTable extended(archives.read("data/global/excel/monstats2.txt"));
+    if (archives.contains("data/global/animdata.d2")) {
+        AnimDataTable animations(archives.read("data/global/animdata.d2"));
+        for (int kind = 0; kind < int(MonsterKind::Count); ++kind)
+            if (auto timing = loadMonsterAttackTiming(animations, monsterDefinition(MonsterKind(kind))))
+                attacks_.emplace(MonsterKind(kind), *timing);
+    }
     std::optional<DataTable> levels;
     if (archives.contains("data/global/excel/monlvl.txt"))
         levels.emplace(archives.read("data/global/excel/monlvl.txt"));

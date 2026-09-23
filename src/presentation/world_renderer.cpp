@@ -200,25 +200,28 @@ void SceneView::drawActors() const {
             sprite(f, p, sim.player.dead ? Color{185, 185, 185, 255} : WHITE);
         } else if (item.type == 2) {
             auto &e = sim.area.enemies[item.index];
-            std::string mode = e.hp <= 0 ? "dt" : movingMonsters_.contains(e.id) ? "wl"
-                              : (e.pos - sim.player.pos).length() < 1.8f && e.attack > 0 ? "a1" : "nu";
+            std::string mode = e.hp <= 0 ? "dt" : e.attack > 0 ? "a1"
+                              : movingMonsters_.contains(e.id) ? "wl" : "nu";
             const auto &animations = assets_.monsterAnimations.at(e.kind);
             auto *anim = &animations.at(mode);
             if (anim->frames.empty())
                 anim = &animations.at("nu");
             DrawEllipse(int(item.p.x), int(item.p.y), 12, 5, {0, 0, 0, 100});
-            if (!anim->frames.empty())
+            if (!anim->frames.empty()) {
+                int frame = e.hp <= 0 ? std::min(anim->count - 1, int(e.deathAge * 20))
+                            : e.stun > 0 ? 0
+                            : int(view_.animationTime * (e.chill > 0 ? 5 : 12) + item.index);
+                if (mode == "a1" && e.attackDuration > 0)
+                    frame = std::clamp(int((e.attackDuration - e.attack) / e.attackDuration * anim->count),
+                                       0, anim->count - 1);
                 sprite(anim->frame(direction(monsterLooks_.contains(e.id) ? monsterLooks_.at(e.id)
                                                                          : sim.player.pos - e.pos,
-                                             anim->directions),
-                                   e.hp <= 0 ? std::min(anim->count - 1, int(e.deathAge * 20))
-                                   : e.stun > 0
-                                       ? 0
-                                       : int(view_.animationTime * (e.chill > 0 ? 5 : 12) + item.index)),
+                                             anim->directions), frame),
                        item.p,
                        e.hitFlash > 0 ? Color{255, 175, 155, 255}
                        : e.chill > 0  ? Color{115, 175, 255, 255}
                                       : WHITE);
+            }
             if (e.stun > 0)
                 for (int i = 0; i < 3; i++) {
                     float angle = view_.animationTime * 5 + i * 2 * pi / 3;
