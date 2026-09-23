@@ -30,6 +30,10 @@ struct IdentifyWithCain {
 struct EndNpcConversation {
     EntityId target;
 };
+struct BuyVendorItem {
+    EntityId vendor;
+    uint32_t slot = 0;
+};
 struct DebugGrantGold {
     unsigned amount = 0;
 };
@@ -53,7 +57,7 @@ struct PickupItem {
 };
 // UI supplies intentions; only the gameplay layer changes authoritative state.
 using GameCommand =
-    std::variant<MoveTo, Attack, CastSkill, ToggleRun, Interact, IdentifyWithCain, EndNpcConversation, DebugGrantGold, Travel, RestartArea, MoveItem, SwapItems,
+    std::variant<MoveTo, Attack, CastSkill, ToggleRun, Interact, IdentifyWithCain, EndNpcConversation, BuyVendorItem, DebugGrantGold, Travel, RestartArea, MoveItem, SwapItems,
                  SplitStack, MergeStacks, PickupItem, StopMoving, EquipBelt, UseItem, UseBeltColumn,
                  CloseStorage, TransferItem, UseExit, EquipItem, DebugKill, UseTownPortal, WaypointTravel>;
 } // namespace d2x

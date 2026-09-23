@@ -44,6 +44,7 @@ SessionSnapshot GameSession::snapshot() const {
     result.inventory = inventory_.state();
     result.containers = playerContainers_;
     result.loot = loot_.snapshot();
+    result.soldVendorOffers = soldVendorOffers_;
     for (const auto &region : regions_)
         for (const auto &object : region.objects)
             if (!object.npcPath.empty())
@@ -91,6 +92,14 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
             movingNpcs += !object.npcPath.empty();
     require(s.npcMotions.size() == movingNpcs, "NPC motion count");
     std::set<EntityId> seenNpcs;
+    for (const auto &[npc, slots] : s.soldVendorOffers) {
+        auto stock = vendorStock(npc);
+        require(stock != nullptr && !slots.empty(), "vendor sale identity");
+        for (auto slot : slots)
+            require(std::any_of(stock->begin(), stock->end(), [&](const VendorOffer &offer) {
+                        return offer.slot == slot && !offer.permanent;
+                    }), "vendor sale slot");
+    }
     for (const auto &motion : s.npcMotions) {
         const Region *home = nullptr;
         const WorldObject *object = nullptr;
@@ -324,6 +333,7 @@ void GameSession::restore(SessionSnapshot s) {
     inactiveAreas_.swap(s.inactiveAreas);
     playerContainers_ = s.containers;
     loot_.restore(std::move(s.loot));
+    soldVendorOffers_.swap(s.soldVendorOffers);
     for (auto &motion : s.npcMotions)
         for (auto &region : regions_)
             for (auto &object : region.objects)

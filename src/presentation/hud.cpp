@@ -143,8 +143,9 @@ void SceneView::draw(Vec mouse) const {
             std::to_string(view_.travelPage + 1) + " / " + std::to_string(pages) + "   PgUp / PgDn", 554, 14);
     }
     drawSkillControls(mouse);
-    if (!view_.dialogue.empty())
-        drawNpcDialogue();
+    if (view_.npcMenu) drawNpcMenu();
+    if (view_.shopOpen) drawNpcShop(mouse);
+    if (!view_.dialogue.empty()) drawNpcDialogue();
     drawInventoryCursor(mouse);
     if (!assets_.cursor.frames.empty())
         sprite(assets_.cursor.frame(0, 0), mouse);

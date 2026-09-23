@@ -74,6 +74,15 @@ if ($target) {
 
 `item` 只读查询单件实例的品质原行、词缀行、属性掷值、位置及从 MPQ 适配的外观 token；`status` 同时给出本局出现过的暗金原行数量（含不限量行）和当前人物合成缺资源提示，便于对照穿脱与恢复前后的状态。
 
+营地商人可先从 `objects` 取会话对象 ID，再按正常交互进入菜单；`shop` 给出可买 slot，`buy` 使用同一购买事务。`talk` 用于单独查看原 MPQ 对话，购买不要求先 Talk。
+
+```powershell
+$vendorId = ((.\scripts\Send-D2XCommand.ps1 -Command objects).objects | Where-Object name -eq 'Charsi' | Select-Object -First 1).id
+.\scripts\Send-D2XCommand.ps1 -Command interact -Arguments @{ id = $vendorId; ticks = 250 }
+$offers = (.\scripts\Send-D2XCommand.ps1 -Command shop -Arguments @{ id = $vendorId }).offers
+.\scripts\Send-D2XCommand.ps1 -Command buy -Arguments @{ id = $vendorId; slot = $offers[0].slot }
+```
+
 ## 命令
 
 | command | Arguments | 行为 |
@@ -90,9 +99,12 @@ if ($target) {
 | item-move | `id`、`to`，可选成对 `x`、`y` | 背包、腰带、已开启储物箱间移动；也可从装备栏卸下到指定容器，正式预览后提交，不推进世界时间 |
 | travel | `level` | 调试自由传到已实现地图，优先落在原传送点旁；不检查或写入激活记录 |
 | waypoint | `id`、`level` | 正常传送点命令，id 是当前区域源点；校验距离／通路、两端激活及玩家状态，拒绝时返回错误 |
-| interact | `id`，可选 `ticks` 1–250 | 正常走近对象交互；返回是否已开启、仍在寻路；NPC 对话附原 MPQ 文本与排版行数 |
+| interact | `id`，可选 `ticks` 1–250 | 正常走近对象交互；返回是否已开启、仍在寻路；NPC 首先打开交互菜单 |
+| talk | 无 | 在已打开的 NPC 菜单中选择 Talk，返回原 MPQ 对话文本与排版行数 |
 | gossip | 无 | 活动 NPC 对话切换到下一段原 MPQ 通用闲聊，返回文本和排版行数；不改变玩法状态 |
 | identify | 凯恩对象 `id` | 需先正常交谈且在范围内；按未完成任务档位每件 100 金币鉴定背包和装备中的物品，返回数量和扣款 |
+| shop | 商人对象 `id` | 查询原 MPQ 货架报价、常驻／已售状态；该 NPC 菜单已打开时进入货架界面 |
+| buy | 商人对象 `id`、货架 `slot` | 需先正常交谈且在范围内；按报价扣金币并正式创建背包物品，随机货品售出后不可重购 |
 | grant-gold | `amount` | 仅调试管道增加钱包金币，仍遵守当前角色携带上限，便于检验需付费的 NPC 服务 |
 | use | `id` | 正常物品预览和使用，返回 `used`；支持背包回城卷轴，城镇使用拒绝 |
 | portal | `revision` | 正常走近当前蓝门；需使用 status 中当前版本，营地返程关闭双端点 |
@@ -118,12 +130,12 @@ kill 和 drop 都不进行攻击命中／伤害计算，因此用于验证死亡
 
 ## 当前证据与限制
 
-当前源码为格式 v13／规则 v37，旧档不迁移。v10／规则 v30 的传送现场 `artifacts/waypoint-state-v10.d2xsave` 仅是历史证据，不能按当前格式读取。status 增加 portal、waypoints 和 travelMenu；objects 中 Waypoint 返回 activated 及原 fps。新游戏包括营地全部未激活；travel 自由传送不激活，waypoint 不能绕过解锁。F2 是独立开发目录，不是游戏传送点菜单。原三态动画、首次交互、锁定目的地拒绝及解锁保存恢复曾在 v10 实际验证，本轮未重新运行。
+当前源码为格式 v14／规则 v38，旧档不迁移。v10／规则 v30 的传送现场 `artifacts/waypoint-state-v10.d2xsave` 仅是历史证据，不能按当前格式读取。status 增加 portal、waypoints 和 travelMenu；objects 中 Waypoint 返回 activated 及原 fps。新游戏包括营地全部未激活；travel 自由传送不激活，waypoint 不能绕过解锁。F2 是独立开发目录，不是游戏传送点菜单。原三态动画、首次交互、锁定目的地拒绝及解锁保存恢复曾在 v10 实际验证，本轮未重新运行。
 
 新增 `drop`、`item-move`、`item` 及物品命令回执已完成源码和协议文档。Windows Release 构建后，实际调用 `item` 查询初始手斧、`equip` 卸下和重新装备，以及对当前区域指定怪物 `drop`；后者生成 6 件地面物品、无暂缓原因，已结算数从 0 到 1。拾取、药水使用和头盔胸甲图层仍待定向验收。
 
 在原洞窟地图种子 210、掉落种子 10 下，通过正常移动接近后击杀四个可见普通怪物，得到箭袋 `aqv`（数量 196、等级 2）、金币 5、法力药水及一次 NoDrop。箭袋正常入包保留数量与等级；金币正常拾取后地面实例消失、钱包变为 5、不占背包。重复击杀同 ID 被拒绝；管道保存／恢复后金币 5、箭袋 196、击杀和结算数 4、随机状态保持。现场 `artifacts/gold-pipe-v8.d2xsave`，截图 `artifacts/gold-wallet-v8.png`，均不提交。
 
-上述金币现场使用历史存档 v8／规则 v26，不能按当前 v13／规则 v37 恢复。六件上限、钱包满额部分拾取、跨用户 ACL 拒绝及 Linux 构建尚未实际验证。金币仓库存取／死亡掉金、装备金币加成和投掷武器消耗仍未实现；当前品质展示实例见 [物品补全](ITEM_COMPLETION.md)。
+上述金币现场使用历史存档 v8／规则 v26，不能按当前 v14／规则 v38 恢复。六件上限、钱包满额部分拾取、跨用户 ACL 拒绝及 Linux 构建尚未实际验证。金币仓库存取／死亡掉金、装备金币加成和投掷武器消耗仍未实现；当前品质展示实例见 [物品补全](ITEM_COMPLETION.md)。
 
 另有历史 v27 视觉现场 `artifacts/visual-v27.d2xsave`；status 包含 look／routePoints，monsters 包含可用的原 sourceVelocity。view 会改变当前屏幕范围，因此 kill 的可见约束按调试相机计算，但仍要求单位已激活；drop 不受该约束。

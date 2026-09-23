@@ -143,7 +143,7 @@ class Codec {
         }
     }
 };
-// Explicit schema, never compiler struct layout. Field order is save version 13.
+// Explicit schema, never compiler struct layout. Field order is save version 14.
 void fields(Codec &a, EntityId &v) {
     a(v.value);
 }
@@ -233,7 +233,7 @@ void fields(Codec &a, NpcMotionState &v) {
 }
 void fields(Codec &a, SessionSnapshot &v) {
     a(v.contentFingerprint, v.nextEntityId, v.maps, v.world, v.inactiveAreas, v.inventory, v.containers,
-      v.loot, v.npcMotions);
+      v.loot, v.npcMotions, v.soldVendorOffers);
 }
 uint32_t checksum(std::span<const uint8_t> bytes) {
     uint32_t crc = 0xffffffffu;
@@ -250,7 +250,7 @@ Bytes encodeSave(SessionSnapshot snapshot) {
     Codec body;
     body(snapshot);
     auto bytes = body.take();
-    uint32_t version = 13, size = uint32_t(bytes.size()), crc = checksum(bytes);
+    uint32_t version = 14, size = uint32_t(bytes.size()), crc = checksum(bytes);
     Codec header;
     header(version, size, crc);
     auto headerBytes = header.take();
@@ -269,8 +269,8 @@ SessionSnapshot decodeSave(std::span<const uint8_t> bytes) {
     Codec header(bytes.subspan(sizeof(magic), 12));
     uint32_t version = 0, size = 0, crc = 0;
     header(version, size, crc);
-    if (version != 13)
-        throw std::runtime_error("Unsupported D2X save version; NPC identification requires a new version-13 game");
+    if (version != 14)
+        throw std::runtime_error("Unsupported D2X save version; vendor stock requires a new version-14 game");
     auto payload = bytes.subspan(headerSize);
     if (size != payload.size() || crc != checksum(payload))
         throw std::runtime_error("Save checksum or length mismatch");

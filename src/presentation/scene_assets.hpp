@@ -31,7 +31,8 @@ class SceneAssets {
     std::map<std::string, GpuAnimation> itemGround, itemIcons;
     std::array<GpuAnimation, 2> townPortalAnimations;
     std::array<ObjectAnimationRule, 2> townPortalRules;
-    GpuAnimation fireball, fireburst, panel, cursor, inventoryPanel, storagePanel, beltPanel, beltSocket, orbs,
+    GpuAnimation fireball, fireburst, panel, cursor, inventoryPanel, vendorPanel, vendorTabs,
+        vendorConfirm, storagePanel, beltPanel, beltSocket, orbs,
         globeOverlap, runButton, button;
     SceneAssets(Archives &archives, const GameSession &session);
     static std::string itemArtKey(const ItemInstance &item);

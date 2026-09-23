@@ -35,6 +35,9 @@ std::string fontText(std::string text) {
 
 void SceneView::openNpcDialogue(EntityId object, std::string speaker, std::string text) {
     view_.dialogueObject = object;
+    view_.shopOpen = false;
+    view_.npcMenu = false;
+    view_.shopPage = 0;
     view_.dialogueSpeaker = std::move(speaker);
     view_.dialogue = std::move(text);
     view_.dialogueStatus.clear();
@@ -95,6 +98,7 @@ bool SceneView::clickNpcDialogue(Vec mouse) {
     if (CheckCollisionPointRec(rv(mouse), closeButton())) {
         view_.dialogue.clear();
         view_.dialogueLines.clear();
+        view_.npcMenu = true;
     } else if (CheckCollisionPointRec(rv(mouse), previousButton()))
         scrollNpcDialogue(-visibleLines + 2);
     else if (CheckCollisionPointRec(rv(mouse), nextButton()))

@@ -70,19 +70,44 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
         return true;
     }
     repeatClick_ -= elapsed;
+    if (ui.npcMenu) {
+        int action = input.escape ? 4 :
+                     input.insideViewport && input.leftPressed ? view_.clickNpcMenu(input.mouse) : 0;
+        if (input.insideViewport && input.leftPressed && !action) action = 4;
+        if (action == 1) view_.startNpcTalk();
+        else if (action == 2) view_.openNpcShop();
+        else if (action == 3)
+            session_.submit(IdentifyWithCain{ui.dialogueObject});
+        else if (action == 4) {
+            session_.submit(EndNpcConversation{ui.dialogueObject});
+            ui.npcMenu = false;
+        }
+        return true;
+    }
+    if (ui.shopOpen) {
+        if (input.escape) {
+            ui.shopOpen = false;
+            ui.npcMenu = true;
+            ui.inventory.open = false;
+        } else {
+            if (input.pageDelta) view_.scrollNpcShop(-input.pageDelta);
+            if (input.insideViewport && input.leftPressed)
+                if (auto slot = view_.clickNpcShop(input.mouse))
+                    session_.submit(BuyVendorItem{ui.dialogueObject, *slot});
+        }
+        return true;
+    }
     if (!ui.dialogue.empty()) {
         if (input.escape) {
-            session_.submit(EndNpcConversation{ui.dialogueObject});
             ui.dialogue.clear();
             ui.dialogueLines.clear();
+            ui.npcMenu = true;
         } else {
             if (input.pageDelta)
                 view_.scrollNpcDialogue(-input.pageDelta * 3);
             if (input.insideViewport && input.leftPressed) {
                 if (view_.clickNpcDialogue(input.mouse))
                     session_.submit(IdentifyWithCain{ui.dialogueObject});
-                else if (ui.dialogue.empty())
-                    session_.submit(EndNpcConversation{ui.dialogueObject});
             }
         }
         return true;

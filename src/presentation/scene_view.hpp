@@ -13,7 +13,10 @@ struct ViewState {
     Vec camera, clickAt;
     float clickAge = 10, zoom = 1;
     bool help = false, automap = false, debug = false, pause = false, travelMenu = false;
-    bool showLoot = false;
+    bool showLoot = false, shopOpen = false, npcMenu = false;
+    int shopPage = 0;
+    int shopCategory = 0;
+    std::optional<uint32_t> shopConfirm;
     EntityId waypointSource;
     int travelPage = 0;
     float animationTime = 0, heroTime = 0, stepClock = 0;
@@ -27,7 +30,7 @@ struct ViewState {
     std::string lootNotice;
     float noticeTime = 0;
     bool noticeError = false;
-    bool blocksWorld() const { return pause || travelMenu || help || !dialogue.empty(); }
+    bool blocksWorld() const { return pause || travelMenu || help || npcMenu || shopOpen || !dialogue.empty(); }
 };
 class SceneView {
     const GameSession &session_;
@@ -54,6 +57,8 @@ class SceneView {
     void drawMinimap(bool large) const;
     void drawHud() const;
     void drawNpcDialogue() const;
+    void drawNpcMenu() const;
+    void drawNpcShop(Vec mouse) const;
     void drawControlPanel() const;
     void drawSkillControls(Vec mouse) const;
     void drawSkillIcon(std::optional<Skill> skill, Rectangle bounds) const;
@@ -88,8 +93,14 @@ class SceneView {
     void draw(Vec mouse) const;
     void notice(std::string text, bool error = false);
     void openNpcDialogue(EntityId object, std::string speaker, std::string text);
+    void openNpcMenu(EntityId object, std::string speaker);
+    bool startNpcTalk();
+    bool openNpcShop();
+    int clickNpcMenu(Vec mouse);
     void scrollNpcDialogue(int amount);
     bool clickNpcDialogue(Vec mouse);
+    std::optional<uint32_t> clickNpcShop(Vec mouse);
+    void scrollNpcShop(int pages);
     bool showNextNpcGossip();
     void sessionRestored();
     void collectMapVariants(Archives &archives) {

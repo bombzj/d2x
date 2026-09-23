@@ -7,6 +7,7 @@
 #include "gameplay/loot/grade.hpp"
 #include "gameplay/loot/special.hpp"
 #include "npc_dialogue.hpp"
+#include "vendor_data.hpp"
 #include "resources/archive.hpp"
 #include "resources/data_table.hpp"
 #include <array>
@@ -30,6 +31,7 @@ struct ClassicData {
     std::vector<ClassicTreasureClass> treasures;
     std::vector<ClassicMonsterData> monsters;
     NpcDialogues npcDialogues;
+    std::map<std::string, VendorDefinition, std::less<>> vendors;
     std::string profile;
     std::vector<std::string> armorTypes;
     std::vector<SpecialItemRecord> uniqueItems, setItems;

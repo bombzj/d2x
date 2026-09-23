@@ -3,6 +3,7 @@
 #include "gameplay/items/inventory.hpp"
 #include "gameplay/loot/loot.hpp"
 #include "gameplay/model/interaction.hpp"
+#include "gameplay/npc/store.hpp"
 #include "gameplay/session/session_snapshot.hpp"
 #include "gameplay/simulation/simulation.hpp"
 #include "world/population.hpp"
@@ -25,6 +26,8 @@ class GameSession {
     EntityId pendingInteraction_;
     bool pendingInteractionRepath_ = false;
     EntityId engagedNpc_;
+    std::map<EntityId, std::vector<VendorOffer>> vendorStocks_;
+    std::map<EntityId, std::set<uint32_t>> soldVendorOffers_;
     std::optional<uint64_t> pendingPortal_;
     std::optional<Vec> townPortalArrival_;
     float portalReach_ = 0;
@@ -46,6 +49,7 @@ class GameSession {
     void cancelInteraction();
     void completeInteraction(const WorldObject &object);
     void identifyWithCain(EntityId npc);
+    void buyVendorItem(EntityId npc, uint32_t slot);
     void advanceNpcPaths(float dt);
     bool canReach(const WorldObject &object) const;
     std::optional<Vec> interactionApproach(const WorldObject &object) const;
@@ -93,6 +97,8 @@ class GameSession {
     const PlayerContainers &playerContainers() const { return playerContainers_; }
     StorageAccess storage() const;
     const WorldObject *object(EntityId id) const;
+    const std::vector<VendorOffer> *vendorStock(EntityId npc) const;
+    bool vendorOfferSold(EntityId npc, uint32_t slot) const;
     EntityId interactionTarget() const { return pendingInteraction_; }
     EntityId pickupTarget() const { return pickup_.id; }
     std::optional<Vec> portalPosition() const;

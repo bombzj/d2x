@@ -126,11 +126,48 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
                     break;
             }
             result["queued"] = session.interactionTarget() == id;
-            if (result["opened"].get<bool>() && !view.ui().dialogue.empty()) {
+            if (result["opened"].get<bool>() && view.ui().npcMenu) {
                 result["speaker"] = view.ui().dialogueSpeaker;
-                result["dialogue"] = view.ui().dialogue;
-                result["lines"] = view.ui().dialogueLines.size();
+                result["menu"] = true;
             }
+        } else if (command == "talk") {
+            if (!view.ui().npcMenu || !view.startNpcTalk())
+                throw std::runtime_error("No active NPC menu or original dialogue");
+            result["speaker"] = view.ui().dialogueSpeaker;
+            result["dialogue"] = view.ui().dialogue;
+            result["lines"] = view.ui().dialogueLines.size();
+        } else if (command == "shop") {
+            auto id = entity();
+            const auto *stock = session.vendorStock(id);
+            if (!stock || !session.object(id))
+                throw std::runtime_error("No vendor stock for that NPC in this region");
+            result["offers"] = Json::array();
+            for (const auto &offer : *stock)
+                result["offers"].push_back({{"slot", offer.slot}, {"code", offer.code},
+                    {"quantity", offer.quantity}, {"level", offer.level}, {"price", offer.price},
+                    {"defense", offer.defense}, {"permanent", offer.permanent},
+                    {"sold", session.vendorOfferSold(id, offer.slot)}});
+            if (view.ui().dialogueObject == id && view.ui().npcMenu)
+                view.openNpcShop();
+        } else if (command == "buy") {
+            auto id = entity();
+            auto slot = request.at("slot").get<uint32_t>();
+            if (!slot) throw std::runtime_error("slot must be positive");
+            session.submit(BuyVendorItem{id, slot});
+            session.tick(0);
+            view.advance(0);
+            bool bought = false;
+            for (const auto &event : session.events()) {
+                if (auto failed = std::get_if<InteractionFailed>(&event); failed && failed->object == id)
+                    throw std::runtime_error(failed->reason);
+                if (auto done = std::get_if<VendorItemBought>(&event); done && done->vendor == id) {
+                    result["item"] = done->item.value;
+                    result["slot"] = done->slot;
+                    result["goldSpent"] = done->price;
+                    bought = true;
+                }
+            }
+            if (!bought) throw std::runtime_error("Vendor purchase produced no result");
         } else if (command == "identify") {
             auto id = entity();
             session.submit(IdentifyWithCain{id});

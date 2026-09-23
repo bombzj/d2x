@@ -49,6 +49,8 @@ void SceneView::sessionRestored() {
     view_.travelMenu = view_.help = false;
     view_.skillPicker.reset();
     view_.dialogue.clear();
+    view_.shopOpen = false;
+    view_.npcMenu = false;
     view_.camera = project(session_.state().player.pos);
     view_.clickAge = 10;
     view_.animationTime = view_.heroTime = view_.stepClock = 0;
@@ -99,6 +101,8 @@ void SceneView::advance(float dt) {
                     view_.noticeTime = 0;
                     view_.camera = project(session_.state().player.pos);
                     view_.dialogue.clear();
+                    view_.shopOpen = false;
+                    view_.npcMenu = false;
                     view_.clickAge = 10;
                     view_.heroTime = 0;
                     view_.travelMenu = false;
@@ -122,7 +126,7 @@ void SceneView::advance(float dt) {
                     }
                 } else if constexpr (std::is_same_v<T, InteractionFailed>) {
                     notice(value.reason, true);
-                    if (!view_.dialogue.empty())
+                    if (view_.npcMenu || view_.shopOpen || !view_.dialogue.empty())
                         view_.dialogueStatus = value.reason;
                 } else if constexpr (std::is_same_v<T, LootDeferred>) {
                     notice("Loot deferred: " + value.reason, true);
@@ -177,19 +181,16 @@ void SceneView::advance(float dt) {
                         view_.travelMenu = true;
                     } else if (value.interaction == Interaction::Heal ||
                                value.interaction == Interaction::Talk) {
-                        if (const auto *speech = introSpeech(session_.content().npcDialogues, value.name))
-                        {
-                            openNpcDialogue(value.object, value.name, speech->text);
-                            view_.dialogueGossipTurn = value.name == "Deckard Cain" ? 1 : 0;
-                        }
-                        else
-                            notice("Original dialogue unavailable for " + value.name + ".", true);
+                        openNpcMenu(value.object, value.name);
                     }
                 } else if constexpr (std::is_same_v<T, ItemsIdentified>) {
                     view_.dialogueStatus = value.count
                         ? "Identified " + std::to_string(value.count) + " item(s) for " +
                               std::to_string(value.goldSpent) + " gold."
                         : "No unidentified items in your inventory.";
+                } else if constexpr (std::is_same_v<T, VendorItemBought>) {
+                    view_.dialogueStatus = "Purchased item for " + std::to_string(value.price) + " gold.";
+                    if (view_.shopOpen) scrollNpcShop(0);
                 }
             },
             event);

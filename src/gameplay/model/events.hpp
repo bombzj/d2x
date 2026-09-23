@@ -38,6 +38,11 @@ struct ItemsIdentified {
     EntityId npc;
     unsigned count = 0, goldSpent = 0;
 };
+struct VendorItemBought {
+    EntityId vendor, item;
+    uint32_t slot = 0;
+    unsigned price = 0;
+};
 struct InventoryRejected {
     EntityId item;
     InventoryError error;
@@ -77,7 +82,7 @@ struct LootDeferred {
 struct WaypointActivated {
     EntityId object;
 };
-using GameEvent = std::variant<SkillCast, MeleeAttack, EnemyDied, PlayerDied, RegionEntered, ObjectInteracted, ItemsIdentified,
+using GameEvent = std::variant<SkillCast, MeleeAttack, EnemyDied, PlayerDied, RegionEntered, ObjectInteracted, ItemsIdentified, VendorItemBought,
                                ItemChange, InventoryRejected, InventoryApplied, ItemPickedUp, PickupFailed,
                                ItemUsed, BeltEquipped, StorageOpened, StorageClosed, InteractionFailed,
                                LootDeferred, WaypointActivated>;

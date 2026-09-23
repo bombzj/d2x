@@ -54,6 +54,7 @@ target_sources(d2x_content PRIVATE src/content/item_consumables.cpp)
 target_sources(d2x_content PRIVATE src/content/item_magic_loot.cpp)
 target_sources(d2x_content PRIVATE src/content/item_grades.cpp)
 target_sources(d2x_content PRIVATE src/content/npc_dialogue.cpp)
+target_sources(d2x_content PRIVATE src/content/vendor_data.cpp)
 target_link_libraries(d2x_content PUBLIC d2x_resources d2x_items)
 
 # Rules and state compile without raylib, StormLib, a window or an archive.
@@ -76,6 +77,7 @@ add_library(d2x_population src/world/population.cpp)
 target_link_libraries(d2x_population PUBLIC d2x_content d2x_gameplay)
 add_library(d2x_session src/gameplay/session/session.cpp src/gameplay/session/session_loot.cpp src/gameplay/session/session_inventory.cpp src/gameplay/session/session_consumables.cpp src/gameplay/session/session_interaction.cpp src/gameplay/session/session_snapshot.cpp src/gameplay/session/session_exits.cpp)
 target_sources(d2x_session PRIVATE src/gameplay/npc/identification.cpp src/gameplay/npc/service.cpp src/gameplay/npc/movement.cpp)
+target_sources(d2x_session PRIVATE src/gameplay/npc/store.cpp src/gameplay/npc/purchase.cpp)
 target_sources(d2x_session PRIVATE src/gameplay/session/session_item_snapshot.cpp)
 target_link_libraries(d2x_session PUBLIC d2x_gameplay d2x_world d2x_content d2x_population)
 add_library(d2x_persistence src/persistence/save_codec.cpp src/persistence/save_file.cpp)
@@ -86,7 +88,7 @@ add_library(d2x_presentation
   src/presentation/scene_assets.cpp src/presentation/hero_assets.cpp src/presentation/scene_view.cpp
   src/presentation/skill_assets.cpp src/presentation/hud_controls.cpp src/presentation/skill_controller.cpp
   src/presentation/exit_view.cpp
-  src/presentation/world_renderer.cpp src/presentation/hud.cpp src/presentation/npc_dialogue_view.cpp src/presentation/controller.cpp
+  src/presentation/world_renderer.cpp src/presentation/hud.cpp src/presentation/npc_dialogue_view.cpp src/presentation/npc_menu_view.cpp src/presentation/npc_shop_view.cpp src/presentation/controller.cpp
   src/presentation/loot_view.cpp src/presentation/inventory_panel.cpp
   src/presentation/container_view.cpp src/presentation/storage_view.cpp src/presentation/belt_view.cpp src/presentation/inventory_view.cpp src/presentation/inventory_controller.cpp)
 target_link_libraries(d2x_presentation PUBLIC d2x_session raylib)

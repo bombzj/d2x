@@ -40,6 +40,14 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
     worldSelection.difficulty = population.difficulty;
     auto plan = planWorld(archives, worldContent_, worldSelection);
     regions_ = loadRegions(archives, ids_, plan.regions, monsterContent_);
+    for (const auto &region : regions_)
+        for (const auto &object : region.objects)
+            if (auto vendor = content_.vendors.find(object.npcClass);
+                vendor != content_.vendors.end()) {
+                uint64_t seed = (uint64_t(selection.seed) << 32) | object.id.value;
+                vendorStocks_.emplace(object.id, planVendorStock(content_, vendor->second,
+                                                                  equipmentActor().level, seed));
+            }
     linkLevelExits(regions_, worldContent_);
     for (const auto &region : regions_)
         if (region.definition.id == RegionId::Encampment)
@@ -71,7 +79,7 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
     Fingerprint fingerprint;
     fingerprint.add(content_.profile);
     // Bump this rules revision when state interpretation or compiled rules change.
-    fingerprint.add("d2x-session-rules-v37-npc-interaction-routing");
+    fingerprint.add("d2x-session-rules-v38-vendor-purchase");
     auto members = archives.used;
     for (const auto &member : members) {
         fingerprint.add(member);
@@ -203,6 +211,8 @@ void GameSession::tick(float dt, Vec keyboard) {
                     interact(intent.target);
                 } else if constexpr (std::is_same_v<T, IdentifyWithCain>) {
                     identifyWithCain(intent.target);
+                } else if constexpr (std::is_same_v<T, BuyVendorItem>) {
+                    buyVendorItem(intent.vendor, intent.slot);
                 } else if constexpr (std::is_same_v<T, EndNpcConversation>) {
                     if (engagedNpc_ == intent.target)
                         engagedNpc_ = {};

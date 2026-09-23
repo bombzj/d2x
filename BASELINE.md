@@ -18,7 +18,8 @@
 - 物品：[原表](docs/ITEM_DATA.md)、[实例与事务](docs/ITEM_MODEL.md)、[包裹](docs/INVENTORY_UI.md)、[腰带](docs/BELT_AND_CONSUMABLES.md)、[储物箱](docs/STORAGE.md)。
 - 本轮物品补全顺序与当前进度：[物品与掉落补全](docs/ITEM_COMPLETION.md)。
 - NPC：[对话、服务与原路径移动](docs/NPC_COMPLETION.md)。
+- NPC 交易：[购买实施顺序与限制](docs/NPC_TRADE.md)。
 - 界面与保存：[经典 HUD](docs/CLASSIC_HUD.md)、[存档](docs/SAVES.md)。
 - 工程：[构建与分发](docs/BUILD_AND_SHARE.md)、[MPQ 清单](docs/MPQ_RESOURCES.md)、[第三方许可](docs/THIRD_PARTY.md)。
 
-当前工作：物品与掉落补全已接入并完成基础冒烟（见 [实施清单](docs/ITEM_COMPLETION.md)）；NPC 对话、治疗、付费鉴定与原 DS1 路径移动已接入；详见 [NPC 实施顺序](docs/NPC_COMPLETION.md)。传送点与回城卷轴阶段状态：第一幕九个传送点已生成／识别；新角色包括营地在内全部未开启，实际走近点击才解锁，按原 NU／OP（启动）／ON（开启）模式和 Objects 动画字段播放，普通传送只允许已开启目标。普通场景物件也按 FrameCnt／FrameDelta／CycleAnim／Start 播放，非循环的箱子、尸体等停在末帧。调试 travel／F2 目录独立，不自动解锁。背包回城卷轴已接双向蓝门，OP 段只播一次后进入 ON 循环，使用透明混合；返程关闭并支持保存恢复。当前存档 v13、规则 v37，旧档不迁移。Windows Release 构建、完整 `assets/mpq2` 的新游戏与读档短帧冒烟通过；EXE 直接读取该目录，本轮不打包。装备外观与所有物品交互仍待完整视觉和操作验收。原模板放置、洞口视觉与完整怪物属性等既有缺口保留；验证见核心基线。
+当前工作：物品与掉落补全已接入并完成基础冒烟（见 [实施清单](docs/ITEM_COMPLETION.md)）；NPC 对话、治疗、付费鉴定与原 DS1 路径移动已接入；商人原表货架、购买事务、交互菜单和 MPQ 商店面板已接入源码，购买尚未构建或运行；详见 [NPC 实施顺序](docs/NPC_COMPLETION.md)与 [NPC 交易](docs/NPC_TRADE.md)。传送点与回城卷轴阶段状态：第一幕九个传送点已生成／识别；新角色包括营地在内全部未开启，实际走近点击才解锁，按原 NU／OP（启动）／ON（开启）模式和 Objects 动画字段播放，普通传送只允许已开启目标。普通场景物件也按 FrameCnt／FrameDelta／CycleAnim／Start 播放，非循环的箱子、尸体等停在末帧。调试 travel／F2 目录独立，不自动解锁。背包回城卷轴已接双向蓝门，OP 段只播一次后进入 ON 循环，使用透明混合；返程关闭并支持保存恢复。当前存档 v14、规则 v38，旧档不迁移。此前 NPC 对话阶段的 Windows Release 构建、完整 `assets/mpq2` 的新游戏与读档短帧冒烟通过；EXE 直接读取该目录，本轮购买未构建或运行。装备外观与所有物品交互仍待完整视觉和操作验收。原模板放置、洞口视觉与完整怪物属性等既有缺口保留；验证见核心基线。

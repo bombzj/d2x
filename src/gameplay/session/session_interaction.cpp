@@ -135,7 +135,7 @@ void GameSession::completeInteraction(const WorldObject &object) {
         simulation_.heal();
         [[fallthrough]];
     case Interaction::Talk:
-        if (introSpeech(content_.npcDialogues, object.name))
+        if (introSpeech(content_.npcDialogues, object.name) || vendorStock(object.id))
             engagedNpc_ = object.id;
         simulation_.emit(ObjectInteracted{object.id, object.interaction, object.name});
         break;

@@ -73,6 +73,13 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
     panel = uiGraphics_.single("data/global/ui/panel/800ctrlpnl7.dc6");
     cursor = uiGraphics_.single("data/global/ui/cursor/gaunt.dc6");
     inventoryPanel = graphics_.single("data/global/ui/panel/invchar.dc6");
+    vendorPanel = graphics_.single("data/global/ui/panel/buysell.dc6");
+    vendorTabs = graphics_.single("data/global/ui/panel/buyselltabs.dc6");
+    vendorConfirm = graphics_.single("data/global/ui/menu/dialogbackground.dc6");
+    if (!session.content().vendors.empty() &&
+        (vendorPanel.frames.size() < 4 || vendorTabs.frames.size() < 8 ||
+         vendorConfirm.frames.empty()))
+        throw std::runtime_error("Original vendor UI artwork is missing");
     storagePanel = graphics_.single("data/global/ui/panel/bank.dc6");
     if (storagePanel.frames.size() < 4)
         throw std::runtime_error(
@@ -90,6 +97,18 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
     for (auto table : {"belts", "charstats", "skills"})
         archives.read(std::string("data/global/excel/") + table + ".txt");
     loadInventoryArt(session);
+    for (const auto &region : session.regions())
+        for (const auto &object : region.objects)
+            if (const auto *stock = session.vendorStock(object.id))
+                for (const auto &offer : *stock)
+                    if (!itemIcons.contains(offer.code)) {
+                        const auto *definition = session.inventory().catalog().find(offer.code);
+                        if (!definition) continue;
+                        auto art = graphics_.single(definition->icon);
+                        if (art.frames.empty())
+                            throw std::runtime_error("Original vendor item icon is missing: " + offer.code);
+                        itemIcons.emplace(offer.code, std::move(art));
+                    }
     graphics_.releaseDecoded();
     uiGraphics_.releaseDecoded();
 }

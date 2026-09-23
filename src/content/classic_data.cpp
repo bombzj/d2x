@@ -30,6 +30,8 @@ ClassicData loadClassicData(Archives &archives) {
     tables.emplace(treasureName,
                    DataTable(archives.read(std::string("data/global/excel/") + treasureName + ".txt")));
     if (lod) {
+        if (archives.contains("data/global/excel/npc.txt"))
+            tables.emplace("npc", DataTable(archives.read("data/global/excel/npc.txt")));
         tables.emplace("itemtypes", DataTable(archives.read("data/global/excel/itemtypes.txt")));
         if (archives.contains("data/global/excel/itemratio.txt"))
             tables.emplace("itemratio", DataTable(archives.read("data/global/excel/itemratio.txt")));
@@ -149,6 +151,7 @@ ClassicData loadClassicData(Archives &archives) {
     ClassicData data{ItemCatalog(std::move(items)), std::move(tables),
                      legacy ? "classic-1.04-txt-v1" : "lod-named-txt-v1"};
     data.armorTypes = std::move(armorTypes);
+    data.vendors = loadVendorData(data.tables, data.items);
     if (archives.contains("data/local/docs/eng/a1npc.txt"))
         data.npcDialogues = loadActOneNpcDialogues(archives);
     loadItemConsumables(data);
