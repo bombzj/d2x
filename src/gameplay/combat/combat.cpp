@@ -2,8 +2,9 @@
 #include <algorithm>
 
 namespace d2x {
-void Simulation::damageEnemy(Enemy &enemy, float amount, EntityId source, float chill) {
-    if (enemy.hp <= 0 || !active(enemy.pos))
+void Simulation::damageEnemy(Enemy &enemy, float amount, EntityId source, float chill,
+                             bool ignoreActivation) {
+    if (enemy.hp <= 0 || (!ignoreActivation && !active(enemy.pos)))
         return;
     enemy.hp = std::max(0.f, enemy.hp - amount);
     enemy.hitFlash = .12f;

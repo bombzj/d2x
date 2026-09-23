@@ -43,6 +43,7 @@ add_library(d2x_items
 target_link_libraries(d2x_items PUBLIC d2x_core)
 add_library(d2x_content src/content/classic_data.cpp src/content/lod_data.cpp src/content/world_catalog.cpp src/content/monster_catalog.cpp)
 target_sources(d2x_content PRIVATE src/content/equipment_data.cpp)
+target_sources(d2x_content PRIVATE src/content/item_appearance.cpp)
 target_sources(d2x_content PRIVATE src/content/monster_loot.cpp)
 target_sources(d2x_content PRIVATE src/content/item_quality.cpp)
 target_sources(d2x_content PRIVATE src/content/item_loot.cpp)
@@ -80,7 +81,7 @@ target_link_libraries(d2x_persistence PUBLIC d2x_gameplay d2x_items)
 
 add_library(d2x_presentation
   src/presentation/graphics.cpp src/presentation/audio.cpp src/presentation/primitives.cpp
-  src/presentation/scene_assets.cpp src/presentation/scene_view.cpp
+  src/presentation/scene_assets.cpp src/presentation/hero_assets.cpp src/presentation/scene_view.cpp
   src/presentation/skill_assets.cpp src/presentation/hud_controls.cpp src/presentation/skill_controller.cpp
   src/presentation/exit_view.cpp
   src/presentation/world_renderer.cpp src/presentation/hud.cpp src/presentation/controller.cpp
@@ -89,7 +90,7 @@ add_library(d2x_presentation
 target_link_libraries(d2x_presentation PUBLIC d2x_session raylib)
 
 add_executable(d2x src/main.cpp src/app/application.cpp src/app/options.cpp src/app/input.cpp)
-target_sources(d2x PRIVATE src/app/debug_pipe.cpp src/app/debug_commands.cpp)
+target_sources(d2x PRIVATE src/app/debug_pipe.cpp src/app/debug_commands.cpp src/app/debug_inventory.cpp)
 target_link_libraries(d2x PRIVATE d2x_presentation d2x_persistence)
 target_link_libraries(d2x PRIVATE nlohmann_json::nlohmann_json)
 if(WIN32)

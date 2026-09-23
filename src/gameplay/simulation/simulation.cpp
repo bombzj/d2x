@@ -82,8 +82,9 @@ void Simulation::execute(const GameCommand &command) {
                 attackEnemy(intent.target);
             else if constexpr (std::is_same_v<T, DebugKill>) {
                 if (!state_.player.dead)
-                    if (auto enemy = findEnemy(intent.target); enemy && enemy->hp > 0 && active(enemy->pos))
-                        damageEnemy(*enemy, enemy->hp, state_.player.id);
+                    if (auto enemy = findEnemy(intent.target);
+                        enemy && enemy->hp > 0 && (intent.ignoreActivation || active(enemy->pos)))
+                        damageEnemy(*enemy, enemy->hp, state_.player.id, 0, intent.ignoreActivation);
             }
             else if constexpr (std::is_same_v<T, CastSkill>)
                 cast(intent.skill, intent.target);

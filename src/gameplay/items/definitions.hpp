@@ -1,5 +1,6 @@
 #pragma once
 #include "equipment_rules.hpp"
+#include <array>
 #include <map>
 #include <optional>
 #include <string>
@@ -8,6 +9,12 @@
 
 namespace d2x {
 enum class ItemFamily { Weapon, Armor, Misc };
+// MPQ equipment artwork selectors; indices follow Armor.txt's six body columns.
+struct ItemAppearance {
+    int component = -1;
+    std::string token;
+    std::array<std::string, 6> body{};
+};
 struct ItemBaseStats {
     std::string type, secondaryType, weaponClass;
     std::optional<int> minDamage, maxDamage, twoHandMin, twoHandMax, throwMin, throwMax;
@@ -29,6 +36,7 @@ struct ItemDefinition {
     int beltRows = 0; // Zero is not an equippable belt; row zero is the ready row.
     ItemBaseStats base;
     EquipmentDefinition equipment;
+    ItemAppearance appearance;
 };
 // Immutable once constructed. Instance IDs and definition codes are different identities.
 class ItemCatalog {

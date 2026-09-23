@@ -29,6 +29,7 @@ struct ClassicData {
     std::vector<ClassicTreasureClass> treasures;
     std::vector<ClassicMonsterData> monsters;
     std::string profile;
+    std::vector<std::string> armorTypes;
     std::vector<SpecialItemRecord> uniqueItems, setItems;
     std::vector<MagicAffixRecord> magicPrefixes, magicSuffixes;
     std::vector<RareNameRecord> rarePrefixes, rareSuffixes;

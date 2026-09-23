@@ -26,7 +26,8 @@ class Simulation {
     void attackEnemy(EntityId target);
     bool cast(Skill skill, Vec target);
     void damage(Vec pos, float radius, float amount, EntityId source, float chill = 0);
-    void damageEnemy(Enemy &enemy, float amount, EntityId source, float chill = 0);
+    void damageEnemy(Enemy &enemy, float amount, EntityId source, float chill = 0,
+                     bool ignoreActivation = false);
     void meleeDamage(Enemy &enemy);
     void updatePotions(float dt);
     void updatePlayer(float dt, Vec keyboard);

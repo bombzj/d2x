@@ -13,6 +13,7 @@ struct Attack {
 };
 struct DebugKill {
     EntityId target;
+    bool ignoreActivation = false;
 };
 struct CastSkill {
     Skill skill;

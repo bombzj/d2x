@@ -1,10 +1,26 @@
 #include "debug_commands.hpp"
+#include "debug_inventory.hpp"
 #include "persistence/save_file.hpp"
 #include <nlohmann/json.hpp>
 #include <cmath>
+#include <set>
 #include <stdexcept>
 
 namespace d2x {
+namespace {
+const char *qualityName(ItemQuality quality) {
+    switch (quality) {
+    case ItemQuality::Normal: return "normal";
+    case ItemQuality::Magic: return "magic";
+    case ItemQuality::Rare: return "rare";
+    case ItemQuality::Set: return "set";
+    case ItemQuality::Unique: return "unique";
+    case ItemQuality::Superior: return "superior";
+    case ItemQuality::Inferior: return "inferior";
+    }
+    return "unknown";
+}
+} // namespace
 std::string debugCommand(const std::string &text, GameSession &session, SceneView &view,
                          bool &paused, bool &quit, const std::string &savePath,
                          const std::function<void(const std::string &)> &screenshot) {
@@ -26,7 +42,11 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
                 throw std::runtime_error("id must be a positive integer");
             return EntityId{value.get<uint64_t>()};
         };
-        if (command == "status") {
+        if (command == "item") {
+            debugItemInspect(request, result, session);
+        } else if (command == "item-move") {
+            debugItemMove(request, result, session, view);
+        } else if (command == "status") {
             const auto &state = session.state();
             result["player"] = {{"x", state.player.pos.x}, {"y", state.player.pos.y},
                 {"hp", state.player.hp}, {"gold", state.player.gold}, {"dead", state.player.dead}};
@@ -37,6 +57,8 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
             auto snapshot = session.snapshot();
             result["lootRandom"] = snapshot.loot.randomState;
             result["settled"] = snapshot.loot.settled.size();
+            result["uniqueRowsSeen"] = snapshot.loot.usedUniques.size();
+            result["heroAppearanceError"] = view.heroAppearanceError();
             result["look"] = {state.player.look.x, state.player.look.y};
             result["routePoints"] = state.player.route.size();
             result["waypoints"] = Json::array();
@@ -66,7 +88,17 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
             GameCommand intent = UseItem{item->handle()};
             if (auto error = session.previewInventory(intent); error != InventoryError::None)
                 throw std::runtime_error(inventoryErrorText(error));
+            const EntityId id = item->id;
             session.submit(intent); step();
+            bool used = false;
+            for (const auto &event : session.events()) {
+                if (auto rejected = std::get_if<InventoryRejected>(&event); rejected && rejected->item == id)
+                    throw std::runtime_error(inventoryErrorText(rejected->error));
+                if (auto applied = std::get_if<ItemUsed>(&event); applied && applied->item == id)
+                    used = true;
+            }
+            if (!used) throw std::runtime_error("Item use produced no result");
+            result["used"] = id.value;
         } else if (command == "portal") {
             if (!session.portalPosition() || session.state().player.dead)
                 throw std::runtime_error("No usable portal in this region");
@@ -127,10 +159,32 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
                 slot = equipmentSlotFromCode(request.at("slot").get<std::string>());
                 if (!slot) throw std::runtime_error("Unknown equipment slot");
             }
-            GameCommand intent = EquipItem{item->handle(), slot};
+            const auto *location = std::get_if<ContainerLocation>(&item->location);
+            const auto &containers = session.playerContainers();
+            if (!slot && (!location || (location->container != containers.equipment &&
+                                        location->container != containers.beltEquipment)))
+                throw std::runtime_error("slot is required to equip an unworn item");
+            GameCommand intent = (slot && *slot == EquipmentSlot::Belt) ||
+                                 (!slot && location->container == containers.beltEquipment)
+                                     ? GameCommand{EquipBelt{item->handle()}}
+                                     : GameCommand{EquipItem{item->handle(), slot}};
             if (auto error = session.previewInventory(intent); error != InventoryError::None)
                 throw std::runtime_error(inventoryErrorText(error));
-            session.submit(intent); step();
+            const EntityId id = item->id;
+            session.submit(intent);
+            session.tick(0);
+            view.advance(0);
+            bool applied = false;
+            for (const auto &event : session.events()) {
+                if (auto rejected = std::get_if<InventoryRejected>(&event); rejected && rejected->item == id)
+                    throw std::runtime_error(inventoryErrorText(rejected->error));
+                if (auto accepted = std::get_if<InventoryApplied>(&event); accepted && accepted->requested == id) {
+                    result["transferred"] = accepted->transferred;
+                    applied = true;
+                }
+            }
+            if (!applied) throw std::runtime_error("Equip produced no inventory result");
+            result["item"] = id.value;
         } else if (command == "monsters") {
             result["monsters"] = Json::array();
             for (const auto &enemy : session.state().area.enemies) {
@@ -151,7 +205,8 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
                 if (command == "ground" ? !ground || ground->region != session.state().area.region : ground != nullptr)
                     continue;
                 Json entry = {{"id", id.value}, {"revision", item.revision}, {"code", item.definition},
-                    {"quantity", item.quantity}, {"level", item.level}, {"durability", item.durability}};
+                    {"quantity", item.quantity}, {"level", item.level}, {"durability", item.durability},
+                    {"quality", qualityName(item.quality)}, {"specialRow", item.specialRow}};
                 if (ground) { entry["x"] = ground->position.x; entry["y"] = ground->position.y; }
                 else {
                     const auto &location = std::get<ContainerLocation>(item.location);
@@ -162,15 +217,41 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
                 result["items"].push_back(std::move(entry));
             }
             result["gold"] = session.state().player.gold;
-        } else if (command == "kill") {
+        } else if (command == "kill" || command == "drop") {
             auto id = entity();
+            const bool direct = command == "drop";
             const Enemy *target = nullptr;
             for (const auto &enemy : session.state().area.enemies)
                 if (enemy.id == id) target = &enemy;
-            if (!target || target->hp <= 0 || !visible(*target) || session.state().player.dead)
-                throw std::runtime_error("Target must be a living visible active monster; player must be alive");
-            session.submit(DebugKill{id});
-            step();
+            if (!target || target->hp <= 0 || (!direct && !visible(*target)) || session.state().player.dead)
+                throw std::runtime_error(direct
+                    ? "Target must be a living created monster in the current region; player must be alive"
+                    : "Target must be a living visible active monster; player must be alive");
+            std::set<EntityId> priorItems;
+            if (direct)
+                for (const auto &entry : session.inventory().state().items)
+                    priorItems.insert(entry.first);
+            session.submit(DebugKill{id, direct});
+            if (direct) {
+                session.tick(0);
+                view.advance(0);
+            } else step();
+            if (direct) {
+                result["drops"] = Json::array();
+                result["deferred"] = nullptr;
+                for (const auto &event : session.events())
+                    if (auto deferred = std::get_if<LootDeferred>(&event); deferred && deferred->source == id)
+                        result["deferred"] = deferred->reason;
+                for (const auto &[itemId, item] : session.inventory().state().items) {
+                    if (priorItems.contains(itemId)) continue;
+                    const auto *ground = std::get_if<GroundLocation>(&item.location);
+                    if (!ground || ground->region != session.state().area.region) continue;
+                    result["drops"].push_back({{"id", itemId.value}, {"revision", item.revision},
+                        {"code", item.definition}, {"quantity", item.quantity}, {"level", item.level},
+                        {"quality", qualityName(item.quality)}, {"specialRow", item.specialRow},
+                        {"x", ground->position.x}, {"y", ground->position.y}});
+                }
+            }
             result["killed"] = id.value;
         } else if (command == "pickup") {
             const auto *item = session.inventory().item(entity());
@@ -178,9 +259,26 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
                 throw std::runtime_error("Unknown ground item");
             if (request.contains("revision") && request.at("revision").get<uint64_t>() != item->revision)
                 throw std::runtime_error("Stale item revision");
+            int ticks = request.value("ticks", 1);
+            if (ticks < 1 || ticks > 250) throw std::runtime_error("ticks must be 1..250");
+            const EntityId id = item->id;
             session.submit(PickupItem{item->handle()});
-            step();
-            result["queued"] = true;
+            result["pickedUp"] = false;
+            for (int tick = 0; tick < ticks; ++tick) {
+                step();
+                result["ticks"] = tick + 1;
+                for (const auto &event : session.events()) {
+                    if (auto failed = std::get_if<PickupFailed>(&event); failed && failed->item == id)
+                        throw std::runtime_error(failed->reason);
+                    if (auto rejected = std::get_if<InventoryRejected>(&event); rejected && rejected->item == id)
+                        throw std::runtime_error(inventoryErrorText(rejected->error));
+                    if (auto picked = std::get_if<ItemPickedUp>(&event); picked && picked->item == id)
+                        result["pickedUp"] = true;
+                }
+                if (result["pickedUp"].get<bool>() || session.pickupTarget() != id)
+                    break;
+            }
+            result["queued"] = session.pickupTarget() == id;
         } else if (command == "move") {
             Vec point{request.at("x").get<float>(), request.at("y").get<float>()};
             if (!std::isfinite(point.x) || !std::isfinite(point.y) || point.x < 0 || point.y < 0 ||

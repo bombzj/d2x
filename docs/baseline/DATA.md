@@ -38,12 +38,12 @@
 
 ## 物品与存档
 
-- 当前格式 v12，规则 `d2x-session-rules-v32-visible-item-properties`，拒绝 v1–v11，亦拒绝不同内容／规则指纹。物品保存品质原行、等级要求、展示属性值与词缀行，掉落状态保存限量暗金记录。WorldState 包含 TownPortalState（active、revision、field、双端点）及 waypoints（RegionId 到激活时间）。新游戏解锁表为空；激活时间须在当前时间内且目的地区域含真实传送点；蓝门端点须可行走且营地端匹配原标记。临时走近门请求不保存，相关自动路径在快照中清除。
+- 当前格式 v12，规则 `d2x-session-rules-v33-equipment-appearance-and-unique-batch`，拒绝 v1–v11，亦拒绝不同内容／规则指纹。物品保存品质原行、等级要求、展示属性值与词缀行，掉落状态保存限量暗金记录。WorldState 包含 TownPortalState（active、revision、field、双端点）及 waypoints（RegionId 到激活时间）。新游戏解锁表为空；激活时间须在当前时间内且目的地区域含真实传送点；蓝门端点须可行走且营地端匹配原标记。临时走近门请求不保存，相关自动路径在快照中清除。
 - 调试 Travel 不修改解锁记录；普通 WaypointTravel 重新校验源点与目标，不相信 UI 已禁用按钮。传送点 NU／OP（Operating）／ON（Opened）的帧数、速率、循环和起帧来自 Objects.FrameCnt／FrameDelta／CycleAnim／Start；当前难度与角色都固定在同一 SessionSnapshot 中，不提供跨难度迁移。
 - 野外传送点固定分组通过 MapPiece.substitutionGroup 裁剪原图层和分组内部原对象，保持每格 DT1 资源作用域；非完整通用 LvlSub。回城蓝门使用原 TP 资源，不写入静态地图对象列表，不分配临时地图对象 ID。
 
 - LoD 掉落数据含 852 个原表 TC 和 160 个 ItemTypes 自动类别；怪物 TC 引用在生成类别后重新按名称解析，不把运行时数组下标存入存档。自动类别使用原 weapons/armor/misc 行顺序和主类型 rarity，排除任务物品及不允许生成的条目，投掷药剂不混入其他类别。
-- `selectTreasure` 消费类型化 TC 与调用方种子，可在叶子回调中执行品质判定并停止遍历；纯查询不改变会话状态。单人 NoDrop 未做人数缩放，旧 1.04 数据不套用 LoD 算法。`planItemLoot` 最多规划六件有原表定义和原图的物品实例，品质候选失败后按已核实顺序降级；遇未知实例整批暂缓并丢弃候选，保留已消费随机状态而不重抽。入口本身无法解析时不抽取。死亡 ID 仍只结算一次，暂缓批次不会补发。
+- `selectTreasure` 消费类型化 TC 与调用方种子，原表 `Picks=0` 不抽取，可在叶子回调中执行品质判定并停止遍历；纯查询不改变会话状态。单人 NoDrop 未做人数缩放，旧 1.04 数据不套用 LoD 算法。`planItemLoot` 最多规划六件有原表定义和原图的物品实例，同批次选择限量暗金时登记已选原行，品质候选失败后按已核实顺序降级；遇未知实例整批暂缓并丢弃候选，保留已消费随机状态而不重抽。入口本身无法解析时不抽取。死亡 ID 仍只结算一次，暂缓批次不会补发。
 - ItemRatio 在 LoD 源存在时读取并纳入内容指纹；缺表时游戏显示暂缓原因，不补造比例。品质请求规则独立于存档 ItemQuality，超强／劣质等从 QualityItems／LowQualityItems 原行生成展示实例。`createItem` 接受可信物品等级参数，掉落实例使用解析后的等级，初始物品仍为等级 1。
 - `resolveMonsterLoot` 只读真实身份、MonStats、SuperUniques 和 Levels，返回 Ready／Empty／Deferred、基础 TC 名称、物品等级及 TC 升级等级；不读取替身 MonsterKind。普通难度升级等级固定为零，噩梦／地狱仅非 boss／非 noRatio 怪物可升级。任务条件缺失和随从等级归属不明明确暂缓，不当作 NoDrop；死亡日志不编码到存档，已结算 ID 仍按原语义保存。
 - `ItemDefinition` 是只读原表定义；`ItemInstance` 是带稳定 ID 的实例。

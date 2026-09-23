@@ -1,5 +1,6 @@
 #include "classic_data.hpp"
 #include "equipment_data.hpp"
+#include "item_appearance.hpp"
 #include "item_affixes.hpp"
 #include "item_properties.hpp"
 #include "item_consumables.hpp"
@@ -11,8 +12,16 @@
 namespace d2x {
 ClassicData loadClassicData(Archives &archives) {
     std::map<std::string, DataTable, std::less<>> tables;
-    for (auto name : {"misc", "weapons", "armor", "belts", "monstats", "charstats", "skills"})
+    for (auto name : {"misc", "weapons", "armor", "armtype", "belts", "monstats", "charstats", "skills"})
         tables.emplace(name, DataTable(archives.read(std::string("data/global/excel/") + name + ".txt")));
+    const auto &armtype = tables.at("armtype");
+    if (!armtype.has("Token"))
+        throw std::runtime_error("ArmType lacks original Token column");
+    std::vector<std::string> armorTypes;
+    for (size_t row = 0; row < armtype.rows().size(); ++row)
+        armorTypes.emplace_back(armtype.value(row, "Token"));
+    if (armorTypes.empty() || armorTypes.front().empty())
+        throw std::runtime_error("ArmType lacks the unarmored appearance token");
     bool legacy = tables.at("monstats").has("Class");
     bool lod = !legacy && tables.at("monstats").has("Id") && tables.at("monstats").has("TreasureClass1");
     if (!legacy && !lod)
@@ -134,10 +143,12 @@ ClassicData loadClassicData(Archives &archives) {
         if (item.beltRows < 1 || item.beltRows > 4)
             throw std::runtime_error("Missing original belt layout: " + std::string(shape));
     }
+    loadItemAppearances(items, tables, armorTypes);
     if (lod)
         loadEquipmentDefinitions(items, tables.at("itemtypes"), tables);
     ClassicData data{ItemCatalog(std::move(items)), std::move(tables),
                      legacy ? "classic-1.04-txt-v1" : "lod-named-txt-v1"};
+    data.armorTypes = std::move(armorTypes);
     loadItemConsumables(data);
     if (lod) {
         loadPropertyData(data);

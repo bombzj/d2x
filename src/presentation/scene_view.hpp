@@ -74,6 +74,7 @@ class SceneView {
     Vec screen(Vec position) const;
     Vec world(Vec position) const;
     bool visible(const WorldObject &object) const;
+    const std::string &heroAppearanceError() const { return assets_.heroAppearanceError(); }
     bool leftSkillAllowed(Skill skill) const { return assets_.skillIcons.at(size_t(skill)).leftAllowed; }
     std::vector<std::optional<Skill>> skillChoices(bool right) const;
     std::optional<ItemHandle> lootAt(Vec mouse, bool labelsOnly = false) const;

@@ -14,6 +14,7 @@ LootPlan planItemLoot(const ClassicData &data, const DataTable &ratios, std::str
         throw std::runtime_error("Unsupported item loot profile or level");
     LootPlan plan;
     plan.randomState = seed;
+    std::set<size_t> selectedUniques = usedUniques;
     auto roll = selectTreasure(data.treasures, root, seed, upgradeLevel,
         [&](const TreasureSelection &selection, uint64_t &random) {
             std::string_view code = selection.code;
@@ -56,7 +57,7 @@ LootPlan planItemLoot(const ClassicData &data, const DataTable &ratios, std::str
                     }
                     const auto &records = unique ? data.uniqueItems : data.setItems;
                     auto choice = rollSpecialItem(records, item->code, itemLevel, random,
-                                                  unique ? usedUniques : std::set<size_t>{});
+                                                  unique ? selectedUniques : std::set<size_t>{});
                     random = choice.randomState;
                     if (choice.row && !choice.alreadyDropped) {
                         auto found = std::find_if(records.begin(), records.end(),
@@ -71,6 +72,8 @@ LootPlan planItemLoot(const ClassicData &data, const DataTable &ratios, std::str
                         random = properties.randomState;
                         generation.quality = unique ? ItemQuality::Unique : ItemQuality::Set;
                         generation.specialRow = int32_t(found->row);
+                        if (unique && !found->noLimit)
+                            selectedUniques.insert(found->row);
                         generation.requiredLevel = found->requiredLevel;
                         generation.propertyRolls = std::move(properties.values);
                         break;
