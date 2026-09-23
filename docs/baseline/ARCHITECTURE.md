@@ -32,6 +32,7 @@
 扩展入口：
 
 - Travel 为开发目录／管道自由传送；WaypointTravel 为游戏传送，GameSession 校验两端激活与源点距离。SceneView.waypointSource 区分专用菜单与 F2 目录，首次交互发 WaypointActivated 而非直接开菜单。WorldState.waypoints 保存激活时间，表现层按 Objects 的 NU／OP（Operating）／ON（Opened）顺序及 FrameCnt／FrameDelta／CycleAnim／Start 计算动画阶段；普通物件共用这套只读播放规则，非循环段钳在末帧。
+- `presentation/waypoint_view.cpp` 拼接 MPQ 菜单美术，依据 `WorldCatalog` 的 `Levels.Waypoint` 排列目的地，点击只提交 `WaypointTravel`。NPC 字幕和紧凑菜单分别在 `npc_dialogue_view.cpp`、`npc_menu_view.cpp`；正文仍来自 `NpcDialogueCatalog`，表现层不创建 NPC 服务状态。
 - 回城卷轴 UseItem 在 session_consumables 中规划端点、消耗库存并替换 TownPortalState；UseTownPortal 走近后切区，营地返回关闭。蓝门仅作为状态派生图像，不混入静态 Region.objects；表现层按 Objects 的 OP 一次段、ON 循环段和 COF 透明绘制播放，读档已有门直接显示持续段。快照校验端点和原营地标记。原野外传送点固定 LvlSub 片段由 outdoor 和 map_assembly 负责。
 
 - `content/item_appearance.*` 从原物品表与 `ArmType.txt` 适配头盔、胸甲六图层及手部组件；`presentation/hero_assets.cpp` 按当前穿戴与动作类别合成并缓存角色动画。穿脱与读档重建表现，GPU 状态不入存档；死亡模式使用原基础身体资源。`Graphics::composite` 将 COF 顺序方向映射到 DCC 方向；缺部位 token 时提示并保留该部位基础图层，整套动作图不完整时提示并回退基础身体。怪物实际位移及面向缓存在 SceneView，不改变战斗状态编码。

@@ -59,6 +59,7 @@ class SceneView {
     void drawNpcDialogue() const;
     void drawNpcMenu() const;
     void drawNpcShop(Vec mouse) const;
+    void drawWaypointMenu(Vec mouse) const;
     void drawControlPanel() const;
     void drawSkillControls(Vec mouse) const;
     void drawSkillIcon(std::optional<Skill> skill, Rectangle bounds) const;
@@ -98,8 +99,9 @@ class SceneView {
     bool openNpcShop();
     int clickNpcMenu(Vec mouse);
     void scrollNpcDialogue(int amount);
-    bool clickNpcDialogue(Vec mouse);
+    void closeNpcDialogue();
     std::optional<uint32_t> clickNpcShop(Vec mouse);
+    std::optional<RegionId> clickWaypointMenu(Vec mouse);
     void scrollNpcShop(int pages);
     bool showNextNpcGossip();
     void sessionRestored();

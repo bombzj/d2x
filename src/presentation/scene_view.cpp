@@ -230,17 +230,25 @@ void SceneView::advance(float dt) {
 std::vector<WorldEntry> SceneView::travelEntries() const {
     if (!view_.waypointSource)
         return session_.worldEntries();
-    std::vector<WorldEntry> entries;
+    std::vector<std::pair<int, WorldEntry>> ordered;
     for (const auto &region : session_.regions()) {
         if (std::none_of(region.objects.begin(), region.objects.end(), [](const auto &object) {
                 return object.name == "Waypoint" && object.interaction == Interaction::Travel;
             }))
             continue;
         const bool unlocked = session_.waypointUnlocked(region.definition.id);
-        entries.push_back({int(region.definition.id), region.definition.name,
-                            unlocked ? "Activated" : "Not activated", {},
-                            unlocked ? std::optional<RegionId>{region.definition.id} : std::nullopt});
+        auto record = session_.worldContent().levels().find(int(region.definition.id));
+        int order = record == session_.worldContent().levels().end() ? 999 : record->second.waypoint;
+        ordered.push_back({order, {int(region.definition.id), region.definition.name,
+                          unlocked ? "Activated" : "Not activated", {},
+                          unlocked ? std::optional<RegionId>{region.definition.id} : std::nullopt}});
     }
+    std::sort(ordered.begin(), ordered.end(), [](const auto &a, const auto &b) {
+        return a.first == b.first ? a.second.level < b.second.level : a.first < b.first;
+    });
+    std::vector<WorldEntry> entries;
+    for (auto &[order, entry] : ordered)
+        entries.push_back(std::move(entry));
     return entries;
 }
 } // namespace d2x

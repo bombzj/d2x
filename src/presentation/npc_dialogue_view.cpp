@@ -1,20 +1,13 @@
 #include "scene_view.hpp"
-#include "gameplay/npc/identification.hpp"
 #include <algorithm>
 
 namespace d2x {
 namespace {
-constexpr int visibleLines = 14;
-constexpr int textSize = 17;
+constexpr int visibleLines = 6;
+constexpr int textSize = 18;
 constexpr int lineHeight = 24;
-constexpr int left = 210;
-constexpr int textWidth = 640;
-Rectangle previousButton() { return {225, 535, 142, 36}; }
-Rectangle nextButton() { return {699, 535, 142, 36}; }
-Rectangle closeButton() { return {463, 535, 140, 36}; }
-Rectangle identifyButton() { return {368, 579, 330, 31}; }
-Rectangle gossipButton(bool cain) { return cain ? Rectangle{698, 579, 150, 31}
-                                               : Rectangle{368, 579, 330, 31}; }
+Rectangle speechBounds() { return {(W - 540.f) / 2, 8, 540, 170}; }
+int textWidth() { return int(speechBounds().width) - 32; }
 
 std::string fontText(std::string text) {
     // The original Font16 DC6 is byte-indexed. Keep MPQ text intact in content;
@@ -65,7 +58,7 @@ void SceneView::openNpcDialogue(EntityId object, std::string speaker, std::strin
                     wordEnd = paragraph.size();
                 auto word = paragraph.substr(wordAt, wordEnd - wordAt);
                 auto candidate = line.empty() ? word : line + ' ' + word;
-                if (!line.empty() && painter_.measure(candidate, textSize) > textWidth) {
+                if (!line.empty() && painter_.measure(candidate, textSize) > textWidth()) {
                     view_.dialogueLines.push_back(std::move(line));
                     line = std::move(word);
                 } else
@@ -86,28 +79,14 @@ void SceneView::scrollNpcDialogue(int amount) {
                                       std::max(0, int(view_.dialogueLines.size()) - visibleLines));
 }
 
-bool SceneView::clickNpcDialogue(Vec mouse) {
-    if (view_.dialogueSpeaker == "Deckard Cain" &&
-        CheckCollisionPointRec(rv(mouse), identifyButton()))
-        return true;
-    const bool cain = view_.dialogueSpeaker == "Deckard Cain";
-    if (CheckCollisionPointRec(rv(mouse), gossipButton(cain))) {
-        showNextNpcGossip();
-        return false;
-    }
-    if (CheckCollisionPointRec(rv(mouse), closeButton())) {
-        view_.dialogue.clear();
-        view_.dialogueLines.clear();
-        view_.npcMenu = true;
-    } else if (CheckCollisionPointRec(rv(mouse), previousButton()))
-        scrollNpcDialogue(-visibleLines + 2);
-    else if (CheckCollisionPointRec(rv(mouse), nextButton()))
-        scrollNpcDialogue(visibleLines - 2);
-    return false;
+void SceneView::closeNpcDialogue() {
+    view_.dialogue.clear();
+    view_.dialogueLines.clear();
+    view_.npcMenu = true;
 }
 
 bool SceneView::showNextNpcGossip() {
-    if (view_.dialogue.empty())
+    if (!view_.npcMenu && view_.dialogue.empty())
         return false;
     const auto *speech = gossipSpeech(session_.content().npcDialogues,
                                       view_.dialogueSpeaker, view_.dialogueGossipTurn);
@@ -119,42 +98,19 @@ bool SceneView::showNextNpcGossip() {
 }
 
 void SceneView::drawNpcDialogue() const {
-    DrawRectangle(0, 0, W, H, {0, 0, 0, 175});
-    frame({179, 71, 708, 545});
-    painter_.centered(view_.dialogueSpeaker, 91, 24, gold);
-    DrawLine(left, 131, left + textWidth, 131, gold);
-    BeginScissorMode(left, 145, textWidth, visibleLines * lineHeight);
+    auto bounds = speechBounds();
+    DrawRectangleRec(bounds, {0, 0, 0, 200});
+    DrawRectangleLinesEx(bounds, 1, gold);
+    BeginScissorMode(int(bounds.x) + 14, int(bounds.y) + 12,
+                     textWidth() + 4, visibleLines * lineHeight);
     for (int row = 0; row < visibleLines; ++row) {
         auto index = view_.dialogueScroll + row;
         if (index >= int(view_.dialogueLines.size()))
             break;
-        painter_.label(view_.dialogueLines[size_t(index)], left, 146 + row * lineHeight,
-                       textSize, parchment);
+        painter_.label(view_.dialogueLines[size_t(index)], int(bounds.x) + 16,
+                       int(bounds.y) + 13 + row * lineHeight,
+                       textSize, {230, 226, 212, 255});
     }
     EndScissorMode();
-    for (auto [bounds, label] : {std::pair{previousButton(), "< PREVIOUS"},
-                               {closeButton(), "CLOSE"}, {nextButton(), "NEXT >"}}) {
-        frame(bounds);
-        painter_.label(label, int(bounds.x) + 17, int(bounds.y) + 9, 14, gold);
-    }
-    auto count = std::max(1, int(view_.dialogueLines.size()) - visibleLines + 1);
-    painter_.centered(std::to_string(view_.dialogueScroll + 1) + " / " + std::to_string(count) +
-                          "   Scroll or PgUp / PgDn",
-                      509, 12);
-    if (view_.dialogueSpeaker == "Deckard Cain") {
-        const auto plan = planCainIdentification(session_.inventory().state(),
-                                                  session_.playerContainers());
-        frame(identifyButton());
-        auto label = "IDENTIFY ALL  " + std::to_string(plan.items.size()) + " / " +
-                     std::to_string(plan.cost) + " GOLD";
-        painter_.label(label, int(identifyButton().x) + 13, int(identifyButton().y) + 8, 14, gold);
-    }
-    if (gossipSpeech(session_.content().npcDialogues, view_.dialogueSpeaker, 0)) {
-        auto button = gossipButton(view_.dialogueSpeaker == "Deckard Cain");
-        frame(button);
-        painter_.label("GOSSIP", int(button.x) + 14, int(button.y) + 8, 14, gold);
-    }
-    if (!view_.dialogueStatus.empty())
-        painter_.centered(view_.dialogueStatus, 619, 14, gold);
 }
 } // namespace d2x

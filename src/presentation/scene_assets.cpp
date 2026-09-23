@@ -80,6 +80,15 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
         (vendorPanel.frames.size() < 4 || vendorTabs.frames.size() < 8 ||
          vendorConfirm.frames.empty()))
         throw std::runtime_error("Original vendor UI artwork is missing");
+    waypointBorder = graphics_.single("data/global/ui/panel/800borderframe.dc6");
+    waypointPanel = graphics_.single("data/global/ui/menu/waygatebackground.dc6");
+    waypointTabs = graphics_.single(archives.contains("data/global/ui/menu/expwaygatetabs.dc6")
+        ? "data/global/ui/menu/expwaygatetabs.dc6"
+        : "data/global/ui/menu/waygatetabs.dc6");
+    waypointIcons = graphics_.single("data/global/ui/menu/waygateicons.dc6");
+    if (waypointBorder.frames.size() < 10 || waypointPanel.frames.size() < 4 ||
+        waypointTabs.frames.size() < 8 || waypointIcons.frames.size() < 4)
+        throw std::runtime_error("Original waypoint menu artwork is missing");
     storagePanel = graphics_.single("data/global/ui/panel/bank.dc6");
     if (storagePanel.frames.size() < 4)
         throw std::runtime_error(

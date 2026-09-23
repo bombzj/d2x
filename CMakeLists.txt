@@ -87,7 +87,7 @@ add_library(d2x_presentation
   src/presentation/graphics.cpp src/presentation/audio.cpp src/presentation/primitives.cpp
   src/presentation/scene_assets.cpp src/presentation/hero_assets.cpp src/presentation/scene_view.cpp
   src/presentation/skill_assets.cpp src/presentation/hud_controls.cpp src/presentation/skill_controller.cpp
-  src/presentation/exit_view.cpp
+  src/presentation/exit_view.cpp src/presentation/waypoint_view.cpp
   src/presentation/world_renderer.cpp src/presentation/hud.cpp src/presentation/npc_dialogue_view.cpp src/presentation/npc_menu_view.cpp src/presentation/npc_shop_view.cpp src/presentation/controller.cpp
   src/presentation/loot_view.cpp src/presentation/inventory_panel.cpp
   src/presentation/container_view.cpp src/presentation/storage_view.cpp src/presentation/belt_view.cpp src/presentation/inventory_view.cpp src/presentation/inventory_controller.cpp)

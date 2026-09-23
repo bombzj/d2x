@@ -78,6 +78,7 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
         else if (action == 2) view_.openNpcShop();
         else if (action == 3)
             session_.submit(IdentifyWithCain{ui.dialogueObject});
+        else if (action == 5) view_.showNextNpcGossip();
         else if (action == 4) {
             session_.submit(EndNpcConversation{ui.dialogueObject});
             ui.npcMenu = false;
@@ -105,10 +106,8 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
         } else {
             if (input.pageDelta)
                 view_.scrollNpcDialogue(-input.pageDelta * 3);
-            if (input.insideViewport && input.leftPressed) {
-                if (view_.clickNpcDialogue(input.mouse))
-                    session_.submit(IdentifyWithCain{ui.dialogueObject});
-            }
+            if (input.insideViewport && input.leftPressed)
+                view_.closeNpcDialogue();
         }
         return true;
     }
@@ -193,6 +192,15 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
         return true;
     }
     if (ui.travelMenu && !ui.help) {
+        if (ui.waypointSource) {
+            if (input.insideViewport && input.leftPressed)
+                if (auto destination = view_.clickWaypointMenu(input.mouse)) {
+                    session_.submit(WaypointTravel{ui.waypointSource, *destination});
+                    ui.travelMenu = false;
+                    ui.pause = false;
+                }
+            return true;
+        }
         const auto entries = view_.travelEntries();
         int pages = (int(entries.size()) + worldPageSize - 1) / worldPageSize;
         int delta = input.pageDelta;
@@ -213,10 +221,7 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
                                  true);
                     return true;
                 }
-                if (ui.waypointSource)
-                    session_.submit(WaypointTravel{ui.waypointSource, *entry.destination});
-                else
-                    session_.submit(Travel{*entry.destination});
+                session_.submit(Travel{*entry.destination});
                 ui.travelMenu = false;
                 // Opening a paused travel panel does not trap its queued transition.
                 ui.pause = false;
