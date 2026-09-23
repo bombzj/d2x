@@ -25,6 +25,7 @@ void fields(Codec &, Cell &);
 void fields(Codec &, ContainerSpec &);
 void fields(Codec &, ContainerState &);
 void fields(Codec &, ItemInstance &);
+void fields(Codec &, ItemAffixInstance &);
 void fields(Codec &, InventoryState &);
 void fields(Codec &, PlayerContainers &);
 void fields(Codec &, LootState &);
@@ -141,7 +142,7 @@ class Codec {
         }
     }
 };
-// Explicit schema, never compiler struct layout. Field order is save version 10.
+// Explicit schema, never compiler struct layout. Field order is save version 12.
 void fields(Codec &a, EntityId &v) {
     a(v.value);
 }
@@ -197,7 +198,9 @@ void fields(Codec &a, PlayerContainers &v) {
     a(v.backpack, v.belt, v.stash, v.beltEquipment, v.equipment);
 }
 void fields(Codec &a, ItemInstance &v) {
-    a(v.id, v.definition, v.quantity, v.durability, v.quality, v.level, v.revision, v.defense);
+    a(v.id, v.definition, v.quantity, v.durability, v.quality, v.level, v.revision, v.defense,
+      v.specialRow, v.requiredLevel, v.gradeRow, v.rarePrefixRow, v.rareSuffixRow,
+      v.propertyRolls, v.affixes);
     uint32_t kind = uint32_t(v.location.index());
     a(kind);
     if (kind == 0) {
@@ -215,11 +218,14 @@ void fields(Codec &a, ItemInstance &v) {
     } else
         throw std::runtime_error("Invalid saved item location kind");
 }
+void fields(Codec &a, ItemAffixInstance &v) {
+    a(v.prefix, v.row, v.propertyRolls);
+}
 void fields(Codec &a, InventoryState &v) {
     a(v.items, v.containers, v.creationRandom);
 }
 void fields(Codec &a, LootState &v) {
-    a(v.randomState, v.settled);
+    a(v.randomState, v.settled, v.usedUniques);
 }
 void fields(Codec &a, SessionSnapshot &v) {
     a(v.contentFingerprint, v.nextEntityId, v.maps, v.world, v.inactiveAreas, v.inventory, v.containers,
@@ -240,7 +246,7 @@ Bytes encodeSave(SessionSnapshot snapshot) {
     Codec body;
     body(snapshot);
     auto bytes = body.take();
-    uint32_t version = 10, size = uint32_t(bytes.size()), crc = checksum(bytes);
+    uint32_t version = 12, size = uint32_t(bytes.size()), crc = checksum(bytes);
     Codec header;
     header(version, size, crc);
     auto headerBytes = header.take();
@@ -259,8 +265,8 @@ SessionSnapshot decodeSave(std::span<const uint8_t> bytes) {
     Codec header(bytes.subspan(sizeof(magic), 12));
     uint32_t version = 0, size = 0, crc = 0;
     header(version, size, crc);
-    if (version != 10)
-        throw std::runtime_error("Unsupported D2X save version; waypoint activation requires a new version-10 game");
+    if (version != 12)
+        throw std::runtime_error("Unsupported D2X save version; item properties require a new version-12 game");
     auto payload = bytes.subspan(headerSize);
     if (size != payload.size() || crc != checksum(payload))
         throw std::runtime_error("Save checksum or length mismatch");

@@ -12,7 +12,7 @@ struct ItemBaseStats {
     std::string type, secondaryType, weaponClass;
     std::optional<int> minDamage, maxDamage, twoHandMin, twoHandMax, throwMin, throwMax;
     std::optional<int> minDefense, maxDefense, requiredStrength, requiredDexterity, requiredLevel;
-    std::optional<int> level, cost, speed, block, sockets, rarity, spawnable;
+    std::optional<int> level, magicLevel, cost, speed, block, sockets, rarity, spawnable;
     std::optional<int> strengthBonus, dexterityBonus;
     std::string sourceTable;
     size_t sourceRow = 0;
@@ -24,6 +24,7 @@ struct ItemDefinition {
     unsigned maxStack = 1, maxDurability = 0;
     bool beltAllowed = false, usable = false;
     std::string icon, groundAnimation;
+    bool artAvailable = false;
     bool autoBelt = false;
     int beltRows = 0; // Zero is not an equippable belt; row zero is the ready row.
     ItemBaseStats base;

@@ -20,7 +20,7 @@ Color itemColor(ItemQuality quality) {
 } // namespace
 Rectangle SceneView::lootBounds(const ItemInstance &item) const {
     auto p = screen(std::get<GroundLocation>(item.location).position);
-    auto animation = assets_.itemGround.find(item.definition);
+    auto animation = assets_.itemGround.find(SceneAssets::itemArtKey(item));
     if (animation != assets_.itemGround.end())
         if (auto frame = animation->second.frame(0, animation->second.count - 1))
             return {p.x + frame->x - 5, p.y + frame->y - 5, float(frame->texture.width + 10),
@@ -34,7 +34,7 @@ void SceneView::drawGroundItem(EntityId id) const {
         return;
     if (id == session_.pickupTarget())
         diamond(p, 15, gold);
-    auto animation = assets_.itemGround.find(item.definition);
+    auto animation = assets_.itemGround.find(SceneAssets::itemArtKey(item));
     if (animation != assets_.itemGround.end() && animation->second.count > 0) {
         const auto &anim = animation->second;
         auto age = landingAge_.find(id);
@@ -55,8 +55,7 @@ std::vector<SceneView::LootLabel> SceneView::lootLabels(Vec mouse) const {
         auto ground = screen(std::get<GroundLocation>(item.location).position);
         if (ground.x < 0 || ground.x > W || ground.y < 70 || ground.y > H - HUD - 38)
             continue;
-        const auto *definition = inventory.catalog().find(item.definition);
-        std::string text = definition->name;
+        std::string text = itemName(item);
         if (item.quantity > 1)
             text += " x" + std::to_string(item.quantity);
         float width = float(painter_.measure(text, 14) + 14);

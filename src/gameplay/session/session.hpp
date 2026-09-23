@@ -65,6 +65,7 @@ class GameSession {
     void updatePickup();
     void cancelPickup();
     int validateSnapshot(const SessionSnapshot &snapshot) const;
+    void validateItemProperties(const SessionSnapshot &snapshot) const;
 
   public:
     static constexpr float fixedStep = 1.f / 25.f;

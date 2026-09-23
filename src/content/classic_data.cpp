@@ -1,5 +1,10 @@
 #include "classic_data.hpp"
 #include "equipment_data.hpp"
+#include "item_affixes.hpp"
+#include "item_properties.hpp"
+#include "item_consumables.hpp"
+#include "item_grades.hpp"
+#include "special_items.hpp"
 #include <algorithm>
 #include <stdexcept>
 
@@ -19,6 +24,11 @@ ClassicData loadClassicData(Archives &archives) {
         tables.emplace("itemtypes", DataTable(archives.read("data/global/excel/itemtypes.txt")));
         if (archives.contains("data/global/excel/itemratio.txt"))
             tables.emplace("itemratio", DataTable(archives.read("data/global/excel/itemratio.txt")));
+        for (auto name : {"uniqueitems", "setitems", "sets", "magicprefix", "magicsuffix",
+                          "rareprefix", "raresuffix",
+                          "properties", "itemstatcost", "qualityitems", "lowqualityitems"})
+            if (archives.contains(std::string("data/global/excel/") + name + ".txt"))
+                tables.emplace(name, DataTable(archives.read(std::string("data/global/excel/") + name + ".txt")));
     }
     const auto &tc = tables.at(treasureName);
     if (legacy && (!tc.has("NumCodes") || !tc.has("Code30")))
@@ -50,6 +60,8 @@ ClassicData loadClassicData(Archives &archives) {
                 item.icon = "data/global/items/" + value("invfile") + ".dc6";
             if (!value("flippyfile").empty())
                 item.groundAnimation = "data/global/items/" + value("flippyfile") + ".dc6";
+            item.artAvailable = !item.icon.empty() && !item.groundAnimation.empty() &&
+                                archives.contains(item.icon) && archives.contains(item.groundAnimation);
             auto &base = item.base;
             base.type = value("type");
             base.secondaryType = value("type2");
@@ -66,6 +78,7 @@ ClassicData loadClassicData(Archives &archives) {
             base.requiredDexterity = number("reqdex");
             base.requiredLevel = number("levelreq");
             base.level = number("level");
+            base.magicLevel = number("magic lvl");
             base.cost = number("cost");
             base.speed = number("speed");
             base.strengthBonus = number("strbonus");
@@ -123,12 +136,30 @@ ClassicData loadClassicData(Archives &archives) {
     }
     if (lod)
         loadEquipmentDefinitions(items, tables.at("itemtypes"), tables);
-    ClassicData data{ItemCatalog(std::move(items)),
-                     std::move(tables),
-                     {},
-                     {},
+    ClassicData data{ItemCatalog(std::move(items)), std::move(tables),
                      legacy ? "classic-1.04-txt-v1" : "lod-named-txt-v1"};
+    loadItemConsumables(data);
     if (lod) {
+        loadPropertyData(data);
+        loadItemGrades(data);
+        loadSpecialItemData(data);
+        auto resolveSpecialArt = [&](SpecialItemRecord &record) {
+            const auto *base = data.items.find(record.code);
+            if (!base)
+                return;
+            const auto &icon = record.icon.empty() ? base->icon : record.icon;
+            const auto &ground = record.groundAnimation.empty() ? base->groundAnimation
+                                                                 : record.groundAnimation;
+            record.artAvailable = !icon.empty() && !ground.empty() &&
+                                  archives.contains(icon) && archives.contains(ground);
+        };
+        for (auto &record : data.uniqueItems) {
+            resolveSpecialArt(record);
+        }
+        for (auto &record : data.setItems) {
+            resolveSpecialArt(record);
+        }
+        loadMagicAffixData(data);
         loadLodTreasureData(data);
         return data;
     }

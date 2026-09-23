@@ -29,10 +29,13 @@ class SceneAssets {
     std::map<std::string, std::array<GpuAnimation, 3>> waypointAnimations;
     std::map<MonsterKind, std::map<std::string, GpuAnimation>> monsterAnimations;
     std::map<std::string, GpuAnimation> itemGround, itemIcons;
-    GpuAnimation townPortal, fireball, fireburst, panel, cursor, inventoryPanel, storagePanel, beltPanel, beltSocket,
-        orbs, globeOverlap, runButton, button;
+    std::array<GpuAnimation, 2> townPortalAnimations;
+    std::array<ObjectAnimationRule, 2> townPortalRules;
+    GpuAnimation fireball, fireburst, panel, cursor, inventoryPanel, storagePanel, beltPanel, beltSocket, orbs,
+        globeOverlap, runButton, button;
     SceneAssets(Archives &archives, const GameSession &session);
-    void loadInventoryArt(const InventoryService &inventory);
+    static std::string itemArtKey(const ItemInstance &item);
+    void loadInventoryArt(const GameSession &session);
     void loadHeroEquipment(const GameSession &session);
     const std::string &heroAppearanceError() const { return heroFailure_; }
     void collectMapVariants(Archives &archives, const WorldCatalog &catalog, const MonsterCatalog &monsters);

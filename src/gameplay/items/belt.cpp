@@ -9,10 +9,11 @@ InventoryResult failure(InventoryError error) {
     result.error = error;
     return result;
 }
-bool samePotionFamily(std::string_view a, std::string_view b) {
-    if (a.size() == 3 && b.size() == 3 && (a.starts_with("hp") || a.starts_with("mp")))
-        return a.substr(0, 2) == b.substr(0, 2);
-    return (a == "rvs" || a == "rvl") ? b == "rvs" || b == "rvl" : a == b;
+bool samePotionFamily(const ItemDefinition &a, const ItemDefinition &b) {
+    if (a.code == b.code)
+        return true;
+    return (a.base.type == "hpot" || a.base.type == "mpot" || a.base.type == "rpot") &&
+           a.base.type == b.base.type;
 }
 } // namespace
 std::optional<Cell> InventoryService::beltSpace(EntityId belt, std::string_view code,
@@ -28,7 +29,7 @@ std::optional<Cell> InventoryService::beltSpace(EntityId belt, std::string_view 
             const ItemInstance *anchor = nullptr;
             for (int y = 0; y < c->spec.rows && !anchor; ++y)
                 anchor = item(itemAt(belt, {x, y}));
-            if (pass == 0 ? !anchor || !samePotionFamily(code, anchor->definition)
+            if (pass == 0 ? !anchor || !samePotionFamily(*def, *catalog_.find(anchor->definition))
                           : anchor || (automaticPickup && !def->autoBelt))
                 continue;
             for (int y = 0; y < c->spec.rows; ++y)

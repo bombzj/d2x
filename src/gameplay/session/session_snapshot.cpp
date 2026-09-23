@@ -235,6 +235,7 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
                             [&](const Enemy &e) { return e.id == player.attackTarget; }),
                 "attack target");
     inventory_.validateSnapshot(s.inventory, s.containers, player.id);
+    validateItemProperties(s);
     EntityIds validationIds;
     InventoryService equipmentInventory(validationIds, inventory_.catalog());
     equipmentInventory.state_ = s.inventory;
@@ -266,6 +267,10 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
         require(bool(id) && id.value < s.nextEntityId &&
                     (!allocated.contains(id) || deadEnemies.contains(id)),
                 "death settlement identity");
+    for (auto row : s.loot.usedUniques)
+        require(std::any_of(content_.uniqueItems.begin(), content_.uniqueItems.end(),
+                            [&](const auto &record) { return record.row == row; }),
+                "unknown limited unique row");
     for (auto id : deadEnemies)
         require(s.loot.settled.contains(id), "unsettled corpse");
     return current;

@@ -104,15 +104,11 @@ AppOptions parseOptions(int argc, char **argv) {
         throw std::runtime_error("Choose either --map or --preset");
     if (!explicitMpq) {
         auto discover = [](const std::filesystem::path &root) -> std::string {
-            for (const auto *candidate :
-                 {"assets/mpq2", "assets/mpq2/d2x-act1.mpq", "assets/mpq/d2x-mvp.mpq", "assets/mpq"}) {
-                auto path = root / candidate;
-                if (std::filesystem::is_regular_file(path) ||
-                    (std::filesystem::is_directory(path) &&
-                     (std::filesystem::is_regular_file(path / "d2data.mpq") ||
-                      std::filesystem::is_regular_file(path / "D2Data.mpq"))))
-                    return path.string();
-            }
+            auto path = root / "assets/mpq2";
+            if (std::filesystem::is_directory(path) &&
+                (std::filesystem::is_regular_file(path / "d2data.mpq") ||
+                 std::filesystem::is_regular_file(path / "D2Data.mpq")))
+                return path.string();
             return {};
         };
         auto discovered = discover(std::filesystem::current_path());

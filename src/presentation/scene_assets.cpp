@@ -1,6 +1,7 @@
 #include "scene_assets.hpp"
 #include "world/cow_level.hpp"
 #include "world/outdoor.hpp"
+#include <algorithm>
 #include <iostream>
 
 namespace d2x {
@@ -46,9 +47,29 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
         }
     }
     fireball = graphics_.single("data/global/missiles/fireball.dcc");
-    townPortal = graphics_.composite("objects", "tp", "op", "hth");
-    if (townPortal.frames.empty() || !townPortal.completeComposite)
-        throw std::runtime_error("Original town portal animation is missing or incomplete");
+    const auto objectRows = decodeTable(archives.read("data/global/excel/objects.txt"));
+    auto portalRecord = std::find_if(objectRows.begin(), objectRows.end(), [](const auto &row) {
+        auto id = row.find("Id");
+        return id != row.end() && id->second == "59";
+    });
+    if (portalRecord == objectRows.end() || normalize(portalRecord->at("Token")) != "tp")
+        throw std::runtime_error("MPQ objects.txt lacks the town portal definition");
+    const char *portalModes[] = {"op", "on"};
+    for (size_t index = 0; index < townPortalAnimations.size(); ++index) {
+        townPortalAnimations[index] = graphics_.composite("objects", "tp", portalModes[index], "hth");
+        if (townPortalAnimations[index].frames.empty() || !townPortalAnimations[index].completeComposite)
+            throw std::runtime_error("Original town portal animation is missing or incomplete");
+        const auto mode = index + 1;
+        const auto suffix = std::to_string(mode);
+        auto &rule = townPortalRules[index];
+        rule.frames = std::max(1, std::stoi(portalRecord->at("FrameCnt" + suffix)));
+        rule.start = std::max(0, std::stoi(portalRecord->at("Start" + suffix)));
+        rule.fps = float(std::stoi(portalRecord->at("FrameDelta" + suffix))) * 25.f / 256.f;
+        rule.cycle = portalRecord->at("CycleAnim" + suffix) == "1";
+        rule.enabled = portalRecord->at("Mode" + suffix) == "1";
+        if (!rule.enabled || rule.fps <= 0)
+            throw std::runtime_error("Invalid original town portal animation rules");
+    }
     fireburst = graphics_.single("data/global/missiles/shamanfireballexplodefinal.dcc");
     panel = uiGraphics_.single("data/global/ui/panel/800ctrlpnl7.dc6");
     cursor = uiGraphics_.single("data/global/ui/cursor/gaunt.dc6");
@@ -69,26 +90,7 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
     // Preserve the source tables alongside their extracted metadata in compact packs.
     for (auto table : {"belts", "charstats", "skills"})
         archives.read(std::string("data/global/excel/") + table + ".txt");
-    // Presentation coverage retained from previous packs, independent of drop rules.
-    constexpr const char *itemArt[] = {"hp1", "mp1", "hp2", "mp2", "rvs", "key", "aqv", "cqv", "tsc",
-                                       "isc", "ssd", "hax", "clb", "dgr", "buc", "cap", "qui", "lgl",
-                                       "lbt", "rin", "amu", "lbl", "vbl", "mbl", "tbl", "hbl", "hp3",
-                                       "hp4", "hp5", "mp3", "mp4", "mp5", "rvl", "vps"};
-    for (const auto *code : itemArt) {
-        const auto *definition = session.inventory().catalog().find(code);
-        if (!definition)
-            throw std::runtime_error("Item art list refers to an unknown item: " + std::string(code));
-        auto ground = graphics_.single(definition->groundAnimation);
-        auto icon = graphics_.single(definition->icon);
-        if (ground.frames.empty() || icon.frames.empty())
-            std::cerr << "Missing item graphics for " << code << "; rebuild the compact MPQ.\n";
-        // DC6 item offsets refer to the bottom of a frame; the renderer uses its top-left.
-        for (auto &frame : ground.frames)
-            frame.y -= frame.texture.height;
-        itemGround.emplace(code, std::move(ground));
-        itemIcons.emplace(code, std::move(icon));
-    }
-    loadInventoryArt(session.inventory());
+    loadInventoryArt(session);
     graphics_.releaseDecoded();
     uiGraphics_.releaseDecoded();
 }
@@ -168,24 +170,43 @@ void SceneAssets::loadHeroEquipment(const GameSession &session) {
     heroFailure_ = heroErrors_.at(key);
     heroKey_ = key;
 }
-void SceneAssets::loadInventoryArt(const InventoryService &inventory) {
+std::string SceneAssets::itemArtKey(const ItemInstance &item) {
+    if (item.specialRow < 0)
+        return item.definition;
+    return item.definition + "#" + std::to_string(int(item.quality)) + ":" +
+           std::to_string(item.specialRow);
+}
+void SceneAssets::loadInventoryArt(const GameSession &session) {
+    const auto &inventory = session.inventory();
     for (const auto &[id, item] : inventory.state().items) {
         const auto &definition = *inventory.catalog().find(item.definition);
-        if (auto icon = itemIcons.find(item.definition);
+        auto artKey = itemArtKey(item);
+        std::string iconPath = definition.icon, groundPath = definition.groundAnimation;
+        if (item.specialRow >= 0) {
+            const auto &records = item.quality == ItemQuality::Unique ? session.content().uniqueItems
+                                                                        : session.content().setItems;
+            auto found = std::find_if(records.begin(), records.end(),
+                                      [&](const auto &record) { return int32_t(record.row) == item.specialRow; });
+            if (found != records.end()) {
+                if (!found->icon.empty()) iconPath = found->icon;
+                if (!found->groundAnimation.empty()) groundPath = found->groundAnimation;
+            }
+        }
+        if (auto icon = itemIcons.find(artKey);
             icon == itemIcons.end() || icon->second.frames.empty()) {
-            auto image = graphics_.single(definition.icon);
+            auto image = graphics_.single(iconPath);
             if (image.frames.empty())
                 throw std::runtime_error("Original inventory art missing: " + item.definition);
-            itemIcons.insert_or_assign(item.definition, std::move(image));
+            itemIcons.insert_or_assign(artKey, std::move(image));
         }
-        if (auto ground = itemGround.find(item.definition);
+        if (auto ground = itemGround.find(artKey);
             ground == itemGround.end() || ground->second.frames.empty()) {
-            auto image = graphics_.single(definition.groundAnimation);
+            auto image = graphics_.single(groundPath);
             if (image.frames.empty())
                 throw std::runtime_error("Original ground art missing: " + item.definition);
             for (auto &frame : image.frames)
                 frame.y -= frame.texture.height;
-            itemGround.insert_or_assign(item.definition, std::move(image));
+            itemGround.insert_or_assign(artKey, std::move(image));
         }
     }
     graphics_.releaseDecoded();
@@ -200,7 +221,8 @@ void SceneAssets::loadProps(const Region &region) {
             equipment[i] = appearance.equipment[i].c_str();
         if (object.name == "Waypoint" && object.interaction == Interaction::Travel) {
             std::array<GpuAnimation, 3> animations;
-            const char *modes[] = {"nu", "on", "op"};
+            // Objects.txt modes are NU, OP (operating), ON (opened).
+            const char *modes[] = {"nu", "op", "on"};
             for (size_t index = 0; index < animations.size(); ++index) {
                 animations[index] = graphics_.composite(appearance.category, appearance.token, modes[index],
                                                         appearance.weapon, &equipment);

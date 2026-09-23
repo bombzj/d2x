@@ -1,0 +1,57 @@
+# 物品与掉落补全顺序
+
+本页是当前实施清单。既有行为见 [原表](ITEM_DATA.md)、[实例与事务](ITEM_MODEL.md)、[腰带与消耗品](BELT_AND_CONSUMABLES.md) 和 [存档](SAVES.md)。实现时一次完成一项，再进入下一项；本轮不编写测试用例，完成后统一构建并做短帧冒烟。
+
+| 顺序 | 工作 | 完成条件 |
+| --- | --- | --- |
+| 1 | 原表盘点与边界 | 核对当前 LoD MPQ 的基础物品、UniqueItems、SetItems、Sets、MagicPrefix、MagicSuffix、Properties 和 ItemStatCost；列明能执行的规则及缺口。 |
+| 2 | 基础掉落实例 | 普通药水（含 `vps` 耐力药水）、卷轴、箭袋、金币及普通武器／护甲等按已核实原表生成；投放、拾取、原图和库存贯通。任何未知分支保留明确暂缓原因。 |
+| 3 | 套装／暗金候选选择 | 按原表的基础代码、物品等级、版本限制和 rarity 选择具体行；只读入口能查询结果，游戏实例保存所选原行。 |
+| 4 | 属性与品质实例 | 用原 MagicPrefix／MagicSuffix、UniqueItems／SetItems 形成可持久化的展示属性；实现同局唯一限制，以及魔法、稀有、套装和暗金的可见、可装备实例。属性参与战斗留到战斗系统阶段，提示必须标明当前展示边界。 |
+| 5 | 资源与生命周期 | 各品质使用原图形和名称，覆盖地面、包裹、装备、保存恢复；同步快照校验、存档版本、规则指纹及基线文档。 |
+
+目录职责：`src/content/` 只适配 MPQ 表；`src/gameplay/loot/` 放无 MPQ 依赖的抽取规则；`src/gameplay/items/` 放实例、库存和属性生效；`src/gameplay/session/` 只协调死亡与投放；`src/presentation/` 只读状态并按原资源绘制。新增规则按职责拆文件，避免继续扩大 `item_quality.cpp` 或 `session_loot.cpp`。
+
+物品名称、数值、适用类型、候选权重和资源路径在运行时直接读取已挂载 MPQ 的原 TXT／图形；不维护抽取后的独立数据副本。代码仅保留版本适配、原版引擎函数和状态转换。原表不含可验证规则时明确暂缓。这个约束也用于后续模块的数据审计，但本清单不宣称项目中所有既有硬编码都已清除。
+
+资源或版本规则无据可依的分支必须明确暂缓，不重抽、不用自造概率或假属性代替。2026-09-23 用户将本轮属性范围收窄为“能查看、能装备”；本轮不要求属性影响战斗。完成状态与尚待验证的行为持续更新本页；旧档不静默迁移。
+
+物品展示属性和限量暗金记录已将项目存档升至 v12、规则指纹升至 v32；旧档明确拒绝。新增字段保存原行身份、展示属性值和同局已掉落暗金集合。Windows Release 构建及完整 `assets/mpq2` 的短帧启动、保存、恢复冒烟已通过。
+
+## 1. 原表盘点（已完成）
+
+当前 `assets/mpq2` 含 UniqueItems、SetItems、Sets、MagicPrefix／Suffix、RarePrefix／Suffix、QualityItems、LowQualityItems、Properties 和 ItemStatCost 原 TXT。首批七表按文本物理行计有 403、128、33、670、748、269、359 条数据行；包含空行和版本标记，不能直接当作可生成数量。UniqueItems 有 `code`、`lvl`、`rarity`、`enabled`、`nolimit` 及 12 组属性；SetItems 有 `item`、`lvl`、`rarity`、套装 ID、基础与部分加成；魔法词缀有等级、组、频率、适用／排除类型及三组属性。Properties 给出属性函数到 ItemStatCost 的映射。当前按原表保存与展示属性，完整属性函数效果留到战斗系统阶段。
+
+盘点时 `vps` 的基础定义、原图、耐力药效已接通；当时掉落生成只接受 potion／scroll／quiver／gold 分支。第 2 项随后放开有据可依的普通基础实例。
+
+## 2. 普通基础实例（已接入，待交互验收）
+
+`content/item_loot.cpp` 负责 TC 叶子到实例计划；品质规则留在 `item_quality.cpp`。普通武器／护甲按基础代码生成，护甲沿现有实例创建规则掷原最小／最大防御；投掷装备按原 `minstack`／`spawnstack` 生成堆叠并可装备，高品质堆叠保留品质与属性，当前不提供高品质分堆或合并。原图由物品出现时按定义动态载入。`vps` 走 MPQ 药水定义；其他原 TC 选中的普通杂项也可形成可见实例，未核实的使用效果会明确拒绝。任务物品、无原图路径及不合法护甲防御继续明确暂缓。整批暂缓规则未改变。已构建并完成短帧启动，实际拾取和使用待交互验收。
+
+`content/item_consumables.cpp` 从 `misc.txt` 的 pSpell、stat、calc、len 解析可执行的生命、法力、回复及耐力药剂；持续帧按玩法 25 Hz 换算。野蛮人生命药剂倍率是版本引擎规则，原表提供基础恢复量。原表不能说明的药剂不进入可执行表；其物品实例仍可展示，使用时明确拒绝。初始物品代码和数量改由 `charstats.txt` 读取；试玩 1.04 的数字装备槽尚无可信适配，只生成原表中无装备槽的初始消耗品。UI 物品图形只在实例出现时从 MPQ 指定路径载入。试玩 1.04 的 misc 表无相应效果字段，故该版本的药效暂缓。以上改动未运行验收。
+
+## 3. 套装／暗金记录选择（已接入，待交互验收）
+
+特殊套装的名称通过 `Sets.txt` 原行序解析，代码只保留原引擎的特殊套装 ID 规则。
+
+`content/special_items.cpp` 从原表导入行身份、基础代码、等级、稀有度、属性与限制；`gameplay/loot/special.cpp` 做无 MPQ 依赖的合格候选加权选择和保守展示值抽取。当前 MPQ 中有 385 条启用的 UniqueItems 记录、127 条有基础代码的 SetItems 记录；其中包含当前单人模式不能生成的 ladder／特殊场景记录。查询入口 `d2x_assets ... special` 可显示所选原行；游戏的第 4 项已接所选原行的可见实例、装备与保存。
+
+候选选择及失败品质的行为参考 [D2MOO ItemMode](https://github.com/ThePhrozenKeep/D2MOO/blob/master/source/D2Game/src/ITEMS/ItemMode.cpp) 与 [ItemsMagic](https://github.com/ThePhrozenKeep/D2MOO/blob/master/source/D2Game/src/ITEMS/ItemsMagic.cpp)。当前单人模式不启用 ladder 限制记录，牛王套装只允许相应掉落入口；当前还没有该入口。品质请求命中某行不等于全部属性函数已经执行。
+
+## 4. 属性与品质实例（已接入，待交互验收）
+
+稀有物品的前后名称行也从原 RarePrefix／RareSuffix 读取，名称行与词缀行分别保存；无需在代码中拼一组自造的稀有名字。
+
+当前 Properties 有 269 条有代码的记录，使用 23 个不同的执行函数编号；已启用暗金行涉及 174 种不同属性代码。当前装备派生只有基础伤害、防御和格挡，角色尚无完整命中、毒／冰抗性、技能加成或触发效果状态。实现入口拆为 `src/content/item_affixes.*`（原表适配）、`src/gameplay/loot/affix.*`（抽取）、`src/gameplay/items/state.hpp`（展示属性实例）以及现有 `src/gameplay/items/equipment_stats.*`（当前基础战斗消费者）。本轮按照用户新指示保存并展示原属性数值，装备仍能使用基础伤害、防御、格挡；其它属性暂不进入战斗，界面明确说明。
+
+`src/content/item_affixes.cpp` 读取魔法前／后缀的行身份、等级、频率、组、适用／排除类型及原属性范围；原表中带参数的属性允许空或逆序的 min/max，不能用普通数值范围规则清洗。`src/gameplay/loot/affix.cpp` 按原等级、类型、组与 rare 标志选择候选，`src/content/item_magic_loot.cpp` 形成可保存的魔法／稀有词缀实例。`src/content/item_grades.cpp` 读取 QualityItems／LowQualityItems 的优质／劣质行。套装、暗金、魔法、稀有、优质、劣质属性都只展示；目前只对已核实的单项直接数值做区间掷值，其他函数显示原表参数，不声称它们已经生效。候选失败后的品质降级按原引擎顺序实现；完整鉴定、失败耐久变化和逐随机流等价仍未核实。第 4 项源码已接，待统一验收。
+
+`src/content/item_properties.cpp` 将 Properties 的执行函数槽位及 ItemStatCost 的身份保留为只读类型化记录，`src/gameplay/items/modifiers.hpp` 定义 MPQ 无关的表示。这里尚不解释函数或生成实例属性，避免将 `func` 和原始参数误当作可直接相加的角色数值。
+
+## 5. 资源与生命周期（已接入，待交互验收）
+
+地面、包裹、装备和腰带按当前实例引用的 MPQ `invfile`／`flippyfile` 动态载图，套装／暗金可覆盖基础物品原图。内容读取时核对图形成员是否存在，掉落缺图时明确暂缓；资源可用状态也纳入规则指纹。物品名、品质颜色及属性提示随实例读取原表；套装提示列出原 SetItems／Sets 中的各条条件加成，尚不计算套装穿戴件数或属性效果。属性较多时提示分列，完整显示原表条目。魔法／稀有、优质／劣质、套装／暗金的行身份、展示值及同局限量暗金记录进入 v12 存档；恢复时核对原行及值，旧档明确拒绝。
+
+Windows Release 构建通过。直接读取完整 `assets/mpq2` 完成新游戏 5 帧启动、v12 保存及恢复后 5 帧启动，默认不传 `--mpq` 的入口也完成 5 帧启动；`d2x_assets` 从原 MPQ 查询到 `vps` 耐力药水、The Gnasher 暗金、Civerb’s Ward 套装，并能规划 `Act 1 Champ A` 的掉落。冒烟截图在 `artifacts/`，未纳入源码提交。尚未逐个交互验证拾取、饮药、穿戴特殊品质或全部原表行及图形。
+
+当前可生成物品等级为 1–99；原表中如 Annihilus 的 `lvl=110` 属于此范围外的事件记录，加载时跳过，不因其存在而拒绝整份 MPQ。

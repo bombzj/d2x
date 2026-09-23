@@ -10,22 +10,22 @@
 - MPQ DS1/DT1 地形和碰撞；Cave/Crypt 迷宫、矩形野外边界及原预设。完整道路、河桥、悬崖和 LvlSub 待完善。
 - 野蛮人 COF/DCC、A* 与 WASD、六种演示技能；MPQ 经典底栏、生命／法力球、左右技能槽和展开式菜单。
 - 怪物按原表生成计划，附近房间成组创建，远处休眠；未实现类型保留真实身份并使用沉沦魔替身。
-- 物品原表、拾取、包裹、腰带、药剂、私人箱；原版掉落执行与完整装备效果尚未接入。
-- v3 会话存档，包含地图种子、区域状态、待生成怪物和物品。旧 v1/v2 不兼容。
+- 物品原表、TC 掉落、拾取、包裹、腰带、药剂、私人箱；魔法、稀有、套装、暗金、优质及劣质装备可展示原属性并穿戴，属性战斗效果留待战斗系统。
+- v12 会话存档，包含地图、怪物、物品及同局限量暗金状态；旧档不迁移。
 
 完整限制见 [能力基线](docs/baseline/STATUS.md)。
 
 ## 构建与资源
 
-获准继续构建后，Windows 使用 `scripts/build.ps1`，启动示例：
+Windows 使用 `scripts/build.ps1`，启动示例（默认读取 `assets/mpq2`）：
 
 ```powershell
-.\build\bin\d2x.exe --mpq assets/mpq2 --level 1 --map-seed 210
+.\build\bin\d2x.exe --level 1 --map-seed 210
 ```
 
-本机可用 `Play.cmd`。启动优先完整 `assets/mpq2`；原始五个 MPQ 保留。旧精简包缺少本轮地图模板，本轮不重新打包。
+本机可用 `Play.cmd`。EXE 默认直接读取完整 `assets/mpq2`；原始 MPQ 保留。其他位置可显式传 `--mpq <目录>`。本轮不打包。
 
-Windows 已有构建运行记录；Linux 使用原生 CMake，尚未实际编译运行。见 [构建与分发](docs/BUILD_AND_SHARE.md)。
+Windows Release 构建、完整 MPQ 的短帧新游戏和 v12 读档冒烟已通过；Linux 使用原生 CMake，尚未实际编译运行。见 [构建与分发](docs/BUILD_AND_SHARE.md)。
 
 ## 操作
 

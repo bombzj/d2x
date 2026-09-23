@@ -25,9 +25,13 @@ void GameSession::settleDeaths() {
             auto ratios = content_.tables.find("itemratio");
             if (ratios == content_.tables.end())
                 plan.deferred = "Missing original ItemRatio table";
-            else
-                plan = planConsumableLoot(content_, ratios->second, entry.treasureClass, entry.itemLevel,
-                                          entry.upgradeLevel, plan.randomState);
+            else {
+                std::set<size_t> usedUniques;
+                for (auto row : loot_.usedUniques())
+                    usedUniques.insert(size_t(row));
+                plan = planItemLoot(content_, ratios->second, entry.treasureClass, entry.itemLevel,
+                                    entry.upgradeLevel, plan.randomState, usedUniques);
+            }
             std::cout << " TC=" << entry.treasureClass << " itemLevel=" << entry.itemLevel
                       << " upgradeLevel=" << entry.upgradeLevel << " drops=" << plan.drops.size()
                       << " NoDrop=" << plan.noDrops << " deferred=" << plan.deferred << '\n';
@@ -56,7 +60,8 @@ void GameSession::spawnLoot(std::span<const LootDrop> drops, RegionId id, Vec or
         Vec position = grid.nearest(origin + drop.offset);
         if (!grid.segment(origin, position))
             position = origin;
-        auto result = inventory_.createItem(drop.code, drop.quantity, GroundLocation{id, position}, drop.level);
+        auto result = inventory_.createItem(drop.code, drop.quantity, GroundLocation{id, position},
+                                            drop.level, drop.generation);
         if (!result)
             throw std::logic_error("Invalid loot definition or placement");
         publishInventory(std::move(result), {});

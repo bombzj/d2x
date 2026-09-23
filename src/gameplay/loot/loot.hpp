@@ -1,6 +1,7 @@
 #pragma once
 #include "core/id.hpp"
 #include "gameplay/model/definitions.hpp"
+#include "gameplay/items/state.hpp"
 #include "gameplay/monsters/monster_spawn.hpp"
 #include <set>
 #include <span>
@@ -43,6 +44,7 @@ struct LootDrop {
     unsigned quantity;
     Vec offset;
     unsigned level = 1;
+    ItemGeneration generation;
 };
 struct LootPlan {
     uint64_t randomState = 0;
@@ -53,23 +55,27 @@ struct LootPlan {
 struct LootState {
     uint64_t randomState = 0;
     std::set<EntityId> settled;
+    std::set<uint32_t> usedUniques;
 };
 class LootSystem {
     uint64_t randomState_;
     std::set<EntityId> settled_;
+    std::set<uint32_t> usedUniques_;
 
   public:
     static constexpr uint64_t defaultSeed = 0xd2;
     explicit LootSystem(uint64_t seed = defaultSeed) : randomState_(seed) {}
     bool settled(EntityId source) const { return settled_.contains(source); }
     uint64_t randomState() const { return randomState_; }
-    LootState snapshot() const { return {randomState_, settled_}; }
+    const std::set<uint32_t> &usedUniques() const { return usedUniques_; }
+    LootState snapshot() const { return {randomState_, settled_, usedUniques_}; }
     void restore(LootState state) noexcept {
         randomState_ = state.randomState;
         settled_.swap(state.settled);
+        usedUniques_.swap(state.usedUniques);
     }
     static constexpr std::string_view unavailableReason =
-        "Monster loot partial: normal consumables, quivers and gold; unsupported batches are deferred.";
+        "Monster loot partial: unsupported item generations are deferred.";
     std::vector<LootDrop> settle(LootRequest request, LootPlan plan);
 };
 } // namespace d2x

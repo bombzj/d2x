@@ -3,7 +3,7 @@
 
 namespace d2x {
 void SceneView::drawItemIcon(const ItemInstance &item, Rectangle bounds, Color tint) const {
-    auto found = assets_.itemIcons.find(item.definition);
+    auto found = assets_.itemIcons.find(SceneAssets::itemArtKey(item));
     auto icon = found == assets_.itemIcons.end() ? nullptr : found->second.frame(0, 0);
     if (icon && icon->texture.id) {
         float scale = std::min({inventoryScale, (bounds.width - 4) / icon->texture.width,
@@ -72,7 +72,8 @@ void SceneView::drawInventory(Vec mouse) const {
     const auto *selected = inventory.item(ui.selected);
     for (int i = 0; i < 3; ++i) {
         auto box = inventoryButton(i);
-        bool enabled = selected && !ui.pending && (i != 1 || selected->quantity > 1);
+        bool enabled = selected && !ui.pending &&
+                       (i != 1 || (selected->quality == ItemQuality::Normal && selected->quantity > 1));
         Color color =
             enabled ? CheckCollisionPointRec(rv(mouse), box) ? parchment : gold : Color{85, 83, 71, 255};
         itemButton(box, buttons[i], color);

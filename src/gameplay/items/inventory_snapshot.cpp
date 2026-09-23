@@ -43,7 +43,16 @@ void InventoryService::validateSnapshot(const InventoryState &state, const Playe
         require(item.quantity > 0 && item.quantity <= def->maxStack &&
                     item.durability <= def->maxDurability && item.revision > 0 && item.level > 0 &&
                     item.level <= 99 && int(item.quality) >= 0 &&
-                    int(item.quality) <= int(ItemQuality::Unique),
+                    int(item.quality) <= int(ItemQuality::Inferior) &&
+                    item.specialRow >= -1 && item.gradeRow >= -1 &&
+                    item.rarePrefixRow >= -1 && item.rareSuffixRow >= -1 &&
+                    item.requiredLevel >= 0 && item.requiredLevel <= 99 &&
+                    item.propertyRolls.size() <= 16 && item.affixes.size() <= 6 &&
+                    (item.quality != ItemQuality::Normal ||
+                     (item.specialRow == -1 && item.gradeRow == -1 &&
+                      item.propertyRolls.empty() && item.affixes.empty())) &&
+                    ((item.quality == ItemQuality::Set || item.quality == ItemQuality::Unique) ==
+                     (item.specialRow >= 0)),
                 "item parameters");
         auto location = std::get_if<ContainerLocation>(&item.location);
         require(!location || !def->equipment.isType("gold"), "gold must be on ground or in wallet");
@@ -56,7 +65,7 @@ void InventoryService::validateSnapshot(const InventoryState &state, const Playe
         if (c.kind == ContainerKind::Equipment) {
             require(cell.y == 0 && cell.x >= 0 && cell.x < int(EquipmentSlot::Count) &&
                         EquipmentSlot(cell.x) != EquipmentSlot::Belt &&
-                        def->equipment.fits(EquipmentSlot(cell.x)) && item.quality == ItemQuality::Normal,
+                        def->equipment.fits(EquipmentSlot(cell.x)),
                     "equipment slot eligibility");
             auto &cells = occupied.at(location->container);
             require(!cells[size_t(cell.x)], "overlapping equipment");

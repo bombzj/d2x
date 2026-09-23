@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <iostream>
 #include <stdexcept>
+#include <string_view>
 
 namespace d2x {
 namespace {
@@ -12,6 +13,14 @@ void appearanceKey(WorldObject &object) {
     for (const auto &part : a.equipment)
         object.key += ":" + part;
 }
+int objectMode(std::string_view mode) {
+    if (mode == "nu") return 0;
+    if (mode == "op") return 1;
+    if (mode == "on") return 2;
+    if (mode.size() == 2 && mode[0] == 's' && mode[1] >= '1' && mode[1] <= '5')
+        return mode[1] - '1' + 3;
+    return 0;
+}
 void classify(WorldObject &object, const Table &objectRows) {
     const auto &token = object.appearance.token;
     static const std::map<std::string, std::string> names = {
@@ -20,22 +29,35 @@ void classify(WorldObject &object, const Table &objectRows) {
         {"wp", "Waypoint"}, {"ck", "Chicken"},      {"cw", "Cow"}};
     if (auto it = names.find(token); it != names.end())
         object.name = it->second;
-    if (object.appearance.category == "objects")
-        for (const auto &row : objectRows) {
+    if (object.appearance.category == "objects") {
+        auto record = std::find_if(objectRows.begin(), objectRows.end(), [&](const auto &row) {
             auto sourceToken = row.find("Token");
-            auto operation = row.find("OperateFn");
-            if (sourceToken != row.end() && operation != row.end() && operation->second == "23" &&
-                normalize(sourceToken->second) == normalize(token)) {
+            return sourceToken != row.end() && normalize(sourceToken->second) == normalize(token);
+        });
+        if (record != objectRows.end()) {
+            object.animationMode = objectMode(object.appearance.mode);
+            for (size_t index = 0; index < object.animationRules.size(); ++index) {
+                auto &rule = object.animationRules[index];
+                const auto suffix = std::to_string(index);
+                rule.frames = std::max(1, std::stoi(record->at("FrameCnt" + suffix)));
+                rule.start = std::max(0, std::stoi(record->at("Start" + suffix)));
+                rule.fps = float(std::stoi(record->at("FrameDelta" + suffix))) * 25.f / 256.f;
+                rule.cycle = record->at("CycleAnim" + suffix) == "1";
+                rule.enabled = record->at("Mode" + suffix) == "1";
+            }
+            auto operation = record->find("OperateFn");
+            if (operation != record->end() && operation->second == "23") {
                 object.name = "Waypoint";
                 object.interaction = Interaction::Travel;
-                object.reach = float(std::stoi(row.at("OperateRange")));
+                object.reach = float(std::stoi(record->at("OperateRange")));
                 for (size_t index = 0; index < object.waypointFps.size(); ++index)
-                    object.waypointFps[index] = float(std::stoi(row.at("FrameDelta" + std::to_string(index)))) * 25.f / 256.f;
+                    object.waypointFps[index] = object.animationRules[index].fps;
                 if (object.reach <= 0)
                     throw std::runtime_error("Invalid original waypoint interaction range");
                 return;
             }
         }
+    }
     if (token == "b6") {
         object.interaction = Interaction::Stash;
         auto record = std::find_if(objectRows.begin(), objectRows.end(), [](const auto &row) {

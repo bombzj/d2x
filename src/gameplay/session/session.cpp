@@ -13,11 +13,6 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
     simulation_.state_.mapSeed = selection.seed;
     inventory_.state_.creationRandom = (uint64_t(666) << 32) | uint32_t(lootSeed);
     playerContainers_ = inventory_.createPlayerContainers(state().player.id);
-    // Original Barbarian charstats.txt starter consumables.
-    for (int column = 0; column < 4; ++column)
-        inventory_.createItem("hp1", 1, ContainerLocation{playerContainers_.belt, {column, 0}});
-    inventory_.createItem("tsc", 1, AutoPlace{playerContainers_.backpack});
-    inventory_.createItem("isc", 1, AutoPlace{playerContainers_.backpack});
     createStarterEquipment();
     simulation_.equipmentStats_ = deriveEquipmentStats(inventory_, playerContainers_, equipmentActor());
     simulation_.wearEquipment_ = [this](EntityId weapon, bool defending) {
@@ -76,12 +71,20 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
     Fingerprint fingerprint;
     fingerprint.add(content_.profile);
     // Bump this rules revision when state interpretation or compiled rules change.
-    fingerprint.add("d2x-session-rules-v30-waypoint-activation");
+    fingerprint.add("d2x-session-rules-v32-visible-item-properties");
     auto members = archives.used;
     for (const auto &member : members) {
         fingerprint.add(member);
         fingerprint.add(archives.read(member));
     }
+    for (const auto &[code, item] : content_.items.entries()) {
+        fingerprint.add(code);
+        fingerprint.add(item.artAvailable ? "art" : "missing-art");
+    }
+    for (const auto &record : content_.uniqueItems)
+        fingerprint.add(record.artAvailable ? "unique-art" : "unique-missing-art");
+    for (const auto &record : content_.setItems)
+        fingerprint.add(record.artAvailable ? "set-art" : "set-missing-art");
     contentFingerprint_ = fingerprint.value();
     for (const auto &region : regions_) {
         AreaState area;

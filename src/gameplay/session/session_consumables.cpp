@@ -9,7 +9,7 @@ void GameSession::useItem(ItemHandle handle) {
         return;
     }
     auto code = inventory_.item(handle.id)->definition;
-    if (code == "tsc") {
+    if (content_.isPortalScroll(code)) {
         auto &portal = simulation_.state_.portal;
         TownPortalState next{true, portal.revision + 1, region().definition.id,
                              state().player.pos, *townPortalArrival_};
@@ -26,7 +26,7 @@ void GameSession::useItem(ItemHandle handle) {
             simulation_.emit(ItemUsed{handle.id, std::move(code)});
         return;
     }
-    auto potion = *potionDefinition(code);
+    auto potion = *content_.potion(code);
     auto result = inventory_.drink(handle, inventoryAccess());
     bool consumed = bool(result);
     publishInventory(std::move(result), handle.id);

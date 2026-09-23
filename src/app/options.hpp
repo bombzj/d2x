@@ -5,7 +5,7 @@
 
 namespace d2x {
 struct AppOptions {
-    std::string mpq = "assets/mpq";
+    std::string mpq = "assets/mpq2";
     WorldSelection world;
     std::string screenshot, pack;
     std::string save, load;

@@ -6,6 +6,7 @@ namespace d2x {
 SceneView::SceneView(Archives &archives, const GameSession &session)
     : session_(session), assets_(archives, session), painter_(assets_.font) {
     view_.camera = project(session_.state().player.pos);
+    view_.portalRevision = session_.state().portal.revision;
 }
 Vec SceneView::screen(Vec p) const {
     float centerX = view_.inventory.storage ? W * .5f
@@ -42,7 +43,7 @@ void SceneView::sessionRestored() {
     monsterPositions_.clear();
     monsterLooks_.clear();
     movingMonsters_.clear();
-    assets_.loadInventoryArt(session_.inventory());
+    assets_.loadInventoryArt(session_);
     assets_.loadHeroEquipment(session_);
     view_.inventory = {};
     view_.travelMenu = view_.help = false;
@@ -51,6 +52,8 @@ void SceneView::sessionRestored() {
     view_.camera = project(session_.state().player.pos);
     view_.clickAge = 10;
     view_.animationTime = view_.heroTime = view_.stepClock = 0;
+    view_.portalRevision = session_.state().portal.revision;
+    view_.portalAnimationStarted = -1;
     view_.heroMode = playerAnimationMode(session_.state().player);
     landingAge_.clear();
 }
@@ -122,7 +125,7 @@ void SceneView::advance(float dt) {
                 } else if constexpr (std::is_same_v<T, LootDeferred>) {
                     notice("Loot deferred: " + value.reason, true);
                 } else if constexpr (std::is_same_v<T, ItemUsed>) {
-                    if (value.definition != "tsc")
+                    if (!session_.content().isPortalScroll(value.definition))
                         assets_.audio.play("drink");
                     const auto *def = session_.inventory().catalog().find(value.definition);
                     notice("Used: " + (def ? def->name : value.definition), false);
@@ -148,13 +151,15 @@ void SceneView::advance(float dt) {
                     notice(value.reason, true);
                 } else if constexpr (std::is_same_v<T, ItemPickedUp>) {
                     const auto *definition = session_.inventory().catalog().find(value.definition);
-                    auto name = definition ? definition->name : value.definition;
+                    const auto *picked = session_.inventory().item(value.item);
+                    auto name = picked ? itemName(*picked) :
+                                         (definition ? definition->name : value.definition);
                     if (value.quantity > 1)
                         name += " x" + std::to_string(value.quantity);
                     notice("Picked up: " + name, false);
                 } else if constexpr (std::is_same_v<T, ItemChange>) {
                     if (value.kind == ItemChangeKind::Created)
-                        assets_.loadInventoryArt(session_.inventory());
+                        assets_.loadInventoryArt(session_);
                     landingAge_.erase(value.item);
                     if (value.after)
                         if (auto ground = std::get_if<GroundLocation>(&*value.after);
@@ -190,6 +195,11 @@ void SceneView::advance(float dt) {
     };
     if (!inBackpack(view_.inventory.selected))
         view_.inventory.selected = {};
+    const auto &portal = session_.state().portal;
+    if (portal.active && portal.revision != view_.portalRevision) {
+        view_.portalRevision = portal.revision;
+        view_.portalAnimationStarted = view_.animationTime;
+    }
     view_.animationTime += dt;
     view_.heroTime += dt;
     auto mode = playerAnimationMode(player);

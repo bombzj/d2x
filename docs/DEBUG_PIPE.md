@@ -85,7 +85,7 @@ kill 不进行攻击命中／伤害计算，因此用于验证死亡和掉落链
 
 ## 当前证据与限制
 
-当前为格式 v10／规则 v30，旧档不迁移。status 增加 portal、waypoints 和 travelMenu；objects 中 Waypoint 返回 activated 及原 fps。新游戏包括营地全部未激活；travel 自由传送不激活，waypoint 不能绕过解锁。F2 是独立开发目录，不是游戏传送点菜单。原三态动画、首次交互、锁定目的地拒绝及解锁保存恢复已实际验证，现场 artifacts/waypoint-state-v10.d2xsave。
+当前源码为格式 v12／规则 v32，旧档不迁移。v10／规则 v30 的传送现场 `artifacts/waypoint-state-v10.d2xsave` 仅是历史证据，不能按当前格式读取。status 增加 portal、waypoints 和 travelMenu；objects 中 Waypoint 返回 activated 及原 fps。新游戏包括营地全部未激活；travel 自由传送不激活，waypoint 不能绕过解锁。F2 是独立开发目录，不是游戏传送点菜单。原三态动画、首次交互、锁定目的地拒绝及解锁保存恢复曾在 v10 实际验证，本轮未重新运行。
 
 在原洞窟地图种子 210、掉落种子 10 下，通过正常移动接近后击杀四个可见普通怪物，得到箭袋 `aqv`（数量 196、等级 2）、金币 5、法力药水及一次 NoDrop。箭袋正常入包保留数量与等级；金币正常拾取后地面实例消失、钱包变为 5、不占背包。重复击杀同 ID 被拒绝；管道保存／恢复后金币 5、箭袋 196、击杀和结算数 4、随机状态保持。现场 `artifacts/gold-pipe-v8.d2xsave`，截图 `artifacts/gold-wallet-v8.png`，均不提交。
 

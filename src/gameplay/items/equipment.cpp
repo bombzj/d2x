@@ -43,7 +43,7 @@ InventoryError InventoryService::equipmentRequirements(ItemHandle handle, const 
         return error;
     const auto &source = *item(handle.id);
     const auto &definition = *catalog_.find(source.definition);
-    if (!definition.equipment.known || source.quality != ItemQuality::Normal ||
+    if (!definition.equipment.known ||
         definition.equipment.types.empty() || definition.equipment.isType("tpot"))
         return InventoryError::UnsupportedEquipment;
     if (!definition.equipment.requiredClass.empty() &&
@@ -51,7 +51,7 @@ InventoryError InventoryService::equipmentRequirements(ItemHandle handle, const 
         return InventoryError::WrongClass;
     if (actor.strength < definition.base.requiredStrength.value_or(0) ||
         actor.dexterity < definition.base.requiredDexterity.value_or(0) ||
-        actor.level < definition.base.requiredLevel.value_or(0))
+        actor.level < std::max(definition.base.requiredLevel.value_or(0), source.requiredLevel))
         return InventoryError::RequirementsNotMet;
     return InventoryError::None;
 }

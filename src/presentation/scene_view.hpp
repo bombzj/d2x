@@ -17,6 +17,8 @@ struct ViewState {
     EntityId waypointSource;
     int travelPage = 0;
     float animationTime = 0, heroTime = 0, stepClock = 0;
+    uint64_t portalRevision = 0;
+    float portalAnimationStarted = -1;
     std::string heroMode = "nu", dialogue;
     std::string lootNotice;
     float noticeTime = 0;
@@ -57,6 +59,8 @@ class SceneView {
     void drawContainerGrid(const ContainerGrid &grid, Vec mouse) const;
     void drawBelt(Vec mouse) const;
     void drawItemTooltip(const ItemInstance &item, Vec anchor) const;
+    const SpecialItemRecord *specialItem(const ItemInstance &item) const;
+    std::string itemName(const ItemInstance &item) const;
     void itemButton(Rectangle bounds, const char *label, Color color) const;
     void drawItemIcon(const ItemInstance &item, Rectangle bounds, Color tint = WHITE) const;
     void drawInventoryCursor(Vec mouse) const;

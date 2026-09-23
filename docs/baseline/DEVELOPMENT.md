@@ -2,13 +2,15 @@
 
 ## 当前交接状态
 
-- 当前传送改动在提交 b7cb503 之后，尚未再次提交。格式 v10／规则 v30：默认种子下第一幕九个传送点均可绘制；新游戏激活表为空，调试 travel 不解锁；实际交互激活营地和冰冷之原，第二次交互开菜单，已开启点往返、未开启目标拒绝、保存恢复保留激活记录均通过。截图 waypoint-inactive-v10.png、waypoint-activating-v10.png、waypoint-active-v10.png、waypoint-menu-v10.png 位于 artifacts。
+- 当前工作见 [物品与掉落补全](../ITEM_COMPLETION.md)：v12／规则 v32；普通基础装备和各品质展示实例已接入，套装／暗金按原表名称和属性行显示并可装备。属性战斗效果留待战斗系统。Windows Release 构建通过；完整 `assets/mpq2` 新游戏与 v12 读档各运行 5 帧，默认不传 `--mpq` 入口也运行 5 帧。没有生成分发包或编写测试用例；实际饮药、特殊品质穿戴和全部原图尚待交互验收。以下 v10 及更早记录均为历史现场。
+- 本轮对象动画纠正已纳入构建及短帧启动：普通物件读取 Objects.FrameCnt／FrameDelta／CycleAnim／Start，传送点和蓝门为 OP 一次段后进入 ON 循环，蓝门使用透明混合。以下传送点、蓝门截图和交互结论均是修正前现场，不能作为本轮视觉交互结果。
+- 传送阶段 v10／规则 v30 记录：默认种子下第一幕九个传送点均可绘制；新游戏激活表为空，调试 travel 不解锁；实际交互激活营地和冰冷之原，第二次交互开菜单，已开启点往返、未开启目标拒绝、保存恢复保留激活记录均通过。截图 waypoint-inactive-v10.png、waypoint-activating-v10.png、waypoint-active-v10.png、waypoint-menu-v10.png 位于 artifacts。
 - 回城卷轴已验证野外消耗一张、回营地、营地保存读档、返回原位置关闭门、旧门拒绝；城镇使用拒绝且卷轴不消耗。此前 v9 中间现场不兼容最终 v10。传送点模板是当前生成适配；多种子、回城门重开替换、远距离／死亡门禁尚未全面实测。所有代理调试实例已正常退出，未关闭用户游戏。
 
 - Play.cmd 现默认开启 d2x-debug 并正常运行，支持 -DebugPaused、-PipeName、-NoDebugPipe；实际通过 Play.cmd 启动和默认客户端 status 验证 paused=false，随后正常退出。直接 EXE 的 --debug-pipe 仍默认暂停，新增 --debug-run 显式恢复启动模式，详见调试协议。
-- 最新任务为四项视觉／移动缺陷，当前格式 v8／规则 v27，最后提交 a2fc351，本轮未提交。Windows 构建通过；管道短路径从 (379.5,181.5) 到 (380.5,181.5)，20 步后到达，再推进 20 步坐标与朝向不变，routePoints=0。原斧盾卸下、空手组合、重新装备和保存／恢复通过，场景 `artifacts/visual-v27.d2xsave`；截图 `visual-equipped-v27.png`、`visual-unarmed-v27.png`、`visual-flavie-v27.png` 保留于 artifacts。
+- 历史视觉／移动阶段 v8／规则 v27，最后提交 a2fc351。Windows 构建通过；管道短路径从 (379.5,181.5) 到 (380.5,181.5)，20 步后到达，再推进 20 步坐标与朝向不变，routePoints=0。原斧盾卸下、空手组合、重新装备和保存／恢复通过，场景 `artifacts/visual-v27.d2xsave`；截图 `visual-equipped-v27.png`、`visual-unarmed-v27.png`、`visual-flavie-v27.png` 保留于 artifacts。
 - 原 NPC 查询确认 Flavie、native.navi.0.16、坐标 (20,100)、renderable=true；怪物行走读取原 Velocity，生命／伤害等仍为 MVP。洞口缺块尚未定位，未改地图／DT1 隐藏语义；完整方向、所有装备组合和怪物速度位移量仍未全面验收。所有调试实例已退出，原资源未改动。
-- 当前任务为怪物掉落，装备剩余工作暂停。最后提交 `dfa9029`，未推送；之后新增死亡入口、品质请求、金币钱包、普通消耗品／箭袋数量和 Windows 调试管道，尚未再次提交。当前 v8／规则 v26；未知品质实例仍整批暂缓，不宣称完整掉落可用。
+- 历史掉落阶段 v8／规则 v26：最后提交 `dfa9029` 后接入死亡入口、品质请求、金币钱包、普通消耗品／箭袋数量和 Windows 调试管道；未知品质实例整批暂缓。该阶段不代表当前格式或完整掉落可用。
 - 本轮实际通过通用脚本调用管道：普通怪物四次击杀、四个已结算 ID；箭袋 aqv 数量 196、等级 2 正常入包；金币 5 正常入钱包、不占格，地面金币消失；重复击杀拒绝。保存／恢复后金币、箭袋、结算数及随机状态保持。现场 `artifacts/gold-pipe-v8.d2xsave`，截图 `artifacts/gold-wallet-v8.png`；原冠军金币 TC 种子 0、等级 4 的 mul=1280 输出 20 金币，旧 v7 明确拒绝。调试实例已正常退出；满钱包边界、六件上限及跨用户拒绝未实际验证。
 - 最新用户明确授权新增命名管道和 PowerShell 调用入口。使用 [调试协议](../DEBUG_PIPE.md) 和 `scripts/Send-D2XCommand.ps1`，不是专用测试程序；Win32 仅位于 app，主线程处理命令，默认不监听。固定 JSON 3.11.3 依赖及 SHA256，首次构建需下载或提供 FetchContent 缓存。
 - 历史 v25 品质检查：hp1 强制普通不消耗品质随机数，hax 的 MF=0／200 分母和 TC=1024 暗金修正、ba1 职业比例通过；非法等级 0 拒绝。当时的 v7 现场不能按当前 v8 恢复。当前真实交互证据以上述管道现场为准。
@@ -28,7 +30,7 @@
 - `d2x_assets assets/mpq2 substitutions 6` 明确拒绝 `data/global/tiles/act1/outdoors/trees.ds1: Truncated game resource`。原文件声明的分组数量超过尾部完整记录数，详见 STATUS；通用主题执行暂缓，不修改原资源、不猜补分组。该缺口不因本阶段提交而视为解决。
 - 后半幕此前已验证三个回廊朝向、两组种子／难度和独立包启动，现有全地图加载仍执行出口关联及区域内部出口可达性检查。完整键鼠往返、门交互和 Linux 运行仍待确认。
 - 原始五个 MPQ 未改动。旧 `d2x-act1.mpq` 仍是 HUD 阶段的精简包，不含本轮全部生成模板。
-- 当前启动优先完整 `assets/mpq2`；旧精简包和 `dist/` 压缩包不代表此基线。
+- 当前默认启动直接读取完整 `assets/mpq2`；旧精简包和 `dist/` 压缩包不代表此基线。
 
 ## 构建入口
 

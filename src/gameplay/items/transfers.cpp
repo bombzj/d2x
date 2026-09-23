@@ -18,7 +18,8 @@ InventoryResult prepared(EntityId item, unsigned quantity) {
 }
 } // namespace
 InventoryResult InventoryService::createItem(std::string_view code, unsigned quantity,
-                                             const ItemDestination &destination, unsigned level) {
+                                             const ItemDestination &destination, unsigned level,
+                                             const ItemGeneration &generation) {
     if (level < 1 || level > 99)
         return failure(InventoryError::InvalidRequest);
     auto definition = catalog_.find(code);
@@ -26,6 +27,29 @@ InventoryResult InventoryService::createItem(std::string_view code, unsigned qua
         return failure(InventoryError::UnknownDefinition);
     if (quantity == 0 || quantity > definition->maxStack)
         return failure(InventoryError::InvalidQuantity);
+    if (generation.specialRow < -1 || generation.gradeRow < -1 ||
+        generation.rarePrefixRow < -1 || generation.rareSuffixRow < -1 ||
+        generation.requiredLevel < 0 || generation.requiredLevel > 99 ||
+        (generation.quality == ItemQuality::Normal &&
+         (generation.specialRow != -1 || generation.gradeRow != -1 ||
+          generation.rarePrefixRow != -1 || generation.rareSuffixRow != -1 ||
+          !generation.propertyRolls.empty() || !generation.affixes.empty())) ||
+        ((generation.quality == ItemQuality::Set || generation.quality == ItemQuality::Unique) &&
+         (generation.specialRow < 0 || generation.gradeRow != -1 ||
+          generation.rarePrefixRow != -1 || generation.rareSuffixRow != -1 ||
+          !generation.affixes.empty())) ||
+        ((generation.quality == ItemQuality::Magic || generation.quality == ItemQuality::Rare) &&
+         (generation.specialRow != -1 || generation.gradeRow != -1 || generation.affixes.empty())) ||
+        ((generation.quality == ItemQuality::Superior || generation.quality == ItemQuality::Inferior) &&
+         (generation.gradeRow < 0 || generation.specialRow != -1 ||
+          generation.rarePrefixRow != -1 || generation.rareSuffixRow != -1 ||
+          !generation.affixes.empty())) ||
+        (generation.quality == ItemQuality::Rare &&
+         (generation.rarePrefixRow < 0 || generation.rareSuffixRow < 0)) ||
+        (generation.quality == ItemQuality::Magic &&
+         (generation.rarePrefixRow != -1 || generation.rareSuffixRow != -1)) ||
+        int(generation.quality) < 0 || int(generation.quality) > int(ItemQuality::Inferior))
+        return failure(InventoryError::InvalidRequest);
     ItemLocation location;
     if (auto error = resolve(*definition, destination, location); error != InventoryError::None)
         return failure(error);
@@ -33,6 +57,14 @@ InventoryResult InventoryService::createItem(std::string_view code, unsigned qua
     instance.definition = definition->code;
     instance.quantity = quantity;
     instance.level = level;
+    instance.quality = generation.quality;
+    instance.specialRow = generation.specialRow;
+    instance.requiredLevel = generation.requiredLevel;
+    instance.gradeRow = generation.gradeRow;
+    instance.rarePrefixRow = generation.rarePrefixRow;
+    instance.rareSuffixRow = generation.rareSuffixRow;
+    instance.propertyRolls = generation.propertyRolls;
+    instance.affixes = generation.affixes;
     instance.durability = definition->maxDurability;
     instance.location = location;
     uint64_t nextRandom = state_.creationRandom;

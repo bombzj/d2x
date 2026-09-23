@@ -18,27 +18,46 @@ EquipmentActor GameSession::equipmentActor() const {
     throw std::runtime_error("Missing Barbarian character definition");
 }
 void GameSession::createStarterEquipment() {
-    if (content_.profile != "lod-named-txt-v1")
-        return;
+    const bool legacy = content_.profile == "classic-1.04-txt-v1";
     const auto &characters = content_.tables.at("charstats");
     const auto actor = equipmentActor();
     InventoryAccess access;
     access.actor = state().player.id;
+    int beltColumn = 0;
     for (size_t row = 0; row < characters.rows().size(); ++row) {
         if (characters.value(row, "class") != "Barbarian")
             continue;
         for (int index = 1; index <= 10; ++index) {
             auto field = "item" + std::to_string(index);
             auto body = characters.value(row, field + "loc");
-            if (body.empty())
+            auto code = characters.value(row, field);
+            int quantity = characters.number(row, field + "count").value_or(0);
+            if (code.empty() || code == "0") {
+                if (quantity)
+                    throw std::runtime_error("Starter item count without definition");
                 continue;
+            }
+            if (quantity <= 0)
+                throw std::runtime_error("Invalid starter equipment quantity");
+            if (body.empty() || (legacy && body == "0")) {
+                const auto *definition = inventory_.catalog().find(code);
+                if (!definition)
+                    throw std::runtime_error("Unknown original starter item: " + std::string(code));
+                for (int count = 0; count < quantity; ++count) {
+                    ItemDestination destination = AutoPlace{playerContainers_.backpack};
+                    auto belt = inventory_.container(playerContainers_.belt);
+                    if (definition->beltAllowed && belt && beltColumn < belt->spec.columns)
+                        destination = ContainerLocation{playerContainers_.belt, {beltColumn++, 0}};
+                    if (!inventory_.createItem(code, 1, destination))
+                        throw std::runtime_error("Cannot create original starter item: " + std::string(code));
+                }
+                continue;
+            }
+            if (legacy)
+                continue; // Numeric 1.04 equipment locations have no verified slot adapter.
             auto bodySlot = equipmentSlotFromCode(body);
             if (!bodySlot)
                 throw std::runtime_error("Unsupported starter body location");
-            auto code = characters.value(row, field);
-            int quantity = characters.number(row, field + "count").value_or(0);
-            if (quantity <= 0)
-                throw std::runtime_error("Invalid starter equipment quantity");
             auto created =
                 inventory_.createItem(code, unsigned(quantity), AutoPlace{playerContainers_.backpack});
             if (!created)
@@ -97,12 +116,12 @@ InventoryError GameSession::previewInventory(const GameCommand &command) const {
                 return inventory_.preview(intent, playerContainers_, inventoryAccess(), equipmentActor());
             } else if constexpr (std::is_same_v<T, UseItem>) {
                 const auto *source = inventory_.item(intent.item.id);
-                if (source && source->definition == "tsc")
+                if (source && content_.isPortalScroll(source->definition))
                     return previewPortalScroll(intent.item);
                 auto error = inventory_.previewDrink(intent.item, inventoryAccess());
                 if (error != InventoryError::None)
                     return error;
-                return potionDefinition(inventory_.item(intent.item.id)->definition)
+                return content_.potion(inventory_.item(intent.item.id)->definition)
                            ? InventoryError::None
                            : InventoryError::UnsupportedUse;
             } else

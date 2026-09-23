@@ -45,6 +45,13 @@ add_library(d2x_content src/content/classic_data.cpp src/content/lod_data.cpp sr
 target_sources(d2x_content PRIVATE src/content/equipment_data.cpp)
 target_sources(d2x_content PRIVATE src/content/monster_loot.cpp)
 target_sources(d2x_content PRIVATE src/content/item_quality.cpp)
+target_sources(d2x_content PRIVATE src/content/item_loot.cpp)
+target_sources(d2x_content PRIVATE src/content/special_items.cpp)
+target_sources(d2x_content PRIVATE src/content/item_affixes.cpp)
+target_sources(d2x_content PRIVATE src/content/item_properties.cpp)
+target_sources(d2x_content PRIVATE src/content/item_consumables.cpp)
+target_sources(d2x_content PRIVATE src/content/item_magic_loot.cpp)
+target_sources(d2x_content PRIVATE src/content/item_grades.cpp)
 target_link_libraries(d2x_content PUBLIC d2x_resources d2x_items)
 
 # Rules and state compile without raylib, StormLib, a window or an archive.
@@ -54,15 +61,19 @@ add_library(d2x_gameplay
 target_sources(d2x_gameplay PRIVATE src/gameplay/monsters/monster_spawn.cpp src/gameplay/monsters/monster_activation.cpp)
 target_sources(d2x_gameplay PRIVATE src/gameplay/loot/treasure.cpp)
 target_sources(d2x_gameplay PRIVATE src/gameplay/loot/quality.cpp)
+target_sources(d2x_gameplay PRIVATE src/gameplay/loot/special.cpp)
+target_sources(d2x_gameplay PRIVATE src/gameplay/loot/affix.cpp)
 target_sources(d2x_gameplay PRIVATE
   src/gameplay/skills/definitions.cpp
   src/gameplay/skills/fireball.cpp src/gameplay/skills/frost_nova.cpp
   src/gameplay/skills/whirlwind.cpp src/gameplay/skills/teleport.cpp
   src/gameplay/skills/leap.cpp src/gameplay/skills/war_cry.cpp)
 target_link_libraries(d2x_gameplay PUBLIC d2x_navigation)
+target_link_libraries(d2x_content PUBLIC d2x_gameplay)
 add_library(d2x_population src/world/population.cpp)
 target_link_libraries(d2x_population PUBLIC d2x_content d2x_gameplay)
 add_library(d2x_session src/gameplay/session/session.cpp src/gameplay/session/session_loot.cpp src/gameplay/session/session_inventory.cpp src/gameplay/session/session_consumables.cpp src/gameplay/session/session_interaction.cpp src/gameplay/session/session_snapshot.cpp src/gameplay/session/session_exits.cpp)
+target_sources(d2x_session PRIVATE src/gameplay/session/session_item_snapshot.cpp)
 target_link_libraries(d2x_session PUBLIC d2x_gameplay d2x_world d2x_content d2x_population)
 add_library(d2x_persistence src/persistence/save_codec.cpp src/persistence/save_file.cpp)
 target_link_libraries(d2x_persistence PUBLIC d2x_gameplay d2x_items)

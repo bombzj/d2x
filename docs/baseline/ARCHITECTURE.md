@@ -20,6 +20,7 @@
 依赖约束：
 
 - `d2x_gameplay → d2x_navigation`；玩法不链接 StormLib 或 raylib。
+- 原 MPQ 是内容数据的唯一运行时来源；`content` 在加载时解析原 TXT 并提供类型化只读定义。提取文件仅供人工核对，不随源码维护或提交。算法常量与 MPQ 内容字段应分开记录。
 - `d2x_world → content/navigation`；生成器只产出资源配方，不创建 GPU 对象。
 - `d2x_population → content/gameplay`；怪物计划与实体创建分离。
 - `GameSession` 持有区域、模拟、物品服务和掉落状态。`Simulation` 借用稳定区域网格与房间索引。
@@ -28,8 +29,8 @@
 
 扩展入口：
 
-- Travel 为开发目录／管道自由传送；WaypointTravel 为游戏传送，GameSession 校验两端激活与源点距离。SceneView.waypointSource 区分专用菜单与 F2 目录，首次交互发 WaypointActivated 而非直接开菜单。WorldState.waypoints 保存激活时间，表现层从 Objects.FrameDelta 和原 nu/on/op 计算动画阶段。
-- 回城卷轴 UseItem 在 session_consumables 中规划端点、消耗库存并替换 TownPortalState；UseTownPortal 走近后切区，营地返回关闭。蓝门仅作为状态派生图像，不混入静态 Region.objects；快照校验端点和原营地标记。原野外传送点固定 LvlSub 片段由 outdoor 和 map_assembly 负责。
+- Travel 为开发目录／管道自由传送；WaypointTravel 为游戏传送，GameSession 校验两端激活与源点距离。SceneView.waypointSource 区分专用菜单与 F2 目录，首次交互发 WaypointActivated 而非直接开菜单。WorldState.waypoints 保存激活时间，表现层按 Objects 的 NU／OP（Operating）／ON（Opened）顺序及 FrameCnt／FrameDelta／CycleAnim／Start 计算动画阶段；普通物件共用这套只读播放规则，非循环段钳在末帧。
+- 回城卷轴 UseItem 在 session_consumables 中规划端点、消耗库存并替换 TownPortalState；UseTownPortal 走近后切区，营地返回关闭。蓝门仅作为状态派生图像，不混入静态 Region.objects；表现层按 Objects 的 OP 一次段、ON 循环段和 COF 透明绘制播放，读档已有门直接显示持续段。快照校验端点和原营地标记。原野外传送点固定 LvlSub 片段由 outdoor 和 map_assembly 负责。
 
 - `SceneAssets::loadHeroEquipment` 按原手部物品组件与动作类别构造角色动画并缓存，空组件用 nil 明确跳过；穿脱与读档重建表现，GPU 状态不入存档。`Graphics::composite` 将 COF 顺序方向映射到 DCC 方向，缺角色武器图不替换为默认斧。怪物实际位移及面向缓存在 SceneView，不改变战斗状态编码。
 - `region.cpp` 在 DS1 对象后补原规则要求的 Navi 中立单位，位置来自血腥荒地边界预设中心；新增对象改变实体分配，因此同步规则指纹。`GameSession` 通过类型化回调向 Simulation 提供真实怪物基础行走速度，玩法仍不读取 MPQ。

@@ -45,7 +45,7 @@ InventoryError InventoryService::preview(const SplitStack &command, const Invent
         return error;
     const auto &source = state_.items.at(command.source.id);
     const auto &definition = *catalog_.find(source.definition);
-    if (definition.maxStack <= 1)
+    if (definition.maxStack <= 1 || source.quality != ItemQuality::Normal)
         return InventoryError::NotStackable;
     if (command.quantity == 0 || command.quantity >= source.quantity)
         return InventoryError::InvalidQuantity;

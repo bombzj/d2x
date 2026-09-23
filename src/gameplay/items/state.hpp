@@ -2,7 +2,9 @@
 #include "core/id.hpp"
 #include "gameplay/model/definitions.hpp"
 #include <map>
+#include <cstdint>
 #include <variant>
+#include <vector>
 
 namespace d2x {
 struct Cell {
@@ -27,7 +29,21 @@ struct AutoPlace {
 };
 using ItemDestination = std::variant<GroundLocation, ContainerLocation, AutoPlace>;
 
-enum class ItemQuality { Normal, Magic, Rare, Set, Unique };
+enum class ItemQuality { Normal, Magic, Rare, Set, Unique, Superior, Inferior };
+struct ItemAffixInstance {
+    bool prefix = false;
+    int32_t row = -1;
+    std::vector<int32_t> propertyRolls;
+};
+struct ItemGeneration {
+    ItemQuality quality = ItemQuality::Normal;
+    int32_t specialRow = -1;
+    int32_t requiredLevel = 0;
+    int32_t gradeRow = -1;
+    int32_t rarePrefixRow = -1, rareSuffixRow = -1;
+    std::vector<int32_t> propertyRolls;
+    std::vector<ItemAffixInstance> affixes;
+};
 struct ItemHandle {
     EntityId id;
     uint64_t revision = 0;
@@ -40,6 +56,11 @@ struct ItemInstance {
     unsigned level = 1;
     uint64_t revision = 1;
     int defense = 0;
+    int32_t specialRow = -1, requiredLevel = 0;
+    int32_t gradeRow = -1;
+    int32_t rarePrefixRow = -1, rareSuffixRow = -1;
+    std::vector<int32_t> propertyRolls;
+    std::vector<ItemAffixInstance> affixes;
     ItemLocation location;
     ItemHandle handle() const { return {id, revision}; }
 };

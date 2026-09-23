@@ -10,6 +10,11 @@ struct ObjectAppearance {
     std::string category, token, mode, weapon;
     std::array<std::string, 16> equipment;
 };
+struct ObjectAnimationRule {
+    int frames = 1, start = 0;
+    float fps = 0;
+    bool cycle = false, enabled = false;
+};
 struct WorldObject {
     EntityId id;
     Vec pos, accessPoint;
@@ -20,6 +25,8 @@ struct WorldObject {
     float reach = 4;
     bool flame = false;
     int facing = 0;
+    int animationMode = 0;
+    std::array<ObjectAnimationRule, 8> animationRules{};
     std::array<float, 3> waypointFps{};
 };
 struct LevelExit {

@@ -31,6 +31,7 @@ int main(int argc, char **argv) {
                    "  ... treasure <TC-name> [seed] [monster-level]\n"
                    "  ... quality <item-code> <item-level> <MF> [seed] [unique set rare magic modifiers]\n"
                    "  ... loot-plan <TC-name> <item-level> <seed> [upgrade-level]\n"
+                   "  ... special <unique|set> <item-code> <item-level> <seed>\n"
                    "  ... loot-entry <monster> <normal|champion|unique|minion|boss|superunique> <difficulty:0-2> <level-ID> [superunique-ID]\n"
                    "  ... population <level-ID> [normal|nightmare|hell] [seed]\n";
             return 0;
@@ -55,15 +56,48 @@ int main(int argc, char **argv) {
             auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), seed);
             if (error != std::errc{} || end != text.data() + text.size())
                 throw std::runtime_error("Invalid loot plan seed");
-            auto plan = d2x::planConsumableLoot(data, ratios->second, argv[3], integer(argv[4]),
+            auto plan = d2x::planItemLoot(data, ratios->second, argv[3], integer(argv[4]),
                                                argc == 7 ? integer(argv[6]) : 0, seed);
             std::cout << "TC=" << argv[3] << " seed=" << seed << " next=" << plan.randomState
                       << " NoDrop=" << plan.noDrops << " drops=" << plan.drops.size()
                       << " deferred=" << plan.deferred << '\n';
             for (const auto &drop : plan.drops)
                 std::cout << "  " << drop.code << " quantity=" << drop.quantity << " level="
-                          << drop.level << " offset=" << drop.offset.x << ',' << drop.offset.y << '\n';
-            std::cout << "Shared consumable planner; no session state or items were created.\n";
+                          << drop.level << " quality=" << int(drop.generation.quality)
+                          << " specialRow=" << drop.generation.specialRow
+                          << " gradeRow=" << drop.generation.gradeRow
+                          << " affixes=" << drop.generation.affixes.size()
+                          << " offset=" << drop.offset.x << ',' << drop.offset.y << '\n';
+            std::cout << "Shared item planner; no session state or items were created.\n";
+        } else if (command == "special" && argc == 7) {
+            auto data = d2x::loadClassicData(a);
+            auto kind = std::string_view(argv[3]);
+            if (kind != "unique" && kind != "set")
+                throw std::runtime_error("Special item kind must be unique or set");
+            int level = 0;
+            auto levelText = std::string_view(argv[5]);
+            auto [levelEnd, levelError] = std::from_chars(levelText.data(), levelText.data() + levelText.size(), level);
+            if (levelError != std::errc{} || levelEnd != levelText.data() + levelText.size())
+                throw std::runtime_error("Invalid special item level");
+            uint64_t seed = 0;
+            auto seedText = std::string_view(argv[6]);
+            auto [seedEnd, seedError] = std::from_chars(seedText.data(), seedText.data() + seedText.size(), seed);
+            if (seedError != std::errc{} || seedEnd != seedText.data() + seedText.size())
+                throw std::runtime_error("Invalid special item seed");
+            const auto &records = kind == "unique" ? data.uniqueItems : data.setItems;
+            auto roll = d2x::rollSpecialItem(records, argv[4], level, seed);
+            std::cout << "Requested=" << kind << " base=" << argv[4] << " level=" << level
+                      << " seed=" << seed << " next=" << roll.randomState << '\n';
+            if (roll.row)
+                for (const auto &record : records)
+                    if (record.row == *roll.row) {
+                        std::cout << "  row=" << record.row << " name=" << record.name
+                                  << " set=" << record.set << " rarity=" << record.rarity << '\n';
+                        break;
+                    }
+            if (!roll.row)
+                std::cout << "  no eligible original record\n";
+            std::cout << "Selection only; properties and an item instance were not created.\n";
         } else if (command == "quality" && (argc == 6 || argc == 7 || argc == 11)) {
             auto data = d2x::loadClassicData(a);
             d2x::DataTable ratios(a.read("data/global/excel/itemratio.txt"));
@@ -133,7 +167,7 @@ int main(int argc, char **argv) {
         } else if (command == "save-info" && argc == 4) {
             auto snapshot = d2x::loadSave(argv[3]);
             auto data = d2x::loadClassicData(a);
-            std::cout << "Save format=10 region=" << int(snapshot.world.area.region)
+            std::cout << "Save format=12 region=" << int(snapshot.world.area.region)
                       << " gold=" << snapshot.world.player.gold
                       << " time=" << snapshot.world.time << " life=" << snapshot.world.player.hp
                       << " combatRandom=" << snapshot.world.player.combatRandom

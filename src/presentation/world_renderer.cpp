@@ -169,7 +169,28 @@ void SceneView::drawActors() const {
                               int(36 * e.hp / monsterDefinition(e.kind).maxLife), 3, {176, 47, 25, 255});
             }
         } else if (item.type == 5) {
-            sprite(assets_.townPortal.frame(0, int(view_.animationTime * 25)), item.p);
+            size_t mode = 1;
+            float elapsed = view_.animationTime;
+            if (view_.portalAnimationStarted >= 0 && view_.portalRevision == sim.portal.revision) {
+                elapsed = std::max(0.f, view_.animationTime - view_.portalAnimationStarted);
+                const auto &opening = assets_.townPortalRules[0];
+                const float duration = opening.frames / opening.fps;
+                if (elapsed < duration)
+                    mode = 0;
+                else
+                    elapsed -= duration;
+            }
+            const auto &rule = assets_.townPortalRules[mode];
+            int frame = rule.start + int(elapsed * rule.fps);
+            if (rule.cycle)
+                frame = rule.start + (frame - rule.start) % rule.frames;
+            else
+                frame = std::min(frame, rule.start + rule.frames - 1);
+            // The classic portal COF uses translucent draw effects. Additive composition keeps
+            // its black palette entries from becoming an opaque oval over the world.
+            BeginBlendMode(BLEND_ADDITIVE);
+            sprite(assets_.townPortalAnimations[mode].frame(0, frame), item.p);
+            EndBlendMode();
             const std::string name = sim.area.region == RegionId::Encampment ? "Return Portal" : "Rogue Encampment";
             painter_.label(name, int(item.p.x) - painter_.measure(name, 12) / 2, int(item.p.y) - 100, 12, gold);
         } else if (item.type == 4) {
@@ -182,17 +203,35 @@ void SceneView::drawActors() const {
                 float elapsed = 0;
                 if (activated != sim.waypoints.end()) {
                     elapsed = std::max(0.f, sim.time - activated->second);
-                    const float duration = animations->second[1].count / p.waypointFps[1];
+                    const float duration = p.animationRules[1].frames / p.waypointFps[1];
                     mode = elapsed < duration ? 1 : 2;
                     if (mode == 2) elapsed -= duration;
                 }
                 const auto &animation = animations->second[mode];
-                int frame = mode == 0 ? 0 : int(elapsed * p.waypointFps[mode]);
-                if (mode == 1) frame = std::min(frame, animation.count - 1);
+                const auto &rule = p.animationRules[mode];
+                int frame = rule.start + int(elapsed * p.waypointFps[mode]);
+                if (rule.cycle)
+                    frame = rule.start + (frame - rule.start) % rule.frames;
+                else
+                    frame = std::min(frame, rule.start + rule.frames - 1);
                 sprite(animation.frame(p.facing % std::max(1, animation.directions), frame), item.p);
             } else {
                 auto &anim = assets_.propAnimations.at(p.key);
-                sprite(anim.frame(p.facing % std::max(1, anim.directions), int(view_.animationTime * 12)), item.p);
+                const auto &rule = p.animationRules[p.animationMode];
+                int frame = 0;
+                if (p.appearance.category == "objects") {
+                    frame = rule.start;
+                    if (rule.fps > 0) {
+                        frame += int(view_.animationTime * rule.fps);
+                        if (rule.cycle)
+                            frame = rule.start + (frame - rule.start) % rule.frames;
+                        else
+                            frame = std::min(frame, rule.start + rule.frames - 1);
+                    }
+                } else {
+                    frame = int(view_.animationTime * 12);
+                }
+                sprite(anim.frame(p.facing % std::max(1, anim.directions), frame), item.p);
             }
             if (!p.name.empty() && p.name != "Chicken" && p.name != "Cow" && p.name != "Rogue Scout")
                 painter_.label(p.name, int(item.p.x) - painter_.measure(p.name, 10) / 2, int(item.p.y) - 80,
