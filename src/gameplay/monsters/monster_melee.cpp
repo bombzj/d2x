@@ -1,19 +1,26 @@
 #include "gameplay/simulation/simulation.hpp"
 #include "gameplay/combat/accuracy.hpp"
-#include "gameplay/monsters/brute_ai.hpp"
 #include <algorithm>
 #include <tuple>
 
 namespace d2x {
+namespace {
+int chooseAttackMode(Enemy &enemy, const MonsterAiProfile &rules) {
+    enemy.combatRandom = uint64_t(uint32_t(enemy.combatRandom)) * 0x6ac690c5ULL +
+                         (enemy.combatRandom >> 32);
+    return uint32_t(enemy.combatRandom) % 100 < unsigned(rules.params[3]) ? 1 : 2;
+}
+} // namespace
 void Simulation::beginMonsterAttack(Enemy &enemy) {
     enemy.attackMode = 1;
     const auto ai = monsterAi_ ? monsterAi_(enemy) : std::nullopt;
-    if (ai && ai->kind == MonsterAiKind::Brute && monsterAttackTiming_ &&
+    if (ai && (ai->kind == MonsterAiKind::Brute || ai->kind == MonsterAiKind::Skeleton) &&
+        monsterAttackTiming_ &&
         monsterAttackTiming_(enemy, 2) && monsterNormalCombat_ &&
         monsterAccuracy_ && monsterAccuracy_(enemy, 2))
         if (auto combat = monsterNormalCombat_(enemy.identity);
             combat && combat->attack2Damage)
-            enemy.attackMode = bruteAttackMode(enemy, *ai);
+            enemy.attackMode = chooseAttackMode(enemy, *ai);
     const float chillScale = enemy.chill > 0 ? 2.f : 1.f;
     if (auto timing = monsterAttackTiming_ ? monsterAttackTiming_(enemy, enemy.attackMode) : std::nullopt) {
         enemy.attackDuration = timing->duration * chillScale;

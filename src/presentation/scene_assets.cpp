@@ -45,7 +45,8 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
             equipment[9] = "lit";
         }
         for (auto mode : {"nu", "wl", "a1", "dt", "a2"}) {
-            if (std::string_view(mode) == "a2" && kind != MonsterKind::Brute) continue;
+            if (std::string_view(mode) == "a2" && kind != MonsterKind::Brute &&
+                kind != MonsterKind::Skeleton) continue;
             auto animation =
                 graphics_.composite("monsters", definition.token, mode, definition.weapon, &equipment);
             if (animation.frames.empty() || !animation.completeComposite)
@@ -57,7 +58,7 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
             timing && monsterAnimations[kind].at("a1").count != timing->frames)
             throw std::runtime_error("Monster AnimData/COF frame mismatch: " +
                                      std::string(definition.token));
-        if (kind == MonsterKind::Brute)
+        if (kind == MonsterKind::Brute || kind == MonsterKind::Skeleton)
             if (auto timing = session.monsterContent().attackTiming(kind, 2);
                 timing && monsterAnimations[kind].at("a2").count != timing->frames)
                 throw std::runtime_error("Monster A2 AnimData/COF frame mismatch: " +

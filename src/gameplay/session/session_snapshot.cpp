@@ -298,7 +298,7 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
                         "idle monster attack phase");
             else {
                 if (enemy.attackMode == 2)
-                    require(enemy.kind == MonsterKind::Brute &&
+                    require((enemy.kind == MonsterKind::Brute || enemy.kind == MonsterKind::Skeleton) &&
                                 monsterContent_.attackTiming(enemy.kind, 2),
                             "unsupported monster A2 mode");
                 float duration = monsterDefinition(enemy.kind).attackInterval;
