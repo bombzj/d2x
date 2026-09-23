@@ -148,7 +148,7 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
     Fingerprint fingerprint;
     fingerprint.add(content_.profile);
     // Bump this rules revision when state interpretation or compiled rules change.
-    fingerprint.add("d2x-session-rules-v56-debug-monster-spawn");
+    fingerprint.add("d2x-session-rules-v57-zombie-movement");
     auto members = archives.used;
     for (const auto &member : members) {
         fingerprint.add(member);
