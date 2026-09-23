@@ -36,6 +36,6 @@ cmake --build build --parallel
 
 在项目根目录使用 `Play.cmd`，或运行 `build/bin/d2x.exe`。程序默认读取 `assets/mpq2` 中的原始 MPQ；其他位置可用 `--mpq <目录>` 指定。MPQ 不参与编译，但运行时必须可用。源码入口为 `CMakeLists.txt`、`cmake/` 和 `src/`；许可和素材来源见 `LICENSE`、[第三方说明](THIRD_PARTY.md) 及 `docs/licenses/`。
 
-如果编译机器不能访问 GitHub，CMake 可使用 `external/raylib` 和 `external/stormlib` 的固定版本源码；系统编译器、CMake 和开发库仍需安装。当前源码存档格式 v28、规则 v55，旧档不迁移。分发目录保留完整 `assets/mpq2`，EXE 直接读取原始 MPQ，不生成精简资源包或 ZIP。原 MPQ 文件清单见 [MPQ 资源](MPQ_RESOURCES.md)。
+如果编译机器不能访问 GitHub，CMake 可使用 `external/raylib` 和 `external/stormlib` 的固定版本源码；系统编译器、CMake 和开发库仍需安装。当前源码存档格式 v29、规则 v56，旧档不迁移。分发目录保留完整 `assets/mpq2`，EXE 直接读取原始 MPQ，不生成精简资源包或 ZIP。原 MPQ 文件清单见 [MPQ 资源](MPQ_RESOURCES.md)。
 
 依赖说明依据 [raylib 官方 Linux 构建文档](https://github.com/raysan5/raylib/wiki/Working-on-GNU-Linux)、[StormLib 官方源码](https://github.com/ladislav-zezula/StormLib) 及本项目固定版本的 CMake 配置。

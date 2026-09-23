@@ -1,6 +1,6 @@
 # 开发与交接
 
-当前源码存档 v28／规则 v55。怪物阶段的当前范围见 [怪物实施计划](../MONSTERS.md)：普通骷髅按运行时 MPQ 参数决定接近／停顿／攻击，Brute 随失血加速；Brute、普通骷髅与僵尸均按 `aip4` 选择 A1／A2，动作时长和命中帧按原 `AnimData.d2`。Windows Release 构建通过；邪恶洞窟的僵尸 A2 使用 MPQ 原 16 帧动作，v28 保存恢复保留模式 2 与 0.24 秒命中倒计时，事件前生命 47，事件后降至 44。完整六 MPQ 运行目录 `dist/d2x-runtime-20260924-v28-zombie-a2/` 已独立短帧启动 Blood Moor，并重新装载 v28 A2 现场，截图在 `artifacts/monster-smoke/packaged-v28-blood-moor.png`、`packaged-v28-restored.png` 和 `zombie-a2-v28.png`。此前 Brute、普通骷髅的出伤前恢复现场保留在忽略目录；AI 逐帧调度、僵尸接近决策和受伤 Brute 速度变化仍待后续定向验收。未写测试脚本／用例，不生成 ZIP；旧存档不兼容。
+当前源码存档 v29／规则 v56。怪物阶段的当前范围见 [怪物实施计划](../MONSTERS.md)：普通骷髅按运行时 MPQ 参数决定接近／停顿／攻击，Brute 随失血加速；Brute、普通骷髅与僵尸均按 `aip4` 选择 A1／A2，动作时长和命中帧按原 `AnimData.d2`。Windows Release 构建通过；命名管道在邪恶洞窟按原表 ID 定点生成 `zombie1`，7 HP 扣至 4 HP 后存读档保持身份和 Debug 来源，直接击杀取得 33 经验。`brute1` 扣血致死取得 48 经验及一件掉落，`brute2` 显示替身，中立 `chicken` 被拒绝。完整六 MPQ 运行目录 `dist/d2x-runtime-20260924-v29-debug-monsters/` 独立加载该现场，截图在 `artifacts/monster-smoke/debug-spawn-v29.png` 和 `packaged-v29-restored.png`。此前 A1 与三种 A2 的出伤前恢复现场保留在忽略目录；AI 逐帧调度、僵尸接近决策和受伤 Brute 速度变化仍待后续定向验收。未写测试脚本／用例，不生成 ZIP；旧存档不兼容。
 
 ## 当前交接状态
 

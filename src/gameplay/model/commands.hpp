@@ -19,6 +19,14 @@ struct DebugKill {
     EntityId target;
     bool ignoreActivation = false;
 };
+struct DebugSpawnMonster {
+    std::string monster;
+    Vec position;
+};
+struct DebugDamageMonster {
+    EntityId target;
+    float amount = 0;
+};
 struct CastSkill {
     Skill skill;
     Vec target;
@@ -77,5 +85,6 @@ struct PickupItem {
 using GameCommand =
     std::variant<MoveTo, Attack, CastSkill, UseClassSkill, ToggleRun, Interact, IdentifyWithCain, EndNpcConversation, BuyVendorItem, DebugGrantGold, DebugGrantExperience, AllocateAttribute, AllocateSkill, BindSkillHotkey, DebugResetAttributes, DebugResetSkills, DebugSwitchCharacter, Travel, RestartArea, MoveItem, SwapItems,
                  SplitStack, MergeStacks, PickupItem, StopMoving, EquipBelt, UseItem, UseBeltColumn,
-                 CloseStorage, TransferItem, UseExit, EquipItem, DebugKill, UseTownPortal, WaypointTravel>;
+                 CloseStorage, TransferItem, UseExit, EquipItem, DebugKill, DebugSpawnMonster,
+                 DebugDamageMonster, UseTownPortal, WaypointTravel>;
 } // namespace d2x

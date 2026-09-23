@@ -148,7 +148,7 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
     Fingerprint fingerprint;
     fingerprint.add(content_.profile);
     // Bump this rules revision when state interpretation or compiled rules change.
-    fingerprint.add("d2x-session-rules-v55-zombie-a2-attack");
+    fingerprint.add("d2x-session-rules-v56-debug-monster-spawn");
     auto members = archives.used;
     for (const auto &member : members) {
         fingerprint.add(member);
@@ -313,6 +313,10 @@ void GameSession::tick(float dt, Vec keyboard) {
                         player.gold += intent.amount;
                 } else if constexpr (std::is_same_v<T, DebugGrantExperience>) {
                     grantExperience(intent.amount);
+                } else if constexpr (std::is_same_v<T, DebugSpawnMonster>) {
+                    spawnDebugMonster(intent);
+                } else if constexpr (std::is_same_v<T, DebugDamageMonster>) {
+                    damageDebugMonster(intent);
                 } else if constexpr (std::is_same_v<T, AllocateAttribute>) {
                     auto &player = simulation_.state_.player;
                     if (!player.dead && allocateAttribute(player.allocated, player.unspentAttributes, intent.attribute))

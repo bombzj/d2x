@@ -98,6 +98,7 @@ add_library(d2x_session src/gameplay/session/session.cpp src/gameplay/session/se
 target_sources(d2x_session PRIVATE src/gameplay/npc/identification.cpp src/gameplay/npc/service.cpp src/gameplay/npc/movement.cpp)
 target_sources(d2x_session PRIVATE src/gameplay/npc/store.cpp src/gameplay/npc/purchase.cpp)
 target_sources(d2x_session PRIVATE src/gameplay/session/session_item_snapshot.cpp)
+target_sources(d2x_session PRIVATE src/gameplay/session/session_debug_monsters.cpp)
 target_link_libraries(d2x_session PUBLIC d2x_gameplay d2x_world d2x_content d2x_population)
 add_library(d2x_persistence src/persistence/save_codec.cpp src/persistence/save_file.cpp)
 target_link_libraries(d2x_persistence PUBLIC d2x_gameplay d2x_items)
@@ -115,7 +116,8 @@ add_library(d2x_presentation
 target_link_libraries(d2x_presentation PUBLIC d2x_session raylib)
 
 add_executable(d2x src/main.cpp src/app/application.cpp src/app/options.cpp src/app/input.cpp)
-target_sources(d2x PRIVATE src/app/debug_pipe.cpp src/app/debug_commands.cpp src/app/debug_inventory.cpp)
+target_sources(d2x PRIVATE src/app/debug_pipe.cpp src/app/debug_commands.cpp src/app/debug_inventory.cpp
+    src/app/debug_monsters.cpp)
 target_link_libraries(d2x PRIVATE d2x_presentation d2x_persistence)
 target_link_libraries(d2x PRIVATE nlohmann_json::nlohmann_json)
 if(WIN32)

@@ -1,10 +1,10 @@
 #include "debug_commands.hpp"
 #include "debug_inventory.hpp"
+#include "debug_monsters.hpp"
 #include "persistence/save_file.hpp"
 #include <nlohmann/json.hpp>
 #include <algorithm>
 #include <cmath>
-#include <set>
 #include <stdexcept>
 
 namespace d2x {
@@ -31,12 +31,6 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
         const auto command = request.at("command").get<std::string>();
         Json result = {{"ok", true}, {"command", command}};
         auto step = [&]() { session.tick(GameSession::fixedStep); view.advance(GameSession::fixedStep); };
-        auto visible = [&](const Enemy &enemy) {
-            auto screen = view.screen(enemy.pos);
-            const float right = view.ui().inventory.open ? inventoryBounds().x : float(W);
-            return session.active(enemy.pos) && screen.x >= 0 && screen.x < right && screen.y >= 0 &&
-                   screen.y < H - HUD && !view.ui().blocksWorld();
-        };
         auto entity = [&]() {
             const auto &value = request.at("id");
             if (!value.is_number_unsigned() || value.get<uint64_t>() == 0)
@@ -405,34 +399,10 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
             }
             if (!applied) throw std::runtime_error("Equip produced no inventory result");
             result["item"] = id.value;
-        } else if (command == "monsters") {
-            result["monsters"] = Json::array();
-            for (const auto &enemy : session.state().area.enemies) {
-                if (request.value("visible", true) && !visible(enemy))
-                    continue;
-                Json entry = {{"id", enemy.id.value}, {"monster", enemy.identity.monster},
-                    {"rank", monsterRankName(enemy.identity.rank)}, {"hp", enemy.hp},
-                    {"maxHp", enemy.maxHp}, {"x", enemy.pos.x},
-                    {"y", enemy.pos.y}, {"visible", visible(enemy)}, {"active", session.active(enemy.pos)},
-                    {"aiWait", enemy.aiWait}, {"aiPursuing", enemy.aiPursuing},
-                    {"attackMode", enemy.attackMode}, {"attackRemaining", enemy.attack},
-                    {"impactRemaining", enemy.attackImpact}};
-                const auto *record = session.monsterContent().find(enemy.identity.monster);
-                if (record) entry["sourceAi"] = record->ai;
-                if (record && record->walkVelocity)
-                    entry["sourceVelocity"] = *record->walkVelocity;
-                if (auto timing = session.monsterContent().attackTiming(enemy.kind)) {
-                    entry["attackDuration"] = timing->duration;
-                    entry["attackImpact"] = timing->impact;
-                    entry["attackFrames"] = timing->frames;
-                }
-                if (auto timing = session.monsterContent().attackTiming(enemy.kind, 2)) {
-                    entry["attack2Duration"] = timing->duration;
-                    entry["attack2Impact"] = timing->impact;
-                    entry["attack2Frames"] = timing->frames;
-                }
-                result["monsters"].push_back(std::move(entry));
-            }
+        } else if (command == "monsters" || command == "monster-spawn" ||
+                   command == "monster-damage" || command == "monster-kill" ||
+                   command == "kill" || command == "drop") {
+            debugMonsterCommand(command, request, result, session, view, step);
         } else if (command == "ground" || command == "inventory") {
             result["items"] = Json::array();
             for (const auto &[id, item] : session.inventory().state().items) {
@@ -453,46 +423,6 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
                 result["items"].push_back(std::move(entry));
             }
             result["gold"] = session.state().player.gold;
-        } else if (command == "kill" || command == "drop") {
-            auto id = entity();
-            const bool direct = command == "drop";
-            const Enemy *target = nullptr;
-            for (const auto &enemy : session.state().area.enemies)
-                if (enemy.id == id) target = &enemy;
-            if (!target || target->hp <= 0 || (!direct && !visible(*target)) || session.state().player.dead)
-                throw std::runtime_error(direct
-                    ? "Target must be a living created monster in the current region; player must be alive"
-                    : "Target must be a living visible active monster; player must be alive");
-            std::set<EntityId> priorItems;
-            const auto experienceBefore = session.state().player.experience;
-            if (direct)
-                for (const auto &entry : session.inventory().state().items)
-                    priorItems.insert(entry.first);
-            session.submit(DebugKill{id, direct});
-            if (direct) {
-                session.tick(0);
-                view.advance(0);
-            } else step();
-            if (direct) {
-                result["drops"] = Json::array();
-                result["deferred"] = nullptr;
-                for (const auto &event : session.events())
-                    if (auto deferred = std::get_if<LootDeferred>(&event); deferred && deferred->source == id)
-                        result["deferred"] = deferred->reason;
-                for (const auto &[itemId, item] : session.inventory().state().items) {
-                    if (priorItems.contains(itemId)) continue;
-                    const auto *ground = std::get_if<GroundLocation>(&item.location);
-                    if (!ground || ground->region != session.state().area.region) continue;
-                    result["drops"].push_back({{"id", itemId.value}, {"revision", item.revision},
-                        {"code", item.definition}, {"quantity", item.quantity}, {"level", item.level},
-                        {"quality", qualityName(item.quality)}, {"specialRow", item.specialRow},
-                        {"x", ground->position.x}, {"y", ground->position.y}});
-                }
-            }
-            result["killed"] = id.value;
-            result["experienceGained"] = session.state().player.experience - experienceBefore;
-            result["experience"] = session.state().player.experience;
-            result["level"] = session.state().player.level;
         } else if (command == "pickup") {
             const auto *item = session.inventory().item(entity());
             if (!item || !std::holds_alternative<GroundLocation>(item->location))

@@ -2,7 +2,15 @@
 param(
     [ValidatePattern('^[A-Za-z0-9_-]{1,80}$')][string]$PipeName = 'd2x-debug',
     [Parameter(Mandatory = $true)]
-    [ValidateSet('status', 'monsters', 'ground', 'inventory', 'item', 'item-move', 'objects', 'exits', 'view', 'equip', 'use', 'portal', 'interact', 'talk', 'gossip', 'identify', 'shop', 'buy', 'grant-gold', 'grant-experience', 'allocate-attribute', 'reset-attributes', 'switch-character', 'character-panel', 'skill-tree', 'skill-picker', 'skills', 'bind-skill-hotkey', 'learn-skill', 'reset-skills', 'travel', 'waypoint', 'kill', 'drop', 'pickup', 'move', 'step', 'pause', 'resume', 'save', 'load', 'screenshot', 'quit')]
+    [ValidateSet(
+        'status', 'monsters', 'monster-spawn', 'monster-damage', 'monster-kill',
+        'ground', 'inventory', 'item', 'item-move', 'objects', 'exits', 'view',
+        'equip', 'use', 'portal', 'interact', 'talk', 'gossip', 'identify', 'shop', 'buy',
+        'grant-gold', 'grant-experience', 'allocate-attribute', 'reset-attributes',
+        'switch-character', 'character-panel', 'skill-tree', 'skill-picker', 'skills',
+        'bind-skill-hotkey', 'learn-skill', 'reset-skills', 'travel', 'waypoint',
+        'kill', 'drop', 'pickup', 'move', 'step', 'pause', 'resume', 'save', 'load',
+        'screenshot', 'quit')]
     [string]$Command,
     [hashtable]$Arguments = @{},
     [ValidateRange(100, 60000)][int]$TimeoutMs = 10000

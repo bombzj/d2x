@@ -12,6 +12,7 @@
 6. **Brute A2：已完成基础分支。** `brute1` 的第二攻击模式由运行时 MPQ 的 A2 COF/DCC 与 `AnimData.d2` 驱动；伤害／命中读取 `MonStats.A2MinD/A2MaxD/A2TH` 与 `MonLvl`，A1／A2 选择使用原 `AI=Brute` 的 `aip4`。攻击模式写入 v26 存档并在恢复时验证。只在 A2 资源、数值和命中资料齐全时选择该动作。
 7. **普通骷髅 A2：已完成基础分支。** `skeleton1` 的 A2 使用运行时 MPQ 的 `SKA21HS` COF/DCC、`AnimData.d2` 动作事件及 `MonStats` A2 伤害／命中；`AI=Skeleton` 的 `aip4` 在攻击决策通过后选择 A1／A2。v27 存档保存模式并按当前资源验证。该分支仍只覆盖普通难度、普通级别的已实现外观。
 8. **普通僵尸 A2：已完成基础分支。** `zombie1` 的 A2 使用 MPQ 原 `ZMA2HTH` COF/DCC、`AnimData.d2` 动作事件和 `MonStats` A2 伤害／命中；`AI=Zombie` 的 `aip4` 决定近身攻击模式。v28 存档保存模式并按当前资源验证。接近目标的专属 AI 仍待单独实现。
-9. **后续候选：其他专属 AI 与动作。** 逐种核对原 AI 规则和 MPQ 资源，再处理远程弹体与技能、尸体复活、各难度与等级缩放、抗性和元素伤害、精英／首领词缀和 Boss 特性。
+9. **调试定向刷怪与扣血：已完成。** 命名管道按当前 MPQ `MonStats.Id` 和可走坐标生成单个敌对怪物，沿用正式生命掷骰；扣血、死亡经验与掉落走正式结算。存档使用 Debug 来源区分自然生成，v29 恢复校验身份、位置与唯一键。未实现的敌对类型仍显式标记沉沦魔替身。
+10. **后续候选：其他专属 AI 与动作。** 逐种核对原 AI 规则和 MPQ 资源，再处理远程弹体与技能、尸体复活、各难度与等级缩放、抗性和元素伤害、精英／首领词缀和 Boss 特性。
 
 当前数值计算依据本地 `reference/d2moo/source/D2Common/src/DataTbls/MonsterTbls.cpp` 的 `DATATBLS_CalculateMonsterStatsByLevel` 和 `reference/d2moo/source/D2Game/src/MONSTER/Monster.cpp` 的生命掷骰；AI 规则核对 `reference/d2moo/source/D2Game/src/AI/AiThink.cpp` 的 Skeleton 与 Brute 分支，动作帧核对 `reference/d2moo/source/D2Common/src/DataTbls/AnimTbls.cpp` 与 `Units.cpp`。区间、AI 参数和动作时序始终从用户挂载的 MPQ 读取，参考仓库不作为运行时数据源。当前目标选择、AI 调度和随机流仍是项目适配，不能视为原版逐帧复刻。

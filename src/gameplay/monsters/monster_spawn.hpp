@@ -7,7 +7,7 @@
 
 namespace d2x {
 enum class MonsterRank { Normal, Minion, Champion, Unique, SuperUnique, Boss };
-enum class SpawnOrigin { Density, Preset };
+enum class SpawnOrigin { Density, Preset, Debug };
 struct PopulationSettings {
     uint32_t seed = 0xd2;
     int difficulty = 0; // Normal, Nightmare, Hell. Independent of loot randomness.

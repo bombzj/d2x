@@ -247,11 +247,17 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
             require(source && source->hostile(), "original monster identity");
             require(kind == monsterImplementation(identity.monster).kind, "monster implementation");
             require(int(identity.rank) >= 0 && int(identity.rank) <= int(MonsterRank::Boss), "monster rank");
-            require(identity.origin == SpawnOrigin::Density || identity.origin == SpawnOrigin::Preset,
+            require(identity.origin == SpawnOrigin::Density || identity.origin == SpawnOrigin::Preset ||
+                        identity.origin == SpawnOrigin::Debug,
                     "monster spawn origin");
             require(identity.group > 0 && !identity.spawnKey.empty() && identity.spawnKey.size() <= 256 &&
                         spawnKeys.insert(identity.spawnKey).second,
                     "monster spawn key/group");
+            if (identity.origin == SpawnOrigin::Debug)
+                require(identity.spawnKey == "debug." + std::to_string(identity.group) &&
+                            identity.superUnique.empty() &&
+                            identity.rank == (source->boss ? MonsterRank::Boss : MonsterRank::Normal),
+                        "debug monster identity");
             if (!identity.superUnique.empty()) {
                 auto unique = monsterContent_.superUnique(identity.superUnique);
                 require(unique && unique->monster == identity.monster &&

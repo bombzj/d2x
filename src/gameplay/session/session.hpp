@@ -81,6 +81,8 @@ class GameSession {
     void cancelPickup();
     int validateSnapshot(const SessionSnapshot &snapshot) const;
     void validateItemProperties(const SessionSnapshot &snapshot) const;
+    void spawnDebugMonster(const DebugSpawnMonster &command);
+    void damageDebugMonster(const DebugDamageMonster &command);
 
   public:
     static constexpr float fixedStep = 1.f / 25.f;
@@ -121,6 +123,7 @@ class GameSession {
     bool waypointUnlocked(RegionId region) const { return state().waypoints.contains(region); }
     InventoryError previewInventory(const GameCommand &command) const;
     std::optional<GroundLocation> dropLocation() const;
+    std::string debugSpawnError(std::string_view monster, Vec position) const;
     const Map &map() const { return regions_.at(current_).map; }
     const Region &region() const { return regions_.at(current_); }
     const std::vector<Region> &regions() const { return regions_; }
