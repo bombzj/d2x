@@ -36,6 +36,12 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
         return MonsterAccuracy{record->normalLevel, *record->normalAttackRating};
     };
     auto worldSelection = selection;
+    simulation_.monsterWalkSpeed_ = [this](const Enemy &enemy) -> std::optional<float> {
+        const auto *record = monsterContent_.find(enemy.identity.monster);
+        if (!record || !record->walkVelocity)
+            return std::nullopt;
+        return float((*record->walkVelocity << 8) * 75 / 100) * 25.f / 4096.f;
+    };
     worldSelection.difficulty = population.difficulty;
     auto plan = planWorld(archives, worldContent_, worldSelection);
     regions_ = loadRegions(archives, ids_, plan.regions, monsterContent_);
@@ -44,7 +50,7 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
     Fingerprint fingerprint;
     fingerprint.add(content_.profile);
     // Bump this rules revision when state interpretation or compiled rules change.
-    fingerprint.add("d2x-session-rules-v26-gold-stack-loot");
+    fingerprint.add("d2x-session-rules-v27-movement-native-npc");
     auto members = archives.used;
     for (const auto &member : members) {
         fingerprint.add(member);

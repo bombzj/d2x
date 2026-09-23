@@ -72,12 +72,17 @@ GpuAnimation Graphics::composite(const std::string &type, const std::string &tok
         return {};
     auto cof = decodeCof(bytes);
     std::map<int, const Animation *> parts;
+    int omitted = 0;
     static const std::string codes[] = {"hd", "tr", "lg", "ra", "la", "rh", "lh", "sh",
                                         "s1", "s2", "s3", "s4", "s5", "s6", "s7", "s8"};
     for (int i = 0; i < cof.layers; i++) {
         int c = cof.components[i];
         if (c < 0 || c >= 16)
             throw std::runtime_error("Invalid COF component");
+        if (equipment && std::string_view((*equipment)[c]) == "nil") {
+            ++omitted;
+            continue;
+        }
         std::string gear = c == 5 ? "ssd" : c == 7 ? (token == "ba" ? "kit" : "buc") : "lit";
         if (token == "zm" && c == 10)
             gear = "bld";
@@ -85,10 +90,10 @@ GpuAnimation Graphics::composite(const std::string &type, const std::string &tok
             gear = (*equipment)[c];
         auto path = base + codes[c] + "/" + token + codes[c] + gear + mode + cof.weapons[i] + ".dcc";
         auto part = animation(path);
-        if (!part && c == 7)
+        if (!part && c == 7 && type != "chars")
             part =
                 animation(base + codes[c] + "/" + token + codes[c] + "buc" + mode + cof.weapons[i] + ".dcc");
-        if (!part && c == 5)
+        if (!part && c == 5 && type != "chars")
             part =
                 animation(base + codes[c] + "/" + token + codes[c] + "axe" + mode + cof.weapons[i] + ".dcc");
         if (part)
@@ -101,9 +106,16 @@ GpuAnimation Graphics::composite(const std::string &type, const std::string &tok
     GpuAnimation gpu;
     gpu.directions = cof.directions;
     gpu.count = cof.frames;
-    gpu.completeComposite = parts.size() == size_t(cof.layers);
+    gpu.completeComposite = parts.size() + omitted == size_t(cof.layers);
     for (int d = 0; d < cof.directions; d++)
         for (int f = 0; f < cof.frames; f++) {
+            static constexpr int order8[] = {4, 0, 5, 1, 6, 2, 7, 3};
+            static constexpr int order16[] = {4, 8, 0, 9, 5, 10, 1, 11, 6, 12, 2, 13, 7, 14, 3, 15};
+            int cofDirection = d;
+            if (cof.directions == 8)
+                cofDirection = int(std::find(std::begin(order8), std::end(order8), d) - std::begin(order8));
+            else if (cof.directions == 16)
+                cofDirection = int(std::find(std::begin(order16), std::end(order16), d) - std::begin(order16));
             IndexedFrame merged;
             int left = 0, top = 0, right = 0, bottom = 0;
             auto get = [&](int c) -> const IndexedFrame * {
@@ -112,6 +124,10 @@ GpuAnimation Graphics::composite(const std::string &type, const std::string &tok
                     return nullptr;
                 auto a = it->second;
                 int dir = d * a->directions / cof.directions;
+                if (cof.directions == 16 && a->directions == 8)
+                    dir = order8[(cofDirection + 1) / 2 % 8];
+                else if (cof.directions == 8 && a->directions == 16)
+                    dir = d;
                 return &a->frames[dir * a->framesPerDirection + (f % a->framesPerDirection)];
             };
             for (auto [c, a] : parts) {
@@ -127,7 +143,7 @@ GpuAnimation Graphics::composite(const std::string &type, const std::string &tok
             merged.y = top;
             merged.pixels.resize(size_t(merged.width) * merged.height);
             for (int l = 0; l < cof.layers; l++) {
-                auto p = get(cof.componentAt(d, f, l));
+                auto p = get(cof.componentAt(cofDirection, f, l));
                 if (!p)
                     continue;
                 for (int y = 0; y < p->height; y++)

@@ -134,14 +134,17 @@ void SceneView::drawActors() const {
             sprite(f, p, sim.player.dead ? Color{185, 185, 185, 255} : WHITE);
         } else if (item.type == 2) {
             auto &e = sim.area.enemies[item.index];
-            std::string mode = e.hp <= 0 ? "dt" : (e.pos - sim.player.pos).length() < 1.8f ? "a1" : "wl";
+            std::string mode = e.hp <= 0 ? "dt" : movingMonsters_.contains(e.id) ? "wl"
+                              : (e.pos - sim.player.pos).length() < 1.8f && e.attack > 0 ? "a1" : "nu";
             const auto &animations = assets_.monsterAnimations.at(e.kind);
             auto *anim = &animations.at(mode);
             if (anim->frames.empty())
                 anim = &animations.at("nu");
             DrawEllipse(int(item.p.x), int(item.p.y), 12, 5, {0, 0, 0, 100});
             if (!anim->frames.empty())
-                sprite(anim->frame(direction(sim.player.pos - e.pos, anim->directions),
+                sprite(anim->frame(direction(monsterLooks_.contains(e.id) ? monsterLooks_.at(e.id)
+                                                                         : sim.player.pos - e.pos,
+                                             anim->directions),
                                    e.hp <= 0 ? std::min(anim->count - 1, int(e.deathAge * 20))
                                    : e.stun > 0
                                        ? 0

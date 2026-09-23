@@ -4,8 +4,9 @@
 #include <iostream>
 namespace d2x {
 int Map::tileIndex(const MapCell &c, int x, int y) const {
-    auto it = lookup.find(c.key());
-    if (it == lookup.end() || it->second.empty())
+    const auto &candidates = scopedLookup.at(c.libraryScope);
+    auto it = candidates.find(c.key());
+    if (it == candidates.end() || it->second.empty())
         return -1;
     // DT1 rarity is the native variant weight. Coordinate hashing only stabilizes
     // this preset viewer; it does not reproduce the original room seed sequence.
@@ -57,21 +58,34 @@ void Map::load(Archives &a, TileLibraryCache &cache, const MapRecipe &recipe) {
     tiles.clear();
     libraries.clear();
     lookup.clear();
+    scopedLookup.clear();
     unresolved = 0;
-    std::set<std::string> loaded;
-    auto files = recipe.tileLibraries;
-    for (const auto &piece : recipe.pieces)
-        files.insert(files.end(), piece.tileLibraries.begin(), piece.tileLibraries.end());
-    for (const auto &file : files) {
-        if (!loaded.insert(normalize(file)).second)
-            continue;
-        auto library = cache.load(file);
-        for (const auto &tile : *library) {
-            lookup[tile.key()].push_back(int(tiles.size()));
-            tiles.push_back(&tile);
+    std::map<std::string, std::vector<int>> loaded;
+    auto addScope = [&](const std::vector<std::string> &files) {
+        auto &scope = scopedLookup.emplace_back();
+        std::set<std::string> included;
+        for (const auto &file : files) {
+            auto name = normalize(file);
+            if (!included.insert(name).second)
+                continue;
+            auto [entry, fresh] = loaded.try_emplace(name);
+            if (fresh) {
+                auto library = cache.load(file);
+                for (const auto &tile : *library) {
+                    int index = int(tiles.size());
+                    entry->second.push_back(index);
+                    lookup[tile.key()].push_back(index);
+                    tiles.push_back(&tile);
+                }
+                libraries.push_back(std::move(library));
+            }
+            for (int index : entry->second)
+                scope[tiles[index]->key()].push_back(index);
         }
-        libraries.push_back(std::move(library));
-    }
+    };
+    addScope(recipe.tileLibraries);
+    for (const auto &piece : recipe.pieces)
+        addScope(piece.tileLibraries);
     if (recipe.fillBlanks)
         for (auto &cell : data.floors.front())
             if (!cell.occupied())

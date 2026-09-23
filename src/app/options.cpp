@@ -29,6 +29,8 @@ AppOptions parseOptions(int argc, char **argv) {
             options.world.map = value();
         else if (arg == "--debug-pipe")
             options.debugPipe = value();
+        else if (arg == "--debug-run")
+            options.debugRun = true;
         else if (arg == "--level")
             options.world.level = number();
         else if (arg == "--preset")
@@ -92,6 +94,8 @@ AppOptions parseOptions(int argc, char **argv) {
     }
     if (options.frameLimit < 0)
         throw std::runtime_error("--frames must not be negative");
+    if (options.debugRun && options.debugPipe.empty())
+        throw std::runtime_error("--debug-run requires --debug-pipe");
     if (options.world.variant < 0 || options.world.variant > 5)
         throw std::runtime_error("--variant must be 0..5 (original File1..File6 slots)");
     if (options.world.preset < 0 || (options.world.preset != 0) != (options.world.levelType > 0))

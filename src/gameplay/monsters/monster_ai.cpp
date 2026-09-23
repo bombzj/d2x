@@ -47,7 +47,8 @@ void Simulation::updateMonsters(float dt) {
                 destination = enemy.route.front();
             }
             auto offset = destination - enemy.pos;
-            float speed = definition.speed * (enemy.chill > 0 ? .42f : 1.f);
+            auto originalSpeed = monsterWalkSpeed_ ? monsterWalkSpeed_(enemy) : std::nullopt;
+            float speed = originalSpeed.value_or(definition.speed) * (enemy.chill > 0 ? .42f : 1.f);
             auto next = enemy.pos + offset.unit() * std::min(speed * dt, offset.length());
             if (grid_->segment(enemy.pos, next))
                 enemy.pos = next;

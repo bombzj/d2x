@@ -10,6 +10,10 @@ class SceneAssets {
     Graphics uiGraphics_;
     void loadProps(const Region &region);
     void loadSkillIcons(Archives &archives, const ClassicData &content);
+    std::string heroKey_;
+    std::map<std::string, std::map<std::string, GpuAnimation>> heroCache_;
+    std::map<std::string, std::string> heroErrors_;
+    std::string heroFailure_;
 
   public:
     SoundBank audio;
@@ -28,6 +32,8 @@ class SceneAssets {
         orbs, globeOverlap, runButton, button;
     SceneAssets(Archives &archives, const GameSession &session);
     void loadInventoryArt(const InventoryService &inventory);
+    void loadHeroEquipment(const GameSession &session);
+    const std::string &heroAppearanceError() const { return heroFailure_; }
     void collectMapVariants(Archives &archives, const WorldCatalog &catalog, const MonsterCatalog &monsters);
 };
 } // namespace d2x

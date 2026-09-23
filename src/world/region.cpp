@@ -83,6 +83,29 @@ std::vector<Region> loadRegions(Archives &archives, EntityIds &ids, const std::v
             object.facing = (source.x + source.y) % 8;
             region.objects.push_back(std::move(object));
         }
+        if (int(region.definition.id) == 2) {
+            const auto *navi = monsters.find("navi");
+            for (const auto &piece : region.recipe.pieces) {
+                if (piece.preset < 4 || piece.preset > 7 || piece.variant != 3)
+                    continue;
+                if (!navi || navi->hostile())
+                    throw std::runtime_error("Missing neutral Navi definition");
+                WorldObject object;
+                object.id = ids.allocate();
+                object.contentKey = "native.navi." + std::to_string(piece.x) + "." + std::to_string(piece.y);
+                object.pos = {float((piece.x + piece.width / 2) * 5), float((piece.y + piece.height / 2) * 5)};
+                object.accessPoint = region.map.grid.nearest(object.pos);
+                object.appearance = {"monsters", "rg", "nu", "hth", {}};
+                for (const auto &preset : presets)
+                    if (preset.type == 1 && preset.id == 4)
+                        for (size_t index = 0; index < object.appearance.equipment.size(); ++index)
+                            object.appearance.equipment[index] = preset.gear[index];
+                object.name = "Flavie";
+                object.interaction = Interaction::Talk;
+                appearanceKey(object);
+                region.objects.push_back(std::move(object));
+            }
+        }
         std::cout << "  DS1 objects: " << region.objects.size() << " appearances, "
                   << region.unsupportedObjects << " records await original unit rules\n";
         regions.push_back(std::move(region));

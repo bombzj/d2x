@@ -2,7 +2,7 @@
 param(
     [ValidatePattern('^[A-Za-z0-9_-]{1,80}$')][string]$PipeName = 'd2x-debug',
     [Parameter(Mandatory = $true)]
-    [ValidateSet('status', 'monsters', 'ground', 'inventory', 'kill', 'pickup', 'move', 'step', 'pause', 'resume', 'save', 'load', 'screenshot', 'quit')]
+    [ValidateSet('status', 'monsters', 'ground', 'inventory', 'objects', 'exits', 'view', 'equip', 'kill', 'pickup', 'move', 'step', 'pause', 'resume', 'save', 'load', 'screenshot', 'quit')]
     [string]$Command,
     [hashtable]$Arguments = @{},
     [ValidateRange(100, 60000)][int]$TimeoutMs = 10000

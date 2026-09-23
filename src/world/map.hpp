@@ -19,6 +19,7 @@ struct Map {
     std::vector<std::shared_ptr<const std::vector<Tile>>> libraries;
     std::vector<const Tile *> tiles;
     std::map<uint32_t, std::vector<int>> lookup;
+    std::vector<std::map<uint32_t, std::vector<int>>> scopedLookup;
     Grid grid;
     std::string name, path;
     Vec spawn;

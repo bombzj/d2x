@@ -34,6 +34,8 @@ void Simulation::updatePlayer(float dt, Vec keyboard) {
     const auto &rules = playerRules();
     p.mana = std::min(rules.maxMana, p.mana + dt * rules.manaRegen);
     Vec step;
+    float remaining = 0;
+    bool followingRoute = false;
     if (p.leapTime > 0) {
         const auto &skill = skillDefinition(Skill::Leap);
         p.leapTime = std::max(0.f, p.leapTime - dt);
@@ -63,19 +65,25 @@ void Simulation::updatePlayer(float dt, Vec keyboard) {
         p.attackTarget = {};
         step = keyboard.unit();
     } else if (!p.route.empty() && p.castTime <= 0 && p.leapTime <= 0 && p.meleeTime <= 0) {
-        auto delta = p.route.front() - p.pos;
-        if (delta.length() < .2f)
+        while (!p.route.empty() && (p.route.front() - p.pos).length() < .01f)
             p.route.pop_front();
-        else
+        if (!p.route.empty()) {
+            auto delta = p.route.front() - p.pos;
+            remaining = delta.length();
+            followingRoute = true;
             step = delta.unit();
+        }
     }
     float speed = p.spinTime > 0               ? rules.spinSpeed
                   : p.running && p.stamina > 0 ? rules.runSpeed
                                                : rules.walkSpeed;
     if (step.length() > .1f) {
-        Vec next = p.pos + step * (dt * speed);
+        float distance = followingRoute ? std::min(dt * speed, remaining) : dt * speed;
+        Vec next = p.pos + step * distance;
         if (grid_->segment(p.pos, next)) {
             p.pos = next;
+            if (followingRoute && distance >= remaining)
+                p.route.pop_front();
             p.moving = true;
             if (p.spinTime <= 0)
                 p.look = step;

@@ -25,7 +25,7 @@ std::string playerAnimationMode(const PlayerState &p) {
            : p.hitTime > 0 && p.spinTime <= 0  ? "gh"
            : p.castTime > 0                    ? "sc"
            : p.spinTime > 0 || p.meleeTime > 0 ? "a1"
-           : p.moving                          ? (p.running ? "rn" : "wl")
+           : p.moving                          ? (p.running && p.stamina > 0 ? "rn" : "wl")
                                                : "nu";
 }
 bool SceneView::visible(const WorldObject &object) const {
@@ -38,7 +38,11 @@ void SceneView::notice(std::string text, bool error) {
     view_.noticeTime = 4;
 }
 void SceneView::sessionRestored() {
+    monsterPositions_.clear();
+    monsterLooks_.clear();
+    movingMonsters_.clear();
     assets_.loadInventoryArt(session_.inventory());
+    assets_.loadHeroEquipment(session_);
     view_.inventory = {};
     view_.travelMenu = view_.help = false;
     view_.skillPicker.reset();
@@ -50,6 +54,20 @@ void SceneView::sessionRestored() {
     landingAge_.clear();
 }
 void SceneView::advance(float dt) {
+    assets_.loadHeroEquipment(session_);
+    if (!assets_.heroAppearanceError().empty() && view_.lootNotice != assets_.heroAppearanceError())
+        notice(assets_.heroAppearanceError(), true);
+    movingMonsters_.clear();
+    for (const auto &enemy : session_.state().area.enemies) {
+        auto [previous, inserted] = monsterPositions_.try_emplace(enemy.id, enemy.pos);
+        auto delta = enemy.pos - previous->second;
+        if (!inserted && delta.length() > .0001f && enemy.hp > 0) {
+            movingMonsters_.insert(enemy.id);
+            monsterLooks_[enemy.id] = delta.unit();
+        } else if (!monsterLooks_.contains(enemy.id) || (enemy.hp > 0 && enemy.attack > 0))
+            monsterLooks_[enemy.id] = (session_.state().player.pos - enemy.pos).unit();
+        previous->second = enemy.pos;
+    }
     view_.noticeTime = std::max(0.f, view_.noticeTime - dt);
     for (auto &[id, age] : landingAge_)
         age += dt;
@@ -177,7 +195,7 @@ void SceneView::advance(float dt) {
     view_.stepClock -= dt;
     if (player.moving && view_.stepClock <= 0) {
         assets_.audio.play("step");
-        view_.stepClock = player.running ? .28f : .42f;
+        view_.stepClock = player.running && player.stamina > 0 ? .28f : .42f;
     }
 }
 } // namespace d2x

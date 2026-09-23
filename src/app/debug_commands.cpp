@@ -36,14 +36,67 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
             auto snapshot = session.snapshot();
             result["lootRandom"] = snapshot.loot.randomState;
             result["settled"] = snapshot.loot.settled.size();
+            result["look"] = {state.player.look.x, state.player.look.y};
+            result["routePoints"] = state.player.route.size();
+        } else if (command == "objects") {
+            result["objects"] = Json::array();
+            for (const auto &object : session.region().objects)
+                result["objects"].push_back({{"id", object.id.value}, {"name", object.name},
+                    {"key", object.contentKey}, {"x", object.pos.x}, {"y", object.pos.y},
+                    {"renderable", view.visible(object)}});
+            result["pieces"] = Json::array();
+            for (const auto &piece : session.region().recipe.pieces)
+                if (piece.preset <= 7 || piece.preset == 51 || piece.preset == 52)
+                    result["pieces"].push_back({{"preset", piece.preset}, {"variant", piece.variant},
+                        {"x", piece.x}, {"y", piece.y}, {"path", piece.ds1}});
+        } else if (command == "exits") {
+            result["exits"] = Json::array();
+            for (const auto &exit : session.region().exits)
+                result["exits"].push_back({{"slot", exit.slot}, {"name", exit.name},
+                    {"x", exit.accessPoint.x}, {"y", exit.accessPoint.y}, {"enabled", exit.enabled}});
+        } else if (command == "view") {
+            Vec point{request.at("x").get<float>(), request.at("y").get<float>()};
+            if (!std::isfinite(point.x) || !std::isfinite(point.y) || point.x < 0 || point.y < 0 ||
+                point.x >= session.map().grid.width || point.y >= session.map().grid.height)
+                throw std::runtime_error("Invalid camera point");
+            view.ui().camera = project(point);
+            result["walls"] = Json::array();
+            const auto &map = session.map();
+            for (int row = std::max(0, int(point.y / 5) - 5); row < std::min(map.data.height, int(point.y / 5) + 6); ++row)
+                for (int column = std::max(0, int(point.x / 5) - 5); column < std::min(map.data.width, int(point.x / 5) + 6); ++column)
+                    for (const auto &layer : map.data.walls) {
+                        const auto &cell = layer[row * map.data.width + column];
+                        if (!cell.occupied()) continue;
+                        int tile = map.tileIndex(cell, column, row);
+                        result["walls"].push_back({{"x", column}, {"y", row}, {"orientation", cell.orientation},
+                            {"key", cell.key()}, {"hidden", cell.hidden()}, {"present", cell.present()},
+                            {"width", tile >= 0 ? map.tiles[tile]->image.width : -1},
+                            {"height", tile >= 0 ? map.tiles[tile]->image.height : -1}});
+                    }
+        } else if (command == "equip") {
+            const auto *item = session.inventory().item(entity());
+            if (!item) throw std::runtime_error("Unknown item");
+            std::optional<EquipmentSlot> slot;
+            if (request.contains("slot")) {
+                slot = equipmentSlotFromCode(request.at("slot").get<std::string>());
+                if (!slot) throw std::runtime_error("Unknown equipment slot");
+            }
+            GameCommand intent = EquipItem{item->handle(), slot};
+            if (auto error = session.previewInventory(intent); error != InventoryError::None)
+                throw std::runtime_error(inventoryErrorText(error));
+            session.submit(intent); step();
         } else if (command == "monsters") {
             result["monsters"] = Json::array();
             for (const auto &enemy : session.state().area.enemies) {
                 if (request.value("visible", true) && !visible(enemy))
                     continue;
-                result["monsters"].push_back({{"id", enemy.id.value}, {"monster", enemy.identity.monster},
+                Json entry = {{"id", enemy.id.value}, {"monster", enemy.identity.monster},
                     {"rank", monsterRankName(enemy.identity.rank)}, {"hp", enemy.hp}, {"x", enemy.pos.x},
-                    {"y", enemy.pos.y}, {"visible", visible(enemy)}, {"active", session.active(enemy.pos)}});
+                    {"y", enemy.pos.y}, {"visible", visible(enemy)}, {"active", session.active(enemy.pos)}};
+                const auto *record = session.monsterContent().find(enemy.identity.monster);
+                if (record && record->walkVelocity)
+                    entry["sourceVelocity"] = *record->walkVelocity;
+                result["monsters"].push_back(std::move(entry));
             }
         } else if (command == "ground" || command == "inventory") {
             result["items"] = Json::array();

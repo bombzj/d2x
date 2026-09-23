@@ -69,6 +69,7 @@ int runGame(int argc, char **argv) {
                      "--frames N --hidden --pack "
                      "<new.mpq> --save <file.d2xsave> --load <file.d2xsave>\n"
                      "--debug-pipe <name>: opt-in local Windows debug commands (starts paused).\n"
+                     "--debug-run: start the debug-enabled game without pausing.\n"
                      "F11: save; Ctrl+F11: load. Default slot: saves/quick.d2xsave\n";
         return 0;
     }
@@ -122,11 +123,12 @@ int runGame(int argc, char **argv) {
     SceneController controller(session, view);
     RenderTarget target;
     DebugPipe debugPipe(options.debugPipe);
-    bool debugPaused = !options.debugPipe.empty(), debugQuit = false;
-    if (debugPaused && options.hidden)
+    bool debugPaused = !options.debugPipe.empty() && !options.debugRun, debugQuit = false;
+    if (!options.debugPipe.empty() && options.hidden)
         SetTargetFPS(60);
     if (!options.debugPipe.empty())
-        std::cout << "Debug pipe ready: " << options.debugPipe << " (paused)\n" << std::flush;
+        std::cout << "Debug pipe ready: " << options.debugPipe
+                  << (debugPaused ? " (paused)\n" : " (running)\n") << std::flush;
     float accumulator = 0;
     int frames = 0;
     while (!WindowShouldClose()) {

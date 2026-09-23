@@ -19,6 +19,7 @@ class Simulation {
     EquipmentStats equipmentStats_;
     std::function<void(EntityId, bool)> wearEquipment_;
     std::function<std::optional<MonsterAccuracy>(const Enemy &)> monsterAccuracy_;
+    std::function<std::optional<float>(const Enemy &)> monsterWalkSpeed_;
     std::vector<GameEvent> events_;
     Enemy *findEnemy(EntityId id);
     void moveTo(Vec target);

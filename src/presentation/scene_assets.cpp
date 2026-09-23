@@ -22,9 +22,7 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
         regionTiles.push_back(std::move(tiles));
         loadProps(region);
     }
-    for (auto mode : {"nu", "wl", "rn", "a1", "sc", "gh"})
-        hero.emplace(mode, graphics_.composite("chars", "ba", mode, "1hs"));
-    hero.emplace("dt", graphics_.composite("chars", "ba", "dt", "hth"));
+    loadHeroEquipment(session);
     if (hero.at("nu").frames.empty() || hero.at("rn").frames.empty())
         throw std::runtime_error("Barbarian animations missing; supply the classic MPQ resources.");
     for (int index = 0; index < int(MonsterKind::Count); ++index) {
@@ -90,6 +88,82 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
     loadInventoryArt(session.inventory());
     graphics_.releaseDecoded();
     uiGraphics_.releaseDecoded();
+}
+void SceneAssets::loadHeroEquipment(const GameSession &session) {
+    std::array<std::string, 16> parts;
+    parts.fill("lit");
+    parts[5] = parts[6] = parts[7] = "nil";
+    std::string weapon = "hth";
+    int weapons = 0;
+    std::array<std::string, 2> weaponClasses;
+    for (auto slot : {EquipmentSlot::RightHand, EquipmentSlot::LeftHand}) {
+        const auto &inventory = session.inventory();
+        const auto *item = inventory.item(inventory.equipped(session.playerContainers(), slot));
+        if (!item)
+            continue;
+        const auto &definition = *inventory.catalog().find(item->definition);
+        if (definition.maxDurability && !item->durability)
+            continue;
+        const auto &table = session.content().tables.at(definition.base.sourceTable);
+        auto component = table.number(definition.base.sourceRow, "component");
+        auto graphics = table.value(definition.base.sourceRow, "alternateGfx");
+        if (graphics.empty())
+            graphics = table.value(definition.base.sourceRow, "alternategfx");
+        if (component && *component == 16)
+            continue;
+        if (!component || *component < 5 || *component > 7 || graphics.empty())
+            throw std::runtime_error("Unverified equipped hand appearance: " + definition.code);
+        int index = *component;
+        if (definition.equipment.isType("weap")) {
+            weaponClasses[weapons] = definition.base.weaponClass;
+            ++weapons;
+            index = slot == EquipmentSlot::LeftHand ? 6 : 5;
+            weapon = definition.base.weaponClass;
+            if (definition.equipment.twoHanded &&
+                (!definition.equipment.oneOrTwoHanded ||
+                 !inventory.equipped(session.playerContainers(), slot == EquipmentSlot::RightHand
+                    ? EquipmentSlot::LeftHand : EquipmentSlot::RightHand)))
+                weapon = definition.equipment.twoHandWeaponClass;
+        }
+        parts[index] = graphics;
+    }
+    if (weapons == 2)
+        weapon = weaponClasses[0] == "1ht" ? (weaponClasses[1] == "1ht" ? "1jt" : "1st")
+                                           : (weaponClasses[1] == "1ht" ? "1js" : "1ss");
+    std::string key = weapon;
+    std::array<const char *, 16> equipment;
+    for (size_t index = 0; index < parts.size(); ++index) {
+        key += ":" + parts[index];
+        equipment[index] = parts[index].c_str();
+    }
+    if (heroKey_ == key)
+        return;
+    heroFailure_.clear();
+    auto cached = heroCache_.find(key);
+    if (cached == heroCache_.end()) {
+        std::map<std::string, GpuAnimation> animations;
+        for (auto mode : {"nu", "wl", "rn", "a1", "sc", "gh", "dt"}) {
+            auto animation = graphics_.composite("chars", "ba", mode, std::string_view(mode) == "dt" ? "hth" : weapon,
+                                                  &equipment);
+            if (animation.frames.empty() || !animation.completeComposite) {
+                heroFailure_ = "Hand appearance unavailable: " + std::string(mode) + weapon;
+                auto unarmed = equipment;
+                unarmed[5] = unarmed[6] = unarmed[7] = "nil";
+                animation = graphics_.composite("chars", "ba", mode, "hth", &unarmed);
+                if (animation.frames.empty() || !animation.completeComposite)
+                    throw std::runtime_error("Base Barbarian animation incomplete: " + std::string(mode));
+            }
+            animations.emplace(mode, std::move(animation));
+        }
+        cached = heroCache_.emplace(key, std::move(animations)).first;
+        heroErrors_[key] = heroFailure_;
+        if (!heroFailure_.empty())
+            std::cerr << heroFailure_ << '\n';
+        graphics_.releaseDecoded();
+    }
+    hero = cached->second;
+    heroFailure_ = heroErrors_.at(key);
+    heroKey_ = key;
 }
 void SceneAssets::loadInventoryArt(const InventoryService &inventory) {
     for (const auto &[id, item] : inventory.state().items) {

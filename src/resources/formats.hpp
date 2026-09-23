@@ -83,6 +83,7 @@ std::vector<Tile> decodeDt1(const Bytes &data);
 struct MapCell {
     uint32_t value = 0;
     int orientation = 0;
+    size_t libraryScope = 0;
     uint32_t key() const { return (((value >> 20) & 63) << 16) | (((value >> 8) & 255) << 8) | orientation; }
     bool occupied() const {
         return (value & (orientation == 0 ? 2u : orientation == 13 ? 0x8000000u : 1u)) != 0;

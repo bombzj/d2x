@@ -2,6 +2,9 @@
 
 ## 当前交接状态
 
+- Play.cmd 现默认开启 d2x-debug 并正常运行，支持 -DebugPaused、-PipeName、-NoDebugPipe；实际通过 Play.cmd 启动和默认客户端 status 验证 paused=false，随后正常退出。直接 EXE 的 --debug-pipe 仍默认暂停，新增 --debug-run 显式恢复启动模式，详见调试协议。
+- 最新任务为四项视觉／移动缺陷，当前格式 v8／规则 v27，最后提交 a2fc351，本轮未提交。Windows 构建通过；管道短路径从 (379.5,181.5) 到 (380.5,181.5)，20 步后到达，再推进 20 步坐标与朝向不变，routePoints=0。原斧盾卸下、空手组合、重新装备和保存／恢复通过，场景 `artifacts/visual-v27.d2xsave`；截图 `visual-equipped-v27.png`、`visual-unarmed-v27.png`、`visual-flavie-v27.png` 保留于 artifacts。
+- 原 NPC 查询确认 Flavie、native.navi.0.16、坐标 (20,100)、renderable=true；怪物行走读取原 Velocity，生命／伤害等仍为 MVP。洞口缺块尚未定位，未改地图／DT1 隐藏语义；完整方向、所有装备组合和怪物速度位移量仍未全面验收。所有调试实例已退出，原资源未改动。
 - 当前任务为怪物掉落，装备剩余工作暂停。最后提交 `dfa9029`，未推送；之后新增死亡入口、品质请求、金币钱包、普通消耗品／箭袋数量和 Windows 调试管道，尚未再次提交。当前 v8／规则 v26；未知品质实例仍整批暂缓，不宣称完整掉落可用。
 - 本轮实际通过通用脚本调用管道：普通怪物四次击杀、四个已结算 ID；箭袋 aqv 数量 196、等级 2 正常入包；金币 5 正常入钱包、不占格，地面金币消失；重复击杀拒绝。保存／恢复后金币、箭袋、结算数及随机状态保持。现场 `artifacts/gold-pipe-v8.d2xsave`，截图 `artifacts/gold-wallet-v8.png`；原冠军金币 TC 种子 0、等级 4 的 mul=1280 输出 20 金币，旧 v7 明确拒绝。调试实例已正常退出；满钱包边界、六件上限及跨用户拒绝未实际验证。
 - 最新用户明确授权新增命名管道和 PowerShell 调用入口。使用 [调试协议](../DEBUG_PIPE.md) 和 `scripts/Send-D2XCommand.ps1`，不是专用测试程序；Win32 仅位于 app，主线程处理命令，默认不监听。固定 JSON 3.11.3 依赖及 SHA256，首次构建需下载或提供 FetchContent 缓存。

@@ -35,7 +35,8 @@ MapData assembleMap(Archives &archives, const MapRecipe &recipe) {
             throw std::runtime_error("Invalid outdoor floor override");
         result.floors.front()[size_t(floor.y) * result.width + floor.x] = {floor.value, 0};
     }
-    for (const auto &piece : recipe.pieces) {
+    for (size_t pieceIndex = 0; pieceIndex < recipe.pieces.size(); ++pieceIndex) {
+        const auto &piece = recipe.pieces[pieceIndex];
         auto source = decodeDs1(archives.read(piece.ds1));
         if (source.width != piece.width + 1 || source.height != piece.height + 1)
             throw std::runtime_error("DS1 room dimensions disagree with LvlMaze: " + piece.ds1);
@@ -57,8 +58,10 @@ MapData assembleMap(Archives &archives, const MapRecipe &recipe) {
                     auto &dest = to[(piece.y + y) * result.width + piece.x + x];
                     // DS1's extra row/column is a shared room border, not an extra room tile.
                     // Empty cells do not erase the neighbouring room's authored wall/floor.
-                    if (cell.occupied() && (!cell.hidden() || !dest.occupied()))
+                    if (cell.occupied() && (!cell.hidden() || !dest.occupied())) {
                         dest = cell;
+                        dest.libraryScope = pieceIndex + 1;
+                    }
                 }
         };
         auto layers = [&](const auto &from, auto &to) {

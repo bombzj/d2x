@@ -45,6 +45,9 @@ MonsterCatalog::MonsterCatalog(Archives &archives, const DataTable &stats) {
         m.partyMax = n("PartyMax");
         m.sparse = n("sparsePopulate");
         m.normalLevel = n("Level");
+        m.walkVelocity = stats.number(row, "Velocity");
+        if (m.walkVelocity && (*m.walkVelocity < 0 || *m.walkVelocity > 255))
+            throw std::runtime_error("Unsupported monster Velocity: " + m.id);
         if (auto attack = stats.number(row, "A1TH"); attack && *attack >= 0 && m.normalLevel > 0) {
             if (n("noRatio"))
                 m.normalAttackRating = *attack;

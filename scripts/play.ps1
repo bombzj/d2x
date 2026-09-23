@@ -1,5 +1,13 @@
-param([string]$Mpq='',[int]$Level=1,[int]$Region=-1)
+param(
+    [string]$Mpq='',
+    [int]$Level=1,
+    [int]$Region=-1,
+    [ValidatePattern('^[A-Za-z0-9_-]{1,80}$')][string]$PipeName='d2x-debug',
+    [switch]$NoDebugPipe,
+    [switch]$DebugPaused
+)
 $ErrorActionPreference='Stop'
+if($NoDebugPipe -and $DebugPaused){throw '-DebugPaused cannot be combined with -NoDebugPipe.'}
 $projectRoot=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $exe=Join-Path $projectRoot 'build/bin/d2x.exe'
 if(-not (Test-Path -LiteralPath $exe)){$exe=Join-Path $projectRoot 'build/bin/Release/d2x.exe'}
@@ -12,4 +20,14 @@ if(-not $Mpq){
     elseif(-not (Get-ChildItem -LiteralPath (Join-Path $projectRoot 'assets/mpq') -Filter '*.mpq' -ErrorAction SilentlyContinue)){& (Join-Path $PSScriptRoot 'fetch-demo.ps1')}
 }
 Push-Location $projectRoot
-try{$arguments=@('--level',"$Level",'--region',"$Region");if($Mpq){$arguments+=@('--mpq',$Mpq)};& $exe @arguments;if($LASTEXITCODE -ne 0){throw 'D2X could not start. See the error above.'}}finally{Pop-Location}
+try{
+    $arguments=@('--level',"$Level",'--region',"$Region")
+    if($Mpq){$arguments+=@('--mpq',$Mpq)}
+    if(-not $NoDebugPipe){
+        $arguments+=@('--debug-pipe',$PipeName)
+        if(-not $DebugPaused){$arguments+='--debug-run'}
+        Write-Host "Local debug pipe: $PipeName (current Windows user only)"
+    }
+    & $exe @arguments
+    if($LASTEXITCODE -ne 0){throw 'D2X could not start. See the error above.'}
+}finally{Pop-Location}

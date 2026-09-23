@@ -15,7 +15,7 @@ int direction(Vec look, int count) {
     float a = std::atan2(s.y, s.x);
     if (a < 0)
         a += 2 * pi;
-    static constexpr int dir16[] = {7, 15, 3, 11, 4, 8, 0, 12, 5, 9, 1, 13, 6, 10, 2, 14};
+    static constexpr int dir16[] = {7, 14, 3, 15, 4, 8, 0, 9, 5, 10, 1, 11, 6, 12, 2, 13};
     static constexpr int dir8[] = {7, 3, 4, 0, 5, 1, 6, 2};
     if (count == 16)
         return dir16[int(std::round(a / (2 * pi) * 16)) % 16];

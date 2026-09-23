@@ -28,6 +28,8 @@ class SceneView {
     UiPainter painter_;
     ViewState view_;
     std::map<EntityId, float> landingAge_;
+    std::map<EntityId, Vec> monsterPositions_, monsterLooks_;
+    std::set<EntityId> movingMonsters_;
     struct LootLabel {
         ItemHandle item;
         std::string text;
