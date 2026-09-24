@@ -36,10 +36,12 @@ struct MonsterDefense {
     int level = 1;
     int defense = 0;
 };
-// Resolved from the original MonStats and MonLvl tables for an ordinary melee monster.
+enum class MonsterDamageType { Physical, Magic, Fire, Lightning, Cold, Poison };
+// Resolved from the original MonStats and MonLvl tables. Some ordinary monsters
+// have life but no A1 melee columns, so the attacks are independent.
 struct MonsterNormalCombat {
     int minLife = 0, maxLife = 0;
-    int minDamage = 0, maxDamage = 0;
+    std::optional<std::pair<int, int>> attack1Damage;
     std::optional<std::pair<int, int>> attack2Damage;
 };
 enum class MonsterAiKind { Skeleton, Brute, Zombie, Fallen };

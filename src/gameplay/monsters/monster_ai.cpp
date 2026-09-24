@@ -12,6 +12,11 @@ void Simulation::updateMonsters(float dt) {
     for (auto &enemy : state_.area.enemies) {
         if (enemy.hp <= 0 || !active(enemy.pos))
             continue;
+        if (enemy.hp < enemy.maxHp && monsterDamageRegen_)
+            if (auto rate = monsterDamageRegen_(enemy, state_.area.region)) {
+                const auto perFrame = int(enemy.maxHp * 256.f * *rate / 4096.f);
+                enemy.hp = std::min(enemy.maxHp, enemy.hp + perFrame / 256.f * dt * 25.f);
+            }
         enemy.chill = std::max(0.f, enemy.chill - dt);
         enemy.stun = std::max(0.f, enemy.stun - dt);
         enemy.rethink = std::max(0.f, enemy.rethink - dt);

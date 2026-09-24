@@ -280,7 +280,7 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
             position(enemy.pos, areaGrid, true);
             scalar(enemy.maxHp, 1, float((1 << 23) - 1));
             if (simulation_.monsterNormalCombat_) {
-                if (auto combat = simulation_.monsterNormalCombat_(enemy.identity))
+                if (auto combat = simulation_.monsterNormalCombat_(enemy.identity, area.region))
                     require(enemy.maxHp >= combat->minLife && enemy.maxHp <= combat->maxLife &&
                                 enemy.maxHp == std::floor(enemy.maxHp), "original monster life roll");
                 else
@@ -306,12 +306,12 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
                 if (enemy.attackMode == 2) {
                     const auto ai = simulation_.monsterAi_ ? simulation_.monsterAi_(enemy) : std::nullopt;
                     const auto combat = simulation_.monsterNormalCombat_
-                        ? simulation_.monsterNormalCombat_(enemy.identity) : std::nullopt;
+                        ? simulation_.monsterNormalCombat_(enemy.identity, area.region) : std::nullopt;
                     require((enemy.kind == MonsterKind::Brute || enemy.kind == MonsterKind::Skeleton ||
                              enemy.kind == MonsterKind::Zombie || enemy.kind == MonsterKind::Fallen) && ai &&
                                 monsterContent_.attackTiming(enemy.kind, 2) && combat &&
                                 combat->attack2Damage && simulation_.monsterAccuracy_ &&
-                                simulation_.monsterAccuracy_(enemy, 2),
+                                simulation_.monsterAccuracy_(enemy, area.region, 2),
                             "unsupported monster A2 mode");
                 }
                 float duration = monsterDefinition(enemy.kind).attackInterval;
@@ -326,9 +326,11 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
             scalar(enemy.aiWait, 0, 65535.f / 25.f);
             auto ai = simulation_.monsterAi_ ? simulation_.monsterAi_(enemy) : std::nullopt;
             if (!ai || (ai->kind != MonsterAiKind::Skeleton && ai->kind != MonsterAiKind::Zombie &&
-                        ai->kind != MonsterAiKind::Fallen))
+                        ai->kind != MonsterAiKind::Fallen && ai->kind != MonsterAiKind::Brute))
                 require(enemy.aiWait == 0 && !enemy.aiPursuing,
                         "unexpected monster AI state");
+            if (ai && ai->kind == MonsterAiKind::Brute)
+                require(enemy.aiWait <= 15.f / 25.f && !enemy.aiPursuing, "brute AI state");
             if (ai && ai->kind == MonsterAiKind::Zombie)
                 require(enemy.aiWait <= 10.f / 25.f && (!enemy.aiPursuing || enemy.aiWait == 0),
                         "zombie AI state");

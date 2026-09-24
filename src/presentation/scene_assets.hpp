@@ -32,6 +32,11 @@ class SceneAssets {
     std::map<std::string, GpuAnimation> propAnimations, npcWalkAnimations, hero;
     std::map<std::string, std::array<GpuAnimation, 3>> waypointAnimations;
     std::map<MonsterKind, std::map<std::string, GpuAnimation>> monsterAnimations;
+    struct MonsterAudio {
+        std::string attack1, attack2, hit, death, footstep, neutral;
+        float footstepInterval = 0, neutralInterval = 0;
+    };
+    std::map<std::string, MonsterAudio, std::less<>> monsterAudio;
     std::map<std::string, GpuAnimation> itemGround, itemIcons;
     std::array<GpuAnimation, 2> townPortalAnimations;
     std::array<ObjectAnimationRule, 2> townPortalRules;
@@ -46,5 +51,6 @@ class SceneAssets {
     void loadHeroEquipment(const GameSession &session);
     const std::string &heroAppearanceError() const { return heroFailure_; }
     void collectMapVariants(Archives &archives, const WorldCatalog &catalog, const MonsterCatalog &monsters);
+    void loadMonsterAudio(Archives &archives, const MonsterCatalog &monsters);
 };
 } // namespace d2x

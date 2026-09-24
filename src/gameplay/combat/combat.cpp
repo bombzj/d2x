@@ -4,12 +4,19 @@
 
 namespace d2x {
 void Simulation::damageEnemy(Enemy &enemy, float amount, EntityId source, float chill,
-                             bool ignoreActivation) {
+                             bool ignoreActivation, MonsterDamageType type) {
     if (enemy.hp <= 0 || (!ignoreActivation && !active(enemy.pos)))
         return;
+    if (!ignoreActivation && monsterResistance_)
+        if (auto resistance = monsterResistance_(enemy, state_.area.region, type)) {
+            amount *= float(std::max(0, 100 - *resistance)) / 100.f;
+            if (type == MonsterDamageType::Cold && *resistance >= 100) chill = 0;
+        }
+    if (amount <= 0) return;
     enemy.hp = std::max(0.f, enemy.hp - amount);
     enemy.hitFlash = .12f;
     enemy.chill = std::max(enemy.chill, chill);
+    if (enemy.hp > 0) emit(EnemyHit{enemy.id, enemy.kind});
     if (enemy.hp == 0) {
         enemy.deathAge = 0;
         enemy.route.clear();
@@ -32,7 +39,7 @@ void Simulation::meleeDamage(Enemy &enemy, bool leftHand) {
     player.combatRandom = uint64_t(uint32_t(player.combatRandom)) * 0x6ac690c5ULL +
                           (player.combatRandom >> 32);
     if (monsterDefense_)
-        if (auto defense = monsterDefense_(enemy)) {
+        if (auto defense = monsterDefense_(enemy, state_.area.region)) {
             if (uint32_t(player.combatRandom) % 100 >=
                 unsigned(physicalHitChance(player.level, characterStats_.attackRating,
                                            defense->level, defense->defense)))
@@ -46,11 +53,12 @@ void Simulation::meleeDamage(Enemy &enemy, bool leftHand) {
     if (wearEquipment_ && weapon->item)
         wearEquipment_(weapon->item, false);
 }
-void Simulation::damage(Vec pos, float radius, float amount, EntityId source, float chill) {
+void Simulation::damage(Vec pos, float radius, float amount, EntityId source, float chill,
+                        MonsterDamageType type) {
     for (auto &e : state_.area.enemies) {
         if (e.hp <= 0 || !active(e.pos) || (e.pos - pos).length() > radius)
             continue;
-        damageEnemy(e, amount, source, chill);
+        damageEnemy(e, amount, source, chill, false, type);
     }
 }
 void Simulation::updateMissiles(float dt) {
@@ -88,10 +96,12 @@ void Simulation::updateMissiles(float dt) {
             if (wall || struck || m.remaining <= 0) {
                 m.remaining = 0;
                 if (m.radius > 0) {
-                    damage(m.pos, m.radius, m.damage, m.owner, m.chill);
+                    damage(m.pos, m.radius, m.damage, m.owner, m.chill,
+                           m.chill > 0 ? MonsterDamageType::Cold : MonsterDamageType::Fire);
                     area.effects.push_back({m.pos, m.skill, 0, .55f});
                 } else if (struck)
-                    damageEnemy(*struck, m.damage, m.owner, m.chill);
+                    damageEnemy(*struck, m.damage, m.owner, m.chill, false,
+                                m.chill > 0 ? MonsterDamageType::Cold : MonsterDamageType::Fire);
             }
             continue;
         }
@@ -124,7 +134,7 @@ void Simulation::updateMissiles(float dt) {
                                       (player.combatRandom >> 32);
                 bool hit = true;
                 if (monsterDefense_)
-                    if (auto defense = monsterDefense_(*struck))
+                    if (auto defense = monsterDefense_(*struck, state_.area.region))
                         hit = uint32_t(player.combatRandom) % 100 <
                             unsigned(physicalHitChance(player.level, characterStats_.attackRating,
                                                        defense->level, defense->defense));
@@ -141,7 +151,7 @@ void Simulation::updateMissiles(float dt) {
         if (hit) {
             m.remaining = 0;
             const auto &skill = skillDefinition(m.skill);
-            damage(m.pos, skill.radius, skill.damage, m.owner);
+            damage(m.pos, skill.radius, skill.damage, m.owner, 0, MonsterDamageType::Fire);
             area.effects.push_back({m.pos, m.skill, 0, .55f});
         }
     }

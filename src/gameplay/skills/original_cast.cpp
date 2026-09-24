@@ -37,9 +37,10 @@ bool Simulation::castOriginal(const OriginalSkillCast &skill, Vec target, bool t
             if (enemy.hp <= 0 || !active(enemy.pos) ||
                 (enemy.pos - player.pos).length() > skill.staticRadius) continue;
             const float floor = std::max(1.f,
-                monsterDefinition(enemy.kind).maxLife * float(staticFieldMinimum) / 100.f);
+                enemy.maxHp * float(staticFieldMinimum) / 100.f);
             const float amount = std::min(enemy.hp * skill.staticPercent / 100.f, enemy.hp - floor);
-            if (amount > 0) damageEnemy(enemy, amount, player.id);
+            if (amount > 0) damageEnemy(enemy, amount, player.id, 0, false,
+                                        MonsterDamageType::Lightning);
         }
     } else if (skill.effect == Skill::FrostNova) {
         state_.area.effects.push_back({player.pos, skill.effect, 0, skill.missileLifetime});
@@ -53,7 +54,8 @@ bool Simulation::castOriginal(const OriginalSkillCast &skill, Vec target, bool t
             const float fraction = float(uint32_t(player.combatRandom)) / 4294967295.f;
             const float amount = skill.minimumDamage +
                 (skill.maximumDamage - skill.minimumDamage) * fraction;
-            damageEnemy(enemy, amount, player.id, skill.coldDuration);
+            damageEnemy(enemy, amount, player.id, skill.coldDuration, false,
+                        MonsterDamageType::Cold);
         }
     } else {
         player.combatRandom = uint64_t(uint32_t(player.combatRandom)) * 0x6ac690c5ULL +

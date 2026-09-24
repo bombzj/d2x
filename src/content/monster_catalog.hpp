@@ -1,6 +1,7 @@
 #pragma once
 #include "resources/archive.hpp"
 #include "resources/data_table.hpp"
+#include "content/monster_animation.hpp"
 #include "gameplay/monsters/monster_spawn.hpp"
 #include <array>
 #include <map>
@@ -9,7 +10,8 @@
 
 namespace d2x {
 struct MonsterRecord {
-    std::string id, base, next, name, token, ai, spawn;
+    std::string id, base, next, name, token, ai, spawn, sound;
+    size_t sourceRow = 0;
     int index = -1, rarity = 0, minGroup = 0, maxGroup = 0, partyMin = 0, partyMax = 0;
     int sparse = 0, alignment = 0, normalLevel = 0;
     std::optional<int> normalAttackRating;
@@ -39,6 +41,7 @@ class MonsterCatalog {
     std::map<std::string, MonsterRecord, std::less<>> monsters_;
     std::map<MonsterKind, MonsterAttackTiming> attacks_;
     std::map<MonsterKind, MonsterAttackTiming> attacks2_;
+    std::map<MonsterKind, std::map<std::string, MonsterMotionTiming, std::less<>>> motions_;
     std::map<int, std::string> indices_;
     std::set<std::string, std::less<>> ambiguous_;
     std::map<std::string, SuperUniqueRecord, std::less<>> uniques_;
@@ -57,6 +60,12 @@ class MonsterCatalog {
         const auto &source = mode == 2 ? attacks2_ : attacks_;
         auto found = source.find(kind);
         return found == source.end() ? nullptr : &found->second;
+    }
+    const MonsterMotionTiming *motion(MonsterKind kind, std::string_view mode) const {
+        auto kinds = motions_.find(kind);
+        if (kinds == motions_.end()) return nullptr;
+        auto found = kinds->second.find(mode);
+        return found == kinds->second.end() ? nullptr : &found->second;
     }
     const MonsterRecord *find(std::string_view id) const;
     const SuperUniqueRecord *superUnique(std::string_view id) const;

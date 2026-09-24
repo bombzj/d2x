@@ -200,17 +200,25 @@ void SceneView::drawActors() const {
             sprite(f, p, sim.player.dead ? Color{185, 185, 185, 255} : WHITE);
         } else if (item.type == 2) {
             auto &e = sim.area.enemies[item.index];
-            std::string mode = e.hp <= 0 ? "dt" : e.attack > 0 ? (e.attackMode == 2 ? "a2" : "a1")
-                              : movingMonsters_.contains(e.id) ? "wl" : "nu";
             const auto &animations = assets_.monsterAnimations.at(e.kind);
+            const auto *deathTiming = session_.monsterContent().motion(e.kind, "dt");
+            std::string mode = e.hp <= 0 ? (animations.contains("dd") && deathTiming &&
+                                               e.deathAge >= deathTiming->duration ? "dd" : "dt")
+                              : e.stun > 0 && animations.contains("gh") ? "gh"
+                              : e.attack > 0 ? (e.attackMode == 2 ? "a2" : "a1")
+                              : movingMonsters_.contains(e.id) ? "wl" : "nu";
             auto *anim = &animations.at(mode);
             if (anim->frames.empty())
                 anim = &animations.at("nu");
             DrawEllipse(int(item.p.x), int(item.p.y), 12, 5, {0, 0, 0, 100});
             if (!anim->frames.empty()) {
-                int frame = e.hp <= 0 ? std::min(anim->count - 1, int(e.deathAge * 20))
-                            : e.stun > 0 ? 0
-                            : int(view_.animationTime * (e.chill > 0 ? 5 : 12) + item.index);
+                const auto *motion = session_.monsterContent().motion(e.kind, mode);
+                const float fps = motion ? float(motion->frames) / motion->duration
+                                         : e.hp <= 0 ? 20.f : 12.f;
+                int frame = e.hp <= 0 ? (mode == "dd" ? 0
+                                        : std::min(anim->count - 1, int(e.deathAge * fps)))
+                            : e.stun > 0 && !animations.contains("gh") ? 0
+                            : int(view_.animationTime * (e.chill > 0 ? fps * .42f : fps) + item.index);
                 if ((mode == "a1" || mode == "a2") && e.attackDuration > 0)
                     frame = std::clamp(int((e.attackDuration - e.attack) / e.attackDuration * anim->count),
                                        0, anim->count - 1);

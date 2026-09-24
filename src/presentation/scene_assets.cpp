@@ -44,10 +44,12 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
             equipment[8] = "lit";
             equipment[9] = "lit";
         }
-        for (auto mode : {"nu", "wl", "a1", "dt", "a2"}) {
+        for (auto mode : {"nu", "wl", "a1", "dt", "a2", "gh", "dd"}) {
             if (std::string_view(mode) == "a2" && kind != MonsterKind::Brute &&
                 kind != MonsterKind::Skeleton && kind != MonsterKind::Zombie &&
                 kind != MonsterKind::Fallen) continue;
+            if ((std::string_view(mode) == "gh" || std::string_view(mode) == "dd") &&
+                kind != MonsterKind::Brute) continue;
             auto animation =
                 graphics_.composite("monsters", definition.token, mode, definition.weapon, &equipment);
             if (animation.frames.empty() || !animation.completeComposite)
@@ -65,7 +67,15 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
                 timing && monsterAnimations[kind].at("a2").count != timing->frames)
                 throw std::runtime_error("Monster A2 AnimData/COF frame mismatch: " +
                                          std::string(definition.token));
+        if (kind == MonsterKind::Brute)
+            for (auto mode : {"nu", "wl", "gh", "dt", "dd"}) {
+                auto *timing = session.monsterContent().motion(kind, mode);
+                if (!timing || monsterAnimations[kind].at(mode).count != timing->frames)
+                    throw std::runtime_error("Brute AnimData/COF frame mismatch: " +
+                                             std::string(mode));
+            }
     }
+    loadMonsterAudio(archives, session.monsterContent());
     fireball = graphics_.single("data/global/missiles/fireball.dcc");
     const auto objectRows = decodeTable(archives.read("data/global/excel/objects.txt"));
     auto portalRecord = std::find_if(objectRows.begin(), objectRows.end(), [](const auto &row) {

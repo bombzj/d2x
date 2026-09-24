@@ -30,6 +30,11 @@ MonsterCatalog::MonsterCatalog(Archives &archives, const DataTable &stats) {
                           MonsterKind::Fallen})
             if (auto timing = loadMonsterAttackTiming(animations, monsterDefinition(kind), 2))
                 attacks2_.emplace(kind, *timing);
+        for (int index = 0; index < int(MonsterKind::Count); ++index)
+            for (auto mode : {"nu", "wl", "gh", "dt", "dd"})
+                if (auto timing = loadMonsterMotionTiming(
+                        animations, monsterDefinition(MonsterKind(index)), mode))
+                    motions_[MonsterKind(index)].emplace(mode, *timing);
     }
     std::optional<DataTable> levels;
     if (archives.contains("data/global/excel/monlvl.txt"))
@@ -43,12 +48,14 @@ MonsterCatalog::MonsterCatalog(Archives &archives, const DataTable &stats) {
         auto n = [&](std::string_view field) { return stats.number(row, field).value_or(0); };
         MonsterRecord m;
         m.id = stats.value(row, "Id");
+        m.sourceRow = row;
         m.index = n("hcIdx");
         m.base = stats.value(row, "BaseId");
         m.next = stats.value(row, "NextInClass");
         m.name = stats.value(row, "NameStr");
         m.token = stats.value(row, "Code");
         m.ai = stats.value(row, "AI");
+        m.sound = stats.value(row, "MonSound");
         m.spawn = stats.value(row, "spawn");
         m.minions = {std::string(stats.value(row, "minion1")), std::string(stats.value(row, "minion2"))};
         m.rarity = n("Rarity");

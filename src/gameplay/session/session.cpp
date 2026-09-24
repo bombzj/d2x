@@ -33,7 +33,12 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
             publishInventory(std::move(result), {});
     };
     simulation_.state_.player.combatRandom = (uint64_t(666) << 32) | selection.seed;
-    simulation_.monsterAccuracy_ = [this](const Enemy &enemy, int mode) -> std::optional<MonsterAccuracy> {
+    simulation_.monsterAccuracy_ = [this](const Enemy &enemy, RegionId region, int mode)
+        -> std::optional<MonsterAccuracy> {
+        if (auto combat = resolvedMonsterCombat(enemy.identity, region)) {
+            auto rating = mode == 2 ? combat->attack2Rating : combat->attack1Rating;
+            return rating ? std::optional<MonsterAccuracy>{{combat->level, *rating}} : std::nullopt;
+        }
         if (state().population.difficulty != 0 || !baseMonsterRank(enemy.identity.rank))
             return std::nullopt;
         const auto *record = monsterContent_.find(enemy.identity.monster);
@@ -68,7 +73,11 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
         if (applied) publishInventory(std::move(result), {});
         return applied;
     };
-    simulation_.monsterDefense_ = [this](const Enemy &enemy) -> std::optional<MonsterDefense> {
+    simulation_.monsterDefense_ = [this](const Enemy &enemy, RegionId region)
+        -> std::optional<MonsterDefense> {
+        if (auto combat = resolvedMonsterCombat(enemy.identity, region))
+            return combat->defense ? std::optional<MonsterDefense>{{combat->level, *combat->defense}}
+                                   : std::nullopt;
         if (state().population.difficulty != 0 || !baseMonsterRank(enemy.identity.rank))
             return std::nullopt;
         const auto *record = monsterContent_.find(enemy.identity.monster);
@@ -83,12 +92,31 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
             return std::nullopt;
         return float((*record->walkVelocity << 8) * 75 / 100) * 25.f / 4096.f;
     };
-    simulation_.monsterNormalCombat_ = [this](const MonsterIdentity &identity)
+    simulation_.monsterNormalCombat_ = [this](const MonsterIdentity &identity, RegionId region)
         -> std::optional<MonsterNormalCombat> {
+        if (auto combat = resolvedMonsterCombat(identity, region)) return combat->damage;
         if (state().population.difficulty != 0 || !baseMonsterRank(identity.rank))
             return std::nullopt;
         const auto *record = monsterContent_.find(identity.monster);
         return record && !record->boss ? record->normalCombat : std::nullopt;
+    };
+    simulation_.monsterCriticalChance_ = [this](const Enemy &enemy, RegionId region)
+        -> std::optional<int> {
+        if (auto combat = resolvedMonsterCombat(enemy.identity, region))
+            return combat->criticalChance;
+        return std::nullopt;
+    };
+    simulation_.monsterDamageRegen_ = [this](const Enemy &enemy, RegionId region)
+        -> std::optional<int> {
+        if (auto combat = resolvedMonsterCombat(enemy.identity, region))
+            return combat->damageRegen;
+        return std::nullopt;
+    };
+    simulation_.monsterResistance_ = [this](const Enemy &enemy, RegionId region, MonsterDamageType type)
+        -> std::optional<int> {
+        if (auto combat = resolvedMonsterCombat(enemy.identity, region))
+            return combat->resistances[size_t(type)];
+        return std::nullopt;
     };
     simulation_.monsterAi_ = [this](const Enemy &enemy)
         -> std::optional<MonsterAiProfile> {
@@ -155,7 +183,7 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
     Fingerprint fingerprint;
     fingerprint.add(content_.profile);
     // Bump this rules revision when state interpretation or compiled rules change.
-    fingerprint.add("d2x-session-rules-v61-brute-attack");
+    fingerprint.add("d2x-session-rules-v63-generic-combat-brute");
     auto members = archives.used;
     for (const auto &member : members) {
         fingerprint.add(member);

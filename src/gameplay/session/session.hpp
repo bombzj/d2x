@@ -1,5 +1,6 @@
 #pragma once
 #include "content/classic_data.hpp"
+#include "content/monster_difficulty_combat.hpp"
 #include "gameplay/items/inventory.hpp"
 #include "gameplay/loot/loot.hpp"
 #include "gameplay/model/interaction.hpp"
@@ -16,6 +17,7 @@ class GameSession {
     CharacterDefinition characterDefinition_;
     WorldCatalog worldContent_;
     MonsterCatalog monsterContent_;
+    mutable std::map<std::pair<std::string, RegionId>, std::optional<MonsterCombatProfile>> monsterCombatCache_;
     std::vector<WorldEntry> worldEntries_;
     uint64_t contentFingerprint_ = 0;
     Simulation simulation_{ids_};
@@ -83,6 +85,8 @@ class GameSession {
     void validateItemProperties(const SessionSnapshot &snapshot) const;
     void spawnDebugMonster(const DebugSpawnMonster &command);
     void damageDebugMonster(const DebugDamageMonster &command);
+    std::optional<MonsterCombatProfile> resolvedMonsterCombat(
+        const MonsterIdentity &identity, RegionId region) const;
 
   public:
     static constexpr float fixedStep = 1.f / 25.f;
@@ -95,6 +99,10 @@ class GameSession {
     const ClassicData &content() const { return content_; }
     const WorldCatalog &worldContent() const { return worldContent_; }
     const MonsterCatalog &monsterContent() const { return monsterContent_; }
+    std::optional<MonsterCombatProfile> monsterCombatProfile(
+        const MonsterIdentity &identity, RegionId region) const {
+        return resolvedMonsterCombat(identity, region);
+    }
     const auto &worldEntries() const { return worldEntries_; }
     uint64_t contentFingerprint() const { return contentFingerprint_; }
     const std::vector<uint64_t> &experienceThresholds() const {

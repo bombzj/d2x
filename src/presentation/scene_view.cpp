@@ -97,11 +97,38 @@ void SceneView::advance(float dt) {
         } else if (!monsterLooks_.contains(enemy.id) || (enemy.hp > 0 && enemy.attack > 0))
             monsterLooks_[enemy.id] = (session_.state().player.pos - enemy.pos).unit();
         previous->second = enemy.pos;
+        if (enemy.hp > 0 && session_.active(enemy.pos))
+            if (auto sound = assets_.monsterAudio.find(enemy.identity.monster);
+                sound != assets_.monsterAudio.end()) {
+                const float now = session_.state().time;
+                if (movingMonsters_.contains(enemy.id) && sound->second.footstepInterval > 0) {
+                    auto &next = nextMonsterFootstep_[enemy.id];
+                    if (now >= next) {
+                        assets_.audio.play(sound->second.footstep);
+                        next = now + sound->second.footstepInterval;
+                    }
+                } else if (enemy.attack <= 0 && enemy.stun <= 0 &&
+                           sound->second.neutralInterval > 0) {
+                    auto &next = nextMonsterNeutral_[enemy.id];
+                    if (now >= next) {
+                        assets_.audio.play(sound->second.neutral);
+                        next = now + sound->second.neutralInterval;
+                    }
+                }
+            }
     }
     view_.noticeTime = std::max(0.f, view_.noticeTime - dt);
     for (auto &[id, age] : landingAge_)
         age += dt;
     std::erase_if(landingAge_, [](const auto &pair) { return pair.second > 4; });
+    auto soundFor = [&](EntityId id) -> const SceneAssets::MonsterAudio * {
+        auto enemy = std::find_if(session_.state().area.enemies.begin(),
+                                  session_.state().area.enemies.end(),
+                                  [id](const Enemy &candidate) { return candidate.id == id; });
+        if (enemy == session_.state().area.enemies.end()) return nullptr;
+        auto sound = assets_.monsterAudio.find(enemy->identity.monster);
+        return sound == assets_.monsterAudio.end() ? nullptr : &sound->second;
+    };
     for (const auto &event : session_.events()) {
         std::visit(
             [&](const auto &value) {
@@ -112,9 +139,20 @@ void SceneView::advance(float dt) {
                 } else if constexpr (std::is_same_v<T, MeleeAttack>) {
                     view_.heroTime = 0;
                     assets_.audio.play("swing");
-                } else if constexpr (std::is_same_v<T, EnemyDied>)
-                    assets_.audio.play("impact");
+                } else if constexpr (std::is_same_v<T, EnemyAttacked>) {
+                    if (auto sound = soundFor(value.attacker))
+                        assets_.audio.play(value.mode == 2 ? sound->attack2 : sound->attack1);
+                } else if constexpr (std::is_same_v<T, EnemyHit>) {
+                    if (auto sound = soundFor(value.victim)) assets_.audio.play(sound->hit);
+                } else if constexpr (std::is_same_v<T, EnemyDied>) {
+                    if (auto sound = assets_.monsterAudio.find(value.identity.monster);
+                        sound != assets_.monsterAudio.end())
+                        assets_.audio.play(sound->second.death);
+                    else assets_.audio.play("impact");
+                }
                 else if constexpr (std::is_same_v<T, RegionEntered>) {
+                    nextMonsterFootstep_.clear();
+                    nextMonsterNeutral_.clear();
                     view_.waypointSource = {};
                     view_.skillPicker.reset();
                     view_.skillTreeOpen = false;

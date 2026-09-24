@@ -9,6 +9,9 @@
 namespace d2x {
 namespace {
 using Json = nlohmann::json;
+Json optionalNumber(std::optional<int> value) {
+    return value ? Json(*value) : Json(nullptr);
+}
 EntityId monsterId(const Json &request) {
     const auto &value = request.at("id");
     if (!value.is_number_unsigned() || value.get<uint64_t>() == 0)
@@ -78,6 +81,23 @@ void listMonsters(Json &result, const Json &request, const GameSession &session,
             {"impactRemaining", enemy.attackImpact}};
         const auto *record = session.monsterContent().find(enemy.identity.monster);
         if (record) entry["sourceAi"] = record->ai;
+        if (auto combat = session.monsterCombatProfile(enemy.identity, session.state().area.region)) {
+            entry["combat"] = {{"level", combat->level},
+                               {"minLife", combat->damage.minLife},
+                               {"maxLife", combat->damage.maxLife},
+                               {"defense", optionalNumber(combat->defense)},
+                               {"criticalChance", combat->criticalChance},
+                               {"damageRegen", combat->damageRegen},
+                               {"resistances", combat->resistances}};
+            if (combat->damage.attack1Damage)
+                entry["combat"]["attack1"] = {combat->damage.attack1Damage->first,
+                                                 combat->damage.attack1Damage->second,
+                                                 optionalNumber(combat->attack1Rating)};
+            if (combat->damage.attack2Damage)
+                entry["combat"]["attack2"] = {combat->damage.attack2Damage->first,
+                                                 combat->damage.attack2Damage->second,
+                                                 optionalNumber(combat->attack2Rating)};
+        }
         if (record && record->walkVelocity) entry["sourceVelocity"] = *record->walkVelocity;
         if (auto timing = session.monsterContent().attackTiming(enemy.kind)) {
             entry["attackDuration"] = timing->duration;

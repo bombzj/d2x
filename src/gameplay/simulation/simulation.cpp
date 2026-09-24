@@ -65,7 +65,7 @@ void Simulation::spawnEnemies(std::span<const MonsterSpawn> spawns) {
         enemy.pos = spawn.position;
         enemy.maxHp = monsterDefinition(enemy.kind).maxLife;
         if (monsterNormalCombat_)
-            if (auto combat = monsterNormalCombat_(enemy.identity)) {
+            if (auto combat = monsterNormalCombat_(enemy.identity, area.region)) {
                 enemy.combatRandom = uint64_t(uint32_t(enemy.combatRandom)) * 0x6ac690c5ULL +
                                      (enemy.combatRandom >> 32);
                 enemy.maxHp = float(combat->minLife +

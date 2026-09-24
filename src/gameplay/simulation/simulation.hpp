@@ -22,10 +22,13 @@ class Simulation {
     CharacterAttributes characterStats_;
     std::function<void(EntityId, bool)> wearEquipment_;
     std::function<bool(EntityId, bool)> spendProjectile_;
-    std::function<std::optional<MonsterAccuracy>(const Enemy &, int)> monsterAccuracy_;
-    std::function<std::optional<MonsterDefense>(const Enemy &)> monsterDefense_;
+    std::function<std::optional<MonsterAccuracy>(const Enemy &, RegionId, int)> monsterAccuracy_;
+    std::function<std::optional<MonsterDefense>(const Enemy &, RegionId)> monsterDefense_;
     std::function<std::optional<float>(const Enemy &)> monsterWalkSpeed_;
-    std::function<std::optional<MonsterNormalCombat>(const MonsterIdentity &)> monsterNormalCombat_;
+    std::function<std::optional<MonsterNormalCombat>(const MonsterIdentity &, RegionId)> monsterNormalCombat_;
+    std::function<std::optional<int>(const Enemy &, RegionId)> monsterCriticalChance_;
+    std::function<std::optional<int>(const Enemy &, RegionId)> monsterDamageRegen_;
+    std::function<std::optional<int>(const Enemy &, RegionId, MonsterDamageType)> monsterResistance_;
     std::function<std::optional<MonsterAiProfile>(const Enemy &)> monsterAi_;
     std::function<std::optional<MonsterAttackTiming>(const Enemy &, int)> monsterAttackTiming_;
     std::vector<GameEvent> events_;
@@ -36,9 +39,11 @@ class Simulation {
     bool cast(Skill skill, Vec target);
     bool castOriginal(const OriginalSkillCast &skill, Vec target, bool teleportAllowed,
                       int staticFieldMinimum);
-    void damage(Vec pos, float radius, float amount, EntityId source, float chill = 0);
+    void damage(Vec pos, float radius, float amount, EntityId source, float chill = 0,
+                MonsterDamageType type = MonsterDamageType::Physical);
     void damageEnemy(Enemy &enemy, float amount, EntityId source, float chill = 0,
-                     bool ignoreActivation = false);
+                     bool ignoreActivation = false,
+                     MonsterDamageType type = MonsterDamageType::Physical);
     void meleeDamage(Enemy &enemy, bool leftHand = false);
     void updatePotions(float dt);
     void updatePlayer(float dt, Vec keyboard);

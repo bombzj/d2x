@@ -42,6 +42,7 @@ class SceneView {
     ViewState view_;
     std::map<EntityId, float> landingAge_;
     std::map<EntityId, Vec> monsterPositions_, monsterLooks_;
+    std::map<EntityId, float> nextMonsterFootstep_, nextMonsterNeutral_;
     std::set<EntityId> movingMonsters_;
     const Sprite *objectSprite(const WorldObject &object, RegionId region) const;
     struct LootLabel {
