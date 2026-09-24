@@ -33,13 +33,13 @@
 - 切区保存整个 `AreaState`；回来不重刷。`R` 才主动重置当前区。
 - 真实怪物／首领身份与运行替身类型分离；掉落请求使用真实身份。
 - 基础行走速度读取真实身份的 MonStats.Velocity，按 `(Velocity * 256 * 75 / 100) * 25 / 4096` 转换为子格／秒；保留整数阶段截断。怪物独立奔跑、精英加速及原冰冷修正尚未接入，不能把此项当作完整原移动模拟。
-- 普通难度普通怪物及其普通随从按真实身份读取 `MonStats.minHP/maxHP/A1MinD/A1MaxD/noRatio/Level` 与 `MonLvl.L-HP/L-DM`，生成时掷生命并保存实例最大值，A1 命中后掷伤害。`MonStats.AI/aip1–aip8` 按难度读取，已实现普通骷髅的接近／停顿／近身攻击决策、沉沦魔的距离判定／游走／近身攻击几率、Brute 受伤行走加速，以及 Brute／骷髅／僵尸按 `aip4` 选择 A1／A2。三者的 A2 伤害与命中读取 `A2MinD/A2MaxD/A2TH` 和 `MonLvl`；精英／首领及噩梦／地狱战斗值维持旧适配。已实现外观的 A1 与这三种 A2 动作时长、命中帧从运行时 `AnimData.d2` 读取；其他怪物的 A2 与完整 AI 调度仍待实现。`brute1` 另使用原 `YE` 的 NU/WL/A1/A2/DT 动作，其余同族变体不共用该注册。
+- 普通难度普通怪物及其普通随从按真实身份读取 `MonStats.minHP/maxHP/A1MinD/A1MaxD/noRatio/Level` 与 `MonLvl.L-HP/L-DM`，生成时掷生命并保存实例最大值，A1 命中后掷伤害。`MonStats.AI/aip1–aip8` 按难度读取，已实现普通骷髅的接近／停顿／近身攻击决策、沉沦魔的距离判定／游走／近身攻击几率、Brute 受伤行走加速，以及 Brute／骷髅／僵尸／沉沦魔按 `aip4` 选择 A1／A2。这四者的 A2 伤害与命中读取 `A2MinD/A2MaxD/A2TH` 和 `MonLvl`；精英／首领及噩梦／地狱战斗值维持旧适配。已实现外观的 A1 与这四种 A2 动作时长、命中帧从运行时 `AnimData.d2` 读取；其他怪物的 A2 与完整 AI 调度仍待实现。`brute1` 另使用原 `YE` 的 NU/WL/A1/A2/DT 动作，其余同族变体不共用该注册。
 - 弗拉维为原引擎补充预设单位，不是普通 DS1 列表内的单位：仅血腥荒地边界预设 4–7、变体 3 的预设中心生成；保留中立身份及原 RG 外观，不使用敌对替身。
 - 当前激活是原版房间状态模型的适配，尚非完整 DRLG 客户端／服务器四级调度。
 
 ## 物品与存档
 
-- 当前格式 v32，规则 `d2x-session-rules-v59-fallen-ai`，拒绝 v1–v31，亦拒绝不同内容／规则指纹。玩家保存职业、四维已分配点及未用点数，必须等于按该职业运行时 MPQ `CharStats.StatPerLevel` 计算的等级总点数；等级与经验按该职业 `Experience.txt` 列校验。技能等级与未用点数总和等于升级次数，按运行时 MPQ `Skills.txt`／`SkillDesc.txt` 校验职业、门槛、最大等级及前置。八个快捷键保存技能 ID 和左右键，读取时校验当前职业身份及左键限制。第一件原初始装备的授予技能按 `CharStats.StartSkill` 校验；飞行中的普通与女巫技能弹体保存原 Missile ID、伤害、作用半径和冰冷时长。派生属性、装备词缀和资源上限在恢复前从 MPQ 定义与快照库存重算；私人箱尺寸按 `inventory.txt` 当前模式校验。物品保存品质原行、等级要求、展示属性值与词缀行，掉落状态保存限量暗金记录。WorldState 包含 TownPortalState 和 waypoints；临时走近请求不保存。
+- 当前格式 v33，规则 `d2x-session-rules-v60-fallen-a2`，拒绝 v1–v32，亦拒绝不同内容／规则指纹。玩家保存职业、四维已分配点及未用点数，必须等于按该职业运行时 MPQ `CharStats.StatPerLevel` 计算的等级总点数；等级与经验按该职业 `Experience.txt` 列校验。技能等级与未用点数总和等于升级次数，按运行时 MPQ `Skills.txt`／`SkillDesc.txt` 校验职业、门槛、最大等级及前置。八个快捷键保存技能 ID 和左右键，读取时校验当前职业身份及左键限制。第一件原初始装备的授予技能按 `CharStats.StartSkill` 校验；飞行中的普通与女巫技能弹体保存原 Missile ID、伤害、作用半径和冰冷时长。派生属性、装备词缀和资源上限在恢复前从 MPQ 定义与快照库存重算；私人箱尺寸按 `inventory.txt` 当前模式校验。物品保存品质原行、等级要求、展示属性值与词缀行，掉落状态保存限量暗金记录。WorldState 包含 TownPortalState 和 waypoints；临时走近请求不保存。
 - 调试 Travel 不修改解锁记录；普通 WaypointTravel 重新校验源点与目标，不相信 UI 已禁用按钮。传送点 NU／OP（Operating）／ON（Opened）的帧数、速率、循环和起帧来自 Objects.FrameCnt／FrameDelta／CycleAnim／Start；当前难度与角色都固定在同一 SessionSnapshot 中，不提供跨难度迁移。
 - 野外传送点固定分组通过 MapPiece.substitutionGroup 裁剪原图层和分组内部原对象，保持每格 DT1 资源作用域；非完整通用 LvlSub。回城蓝门使用原 TP 资源，不写入静态地图对象列表，不分配临时地图对象 ID。
 
@@ -50,7 +50,7 @@
 - `ItemDefinition` 是只读原表定义；`ItemInstance` 是带稳定 ID 的实例。
 - 位置由地面区域或容器格子唯一确定；转移通过 `InventoryService`，禁止 UI 直接改归属。
 - 私人箱访问权是临时交互状态，不能通过存档恢复远程访问。
-- `.d2xsave` 当前 v32 显式编码玩家职业、经验、等级、已分配属性／技能与未用点数、F1–F8 绑定、钱包、物品数量／等级／品质原行／已鉴定标志／展示属性、初始装备技能、普通与技能弹体、怪物最大生命、骷髅、僵尸与沉沦魔 AI 停顿／追击状态及 A1／Brute／骷髅／僵尸 A2 攻击过程、NPC 原路径运动、商人随机货品已售 slot、ID、掉落随机状态及已结算 ID。命名管道定向生成的怪物保存 Debug 来源、原身份、分组和生成键，并沿用敌对身份、生命范围与地图位置校验。金币地面物品使用 quantity，禁止放入普通容器；拾取最多补到角色等级乘 10000，余额留地面，满额拒绝。各职业等级阈值来自运行时 MPQ `Experience.txt`，成长来自 `CharStats.txt`；击杀经验按 `MonStats`／`MonLvl`／`Experience` 及原引擎等级差规则结算。
+- `.d2xsave` 当前 v33 显式编码玩家职业、经验、等级、已分配属性／技能与未用点数、F1–F8 绑定、钱包、物品数量／等级／品质原行／已鉴定标志／展示属性、初始装备技能、普通与技能弹体、怪物最大生命、骷髅、僵尸与沉沦魔 AI 停顿／追击状态及 A1／Brute／骷髅／僵尸／沉沦魔 A2 攻击过程、NPC 原路径运动、商人随机货品已售 slot、ID、掉落随机状态及已结算 ID。命名管道定向生成的怪物保存 Debug 来源、原身份、分组和生成键，并沿用敌对身份、生命范围与地图位置校验。金币地面物品使用 quantity，禁止放入普通容器；拾取最多补到角色等级乘 10000，余额留地面，满额拒绝。各职业等级阈值来自运行时 MPQ `Experience.txt`，成长来自 `CharStats.txt`；击杀经验按 `MonStats`／`MonLvl`／`Experience` 及原引擎等级差规则结算。
 - 读取先完整校验，再提交状态。地图配置、内容／规则指纹不匹配则拒绝；旧 v1–v24 不迁移。防具实例防御必须落在原基础范围，非防具不得带防御值；装备派生结果在恢复提交前重算验证，不单独编码。
 - 金币基础数量为物品等级加 [0,5 倍等级) 随机值，支持 TC 的 gld,mul=N 按 N/256 整数缩放；当前超过原 gld.maxstack 的金币堆明确暂缓，不截断金额。箭袋按 minstack/maxstack，其他已支持普通消耗品按 minstack/spawnstack（无效 spawnstack 回退 maxstack）生成，随机上界不含。数量使用会话掉落随机流，是项目适配，不宣称原物品独立种子流一致。
 - 装备 ContainerLocation 的 cell.x 表示部位而非背包矩形，cell.y 固定零；腰带仍使用 BeltEquipment。读档校验钱包上限、金币位置、数量、部位、品质原行及属性展示值、需求、职业与手部组合。普通野外配方身份 outdoor-v6、牛场 cow-v1 不变。金币加成、银行和死亡扣金仍暂缓；投掷攻击和数量损耗已接源码，待运行验收。

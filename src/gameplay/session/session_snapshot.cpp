@@ -308,7 +308,7 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
                     const auto combat = simulation_.monsterNormalCombat_
                         ? simulation_.monsterNormalCombat_(enemy.identity) : std::nullopt;
                     require((enemy.kind == MonsterKind::Brute || enemy.kind == MonsterKind::Skeleton ||
-                             enemy.kind == MonsterKind::Zombie) && ai &&
+                             enemy.kind == MonsterKind::Zombie || enemy.kind == MonsterKind::Fallen) && ai &&
                                 monsterContent_.attackTiming(enemy.kind, 2) && combat &&
                                 combat->attack2Damage && simulation_.monsterAccuracy_ &&
                                 simulation_.monsterAccuracy_(enemy, 2),

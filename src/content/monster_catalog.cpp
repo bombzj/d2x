@@ -26,7 +26,8 @@ MonsterCatalog::MonsterCatalog(Archives &archives, const DataTable &stats) {
         for (int kind = 0; kind < int(MonsterKind::Count); ++kind)
             if (auto timing = loadMonsterAttackTiming(animations, monsterDefinition(MonsterKind(kind)), 1))
                 attacks_.emplace(MonsterKind(kind), *timing);
-        for (auto kind : {MonsterKind::Brute, MonsterKind::Skeleton, MonsterKind::Zombie})
+        for (auto kind : {MonsterKind::Brute, MonsterKind::Skeleton, MonsterKind::Zombie,
+                          MonsterKind::Fallen})
             if (auto timing = loadMonsterAttackTiming(animations, monsterDefinition(kind), 2))
                 attacks2_.emplace(kind, *timing);
     }
