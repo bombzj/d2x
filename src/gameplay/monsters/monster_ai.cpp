@@ -24,6 +24,7 @@ void Simulation::updateMonsters(float dt) {
         if (player.dead || player.hp <= 0) {
             enemy.route.clear();
             enemy.aiPursuing = false;
+            enemy.aiEscaping = false;
             enemy.attack = enemy.attackDuration = 0;
             enemy.attackImpact = -1;
             enemy.attackMode = 1;
@@ -51,6 +52,23 @@ void Simulation::updateMonsters(float dt) {
             }
             continue;
         }
+        const auto ai = monsterAi_ ? monsterAi_(enemy) : std::nullopt;
+        const bool fallenAi = ai && ai->kind == MonsterAiKind::Fallen;
+        if (fallenAi && !enemy.aiEscaping && monsterDeathDuration_)
+            for (const auto &corpse : state_.area.enemies) {
+                if (corpse.hp > 0 || corpse.id == enemy.id ||
+                    (corpse.pos - enemy.pos).length() >= 15.f) continue;
+                const auto duration = monsterDeathDuration_(corpse);
+                if (duration && corpse.deathAge <= *duration &&
+                    fallenStartEscape(enemy, player.pos, *grid_)) break;
+            }
+        if (enemy.aiEscaping) {
+            const auto originalSpeed = monsterWalkSpeed_ ? monsterWalkSpeed_(enemy) : std::nullopt;
+            const float speed = originalSpeed.value_or(monsterDefinition(enemy.kind).speed) *
+                                1.5f * (enemy.chill > 0 ? .42f : 1.f);
+            fallenAdvanceEscape(enemy, *grid_, speed, dt);
+            continue;
+        }
         const auto &definition = monsterDefinition(enemy.kind);
         auto delta = player.pos - enemy.pos;
         float distance = delta.length();
@@ -60,11 +78,9 @@ void Simulation::updateMonsters(float dt) {
             enemy.aiPursuing = false;
             continue;
         }
-        const auto ai = monsterAi_ ? monsterAi_(enemy) : std::nullopt;
         const bool skeletonAi = ai && ai->kind == MonsterAiKind::Skeleton;
         const bool bruteAi = ai && ai->kind == MonsterAiKind::Brute;
         const bool zombieAi = ai && ai->kind == MonsterAiKind::Zombie;
-        const bool fallenAi = ai && ai->kind == MonsterAiKind::Fallen;
         bool clear = grid_->segment(enemy.pos, player.pos);
         if (distance >= definition.attackRange || !clear) {
             if (skeletonAi && !skeletonApproaches(enemy, *ai)) {

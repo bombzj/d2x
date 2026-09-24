@@ -77,6 +77,7 @@ void listMonsters(Json &result, const Json &request, const GameSession &session,
             {"substitute", monsterImplementation(enemy.identity.monster).substitute},
             {"debugSpawn", enemy.identity.origin == SpawnOrigin::Debug},
             {"aiWait", enemy.aiWait}, {"aiPursuing", enemy.aiPursuing},
+            {"aiEscaping", enemy.aiEscaping},
             {"attackMode", enemy.attackMode}, {"attackRemaining", enemy.attack},
             {"impactRemaining", enemy.attackImpact}};
         const auto *record = session.monsterContent().find(enemy.identity.monster);

@@ -23,6 +23,7 @@ void Simulation::damageEnemy(Enemy &enemy, float amount, EntityId source, float 
     if (enemy.hp == 0) {
         enemy.deathAge = 0;
         enemy.route.clear();
+        enemy.aiEscaping = false;
         enemy.attack = enemy.attackDuration = 0;
         enemy.attackImpact = -1;
         enemy.attackMode = 1;

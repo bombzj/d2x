@@ -330,7 +330,7 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
             auto ai = simulation_.monsterAi_ ? simulation_.monsterAi_(enemy) : std::nullopt;
             if (!ai || (ai->kind != MonsterAiKind::Skeleton && ai->kind != MonsterAiKind::Zombie &&
                         ai->kind != MonsterAiKind::Fallen && ai->kind != MonsterAiKind::Brute))
-                require(enemy.aiWait == 0 && !enemy.aiPursuing,
+                require(enemy.aiWait == 0 && !enemy.aiPursuing && !enemy.aiEscaping,
                         "unexpected monster AI state");
             if (ai && ai->kind == MonsterAiKind::Brute)
                 require(enemy.aiWait <= 15.f / 25.f && !enemy.aiPursuing, "brute AI state");
@@ -338,7 +338,11 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
                 require(enemy.aiWait <= 10.f / 25.f && (!enemy.aiPursuing || enemy.aiWait == 0),
                         "zombie AI state");
             if (ai && ai->kind == MonsterAiKind::Fallen)
-                require(enemy.aiWait <= 10.f / 25.f, "fallen AI state");
+                require(enemy.aiWait <= 10.f / 25.f &&
+                            (!enemy.aiEscaping || (enemy.hp > 0 && enemy.attack == 0 &&
+                                                   enemy.aiWait == 0 && !enemy.aiPursuing &&
+                                                   !enemy.route.empty())),
+                        "fallen AI state");
             route(enemy.route, areaGrid);
             if (enemy.hp == 0) {
                 ++dead;

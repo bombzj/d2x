@@ -149,6 +149,12 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
         const auto *motion = monsterContent_.motion(implementation.kind, "gh");
         return motion ? std::optional<float>(motion->duration) : std::nullopt;
     };
+    simulation_.monsterDeathDuration_ = [this](const Enemy &enemy)
+        -> std::optional<float> {
+        if (monsterImplementation(enemy.identity.monster).substitute) return std::nullopt;
+        const auto *motion = monsterContent_.motion(enemy.kind, "dt");
+        return motion ? std::optional<float>(motion->duration) : std::nullopt;
+    };
     simulation_.monsterAttackTiming_ = [this](const Enemy &enemy, int mode)
         -> std::optional<MonsterAttackTiming> {
         const auto *timing = monsterContent_.attackTiming(enemy.kind, mode);
@@ -196,7 +202,7 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
     Fingerprint fingerprint;
     fingerprint.add(content_.profile);
     // Bump this rules revision when state interpretation or compiled rules change.
-    fingerprint.add("d2x-session-rules-v73-skeleton5-lightning-attack");
+    fingerprint.add("d2x-session-rules-v74-fallen-corpse-escape");
     auto members = archives.used;
     for (const auto &member : members) {
         fingerprint.add(member);
