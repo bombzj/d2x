@@ -13,9 +13,11 @@ bool GameSession::vendorOfferSold(EntityId npc, uint32_t slot) const {
 void GameSession::buyVendorItem(EntityId npc, uint32_t slot) {
     const auto *target = object(npc);
     const auto *stock = vendorStock(npc);
+    // Opening Trade already checked the NPC interaction range. NPCs may wander
+    // during a transaction, so distance is not rechecked on each purchase.
     if (!target || !stock || engagedNpc_ != npc || state().player.dead ||
-        region().definition.id != RegionId::Encampment || !canReach(*target)) {
-        simulation_.emit(InteractionFailed{npc, "Vendor is unavailable or too far away."});
+        !region().definition.safe) {
+        simulation_.emit(InteractionFailed{npc, "Vendor is unavailable in this town."});
         return;
     }
     auto found = std::find_if(stock->begin(), stock->end(),

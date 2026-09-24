@@ -15,15 +15,24 @@ struct SplitDialog {
     unsigned quantity = 1;
     EntityId destination;
 };
+struct GoldDialog {
+    GoldAction action = GoldAction::Drop;
+    std::string amount;
+    unsigned maximum = 0;
+};
 struct InventoryUi {
-    bool open = false, forceSwap = false, beltExpanded = false;
+    bool open = false, cubeOpen = false, forceSwap = false, beltExpanded = false;
     EntityId selected, pending, storage;
     std::string pendingMessage;
     std::optional<InventoryDrag> drag;
     std::optional<SplitDialog> split;
+    std::optional<ItemHandle> identify;
+    std::optional<GoldDialog> goldDialog;
     void cancelGesture() {
         drag.reset();
         split.reset();
+        identify.reset();
+        goldDialog.reset();
     }
 };
 // Classic invchar.dc6's right panel, scaled from 320 x 432; grid data from inventory.txt.
@@ -38,10 +47,13 @@ inline Rectangle inventoryGrid() {
 }
 inline Rectangle inventoryClose() {
     auto p = inventoryBounds();
-    return {p.x + p.width - 34, p.y + 9, 23, 23};
+    return {p.x + 14 * inventoryScale, p.y + 381 * inventoryScale,
+            33 * inventoryScale, 30 * inventoryScale};
 }
-inline Rectangle inventoryButton(int index) {
-    return {inventoryBounds().x + 19 + index * 123, 501, 116, 28};
+inline Rectangle inventoryGold() {
+    auto p = inventoryBounds();
+    return {p.x + 82 * inventoryScale, p.y + 381 * inventoryScale,
+            120 * inventoryScale, 26 * inventoryScale};
 }
 inline Rectangle inventoryToggle() {
     return hudMenuButton();
@@ -72,8 +84,30 @@ inline Rectangle storageClose() {
     return {storageBounds().x + 274 * inventoryScale, storageBounds().y + 384 * inventoryScale,
             31 * inventoryScale, 34 * inventoryScale};
 }
-inline Rectangle storageTransfer() {
-    return {storageBounds().x + 90, 510, 220, 28};
+inline Rectangle cubeBounds() {
+    return {inventoryBounds().x - 400, inventoryBounds().y, 400, 540};
+}
+inline Rectangle cubeClose() {
+    auto p = cubeBounds();
+    return {p.x + 272 * inventoryScale, p.y + 383 * inventoryScale,
+            32 * inventoryScale, 32 * inventoryScale};
+}
+inline Rectangle cubeTransmute() {
+    auto p = cubeBounds();
+    return {p.x + 109 * inventoryScale, p.y + 297 * inventoryScale,
+            102 * inventoryScale, 35 * inventoryScale};
+}
+inline Rectangle storageGold() {
+    auto p = storageBounds();
+    return {p.x + 84 * inventoryScale, p.y + 378 * inventoryScale,
+            176 * inventoryScale, 28 * inventoryScale};
+}
+inline Rectangle goldDialogBounds() {
+    return {inventoryBounds().x + 28, 192, 344, 166};
+}
+inline Rectangle goldDialogButton(int index) {
+    auto p = goldDialogBounds();
+    return {p.x + 23 + index * 166, p.y + 123, 130, 29};
 }
 inline Rectangle splitBounds() {
     return {inventoryBounds().x + 24, 190, 352, 180};

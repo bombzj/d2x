@@ -83,7 +83,7 @@ InventoryResult InventoryService::planEquipment(const EquipItem &command, const 
             return reject(error);
     } else if (location->container != containers.equipment)
         return reject(InventoryError::InvalidRequest);
-    InventoryService draft(ids_, catalog_, stashDimensions_);
+    InventoryService draft(ids_, catalog_, stashDimensions_, cubeDimensions_);
     draft.state_ = state_;
     InventoryResult result;
     result.item = source.id;

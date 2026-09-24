@@ -71,7 +71,7 @@ InventoryResult InventoryService::planBelt(const EquipBelt &command, const Playe
     int rows = removing ? 1 : definition->beltRows;
     // Plan against a private snapshot. No IDs are allocated, and failed previews
     // or capacity changes never mutate live items, revisions or container sizes.
-    InventoryService draft(ids_, catalog_, stashDimensions_);
+    InventoryService draft(ids_, catalog_, stashDimensions_, cubeDimensions_);
     draft.state_ = state_;
     InventoryResult result;
     result.item = source.id;

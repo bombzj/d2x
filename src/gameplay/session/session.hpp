@@ -26,7 +26,8 @@ class GameSession {
     uint64_t contentFingerprint_ = 0;
     Simulation simulation_{ids_};
     InventoryService inventory_{ids_, content_.items, {content_.stashLayout.columns,
-                                                       content_.stashLayout.rows}};
+                                                       content_.stashLayout.rows},
+                                     {content_.cubeLayout.columns, content_.cubeLayout.rows}};
     LootSystem loot_;
     ItemHandle pickup_{};
     PlayerContainers playerContainers_;
@@ -87,6 +88,9 @@ class GameSession {
     void executeInventory(const GameCommand &command);
     void settleDeaths();
     void useItem(ItemHandle item);
+    void identifyItem(const IdentifyItem &command);
+    void transactGold(const GoldTransaction &command);
+    void dropDebugCube();
     void beginPortal(uint64_t revision);
     void updatePortal();
     InventoryError previewPortalScroll(ItemHandle item) const;
@@ -133,6 +137,8 @@ class GameSession {
     const std::string &characterName() const { return characterDefinition_.name; }
     const std::string &characterCode() const { return characterDefinition_.code; }
     const std::string &characterAppearance() const { return characterDefinition_.appearance; }
+    unsigned bankGoldLimit() const;
+    unsigned groundGoldLimit() const;
     bool skillAvailable(int id) const;
     int effectiveSkillRank(int id) const;
     const PlayerContainers &playerContainers() const { return playerContainers_; }

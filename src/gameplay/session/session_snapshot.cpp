@@ -218,6 +218,9 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
     scalar(player.lastCastDuration, 0.001f, 10.f);
     require(player.nextWeapon < 2, "active melee hand");
     require(player.gold <= unsigned(player.level) * 10000, "gold carrying limit");
+    require(player.bankGold <= (player.level <= 30
+                ? 50000u * (unsigned(player.level) / 10u + 1u)
+                : 50000u * (unsigned(player.level) / 2u + 1u)), "bank gold limit");
     const auto &thresholds = content_.experienceByClass.at(player.characterClass);
     require(player.level >= 1 && size_t(player.level) < thresholds.size() &&
                 player.experience <= thresholds.back() &&
@@ -729,10 +732,21 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
                             [&](const Enemy &e) { return e.id == player.attackTarget; }),
                 "attack target");
     inventory_.validateSnapshot(s.inventory, s.containers, player.id);
+    if (s.containers.cube) {
+        unsigned cubes = 0, contained = 0;
+        for (const auto &[id, item] : s.inventory.items) {
+            cubes += item.definition == content_.cubeCode;
+            if (auto location = std::get_if<ContainerLocation>(&item.location);
+                location && location->container == s.containers.cube)
+                ++contained;
+        }
+        require(cubes <= 1 && (!contained || cubes == 1), "cube ownership");
+    }
     validateItemProperties(s);
     EntityIds validationIds;
     InventoryService equipmentInventory(validationIds, inventory_.catalog(),
-                                        {content_.stashLayout.columns, content_.stashLayout.rows});
+                                        {content_.stashLayout.columns, content_.stashLayout.rows},
+                                        {content_.cubeLayout.columns, content_.cubeLayout.rows});
     equipmentInventory.state_ = s.inventory;
     auto base = deriveCharacterAttributes(characterDefinition, player.level, player.allocated);
     EquipmentActor baseActor{characterDefinition.code, base.strength, base.dexterity, player.level, base.blockFactor};
@@ -797,7 +811,8 @@ void GameSession::restore(SessionSnapshot s) {
     const auto &characterDefinition = definitionFor(s.world.player.characterClass);
     EntityIds validationIds;
     InventoryService equipmentInventory(validationIds, inventory_.catalog(),
-                                        {content_.stashLayout.columns, content_.stashLayout.rows});
+                                        {content_.stashLayout.columns, content_.stashLayout.rows},
+                                        {content_.cubeLayout.columns, content_.cubeLayout.rows});
     equipmentInventory.state_ = s.inventory;
     auto base = deriveCharacterAttributes(characterDefinition, s.world.player.level,
                                            s.world.player.allocated);
@@ -815,7 +830,8 @@ void GameSession::restore(SessionSnapshot s) {
                 vendor != content_.vendors.end()) {
                 uint64_t seed = (uint64_t(s.world.mapSeed) << 32) | object.id.value;
                 nextVendorStocks.emplace(object.id, planVendorStock(content_, vendor->second,
-                                                                    unsigned(s.world.player.level), seed));
+                                                                    unsigned(s.world.player.level),
+                                                                    s.world.population.difficulty, seed));
             }
     CharacterDefinition restoredDefinition = characterDefinition;
     // All allocation and validation precedes this no-throw commit.

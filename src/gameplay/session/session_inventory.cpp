@@ -111,17 +111,28 @@ InventoryError GameSession::previewInventory(const GameCommand &command) const {
                     source = intent.source.id;
                 if (!inventorySourceAllowed(source))
                     return InventoryError::AccessDenied;
+                if constexpr (std::is_same_v<T, MoveItem>) {
+                    const auto *item = inventory_.item(source);
+                    if (item && inventory_.catalog().find(item->definition)->opensCube &&
+                        std::holds_alternative<GroundLocation>(intent.destination) &&
+                        !inventory_.contents(playerContainers_.cube).empty())
+                        return InventoryError::RestrictedItem;
+                }
                 if (!inventoryDestinationAllowed(intent.destination))
                     return InventoryError::InvalidLocation;
                 return inventory_.preview(intent, inventoryAccess());
-            } else if constexpr (std::is_same_v<T, SwapItems> || std::is_same_v<T, MergeStacks>) {
+            } else if constexpr (std::is_same_v<T, SwapItems> || std::is_same_v<T, MergeStacks> ||
+                                 std::is_same_v<T, LoadBook>) {
                 EntityId first, second;
                 if constexpr (std::is_same_v<T, SwapItems>) {
                     first = intent.first.id;
                     second = intent.second.id;
-                } else {
+                } else if constexpr (std::is_same_v<T, MergeStacks>) {
                     first = intent.source.id;
                     second = intent.target.id;
+                } else {
+                    first = intent.scroll.id;
+                    second = intent.book.id;
                 }
                 if (!inventorySourceAllowed(first) || !inventorySourceAllowed(second))
                     return InventoryError::AccessDenied;
@@ -136,7 +147,9 @@ InventoryError GameSession::previewInventory(const GameCommand &command) const {
                 return inventory_.preview(intent, playerContainers_, inventoryAccess(), equipmentActor());
             } else if constexpr (std::is_same_v<T, UseItem>) {
                 const auto *source = inventory_.item(intent.item.id);
-                if (source && content_.isPortalScroll(source->definition))
+                if (source && (content_.isPortalScroll(source->definition) ||
+                               content_.isPortalScroll(
+                                   inventory_.catalog().find(source->definition)->bookScroll)))
                     return previewPortalScroll(intent.item);
                 auto error = inventory_.previewDrink(intent.item, inventoryAccess());
                 if (error != InventoryError::None)
@@ -144,6 +157,35 @@ InventoryError GameSession::previewInventory(const GameCommand &command) const {
                 return content_.potion(inventory_.item(intent.item.id)->definition)
                            ? InventoryError::None
                            : InventoryError::UnsupportedUse;
+            } else if constexpr (std::is_same_v<T, IdentifyItem>) {
+                if (intent.source.id == intent.target.id)
+                    return InventoryError::InvalidRequest;
+                if (auto error = inventory_.checkHandle(intent.source); error != InventoryError::None)
+                    return error;
+                if (auto error = inventory_.checkHandle(intent.target); error != InventoryError::None)
+                    return error;
+                const auto &source = *inventory_.item(intent.source.id);
+                const auto &target = *inventory_.item(intent.target.id);
+                const auto *definition = inventory_.catalog().find(source.definition);
+                if (!content_.isIdentifyScroll(source.definition) &&
+                    !content_.isIdentifyScroll(definition->bookScroll))
+                    return InventoryError::UnsupportedUse;
+                if (!definition->bookScroll.empty() && !source.charges)
+                    return InventoryError::InvalidQuantity;
+                auto origin = std::get_if<ContainerLocation>(&source.location);
+                if (!origin || (origin->container != playerContainers_.backpack &&
+                                origin->container != playerContainers_.belt))
+                    return InventoryError::AccessDenied;
+                auto destination = std::get_if<ContainerLocation>(&target.location);
+                if (!destination || (destination->container != playerContainers_.backpack &&
+                                     destination->container != playerContainers_.equipment &&
+                                     destination->container != playerContainers_.beltEquipment &&
+                                     destination->container != playerContainers_.stash))
+                    return InventoryError::AccessDenied;
+                if (destination->container == playerContainers_.stash &&
+                    storage().container != playerContainers_.stash)
+                    return InventoryError::AccessDenied;
+                return target.identified ? InventoryError::InvalidRequest : InventoryError::None;
             } else
                 return InventoryError::InvalidRequest;
         },
@@ -155,6 +197,7 @@ void GameSession::executeInventory(const GameCommand &command) {
             using T = std::decay_t<decltype(intent)>;
             if constexpr (std::is_same_v<T, MoveItem> || std::is_same_v<T, SwapItems> ||
                           std::is_same_v<T, SplitStack> || std::is_same_v<T, MergeStacks> ||
+                          std::is_same_v<T, LoadBook> ||
                           std::is_same_v<T, EquipBelt> || std::is_same_v<T, TransferItem> ||
                           std::is_same_v<T, EquipItem>) {
                 EntityId requested;
@@ -163,6 +206,8 @@ void GameSession::executeInventory(const GameCommand &command) {
                     requested = intent.item.id;
                 else if constexpr (std::is_same_v<T, SwapItems>)
                     requested = intent.first.id;
+                else if constexpr (std::is_same_v<T, LoadBook>)
+                    requested = intent.scroll.id;
                 else
                     requested = intent.source.id;
                 auto error = previewInventory(command);
@@ -189,7 +234,9 @@ void GameSession::executeInventory(const GameCommand &command) {
                     publishInventory(std::move(result), requested);
                     if (applied)
                         simulation_.emit(BeltEquipped{});
-                } else
+                } else if constexpr (std::is_same_v<T, LoadBook>)
+                    publishInventory(inventory_.loadBook(intent, inventoryAccess()), requested);
+                else
                     publishInventory(inventory_.merge(intent, inventoryAccess()), requested);
             }
         },

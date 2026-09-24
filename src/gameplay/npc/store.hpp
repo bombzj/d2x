@@ -11,8 +11,9 @@ struct VendorOffer {
     std::string code;
     unsigned quantity = 1, level = 1, price = 0;
     int defense = 0;
+    int storePage = -1;
     bool permanent = false;
 };
 std::vector<VendorOffer> planVendorStock(const ClassicData &data, const VendorDefinition &vendor,
-                                         unsigned playerLevel, uint64_t seed);
+                                         unsigned playerLevel, int difficulty, uint64_t seed);
 } // namespace d2x

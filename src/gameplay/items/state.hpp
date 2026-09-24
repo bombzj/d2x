@@ -51,7 +51,7 @@ struct ItemHandle {
 struct ItemInstance {
     EntityId id;
     std::string definition;
-    unsigned quantity = 1, durability = 0;
+    unsigned quantity = 1, durability = 0, charges = 0;
     ItemQuality quality = ItemQuality::Normal;
     bool identified = true;
     unsigned level = 1;
@@ -66,7 +66,7 @@ struct ItemInstance {
     ItemLocation location;
     ItemHandle handle() const { return {id, revision}; }
 };
-enum class ContainerKind { Backpack, Belt, Stash, Chest, BeltEquipment, Equipment };
+enum class ContainerKind { Backpack, Belt, Stash, Chest, BeltEquipment, Equipment, Cube };
 struct ContainerSpec {
     EntityId owner;
     ContainerKind kind = ContainerKind::Backpack;
@@ -77,7 +77,7 @@ struct ContainerState {
     ContainerSpec spec;
 };
 struct PlayerContainers {
-    EntityId backpack, belt, stash, beltEquipment, equipment;
+    EntityId backpack, belt, stash, beltEquipment, equipment, cube;
 };
 // Location is authoritative. Occupancy is derived, never a second mutable copy.
 struct InventoryState {
@@ -93,5 +93,6 @@ struct InventoryAccess {
     Vec position;
     EntityId openContainer;
     float reach = 4;
+    EntityId portableContainer;
 };
 } // namespace d2x

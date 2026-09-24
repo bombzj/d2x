@@ -31,15 +31,10 @@ void SceneView::drawStorage(Vec mouse) const {
                 if (auto item = inventory.item(inventory.itemAt(grid.container, *cell)))
                     drawItemTooltip(*item, {inventoryBounds().x - 12, mouse.y});
     }
-    int used = 0;
-    for (auto id : inventory.contents(ui.storage)) {
-        auto def = inventory.catalog().find(inventory.item(id)->definition);
-        used += def->width * def->height;
-    }
-    painter_.label(std::to_string(used) + " / " + std::to_string(layout.columns * layout.rows),
-                   int(panel.x + 160), layout.expansion ? int(panel.y + 52 * inventoryScale) : 326, 12, gold);
-    itemButton(storageTransfer(), "TRANSFER SELECTED", inventory.item(ui.selected) ? gold : GRAY);
+    painter_.label("Gold Max: " + std::to_string(session_.bankGoldLimit()),
+                   int(panel.x + 108), layout.expansion ? int(panel.y + 53 * inventoryScale) : 326, 13, gold);
+    painter_.label(std::to_string(session_.state().player.bankGold),
+                   int(storageGold().x + 54), int(storageGold().y + 14), 14, parchment);
     painter_.label("X", int(storageClose().x + 15), int(storageClose().y + 15), 12, gold);
-    painter_.label("Shift-click: transfer   I / Esc: close", int(panel.x + 60), 544, 10, gold);
 }
 } // namespace d2x

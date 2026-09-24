@@ -114,6 +114,7 @@ void SceneView::draw(Vec mouse) const {
         }
     }
     drawStorage(mouse);
+    drawCube(mouse);
     drawCharacter(mouse);
     drawSkillTree(mouse);
     drawInventory(mouse);

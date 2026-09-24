@@ -59,11 +59,20 @@ std::vector<ContainerGrid> inventoryGrids(const GameSession &session, const Inve
                          spec.rows,
                          layout.cellSize * inventoryScale});
     }
+    if (ui.cubeOpen && c.cube) {
+        auto p = cubeBounds();
+        const auto &layout = session.content().cubeLayout;
+        grids.push_back({c.cube,
+                         {p.x + layout.left * inventoryScale, p.y + layout.top * inventoryScale},
+                         {layout.cellSize * inventoryScale, layout.cellSize * inventoryScale},
+                         layout.columns, layout.rows, layout.cellSize * inventoryScale});
+    }
     return grids;
 }
 bool inventorySurface(const InventoryUi &ui, Vec mouse) {
     return (ui.open && CheckCollisionPointRec(rv(mouse), inventoryBounds())) ||
-           (ui.storage && CheckCollisionPointRec(rv(mouse), storageBounds()));
+           (ui.storage && CheckCollisionPointRec(rv(mouse), storageBounds())) ||
+           (ui.cubeOpen && CheckCollisionPointRec(rv(mouse), cubeBounds()));
 }
 InventoryDrop inventoryDrop(const GameSession &session, const InventoryUi &ui, Vec mouse) {
     InventoryDrop drop;
@@ -125,7 +134,11 @@ InventoryDrop inventoryDrop(const GameSession &session, const InventoryUi &ui, V
             if (target && target->id != source->id) {
                 auto targetCell = std::get<ContainerLocation>(target->location).cell;
                 drop.bounds = grid.itemBounds(targetCell, definition);
-                if (!ui.forceSwap && definition.maxStack > 1 && target->definition == source->definition) {
+                const auto *targetDefinition = inventory.catalog().find(target->definition);
+                if (!ui.forceSwap && targetDefinition->bookScroll == source->definition) {
+                    drop.command = LoadBook{source->handle(), target->handle()};
+                    drop.description = "Put scroll in tome";
+                } else if (!ui.forceSwap && definition.maxStack > 1 && target->definition == source->definition) {
                     drop.command = MergeStacks{source->handle(), target->handle()};
                     drop.description = "Merge into this stack";
                 } else {
@@ -142,13 +155,7 @@ InventoryDrop inventoryDrop(const GameSession &session, const InventoryUi &ui, V
         }
     }
     if (equipped && !drop.command) {
-        if (ui.open && CheckCollisionPointRec(rv(mouse), inventoryButton(0))) {
-            removeTo(AutoPlace{containers.backpack});
-            drop.description = "Unequip item";
-        } else if (ui.storage && CheckCollisionPointRec(rv(mouse), storageTransfer())) {
-            removeTo(AutoPlace{ui.storage});
-            drop.description = "Store equipment";
-        } else if (!inventorySurface(ui, mouse) && mouse.x >= 0 && mouse.x < W && mouse.y >= 0 &&
+        if (!inventorySurface(ui, mouse) && mouse.x >= 0 && mouse.x < W && mouse.y >= 0 &&
                    !hudSurface(mouse)) {
             if (auto ground = session.dropLocation()) {
                 removeTo(*ground);
@@ -164,15 +171,7 @@ InventoryDrop inventoryDrop(const GameSession &session, const InventoryUi &ui, V
         return drop;
     }
     if (!drop.command) {
-        if (ui.open && CheckCollisionPointRec(rv(mouse), inventoryButton(0))) {
-            drop.command = MoveItem{source->handle(), AutoPlace{session.playerContainers().backpack}};
-            drop.description = "Place in backpack";
-        } else if (ui.storage && CheckCollisionPointRec(rv(mouse), storageTransfer())) {
-            EntityId target =
-                location->container == ui.storage ? session.playerContainers().backpack : ui.storage;
-            drop.command = TransferItem{source->handle(), target};
-            drop.description = "Transfer whole item";
-        } else if (!inventorySurface(ui, mouse) && mouse.x >= 0 && mouse.x < W && mouse.y >= 0 &&
+        if (!inventorySurface(ui, mouse) && mouse.x >= 0 && mouse.x < W && mouse.y >= 0 &&
                    !hudSurface(mouse)) {
             if (auto ground = session.dropLocation()) {
                 drop.command = MoveItem{source->handle(), *ground};

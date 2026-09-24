@@ -46,7 +46,7 @@ class SceneAssets {
     GpuAnimation fireball, fireburst, teleportOverlay, panel, cursor, inventoryPanel, attributeButtons,
         attributePoints, vendorPanel, vendorTabs,
         vendorButtons, vendorConfirm, waypointBorder, waypointPanel, waypointTabs, waypointIcons,
-        storagePanel, beltPanel, beltSocket, orbs,
+        storagePanel, cubePanel, beltPanel, beltSocket, orbs,
         globeOverlap, runButton, button;
     SceneAssets(Archives &archives, const GameSession &session);
     static std::string itemArtKey(const ItemInstance &item);

@@ -26,7 +26,6 @@ void SceneView::drawInventory(Vec mouse) const {
     EntityId backpack = session_.playerContainers().backpack;
     auto panel = inventoryBounds();
     DrawRectangle(int(panel.x) - 6, 0, int(panel.width) + 22, H - HUD, {0, 0, 0, 150});
-    frame(panel);
     if (assets_.inventoryPanel.frames.size() >= 8)
         for (int i = 0; i < 4; ++i) {
             const auto &tile = assets_.inventoryPanel.frames[4 + i].texture;
@@ -36,8 +35,6 @@ void SceneView::drawInventory(Vec mouse) const {
                             tile.height * inventoryScale},
                            {0, 0}, 0, WHITE);
         }
-    frame(inventoryClose(), CheckCollisionPointRec(rv(mouse), inventoryClose()) ? parchment : gold);
-    painter_.label("X", int(inventoryClose().x + 7), int(inventoryClose().y + 6), 12, gold);
     auto hoverCell = inventoryCell(mouse);
     EntityId hovered = hoverCell ? inventory.itemAt(backpack, *hoverCell) : EntityId{};
     for (int index = 0; index < int(EquipmentSlot::Count); ++index) {
@@ -68,29 +65,10 @@ void SceneView::drawInventory(Vec mouse) const {
         if (drop.otherBounds)
             DrawRectangleLinesEx(*drop.otherBounds, 2, color);
     }
-    const char *buttons[] = {"AUTO PLACE", "SPLIT", "DROP"};
-    const auto *selected = inventory.item(ui.selected);
-    for (int i = 0; i < 3; ++i) {
-        auto box = inventoryButton(i);
-        bool enabled = selected && !ui.pending &&
-                       (i != 1 || (selected->quality == ItemQuality::Normal && selected->quantity > 1));
-        Color color =
-            enabled ? CheckCollisionPointRec(rv(mouse), box) ? parchment : gold : Color{85, 83, 71, 255};
-        itemButton(box, buttons[i], color);
-    }
-    const auto &stats = session_.equipmentStats();
-    std::string damageText = "Damage ";
-    for (int index = 0; index < stats.weaponCount; ++index) {
-        if (index)
-            damageText += " / ";
-        const auto &weapon = stats.weapons[index];
-        damageText += std::to_string(weapon.minimum / 256) + "-" + std::to_string(weapon.maximum / 256);
-    }
-    painter_.label(damageText, int(panel.x + 20), 539, 10, parchment);
-    auto armorText = "Defense " + std::to_string(stats.defense) + "  Block " +
-                     std::to_string(stats.blockChance) + "%";
-    painter_.label(armorText, int(panel.x + 195), 539, 10, parchment);
-    painter_.label("Gold " + std::to_string(session_.state().player.gold), int(panel.x + 20), 555, 10, gold);
+    painter_.label(std::to_string(session_.state().player.gold),
+                   int(panel.x + 110), int(panel.y + 480), 14, parchment);
+    if (ui.identify)
+        painter_.label("SELECT AN UNIDENTIFIED ITEM", int(panel.x + 30), int(panel.y + 455), 12, gold);
     if (!ui.split && !ui.drag) {
         if (auto item = inventory.item(hovered))
             drawItemTooltip(*item, {panel.x - 12, mouse.y});
@@ -122,6 +100,19 @@ void SceneView::drawInventory(Vec mouse) const {
         }
         painter_.label("Wheel / arrows: quantity   Enter: confirm", int(dialog.x + 23), int(dialog.y + 108),
                        10);
+    }
+    if (ui.goldDialog) {
+        DrawRectangleRec(panel, {0, 0, 0, 175});
+        auto dialog = goldDialogBounds();
+        frame(dialog);
+        const char *title = ui.goldDialog->action == GoldAction::Deposit ? "DEPOSIT GOLD" :
+                            ui.goldDialog->action == GoldAction::Withdraw ? "WITHDRAW GOLD" : "DROP GOLD";
+        painter_.label(title, int(dialog.x + 22), int(dialog.y + 17), 18, gold);
+        painter_.label("Amount (max " + std::to_string(ui.goldDialog->maximum) + ")",
+                       int(dialog.x + 22), int(dialog.y + 53), 12, parchment);
+        painter_.label(ui.goldDialog->amount + "_", int(dialog.x + 25), int(dialog.y + 76), 20, WHITE);
+        for (int index = 0; index < 2; ++index)
+            itemButton(goldDialogButton(index), index ? "CANCEL" : "OK", gold);
     }
 }
 void SceneView::drawInventoryCursor(Vec mouse) const {

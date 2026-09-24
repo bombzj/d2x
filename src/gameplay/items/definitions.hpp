@@ -36,10 +36,13 @@ struct ItemDefinition {
     int width = 1, height = 1;
     unsigned maxStack = 1, maxDurability = 0;
     bool beltAllowed = false, usable = false;
+    bool opensCube = false;
     std::string icon, groundAnimation;
     bool artAvailable = false;
     bool autoBelt = false;
     int beltRows = 0; // Zero is not an equippable belt; row zero is the ready row.
+    std::string bookScroll;
+    unsigned bookCapacity = 0, bookInitialCharges = 0, bookChargeCost = 0;
     ItemBaseStats base;
     EquipmentDefinition equipment;
     ItemAppearance appearance;

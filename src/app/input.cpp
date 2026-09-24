@@ -27,12 +27,17 @@ FrameInput pollInput(const Viewport &viewport) {
     input.control = IsKeyDown(KEY_LEFT_CONTROL) || IsKeyDown(KEY_RIGHT_CONTROL);
     input.storage = input.control && IsKeyPressed(KEY_F4);
     input.enter = IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_KP_ENTER);
+    input.backspace = IsKeyPressed(KEY_BACKSPACE);
+    for (int character = GetCharPressed(); character; character = GetCharPressed())
+        if (character >= '0' && character <= '9')
+            input.text.push_back(char(character));
     input.quantityDelta =
         int(GetMouseWheelMove()) + int(IsKeyPressed(KEY_RIGHT)) - int(IsKeyPressed(KEY_LEFT));
     input.focused = IsWindowFocused();
     input.showLoot = IsKeyDown(KEY_LEFT_ALT) || IsKeyDown(KEY_RIGHT_ALT);
     if (input.control && input.showLoot) {
         input.debugGold = IsKeyPressed(KEY_G);
+        input.debugCube = IsKeyPressed(KEY_B);
         input.debugExperience = IsKeyPressed(KEY_E);
         input.debugAttributes = characterA;
         input.debugTalents = skillT;
@@ -63,7 +68,7 @@ FrameInput pollInput(const Viewport &viewport) {
         input.skills[i] = !input.control && IsKeyPressed(KEY_F1 + i);
     for (int i = 0; i < 4; ++i)
         input.belt[i] = IsKeyPressed(KEY_ONE + i);
-    input.expandBelt = IsKeyPressed(KEY_B);
+    input.expandBelt = !input.control && IsKeyPressed(KEY_B);
     return input;
 }
 } // namespace d2x

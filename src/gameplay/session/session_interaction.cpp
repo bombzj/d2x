@@ -54,7 +54,14 @@ StorageAccess GameSession::storage() const {
 }
 InventoryAccess GameSession::inventoryAccess() const {
     const auto &player = state().player;
-    return {player.id, !player.dead, region().definition.id, player.pos, storage().container, 4};
+    InventoryAccess access{player.id, !player.dead, region().definition.id, player.pos, storage().container, 4, {}};
+    if (playerContainers_.cube)
+        for (auto id : inventory_.contents(playerContainers_.backpack))
+            if (inventory_.item(id)->definition == content_.cubeCode) {
+                access.portableContainer = playerContainers_.cube;
+                break;
+            }
+    return access;
 }
 void GameSession::closeStorage() {
     if (storage_)

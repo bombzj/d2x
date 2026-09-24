@@ -42,7 +42,7 @@ add_library(d2x_items
   src/gameplay/items/durability.cpp
   src/gameplay/items/definitions.cpp
   src/gameplay/items/inventory.cpp src/gameplay/items/transfers.cpp src/gameplay/items/collection.cpp
-  src/gameplay/items/preview.cpp src/gameplay/items/belt.cpp src/gameplay/items/inventory_snapshot.cpp)
+  src/gameplay/items/preview.cpp src/gameplay/items/belt.cpp src/gameplay/items/books.cpp src/gameplay/items/inventory_snapshot.cpp)
 target_link_libraries(d2x_items PUBLIC d2x_core)
 add_library(d2x_content src/content/classic_data.cpp src/content/lod_data.cpp src/content/world_catalog.cpp src/content/monster_catalog.cpp)
 target_sources(d2x_content PRIVATE src/content/character_progression.cpp)
@@ -120,7 +120,7 @@ target_link_libraries(d2x_gameplay PUBLIC d2x_navigation)
 target_link_libraries(d2x_content PUBLIC d2x_gameplay)
 add_library(d2x_population src/world/population.cpp)
 target_link_libraries(d2x_population PUBLIC d2x_content d2x_gameplay)
-add_library(d2x_session src/gameplay/session/session.cpp src/gameplay/session/session_skills.cpp src/gameplay/session/session_loot.cpp src/gameplay/session/session_inventory.cpp src/gameplay/session/session_consumables.cpp src/gameplay/session/session_interaction.cpp src/gameplay/session/session_snapshot.cpp src/gameplay/session/session_exits.cpp src/gameplay/session/session_monster_combat.cpp)
+add_library(d2x_session src/gameplay/session/session.cpp src/gameplay/session/session_skills.cpp src/gameplay/session/session_loot.cpp src/gameplay/session/session_inventory.cpp src/gameplay/session/session_consumables.cpp src/gameplay/session/session_gold.cpp src/gameplay/session/session_interaction.cpp src/gameplay/session/session_snapshot.cpp src/gameplay/session/session_exits.cpp src/gameplay/session/session_monster_combat.cpp)
 target_sources(d2x_session PRIVATE src/gameplay/session/session_objects.cpp)
 target_sources(d2x_session PRIVATE src/gameplay/npc/identification.cpp src/gameplay/npc/service.cpp src/gameplay/npc/movement.cpp)
 target_sources(d2x_session PRIVATE src/gameplay/npc/store.cpp src/gameplay/npc/purchase.cpp)
@@ -140,14 +140,14 @@ add_library(d2x_presentation
   src/presentation/world_renderer.cpp src/presentation/hud.cpp src/presentation/npc_dialogue_view.cpp src/presentation/npc_menu_view.cpp src/presentation/npc_shop_view.cpp src/presentation/controller.cpp
   src/presentation/loot_view.cpp src/presentation/inventory_panel.cpp
   src/presentation/character_panel.cpp
-  src/presentation/container_view.cpp src/presentation/storage_view.cpp src/presentation/belt_view.cpp src/presentation/inventory_view.cpp src/presentation/inventory_controller.cpp)
+  src/presentation/container_view.cpp src/presentation/storage_view.cpp src/presentation/cube_view.cpp src/presentation/belt_view.cpp src/presentation/inventory_view.cpp src/presentation/inventory_controller.cpp)
 target_link_libraries(d2x_presentation PUBLIC d2x_session raylib)
 target_sources(d2x_presentation PRIVATE src/presentation/monster_audio.cpp)
 target_sources(d2x_presentation PRIVATE src/presentation/monster_assets.cpp)
 
 add_executable(d2x src/main.cpp src/app/application.cpp src/app/options.cpp src/app/input.cpp)
 target_sources(d2x PRIVATE src/app/debug_pipe.cpp src/app/debug_commands.cpp src/app/debug_inventory.cpp
-    src/app/debug_monsters.cpp)
+    src/app/debug_item_actions.cpp src/app/debug_monsters.cpp)
 target_link_libraries(d2x PRIVATE d2x_presentation d2x_persistence)
 target_link_libraries(d2x PRIVATE nlohmann_json::nlohmann_json)
 if(WIN32)

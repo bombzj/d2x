@@ -279,7 +279,8 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
                 vendor != content_.vendors.end()) {
                 uint64_t seed = (uint64_t(selection.seed) << 32) | object.id.value;
                 vendorStocks_.emplace(object.id, planVendorStock(content_, vendor->second,
-                                                                  equipmentActor().level, seed));
+                                                                  equipmentActor().level,
+                                                                  population.difficulty, seed));
             }
     linkLevelExits(regions_, worldContent_);
     for (const auto &region : regions_)
@@ -312,7 +313,7 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
     Fingerprint fingerprint;
     fingerprint.add(content_.profile);
     // Bump this rules revision when state interpretation or compiled rules change.
-    fingerprint.add("d2x-session-rules-v114-world-objects");
+    fingerprint.add("d2x-session-rules-v116-books-gold-cube");
     auto members = archives.used;
     for (const auto &member : members) {
         fingerprint.add(member);
@@ -455,6 +456,8 @@ void GameSession::tick(float dt, Vec keyboard) {
                     beginPickup(intent.item);
                 } else if constexpr (std::is_same_v<T, UseItem>)
                     useItem(intent.item);
+                else if constexpr (std::is_same_v<T, IdentifyItem>)
+                    identifyItem(intent);
                 else if constexpr (std::is_same_v<T, UseBeltColumn>)
                     useBeltColumn(intent.column);
                 else if constexpr (std::is_same_v<T, CloseStorage>)
@@ -475,6 +478,10 @@ void GameSession::tick(float dt, Vec keyboard) {
                     unsigned limit = unsigned(equipmentActor().level) * 10000;
                     if (intent.amount && intent.amount <= limit - player.gold)
                         player.gold += intent.amount;
+                } else if constexpr (std::is_same_v<T, GoldTransaction>) {
+                    transactGold(intent);
+                } else if constexpr (std::is_same_v<T, DebugDropCube>) {
+                    dropDebugCube();
                 } else if constexpr (std::is_same_v<T, DebugGrantExperience>) {
                     grantExperience(intent.amount);
                 } else if constexpr (std::is_same_v<T, DebugUnlockWaypoints>) {
@@ -577,6 +584,7 @@ void GameSession::tick(float dt, Vec keyboard) {
                         player.skillRanks.clear(); player.unspentSkills = 0;
                         player.skillHotkeys = {};
                         player.gold = std::min(player.gold, 10000u);
+                        player.bankGold = std::min(player.bankGold, 50000u);
                         player.castTime = player.spinTime = player.leapTime = 0;
                         player.hitTime = player.meleeTime = 0;
                         player.attackTarget = {};
@@ -589,6 +597,7 @@ void GameSession::tick(float dt, Vec keyboard) {
                     }
                 } else if constexpr (std::is_same_v<T, MoveItem> || std::is_same_v<T, SwapItems> ||
                                      std::is_same_v<T, SplitStack> || std::is_same_v<T, MergeStacks> ||
+                                     std::is_same_v<T, LoadBook> ||
                                      std::is_same_v<T, EquipBelt> || std::is_same_v<T, TransferItem> ||
                                      std::is_same_v<T, EquipItem>)
                     executeInventory(command);

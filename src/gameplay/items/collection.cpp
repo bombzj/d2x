@@ -21,7 +21,8 @@ InventoryResult InventoryService::planTransfer(const TransferItem &command,
     auto destination = container(backpack);
     if (!destination ||
         (destination->spec.kind != ContainerKind::Backpack &&
-         destination->spec.kind != ContainerKind::Stash && destination->spec.kind != ContainerKind::Chest))
+         destination->spec.kind != ContainerKind::Stash && destination->spec.kind != ContainerKind::Chest &&
+         destination->spec.kind != ContainerKind::Cube))
         return failure(InventoryError::UnknownContainer);
     if (auto error = checkDestinationAccess(AutoPlace{backpack}, access); error != InventoryError::None)
         return failure(error);
@@ -34,7 +35,6 @@ InventoryResult InventoryService::planTransfer(const TransferItem &command,
         for (auto id : contents(backpack)) {
             const auto &target = state_.items.at(id);
             if (target.definition != source.definition || target.quality != source.quality ||
-                target.level != source.level || target.durability != source.durability ||
                 target.quantity == definition.maxStack)
                 continue;
             if (auto error = checkHandle(target.handle()); error != InventoryError::None)

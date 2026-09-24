@@ -22,6 +22,7 @@ void debugItemInspect(const nlohmann::json &request, nlohmann::json &result,
     result["item"] = {{"id", item->id.value}, {"revision", item->revision},
                       {"code", item->definition}, {"name", definition->name},
                       {"quantity", item->quantity}, {"level", item->level},
+                      {"charges", item->charges},
                       {"durability", item->durability}, {"maxDurability", definition->maxDurability},
                       {"defense", item->defense}, {"quality", qualities.at(size_t(item->quality))},
                       {"identified", item->identified},
@@ -74,7 +75,8 @@ void debugItemMove(const nlohmann::json &request, nlohmann::json &result,
     if (to == "backpack") container = containers.backpack;
     else if (to == "belt") container = containers.belt;
     else if (to == "stash") container = containers.stash;
-    else throw std::runtime_error("to must be backpack, belt, or stash");
+    else if (to == "cube") container = containers.cube;
+    else throw std::runtime_error("to must be backpack, belt, stash, or cube");
     const bool hasX = request.contains("x"), hasY = request.contains("y");
     if (hasX != hasY)
         throw std::runtime_error("x and y must be supplied together");
@@ -84,12 +86,16 @@ void debugItemMove(const nlohmann::json &request, nlohmann::json &result,
                                                     request.at("y").get<int>()}};
     if (!hasX && source->container == container)
         throw std::runtime_error("Specify x and y to move within the same container");
+    const auto target = hasX ? session.inventory().itemAt(container,
+        {request.at("x").get<int>(), request.at("y").get<int>()}) : EntityId{};
 
     GameCommand intent;
     if (source->container == containers.equipment)
         intent = EquipItem{item->handle(), std::nullopt, destination};
     else if (source->container == containers.beltEquipment)
         intent = EquipBelt{item->handle(), destination};
+    else if (target && target != item->id)
+        intent = MergeStacks{item->handle(), session.inventory().item(target)->handle()};
     else if (!hasX && to != "belt")
         intent = TransferItem{item->handle(), container};
     else

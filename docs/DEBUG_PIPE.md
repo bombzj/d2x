@@ -77,7 +77,7 @@ $spawn = .\scripts\Send-D2XCommand.ps1 -Command monster-spawn -Arguments @{monst
 
 `aiRunning` 表示 Corrupt Rogue 当前跑步动作；`aiAdvanceRemaining` 表示 Corrupt Rogue、Skeleton Bow 或 Skeleton Mage 当前路径决策的剩余距离。可定点生成 `corruptrogue1`，逐帧推进并用 `monsters` 观察；该状态只在本局维持。
 
-`monsters` 的 `hostileProjectiles` 统计该怪物仍在飞行的敌方弹体；`aiRetaliate` 表示 Quill Rat 受击后待 A2 回击。可定点生成 `quillrat1` 后推进 6 帧观察原 `spike1` 发射，在本局继续推进观察命中；这两项状态不会进入 v81 角色存档。`aiEscaping` 对 Quill Rat 也表示其按 MPQ `aip4` 距离后撤。
+`monsters` 的 `hostileProjectiles` 统计该怪物仍在飞行的敌方弹体；`aiRetaliate` 表示 Quill Rat 受击后待 A2 回击。可定点生成 `quillrat1` 后推进 6 帧观察原 `spike1` 发射，在本局继续推进观察命中；这两项状态不会进入 v82 角色存档。`aiEscaping` 对 Quill Rat 也表示其按 MPQ `aip4` 距离后撤。
 
 普通怪物的 `combat` 返回共用三难度 MPQ 解析后的等级、生命区间、可用的 A1／A2 `[最小伤害, 最大伤害, 命中]`、防御、暴击、再生和六项抗性。原表缺少某攻击模式时省略该模式；缺命中或防御列时相应位置为 `null`。`combat.elements` 返回有完整数值的 `El1–3` 模式、元素种类、概率、伤害区间及持续帧数；`status.player.chill` 是冰冷剩余秒数，`poisonRemaining` 与 `poisonPerSecond` 是毒素剩余秒数和每秒伤害。这些字段与游戏使用同一解析结果，不是调试接口另算的一套数值。
 
@@ -92,9 +92,9 @@ $spawn = .\scripts\Send-D2XCommand.ps1 -Command monster-spawn -Arguments @{monst
 .\scripts\Send-D2XCommand.ps1 -Command item -Arguments @{ id = 1200 } | ConvertTo-Json -Depth 8
 ```
 
-`pickup` 仍需正常寻路和容量，`ticks` 到上限时返回 `queued=true` 表示仍在靠近。`item-move` 的 `to` 可为 `backpack`、`belt`、`stash`；同时指定从 0 开始的 `x`、`y` 则放入目标格，不指定则自动放置。跨容器自动放入背包／储物箱沿用堆叠合并，源 ID 可能消失，响应会标明 `removedByMerge`；同容器移动需指定格子。从装备栏移出会走正式卸装，储物箱仍须正常开启。装备栏入口用 `equip` 的原部位代码，省略 `slot` 表示卸下入背包；`belt` 槽也受腰带专用事务约束。`use` 返回使用成功的物品 ID。
+`pickup` 仍需正常寻路和容量，`ticks` 到上限时返回 `queued=true` 表示仍在靠近。`item-move` 的 `to` 可为 `backpack`、`belt`、`stash`、`cube`；同时指定从 0 开始的 `x`、`y` 则放入目标格，不指定则自动放置。跨容器自动放入背包／储物箱／方块沿用堆叠合并，源 ID 可能消失，响应会标明 `removedByMerge`；同容器移动需指定格子；指定同类堆叠所在格会执行合并。从装备栏移出会走正式卸装，储物箱仍须正常开启，方块必须在背包中。装备栏入口用 `equip` 的原部位代码，省略 `slot` 表示卸下入背包；`belt` 槽也受腰带专用事务约束。`use` 返回使用成功的物品 ID。
 
-`item` 只读查询单件实例的品质原行、词缀行、属性掷值、位置及从 MPQ 适配的外观 token；`status` 同时给出本局出现过的暗金原行数量（含不限量行）和当前人物合成缺资源提示，便于对照穿脱与恢复前后的状态。
+`item` 只读查询单件实例的品质原行、词缀行、属性掷值、书的页数、位置及从 MPQ 适配的外观 token；`status` 给出钱包和私人箱金币，以及本局出现过的暗金原行数量。
 
 调试职业可在角色存活时切换。`Ctrl+Alt+C` 按 MPQ `CharStats` 的职业顺序循环；管道省略 `class` 也循环，指定原表职业名则直达：
 
@@ -138,7 +138,7 @@ $offers = (.\scripts\Send-D2XCommand.ps1 -Command shop -Arguments @{ id = $vendo
 | exits | 无 | 当前出口名称、slot、访问坐标与启用状态 |
 | view | `x`、`y` | 只移动相机并查询附近墙格键值与隐藏标志；下一次模拟步恢复跟随，不修改玩家位置 |
 | equip | `id`，可选 `slot` | 正式预览及提交装备事务；如 rarm/larm/belt，省略 slot 则卸下入包；不推进世界时间 |
-| item-move | `id`、`to`，可选成对 `x`、`y` | 背包、腰带、已开启储物箱间移动；也可从装备栏卸下到指定容器，正式预览后提交，不推进世界时间 |
+| item-move | `id`、`to`，可选成对 `x`、`y` | 背包、腰带、已开启储物箱、已携带方块间移动；也可从装备栏卸下到指定容器，指定已占用的同类堆叠格会合并，正式预览后提交，不推进世界时间 |
 | travel | `level` | 调试自由传到已实现地图，优先落在原传送点旁；不检查或写入激活记录 |
 | waypoint | `id`、`level` | 正常传送点命令，id 是当前区域源点；校验距离／通路、两端激活及玩家状态，拒绝时返回错误 |
 | interact | `id`，可选 `ticks` 1–250 | 正常走近对象交互；返回是否已开启、仍在寻路；NPC 首先打开交互菜单 |
@@ -147,9 +147,14 @@ $offers = (.\scripts\Send-D2XCommand.ps1 -Command shop -Arguments @{ id = $vendo
 | talk | 无 | 在已打开的 NPC 菜单中选择 Talk，返回原 MPQ 对话文本与排版行数 |
 | gossip | 无 | 已打开的 NPC 菜单或对话切换到下一段原 MPQ 通用闲聊，返回文本和排版行数；不改变玩法状态 |
 | identify | 凯恩对象 `id` | 需先正常交谈且在范围内；按未完成任务档位每件 100 金币鉴定背包和装备中的物品，返回数量和扣款 |
-| shop | 商人对象 `id` | 查询原 MPQ 货架报价、常驻／已售状态；该 NPC 菜单已打开时进入货架界面 |
-| buy | 商人对象 `id`、货架 `slot` | 需先正常交谈且在范围内；按报价扣金币并正式创建背包物品，随机货品售出后不可重购 |
+| shop | 商人对象 `id` | 查询原 MPQ 货架报价、`storePage`、常驻／已售状态；该 NPC 菜单已打开时进入货架界面 |
+| buy | 商人对象 `id`、货架 `slot` | 需先正常交谈并保持同区商店会话；按报价扣金币并正式创建背包物品，随机货品售出后不可重购 |
 | grant-gold | `amount` | 增加钱包金币，仍遵守当前角色等级对应的携带上限，便于检验需付费的 NPC 服务 |
+| gold-transfer | `action` 为 `deposit`／`withdraw`／`drop`，`amount` | 正式金币存取／丢弃；存取需先正常打开私人箱，丢弃受 MPQ 单堆上限约束 |
+| cube-drop | 无 | 调试快捷投放一件原 MPQ 方块于人物脚边；已有方块时拒绝。对应按键 `Ctrl+Alt+B` |
+| cube-open | 无 | 角色已把方块拾入背包时打开原面板，返回随身容器 ID |
+| book-load | `scroll`、`book` 物品 ID | 用正式装书事务把对应卷轴放入书，返回页数 |
+| identify-item | `source` 为鉴定卷轴／书、`target` 为未鉴定物品 ID | 消耗卷轴／一页并鉴定目标，返回鉴定结果 |
 | grant-experience | `amount` | 增加经验并依照运行时 MPQ `Experience.txt` 的当前职业阈值升级；达到 `MaxLvl` 时封顶；每升一级增加一个未用技能点 |
 | unlock-waypoints | 无 | 激活当前 MPQ 所建区域中实际存在的传送点，返回激活的区域 ID；对应快捷键 `Ctrl+Alt+W` |
 | allocate-attribute | `attribute`：`strength`／`dexterity`／`vitality`／`energy` | 正式分配一个未用属性点；角色面板和装备需求同步刷新 |
@@ -162,7 +167,7 @@ $offers = (.\scripts\Send-D2XCommand.ps1 -Command shop -Arguments @{ id = $vendo
 | character-panel | 可选 `open` 布尔值，默认 true | 打开或关闭角色面板，便于结合 `screenshot` 对照职业外观和数值 |
 | skill-tree | 可选 `open` 布尔值和 `page` 1–3 | 打开或关闭当前职业技能树并切到指定页，便于结合 `screenshot` 查看布局 |
 | skill-picker | 可选 `open`、`right` 布尔值，默认 true | 打开或关闭左／右技能菜单，便于结合 `screenshot` 查看图标与快捷键标签 |
-| use | `id` | 正常物品预览和使用，返回 `used`；支持背包回城卷轴，城镇使用拒绝 |
+| use | `id` | 正常物品预览和使用，返回 `used`；支持背包回城卷轴和有页数的回城书，城镇使用拒绝 |
 | portal | `revision` | 正常走近当前蓝门；需使用 status 中当前版本，营地返程关闭双端点 |
 | kill | `id` | 仅击杀存活且当前屏幕范围内、已激活的指定怪物，玩家须存活；使用正常死亡事件及掉落结算 |
 | drop | `id` | 快速击杀当前区域已创建且存活的指定怪物，不要求可见或激活；不推进世界时间，经相同死亡和 MPQ 掉落结算，返回本次地面物品 |

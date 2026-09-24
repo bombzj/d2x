@@ -57,6 +57,7 @@ InventoryResult InventoryService::createItem(std::string_view code, unsigned qua
     ItemInstance instance;
     instance.definition = definition->code;
     instance.quantity = quantity;
+    instance.charges = definition->bookInitialCharges;
     instance.level = level;
     instance.quality = generation.quality;
     instance.identified = generation.quality != ItemQuality::Magic &&

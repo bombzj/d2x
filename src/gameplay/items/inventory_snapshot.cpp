@@ -11,12 +11,19 @@ void InventoryService::validateSnapshot(const InventoryState &state, const Playe
         if (!condition)
             throw std::runtime_error(std::string("Invalid save inventory: ") + reason);
     };
-    const std::array ids{containers.backpack, containers.belt, containers.stash, containers.beltEquipment,
-                         containers.equipment};
-    const std::array kinds{ContainerKind::Backpack, ContainerKind::Belt, ContainerKind::Stash,
-                           ContainerKind::BeltEquipment, ContainerKind::Equipment};
-    const std::array widths{10, 4, stashDimensions_.x, 2, int(EquipmentSlot::Count)};
-    const std::array heights{4, 0, stashDimensions_.y, 1, 1};
+    std::vector<EntityId> ids{containers.backpack, containers.belt, containers.stash,
+                              containers.beltEquipment, containers.equipment};
+    std::vector<ContainerKind> kinds{ContainerKind::Backpack, ContainerKind::Belt, ContainerKind::Stash,
+                                     ContainerKind::BeltEquipment, ContainerKind::Equipment};
+    std::vector<int> widths{10, 4, stashDimensions_.x, 2, int(EquipmentSlot::Count)};
+    std::vector<int> heights{4, 0, stashDimensions_.y, 1, 1};
+    if (cubeDimensions_.x > 0 && cubeDimensions_.y > 0) {
+        ids.push_back(containers.cube);
+        kinds.push_back(ContainerKind::Cube);
+        widths.push_back(cubeDimensions_.x);
+        heights.push_back(cubeDimensions_.y);
+    } else
+        require(!containers.cube, "cube container in classic profile");
     std::set<EntityId> unique(ids.begin(), ids.end());
     require(unique.size() == ids.size() && state.containers.size() == ids.size(), "player container set");
     std::map<EntityId, std::vector<bool>> occupied;
@@ -42,6 +49,7 @@ void InventoryService::validateSnapshot(const InventoryState &state, const Playe
         else
             require(item.defense == 0, "defense on non-armor item");
         require(item.quantity > 0 && item.quantity <= def->maxStack &&
+                    item.charges <= def->bookCapacity &&
                     item.durability <= def->maxDurability && item.revision > 0 && item.level > 0 &&
                     item.level <= 99 && int(item.quality) >= 0 &&
                     int(item.quality) <= int(ItemQuality::Inferior) &&
@@ -81,6 +89,8 @@ void InventoryService::validateSnapshot(const InventoryState &state, const Playe
         require(cell.x >= 0 && cell.y >= 0 && def->width <= c.columns && def->height <= c.rows &&
                     cell.x <= c.columns - def->width && cell.y <= c.rows - def->height,
                 "item rectangle");
+        if (c.kind == ContainerKind::Cube)
+            require(!def->opensCube, "nested cube");
         if (c.kind == ContainerKind::Belt)
             require(def->beltAllowed && def->width == 1 && def->height == 1, "belt item eligibility");
         if (c.kind == ContainerKind::BeltEquipment) {

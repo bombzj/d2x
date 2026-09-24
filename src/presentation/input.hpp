@@ -2,6 +2,7 @@
 #include "core/math.hpp"
 #include "gameplay/model/definitions.hpp"
 #include <array>
+#include <string>
 
 namespace d2x {
 inline constexpr size_t hotbarSlots = 8;
@@ -12,12 +13,15 @@ struct FrameInput {
     bool leftPressed = false, leftHeld = false, leftReleased = false, rightHeld = false, rightPressed = false;
     bool inventory = false, character = false, skillTree = false, shift = false, control = false, enter = false, focused = true;
     int quantityDelta = 0, pageDelta = 0;
+    std::string text;
+    bool backspace = false;
     bool showLoot = false;
     bool help = false, automap = false, travel = false, collision = false;
     bool pause = false, mute = false, run = false, restart = false, escape = false, screenshot = false;
     bool expandBelt = false, storage = false;
     bool save = false, load = false;
     bool debugGold = false, debugExperience = false;
+    bool debugCube = false;
     bool debugAttributes = false, debugTalents = false, debugCharacter = false;
     bool debugWaypoints = false;
     std::array<bool, 4> belt{};

@@ -41,6 +41,9 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
             debugItemInspect(request, result, session);
         } else if (command == "item-move") {
             debugItemMove(request, result, session, view);
+        } else if (command == "book-load" || command == "identify-item" ||
+                   command == "gold-transfer" || command == "cube-open") {
+            debugItemAction(command, request, result, session, view);
         } else if (command == "status") {
             const auto &state = session.state();
             result["player"] = {{"x", state.player.pos.x}, {"y", state.player.pos.y},
@@ -53,6 +56,7 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
                 {"webSlowPercent", state.player.webSlowPercent},
                 {"poisonPerSecond", state.player.poisonPerSecond},
                 {"gold", state.player.gold},
+                {"bankGold", state.player.bankGold},
                 {"class", state.player.characterClass},
                 {"experience", state.player.experience}, {"level", state.player.level},
                 {"unspentAttributes", state.player.unspentAttributes},
@@ -178,7 +182,8 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
             for (const auto &offer : *stock)
                 result["offers"].push_back({{"slot", offer.slot}, {"code", offer.code},
                     {"quantity", offer.quantity}, {"level", offer.level}, {"price", offer.price},
-                    {"defense", offer.defense}, {"permanent", offer.permanent},
+                    {"defense", offer.defense}, {"storePage", offer.storePage},
+                    {"permanent", offer.permanent},
                     {"sold", session.vendorOfferSold(id, offer.slot)}});
             if (view.ui().dialogueObject == id && view.ui().npcMenu)
                 view.openNpcShop();
@@ -231,6 +236,20 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
             session.submit(DebugGrantGold{amount});
             session.tick(0);
             result["gold"] = session.state().player.gold;
+        } else if (command == "cube-drop") {
+            session.submit(DebugDropCube{});
+            session.tick(0);
+            view.advance(0);
+            for (const auto &event : session.events())
+                if (auto failed = std::get_if<InteractionFailed>(&event); failed)
+                    throw std::runtime_error(failed->reason);
+            for (const auto &[id, item] : session.inventory().state().items)
+                if (item.definition == session.content().cubeCode &&
+                    std::holds_alternative<GroundLocation>(item.location)) {
+                    result["id"] = id.value;
+                    break;
+                }
+            if (!result.contains("id")) throw std::runtime_error("Cube was not dropped");
         } else if (command == "unlock-waypoints") {
             if (session.state().player.dead)
                 throw std::runtime_error("Dead player cannot activate waypoints");
@@ -447,7 +466,8 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
                 if (command == "ground" ? !ground || ground->region != session.state().area.region : ground != nullptr)
                     continue;
                 Json entry = {{"id", id.value}, {"revision", item.revision}, {"code", item.definition},
-                    {"quantity", item.quantity}, {"level", item.level}, {"durability", item.durability},
+                    {"quantity", item.quantity}, {"charges", item.charges},
+                    {"level", item.level}, {"durability", item.durability},
                     {"quality", qualityName(item.quality)}, {"identified", item.identified},
                     {"specialRow", item.specialRow}};
                 if (ground) { entry["x"] = ground->position.x; entry["y"] = ground->position.y; }
@@ -460,6 +480,7 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
                 result["items"].push_back(std::move(entry));
             }
             result["gold"] = session.state().player.gold;
+            result["bankGold"] = session.state().player.bankGold;
         } else if (command == "pickup") {
             const auto *item = session.inventory().item(entity());
             if (!item || !std::holds_alternative<GroundLocation>(item->location))

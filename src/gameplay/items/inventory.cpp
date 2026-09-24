@@ -66,6 +66,7 @@ EntityId InventoryService::createContainer(ContainerSpec specification) {
     case ContainerKind::Belt:
     case ContainerKind::Stash:
     case ContainerKind::Chest:
+    case ContainerKind::Cube:
         break;
     default:
         throw std::invalid_argument("Unknown inventory container kind");
@@ -82,6 +83,8 @@ PlayerContainers InventoryService::createPlayerContainers(EntityId player) {
     result.stash = createContainer({player, ContainerKind::Stash, stashDimensions_.x, stashDimensions_.y});
     result.beltEquipment = createContainer({player, ContainerKind::BeltEquipment, 2, 1});
     result.equipment = createContainer({player, ContainerKind::Equipment, int(EquipmentSlot::Count), 1});
+    if (cubeDimensions_.x > 0 && cubeDimensions_.y > 0)
+        result.cube = createContainer({player, ContainerKind::Cube, cubeDimensions_.x, cubeDimensions_.y});
     return result;
 }
 bool InventoryService::overlaps(const ItemDefinition &a, const ItemLocation &aPosition,
@@ -120,6 +123,8 @@ InventoryError InventoryService::checkAccess(const ItemLocation &location,
             return InventoryError::RestrictedItem;
         if (c->spec.kind == ContainerKind::Chest)
             return access.openContainer == c->id ? InventoryError::None : InventoryError::AccessDenied;
+        if (c->spec.kind == ContainerKind::Cube)
+            return access.portableContainer == c->id ? InventoryError::None : InventoryError::AccessDenied;
         if (c->spec.owner != access.actor)
             return InventoryError::AccessDenied;
         if (c->spec.kind == ContainerKind::Stash && access.openContainer != c->id)
@@ -154,6 +159,8 @@ InventoryError InventoryService::checkPlacement(const ItemDefinition &definition
     if (!c)
         return InventoryError::UnknownContainer;
     if (c->spec.kind == ContainerKind::BeltEquipment || c->spec.kind == ContainerKind::Equipment)
+        return InventoryError::RestrictedItem;
+    if (c->spec.kind == ContainerKind::Cube && definition.opensCube)
         return InventoryError::RestrictedItem;
     if (c->spec.kind == ContainerKind::Belt &&
         (!definition.beltAllowed || definition.width != 1 || definition.height != 1))

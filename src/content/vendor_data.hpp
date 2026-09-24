@@ -11,6 +11,7 @@ struct VendorItemRule {
     int level = 0;
     int minimum = 0, maximum = 0;
     int magicMinimum = 0, magicMaximum = 0, magicLevel = 255;
+    int storePage = -1;
     bool permanent = false, magicEligible = false;
 };
 struct VendorDefinition {

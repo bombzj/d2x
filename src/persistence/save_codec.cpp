@@ -133,7 +133,7 @@ class Codec {
         }
     }
 };
-// Explicit schema, never compiler struct layout. Version 81 is a character save,
+// Explicit schema, never compiler struct layout. Version 82 is a character save,
 // not an in-progress world snapshot.
 void fields(Codec &a, EntityId &v) {
     a(v.value);
@@ -146,7 +146,7 @@ void fields(Codec &a, AttributeAllocation &v) {
 }
 void fields(Codec &a, PlayerState &v) {
     a(v.id, v.characterClass, v.hp, v.mana, v.stamina, v.lastSkill,
-      v.running, v.combatRandom, v.nextWeapon, v.gold, v.experience,
+      v.running, v.combatRandom, v.nextWeapon, v.gold, v.bankGold, v.experience,
       v.level, v.allocated, v.unspentAttributes, v.skillRanks,
       v.unspentSkills, v.skillHotkeys);
 }
@@ -165,10 +165,10 @@ void fields(Codec &a, ContainerState &v) {
     a(v.id, v.spec);
 }
 void fields(Codec &a, PlayerContainers &v) {
-    a(v.backpack, v.belt, v.stash, v.beltEquipment, v.equipment);
+    a(v.backpack, v.belt, v.stash, v.beltEquipment, v.equipment, v.cube);
 }
 void fields(Codec &a, ItemInstance &v) {
-    a(v.id, v.definition, v.quantity, v.durability, v.quality, v.identified, v.level, v.revision, v.defense,
+    a(v.id, v.definition, v.quantity, v.durability, v.charges, v.quality, v.identified, v.level, v.revision, v.defense,
       v.specialRow, v.requiredLevel, v.gradeRow, v.rarePrefixRow, v.rareSuffixRow, v.grantedSkill,
       v.propertyRolls, v.affixes);
     ContainerLocation location;
@@ -210,7 +210,7 @@ Bytes encodeSave(SessionSnapshot snapshot) {
     Codec body;
     body(snapshot);
     auto bytes = body.take();
-    uint32_t version = 81, size = uint32_t(bytes.size()), crc = checksum(bytes);
+    uint32_t version = 82, size = uint32_t(bytes.size()), crc = checksum(bytes);
     Codec header;
     header(version, size, crc);
     auto headerBytes = header.take();
@@ -229,8 +229,8 @@ SessionSnapshot decodeSave(std::span<const uint8_t> bytes) {
     Codec header(bytes.subspan(sizeof(magic), 12));
     uint32_t version = 0, size = 0, crc = 0;
     header(version, size, crc);
-    if (version != 81)
-        throw std::runtime_error("Unsupported D2X save version; character saves require version 81");
+    if (version != 82)
+        throw std::runtime_error("Unsupported D2X save version; character saves require version 82");
     auto payload = bytes.subspan(headerSize);
     if (size != payload.size() || crc != checksum(payload))
         throw std::runtime_error("Save checksum or length mismatch");

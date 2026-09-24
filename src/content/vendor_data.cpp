@@ -12,6 +12,21 @@ std::map<std::string, VendorDefinition, std::less<>> loadVendorData(
     const auto &npc = found->second;
     if (!npc.has("npc") || !npc.has("sell mult"))
         throw std::runtime_error("Original NPC trade table lacks vendor pricing");
+    const auto &pages = tables.at("storepage");
+    const auto &types = tables.at("itemtypes");
+    if (!pages.has("Code") || !pages.has("Store Page") || pages.rows().size() < 4 ||
+        !types.has("Code") || !types.has("StorePage"))
+        throw std::runtime_error("Original vendor page tables are incomplete");
+    std::map<std::string, int, std::less<>> pageByCode;
+    for (size_t row = 0; row < pages.rows().size(); ++row)
+        if (!pages.value(row, "Code").empty())
+            pageByCode.emplace(std::string(pages.value(row, "Code")), int(row));
+    std::map<std::string, int, std::less<>> pageByType;
+    for (size_t row = 0; row < types.rows().size(); ++row) {
+        auto page = pageByCode.find(types.value(row, "StorePage"));
+        if (!types.value(row, "Code").empty() && page != pageByCode.end())
+            pageByType.emplace(std::string(types.value(row, "Code")), page->second);
+    }
     for (size_t row = 0; row < npc.rows().size(); ++row) {
         std::string id(npc.value(row, "npc"));
         if (id.empty())
@@ -28,6 +43,9 @@ std::map<std::string, VendorDefinition, std::less<>> loadVendorData(
                 auto code = std::string(source.value(itemRow, "code"));
                 const auto *item = catalog.find(code);
                 if (!item || item->base.sourceTable != family || item->base.sourceRow != itemRow)
+                    continue;
+                auto page = pageByType.find(item->base.type);
+                if (page == pageByType.end())
                     continue;
                 auto minColumn = prefix + "Min", maxColumn = prefix + "Max";
                 if (!source.has(minColumn) || !source.has(maxColumn))
@@ -46,6 +64,7 @@ std::map<std::string, VendorDefinition, std::less<>> loadVendorData(
                     throw std::runtime_error("Invalid original vendor quantity: " + code);
                 vendor.items.push_back({code, item->base.level.value_or(0), minimum, maximum,
                                         magicMinimum, magicMaximum, magicLevel,
+                                        page->second,
                                         permanent,
                                         (source.number(itemRow, "bitfield1").value_or(0) & 1) != 0});
             }

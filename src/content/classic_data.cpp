@@ -34,12 +34,14 @@ ClassicData loadClassicData(Archives &archives) {
     tables.emplace(treasureName,
                    DataTable(archives.read(std::string("data/global/excel/") + treasureName + ".txt")));
     if (lod) {
+        tables.emplace("books", DataTable(archives.read("data/global/excel/books.txt")));
         tables.emplace("shrines", DataTable(archives.read("data/global/excel/shrines.txt")));
         tables.emplace("monlvl", DataTable(archives.read("data/global/excel/monlvl.txt")));
         tables.emplace("missiles", DataTable(archives.read("data/global/excel/missiles.txt")));
         if (archives.contains("data/global/excel/npc.txt"))
             tables.emplace("npc", DataTable(archives.read("data/global/excel/npc.txt")));
         tables.emplace("itemtypes", DataTable(archives.read("data/global/excel/itemtypes.txt")));
+        tables.emplace("storepage", DataTable(archives.read("data/global/excel/storepage.txt")));
         if (archives.contains("data/global/excel/itemratio.txt"))
             tables.emplace("itemratio", DataTable(archives.read("data/global/excel/itemratio.txt")));
         for (auto name : {"uniqueitems", "setitems", "sets", "magicprefix", "magicsuffix",
@@ -73,6 +75,8 @@ ClassicData loadClassicData(Archives &archives) {
             item.maxDurability = std::max(0, number("durability").value_or(0));
             item.beltAllowed = family == ItemFamily::Misc && number("belt").value_or(0) != 0;
             item.usable = number("useable").value_or(0) != 0;
+            item.opensCube = lod && family == ItemFamily::Misc &&
+                             value("type") == "ques" && number("pSpell") == 7;
             item.autoBelt = number("autobelt").value_or(0) != 0;
             if (!value("invfile").empty())
                 item.icon = "data/global/items/" + value("invfile") + ".dc6";
@@ -154,6 +158,27 @@ ClassicData loadClassicData(Archives &archives) {
         if (item.beltRows < 1 || item.beltRows > 4)
             throw std::runtime_error("Missing original belt layout: " + std::string(shape));
     }
+    if (lod) {
+        const auto &books = tables.at("books");
+        const auto &misc = tables.at("misc");
+        for (auto &item : items) {
+            if (item.base.type != "book") continue;
+            for (size_t row = 0; row < books.rows().size(); ++row) {
+                if (books.value(row, "BookSpellCode") != item.code) continue;
+                item.bookScroll = std::string(books.value(row, "ScrollSpellCode"));
+                item.bookCapacity = item.maxStack;
+                item.bookChargeCost = unsigned(std::max(0, books.number(row, "CostPerCharge").value_or(0)));
+                item.bookInitialCharges = unsigned(std::max(0, misc.number(item.base.sourceRow, "spawnstack").value_or(0)));
+                if (item.bookScroll.empty() || item.bookCapacity < 1 ||
+                    item.bookInitialCharges > item.bookCapacity)
+                    throw std::runtime_error("Invalid original book data: " + item.code);
+                item.maxStack = 1;
+                break;
+            }
+            if (item.bookScroll.empty())
+                throw std::runtime_error("Missing original books.txt mapping: " + item.code);
+        }
+    }
     loadItemAppearances(items, tables, armorTypes);
     if (lod)
         loadEquipmentDefinitions(items, tables.at("itemtypes"), tables);
@@ -183,6 +208,35 @@ ClassicData loadClassicData(Archives &archives) {
         data.stashLayout.left + data.stashLayout.columns * data.stashLayout.cellSize > 320 ||
         data.stashLayout.top + data.stashLayout.rows * data.stashLayout.cellSize > 432)
         throw std::runtime_error("Unsupported MPQ stash grid geometry");
+    if (lod) {
+        size_t cubeRow = 0;
+        for (; cubeRow < inventory.rows().size(); ++cubeRow)
+            if (inventory.value(cubeRow, "class") == "Transmogrify Box Page 1") break;
+        if (cubeRow == inventory.rows().size())
+            throw std::runtime_error("MPQ inventory.txt lacks the cube layout");
+        auto cubeNumber = [&](std::string_view field) {
+            auto value = inventory.number(cubeRow, field);
+            if (!value) throw std::runtime_error("Invalid MPQ cube layout field: " + std::string(field));
+            return *value;
+        };
+        data.cubeLayout = {cubeNumber("gridX"), cubeNumber("gridY"),
+                           cubeNumber("gridLeft"), cubeNumber("gridTop"),
+                           cubeNumber("gridBoxWidth"), true};
+        if (data.cubeLayout.columns < 1 || data.cubeLayout.rows < 1 ||
+            data.cubeLayout.cellSize != cubeNumber("gridBoxHeight") ||
+            data.cubeLayout.left < 0 || data.cubeLayout.top < 0 ||
+            data.cubeLayout.left + data.cubeLayout.columns * data.cubeLayout.cellSize > 320 ||
+            data.cubeLayout.top + data.cubeLayout.rows * data.cubeLayout.cellSize > 432)
+            throw std::runtime_error("Unsupported MPQ cube grid geometry");
+        const auto &misc = data.tables.at("misc");
+        for (size_t row = 0; row < misc.rows().size(); ++row)
+            if (misc.number(row, "pSpell") == 7 && misc.value(row, "type") == "ques") {
+                if (!data.cubeCode.empty()) throw std::runtime_error("Ambiguous original cube item");
+                data.cubeCode = std::string(misc.value(row, "code"));
+            }
+        if (data.cubeCode.empty() || !data.items.find(data.cubeCode))
+            throw std::runtime_error("MPQ lacks the original cube item");
+    }
     data.characters = loadCharacterDefinitions(data.tables.at("charstats"));
     if (lod) {
         data.tables.emplace("skilldesc", DataTable(archives.read("data/global/excel/skilldesc.txt")));

@@ -11,22 +11,24 @@ unsigned below(uint64_t &random, unsigned bound) {
 }
 }
 std::vector<VendorOffer> planVendorStock(const ClassicData &data, const VendorDefinition &vendor,
-                                         unsigned playerLevel, uint64_t seed) {
-    if (!playerLevel || playerLevel > 99 || vendor.sellMultiplier <= 0)
+                                         unsigned playerLevel, int difficulty, uint64_t seed) {
+    if (!playerLevel || playerLevel > 99 || difficulty < 0 || difficulty > 2 ||
+        vendor.sellMultiplier <= 0)
         throw std::runtime_error("Unsupported vendor stock parameters");
-    // Act I normal difficulty cap and item level come from SUnitNpc.cpp.
-    const unsigned level = std::min(playerLevel + 5, 12u);
+    // D2MOO SUnitNpc: only Normal applies the Act I level cap. At item level
+    // 25 and above the ordinary pool stops, while permanent goods remain.
+    const unsigned level = difficulty == 0 ? std::min(playerLevel + 5, 12u)
+                                           : std::min(playerLevel + 5, 99u);
     std::vector<VendorOffer> offers;
     unsigned randomCount = 0;
     // SUnitNpc.cpp creates normal/magic pools first, then a separate permanent
     // pool. A row may contribute to both pools.
     for (bool permanent : {false, true}) {
         for (const auto &rule : vendor.items) {
-            if (permanent ? !rule.permanent : !rule.maximum)
+            if (permanent ? !rule.permanent : (!rule.maximum || level >= 25))
                 continue;
             const auto *item = data.items.find(rule.code);
             if (!item || !item->artAvailable || rule.level > int(level) ||
-                item->equipment.isType("book") ||
                 !item->base.cost || *item->base.cost < 0)
                 continue;
             unsigned count = permanent ? 1u :
@@ -56,6 +58,9 @@ std::vector<VendorOffer> planVendorStock(const ClassicData &data, const VendorDe
                 }
                 // D2Common uses npc.txt SellMult for a player buying from a vendor.
                 uint64_t price = base * unsigned(vendor.sellMultiplier) / 1024;
+                if (item->bookCapacity)
+                    price += uint64_t(item->bookInitialCharges) * item->bookChargeCost *
+                             unsigned(vendor.sellMultiplier) / 1024;
                 if (!item->equipment.quiver.empty())
                     price = uint64_t(quantity) * unsigned(*item->base.cost) / 1024 *
                             unsigned(vendor.sellMultiplier) / 1024;
@@ -65,7 +70,7 @@ std::vector<VendorOffer> planVendorStock(const ClassicData &data, const VendorDe
                 if (price > std::numeric_limits<unsigned>::max())
                     continue;
                 offers.push_back({uint32_t(offers.size() + 1), rule.code, quantity, level,
-                                  unsigned(price), defense, permanent});
+                                  unsigned(price), defense, rule.storePage, permanent});
             }
             // MagicMin/MagicMax are retained in typed MPQ definitions. Magic
             // items require full bonus-stat pricing before they can be sold.

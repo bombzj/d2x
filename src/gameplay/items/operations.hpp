@@ -63,6 +63,12 @@ struct EquipItem {
 struct UseItem {
     ItemHandle item;
 };
+struct LoadBook {
+    ItemHandle scroll, book;
+};
+struct IdentifyItem {
+    ItemHandle source, target;
+};
 struct UseBeltColumn {
     int column;
 };

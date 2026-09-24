@@ -40,7 +40,7 @@ struct PlayerState {
     bool running = true, moving = false, dead = false;
     uint64_t combatRandom = (uint64_t(666) << 32) | 210;
     unsigned nextWeapon = 0;
-    unsigned gold = 0;
+    unsigned gold = 0, bankGold = 0;
     uint64_t experience = 0;
     int level = 1;
     AttributeAllocation allocated;

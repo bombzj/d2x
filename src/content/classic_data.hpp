@@ -41,6 +41,8 @@ struct ClassicData {
     std::array<int, 3> staticFieldMinimum{};
     std::array<int, 3> resistancePenalty{};
     StashLayout stashLayout;
+    StashLayout cubeLayout;
+    std::string cubeCode;
     // Class name -> level-indexed cumulative XP thresholds from Experience.txt.
     std::map<std::string, std::vector<uint64_t>, std::less<>> experienceByClass;
     std::vector<ClassicTreasureClass> treasures;
@@ -57,11 +59,13 @@ struct ClassicData {
     std::vector<QualityGradeRecord> superiorGrades, inferiorGrades;
     std::map<std::string, PotionDefinition, std::less<>> potions;
     std::set<std::string, std::less<>> portalScrolls;
+    std::set<std::string, std::less<>> identifyScrolls;
     const PotionDefinition *potion(std::string_view code) const {
         auto found = potions.find(code);
         return found == potions.end() ? nullptr : &found->second;
     }
     bool isPortalScroll(std::string_view code) const { return portalScrolls.contains(code); }
+    bool isIdentifyScroll(std::string_view code) const { return identifyScrolls.contains(code); }
 };
 ClassicData loadClassicData(Archives &archives);
 void loadLodTreasureData(ClassicData &data);

@@ -17,6 +17,10 @@ void loadItemConsumables(ClassicData &data) {
             data.portalScrolls.emplace(std::string(code));
             continue;
         }
+        if (spell == 1 && item->equipment.isType("scro")) {
+            data.identifyScrolls.emplace(std::string(code));
+            continue;
+        }
         auto stat = table.value(row, "stat1");
         auto amount = table.number(row, "calc1");
         auto frames = table.number(row, "len");

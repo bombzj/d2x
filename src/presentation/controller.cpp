@@ -91,6 +91,10 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
             if (amount) session_.submit(DebugGrantGold{amount});
             view_.notice(amount ? "Gold +" + std::to_string(amount) : "Gold wallet is full.");
         }
+        if (input.debugCube) {
+            session_.submit(DebugDropCube{});
+            view_.notice("Dropping the original cube near your feet.");
+        }
         if (input.debugExperience) {
             auto remaining = session_.maximumExperience() - session_.state().player.experience;
             auto amount = std::min<uint64_t>(1000, remaining);
@@ -124,14 +128,32 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
     }
     if (ui.shopOpen) {
         if (input.escape) {
-            ui.shopOpen = false;
-            ui.npcMenu = true;
-            ui.inventory.open = false;
+            if (ui.shopConfirm)
+                ui.shopConfirm.reset();
+            else {
+                ui.shopOpen = false;
+                ui.npcMenu = true;
+                ui.inventory.open = false;
+            }
         } else {
             if (input.pageDelta) view_.scrollNpcShop(-input.pageDelta);
-            if (input.insideViewport && input.leftPressed)
+            if (!ui.shopConfirm && input.insideViewport && input.leftPressed &&
+                CheckCollisionPointRec(rv(input.mouse), inventoryClose())) {
+                ui.shopOpen = false;
+                ui.npcMenu = true;
+                ui.inventory.open = false;
+            } else if (input.enter && ui.shopConfirm) {
+                const auto slot = *ui.shopConfirm;
+                ui.shopConfirm.reset();
+                session_.submit(BuyVendorItem{ui.dialogueObject, slot});
+            } else if (input.insideViewport && input.leftPressed) {
                 if (auto slot = view_.clickNpcShop(input.mouse))
                     session_.submit(BuyVendorItem{ui.dialogueObject, *slot});
+            } else if (input.insideViewport && input.rightPressed) {
+                inventoryRight_ = true;
+                if (auto slot = view_.clickNpcShop(input.mouse, true))
+                    session_.submit(BuyVendorItem{ui.dialogueObject, *slot});
+            }
         }
         return true;
     }
@@ -160,6 +182,7 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
         ui.skillPicker.reset();
         session_.submit(CloseStorage{});
         ui.inventory.storage = {};
+        ui.inventory.cubeOpen = false;
         ui.travelMenu = !ui.travelMenu;
         ui.inventory.cancelGesture();
         ui.inventory.open = false;
@@ -234,6 +257,7 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
     if (input.restart) {
         ui.skillPicker.reset();
         ui.inventory.storage = {};
+        ui.inventory.cubeOpen = false;
         ui.help = ui.pause = ui.travelMenu = false;
         ui.inventory.cancelGesture();
         ui.inventory.open = false;

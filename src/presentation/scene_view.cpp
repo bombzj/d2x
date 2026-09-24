@@ -168,6 +168,7 @@ void SceneView::advance(float dt) {
                     view_.inventory.pending = {};
                     view_.inventory.open = false;
                     view_.inventory.storage = {};
+                    view_.inventory.cubeOpen = false;
                     landingAge_.clear();
                     view_.noticeTime = 0;
                     view_.camera = project(session_.state().player.pos);
@@ -183,12 +184,14 @@ void SceneView::advance(float dt) {
                     view_.inventory.cancelGesture();
                     view_.inventory.open = false;
                     view_.inventory.storage = {};
+                    view_.inventory.cubeOpen = false;
                 } else if constexpr (std::is_same_v<T, StorageOpened>) {
                     auto &ui = view_.inventory;
                     view_.skillTreeOpen = false;
                     ui.cancelGesture();
                     ui.open = true;
                     ui.storage = value.container;
+                    ui.cubeOpen = false;
                     view_.dialogue.clear();
                     view_.travelMenu = view_.help = false;
                     view_.clickAge = 10;
@@ -204,7 +207,9 @@ void SceneView::advance(float dt) {
                 } else if constexpr (std::is_same_v<T, LootDeferred>) {
                     notice("Loot deferred: " + value.reason, true);
                 } else if constexpr (std::is_same_v<T, ItemUsed>) {
-                    if (!session_.content().isPortalScroll(value.definition))
+                    const auto *usedDefinition = session_.inventory().catalog().find(value.definition);
+                    if (!session_.content().isPortalScroll(value.definition) &&
+                        (!usedDefinition || !session_.content().isPortalScroll(usedDefinition->bookScroll)))
                         assets_.audio.play("drink");
                     const auto *def = session_.inventory().catalog().find(value.definition);
                     notice("Used: " + (def ? def->name : value.definition), false);
@@ -287,10 +292,21 @@ void SceneView::advance(float dt) {
                             location->container == session_.playerContainers().belt ||
                             location->container == session_.playerContainers().beltEquipment ||
                             location->container == session_.playerContainers().equipment ||
+                            location->container == session_.playerContainers().cube ||
                             location->container == view_.inventory.storage);
     };
     if (!inBackpack(view_.inventory.selected))
         view_.inventory.selected = {};
+    if (view_.inventory.cubeOpen) {
+        bool carried = false;
+        for (auto id : session_.inventory().contents(session_.playerContainers().backpack))
+            if (session_.inventory().item(id)->definition == session_.content().cubeCode)
+                carried = true;
+        if (!carried) {
+            view_.inventory.cubeOpen = false;
+            view_.inventory.cancelGesture();
+        }
+    }
     const auto &portal = session_.state().portal;
     if (portal.active && portal.revision != view_.portalRevision) {
         view_.portalRevision = portal.revision;

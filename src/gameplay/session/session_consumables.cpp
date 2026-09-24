@@ -2,6 +2,27 @@
 #include <limits>
 
 namespace d2x {
+void GameSession::identifyItem(const IdentifyItem &command) {
+    if (auto error = previewInventory(command); error != InventoryError::None) {
+        simulation_.emit(InventoryRejected{command.source.id, error});
+        return;
+    }
+    const auto &source = *inventory_.item(command.source.id);
+    const bool book = !inventory_.catalog().find(source.definition)->bookScroll.empty();
+    auto consumed = book ? inventory_.consumeBookCharge(command.source, inventoryAccess())
+                         : inventory_.consume(command.source, 1, inventoryAccess());
+    if (!consumed) {
+        publishInventory(std::move(consumed), command.source.id);
+        return;
+    }
+    auto &target = inventory_.state_.items.at(command.target.id);
+    target.identified = true;
+    ++target.revision;
+    consumed.item = target.id;
+    consumed.changes.push_back({target.id, target.revision, ItemChangeKind::QuantityChanged,
+                                target.location, target.location, target.quantity});
+    publishInventory(std::move(consumed), command.source.id);
+}
 void GameSession::useItem(ItemHandle handle) {
     auto error = previewInventory(UseItem{handle});
     if (error != InventoryError::None) {
@@ -9,11 +30,14 @@ void GameSession::useItem(ItemHandle handle) {
         return;
     }
     auto code = inventory_.item(handle.id)->definition;
-    if (content_.isPortalScroll(code)) {
+    const auto *definition = inventory_.catalog().find(code);
+    if (content_.isPortalScroll(code) || content_.isPortalScroll(definition->bookScroll)) {
         auto &portal = simulation_.state_.portal;
         TownPortalState next{true, portal.revision + 1, region().definition.id,
                              state().player.pos, *townPortalArrival_};
-        auto result = inventory_.consume(handle, 1, inventoryAccess());
+        auto result = definition->bookScroll.empty()
+                          ? inventory_.consume(handle, 1, inventoryAccess())
+                          : inventory_.consumeBookCharge(handle, inventoryAccess());
         if (result) {
             cancelExit();
             cancelPickup();
@@ -41,7 +65,9 @@ InventoryError GameSession::previewPortalScroll(ItemHandle handle) const {
     const auto *item = inventory_.item(handle.id);
     auto location = std::get_if<ContainerLocation>(&item->location);
     const auto &player = state().player;
-    if (!location || location->container != playerContainers_.backpack || player.dead ||
+    if (!location || location->container != playerContainers_.backpack ||
+        (!inventory_.catalog().find(item->definition)->bookScroll.empty() && !item->charges) ||
+        player.dead ||
         player.hp <= 0 || region().definition.safe || player.leapTime > 0 || player.spinTime > 0 ||
         player.castTime > 0 || player.meleeTime > 0)
         return InventoryError::AccessDenied;

@@ -90,6 +90,11 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
         : "data/global/ui/panel/bank.dc6");
     if (storagePanel.frames.size() < 4)
         throw std::runtime_error("Original stash panel artwork is missing from the mounted MPQ");
+    if (!session.content().cubeCode.empty()) {
+        cubePanel = graphics_.single("data/global/ui/panel/supertransmogrifier.dc6");
+        if (cubePanel.frames.size() < 4)
+            throw std::runtime_error("Original cube panel artwork is missing from the mounted MPQ");
+    }
     beltPanel = graphics_.single("data/global/ui/panel/ctrlpnl_popbelt.dc6");
     beltSocket = graphics_.single("data/global/ui/panel/inv_belt.dc6");
     orbs = uiGraphics_.single("data/global/ui/panel/hlthmana.dc6");

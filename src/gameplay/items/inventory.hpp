@@ -9,6 +9,7 @@ class InventoryService {
     ItemCatalog catalog_;
     InventoryState state_;
     Cell stashDimensions_;
+    Cell cubeDimensions_;
     void validateSnapshot(const InventoryState &state, const PlayerContainers &containers,
                           EntityId player) const;
     InventoryError checkHandle(ItemHandle handle) const;
@@ -30,8 +31,9 @@ class InventoryService {
                                   InventoryState *replacement) const;
 
   public:
-    InventoryService(EntityIds &ids, ItemCatalog catalog, Cell stashDimensions)
-        : ids_(ids), catalog_(std::move(catalog)), stashDimensions_(stashDimensions) {}
+    InventoryService(EntityIds &ids, ItemCatalog catalog, Cell stashDimensions, Cell cubeDimensions)
+        : ids_(ids), catalog_(std::move(catalog)), stashDimensions_(stashDimensions),
+          cubeDimensions_(cubeDimensions) {}
     InventoryService(const InventoryService &) = delete;
     InventoryService &operator=(const InventoryService &) = delete;
     const InventoryState &state() const { return state_; }
@@ -76,6 +78,9 @@ class InventoryService {
     InventoryResult swap(const SwapItems &command, const InventoryAccess &access);
     InventoryResult split(const SplitStack &command, const InventoryAccess &access);
     InventoryResult merge(const MergeStacks &command, const InventoryAccess &access);
+    InventoryError preview(const LoadBook &command, const InventoryAccess &access) const;
+    InventoryResult loadBook(const LoadBook &command, const InventoryAccess &access);
+    InventoryResult consumeBookCharge(ItemHandle book, const InventoryAccess &access);
     InventoryResult consume(ItemHandle item, unsigned quantity, const InventoryAccess &access);
     // Trusted combat consumption; ordinary UI consume cannot address equipment slots.
     InventoryResult consumeEquipped(EntityId item, const PlayerContainers &containers);

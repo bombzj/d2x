@@ -75,6 +75,7 @@ class SceneView {
     void drawInventory(Vec mouse) const;
     void drawCharacter(Vec mouse) const;
     void drawStorage(Vec mouse) const;
+    void drawCube(Vec mouse) const;
     void drawContainerGrid(const ContainerGrid &grid, Vec mouse) const;
     void drawBelt(Vec mouse) const;
     void drawItemTooltip(const ItemInstance &item, Vec anchor) const;
@@ -110,7 +111,7 @@ class SceneView {
     int clickNpcMenu(Vec mouse);
     void scrollNpcDialogue(int amount);
     void closeNpcDialogue();
-    std::optional<uint32_t> clickNpcShop(Vec mouse);
+    std::optional<uint32_t> clickNpcShop(Vec mouse, bool directBuy = false);
     std::optional<RegionId> clickWaypointMenu(Vec mouse);
     void scrollNpcShop(int pages);
     bool showNextNpcGossip();

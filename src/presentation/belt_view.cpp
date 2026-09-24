@@ -91,6 +91,10 @@ void SceneView::drawItemTooltip(const ItemInstance &item, Vec anchor) const {
             break;
         }
         lines.push_back("Right-click to drink");
+    } else if (definition.bookCapacity) {
+        lines.push_back("Scrolls: " + std::to_string(item.charges) + " / " +
+                        std::to_string(definition.bookCapacity));
+        lines.push_back("Drag matching scrolls onto this tome");
     } else if (definition.beltRows) {
         lines.push_back("Belt capacity: " + std::to_string(4 * definition.beltRows) + " potions / scrolls");
         lines.push_back("Right-click to equip / remove");
