@@ -1,8 +1,8 @@
 # 开发与交接
 
-当前源码存档 v48／规则 v76。普通怪物三难度生命、近战伤害／命中、防御、抗性、暴击、再生和 `El1–3` 按原表共用解析；`brute1`、`zombie1–5`、`skeleton1–5`、`fallen1–2` 使用原动作及 MPQ 所列声音。僵尸、骷髅和沉沦魔同族变体分别共用各自 AI，按 `MonStats.TransLvl` 选择原 `palshift.dat` 颜色映射；火焰、闪电、冰冷与毒素命中接通用元素攻击，冰冷与毒素保存角色持续状态。Fallen 家族在原死亡动作期间见附近尸体后逃离，使用原 AI 参数发同组命令并播放 MPQ S2 喊叫。其他普通怪物仍保留真实身份与类型替身。分工和下一种怪物的条件见 [怪物实施计划](../MONSTERS.md)；精英、固定首领、Boss 和通用逐帧 AI 调度仍待逐项核对。旧存档不迁移。
+当前源码存档 v49／规则 v77。普通怪物三难度生命、近战伤害／命中、防御、抗性、暴击、再生和 `El1–3` 按原表共用解析；`brute1`、`zombie1–5`、`skeleton1–5`、`fallen1–3` 使用原动作及 MPQ 所列声音。僵尸、骷髅和沉沦魔同族变体分别共用各自 AI，按 `MonStats.TransLvl` 选择原 `palshift.dat` 颜色映射；火焰、闪电、冰冷与毒素命中接通用元素攻击，冰冷与毒素保存角色持续状态。Fallen 家族在原死亡动作期间见附近尸体后逃离，使用原 AI 参数发同组命令并播放 MPQ S2 喊叫。其他普通怪物仍保留真实身份与类型替身。分工和下一种怪物的条件见 [怪物实施计划](../MONSTERS.md)；精英、固定首领、Boss 和通用逐帧 AI 调度仍待逐项核对。旧存档不迁移。
 
-Windows Release 构建通过。完整六 MPQ 目录 `dist/d2x-runtime-20260924-v48-fallen2/` 在黑色荒地与邪恶洞窟启动；`fallen2` 原形 `substitute=false`、`sourceAi=Fallen`，一帧后 S2 剩余 0.72 秒，v48 存读档正常，击杀获得 42 经验。开阔场景原调色截图保存于 `artifacts/monster-smoke/fallen2-v48-in-view.png`。噩梦／地狱 A1 冰冷概率已从 MPQ 接入共享元素路径，现场未单独测高难度触发。运行目录与截图不提交，不生成 ZIP 或测试脚本／用例。音频播放效果仍待用户实机听验。
+Windows Release 构建通过。完整六 MPQ 目录 `dist/d2x-runtime-20260924-v49-fallen3/` 在邪恶洞窟启动；`fallen3` 原形 `substitute=false`、`sourceAi=Fallen`，一帧后 S2 剩余 0.72 秒，v49 存读档正常，击杀获得 46 经验。原调色截图保存于 `artifacts/monster-smoke/fallen3-v49-in-view.png`。噩梦／地狱 A1 闪电概率已从 MPQ 接入共享元素路径，现场未单独测高难度触发。运行目录与截图不提交，不生成 ZIP 或测试脚本／用例。音频播放效果仍待用户实机听验。
 
 ## 当前交接状态
 

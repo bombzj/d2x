@@ -2,7 +2,7 @@
 
 namespace d2x {
 MonsterImplementation monsterImplementation(const std::string &code) {
-    if (code == "fallen1" || code == "fallen2")
+    if (code == "fallen1" || code == "fallen2" || code == "fallen3")
         return {MonsterKind::Fallen, false};
     if (code == "zombie1" || code == "zombie2" || code == "zombie3" || code == "zombie4" ||
         code == "zombie5")
