@@ -40,6 +40,8 @@ MonsterImplementation monsterImplementation(const std::string &code) {
     if (code == "skmage_fire1" || code == "skmage_fire2" ||
         code == "skmage_ltng1" || code == "skmage_ltng2")
         return {MonsterKind::SkeletonMage, false};
+    if (code == "fetish1")
+        return {MonsterKind::Fetish, false};
     return {MonsterKind::Fallen, true};
 }
 const char *monsterRankName(MonsterRank rank) {

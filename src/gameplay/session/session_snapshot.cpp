@@ -358,7 +358,8 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
                         ai->kind != MonsterAiKind::CorruptArcher &&
                         ai->kind != MonsterAiKind::SkeletonBow &&
                         ai->kind != MonsterAiKind::Bighead &&
-                        ai->kind != MonsterAiKind::SkeletonMage))
+                        ai->kind != MonsterAiKind::SkeletonMage &&
+                        ai->kind != MonsterAiKind::Fetish))
                 require(enemy.aiWait == 0 && !enemy.aiPursuing && !enemy.aiEscaping &&
                             !enemy.aiCommanded && !enemy.aiCircling && !enemy.aiRunning &&
                             enemy.aiAdvanceRemaining == 0 && enemy.skill2Remaining == 0,
@@ -386,8 +387,24 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
                             (!enemy.aiEscaping || (enemy.hp > 0 && enemy.attack == 0 &&
                                                    !enemy.route.empty())),
                         "skeleton mage AI state");
+            else if (ai && ai->kind == MonsterAiKind::Fetish)
+                require(enemy.aiWait <= float(std::max(ai->params[1], 10)) / 25.f &&
+                            !enemy.aiPursuing && !enemy.aiCommanded && !enemy.aiRunning &&
+                            !enemy.aiCharged && enemy.aiAdvanceRemaining == 0 &&
+                            enemy.aiPhase >= 0 && enemy.aiPhase <= 2 &&
+                            enemy.aiLoop >= 0 &&
+                            enemy.aiLoop <= (enemy.aiPhase == 1 ? ai->params[2] + 1 :
+                                             enemy.aiPhase == 2 ? 1 : 0) &&
+                            (!enemy.aiCircling || (enemy.hp > 0 && enemy.attack == 0 &&
+                                                   enemy.aiWait == 0 && !enemy.route.empty())) &&
+                            (!enemy.aiEscaping || (enemy.hp > 0 && enemy.aiPhase == 2 &&
+                                                   enemy.attack == 0 && !enemy.route.empty())),
+                        "fetish AI state");
             else
                 require(!enemy.aiCircling, "unsupported circling state");
+            if (!ai || ai->kind != MonsterAiKind::Fetish)
+                require(enemy.aiPhase == 0 && enemy.aiLoop == 0,
+                        "non-fetish AI phase");
             if (ai && ai->kind == MonsterAiKind::CorruptRogue)
                 require(enemy.aiWait <= float(ai->params[1]) / 25.f &&
                             (enemy.aiAdvanceRemaining == 0 || enemy.hp > 0) &&

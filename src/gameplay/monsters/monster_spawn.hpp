@@ -52,7 +52,7 @@ struct MonsterNormalCombat {
 };
 enum class MonsterAiKind { Skeleton, Brute, Zombie, Fallen, CorruptRogue, Goatman, QuillRat,
                            Wraith, CorruptLancer, CorruptArcher, SkeletonBow, Bighead,
-                           SkeletonMage };
+                           SkeletonMage, Fetish };
 struct MonsterAiProfile {
     MonsterAiKind kind;
     std::array<int, 8> params{};

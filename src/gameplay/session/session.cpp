@@ -165,6 +165,8 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
         if (profile->kind == MonsterAiKind::SkeletonMage &&
             enemy.kind == MonsterKind::SkeletonMage)
             return profile;
+        if (profile->kind == MonsterAiKind::Fetish && enemy.kind == MonsterKind::Fetish)
+            return profile;
         return std::nullopt;
     };
     simulation_.zombieForcedPursuit_ = [this](RegionId region) {
@@ -254,7 +256,7 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
     Fingerprint fingerprint;
     fingerprint.add(content_.profile);
     // Bump this rules revision when state interpretation or compiled rules change.
-    fingerprint.add("d2x-session-rules-v107-skeleton-mage");
+    fingerprint.add("d2x-session-rules-v108-fetish");
     auto members = archives.used;
     for (const auto &member : members) {
         fingerprint.add(member);

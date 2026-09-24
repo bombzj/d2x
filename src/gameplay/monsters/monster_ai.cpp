@@ -12,6 +12,7 @@
 #include "gameplay/monsters/skeleton_bow_ai.hpp"
 #include "gameplay/monsters/bighead_ai.hpp"
 #include "gameplay/monsters/skeleton_mage_ai.hpp"
+#include "gameplay/monsters/fetish_ai.hpp"
 #include "gameplay/monsters/monster_wander.hpp"
 #include <algorithm>
 
@@ -48,6 +49,7 @@ void Simulation::updateMonsters(float dt) {
             enemy.aiRetaliate = false;
             enemy.aiCharged = false;
             enemy.aiAdvanceRemaining = 0;
+            enemy.aiPhase = enemy.aiLoop = 0;
             enemy.skill2Remaining = enemy.skill2Duration = 0;
             enemy.attack = enemy.attackDuration = 0;
             enemy.attackImpact = -1;
@@ -124,6 +126,7 @@ void Simulation::updateMonsters(float dt) {
             const float speed = originalSpeed.value_or(monsterDefinition(enemy.kind).speed) *
                                 (enemy.kind == MonsterKind::Bighead ? .5f :
                                  enemy.kind == MonsterKind::SkeletonMage ? .25f :
+                                 enemy.kind == MonsterKind::Fetish ? .5f :
                                  enemy.kind == MonsterKind::QuillRat ? 1.f : 1.5f) *
                                 (enemy.chill > 0 ? .42f : 1.f);
             fallenAdvanceEscape(enemy, *grid_, speed, dt);
@@ -164,7 +167,34 @@ void Simulation::updateMonsters(float dt) {
         const bool skeletonBowAi = ai && ai->kind == MonsterAiKind::SkeletonBow;
         const bool bigheadAi = ai && ai->kind == MonsterAiKind::Bighead;
         const bool skeletonMageAi = ai && ai->kind == MonsterAiKind::SkeletonMage;
+        const bool fetishAi = ai && ai->kind == MonsterAiKind::Fetish;
         bool clear = grid_->segment(enemy.pos, player.pos);
+        if (fetishAi) {
+            const bool inCombat = clear && distance < definition.attackRange &&
+                                  player.leapTime <= 0;
+            const int lifePercent = characterStats_.maxLife > 0
+                ? std::clamp(int(player.hp * 100.f / float(characterStats_.maxLife)), 0, 100) : 0;
+            const auto action = fetishThink(enemy, *ai, distance, inCombat, lifePercent);
+            if (action == FetishAction::Retreat) {
+                if (!monsterStartRetreat(enemy, player.pos, 14, *grid_))
+                    fetishRetreatFailed(enemy);
+                continue;
+            }
+            if (action == FetishAction::Circle) {
+                if (!monsterStartCircle(enemy, player.pos, 4, *grid_))
+                    enemy.aiWait = 10.f / 25.f;
+                continue;
+            }
+            if (action == FetishAction::Attack) {
+                enemy.route.clear();
+                beginMonsterAttack(enemy, 1);
+                continue;
+            }
+            if (action == FetishAction::Idle) {
+                enemy.route.clear();
+                continue;
+            }
+        }
         if (skeletonMageAi) {
             auto action = skeletonMageThink(enemy, *ai, distance, clear);
             if (action == SkeletonMageAction::Retreat)
@@ -372,7 +402,7 @@ void Simulation::updateMonsters(float dt) {
             if (lancerAi) enemy.aiRunning = false;
             if (archerAi) enemy.aiRunning = false;
         }
-        if (!skeletonBowAi && !skeletonMageAi && !bigheadAi &&
+        if (!skeletonBowAi && !skeletonMageAi && !bigheadAi && !fetishAi &&
             (player.pos - enemy.pos).length() < definition.attackRange &&
             player.leapTime <= 0 && grid_->segment(enemy.pos, player.pos)) {
             if (skeletonAi && !skeletonAttacks(enemy, *ai))
