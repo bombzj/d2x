@@ -111,6 +111,7 @@ ClassicData loadClassicData(Archives &archives) {
             base.strengthBonus = number("strbonus");
             base.dexterityBonus = number("dexbonus");
             base.block = number("block");
+            base.lightRadius = number("lightradius");
             base.sockets = number("gemsockets");
             base.rarity = number("rarity");
             base.spawnable = number("spawnable");

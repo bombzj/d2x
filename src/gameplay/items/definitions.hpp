@@ -19,7 +19,7 @@ struct ItemBaseStats {
     std::string type, secondaryType, weaponClass;
     std::optional<int> minDamage, maxDamage, twoHandMin, twoHandMax, throwMin, throwMax;
     std::optional<int> minDefense, maxDefense, requiredStrength, requiredDexterity, requiredLevel;
-    std::optional<int> level, magicLevel, cost, speed, block, sockets, rarity, spawnable;
+    std::optional<int> level, magicLevel, cost, speed, block, sockets, rarity, spawnable, lightRadius;
     std::optional<int> strengthBonus, dexterityBonus;
     struct Projectile {
         int id = -1;

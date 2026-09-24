@@ -1,8 +1,7 @@
 # 开发与交接
 
-当前源码角色存档 v83／规则 v117-combat-calculation。普通怪物三难度生命、近战伤害／命中、防御、抗性、暴击、再生和 `El1–3` 按原表共用解析；`brute1–5`、`zombie1–5`、`skeleton1–5`、`fallen1–5`、`corruptrogue1–5`、`goatman1–5`、`quillrat1–5`、`wraith1–3`、`cr_lancer1–3`、`cr_archer1–4`、`sk_archer1–3`、`bighead1–4`、`hellbovine`、`skmage_fire1–2`、`skmage_ltng1–2`、`fetish1`、`vampire5`、`fallenshaman1–4`、`crownest1–2`、`foulcrow1–2`、`arach1` 使用原动作及 MPQ 所列声音。僵尸、骷髅、沉沦魔、Brute、Corrupt Rogue、Goatman、Quill Rat、Wraith、Corrupt Lancer、Corrupt Archer、Skeleton Bow、Bighead、Skeleton Mage、Fetish、Vampire、Fallen Shaman、Foul Crow Nest、BloodHawk 和 Arach 按原 AI 家族分别决策，按 `MonStats.TransLvl` 选择原 `palshift.dat` 颜色映射；火焰、闪电、冰冷、毒素与法力吸取命中接通用元素攻击，冰冷与毒素在当前游戏中维持。Fallen 家族在原死亡动作期间见附近尸体后逃离，使用原 AI 参数发同组命令并播放 MPQ S2 喊叫；Brute 在两次攻击掷骰后可绕目标行走；Corrupt Rogue 使用 MPQ 接近／停顿、跑步概率及原 RN 动作。其他普通怪物仍保留真实身份与类型替身。分工和下一种怪物的条件见 [怪物实施计划](../MONSTERS.md)；精英、固定首领、Boss 和通用逐帧 AI 调度仍待逐项核对。旧存档不迁移。
+当前角色存档 v84／规则 v118-act-one-quests；运行时读取完整原 MPQ。Windows Release 构建通过，完整 MPQ 分发目录 dist/d2x-runtime-20260925-v84-r118-lighting-automap/ 可直接运行；该目录内罗格营地、血腥荒地、邪恶洞窟和地下墓穴第四层三帧启动均成功，六个 MPQ 与两个 EXE 的 SHA-256 与源目录一致。洞穴、墓穴暗层和野外白天截图已目视检查；装备照亮词缀的实际穿戴交互及 Linux 构建仍待验收。不生成 ZIP、精简 MPQ、测试脚本或测试用例。
 
-当前 v83／r117 Windows Release 构建通过；完整六 MPQ 分发目录 `dist/d2x-runtime-20260924-v83-r117-reviewed/` 从目录内启动，罗格营地三帧冒烟退出码 0，截图为忽略目录下的 `artifacts/combat-reviewed-package.png`。六个 MPQ 与 EXE 对源文件的 SHA-256 校验一致；分发目录含可直接启动 EXE 的 `Play.cmd` 与现有命名管道调用脚本，不生成 ZIP 或测试脚本／用例。角色面板左右技能数值已接共用计算入口，切换技能的键鼠画面及完整装备与战斗交互仍待用户验收；Linux 未在本机实际编译运行。
 ## 当前交接状态
 
 - 本轮调试快捷键、MPQ 城镇出生标记、NPC／传送点可见帧热区、城镇耐力规则及第一幕野外神殿分组已接入源码。用户随后明确要求打包和冒烟，Windows Release 构建、五个原始 MPQ 下 1–39 关逐张短帧启动及截图已完成；完整交互仍待验收。

@@ -1,7 +1,9 @@
 #pragma once
 #include "input.hpp"
 #include "inventory_panel.hpp"
+#include "lighting_view.hpp"
 #include "scene_assets.hpp"
+#include <cstdint>
 
 namespace d2x {
 struct ViewState {
@@ -41,6 +43,7 @@ struct ViewState {
 class SceneView {
     const GameSession &session_;
     SceneAssets assets_;
+    LightingView lighting_;
     UiPainter painter_;
     UiPainter speechPainter_;
     ViewState view_;
@@ -48,6 +51,7 @@ class SceneView {
     std::map<EntityId, Vec> monsterPositions_, monsterLooks_;
     std::map<EntityId, float> nextMonsterFootstep_, nextMonsterNeutral_;
     std::set<EntityId> movingMonsters_;
+    std::map<RegionId, std::vector<uint8_t>> exploredAutomap_;
     const Sprite *objectSprite(const WorldObject &object, RegionId region) const;
     struct LootLabel {
         ItemHandle item;
@@ -63,7 +67,9 @@ class SceneView {
     void drawTerrain() const;
     void drawActors() const;
     void drawMagic() const;
+    void drawLighting() const;
     void drawMinimap(bool large) const;
+    void revealAutomap();
     void drawHud() const;
     void drawNpcDialogue() const;
     void drawNpcMenu() const;

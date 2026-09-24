@@ -1,5 +1,6 @@
 #pragma once
 #include "audio.hpp"
+#include "content/automap_data.hpp"
 #include "gameplay/session/session.hpp"
 #include "primitives.hpp"
 
@@ -8,16 +9,21 @@ namespace d2x {
 class SceneAssets {
     Graphics graphics_;
     Graphics uiGraphics_;
+    AutomapCatalog automapCatalog_;
     void loadProps(const Region &region);
     void loadMonsterAnimations(Archives &archives, const GameSession &session);
     void loadHirelingAnimations(Archives &archives, const GameSession &session);
     void loadSkillIcons(Archives &archives, const ClassicData &content);
+    void loadAutomap(const GameSession &session);
     std::string heroKey_;
     std::map<std::string, std::map<std::string, GpuAnimation>> heroCache_;
     std::map<std::string, std::string> heroErrors_;
     std::string heroFailure_;
 
   public:
+    struct AutomapStamp {
+        int x = 0, y = 0, cel = -1;
+    };
     SoundBank audio;
     ClassicFont font, speechFont;
     struct SkillIcon {
@@ -31,6 +37,9 @@ class SceneAssets {
     std::map<std::string, GpuAnimation> skillTrees;
     Sprite attackIcon;
     std::vector<std::vector<Sprite>> regionTiles;
+    std::vector<std::vector<AutomapStamp>> regionAutomap;
+    // 0: original maximaps.dc6, 1: original maximap.dc6.
+    std::array<std::map<int, Sprite>, 2> automapCels;
     std::map<std::string, GpuAnimation> propAnimations, npcWalkAnimations, hero;
     std::map<std::string, GpuAnimation> hirelingAnimations;
     std::map<std::string, std::array<GpuAnimation, 3>> waypointAnimations;
@@ -58,6 +67,7 @@ class SceneAssets {
     void loadInventoryArt(const GameSession &session);
     void loadHeroEquipment(const GameSession &session);
     const std::string &heroAppearanceError() const { return heroFailure_; }
+    int automapObjectCel(int objectClass) const { return automapCatalog_.objectCel(objectClass); }
     void collectMapVariants(Archives &archives, const WorldCatalog &catalog, const MonsterCatalog &monsters);
     void loadMonsterAudio(Archives &archives, const MonsterCatalog &monsters);
 };

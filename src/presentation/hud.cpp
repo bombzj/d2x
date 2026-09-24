@@ -88,15 +88,16 @@ void SceneView::draw(Vec mouse) const {
     }
     drawActors();
     drawMagic();
+    drawLighting();
     drawLootLabels(mouse);
     drawExitHint(mouse);
     drawObjectHint(mouse);
     EndScissorMode();
     DrawRectangleGradientV(0, 0, W, 105, {0, 0, 0, 145}, {0, 0, 0, 0});
-    if (!view_.inventory.open && !view_.npcMenu && view_.dialogue.empty())
-        drawMinimap(false);
     if (view_.automap)
         drawMinimap(true);
+    else if (!view_.inventory.open && !view_.npcMenu && view_.dialogue.empty())
+        drawMinimap(false);
     drawHud();
     if (!view_.blocksWorld() && !view_.inventory.open && mouse.y < H - HUD) {
         for (const auto &enemy : sim.area.enemies) {

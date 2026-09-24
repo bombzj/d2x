@@ -30,7 +30,8 @@ WorldCatalog::WorldCatalog(Archives &archives) {
         DataTable table(archives.read(std::string("data/global/excel/") + name + ".txt"));
         const std::map<std::string_view, std::vector<std::string_view>> required = {
             {"levels",
-             {"Id", "Act", "DrlgType", "LevelType", "SizeX", "SizeY", "LevelName", "Vis0", "Warp0"}},
+             {"Id", "Act", "DrlgType", "LevelType", "SizeX", "SizeY", "LevelName", "Vis0", "Warp0",
+              "IsInside", "LOSDraw", "Intensity", "Red", "Green", "Blue"}},
             {"lvlprest", {"Def", "LevelId", "File1", "File6", "Dt1Mask", "FillBlanks"}},
             {"lvltypes", {"Id", "File 1", "File 32"}},
             {"lvlmaze", {"Level", "Rooms", "SizeX", "SizeY", "Merge"}},
@@ -58,6 +59,12 @@ WorldCatalog::WorldCatalog(Archives &archives) {
                 record.id = number("Id");
                 record.act = number("Act");
                 record.levelType = number("LevelType");
+                record.isInside = number("IsInside") != 0;
+                record.losDraw = number("LOSDraw") != 0;
+                record.lightIntensity = number("Intensity");
+                record.lightRed = number("Red");
+                record.lightGreen = number("Green");
+                record.lightBlue = number("Blue");
                 record.generation = GenerationKind(number("DrlgType"));
                 record.name = table.value(row, "LevelName");
                 record.width = number("SizeX");

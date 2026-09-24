@@ -9,6 +9,9 @@ SceneView::SceneView(Archives &archives, const GameSession &session)
     view_.camera = project(session_.state().player.pos);
     view_.portalRevision = session_.state().portal.revision;
     view_.skillClass = session_.characterCode();
+    revealAutomap();
+    lighting_.update(session_.map().grid, session_.region().definition.id,
+                     session_.state().player.pos, session_.characterStats().lightRadius);
 }
 Vec SceneView::screen(Vec p) const {
     float centerX = view_.inventory.storage ? W * .5f
@@ -21,6 +24,13 @@ Vec SceneView::world(Vec p) const {
                     : view_.inventory.open  ? inventoryBounds().x * .5f
                                             : W * .5f;
     return unproject((p - Vec{centerX, (H - HUD) * .5f}) * (1 / view_.zoom) + view_.camera);
+}
+void SceneView::drawLighting() const {
+    const auto &region = session_.region();
+    const auto &level = session_.worldContent().level(int(region.definition.id));
+    const auto player = session_.state().player.pos;
+    lighting_.draw(level, player, screen(player), view_.zoom, session_.characterStats().lightRadius,
+                   region.objects);
 }
 std::string playerAnimationMode(const PlayerState &p) {
     return p.dead                              ? "dt"
@@ -43,6 +53,7 @@ void SceneView::notice(std::string text, bool error) {
     view_.noticeTime = 4;
 }
 void SceneView::sessionRestored() {
+    exploredAutomap_.clear();
     view_.waypointSource = {};
     monsterPositions_.clear();
     monsterLooks_.clear();
@@ -70,8 +81,14 @@ void SceneView::sessionRestored() {
     view_.cainPortalAnimationStarted = -1;
     view_.heroMode = playerAnimationMode(session_.state().player);
     landingAge_.clear();
+    revealAutomap();
+    lighting_.update(session_.map().grid, session_.region().definition.id,
+                     session_.state().player.pos, session_.characterStats().lightRadius);
 }
 void SceneView::advance(float dt) {
+    revealAutomap();
+    lighting_.update(session_.map().grid, session_.region().definition.id,
+                     session_.state().player.pos, session_.characterStats().lightRadius);
     const auto &player = session_.state().player;
     if (view_.skillClass != session_.characterCode()) {
         view_.skillClass = session_.characterCode();

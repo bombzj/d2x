@@ -80,6 +80,7 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
                 {"dexterity", session.characterStats().dexterity},
                 {"vitality", session.characterStats().vitality},
                 {"energy", session.characterStats().energy},
+                {"lightRadius", session.characterStats().lightRadius},
                 {"attackRating", session.characterStats().attackRating},
                 {"defense", session.equipmentStats().defense},
                 {"dead", state.player.dead}};

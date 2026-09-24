@@ -23,6 +23,7 @@ struct CharacterModifiers {
     int maxLife = 0, maxMana = 0, maxStamina = 0;
     int attackRating = 0, defense = 0;
     int fireResist = 0, coldResist = 0, lightningResist = 0, poisonResist = 0;
+    int lightRadius = 0, baseItemLightRadius = 0;
     CombatModifiers combat;
 };
 struct CharacterAttributes {
@@ -30,6 +31,7 @@ struct CharacterAttributes {
     int maxLife = 1, maxMana = 1, maxStamina = 1;
     int attackRating = 0, defense = 0;
     int fireResist = 0, coldResist = 0, lightningResist = 0, poisonResist = 0;
+    int lightRadius = 13;
     CombatModifiers combat;
     int blockFactor = 0;
     float manaRegen = 0;

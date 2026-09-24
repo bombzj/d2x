@@ -20,7 +20,8 @@ void loadFont(Graphics &graphics, Archives &archives, ClassicFont &font, std::st
 }
 } // namespace
 SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
-    : graphics_(archives), uiGraphics_(archives, "data/global/palette/sky/pal.dat"), audio(archives) {
+    : graphics_(archives), uiGraphics_(archives, "data/global/palette/sky/pal.dat"),
+      automapCatalog_(archives), audio(archives) {
     loadFont(uiGraphics_, archives, font, "font16");
     loadFont(uiGraphics_, archives, speechFont, "fontformal12");
     for (const auto &region : session.regions()) {
@@ -30,6 +31,7 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
         regionTiles.push_back(std::move(tiles));
         loadProps(region);
     }
+    loadAutomap(session);
     loadHeroEquipment(session);
     if (hero.at("nu").frames.empty() || hero.at("rn").frames.empty())
         throw std::runtime_error("Character animations missing; supply the classic MPQ resources.");

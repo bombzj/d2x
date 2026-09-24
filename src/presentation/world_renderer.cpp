@@ -439,30 +439,4 @@ void SceneView::drawMagic() const {
     }
     EndBlendMode();
 }
-void SceneView::drawMinimap(bool large) const {
-    const auto &map = session_.map();
-    const auto &sim = session_.state();
-
-    Rectangle area = large ? Rectangle{210, 80, 646, 410} : Rectangle{W - 204.f, 42, 184, 140};
-    if (!large)
-        frame(area, {64, 60, 43, 230});
-    BeginScissorMode(int(area.x + 5), int(area.y + 5), int(area.width - 10), int(area.height - 10));
-    float scale = large ? .095f : .04f;
-    Vec center{area.x + area.width * .5f, area.y + area.height * .5f};
-    for (int y = 1; y < map.grid.height - 1; y++)
-        for (int x = 1; x < map.grid.width - 1; x++)
-            if (map.grid.walkable(x, y)) {
-                auto p = (project({float(x), float(y)}) - project(sim.player.pos)) * scale + center;
-                if (!map.grid.walkable(x + 1, y) || !map.grid.walkable(x, y + 1))
-                    DrawPixel(int(p.x), int(p.y), {173, 152, 100, uint8_t(large ? 200 : 140)});
-            }
-    for (auto &e : sim.area.enemies)
-        if (e.hp > 0 && session_.active(e.pos)) {
-            auto p = (project(e.pos) - project(sim.player.pos)) * scale + center;
-            DrawCircleV(rv(p), 1.4f, {207, 53, 35, 255});
-        }
-    DrawCircleV(rv(center), 2, gold);
-    DrawLine(int(center.x) - 5, int(center.y), int(center.x) + 5, int(center.y), gold);
-    EndScissorMode();
-}
 } // namespace d2x

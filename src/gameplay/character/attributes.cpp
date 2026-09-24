@@ -35,6 +35,8 @@ void mergeCharacterModifiers(CharacterModifiers &a, const CharacterModifiers &b)
     add(a.attackRating, b.attackRating); add(a.defense, b.defense);
     add(a.fireResist, b.fireResist); add(a.coldResist, b.coldResist);
     add(a.lightningResist, b.lightningResist); add(a.poisonResist, b.poisonResist);
+    add(a.lightRadius, b.lightRadius);
+    a.baseItemLightRadius = std::max(a.baseItemLightRadius, b.baseItemLightRadius);
     mergeCombatModifiers(a.combat, b.combat);
 }
 CharacterAttributes deriveCharacterAttributes(const CharacterDefinition &d, int level,
@@ -81,6 +83,8 @@ CharacterAttributes deriveCharacterAttributes(const CharacterDefinition &d, int 
     result.coldResist = resistance(m.coldResist, m.combat.coldMaxResist);
     result.lightningResist = resistance(m.lightningResist, m.combat.lightningMaxResist);
     result.poisonResist = resistance(m.poisonResist, m.combat.poisonMaxResist);
+    result.lightRadius = int(std::clamp(int64_t(13) + m.baseItemLightRadius + m.lightRadius,
+                                        int64_t(1), int64_t(18)));
     result.combat = m.combat;
     result.blockFactor = d.blockFactor;
     // CharStats.ManaRegen is an engine denominator, not mana per second.

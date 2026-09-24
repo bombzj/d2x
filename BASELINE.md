@@ -23,6 +23,8 @@
 - NPC 交易：[购买实施顺序与限制](docs/NPC_TRADE.md)。
 - 第一幕任务：[六项任务与已知边界](docs/ACT1_QUESTS.md)。
 - 界面与保存：[经典 HUD](docs/CLASSIC_HUD.md)、[存档](docs/SAVES.md)。
+- 自动地图：[MPQ 图块与显示边界](docs/AUTOMAP.md)。
+- 场景照明：[MPQ 区域与装备光照](docs/LIGHTING.md)。
 - 成长与战斗属性：[角色属性实施计划](docs/CHARACTER_ATTRIBUTES.md)、[七职业技能树](docs/SKILLS.md)。
 - 怪物：[人口与替身](docs/MONSTER_POPULATION.md)、[分步实施与数值范围](docs/MONSTERS.md)。
 - 工程：[构建与分发](docs/BUILD_AND_SHARE.md)、[MPQ 清单](docs/MPQ_RESOURCES.md)、[第三方许可](docs/THIRD_PARTY.md)。

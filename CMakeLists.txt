@@ -72,6 +72,7 @@ target_sources(d2x_content PRIVATE src/content/item_magic_loot.cpp)
 target_sources(d2x_content PRIVATE src/content/item_grades.cpp)
 target_sources(d2x_content PRIVATE src/content/npc_dialogue.cpp)
 target_sources(d2x_content PRIVATE src/content/hireling_data.cpp)
+target_sources(d2x_content PRIVATE src/content/automap_data.cpp)
 target_sources(d2x_content PRIVATE src/content/vendor_data.cpp)
 target_link_libraries(d2x_content PUBLIC d2x_resources d2x_items)
 
@@ -155,6 +156,8 @@ target_link_libraries(d2x_presentation PUBLIC d2x_session raylib)
 target_sources(d2x_presentation PRIVATE src/presentation/monster_audio.cpp)
 target_sources(d2x_presentation PRIVATE src/presentation/monster_assets.cpp)
 target_sources(d2x_presentation PRIVATE src/presentation/hireling_assets.cpp)
+target_sources(d2x_presentation PRIVATE src/presentation/automap_assets.cpp src/presentation/automap_view.cpp)
+target_sources(d2x_presentation PRIVATE src/presentation/lighting_view.cpp)
 
 add_executable(d2x src/main.cpp src/app/application.cpp src/app/options.cpp src/app/input.cpp)
 target_sources(d2x PRIVATE src/app/debug_pipe.cpp src/app/debug_commands.cpp src/app/debug_inventory.cpp

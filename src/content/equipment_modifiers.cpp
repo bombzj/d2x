@@ -35,6 +35,7 @@ void addProperty(const ClassicData &content, const PropertyRange &property, int 
         else if (stat == "coldresist") target = &mods.coldResist;
         else if (stat == "lightresist") target = &mods.lightningResist;
         else if (stat == "poisonresist") target = &mods.poisonResist;
+        else if (stat == "item_lightradius") target = &mods.lightRadius;
         if (target) {
             int64_t sum = int64_t(*target) + value;
             if (sum < std::numeric_limits<int>::min() || sum > std::numeric_limits<int>::max())
@@ -53,7 +54,11 @@ void addProperties(const ClassicData &content, std::span<const PropertyRange> pr
         applyEquipmentCombatProperty(content, properties[index], rolls[index], item, weapon, mods.combat);
     }
 }
-void addItem(const ClassicData &content, const ItemInstance &item, bool weapon, CharacterModifiers &mods) {
+void addItem(const ClassicData &content, const ItemDefinition &definition,
+             const ItemInstance &item, bool weapon, CharacterModifiers &mods) {
+    // The base item field is an emitted radius; use the strongest equipped source.
+    mods.baseItemLightRadius = std::max(mods.baseItemLightRadius,
+                                        std::max(0, definition.base.lightRadius.value_or(0)));
     if (item.specialRow >= 0) {
         const auto &records = item.quality == ItemQuality::Unique ? content.uniqueItems : content.setItems;
         auto found = std::find_if(records.begin(), records.end(),
@@ -99,7 +104,7 @@ CharacterModifiers resolveEquipmentModifiers(const ClassicData &content,
             actor.strength = adjusted(actor.strength, total.strength);
             actor.dexterity = adjusted(actor.dexterity, total.dexterity);
             if (inventory.equipmentRequirements(item->handle(), actor) != InventoryError::None) continue;
-            addItem(content, *item, definition->equipment.isType("weap"), total);
+            addItem(content, *definition, *item, definition->equipment.isType("weap"), total);
             active.insert(item->id);
             changed = true;
         }
