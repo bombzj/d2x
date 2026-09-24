@@ -254,7 +254,13 @@ void SceneView::advance(float dt) {
                 } else if constexpr (std::is_same_v<T, WaypointActivated>) {
                     notice("Waypoint activated.", false);
                 } else if constexpr (std::is_same_v<T, ObjectInteracted>) {
-                    if (value.interaction == Interaction::Travel) {
+                    if (value.interaction == Interaction::Shrine) {
+                        notice("Shrine: " + value.name);
+                    } else if (value.interaction == Interaction::Loot) {
+                        notice("Opened: " + value.name);
+                    } else if (value.interaction == Interaction::Well) {
+                        notice("Restored at: " + value.name);
+                    } else if (value.interaction == Interaction::Travel) {
                         view_.waypointSource = value.name == "Waypoint" ? value.object : EntityId{};
                         view_.travelPage = 0;
                         view_.travelMenu = true;

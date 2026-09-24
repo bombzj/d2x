@@ -81,6 +81,25 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
             result["portal"] = {{"active", state.portal.active}, {"revision", state.portal.revision},
                 {"field", int(state.portal.field)}, {"fieldPosition", {state.portal.fieldPosition.x, state.portal.fieldPosition.y}},
                 {"townPosition", {state.portal.townPosition.x, state.portal.townPosition.y}}};
+            result["shrines"] = Json::array();
+            for (const auto &status : session.shrineStatuses())
+                result["shrines"].push_back({{"name", status.name}, {"effect", status.effect},
+                    {"remaining", std::max(0.f, status.until - state.time)}});
+        } else if (command == "grant-shrine") {
+            const int code = request.at("code").get<int>();
+            const auto &table = session.content().tables.at("shrines");
+            bool valid = false;
+            for (size_t row = 0; row < table.rows().size(); ++row)
+                if (code > 0 && table.number(row, "Code") == code) {
+                    valid = true;
+                    result["name"] = std::string(table.value(row, "Shrine name"));
+                    result["effect"] = std::string(table.value(row, "Effect"));
+                    break;
+                }
+            if (!valid || session.state().player.dead)
+                throw std::runtime_error("Unknown MPQ shrine code or player unavailable");
+            session.submit(DebugGrantShrine{code}); step();
+            result["code"] = code;
         } else if (command == "waypoint") {
             session.submit(WaypointTravel{entity(), RegionId(request.at("level").get<int>())});
             step();
@@ -339,10 +358,15 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
         } else if (command == "objects") {
             result["objects"] = Json::array();
             for (const auto &object : session.region().objects) {
+                if (request.value("interactiveOnly", false) &&
+                    object.interaction == Interaction::None && object.operatedAt < 0) continue;
                 Json entry = {{"id", object.id.value}, {"name", object.name},
                     {"key", object.contentKey}, {"x", object.pos.x}, {"y", object.pos.y},
                     {"renderable", view.visible(object)}, {"npcClass", object.npcClass},
-                    {"pathNodes", object.npcPath.size()}, {"sourceVelocity", object.npcVelocity}};
+                    {"pathNodes", object.npcPath.size()}, {"sourceVelocity", object.npcVelocity},
+                    {"class", object.objectClass}, {"operation", object.operateFn},
+                    {"active", object.interaction != Interaction::None},
+                    {"shrineCode", object.shrineCode}, {"uses", object.remainingUses}};
                 if (object.name == "Waypoint") {
                     entry["activated"] = session.waypointUnlocked(session.state().area.region);
                     entry["fps"] = object.waypointFps;

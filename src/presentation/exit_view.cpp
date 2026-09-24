@@ -27,4 +27,15 @@ void SceneView::drawExitHint(Vec mouse) const {
         painter_.label(text, int(p.x - width / 2), int(p.y - 51), 14, gold);
     }
 }
+void SceneView::drawObjectHint(Vec mouse) const {
+    if (view_.inventory.open || view_.inventory.drag || view_.blocksWorld() || mouse.y >= H - HUD)
+        return;
+    const auto *object = objectAt(mouse);
+    if (!object || object->name.empty() || exitAt(mouse))
+        return;
+    const Vec p = screen(object->pos);
+    const int width = painter_.measure(object->name, 14);
+    DrawRectangle(int(p.x - width / 2 - 8), int(p.y - 70), width + 16, 24, {0, 0, 0, 210});
+    painter_.label(object->name, int(p.x - width / 2), int(p.y - 65), 14, gold);
+}
 } // namespace d2x

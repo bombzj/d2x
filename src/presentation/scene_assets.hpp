@@ -32,6 +32,7 @@ class SceneAssets {
     std::vector<std::vector<Sprite>> regionTiles;
     std::map<std::string, GpuAnimation> propAnimations, npcWalkAnimations, hero;
     std::map<std::string, std::array<GpuAnimation, 3>> waypointAnimations;
+    std::map<std::string, std::array<GpuAnimation, 3>> objectModeAnimations;
     std::map<MonsterKind, std::map<std::string, GpuAnimation>> monsterAnimations;
     std::map<std::string, std::map<std::string, GpuAnimation>, std::less<>> monsterVariantAnimations;
     struct MonsterAudio {

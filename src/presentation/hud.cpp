@@ -1,5 +1,6 @@
 #include "scene_view.hpp"
 #include <algorithm>
+#include <cmath>
 namespace d2x {
 void SceneView::drawHud() const {
     const auto &sim = session_.state();
@@ -29,6 +30,14 @@ void SceneView::drawHud() const {
               view_.noticeError ? Color{190, 91, 67, 255} : gold);
         painter_.label(view_.lootNotice, int(centerX - (width - 32) * .5f), H - HUD - 129, 14,
                        view_.noticeError ? Color{245, 166, 135, 255} : parchment);
+    }
+    int statusY = H - HUD - 28;
+    for (const auto &status : session_.shrineStatuses()) {
+        const int seconds = std::max(0, int(std::ceil(status.until - sim.time)));
+        const std::string label = status.name + "  " + std::to_string(seconds) + "s";
+        DrawRectangle(8, statusY - 3, painter_.measure(label, 12) + 16, 21, {0, 0, 0, 205});
+        painter_.label(label, 16, statusY, 12, gold);
+        statusY -= 23;
     }
 }
 void SceneView::drawHelp() const {
@@ -81,6 +90,7 @@ void SceneView::draw(Vec mouse) const {
     drawMagic();
     drawLootLabels(mouse);
     drawExitHint(mouse);
+    drawObjectHint(mouse);
     EndScissorMode();
     DrawRectangleGradientV(0, 0, W, 105, {0, 0, 0, 145}, {0, 0, 0, 0});
     if (!view_.inventory.open && !view_.npcMenu && view_.dialogue.empty())

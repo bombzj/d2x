@@ -11,6 +11,10 @@
 #include "world/region.hpp"
 
 namespace d2x {
+struct ShrineStatus {
+    std::string name, effect;
+    float until = 0;
+};
 class GameSession {
     EntityIds ids_;
     ClassicData content_;
@@ -41,6 +45,7 @@ class GameSession {
     std::vector<Region> regions_;
     std::vector<NpcMotionState> initialNpcMotions_;
     std::vector<AreaState> inactiveAreas_;
+    std::vector<ShrineStatus> shrineStatuses_;
     std::vector<GameCommand> pending_;
     int current_ = -1;
     void enter(RegionId id, std::optional<Vec> arrival = {});
@@ -53,6 +58,12 @@ class GameSession {
     void updateInteraction();
     void cancelInteraction();
     void completeInteraction(const WorldObject &object);
+    void activateLootObject(EntityId object);
+    void activateShrine(EntityId object);
+    void grantShrine(int code);
+    void applyShrine(int code, std::string name, std::string effect, float duration);
+    void drinkWell(EntityId object);
+    void updateObjectTimers();
     void identifyWithCain(EntityId npc);
     void buyVendorItem(EntityId npc, uint32_t slot);
     void advanceNpcPaths(float dt);
@@ -107,6 +118,7 @@ class GameSession {
         return resolvedMonsterCombat(identity, region);
     }
     const auto &worldEntries() const { return worldEntries_; }
+    const std::vector<ShrineStatus> &shrineStatuses() const { return shrineStatuses_; }
     uint64_t contentFingerprint() const { return contentFingerprint_; }
     const std::vector<uint64_t> &experienceThresholds() const {
         return content_.experienceByClass.at(state().player.characterClass);

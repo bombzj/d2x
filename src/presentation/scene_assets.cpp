@@ -250,6 +250,17 @@ void SceneAssets::loadProps(const Region &region) {
             waypointAnimations.emplace(object.key, std::move(animations));
             continue;
         }
+        if (object.interaction == Interaction::Loot || object.interaction == Interaction::Shrine ||
+            object.interaction == Interaction::Well) {
+            std::array<GpuAnimation, 3> animations;
+            const char *modes[] = {"nu", "op", "on"};
+            for (size_t index = 0; index < animations.size(); ++index)
+                animations[index] = graphics_.composite(appearance.category, appearance.token, modes[index],
+                                                        appearance.weapon, &equipment);
+            propAnimations.emplace(object.key, animations[0]);
+            objectModeAnimations.emplace(object.key, std::move(animations));
+            continue;
+        }
         propAnimations.emplace(object.key,
                                graphics_.composite(appearance.category, appearance.token, appearance.mode,
                                                    appearance.weapon, &equipment));
@@ -312,7 +323,7 @@ void SceneAssets::collectMapVariants(Archives &archives, const WorldCatalog &cat
     }
     // A separate importer-owned ID space cannot modify the live session or saves.
     EntityIds ids;
-    for (const auto &region : loadRegions(archives, ids, plans, monsters))
+    for (const auto &region : loadRegions(archives, ids, plans, monsters, catalog, 0))
         loadProps(region);
 }
 } // namespace d2x

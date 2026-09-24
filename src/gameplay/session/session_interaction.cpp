@@ -142,6 +142,15 @@ void GameSession::completeInteraction(const WorldObject &object) {
     case Interaction::Travel:
         simulation_.emit(ObjectInteracted{object.id, object.interaction, object.name});
         break;
+    case Interaction::Loot:
+        activateLootObject(object.id);
+        break;
+    case Interaction::Shrine:
+        activateShrine(object.id);
+        break;
+    case Interaction::Well:
+        drinkWell(object.id);
+        break;
     case Interaction::None:
         break;
     }

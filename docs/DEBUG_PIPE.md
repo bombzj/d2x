@@ -142,6 +142,8 @@ $offers = (.\scripts\Send-D2XCommand.ps1 -Command shop -Arguments @{ id = $vendo
 | travel | `level` | 调试自由传到已实现地图，优先落在原传送点旁；不检查或写入激活记录 |
 | waypoint | `id`、`level` | 正常传送点命令，id 是当前区域源点；校验距离／通路、两端激活及玩家状态，拒绝时返回错误 |
 | interact | `id`，可选 `ticks` 1–250 | 正常走近对象交互；返回是否已开启、仍在寻路；NPC 首先打开交互菜单 |
+| objects | 可选 `interactiveOnly` 布尔值 | 列出当前区域对象；可筛选可交互／已操作对象，返回 Objects 原类别、操作编号、祭坛 Code 和井水余量 |
+| grant-shrine | `code`：运行时 `Shrines.txt` 的 Code | 调试领取指定祭坛效果，无需找实物；限时效果见 `status.shrines`，一次性效果显示领取提示 |
 | talk | 无 | 在已打开的 NPC 菜单中选择 Talk，返回原 MPQ 对话文本与排版行数 |
 | gossip | 无 | 已打开的 NPC 菜单或对话切换到下一段原 MPQ 通用闲聊，返回文本和排版行数；不改变玩法状态 |
 | identify | 凯恩对象 `id` | 需先正常交谈且在范围内；按未完成任务档位每件 100 金币鉴定背包和装备中的物品，返回数量和扣款 |

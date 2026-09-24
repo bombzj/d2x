@@ -78,6 +78,7 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
     }
     require(current >= 0 && s.nextEntityId > 0, "active region or ID cursor");
     std::set<EntityId> allocated;
+    std::set<EntityId> lootObjects;
     auto registerId = [&](EntityId id) {
         require(bool(id) && id.value < s.nextEntityId && allocated.insert(id).second,
                 "duplicate or invalid entity ID");
@@ -87,7 +88,13 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
     require(player.id == state().player.id, "player identity");
     for (const auto &region : regions_)
         for (const auto &object : region.objects)
+        {
             registerId(object.id);
+            if (object.operateFn == 1 || object.operateFn == 3 || object.operateFn == 4 ||
+                object.operateFn == 5 || object.operateFn == 7 || object.operateFn == 14 ||
+                object.operateFn == 19 || object.operateFn == 20)
+                lootObjects.insert(object.id);
+        }
     size_t movingNpcs = 0;
     for (const auto &region : regions_)
         for (const auto &object : region.objects)
@@ -773,7 +780,7 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
     }
     for (auto id : s.loot.settled)
         require(bool(id) && id.value < s.nextEntityId &&
-                    (!allocated.contains(id) || deadEnemies.contains(id) ||
+                    (!allocated.contains(id) || lootObjects.contains(id) || deadEnemies.contains(id) ||
                      resurrectedEnemies.contains(id)),
                 "death settlement identity");
     for (auto row : s.loot.usedUniques)
@@ -828,6 +835,27 @@ void GameSession::restore(SessionSnapshot s) {
     loot_.restore(std::move(s.loot));
     vendorStocks_.swap(nextVendorStocks);
     soldVendorOffers_.swap(s.soldVendorOffers);
+    shrineStatuses_.clear();
+    for (auto &region : regions_)
+        for (auto &object : region.objects)
+            if (object.operatedAt >= 0) {
+                object.operatedAt = -1;
+                object.animationMode = 0;
+                if (object.operateFn == 22) {
+                    object.remainingUses = 2 * object.parameters[2];
+                    object.interaction = Interaction::Well;
+                } else if (object.shrineCode > 0) {
+                    object.interaction = Interaction::Shrine;
+                } else if (loot_.settled(object.id)) {
+                    object.interaction = Interaction::None;
+                    object.operatedAt = simulation_.state_.time;
+                } else if (object.operateFn == 1 || object.operateFn == 3 ||
+                           object.operateFn == 4 || object.operateFn == 5 ||
+                           object.operateFn == 7 || object.operateFn == 14 ||
+                           object.operateFn == 19 || object.operateFn == 20) {
+                    object.interaction = Interaction::Loot;
+                }
+            }
     for (auto &motion : s.npcMotions)
         for (auto &region : regions_)
             for (auto &object : region.objects)

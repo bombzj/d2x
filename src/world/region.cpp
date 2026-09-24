@@ -1,6 +1,9 @@
 #include "region.hpp"
 #include "resources/presets.hpp"
+#include "object_population.hpp"
+#include "shrine_catalog.hpp"
 #include <algorithm>
+#include <cctype>
 #include <iostream>
 #include <stdexcept>
 #include <string_view>
@@ -32,9 +35,12 @@ void classify(WorldObject &object, const Table &objectRows) {
     if (object.appearance.category == "objects") {
         auto record = std::find_if(objectRows.begin(), objectRows.end(), [&](const auto &row) {
             auto sourceToken = row.find("Token");
-            return sourceToken != row.end() && normalize(sourceToken->second) == normalize(token);
+            if (sourceToken == row.end() || normalize(sourceToken->second) != normalize(token))
+                return false;
+            return object.objectClass < 0 || std::stoi(row.at("Id")) == object.objectClass;
         });
         if (record != objectRows.end()) {
+            object.objectClass = std::stoi(record->at("Id"));
             object.animationMode = objectMode(object.appearance.mode);
             for (size_t index = 0; index < object.animationRules.size(); ++index) {
                 auto &rule = object.animationRules[index];
@@ -45,8 +51,14 @@ void classify(WorldObject &object, const Table &objectRows) {
                 rule.cycle = record->at("CycleAnim" + suffix) == "1";
                 rule.enabled = record->at("Mode" + suffix) == "1";
             }
-            auto operation = record->find("OperateFn");
-            if (operation != record->end() && operation->second == "23") {
+            const auto &operation = record->at("OperateFn");
+            object.operateFn = operation.empty() ? 0 : std::stoi(operation);
+            object.objectDamage = record->at("Damage").empty() ? 0 : std::stoi(record->at("Damage"));
+            for (size_t index = 0; index < object.parameters.size(); ++index) {
+                const auto &value = record->at("Parm" + std::to_string(index));
+                object.parameters[index] = value.empty() ? 0 : std::stoi(value);
+            }
+            if (object.operateFn == 23) {
                 object.name = "Waypoint";
                 object.interaction = Interaction::Travel;
                 object.reach = float(std::stoi(record->at("OperateRange")));
@@ -54,6 +66,35 @@ void classify(WorldObject &object, const Table &objectRows) {
                     object.waypointFps[index] = object.animationRules[index].fps;
                 if (object.reach <= 0)
                     throw std::runtime_error("Invalid original waypoint interaction range");
+                return;
+            }
+            if ((object.operateFn == 1 &&
+                 (normalize(record->at("Name")) == "casket" ||
+                  normalize(record->at("Name")) == "sarcophagus")) ||
+                object.operateFn == 3 || object.operateFn == 4 || object.operateFn == 5 ||
+                object.operateFn == 7 || object.operateFn == 14 ||
+                object.operateFn == 19 || object.operateFn == 20) {
+                object.interaction = Interaction::Loot;
+            } else if (object.operateFn == 2 && normalize(record->at("Name")) == "shrine") {
+                object.interaction = Interaction::Shrine;
+            } else if (object.operateFn == 22) {
+                object.interaction = Interaction::Well;
+            }
+            if (object.interaction != Interaction::None) {
+                object.reach = float(std::stoi(record->at("OperateRange")));
+                if (object.reach <= 0)
+                    throw std::runtime_error("Invalid MPQ object interaction range: " + token);
+                if (object.name.empty()) {
+                    const auto &sourceName = record->at("Name");
+                    for (size_t index = 0; index < sourceName.size(); ++index) {
+                        const unsigned char letter = static_cast<unsigned char>(sourceName[index]);
+                        if (index && std::isupper(letter) && std::islower(static_cast<unsigned char>(sourceName[index - 1])))
+                            object.name += ' ';
+                        object.name += index == 0 ? char(std::toupper(letter)) : char(letter);
+                    }
+                }
+                if (object.interaction == Interaction::Well)
+                    object.remainingUses = std::max(0, 2 * object.parameters[2]);
                 return;
             }
         }
@@ -78,9 +119,16 @@ void classify(WorldObject &object, const Table &objectRows) {
     object.flame = token == "rb" || token == "to";
 }
 } // namespace
+void configureWorldObject(WorldObject &object, const Table &objectRows) {
+    classify(object, objectRows);
+    appearanceKey(object);
+}
 std::vector<Region> loadRegions(Archives &archives, EntityIds &ids, const std::vector<RegionPlan> &plans,
-                                const MonsterCatalog &monsters) {
+                                const MonsterCatalog &monsters, const WorldCatalog &catalog,
+                                uint32_t worldSeed) {
     auto objectRows = decodeTable(archives.read("data/global/excel/objects.txt"));
+    auto groupRows = decodeTable(archives.read("data/global/excel/objgroup.txt"));
+    auto shrineRows = decodeTable(archives.read("data/global/excel/shrines.txt"));
     TileLibraryCache cache(archives);
     std::vector<Region> regions;
     regions.reserve(plans.size());
@@ -158,11 +206,11 @@ std::vector<Region> loadRegions(Archives &archives, EntityIds &ids, const std::v
             object.appearance = {preset->category, preset->token, preset->mode, preset->weapon, {}};
             for (size_t i = 0; i < object.appearance.equipment.size(); ++i)
                 object.appearance.equipment[i] = preset->gear[i];
-            classify(object, objectRows);
-            appearanceKey(object);
+            configureWorldObject(object, objectRows);
             object.facing = (source.x + source.y) % 8;
             region.objects.push_back(std::move(object));
         }
+        populateAct1WorldObjects(region, ids, catalog, objectRows, groupRows, worldSeed);
         if (int(region.definition.id) == 2) {
             const auto *navi = monsters.find("navi");
             for (const auto &piece : region.recipe.pieces) {
@@ -186,6 +234,8 @@ std::vector<Region> loadRegions(Archives &archives, EntityIds &ids, const std::v
                 region.objects.push_back(std::move(object));
             }
         }
+        for (auto &object : region.objects)
+            assignShrine(object, shrineRows, int(region.definition.id), worldSeed);
         std::cout << "  DS1 objects: " << region.objects.size() << " appearances, "
                   << region.unsupportedObjects << " records await original unit rules\n";
         regions.push_back(std::move(region));

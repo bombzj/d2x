@@ -266,7 +266,7 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
     };
     worldSelection.difficulty = population.difficulty;
     auto plan = planWorld(archives, worldContent_, worldSelection);
-    regions_ = loadRegions(archives, ids_, plan.regions, monsterContent_);
+    regions_ = loadRegions(archives, ids_, plan.regions, monsterContent_, worldContent_, selection.seed);
     for (const auto &region : regions_)
         for (const auto &object : region.objects)
             if (!object.npcPath.empty())
@@ -312,7 +312,7 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
     Fingerprint fingerprint;
     fingerprint.add(content_.profile);
     // Bump this rules revision when state interpretation or compiled rules change.
-    fingerprint.add("d2x-session-rules-v113-character-save");
+    fingerprint.add("d2x-session-rules-v114-world-objects");
     auto members = archives.used;
     for (const auto &member : members) {
         fingerprint.add(member);
@@ -479,6 +479,8 @@ void GameSession::tick(float dt, Vec keyboard) {
                     grantExperience(intent.amount);
                 } else if constexpr (std::is_same_v<T, DebugUnlockWaypoints>) {
                     unlockWaypoints();
+                } else if constexpr (std::is_same_v<T, DebugGrantShrine>) {
+                    grantShrine(intent.code);
                 } else if constexpr (std::is_same_v<T, DebugSpawnMonster>) {
                     spawnDebugMonster(intent);
                 } else if constexpr (std::is_same_v<T, DebugDamageMonster>) {
@@ -611,6 +613,7 @@ void GameSession::tick(float dt, Vec keyboard) {
         cancelInteraction();
     }
     simulation_.tick(dt, transitioned ? Vec{} : keyboard);
+    updateObjectTimers();
     advanceNpcPaths(dt);
     settleDeaths();
     updatePickup();

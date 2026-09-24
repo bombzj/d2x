@@ -34,6 +34,7 @@ ClassicData loadClassicData(Archives &archives) {
     tables.emplace(treasureName,
                    DataTable(archives.read(std::string("data/global/excel/") + treasureName + ".txt")));
     if (lod) {
+        tables.emplace("shrines", DataTable(archives.read("data/global/excel/shrines.txt")));
         tables.emplace("monlvl", DataTable(archives.read("data/global/excel/monlvl.txt")));
         tables.emplace("missiles", DataTable(archives.read("data/global/excel/missiles.txt")));
         if (archives.contains("data/global/excel/npc.txt"))

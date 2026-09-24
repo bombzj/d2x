@@ -71,6 +71,7 @@ class SceneView {
     void drawSkillTree(Vec mouse) const;
     void drawHelp() const;
     void drawExitHint(Vec mouse) const;
+    void drawObjectHint(Vec mouse) const;
     void drawInventory(Vec mouse) const;
     void drawCharacter(Vec mouse) const;
     void drawStorage(Vec mouse) const;

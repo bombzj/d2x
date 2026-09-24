@@ -39,6 +39,29 @@ const Sprite *SceneView::objectSprite(const WorldObject &object, RegionId region
             frame = std::min(frame, rule.start + rule.frames - 1);
         return animation.frame(object.facing % std::max(1, animation.directions), frame);
     }
+    if (auto modes = assets_.objectModeAnimations.find(object.key);
+        modes != assets_.objectModeAnimations.end()) {
+        int mode = object.animationMode;
+        float elapsed = view_.animationTime;
+        if (object.operatedAt >= 0 && object.operateFn != 22) {
+            elapsed = std::max(0.f, session_.state().time - object.operatedAt);
+            const auto &operating = object.animationRules[1];
+            const float duration = operating.fps > 0 ? operating.frames / operating.fps : 0;
+            mode = elapsed < duration ? 1 : 2;
+            if (mode == 2) elapsed -= duration;
+        }
+        mode = std::clamp(mode, 0, 2);
+        const auto &animation = modes->second[size_t(mode)];
+        if (!animation.frames.empty()) {
+            const auto &rule = object.animationRules[size_t(mode)];
+            int frame = rule.start + int(elapsed * rule.fps);
+            if (rule.cycle)
+                frame = rule.start + (frame - rule.start) % rule.frames;
+            else
+                frame = std::min(frame, rule.start + rule.frames - 1);
+            return animation.frame(object.facing % std::max(1, animation.directions), frame);
+        }
+    }
     auto found = assets_.propAnimations.find(object.key);
     if (found == assets_.propAnimations.end()) return nullptr;
     const auto *animation = &found->second;
@@ -289,9 +312,6 @@ void SceneView::drawActors() const {
         } else {
             auto &p = session_.regions()[item.region].objects[item.index];
             sprite(objectSprite(p, session_.regions()[item.region].definition.id), item.p);
-            if (!p.name.empty() && p.name != "Chicken" && p.name != "Cow" && p.name != "Rogue Scout")
-                painter_.label(p.name, int(item.p.x) - painter_.measure(p.name, 10) / 2, int(item.p.y) - 80,
-                               10, gold);
         }
     }
 }

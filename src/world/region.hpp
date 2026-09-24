@@ -27,6 +27,13 @@ struct WorldObject {
     bool flame = false;
     int facing = 0;
     int animationMode = 0;
+    int objectClass = -1, operateFn = 0, objectDamage = 0;
+    std::array<int, 8> parameters{};
+    float operatedAt = -1;
+    int remainingUses = 0;
+    int shrineCode = 0;
+    std::string shrineName, shrineEffect;
+    float shrineDuration = 0, shrineReset = 0;
     std::array<ObjectAnimationRule, 8> animationRules{};
     std::array<float, 3> waypointFps{};
     // Authored DS1 map AI path and current NPC motion. Only NPCs with original
@@ -79,8 +86,10 @@ struct WorldPlan {
     std::vector<WorldEntry> entries;
     RegionId start = RegionId::Encampment;
 };
+void configureWorldObject(WorldObject &object, const Table &objectRows);
 WorldPlan planWorld(Archives &archives, const WorldCatalog &catalog, WorldSelection selection);
 void linkLevelExits(std::vector<Region> &regions, const WorldCatalog &catalog);
 std::vector<Region> loadRegions(Archives &archives, EntityIds &ids, const std::vector<RegionPlan> &plans,
-                                const MonsterCatalog &monsters);
+                                const MonsterCatalog &monsters, const WorldCatalog &catalog,
+                                uint32_t worldSeed);
 } // namespace d2x

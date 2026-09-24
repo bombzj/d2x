@@ -63,6 +63,7 @@ struct BindSkillHotkey { unsigned index = 0; int skill = -2; bool right = true; 
 struct DebugResetAttributes {};
 struct DebugResetSkills {};
 struct DebugUnlockWaypoints {};
+struct DebugGrantShrine { int code = 0; };
 struct DebugSwitchCharacter { std::string name; }; // Empty name cycles MPQ CharStats order.
 struct Travel {
     RegionId destination;
@@ -84,7 +85,7 @@ struct PickupItem {
 };
 // UI supplies intentions; only the gameplay layer changes authoritative state.
 using GameCommand =
-    std::variant<MoveTo, Attack, CastSkill, UseClassSkill, ToggleRun, Interact, IdentifyWithCain, EndNpcConversation, BuyVendorItem, DebugGrantGold, DebugGrantExperience, AllocateAttribute, AllocateSkill, BindSkillHotkey, DebugResetAttributes, DebugResetSkills, DebugUnlockWaypoints, DebugSwitchCharacter, Travel, RestartArea, MoveItem, SwapItems,
+    std::variant<MoveTo, Attack, CastSkill, UseClassSkill, ToggleRun, Interact, IdentifyWithCain, EndNpcConversation, BuyVendorItem, DebugGrantGold, DebugGrantExperience, AllocateAttribute, AllocateSkill, BindSkillHotkey, DebugResetAttributes, DebugResetSkills, DebugUnlockWaypoints, DebugGrantShrine, DebugSwitchCharacter, Travel, RestartArea, MoveItem, SwapItems,
                  SplitStack, MergeStacks, PickupItem, StopMoving, EquipBelt, UseItem, UseBeltColumn,
                  CloseStorage, TransferItem, UseExit, EquipItem, DebugKill, DebugSpawnMonster,
                  DebugDamageMonster, UseTownPortal, WaypointTravel>;
