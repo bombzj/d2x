@@ -131,8 +131,9 @@ class Planner {
         int classes = leader.minions[1].empty() ? 1 : 2;
         for (int i = 0; i < count; ++i)
             if (auto minion = lookup(leader.minions[i % classes]))
-                // The original creation flag 64 suppresses further party recursion.
-                add(*minion, pos, 4, MonsterRank::Minion, origin, key + ".party." + std::to_string(i));
+                // A normal monster's party uses normal monster creation. Flag 64
+                // suppresses recursion; it does not grant an elite minion rank.
+                add(*minion, pos, 4, MonsterRank::Normal, origin, key + ".party." + std::to_string(i));
     }
     const MonsterRecord *choose(bool elite) {
         const MonsterRecord *monster = nullptr;

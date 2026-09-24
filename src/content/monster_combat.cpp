@@ -4,8 +4,6 @@
 namespace d2x {
 std::optional<MonsterNormalCombat> loadMonsterNormalCombat(const DataTable &stats, size_t row,
                                                           const DataTable *levels) {
-    if (stats.number(row, "rangedtype").value_or(0) != 0)
-        return std::nullopt;
     const auto level = stats.number(row, "Level");
     const auto lowLife = stats.number(row, "minHP");
     const auto highLife = stats.number(row, "maxHP");

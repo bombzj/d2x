@@ -8,6 +8,11 @@
 #include <type_traits>
 
 namespace d2x {
+namespace {
+bool baseMonsterRank(MonsterRank rank) {
+    return rank == MonsterRank::Normal || rank == MonsterRank::Minion;
+}
+} // namespace
 GameSession::GameSession(Archives &archives, const WorldSelection &selection, int startRegion,
                          uint64_t lootSeed, PopulationSettings population)
     : content_(loadClassicData(archives)), worldContent_(archives),
@@ -29,7 +34,7 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
     };
     simulation_.state_.player.combatRandom = (uint64_t(666) << 32) | selection.seed;
     simulation_.monsterAccuracy_ = [this](const Enemy &enemy, int mode) -> std::optional<MonsterAccuracy> {
-        if (state().population.difficulty != 0 || enemy.identity.rank != MonsterRank::Normal)
+        if (state().population.difficulty != 0 || !baseMonsterRank(enemy.identity.rank))
             return std::nullopt;
         const auto *record = monsterContent_.find(enemy.identity.monster);
         if (!record || record->boss)
@@ -64,7 +69,7 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
         return applied;
     };
     simulation_.monsterDefense_ = [this](const Enemy &enemy) -> std::optional<MonsterDefense> {
-        if (state().population.difficulty != 0 || enemy.identity.rank != MonsterRank::Normal)
+        if (state().population.difficulty != 0 || !baseMonsterRank(enemy.identity.rank))
             return std::nullopt;
         const auto *record = monsterContent_.find(enemy.identity.monster);
         if (!record || record->boss || !record->normalDefense)
@@ -80,14 +85,14 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
     };
     simulation_.monsterNormalCombat_ = [this](const MonsterIdentity &identity)
         -> std::optional<MonsterNormalCombat> {
-        if (state().population.difficulty != 0 || identity.rank != MonsterRank::Normal)
+        if (state().population.difficulty != 0 || !baseMonsterRank(identity.rank))
             return std::nullopt;
         const auto *record = monsterContent_.find(identity.monster);
         return record && !record->boss ? record->normalCombat : std::nullopt;
     };
     simulation_.monsterAi_ = [this](const Enemy &enemy)
         -> std::optional<MonsterAiProfile> {
-        if (enemy.identity.rank != MonsterRank::Normal)
+        if (!baseMonsterRank(enemy.identity.rank))
             return std::nullopt;
         const auto *record = monsterContent_.find(enemy.identity.monster);
         if (!record || record->boss) return std::nullopt;
@@ -148,7 +153,7 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
     Fingerprint fingerprint;
     fingerprint.add(content_.profile);
     // Bump this rules revision when state interpretation or compiled rules change.
-    fingerprint.add("d2x-session-rules-v57-zombie-movement");
+    fingerprint.add("d2x-session-rules-v58-normal-party-combat");
     auto members = archives.used;
     for (const auto &member : members) {
         fingerprint.add(member);
