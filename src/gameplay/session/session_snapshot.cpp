@@ -346,7 +346,8 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
             if (!ai || (ai->kind != MonsterAiKind::Skeleton && ai->kind != MonsterAiKind::Zombie &&
                         ai->kind != MonsterAiKind::Fallen && ai->kind != MonsterAiKind::Brute &&
                         ai->kind != MonsterAiKind::CorruptRogue && ai->kind != MonsterAiKind::Goatman &&
-                        ai->kind != MonsterAiKind::QuillRat && ai->kind != MonsterAiKind::Wraith))
+                        ai->kind != MonsterAiKind::QuillRat && ai->kind != MonsterAiKind::Wraith &&
+                        ai->kind != MonsterAiKind::CorruptLancer))
                 require(enemy.aiWait == 0 && !enemy.aiPursuing && !enemy.aiEscaping &&
                             !enemy.aiCommanded && !enemy.aiCircling && !enemy.aiRunning &&
                             enemy.aiAdvanceRemaining == 0 && enemy.skill2Remaining == 0,
@@ -363,9 +364,17 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
                             (enemy.aiAdvanceRemaining == 0 || enemy.hp > 0) &&
                             (!enemy.aiRunning || enemy.aiAdvanceRemaining > 0),
                         "corrupt rogue AI state");
+            else if (ai && ai->kind == MonsterAiKind::CorruptLancer)
+                require(enemy.aiWait <= float(ai->params[2]) / 25.f &&
+                            enemy.aiAdvanceRemaining == 0 &&
+                            (!enemy.aiCharged || enemy.hp > 0) &&
+                            !enemy.aiPursuing && !enemy.aiEscaping && !enemy.aiCommanded,
+                        "corrupt lancer AI state");
             else
                 require(!enemy.aiRunning && enemy.aiAdvanceRemaining == 0,
                         "non-rogue run state");
+            if (!ai || ai->kind != MonsterAiKind::CorruptLancer)
+                require(!enemy.aiCharged, "non-lancer charge state");
             if (ai && ai->kind == MonsterAiKind::Goatman)
                 require(enemy.aiWait <= float(ai->params[1]) / 25.f &&
                             !enemy.aiPursuing && !enemy.aiEscaping && !enemy.aiCommanded,
@@ -386,7 +395,7 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
                 const auto *record = monsterContent_.find(enemy.identity.monster);
                 require(record && record->runMode && record->runVelocity &&
                             monsterContent_.motion(enemy.kind, "rn"),
-                        "original rogue run animation and velocity");
+                        "original monster run animation and velocity");
             }
             if (ai && ai->kind == MonsterAiKind::Zombie)
                 require(enemy.aiWait <= 10.f / 25.f && (!enemy.aiPursuing || enemy.aiWait == 0),

@@ -25,6 +25,8 @@ MonsterImplementation monsterImplementation(const std::string &code) {
         return {MonsterKind::QuillRat, false};
     if (code == "wraith1" || code == "wraith2" || code == "wraith3")
         return {MonsterKind::Wraith, false};
+    if (code == "cr_lancer1" || code == "cr_lancer2" || code == "cr_lancer3")
+        return {MonsterKind::CorruptLancer, false};
     return {MonsterKind::Fallen, true};
 }
 const char *monsterRankName(MonsterRank rank) {

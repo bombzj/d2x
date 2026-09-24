@@ -22,7 +22,8 @@ void SceneAssets::loadMonsterAnimations(Archives &archives, const GameSession &s
         }
         for (auto mode : {"nu", "wl", "rn", "a1", "dt", "a2", "gh", "dd", "s2"}) {
             if (std::string_view(mode) == "rn" &&
-                (kind != MonsterKind::CorruptRogue || !actor.runMode)) continue;
+                ((kind != MonsterKind::CorruptRogue && kind != MonsterKind::CorruptLancer) ||
+                 !actor.runMode)) continue;
             if (std::string_view(mode) == "a2" && !content.attackTiming(kind, 2)) continue;
             if (std::string_view(mode) == "gh" && !actor.getHitMode) continue;
             if (std::string_view(mode) == "dd" && !actor.deadMode) continue;
@@ -53,7 +54,7 @@ void SceneAssets::loadMonsterAnimations(Archives &archives, const GameSession &s
                 if ((kind == MonsterKind::Brute || kind == MonsterKind::Zombie ||
                      kind == MonsterKind::Skeleton || kind == MonsterKind::CorruptRogue ||
                      kind == MonsterKind::Goatman || kind == MonsterKind::QuillRat ||
-                     kind == MonsterKind::Wraith) && !timing)
+                     kind == MonsterKind::Wraith || kind == MonsterKind::CorruptLancer) && !timing)
                     throw std::runtime_error("Original monster AnimData entry missing: " +
                                              actor.id + "/" + mode);
                 if (timing && animation->second.count != timing->frames)

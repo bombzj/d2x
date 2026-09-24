@@ -7,6 +7,7 @@
 #include "gameplay/monsters/goatman_ai.hpp"
 #include "gameplay/monsters/quill_rat_ai.hpp"
 #include "gameplay/monsters/wraith_ai.hpp"
+#include "gameplay/monsters/corrupt_lancer_ai.hpp"
 #include "gameplay/monsters/monster_wander.hpp"
 #include <algorithm>
 
@@ -41,6 +42,7 @@ void Simulation::updateMonsters(float dt) {
             enemy.aiCircling = false;
             enemy.aiRunning = false;
             enemy.aiRetaliate = false;
+            enemy.aiCharged = false;
             enemy.aiAdvanceRemaining = 0;
             enemy.skill2Remaining = enemy.skill2Duration = 0;
             enemy.aiCircling = false;
@@ -105,6 +107,7 @@ void Simulation::updateMonsters(float dt) {
         const auto ai = monsterAi_ ? monsterAi_(enemy) : std::nullopt;
         const bool fallenAi = ai && ai->kind == MonsterAiKind::Fallen;
         const bool rogueAi = ai && ai->kind == MonsterAiKind::CorruptRogue;
+        const bool lancerAi = ai && ai->kind == MonsterAiKind::CorruptLancer;
         if (fallenAi && !enemy.aiEscaping && monsterDeathDuration_)
             for (const auto &corpse : state_.area.enemies) {
                 if (corpse.hp > 0 || corpse.id == enemy.id ||
@@ -167,6 +170,15 @@ void Simulation::updateMonsters(float dt) {
             }
         }
         if (distance >= definition.attackRange || !clear) {
+            if (lancerAi) {
+                const auto action = corruptLancerMovement(enemy, *ai, distance);
+                if (action == CorruptLancerMovement::Idle) {
+                    enemy.route.clear();
+                    enemy.aiRunning = false;
+                    continue;
+                }
+                enemy.aiRunning = action == CorruptLancerMovement::Run;
+            }
             if (rogueAi && enemy.aiAdvanceRemaining <= 0) {
                 const auto action = corruptRogueMovement(
                     enemy, *ai, distance, state_.population.difficulty);
@@ -230,6 +242,7 @@ void Simulation::updateMonsters(float dt) {
                         enemy.aiRunning = false;
                         enemy.aiAdvanceRemaining = 0;
                     }
+                    if (lancerAi) enemy.aiRunning = false;
                     continue;
                 }
                 destination = enemy.route.front();
@@ -241,6 +254,11 @@ void Simulation::updateMonsters(float dt) {
                 const auto runSpeed = monsterRunSpeed_ ? monsterRunSpeed_(enemy) : std::nullopt;
                 speed = runSpeed.value_or(originalSpeed.value_or(definition.speed)) *
                         (1.f + float(ai->params[3]) / 100.f) * (enemy.chill > 0 ? .42f : 1.f);
+            }
+            if (lancerAi && enemy.aiRunning) {
+                const auto runSpeed = monsterRunSpeed_ ? monsterRunSpeed_(enemy) : std::nullopt;
+                speed = runSpeed.value_or(originalSpeed.value_or(definition.speed)) *
+                        (enemy.chill > 0 ? .42f : 1.f);
             }
             if (bruteAi) speed *= bruteWalkMultiplier(enemy);
             if (zombieAi && !zombieWanders) speed *= 4.f / 3.f;
@@ -260,6 +278,7 @@ void Simulation::updateMonsters(float dt) {
                     enemy.aiRunning = false;
                     enemy.aiAdvanceRemaining = 0;
                 }
+                if (lancerAi) enemy.aiRunning = false;
             }
         } else {
             enemy.route.clear();
@@ -268,6 +287,7 @@ void Simulation::updateMonsters(float dt) {
                 enemy.aiRunning = false;
                 enemy.aiAdvanceRemaining = 0;
             }
+            if (lancerAi) enemy.aiRunning = false;
         }
         if ((player.pos - enemy.pos).length() < definition.attackRange &&
             player.leapTime <= 0 && grid_->segment(enemy.pos, player.pos)) {
@@ -293,6 +313,7 @@ void Simulation::updateMonsters(float dt) {
             if (rogueAi && !corruptRogueAttacks(enemy, *ai)) continue;
             if (goatmanAi && !goatmanAttacks(enemy, *ai)) continue;
             if (wraithAi && !wraithAttacks(enemy, *ai)) continue;
+            if (lancerAi && !corruptLancerAttacks(enemy, *ai)) continue;
             beginMonsterAttack(enemy);
         }
     }

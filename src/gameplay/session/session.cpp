@@ -150,6 +150,9 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
             return profile;
         if (profile->kind == MonsterAiKind::Wraith && enemy.kind == MonsterKind::Wraith)
             return profile;
+        if (profile->kind == MonsterAiKind::CorruptLancer &&
+            enemy.kind == MonsterKind::CorruptLancer)
+            return profile;
         return std::nullopt;
     };
     simulation_.zombieForcedPursuit_ = [this](RegionId region) {
@@ -233,7 +236,7 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
     Fingerprint fingerprint;
     fingerprint.add(content_.profile);
     // Bump this rules revision when state interpretation or compiled rules change.
-    fingerprint.add("d2x-session-rules-v101-wraith3");
+    fingerprint.add("d2x-session-rules-v102-corrupt-lancer");
     auto members = archives.used;
     for (const auto &member : members) {
         fingerprint.add(member);
