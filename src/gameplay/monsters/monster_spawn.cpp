@@ -11,7 +11,7 @@ MonsterImplementation monsterImplementation(const std::string &code) {
     if (code == "skeleton1" || code == "skeleton2" || code == "skeleton3" ||
         code == "skeleton4" || code == "skeleton5")
         return {MonsterKind::Skeleton, false};
-    if (code == "corruptrogue1")
+    if (code == "corruptrogue1" || code == "corruptrogue2")
         return {MonsterKind::CorruptRogue, false};
     if (code == "brute1" || code == "brute2" || code == "brute3" || code == "brute4" ||
         code == "brute5")

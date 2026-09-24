@@ -219,7 +219,7 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
     Fingerprint fingerprint;
     fingerprint.add(content_.profile);
     // Bump this rules revision when state interpretation or compiled rules change.
-    fingerprint.add("d2x-session-rules-v84-corrupt-rogue-ai");
+    fingerprint.add("d2x-session-rules-v85-corrupt-rogue2");
     auto members = archives.used;
     for (const auto &member : members) {
         fingerprint.add(member);
