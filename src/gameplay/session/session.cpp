@@ -155,7 +155,7 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
     Fingerprint fingerprint;
     fingerprint.add(content_.profile);
     // Bump this rules revision when state interpretation or compiled rules change.
-    fingerprint.add("d2x-session-rules-v60-fallen-a2");
+    fingerprint.add("d2x-session-rules-v61-brute-attack");
     auto members = archives.used;
     for (const auto &member : members) {
         fingerprint.add(member);

@@ -17,6 +17,7 @@
 11. **普通群组等级与数值：已修正。** 普通怪物从 MPQ `PartyMin/Max` 生成的随从使用 Normal，保留原数量但不再误用精英 Minion 的通用 100 HP／6 点伤害；Minion 留给精英随从。读取 MPQ A1 数值时不因 `rangedtype` 一概跳过有 A1 字段的类型。血腥荒地种子 210 的 24 个 `fallen1` 现为 1–4 HP，`quillrat1` 为 2 HP；普通难度 `Levels.MonDen=520` 与两个高难度在该区域恰好相同，不能凭难度名称擅改数量。v31 存档按新等级与生命区间校验；噩梦／地狱的完整战斗数值和正式切换仍待后续。
 12. **沉沦魔追击／游走／攻击概率：已完成基础分支。** 普通 `AI=Fallen` 按 MPQ `aip2` 的距离门槛追击目标；门槛外参照原规则按 30% 几率在三格内游走，否则等待 10 帧。近身攻击按 `aip3` 选择，失败后短暂等待。普通难度 `fallen1` 的门槛 10、攻击概率 50% 均来自当前 MPQ。游走与等待共用独立怪物 AI 组件，等待／追击状态进入 v32 存档。见同伴尸体逃跑、`aip1` 同伴命令与 Skill2 喊叫暂缓。
 13. **普通沉沦魔 A2：已完成基础分支。** `fallen1` 从 MPQ 原 `FAA2HTH` COF/DCC、`AnimData.d2` 动作事件和 `MonStats.A2MinD/A2MaxD/A2TH` 取得第二近战动作与数值；`AI=Fallen` 的 `aip4` 决定 A1／A2。原表 A2 为 15 帧、0.6 秒，命中事件在 0.32 秒；v33 存档可恢复出伤阶段，独立运行目录已截图。仅在原资源与数值齐全时启用。
-14. **后续候选：其他专属 AI 与动作。** 逐种核对原 AI 规则和 MPQ 资源，再处理远程弹体与技能、尸体复活、各难度与等级缩放、抗性和元素伤害、精英／首领词缀和 Boss 特性。
+14. **Brute 近身攻击机会：已完成基础分支。** `AI=Brute` 在近身时先按 MPQ `aip3` 掷攻击机会；掷骰失败则等待 15 帧，等待状态沿用现有存档字段。原 AI 在失败后还会再次掷骰，并可能执行侧移；侧移所需移动参数尚未核实，暂缓接入。`brute1` 普通难度原表攻击机会为 100%，因此这一步不会改变其近身攻击频率；其他 Brute 变体仍使用类型替身。v34 改变规则指纹，不读取旧档。
+15. **后续候选：其他专属 AI 与动作。** 逐种核对原 AI 规则和 MPQ 资源，再处理远程弹体与技能、尸体复活、各难度与等级缩放、抗性和元素伤害、精英／首领词缀和 Boss 特性。
 
 当前数值计算依据本地 `reference/d2moo/source/D2Common/src/DataTbls/MonsterTbls.cpp` 的 `DATATBLS_CalculateMonsterStatsByLevel` 和 `reference/d2moo/source/D2Game/src/MONSTER/Monster.cpp` 的生命掷骰；AI 规则核对 `reference/d2moo/source/D2Game/src/AI/AiThink.cpp` 的 Skeleton、Zombie、Fallen 与 Brute 分支，动作帧核对 `reference/d2moo/source/D2Common/src/DataTbls/AnimTbls.cpp` 与 `Units.cpp`。区间、AI 参数和动作时序始终从用户挂载的 MPQ 读取，参考仓库不作为运行时数据源。当前目标选择、AI 调度和随机流仍是项目适配，不能视为原版逐帧复刻。

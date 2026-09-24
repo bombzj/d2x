@@ -125,6 +125,8 @@ void Simulation::updateMonsters(float dt) {
                 continue;
             if (fallenAi && !fallenAttacks(enemy, *ai))
                 continue;
+            if (bruteAi && !bruteAttacks(enemy, *ai))
+                continue;
             beginMonsterAttack(enemy);
         }
     }
