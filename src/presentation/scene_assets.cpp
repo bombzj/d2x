@@ -133,6 +133,12 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
                 throw std::runtime_error("Original MPQ monster spell art is missing: " + id);
             projectileAnimations.emplace(spell->projectile.id, std::move(animation));
         }
+        if (monster.web && !projectileAnimations.contains(monster.web->missileId)) {
+            auto animation = graphics_.single(monster.web->art);
+            if (animation.frames.empty())
+                throw std::runtime_error("Original MPQ spider web art is missing: " + id);
+            projectileAnimations.emplace(monster.web->missileId, std::move(animation));
+        }
     }
     for (const auto &[id, skill] : session.content().skills.skills)
         if (skill.originalEffect && skill.originalEffect->effect == Skill::Teleport) {

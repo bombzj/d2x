@@ -212,7 +212,8 @@ void SceneView::drawActors() const {
                               : (e.stun > 0 || e.hitFlash > 0) && animations.contains("gh") ? "gh"
                               : e.skill2Remaining > 0 && animations.contains("s2") ? "s2"
                               : e.attack > 0 ? (e.attackMode >= 3 ?
-                                                 (e.kind == MonsterKind::FallenShaman ? "a2" :
+                                                 ((e.kind == MonsterKind::FallenShaman ||
+                                                   e.kind == MonsterKind::Arach) ? "a2" :
                                                   e.kind == MonsterKind::FoulCrowNest ? "s1" : "sc") :
                                                  e.attackMode == 2 ? "a2" : "a1")
                               : movingMonsters_.contains(e.id) ?

@@ -144,7 +144,7 @@ class Codec {
         }
     }
 };
-// Explicit schema, never compiler struct layout. Player/item field order is save version 79.
+// Explicit schema, never compiler struct layout. Player/item field order is save version 80.
 void fields(Codec &a, EntityId &v) {
     a(v.value);
 }
@@ -164,6 +164,7 @@ void fields(Codec &a, PlayerState &v) {
     a(v.id, v.characterClass, v.pos, v.previous, v.look, v.route, v.hp, v.mana, v.stamina, v.castTime, v.spinTime, v.leapTime,
       v.hitTime, v.deathTime, v.meleeTime, v.lastMeleeDuration, v.chill,
       v.poisonRemaining, v.poisonPerSecond,
+      v.webSlowRemaining, v.webSlowPercent, v.webSource,
       v.leapStart, v.leapEnd, v.cooldown, v.healing, v.manaRestoration,
     v.staminaBoost, v.attackTarget, v.throwAttack, v.leftHandAttack, v.lastSkill, v.lastCastDuration, v.running, v.moving, v.dead, v.combatRandom, v.nextWeapon, v.gold,
     v.experience, v.level, v.allocated, v.unspentAttributes, v.skillRanks, v.unspentSkills, v.skillHotkeys);
@@ -175,6 +176,7 @@ void fields(Codec &a, Enemy &v) {
             v.aiWait, v.aiPursuing, v.aiEscaping, v.aiCommanded, v.aiCircling,
             v.aiRunning, v.aiAdvanceRemaining, v.aiRetaliate, v.aiCharged,
             v.aiPhase, v.aiLoop, v.aiCorpse, v.resurrected,
+            v.webAuraRemaining, v.webTrailDistance,
             v.route, v.combatRandom);
 }
 void fields(Codec &a, MonsterIdentity &v) {
@@ -188,7 +190,7 @@ void fields(Codec &a, PopulationSettings &v) {
 }
 void fields(Codec &a, Missile &v) {
     a(v.id, v.owner, v.pos, v.velocity, v.remaining, v.skill, v.physical, v.missileId,
-      v.damage, v.radius, v.chill, v.hostile, v.hostileMode);
+      v.damage, v.radius, v.chill, v.hostile, v.hostileMode, v.slowDuration);
 }
 void fields(Codec &a, Effect &v) {
     a(v.pos, v.skill, v.age, v.duration);
@@ -266,7 +268,7 @@ Bytes encodeSave(SessionSnapshot snapshot) {
     Codec body;
     body(snapshot);
     auto bytes = body.take();
-    uint32_t version = 79, size = uint32_t(bytes.size()), crc = checksum(bytes);
+    uint32_t version = 80, size = uint32_t(bytes.size()), crc = checksum(bytes);
     Codec header;
     header(version, size, crc);
     auto headerBytes = header.take();
@@ -285,8 +287,8 @@ SessionSnapshot decodeSave(std::span<const uint8_t> bytes) {
     Codec header(bytes.subspan(sizeof(magic), 12));
     uint32_t version = 0, size = 0, crc = 0;
     header(version, size, crc);
-    if (version != 79)
-        throw std::runtime_error("Unsupported D2X save version; nest summons require a new version-79 game");
+    if (version != 80)
+        throw std::runtime_error("Unsupported D2X save version; Arach webs require a new version-80 game");
     auto payload = bytes.subspan(headerSize);
     if (size != payload.size() || crc != checksum(payload))
         throw std::runtime_error("Save checksum or length mismatch");

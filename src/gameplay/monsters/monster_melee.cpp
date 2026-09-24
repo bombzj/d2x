@@ -37,6 +37,8 @@ void Simulation::beginMonsterAttack(Enemy &enemy, int forcedMode) {
         if (enemy.attackMode == 3 && monsterResurrection_ &&
             monsterResurrection_(enemy))
             resolveMonsterResurrection(enemy);
+        else if (enemy.attackMode == 3 && monsterWeb_ && monsterWeb_(enemy))
+            activateSpiderWeb(enemy);
         else if (enemy.attackMode >= 3)
             launchMonsterSpell(enemy);
         else if (monsterProjectile_ && monsterProjectile_(enemy, enemy.attackMode))

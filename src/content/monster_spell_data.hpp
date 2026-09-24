@@ -13,4 +13,7 @@ std::optional<MonsterResurrection> loadMonsterResurrection(
 std::optional<MonsterNest> loadMonsterNest(
     const DataTable &monsters, size_t monsterRow,
     const DataTable &skills, const DataTable &sequences);
+std::optional<MonsterWeb> loadMonsterWeb(
+    const Archives &archives, const DataTable &monsters, size_t monsterRow,
+    const DataTable &skills, const DataTable &missiles);
 } // namespace d2x

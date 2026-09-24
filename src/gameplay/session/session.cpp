@@ -178,6 +178,8 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
         if (profile->kind == MonsterAiKind::BloodHawk &&
             enemy.kind == MonsterKind::BloodHawk)
             return profile;
+        if (profile->kind == MonsterAiKind::Arach && enemy.kind == MonsterKind::Arach)
+            return profile;
         return std::nullopt;
     };
     simulation_.zombieForcedPursuit_ = [this](RegionId region) {
@@ -255,6 +257,13 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
             monsterImplementation(record->nest->child).substitute) return std::nullopt;
         return record->nest;
     };
+    simulation_.monsterWeb_ = [this](const Enemy &enemy)
+        -> std::optional<MonsterWeb> {
+        if (enemy.kind != MonsterKind::Arach ||
+            monsterImplementation(enemy.identity.monster).substitute) return std::nullopt;
+        const auto *record = monsterContent_.find(enemy.identity.monster);
+        return record ? record->web : std::nullopt;
+    };
     worldSelection.difficulty = population.difficulty;
     auto plan = planWorld(archives, worldContent_, worldSelection);
     regions_ = loadRegions(archives, ids_, plan.regions, monsterContent_);
@@ -297,7 +306,7 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
     Fingerprint fingerprint;
     fingerprint.add(content_.profile);
     // Bump this rules revision when state interpretation or compiled rules change.
-    fingerprint.add("d2x-session-rules-v111-foul-crow-nest");
+    fingerprint.add("d2x-session-rules-v112-arach-web");
     auto members = archives.used;
     for (const auto &member : members) {
         fingerprint.add(member);

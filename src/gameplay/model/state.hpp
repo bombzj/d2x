@@ -25,6 +25,9 @@ struct PlayerState {
     float lastMeleeDuration = 0;
     float chill = 0;
     float poisonRemaining = 0, poisonPerSecond = 0;
+    float webSlowRemaining = 0;
+    int webSlowPercent = 0;
+    EntityId webSource;
     Vec leapStart, leapEnd;
     std::array<float, skillCount> cooldown{};
     std::deque<Restoration> healing, manaRestoration;
@@ -68,6 +71,7 @@ struct Enemy {
     int aiPhase = 0, aiLoop = 0;
     EntityId aiCorpse;
     bool resurrected = false;
+    float webAuraRemaining = 0, webTrailDistance = 0;
     std::deque<Vec> route;
     uint64_t combatRandom = (uint64_t(666) << 32) | 210;
 };
@@ -82,6 +86,7 @@ struct Missile {
     float radius = 0, chill = 0;
     bool hostile = false;
     int hostileMode = 0;
+    float slowDuration = 0;
 };
 struct Effect {
     Vec pos;

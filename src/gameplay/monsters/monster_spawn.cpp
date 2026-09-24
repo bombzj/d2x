@@ -51,6 +51,8 @@ MonsterImplementation monsterImplementation(const std::string &code) {
         return {MonsterKind::FoulCrowNest, false};
     if (code == "foulcrow1" || code == "foulcrow2")
         return {MonsterKind::BloodHawk, false};
+    if (code == "arach1")
+        return {MonsterKind::Arach, false};
     return {MonsterKind::Fallen, true};
 }
 const char *monsterRankName(MonsterRank rank) {

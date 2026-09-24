@@ -37,6 +37,8 @@ void Simulation::updateMonsters(float dt) {
         enemy.stun = std::max(0.f, enemy.stun - dt);
         enemy.rethink = std::max(0.f, enemy.rethink - dt);
         enemy.aiWait = std::max(0.f, enemy.aiWait - dt);
+        enemy.webAuraRemaining = std::max(0.f, enemy.webAuraRemaining - dt);
+        if (enemy.webAuraRemaining == 0) enemy.webTrailDistance = 0;
         if (player.dead || player.hp <= 0) {
             enemy.route.clear();
             enemy.aiPursuing = false;
@@ -79,6 +81,9 @@ void Simulation::updateMonsters(float dt) {
                     if (enemy.attackMode == 3 && monsterResurrection_ &&
                         monsterResurrection_(enemy))
                         resolveMonsterResurrection(enemy);
+                    else if (enemy.attackMode == 3 && monsterWeb_ &&
+                             monsterWeb_(enemy))
+                        activateSpiderWeb(enemy);
                     else if (enemy.attackMode == 3 && monsterNest_ &&
                              monsterNest_(enemy)) {
                         if (auto hatchling = nestSpawn(enemy, nestSpawns))
@@ -113,11 +118,13 @@ void Simulation::updateMonsters(float dt) {
             }
         }
         if (enemy.aiCircling) {
+            const Vec before = enemy.pos;
             const auto originalSpeed = monsterWalkSpeed_ ? monsterWalkSpeed_(enemy) : std::nullopt;
             const float speed = originalSpeed.value_or(monsterDefinition(enemy.kind).speed) *
                                 (enemy.kind == MonsterKind::Brute ? bruteWalkMultiplier(enemy) : 1.f) *
                                 (enemy.chill > 0 ? .42f : 1.f);
             monsterAdvanceCircle(enemy, *grid_, speed, dt);
+            leaveSpiderWeb(enemy, (enemy.pos - before).length());
             continue;
         }
         const auto ai = monsterAi_ ? monsterAi_(enemy) : std::nullopt;
@@ -134,6 +141,7 @@ void Simulation::updateMonsters(float dt) {
                     fallenStartEscape(enemy, player.pos, *grid_)) break;
             }
         if (enemy.aiEscaping) {
+            const Vec before = enemy.pos;
             const auto originalSpeed = monsterWalkSpeed_ ? monsterWalkSpeed_(enemy) : std::nullopt;
             const float speed = originalSpeed.value_or(monsterDefinition(enemy.kind).speed) *
                                 (enemy.kind == MonsterKind::Bighead ? .5f :
@@ -145,6 +153,7 @@ void Simulation::updateMonsters(float dt) {
                                  enemy.kind == MonsterKind::QuillRat ? 1.f : 1.5f) *
                                 (enemy.chill > 0 ? .42f : 1.f);
             fallenAdvanceEscape(enemy, *grid_, speed, dt);
+            leaveSpiderWeb(enemy, (enemy.pos - before).length());
             continue;
         }
         const auto &definition = monsterDefinition(enemy.kind);
@@ -333,6 +342,7 @@ void Simulation::updateMonsters(float dt) {
             if (grid_->segment(enemy.pos, next)) {
                 const float moved = (next - enemy.pos).length();
                 enemy.pos = next;
+                if (enemy.webAuraRemaining > 0) leaveSpiderWeb(enemy, moved);
                 if (rogueAi || skeletonBowAi || skeletonMageAi) {
                     enemy.aiAdvanceRemaining = std::max(0.f, enemy.aiAdvanceRemaining - moved);
                     if (rogueAi && enemy.aiAdvanceRemaining == 0) enemy.aiRunning = false;

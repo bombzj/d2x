@@ -37,7 +37,8 @@ void SceneAssets::loadMonsterAnimations(Archives &archives, const GameSession &s
                   kind != MonsterKind::CorruptArcher) ||
                  !actor.runMode)) continue;
             if (std::string_view(mode) == "a2" && !content.attackTiming(kind, 2) &&
-                !(kind == MonsterKind::FallenShaman && content.attackTiming(kind, 3))) continue;
+                !((kind == MonsterKind::FallenShaman || kind == MonsterKind::Arach) &&
+                  content.attackTiming(kind, 3))) continue;
             if (std::string_view(mode) == "sc" &&
                 (!actor.castMode || !content.attackTiming(kind, 3))) continue;
             if (std::string_view(mode) == "gh" && !actor.getHitMode) continue;
@@ -85,6 +86,12 @@ void SceneAssets::loadMonsterAnimations(Archives &archives, const GameSession &s
                 animations.at("s1").count != timing->frames)
                 throw std::runtime_error("Original nest sequence resources missing: " + actor.id);
         }
+        if (kind == MonsterKind::Arach) {
+            const auto *timing = content.attackTiming(kind, 3);
+            if (!actor.web || !timing || !animations.contains("a2") ||
+                animations.at("a2").count != timing->frames)
+                throw std::runtime_error("Original Arach SpiderLay resources missing: " + actor.id);
+        }
         if (actor.skill2Mode && kind == MonsterKind::Fallen) {
             const auto *timing = content.motion(kind, "s2");
             if (!timing || animations.at("s2").count != timing->frames)
@@ -103,7 +110,8 @@ void SceneAssets::loadMonsterAnimations(Archives &archives, const GameSession &s
                      kind == MonsterKind::Vampire ||
                      kind == MonsterKind::FallenShaman ||
                      kind == MonsterKind::FoulCrowNest ||
-                     kind == MonsterKind::BloodHawk) && !timing)
+                     kind == MonsterKind::BloodHawk ||
+                     kind == MonsterKind::Arach) && !timing)
                     throw std::runtime_error("Original monster AnimData entry missing: " +
                                              actor.id + "/" + mode);
                 if (timing && animation->second.count != timing->frames)

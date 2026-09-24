@@ -5,6 +5,7 @@
 #include "gameplay/monsters/vampire_ai.hpp"
 #include "gameplay/monsters/fallen_shaman_ai.hpp"
 #include "gameplay/monsters/blood_hawk_ai.hpp"
+#include "gameplay/monsters/arach_ai.hpp"
 #include "gameplay/monsters/monster_wander.hpp"
 #include <algorithm>
 
@@ -12,6 +13,31 @@ namespace d2x {
 bool Simulation::handleMonsterSpecialAi(Enemy &enemy, const MonsterAiProfile &ai,
                                         float distance, bool clear) {
     const auto &player = state_.player;
+    if (ai.kind == MonsterAiKind::Arach) {
+        const bool inCombat = clear &&
+            distance < monsterDefinition(enemy.kind).attackRange && player.leapTime <= 0;
+        const auto action = arachThink(enemy, ai, distance, inCombat);
+        if (action == ArachAction::Attack || action == ArachAction::Web) {
+            enemy.route.clear();
+            beginMonsterAttack(enemy, action == ArachAction::Web ? 3 : 1);
+            return true;
+        }
+        if (action == ArachAction::Retreat) {
+            if (!monsterStartRetreat(enemy, player.pos, ai.params[3], *grid_))
+                enemy.aiWait = 15.f / 25.f;
+            return true;
+        }
+        if (action == ArachAction::Circle) {
+            if (!monsterStartCircle(enemy, player.pos, 6, *grid_))
+                enemy.aiWait = 15.f / 25.f;
+            return true;
+        }
+        if (action == ArachAction::Idle) {
+            enemy.route.clear();
+            return true;
+        }
+        return false;
+    }
     if (ai.kind == MonsterAiKind::FoulCrowNest) {
         enemy.route.clear();
         if (distance <= 20.f && enemy.aiWait == 0 &&

@@ -82,4 +82,42 @@ std::optional<MonsterNest> loadMonsterNest(
                                std::string(sequence)};
     return std::nullopt;
 }
+std::optional<MonsterWeb> loadMonsterWeb(
+    const Archives &archives, const DataTable &monsters, size_t monsterRow,
+    const DataTable &skills, const DataTable &missiles) {
+    const auto sourceSkill = monsters.value(monsterRow, "Skill1");
+    const auto sourceMode = monsters.value(monsterRow, "Sk1mode");
+    if (sourceSkill.empty() || sourceMode != "A2") return std::nullopt;
+    for (size_t skillRow = 0; skillRow < skills.rows().size(); ++skillRow) {
+        if (skills.value(skillRow, "skill") != sourceSkill ||
+            skills.number(skillRow, "srvdofunc") != 23 ||
+            skills.value(skillRow, "aurastate") != "spiderlay" ||
+            skills.value(skillRow, "auratargetstate") != "slowed" ||
+            skills.value(skillRow, "aurastat1") != "velocitypercent") continue;
+        const auto aura = skills.number(skillRow, "auralencalc");
+        const auto slow = skills.number(skillRow, "calc4");
+        const auto percent = skills.number(skillRow, "aurastatcalc1");
+        if (!aura || *aura <= 0 || *aura > 10000 ||
+            !slow || *slow <= 0 || *slow > 1000 ||
+            !percent || *percent < -100 || *percent > 0) return std::nullopt;
+        // D2Game SrvDo023 creates the spidergoo missile from the original table.
+        for (size_t missileRow = 0; missileRow < missiles.rows().size(); ++missileRow) {
+            if (missiles.value(missileRow, "Missile") != "spidergoo") continue;
+            const auto id = missiles.number(missileRow, "Id");
+            const auto range = missiles.number(missileRow, "Range");
+            const auto size = missiles.number(missileRow, "Size");
+            auto file = std::string(missiles.value(missileRow, "CelFile"));
+            for (char &ch : file)
+                ch = char(std::tolower(static_cast<unsigned char>(ch)));
+            const auto art = "data/global/missiles/" + file + ".dcc";
+            if (!id || *id < 0 || !range || *range <= 0 || *range > 10000 ||
+                !size || *size <= 0 || *size > 16 || file.empty() ||
+                !archives.contains(art)) return std::nullopt;
+            return MonsterWeb{std::string(sourceSkill), std::string(sourceMode), art,
+                              *id, float(*range) / 25.f, float(*size) / 2.f,
+                              float(*aura) / 25.f, float(*slow) / 25.f, *percent};
+        }
+    }
+    return std::nullopt;
+}
 } // namespace d2x

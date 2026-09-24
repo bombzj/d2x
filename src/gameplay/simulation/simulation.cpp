@@ -53,6 +53,9 @@ void Simulation::heal() {
     p.staminaBoost = 0;
     p.chill = 0;
     p.poisonRemaining = p.poisonPerSecond = 0;
+    p.webSlowRemaining = 0;
+    p.webSlowPercent = 0;
+    p.webSource = {};
     p.dead = false;
     p.deathTime = 0;
 }
@@ -123,6 +126,11 @@ void Simulation::tick(float dt, Vec keyboard) {
     p.spinTime = std::max(0.f, p.spinTime - dt);
     p.hitTime = std::max(0.f, p.hitTime - dt);
     p.chill = std::max(0.f, p.chill - dt);
+    p.webSlowRemaining = std::max(0.f, p.webSlowRemaining - dt);
+    if (p.webSlowRemaining == 0) {
+        p.webSlowPercent = 0;
+        p.webSource = {};
+    }
     p.meleeTime = std::max(0.f, p.meleeTime - dt);
     p.moving = false;
     if (p.dead)

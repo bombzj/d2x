@@ -29,6 +29,7 @@ struct MonsterRecord {
     std::array<std::optional<MonsterSpell>, 4> spells;
     std::optional<MonsterResurrection> resurrection;
     std::optional<MonsterNest> nest;
+    std::optional<MonsterWeb> web;
     std::array<std::optional<MonsterAiProfile>, 3> aiProfiles;
     bool enabled = false, randomSpawn = false, ranged = false, placeSpawn = false;
     bool killable = false, npc = false, critter = false, inert = false, boss = false;

@@ -38,6 +38,7 @@ void Simulation::damageEnemy(Enemy &enemy, float amount, EntityId source, float 
         enemy.aiPhase = 0;
         if (enemy.kind != MonsterKind::FoulCrowNest) enemy.aiLoop = 0;
         enemy.aiCorpse = {};
+        enemy.webAuraRemaining = enemy.webTrailDistance = 0;
         enemy.attack = enemy.attackDuration = 0;
         enemy.attackImpact = -1;
         enemy.attackMode = 1;
@@ -82,6 +83,19 @@ void Simulation::damage(Vec pos, float radius, float amount, EntityId source, fl
 void Simulation::updateMissiles(float dt) {
     auto &area = state_.area;
     for (auto &m : area.missiles) {
+        if (m.hostile && m.hostileMode == 7) {
+            m.remaining -= dt;
+            if (!state_.player.dead && m.remaining > 0 &&
+                (state_.player.pos - m.pos).length() < m.radius)
+                if (auto *owner = findEnemy(m.owner))
+                    if (auto web = monsterWeb_ ? monsterWeb_(*owner) : std::nullopt) {
+                        state_.player.webSlowRemaining =
+                            std::max(state_.player.webSlowRemaining, m.slowDuration);
+                        state_.player.webSlowPercent = web->slowPercent;
+                        state_.player.webSource = owner->id;
+                    }
+            continue;
+        }
         auto next = m.pos + m.velocity * dt;
         if (m.hostile) {
             if (!grid_->segment(m.pos, next)) {

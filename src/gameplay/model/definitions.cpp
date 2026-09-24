@@ -65,6 +65,9 @@ const MonsterDefinition &monsterDefinition(MonsterKind id) {
     static const MonsterDefinition bloodHawk{MonsterKind::BloodHawk, "bk", fallen.maxLife,
                                              fallen.speed, fallen.damage, fallen.attackInterval,
                                              fallen.sightRange, fallen.attackRange};
+    static const MonsterDefinition arach{MonsterKind::Arach, "sp", fallen.maxLife,
+                                         fallen.speed, fallen.damage, fallen.attackInterval,
+                                         fallen.sightRange, fallen.attackRange};
     switch (id) {
     case MonsterKind::Fallen:
         return fallen;
@@ -104,6 +107,8 @@ const MonsterDefinition &monsterDefinition(MonsterKind id) {
         return foulCrowNest;
     case MonsterKind::BloodHawk:
         return bloodHawk;
+    case MonsterKind::Arach:
+        return arach;
     case MonsterKind::Count:
         break;
     }

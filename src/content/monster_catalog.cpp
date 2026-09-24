@@ -161,6 +161,7 @@ MonsterCatalog::MonsterCatalog(Archives &archives, const DataTable &stats) {
             m.spells = loadMonsterSpells(archives, stats, row, skills, missiles, sequences);
             m.resurrection = loadMonsterResurrection(stats, row, skills, sequences);
             m.nest = loadMonsterNest(stats, row, skills, sequences);
+            m.web = loadMonsterWeb(archives, stats, row, skills, missiles);
         }
         if (!indices_.emplace(m.index, m.id).second)
             throw std::runtime_error("Duplicate MonStats hcIdx: " + std::to_string(m.index));
@@ -201,6 +202,11 @@ MonsterCatalog::MonsterCatalog(Archives &archives, const DataTable &stats) {
                         actor->spells[1] && actor->resurrection &&
                         actor->spells[1]->mode == "A2" &&
                         actor->resurrection->mode == "A2")
+                        if (auto timing = loadMonsterActionTiming(
+                                animations, actor->token, mode, weapon, 2))
+                            casts_.emplace(kind, *timing);
+                    if (kind == MonsterKind::Arach && actor->web &&
+                        actor->web->mode == "A2")
                         if (auto timing = loadMonsterActionTiming(
                                 animations, actor->token, mode, weapon, 2))
                             casts_.emplace(kind, *timing);

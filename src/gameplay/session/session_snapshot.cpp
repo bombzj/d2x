@@ -183,10 +183,27 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
     scalar(player.stamina);
     for (auto timer : {player.castTime, player.spinTime, player.leapTime, player.hitTime, player.deathTime,
                        player.meleeTime, player.lastMeleeDuration, player.staminaBoost, player.chill,
-                       player.poisonRemaining, player.poisonPerSecond})
+                       player.poisonRemaining, player.poisonPerSecond,
+                       player.webSlowRemaining})
         scalar(timer);
     require(player.meleeTime <= player.lastMeleeDuration, "player melee phase");
     require((player.poisonRemaining == 0) == (player.poisonPerSecond == 0), "player poison phase");
+    if (player.webSlowRemaining == 0)
+        require(player.webSlowPercent == 0 && !player.webSource,
+                "player web phase");
+    else {
+        bool sourceFound = false;
+        auto checkWebSource = [&](const AreaState &area) {
+            for (const auto &enemy : area.enemies)
+                if (enemy.id == player.webSource && simulation_.monsterWeb_)
+                    if (auto web = simulation_.monsterWeb_(enemy))
+                        sourceFound = player.webSlowPercent == web->slowPercent &&
+                                      player.webSlowRemaining <= web->slowDuration;
+        };
+        checkWebSource(s.world.area);
+        for (const auto &area : s.inactiveAreas) checkWebSource(area);
+        require(sourceFound, "player web source");
+    }
     for (auto cooldown : player.cooldown)
         scalar(cooldown);
     require(player.dead == (player.hp == 0), "player death state");
@@ -382,6 +399,10 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
                               simulation_.monsterNest_ &&
                               simulation_.monsterNest_(enemy) &&
                               monsterContent_.attackTiming(enemy.kind, 3)) ||
+                             (enemy.kind == MonsterKind::Arach &&
+                              enemy.attackMode == 3 && !spell &&
+                              simulation_.monsterWeb_ &&
+                              simulation_.monsterWeb_(enemy)) ||
                              (enemy.kind == MonsterKind::FallenShaman &&
                               ((enemy.attackMode == 3 && resurrection &&
                                 resurrection->mode == "A2") ||
@@ -414,7 +435,8 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
                         ai->kind != MonsterAiKind::Vampire &&
                         ai->kind != MonsterAiKind::FallenShaman &&
                         ai->kind != MonsterAiKind::FoulCrowNest &&
-                        ai->kind != MonsterAiKind::BloodHawk))
+                        ai->kind != MonsterAiKind::BloodHawk &&
+                        ai->kind != MonsterAiKind::Arach))
                 require(enemy.aiWait == 0 && !enemy.aiPursuing && !enemy.aiEscaping &&
                             !enemy.aiCommanded && !enemy.aiCircling && !enemy.aiRunning &&
                             enemy.aiAdvanceRemaining == 0 && enemy.skill2Remaining == 0,
@@ -489,13 +511,38 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
                             (!enemy.aiCircling ||
                              (enemy.hp > 0 && enemy.attack == 0 && !enemy.route.empty())),
                         "blood hawk AI state");
+            else if (ai && ai->kind == MonsterAiKind::Arach)
+                require(enemy.aiWait <= 15.f / 25.f &&
+                            enemy.aiPhase >= 0 && enemy.aiPhase <= 1 &&
+                            !enemy.aiPursuing && !enemy.aiCommanded &&
+                            !enemy.aiRunning && !enemy.aiCharged &&
+                            (!enemy.aiEscaping ||
+                             (enemy.hp > 0 && enemy.attack == 0 && !enemy.route.empty())) &&
+                            (!enemy.aiCircling ||
+                             (enemy.hp > 0 && enemy.attack == 0 && !enemy.route.empty())),
+                        "arach AI state");
             else
                 require(!enemy.aiCircling, "unsupported circling state");
             if (!ai || (ai->kind != MonsterAiKind::Fetish &&
                         ai->kind != MonsterAiKind::Vampire &&
-                        ai->kind != MonsterAiKind::FoulCrowNest))
+                        ai->kind != MonsterAiKind::FoulCrowNest &&
+                        ai->kind != MonsterAiKind::Arach))
                 require(enemy.aiPhase == 0 && enemy.aiLoop == 0,
                         "non-fetish AI phase");
+            if (ai && ai->kind == MonsterAiKind::Arach)
+                require(enemy.aiLoop == 0, "arach AI loop");
+            scalar(enemy.webAuraRemaining);
+            scalar(enemy.webTrailDistance, 0, 1);
+            if (simulation_.monsterWeb_) {
+                const auto web = simulation_.monsterWeb_(enemy);
+                if (web)
+                    require(enemy.webAuraRemaining <= web->auraDuration &&
+                                (enemy.webAuraRemaining > 0 || enemy.webTrailDistance == 0),
+                            "arach web aura");
+                else
+                    require(enemy.webAuraRemaining == 0 && enemy.webTrailDistance == 0,
+                            "unexpected web aura");
+            }
             if (enemy.aiCorpse) {
                 require(ai && ai->kind == MonsterAiKind::FallenShaman &&
                             enemy.attackMode == 3 && enemy.attack > 0,
@@ -587,7 +634,18 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
             if (missile.hostile) {
                 const auto owner = std::find_if(area.enemies.begin(), area.enemies.end(),
                     [&](const Enemy &enemy) { return enemy.id == missile.owner; });
-                if (missile.hostileMode >= 3) {
+                if (missile.hostileMode == 7) {
+                    const auto web = owner != area.enemies.end() && simulation_.monsterWeb_
+                        ? simulation_.monsterWeb_(*owner) : std::nullopt;
+                    require(web && !missile.physical &&
+                                missile.missileId == web->missileId &&
+                                missile.velocity.x == 0 && missile.velocity.y == 0 &&
+                                missile.damage == 0 && missile.chill == 0 &&
+                                missile.radius == web->radius &&
+                                missile.slowDuration == web->slowDuration &&
+                                missile.remaining <= web->lifetime,
+                            "original spider web identity");
+                } else if (missile.hostileMode >= 3) {
                     const auto spell = owner != area.enemies.end() && simulation_.monsterSpell_
                         ? simulation_.monsterSpell_(*owner, missile.hostileMode) : std::nullopt;
                     require((missile.hostileMode == 3 || missile.hostileMode == 4 ||
@@ -623,6 +681,9 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
             scalar(missile.damage);
             scalar(missile.radius);
             scalar(missile.chill);
+            scalar(missile.slowDuration);
+            if (missile.hostileMode != 7)
+                require(missile.slowDuration == 0, "unexpected missile slow");
             if (missile.physical && !missile.hostile)
                 require(std::any_of(content_.items.entries().begin(), content_.items.entries().end(),
                     [&](const auto &pair) { return pair.second.base.projectile &&

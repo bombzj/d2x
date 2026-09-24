@@ -79,6 +79,8 @@ add_library(d2x_gameplay
     src/gameplay/monsters/monster_resurrection.cpp
     src/gameplay/monsters/monster_nest.cpp
     src/gameplay/monsters/blood_hawk_ai.cpp
+    src/gameplay/monsters/arach_web.cpp
+    src/gameplay/monsters/arach_ai.cpp
   src/gameplay/monsters/monster_element.cpp
   src/gameplay/monsters/skeleton_ai.cpp src/gameplay/monsters/brute_ai.cpp
   src/gameplay/monsters/corrupt_rogue_ai.cpp

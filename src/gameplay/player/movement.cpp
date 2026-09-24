@@ -111,6 +111,8 @@ void Simulation::updatePlayer(float dt, Vec keyboard) {
                   : p.running && (safeZone_ || p.stamina > 0) ? rules.runSpeed
                                                : rules.walkSpeed;
     if (p.chill > 0) speed *= .5f;
+    if (p.webSlowRemaining > 0)
+        speed *= 1.f + float(p.webSlowPercent) / 100.f;
     if (step.length() > .1f) {
         float distance = followingRoute ? std::min(dt * speed, remaining) : dt * speed;
         Vec next = p.pos + step * distance;
