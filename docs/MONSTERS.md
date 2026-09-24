@@ -17,7 +17,7 @@
 
 `reference/d2moo` 对数值采用共享 `DATATBLS_CalculateMonsterStatsByLevel`，AI 由 `AITHINK_GetAiTableRecord` 分派到不同函数。因此逐个 ID 的工作是核对它是否需要尚未落地的 AI 分支、技能、动作或视觉参数，而不是重做一遍生命／抗性算法。当前仍未覆盖的通用元素攻击、怪物技能、精英修正等需要先补共用能力，再开放依赖它的 ID。
 
-已启用原外观的 `fallen1–5`、`corruptrogue1–5`、`brute1–5`、`skeleton1–5` 与 `zombie1–5` 已核对共用路径：普通级别的生命、命中、防御、伤害、抗性、元素由 `GameSession::resolvedMonsterCombat` 按真实 ID 提供，攻击与死亡结算不按 ID 分支；动画按原 token／模式／调色读 MPQ，声音按各自 `MonSound` 读 MPQ。声音行存在性现对所有启用的敌对外观统一校验，原行未列出的具体音效留空。
+已启用原外观的 `fallen1–5`、`corruptrogue1–5`、`brute1–5`、`skeleton1–5`、`zombie1–5` 与 `goatman1` 已核对共用路径：普通级别的生命、命中、防御、伤害、抗性、元素由 `GameSession::resolvedMonsterCombat` 按真实 ID 提供，攻击与死亡结算不按 ID 分支；动画按原 token／模式／调色读 MPQ，声音按各自 `MonSound` 读 MPQ。声音行存在性现对所有启用的敌对外观统一校验，原行未列出的具体音效留空。
 
 ## 分步边界
 
@@ -61,6 +61,7 @@
 38. **`corruptrogue3`（Dark Stalker）普通级别变体：已完成。** `MonStats2` 除 ID 外与前两只近战 Rogue 一致，复用 `CR` 七动作、`MonSounds.corruptrogue`、共享接近／停顿／跑步／A1 决策和三难度战斗／死亡链；`aip1–5` 使用自身 MPQ 行，`TransLvl=2` 取原调色。原表 `Skill1=CountessFirewall`，但 D2MOO 的普通 `AITHINK_Fn010_CorruptRogue` 不读取该技能槽或进入施法模式，因此普通个体不主动施放；没有元素攻击或弹体。完整六 MPQ 包在邪恶洞窟启动，原形截图、v58 存读档与击杀获得 53 经验已现场确认。
 39. **`corruptrogue4`（Black Rogue）普通级别变体：已完成。** `MonStats2` 除 ID 外与前几只近战 Rogue 一致，复用 `CR` 七动作、`MonSounds.corruptrogue`、共享接近／停顿／跑步／A1 决策和三难度战斗／死亡链；`aip1–5` 取自身 MPQ 行，`TransLvl=3` 使用原红色调色。原表无主动技能、元素攻击或弹体。完整六 MPQ 包在邪恶洞窟启动，原形截图、v59 存读档与击杀获得 30 经验已现场确认；跑步数值已在 `corruptrogue1` 现场核对，不逐变体重复。
 40. **`corruptrogue5`（Flesh Hunter）普通级别变体：已完成。** `MonStats2` 除 ID 外与前几只近战 Rogue 一致，复用 `CR` 七动作、`MonSounds.corruptrogue`、共享接近／停顿／跑步／A1 决策与三难度战斗／死亡链；`aip1–5` 取自身 MPQ 行，`TransLvl=4` 使用原浅色调色。没有主动技能、元素攻击或弹体。完整六 MPQ 包在邪恶洞窟启动，原形截图、v60 存读档与击杀获得 6 经验已现场确认；跑步数值已在 `corruptrogue1` 现场核对，不逐变体重复。
-41. **后续候选：其他 Act I AI 家族。** 先核对未实现普通身份的 MPQ 动作、声音、技能／弹体与本地 D2MOO 规则，补齐家族共用能力后逐 ID 开放。弓箭、法术、复活等依赖独立流程，不直接套用近战 AI。精英／首领词缀和 Boss 特性另列阶段。
+41. **`goatman1`（Moon Clan）普通级别与共享动作武器类：已完成基础分支。** 本地 D2MOO 的 `AITHINK_Fn012_019_Goatman_Swarm` 在非近战时按 `aip1` 接近、近身按 `aip3` 攻击，未通过则按 `aip2` 停顿；独立 `goatman_ai.*` 读取该 ID 的三难度参数。原表没有主动技能、元素攻击或弹体，A1 命中、战斗数值、死亡经验和掉落走共享路径。`MonStats2.BaseW=2hs` 供 NU/WL/A1/GH 动作，DT/DD 原 COF 使用 `hth`；`content/monster_animation.*` 现在逐动作从运行时 MPQ 选 `BaseW` 或已有徒手 COF，并让此前 25 种原形也使用相同加载路径。右手原组件从 `RHv` 选择首个变体，本 ID 为 `btx`。完整六 MPQ 包在邪恶洞窟启动，确认此前原形资源同时加载、原形截图、v61 存读档与击杀获得 54 经验。行为仍使用项目通用目标调度与路径适配。
+42. **后续候选：其他 Act I AI 家族。** 先核对未实现普通身份的 MPQ 动作、声音、技能／弹体与本地 D2MOO 规则，补齐家族共用能力后逐 ID 开放。弓箭、法术、复活等依赖独立流程，不直接套用近战 AI。精英／首领词缀和 Boss 特性另列阶段。
 
 当前数值计算依据本地 `reference/d2moo/source/D2Common/src/DataTbls/MonsterTbls.cpp` 的 `DATATBLS_CalculateMonsterStatsByLevel` 和 `reference/d2moo/source/D2Game/src/MONSTER/Monster.cpp` 的生命掷骰；AI 规则核对 `reference/d2moo/source/D2Game/src/AI/AiThink.cpp` 的 Skeleton、Zombie、Fallen 与 Brute 分支，动作帧核对 `reference/d2moo/source/D2Common/src/DataTbls/AnimTbls.cpp` 与 `Units.cpp`。区间、AI 参数和动作时序始终从用户挂载的 MPQ 读取，参考仓库不作为运行时数据源。当前目标选择、AI 调度和随机流仍是项目适配，不能视为原版逐帧复刻。

@@ -10,7 +10,7 @@
 
 namespace d2x {
 struct MonsterRecord {
-    std::string id, base, next, name, token, ai, spawn, sound;
+    std::string id, base, next, name, token, ai, spawn, sound, baseWeapon, rightHandVariant;
     size_t sourceRow = 0;
     int index = -1, rarity = 0, minGroup = 0, maxGroup = 0, partyMin = 0, partyMax = 0;
     int sparse = 0, alignment = 0, normalLevel = 0, transLevel = 0;
@@ -44,6 +44,7 @@ class MonsterCatalog {
     std::map<MonsterKind, MonsterAttackTiming> attacks_;
     std::map<MonsterKind, MonsterAttackTiming> attacks2_;
     std::map<MonsterKind, std::map<std::string, MonsterMotionTiming, std::less<>>> motions_;
+    std::map<MonsterKind, std::map<std::string, std::string, std::less<>>> modeWeapons_;
     std::map<int, std::string> indices_;
     std::set<std::string, std::less<>> ambiguous_;
     std::map<std::string, SuperUniqueRecord, std::less<>> uniques_;
@@ -68,6 +69,12 @@ class MonsterCatalog {
         if (kinds == motions_.end()) return nullptr;
         auto found = kinds->second.find(mode);
         return found == kinds->second.end() ? nullptr : &found->second;
+    }
+    std::string_view modeWeapon(MonsterKind kind, std::string_view mode) const {
+        auto kinds = modeWeapons_.find(kind);
+        if (kinds == modeWeapons_.end()) return {};
+        auto found = kinds->second.find(mode);
+        return found == kinds->second.end() ? std::string_view{} : std::string_view(found->second);
     }
     const MonsterRecord *find(std::string_view id) const;
     const SuperUniqueRecord *superUnique(std::string_view id) const;

@@ -343,7 +343,7 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
             auto ai = simulation_.monsterAi_ ? simulation_.monsterAi_(enemy) : std::nullopt;
             if (!ai || (ai->kind != MonsterAiKind::Skeleton && ai->kind != MonsterAiKind::Zombie &&
                         ai->kind != MonsterAiKind::Fallen && ai->kind != MonsterAiKind::Brute &&
-                        ai->kind != MonsterAiKind::CorruptRogue))
+                        ai->kind != MonsterAiKind::CorruptRogue && ai->kind != MonsterAiKind::Goatman))
                 require(enemy.aiWait == 0 && !enemy.aiPursuing && !enemy.aiEscaping &&
                             !enemy.aiCommanded && !enemy.aiCircling && !enemy.aiRunning &&
                             enemy.aiAdvanceRemaining == 0 && enemy.skill2Remaining == 0,
@@ -363,6 +363,10 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
             else
                 require(!enemy.aiRunning && enemy.aiAdvanceRemaining == 0,
                         "non-rogue run state");
+            if (ai && ai->kind == MonsterAiKind::Goatman)
+                require(enemy.aiWait <= float(ai->params[1]) / 25.f &&
+                            !enemy.aiPursuing && !enemy.aiEscaping && !enemy.aiCommanded,
+                        "goatman AI state");
             if (enemy.aiRunning) {
                 const auto *record = monsterContent_.find(enemy.identity.monster);
                 require(record && record->runMode && record->runVelocity &&

@@ -21,23 +21,6 @@ MonsterCatalog::MonsterCatalog(Archives &archives, const DataTable &stats) {
     if (!diagnostics_.empty())
         return;
     DataTable extended(archives.read("data/global/excel/monstats2.txt"));
-    if (archives.contains("data/global/animdata.d2")) {
-        AnimDataTable animations(archives.read("data/global/animdata.d2"));
-        for (int kind = 0; kind < int(MonsterKind::Count); ++kind)
-            if (auto timing = loadMonsterAttackTiming(animations, monsterDefinition(MonsterKind(kind)), 1))
-                attacks_.emplace(MonsterKind(kind), *timing);
-        for (auto kind : {MonsterKind::Brute, MonsterKind::Skeleton, MonsterKind::Zombie,
-                          MonsterKind::Fallen})
-            if (auto timing = loadMonsterAttackTiming(animations, monsterDefinition(kind), 2))
-                attacks2_.emplace(kind, *timing);
-        if (auto timing = loadMonsterMotionTiming(animations, monsterDefinition(MonsterKind::Fallen), "s2"))
-            motions_[MonsterKind::Fallen].emplace("s2", *timing);
-        for (int index = 0; index < int(MonsterKind::Count); ++index)
-            for (auto mode : {"nu", "wl", "rn", "gh", "dt", "dd"})
-                if (auto timing = loadMonsterMotionTiming(
-                        animations, monsterDefinition(MonsterKind(index)), mode))
-                    motions_[MonsterKind(index)].emplace(mode, *timing);
-    }
     std::optional<DataTable> levels;
     if (archives.contains("data/global/excel/monlvl.txt"))
         levels.emplace(archives.read("data/global/excel/monlvl.txt"));
@@ -125,6 +108,12 @@ MonsterCatalog::MonsterCatalog(Archives &archives, const DataTable &stats) {
         m.deadMode = extended.number(extra->second, "mDD").value_or(0) != 0;
         m.skill2Mode = extended.number(extra->second, "mS2").value_or(0) != 0;
         m.runMode = extended.number(extra->second, "mRN").value_or(0) != 0;
+        m.baseWeapon = extended.value(extra->second, "BaseW");
+        m.rightHandVariant = extended.value(extra->second, "RHv");
+        if (m.rightHandVariant.starts_with('"')) m.rightHandVariant.erase(0, 1);
+        if (auto separator = m.rightHandVariant.find(','); separator != std::string::npos)
+            m.rightHandVariant.resize(separator);
+        if (m.rightHandVariant.ends_with('"')) m.rightHandVariant.pop_back();
         if (!indices_.emplace(m.index, m.id).second)
             throw std::runtime_error("Duplicate MonStats hcIdx: " + std::to_string(m.index));
         if (!monsters_.emplace(m.id, m).second) {
@@ -132,6 +121,33 @@ MonsterCatalog::MonsterCatalog(Archives &archives, const DataTable &stats) {
             // guess which native row a string reference meant, or block Act I.
             ambiguous_.insert(m.id);
             diagnostics_.push_back("Ambiguous duplicate MonStats Id disabled: " + m.id);
+        }
+    }
+    if (archives.contains("data/global/animdata.d2")) {
+        AnimDataTable animations(archives.read("data/global/animdata.d2"));
+        std::map<MonsterKind, const MonsterRecord *> actors;
+        for (const auto &[id, record] : monsters_) {
+            auto implementation = monsterImplementation(id);
+            if (!implementation.substitute) actors.emplace(implementation.kind, &record);
+        }
+        for (const auto &[kind, actor] : actors) {
+            for (auto mode : {"nu", "wl", "rn", "a1", "a2", "gh", "dt", "dd", "s2"}) {
+                auto weapon = monsterModeWeapon(archives, actor->token, mode, actor->baseWeapon);
+                if (weapon.empty()) continue;
+                modeWeapons_[kind].emplace(mode, weapon);
+                if (std::string_view(mode) == "a1") {
+                    if (auto timing = loadMonsterAttackTiming(animations, actor->token, 1, weapon))
+                        attacks_.emplace(kind, *timing);
+                } else if (std::string_view(mode) == "a2") {
+                    if (kind == MonsterKind::Brute || kind == MonsterKind::Skeleton ||
+                        kind == MonsterKind::Zombie || kind == MonsterKind::Fallen)
+                        if (auto timing = loadMonsterAttackTiming(animations, actor->token, 2, weapon))
+                            attacks2_.emplace(kind, *timing);
+                } else if (std::string_view(mode) != "s2" || kind == MonsterKind::Fallen) {
+                    if (auto timing = loadMonsterMotionTiming(animations, actor->token, mode, weapon))
+                        motions_[kind].emplace(mode, *timing);
+                }
+            }
         }
     }
     DataTable uniques(archives.read("data/global/excel/superuniques.txt"));

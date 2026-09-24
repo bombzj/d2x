@@ -77,6 +77,7 @@ add_library(d2x_gameplay
   src/gameplay/monsters/monster_element.cpp
   src/gameplay/monsters/skeleton_ai.cpp src/gameplay/monsters/brute_ai.cpp
   src/gameplay/monsters/corrupt_rogue_ai.cpp
+  src/gameplay/monsters/goatman_ai.cpp
   src/gameplay/monsters/zombie_ai.cpp
   src/gameplay/monsters/fallen_ai.cpp src/gameplay/monsters/monster_wander.cpp
   src/gameplay/loot/loot.cpp src/gameplay/consumables/potions.cpp)

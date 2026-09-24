@@ -144,6 +144,8 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
         if (profile->kind == MonsterAiKind::CorruptRogue &&
             enemy.kind == MonsterKind::CorruptRogue)
             return profile;
+        if (profile->kind == MonsterAiKind::Goatman && enemy.kind == MonsterKind::Goatman)
+            return profile;
         return std::nullopt;
     };
     simulation_.zombieForcedPursuit_ = [this](RegionId region) {
@@ -219,7 +221,7 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
     Fingerprint fingerprint;
     fingerprint.add(content_.profile);
     // Bump this rules revision when state interpretation or compiled rules change.
-    fingerprint.add("d2x-session-rules-v88-corrupt-rogue5");
+    fingerprint.add("d2x-session-rules-v89-goatman1");
     auto members = archives.used;
     for (const auto &member : members) {
         fingerprint.add(member);

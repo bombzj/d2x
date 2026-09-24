@@ -4,6 +4,7 @@
 #include "gameplay/monsters/zombie_ai.hpp"
 #include "gameplay/monsters/fallen_ai.hpp"
 #include "gameplay/monsters/corrupt_rogue_ai.hpp"
+#include "gameplay/monsters/goatman_ai.hpp"
 #include "gameplay/monsters/monster_wander.hpp"
 #include <algorithm>
 
@@ -129,6 +130,7 @@ void Simulation::updateMonsters(float dt) {
         const bool skeletonAi = ai && ai->kind == MonsterAiKind::Skeleton;
         const bool bruteAi = ai && ai->kind == MonsterAiKind::Brute;
         const bool zombieAi = ai && ai->kind == MonsterAiKind::Zombie;
+        const bool goatmanAi = ai && ai->kind == MonsterAiKind::Goatman;
         bool clear = grid_->segment(enemy.pos, player.pos);
         if (distance >= definition.attackRange || !clear) {
             if (rogueAi && enemy.aiAdvanceRemaining <= 0) {
@@ -142,6 +144,10 @@ void Simulation::updateMonsters(float dt) {
                 enemy.aiAdvanceRemaining = enemy.aiRunning ? 3.f : 1.f;
             }
             if (skeletonAi && !skeletonApproaches(enemy, *ai)) {
+                enemy.route.clear();
+                continue;
+            }
+            if (goatmanAi && !goatmanApproaches(enemy, *ai)) {
                 enemy.route.clear();
                 continue;
             }
@@ -247,6 +253,7 @@ void Simulation::updateMonsters(float dt) {
                 }
             }
             if (rogueAi && !corruptRogueAttacks(enemy, *ai)) continue;
+            if (goatmanAi && !goatmanAttacks(enemy, *ai)) continue;
             beginMonsterAttack(enemy);
         }
     }

@@ -12,8 +12,7 @@ const MonsterDefinition &monsterDefinition(MonsterKind id) {
                                             fallen.damage,
                                             fallen.attackInterval,
                                             fallen.sightRange,
-                                            fallen.attackRange,
-                                            "1hs"};
+                                            fallen.attackRange};
     static const MonsterDefinition rogue{MonsterKind::CorruptRogue,
                                          "cr",
                                          fallen.maxLife,
@@ -21,11 +20,13 @@ const MonsterDefinition &monsterDefinition(MonsterKind id) {
                                          fallen.damage,
                                          fallen.attackInterval,
                                          fallen.sightRange,
-                                         fallen.attackRange,
-                                         "1hs"};
+                                         fallen.attackRange};
     static const MonsterDefinition brute{MonsterKind::Brute, "ye", fallen.maxLife,
                                          fallen.speed, fallen.damage, fallen.attackInterval,
                                          fallen.sightRange, fallen.attackRange};
+    static const MonsterDefinition goatman{MonsterKind::Goatman, "gm", fallen.maxLife,
+                                           fallen.speed, fallen.damage, fallen.attackInterval,
+                                           fallen.sightRange, fallen.attackRange};
     switch (id) {
     case MonsterKind::Fallen:
         return fallen;
@@ -37,6 +38,8 @@ const MonsterDefinition &monsterDefinition(MonsterKind id) {
         return rogue;
     case MonsterKind::Brute:
         return brute;
+    case MonsterKind::Goatman:
+        return goatman;
     case MonsterKind::Count:
         break;
     }

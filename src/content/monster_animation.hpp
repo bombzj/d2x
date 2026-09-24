@@ -5,9 +5,13 @@
 
 namespace d2x {
 struct MonsterMotionTiming { float duration = 0; int frames = 0; };
+std::string monsterModeWeapon(const Archives &archives, std::string_view token,
+                              std::string_view mode, std::string_view baseWeapon);
 std::optional<MonsterMotionTiming> loadMonsterMotionTiming(const AnimDataTable &animations,
-                                                          const MonsterDefinition &monster,
-                                                          std::string_view mode);
+                                                          std::string_view token,
+                                                          std::string_view mode,
+                                                          std::string_view weapon);
 std::optional<MonsterAttackTiming> loadMonsterAttackTiming(const AnimDataTable &animations,
-                                                           const MonsterDefinition &monster, int mode);
+                                                           std::string_view token, int mode,
+                                                           std::string_view weapon);
 } // namespace d2x
