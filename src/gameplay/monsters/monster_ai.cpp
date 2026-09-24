@@ -6,6 +6,7 @@
 #include "gameplay/monsters/corrupt_rogue_ai.hpp"
 #include "gameplay/monsters/goatman_ai.hpp"
 #include "gameplay/monsters/quill_rat_ai.hpp"
+#include "gameplay/monsters/wraith_ai.hpp"
 #include "gameplay/monsters/monster_wander.hpp"
 #include <algorithm>
 
@@ -151,6 +152,7 @@ void Simulation::updateMonsters(float dt) {
         const bool zombieAi = ai && ai->kind == MonsterAiKind::Zombie;
         const bool goatmanAi = ai && ai->kind == MonsterAiKind::Goatman;
         const bool quillRatAi = ai && ai->kind == MonsterAiKind::QuillRat;
+        const bool wraithAi = ai && ai->kind == MonsterAiKind::Wraith;
         bool clear = grid_->segment(enemy.pos, player.pos);
         if (quillRatAi && distance >= definition.attackRange &&
             distance < float(ai->params[0]) && clear) {
@@ -180,6 +182,10 @@ void Simulation::updateMonsters(float dt) {
                 continue;
             }
             if (goatmanAi && !goatmanApproaches(enemy, *ai)) {
+                enemy.route.clear();
+                continue;
+            }
+            if (wraithAi && !wraithApproaches(enemy, *ai)) {
                 enemy.route.clear();
                 continue;
             }
@@ -286,6 +292,7 @@ void Simulation::updateMonsters(float dt) {
             }
             if (rogueAi && !corruptRogueAttacks(enemy, *ai)) continue;
             if (goatmanAi && !goatmanAttacks(enemy, *ai)) continue;
+            if (wraithAi && !wraithAttacks(enemy, *ai)) continue;
             beginMonsterAttack(enemy);
         }
     }

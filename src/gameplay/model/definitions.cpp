@@ -30,6 +30,9 @@ const MonsterDefinition &monsterDefinition(MonsterKind id) {
     static const MonsterDefinition quillrat{MonsterKind::QuillRat, "si", fallen.maxLife,
                                             fallen.speed, fallen.damage, fallen.attackInterval,
                                             fallen.sightRange, fallen.attackRange};
+    static const MonsterDefinition wraith{MonsterKind::Wraith, "wr", fallen.maxLife,
+                                          fallen.speed, fallen.damage, fallen.attackInterval,
+                                          fallen.sightRange, fallen.attackRange};
     switch (id) {
     case MonsterKind::Fallen:
         return fallen;
@@ -45,6 +48,8 @@ const MonsterDefinition &monsterDefinition(MonsterKind id) {
         return goatman;
     case MonsterKind::QuillRat:
         return quillrat;
+    case MonsterKind::Wraith:
+        return wraith;
     case MonsterKind::Count:
         break;
     }

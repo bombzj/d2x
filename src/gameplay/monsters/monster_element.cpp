@@ -19,10 +19,14 @@ void Simulation::applyMonsterElements(Enemy &enemy, const MonsterNormalCombat &c
         else if (slot->type == "ltng") resistance = characterStats_.lightningResist + resistancePenalty_;
         else if (slot->type == "cold") resistance = characterStats_.coldResist + resistancePenalty_;
         else if (slot->type == "pois") resistance = characterStats_.poisonResist + resistancePenalty_;
-        else if (slot->type == "mag") resistance = 0;
+        else if (slot->type == "mag" || slot->type == "mana") resistance = 0;
         else continue; // Other original effect families await their shared handlers.
         resistance = std::clamp(resistance, -100, 75);
         const int value = slot->minimum + int(roll(enemy, unsigned(slot->maximum - slot->minimum + 1)));
+        if (slot->type == "mana") {
+            player.mana = std::max(0.f, player.mana - float(value));
+            continue;
+        }
         if (slot->type == "pois") {
             // D2MOO writes 10 * elemental damage as HP regeneration units per
             // frame (256 units per HP), for twice the MonStats duration.

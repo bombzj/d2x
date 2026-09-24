@@ -346,7 +346,7 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
             if (!ai || (ai->kind != MonsterAiKind::Skeleton && ai->kind != MonsterAiKind::Zombie &&
                         ai->kind != MonsterAiKind::Fallen && ai->kind != MonsterAiKind::Brute &&
                         ai->kind != MonsterAiKind::CorruptRogue && ai->kind != MonsterAiKind::Goatman &&
-                        ai->kind != MonsterAiKind::QuillRat))
+                        ai->kind != MonsterAiKind::QuillRat && ai->kind != MonsterAiKind::Wraith))
                 require(enemy.aiWait == 0 && !enemy.aiPursuing && !enemy.aiEscaping &&
                             !enemy.aiCommanded && !enemy.aiCircling && !enemy.aiRunning &&
                             enemy.aiAdvanceRemaining == 0 && enemy.skill2Remaining == 0,
@@ -370,6 +370,10 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
                 require(enemy.aiWait <= float(ai->params[1]) / 25.f &&
                             !enemy.aiPursuing && !enemy.aiEscaping && !enemy.aiCommanded,
                         "goatman AI state");
+            if (ai && ai->kind == MonsterAiKind::Wraith)
+                require(enemy.aiWait <= float(ai->params[1]) / 25.f &&
+                            !enemy.aiPursuing && !enemy.aiEscaping && !enemy.aiCommanded,
+                        "wraith AI state");
             if (ai && ai->kind == MonsterAiKind::QuillRat)
                 require(enemy.aiWait == 0 && !enemy.aiPursuing && !enemy.aiCommanded &&
                             (!enemy.aiEscaping || (enemy.hp > 0 && enemy.attack == 0 &&
