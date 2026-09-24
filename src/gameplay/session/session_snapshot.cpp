@@ -182,9 +182,11 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
     scalar(player.mana);
     scalar(player.stamina);
     for (auto timer : {player.castTime, player.spinTime, player.leapTime, player.hitTime, player.deathTime,
-                       player.meleeTime, player.lastMeleeDuration, player.staminaBoost, player.chill})
+                       player.meleeTime, player.lastMeleeDuration, player.staminaBoost, player.chill,
+                       player.poisonRemaining, player.poisonPerSecond})
         scalar(timer);
     require(player.meleeTime <= player.lastMeleeDuration, "player melee phase");
+    require((player.poisonRemaining == 0) == (player.poisonPerSecond == 0), "player poison phase");
     for (auto cooldown : player.cooldown)
         scalar(cooldown);
     require(player.dead == (player.hp == 0), "player death state");

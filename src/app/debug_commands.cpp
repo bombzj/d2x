@@ -48,6 +48,8 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
                 {"mana", state.player.mana}, {"maxMana", session.characterStats().maxMana},
                 {"stamina", state.player.stamina}, {"maxStamina", session.characterStats().maxStamina},
                 {"chill", state.player.chill},
+                {"poisonRemaining", state.player.poisonRemaining},
+                {"poisonPerSecond", state.player.poisonPerSecond},
                 {"gold", state.player.gold},
                 {"class", state.player.characterClass},
                 {"experience", state.player.experience}, {"level", state.player.level},

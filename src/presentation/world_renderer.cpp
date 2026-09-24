@@ -199,7 +199,8 @@ void SceneView::drawActors() const {
             if (sim.player.leapTime > 0)
                 p.y -= std::sin(sim.player.leapTime / skillDefinition(Skill::Leap).duration * pi) * 95;
             sprite(f, p, sim.player.dead ? Color{185, 185, 185, 255}
-                         : sim.player.chill > 0 ? Color{115, 175, 255, 255} : WHITE);
+                         : sim.player.chill > 0 ? Color{115, 175, 255, 255}
+                         : sim.player.poisonRemaining > 0 ? Color{145, 210, 115, 255} : WHITE);
         } else if (item.type == 2) {
             auto &e = sim.area.enemies[item.index];
             const auto variant = assets_.monsterVariantAnimations.find(e.identity.monster);

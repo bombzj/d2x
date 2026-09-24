@@ -24,6 +24,7 @@ struct PlayerState {
     float castTime = 0, spinTime = 0, leapTime = 0, hitTime = 0, deathTime = 0, meleeTime = 0;
     float lastMeleeDuration = 0;
     float chill = 0;
+    float poisonRemaining = 0, poisonPerSecond = 0;
     Vec leapStart, leapEnd;
     std::array<float, skillCount> cooldown{};
     std::deque<Restoration> healing, manaRestoration;

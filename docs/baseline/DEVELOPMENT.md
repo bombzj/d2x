@@ -1,8 +1,8 @@
 # 开发与交接
 
-当前源码存档 v40／规则 v68。普通怪物三难度生命、近战伤害／命中、防御、抗性、暴击、再生和 `El1–3` 按原表共用解析；`brute1`、`zombie1`、`zombie2`、`zombie3`、`zombie4` 与 `skeleton1` 使用原动作及 MPQ 所列声音。僵尸变体共用 Zombie AI，按各自 `MonStats.TransLvl` 选择原 `palshift.dat` 颜色映射；`zombie4` 的冰冷命中接通用元素攻击和角色冰冷状态。其他普通怪物仍保留真实身份与类型替身。分工和下一种怪物的条件见 [怪物实施计划](../MONSTERS.md)；精英、固定首领、Boss 和通用逐帧 AI 调度仍待逐项核对。旧存档不迁移。
+当前源码存档 v41／规则 v69。普通怪物三难度生命、近战伤害／命中、防御、抗性、暴击、再生和 `El1–3` 按原表共用解析；`brute1`、`zombie1`、`zombie2`、`zombie3`、`zombie4`、`zombie5` 与 `skeleton1` 使用原动作及 MPQ 所列声音。僵尸变体共用 Zombie AI，按各自 `MonStats.TransLvl` 选择原 `palshift.dat` 颜色映射；`zombie4` 的冰冷与 `zombie5` 的毒素命中接通用元素攻击及角色持续状态。其他普通怪物仍保留真实身份与类型替身。分工和下一种怪物的条件见 [怪物实施计划](../MONSTERS.md)；精英、固定首领、Boss 和通用逐帧 AI 调度仍待逐项核对。旧存档不迁移。
 
-Windows Release 构建通过。完整六 MPQ 目录 `dist/d2x-runtime-20260924-v40-zombie4/` 在邪恶洞窟启动；命名管道定向生成 `zombie4` 返回 `substitute=false`，共享解析给出 A1 冰冷概率、伤害与帧长，截图 `artifacts/monster-smoke/zombie4-v40-in-view.png` 和 `zombie4-v40-cold.png` 显示原调色与角色冰冷画面。原攻击命中后角色冰冷状态为 0.96 秒；v40 保存、推进 5 帧和恢复后，冰冷状态及生命回到保存值。击杀经正式死亡链获得经验并产生 TC 物品。最终 EXE 替换至该完整目录后再次短帧启动成功。运行目录与截图不提交，不生成 ZIP 或测试脚本／用例。音频播放效果仍待用户实机听验。
+Windows Release 构建通过。完整六 MPQ 目录 `dist/d2x-runtime-20260924-v41-zombie5/` 在邪恶洞窟启动；命名管道定向生成 `zombie5` 返回 `substitute=false`，共享解析给出 A1 毒素概率、伤害与帧长，截图 `artifacts/monster-smoke/zombie5-v41-in-view.png` 和 `zombie5-v41-poison.png` 显示原调色与角色中毒画面。原攻击命中后角色毒素剩余约 31.76 秒、每秒伤害 3.90625；v41 保存、推进 5 帧和恢复后，毒素状态及生命回到保存值。击杀经正式死亡链增加 245 经验，本次原 TC 掷骰为 NoDrop。运行目录与截图不提交，不生成 ZIP 或测试脚本／用例。音频播放效果仍待用户实机听验。
 
 ## 当前交接状态
 

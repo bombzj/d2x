@@ -6,7 +6,7 @@
 
 本地 `reference/d2moo` 的 `DATATBLS_CalculateMonsterStatsByLevel` 对所有怪物按同一公式和模式标志换算生命、护甲、经验、A1／A2／S1 伤害与命中；`MonsterMode.cpp` 同一路径还按 `El1–3` 与当前动作模式附加元素伤害。`AITHINK_GetAiTableRecord` 则按 `MonStats.AI` 选择 AI 函数；Skeleton、Zombie、Fallen、Brute 等是不同函数，同一 AI 类型的不同 `MonStats.Id` 共用行为代码，`aip1–8` 取各自难度的原值。故不能把所有行为合并为一种通用追击，也不应为每个变体复制一份 AI。
 
-本项目共用解析放在 `content/monster_difficulty_combat.*`，生成、命中、受击、抗性、经验、掉落与存档走通用会话／模拟流程。`content/monster_animation.*` 按 token／动作／武器类读取 `AnimData.d2`，展示层的 `monster_audio.cpp` 按真实怪物身份读取 `MonSounds`／`Sounds`。`El1–3` 的动作、难度触发概率、伤害和持续时间也由该共用解析器读取；火、闪电、魔法、冰冷直接伤害及冰冷状态在 `gameplay/monsters/monster_element.cpp` 共用处理，毒素等其他类型待对应阶段。原技能／弹体与其施放动作仍需接入共用攻击流程；仅在 `gameplay/monsters/` 为不同 AI 家族实现决策和必要状态。怪物 ID 负责挑选原图形、声音、AI 家族及数据行；同一家族变体不重复实现数值或战斗规则。精英词缀、特殊死亡、复活、召唤和 Boss 阶段另设模块。
+本项目共用解析放在 `content/monster_difficulty_combat.*`，生成、命中、受击、抗性、经验、掉落与存档走通用会话／模拟流程。`content/monster_animation.*` 按 token／动作／武器类读取 `AnimData.d2`，展示层的 `monster_audio.cpp` 按真实怪物身份读取 `MonSounds`／`Sounds`。`El1–3` 的动作、难度触发概率、伤害和持续时间也由该共用解析器读取；火、闪电、魔法、冰冷直接伤害及冰冷和毒素持续状态在 `gameplay/monsters/monster_element.cpp` 共用处理，其他元素类型待对应阶段。原技能／弹体与其施放动作仍需接入共用攻击流程；仅在 `gameplay/monsters/` 为不同 AI 家族实现决策和必要状态。怪物 ID 负责挑选原图形、声音、AI 家族及数据行；同一家族变体不重复实现数值或战斗规则。精英词缀、特殊死亡、复活、召唤和 Boss 阶段另设模块。
 
 | 范围 | 共用解析或执行 | 按怪物区别 |
 | --- | --- | --- |
@@ -39,6 +39,7 @@
 18. **`zombie2` 普通级别变体：已接源码。** 与 `zombie1` 共用 `AI=Zombie`、`ZM` 原动作和原音效行，三难度各自读取自己的生命、攻击、抗性、AI 参数、经验和 TC；原行没有主动技能与元素攻击。`MonStats.TransLvl=1` 经 `ZM/COF/palshift.dat` 的第 5 组颜色映射呈现，`zombie1` 的 0 使用第 4 组；该 MPQ 文件前 3 组为保留映射。调色加载为所有已实现怪物的共享路径，`brute1` 的 `TransLvl=4` 同时按原表呈现。整包和现场见开发基线。
 19. **`zombie3` 普通级别变体：已完成。** 与 `zombie1`／`zombie2` 共用 Zombie AI、原 `ZM` 七动作、音效和攻击／死亡链；`MonStats2` 的相关模式标志与组件也相同。三难度数值、AI 参数、经验和 TC 仍按 `zombie3` 自身 MPQ 行读取，`TransLvl=2` 从同一 `palshift.dat` 选第 6 组颜色映射。原行没有主动技能、元素攻击或弹体；整包和现场见开发基线。
 20. **`zombie4` 普通级别变体：已完成。** 与前几种僵尸共用 Zombie AI、七动作、原声音及基础数值／死亡流程；`TransLvl=3` 选择同一 MPQ `palshift.dat` 的第 7 组颜色映射。它的 `El1Mode=A1`、`El1Type=cold` 在三难度分别从自身 MPQ 行取得触发概率、`MonLvl` 缩放的冰冷伤害及帧数；角色抗性加当前难度 `DifficultyLevels.ResistPenalty` 减免伤害和冰冷持续时间。冰冷状态按本地 D2MOO 的角色速度／攻击速度减半规则改变移动、普攻时长和画面速度，并以 v40 存档。该 ID 无主动技能或弹体。整包、截图、冰冷命中与存读档现场见开发基线。
-21. **后续候选：其他普通怪物。** `zombie5` 的 A1 是原表毒素伤害，需要在同一元素通路补逐帧毒素伤害及持续状态后按 ID 验收。`brute2` 的 `aip3=75` 可进入 Brute 近身攻击失败后的侧移分支；本地 D2MOO 对该侧移调用的底层位移参数标记 `TODO`，尚未确认前保留替身。远程弹体与技能、尸体复活等也随相应身份逐项接入共用能力。精英／首领词缀和 Boss 特性另列阶段。
+21. **`zombie5` 普通级别变体：已完成。** 继续复用 Zombie AI、七动作、原声音和共享三难度数值／经验／TC；`TransLvl=4` 从运行时 MPQ `palshift.dat` 选择第 8 组颜色映射。原 `El1Mode=A1`／`El1Type=pois` 由通用元素解析器取得三难度概率、缩放伤害和持续帧数；毒素处理参照本地 D2MOO 将伤害乘 10 写成每帧生命回复负值，持续时间乘 2，相同目标只由更强毒素刷新；角色毒抗和难度惩罚影响毒伤，毒素最低留 1 HP。状态与伤害率存入 v41。原行无主动技能或弹体。完整六 MPQ 目录、原色和中毒截图、毒伤存读档、死亡经验和 NoDrop 现场见开发基线。
+22. **后续候选：其他普通怪物。** `brute2` 的 `aip3=75` 可进入 Brute 近身攻击失败后的侧移分支；本地 D2MOO 对该侧移调用的底层位移参数标记 `TODO`，尚未确认前保留替身。远程弹体与技能、尸体复活等也随相应身份逐项接入共用能力。精英／首领词缀和 Boss 特性另列阶段。
 
 当前数值计算依据本地 `reference/d2moo/source/D2Common/src/DataTbls/MonsterTbls.cpp` 的 `DATATBLS_CalculateMonsterStatsByLevel` 和 `reference/d2moo/source/D2Game/src/MONSTER/Monster.cpp` 的生命掷骰；AI 规则核对 `reference/d2moo/source/D2Game/src/AI/AiThink.cpp` 的 Skeleton、Zombie、Fallen 与 Brute 分支，动作帧核对 `reference/d2moo/source/D2Common/src/DataTbls/AnimTbls.cpp` 与 `Units.cpp`。区间、AI 参数和动作时序始终从用户挂载的 MPQ 读取，参考仓库不作为运行时数据源。当前目标选择、AI 调度和随机流仍是项目适配，不能视为原版逐帧复刻。

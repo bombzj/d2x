@@ -52,6 +52,7 @@ void Simulation::heal() {
     p.manaRestoration.clear();
     p.staminaBoost = 0;
     p.chill = 0;
+    p.poisonRemaining = p.poisonPerSecond = 0;
     p.dead = false;
     p.deathTime = 0;
 }
@@ -132,6 +133,12 @@ void Simulation::tick(float dt, Vec keyboard) {
     }
     if (!p.dead) {
         updatePotions(dt);
+        if (p.poisonRemaining > 0) {
+            const float elapsed = std::min(dt, p.poisonRemaining);
+            p.hp = std::max(1.f, p.hp - elapsed * p.poisonPerSecond);
+            p.poisonRemaining -= elapsed;
+            if (p.poisonRemaining <= 0) p.poisonPerSecond = 0;
+        }
         updatePlayer(dt, keyboard);
         activateMonsters();
         updateMonsters(dt);
@@ -141,6 +148,7 @@ void Simulation::tick(float dt, Vec keyboard) {
             p.manaRestoration.clear();
             p.staminaBoost = 0;
             p.chill = 0;
+            p.poisonRemaining = p.poisonPerSecond = 0;
             p.route.clear();
             p.attackTarget = {};
             p.throwAttack = false;
