@@ -25,7 +25,7 @@ Windows 使用 `scripts/build.ps1`，启动示例（默认读取 `assets/mpq2`�
 
 本机可用 `Play.cmd`。EXE 默认直接读取完整 `assets/mpq2`；其他位置可显式传 `--mpq <目录>`。
 
-当前 Windows Release 构建、完整六 MPQ 运行目录与 `skeleton4` 原形截图、存读档及死亡经验冒烟已通过；Linux 尚未实际编译运行。见 [构建与运行](docs/BUILD_AND_SHARE.md) 和 [开发基线](docs/baseline/DEVELOPMENT.md)。
+当前 Windows Release 构建、完整六 MPQ 运行目录与 `skeleton5` 原形截图、存读档及死亡经验冒烟已通过；Linux 尚未实际编译运行。见 [构建与运行](docs/BUILD_AND_SHARE.md) 和 [开发基线](docs/baseline/DEVELOPMENT.md)。
 
 ## 操作
 
