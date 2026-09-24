@@ -296,6 +296,18 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
             scalar(enemy.attack, 0, 40);
             scalar(enemy.attackDuration, 0, 40);
             scalar(enemy.attackImpact, -1, 40);
+            scalar(enemy.skill2Remaining, 0, 40);
+            scalar(enemy.skill2Duration, 0, 40);
+            require(enemy.skill2Remaining <= enemy.skill2Duration &&
+                        (enemy.skill2Remaining > 0 || enemy.skill2Duration == 0),
+                    "monster S2 phase");
+            if (enemy.skill2Remaining > 0) {
+                const auto duration = simulation_.monsterSkill2Duration_
+                    ? simulation_.monsterSkill2Duration_(enemy) : std::nullopt;
+                require(duration && std::abs(enemy.skill2Duration - *duration) < .001f &&
+                            enemy.attack == 0 && enemy.kind == MonsterKind::Fallen,
+                        "original monster S2 duration");
+            }
             require(enemy.attackMode == 1 || enemy.attackMode == 2,
                     "unknown monster attack mode");
             require(enemy.attack <= enemy.attackDuration &&
@@ -330,7 +342,8 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
             auto ai = simulation_.monsterAi_ ? simulation_.monsterAi_(enemy) : std::nullopt;
             if (!ai || (ai->kind != MonsterAiKind::Skeleton && ai->kind != MonsterAiKind::Zombie &&
                         ai->kind != MonsterAiKind::Fallen && ai->kind != MonsterAiKind::Brute))
-                require(enemy.aiWait == 0 && !enemy.aiPursuing && !enemy.aiEscaping,
+                require(enemy.aiWait == 0 && !enemy.aiPursuing && !enemy.aiEscaping &&
+                            !enemy.aiCommanded && enemy.skill2Remaining == 0,
                         "unexpected monster AI state");
             if (ai && ai->kind == MonsterAiKind::Brute)
                 require(enemy.aiWait <= 15.f / 25.f && !enemy.aiPursuing, "brute AI state");
@@ -341,7 +354,8 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
                 require(enemy.aiWait <= 10.f / 25.f &&
                             (!enemy.aiEscaping || (enemy.hp > 0 && enemy.attack == 0 &&
                                                    enemy.aiWait == 0 && !enemy.aiPursuing &&
-                                                   !enemy.route.empty())),
+                                                   !enemy.aiCommanded && !enemy.route.empty())) &&
+                            (!enemy.aiCommanded || enemy.hp > 0),
                         "fallen AI state");
             route(enemy.route, areaGrid);
             if (enemy.hp == 0) {

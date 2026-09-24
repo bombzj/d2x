@@ -20,10 +20,11 @@ void SceneAssets::loadMonsterAnimations(Archives &archives, const GameSession &s
             equipment[8] = "lit";
             equipment[9] = "lit";
         }
-        for (auto mode : {"nu", "wl", "a1", "dt", "a2", "gh", "dd"}) {
+        for (auto mode : {"nu", "wl", "a1", "dt", "a2", "gh", "dd", "s2"}) {
             if (std::string_view(mode) == "a2" && !content.attackTiming(kind, 2)) continue;
             if (std::string_view(mode) == "gh" && !actor.getHitMode) continue;
             if (std::string_view(mode) == "dd" && !actor.deadMode) continue;
+            if (std::string_view(mode) == "s2" && (kind != MonsterKind::Fallen || !actor.skill2Mode)) continue;
             auto animation = graphics_.composite("monsters", definition.token, mode,
                                                  definition.weapon, &equipment, &colors);
             if (animation.frames.empty() || !animation.completeComposite)
@@ -36,6 +37,11 @@ void SceneAssets::loadMonsterAnimations(Archives &archives, const GameSession &s
         if (auto timing = content.attackTiming(kind, 2);
             timing && animations.at("a2").count != timing->frames)
             throw std::runtime_error("Monster A2 AnimData/COF frame mismatch: " + actor.id);
+        if (actor.skill2Mode && kind == MonsterKind::Fallen) {
+            const auto *timing = content.motion(kind, "s2");
+            if (!timing || animations.at("s2").count != timing->frames)
+                throw std::runtime_error("Monster S2 AnimData/COF frame mismatch: " + actor.id);
+        }
         for (auto mode : {"nu", "wl", "gh", "dt", "dd"})
             if (auto animation = animations.find(mode); animation != animations.end()) {
                 auto *timing = content.motion(kind, mode);

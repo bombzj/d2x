@@ -30,6 +30,8 @@ MonsterCatalog::MonsterCatalog(Archives &archives, const DataTable &stats) {
                           MonsterKind::Fallen})
             if (auto timing = loadMonsterAttackTiming(animations, monsterDefinition(kind), 2))
                 attacks2_.emplace(kind, *timing);
+        if (auto timing = loadMonsterMotionTiming(animations, monsterDefinition(MonsterKind::Fallen), "s2"))
+            motions_[MonsterKind::Fallen].emplace("s2", *timing);
         for (int index = 0; index < int(MonsterKind::Count); ++index)
             for (auto mode : {"nu", "wl", "gh", "dt", "dd"})
                 if (auto timing = loadMonsterMotionTiming(
@@ -118,6 +120,7 @@ MonsterCatalog::MonsterCatalog(Archives &archives, const DataTable &stats) {
         m.inert = extended.number(extra->second, "inert").value_or(0) != 0;
         m.getHitMode = extended.number(extra->second, "mGH").value_or(0) != 0;
         m.deadMode = extended.number(extra->second, "mDD").value_or(0) != 0;
+        m.skill2Mode = extended.number(extra->second, "mS2").value_or(0) != 0;
         if (!indices_.emplace(m.index, m.id).second)
             throw std::runtime_error("Duplicate MonStats hcIdx: " + std::to_string(m.index));
         if (!monsters_.emplace(m.id, m).second) {

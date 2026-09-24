@@ -155,6 +155,14 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
         const auto *motion = monsterContent_.motion(enemy.kind, "dt");
         return motion ? std::optional<float>(motion->duration) : std::nullopt;
     };
+    simulation_.monsterSkill2Duration_ = [this](const Enemy &enemy)
+        -> std::optional<float> {
+        const auto *record = monsterContent_.find(enemy.identity.monster);
+        if (monsterImplementation(enemy.identity.monster).substitute || !record ||
+            !record->skill2Mode || enemy.kind != MonsterKind::Fallen) return std::nullopt;
+        const auto *motion = monsterContent_.motion(enemy.kind, "s2");
+        return motion ? std::optional<float>(motion->duration) : std::nullopt;
+    };
     simulation_.monsterAttackTiming_ = [this](const Enemy &enemy, int mode)
         -> std::optional<MonsterAttackTiming> {
         const auto *timing = monsterContent_.attackTiming(enemy.kind, mode);
@@ -202,7 +210,7 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
     Fingerprint fingerprint;
     fingerprint.add(content_.profile);
     // Bump this rules revision when state interpretation or compiled rules change.
-    fingerprint.add("d2x-session-rules-v74-fallen-corpse-escape");
+    fingerprint.add("d2x-session-rules-v75-fallen-group-command");
     auto members = archives.used;
     for (const auto &member : members) {
         fingerprint.add(member);

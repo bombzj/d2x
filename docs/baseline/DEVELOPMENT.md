@@ -1,8 +1,8 @@
 # 开发与交接
 
-当前源码存档 v46／规则 v74。普通怪物三难度生命、近战伤害／命中、防御、抗性、暴击、再生和 `El1–3` 按原表共用解析；`brute1`、`zombie1–5`、`skeleton1–5` 使用原动作及 MPQ 所列声音。僵尸与骷髅同族变体分别共用各自 AI，按 `MonStats.TransLvl` 选择原 `palshift.dat` 颜色映射；火焰、闪电、冰冷与毒素命中接通用元素攻击，冰冷与毒素保存角色持续状态。Fallen 家族在原死亡动作期间见附近尸体后逃离，首领命令与喊叫仍待完成。其他普通怪物仍保留真实身份与类型替身。分工和下一种怪物的条件见 [怪物实施计划](../MONSTERS.md)；精英、固定首领、Boss 和通用逐帧 AI 调度仍待逐项核对。旧存档不迁移。
+当前源码存档 v47／规则 v75。普通怪物三难度生命、近战伤害／命中、防御、抗性、暴击、再生和 `El1–3` 按原表共用解析；`brute1`、`zombie1–5`、`skeleton1–5` 使用原动作及 MPQ 所列声音。僵尸与骷髅同族变体分别共用各自 AI，按 `MonStats.TransLvl` 选择原 `palshift.dat` 颜色映射；火焰、闪电、冰冷与毒素命中接通用元素攻击，冰冷与毒素保存角色持续状态。Fallen 家族在原死亡动作期间见附近尸体后逃离，使用原 AI 参数发同组命令并播放 MPQ S2 喊叫。其他普通怪物仍保留真实身份与类型替身。分工和下一种怪物的条件见 [怪物实施计划](../MONSTERS.md)；精英、固定首领、Boss 和通用逐帧 AI 调度仍待逐项核对。旧存档不迁移。
 
-Windows Release 构建通过。完整六 MPQ 目录 `dist/d2x-runtime-20260924-v46-fallen-corpse/` 在邪恶洞窟启动；命名管道生成两只原形 `fallen1`，击杀第一只后推进一帧，第二只 `aiEscaping=true` 且 x 坐标从 23.5 移到 23.8515625，截图 `artifacts/monster-smoke/fallen-corpse-v46-escape.png` 保存现场。再推进五帧到 x=25.609375，v46 恢复后回到 x=23.8515625 且仍在逃跑。运行目录与截图不提交，不生成 ZIP 或测试脚本／用例。音频播放效果仍待用户实机听验。
+Windows Release 构建通过。完整六 MPQ 目录 `dist/d2x-runtime-20260924-v47-fallen-command/` 在邪恶洞窟启动；定向生成原形 `fallen1`，一帧后 `aiCommanded=true`、`skill2Remaining=0.72`，截图 `artifacts/monster-smoke/fallen-command-v47-shout.png` 保存喊叫画面；再推进 25 帧动作结束，v47 读取后恢复 0.72 秒剩余及命令状态。自然组的同组成员与归属可经管道 `group` 观察；该现场的自然 Fallen 由 Shaman 带队，因此未声称自然组命令已在画面触发。运行目录与截图不提交，不生成 ZIP 或测试脚本／用例。音频播放效果仍待用户实机听验。
 
 ## 当前交接状态
 

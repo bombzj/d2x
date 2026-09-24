@@ -70,7 +70,8 @@ void listMonsters(Json &result, const Json &request, const GameSession &session,
     result["monsters"] = Json::array();
     for (const auto &enemy : session.state().area.enemies) {
         if (request.value("visible", true) && !onScreen(enemy, session, view)) continue;
-        Json entry = {{"id", enemy.id.value}, {"monster", enemy.identity.monster},
+        Json entry = {{"id", enemy.id.value}, {"group", enemy.identity.group},
+            {"monster", enemy.identity.monster},
             {"rank", monsterRankName(enemy.identity.rank)}, {"hp", enemy.hp},
             {"maxHp", enemy.maxHp}, {"x", enemy.pos.x}, {"y", enemy.pos.y},
             {"visible", onScreen(enemy, session, view)}, {"active", session.active(enemy.pos)},
@@ -78,6 +79,8 @@ void listMonsters(Json &result, const Json &request, const GameSession &session,
             {"debugSpawn", enemy.identity.origin == SpawnOrigin::Debug},
             {"aiWait", enemy.aiWait}, {"aiPursuing", enemy.aiPursuing},
             {"aiEscaping", enemy.aiEscaping},
+            {"aiCommanded", enemy.aiCommanded},
+            {"skill2Remaining", enemy.skill2Remaining},
             {"attackMode", enemy.attackMode}, {"attackRemaining", enemy.attack},
             {"impactRemaining", enemy.attackImpact}};
         const auto *record = session.monsterContent().find(enemy.identity.monster);

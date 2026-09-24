@@ -54,10 +54,12 @@ struct Enemy {
     float hp = 100, maxHp = 100, chill = 0, attack = 0;
     float attackDuration = 0, attackImpact = -1;
     int attackMode = 1;
+    float skill2Remaining = 0, skill2Duration = 0;
     float stun = 0, deathAge = 0, hitFlash = 0, rethink = 0;
     float aiWait = 0;
     bool aiPursuing = false;
     bool aiEscaping = false;
+    bool aiCommanded = false;
     std::deque<Vec> route;
     uint64_t combatRandom = (uint64_t(666) << 32) | 210;
 };

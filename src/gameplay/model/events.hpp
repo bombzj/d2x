@@ -39,6 +39,9 @@ struct EnemyAttacked {
     MonsterKind kind;
     int mode = 1;
 };
+struct EnemySkill2 {
+    EntityId caster;
+};
 struct EnemyHit {
     EntityId victim;
     MonsterKind kind;
@@ -91,7 +94,7 @@ struct LootDeferred {
 struct WaypointActivated {
     EntityId object;
 };
-using GameEvent = std::variant<SkillCast, MeleeAttack, EnemyDied, EnemyAttacked, EnemyHit, PlayerDied, RegionEntered, ObjectInteracted, ItemsIdentified, VendorItemBought,
+using GameEvent = std::variant<SkillCast, MeleeAttack, EnemyDied, EnemyAttacked, EnemySkill2, EnemyHit, PlayerDied, RegionEntered, ObjectInteracted, ItemsIdentified, VendorItemBought,
                                ItemChange, InventoryRejected, InventoryApplied, ItemPickedUp, PickupFailed,
                                ItemUsed, BeltEquipped, StorageOpened, StorageClosed, InteractionFailed,
                                LootDeferred, WaypointActivated>;

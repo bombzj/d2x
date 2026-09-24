@@ -6,6 +6,7 @@
 namespace d2x {
 FallenMovement fallenMovement(Enemy &enemy, const MonsterAiProfile &rules, float distance) {
     if (enemy.aiWait > 0) return FallenMovement::Idle;
+    if (enemy.aiCommanded) return FallenMovement::Approach;
     if (distance <= float(rules.params[1])) {
         enemy.aiPursuing = true;
         return FallenMovement::Approach;
@@ -20,12 +21,16 @@ FallenMovement fallenMovement(Enemy &enemy, const MonsterAiProfile &rules, float
     return FallenMovement::Idle;
 }
 
-bool fallenAttacks(Enemy &enemy, const MonsterAiProfile &rules) {
-    if (enemy.aiWait > 0) return false;
-    if (monsterAiRandom(enemy) % 100 < unsigned(rules.params[2])) return true;
-    // The original's Skill2 shout is deferred with group-command handling.
+FallenCombat fallenCombat(Enemy &enemy, const MonsterAiProfile &rules) {
+    if (enemy.aiWait > 0) return FallenCombat::Idle;
+    if (monsterAiRandom(enemy) % 100 < unsigned(rules.params[2])) return FallenCombat::Attack;
+    if (enemy.aiCommanded) {
+        enemy.aiWait = 5.f / 25.f;
+        return FallenCombat::Idle;
+    }
+    if (monsterAiRandom(enemy) % 100 < 30) return FallenCombat::Shout;
     enemy.aiWait = 10.f / 25.f;
-    return false;
+    return FallenCombat::Idle;
 }
 
 bool fallenStartEscape(Enemy &enemy, Vec player, const Grid &grid) {
@@ -42,6 +47,7 @@ bool fallenStartEscape(Enemy &enemy, Vec player, const Grid &grid) {
         enemy.route = std::move(route);
         enemy.aiEscaping = true;
         enemy.aiPursuing = false;
+        enemy.aiCommanded = false;
         enemy.aiWait = 0;
         return true;
     }

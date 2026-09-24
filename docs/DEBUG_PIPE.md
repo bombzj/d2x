@@ -71,7 +71,7 @@ $spawn = .\scripts\Send-D2XCommand.ps1 -Command monster-spawn -Arguments @{monst
 
 `monsters` 同时返回当前 `attackMode`、`attackRemaining`、`impactRemaining` 及已实现外观的 `attackDuration/attackImpact/attackFrames`；Brute、普通骷髅、僵尸和沉沦魔另有 `attack2Duration/attack2Impact/attack2Frames`。这些时序从挂载 MPQ 的 `AnimData.d2` 读取，可在暂停状态逐帧 `step`，确认 A2 模式与命中事件以及存读档恢复。
 
-`aiEscaping` 表示 Fallen 正沿见尸逃离路线移动；它与原身份、路线一起保存。可在同一可走房间生成两只 `fallen1`，击杀其中一只再 `step` 一帧观察另一只。原死亡动作时长由运行时 MPQ 的 `AnimData.d2` 决定。
+`aiEscaping` 表示 Fallen 正沿见尸逃离路线移动；它与原身份、路线一起保存。可在同一可走房间生成两只 `fallen1`，击杀其中一只再 `step` 一帧观察另一只。原死亡动作时长由运行时 MPQ 的 `AnimData.d2` 决定。`monsters` 同时返回原生成 `group`、`aiCommanded` 和 `skill2Remaining`，可观察同组命令和 S2 喊叫，后二者也随存档保存。
 
 普通怪物的 `combat` 返回共用三难度 MPQ 解析后的等级、生命区间、可用的 A1／A2 `[最小伤害, 最大伤害, 命中]`、防御、暴击、再生和六项抗性。原表缺少某攻击模式时省略该模式；缺命中或防御列时相应位置为 `null`。`combat.elements` 返回有完整数值的 `El1–3` 模式、元素种类、概率、伤害区间及持续帧数；`status.player.chill` 是冰冷剩余秒数，`poisonRemaining` 与 `poisonPerSecond` 是毒素剩余秒数和每秒伤害。这些字段与游戏使用同一解析结果，不是调试接口另算的一套数值。
 

@@ -34,6 +34,7 @@ class Simulation {
     std::function<bool(RegionId)> zombieForcedPursuit_;
     std::function<std::optional<float>(const MonsterIdentity &)> monsterGetHitDuration_;
     std::function<std::optional<float>(const Enemy &)> monsterDeathDuration_;
+    std::function<std::optional<float>(const Enemy &)> monsterSkill2Duration_;
     std::function<std::optional<MonsterAttackTiming>(const Enemy &, int)> monsterAttackTiming_;
     std::vector<GameEvent> events_;
     Enemy *findEnemy(EntityId id);

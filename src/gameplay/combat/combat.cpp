@@ -18,12 +18,15 @@ void Simulation::damageEnemy(Enemy &enemy, float amount, EntityId source, float 
     if (enemy.hp > 0)
         enemy.hitFlash = monsterGetHitDuration_
             ? monsterGetHitDuration_(enemy.identity).value_or(.12f) : .12f;
+    if (enemy.skill2Remaining > 0)
+        enemy.skill2Remaining = enemy.skill2Duration = 0;
     enemy.chill = std::max(enemy.chill, chill);
     if (enemy.hp > 0) emit(EnemyHit{enemy.id, enemy.kind});
     if (enemy.hp == 0) {
         enemy.deathAge = 0;
         enemy.route.clear();
         enemy.aiEscaping = false;
+        enemy.aiCommanded = false;
         enemy.attack = enemy.attackDuration = 0;
         enemy.attackImpact = -1;
         enemy.attackMode = 1;

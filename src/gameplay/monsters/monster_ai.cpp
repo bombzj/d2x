@@ -9,6 +9,14 @@
 namespace d2x {
 void Simulation::updateMonsters(float dt) {
     auto &player = state_.player;
+    auto beginFallenShout = [&](Enemy &enemy) {
+        const auto duration = monsterSkill2Duration_ ? monsterSkill2Duration_(enemy) : std::nullopt;
+        if (!duration || *duration <= 0) return false;
+        enemy.route.clear();
+        enemy.skill2Remaining = enemy.skill2Duration = *duration;
+        emit(EnemySkill2{enemy.id});
+        return true;
+    };
     for (auto &enemy : state_.area.enemies) {
         if (enemy.hp <= 0 || !active(enemy.pos))
             continue;
@@ -25,6 +33,8 @@ void Simulation::updateMonsters(float dt) {
             enemy.route.clear();
             enemy.aiPursuing = false;
             enemy.aiEscaping = false;
+            enemy.aiCommanded = false;
+            enemy.skill2Remaining = enemy.skill2Duration = 0;
             enemy.attack = enemy.attackDuration = 0;
             enemy.attackImpact = -1;
             enemy.attackMode = 1;
@@ -34,6 +44,12 @@ void Simulation::updateMonsters(float dt) {
             enemy.attack = enemy.attackDuration = 0;
             enemy.attackImpact = -1;
             enemy.attackMode = 1;
+            enemy.skill2Remaining = enemy.skill2Duration = 0;
+            continue;
+        }
+        if (enemy.skill2Remaining > 0) {
+            enemy.skill2Remaining = std::max(0.f, enemy.skill2Remaining - dt);
+            if (enemy.skill2Remaining == 0) enemy.skill2Duration = 0;
             continue;
         }
         if (enemy.attack > 0) {
@@ -72,6 +88,21 @@ void Simulation::updateMonsters(float dt) {
         const auto &definition = monsterDefinition(enemy.kind);
         auto delta = player.pos - enemy.pos;
         float distance = delta.length();
+        if (fallenAi && !enemy.aiCommanded && enemy.aiWait == 0 && enemy.route.empty() &&
+            distance < 15.f &&
+            std::none_of(state_.area.enemies.begin(), state_.area.enemies.end(),
+                         [&](const Enemy &other) {
+                             return other.identity.group == enemy.identity.group &&
+                                    other.id.value < enemy.id.value;
+                         }) &&
+            monsterAiRandom(enemy) % 100 < unsigned(ai->params[0]) &&
+            beginFallenShout(enemy)) {
+            for (auto &other : state_.area.enemies)
+                if (other.hp > 0 && other.identity.group == enemy.identity.group &&
+                    other.kind == MonsterKind::Fallen && monsterAi_ && monsterAi_(other))
+                    other.aiCommanded = true;
+            continue;
+        }
         if (distance >= definition.sightRange) {
             enemy.route.clear();
             enemy.rethink = 0;
@@ -122,8 +153,10 @@ void Simulation::updateMonsters(float dt) {
                     enemy.route = grid_->path(enemy.pos, player.pos);
                     enemy.rethink = .7f;
                 }
-                if (enemy.route.empty())
+                if (enemy.route.empty()) {
+                    if (fallenAi) enemy.aiCommanded = false;
                     continue;
+                }
                 destination = enemy.route.front();
             }
             auto offset = destination - enemy.pos;
@@ -137,6 +170,7 @@ void Simulation::updateMonsters(float dt) {
             else {
                 enemy.route.clear();
                 enemy.rethink = 0;
+                if (fallenAi) enemy.aiCommanded = false;
             }
         } else {
             enemy.route.clear();
@@ -146,8 +180,14 @@ void Simulation::updateMonsters(float dt) {
             player.leapTime <= 0 && grid_->segment(enemy.pos, player.pos)) {
             if (skeletonAi && !skeletonAttacks(enemy, *ai))
                 continue;
-            if (fallenAi && !fallenAttacks(enemy, *ai))
-                continue;
+            if (fallenAi) {
+                const auto action = fallenCombat(enemy, *ai);
+                if (action == FallenCombat::Idle) continue;
+                if (action == FallenCombat::Shout) {
+                    beginFallenShout(enemy);
+                    continue;
+                }
+            }
             if (bruteAi && !bruteAttacks(enemy, *ai))
                 continue;
             beginMonsterAttack(enemy);

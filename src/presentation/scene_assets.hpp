@@ -35,7 +35,7 @@ class SceneAssets {
     std::map<MonsterKind, std::map<std::string, GpuAnimation>> monsterAnimations;
     std::map<std::string, std::map<std::string, GpuAnimation>, std::less<>> monsterVariantAnimations;
     struct MonsterAudio {
-        std::string attack1, attack2, hit, death, footstep, neutral;
+        std::string attack1, attack2, skill2, hit, death, footstep, neutral;
         float footstepInterval = 0, neutralInterval = 0;
     };
     std::map<std::string, MonsterAudio, std::less<>> monsterAudio;
