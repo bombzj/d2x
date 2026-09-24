@@ -33,7 +33,8 @@ void SceneAssets::loadMonsterAnimations(Archives &archives, const GameSession &s
                 ((kind != MonsterKind::CorruptRogue && kind != MonsterKind::CorruptLancer &&
                   kind != MonsterKind::CorruptArcher) ||
                  !actor.runMode)) continue;
-            if (std::string_view(mode) == "a2" && !content.attackTiming(kind, 2)) continue;
+            if (std::string_view(mode) == "a2" && !content.attackTiming(kind, 2) &&
+                !(kind == MonsterKind::FallenShaman && content.attackTiming(kind, 3))) continue;
             if (std::string_view(mode) == "sc" &&
                 (!actor.castMode || !content.attackTiming(kind, 3))) continue;
             if (std::string_view(mode) == "gh" && !actor.getHitMode) continue;
@@ -67,6 +68,13 @@ void SceneAssets::loadMonsterAnimations(Archives &archives, const GameSession &s
                 !actor.spells[0] || !actor.spells[3])
                 throw std::runtime_error("Original monster SC spell resources missing: " + actor.id);
         }
+        if (actor.sequenceMode && kind == MonsterKind::FallenShaman) {
+            const auto *timing = content.attackTiming(kind, 3);
+            if (!timing || !animations.contains("a2") ||
+                animations.at("a2").count != timing->frames ||
+                !actor.resurrection || !actor.spells[1])
+                throw std::runtime_error("Original Shaman sequence resources missing: " + actor.id);
+        }
         if (actor.skill2Mode && kind == MonsterKind::Fallen) {
             const auto *timing = content.motion(kind, "s2");
             if (!timing || animations.at("s2").count != timing->frames)
@@ -82,7 +90,8 @@ void SceneAssets::loadMonsterAnimations(Archives &archives, const GameSession &s
                      kind == MonsterKind::CorruptArcher || kind == MonsterKind::SkeletonBow ||
                      kind == MonsterKind::Bighead || kind == MonsterKind::HellBovine ||
                      kind == MonsterKind::SkeletonMage || kind == MonsterKind::Fetish ||
-                     kind == MonsterKind::Vampire) && !timing)
+                     kind == MonsterKind::Vampire ||
+                     kind == MonsterKind::FallenShaman) && !timing)
                     throw std::runtime_error("Original monster AnimData entry missing: " +
                                              actor.id + "/" + mode);
                 if (timing && animation->second.count != timing->frames)

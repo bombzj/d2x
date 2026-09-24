@@ -169,6 +169,9 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
             return profile;
         if (profile->kind == MonsterAiKind::Vampire && enemy.kind == MonsterKind::Vampire)
             return profile;
+        if (profile->kind == MonsterAiKind::FallenShaman &&
+            enemy.kind == MonsterKind::FallenShaman)
+            return profile;
         return std::nullopt;
     };
     simulation_.zombieForcedPursuit_ = [this](RegionId region) {
@@ -218,12 +221,22 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
     };
     simulation_.monsterSpell_ = [this](const Enemy &enemy, int mode)
         -> std::optional<MonsterSpell> {
-        if (enemy.kind != MonsterKind::Vampire || mode < 3 || mode > 6)
+        if (mode < 3 || mode > 6 ||
+            (enemy.kind != MonsterKind::Vampire &&
+             !(enemy.kind == MonsterKind::FallenShaman && mode == 4)))
             return std::nullopt;
         const auto *record = monsterContent_.find(enemy.identity.monster);
         if (!record || monsterImplementation(enemy.identity.monster).substitute ||
-            !record->castMode) return std::nullopt;
+            (!record->castMode && !record->sequenceMode)) return std::nullopt;
         return record->spells[size_t(mode - 3)];
+    };
+    simulation_.monsterResurrection_ = [this](const Enemy &enemy)
+        -> std::optional<MonsterResurrection> {
+        if (enemy.kind != MonsterKind::FallenShaman) return std::nullopt;
+        const auto *record = monsterContent_.find(enemy.identity.monster);
+        if (!record || monsterImplementation(enemy.identity.monster).substitute ||
+            !record->sequenceMode) return std::nullopt;
+        return record->resurrection;
     };
     worldSelection.difficulty = population.difficulty;
     auto plan = planWorld(archives, worldContent_, worldSelection);
@@ -267,7 +280,7 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
     Fingerprint fingerprint;
     fingerprint.add(content_.profile);
     // Bump this rules revision when state interpretation or compiled rules change.
-    fingerprint.add("d2x-session-rules-v109-vampire-spells");
+    fingerprint.add("d2x-session-rules-v110-fallen-shaman");
     auto members = archives.used;
     for (const auto &member : members) {
         fingerprint.add(member);

@@ -66,6 +66,8 @@ struct Enemy {
     bool aiCharged = false;
     float aiAdvanceRemaining = 0;
     int aiPhase = 0, aiLoop = 0;
+    EntityId aiCorpse;
+    bool resurrected = false;
     std::deque<Vec> route;
     uint64_t combatRandom = (uint64_t(666) << 32) | 210;
 };

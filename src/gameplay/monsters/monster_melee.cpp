@@ -34,7 +34,10 @@ void Simulation::beginMonsterAttack(Enemy &enemy, int forcedMode) {
     emit(EnemyAttacked{enemy.id, enemy.kind, enemy.attackMode});
     if (enemy.attackImpact <= 0) {
         enemy.attackImpact = -1;
-        if (enemy.attackMode >= 3)
+        if (enemy.attackMode == 3 && monsterResurrection_ &&
+            monsterResurrection_(enemy))
+            resolveMonsterResurrection(enemy);
+        else if (enemy.attackMode >= 3)
             launchMonsterSpell(enemy);
         else if (monsterProjectile_ && monsterProjectile_(enemy, enemy.attackMode))
             launchMonsterProjectile(enemy);

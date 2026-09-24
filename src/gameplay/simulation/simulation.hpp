@@ -39,6 +39,7 @@ class Simulation {
     std::function<std::optional<MonsterAttackTiming>(const Enemy &, int)> monsterAttackTiming_;
     std::function<std::optional<MonsterProjectile>(const Enemy &, int)> monsterProjectile_;
     std::function<std::optional<MonsterSpell>(const Enemy &, int)> monsterSpell_;
+    std::function<std::optional<MonsterResurrection>(const Enemy &)> monsterResurrection_;
     std::vector<GameEvent> events_;
     Enemy *findEnemy(EntityId id);
     void moveTo(Vec target);
@@ -56,11 +57,14 @@ class Simulation {
     void updatePotions(float dt);
     void updatePlayer(float dt, Vec keyboard);
     void updateMonsters(float dt);
+    bool handleMonsterSpecialAi(Enemy &enemy, const MonsterAiProfile &ai,
+                                float distance, bool clear);
     void beginMonsterAttack(Enemy &enemy, int forcedMode = 0);
     void resolveMonsterAttack(Enemy &enemy, int modeOverride = 0, bool projectile = false);
     void launchMonsterProjectile(Enemy &enemy);
     void launchMonsterSpell(Enemy &enemy);
     void resolveMonsterSpell(Enemy &enemy, const Missile &missile);
+    void resolveMonsterResurrection(Enemy &enemy);
     void applyMonsterElements(Enemy &enemy, const MonsterNormalCombat &combat, int mode);
     void updateMissiles(float dt);
     void spawnEnemies(std::span<const MonsterSpawn> spawns);

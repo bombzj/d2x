@@ -36,6 +36,7 @@ void Simulation::damageEnemy(Enemy &enemy, float amount, EntityId source, float 
         enemy.aiCharged = false;
         enemy.aiAdvanceRemaining = 0;
         enemy.aiPhase = enemy.aiLoop = 0;
+        enemy.aiCorpse = {};
         enemy.attack = enemy.attackDuration = 0;
         enemy.attackImpact = -1;
         enemy.attackMode = 1;

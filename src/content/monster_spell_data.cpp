@@ -3,17 +3,29 @@
 #include <cctype>
 
 namespace d2x {
+namespace {
+std::string resolveMode(std::string_view source, const DataTable &sequences) {
+    if (source == "SC") return "SC";
+    for (size_t row = 0; row < sequences.rows().size(); ++row)
+        if (sequences.value(row, "sequence") == source &&
+            sequences.number(row, "event").value_or(0) == 2)
+            return std::string(sequences.value(row, "mode"));
+    return {};
+}
+} // namespace
 std::array<std::optional<MonsterSpell>, 4> loadMonsterSpells(
     Archives &archives, const DataTable &monsters, size_t monsterRow,
-    const DataTable &skills, const DataTable &missiles) {
+    const DataTable &skills, const DataTable &missiles, const DataTable &sequences) {
     std::array<std::optional<MonsterSpell>, 4> result;
     for (int slot = 0; slot < 4; ++slot) {
         const auto sourceSkill = monsters.value(monsterRow, "Skill" + std::to_string(slot + 1));
         const auto sourceMode = monsters.value(monsterRow, "Sk" + std::to_string(slot + 1) + "mode");
-        if (sourceSkill.empty() || sourceMode != "SC") continue;
+        const auto actionMode = resolveMode(sourceMode, sequences);
+        if (sourceSkill.empty() || actionMode.empty()) continue;
         for (size_t skillRow = 0; skillRow < skills.rows().size(); ++skillRow) {
             if (skills.value(skillRow, "skill") != sourceSkill) continue;
-            const auto missileName = skills.value(skillRow, "srvmissile");
+            auto missileName = skills.value(skillRow, "srvmissile");
+            if (missileName.empty()) missileName = skills.value(skillRow, "srvmissilea");
             if (missileName.empty()) break;
             for (size_t missileRow = 0; missileRow < missiles.rows().size(); ++missileRow) {
                 if (missiles.value(missileRow, "Missile") != missileName) continue;
@@ -33,7 +45,7 @@ std::array<std::optional<MonsterSpell>, 4> loadMonsterSpells(
                     element == "cold" || element == "mag") && !file.empty() &&
                     archives.contains(art))
                     result[size_t(slot)] = MonsterSpell{std::string(sourceSkill),
-                        std::string(sourceMode), art, std::string(element),
+                        actionMode, art, std::string(element),
                         MonsterProjectile{*id, float(*velocity), float(*range) / 25.f},
                         *minimum, *maximum};
                 break;
@@ -42,5 +54,17 @@ std::array<std::optional<MonsterSpell>, 4> loadMonsterSpells(
         }
     }
     return result;
+}
+std::optional<MonsterResurrection> loadMonsterResurrection(
+    const DataTable &monsters, size_t monsterRow,
+    const DataTable &skills, const DataTable &sequences) {
+    const auto sourceSkill = monsters.value(monsterRow, "Skill1");
+    const auto mode = resolveMode(monsters.value(monsterRow, "Sk1mode"), sequences);
+    if (sourceSkill.empty() || mode.empty()) return std::nullopt;
+    for (size_t row = 0; row < skills.rows().size(); ++row)
+        if (skills.value(row, "skill") == sourceSkill &&
+            skills.number(row, "srvdofunc") == 97)
+            return MonsterResurrection{std::string(sourceSkill), mode};
+    return std::nullopt;
 }
 } // namespace d2x

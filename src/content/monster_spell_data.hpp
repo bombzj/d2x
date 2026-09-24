@@ -6,5 +6,8 @@
 namespace d2x {
 std::array<std::optional<MonsterSpell>, 4> loadMonsterSpells(
     Archives &archives, const DataTable &monsters, size_t monsterRow,
-    const DataTable &skills, const DataTable &missiles);
+    const DataTable &skills, const DataTable &missiles, const DataTable &sequences);
+std::optional<MonsterResurrection> loadMonsterResurrection(
+    const DataTable &monsters, size_t monsterRow,
+    const DataTable &skills, const DataTable &sequences);
 } // namespace d2x

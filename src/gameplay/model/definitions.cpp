@@ -57,6 +57,9 @@ const MonsterDefinition &monsterDefinition(MonsterKind id) {
     static const MonsterDefinition vampire{MonsterKind::Vampire, "va", fallen.maxLife,
                                            fallen.speed, fallen.damage, fallen.attackInterval,
                                            fallen.sightRange, fallen.attackRange};
+    static const MonsterDefinition fallenShaman{MonsterKind::FallenShaman, "fs", fallen.maxLife,
+                                                fallen.speed, fallen.damage, fallen.attackInterval,
+                                                fallen.sightRange, fallen.attackRange};
     switch (id) {
     case MonsterKind::Fallen:
         return fallen;
@@ -90,6 +93,8 @@ const MonsterDefinition &monsterDefinition(MonsterKind id) {
         return fetish;
     case MonsterKind::Vampire:
         return vampire;
+    case MonsterKind::FallenShaman:
+        return fallenShaman;
     case MonsterKind::Count:
         break;
     }

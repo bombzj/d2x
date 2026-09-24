@@ -231,7 +231,7 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
                     }), "activated waypoint region");
     }
     require(s.world.message.size() <= 4096, "message too large");
-    std::set<EntityId> deadEnemies;
+    std::set<EntityId> deadEnemies, resurrectedEnemies;
     auto validateArea = [&](const AreaState &area, size_t index, bool active) {
         require(area.region == regions_[index].definition.id, "area identity");
         require(area.enemies.size() <= 65536 && area.missiles.size() <= 65536 && area.effects.size() <= 65536,
@@ -291,6 +291,16 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
                             "pending monster life fallback");
             }
             scalar(enemy.hp, 0, enemy.maxHp);
+            if (enemy.resurrected) {
+                require((enemy.kind == MonsterKind::Fallen ||
+                         enemy.kind == MonsterKind::FallenShaman) &&
+                            !monsterImplementation(enemy.identity.monster).substitute &&
+                            (enemy.identity.rank == MonsterRank::Normal ||
+                             enemy.identity.rank == MonsterRank::Minion) &&
+                            s.loot.settled.contains(enemy.id),
+                        "resurrected monster identity");
+                resurrectedEnemies.insert(enemy.id);
+            }
             for (auto timer : {enemy.chill, enemy.stun, enemy.deathAge, enemy.hitFlash})
                 scalar(timer);
             scalar(enemy.attack, 0, 40);
@@ -309,7 +319,8 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
                         "original monster S2 duration");
             }
             require(enemy.attackMode == 1 || enemy.attackMode == 2 ||
-                        enemy.attackMode == 3 || enemy.attackMode == 6,
+                        enemy.attackMode == 3 || enemy.attackMode == 4 ||
+                        enemy.attackMode == 6,
                     "unknown monster attack mode");
             require(enemy.attack <= enemy.attackDuration &&
                         (enemy.attackImpact == -1 ||
@@ -341,8 +352,14 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
                 } else if (enemy.attackMode >= 3) {
                     const auto spell = simulation_.monsterSpell_
                         ? simulation_.monsterSpell_(enemy, enemy.attackMode) : std::nullopt;
-                    require(enemy.kind == MonsterKind::Vampire && spell &&
-                                spell->mode == "SC" &&
+                    const auto resurrection = simulation_.monsterResurrection_
+                        ? simulation_.monsterResurrection_(enemy) : std::nullopt;
+                    require(((enemy.kind == MonsterKind::Vampire && spell &&
+                              spell->mode == "SC") ||
+                             (enemy.kind == MonsterKind::FallenShaman &&
+                              ((enemy.attackMode == 3 && resurrection &&
+                                resurrection->mode == "A2") ||
+                               (enemy.attackMode == 4 && spell && spell->mode == "A2")))) &&
                                 monsterContent_.attackTiming(enemy.kind, enemy.attackMode),
                             "unsupported monster spell mode");
                 }
@@ -368,7 +385,8 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
                         ai->kind != MonsterAiKind::Bighead &&
                         ai->kind != MonsterAiKind::SkeletonMage &&
                         ai->kind != MonsterAiKind::Fetish &&
-                        ai->kind != MonsterAiKind::Vampire))
+                        ai->kind != MonsterAiKind::Vampire &&
+                        ai->kind != MonsterAiKind::FallenShaman))
                 require(enemy.aiWait == 0 && !enemy.aiPursuing && !enemy.aiEscaping &&
                             !enemy.aiCommanded && !enemy.aiCircling && !enemy.aiRunning &&
                             enemy.aiAdvanceRemaining == 0 && enemy.skill2Remaining == 0,
@@ -420,12 +438,34 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
                             (!enemy.aiEscaping || (enemy.hp > 0 && enemy.attack == 0 &&
                                                    !enemy.route.empty())),
                         "vampire AI state");
+            else if (ai && ai->kind == MonsterAiKind::FallenShaman)
+                require(enemy.aiWait <= 10.f / 25.f && !enemy.aiPursuing &&
+                            !enemy.aiEscaping && !enemy.aiCommanded &&
+                            !enemy.aiRunning && !enemy.aiCharged &&
+                            enemy.aiAdvanceRemaining == 0 &&
+                            (!enemy.aiCircling || (enemy.hp > 0 && enemy.attack == 0 &&
+                                                   enemy.aiWait == 0 && !enemy.route.empty())),
+                        "fallen shaman AI state");
             else
                 require(!enemy.aiCircling, "unsupported circling state");
             if (!ai || (ai->kind != MonsterAiKind::Fetish &&
                         ai->kind != MonsterAiKind::Vampire))
                 require(enemy.aiPhase == 0 && enemy.aiLoop == 0,
                         "non-fetish AI phase");
+            if (enemy.aiCorpse) {
+                require(ai && ai->kind == MonsterAiKind::FallenShaman &&
+                            enemy.attackMode == 3 && enemy.attack > 0,
+                        "unexpected resurrection target");
+                const auto corpse = std::find_if(area.enemies.begin(), area.enemies.end(),
+                    [&](const Enemy &other) { return other.id == enemy.aiCorpse; });
+                require(corpse != area.enemies.end() &&
+                            (corpse->kind == MonsterKind::Fallen ||
+                             corpse->kind == MonsterKind::FallenShaman) &&
+                            !monsterImplementation(corpse->identity.monster).substitute &&
+                            (corpse->identity.rank == MonsterRank::Normal ||
+                             corpse->identity.rank == MonsterRank::Minion),
+                        "resurrection corpse identity");
+            }
             if (ai && ai->kind == MonsterAiKind::CorruptRogue)
                 require(enemy.aiWait <= float(ai->params[1]) / 25.f &&
                             (enemy.aiAdvanceRemaining == 0 || enemy.hp > 0) &&
@@ -505,7 +545,8 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
                 if (missile.hostileMode >= 3) {
                     const auto spell = owner != area.enemies.end() && simulation_.monsterSpell_
                         ? simulation_.monsterSpell_(*owner, missile.hostileMode) : std::nullopt;
-                    require((missile.hostileMode == 3 || missile.hostileMode == 6) &&
+                    require((missile.hostileMode == 3 || missile.hostileMode == 4 ||
+                             missile.hostileMode == 6) &&
                                 spell && !missile.physical &&
                                 missile.missileId == spell->projectile.id &&
                                 missile.damage >= spell->minimumDamage &&
@@ -626,7 +667,8 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
     }
     for (auto id : s.loot.settled)
         require(bool(id) && id.value < s.nextEntityId &&
-                    (!allocated.contains(id) || deadEnemies.contains(id)),
+                    (!allocated.contains(id) || deadEnemies.contains(id) ||
+                     resurrectedEnemies.contains(id)),
                 "death settlement identity");
     for (auto row : s.loot.usedUniques)
         require(std::any_of(content_.uniqueItems.begin(), content_.uniqueItems.end(),

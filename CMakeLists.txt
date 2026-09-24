@@ -75,6 +75,8 @@ add_library(d2x_gameplay
   src/gameplay/model/definitions.cpp src/gameplay/simulation/simulation.cpp src/gameplay/player/movement.cpp
   src/gameplay/combat/combat.cpp src/gameplay/skills/casting.cpp
   src/gameplay/monsters/monster_ai.cpp src/gameplay/monsters/monster_melee.cpp
+  src/gameplay/monsters/monster_special_ai.cpp
+  src/gameplay/monsters/monster_resurrection.cpp
   src/gameplay/monsters/monster_element.cpp
   src/gameplay/monsters/skeleton_ai.cpp src/gameplay/monsters/brute_ai.cpp
   src/gameplay/monsters/corrupt_rogue_ai.cpp
@@ -88,6 +90,7 @@ add_library(d2x_gameplay
   src/gameplay/monsters/skeleton_mage_ai.cpp
   src/gameplay/monsters/fetish_ai.cpp
   src/gameplay/monsters/vampire_ai.cpp
+  src/gameplay/monsters/fallen_shaman_ai.cpp
   src/gameplay/monsters/zombie_ai.cpp
   src/gameplay/monsters/fallen_ai.cpp src/gameplay/monsters/monster_wander.cpp
   src/gameplay/loot/loot.cpp src/gameplay/consumables/potions.cpp)

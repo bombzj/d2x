@@ -211,7 +211,8 @@ void SceneView::drawActors() const {
                                                e.deathAge >= deathTiming->duration ? "dd" : "dt")
                               : (e.stun > 0 || e.hitFlash > 0) && animations.contains("gh") ? "gh"
                               : e.skill2Remaining > 0 && animations.contains("s2") ? "s2"
-                              : e.attack > 0 ? (e.attackMode >= 3 ? "sc" :
+                              : e.attack > 0 ? (e.attackMode >= 3 ?
+                                                 (e.kind == MonsterKind::FallenShaman ? "a2" : "sc") :
                                                  e.attackMode == 2 ? "a2" : "a1")
                               : movingMonsters_.contains(e.id) ?
                                     (e.aiRunning && animations.contains("rn") ? "rn" : "wl") : "nu";

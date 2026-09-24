@@ -10,10 +10,6 @@
 #include "gameplay/monsters/corrupt_lancer_ai.hpp"
 #include "gameplay/monsters/corrupt_archer_ai.hpp"
 #include "gameplay/monsters/skeleton_bow_ai.hpp"
-#include "gameplay/monsters/bighead_ai.hpp"
-#include "gameplay/monsters/skeleton_mage_ai.hpp"
-#include "gameplay/monsters/fetish_ai.hpp"
-#include "gameplay/monsters/vampire_ai.hpp"
 #include "gameplay/monsters/monster_wander.hpp"
 #include <algorithm>
 
@@ -51,6 +47,7 @@ void Simulation::updateMonsters(float dt) {
             enemy.aiCharged = false;
             enemy.aiAdvanceRemaining = 0;
             enemy.aiPhase = enemy.aiLoop = 0;
+            enemy.aiCorpse = {};
             enemy.skill2Remaining = enemy.skill2Duration = 0;
             enemy.attack = enemy.attackDuration = 0;
             enemy.attackImpact = -1;
@@ -62,6 +59,7 @@ void Simulation::updateMonsters(float dt) {
             enemy.attackImpact = -1;
             enemy.attackMode = 1;
             enemy.skill2Remaining = enemy.skill2Duration = 0;
+            enemy.aiCorpse = {};
             continue;
         }
         if (enemy.kind == MonsterKind::QuillRat && enemy.hitFlash > 0) continue;
@@ -76,7 +74,10 @@ void Simulation::updateMonsters(float dt) {
                 enemy.attackImpact -= dt;
                 if (enemy.attackImpact <= 0) {
                     enemy.attackImpact = -1;
-                    if (enemy.attackMode >= 3)
+                    if (enemy.attackMode == 3 && monsterResurrection_ &&
+                        monsterResurrection_(enemy))
+                        resolveMonsterResurrection(enemy);
+                    else if (enemy.attackMode >= 3)
                         launchMonsterSpell(enemy);
                     else if (monsterProjectile_ && monsterProjectile_(enemy, enemy.attackMode))
                         launchMonsterProjectile(enemy);
@@ -88,6 +89,7 @@ void Simulation::updateMonsters(float dt) {
                 enemy.attackDuration = 0;
                 enemy.attackImpact = -1;
                 enemy.attackMode = 1;
+                enemy.aiCorpse = {};
             }
             continue;
         }
@@ -176,98 +178,7 @@ void Simulation::updateMonsters(float dt) {
         const bool fetishAi = ai && ai->kind == MonsterAiKind::Fetish;
         const bool vampireAi = ai && ai->kind == MonsterAiKind::Vampire;
         bool clear = grid_->segment(enemy.pos, player.pos);
-        if (vampireAi) {
-            const bool inCombat = clear && distance < definition.attackRange &&
-                                  player.leapTime <= 0;
-            const auto action = vampireThink(enemy, *ai, distance, inCombat);
-            if (action == VampireAction::Retreat) {
-                if (!monsterStartRetreat(enemy, player.pos, 8, *grid_))
-                    enemy.aiWait = 10.f / 25.f;
-                continue;
-            }
-            if (action == VampireAction::Circle) {
-                if (!monsterStartCircle(enemy, player.pos, 4, *grid_))
-                    enemy.aiWait = 10.f / 25.f;
-                continue;
-            }
-            if (action == VampireAction::Attack || action == VampireAction::CastFirst ||
-                action == VampireAction::CastFourth) {
-                enemy.route.clear();
-                beginMonsterAttack(enemy, action == VampireAction::CastFirst ? 3 :
-                                          action == VampireAction::CastFourth ? 6 : 1);
-                continue;
-            }
-            if (action == VampireAction::Idle) {
-                enemy.route.clear();
-                continue;
-            }
-        }
-        if (fetishAi) {
-            const bool inCombat = clear && distance < definition.attackRange &&
-                                  player.leapTime <= 0;
-            const int lifePercent = characterStats_.maxLife > 0
-                ? std::clamp(int(player.hp * 100.f / float(characterStats_.maxLife)), 0, 100) : 0;
-            const auto action = fetishThink(enemy, *ai, distance, inCombat, lifePercent);
-            if (action == FetishAction::Retreat) {
-                if (!monsterStartRetreat(enemy, player.pos, 14, *grid_))
-                    fetishRetreatFailed(enemy);
-                continue;
-            }
-            if (action == FetishAction::Circle) {
-                if (!monsterStartCircle(enemy, player.pos, 4, *grid_))
-                    enemy.aiWait = 10.f / 25.f;
-                continue;
-            }
-            if (action == FetishAction::Attack) {
-                enemy.route.clear();
-                beginMonsterAttack(enemy, 1);
-                continue;
-            }
-            if (action == FetishAction::Idle) {
-                enemy.route.clear();
-                continue;
-            }
-        }
-        if (skeletonMageAi) {
-            auto action = skeletonMageThink(enemy, *ai, distance, clear);
-            if (action == SkeletonMageAction::Retreat)
-                action = monsterStartRetreat(enemy, player.pos, 5, *grid_)
-                    ? SkeletonMageAction::Idle : SkeletonMageAction::Fire;
-            if (action == SkeletonMageAction::Circle) {
-                if (!monsterStartCircle(enemy, player.pos, 4, *grid_))
-                    enemy.aiWait = float(ai->params[7]) / 25.f;
-                action = SkeletonMageAction::Idle;
-            }
-            if (action == SkeletonMageAction::Fire) {
-                enemy.route.clear();
-                beginMonsterAttack(enemy, 1);
-                continue;
-            }
-            if (action == SkeletonMageAction::Idle) {
-                if (!enemy.aiEscaping && !enemy.aiCircling) enemy.route.clear();
-                continue;
-            }
-        }
-        if (bigheadAi) {
-            auto action = bigheadThink(enemy, *ai, distance, clear, definition.attackRange);
-            if (action == BigheadAction::Retreat)
-                action = monsterStartRetreat(enemy, player.pos, 5, *grid_)
-                    ? BigheadAction::Idle : BigheadAction::Fire;
-            if (action == BigheadAction::Circle) {
-                if (!monsterStartCircle(enemy, player.pos, 4, *grid_))
-                    enemy.aiWait = 10.f / 25.f;
-                action = BigheadAction::Idle;
-            }
-            if (action == BigheadAction::Melee || action == BigheadAction::Fire) {
-                enemy.route.clear();
-                beginMonsterAttack(enemy, action == BigheadAction::Fire ? 2 : 1);
-                continue;
-            }
-            if (action == BigheadAction::Idle) {
-                if (!enemy.aiEscaping && !enemy.aiCircling) enemy.route.clear();
-                continue;
-            }
-        }
+        if (ai && handleMonsterSpecialAi(enemy, *ai, distance, clear)) continue;
         if (skeletonBowAi) {
             const auto action = skeletonBowThink(enemy, *ai, distance, clear);
             if (action == SkeletonBowAction::Shoot) {
