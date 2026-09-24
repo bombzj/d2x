@@ -144,7 +144,7 @@ class Codec {
         }
     }
 };
-// Explicit schema, never compiler struct layout. Player/item field order is save version 62.
+// Explicit schema, never compiler struct layout. Player/item field order is save version 63.
 void fields(Codec &a, EntityId &v) {
     a(v.value);
 }
@@ -265,7 +265,7 @@ Bytes encodeSave(SessionSnapshot snapshot) {
     Codec body;
     body(snapshot);
     auto bytes = body.take();
-    uint32_t version = 62, size = uint32_t(bytes.size()), crc = checksum(bytes);
+    uint32_t version = 63, size = uint32_t(bytes.size()), crc = checksum(bytes);
     Codec header;
     header(version, size, crc);
     auto headerBytes = header.take();
@@ -284,8 +284,8 @@ SessionSnapshot decodeSave(std::span<const uint8_t> bytes) {
     Codec header(bytes.subspan(sizeof(magic), 12));
     uint32_t version = 0, size = 0, crc = 0;
     header(version, size, crc);
-    if (version != 62)
-        throw std::runtime_error("Unsupported D2X save version; Night Clan identity requires a new version-62 game");
+    if (version != 63)
+        throw std::runtime_error("Unsupported D2X save version; Blood Clan identity requires a new version-63 game");
     auto payload = bytes.subspan(headerSize);
     if (size != payload.size() || crc != checksum(payload))
         throw std::runtime_error("Save checksum or length mismatch");
