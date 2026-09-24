@@ -59,7 +59,7 @@ if ($target) {
 
 响应的 `drops` 列出本次地面物品 ID、代码、数量、品质、原特殊行号和坐标；`deferred` 给出无法结算的原因。`drops=[]` 且 `deferred=null` 也可能是原 TC 的 NoDrop。这里的 ID 是 `monsters` 返回的会话实体 ID，不是 MonStats 怪物类型代码；尚未创建的刷怪计划没有可用实体 ID。
 
-定向怪物现场可跳过自然刷怪：`monster-spawn` 的 `monster` 是当前 MPQ `MonStats.Id`，`x/y` 是当前区域的可走地图坐标，必须与角色及现有活怪留出空位。仅接受原表的敌对身份，城镇与玩家死亡时拒绝；未实现的敌对外观返回 `substitute=true`。生成仍走正式实例 ID、原生命掷骰和当前难度；`monsters` 返回 `debugSpawn=true`，存档恢复保留这个来源。随后用 `monster-damage` 扣指定血量，若致死则走正式经验、掉落和死亡结算；`monster-kill` 是现有 `drop` 的直观别名，`kill` 仍要求目标在屏幕内。
+定向怪物现场可跳过自然刷怪：`monster-spawn` 的 `monster` 是当前 MPQ `MonStats.Id`，`x/y` 是当前区域的可走地图坐标，必须与角色及现有活怪留出空位。仅接受原表的敌对身份，城镇与玩家死亡时拒绝；未实现的敌对外观返回 `substitute=true`。生成仍走正式实例 ID、原生命掷骰和当前难度；`monsters` 返回 `debugSpawn=true`，只在本局会话中保留这个来源；角色存档不会保存调试生成的怪物。随后用 `monster-damage` 扣指定血量，若致死则走正式经验、掉落和死亡结算；`monster-kill` 是现有 `drop` 的直观别名，`kill` 仍要求目标在屏幕内。
 
 ```powershell
 $spawn = .\scripts\Send-D2XCommand.ps1 -Command monster-spawn -Arguments @{monster='zombie1'; x=22.5; y=25.5}
@@ -69,15 +69,15 @@ $spawn = .\scripts\Send-D2XCommand.ps1 -Command monster-spawn -Arguments @{monst
 
 示例坐标对应邪恶洞窟 `--map-seed 210` 的入口；其他地图需挑选可走且未占用的格子。管道请求本身是 JSON，其他语言可发送相同 `command` 和参数，无需另造游戏规则入口。`monster-damage` 可作用于当前区域已创建但不在镜头内的敌人，返回剩余血量；致死时与 `monster-kill` 一样返回经验及新掉落。
 
-`monsters` 同时返回当前 `attackMode`、`attackRemaining`、`impactRemaining` 及已实现外观的 `attackDuration/attackImpact/attackFrames`；Brute、普通骷髅、僵尸和沉沦魔另有 `attack2Duration/attack2Impact/attack2Frames`。这些时序从挂载 MPQ 的 `AnimData.d2` 读取，可在暂停状态逐帧 `step`，确认 A2 模式与命中事件以及存读档恢复。
+`monsters` 同时返回当前 `attackMode`、`attackRemaining`、`impactRemaining` 及已实现外观的 `attackDuration/attackImpact/attackFrames`；Brute、普通骷髅、僵尸和沉沦魔另有 `attack2Duration/attack2Impact/attack2Frames`。这些时序从挂载 MPQ 的 `AnimData.d2` 读取，可在暂停状态逐帧 `step`，确认 A2 模式与命中事件；角色载入将重置怪物。
 
-`aiEscaping` 表示 Fallen 正沿见尸逃离路线移动；它与原身份、路线一起保存。可在同一可走房间生成两只 `fallen1`，击杀其中一只再 `step` 一帧观察另一只。原死亡动作时长由运行时 MPQ 的 `AnimData.d2` 决定。`monsters` 同时返回原生成 `group`、`aiCommanded` 和 `skill2Remaining`，可观察同组命令和 S2 喊叫，后二者也随存档保存。
+`aiEscaping` 表示 Fallen 正沿见尸逃离路线移动；它与原身份、路线都只在本局维持。可在同一可走房间生成两只 `fallen1`，击杀其中一只再 `step` 一帧观察另一只。原死亡动作时长由运行时 MPQ 的 `AnimData.d2` 决定。`monsters` 同时返回原生成 `group`、`aiCommanded` 和 `skill2Remaining`，可观察同组命令和 S2 喊叫，后二者不会进入角色存档。
 
-`aiCircling` 表示 Brute、Bighead 或 Skeleton Mage 正沿可走路径绕目标行走。可定点生成 `brute2`，逐次 `step` 后查询 `monsters`，在近战攻击两次 `aip3` 掷骰中首次失败、第二次成功时观察该状态和位移；绕行路线随存档保存。
+`aiCircling` 表示 Brute、Bighead 或 Skeleton Mage 正沿可走路径绕目标行走。可定点生成 `brute2`，逐次 `step` 后查询 `monsters`，在近战攻击两次 `aip3` 掷骰中首次失败、第二次成功时观察该状态和位移；绕行路线只在本局维持。
 
-`aiRunning` 表示 Corrupt Rogue 当前跑步动作；`aiAdvanceRemaining` 表示 Corrupt Rogue、Skeleton Bow 或 Skeleton Mage 当前路径决策的剩余距离。可定点生成 `corruptrogue1`，逐帧推进并用 `monsters` 观察；该状态随存档保存。
+`aiRunning` 表示 Corrupt Rogue 当前跑步动作；`aiAdvanceRemaining` 表示 Corrupt Rogue、Skeleton Bow 或 Skeleton Mage 当前路径决策的剩余距离。可定点生成 `corruptrogue1`，逐帧推进并用 `monsters` 观察；该状态只在本局维持。
 
-`monsters` 的 `hostileProjectiles` 统计该怪物仍在飞行的敌方弹体；`aiRetaliate` 表示 Quill Rat 受击后待 A2 回击。可定点生成 `quillrat1` 后推进 6 帧观察原 `spike1` 发射，飞行中保存／读取再推进观察命中；这两项状态均随 v66 存档校验。`aiEscaping` 对 Quill Rat 也表示其按 MPQ `aip4` 距离后撤。
+`monsters` 的 `hostileProjectiles` 统计该怪物仍在飞行的敌方弹体；`aiRetaliate` 表示 Quill Rat 受击后待 A2 回击。可定点生成 `quillrat1` 后推进 6 帧观察原 `spike1` 发射，在本局继续推进观察命中；这两项状态不会进入 v81 角色存档。`aiEscaping` 对 Quill Rat 也表示其按 MPQ `aip4` 距离后撤。
 
 普通怪物的 `combat` 返回共用三难度 MPQ 解析后的等级、生命区间、可用的 A1／A2 `[最小伤害, 最大伤害, 命中]`、防御、暴击、再生和六项抗性。原表缺少某攻击模式时省略该模式；缺命中或防御列时相应位置为 `null`。`combat.elements` 返回有完整数值的 `El1–3` 模式、元素种类、概率、伤害区间及持续帧数；`status.player.chill` 是冰冷剩余秒数，`poisonRemaining` 与 `poisonPerSecond` 是毒素剩余秒数和每秒伤害。这些字段与游戏使用同一解析结果，不是调试接口另算的一套数值。
 
@@ -149,6 +149,7 @@ $offers = (.\scripts\Send-D2XCommand.ps1 -Command shop -Arguments @{ id = $vendo
 | buy | 商人对象 `id`、货架 `slot` | 需先正常交谈且在范围内；按报价扣金币并正式创建背包物品，随机货品售出后不可重购 |
 | grant-gold | `amount` | 增加钱包金币，仍遵守当前角色等级对应的携带上限，便于检验需付费的 NPC 服务 |
 | grant-experience | `amount` | 增加经验并依照运行时 MPQ `Experience.txt` 的当前职业阈值升级；达到 `MaxLvl` 时封顶；每升一级增加一个未用技能点 |
+| unlock-waypoints | 无 | 激活当前 MPQ 所建区域中实际存在的传送点，返回激活的区域 ID；对应快捷键 `Ctrl+Alt+W` |
 | allocate-attribute | `attribute`：`strength`／`dexterity`／`vitality`／`energy` | 正式分配一个未用属性点；角色面板和装备需求同步刷新 |
 | reset-attributes | 无 | 调试重置四维已分配点；等级、经验和装备槽不变，需求不足的装备停用 |
 | skills | 无 | 返回当前职业 MPQ 技能节点、页／行／列、等级门槛、前置、等级和剩余点数 |
@@ -167,7 +168,7 @@ $offers = (.\scripts\Send-D2XCommand.ps1 -Command shop -Arguments @{ id = $vendo
 | move | `x`、`y` | 校验当前地图可行走坐标，提交正常 MoveTo 并执行一个固定步，不是传送 |
 | step | `ticks`，默认 1，范围 1–250 | 同步推进固定步，每步 1/25 秒，包含 AI、伤害、死亡及拾取；不会暂停怪物单独移动玩家 |
 | pause / resume | 无 | 暂停／恢复实时模拟；调试暂停独立于游戏菜单暂停 |
-| save / load | 无 | 使用启动时 `--save`、否则 `--load`、否则 `saves/quick.d2xsave`；不能通过请求任意指定路径 |
+| save / load | 无 | 使用启动时 `--save`、否则 `--load`、否则 `saves/quick.d2xsave`；保存角色，载入后在城镇开启新的一局；不能通过请求任意指定路径 |
 | screenshot | 无 | 保存最近渲染画面到 `artifacts/debug-pipe.png`；命令返回前一已完成帧，立即移动后可在下一请求截取 |
 | quit | 无 | 正常退出；若启动指定 `--save`，退出时仍会保存 |
 
@@ -183,7 +184,7 @@ kill 和 drop 都不进行攻击命中／伤害计算，因此用于验证死亡
 
 ## 当前证据与限制
 
-当前源码格式与规则版本见[存档说明](SAVES.md)，旧档不迁移。技能树与女巫技能菜单已构建截图，快捷键已完成存读档冒烟；基础远程攻击和女巫战斗效果待逐项实机验收。v10／规则 v30 的传送现场 `artifacts/waypoint-state-v10.d2xsave` 仅是历史证据，不能按当前格式读取。status 增加 portal、waypoints 和 travelMenu；objects 中 Waypoint 返回 activated 及原 fps。新游戏包括营地全部未激活；travel 自由传送不激活，waypoint 不能绕过解锁。Ctrl+F2 是独立开发目录，不是游戏传送点菜单。原三态动画、首次交互、锁定目的地拒绝及解锁保存恢复曾在 v10 实际验证，本轮未重新运行。
+当前角色存档只保留持久进度，载入会返回城镇并重置怪物；格式与规则版本见[存档说明](SAVES.md)，旧档不迁移。技能树与女巫技能菜单已构建截图，快捷键已完成存读档冒烟；基础远程攻击和女巫战斗效果待逐项实机验收。v10／规则 v30 的传送现场 `artifacts/waypoint-state-v10.d2xsave` 仅是历史证据，不能按当前格式读取。status 增加 portal、waypoints 和 travelMenu；objects 中 Waypoint 返回 activated 及原 fps。新游戏包括营地全部未激活；travel 自由传送不激活，waypoint 不能绕过解锁。Ctrl+F2 是独立开发目录，不是游戏传送点菜单。原三态动画、首次交互、锁定目的地拒绝及解锁保存恢复曾在 v10 实际验证，本轮未重新运行。
 
 新增 `drop`、`item-move`、`item` 及物品命令回执已完成源码和协议文档。Windows Release 构建后，实际调用 `item` 查询初始手斧、`equip` 卸下和重新装备，以及对当前区域指定怪物 `drop`；后者生成 6 件地面物品、无暂缓原因，已结算数从 0 到 1。拾取、药水使用和头盔胸甲图层仍待定向验收。
 

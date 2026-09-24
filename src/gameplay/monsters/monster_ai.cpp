@@ -134,11 +134,14 @@ void Simulation::updateMonsters(float dt) {
         const bool archerAi = ai && ai->kind == MonsterAiKind::CorruptArcher;
         if (fallenAi && !enemy.aiEscaping && monsterDeathDuration_)
             for (const auto &corpse : state_.area.enemies) {
-                if (corpse.hp > 0 || corpse.id == enemy.id ||
+                if (corpse.hp > 0 || corpse.id == enemy.id || corpse.id == enemy.aiCorpse ||
                     (corpse.pos - enemy.pos).length() >= 15.f) continue;
                 const auto duration = monsterDeathDuration_(corpse);
                 if (duration && corpse.deathAge <= *duration &&
-                    fallenStartEscape(enemy, player.pos, *grid_)) break;
+                    fallenStartEscape(enemy, player.pos, *grid_)) {
+                    enemy.aiCorpse = corpse.id;
+                    break;
+                }
             }
         if (enemy.aiEscaping) {
             const Vec before = enemy.pos;

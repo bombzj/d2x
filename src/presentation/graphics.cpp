@@ -13,7 +13,7 @@ Graphics::~Graphics() {
     for (auto t : textures)
         UnloadTexture(t);
 }
-Sprite Graphics::upload(const IndexedFrame &f) {
+Sprite Graphics::upload(const IndexedFrame &f, std::optional<uint8_t> transparentIndex) {
     if (f.width <= 0 || f.height <= 0)
         return {};
     uint64_t hash = 1469598103934665603ull;
@@ -22,6 +22,7 @@ Sprite Graphics::upload(const IndexedFrame &f) {
     mix(f.height);
     mix(uint32_t(f.x));
     mix(uint32_t(f.y));
+    mix(transparentIndex ? 256 + *transparentIndex : 0);
     for (auto pixel : f.pixels)
         mix(pixel);
     if (auto found = textureCache.find(hash); found != textureCache.end())
@@ -30,6 +31,8 @@ Sprite Graphics::upload(const IndexedFrame &f) {
     int left = f.width, top = f.height, right = -1, bottom = -1;
     for (size_t i = 0; i < pixels.size(); i++) {
         pixels[i] = color(palette[f.pixels[i]]);
+        if (transparentIndex && f.pixels[i] == *transparentIndex)
+            pixels[i].a = 0;
         if (pixels[i].a) {
             int x = int(i % size_t(f.width)), y = int(i / size_t(f.width));
             left = std::min(left, x);
@@ -68,7 +71,7 @@ const Animation *Graphics::animation(const std::string &path) {
         return nullptr;
     }
 }
-GpuAnimation Graphics::single(const std::string &path) {
+GpuAnimation Graphics::single(const std::string &path, bool transparentBorderColor) {
     GpuAnimation gpu;
     auto a = animation(path);
     if (!a)
@@ -76,7 +79,8 @@ GpuAnimation Graphics::single(const std::string &path) {
     gpu.directions = a->directions;
     gpu.count = a->framesPerDirection;
     for (auto &f : a->frames)
-        gpu.frames.push_back(upload(f));
+        gpu.frames.push_back(upload(f, transparentBorderColor && !f.pixels.empty()
+                                             ? std::optional<uint8_t>(f.pixels.front()) : std::nullopt));
     return gpu;
 }
 GpuAnimation Graphics::composite(const std::string &type, const std::string &token, const std::string &mode,

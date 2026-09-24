@@ -61,7 +61,7 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
     }
     fireburst = graphics_.single("data/global/missiles/shamanfireballexplodefinal.dcc");
     panel = uiGraphics_.single("data/global/ui/panel/800ctrlpnl7.dc6");
-    cursor = uiGraphics_.single("data/global/ui/cursor/gaunt.dc6");
+    cursor = uiGraphics_.single("data/global/ui/cursor/gaunt.dc6", true);
     inventoryPanel = graphics_.single("data/global/ui/panel/invchar.dc6");
     attributeButtons = graphics_.single("data/global/ui/panel/level.dc6");
     attributePoints = graphics_.single("data/global/ui/panel/skillpoints.dc6");

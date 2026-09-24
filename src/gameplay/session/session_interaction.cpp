@@ -146,6 +146,16 @@ void GameSession::completeInteraction(const WorldObject &object) {
         break;
     }
 }
+void GameSession::unlockWaypoints() {
+    if (state().player.dead) return;
+    for (const auto &region : regions_)
+        for (const auto &object : region.objects)
+            if (object.name == "Waypoint" && object.interaction == Interaction::Travel &&
+                simulation_.state_.waypoints.emplace(region.definition.id, state().time).second) {
+                simulation_.emit(WaypointActivated{object.id});
+                break;
+            }
+}
 bool GameSession::travelWaypoint(const WaypointTravel &command) {
     const auto *source = object(command.source);
     if (!source || source->name != "Waypoint" || source->interaction != Interaction::Travel ||

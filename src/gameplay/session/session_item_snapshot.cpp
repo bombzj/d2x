@@ -16,7 +16,6 @@ void GameSession::validateItemProperties(const SessionSnapshot &snapshot) const 
                    ? value >= *property.minimum && value <= *property.maximum
                    : value == property.minimum.value_or(0);
     };
-    std::set<size_t> uniqueRows;
     for (const auto &[id, item] : snapshot.inventory.items) {
         if (item.quality == ItemQuality::Normal) {
             requireItem(item.specialRow == -1 && item.gradeRow == -1 && item.requiredLevel == 0 &&
@@ -113,10 +112,6 @@ void GameSession::validateItemProperties(const SessionSnapshot &snapshot) const 
         for (size_t index = 0; index < item.propertyRolls.size(); ++index)
             requireItem(validRoll(found->properties[index], item.propertyRolls[index]),
                         "special property roll");
-        if (item.quality == ItemQuality::Unique && !found->noLimit)
-            requireItem(uniqueRows.insert(found->row).second &&
-                            snapshot.loot.usedUniques.contains(uint32_t(found->row)),
-                        "duplicate or untracked unique");
     }
 }
 } // namespace d2x

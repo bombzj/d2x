@@ -157,7 +157,7 @@ void SceneView::drawActors() const {
         if (!session_.active(e.pos))
             continue;
         auto p = screen(e.pos);
-        draw.push_back({e.hp > 0 ? p.y : -100000.f, 2, i, p});
+        draw.push_back({e.hp > 0 ? p.y : p.y - 1.f, 2, i, p});
     }
     draw.push_back({screen(sim.player.pos).y, 1, 0, screen(sim.player.pos)});
     if (auto position = session_.portalPosition()) {

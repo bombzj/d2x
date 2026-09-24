@@ -17,6 +17,11 @@ int direction(Vec look, int count) {
         a += 2 * pi;
     static constexpr int dir16[] = {7, 14, 3, 15, 4, 8, 0, 9, 5, 10, 1, 11, 6, 12, 2, 13};
     static constexpr int dir8[] = {7, 3, 4, 0, 5, 1, 6, 2};
+    // The DCC direction order is interleaved; missiles such as Arrow use 32 directions.
+    static constexpr int dir32[] = {7, 28, 14, 29, 3, 30, 15, 31, 4, 16, 8, 17, 0, 18, 9, 19,
+                                    5, 20, 10, 21, 1, 22, 11, 23, 6, 24, 12, 25, 2, 26, 13, 27};
+    if (count == 32)
+        return dir32[int(std::round(a / (2 * pi) * 32)) % 32];
     if (count == 16)
         return dir16[int(std::round(a / (2 * pi) * 16)) % 16];
     if (count == 8)

@@ -2,6 +2,7 @@
 #include "resources/archive.hpp"
 #include "resources/formats.hpp"
 #include <raylib.h>
+#include <optional>
 #include <unordered_map>
 namespace d2x {
 struct Sprite {
@@ -32,9 +33,9 @@ class Graphics {
     ~Graphics();
     Graphics(const Graphics &) = delete;
     Graphics &operator=(const Graphics &) = delete;
-    Sprite upload(const IndexedFrame &frame);
+    Sprite upload(const IndexedFrame &frame, std::optional<uint8_t> transparentIndex = std::nullopt);
     const Animation *animation(const std::string &path);
-    GpuAnimation single(const std::string &path);
+    GpuAnimation single(const std::string &path, bool transparentBorderColor = false);
     GpuAnimation composite(const std::string &type, const std::string &token, const std::string &mode,
                            const std::string &weapon,
                            const std::array<const char *, 16> *equipment = nullptr,

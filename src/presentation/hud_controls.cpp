@@ -68,9 +68,21 @@ void SceneView::drawControlPanel() const {
     auto stamina = hudStamina();
     stamina.width *= std::clamp(player.stamina / session_.characterStats().maxStamina, 0.f, 1.f);
     DrawRectangleRec(stamina, {170, 136, 68, 175});
+    const auto &thresholds = session_.experienceThresholds();
+    const size_t level = size_t(player.level);
+    if (level + 1 < thresholds.size() && thresholds[level + 1] > thresholds[level]) {
+        auto experience = hudExperience();
+        const auto gained = player.experience - thresholds[level];
+        const auto needed = thresholds[level + 1] - thresholds[level];
+        experience.width *= std::clamp(double(gained) / double(needed), 0.0, 1.0);
+        experience.height = 2 * hudScale;
+        DrawRectangleRec(experience, WHITE);
+    }
     imageAt(assets_.runButton.frame(0, player.running ? 2 : 0), hudRunButton());
+    if (player.unspentAttributes > 0)
+        imageAt(assets_.attributeButtons.frame(0, 0), hudCharacterButton());
     if (player.unspentSkills > 0)
-        painter_.label("T " + std::to_string(player.unspentSkills), W - 350, H - 29, 12, gold);
+        imageAt(assets_.attributeButtons.frame(0, 0), hudSkillTreeButton());
 }
 bool SceneView::leftSkillAllowed(int skill) const {
     const auto *entry = session_.content().skills.find(skill);
@@ -168,6 +180,22 @@ void SceneView::drawSkillControls(Vec mouse) const {
     if (CheckCollisionPointRec(rv(mouse), hudStamina()))
         hint = "Stamina: " + std::to_string(int(session_.state().player.stamina)) + " / " +
                std::to_string(session_.characterStats().maxStamina);
+    if (session_.state().player.unspentAttributes > 0 &&
+        CheckCollisionPointRec(rv(mouse), hudCharacterButton())) {
+        imageAt(assets_.attributeButtons.frame(0, 1), hudCharacterButton());
+        hint = "New attribute points [A]";
+    }
+    if (session_.state().player.unspentSkills > 0 &&
+        CheckCollisionPointRec(rv(mouse), hudSkillTreeButton())) {
+        imageAt(assets_.attributeButtons.frame(0, 1), hudSkillTreeButton());
+        hint = "New skill points [S]";
+    }
+    if (CheckCollisionPointRec(rv(mouse), hudExperience())) {
+        const auto &thresholds = session_.experienceThresholds();
+        const size_t level = size_t(session_.state().player.level);
+        hint = "Experience: " + std::to_string(session_.state().player.experience) + " / " +
+               (level + 1 < thresholds.size() ? std::to_string(thresholds[level + 1]) : "MAX");
+    }
     if (!hint.empty())
         painter_.centered(hint, H - HUD - 24, 12, parchment);
 }

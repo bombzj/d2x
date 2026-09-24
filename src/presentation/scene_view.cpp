@@ -121,6 +121,11 @@ void SceneView::advance(float dt) {
     for (auto &[id, age] : landingAge_)
         age += dt;
     std::erase_if(landingAge_, [](const auto &pair) { return pair.second > 4; });
+    std::vector<std::pair<Vec, float>> deathLandingDelays;
+    for (const auto &event : session_.events())
+        if (const auto *death = std::get_if<EnemyDied>(&event))
+            if (const auto *motion = session_.monsterContent().motion(death->kind, "dt"))
+                deathLandingDelays.emplace_back(death->position, motion->duration);
     auto soundFor = [&](EntityId id) -> const SceneAssets::MonsterAudio * {
         auto enemy = std::find_if(session_.state().area.enemies.begin(),
                                   session_.state().area.enemies.end(),
@@ -239,7 +244,13 @@ void SceneView::advance(float dt) {
                         if (auto ground = std::get_if<GroundLocation>(&*value.after);
                             ground && ground->region == session_.region().definition.id &&
                             (value.kind == ItemChangeKind::Created || value.kind == ItemChangeKind::Moved))
-                            landingAge_[value.item] = 0;
+                            landingAge_[value.item] = [&] {
+                                if (value.kind == ItemChangeKind::Created)
+                                    for (const auto &[position, delay] : deathLandingDelays)
+                                        if ((ground->position - position).length() <= 6.f)
+                                            return -delay;
+                                return 0.f;
+                            }();
                 } else if constexpr (std::is_same_v<T, WaypointActivated>) {
                     notice("Waypoint activated.", false);
                 } else if constexpr (std::is_same_v<T, ObjectInteracted>) {

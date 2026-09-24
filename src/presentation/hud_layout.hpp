@@ -20,6 +20,15 @@ inline Rectangle hudRunButton() {
 inline Rectangle hudStamina() {
     return hudRect(273, 28, 102, 19);
 }
+inline Rectangle hudExperience() {
+    return hudRect(256, 39, 120, 4);
+}
+inline Rectangle hudCharacterButton() {
+    return hudRect(206, 39, 30, 30);
+}
+inline Rectangle hudSkillTreeButton() {
+    return hudRect(563, 39, 30, 30);
+}
 inline Rectangle hudMenuButton() {
     return hudRect(393, 39, 16, 32);
 }

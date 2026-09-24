@@ -70,7 +70,8 @@ int runGame(int argc, char **argv) {
                      "<new.mpq> --save <file.d2xsave> --load <file.d2xsave>\n"
                      "--debug-pipe <name>: opt-in local Windows debug commands (starts paused).\n"
                      "--debug-run: start the debug-enabled game without pausing.\n"
-                     "F11: save; Ctrl+F11: load. Default slot: saves/quick.d2xsave\n";
+                     "F11: save character; Ctrl+F11: start a new game in town from save. "
+                     "Default slot: saves/quick.d2xsave\n";
         return 0;
     }
     Archives archives;
@@ -89,7 +90,7 @@ int runGame(int argc, char **argv) {
     if (!options.load.empty()) {
         restored = loadSave(options.load);
         options.world.seed = restored->world.mapSeed;
-        options.population = restored->world.population;
+        options.population.difficulty = restored->world.population.difficulty;
     }
     GameSession session(archives, options.world, options.region, options.lootSeed, options.population);
     std::cout << "MPQ data: " << session.content().profile << ", "
@@ -149,10 +150,10 @@ int runGame(int argc, char **argv) {
                     view.sessionRestored();
                     controller.resetInput();
                     accumulator = 0;
-                    view.notice("Loaded game.");
+                    view.notice("Character loaded in town; monsters have reset.");
                 } else {
                     writeSave(savePath, session.snapshot());
-                    view.notice("Game saved.");
+                    view.notice("Character saved.");
                 }
                 std::cout << (input.load ? "Loaded " : "Saved ") << savePath << '\n';
             } catch (const std::exception &error) {

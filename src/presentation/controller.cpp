@@ -117,6 +117,10 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
             session_.submit(DebugResetSkills{});
             view_.notice("Allocated skill points returned.");
         }
+        if (input.debugWaypoints) {
+            session_.submit(DebugUnlockWaypoints{});
+            view_.notice("Available waypoints activated.");
+        }
     }
     if (ui.shopOpen) {
         if (input.escape) {
@@ -197,6 +201,19 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
         bool opening = !ui.skillTreeOpen;
         if (opening && ui.inventory.open) toggleInventory();
         ui.skillTreeOpen = opening;
+        ui.skillPicker.reset();
+        return true;
+    }
+    if (input.insideViewport && input.leftPressed && !ui.blocksWorld() &&
+        session_.state().player.unspentAttributes > 0 &&
+        CheckCollisionPointRec(rv(input.mouse), hudCharacterButton())) {
+        ui.characterOpen = true;
+        return true;
+    }
+    if (input.insideViewport && input.leftPressed && !ui.blocksWorld() &&
+        session_.state().player.unspentSkills > 0 &&
+        CheckCollisionPointRec(rv(input.mouse), hudSkillTreeButton())) {
+        ui.skillTreeOpen = true;
         ui.skillPicker.reset();
         return true;
     }

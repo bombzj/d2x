@@ -212,6 +212,14 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
             session.submit(DebugGrantGold{amount});
             session.tick(0);
             result["gold"] = session.state().player.gold;
+        } else if (command == "unlock-waypoints") {
+            if (session.state().player.dead)
+                throw std::runtime_error("Dead player cannot activate waypoints");
+            session.submit(DebugUnlockWaypoints{});
+            session.tick(0);
+            result["waypoints"] = Json::array();
+            for (const auto &[region, time] : session.state().waypoints)
+                result["waypoints"].push_back(int(region));
         } else if (command == "grant-experience") {
             uint64_t amount = request.at("amount").get<uint64_t>();
             if (!amount || session.state().player.dead)

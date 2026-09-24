@@ -39,6 +39,7 @@ class GameSession {
     std::optional<int> pendingExit_;
     std::optional<Vec> boundaryMoveTarget_;
     std::vector<Region> regions_;
+    std::vector<NpcMotionState> initialNpcMotions_;
     std::vector<AreaState> inactiveAreas_;
     std::vector<GameCommand> pending_;
     int current_ = -1;
@@ -58,6 +59,7 @@ class GameSession {
     bool canReach(const WorldObject &object) const;
     std::optional<Vec> interactionApproach(const WorldObject &object) const;
     bool travelWaypoint(const WaypointTravel &command);
+    void unlockWaypoints();
     void validateStorage();
     void closeStorage();
     void spawnLoot(std::span<const LootDrop> drops, RegionId region, Vec origin);
@@ -82,6 +84,7 @@ class GameSession {
     void updatePickup();
     void cancelPickup();
     int validateSnapshot(const SessionSnapshot &snapshot) const;
+    SessionSnapshot prepareCharacterRestore(SessionSnapshot character) const;
     void validateItemProperties(const SessionSnapshot &snapshot) const;
     void spawnDebugMonster(const DebugSpawnMonster &command);
     void damageDebugMonster(const DebugDamageMonster &command);

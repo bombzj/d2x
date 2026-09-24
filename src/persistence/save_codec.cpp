@@ -4,24 +4,15 @@
 #include <limits>
 #include <stdexcept>
 #include <type_traits>
+#include <variant>
 
 namespace d2x {
 namespace {
 class Codec;
 void fields(Codec &, EntityId &);
-void fields(Codec &, Vec &);
-void fields(Codec &, Restoration &);
 void fields(Codec &, SkillHotkey &);
 void fields(Codec &, PlayerState &);
-void fields(Codec &, Enemy &);
-void fields(Codec &, MonsterIdentity &);
-void fields(Codec &, MonsterSpawn &);
-void fields(Codec &, PopulationSettings &);
-void fields(Codec &, Missile &);
-void fields(Codec &, Effect &);
-void fields(Codec &, AreaState &);
 void fields(Codec &, WorldState &);
-void fields(Codec &, TownPortalState &);
 void fields(Codec &, Cell &);
 void fields(Codec &, ContainerSpec &);
 void fields(Codec &, ContainerState &);
@@ -29,8 +20,6 @@ void fields(Codec &, ItemInstance &);
 void fields(Codec &, ItemAffixInstance &);
 void fields(Codec &, InventoryState &);
 void fields(Codec &, PlayerContainers &);
-void fields(Codec &, LootState &);
-void fields(Codec &, NpcMotionState &);
 void fields(Codec &, SessionSnapshot &);
 class Codec {
     Bytes output_;
@@ -144,15 +133,10 @@ class Codec {
         }
     }
 };
-// Explicit schema, never compiler struct layout. Player/item field order is save version 80.
+// Explicit schema, never compiler struct layout. Version 81 is a character save,
+// not an in-progress world snapshot.
 void fields(Codec &a, EntityId &v) {
     a(v.value);
-}
-void fields(Codec &a, Vec &v) {
-    a(v.x, v.y);
-}
-void fields(Codec &a, Restoration &v) {
-    a(v.remaining, v.rate);
 }
 void fields(Codec &a, SkillHotkey &v) {
     a(v.skill, v.right);
@@ -161,48 +145,15 @@ void fields(Codec &a, AttributeAllocation &v) {
     a(v.strength, v.dexterity, v.vitality, v.energy);
 }
 void fields(Codec &a, PlayerState &v) {
-    a(v.id, v.characterClass, v.pos, v.previous, v.look, v.route, v.hp, v.mana, v.stamina, v.castTime, v.spinTime, v.leapTime,
-      v.hitTime, v.deathTime, v.meleeTime, v.lastMeleeDuration, v.chill,
-      v.poisonRemaining, v.poisonPerSecond,
-      v.webSlowRemaining, v.webSlowPercent, v.webSource,
-      v.leapStart, v.leapEnd, v.cooldown, v.healing, v.manaRestoration,
-    v.staminaBoost, v.attackTarget, v.throwAttack, v.leftHandAttack, v.lastSkill, v.lastCastDuration, v.running, v.moving, v.dead, v.combatRandom, v.nextWeapon, v.gold,
-    v.experience, v.level, v.allocated, v.unspentAttributes, v.skillRanks, v.unspentSkills, v.skillHotkeys);
-}
-void fields(Codec &a, Enemy &v) {
-    a(v.id, v.kind, v.identity, v.pos, v.hp, v.maxHp, v.chill, v.attack, v.attackDuration, v.attackImpact,
-            v.attackMode, v.skill2Remaining, v.skill2Duration,
-            v.stun, v.deathAge, v.hitFlash, v.rethink,
-            v.aiWait, v.aiPursuing, v.aiEscaping, v.aiCommanded, v.aiCircling,
-            v.aiRunning, v.aiAdvanceRemaining, v.aiRetaliate, v.aiCharged,
-            v.aiPhase, v.aiLoop, v.aiCorpse, v.resurrected,
-            v.webAuraRemaining, v.webTrailDistance,
-            v.route, v.combatRandom);
-}
-void fields(Codec &a, MonsterIdentity &v) {
-    a(v.monster, v.superUnique, v.spawnKey, v.rank, v.origin, v.group);
-}
-void fields(Codec &a, MonsterSpawn &v) {
-    a(v.identity, v.kind, v.position);
-}
-void fields(Codec &a, PopulationSettings &v) {
-    a(v.seed, v.difficulty);
-}
-void fields(Codec &a, Missile &v) {
-    a(v.id, v.owner, v.pos, v.velocity, v.remaining, v.skill, v.physical, v.missileId,
-      v.damage, v.radius, v.chill, v.hostile, v.hostileMode, v.slowDuration);
-}
-void fields(Codec &a, Effect &v) {
-    a(v.pos, v.skill, v.age, v.duration);
-}
-void fields(Codec &a, AreaState &v) {
-    a(v.region, v.enemies, v.pendingSpawns, v.missiles, v.effects, v.kills, v.initialized);
+    a(v.id, v.characterClass, v.hp, v.mana, v.stamina, v.lastSkill,
+      v.running, v.combatRandom, v.nextWeapon, v.gold, v.experience,
+      v.level, v.allocated, v.unspentAttributes, v.skillRanks,
+      v.unspentSkills, v.skillHotkeys);
 }
 void fields(Codec &a, WorldState &v) {
-    a(v.mapSeed, v.population, v.player, v.area, v.time, v.message, v.portal, v.waypoints);
-}
-void fields(Codec &a, TownPortalState &v) {
-    a(v.active, v.revision, v.field, v.fieldPosition, v.townPosition);
+    // The region ID identifies the act town on entry. No area actors or effects
+    // cross the save boundary; waypoints retain their activation time.
+    a(v.mapSeed, v.population.difficulty, v.player, v.area.region, v.time, v.waypoints);
 }
 void fields(Codec &a, Cell &v) {
     a(v.x, v.y);
@@ -220,22 +171,15 @@ void fields(Codec &a, ItemInstance &v) {
     a(v.id, v.definition, v.quantity, v.durability, v.quality, v.identified, v.level, v.revision, v.defense,
       v.specialRow, v.requiredLevel, v.gradeRow, v.rarePrefixRow, v.rareSuffixRow, v.grantedSkill,
       v.propertyRolls, v.affixes);
-    uint32_t kind = uint32_t(v.location.index());
-    a(kind);
-    if (kind == 0) {
-        GroundLocation location;
-        if (!a.reading())
-            location = std::get<GroundLocation>(v.location);
-        a(location.region, location.position);
-        v.location = location;
-    } else if (kind == 1) {
-        ContainerLocation location;
-        if (!a.reading())
-            location = std::get<ContainerLocation>(v.location);
-        a(location.container, location.cell);
-        v.location = location;
-    } else
-        throw std::runtime_error("Invalid saved item location kind");
+    ContainerLocation location;
+    if (!a.reading()) {
+        const auto *contained = std::get_if<ContainerLocation>(&v.location);
+        if (!contained)
+            throw std::runtime_error("Ground item cannot enter character save");
+        location = *contained;
+    }
+    a(location.container, location.cell);
+    v.location = location;
 }
 void fields(Codec &a, ItemAffixInstance &v) {
     a(v.prefix, v.row, v.propertyRolls);
@@ -243,15 +187,8 @@ void fields(Codec &a, ItemAffixInstance &v) {
 void fields(Codec &a, InventoryState &v) {
     a(v.items, v.containers, v.creationRandom);
 }
-void fields(Codec &a, LootState &v) {
-    a(v.randomState, v.settled, v.usedUniques);
-}
-void fields(Codec &a, NpcMotionState &v) {
-    a(v.id, v.position, v.look, v.route, v.wait, v.target, v.random);
-}
 void fields(Codec &a, SessionSnapshot &v) {
-    a(v.contentFingerprint, v.nextEntityId, v.maps, v.world, v.inactiveAreas, v.inventory, v.containers,
-      v.loot, v.npcMotions, v.soldVendorOffers);
+    a(v.contentFingerprint, v.nextEntityId, v.maps, v.world, v.inventory, v.containers);
 }
 uint32_t checksum(std::span<const uint8_t> bytes) {
     uint32_t crc = 0xffffffffu;
@@ -265,10 +202,15 @@ uint32_t checksum(std::span<const uint8_t> bytes) {
 constexpr uint8_t magic[] = {'D', '2', 'X', 'S', 'A', 'V', 'E', 0};
 } // namespace
 Bytes encodeSave(SessionSnapshot snapshot) {
+    // Ground drops belong to this game session, not the character. They must
+    // never be serialized with the player's equipment, backpack or stash.
+    std::erase_if(snapshot.inventory.items, [](const auto &entry) {
+        return std::holds_alternative<GroundLocation>(entry.second.location);
+    });
     Codec body;
     body(snapshot);
     auto bytes = body.take();
-    uint32_t version = 80, size = uint32_t(bytes.size()), crc = checksum(bytes);
+    uint32_t version = 81, size = uint32_t(bytes.size()), crc = checksum(bytes);
     Codec header;
     header(version, size, crc);
     auto headerBytes = header.take();
@@ -287,8 +229,8 @@ SessionSnapshot decodeSave(std::span<const uint8_t> bytes) {
     Codec header(bytes.subspan(sizeof(magic), 12));
     uint32_t version = 0, size = 0, crc = 0;
     header(version, size, crc);
-    if (version != 80)
-        throw std::runtime_error("Unsupported D2X save version; Arach webs require a new version-80 game");
+    if (version != 81)
+        throw std::runtime_error("Unsupported D2X save version; character saves require version 81");
     auto payload = bytes.subspan(headerSize);
     if (size != payload.size() || crc != checksum(payload))
         throw std::runtime_error("Save checksum or length mismatch");

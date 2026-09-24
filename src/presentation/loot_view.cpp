@@ -28,12 +28,12 @@ Rectangle SceneView::lootBounds(const ItemInstance &item) const {
     return {p.x - 12, p.y - 10, 24, 20};
 }
 void SceneView::drawGroundItem(EntityId id) const {
+    if (auto age = landingAge_.find(id); age != landingAge_.end() && age->second < 0)
+        return;
     const auto &item = *session_.inventory().item(id);
     auto p = screen(std::get<GroundLocation>(item.location).position);
     if (p.x < -80 || p.x > W + 80 || p.y < -80 || p.y > H - HUD + 80)
         return;
-    if (id == session_.pickupTarget())
-        diamond(p, 15, gold);
     auto animation = assets_.itemGround.find(SceneAssets::itemArtKey(item));
     if (animation != assets_.itemGround.end() && animation->second.count > 0) {
         const auto &anim = animation->second;
@@ -51,6 +51,8 @@ std::vector<SceneView::LootLabel> SceneView::lootLabels(Vec mouse) const {
     std::vector<LootLabel> layout, visible;
     const auto &inventory = session_.inventory();
     for (auto id : inventory.groundItems(session_.region().definition.id)) {
+        if (auto age = landingAge_.find(id); age != landingAge_.end() && age->second < 0)
+            continue;
         const auto &item = *inventory.item(id);
         auto ground = screen(std::get<GroundLocation>(item.location).position);
         if (ground.x < 0 || ground.x > W || ground.y < 70 || ground.y > H - HUD - 38)
@@ -58,8 +60,8 @@ std::vector<SceneView::LootLabel> SceneView::lootLabels(Vec mouse) const {
         std::string text = itemName(item);
         if (item.quantity > 1)
             text += " x" + std::to_string(item.quantity);
-        float width = float(painter_.measure(text, 14) + 14);
-        Rectangle box{std::clamp(ground.x - width / 2, 4.f, W - width - 4), ground.y - 30, width, 22};
+        float width = float(painter_.measure(text, 14) + 8);
+        Rectangle box{std::clamp(ground.x - width / 2, 4.f, W - width - 4), ground.y - 30, width, 20};
         bool placed = false;
         // Alternate rows above and below the drop; drawing and clicking use this same layout.
         for (int step = 0; step < 42; ++step) {
@@ -77,8 +79,7 @@ std::vector<SceneView::LootLabel> SceneView::lootLabels(Vec mouse) const {
             continue;
         LootLabel label{item.handle(), std::move(text), box, ground, itemColor(item.quality)};
         layout.push_back(label);
-        bool recent = landingAge_.contains(id) && landingAge_.at(id) < 3;
-        if (view_.showLoot || recent || id == session_.pickupTarget() ||
+        if (view_.showLoot || id == session_.pickupTarget() ||
             CheckCollisionPointRec(rv(mouse), box) || CheckCollisionPointRec(rv(mouse), lootBounds(item)))
             visible.push_back(std::move(label));
     }
@@ -93,6 +94,8 @@ std::optional<ItemHandle> SceneView::lootAt(Vec mouse, bool labelsOnly) const {
         float distance = 1000;
         const auto &inventory = session_.inventory();
         for (auto id : inventory.groundItems(session_.region().definition.id)) {
+            if (auto age = landingAge_.find(id); age != landingAge_.end() && age->second < 0)
+                continue;
             const auto &item = *inventory.item(id);
             if (!CheckCollisionPointRec(rv(mouse), lootBounds(item)))
                 continue;
@@ -112,16 +115,9 @@ void SceneView::drawLootLabels(Vec mouse) const {
         bool hot = CheckCollisionPointRec(rv(mouse), label.bounds) ||
                    CheckCollisionPointRec(rv(mouse), lootBounds(*session_.inventory().item(label.item.id)));
         bool selected = label.item.id == session_.pickupTarget();
-        if (hot || selected) {
-            DrawLineV(rv(label.ground),
-                      {label.bounds.x + label.bounds.width / 2, label.bounds.y + label.bounds.height},
-                      Fade(gold, .55f));
-            diamond(label.ground, 12, gold);
-        }
-        DrawRectangleRec(label.bounds, hot ? Color{48, 42, 24, 238} : Color{8, 9, 10, 205});
-        if (hot || selected)
-            DrawRectangleLinesEx(label.bounds, 1, gold);
-        painter_.label(label.text, int(label.bounds.x + 7), int(label.bounds.y + 3), 14, label.color);
+        DrawRectangleRec(label.bounds, hot || selected ? Color{47, 47, 47, 235}
+                                                         : Color{0, 0, 0, 218});
+        painter_.label(label.text, int(label.bounds.x + 4), int(label.bounds.y + 2), 14, label.color);
     }
 }
 } // namespace d2x

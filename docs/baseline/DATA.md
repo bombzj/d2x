@@ -39,23 +39,23 @@
 
 ## 物品与存档
 
-- 当前格式 v80，规则 `d2x-session-rules-v112-arach-web`，拒绝 v1–v79，亦拒绝不同内容／规则指纹。玩家保存职业、四维已分配点及未用点数，必须等于按该职业运行时 MPQ `CharStats.StatPerLevel` 计算的等级总点数；等级与经验按该职业 `Experience.txt` 列校验。技能等级与未用点数总和等于升级次数，按运行时 MPQ `Skills.txt`／`SkillDesc.txt` 校验职业、门槛、最大等级及前置。八个快捷键保存技能 ID 和左右键，读取时校验当前职业身份及左键限制。第一件原初始装备的授予技能按 `CharStats.StartSkill` 校验；角色冰冷剩余时间、毒素剩余时间与每秒伤害及普攻动作时长按当前格式保存；Fallen 逃离状态／路线、同组命令及按 MPQ `AnimData.d2` 校验的 S2 动作时间，以及 Brute 绕行、Corrupt Rogue 跑步状态／路线、Goatman／Wraith 停顿、Corrupt Lancer 冲锋、Corrupt Archer 后撤和 A1 箭、Skeleton Bow 接近步数与 A1 箭、Bighead 绕行／后撤和 A2 闪电、Skeleton Mage 接近／绕行和 A1 火／闪电弹体、Fetish 攻击／撤退阶段与计数、Vampire 阶段／目标距离和 SC 法术弹体、Fallen Shaman 复活目标／复活标记与 A2 火焰弹体、Foul Crow Nest 孵化计数／间隔及 BloodHawk 冲锋状态、Arach 蛛网光环／地面弹体和角色减速来源／剩余时间、Quill Rat 的敌方原弹体一同校验；飞行中的普通与女巫技能弹体保存原 Missile ID、伤害、作用半径和冰冷时长。派生属性、装备词缀和资源上限在恢复前从 MPQ 定义与快照库存重算；私人箱尺寸按 `inventory.txt` 当前模式校验。物品保存品质原行、等级要求、展示属性值与词缀行，掉落状态保存限量暗金记录。WorldState 包含 TownPortalState 和 waypoints；临时走近请求不保存。
+- 当前角色存档格式 v81，规则 d2x-session-rules-v113-character-save；拒绝 v1–v80 与不同内容／规则指纹。职业成长、经验、技能等级／前置、F1–F8 绑定、初始物品授予技能和箱子尺寸均按运行时 MPQ 校验。只编码角色当前资源、持久成长、钱包、容器内物品、传送点和地图配置；临时战斗状态及本局怪物状态不编码。恢复时重新计算装备与角色派生属性。
 - 调试 Travel 不修改解锁记录；普通 WaypointTravel 重新校验源点与目标，不相信 UI 已禁用按钮。传送点 NU／OP（Operating）／ON（Opened）的帧数、速率、循环和起帧来自 Objects.FrameCnt／FrameDelta／CycleAnim／Start；当前难度与角色都固定在同一 SessionSnapshot 中，不提供跨难度迁移。
 - 野外传送点固定分组通过 MapPiece.substitutionGroup 裁剪原图层和分组内部原对象，保持每格 DT1 资源作用域；非完整通用 LvlSub。回城蓝门使用原 TP 资源，不写入静态地图对象列表，不分配临时地图对象 ID。
 
 - LoD 掉落数据含 852 个原表 TC 和 160 个 ItemTypes 自动类别；怪物 TC 引用在生成类别后重新按名称解析，不把运行时数组下标存入存档。自动类别使用原 weapons/armor/misc 行顺序和主类型 rarity，排除任务物品及不允许生成的条目，投掷药剂不混入其他类别。
 - `selectTreasure` 消费类型化 TC 与调用方种子，原表 `Picks=0` 不抽取，可在叶子回调中执行品质判定并停止遍历；纯查询不改变会话状态。单人 NoDrop 未做人数缩放，旧 1.04 数据不套用 LoD 算法。`planItemLoot` 最多规划六件有原表定义和原图的物品实例，同批次选择限量暗金时登记已选原行，品质候选失败后按已核实顺序降级；遇未知实例整批暂缓并丢弃候选，保留已消费随机状态而不重抽。入口本身无法解析时不抽取。死亡 ID 仍只结算一次，暂缓批次不会补发。
 - ItemRatio 在 LoD 源存在时读取并纳入内容指纹；缺表时游戏显示暂缓原因，不补造比例。品质请求规则独立于存档 ItemQuality，超强／劣质等从 QualityItems／LowQualityItems 原行生成展示实例。`createItem` 接受可信物品等级参数，掉落实例使用解析后的等级，初始物品仍为等级 1。
-- `resolveMonsterLoot` 只读真实身份、MonStats、SuperUniques 和 Levels，返回 Ready／Empty／Deferred、基础 TC 名称、物品等级及 TC 升级等级；不读取替身 MonsterKind。普通难度升级等级固定为零，噩梦／地狱仅非 boss／非 noRatio 怪物可升级。任务条件缺失和随从等级归属不明明确暂缓，不当作 NoDrop；死亡日志不编码到存档，已结算 ID 仍按原语义保存。
+- `resolveMonsterLoot` 只读真实身份、MonStats、SuperUniques 和 Levels，返回 Ready／Empty／Deferred、基础 TC 名称、物品等级及 TC 升级等级；不读取替身 MonsterKind。普通难度升级等级固定为零，噩梦／地狱仅非 boss／非 noRatio 怪物可升级。任务条件缺失和随从等级归属不明明确暂缓，不当作 NoDrop；死亡结算 ID 仅在本局会话内保留。
 - `ItemDefinition` 是只读原表定义；`ItemInstance` 是带稳定 ID 的实例。
 - 位置由地面区域或容器格子唯一确定；转移通过 `InventoryService`，禁止 UI 直接改归属。
 - 私人箱访问权是临时交互状态，不能通过存档恢复远程访问。
-- `.d2xsave` 当前 v80 显式编码玩家职业、经验、等级、已分配属性／技能与未用点数、F1–F8 绑定、钱包、物品数量／等级／品质原行／已鉴定标志／展示属性、初始装备技能、普通、技能及敌方原弹体、角色冰冷及毒素剩余时间／毒素每秒伤害／当前普攻时长、怪物最大生命、骷髅、僵尸与沉沦魔 AI 停顿／追击及 Fallen 逃离／命令及 S2 动作状态、Brute 绕行、Corrupt Rogue 跑步状态、Goatman／Wraith 停顿、Corrupt Lancer 冲锋、Corrupt Archer 后撤和 A1 箭、Skeleton Bow 接近步数与 A1 箭、Bighead 绕行／后撤和 A2 闪电、Skeleton Mage 接近／绕行和 A1 火／闪电弹体、Fetish 攻击／撤退阶段与计数、Vampire 阶段／目标距离和 SC 法术弹体、Fallen Shaman 复活目标／复活标记与 A2 火焰弹体、Foul Crow Nest 孵化计数／间隔及 BloodHawk 冲锋状态、Arach 蛛网光环／地面弹体和角色减速来源／剩余时间、Quill Rat 敌方弹体与受击回击、A1／Brute／骷髅／僵尸／沉沦魔 A2 攻击过程、NPC 原路径运动、商人随机货品已售 slot、ID、掉落随机状态及已结算 ID。命名管道定向生成的怪物保存 Debug 来源、原身份、分组和生成键，并沿用敌对身份、生命范围与地图位置校验。金币地面物品使用 quantity，禁止放入普通容器；拾取最多补到角色等级乘 10000，余额留地面，满额拒绝。各职业等级阈值来自运行时 MPQ `Experience.txt`，成长来自 `CharStats.txt`；击杀经验按 `MonStats`／`MonLvl`／`Experience` 及原引擎等级差规则结算。
-- 读取先完整校验，再提交状态。地图配置、内容／规则指纹不匹配则拒绝；旧 v1–v24 不迁移。防具实例防御必须落在原基础范围，非防具不得带防御值；装备派生结果在恢复提交前重算验证，不单独编码。
+- .d2xsave v81 保存容器内物品的品质原行、词缀掷值、数量、耐久与位置；地面掉落不保存。载入从上次所在幕的城镇开始，重新生成怪物，重置尸体、弹体、回城门、NPC 位置、商店已售记录及死亡结算。当前只实现第一幕城镇；死亡后取回尸体与任务进度尚未实现。金币地面物品使用 quantity，不能入普通容器；击杀经验仍按原表计算。
+- 读取先完整校验，再提交状态。地图配置、内容／规则指纹不匹配则拒绝；旧 v1–v80 不迁移。防具实例防御必须落在原基础范围，非防具不得带防御值；装备派生结果在恢复提交前重算验证，不单独编码。
 - 金币基础数量为物品等级加 [0,5 倍等级) 随机值，支持 TC 的 gld,mul=N 按 N/256 整数缩放；当前超过原 gld.maxstack 的金币堆明确暂缓，不截断金额。箭袋按 minstack/maxstack，其他已支持普通消耗品按 minstack/spawnstack（无效 spawnstack 回退 maxstack）生成，随机上界不含。数量使用会话掉落随机流，是项目适配，不宣称原物品独立种子流一致。
 - 装备 ContainerLocation 的 cell.x 表示部位而非背包矩形，cell.y 固定零；腰带仍使用 BeltEquipment。读档校验钱包上限、金币位置、数量、部位、品质原行及属性展示值、需求、职业与手部组合。普通野外配方身份 outdoor-v6、牛场 cow-v1 不变。金币加成、银行和死亡扣金仍暂缓；投掷攻击和数量损耗已接源码，待运行验收。
 - LoD ItemTypes 导入 BodyLoc、Class、Equiv1/2、Shoots/Quiver 与双手标记；StaffMods 不作为职业限制。旧数字 ItemTypes 格式未适配完整装备规则时明确拒绝穿戴。需求取当前职业由 `CharStats` 与已分配点派生的实际力量／敏捷和等级，受支持的直接装备加值进入需求闭包；有原装备部位的品质物品可穿戴，投掷药剂不进入普通穿戴事务。
-- 普通武器消费原基础伤害与 StrBonus／DexBonus，盾牌消费 block 及 CharStats.BlockFactor。普通怪物各难度的现有战斗字段由共用内容解析输入命中、出伤、受击、再生与存档校验；缺原数据时不猜值。已实现外观的 A1 与四种 A2 时序按 `AnimData.d2` 读取；未接入的远程技能和元素出招仍是后续工作。
+- 普通武器消费原基础伤害与 StrBonus／DexBonus，盾牌消费 block 及 CharStats.BlockFactor。普通怪物各难度的现有战斗字段由共用内容解析输入命中、出伤、受击、再生与本局模拟；缺原数据时不猜值。已实现外观的 A1 与四种 A2 时序按 `AnimData.d2` 读取；未接入的远程技能和元素出招仍是后续工作。
 - 非堆叠普通装备耐久变化增加实例版本并发布 DurabilityChanged，立即重算派生属性。玩家随机流负责伤害、格挡和耐久，怪物随机流负责自身命中；种子分配是本项目适配，不保证原版全局随机顺序一致。
 - `--load` 启动时使用存档地图种子与难度重建地图；自选 `--preset/--variant` 仍需保持同一配置。
-- 临时输入、拖拽、出口／拾取／交互请求不保存；对应的自动寻路在快照中清除。
+- 临时输入、拖拽、出口／拾取／交互请求和自动寻路不保存；新游戏从城镇重新开始。

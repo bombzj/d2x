@@ -39,8 +39,8 @@ void SceneView::drawHelp() const {
     painter_.centered("Diablo II classic resource simulation", 178, 12);
     const char *lines[] = {"Left click / hold          Move / Attack / Talk / Pick up",
                            "Hold Alt                   Show ground item names",
-                           "I / C / T                  Inventory / Character / Skills",
-                           "W A S D                    Move in screen directions",
+                           "I / A / S                  Inventory / Character / Skills",
+                           "Arrow keys                 Move in screen directions",
                            "Right click                Cast; click slot to choose",
                            "1 through 4 / B            Drink belt potion / Expand belt",
                            "Hover skill, F1-F8         Bind selected mouse skill",
@@ -50,13 +50,13 @@ void SceneView::drawHelp() const {
                            "Ctrl+F3 / Ctrl+F4          Collision / Walk to stash",
                            "P / M                      Pause / Mute",
                            "R                          Restore life",
-                           "F11 / Ctrl + F11           Save game / Load game",
+                           "F11 / Ctrl + F11           Save / Restart in town",
                            "F12                        Save screenshot",
                            "Ctrl+F1                   Close this panel"};
     for (int i = 0; i < int(std::size(lines)); i++)
         painter_.label(lines[i], W / 2 - 194, 216 + i * 23, 12,
                        i < 4 ? parchment : Color{150, 148, 132, 255});
-    painter_.centered("Ctrl+Alt+G/E: gold/XP   A: reset attributes   C: next class   T: reset skills", 575, 11, gold);
+    painter_.centered("Ctrl+Alt+G/E: gold/XP   A/T: reset points   C: next class   W: waypoints", 575, 11, gold);
 }
 void SceneView::draw(Vec mouse) const {
     const auto &map = session_.map();
@@ -65,8 +65,6 @@ void SceneView::draw(Vec mouse) const {
     ClearBackground({10, 13, 11, 255});
     BeginScissorMode(0, 0, W, H - HUD);
     drawTerrain();
-    if (view_.clickAge < .8f)
-        diamond(screen(view_.clickAt), 10 + view_.clickAge * 12, Fade(gold, 1 - view_.clickAge));
     if (view_.debug) {
         for (int y = 0; y < map.grid.height; y++)
             for (int x = 0; x < map.grid.width; x++) {

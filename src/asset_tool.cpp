@@ -168,7 +168,7 @@ int main(int argc, char **argv) {
         } else if (command == "save-info" && argc == 4) {
             auto snapshot = d2x::loadSave(argv[3]);
             auto data = d2x::loadClassicData(a);
-            std::cout << "Save format=16 region=" << int(snapshot.world.area.region)
+            std::cout << "Save format=81 lastRegion=" << int(snapshot.world.area.region)
                       << " gold=" << snapshot.world.player.gold
                       << " level=" << snapshot.world.player.level
                       << " xp=" << snapshot.world.player.experience
@@ -194,7 +194,7 @@ int main(int argc, char **argv) {
                           << (definition ? definition->maxDurability : 0)
                           << " defense=" << item.defense << '\n';
             }
-            std::cout << "Decoded snapshot only; full gameplay validation occurs on --load.\n";
+            std::cout << "Decoded character save only; full gameplay validation occurs on --load.\n";
         } else if (command == "substitutions" && argc == 4) {
             d2x::WorldCatalog catalog(a);
             int type = std::stoi(argv[3]);

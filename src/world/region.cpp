@@ -69,7 +69,7 @@ void classify(WorldObject &object, const Table &objectRows) {
         object.reach = float(std::stoi(record->at("OperateRange")));
         if (object.reach <= 0)
             throw std::runtime_error("Invalid bank interaction range in objects.txt");
-    } else if (token == "wp" || token == "wa")
+    } else if (token == "wp")
         object.interaction = Interaction::Travel;
     else if (token == "ps")
         object.interaction = Interaction::Heal;

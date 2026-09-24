@@ -785,6 +785,7 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
     return current;
 }
 void GameSession::restore(SessionSnapshot s) {
+    s = prepareCharacterRestore(std::move(s));
     int current = validateSnapshot(s);
     const auto &characterDefinition = definitionFor(s.world.player.characterClass);
     EntityIds validationIds;
@@ -800,6 +801,15 @@ void GameSession::restore(SessionSnapshot s) {
     EquipmentActor actor{characterDefinition.code, characterStats.strength, characterStats.dexterity,
                          s.world.player.level, characterStats.blockFactor};
     auto equipmentStats = deriveEquipmentStats(equipmentInventory, s.containers, actor, modifiers.defense);
+    std::map<EntityId, std::vector<VendorOffer>> nextVendorStocks;
+    for (const auto &region : regions_)
+        for (const auto &object : region.objects)
+            if (auto vendor = content_.vendors.find(object.npcClass);
+                vendor != content_.vendors.end()) {
+                uint64_t seed = (uint64_t(s.world.mapSeed) << 32) | object.id.value;
+                nextVendorStocks.emplace(object.id, planVendorStock(content_, vendor->second,
+                                                                    unsigned(s.world.player.level), seed));
+            }
     CharacterDefinition restoredDefinition = characterDefinition;
     // All allocation and validation precedes this no-throw commit.
     static_assert(std::is_nothrow_move_assignable_v<WorldState>);
@@ -816,6 +826,7 @@ void GameSession::restore(SessionSnapshot s) {
     inactiveAreas_.swap(s.inactiveAreas);
     playerContainers_ = s.containers;
     loot_.restore(std::move(s.loot));
+    vendorStocks_.swap(nextVendorStocks);
     soldVendorOffers_.swap(s.soldVendorOffers);
     for (auto &motion : s.npcMotions)
         for (auto &region : regions_)

@@ -269,6 +269,12 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
     regions_ = loadRegions(archives, ids_, plan.regions, monsterContent_);
     for (const auto &region : regions_)
         for (const auto &object : region.objects)
+            if (!object.npcPath.empty())
+                initialNpcMotions_.push_back({object.id, object.pos, object.npcLook,
+                                              object.npcRoute, object.npcWait,
+                                              object.npcTarget, object.npcRandom});
+    for (const auto &region : regions_)
+        for (const auto &object : region.objects)
             if (auto vendor = content_.vendors.find(object.npcClass);
                 vendor != content_.vendors.end()) {
                 uint64_t seed = (uint64_t(selection.seed) << 32) | object.id.value;
@@ -306,7 +312,7 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
     Fingerprint fingerprint;
     fingerprint.add(content_.profile);
     // Bump this rules revision when state interpretation or compiled rules change.
-    fingerprint.add("d2x-session-rules-v112-arach-web");
+    fingerprint.add("d2x-session-rules-v113-character-save");
     auto members = archives.used;
     for (const auto &member : members) {
         fingerprint.add(member);
@@ -471,6 +477,8 @@ void GameSession::tick(float dt, Vec keyboard) {
                         player.gold += intent.amount;
                 } else if constexpr (std::is_same_v<T, DebugGrantExperience>) {
                     grantExperience(intent.amount);
+                } else if constexpr (std::is_same_v<T, DebugUnlockWaypoints>) {
+                    unlockWaypoints();
                 } else if constexpr (std::is_same_v<T, DebugSpawnMonster>) {
                     spawnDebugMonster(intent);
                 } else if constexpr (std::is_same_v<T, DebugDamageMonster>) {
