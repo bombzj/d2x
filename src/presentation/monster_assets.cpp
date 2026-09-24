@@ -42,7 +42,8 @@ void SceneAssets::loadMonsterAnimations(Archives &archives, const GameSession &s
         if (auto timing = content.attackTiming(kind);
             timing && animations.at("a1").count != timing->frames)
             throw std::runtime_error("Monster AnimData/COF frame mismatch: " + actor.id);
-        if (kind == MonsterKind::CorruptArcher && actor.attack1Projectile &&
+        if ((kind == MonsterKind::CorruptArcher || kind == MonsterKind::SkeletonBow) &&
+            actor.attack1Projectile &&
             !content.attackTiming(kind))
             throw std::runtime_error("Monster ranged A1 event missing: " + actor.id);
         if (auto timing = content.attackTiming(kind, 2);
@@ -60,7 +61,7 @@ void SceneAssets::loadMonsterAnimations(Archives &archives, const GameSession &s
                      kind == MonsterKind::Skeleton || kind == MonsterKind::CorruptRogue ||
                      kind == MonsterKind::Goatman || kind == MonsterKind::QuillRat ||
                      kind == MonsterKind::Wraith || kind == MonsterKind::CorruptLancer ||
-                     kind == MonsterKind::CorruptArcher) && !timing)
+                     kind == MonsterKind::CorruptArcher || kind == MonsterKind::SkeletonBow) && !timing)
                     throw std::runtime_error("Original monster AnimData entry missing: " +
                                              actor.id + "/" + mode);
                 if (timing && animation->second.count != timing->frames)

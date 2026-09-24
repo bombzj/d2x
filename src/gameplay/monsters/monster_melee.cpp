@@ -43,7 +43,7 @@ void Simulation::beginMonsterAttack(Enemy &enemy, int forcedMode) {
 void Simulation::launchMonsterProjectile(Enemy &enemy) {
     const auto projectile = monsterProjectile_ ? monsterProjectile_(enemy, enemy.attackMode) : std::nullopt;
     if (!projectile || projectile->id < 0 || projectile->velocity <= 0 || projectile->lifetime <= 0)
-        throw std::runtime_error("Monster A2 projectile is missing");
+        throw std::runtime_error("Monster projectile is missing");
     const auto direction = (state_.player.pos - enemy.pos).unit();
     state_.area.missiles.push_back({ids_.allocate(), enemy.id, enemy.pos,
         direction * projectile->velocity, projectile->lifetime, Skill::Fireball,

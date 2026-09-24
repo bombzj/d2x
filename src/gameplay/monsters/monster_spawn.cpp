@@ -30,6 +30,8 @@ MonsterImplementation monsterImplementation(const std::string &code) {
     if (code == "cr_archer1" || code == "cr_archer2" || code == "cr_archer3" ||
         code == "cr_archer4")
         return {MonsterKind::CorruptArcher, false};
+    if (code == "sk_archer1" || code == "sk_archer2" || code == "sk_archer3")
+        return {MonsterKind::SkeletonBow, false};
     return {MonsterKind::Fallen, true};
 }
 const char *monsterRankName(MonsterRank rank) {

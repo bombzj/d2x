@@ -1,8 +1,8 @@
 # 开发与交接
 
-当前源码存档 v75／规则 v103。普通怪物三难度生命、近战伤害／命中、防御、抗性、暴击、再生和 `El1–3` 按原表共用解析；`brute1–5`、`zombie1–5`、`skeleton1–5`、`fallen1–5`、`corruptrogue1–5`、`goatman1–5`、`quillrat1–5`、`wraith1–3`、`cr_lancer1–3`、`cr_archer1–4` 使用原动作及 MPQ 所列声音。僵尸、骷髅、沉沦魔、Brute、Corrupt Rogue、Goatman、Quill Rat、Wraith、Corrupt Lancer 和 Corrupt Archer 按原 AI 家族分别决策，按 `MonStats.TransLvl` 选择原 `palshift.dat` 颜色映射；火焰、闪电、冰冷、毒素与法力吸取命中接通用元素攻击，冰冷与毒素保存角色持续状态。Fallen 家族在原死亡动作期间见附近尸体后逃离，使用原 AI 参数发同组命令并播放 MPQ S2 喊叫；Brute 在两次攻击掷骰后可绕目标行走；Corrupt Rogue 使用 MPQ 接近／停顿、跑步概率及原 RN 动作。其他普通怪物仍保留真实身份与类型替身。分工和下一种怪物的条件见 [怪物实施计划](../MONSTERS.md)；精英、固定首领、Boss 和通用逐帧 AI 调度仍待逐项核对。旧存档不迁移。
+当前源码存档 v75／规则 v104。普通怪物三难度生命、近战伤害／命中、防御、抗性、暴击、再生和 `El1–3` 按原表共用解析；`brute1–5`、`zombie1–5`、`skeleton1–5`、`fallen1–5`、`corruptrogue1–5`、`goatman1–5`、`quillrat1–5`、`wraith1–3`、`cr_lancer1–3`、`cr_archer1–4`、`sk_archer1–3` 使用原动作及 MPQ 所列声音。僵尸、骷髅、沉沦魔、Brute、Corrupt Rogue、Goatman、Quill Rat、Wraith、Corrupt Lancer、Corrupt Archer 和 Skeleton Bow 按原 AI 家族分别决策，按 `MonStats.TransLvl` 选择原 `palshift.dat` 颜色映射；火焰、闪电、冰冷、毒素与法力吸取命中接通用元素攻击，冰冷与毒素保存角色持续状态。Fallen 家族在原死亡动作期间见附近尸体后逃离，使用原 AI 参数发同组命令并播放 MPQ S2 喊叫；Brute 在两次攻击掷骰后可绕目标行走；Corrupt Rogue 使用 MPQ 接近／停顿、跑步概率及原 RN 动作。其他普通怪物仍保留真实身份与类型替身。分工和下一种怪物的条件见 [怪物实施计划](../MONSTERS.md)；精英、固定首领、Boss 和通用逐帧 AI 调度仍待逐项核对。旧存档不迁移。
 
-Windows Release 构建通过。完整六 MPQ 目录 `dist/d2x-runtime-20260924-v75-cr-archer-act1/` 在邪恶洞窟启动。`cr_archer1–4` 显示原弓手及四种调色，`substitute=false`；截图在 `artifacts/monster-smoke/cr-archer1-v75-projectile.png` 和 `cr-archer2-4-v75.png`。`cr_archer1` 按原 A1 事件 2 发箭，飞行中 v75 存读档保持一枚敌方弹体，命中使角色生命 55→52；四只击杀经验依次为 54／63／71／16。旧 `quillrat1` 的 A2 弹体在同一构建中再次存读档通过。运行目录与截图不提交，不生成 ZIP 或测试脚本／用例。音频播放效果仍待用户实机听验。
+Windows Release 构建通过。完整六 MPQ 目录 `dist/d2x-runtime-20260924-v75-sk-archer-act1/` 在邪恶洞窟启动；`sk_archer1–3` 原形及三种调色均显示，`substitute=false`。截图为 `artifacts/monster-smoke/sk-archer1-3-r104.png`。三只原 A1 事件 2 发射各自 MPQ 箭，v75 飞行中存读档保持一枚敌方弹体且另一只攻击动作恢复；命中使角色生命 52→49，击杀经验 62／61／35，后两只产生原掉落。运行目录与截图不提交，不生成 ZIP 或测试脚本／用例。音频播放效果仍待用户实机听验。
 ## 当前交接状态
 
 - 本轮调试快捷键、MPQ 城镇出生标记、NPC／传送点可见帧热区、城镇耐力规则及第一幕野外神殿分组已接入源码。用户随后明确要求打包和冒烟，Windows Release 构建、五个原始 MPQ 下 1–39 关逐张短帧启动及截图已完成；完整交互仍待验收。

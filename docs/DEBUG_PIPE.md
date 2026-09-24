@@ -75,7 +75,7 @@ $spawn = .\scripts\Send-D2XCommand.ps1 -Command monster-spawn -Arguments @{monst
 
 `aiCircling` 表示 Brute 正沿可走路径绕目标行走。可定点生成 `brute2`，逐次 `step` 后查询 `monsters`，在近战攻击两次 `aip3` 掷骰中首次失败、第二次成功时观察该状态和位移；绕行路线随存档保存。
 
-`aiRunning` 和 `aiAdvanceRemaining` 表示 Corrupt Rogue 当前跑步动作及该次路径决策剩余距离。可定点生成 `corruptrogue1`，逐帧推进并用 `monsters` 观察；该状态随存档保存。
+`aiRunning` 表示 Corrupt Rogue 当前跑步动作；`aiAdvanceRemaining` 表示 Corrupt Rogue 或 Skeleton Bow 当前路径决策的剩余距离。可定点生成 `corruptrogue1`，逐帧推进并用 `monsters` 观察；该状态随存档保存。
 
 `monsters` 的 `hostileProjectiles` 统计该怪物仍在飞行的敌方弹体；`aiRetaliate` 表示 Quill Rat 受击后待 A2 回击。可定点生成 `quillrat1` 后推进 6 帧观察原 `spike1` 发射，飞行中保存／读取再推进观察命中；这两项状态均随 v66 存档校验。`aiEscaping` 对 Quill Rat 也表示其按 MPQ `aip4` 距离后撤。
 

@@ -9,6 +9,7 @@
 #include "gameplay/monsters/wraith_ai.hpp"
 #include "gameplay/monsters/corrupt_lancer_ai.hpp"
 #include "gameplay/monsters/corrupt_archer_ai.hpp"
+#include "gameplay/monsters/skeleton_bow_ai.hpp"
 #include "gameplay/monsters/monster_wander.hpp"
 #include <algorithm>
 
@@ -158,7 +159,20 @@ void Simulation::updateMonsters(float dt) {
         const bool goatmanAi = ai && ai->kind == MonsterAiKind::Goatman;
         const bool quillRatAi = ai && ai->kind == MonsterAiKind::QuillRat;
         const bool wraithAi = ai && ai->kind == MonsterAiKind::Wraith;
+        const bool skeletonBowAi = ai && ai->kind == MonsterAiKind::SkeletonBow;
         bool clear = grid_->segment(enemy.pos, player.pos);
+        if (skeletonBowAi) {
+            const auto action = skeletonBowThink(enemy, *ai, distance, clear);
+            if (action == SkeletonBowAction::Shoot) {
+                enemy.route.clear();
+                beginMonsterAttack(enemy, 1);
+                continue;
+            }
+            if (action == SkeletonBowAction::Idle) {
+                enemy.route.clear();
+                continue;
+            }
+        }
         if (archerAi) {
             if (enemy.aiWait > 0) {
                 enemy.route.clear();
@@ -289,9 +303,9 @@ void Simulation::updateMonsters(float dt) {
             if (grid_->segment(enemy.pos, next)) {
                 const float moved = (next - enemy.pos).length();
                 enemy.pos = next;
-                if (rogueAi) {
+                if (rogueAi || skeletonBowAi) {
                     enemy.aiAdvanceRemaining = std::max(0.f, enemy.aiAdvanceRemaining - moved);
-                    if (enemy.aiAdvanceRemaining == 0) enemy.aiRunning = false;
+                    if (rogueAi && enemy.aiAdvanceRemaining == 0) enemy.aiRunning = false;
                 }
             } else {
                 enemy.route.clear();
@@ -314,7 +328,7 @@ void Simulation::updateMonsters(float dt) {
             if (lancerAi) enemy.aiRunning = false;
             if (archerAi) enemy.aiRunning = false;
         }
-        if ((player.pos - enemy.pos).length() < definition.attackRange &&
+        if (!skeletonBowAi && (player.pos - enemy.pos).length() < definition.attackRange &&
             player.leapTime <= 0 && grid_->segment(enemy.pos, player.pos)) {
             if (skeletonAi && !skeletonAttacks(enemy, *ai))
                 continue;

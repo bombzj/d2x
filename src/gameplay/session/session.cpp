@@ -156,6 +156,9 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
         if (profile->kind == MonsterAiKind::CorruptArcher &&
             enemy.kind == MonsterKind::CorruptArcher)
             return profile;
+        if (profile->kind == MonsterAiKind::SkeletonBow &&
+            enemy.kind == MonsterKind::SkeletonBow)
+            return profile;
         return std::nullopt;
     };
     simulation_.zombieForcedPursuit_ = [this](RegionId region) {
@@ -194,7 +197,8 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
         const auto *record = monsterContent_.find(enemy.identity.monster);
         if (!record || monsterImplementation(enemy.identity.monster).substitute)
             return std::nullopt;
-        if (mode == 1 && enemy.kind == MonsterKind::CorruptArcher)
+        if (mode == 1 && (enemy.kind == MonsterKind::CorruptArcher ||
+                          enemy.kind == MonsterKind::SkeletonBow))
             return record->attack1Projectile;
         if (mode == 2 && enemy.kind == MonsterKind::QuillRat)
             return record->attack2Projectile;
@@ -242,7 +246,7 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
     Fingerprint fingerprint;
     fingerprint.add(content_.profile);
     // Bump this rules revision when state interpretation or compiled rules change.
-    fingerprint.add("d2x-session-rules-v103-corrupt-archer");
+    fingerprint.add("d2x-session-rules-v104-skeleton-bow");
     auto members = archives.used;
     for (const auto &member : members) {
         fingerprint.add(member);

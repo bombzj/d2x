@@ -39,7 +39,11 @@ void SceneAssets::loadMonsterAudio(Archives &archives, const MonsterCatalog &mon
             throw std::runtime_error("Implemented monster MonSounds row is missing from the mounted MPQ: " + id);
         MonsterAudio profile;
         profile.attack1 = resolve(voice->second, "Attack1");
+        if (profile.attack1.empty() && record.attack1Projectile)
+            profile.attack1 = resolve(voice->second, "Weapon1");
         profile.attack2 = resolve(voice->second, "Attack2");
+        if (profile.attack2.empty() && record.attack2Projectile)
+            profile.attack2 = resolve(voice->second, "Weapon2");
         profile.skill2 = resolve(voice->second, "Skill2");
         profile.hit = resolve(voice->second, "HitSound");
         profile.death = resolve(voice->second, "DeathSound");
