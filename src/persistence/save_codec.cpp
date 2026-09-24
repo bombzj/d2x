@@ -144,7 +144,7 @@ class Codec {
         }
     }
 };
-// Explicit schema, never compiler struct layout. Player/item field order is save version 39.
+// Explicit schema, never compiler struct layout. Player/item field order is save version 40.
 void fields(Codec &a, EntityId &v) {
     a(v.value);
 }
@@ -162,7 +162,8 @@ void fields(Codec &a, AttributeAllocation &v) {
 }
 void fields(Codec &a, PlayerState &v) {
     a(v.id, v.characterClass, v.pos, v.previous, v.look, v.route, v.hp, v.mana, v.stamina, v.castTime, v.spinTime, v.leapTime,
-      v.hitTime, v.deathTime, v.meleeTime, v.leapStart, v.leapEnd, v.cooldown, v.healing, v.manaRestoration,
+      v.hitTime, v.deathTime, v.meleeTime, v.lastMeleeDuration, v.chill,
+      v.leapStart, v.leapEnd, v.cooldown, v.healing, v.manaRestoration,
     v.staminaBoost, v.attackTarget, v.throwAttack, v.leftHandAttack, v.lastSkill, v.lastCastDuration, v.running, v.moving, v.dead, v.combatRandom, v.nextWeapon, v.gold,
     v.experience, v.level, v.allocated, v.unspentAttributes, v.skillRanks, v.unspentSkills, v.skillHotkeys);
 }
@@ -261,7 +262,7 @@ Bytes encodeSave(SessionSnapshot snapshot) {
     Codec body;
     body(snapshot);
     auto bytes = body.take();
-    uint32_t version = 39, size = uint32_t(bytes.size()), crc = checksum(bytes);
+    uint32_t version = 40, size = uint32_t(bytes.size()), crc = checksum(bytes);
     Codec header;
     header(version, size, crc);
     auto headerBytes = header.take();
@@ -280,8 +281,8 @@ SessionSnapshot decodeSave(std::span<const uint8_t> bytes) {
     Codec header(bytes.subspan(sizeof(magic), 12));
     uint32_t version = 0, size = 0, crc = 0;
     header(version, size, crc);
-    if (version != 39)
-        throw std::runtime_error("Unsupported D2X save version; zombie3 rules require a new version-39 game");
+    if (version != 40)
+        throw std::runtime_error("Unsupported D2X save version; zombie4 cold attack requires a new version-40 game");
     auto payload = bytes.subspan(headerSize);
     if (size != payload.size() || crc != checksum(payload))
         throw std::runtime_error("Save checksum or length mismatch");

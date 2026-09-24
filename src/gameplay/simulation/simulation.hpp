@@ -20,6 +20,7 @@ class Simulation {
     WorldState state_;
     EquipmentStats equipmentStats_;
     CharacterAttributes characterStats_;
+    int resistancePenalty_ = 0;
     std::function<void(EntityId, bool)> wearEquipment_;
     std::function<bool(EntityId, bool)> spendProjectile_;
     std::function<std::optional<MonsterAccuracy>(const Enemy &, RegionId, int)> monsterAccuracy_;
@@ -52,6 +53,7 @@ class Simulation {
     void updateMonsters(float dt);
     void beginMonsterAttack(Enemy &enemy);
     void resolveMonsterAttack(Enemy &enemy);
+    void applyMonsterElements(Enemy &enemy, const MonsterNormalCombat &combat);
     void updateMissiles(float dt);
     void spawnEnemies(std::span<const MonsterSpawn> spawns);
     void activateMonsters();

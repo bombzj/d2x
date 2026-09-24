@@ -22,6 +22,8 @@ struct PlayerState {
     std::deque<Vec> route;
     float hp = 0, mana = 0, stamina = 0;
     float castTime = 0, spinTime = 0, leapTime = 0, hitTime = 0, deathTime = 0, meleeTime = 0;
+    float lastMeleeDuration = 0;
+    float chill = 0;
     Vec leapStart, leapEnd;
     std::array<float, skillCount> cooldown{};
     std::deque<Restoration> healing, manaRestoration;

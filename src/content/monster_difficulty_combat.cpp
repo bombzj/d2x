@@ -63,6 +63,27 @@ std::optional<MonsterCombatProfile> loadMonsterCombatProfile(
         if (value < -100 || value > 200) return std::nullopt;
         result.resistances[index] = value;
     }
+    for (size_t index = 0; index < result.damage.elements.size(); ++index) {
+        const auto prefix = "El" + std::to_string(index + 1);
+        const std::string mode(stats.value(row, prefix + "Mode"));
+        const std::string type(stats.value(row, prefix + "Type"));
+        const int chance = stats.number(row, prefix + "Pct" + ending).value_or(0);
+        if (chance < 0 || chance > 100) return std::nullopt;
+        if (mode.empty() || type.empty() || chance == 0) continue;
+        auto minimum = scale(prefix + "MinD", "L-DM");
+        auto maximum = scale(prefix + "MaxD", "L-DM");
+        if (type == "stun" && !minimum && !maximum)
+            minimum = maximum = 0;
+        const int duration = stats.number(row, prefix + "Dur" + ending).value_or(0);
+        // A few shipped rows advertise an element but leave its damage blank.
+        // Keep their life, physical damage and resistances available.
+        if (!minimum || !maximum) continue;
+        if (*minimum < 0 || *maximum < *minimum ||
+            *maximum > 1000000 || duration < 0 || duration > 1000000)
+            return std::nullopt;
+        result.damage.elements[index] = MonsterElementAttack{
+            mode, type, chance, *minimum, *maximum, duration};
+    }
     return result;
 }
 } // namespace d2x

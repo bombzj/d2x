@@ -39,6 +39,7 @@ struct ClassicData {
     SkillCatalog skills;
     std::map<int, int> teleportByLevel;
     std::array<int, 3> staticFieldMinimum{};
+    std::array<int, 3> resistancePenalty{};
     StashLayout stashLayout;
     // Class name -> level-indexed cumulative XP thresholds from Experience.txt.
     std::map<std::string, std::vector<uint64_t>, std::less<>> experienceByClass;

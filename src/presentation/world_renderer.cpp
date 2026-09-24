@@ -191,13 +191,15 @@ void SceneView::drawActors() const {
                              int((sim.player.lastCastDuration - sim.player.castTime) /
                                  sim.player.lastCastDuration * anim->count));
             if ((mode == "a1" || mode == "th") && sim.player.meleeTime > 0)
-                frame = std::min(anim->count - 1, int((playerRules().meleeDuration - sim.player.meleeTime) /
-                                                      playerRules().meleeDuration * anim->count));
+                frame = std::clamp(int((sim.player.lastMeleeDuration - sim.player.meleeTime) /
+                                       std::max(.001f, sim.player.lastMeleeDuration) * anim->count),
+                                   0, anim->count - 1);
             auto f = anim->frame(direction(look, anim->directions), frame);
             auto p = item.p;
             if (sim.player.leapTime > 0)
                 p.y -= std::sin(sim.player.leapTime / skillDefinition(Skill::Leap).duration * pi) * 95;
-            sprite(f, p, sim.player.dead ? Color{185, 185, 185, 255} : WHITE);
+            sprite(f, p, sim.player.dead ? Color{185, 185, 185, 255}
+                         : sim.player.chill > 0 ? Color{115, 175, 255, 255} : WHITE);
         } else if (item.type == 2) {
             auto &e = sim.area.enemies[item.index];
             const auto variant = assets_.monsterVariantAnimations.find(e.identity.monster);

@@ -97,6 +97,12 @@ void listMonsters(Json &result, const Json &request, const GameSession &session,
                 entry["combat"]["attack2"] = {combat->damage.attack2Damage->first,
                                                  combat->damage.attack2Damage->second,
                                                  optionalNumber(combat->attack2Rating)};
+            for (const auto &element : combat->damage.elements)
+                if (element)
+                    entry["combat"]["elements"].push_back({
+                        {"mode", element->mode}, {"type", element->type},
+                        {"chance", element->chance}, {"minimum", element->minimum},
+                        {"maximum", element->maximum}, {"durationFrames", element->durationFrames}});
         }
         if (record && record->walkVelocity) entry["sourceVelocity"] = *record->walkVelocity;
         if (auto timing = session.monsterContent().attackTiming(enemy.kind)) {

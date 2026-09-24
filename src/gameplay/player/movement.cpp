@@ -80,7 +80,8 @@ void Simulation::updatePlayer(float dt, Vec keyboard) {
                     if (p.castTime <= 0 && p.meleeTime <= 0 && p.leapTime <= 0 && p.spinTime <= 0) {
                         p.look = (e->pos - p.pos).unit();
                         if (!projectile || firePhysicalProjectile(*e, *weapon, p.throwAttack)) {
-                            p.meleeTime = rules.meleeDuration;
+                            p.lastMeleeDuration = rules.meleeDuration * (p.chill > 0 ? 2.f : 1.f);
+                            p.meleeTime = p.lastMeleeDuration;
                             emit(MeleeAttack{p.id, e->id});
                             if (!projectile) meleeDamage(*e, p.leftHandAttack);
                         }
@@ -109,6 +110,7 @@ void Simulation::updatePlayer(float dt, Vec keyboard) {
     float speed = p.spinTime > 0                              ? rules.spinSpeed
                   : p.running && (safeZone_ || p.stamina > 0) ? rules.runSpeed
                                                : rules.walkSpeed;
+    if (p.chill > 0) speed *= .5f;
     if (step.length() > .1f) {
         float distance = followingRoute ? std::min(dt * speed, remaining) : dt * speed;
         Vec next = p.pos + step * distance;

@@ -13,6 +13,7 @@ void Simulation::clearActions() {
     p.attackTarget = {};
     p.throwAttack = p.leftHandAttack = false;
     p.castTime = p.spinTime = p.leapTime = p.meleeTime = p.hitTime = 0;
+    p.lastMeleeDuration = 0;
     p.moving = false;
     state_.message.clear();
 }
@@ -50,6 +51,7 @@ void Simulation::heal() {
     p.healing.clear();
     p.manaRestoration.clear();
     p.staminaBoost = 0;
+    p.chill = 0;
     p.dead = false;
     p.deathTime = 0;
 }
@@ -116,6 +118,7 @@ void Simulation::tick(float dt, Vec keyboard) {
     p.castTime = std::max(0.f, p.castTime - dt);
     p.spinTime = std::max(0.f, p.spinTime - dt);
     p.hitTime = std::max(0.f, p.hitTime - dt);
+    p.chill = std::max(0.f, p.chill - dt);
     p.meleeTime = std::max(0.f, p.meleeTime - dt);
     p.moving = false;
     if (p.dead)
@@ -137,6 +140,7 @@ void Simulation::tick(float dt, Vec keyboard) {
             p.healing.clear();
             p.manaRestoration.clear();
             p.staminaBoost = 0;
+            p.chill = 0;
             p.route.clear();
             p.attackTarget = {};
             p.throwAttack = false;

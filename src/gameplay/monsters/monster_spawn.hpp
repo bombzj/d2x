@@ -3,6 +3,7 @@
 #include <array>
 #include <cstdint>
 #include <optional>
+#include <string>
 #include <utility>
 
 namespace d2x {
@@ -37,12 +38,17 @@ struct MonsterDefense {
     int defense = 0;
 };
 enum class MonsterDamageType { Physical, Magic, Fire, Lightning, Cold, Poison };
+struct MonsterElementAttack {
+    std::string mode, type;
+    int chance = 0, minimum = 0, maximum = 0, durationFrames = 0;
+};
 // Resolved from the original MonStats and MonLvl tables. Some ordinary monsters
 // have life but no A1 melee columns, so the attacks are independent.
 struct MonsterNormalCombat {
     int minLife = 0, maxLife = 0;
     std::optional<std::pair<int, int>> attack1Damage;
     std::optional<std::pair<int, int>> attack2Damage;
+    std::array<std::optional<MonsterElementAttack>, 3> elements;
 };
 enum class MonsterAiKind { Skeleton, Brute, Zombie, Fallen };
 struct MonsterAiProfile {

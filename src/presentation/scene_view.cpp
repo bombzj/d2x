@@ -277,7 +277,7 @@ void SceneView::advance(float dt) {
         view_.portalAnimationStarted = view_.animationTime;
     }
     view_.animationTime += dt;
-    view_.heroTime += dt;
+    view_.heroTime += dt * (player.chill > 0 ? .5f : 1.f);
     auto mode = playerAnimationMode(player);
     if (mode == "wl" && session_.region().definition.safe && player.running)
         mode = "rn";

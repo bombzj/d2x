@@ -58,17 +58,18 @@ void Simulation::resolveMonsterAttack(Enemy &enemy) {
         if (uint32_t(player.combatRandom) % 100 < unsigned(block)) return;
     }
     float damage = monsterDefinition(enemy.kind).damage;
-    if (monsterNormalCombat_)
-        if (auto combat = monsterNormalCombat_(enemy.identity, state_.area.region)) {
-            auto range = enemy.attackMode == 2 && combat->attack2Damage
-                ? combat->attack2Damage : combat->attack1Damage;
-            if (range) {
-                const auto [minimum, maximum] = *range;
-                enemy.combatRandom = uint64_t(uint32_t(enemy.combatRandom)) * 0x6ac690c5ULL +
-                                     (enemy.combatRandom >> 32);
-                damage = float(minimum + uint32_t(enemy.combatRandom) % unsigned(maximum - minimum + 1));
-            }
+    const auto combat = monsterNormalCombat_
+                            ? monsterNormalCombat_(enemy.identity, state_.area.region) : std::nullopt;
+    if (combat) {
+        auto range = enemy.attackMode == 2 && combat->attack2Damage
+            ? combat->attack2Damage : combat->attack1Damage;
+        if (range) {
+            const auto [minimum, maximum] = *range;
+            enemy.combatRandom = uint64_t(uint32_t(enemy.combatRandom)) * 0x6ac690c5ULL +
+                                 (enemy.combatRandom >> 32);
+            damage = float(minimum + uint32_t(enemy.combatRandom) % unsigned(maximum - minimum + 1));
         }
+    }
     if (monsterCriticalChance_)
         if (auto chance = monsterCriticalChance_(enemy, state_.area.region); chance && *chance > 0) {
             enemy.combatRandom = uint64_t(uint32_t(enemy.combatRandom)) * 0x6ac690c5ULL +
@@ -76,6 +77,8 @@ void Simulation::resolveMonsterAttack(Enemy &enemy) {
             if (uint32_t(enemy.combatRandom) % 100 < unsigned(*chance)) damage *= 2.f;
         }
     player.hp = std::max(0.f, player.hp - damage);
+    if (combat && player.hp > 0)
+        applyMonsterElements(enemy, *combat);
     player.hitTime = .16f;
     if (wearEquipment_) wearEquipment_({}, true);
 }

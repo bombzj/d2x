@@ -19,6 +19,7 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
       monsterContent_(archives, content_.tables.at("monstats")), loot_(lootSeed) {
     characterDefinition_ = definitionFor(state().player.characterClass);
     simulation_.state_.population = population;
+    simulation_.resistancePenalty_ = content_.resistancePenalty.at(size_t(population.difficulty));
     simulation_.state_.mapSeed = selection.seed;
     inventory_.state_.creationRandom = (uint64_t(666) << 32) | uint32_t(lootSeed);
     playerContainers_ = inventory_.createPlayerContainers(state().player.id);
@@ -195,7 +196,7 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
     Fingerprint fingerprint;
     fingerprint.add(content_.profile);
     // Bump this rules revision when state interpretation or compiled rules change.
-    fingerprint.add("d2x-session-rules-v67-zombie3-complete");
+    fingerprint.add("d2x-session-rules-v68-zombie4-cold-attack");
     auto members = archives.used;
     for (const auto &member : members) {
         fingerprint.add(member);

@@ -202,9 +202,13 @@ ClassicData loadClassicData(Archives &archives) {
             throw std::runtime_error("Missing original Static Field difficulty limits");
         for (size_t index = 0; index < data.staticFieldMinimum.size(); ++index) {
             auto value = difficulties.number(index, "StaticFieldMin");
+            auto penalty = difficulties.number(index, "ResistPenalty");
             if (!value || *value < 0 || *value > 100)
                 throw std::runtime_error("Invalid original Static Field difficulty limit");
+            if (!penalty || *penalty < -200 || *penalty > 100)
+                throw std::runtime_error("Invalid original resistance difficulty penalty");
             data.staticFieldMinimum[index] = *value;
+            data.resistancePenalty[index] = *penalty;
         }
     }
     for (const auto &character : data.characters)
