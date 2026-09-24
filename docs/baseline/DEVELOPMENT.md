@@ -1,8 +1,8 @@
 # 开发与交接
 
-当前源码存档 v43／规则 v71。普通怪物三难度生命、近战伤害／命中、防御、抗性、暴击、再生和 `El1–3` 按原表共用解析；`brute1`、`zombie1–5`、`skeleton1–3` 使用原动作及 MPQ 所列声音。僵尸与骷髅同族变体分别共用各自 AI，按 `MonStats.TransLvl` 选择原 `palshift.dat` 颜色映射；冰冷与毒素命中接通用元素攻击及角色持续状态。其他普通怪物仍保留真实身份与类型替身。分工和下一种怪物的条件见 [怪物实施计划](../MONSTERS.md)；精英、固定首领、Boss 和通用逐帧 AI 调度仍待逐项核对。旧存档不迁移。
+当前源码存档 v44／规则 v72。普通怪物三难度生命、近战伤害／命中、防御、抗性、暴击、再生和 `El1–3` 按原表共用解析；`brute1`、`zombie1–5`、`skeleton1–4` 使用原动作及 MPQ 所列声音。僵尸与骷髅同族变体分别共用各自 AI，按 `MonStats.TransLvl` 选择原 `palshift.dat` 颜色映射；火焰、冰冷与毒素命中接通用元素攻击，冰冷与毒素保存角色持续状态。其他普通怪物仍保留真实身份与类型替身。分工和下一种怪物的条件见 [怪物实施计划](../MONSTERS.md)；精英、固定首领、Boss 和通用逐帧 AI 调度仍待逐项核对。旧存档不迁移。
 
-Windows Release 构建通过。完整六 MPQ 目录 `dist/d2x-runtime-20260924-v43-skeleton3/` 在邪恶洞窟启动；命名管道定向生成 `skeleton3` 返回 `substitute=false`，共享解析返回其原等级、A1／A2、抗性和生命区间，截图 `artifacts/monster-smoke/skeleton3-v43-in-view.png` 显示原红色调色。v43 保存、推进 20 帧与恢复后，怪物位置及生命回到保存值；击杀经正式死亡链增加 66 经验，本次原 TC 掷骰为 NoDrop。运行目录与截图不提交，不生成 ZIP 或测试脚本／用例。音频播放效果仍待用户实机听验。
+Windows Release 构建通过。完整六 MPQ 目录 `dist/d2x-runtime-20260924-v44-skeleton4/` 在邪恶洞窟启动；命名管道定向生成 `skeleton4` 返回 `substitute=false`，共享解析返回 A1 火焰 50% 概率和三难度原伤害，截图 `artifacts/monster-smoke/skeleton4-v44-in-view.png` 显示原深色调色。推进 20 帧角色从 55 降至 51 HP，v44 保存与恢复回到 55 HP；击杀经正式死亡链增加 2 经验，本次原 TC 掷骰为 NoDrop。火焰份额未由现场单独量出。运行目录与截图不提交，不生成 ZIP 或测试脚本／用例。音频播放效果仍待用户实机听验。
 
 ## 当前交接状态
 

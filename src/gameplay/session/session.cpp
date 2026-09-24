@@ -196,7 +196,7 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
     Fingerprint fingerprint;
     fingerprint.add(content_.profile);
     // Bump this rules revision when state interpretation or compiled rules change.
-    fingerprint.add("d2x-session-rules-v71-skeleton3-variant");
+    fingerprint.add("d2x-session-rules-v72-skeleton4-fire-attack");
     auto members = archives.used;
     for (const auto &member : members) {
         fingerprint.add(member);
