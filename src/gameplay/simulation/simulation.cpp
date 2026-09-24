@@ -75,6 +75,9 @@ void Simulation::spawnEnemies(std::span<const MonsterSpawn> spawns) {
                     uint32_t(enemy.combatRandom) % unsigned(combat->maxLife - combat->minLife + 1));
             }
         enemy.hp = enemy.maxHp;
+        if (enemy.kind == MonsterKind::FoulCrowNest && monsterAi_)
+            if (auto ai = monsterAi_(enemy); ai && ai->kind == MonsterAiKind::FoulCrowNest)
+                enemy.aiWait = float(ai->params[0]) / 25.f;
         area.enemies.push_back(std::move(enemy));
     }
 }

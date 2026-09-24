@@ -4,11 +4,11 @@
 
 namespace d2x {
 namespace {
-std::string resolveMode(std::string_view source, const DataTable &sequences) {
+std::string resolveMode(std::string_view source, const DataTable &sequences, int event = 2) {
     if (source == "SC") return "SC";
     for (size_t row = 0; row < sequences.rows().size(); ++row)
         if (sequences.value(row, "sequence") == source &&
-            sequences.number(row, "event").value_or(0) == 2)
+            sequences.number(row, "event").value_or(0) == event)
             return std::string(sequences.value(row, "mode"));
     return {};
 }
@@ -65,6 +65,21 @@ std::optional<MonsterResurrection> loadMonsterResurrection(
         if (skills.value(row, "skill") == sourceSkill &&
             skills.number(row, "srvdofunc") == 97)
             return MonsterResurrection{std::string(sourceSkill), mode};
+    return std::nullopt;
+}
+std::optional<MonsterNest> loadMonsterNest(
+    const DataTable &monsters, size_t monsterRow,
+    const DataTable &skills, const DataTable &sequences) {
+    const auto child = monsters.value(monsterRow, "spawn");
+    const auto sourceSkill = monsters.value(monsterRow, "Skill1");
+    const auto sequence = monsters.value(monsterRow, "Sk1mode");
+    const auto mode = resolveMode(sequence, sequences, 4);
+    if (child.empty() || sourceSkill.empty() || mode.empty()) return std::nullopt;
+    for (size_t row = 0; row < skills.rows().size(); ++row)
+        if (skills.value(row, "skill") == sourceSkill &&
+            skills.number(row, "srvdofunc") == 91)
+            return MonsterNest{std::string(sourceSkill), mode, std::string(child),
+                               std::string(sequence)};
     return std::nullopt;
 }
 } // namespace d2x

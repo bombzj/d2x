@@ -40,6 +40,7 @@ class Simulation {
     std::function<std::optional<MonsterProjectile>(const Enemy &, int)> monsterProjectile_;
     std::function<std::optional<MonsterSpell>(const Enemy &, int)> monsterSpell_;
     std::function<std::optional<MonsterResurrection>(const Enemy &)> monsterResurrection_;
+    std::function<std::optional<MonsterNest>(const Enemy &)> monsterNest_;
     std::vector<GameEvent> events_;
     Enemy *findEnemy(EntityId id);
     void moveTo(Vec target);
@@ -65,6 +66,8 @@ class Simulation {
     void launchMonsterSpell(Enemy &enemy);
     void resolveMonsterSpell(Enemy &enemy, const Missile &missile);
     void resolveMonsterResurrection(Enemy &enemy);
+    std::optional<MonsterSpawn> nestSpawn(Enemy &enemy,
+                                         std::span<const MonsterSpawn> queued);
     void applyMonsterElements(Enemy &enemy, const MonsterNormalCombat &combat, int mode);
     void updateMissiles(float dt);
     void spawnEnemies(std::span<const MonsterSpawn> spawns);

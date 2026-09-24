@@ -59,4 +59,29 @@ std::optional<MonsterAttackTiming> loadMonsterActionTiming(const AnimDataTable &
         return std::nullopt;
     return MonsterAttackTiming{duration, impactTime, frames};
 }
+std::optional<MonsterAttackTiming> loadMonsterSequenceTiming(
+    const AnimDataTable &animations, const DataTable &sequences,
+    std::string_view sequence, std::string_view token,
+    std::string_view mode, std::string_view weapon, int event) {
+    const auto motion = loadMonsterMotionTiming(animations, token, mode, weapon);
+    if (!motion) return std::nullopt;
+    int sequenceFrames = 0, impactFrame = -1;
+    std::string sequenceMode(mode);
+    for (char &value : sequenceMode)
+        value = char(std::toupper(static_cast<unsigned char>(value)));
+    for (size_t row = 0; row < sequences.rows().size(); ++row) {
+        if (sequences.value(row, "sequence") != sequence ||
+            sequences.value(row, "mode") != sequenceMode) continue;
+        const auto frame = sequences.number(row, "frame");
+        if (!frame || *frame != sequenceFrames) return std::nullopt;
+        if (sequences.number(row, "event").value_or(0) == event)
+            impactFrame = *frame;
+        ++sequenceFrames;
+    }
+    if (sequenceFrames <= 0 || sequenceFrames > 144 ||
+        impactFrame < 0 || impactFrame >= sequenceFrames) return std::nullopt;
+    const float frameTime = motion->duration / float(motion->frames);
+    return MonsterAttackTiming{frameTime * sequenceFrames,
+                               frameTime * impactFrame, motion->frames};
+}
 } // namespace d2x

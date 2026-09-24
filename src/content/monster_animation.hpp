@@ -1,6 +1,7 @@
 #pragma once
 #include "gameplay/monsters/monster_spawn.hpp"
 #include "resources/anim_data.hpp"
+#include "resources/data_table.hpp"
 #include <optional>
 
 namespace d2x {
@@ -18,4 +19,8 @@ std::optional<MonsterAttackTiming> loadMonsterActionTiming(const AnimDataTable &
                                                            std::string_view token,
                                                            std::string_view mode,
                                                            std::string_view weapon, int impactFlag);
+std::optional<MonsterAttackTiming> loadMonsterSequenceTiming(
+    const AnimDataTable &animations, const DataTable &sequences,
+    std::string_view sequence, std::string_view token,
+    std::string_view mode, std::string_view weapon, int event);
 } // namespace d2x

@@ -28,13 +28,17 @@ struct MonsterRecord {
     std::string attack2ProjectileArt;
     std::array<std::optional<MonsterSpell>, 4> spells;
     std::optional<MonsterResurrection> resurrection;
+    std::optional<MonsterNest> nest;
     std::array<std::optional<MonsterAiProfile>, 3> aiProfiles;
     bool enabled = false, randomSpawn = false, ranged = false, placeSpawn = false;
     bool killable = false, npc = false, critter = false, inert = false, boss = false;
     bool getHitMode = false, deadMode = false, skill2Mode = false, runMode = false;
     bool castMode = false, sequenceMode = false;
     std::array<std::string, 2> minions;
-    bool hostile() const { return enabled && killable && !npc && !critter && !inert && alignment == 0; }
+    bool hostile() const {
+        return enabled && killable && !npc && !critter &&
+               (!inert || ai == "FoulCrowNest") && alignment == 0;
+    }
 };
 struct SuperUniqueRecord {
     std::string id, monster, name;

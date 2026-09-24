@@ -8,7 +8,7 @@
 
 namespace d2x {
 enum class MonsterRank { Normal, Minion, Champion, Unique, SuperUnique, Boss };
-enum class SpawnOrigin { Density, Preset, Debug };
+enum class SpawnOrigin { Density, Preset, Debug, Summoned };
 struct PopulationSettings {
     uint32_t seed = 0xd2;
     int difficulty = 0; // Normal, Nightmare, Hell. Independent of loot randomness.
@@ -52,7 +52,7 @@ struct MonsterNormalCombat {
 };
 enum class MonsterAiKind { Skeleton, Brute, Zombie, Fallen, CorruptRogue, Goatman, QuillRat,
                            Wraith, CorruptLancer, CorruptArcher, SkeletonBow, Bighead,
-                           SkeletonMage, Fetish, Vampire, FallenShaman };
+                           SkeletonMage, Fetish, Vampire, FallenShaman, FoulCrowNest, BloodHawk };
 struct MonsterAiProfile {
     MonsterAiKind kind;
     std::array<int, 8> params{};
@@ -74,6 +74,9 @@ struct MonsterSpell {
 };
 struct MonsterResurrection {
     std::string sourceSkill, mode;
+};
+struct MonsterNest {
+    std::string sourceSkill, mode, child, sequence;
 };
 // Explicit implementation registry: add real actors here as their behaviour/assets land.
 MonsterImplementation monsterImplementation(const std::string &code);

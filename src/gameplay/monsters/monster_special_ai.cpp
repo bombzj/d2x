@@ -4,6 +4,7 @@
 #include "gameplay/monsters/fetish_ai.hpp"
 #include "gameplay/monsters/vampire_ai.hpp"
 #include "gameplay/monsters/fallen_shaman_ai.hpp"
+#include "gameplay/monsters/blood_hawk_ai.hpp"
 #include "gameplay/monsters/monster_wander.hpp"
 #include <algorithm>
 
@@ -11,6 +12,34 @@ namespace d2x {
 bool Simulation::handleMonsterSpecialAi(Enemy &enemy, const MonsterAiProfile &ai,
                                         float distance, bool clear) {
     const auto &player = state_.player;
+    if (ai.kind == MonsterAiKind::FoulCrowNest) {
+        enemy.route.clear();
+        if (distance <= 20.f && enemy.aiWait == 0 &&
+            enemy.aiLoop < ai.params[2] && monsterNest_ &&
+            monsterNest_(enemy) && monsterAttackTiming_ &&
+            monsterAttackTiming_(enemy, 3))
+            beginMonsterAttack(enemy, 3);
+        return true;
+    }
+    if (ai.kind == MonsterAiKind::BloodHawk) {
+        const bool inCombat = clear &&
+            distance < monsterDefinition(enemy.kind).attackRange && player.leapTime <= 0;
+        const auto action = bloodHawkThink(enemy, ai, distance, inCombat);
+        if (action == BloodHawkAction::Attack) {
+            enemy.route.clear();
+            beginMonsterAttack(enemy, 1);
+            return true;
+        }
+        if (action == BloodHawkAction::Retreat) {
+            if (!monsterStartRetreat(enemy, player.pos, 4, *grid_))
+                beginMonsterAttack(enemy, 1);
+            return true;
+        }
+        if (action == BloodHawkAction::Circle) {
+            if (monsterStartCircle(enemy, player.pos, 4, *grid_)) return true;
+        }
+        return false;
+    }
     if (ai.kind == MonsterAiKind::FallenShaman) {
         Enemy *corpse = nullptr;
         float closest = float(ai.params[3]);

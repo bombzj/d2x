@@ -10,4 +10,7 @@ std::array<std::optional<MonsterSpell>, 4> loadMonsterSpells(
 std::optional<MonsterResurrection> loadMonsterResurrection(
     const DataTable &monsters, size_t monsterRow,
     const DataTable &skills, const DataTable &sequences);
+std::optional<MonsterNest> loadMonsterNest(
+    const DataTable &monsters, size_t monsterRow,
+    const DataTable &skills, const DataTable &sequences);
 } // namespace d2x

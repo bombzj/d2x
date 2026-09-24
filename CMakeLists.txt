@@ -76,7 +76,9 @@ add_library(d2x_gameplay
   src/gameplay/combat/combat.cpp src/gameplay/skills/casting.cpp
   src/gameplay/monsters/monster_ai.cpp src/gameplay/monsters/monster_melee.cpp
   src/gameplay/monsters/monster_special_ai.cpp
-  src/gameplay/monsters/monster_resurrection.cpp
+    src/gameplay/monsters/monster_resurrection.cpp
+    src/gameplay/monsters/monster_nest.cpp
+    src/gameplay/monsters/blood_hawk_ai.cpp
   src/gameplay/monsters/monster_element.cpp
   src/gameplay/monsters/skeleton_ai.cpp src/gameplay/monsters/brute_ai.cpp
   src/gameplay/monsters/corrupt_rogue_ai.cpp

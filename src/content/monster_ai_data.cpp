@@ -22,6 +22,8 @@ std::optional<MonsterAiProfile> loadMonsterAiProfile(const DataTable &stats, siz
     else if (ai == "Fetish") profile.kind = MonsterAiKind::Fetish;
     else if (ai == "Vampire") profile.kind = MonsterAiKind::Vampire;
     else if (ai == "FallenShaman") profile.kind = MonsterAiKind::FallenShaman;
+    else if (ai == "FoulCrowNest") profile.kind = MonsterAiKind::FoulCrowNest;
+    else if (ai == "BloodHawk") profile.kind = MonsterAiKind::BloodHawk;
     else return std::nullopt;
     const std::string suffix = difficulty == 0 ? "" : difficulty == 1 ? "(N)" : "(H)";
     for (int index = 0; index < 8; ++index) {
@@ -73,6 +75,11 @@ std::optional<MonsterAiProfile> loadMonsterAiProfile(const DataTable &stats, siz
         (!percentage(0) || !percentage(1) || !percentage(3) ||
          profile.params[2] > 255 || profile.params[4] > 7)) return std::nullopt;
     if (profile.kind == MonsterAiKind::FallenShaman &&
+        (!percentage(0) || !percentage(1) || !percentage(2) ||
+         profile.params[3] > 255 || profile.params[4] > 255)) return std::nullopt;
+    if (profile.kind == MonsterAiKind::FoulCrowNest &&
+        (profile.params[0] > 2500 || profile.params[2] > 100)) return std::nullopt;
+    if (profile.kind == MonsterAiKind::BloodHawk &&
         (!percentage(0) || !percentage(1) || !percentage(2) ||
          profile.params[3] > 255 || profile.params[4] > 255)) return std::nullopt;
     return profile;

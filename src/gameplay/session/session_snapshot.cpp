@@ -251,7 +251,8 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
             require(kind == monsterImplementation(identity.monster).kind, "monster implementation");
             require(int(identity.rank) >= 0 && int(identity.rank) <= int(MonsterRank::Boss), "monster rank");
             require(identity.origin == SpawnOrigin::Density || identity.origin == SpawnOrigin::Preset ||
-                        identity.origin == SpawnOrigin::Debug,
+                        identity.origin == SpawnOrigin::Debug ||
+                        identity.origin == SpawnOrigin::Summoned,
                     "monster spawn origin");
             require(identity.group > 0 && !identity.spawnKey.empty() && identity.spawnKey.size() <= 256 &&
                         spawnKeys.insert(identity.spawnKey).second,
@@ -261,6 +262,24 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
                             identity.superUnique.empty() &&
                             identity.rank == (source->boss ? MonsterRank::Boss : MonsterRank::Normal),
                         "debug monster identity");
+            if (identity.origin == SpawnOrigin::Summoned) {
+                bool parentFound = false;
+                for (const auto &parent : area.enemies) {
+                    if (parent.kind != MonsterKind::FoulCrowNest ||
+                        parent.identity.group != identity.group) continue;
+                    const auto *parentRecord = monsterContent_.find(parent.identity.monster);
+                    if (!parentRecord || !parentRecord->nest ||
+                        parentRecord->nest->child != identity.monster) continue;
+                    for (int slot = 1; slot <= parent.aiLoop; ++slot)
+                        if (identity.spawnKey == "summon." +
+                            std::to_string(parent.id.value) + "." + std::to_string(slot))
+                            parentFound = true;
+                }
+                require(parentFound && identity.superUnique.empty() &&
+                            identity.rank == MonsterRank::Normal &&
+                            kind == MonsterKind::BloodHawk,
+                        "summoned monster identity");
+            }
             if (!identity.superUnique.empty()) {
                 auto unique = monsterContent_.superUnique(identity.superUnique);
                 require(unique && unique->monster == identity.monster &&
@@ -272,6 +291,8 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
         require(area.pendingSpawns.size() <= 65536, "too many deferred spawns");
         std::set<uint32_t> pendingGroups;
         for (const auto &spawn : area.pendingSpawns) {
+            require(spawn.identity.origin != SpawnOrigin::Summoned,
+                    "summoned monster cannot be pending");
             validateIdentity(spawn.kind, spawn.identity);
             position(spawn.position, areaGrid, true);
             pendingGroups.insert(spawn.identity.group);
@@ -356,6 +377,11 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
                         ? simulation_.monsterResurrection_(enemy) : std::nullopt;
                     require(((enemy.kind == MonsterKind::Vampire && spell &&
                               spell->mode == "SC") ||
+                             (enemy.kind == MonsterKind::FoulCrowNest &&
+                              enemy.attackMode == 3 && !spell &&
+                              simulation_.monsterNest_ &&
+                              simulation_.monsterNest_(enemy) &&
+                              monsterContent_.attackTiming(enemy.kind, 3)) ||
                              (enemy.kind == MonsterKind::FallenShaman &&
                               ((enemy.attackMode == 3 && resurrection &&
                                 resurrection->mode == "A2") ||
@@ -386,7 +412,9 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
                         ai->kind != MonsterAiKind::SkeletonMage &&
                         ai->kind != MonsterAiKind::Fetish &&
                         ai->kind != MonsterAiKind::Vampire &&
-                        ai->kind != MonsterAiKind::FallenShaman))
+                        ai->kind != MonsterAiKind::FallenShaman &&
+                        ai->kind != MonsterAiKind::FoulCrowNest &&
+                        ai->kind != MonsterAiKind::BloodHawk))
                 require(enemy.aiWait == 0 && !enemy.aiPursuing && !enemy.aiEscaping &&
                             !enemy.aiCommanded && !enemy.aiCircling && !enemy.aiRunning &&
                             enemy.aiAdvanceRemaining == 0 && enemy.skill2Remaining == 0,
@@ -446,10 +474,26 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
                             (!enemy.aiCircling || (enemy.hp > 0 && enemy.attack == 0 &&
                                                    enemy.aiWait == 0 && !enemy.route.empty())),
                         "fallen shaman AI state");
+            else if (ai && ai->kind == MonsterAiKind::FoulCrowNest)
+                require(enemy.aiWait <= float(std::max(ai->params[0], 20)) / 25.f &&
+                            enemy.aiLoop >= 0 && enemy.aiLoop <= ai->params[2] &&
+                            !enemy.aiPursuing && !enemy.aiEscaping &&
+                            !enemy.aiCircling && !enemy.aiRunning &&
+                            !enemy.aiCharged && enemy.route.empty(),
+                        "foul crow nest AI state");
+            else if (ai && ai->kind == MonsterAiKind::BloodHawk)
+                require(enemy.aiWait == 0 && !enemy.aiPursuing &&
+                            !enemy.aiCommanded && !enemy.aiRunning &&
+                            (!enemy.aiEscaping ||
+                             (enemy.hp > 0 && enemy.attack == 0 && !enemy.route.empty())) &&
+                            (!enemy.aiCircling ||
+                             (enemy.hp > 0 && enemy.attack == 0 && !enemy.route.empty())),
+                        "blood hawk AI state");
             else
                 require(!enemy.aiCircling, "unsupported circling state");
             if (!ai || (ai->kind != MonsterAiKind::Fetish &&
-                        ai->kind != MonsterAiKind::Vampire))
+                        ai->kind != MonsterAiKind::Vampire &&
+                        ai->kind != MonsterAiKind::FoulCrowNest))
                 require(enemy.aiPhase == 0 && enemy.aiLoop == 0,
                         "non-fetish AI phase");
             if (enemy.aiCorpse) {
@@ -496,7 +540,8 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
             else
                 require(!enemy.aiRunning && enemy.aiAdvanceRemaining == 0,
                         "non-rogue run state");
-            if (!ai || ai->kind != MonsterAiKind::CorruptLancer)
+            if (!ai || (ai->kind != MonsterAiKind::CorruptLancer &&
+                        ai->kind != MonsterAiKind::BloodHawk))
                 require(!enemy.aiCharged, "non-lancer charge state");
             if (ai && ai->kind == MonsterAiKind::Goatman)
                 require(enemy.aiWait <= float(ai->params[1]) / 25.f &&

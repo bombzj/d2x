@@ -160,6 +160,7 @@ MonsterCatalog::MonsterCatalog(Archives &archives, const DataTable &stats) {
         if (m.castMode || m.sequenceMode) {
             m.spells = loadMonsterSpells(archives, stats, row, skills, missiles, sequences);
             m.resurrection = loadMonsterResurrection(stats, row, skills, sequences);
+            m.nest = loadMonsterNest(stats, row, skills, sequences);
         }
         if (!indices_.emplace(m.index, m.id).second)
             throw std::runtime_error("Duplicate MonStats hcIdx: " + std::to_string(m.index));
@@ -178,7 +179,7 @@ MonsterCatalog::MonsterCatalog(Archives &archives, const DataTable &stats) {
             if (!implementation.substitute) actors.emplace(implementation.kind, &record);
         }
         for (const auto &[kind, actor] : actors) {
-            for (auto mode : {"nu", "wl", "rn", "a1", "a2", "sc", "gh", "dt", "dd", "s2"}) {
+            for (auto mode : {"nu", "wl", "rn", "a1", "a2", "sc", "gh", "dt", "dd", "s1", "s2"}) {
                 auto weapon = monsterModeWeapon(archives, actor->token, mode, actor->baseWeapon);
                 if (weapon.empty()) continue;
                 modeWeapons_[kind].emplace(mode, weapon);
@@ -207,6 +208,13 @@ MonsterCatalog::MonsterCatalog(Archives &archives, const DataTable &stats) {
                            kind == MonsterKind::Vampire && actor->castMode) {
                     if (auto timing = loadMonsterActionTiming(
                             animations, actor->token, mode, weapon, 2))
+                        casts_.emplace(kind, *timing);
+                } else if (std::string_view(mode) == "s1" &&
+                           kind == MonsterKind::FoulCrowNest && actor->nest &&
+                           actor->nest->mode == "S1") {
+                    if (auto timing = loadMonsterSequenceTiming(
+                            animations, sequences, actor->nest->sequence,
+                            actor->token, mode, weapon, 4))
                         casts_.emplace(kind, *timing);
                 } else if (std::string_view(mode) != "s2" || kind == MonsterKind::Fallen) {
                     if (auto timing = loadMonsterMotionTiming(animations, actor->token, mode, weapon))

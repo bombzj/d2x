@@ -212,7 +212,8 @@ void SceneView::drawActors() const {
                               : (e.stun > 0 || e.hitFlash > 0) && animations.contains("gh") ? "gh"
                               : e.skill2Remaining > 0 && animations.contains("s2") ? "s2"
                               : e.attack > 0 ? (e.attackMode >= 3 ?
-                                                 (e.kind == MonsterKind::FallenShaman ? "a2" : "sc") :
+                                                 (e.kind == MonsterKind::FallenShaman ? "a2" :
+                                                  e.kind == MonsterKind::FoulCrowNest ? "s1" : "sc") :
                                                  e.attackMode == 2 ? "a2" : "a1")
                               : movingMonsters_.contains(e.id) ?
                                     (e.aiRunning && animations.contains("rn") ? "rn" : "wl") : "nu";
@@ -228,7 +229,8 @@ void SceneView::drawActors() const {
                                         : std::min(anim->count - 1, int(e.deathAge * fps)))
                             : e.stun > 0 && !animations.contains("gh") ? 0
                             : int(view_.animationTime * (e.chill > 0 ? fps * .42f : fps) + item.index);
-                if ((mode == "a1" || mode == "a2" || mode == "sc") && e.attackDuration > 0)
+                if ((mode == "a1" || mode == "a2" || mode == "sc" || mode == "s1") &&
+                    e.attackDuration > 0)
                     frame = std::clamp(int((e.attackDuration - e.attack) / e.attackDuration * anim->count),
                                        0, anim->count - 1);
                 if (mode == "s2" && e.skill2Duration > 0)

@@ -16,6 +16,7 @@
 namespace d2x {
 void Simulation::updateMonsters(float dt) {
     auto &player = state_.player;
+    std::vector<MonsterSpawn> nestSpawns;
     auto beginFallenShout = [&](Enemy &enemy) {
         const auto duration = monsterSkill2Duration_ ? monsterSkill2Duration_(enemy) : std::nullopt;
         if (!duration || *duration <= 0) return false;
@@ -46,7 +47,8 @@ void Simulation::updateMonsters(float dt) {
             enemy.aiRetaliate = false;
             enemy.aiCharged = false;
             enemy.aiAdvanceRemaining = 0;
-            enemy.aiPhase = enemy.aiLoop = 0;
+            enemy.aiPhase = 0;
+            if (enemy.kind != MonsterKind::FoulCrowNest) enemy.aiLoop = 0;
             enemy.aiCorpse = {};
             enemy.skill2Remaining = enemy.skill2Duration = 0;
             enemy.attack = enemy.attackDuration = 0;
@@ -77,6 +79,11 @@ void Simulation::updateMonsters(float dt) {
                     if (enemy.attackMode == 3 && monsterResurrection_ &&
                         monsterResurrection_(enemy))
                         resolveMonsterResurrection(enemy);
+                    else if (enemy.attackMode == 3 && monsterNest_ &&
+                             monsterNest_(enemy)) {
+                        if (auto hatchling = nestSpawn(enemy, nestSpawns))
+                            nestSpawns.push_back(std::move(*hatchling));
+                    }
                     else if (enemy.attackMode >= 3)
                         launchMonsterSpell(enemy);
                     else if (monsterProjectile_ && monsterProjectile_(enemy, enemy.attackMode))
@@ -133,6 +140,8 @@ void Simulation::updateMonsters(float dt) {
                                  enemy.kind == MonsterKind::SkeletonMage ? .25f :
                                  enemy.kind == MonsterKind::Fetish ? .5f :
                                  enemy.kind == MonsterKind::Vampire ? 1.f :
+                                 enemy.kind == MonsterKind::BloodHawk && ai ?
+                                     1.f + float(ai->params[3]) / 100.f :
                                  enemy.kind == MonsterKind::QuillRat ? 1.f : 1.5f) *
                                 (enemy.chill > 0 ? .42f : 1.f);
             fallenAdvanceEscape(enemy, *grid_, speed, dt);
@@ -164,6 +173,7 @@ void Simulation::updateMonsters(float dt) {
             enemy.aiPursuing = false;
             enemy.aiRunning = false;
             enemy.aiAdvanceRemaining = 0;
+            if (enemy.kind == MonsterKind::BloodHawk) enemy.aiCharged = false;
             continue;
         }
         const bool skeletonAi = ai && ai->kind == MonsterAiKind::Skeleton;
@@ -316,6 +326,8 @@ void Simulation::updateMonsters(float dt) {
                         (enemy.chill > 0 ? .42f : 1.f);
             }
             if (bruteAi) speed *= bruteWalkMultiplier(enemy);
+            if (enemy.kind == MonsterKind::BloodHawk && enemy.aiCharged && ai)
+                speed *= 1.f + float(ai->params[4]) / 100.f;
             if (zombieAi && !zombieWanders) speed *= 4.f / 3.f;
             auto next = enemy.pos + offset.unit() * std::min(speed * dt, offset.length());
             if (grid_->segment(enemy.pos, next)) {
@@ -375,5 +387,6 @@ void Simulation::updateMonsters(float dt) {
             beginMonsterAttack(enemy);
         }
     }
+    if (!nestSpawns.empty()) spawnEnemies(nestSpawns);
 }
 } // namespace d2x

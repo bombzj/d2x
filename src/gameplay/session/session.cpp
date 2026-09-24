@@ -172,6 +172,12 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
         if (profile->kind == MonsterAiKind::FallenShaman &&
             enemy.kind == MonsterKind::FallenShaman)
             return profile;
+        if (profile->kind == MonsterAiKind::FoulCrowNest &&
+            enemy.kind == MonsterKind::FoulCrowNest)
+            return profile;
+        if (profile->kind == MonsterAiKind::BloodHawk &&
+            enemy.kind == MonsterKind::BloodHawk)
+            return profile;
         return std::nullopt;
     };
     simulation_.zombieForcedPursuit_ = [this](RegionId region) {
@@ -238,6 +244,17 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
             !record->sequenceMode) return std::nullopt;
         return record->resurrection;
     };
+    simulation_.monsterNest_ = [this](const Enemy &enemy)
+        -> std::optional<MonsterNest> {
+        if (enemy.kind != MonsterKind::FoulCrowNest ||
+            monsterImplementation(enemy.identity.monster).substitute) return std::nullopt;
+        const auto *record = monsterContent_.find(enemy.identity.monster);
+        if (!record || !record->nest ||
+            !monsterContent_.find(record->nest->child) ||
+            monsterImplementation(record->nest->child).kind != MonsterKind::BloodHawk ||
+            monsterImplementation(record->nest->child).substitute) return std::nullopt;
+        return record->nest;
+    };
     worldSelection.difficulty = population.difficulty;
     auto plan = planWorld(archives, worldContent_, worldSelection);
     regions_ = loadRegions(archives, ids_, plan.regions, monsterContent_);
@@ -280,7 +297,7 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
     Fingerprint fingerprint;
     fingerprint.add(content_.profile);
     // Bump this rules revision when state interpretation or compiled rules change.
-    fingerprint.add("d2x-session-rules-v110-fallen-shaman");
+    fingerprint.add("d2x-session-rules-v111-foul-crow-nest");
     auto members = archives.used;
     for (const auto &member : members) {
         fingerprint.add(member);

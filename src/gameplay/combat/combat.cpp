@@ -35,7 +35,8 @@ void Simulation::damageEnemy(Enemy &enemy, float amount, EntityId source, float 
         enemy.aiRetaliate = false;
         enemy.aiCharged = false;
         enemy.aiAdvanceRemaining = 0;
-        enemy.aiPhase = enemy.aiLoop = 0;
+        enemy.aiPhase = 0;
+        if (enemy.kind != MonsterKind::FoulCrowNest) enemy.aiLoop = 0;
         enemy.aiCorpse = {};
         enemy.attack = enemy.attackDuration = 0;
         enemy.attackImpact = -1;

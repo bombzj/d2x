@@ -17,6 +17,12 @@ void GameSession::settleDeaths() {
         if (loot_.settled(death.victim))
             continue;
         LootRequest request{death.victim, death.identity, death.region, death.difficulty};
+        if (death.identity.origin == SpawnOrigin::Summoned) {
+            LootPlan empty;
+            empty.randomState = loot_.randomState();
+            loot_.settle(request, std::move(empty));
+            continue;
+        }
         const auto entry = resolveMonsterLoot(content_, monsterContent_, worldContent_, request);
         std::cout << "Monster loot entry: id=" << death.victim.value << " monster=" << death.identity.monster
                   << " rank=" << monsterRankName(death.identity.rank);
