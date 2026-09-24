@@ -65,6 +65,7 @@ MonsterCatalog::MonsterCatalog(Archives &archives, const DataTable &stats) {
         m.partyMax = n("PartyMax");
         m.sparse = n("sparsePopulate");
         m.normalLevel = n("Level");
+        m.transLevel = n("TransLvl");
         m.normalCombat = loadMonsterNormalCombat(stats, row, levels ? &*levels : nullptr);
         for (int difficulty = 0; difficulty < 3; ++difficulty)
             m.aiProfiles[difficulty] = loadMonsterAiProfile(stats, row, m.ai, difficulty);

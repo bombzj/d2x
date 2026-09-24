@@ -200,7 +200,9 @@ void SceneView::drawActors() const {
             sprite(f, p, sim.player.dead ? Color{185, 185, 185, 255} : WHITE);
         } else if (item.type == 2) {
             auto &e = sim.area.enemies[item.index];
-            const auto &animations = assets_.monsterAnimations.at(e.kind);
+            const auto variant = assets_.monsterVariantAnimations.find(e.identity.monster);
+            const auto &animations = variant == assets_.monsterVariantAnimations.end()
+                                         ? assets_.monsterAnimations.at(e.kind) : variant->second;
             const auto *deathTiming = session_.monsterContent().motion(e.kind, "dt");
             std::string mode = e.hp <= 0 ? (animations.contains("dd") && deathTiming &&
                                                e.deathAge >= deathTiming->duration ? "dd" : "dt")

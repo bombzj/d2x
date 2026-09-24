@@ -15,7 +15,7 @@ if(WIN32)
   target_compile_definitions(d2x_core INTERFACE NOMINMAX WIN32_LEAN_AND_MEAN)
 endif()
 
-add_library(d2x_resources src/resources/archive.cpp src/resources/formats.cpp src/resources/dcc.cpp src/resources/data_table.cpp src/resources/text.cpp src/resources/anim_data.cpp)
+add_library(d2x_resources src/resources/archive.cpp src/resources/formats.cpp src/resources/dcc.cpp src/resources/data_table.cpp src/resources/text.cpp src/resources/anim_data.cpp src/resources/monster_palshift.cpp)
 target_link_libraries(d2x_resources PUBLIC d2x_core PRIVATE storm)
 
 add_library(d2x_navigation src/world/navigation.cpp src/world/room_activation.cpp)
@@ -118,6 +118,7 @@ add_library(d2x_presentation
   src/presentation/container_view.cpp src/presentation/storage_view.cpp src/presentation/belt_view.cpp src/presentation/inventory_view.cpp src/presentation/inventory_controller.cpp)
 target_link_libraries(d2x_presentation PUBLIC d2x_session raylib)
 target_sources(d2x_presentation PRIVATE src/presentation/monster_audio.cpp)
+target_sources(d2x_presentation PRIVATE src/presentation/monster_assets.cpp)
 
 add_executable(d2x src/main.cpp src/app/application.cpp src/app/options.cpp src/app/input.cpp)
 target_sources(d2x PRIVATE src/app/debug_pipe.cpp src/app/debug_commands.cpp src/app/debug_inventory.cpp

@@ -80,7 +80,8 @@ GpuAnimation Graphics::single(const std::string &path) {
     return gpu;
 }
 GpuAnimation Graphics::composite(const std::string &type, const std::string &token, const std::string &mode,
-                                 const std::string &weapon, const std::array<const char *, 16> *equipment) {
+                                 const std::string &weapon, const std::array<const char *, 16> *equipment,
+                                 const std::array<uint8_t, 256> *colorMap) {
     auto base = "data/global/" + type + "/" + token + "/";
     auto bytes = archives.read(base + "cof/" + token + mode + weapon + ".cof", false);
     if (bytes.empty())
@@ -168,6 +169,9 @@ GpuAnimation Graphics::composite(const std::string &type, const std::string &tok
                             merged.pixels[(y + p->y - top) * merged.width + x + p->x - left] = index;
                     }
             }
+            if (colorMap)
+                for (auto &index : merged.pixels)
+                    index = (*colorMap)[index];
             gpu.frames.push_back(upload(merged));
         }
     std::cout << "Composite " << token << mode << weapon << ": " << parts.size() << '/' << cof.layers

@@ -9,6 +9,7 @@ class SceneAssets {
     Graphics graphics_;
     Graphics uiGraphics_;
     void loadProps(const Region &region);
+    void loadMonsterAnimations(Archives &archives, const GameSession &session);
     void loadSkillIcons(Archives &archives, const ClassicData &content);
     std::string heroKey_;
     std::map<std::string, std::map<std::string, GpuAnimation>> heroCache_;
@@ -32,6 +33,7 @@ class SceneAssets {
     std::map<std::string, GpuAnimation> propAnimations, npcWalkAnimations, hero;
     std::map<std::string, std::array<GpuAnimation, 3>> waypointAnimations;
     std::map<MonsterKind, std::map<std::string, GpuAnimation>> monsterAnimations;
+    std::map<std::string, std::map<std::string, GpuAnimation>, std::less<>> monsterVariantAnimations;
     struct MonsterAudio {
         std::string attack1, attack2, hit, death, footstep, neutral;
         float footstepInterval = 0, neutralInterval = 0;

@@ -4,7 +4,7 @@ namespace d2x {
 MonsterImplementation monsterImplementation(const std::string &code) {
     if (code == "fallen1")
         return {MonsterKind::Fallen, false};
-    if (code == "zombie1")
+    if (code == "zombie1" || code == "zombie2")
         return {MonsterKind::Zombie, false};
     if (code == "skeleton1")
         return {MonsterKind::Skeleton, false};

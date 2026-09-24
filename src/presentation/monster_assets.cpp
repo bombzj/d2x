@@ -1,0 +1,64 @@
+#include "scene_assets.hpp"
+#include "resources/monster_palshift.hpp"
+
+namespace d2x {
+void SceneAssets::loadMonsterAnimations(Archives &archives, const GameSession &session) {
+    const auto &content = session.monsterContent();
+    auto loadActor = [&](MonsterKind kind, const MonsterRecord &actor,
+                         std::map<std::string, GpuAnimation> &animations) {
+        const auto &definition = monsterDefinition(kind);
+        if (normalize(actor.token) != definition.token)
+            throw std::runtime_error("Monster token differs from implemented art: " + actor.id);
+        const auto palettePath = "data/global/monsters/" + std::string(definition.token) +
+                                 "/cof/palshift.dat";
+        const auto colors = monsterPalshift(archives.read(palettePath), actor.transLevel);
+        std::array<const char *, 16> equipment;
+        equipment.fill("");
+        if (kind == MonsterKind::Skeleton || kind == MonsterKind::CorruptRogue) {
+            equipment[5] = "axe";
+            equipment[7] = "buc";
+            equipment[8] = "lit";
+            equipment[9] = "lit";
+        }
+        for (auto mode : {"nu", "wl", "a1", "dt", "a2", "gh", "dd"}) {
+            if (std::string_view(mode) == "a2" && !content.attackTiming(kind, 2)) continue;
+            if (std::string_view(mode) == "gh" && !actor.getHitMode) continue;
+            if (std::string_view(mode) == "dd" && !actor.deadMode) continue;
+            auto animation = graphics_.composite("monsters", definition.token, mode,
+                                                 definition.weapon, &equipment, &colors);
+            if (animation.frames.empty() || !animation.completeComposite)
+                throw std::runtime_error("Monster animation incomplete: " + actor.id + "/" + mode);
+            animations.emplace(mode, std::move(animation));
+        }
+        if (auto timing = content.attackTiming(kind);
+            timing && animations.at("a1").count != timing->frames)
+            throw std::runtime_error("Monster AnimData/COF frame mismatch: " + actor.id);
+        if (auto timing = content.attackTiming(kind, 2);
+            timing && animations.at("a2").count != timing->frames)
+            throw std::runtime_error("Monster A2 AnimData/COF frame mismatch: " + actor.id);
+        for (auto mode : {"nu", "wl", "gh", "dt", "dd"})
+            if (auto animation = animations.find(mode); animation != animations.end()) {
+                auto *timing = content.motion(kind, mode);
+                if ((kind == MonsterKind::Brute || kind == MonsterKind::Zombie ||
+                     kind == MonsterKind::Skeleton) && !timing)
+                    throw std::runtime_error("Original monster AnimData entry missing: " +
+                                             actor.id + "/" + mode);
+                if (timing && animation->second.count != timing->frames)
+                    throw std::runtime_error("Monster AnimData/COF frame mismatch: " +
+                                             actor.id + "/" + mode);
+            }
+    };
+    std::map<MonsterKind, const MonsterRecord *> baseActors;
+    for (const auto &[id, actor] : content.monsters()) {
+        auto implementation = monsterImplementation(id);
+        if (implementation.substitute) continue;
+        if (auto [it, inserted] = baseActors.emplace(implementation.kind, &actor); inserted)
+            loadActor(implementation.kind, actor, monsterAnimations[implementation.kind]);
+        else
+            loadActor(implementation.kind, actor, monsterVariantAnimations[id]);
+    }
+    for (int index = 0; index < int(MonsterKind::Count); ++index)
+        if (!baseActors.contains(MonsterKind(index)))
+            throw std::runtime_error("Implemented monster kind has no MPQ actor");
+}
+} // namespace d2x

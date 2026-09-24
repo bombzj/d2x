@@ -37,7 +37,8 @@ class Graphics {
     GpuAnimation single(const std::string &path);
     GpuAnimation composite(const std::string &type, const std::string &token, const std::string &mode,
                            const std::string &weapon,
-                           const std::array<const char *, 16> *equipment = nullptr);
+                           const std::array<const char *, 16> *equipment = nullptr,
+                           const std::array<uint8_t, 256> *colorMap = nullptr);
     void releaseDecoded() { decoded.clear(); }
 };
 } // namespace d2x

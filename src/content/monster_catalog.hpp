@@ -13,7 +13,7 @@ struct MonsterRecord {
     std::string id, base, next, name, token, ai, spawn, sound;
     size_t sourceRow = 0;
     int index = -1, rarity = 0, minGroup = 0, maxGroup = 0, partyMin = 0, partyMax = 0;
-    int sparse = 0, alignment = 0, normalLevel = 0;
+    int sparse = 0, alignment = 0, normalLevel = 0, transLevel = 0;
     std::optional<int> normalAttackRating;
     std::optional<int> normalAttackRating2;
     std::optional<int> normalDefense;

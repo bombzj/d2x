@@ -8,6 +8,15 @@
 
 本项目共用解析放在 `content/monster_difficulty_combat.*`，生成、命中、受击、抗性、经验、掉落与存档走通用会话／模拟流程。`content/monster_animation.*` 按 token／动作／武器类读取 `AnimData.d2`，展示层的 `monster_audio.cpp` 按真实怪物身份读取 `MonSounds`／`Sounds`。后续应将元素模式、原技能／弹体与其施放动作接入共用攻击流程；仅在 `gameplay/monsters/` 为不同 AI 家族实现决策和必要状态。怪物 ID 负责挑选原图形、声音、AI 家族及数据行；同一家族变体不重复实现数值或战斗规则。精英词缀、特殊死亡、复活、召唤和 Boss 阶段另设模块。
 
+| 范围 | 共用解析或执行 | 按怪物区别 |
+| --- | --- | --- |
+| 基础数值 | `MonStats`／`MonLvl` 的三难度等级、生命、A1／A2、命中、防御、暴击、再生、六抗；所有普通身份走同一解析器 | 每个 ID 只提供自己的 MPQ 数据行，不复制公式；缺列应保留已存在的字段 |
+| 出生与死亡 | `Levels`／`MonStats` 群组、生命掷骰、经验、TC 掉落、通用存读档 | 等级区域、怪物身份、特殊召唤或死亡规则由原表指定 |
+| 行为 | 目标、移动、攻击动作事件、伤害结算与 AI 参数读取共用 | 以 `MonStats.AI` 选择 Skeleton／Zombie／Brute 等 AI 家族，再用该 ID 的三难度 `aip1–8`；有技能／召唤／复活时接相应能力模块 |
+| 形象与声音 | token、COF／DCC、`AnimData.d2`、`MonSounds`／`Sounds` 统一加载；`TransLvl` 选择运行时 MPQ `palshift.dat` 颜色映射 | 同一动作可因装备组件、调色级别、动作模式标志和原音效行呈现不同结果 |
+
+`reference/d2moo` 对数值采用共享 `DATATBLS_CalculateMonsterStatsByLevel`，AI 由 `AITHINK_GetAiTableRecord` 分派到不同函数。因此逐个 ID 的工作是核对它是否需要尚未落地的 AI 分支、技能、动作或视觉参数，而不是重做一遍生命／抗性算法。当前仍未覆盖的通用元素攻击、怪物技能、精英修正等需要先补共用能力，再开放依赖它的 ID。
+
 ## 分步边界
 
 1. **普通基础数值：已完成。** 最初由 `content/monster_combat.*` 解析普通难度生命与 A1；当前已由共用三难度解析接管普通怪物。`Simulation` 按真实身份在生成时掷生命、攻击时读取当前模式的原伤害；缺 A1 的远程或特殊记录仍保留其余数值。精英／首领仍沿用旧适配值。敌人最大生命随存档保存并校验，血条使用该实例的最大生命。
@@ -27,6 +36,7 @@
 15. **`brute1` 普通级别三难度收尾：已接源码。** 原 `YE` NU/WL/A1/A2/GH/DT/DD 动作和 `AnimData.d2` 时序，`MonSounds` 与 `Sounds` 的脚步、待机、攻击、受击、死亡音频已按此身份接入；三难度生命、A1/A2 伤害／命中、防御、暴击、生命再生与抗性由上述共用解析读取。地狱原表物理抗性 50%、冰冷抗性 100%；没有原技能或元素攻击。Brute AI 在三难度的 `aip3` 均为 100%，因此失败后的侧移／停顿不会在此 ID 触发；A1/A2 按 `aip4`。自然生成、经验、掉落走既有身份链。独立打包与冒烟结果见开发基线。
 16. **`zombie1` 普通级别三难度收尾：已完成。** 原 `ZM` NU/WL/A1/A2/GH/DT/DD 动作由 `MonStats2` 的模式标志和 `AnimData.d2` 加载，攻击、受击、死亡、脚步和待机音频从该身份的 `MonSounds`／`Sounds` 读取。三难度基础数值、50% 普通难度毒抗、经验与掉落走共享流程。原 Zombie AI 的 `aip1` 接近概率、`aip2` 警觉距离、`aip4` A1/A2 选择沿用现有实现；受击后进入追击，`Levels.LevelName=Burial Grounds` 的区域也强制追击。该 ID 没有原技能、元素攻击或弹体。地图寻路、目标调度与命中反应阈值仍是项目适配，不能声称原版逐帧一致。整包和现场见开发基线。
 17. **`skeleton1` 普通级别三难度收尾：已完成。** 原 `SK` NU/WL/A1/A2/GH/DT/DD 动作由 `MonStats2`、COF/DCC 和 `AnimData.d2` 驱动；`MonSounds` 对该 ID 只列出受击、死亡和脚步，没有攻击或待机音频，因此不补造声音。普通 Skeleton AI 的接近概率、停顿帧数、近身攻击概率和 A1/A2 选择分别使用 `aip1–4`；掷骰复用怪物共享随机流。三难度基础数值、经验与掉落走公共身份链。原 `Skill1=SkeletonRaise` 与 `MonStats2.ResurrectSkill` 描述被其他单位复活时的动作，不由普通 Skeleton AI 主动施放；复活者与尸体交互留给相应怪物阶段。整包和现场见开发基线。
-18. **后续候选：其他普通怪物。** 下一种须按上述清单独立完成；远程弹体与技能、尸体复活、元素伤害等随相应身份逐项实现。精英／首领词缀和 Boss 特性另列阶段。
+18. **`zombie2` 普通级别变体：已接源码。** 与 `zombie1` 共用 `AI=Zombie`、`ZM` 原动作和原音效行，三难度各自读取自己的生命、攻击、抗性、AI 参数、经验和 TC；原行没有主动技能与元素攻击。`MonStats.TransLvl=1` 经 `ZM/COF/palshift.dat` 的第 5 组颜色映射呈现，`zombie1` 的 0 使用第 4 组；该 MPQ 文件前 3 组为保留映射。调色加载为所有已实现怪物的共享路径，`brute1` 的 `TransLvl=4` 同时按原表呈现。整包和现场见开发基线。
+19. **后续候选：其他普通怪物。** `brute2` 的 `aip3=75` 可进入 Brute 近身攻击失败后的侧移分支；本地 D2MOO 对该侧移调用的底层位移参数标记 `TODO`，尚未确认前保留替身。其余远程弹体与技能、尸体复活、元素伤害等按相应身份逐项接入共用能力。精英／首领词缀和 Boss 特性另列阶段。
 
 当前数值计算依据本地 `reference/d2moo/source/D2Common/src/DataTbls/MonsterTbls.cpp` 的 `DATATBLS_CalculateMonsterStatsByLevel` 和 `reference/d2moo/source/D2Game/src/MONSTER/Monster.cpp` 的生命掷骰；AI 规则核对 `reference/d2moo/source/D2Game/src/AI/AiThink.cpp` 的 Skeleton、Zombie、Fallen 与 Brute 分支，动作帧核对 `reference/d2moo/source/D2Common/src/DataTbls/AnimTbls.cpp` 与 `Units.cpp`。区间、AI 参数和动作时序始终从用户挂载的 MPQ 读取，参考仓库不作为运行时数据源。当前目标选择、AI 调度和随机流仍是项目适配，不能视为原版逐帧复刻。
