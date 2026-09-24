@@ -1,8 +1,8 @@
 # 开发与交接
 
-当前源码存档 v38／规则 v66。普通怪物三难度生命、近战伤害／命中、防御、抗性、暴击和再生共用原表解析；普通 `brute1`、`zombie1`、`zombie2` 与 `skeleton1` 使用原动作和 MPQ 所列声音。`zombie2` 共用 Zombie AI，并由 `MonStats.TransLvl` 选择原 `palshift.dat` 颜色映射；其他普通怪物仍保留真实身份与类型替身。分工和下一种怪物的条件见 [怪物实施计划](../MONSTERS.md)；精英、固定首领、Boss 和通用逐帧 AI 调度仍待逐项核对。旧存档不迁移。
+当前源码存档 v39／规则 v67。普通怪物三难度生命、近战伤害／命中、防御、抗性、暴击和再生共用原表解析；普通 `brute1`、`zombie1`、`zombie2`、`zombie3` 与 `skeleton1` 使用原动作和 MPQ 所列声音。僵尸三个变体共用 Zombie AI，并由各自 `MonStats.TransLvl` 选择原 `palshift.dat` 颜色映射；其他普通怪物仍保留真实身份与类型替身。分工和下一种怪物的条件见 [怪物实施计划](../MONSTERS.md)；精英、固定首领、Boss 和通用逐帧 AI 调度仍待逐项核对。旧存档不迁移。
 
-Windows Release 构建通过。完整六 MPQ 目录 `dist/d2x-runtime-20260924-v38-zombie2/` 在邪恶洞窟启动；命名管道定向生成 `zombie1` 与 `zombie2` 均返回 `substitute=false`，并截图 `artifacts/monster-smoke/zombie2-v38-in-view.png` 对照两者颜色。`zombie2` 保存／恢复成功，经正式死亡链获得 44 经验，本次 TC 为 NoDrop。此前 `brute1`、`zombie1`、`skeleton1` 的独立包与现场在忽略的 `dist/`、`artifacts/monster-smoke/` 中；运行目录和截图不提交，不生成 ZIP 或测试脚本／用例。音频播放效果仍待用户实机听验。
+Windows Release 构建通过。完整六 MPQ 目录 `dist/d2x-runtime-20260924-v39-zombie3/` 在邪恶洞窟启动；命名管道定向生成 `zombie2` 与 `zombie3` 均返回 `substitute=false`，截图 `artifacts/monster-smoke/zombie3-v39-in-view.png` 显示原色差。`zombie3` 保存／恢复成功，经正式死亡链获得经验，本次 TC 为 NoDrop。此前 `brute1`、`zombie1`、`skeleton1`、`zombie2` 的独立包与现场在忽略的 `dist/`、`artifacts/monster-smoke/` 中；运行目录和截图不提交，不生成 ZIP 或测试脚本／用例。音频播放效果仍待用户实机听验。
 
 ## 当前交接状态
 

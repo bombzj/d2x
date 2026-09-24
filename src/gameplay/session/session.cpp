@@ -195,7 +195,7 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
     Fingerprint fingerprint;
     fingerprint.add(content_.profile);
     // Bump this rules revision when state interpretation or compiled rules change.
-    fingerprint.add("d2x-session-rules-v66-monster-palette-variants");
+    fingerprint.add("d2x-session-rules-v67-zombie3-complete");
     auto members = archives.used;
     for (const auto &member : members) {
         fingerprint.add(member);

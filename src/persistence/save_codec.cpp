@@ -144,7 +144,7 @@ class Codec {
         }
     }
 };
-// Explicit schema, never compiler struct layout. Player/item field order is save version 38.
+// Explicit schema, never compiler struct layout. Player/item field order is save version 39.
 void fields(Codec &a, EntityId &v) {
     a(v.value);
 }
@@ -261,7 +261,7 @@ Bytes encodeSave(SessionSnapshot snapshot) {
     Codec body;
     body(snapshot);
     auto bytes = body.take();
-    uint32_t version = 38, size = uint32_t(bytes.size()), crc = checksum(bytes);
+    uint32_t version = 39, size = uint32_t(bytes.size()), crc = checksum(bytes);
     Codec header;
     header(version, size, crc);
     auto headerBytes = header.take();
@@ -280,8 +280,8 @@ SessionSnapshot decodeSave(std::span<const uint8_t> bytes) {
     Codec header(bytes.subspan(sizeof(magic), 12));
     uint32_t version = 0, size = 0, crc = 0;
     header(version, size, crc);
-    if (version != 38)
-        throw std::runtime_error("Unsupported D2X save version; monster palette variants require a new version-38 game");
+    if (version != 39)
+        throw std::runtime_error("Unsupported D2X save version; zombie3 rules require a new version-39 game");
     auto payload = bytes.subspan(headerSize);
     if (size != payload.size() || crc != checksum(payload))
         throw std::runtime_error("Save checksum or length mismatch");
