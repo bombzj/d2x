@@ -25,6 +25,7 @@
 13. **普通沉沦魔 A2：已完成基础分支。** `fallen1` 从 MPQ 原 `FAA2HTH` COF/DCC、`AnimData.d2` 动作事件和 `MonStats.A2MinD/A2MaxD/A2TH` 取得第二近战动作与数值；`AI=Fallen` 的 `aip4` 决定 A1／A2。原表 A2 为 15 帧、0.6 秒，命中事件在 0.32 秒；v33 存档可恢复出伤阶段，独立运行目录已截图。仅在原资源与数值齐全时启用。
 14. **Brute 近身攻击机会：已完成基础分支。** `AI=Brute` 在近身时先按 MPQ `aip3` 掷攻击机会；掷骰失败则等待 15 帧，等待状态沿用现有存档字段。原 AI 在失败后还会再次掷骰，并可能执行侧移；侧移所需移动参数尚未核实，暂缓接入。`brute1` 普通难度原表攻击机会为 100%，因此这一步不会改变其近身攻击频率；其他 Brute 变体仍使用类型替身。v34 改变规则指纹，不读取旧档。
 15. **`brute1` 普通级别三难度收尾：已接源码。** 原 `YE` NU/WL/A1/A2/GH/DT/DD 动作和 `AnimData.d2` 时序，`MonSounds` 与 `Sounds` 的脚步、待机、攻击、受击、死亡音频已按此身份接入；三难度生命、A1/A2 伤害／命中、防御、暴击、生命再生与抗性由上述共用解析读取。地狱原表物理抗性 50%、冰冷抗性 100%；没有原技能或元素攻击。Brute AI 在三难度的 `aip3` 均为 100%，因此失败后的侧移／停顿不会在此 ID 触发；A1/A2 按 `aip4`。自然生成、经验、掉落走既有身份链。独立打包与冒烟结果见开发基线。
-16. **后续候选：其他普通怪物。** 下一种须按上述清单独立完成；远程弹体与技能、尸体复活、元素伤害等随相应身份逐项实现。精英／首领词缀和 Boss 特性另列阶段。
+16. **`zombie1` 普通级别三难度收尾：已完成。** 原 `ZM` NU/WL/A1/A2/GH/DT/DD 动作由 `MonStats2` 的模式标志和 `AnimData.d2` 加载，攻击、受击、死亡、脚步和待机音频从该身份的 `MonSounds`／`Sounds` 读取。三难度基础数值、50% 普通难度毒抗、经验与掉落走共享流程。原 Zombie AI 的 `aip1` 接近概率、`aip2` 警觉距离、`aip4` A1/A2 选择沿用现有实现；受击后进入追击，`Levels.LevelName=Burial Grounds` 的区域也强制追击。该 ID 没有原技能、元素攻击或弹体。地图寻路、目标调度与命中反应阈值仍是项目适配，不能声称原版逐帧一致。整包和现场见开发基线。
+17. **后续候选：其他普通怪物。** 下一种须按上述清单独立完成；远程弹体与技能、尸体复活、元素伤害等随相应身份逐项实现。精英／首领词缀和 Boss 特性另列阶段。
 
 当前数值计算依据本地 `reference/d2moo/source/D2Common/src/DataTbls/MonsterTbls.cpp` 的 `DATATBLS_CalculateMonsterStatsByLevel` 和 `reference/d2moo/source/D2Game/src/MONSTER/Monster.cpp` 的生命掷骰；AI 规则核对 `reference/d2moo/source/D2Game/src/AI/AiThink.cpp` 的 Skeleton、Zombie、Fallen 与 Brute 分支，动作帧核对 `reference/d2moo/source/D2Common/src/DataTbls/AnimTbls.cpp` 与 `Units.cpp`。区间、AI 参数和动作时序始终从用户挂载的 MPQ 读取，参考仓库不作为运行时数据源。当前目标选择、AI 调度和随机流仍是项目适配，不能视为原版逐帧复刻。

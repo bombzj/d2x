@@ -44,12 +44,18 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
             equipment[8] = "lit";
             equipment[9] = "lit";
         }
+        const MonsterRecord *actor = nullptr;
+        for (const auto &[id, record] : session.monsterContent().monsters())
+            if (auto implementation = monsterImplementation(id);
+                !implementation.substitute && implementation.kind == kind) {
+                actor = &record;
+                break;
+            }
         for (auto mode : {"nu", "wl", "a1", "dt", "a2", "gh", "dd"}) {
-            if (std::string_view(mode) == "a2" && kind != MonsterKind::Brute &&
-                kind != MonsterKind::Skeleton && kind != MonsterKind::Zombie &&
-                kind != MonsterKind::Fallen) continue;
-            if ((std::string_view(mode) == "gh" || std::string_view(mode) == "dd") &&
-                kind != MonsterKind::Brute) continue;
+            if (std::string_view(mode) == "a2" &&
+                !session.monsterContent().attackTiming(kind, 2)) continue;
+            if (std::string_view(mode) == "gh" && (!actor || !actor->getHitMode)) continue;
+            if (std::string_view(mode) == "dd" && (!actor || !actor->deadMode)) continue;
             auto animation =
                 graphics_.composite("monsters", definition.token, mode, definition.weapon, &equipment);
             if (animation.frames.empty() || !animation.completeComposite)
@@ -61,18 +67,20 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
             timing && monsterAnimations[kind].at("a1").count != timing->frames)
             throw std::runtime_error("Monster AnimData/COF frame mismatch: " +
                                      std::string(definition.token));
-        if (kind == MonsterKind::Brute || kind == MonsterKind::Skeleton ||
-            kind == MonsterKind::Zombie || kind == MonsterKind::Fallen)
-            if (auto timing = session.monsterContent().attackTiming(kind, 2);
-                timing && monsterAnimations[kind].at("a2").count != timing->frames)
+        if (auto timing = session.monsterContent().attackTiming(kind, 2))
+            if (monsterAnimations[kind].at("a2").count != timing->frames)
                 throw std::runtime_error("Monster A2 AnimData/COF frame mismatch: " +
                                          std::string(definition.token));
-        if (kind == MonsterKind::Brute)
-            for (auto mode : {"nu", "wl", "gh", "dt", "dd"}) {
+        for (auto mode : {"nu", "wl", "gh", "dt", "dd"})
+            if (auto animation = monsterAnimations[kind].find(mode);
+                animation != monsterAnimations[kind].end()) {
                 auto *timing = session.monsterContent().motion(kind, mode);
-                if (!timing || monsterAnimations[kind].at(mode).count != timing->frames)
-                    throw std::runtime_error("Brute AnimData/COF frame mismatch: " +
-                                             std::string(mode));
+                if ((kind == MonsterKind::Brute || kind == MonsterKind::Zombie) && !timing)
+                    throw std::runtime_error("Original monster AnimData entry missing: " +
+                                             std::string(definition.token) + mode);
+                if (timing && animation->second.count != timing->frames)
+                    throw std::runtime_error("Monster AnimData/COF frame mismatch: " +
+                                             std::string(definition.token) + mode);
             }
     }
     loadMonsterAudio(archives, session.monsterContent());

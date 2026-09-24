@@ -204,7 +204,7 @@ void SceneView::drawActors() const {
             const auto *deathTiming = session_.monsterContent().motion(e.kind, "dt");
             std::string mode = e.hp <= 0 ? (animations.contains("dd") && deathTiming &&
                                                e.deathAge >= deathTiming->duration ? "dd" : "dt")
-                              : e.stun > 0 && animations.contains("gh") ? "gh"
+                              : (e.stun > 0 || e.hitFlash > 0) && animations.contains("gh") ? "gh"
                               : e.attack > 0 ? (e.attackMode == 2 ? "a2" : "a1")
                               : movingMonsters_.contains(e.id) ? "wl" : "nu";
             auto *anim = &animations.at(mode);
@@ -221,6 +221,9 @@ void SceneView::drawActors() const {
                             : int(view_.animationTime * (e.chill > 0 ? fps * .42f : fps) + item.index);
                 if ((mode == "a1" || mode == "a2") && e.attackDuration > 0)
                     frame = std::clamp(int((e.attackDuration - e.attack) / e.attackDuration * anim->count),
+                                       0, anim->count - 1);
+                if (mode == "gh" && e.hitFlash > 0 && motion)
+                    frame = std::clamp(int((motion->duration - e.hitFlash) / motion->duration * anim->count),
                                        0, anim->count - 1);
                 sprite(anim->frame(direction(monsterLooks_.contains(e.id) ? monsterLooks_.at(e.id)
                                                                          : sim.player.pos - e.pos,

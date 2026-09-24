@@ -2,5 +2,6 @@
 #include "gameplay/model/state.hpp"
 
 namespace d2x {
-bool zombiePursues(Enemy &enemy, const MonsterAiProfile &rules, float distance);
+bool zombiePursues(Enemy &enemy, const MonsterAiProfile &rules, float distance,
+                   bool forcedByLevel);
 } // namespace d2x

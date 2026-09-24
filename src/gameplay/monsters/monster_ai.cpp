@@ -77,7 +77,9 @@ void Simulation::updateMonsters(float dt) {
                 enemy.route.clear();
                 continue;
             }
-            const bool zombieWanders = zombieAi && !zombiePursues(enemy, *ai, distance);
+            const bool zombieWanders = zombieAi && !zombiePursues(
+                enemy, *ai, distance,
+                zombieForcedPursuit_ && zombieForcedPursuit_(state_.area.region));
             const bool wanders = zombieWanders || fallenMove == FallenMovement::Wander;
             Vec destination = player.pos;
             if (wanders) {

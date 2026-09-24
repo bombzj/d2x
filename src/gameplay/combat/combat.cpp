@@ -14,7 +14,10 @@ void Simulation::damageEnemy(Enemy &enemy, float amount, EntityId source, float 
         }
     if (amount <= 0) return;
     enemy.hp = std::max(0.f, enemy.hp - amount);
-    enemy.hitFlash = .12f;
+    enemy.hitFlash = 0;
+    if (enemy.hp > 0)
+        enemy.hitFlash = monsterGetHitDuration_
+            ? monsterGetHitDuration_(enemy.identity).value_or(.12f) : .12f;
     enemy.chill = std::max(enemy.chill, chill);
     if (enemy.hp > 0) emit(EnemyHit{enemy.id, enemy.kind});
     if (enemy.hp == 0) {

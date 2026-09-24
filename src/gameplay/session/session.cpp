@@ -136,6 +136,18 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
             return profile;
         return std::nullopt;
     };
+    simulation_.zombieForcedPursuit_ = [this](RegionId region) {
+        auto level = worldContent_.levels().find(int(region));
+        return level != worldContent_.levels().end() && level->second.name == "Burial Grounds";
+    };
+    simulation_.monsterGetHitDuration_ = [this](const MonsterIdentity &identity)
+        -> std::optional<float> {
+        const auto implementation = monsterImplementation(identity.monster);
+        const auto *record = monsterContent_.find(identity.monster);
+        if (implementation.substitute || !record || !record->getHitMode) return std::nullopt;
+        const auto *motion = monsterContent_.motion(implementation.kind, "gh");
+        return motion ? std::optional<float>(motion->duration) : std::nullopt;
+    };
     simulation_.monsterAttackTiming_ = [this](const Enemy &enemy, int mode)
         -> std::optional<MonsterAttackTiming> {
         const auto *timing = monsterContent_.attackTiming(enemy.kind, mode);
@@ -183,7 +195,7 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
     Fingerprint fingerprint;
     fingerprint.add(content_.profile);
     // Bump this rules revision when state interpretation or compiled rules change.
-    fingerprint.add("d2x-session-rules-v63-generic-combat-brute");
+    fingerprint.add("d2x-session-rules-v64-zombie-complete");
     auto members = archives.used;
     for (const auto &member : members) {
         fingerprint.add(member);

@@ -115,6 +115,8 @@ MonsterCatalog::MonsterCatalog(Archives &archives, const DataTable &stats) {
             throw std::runtime_error("Missing MonStats2 record for " + m.id);
         m.critter = extended.number(extra->second, "critter").value_or(0) != 0;
         m.inert = extended.number(extra->second, "inert").value_or(0) != 0;
+        m.getHitMode = extended.number(extra->second, "mGH").value_or(0) != 0;
+        m.deadMode = extended.number(extra->second, "mDD").value_or(0) != 0;
         if (!indices_.emplace(m.index, m.id).second)
             throw std::runtime_error("Duplicate MonStats hcIdx: " + std::to_string(m.index));
         if (!monsters_.emplace(m.id, m).second) {

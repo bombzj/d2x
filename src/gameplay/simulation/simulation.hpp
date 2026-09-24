@@ -30,6 +30,8 @@ class Simulation {
     std::function<std::optional<int>(const Enemy &, RegionId)> monsterDamageRegen_;
     std::function<std::optional<int>(const Enemy &, RegionId, MonsterDamageType)> monsterResistance_;
     std::function<std::optional<MonsterAiProfile>(const Enemy &)> monsterAi_;
+    std::function<bool(RegionId)> zombieForcedPursuit_;
+    std::function<std::optional<float>(const MonsterIdentity &)> monsterGetHitDuration_;
     std::function<std::optional<MonsterAttackTiming>(const Enemy &, int)> monsterAttackTiming_;
     std::vector<GameEvent> events_;
     Enemy *findEnemy(EntityId id);
