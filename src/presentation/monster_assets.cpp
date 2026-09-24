@@ -28,12 +28,14 @@ void SceneAssets::loadMonsterAnimations(Archives &archives, const GameSession &s
             if (!equipment[8][0]) equipment[8] = "lit";
             if (!equipment[9][0]) equipment[9] = "lit";
         }
-        for (auto mode : {"nu", "wl", "rn", "a1", "dt", "a2", "gh", "dd", "s2"}) {
+        for (auto mode : {"nu", "wl", "rn", "a1", "dt", "a2", "sc", "gh", "dd", "s2"}) {
             if (std::string_view(mode) == "rn" &&
                 ((kind != MonsterKind::CorruptRogue && kind != MonsterKind::CorruptLancer &&
                   kind != MonsterKind::CorruptArcher) ||
                  !actor.runMode)) continue;
             if (std::string_view(mode) == "a2" && !content.attackTiming(kind, 2)) continue;
+            if (std::string_view(mode) == "sc" &&
+                (!actor.castMode || !content.attackTiming(kind, 3))) continue;
             if (std::string_view(mode) == "gh" && !actor.getHitMode) continue;
             if (std::string_view(mode) == "dd" && !actor.deadMode) continue;
             if (std::string_view(mode) == "s2" && (kind != MonsterKind::Fallen || !actor.skill2Mode)) continue;
@@ -58,6 +60,13 @@ void SceneAssets::loadMonsterAnimations(Archives &archives, const GameSession &s
         if (auto timing = content.attackTiming(kind, 2);
             timing && animations.at("a2").count != timing->frames)
             throw std::runtime_error("Monster A2 AnimData/COF frame mismatch: " + actor.id);
+        if (actor.castMode && kind == MonsterKind::Vampire) {
+            const auto *timing = content.attackTiming(kind, 3);
+            if (!timing || !animations.contains("sc") ||
+                animations.at("sc").count != timing->frames ||
+                !actor.spells[0] || !actor.spells[3])
+                throw std::runtime_error("Original monster SC spell resources missing: " + actor.id);
+        }
         if (actor.skill2Mode && kind == MonsterKind::Fallen) {
             const auto *timing = content.motion(kind, "s2");
             if (!timing || animations.at("s2").count != timing->frames)
@@ -72,7 +81,8 @@ void SceneAssets::loadMonsterAnimations(Archives &archives, const GameSession &s
                      kind == MonsterKind::Wraith || kind == MonsterKind::CorruptLancer ||
                      kind == MonsterKind::CorruptArcher || kind == MonsterKind::SkeletonBow ||
                      kind == MonsterKind::Bighead || kind == MonsterKind::HellBovine ||
-                     kind == MonsterKind::SkeletonMage || kind == MonsterKind::Fetish) && !timing)
+                     kind == MonsterKind::SkeletonMage || kind == MonsterKind::Fetish ||
+                     kind == MonsterKind::Vampire) && !timing)
                     throw std::runtime_error("Original monster AnimData entry missing: " +
                                              actor.id + "/" + mode);
                 if (timing && animation->second.count != timing->frames)

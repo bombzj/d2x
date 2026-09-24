@@ -44,6 +44,7 @@ void SceneAssets::loadMonsterAudio(Archives &archives, const MonsterCatalog &mon
         profile.attack2 = resolve(voice->second, "Attack2");
         if (profile.attack2.empty() && record.attack2Projectile)
             profile.attack2 = resolve(voice->second, "Weapon2");
+        profile.skill1 = resolve(voice->second, "Skill1");
         profile.skill2 = resolve(voice->second, "Skill2");
         profile.hit = resolve(voice->second, "HitSound");
         profile.death = resolve(voice->second, "DeathSound");

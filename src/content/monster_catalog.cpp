@@ -1,6 +1,7 @@
 #include "monster_catalog.hpp"
 #include "monster_combat.hpp"
 #include "monster_ai_data.hpp"
+#include "monster_spell_data.hpp"
 #include "monster_animation.hpp"
 #include <algorithm>
 #include <cctype>
@@ -23,6 +24,7 @@ MonsterCatalog::MonsterCatalog(Archives &archives, const DataTable &stats) {
         return;
     DataTable extended(archives.read("data/global/excel/monstats2.txt"));
     DataTable missiles(archives.read("data/global/excel/missiles.txt"));
+    DataTable skills(archives.read("data/global/excel/skills.txt"));
     std::optional<DataTable> levels;
     if (archives.contains("data/global/excel/monlvl.txt"))
         levels.emplace(archives.read("data/global/excel/monlvl.txt"));
@@ -139,6 +141,7 @@ MonsterCatalog::MonsterCatalog(Archives &archives, const DataTable &stats) {
         m.deadMode = extended.number(extra->second, "mDD").value_or(0) != 0;
         m.skill2Mode = extended.number(extra->second, "mS2").value_or(0) != 0;
         m.runMode = extended.number(extra->second, "mRN").value_or(0) != 0;
+        m.castMode = extended.number(extra->second, "mSC").value_or(0) != 0;
         m.baseWeapon = extended.value(extra->second, "BaseW");
         auto firstVariant = [&](std::string_view field) {
             auto variant = std::string(extended.value(extra->second, field));
@@ -152,6 +155,8 @@ MonsterCatalog::MonsterCatalog(Archives &archives, const DataTable &stats) {
         m.leftHandVariant = firstVariant("LHv");
         for (int index = 0; index < 8; ++index)
             m.specialVariants[size_t(index)] = firstVariant("S" + std::to_string(index + 1) + "v");
+        if (m.castMode)
+            m.spells = loadMonsterSpells(archives, stats, row, skills, missiles);
         if (!indices_.emplace(m.index, m.id).second)
             throw std::runtime_error("Duplicate MonStats hcIdx: " + std::to_string(m.index));
         if (!monsters_.emplace(m.id, m).second) {
@@ -169,7 +174,7 @@ MonsterCatalog::MonsterCatalog(Archives &archives, const DataTable &stats) {
             if (!implementation.substitute) actors.emplace(implementation.kind, &record);
         }
         for (const auto &[kind, actor] : actors) {
-            for (auto mode : {"nu", "wl", "rn", "a1", "a2", "gh", "dt", "dd", "s2"}) {
+            for (auto mode : {"nu", "wl", "rn", "a1", "a2", "sc", "gh", "dt", "dd", "s2"}) {
                 auto weapon = monsterModeWeapon(archives, actor->token, mode, actor->baseWeapon);
                 if (weapon.empty()) continue;
                 modeWeapons_[kind].emplace(mode, weapon);
@@ -187,6 +192,11 @@ MonsterCatalog::MonsterCatalog(Archives &archives, const DataTable &stats) {
                                 animations, actor->token, 2, weapon,
                                 actor->attack2Projectile ? 2 : 1))
                             attacks2_.emplace(kind, *timing);
+                } else if (std::string_view(mode) == "sc" &&
+                           kind == MonsterKind::Vampire && actor->castMode) {
+                    if (auto timing = loadMonsterActionTiming(
+                            animations, actor->token, mode, weapon, 2))
+                        casts_.emplace(kind, *timing);
                 } else if (std::string_view(mode) != "s2" || kind == MonsterKind::Fallen) {
                     if (auto timing = loadMonsterMotionTiming(animations, actor->token, mode, weapon))
                         motions_[kind].emplace(mode, *timing);

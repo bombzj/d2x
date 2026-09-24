@@ -52,6 +52,7 @@ target_sources(d2x_content PRIVATE src/content/monster_experience.cpp)
 target_sources(d2x_content PRIVATE src/content/monster_combat.cpp)
 target_sources(d2x_content PRIVATE src/content/monster_difficulty_combat.cpp)
 target_sources(d2x_content PRIVATE src/content/monster_ai_data.cpp)
+target_sources(d2x_content PRIVATE src/content/monster_spell_data.cpp)
 target_sources(d2x_content PRIVATE src/content/monster_animation.cpp)
 target_sources(d2x_content PRIVATE src/content/equipment_modifiers.cpp)
 target_sources(d2x_content PRIVATE src/content/equipment_data.cpp)
@@ -86,6 +87,7 @@ add_library(d2x_gameplay
   src/gameplay/monsters/bighead_ai.cpp
   src/gameplay/monsters/skeleton_mage_ai.cpp
   src/gameplay/monsters/fetish_ai.cpp
+  src/gameplay/monsters/vampire_ai.cpp
   src/gameplay/monsters/zombie_ai.cpp
   src/gameplay/monsters/fallen_ai.cpp src/gameplay/monsters/monster_wander.cpp
   src/gameplay/loot/loot.cpp src/gameplay/consumables/potions.cpp)

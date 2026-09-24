@@ -32,7 +32,14 @@ std::optional<MonsterAttackTiming> loadMonsterAttackTiming(const AnimDataTable &
                                                            std::string_view token, int mode,
                                                            std::string_view weapon, int impactFlag) {
     if (mode != 1 && mode != 2) return std::nullopt;
-    std::string key = std::string(token) + "a" + std::to_string(mode) + std::string(weapon);
+    return loadMonsterActionTiming(animations, token, "a" + std::to_string(mode), weapon,
+                                   impactFlag);
+}
+std::optional<MonsterAttackTiming> loadMonsterActionTiming(const AnimDataTable &animations,
+                                                           std::string_view token,
+                                                           std::string_view mode,
+                                                           std::string_view weapon, int impactFlag) {
+    std::string key = std::string(token) + std::string(mode) + std::string(weapon);
     for (auto &ch : key) ch = char(std::toupper(static_cast<unsigned char>(ch)));
     const auto *record = animations.find(key);
     if (!record || record->frames == 0 || record->frames > 144 ||

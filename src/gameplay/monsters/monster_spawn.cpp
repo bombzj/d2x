@@ -42,6 +42,8 @@ MonsterImplementation monsterImplementation(const std::string &code) {
         return {MonsterKind::SkeletonMage, false};
     if (code == "fetish1")
         return {MonsterKind::Fetish, false};
+    if (code == "vampire5")
+        return {MonsterKind::Vampire, false};
     return {MonsterKind::Fallen, true};
 }
 const char *monsterRankName(MonsterRank rank) {

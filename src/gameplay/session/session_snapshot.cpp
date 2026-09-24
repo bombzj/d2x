@@ -308,7 +308,8 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
                             enemy.attack == 0 && enemy.kind == MonsterKind::Fallen,
                         "original monster S2 duration");
             }
-            require(enemy.attackMode == 1 || enemy.attackMode == 2,
+            require(enemy.attackMode == 1 || enemy.attackMode == 2 ||
+                        enemy.attackMode == 3 || enemy.attackMode == 6,
                     "unknown monster attack mode");
             require(enemy.attack <= enemy.attackDuration &&
                         (enemy.attackImpact == -1 ||
@@ -337,6 +338,13 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
                                 monsterContent_.attackTiming(enemy.kind, 2) && combat &&
                                 (physicalA2 || elementalA2),
                             "unsupported monster A2 mode");
+                } else if (enemy.attackMode >= 3) {
+                    const auto spell = simulation_.monsterSpell_
+                        ? simulation_.monsterSpell_(enemy, enemy.attackMode) : std::nullopt;
+                    require(enemy.kind == MonsterKind::Vampire && spell &&
+                                spell->mode == "SC" &&
+                                monsterContent_.attackTiming(enemy.kind, enemy.attackMode),
+                            "unsupported monster spell mode");
                 }
                 float duration = monsterDefinition(enemy.kind).attackInterval;
                 if (simulation_.monsterAttackTiming_)
@@ -359,7 +367,8 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
                         ai->kind != MonsterAiKind::SkeletonBow &&
                         ai->kind != MonsterAiKind::Bighead &&
                         ai->kind != MonsterAiKind::SkeletonMage &&
-                        ai->kind != MonsterAiKind::Fetish))
+                        ai->kind != MonsterAiKind::Fetish &&
+                        ai->kind != MonsterAiKind::Vampire))
                 require(enemy.aiWait == 0 && !enemy.aiPursuing && !enemy.aiEscaping &&
                             !enemy.aiCommanded && !enemy.aiCircling && !enemy.aiRunning &&
                             enemy.aiAdvanceRemaining == 0 && enemy.skill2Remaining == 0,
@@ -400,9 +409,21 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
                             (!enemy.aiEscaping || (enemy.hp > 0 && enemy.aiPhase == 2 &&
                                                    enemy.attack == 0 && !enemy.route.empty())),
                         "fetish AI state");
+            else if (ai && ai->kind == MonsterAiKind::Vampire)
+                require(enemy.aiWait <= 15.f / 25.f && !enemy.aiPursuing &&
+                            !enemy.aiCommanded && !enemy.aiRunning && !enemy.aiCharged &&
+                            enemy.aiAdvanceRemaining == 0 &&
+                            enemy.aiPhase >= 0 && enemy.aiPhase <= 2 &&
+                            enemy.aiLoop >= 0 && enemy.aiLoop < 30 &&
+                            (!enemy.aiCircling || (enemy.hp > 0 && enemy.attack == 0 &&
+                                                   enemy.aiWait == 0 && !enemy.route.empty())) &&
+                            (!enemy.aiEscaping || (enemy.hp > 0 && enemy.attack == 0 &&
+                                                   !enemy.route.empty())),
+                        "vampire AI state");
             else
                 require(!enemy.aiCircling, "unsupported circling state");
-            if (!ai || ai->kind != MonsterAiKind::Fetish)
+            if (!ai || (ai->kind != MonsterAiKind::Fetish &&
+                        ai->kind != MonsterAiKind::Vampire))
                 require(enemy.aiPhase == 0 && enemy.aiLoop == 0,
                         "non-fetish AI phase");
             if (ai && ai->kind == MonsterAiKind::CorruptRogue)
@@ -481,14 +502,27 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
             if (missile.hostile) {
                 const auto owner = std::find_if(area.enemies.begin(), area.enemies.end(),
                     [&](const Enemy &enemy) { return enemy.id == missile.owner; });
-                const auto projectile = owner != area.enemies.end() && simulation_.monsterProjectile_
-                    ? simulation_.monsterProjectile_(*owner, missile.hostileMode) : std::nullopt;
-                require((missile.hostileMode == 1 || missile.hostileMode == 2) &&
-                            projectile && missile.physical &&
-                            missile.missileId == projectile->id &&
-                            missile.damage == 0 && missile.radius == 0 && missile.chill == 0 &&
-                            missile.remaining <= projectile->lifetime,
-                        "original hostile missile identity");
+                if (missile.hostileMode >= 3) {
+                    const auto spell = owner != area.enemies.end() && simulation_.monsterSpell_
+                        ? simulation_.monsterSpell_(*owner, missile.hostileMode) : std::nullopt;
+                    require((missile.hostileMode == 3 || missile.hostileMode == 6) &&
+                                spell && !missile.physical &&
+                                missile.missileId == spell->projectile.id &&
+                                missile.damage >= spell->minimumDamage &&
+                                missile.damage <= spell->maximumDamage &&
+                                missile.radius == 0 && missile.chill == 0 &&
+                                missile.remaining <= spell->projectile.lifetime,
+                            "original hostile spell identity");
+                } else {
+                    const auto projectile = owner != area.enemies.end() && simulation_.monsterProjectile_
+                        ? simulation_.monsterProjectile_(*owner, missile.hostileMode) : std::nullopt;
+                    require((missile.hostileMode == 1 || missile.hostileMode == 2) &&
+                                projectile && missile.physical &&
+                                missile.missileId == projectile->id &&
+                                missile.damage == 0 && missile.radius == 0 && missile.chill == 0 &&
+                                missile.remaining <= projectile->lifetime,
+                            "original hostile missile identity");
+                }
             } else
                 require(missile.owner == player.id && missile.hostileMode == 0, "missile owner");
             position(missile.pos, areaGrid);

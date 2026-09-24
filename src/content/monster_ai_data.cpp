@@ -20,6 +20,7 @@ std::optional<MonsterAiProfile> loadMonsterAiProfile(const DataTable &stats, siz
     else if (ai == "Bighead") profile.kind = MonsterAiKind::Bighead;
     else if (ai == "SkeletonMage") profile.kind = MonsterAiKind::SkeletonMage;
     else if (ai == "Fetish") profile.kind = MonsterAiKind::Fetish;
+    else if (ai == "Vampire") profile.kind = MonsterAiKind::Vampire;
     else return std::nullopt;
     const std::string suffix = difficulty == 0 ? "" : difficulty == 1 ? "(N)" : "(H)";
     for (int index = 0; index < 8; ++index) {
@@ -67,6 +68,9 @@ std::optional<MonsterAiProfile> loadMonsterAiProfile(const DataTable &stats, siz
     if (profile.kind == MonsterAiKind::Fetish &&
         (!percentage(0) || !percentage(3) || profile.params[1] > 255 ||
          profile.params[2] > 255)) return std::nullopt;
+    if (profile.kind == MonsterAiKind::Vampire &&
+        (!percentage(0) || !percentage(1) || !percentage(3) ||
+         profile.params[2] > 255 || profile.params[4] > 7)) return std::nullopt;
     return profile;
 }
 } // namespace d2x

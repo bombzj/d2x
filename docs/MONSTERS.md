@@ -1,6 +1,6 @@
 # 怪物实施计划
 
-怪物身份、区域名单、分组和掉落继续以运行时 MPQ 为准；类型替身只用于尚未实现的敌对外观。当前优先范围为普通难度第一幕 `Levels.txt` 的 `mon1–mon10`：55 个唯一身份，Fetish 完成后尚余 8 个。其他幕／难度的变体预留。普通级别怪物共用 `MonStats`／`MonLvl` 的三难度生命、A1／A2、命中、防御、暴击、再生和抗性解析；某行没有 A1 近战列时仍读取其余字段。共享数值只需集中核对，不逐个怪物重复验算。逐个核对原 `MonStats.Id`，同一家族的第一幕变体完成后统一打完整 MPQ 运行目录、冒烟并提交；精英、固定首领与 Boss 单列。通用地图寻路、目标调度和画面帧时钟仍是项目适配，验收不声称逐帧等同原引擎。
+怪物身份、区域名单、分组和掉落继续以运行时 MPQ 为准；类型替身只用于尚未实现的敌对外观。当前优先范围为普通难度第一幕 `Levels.txt` 的 `mon1–mon10`：55 个唯一身份，Vampire 完成后尚余 7 个。其他幕／难度的变体预留。普通级别怪物共用 `MonStats`／`MonLvl` 的三难度生命、A1／A2、命中、防御、暴击、再生和抗性解析；某行没有 A1 近战列时仍读取其余字段。共享数值只需集中核对，不逐个怪物重复验算。逐个核对原 `MonStats.Id`，同一家族的第一幕变体完成后统一打完整 MPQ 运行目录、冒烟并提交；精英、固定首领与 Boss 单列。通用地图寻路、目标调度和画面帧时钟仍是项目适配，验收不声称逐帧等同原引擎。
 
 ## 共用与专属边界
 
@@ -17,7 +17,7 @@
 
 `reference/d2moo` 对数值采用共享 `DATATBLS_CalculateMonsterStatsByLevel`，AI 由 `AITHINK_GetAiTableRecord` 分派到不同函数。因此逐个 ID 的工作是核对它是否需要尚未落地的 AI 分支、技能、动作或视觉参数，而不是重做一遍生命／抗性算法。当前仍未覆盖的通用元素攻击、怪物技能、精英修正等需要先补共用能力，再开放依赖它的 ID。
 
-已启用原外观的 `fallen1–5`、`corruptrogue1–5`、`cr_lancer1–3`、`cr_archer1–4`、`sk_archer1–3`、`bighead1–4`、`hellbovine`、`skmage_fire1–2`、`skmage_ltng1–2`、`fetish1`、`brute1–5`、`skeleton1–5`、`zombie1–5`、`goatman1–5`、`quillrat1–5` 与 `wraith1–3` 已核对共用路径：普通级别的生命、命中、防御、伤害、抗性、元素由 `GameSession::resolvedMonsterCombat` 按真实 ID 提供，攻击与死亡结算不按 ID 分支；动画按原 token／模式／调色读 MPQ，声音按各自 `MonSound` 读 MPQ。声音行存在性现对所有启用的敌对外观统一校验，原行未列出的具体音效留空。
+已启用原外观的 `fallen1–5`、`corruptrogue1–5`、`cr_lancer1–3`、`cr_archer1–4`、`sk_archer1–3`、`bighead1–4`、`hellbovine`、`skmage_fire1–2`、`skmage_ltng1–2`、`fetish1`、`vampire5`、`brute1–5`、`skeleton1–5`、`zombie1–5`、`goatman1–5`、`quillrat1–5` 与 `wraith1–3` 已核对共用路径：普通级别的生命、命中、防御、伤害、抗性、元素由 `GameSession::resolvedMonsterCombat` 按真实 ID 提供，攻击与死亡结算不按 ID 分支；动画按原 token／模式／调色读 MPQ，声音按各自 `MonSound` 读 MPQ。声音行存在性现对所有启用的敌对外观统一校验，原行未列出的具体音效留空。
 
 ## 分步边界
 
@@ -81,6 +81,7 @@
 58. **`hellbovine`（地狱之牛）第一幕普通身份：已完成。** `MonStats.AI=Skeleton`，与普通骷髅共用按各 ID、各难度 `aip1–4` 的接近、停顿、近身 A1／A2 选择；原 `EC` NU/WL/A1/A2/GH/DT/DD、`MonStats2.RHv` 首个 `hal` 长柄武器组件、`MonSounds.hellbovine`、`AnimData.d2` 两种命中帧和战斗、经验、掉落均从 MPQ 读取。该身份 `TransLvl=0` 且原资源无 `palshift.dat`，直接使用 DCC 原色；非零等级仍要求原调色资源。完整六 MPQ 目录在邪恶洞窟冒烟，原形截图、v75 A2 出伤前存读档、生命 55→23 和击杀经验 15 已确认。牛场任务入口与精英另列阶段。
 59. **`skmage_fire1–2`／`skmage_ltng1–2`（骷髅法师）第一幕普通变体：已完成。** `MonStats.AI=SkeletonMage` 对应本地 D2MOO 的 `AITHINK_Fn064_SkeletonMage`；射击、接近、过近撤退、绕行和停顿参数从各 ID、各难度 `aip1–8` 读取，决策在 `skeleton_mage_ai.*`。原 `SK` NU/WL/A1/GH/DT/DD、`MonStats2.S1v–S8v` 元素层、`MonSounds.sk_mage`、`AnimData.d2` A1 事件 2、`MissA1=skmage3/4` 和 `El1` 火／闪电伤害均从 MPQ 读取；无 A1 物理列时共享弹体不加回退物理伤害。普通 SkeletonMage AI 不读取 `Skill1=SkeletonRaise`，该槽用于其他复活者交互。完整六 MPQ 目录在邪恶洞窟冒烟，四只原形／元素层及弹体截图、v75 两枚弹体飞行中和绕行状态存读档、生命 55→36、击杀经验 38／9／38／9 与后三只原掉落已确认。第一幕以外变体仍保留替身。
 60. **`fetish1`（小矮人）第一幕普通身份：已完成。** `MonStats.AI=Fetish` 对应本地 D2MOO 的 `AITHINK_Fn030_Fetish`；近身攻击几率、停顿帧、攻击循环次数和玩家低生命阈值读取该 ID、各难度 `aip1–4`。独立 `fetish_ai.*` 保存接近、连续攻击、撤退三阶段及循环计数；撤退和绕行复用通用地图路径。原 `FE` NU/WL/A1/GH/DT/DD、`BaseW=1hs`、`RHv=fbl` 首组件、`MonSounds.fetish` 与 `AnimData.d2` A1 命中帧从运行时 MPQ 读取。普通 Fetish AI 不调用该行的 `Skill1=SkeletonRaise`。完整六 MPQ 目录在邪恶洞窟冒烟，原形截图、近战后角色生命 55→24、撤退中 v76 存读档、击杀获得 14 经验；本次掉落为空。原引擎逐帧 AI 调度与逃跑路径仍是项目适配。
-61. **后续第一幕名单。** 继续按运行时 `Levels.mon1–mon10` 核对 `fallenshaman1–4`、`crownest1–2`、`arach1`、`vampire5`。先核对 MPQ 动作、声音、技能／弹体及本地 D2MOO 规则，补齐家族共用能力后开放身份。召唤、复活、法术及 Boss 特性各自处理；精英／首领词缀另列阶段。
+61. **`vampire5`（吸血鬼）第一幕普通身份：已完成。** `MonStats.AI=Vampire` 对应本地 D2MOO 的 `AITHINK_Fn028_Vampire`；近战／施法几率、活跃距离和技能标志按各难度 `aip1–5` 读取。普通难度技能标志为 1，分支只选 `Skill1=VampireFireball` 和 `Skill4=VampireMissile`，不施放原行另列的火墙／陨石。`content/monster_spell_data.*` 从运行时 `Skills.txt.srvmissile`、`Missiles.txt` 解析原 ID、速度、寿命、火焰伤害和 DCC；`VA` 的 `SC` COF／DCC、`AnimData.d2` 事件 2、`MonSounds.Skill1` 也从 MPQ 读取。`vampire_ai.*` 处理近战、施法、绕行与低于 33% 生命时后撤；通用敌方弹体保存施法槽、原 ID 和掷出的伤害，按角色火抗结算。完整六 MPQ 目录在邪恶洞窟冒烟，原形和两种施法截图、飞行中 v77 存读档、角色生命 55→47、低血量撤退中存读档与击杀经验 3 已确认；经验受等级差缩减，本次无掉落。原引擎逐帧调度、路径和多目标选择仍是项目适配，其他 Vampire 技能标志待对应怪物阶段。
+62. **后续第一幕名单。** 继续按运行时 `Levels.mon1–mon10` 核对 `fallenshaman1–4`、`crownest1–2`、`arach1`。先核对 MPQ 动作、声音、技能／弹体及本地 D2MOO 规则，补齐家族共用能力后开放身份。召唤、复活、法术及 Boss 特性各自处理；精英／首领词缀另列阶段。
 
 当前数值计算依据本地 `reference/d2moo/source/D2Common/src/DataTbls/MonsterTbls.cpp` 的 `DATATBLS_CalculateMonsterStatsByLevel` 和 `reference/d2moo/source/D2Game/src/MONSTER/Monster.cpp` 的生命掷骰；AI 规则核对 `reference/d2moo/source/D2Game/src/AI/AiThink.cpp` 的 Skeleton、Zombie、Fallen 与 Brute 分支，动作帧核对 `reference/d2moo/source/D2Common/src/DataTbls/AnimTbls.cpp` 与 `Units.cpp`。区间、AI 参数和动作时序始终从用户挂载的 MPQ 读取，参考仓库不作为运行时数据源。当前目标选择、AI 调度和随机流仍是项目适配，不能视为原版逐帧复刻。

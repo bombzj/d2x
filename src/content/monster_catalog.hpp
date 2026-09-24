@@ -26,10 +26,11 @@ struct MonsterRecord {
     std::string attack1ProjectileArt;
     std::optional<MonsterProjectile> attack2Projectile;
     std::string attack2ProjectileArt;
+    std::array<std::optional<MonsterSpell>, 4> spells;
     std::array<std::optional<MonsterAiProfile>, 3> aiProfiles;
     bool enabled = false, randomSpawn = false, ranged = false, placeSpawn = false;
     bool killable = false, npc = false, critter = false, inert = false, boss = false;
-    bool getHitMode = false, deadMode = false, skill2Mode = false, runMode = false;
+    bool getHitMode = false, deadMode = false, skill2Mode = false, runMode = false, castMode = false;
     std::array<std::string, 2> minions;
     bool hostile() const { return enabled && killable && !npc && !critter && !inert && alignment == 0; }
 };
@@ -49,6 +50,7 @@ class MonsterCatalog {
     std::map<std::string, MonsterRecord, std::less<>> monsters_;
     std::map<MonsterKind, MonsterAttackTiming> attacks_;
     std::map<MonsterKind, MonsterAttackTiming> attacks2_;
+    std::map<MonsterKind, MonsterAttackTiming> casts_;
     std::map<MonsterKind, std::map<std::string, MonsterMotionTiming, std::less<>>> motions_;
     std::map<MonsterKind, std::map<std::string, std::string, std::less<>>> modeWeapons_;
     std::map<int, std::string> indices_;
@@ -66,7 +68,7 @@ class MonsterCatalog {
     const auto &diagnostics() const { return diagnostics_; }
     const auto &monsters() const { return monsters_; }
     const MonsterAttackTiming *attackTiming(MonsterKind kind, int mode = 1) const {
-        const auto &source = mode == 2 ? attacks2_ : attacks_;
+        const auto &source = mode >= 3 ? casts_ : mode == 2 ? attacks2_ : attacks_;
         auto found = source.find(kind);
         return found == source.end() ? nullptr : &found->second;
     }

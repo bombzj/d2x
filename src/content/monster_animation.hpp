@@ -14,4 +14,8 @@ std::optional<MonsterMotionTiming> loadMonsterMotionTiming(const AnimDataTable &
 std::optional<MonsterAttackTiming> loadMonsterAttackTiming(const AnimDataTable &animations,
                                                            std::string_view token, int mode,
                                                            std::string_view weapon, int impactFlag = 1);
+std::optional<MonsterAttackTiming> loadMonsterActionTiming(const AnimDataTable &animations,
+                                                           std::string_view token,
+                                                           std::string_view mode,
+                                                           std::string_view weapon, int impactFlag);
 } // namespace d2x

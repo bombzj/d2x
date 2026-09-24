@@ -52,7 +52,7 @@ struct MonsterNormalCombat {
 };
 enum class MonsterAiKind { Skeleton, Brute, Zombie, Fallen, CorruptRogue, Goatman, QuillRat,
                            Wraith, CorruptLancer, CorruptArcher, SkeletonBow, Bighead,
-                           SkeletonMage, Fetish };
+                           SkeletonMage, Fetish, Vampire };
 struct MonsterAiProfile {
     MonsterAiKind kind;
     std::array<int, 8> params{};
@@ -66,6 +66,11 @@ struct MonsterProjectile {
     int id = -1;
     float velocity = 0, lifetime = 0;
     int minimumDamage = 0, maximumDamage = 0, sourceDamage = 0;
+};
+struct MonsterSpell {
+    std::string sourceSkill, mode, art, element;
+    MonsterProjectile projectile;
+    int minimumDamage = 0, maximumDamage = 0;
 };
 // Explicit implementation registry: add real actors here as their behaviour/assets land.
 MonsterImplementation monsterImplementation(const std::string &code);

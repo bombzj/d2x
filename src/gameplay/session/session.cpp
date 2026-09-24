@@ -167,6 +167,8 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
             return profile;
         if (profile->kind == MonsterAiKind::Fetish && enemy.kind == MonsterKind::Fetish)
             return profile;
+        if (profile->kind == MonsterAiKind::Vampire && enemy.kind == MonsterKind::Vampire)
+            return profile;
         return std::nullopt;
     };
     simulation_.zombieForcedPursuit_ = [this](RegionId region) {
@@ -214,6 +216,15 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
             return record->attack2Projectile;
         return std::nullopt;
     };
+    simulation_.monsterSpell_ = [this](const Enemy &enemy, int mode)
+        -> std::optional<MonsterSpell> {
+        if (enemy.kind != MonsterKind::Vampire || mode < 3 || mode > 6)
+            return std::nullopt;
+        const auto *record = monsterContent_.find(enemy.identity.monster);
+        if (!record || monsterImplementation(enemy.identity.monster).substitute ||
+            !record->castMode) return std::nullopt;
+        return record->spells[size_t(mode - 3)];
+    };
     worldSelection.difficulty = population.difficulty;
     auto plan = planWorld(archives, worldContent_, worldSelection);
     regions_ = loadRegions(archives, ids_, plan.regions, monsterContent_);
@@ -256,7 +267,7 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
     Fingerprint fingerprint;
     fingerprint.add(content_.profile);
     // Bump this rules revision when state interpretation or compiled rules change.
-    fingerprint.add("d2x-session-rules-v108-fetish");
+    fingerprint.add("d2x-session-rules-v109-vampire-spells");
     auto members = archives.used;
     for (const auto &member : members) {
         fingerprint.add(member);

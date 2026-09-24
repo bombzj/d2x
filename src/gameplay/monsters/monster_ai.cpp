@@ -13,6 +13,7 @@
 #include "gameplay/monsters/bighead_ai.hpp"
 #include "gameplay/monsters/skeleton_mage_ai.hpp"
 #include "gameplay/monsters/fetish_ai.hpp"
+#include "gameplay/monsters/vampire_ai.hpp"
 #include "gameplay/monsters/monster_wander.hpp"
 #include <algorithm>
 
@@ -75,7 +76,9 @@ void Simulation::updateMonsters(float dt) {
                 enemy.attackImpact -= dt;
                 if (enemy.attackImpact <= 0) {
                     enemy.attackImpact = -1;
-                    if (monsterProjectile_ && monsterProjectile_(enemy, enemy.attackMode))
+                    if (enemy.attackMode >= 3)
+                        launchMonsterSpell(enemy);
+                    else if (monsterProjectile_ && monsterProjectile_(enemy, enemy.attackMode))
                         launchMonsterProjectile(enemy);
                     else
                         resolveMonsterAttack(enemy);
@@ -127,6 +130,7 @@ void Simulation::updateMonsters(float dt) {
                                 (enemy.kind == MonsterKind::Bighead ? .5f :
                                  enemy.kind == MonsterKind::SkeletonMage ? .25f :
                                  enemy.kind == MonsterKind::Fetish ? .5f :
+                                 enemy.kind == MonsterKind::Vampire ? 1.f :
                                  enemy.kind == MonsterKind::QuillRat ? 1.f : 1.5f) *
                                 (enemy.chill > 0 ? .42f : 1.f);
             fallenAdvanceEscape(enemy, *grid_, speed, dt);
@@ -150,7 +154,9 @@ void Simulation::updateMonsters(float dt) {
                     other.aiCommanded = true;
             continue;
         }
-        if (distance >= definition.sightRange) {
+        if (distance >= (ai && ai->kind == MonsterAiKind::Vampire
+                             ? std::max(definition.sightRange, float(ai->params[2]) + 2.f)
+                             : definition.sightRange)) {
             enemy.route.clear();
             enemy.rethink = 0;
             enemy.aiPursuing = false;
@@ -168,7 +174,34 @@ void Simulation::updateMonsters(float dt) {
         const bool bigheadAi = ai && ai->kind == MonsterAiKind::Bighead;
         const bool skeletonMageAi = ai && ai->kind == MonsterAiKind::SkeletonMage;
         const bool fetishAi = ai && ai->kind == MonsterAiKind::Fetish;
+        const bool vampireAi = ai && ai->kind == MonsterAiKind::Vampire;
         bool clear = grid_->segment(enemy.pos, player.pos);
+        if (vampireAi) {
+            const bool inCombat = clear && distance < definition.attackRange &&
+                                  player.leapTime <= 0;
+            const auto action = vampireThink(enemy, *ai, distance, inCombat);
+            if (action == VampireAction::Retreat) {
+                if (!monsterStartRetreat(enemy, player.pos, 8, *grid_))
+                    enemy.aiWait = 10.f / 25.f;
+                continue;
+            }
+            if (action == VampireAction::Circle) {
+                if (!monsterStartCircle(enemy, player.pos, 4, *grid_))
+                    enemy.aiWait = 10.f / 25.f;
+                continue;
+            }
+            if (action == VampireAction::Attack || action == VampireAction::CastFirst ||
+                action == VampireAction::CastFourth) {
+                enemy.route.clear();
+                beginMonsterAttack(enemy, action == VampireAction::CastFirst ? 3 :
+                                          action == VampireAction::CastFourth ? 6 : 1);
+                continue;
+            }
+            if (action == VampireAction::Idle) {
+                enemy.route.clear();
+                continue;
+            }
+        }
         if (fetishAi) {
             const bool inCombat = clear && distance < definition.attackRange &&
                                   player.leapTime <= 0;
@@ -402,7 +435,7 @@ void Simulation::updateMonsters(float dt) {
             if (lancerAi) enemy.aiRunning = false;
             if (archerAi) enemy.aiRunning = false;
         }
-        if (!skeletonBowAi && !skeletonMageAi && !bigheadAi && !fetishAi &&
+        if (!skeletonBowAi && !skeletonMageAi && !bigheadAi && !fetishAi && !vampireAi &&
             (player.pos - enemy.pos).length() < definition.attackRange &&
             player.leapTime <= 0 && grid_->segment(enemy.pos, player.pos)) {
             if (skeletonAi && !skeletonAttacks(enemy, *ai))

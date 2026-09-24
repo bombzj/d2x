@@ -141,7 +141,8 @@ void SceneView::advance(float dt) {
                     assets_.audio.play("swing");
                 } else if constexpr (std::is_same_v<T, EnemyAttacked>) {
                     if (auto sound = soundFor(value.attacker))
-                        assets_.audio.play(value.mode == 2 ? sound->attack2 : sound->attack1);
+                        assets_.audio.play(value.mode >= 3 ? sound->skill1 :
+                                           value.mode == 2 ? sound->attack2 : sound->attack1);
                 } else if constexpr (std::is_same_v<T, EnemySkill2>) {
                     if (auto sound = soundFor(value.caster)) assets_.audio.play(sound->skill2);
                 } else if constexpr (std::is_same_v<T, EnemyHit>) {
