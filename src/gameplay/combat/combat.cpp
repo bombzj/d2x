@@ -18,6 +18,9 @@ void Simulation::damageEnemy(Enemy &enemy, float amount, EntityId source, float 
     if (enemy.hp > 0)
         enemy.hitFlash = monsterGetHitDuration_
             ? monsterGetHitDuration_(enemy.identity).value_or(.12f) : .12f;
+    if (enemy.hp > 0 && monsterAi_)
+        if (auto ai = monsterAi_(enemy); ai && ai->kind == MonsterAiKind::QuillRat)
+            enemy.aiRetaliate = true;
     if (enemy.skill2Remaining > 0)
         enemy.skill2Remaining = enemy.skill2Duration = 0;
     enemy.chill = std::max(enemy.chill, chill);
@@ -29,6 +32,7 @@ void Simulation::damageEnemy(Enemy &enemy, float amount, EntityId source, float 
         enemy.aiCommanded = false;
         enemy.aiCircling = false;
         enemy.aiRunning = false;
+        enemy.aiRetaliate = false;
         enemy.aiAdvanceRemaining = 0;
         enemy.attack = enemy.attackDuration = 0;
         enemy.attackImpact = -1;
@@ -75,6 +79,27 @@ void Simulation::updateMissiles(float dt) {
     auto &area = state_.area;
     for (auto &m : area.missiles) {
         auto next = m.pos + m.velocity * dt;
+        if (m.hostile) {
+            if (!grid_->segment(m.pos, next)) {
+                m.remaining = 0;
+                continue;
+            }
+            const Vec motion = next - m.pos;
+            const float lengthSquared = motion.x * motion.x + motion.y * motion.y;
+            const Vec offset = state_.player.pos - m.pos;
+            const float projection = lengthSquared > 0 ?
+                std::clamp((offset.x * motion.x + offset.y * motion.y) / lengthSquared, 0.f, 1.f) : 0.f;
+            const Vec closest = m.pos + motion * projection;
+            const bool struck = !state_.player.dead &&
+                (state_.player.pos - closest).length() < 1.2f;
+            m.pos = struck ? closest : next;
+            m.remaining -= dt;
+            if (struck) {
+                m.remaining = 0;
+                if (auto *source = findEnemy(m.owner)) resolveMonsterAttack(*source, 2, true);
+            }
+            continue;
+        }
         if (!m.physical && m.missileId >= 0) {
             const bool wall = !grid_->segment(m.pos, next);
             if (wall) {

@@ -9,10 +9,10 @@ unsigned roll(Enemy &enemy, unsigned limit) {
     return uint32_t(enemy.combatRandom) % limit;
 }
 } // namespace
-void Simulation::applyMonsterElements(Enemy &enemy, const MonsterNormalCombat &combat) {
+void Simulation::applyMonsterElements(Enemy &enemy, const MonsterNormalCombat &combat, int mode) {
     auto &player = state_.player;
     for (const auto &slot : combat.elements) {
-        if (!slot || slot->mode != (enemy.attackMode == 2 ? "A2" : "A1")) continue;
+        if (!slot || slot->mode != (mode == 2 ? "A2" : "A1")) continue;
         if (slot->chance < 100 && roll(enemy, 100) >= unsigned(slot->chance)) continue;
         int resistance = 0;
         if (slot->type == "fire") resistance = characterStats_.fireResist + resistancePenalty_;

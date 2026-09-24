@@ -1,8 +1,8 @@
 # 开发与交接
 
-当前源码存档 v65／规则 v93。普通怪物三难度生命、近战伤害／命中、防御、抗性、暴击、再生和 `El1–3` 按原表共用解析；`brute1–5`、`zombie1–5`、`skeleton1–5`、`fallen1–5`、`corruptrogue1–5`、`goatman1–5` 使用原动作及 MPQ 所列声音。僵尸、骷髅、沉沦魔、Brute、Corrupt Rogue 和 Goatman 按原 AI 家族分别决策，按 `MonStats.TransLvl` 选择原 `palshift.dat` 颜色映射；火焰、闪电、冰冷与毒素命中接通用元素攻击，冰冷与毒素保存角色持续状态。Fallen 家族在原死亡动作期间见附近尸体后逃离，使用原 AI 参数发同组命令并播放 MPQ S2 喊叫；Brute 在两次攻击掷骰后可绕目标行走；Corrupt Rogue 使用 MPQ 接近／停顿、跑步概率及原 RN 动作。其他普通怪物仍保留真实身份与类型替身。分工和下一种怪物的条件见 [怪物实施计划](../MONSTERS.md)；精英、固定首领、Boss 和通用逐帧 AI 调度仍待逐项核对。旧存档不迁移。
+当前源码存档 v66／规则 v94。普通怪物三难度生命、近战伤害／命中、防御、抗性、暴击、再生和 `El1–3` 按原表共用解析；`brute1–5`、`zombie1–5`、`skeleton1–5`、`fallen1–5`、`corruptrogue1–5`、`goatman1–5`、`quillrat1` 使用原动作及 MPQ 所列声音。僵尸、骷髅、沉沦魔、Brute、Corrupt Rogue、Goatman 和 Quill Rat 按原 AI 家族分别决策，按 `MonStats.TransLvl` 选择原 `palshift.dat` 颜色映射；火焰、闪电、冰冷与毒素命中接通用元素攻击，冰冷与毒素保存角色持续状态。Fallen 家族在原死亡动作期间见附近尸体后逃离，使用原 AI 参数发同组命令并播放 MPQ S2 喊叫；Brute 在两次攻击掷骰后可绕目标行走；Corrupt Rogue 使用 MPQ 接近／停顿、跑步概率及原 RN 动作。其他普通怪物仍保留真实身份与类型替身。分工和下一种怪物的条件见 [怪物实施计划](../MONSTERS.md)；精英、固定首领、Boss 和通用逐帧 AI 调度仍待逐项核对。旧存档不迁移。
 
-Windows Release 构建通过。完整六 MPQ 目录 `dist/d2x-runtime-20260924-v65-goatman5/` 在邪恶洞窟启动；`goatman5` 原形 `substitute=false`，截图保存于 `artifacts/monster-smoke/goatman5-v65-in-view.png`，v65 存读档正常，击杀获得 16 经验。五个 Goatman 变体共用 MPQ 动作武器类选择、AI、声音、战斗数值、经验和掉落路径，最后一个 ID 没有主动技能或元素攻击。运行目录与截图不提交，不生成 ZIP 或测试脚本／用例。音频播放效果仍待用户实机听验。
+Windows Release 构建通过。完整六 MPQ 目录 `dist/d2x-runtime-20260924-v66-quillrat1/` 在邪恶洞窟启动；`quillrat1` 原形 `substitute=false`，原怪物与 A2 弹体截图在 `artifacts/monster-smoke/quillrat1-v66-projectile.png`。MPQ A2 的 13 帧和事件 2 发射点已读取；飞行中的敌方 `spike1` 存读档正常，命中使角色生命 55→53，随后怪物后撤，击杀存档记录经验增加 21。受击后待 A2 回击状态可保存恢复。高难度 A2 毒素由共享元素路径处理，未单独量测。运行目录与截图不提交，不生成 ZIP 或测试脚本／用例。音频播放效果仍待用户实机听验。
 
 ## 当前交接状态
 

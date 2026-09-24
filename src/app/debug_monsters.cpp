@@ -2,6 +2,7 @@
 #include "gameplay/session/session.hpp"
 #include "presentation/scene_view.hpp"
 #include <nlohmann/json.hpp>
+#include <algorithm>
 #include <cmath>
 #include <set>
 #include <stdexcept>
@@ -82,7 +83,11 @@ void listMonsters(Json &result, const Json &request, const GameSession &session,
             {"aiCommanded", enemy.aiCommanded},
             {"aiCircling", enemy.aiCircling},
             {"aiRunning", enemy.aiRunning}, {"aiAdvanceRemaining", enemy.aiAdvanceRemaining},
+            {"aiRetaliate", enemy.aiRetaliate},
             {"skill2Remaining", enemy.skill2Remaining},
+            {"hostileProjectiles", std::count_if(session.state().area.missiles.begin(),
+                session.state().area.missiles.end(),
+                [&](const Missile &missile) { return missile.hostile && missile.owner == enemy.id; })},
             {"attackMode", enemy.attackMode}, {"attackRemaining", enemy.attack},
             {"impactRemaining", enemy.attackImpact}};
         const auto *record = session.monsterContent().find(enemy.identity.monster);

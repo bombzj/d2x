@@ -20,6 +20,8 @@ MonsterImplementation monsterImplementation(const std::string &code) {
     if (code == "goatman1" || code == "goatman2" || code == "goatman3" || code == "goatman4" ||
         code == "goatman5")
         return {MonsterKind::Goatman, false};
+    if (code == "quillrat1")
+        return {MonsterKind::QuillRat, false};
     return {MonsterKind::Fallen, true};
 }
 const char *monsterRankName(MonsterRank rank) {

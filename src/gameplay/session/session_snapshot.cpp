@@ -322,8 +322,10 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
                     const auto ai = simulation_.monsterAi_ ? simulation_.monsterAi_(enemy) : std::nullopt;
                     const auto combat = simulation_.monsterNormalCombat_
                         ? simulation_.monsterNormalCombat_(enemy.identity, area.region) : std::nullopt;
+                    const auto *source = monsterContent_.find(enemy.identity.monster);
                     require((enemy.kind == MonsterKind::Brute || enemy.kind == MonsterKind::Skeleton ||
-                             enemy.kind == MonsterKind::Zombie || enemy.kind == MonsterKind::Fallen) && ai &&
+                             enemy.kind == MonsterKind::Zombie || enemy.kind == MonsterKind::Fallen ||
+                             (enemy.kind == MonsterKind::QuillRat && source && source->attack2Projectile)) && ai &&
                                 monsterContent_.attackTiming(enemy.kind, 2) && combat &&
                                 combat->attack2Damage && simulation_.monsterAccuracy_ &&
                                 simulation_.monsterAccuracy_(enemy, area.region, 2),
@@ -343,7 +345,8 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
             auto ai = simulation_.monsterAi_ ? simulation_.monsterAi_(enemy) : std::nullopt;
             if (!ai || (ai->kind != MonsterAiKind::Skeleton && ai->kind != MonsterAiKind::Zombie &&
                         ai->kind != MonsterAiKind::Fallen && ai->kind != MonsterAiKind::Brute &&
-                        ai->kind != MonsterAiKind::CorruptRogue && ai->kind != MonsterAiKind::Goatman))
+                        ai->kind != MonsterAiKind::CorruptRogue && ai->kind != MonsterAiKind::Goatman &&
+                        ai->kind != MonsterAiKind::QuillRat))
                 require(enemy.aiWait == 0 && !enemy.aiPursuing && !enemy.aiEscaping &&
                             !enemy.aiCommanded && !enemy.aiCircling && !enemy.aiRunning &&
                             enemy.aiAdvanceRemaining == 0 && enemy.skill2Remaining == 0,
@@ -367,6 +370,14 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
                 require(enemy.aiWait <= float(ai->params[1]) / 25.f &&
                             !enemy.aiPursuing && !enemy.aiEscaping && !enemy.aiCommanded,
                         "goatman AI state");
+            if (ai && ai->kind == MonsterAiKind::QuillRat)
+                require(enemy.aiWait == 0 && !enemy.aiPursuing && !enemy.aiCommanded &&
+                            (!enemy.aiEscaping || (enemy.hp > 0 && enemy.attack == 0 &&
+                                                   !enemy.route.empty())) &&
+                            (!enemy.aiRetaliate || enemy.hp > 0),
+                        "quill rat AI state");
+            else
+                require(!enemy.aiRetaliate, "non-quill-rat retaliation state");
             if (enemy.aiRunning) {
                 const auto *record = monsterContent_.find(enemy.identity.monster);
                 require(record && record->runMode && record->runVelocity &&
@@ -392,7 +403,19 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
         require(area.kills == dead, "area kill count");
         for (const auto &missile : area.missiles) {
             registerId(missile.id);
-            require(missile.owner == player.id, "missile owner");
+            if (missile.hostile) {
+                const auto owner = std::find_if(area.enemies.begin(), area.enemies.end(),
+                    [&](const Enemy &enemy) { return enemy.id == missile.owner; });
+                const auto *record = owner == area.enemies.end() ? nullptr :
+                    monsterContent_.find(owner->identity.monster);
+                require(owner != area.enemies.end() && owner->kind == MonsterKind::QuillRat &&
+                            record && record->attack2Projectile && missile.physical &&
+                            missile.missileId == record->attack2Projectile->id &&
+                            missile.damage == 0 && missile.radius == 0 && missile.chill == 0 &&
+                            missile.remaining <= record->attack2Projectile->lifetime,
+                        "original hostile missile identity");
+            } else
+                require(missile.owner == player.id, "missile owner");
             position(missile.pos, areaGrid);
             scalar(missile.velocity.x, -100000, 100000);
             scalar(missile.velocity.y, -100000, 100000);
@@ -405,12 +428,12 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
             scalar(missile.damage);
             scalar(missile.radius);
             scalar(missile.chill);
-            if (missile.physical)
+            if (missile.physical && !missile.hostile)
                 require(std::any_of(content_.items.entries().begin(), content_.items.entries().end(),
                     [&](const auto &pair) { return pair.second.base.projectile &&
                         pair.second.base.projectile->id == missile.missileId; }),
                     "unknown original weapon missile");
-            else if (missile.missileId >= 0)
+            else if (!missile.hostile && missile.missileId >= 0)
                 require(std::any_of(content_.skills.skills.begin(), content_.skills.skills.end(),
                     [&](const auto &pair) { return pair.second.originalEffect &&
                         pair.second.originalEffect->effect == missile.skill &&

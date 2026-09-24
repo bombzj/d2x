@@ -115,6 +115,14 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
                 throw std::runtime_error("Original MPQ skill missile art is missing: " + skill.sourceName);
             projectileAnimations.emplace(skill.originalEffect->missileId, std::move(animation));
         }
+    for (const auto &[id, monster] : session.monsterContent().monsters())
+        if (!monsterImplementation(id).substitute && monster.attack2Projectile &&
+            !projectileAnimations.contains(monster.attack2Projectile->id)) {
+            auto animation = graphics_.single(monster.attack2ProjectileArt);
+            if (animation.frames.empty())
+                throw std::runtime_error("Original MPQ monster missile art is missing: " + id);
+            projectileAnimations.emplace(monster.attack2Projectile->id, std::move(animation));
+        }
     for (const auto &[id, skill] : session.content().skills.skills)
         if (skill.originalEffect && skill.originalEffect->effect == Skill::Teleport) {
             teleportOverlay = graphics_.single(skill.originalEffect->visualArt);

@@ -27,6 +27,9 @@ const MonsterDefinition &monsterDefinition(MonsterKind id) {
     static const MonsterDefinition goatman{MonsterKind::Goatman, "gm", fallen.maxLife,
                                            fallen.speed, fallen.damage, fallen.attackInterval,
                                            fallen.sightRange, fallen.attackRange};
+    static const MonsterDefinition quillrat{MonsterKind::QuillRat, "si", fallen.maxLife,
+                                            fallen.speed, fallen.damage, fallen.attackInterval,
+                                            fallen.sightRange, fallen.attackRange};
     switch (id) {
     case MonsterKind::Fallen:
         return fallen;
@@ -40,6 +43,8 @@ const MonsterDefinition &monsterDefinition(MonsterKind id) {
         return brute;
     case MonsterKind::Goatman:
         return goatman;
+    case MonsterKind::QuillRat:
+        return quillrat;
     case MonsterKind::Count:
         break;
     }

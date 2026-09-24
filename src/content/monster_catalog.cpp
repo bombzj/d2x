@@ -3,6 +3,7 @@
 #include "monster_ai_data.hpp"
 #include "monster_animation.hpp"
 #include <algorithm>
+#include <cctype>
 #include <limits>
 #include <stdexcept>
 
@@ -21,6 +22,7 @@ MonsterCatalog::MonsterCatalog(Archives &archives, const DataTable &stats) {
     if (!diagnostics_.empty())
         return;
     DataTable extended(archives.read("data/global/excel/monstats2.txt"));
+    DataTable missiles(archives.read("data/global/excel/missiles.txt"));
     std::optional<DataTable> levels;
     if (archives.contains("data/global/excel/monlvl.txt"))
         levels.emplace(archives.read("data/global/excel/monlvl.txt"));
@@ -56,6 +58,30 @@ MonsterCatalog::MonsterCatalog(Archives &archives, const DataTable &stats) {
             m.aiProfiles[difficulty] = loadMonsterAiProfile(stats, row, m.ai, difficulty);
         m.walkVelocity = stats.number(row, "Velocity");
         m.runVelocity = stats.number(row, "Run");
+        const auto missileName = stats.value(row, "MissA2");
+        if (!missileName.empty())
+            for (size_t missileRow = 0; missileRow < missiles.rows().size(); ++missileRow)
+                if (missiles.value(missileRow, "Missile") == missileName) {
+                    const auto id = missiles.number(missileRow, "Id");
+                    const auto velocity = missiles.number(missileRow, "Vel");
+                    const auto range = missiles.number(missileRow, "Range");
+                    const auto minimum = missiles.number(missileRow, "MinDamage").value_or(0);
+                    const auto maximum = missiles.number(missileRow, "MaxDamage").value_or(0);
+                    const auto sourceDamage = missiles.number(missileRow, "SrcDamage").value_or(0);
+                    auto file = std::string(missiles.value(missileRow, "CelFile"));
+                    std::transform(file.begin(), file.end(), file.begin(),
+                                   [](unsigned char ch) { return char(std::tolower(ch)); });
+                    const auto art = "data/global/missiles/" + file + ".dcc";
+                    if (id && velocity && *velocity > 0 && range && *range > 0 &&
+                        minimum >= 0 && maximum >= minimum && maximum <= 1000000 &&
+                        sourceDamage >= 0 && sourceDamage <= 255 &&
+                        !file.empty() && archives.contains(art))
+                        m.attack2Projectile = MonsterProjectile{*id, float(*velocity),
+                                                                  float(*range) / 25.f,
+                                                                  minimum, maximum, sourceDamage};
+                    if (m.attack2Projectile) m.attack2ProjectileArt = art;
+                    break;
+                }
         if (m.walkVelocity && (*m.walkVelocity < 0 || *m.walkVelocity > 255))
             throw std::runtime_error("Unsupported monster Velocity: " + m.id);
         if (m.runVelocity && (*m.runVelocity < 0 || *m.runVelocity > 255))
@@ -140,8 +166,11 @@ MonsterCatalog::MonsterCatalog(Archives &archives, const DataTable &stats) {
                         attacks_.emplace(kind, *timing);
                 } else if (std::string_view(mode) == "a2") {
                     if (kind == MonsterKind::Brute || kind == MonsterKind::Skeleton ||
-                        kind == MonsterKind::Zombie || kind == MonsterKind::Fallen)
-                        if (auto timing = loadMonsterAttackTiming(animations, actor->token, 2, weapon))
+                        kind == MonsterKind::Zombie || kind == MonsterKind::Fallen ||
+                        kind == MonsterKind::QuillRat)
+                        if (auto timing = loadMonsterAttackTiming(
+                                animations, actor->token, 2, weapon,
+                                actor->attack2Projectile ? 2 : 1))
                             attacks2_.emplace(kind, *timing);
                 } else if (std::string_view(mode) != "s2" || kind == MonsterKind::Fallen) {
                     if (auto timing = loadMonsterMotionTiming(animations, actor->token, mode, weapon))

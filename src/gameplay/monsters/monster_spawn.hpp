@@ -50,7 +50,7 @@ struct MonsterNormalCombat {
     std::optional<std::pair<int, int>> attack2Damage;
     std::array<std::optional<MonsterElementAttack>, 3> elements;
 };
-enum class MonsterAiKind { Skeleton, Brute, Zombie, Fallen, CorruptRogue, Goatman };
+enum class MonsterAiKind { Skeleton, Brute, Zombie, Fallen, CorruptRogue, Goatman, QuillRat };
 struct MonsterAiProfile {
     MonsterAiKind kind;
     std::array<int, 8> params{};
@@ -59,6 +59,11 @@ struct MonsterAttackTiming {
     float duration = 0;
     float impact = 0;
     int frames = 0;
+};
+struct MonsterProjectile {
+    int id = -1;
+    float velocity = 0, lifetime = 0;
+    int minimumDamage = 0, maximumDamage = 0, sourceDamage = 0;
 };
 // Explicit implementation registry: add real actors here as their behaviour/assets land.
 MonsterImplementation monsterImplementation(const std::string &code);

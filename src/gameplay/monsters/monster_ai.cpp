@@ -5,6 +5,7 @@
 #include "gameplay/monsters/fallen_ai.hpp"
 #include "gameplay/monsters/corrupt_rogue_ai.hpp"
 #include "gameplay/monsters/goatman_ai.hpp"
+#include "gameplay/monsters/quill_rat_ai.hpp"
 #include "gameplay/monsters/monster_wander.hpp"
 #include <algorithm>
 
@@ -38,6 +39,7 @@ void Simulation::updateMonsters(float dt) {
             enemy.aiCommanded = false;
             enemy.aiCircling = false;
             enemy.aiRunning = false;
+            enemy.aiRetaliate = false;
             enemy.aiAdvanceRemaining = 0;
             enemy.skill2Remaining = enemy.skill2Duration = 0;
             enemy.aiCircling = false;
@@ -55,6 +57,7 @@ void Simulation::updateMonsters(float dt) {
             enemy.skill2Remaining = enemy.skill2Duration = 0;
             continue;
         }
+        if (enemy.kind == MonsterKind::QuillRat && enemy.hitFlash > 0) continue;
         if (enemy.skill2Remaining > 0) {
             enemy.skill2Remaining = std::max(0.f, enemy.skill2Remaining - dt);
             if (enemy.skill2Remaining == 0) enemy.skill2Duration = 0;
@@ -66,7 +69,10 @@ void Simulation::updateMonsters(float dt) {
                 enemy.attackImpact -= dt;
                 if (enemy.attackImpact <= 0) {
                     enemy.attackImpact = -1;
-                    resolveMonsterAttack(enemy);
+                    if (enemy.attackMode == 2 && monsterProjectile_ && monsterProjectile_(enemy))
+                        launchMonsterProjectile(enemy);
+                    else
+                        resolveMonsterAttack(enemy);
                 }
             }
             if (enemy.attack == 0) {
@@ -75,6 +81,18 @@ void Simulation::updateMonsters(float dt) {
                 enemy.attackMode = 1;
             }
             continue;
+        }
+        if (enemy.aiRetaliate && enemy.hitFlash <= 0) {
+            enemy.aiRetaliate = false;
+            const auto ai = monsterAi_ ? monsterAi_(enemy) : std::nullopt;
+            if (ai && ai->kind == MonsterAiKind::QuillRat &&
+                (player.pos - enemy.pos).length() < monsterDefinition(enemy.kind).sightRange &&
+                grid_->segment(enemy.pos, player.pos)) {
+                enemy.route.clear();
+                enemy.aiEscaping = false;
+                beginMonsterAttack(enemy, 2);
+                continue;
+            }
         }
         if (enemy.aiCircling) {
             const auto originalSpeed = monsterWalkSpeed_ ? monsterWalkSpeed_(enemy) : std::nullopt;
@@ -97,7 +115,8 @@ void Simulation::updateMonsters(float dt) {
         if (enemy.aiEscaping) {
             const auto originalSpeed = monsterWalkSpeed_ ? monsterWalkSpeed_(enemy) : std::nullopt;
             const float speed = originalSpeed.value_or(monsterDefinition(enemy.kind).speed) *
-                                1.5f * (enemy.chill > 0 ? .42f : 1.f);
+                                (enemy.kind == MonsterKind::QuillRat ? 1.f : 1.5f) *
+                                (enemy.chill > 0 ? .42f : 1.f);
             fallenAdvanceEscape(enemy, *grid_, speed, dt);
             continue;
         }
@@ -131,7 +150,20 @@ void Simulation::updateMonsters(float dt) {
         const bool bruteAi = ai && ai->kind == MonsterAiKind::Brute;
         const bool zombieAi = ai && ai->kind == MonsterAiKind::Zombie;
         const bool goatmanAi = ai && ai->kind == MonsterAiKind::Goatman;
+        const bool quillRatAi = ai && ai->kind == MonsterAiKind::QuillRat;
         bool clear = grid_->segment(enemy.pos, player.pos);
+        if (quillRatAi && distance >= definition.attackRange &&
+            distance < float(ai->params[0]) && clear) {
+            if (quillRatShoots(enemy, *ai)) {
+                beginMonsterAttack(enemy, 2);
+                continue;
+            }
+            if (quillRatStartRetreat(enemy, player.pos, ai->params[3], *grid_)) continue;
+            if (distance < 4.f) {
+                beginMonsterAttack(enemy, 2);
+                continue;
+            }
+        }
         if (distance >= definition.attackRange || !clear) {
             if (rogueAi && enemy.aiAdvanceRemaining <= 0) {
                 const auto action = corruptRogueMovement(

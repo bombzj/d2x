@@ -146,6 +146,8 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
             return profile;
         if (profile->kind == MonsterAiKind::Goatman && enemy.kind == MonsterKind::Goatman)
             return profile;
+        if (profile->kind == MonsterAiKind::QuillRat && enemy.kind == MonsterKind::QuillRat)
+            return profile;
         return std::nullopt;
     };
     simulation_.zombieForcedPursuit_ = [this](RegionId region) {
@@ -178,6 +180,14 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
         -> std::optional<MonsterAttackTiming> {
         const auto *timing = monsterContent_.attackTiming(enemy.kind, mode);
         return timing ? std::optional<MonsterAttackTiming>(*timing) : std::nullopt;
+    };
+    simulation_.monsterProjectile_ = [this](const Enemy &enemy)
+        -> std::optional<MonsterProjectile> {
+        const auto *record = monsterContent_.find(enemy.identity.monster);
+        if (!record || enemy.kind != MonsterKind::QuillRat ||
+            monsterImplementation(enemy.identity.monster).substitute)
+            return std::nullopt;
+        return record->attack2Projectile;
     };
     worldSelection.difficulty = population.difficulty;
     auto plan = planWorld(archives, worldContent_, worldSelection);
@@ -221,7 +231,7 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
     Fingerprint fingerprint;
     fingerprint.add(content_.profile);
     // Bump this rules revision when state interpretation or compiled rules change.
-    fingerprint.add("d2x-session-rules-v93-goatman5");
+    fingerprint.add("d2x-session-rules-v94-quillrat1");
     auto members = archives.used;
     for (const auto &member : members) {
         fingerprint.add(member);

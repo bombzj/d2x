@@ -2,6 +2,7 @@
 #include "gameplay/combat/accuracy.hpp"
 #include "gameplay/monsters/monster_wander.hpp"
 #include <algorithm>
+#include <stdexcept>
 #include <tuple>
 
 namespace d2x {
@@ -10,10 +11,10 @@ int chooseAttackMode(Enemy &enemy, const MonsterAiProfile &rules) {
     return monsterAiRandom(enemy) % 100 < unsigned(rules.params[3]) ? 1 : 2;
 }
 } // namespace
-void Simulation::beginMonsterAttack(Enemy &enemy) {
-    enemy.attackMode = 1;
+void Simulation::beginMonsterAttack(Enemy &enemy, int forcedMode) {
+    enemy.attackMode = forcedMode == 2 ? 2 : 1;
     const auto ai = monsterAi_ ? monsterAi_(enemy) : std::nullopt;
-    if (ai && (ai->kind == MonsterAiKind::Brute || ai->kind == MonsterAiKind::Skeleton ||
+    if (!forcedMode && ai && (ai->kind == MonsterAiKind::Brute || ai->kind == MonsterAiKind::Skeleton ||
                ai->kind == MonsterAiKind::Zombie || ai->kind == MonsterAiKind::Fallen) &&
         monsterAttackTiming_ &&
         monsterAttackTiming_(enemy, 2) && monsterNormalCombat_ &&
@@ -33,17 +34,30 @@ void Simulation::beginMonsterAttack(Enemy &enemy) {
     emit(EnemyAttacked{enemy.id, enemy.kind, enemy.attackMode});
     if (enemy.attackImpact <= 0) {
         enemy.attackImpact = -1;
-        resolveMonsterAttack(enemy);
+        if (enemy.attackMode == 2 && monsterProjectile_ && monsterProjectile_(enemy))
+            launchMonsterProjectile(enemy);
+        else
+            resolveMonsterAttack(enemy);
     }
 }
-void Simulation::resolveMonsterAttack(Enemy &enemy) {
+void Simulation::launchMonsterProjectile(Enemy &enemy) {
+    const auto projectile = monsterProjectile_ ? monsterProjectile_(enemy) : std::nullopt;
+    if (!projectile || projectile->id < 0 || projectile->velocity <= 0 || projectile->lifetime <= 0)
+        throw std::runtime_error("Monster A2 projectile is missing");
+    const auto direction = (state_.player.pos - enemy.pos).unit();
+    state_.area.missiles.push_back({ids_.allocate(), enemy.id, enemy.pos,
+        direction * projectile->velocity, projectile->lifetime, Skill::Fireball,
+        true, projectile->id, 0, 0, 0, true});
+}
+void Simulation::resolveMonsterAttack(Enemy &enemy, int modeOverride, bool projectile) {
     auto &player = state_.player;
-    if (enemy.hp <= 0 || player.dead || player.hp <= 0 || player.leapTime > 0 ||
-        (player.pos - enemy.pos).length() >= monsterDefinition(enemy.kind).attackRange ||
-        !grid_->segment(enemy.pos, player.pos))
+    if ((!projectile && enemy.hp <= 0) || player.dead || player.hp <= 0 || player.leapTime > 0 ||
+        (!projectile && ((player.pos - enemy.pos).length() >= monsterDefinition(enemy.kind).attackRange ||
+                         !grid_->segment(enemy.pos, player.pos))))
         return;
+    const int mode = modeOverride ? modeOverride : enemy.attackMode;
     if (!(player.running && player.moving) && monsterAccuracy_)
-        if (auto accuracy = monsterAccuracy_(enemy, state_.area.region, enemy.attackMode)) {
+        if (auto accuracy = monsterAccuracy_(enemy, state_.area.region, mode)) {
             const auto chance = physicalHitChance(accuracy->level, accuracy->attackRating,
                                                    equipmentStats_.level, equipmentStats_.defense);
             enemy.combatRandom = uint64_t(uint32_t(enemy.combatRandom)) * 0x6ac690c5ULL +
@@ -61,7 +75,7 @@ void Simulation::resolveMonsterAttack(Enemy &enemy) {
     const auto combat = monsterNormalCombat_
                             ? monsterNormalCombat_(enemy.identity, state_.area.region) : std::nullopt;
     if (combat) {
-        auto range = enemy.attackMode == 2 && combat->attack2Damage
+        auto range = mode == 2 && combat->attack2Damage
             ? combat->attack2Damage : combat->attack1Damage;
         if (range) {
             const auto [minimum, maximum] = *range;
@@ -70,6 +84,15 @@ void Simulation::resolveMonsterAttack(Enemy &enemy) {
             damage = float(minimum + uint32_t(enemy.combatRandom) % unsigned(maximum - minimum + 1));
         }
     }
+    if (projectile && monsterProjectile_)
+        if (auto spec = monsterProjectile_(enemy)) {
+            damage = damage * float(spec->sourceDamage) / 128.f;
+            enemy.combatRandom = uint64_t(uint32_t(enemy.combatRandom)) * 0x6ac690c5ULL +
+                                 (enemy.combatRandom >> 32);
+            damage += float(spec->minimumDamage +
+                            uint32_t(enemy.combatRandom) %
+                                unsigned(spec->maximumDamage - spec->minimumDamage + 1));
+        }
     if (monsterCriticalChance_)
         if (auto chance = monsterCriticalChance_(enemy, state_.area.region); chance && *chance > 0) {
             enemy.combatRandom = uint64_t(uint32_t(enemy.combatRandom)) * 0x6ac690c5ULL +
@@ -78,7 +101,7 @@ void Simulation::resolveMonsterAttack(Enemy &enemy) {
         }
     player.hp = std::max(0.f, player.hp - damage);
     if (combat && player.hp > 0)
-        applyMonsterElements(enemy, *combat);
+        applyMonsterElements(enemy, *combat, mode);
     player.hitTime = .16f;
     if (wearEquipment_) wearEquipment_({}, true);
 }

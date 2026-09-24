@@ -62,6 +62,7 @@ struct Enemy {
     bool aiCommanded = false;
     bool aiCircling = false;
     bool aiRunning = false;
+    bool aiRetaliate = false;
     float aiAdvanceRemaining = 0;
     std::deque<Vec> route;
     uint64_t combatRandom = (uint64_t(666) << 32) | 210;
@@ -75,6 +76,7 @@ struct Missile {
     int missileId = -1;
     float damage = 0;
     float radius = 0, chill = 0;
+    bool hostile = false;
 };
 struct Effect {
     Vec pos;
