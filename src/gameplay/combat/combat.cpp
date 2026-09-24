@@ -1,15 +1,16 @@
 #include "gameplay/simulation/simulation.hpp"
 #include "gameplay/combat/accuracy.hpp"
+#include "gameplay/combat/damage_resolution.hpp"
 #include <algorithm>
 
 namespace d2x {
 void Simulation::damageEnemy(Enemy &enemy, float amount, EntityId source, float chill,
-                             bool ignoreActivation, MonsterDamageType type) {
+                             bool ignoreActivation, MonsterDamageType type, bool alreadyMitigated) {
     if (enemy.hp <= 0 || (!ignoreActivation && !active(enemy.pos)))
         return;
-    if (!ignoreActivation && monsterResistance_)
+    if (!ignoreActivation && !alreadyMitigated && monsterResistance_)
         if (auto resistance = monsterResistance_(enemy, state_.area.region, type)) {
-            amount *= float(std::max(0, 100 - *resistance)) / 100.f;
+            amount = mitigateMonsterDamage(amount, *resistance);
             if (type == MonsterDamageType::Cold && *resistance >= 100) chill = 0;
         }
     if (amount <= 0) return;
@@ -66,9 +67,9 @@ void Simulation::meleeDamage(Enemy &enemy, bool leftHand) {
             player.combatRandom = uint64_t(uint32_t(player.combatRandom)) * 0x6ac690c5ULL +
                                   (player.combatRandom >> 32);
         }
-    auto range = uint32_t(weapon->maximum - weapon->minimum);
+    auto range = uint32_t(weapon->maximum - weapon->minimum) + 1;
     auto damage = weapon->minimum + (range ? uint32_t(player.combatRandom) % range : 0);
-    damageEnemy(enemy, float(damage) / 256.f, player.id);
+    resolveWeaponHit(enemy, float(damage) / 256.f, player.id, rollAttackElements(weapon->item));
     if (wearEquipment_ && weapon->item)
         wearEquipment_(weapon->item, false);
 }
@@ -194,7 +195,7 @@ void Simulation::updateMissiles(float dt) {
                         hit = uint32_t(player.combatRandom) % 100 <
                             unsigned(physicalHitChance(player.level, characterStats_.attackRating,
                                                        defense->level, defense->defense));
-                if (hit) damageEnemy(*struck, m.damage, m.owner);
+                if (hit) resolveWeaponHit(*struck, m.damage, m.owner, m.attackElements);
             }
             continue;
         }

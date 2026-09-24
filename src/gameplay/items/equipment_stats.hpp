@@ -1,5 +1,6 @@
 #pragma once
 #include "inventory.hpp"
+#include "gameplay/combat/stat_modifiers.hpp"
 
 namespace d2x {
 struct WeaponDamage {
@@ -19,5 +20,6 @@ struct EquipmentStats {
     int level = 1;
 };
 EquipmentStats deriveEquipmentStats(const InventoryService &inventory, const PlayerContainers &containers,
-                                    const EquipmentActor &actor, int bonusDefense = 0);
+                                    const EquipmentActor &actor, int bonusDefense = 0,
+                                    const CombatModifiers &combat = {});
 } // namespace d2x

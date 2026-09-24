@@ -141,6 +141,13 @@ void Simulation::tick(float dt, Vec keyboard) {
         e.hitFlash = std::max(0.f, e.hitFlash - dt);
         if (e.hp <= 0)
             e.deathAge += dt;
+        else if (e.poisonRemaining > 0) {
+            const float elapsed = std::min(dt, e.poisonRemaining);
+            e.poisonRemaining -= elapsed;
+            damageEnemy(e, e.poisonPerSecond * elapsed, e.poisonSource, 0, false,
+                        MonsterDamageType::Poison);
+            if (e.poisonRemaining <= 0) e.poisonPerSecond = 0;
+        }
     }
     if (!p.dead) {
         updatePotions(dt);

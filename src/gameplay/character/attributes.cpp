@@ -22,9 +22,25 @@ bool allocateAttribute(AttributeAllocation &a, int &unspent, Attribute attribute
     --unspent;
     return true;
 }
+void mergeCharacterModifiers(CharacterModifiers &a, const CharacterModifiers &b) {
+    auto add = [](int &target, int value) {
+        const auto sum = int64_t(target) + value;
+        if (sum < std::numeric_limits<int>::min() || sum > std::numeric_limits<int>::max())
+            throw std::runtime_error("Character modifier sum exceeds supported range");
+        target = int(sum);
+    };
+    add(a.strength, b.strength); add(a.dexterity, b.dexterity);
+    add(a.vitality, b.vitality); add(a.energy, b.energy);
+    add(a.maxLife, b.maxLife); add(a.maxMana, b.maxMana); add(a.maxStamina, b.maxStamina);
+    add(a.attackRating, b.attackRating); add(a.defense, b.defense);
+    add(a.fireResist, b.fireResist); add(a.coldResist, b.coldResist);
+    add(a.lightningResist, b.lightningResist); add(a.poisonResist, b.poisonResist);
+    mergeCombatModifiers(a.combat, b.combat);
+}
 CharacterAttributes deriveCharacterAttributes(const CharacterDefinition &d, int level,
                                                const AttributeAllocation &a,
-                                               const CharacterModifiers &m) {
+                                               const CharacterModifiers &m,
+                                               int resistancePenalty) {
     if (level < 1 || a.strength < 0 || a.dexterity < 0 || a.vitality < 0 || a.energy < 0)
         throw std::runtime_error("Invalid character progression");
     CharacterAttributes result;
@@ -43,21 +59,29 @@ CharacterAttributes deriveCharacterAttributes(const CharacterDefinition &d, int 
             throw std::runtime_error("Character resource exceeds supported range");
         return int(value / 4);
     };
-    result.maxLife = bounded(int64_t(quarter(int64_t(d.lifeAdd) + d.vitality, d.lifePerLevel,
-                                             int64_t(a.vitality) + m.vitality,
-                                             d.lifePerVitality, level)) + m.maxLife, 1);
-    result.maxMana = bounded(int64_t(quarter(d.energy, d.manaPerLevel,
-                                             int64_t(a.energy) + m.energy,
-                                             d.manaPerEnergy, level)) + m.maxMana, 1);
+    const int naturalLife = quarter(int64_t(d.lifeAdd) + d.vitality, d.lifePerLevel,
+                                    int64_t(a.vitality) + m.vitality, d.lifePerVitality, level);
+    const int naturalMana = quarter(d.energy, d.manaPerLevel,
+                                    int64_t(a.energy) + m.energy, d.manaPerEnergy, level);
+    result.maxLife = bounded(int64_t(naturalLife) * std::max<int64_t>(0, 100LL + m.combat.lifePercent) / 100 +
+                             m.maxLife, 1);
+    result.maxMana = bounded(int64_t(naturalMana) * std::max<int64_t>(0, 100LL + m.combat.manaPercent) / 100 +
+                             m.maxMana, 1);
     result.maxStamina = bounded(int64_t(quarter(d.stamina, d.staminaPerLevel,
                                                 int64_t(a.vitality) + m.vitality,
                                                 d.staminaPerVitality, level)) + m.maxStamina, 1);
-    result.attackRating = bounded(int64_t(result.dexterity) * 5 - 35 + d.toHitFactor + m.attackRating);
+    result.attackRating = bounded((int64_t(result.dexterity) * 5 - 35 + d.toHitFactor + m.attackRating) *
+                                  std::max<int64_t>(0, 100LL + m.combat.attackRatingPercent) / 100);
     result.defense = bounded(int64_t(result.dexterity) / 4 + m.defense);
-    result.fireResist = m.fireResist;
-    result.coldResist = m.coldResist;
-    result.lightningResist = m.lightningResist;
-    result.poisonResist = m.poisonResist;
+    auto resistance = [resistancePenalty](int value, int maximumBonus) {
+        const int maximum = int(std::clamp(int64_t(75) + maximumBonus, int64_t(-100), int64_t(95)));
+        return int(std::clamp(int64_t(value) + resistancePenalty, int64_t(-100), int64_t(maximum)));
+    };
+    result.fireResist = resistance(m.fireResist, m.combat.fireMaxResist);
+    result.coldResist = resistance(m.coldResist, m.combat.coldMaxResist);
+    result.lightningResist = resistance(m.lightningResist, m.combat.lightningMaxResist);
+    result.poisonResist = resistance(m.poisonResist, m.combat.poisonMaxResist);
+    result.combat = m.combat;
     result.blockFactor = d.blockFactor;
     // CharStats.ManaRegen is an engine denominator, not mana per second.
     result.manaRegen = d.manaRegen > 0 ? float(result.maxMana) / d.manaRegen : 0;

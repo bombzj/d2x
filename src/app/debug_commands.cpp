@@ -68,6 +68,47 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
                 {"attackRating", session.characterStats().attackRating},
                 {"defense", session.equipmentStats().defense},
                 {"dead", state.player.dead}};
+            const auto &combat = session.characterStats().combat;
+            result["combat"] = {
+                {"resistances", {{"fire", session.characterStats().fireResist},
+                                  {"lightning", session.characterStats().lightningResist},
+                                  {"cold", session.characterStats().coldResist},
+                                  {"poison", session.characterStats().poisonResist},
+                                  {"physical", combat.physicalResist}, {"magic", combat.magicResist}}},
+                {"flatReduction", {{"physical", combat.flatPhysicalReduction},
+                                    {"magic", combat.flatMagicReduction}}},
+                {"block", session.equipmentStats().blockChance},
+                {"attackSpeed", combat.fasterAttack}, {"castSpeed", combat.fasterCast},
+                {"hitRecovery", combat.fasterHitRecovery}, {"blockSpeed", combat.fasterBlock},
+                {"globalFireDamage", {combat.fireMinimum, combat.fireMaximum}},
+                {"globalLightningDamage", {combat.lightningMinimum, combat.lightningMaximum}},
+                {"globalColdDamage", {combat.coldMinimum, combat.coldMaximum}},
+                {"globalMagicDamage", {combat.magicMinimum, combat.magicMaximum}},
+                {"globalPoisonDamage", {combat.poisonMinimum, combat.poisonMaximum}},
+                {"deadlyStrike", combat.deadlyStrike}, {"magicFind", combat.magicFind}
+            };
+            result["combat"]["weapons"] = Json::array();
+            for (int index = 0; index < session.equipmentStats().weaponCount; ++index) {
+                const auto &weapon = session.equipmentStats().weapons[index];
+                WeaponModifiers own;
+                if (auto found = combat.weapons.find(weapon.item); found != combat.weapons.end())
+                    own = found->second;
+                result["combat"]["weapons"].push_back({
+                    {"item", weapon.item.value},
+                    {"physical", {weapon.minimum / 256.f, weapon.maximum / 256.f}},
+                    {"fire", {int64_t(combat.fireMinimum) + own.fireMinimum,
+                              int64_t(combat.fireMaximum) + own.fireMaximum}},
+                    {"lightning", {int64_t(combat.lightningMinimum) + own.lightningMinimum,
+                                   int64_t(combat.lightningMaximum) + own.lightningMaximum}},
+                    {"cold", {int64_t(combat.coldMinimum) + own.coldMinimum,
+                              int64_t(combat.coldMaximum) + own.coldMaximum}},
+                    {"magic", {int64_t(combat.magicMinimum) + own.magicMinimum,
+                               int64_t(combat.magicMaximum) + own.magicMaximum}},
+                    {"poison", {int64_t(combat.poisonMinimum) + own.poisonMinimum,
+                                int64_t(combat.poisonMaximum) + own.poisonMaximum}}
+                });
+            }
+            result["combat"]["activeEffects"] = state.player.combatEffects.size();
             result["region"] = int(state.area.region);
             result["kills"] = state.area.kills;
             result["paused"] = paused;

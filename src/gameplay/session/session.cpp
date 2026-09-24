@@ -313,7 +313,7 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
     Fingerprint fingerprint;
     fingerprint.add(content_.profile);
     // Bump this rules revision when state interpretation or compiled rules change.
-    fingerprint.add("d2x-session-rules-v116-books-gold-cube");
+    fingerprint.add("d2x-session-rules-v117-combat-calculation");
     auto members = archives.used;
     for (const auto &member : members) {
         fingerprint.add(member);
@@ -582,6 +582,7 @@ void GameSession::tick(float dt, Vec keyboard) {
                         player.level = 1; player.experience = 0;
                         player.allocated = {}; player.unspentAttributes = 0;
                         player.skillRanks.clear(); player.unspentSkills = 0;
+                        player.combatEffects.clear();
                         player.skillHotkeys = {};
                         player.gold = std::min(player.gold, 10000u);
                         player.bankGold = std::min(player.bankGold, 50000u);
@@ -622,6 +623,7 @@ void GameSession::tick(float dt, Vec keyboard) {
         cancelInteraction();
     }
     simulation_.tick(dt, transitioned ? Vec{} : keyboard);
+    expireCombatEffects();
     updateObjectTimers();
     advanceNpcPaths(dt);
     settleDeaths();

@@ -77,9 +77,11 @@ $spawn = .\scripts\Send-D2XCommand.ps1 -Command monster-spawn -Arguments @{monst
 
 `aiRunning` 表示 Corrupt Rogue 当前跑步动作；`aiAdvanceRemaining` 表示 Corrupt Rogue、Skeleton Bow 或 Skeleton Mage 当前路径决策的剩余距离。可定点生成 `corruptrogue1`，逐帧推进并用 `monsters` 观察；该状态只在本局维持。
 
-`monsters` 的 `hostileProjectiles` 统计该怪物仍在飞行的敌方弹体；`aiRetaliate` 表示 Quill Rat 受击后待 A2 回击。可定点生成 `quillrat1` 后推进 6 帧观察原 `spike1` 发射，在本局继续推进观察命中；这两项状态不会进入 v82 角色存档。`aiEscaping` 对 Quill Rat 也表示其按 MPQ `aip4` 距离后撤。
+`monsters` 的 `hostileProjectiles` 统计该怪物仍在飞行的敌方弹体；`aiRetaliate` 表示 Quill Rat 受击后待 A2 回击。可定点生成 `quillrat1` 后推进 6 帧观察原 `spike1` 发射，在本局继续推进观察命中；这两项状态不会进入 v83 角色存档。`aiEscaping` 对 Quill Rat 也表示其按 MPQ `aip4` 距离后撤。
 
 普通怪物的 `combat` 返回共用三难度 MPQ 解析后的等级、生命区间、可用的 A1／A2 `[最小伤害, 最大伤害, 命中]`、防御、暴击、再生和六项抗性。原表缺少某攻击模式时省略该模式；缺命中或防御列时相应位置为 `null`。`combat.elements` 返回有完整数值的 `El1–3` 模式、元素种类、概率、伤害区间及持续帧数；`status.player.chill` 是冰冷剩余秒数，`poisonRemaining` 与 `poisonPerSecond` 是毒素剩余秒数和每秒伤害。这些字段与游戏使用同一解析结果，不是调试接口另算的一套数值。
+
+`status.combat` 返回角色当前结算用的抗性、固定减伤、格挡和每把武器的物理及元素伤害范围；`global*Damage` 是不限定武器的部分，`weapons` 中合并了当前手中武器专属词缀。速度、吸取、寻宝等尚未生效的字段只表示已解析的装备修正，不代表对应动画帧或掉落结算已实现。限时效果数量见 `activeEffects`。
 
 物品操作复用游戏的事务与访问校验。以下调用可分别使用，不要求按顺序执行：
 

@@ -15,6 +15,15 @@ struct SkillHotkey {
     int skill = -2; // -2 unbound, -1 ordinary attack, otherwise MPQ skill ID.
     bool right = true;
 };
+// Transient skill, monster, shrine and item states share a single modifier
+// source. Runtime triggers may add entries; character saves omit them.
+struct ActiveCombatEffect {
+    CombatEffectSource source = CombatEffectSource::Skill;
+    EntityId owner;
+    int sourceId = -1;
+    float expiresAt = 0;
+    CharacterModifiers modifiers;
+};
 struct PlayerState {
     EntityId id;
     std::string characterClass = "Barbarian";
@@ -46,6 +55,7 @@ struct PlayerState {
     AttributeAllocation allocated;
     int unspentAttributes = 0;
     std::map<int, int> skillRanks;
+    std::vector<ActiveCombatEffect> combatEffects;
     int unspentSkills = 0;
     std::array<SkillHotkey, 8> skillHotkeys{};
 };
@@ -74,6 +84,8 @@ struct Enemy {
     float webAuraRemaining = 0, webTrailDistance = 0;
     std::deque<Vec> route;
     uint64_t combatRandom = (uint64_t(666) << 32) | 210;
+    float poisonRemaining = 0, poisonPerSecond = 0;
+    EntityId poisonSource;
 };
 struct Missile {
     EntityId id, owner;
@@ -87,6 +99,7 @@ struct Missile {
     bool hostile = false;
     int hostileMode = 0;
     float slowDuration = 0;
+    AttackElements attackElements{};
 };
 struct Effect {
     Vec pos;

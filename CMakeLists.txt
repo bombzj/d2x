@@ -57,6 +57,7 @@ target_sources(d2x_content PRIVATE src/content/monster_ai_data.cpp)
 target_sources(d2x_content PRIVATE src/content/monster_spell_data.cpp)
 target_sources(d2x_content PRIVATE src/content/monster_animation.cpp)
 target_sources(d2x_content PRIVATE src/content/equipment_modifiers.cpp)
+target_sources(d2x_content PRIVATE src/content/equipment_combat.cpp)
 target_sources(d2x_content PRIVATE src/content/equipment_data.cpp)
 target_sources(d2x_content PRIVATE src/content/item_appearance.cpp)
 target_sources(d2x_content PRIVATE src/content/monster_loot.cpp)
@@ -76,7 +77,10 @@ target_link_libraries(d2x_content PUBLIC d2x_resources d2x_items)
 # Rules and state compile without raylib, StormLib, a window or an archive.
 add_library(d2x_gameplay
   src/gameplay/model/definitions.cpp src/gameplay/simulation/simulation.cpp src/gameplay/player/movement.cpp
-  src/gameplay/combat/combat.cpp src/gameplay/skills/casting.cpp
+  src/gameplay/combat/combat.cpp src/gameplay/combat/stat_modifiers.cpp
+  src/gameplay/combat/damage_resolution.cpp src/gameplay/combat/player_damage.cpp
+  src/gameplay/combat/weapon_elements.cpp
+  src/gameplay/skills/casting.cpp
   src/gameplay/monsters/monster_ai.cpp src/gameplay/monsters/monster_melee.cpp
   src/gameplay/monsters/monster_special_ai.cpp
     src/gameplay/monsters/monster_resurrection.cpp
@@ -126,6 +130,7 @@ target_sources(d2x_session PRIVATE src/gameplay/npc/identification.cpp src/gamep
 target_sources(d2x_session PRIVATE src/gameplay/npc/store.cpp src/gameplay/npc/purchase.cpp)
 target_sources(d2x_session PRIVATE src/gameplay/session/session_item_snapshot.cpp)
 target_sources(d2x_session PRIVATE src/gameplay/session/session_character_save.cpp)
+target_sources(d2x_session PRIVATE src/gameplay/session/session_effects.cpp)
 target_sources(d2x_session PRIVATE src/gameplay/session/session_debug_monsters.cpp)
 target_link_libraries(d2x_session PUBLIC d2x_gameplay d2x_world d2x_content d2x_population)
 add_library(d2x_persistence src/persistence/save_codec.cpp src/persistence/save_file.cpp)
@@ -139,7 +144,7 @@ add_library(d2x_presentation
   src/presentation/exit_view.cpp src/presentation/waypoint_view.cpp
   src/presentation/world_renderer.cpp src/presentation/hud.cpp src/presentation/npc_dialogue_view.cpp src/presentation/npc_menu_view.cpp src/presentation/npc_shop_view.cpp src/presentation/controller.cpp
   src/presentation/loot_view.cpp src/presentation/inventory_panel.cpp
-  src/presentation/character_panel.cpp
+  src/presentation/character_panel.cpp src/presentation/character_action_stats.cpp
   src/presentation/container_view.cpp src/presentation/storage_view.cpp src/presentation/cube_view.cpp src/presentation/belt_view.cpp src/presentation/inventory_view.cpp src/presentation/inventory_controller.cpp)
 target_link_libraries(d2x_presentation PUBLIC d2x_session raylib)
 target_sources(d2x_presentation PRIVATE src/presentation/monster_audio.cpp)

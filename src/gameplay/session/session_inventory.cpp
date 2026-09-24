@@ -4,23 +4,37 @@
 #include <type_traits>
 
 namespace d2x {
+namespace {
+CharacterModifiers activeModifiers(const PlayerState &player, float now) {
+    CharacterModifiers result;
+    for (const auto &effect : player.combatEffects)
+        if (effect.expiresAt > now)
+            mergeCharacterModifiers(result, effect.modifiers);
+    return result;
+}
+}
 EquipmentActor GameSession::equipmentActor() const {
     return equipmentActor(state().player);
 }
 EquipmentActor GameSession::equipmentActor(const PlayerState &player) const {
-    auto base = deriveCharacterAttributes(characterDefinition_, player.level, player.allocated);
+    auto effects = activeModifiers(player, state().time);
+    auto base = deriveCharacterAttributes(characterDefinition_, player.level, player.allocated, effects);
     EquipmentActor baseActor{characterDefinition_.code, base.strength, base.dexterity, player.level, base.blockFactor};
     auto modifiers = resolveEquipmentModifiers(content_, inventory_, playerContainers_, baseActor);
+    mergeCharacterModifiers(modifiers, effects);
     auto stats = deriveCharacterAttributes(characterDefinition_, player.level, player.allocated, modifiers);
     return {characterDefinition_.code, stats.strength, stats.dexterity, player.level, stats.blockFactor};
 }
 void GameSession::refreshCharacter(bool fillGains) {
     auto &player = simulation_.state_.player;
     const auto previous = simulation_.characterStats_;
-    auto base = deriveCharacterAttributes(characterDefinition_, player.level, player.allocated);
+    auto effects = activeModifiers(player, state().time);
+    auto base = deriveCharacterAttributes(characterDefinition_, player.level, player.allocated, effects);
     EquipmentActor baseActor{characterDefinition_.code, base.strength, base.dexterity, player.level, base.blockFactor};
     auto modifiers = resolveEquipmentModifiers(content_, inventory_, playerContainers_, baseActor);
-    auto current = deriveCharacterAttributes(characterDefinition_, player.level, player.allocated, modifiers);
+    mergeCharacterModifiers(modifiers, effects);
+    auto current = deriveCharacterAttributes(characterDefinition_, player.level, player.allocated,
+                                             modifiers, simulation_.resistancePenalty_);
     if (fillGains) {
         if (player.hp > 0) player.hp += current.maxLife - previous.maxLife;
         player.mana += current.maxMana - previous.maxMana;
@@ -31,7 +45,8 @@ void GameSession::refreshCharacter(bool fillGains) {
     player.stamina = std::clamp(player.stamina, 0.f, float(current.maxStamina));
     simulation_.characterStats_ = current;
     EquipmentActor actor{characterDefinition_.code, current.strength, current.dexterity, player.level, current.blockFactor};
-    simulation_.equipmentStats_ = deriveEquipmentStats(inventory_, playerContainers_, actor, modifiers.defense);
+    simulation_.equipmentStats_ = deriveEquipmentStats(inventory_, playerContainers_, actor,
+                                                       modifiers.defense, modifiers.combat);
 }
 void GameSession::createStarterEquipment() {
     const bool legacy = content_.profile == "classic-1.04-txt-v1";

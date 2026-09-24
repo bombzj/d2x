@@ -2,6 +2,7 @@
 #include <cstdint>
 #include <cstddef>
 #include <string>
+#include "gameplay/combat/stat_modifiers.hpp"
 
 namespace d2x {
 enum class Attribute { Strength, Dexterity, Vitality, Energy };
@@ -22,18 +23,22 @@ struct CharacterModifiers {
     int maxLife = 0, maxMana = 0, maxStamina = 0;
     int attackRating = 0, defense = 0;
     int fireResist = 0, coldResist = 0, lightningResist = 0, poisonResist = 0;
+    CombatModifiers combat;
 };
 struct CharacterAttributes {
     int strength = 0, dexterity = 0, vitality = 0, energy = 0;
     int maxLife = 1, maxMana = 1, maxStamina = 1;
     int attackRating = 0, defense = 0;
     int fireResist = 0, coldResist = 0, lightningResist = 0, poisonResist = 0;
+    CombatModifiers combat;
     int blockFactor = 0;
     float manaRegen = 0;
 };
 int64_t allocatedPoints(const AttributeAllocation &allocation);
 bool allocateAttribute(AttributeAllocation &allocation, int &unspent, Attribute attribute);
+void mergeCharacterModifiers(CharacterModifiers &target, const CharacterModifiers &source);
 CharacterAttributes deriveCharacterAttributes(const CharacterDefinition &definition, int level,
                                                const AttributeAllocation &allocation,
-                                               const CharacterModifiers &modifiers = {});
+                                               const CharacterModifiers &modifiers = {},
+                                               int resistancePenalty = 0);
 } // namespace d2x

@@ -118,10 +118,9 @@ void Simulation::resolveMonsterAttack(Enemy &enemy, int modeOverride, bool proje
                                  (enemy.combatRandom >> 32);
             if (uint32_t(enemy.combatRandom) % 100 < unsigned(*chance)) damage *= 2.f;
         }
-    player.hp = std::max(0.f, player.hp - damage);
+    hurtPlayer(damage, MonsterDamageType::Physical);
     if (combat && player.hp > 0)
         applyMonsterElements(enemy, *combat, mode);
-    player.hitTime = .16f;
     if (wearEquipment_) wearEquipment_({}, true);
 }
 } // namespace d2x

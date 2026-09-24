@@ -6,7 +6,10 @@ namespace d2x {
 bool Simulation::firePhysicalProjectile(const Enemy &enemy, const WeaponDamage &weapon, bool thrown) {
     auto &player = state_.player;
     const auto selected = weapon; // Ammo consumption can rebuild the equipment cache.
+    const auto priorRandom = player.combatRandom;
+    const auto elements = rollAttackElements(selected.item);
     if (!spendProjectile_ || !spendProjectile_(selected.item, thrown)) {
+        player.combatRandom = priorRandom;
         player.attackTarget = {};
         player.throwAttack = false;
         player.leftHandAttack = false;
@@ -23,6 +26,7 @@ bool Simulation::firePhysicalProjectile(const Enemy &enemy, const WeaponDamage &
     state_.area.missiles.push_back({ids_.allocate(), player.id, player.pos,
         direction * selected.missileSpeed, selected.missileLifetime, Skill::Fireball,
         true, selected.missileId, damage});
+    state_.area.missiles.back().attackElements = elements;
     if (wearEquipment_ && !thrown)
         wearEquipment_(selected.item, false);
     return true;

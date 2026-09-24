@@ -44,6 +44,10 @@ class Simulation {
     std::function<std::optional<MonsterWeb>(const Enemy &)> monsterWeb_;
     std::vector<GameEvent> events_;
     Enemy *findEnemy(EntityId id);
+    float hurtPlayer(float amount, MonsterDamageType type);
+    AttackElements rollAttackElements(EntityId weapon);
+    void resolveWeaponHit(Enemy &enemy, float physical, EntityId source,
+                          const AttackElements &elements);
     void moveTo(Vec target);
     void attackEnemy(EntityId target, bool thrown, bool leftHand);
     bool firePhysicalProjectile(const Enemy &enemy, const WeaponDamage &weapon, bool thrown);
@@ -54,7 +58,8 @@ class Simulation {
                 MonsterDamageType type = MonsterDamageType::Physical);
     void damageEnemy(Enemy &enemy, float amount, EntityId source, float chill = 0,
                      bool ignoreActivation = false,
-                     MonsterDamageType type = MonsterDamageType::Physical);
+                     MonsterDamageType type = MonsterDamageType::Physical,
+                     bool alreadyMitigated = false);
     void meleeDamage(Enemy &enemy, bool leftHand = false);
     void updatePotions(float dt);
     void updatePlayer(float dt, Vec keyboard);

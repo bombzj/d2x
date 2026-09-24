@@ -38,12 +38,24 @@ SessionSnapshot GameSession::snapshot() const {
     for (const auto &region : regions_)
         result.maps.push_back(region.definition.mapPath);
     result.world = state();
+    // Character saves begin a new game: timed effects do not cross that boundary.
+    result.world.player.combatEffects.clear();
     result.inactiveAreas = inactiveAreas_;
     // A moved-from area is an implementation detail, not a second saved copy.
     result.inactiveAreas.at(current_) = {};
     result.inactiveAreas.at(current_).region = region().definition.id;
     result.inventory = inventory_.state();
     result.containers = playerContainers_;
+    const auto &savedPlayer = result.world.player;
+    auto base = deriveCharacterAttributes(characterDefinition_, savedPlayer.level, savedPlayer.allocated);
+    EquipmentActor baseActor{characterDefinition_.code, base.strength, base.dexterity,
+                             savedPlayer.level, base.blockFactor};
+    auto unbuffed = resolveEquipmentModifiers(content_, inventory_, playerContainers_, baseActor);
+    auto limits = deriveCharacterAttributes(characterDefinition_, savedPlayer.level,
+                                            savedPlayer.allocated, unbuffed);
+    result.world.player.hp = std::min(result.world.player.hp, float(limits.maxLife));
+    result.world.player.mana = std::min(result.world.player.mana, float(limits.maxMana));
+    result.world.player.stamina = std::min(result.world.player.stamina, float(limits.maxStamina));
     result.loot = loot_.snapshot();
     result.soldVendorOffers = soldVendorOffers_;
     for (const auto &region : regions_)
@@ -349,8 +361,11 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
                         "resurrected monster identity");
                 resurrectedEnemies.insert(enemy.id);
             }
-            for (auto timer : {enemy.chill, enemy.stun, enemy.deathAge, enemy.hitFlash})
+            for (auto timer : {enemy.chill, enemy.stun, enemy.deathAge, enemy.hitFlash,
+                               enemy.poisonRemaining, enemy.poisonPerSecond})
                 scalar(timer);
+            require((enemy.poisonRemaining == 0) == (enemy.poisonPerSecond == 0),
+                    "monster poison phase");
             scalar(enemy.attack, 0, 40);
             scalar(enemy.attackDuration, 0, 40);
             scalar(enemy.attackImpact, -1, 40);
@@ -692,6 +707,12 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
             scalar(missile.radius);
             scalar(missile.chill);
             scalar(missile.slowDuration);
+            for (auto value : {missile.attackElements.fire, missile.attackElements.lightning,
+                               missile.attackElements.cold, missile.attackElements.magic,
+                               missile.attackElements.poisonPerSecond,
+                               missile.attackElements.poisonDuration,
+                               missile.attackElements.coldDuration})
+                scalar(value);
             if (missile.hostileMode != 7)
                 require(missile.slowDuration == 0, "unexpected missile slow");
             if (missile.physical && !missile.hostile)
@@ -822,7 +843,8 @@ void GameSession::restore(SessionSnapshot s) {
                                                      s.world.player.allocated, modifiers);
     EquipmentActor actor{characterDefinition.code, characterStats.strength, characterStats.dexterity,
                          s.world.player.level, characterStats.blockFactor};
-    auto equipmentStats = deriveEquipmentStats(equipmentInventory, s.containers, actor, modifiers.defense);
+    auto equipmentStats = deriveEquipmentStats(equipmentInventory, s.containers, actor,
+                                               modifiers.defense, modifiers.combat);
     std::map<EntityId, std::vector<VendorOffer>> nextVendorStocks;
     for (const auto &region : regions_)
         for (const auto &object : region.objects)

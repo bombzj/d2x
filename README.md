@@ -25,7 +25,7 @@ Windows 使用 `scripts/build.ps1`，启动示例（默认读取 `assets/mpq2`�
 
 本机可用 `Play.cmd`。EXE 默认直接读取完整 `assets/mpq2`；其他位置可显式传 `--mpq <目录>`。
 
-当前 Windows Release 构建、完整六 MPQ 运行目录、书与箭袋堆叠、金币存取、方块内容及 v82 角色存读档冒烟已通过；Linux 尚未实际编译运行。见 [构建与运行](docs/BUILD_AND_SHARE.md) 和 [开发基线](docs/baseline/DEVELOPMENT.md)。
+当前 Windows Release 构建、完整六 MPQ 运行目录短帧启动及 v83 战斗数值管道状态／角色面板截图已通过；书与箭袋堆叠、金币存取、方块内容及 v82 存读档为前轮记录。Linux 尚未实际编译运行。见 [构建与运行](docs/BUILD_AND_SHARE.md)、[战斗数值](docs/COMBAT_NUMBERS.md) 和 [开发基线](docs/baseline/DEVELOPMENT.md)。
 
 ## 操作
 

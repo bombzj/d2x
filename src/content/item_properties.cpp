@@ -48,7 +48,10 @@ void loadPropertyData(ClassicData &data) {
 bool isDirectPropertyRoll(const ClassicData &data, std::string_view code) {
     auto found = std::find_if(data.properties.begin(), data.properties.end(),
                               [&](const auto &property) { return property.code == code; });
-    return found != data.properties.end() && found->operations.size() == 1 &&
-           found->operations.front().function == 1 && !found->operations.front().stat.empty();
+    if (found == data.properties.end() || found->operations.empty()) return false;
+    switch (found->operations.front().function) {
+    case 1: case 2: case 3: case 5: case 6: case 7: case 8: return true;
+    default: return false;
+    }
 }
 } // namespace d2x

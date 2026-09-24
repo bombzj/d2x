@@ -1,5 +1,7 @@
 #include "scene_view.hpp"
 #include "character_panel.hpp"
+#include "character_action_stats.hpp"
+#include <algorithm>
 
 namespace d2x {
 void SceneView::drawCharacter(Vec mouse) const {
@@ -70,15 +72,12 @@ void SceneView::drawCharacter(Vec mouse) const {
         }
     }
 
-    std::string damage;
-    for (int index = 0; index < equipment.weaponCount; ++index) {
-        if (index) damage += "/";
-        const auto &weapon = equipment.weapons[index];
-        damage += std::to_string(weapon.minimum / 256) + "-" + std::to_string(weapon.maximum / 256);
-    }
-    if (damage.empty()) damage = "0";
-    paired("Damage", damage, 83);
-    paired("Attack Rating", std::to_string(stats.attackRating), 105);
+    const auto leftAction = characterActionStats(session_, view_.leftSkill);
+    const auto rightAction = characterActionStats(session_, view_.rightSkill);
+    paired("Damage", leftAction.damage, 83);
+    paired("Attack Rating", leftAction.attackRating, 105);
+    paired("Damage", rightAction.damage, 146);
+    paired("Attack Rating", rightAction.attackRating, 168);
     paired("Defense", std::to_string(equipment.defense), 190);
     paired("Stamina", std::to_string(int(player.stamina)) + "/" + std::to_string(stats.maxStamina), 230);
     paired("Life", std::to_string(int(player.hp)) + "/" + std::to_string(stats.maxLife), 252);
@@ -87,6 +86,18 @@ void SceneView::drawCharacter(Vec mouse) const {
     paired("Cold Resist", std::to_string(stats.coldResist) + "%", 358);
     paired("Lightning Resist", std::to_string(stats.lightningResist) + "%", 380);
     paired("Poison Resist", std::to_string(stats.poisonResist) + "%", 402);
+    const auto &combat = stats.combat;
+    cell("Block " + std::to_string(equipment.blockChance) + "%", 18, 317, 132, 12, 9, parchment);
+    cell("Physical Resist " + std::to_string(std::clamp(combat.physicalResist, -100, 50)) +
+             "%", 18, 330, 132, 12, 9, parchment);
+    cell("Magic Resist " + std::to_string(std::clamp(combat.magicResist, -100, 75)) +
+             "%", 18, 343, 132, 12, 9, parchment);
+    cell("Damage -" + std::to_string(combat.flatPhysicalReduction) + " / " +
+             std::to_string(combat.flatMagicReduction), 18, 356, 132, 12, 9, parchment);
+    cell("Poison Length -" + std::to_string(std::clamp(combat.poisonLengthResist, 0, 100)) +
+             "%", 18, 391, 132, 12, 9, parchment);
+    cell("Fire Absorb " + std::to_string(std::clamp(combat.fireAbsorbPercent, 0, 40)) +
+             "%", 18, 404, 132, 12, 9, parchment);
     if (player.unspentAttributes > 0) {
         const auto &texture = assets_.attributePoints.frames[0].texture;
         const auto box = characterArtRect(3, 365, float(texture.width), float(texture.height));
