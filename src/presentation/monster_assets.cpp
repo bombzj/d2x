@@ -61,7 +61,8 @@ void SceneAssets::loadMonsterAnimations(Archives &archives, const GameSession &s
                      kind == MonsterKind::Skeleton || kind == MonsterKind::CorruptRogue ||
                      kind == MonsterKind::Goatman || kind == MonsterKind::QuillRat ||
                      kind == MonsterKind::Wraith || kind == MonsterKind::CorruptLancer ||
-                     kind == MonsterKind::CorruptArcher || kind == MonsterKind::SkeletonBow) && !timing)
+                     kind == MonsterKind::CorruptArcher || kind == MonsterKind::SkeletonBow ||
+                     kind == MonsterKind::Bighead) && !timing)
                     throw std::runtime_error("Original monster AnimData entry missing: " +
                                              actor.id + "/" + mode);
                 if (timing && animation->second.count != timing->frames)

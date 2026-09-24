@@ -10,6 +10,7 @@
 #include "gameplay/monsters/corrupt_lancer_ai.hpp"
 #include "gameplay/monsters/corrupt_archer_ai.hpp"
 #include "gameplay/monsters/skeleton_bow_ai.hpp"
+#include "gameplay/monsters/bighead_ai.hpp"
 #include "gameplay/monsters/monster_wander.hpp"
 #include <algorithm>
 
@@ -47,9 +48,6 @@ void Simulation::updateMonsters(float dt) {
             enemy.aiCharged = false;
             enemy.aiAdvanceRemaining = 0;
             enemy.skill2Remaining = enemy.skill2Duration = 0;
-            enemy.aiCircling = false;
-            enemy.aiRunning = false;
-            enemy.aiAdvanceRemaining = 0;
             enemy.attack = enemy.attackDuration = 0;
             enemy.attackImpact = -1;
             enemy.attackMode = 1;
@@ -102,8 +100,9 @@ void Simulation::updateMonsters(float dt) {
         if (enemy.aiCircling) {
             const auto originalSpeed = monsterWalkSpeed_ ? monsterWalkSpeed_(enemy) : std::nullopt;
             const float speed = originalSpeed.value_or(monsterDefinition(enemy.kind).speed) *
-                                bruteWalkMultiplier(enemy) * (enemy.chill > 0 ? .42f : 1.f);
-            bruteAdvanceCircle(enemy, *grid_, speed, dt);
+                                (enemy.kind == MonsterKind::Brute ? bruteWalkMultiplier(enemy) : 1.f) *
+                                (enemy.chill > 0 ? .42f : 1.f);
+            monsterAdvanceCircle(enemy, *grid_, speed, dt);
             continue;
         }
         const auto ai = monsterAi_ ? monsterAi_(enemy) : std::nullopt;
@@ -122,7 +121,8 @@ void Simulation::updateMonsters(float dt) {
         if (enemy.aiEscaping) {
             const auto originalSpeed = monsterWalkSpeed_ ? monsterWalkSpeed_(enemy) : std::nullopt;
             const float speed = originalSpeed.value_or(monsterDefinition(enemy.kind).speed) *
-                                (enemy.kind == MonsterKind::QuillRat ? 1.f : 1.5f) *
+                                (enemy.kind == MonsterKind::Bighead ? .5f :
+                                 enemy.kind == MonsterKind::QuillRat ? 1.f : 1.5f) *
                                 (enemy.chill > 0 ? .42f : 1.f);
             fallenAdvanceEscape(enemy, *grid_, speed, dt);
             continue;
@@ -160,7 +160,28 @@ void Simulation::updateMonsters(float dt) {
         const bool quillRatAi = ai && ai->kind == MonsterAiKind::QuillRat;
         const bool wraithAi = ai && ai->kind == MonsterAiKind::Wraith;
         const bool skeletonBowAi = ai && ai->kind == MonsterAiKind::SkeletonBow;
+        const bool bigheadAi = ai && ai->kind == MonsterAiKind::Bighead;
         bool clear = grid_->segment(enemy.pos, player.pos);
+        if (bigheadAi) {
+            auto action = bigheadThink(enemy, *ai, distance, clear, definition.attackRange);
+            if (action == BigheadAction::Retreat)
+                action = monsterStartRetreat(enemy, player.pos, 5, *grid_)
+                    ? BigheadAction::Idle : BigheadAction::Fire;
+            if (action == BigheadAction::Circle) {
+                if (!monsterStartCircle(enemy, player.pos, 4, *grid_))
+                    enemy.aiWait = 10.f / 25.f;
+                action = BigheadAction::Idle;
+            }
+            if (action == BigheadAction::Melee || action == BigheadAction::Fire) {
+                enemy.route.clear();
+                beginMonsterAttack(enemy, action == BigheadAction::Fire ? 2 : 1);
+                continue;
+            }
+            if (action == BigheadAction::Idle) {
+                if (!enemy.aiEscaping && !enemy.aiCircling) enemy.route.clear();
+                continue;
+            }
+        }
         if (skeletonBowAi) {
             const auto action = skeletonBowThink(enemy, *ai, distance, clear);
             if (action == SkeletonBowAction::Shoot) {
@@ -328,7 +349,8 @@ void Simulation::updateMonsters(float dt) {
             if (lancerAi) enemy.aiRunning = false;
             if (archerAi) enemy.aiRunning = false;
         }
-        if (!skeletonBowAi && (player.pos - enemy.pos).length() < definition.attackRange &&
+        if (!skeletonBowAi && !bigheadAi &&
+            (player.pos - enemy.pos).length() < definition.attackRange &&
             player.leapTime <= 0 && grid_->segment(enemy.pos, player.pos)) {
             if (skeletonAi && !skeletonAttacks(enemy, *ai))
                 continue;
@@ -344,7 +366,7 @@ void Simulation::updateMonsters(float dt) {
                 const auto action = bruteCombat(enemy, *ai);
                 if (action == BruteCombat::Idle) continue;
                 if (action == BruteCombat::Circle) {
-                    if (!bruteStartCircle(enemy, player.pos, *grid_))
+                    if (!monsterStartCircle(enemy, player.pos, 4, *grid_))
                         enemy.aiWait = 15.f / 25.f;
                     continue;
                 }

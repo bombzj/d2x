@@ -39,4 +39,41 @@ bool monsterStartRetreat(Enemy &enemy, Vec target, int distance, const Grid &gri
     }
     return false;
 }
+bool monsterStartCircle(Enemy &enemy, Vec target, int distance, const Grid &grid) {
+    const Vec offset = enemy.pos - target;
+    if (offset.length() == 0) return false;
+    const Vec radial = offset.unit();
+    const bool clockwise = (monsterAiRandom(enemy) & 255) < 128;
+    const Vec tangent = clockwise ? Vec{-radial.y, radial.x} : Vec{radial.y, -radial.x};
+    for (float angleStep : {1.f, .75f, .5f}) {
+        const Vec destination = target + (radial + tangent * angleStep).unit() *
+                                        float(std::max(distance, 1));
+        if (!grid.walkable(destination)) continue;
+        auto route = grid.path(enemy.pos, destination);
+        if (route.empty()) continue;
+        enemy.route = std::move(route);
+        enemy.aiCircling = true;
+        enemy.aiWait = 0;
+        return true;
+    }
+    return false;
+}
+void monsterAdvanceCircle(Enemy &enemy, const Grid &grid, float speed, float dt) {
+    while (!enemy.route.empty() && (enemy.route.front() - enemy.pos).length() < .25f)
+        enemy.route.pop_front();
+    if (enemy.route.empty()) {
+        enemy.aiCircling = false;
+        return;
+    }
+    const Vec offset = enemy.route.front() - enemy.pos;
+    const Vec next = enemy.pos + offset.unit() * std::min(speed * dt, offset.length());
+    if (!grid.segment(enemy.pos, next)) {
+        enemy.route.clear();
+        enemy.aiCircling = false;
+        return;
+    }
+    enemy.pos = next;
+    if ((enemy.route.front() - enemy.pos).length() < .25f) enemy.route.pop_front();
+    if (enemy.route.empty()) enemy.aiCircling = false;
+}
 } // namespace d2x

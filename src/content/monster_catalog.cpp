@@ -179,7 +179,7 @@ MonsterCatalog::MonsterCatalog(Archives &archives, const DataTable &stats) {
                 } else if (std::string_view(mode) == "a2") {
                     if (kind == MonsterKind::Brute || kind == MonsterKind::Skeleton ||
                         kind == MonsterKind::Zombie || kind == MonsterKind::Fallen ||
-                        kind == MonsterKind::QuillRat)
+                        kind == MonsterKind::QuillRat || kind == MonsterKind::Bighead)
                         if (auto timing = loadMonsterAttackTiming(
                                 animations, actor->token, 2, weapon,
                                 actor->attack2Projectile ? 2 : 1))

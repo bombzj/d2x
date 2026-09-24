@@ -323,12 +323,18 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
                     const auto combat = simulation_.monsterNormalCombat_
                         ? simulation_.monsterNormalCombat_(enemy.identity, area.region) : std::nullopt;
                     const auto *source = monsterContent_.find(enemy.identity.monster);
+                    const bool physicalA2 = combat && combat->attack2Damage &&
+                        simulation_.monsterAccuracy_ &&
+                        simulation_.monsterAccuracy_(enemy, area.region, 2);
+                    const bool elementalA2 = combat && source && source->attack2Projectile &&
+                        std::any_of(combat->elements.begin(), combat->elements.end(),
+                            [](const auto &element) { return element && element->mode == "A2"; });
                     require((enemy.kind == MonsterKind::Brute || enemy.kind == MonsterKind::Skeleton ||
                              enemy.kind == MonsterKind::Zombie || enemy.kind == MonsterKind::Fallen ||
-                             (enemy.kind == MonsterKind::QuillRat && source && source->attack2Projectile)) && ai &&
+                             ((enemy.kind == MonsterKind::QuillRat || enemy.kind == MonsterKind::Bighead) &&
+                              source && source->attack2Projectile)) && ai &&
                                 monsterContent_.attackTiming(enemy.kind, 2) && combat &&
-                                combat->attack2Damage && simulation_.monsterAccuracy_ &&
-                                simulation_.monsterAccuracy_(enemy, area.region, 2),
+                                (physicalA2 || elementalA2),
                             "unsupported monster A2 mode");
                 }
                 float duration = monsterDefinition(enemy.kind).attackInterval;
@@ -349,7 +355,8 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
                         ai->kind != MonsterAiKind::QuillRat && ai->kind != MonsterAiKind::Wraith &&
                         ai->kind != MonsterAiKind::CorruptLancer &&
                         ai->kind != MonsterAiKind::CorruptArcher &&
-                        ai->kind != MonsterAiKind::SkeletonBow))
+                        ai->kind != MonsterAiKind::SkeletonBow &&
+                        ai->kind != MonsterAiKind::Bighead))
                 require(enemy.aiWait == 0 && !enemy.aiPursuing && !enemy.aiEscaping &&
                             !enemy.aiCommanded && !enemy.aiCircling && !enemy.aiRunning &&
                             enemy.aiAdvanceRemaining == 0 && enemy.skill2Remaining == 0,
@@ -359,8 +366,16 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
                             (!enemy.aiCircling || (enemy.hp > 0 && enemy.attack == 0 &&
                                                    enemy.aiWait == 0 && !enemy.route.empty())),
                         "brute AI state");
+            else if (ai && ai->kind == MonsterAiKind::Bighead)
+                require(enemy.aiWait <= 10.f / 25.f && !enemy.aiPursuing &&
+                            !enemy.aiCommanded && !enemy.aiRunning && !enemy.aiCharged &&
+                            (!enemy.aiCircling || (enemy.hp > 0 && enemy.attack == 0 &&
+                                                   enemy.aiWait == 0 && !enemy.route.empty())) &&
+                            (!enemy.aiEscaping || (enemy.hp > 0 && enemy.attack == 0 &&
+                                                   !enemy.route.empty())),
+                        "bighead AI state");
             else
-                require(!enemy.aiCircling, "non-Brute circling state");
+                require(!enemy.aiCircling, "unsupported circling state");
             if (ai && ai->kind == MonsterAiKind::CorruptRogue)
                 require(enemy.aiWait <= float(ai->params[1]) / 25.f &&
                             (enemy.aiAdvanceRemaining == 0 || enemy.hp > 0) &&
