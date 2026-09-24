@@ -17,7 +17,7 @@
 
 `reference/d2moo` 对数值采用共享 `DATATBLS_CalculateMonsterStatsByLevel`，AI 由 `AITHINK_GetAiTableRecord` 分派到不同函数。因此逐个 ID 的工作是核对它是否需要尚未落地的 AI 分支、技能、动作或视觉参数，而不是重做一遍生命／抗性算法。当前仍未覆盖的通用元素攻击、怪物技能、精英修正等需要先补共用能力，再开放依赖它的 ID。
 
-已启用原外观的 `fallen1–5`、`corruptrogue1–5`、`brute1–5`、`skeleton1–5`、`zombie1–5`、`goatman1–5` 与 `quillrat1` 已核对共用路径：普通级别的生命、命中、防御、伤害、抗性、元素由 `GameSession::resolvedMonsterCombat` 按真实 ID 提供，攻击与死亡结算不按 ID 分支；动画按原 token／模式／调色读 MPQ，声音按各自 `MonSound` 读 MPQ。声音行存在性现对所有启用的敌对外观统一校验，原行未列出的具体音效留空。
+已启用原外观的 `fallen1–5`、`corruptrogue1–5`、`brute1–5`、`skeleton1–5`、`zombie1–5`、`goatman1–5` 与 `quillrat1–2` 已核对共用路径：普通级别的生命、命中、防御、伤害、抗性、元素由 `GameSession::resolvedMonsterCombat` 按真实 ID 提供，攻击与死亡结算不按 ID 分支；动画按原 token／模式／调色读 MPQ，声音按各自 `MonSound` 读 MPQ。声音行存在性现对所有启用的敌对外观统一校验，原行未列出的具体音效留空。
 
 ## 分步边界
 
@@ -67,6 +67,7 @@
 44. **`goatman4`（Hell Clan）普通级别变体：已完成。** 复用 `GM` 六动作、`MonSounds.goatman`、共享 Goatman AI、三难度战斗和死亡链，`TransLvl=3` 读取原调色。自身 MPQ 行的 `El1Mode=A1`／`El1Type=fire` 在普通难度无概率，噩梦／地狱分别为 25%／30%，进入通用元素攻击；无主动技能或弹体。完整六 MPQ 包在邪恶洞窟启动，原形截图、v64 存读档与击杀获得 4 经验已现场确认；该经验受等级差缩减，高难度火焰命中未单独量测。
 45. **`goatman5`（Death Clan）普通级别变体：已完成。** 复用 `GM` 六动作、`MonSounds.goatman`、共享 Goatman AI 及三难度战斗／死亡链，`TransLvl=4` 读取原调色；自身 MPQ 行没有主动技能、元素攻击或弹体。完整六 MPQ 包在邪恶洞窟启动，原形截图、v65 存读档与击杀获得 16 经验已现场确认。
 46. **`quillrat1`（Quill Rat）远程家族与敌方弹体：已完成基础分支。** 血腥荒地首批真实远程普通怪物。`MonStats.AI=QuillRat` 与本地 D2MOO 的 `AITHINK_Fn014_QuillRat` 指定近身 A1、激活距离 `aip1`、A2 射击概率 `aip2`、后撤距离 `aip4`；专属决策放在 `quill_rat_ai.*`，通用房间激活／寻路仍是项目适配。原 `SI` 的 NU/WL/A1/A2/GH/DT/DD、`MonSounds.quillrat`、`AnimData.d2` A2 事件 2 都从 MPQ 读取；A2 的 13 帧、0.52 秒、0.2 秒发射点与 `MissA2=spike1` 对应。敌方弹体使用运行时 `Missiles.txt` 的 ID、速度、射程、原 DCC、基础伤害及源伤害比例，在命中玩家时复用 A2 命中、暴击、角色格挡、元素攻击和受击流程；发射者身份与飞行状态写入 v66 存档并校验。原 A2 毒素在普通难度无概率，噩梦／地狱 15%／20% 由通用元素路径处理，未单独量测。完整六 MPQ 包在邪恶洞窟启动，原形与弹体截图、飞行中存读档、生命 55→53、后撤位移和击杀经验 21 已现场确认。受击后按原 GH 动作结束触发一次 A2 回击，待回击状态随 v66 保存；原引擎逐帧行动调度与逃跑路径算法仍属项目适配。
-47. **后续候选：其他 Act I AI 家族。** 先核对未实现普通身份的 MPQ 动作、声音、技能／弹体与本地 D2MOO 规则，补齐家族共用能力后逐 ID 开放。弓箭、法术、复活等依赖独立流程，不直接套用近战 AI。精英／首领词缀和 Boss 特性另列阶段。
+47. **`quillrat2`（Spike Fiend）普通级别变体：已完成。** 复用 `SI` 七动作、`MonSounds.quillrat`、共享 Quill Rat AI／A2 事件 2 发射、敌方弹体命中与三难度战斗／死亡链；`TransLvl=1` 选择原蓝色调色。该 ID 的 `MissA2=spike2` 从自身 MPQ 行解析，`Missiles.txt` 原 ID 8、速度 13、射程 40 帧、基础伤害 1–3 和源伤害比例 128；无需为变体写一套弹体行为。原 A2 冰冷普通难度无概率，噩梦／地狱为 5%／15%，走通用元素攻击，未单独量测。完整六 MPQ 包在邪恶洞窟启动，原形与弹体截图、v67 飞行中存读档、生命 55→51 与击杀获得 49 经验已现场确认。
+48. **后续候选：其他 Act I AI 家族。** 先核对未实现普通身份的 MPQ 动作、声音、技能／弹体与本地 D2MOO 规则，补齐家族共用能力后逐 ID 开放。弓箭、法术、复活等依赖独立流程，不直接套用近战 AI。精英／首领词缀和 Boss 特性另列阶段。
 
 当前数值计算依据本地 `reference/d2moo/source/D2Common/src/DataTbls/MonsterTbls.cpp` 的 `DATATBLS_CalculateMonsterStatsByLevel` 和 `reference/d2moo/source/D2Game/src/MONSTER/Monster.cpp` 的生命掷骰；AI 规则核对 `reference/d2moo/source/D2Game/src/AI/AiThink.cpp` 的 Skeleton、Zombie、Fallen 与 Brute 分支，动作帧核对 `reference/d2moo/source/D2Common/src/DataTbls/AnimTbls.cpp` 与 `Units.cpp`。区间、AI 参数和动作时序始终从用户挂载的 MPQ 读取，参考仓库不作为运行时数据源。当前目标选择、AI 调度和随机流仍是项目适配，不能视为原版逐帧复刻。
