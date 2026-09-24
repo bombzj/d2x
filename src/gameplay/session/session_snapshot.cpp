@@ -330,6 +330,7 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
                         std::any_of(combat->elements.begin(), combat->elements.end(),
                             [](const auto &element) { return element && element->mode == "A2"; });
                     require((enemy.kind == MonsterKind::Brute || enemy.kind == MonsterKind::Skeleton ||
+                             enemy.kind == MonsterKind::HellBovine ||
                              enemy.kind == MonsterKind::Zombie || enemy.kind == MonsterKind::Fallen ||
                              ((enemy.kind == MonsterKind::QuillRat || enemy.kind == MonsterKind::Bighead) &&
                               source && source->attack2Projectile)) && ai &&

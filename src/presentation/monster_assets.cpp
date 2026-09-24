@@ -11,7 +11,11 @@ void SceneAssets::loadMonsterAnimations(Archives &archives, const GameSession &s
             throw std::runtime_error("Monster token differs from implemented art: " + actor.id);
         const auto palettePath = "data/global/monsters/" + std::string(definition.token) +
                                  "/cof/palshift.dat";
-        const auto colors = monsterPalshift(archives.read(palettePath), actor.transLevel);
+        std::optional<std::array<uint8_t, 256>> colors;
+        if (archives.contains(palettePath))
+            colors = monsterPalshift(archives.read(palettePath), actor.transLevel);
+        else if (actor.transLevel != 0)
+            throw std::runtime_error("Monster TransLvl requires missing palshift.dat: " + actor.id);
         std::array<const char *, 16> equipment;
         equipment.fill("");
         if (!actor.rightHandVariant.empty()) equipment[5] = actor.rightHandVariant.c_str();
@@ -34,7 +38,8 @@ void SceneAssets::loadMonsterAnimations(Archives &archives, const GameSession &s
             if (weapon.empty())
                 throw std::runtime_error("Monster mode COF missing: " + actor.id + "/" + mode);
             auto animation = graphics_.composite("monsters", definition.token, mode,
-                                                 std::string(weapon), &equipment, &colors);
+                                                 std::string(weapon), &equipment,
+                                                 colors ? &*colors : nullptr);
             if (animation.frames.empty() || !animation.completeComposite)
                 throw std::runtime_error("Monster animation incomplete: " + actor.id + "/" + mode);
             animations.emplace(mode, std::move(animation));
@@ -62,7 +67,7 @@ void SceneAssets::loadMonsterAnimations(Archives &archives, const GameSession &s
                      kind == MonsterKind::Goatman || kind == MonsterKind::QuillRat ||
                      kind == MonsterKind::Wraith || kind == MonsterKind::CorruptLancer ||
                      kind == MonsterKind::CorruptArcher || kind == MonsterKind::SkeletonBow ||
-                     kind == MonsterKind::Bighead) && !timing)
+                     kind == MonsterKind::Bighead || kind == MonsterKind::HellBovine) && !timing)
                     throw std::runtime_error("Original monster AnimData entry missing: " +
                                              actor.id + "/" + mode);
                 if (timing && animation->second.count != timing->frames)

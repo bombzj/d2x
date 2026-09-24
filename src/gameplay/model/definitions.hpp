@@ -9,7 +9,8 @@ namespace d2x {
 enum class Skill { Fireball, FrostNova, Whirlwind, Teleport, Leap, WarCry, FireBolt, StaticField, Count };
 constexpr size_t skillCount = size_t(Skill::Count);
 enum class MonsterKind { Fallen, Zombie, Skeleton, CorruptRogue, Brute, Goatman, QuillRat,
-                         Wraith, CorruptLancer, CorruptArcher, SkeletonBow, Bighead, Count };
+                         Wraith, CorruptLancer, CorruptArcher, SkeletonBow, Bighead,
+                         HellBovine, Count };
 // Native Levels.txt IDs. Template previews occupy a separate range (10000 + Def).
 enum class RegionId { Encampment = 1 };
 enum class Interaction { None, Talk, Heal, Travel, Stash };

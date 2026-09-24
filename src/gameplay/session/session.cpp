@@ -133,7 +133,8 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
         if (!record || record->boss) return std::nullopt;
         auto profile = record->aiProfiles.at(state().population.difficulty);
         if (!profile) return std::nullopt;
-        if (profile->kind == MonsterAiKind::Skeleton && enemy.kind == MonsterKind::Skeleton)
+        if (profile->kind == MonsterAiKind::Skeleton &&
+            (enemy.kind == MonsterKind::Skeleton || enemy.kind == MonsterKind::HellBovine))
             return profile;
         if (profile->kind == MonsterAiKind::Brute && enemy.kind == MonsterKind::Brute)
             return profile;
@@ -249,7 +250,7 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
     Fingerprint fingerprint;
     fingerprint.add(content_.profile);
     // Bump this rules revision when state interpretation or compiled rules change.
-    fingerprint.add("d2x-session-rules-v105-bighead");
+    fingerprint.add("d2x-session-rules-v106-hellbovine");
     auto members = archives.used;
     for (const auto &member : members) {
         fingerprint.add(member);

@@ -178,6 +178,7 @@ MonsterCatalog::MonsterCatalog(Archives &archives, const DataTable &stats) {
                         attacks_.emplace(kind, *timing);
                 } else if (std::string_view(mode) == "a2") {
                     if (kind == MonsterKind::Brute || kind == MonsterKind::Skeleton ||
+                        kind == MonsterKind::HellBovine ||
                         kind == MonsterKind::Zombie || kind == MonsterKind::Fallen ||
                         kind == MonsterKind::QuillRat || kind == MonsterKind::Bighead)
                         if (auto timing = loadMonsterAttackTiming(
