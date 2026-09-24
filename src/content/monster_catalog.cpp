@@ -33,7 +33,7 @@ MonsterCatalog::MonsterCatalog(Archives &archives, const DataTable &stats) {
         if (auto timing = loadMonsterMotionTiming(animations, monsterDefinition(MonsterKind::Fallen), "s2"))
             motions_[MonsterKind::Fallen].emplace("s2", *timing);
         for (int index = 0; index < int(MonsterKind::Count); ++index)
-            for (auto mode : {"nu", "wl", "gh", "dt", "dd"})
+            for (auto mode : {"nu", "wl", "rn", "gh", "dt", "dd"})
                 if (auto timing = loadMonsterMotionTiming(
                         animations, monsterDefinition(MonsterKind(index)), mode))
                     motions_[MonsterKind(index)].emplace(mode, *timing);
@@ -72,8 +72,11 @@ MonsterCatalog::MonsterCatalog(Archives &archives, const DataTable &stats) {
         for (int difficulty = 0; difficulty < 3; ++difficulty)
             m.aiProfiles[difficulty] = loadMonsterAiProfile(stats, row, m.ai, difficulty);
         m.walkVelocity = stats.number(row, "Velocity");
+        m.runVelocity = stats.number(row, "Run");
         if (m.walkVelocity && (*m.walkVelocity < 0 || *m.walkVelocity > 255))
             throw std::runtime_error("Unsupported monster Velocity: " + m.id);
+        if (m.runVelocity && (*m.runVelocity < 0 || *m.runVelocity > 255))
+            throw std::runtime_error("Unsupported monster Run: " + m.id);
         auto attackRating = [&](std::string_view field) -> std::optional<int> {
             auto attack = stats.number(row, field);
             if (!attack || *attack < 0 || m.normalLevel <= 0) return std::nullopt;
@@ -121,6 +124,7 @@ MonsterCatalog::MonsterCatalog(Archives &archives, const DataTable &stats) {
         m.getHitMode = extended.number(extra->second, "mGH").value_or(0) != 0;
         m.deadMode = extended.number(extra->second, "mDD").value_or(0) != 0;
         m.skill2Mode = extended.number(extra->second, "mS2").value_or(0) != 0;
+        m.runMode = extended.number(extra->second, "mRN").value_or(0) != 0;
         if (!indices_.emplace(m.index, m.id).second)
             throw std::runtime_error("Duplicate MonStats hcIdx: " + std::to_string(m.index));
         if (!monsters_.emplace(m.id, m).second) {

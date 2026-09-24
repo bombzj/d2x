@@ -17,7 +17,7 @@
 
 `reference/d2moo` 对数值采用共享 `DATATBLS_CalculateMonsterStatsByLevel`，AI 由 `AITHINK_GetAiTableRecord` 分派到不同函数。因此逐个 ID 的工作是核对它是否需要尚未落地的 AI 分支、技能、动作或视觉参数，而不是重做一遍生命／抗性算法。当前仍未覆盖的通用元素攻击、怪物技能、精英修正等需要先补共用能力，再开放依赖它的 ID。
 
-已启用原外观的 `fallen1`、`corruptrogue1`、`brute1`、`skeleton1` 与 `zombie1–5` 已核对共用路径：普通级别的生命、命中、防御、伤害、抗性、元素由 `GameSession::resolvedMonsterCombat` 按真实 ID 提供，攻击与死亡结算不按 ID 分支；动画按原 token／模式／调色读 MPQ，声音按各自 `MonSound` 读 MPQ。声音行存在性现对所有启用的敌对外观统一校验，原行未列出的具体音效留空。`corruptrogue1` 的专属 AI 尚未完成，虽已显示原外观，仍不算该怪物完整收尾。
+已启用原外观的 `fallen1–5`、`corruptrogue1`、`brute1–5`、`skeleton1–5` 与 `zombie1–5` 已核对共用路径：普通级别的生命、命中、防御、伤害、抗性、元素由 `GameSession::resolvedMonsterCombat` 按真实 ID 提供，攻击与死亡结算不按 ID 分支；动画按原 token／模式／调色读 MPQ，声音按各自 `MonSound` 读 MPQ。声音行存在性现对所有启用的敌对外观统一校验，原行未列出的具体音效留空。
 
 ## 分步边界
 
@@ -56,6 +56,7 @@
 33. **`brute3`（Yeti）普通级别变体：已完成。** `MonStats2` 除 ID 外与 `brute2` 一致，复用 `YE` 七动作、`MonSounds.brute`、共享 Brute AI 与三难度战斗／死亡链；自身 `aip3` 普通／噩梦为 80、地狱为 85，失败后的绕行分支走第 32 项的共享实现，`aip4` 选 A1／A2。`TransLvl=1` 使用原调色；没有主动技能、元素攻击或弹体。完整六 MPQ 包在邪恶洞窟启动，原形截图、v53 存读档与击杀获得 47 经验已现场确认；不逐变体重复量测绕行数值。
 34. **`brute4`（Crusher）普通级别变体：已完成。** `MonStats2` 除 ID 外与 `brute3` 一致，复用 `YE` 七动作、`MonSounds.brute`、共享 Brute AI 和三难度战斗／死亡链；`aip3` 普通／噩梦为 85、地狱为 90，`aip4` 选择 A1／A2。`TransLvl=2` 选原红黑调色；没有主动技能、元素攻击或弹体。完整六 MPQ 包在邪恶洞窟启动，原形截图、v54 存读档与击杀获得 6 经验已现场确认；不逐变体重复量测绕行数值。
 35. **`brute5`（Wailing Beast）普通级别变体：已完成。** `MonStats2` 除 ID 外与前几只 Brute 一致，复用 `YE` 七动作、`MonSounds.brute`、共享 Brute AI 及三难度战斗／死亡链；`aip3` 普通／噩梦为 90、地狱为 95，`aip4` 选择 A1／A2。`TransLvl=3` 使用原调色；`El1Mode=A1`／`El1Type=fire` 普通难度没有触发概率，噩梦／地狱均为原表 15%，进入共享火焰攻击。没有主动技能或弹体。完整六 MPQ 包在邪恶洞窟启动，原形截图、v55 存读档与击杀获得 9 经验已现场确认；高难度火焰命中未单独测。
-36. **后续候选：其他 AI 家族。** 先从 Act I 的未实现普通身份挑选依赖最少的原 AI 家族，核对 MPQ 动作、声音、技能／弹体与本地参考，再补共享能力后逐 ID 开放。精英／首领词缀和 Boss 特性另列阶段。
+36. **`corruptrogue1`（Dark Hunter）专属 AI 收尾：已完成基础分支。** 本地 D2MOO 的 `AITHINK_Fn010_CorruptRogue` 在 20−3×难度格内按 `aip1` 决定接近，否则按 `aip2` 停顿；接近时 `aip5` 决定步行或跑步，`aip4` 增加跑步速度，近身按 `aip3` 攻击或停顿。跑步取 `MonStats.Run` 与 `MonStats2.mRN`、原 `CRRN1HS` COF／DCC、`AnimData.d2` 帧数；AI 决策放在独立 `corrupt_rogue_ai.*`。原表没有主动技能、元素攻击或弹体，A1 命中、基础战斗、声音、经验和掉落继续走共享路径。原引擎的动作调度和路径步数在本项目以 3 格跑步／1 格步行决策周期适配，不能声称逐帧等同。完整六 MPQ 包在邪恶洞窟启动，原形截图、跑步位移与状态、v56 存读档及击杀获得 31 经验已现场确认。
+37. **后续候选：`corruptrogue2`。** 逐 ID 核对原动作、AI 参数、调色和特殊攻击后开放；若 MPQ 切换到弓箭，则先补共享远程怪物弹体能力。精英／首领词缀和 Boss 特性另列阶段。
 
 当前数值计算依据本地 `reference/d2moo/source/D2Common/src/DataTbls/MonsterTbls.cpp` 的 `DATATBLS_CalculateMonsterStatsByLevel` 和 `reference/d2moo/source/D2Game/src/MONSTER/Monster.cpp` 的生命掷骰；AI 规则核对 `reference/d2moo/source/D2Game/src/AI/AiThink.cpp` 的 Skeleton、Zombie、Fallen 与 Brute 分支，动作帧核对 `reference/d2moo/source/D2Common/src/DataTbls/AnimTbls.cpp` 与 `Units.cpp`。区间、AI 参数和动作时序始终从用户挂载的 MPQ 读取，参考仓库不作为运行时数据源。当前目标选择、AI 调度和随机流仍是项目适配，不能视为原版逐帧复刻。

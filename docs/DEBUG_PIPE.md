@@ -75,6 +75,8 @@ $spawn = .\scripts\Send-D2XCommand.ps1 -Command monster-spawn -Arguments @{monst
 
 `aiCircling` 表示 Brute 正沿可走路径绕目标行走。可定点生成 `brute2`，逐次 `step` 后查询 `monsters`，在近战攻击两次 `aip3` 掷骰中首次失败、第二次成功时观察该状态和位移；绕行路线随存档保存。
 
+`aiRunning` 和 `aiAdvanceRemaining` 表示 Corrupt Rogue 当前跑步动作及该次路径决策剩余距离。可定点生成 `corruptrogue1`，逐帧推进并用 `monsters` 观察；该状态随存档保存。
+
 普通怪物的 `combat` 返回共用三难度 MPQ 解析后的等级、生命区间、可用的 A1／A2 `[最小伤害, 最大伤害, 命中]`、防御、暴击、再生和六项抗性。原表缺少某攻击模式时省略该模式；缺命中或防御列时相应位置为 `null`。`combat.elements` 返回有完整数值的 `El1–3` 模式、元素种类、概率、伤害区间及持续帧数；`status.player.chill` 是冰冷剩余秒数，`poisonRemaining` 与 `poisonPerSecond` 是毒素剩余秒数和每秒伤害。这些字段与游戏使用同一解析结果，不是调试接口另算的一套数值。
 
 物品操作复用游戏的事务与访问校验。以下调用可分别使用，不要求按顺序执行：

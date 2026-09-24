@@ -93,6 +93,12 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
             return std::nullopt;
         return float((*record->walkVelocity << 8) * 75 / 100) * 25.f / 4096.f;
     };
+    simulation_.monsterRunSpeed_ = [this](const Enemy &enemy) -> std::optional<float> {
+        const auto *record = monsterContent_.find(enemy.identity.monster);
+        if (!record || !record->runVelocity)
+            return std::nullopt;
+        return float((*record->runVelocity << 8) * 75 / 100) * 25.f / 4096.f;
+    };
     simulation_.monsterNormalCombat_ = [this](const MonsterIdentity &identity, RegionId region)
         -> std::optional<MonsterNormalCombat> {
         if (auto combat = resolvedMonsterCombat(identity, region)) return combat->damage;
@@ -134,6 +140,9 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
         if (profile->kind == MonsterAiKind::Zombie && enemy.kind == MonsterKind::Zombie)
             return profile;
         if (profile->kind == MonsterAiKind::Fallen && enemy.kind == MonsterKind::Fallen)
+            return profile;
+        if (profile->kind == MonsterAiKind::CorruptRogue &&
+            enemy.kind == MonsterKind::CorruptRogue)
             return profile;
         return std::nullopt;
     };
@@ -210,7 +219,7 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
     Fingerprint fingerprint;
     fingerprint.add(content_.profile);
     // Bump this rules revision when state interpretation or compiled rules change.
-    fingerprint.add("d2x-session-rules-v83-brute5-wailing-beast");
+    fingerprint.add("d2x-session-rules-v84-corrupt-rogue-ai");
     auto members = archives.used;
     for (const auto &member : members) {
         fingerprint.add(member);

@@ -3,6 +3,7 @@
 #include "gameplay/monsters/brute_ai.hpp"
 #include "gameplay/monsters/zombie_ai.hpp"
 #include "gameplay/monsters/fallen_ai.hpp"
+#include "gameplay/monsters/corrupt_rogue_ai.hpp"
 #include "gameplay/monsters/monster_wander.hpp"
 #include <algorithm>
 
@@ -35,8 +36,12 @@ void Simulation::updateMonsters(float dt) {
             enemy.aiEscaping = false;
             enemy.aiCommanded = false;
             enemy.aiCircling = false;
+            enemy.aiRunning = false;
+            enemy.aiAdvanceRemaining = 0;
             enemy.skill2Remaining = enemy.skill2Duration = 0;
             enemy.aiCircling = false;
+            enemy.aiRunning = false;
+            enemy.aiAdvanceRemaining = 0;
             enemy.attack = enemy.attackDuration = 0;
             enemy.attackImpact = -1;
             enemy.attackMode = 1;
@@ -79,6 +84,7 @@ void Simulation::updateMonsters(float dt) {
         }
         const auto ai = monsterAi_ ? monsterAi_(enemy) : std::nullopt;
         const bool fallenAi = ai && ai->kind == MonsterAiKind::Fallen;
+        const bool rogueAi = ai && ai->kind == MonsterAiKind::CorruptRogue;
         if (fallenAi && !enemy.aiEscaping && monsterDeathDuration_)
             for (const auto &corpse : state_.area.enemies) {
                 if (corpse.hp > 0 || corpse.id == enemy.id ||
@@ -116,6 +122,8 @@ void Simulation::updateMonsters(float dt) {
             enemy.route.clear();
             enemy.rethink = 0;
             enemy.aiPursuing = false;
+            enemy.aiRunning = false;
+            enemy.aiAdvanceRemaining = 0;
             continue;
         }
         const bool skeletonAi = ai && ai->kind == MonsterAiKind::Skeleton;
@@ -123,6 +131,16 @@ void Simulation::updateMonsters(float dt) {
         const bool zombieAi = ai && ai->kind == MonsterAiKind::Zombie;
         bool clear = grid_->segment(enemy.pos, player.pos);
         if (distance >= definition.attackRange || !clear) {
+            if (rogueAi && enemy.aiAdvanceRemaining <= 0) {
+                const auto action = corruptRogueMovement(
+                    enemy, *ai, distance, state_.population.difficulty);
+                if (action == CorruptRogueMovement::Idle) {
+                    enemy.route.clear();
+                    continue;
+                }
+                enemy.aiRunning = action == CorruptRogueMovement::Run;
+                enemy.aiAdvanceRemaining = enemy.aiRunning ? 3.f : 1.f;
+            }
             if (skeletonAi && !skeletonApproaches(enemy, *ai)) {
                 enemy.route.clear();
                 continue;
@@ -164,6 +182,10 @@ void Simulation::updateMonsters(float dt) {
                 }
                 if (enemy.route.empty()) {
                     if (fallenAi) enemy.aiCommanded = false;
+                    if (rogueAi) {
+                        enemy.aiRunning = false;
+                        enemy.aiAdvanceRemaining = 0;
+                    }
                     continue;
                 }
                 destination = enemy.route.front();
@@ -171,19 +193,37 @@ void Simulation::updateMonsters(float dt) {
             auto offset = destination - enemy.pos;
             auto originalSpeed = monsterWalkSpeed_ ? monsterWalkSpeed_(enemy) : std::nullopt;
             float speed = originalSpeed.value_or(definition.speed) * (enemy.chill > 0 ? .42f : 1.f);
+            if (rogueAi && enemy.aiRunning) {
+                const auto runSpeed = monsterRunSpeed_ ? monsterRunSpeed_(enemy) : std::nullopt;
+                speed = runSpeed.value_or(originalSpeed.value_or(definition.speed)) *
+                        (1.f + float(ai->params[3]) / 100.f) * (enemy.chill > 0 ? .42f : 1.f);
+            }
             if (bruteAi) speed *= bruteWalkMultiplier(enemy);
             if (zombieAi && !zombieWanders) speed *= 4.f / 3.f;
             auto next = enemy.pos + offset.unit() * std::min(speed * dt, offset.length());
-            if (grid_->segment(enemy.pos, next))
+            if (grid_->segment(enemy.pos, next)) {
+                const float moved = (next - enemy.pos).length();
                 enemy.pos = next;
-            else {
+                if (rogueAi) {
+                    enemy.aiAdvanceRemaining = std::max(0.f, enemy.aiAdvanceRemaining - moved);
+                    if (enemy.aiAdvanceRemaining == 0) enemy.aiRunning = false;
+                }
+            } else {
                 enemy.route.clear();
                 enemy.rethink = 0;
                 if (fallenAi) enemy.aiCommanded = false;
+                if (rogueAi) {
+                    enemy.aiRunning = false;
+                    enemy.aiAdvanceRemaining = 0;
+                }
             }
         } else {
             enemy.route.clear();
             enemy.rethink = 0;
+            if (rogueAi) {
+                enemy.aiRunning = false;
+                enemy.aiAdvanceRemaining = 0;
+            }
         }
         if ((player.pos - enemy.pos).length() < definition.attackRange &&
             player.leapTime <= 0 && grid_->segment(enemy.pos, player.pos)) {
@@ -206,6 +246,7 @@ void Simulation::updateMonsters(float dt) {
                     continue;
                 }
             }
+            if (rogueAi && !corruptRogueAttacks(enemy, *ai)) continue;
             beginMonsterAttack(enemy);
         }
     }

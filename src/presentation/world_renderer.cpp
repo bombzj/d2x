@@ -212,7 +212,8 @@ void SceneView::drawActors() const {
                               : (e.stun > 0 || e.hitFlash > 0) && animations.contains("gh") ? "gh"
                               : e.skill2Remaining > 0 && animations.contains("s2") ? "s2"
                               : e.attack > 0 ? (e.attackMode == 2 ? "a2" : "a1")
-                              : movingMonsters_.contains(e.id) ? "wl" : "nu";
+                              : movingMonsters_.contains(e.id) ?
+                                    (e.aiRunning && animations.contains("rn") ? "rn" : "wl") : "nu";
             auto *anim = &animations.at(mode);
             if (anim->frames.empty())
                 anim = &animations.at("nu");

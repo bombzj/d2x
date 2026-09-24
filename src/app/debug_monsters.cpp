@@ -81,6 +81,7 @@ void listMonsters(Json &result, const Json &request, const GameSession &session,
             {"aiEscaping", enemy.aiEscaping},
             {"aiCommanded", enemy.aiCommanded},
             {"aiCircling", enemy.aiCircling},
+            {"aiRunning", enemy.aiRunning}, {"aiAdvanceRemaining", enemy.aiAdvanceRemaining},
             {"skill2Remaining", enemy.skill2Remaining},
             {"attackMode", enemy.attackMode}, {"attackRemaining", enemy.attack},
             {"impactRemaining", enemy.attackImpact}};

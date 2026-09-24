@@ -339,11 +339,14 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
             }
             scalar(enemy.rethink, -1.e9f);
             scalar(enemy.aiWait, 0, 65535.f / 25.f);
+            scalar(enemy.aiAdvanceRemaining, 0, 3.f);
             auto ai = simulation_.monsterAi_ ? simulation_.monsterAi_(enemy) : std::nullopt;
             if (!ai || (ai->kind != MonsterAiKind::Skeleton && ai->kind != MonsterAiKind::Zombie &&
-                        ai->kind != MonsterAiKind::Fallen && ai->kind != MonsterAiKind::Brute))
+                        ai->kind != MonsterAiKind::Fallen && ai->kind != MonsterAiKind::Brute &&
+                        ai->kind != MonsterAiKind::CorruptRogue))
                 require(enemy.aiWait == 0 && !enemy.aiPursuing && !enemy.aiEscaping &&
-                            !enemy.aiCommanded && !enemy.aiCircling && enemy.skill2Remaining == 0,
+                            !enemy.aiCommanded && !enemy.aiCircling && !enemy.aiRunning &&
+                            enemy.aiAdvanceRemaining == 0 && enemy.skill2Remaining == 0,
                         "unexpected monster AI state");
             if (ai && ai->kind == MonsterAiKind::Brute)
                 require(enemy.aiWait <= 15.f / 25.f && !enemy.aiPursuing &&
@@ -352,6 +355,20 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
                         "brute AI state");
             else
                 require(!enemy.aiCircling, "non-Brute circling state");
+            if (ai && ai->kind == MonsterAiKind::CorruptRogue)
+                require(enemy.aiWait <= float(ai->params[1]) / 25.f &&
+                            (enemy.aiAdvanceRemaining == 0 || enemy.hp > 0) &&
+                            (!enemy.aiRunning || enemy.aiAdvanceRemaining > 0),
+                        "corrupt rogue AI state");
+            else
+                require(!enemy.aiRunning && enemy.aiAdvanceRemaining == 0,
+                        "non-rogue run state");
+            if (enemy.aiRunning) {
+                const auto *record = monsterContent_.find(enemy.identity.monster);
+                require(record && record->runMode && record->runVelocity &&
+                            monsterContent_.motion(enemy.kind, "rn"),
+                        "original rogue run animation and velocity");
+            }
             if (ai && ai->kind == MonsterAiKind::Zombie)
                 require(enemy.aiWait <= 10.f / 25.f && (!enemy.aiPursuing || enemy.aiWait == 0),
                         "zombie AI state");

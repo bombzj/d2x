@@ -18,11 +18,12 @@ struct MonsterRecord {
     std::optional<int> normalAttackRating2;
     std::optional<int> normalDefense;
     std::optional<int> walkVelocity;
+    std::optional<int> runVelocity;
     std::optional<MonsterNormalCombat> normalCombat;
     std::array<std::optional<MonsterAiProfile>, 3> aiProfiles;
     bool enabled = false, randomSpawn = false, ranged = false, placeSpawn = false;
     bool killable = false, npc = false, critter = false, inert = false, boss = false;
-    bool getHitMode = false, deadMode = false, skill2Mode = false;
+    bool getHitMode = false, deadMode = false, skill2Mode = false, runMode = false;
     std::array<std::string, 2> minions;
     bool hostile() const { return enabled && killable && !npc && !critter && !inert && alignment == 0; }
 };

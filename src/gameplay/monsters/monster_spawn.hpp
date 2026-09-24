@@ -50,7 +50,7 @@ struct MonsterNormalCombat {
     std::optional<std::pair<int, int>> attack2Damage;
     std::array<std::optional<MonsterElementAttack>, 3> elements;
 };
-enum class MonsterAiKind { Skeleton, Brute, Zombie, Fallen };
+enum class MonsterAiKind { Skeleton, Brute, Zombie, Fallen, CorruptRogue };
 struct MonsterAiProfile {
     MonsterAiKind kind;
     std::array<int, 8> params{};

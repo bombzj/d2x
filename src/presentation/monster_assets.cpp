@@ -20,7 +20,9 @@ void SceneAssets::loadMonsterAnimations(Archives &archives, const GameSession &s
             equipment[8] = "lit";
             equipment[9] = "lit";
         }
-        for (auto mode : {"nu", "wl", "a1", "dt", "a2", "gh", "dd", "s2"}) {
+        for (auto mode : {"nu", "wl", "rn", "a1", "dt", "a2", "gh", "dd", "s2"}) {
+            if (std::string_view(mode) == "rn" &&
+                (kind != MonsterKind::CorruptRogue || !actor.runMode)) continue;
             if (std::string_view(mode) == "a2" && !content.attackTiming(kind, 2)) continue;
             if (std::string_view(mode) == "gh" && !actor.getHitMode) continue;
             if (std::string_view(mode) == "dd" && !actor.deadMode) continue;
@@ -42,11 +44,11 @@ void SceneAssets::loadMonsterAnimations(Archives &archives, const GameSession &s
             if (!timing || animations.at("s2").count != timing->frames)
                 throw std::runtime_error("Monster S2 AnimData/COF frame mismatch: " + actor.id);
         }
-        for (auto mode : {"nu", "wl", "gh", "dt", "dd"})
+        for (auto mode : {"nu", "wl", "rn", "gh", "dt", "dd"})
             if (auto animation = animations.find(mode); animation != animations.end()) {
                 auto *timing = content.motion(kind, mode);
                 if ((kind == MonsterKind::Brute || kind == MonsterKind::Zombie ||
-                     kind == MonsterKind::Skeleton) && !timing)
+                     kind == MonsterKind::Skeleton || kind == MonsterKind::CorruptRogue) && !timing)
                     throw std::runtime_error("Original monster AnimData entry missing: " +
                                              actor.id + "/" + mode);
                 if (timing && animation->second.count != timing->frames)
