@@ -17,7 +17,7 @@
 
 `reference/d2moo` 对数值采用共享 `DATATBLS_CalculateMonsterStatsByLevel`，AI 由 `AITHINK_GetAiTableRecord` 分派到不同函数。因此逐个 ID 的工作是核对它是否需要尚未落地的 AI 分支、技能、动作或视觉参数，而不是重做一遍生命／抗性算法。当前仍未覆盖的通用元素攻击、怪物技能、精英修正等需要先补共用能力，再开放依赖它的 ID。
 
-已启用原外观的 `fallen1–5`、`corruptrogue1–5`、`brute1–5`、`skeleton1–5`、`zombie1–5`、`goatman1–5`、`quillrat1–5` 与 `wraith1–2` 已核对共用路径：普通级别的生命、命中、防御、伤害、抗性、元素由 `GameSession::resolvedMonsterCombat` 按真实 ID 提供，攻击与死亡结算不按 ID 分支；动画按原 token／模式／调色读 MPQ，声音按各自 `MonSound` 读 MPQ。声音行存在性现对所有启用的敌对外观统一校验，原行未列出的具体音效留空。
+已启用原外观的 `fallen1–5`、`corruptrogue1–5`、`brute1–5`、`skeleton1–5`、`zombie1–5`、`goatman1–5`、`quillrat1–5` 与 `wraith1–3` 已核对共用路径：普通级别的生命、命中、防御、伤害、抗性、元素由 `GameSession::resolvedMonsterCombat` 按真实 ID 提供，攻击与死亡结算不按 ID 分支；动画按原 token／模式／调色读 MPQ，声音按各自 `MonSound` 读 MPQ。声音行存在性现对所有启用的敌对外观统一校验，原行未列出的具体音效留空。
 
 ## 分步边界
 
@@ -73,6 +73,7 @@
 50. **`quillrat5`（Jungle Urchin）普通级别变体：已完成。** 复用 `SI` 七动作、`MonSounds.quillrat`、共享 Quill Rat AI 与敌方弹体流程；`TransLvl=4` 使用原灰色调色，自己的 `aip1=25`、`aip2=75`、`aip4=1` 从 MPQ 读取。`MissA2=spike5` 对应运行时 `Missiles.txt` ID 11、速度 24、射程 40 帧、基础伤害 2–7 和源比例 128；无主动技能。原 A2 闪电普通难度无概率，噩梦／地狱为 5%／15%，进入通用元素路径。完整六 MPQ 包在邪恶洞窟启动，原形与弹体截图、v70 飞行中存读档、生命 55→45 和击杀经验 3 已确认；经验受等级差折减，高难度闪电未单独量测。
 51. **`wraith1`（Ghost）Wraith 家族与法力吸取：已完成基础分支。** `MonStats.AI=Wraith` 对应本地 D2MOO 的 `AITHINK_Fn009_Wraith`；`aip1` 接近几率、`aip2` 停顿帧数、`aip3` 近身攻击几率按各难度从 MPQ 读取。决策放在 `wraith_ai.*`，其余命中、死亡、经验和存档共用。原 `WR` 的 NU/WL/A1/GH/DT/DD、`MonSounds.wraith`、`AnimData.d2` 命中帧均从 MPQ 读取；`El1Mode=A1`／`El1Type=mana` 的原触发概率和伤害区间通过共用元素命中减少玩家法力。完整六 MPQ 包在邪恶洞窟启动，原形截图、v71 攻击中存读档、角色生命 55→43、法力从 10 降至 6.16 和击杀经验 72 已确认。房间调度及寻路仍为项目适配。
 52. **`wraith2`（Wraith）普通级别变体：已完成。** 复用 `WR` 六动作、`MonSounds.wraith`、共享 Wraith AI、A1 法力吸取及三难度战斗／死亡链；`TransLvl=1` 选择原黄色调色。自身 MPQ 行的 `aip1=60`、`aip2=10`、`aip3=75` 和 A1 法力吸取普通难度 45% 概率及伤害区间均动态读取；无主动技能或弹体。完整六 MPQ 包在邪恶洞窟启动，原形截图、v72 攻击中存读档、角色生命 55→49、法力从满值降至 6.10 和击杀经验 16 已确认。
-53. **后续候选：其他 Act I AI 家族。** 先核对未实现普通身份的 MPQ 动作、声音、技能／弹体与本地 D2MOO 规则，补齐家族共用能力后逐 ID 开放。弓箭、法术、复活等依赖独立流程，不直接套用近战 AI。精英／首领词缀和 Boss 特性另列阶段。
+53. **`wraith3`（Specter）普通级别变体：已完成。** 复用 `WR` 六动作、`MonSounds.wraith`、共享 Wraith AI、A1 法力吸取及三难度战斗／死亡链；`TransLvl=2` 选择原深色调色。自身 MPQ 行的 `aip1=70`、`aip2=8`、`aip3=80` 和 A1 法力吸取普通难度 50% 概率及伤害区间均动态读取；无主动技能或弹体。完整六 MPQ 包在邪恶洞窟启动，原形截图、v73 攻击中存读档、角色生命 55→42、法力从满值降至 5.10 和击杀经验 4 已确认；经验受等级差折减。
+54. **后续候选：其他 Act I AI 家族。** 先核对未实现普通身份的 MPQ 动作、声音、技能／弹体与本地 D2MOO 规则，补齐家族共用能力后逐 ID 开放。弓箭、法术、复活等依赖独立流程，不直接套用近战 AI。精英／首领词缀和 Boss 特性另列阶段。
 
 当前数值计算依据本地 `reference/d2moo/source/D2Common/src/DataTbls/MonsterTbls.cpp` 的 `DATATBLS_CalculateMonsterStatsByLevel` 和 `reference/d2moo/source/D2Game/src/MONSTER/Monster.cpp` 的生命掷骰；AI 规则核对 `reference/d2moo/source/D2Game/src/AI/AiThink.cpp` 的 Skeleton、Zombie、Fallen 与 Brute 分支，动作帧核对 `reference/d2moo/source/D2Common/src/DataTbls/AnimTbls.cpp` 与 `Units.cpp`。区间、AI 参数和动作时序始终从用户挂载的 MPQ 读取，参考仓库不作为运行时数据源。当前目标选择、AI 调度和随机流仍是项目适配，不能视为原版逐帧复刻。
