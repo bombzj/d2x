@@ -153,6 +153,9 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
         if (profile->kind == MonsterAiKind::CorruptLancer &&
             enemy.kind == MonsterKind::CorruptLancer)
             return profile;
+        if (profile->kind == MonsterAiKind::CorruptArcher &&
+            enemy.kind == MonsterKind::CorruptArcher)
+            return profile;
         return std::nullopt;
     };
     simulation_.zombieForcedPursuit_ = [this](RegionId region) {
@@ -186,13 +189,16 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
         const auto *timing = monsterContent_.attackTiming(enemy.kind, mode);
         return timing ? std::optional<MonsterAttackTiming>(*timing) : std::nullopt;
     };
-    simulation_.monsterProjectile_ = [this](const Enemy &enemy)
+    simulation_.monsterProjectile_ = [this](const Enemy &enemy, int mode)
         -> std::optional<MonsterProjectile> {
         const auto *record = monsterContent_.find(enemy.identity.monster);
-        if (!record || enemy.kind != MonsterKind::QuillRat ||
-            monsterImplementation(enemy.identity.monster).substitute)
+        if (!record || monsterImplementation(enemy.identity.monster).substitute)
             return std::nullopt;
-        return record->attack2Projectile;
+        if (mode == 1 && enemy.kind == MonsterKind::CorruptArcher)
+            return record->attack1Projectile;
+        if (mode == 2 && enemy.kind == MonsterKind::QuillRat)
+            return record->attack2Projectile;
+        return std::nullopt;
     };
     worldSelection.difficulty = population.difficulty;
     auto plan = planWorld(archives, worldContent_, worldSelection);
@@ -236,7 +242,7 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
     Fingerprint fingerprint;
     fingerprint.add(content_.profile);
     // Bump this rules revision when state interpretation or compiled rules change.
-    fingerprint.add("d2x-session-rules-v102-corrupt-lancer");
+    fingerprint.add("d2x-session-rules-v103-corrupt-archer");
     auto members = archives.used;
     for (const auto &member : members) {
         fingerprint.add(member);

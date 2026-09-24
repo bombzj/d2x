@@ -144,7 +144,7 @@ class Codec {
         }
     }
 };
-// Explicit schema, never compiler struct layout. Player/item field order is save version 74.
+// Explicit schema, never compiler struct layout. Player/item field order is save version 75.
 void fields(Codec &a, EntityId &v) {
     a(v.value);
 }
@@ -187,7 +187,7 @@ void fields(Codec &a, PopulationSettings &v) {
 }
 void fields(Codec &a, Missile &v) {
     a(v.id, v.owner, v.pos, v.velocity, v.remaining, v.skill, v.physical, v.missileId,
-      v.damage, v.radius, v.chill, v.hostile);
+      v.damage, v.radius, v.chill, v.hostile, v.hostileMode);
 }
 void fields(Codec &a, Effect &v) {
     a(v.pos, v.skill, v.age, v.duration);
@@ -265,7 +265,7 @@ Bytes encodeSave(SessionSnapshot snapshot) {
     Codec body;
     body(snapshot);
     auto bytes = body.take();
-    uint32_t version = 74, size = uint32_t(bytes.size()), crc = checksum(bytes);
+    uint32_t version = 75, size = uint32_t(bytes.size()), crc = checksum(bytes);
     Codec header;
     header(version, size, crc);
     auto headerBytes = header.take();
@@ -284,8 +284,8 @@ SessionSnapshot decodeSave(std::span<const uint8_t> bytes) {
     Codec header(bytes.subspan(sizeof(magic), 12));
     uint32_t version = 0, size = 0, crc = 0;
     header(version, size, crc);
-    if (version != 74)
-        throw std::runtime_error("Unsupported D2X save version; Corrupt Lancer AI requires a new version-74 game");
+    if (version != 75)
+        throw std::runtime_error("Unsupported D2X save version; hostile projectile mode requires a new version-75 game");
     auto payload = bytes.subspan(headerSize);
     if (size != payload.size() || crc != checksum(payload))
         throw std::runtime_error("Save checksum or length mismatch");

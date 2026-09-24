@@ -81,6 +81,7 @@ add_library(d2x_gameplay
   src/gameplay/monsters/quill_rat_ai.cpp
   src/gameplay/monsters/wraith_ai.cpp
   src/gameplay/monsters/corrupt_lancer_ai.cpp
+  src/gameplay/monsters/corrupt_archer_ai.cpp
   src/gameplay/monsters/zombie_ai.cpp
   src/gameplay/monsters/fallen_ai.cpp src/gameplay/monsters/monster_wander.cpp
   src/gameplay/loot/loot.cpp src/gameplay/consumables/potions.cpp)

@@ -115,14 +115,18 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
                 throw std::runtime_error("Original MPQ skill missile art is missing: " + skill.sourceName);
             projectileAnimations.emplace(skill.originalEffect->missileId, std::move(animation));
         }
-    for (const auto &[id, monster] : session.monsterContent().monsters())
-        if (!monsterImplementation(id).substitute && monster.attack2Projectile &&
-            !projectileAnimations.contains(monster.attack2Projectile->id)) {
-            auto animation = graphics_.single(monster.attack2ProjectileArt);
+    for (const auto &[id, monster] : session.monsterContent().monsters()) {
+        if (monsterImplementation(id).substitute) continue;
+        for (auto mode : {1, 2}) {
+            const auto &projectile = mode == 1 ? monster.attack1Projectile : monster.attack2Projectile;
+            const auto &art = mode == 1 ? monster.attack1ProjectileArt : monster.attack2ProjectileArt;
+            if (!projectile || projectileAnimations.contains(projectile->id)) continue;
+            auto animation = graphics_.single(art);
             if (animation.frames.empty())
                 throw std::runtime_error("Original MPQ monster missile art is missing: " + id);
-            projectileAnimations.emplace(monster.attack2Projectile->id, std::move(animation));
+            projectileAnimations.emplace(projectile->id, std::move(animation));
         }
+    }
     for (const auto &[id, skill] : session.content().skills.skills)
         if (skill.originalEffect && skill.originalEffect->effect == Skill::Teleport) {
             teleportOverlay = graphics_.single(skill.originalEffect->visualArt);

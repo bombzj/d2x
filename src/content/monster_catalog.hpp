@@ -10,7 +10,8 @@
 
 namespace d2x {
 struct MonsterRecord {
-    std::string id, base, next, name, token, ai, spawn, sound, baseWeapon, rightHandVariant;
+    std::string id, base, next, name, token, ai, spawn, sound, baseWeapon;
+    std::string rightHandVariant, leftHandVariant;
     size_t sourceRow = 0;
     int index = -1, rarity = 0, minGroup = 0, maxGroup = 0, partyMin = 0, partyMax = 0;
     int sparse = 0, alignment = 0, normalLevel = 0, transLevel = 0;
@@ -20,6 +21,8 @@ struct MonsterRecord {
     std::optional<int> walkVelocity;
     std::optional<int> runVelocity;
     std::optional<MonsterNormalCombat> normalCombat;
+    std::optional<MonsterProjectile> attack1Projectile;
+    std::string attack1ProjectileArt;
     std::optional<MonsterProjectile> attack2Projectile;
     std::string attack2ProjectileArt;
     std::array<std::optional<MonsterAiProfile>, 3> aiProfiles;

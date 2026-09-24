@@ -58,8 +58,9 @@ MonsterCatalog::MonsterCatalog(Archives &archives, const DataTable &stats) {
             m.aiProfiles[difficulty] = loadMonsterAiProfile(stats, row, m.ai, difficulty);
         m.walkVelocity = stats.number(row, "Velocity");
         m.runVelocity = stats.number(row, "Run");
-        const auto missileName = stats.value(row, "MissA2");
-        if (!missileName.empty())
+        auto loadProjectile = [&](std::string_view missileName, std::string &artPath)
+            -> std::optional<MonsterProjectile> {
+            if (missileName.empty()) return std::nullopt;
             for (size_t missileRow = 0; missileRow < missiles.rows().size(); ++missileRow)
                 if (missiles.value(missileRow, "Missile") == missileName) {
                     const auto id = missiles.number(missileRow, "Id");
@@ -75,13 +76,17 @@ MonsterCatalog::MonsterCatalog(Archives &archives, const DataTable &stats) {
                     if (id && velocity && *velocity > 0 && range && *range > 0 &&
                         minimum >= 0 && maximum >= minimum && maximum <= 1000000 &&
                         sourceDamage >= 0 && sourceDamage <= 255 &&
-                        !file.empty() && archives.contains(art))
-                        m.attack2Projectile = MonsterProjectile{*id, float(*velocity),
-                                                                  float(*range) / 25.f,
-                                                                  minimum, maximum, sourceDamage};
-                    if (m.attack2Projectile) m.attack2ProjectileArt = art;
-                    break;
+                        !file.empty() && archives.contains(art)) {
+                        artPath = art;
+                        return MonsterProjectile{*id, float(*velocity), float(*range) / 25.f,
+                                                 minimum, maximum, sourceDamage};
+                    }
+                    return std::nullopt;
                 }
+            return std::nullopt;
+        };
+        m.attack1Projectile = loadProjectile(stats.value(row, "MissA1"), m.attack1ProjectileArt);
+        m.attack2Projectile = loadProjectile(stats.value(row, "MissA2"), m.attack2ProjectileArt);
         if (m.walkVelocity && (*m.walkVelocity < 0 || *m.walkVelocity > 255))
             throw std::runtime_error("Unsupported monster Velocity: " + m.id);
         if (m.runVelocity && (*m.runVelocity < 0 || *m.runVelocity > 255))
@@ -135,11 +140,16 @@ MonsterCatalog::MonsterCatalog(Archives &archives, const DataTable &stats) {
         m.skill2Mode = extended.number(extra->second, "mS2").value_or(0) != 0;
         m.runMode = extended.number(extra->second, "mRN").value_or(0) != 0;
         m.baseWeapon = extended.value(extra->second, "BaseW");
-        m.rightHandVariant = extended.value(extra->second, "RHv");
-        if (m.rightHandVariant.starts_with('"')) m.rightHandVariant.erase(0, 1);
-        if (auto separator = m.rightHandVariant.find(','); separator != std::string::npos)
-            m.rightHandVariant.resize(separator);
-        if (m.rightHandVariant.ends_with('"')) m.rightHandVariant.pop_back();
+        auto firstVariant = [&](std::string_view field) {
+            auto variant = std::string(extended.value(extra->second, field));
+            if (variant.starts_with('"')) variant.erase(0, 1);
+            if (auto separator = variant.find(','); separator != std::string::npos)
+                variant.resize(separator);
+            if (variant.ends_with('"')) variant.pop_back();
+            return variant;
+        };
+        m.rightHandVariant = firstVariant("RHv");
+        m.leftHandVariant = firstVariant("LHv");
         if (!indices_.emplace(m.index, m.id).second)
             throw std::runtime_error("Duplicate MonStats hcIdx: " + std::to_string(m.index));
         if (!monsters_.emplace(m.id, m).second) {
@@ -162,7 +172,9 @@ MonsterCatalog::MonsterCatalog(Archives &archives, const DataTable &stats) {
                 if (weapon.empty()) continue;
                 modeWeapons_[kind].emplace(mode, weapon);
                 if (std::string_view(mode) == "a1") {
-                    if (auto timing = loadMonsterAttackTiming(animations, actor->token, 1, weapon))
+                    if (auto timing = loadMonsterAttackTiming(
+                            animations, actor->token, 1, weapon,
+                            actor->attack1Projectile ? 2 : 1))
                         attacks_.emplace(kind, *timing);
                 } else if (std::string_view(mode) == "a2") {
                     if (kind == MonsterKind::Brute || kind == MonsterKind::Skeleton ||

@@ -34,20 +34,20 @@ void Simulation::beginMonsterAttack(Enemy &enemy, int forcedMode) {
     emit(EnemyAttacked{enemy.id, enemy.kind, enemy.attackMode});
     if (enemy.attackImpact <= 0) {
         enemy.attackImpact = -1;
-        if (enemy.attackMode == 2 && monsterProjectile_ && monsterProjectile_(enemy))
+        if (monsterProjectile_ && monsterProjectile_(enemy, enemy.attackMode))
             launchMonsterProjectile(enemy);
         else
             resolveMonsterAttack(enemy);
     }
 }
 void Simulation::launchMonsterProjectile(Enemy &enemy) {
-    const auto projectile = monsterProjectile_ ? monsterProjectile_(enemy) : std::nullopt;
+    const auto projectile = monsterProjectile_ ? monsterProjectile_(enemy, enemy.attackMode) : std::nullopt;
     if (!projectile || projectile->id < 0 || projectile->velocity <= 0 || projectile->lifetime <= 0)
         throw std::runtime_error("Monster A2 projectile is missing");
     const auto direction = (state_.player.pos - enemy.pos).unit();
     state_.area.missiles.push_back({ids_.allocate(), enemy.id, enemy.pos,
         direction * projectile->velocity, projectile->lifetime, Skill::Fireball,
-        true, projectile->id, 0, 0, 0, true});
+        true, projectile->id, 0, 0, 0, true, enemy.attackMode});
 }
 void Simulation::resolveMonsterAttack(Enemy &enemy, int modeOverride, bool projectile) {
     auto &player = state_.player;
@@ -85,7 +85,7 @@ void Simulation::resolveMonsterAttack(Enemy &enemy, int modeOverride, bool proje
         }
     }
     if (projectile && monsterProjectile_)
-        if (auto spec = monsterProjectile_(enemy)) {
+        if (auto spec = monsterProjectile_(enemy, mode)) {
             damage = damage * float(spec->sourceDamage) / 128.f;
             enemy.combatRandom = uint64_t(uint32_t(enemy.combatRandom)) * 0x6ac690c5ULL +
                                  (enemy.combatRandom >> 32);

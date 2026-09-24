@@ -78,6 +78,7 @@ struct Missile {
     float damage = 0;
     float radius = 0, chill = 0;
     bool hostile = false;
+    int hostileMode = 0;
 };
 struct Effect {
     Vec pos;

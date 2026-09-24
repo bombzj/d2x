@@ -8,6 +8,7 @@
 #include "gameplay/monsters/quill_rat_ai.hpp"
 #include "gameplay/monsters/wraith_ai.hpp"
 #include "gameplay/monsters/corrupt_lancer_ai.hpp"
+#include "gameplay/monsters/corrupt_archer_ai.hpp"
 #include "gameplay/monsters/monster_wander.hpp"
 #include <algorithm>
 
@@ -72,7 +73,7 @@ void Simulation::updateMonsters(float dt) {
                 enemy.attackImpact -= dt;
                 if (enemy.attackImpact <= 0) {
                     enemy.attackImpact = -1;
-                    if (enemy.attackMode == 2 && monsterProjectile_ && monsterProjectile_(enemy))
+                    if (monsterProjectile_ && monsterProjectile_(enemy, enemy.attackMode))
                         launchMonsterProjectile(enemy);
                     else
                         resolveMonsterAttack(enemy);
@@ -108,6 +109,7 @@ void Simulation::updateMonsters(float dt) {
         const bool fallenAi = ai && ai->kind == MonsterAiKind::Fallen;
         const bool rogueAi = ai && ai->kind == MonsterAiKind::CorruptRogue;
         const bool lancerAi = ai && ai->kind == MonsterAiKind::CorruptLancer;
+        const bool archerAi = ai && ai->kind == MonsterAiKind::CorruptArcher;
         if (fallenAi && !enemy.aiEscaping && monsterDeathDuration_)
             for (const auto &corpse : state_.area.enemies) {
                 if (corpse.hp > 0 || corpse.id == enemy.id ||
@@ -157,19 +159,39 @@ void Simulation::updateMonsters(float dt) {
         const bool quillRatAi = ai && ai->kind == MonsterAiKind::QuillRat;
         const bool wraithAi = ai && ai->kind == MonsterAiKind::Wraith;
         bool clear = grid_->segment(enemy.pos, player.pos);
+        if (archerAi) {
+            if (enemy.aiWait > 0) {
+                enemy.route.clear();
+                enemy.aiRunning = false;
+                continue;
+            }
+            if (clear && distance < 6.f && corruptArcherRetreats(enemy, *ai) &&
+                monsterStartRetreat(enemy, player.pos, 12, *grid_)) {
+                enemy.aiRunning = false;
+                continue;
+            }
+            if (clear && distance <= float(ai->params[4]) &&
+                !corruptArcherApproaches(enemy, *ai, distance)) {
+                enemy.route.clear();
+                enemy.aiRunning = false;
+                if (corruptArcherShoots(enemy, *ai)) beginMonsterAttack(enemy, 1);
+                continue;
+            }
+        }
         if (quillRatAi && distance >= definition.attackRange &&
             distance < float(ai->params[0]) && clear) {
             if (quillRatShoots(enemy, *ai)) {
                 beginMonsterAttack(enemy, 2);
                 continue;
             }
-            if (quillRatStartRetreat(enemy, player.pos, ai->params[3], *grid_)) continue;
+            if (monsterStartRetreat(enemy, player.pos, ai->params[3], *grid_)) continue;
             if (distance < 4.f) {
                 beginMonsterAttack(enemy, 2);
                 continue;
             }
         }
         if (distance >= definition.attackRange || !clear) {
+            if (archerAi) enemy.aiRunning = distance > float(ai->params[4]);
             if (lancerAi) {
                 const auto action = corruptLancerMovement(enemy, *ai, distance);
                 if (action == CorruptLancerMovement::Idle) {
@@ -243,6 +265,7 @@ void Simulation::updateMonsters(float dt) {
                         enemy.aiAdvanceRemaining = 0;
                     }
                     if (lancerAi) enemy.aiRunning = false;
+                    if (archerAi) enemy.aiRunning = false;
                     continue;
                 }
                 destination = enemy.route.front();
@@ -255,7 +278,7 @@ void Simulation::updateMonsters(float dt) {
                 speed = runSpeed.value_or(originalSpeed.value_or(definition.speed)) *
                         (1.f + float(ai->params[3]) / 100.f) * (enemy.chill > 0 ? .42f : 1.f);
             }
-            if (lancerAi && enemy.aiRunning) {
+            if ((lancerAi || archerAi) && enemy.aiRunning) {
                 const auto runSpeed = monsterRunSpeed_ ? monsterRunSpeed_(enemy) : std::nullopt;
                 speed = runSpeed.value_or(originalSpeed.value_or(definition.speed)) *
                         (enemy.chill > 0 ? .42f : 1.f);
@@ -279,6 +302,7 @@ void Simulation::updateMonsters(float dt) {
                     enemy.aiAdvanceRemaining = 0;
                 }
                 if (lancerAi) enemy.aiRunning = false;
+                if (archerAi) enemy.aiRunning = false;
             }
         } else {
             enemy.route.clear();
@@ -288,6 +312,7 @@ void Simulation::updateMonsters(float dt) {
                 enemy.aiAdvanceRemaining = 0;
             }
             if (lancerAi) enemy.aiRunning = false;
+            if (archerAi) enemy.aiRunning = false;
         }
         if ((player.pos - enemy.pos).length() < definition.attackRange &&
             player.leapTime <= 0 && grid_->segment(enemy.pos, player.pos)) {

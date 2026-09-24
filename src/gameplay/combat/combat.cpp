@@ -97,7 +97,8 @@ void Simulation::updateMissiles(float dt) {
             m.remaining -= dt;
             if (struck) {
                 m.remaining = 0;
-                if (auto *source = findEnemy(m.owner)) resolveMonsterAttack(*source, 2, true);
+                if (auto *source = findEnemy(m.owner))
+                    resolveMonsterAttack(*source, m.hostileMode, true);
             }
             continue;
         }

@@ -347,7 +347,8 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
                         ai->kind != MonsterAiKind::Fallen && ai->kind != MonsterAiKind::Brute &&
                         ai->kind != MonsterAiKind::CorruptRogue && ai->kind != MonsterAiKind::Goatman &&
                         ai->kind != MonsterAiKind::QuillRat && ai->kind != MonsterAiKind::Wraith &&
-                        ai->kind != MonsterAiKind::CorruptLancer))
+                        ai->kind != MonsterAiKind::CorruptLancer &&
+                        ai->kind != MonsterAiKind::CorruptArcher))
                 require(enemy.aiWait == 0 && !enemy.aiPursuing && !enemy.aiEscaping &&
                             !enemy.aiCommanded && !enemy.aiCircling && !enemy.aiRunning &&
                             enemy.aiAdvanceRemaining == 0 && enemy.skill2Remaining == 0,
@@ -370,6 +371,13 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
                             (!enemy.aiCharged || enemy.hp > 0) &&
                             !enemy.aiPursuing && !enemy.aiEscaping && !enemy.aiCommanded,
                         "corrupt lancer AI state");
+            else if (ai && ai->kind == MonsterAiKind::CorruptArcher)
+                require(enemy.aiWait <= float(ai->params[2]) / 25.f &&
+                            enemy.aiAdvanceRemaining == 0 && !enemy.aiPursuing &&
+                            !enemy.aiCommanded &&
+                            (!enemy.aiEscaping || (enemy.hp > 0 && enemy.attack == 0 &&
+                                                   !enemy.route.empty())),
+                        "corrupt archer AI state");
             else
                 require(!enemy.aiRunning && enemy.aiAdvanceRemaining == 0,
                         "non-rogue run state");
@@ -419,16 +427,16 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
             if (missile.hostile) {
                 const auto owner = std::find_if(area.enemies.begin(), area.enemies.end(),
                     [&](const Enemy &enemy) { return enemy.id == missile.owner; });
-                const auto *record = owner == area.enemies.end() ? nullptr :
-                    monsterContent_.find(owner->identity.monster);
-                require(owner != area.enemies.end() && owner->kind == MonsterKind::QuillRat &&
-                            record && record->attack2Projectile && missile.physical &&
-                            missile.missileId == record->attack2Projectile->id &&
+                const auto projectile = owner != area.enemies.end() && simulation_.monsterProjectile_
+                    ? simulation_.monsterProjectile_(*owner, missile.hostileMode) : std::nullopt;
+                require((missile.hostileMode == 1 || missile.hostileMode == 2) &&
+                            projectile && missile.physical &&
+                            missile.missileId == projectile->id &&
                             missile.damage == 0 && missile.radius == 0 && missile.chill == 0 &&
-                            missile.remaining <= record->attack2Projectile->lifetime,
+                            missile.remaining <= projectile->lifetime,
                         "original hostile missile identity");
             } else
-                require(missile.owner == player.id, "missile owner");
+                require(missile.owner == player.id && missile.hostileMode == 0, "missile owner");
             position(missile.pos, areaGrid);
             scalar(missile.velocity.x, -100000, 100000);
             scalar(missile.velocity.y, -100000, 100000);

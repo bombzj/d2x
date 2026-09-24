@@ -37,7 +37,7 @@ class Simulation {
     std::function<std::optional<float>(const Enemy &)> monsterDeathDuration_;
     std::function<std::optional<float>(const Enemy &)> monsterSkill2Duration_;
     std::function<std::optional<MonsterAttackTiming>(const Enemy &, int)> monsterAttackTiming_;
-    std::function<std::optional<MonsterProjectile>(const Enemy &)> monsterProjectile_;
+    std::function<std::optional<MonsterProjectile>(const Enemy &, int)> monsterProjectile_;
     std::vector<GameEvent> events_;
     Enemy *findEnemy(EntityId id);
     void moveTo(Vec target);
