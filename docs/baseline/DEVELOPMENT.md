@@ -1,8 +1,8 @@
 # 开发与交接
 
-当前源码存档 v36／规则 v64。普通怪物三难度生命、近战伤害／命中、防御、抗性、暴击和再生共用原表解析；普通 `brute1` 与 `zombie1` 的七种原动作和原声音已补齐。其他普通怪物仍保留各自已实现的基础分支与类型替身，不能套用已完成身份的状态。范围与下一种怪物的验收标准见 [怪物实施计划](../MONSTERS.md)；精英、固定首领、Boss 和通用逐帧 AI 调度仍待逐项核对。旧存档不迁移。
+当前源码存档 v37／规则 v65。普通怪物三难度生命、近战伤害／命中、防御、抗性、暴击和再生共用原表解析；普通 `brute1`、`zombie1` 与 `skeleton1` 的七种原动作和 MPQ 所列原声音已补齐。其他普通怪物仍保留各自已实现的基础分支与类型替身，不能套用已完成身份的状态。范围与下一种怪物的验收标准见 [怪物实施计划](../MONSTERS.md)；精英、固定首领、Boss 和通用逐帧 AI 调度仍待逐项核对。旧存档不迁移。
 
-Windows Release 构建通过。完整六 MPQ 目录 `dist/d2x-runtime-20260924-v36-zombie1/` 在邪恶洞窟以普通、噩梦、地狱分别新建并读取 v36／规则 v64 存档，截图保存在忽略的 `artifacts/monster-smoke/zombie-v36-*.png`。普通难度定向生成 `zombie1` 后确认原外观、A1／A2 时序及 `substitute=false`，画面为 `artifacts/monster-smoke/zombie-v36-in-view.png`；受击后追击与保存恢复通过，死亡链结算 33 经验，本次原 TC 为 NoDrop。在埋骨之地距玩家 12 格定向生成后，下一帧进入追击。此前 `brute1` 的三难度、共享缺 A1 字段解析及整包现场见 [怪物实施计划](../MONSTERS.md)。运行目录和截图均被忽略，不生成 ZIP，也未编写测试脚本／用例；音频播放效果仍待用户实机听验。
+Windows Release 构建通过。完整六 MPQ 目录 `dist/d2x-runtime-20260924-v37-skeleton1/` 在埋骨之地以普通、噩梦、地狱分别新建并读取 v37／规则 v65 存档，截图保存在忽略的 `artifacts/monster-smoke/skeleton-v37-*.png`。定向生成 `skeleton1` 后确认原形象、A1／A2 时序及 `substitute=false`，较清楚的截图为 `artifacts/monster-smoke/skeleton-v37-in-view-2.png`；扣血后保存恢复生命，真实死亡链结算 34 经验，本次原 TC 为 NoDrop。此前 `brute1`、`zombie1` 的独立现场见 [怪物实施计划](../MONSTERS.md)。运行目录和截图均被忽略，不生成 ZIP，也未编写测试脚本／用例；音频播放效果仍待用户实机听验。
 
 ## 当前交接状态
 

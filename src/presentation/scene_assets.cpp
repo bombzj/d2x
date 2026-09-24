@@ -75,7 +75,8 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
             if (auto animation = monsterAnimations[kind].find(mode);
                 animation != monsterAnimations[kind].end()) {
                 auto *timing = session.monsterContent().motion(kind, mode);
-                if ((kind == MonsterKind::Brute || kind == MonsterKind::Zombie) && !timing)
+                if ((kind == MonsterKind::Brute || kind == MonsterKind::Zombie ||
+                     kind == MonsterKind::Skeleton) && !timing)
                     throw std::runtime_error("Original monster AnimData entry missing: " +
                                              std::string(definition.token) + mode);
                 if (timing && animation->second.count != timing->frames)

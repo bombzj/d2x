@@ -19,10 +19,12 @@ void SceneAssets::loadMonsterAudio(Archives &archives, const MonsterCatalog &mon
         const std::string name(monSounds.value(voice, column));
         if (name.empty()) return {};
         auto found = soundRows.find(name);
-        if (found == soundRows.end()) return {};
+        if (found == soundRows.end())
+            throw std::runtime_error("Monster Sounds row is missing: " + name);
         std::string path = "data/global/sfx/" + std::string(sounds.value(found->second, "FileName"));
         std::replace(path.begin(), path.end(), '\\', '/');
-        if (!archives.contains(path)) return {};
+        if (!archives.contains(path))
+            throw std::runtime_error("Monster original sound file is missing: " + path);
         const std::string key = "monster." + name;
         if (registered.insert(key).second) audio.registerOriginal(archives, key, path);
         return key;

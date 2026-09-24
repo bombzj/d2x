@@ -1,14 +1,13 @@
 #include "gameplay/simulation/simulation.hpp"
 #include "gameplay/combat/accuracy.hpp"
+#include "gameplay/monsters/monster_wander.hpp"
 #include <algorithm>
 #include <tuple>
 
 namespace d2x {
 namespace {
 int chooseAttackMode(Enemy &enemy, const MonsterAiProfile &rules) {
-    enemy.combatRandom = uint64_t(uint32_t(enemy.combatRandom)) * 0x6ac690c5ULL +
-                         (enemy.combatRandom >> 32);
-    return uint32_t(enemy.combatRandom) % 100 < unsigned(rules.params[3]) ? 1 : 2;
+    return monsterAiRandom(enemy) % 100 < unsigned(rules.params[3]) ? 1 : 2;
 }
 } // namespace
 void Simulation::beginMonsterAttack(Enemy &enemy) {

@@ -1,12 +1,10 @@
 #include "skeleton_ai.hpp"
-#include <cstdint>
+#include "monster_wander.hpp"
 
 namespace d2x {
 namespace {
 bool roll(Enemy &enemy, int chance) {
-    enemy.combatRandom = uint64_t(uint32_t(enemy.combatRandom)) * 0x6ac690c5ULL +
-                         (enemy.combatRandom >> 32);
-    return uint32_t(enemy.combatRandom) % 100 < unsigned(chance);
+    return monsterAiRandom(enemy) % 100 < unsigned(chance);
 }
 void stall(Enemy &enemy, const MonsterAiProfile &rules) {
     enemy.aiWait = float(rules.params[1]) / 25.f;
