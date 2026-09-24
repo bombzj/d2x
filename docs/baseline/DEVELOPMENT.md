@@ -1,8 +1,8 @@
 # 开发与交接
 
-当前源码存档 v58／规则 v86。普通怪物三难度生命、近战伤害／命中、防御、抗性、暴击、再生和 `El1–3` 按原表共用解析；`brute1–5`、`zombie1–5`、`skeleton1–5`、`fallen1–5`、`corruptrogue1–3` 使用原动作及 MPQ 所列声音。僵尸、骷髅、沉沦魔、Brute 和 Corrupt Rogue 按原 AI 家族分别决策，按 `MonStats.TransLvl` 选择原 `palshift.dat` 颜色映射；火焰、闪电、冰冷与毒素命中接通用元素攻击，冰冷与毒素保存角色持续状态。Fallen 家族在原死亡动作期间见附近尸体后逃离，使用原 AI 参数发同组命令并播放 MPQ S2 喊叫；Brute 在两次攻击掷骰后可绕目标行走；Corrupt Rogue 使用 MPQ 接近／停顿、跑步概率及原 RN 动作。其他普通怪物仍保留真实身份与类型替身。分工和下一种怪物的条件见 [怪物实施计划](../MONSTERS.md)；精英、固定首领、Boss 和通用逐帧 AI 调度仍待逐项核对。旧存档不迁移。
+当前源码存档 v59／规则 v87。普通怪物三难度生命、近战伤害／命中、防御、抗性、暴击、再生和 `El1–3` 按原表共用解析；`brute1–5`、`zombie1–5`、`skeleton1–5`、`fallen1–5`、`corruptrogue1–4` 使用原动作及 MPQ 所列声音。僵尸、骷髅、沉沦魔、Brute 和 Corrupt Rogue 按原 AI 家族分别决策，按 `MonStats.TransLvl` 选择原 `palshift.dat` 颜色映射；火焰、闪电、冰冷与毒素命中接通用元素攻击，冰冷与毒素保存角色持续状态。Fallen 家族在原死亡动作期间见附近尸体后逃离，使用原 AI 参数发同组命令并播放 MPQ S2 喊叫；Brute 在两次攻击掷骰后可绕目标行走；Corrupt Rogue 使用 MPQ 接近／停顿、跑步概率及原 RN 动作。其他普通怪物仍保留真实身份与类型替身。分工和下一种怪物的条件见 [怪物实施计划](../MONSTERS.md)；精英、固定首领、Boss 和通用逐帧 AI 调度仍待逐项核对。旧存档不迁移。
 
-Windows Release 构建通过。完整六 MPQ 目录 `dist/d2x-runtime-20260924-v58-corrupt-rogue3/` 在邪恶洞窟启动；`corruptrogue3` 原形 `substitute=false`、`sourceAi=CorruptRogue`，MPQ 普通难度生命／A1／防御／抗性已返回，v58 存读档正常，击杀获得 53 经验。原调色截图保存于 `artifacts/monster-smoke/corrupt-rogue3-v58-in-view.png`。原 `Skill1=CountessFirewall` 不在普通 Corrupt Rogue AI 中施放。共享跑步动作已在 `corruptrogue1` 现场核对，此变体不重复数值测试。运行目录与截图不提交，不生成 ZIP 或测试脚本／用例。音频播放效果仍待用户实机听验。
+Windows Release 构建通过。完整六 MPQ 目录 `dist/d2x-runtime-20260924-v59-corrupt-rogue4/` 在邪恶洞窟启动；`corruptrogue4` 原形 `substitute=false`、`sourceAi=CorruptRogue`，MPQ 普通难度生命／A1／防御／抗性已返回，v59 存读档正常，击杀获得 30 经验。原红色调色截图保存于 `artifacts/monster-smoke/corrupt-rogue4-v59-in-view.png`。共享跑步动作已在 `corruptrogue1` 现场核对，此变体不重复数值测试。运行目录与截图不提交，不生成 ZIP 或测试脚本／用例。音频播放效果仍待用户实机听验。
 
 ## 当前交接状态
 
@@ -27,7 +27,7 @@ Windows Release 构建通过。完整六 MPQ 目录 `dist/d2x-runtime-20260924-v
 - Windows 构建通过，现有 `d2x_assets item` 查询验证了 2hs、rin、buc、sbw、sst、ba1 的部位、职业、继承与双手／弹药字段。初始装备实际使用原 CharStats 的 hax/rarm 和 buc/larm，经正式事务穿戴，不另造测试装备或物品创建命令。
 - 当前 Windows 构建通过；完整源 MPQ 下营地装备面板运行 60 帧、v7 保存及恢复 60 帧通过。现场为 `artifacts/equipment-v7-current.d2xsave`，截图为 `artifacts/equipment-v7-current.png`、`artifacts/equipment-v7-restored.png`。短帧启动不证明完整交互正确，资源包／存档／截图不提交。
 - 耐久分支曾在规则 v22 下运行洞窟 1800 帧；只读存档摘要显示生命 250、斧 28/28、盾 12/12、防御 4，战斗随机状态未变化，因此没有覆盖真实受击或耐久消耗。当时 v24 尚无这些效果的定向运行证据。历史 v4 独立装备包不代表当前资源闭包，当前版本未重新打包验证。
-- 怪物阶段 `skeleton1` 与 `corruptrogue1–3` 已完成构建、原场景运行、保存恢复及独立包验证；SK 四动作分别 10/10、10/10、10/10、8/8 组件，CR 四动作均 9/9。历史普通怪物包为 `artifacts/d2x-ordinary-monsters-v18-20260923.mpq`，当时装备规则为 v24、保存格式 v7；旧怪物现场不可直接恢复。原专属 AI 和定向交互验收仍有缺口。
+- 怪物阶段 `skeleton1` 与 `corruptrogue1–4` 已完成构建、原场景运行、保存恢复及独立包验证；SK 四动作分别 10/10、10/10、10/10、8/8 组件，CR 四动作均 9/9。历史普通怪物包为 `artifacts/d2x-ordinary-monsters-v18-20260923.mpq`，当时装备规则为 v24、保存格式 v7；旧怪物现场不可直接恢复。原专属 AI 和定向交互验收仍有缺口。
 
 - 地图按预设、迷宫、野外三类逐项核对。1–39 关分别从仅含五个原始 MPQ 的运行目录短帧启动，39 份截图和日志位于忽略的 `artifacts/act1-map-review-20260923/`；第四层另截首领房。没有编写测试用例、脚本或专用测试程序。
 - 公共近战此前在 v16 规则下完成邪恶洞窟 900 帧运行、恢复后继续 300 帧；隔墙、动态绕行及控制状态的定向交互验收仍待人工完成。本轮新增类型复用该逻辑，不声称专属 AI 已完成。
