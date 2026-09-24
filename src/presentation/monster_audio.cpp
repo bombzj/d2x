@@ -32,17 +32,11 @@ void SceneAssets::loadMonsterAudio(Archives &archives, const MonsterCatalog &mon
     for (const auto &[id, record] : monsters.monsters()) {
         const auto implementation = monsterImplementation(id);
         if (implementation.substitute || !record.hostile()) continue;
-        if (record.sound.empty()) {
-            if (id == "brute1")
-                throw std::runtime_error("Brute MonSound is missing from the mounted MPQ");
-            continue;
-        }
+        if (record.sound.empty())
+            throw std::runtime_error("Implemented monster MonSound is missing from the mounted MPQ: " + id);
         auto voice = voiceRows.find(record.sound);
-        if (voice == voiceRows.end()) {
-            if (id == "brute1")
-                throw std::runtime_error("Brute MonSounds row is missing from the mounted MPQ");
-            continue;
-        }
+        if (voice == voiceRows.end())
+            throw std::runtime_error("Implemented monster MonSounds row is missing from the mounted MPQ: " + id);
         MonsterAudio profile;
         profile.attack1 = resolve(voice->second, "Attack1");
         profile.attack2 = resolve(voice->second, "Attack2");
@@ -57,11 +51,6 @@ void SceneAssets::loadMonsterAudio(Archives &archives, const MonsterCatalog &mon
             profile.footstepInterval = walk->duration / *steps;
         if (neutralTime && *neutralTime > 0)
             profile.neutralInterval = float(*neutralTime) / 25.f;
-        if (id == "brute1" && (profile.attack1.empty() || profile.attack2.empty() ||
-            profile.hit.empty() || profile.death.empty() || profile.footstep.empty() ||
-            profile.neutral.empty() || profile.footstepInterval <= 0 ||
-            profile.neutralInterval <= 0))
-            throw std::runtime_error("Brute original MonSounds data is incomplete");
         monsterAudio.emplace(id, std::move(profile));
     }
 }

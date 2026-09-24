@@ -17,6 +17,8 @@
 
 `reference/d2moo` 对数值采用共享 `DATATBLS_CalculateMonsterStatsByLevel`，AI 由 `AITHINK_GetAiTableRecord` 分派到不同函数。因此逐个 ID 的工作是核对它是否需要尚未落地的 AI 分支、技能、动作或视觉参数，而不是重做一遍生命／抗性算法。当前仍未覆盖的通用元素攻击、怪物技能、精英修正等需要先补共用能力，再开放依赖它的 ID。
 
+已启用原外观的 `fallen1`、`corruptrogue1`、`brute1`、`skeleton1` 与 `zombie1–5` 已核对共用路径：普通级别的生命、命中、防御、伤害、抗性、元素由 `GameSession::resolvedMonsterCombat` 按真实 ID 提供，攻击与死亡结算不按 ID 分支；动画按原 token／模式／调色读 MPQ，声音按各自 `MonSound` 读 MPQ。声音行存在性现对所有启用的敌对外观统一校验，原行未列出的具体音效留空。`corruptrogue1` 的专属 AI 尚未完成，虽已显示原外观，仍不算该怪物完整收尾。
+
 ## 分步边界
 
 1. **普通基础数值：已完成。** 最初由 `content/monster_combat.*` 解析普通难度生命与 A1；当前已由共用三难度解析接管普通怪物。`Simulation` 按真实身份在生成时掷生命、攻击时读取当前模式的原伤害；缺 A1 的远程或特殊记录仍保留其余数值。精英／首领仍沿用旧适配值。敌人最大生命随存档保存并校验，血条使用该实例的最大生命。
