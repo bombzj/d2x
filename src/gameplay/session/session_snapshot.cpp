@@ -343,10 +343,15 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
             if (!ai || (ai->kind != MonsterAiKind::Skeleton && ai->kind != MonsterAiKind::Zombie &&
                         ai->kind != MonsterAiKind::Fallen && ai->kind != MonsterAiKind::Brute))
                 require(enemy.aiWait == 0 && !enemy.aiPursuing && !enemy.aiEscaping &&
-                            !enemy.aiCommanded && enemy.skill2Remaining == 0,
+                            !enemy.aiCommanded && !enemy.aiCircling && enemy.skill2Remaining == 0,
                         "unexpected monster AI state");
             if (ai && ai->kind == MonsterAiKind::Brute)
-                require(enemy.aiWait <= 15.f / 25.f && !enemy.aiPursuing, "brute AI state");
+                require(enemy.aiWait <= 15.f / 25.f && !enemy.aiPursuing &&
+                            (!enemy.aiCircling || (enemy.hp > 0 && enemy.attack == 0 &&
+                                                   enemy.aiWait == 0 && !enemy.route.empty())),
+                        "brute AI state");
+            else
+                require(!enemy.aiCircling, "non-Brute circling state");
             if (ai && ai->kind == MonsterAiKind::Zombie)
                 require(enemy.aiWait <= 10.f / 25.f && (!enemy.aiPursuing || enemy.aiWait == 0),
                         "zombie AI state");

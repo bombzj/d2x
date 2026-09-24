@@ -34,7 +34,9 @@ void Simulation::updateMonsters(float dt) {
             enemy.aiPursuing = false;
             enemy.aiEscaping = false;
             enemy.aiCommanded = false;
+            enemy.aiCircling = false;
             enemy.skill2Remaining = enemy.skill2Duration = 0;
+            enemy.aiCircling = false;
             enemy.attack = enemy.attackDuration = 0;
             enemy.attackImpact = -1;
             enemy.attackMode = 1;
@@ -66,6 +68,13 @@ void Simulation::updateMonsters(float dt) {
                 enemy.attackImpact = -1;
                 enemy.attackMode = 1;
             }
+            continue;
+        }
+        if (enemy.aiCircling) {
+            const auto originalSpeed = monsterWalkSpeed_ ? monsterWalkSpeed_(enemy) : std::nullopt;
+            const float speed = originalSpeed.value_or(monsterDefinition(enemy.kind).speed) *
+                                bruteWalkMultiplier(enemy) * (enemy.chill > 0 ? .42f : 1.f);
+            bruteAdvanceCircle(enemy, *grid_, speed, dt);
             continue;
         }
         const auto ai = monsterAi_ ? monsterAi_(enemy) : std::nullopt;
@@ -188,8 +197,15 @@ void Simulation::updateMonsters(float dt) {
                     continue;
                 }
             }
-            if (bruteAi && !bruteAttacks(enemy, *ai))
-                continue;
+            if (bruteAi) {
+                const auto action = bruteCombat(enemy, *ai);
+                if (action == BruteCombat::Idle) continue;
+                if (action == BruteCombat::Circle) {
+                    if (!bruteStartCircle(enemy, player.pos, *grid_))
+                        enemy.aiWait = 15.f / 25.f;
+                    continue;
+                }
+            }
             beginMonsterAttack(enemy);
         }
     }
