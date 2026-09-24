@@ -1,8 +1,8 @@
 # 开发与交接
 
-当前源码存档 v31／规则 v58。血腥荒地种子 210 的普通沉沦魔群组修正后仍生成 30 个已创建敌人，其中 24 个沉沦魔均为 Normal、生命 1–4，箭猪为 2 HP；单只定向沉沦魔近身四秒后角色从 55 HP 降至 46 HP，存读档保持等级与生命区间。完整六 MPQ 目录 `dist/d2x-runtime-20260924-v31-normal-party/` 独立读取该现场并截图 `artifacts/monster-smoke/packaged-v31-field.png`；运行目录和截图均不纳入源码提交。怪物阶段的当前范围见 [怪物实施计划](../MONSTERS.md)：普通骷髅按运行时 MPQ 参数决定接近／停顿／攻击，僵尸按 MPQ 警觉距离和概率追击或近处游走，Brute 随失血加速；Brute、普通骷髅与僵尸均按 `aip4` 选择 A1／A2，动作时长和命中帧按原 `AnimData.d2`。Windows Release 构建通过；命名管道在邪恶洞窟按原表 ID 定点生成 `zombie1`，7 HP 扣至 4 HP 后存读档保持身份和 Debug 来源，直接击杀取得 33 经验。`brute1` 扣血致死取得 48 经验及一件掉落，`brute2` 显示替身，中立 `chicken` 被拒绝。完整六 MPQ 运行目录 `dist/d2x-runtime-20260924-v29-debug-monsters/` 独立加载该现场，截图在 `artifacts/monster-smoke/debug-spawn-v29.png` 和 `packaged-v29-restored.png`。此前 A1 与三种 A2 的出伤前恢复现场保留在忽略目录；AI 逐帧调度、僵尸原 AI 状态／埋骨之地特例和受伤 Brute 速度变化仍待后续定向验收。未写测试脚本／用例，不生成 ZIP；旧存档不兼容。
+当前源码存档 v32／规则 v59。怪物阶段已接普通难度 MPQ 生命和 A1 数值、普通群组随从等级、沉沦魔／骷髅／僵尸的首批 AI 分支，以及 Brute 受伤加速和三种 A2。范围与限制见 [怪物实施计划](../MONSTERS.md)；AI 逐帧调度、沉沦魔同伴命令／尸体逃跑、僵尸特殊状态、精英和高难度战斗规则仍待逐项核对。旧存档不迁移。
 
-v30 僵尸移动现场：邪恶洞窟种子 210、人口种子 1，管道在 (26.5,25.5) 生成的 `zombie1` 一秒后追击至 (24.9375,25.5)；在 (34.5,25.5) 生成的另一只未追击，游走至 (34.5,24.375)。保存／读取后两只的坐标、追击标记及 Debug 来源一致。完整六 MPQ 运行目录 `dist/d2x-runtime-20260924-v30-zombie-ai/` 独立加载 v30 存档并截图 `artifacts/monster-smoke/packaged-v30-zombie-ai.png`；现场和截图均在忽略目录。
+Windows Release 构建通过。血腥荒地种子 210 的 24 个普通沉沦魔为 1–4 HP；定向在距玩家 14 格处生成的 `fallen1` 初始一秒没有直接追击，游走靠近后开始追击，近身四秒角色从 55 HP 降至 53 HP。存读档保留等待、追击与 Debug 来源。完整六 MPQ 目录 `dist/d2x-runtime-20260924-v32-fallen-ai/` 独立加载现场，截图 `artifacts/monster-smoke/packaged-v32-fallen-ai.png`；运行目录和截图均被忽略，不生成 ZIP，也未编写测试脚本／用例。
 
 ## 当前交接状态
 

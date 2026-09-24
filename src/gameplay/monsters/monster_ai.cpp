@@ -2,6 +2,8 @@
 #include "gameplay/monsters/skeleton_ai.hpp"
 #include "gameplay/monsters/brute_ai.hpp"
 #include "gameplay/monsters/zombie_ai.hpp"
+#include "gameplay/monsters/fallen_ai.hpp"
+#include "gameplay/monsters/monster_wander.hpp"
 #include <algorithm>
 
 namespace d2x {
@@ -57,21 +59,29 @@ void Simulation::updateMonsters(float dt) {
         const bool skeletonAi = ai && ai->kind == MonsterAiKind::Skeleton;
         const bool bruteAi = ai && ai->kind == MonsterAiKind::Brute;
         const bool zombieAi = ai && ai->kind == MonsterAiKind::Zombie;
+        const bool fallenAi = ai && ai->kind == MonsterAiKind::Fallen;
         bool clear = grid_->segment(enemy.pos, player.pos);
         if (distance >= definition.attackRange || !clear) {
             if (skeletonAi && !skeletonApproaches(enemy, *ai)) {
                 enemy.route.clear();
                 continue;
             }
+            const auto fallenMove = fallenAi ? fallenMovement(enemy, *ai, distance)
+                                             : FallenMovement::Approach;
+            if (fallenMove == FallenMovement::Idle) {
+                enemy.route.clear();
+                continue;
+            }
             const bool zombieWanders = zombieAi && !zombiePursues(enemy, *ai, distance);
+            const bool wanders = zombieWanders || fallenMove == FallenMovement::Wander;
             Vec destination = player.pos;
-            if (zombieWanders) {
+            if (wanders) {
                 while (!enemy.route.empty() && (enemy.route.front() - enemy.pos).length() < .25f)
                     enemy.route.pop_front();
                 if (!enemy.route.empty() && !grid_->segment(enemy.pos, enemy.route.front()))
                     enemy.route.clear();
                 if (enemy.route.empty())
-                    if (auto target = zombieWanderTarget(enemy, *grid_)) enemy.route.push_back(*target);
+                    if (auto target = monsterWanderTarget(enemy, *grid_, 3)) enemy.route.push_back(*target);
                 if (enemy.route.empty()) continue;
                 destination = enemy.route.front();
                 enemy.rethink = 0;
@@ -112,6 +122,8 @@ void Simulation::updateMonsters(float dt) {
         if ((player.pos - enemy.pos).length() < definition.attackRange &&
             player.leapTime <= 0 && grid_->segment(enemy.pos, player.pos)) {
             if (skeletonAi && !skeletonAttacks(enemy, *ai))
+                continue;
+            if (fallenAi && !fallenAttacks(enemy, *ai))
                 continue;
             beginMonsterAttack(enemy);
         }

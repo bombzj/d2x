@@ -75,6 +75,7 @@ add_library(d2x_gameplay
   src/gameplay/monsters/monster_ai.cpp src/gameplay/monsters/monster_melee.cpp
   src/gameplay/monsters/skeleton_ai.cpp src/gameplay/monsters/brute_ai.cpp
   src/gameplay/monsters/zombie_ai.cpp
+  src/gameplay/monsters/fallen_ai.cpp src/gameplay/monsters/monster_wander.cpp
   src/gameplay/loot/loot.cpp src/gameplay/consumables/potions.cpp)
 target_sources(d2x_gameplay PRIVATE src/gameplay/character/attributes.cpp)
 target_sources(d2x_gameplay PRIVATE src/gameplay/combat/accuracy.cpp)

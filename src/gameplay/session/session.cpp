@@ -104,6 +104,8 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
             return profile;
         if (profile->kind == MonsterAiKind::Zombie && enemy.kind == MonsterKind::Zombie)
             return profile;
+        if (profile->kind == MonsterAiKind::Fallen && enemy.kind == MonsterKind::Fallen)
+            return profile;
         return std::nullopt;
     };
     simulation_.monsterAttackTiming_ = [this](const Enemy &enemy, int mode)
@@ -153,7 +155,7 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
     Fingerprint fingerprint;
     fingerprint.add(content_.profile);
     // Bump this rules revision when state interpretation or compiled rules change.
-    fingerprint.add("d2x-session-rules-v58-normal-party-combat");
+    fingerprint.add("d2x-session-rules-v59-fallen-ai");
     auto members = archives.used;
     for (const auto &member : members) {
         fingerprint.add(member);
