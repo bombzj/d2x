@@ -21,7 +21,7 @@ MonsterImplementation monsterImplementation(const std::string &code) {
         code == "goatman5")
         return {MonsterKind::Goatman, false};
     if (code == "quillrat1" || code == "quillrat2" || code == "quillrat3" ||
-        code == "quillrat4")
+        code == "quillrat4" || code == "quillrat5")
         return {MonsterKind::QuillRat, false};
     return {MonsterKind::Fallen, true};
 }
