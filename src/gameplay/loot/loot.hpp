@@ -38,6 +38,7 @@ struct LootRequest {
     MonsterIdentity identity;
     RegionId region = RegionId::Encampment;
     int difficulty = 0;
+    bool questFirstKill = false;
 };
 struct LootDrop {
     std::string code;

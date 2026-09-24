@@ -255,6 +255,14 @@ bool SceneController::handleInventory(const FrameInput &input) {
     EntityId hovered = hitGrid     ? inventory.itemAt(hitGrid->container, *cell)
                        : equipment ? inventory.equipped(containers, *equipmentSlot)
                                    : EntityId{};
+    if (view_.ui().imbueNpc) {
+        if (input.leftPressed) {
+            if (const auto *item = inventory.item(hovered))
+                session_.submit(ImbueItem{view_.ui().imbueNpc, item->handle()});
+            inventoryClick_ = true;
+        }
+        return true;
+    }
     auto changeEquipment = [&](const ItemInstance &item) {
         const auto &definition = *inventory.catalog().find(item.definition);
         if (definition.opensCube) {

@@ -11,6 +11,6 @@ struct IdentificationPlan {
     unsigned cost = 0;
 };
 IdentificationPlan planCainIdentification(const InventoryState &inventory,
-                                          const PlayerContainers &containers);
+                                           const PlayerContainers &containers, bool free = false);
 void applyCainIdentification(InventoryState &inventory, const IdentificationPlan &plan);
 } // namespace d2x

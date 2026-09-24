@@ -71,6 +71,7 @@ target_sources(d2x_content PRIVATE src/content/item_consumables.cpp)
 target_sources(d2x_content PRIVATE src/content/item_magic_loot.cpp)
 target_sources(d2x_content PRIVATE src/content/item_grades.cpp)
 target_sources(d2x_content PRIVATE src/content/npc_dialogue.cpp)
+target_sources(d2x_content PRIVATE src/content/hireling_data.cpp)
 target_sources(d2x_content PRIVATE src/content/vendor_data.cpp)
 target_link_libraries(d2x_content PUBLIC d2x_resources d2x_items)
 
@@ -114,6 +115,7 @@ target_sources(d2x_gameplay PRIVATE src/gameplay/monsters/monster_spawn.cpp src/
 target_sources(d2x_gameplay PRIVATE src/gameplay/loot/treasure.cpp)
 target_sources(d2x_gameplay PRIVATE src/gameplay/loot/quality.cpp)
 target_sources(d2x_gameplay PRIVATE src/gameplay/loot/special.cpp)
+target_sources(d2x_gameplay PRIVATE src/gameplay/quest/den_of_evil.cpp src/gameplay/quest/burial_grounds.cpp src/gameplay/quest/search_for_cain.cpp src/gameplay/quest/forgotten_tower.cpp src/gameplay/quest/tools_of_trade.cpp src/gameplay/quest/sisters_to_slaughter.cpp)
 target_sources(d2x_gameplay PRIVATE src/gameplay/loot/affix.cpp)
 target_sources(d2x_gameplay PRIVATE
   src/gameplay/skills/definitions.cpp
@@ -132,6 +134,9 @@ target_sources(d2x_session PRIVATE src/gameplay/session/session_item_snapshot.cp
 target_sources(d2x_session PRIVATE src/gameplay/session/session_character_save.cpp)
 target_sources(d2x_session PRIVATE src/gameplay/session/session_effects.cpp)
 target_sources(d2x_session PRIVATE src/gameplay/session/session_debug_monsters.cpp)
+target_sources(d2x_session PRIVATE src/gameplay/session/session_quests.cpp)
+target_sources(d2x_session PRIVATE src/gameplay/session/session_cain_world.cpp src/gameplay/session/session_cain_items.cpp src/gameplay/session/session_tools.cpp src/gameplay/session/session_slaughter.cpp)
+target_sources(d2x_session PRIVATE src/gameplay/npc/hireling.cpp)
 target_link_libraries(d2x_session PUBLIC d2x_gameplay d2x_world d2x_content d2x_population)
 add_library(d2x_persistence src/persistence/save_codec.cpp src/persistence/save_file.cpp)
 target_link_libraries(d2x_persistence PUBLIC d2x_gameplay d2x_items)
@@ -140,7 +145,7 @@ add_library(d2x_presentation
   src/presentation/graphics.cpp src/presentation/audio.cpp src/presentation/primitives.cpp
   src/presentation/scene_assets.cpp src/presentation/hero_assets.cpp src/presentation/scene_view.cpp
   src/presentation/skill_assets.cpp src/presentation/hud_controls.cpp src/presentation/skill_controller.cpp
-  src/presentation/skill_tree_view.cpp
+  src/presentation/skill_tree_view.cpp src/presentation/quest_panel.cpp
   src/presentation/exit_view.cpp src/presentation/waypoint_view.cpp
   src/presentation/world_renderer.cpp src/presentation/hud.cpp src/presentation/npc_dialogue_view.cpp src/presentation/npc_menu_view.cpp src/presentation/npc_shop_view.cpp src/presentation/controller.cpp
   src/presentation/loot_view.cpp src/presentation/inventory_panel.cpp
@@ -149,6 +154,7 @@ add_library(d2x_presentation
 target_link_libraries(d2x_presentation PUBLIC d2x_session raylib)
 target_sources(d2x_presentation PRIVATE src/presentation/monster_audio.cpp)
 target_sources(d2x_presentation PRIVATE src/presentation/monster_assets.cpp)
+target_sources(d2x_presentation PRIVATE src/presentation/hireling_assets.cpp)
 
 add_executable(d2x src/main.cpp src/app/application.cpp src/app/options.cpp src/app/input.cpp)
 target_sources(d2x PRIVATE src/app/debug_pipe.cpp src/app/debug_commands.cpp src/app/debug_inventory.cpp

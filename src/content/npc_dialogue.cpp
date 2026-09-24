@@ -20,12 +20,17 @@ NpcDialogues loadActOneNpcDialogues(Archives &archives) {
         throw std::runtime_error("Original Act I NPC dialogue is missing");
     auto source = decodeText(archives.read(path));
     NpcDialogues result;
-    std::string name;
+    std::string name, section, quest, state;
     NpcSpeech speech;
     bool readingQuote = false;
     auto finish = [&] {
-        if (!name.empty() && !speech.text.empty())
+        if (!name.empty() && !speech.text.empty()) {
+            if (section == "QUEST") {
+                speech.quest = quest;
+                speech.state = state;
+            }
             result[name].push_back(std::move(speech));
+        }
         speech = {};
     };
     size_t begin = 0;
@@ -46,6 +51,21 @@ NpcDialogues loadActOneNpcDialogues(Archives &archives) {
                 readingQuote = false;
                 finish();
             }
+        } else if (line.starts_with("SECTION:")) {
+            finish();
+            section = trim(line.substr(8));
+            quest.clear();
+            state.clear();
+            name.clear();
+        } else if (line.starts_with("QUEST:")) {
+            finish();
+            quest = trim(line.substr(6));
+            state.clear();
+            name.clear();
+        } else if (line.starts_with("STATE:")) {
+            finish();
+            state = trim(line.substr(6));
+            name.clear();
         } else if (line.starts_with("NAME:")) {
             finish();
             name = trim(line.substr(5));
@@ -77,10 +97,14 @@ NpcDialogues loadActOneNpcDialogues(Archives &archives) {
 const NpcSpeech *introSpeech(const NpcDialogues &dialogues, std::string_view npc) {
     const auto key = npc == "Deckard Cain" ? "Cain" : std::string(npc);
     auto intro = dialogues.find(key + "Intro");
-    if (intro != dialogues.end() && !intro->second.empty())
-        return &intro->second.front();
+    if (intro != dialogues.end())
+        for (const auto &speech : intro->second)
+            if (speech.quest.empty()) return &speech;
     auto generic = dialogues.find(key);
-    return generic != dialogues.end() && !generic->second.empty() ? &generic->second.front() : nullptr;
+    if (generic != dialogues.end())
+        for (const auto &speech : generic->second)
+            if (speech.quest.empty()) return &speech;
+    return nullptr;
 }
 const NpcSpeech *gossipSpeech(const NpcDialogues &dialogues, std::string_view npc, size_t turn) {
     const auto key = npc == "Deckard Cain" ? "Cain" : std::string(npc);
@@ -97,5 +121,16 @@ const NpcSpeech *gossipSpeech(const NpcDialogues &dialogues, std::string_view np
     if (generic.empty())
         return nullptr;
     return generic[turn % generic.size()];
+}
+const NpcSpeech *questSpeech(const NpcDialogues &dialogues, std::string_view quest,
+                             std::string_view state, std::string_view npc) {
+    auto key = npc == "Deckard Cain" ? "Cain" : std::string(npc);
+    if (key == "Charsi") key = "CharsiMain";
+    auto group = dialogues.find(key);
+    if (group == dialogues.end()) return nullptr;
+    for (const auto &speech : group->second)
+        if (speech.quest == quest && speech.state == state)
+            return &speech;
+    return nullptr;
 }
 } // namespace d2x

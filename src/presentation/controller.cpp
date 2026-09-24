@@ -1,12 +1,19 @@
 #include "controller.hpp"
 #include "character_panel.hpp"
 #include "skill_tree.hpp"
+#include "quest_panel.hpp"
 #include <algorithm>
 
 namespace d2x {
 void SceneController::click(Vec mouse) {
     auto &ui = view_.ui();
     ui.dialogue.clear();
+    if (auto portal = session_.cainPortalPosition(); portal &&
+        (view_.screen(*portal) - Vec{0, 40} - mouse).length() < 45) {
+        session_.submit(UseCainPortal{});
+        pickupClick_ = true;
+        return;
+    }
     if (auto portal = session_.portalPosition(); portal &&
         (view_.screen(*portal) - Vec{0, 40} - mouse).length() < 45) {
         session_.submit(UseTownPortal{session_.state().portal.revision});
@@ -73,11 +80,28 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
         int action = input.escape ? 4 :
                      input.insideViewport && input.leftPressed ? view_.clickNpcMenu(input.mouse) : 0;
         if (input.insideViewport && input.leftPressed && !action) action = 4;
-        if (action == 1) view_.startNpcTalk();
+        if (action == 1) {
+            if (view_.startNpcTalk())
+                session_.submit(TalkToNpc{ui.dialogueObject});
+        }
         else if (action == 2) view_.openNpcShop();
         else if (action == 3)
             session_.submit(IdentifyWithCain{ui.dialogueObject});
         else if (action == 5) view_.showNextNpcGossip();
+        else if (action == 6)
+            session_.submit(ClaimAkaraRespec{ui.dialogueObject});
+        else if (action == 7) {
+            ui.imbueNpc = ui.dialogueObject;
+            ui.npcMenu = false;
+            ui.inventory.open = true;
+            ui.inventory.cancelGesture();
+            view_.notice("Select a plain weapon or armor to imbue.");
+        }
+        else if (action == 8) {
+            session_.submit(CompleteActOne{ui.dialogueObject});
+            ui.npcMenu = false;
+            view_.notice("The passage east is open. Act II travel is not yet available.");
+        }
         else if (action == 4) {
             session_.submit(EndNpcConversation{ui.dialogueObject});
             ui.npcMenu = false;
@@ -214,6 +238,17 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
     }
     if (input.character && !ui.blocksWorld()) {
         ui.characterOpen = !ui.characterOpen;
+        if (ui.characterOpen) ui.questOpen = false;
+        return true;
+    }
+    if (input.quests && !ui.blocksWorld()) {
+        ui.questOpen = !ui.questOpen;
+        ui.questSelected = -1;
+        if (ui.questOpen) {
+            ui.characterOpen = false;
+            ui.skillTreeOpen = false;
+            if (ui.inventory.open) toggleInventory();
+        }
         return true;
     }
     if (input.skillTree && !ui.blocksWorld()) {
@@ -224,6 +259,7 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
         bool opening = !ui.skillTreeOpen;
         if (opening && ui.inventory.open) toggleInventory();
         ui.skillTreeOpen = opening;
+        if (opening) ui.questOpen = false;
         ui.skillPicker.reset();
         return true;
     }
@@ -264,6 +300,7 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
         session_.submit(RestartArea{});
         ui.characterOpen = false;
         ui.skillTreeOpen = false;
+        ui.questOpen = false;
     }
     if (input.escape) {
         if (ui.skillPicker) {
@@ -275,12 +312,18 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
             ui.travelMenu = false;
         else if (ui.inventory.drag || ui.inventory.split)
             ui.inventory.cancelGesture();
-        else if (ui.inventory.open)
+        else if (ui.inventory.open) {
             toggleInventory();
+            ui.imbueNpc = {};
+        }
         else if (ui.characterOpen)
             ui.characterOpen = false;
         else if (ui.skillTreeOpen)
             ui.skillTreeOpen = false;
+        else if (ui.questOpen) {
+            if (ui.questSelected >= 0) ui.questSelected = -1;
+            else ui.questOpen = false;
+        }
         else
             return false;
         inventoryClick_ = input.leftHeld || input.leftReleased;
@@ -342,6 +385,23 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
         }
         return true;
     }
+    if (ui.questOpen && input.insideViewport &&
+        CheckCollisionPointRec(rv(input.mouse), questBounds())) {
+        if (input.leftPressed) {
+            if (CheckCollisionPointRec(rv(input.mouse), questCloseBounds()))
+                ui.questOpen = false;
+            else if (ui.questSelected >= 0) {
+                if (CheckCollisionPointRec(rv(input.mouse), questBackBounds()))
+                    ui.questSelected = -1;
+            } else
+                for (int index = 0; index < 6; ++index)
+                    if (CheckCollisionPointRec(rv(input.mouse), questIconBounds(index))) {
+                        ui.questSelected = index;
+                        break;
+                    }
+        }
+        return true;
+    }
     if (ui.skillTreeOpen && input.insideViewport &&
         CheckCollisionPointRec(rv(input.mouse), skillTreeBounds())) {
         if (input.leftPressed) {
@@ -372,6 +432,7 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
                 session_.submit(UseBeltColumn{i});
     if (handleSkills(input) || handleInventory(input))
         return true;
+    if (ui.imbueNpc) return true;
     movement_ = unproject(input.movement).unit();
     if (!input.insideViewport)
         return true;

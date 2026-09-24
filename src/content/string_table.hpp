@@ -11,5 +11,6 @@ class ClassicStrings {
   public:
     explicit ClassicStrings(Archives &archives);
     std::string_view find(std::string_view key) const;
+    const auto &entries() const { return entries_; }
 };
 } // namespace d2x

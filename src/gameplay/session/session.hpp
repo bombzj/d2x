@@ -5,6 +5,12 @@
 #include "gameplay/loot/loot.hpp"
 #include "gameplay/model/interaction.hpp"
 #include "gameplay/npc/store.hpp"
+#include "gameplay/quest/den_of_evil.hpp"
+#include "gameplay/quest/burial_grounds.hpp"
+#include "gameplay/quest/search_for_cain.hpp"
+#include "gameplay/quest/forgotten_tower.hpp"
+#include "gameplay/quest/tools_of_trade.hpp"
+#include "gameplay/quest/sisters_to_slaughter.hpp"
 #include "gameplay/session/session_snapshot.hpp"
 #include "gameplay/simulation/simulation.hpp"
 #include "world/population.hpp"
@@ -24,6 +30,12 @@ class GameSession {
     mutable std::map<std::pair<std::string, RegionId>, std::optional<MonsterCombatProfile>> monsterCombatCache_;
     std::vector<WorldEntry> worldEntries_;
     uint64_t contentFingerprint_ = 0;
+    std::optional<RegionId> denRegion_;
+    std::optional<RegionId> burialRegion_;
+    std::optional<RegionId> stonyRegion_, darkWoodRegion_, tristramRegion_;
+    std::optional<RegionId> towerRegion_, towerCellarRegion_;
+    std::optional<RegionId> barracksRegion_;
+    std::optional<RegionId> catacombsFourRegion_;
     Simulation simulation_{ids_};
     InventoryService inventory_{ids_, content_.items, {content_.stashLayout.columns,
                                                        content_.stashLayout.rows},
@@ -38,8 +50,10 @@ class GameSession {
     std::map<EntityId, std::vector<VendorOffer>> vendorStocks_;
     std::map<EntityId, std::set<uint32_t>> soldVendorOffers_;
     std::optional<uint64_t> pendingPortal_;
+    bool pendingCainPortal_ = false;
     std::optional<Vec> townPortalArrival_;
     float portalReach_ = 0;
+    float cainPortalReach_ = 0;
     bool portalResources_ = false;
     std::optional<int> pendingExit_;
     std::optional<Vec> boundaryMoveTarget_;
@@ -88,6 +102,28 @@ class GameSession {
     void publishInventory(InventoryResult result, EntityId requested);
     void executeInventory(const GameCommand &command);
     void settleDeaths();
+    void onQuestRegionEntered(RegionId id);
+    void updateDenQuest();
+    void updateBurialQuest(const EnemyDied &death);
+    void updateTowerQuest(const EnemyDied &death);
+    void updateSlaughterQuest(const EnemyDied &death);
+    void completeActOne(EntityId npc);
+    void activateCainQuestObject(const WorldObject &object);
+    void updateCainQuestItems();
+    void updateToolsQuestItems();
+    void activateMalus(const WorldObject &object);
+    void imbueWithCharsi(const ImbueItem &command);
+    void reconcileCainObjects();
+    std::array<int, 5> cainStoneOrder() const;
+    bool claimCainReward();
+    void translateCainScroll(EntityId npc);
+    bool travelCainPortal();
+    bool beginCainPortal();
+    void updateCainPortal();
+    void advanceHireling(float dt);
+    bool assignKashyaHireling();
+    void talkToNpc(EntityId npc);
+    void claimAkaraRespec(EntityId npc);
     void useItem(ItemHandle item);
     void identifyItem(const IdentifyItem &command);
     void transactGold(const GoldTransaction &command);
@@ -114,6 +150,10 @@ class GameSession {
     GameSession(const GameSession &) = delete;
     GameSession &operator=(const GameSession &) = delete;
     const WorldState &state() const { return simulation_.state(); }
+    const QuestRecord &quest(ActOneQuest id, int difficulty) const {
+        return state().player.actOneQuests.at(size_t(difficulty)).at(questIndex(id));
+    }
+    const QuestRecord &quest(ActOneQuest id) const { return quest(id, state().population.difficulty); }
     bool active(Vec position) const { return simulation_.active(position); }
     const ClassicData &content() const { return content_; }
     const WorldCatalog &worldContent() const { return worldContent_; }
@@ -151,6 +191,8 @@ class GameSession {
     EntityId interactionTarget() const { return pendingInteraction_; }
     EntityId pickupTarget() const { return pickup_.id; }
     std::optional<Vec> portalPosition() const;
+    std::optional<Vec> cainPortalPosition() const;
+    std::array<int, 5> cainStoneSequence() const { return cainStoneOrder(); }
     bool waypointUnlocked(RegionId region) const { return state().waypoints.contains(region); }
     InventoryError previewInventory(const GameCommand &command) const;
     std::optional<GroundLocation> dropLocation() const;

@@ -3,6 +3,8 @@
 #include "gameplay/model/definitions.hpp"
 #include "gameplay/character/attributes.hpp"
 #include "gameplay/monsters/monster_spawn.hpp"
+#include "gameplay/quest/state.hpp"
+#include "gameplay/npc/hireling.hpp"
 #include <deque>
 #include <map>
 #include <string>
@@ -58,6 +60,8 @@ struct PlayerState {
     std::vector<ActiveCombatEffect> combatEffects;
     int unspentSkills = 0;
     std::array<SkillHotkey, 8> skillHotkeys{};
+    ActOneQuestBook actOneQuests{};
+    HirelingState hireling;
 };
 struct Enemy {
     EntityId id;
@@ -100,6 +104,7 @@ struct Missile {
     int hostileMode = 0;
     float slowDuration = 0;
     AttackElements attackElements{};
+    int attackerLevel = 0, attackRating = 0; // Non-player physical projectiles.
 };
 struct Effect {
     Vec pos;

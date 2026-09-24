@@ -11,6 +11,8 @@ namespace {
 class Codec;
 void fields(Codec &, EntityId &);
 void fields(Codec &, SkillHotkey &);
+void fields(Codec &, QuestRecord &);
+void fields(Codec &, HirelingState &);
 void fields(Codec &, PlayerState &);
 void fields(Codec &, WorldState &);
 void fields(Codec &, Cell &);
@@ -141,6 +143,12 @@ void fields(Codec &a, EntityId &v) {
 void fields(Codec &a, SkillHotkey &v) {
     a(v.skill, v.right);
 }
+void fields(Codec &a, QuestRecord &v) {
+    a(v.stage, v.flags);
+}
+void fields(Codec &a, HirelingState &v) {
+    a(v.sourceRow, v.classId, v.nameKey, v.level, v.hp);
+}
 void fields(Codec &a, AttributeAllocation &v) {
     a(v.strength, v.dexterity, v.vitality, v.energy);
 }
@@ -148,7 +156,7 @@ void fields(Codec &a, PlayerState &v) {
     a(v.id, v.characterClass, v.hp, v.mana, v.stamina, v.lastSkill,
       v.running, v.combatRandom, v.nextWeapon, v.gold, v.bankGold, v.experience,
       v.level, v.allocated, v.unspentAttributes, v.skillRanks,
-      v.unspentSkills, v.skillHotkeys);
+      v.unspentSkills, v.skillHotkeys, v.actOneQuests, v.hireling);
 }
 void fields(Codec &a, WorldState &v) {
     // The region ID identifies the act town on entry. No area actors or effects
@@ -210,7 +218,7 @@ Bytes encodeSave(SessionSnapshot snapshot) {
     Codec body;
     body(snapshot);
     auto bytes = body.take();
-    uint32_t version = 83, size = uint32_t(bytes.size()), crc = checksum(bytes);
+    uint32_t version = 84, size = uint32_t(bytes.size()), crc = checksum(bytes);
     Codec header;
     header(version, size, crc);
     auto headerBytes = header.take();
@@ -229,8 +237,8 @@ SessionSnapshot decodeSave(std::span<const uint8_t> bytes) {
     Codec header(bytes.subspan(sizeof(magic), 12));
     uint32_t version = 0, size = 0, crc = 0;
     header(version, size, crc);
-    if (version != 83)
-        throw std::runtime_error("Unsupported D2X save version; character saves require version 83");
+    if (version != 84)
+        throw std::runtime_error("Unsupported D2X save version; character saves require version 84");
     auto payload = bytes.subspan(headerSize);
     if (size != payload.size() || crc != checksum(payload))
         throw std::runtime_error("Save checksum or length mismatch");

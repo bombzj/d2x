@@ -7,7 +7,7 @@ namespace d2x {
 const WorldObject *GameSession::object(EntityId id) const {
     const auto &objects = region().objects;
     auto found = std::find_if(objects.begin(), objects.end(), [id](const auto &o) { return o.id == id; });
-    return found == objects.end() ? nullptr : &*found;
+    return found == objects.end() || found->questHidden ? nullptr : &*found;
 }
 bool GameSession::canReach(const WorldObject &object) const {
     const auto &player = state().player;
@@ -79,6 +79,7 @@ void GameSession::cancelInteraction() {
     pendingInteractionRepath_ = false;
     engagedNpc_ = {};
     pendingPortal_.reset();
+    pendingCainPortal_ = false;
 }
 void GameSession::interact(EntityId id) {
     if (pendingInteraction_ == id)
@@ -157,6 +158,24 @@ void GameSession::completeInteraction(const WorldObject &object) {
         break;
     case Interaction::Well:
         drinkWell(object.id);
+        break;
+    case Interaction::QuestTree:
+    case Interaction::QuestStone:
+    case Interaction::QuestGibbet:
+        activateCainQuestObject(object);
+        break;
+    case Interaction::QuestTome: {
+        auto &record = simulation_.state_.player.actOneQuests
+            .at(size_t(state().population.difficulty)).at(questIndex(ActOneQuest::ForgottenTower));
+        if (towerAdvance(record, TowerStage::TomeRead))
+            simulation_.emit(QuestAdvanced{ActOneQuest::ForgottenTower, record.stage});
+        for (auto &candidate : regions_.at(current_).objects)
+            if (candidate.id == object.id) candidate.operatedAt = state().time;
+        simulation_.emit(ObjectInteracted{object.id, object.interaction, object.name});
+        break;
+    }
+    case Interaction::QuestMalus:
+        activateMalus(object);
         break;
     case Interaction::None:
         break;

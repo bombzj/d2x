@@ -193,7 +193,9 @@ void Simulation::updateMissiles(float dt) {
                 if (monsterDefense_)
                     if (auto defense = monsterDefense_(*struck, state_.area.region))
                         hit = uint32_t(player.combatRandom) % 100 <
-                            unsigned(physicalHitChance(player.level, characterStats_.attackRating,
+                            unsigned(physicalHitChance(m.attackerLevel > 0 ? m.attackerLevel : player.level,
+                                                       m.attackerLevel > 0 ? m.attackRating :
+                                                           characterStats_.attackRating,
                                                        defense->level, defense->defense));
                 if (hit) resolveWeaponHit(*struck, m.damage, m.owner, m.attackElements);
             }

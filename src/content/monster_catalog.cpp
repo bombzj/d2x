@@ -174,6 +174,15 @@ MonsterCatalog::MonsterCatalog(Archives &archives, const DataTable &stats) {
     }
     if (archives.contains("data/global/animdata.d2")) {
         AnimDataTable animations(archives.read("data/global/animdata.d2"));
+        for (const auto &[id, actor] : monsters_)
+            if (actor.ai == "Hireable") {
+                auto weapon = monsterModeWeapon(archives, actor.token, "a1", actor.baseWeapon);
+                if (!weapon.empty())
+                    if (auto timing = loadMonsterAttackTiming(
+                            animations, actor.token, 1, weapon,
+                            actor.attack1Projectile ? 2 : 1))
+                        hirelingAttacks_.emplace(actor.index, *timing);
+            }
         std::map<MonsterKind, const MonsterRecord *> actors;
         for (const auto &[id, record] : monsters_) {
             auto implementation = monsterImplementation(id);

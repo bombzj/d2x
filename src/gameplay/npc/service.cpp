@@ -9,7 +9,9 @@ void GameSession::identifyWithCain(EntityId npc) {
         simulation_.emit(InteractionFailed{npc, "Cain is unavailable or too far away."});
         return;
     }
-    auto plan = planCainIdentification(inventory_.state(), playerContainers_);
+    auto plan = planCainIdentification(inventory_.state(), playerContainers_,
+        quest(ActOneQuest::SearchForCain).stage >= uint32_t(CainStage::Rescued) &&
+        !(quest(ActOneQuest::SearchForCain).flags & cainRescuedByRogues));
     if (plan.items.empty()) {
         simulation_.emit(ItemsIdentified{npc, 0, 0});
         return;

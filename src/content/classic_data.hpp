@@ -8,6 +8,7 @@
 #include "gameplay/loot/special.hpp"
 #include "gameplay/character/attributes.hpp"
 #include "npc_dialogue.hpp"
+#include "hireling_data.hpp"
 #include "skill_data.hpp"
 #include "vendor_data.hpp"
 #include "resources/archive.hpp"
@@ -48,6 +49,9 @@ struct ClassicData {
     std::vector<ClassicTreasureClass> treasures;
     std::vector<ClassicMonsterData> monsters;
     NpcDialogues npcDialogues;
+    std::map<std::string, std::string, std::less<>> actOneQuestStrings;
+    std::map<std::string, std::string, std::less<>> hirelingStrings;
+    std::vector<HirelingDefinition> hirelings;
     std::map<std::string, VendorDefinition, std::less<>> vendors;
     std::string profile;
     std::vector<std::string> armorTypes;

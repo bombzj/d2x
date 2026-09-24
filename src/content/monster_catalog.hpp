@@ -56,6 +56,7 @@ class MonsterCatalog {
     bool supported_ = false;
     std::map<std::string, MonsterRecord, std::less<>> monsters_;
     std::map<MonsterKind, MonsterAttackTiming> attacks_;
+    std::map<int, MonsterAttackTiming> hirelingAttacks_;
     std::map<MonsterKind, MonsterAttackTiming> attacks2_;
     std::map<MonsterKind, MonsterAttackTiming> casts_;
     std::map<MonsterKind, std::map<std::string, MonsterMotionTiming, std::less<>>> motions_;
@@ -78,6 +79,10 @@ class MonsterCatalog {
         const auto &source = mode >= 3 ? casts_ : mode == 2 ? attacks2_ : attacks_;
         auto found = source.find(kind);
         return found == source.end() ? nullptr : &found->second;
+    }
+    const MonsterAttackTiming *hirelingAttackTiming(int classId) const {
+        auto found = hirelingAttacks_.find(classId);
+        return found == hirelingAttacks_.end() ? nullptr : &found->second;
     }
     const MonsterMotionTiming *motion(MonsterKind kind, std::string_view mode) const {
         auto kinds = motions_.find(kind);

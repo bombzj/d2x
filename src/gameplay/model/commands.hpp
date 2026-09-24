@@ -47,6 +47,14 @@ struct IdentifyWithCain {
 struct EndNpcConversation {
     EntityId target;
 };
+struct TalkToNpc {
+    EntityId target;
+};
+struct ClaimAkaraRespec {
+    EntityId target;
+};
+struct ImbueItem { EntityId npc; ItemHandle item; };
+struct CompleteActOne { EntityId npc; };
 struct BuyVendorItem {
     EntityId vendor;
     uint32_t slot = 0;
@@ -86,13 +94,14 @@ struct CloseStorage {};
 struct UseTownPortal {
     uint64_t revision;
 };
+struct UseCainPortal {};
 struct PickupItem {
     ItemHandle item;
 };
 // UI supplies intentions; only the gameplay layer changes authoritative state.
 using GameCommand =
-    std::variant<MoveTo, Attack, CastSkill, UseClassSkill, ToggleRun, Interact, IdentifyWithCain, EndNpcConversation, BuyVendorItem, DebugGrantGold, DebugDropCube, GoldTransaction, DebugGrantExperience, AllocateAttribute, AllocateSkill, BindSkillHotkey, DebugResetAttributes, DebugResetSkills, DebugUnlockWaypoints, DebugGrantShrine, DebugSwitchCharacter, Travel, RestartArea, MoveItem, SwapItems,
+    std::variant<MoveTo, Attack, CastSkill, UseClassSkill, ToggleRun, Interact, IdentifyWithCain, EndNpcConversation, TalkToNpc, ClaimAkaraRespec, ImbueItem, CompleteActOne, BuyVendorItem, DebugGrantGold, DebugDropCube, GoldTransaction, DebugGrantExperience, AllocateAttribute, AllocateSkill, BindSkillHotkey, DebugResetAttributes, DebugResetSkills, DebugUnlockWaypoints, DebugGrantShrine, DebugSwitchCharacter, Travel, RestartArea, MoveItem, SwapItems,
                  SplitStack, MergeStacks, LoadBook, IdentifyItem, PickupItem, StopMoving, EquipBelt, UseItem, UseBeltColumn,
                  CloseStorage, TransferItem, UseExit, EquipItem, DebugKill, DebugSpawnMonster,
-                 DebugDamageMonster, UseTownPortal, WaypointTravel>;
+                 DebugDamageMonster, UseTownPortal, UseCainPortal, WaypointTravel>;
 } // namespace d2x

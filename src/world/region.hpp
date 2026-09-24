@@ -25,6 +25,7 @@ struct WorldObject {
     Interaction interaction = Interaction::None;
     float reach = 4;
     bool flame = false;
+    bool questHidden = false;
     int facing = 0;
     int animationMode = 0;
     int objectClass = -1, operateFn = 0, objectDamage = 0;

@@ -16,7 +16,14 @@ void GameSession::settleDeaths() {
     for (const auto &death : deaths) {
         if (loot_.settled(death.victim))
             continue;
-        LootRequest request{death.victim, death.identity, death.region, death.difficulty};
+        const bool questFirstKill = death.identity.monster == "andariel" &&
+            quest(ActOneQuest::SistersToTheSlaughter).stage < uint32_t(SlaughterStage::AndarielSlain) &&
+            catacombsFourRegion_ && death.region == *catacombsFourRegion_;
+        updateBurialQuest(death);
+        updateTowerQuest(death);
+        updateSlaughterQuest(death);
+        LootRequest request{death.victim, death.identity, death.region, death.difficulty,
+                            questFirstKill};
         if (death.identity.origin == SpawnOrigin::Summoned) {
             LootPlan empty;
             empty.randomState = loot_.randomState();

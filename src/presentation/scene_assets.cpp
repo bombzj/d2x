@@ -34,6 +34,7 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
     if (hero.at("nu").frames.empty() || hero.at("rn").frames.empty())
         throw std::runtime_error("Character animations missing; supply the classic MPQ resources.");
     loadMonsterAnimations(archives, session);
+    loadHirelingAnimations(archives, session);
     loadMonsterAudio(archives, session.monsterContent());
     fireball = graphics_.single("data/global/missiles/fireball.dcc");
     const auto objectRows = decodeTable(archives.read("data/global/excel/objects.txt"));
@@ -59,10 +60,39 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
         if (!rule.enabled || rule.fps <= 0)
             throw std::runtime_error("Invalid original town portal animation rules");
     }
+    auto cainPortalRecord = std::find_if(objectRows.begin(), objectRows.end(), [](const auto &row) {
+        auto id = row.find("Id");
+        return id != row.end() && id->second == "60";
+    });
+    if (cainPortalRecord == objectRows.end() || normalize(cainPortalRecord->at("Token")) != "pp")
+        throw std::runtime_error("MPQ objects.txt lacks the Tristram portal definition");
+    for (size_t index = 0; index < cainPortalAnimations.size(); ++index) {
+        const auto mode = index ? "on" : "op";
+        cainPortalAnimations[index] = graphics_.composite("objects", "pp", mode, "hth");
+        if (cainPortalAnimations[index].frames.empty() ||
+            !cainPortalAnimations[index].completeComposite)
+            throw std::runtime_error("Original Tristram portal animation is missing");
+        const auto suffix = std::to_string(index + 1);
+        auto &rule = cainPortalRules[index];
+        rule.frames = std::max(1, std::stoi(cainPortalRecord->at("FrameCnt" + suffix)));
+        rule.start = std::max(0, std::stoi(cainPortalRecord->at("Start" + suffix)));
+        rule.fps = float(std::stoi(cainPortalRecord->at("FrameDelta" + suffix))) * 25.f / 256.f;
+        rule.cycle = cainPortalRecord->at("CycleAnim" + suffix) == "1";
+        rule.enabled = cainPortalRecord->at("Mode" + suffix) == "1";
+        if (!rule.enabled || rule.fps <= 0)
+            throw std::runtime_error("Invalid original Tristram portal animation rules");
+    }
     fireburst = graphics_.single("data/global/missiles/shamanfireballexplodefinal.dcc");
     panel = uiGraphics_.single("data/global/ui/panel/800ctrlpnl7.dc6");
     cursor = uiGraphics_.single("data/global/ui/cursor/gaunt.dc6", true);
     inventoryPanel = graphics_.single("data/global/ui/panel/invchar.dc6");
+    questBackground = graphics_.single("data/global/ui/menu/questbackground.dc6");
+    questSockets = graphics_.single("data/global/ui/menu/questsockets.dc6");
+    questDone = graphics_.single("data/global/ui/menu/questdone.dc6");
+    questTabs = graphics_.single("data/global/ui/menu/questtabs.dc6");
+    if (questBackground.frames.size() < 4 || questSockets.frames.size() < 2 ||
+        questDone.frames.size() < 6 || questTabs.frames.size() < 2)
+        throw std::runtime_error("Original Act I quest panel artwork is missing");
     attributeButtons = graphics_.single("data/global/ui/panel/level.dc6");
     attributePoints = graphics_.single("data/global/ui/panel/skillpoints.dc6");
     if (attributeButtons.frames.size() < 3 || attributePoints.frames.empty())
@@ -256,7 +286,11 @@ void SceneAssets::loadProps(const Region &region) {
             continue;
         }
         if (object.interaction == Interaction::Loot || object.interaction == Interaction::Shrine ||
-            object.interaction == Interaction::Well) {
+            object.interaction == Interaction::Well || object.interaction == Interaction::QuestTree ||
+            object.interaction == Interaction::QuestStone ||
+            object.interaction == Interaction::QuestGibbet ||
+            object.interaction == Interaction::QuestTome ||
+            object.interaction == Interaction::QuestMalus) {
             std::array<GpuAnimation, 3> animations;
             const char *modes[] = {"nu", "op", "on"};
             for (size_t index = 0; index < animations.size(); ++index)

@@ -10,6 +10,7 @@ class SceneAssets {
     Graphics uiGraphics_;
     void loadProps(const Region &region);
     void loadMonsterAnimations(Archives &archives, const GameSession &session);
+    void loadHirelingAnimations(Archives &archives, const GameSession &session);
     void loadSkillIcons(Archives &archives, const ClassicData &content);
     std::string heroKey_;
     std::map<std::string, std::map<std::string, GpuAnimation>> heroCache_;
@@ -31,6 +32,7 @@ class SceneAssets {
     Sprite attackIcon;
     std::vector<std::vector<Sprite>> regionTiles;
     std::map<std::string, GpuAnimation> propAnimations, npcWalkAnimations, hero;
+    std::map<std::string, GpuAnimation> hirelingAnimations;
     std::map<std::string, std::array<GpuAnimation, 3>> waypointAnimations;
     std::map<std::string, std::array<GpuAnimation, 3>> objectModeAnimations;
     std::map<MonsterKind, std::map<std::string, GpuAnimation>> monsterAnimations;
@@ -43,8 +45,11 @@ class SceneAssets {
     std::map<std::string, GpuAnimation> itemGround, itemIcons;
     std::array<GpuAnimation, 2> townPortalAnimations;
     std::array<ObjectAnimationRule, 2> townPortalRules;
+    std::array<GpuAnimation, 2> cainPortalAnimations;
+    std::array<ObjectAnimationRule, 2> cainPortalRules;
     GpuAnimation fireball, fireburst, teleportOverlay, panel, cursor, inventoryPanel, attributeButtons,
         attributePoints, vendorPanel, vendorTabs,
+        questBackground, questSockets, questDone, questTabs,
         vendorButtons, vendorConfirm, waypointBorder, waypointPanel, waypointTabs, waypointIcons,
         storagePanel, cubePanel, beltPanel, beltSocket, orbs,
         globeOverlap, runButton, button;

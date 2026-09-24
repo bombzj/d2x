@@ -15,6 +15,8 @@ struct ViewState {
     float clickAge = 10, zoom = 1;
     bool help = false, automap = false, debug = false, pause = false, travelMenu = false;
     bool characterOpen = false;
+    bool questOpen = false;
+    int questSelected = -1;
     bool showLoot = false, shopOpen = false, npcMenu = false;
     int shopPage = 0;
     int shopCategory = 0;
@@ -24,8 +26,10 @@ struct ViewState {
     float animationTime = 0, heroTime = 0, stepClock = 0;
     uint64_t portalRevision = 0;
     float portalAnimationStarted = -1;
+    float cainPortalAnimationStarted = -1;
     std::string heroMode = "nu", dialogue, dialogueSpeaker, dialogueStatus;
     EntityId dialogueObject;
+    EntityId imbueNpc;
     std::vector<std::string> dialogueLines;
     int dialogueScroll = 0;
     size_t dialogueGossipTurn = 0;
@@ -69,6 +73,7 @@ class SceneView {
     void drawSkillControls(Vec mouse) const;
     void drawSkillIcon(std::optional<int> skill, Rectangle bounds) const;
     void drawSkillTree(Vec mouse) const;
+    void drawQuests(Vec mouse) const;
     void drawHelp() const;
     void drawExitHint(Vec mouse) const;
     void drawObjectHint(Vec mouse) const;

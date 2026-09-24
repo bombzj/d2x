@@ -12,7 +12,7 @@
 | `gameplay/character` | 角色已分配点、类型化成长与派生资源／战斗快照；不读 MPQ | `deriveCharacterAttributes` |
 | `gameplay/items` | 物品／容器唯一状态及事务 | `InventoryService` |
 | `gameplay/npc` | NPC 路径移动、凯恩鉴定与商店购买 | `advanceNpcPaths`、`planCainIdentification`、`planVendorStock`、`buyVendorItem` |
-| `gameplay/quest`（待建立） | 任务进度、门槛和对话分支；当前无任务状态，暂不建空模块 | 后续任务实现时接入 |
+| `gameplay/quest` | 第一幕六项任务的分文件阶段规则与每难度记录 | `QuestRecord`、各任务 `Advance` |
 | `gameplay/session` | 区域生命周期、出口、交互、死亡与存档协调 | `GameSession` |
 | `persistence` | 值快照、编码、版本、文件替换和备份 | `SessionSnapshot`、`encodeSave/decodeSave` |
 | `presentation` | GPU、音效、只读绘制、屏幕命中 | `SceneAssets`、`SceneView`、`SceneController` |

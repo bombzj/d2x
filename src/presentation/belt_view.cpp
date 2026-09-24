@@ -158,6 +158,18 @@ void SceneView::drawItemTooltip(const ItemInstance &item, Vec anchor) const {
         if (found != records.end())
             showProperties(found->properties, affix.propertyRolls);
     }
+    if (item.definition == "bkd") {
+        lines.push_back("Cairn Stones order:");
+        for (int objectClass : session_.cainStoneSequence()) {
+            std::string stoneName;
+            for (const auto &region : session_.regions())
+                for (const auto &object : region.objects)
+                    if (object.interaction == Interaction::QuestStone &&
+                        object.objectClass == objectClass)
+                        stoneName = object.name;
+            if (!stoneName.empty()) lines.push_back(stoneName);
+        }
+    }
     if (item.quality == ItemQuality::Superior)
         for (const auto &grade : session_.content().superiorGrades)
             if (int32_t(grade.row) == item.gradeRow) {

@@ -4,7 +4,7 @@
 
 namespace d2x {
 IdentificationPlan planCainIdentification(const InventoryState &inventory,
-                                          const PlayerContainers &containers) {
+                                           const PlayerContainers &containers, bool free) {
     IdentificationPlan plan;
     for (const auto &[id, item] : inventory.items) {
         if (item.identified)
@@ -18,7 +18,7 @@ IdentificationPlan planCainIdentification(const InventoryState &inventory,
     }
     if (plan.items.size() > UINT32_MAX / cainIdentifyCost)
         throw std::runtime_error("Too many items for Cain identification");
-    plan.cost = unsigned(plan.items.size()) * cainIdentifyCost;
+    plan.cost = free ? 0 : unsigned(plan.items.size()) * cainIdentifyCost;
     return plan;
 }
 void applyCainIdentification(InventoryState &inventory, const IdentificationPlan &plan) {

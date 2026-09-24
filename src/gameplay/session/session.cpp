@@ -302,6 +302,9 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
         if (portalObjects.number(row, "Id").value_or(-1) == 59 &&
             portalObjects.number(row, "OperateFn").value_or(0) == 15)
             portalReach_ = float(portalObjects.number(row, "OperateRange").value_or(0));
+        else if (portalObjects.number(row, "Id").value_or(-1) == 60 &&
+                 portalObjects.number(row, "OperateFn").value_or(0) == 15)
+            cainPortalReach_ = float(portalObjects.number(row, "OperateRange").value_or(0));
     portalResources_ = true;
     for (auto file : {"data/global/objects/tp/cof/tpophth.cof",
                       "data/global/objects/tp/hd/tphdlitophth.dcc",
@@ -310,10 +313,25 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
         else portalResources_ = false;
     }
     worldEntries_ = std::move(plan.entries);
+    for (const auto &[id, level] : worldContent_.levels())
+        if (level.act == 0) {
+            if (level.name == "Den of Evil") denRegion_ = RegionId(id);
+            if (level.name == "Burial Grounds") burialRegion_ = RegionId(id);
+            if (level.name == "Stony Field") stonyRegion_ = RegionId(id);
+            if (level.name == "Dark Wood") darkWoodRegion_ = RegionId(id);
+            if (level.name == "Forgotten Tower") towerRegion_ = RegionId(id);
+            if (level.name == "Tower Cellar Level 5") towerCellarRegion_ = RegionId(id);
+            if (level.name == "Barracks") barracksRegion_ = RegionId(id);
+            if (level.name == "Catacombs Level 4") catacombsFourRegion_ = RegionId(id);
+            if (level.name == "Tristram") tristramRegion_ = RegionId(id);
+        }
+    if (!denRegion_ || !burialRegion_ || !stonyRegion_ || !darkWoodRegion_ || !tristramRegion_)
+        throw std::runtime_error("Original Act I quest levels are missing");
+    reconcileCainObjects();
     Fingerprint fingerprint;
     fingerprint.add(content_.profile);
     // Bump this rules revision when state interpretation or compiled rules change.
-    fingerprint.add("d2x-session-rules-v117-combat-calculation");
+    fingerprint.add("d2x-session-rules-v118-act-one-quests");
     auto members = archives.used;
     for (const auto &member : members) {
         fingerprint.add(member);
@@ -374,6 +392,13 @@ void GameSession::enter(RegionId id, std::optional<Vec> arrival) {
     simulation_.enterArea(found->map.grid, found->map.activation, arrival.value_or(found->map.spawn),
                           found->definition.safe,
                           std::move(inactiveAreas_[current_]), plan.spawns);
+    if (simulation_.state_.player.hireling.active()) {
+        auto &hireling = simulation_.state_.player.hireling;
+        hireling.pos = state().player.pos;
+        hireling.route.clear();
+        hireling.moving = false;
+    }
+    onQuestRegionEntered(id);
     std::cout << "Room activation: created=" << state().area.enemies.size()
               << " deferred=" << state().area.pendingSpawns.size() << '\n';
 }
@@ -419,6 +444,8 @@ void GameSession::tick(float dt, Vec keyboard) {
                     beginExit(intent.slot);
                 } else if constexpr (std::is_same_v<T, UseTownPortal>) {
                     beginPortal(intent.revision);
+                } else if constexpr (std::is_same_v<T, UseCainPortal>) {
+                    transitioned = beginCainPortal();
                 } else if constexpr (std::is_same_v<T, WaypointTravel>) {
                     transitioned = travelWaypoint(intent);
                 } else if constexpr (std::is_same_v<T, Travel>) {
@@ -468,6 +495,14 @@ void GameSession::tick(float dt, Vec keyboard) {
                     interact(intent.target);
                 } else if constexpr (std::is_same_v<T, IdentifyWithCain>) {
                     identifyWithCain(intent.target);
+                } else if constexpr (std::is_same_v<T, TalkToNpc>) {
+                    talkToNpc(intent.target);
+                } else if constexpr (std::is_same_v<T, ClaimAkaraRespec>) {
+                    claimAkaraRespec(intent.target);
+                } else if constexpr (std::is_same_v<T, ImbueItem>) {
+                    imbueWithCharsi(intent);
+                } else if constexpr (std::is_same_v<T, CompleteActOne>) {
+                    completeActOne(intent.npc);
                 } else if constexpr (std::is_same_v<T, BuyVendorItem>) {
                     buyVendorItem(intent.vendor, intent.slot);
                 } else if constexpr (std::is_same_v<T, EndNpcConversation>) {
@@ -529,6 +564,10 @@ void GameSession::tick(float dt, Vec keyboard) {
                     if (!player.dead) {
                         player.skillRanks.clear();
                         player.unspentSkills = player.level - 1;
+                        for (const auto &difficulty : player.actOneQuests)
+                            if (difficulty.at(questIndex(ActOneQuest::DenOfEvil)).stage ==
+                                uint32_t(DenStage::Rewarded))
+                                ++player.unspentSkills;
                     }
                 } else if constexpr (std::is_same_v<T, UseClassSkill>) {
                     const auto *entry = content_.skills.find(intent.id);
@@ -582,6 +621,8 @@ void GameSession::tick(float dt, Vec keyboard) {
                         player.level = 1; player.experience = 0;
                         player.allocated = {}; player.unspentAttributes = 0;
                         player.skillRanks.clear(); player.unspentSkills = 0;
+                        player.actOneQuests = {};
+                        player.hireling = {};
                         player.combatEffects.clear();
                         player.skillHotkeys = {};
                         player.gold = std::min(player.gold, 10000u);
@@ -623,13 +664,18 @@ void GameSession::tick(float dt, Vec keyboard) {
         cancelInteraction();
     }
     simulation_.tick(dt, transitioned ? Vec{} : keyboard);
+    advanceHireling(dt);
     expireCombatEffects();
     updateObjectTimers();
     advanceNpcPaths(dt);
     settleDeaths();
+    updateDenQuest();
     updatePickup();
+    updateCainQuestItems();
+    updateToolsQuestItems();
     updateInteraction();
     updatePortal();
+    updateCainPortal();
     updateExit();
     validateStorage();
 }

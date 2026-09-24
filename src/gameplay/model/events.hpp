@@ -3,6 +3,7 @@
 #include "gameplay/model/definitions.hpp"
 #include "gameplay/items/operations.hpp"
 #include "gameplay/monsters/monster_spawn.hpp"
+#include "gameplay/quest/state.hpp"
 #include <variant>
 
 namespace d2x {
@@ -94,8 +95,12 @@ struct LootDeferred {
 struct WaypointActivated {
     EntityId object;
 };
+struct QuestAdvanced {
+    ActOneQuest quest;
+    uint32_t stage;
+};
 using GameEvent = std::variant<SkillCast, MeleeAttack, EnemyDied, EnemyAttacked, EnemySkill2, EnemyHit, PlayerDied, RegionEntered, ObjectInteracted, ItemsIdentified, VendorItemBought,
                                ItemChange, InventoryRejected, InventoryApplied, ItemPickedUp, PickupFailed,
                                ItemUsed, BeltEquipped, StorageOpened, StorageClosed, InteractionFailed,
-                               LootDeferred, WaypointActivated>;
+                               LootDeferred, WaypointActivated, QuestAdvanced>;
 } // namespace d2x

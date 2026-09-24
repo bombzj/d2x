@@ -50,6 +50,11 @@ SessionSnapshot GameSession::prepareCharacterRestore(SessionSnapshot character) 
     fresh.world.player = std::move(character.world.player);
     fresh.world.player.pos = town->map.spawn;
     fresh.world.player.previous = town->map.spawn;
+    if (fresh.world.player.hireling.sourceRow >= 0) {
+        fresh.world.player.hireling.pos = town->map.spawn;
+        fresh.world.player.hireling.route.clear();
+        fresh.world.player.hireling.moving = false;
+    }
     fresh.world.player.dead = false;
     fresh.world.player.hp = std::max(1.f, fresh.world.player.hp);
     fresh.world.area = {};

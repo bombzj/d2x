@@ -11,7 +11,7 @@ struct FrameInput {
     Vec mouse, movement;
     bool insideViewport = false;
     bool leftPressed = false, leftHeld = false, leftReleased = false, rightHeld = false, rightPressed = false;
-    bool inventory = false, character = false, skillTree = false, shift = false, control = false, enter = false, focused = true;
+    bool inventory = false, character = false, skillTree = false, quests = false, shift = false, control = false, enter = false, focused = true;
     int quantityDelta = 0, pageDelta = 0;
     std::string text;
     bool backspace = false;

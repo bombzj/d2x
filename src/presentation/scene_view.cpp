@@ -33,6 +33,7 @@ std::string playerAnimationMode(const PlayerState &p) {
                                                : "nu";
 }
 bool SceneView::visible(const WorldObject &object) const {
+    if (object.questHidden) return false;
     auto found = assets_.propAnimations.find(object.key);
     return found != assets_.propAnimations.end() && !found->second.frames.empty();
 }
@@ -51,6 +52,7 @@ void SceneView::sessionRestored() {
     view_.inventory = {};
     view_.characterOpen = false;
     view_.skillTreeOpen = false;
+    view_.questOpen = false;
     view_.skillClass = session_.characterCode();
     view_.skillPage = 3;
     view_.leftSkill.reset();
@@ -65,6 +67,7 @@ void SceneView::sessionRestored() {
     view_.animationTime = view_.heroTime = view_.stepClock = 0;
     view_.portalRevision = session_.state().portal.revision;
     view_.portalAnimationStarted = -1;
+    view_.cainPortalAnimationStarted = -1;
     view_.heroMode = playerAnimationMode(session_.state().player);
     landingAge_.clear();
 }
@@ -164,6 +167,7 @@ void SceneView::advance(float dt) {
                     view_.waypointSource = {};
                     view_.skillPicker.reset();
                     view_.skillTreeOpen = false;
+                    view_.questOpen = false;
                     view_.inventory.cancelGesture();
                     view_.inventory.pending = {};
                     view_.inventory.open = false;
@@ -258,8 +262,22 @@ void SceneView::advance(float dt) {
                             }();
                 } else if constexpr (std::is_same_v<T, WaypointActivated>) {
                     notice("Waypoint activated.", false);
+                } else if constexpr (std::is_same_v<T, QuestAdvanced>) {
+                    if (value.quest == ActOneQuest::ToolsOfTheTrade &&
+                        value.stage == uint32_t(ToolsStage::Imbued)) {
+                        view_.imbueNpc = {};
+                        view_.inventory.open = false;
+                    }
+                    if (value.quest == ActOneQuest::SearchForCain &&
+                        value.stage == uint32_t(CainStage::PortalOpened))
+                        view_.cainPortalAnimationStarted = view_.animationTime;
+                    notice("Quest log updated.", false);
                 } else if constexpr (std::is_same_v<T, ObjectInteracted>) {
-                    if (value.interaction == Interaction::Shrine) {
+                    if (value.interaction == Interaction::QuestTome) {
+                        if (auto speech = questSpeech(session_.content().npcDialogues,
+                                                      "A1Q5", "Init", "QuestTome"))
+                            openNpcDialogue(value.object, value.name, speech->text);
+                    } else if (value.interaction == Interaction::Shrine) {
                         notice("Shrine: " + value.name);
                     } else if (value.interaction == Interaction::Loot) {
                         notice("Opened: " + value.name);

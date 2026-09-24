@@ -14,7 +14,8 @@ enum class MonsterKind { Fallen, Zombie, Skeleton, CorruptRogue, Brute, Goatman,
                          FoulCrowNest, BloodHawk, Arach, Count };
 // Native Levels.txt IDs. Template previews occupy a separate range (10000 + Def).
 enum class RegionId { Encampment = 1 };
-enum class Interaction { None, Talk, Heal, Travel, Stash, Loot, Shrine, Well };
+enum class Interaction { None, Talk, Heal, Travel, Stash, Loot, Shrine, Well,
+                         QuestTree, QuestStone, QuestGibbet, QuestTome, QuestMalus };
 
 struct SkillDefinition {
     Skill id;

@@ -183,9 +183,17 @@ void SceneView::drawActors() const {
         draw.push_back({e.hp > 0 ? p.y : p.y - 1.f, 2, i, p});
     }
     draw.push_back({screen(sim.player.pos).y, 1, 0, screen(sim.player.pos)});
+    if (sim.player.hireling.active() && session_.active(sim.player.hireling.pos)) {
+        auto point = screen(sim.player.hireling.pos);
+        draw.push_back({point.y, 6, 0, point});
+    }
     if (auto position = session_.portalPosition()) {
         auto point = screen(*position);
         draw.push_back({point.y, 5, 0, point});
+    }
+    if (auto position = session_.cainPortalPosition()) {
+        auto point = screen(*position);
+        draw.push_back({point.y, 7, 0, point});
     }
     std::stable_sort(draw.begin(), draw.end(), [](auto &a, auto &b) { return a.depth < b.depth; });
     for (auto item : draw) {
@@ -224,6 +232,33 @@ void SceneView::drawActors() const {
             sprite(f, p, sim.player.dead ? Color{185, 185, 185, 255}
                          : sim.player.chill > 0 ? Color{115, 175, 255, 255}
                          : sim.player.poisonRemaining > 0 ? Color{145, 210, 115, 255} : WHITE);
+        } else if (item.type == 6) {
+            const auto &hireling = sim.player.hireling;
+            const auto &animations = assets_.hirelingAnimations;
+            auto mode = hireling.attackTimer > .2f ? "a1" : hireling.moving ? "wl" : "nu";
+            auto found = animations.find(mode);
+            if (found != animations.end()) {
+                const auto &animation = found->second;
+                DrawEllipse(int(item.p.x), int(item.p.y), 12, 5, {0, 0, 0, 100});
+                sprite(animation.frame(direction(hireling.look, animation.directions),
+                                       int(view_.animationTime * 12)), item.p);
+                auto name = session_.content().hirelingStrings.find(hireling.nameKey);
+                if (name != session_.content().hirelingStrings.end())
+                    painter_.label(name->second, int(item.p.x) - painter_.measure(name->second, 11) / 2,
+                                   int(item.p.y) - 60, 11, gold);
+            }
+        } else if (item.type == 7) {
+            float elapsed = view_.cainPortalAnimationStarted < 0 ? 999.f :
+                std::max(0.f, view_.animationTime - view_.cainPortalAnimationStarted);
+            const auto &opening = assets_.cainPortalRules[0];
+            const float duration = float(opening.frames) / opening.fps;
+            const size_t mode = elapsed < duration ? 0 : 1;
+            if (mode == 1) elapsed = view_.animationTime;
+            const auto &rule = assets_.cainPortalRules[mode];
+            int frame = rule.start + int(elapsed * rule.fps);
+            if (rule.cycle) frame = rule.start + (frame - rule.start) % rule.frames;
+            else frame = std::min(frame, rule.start + rule.frames - 1);
+            sprite(assets_.cainPortalAnimations[mode].frame(0, frame), item.p);
         } else if (item.type == 2) {
             auto &e = sim.area.enemies[item.index];
             const auto variant = assets_.monsterVariantAnimations.find(e.identity.monster);

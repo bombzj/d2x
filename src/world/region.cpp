@@ -68,6 +68,14 @@ void classify(WorldObject &object, const Table &objectRows) {
                     throw std::runtime_error("Invalid original waypoint interaction range");
                 return;
             }
+            if (object.operateFn == 9 || object.operateFn == 10 || object.operateFn == 12) {
+                object.interaction = object.operateFn == 9 ? Interaction::QuestStone
+                    : object.operateFn == 10 ? Interaction::QuestGibbet : Interaction::QuestTree;
+            }
+            if (object.operateFn == 6 && object.objectClass == 8)
+                object.interaction = Interaction::QuestTome;
+            if (object.operateFn == 21 && object.objectClass == 108)
+                object.interaction = Interaction::QuestMalus;
             if ((object.operateFn == 1 &&
                  (normalize(record->at("Name")) == "casket" ||
                   normalize(record->at("Name")) == "sarcophagus")) ||

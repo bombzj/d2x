@@ -132,6 +132,8 @@ $offers = (.\scripts\Send-D2XCommand.ps1 -Command shop -Arguments @{ id = $vendo
 | command | Arguments | 行为 |
 | --- | --- | --- |
 | status | 无 | 玩家坐标、生命、蛛网减速剩余时间／百分比、钱包、区域、击杀、已结算数、掉落随机状态、调试暂停状态 |
+| quest-status | 无 | 当前难度六项第一幕任务的阶段和标记，只读；A1Q3 灌注、A1Q4 石阵与 A1Q6 结局都使用正式会话状态 |
+| quest-panel | 可选 `open`、`selected`（-1 为总览，0–5 为六项） | 调试打开原 MPQ 任务面板，便于与 `screenshot` 查看布局 |
 | monsters | `visible`，默认 true | 当前区域已创建怪物 ID、真实身份、召唤来源、等级类别、当前／最大生命、蛛网光环、原 AI 名、停顿／追击、当前攻击／命中剩余时间、MPQ A1 动作时长／命中时刻与帧数、坐标、屏幕内／激活状态；不含尚未创建计划 |
 | ground | 无 | 当前区域地面物品 ID、版本、代码、数量、品质、特殊行号、物品等级、坐标 |
 | inventory | 无 | 所有角色容器内物品及钱包；包含背包、腰带、装备和私人箱，不改变箱子访问权 |
@@ -148,7 +150,7 @@ $offers = (.\scripts\Send-D2XCommand.ps1 -Command shop -Arguments @{ id = $vendo
 | grant-shrine | `code`：运行时 `Shrines.txt` 的 Code | 调试领取指定祭坛效果，无需找实物；限时效果见 `status.shrines`，一次性效果显示领取提示 |
 | talk | 无 | 在已打开的 NPC 菜单中选择 Talk，返回原 MPQ 对话文本与排版行数 |
 | gossip | 无 | 已打开的 NPC 菜单或对话切换到下一段原 MPQ 通用闲聊，返回文本和排版行数；不改变玩法状态 |
-| identify | 凯恩对象 `id` | 需先正常交谈且在范围内；按未完成任务档位每件 100 金币鉴定背包和装备中的物品，返回数量和扣款 |
+| identify | 凯恩对象 `id` | 需先正常交谈且在范围内；玩家亲自救出凯恩则免费，罗格代救则每件 100 金币，返回数量和扣款 |
 | shop | 商人对象 `id` | 查询原 MPQ 货架报价、`storePage`、常驻／已售状态；该 NPC 菜单已打开时进入货架界面 |
 | buy | 商人对象 `id`、货架 `slot` | 需先正常交谈并保持同区商店会话；按报价扣金币并正式创建背包物品，随机货品售出后不可重购 |
 | grant-gold | `amount` | 增加钱包金币，仍遵守当前角色等级对应的携带上限，便于检验需付费的 NPC 服务 |

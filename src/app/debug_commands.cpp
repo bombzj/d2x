@@ -44,6 +44,21 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
         } else if (command == "book-load" || command == "identify-item" ||
                    command == "gold-transfer" || command == "cube-open") {
             debugItemAction(command, request, result, session, view);
+        } else if (command == "quest-status") {
+            result["difficulty"] = session.state().population.difficulty;
+            result["quests"] = Json::array();
+            constexpr std::pair<ActOneQuest, const char *> quests[] = {
+                {ActOneQuest::DenOfEvil, "A1Q1"},
+                {ActOneQuest::SistersBurialGrounds, "A1Q2"},
+                {ActOneQuest::SearchForCain, "A1Q4"},
+                {ActOneQuest::ForgottenTower, "A1Q5"},
+                {ActOneQuest::ToolsOfTheTrade, "A1Q3"},
+                {ActOneQuest::SistersToTheSlaughter, "A1Q6"}};
+            for (const auto &[id, key] : quests) {
+                const auto &quest = session.quest(id);
+                result["quests"].push_back({{"id", key}, {"stage", quest.stage},
+                                             {"flags", quest.flags}});
+            }
         } else if (command == "status") {
             const auto &state = session.state();
             result["player"] = {{"x", state.player.pos.x}, {"y", state.player.pos.y},
@@ -214,6 +229,7 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
             result["speaker"] = view.ui().dialogueSpeaker;
             result["dialogue"] = view.ui().dialogue;
             result["lines"] = view.ui().dialogueLines.size();
+            session.submit(TalkToNpc{view.ui().dialogueObject}); step();
         } else if (command == "shop") {
             auto id = entity();
             const auto *stock = session.vendorStock(id);
@@ -408,6 +424,14 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
         } else if (command == "character-panel") {
             view.ui().characterOpen = request.value("open", true);
             result["open"] = view.ui().characterOpen;
+        } else if (command == "quest-panel") {
+            int selected = request.value("selected", -1);
+            if (selected < -1 || selected >= int(ActOneQuest::Count))
+                throw std::runtime_error("Quest selection must be -1..5");
+            view.ui().questOpen = request.value("open", true);
+            view.ui().questSelected = selected;
+            result["open"] = view.ui().questOpen;
+            result["selected"] = selected;
         } else if (command == "skill-tree") {
             int page = request.value("page", view.ui().skillPage);
             if (page < 1 || page > 3) throw std::runtime_error("Skill page must be 1..3");

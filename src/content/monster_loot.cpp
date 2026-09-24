@@ -74,8 +74,10 @@ MonsterLootEntry resolveMonsterLoot(const ClassicData &data, const MonsterCatalo
     if (result.itemLevel > 99)
         return defer("Monster item level exceeds supported instance range");
     result.upgradeLevel = scales ? result.itemLevel : 0;
-    if (table.number(row, "TCQuestId").value_or(0) && source->treasureClasses[request.difficulty][3])
-        return defer("Quest treasure class requires killer quest state");
+    const bool questClass = table.number(row, "TCQuestId").value_or(0) &&
+                            source->treasureClasses[request.difficulty][3];
+    if (questClass && request.questFirstKill)
+        slot = 3;
     auto entry = source->treasureClasses[request.difficulty][slot];
     if (superUnique)
         result.treasureClass = superUnique->treasureClasses[request.difficulty];

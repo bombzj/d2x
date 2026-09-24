@@ -65,7 +65,7 @@ SessionSnapshot GameSession::snapshot() const {
                                              object.npcRoute, object.npcWait,
                                              object.npcTarget, object.npcRandom});
     // Automatic walking to a transient pickup/interaction does not outlive that request.
-    if (pickup_.id || pendingInteraction_ || pendingExit_ || pendingPortal_) {
+    if (pickup_.id || pendingInteraction_ || pendingExit_ || pendingPortal_ || pendingCainPortal_) {
         result.world.player.route.clear();
         result.world.player.attackTarget = {};
         result.world.player.throwAttack = result.world.player.leftHandAttack = false;
@@ -186,7 +186,53 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
                     "character skill prerequisite");
         }
     }
-    require(learned + player.unspentSkills == player.level - 1,
+    int questSkillPoints = 0;
+    for (const auto &difficulty : player.actOneQuests) {
+        const auto &den = difficulty.at(questIndex(ActOneQuest::DenOfEvil));
+        require(den.stage <= uint32_t(DenStage::Rewarded) &&
+                    !(den.flags & ~denRespecUsed) &&
+                    (!(den.flags & denRespecUsed) || den.stage == uint32_t(DenStage::Rewarded)),
+                "Den of Evil quest progress");
+        if (den.stage == uint32_t(DenStage::Rewarded)) ++questSkillPoints;
+        const auto &burial = difficulty.at(questIndex(ActOneQuest::SistersBurialGrounds));
+        require(burial.stage <= uint32_t(BurialStage::Rewarded) && burial.flags == 0,
+                "Burial Grounds quest progress");
+        if (burial.stage == uint32_t(BurialStage::Rewarded))
+            require(player.hireling.sourceRow >= 0, "Kashya hireling reward");
+        const auto &cain = difficulty.at(questIndex(ActOneQuest::SearchForCain));
+        require(cain.stage <= uint32_t(CainStage::Rewarded) &&
+                    !(cain.flags & ~(cainStoneCountMask | cainRescuedByRogues)) &&
+                    (cain.flags & cainStoneCountMask) <= 5 &&
+                    (!(cain.flags & cainRescuedByRogues) ||
+                     cain.stage == uint32_t(CainStage::Rewarded)),
+                "Search for Cain quest progress");
+        const auto &tower = difficulty.at(questIndex(ActOneQuest::ForgottenTower));
+        require(tower.stage <= uint32_t(TowerStage::CountessSlain) && tower.flags == 0,
+                "Forgotten Tower quest progress");
+        const auto &tools = difficulty.at(questIndex(ActOneQuest::ToolsOfTheTrade));
+        require(tools.stage <= uint32_t(ToolsStage::Imbued) && tools.flags == 0,
+                "Tools of the Trade quest progress");
+        const auto &slaughter = difficulty.at(questIndex(ActOneQuest::SistersToTheSlaughter));
+        require(slaughter.stage <= uint32_t(SlaughterStage::Completed) && slaughter.flags == 0,
+                "Sisters to the Slaughter quest progress");
+    }
+    const auto &hireling = player.hireling;
+    if (hireling.sourceRow >= 0) {
+        auto definition = std::find_if(content_.hirelings.begin(), content_.hirelings.end(),
+            [&](const HirelingDefinition &entry) { return entry.sourceRow == hireling.sourceRow; });
+        require(definition != content_.hirelings.end() &&
+                    definition->classId == hireling.classId &&
+                    definition->level == hireling.level &&
+                    hireling.nameKey >= definition->nameFirst &&
+                    hireling.nameKey <= definition->nameLast &&
+                    hireling.hp >= 0 && hireling.hp <= definition->life,
+                "hireling identity or life");
+        position(hireling.pos, grid, true);
+        route(hireling.route, grid);
+    } else
+        require(hireling.classId == -1 && hireling.level == 0 && hireling.hp == 0 &&
+                    hireling.nameKey.empty(), "empty hireling state");
+    require(learned + player.unspentSkills == player.level - 1 + questSkillPoints,
             "character skill point total");
     for (const auto &key : player.skillHotkeys) {
         require(key.skill >= -2 && key.skill < 4096, "skill hotkey id");
@@ -908,12 +954,14 @@ void GameSession::restore(SessionSnapshot s) {
                 }
     ids_.next_ = s.nextEntityId;
     current_ = current;
+    reconcileCainObjects();
     pending_.clear();
     pickup_ = {};
     pendingInteraction_ = {};
     pendingInteractionRepath_ = false;
     engagedNpc_ = {};
     pendingPortal_.reset();
+    pendingCainPortal_ = false;
     pendingExit_.reset();
     boundaryMoveTarget_.reset();
     storage_ = {};

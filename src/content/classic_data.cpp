@@ -42,6 +42,7 @@ ClassicData loadClassicData(Archives &archives) {
             tables.emplace("npc", DataTable(archives.read("data/global/excel/npc.txt")));
         tables.emplace("itemtypes", DataTable(archives.read("data/global/excel/itemtypes.txt")));
         tables.emplace("storepage", DataTable(archives.read("data/global/excel/storepage.txt")));
+        tables.emplace("hireling", DataTable(archives.read("data/global/excel/hireling.txt")));
         if (archives.contains("data/global/excel/itemratio.txt"))
             tables.emplace("itemratio", DataTable(archives.read("data/global/excel/itemratio.txt")));
         for (auto name : {"uniqueitems", "setitems", "sets", "magicprefix", "magicsuffix",
@@ -78,6 +79,8 @@ ClassicData loadClassicData(Archives &archives) {
             item.opensCube = lod && family == ItemFamily::Misc &&
                              value("type") == "ques" && number("pSpell") == 7;
             item.autoBelt = number("autobelt").value_or(0) != 0;
+            item.imbueable = (number("bitfield1").value_or(0) & 1) != 0 &&
+                             number("quest").value_or(0) == 0;
             if (!value("invfile").empty())
                 item.icon = "data/global/items/" + value("invfile") + ".dc6";
             if (!value("flippyfile").empty())
@@ -238,9 +241,17 @@ ClassicData loadClassicData(Archives &archives) {
             throw std::runtime_error("MPQ lacks the original cube item");
     }
     data.characters = loadCharacterDefinitions(data.tables.at("charstats"));
+    if (lod)
+        data.hirelings = loadHirelingDefinitions(data.tables.at("hireling"));
     if (lod) {
         data.tables.emplace("skilldesc", DataTable(archives.read("data/global/excel/skilldesc.txt")));
         ClassicStrings strings(archives);
+        for (const auto &[key, value] : strings.entries())
+            if (key.starts_with("qstsa1q") || key == "newquestlog" ||
+                key == "qstsComplete" || key == "noactivequest")
+                data.actOneQuestStrings.emplace(key, value);
+            else if (key.starts_with("merc"))
+                data.hirelingStrings.emplace(key, value);
         data.skills = loadSkillCatalog(data.tables.at("skills"), data.tables.at("skilldesc"),
                                        data.tables.at("charstats"), data.characters, strings);
         const DataTable overlays(archives.read("data/global/excel/overlay.txt"));
