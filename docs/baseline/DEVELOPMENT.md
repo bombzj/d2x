@@ -1,8 +1,8 @@
 # 开发与交接
 
-当前源码存档 v52／规则 v80。普通怪物三难度生命、近战伤害／命中、防御、抗性、暴击、再生和 `El1–3` 按原表共用解析；`brute1–2`、`zombie1–5`、`skeleton1–5`、`fallen1–5` 使用原动作及 MPQ 所列声音。僵尸、骷髅、沉沦魔和 Brute 同族变体分别共用各自 AI，按 `MonStats.TransLvl` 选择原 `palshift.dat` 颜色映射；火焰、闪电、冰冷与毒素命中接通用元素攻击，冰冷与毒素保存角色持续状态。Fallen 家族在原死亡动作期间见附近尸体后逃离，使用原 AI 参数发同组命令并播放 MPQ S2 喊叫；Brute 在两次攻击掷骰后可绕目标行走。其他普通怪物仍保留真实身份与类型替身。分工和下一种怪物的条件见 [怪物实施计划](../MONSTERS.md)；精英、固定首领、Boss 和通用逐帧 AI 调度仍待逐项核对。旧存档不迁移。
+当前源码存档 v53／规则 v81。普通怪物三难度生命、近战伤害／命中、防御、抗性、暴击、再生和 `El1–3` 按原表共用解析；`brute1–3`、`zombie1–5`、`skeleton1–5`、`fallen1–5` 使用原动作及 MPQ 所列声音。僵尸、骷髅、沉沦魔和 Brute 同族变体分别共用各自 AI，按 `MonStats.TransLvl` 选择原 `palshift.dat` 颜色映射；火焰、闪电、冰冷与毒素命中接通用元素攻击，冰冷与毒素保存角色持续状态。Fallen 家族在原死亡动作期间见附近尸体后逃离，使用原 AI 参数发同组命令并播放 MPQ S2 喊叫；Brute 在两次攻击掷骰后可绕目标行走。其他普通怪物仍保留真实身份与类型替身。分工和下一种怪物的条件见 [怪物实施计划](../MONSTERS.md)；精英、固定首领、Boss 和通用逐帧 AI 调度仍待逐项核对。旧存档不迁移。
 
-Windows Release 构建通过。完整六 MPQ 目录 `dist/d2x-runtime-20260924-v52-brute2/` 在邪恶洞窟启动；`brute2` 原形 `substitute=false`、`sourceAi=Brute`，近战决策进入 `aiCircling=true` 后位置从 `(22.345,24.982)` 移到 `(23.079,23.257)`，v52 读取后恢复原位置与绕行状态。截图 `artifacts/monster-smoke/brute2-v52-circle.png` 显示原 `YE` 外观，击杀获得 84 经验。运行目录与截图不提交，不生成 ZIP 或测试脚本／用例。音频播放效果仍待用户实机听验。
+Windows Release 构建通过。完整六 MPQ 目录 `dist/d2x-runtime-20260924-v53-brute3/` 在邪恶洞窟启动；`brute3` 原形 `substitute=false`、`sourceAi=Brute`，MPQ 普通难度生命／A1／A2／防御／抗性已返回，v53 存读档正常，击杀获得 47 经验。原调色截图保存于 `artifacts/monster-smoke/brute3-v53-in-view.png`。共享绕行行为已在 `brute2` 现场量测，此变体不重复数值测试。运行目录与截图不提交，不生成 ZIP 或测试脚本／用例。音频播放效果仍待用户实机听验。
 
 ## 当前交接状态
 
