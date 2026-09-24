@@ -1,8 +1,8 @@
 # 开发与交接
 
-当前源码存档 v71／规则 v99。普通怪物三难度生命、近战伤害／命中、防御、抗性、暴击、再生和 `El1–3` 按原表共用解析；`brute1–5`、`zombie1–5`、`skeleton1–5`、`fallen1–5`、`corruptrogue1–5`、`goatman1–5`、`quillrat1–5`、`wraith1` 使用原动作及 MPQ 所列声音。僵尸、骷髅、沉沦魔、Brute、Corrupt Rogue、Goatman、Quill Rat 和 Wraith 按原 AI 家族分别决策，按 `MonStats.TransLvl` 选择原 `palshift.dat` 颜色映射；火焰、闪电、冰冷、毒素与法力吸取命中接通用元素攻击，冰冷与毒素保存角色持续状态。Fallen 家族在原死亡动作期间见附近尸体后逃离，使用原 AI 参数发同组命令并播放 MPQ S2 喊叫；Brute 在两次攻击掷骰后可绕目标行走；Corrupt Rogue 使用 MPQ 接近／停顿、跑步概率及原 RN 动作。其他普通怪物仍保留真实身份与类型替身。分工和下一种怪物的条件见 [怪物实施计划](../MONSTERS.md)；精英、固定首领、Boss 和通用逐帧 AI 调度仍待逐项核对。旧存档不迁移。
+当前源码存档 v72／规则 v100。普通怪物三难度生命、近战伤害／命中、防御、抗性、暴击、再生和 `El1–3` 按原表共用解析；`brute1–5`、`zombie1–5`、`skeleton1–5`、`fallen1–5`、`corruptrogue1–5`、`goatman1–5`、`quillrat1–5`、`wraith1–2` 使用原动作及 MPQ 所列声音。僵尸、骷髅、沉沦魔、Brute、Corrupt Rogue、Goatman、Quill Rat 和 Wraith 按原 AI 家族分别决策，按 `MonStats.TransLvl` 选择原 `palshift.dat` 颜色映射；火焰、闪电、冰冷、毒素与法力吸取命中接通用元素攻击，冰冷与毒素保存角色持续状态。Fallen 家族在原死亡动作期间见附近尸体后逃离，使用原 AI 参数发同组命令并播放 MPQ S2 喊叫；Brute 在两次攻击掷骰后可绕目标行走；Corrupt Rogue 使用 MPQ 接近／停顿、跑步概率及原 RN 动作。其他普通怪物仍保留真实身份与类型替身。分工和下一种怪物的条件见 [怪物实施计划](../MONSTERS.md)；精英、固定首领、Boss 和通用逐帧 AI 调度仍待逐项核对。旧存档不迁移。
 
-Windows Release 构建通过。完整六 MPQ 目录 `dist/d2x-runtime-20260924-v71-wraith1/` 在邪恶洞窟启动；`wraith1` 原形 `substitute=false`，蓝色原形截图在 `artifacts/monster-smoke/wraith1-v71-in-view.png`。独立 Wraith AI 从自身 MPQ 读取 `aip1=50` 接近、`aip2=12` 停顿和 `aip3=70` 攻击；A1 的 `mana` 元素按原概率和伤害区间进入共享命中处理。v71 攻击中存读档正常，角色生命 55→43、法力从满值 10 降到 6.16，击杀获得 72 经验。运行目录与截图不提交，不生成 ZIP 或测试脚本／用例。音频播放效果仍待用户实机听验。
+Windows Release 构建通过。完整六 MPQ 目录 `dist/d2x-runtime-20260924-v72-wraith2/` 在邪恶洞窟启动；`wraith2` 原形 `substitute=false`，黄色原调色截图在 `artifacts/monster-smoke/wraith2-v72-in-view.png`。该 ID 自身的 `aip1=60`、`aip2=10`、`aip3=75`、A1 法力吸取 45% 概率和区间由运行时 MPQ 提供，沿用共用 Wraith AI 与元素命中。v72 攻击中存读档正常，角色生命 55→49、法力降到 6.10，击杀获得 16 经验。运行目录与截图不提交，不生成 ZIP 或测试脚本／用例。音频播放效果仍待用户实机听验。
 ## 当前交接状态
 
 - 本轮调试快捷键、MPQ 城镇出生标记、NPC／传送点可见帧热区、城镇耐力规则及第一幕野外神殿分组已接入源码。用户随后明确要求打包和冒烟，Windows Release 构建、五个原始 MPQ 下 1–39 关逐张短帧启动及截图已完成；完整交互仍待验收。
