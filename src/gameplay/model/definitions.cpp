@@ -48,6 +48,9 @@ const MonsterDefinition &monsterDefinition(MonsterKind id) {
     static const MonsterDefinition hellBovine{MonsterKind::HellBovine, "ec", fallen.maxLife,
                                                fallen.speed, fallen.damage, fallen.attackInterval,
                                                fallen.sightRange, fallen.attackRange};
+    static const MonsterDefinition skeletonMage{MonsterKind::SkeletonMage, "sk", fallen.maxLife,
+                                                fallen.speed, fallen.damage, fallen.attackInterval,
+                                                fallen.sightRange, fallen.attackRange};
     switch (id) {
     case MonsterKind::Fallen:
         return fallen;
@@ -75,6 +78,8 @@ const MonsterDefinition &monsterDefinition(MonsterKind id) {
         return bighead;
     case MonsterKind::HellBovine:
         return hellBovine;
+    case MonsterKind::SkeletonMage:
+        return skeletonMage;
     case MonsterKind::Count:
         break;
     }

@@ -37,6 +37,9 @@ MonsterImplementation monsterImplementation(const std::string &code) {
         return {MonsterKind::Bighead, false};
     if (code == "hellbovine")
         return {MonsterKind::HellBovine, false};
+    if (code == "skmage_fire1" || code == "skmage_fire2" ||
+        code == "skmage_ltng1" || code == "skmage_ltng2")
+        return {MonsterKind::SkeletonMage, false};
     return {MonsterKind::Fallen, true};
 }
 const char *monsterRankName(MonsterRank rank) {

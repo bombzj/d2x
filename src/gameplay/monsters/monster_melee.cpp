@@ -76,7 +76,7 @@ void Simulation::resolveMonsterAttack(Enemy &enemy, int modeOverride, bool proje
                             ? monsterNormalCombat_(enemy.identity, state_.area.region) : std::nullopt;
     if (combat) {
         auto range = mode == 2 ? combat->attack2Damage : combat->attack1Damage;
-        if (mode == 2 && !range) damage = 0;
+        if (!range && (projectile || mode == 2)) damage = 0;
         if (range) {
             const auto [minimum, maximum] = *range;
             enemy.combatRandom = uint64_t(uint32_t(enemy.combatRandom)) * 0x6ac690c5ULL +

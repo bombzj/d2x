@@ -150,6 +150,8 @@ MonsterCatalog::MonsterCatalog(Archives &archives, const DataTable &stats) {
         };
         m.rightHandVariant = firstVariant("RHv");
         m.leftHandVariant = firstVariant("LHv");
+        for (int index = 0; index < 8; ++index)
+            m.specialVariants[size_t(index)] = firstVariant("S" + std::to_string(index + 1) + "v");
         if (!indices_.emplace(m.index, m.id).second)
             throw std::runtime_error("Duplicate MonStats hcIdx: " + std::to_string(m.index));
         if (!monsters_.emplace(m.id, m).second) {

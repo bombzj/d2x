@@ -20,10 +20,13 @@ void SceneAssets::loadMonsterAnimations(Archives &archives, const GameSession &s
         equipment.fill("");
         if (!actor.rightHandVariant.empty()) equipment[5] = actor.rightHandVariant.c_str();
         if (!actor.leftHandVariant.empty()) equipment[6] = actor.leftHandVariant.c_str();
+        for (size_t index = 0; index < actor.specialVariants.size(); ++index)
+            if (!actor.specialVariants[index].empty())
+                equipment[index + 8] = actor.specialVariants[index].c_str();
         if (kind == MonsterKind::Skeleton || kind == MonsterKind::CorruptRogue) {
             equipment[7] = "buc";
-            equipment[8] = "lit";
-            equipment[9] = "lit";
+            if (!equipment[8][0]) equipment[8] = "lit";
+            if (!equipment[9][0]) equipment[9] = "lit";
         }
         for (auto mode : {"nu", "wl", "rn", "a1", "dt", "a2", "gh", "dd", "s2"}) {
             if (std::string_view(mode) == "rn" &&
@@ -47,7 +50,8 @@ void SceneAssets::loadMonsterAnimations(Archives &archives, const GameSession &s
         if (auto timing = content.attackTiming(kind);
             timing && animations.at("a1").count != timing->frames)
             throw std::runtime_error("Monster AnimData/COF frame mismatch: " + actor.id);
-        if ((kind == MonsterKind::CorruptArcher || kind == MonsterKind::SkeletonBow) &&
+        if ((kind == MonsterKind::CorruptArcher || kind == MonsterKind::SkeletonBow ||
+             kind == MonsterKind::SkeletonMage) &&
             actor.attack1Projectile &&
             !content.attackTiming(kind))
             throw std::runtime_error("Monster ranged A1 event missing: " + actor.id);
@@ -67,7 +71,8 @@ void SceneAssets::loadMonsterAnimations(Archives &archives, const GameSession &s
                      kind == MonsterKind::Goatman || kind == MonsterKind::QuillRat ||
                      kind == MonsterKind::Wraith || kind == MonsterKind::CorruptLancer ||
                      kind == MonsterKind::CorruptArcher || kind == MonsterKind::SkeletonBow ||
-                     kind == MonsterKind::Bighead || kind == MonsterKind::HellBovine) && !timing)
+                     kind == MonsterKind::Bighead || kind == MonsterKind::HellBovine ||
+                     kind == MonsterKind::SkeletonMage) && !timing)
                     throw std::runtime_error("Original monster AnimData entry missing: " +
                                              actor.id + "/" + mode);
                 if (timing && animation->second.count != timing->frames)

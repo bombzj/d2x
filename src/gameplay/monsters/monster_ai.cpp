@@ -11,6 +11,7 @@
 #include "gameplay/monsters/corrupt_archer_ai.hpp"
 #include "gameplay/monsters/skeleton_bow_ai.hpp"
 #include "gameplay/monsters/bighead_ai.hpp"
+#include "gameplay/monsters/skeleton_mage_ai.hpp"
 #include "gameplay/monsters/monster_wander.hpp"
 #include <algorithm>
 
@@ -122,6 +123,7 @@ void Simulation::updateMonsters(float dt) {
             const auto originalSpeed = monsterWalkSpeed_ ? monsterWalkSpeed_(enemy) : std::nullopt;
             const float speed = originalSpeed.value_or(monsterDefinition(enemy.kind).speed) *
                                 (enemy.kind == MonsterKind::Bighead ? .5f :
+                                 enemy.kind == MonsterKind::SkeletonMage ? .25f :
                                  enemy.kind == MonsterKind::QuillRat ? 1.f : 1.5f) *
                                 (enemy.chill > 0 ? .42f : 1.f);
             fallenAdvanceEscape(enemy, *grid_, speed, dt);
@@ -161,7 +163,28 @@ void Simulation::updateMonsters(float dt) {
         const bool wraithAi = ai && ai->kind == MonsterAiKind::Wraith;
         const bool skeletonBowAi = ai && ai->kind == MonsterAiKind::SkeletonBow;
         const bool bigheadAi = ai && ai->kind == MonsterAiKind::Bighead;
+        const bool skeletonMageAi = ai && ai->kind == MonsterAiKind::SkeletonMage;
         bool clear = grid_->segment(enemy.pos, player.pos);
+        if (skeletonMageAi) {
+            auto action = skeletonMageThink(enemy, *ai, distance, clear);
+            if (action == SkeletonMageAction::Retreat)
+                action = monsterStartRetreat(enemy, player.pos, 5, *grid_)
+                    ? SkeletonMageAction::Idle : SkeletonMageAction::Fire;
+            if (action == SkeletonMageAction::Circle) {
+                if (!monsterStartCircle(enemy, player.pos, 4, *grid_))
+                    enemy.aiWait = float(ai->params[7]) / 25.f;
+                action = SkeletonMageAction::Idle;
+            }
+            if (action == SkeletonMageAction::Fire) {
+                enemy.route.clear();
+                beginMonsterAttack(enemy, 1);
+                continue;
+            }
+            if (action == SkeletonMageAction::Idle) {
+                if (!enemy.aiEscaping && !enemy.aiCircling) enemy.route.clear();
+                continue;
+            }
+        }
         if (bigheadAi) {
             auto action = bigheadThink(enemy, *ai, distance, clear, definition.attackRange);
             if (action == BigheadAction::Retreat)
@@ -324,7 +347,7 @@ void Simulation::updateMonsters(float dt) {
             if (grid_->segment(enemy.pos, next)) {
                 const float moved = (next - enemy.pos).length();
                 enemy.pos = next;
-                if (rogueAi || skeletonBowAi) {
+                if (rogueAi || skeletonBowAi || skeletonMageAi) {
                     enemy.aiAdvanceRemaining = std::max(0.f, enemy.aiAdvanceRemaining - moved);
                     if (rogueAi && enemy.aiAdvanceRemaining == 0) enemy.aiRunning = false;
                 }
@@ -349,7 +372,7 @@ void Simulation::updateMonsters(float dt) {
             if (lancerAi) enemy.aiRunning = false;
             if (archerAi) enemy.aiRunning = false;
         }
-        if (!skeletonBowAi && !bigheadAi &&
+        if (!skeletonBowAi && !skeletonMageAi && !bigheadAi &&
             (player.pos - enemy.pos).length() < definition.attackRange &&
             player.leapTime <= 0 && grid_->segment(enemy.pos, player.pos)) {
             if (skeletonAi && !skeletonAttacks(enemy, *ai))

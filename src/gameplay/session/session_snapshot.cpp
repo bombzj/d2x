@@ -357,7 +357,8 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
                         ai->kind != MonsterAiKind::CorruptLancer &&
                         ai->kind != MonsterAiKind::CorruptArcher &&
                         ai->kind != MonsterAiKind::SkeletonBow &&
-                        ai->kind != MonsterAiKind::Bighead))
+                        ai->kind != MonsterAiKind::Bighead &&
+                        ai->kind != MonsterAiKind::SkeletonMage))
                 require(enemy.aiWait == 0 && !enemy.aiPursuing && !enemy.aiEscaping &&
                             !enemy.aiCommanded && !enemy.aiCircling && !enemy.aiRunning &&
                             enemy.aiAdvanceRemaining == 0 && enemy.skill2Remaining == 0,
@@ -375,6 +376,16 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
                             (!enemy.aiEscaping || (enemy.hp > 0 && enemy.attack == 0 &&
                                                    !enemy.route.empty())),
                         "bighead AI state");
+            else if (ai && ai->kind == MonsterAiKind::SkeletonMage)
+                require(enemy.aiWait <= float(ai->params[7]) / 25.f &&
+                            enemy.aiAdvanceRemaining <= float(ai->params[1]) &&
+                            !enemy.aiPursuing && !enemy.aiCommanded &&
+                            !enemy.aiRunning && !enemy.aiCharged &&
+                            (!enemy.aiCircling || (enemy.hp > 0 && enemy.attack == 0 &&
+                                                   enemy.aiWait == 0 && !enemy.route.empty())) &&
+                            (!enemy.aiEscaping || (enemy.hp > 0 && enemy.attack == 0 &&
+                                                   !enemy.route.empty())),
+                        "skeleton mage AI state");
             else
                 require(!enemy.aiCircling, "unsupported circling state");
             if (ai && ai->kind == MonsterAiKind::CorruptRogue)
@@ -401,6 +412,9 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
                             !enemy.aiPursuing && !enemy.aiEscaping && !enemy.aiCommanded &&
                             !enemy.aiCircling && !enemy.aiRunning && !enemy.aiCharged,
                         "skeleton bow AI state");
+            else if (ai && ai->kind == MonsterAiKind::SkeletonMage)
+                require(enemy.aiAdvanceRemaining <= float(ai->params[1]) &&
+                            !enemy.aiRunning, "skeleton mage approach state");
             else
                 require(!enemy.aiRunning && enemy.aiAdvanceRemaining == 0,
                         "non-rogue run state");

@@ -73,9 +73,9 @@ $spawn = .\scripts\Send-D2XCommand.ps1 -Command monster-spawn -Arguments @{monst
 
 `aiEscaping` 表示 Fallen 正沿见尸逃离路线移动；它与原身份、路线一起保存。可在同一可走房间生成两只 `fallen1`，击杀其中一只再 `step` 一帧观察另一只。原死亡动作时长由运行时 MPQ 的 `AnimData.d2` 决定。`monsters` 同时返回原生成 `group`、`aiCommanded` 和 `skill2Remaining`，可观察同组命令和 S2 喊叫，后二者也随存档保存。
 
-`aiCircling` 表示 Brute 或 Bighead 正沿可走路径绕目标行走。可定点生成 `brute2`，逐次 `step` 后查询 `monsters`，在近战攻击两次 `aip3` 掷骰中首次失败、第二次成功时观察该状态和位移；绕行路线随存档保存。
+`aiCircling` 表示 Brute、Bighead 或 Skeleton Mage 正沿可走路径绕目标行走。可定点生成 `brute2`，逐次 `step` 后查询 `monsters`，在近战攻击两次 `aip3` 掷骰中首次失败、第二次成功时观察该状态和位移；绕行路线随存档保存。
 
-`aiRunning` 表示 Corrupt Rogue 当前跑步动作；`aiAdvanceRemaining` 表示 Corrupt Rogue 或 Skeleton Bow 当前路径决策的剩余距离。可定点生成 `corruptrogue1`，逐帧推进并用 `monsters` 观察；该状态随存档保存。
+`aiRunning` 表示 Corrupt Rogue 当前跑步动作；`aiAdvanceRemaining` 表示 Corrupt Rogue、Skeleton Bow 或 Skeleton Mage 当前路径决策的剩余距离。可定点生成 `corruptrogue1`，逐帧推进并用 `monsters` 观察；该状态随存档保存。
 
 `monsters` 的 `hostileProjectiles` 统计该怪物仍在飞行的敌方弹体；`aiRetaliate` 表示 Quill Rat 受击后待 A2 回击。可定点生成 `quillrat1` 后推进 6 帧观察原 `spike1` 发射，飞行中保存／读取再推进观察命中；这两项状态均随 v66 存档校验。`aiEscaping` 对 Quill Rat 也表示其按 MPQ `aip4` 距离后撤。
 
