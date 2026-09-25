@@ -75,7 +75,7 @@ struct Cof {
 };
 Cof decodeCof(const Bytes &data);
 struct Tile {
-    int orientation = 0, main = 0, sub = 0, rarity = 0;
+    int orientation = 0, main = 0, sub = 0, rarity = 0, roofHeight = 0;
     std::array<uint8_t, 25> flags{};
     IndexedFrame image;
     uint32_t key() const { return (main << 16) | (sub << 8) | orientation; }

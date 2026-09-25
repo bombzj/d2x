@@ -19,6 +19,22 @@ bool Grid::segment(Vec a, Vec b) const {
     }
     return true;
 }
+bool Grid::lightSegment(Vec a, Vec b) const {
+    auto delta = b - a;
+    int steps = std::max(1, int(delta.length() * 5));
+    const int targetX = int(std::floor(b.x)), targetY = int(std::floor(b.y));
+    // The target cell is allowed to receive light even if its own wall blocks
+    // rays travelling farther. This keeps the visible face of a wall lit.
+    for (int i = 0; i < steps; ++i) {
+        auto p = a + delta * (float(i) / steps);
+        int x = int(std::floor(p.x)), y = int(std::floor(p.y));
+        if (x == targetX && y == targetY)
+            return true;
+        if (x < 0 || y < 0 || x >= width || y >= height || lightBlocked[y * width + x])
+            return false;
+    }
+    return true;
+}
 Vec Grid::nearest(Vec p) const {
     int px = std::clamp(int(p.x), 0, std::max(0, width - 1)),
         py = std::clamp(int(p.y), 0, std::max(0, height - 1));

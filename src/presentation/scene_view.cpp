@@ -10,7 +10,8 @@ SceneView::SceneView(Archives &archives, const GameSession &session)
     view_.portalRevision = session_.state().portal.revision;
     view_.skillClass = session_.characterCode();
     revealAutomap();
-    lighting_.update(session_.map().grid, session_.region().definition.id,
+    lighting_.update(session_.map().grid, session_.worldContent().level(int(session_.region().definition.id)),
+                     session_.region().definition.id,
                      session_.state().player.pos, session_.characterStats().lightRadius);
 }
 Rectangle SceneView::worldViewport() const {
@@ -97,7 +98,8 @@ void SceneView::sessionRestored() {
     view_.heroMode = playerAnimationMode(session_.state().player);
     landingAge_.clear();
     revealAutomap();
-    lighting_.update(session_.map().grid, session_.region().definition.id,
+    lighting_.update(session_.map().grid, session_.worldContent().level(int(session_.region().definition.id)),
+                     session_.region().definition.id,
                      session_.state().player.pos, session_.characterStats().lightRadius);
 }
 void SceneView::advanceUi(float dt) {
@@ -106,7 +108,8 @@ void SceneView::advanceUi(float dt) {
 }
 void SceneView::advance(float dt) {
     revealAutomap();
-    lighting_.update(session_.map().grid, session_.region().definition.id,
+    lighting_.update(session_.map().grid, session_.worldContent().level(int(session_.region().definition.id)),
+                     session_.region().definition.id,
                      session_.state().player.pos, session_.characterStats().lightRadius);
     const auto &player = session_.state().player;
     if (view_.displayedWeaponSet != player.weaponSet) {

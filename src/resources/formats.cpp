@@ -100,10 +100,13 @@ std::vector<Tile> decodeDt1(const Bytes &b) {
     std::vector<Tile> result;
     for (uint32_t i = 0; i < count; i++) {
         r.seek(offset + size_t(i) * 96);
-        r.skip(8);
+        r.skip(4);
+        int roofHeight = r.i16();
+        r.skip(2);
         int h = r.i32(), w = r.i32();
         r.skip(4);
         Tile t;
+        t.roofHeight = roofHeight;
         t.orientation = r.u32();
         t.main = r.u32();
         t.sub = r.u32();
@@ -155,6 +158,8 @@ std::vector<Tile> decodeDt1(const Bytes &b) {
         // DT1 wall coordinates end at y=0; their origin is the front corner of the floor.
         if (t.orientation != 0 && t.orientation != 15)
             t.image.y = minY + 80;
+        else if (t.orientation == 15)
+            t.image.y -= t.roofHeight;
         t.image.pixels.resize(size_t(maxX) * (maxY - minY));
         auto put = [&](int x, int y, uint8_t v) {
             y -= minY;

@@ -8,9 +8,9 @@
 #include <vector>
 
 namespace d2x {
-// View-only light mask. The collision grid supplies visibility; no lighting state is saved.
+// View-only light mask. DT1 light-blocking flags supply visibility; no lighting state is saved.
 class LightingView {
-    static constexpr int maskRadius = 21;
+    static constexpr int maskRadius = 30;
     static constexpr int maskSide = maskRadius * 2 + 1;
     Shader shader_{};
     Texture2D visibility_{};
@@ -24,7 +24,7 @@ class LightingView {
     ~LightingView();
     LightingView(const LightingView &) = delete;
     LightingView &operator=(const LightingView &) = delete;
-    void update(const Grid &grid, RegionId region, Vec player, int radius);
+    void update(const Grid &grid, const LevelRecord &level, RegionId region, Vec player, int radius);
     void draw(const LevelRecord &level, Vec player, Vec playerScreen, float zoom, int radius,
               const std::vector<WorldObject> &objects) const;
 };

@@ -198,12 +198,8 @@ void SceneView::drawActors() const {
     std::stable_sort(draw.begin(), draw.end(), [](auto &a, auto &b) { return a.depth < b.depth; });
     for (auto item : draw) {
         if (item.type == 0) {
-            Color tint = WHITE;
             auto &s = assets_.regionTiles[item.region][item.index];
-            auto hp = screen(sim.player.pos);
-            if (hp.y < item.depth && std::abs(hp.x - item.p.x) < 90 && hp.y > item.p.y + s.y)
-                tint = {255, 255, 255, 125};
-            sprite(&s, item.p, tint);
+            sprite(&s, item.p);
         } else if (item.type == 1) {
             const auto &mode = view_.heroMode;
             auto *anim = &assets_.hero.at(mode);

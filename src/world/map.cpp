@@ -94,6 +94,7 @@ void Map::load(Archives &a, TileLibraryCache &cache, const MapRecipe &recipe) {
         throw std::runtime_error("No DT1 tiles for " + ds1);
     grid = Grid(data.width * 5, data.height * 5);
     std::fill(grid.blocked.begin(), grid.blocked.end(), 1);
+    std::fill(grid.lightBlocked.begin(), grid.lightBlocked.end(), 1);
     for (int y = 0; y < data.height; y++)
         for (int x = 0; x < data.width; x++) {
             auto apply = [&](const MapCell &c, bool floor) {
@@ -122,11 +123,17 @@ void Map::load(Archives &a, TileLibraryCache &cache, const MapRecipe &recipe) {
                     for (int sx = 0; sx < 5; sx++) {
                         auto flag = t.flags[(4 - sy) * 5 + sx];
                         bool blocked = (flag & 1) || (c.value & (1u << 17));
-                        auto &dest = grid.blocked[(y * 5 + sy) * grid.width + x * 5 + sx];
+                        auto index = (y * 5 + sy) * grid.width + x * 5 + sx;
+                        auto &dest = grid.blocked[index];
+                        auto &light = grid.lightBlocked[index];
                         if (floor)
                             dest = blocked ? 1 : 0;
                         else if (blocked)
                             dest = 1;
+                        if (floor)
+                            light = (flag & 2) ? 1 : 0;
+                        else if (flag & 2)
+                            light = 1;
                     }
             };
             for (auto &l : data.floors)
@@ -159,7 +166,7 @@ void Map::load(Archives &a, TileLibraryCache &cache, const MapRecipe &recipe) {
                 });
             if (x >= width || y >= height ||
                 (!opening && (x < 2 || y < 2 || x >= width - 2 || y >= height - 2)))
-                grid.blocked[y * grid.width + x] = 1;
+                grid.blocked[y * grid.width + x] = grid.lightBlocked[y * grid.width + x] = 1;
         }
     if (unresolved)
         throw std::runtime_error("Unresolved DT1 cells in " + ds1 +

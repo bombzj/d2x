@@ -61,22 +61,23 @@ LightingView::~LightingView() {
     if (visibility_.id)
         UnloadTexture(visibility_);
 }
-void LightingView::update(const Grid &grid, RegionId region, Vec player, int radius) {
+void LightingView::update(const Grid &grid, const LevelRecord &level, RegionId region, Vec player, int radius) {
+    const int visibleRadius = level.id == 1 ? std::max(radius, 26) : radius;
     int px = int(std::floor(player.x)), py = int(std::floor(player.y));
-    if (region == cachedRegion_ && px == cachedX_ && py == cachedY_ && radius == cachedRadius_)
+    if (region == cachedRegion_ && px == cachedX_ && py == cachedY_ && visibleRadius == cachedRadius_)
         return;
     cachedRegion_ = region;
     cachedX_ = px;
     cachedY_ = py;
-    cachedRadius_ = radius;
+    cachedRadius_ = visibleRadius;
     originX_ = px - maskRadius;
     originY_ = py - maskRadius;
     for (int y = 0; y < maskSide; ++y)
         for (int x = 0; x < maskSide; ++x) {
             const int wx = originX_ + x, wy = originY_ + y;
             const Vec target{wx + .5f, wy + .5f};
-            const bool inRange = (target - player).length() <= radius + 1.f;
-            const bool visible = inRange && grid.walkable(wx, wy) && grid.segment(player, target);
+            const bool inRange = (target - player).length() <= visibleRadius + 1.f;
+            const bool visible = inRange && grid.lightSegment(player, target);
             pixels_[size_t(y) * maskSide + x] = visible ? WHITE : BLACK;
         }
     if (visibility_.id)
@@ -84,15 +85,16 @@ void LightingView::update(const Grid &grid, RegionId region, Vec player, int rad
 }
 void LightingView::draw(const LevelRecord &level, Vec player, Vec playerScreen, float zoom, int radius,
                         const std::vector<WorldObject> &objects) const {
-    // MPQ IsInside selects the dark indoor treatment. Outdoor daylight remains unobscured.
-    if (!level.isInside || !shader_.id || !visibility_.id)
+    // The Act I town uses a broader local light and a visible dim ambient floor.
+    if ((!level.isInside && level.id != 1) || !shader_.id || !visibility_.id)
         return;
     const float screenHeight = float(H);
     const float position[2]{playerScreen.x, playerScreen.y};
     const float world[2]{player.x, player.y};
     const float origin[2]{float(originX_), float(originY_)};
-    const float effectiveRadius = float(std::clamp(radius, 1, 18));
-    const float ambient = level.losDraw ? .035f : .14f;
+    const float effectiveRadius = level.id == 1 ? float(std::max(radius, 26))
+                                                : float(std::clamp(radius, 1, 18));
+    const float ambient = level.id == 1 ? .53f : level.losDraw ? .19f : .27f;
     // Changing shader flushes raylib's previous batch and clears registered sampler textures.
     BeginShaderMode(shader_);
     uniform(shader_, "screenHeight", &screenHeight, SHADER_UNIFORM_FLOAT);
