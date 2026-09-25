@@ -37,6 +37,7 @@ Graphics::~Graphics() {
         UnloadTexture(t);
 }
 Sprite Graphics::upload(const IndexedFrame &f) {
+    archives.pulseLoading();
     if (f.width <= 0 || f.height <= 0)
         return {};
     uint64_t hash = 1469598103934665603ull;

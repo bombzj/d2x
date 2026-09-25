@@ -5,6 +5,7 @@
 #include "debug_commands.hpp"
 #include "persistence/save_file.hpp"
 #include "presentation/controller.hpp"
+#include "presentation/graphics.hpp"
 #include <algorithm>
 #include <fstream>
 #include <iostream>
@@ -80,12 +81,32 @@ int runGame(int argc, char **argv) {
         throw std::runtime_error("No MPQs found. Supply --mpq <Lord-of-Destruction-folder|archive>.");
     // Declaration order guarantees GPU/audio resources die before their devices.
     Platform platform(options.hidden);
-    BeginDrawing();
-    ClearBackground({9, 11, 10, 255});
-    DrawText("D2X", GetScreenWidth() / 2 - 40, GetScreenHeight() / 2 - 40, 36, gold);
-    DrawText("Loading classic maps and animations...", GetScreenWidth() / 2 - 180, GetScreenHeight() / 2 + 20,
-             18, parchment);
-    EndDrawing();
+    std::optional<Graphics> loadingGraphics;
+    GpuAnimation loadingFrames;
+    if (!options.hidden) {
+        loadingGraphics.emplace(archives, "data/global/palette/loading/pal.dat");
+        loadingFrames = loadingGraphics->single("data/global/ui/loading/loadingscreen.dc6");
+        if (loadingFrames.frames.size() < 2)
+            throw std::runtime_error("Original MPQ loading screen is missing or incomplete");
+        archives.setLoadingPulse([&, started = GetTime(), lastDraw = -1.0]() mutable {
+            double now = GetTime();
+            if (now - lastDraw < 1.0 / 30.0) return;
+            lastDraw = now;
+            const int index = std::min(int((now - started) * 3), loadingFrames.count - 1);
+            const auto *frame = loadingFrames.frame(0, index);
+            const auto viewport = currentViewport();
+            const auto &texture = frame->texture;
+            const float width = texture.width * viewport.scale;
+            const float height = texture.height * viewport.scale;
+            BeginDrawing();
+            ClearBackground(BLACK);
+            DrawTexturePro(texture, {0, 0, float(texture.width), float(texture.height)},
+                           {(GetScreenWidth() - width) * .5f, (GetScreenHeight() - height) * .5f,
+                            width, height}, {0, 0}, 0, WHITE);
+            EndDrawing();
+        });
+        archives.pulseLoading();
+    }
     std::optional<SessionSnapshot> restored;
     if (!options.load.empty()) {
         restored = loadSave(options.load);
@@ -123,6 +144,7 @@ int runGame(int argc, char **argv) {
     }
     SceneController controller(session, view);
     RenderTarget target;
+    archives.setLoadingPulse({});
     DebugPipe debugPipe(options.debugPipe);
     bool debugPaused = !options.debugPipe.empty() && !options.debugRun, debugQuit = false;
     if (!options.debugPipe.empty() && options.hidden)

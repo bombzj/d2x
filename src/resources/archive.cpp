@@ -66,6 +66,7 @@ void Archives::mountDirectory(const std::filesystem::path &p) {
         mount(path);
 }
 Bytes Archives::read(const std::string &path, bool required) const {
+    pulseLoading();
     auto name = normalize(path);
     for (auto i = handles.rbegin(); i != handles.rend(); ++i) {
         HANDLE f = nullptr;
