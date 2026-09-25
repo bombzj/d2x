@@ -37,8 +37,8 @@ AttackElementRanges attackElementRanges(const CombatModifiers &combat, EntityId 
         boundedRange(combat.magicMinimum, combat.magicMaximum, own.magicMinimum, own.magicMaximum)
     };
 }
-AttackElements Simulation::rollAttackElements(EntityId weapon) {
-    const auto &m = characterStats_.combat;
+AttackElements Simulation::rollAttackElements(EntityId weapon, const CombatModifiers *modifiers) {
+    const auto &m = modifiers ? *modifiers : characterStats_.combat;
     auto &player = state_.player;
     WeaponModifiers own;
     if (auto found = m.weapons.find(weapon); found != m.weapons.end()) own = found->second;
@@ -125,6 +125,7 @@ void Simulation::resolveWeaponHit(Enemy &enemy, float physical, EntityId source,
         enemy.openWoundsRemaining = 8.f;
         enemy.openWoundsPerSecond = framesDamage * 25.f / 256.f;
         enemy.openWoundsSource = source;
+        enemy.openWoundsPlayerEffects = elements.playerKillEffects;
     }
     if (enemy.hp <= 0 || elements.poisonPerSecond <= 0 || elements.poisonDuration <= 0) return;
     const float rate = resistance(MonsterDamageType::Poison) >= 100 ? 0.f : elements.poisonPerSecond;
@@ -132,6 +133,7 @@ void Simulation::resolveWeaponHit(Enemy &enemy, float physical, EntityId source,
         enemy.poisonPerSecond = rate;
         enemy.poisonRemaining = elements.poisonDuration;
         enemy.poisonSource = source;
+        enemy.poisonPlayerEffects = elements.playerKillEffects;
     }
 }
 } // namespace d2x

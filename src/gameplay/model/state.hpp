@@ -93,8 +93,10 @@ struct Enemy {
     uint64_t combatRandom = (uint64_t(666) << 32) | 210;
     float poisonRemaining = 0, poisonPerSecond = 0;
     EntityId poisonSource;
+    bool poisonPlayerEffects = true;
     float openWoundsRemaining = 0, openWoundsPerSecond = 0;
     EntityId openWoundsSource;
+    bool openWoundsPlayerEffects = true;
 };
 struct Missile {
     EntityId id, owner;

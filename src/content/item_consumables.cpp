@@ -6,7 +6,7 @@ namespace d2x {
 void loadItemConsumables(ClassicData &data) {
     const auto &table = data.tables.at("misc");
     if (!table.has("pSpell") || !table.has("stat1") || !table.has("calc1") || !table.has("len"))
-        return; // The 1.04 demo table does not describe executable potion effects.
+        throw std::runtime_error("Expansion Misc table lacks executable potion columns");
     for (size_t row = 0; row < table.rows().size(); ++row) {
         auto code = table.value(row, "code");
         const auto *item = data.items.find(code);

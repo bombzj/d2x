@@ -83,6 +83,7 @@ PlayerContainers InventoryService::createPlayerContainers(EntityId player) {
     result.stash = createContainer({player, ContainerKind::Stash, stashDimensions_.x, stashDimensions_.y});
     result.beltEquipment = createContainer({player, ContainerKind::BeltEquipment, 2, 1});
     result.equipment = createContainer({player, ContainerKind::Equipment, int(EquipmentSlot::Count), 1});
+    result.hirelingEquipment = createContainer({player, ContainerKind::Equipment, int(EquipmentSlot::Count), 1});
     if (cubeDimensions_.x > 0 && cubeDimensions_.y > 0)
         result.cube = createContainer({player, ContainerKind::Cube, cubeDimensions_.x, cubeDimensions_.y});
     return result;

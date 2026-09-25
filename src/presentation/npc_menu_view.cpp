@@ -33,6 +33,8 @@ std::vector<MenuEntry> entries(const GameSession &session, EntityId npc, std::st
     }
     if (npcCanGamble(npcClass))
         result.push_back({"Gamble", 9});
+    if (session.canHireFrom(npc))
+        result.push_back({"Hire", 10});
     if (npcClass.starts_with("cain"))
         result.push_back({"Identify Items", 3});
     if (npcClass == "akara") {
@@ -65,7 +67,7 @@ Rectangle menuBounds(const SceneView &view, const GameSession &session, EntityId
 } // namespace
 void SceneView::openNpcMenu(EntityId object, std::string speaker, bool firstIntroduction) {
     // A delayed interaction event must not reopen the menu over an active NPC view.
-    if (view_.shopOpen || !view_.dialogue.empty()) return;
+    if (view_.shopOpen || view_.hireListOpen || !view_.dialogue.empty()) return;
     if (firstIntroduction) {
         if (auto intro = introSpeech(session_.content().npcDialogues, speaker,
                                       session_.state().player.characterClass)) {

@@ -77,7 +77,7 @@ int runGame(int argc, char **argv) {
     Archives archives;
     archives.mountDirectory(options.mpq);
     if (archives.names.empty())
-        throw std::runtime_error("No MPQs found. Supply --mpq <classic-game-folder|archive>.");
+        throw std::runtime_error("No MPQs found. Supply --mpq <Lord-of-Destruction-folder|archive>.");
     // Declaration order guarantees GPU/audio resources die before their devices.
     Platform platform(options.hidden);
     BeginDrawing();

@@ -4,6 +4,7 @@ param(
     [Parameter(Mandatory = $true)]
     [ValidateSet(
         'status', 'quest-status', 'monsters', 'monster-spawn', 'monster-damage', 'monster-kill',
+        'grant-hireling', 'grant_hireling', 'hireling', 'hireling-panel', 'hireling-equip',
         'ground', 'inventory', 'item', 'item-move', 'objects', 'exits', 'view',
         'equip', 'use', 'portal', 'interact', 'talk', 'gossip', 'identify', 'identify-item', 'book-load', 'shop', 'buy',
         'grant-gold', 'gold-transfer', 'cube-drop', 'cube-open', 'grant-experience', 'grant-shrine', 'unlock-waypoints', 'allocate-attribute', 'reset-attributes',

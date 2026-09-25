@@ -47,7 +47,7 @@ class Simulation {
     std::vector<GameEvent> events_;
     Enemy *findEnemy(EntityId id);
     float hurtPlayer(float amount, MonsterDamageType type);
-    AttackElements rollAttackElements(EntityId weapon);
+    AttackElements rollAttackElements(EntityId weapon, const CombatModifiers *modifiers = nullptr);
     void resolveWeaponHit(Enemy &enemy, float physical, EntityId source,
                           const AttackElements &elements);
     void moveTo(Vec target);

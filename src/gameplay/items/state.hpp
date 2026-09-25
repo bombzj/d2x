@@ -77,7 +77,7 @@ struct ContainerState {
     ContainerSpec spec;
 };
 struct PlayerContainers {
-    EntityId backpack, belt, stash, beltEquipment, equipment, cube;
+    EntityId backpack, belt, stash, beltEquipment, equipment, cube, hirelingEquipment;
 };
 // Location is authoritative. Occupancy is derived, never a second mutable copy.
 struct InventoryState {

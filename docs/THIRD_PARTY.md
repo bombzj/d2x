@@ -2,7 +2,7 @@
 
 ## 经典版素材
 
-地图阶段改用用户提供的 `assets/mpq2` 五个经典完整版／资料片 MPQ；文件摘要见 [MPQ 资源](MPQ_RESOURCES.md)。地形及原表均从这些档案读取，没有引入第三方 JSON 地图。以下试玩来源保留用于旧版本适配。
+地图阶段改用用户提供的 `assets/mpq2` 完整版／资料片 MPQ；文件摘要见 [MPQ 资源](MPQ_RESOURCES.md)。地形及原表均从这些档案读取，没有引入第三方 JSON 地图。当前只运行资料片；以下试玩来源仅保留历史素材出处，不再作为游戏运行入口。
 
 - [Blizzard 历史下载导航](https://classic.battle.net/diablo-universe.shtml) 曾提供 Diablo II Playable Demo。
 - [ModDB 的 Diablo II Demo 页面](https://www.moddb.com/games/diablo-2/downloads/diablo-ii-demo) 标注官方 Windows 试玩版、文件大小 138,309,685 字节和 MD5 `9ae5033551a078937cd5d1f388cd8438`。
@@ -11,9 +11,9 @@
 
 素材属于 Blizzard Entertainment。试玩包的公开下载与本项目代码的开源许可是两件事；仓库忽略所有 MPQ、下载缓存和导出的原版图片。请保留代码与素材各自的权利说明。
 
-物品定义由 `src/content/classic_data.cpp` 与 `lod_data.cpp` 从当前 MPQ 的 `misc.txt`、`weapons.txt`、`armor.txt` 运行时导入；正式包读取命名类型和 `TreasureClassEx`，旧试玩适配保留。原表属于游戏资源。包裹／储物箱尺寸依据 `inventory.txt` Barbarian / Bank Page 1；当前加载 34 种物品美术，自定掉落权重已删除，原版生成尚未执行。详见 [原版物品数据](ITEM_DATA.md)。
+物品定义由 `src/content/classic_data.cpp` 与 `lod_data.cpp` 从当前 MPQ 的 `misc.txt`、`weapons.txt`、`armor.txt` 运行时导入；读取资料片命名类型和 `TreasureClassEx`，旧试玩适配已移除。原表属于游戏资源。储物箱尺寸依据 `inventory.txt` Big Bank Page 1；原掉落生成与物品效果的覆盖以 [物品完成度](ITEM_COMPLETION.md) 为准。
 
-包裹面板读取当前 MPQ 的 `data/global/ui/panel/invchar.dc6`，按右侧面板分块拼接原版石框和格子，保留上方装备区域，物品详情以悬停提示呈现。该 DC6 与物品图标保留暴雪素材权利说明。
+包裹面板读取当前 MPQ 的 `data/global/ui/panel/invchar6.dc6`，按右侧面板分块拼接原版石框和格子，保留上方装备区域，物品详情以悬停提示呈现。该 DC6 与物品图标保留暴雪素材权利说明。
 
 ## 实际使用的开源项目
 
@@ -66,7 +66,7 @@
 药剂恢复量与基本行为参考 [暴雪 Arreat Summit 药剂资料](https://classic.battle.net/diablo2exp/items/potions.shtml)。该说明包含资料片年代的规则，不是经典试玩 1.04 的逐帧规范；项目使用的持续时长、混用队列和耐力增强详见 [腰带与物品使用](BELT_AND_CONSUMABLES.md)，不可据此宣称完整复刻。
 
 
-私人储物箱读取当前 MPQ 的原 DS1 私人箱实体及 b6 COF/DCC；资料片面板为 `data/global/ui/panel/tradestash.dc6`，格子取自 `inventory.txt` Big Bank Page 1；经典模式面板为 `bank.dc6`，格子取自 Bank Page 1。操作距离取自 `objects.txt` bank 记录。文件清单与版本边界见 [MPQ 资源](MPQ_RESOURCES.md)。
+私人储物箱读取当前 MPQ 的原 DS1 私人箱实体及 b6 COF/DCC；资料片面板为 `data/global/ui/panel/tradestash.dc6`，格子取自 `inventory.txt` Big Bank Page 1；不再提供经典模式回退。操作距离取自 `objects.txt` bank 记录。文件清单与版本边界见 [MPQ 资源](MPQ_RESOURCES.md)。
 
 经典 HUD 的分块、球体偏移和 Sky 调色板参考 OpenDiablo2 [hud.go](https://github.com/OpenDiablo2/OpenDiablo2/blob/master/d2game/d2player/hud.go)／`globeWidget.go`。任务日志三列两行、选中时保留全部任务、图像状态帧和只显示已到达幕页签参考 [quest_log.go](https://github.com/OpenDiablo2/OpenDiablo2/blob/master/d2game/d2player/quest_log.go)；外框五块拼接和包裹金币／关闭按钮位置另核对 `d2core/d2ui/frame.go`、`d2game/d2player/inventory.go`，固定提交 `7f92c57`，GPL-3.0。本项目用 C++ 实现布局、绘制与输入，运行时素材来自用户 MPQ；见 [CLASSIC_HUD.md](CLASSIC_HUD.md) 与 [ACT1_QUESTS.md](ACT1_QUESTS.md)。
 

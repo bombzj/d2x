@@ -67,7 +67,7 @@ void SceneView::drawInventory(Vec mouse) const {
                 hovered = equipped->id;
         }
     }
-    auto drop = inventoryDrop(session_, ui, mouse);
+    auto drop = inventoryDrop(session_, ui, mouse, view_.hirelingOpen);
     std::string hint = ui.pending                  ? "Moving item..."
                        : ui.drag && ui.drag->moved ? drop.description
                                                    : "Select an item or drag it to another slot.";

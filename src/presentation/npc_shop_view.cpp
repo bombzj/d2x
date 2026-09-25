@@ -98,7 +98,7 @@ bool SceneView::openNpcShop(bool gamble) {
     view_.shopConfirm.reset();
     view_.inventory.open = true;
     view_.inventory.cubeOpen = false;
-    view_.questOpen = view_.characterOpen = view_.skillTreeOpen = false;
+    view_.questOpen = view_.characterOpen = view_.skillTreeOpen = view_.hirelingOpen = false;
     view_.shopCategory = 0;
     for (int tab = 0; tab < 4; ++tab)
         if (!gamble && tabAvailable(session_, view_.dialogueObject, tab)) {

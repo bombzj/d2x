@@ -21,6 +21,8 @@ struct ViewState {
     bool help = false, automap = false, debug = false, pause = false, travelMenu = false;
     bool minimapRight = false;
     bool characterOpen = false;
+    bool hirelingOpen = false, hireListOpen = false;
+    int hireListScroll = 0;
     bool questOpen = false;
     int questSelected = -1;
     bool questNotice = false;
@@ -50,7 +52,7 @@ struct ViewState {
     std::string lootNotice;
     float noticeTime = 0;
     bool noticeError = false;
-    bool blocksWorld() const { return pause || travelMenu || help || npcMenu || shopOpen || !dialogue.empty(); }
+    bool blocksWorld() const { return pause || travelMenu || help || npcMenu || shopOpen || hireListOpen || !dialogue.empty(); }
 };
 class SceneView {
     const GameSession &session_;
@@ -101,6 +103,9 @@ class SceneView {
     void drawObjectHint(Vec mouse) const;
     void drawInventory(Vec mouse) const;
     void drawCharacter(Vec mouse) const;
+    void drawHireling(Vec mouse) const;
+    void drawHirelingList(Vec mouse) const;
+    std::string hirelingName(std::string_view key) const;
     void drawStorage(Vec mouse) const;
     void drawCube(Vec mouse) const;
     void drawContainerGrid(const ContainerGrid &grid, Vec mouse) const;
@@ -115,6 +120,7 @@ class SceneView {
     void orb(bool mana, float fraction) const;
 
   public:
+    Rectangle hirelingSlotBounds(size_t index) const;
     const LevelExit *exitAt(Vec mouse) const;
     SceneView(Archives &archives, const GameSession &session);
     ViewState &ui() { return view_; }

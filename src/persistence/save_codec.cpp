@@ -147,7 +147,7 @@ void fields(Codec &a, QuestRecord &v) {
     a(v.stage, v.flags);
 }
 void fields(Codec &a, HirelingState &v) {
-    a(v.sourceRow, v.classId, v.nameKey, v.level, v.hp);
+    a(v.sourceRow, v.classId, v.nameKey, v.level, v.hp, v.experience);
 }
 void fields(Codec &a, AttributeAllocation &v) {
     a(v.strength, v.dexterity, v.vitality, v.energy);
@@ -174,7 +174,7 @@ void fields(Codec &a, ContainerState &v) {
     a(v.id, v.spec);
 }
 void fields(Codec &a, PlayerContainers &v) {
-    a(v.backpack, v.belt, v.stash, v.beltEquipment, v.equipment, v.cube);
+    a(v.backpack, v.belt, v.stash, v.beltEquipment, v.equipment, v.cube, v.hirelingEquipment);
 }
 void fields(Codec &a, ItemInstance &v) {
     a(v.id, v.definition, v.quantity, v.durability, v.charges, v.quality, v.identified, v.level, v.revision, v.defense,
@@ -219,7 +219,7 @@ Bytes encodeSave(SessionSnapshot snapshot) {
     Codec body;
     body(snapshot);
     auto bytes = body.take();
-    uint32_t version = 88, size = uint32_t(bytes.size()), crc = checksum(bytes);
+    uint32_t version = 89, size = uint32_t(bytes.size()), crc = checksum(bytes);
     Codec header;
     header(version, size, crc);
     auto headerBytes = header.take();
@@ -238,8 +238,8 @@ SessionSnapshot decodeSave(std::span<const uint8_t> bytes) {
     Codec header(bytes.subspan(sizeof(magic), 12));
     uint32_t version = 0, size = 0, crc = 0;
     header(version, size, crc);
-    if (version != 88)
-        throw std::runtime_error("Unsupported D2X save version; character saves require version 88");
+    if (version != 89)
+        throw std::runtime_error("Unsupported D2X save version; character saves require version 89");
     auto payload = bytes.subspan(headerSize);
     if (size != payload.size() || crc != checksum(payload))
         throw std::runtime_error("Save checksum or length mismatch");

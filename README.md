@@ -1,6 +1,6 @@
-# D2X — Diablo II Classic C++
+# D2X — Diablo II: Lord of Destruction C++
 
-基于经典 MPQ 的单机 C++20 项目：地图、行走、技能、物品容器和存档。不依赖原版 EXE，不使用重制版资源。
+基于《毁灭之王》原始 MPQ 的单机 C++20 项目：地图、行走、技能、物品容器和存档。不依赖原版 EXE，不使用重制版资源。资料片为唯一运行目标，不提供经典版／试玩版入口。
 
 **总目录：[BASELINE.md](BASELINE.md)。协作 agent 先读 [AGENTS.md](AGENTS.md)。**
 
@@ -25,7 +25,7 @@ Windows 使用 `scripts/build.ps1`，启动示例（默认读取 `assets/mpq2`�
 
 本机可用 `Play.cmd`。EXE 默认直接读取完整 `assets/mpq2`；其他位置可显式传 `--mpq <目录>`。
 
-当前 Windows Release 构建、完整六 MPQ 运行目录短帧启动及 v83 战斗数值管道状态／角色面板截图已通过；书与箭袋堆叠、金币存取、方块内容及 v82 存读档为前轮记录。Linux 尚未实际编译运行。见 [构建与运行](docs/BUILD_AND_SHARE.md)、[战斗数值](docs/COMBAT_NUMBERS.md) 和 [开发基线](docs/baseline/DEVELOPMENT.md)。
+当前源码为 v89／规则 v123，按 AGENTS.md 未构建、运行检查或打包。此前 Windows Release 和 MPQ 运行结果不能替代本批验收；Linux 尚未实际编译运行。佣兵 Hire／O 窗口和快速授予见 [佣兵](docs/HIRELINGS.md)，其余边界见 [开发基线](docs/baseline/DEVELOPMENT.md)。
 
 ## 操作
 
@@ -36,6 +36,7 @@ Windows 使用 `scripts/build.ps1`，启动示例（默认读取 `assets/mpq2`�
 | 左／右技能菜单悬停 + F1–F8 | 绑定对应鼠标键技能；单按 F1–F8 切换技能，不立即施法 |
 | 点击左右技能槽 | 展开当前职业已学技能菜单；Shift 左键使用左键技能 |
 | I、A／C、S／T、1–4、B、Ctrl+F4 | 包裹、角色面板、技能树、饮药、展开腰带、走近私人箱 |
+| O | 佣兵属性和装备面板，需已有佣兵 |
 | Alt、Tab、空格 | 物品名称、地图、走跑切换 |
 | Ctrl+F2、PgUp／PgDn | 开发地图目录、翻页 |
 | F11、Ctrl+F11 | 保存、读取；默认 `saves/quick.d2xsave` |

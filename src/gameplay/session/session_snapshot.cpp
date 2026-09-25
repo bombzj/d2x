@@ -223,16 +223,16 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
             [&](const HirelingDefinition &entry) { return entry.sourceRow == hireling.sourceRow; });
         require(definition != content_.hirelings.end() &&
                     definition->classId == hireling.classId &&
-                    definition->level == hireling.level &&
+                    hireling.level >= 1 && hireling.level <= 99 &&
                     hireling.nameKey >= definition->nameFirst &&
                     hireling.nameKey <= definition->nameLast &&
-                    hireling.hp >= 0 && hireling.hp <= definition->life,
+                    std::isfinite(hireling.hp) && hireling.hp >= 0,
                 "hireling identity or life");
         position(hireling.pos, grid, true);
         route(hireling.route, grid);
     } else
         require(hireling.classId == -1 && hireling.level == 0 && hireling.hp == 0 &&
-                    hireling.nameKey.empty(), "empty hireling state");
+                    hireling.nameKey.empty() && hireling.experience == 0, "empty hireling state");
     require(learned + player.unspentSkills == player.level - 1 + questSkillPoints,
             "character skill point total");
     for (const auto &key : player.skillHotkeys) {
@@ -831,6 +831,24 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
                                         {content_.cubeLayout.columns, content_.cubeLayout.rows});
     equipmentInventory.state_ = s.inventory;
     equipmentInventory.itemProperties_ = inventory_.itemProperties_;
+    if (hireling.sourceRow >= 0) {
+        const auto stats = hirelingStats(hireling, equipmentInventory, s.containers);
+        require(hireling.hp <= stats.base.life && hireling.experience >= stats.base.experience &&
+                (!stats.base.nextExperience || hireling.experience < stats.base.nextExperience),
+                "hireling life or experience");
+    }
+    for (auto id : equipmentInventory.contents(s.containers.hirelingEquipment)) {
+        require(hireling.sourceRow >= 0, "equipment without a hireling");
+        const auto &item = *equipmentInventory.item(id);
+        const auto &gear = equipmentInventory.catalog().find(item.definition)->equipment;
+        const auto slot = EquipmentSlot(std::get<ContainerLocation>(item.location).cell.x);
+        const auto definition = std::find_if(content_.hirelings.begin(), content_.hirelings.end(),
+            [&](const auto &d) { return d.sourceRow == hireling.sourceRow; });
+        require(gear.requiredClass.empty() && (slot == EquipmentSlot::Head || slot == EquipmentSlot::Torso ||
+            (slot == EquipmentSlot::RightHand && (gear.isType(definition->weaponType1) ||
+             (!definition->weaponType2.empty() && gear.isType(definition->weaponType2))))),
+            "unsupported hireling equipment");
+    }
     auto base = deriveCharacterAttributes(characterDefinition, player.level, player.allocated);
     EquipmentActor baseActor{characterDefinition.code, base.strength, base.dexterity, player.level,
                              base.blockFactor, player.weaponSet};
@@ -942,6 +960,7 @@ void GameSession::restore(SessionSnapshot s) {
     loot_.restore(std::move(s.loot));
     vendorStocks_.swap(nextVendorStocks);
     gambleStocks_.clear();
+    hirelingOffers_.clear();
     soldVendorOffers_.swap(s.soldVendorOffers);
     shrineStatuses_.clear();
     for (auto &region : regions_)

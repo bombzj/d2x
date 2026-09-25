@@ -14,7 +14,7 @@ SceneView::SceneView(Archives &archives, const GameSession &session)
                      session_.state().player.pos, session_.characterStats().lightRadius);
 }
 Rectangle SceneView::worldViewport() const {
-    const bool left = view_.questOpen || view_.characterOpen || view_.travelMenu || view_.shopOpen ||
+    const bool left = view_.questOpen || view_.characterOpen || view_.hirelingOpen || view_.travelMenu || view_.shopOpen ||
                       view_.inventory.storage || view_.inventory.cubeOpen;
     const bool right = view_.inventory.open || view_.skillTreeOpen;
     const float begin = left ? classicSideBounds(false).width : 0;
@@ -68,6 +68,7 @@ void SceneView::sessionRestored() {
     assets_.loadHeroEquipment(session_);
     view_.inventory = {};
     view_.characterOpen = false;
+    view_.hirelingOpen = view_.hireListOpen = false;
     view_.skillTreeOpen = false;
     view_.questOpen = false;
     view_.questNotice = false;
@@ -212,6 +213,7 @@ void SceneView::advance(float dt) {
                     else assets_.audio.play("impact");
                 }
                 else if constexpr (std::is_same_v<T, RegionEntered>) {
+                    view_.hireListOpen = view_.hirelingOpen = false;
                     nextMonsterFootstep_.clear();
                     nextMonsterNeutral_.clear();
                     view_.waypointSource = {};
@@ -246,7 +248,7 @@ void SceneView::advance(float dt) {
                     ui.open = true;
                     ui.storage = value.container;
                     ui.cubeOpen = false;
-                    view_.questOpen = view_.characterOpen = view_.skillTreeOpen = false;
+                    view_.questOpen = view_.characterOpen = view_.skillTreeOpen = view_.hirelingOpen = false;
                     view_.dialogue.clear();
                     view_.travelMenu = view_.help = false;
                     view_.clickAge = 10;
@@ -354,6 +356,18 @@ void SceneView::advance(float dt) {
                 } else if constexpr (std::is_same_v<T, GambleStockOpened>) {
                     assets_.loadInventoryArt(session_);
                     if (view_.npcMenu && view_.dialogueObject == value.npc) openNpcShop(true);
+                } else if constexpr (std::is_same_v<T, HirelingListOpened>) {
+                    if (view_.npcMenu && view_.dialogueObject == value.npc) {
+                        view_.npcMenu = false;
+                        view_.hireListOpen = true;
+                        view_.hireListScroll = 0;
+                        view_.hirelingOpen = view_.characterOpen = view_.questOpen = false;
+                        view_.inventory.open = view_.skillTreeOpen = false;
+                        view_.inventory.cancelGesture();
+                    }
+                } else if constexpr (std::is_same_v<T, HirelingHired>) {
+                    view_.hireListOpen = view_.npcMenu = false;
+                    view_.dialogueStatus.clear();
                 } else if constexpr (std::is_same_v<T, VendorItemBought>) {
                     view_.dialogueStatus.clear();
                     if (view_.shopOpen) scrollNpcShop(0);

@@ -27,6 +27,12 @@ struct NpcQuestDialogue {
     bool automatic = false;
     std::string readKey;
 };
+struct HirelingCombatStats {
+    HirelingStats base;
+    int fireResist = 0, coldResist = 0, lightningResist = 0, poisonResist = 0;
+    WeaponDamage weapon;
+    CombatModifiers combat;
+};
 class GameSession {
     EntityIds ids_;
     ClassicData content_;
@@ -58,6 +64,7 @@ class GameSession {
     std::map<EntityId, std::vector<VendorOffer>> vendorStocks_;
     std::map<EntityId, std::set<uint32_t>> soldVendorOffers_;
     std::map<EntityId, std::vector<VendorOffer>> gambleStocks_;
+    std::map<EntityId, std::vector<HirelingOffer>> hirelingOffers_;
     std::optional<uint64_t> pendingPortal_;
     bool pendingCainPortal_ = false;
     std::optional<Vec> townPortalArrival_;
@@ -134,6 +141,16 @@ class GameSession {
     void updateCainPortal();
     void advanceHireling(float dt);
     bool assignKashyaHireling();
+    void openHirelingList(EntityId npc);
+    void hireMercenary(const HireMercenary &command);
+    void equipHirelingItem(const EquipHirelingItem &command);
+    InventoryError previewHirelingEquipment(const EquipHirelingItem &command) const;
+    bool ensureHirelingOffers(EntityId npc);
+    void assignHireling(const HirelingOffer &offer);
+    void grantDebugHireling();
+    void grantHirelingExperience(const EnemyDied &death);
+    HirelingCombatStats hirelingStats(const HirelingState &hireling, const InventoryService &inventory,
+                                      const PlayerContainers &containers) const;
     void talkToNpc(EntityId npc);
     void claimAkaraRespec(EntityId npc);
     void useItem(ItemHandle item);
@@ -156,6 +173,10 @@ class GameSession {
         const MonsterIdentity &identity, RegionId region) const;
 
   public:
+    bool canHireFrom(EntityId npc) const;
+    const std::vector<HirelingOffer> *hirelingOffers(EntityId npc) const;
+    const HirelingDefinition *hirelingDefinition() const;
+    HirelingCombatStats hirelingStats() const;
     static constexpr float fixedStep = 1.f / 25.f;
     GameSession(Archives &archives, const WorldSelection &selection, int startRegion = -1,
                 uint64_t lootSeed = LootSystem::defaultSeed, PopulationSettings population = {});

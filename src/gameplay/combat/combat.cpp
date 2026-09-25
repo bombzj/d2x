@@ -51,7 +51,7 @@ void Simulation::damageEnemy(Enemy &enemy, float amount, EntityId source, float 
         enemy.attackMode = 1;
         ++state_.area.kills;
         emit(EnemyDied{enemy.id, source, enemy.kind, state_.area.region, enemy.pos, enemy.identity,
-                       state_.population.difficulty});
+                       state_.population.difficulty, !playerKillEffects});
     }
 }
 void Simulation::meleeDamage(Enemy &enemy, bool leftHand) {

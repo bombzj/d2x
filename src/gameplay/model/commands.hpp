@@ -57,6 +57,13 @@ struct ClaimAkaraRespec {
 struct ImbueItem { EntityId npc; ItemHandle item; };
 struct CompleteActOne { EntityId npc; };
 struct OpenGamble { EntityId npc; };
+struct OpenHirelingList { EntityId npc; };
+struct HireMercenary { EntityId npc; uint32_t slot = 0; };
+struct EquipHirelingItem {
+    ItemHandle item;
+    std::optional<EquipmentSlot> slot;
+    std::optional<ItemDestination> destination;
+};
 struct RepairVendorItem { EntityId npc; ItemHandle item; };
 struct BuyVendorItem {
     EntityId vendor;
@@ -66,6 +73,7 @@ struct BuyVendorItem {
 struct DebugGrantGold {
     unsigned amount = 0;
 };
+struct DebugGrantHireling {};
 struct DebugDropCube {};
 enum class GoldAction { Deposit, Withdraw, Drop };
 struct GoldTransaction {
@@ -107,5 +115,6 @@ using GameCommand =
     std::variant<MoveTo, Attack, CastSkill, UseClassSkill, ToggleRun, SwitchWeaponSet, Interact, IdentifyWithCain, EndNpcConversation, TalkToNpc, ClaimAkaraRespec, ImbueItem, CompleteActOne, BuyVendorItem, DebugGrantGold, DebugDropCube, GoldTransaction, DebugGrantExperience, AllocateAttribute, AllocateSkill, BindSkillHotkey, DebugResetAttributes, DebugResetSkills, DebugUnlockWaypoints, DebugGrantShrine, DebugSwitchCharacter, Travel, RestartArea, MoveItem, SwapItems,
                  SplitStack, MergeStacks, LoadBook, IdentifyItem, PickupItem, StopMoving, EquipBelt, UseItem, UseBeltColumn,
                  CloseStorage, TransferItem, UseExit, EquipItem, DebugKill, DebugSpawnMonster,
-                 DebugDamageMonster, UseTownPortal, UseCainPortal, WaypointTravel, OpenGamble, RepairVendorItem>;
+                 DebugDamageMonster, UseTownPortal, UseCainPortal, WaypointTravel, OpenGamble, RepairVendorItem,
+                 OpenHirelingList, HireMercenary, EquipHirelingItem, DebugGrantHireling>;
 } // namespace d2x

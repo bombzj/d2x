@@ -16,7 +16,7 @@ if(-not $Mpq){
     $fullSource=Join-Path $projectRoot 'assets/mpq2'
     if(-not (Test-Path -LiteralPath (Join-Path $fullSource 'd2data.mpq')) -and
        -not (Test-Path -LiteralPath (Join-Path $fullSource 'D2Data.mpq'))){
-        throw 'Classic MPQ files are required in assets/mpq2.'
+        throw 'Lord of Destruction expansion MPQ files are required in assets/mpq2.'
     }
     $Mpq=$fullSource
 }

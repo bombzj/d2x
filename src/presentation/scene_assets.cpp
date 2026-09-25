@@ -57,6 +57,14 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
         throw std::runtime_error("Character animations missing; supply the classic MPQ resources.");
     loadMonsterAnimations(archives, session);
     loadHirelingAnimations(archives, session);
+    hirelingPanel = uiGraphics_.single("data/global/ui/panel/npcinv.dc6");
+    hirelingScroll = uiGraphics_.single("data/global/ui/panel/scrollbar.dc6");
+    hirelingHead = uiGraphics_.single("data/global/ui/panel/inv_helm_glove.dc6");
+    hirelingArmor = uiGraphics_.single("data/global/ui/panel/inv_armor.dc6");
+    hirelingWeapon = uiGraphics_.single("data/global/ui/panel/inv_weapons.dc6");
+    if (hirelingPanel.frames.size() < 4 || hirelingScroll.frames.size() < 6 ||
+        hirelingHead.frames.empty() || hirelingArmor.frames.empty() || hirelingWeapon.frames.empty())
+        throw std::runtime_error("Original expansion hireling panel resources are missing");
     loadMonsterAudio(archives, session.monsterContent());
     fireball = graphics_.single("data/global/missiles/fireball.dcc");
     const auto objectRows = decodeTable(archives.read("data/global/excel/objects.txt"));
@@ -109,18 +117,15 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
     cursor = unitsGraphics_.single("data/global/ui/cursor/ohand.dc6");
     if (cursor.frames.empty())
         throw std::runtime_error("Original pointer is missing: data/global/ui/cursor/ohand.dc6");
-    inventoryPanel = uiGraphics_.single(session.content().stashLayout.expansion
-        ? "data/global/ui/panel/invchar6.dc6" : "data/global/ui/panel/invchar.dc6");
-    if (session.content().stashLayout.expansion) {
+    inventoryPanel = uiGraphics_.single("data/global/ui/panel/invchar6.dc6");
+    {
         weaponTabs = uiGraphics_.single("data/global/ui/panel/invchar6tab.dc6");
         if (weaponTabs.frames.size() != 2)
             throw std::runtime_error("Original alternate weapon panel artwork is missing");
     }
     questBackground = uiGraphics_.single("data/global/ui/menu/questbackground.dc6");
     questSockets = uiGraphics_.single("data/global/ui/menu/questsockets.dc6");
-    questTabs = uiGraphics_.single(archives.contains("data/global/ui/menu/expquesttabs.dc6")
-                                     ? "data/global/ui/menu/expquesttabs.dc6"
-                                     : "data/global/ui/menu/questtabs.dc6");
+    questTabs = uiGraphics_.single("data/global/ui/menu/expquesttabs.dc6");
     for (int quest = 0; quest < 6; ++quest)
         actOneQuestIcons[size_t(quest)] = uiGraphics_.single(
             "data/global/ui/menu/a1q" + std::to_string(quest + 1) + ".dc6");
@@ -148,16 +153,12 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
         throw std::runtime_error("Original vendor UI artwork is missing");
     waypointBorder = uiGraphics_.single("data/global/ui/panel/800borderframe.dc6");
     waypointPanel = graphics_.single("data/global/ui/menu/waygatebackground.dc6");
-    waypointTabs = graphics_.single(archives.contains("data/global/ui/menu/expwaygatetabs.dc6")
-        ? "data/global/ui/menu/expwaygatetabs.dc6"
-        : "data/global/ui/menu/waygatetabs.dc6");
+    waypointTabs = graphics_.single("data/global/ui/menu/expwaygatetabs.dc6");
     waypointIcons = graphics_.single("data/global/ui/menu/waygateicons.dc6");
     if (waypointBorder.frames.size() < 10 || waypointPanel.frames.size() < 4 ||
         waypointTabs.frames.size() < 8 || waypointIcons.frames.size() < 4)
         throw std::runtime_error("Original waypoint menu artwork is missing");
-    storagePanel = uiGraphics_.single(session.content().stashLayout.expansion
-        ? "data/global/ui/panel/tradestash.dc6"
-        : "data/global/ui/panel/bank.dc6");
+    storagePanel = uiGraphics_.single("data/global/ui/panel/tradestash.dc6");
     if (storagePanel.frames.size() < 4)
         throw std::runtime_error("Original stash panel artwork is missing from the mounted MPQ");
     if (!session.content().cubeCode.empty()) {

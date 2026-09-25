@@ -127,6 +127,7 @@ void SceneView::draw(Vec mouse) const {
     drawStorage(mouse);
     drawCube(mouse);
     drawCharacter(mouse);
+    drawHireling(mouse);
     drawQuests(mouse);
     drawSkillTree(mouse);
     if (view_.shopOpen) drawNpcShop(mouse);
@@ -176,6 +177,7 @@ void SceneView::draw(Vec mouse) const {
     }
     drawSkillControls(mouse);
     if (view_.npcMenu) drawNpcMenu(mouse);
+    drawHirelingList(mouse);
     if (!view_.dialogue.empty()) drawNpcDialogue();
     drawInventoryCursor(mouse);
     if (const auto *pointer = assets_.cursor.frame(0, 0))

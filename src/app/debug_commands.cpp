@@ -1,6 +1,7 @@
 #include "debug_commands.hpp"
 #include "debug_inventory.hpp"
 #include "debug_monsters.hpp"
+#include "debug_hireling.hpp"
 #include "presentation/character_action_stats.hpp"
 #include "persistence/save_file.hpp"
 #include <nlohmann/json.hpp>
@@ -56,11 +57,15 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
             else if (key == "inventory") frame.inventory = true;
             else if (key == "character") frame.character = true;
             else if (key == "quests") frame.quests = true;
+            else if (key == "hireling" || key == "o") frame.hireling = true;
             else if (key == "weapon-swap") frame.weaponSwap = true;
             else if (key == "automap") frame.automap = true;
             else if (!key.empty()) throw std::runtime_error("Unsupported UI key");
             input(std::move(frame));
             result["queued"] = true;
+        } else if (command == "grant-hireling" || command == "grant_hireling" || command == "hireling" ||
+                   command == "hireling-panel" || command == "hireling-equip") {
+            debugHireling(command, request, result, session, view);
         } else if (command == "item") {
             debugItemInspect(request, result, session);
         } else if (command == "item-move") {

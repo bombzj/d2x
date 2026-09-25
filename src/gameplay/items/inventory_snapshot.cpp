@@ -13,11 +13,11 @@ void InventoryService::validateSnapshot(const InventoryState &state, const Playe
             throw std::runtime_error(std::string("Invalid save inventory: ") + reason);
     };
     std::vector<EntityId> ids{containers.backpack, containers.belt, containers.stash,
-                              containers.beltEquipment, containers.equipment};
+                              containers.beltEquipment, containers.equipment, containers.hirelingEquipment};
     std::vector<ContainerKind> kinds{ContainerKind::Backpack, ContainerKind::Belt, ContainerKind::Stash,
-                                     ContainerKind::BeltEquipment, ContainerKind::Equipment};
-    std::vector<int> widths{10, 4, stashDimensions_.x, 2, int(EquipmentSlot::Count)};
-    std::vector<int> heights{4, 0, stashDimensions_.y, 1, 1};
+                                     ContainerKind::BeltEquipment, ContainerKind::Equipment, ContainerKind::Equipment};
+    std::vector<int> widths{10, 4, stashDimensions_.x, 2, int(EquipmentSlot::Count), int(EquipmentSlot::Count)};
+    std::vector<int> heights{4, 0, stashDimensions_.y, 1, 1, 1};
     if (cubeDimensions_.x > 0 && cubeDimensions_.y > 0) {
         ids.push_back(containers.cube);
         kinds.push_back(ContainerKind::Cube);

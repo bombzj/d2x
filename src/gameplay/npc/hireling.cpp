@@ -1,61 +1,25 @@
 #include "gameplay/session/session.hpp"
 #include <algorithm>
-#include <charconv>
-#include <iomanip>
-#include <sstream>
-#include <vector>
 
 namespace d2x {
 bool GameSession::assignKashyaHireling() {
-    auto &player = simulation_.state_.player;
-    if (player.hireling.sourceRow >= 0) return true;
-    const auto *seller = monsterContent_.find("kashya");
-    if (!seller) return false;
-    std::vector<const HirelingDefinition *> eligible;
-    int bestLevel = -1;
-    for (const auto &entry : content_.hirelings) {
-        if (entry.act != 1 || entry.difficulty != state().population.difficulty + 1 ||
-            entry.seller != seller->index) continue;
-        if (entry.level <= player.level && entry.level > bestLevel) {
-            bestLevel = entry.level;
-            eligible.clear();
-        }
-        if (entry.level == bestLevel) eligible.push_back(&entry);
+    if (state().player.hireling.sourceRow >= 0) return true;
+    for (const auto &npc : region().objects) {
+        if (npc.npcClass != "kashya" || !ensureHirelingOffers(npc.id)) continue;
+        auto &offers = hirelingOffers_.at(npc.id);
+        assignHireling(offers.front());
+        offers.erase(offers.begin());
+        return true;
     }
-    if (eligible.empty()) {
-        for (const auto &entry : content_.hirelings)
-            if (entry.act == 1 && entry.difficulty == state().population.difficulty + 1 &&
-                entry.seller == seller->index &&
-                (bestLevel < 0 || entry.level < bestLevel)) {
-                bestLevel = entry.level;
-                eligible = {&entry};
-            }
-    }
-    if (eligible.empty()) return false;
-    const auto *entry = eligible[size_t(player.combatRandom % eligible.size())];
-    auto key = entry->nameFirst;
-    if (key.size() == entry->nameLast.size() && key.size() > 2 &&
-        key.substr(0, key.size() - 2) == entry->nameLast.substr(0, key.size() - 2)) {
-        int first = 0, last = 0;
-        auto from = std::from_chars(key.data() + key.size() - 2, key.data() + key.size(), first);
-        auto to = std::from_chars(entry->nameLast.data() + key.size() - 2,
-                                  entry->nameLast.data() + key.size(), last);
-        if (from.ec == std::errc{} && to.ec == std::errc{} && last >= first) {
-            std::ostringstream name;
-            name << key.substr(0, key.size() - 2) << std::setw(2) << std::setfill('0')
-                 << (first + int((player.combatRandom >> 16) % unsigned(last - first + 1)));
-            key = name.str();
-        }
-    }
-    player.hireling = {entry->sourceRow, entry->classId, key, entry->level,
-                       float(entry->life), player.pos, {1, 0}, {}, false, 0};
-    return true;
+    return false;
 }
-
 void GameSession::advanceHireling(float dt) {
     auto &hireling = simulation_.state_.player.hireling;
     auto &player = simulation_.state_.player;
     if (!hireling.active() || player.dead || dt <= 0) return;
+    const auto stats = hirelingStats();
+    hireling.hp = std::min(float(stats.base.life), hireling.hp +
+        (stats.base.life * 25.f / 2000.f + stats.combat.replenishLife * 25.f / 256.f) * dt);
     hireling.attackTimer = std::max(0.f, hireling.attackTimer - dt);
     const HirelingDefinition *definition = nullptr;
     for (const auto &entry : content_.hirelings)
@@ -81,16 +45,20 @@ void GameSession::advanceHireling(float dt) {
             if (hireling.attackTimer <= 0) {
                 player.combatRandom = uint64_t(uint32_t(player.combatRandom)) * 0x6ac690c5ULL +
                                       (player.combatRandom >> 32);
-                auto spread = unsigned(definition->damageMax - definition->damageMin + 1);
-                float damage = float(definition->damageMin +
-                                     int(uint32_t(player.combatRandom) % spread));
+                auto spread = unsigned(stats.weapon.maximum - stats.weapon.minimum + 1);
+                float damage = float(stats.weapon.minimum +
+                                     int(uint32_t(player.combatRandom) % spread)) / 256.f;
                 simulation_.state_.area.missiles.push_back({ids_.allocate(), player.id,
                     hireling.pos, hireling.look * projectile.velocity,
                     projectile.lifetime, Skill::Fireball, true, projectile.id, damage});
                 auto &missile = simulation_.state_.area.missiles.back();
+                missile.attackElements = simulation_.rollAttackElements(stats.weapon.item, &stats.combat);
                 missile.attackElements.playerKillEffects = false;
+                missile.attackElements.ranged = true;
+                missile.attackElements.attackerLevel = hireling.level;
+                missile.attackElements.lifeLeech = missile.attackElements.manaLeech = 0;
                 missile.attackerLevel = hireling.level;
-                missile.attackRating = definition->attackRating;
+                missile.attackRating = stats.base.attackRating;
                 hireling.attackTimer = timing->duration;
             }
             return;

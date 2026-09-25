@@ -1,4 +1,5 @@
 #include "inventory_panel.hpp"
+#include "hireling_panel.hpp"
 #include <algorithm>
 
 namespace d2x {
@@ -90,7 +91,7 @@ bool inventorySurface(const InventoryUi &ui, Vec mouse) {
     return (ui.open && CheckCollisionPointRec(rv(mouse), classicSideBounds(true))) ||
            ((ui.storage || ui.cubeOpen) && CheckCollisionPointRec(rv(mouse), classicSideBounds(false)));
 }
-InventoryDrop inventoryDrop(const GameSession &session, const InventoryUi &ui, Vec mouse) {
+InventoryDrop inventoryDrop(const GameSession &session, const InventoryUi &ui, Vec mouse, bool hirelingOpen) {
     InventoryDrop drop;
     if (!ui.drag)
         return drop;
@@ -107,7 +108,27 @@ InventoryDrop inventoryDrop(const GameSession &session, const InventoryUi &ui, V
         return location && grid.container == location->container;
     });
     const auto &containers = session.playerContainers();
+    if (hirelingOpen && CheckCollisionPointRec(rv(mouse), classicSideBounds(false))) {
+        constexpr EquipmentSlot order[] = {EquipmentSlot::Head, EquipmentSlot::Torso,
+                                           EquipmentSlot::RightHand, EquipmentSlot::RightHand};
+        const auto &layout = session.content().hirelingLayout;
+        drop.description = "Release to cancel";
+        for (size_t index = 0; index < layout.slots.size(); ++index) {
+            const auto &box = layout.slots[index];
+            auto bounds = hirelingArtRect(float(box[0]), float(box[1]),
+                                           float(box[2] - box[0]), float(box[3] - box[1]));
+            if (!CheckCollisionPointRec(rv(mouse), bounds)) continue;
+            drop.bounds = bounds;
+            drop.command = EquipHirelingItem{source->handle(), order[index]};
+            drop.error = session.previewInventory(*drop.command);
+            drop.description = drop.error == InventoryError::None ? "Equip mercenary" :
+                                                                   inventoryErrorText(drop.error);
+            break;
+        }
+        return drop;
+    }
     bool equipped = location && (location->container == containers.equipment ||
+                                  location->container == containers.hirelingEquipment ||
                                   location->container == containers.beltEquipment);
     if (sourceGrid == grids.end() && !equipped) {
         drop.error = InventoryError::AccessDenied;
@@ -118,6 +139,8 @@ InventoryDrop inventoryDrop(const GameSession &session, const InventoryUi &ui, V
     auto removeTo = [&](ItemDestination destination) {
         if (location->container == containers.beltEquipment)
             drop.command.emplace(std::in_place_type<EquipBelt>, source->handle(), std::move(destination));
+        else if (location->container == containers.hirelingEquipment)
+            drop.command = EquipHirelingItem{source->handle(), std::nullopt, std::move(destination)};
         else
             drop.command.emplace(std::in_place_type<EquipItem>, source->handle(), std::nullopt,
                                  std::move(destination));

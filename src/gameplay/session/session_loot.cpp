@@ -63,6 +63,7 @@ void GameSession::settleDeaths() {
         auto drops = loot_.settle(request, std::move(plan));
         spawnLoot(drops, death.region, death.position);
         if (death.killer == state().player.id) {
+            grantHirelingExperience(death);
             auto experience = resolveMonsterExperience(content_, monsterContent_, worldContent_,
                 {death.identity, death.region, death.difficulty, state().player.level});
             if (experience.deferred.empty())

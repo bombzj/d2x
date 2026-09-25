@@ -55,6 +55,8 @@ struct ClassicData {
     std::map<std::string, std::string, std::less<>> hirelingStrings;
     std::map<std::string, std::string, std::less<>> itemStrings;
     std::vector<HirelingDefinition> hirelings;
+    HirelingLayout hirelingLayout;
+    std::map<std::string, std::string> hirelingDescriptions;
     std::map<std::string, VendorDefinition, std::less<>> vendors;
     std::string profile;
     std::vector<std::string> armorTypes;

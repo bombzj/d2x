@@ -135,5 +135,6 @@ struct InventoryDrop {
 };
 std::vector<ContainerGrid> inventoryGrids(const GameSession &session, const InventoryUi &ui);
 bool inventorySurface(const InventoryUi &ui, Vec mouse);
-InventoryDrop inventoryDrop(const GameSession &session, const InventoryUi &ui, Vec mouse);
+InventoryDrop inventoryDrop(const GameSession &session, const InventoryUi &ui, Vec mouse,
+                            bool hirelingOpen = false);
 } // namespace d2x

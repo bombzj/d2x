@@ -1,6 +1,6 @@
 # NPC 商店、赌博与修理
 
-当前源码 v88／规则 `v122-item-properties-gambling`，未构建或运行验收。AGENTS.md 要求当前交接阶段不新增测试、运行检查或打包。此前 v87 右键购买即时入包、关闭商店不恢复菜单的运行记录仍只覆盖旧代码。
+当前源码 v89／规则 `v123-hireling-services`，未构建或运行验收。AGENTS.md 要求当前交接阶段不新增测试、运行检查或打包。此前 v87 右键购买即时入包、关闭商店不恢复菜单的运行记录仍只覆盖旧代码。
 
 ## 数据与服务
 
@@ -8,7 +8,7 @@
 
 - 赌博：Gheed、Elzix、Alkor、Jamella、Nihlathak、Drehya。当前可到达世界只有第一幕。
 - 修理：Charsi、Fara、Hratli、Halbu、Larzuk。菜单显示 Trade / Repair；其他商人显示 Trade。
-- 现有任务服务仍按任务状态出现：凯恩鉴定、Akara 免费重置、Charsi 灌注、Warriv 东行。Kashya 的付费 Hire 列表／窗口仍缺；等级至少 8 或已领取血鸟奖励的条件已在 D2MOO 核实，布局等待原版截图。
+- 现有任务服务仍按任务状态出现：凯恩鉴定、Akara 免费重置、Charsi 灌注、Warriv 东行。Kashya 在等级至少 8 或已领取血鸟奖励后提供 Hire；列表、O 面板及装备实现与边界见 [佣兵](HIRELINGS.md)。
 
 ## 库存与购买
 
@@ -34,4 +34,4 @@
 
 商店在左、背包在右，使用原 buysell、buyselltabs、buysellbtn 等素材。分类来自 StorePage；前四个标签图是选中态、后四个是未选中态。商店与背包调用同一物品说明，底部 STASH 显示个人箱金币。没有修理服务时不绘制修理图标；关闭商店不再恢复 NPC 菜单。
 
-出售、回购、修理全部和完整雇佣服务仍待实现；额外翻页、菜单背景和部分布局仍是项目适配。参考来源见 THIRD_PARTY.md，物品效果覆盖与缺口见 ITEM_COMPLETION.md。
+出售、回购、修理全部及佣兵复活仍待实现；额外翻页、菜单背景和部分布局仍是项目适配。参考来源见 THIRD_PARTY.md，物品效果覆盖与缺口见 ITEM_COMPLETION.md。

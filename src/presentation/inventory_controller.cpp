@@ -50,7 +50,7 @@ bool SceneController::queueInventory(GameCommand command, EntityId source) {
         ui.pendingMessage = "Item identified.";
     else if (std::holds_alternative<EquipBelt>(command))
         ui.pendingMessage = "Belt equipment changed.";
-    else if (std::holds_alternative<EquipItem>(command))
+    else if (std::holds_alternative<EquipItem>(command) || std::holds_alternative<EquipHirelingItem>(command))
         ui.pendingMessage = "Equipment changed.";
     else if (std::holds_alternative<TransferItem>(command))
         ui.pendingMessage = "Item transferred.";
@@ -230,7 +230,7 @@ bool SceneController::handleInventory(const FrameInput &input) {
             ui.drag->moved = true;
         if (input.leftReleased) {
             if (ui.drag->moved && input.insideViewport) {
-                auto drop = inventoryDrop(session_, ui, input.mouse);
+                auto drop = inventoryDrop(session_, ui, input.mouse, view_.ui().hirelingOpen);
                 if (drop.command)
                     queueInventory(std::move(*drop.command), source->id);
                 else if (drop.error != InventoryError::None)

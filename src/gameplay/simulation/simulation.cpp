@@ -145,14 +145,14 @@ void Simulation::tick(float dt, Vec keyboard) {
             const float elapsed = std::min(dt, e.poisonRemaining);
             e.poisonRemaining -= elapsed;
             damageEnemy(e, e.poisonPerSecond * elapsed, e.poisonSource, 0, false,
-                        MonsterDamageType::Poison);
+                        MonsterDamageType::Poison, false, e.poisonPlayerEffects);
             if (e.poisonRemaining <= 0) e.poisonPerSecond = 0;
         }
         if (e.hp > 0 && e.openWoundsRemaining > 0) {
             const float elapsed = std::min(dt, e.openWoundsRemaining);
             e.openWoundsRemaining -= elapsed;
             damageEnemy(e, e.openWoundsPerSecond * elapsed, e.openWoundsSource, 0, false,
-                        MonsterDamageType::Physical, true);
+                        MonsterDamageType::Physical, true, e.openWoundsPlayerEffects);
             if (e.openWoundsRemaining <= 0) e.openWoundsPerSecond = 0;
         }
     }

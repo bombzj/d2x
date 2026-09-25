@@ -347,7 +347,7 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
     Fingerprint fingerprint;
     fingerprint.add(content_.profile);
     // Bump this rules revision when state interpretation or compiled rules change.
-    fingerprint.add("d2x-session-rules-v122-item-properties-gambling");
+    fingerprint.add("d2x-session-rules-v123-hireling-services");
     auto members = archives.used;
     for (const auto &member : members) {
         fingerprint.add(member);
@@ -546,6 +546,14 @@ void GameSession::tick(float dt, Vec keyboard) {
                     buyVendorItem(intent.vendor, intent.slot, intent.gamble);
                 } else if constexpr (std::is_same_v<T, OpenGamble>) {
                     openGamble(intent.npc);
+                } else if constexpr (std::is_same_v<T, OpenHirelingList>) {
+                    openHirelingList(intent.npc);
+                } else if constexpr (std::is_same_v<T, HireMercenary>) {
+                    hireMercenary(intent);
+                } else if constexpr (std::is_same_v<T, EquipHirelingItem>) {
+                    equipHirelingItem(intent);
+                } else if constexpr (std::is_same_v<T, DebugGrantHireling>) {
+                    grantDebugHireling();
                 } else if constexpr (std::is_same_v<T, RepairVendorItem>) {
                     repairVendorItem(intent);
                 } else if constexpr (std::is_same_v<T, EndNpcConversation>) {
@@ -666,7 +674,8 @@ void GameSession::tick(float dt, Vec keyboard) {
                         player.allocated = {}; player.unspentAttributes = 0;
                         player.skillRanks.clear(); player.unspentSkills = 0;
                         player.actOneQuests = {};
-                        player.hireling = {};
+                        // A debug class switch keeps owned mercenary equipment and identity together.
+                        hirelingOffers_.clear();
                         player.combatEffects.clear();
                         player.skillHotkeys = {};
                         player.weaponSet = 0;

@@ -23,6 +23,7 @@ struct EnemyDied {
     Vec position;
     MonsterIdentity identity;
     int difficulty = 0;
+    bool hirelingKill = false;
 };
 struct PlayerDied {
     EntityId player;
@@ -62,6 +63,8 @@ struct VendorItemBought {
     unsigned price = 0;
 };
 struct GambleStockOpened { EntityId npc; };
+struct HirelingListOpened { EntityId npc; };
+struct HirelingHired { EntityId npc; };
 struct InventoryRejected {
     EntityId item;
     InventoryError error;
@@ -108,5 +111,6 @@ struct QuestAdvanced {
 using GameEvent = std::variant<SkillCast, MeleeAttack, EnemyDied, EnemyAttacked, EnemySkill2, EnemyHit, PlayerDied, RegionEntered, ObjectInteracted, NpcDialogueStarted, ItemsIdentified, VendorItemBought,
                                ItemChange, InventoryRejected, InventoryApplied, ItemPickedUp, PickupFailed,
                                ItemUsed, BeltEquipped, StorageOpened, StorageClosed, InteractionFailed,
-                               LootDeferred, WaypointActivated, QuestAdvanced, GambleStockOpened>;
+                               LootDeferred, WaypointActivated, QuestAdvanced, GambleStockOpened,
+                               HirelingListOpened, HirelingHired>;
 } // namespace d2x

@@ -53,7 +53,6 @@ void GameSession::refreshCharacter(bool fillGains) {
                                                        modifiers.defense, modifiers.combat);
 }
 void GameSession::createStarterEquipment() {
-    const bool legacy = content_.profile == "classic-1.04-txt-v1";
     const auto &characters = content_.tables.at("charstats");
     const auto actor = equipmentActor();
     InventoryAccess access;
@@ -72,7 +71,7 @@ void GameSession::createStarterEquipment() {
         }
         if (quantity <= 0)
             throw std::runtime_error("Invalid starter equipment quantity");
-        if (body.empty() || (legacy && body == "0")) {
+        if (body.empty()) {
             const auto *definition = inventory_.catalog().find(code);
             if (!definition)
                 throw std::runtime_error("Unknown original starter item: " + std::string(code));
@@ -86,8 +85,6 @@ void GameSession::createStarterEquipment() {
             }
             continue;
         }
-        if (legacy)
-            continue; // Numeric 1.04 equipment locations have no verified slot adapter.
         auto bodySlot = equipmentSlotFromCode(body);
         if (!bodySlot)
             throw std::runtime_error("Unsupported starter body location");
@@ -164,6 +161,8 @@ InventoryError GameSession::previewInventory(const GameCommand &command) const {
                 if (intent.destination && !inventoryDestinationAllowed(*intent.destination))
                     return InventoryError::InvalidLocation;
                 return inventory_.preview(intent, playerContainers_, inventoryAccess(), equipmentActor());
+            } else if constexpr (std::is_same_v<T, EquipHirelingItem>) {
+                return previewHirelingEquipment(intent);
             } else if constexpr (std::is_same_v<T, UseItem>) {
                 const auto *source = inventory_.item(intent.item.id);
                 if (source && (content_.isPortalScroll(source->definition) ||

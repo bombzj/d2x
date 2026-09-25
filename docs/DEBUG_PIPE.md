@@ -105,7 +105,7 @@ $spawn = .\scripts\Send-D2XCommand.ps1 -Command monster-spawn -Arguments @{monst
 .\scripts\Send-D2XCommand.ps1 -Command switch-character -Arguments @{ class = 'Sorceress' }
 ```
 
-切换后等级、经验、属性和技能分配归零，生命／法力／耐力回满；背包、装备与世界保留，超出一级携带上限的金币裁剪。`status.player.class` 和响应 `class` 可核对职业；职业成长、经验阈值和技能树始终从挂载的 MPQ 读取。
+切换后等级、经验、属性和技能分配归零，生命／法力／耐力回满；背包、装备、佣兵及其装备与世界保留，超出一级携带上限的金币裁剪。`status.player.class` 和响应 `class` 可核对职业；职业成长、经验阈值和技能树始终从挂载的 MPQ 读取。
 
 技能调试入口使用正式升级、分配和存档状态。先通过 `skills` 查看当前职业的原技能 ID、前置及 F1–F8 绑定，再用 `grant-experience` 获得升级技能点；`learn-skill` 遵守等级、前置和最大等级。`reset-skills` 与 `Ctrl+Alt+T` 归还已分配点，`skill-tree` 可指定 1–3 页打开界面并配合 `screenshot` 查看。`skill-picker` 打开左右技能菜单，`bind-skill-hotkey` 通过正式会话命令绑定或清除快捷键，便于复查存档。
 
@@ -129,8 +129,26 @@ $offers = (.\scripts\Send-D2XCommand.ps1 -Command shop -Arguments @{ id = $vendo
 
 ## 命令
 
+### 快速授予佣兵
+
+```powershell
+.\scripts\Send-D2XCommand.ps1 -Command grant-hireling
+.\scripts\Send-D2XCommand.ps1 -Command hireling | ConvertTo-Json -Depth 6
+.\scripts\Send-D2XCommand.ps1 -Command hireling-panel -Arguments @{open=$true}
+```
+
+`grant_hireling` 也可使用。授予不需要任务、金币或 NPC 距离，按当前难度、角色等级及资料片 MPQ 生成一名罗格，默认打开属性面板；`open=$false` 可只领取。重复执行不替换已有佣兵或装备，`created` 表示本次是否新建；死亡角色拒绝领取。响应的 `hireling` 包含名字、等级、生命、经验、伤害、四抗和装备实例，未雇佣时查询为 `null`。`hireling-equip -Arguments @{id=物品ID;slot='rarm'}` 从背包装备；原部位代码可为 `head`、`tors`、`rarm`，省略 `slot` 卸下入背包，均复用正式装备限制。`ui-input` 的 `key='o'`／`'hireling'` 模拟 O 键。
+
+接口源码随 v89 加入，目前未构建或运行验收；现有旧 EXE 不含这些命令。完整边界见 [资料片佣兵](HIRELINGS.md)。
+
+### 命令表
+
 | command | Arguments | 行为 |
 | --- | --- | --- |
+| grant-hireling / grant_hireling | 可选 `open`，默认 true | 立即授予资料片罗格并打开 O 面板；已有则保留，不扣金币或改任务 |
+| hireling | 无 | 查询佣兵身份、派生属性及装备；不修改状态 |
+| hireling-panel | 可选 `open`，默认 true | 开关已有佣兵的 O 面板 |
+| hireling-equip | `id`，可选 `slot` | 正式佣兵装备事务；省略 slot 卸下入背包 |
 | status | 无 | 玩家坐标、生命、蛛网减速剩余时间／百分比、钱包、区域、击杀、已结算数、掉落随机状态、调试暂停状态，以及 ui 中的商店／NPC 菜单／字幕偏移／I、II 组／左右面板伤害 |
 | quest-status | 无 | 当前难度六项第一幕任务的阶段和标记，只读；A1Q3 灌注、A1Q4 石阵与 A1Q6 结局都使用正式会话状态 |
 | quest-panel | 可选 `open`、`selected`（-1 为总览，0–5 为六项） | 调试打开原 MPQ 任务面板，便于与 `screenshot` 查看布局 |
