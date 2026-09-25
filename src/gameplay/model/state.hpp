@@ -29,6 +29,7 @@ struct ActiveCombatEffect {
 };
 struct PlayerState {
     EntityId id;
+    std::string name = "Hero";
     std::string characterClass = "Barbarian";
     Vec pos, previous, look{1, 0};
     std::deque<Vec> route;

@@ -170,6 +170,12 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
     scalar(player.look.y, -1.001f, 1.001f);
     route(player.route, grid);
     const auto &characterDefinition = definitionFor(player.characterClass);
+    require(!player.name.empty() && player.name.size() <= 15 &&
+                std::all_of(player.name.begin(), player.name.end(), [](unsigned char letter) {
+                    return (letter >= 'A' && letter <= 'Z') ||
+                           (letter >= 'a' && letter <= 'z') ||
+                           (letter >= '0' && letter <= '9') || letter == '-';
+                }), "character name");
     require(player.level >= 1 && player.level <= 255 &&
                 player.allocated.strength >= 0 && player.allocated.dexterity >= 0 &&
                 player.allocated.vitality >= 0 && player.allocated.energy >= 0 &&

@@ -15,9 +15,12 @@ bool baseMonsterRank(MonsterRank rank) {
 }
 } // namespace
 GameSession::GameSession(Archives &archives, const WorldSelection &selection, int startRegion,
-                         uint64_t lootSeed, PopulationSettings population)
+                         uint64_t lootSeed, PopulationSettings population, std::string characterClass,
+                         std::string characterName)
     : content_(loadClassicData(archives)), worldContent_(archives),
       monsterContent_(archives, content_.tables.at("monstats")), loot_(lootSeed) {
+    simulation_.state_.player.characterClass = std::move(characterClass);
+    simulation_.state_.player.name = std::move(characterName);
     characterDefinition_ = definitionFor(state().player.characterClass);
     simulation_.state_.population = population;
     simulation_.lifeStealDivisor_ = content_.lifeStealDivisor.at(size_t(population.difficulty));
@@ -354,7 +357,7 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
     Fingerprint fingerprint;
     fingerprint.add(content_.profile);
     // Bump this rules revision when state interpretation or compiled rules change.
-    fingerprint.add("d2x-session-rules-v126-npc-interact");
+    fingerprint.add("d2x-session-rules-v127-character-name");
     auto members = archives.used;
     for (const auto &member : members) {
         fingerprint.add(member);

@@ -45,7 +45,7 @@ void SceneView::drawCharacter(Vec mouse) const {
     const auto &player = session_.state().player;
     const auto &stats = session_.characterStats();
     const auto &equipment = session_.equipmentStats();
-    cell("Hero", 10, 9, 173, 20, 14, gold, true);
+    cell(player.name, 10, 9, 173, 20, 14, gold, true);
     cell(session_.characterName(), 191, 9, 120, 20, 14, gold, true);
     cell("Level", 11, 35, 45, 13, 10, parchment, true);
     cell(std::to_string(player.level), 11, 48, 45, 20, 13, gold, true);

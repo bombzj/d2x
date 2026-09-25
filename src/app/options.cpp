@@ -9,6 +9,7 @@ AppOptions parseOptions(int argc, char **argv) {
     bool explicitMpq = false;
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
+        if (arg != "--mpq") options.directGame = true;
         auto value = [&]() {
             if (++i >= argc)
                 throw std::runtime_error("Missing value for " + arg);

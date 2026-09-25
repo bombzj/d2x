@@ -11,6 +11,7 @@ struct AppOptions {
     std::string save, load;
     std::string debugPipe;
     bool debugRun = false;
+    bool directGame = false;
     bool hidden = false, help = false, inventory = false, stash = false, maps = false, skills = false;
     int frameLimit = 0, region = -1;
     uint64_t lootSeed = LootSystem::defaultSeed;

@@ -180,7 +180,8 @@ class GameSession {
     HirelingCombatStats hirelingStats() const;
     static constexpr float fixedStep = 1.f / 25.f;
     GameSession(Archives &archives, const WorldSelection &selection, int startRegion = -1,
-                uint64_t lootSeed = LootSystem::defaultSeed, PopulationSettings population = {});
+                uint64_t lootSeed = LootSystem::defaultSeed, PopulationSettings population = {},
+                std::string characterClass = "Barbarian", std::string characterName = "Hero");
     GameSession(const GameSession &) = delete;
     GameSession &operator=(const GameSession &) = delete;
     const WorldState &state() const { return simulation_.state(); }

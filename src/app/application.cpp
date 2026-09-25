@@ -1,4 +1,5 @@
 #include "application.hpp"
+#include "character_frontend.hpp"
 #include "input.hpp"
 #include "options.hpp"
 #include "debug_pipe.hpp"
@@ -17,7 +18,7 @@ class Platform {
     explicit Platform(bool hidden) {
         SetTraceLogLevel(LOG_WARNING);
         SetConfigFlags(FLAG_WINDOW_RESIZABLE | FLAG_VSYNC_HINT | (hidden ? FLAG_WINDOW_HIDDEN : 0));
-        InitWindow(1280, 816, "D2X - Diablo II Classic / C++");
+        InitWindow(1280, 816, "D2X - Diablo II Expansion / C++");
         if (!IsWindowReady())
             throw std::runtime_error("Unable to create OpenGL window");
         SetWindowMinSize(800, 510);
@@ -108,12 +109,27 @@ int runGame(int argc, char **argv) {
         archives.pulseLoading();
     }
     std::optional<SessionSnapshot> restored;
+    std::optional<CharacterChoice> character;
+    std::optional<RenderTarget> frontendTarget;
+    const bool frontend = !options.directGame;
+    if (frontend) {
+        frontendTarget.emplace();
+        archives.setLoadingPulse({});
+        loadingGraphics.reset();
+        ShowCursor();
+        character = chooseCharacter(archives, frontendTarget->handle);
+        if (!character) return 0;
+        HideCursor();
+    }
+    if (character && !character->created) options.load = character->path.string();
     if (!options.load.empty()) {
         restored = loadSave(options.load);
         options.world.seed = restored->world.mapSeed;
         options.population.difficulty = restored->world.population.difficulty;
     }
-    GameSession session(archives, options.world, options.region, options.lootSeed, options.population);
+    GameSession session(archives, options.world, options.region, options.lootSeed, options.population,
+                        character ? character->characterClass : "Barbarian",
+                        character ? character->name : "Hero");
     std::cout << "MPQ data: " << session.content().profile << ", "
               << session.inventory().catalog().entries().size() << " items, "
               << session.content().monsters.size() << " monsters, " << session.content().treasures.size()
@@ -123,9 +139,12 @@ int runGame(int argc, char **argv) {
         session.restore(std::move(*restored));
         std::cout << "Loaded " << options.load << '\n';
     }
-    const std::string savePath = !options.save.empty()   ? options.save
+    const std::string savePath = character ? character->path.string()
+                                 : !options.save.empty()   ? options.save
                                  : !options.load.empty() ? options.load
                                                          : "saves/quick.d2xsave";
+    if (character && character->created) writeSave(savePath, session.snapshot());
+    frontendTarget.reset();
     SceneView view(archives, session);
     view.ui().travelMenu = options.maps;
     view.ui().inventory.open = options.inventory;
@@ -229,6 +248,7 @@ int runGame(int argc, char **argv) {
         writeSave(options.save, session.snapshot());
         std::cout << "Saved " << options.save << '\n';
     }
+    if (character) writeSave(savePath, session.snapshot());
     if (!options.pack.empty())
         view.collectMapVariants(archives);
     std::filesystem::create_directories("artifacts");
