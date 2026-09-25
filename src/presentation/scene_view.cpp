@@ -61,6 +61,7 @@ void SceneView::notice(std::string text, bool error) {
 }
 void SceneView::sessionRestored() {
     exploredAutomap_.clear();
+    roofOpacity_.clear();
     view_.waypointSource = {};
     monsterPositions_.clear();
     monsterLooks_.clear();
@@ -108,6 +109,15 @@ void SceneView::advanceUi(float dt) {
 }
 void SceneView::advance(float dt) {
     revealAutomap();
+    const auto &currentRegion = session_.region();
+    const auto &popups = currentRegion.map.data.roofPopups;
+    auto &opacity = roofOpacity_[currentRegion.definition.id];
+    if (opacity.size() != popups.size())
+        opacity.assign(popups.size(), 1.f);
+    for (size_t i = 0; i < popups.size(); ++i) {
+        const float target = popups[i].contains(session_.state().player.pos) ? 0.f : 1.f;
+        opacity[i] += std::clamp(target - opacity[i], -4.f * dt, 4.f * dt);
+    }
     lighting_.update(session_.map().grid, session_.worldContent().level(int(session_.region().definition.id)),
                      session_.region().definition.id,
                      session_.state().player.pos, session_.characterStats().lightRadius);

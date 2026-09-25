@@ -72,6 +72,15 @@ MapData assembleMap(Archives &archives, const MapRecipe &recipe) {
                     }))
                     object.path.clear();
             }
+            std::erase_if(source.roofPopups, [&](const auto &popup) {
+                return popup.x < group.x || popup.y < group.y ||
+                       popup.x + popup.width > group.x + group.width ||
+                       popup.y + popup.height > group.y + group.height;
+            });
+            for (auto &popup : source.roofPopups) {
+                popup.x -= group.x;
+                popup.y -= group.y;
+            }
             source.width = piece.width + 1;
             source.height = piece.height + 1;
         }
@@ -123,6 +132,11 @@ MapData assembleMap(Archives &archives, const MapRecipe &recipe) {
                 node.y += piece.y * 5;
             }
             result.objects.push_back(object);
+        }
+        for (auto popup : source.roofPopups) {
+            popup.x += piece.x;
+            popup.y += piece.y;
+            result.roofPopups.push_back(popup);
         }
     }
     return result;

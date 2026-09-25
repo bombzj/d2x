@@ -40,7 +40,7 @@
 
 野外基础草地使用原 DRLG 的 `0x40002` 地板规则及 `0x44103` DT1 掩码。不同关卡放置对应原预设，包括凯恩石阵、艾尼弗斯树、塔楼、营地、房屋和洞口。
 
-DT1 图像共享；像素与碰撞使用同一瓦片变体。隐藏出口仍参与关联。缺少所需瓦片时报错，不铺替代地板。
+DT1 图像共享；像素与碰撞使用同一瓦片变体。隐藏出口仍参与关联。缺少所需瓦片时报错，不铺替代地板。屋顶独立于墙体最后绘制；DS1 orientation 10 的成对区域标记限定进入范围和对应屋顶主索引，角色进入时只让该组屋顶渐隐，离开后恢复，普通墙体不透明。拼接地图中的标记随预设一同平移。
 
 ## 种子和工具
 
@@ -56,7 +56,8 @@ DT1 图像共享；像素与碰撞使用同一瓦片变体。隐藏出口仍参�
 - 野外已接矩形边界／预设分支、悬崖／河桥和适配道路；传送点使用 `LvlSub` 类型 4 原分组。此次接入类型 5 的神殿／治疗井：`Levels.SubShrine` 给出 LvlSub 类型编号，从该类型的前四条原表记录循环选择，在可用宏格叠加原 DS1 分组和对象。原版每区五处的规则来自 D2MOO `DRLGOUTDOORS_SpawnAct12Shrines`；宏格内位置和随机流是当前适配，已在本轮截图检查，位置仍为项目适配。
 - 通用野外主题仍缺失。当前唯一原始 `Trees.ds1` 位于 `d2data.mpq`，v12 文件声明 14 个分组，但尾部只有 13 个完整记录和 4 个字节；`d2exp.mpq`、`Patch_D2.mpq` 与 `d2x-act1.mpq` 没有另一份。解码器拒绝这份不完整数据；取得可核实的完整原资源或有依据的格式解释前不截断分组、不造替代主题。
 - 可选 Trees2（Def 40）在其原 DT1 掩码中缺少所引用的阴影瓦片，暂跳过该装饰；艾尼弗斯树仍用独立原预设。
-- 地形整体装载，怪物按附近房间创建／休眠。完整地形流式加载、两处任务门和原版屋顶语义待实现。
+- 地形整体装载，怪物按附近房间创建／休眠。完整地形流式加载、两处任务门仍待实现；屋顶已按 DS1 标记做局部渐隐，尚未与原客户端逐场景核对时序和所有屋顶分组。
 - 本轮用种子 210、普通难度对 1–39 关各运行两帧，39 份截图及日志在忽略的 `artifacts/act1-map-review-20260923/`；日志没有未解析 DT1 瓦片。第四层另将镜头移到原 `andariel` 实体 (46.5,46.5) 并截取首领房。怪物身份正确，外观仍为已授权的敌对怪物替身。修道院大门出生画面中人物被立面半透明遮挡，需后续与原版画面对照；完整路径、门交互及更多种子未在此冒烟中验收。
 
 参考固定 [D2MOO](https://github.com/ThePhrozenKeep/D2MOO/tree/5596f5cb6c5251a0a07c6637d26458b06099d516) 的 DrlgMaze、DrlgOutPlace、DrlgOutWild、DrlgOutdoors、DrlgRoomTile、DrlgActivate；改编保留 MIT 归属，见 [许可](licenses/D2MOO.txt)。
+屋顶区域标记与渐隐参考固定 [Diablerie LevelBuilder](https://github.com/mofr/Diablerie/blob/9e42ef257228257825ebbbeb905d4b1d894b6e98/Assets/Scripts/Diablerie/Engine/World/LevelBuilder.cs)、[Popup](https://github.com/mofr/Diablerie/blob/9e42ef257228257825ebbbeb905d4b1d894b6e98/Assets/Scripts/Diablerie/Engine/World/Popup.cs)；独立屋顶层另与 [OpenDiablo2 renderer](https://github.com/OpenDiablo2/OpenDiablo2/blob/7f92c571bf04057a7fbdfb5d25a486f7d775e3c3/d2core/d2map/d2maprenderer/renderer.go) 核对。参考项目的行为是实现依据，运行时标记和图形均从当前 MPQ 读取。

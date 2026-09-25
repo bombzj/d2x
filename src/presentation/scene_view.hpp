@@ -67,6 +67,7 @@ class SceneView {
     std::map<EntityId, float> nextMonsterFootstep_, nextMonsterNeutral_;
     std::set<EntityId> movingMonsters_;
     std::map<RegionId, std::vector<uint8_t>> exploredAutomap_;
+    std::map<RegionId, std::vector<float>> roofOpacity_;
     const Sprite *objectSprite(const WorldObject &object, RegionId region) const;
     struct LootLabel {
         ItemHandle item;

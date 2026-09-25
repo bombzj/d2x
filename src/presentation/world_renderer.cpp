@@ -142,8 +142,10 @@ void SceneView::drawActors() const {
         int type, index;
         Vec p;
         int region = -1;
+        int tileX = -1, tileY = -1;
     };
     std::vector<Item> draw;
+    std::vector<Item> roofs;
     const auto groundItems = session_.inventory().groundItems(sim.area.region);
     for (int i = 0; i < int(groundItems.size()); ++i) {
         const auto &item = *session_.inventory().item(groundItems[i]);
@@ -162,8 +164,13 @@ void SceneView::drawActors() const {
                     if (!cell.present())
                         continue;
                     int idx = map.tileIndex(cell, x, y);
-                    if (idx >= 0)
-                        draw.push_back({p.y + 64, 0, idx, p, region});
+                    if (idx >= 0) {
+                        auto item = Item{p.y + 64, 0, idx, p, region, x, y};
+                        if (map.tiles[idx]->orientation == 15)
+                            roofs.push_back(item);
+                        else
+                            draw.push_back(item);
+                    }
                 }
             }
         const auto &props = session_.regions()[region].objects;
@@ -355,6 +362,24 @@ void SceneView::drawActors() const {
             spriteShadow(image, item.p);
             sprite(image, item.p);
         }
+    }
+    // Roofs are the final terrain layer. Only DS1 popup markers may fade them;
+    // ordinary walls stay opaque even when the player walks behind them.
+    std::stable_sort(roofs.begin(), roofs.end(), [](auto &a, auto &b) { return a.depth < b.depth; });
+    for (const auto &item : roofs) {
+        float alpha = 1.f;
+        const auto &region = session_.regions()[item.region];
+        if (item.region == session_.regionIndex()) {
+            const auto &popups = region.map.data.roofPopups;
+            auto found = roofOpacity_.find(region.definition.id);
+            for (size_t i = 0; i < popups.size(); ++i)
+                if (popups[i].covers(item.tileX, item.tileY, region.map.tiles[item.index]->main))
+                    alpha = std::min(alpha, found != roofOpacity_.end() && i < found->second.size()
+                                                ? found->second[i] : 1.f);
+        }
+        if (alpha > 0.f)
+            sprite(&assets_.regionTiles[item.region][item.index], item.p,
+                   {255, 255, 255, uint8_t(alpha * 255.f)});
     }
 }
 void SceneView::drawMagic() const {

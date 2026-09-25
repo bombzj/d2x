@@ -314,6 +314,35 @@ MapData decodeDs1(const Bytes &b) {
             }
         }
     }
+    // DS1 orientation 10 markers come in paired corners. Their main index
+    // identifies the popup group and their sub index identifies the roof style.
+    // Match each wall layer separately, as in Diablerie's LevelBuilder.
+    for (const auto &layer : m.walls) {
+        std::array<std::pair<int, int>, 7> starts{};
+        std::array<bool, 7> found{};
+        for (int y = 0; y < m.height; ++y)
+            for (int x = 0; x < m.width; ++x) {
+                const auto &cell = layer[size_t(y) * m.width + x];
+                if (cell.orientation != 10)
+                    continue;
+                const int main = int((cell.value >> 20) & 63);
+                const int group = main == 8 ? 0 : main == 9 ? 1 : main == 10 ? 2 :
+                                  main == 12 ? 3 : main == 13 ? 4 : main == 16 ? 5 :
+                                  main == 20 ? 6 : -1;
+                if (group < 0)
+                    continue;
+                if (!found[size_t(group)]) {
+                    starts[size_t(group)] = {x, y};
+                    found[size_t(group)] = true;
+                } else {
+                    auto [firstX, firstY] = starts[size_t(group)];
+                    if (x > firstX && y > firstY)
+                        m.roofPopups.push_back({firstX, firstY, x - firstX, y - firstY,
+                                                int((cell.value >> 8) & 255)});
+                    found[size_t(group)] = false;
+                }
+            }
+    }
     return m;
 }
 Table decodeTable(const Bytes &data) {

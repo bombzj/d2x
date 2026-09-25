@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "core/bytes.hpp"
+#include "core/math.hpp"
 namespace d2x {
 struct Reader {
     std::span<const uint8_t> data;
@@ -109,6 +110,17 @@ struct MapObject {
 struct SubstitutionGroup {
     int x = 0, y = 0, width = 0, height = 0, variants = 0;
 };
+struct RoofPopup {
+    int x = 0, y = 0, width = 0, height = 0, roofMain = 0;
+    bool contains(Vec player) const {
+        return player.x >= x * 5 && player.y >= y * 5 &&
+               player.x < (x + width) * 5 && player.y < (y + height) * 5;
+    }
+    bool covers(int tileX, int tileY, int main) const {
+        return main == roofMain && tileX >= x - 1 && tileY >= y - 1 &&
+               tileX < x + width + 2 && tileY < y + height + 2;
+    }
+};
 struct MapData {
     int version = 0, width = 0, height = 0, act = 0;
     int substitutionMethod = 0;
@@ -117,6 +129,7 @@ struct MapData {
     std::vector<MapCell> shadows;
     std::vector<uint32_t> substitutions;
     std::vector<SubstitutionGroup> substitutionGroups;
+    std::vector<RoofPopup> roofPopups;
     std::vector<MapObject> objects;
 };
 MapData decodeDs1(const Bytes &data);
