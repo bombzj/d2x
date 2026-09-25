@@ -169,7 +169,7 @@ bool SceneController::handleInventory(const FrameInput &input) {
     bool bankField = ui.storage && CheckCollisionPointRec(
             rv(input.mouse), storageGold(session_.content().stashLayout.expansion));
     if (ui.open && input.insideViewport && input.leftPressed && !ui.pending &&
-        (CheckCollisionPointRec(rv(input.mouse), inventoryGold()) || bankField)) {
+        !ui.drag && (CheckCollisionPointRec(rv(input.mouse), inventoryGold()) || bankField)) {
         GoldAction action = bankField ? GoldAction::Withdraw :
                             ui.storage ? GoldAction::Deposit : GoldAction::Drop;
         const auto &player = session_.state().player;
@@ -226,6 +226,18 @@ bool SceneController::handleInventory(const FrameInput &input) {
             ui.drag.reset();
             return true;
         }
+        if (ui.drag->pickedUp) {
+            if (input.leftPressed && input.insideViewport && !ui.pending) {
+                inventoryClick_ = true;
+                auto drop = inventoryDrop(session_, ui, input.mouse, view_.ui().hirelingOpen);
+                if (drop.command) {
+                    if (queueInventory(std::move(*drop.command), source->id))
+                        ui.drag.reset();
+                } else if (drop.error != InventoryError::None)
+                    view_.notice(inventoryErrorText(drop.error), true);
+            }
+            return true;
+        }
         if ((input.mouse - ui.drag->pressedAt).length() > 4)
             ui.drag->moved = true;
         if (input.leftReleased) {
@@ -236,7 +248,16 @@ bool SceneController::handleInventory(const FrameInput &input) {
                 else if (drop.error != InventoryError::None)
                     view_.notice(inventoryErrorText(drop.error), true);
             }
-            ui.drag.reset();
+            if (ui.drag->moved)
+                ui.drag.reset();
+            else {
+                const auto &definition = *inventory.catalog().find(source->definition);
+                ui.drag->grab = {definition.width / 2, definition.height / 2};
+                ui.drag->pixelOffset = {definition.width * inventoryCellSize / 2,
+                                        definition.height * inventoryCellSize / 2};
+                ui.drag->pickedUp = true;
+                ui.drag->moved = true;
+            }
         } else if (!input.leftHeld)
             ui.drag.reset();
         return true;

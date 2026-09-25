@@ -10,6 +10,7 @@ struct InventoryDrag {
     Cell grab;
     Vec pressedAt, pixelOffset;
     bool moved = false;
+    bool pickedUp = false;
 };
 struct SplitDialog {
     ItemHandle item;
