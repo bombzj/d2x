@@ -33,6 +33,7 @@ std::string fontText(std::string text) {
 void SceneView::openNpcDialogue(EntityId object, std::string speaker, std::string text) {
     view_.dialogueObject = object;
     view_.shopOpen = false;
+    view_.shopSaleConfirm.reset();
     view_.npcMenu = false;
     view_.npcTopics = false;
     view_.shopPage = 0;

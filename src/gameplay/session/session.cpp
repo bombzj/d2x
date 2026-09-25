@@ -544,6 +544,8 @@ void GameSession::tick(float dt, Vec keyboard, bool forceRun) {
                     completeActOne(intent.npc);
                 } else if constexpr (std::is_same_v<T, BuyVendorItem>) {
                     buyVendorItem(intent.vendor, intent.slot, intent.gamble);
+                } else if constexpr (std::is_same_v<T, SellVendorItem>) {
+                    sellVendorItem(intent);
                 } else if constexpr (std::is_same_v<T, OpenGamble>) {
                     openGamble(intent.npc);
                 } else if constexpr (std::is_same_v<T, OpenHirelingList>) {

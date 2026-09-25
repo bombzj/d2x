@@ -86,6 +86,7 @@ void SceneView::sessionRestored() {
     view_.dialogue.clear();
     view_.npcGossipTurns.clear();
     view_.shopOpen = false;
+    view_.shopSaleConfirm.reset();
     view_.npcMenu = false;
     view_.camera = project(session_.state().player.pos);
     view_.clickAge = 10;
@@ -371,6 +372,10 @@ void SceneView::advance(float dt) {
                 } else if constexpr (std::is_same_v<T, VendorItemBought>) {
                     view_.dialogueStatus.clear();
                     if (view_.shopOpen) scrollNpcShop(0);
+                } else if constexpr (std::is_same_v<T, VendorItemSold>) {
+                    view_.dialogueStatus.clear();
+                    view_.shopSaleConfirm.reset();
+                    notice("Sold for " + std::to_string(value.price) + " gold.");
                 }
             },
             event);

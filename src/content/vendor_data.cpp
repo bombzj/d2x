@@ -1,4 +1,5 @@
 #include "vendor_data.hpp"
+#include <algorithm>
 #include <cctype>
 #include <stdexcept>
 
@@ -10,7 +11,8 @@ std::map<std::string, VendorDefinition, std::less<>> loadVendorData(
     if (found == tables.end())
         return vendors;
     const auto &npc = found->second;
-    if (!npc.has("npc") || !npc.has("sell mult"))
+    if (!npc.has("npc") || !npc.has("sell mult") || !npc.has("buy mult") ||
+        !npc.has("max buy") || !npc.has("max buy (N)") || !npc.has("max buy (H)"))
         throw std::runtime_error("Original NPC trade table lacks vendor pricing");
     const auto &pages = tables.at("storepage");
     const auto &types = tables.at("itemtypes");
@@ -36,12 +38,22 @@ std::map<std::string, VendorDefinition, std::less<>> loadVendorData(
             continue;
         std::string prefix = id;
         prefix.front() = char(std::toupper(static_cast<unsigned char>(prefix.front())));
-        VendorDefinition vendor{id, *multiplier, {}};
+        VendorDefinition vendor;
+        vendor.id = id;
+        vendor.sellMultiplier = *multiplier;
+        vendor.buyMultiplier = npc.number(row, "buy mult").value_or(0);
+        vendor.maxBuy = {npc.number(row, "max buy").value_or(0),
+                         npc.number(row, "max buy (N)").value_or(0),
+                         npc.number(row, "max buy (H)").value_or(0)};
+        if (vendor.buyMultiplier <= 0 ||
+            std::any_of(vendor.maxBuy.begin(), vendor.maxBuy.end(), [](int value) { return value <= 0; }))
+            throw std::runtime_error("Original NPC buy price data is incomplete: " + id);
         vendor.repairMultiplier = npc.number(row, "rep mult").value_or(0);
         for (const auto suffix : {"A", "B", "C"})
             if (const int flag = npc.number(row, std::string("questflag ") + suffix).value_or(0))
                 vendor.questPrices.push_back({flag,
                     npc.number(row, std::string("questsellmult ") + suffix).value_or(1024),
+                    npc.number(row, std::string("questbuymult ") + suffix).value_or(1024),
                     npc.number(row, std::string("questrepmult ") + suffix).value_or(1024)});
         // Acts are engine service configuration (SUnitProxy), not localization.
         if (id == "fara" || id == "drognan" || id == "lysander" || id == "elzix") vendor.act = 1;

@@ -96,6 +96,7 @@ bool SceneView::openNpcShop(bool gamble) {
     view_.shopRepair = false;
     view_.shopPage = 0;
     view_.shopConfirm.reset();
+    view_.shopSaleConfirm.reset();
     view_.inventory.open = true;
     view_.inventory.cubeOpen = false;
     view_.questOpen = view_.characterOpen = view_.skillTreeOpen = view_.hirelingOpen = false;
@@ -113,6 +114,7 @@ void SceneView::closeNpcShop() {
     view_.shopRepair = false;
     view_.npcMenu = false;
     view_.shopConfirm.reset();
+    view_.shopSaleConfirm.reset();
     view_.inventory.open = false;
 }
 void SceneView::scrollNpcShop(int pages) {
@@ -121,6 +123,17 @@ void SceneView::scrollNpcShop(int pages) {
     if (view_.shopCategory == 1 || view_.shopCategory == 2)
         view_.shopCategory = view_.shopPage == 0 ? 1 : 2;
     view_.shopConfirm.reset();
+}
+std::optional<ItemHandle> SceneView::clickNpcSaleConfirm(Vec mouse) {
+    if (!view_.shopSaleConfirm) return {};
+    if (CheckCollisionPointRec(rv(mouse), confirmButton(true))) {
+        auto item = *view_.shopSaleConfirm;
+        view_.shopSaleConfirm.reset();
+        return item;
+    }
+    if (CheckCollisionPointRec(rv(mouse), confirmButton(false)))
+        view_.shopSaleConfirm.reset();
+    return {};
 }
 std::optional<uint32_t> SceneView::clickNpcShop(Vec mouse, bool directBuy) {
     if (view_.shopConfirm) {
@@ -243,10 +256,30 @@ void SceneView::drawNpcShop(Vec mouse) const {
                        std::to_string(maximumPage(items) + 1),
                        int(panel.x + 36 * scale), int(panel.y + 416 * scale), 11, gold);
     }
-    if (hovered && !view_.shopConfirm) {
+    if (hovered && !view_.shopConfirm && !view_.shopSaleConfirm) {
         auto visual = vendorItem(*hovered, session_.content(), view_.shopGamble);
         drawItemTooltip(visual, {mouse.x + 170, mouse.y},
             session_.vendorPurchasePrice(view_.dialogueObject, *hovered, view_.shopGamble), view_.shopGamble);
+    }
+    if (view_.shopSaleConfirm) {
+        auto popup = confirmBounds();
+        if (auto sprite = assets_.vendorConfirm.frame(0, 0)) {
+            const auto &texture = sprite->texture;
+            DrawTexturePro(texture, {0, 0, float(texture.width), float(texture.height)},
+                           popup, {0, 0}, 0, WHITE);
+        }
+        if (const auto *item = session_.inventory().item(view_.shopSaleConfirm->id)) {
+            painter_.label(itemName(*item), int(popup.x) + 22, int(popup.y) + 47, 14, gold);
+            if (auto quote = session_.vendorSaleQuote(view_.dialogueObject, *view_.shopSaleConfirm))
+                painter_.label("SELL FOR " + std::to_string(*quote) + " GOLD?",
+                               int(popup.x) + 24, int(popup.y) + 88, 14, parchment);
+        }
+        for (bool yes : {true, false}) {
+            auto button = confirmButton(yes);
+            DrawRectangleLinesEx(button, 1, gold);
+            painter_.label(yes ? "YES" : "NO", int(button.x) + (yes ? 4 : 9),
+                           int(button.y) + 8, 13, gold);
+        }
     }
     if (view_.shopConfirm) {
         auto popup = confirmBounds();

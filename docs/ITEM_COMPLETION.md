@@ -1,13 +1,13 @@
 # 物品与掉落完成度
 
-当前源码：角色存档 v90，规则 `v124-player-movement-light`。本批移动与光照修正只进行源码和原资源核对；没有构建、运行检查、测试程序或新包。此前 v89 的构建与 v87 的交互记录不能替代本批验收。
+当前源码：角色存档 v90，规则 `v124-player-movement-light`。本批移动、光照、NPC 出售与介绍入口修正只进行源码和原资源核对；没有构建、运行检查、测试程序或新包。此前 v89 的构建与 v87 的交互记录不能替代本批验收。
 
 ## 数据与入口
 
 - 运行时 MPQ：Weapons、Armor、Misc、ItemTypes、ItemRatio、TreasureClassEx、MagicPrefix／Suffix、RarePrefix／Suffix、UniqueItems、SetItems、Sets、QualityItems、LowQualityItems、Properties、ItemStatCost、NPC、Gamble、DifficultyLevels 和语言 TBL。
 - `content/item_properties.cpp` 将原属性指令与实例掷值解析成共同统计值，保留原 stat、layer、原值与按等级换算后的效果值。装备、说明和定价共用解析结果；不从界面文字反推效果。
 - `content/item_descriptions.cpp` 按 ItemStatCost 的说明优先级、函数、正负文本与 TBL 生成说明，合并元素／毒素伤害；商店与背包共用同一提示框。
-- `content/item_pricing.cpp` 按基础表、词缀／品质费用、ItemStatCost、NPC 倍率形成购买和单件修理报价。尚不能解释的属性计价分支拒绝报价，不按普通价格出售。
+- `content/item_pricing.cpp` 按基础表、词缀／品质费用、ItemStatCost、NPC 倍率形成购买、出售和单件修理报价。尚不能解释的属性计价分支拒绝报价，不按普通价格出售。
 - `content/item_loot.cpp` 与 `gameplay/loot` 处理 TC、品质和实例；`gameplay/items` 负责数量、持久身份、位置、需求、耐久与事务。UI 只提交购买／修理等命令。
 
 ## 已接入源码
@@ -29,9 +29,9 @@
 
 - 自动词缀、法杖类固有技能、天然凹槽／打孔、宝石和符文镶嵌、符文之语、无形，以及失败暗金／套装的额外耐久倍率。
 - 触发施法、充能技能实例和补充费用、装备光环、部分条件与目标类型属性；对应说明格式也未覆盖全部 ItemStatCost 函数。
-- IAS／FCR／FHR／FBR 的完整原动画帧和断点、跑速装备效果、敌人状态／控制类属性，以及全部技能／召唤物交互。
+- IAS／FCR／FHR／FBR 的完整原动画帧和断点、敌人状态／控制类属性，以及全部技能／召唤物交互。角色走跑速度及装备快速移动词缀已接入，仍待运行验收。
 - 套装 add func 的其余分支、变量条件加成的持久掷值、完整套装说明；染色／无形视觉及各品质完整生成随机流。
-- 所有商店出售／回购、修理全部和其它幕的服务流程。Kashya Hire 列表、O 面板及装备已按用户截图接入；佣兵技能、承伤、复活和完整物品效果仍缺，见 [佣兵](HIRELINGS.md)。
+- 商店回购、修理全部和其它幕的服务流程。背包／装备出售已接入源码，尚未运行验收；Kashya Hire 列表、O 面板及装备已按用户截图接入；佣兵技能、承伤、复活和完整物品效果仍缺，见 [佣兵](HIRELINGS.md)。
 - 七职业药剂差异、药剂暴击恢复、所有消耗品和方块公式仍有旧实现缺口。
 - 上述新增源码未构建或运行验收，也未逐条验收原 MPQ 的所有物品组合。存档拒绝 v1–v88，不修改已有存档或旧分发包。
 

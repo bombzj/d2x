@@ -97,9 +97,10 @@ class GameSession {
     void updateObjectTimers();
     void identifyWithCain(EntityId npc);
     void buyVendorItem(EntityId npc, uint32_t slot, bool gamble = false);
+    void sellVendorItem(const SellVendorItem &command);
     void openGamble(EntityId npc);
     void repairVendorItem(const RepairVendorItem &command);
-    std::vector<int> vendorQuestFactors(const VendorDefinition &vendor, bool repair) const;
+    std::vector<int> vendorQuestFactors(const VendorDefinition &vendor, bool repair, bool sale = false) const;
     void advanceNpcPaths(float dt);
     bool canReach(const WorldObject &object) const;
     std::optional<Vec> interactionApproach(const WorldObject &object) const;
@@ -226,6 +227,7 @@ class GameSession {
     const std::vector<VendorOffer> *vendorStock(EntityId npc, bool gamble = false) const;
     bool vendorOfferSold(EntityId npc, uint32_t slot) const;
     std::optional<unsigned> vendorRepairQuote(EntityId npc, ItemHandle item) const;
+    std::optional<unsigned> vendorSaleQuote(EntityId npc, ItemHandle item) const;
     unsigned vendorPurchasePrice(EntityId npc, const VendorOffer &offer, bool gamble) const;
     EntityId interactionTarget() const { return pendingInteraction_; }
     EntityId pickupTarget() const { return pickup_.id; }

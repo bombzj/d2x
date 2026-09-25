@@ -35,6 +35,7 @@ struct ViewState {
     int shopPage = 0;
     int shopCategory = 0;
     std::optional<uint32_t> shopConfirm;
+    std::optional<ItemHandle> shopSaleConfirm;
     EntityId waypointSource;
     int travelPage = 0;
     float animationTime = 0, heroTime = 0, stepClock = 0;
@@ -111,7 +112,8 @@ class SceneView {
     void drawContainerGrid(const ContainerGrid &grid, Vec mouse) const;
     void drawBelt(Vec mouse) const;
     void drawItemTooltip(const ItemInstance &item, Vec anchor,
-                         std::optional<unsigned> price = {}, bool gamble = false) const;
+                         std::optional<unsigned> price = {}, bool gamble = false,
+                         std::string_view priceLabel = "Cost") const;
     const SpecialItemRecord *specialItem(const ItemInstance &item) const;
     std::string itemName(const ItemInstance &item) const;
     void itemButton(Rectangle bounds, const char *label, Color color) const;
@@ -142,6 +144,7 @@ class SceneView {
     void openNpcDialogue(EntityId object, std::string speaker, std::string text);
     void openNpcMenu(EntityId object, std::string speaker, bool firstIntroduction);
     bool startNpcTalk();
+    bool startNpcIntroduction();
     bool startNpcTopic(ActOneQuest quest);
     bool openNpcShop(bool gamble = false);
     void closeNpcShop();
@@ -149,6 +152,7 @@ class SceneView {
     void scrollNpcDialogue(int amount);
     void closeNpcDialogue();
     std::optional<uint32_t> clickNpcShop(Vec mouse, bool directBuy = false);
+    std::optional<ItemHandle> clickNpcSaleConfirm(Vec mouse);
     std::optional<RegionId> clickWaypointMenu(Vec mouse);
     void scrollNpcShop(int pages);
     bool showNextNpcGossip();

@@ -100,7 +100,9 @@ void SceneView::drawInventory(Vec mouse) const {
     if (!ui.split && !ui.drag) {
         if (auto item = inventory.item(hovered))
             drawItemTooltip(*item, {panel.x - 12, mouse.y},
-                view_.shopRepair ? session_.vendorRepairQuote(view_.dialogueObject, item->handle()) : std::nullopt);
+                view_.shopRepair ? session_.vendorRepairQuote(view_.dialogueObject, item->handle()) :
+                view_.shopOpen ? session_.vendorSaleQuote(view_.dialogueObject, item->handle()) : std::nullopt,
+                false, view_.shopRepair ? "Repair" : view_.shopOpen ? "Sell" : "Cost");
     } else if (ui.drag && ui.drag->moved && !hint.empty()) {
         int width = painter_.measure(hint, 12) + 24;
         frame({panel.x - width - 12, 450, float(width), 30});

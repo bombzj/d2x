@@ -25,7 +25,7 @@ Windows 使用 `scripts/build.ps1`，启动示例（默认读取 `assets/mpq2`�
 
 本机可用 `Play.cmd`。EXE 默认直接读取完整 `assets/mpq2`；其他位置可显式传 `--mpq <目录>`。
 
-当前源码为存档 v90／规则 v124-player-movement-light；本批移动与光照修正尚未构建或运行验收。此前 Windows Release 和 MPQ 运行结果不能替代本批验收；Linux 尚未实际编译运行。佣兵 Hire／O 窗口和快速授予见 [佣兵](docs/HIRELINGS.md)，其余边界见 [开发基线](docs/baseline/DEVELOPMENT.md)。
+当前源码为存档 v90／规则 v124-player-movement-light；本批移动、光照、NPC 出售与介绍入口修正尚未构建或运行验收。此前 Windows Release 和 MPQ 运行结果不能替代本批验收；Linux 尚未实际编译运行。佣兵 Hire／O 窗口和快速授予见 [佣兵](docs/HIRELINGS.md)，其余边界见 [开发基线](docs/baseline/DEVELOPMENT.md)。
 
 ## 操作
 
@@ -33,6 +33,7 @@ Windows 使用 `scripts/build.ps1`，启动示例（默认读取 `assets/mpq2`�
 | --- | --- |
 | 左键／方向键 | 寻路／辅助移动；野外边界直接跨区，洞口和楼梯点击进入 |
 | 左键点敌人／物品／NPC | 攻击／走近拾取／交互 |
+| NPC Trade 窗口左／右键点击背包或装备 | 确认出售／直接出售；修理模式左键修理 |
 | 左／右技能菜单悬停 + F1–F8 | 绑定对应鼠标键技能；单按 F1–F8 切换技能，不立即施法 |
 | 点击左右技能槽 | 展开当前职业已学技能菜单；Shift 左键使用左键技能 |
 | I、A／C、S／T、1–4、B、Ctrl+F4 | 包裹、角色面板、技能树、饮药、展开腰带、走近私人箱 |

@@ -12,6 +12,9 @@ std::vector<MenuEntry> entries(const GameSession &session, EntityId npc, std::st
     const auto *npcObject = session.object(npc);
     const std::string_view npcClass = npcObject ? std::string_view(npcObject->npcClass) : std::string_view{};
     if (topics) {
+        if (introSpeech(session.content().npcDialogues, speaker,
+                        session.state().player.characterClass))
+            result.push_back({"Introduction", 11});
         for (auto [id, speech] : session.npcQuestTopics(speaker)) {
             std::string key = "qsts" + speech->quest;
             std::transform(key.begin(), key.end(), key.begin(), [](unsigned char c) {
@@ -26,7 +29,8 @@ std::vector<MenuEntry> entries(const GameSession &session, EntityId npc, std::st
         result.push_back({"Cancel", 4});
         return result;
     }
-    if (!session.npcQuestTopics(speaker).empty() || gossipSpeech(session.content().npcDialogues, speaker, 0))
+    if (introSpeech(session.content().npcDialogues, speaker, session.state().player.characterClass) ||
+        !session.npcQuestTopics(speaker).empty() || gossipSpeech(session.content().npcDialogues, speaker, 0))
         result.push_back({"Talk", 1});
     if (session.vendorStock(npc)) {
         result.push_back({npcCanRepair(npcClass) ? "Trade / Repair" : "Trade", 2});
@@ -90,6 +94,14 @@ void SceneView::openNpcMenu(EntityId object, std::string speaker, bool firstIntr
 bool SceneView::startNpcTalk() {
     if (!view_.npcMenu) return false;
     view_.npcTopics = true;
+    return true;
+}
+bool SceneView::startNpcIntroduction() {
+    if (!view_.npcMenu || !view_.npcTopics) return false;
+    const auto *speech = introSpeech(session_.content().npcDialogues, view_.dialogueSpeaker,
+                                     session_.state().player.characterClass);
+    if (!speech) return false;
+    openNpcDialogue(view_.dialogueObject, view_.dialogueSpeaker, speech->text);
     return true;
 }
 bool SceneView::startNpcTopic(ActOneQuest quest) {

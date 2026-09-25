@@ -1,6 +1,7 @@
 #pragma once
 #include "gameplay/items/definitions.hpp"
 #include "resources/data_table.hpp"
+#include <array>
 #include <map>
 #include <string>
 #include <vector>
@@ -15,9 +16,11 @@ struct VendorItemRule {
     bool permanent = false, magicEligible = false;
 };
 struct VendorDefinition {
-    struct QuestPrice { int flag = 0, sell = 1024, repair = 1024; };
+    struct QuestPrice { int flag = 0, sell = 1024, buy = 1024, repair = 1024; };
     std::string id;
     int sellMultiplier = 0;
+    int buyMultiplier = 0;
+    std::array<int, 3> maxBuy{};
     std::vector<VendorItemRule> items;
     int repairMultiplier = 0;
     unsigned act = 0;

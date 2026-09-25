@@ -4,9 +4,10 @@
 #include <span>
 
 namespace d2x {
-// Shared buy/repair quote, including optional quest and character discounts.
+// Shared purchase, sale and repair quote. Sale uses NPC buy rates and difficulty caps.
 // Missing rule data defers the quote.
 std::optional<unsigned> itemTradePrice(const ClassicData &data, const ItemInstance &item,
                                        const VendorDefinition &vendor, bool repair = false,
-                                       std::span<const int> questFactors = {}, int reducedPrices = 0);
+                                       std::span<const int> questFactors = {}, int reducedPrices = 0,
+                                       bool sale = false, int difficulty = 0);
 }

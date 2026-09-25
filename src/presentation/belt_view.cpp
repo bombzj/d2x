@@ -70,7 +70,8 @@ void SceneView::itemButton(Rectangle bounds, const char *label, Color color) con
                    int(bounds.y + (bounds.height - 12) / 2), 12, color);
 }
 void SceneView::drawItemTooltip(const ItemInstance &item, Vec anchor,
-                                std::optional<unsigned> price, bool gamble) const {
+                                std::optional<unsigned> price, bool gamble,
+                                std::string_view priceLabel) const {
     const auto &definition = *session_.inventory().catalog().find(item.definition);
     std::vector<std::string> lines{itemName(item)};
     std::vector<Color> colors;
@@ -83,7 +84,7 @@ void SceneView::drawItemTooltip(const ItemInstance &item, Vec anchor,
     auto line = [&](std::string value, Color color = WHITE) {
         if (!value.empty()) { lines.push_back(std::move(value)); colors.push_back(color); }
     };
-    if (price) line("Cost: " + std::to_string(*price));
+    if (price) line(std::string(priceLabel) + ": " + std::to_string(*price));
     if (!gamble) {
         if ((item.quality == ItemQuality::Unique || item.quality == ItemQuality::Set ||
              item.quality == ItemQuality::Rare) && item.identified) line(definition.name, nameColor);

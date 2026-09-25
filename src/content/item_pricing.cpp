@@ -6,7 +6,9 @@
 namespace d2x {
 std::optional<unsigned> itemTradePrice(const ClassicData &data, const ItemInstance &item,
                                        const VendorDefinition &vendor, bool repair,
-                                       std::span<const int> questFactors, int reducedPrices) {
+                                       std::span<const int> questFactors, int reducedPrices,
+                                       bool sale, int difficulty) {
+    if (sale && (repair || difficulty < 0 || difficulty >= int(vendor.maxBuy.size()))) return {};
     const auto *definition = data.items.find(item.definition);
     if (!definition || !definition->base.cost || *definition->base.cost < 0) return {};
     auto identified = item;
@@ -110,11 +112,13 @@ std::optional<unsigned> itemTradePrice(const ClassicData &data, const ItemInstan
             for (int factor : questFactors) base = base * factor / 1024;
         }
     } else {
-        base = base * vendor.sellMultiplier / 1024;
+        base = base * (sale ? vendor.buyMultiplier : vendor.sellMultiplier) / 1024;
         for (int factor : questFactors) base = base * factor / 1024;
-        if (!quiver && !definition->bookCapacity) base *= std::max(1u, item.quantity);
+        if (!quiver && !definition->bookCapacity)
+            base *= sale ? item.quantity : std::max(1u, item.quantity);
+        if (sale) base = std::min<int64_t>(base, vendor.maxBuy[size_t(difficulty)]);
     }
-    base -= base * std::clamp(reducedPrices, 0, 99) / 100;
+    if (!sale) base -= base * std::clamp(reducedPrices, 0, 99) / 100;
     return unsigned(std::clamp<int64_t>(base, 1, std::numeric_limits<unsigned>::max()));
 }
 } // namespace d2x

@@ -1,6 +1,6 @@
 # NPC 商店、赌博与修理
 
-当前源码 v90／规则 `v124-player-movement-light`，本批修正未构建或运行验收。AGENTS.md 要求当前交接阶段不新增测试、运行检查或打包。此前 v87 右键购买即时入包、关闭商店不恢复菜单的运行记录仍只覆盖旧代码。
+当前源码 v90／规则 `v124-player-movement-light`，本批出售与 NPC 介绍入口修正未构建或运行验收。AGENTS.md 要求当前交接阶段不新增测试、运行检查或打包。此前 v87 右键购买即时入包、关闭商店不恢复菜单的运行记录仍只覆盖旧代码。
 
 ## 数据与服务
 
@@ -20,6 +20,10 @@
 
 购买价格由 `content/item_pricing.cpp` 结合基础费用、防具防御、词缀／品质费用、附加统计值及 NPC SellMult 计算。第一幕已完成或待领奖的对应任务应用 NPC 原 quest multiplier；装备 reducedprices 对购买、修理和赌博应用同一折扣查询。UI 显示与实际扣款调用同一报价。原反编译费用函数本身标有舍入疑点，当前没有原版逐金额运行对照。
 
+## 出售
+
+Trade 窗口右侧背包或已装备物品可出售：左键显示售价确认，右键直接出售；修理模式左键仍修理。玩法层用物品版本、交谈中的 NPC、城镇、所有权与 MPQ `quest` 字段校验，任务物品不能出售。报价使用 NPC 原表 `buy mult`、任务 `questbuymult` 和当前难度 `max buy` 上限，UI 与事务共用查询。成交移除原物品并给钱包加金；超过角色携金上限时拒绝交易，避免丢失余款。当前未做卖出物的回购货架。
+
 ## 赌博
 
 `content/gamble_stock.cpp` 读取 Gamble 候选池及 DifficultyLevels 品质／升级概率，生成 14 个报价；戒指和项链占前两个槽位。等级使用角色等级 -5 至 +4，范围限制 5–99。基础价格取原 gamble cost 或原引擎价格公式；不使用 MF 改变赌博品质。
@@ -34,4 +38,4 @@
 
 商店在左、背包在右，使用原 buysell、buyselltabs、buysellbtn 等素材。分类来自 StorePage；前四个标签图是选中态、后四个是未选中态。商店与背包调用同一物品说明，底部 STASH 显示个人箱金币。没有修理服务时不绘制修理图标；关闭商店不再恢复 NPC 菜单。
 
-出售、回购、修理全部及佣兵复活仍待实现；额外翻页、菜单背景和部分布局仍是项目适配。参考来源见 THIRD_PARTY.md，物品效果覆盖与缺口见 ITEM_COMPLETION.md。
+回购、修理全部及佣兵复活仍待实现；额外翻页、菜单背景和部分布局仍是项目适配。出售判定和商人是否回收上架对照本地 D2MOO `SUnitNpc.cpp::D2GAME_STORES_SellItem_6FCC7680`，价格列对照 `Items.cpp::ITEMS_GetTransactionCost`，实际数值读取当前 MPQ。参考来源见 THIRD_PARTY.md，物品效果覆盖与缺口见 ITEM_COMPLETION.md。

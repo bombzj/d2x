@@ -95,6 +95,7 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
         if (action == 1) {
             view_.startNpcTalk();
         }
+        else if (action == 11) view_.startNpcIntroduction();
         else if (action == 5) view_.showNextNpcGossip();
         else if (action >= 100 && action < 106) view_.startNpcTopic(ActOneQuest(action - 100));
         else if (action == 2) view_.openNpcShop();
@@ -197,6 +198,26 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
         }
     }
     if (ui.shopOpen) {
+        auto saleItemAt = [&]() -> const ItemInstance * {
+            const auto &inventory = session_.inventory();
+            EntityId id;
+            if (auto cell = inventoryCell(input.mouse))
+                id = inventory.itemAt(session_.playerContainers().backpack, *cell);
+            if (auto slot = equipmentAt(input.mouse, session_.state().player.weaponSet))
+                id = inventory.equipped(session_.playerContainers(), *slot);
+            return inventory.item(id);
+        };
+        if (ui.shopSaleConfirm) {
+            if (input.escape) ui.shopSaleConfirm.reset();
+            else if (input.enter) {
+                auto item = *ui.shopSaleConfirm;
+                ui.shopSaleConfirm.reset();
+                session_.submit(SellVendorItem{ui.dialogueObject, item});
+            } else if (input.insideViewport && input.leftPressed)
+                if (auto item = view_.clickNpcSaleConfirm(input.mouse))
+                    session_.submit(SellVendorItem{ui.dialogueObject, *item});
+            return true;
+        }
         if (input.escape) {
             if (ui.shopRepair) ui.shopRepair = false;
             else if (ui.shopConfirm)
@@ -220,25 +241,31 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
                 const auto slot = *ui.shopConfirm;
                 ui.shopConfirm.reset();
                 session_.submit(BuyVendorItem{ui.dialogueObject, slot, ui.shopGamble});
-            } else if (input.insideViewport && input.leftPressed) {
-                if (ui.shopRepair && CheckCollisionPointRec(rv(input.mouse), inventoryBounds())) {
-                    const auto &inventory = session_.inventory();
-                    EntityId id;
-                    if (auto cell = inventoryCell(input.mouse))
-                        id = inventory.itemAt(session_.playerContainers().backpack, *cell);
-                    if (auto slot = equipmentAt(input.mouse, session_.state().player.weaponSet))
-                        id = inventory.equipped(session_.playerContainers(), *slot);
-                    if (auto item = inventory.item(id))
+            } else if (!ui.shopConfirm && input.insideViewport && input.leftPressed &&
+                       CheckCollisionPointRec(rv(input.mouse), inventoryBounds())) {
+                if (const auto *item = saleItemAt()) {
+                    if (ui.shopRepair)
                         session_.submit(RepairVendorItem{ui.dialogueObject, item->handle()});
-                    return true;
+                    else if (session_.vendorSaleQuote(ui.dialogueObject, item->handle()))
+                        ui.shopSaleConfirm = item->handle();
+                    else
+                        view_.notice("That item cannot be sold here.", true);
                 }
+            } else if (input.insideViewport && input.leftPressed) {
                 if (auto slot = view_.clickNpcShop(input.mouse))
                     session_.submit(BuyVendorItem{ui.dialogueObject, *slot, ui.shopGamble});
                 if (!ui.shopOpen)
                     session_.submit(EndNpcConversation{ui.dialogueObject});
             } else if (input.insideViewport && input.rightPressed) {
                 inventoryRight_ = true;
-                if (auto slot = view_.clickNpcShop(input.mouse, true))
+                if (CheckCollisionPointRec(rv(input.mouse), inventoryBounds())) {
+                    if (const auto *item = saleItemAt()) {
+                        if (ui.shopRepair)
+                            session_.submit(RepairVendorItem{ui.dialogueObject, item->handle()});
+                        else
+                            session_.submit(SellVendorItem{ui.dialogueObject, item->handle()});
+                    }
+                } else if (auto slot = view_.clickNpcShop(input.mouse, true))
                     session_.submit(BuyVendorItem{ui.dialogueObject, *slot, ui.shopGamble});
             }
         }

@@ -5,7 +5,7 @@
 #include <limits>
 
 namespace d2x {
-std::vector<int> GameSession::vendorQuestFactors(const VendorDefinition &vendor, bool repair) const {
+std::vector<int> GameSession::vendorQuestFactors(const VendorDefinition &vendor, bool repair, bool sale) const {
     // The values are D2MOO QuestStateFlag IDs, not the quest log's display order.
     auto pendingOrRewarded = [&](int flag) {
         switch (flag) {
@@ -20,7 +20,7 @@ std::vector<int> GameSession::vendorQuestFactors(const VendorDefinition &vendor,
     };
     std::vector<int> result;
     for (const auto &price : vendor.questPrices)
-        if (pendingOrRewarded(price.flag)) result.push_back(repair ? price.repair : price.sell);
+        if (pendingOrRewarded(price.flag)) result.push_back(repair ? price.repair : sale ? price.buy : price.sell);
     return result;
 }
 unsigned GameSession::vendorPurchasePrice(EntityId npc, const VendorOffer &offer, bool gamble) const {
@@ -46,6 +46,47 @@ std::optional<unsigned> GameSession::vendorRepairQuote(EntityId npc, ItemHandle 
     if (vendor == content_.vendors.end()) return {};
     const auto factors = vendorQuestFactors(vendor->second, true);
     return itemTradePrice(content_, *item, vendor->second, true, factors, characterStats().combat.reducedPrices);
+}
+std::optional<unsigned> GameSession::vendorSaleQuote(EntityId npc, ItemHandle handle) const {
+    const auto *target = object(npc);
+    const auto *item = inventory_.item(handle.id);
+    if (!target || !vendorStock(npc) || engagedNpc_ != npc || state().player.dead ||
+        !region().definition.safe || !item || item->revision != handle.revision ||
+        item->revision == std::numeric_limits<uint64_t>::max()) return {};
+    const auto *location = std::get_if<ContainerLocation>(&item->location);
+    if (!location || (location->container != playerContainers_.backpack &&
+                      location->container != playerContainers_.equipment &&
+                      location->container != playerContainers_.beltEquipment)) return {};
+    const auto *definition = inventory_.catalog().find(item->definition);
+    if (!definition || content_.tables.at(definition->base.sourceTable)
+                           .number(definition->base.sourceRow, "quest").value_or(0)) return {};
+    auto vendor = content_.vendors.find(target->npcClass);
+    if (vendor == content_.vendors.end()) return {};
+    const auto factors = vendorQuestFactors(vendor->second, false, true);
+    return itemTradePrice(content_, *item, vendor->second, false, factors, 0, true,
+                          state().population.difficulty);
+}
+void GameSession::sellVendorItem(const SellVendorItem &command) {
+    const auto quote = vendorSaleQuote(command.vendor, command.item);
+    if (!quote) {
+        simulation_.emit(InteractionFailed{command.vendor, "That item cannot be sold here."});
+        return;
+    }
+    auto &player = simulation_.state_.player;
+    const unsigned walletLimit = unsigned(player.level) * 10000u;
+    if (*quote > walletLimit - player.gold) {
+        simulation_.emit(InteractionFailed{command.vendor, "Make room for the sale gold first."});
+        return;
+    }
+    const auto item = inventory_.state_.items.at(command.item.id);
+    InventoryResult result;
+    result.item = item.id;
+    result.changes.push_back({item.id, item.revision + 1, ItemChangeKind::Removed,
+                              item.location, std::nullopt, 0});
+    inventory_.state_.items.erase(item.id);
+    player.gold += *quote;
+    publishInventory(std::move(result), {});
+    simulation_.emit(VendorItemSold{command.vendor, item.id, *quote});
 }
 void GameSession::repairVendorItem(const RepairVendorItem &command) {
     const auto quote = vendorRepairQuote(command.npc, command.item);

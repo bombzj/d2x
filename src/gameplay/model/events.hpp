@@ -62,6 +62,7 @@ struct VendorItemBought {
     uint32_t slot = 0;
     unsigned price = 0;
 };
+struct VendorItemSold { EntityId vendor, item; unsigned price = 0; };
 struct GambleStockOpened { EntityId npc; };
 struct HirelingListOpened { EntityId npc; };
 struct HirelingHired { EntityId npc; };
@@ -108,7 +109,7 @@ struct QuestAdvanced {
     ActOneQuest quest;
     uint32_t stage;
 };
-using GameEvent = std::variant<SkillCast, MeleeAttack, EnemyDied, EnemyAttacked, EnemySkill2, EnemyHit, PlayerDied, RegionEntered, ObjectInteracted, NpcDialogueStarted, ItemsIdentified, VendorItemBought,
+using GameEvent = std::variant<SkillCast, MeleeAttack, EnemyDied, EnemyAttacked, EnemySkill2, EnemyHit, PlayerDied, RegionEntered, ObjectInteracted, NpcDialogueStarted, ItemsIdentified, VendorItemBought, VendorItemSold,
                                ItemChange, InventoryRejected, InventoryApplied, ItemPickedUp, PickupFailed,
                                ItemUsed, BeltEquipped, StorageOpened, StorageClosed, InteractionFailed,
                                LootDeferred, WaypointActivated, QuestAdvanced, GambleStockOpened,
