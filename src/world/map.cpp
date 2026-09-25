@@ -130,9 +130,11 @@ void Map::load(Archives &a, TileLibraryCache &cache, const MapRecipe &recipe) {
                             dest = blocked ? 1 : 0;
                         else if (blocked)
                             dest = 1;
+                        // DT1 bit 2 blocks LOS and light; bit 32 blocks light
+                        // without blocking LOS. They must both affect lighting.
                         if (floor)
-                            light = (flag & 2) ? 1 : 0;
-                        else if (flag & 2)
+                            light = (flag & (2 | 32)) ? 1 : 0;
+                        else if (flag & (2 | 32))
                             light = 1;
                     }
             };

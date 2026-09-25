@@ -27,7 +27,7 @@ Rectangle SceneView::lootBounds(const ItemInstance &item) const {
                     float(frame->texture.height + 10)};
     return {p.x - 12, p.y - 10, 24, 20};
 }
-void SceneView::drawGroundItem(EntityId id) const {
+void SceneView::drawGroundItem(EntityId id, bool highlighted) const {
     if (auto age = landingAge_.find(id); age != landingAge_.end() && age->second < 0)
         return;
     const auto &item = *session_.inventory().item(id);
@@ -40,11 +40,17 @@ void SceneView::drawGroundItem(EntityId id) const {
         auto age = landingAge_.find(id);
         int index =
             age == landingAge_.end() ? anim.count - 1 : std::min(anim.count - 1, int(age->second * 25));
-        sprite(anim.frame(0, index), p);
+        drawSelectableSprite(anim.frame(0, index), p, highlighted);
     } else {
         // Older compact packs remain playable, with a visible fallback for missing graphics.
-        diamond(p, 7, itemColor(item.quality));
-        DrawCircleV(rv(p), 2, parchment);
+        Color color = itemColor(item.quality);
+        if (highlighted) {
+            color.r = uint8_t(std::min(255, int(color.r) * 2));
+            color.g = uint8_t(std::min(255, int(color.g) * 2));
+            color.b = uint8_t(std::min(255, int(color.b) * 2));
+        }
+        diamond(p, 7, color);
+        DrawCircleV(rv(p), 2, highlighted ? WHITE : parchment);
     }
 }
 std::vector<SceneView::LootLabel> SceneView::lootLabels(Vec mouse) const {

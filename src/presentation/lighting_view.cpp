@@ -27,12 +27,15 @@ void main() {
     vec2 delta = (pixel - playerScreen) / zoom;
     vec2 world = playerWorld + vec2(delta.x / 32.0 + delta.y / 16.0,
                                       delta.y / 16.0 - delta.x / 32.0);
-    ivec2 cell = ivec2(floor(world - maskOrigin));
+    vec2 maskPosition = world - maskOrigin;
     float seen = 0.0;
-    if (all(greaterThanEqual(cell, ivec2(0))) && all(lessThan(cell, textureSize(visibility, 0))))
-        seen = texelFetch(visibility, cell, 0).r;
+    if (all(greaterThanEqual(maskPosition, vec2(0.0))) &&
+        all(lessThan(maskPosition, vec2(textureSize(visibility, 0)))))
+        seen = texture(visibility, maskPosition / vec2(textureSize(visibility, 0))).r;
     float distanceToPlayer = length(world - playerWorld);
-    float playerLight = (1.0 - smoothstep(radius * 0.22, radius, distanceToPlayer)) * seen;
+    float radialLight = 1.0 - smoothstep(radius * 0.22, radius, distanceToPlayer);
+    // A circular fill remains visible behind blockers; only the brighter part casts shadows.
+    float playerLight = max(radialLight * 0.35, radialLight * seen);
     float flameLight = 0.0;
     for (int i = 0; i < flameCount; ++i) {
         float distanceToFlame = length(world - flameWorld[i]);
@@ -52,7 +55,7 @@ LightingView::LightingView() : pixels_(maskSide * maskSide, BLACK) {
     visibility_ = LoadTextureFromImage(image);
     UnloadImage(image);
     if (visibility_.id)
-        SetTextureFilter(visibility_, TEXTURE_FILTER_POINT);
+        SetTextureFilter(visibility_, TEXTURE_FILTER_BILINEAR);
     shader_ = LoadShaderFromMemory(nullptr, fragmentShader);
 }
 LightingView::~LightingView() {
@@ -62,7 +65,7 @@ LightingView::~LightingView() {
         UnloadTexture(visibility_);
 }
 void LightingView::update(const Grid &grid, const LevelRecord &level, RegionId region, Vec player, int radius) {
-    const int visibleRadius = level.id == 1 ? std::max(radius, 26) : radius;
+    const int visibleRadius = level.isInside ? radius : std::max(radius, 26);
     int px = int(std::floor(player.x)), py = int(std::floor(player.y));
     if (region == cachedRegion_ && px == cachedX_ && py == cachedY_ && visibleRadius == cachedRadius_)
         return;
@@ -77,7 +80,9 @@ void LightingView::update(const Grid &grid, const LevelRecord &level, RegionId r
             const int wx = originX_ + x, wy = originY_ + y;
             const Vec target{wx + .5f, wy + .5f};
             const bool inRange = (target - player).length() <= visibleRadius + 1.f;
-            const bool visible = inRange && grid.lightSegment(player, target);
+            // Outdoor player light has no terrain-shaped shadow; dungeons retain
+            // the DT1 blocker mask for their brighter direct contribution.
+            const bool visible = inRange && (!level.isInside || grid.lightSegment(player, target));
             pixels_[size_t(y) * maskSide + x] = visible ? WHITE : BLACK;
         }
     if (visibility_.id)
@@ -85,16 +90,15 @@ void LightingView::update(const Grid &grid, const LevelRecord &level, RegionId r
 }
 void LightingView::draw(const LevelRecord &level, Vec player, Vec playerScreen, float zoom, int radius,
                         const std::vector<WorldObject> &objects) const {
-    // The Act I town uses a broader local light and a visible dim ambient floor.
-    if ((!level.isInside && level.id != 1) || !shader_.id || !visibility_.id)
+    if (!shader_.id || !visibility_.id)
         return;
     const float screenHeight = float(H);
     const float position[2]{playerScreen.x, playerScreen.y};
     const float world[2]{player.x, player.y};
     const float origin[2]{float(originX_), float(originY_)};
-    const float effectiveRadius = level.id == 1 ? float(std::max(radius, 26))
-                                                : float(std::clamp(radius, 1, 18));
-    const float ambient = level.id == 1 ? .53f : level.losDraw ? .19f : .27f;
+    const float effectiveRadius = level.isInside ? float(std::clamp(radius, 1, 18))
+                                                 : float(std::max(radius, 26));
+    const float ambient = !level.isInside ? .53f : level.losDraw ? .19f : .27f;
     // Changing shader flushes raylib's previous batch and clears registered sampler textures.
     BeginShaderMode(shader_);
     uniform(shader_, "screenHeight", &screenHeight, SHADER_UNIFORM_FLOAT);

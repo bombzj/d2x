@@ -90,7 +90,7 @@ const WorldObject *SceneView::objectAt(Vec mouse) const {
     const WorldObject *nearest = nullptr;
     float nearestDepth = -1;
     for (const auto &object : session_.region().objects) {
-        if (object.interaction == Interaction::None) continue;
+        if (object.interaction == Interaction::None || object.questHidden) continue;
         auto sprite = objectSprite(object, session_.region().definition.id);
         if (!sprite || !sprite->hitWidth || !sprite->hitHeight) continue;
         Vec origin = screen(object.pos);
@@ -134,8 +134,35 @@ void SceneView::drawTerrain() const {
             }
     }
 }
-void SceneView::drawActors() const {
+void SceneView::drawActors(Vec mouse) const {
     const auto &sim = session_.state();
+
+    // Follow the same priority as SceneController::click so overlapping targets
+    // do not all brighten at once. Only the sprite is highlighted, not its shadow.
+    const bool canHover = !view_.blocksWorld() && !view_.inventory.open && !view_.inventory.drag &&
+                          !hudSurface(mouse) && CheckCollisionPointRec(rv(mouse), worldViewport());
+    const auto cainPortal = session_.cainPortalPosition();
+    const auto townPortal = session_.portalPosition();
+    const bool hotCainPortal = canHover && cainPortal &&
+        (screen(*cainPortal) - Vec{0, 40} - mouse).length() < 45;
+    const bool hotTownPortal = canHover && !hotCainPortal && townPortal &&
+        (screen(*townPortal) - Vec{0, 40} - mouse).length() < 45;
+    const bool hotExit = canHover && !hotCainPortal && !hotTownPortal && exitAt(mouse);
+    const auto hotLabelItem = canHover && !hotCainPortal && !hotTownPortal && !hotExit
+                                  ? lootAt(mouse, true) : std::nullopt;
+    EntityId hotEnemy;
+    if (canHover && !hotCainPortal && !hotTownPortal && !hotExit && !hotLabelItem)
+        for (const auto &enemy : sim.area.enemies)
+            if (enemy.hp > 0 && session_.active(enemy.pos) &&
+                (screen(enemy.pos) - Vec{0, 25} - mouse).length() < 24) {
+                hotEnemy = enemy.id;
+                break;
+            }
+    const auto *hotObject = canHover && !hotCainPortal && !hotTownPortal && !hotExit &&
+                                    !hotLabelItem && !hotEnemy ? objectAt(mouse) : nullptr;
+    const auto hotGroundItem = canHover && !hotCainPortal && !hotTownPortal && !hotExit &&
+                               !hotLabelItem && !hotEnemy && !hotObject ? lootAt(mouse) : std::nullopt;
+    const EntityId hotItem = hotLabelItem ? hotLabelItem->id : hotGroundItem ? hotGroundItem->id : EntityId{};
 
     struct Item {
         float depth;
@@ -168,8 +195,17 @@ void SceneView::drawActors() const {
                         auto item = Item{p.y + 64, 0, idx, p, region, x, y};
                         if (map.tiles[idx]->orientation == 15)
                             roofs.push_back(item);
-                        else
+                        else {
                             draw.push_back(item);
+                            // A top-right corner is two DT1 tiles at the same DS1 cell.
+                            // D2MOO and Diablerie both place its orientation-4 half above it.
+                            if (cell.orientation == 3) {
+                                auto companion = cell;
+                                companion.orientation = 4;
+                                if (int corner = map.tileIndex(companion, x, y); corner >= 0)
+                                    draw.push_back({p.y + 64.01f, 0, corner, p, region, x, y});
+                            }
+                        }
                     }
                 }
             }
@@ -264,7 +300,7 @@ void SceneView::drawActors() const {
             int frame = rule.start + int(elapsed * rule.fps);
             if (rule.cycle) frame = rule.start + (frame - rule.start) % rule.frames;
             else frame = std::min(frame, rule.start + rule.frames - 1);
-            sprite(assets_.cainPortalAnimations[mode].frame(0, frame), item.p);
+            drawSelectableSprite(assets_.cainPortalAnimations[mode].frame(0, frame), item.p, hotCainPortal);
         } else if (item.type == 2) {
             auto &e = sim.area.enemies[item.index];
             const auto variant = assets_.monsterVariantAnimations.find(e.identity.monster);
@@ -312,11 +348,10 @@ void SceneView::drawActors() const {
                                                            : sim.player.pos - e.pos,
                               anim->directions), frame);
                 spriteShadow(image, item.p);
-                sprite(image,
-                       item.p,
-                       e.hitFlash > 0 ? Color{255, 175, 155, 255}
-                       : e.chill > 0  ? Color{115, 175, 255, 255}
-                                      : WHITE);
+                drawSelectableSprite(image, item.p, e.id == hotEnemy,
+                                     e.hitFlash > 0 ? Color{255, 175, 155, 255}
+                                     : e.chill > 0  ? Color{115, 175, 255, 255}
+                                                    : WHITE);
             }
             if (e.stun > 0)
                 for (int i = 0; i < 3; i++) {
@@ -350,17 +385,17 @@ void SceneView::drawActors() const {
             // The classic portal COF uses translucent draw effects. Additive composition keeps
             // its black palette entries from becoming an opaque oval over the world.
             BeginBlendMode(BLEND_ADDITIVE);
-            sprite(assets_.townPortalAnimations[mode].frame(0, frame), item.p);
+            drawSelectableSprite(assets_.townPortalAnimations[mode].frame(0, frame), item.p, hotTownPortal);
             EndBlendMode();
             const std::string name = sim.area.region == RegionId::Encampment ? "Return Portal" : "Rogue Encampment";
             painter_.label(name, int(item.p.x) - painter_.measure(name, 12) / 2, int(item.p.y) - 100, 12, gold);
         } else if (item.type == 4) {
-            drawGroundItem(groundItems[item.index]);
+            drawGroundItem(groundItems[item.index], groundItems[item.index] == hotItem);
         } else {
             auto &p = session_.regions()[item.region].objects[item.index];
             const auto *image = objectSprite(p, session_.regions()[item.region].definition.id);
             spriteShadow(image, item.p);
-            sprite(image, item.p);
+            drawSelectableSprite(image, item.p, &p == hotObject);
         }
     }
     // Roofs are the final terrain layer. Only DS1 popup markers may fade them;

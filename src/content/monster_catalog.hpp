@@ -33,7 +33,7 @@ struct MonsterRecord {
     std::optional<MonsterWeb> web;
     std::array<std::optional<MonsterAiProfile>, 3> aiProfiles;
     bool enabled = false, randomSpawn = false, ranged = false, placeSpawn = false;
-    bool killable = false, npc = false, critter = false, inert = false, boss = false;
+    bool killable = false, npc = false, interact = false, critter = false, inert = false, boss = false;
     bool getHitMode = false, deadMode = false, skill2Mode = false, runMode = false;
     bool castMode = false, sequenceMode = false;
     bool castsShadow = false;

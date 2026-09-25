@@ -50,6 +50,8 @@
 
 本轮世界生成代码依据 D2MOO 的 `DrlgMaze`、`DrlgOutPlace`、`DrlgOutWild`、`DrlgOutdoors`、`DrlgRoomTile` 和 `DrlgDrlgVer` 适配；附近房间策略参考 `DrlgActivate`。这是实际代码适配来源，不是完整 DRLG 或逐种子等价实现。当前入口见 [地图](ACT1_MAPS.md) 与 [数据生命周期](baseline/DATA.md)。
 
+墙角补片规则交叉核对 [D2MOO `DrlgRoomTile.cpp`](https://github.com/ThePhrozenKeep/D2MOO/blob/5596f5cb6c5251a0a07c6637d26458b06099d516/source/D2Common/src/Drlg/DrlgRoomTile.cpp) 与 [Diablerie `LevelBuilder.cs`](https://github.com/mofr/Diablerie/blob/9e42ef257228257825ebbbeb905d4b1d894b6e98/Assets/Scripts/Diablerie/Engine/World/LevelBuilder.cs)：DS1 方向 3 墙角同格绘制方向 4 补片；图像仍只取当前 MPQ。
+
 - [D2MOO](https://github.com/ThePhrozenKeep/D2MOO/tree/5596f5cb6c5251a0a07c6637d26458b06099d516)，固定提交 `5596f5cb6c5251a0a07c6637d26458b06099d516`，MIT，Copyright 2020–2025 The Phrozen Keep community。共有 DT1、隐藏空白瓦片和变体权重解释依据 DrlgRoomTile.cpp；生成边界参考 DrlgDrlg.cpp、DrlgPreset.cpp、DrlgMaze.cpp。许可见 [D2MOO.txt](licenses/D2MOO.txt)。没有移植完整 DRLG，也未执行参考仓库的游戏代码。
 
   女巫技能还核对了该快照的 `D2Common/src/D2Skills.cpp`（等级伤害分段与定点法力）、`D2Game/src/SKILLS/SkillSor.cpp`（传送的 Levels 许可与静电力场生命下限）。本项目从用户 MPQ 在运行时读取每个技能和难度的实际数值；现有战斗系统尚不具备原版完整施法帧、抗性与逐弹命中规则。
@@ -70,7 +72,7 @@
 
 经典 HUD 的分块、球体偏移和 Sky 调色板参考 OpenDiablo2 [hud.go](https://github.com/OpenDiablo2/OpenDiablo2/blob/master/d2game/d2player/hud.go)／`globeWidget.go`。任务日志三列两行、选中时保留全部任务、图像状态帧和只显示已到达幕页签参考 [quest_log.go](https://github.com/OpenDiablo2/OpenDiablo2/blob/master/d2game/d2player/quest_log.go)；外框五块拼接和包裹金币／关闭按钮位置另核对 `d2core/d2ui/frame.go`、`d2game/d2player/inventory.go`，固定提交 `7f92c57`，GPL-3.0。本项目用 C++ 实现布局、绘制与输入，运行时素材来自用户 MPQ；见 [CLASSIC_HUD.md](CLASSIC_HUD.md) 与 [ACT1_QUESTS.md](ACT1_QUESTS.md)。
 
-NPC 提示和初见依据 D2MOO 固定提交 `5596f5c` 的 `A1Intro.cpp`、`A1Q0.cpp`、第一幕各任务 `ActiveFilterCallback` 与 `PLAYER/PlrIntro.cpp`；区分按难度保存的介绍和本局 GUID 反应列表。原图来自当前 `Overlay.txt/npcalert` 和 `NPCSpeechBalloon.dcc`，高度取 `MonStats2.OverlayHeight`；字段含义交叉核对 [Diablo II Data File Guide](https://wolfieeiflow.github.io/diabloiidatafileguide/#overlaytxt)。用户本批八张原版图用于确认接任务、剩余数、清空待领奖、外框和角落地图。D2Client 完整字幕时序／重播间隔不在当前参考快照中，未声称逐帧一致。
+NPC 提示和初见依据 D2MOO 固定提交 `5596f5c` 的 `A1Intro.cpp`、`A1Q0.cpp`、第一幕各任务 `ActiveFilterCallback` 与 `PLAYER/PlrIntro.cpp`；区分按难度保存的介绍和本局 GUID 反应列表。原图来自当前 `Overlay.txt/npcalert` 和 `NPCSpeechBalloon.dcc`，高度取 `MonStats2.OverlayHeight`；字段含义交叉核对 [Diablo II Data File Guide](https://wolfieeiflow.github.io/diabloiidatafileguide/#overlaytxt)。用户本批八张原版图用于确认接任务、剩余数、清空待领奖、外框和角落地图。本地 `reference/` 中固定版本的开源项目没有原版 D2Client 完整字幕时序／重播间隔实现；这与用户 MPQ 的完整性无关，当前未声称逐帧一致。
 
 NPC 初次接触自动播开场白、后续出现交互菜单参考[暴雪《Diablo II》手册](https://ftp.blizzard.com/pub/misc/Diablo%20II%20Manual.pdf)。资料片 I／II 武器标签、W 切换及备用组属性不生效参考[暴雪《毁灭之王》手册](https://ftp.blizzard.com/pub/misc/Diablo%20II%20-%20Lord%20of%20Destruction.pdf)和[Arreat Summit 操作说明](https://classic.battle.net/diablo2exp/basics/controls.shtml)。NPC 菜单、任务、交易和背包的位置、图像状态及文案还对照用户原版截图；程序只读取当前 MPQ 素材。任务与侧栏布局已有参考源码，滚动节奏和字幕自然结束时序仍未核实。
 

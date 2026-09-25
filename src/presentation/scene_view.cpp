@@ -3,9 +3,23 @@
 #include <type_traits>
 
 namespace d2x {
+namespace {
+constexpr const char *highlightFragment = R"(
+#version 330
+in vec2 fragTexCoord;
+in vec4 fragColor;
+out vec4 finalColor;
+uniform sampler2D texture0;
+void main() {
+    vec4 pixel = texture(texture0, fragTexCoord) * fragColor;
+    finalColor = vec4(min(pixel.rgb * 2.0, vec3(1.0)), pixel.a);
+}
+)";
+} // namespace
 SceneView::SceneView(Archives &archives, const GameSession &session)
     : session_(session), assets_(archives, session), painter_(assets_.font),
       speechPainter_(assets_.speechFont) {
+    highlightShader_ = LoadShaderFromMemory(nullptr, highlightFragment);
     view_.camera = project(session_.state().player.pos);
     view_.portalRevision = session_.state().portal.revision;
     view_.skillClass = session_.characterCode();
@@ -13,6 +27,19 @@ SceneView::SceneView(Archives &archives, const GameSession &session)
     lighting_.update(session_.map().grid, session_.worldContent().level(int(session_.region().definition.id)),
                      session_.region().definition.id,
                      session_.state().player.pos, session_.characterStats().lightRadius);
+}
+SceneView::~SceneView() {
+    if (highlightShader_.id)
+        UnloadShader(highlightShader_);
+}
+void SceneView::drawSelectableSprite(const Sprite *image, Vec position, bool highlighted, Color tint) const {
+    if (!image || !image->texture.id)
+        return;
+    if (highlighted && highlightShader_.id)
+        BeginShaderMode(highlightShader_);
+    sprite(image, position, tint);
+    if (highlighted && highlightShader_.id)
+        EndShaderMode();
 }
 Rectangle SceneView::worldViewport() const {
     const bool left = view_.questOpen || view_.characterOpen || view_.hirelingOpen || view_.travelMenu || view_.shopOpen ||

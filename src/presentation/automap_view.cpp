@@ -86,7 +86,8 @@ void SceneView::drawMinimap(bool large) const {
         marker(assets_.automapObjectCel(60), *cainPortal);
     EndBlendMode();
     for (const auto &object : region.objects) {
-        if (object.questHidden || (object.npcClass.empty() && object.interaction != Interaction::Stash))
+        if (object.questHidden || object.interaction == Interaction::None ||
+            (object.npcClass.empty() && object.interaction != Interaction::Stash))
             continue;
         const int x = int(object.pos.x / 5.f), y = int(object.pos.y / 5.f);
         if (x < 0 || y < 0 || x >= map.data.width || y >= map.data.height ||

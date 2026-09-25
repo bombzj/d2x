@@ -354,7 +354,7 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
     Fingerprint fingerprint;
     fingerprint.add(content_.profile);
     // Bump this rules revision when state interpretation or compiled rules change.
-    fingerprint.add("d2x-session-rules-v125-npc-monster-cadence");
+    fingerprint.add("d2x-session-rules-v126-npc-interact");
     auto members = archives.used;
     for (const auto &member : members) {
         fingerprint.add(member);

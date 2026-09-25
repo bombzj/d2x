@@ -4,8 +4,9 @@
 namespace d2x {
 namespace {
 constexpr int visibleLines = 5;
-constexpr int textSize = int(16 * classicPanelScale);
+constexpr int textSize = int(12 * classicPanelScale);
 constexpr int lineHeight = int(20 * classicPanelScale);
+constexpr float initialOffset = float(lineHeight);
 Rectangle speechBounds() { return {(W - 400 * classicPanelScale) / 2, 0,
                                    400 * classicPanelScale, 120 * classicPanelScale}; }
 int textWidth() { return int(speechBounds().width) - 32; }
@@ -40,7 +41,8 @@ void SceneView::openNpcDialogue(EntityId object, std::string speaker, std::strin
     view_.dialogueSpeaker = std::move(speaker);
     view_.dialogue = std::move(text);
     view_.dialogueStatus.clear();
-    view_.dialogueOffset = 0;
+    // Show the first line immediately, then continue the bottom-to-top crawl.
+    view_.dialogueOffset = initialOffset;
     view_.dialogueManualScroll = false;
     view_.dialogueLines.clear();
     auto rendered = fontText(view_.dialogue);
@@ -84,7 +86,7 @@ void SceneView::openNpcDialogue(EntityId object, std::string speaker, std::strin
 void SceneView::scrollNpcDialogue(int amount) {
     view_.dialogueManualScroll = true;
     view_.dialogueOffset = std::clamp(view_.dialogueOffset + amount * lineHeight,
-                                      0.f, maxOffset(view_.dialogueLines.size()));
+                                      initialOffset, maxOffset(view_.dialogueLines.size()));
 }
 
 void SceneView::advanceNpcDialogue(float dt) {

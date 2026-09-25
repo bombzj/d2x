@@ -59,6 +59,7 @@ class SceneView {
     const GameSession &session_;
     SceneAssets assets_;
     LightingView lighting_;
+    Shader highlightShader_{};
     UiPainter painter_;
     UiPainter speechPainter_;
     ViewState view_;
@@ -78,10 +79,12 @@ class SceneView {
     };
     std::vector<LootLabel> lootLabels(Vec mouse) const;
     Rectangle lootBounds(const ItemInstance &item) const;
-    void drawGroundItem(EntityId item) const;
+    void drawGroundItem(EntityId item, bool highlighted) const;
     void drawLootLabels(Vec mouse) const;
     void drawTerrain() const;
-    void drawActors() const;
+    void drawActors(Vec mouse) const;
+    void drawSelectableSprite(const Sprite *image, Vec position, bool highlighted,
+                              Color tint = WHITE) const;
     void drawMagic() const;
     void drawLighting() const;
     void drawNpcAlerts() const;
@@ -126,6 +129,7 @@ class SceneView {
     Rectangle hirelingSlotBounds(size_t index) const;
     const LevelExit *exitAt(Vec mouse) const;
     SceneView(Archives &archives, const GameSession &session);
+    ~SceneView();
     ViewState &ui() { return view_; }
     const ViewState &ui() const { return view_; }
     Vec screen(Vec position) const;

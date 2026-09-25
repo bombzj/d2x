@@ -132,6 +132,7 @@ MonsterCatalog::MonsterCatalog(Archives &archives, const DataTable &stats) {
         m.placeSpawn = n("placespawn") != 0;
         m.killable = n("killable") != 0;
         m.npc = n("npc") != 0;
+        m.interact = n("interact") != 0;
         m.boss = n("boss") != 0 || n("primeevil") != 0;
         auto extra = extendedRows.find(stats.value(row, "MonStatsEx"));
         if (extra == extendedRows.end())

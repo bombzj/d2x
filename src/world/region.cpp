@@ -217,6 +217,14 @@ std::vector<Region> loadRegions(Archives &archives, EntityIds &ids, const std::v
             for (size_t i = 0; i < object.appearance.equipment.size(); ++i)
                 object.appearance.equipment[i] = preset->gear[i];
             configureWorldObject(object, objectRows);
+            // A named neutral monster is not necessarily a conversation target.
+            // MonStats.interact is the original client/server eligibility flag;
+            // for example town rogues are NPCs but have interact=0.
+            if (source.type == 1 && object.appearance.category == "monsters") {
+                const auto *monster = monsters.find(object.npcClass);
+                if (!monster || !monster->interact)
+                    object.interaction = Interaction::None;
+            }
             object.facing = (source.x + source.y) % 8;
             region.objects.push_back(std::move(object));
         }
@@ -226,7 +234,7 @@ std::vector<Region> loadRegions(Archives &archives, EntityIds &ids, const std::v
             for (const auto &piece : region.recipe.pieces) {
                 if (piece.preset < 4 || piece.preset > 7 || piece.variant != 3)
                     continue;
-                if (!navi || navi->hostile())
+                if (!navi || navi->hostile() || !navi->interact)
                     throw std::runtime_error("Missing neutral Navi definition");
                 WorldObject object;
                 object.id = ids.allocate();

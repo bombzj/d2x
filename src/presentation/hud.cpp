@@ -98,7 +98,7 @@ void SceneView::draw(Vec mouse) const {
         for (auto p : sim.player.route)
             DrawCircleV(rv(screen(p)), 3, GREEN);
     }
-    drawActors();
+    drawActors(mouse);
     drawMagic();
     drawLighting();
     drawNpcAlerts();
