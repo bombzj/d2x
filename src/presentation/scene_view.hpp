@@ -19,6 +19,7 @@ struct ViewState {
     Vec camera, clickAt;
     float clickAge = 10, zoom = 1;
     bool help = false, automap = false, debug = false, pause = false, travelMenu = false;
+    bool miniPanelOpen = false;
     bool minimapRight = false;
     bool characterOpen = false;
     bool hirelingOpen = false, hireListOpen = false;
@@ -127,6 +128,7 @@ class SceneView {
 
   public:
     Rectangle hirelingSlotBounds(size_t index) const;
+    std::optional<int> miniPanelAt(Vec mouse) const;
     const LevelExit *exitAt(Vec mouse) const;
     SceneView(Archives &archives, const GameSession &session);
     ~SceneView();

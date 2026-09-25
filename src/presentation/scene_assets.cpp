@@ -114,6 +114,11 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
     }
     fireburst = graphics_.single("data/global/missiles/shamanfireballexplodefinal.dcc");
     panel = uiGraphics_.single("data/global/ui/panel/800ctrlpnl7.dc6");
+    miniPanel = uiGraphics_.single("data/global/ui/panel/minipanel_s.dc6");
+    miniPanelButtons = uiGraphics_.single("data/global/ui/panel/minipanelbtn.dc6");
+    miniPanelToggle = uiGraphics_.single("data/global/ui/panel/menubutton.dc6");
+    if (miniPanel.frames.empty() || miniPanelButtons.frames.size() < 16 || miniPanelToggle.frames.size() < 4)
+        throw std::runtime_error("Original single-player mini panel artwork is missing");
     cursor = unitsGraphics_.single("data/global/ui/cursor/ohand.dc6");
     if (cursor.frames.empty())
         throw std::runtime_error("Original pointer is missing: data/global/ui/cursor/ohand.dc6");

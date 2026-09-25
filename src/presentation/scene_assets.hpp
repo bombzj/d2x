@@ -57,7 +57,8 @@ class SceneAssets {
     std::array<ObjectAnimationRule, 2> townPortalRules;
     std::array<GpuAnimation, 2> cainPortalAnimations;
     std::array<ObjectAnimationRule, 2> cainPortalRules;
-    GpuAnimation fireball, fireburst, teleportOverlay, panel, cursor, inventoryPanel, attributeButtons,
+    GpuAnimation fireball, fireburst, teleportOverlay, panel, miniPanel, miniPanelButtons, miniPanelToggle,
+        cursor, inventoryPanel, attributeButtons,
         attributePoints, weaponTabs, vendorPanel, vendorTabs,
         questBackground, questSockets, questTabs, questClose, questReplay, goldCoin,
         vendorButtons, vendorConfirm, waypointBorder, waypointPanel, waypointTabs, waypointIcons,

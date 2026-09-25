@@ -83,6 +83,28 @@ void SceneView::drawControlPanel() const {
         imageAt(assets_.attributeButtons.frame(0, 0), hudCharacterButton());
     if (player.unspentSkills > 0)
         imageAt(assets_.attributeButtons.frame(0, 0), hudSkillTreeButton());
+    imageAt(assets_.miniPanelToggle.frame(0, view_.miniPanelOpen ? 2 : 0), hudMenuButton());
+    if (view_.miniPanelOpen) {
+        if (const auto *background = assets_.miniPanel.frame(0, 0))
+            imageAt(background, hudMiniPanel(*background));
+        constexpr int frames[] = {0, 2, 4, 8, 10, 12, 14};
+        for (int index = 0; index < 7; ++index)
+            if (const auto *icon = assets_.miniPanelButtons.frame(0, frames[index]))
+                imageAt(icon, hudMiniButton(*icon, index),
+                        index == 4 || index == 6 ? Color{120, 120, 120, 255} : WHITE);
+    }
+}
+std::optional<int> SceneView::miniPanelAt(Vec mouse) const {
+    if (!view_.miniPanelOpen) return std::nullopt;
+    const auto *background = assets_.miniPanel.frame(0, 0);
+    if (!background || !CheckCollisionPointRec(rv(mouse), hudMiniPanel(*background)))
+        return std::nullopt;
+    constexpr int frames[] = {0, 2, 4, 8, 10, 12, 14};
+    for (int index = 0; index < 7; ++index)
+        if (const auto *icon = assets_.miniPanelButtons.frame(0, frames[index]);
+            icon && CheckCollisionPointRec(rv(mouse), hudMiniButton(*icon, index)))
+            return index;
+    return -1;
 }
 bool SceneView::leftSkillAllowed(int skill) const {
     const auto *entry = session_.content().skills.find(skill);
@@ -176,7 +198,13 @@ void SceneView::drawSkillControls(Vec mouse) const {
     if (CheckCollisionPointRec(rv(mouse), hudRunButton()))
         hint = "Walk / Run [SPACE]";
     if (CheckCollisionPointRec(rv(mouse), hudMenuButton()))
-        hint = "Backpack [I]";
+        hint = view_.miniPanelOpen ? "Close mini panel" : "Open mini panel";
+    if (auto button = miniPanelAt(mouse); button && *button >= 0) {
+        constexpr const char *labels[] = {"Character [C]", "Inventory [I]", "Skill Tree [S]",
+                                          "Automap [TAB]", "Message unavailable", "Quest Log [Q]",
+                                          "Game menu unavailable"};
+        hint = labels[*button];
+    }
     if (CheckCollisionPointRec(rv(mouse), hudStamina()))
         hint = "Stamina: " + std::to_string(int(session_.state().player.stamina)) + " / " +
                std::to_string(session_.characterStats().maxStamina);

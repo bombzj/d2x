@@ -32,6 +32,14 @@ inline Rectangle hudSkillTreeButton() {
 inline Rectangle hudMenuButton() {
     return hudRect(393, 39, 16, 32);
 }
+inline Rectangle hudMiniPanel(const Sprite &image) {
+    return hudRect(400 - image.texture.width / 2.f, 49 + image.texture.height,
+                   float(image.texture.width), float(image.texture.height));
+}
+inline Rectangle hudMiniButton(const Sprite &image, int index) {
+    return hudRect(328 + index * (image.texture.width + 1), 52 + image.texture.height,
+                   float(image.texture.width), float(image.texture.height));
+}
 inline Rectangle hudPickerSlot(bool right, int index, int count) {
     constexpr float side = 45;
     constexpr int columns = 6;

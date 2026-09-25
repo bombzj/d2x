@@ -395,10 +395,30 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
         return true;
     }
     if (input.insideViewport && input.leftPressed && !ui.blocksWorld() &&
-        CheckCollisionPointRec(rv(input.mouse), inventoryToggle())) {
+        CheckCollisionPointRec(rv(input.mouse), hudMenuButton())) {
         inventoryClick_ = true;
-        toggleInventory();
+        ui.miniPanelOpen = !ui.miniPanelOpen;
         return true;
+    }
+    if (ui.miniPanelOpen && !ui.blocksWorld() && input.insideViewport) {
+        if (auto button = view_.miniPanelAt(input.mouse)) {
+            if (input.leftPressed) {
+                inventoryClick_ = true;
+                if (*button == 4 || *button == 6) {
+                    view_.notice("This panel action is not available yet.", true);
+                    return true;
+                }
+                FrameInput action;
+                action.focused = true;
+                if (*button == 0) action.character = true;
+                if (*button == 1) action.inventory = true;
+                if (*button == 2) action.skillTree = true;
+                if (*button == 3) action.automap = true;
+                if (*button == 5) action.quests = true;
+                return handle(action, elapsed);
+            }
+            return true;
+        }
     }
     if (input.collision)
         ui.debug = !ui.debug;
