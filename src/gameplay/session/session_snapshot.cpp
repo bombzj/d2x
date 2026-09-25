@@ -1,6 +1,7 @@
 #include "gameplay/session/session.hpp"
 #include "content/equipment_modifiers.hpp"
 #include "content/npc_dialogue.hpp"
+#include "gameplay/monsters/fallen_shaman_ai.hpp"
 #include <algorithm>
 #include <cmath>
 #include <set>
@@ -134,12 +135,16 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
         require(object && home && !object->npcPath.empty() && seenNpcs.insert(motion.id).second,
                 "NPC motion identity");
         position(motion.position, home->map.grid, true);
+        require((motion.position - object->npcHome).length() <= 8.f &&
+                    motion.route.size() <= 12, "NPC home range");
         scalar(motion.look.x, -1, 1);
         scalar(motion.look.y, -1, 1);
         scalar(motion.wait, 0, 10);
         require(motion.target >= -1 && motion.target < int(object->npcPath.size()),
                 "NPC path target");
         route(motion.route, home->map.grid);
+        for (auto point : motion.route)
+            require((point - object->npcHome).length() <= 8.f, "NPC route range");
     }
     const auto &grid = regions_[current].map.grid;
     const auto &portal = s.world.portal;
@@ -407,8 +412,7 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
             }
             scalar(enemy.hp, 0, enemy.maxHp);
             if (enemy.resurrected) {
-                require((enemy.kind == MonsterKind::Fallen ||
-                         enemy.kind == MonsterKind::FallenShaman) &&
+                require(enemy.kind == MonsterKind::Fallen &&
                             !monsterImplementation(enemy.identity.monster).substitute &&
                             (enemy.identity.rank == MonsterRank::Normal ||
                              enemy.identity.rank == MonsterRank::Minion) &&
@@ -426,6 +430,19 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
             scalar(enemy.attackImpact, -1, 40);
             scalar(enemy.skill2Remaining, 0, 40);
             scalar(enemy.skill2Duration, 0, 40);
+            scalar(enemy.resurrectionRemaining, 0, 40);
+            scalar(enemy.resurrectionDuration, 0, 40);
+            require(enemy.resurrectionRemaining <= enemy.resurrectionDuration &&
+                        (enemy.resurrectionRemaining > 0 || enemy.resurrectionDuration == 0),
+                    "monster resurrection phase");
+            if (enemy.resurrectionRemaining > 0) {
+                const auto duration = simulation_.monsterResurrectionDuration_
+                    ? simulation_.monsterResurrectionDuration_(enemy) : std::nullopt;
+                require(duration && std::abs(enemy.resurrectionDuration - *duration) < .001f &&
+                            enemy.kind == MonsterKind::Fallen && enemy.resurrected &&
+                            enemy.hp > 0 && enemy.attack == 0,
+                        "original Fallen resurrection duration");
+            }
             require(enemy.skill2Remaining <= enemy.skill2Duration &&
                         (enemy.skill2Remaining > 0 || enemy.skill2Duration == 0),
                     "monster S2 phase");
@@ -629,12 +646,10 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
                         "unexpected resurrection target");
                 const auto corpse = std::find_if(area.enemies.begin(), area.enemies.end(),
                     [&](const Enemy &other) { return other.id == enemy.aiCorpse; });
-                require(corpse != area.enemies.end() &&
-                            (corpse->kind == MonsterKind::Fallen ||
-                             corpse->kind == MonsterKind::FallenShaman) &&
-                            !monsterImplementation(corpse->identity.monster).substitute &&
-                            (corpse->identity.rank == MonsterRank::Normal ||
-                             corpse->identity.rank == MonsterRank::Minion),
+                const auto skill = simulation_.monsterResurrection_
+                    ? simulation_.monsterResurrection_(enemy) : std::nullopt;
+                require(corpse != area.enemies.end() && skill &&
+                            fallenShamanResurrectionTarget(enemy, *corpse, *skill),
                         "resurrection corpse identity");
             }
             if (ai && ai->kind == MonsterAiKind::CorruptRogue)
@@ -679,7 +694,7 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
                             !enemy.aiPursuing && !enemy.aiEscaping && !enemy.aiCommanded,
                         "wraith AI state");
             if (ai && ai->kind == MonsterAiKind::QuillRat)
-                require(enemy.aiWait == 0 && !enemy.aiPursuing && !enemy.aiCommanded &&
+                require(enemy.aiWait <= 15.f / 25.f && !enemy.aiPursuing && !enemy.aiCommanded &&
                             (!enemy.aiEscaping || (enemy.hp > 0 && enemy.attack == 0 &&
                                                    !enemy.route.empty())) &&
                             (!enemy.aiRetaliate || enemy.hp > 0),

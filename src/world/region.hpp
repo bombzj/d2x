@@ -43,6 +43,7 @@ struct WorldObject {
     std::string npcClass;
     std::vector<NpcPathNode> npcPath;
     std::deque<Vec> npcRoute;
+    Vec npcHome;
     Vec npcLook;
     float npcVelocity = 0, npcWait = 0;
     int npcTarget = -1;

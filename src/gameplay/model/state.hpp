@@ -75,6 +75,7 @@ struct Enemy {
     float attackDuration = 0, attackImpact = -1;
     int attackMode = 1;
     float skill2Remaining = 0, skill2Duration = 0;
+    float resurrectionRemaining = 0, resurrectionDuration = 0;
     float stun = 0, deathAge = 0, hitFlash = 0, rethink = 0;
     float aiWait = 0;
     bool aiPursuing = false;

@@ -74,7 +74,7 @@ struct MonsterSpell {
     int minimumDamage = 0, maximumDamage = 0;
 };
 struct MonsterResurrection {
-    std::string sourceSkill, mode;
+    std::string sourceSkill, mode, minion;
 };
 struct MonsterNest {
     std::string sourceSkill, mode, child, sequence;

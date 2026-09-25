@@ -224,6 +224,13 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
         const auto *motion = monsterContent_.motion(enemy.kind, "s2");
         return motion ? std::optional<float>(motion->duration) : std::nullopt;
     };
+    simulation_.monsterResurrectionDuration_ = [this](const Enemy &enemy)
+        -> std::optional<float> {
+        if (enemy.kind != MonsterKind::Fallen ||
+            monsterImplementation(enemy.identity.monster).substitute) return std::nullopt;
+        const auto *motion = monsterContent_.motion(enemy.kind, "s1");
+        return motion ? std::optional<float>(motion->duration) : std::nullopt;
+    };
     simulation_.monsterAttackTiming_ = [this](const Enemy &enemy, int mode)
         -> std::optional<MonsterAttackTiming> {
         const auto *timing = monsterContent_.attackTiming(enemy.kind, mode);
@@ -347,7 +354,7 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
     Fingerprint fingerprint;
     fingerprint.add(content_.profile);
     // Bump this rules revision when state interpretation or compiled rules change.
-    fingerprint.add("d2x-session-rules-v124-player-movement-light");
+    fingerprint.add("d2x-session-rules-v125-npc-monster-cadence");
     auto members = archives.used;
     for (const auto &member : members) {
         fingerprint.add(member);

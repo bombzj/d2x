@@ -44,7 +44,8 @@ void SceneAssets::loadMonsterAnimations(Archives &archives, const GameSession &s
             if (std::string_view(mode) == "gh" && !actor.getHitMode) continue;
             if (std::string_view(mode) == "dd" && !actor.deadMode) continue;
             if (std::string_view(mode) == "s2" && (kind != MonsterKind::Fallen || !actor.skill2Mode)) continue;
-            if (std::string_view(mode) == "s1" && kind != MonsterKind::FoulCrowNest) continue;
+            if (std::string_view(mode) == "s1" && kind != MonsterKind::FoulCrowNest &&
+                kind != MonsterKind::Fallen) continue;
             const auto weapon = content.modeWeapon(kind, mode);
             if (weapon.empty())
                 throw std::runtime_error("Monster mode COF missing: " + actor.id + "/" + mode);
@@ -98,6 +99,12 @@ void SceneAssets::loadMonsterAnimations(Archives &archives, const GameSession &s
             const auto *timing = content.motion(kind, "s2");
             if (!timing || animations.at("s2").count != timing->frames)
                 throw std::runtime_error("Monster S2 AnimData/COF frame mismatch: " + actor.id);
+        }
+        if (kind == MonsterKind::Fallen) {
+            const auto *timing = content.motion(kind, "s1");
+            if (!timing || !animations.contains("s1") ||
+                animations.at("s1").count != timing->frames)
+                throw std::runtime_error("Original Fallen resurrection animation missing: " + actor.id);
         }
         for (auto mode : {"nu", "wl", "rn", "gh", "dt", "dd"})
             if (auto animation = animations.find(mode); animation != animations.end()) {

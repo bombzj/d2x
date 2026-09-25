@@ -270,6 +270,7 @@ void SceneView::drawActors() const {
             const auto *deathTiming = session_.monsterContent().motion(e.kind, "dt");
             std::string mode = e.hp <= 0 ? (animations.contains("dd") && deathTiming &&
                                                e.deathAge >= deathTiming->duration ? "dd" : "dt")
+                              : e.resurrectionRemaining > 0 && animations.contains("s1") ? "s1"
                               : (e.stun > 0 || e.hitFlash > 0) && animations.contains("gh") ? "gh"
                               : e.skill2Remaining > 0 && animations.contains("s2") ? "s2"
                               : e.attack > 0 ? (e.attackMode >= 3 ?
@@ -297,6 +298,9 @@ void SceneView::drawActors() const {
                 if (mode == "s2" && e.skill2Duration > 0)
                     frame = std::clamp(int((e.skill2Duration - e.skill2Remaining) /
                                            e.skill2Duration * anim->count), 0, anim->count - 1);
+                if (mode == "s1" && e.resurrectionDuration > 0)
+                    frame = std::clamp(int((e.resurrectionDuration - e.resurrectionRemaining) /
+                                           e.resurrectionDuration * anim->count), 0, anim->count - 1);
                 if (mode == "gh" && e.hitFlash > 0 && motion)
                     frame = std::clamp(int((motion->duration - e.hitFlash) / motion->duration * anim->count),
                                        0, anim->count - 1);

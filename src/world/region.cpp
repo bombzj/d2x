@@ -196,6 +196,7 @@ std::vector<Region> loadRegions(Archives &archives, EntityIds &ids, const std::v
                     object.npcClass = monster->id;
                     if (monster->npc && monster->ai == "Npc" && monster->walkVelocity &&
                         *monster->walkVelocity > 0 && region.map.grid.walkable(object.pos)) {
+                        object.npcHome = object.pos;
                         // Original path stores MonStats.Velocity << 8 in a 16.16
                         // position. Unit direction length is 4096, so one
                         // 25 Hz tick advances Velocity / 16 subtiles.
@@ -203,8 +204,9 @@ std::vector<Region> loadRegions(Archives &archives, EntityIds &ids, const std::v
                         for (const auto &node : source.path)
                             if ((node.action == 1 || node.action == 3) && node.x > 0 && node.y > 0) {
                                 Vec position{node.x + .5f, node.y + .5f};
-                                if (region.map.grid.walkable(position) &&
-                                    !region.map.grid.path(region.map.spawn, position).empty())
+                                if ((position - object.npcHome).length() <= 8.f &&
+                                    region.map.grid.walkable(position) &&
+                                    !region.map.grid.path(object.pos, position).empty())
                                     object.npcPath.push_back({position, node.action});
                             }
                         object.npcWait = 20.f / 25.f;

@@ -7,6 +7,8 @@ struct FallenShamanDecision {
     FallenShamanAction action;
     bool commandMinions = false;
 };
+bool fallenShamanResurrectionTarget(const Enemy &shaman, const Enemy &corpse,
+                                   const MonsterResurrection &skill);
 FallenShamanDecision fallenShamanThink(Enemy &enemy, const MonsterAiProfile &rules,
                                       float distance, bool inCombat, bool hasCorpse);
 } // namespace d2x

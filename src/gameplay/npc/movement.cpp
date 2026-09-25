@@ -36,6 +36,13 @@ void GameSession::advanceNpcPaths(float dt) {
                 continue;
             }
             npc.npcRoute = grid.path(npc.pos, target);
+            // A map AI action lasts at most 12 thoughts in the original NPC AI.
+            // Keep the route inside that budget instead of crossing the whole map.
+            if (npc.npcRoute.size() > 12)
+                npc.npcRoute.resize(12);
+            npc.npcRoute.erase(std::find_if(npc.npcRoute.begin(), npc.npcRoute.end(),
+                [&](Vec point) { return (point - npc.npcHome).length() > 8.f; }),
+                npc.npcRoute.end());
             if (npc.npcRoute.empty()) {
                 npc.npcWait = 8.f / 25.f;
                 continue;
@@ -44,16 +51,17 @@ void GameSession::advanceNpcPaths(float dt) {
         while (!npc.npcRoute.empty() && (npc.npcRoute.front() - npc.pos).length() < .01f)
             npc.npcRoute.pop_front();
         if (npc.npcRoute.empty()) {
-            npc.npcWait = 10.f / 25.f;
+            npc.npcWait = 120.f / 25.f;
             continue;
         }
         Vec delta = npc.npcRoute.front() - npc.pos;
         float distance = delta.length();
         npc.npcLook = delta.unit();
         Vec next = npc.pos + npc.npcLook * std::min(distance, npc.npcVelocity * dt);
-        if (!grid.walkable(next) || !grid.segment(npc.pos, next)) {
+        if ((next - npc.npcHome).length() > 8.f || !grid.walkable(next) ||
+            !grid.segment(npc.pos, next)) {
             npc.npcRoute.clear();
-            npc.npcWait = 8.f / 25.f;
+            npc.npcWait = 120.f / 25.f;
             continue;
         }
         npc.pos = next;
@@ -61,7 +69,7 @@ void GameSession::advanceNpcPaths(float dt) {
         if ((npc.npcRoute.front() - npc.pos).length() < .01f) {
             npc.npcRoute.pop_front();
             if (npc.npcRoute.empty())
-                npc.npcWait = 10.f / 25.f;
+                npc.npcWait = 120.f / 25.f;
         }
     }
 }

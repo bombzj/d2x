@@ -28,6 +28,7 @@ void Simulation::damageEnemy(Enemy &enemy, float amount, EntityId source, float 
     enemy.chill = std::max(enemy.chill, chill);
     if (enemy.hp > 0) emit(EnemyHit{enemy.id, enemy.kind});
     if (enemy.hp == 0) {
+        enemy.resurrectionRemaining = enemy.resurrectionDuration = 0;
         if (playerKillEffects && source == state_.player.id && !state_.player.dead) {
             auto &player = state_.player;
             player.hp = std::min(float(characterStats_.maxLife), player.hp + characterStats_.combat.lifeOnKill);

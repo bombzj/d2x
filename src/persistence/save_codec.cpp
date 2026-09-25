@@ -219,7 +219,7 @@ Bytes encodeSave(SessionSnapshot snapshot) {
     Codec body;
     body(snapshot);
     auto bytes = body.take();
-    uint32_t version = 90, size = uint32_t(bytes.size()), crc = checksum(bytes);
+    uint32_t version = 91, size = uint32_t(bytes.size()), crc = checksum(bytes);
     Codec header;
     header(version, size, crc);
     auto headerBytes = header.take();
@@ -238,8 +238,8 @@ SessionSnapshot decodeSave(std::span<const uint8_t> bytes) {
     Codec header(bytes.subspan(sizeof(magic), 12));
     uint32_t version = 0, size = 0, crc = 0;
     header(version, size, crc);
-    if (version != 90)
-        throw std::runtime_error("Unsupported D2X save version; character saves require version 90");
+    if (version != 91)
+        throw std::runtime_error("Unsupported D2X save version; character saves require version 91");
     auto payload = bytes.subspan(headerSize);
     if (size != payload.size() || crc != checksum(payload))
         throw std::runtime_error("Save checksum or length mismatch");

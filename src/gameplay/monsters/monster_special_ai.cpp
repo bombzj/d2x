@@ -67,15 +67,11 @@ bool Simulation::handleMonsterSpecialAi(Enemy &enemy, const MonsterAiProfile &ai
         return false;
     }
     if (ai.kind == MonsterAiKind::FallenShaman) {
+        const auto skill = monsterResurrection_ ? monsterResurrection_(enemy) : std::nullopt;
         Enemy *corpse = nullptr;
         float closest = float(ai.params[3]);
         for (auto &candidate : state_.area.enemies) {
-            if (candidate.hp > 0 || candidate.id == enemy.id ||
-                (candidate.kind != MonsterKind::Fallen &&
-                 candidate.kind != MonsterKind::FallenShaman) ||
-                monsterImplementation(candidate.identity.monster).substitute ||
-                (candidate.identity.rank != MonsterRank::Normal &&
-                 candidate.identity.rank != MonsterRank::Minion)) continue;
+            if (!skill || !fallenShamanResurrectionTarget(enemy, candidate, *skill)) continue;
             const float separation = (candidate.pos - enemy.pos).length();
             if (separation > closest) continue;
             const auto duration = monsterDeathDuration_

@@ -64,7 +64,8 @@ std::optional<MonsterResurrection> loadMonsterResurrection(
     for (size_t row = 0; row < skills.rows().size(); ++row)
         if (skills.value(row, "skill") == sourceSkill &&
             skills.number(row, "srvdofunc") == 97)
-            return MonsterResurrection{std::string(sourceSkill), mode};
+            return MonsterResurrection{std::string(sourceSkill), mode,
+                                       std::string(monsters.value(monsterRow, "minion1"))};
     return std::nullopt;
 }
 std::optional<MonsterNest> loadMonsterNest(

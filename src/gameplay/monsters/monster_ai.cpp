@@ -73,6 +73,11 @@ void Simulation::updateMonsters(float dt) {
             if (enemy.skill2Remaining == 0) enemy.skill2Duration = 0;
             continue;
         }
+        if (enemy.resurrectionRemaining > 0) {
+            enemy.resurrectionRemaining = std::max(0.f, enemy.resurrectionRemaining - dt);
+            if (enemy.resurrectionRemaining == 0) enemy.resurrectionDuration = 0;
+            continue;
+        }
         if (enemy.attack > 0) {
             enemy.attack = std::max(0.f, enemy.attack - dt);
             if (enemy.attackImpact >= 0) {
@@ -99,6 +104,8 @@ void Simulation::updateMonsters(float dt) {
                 }
             }
             if (enemy.attack == 0) {
+                if (enemy.kind == MonsterKind::QuillRat)
+                    enemy.aiWait = std::max(enemy.aiWait, 15.f / 25.f);
                 enemy.attackDuration = 0;
                 enemy.attackImpact = -1;
                 enemy.attackMode = 1;
@@ -109,7 +116,7 @@ void Simulation::updateMonsters(float dt) {
         if (enemy.aiRetaliate && enemy.hitFlash <= 0) {
             enemy.aiRetaliate = false;
             const auto ai = monsterAi_ ? monsterAi_(enemy) : std::nullopt;
-            if (ai && ai->kind == MonsterAiKind::QuillRat &&
+            if (ai && ai->kind == MonsterAiKind::QuillRat && enemy.aiWait == 0 &&
                 (player.pos - enemy.pos).length() < monsterDefinition(enemy.kind).sightRange &&
                 grid_->segment(enemy.pos, player.pos)) {
                 enemy.route.clear();
@@ -194,6 +201,10 @@ void Simulation::updateMonsters(float dt) {
         const bool zombieAi = ai && ai->kind == MonsterAiKind::Zombie;
         const bool goatmanAi = ai && ai->kind == MonsterAiKind::Goatman;
         const bool quillRatAi = ai && ai->kind == MonsterAiKind::QuillRat;
+        if (quillRatAi && enemy.aiWait > 0) {
+            enemy.route.clear();
+            continue;
+        }
         const bool wraithAi = ai && ai->kind == MonsterAiKind::Wraith;
         const bool skeletonBowAi = ai && ai->kind == MonsterAiKind::SkeletonBow;
         const bool bigheadAi = ai && ai->kind == MonsterAiKind::Bighead;
