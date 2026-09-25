@@ -2,7 +2,7 @@
 
 更新：2026-09-25。供维护者和协作 agent 从当前代码继续工作。
 
-当前源码为存档 v91／规则 v125-npc-monster-cadence：从当前 MPQ 读取职业走跑速度与跑步消耗，有效装备的快速移动词缀和护甲惩罚进入最终速度；R 切换走跑。玩家光照以 13 为基准，装备 `item_lightradius` 叠加至 1–18，不再把基础物品 `lightradius` 误作玩家加值。NPC Trade 现可按 MPQ 收购价出售背包与装备，Talk 恢复有原文的 Introduction 重播；NPC 行走限制在出生点附近，刺猬攻击结束后增加恢复间隔，沉沦魔巫师仅复活同组且 MPQ 指定的沉沦魔随从并播放目标 S1 动作；资料片仍是唯一运行目标；Kashya Hire、O 属性面板和物品服务范围见 [佣兵](docs/HIRELINGS.md) 与 [物品完成度](docs/ITEM_COMPLETION.md)。本批源码未构建或运行验收；此前 v89 Windows Release 构建通过，五个原始 MPQ 的修正分发目录按用户要求尚未启动验证。
+当前源码为存档 v91／规则 v125-npc-monster-cadence：从当前 MPQ 读取职业走跑速度与跑步消耗，有效装备的快速移动词缀和护甲惩罚进入最终速度；R 切换走跑。玩家光照以 13 为基准，装备 `item_lightradius` 叠加至 1–18，不再把基础物品 `lightradius` 误作玩家加值。NPC Trade 现可按 MPQ 收购价出售背包与装备，Talk 恢复有原文的 Introduction 重播；NPC 行走限制在出生点附近，刺猬攻击结束后增加恢复间隔，沉沦魔巫师仅复活同组且 MPQ 指定的沉沦魔随从并播放目标 S1 动作；资料片仍是唯一运行目标；Kashya Hire、O 属性面板和物品服务范围见 [佣兵](docs/HIRELINGS.md) 与 [物品完成度](docs/ITEM_COMPLETION.md)。v91 Windows Release 已构建，并以五个原始 MPQ 打成独立运行目录；营地主画面、背包、属性、任务、技能树、瓦瑞夫对白／菜单及恰西商店已做轻量 UI 冒烟。走跑、NPC 路线、怪物攻击／复活、装备出售与存档仍未做定向交互验收。
 
 资源与规则数据以运行时挂载的原 MPQ 为准；`resources` 解码、`content` 类型化适配，玩法只接收只读定义。不要把抽取后的表当作另一个需维护的数据源，也不要在玩法或界面写死物品名、数值、概率与资源路径。原 MPQ 未记载的引擎规则单独实现并注明来源；未核实的规则暂缓。既有模块仍有历史硬编码，按 [实施清单](docs/ITEM_COMPLETION.md) 逐项清理。
 

@@ -49,8 +49,13 @@ void SceneAssets::loadMonsterAnimations(Archives &archives, const GameSession &s
             const auto weapon = content.modeWeapon(kind, mode);
             if (weapon.empty())
                 throw std::runtime_error("Monster mode COF missing: " + actor.id + "/" + mode);
+            auto modeEquipment = equipment;
+            if (kind == MonsterKind::Fallen && std::string_view(mode) == "s1")
+                for (size_t index = 2; index < actor.specialVariants.size(); ++index)
+                    if (actor.specialVariants[index].empty())
+                        modeEquipment[index + 8] = "nil";
             auto animation = graphics_.composite("monsters", definition.token, mode,
-                                                 std::string(weapon), &equipment,
+                                                 std::string(weapon), &modeEquipment,
                                                  colors ? &*colors : nullptr);
             if (animation.frames.empty() || !animation.completeComposite)
                 throw std::runtime_error("Monster animation incomplete: " + actor.id + "/" + mode);
