@@ -15,6 +15,7 @@ void Simulation::clearActions() {
     p.castTime = p.spinTime = p.leapTime = p.meleeTime = p.hitTime = 0;
     p.lastMeleeDuration = 0;
     p.moving = false;
+    p.runningNow = false;
     state_.message.clear();
 }
 AreaState Simulation::leaveArea() {
@@ -114,10 +115,11 @@ void Simulation::execute(const GameCommand &command) {
         },
         command);
 }
-void Simulation::tick(float dt, Vec keyboard) {
+void Simulation::tick(float dt, Vec keyboard, bool forceRun) {
     if (!grid_ || dt <= 0)
         return;
     auto &p = state_.player;
+    forceRun_ = forceRun;
     p.previous = p.pos;
     state_.time += dt;
     for (auto &cooldown : p.cooldown)
@@ -178,14 +180,14 @@ void Simulation::tick(float dt, Vec keyboard) {
             p.attackTarget = {};
             p.throwAttack = false;
             p.leftHandAttack = false;
-            state_.message = "You have died. Press R to return.";
+            state_.message = "You have died. Press Ctrl+R to return.";
             emit(PlayerDied{p.id});
         }
     }
     updateMissiles(dt);
     if (!p.dead && state_.area.pendingSpawns.empty() && !state_.area.enemies.empty() &&
         state_.area.kills == int(state_.area.enemies.size()))
-        state_.message = "Area cleared. F2: travel onward. R: repopulate the area.";
+        state_.message = "Area cleared. Ctrl+F2: travel onward. Ctrl+R: repopulate the area.";
     for (auto &e : state_.area.effects)
         e.age += dt;
     std::erase_if(state_.area.effects, [](const Effect &e) { return e.age >= e.duration; });

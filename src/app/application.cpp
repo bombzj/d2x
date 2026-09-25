@@ -183,7 +183,7 @@ int runGame(int argc, char **argv) {
         else
             accumulator += dt;
         while (accumulator >= GameSession::fixedStep && !view.ui().blocksWorld()) {
-            session.tick(GameSession::fixedStep, controller.movement());
+            session.tick(GameSession::fixedStep, controller.movement(), controller.temporaryRun());
             view.advance(GameSession::fixedStep);
             accumulator -= GameSession::fixedStep;
         }

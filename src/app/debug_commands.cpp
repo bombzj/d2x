@@ -60,6 +60,8 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
             else if (key == "hireling" || key == "o") frame.hireling = true;
             else if (key == "weapon-swap") frame.weaponSwap = true;
             else if (key == "automap") frame.automap = true;
+            else if (key == "run" || key == "r") frame.run = true;
+            else if (key == "restart") frame.restart = true;
             else if (!key.empty()) throw std::runtime_error("Unsupported UI key");
             input(std::move(frame));
             result["queued"] = true;

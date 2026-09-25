@@ -58,6 +58,7 @@ void SceneController::click(Vec mouse) {
 }
 bool SceneController::handle(const FrameInput &input, float elapsed) {
     auto &ui = view_.ui();
+    temporaryRun_ = input.focused && input.control && !input.showLoot;
     ui.showLoot = input.showLoot;
     if (releaseAfterLoad_) {
         movement_ = {};
@@ -78,6 +79,8 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
         return true;
     }
     repeatClick_ -= elapsed;
+    if (input.run)
+        session_.submit(ToggleRun{});
     if (input.weaponSwap && session_.content().stashLayout.expansion &&
         !ui.npcMenu && ui.dialogue.empty() && !ui.pause && !ui.travelMenu &&
         !ui.inventory.drag && !ui.inventory.split && !ui.inventory.goldDialog &&
@@ -376,8 +379,6 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
         ui.pause = !ui.pause;
     if (input.mute)
         view_.toggleMute();
-    if (input.run)
-        session_.submit(ToggleRun{});
     if (input.restart) {
         ui.skillPicker.reset();
         ui.inventory.storage = {};

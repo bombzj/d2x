@@ -66,7 +66,7 @@ void SceneView::drawHelp() const {
                            "1 through 4 / B            Drink belt potion / Expand belt",
                            "Hover skill, F1-F8         Bind selected mouse skill",
                            "F1 through F8              Select bound mouse skill",
-                           "Space                      Toggle walk / run",
+                           "R                          Toggle walk / run",
                            "Tab / V                    Automap / Switch map side",
                            "Ctrl+F3 / Ctrl+F4          Collision / Walk to stash",
                            "P / M                      Pause / Mute",
@@ -138,7 +138,7 @@ void SceneView::draw(Vec mouse) const {
     if (sim.player.dead) {
         DrawRectangle(0, 100, W, 320, {0, 0, 0, 130});
         painter_.centered("YOU HAVE DIED", 250, 32, {187, 46, 30, 255});
-        painter_.centered("Press R to restart this area", 300, 16);
+        painter_.centered("Press Ctrl+R to restart this area", 300, 16);
     }
     if (view_.help)
         drawHelp();

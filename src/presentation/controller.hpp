@@ -13,6 +13,7 @@ class SceneController {
     bool releaseAfterLoad_ = false;
     bool skillGesture_ = false;
     Vec movement_;
+    bool temporaryRun_ = false;
     void click(Vec mouse);
     bool handleInventory(const FrameInput &input);
     bool handleSkills(const FrameInput &input);
@@ -26,9 +27,11 @@ class SceneController {
         repeatClick_ = 0;
         pickupClick_ = inventoryClick_ = inventoryRight_ = false;
         movement_ = {};
+        temporaryRun_ = false;
         skillGesture_ = false;
         releaseAfterLoad_ = true;
     }
     Vec movement() const { return movement_; }
+    bool temporaryRun() const { return temporaryRun_; }
 };
 } // namespace d2x

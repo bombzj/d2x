@@ -45,7 +45,11 @@ std::vector<CharacterDefinition> loadCharacterDefinitions(const DataTable &chara
         result.manaRegen = required("ManaRegen");
         result.toHitFactor = signedField("ToHitFactor");
         result.blockFactor = required("BlockFactor");
-        if (!result.statPerLevel || !result.manaRegen)
+        result.walkVelocity = required("WalkVelocity");
+        result.runVelocity = required("RunVelocity");
+        result.runDrain = required("RunDrain");
+        if (!result.statPerLevel || !result.manaRegen || !result.walkVelocity ||
+            !result.runVelocity || !result.runDrain)
             throw std::runtime_error("MPQ character progression data is incomplete: " + result.name);
         if (std::any_of(definitions.begin(), definitions.end(),
                         [&](const auto &entry) { return entry.name == result.name; }))

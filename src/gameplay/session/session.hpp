@@ -243,6 +243,6 @@ class GameSession {
     std::span<const GameEvent> events() const { return simulation_.events(); }
     void submit(GameCommand command) { pending_.push_back(std::move(command)); }
     bool hasPendingCommands() const { return !pending_.empty(); }
-    void tick(float dt, Vec keyboard = {});
+    void tick(float dt, Vec keyboard = {}, bool forceRun = false);
 };
 } // namespace d2x

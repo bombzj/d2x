@@ -139,7 +139,7 @@ $offers = (.\scripts\Send-D2XCommand.ps1 -Command shop -Arguments @{ id = $vendo
 
 `grant_hireling` 也可使用。授予不需要任务、金币或 NPC 距离，按当前难度、角色等级及资料片 MPQ 生成一名罗格，默认打开属性面板；`open=$false` 可只领取。重复执行不替换已有佣兵或装备，`created` 表示本次是否新建；死亡角色拒绝领取。响应的 `hireling` 包含名字、等级、生命、经验、伤害、四抗和装备实例，未雇佣时查询为 `null`。`hireling-equip -Arguments @{id=物品ID;slot='rarm'}` 从背包装备；原部位代码可为 `head`、`tors`、`rarm`，省略 `slot` 卸下入背包，均复用正式装备限制。`ui-input` 的 `key='o'`／`'hireling'` 模拟 O 键。
 
-接口源码随 v89 加入，目前未构建或运行验收；现有旧 EXE 不含这些命令。完整边界见 [资料片佣兵](HIRELINGS.md)。
+接口源码随 v89 加入；该版本曾完成构建，但这些命令尚未单独运行验收。更早的 EXE 不含这些命令。完整边界见 [资料片佣兵](HIRELINGS.md)。
 
 ### 命令表
 
@@ -198,7 +198,7 @@ $offers = (.\scripts\Send-D2XCommand.ps1 -Command shop -Arguments @{ id = $vendo
 | step | `ticks`，默认 1，范围 1–250 | 同步推进固定步，每步 1/25 秒，包含 AI、伤害、死亡及拾取；不会暂停怪物单独移动玩家 |
 | pause / resume | 无 | 暂停／恢复实时模拟；调试暂停独立于游戏菜单暂停 |
 | save / load | 无 | 使用启动时 `--save`、否则 `--load`、否则 `saves/quick.d2xsave`；保存角色，载入后在城镇开启新的一局；不能通过请求任意指定路径 |
-| ui-input | 可选 `x`、`y`、`button`（left／right）、`key`（escape／enter／inventory／character／quests／weapon-swap／automap） | 排入下一帧的正常 SceneController 输入，坐标基于 1066×680；不直接调用购买或加点事务，适合核对实际界面路径；返回 queued 后在后续请求查看状态 |
+| ui-input | 可选 `x`、`y`、`button`（left／right）、`key`（escape／enter／inventory／character／quests／weapon-swap／automap／r／run／restart） | 排入下一帧的正常 SceneController 输入，坐标基于 1066×680；不直接调用购买或加点事务，适合核对实际界面路径；返回 queued 后在后续请求查看状态 |
 | screenshot | 无 | 保存最近渲染画面到 `artifacts/debug-pipe.png`；命令返回前一已完成帧，立即移动后可在下一请求截取 |
 | quit | 无 | 正常退出；若启动指定 `--save`，退出时仍会保存 |
 

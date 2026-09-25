@@ -347,7 +347,7 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
     Fingerprint fingerprint;
     fingerprint.add(content_.profile);
     // Bump this rules revision when state interpretation or compiled rules change.
-    fingerprint.add("d2x-session-rules-v123-hireling-services");
+    fingerprint.add("d2x-session-rules-v124-player-movement-light");
     auto members = archives.used;
     for (const auto &member : members) {
         fingerprint.add(member);
@@ -461,7 +461,7 @@ void GameSession::publishInventory(InventoryResult result, EntityId requested) {
             simulation_.emit(InventoryApplied{requested, result.item, result.transferred});
     }
 }
-void GameSession::tick(float dt, Vec keyboard) {
+void GameSession::tick(float dt, Vec keyboard, bool forceRun) {
     simulation_.beginTick();
     validateStorage();
     auto commands = std::move(pending_);
@@ -719,7 +719,7 @@ void GameSession::tick(float dt, Vec keyboard) {
         cancelPickup();
         cancelInteraction();
     }
-    simulation_.tick(dt, transitioned ? Vec{} : keyboard);
+    simulation_.tick(dt, transitioned ? Vec{} : keyboard, forceRun);
     auto replenished = inventory_.replenish(dt);
     if (!replenished.changes.empty()) publishInventory(std::move(replenished), {});
     advanceHireling(dt);

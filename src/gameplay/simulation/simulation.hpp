@@ -17,6 +17,7 @@ class Simulation {
     const Grid *grid_ = nullptr; // Borrowed from GameSession's stable region storage.
     const RoomLayout *rooms_ = nullptr;
     bool safeZone_ = false;
+    bool forceRun_ = false;
     WorldState state_;
     EquipmentStats equipmentStats_;
     CharacterAttributes characterStats_;
@@ -94,7 +95,7 @@ class Simulation {
         events_.emplace_back(std::in_place_type<Event>, std::move(event));
     }
     void execute(const GameCommand &command);
-    void tick(float dt, Vec keyboard);
+    void tick(float dt, Vec keyboard, bool forceRun = false);
     AreaState leaveArea();
     void enterArea(const Grid &grid, const RoomLayout &rooms, Vec spawn, bool safeZone, AreaState area,
                    std::span<const MonsterSpawn> monsters);

@@ -75,7 +75,8 @@ void Simulation::resolveMonsterAttack(Enemy &enemy, int modeOverride, bool proje
                          !grid_->segment(enemy.pos, player.pos))))
         return;
     const int mode = modeOverride ? modeOverride : enemy.attackMode;
-    if (!(player.running && player.moving) && monsterAccuracy_)
+    const bool running = player.runningNow && player.moving;
+    if (!running && monsterAccuracy_)
         if (auto accuracy = monsterAccuracy_(enemy, state_.area.region, mode)) {
             const auto chance = physicalHitChance(accuracy->level, accuracy->attackRating,
                                                    equipmentStats_.level, equipmentStats_.defense);
@@ -84,7 +85,7 @@ void Simulation::resolveMonsterAttack(Enemy &enemy, int modeOverride, bool proje
             if (uint32_t(enemy.combatRandom) % 100 >= unsigned(chance)) return;
         }
     int block = equipmentStats_.blockChance;
-    if (player.running && player.moving) block /= 3;
+    if (running) block /= 3;
     if (block > 0) {
         player.combatRandom = uint64_t(uint32_t(player.combatRandom)) * 0x6ac690c5ULL +
                               (player.combatRandom >> 32);

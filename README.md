@@ -25,7 +25,7 @@ Windows 使用 `scripts/build.ps1`，启动示例（默认读取 `assets/mpq2`�
 
 本机可用 `Play.cmd`。EXE 默认直接读取完整 `assets/mpq2`；其他位置可显式传 `--mpq <目录>`。
 
-当前源码为 v89／规则 v123，按 AGENTS.md 未构建、运行检查或打包。此前 Windows Release 和 MPQ 运行结果不能替代本批验收；Linux 尚未实际编译运行。佣兵 Hire／O 窗口和快速授予见 [佣兵](docs/HIRELINGS.md)，其余边界见 [开发基线](docs/baseline/DEVELOPMENT.md)。
+当前源码为存档 v90／规则 v124-player-movement-light；本批移动与光照修正尚未构建或运行验收。此前 Windows Release 和 MPQ 运行结果不能替代本批验收；Linux 尚未实际编译运行。佣兵 Hire／O 窗口和快速授予见 [佣兵](docs/HIRELINGS.md)，其余边界见 [开发基线](docs/baseline/DEVELOPMENT.md)。
 
 ## 操作
 
@@ -37,10 +37,10 @@ Windows 使用 `scripts/build.ps1`，启动示例（默认读取 `assets/mpq2`�
 | 点击左右技能槽 | 展开当前职业已学技能菜单；Shift 左键使用左键技能 |
 | I、A／C、S／T、1–4、B、Ctrl+F4 | 包裹、角色面板、技能树、饮药、展开腰带、走近私人箱 |
 | O | 佣兵属性和装备面板，需已有佣兵 |
-| Alt、Tab、空格 | 物品名称、地图、走跑切换 |
+| Alt、Tab、R、按住 Ctrl | 物品名称、地图、走跑切换、临时跑步 |
 | Ctrl+F2、PgUp／PgDn | 开发地图目录、翻页 |
 | F11、Ctrl+F11 | 保存、读取；默认 `saves/quick.d2xsave` |
-| P、M、R | 暂停、静音、重置当前区 |
+| P、M、Ctrl+R | 暂停、静音、开发用重置当前区 |
 | Ctrl+F1、Ctrl+F3、F12 | 帮助、碰撞网格、截图 |
 | Ctrl+Alt+G／E／A／T／C／W | 调试：加金币／经验、重置属性点、重置技能点、切换职业、激活当前 MPQ 中已构建区域的传送点 |
 | Ctrl+Alt+B | 在脚边掉落一件赫拉迪克方块；已有方块时不会重复生成 |

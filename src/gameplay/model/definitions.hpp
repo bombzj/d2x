@@ -29,8 +29,7 @@ struct MonsterDefinition {
     float maxLife, speed, damage, attackInterval, sightRange, attackRange;
 };
 struct PlayerRules {
-    float walkSpeed = 5, runSpeed = 9, spinSpeed = 8;
-    float staminaDrain = 7, staminaRegen = 14;
+    float spinSpeed = 8;
     float meleeRange = 2, meleeRadius = 1.2f, meleeDuration = .48f;
 };
 struct RegionDefinition {

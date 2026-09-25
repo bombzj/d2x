@@ -61,8 +61,8 @@ FrameInput pollInput(const Viewport &viewport) {
     input.collision = input.control && IsKeyPressed(KEY_F3);
     input.pause = IsKeyPressed(KEY_P);
     input.mute = IsKeyPressed(KEY_M);
-    input.run = IsKeyPressed(KEY_SPACE);
-    input.restart = IsKeyPressed(KEY_R);
+    input.run = !input.control && IsKeyPressed(KEY_R);
+    input.restart = input.control && IsKeyPressed(KEY_R);
     input.escape = IsKeyPressed(KEY_ESCAPE);
     input.screenshot = IsKeyPressed(KEY_F12);
     input.save = IsKeyPressed(KEY_F11) && !input.control;

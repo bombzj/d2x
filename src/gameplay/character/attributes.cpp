@@ -36,7 +36,11 @@ void mergeCharacterModifiers(CharacterModifiers &a, const CharacterModifiers &b)
     add(a.fireResist, b.fireResist); add(a.coldResist, b.coldResist);
     add(a.lightningResist, b.lightningResist); add(a.poisonResist, b.poisonResist);
     add(a.lightRadius, b.lightRadius);
-    a.baseItemLightRadius = std::max(a.baseItemLightRadius, b.baseItemLightRadius);
+    add(a.fasterMoveVelocity, b.fasterMoveVelocity);
+    add(a.velocityPercent, b.velocityPercent);
+    add(a.staminaDrainPercent, b.staminaDrainPercent);
+    add(a.staminaRecoveryBonus, b.staminaRecoveryBonus);
+    a.torsoSpeed = std::max(a.torsoSpeed, b.torsoSpeed);
     mergeCombatModifiers(a.combat, b.combat);
 }
 CharacterAttributes deriveCharacterAttributes(const CharacterDefinition &d, int level,
@@ -83,8 +87,29 @@ CharacterAttributes deriveCharacterAttributes(const CharacterDefinition &d, int 
     result.coldResist = resistance(m.coldResist, m.combat.coldMaxResist);
     result.lightningResist = resistance(m.lightningResist, m.combat.lightningMaxResist);
     result.poisonResist = resistance(m.poisonResist, m.combat.poisonMaxResist);
-    result.lightRadius = int(std::clamp(int64_t(13) + m.baseItemLightRadius + m.lightRadius,
+    result.lightRadius = int(std::clamp(int64_t(13) + m.lightRadius,
                                         int64_t(1), int64_t(18)));
+    // D2Common applies diminishing returns to item FRW, then adds the ordinary
+    // velocity stat (including armor penalties and the run mode bonus).
+    if (m.fasterMoveVelocity < 0)
+        throw std::runtime_error("Negative item faster movement is unsupported");
+    const int64_t fasterMove = m.fasterMoveVelocity
+        ? int64_t(m.fasterMoveVelocity) * 150 / (int64_t(m.fasterMoveVelocity) + 150) : 0;
+    const int64_t movementPercent = 100 + fasterMove + m.velocityPercent;
+    const int64_t walkPercent = std::max<int64_t>(25, movementPercent);
+    const int64_t runBonus = int64_t(100) * d.runVelocity / d.walkVelocity - 100;
+    const int64_t runPercent = std::max<int64_t>(25, movementPercent + runBonus);
+    constexpr float velocityScale = 25.f / 16.f; // 8.8 path velocity, 25 game frames per second.
+    result.walkSpeed = float(d.walkVelocity) * velocityScale * float(walkPercent) / 100.f;
+    result.runSpeed = float(d.walkVelocity) * velocityScale * float(runPercent) / 100.f;
+    result.walkAnimationRate = 25.f * 213.f / 256.f * float(walkPercent) / 100.f;
+    result.runAnimationRate = 25.f * 101.f / 256.f * float(runPercent) / 100.f;
+    const int64_t torsoMultiplier = int64_t(m.torsoSpeed) / 10 + 1;
+    int64_t drain = int64_t(2) * d.runDrain * torsoMultiplier;
+    drain += drain * m.staminaDrainPercent / -100;
+    drain = std::max<int64_t>(1, drain);
+    result.staminaDrain = float(drain) * 25.f / 256.f;
+    result.staminaRecoveryBonus = m.staminaRecoveryBonus;
     result.combat = m.combat;
     result.blockFactor = d.blockFactor;
     // CharStats.ManaRegen is an engine denominator, not mana per second.

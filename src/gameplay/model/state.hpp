@@ -49,7 +49,7 @@ struct PlayerState {
     bool leftHandAttack = false;
     Skill lastSkill = Skill::Fireball;
     float lastCastDuration = .32f;
-    bool running = true, moving = false, dead = false;
+    bool running = false, runningNow = false, moving = false, dead = false;
     uint64_t combatRandom = (uint64_t(666) << 32) | 210;
     unsigned nextWeapon = 0;
     unsigned weaponSet = 0;

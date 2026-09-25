@@ -212,7 +212,9 @@ void SceneView::drawActors() const {
             auto look = sim.player.spinTime > 0
                             ? Vec{std::cos(view_.animationTime * 24), std::sin(view_.animationTime * 24)}
                             : sim.player.look;
-            int frame = int(view_.heroTime * (sim.player.moving ? 20 : 25));
+            const float movementRate = mode == "rn" ? session_.characterStats().runAnimationRate
+                                       : mode == "wl" ? session_.characterStats().walkAnimationRate : 25.f;
+            int frame = int(view_.heroTime * movementRate);
             if (mode == "dt")
                 frame = std::min(anim->count - 1, int(sim.player.deathTime * 20));
             if (mode == "sc")

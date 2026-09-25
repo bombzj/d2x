@@ -45,7 +45,7 @@ std::string playerAnimationMode(const PlayerState &p) {
            : p.castTime > 0                    ? "sc"
            : p.spinTime > 0                 ? "a1"
            : p.meleeTime > 0                ? (p.throwAttack ? "th" : "a1")
-           : p.moving                          ? (p.running && p.stamina > 0 ? "rn" : "wl")
+           : p.moving                          ? (p.runningNow ? "rn" : "wl")
                                                : "nu";
 }
 bool SceneView::visible(const WorldObject &object) const {
@@ -403,10 +403,10 @@ void SceneView::advance(float dt) {
         view_.portalAnimationStarted = view_.animationTime;
     }
     view_.animationTime += dt;
-    view_.heroTime += dt * (player.chill > 0 ? .5f : 1.f);
+    view_.heroTime += dt * (player.chill > 0 ? .5f : 1.f) *
+                      (player.moving && player.webSlowRemaining > 0
+                           ? std::max(0.f, 1.f + player.webSlowPercent / 100.f) : 1.f);
     auto mode = playerAnimationMode(player);
-    if (mode == "wl" && session_.region().definition.safe && player.running)
-        mode = "rn";
     if (mode != view_.heroMode) {
         view_.heroMode = mode;
         view_.heroTime = 0;
@@ -416,8 +416,11 @@ void SceneView::advance(float dt) {
     view_.stepClock -= dt;
     if (player.moving && view_.stepClock <= 0) {
         assets_.audio.play("step");
-        view_.stepClock = player.running && (session_.region().definition.safe || player.stamina > 0)
-                              ? .28f : .42f;
+        float speed = player.runningNow ? session_.characterStats().runSpeed
+                                        : session_.characterStats().walkSpeed;
+        if (player.chill > 0) speed *= .5f;
+        if (player.webSlowRemaining > 0) speed *= std::max(0.f, 1.f + player.webSlowPercent / 100.f);
+        view_.stepClock = 4.f / std::max(.1f, speed);
     }
 }
 std::vector<WorldEntry> SceneView::travelEntries() const {

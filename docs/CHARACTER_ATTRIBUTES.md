@@ -4,6 +4,8 @@
 
 命中率、无装备防御、每级五点及基础法力恢复周期参考 Blizzard 原 [Arreat Summit 角色说明](https://classic.battle.net/diablo2exp/basics/characters.shtml)；本项目仍须以当前挂载 MPQ 的字段值决定职业起点和成长。低法力下的定点恢复舍入及技能／装备修正尚未逐帧核实。
 
+移动属性现从当前 MPQ `CharStats.WalkVelocity`／`RunVelocity`／`RunDrain` 与有效装备的 `item_fastermovevelocity`、防具 `speed`、`item_staminadrainpct` 和 `staminarecoverybonus` 共同派生。快速移动词缀按 D2MOO 的 150 基数递减公式处理，护甲惩罚与跑步加成进入同一最终速度；移动、人物步行动画和脚步节奏读取该结果。角色默认步行，R 切换走跑，按住 Ctrl 临时跑步，Ctrl+R 保留开发用区域重开；默认步行、R 和 Ctrl 控制依据 [Blizzard 操作说明](https://classic.battle.net/diablo2exp/basics/controls.shtml)。未经本轮构建和交互验收；旋风等技能自身的运动规则仍按现有实现。
+
 ## 最终属性边界
 
 - 持久基础状态：角色等级、经验、未分配属性点、四维已分配点、未分配技能点。基础值及每级点数来自 `CharStats`；已分配总点数必须与升级所得相符。重置属性只归还已分配点，不修改等级或经验。

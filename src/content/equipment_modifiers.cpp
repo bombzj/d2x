@@ -26,6 +26,10 @@ void addStats(std::span<const ResolvedItemStat> stats, EntityId item, bool weapo
         else if (stat.effect == "lightresist") target = &mods.lightningResist;
         else if (stat.effect == "poisonresist") target = &mods.poisonResist;
         else if (stat.effect == "item_lightradius") target = &mods.lightRadius;
+        else if (stat.effect == "item_fastermovevelocity") target = &mods.fasterMoveVelocity;
+        else if (stat.effect == "velocitypercent") target = &mods.velocityPercent;
+        else if (stat.effect == "item_staminadrainpct") target = &mods.staminaDrainPercent;
+        else if (stat.effect == "staminarecoverybonus") target = &mods.staminaRecoveryBonus;
         if (target) {
             const int64_t sum = int64_t(*target) + stat.value;
             if (sum < std::numeric_limits<int>::min() || sum > std::numeric_limits<int>::max())
@@ -35,10 +39,8 @@ void addStats(std::span<const ResolvedItemStat> stats, EntityId item, bool weapo
         applyEquipmentStat(stat, item, weapon, mods.combat);
     }
 }
-void addItem(const ClassicData &content, const ItemDefinition &definition,
-             const ItemInstance &item, bool weapon, int level, CharacterModifiers &mods) {
-    mods.baseItemLightRadius = std::max(mods.baseItemLightRadius,
-                                      std::max(0, definition.base.lightRadius.value_or(0)));
+void addItem(const ClassicData &content, const ItemInstance &item, bool weapon,
+             int level, CharacterModifiers &mods) {
     addStats(resolveItemStats(content, item, level), item.id, weapon, mods);
 }
 } // namespace
@@ -55,7 +57,7 @@ CharacterModifiers resolveEquipmentModifiers(const ClassicData &content,
         const auto &definition = *inventory.catalog().find(item.definition);
         if (item.identified && definition.equipment.isType("char") &&
             baseActor.level >= std::max(item.requiredLevel, definition.base.requiredLevel.value_or(0)))
-            addItem(content, definition, item, false, baseActor.level, total);
+            addItem(content, item, false, baseActor.level, total);
     }
     for (int pass = 0; pass < int(EquipmentSlot::Count); ++pass) {
         bool changed = false;
@@ -75,7 +77,17 @@ CharacterModifiers resolveEquipmentModifiers(const ClassicData &content,
             actor.strength = adjusted(actor.strength, total.strength);
             actor.dexterity = adjusted(actor.dexterity, total.dexterity);
             if (inventory.equipmentRequirements(item->handle(), actor) != InventoryError::None) continue;
-            addItem(content, *definition, *item, definition->equipment.isType("weap"), baseActor.level, total);
+            addItem(content, *item, definition->equipment.isType("weap"), baseActor.level, total);
+            if (definition->family == ItemFamily::Armor && definition->base.speed) {
+                const int speed = *definition->base.speed;
+                if (speed < 0) throw std::runtime_error("Invalid original armor speed penalty");
+                const int64_t percent = int64_t(total.velocityPercent) - speed;
+                if (percent < std::numeric_limits<int>::min())
+                    throw std::runtime_error("Equipped velocity penalty exceeds supported range");
+                total.velocityPercent = int(percent);
+                if (EquipmentSlot(slot) == EquipmentSlot::Torso)
+                    total.torsoSpeed = speed;
+            }
             active.insert(item->id);
             changed = true;
         }
