@@ -7,6 +7,7 @@
 #include "gameplay/npc/hireling.hpp"
 #include <deque>
 #include <map>
+#include <set>
 #include <string>
 
 namespace d2x {
@@ -51,7 +52,9 @@ struct PlayerState {
     bool running = true, moving = false, dead = false;
     uint64_t combatRandom = (uint64_t(666) << 32) | 210;
     unsigned nextWeapon = 0;
+    unsigned weaponSet = 0;
     unsigned gold = 0, bankGold = 0;
+    std::array<std::set<std::string>, 3> npcIntroductions;
     uint64_t experience = 0;
     int level = 1;
     AttributeAllocation allocated;
@@ -90,6 +93,8 @@ struct Enemy {
     uint64_t combatRandom = (uint64_t(666) << 32) | 210;
     float poisonRemaining = 0, poisonPerSecond = 0;
     EntityId poisonSource;
+    float openWoundsRemaining = 0, openWoundsPerSecond = 0;
+    EntityId openWoundsSource;
 };
 struct Missile {
     EntityId id, owner;

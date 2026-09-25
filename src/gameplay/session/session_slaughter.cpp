@@ -9,6 +9,8 @@ void GameSession::updateSlaughterQuest(const EnemyDied &death) {
     auto &record = simulation_.state_.player.actOneQuests
         .at(size_t(state().population.difficulty)).at(questIndex(ActOneQuest::SistersToTheSlaughter));
     if (!slaughterAdvance(record, SlaughterStage::AndarielSlain)) return;
+    for (const auto *npc : {"Deckard Cain", "Akara", "Kashya"})
+        pendingNpcQuestMessages_.insert(std::string("A1Q6/Successful/") + npc);
     simulation_.emit(QuestAdvanced{ActOneQuest::SistersToTheSlaughter, record.stage});
     auto &cain = simulation_.state_.player.actOneQuests
         .at(size_t(state().population.difficulty)).at(questIndex(ActOneQuest::SearchForCain));

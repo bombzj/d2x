@@ -88,6 +88,7 @@ void GameSession::advanceHireling(float dt) {
                     hireling.pos, hireling.look * projectile.velocity,
                     projectile.lifetime, Skill::Fireball, true, projectile.id, damage});
                 auto &missile = simulation_.state_.area.missiles.back();
+                missile.attackElements.playerKillEffects = false;
                 missile.attackerLevel = hireling.level;
                 missile.attackRating = definition->attackRating;
                 hireling.attackTimer = timing->duration;

@@ -40,6 +40,9 @@ void Simulation::updatePlayer(float dt, Vec keyboard) {
     auto &p = state_.player;
     const auto &rules = playerRules();
     p.mana = std::min(float(characterStats_.maxMana), p.mana + dt * characterStats_.manaRegen);
+    if (characterStats_.combat.replenishLife)
+        p.hp = std::clamp(p.hp + dt * characterStats_.combat.replenishLife * 25.f / 256.f,
+                          1.f, float(characterStats_.maxLife));
     Vec step;
     float remaining = 0;
     bool followingRoute = false;

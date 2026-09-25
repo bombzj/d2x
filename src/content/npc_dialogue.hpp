@@ -14,7 +14,8 @@ struct NpcSpeech {
 };
 using NpcDialogues = std::map<std::string, std::vector<NpcSpeech>, std::less<>>;
 NpcDialogues loadActOneNpcDialogues(Archives &archives);
-const NpcSpeech *introSpeech(const NpcDialogues &dialogues, std::string_view npc);
+const NpcSpeech *introSpeech(const NpcDialogues &dialogues, std::string_view npc,
+                             std::string_view characterClass = {});
 const NpcSpeech *gossipSpeech(const NpcDialogues &dialogues, std::string_view npc, size_t turn);
 const NpcSpeech *questSpeech(const NpcDialogues &dialogues, std::string_view quest,
                              std::string_view state, std::string_view npc);

@@ -1,18 +1,29 @@
 #pragma once
+#include "gameplay/quest/state.hpp"
 #include "inventory_panel.hpp"
 #include "primitives.hpp"
+#include <array>
 
 namespace d2x {
-inline Rectangle questBounds() { return {16, 20, 400, 540}; }
+inline constexpr std::array questDisplayOrder = {
+    ActOneQuest::DenOfEvil, ActOneQuest::SistersBurialGrounds,
+    ActOneQuest::SearchForCain, ActOneQuest::ForgottenTower,
+    ActOneQuest::ToolsOfTheTrade, ActOneQuest::SistersToTheSlaughter};
+inline Rectangle questBounds() { return classicPanelBounds(false, 64); }
 inline Rectangle questArtRect(float x, float y, float width, float height) {
     const auto panel = questBounds();
     return {panel.x + x * inventoryScale, panel.y + y * inventoryScale,
             width * inventoryScale, height * inventoryScale};
 }
 inline Rectangle questIconBounds(int index) {
-    return questArtRect(52.f + float(index % 2) * 145.f,
-                        72.f + float(index / 2) * 105.f, 72, 85);
+    return questArtRect(20.f + float(index % 3) * 100.f,
+                        28.f + float(index / 3) * 95.f, 80, 95);
 }
-inline Rectangle questCloseBounds() { return questArtRect(274, 386, 34, 35); }
-inline Rectangle questBackBounds() { return questArtRect(22, 386, 65, 35); }
+inline Rectangle questTabBounds(int index) { return questArtRect(6.f + index * 61.f, 2, 61, 31); }
+inline Rectangle questCloseBounds() { return questArtRect(278, 391, 32, 32); }
+inline Rectangle questReplayBounds() { return questArtRect(228, 393, 32, 32); }
+inline Rectangle questNoticeBounds() {
+    return {32 * classicPanelScale, H - HUD - 48 * classicPanelScale,
+            32 * classicPanelScale, 32 * classicPanelScale};
+}
 } // namespace d2x

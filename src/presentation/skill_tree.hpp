@@ -1,11 +1,12 @@
 #pragma once
 #include "primitives.hpp"
+#include "classic_panel.hpp"
 
 namespace d2x {
-inline Rectangle skillTreeBounds() { return {float(W - 416), 20, 400, 540}; }
+inline Rectangle skillTreeBounds() { return classicPanelBounds(true); }
 inline Rectangle skillTreeRect(float x, float y, float width, float height) {
     auto panel = skillTreeBounds();
-    constexpr float scale = 1.25f;
+    constexpr float scale = classicPanelScale;
     return {panel.x + x * scale, panel.y + y * scale, width * scale, height * scale};
 }
 inline Rectangle skillTreeNode(int row, int column) {

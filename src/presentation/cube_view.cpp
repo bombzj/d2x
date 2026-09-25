@@ -5,7 +5,7 @@ void SceneView::drawCube(Vec mouse) const {
     const auto &ui = view_.inventory;
     if (!ui.cubeOpen || !ui.open || !session_.playerContainers().cube) return;
     auto panel = cubeBounds();
-    DrawRectangle(int(panel.x) - 5, 0, int(panel.width) + 10, H - HUD, {0, 0, 0, 150});
+    drawPanelFrame(false);
     for (int i = 0; i < 4; ++i) {
         const auto &tile = assets_.cubePanel.frames[i].texture;
         DrawTexturePro(tile, {0, 0, float(tile.width), float(tile.height)},

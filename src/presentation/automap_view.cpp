@@ -40,8 +40,12 @@ void SceneView::drawMinimap(bool large) const {
     const auto &map = region.map;
     const auto seen = exploredAutomap_.find(region.definition.id);
     if (seen == exploredAutomap_.end()) return;
-    const Rectangle area = large ? Rectangle{0, 0, float(W), float(H - HUD)}
-                                 : Rectangle{float(W - 252), 38, 240, 175};
+    const auto viewport = worldViewport();
+    // Keep the map inside the visible world when a side panel is open.
+    const float width = std::min(240.f, viewport.width - 24);
+    const Rectangle area = large ? viewport
+        : Rectangle{view_.minimapRight ? viewport.x + viewport.width - width - 12 : viewport.x + 12,
+                    38, width, 175};
     const Vec center{area.x + area.width * .5f, area.y + area.height * .5f};
     // One original automap cel per 5x5 world subtile. The two MPQ DC6 files
     // contain the matching 16/8-pixel and 8/4-pixel isometric projections.
@@ -69,7 +73,7 @@ void SceneView::drawMinimap(bool large) const {
         sprite(&cell->second, onMap(position), WHITE);
     };
     for (const auto &object : region.objects)
-        if (!object.questHidden)
+        if (!object.questHidden && object.npcClass.empty())
             marker(assets_.automapObjectCel(object.objectClass), object.pos);
     const auto &portal = session_.state().portal;
     if (portal.active) {
@@ -81,6 +85,18 @@ void SceneView::drawMinimap(bool large) const {
     if (auto cainPortal = session_.cainPortalPosition())
         marker(assets_.automapObjectCel(60), *cainPortal);
     EndBlendMode();
+    for (const auto &object : region.objects) {
+        if (object.questHidden || (object.npcClass.empty() && object.interaction != Interaction::Stash))
+            continue;
+        const int x = int(object.pos.x / 5.f), y = int(object.pos.y / 5.f);
+        if (x < 0 || y < 0 || x >= map.data.width || y >= map.data.height ||
+            !seen->second[size_t(y) * map.data.width + x]) continue;
+        const auto p = onMap(object.pos);
+        // NPC IDs belong to MonStats, never the Objects.txt automap namespace.
+        // Their native marker has not been identified; do not substitute a prop cel.
+        painter_.label(object.name, int(p.x - painter_.measure(object.name, 10) / 2),
+                       int(p.y - 20), 10, object.npcClass.empty() ? WHITE : gold);
+    }
     DrawCircleV(rv(center), large ? 2.f : 1.f, WHITE);
     DrawLineV(rv(center + Vec{-5, 0}), rv(center + Vec{5, 0}), WHITE);
     DrawLineV(rv(center + Vec{0, -4}), rv(center + Vec{0, 4}), WHITE);

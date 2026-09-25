@@ -61,7 +61,8 @@ void GameSession::activateLootObject(EntityId id) {
                     std::set<size_t> usedUniques;
                     for (auto row : loot_.usedUniques()) usedUniques.insert(size_t(row));
                     plan = planItemLoot(content_, ratios->second, entry.treasureClass, entry.itemLevel,
-                                        0, plan.randomState, usedUniques, characterDefinition_.code);
+                                        0, plan.randomState, usedUniques, characterDefinition_.code,
+                                        characterStats().combat.magicFind, characterStats().combat.goldFind);
                 }
             }
         }

@@ -205,7 +205,6 @@ void SceneView::drawActors() const {
                 tint = {255, 255, 255, 125};
             sprite(&s, item.p, tint);
         } else if (item.type == 1) {
-            DrawEllipse(int(item.p.x), int(item.p.y), 17, 7, {0, 0, 0, 115});
             const auto &mode = view_.heroMode;
             auto *anim = &assets_.hero.at(mode);
             if (anim->frames.empty())
@@ -229,6 +228,7 @@ void SceneView::drawActors() const {
             auto p = item.p;
             if (sim.player.leapTime > 0)
                 p.y -= std::sin(sim.player.leapTime / skillDefinition(Skill::Leap).duration * pi) * 95;
+            spriteShadow(f, item.p);
             sprite(f, p, sim.player.dead ? Color{185, 185, 185, 255}
                          : sim.player.chill > 0 ? Color{115, 175, 255, 255}
                          : sim.player.poisonRemaining > 0 ? Color{145, 210, 115, 255} : WHITE);
@@ -239,9 +239,10 @@ void SceneView::drawActors() const {
             auto found = animations.find(mode);
             if (found != animations.end()) {
                 const auto &animation = found->second;
-                DrawEllipse(int(item.p.x), int(item.p.y), 12, 5, {0, 0, 0, 100});
-                sprite(animation.frame(direction(hireling.look, animation.directions),
-                                       int(view_.animationTime * 12)), item.p);
+                const auto *frame = animation.frame(direction(hireling.look, animation.directions),
+                                                    int(view_.animationTime * 12));
+                spriteShadow(frame, item.p);
+                sprite(frame, item.p);
                 auto name = session_.content().hirelingStrings.find(hireling.nameKey);
                 if (name != session_.content().hirelingStrings.end())
                     painter_.label(name->second, int(item.p.x) - painter_.measure(name->second, 11) / 2,
@@ -279,7 +280,6 @@ void SceneView::drawActors() const {
             auto *anim = &animations.at(mode);
             if (anim->frames.empty())
                 anim = &animations.at("nu");
-            DrawEllipse(int(item.p.x), int(item.p.y), 12, 5, {0, 0, 0, 100});
             if (!anim->frames.empty()) {
                 const auto *motion = session_.monsterContent().motion(e.kind, mode);
                 const float fps = motion ? float(motion->frames) / motion->duration
@@ -298,9 +298,12 @@ void SceneView::drawActors() const {
                 if (mode == "gh" && e.hitFlash > 0 && motion)
                     frame = std::clamp(int((motion->duration - e.hitFlash) / motion->duration * anim->count),
                                        0, anim->count - 1);
-                sprite(anim->frame(direction(monsterLooks_.contains(e.id) ? monsterLooks_.at(e.id)
-                                                                         : sim.player.pos - e.pos,
-                                             anim->directions), frame),
+                const auto *image = anim->frame(
+                    direction(monsterLooks_.contains(e.id) ? monsterLooks_.at(e.id)
+                                                           : sim.player.pos - e.pos,
+                              anim->directions), frame);
+                spriteShadow(image, item.p);
+                sprite(image,
                        item.p,
                        e.hitFlash > 0 ? Color{255, 175, 155, 255}
                        : e.chill > 0  ? Color{115, 175, 255, 255}
@@ -346,7 +349,9 @@ void SceneView::drawActors() const {
             drawGroundItem(groundItems[item.index]);
         } else {
             auto &p = session_.regions()[item.region].objects[item.index];
-            sprite(objectSprite(p, session_.regions()[item.region].definition.id), item.p);
+            const auto *image = objectSprite(p, session_.regions()[item.region].definition.id);
+            spriteShadow(image, item.p);
+            sprite(image, item.p);
         }
     }
 }

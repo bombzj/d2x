@@ -58,6 +58,13 @@ AttackElements Simulation::rollAttackElements(EntityId weapon) {
     if (result.cold > 0) result.coldDuration = float(int64_t(m.coldFrames) + own.coldFrames) / 25.f;
     const int64_t deadly = int64_t(m.deadlyStrike) + own.deadlyStrike;
     if (deadly > 0) result.deadly = roll(player, 100) < unsigned(std::min<int64_t>(deadly, 100));
+    const int crushing = std::clamp(m.crushingBlow + own.crushingBlow, 0, 100);
+    const int wounds = std::clamp(m.openWounds + own.openWounds, 0, 100);
+    result.crushing = crushing && roll(player, 100) < unsigned(crushing);
+    result.openWounds = wounds && roll(player, 100) < unsigned(wounds);
+    result.lifeLeech = std::max(0, m.lifeLeech + own.lifeLeech);
+    result.manaLeech = std::max(0, m.manaLeech + own.manaLeech);
+    result.attackerLevel = player.level;
     return result;
 }
 void Simulation::resolveWeaponHit(Enemy &enemy, float physical, EntityId source,
@@ -66,8 +73,28 @@ void Simulation::resolveWeaponHit(Enemy &enemy, float physical, EntityId source,
         return monsterResistance_
             ? monsterResistance_(enemy, state_.area.region, type).value_or(0) : 0;
     };
-    float total = mitigateMonsterDamage(elements.deadly ? physical * 2.f : physical,
+    if (elements.crushing) {
+        const auto rank = enemy.identity.rank;
+        const bool boss = rank == MonsterRank::Boss || rank == MonsterRank::Unique || rank == MonsterRank::SuperUnique;
+        const int divisor = (boss ? 8 : 4) * (elements.ranged ? 2 : 1);
+        // Crushing blow uses current HP and ignores negative physical resistance.
+        const float crushing = enemy.hp / divisor *
+            (100 - std::clamp(resistance(MonsterDamageType::Physical), 0, 100)) / 100.f;
+        enemy.hp = std::max(1.f / 256.f, enemy.hp - crushing);
+    }
+    const float dealtPhysical = mitigateMonsterDamage(elements.deadly ? physical * 2.f : physical,
                                         resistance(MonsterDamageType::Physical));
+    float total = dealtPhysical;
+    if (source == state_.player.id && monsterDrain_) {
+        const int drain = std::max(0, monsterDrain_(enemy));
+        const int64_t damage = int64_t(std::min(enemy.hp, dealtPhysical) * 256.f);
+        auto leeched = [&](int percent, int divisor) {
+            return float(damage * (int64_t(percent) * 64 / std::max(1, divisor)) / 100 * drain / 100 / 64) / 256.f;
+        };
+        auto &p = state_.player;
+        p.hp = std::min(float(characterStats_.maxLife), p.hp + leeched(elements.lifeLeech, lifeStealDivisor_));
+        p.mana = std::min(float(characterStats_.maxMana), p.mana + leeched(elements.manaLeech, manaStealDivisor_));
+    }
     float chill = 0;
     for (auto [amount, type] : {
              std::pair{elements.fire, MonsterDamageType::Fire},
@@ -81,7 +108,24 @@ void Simulation::resolveWeaponHit(Enemy &enemy, float physical, EntityId source,
             chill = elements.coldDuration * float(std::clamp(100 - resist, 0, 200)) / 100.f;
         }
     }
-    damageEnemy(enemy, total, source, chill, false, MonsterDamageType::Physical, true);
+    damageEnemy(enemy, total, source, chill, false, MonsterDamageType::Physical, true,
+                elements.playerKillEffects);
+    if (enemy.hp > 0 && total > 0 && elements.openWounds) {
+        // D2MOO SKILLITEM_CalculateOpenWoundsHpRegen / EventFunc15; 200 frames.
+        int framesDamage = 40;
+        const int increments[] = {9, 18, 27, 36, 45};
+        int remaining = std::max(0, elements.attackerLevel - 1);
+        for (int tier = 0; tier < 5 && remaining; ++tier) {
+            const int levels = std::min(remaining, tier == 0 ? 14 : tier == 4 ? 99 : 15);
+            framesDamage += levels * increments[tier];
+            remaining -= levels;
+        }
+        if (enemy.identity.rank == MonsterRank::Champion || enemy.identity.rank == MonsterRank::Unique ||
+            enemy.identity.rank == MonsterRank::SuperUnique) framesDamage /= 2;
+        enemy.openWoundsRemaining = 8.f;
+        enemy.openWoundsPerSecond = framesDamage * 25.f / 256.f;
+        enemy.openWoundsSource = source;
+    }
     if (enemy.hp <= 0 || elements.poisonPerSecond <= 0 || elements.poisonDuration <= 0) return;
     const float rate = resistance(MonsterDamageType::Poison) >= 100 ? 0.f : elements.poisonPerSecond;
     if (rate > 0 && rate >= enemy.poisonPerSecond) {

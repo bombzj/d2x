@@ -37,6 +37,7 @@ struct UseClassSkill {
     EntityId enemy;
 };
 struct ToggleRun {};
+struct SwitchWeaponSet {};
 struct StopMoving {};
 struct Interact {
     EntityId target;
@@ -55,9 +56,12 @@ struct ClaimAkaraRespec {
 };
 struct ImbueItem { EntityId npc; ItemHandle item; };
 struct CompleteActOne { EntityId npc; };
+struct OpenGamble { EntityId npc; };
+struct RepairVendorItem { EntityId npc; ItemHandle item; };
 struct BuyVendorItem {
     EntityId vendor;
     uint32_t slot = 0;
+    bool gamble = false;
 };
 struct DebugGrantGold {
     unsigned amount = 0;
@@ -100,8 +104,8 @@ struct PickupItem {
 };
 // UI supplies intentions; only the gameplay layer changes authoritative state.
 using GameCommand =
-    std::variant<MoveTo, Attack, CastSkill, UseClassSkill, ToggleRun, Interact, IdentifyWithCain, EndNpcConversation, TalkToNpc, ClaimAkaraRespec, ImbueItem, CompleteActOne, BuyVendorItem, DebugGrantGold, DebugDropCube, GoldTransaction, DebugGrantExperience, AllocateAttribute, AllocateSkill, BindSkillHotkey, DebugResetAttributes, DebugResetSkills, DebugUnlockWaypoints, DebugGrantShrine, DebugSwitchCharacter, Travel, RestartArea, MoveItem, SwapItems,
+    std::variant<MoveTo, Attack, CastSkill, UseClassSkill, ToggleRun, SwitchWeaponSet, Interact, IdentifyWithCain, EndNpcConversation, TalkToNpc, ClaimAkaraRespec, ImbueItem, CompleteActOne, BuyVendorItem, DebugGrantGold, DebugDropCube, GoldTransaction, DebugGrantExperience, AllocateAttribute, AllocateSkill, BindSkillHotkey, DebugResetAttributes, DebugResetSkills, DebugUnlockWaypoints, DebugGrantShrine, DebugSwitchCharacter, Travel, RestartArea, MoveItem, SwapItems,
                  SplitStack, MergeStacks, LoadBook, IdentifyItem, PickupItem, StopMoving, EquipBelt, UseItem, UseBeltColumn,
                  CloseStorage, TransferItem, UseExit, EquipItem, DebugKill, DebugSpawnMonster,
-                 DebugDamageMonster, UseTownPortal, UseCainPortal, WaypointTravel>;
+                 DebugDamageMonster, UseTownPortal, UseCainPortal, WaypointTravel, OpenGamble, RepairVendorItem>;
 } // namespace d2x

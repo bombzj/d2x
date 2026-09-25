@@ -21,6 +21,12 @@ struct ShrineStatus {
     std::string name, effect;
     float until = 0;
 };
+struct NpcQuestDialogue {
+    const NpcSpeech *speech = nullptr;
+    std::optional<ActOneQuest> advancesQuest;
+    bool automatic = false;
+    std::string readKey;
+};
 class GameSession {
     EntityIds ids_;
     ClassicData content_;
@@ -47,8 +53,11 @@ class GameSession {
     EntityId pendingInteraction_;
     bool pendingInteractionRepath_ = false;
     EntityId engagedNpc_;
+    // D2MOO quest GUID reaction lists are local to the current game.
+    std::set<std::string> pendingNpcQuestMessages_;
     std::map<EntityId, std::vector<VendorOffer>> vendorStocks_;
     std::map<EntityId, std::set<uint32_t>> soldVendorOffers_;
+    std::map<EntityId, std::vector<VendorOffer>> gambleStocks_;
     std::optional<uint64_t> pendingPortal_;
     bool pendingCainPortal_ = false;
     std::optional<Vec> townPortalArrival_;
@@ -80,7 +89,10 @@ class GameSession {
     void drinkWell(EntityId object);
     void updateObjectTimers();
     void identifyWithCain(EntityId npc);
-    void buyVendorItem(EntityId npc, uint32_t slot);
+    void buyVendorItem(EntityId npc, uint32_t slot, bool gamble = false);
+    void openGamble(EntityId npc);
+    void repairVendorItem(const RepairVendorItem &command);
+    std::vector<int> vendorQuestFactors(const VendorDefinition &vendor, bool repair) const;
     void advanceNpcPaths(float dt);
     bool canReach(const WorldObject &object) const;
     std::optional<Vec> interactionApproach(const WorldObject &object) const;
@@ -154,6 +166,10 @@ class GameSession {
         return state().player.actOneQuests.at(size_t(difficulty)).at(questIndex(id));
     }
     const QuestRecord &quest(ActOneQuest id) const { return quest(id, state().population.difficulty); }
+    NpcQuestDialogue npcQuestDialogue(std::string_view speaker) const;
+    std::vector<std::pair<ActOneQuest, const NpcSpeech *>> npcQuestTopics(std::string_view speaker) const;
+    bool npcQuestAlert(const WorldObject &npc) const;
+    std::optional<unsigned> denMonstersRemaining() const;
     bool active(Vec position) const { return simulation_.active(position); }
     const ClassicData &content() const { return content_; }
     const WorldCatalog &worldContent() const { return worldContent_; }
@@ -186,8 +202,10 @@ class GameSession {
     const PlayerContainers &playerContainers() const { return playerContainers_; }
     StorageAccess storage() const;
     const WorldObject *object(EntityId id) const;
-    const std::vector<VendorOffer> *vendorStock(EntityId npc) const;
+    const std::vector<VendorOffer> *vendorStock(EntityId npc, bool gamble = false) const;
     bool vendorOfferSold(EntityId npc, uint32_t slot) const;
+    std::optional<unsigned> vendorRepairQuote(EntityId npc, ItemHandle item) const;
+    unsigned vendorPurchasePrice(EntityId npc, const VendorOffer &offer, bool gamble) const;
     EntityId interactionTarget() const { return pendingInteraction_; }
     EntityId pickupTarget() const { return pickup_.id; }
     std::optional<Vec> portalPosition() const;
@@ -203,6 +221,7 @@ class GameSession {
     int regionIndex() const { return current_; }
     std::span<const GameEvent> events() const { return simulation_.events(); }
     void submit(GameCommand command) { pending_.push_back(std::move(command)); }
+    bool hasPendingCommands() const { return !pending_.empty(); }
     void tick(float dt, Vec keyboard = {});
 };
 } // namespace d2x

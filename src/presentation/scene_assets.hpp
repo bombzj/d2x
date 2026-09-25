@@ -9,6 +9,7 @@ namespace d2x {
 class SceneAssets {
     Graphics graphics_;
     Graphics uiGraphics_;
+    Graphics unitsGraphics_;
     AutomapCatalog automapCatalog_;
     void loadProps(const Region &region);
     void loadMonsterAnimations(Archives &archives, const GameSession &session);
@@ -57,11 +58,18 @@ class SceneAssets {
     std::array<GpuAnimation, 2> cainPortalAnimations;
     std::array<ObjectAnimationRule, 2> cainPortalRules;
     GpuAnimation fireball, fireburst, teleportOverlay, panel, cursor, inventoryPanel, attributeButtons,
-        attributePoints, vendorPanel, vendorTabs,
-        questBackground, questSockets, questDone, questTabs,
+        attributePoints, weaponTabs, vendorPanel, vendorTabs,
+        questBackground, questSockets, questTabs, questClose, questReplay, goldCoin,
         vendorButtons, vendorConfirm, waypointBorder, waypointPanel, waypointTabs, waypointIcons,
         storagePanel, cubePanel, beltPanel, beltSocket, orbs,
         globeOverlap, runButton, button;
+    std::array<GpuAnimation, 6> actOneQuestIcons;
+    struct OverlayArt {
+        GpuAnimation animation;
+        Vec offset;
+        std::array<int, 4> heights{};
+        int frames = 0, fps = 0, trans = 5;
+    } npcAlert;
     SceneAssets(Archives &archives, const GameSession &session);
     static std::string itemArtKey(const ItemInstance &item);
     void loadInventoryArt(const GameSession &session);

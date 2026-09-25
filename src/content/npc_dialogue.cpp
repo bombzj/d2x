@@ -94,12 +94,27 @@ NpcDialogues loadActOneNpcDialogues(Archives &archives) {
     return result;
 }
 
-const NpcSpeech *introSpeech(const NpcDialogues &dialogues, std::string_view npc) {
+const NpcSpeech *introSpeech(const NpcDialogues &dialogues, std::string_view npc,
+                             std::string_view characterClass) {
     const auto key = npc == "Deckard Cain" ? "Cain" : std::string(npc);
-    auto intro = dialogues.find(key + "Intro");
+    const auto introKey = npc == "Warriv" ? "WarrivAct1Intro" : key + "Intro";
+    // ACT1Intro_Callback00_NpcActivate / ACT1Q0: class-specific greetings.
+    std::string suffix;
+    if (npc == "Akara" && characterClass == "Sorceress") suffix = "Sor";
+    if (npc == "Kashya" && characterClass == "Amazon") suffix = "Ama";
+    if (npc == "Charsi" && characterClass == "Barbarian") suffix = "Bar";
+    if (npc == "Gheed" && characterClass == "Necromancer") suffix = "Nec";
+    if (npc == "Warriv" && characterClass == "Paladin") suffix = "Pal";
+    if (!suffix.empty())
+        if (auto special = dialogues.find(introKey + suffix); special != dialogues.end())
+            for (const auto &speech : special->second)
+                if (speech.quest.empty()) return &speech;
+    auto intro = dialogues.find(introKey);
     if (intro != dialogues.end())
         for (const auto &speech : intro->second)
             if (speech.quest.empty()) return &speech;
+    // Cain's first Act I speech is selected by his rescue quest, not generic gossip.
+    if (npc == "Deckard Cain") return nullptr;
     auto generic = dialogues.find(key);
     if (generic != dialogues.end())
         for (const auto &speech : generic->second)

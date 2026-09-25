@@ -1,5 +1,6 @@
 #include "gameplay/session/session.hpp"
 #include "content/equipment_modifiers.hpp"
+#include "content/npc_dialogue.hpp"
 #include <algorithm>
 #include <cmath>
 #include <set>
@@ -49,7 +50,7 @@ SessionSnapshot GameSession::snapshot() const {
     const auto &savedPlayer = result.world.player;
     auto base = deriveCharacterAttributes(characterDefinition_, savedPlayer.level, savedPlayer.allocated);
     EquipmentActor baseActor{characterDefinition_.code, base.strength, base.dexterity,
-                             savedPlayer.level, base.blockFactor};
+                             savedPlayer.level, base.blockFactor, savedPlayer.weaponSet};
     auto unbuffed = resolveEquipmentModifiers(content_, inventory_, playerContainers_, baseActor);
     auto limits = deriveCharacterAttributes(characterDefinition_, savedPlayer.level,
                                             savedPlayer.allocated, unbuffed);
@@ -238,8 +239,7 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
         require(key.skill >= -2 && key.skill < 4096, "skill hotkey id");
         if (key.skill >= 0) {
             const auto *entry = content_.skills.find(key.skill);
-            require(entry && !entry->passive && (key.right || entry->leftAllowed) &&
-                        (entry->classCode.empty() || entry->classCode == characterDefinition.code),
+            require(entry && !entry->passive && (key.right || entry->leftAllowed),
                     "skill hotkey identity");
         }
     }
@@ -275,6 +275,15 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
     skill(player.lastSkill);
     scalar(player.lastCastDuration, 0.001f, 10.f);
     require(player.nextWeapon < 2, "active melee hand");
+    require(player.weaponSet < 2 && (content_.stashLayout.expansion || !player.weaponSet),
+            "active weapon set");
+    for (size_t difficulty = 0; difficulty < player.npcIntroductions.size(); ++difficulty) {
+        const auto &introductions = player.npcIntroductions[difficulty];
+        require(introductions.size() <= 64, "NPC introduction count");
+        for (const auto &name : introductions)
+            require(introSpeech(content_.npcDialogues, name, player.characterClass) != nullptr,
+                    "NPC introduction identity");
+    }
     require(player.gold <= unsigned(player.level) * 10000, "gold carrying limit");
     require(player.bankGold <= (player.level <= 30
                 ? 50000u * (unsigned(player.level) / 10u + 1u)
@@ -799,6 +808,12 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
                             [&](const Enemy &e) { return e.id == player.attackTarget; }),
                 "attack target");
     inventory_.validateSnapshot(s.inventory, s.containers, player.id);
+    if (!content_.stashLayout.expansion)
+        for (const auto &[id, item] : s.inventory.items)
+            if (auto location = std::get_if<ContainerLocation>(&item.location);
+                location && location->container == s.containers.equipment)
+                require(location->cell.x < int(EquipmentSlot::AlternateRightHand),
+                        "classic weapon slot");
     if (s.containers.cube) {
         unsigned cubes = 0, contained = 0;
         for (const auto &[id, item] : s.inventory.items) {
@@ -815,15 +830,17 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
                                         {content_.stashLayout.columns, content_.stashLayout.rows},
                                         {content_.cubeLayout.columns, content_.cubeLayout.rows});
     equipmentInventory.state_ = s.inventory;
+    equipmentInventory.itemProperties_ = inventory_.itemProperties_;
     auto base = deriveCharacterAttributes(characterDefinition, player.level, player.allocated);
-    EquipmentActor baseActor{characterDefinition.code, base.strength, base.dexterity, player.level, base.blockFactor};
+    EquipmentActor baseActor{characterDefinition.code, base.strength, base.dexterity, player.level,
+                             base.blockFactor, player.weaponSet};
     auto modifiers = resolveEquipmentModifiers(content_, equipmentInventory, s.containers, baseActor);
     auto characterStats = deriveCharacterAttributes(characterDefinition, player.level, player.allocated,
                                                      modifiers);
     require(player.hp <= characterStats.maxLife && player.mana <= characterStats.maxMana &&
                 player.stamina <= characterStats.maxStamina, "character resource maximum");
     EquipmentActor actor{characterDefinition.code, characterStats.strength, characterStats.dexterity,
-                         player.level, characterStats.blockFactor};
+                         player.level, characterStats.blockFactor, player.weaponSet};
     InventoryAccess equipmentAccess;
     equipmentAccess.actor = player.id;
     // A reset or later temporary stat loss can leave equipment in place but inactive.
@@ -883,12 +900,15 @@ void GameSession::restore(SessionSnapshot s) {
     equipmentInventory.state_ = s.inventory;
     auto base = deriveCharacterAttributes(characterDefinition, s.world.player.level,
                                            s.world.player.allocated);
-    EquipmentActor baseActor{characterDefinition.code, base.strength, base.dexterity, s.world.player.level, base.blockFactor};
+    equipmentInventory.itemProperties_ = inventory_.itemProperties_;
+    EquipmentActor baseActor{characterDefinition.code, base.strength, base.dexterity,
+                             s.world.player.level, base.blockFactor, s.world.player.weaponSet};
     auto modifiers = resolveEquipmentModifiers(content_, equipmentInventory, s.containers, baseActor);
     auto characterStats = deriveCharacterAttributes(characterDefinition, s.world.player.level,
-                                                     s.world.player.allocated, modifiers);
+                                                     s.world.player.allocated, modifiers,
+                                                     content_.resistancePenalty.at(size_t(s.world.population.difficulty)));
     EquipmentActor actor{characterDefinition.code, characterStats.strength, characterStats.dexterity,
-                         s.world.player.level, characterStats.blockFactor};
+                         s.world.player.level, characterStats.blockFactor, s.world.player.weaponSet};
     auto equipmentStats = deriveEquipmentStats(equipmentInventory, s.containers, actor,
                                                modifiers.defense, modifiers.combat);
     std::map<EntityId, std::vector<VendorOffer>> nextVendorStocks;
@@ -906,6 +926,8 @@ void GameSession::restore(SessionSnapshot s) {
     static_assert(std::is_nothrow_move_assignable_v<WorldState>);
     static_assert(std::is_nothrow_move_assignable_v<InventoryState>);
     simulation_.state_ = std::move(s.world);
+    simulation_.lifeStealDivisor_ = content_.lifeStealDivisor.at(size_t(state().population.difficulty));
+    simulation_.manaStealDivisor_ = content_.manaStealDivisor.at(size_t(state().population.difficulty));
     characterDefinition_ = std::move(restoredDefinition);
     simulation_.characterStats_ = characterStats;
     simulation_.equipmentStats_ = equipmentStats;
@@ -914,10 +936,12 @@ void GameSession::restore(SessionSnapshot s) {
     simulation_.safeZone_ = regions_[current].definition.safe;
     simulation_.events_.clear();
     inventory_.state_ = std::move(s.inventory);
+    inventory_.replenishTimers_.clear();
     inactiveAreas_.swap(s.inactiveAreas);
     playerContainers_ = s.containers;
     loot_.restore(std::move(s.loot));
     vendorStocks_.swap(nextVendorStocks);
+    gambleStocks_.clear();
     soldVendorOffers_.swap(s.soldVendorOffers);
     shrineStatuses_.clear();
     for (auto &region : regions_)
@@ -960,6 +984,7 @@ void GameSession::restore(SessionSnapshot s) {
     pendingInteraction_ = {};
     pendingInteractionRepath_ = false;
     engagedNpc_ = {};
+    pendingNpcQuestMessages_.clear();
     pendingPortal_.reset();
     pendingCainPortal_ = false;
     pendingExit_.reset();

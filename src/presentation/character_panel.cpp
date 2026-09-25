@@ -7,7 +7,7 @@ namespace d2x {
 void SceneView::drawCharacter(Vec mouse) const {
     if (!view_.characterOpen) return;
     const auto panel = characterBounds();
-    DrawRectangle(int(panel.x) - 8, 0, int(panel.width) + 12, H - HUD, {0, 0, 0, 150});
+    drawPanelFrame(false);
     if (assets_.inventoryPanel.frames.size() >= 4)
         for (int index = 0; index < 4; ++index) {
             const auto &tile = assets_.inventoryPanel.frames[index].texture;

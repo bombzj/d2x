@@ -22,9 +22,11 @@ class UiPainter {
     int measure(const std::string &text, int size) const;
     void label(const std::string &text, int x, int y, int size, Color color = parchment) const;
     void centered(const std::string &text, int y, int size, Color color = parchment) const;
+    void inBox(const std::string &text, Rectangle bounds, int size, Color color = parchment) const;
 };
 int direction(Vec look, int count);
 void sprite(const Sprite *sprite, Vec position, Color tint = WHITE);
+void spriteShadow(const Sprite *sprite, Vec position);
 void frame(Rectangle bounds, Color border = gold);
 void diamond(Vec position, float radius, Color color);
 inline constexpr int worldPageSize = 8;

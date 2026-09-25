@@ -217,6 +217,8 @@ const char *inventoryErrorText(InventoryError error) {
         return "This equipment is for another class.";
     case InventoryError::UnsupportedEquipment:
         return "This equipment's rules are not implemented yet.";
+    case InventoryError::Unidentified:
+        return "Identify this item before equipping it.";
     case InventoryError::UnsupportedUse:
         return "This item cannot be used yet.";
     case InventoryError::None:

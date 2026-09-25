@@ -113,6 +113,7 @@ void GameSession::activateCainQuestObject(const WorldObject &source) {
                tristramRegion_ && region().definition.id == *tristramRegion_ &&
                record.stage >= uint32_t(CainStage::TristramEntered)) {
         if (cainAdvance(record, CainStage::Rescued)) {
+            pendingNpcQuestMessages_.insert("A1Q4/RescuedByHero/Deckard Cain");
             found->operatedAt = state().time;
             reconcileCainObjects();
             simulation_.emit(QuestAdvanced{ActOneQuest::SearchForCain, record.stage});

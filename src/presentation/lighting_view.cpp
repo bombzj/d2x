@@ -93,6 +93,8 @@ void LightingView::draw(const LevelRecord &level, Vec player, Vec playerScreen, 
     const float origin[2]{float(originX_), float(originY_)};
     const float effectiveRadius = float(std::clamp(radius, 1, 18));
     const float ambient = level.losDraw ? .035f : .14f;
+    // Changing shader flushes raylib's previous batch and clears registered sampler textures.
+    BeginShaderMode(shader_);
     uniform(shader_, "screenHeight", &screenHeight, SHADER_UNIFORM_FLOAT);
     uniform(shader_, "playerScreen", position, SHADER_UNIFORM_VEC2);
     uniform(shader_, "playerWorld", world, SHADER_UNIFORM_VEC2);
@@ -115,7 +117,6 @@ void LightingView::draw(const LevelRecord &level, Vec player, Vec playerScreen, 
     if (count)
         SetShaderValueV(shader_, GetShaderLocation(shader_, "flameWorld"), flames.data(), SHADER_UNIFORM_VEC2,
                         count);
-    BeginShaderMode(shader_);
     DrawRectangle(0, 0, W, H - HUD, WHITE);
     EndShaderMode();
 }

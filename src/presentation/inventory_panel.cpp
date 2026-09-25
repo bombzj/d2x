@@ -3,6 +3,8 @@
 
 namespace d2x {
 Rectangle equipmentBounds(EquipmentSlot slot) {
+    if (slot == EquipmentSlot::AlternateRightHand) slot = EquipmentSlot::RightHand;
+    if (slot == EquipmentSlot::AlternateLeftHand) slot = EquipmentSlot::LeftHand;
     constexpr std::array<Rectangle, size_t(EquipmentSlot::Count)> bounds{{{135, 8, 54, 51},
                                                                           {209, 35, 23, 24},
                                                                           {133, 77, 56, 82},
@@ -20,10 +22,25 @@ Rectangle equipmentBounds(EquipmentSlot slot) {
     return {panel.x + box.x * inventoryScale, panel.y + box.y * inventoryScale, box.width * inventoryScale,
             box.height * inventoryScale};
 }
-std::optional<EquipmentSlot> equipmentAt(Vec mouse) {
-    for (int index = 0; index < int(EquipmentSlot::Count); ++index)
-        if (CheckCollisionPointRec(rv(mouse), equipmentBounds(EquipmentSlot(index))))
-            return EquipmentSlot(index);
+std::optional<EquipmentSlot> equipmentAt(Vec mouse, unsigned weaponSet) {
+    for (int index = 0; index < int(EquipmentSlot::AlternateRightHand); ++index)
+        if (CheckCollisionPointRec(rv(mouse), equipmentBounds(EquipmentSlot(index)))) {
+            auto slot = EquipmentSlot(index);
+            return slot == EquipmentSlot::RightHand ? weaponHandSlot(false, weaponSet) :
+                   slot == EquipmentSlot::LeftHand ? weaponHandSlot(true, weaponSet) : slot;
+        }
+    return std::nullopt;
+}
+Rectangle weaponTabBounds(unsigned set, bool left) {
+    auto panel = inventoryBounds();
+    return {panel.x + (left ? 248.f : 17.f) * inventoryScale + set * 32.f * inventoryScale,
+            panel.y + 23.f * inventoryScale, 30.f * inventoryScale, 20.f * inventoryScale};
+}
+std::optional<unsigned> weaponTabAt(Vec mouse) {
+    for (unsigned set = 0; set < 2; ++set)
+        if (CheckCollisionPointRec(rv(mouse), weaponTabBounds(set, false)) ||
+            CheckCollisionPointRec(rv(mouse), weaponTabBounds(set, true)))
+            return set;
     return std::nullopt;
 }
 std::optional<Cell> inventoryCell(Vec mouse) {
@@ -70,9 +87,8 @@ std::vector<ContainerGrid> inventoryGrids(const GameSession &session, const Inve
     return grids;
 }
 bool inventorySurface(const InventoryUi &ui, Vec mouse) {
-    return (ui.open && CheckCollisionPointRec(rv(mouse), inventoryBounds())) ||
-           (ui.storage && CheckCollisionPointRec(rv(mouse), storageBounds())) ||
-           (ui.cubeOpen && CheckCollisionPointRec(rv(mouse), cubeBounds()));
+    return (ui.open && CheckCollisionPointRec(rv(mouse), classicSideBounds(true))) ||
+           ((ui.storage || ui.cubeOpen) && CheckCollisionPointRec(rv(mouse), classicSideBounds(false)));
 }
 InventoryDrop inventoryDrop(const GameSession &session, const InventoryUi &ui, Vec mouse) {
     InventoryDrop drop;
@@ -106,7 +122,7 @@ InventoryDrop inventoryDrop(const GameSession &session, const InventoryUi &ui, V
             drop.command.emplace(std::in_place_type<EquipItem>, source->handle(), std::nullopt,
                                  std::move(destination));
     };
-    if (auto slot = ui.open ? equipmentAt(mouse) : std::nullopt) {
+    if (auto slot = ui.open ? equipmentAt(mouse, session.state().player.weaponSet) : std::nullopt) {
         if (*slot == EquipmentSlot::Belt) {
             if (location->container == containers.beltEquipment) {
                 drop.bounds = equipmentBounds(*slot);

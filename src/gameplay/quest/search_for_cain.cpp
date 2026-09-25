@@ -7,12 +7,13 @@ bool cainAdvance(QuestRecord &record, CainStage stage) {
     return true;
 }
 bool cainStoneActivated(QuestRecord &record, bool correct) {
-    if (record.stage < uint32_t(CainStage::ScrollTranslated) ||
+    // D2MOO A1Q4: a wrong (or already lit) stone leaves earlier activations intact.
+    if (!correct || record.stage < uint32_t(CainStage::ScrollTranslated) ||
         record.stage >= uint32_t(CainStage::PortalOpened)) return false;
     unsigned count = record.flags & cainStoneCountMask;
-    record.flags = (record.flags & ~cainStoneCountMask) |
-                   (correct ? count + 1 : 0);
-    if (correct && count + 1 == 5)
+    if (count >= 5) return false;
+    record.flags = (record.flags & ~cainStoneCountMask) | (count + 1);
+    if (count + 1 == 5)
         record.stage = uint32_t(CainStage::PortalOpened);
     return true;
 }

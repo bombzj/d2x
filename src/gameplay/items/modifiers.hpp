@@ -20,5 +20,13 @@ struct ItemStatDefinition {
     size_t row = 0;
     std::string name;
     std::optional<int> id;
+    int descriptionPriority = 0, descriptionFunction = 0, descriptionValue = 0;
+    std::string positive, negative, suffix;
+    int operation = 0, operationParameter = 0;
+    std::string operationBase, operationStat;
+};
+struct ResolvedItemStat {
+    std::string name, effect;
+    int value = 0, layer = 0, rawValue = 0;
 };
 } // namespace d2x

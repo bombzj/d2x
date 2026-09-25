@@ -1,5 +1,6 @@
 #include "gameplay/session/session.hpp"
 #include "content/character_attributes.hpp"
+#include "content/item_properties.hpp"
 #include "core/fingerprint.hpp"
 #include <algorithm>
 #include <iostream>
@@ -19,9 +20,22 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
       monsterContent_(archives, content_.tables.at("monstats")), loot_(lootSeed) {
     characterDefinition_ = definitionFor(state().player.characterClass);
     simulation_.state_.population = population;
+    simulation_.lifeStealDivisor_ = content_.lifeStealDivisor.at(size_t(population.difficulty));
+    simulation_.manaStealDivisor_ = content_.manaStealDivisor.at(size_t(population.difficulty));
+    simulation_.monsterDrain_ = [this](const Enemy &enemy) {
+        for (const auto &monster : content_.monsters)
+            if (monster.name == enemy.identity.monster)
+                return monster.drain.at(size_t(state().population.difficulty));
+        return 0;
+    };
     simulation_.resistancePenalty_ = content_.resistancePenalty.at(size_t(population.difficulty));
     simulation_.state_.mapSeed = selection.seed;
     inventory_.state_.creationRandom = (uint64_t(666) << 32) | uint32_t(lootSeed);
+    inventory_.itemProperties_ = [this](const ItemInstance &item) {
+        auto identified = item;
+        identified.identified = true; // Physical limits exist before identification.
+        return resolveItemStats(content_, identified, 1);
+    };
     playerContainers_ = inventory_.createPlayerContainers(state().player.id);
     refreshCharacter();
     simulation_.heal();
@@ -29,7 +43,8 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
     refreshCharacter();
     simulation_.wearEquipment_ = [this](EntityId weapon, bool defending) {
         auto result = inventory_.wearEquipment(playerContainers_, weapon, defending,
-                                               simulation_.state_.player.combatRandom);
+                                               simulation_.state_.player.combatRandom,
+                                               simulation_.state_.player.weaponSet);
         if (!result || !result.changes.empty())
             publishInventory(std::move(result), {});
     };
@@ -57,7 +72,8 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
             const auto *definition = inventory_.catalog().find(item->definition);
             if (!definition || definition->equipment.shoots.empty()) return false;
             spent = {};
-            for (auto slot : {EquipmentSlot::RightHand, EquipmentSlot::LeftHand}) {
+            for (auto slot : {weaponHandSlot(false, state().player.weaponSet),
+                              weaponHandSlot(true, state().player.weaponSet)}) {
                 auto candidate = inventory_.equipped(playerContainers_, slot);
                 const auto *quiver = inventory_.item(candidate);
                 if (candidate == weapon || !quiver) continue;
@@ -331,7 +347,7 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
     Fingerprint fingerprint;
     fingerprint.add(content_.profile);
     // Bump this rules revision when state interpretation or compiled rules change.
-    fingerprint.add("d2x-session-rules-v118-act-one-quests");
+    fingerprint.add("d2x-session-rules-v122-item-properties-gambling");
     auto members = archives.used;
     for (const auto &member : members) {
         fingerprint.add(member);
@@ -381,6 +397,7 @@ void GameSession::enter(RegionId id, std::optional<Vec> arrival) {
     if (found == regions_.end())
         return;
     int index = int(found - regions_.begin());
+    const bool returnToTown = current_ >= 0 && !regions_[current_].definition.safe && found->definition.safe;
     if (current_ >= 0)
         inactiveAreas_[current_] = simulation_.leaveArea();
     current_ = index;
@@ -392,6 +409,20 @@ void GameSession::enter(RegionId id, std::optional<Vec> arrival) {
     simulation_.enterArea(found->map.grid, found->map.activation, arrival.value_or(found->map.spawn),
                           found->definition.safe,
                           std::move(inactiveAreas_[current_]), plan.spawns);
+    if (returnToTown) {
+        // The single player town becomes unoccupied when leaving it. Rebuild
+        // its stock on return using the current character level (SUnitProxy).
+        for (const auto &npc : found->objects)
+            if (auto vendor = content_.vendors.find(npc.npcClass); vendor != content_.vendors.end()) {
+                auto &seed = inventory_.state_.creationRandom;
+                seed = uint64_t(uint32_t(seed)) * 0x6ac690c5ULL + (seed >> 32);
+                auto stock = planVendorStock(content_, vendor->second, unsigned(state().player.level),
+                    state().population.difficulty, seed ^ npc.id.value);
+                vendorStocks_[npc.id] = std::move(stock);
+                soldVendorOffers_.erase(npc.id);
+                gambleStocks_.erase(npc.id);
+            }
+    }
     if (simulation_.state_.player.hireling.active()) {
         auto &hireling = simulation_.state_.player.hireling;
         hireling.pos = state().player.pos;
@@ -483,6 +514,14 @@ void GameSession::tick(float dt, Vec keyboard) {
                     beginPickup(intent.item);
                 } else if constexpr (std::is_same_v<T, UseItem>)
                     useItem(intent.item);
+                else if constexpr (std::is_same_v<T, SwitchWeaponSet>) {
+                    auto &player = simulation_.state_.player;
+                    if (!player.dead && content_.stashLayout.expansion) {
+                        player.weaponSet ^= 1u;
+                        player.nextWeapon = 0;
+                        refreshCharacter();
+                    }
+                }
                 else if constexpr (std::is_same_v<T, IdentifyItem>)
                     identifyItem(intent);
                 else if constexpr (std::is_same_v<T, UseBeltColumn>)
@@ -504,8 +543,13 @@ void GameSession::tick(float dt, Vec keyboard) {
                 } else if constexpr (std::is_same_v<T, CompleteActOne>) {
                     completeActOne(intent.npc);
                 } else if constexpr (std::is_same_v<T, BuyVendorItem>) {
-                    buyVendorItem(intent.vendor, intent.slot);
+                    buyVendorItem(intent.vendor, intent.slot, intent.gamble);
+                } else if constexpr (std::is_same_v<T, OpenGamble>) {
+                    openGamble(intent.npc);
+                } else if constexpr (std::is_same_v<T, RepairVendorItem>) {
+                    repairVendorItem(intent);
                 } else if constexpr (std::is_same_v<T, EndNpcConversation>) {
+                    gambleStocks_.erase(intent.target);
                     if (engagedNpc_ == intent.target)
                         engagedNpc_ = {};
                 } else if constexpr (std::is_same_v<T, DebugGrantGold>) {
@@ -625,6 +669,9 @@ void GameSession::tick(float dt, Vec keyboard) {
                         player.hireling = {};
                         player.combatEffects.clear();
                         player.skillHotkeys = {};
+                        player.weaponSet = 0;
+                        player.npcIntroductions = {};
+                        pendingNpcQuestMessages_.clear();
                         player.gold = std::min(player.gold, 10000u);
                         player.bankGold = std::min(player.bankGold, 50000u);
                         player.castTime = player.spinTime = player.leapTime = 0;
@@ -664,6 +711,8 @@ void GameSession::tick(float dt, Vec keyboard) {
         cancelInteraction();
     }
     simulation_.tick(dt, transitioned ? Vec{} : keyboard);
+    auto replenished = inventory_.replenish(dt);
+    if (!replenished.changes.empty()) publishInventory(std::move(replenished), {});
     advanceHireling(dt);
     expireCombatEffects();
     updateObjectTimers();

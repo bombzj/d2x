@@ -3,6 +3,5 @@
 #include "gameplay/combat/stat_modifiers.hpp"
 
 namespace d2x {
-void applyEquipmentCombatProperty(const ClassicData &content, const PropertyRange &property,
-                                  int roll, EntityId item, bool weapon, CombatModifiers &mods);
+void applyEquipmentStat(const ResolvedItemStat &stat, EntityId item, bool weapon, CombatModifiers &mods);
 } // namespace d2x

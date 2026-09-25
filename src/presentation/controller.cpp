@@ -3,6 +3,7 @@
 #include "skill_tree.hpp"
 #include "quest_panel.hpp"
 #include <algorithm>
+#include <array>
 
 namespace d2x {
 void SceneController::click(Vec mouse) {
@@ -76,18 +77,28 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
         return true;
     }
     repeatClick_ -= elapsed;
+    if (input.weaponSwap && session_.content().stashLayout.expansion &&
+        !ui.npcMenu && ui.dialogue.empty() && !ui.pause && !ui.travelMenu &&
+        !ui.inventory.drag && !ui.inventory.split && !ui.inventory.goldDialog &&
+        !ui.shopConfirm) {
+        session_.submit(SwitchWeaponSet{});
+        return true;
+    }
     if (ui.npcMenu) {
         int action = input.escape ? 4 :
                      input.insideViewport && input.leftPressed ? view_.clickNpcMenu(input.mouse) : 0;
         if (input.insideViewport && input.leftPressed && !action) action = 4;
         if (action == 1) {
-            if (view_.startNpcTalk())
-                session_.submit(TalkToNpc{ui.dialogueObject});
+            view_.startNpcTalk();
         }
+        else if (action == 5) view_.showNextNpcGossip();
+        else if (action >= 100 && action < 106) view_.startNpcTopic(ActOneQuest(action - 100));
         else if (action == 2) view_.openNpcShop();
+        else if (action == 9) {
+            session_.submit(OpenGamble{ui.dialogueObject});
+        }
         else if (action == 3)
             session_.submit(IdentifyWithCain{ui.dialogueObject});
-        else if (action == 5) view_.showNextNpcGossip();
         else if (action == 6)
             session_.submit(ClaimAkaraRespec{ui.dialogueObject});
         else if (action == 7) {
@@ -152,45 +163,63 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
     }
     if (ui.shopOpen) {
         if (input.escape) {
-            if (ui.shopConfirm)
+            if (ui.shopRepair) ui.shopRepair = false;
+            else if (ui.shopConfirm)
                 ui.shopConfirm.reset();
             else {
-                ui.shopOpen = false;
-                ui.npcMenu = true;
-                ui.inventory.open = false;
+                view_.closeNpcShop();
+                session_.submit(EndNpcConversation{ui.dialogueObject});
             }
         } else {
             if (input.pageDelta) view_.scrollNpcShop(-input.pageDelta);
             if (!ui.shopConfirm && input.insideViewport && input.leftPressed &&
                 CheckCollisionPointRec(rv(input.mouse), inventoryClose())) {
-                ui.shopOpen = false;
-                ui.npcMenu = true;
-                ui.inventory.open = false;
+                view_.closeNpcShop();
+                session_.submit(EndNpcConversation{ui.dialogueObject});
+            } else if (!ui.shopConfirm && input.insideViewport && input.leftPressed &&
+                       session_.content().stashLayout.expansion &&
+                       weaponTabAt(input.mouse).has_value()) {
+                if (*weaponTabAt(input.mouse) != session_.state().player.weaponSet)
+                    session_.submit(SwitchWeaponSet{});
             } else if (input.enter && ui.shopConfirm) {
                 const auto slot = *ui.shopConfirm;
                 ui.shopConfirm.reset();
-                session_.submit(BuyVendorItem{ui.dialogueObject, slot});
+                session_.submit(BuyVendorItem{ui.dialogueObject, slot, ui.shopGamble});
             } else if (input.insideViewport && input.leftPressed) {
+                if (ui.shopRepair && CheckCollisionPointRec(rv(input.mouse), inventoryBounds())) {
+                    const auto &inventory = session_.inventory();
+                    EntityId id;
+                    if (auto cell = inventoryCell(input.mouse))
+                        id = inventory.itemAt(session_.playerContainers().backpack, *cell);
+                    if (auto slot = equipmentAt(input.mouse, session_.state().player.weaponSet))
+                        id = inventory.equipped(session_.playerContainers(), *slot);
+                    if (auto item = inventory.item(id))
+                        session_.submit(RepairVendorItem{ui.dialogueObject, item->handle()});
+                    return true;
+                }
                 if (auto slot = view_.clickNpcShop(input.mouse))
-                    session_.submit(BuyVendorItem{ui.dialogueObject, *slot});
+                    session_.submit(BuyVendorItem{ui.dialogueObject, *slot, ui.shopGamble});
+                if (!ui.shopOpen)
+                    session_.submit(EndNpcConversation{ui.dialogueObject});
             } else if (input.insideViewport && input.rightPressed) {
                 inventoryRight_ = true;
                 if (auto slot = view_.clickNpcShop(input.mouse, true))
-                    session_.submit(BuyVendorItem{ui.dialogueObject, *slot});
+                    session_.submit(BuyVendorItem{ui.dialogueObject, *slot, ui.shopGamble});
             }
         }
         return true;
     }
     if (!ui.dialogue.empty()) {
         if (input.escape) {
-            ui.dialogue.clear();
-            ui.dialogueLines.clear();
-            ui.npcMenu = true;
+            view_.closeNpcDialogue();
+            session_.submit(EndNpcConversation{ui.dialogueObject});
         } else {
             if (input.pageDelta)
                 view_.scrollNpcDialogue(-input.pageDelta * 3);
-            if (input.insideViewport && input.leftPressed)
+            if (input.insideViewport && input.leftPressed) {
                 view_.closeNpcDialogue();
+                session_.submit(EndNpcConversation{ui.dialogueObject});
+            }
         }
         return true;
     }
@@ -200,6 +229,8 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
     }
     if (input.automap)
         ui.automap = !ui.automap;
+    if (input.minimapSide)
+        ui.minimapRight = !ui.minimapRight;
     if (input.travel) {
         ui.waypointSource = {};
         ui.travelPage = 0;
@@ -241,10 +272,25 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
         if (ui.characterOpen) ui.questOpen = false;
         return true;
     }
-    if (input.quests && !ui.blocksWorld()) {
+    if ((input.quests || (ui.questNotice && !ui.questOpen && !ui.characterOpen &&
+         !ui.inventory.storage && !ui.inventory.cubeOpen && input.insideViewport && input.leftPressed &&
+        CheckCollisionPointRec(rv(input.mouse), questNoticeBounds()))) && !ui.blocksWorld()) {
         ui.questOpen = !ui.questOpen;
-        ui.questSelected = -1;
         if (ui.questOpen) {
+            const bool updated = ui.questNotice;
+            ui.questNotice = false;
+            if (ui.questSelected < 0 || ui.questSelected >= int(questDisplayOrder.size()) ||
+                !session_.quest(questDisplayOrder[size_t(ui.questSelected)]).stage) {
+                ui.questSelected = -1;
+                for (int index = 0; index < int(questDisplayOrder.size()); ++index)
+                    if (session_.quest(questDisplayOrder[size_t(index)]).stage) {
+                        ui.questSelected = index;
+                        break;
+                    }
+            }
+            if (updated && ui.questUpdated >= 0 && ui.questUpdated < int(questDisplayOrder.size()) &&
+                session_.quest(questDisplayOrder[size_t(ui.questUpdated)]).stage)
+                ui.questSelected = ui.questUpdated;
             ui.characterOpen = false;
             ui.skillTreeOpen = false;
             if (ui.inventory.open) toggleInventory();
@@ -320,10 +366,8 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
             ui.characterOpen = false;
         else if (ui.skillTreeOpen)
             ui.skillTreeOpen = false;
-        else if (ui.questOpen) {
-            if (ui.questSelected >= 0) ui.questSelected = -1;
-            else ui.questOpen = false;
-        }
+        else if (ui.questOpen)
+            ui.questOpen = false;
         else
             return false;
         inventoryClick_ = input.leftHeld || input.leftReleased;
@@ -375,7 +419,7 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
         return true;
     }
     if (ui.characterOpen && input.insideViewport &&
-        CheckCollisionPointRec(rv(input.mouse), characterBounds())) {
+        CheckCollisionPointRec(rv(input.mouse), classicSideBounds(false))) {
         if (input.leftPressed) {
             if (CheckCollisionPointRec(rv(input.mouse), characterClose()))
                 ui.characterOpen = false;
@@ -386,16 +430,14 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
         return true;
     }
     if (ui.questOpen && input.insideViewport &&
-        CheckCollisionPointRec(rv(input.mouse), questBounds())) {
+        CheckCollisionPointRec(rv(input.mouse), classicSideBounds(false))) {
         if (input.leftPressed) {
             if (CheckCollisionPointRec(rv(input.mouse), questCloseBounds()))
                 ui.questOpen = false;
-            else if (ui.questSelected >= 0) {
-                if (CheckCollisionPointRec(rv(input.mouse), questBackBounds()))
-                    ui.questSelected = -1;
-            } else
+            else
                 for (int index = 0; index < 6; ++index)
-                    if (CheckCollisionPointRec(rv(input.mouse), questIconBounds(index))) {
+                    if (session_.quest(questDisplayOrder[size_t(index)]).stage &&
+                        CheckCollisionPointRec(rv(input.mouse), questIconBounds(index))) {
                         ui.questSelected = index;
                         break;
                     }
@@ -403,7 +445,7 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
         return true;
     }
     if (ui.skillTreeOpen && input.insideViewport &&
-        CheckCollisionPointRec(rv(input.mouse), skillTreeBounds())) {
+        CheckCollisionPointRec(rv(input.mouse), classicSideBounds(true))) {
         if (input.leftPressed) {
             if (CheckCollisionPointRec(rv(input.mouse), skillTreeClose()))
                 ui.skillTreeOpen = false;

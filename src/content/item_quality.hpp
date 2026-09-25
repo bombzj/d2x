@@ -7,5 +7,6 @@ ItemQualityRules loadItemQualityRules(const ClassicData &data, const DataTable &
                                      std::string_view code);
 LootPlan planItemLoot(const ClassicData &data, const DataTable &ratios, std::string_view root,
                       int itemLevel, int upgradeLevel, uint64_t seed,
-                      const std::set<size_t> &usedUniques = {}, std::string_view characterClass = {});
+                      const std::set<size_t> &usedUniques = {}, std::string_view characterClass = {},
+                      int magicFind = 0, int goldFind = 0);
 } // namespace d2x

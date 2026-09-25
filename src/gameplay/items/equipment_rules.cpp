@@ -4,7 +4,8 @@
 namespace d2x {
 namespace {
 constexpr std::array<const char *, size_t(EquipmentSlot::Count)> slotCodes{
-    "head", "neck", "tors", "rarm", "larm", "rrin", "lrin", "belt", "feet", "glov"};
+    "head", "neck", "tors", "rarm", "larm", "rrin", "lrin", "belt", "feet", "glov",
+    "rarm", "larm"};
 }
 const char *equipmentSlotCode(EquipmentSlot slot) {
     return size_t(slot) < slotCodes.size() ? slotCodes[size_t(slot)] : "";

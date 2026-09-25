@@ -15,6 +15,8 @@ struct SpecialItemRecord {
     struct Bonus {
         std::string condition;
         PropertyRange property;
+        int pieces = 0; // Zero means the complete set.
+        bool perItem = false;
     };
     size_t row = 0;
     std::string name, code, set, icon, groundAnimation;
@@ -22,6 +24,7 @@ struct SpecialItemRecord {
     bool noLimit = false, ladder = false, cowOnly = false;
     bool artAvailable = false;
     int requiredLevel = 0;
+    int setAddFunction = 0;
     std::vector<PropertyRange> properties;
     std::vector<Bonus> setBonuses;
 };

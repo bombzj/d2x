@@ -148,6 +148,13 @@ void Simulation::tick(float dt, Vec keyboard) {
                         MonsterDamageType::Poison);
             if (e.poisonRemaining <= 0) e.poisonPerSecond = 0;
         }
+        if (e.hp > 0 && e.openWoundsRemaining > 0) {
+            const float elapsed = std::min(dt, e.openWoundsRemaining);
+            e.openWoundsRemaining -= elapsed;
+            damageEnemy(e, e.openWoundsPerSecond * elapsed, e.openWoundsSource, 0, false,
+                        MonsterDamageType::Physical, true);
+            if (e.openWoundsRemaining <= 0) e.openWoundsPerSecond = 0;
+        }
     }
     if (!p.dead) {
         updatePotions(dt);

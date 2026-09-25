@@ -7,7 +7,8 @@ bool Simulation::firePhysicalProjectile(const Enemy &enemy, const WeaponDamage &
     auto &player = state_.player;
     const auto selected = weapon; // Ammo consumption can rebuild the equipment cache.
     const auto priorRandom = player.combatRandom;
-    const auto elements = rollAttackElements(selected.item);
+    auto elements = rollAttackElements(selected.item);
+    elements.ranged = true;
     if (!spendProjectile_ || !spendProjectile_(selected.item, thrown)) {
         player.combatRandom = priorRandom;
         player.attackTarget = {};

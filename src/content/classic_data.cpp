@@ -42,6 +42,7 @@ ClassicData loadClassicData(Archives &archives) {
             tables.emplace("npc", DataTable(archives.read("data/global/excel/npc.txt")));
         tables.emplace("itemtypes", DataTable(archives.read("data/global/excel/itemtypes.txt")));
         tables.emplace("storepage", DataTable(archives.read("data/global/excel/storepage.txt")));
+        tables.emplace("gamble", DataTable(archives.read("data/global/excel/gamble.txt")));
         tables.emplace("hireling", DataTable(archives.read("data/global/excel/hireling.txt")));
         if (archives.contains("data/global/excel/itemratio.txt"))
             tables.emplace("itemratio", DataTable(archives.read("data/global/excel/itemratio.txt")));
@@ -247,6 +248,7 @@ ClassicData loadClassicData(Archives &archives) {
     if (lod) {
         data.tables.emplace("skilldesc", DataTable(archives.read("data/global/excel/skilldesc.txt")));
         ClassicStrings strings(archives);
+        data.itemStrings = strings.entries();
         for (const auto &[key, value] : strings.entries())
             if (key.starts_with("qstsa1q") || key == "newquestlog" ||
                 key == "qstsComplete" || key == "noactivequest")
@@ -264,7 +266,8 @@ ClassicData loadClassicData(Archives &archives) {
             if (auto id = levels.number(row, "Id"); id && *id > 0)
                 if (auto allowed = levels.number(row, "Teleport"))
                     data.teleportByLevel.emplace(*id, *allowed);
-        const DataTable difficulties(archives.read("data/global/excel/difficultylevels.txt"));
+        data.tables.emplace("difficultylevels", DataTable(archives.read("data/global/excel/difficultylevels.txt")));
+        const auto &difficulties = data.tables.at("difficultylevels");
         if (difficulties.rows().size() < data.staticFieldMinimum.size())
             throw std::runtime_error("Missing original Static Field difficulty limits");
         for (size_t index = 0; index < data.staticFieldMinimum.size(); ++index) {

@@ -89,6 +89,7 @@ CharacterAttributes deriveCharacterAttributes(const CharacterDefinition &d, int 
     result.blockFactor = d.blockFactor;
     // CharStats.ManaRegen is an engine denominator, not mana per second.
     result.manaRegen = d.manaRegen > 0 ? float(result.maxMana) / d.manaRegen : 0;
+    result.manaRegen *= std::max(0, 100 + m.combat.manaRecovery) / 100.f;
     return result;
 }
 } // namespace d2x

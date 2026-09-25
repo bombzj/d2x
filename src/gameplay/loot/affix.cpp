@@ -38,7 +38,7 @@ MagicAffixRoll rollMagicAffix(std::span<const MagicAffixRecord> records,
     for (const auto &record : records) {
         if (record.frequency <= 0 || record.level > affixLevel ||
             (record.maxLevel && affixLevel > record.maxLevel) || (rare && !record.rareAllowed) ||
-            (!record.characterClass.empty() && record.characterClass != characterClass) ||
+            (!characterClass.empty() && !record.characterClass.empty() && record.characterClass != characterClass) ||
             std::find(usedGroups.begin(), usedGroups.end(), record.group) != usedGroups.end() ||
             (!socketable && !record.properties.empty() && record.properties.front().code == "sock") ||
             std::any_of(record.excludedTypes.begin(), record.excludedTypes.end(), matches) ||

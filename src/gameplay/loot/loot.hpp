@@ -69,6 +69,7 @@ class LootSystem {
     bool settled(EntityId source) const { return settled_.contains(source); }
     uint64_t randomState() const { return randomState_; }
     const std::set<uint32_t> &usedUniques() const { return usedUniques_; }
+    void recordUnique(uint32_t row) { usedUniques_.insert(row); }
     LootState snapshot() const { return {randomState_, settled_, usedUniques_}; }
     void restore(LootState state) noexcept {
         randomState_ = state.randomState;

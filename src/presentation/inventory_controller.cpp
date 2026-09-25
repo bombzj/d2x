@@ -82,6 +82,14 @@ bool SceneController::handleInventory(const FrameInput &input) {
         toggleInventory();
         return true;
     }
+    if (ui.open && !ui.drag && !ui.split && !ui.goldDialog && input.insideViewport &&
+        input.leftPressed && session_.content().stashLayout.expansion)
+        if (auto set = weaponTabAt(input.mouse)) {
+            inventoryClick_ = true;
+            if (*set != session_.state().player.weaponSet)
+                session_.submit(SwitchWeaponSet{});
+            return true;
+        }
     if (ui.split) {
         auto *source = inventory.item(ui.split->item.id);
         if (!source || source->revision != ui.split->item.revision) {
@@ -158,10 +166,10 @@ bool SceneController::handleInventory(const FrameInput &input) {
         inventoryClick_ = input.leftPressed || inventoryClick_;
         return true;
     }
+    bool bankField = ui.storage && CheckCollisionPointRec(
+            rv(input.mouse), storageGold(session_.content().stashLayout.expansion));
     if (ui.open && input.insideViewport && input.leftPressed && !ui.pending &&
-        (CheckCollisionPointRec(rv(input.mouse), inventoryGold()) ||
-         (ui.storage && CheckCollisionPointRec(rv(input.mouse), storageGold())))) {
-        bool bankField = ui.storage && CheckCollisionPointRec(rv(input.mouse), storageGold());
+        (CheckCollisionPointRec(rv(input.mouse), inventoryGold()) || bankField)) {
         GoldAction action = bankField ? GoldAction::Withdraw :
                             ui.storage ? GoldAction::Deposit : GoldAction::Drop;
         const auto &player = session_.state().player;
@@ -198,7 +206,7 @@ bool SceneController::handleInventory(const FrameInput &input) {
                     break;
                 }
             if (!target)
-                if (auto slot = equipmentAt(input.mouse))
+                if (auto slot = equipmentAt(input.mouse, session_.state().player.weaponSet))
                     target = inventory.equipped(session_.playerContainers(), *slot);
             if (const auto *item = inventory.item(target))
                 if (queueInventory(IdentifyItem{*ui.identify, item->handle()}, source->id))
@@ -245,7 +253,8 @@ bool SceneController::handleInventory(const FrameInput &input) {
             break;
         }
     }
-    auto equipmentSlot = ui.open ? equipmentAt(input.mouse) : std::nullopt;
+    auto equipmentSlot = ui.open ? equipmentAt(input.mouse, session_.state().player.weaponSet)
+                                 : std::nullopt;
     bool equipment = equipmentSlot.has_value();
     bool inBelt = CheckCollisionPointRec(rv(input.mouse), beltBounds(rows));
     if (!input.insideViewport || (!inBelt && !inventorySurface(ui, input.mouse)))
@@ -297,8 +306,12 @@ bool SceneController::handleInventory(const FrameInput &input) {
         if (location && location->container == containers.equipment)
             return queueInventory(EquipItem{item.handle(), std::nullopt}, item.id);
         std::optional<EquipmentSlot> candidate;
-        for (int index = 0; index < int(EquipmentSlot::Count); ++index) {
+        for (int index = 0; index < int(EquipmentSlot::AlternateRightHand); ++index) {
             auto slot = EquipmentSlot(index);
+            if (slot == EquipmentSlot::RightHand)
+                slot = weaponHandSlot(false, session_.state().player.weaponSet);
+            if (slot == EquipmentSlot::LeftHand)
+                slot = weaponHandSlot(true, session_.state().player.weaponSet);
             if (slot == EquipmentSlot::Belt || !definition.equipment.fits(slot))
                 continue;
             if (!candidate)

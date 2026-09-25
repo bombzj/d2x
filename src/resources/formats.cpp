@@ -69,7 +69,10 @@ Cof decodeCof(const Bytes &b) {
         throw std::runtime_error("Invalid COF");
     for (int i = 0; i < c.layers; i++) {
         c.components.push_back(r.u8());
-        r.skip(4);
+        c.shadows.push_back(r.u8() != 0);
+        r.skip(1); // Selectable.
+        c.transparent.push_back(r.u8() != 0);
+        r.skip(1); // Draw effect.
         std::string w;
         for (int j = 0; j < 4; j++) {
             auto ch = r.u8();

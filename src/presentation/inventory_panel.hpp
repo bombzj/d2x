@@ -2,6 +2,7 @@
 #include "container_grid.hpp"
 #include "gameplay/session/session.hpp"
 #include "hud_layout.hpp"
+#include "classic_panel.hpp"
 
 namespace d2x {
 struct InventoryDrag {
@@ -36,9 +37,9 @@ struct InventoryUi {
     }
 };
 // Classic invchar.dc6's right panel, scaled from 320 x 432; grid data from inventory.txt.
-inline constexpr float inventoryScale = 1.25f, inventoryCellSize = 29 * inventoryScale;
+inline constexpr float inventoryScale = classicPanelScale, inventoryCellSize = 29 * inventoryScale;
 inline Rectangle inventoryBounds() {
-    return {W - 416.f, 20, 400, 540};
+    return classicPanelBounds(true);
 }
 inline Rectangle inventoryGrid() {
     auto p = inventoryBounds();
@@ -47,13 +48,13 @@ inline Rectangle inventoryGrid() {
 }
 inline Rectangle inventoryClose() {
     auto p = inventoryBounds();
-    return {p.x + 14 * inventoryScale, p.y + 381 * inventoryScale,
-            33 * inventoryScale, 30 * inventoryScale};
+    return {p.x + 19 * inventoryScale, p.y + 389 * inventoryScale,
+            32 * inventoryScale, 32 * inventoryScale};
 }
 inline Rectangle inventoryGold() {
     auto p = inventoryBounds();
-    return {p.x + 82 * inventoryScale, p.y + 381 * inventoryScale,
-            120 * inventoryScale, 26 * inventoryScale};
+    return {p.x + 82 * inventoryScale, p.y + 391 * inventoryScale,
+            120 * inventoryScale, 20 * inventoryScale};
 }
 inline Rectangle inventoryToggle() {
     return hudMenuButton();
@@ -63,7 +64,9 @@ inline Rectangle equippedBeltBounds() {
     return {p.x + 136 * inventoryScale, p.y + 179 * inventoryScale, 52 * inventoryScale, 25 * inventoryScale};
 }
 Rectangle equipmentBounds(EquipmentSlot slot);
-std::optional<EquipmentSlot> equipmentAt(Vec mouse);
+std::optional<EquipmentSlot> equipmentAt(Vec mouse, unsigned weaponSet);
+Rectangle weaponTabBounds(unsigned set, bool left);
+std::optional<unsigned> weaponTabAt(Vec mouse);
 inline Rectangle beltSlot(Cell cell) {
     return hudRect(425 + 31 * cell.x, 41 + 32 * cell.y, 29, 29);
 }
@@ -78,14 +81,14 @@ inline std::optional<Cell> beltCell(Vec mouse, int rows) {
     return std::nullopt;
 }
 inline Rectangle storageBounds() {
-    return {16, 20, 400, 540};
+    return classicPanelBounds(false);
 }
 inline Rectangle storageClose() {
     return {storageBounds().x + 274 * inventoryScale, storageBounds().y + 384 * inventoryScale,
             31 * inventoryScale, 34 * inventoryScale};
 }
 inline Rectangle cubeBounds() {
-    return {inventoryBounds().x - 400, inventoryBounds().y, 400, 540};
+    return classicPanelBounds(false);
 }
 inline Rectangle cubeClose() {
     auto p = cubeBounds();
@@ -97,10 +100,11 @@ inline Rectangle cubeTransmute() {
     return {p.x + 109 * inventoryScale, p.y + 297 * inventoryScale,
             102 * inventoryScale, 35 * inventoryScale};
 }
-inline Rectangle storageGold() {
+inline Rectangle storageGold(bool expansion) {
     auto p = storageBounds();
-    return {p.x + 84 * inventoryScale, p.y + 378 * inventoryScale,
-            176 * inventoryScale, 28 * inventoryScale};
+    return {p.x + 74 * inventoryScale,
+            p.y + (expansion ? 20 : 218) * inventoryScale,
+            176 * inventoryScale, 22 * inventoryScale};
 }
 inline Rectangle goldDialogBounds() {
     return {inventoryBounds().x + 28, 192, 344, 166};

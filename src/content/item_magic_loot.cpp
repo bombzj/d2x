@@ -6,7 +6,7 @@
 namespace d2x {
 AffixGenerationResult rollAffixItem(const ClassicData &data, const ItemDefinition &item,
                                     ItemQuality quality, int itemLevel, uint64_t seed,
-                                    std::string_view characterClass) {
+                                    std::string_view /*characterClass*/) {
     AffixGenerationResult result;
     result.randomState = seed;
     result.generation.quality = quality;
@@ -18,7 +18,7 @@ AffixGenerationResult rollAffixItem(const ClassicData &data, const ItemDefinitio
     const int magicLevel = item.base.magicLevel.value_or(0);
     const int affixLevel = itemAffixLevel(itemLevel, item.base.level.value_or(0), magicLevel);
     const bool socketable = item.base.sockets.value_or(0) > 0;
-    std::vector<int> usedGroups;
+    std::vector<int> usedGroups[2];
     if (quality == ItemQuality::Rare) {
         auto chooseName = [&](std::span<const RareNameRecord> records) -> int32_t {
             std::vector<const RareNameRecord *> candidates;
@@ -44,9 +44,10 @@ AffixGenerationResult rollAffixItem(const ClassicData &data, const ItemDefinitio
     }
     auto append = [&](bool prefix, bool force) {
         const auto &records = prefix ? data.magicPrefixes : data.magicSuffixes;
-        auto roll = rollMagicAffix(records, std::span<const std::string>(item.equipment.types), characterClass,
+        // D2MOO checks the item's class restriction, not the buyer/killer's class.
+        auto roll = rollMagicAffix(records, std::span<const std::string>(item.equipment.types), item.equipment.requiredClass,
                                    affixLevel, magicLevel, quality == ItemQuality::Rare, socketable,
-                                   std::span<const int>(usedGroups), force,
+                                   std::span<const int>(usedGroups[prefix]), force,
                                    result.randomState);
         result.randomState = roll.randomState;
         if (!roll.row)
@@ -61,7 +62,7 @@ AffixGenerationResult rollAffixItem(const ClassicData &data, const ItemDefinitio
         result.generation.affixes.push_back({prefix, int32_t(found->row), std::move(properties.values)});
         result.generation.requiredLevel = std::max(result.generation.requiredLevel,
                                                     found->requiredLevel);
-        usedGroups.push_back(found->group);
+        usedGroups[prefix].push_back(found->group);
         return true;
     };
     if (quality == ItemQuality::Magic) {
@@ -73,15 +74,14 @@ AffixGenerationResult rollAffixItem(const ClassicData &data, const ItemDefinitio
                                  (result.randomState >> 32);
             return uint32_t(result.randomState) % limit;
         };
-        int minimum = 1 + (itemLevel > 30) + (itemLevel > 50) + (itemLevel > 70);
-        int target = std::max(minimum, int(below(5)));
+        // ItemsMagic::sub_6FC53760: rare jewels request 3-4 affixes,
+        // other rares 4-6. The item-level rule belongs to crafted items.
+        int target = item.equipment.isType("jewl") ? 3 + int(below(2)) : 4 + int(below(3));
         int prefixes = 0, suffixes = 0;
         for (int attempt = 0; attempt < target && (prefixes < 3 || suffixes < 3); ++attempt) {
             bool choosePrefix = suffixes >= 3 || (prefixes < 3 && below(2) == 0);
             if (append(choosePrefix, true))
                 (choosePrefix ? prefixes : suffixes)++;
-            else if (append(!choosePrefix, true))
-                (choosePrefix ? suffixes : prefixes)++;
         }
     }
     if (result.generation.affixes.empty())

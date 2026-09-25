@@ -118,7 +118,7 @@ $spawn = .\scripts\Send-D2XCommand.ps1 -Command monster-spawn -Arguments @{monst
 .\scripts\Send-D2XCommand.ps1 -Command reset-skills
 ```
 
-营地商人可先从 `objects` 取会话对象 ID，再按正常交互进入菜单；`shop` 给出可买 slot，`buy` 使用同一购买事务。`talk` 用于单独查看原 MPQ 对话，购买不要求先 Talk。
+营地商人可先从 `objects` 取会话对象 ID，再按正常交互进入菜单；`shop` 给出可买 slot，`buy` 使用同一购买事务。`talk` 列出任务话题并可选择原 MPQ 对话，购买不要求先 Talk。
 
 ```powershell
 $vendorId = ((.\scripts\Send-D2XCommand.ps1 -Command objects).objects | Where-Object name -eq 'Charsi' | Select-Object -First 1).id
@@ -131,7 +131,7 @@ $offers = (.\scripts\Send-D2XCommand.ps1 -Command shop -Arguments @{ id = $vendo
 
 | command | Arguments | 行为 |
 | --- | --- | --- |
-| status | 无 | 玩家坐标、生命、蛛网减速剩余时间／百分比、钱包、区域、击杀、已结算数、掉落随机状态、调试暂停状态 |
+| status | 无 | 玩家坐标、生命、蛛网减速剩余时间／百分比、钱包、区域、击杀、已结算数、掉落随机状态、调试暂停状态，以及 ui 中的商店／NPC 菜单／字幕偏移／I、II 组／左右面板伤害 |
 | quest-status | 无 | 当前难度六项第一幕任务的阶段和标记，只读；A1Q3 灌注、A1Q4 石阵与 A1Q6 结局都使用正式会话状态 |
 | quest-panel | 可选 `open`、`selected`（-1 为总览，0–5 为六项） | 调试打开原 MPQ 任务面板，便于与 `screenshot` 查看布局 |
 | monsters | `visible`，默认 true | 当前区域已创建怪物 ID、真实身份、召唤来源、等级类别、当前／最大生命、蛛网光环、原 AI 名、停顿／追击、当前攻击／命中剩余时间、MPQ A1 动作时长／命中时刻与帧数、坐标、屏幕内／激活状态；不含尚未创建计划 |
@@ -148,7 +148,7 @@ $offers = (.\scripts\Send-D2XCommand.ps1 -Command shop -Arguments @{ id = $vendo
 | interact | `id`，可选 `ticks` 1–250 | 正常走近对象交互；返回是否已开启、仍在寻路；NPC 首先打开交互菜单 |
 | objects | 可选 `interactiveOnly` 布尔值 | 列出当前区域对象；可筛选可交互／已操作对象，返回 Objects 原类别、操作编号、祭坛 Code 和井水余量 |
 | grant-shrine | `code`：运行时 `Shrines.txt` 的 Code | 调试领取指定祭坛效果，无需找实物；限时效果见 `status.shrines`，一次性效果显示领取提示 |
-| talk | 无 | 在已打开的 NPC 菜单中选择 Talk，返回原 MPQ 对话文本与排版行数 |
+| talk | 可选 `quest`：0–5 | 打开当前 NPC 的 Talk 话题菜单，返回全部可用任务；传 quest 播放该条原文，回顾不推进任务 |
 | gossip | 无 | 已打开的 NPC 菜单或对话切换到下一段原 MPQ 通用闲聊，返回文本和排版行数；不改变玩法状态 |
 | identify | 凯恩对象 `id` | 需先正常交谈且在范围内；玩家亲自救出凯恩则免费，罗格代救则每件 100 金币，返回数量和扣款 |
 | shop | 商人对象 `id` | 查询原 MPQ 货架报价、`storePage`、常驻／已售状态；该 NPC 菜单已打开时进入货架界面 |
@@ -180,6 +180,7 @@ $offers = (.\scripts\Send-D2XCommand.ps1 -Command shop -Arguments @{ id = $vendo
 | step | `ticks`，默认 1，范围 1–250 | 同步推进固定步，每步 1/25 秒，包含 AI、伤害、死亡及拾取；不会暂停怪物单独移动玩家 |
 | pause / resume | 无 | 暂停／恢复实时模拟；调试暂停独立于游戏菜单暂停 |
 | save / load | 无 | 使用启动时 `--save`、否则 `--load`、否则 `saves/quick.d2xsave`；保存角色，载入后在城镇开启新的一局；不能通过请求任意指定路径 |
+| ui-input | 可选 `x`、`y`、`button`（left／right）、`key`（escape／enter／inventory／character／quests／weapon-swap／automap） | 排入下一帧的正常 SceneController 输入，坐标基于 1066×680；不直接调用购买或加点事务，适合核对实际界面路径；返回 queued 后在后续请求查看状态 |
 | screenshot | 无 | 保存最近渲染画面到 `artifacts/debug-pipe.png`；命令返回前一已完成帧，立即移动后可在下一请求截取 |
 | quit | 无 | 正常退出；若启动指定 `--save`，退出时仍会保存 |
 

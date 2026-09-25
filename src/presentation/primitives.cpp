@@ -33,6 +33,10 @@ void sprite(const Sprite *s, Vec p, Color tint) {
         return;
     DrawTexture(s->texture, int(p.x + s->x), int(p.y + s->y), tint);
 }
+void spriteShadow(const Sprite *s, Vec p) {
+    if (s && s->shadowTexture.id)
+        DrawTexture(s->shadowTexture, int(p.x + s->shadowX), int(p.y + s->shadowY), {0, 0, 0, 191});
+}
 void UiPainter::label(const std::string &text, int x, int y, int size, Color c) const {
     if (font.ready) {
         float cursor = float(x), scale = size / 16.f;
@@ -51,6 +55,22 @@ void UiPainter::label(const std::string &text, int x, int y, int size, Color c) 
 }
 void UiPainter::centered(const std::string &text, int y, int size, Color c) const {
     label(text, (W - measure(text, size)) / 2, y, size, c);
+}
+void UiPainter::inBox(const std::string &text, Rectangle bounds, int size, Color color) const {
+    float top = 0, bottom = float(size);
+    bool found = false;
+    if (font.ready)
+        for (unsigned char ch : text) {
+            const auto *glyph = font.glyphs.frame(0, font.indices[ch]);
+            if (!glyph || ch == ' ' || !glyph->hitHeight) continue;
+            const float start = (glyph->hitY - glyph->y) * size / 16.f;
+            const float end = start + glyph->hitHeight * size / 16.f;
+            top = found ? std::min(top, start) : start;
+            bottom = found ? std::max(bottom, end) : end;
+            found = true;
+        }
+    label(text, int(bounds.x + (bounds.width - measure(text, size)) / 2),
+          int(bounds.y + (bounds.height - (bottom - top)) / 2 - top), size, color);
 }
 void frame(Rectangle r, Color border) {
     DrawRectangleRec(r, {15, 15, 14, 238});

@@ -19,18 +19,21 @@ EquipmentActor GameSession::equipmentActor() const {
 EquipmentActor GameSession::equipmentActor(const PlayerState &player) const {
     auto effects = activeModifiers(player, state().time);
     auto base = deriveCharacterAttributes(characterDefinition_, player.level, player.allocated, effects);
-    EquipmentActor baseActor{characterDefinition_.code, base.strength, base.dexterity, player.level, base.blockFactor};
+    EquipmentActor baseActor{characterDefinition_.code, base.strength, base.dexterity, player.level,
+                             base.blockFactor, player.weaponSet};
     auto modifiers = resolveEquipmentModifiers(content_, inventory_, playerContainers_, baseActor);
     mergeCharacterModifiers(modifiers, effects);
     auto stats = deriveCharacterAttributes(characterDefinition_, player.level, player.allocated, modifiers);
-    return {characterDefinition_.code, stats.strength, stats.dexterity, player.level, stats.blockFactor};
+    return {characterDefinition_.code, stats.strength, stats.dexterity, player.level,
+            stats.blockFactor, player.weaponSet};
 }
 void GameSession::refreshCharacter(bool fillGains) {
     auto &player = simulation_.state_.player;
     const auto previous = simulation_.characterStats_;
     auto effects = activeModifiers(player, state().time);
     auto base = deriveCharacterAttributes(characterDefinition_, player.level, player.allocated, effects);
-    EquipmentActor baseActor{characterDefinition_.code, base.strength, base.dexterity, player.level, base.blockFactor};
+    EquipmentActor baseActor{characterDefinition_.code, base.strength, base.dexterity, player.level,
+                             base.blockFactor, player.weaponSet};
     auto modifiers = resolveEquipmentModifiers(content_, inventory_, playerContainers_, baseActor);
     mergeCharacterModifiers(modifiers, effects);
     auto current = deriveCharacterAttributes(characterDefinition_, player.level, player.allocated,
@@ -44,7 +47,8 @@ void GameSession::refreshCharacter(bool fillGains) {
     player.mana = std::clamp(player.mana, 0.f, float(current.maxMana));
     player.stamina = std::clamp(player.stamina, 0.f, float(current.maxStamina));
     simulation_.characterStats_ = current;
-    EquipmentActor actor{characterDefinition_.code, current.strength, current.dexterity, player.level, current.blockFactor};
+    EquipmentActor actor{characterDefinition_.code, current.strength, current.dexterity, player.level,
+                         current.blockFactor, player.weaponSet};
     simulation_.equipmentStats_ = deriveEquipmentStats(inventory_, playerContainers_, actor,
                                                        modifiers.defense, modifiers.combat);
 }

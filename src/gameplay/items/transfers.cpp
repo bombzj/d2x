@@ -26,7 +26,7 @@ InventoryResult InventoryService::createItem(std::string_view code, unsigned qua
     auto definition = catalog_.find(code);
     if (!definition)
         return failure(InventoryError::UnknownDefinition);
-    if (quantity == 0 || quantity > definition->maxStack)
+    if (quantity == 0)
         return failure(InventoryError::InvalidQuantity);
     if (generation.specialRow < -1 || generation.gradeRow < -1 ||
         generation.rarePrefixRow < -1 || generation.rareSuffixRow < -1 ||
@@ -73,6 +73,8 @@ InventoryResult InventoryService::createItem(std::string_view code, unsigned qua
     instance.affixes = generation.affixes;
     instance.durability = definition->maxDurability;
     instance.location = location;
+    instance.durability = maximumDurability(instance);
+    if (quantity > maximumStack(instance)) return failure(InventoryError::InvalidQuantity);
     uint64_t nextRandom = state_.creationRandom;
     if (definition->family == ItemFamily::Armor) {
         auto minimum = definition->base.minDefense;
@@ -81,6 +83,8 @@ InventoryResult InventoryService::createItem(std::string_view code, unsigned qua
             return failure(InventoryError::UnsupportedEquipment);
         nextRandom = uint64_t(uint32_t(nextRandom)) * 0x6ac690c5ULL + (nextRandom >> 32);
         instance.defense = *minimum + uint32_t(nextRandom) % uint32_t(*maximum - *minimum + 1);
+        if (instance.quality == ItemQuality::Inferior) instance.defense = std::max(1, instance.defense * 75 / 100);
+        if (propertyValue(instance, "item_armor_percent")) instance.defense = *maximum + 1;
     }
     instance.id = ids_.allocate();
     auto result = prepared(instance.id, quantity);
@@ -149,8 +153,7 @@ InventoryResult InventoryService::merge(const MergeStacks &command, const Invent
         return failure(error);
     auto &source = state_.items.at(command.source.id);
     auto &target = state_.items.at(command.target.id);
-    const auto &definition = *catalog_.find(source.definition);
-    unsigned space = definition.maxStack - target.quantity;
+    unsigned space = maximumStack(target) - target.quantity;
     unsigned quantity = command.quantity == 0 ? std::min(source.quantity, space) : command.quantity;
     auto result = prepared(target.id, quantity);
     unsigned remaining = source.quantity - quantity;
@@ -195,20 +198,24 @@ InventoryResult InventoryService::consume(ItemHandle handle, unsigned quantity,
 }
 InventoryResult InventoryService::consumeEquipped(EntityId id, const PlayerContainers &containers) {
     if (id != equipped(containers, EquipmentSlot::RightHand) &&
-        id != equipped(containers, EquipmentSlot::LeftHand))
+        id != equipped(containers, EquipmentSlot::LeftHand) &&
+        id != equipped(containers, EquipmentSlot::AlternateRightHand) &&
+        id != equipped(containers, EquipmentSlot::AlternateLeftHand))
         return failure(InventoryError::AccessDenied);
     const auto *source = item(id);
     if (!source || source->quantity == 0 || source->revision == std::numeric_limits<uint64_t>::max())
         return failure(InventoryError::InvalidRequest);
     auto result = prepared(id, 1);
     const unsigned remaining = source->quantity - 1;
+    const bool retain = remaining || retainsEmptyStack(*source);
     result.changes.push_back({id, source->revision + 1,
-        remaining ? ItemChangeKind::QuantityChanged : ItemChangeKind::Removed,
+        retain ? ItemChangeKind::QuantityChanged : ItemChangeKind::Removed,
         source->location,
-        remaining ? std::optional<ItemLocation>{source->location} : std::nullopt, remaining});
-    if (remaining) {
+        retain ? std::optional<ItemLocation>{source->location} : std::nullopt, remaining});
+    if (retain) {
         auto &instance = state_.items.at(id);
         instance.quantity = remaining;
+        instance.durability = maximumDurability(instance);
         ++instance.revision;
     } else state_.items.erase(id);
     return result;

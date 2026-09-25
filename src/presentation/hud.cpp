@@ -1,11 +1,23 @@
 #include "scene_view.hpp"
+#include "quest_panel.hpp"
 #include <algorithm>
 #include <cmath>
 namespace d2x {
 void SceneView::drawHud() const {
     const auto &sim = session_.state();
     drawControlPanel();
-    if (!view_.npcMenu && view_.dialogue.empty() && !view_.shopOpen) {
+    if (view_.questNotice && !view_.questOpen && !view_.blocksWorld() &&
+        !view_.characterOpen && !view_.inventory.storage && !view_.inventory.cubeOpen) {
+        const auto bounds = questNoticeBounds();
+        if (const auto *button = assets_.attributeButtons.frame(0, 0))
+            DrawTexturePro(button->texture, {0, 0, float(button->texture.width), float(button->texture.height)},
+                           bounds, {0, 0}, 0, WHITE);
+        const auto label = session_.content().actOneQuestStrings.find("newquestlog");
+        if (label != session_.content().actOneQuestStrings.end())
+            painter_.label(label->second, int(bounds.x + (bounds.width - painter_.measure(label->second, 13)) / 2),
+                           int(bounds.y) - 19, 13, WHITE);
+    }
+    if (view_.debug && !view_.npcMenu && view_.dialogue.empty() && !view_.shopOpen) {
         painter_.label("D2X", 22, 20, 20, gold);
         painter_.label("CLASSIC ENGINE / C++", 72, 24, 10, {154, 149, 129, 255});
         painter_.label("LV " + std::to_string(sim.player.level) + "  XP " +
@@ -55,7 +67,7 @@ void SceneView::drawHelp() const {
                            "Hover skill, F1-F8         Bind selected mouse skill",
                            "F1 through F8              Select bound mouse skill",
                            "Space                      Toggle walk / run",
-                           "Tab / Ctrl+F2              Automap / Map catalog",
+                           "Tab / V                    Automap / Switch map side",
                            "Ctrl+F3 / Ctrl+F4          Collision / Walk to stash",
                            "P / M                      Pause / Mute",
                            "R                          Restore life",
@@ -89,14 +101,12 @@ void SceneView::draw(Vec mouse) const {
     drawActors();
     drawMagic();
     drawLighting();
+    drawNpcAlerts();
     drawLootLabels(mouse);
     drawExitHint(mouse);
     drawObjectHint(mouse);
     EndScissorMode();
-    DrawRectangleGradientV(0, 0, W, 105, {0, 0, 0, 145}, {0, 0, 0, 0});
     if (view_.automap)
-        drawMinimap(true);
-    else if (!view_.inventory.open && !view_.npcMenu && view_.dialogue.empty())
         drawMinimap(false);
     drawHud();
     if (!view_.blocksWorld() && !view_.inventory.open && mouse.y < H - HUD) {
@@ -119,6 +129,7 @@ void SceneView::draw(Vec mouse) const {
     drawCharacter(mouse);
     drawQuests(mouse);
     drawSkillTree(mouse);
+    if (view_.shopOpen) drawNpcShop(mouse);
     drawInventory(mouse);
     drawBelt(mouse);
     if (view_.pause)
@@ -164,11 +175,10 @@ void SceneView::draw(Vec mouse) const {
             std::to_string(view_.travelPage + 1) + " / " + std::to_string(pages) + "   PgUp / PgDn", 554, 14);
     }
     drawSkillControls(mouse);
-    if (view_.npcMenu) drawNpcMenu();
-    if (view_.shopOpen) drawNpcShop(mouse);
+    if (view_.npcMenu) drawNpcMenu(mouse);
     if (!view_.dialogue.empty()) drawNpcDialogue();
     drawInventoryCursor(mouse);
-    if (!assets_.cursor.frames.empty())
-        sprite(assets_.cursor.frame(0, 0), mouse);
+    if (const auto *pointer = assets_.cursor.frame(0, 0))
+        sprite(pointer, mouse - Vec{0, float(pointer->texture.height)});
 }
 } // namespace d2x

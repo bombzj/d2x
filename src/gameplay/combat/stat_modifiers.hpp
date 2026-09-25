@@ -7,16 +7,19 @@ namespace d2x {
 // derived combat snapshot. Values here are already decoded from MPQ stat IDs.
 struct WeaponModifiers {
     int minimum = 0, maximum = 0;
-    int enhancedDamage = 0;
+    int normalDamage = 0;
+    int enhancedMinimum = 0, enhancedMaximum = 0;
     int fireMinimum = 0, fireMaximum = 0;
     int lightningMinimum = 0, lightningMaximum = 0;
     int coldMinimum = 0, coldMaximum = 0, coldFrames = 0;
     int magicMinimum = 0, magicMaximum = 0;
     int poisonMinimum = 0, poisonMaximum = 0, poisonFrames = 0, poisonSources = 0;
     int deadlyStrike = 0;
+    int lifeLeech = 0, manaLeech = 0, crushingBlow = 0, openWounds = 0;
 };
 struct CombatModifiers {
     int damagePercent = 0, attackRatingPercent = 0;
+    int defensePercent = 0;
     int minimumDamagePercent = 0, maximumDamagePercent = 0;
     int normalDamage = 0, minimumDamage = 0, maximumDamage = 0;
     int fireMinimum = 0, fireMaximum = 0;
@@ -38,7 +41,11 @@ struct CombatModifiers {
     int lifeLeech = 0, manaLeech = 0;
     int crushingBlow = 0, openWounds = 0, deadlyStrike = 0;
     int magicFind = 0, goldFind = 0;
+    int reducedPrices = 0;
     int poisonLengthResist = 0;
+    int replenishLife = 0, manaRecovery = 0, lifeOnKill = 0, manaOnKill = 0;
+    int allSkills = 0;
+    std::map<int, int> classSkills, singleSkills, nonClassSkills, tabSkills;
     bool cannotBeFrozen = false, halfFreezeDuration = false;
     std::map<EntityId, WeaponModifiers> weapons;
     std::map<EntityId, int> armorPercent;
@@ -50,6 +57,9 @@ struct AttackElements {
     float fire = 0, lightning = 0, cold = 0, magic = 0;
     float poisonPerSecond = 0, poisonDuration = 0, coldDuration = 0;
     bool deadly = false;
+    bool crushing = false, openWounds = false, ranged = false;
+    bool playerKillEffects = true;
+    int lifeLeech = 0, manaLeech = 0, attackerLevel = 1;
 };
 struct AttackDamageRange {
     int minimum = 0, maximum = 0;

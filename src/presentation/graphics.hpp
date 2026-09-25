@@ -2,13 +2,14 @@
 #include "resources/archive.hpp"
 #include "resources/formats.hpp"
 #include <raylib.h>
-#include <optional>
 #include <unordered_map>
 namespace d2x {
 struct Sprite {
     Texture2D texture{};
     int x = 0, y = 0;
     int hitX = 0, hitY = 0, hitWidth = 0, hitHeight = 0;
+    Texture2D shadowTexture{};
+    int shadowX = 0, shadowY = 0;
 };
 struct GpuAnimation {
     int directions = 0, count = 0;
@@ -33,9 +34,9 @@ class Graphics {
     ~Graphics();
     Graphics(const Graphics &) = delete;
     Graphics &operator=(const Graphics &) = delete;
-    Sprite upload(const IndexedFrame &frame, std::optional<uint8_t> transparentIndex = std::nullopt);
+    Sprite upload(const IndexedFrame &frame);
     const Animation *animation(const std::string &path);
-    GpuAnimation single(const std::string &path, bool transparentBorderColor = false);
+    GpuAnimation single(const std::string &path);
     GpuAnimation composite(const std::string &type, const std::string &token, const std::string &mode,
                            const std::string &weapon,
                            const std::array<const char *, 16> *equipment = nullptr,

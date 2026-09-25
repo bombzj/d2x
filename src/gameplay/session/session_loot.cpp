@@ -45,7 +45,9 @@ void GameSession::settleDeaths() {
                     usedUniques.insert(size_t(row));
                 plan = planItemLoot(content_, ratios->second, entry.treasureClass, entry.itemLevel,
                                     entry.upgradeLevel, plan.randomState, usedUniques,
-                                    characterDefinition_.code);
+                                    characterDefinition_.code,
+                                    simulation_.characterStats_.combat.magicFind,
+                                    simulation_.characterStats_.combat.goldFind);
             }
             std::cout << " TC=" << entry.treasureClass << " itemLevel=" << entry.itemLevel
                       << " upgradeLevel=" << entry.upgradeLevel << " drops=" << plan.drops.size()

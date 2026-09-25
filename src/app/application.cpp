@@ -132,16 +132,25 @@ int runGame(int argc, char **argv) {
                   << (debugPaused ? " (paused)\n" : " (running)\n") << std::flush;
     float accumulator = 0;
     int frames = 0;
+    std::optional<FrameInput> debugInput;
     while (!WindowShouldClose()) {
         debugPipe.poll([&](const std::string &request) {
             return debugCommand(request, session, view, debugPaused, debugQuit, savePath,
-                                [&](const std::string &path) { target.save(path); });
+                                [&](const std::string &path) { target.save(path); },
+                                [&](FrameInput input) {
+                                    if (debugInput) throw std::runtime_error("UI input already queued for this frame");
+                                    debugInput = std::move(input);
+                                });
         });
         if (debugQuit)
             break;
         float dt = std::min(GetFrameTime(), .1f);
         auto viewport = currentViewport();
         auto input = pollInput(viewport);
+        if (debugInput) {
+            input = std::move(*debugInput);
+            debugInput.reset();
+        }
         bool persistenceInput = input.focused && (input.save || input.load);
         if (persistenceInput) {
             try {
@@ -162,6 +171,13 @@ int runGame(int argc, char **argv) {
             }
         } else if (!controller.handle(input, dt))
             break;
+        // Modal windows suspend world time, but their commands still have to
+        // commit and publish events before this frame is drawn.
+        if (session.hasPendingCommands()) {
+            session.tick(0);
+            view.advance(0);
+        }
+        view.advanceUi(dt);
         if (view.ui().blocksWorld() || persistenceInput || debugPaused)
             accumulator = 0;
         else

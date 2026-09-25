@@ -25,7 +25,7 @@ void SceneView::drawInventory(Vec mouse) const {
     const auto &inventory = session_.inventory();
     EntityId backpack = session_.playerContainers().backpack;
     auto panel = inventoryBounds();
-    DrawRectangle(int(panel.x) - 6, 0, int(panel.width) + 22, H - HUD, {0, 0, 0, 150});
+    drawPanelFrame(true);
     if (assets_.inventoryPanel.frames.size() >= 8)
         for (int i = 0; i < 4; ++i) {
             const auto &tile = assets_.inventoryPanel.frames[4 + i].texture;
@@ -37,13 +37,30 @@ void SceneView::drawInventory(Vec mouse) const {
         }
     auto hoverCell = inventoryCell(mouse);
     EntityId hovered = hoverCell ? inventory.itemAt(backpack, *hoverCell) : EntityId{};
-    for (int index = 0; index < int(EquipmentSlot::Count); ++index) {
+    const auto weaponSet = session_.state().player.weaponSet;
+    if (session_.content().stashLayout.expansion && weaponSet == 1)
+        for (int hand = 0; hand < 2; ++hand) {
+            const auto &tile = assets_.weaponTabs.frames[size_t(hand)].texture;
+            DrawTexturePro(tile, {0, 0, float(tile.width), float(tile.height)},
+                {panel.x + (hand ? 247.f : 16.f) * inventoryScale,
+                 panel.y + 23 * inventoryScale, tile.width * inventoryScale,
+                 tile.height * inventoryScale}, {0, 0}, 0, WHITE);
+        }
+    for (int index = 0; index < int(EquipmentSlot::AlternateRightHand); ++index) {
         auto slot = EquipmentSlot(index);
+        if (slot == EquipmentSlot::RightHand) slot = weaponHandSlot(false, weaponSet);
+        if (slot == EquipmentSlot::LeftHand) slot = weaponHandSlot(true, weaponSet);
         auto bounds = equipmentBounds(slot);
         auto equipped = inventory.item(inventory.equipped(session_.playerContainers(), slot));
-        if (equipped)
+        if (equipped) {
             drawItemIcon(*equipped, bounds,
                          ui.drag && ui.drag->moved && ui.drag->item.id == equipped->id ? Fade(WHITE, .3f) : WHITE);
+            if (inventory.catalog().find(equipped->definition)->maxStack > 1) {
+                auto quantity = std::to_string(equipped->quantity);
+                painter_.label(quantity, int(bounds.x + bounds.width - painter_.measure(quantity, 12) - 4),
+                               int(bounds.y + bounds.height - 16), 12, equipped->quantity ? WHITE : RED);
+            }
+        }
         if (CheckCollisionPointRec(rv(mouse), bounds)) {
             DrawRectangleLinesEx(bounds, 1, parchment);
             if (equipped)
@@ -65,13 +82,25 @@ void SceneView::drawInventory(Vec mouse) const {
         if (drop.otherBounds)
             DrawRectangleLinesEx(*drop.otherBounds, 2, color);
     }
+    const auto goldField = inventoryGold();
+    if (const auto *coin = assets_.goldCoin.frame(0, 0))
+        DrawTexturePro(coin->texture, {0, 0, float(coin->texture.width), float(coin->texture.height)},
+                       {goldField.x + 3 * inventoryScale, goldField.y + 4 * inventoryScale,
+                        coin->texture.width * inventoryScale, coin->texture.height * inventoryScale},
+                       {0, 0}, 0, WHITE);
+    if (const auto *close = assets_.questClose.frame(0, 10))
+        DrawTexturePro(close->texture, {0, 0, float(close->texture.width), float(close->texture.height)},
+                       inventoryClose(), {0, 0}, 0, WHITE);
     painter_.label(std::to_string(session_.state().player.gold),
-                   int(panel.x + 110), int(panel.y + 480), 14, parchment);
+                   int(goldField.x + 28 * inventoryScale), int(goldField.y + 4 * inventoryScale),
+                   int(16 * inventoryScale), WHITE);
     if (ui.identify)
-        painter_.label("SELECT AN UNIDENTIFIED ITEM", int(panel.x + 30), int(panel.y + 455), 12, gold);
+        painter_.label("SELECT AN UNIDENTIFIED ITEM", int(panel.x + 24 * inventoryScale),
+                       int(panel.y + 364 * inventoryScale), 12, gold);
     if (!ui.split && !ui.drag) {
         if (auto item = inventory.item(hovered))
-            drawItemTooltip(*item, {panel.x - 12, mouse.y});
+            drawItemTooltip(*item, {panel.x - 12, mouse.y},
+                view_.shopRepair ? session_.vendorRepairQuote(view_.dialogueObject, item->handle()) : std::nullopt);
     } else if (ui.drag && ui.drag->moved && !hint.empty()) {
         int width = painter_.measure(hint, 12) + 24;
         frame({panel.x - width - 12, 450, float(width), 30});

@@ -1,6 +1,5 @@
 #include "equipment_combat.hpp"
 #include <algorithm>
-#include <charconv>
 #include <limits>
 #include <stdexcept>
 
@@ -11,13 +10,6 @@ void add(int &target, int value) {
     if (sum < std::numeric_limits<int>::min() || sum > std::numeric_limits<int>::max())
         throw std::runtime_error("Combat property sum exceeds supported range");
     target = int(sum);
-}
-int parameter(const PropertyRange &property) {
-    if (property.parameter.empty()) return 0;
-    int value = 0;
-    auto [end, error] = std::from_chars(property.parameter.data(),
-                                        property.parameter.data() + property.parameter.size(), value);
-    return error == std::errc{} && end == property.parameter.data() + property.parameter.size() ? value : 0;
 }
 void addStat(std::string_view stat, int value, CombatModifiers &m) {
     int *target = nullptr;
@@ -69,70 +61,59 @@ void addStat(std::string_view stat, int value, CombatModifiers &m) {
     else if (stat == "item_deadlystrike") target = &m.deadlyStrike;
     else if (stat == "item_magicbonus") target = &m.magicFind;
     else if (stat == "item_goldbonus") target = &m.goldFind;
+    else if (stat == "item_reducedprices") target = &m.reducedPrices;
     else if (stat == "item_poisonlengthresist") target = &m.poisonLengthResist;
+    else if (stat == "hpregen") target = &m.replenishLife;
+    else if (stat == "manarecoverybonus") target = &m.manaRecovery;
+    else if (stat == "item_healafterkill") target = &m.lifeOnKill;
+    else if (stat == "item_manaafterkill") target = &m.manaOnKill;
+    else if (stat == "item_allskills") target = &m.allSkills;
     if (target) add(*target, value);
     else if (stat == "item_cannotbefrozen" && value) m.cannotBeFrozen = true;
     else if (stat == "item_halffreezeduration" && value) m.halfFreezeDuration = true;
 }
 } // namespace
-void applyEquipmentCombatProperty(const ClassicData &content, const PropertyRange &property,
-                                  int roll, EntityId item, bool weapon, CombatModifiers &mods) {
-    auto found = std::find_if(content.properties.begin(), content.properties.end(),
-                              [&](const auto &definition) { return definition.code == property.code; });
-    if (found == content.properties.end()) return;
-    for (const auto &op : found->operations) {
-        int value = 0;
-        switch (op.function) {
-        case 1: case 2: case 3: case 8: value = roll; break;
-        case 5: case 6: case 7: value = roll; break;
-        case 15: value = property.minimum.value_or(0); break;
-        case 16: value = property.maximum.value_or(0); break;
-        case 17: value = parameter(property); break;
-        default: continue;
-        }
-        if (op.function == 5 || (op.function == 15 && op.stat == "mindamage")) {
-            add(weapon ? mods.weapons[item].minimum : mods.minimumDamage, value);
-            continue;
-        }
-        if (op.function == 6 || (op.function == 16 && op.stat == "maxdamage")) {
-            add(weapon ? mods.weapons[item].maximum : mods.maximumDamage, value);
-            continue;
-        }
-        if (op.function == 7) {
-            if (weapon) add(mods.weapons[item].enhancedDamage, value);
-            else { add(mods.minimumDamagePercent, value); add(mods.maximumDamagePercent, value); }
-            continue;
-        }
-        if (op.stat == "item_armor_percent" && !weapon) {
-            add(mods.armorPercent[item], value);
-            continue;
-        }
-        if (op.stat.empty()) continue;
-        const bool known = std::any_of(content.itemStats.begin(), content.itemStats.end(),
-                                       [&](const auto &s) { return s.name == op.stat && s.id.has_value(); });
-        if (known) {
-            int *weaponValue = nullptr;
-            if (weapon) {
-                auto &own = mods.weapons[item];
-                if (op.stat == "firemindam") weaponValue = &own.fireMinimum;
-                else if (op.stat == "firemaxdam") weaponValue = &own.fireMaximum;
-                else if (op.stat == "lightmindam") weaponValue = &own.lightningMinimum;
-                else if (op.stat == "lightmaxdam") weaponValue = &own.lightningMaximum;
-                else if (op.stat == "coldmindam") weaponValue = &own.coldMinimum;
-                else if (op.stat == "coldmaxdam") weaponValue = &own.coldMaximum;
-                else if (op.stat == "coldlength") weaponValue = &own.coldFrames;
-                else if (op.stat == "magicmindam") weaponValue = &own.magicMinimum;
-                else if (op.stat == "magicmaxdam") weaponValue = &own.magicMaximum;
-                else if (op.stat == "poisonmindam") weaponValue = &own.poisonMinimum;
-                else if (op.stat == "poisonmaxdam") weaponValue = &own.poisonMaximum;
-                else if (op.stat == "poisonlength") weaponValue = &own.poisonFrames;
-                else if (op.stat == "item_deadlystrike") weaponValue = &own.deadlyStrike;
-            }
-            if (weaponValue) add(*weaponValue, value);
-            else addStat(op.stat, value, mods);
-            if (op.stat == "poisonmaxdam" && value > 0)
-                add(weapon ? mods.weapons[item].poisonSources : mods.poisonSources, 1);
-        }
+void applyEquipmentStat(const ResolvedItemStat &resolved, EntityId item, bool weapon,
+                         CombatModifiers &mods) {
+    const auto &stat = resolved.effect;
+    const int value = resolved.value;
+    if (stat == "item_addclassskills") { add(mods.classSkills[resolved.layer], value); return; }
+    if (stat == "item_singleskill") { add(mods.singleSkills[resolved.layer], value); return; }
+    if (stat == "item_nonclassskill") { add(mods.nonClassSkills[resolved.layer], value); return; }
+    if (stat == "item_addskill_tab") { add(mods.tabSkills[resolved.layer], value); return; }
+    if (stat == "mindamage") { add(weapon ? mods.weapons[item].minimum : mods.minimumDamage, value); return; }
+    if (stat == "maxdamage") { add(weapon ? mods.weapons[item].maximum : mods.maximumDamage, value); return; }
+    if (weapon && stat == "item_normaldamage") { add(mods.weapons[item].normalDamage, value); return; }
+    if (weapon && stat == "item_mindamage_percent") { add(mods.weapons[item].enhancedMinimum, value); return; }
+    if (weapon && stat == "item_maxdamage_percent") { add(mods.weapons[item].enhancedMaximum, value); return; }
+    if (stat == "item_armor_percent") {
+        add(item ? mods.armorPercent[item] : mods.defensePercent, value);
+        return;
     }
+    int *ownValue = nullptr;
+    if (weapon) {
+        auto &own = mods.weapons[item];
+        if (stat == "firemindam") ownValue = &own.fireMinimum;
+        else if (stat == "firemaxdam") ownValue = &own.fireMaximum;
+        else if (stat == "lightmindam") ownValue = &own.lightningMinimum;
+        else if (stat == "lightmaxdam") ownValue = &own.lightningMaximum;
+        else if (stat == "coldmindam") ownValue = &own.coldMinimum;
+        else if (stat == "coldmaxdam") ownValue = &own.coldMaximum;
+        else if (stat == "coldlength") ownValue = &own.coldFrames;
+        else if (stat == "magicmindam") ownValue = &own.magicMinimum;
+        else if (stat == "magicmaxdam") ownValue = &own.magicMaximum;
+        else if (stat == "poisonmindam") ownValue = &own.poisonMinimum;
+        else if (stat == "poisonmaxdam") ownValue = &own.poisonMaximum;
+        else if (stat == "poisonlength") ownValue = &own.poisonFrames;
+        else if (stat == "item_deadlystrike") ownValue = &own.deadlyStrike;
+        else if (stat == "lifedrainmindam") ownValue = &own.lifeLeech;
+        else if (stat == "manadrainmindam") ownValue = &own.manaLeech;
+        else if (stat == "item_crushingblow") ownValue = &own.crushingBlow;
+        else if (stat == "item_openwounds") ownValue = &own.openWounds;
+    }
+    if (ownValue) add(*ownValue, value);
+    else addStat(stat, value, mods);
+    if (stat == "poisonmaxdam" && value > 0)
+        add(weapon ? mods.weapons[item].poisonSources : mods.poisonSources, 1);
 }
 } // namespace d2x

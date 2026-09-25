@@ -3,7 +3,7 @@
 
 namespace d2x {
 namespace {
-constexpr float scaleX = 1.25f, scaleY = 1.05f;
+constexpr float scaleX = classicPanelScale, scaleY = classicPanelScale;
 constexpr int visibleWaypoints = 9;
 Vec panelOrigin() { return {80 * scaleX, 56 * scaleY}; }
 Rectangle waypointRow(int row) {
@@ -43,13 +43,7 @@ std::optional<RegionId> SceneView::clickWaypointMenu(Vec mouse) {
 }
 
 void SceneView::drawWaypointMenu(Vec mouse) const {
-    // The MPQ supplies a decorative outer border and a separate inset list.
-    for (int row = 0; row < 3; ++row)
-        for (int column = 0; column < 2; ++column)
-            if (const auto *sprite = assets_.waypointBorder.frame(0, row * 4 + column))
-                drawTile(assets_.waypointBorder, row * 4 + column,
-                         {column * 256 * scaleX, row * 256 * scaleY,
-                          sprite->texture.width * scaleX, sprite->texture.height * scaleY});
+    drawPanelFrame(false);
     auto origin = panelOrigin();
     for (int index = 0; index < 4; ++index)
         if (const auto *sprite = assets_.waypointPanel.frame(0, index))

@@ -6,7 +6,7 @@ void SceneView::drawStorage(Vec mouse) const {
     if (!ui.storage)
         return;
     auto panel = storageBounds();
-    DrawRectangle(0, 0, int(panel.x + panel.width + 6), H - HUD, {0, 0, 0, 150});
+    drawPanelFrame(false);
     if (assets_.storagePanel.frames.size() < 4)
         return; // Never substitute a fabricated stash panel.
     for (int i = 0; i < 4; ++i) {
@@ -17,10 +17,17 @@ void SceneView::drawStorage(Vec mouse) const {
                        {0, 0}, 0, WHITE);
     }
     const auto &layout = session_.content().stashLayout;
-    if (layout.expansion)
-        painter_.label("PRIVATE STASH", int(panel.x + 98), int(panel.y + 24 * inventoryScale), 14, gold);
-    else
-        painter_.label("PRIVATE STASH", int(panel.x + 94), 302, 16, gold);
+    auto goldField = storageGold(layout.expansion);
+    auto bankGold = std::to_string(session_.state().player.bankGold);
+    const int textSize = int(16 * inventoryScale);
+    if (const auto *coin = assets_.goldCoin.frame(0, 0))
+        DrawTexturePro(coin->texture, {0, 0, float(coin->texture.width), float(coin->texture.height)},
+                       {goldField.x + 3 * inventoryScale, goldField.y + 4 * inventoryScale,
+                        coin->texture.width * inventoryScale, coin->texture.height * inventoryScale},
+                       {0, 0}, 0, WHITE);
+    painter_.label(bankGold,
+                   int(goldField.x + (goldField.width - painter_.measure(bankGold, textSize)) / 2),
+                   int(goldField.y + 5 * inventoryScale), textSize, WHITE);
     const auto &inventory = session_.inventory();
     for (const auto &grid : inventoryGrids(session_, ui)) {
         if (grid.container != ui.storage)
@@ -31,10 +38,11 @@ void SceneView::drawStorage(Vec mouse) const {
                 if (auto item = inventory.item(inventory.itemAt(grid.container, *cell)))
                     drawItemTooltip(*item, {inventoryBounds().x - 12, mouse.y});
     }
-    painter_.label("Gold Max: " + std::to_string(session_.bankGoldLimit()),
-                   int(panel.x + 108), layout.expansion ? int(panel.y + 53 * inventoryScale) : 326, 13, gold);
-    painter_.label(std::to_string(session_.state().player.bankGold),
-                   int(storageGold().x + 54), int(storageGold().y + 14), 14, parchment);
-    painter_.label("X", int(storageClose().x + 15), int(storageClose().y + 15), 12, gold);
+    const auto maximum = "Gold Max: " + std::to_string(session_.bankGoldLimit());
+    painter_.label(maximum, int(goldField.x + (goldField.width - painter_.measure(maximum, textSize)) / 2),
+                   int(goldField.y + 30 * inventoryScale), textSize, WHITE);
+    if (const auto *close = assets_.questClose.frame(0, 10))
+        DrawTexturePro(close->texture, {0, 0, float(close->texture.width), float(close->texture.height)},
+                       storageClose(), {0, 0}, 0, WHITE);
 }
 } // namespace d2x

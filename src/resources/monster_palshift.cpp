@@ -4,8 +4,10 @@
 
 namespace d2x {
 std::array<uint8_t, 256> monsterPalshift(const Bytes &data, int transLevel) {
-    // The first three 256-byte maps in the original palshift.dat are reserved.
-    constexpr int firstMonsterMap = 3;
+    // MonStats.TransLvl is relative to the third map (zero-based index 2).
+    // See OpenDiablo2 monster_stats_record.go, PaletteId. Adding 3 shifts every
+    // subtype to its neighbour, including the colors baked into DT/DD frames.
+    constexpr int firstMonsterMap = 2;
     if (data.empty() || data.size() % 256 != 0 || transLevel < 0 ||
         size_t(firstMonsterMap + transLevel + 1) > data.size() / 256)
         throw std::runtime_error("Invalid MPQ monster palshift.dat or TransLvl");

@@ -86,6 +86,7 @@ void loadSpecialItemData(ClassicData &data) {
                 record.ladder = table.number(row, "ladder").value_or(0) != 0;
             } else {
                 record.set = table.value(row, "set");
+                record.setAddFunction = table.number(row, "add func").value_or(0);
                 record.cowOnly = !cowSet.empty() && record.set == cowSet;
                 for (int tier = 1; tier <= 4; ++tier)
                     for (auto half : {"a", "b"}) {
@@ -96,7 +97,8 @@ void loadSpecialItemData(ClassicData &data) {
                                                          {std::string(property),
                                                           std::string(table.value(row, "apar" + suffix)),
                                                           table.number(row, "amin" + suffix),
-                                                          table.number(row, "amax" + suffix)}});
+                                                          table.number(row, "amax" + suffix),
+                                                          isDirectPropertyRoll(data, property)}, tier + 1, true});
                     }
                 for (size_t setRow = 0; setRow < setDefinitions->second.rows().size(); ++setRow) {
                     if (setDefinitions->second.value(setRow, "index") != record.set)
@@ -111,7 +113,8 @@ void loadSpecialItemData(ClassicData &data) {
                                                              {std::string(property),
                                                               std::string(setTable.value(setRow, "PParam" + suffix)),
                                                               setTable.number(setRow, "PMin" + suffix),
-                                                              setTable.number(setRow, "PMax" + suffix)}});
+                                                              setTable.number(setRow, "PMax" + suffix),
+                                                              isDirectPropertyRoll(data, property)}, pieces, false});
                         }
                     for (int slot = 1; slot <= 8; ++slot) {
                         auto suffix = std::to_string(slot);
@@ -121,7 +124,8 @@ void loadSpecialItemData(ClassicData &data) {
                                                          {std::string(property),
                                                           std::string(setTable.value(setRow, "FParam" + suffix)),
                                                           setTable.number(setRow, "FMin" + suffix),
-                                                          setTable.number(setRow, "FMax" + suffix)}});
+                                                          setTable.number(setRow, "FMax" + suffix),
+                                                          isDirectPropertyRoll(data, property)}, 0, false});
                     }
                     break;
                 }

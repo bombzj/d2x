@@ -12,8 +12,9 @@ void GameSession::validateItemProperties(const SessionSnapshot &snapshot) const 
     };
     auto validRoll = [](const PropertyRange &property, int value) {
         return property.directRoll && property.minimum && property.maximum &&
-                       *property.maximum > *property.minimum
-                   ? value >= *property.minimum && value <= *property.maximum
+                       *property.maximum != *property.minimum
+                   ? value >= std::min(*property.minimum, *property.maximum) &&
+                     value <= std::max(*property.minimum, *property.maximum)
                    : value == property.minimum.value_or(0);
     };
     for (const auto &[id, item] : snapshot.inventory.items) {
@@ -29,7 +30,7 @@ void GameSession::validateItemProperties(const SessionSnapshot &snapshot) const 
                             !item.affixes.empty() &&
                             item.affixes.size() <= (item.quality == ItemQuality::Magic ? 2u : 6u),
                         "affix parameters");
-            std::set<int> groups;
+            std::set<int> groups[2];
             int prefixes = 0, suffixes = 0, requiredLevel = 0;
             const auto *definition = content_.items.find(item.definition);
             if (item.quality == ItemQuality::Rare) {
@@ -55,17 +56,14 @@ void GameSession::validateItemProperties(const SessionSnapshot &snapshot) const 
                                           [&](const auto &record) { return int32_t(record.row) == affix.row; });
                 requireItem(found != records.end() &&
                                 found->properties.size() == affix.propertyRolls.size() &&
-                                groups.insert(found->group).second,
+                                groups[affix.prefix].insert(found->group).second,
                             "affix row or group");
                 auto matches = [&](const std::string &type) { return definition->equipment.isType(type); };
                 requireItem(found->level <= affixLevel &&
                                 (!found->maxLevel || affixLevel <= found->maxLevel) &&
                                 (item.quality != ItemQuality::Rare || found->rareAllowed) &&
-                                (found->characterClass.empty() ||
-                                 std::any_of(content_.characters.begin(), content_.characters.end(),
-                                     [&](const auto &character) {
-                                         return character.code == found->characterClass;
-                                     })) &&
+                                (definition->equipment.requiredClass.empty() || found->characterClass.empty() ||
+                                 definition->equipment.requiredClass == found->characterClass) &&
                                 std::any_of(found->includedTypes.begin(), found->includedTypes.end(), matches) &&
                                 !std::any_of(found->excludedTypes.begin(), found->excludedTypes.end(), matches),
                             "affix eligibility");

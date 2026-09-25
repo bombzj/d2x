@@ -5,6 +5,17 @@
 #include <stdexcept>
 
 namespace d2x {
+namespace {
+bool sameColumn(std::string_view left, std::string_view right) {
+    // MPQ headers retain their original spelling, while engine field bindings
+    // use case-insensitive ASCII names (e.g. StrBonus vs ItemsTbls strbonus).
+    if (left.size() != right.size()) return false;
+    auto lower = [](char c) { return c >= 'A' && c <= 'Z' ? char(c + ('a' - 'A')) : c; };
+    for (size_t index = 0; index < left.size(); ++index)
+        if (lower(left[index]) != lower(right[index])) return false;
+    return true;
+}
+}
 DataTable::DataTable(const Bytes &bytes) {
     std::istringstream input(std::string(bytes.begin(), bytes.end()));
     std::string line;
@@ -35,11 +46,12 @@ DataTable::DataTable(const Bytes &bytes) {
         throw std::runtime_error("Empty MPQ data table");
 }
 bool DataTable::has(std::string_view column) const {
-    return std::find(columns_.begin(), columns_.end(), column) != columns_.end();
+    return std::any_of(columns_.begin(), columns_.end(),
+                       [&](const auto &name) { return sameColumn(name, column); });
 }
 std::string_view DataTable::value(size_t row, std::string_view column, size_t occurrence) const {
     for (size_t i = 0; i < columns_.size(); ++i)
-        if (columns_[i] == column && occurrence-- == 0)
+        if (sameColumn(columns_[i], column) && occurrence-- == 0)
             return rows_.at(row).at(i);
     return {};
 }

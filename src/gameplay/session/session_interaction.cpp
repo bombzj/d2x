@@ -142,11 +142,28 @@ void GameSession::completeInteraction(const WorldObject &object) {
     case Interaction::Heal:
         simulation_.heal();
         [[fallthrough]];
-    case Interaction::Talk:
-        if (introSpeech(content_.npcDialogues, object.name) || vendorStock(object.id))
+    case Interaction::Talk: {
+        if (introSpeech(content_.npcDialogues, object.name) || vendorStock(object.id) ||
+            npcQuestDialogue(object.name).speech)
             engagedNpc_ = object.id;
-        simulation_.emit(ObjectInteracted{object.id, object.interaction, object.name});
+        const auto *intro = introSpeech(content_.npcDialogues, object.name, state().player.characterClass);
+        auto &introductions = simulation_.state_.player.npcIntroductions
+            .at(size_t(state().population.difficulty));
+        const bool first = intro && introductions.insert(object.name).second;
+        const auto dialogue = npcQuestDialogue(object.name);
+        std::string text = first ? intro->text : std::string{};
+        // Activation collects the introduction and available quest messages
+        // in a scroll-text chain. All text still comes from the MPQ.
+        if (dialogue.automatic && dialogue.speech) {
+            if (!text.empty()) text += "\n\n";
+            text += dialogue.speech->text;
+        }
+        if (!text.empty()) {
+            simulation_.emit(NpcDialogueStarted{object.id, object.name, std::move(text)});
+            if (dialogue.automatic) talkToNpc(object.id);
+        } else simulation_.emit(ObjectInteracted{object.id, object.interaction, object.name});
         break;
+    }
     case Interaction::Travel:
         simulation_.emit(ObjectInteracted{object.id, object.interaction, object.name});
         break;

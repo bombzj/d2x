@@ -14,6 +14,7 @@ void add(int &target, int value) {
 void mergeCombatModifiers(CombatModifiers &a, const CombatModifiers &b) {
 #define D2X_ADD(field) add(a.field, b.field)
     D2X_ADD(damagePercent); D2X_ADD(attackRatingPercent);
+    D2X_ADD(defensePercent);
     D2X_ADD(minimumDamagePercent); D2X_ADD(maximumDamagePercent);
     D2X_ADD(normalDamage); D2X_ADD(minimumDamage); D2X_ADD(maximumDamage);
     D2X_ADD(fireMinimum); D2X_ADD(fireMaximum);
@@ -35,14 +36,23 @@ void mergeCombatModifiers(CombatModifiers &a, const CombatModifiers &b) {
     D2X_ADD(lifeLeech); D2X_ADD(manaLeech);
     D2X_ADD(crushingBlow); D2X_ADD(openWounds); D2X_ADD(deadlyStrike);
     D2X_ADD(magicFind); D2X_ADD(goldFind); D2X_ADD(poisonLengthResist);
+    D2X_ADD(reducedPrices);
+    D2X_ADD(replenishLife); D2X_ADD(manaRecovery); D2X_ADD(lifeOnKill); D2X_ADD(manaOnKill);
+    D2X_ADD(allSkills);
 #undef D2X_ADD
     a.cannotBeFrozen |= b.cannotBeFrozen;
     a.halfFreezeDuration |= b.halfFreezeDuration;
+    for (auto [id, value] : b.classSkills) add(a.classSkills[id], value);
+    for (auto [id, value] : b.singleSkills) add(a.singleSkills[id], value);
+    for (auto [id, value] : b.nonClassSkills) add(a.nonClassSkills[id], value);
+    for (auto [id, value] : b.tabSkills) add(a.tabSkills[id], value);
     for (const auto &[id, bonus] : b.weapons) {
         auto &target = a.weapons[id];
         add(target.minimum, bonus.minimum);
         add(target.maximum, bonus.maximum);
-        add(target.enhancedDamage, bonus.enhancedDamage);
+        add(target.normalDamage, bonus.normalDamage);
+        add(target.enhancedMinimum, bonus.enhancedMinimum);
+        add(target.enhancedMaximum, bonus.enhancedMaximum);
         add(target.fireMinimum, bonus.fireMinimum); add(target.fireMaximum, bonus.fireMaximum);
         add(target.lightningMinimum, bonus.lightningMinimum); add(target.lightningMaximum, bonus.lightningMaximum);
         add(target.coldMinimum, bonus.coldMinimum); add(target.coldMaximum, bonus.coldMaximum);
@@ -51,6 +61,8 @@ void mergeCombatModifiers(CombatModifiers &a, const CombatModifiers &b) {
         add(target.poisonMinimum, bonus.poisonMinimum); add(target.poisonMaximum, bonus.poisonMaximum);
         add(target.poisonFrames, bonus.poisonFrames); add(target.poisonSources, bonus.poisonSources);
         add(target.deadlyStrike, bonus.deadlyStrike);
+        add(target.lifeLeech, bonus.lifeLeech); add(target.manaLeech, bonus.manaLeech);
+        add(target.crushingBlow, bonus.crushingBlow); add(target.openWounds, bonus.openWounds);
     }
     for (const auto &[id, bonus] : b.armorPercent) add(a.armorPercent[id], bonus);
 }

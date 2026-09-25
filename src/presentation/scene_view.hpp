@@ -4,11 +4,14 @@
 #include "lighting_view.hpp"
 #include "scene_assets.hpp"
 #include <cstdint>
+#include <map>
 
 namespace d2x {
 struct ViewState {
     InventoryUi inventory;
     std::optional<int> leftSkill, rightSkill;
+    std::array<std::optional<int>, 2> weaponLeftSkills{}, weaponRightSkills{};
+    unsigned displayedWeaponSet = 0;
     std::optional<bool> skillPicker; // false: left button, true: right button
     bool skillTreeOpen = false;
     int skillPage = 3;
@@ -16,10 +19,17 @@ struct ViewState {
     Vec camera, clickAt;
     float clickAge = 10, zoom = 1;
     bool help = false, automap = false, debug = false, pause = false, travelMenu = false;
+    bool minimapRight = false;
     bool characterOpen = false;
     bool questOpen = false;
     int questSelected = -1;
+    bool questNotice = false;
+    int questUpdated = -1;
+    std::optional<unsigned> lastDenRemaining;
     bool showLoot = false, shopOpen = false, npcMenu = false;
+    bool shopGamble = false;
+    bool shopRepair = false;
+    bool npcTopics = false;
     int shopPage = 0;
     int shopCategory = 0;
     std::optional<uint32_t> shopConfirm;
@@ -33,8 +43,10 @@ struct ViewState {
     EntityId dialogueObject;
     EntityId imbueNpc;
     std::vector<std::string> dialogueLines;
-    int dialogueScroll = 0;
+    float dialogueOffset = 0;
+    bool dialogueManualScroll = false;
     size_t dialogueGossipTurn = 0;
+    std::map<std::string, size_t> npcGossipTurns;
     std::string lootNotice;
     float noticeTime = 0;
     bool noticeError = false;
@@ -68,11 +80,15 @@ class SceneView {
     void drawActors() const;
     void drawMagic() const;
     void drawLighting() const;
+    void drawNpcAlerts() const;
+    void drawPanelFrame(bool right) const;
     void drawMinimap(bool large) const;
     void revealAutomap();
     void drawHud() const;
     void drawNpcDialogue() const;
-    void drawNpcMenu() const;
+    void advanceNpcDialogue(float dt);
+    Rectangle worldViewport() const;
+    void drawNpcMenu(Vec mouse) const;
     void drawNpcShop(Vec mouse) const;
     void drawWaypointMenu(Vec mouse) const;
     void drawControlPanel() const;
@@ -89,7 +105,8 @@ class SceneView {
     void drawCube(Vec mouse) const;
     void drawContainerGrid(const ContainerGrid &grid, Vec mouse) const;
     void drawBelt(Vec mouse) const;
-    void drawItemTooltip(const ItemInstance &item, Vec anchor) const;
+    void drawItemTooltip(const ItemInstance &item, Vec anchor,
+                         std::optional<unsigned> price = {}, bool gamble = false) const;
     const SpecialItemRecord *specialItem(const ItemInstance &item) const;
     std::string itemName(const ItemInstance &item) const;
     void itemButton(Rectangle bounds, const char *label, Color color) const;
@@ -113,12 +130,15 @@ class SceneView {
     std::optional<ItemHandle> lootAt(Vec mouse, bool labelsOnly = false) const;
     void toggleMute() { assets_.audio.muted = !assets_.audio.muted; }
     void advance(float dt);
+    void advanceUi(float dt);
     void draw(Vec mouse) const;
     void notice(std::string text, bool error = false);
     void openNpcDialogue(EntityId object, std::string speaker, std::string text);
-    void openNpcMenu(EntityId object, std::string speaker);
+    void openNpcMenu(EntityId object, std::string speaker, bool firstIntroduction);
     bool startNpcTalk();
-    bool openNpcShop();
+    bool startNpcTopic(ActOneQuest quest);
+    bool openNpcShop(bool gamble = false);
+    void closeNpcShop();
     int clickNpcMenu(Vec mouse);
     void scrollNpcDialogue(int amount);
     void closeNpcDialogue();

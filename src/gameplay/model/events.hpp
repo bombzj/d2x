@@ -34,6 +34,11 @@ struct ObjectInteracted {
     EntityId object;
     Interaction interaction;
     std::string name;
+    bool firstIntroduction = false;
+};
+struct NpcDialogueStarted {
+    EntityId object;
+    std::string speaker, text;
 };
 struct EnemyAttacked {
     EntityId attacker;
@@ -56,6 +61,7 @@ struct VendorItemBought {
     uint32_t slot = 0;
     unsigned price = 0;
 };
+struct GambleStockOpened { EntityId npc; };
 struct InventoryRejected {
     EntityId item;
     InventoryError error;
@@ -99,8 +105,8 @@ struct QuestAdvanced {
     ActOneQuest quest;
     uint32_t stage;
 };
-using GameEvent = std::variant<SkillCast, MeleeAttack, EnemyDied, EnemyAttacked, EnemySkill2, EnemyHit, PlayerDied, RegionEntered, ObjectInteracted, ItemsIdentified, VendorItemBought,
+using GameEvent = std::variant<SkillCast, MeleeAttack, EnemyDied, EnemyAttacked, EnemySkill2, EnemyHit, PlayerDied, RegionEntered, ObjectInteracted, NpcDialogueStarted, ItemsIdentified, VendorItemBought,
                                ItemChange, InventoryRejected, InventoryApplied, ItemPickedUp, PickupFailed,
                                ItemUsed, BeltEquipped, StorageOpened, StorageClosed, InteractionFailed,
-                               LootDeferred, WaypointActivated, QuestAdvanced>;
+                               LootDeferred, WaypointActivated, QuestAdvanced, GambleStockOpened>;
 } // namespace d2x

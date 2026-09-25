@@ -5,7 +5,8 @@
 
 namespace d2x {
 void Simulation::damageEnemy(Enemy &enemy, float amount, EntityId source, float chill,
-                             bool ignoreActivation, MonsterDamageType type, bool alreadyMitigated) {
+                             bool ignoreActivation, MonsterDamageType type, bool alreadyMitigated,
+                             bool playerKillEffects) {
     if (enemy.hp <= 0 || (!ignoreActivation && !active(enemy.pos)))
         return;
     if (!ignoreActivation && !alreadyMitigated && monsterResistance_)
@@ -27,6 +28,11 @@ void Simulation::damageEnemy(Enemy &enemy, float amount, EntityId source, float 
     enemy.chill = std::max(enemy.chill, chill);
     if (enemy.hp > 0) emit(EnemyHit{enemy.id, enemy.kind});
     if (enemy.hp == 0) {
+        if (playerKillEffects && source == state_.player.id && !state_.player.dead) {
+            auto &player = state_.player;
+            player.hp = std::min(float(characterStats_.maxLife), player.hp + characterStats_.combat.lifeOnKill);
+            player.mana = std::min(float(characterStats_.maxMana), player.mana + characterStats_.combat.manaOnKill);
+        }
         enemy.deathAge = 0;
         enemy.route.clear();
         enemy.aiEscaping = false;

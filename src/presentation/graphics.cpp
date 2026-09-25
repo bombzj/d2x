@@ -1,10 +1,33 @@
 #include "graphics.hpp"
 #include <algorithm>
+#include <cmath>
 #include <iostream>
 namespace d2x {
 namespace {
 Color color(Pixel p) {
     return {p.r, p.g, p.b, p.a};
+}
+IndexedFrame projectShadow(const IndexedFrame &mask) {
+    IndexedFrame result;
+    if (mask.width <= 0 || mask.height <= 0 ||
+        std::none_of(mask.pixels.begin(), mask.pixels.end(), [](auto p) { return p != 0; }))
+        return result;
+    // OpenDiablo2 Animation.renderShadow: flatten vertically and shear left
+    // from the unit's feet. Only COF layers marked as casting shadows enter it.
+    const int top = int(std::floor(mask.y * .5f));
+    const int bottom = int(std::floor((mask.y + mask.height - 1) * .5f));
+    result.x = mask.x + top;
+    result.y = top;
+    result.width = mask.width + bottom - top;
+    result.height = bottom - top + 1;
+    result.pixels.resize(size_t(result.width) * result.height);
+    for (int y = 0; y < mask.height; ++y) {
+        const int row = int(std::floor((mask.y + y) * .5f)) - top;
+        for (int x = 0; x < mask.width; ++x)
+            if (mask.pixels[size_t(y) * mask.width + x])
+                result.pixels[size_t(row) * result.width + x + row] = 1;
+    }
+    return result;
 }
 } // namespace
 Graphics::Graphics(Archives &a, const std::string &palettePath)
@@ -13,7 +36,7 @@ Graphics::~Graphics() {
     for (auto t : textures)
         UnloadTexture(t);
 }
-Sprite Graphics::upload(const IndexedFrame &f, std::optional<uint8_t> transparentIndex) {
+Sprite Graphics::upload(const IndexedFrame &f) {
     if (f.width <= 0 || f.height <= 0)
         return {};
     uint64_t hash = 1469598103934665603ull;
@@ -22,7 +45,6 @@ Sprite Graphics::upload(const IndexedFrame &f, std::optional<uint8_t> transparen
     mix(f.height);
     mix(uint32_t(f.x));
     mix(uint32_t(f.y));
-    mix(transparentIndex ? 256 + *transparentIndex : 0);
     for (auto pixel : f.pixels)
         mix(pixel);
     if (auto found = textureCache.find(hash); found != textureCache.end())
@@ -31,8 +53,6 @@ Sprite Graphics::upload(const IndexedFrame &f, std::optional<uint8_t> transparen
     int left = f.width, top = f.height, right = -1, bottom = -1;
     for (size_t i = 0; i < pixels.size(); i++) {
         pixels[i] = color(palette[f.pixels[i]]);
-        if (transparentIndex && f.pixels[i] == *transparentIndex)
-            pixels[i].a = 0;
         if (pixels[i].a) {
             int x = int(i % size_t(f.width)), y = int(i / size_t(f.width));
             left = std::min(left, x);
@@ -71,7 +91,7 @@ const Animation *Graphics::animation(const std::string &path) {
         return nullptr;
     }
 }
-GpuAnimation Graphics::single(const std::string &path, bool transparentBorderColor) {
+GpuAnimation Graphics::single(const std::string &path) {
     GpuAnimation gpu;
     auto a = animation(path);
     if (!a)
@@ -79,8 +99,7 @@ GpuAnimation Graphics::single(const std::string &path, bool transparentBorderCol
     gpu.directions = a->directions;
     gpu.count = a->framesPerDirection;
     for (auto &f : a->frames)
-        gpu.frames.push_back(upload(f, transparentBorderColor && !f.pixels.empty()
-                                             ? std::optional<uint8_t>(f.pixels.front()) : std::nullopt));
+        gpu.frames.push_back(upload(f));
     return gpu;
 }
 GpuAnimation Graphics::composite(const std::string &type, const std::string &token, const std::string &mode,
@@ -92,6 +111,7 @@ GpuAnimation Graphics::composite(const std::string &type, const std::string &tok
         return {};
     auto cof = decodeCof(bytes);
     std::map<int, const Animation *> parts;
+    std::array<bool, 16> castsShadow{};
     int omitted = 0;
     static const std::string codes[] = {"hd", "tr", "lg", "ra", "la", "rh", "lh", "sh",
                                         "s1", "s2", "s3", "s4", "s5", "s6", "s7", "s8"};
@@ -99,6 +119,7 @@ GpuAnimation Graphics::composite(const std::string &type, const std::string &tok
         int c = cof.components[i];
         if (c < 0 || c >= 16)
             throw std::runtime_error("Invalid COF component");
+        castsShadow[size_t(c)] = cof.shadows[size_t(i)] && !cof.transparent[size_t(i)];
         if (equipment && std::string_view((*equipment)[c]) == "nil") {
             ++omitted;
             continue;
@@ -162,21 +183,31 @@ GpuAnimation Graphics::composite(const std::string &type, const std::string &tok
             merged.x = left;
             merged.y = top;
             merged.pixels.resize(size_t(merged.width) * merged.height);
+            IndexedFrame shadowMask = merged;
             for (int l = 0; l < cof.layers; l++) {
-                auto p = get(cof.componentAt(cofDirection, f, l));
+                const int component = cof.componentAt(cofDirection, f, l);
+                auto p = get(component);
                 if (!p)
                     continue;
                 for (int y = 0; y < p->height; y++)
                     for (int x = 0; x < p->width; x++) {
                         auto index = p->pixels[y * p->width + x];
-                        if (index)
-                            merged.pixels[(y + p->y - top) * merged.width + x + p->x - left] = index;
+                        if (index) {
+                            const auto pixel = size_t(y + p->y - top) * merged.width + x + p->x - left;
+                            merged.pixels[pixel] = index;
+                            if (castsShadow[size_t(component)]) shadowMask.pixels[pixel] = 1;
+                        }
                     }
             }
             if (colorMap)
                 for (auto &index : merged.pixels)
                     index = (*colorMap)[index];
-            gpu.frames.push_back(upload(merged));
+            auto frame = upload(merged);
+            const auto shadow = upload(projectShadow(shadowMask));
+            frame.shadowTexture = shadow.texture;
+            frame.shadowX = shadow.x;
+            frame.shadowY = shadow.y;
+            gpu.frames.push_back(frame);
         }
     std::cout << "Composite " << token << mode << weapon << ": " << parts.size() << '/' << cof.layers
               << " parts, " << gpu.frames.size() << " frames\n";

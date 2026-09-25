@@ -1,4 +1,5 @@
 #include "scene_assets.hpp"
+#include "resources/data_table.hpp"
 #include "world/cow_level.hpp"
 #include "world/outdoor.hpp"
 #include <algorithm>
@@ -21,9 +22,28 @@ void loadFont(Graphics &graphics, Archives &archives, ClassicFont &font, std::st
 } // namespace
 SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
     : graphics_(archives), uiGraphics_(archives, "data/global/palette/sky/pal.dat"),
+      unitsGraphics_(archives, "data/global/palette/units/pal.dat"),
       automapCatalog_(archives), audio(archives) {
     loadFont(uiGraphics_, archives, font, "font16");
     loadFont(uiGraphics_, archives, speechFont, "fontformal12");
+    const DataTable overlays(archives.read("data/global/excel/overlay.txt"));
+    for (size_t row = 0; row < overlays.rows().size(); ++row) {
+        if (overlays.value(row, "overlay") != "npcalert") continue;
+        const auto file = std::string(overlays.value(row, "Filename"));
+        npcAlert.animation = unitsGraphics_.single("data/global/overlays/" + file + ".dcc");
+        npcAlert.frames = overlays.number(row, "Frames").value_or(0);
+        npcAlert.fps = overlays.number(row, "AnimRate").value_or(0);
+        npcAlert.trans = overlays.number(row, "Trans").value_or(5);
+        npcAlert.offset = {-float(overlays.number(row, "Xoffset").value_or(0)),
+                           float(overlays.number(row, "Yoffset").value_or(0))};
+        for (int height = 0; height < 4; ++height)
+            npcAlert.heights[size_t(height)] = overlays.number(row,
+                "Height" + std::to_string(height + 1)).value_or(0);
+        break;
+    }
+    if (npcAlert.frames <= 0 || npcAlert.fps <= 0 ||
+        npcAlert.animation.count < npcAlert.frames)
+        throw std::runtime_error("Original NPC alert overlay is missing or invalid");
     for (const auto &region : session.regions()) {
         std::vector<Sprite> tiles;
         for (const auto &tile : region.map.tiles)
@@ -86,14 +106,32 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
     }
     fireburst = graphics_.single("data/global/missiles/shamanfireballexplodefinal.dcc");
     panel = uiGraphics_.single("data/global/ui/panel/800ctrlpnl7.dc6");
-    cursor = uiGraphics_.single("data/global/ui/cursor/gaunt.dc6", true);
-    inventoryPanel = graphics_.single("data/global/ui/panel/invchar.dc6");
-    questBackground = graphics_.single("data/global/ui/menu/questbackground.dc6");
-    questSockets = graphics_.single("data/global/ui/menu/questsockets.dc6");
-    questDone = graphics_.single("data/global/ui/menu/questdone.dc6");
-    questTabs = graphics_.single("data/global/ui/menu/questtabs.dc6");
+    cursor = unitsGraphics_.single("data/global/ui/cursor/ohand.dc6");
+    if (cursor.frames.empty())
+        throw std::runtime_error("Original pointer is missing: data/global/ui/cursor/ohand.dc6");
+    inventoryPanel = uiGraphics_.single(session.content().stashLayout.expansion
+        ? "data/global/ui/panel/invchar6.dc6" : "data/global/ui/panel/invchar.dc6");
+    if (session.content().stashLayout.expansion) {
+        weaponTabs = uiGraphics_.single("data/global/ui/panel/invchar6tab.dc6");
+        if (weaponTabs.frames.size() != 2)
+            throw std::runtime_error("Original alternate weapon panel artwork is missing");
+    }
+    questBackground = uiGraphics_.single("data/global/ui/menu/questbackground.dc6");
+    questSockets = uiGraphics_.single("data/global/ui/menu/questsockets.dc6");
+    questTabs = uiGraphics_.single(archives.contains("data/global/ui/menu/expquesttabs.dc6")
+                                     ? "data/global/ui/menu/expquesttabs.dc6"
+                                     : "data/global/ui/menu/questtabs.dc6");
+    for (int quest = 0; quest < 6; ++quest)
+        actOneQuestIcons[size_t(quest)] = uiGraphics_.single(
+            "data/global/ui/menu/a1q" + std::to_string(quest + 1) + ".dc6");
+    questClose = unitsGraphics_.single("data/global/ui/panel/buysellbtn.dc6");
+    questReplay = unitsGraphics_.single("data/global/ui/menu/questlast.dc6");
+    goldCoin = unitsGraphics_.single("data/global/ui/panel/goldcoinbtn.dc6");
     if (questBackground.frames.size() < 4 || questSockets.frames.size() < 2 ||
-        questDone.frames.size() < 6 || questTabs.frames.size() < 2)
+        questTabs.frames.size() < 8 || questClose.frames.size() < 12 ||
+        questReplay.frames.empty() || goldCoin.frames.size() < 2 ||
+        std::any_of(actOneQuestIcons.begin(), actOneQuestIcons.end(),
+                    [](const GpuAnimation &icon) { return icon.frames.size() < 27; }))
         throw std::runtime_error("Original Act I quest panel artwork is missing");
     attributeButtons = graphics_.single("data/global/ui/panel/level.dc6");
     attributePoints = graphics_.single("data/global/ui/panel/skillpoints.dc6");
@@ -108,7 +146,7 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
          vendorButtons.frames.size() < 16 ||
          vendorConfirm.frames.empty()))
         throw std::runtime_error("Original vendor UI artwork is missing");
-    waypointBorder = graphics_.single("data/global/ui/panel/800borderframe.dc6");
+    waypointBorder = uiGraphics_.single("data/global/ui/panel/800borderframe.dc6");
     waypointPanel = graphics_.single("data/global/ui/menu/waygatebackground.dc6");
     waypointTabs = graphics_.single(archives.contains("data/global/ui/menu/expwaygatetabs.dc6")
         ? "data/global/ui/menu/expwaygatetabs.dc6"
@@ -117,7 +155,7 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
     if (waypointBorder.frames.size() < 10 || waypointPanel.frames.size() < 4 ||
         waypointTabs.frames.size() < 8 || waypointIcons.frames.size() < 4)
         throw std::runtime_error("Original waypoint menu artwork is missing");
-    storagePanel = graphics_.single(session.content().stashLayout.expansion
+    storagePanel = uiGraphics_.single(session.content().stashLayout.expansion
         ? "data/global/ui/panel/tradestash.dc6"
         : "data/global/ui/panel/bank.dc6");
     if (storagePanel.frames.size() < 4)
@@ -216,6 +254,7 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
                     }
     graphics_.releaseDecoded();
     uiGraphics_.releaseDecoded();
+    unitsGraphics_.releaseDecoded();
 }
 std::string SceneAssets::itemArtKey(const ItemInstance &item) {
     if (item.specialRow < 0)
@@ -225,6 +264,19 @@ std::string SceneAssets::itemArtKey(const ItemInstance &item) {
 }
 void SceneAssets::loadInventoryArt(const GameSession &session) {
     const auto &inventory = session.inventory();
+    for (const auto &region : session.regions())
+        for (const auto &object : region.objects)
+            for (bool gamble : {false, true})
+                if (const auto *stock = session.vendorStock(object.id, gamble))
+                    for (const auto &offer : *stock) {
+                        const auto &code = gamble ? offer.displayCode : offer.code;
+                        if (itemIcons.contains(code)) continue;
+                        const auto *definition = inventory.catalog().find(code);
+                        if (!definition) continue;
+                        auto image = graphics_.single(definition->icon);
+                        if (image.frames.empty()) throw std::runtime_error("Original vendor icon missing: " + code);
+                        itemIcons.emplace(code, std::move(image));
+                    }
     for (const auto &[id, item] : inventory.state().items) {
         const auto &definition = *inventory.catalog().find(item.definition);
         auto artKey = itemArtKey(item);

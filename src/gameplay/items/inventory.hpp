@@ -1,6 +1,8 @@
 #pragma once
 #include "definitions.hpp"
 #include "operations.hpp"
+#include "modifiers.hpp"
+#include <functional>
 
 namespace d2x {
 class InventoryService {
@@ -8,6 +10,9 @@ class InventoryService {
     EntityIds &ids_;
     ItemCatalog catalog_;
     InventoryState state_;
+    std::function<std::vector<ResolvedItemStat>(const ItemInstance &)> itemProperties_;
+    struct ReplenishTimer { float elapsed = 0; bool repeated = false; };
+    std::map<std::pair<EntityId, bool>, ReplenishTimer> replenishTimers_;
     Cell stashDimensions_;
     Cell cubeDimensions_;
     void validateSnapshot(const InventoryState &state, const PlayerContainers &containers,
@@ -38,6 +43,11 @@ class InventoryService {
     InventoryService &operator=(const InventoryService &) = delete;
     const InventoryState &state() const { return state_; }
     const ItemCatalog &catalog() const { return catalog_; }
+    int propertyValue(const ItemInstance &item, std::string_view stat) const;
+    unsigned maximumDurability(const ItemInstance &item) const;
+    unsigned maximumStack(const ItemInstance &item) const;
+    bool retainsEmptyStack(const ItemInstance &item) const;
+    InventoryResult replenish(float dt);
     const ItemInstance *item(EntityId id) const;
     const ContainerState *container(EntityId id) const;
     EntityId itemAt(EntityId container, Cell cell) const;
@@ -63,7 +73,7 @@ class InventoryService {
     InventoryResult equip(const EquipItem &command, const PlayerContainers &containers,
                           const InventoryAccess &access, const EquipmentActor &actor);
     InventoryResult wearEquipment(const PlayerContainers &containers, EntityId weapon, bool defending,
-                    uint64_t &randomState);
+                    uint64_t &randomState, unsigned weaponSet);
     std::optional<Cell> beltSpace(EntityId belt, std::string_view code, bool automaticPickup) const;
     InventoryError previewDrink(ItemHandle item, const InventoryAccess &access) const;
     InventoryResult drink(ItemHandle item, const InventoryAccess &access);

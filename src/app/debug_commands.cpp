@@ -1,6 +1,7 @@
 #include "debug_commands.hpp"
 #include "debug_inventory.hpp"
 #include "debug_monsters.hpp"
+#include "presentation/character_action_stats.hpp"
 #include "persistence/save_file.hpp"
 #include <nlohmann/json.hpp>
 #include <algorithm>
@@ -24,7 +25,8 @@ const char *qualityName(ItemQuality quality) {
 } // namespace
 std::string debugCommand(const std::string &text, GameSession &session, SceneView &view,
                          bool &paused, bool &quit, const std::string &savePath,
-                         const std::function<void(const std::string &)> &screenshot) {
+                         const std::function<void(const std::string &)> &screenshot,
+                         const std::function<void(FrameInput)> &input) {
     using Json = nlohmann::json;
     try {
         auto request = Json::parse(text);
@@ -37,7 +39,29 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
                 throw std::runtime_error("id must be a positive integer");
             return EntityId{value.get<uint64_t>()};
         };
-        if (command == "item") {
+        if (command == "ui-input") {
+            FrameInput frame;
+            frame.mouse = {request.value("x", 0.f), request.value("y", 0.f)};
+            if (!std::isfinite(frame.mouse.x) || !std::isfinite(frame.mouse.y) ||
+                frame.mouse.x < 0 || frame.mouse.x >= W || frame.mouse.y < 0 || frame.mouse.y >= H)
+                throw std::runtime_error("UI coordinates must be inside the logical viewport");
+            frame.insideViewport = true;
+            const auto button = request.value("button", std::string{});
+            if (button == "left") frame.leftPressed = frame.leftHeld = true;
+            else if (button == "right") frame.rightPressed = frame.rightHeld = true;
+            else if (!button.empty()) throw std::runtime_error("button must be left or right");
+            const auto key = request.value("key", std::string{});
+            if (key == "escape") frame.escape = true;
+            else if (key == "enter") frame.enter = true;
+            else if (key == "inventory") frame.inventory = true;
+            else if (key == "character") frame.character = true;
+            else if (key == "quests") frame.quests = true;
+            else if (key == "weapon-swap") frame.weaponSwap = true;
+            else if (key == "automap") frame.automap = true;
+            else if (!key.empty()) throw std::runtime_error("Unsupported UI key");
+            input(std::move(frame));
+            result["queued"] = true;
+        } else if (command == "item") {
             debugItemInspect(request, result, session);
         } else if (command == "item-move") {
             debugItemMove(request, result, session, view);
@@ -128,6 +152,13 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
             result["region"] = int(state.area.region);
             result["kills"] = state.area.kills;
             result["paused"] = paused;
+            const auto leftAction = characterActionStats(session, view.ui().leftSkill);
+            const auto rightAction = characterActionStats(session, view.ui().rightSkill);
+            result["ui"] = {{"shop", view.ui().shopOpen}, {"npcMenu", view.ui().npcMenu},
+                {"dialogue", !view.ui().dialogue.empty()}, {"dialogueOffset", view.ui().dialogueOffset},
+                {"questNotice", view.ui().questNotice}, {"quests", view.ui().questOpen},
+                {"inventory", view.ui().inventory.open}, {"weaponSet", state.player.weaponSet},
+                {"leftDamage", leftAction.damage}, {"rightDamage", rightAction.damage}};
             result["travelMenu"] = view.ui().travelMenu;
             auto snapshot = session.snapshot();
             result["lootRandom"] = snapshot.loot.randomState;
@@ -228,9 +259,15 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
             if (!view.ui().npcMenu || !view.startNpcTalk())
                 throw std::runtime_error("No active NPC menu or original dialogue");
             result["speaker"] = view.ui().dialogueSpeaker;
-            result["dialogue"] = view.ui().dialogue;
-            result["lines"] = view.ui().dialogueLines.size();
-            session.submit(TalkToNpc{view.ui().dialogueObject}); step();
+            result["topics"] = Json::array();
+            for (auto [id, speech] : session.npcQuestTopics(view.ui().dialogueSpeaker))
+                result["topics"].push_back({{"id", questIndex(id)}, {"quest", speech->quest}});
+            if (request.contains("quest")) {
+                const int quest = request.at("quest").get<int>();
+                if (quest < 0 || quest >= 6 || !view.startNpcTopic(ActOneQuest(quest)))
+                    throw std::runtime_error("NPC has no available topic for that quest");
+                result["dialogue"] = view.ui().dialogue;
+            }
         } else if (command == "shop") {
             auto id = entity();
             const auto *stock = session.vendorStock(id);

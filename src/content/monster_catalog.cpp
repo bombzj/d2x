@@ -138,6 +138,10 @@ MonsterCatalog::MonsterCatalog(Archives &archives, const DataTable &stats) {
             throw std::runtime_error("Missing MonStats2 record for " + m.id);
         m.critter = extended.number(extra->second, "critter").value_or(0) != 0;
         m.inert = extended.number(extra->second, "inert").value_or(0) != 0;
+        m.localBlood = extended.number(extra->second, "localBlood").value_or(0);
+        m.bleed = extended.number(extra->second, "Bleed").value_or(0);
+        m.castsShadow = extended.number(extra->second, "Shadow").value_or(0) != 0;
+        m.overlayHeight = extended.number(extra->second, "OverlayHeight").value_or(0);
         m.getHitMode = extended.number(extra->second, "mGH").value_or(0) != 0;
         m.deadMode = extended.number(extra->second, "mDD").value_or(0) != 0;
         m.skill2Mode = extended.number(extra->second, "mS2").value_or(0) != 0;

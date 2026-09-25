@@ -77,8 +77,9 @@ InventoryError InventoryService::preview(const MergeStacks &command, const Inven
         return error;
     if (auto error = checkAccess(target.location, access); error != InventoryError::None)
         return error;
-    unsigned space = definition.maxStack - target.quantity;
+    unsigned space = maximumStack(target) - target.quantity;
     unsigned quantity = command.quantity == 0 ? std::min(source.quantity, space) : command.quantity;
+    if (!quantity) return InventoryError::InvalidQuantity;
     if (command.quantity > source.quantity)
         return InventoryError::InvalidQuantity;
     if (space == 0 || quantity > space)

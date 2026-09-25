@@ -15,9 +15,13 @@ struct VendorItemRule {
     bool permanent = false, magicEligible = false;
 };
 struct VendorDefinition {
+    struct QuestPrice { int flag = 0, sell = 1024, repair = 1024; };
     std::string id;
     int sellMultiplier = 0;
     std::vector<VendorItemRule> items;
+    int repairMultiplier = 0;
+    unsigned act = 0;
+    std::vector<QuestPrice> questPrices;
 };
 std::map<std::string, VendorDefinition, std::less<>> loadVendorData(
     const std::map<std::string, DataTable, std::less<>> &tables, const ItemCatalog &catalog);

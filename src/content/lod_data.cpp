@@ -4,6 +4,11 @@
 
 namespace d2x {
 void loadLodTreasureData(ClassicData &data) {
+    const auto &difficultyTable = data.tables.at("difficultylevels");
+    for (size_t difficulty = 0; difficulty < 3; ++difficulty) {
+        data.lifeStealDivisor[difficulty] = std::max(1, difficultyTable.number(difficulty, "LifeStealDivisor").value_or(1));
+        data.manaStealDivisor[difficulty] = std::max(1, difficultyTable.number(difficulty, "ManaStealDivisor").value_or(1));
+    }
     const auto &table = data.tables.at("treasureclassex");
     std::map<std::string, unsigned, std::less<>> indices;
     const auto &types = data.tables.at("itemtypes");
@@ -77,6 +82,8 @@ void loadLodTreasureData(ClassicData &data) {
         record.name = name;
         record.token = monsters.value(row, "Code");
         const char *suffix[] = {"", "(N)", "(H)"};
+        for (int difficulty = 0; difficulty < 3; ++difficulty)
+            record.drain[difficulty] = monsters.number(row, std::string("Drain") + suffix[difficulty]).value_or(0);
         for (int difficulty = 0; difficulty < 3; ++difficulty)
             for (int slot = 0; slot < 4; ++slot) {
                 auto tc =

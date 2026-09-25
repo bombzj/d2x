@@ -77,34 +77,54 @@ void GameSession::talkToNpc(EntityId npc) {
     if (!target || engagedNpc_ != npc ||
         region().definition.id != RegionId::Encampment || !canReach(*target))
         return;
-    if (target->name == "Warriv") {
-        auto &record = simulation_.state_.player.actOneQuests
-            .at(size_t(state().population.difficulty)).at(questIndex(ActOneQuest::SistersToTheSlaughter));
-        if (record.stage == uint32_t(SlaughterStage::AndarielSlain) &&
-            slaughterAdvance(record, SlaughterStage::PassageReady))
-            simulation_.emit(QuestAdvanced{ActOneQuest::SistersToTheSlaughter, record.stage});
-        return;
-    }
-    if (target->name == "Deckard Cain") {
-        auto &record = simulation_.state_.player.actOneQuests
-            .at(size_t(state().population.difficulty)).at(questIndex(ActOneQuest::SistersToTheSlaughter));
-        if (record.stage == uint32_t(SlaughterStage::Unstarted) &&
-            quest(ActOneQuest::SearchForCain).stage >= uint32_t(CainStage::Rescued) &&
-            slaughterAdvance(record, SlaughterStage::Assigned))
-            simulation_.emit(QuestAdvanced{ActOneQuest::SistersToTheSlaughter, record.stage});
-        return;
-    }
-    if (target->name == "Charsi") {
-        auto &record = simulation_.state_.player.actOneQuests
-            .at(size_t(state().population.difficulty)).at(questIndex(ActOneQuest::ToolsOfTheTrade));
+    const auto dialogue = npcQuestDialogue(target->name);
+    if (!dialogue.readKey.empty())
+        pendingNpcQuestMessages_.erase(dialogue.readKey);
+    if (!dialogue.advancesQuest) return;
+    const auto id = *dialogue.advancesQuest;
+    auto &record = simulation_.state_.player.actOneQuests
+        .at(size_t(state().population.difficulty)).at(questIndex(id));
+    auto changed = [&](bool advanced) {
+        if (advanced) simulation_.emit(QuestAdvanced{id, record.stage});
+    };
+    switch (id) {
+    case ActOneQuest::DenOfEvil:
+        if (denClaimReward(record)) {
+            ++simulation_.state_.player.unspentSkills;
+            changed(true);
+        } else changed(denAdvanceOnTalk(record));
+        break;
+    case ActOneQuest::SistersBurialGrounds:
+        if (record.stage == uint32_t(BurialStage::BloodRavenSlain)) {
+            if (!assignKashyaHireling()) {
+                simulation_.emit(InteractionFailed{npc, "Original Rogue hireling data is unavailable."});
+                return;
+            }
+            changed(burialClaimReward(record));
+        } else changed(burialAdvanceOnTalk(record,
+            quest(ActOneQuest::DenOfEvil).stage >= uint32_t(DenStage::Rewarded)));
+        break;
+    case ActOneQuest::SearchForCain:
+        if (record.stage == uint32_t(CainStage::BarkAcquired))
+            translateCainScroll(npc);
+        else if (record.stage == uint32_t(CainStage::Rescued)) {
+            if (!claimCainReward())
+                simulation_.emit(InteractionFailed{npc, "Make room for Akara's original ring reward."});
+        } else if (record.stage == uint32_t(CainStage::Unstarted))
+            changed(cainAdvance(record, CainStage::Assigned));
+        break;
+    case ActOneQuest::ToolsOfTheTrade:
         if (record.stage == uint32_t(ToolsStage::MalusAcquired)) {
             ItemHandle malus;
             for (auto container : {playerContainers_.backpack, playerContainers_.equipment})
-                for (auto id : inventory_.contents(container)) {
-                    const auto *item = inventory_.item(id);
+                for (auto itemId : inventory_.contents(container)) {
+                    const auto *item = inventory_.item(itemId);
                     if (item && item->definition == "hdm") malus = item->handle();
                 }
-            if (!malus.id) return;
+            if (!malus.id) {
+                simulation_.emit(InteractionFailed{npc, "Bring the Horadric Malus to Charsi."});
+                return;
+            }
             const auto *held = inventory_.item(malus.id);
             const auto *location = held ? std::get_if<ContainerLocation>(&held->location) : nullptr;
             auto removed = location && location->container == playerContainers_.equipment
@@ -112,54 +132,18 @@ void GameSession::talkToNpc(EntityId npc) {
                 : inventory_.consume(malus, 1, inventoryAccess());
             if (!removed) return;
             publishInventory(std::move(removed), malus.id);
-            if (toolsAdvance(record, ToolsStage::RewardReady))
-                simulation_.emit(QuestAdvanced{ActOneQuest::ToolsOfTheTrade, record.stage});
-        } else if (record.stage == uint32_t(ToolsStage::Unstarted) &&
-                   state().player.level >= 8) {
-            if (toolsAdvance(record, ToolsStage::Assigned))
-                simulation_.emit(QuestAdvanced{ActOneQuest::ToolsOfTheTrade, record.stage});
-        }
-        return;
+            changed(toolsAdvance(record, ToolsStage::RewardReady));
+        } else if (record.stage == uint32_t(ToolsStage::Unstarted))
+            changed(toolsAdvance(record, ToolsStage::Assigned));
+        break;
+    case ActOneQuest::SistersToTheSlaughter:
+        if (record.stage == uint32_t(SlaughterStage::AndarielSlain))
+            changed(slaughterAdvance(record, SlaughterStage::PassageReady));
+        else if (record.stage == uint32_t(SlaughterStage::Unstarted))
+            changed(slaughterAdvance(record, SlaughterStage::Assigned));
+        break;
+    default: break;
     }
-    if (target->name == "Kashya") {
-        auto &record = simulation_.state_.player.actOneQuests
-            .at(size_t(state().population.difficulty)).at(questIndex(ActOneQuest::SistersBurialGrounds));
-        if (record.stage == uint32_t(BurialStage::BloodRavenSlain)) {
-            if (!assignKashyaHireling()) {
-                simulation_.emit(InteractionFailed{npc, "Original Rogue hireling data is unavailable."});
-                return;
-            }
-            if (burialClaimReward(record))
-                simulation_.emit(QuestAdvanced{ActOneQuest::SistersBurialGrounds, record.stage});
-        } else if (burialAdvanceOnTalk(record,
-                    denRecord(simulation_.state_).stage >= uint32_t(DenStage::Rewarded)))
-            simulation_.emit(QuestAdvanced{ActOneQuest::SistersBurialGrounds, record.stage});
-        return;
-    }
-    if (target->name != "Akara") return;
-    auto &cainQuest = simulation_.state_.player.actOneQuests
-        .at(size_t(state().population.difficulty)).at(questIndex(ActOneQuest::SearchForCain));
-    if (cainQuest.stage == uint32_t(CainStage::BarkAcquired)) {
-        translateCainScroll(npc);
-        return;
-    }
-    if (cainQuest.stage == uint32_t(CainStage::Rescued)) {
-        if (!claimCainReward())
-            simulation_.emit(InteractionFailed{npc, "Make room for Akara's original ring reward."});
-        return;
-    }
-    if (cainQuest.stage == uint32_t(CainStage::Unstarted) &&
-        quest(ActOneQuest::SistersBurialGrounds).stage >= uint32_t(BurialStage::BloodRavenSlain)) {
-        if (cainAdvance(cainQuest, CainStage::Assigned))
-            simulation_.emit(QuestAdvanced{ActOneQuest::SearchForCain, cainQuest.stage});
-        return;
-    }
-    auto &record = denRecord(simulation_.state_);
-    if (denClaimReward(record)) {
-        ++simulation_.state_.player.unspentSkills;
-        simulation_.emit(QuestAdvanced{ActOneQuest::DenOfEvil, record.stage});
-    } else if (denAdvanceOnTalk(record))
-        simulation_.emit(QuestAdvanced{ActOneQuest::DenOfEvil, record.stage});
 }
 
 void GameSession::claimAkaraRespec(EntityId npc) {

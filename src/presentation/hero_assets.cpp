@@ -43,7 +43,8 @@ void SceneAssets::loadHeroEquipment(const GameSession &session) {
     std::string weapon = "hth";
     int weapons = 0;
     std::array<std::string, 2> weaponClasses;
-    for (auto slot : {EquipmentSlot::RightHand, EquipmentSlot::LeftHand}) {
+    const auto weaponSet = session.state().player.weaponSet;
+    for (auto slot : {weaponHandSlot(false, weaponSet), weaponHandSlot(true, weaponSet)}) {
         const auto *definition = equipped(slot);
         if (!definition || definition->appearance.component == 16)
             continue;
@@ -56,12 +57,13 @@ void SceneAssets::loadHeroEquipment(const GameSession &session) {
         int index = appearance.component;
         if (definition->equipment.isType("weap")) {
             weaponClasses[weapons++] = definition->base.weaponClass;
-            index = slot == EquipmentSlot::LeftHand ? 6 : 5;
+            index = slot == weaponHandSlot(true, weaponSet) ? 6 : 5;
             weapon = definition->base.weaponClass;
             if (definition->equipment.twoHanded &&
                 (!definition->equipment.oneOrTwoHanded ||
-                 !equipped(slot == EquipmentSlot::RightHand ? EquipmentSlot::LeftHand
-                                                            : EquipmentSlot::RightHand)))
+                 !equipped(slot == weaponHandSlot(false, weaponSet)
+                               ? weaponHandSlot(true, weaponSet)
+                               : weaponHandSlot(false, weaponSet))))
                 weapon = definition->equipment.twoHandWeaponClass;
         }
         parts[index] = appearance.token;

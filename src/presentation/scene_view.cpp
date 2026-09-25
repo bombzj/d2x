@@ -13,16 +13,22 @@ SceneView::SceneView(Archives &archives, const GameSession &session)
     lighting_.update(session_.map().grid, session_.region().definition.id,
                      session_.state().player.pos, session_.characterStats().lightRadius);
 }
+Rectangle SceneView::worldViewport() const {
+    const bool left = view_.questOpen || view_.characterOpen || view_.travelMenu || view_.shopOpen ||
+                      view_.inventory.storage || view_.inventory.cubeOpen;
+    const bool right = view_.inventory.open || view_.skillTreeOpen;
+    const float begin = left ? classicSideBounds(false).width : 0;
+    const float end = right ? classicSideBounds(true).x : W;
+    return {begin, 0, end - begin, float(H - HUD)};
+}
 Vec SceneView::screen(Vec p) const {
-    float centerX = view_.inventory.storage ? W * .5f
-                    : view_.inventory.open  ? inventoryBounds().x * .5f
-                                            : W * .5f;
+    const auto viewport = worldViewport();
+    const float centerX = viewport.x + viewport.width * .5f;
     return (project(p) - view_.camera) * view_.zoom + Vec{centerX, (H - HUD) * .5f};
 }
 Vec SceneView::world(Vec p) const {
-    float centerX = view_.inventory.storage ? W * .5f
-                    : view_.inventory.open  ? inventoryBounds().x * .5f
-                                            : W * .5f;
+    const auto viewport = worldViewport();
+    const float centerX = viewport.x + viewport.width * .5f;
     return unproject((p - Vec{centerX, (H - HUD) * .5f}) * (1 / view_.zoom) + view_.camera);
 }
 void SceneView::drawLighting() const {
@@ -64,13 +70,20 @@ void SceneView::sessionRestored() {
     view_.characterOpen = false;
     view_.skillTreeOpen = false;
     view_.questOpen = false;
+    view_.questNotice = false;
+    view_.questUpdated = view_.questSelected = -1;
+    view_.lastDenRemaining.reset();
     view_.skillClass = session_.characterCode();
     view_.skillPage = 3;
     view_.leftSkill.reset();
     view_.rightSkill.reset();
+    view_.weaponLeftSkills = {};
+    view_.weaponRightSkills = {};
+    view_.displayedWeaponSet = session_.state().player.weaponSet;
     view_.travelMenu = view_.help = false;
     view_.skillPicker.reset();
     view_.dialogue.clear();
+    view_.npcGossipTurns.clear();
     view_.shopOpen = false;
     view_.npcMenu = false;
     view_.camera = project(session_.state().player.pos);
@@ -85,16 +98,30 @@ void SceneView::sessionRestored() {
     lighting_.update(session_.map().grid, session_.region().definition.id,
                      session_.state().player.pos, session_.characterStats().lightRadius);
 }
+void SceneView::advanceUi(float dt) {
+    view_.noticeTime = std::max(0.f, view_.noticeTime - dt);
+    advanceNpcDialogue(dt);
+}
 void SceneView::advance(float dt) {
     revealAutomap();
     lighting_.update(session_.map().grid, session_.region().definition.id,
                      session_.state().player.pos, session_.characterStats().lightRadius);
     const auto &player = session_.state().player;
+    if (view_.displayedWeaponSet != player.weaponSet) {
+        view_.weaponLeftSkills[view_.displayedWeaponSet] = view_.leftSkill;
+        view_.weaponRightSkills[view_.displayedWeaponSet] = view_.rightSkill;
+        view_.displayedWeaponSet = player.weaponSet;
+        view_.leftSkill = view_.weaponLeftSkills[player.weaponSet];
+        view_.rightSkill = view_.weaponRightSkills[player.weaponSet];
+    }
     if (view_.skillClass != session_.characterCode()) {
         view_.skillClass = session_.characterCode();
+        view_.npcGossipTurns.clear();
         view_.skillPage = 3;
         view_.leftSkill.reset();
         view_.rightSkill.reset();
+        view_.weaponLeftSkills = {};
+        view_.weaponRightSkills = {};
         view_.skillPicker.reset();
     }
     auto learned = [&](std::optional<int> id) {
@@ -137,7 +164,13 @@ void SceneView::advance(float dt) {
                 }
             }
     }
-    view_.noticeTime = std::max(0.f, view_.noticeTime - dt);
+    const auto remaining = session_.denMonstersRemaining();
+    if (session_.quest(ActOneQuest::DenOfEvil).stage == uint32_t(DenStage::Entered) &&
+        remaining && *remaining > 0 && *remaining <= 5 && remaining != view_.lastDenRemaining) {
+        view_.questNotice = !view_.questOpen;
+        view_.questUpdated = 0;
+    }
+    view_.lastDenRemaining = remaining;
     for (auto &[id, age] : landingAge_)
         age += dt;
     std::erase_if(landingAge_, [](const auto &pair) { return pair.second > 4; });
@@ -213,6 +246,7 @@ void SceneView::advance(float dt) {
                     ui.open = true;
                     ui.storage = value.container;
                     ui.cubeOpen = false;
+                    view_.questOpen = view_.characterOpen = view_.skillTreeOpen = false;
                     view_.dialogue.clear();
                     view_.travelMenu = view_.help = false;
                     view_.clickAge = 10;
@@ -280,6 +314,8 @@ void SceneView::advance(float dt) {
                 } else if constexpr (std::is_same_v<T, WaypointActivated>) {
                     notice("Waypoint activated.", false);
                 } else if constexpr (std::is_same_v<T, QuestAdvanced>) {
+                    view_.questUpdated = int(questIndex(value.quest));
+                    view_.questNotice = !view_.questOpen;
                     if (value.quest == ActOneQuest::ToolsOfTheTrade &&
                         value.stage == uint32_t(ToolsStage::Imbued)) {
                         view_.imbueNpc = {};
@@ -288,7 +324,8 @@ void SceneView::advance(float dt) {
                     if (value.quest == ActOneQuest::SearchForCain &&
                         value.stage == uint32_t(CainStage::PortalOpened))
                         view_.cainPortalAnimationStarted = view_.animationTime;
-                    notice("Quest log updated.", false);
+                } else if constexpr (std::is_same_v<T, NpcDialogueStarted>) {
+                    openNpcDialogue(value.object, value.speaker, value.text);
                 } else if constexpr (std::is_same_v<T, ObjectInteracted>) {
                     if (value.interaction == Interaction::QuestTome) {
                         if (auto speech = questSpeech(session_.content().npcDialogues,
@@ -304,17 +341,21 @@ void SceneView::advance(float dt) {
                         view_.waypointSource = value.name == "Waypoint" ? value.object : EntityId{};
                         view_.travelPage = 0;
                         view_.travelMenu = true;
-                    } else if (value.interaction == Interaction::Heal ||
-                               value.interaction == Interaction::Talk) {
-                        openNpcMenu(value.object, value.name);
+                      } else if (value.interaction == Interaction::Heal ||
+                                 value.interaction == Interaction::Talk) {
+                          assets_.loadInventoryArt(session_);
+                          openNpcMenu(value.object, value.name, value.firstIntroduction);
                     }
                 } else if constexpr (std::is_same_v<T, ItemsIdentified>) {
                     view_.dialogueStatus = value.count
                         ? "Identified " + std::to_string(value.count) + " item(s) for " +
                               std::to_string(value.goldSpent) + " gold."
                         : "No unidentified items in your inventory.";
+                } else if constexpr (std::is_same_v<T, GambleStockOpened>) {
+                    assets_.loadInventoryArt(session_);
+                    if (view_.npcMenu && view_.dialogueObject == value.npc) openNpcShop(true);
                 } else if constexpr (std::is_same_v<T, VendorItemBought>) {
-                    view_.dialogueStatus = "Purchased item for " + std::to_string(value.price) + " gold.";
+                    view_.dialogueStatus.clear();
                     if (view_.shopOpen) scrollNpcShop(0);
                 }
             },

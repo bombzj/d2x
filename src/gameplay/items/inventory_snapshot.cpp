@@ -1,4 +1,5 @@
 #include "inventory.hpp"
+#include <algorithm>
 #include <array>
 #include <limits>
 #include <set>
@@ -44,13 +45,18 @@ void InventoryService::validateSnapshot(const InventoryState &state, const Playe
         require(def != nullptr, "unknown definition");
         if (def->family == ItemFamily::Armor)
             require(def->base.minDefense && def->base.maxDefense &&
-                        item.defense >= *def->base.minDefense && item.defense <= *def->base.maxDefense,
+                        item.defense >= (item.quality == ItemQuality::Inferior ?
+                            std::max(1, *def->base.minDefense * 75 / 100) : *def->base.minDefense) &&
+                        item.defense <= (item.quality == ItemQuality::Inferior ?
+                            std::max(1, *def->base.maxDefense * 75 / 100) :
+                            *def->base.maxDefense + (propertyValue(item, "item_armor_percent") ? 1 : 0)),
                     "rolled armor defense");
         else
             require(item.defense == 0, "defense on non-armor item");
-        require(item.quantity > 0 && item.quantity <= def->maxStack &&
+        require((item.quantity > 0 || retainsEmptyStack(item)) &&
+                    item.quantity <= maximumStack(item) &&
                     item.charges <= def->bookCapacity &&
-                    item.durability <= def->maxDurability && item.revision > 0 && item.level > 0 &&
+                    item.durability <= maximumDurability(item) && item.revision > 0 && item.level > 0 &&
                     item.level <= 99 && int(item.quality) >= 0 &&
                     int(item.quality) <= int(ItemQuality::Inferior) &&
                     (item.identified || (item.quality == ItemQuality::Magic ||

@@ -5,7 +5,7 @@
 #include <optional>
 
 namespace d2x {
-inline Rectangle characterBounds() { return {16, 20, 400, 540}; }
+inline Rectangle characterBounds() { return classicPanelBounds(false); }
 inline Rectangle characterArtRect(float x, float y, float width, float height) {
     auto panel = characterBounds();
     return {panel.x + x * inventoryScale, panel.y + y * inventoryScale,

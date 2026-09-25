@@ -154,7 +154,8 @@ void fields(Codec &a, AttributeAllocation &v) {
 }
 void fields(Codec &a, PlayerState &v) {
     a(v.id, v.characterClass, v.hp, v.mana, v.stamina, v.lastSkill,
-      v.running, v.combatRandom, v.nextWeapon, v.gold, v.bankGold, v.experience,
+      v.running, v.combatRandom, v.nextWeapon, v.weaponSet, v.gold, v.bankGold,
+      v.npcIntroductions, v.experience,
       v.level, v.allocated, v.unspentAttributes, v.skillRanks,
       v.unspentSkills, v.skillHotkeys, v.actOneQuests, v.hireling);
 }
@@ -218,7 +219,7 @@ Bytes encodeSave(SessionSnapshot snapshot) {
     Codec body;
     body(snapshot);
     auto bytes = body.take();
-    uint32_t version = 84, size = uint32_t(bytes.size()), crc = checksum(bytes);
+    uint32_t version = 88, size = uint32_t(bytes.size()), crc = checksum(bytes);
     Codec header;
     header(version, size, crc);
     auto headerBytes = header.take();
@@ -237,8 +238,8 @@ SessionSnapshot decodeSave(std::span<const uint8_t> bytes) {
     Codec header(bytes.subspan(sizeof(magic), 12));
     uint32_t version = 0, size = 0, crc = 0;
     header(version, size, crc);
-    if (version != 84)
-        throw std::runtime_error("Unsupported D2X save version; character saves require version 84");
+    if (version != 88)
+        throw std::runtime_error("Unsupported D2X save version; character saves require version 88");
     auto payload = bytes.subspan(headerSize);
     if (size != payload.size() || crc != checksum(payload))
         throw std::runtime_error("Save checksum or length mismatch");

@@ -54,6 +54,7 @@ FrameInput pollInput(const Viewport &viewport) {
         input.movement = {};
     input.help = input.control && IsKeyPressed(KEY_F1);
     input.automap = IsKeyPressed(KEY_TAB);
+    input.minimapSide = IsKeyPressed(KEY_V);
     input.travel = input.control && IsKeyPressed(KEY_F2);
     input.pageDelta = int(IsKeyPressed(KEY_PAGE_DOWN)) - int(IsKeyPressed(KEY_PAGE_UP));
     input.collision = input.control && IsKeyPressed(KEY_F3);
@@ -70,6 +71,7 @@ FrameInput pollInput(const Viewport &viewport) {
     for (int i = 0; i < 4; ++i)
         input.belt[i] = IsKeyPressed(KEY_ONE + i);
     input.expandBelt = !input.control && IsKeyPressed(KEY_B);
+    input.weaponSwap = !input.control && IsKeyPressed(KEY_W);
     return input;
 }
 } // namespace d2x

@@ -27,9 +27,11 @@ void SceneAssets::loadAutomap(const GameSession &session) {
                 collect(map.data.floors);
                 collect(map.data.walls);
             }
-        for (const auto &object : region.objects)
+        for (const auto &object : region.objects) {
+            if (!object.npcClass.empty()) continue;
             if (int cel = automapCatalog_.objectCel(object.objectClass); cel >= 0)
                 used.insert(cel);
+        }
     }
     for (int objectClass : {59, 60})
         if (int cel = automapCatalog_.objectCel(objectClass); cel >= 0)

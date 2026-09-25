@@ -20,15 +20,15 @@ void SceneView::drawSkillTree(Vec mouse) const {
     auto art = assets_.skillTrees.find(tree->classCode);
     if (art == assets_.skillTrees.end()) return;
     const auto panel = skillTreeBounds();
-    DrawRectangle(int(panel.x) - 5, 0, int(panel.width) + 11, H - HUD, {0, 0, 0, 150});
+    drawPanelFrame(true);
     BeginScissorMode(int(panel.x), int(panel.y), int(panel.width), int(panel.height));
     auto layer = [&](int first) {
         for (int index = 0; index < 4; ++index) {
             const auto &tile = art->second.frames[first + index].texture;
             DrawTexturePro(tile, {0, 0, float(tile.width), float(tile.height)},
-                {panel.x + (index % 2) * 256.f * 1.25f,
-                 panel.y + (index / 2) * 256.f * 1.25f,
-                 tile.width * 1.25f, tile.height * 1.25f}, {0, 0}, 0, WHITE);
+                {panel.x + (index % 2) * 256.f * classicPanelScale,
+                 panel.y + (index / 2) * 256.f * classicPanelScale,
+                 tile.width * classicPanelScale, tile.height * classicPanelScale}, {0, 0}, 0, WHITE);
         }
     };
     layer(0);

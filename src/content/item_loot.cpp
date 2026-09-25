@@ -8,7 +8,8 @@
 namespace d2x {
 LootPlan planItemLoot(const ClassicData &data, const DataTable &ratios, std::string_view root,
                       int itemLevel, int upgradeLevel, uint64_t seed,
-                      const std::set<size_t> &usedUniques, std::string_view characterClass) {
+                      const std::set<size_t> &usedUniques, std::string_view characterClass,
+                      int magicFind, int goldFind) {
     if (data.profile != "lod-named-txt-v1" || itemLevel < 1 || itemLevel > 99 ||
         upgradeLevel < 0 || upgradeLevel > 99)
         throw std::runtime_error("Unsupported item loot profile or level");
@@ -26,7 +27,7 @@ LootPlan planItemLoot(const ClassicData &data, const DataTable &ratios, std::str
                 auto [end, error] = std::from_chars(value.data(), value.data() + value.size(), goldMultiplier);
                 if (error != std::errc{} || end != value.data() + value.size() || goldMultiplier > 32767) {
                     plan.deferred = "Unsupported gold multiplier: " + selection.code;
-                    return false;
+                    return true;
                 }
                 if (!goldMultiplier)
                     goldMultiplier = 256;
@@ -35,15 +36,16 @@ LootPlan planItemLoot(const ClassicData &data, const DataTable &ratios, std::str
             const auto *item = data.items.find(code);
             if (!item) {
                 plan.deferred = "Unresolved TC token: " + selection.code;
-                return false;
+                return true;
             }
             const auto &source = data.tables.at(item->base.sourceTable);
             if (source.number(item->base.sourceRow, "quest").value_or(0)) {
                 plan.deferred = "Quest item drop requires verified rules: " + item->code;
-                return false;
+                return true;
             }
             auto rules = loadItemQualityRules(data, ratios, item->code);
-            auto quality = rollItemQuality(rules, itemLevel, 0, selection.quality, random);
+            auto quality = rollItemQuality(rules, itemLevel, std::clamp(magicFind, 0, 1000000),
+                                           selection.quality, random);
             random = quality.randomState;
             auto requested = quality.quality;
             ItemGeneration generation;
@@ -53,7 +55,7 @@ LootPlan planItemLoot(const ClassicData &data, const DataTable &ratios, std::str
                     const char *table = unique ? "uniqueitems" : "setitems";
                     if (!data.tables.contains(table)) {
                         plan.deferred = std::string("Missing original ") + table + " table";
-                        return false;
+                        return true;
                     }
                     const auto &records = unique ? data.uniqueItems : data.setItems;
                     auto choice = rollSpecialItem(records, item->code, itemLevel, random,
@@ -66,7 +68,7 @@ LootPlan planItemLoot(const ClassicData &data, const DataTable &ratios, std::str
                             throw std::logic_error("Selected special item has no source record");
                         if (!found->artAvailable) {
                             plan.deferred = "Original special item art missing: " + found->name;
-                            return false;
+                            return true;
                         }
                         auto properties = rollSpecialProperties(*found, random);
                         random = properties.randomState;
@@ -88,12 +90,12 @@ LootPlan planItemLoot(const ClassicData &data, const DataTable &ratios, std::str
                     }
                     if (!data.tables.contains("magicprefix") || !data.tables.contains("magicsuffix")) {
                         plan.deferred = "Missing original magic affix tables";
-                        return false;
+                        return true;
                     }
                     if (requested == DropQuality::Rare &&
                         (!data.tables.contains("rareprefix") || !data.tables.contains("raresuffix"))) {
                         plan.deferred = "Missing original rare name tables";
-                        return false;
+                        return true;
                     }
                     auto generated = rollAffixItem(data, *item,
                                                    requested == DropQuality::Magic ? ItemQuality::Magic
@@ -113,7 +115,7 @@ LootPlan planItemLoot(const ClassicData &data, const DataTable &ratios, std::str
                     if (!data.tables.contains(superior ? "qualityitems" : "lowqualityitems")) {
                         plan.deferred = superior ? "Missing original QualityItems table"
                                                  : "Missing original LowQualityItems table";
-                        return false;
+                        return true;
                     }
                     auto generated = rollItemGrade(data, *item,
                                                    superior ? ItemQuality::Superior : ItemQuality::Inferior,
@@ -127,27 +129,27 @@ LootPlan planItemLoot(const ClassicData &data, const DataTable &ratios, std::str
                     continue;
                 }
                 plan.deferred = "Unknown item quality request";
-                return false;
+                return true;
             }
             const bool gold = item->equipment.isType("gold");
             const bool quiver = !item->equipment.quiver.empty();
             if (generation.quality != ItemQuality::Unique && generation.quality != ItemQuality::Set &&
                 !item->artAvailable) {
                 plan.deferred = "Original item art missing: " + item->code;
-                return false;
+                return true;
             }
             if (generation.quality == ItemQuality::Normal &&
                 ((item->family == ItemFamily::Misc && !rules.normalOnly) ||
                  (item->family != ItemFamily::Misc && !item->equipment.known))) {
                 plan.deferred = "Unsupported instance: " + item->code + " requested=" +
                                 dropQualityName(requested);
-                return false;
+                return true;
             }
             if (item->family == ItemFamily::Armor &&
                 (!item->base.minDefense || !item->base.maxDefense || *item->base.minDefense < 0 ||
                  *item->base.maxDefense < *item->base.minDefense || *item->base.maxDefense > 1000000)) {
                 plan.deferred = "Unverified armor defense: " + item->code;
-                return false;
+                return true;
             }
             auto below = [&](unsigned bound) {
                 if (!bound)
@@ -159,9 +161,11 @@ LootPlan planItemLoot(const ClassicData &data, const DataTable &ratios, std::str
             if (gold) {
                 quantity = unsigned(itemLevel) + below(5 * unsigned(itemLevel));
                 quantity = unsigned(uint64_t(quantity) * goldMultiplier / 256);
+                quantity = unsigned(std::min<uint64_t>(item->maxStack,
+                    uint64_t(quantity) * uint64_t(100 + std::max(0, goldFind)) / 100));
                 if (!quantity || quantity > item->maxStack) {
                     plan.deferred = "Gold pile exceeds supported original stack limit";
-                    return false;
+                    return true;
                 }
             }
             else if (item->maxStack > 1) {
@@ -169,13 +173,13 @@ LootPlan planItemLoot(const ClassicData &data, const DataTable &ratios, std::str
                 auto maximum = source.number(item->base.sourceRow, quiver ? "maxstack" : "spawnstack");
                 if (!minimum || *minimum < 0 || unsigned(*minimum) > item->maxStack) {
                     plan.deferred = "Unverified stack bounds: " + item->code;
-                    return false;
+                    return true;
                 }
                 if (!quiver && (!maximum || *maximum < *minimum || !*maximum))
                     maximum = int(item->maxStack);
                 if (!maximum || *maximum < *minimum || unsigned(*maximum) > item->maxStack) {
                     plan.deferred = "Unverified stack bounds: " + item->code;
-                    return false;
+                    return true;
                 }
                 quantity = std::max(1u, unsigned(*minimum) + below(unsigned(*maximum - *minimum)));
             }
@@ -185,10 +189,6 @@ LootPlan planItemLoot(const ClassicData &data, const DataTable &ratios, std::str
         });
     plan.randomState = roll.randomState;
     plan.noDrops = roll.noDrops;
-    if (!plan.deferred.empty()) {
-        plan.drops.clear();
-        return plan;
-    }
     return plan;
 }
 } // namespace d2x

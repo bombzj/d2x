@@ -53,6 +53,8 @@ void SceneAssets::loadMonsterAnimations(Archives &archives, const GameSession &s
                                                  colors ? &*colors : nullptr);
             if (animation.frames.empty() || !animation.completeComposite)
                 throw std::runtime_error("Monster animation incomplete: " + actor.id + "/" + mode);
+            if (!actor.castsShadow)
+                for (auto &frame : animation.frames) frame.shadowTexture = {};
             animations.emplace(mode, std::move(animation));
         }
         if (auto timing = content.attackTiming(kind);

@@ -10,7 +10,7 @@ param(
         'switch-character', 'character-panel', 'quest-panel', 'skill-tree', 'skill-picker', 'skills',
         'bind-skill-hotkey', 'learn-skill', 'reset-skills', 'travel', 'waypoint',
         'kill', 'drop', 'pickup', 'move', 'step', 'pause', 'resume', 'save', 'load',
-        'screenshot', 'quit')]
+        'ui-input', 'screenshot', 'quit')]
     [string]$Command,
     [hashtable]$Arguments = @{},
     [ValidateRange(100, 60000)][int]$TimeoutMs = 10000

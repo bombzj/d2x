@@ -23,6 +23,7 @@ using ClassicTreasureClass = TreasureClass;
 struct ClassicMonsterData {
     std::string name, token;
     std::array<std::array<std::optional<unsigned>, 4>, 3> treasureClasses{};
+    std::array<int, 3> drain{};
 };
 struct StashLayout {
     int columns = 0, rows = 0, left = 0, top = 0, cellSize = 0;
@@ -41,6 +42,7 @@ struct ClassicData {
     std::map<int, int> teleportByLevel;
     std::array<int, 3> staticFieldMinimum{};
     std::array<int, 3> resistancePenalty{};
+    std::array<int, 3> lifeStealDivisor{1, 1, 1}, manaStealDivisor{1, 1, 1};
     StashLayout stashLayout;
     StashLayout cubeLayout;
     std::string cubeCode;
@@ -51,6 +53,7 @@ struct ClassicData {
     NpcDialogues npcDialogues;
     std::map<std::string, std::string, std::less<>> actOneQuestStrings;
     std::map<std::string, std::string, std::less<>> hirelingStrings;
+    std::map<std::string, std::string, std::less<>> itemStrings;
     std::vector<HirelingDefinition> hirelings;
     std::map<std::string, VendorDefinition, std::less<>> vendors;
     std::string profile;

@@ -18,13 +18,13 @@ void SceneView::drawContainerGrid(const ContainerGrid &grid, Vec mouse) const {
         if (id == hovered || id == ui.selected)
             DrawRectangleLinesEx(box, 1, id == hovered ? parchment : gold);
         const auto *definition = inventory.catalog().find(item.definition);
-        if (item.quantity > 1 || definition->bookCapacity) {
+        if (definition->maxStack > 1 || definition->bookCapacity) {
             auto quantity = std::to_string(definition->bookCapacity ? item.charges : item.quantity);
             int width = painter_.measure(quantity, 12);
             DrawRectangle(int(box.x + box.width) - width - 6, int(box.y + box.height) - 17, width + 4, 15,
                           {0, 0, 0, 210});
             painter_.label(quantity, int(box.x + box.width) - width - 4, int(box.y + box.height) - 16, 12,
-                           WHITE);
+                           !item.quantity ? RED : WHITE);
         }
     }
 }

@@ -43,14 +43,17 @@ InventoryError InventoryService::equipmentRequirements(ItemHandle handle, const 
         return error;
     const auto &source = *item(handle.id);
     const auto &definition = *catalog_.find(source.definition);
+    if (!source.identified) return InventoryError::Unidentified;
     if (!definition.equipment.known ||
         definition.equipment.types.empty() || definition.equipment.isType("tpot"))
         return InventoryError::UnsupportedEquipment;
     if (!definition.equipment.requiredClass.empty() &&
         definition.equipment.requiredClass != actor.characterClass)
         return InventoryError::WrongClass;
-    if (actor.strength < definition.base.requiredStrength.value_or(0) ||
-        actor.dexterity < definition.base.requiredDexterity.value_or(0) ||
+    const int requirementPercent = propertyValue(source, "item_req_percent");
+    auto requirement = [&](int base) { return std::max(0, base + base * requirementPercent / 100); };
+    if (actor.strength < requirement(definition.base.requiredStrength.value_or(0)) ||
+        actor.dexterity < requirement(definition.base.requiredDexterity.value_or(0)) ||
         actor.level < std::max(definition.base.requiredLevel.value_or(0), source.requiredLevel))
         return InventoryError::RequirementsNotMet;
     return InventoryError::None;
@@ -125,9 +128,12 @@ InventoryResult InventoryService::planEquipment(const EquipItem &command, const 
         if (previous && previous != source.id)
             if (auto error = returnToPack(previous); error != InventoryError::None)
                 return reject(error);
-        if (slot == EquipmentSlot::RightHand || slot == EquipmentSlot::LeftHand) {
-            auto opposite =
-                slot == EquipmentSlot::RightHand ? EquipmentSlot::LeftHand : EquipmentSlot::RightHand;
+        if (slot == EquipmentSlot::RightHand || slot == EquipmentSlot::LeftHand ||
+            slot == EquipmentSlot::AlternateRightHand || slot == EquipmentSlot::AlternateLeftHand) {
+            auto opposite = slot == EquipmentSlot::RightHand ? EquipmentSlot::LeftHand :
+                            slot == EquipmentSlot::LeftHand ? EquipmentSlot::RightHand :
+                            slot == EquipmentSlot::AlternateRightHand ? EquipmentSlot::AlternateLeftHand :
+                                                                         EquipmentSlot::AlternateRightHand;
             auto other = draft.equipped(containers, opposite);
             if (other && !compatibleHands(definition, *catalog_.find(draft.item(other)->definition), actor))
                 if (auto error = returnToPack(other); error != InventoryError::None)

@@ -31,22 +31,24 @@ InventoryResult InventoryService::planTransfer(const TransferItem &command,
         return failure(InventoryError::RestrictedItem);
     unsigned remaining = source.quantity;
     std::vector<std::pair<EntityId, unsigned>> merges;
-    if (definition.maxStack > 1 && source.quality == ItemQuality::Normal)
+    if (remaining && definition.maxStack > 1 && source.quality == ItemQuality::Normal)
         for (auto id : contents(backpack)) {
             const auto &target = state_.items.at(id);
             if (target.definition != source.definition || target.quality != source.quality ||
-                target.quantity == definition.maxStack)
+                target.quantity >= maximumStack(target))
                 continue;
             if (auto error = checkHandle(target.handle()); error != InventoryError::None)
                 return failure(error);
-            unsigned amount = std::min(remaining, definition.maxStack - target.quantity);
+            unsigned amount = std::min(remaining, maximumStack(target) - target.quantity);
             merges.emplace_back(id, amount);
             remaining -= amount;
             if (!remaining)
                 break;
         }
     std::optional<Cell> slot;
-    if (remaining) {
+    const bool emptyWeapon = source.quantity == 0 && definition.equipment.throwable &&
+                             definition.equipment.repairable;
+    if (remaining || emptyWeapon) {
         slot = findSpace(backpack, source.definition);
         if (!slot)
             return failure(InventoryError::NoSpace);
@@ -61,10 +63,10 @@ InventoryResult InventoryService::planTransfer(const TransferItem &command,
                                   target.location, target.quantity + amount});
     }
     std::optional<ItemLocation> after;
-    if (remaining)
+    if (remaining || emptyWeapon)
         after = ContainerLocation{backpack, *slot};
     result.changes.push_back({source.id, source.revision + 1,
-                              remaining ? ItemChangeKind::Moved : ItemChangeKind::Removed, source.location,
+                              (remaining || emptyWeapon) ? ItemChangeKind::Moved : ItemChangeKind::Removed, source.location,
                               after, remaining});
     return result;
 }

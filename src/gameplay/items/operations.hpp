@@ -25,7 +25,8 @@ enum class InventoryError {
     UnsupportedUse,
     RequirementsNotMet,
     WrongClass,
-    UnsupportedEquipment
+    UnsupportedEquipment,
+    Unidentified
 };
 const char *inventoryErrorText(InventoryError error);
 enum class ItemChangeKind { Created, Moved, QuantityChanged, Removed, DurabilityChanged };

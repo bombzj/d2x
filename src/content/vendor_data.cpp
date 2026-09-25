@@ -37,6 +37,17 @@ std::map<std::string, VendorDefinition, std::less<>> loadVendorData(
         std::string prefix = id;
         prefix.front() = char(std::toupper(static_cast<unsigned char>(prefix.front())));
         VendorDefinition vendor{id, *multiplier, {}};
+        vendor.repairMultiplier = npc.number(row, "rep mult").value_or(0);
+        for (const auto suffix : {"A", "B", "C"})
+            if (const int flag = npc.number(row, std::string("questflag ") + suffix).value_or(0))
+                vendor.questPrices.push_back({flag,
+                    npc.number(row, std::string("questsellmult ") + suffix).value_or(1024),
+                    npc.number(row, std::string("questrepmult ") + suffix).value_or(1024)});
+        // Acts are engine service configuration (SUnitProxy), not localization.
+        if (id == "fara" || id == "drognan" || id == "lysander" || id == "elzix") vendor.act = 1;
+        if (id == "hratli" || id == "alkor" || id == "ormus" || id == "asheara") vendor.act = 2;
+        if (id == "halbu" || id == "jamella") vendor.act = 3;
+        if (id == "larzuk" || id == "malah" || id == "nihlathak" || id == "drehya") vendor.act = 4;
         for (auto family : {"weapons", "armor", "misc"}) {
             const auto &source = tables.at(family);
             for (size_t itemRow = 0; itemRow < source.rows().size(); ++itemRow) {
@@ -56,7 +67,8 @@ std::map<std::string, VendorDefinition, std::less<>> loadVendorData(
                 auto magicMaximum = source.number(itemRow, prefix + "MagicMax").value_or(0);
                 auto magicLevel = source.number(itemRow, prefix + "MagicLvl").value_or(255);
                 bool permanent = source.number(itemRow, "PermStoreItem").value_or(0) != 0;
-                if (!item->base.spawnable.value_or(0) || (!maximum && !magicMaximum && !permanent))
+                // PermStoreItem only changes stocking behavior for NPCs whose own vendor column offers it.
+                if (!item->base.spawnable.value_or(0) || (!maximum && !magicMaximum))
                     continue;
                 if (minimum < 0 || maximum < minimum || magicMinimum < 0 ||
                     magicMaximum < magicMinimum || magicLevel < 0 || magicLevel > 255 ||

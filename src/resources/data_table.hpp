@@ -7,6 +7,7 @@
 
 namespace d2x {
 // Ordered columns retain duplicate headers, empty cells, and original row indices.
+// Field lookup ignores ASCII case; original headers and cell values stay intact.
 class DataTable {
     std::vector<std::string> columns_;
     std::vector<std::vector<std::string>> rows_;
