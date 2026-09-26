@@ -41,7 +41,21 @@ void Simulation::releaseOriginalCast(const OriginalSkillCast &skill, Vec target,
         (skill.effect == Skill::Teleport && !grid_->walkable(target))) return;
     player.mana -= skill.manaCost;
     if (skill.missileId >= 0) emit(MissileReleased{skill.missileId});
-    if (skill.effect == Skill::Teleport) {
+    if (skill.effect == Skill::FrozenArmor) {
+        ActiveCombatEffect effect;
+        effect.owner = player.id;
+        effect.sourceId = skill.sourceId;
+        effect.group = skill.stateGroup;
+        effect.startedAt = state_.time;
+        effect.expiresAt = state_.time + skill.buffDuration;
+        effect.modifiers.combat.defensePercent = skill.defensePercent;
+        effect.retaliationFreeze = skill.retaliationFreeze;
+        effect.overlayId = skill.stateOverlayId;
+        effect.hitOverlayId = skill.hitOverlayId;
+        effect.hitOverlayDuration = skill.hitOverlayDuration;
+        if (applyCombatEffect_) applyCombatEffect_(std::move(effect));
+        emit(SkillActivated{skill.effect});
+    } else if (skill.effect == Skill::Teleport) {
         player.pos = player.previous = target;
     } else if (skill.effect == Skill::StaticField) {
         for (auto &enemy : state_.area.enemies) {

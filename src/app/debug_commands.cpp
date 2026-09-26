@@ -172,6 +172,11 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
                 });
             }
             result["combat"]["activeEffects"] = state.player.combatEffects.size();
+            result["effects"] = Json::array();
+            for (const auto &effect : state.player.combatEffects)
+                result["effects"].push_back({{"sourceId", effect.sourceId}, {"group", effect.group},
+                    {"remaining", effect.expiresAt - state.time}, {"defensePercent", effect.modifiers.combat.defensePercent},
+                    {"retaliationFreeze", effect.retaliationFreeze}, {"overlayId", effect.overlayId}});
             result["region"] = int(state.area.region);
             result["kills"] = state.area.kills;
             result["paused"] = paused;

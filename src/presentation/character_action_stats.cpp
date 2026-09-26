@@ -53,7 +53,8 @@ CharacterActionStats characterActionStats(const GameSession &session, std::optio
                                                session.state().player.skillRanks,
                                                session.fireMasteryPercent(),
                                                session.lightningMasteryPercent());
-        if (cast.effect == Skill::Teleport || cast.effect == Skill::StaticField) return {};
+        if (cast.effect == Skill::Teleport || cast.effect == Skill::StaticField ||
+            cast.effect == Skill::FrozenArmor) return {};
         return {damageText(int64_t(cast.minimumDamage), int64_t(cast.maximumDamage)), ""};
     }
     if (auto effect = implementedSkillEffect(*entry)) {

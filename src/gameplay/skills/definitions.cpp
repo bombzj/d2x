@@ -27,6 +27,8 @@ const SkillDefinition &skillDefinition(Skill id) {
          {Skill::IceBlast, "ICE BLAST", "ICE BLAST", "Original MPQ freezing projectile", 0, 0, .32f, 0,
           0, 0, 0, 0, 0},
          {Skill::ChargedBolt, "CHARGED BOLT", "CHARGED BOLT", "Original MPQ charged bolts", 0, 0, .32f, 0,
+          0, 0, 0, 0, 0},
+         {Skill::FrozenArmor, "FROZEN ARMOR", "FROZEN ARMOR", "Original MPQ defensive armor", 0, 0, .32f, 0,
           0, 0, 0, 0, 0}}};
     auto index = size_t(id);
     if (index >= skills.size())

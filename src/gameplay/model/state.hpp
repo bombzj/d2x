@@ -26,6 +26,8 @@ struct ActiveCombatEffect {
     int sourceId = -1;
     float expiresAt = 0;
     CharacterModifiers modifiers;
+    int group = 0, overlayId = -1, hitOverlayId = -1;
+    float startedAt = 0, retaliationFreeze = 0, hitOverlayDuration = 0;
 };
 struct PlayerState {
     EntityId id;

@@ -257,6 +257,8 @@ void SceneView::advance(float dt) {
                         assets_.audio.play("missile-hit:" + std::to_string(value.missileId));
                 } else if constexpr (std::is_same_v<T, MissileReleased>) {
                     assets_.audio.play("missile-release:" + std::to_string(value.missileId));
+                } else if constexpr (std::is_same_v<T, SkillActivated>) {
+                    assets_.audio.play("skill-active:" + std::to_string(int(value.skill)));
                 } else if constexpr (std::is_same_v<T, EnemyHit>) {
                     if (auto sound = soundFor(value.victim)) assets_.audio.play(sound->hit);
                 } else if constexpr (std::is_same_v<T, EnemyDied>) {

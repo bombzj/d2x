@@ -249,10 +249,14 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
             if (!skill.originalEffect->releaseSoundArt.empty())
                 audio.registerOriginal(archives, "missile-release:" + std::to_string(skill.originalEffect->missileId),
                                        skill.originalEffect->releaseSoundArt);
+            if (!skill.originalEffect->activationSoundArt.empty())
+                audio.registerOriginal(archives, "skill-active:" + std::to_string(int(skill.originalEffect->effect)),
+                                       skill.originalEffect->activationSoundArt);
         }
     for (const auto &[id, skill] : session.content().skills.skills)
         if (skill.originalEffect)
-            for (const auto &visual : {skill.originalEffect->castOverlay, skill.originalEffect->hitOverlay}) {
+            for (const auto &visual : {skill.originalEffect->castOverlay, skill.originalEffect->hitOverlay,
+                                      skill.originalEffect->stateOverlay}) {
                 if (visual.id < 0 || spellOverlays.contains(visual.id)) continue;
                 auto animation = unitsGraphics_.single(visual.art, visual.trans == 3);
                 if (animation.count < visual.frames)

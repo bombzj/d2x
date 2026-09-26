@@ -51,6 +51,7 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
         if (!result || !result.changes.empty())
             publishInventory(std::move(result), {});
     };
+            simulation_.applyCombatEffect_ = [this](ActiveCombatEffect effect) { applyCombatEffect(std::move(effect)); };
     simulation_.state_.player.combatRandom = (uint64_t(666) << 32) | selection.seed;
     simulation_.monsterAccuracy_ = [this](const Enemy &enemy, RegionId region, int mode)
         -> std::optional<MonsterAccuracy> {

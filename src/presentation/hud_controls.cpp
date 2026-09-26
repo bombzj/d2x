@@ -167,6 +167,9 @@ void SceneView::drawSkillControls(Vec mouse) const {
                 session_.fireMasteryPercent(), session_.lightningMasteryPercent());
             detail = "Mana " + std::string(TextFormat("%.1f", value.manaCost));
             if (value.effect == Skill::Teleport) detail += " / Teleport to clear ground";
+            else if (value.effect == Skill::FrozenArmor)
+                detail += " / Defense +" + std::to_string(value.defensePercent) + "% / " +
+                    std::to_string(int(value.buffDuration)) + " seconds";
             else if (value.effect == Skill::StaticField)
                 detail += " / " + std::to_string(int(value.staticPercent)) + "% current life, range " +
                     std::to_string(int(value.staticRadius));

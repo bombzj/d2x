@@ -468,6 +468,18 @@ void SceneView::drawMagic() const {
             if (overlay.visual.trans == 3) EndBlendMode();
         }
 
+    for (const auto &effect : sim.player.combatEffects)
+        if (!sim.player.dead && effect.expiresAt > sim.time)
+            if (auto found = assets_.spellOverlays.find(effect.overlayId); found != assets_.spellOverlays.end()) {
+                const auto &overlay = found->second;
+                const int frame = int((sim.time - effect.startedAt) * overlay.visual.fps) % overlay.visual.frames;
+                if (overlay.visual.trans == 3) {
+                    rlSetBlendFactors(0x0307, 1, 0x8006);
+                    BeginBlendMode(BLEND_CUSTOM);
+                }
+                sprite(overlay.animation.frame(0, frame), screen(sim.player.pos) + overlay.visual.offset);
+                if (overlay.visual.trans == 3) EndBlendMode();
+            }
     BeginBlendMode(BLEND_ADDITIVE);
     for (auto &prop : props)
         if (prop.flame) {

@@ -28,6 +28,7 @@ class Simulation {
     WorldState state_;
     EquipmentStats equipmentStats_;
     CharacterAttributes characterStats_;
+    std::function<void(ActiveCombatEffect)> applyCombatEffect_;
     int resistancePenalty_ = 0;
     std::function<void(EntityId, bool)> wearEquipment_;
     std::function<bool(EntityId, bool)> spendProjectile_;

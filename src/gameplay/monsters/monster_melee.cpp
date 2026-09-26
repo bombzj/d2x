@@ -119,7 +119,24 @@ void Simulation::resolveMonsterAttack(Enemy &enemy, int modeOverride, bool proje
                                  (enemy.combatRandom >> 32);
             if (uint32_t(enemy.combatRandom) % 100 < unsigned(*chance)) damage *= 2.f;
         }
-    hurtPlayer(damage, MonsterDamageType::Physical);
+    const float physicalDealt = hurtPlayer(damage, MonsterDamageType::Physical);
+    if (!projectile && physicalDealt > 0 && enemy.hp > 0)
+        for (const auto &effect : player.combatEffects) {
+            if (effect.expiresAt <= state_.time || effect.retaliationFreeze <= 0) continue;
+            const int resistance = monsterResistance_ ?
+                monsterResistance_(enemy, state_.area.region, MonsterDamageType::Cold).value_or(0) : 0;
+            const float duration = float(int(effect.retaliationFreeze * 25) *
+                std::clamp(100 - resistance, 0, 200) / 100) / 25.f;
+            if (auto freezable = monsterFreezable_ ? monsterFreezable_(enemy) : std::nullopt) {
+                if (*freezable) {
+                    enemy.freeze = std::max(enemy.freeze, float(int(duration * 25) / monsterFreezeDivisor_) / 25.f);
+                    if (enemy.freeze > 0) enemy.route.clear();
+                } else enemy.chill = std::max(enemy.chill, duration);
+            }
+            if (effect.hitOverlayId >= 0)
+                state_.area.effects.push_back({enemy.pos, Skill::FrozenArmor, 0, effect.hitOverlayDuration,
+                                              -1, effect.hitOverlayId, enemy.id});
+        }
     if (combat && player.hp > 0)
         applyMonsterElements(enemy, *combat, mode);
     if (wearEquipment_) wearEquipment_({}, true);

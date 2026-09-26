@@ -9,7 +9,7 @@ void GameSession::applyCombatEffect(ActiveCombatEffect effect) {
     auto &effects = simulation_.state_.player.combatEffects;
     std::erase_if(effects, [&](const auto &existing) {
         return existing.source == effect.source && existing.owner == effect.owner &&
-               existing.sourceId == effect.sourceId;
+             (existing.sourceId == effect.sourceId || (effect.group > 0 && existing.group == effect.group));
     });
     effects.push_back(std::move(effect));
     refreshCharacter(true);

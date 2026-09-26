@@ -50,6 +50,19 @@ OriginalSkillCast resolveOriginalSkill(const OriginalSkillSpec &spec, int rank,
         throw std::runtime_error("Unsupported original skill rank or shift");
     OriginalSkillCast result;
     result.effect = spec.effect;
+    result.sourceId = spec.sourceId;
+    result.stateGroup = spec.stateGroup;
+    result.stateOverlayId = spec.stateOverlay.id;
+    if (spec.effect == Skill::FrozenArmor) {
+        int synergyRanks = 0;
+        for (int id : spec.armorSynergySkills)
+            if (auto found = learned.find(id); found != learned.end()) synergyRanks += found->second;
+        const auto &parameters = spec.armorParameters;
+        result.defensePercent = parameters[0] + (rank - 1) * parameters[1];
+        result.buffDuration = float(parameters[2] + (rank - 1) * parameters[3] + synergyRanks * parameters[6]) / 25.f;
+        result.retaliationFreeze = float((parameters[4] + (rank - 1) * parameters[5]) *
+            (100 + synergyRanks * parameters[7]) / 100) / 25.f;
+    }
     const int64_t scaledMana = std::max<int64_t>(0,
         int64_t(spec.mana) + int64_t(rank - 1) * spec.manaPerLevel) << spec.manaShift;
     const int64_t fixedMana = std::max<int64_t>(int64_t(spec.minimumMana) * 256, scaledMana);

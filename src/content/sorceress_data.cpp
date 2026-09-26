@@ -46,7 +46,7 @@ void loadSorceressEffects(SkillCatalog &catalog, const DataTable &skills,
         {"Teleport", Skill::Teleport}, {"Fire Bolt", Skill::FireBolt},
         {"Fire Ball", Skill::Fireball}, {"Frost Nova", Skill::FrostNova},
         {"Ice Bolt", Skill::IceBolt}, {"Nova", Skill::Nova},
-        {"Ice Blast", Skill::IceBlast}, {"Charged Bolt", Skill::ChargedBolt},
+        {"Ice Blast", Skill::IceBlast}, {"Charged Bolt", Skill::ChargedBolt}, {"Frozen Armor", Skill::FrozenArmor},
         {"Static Field", Skill::StaticField}};
     const auto warmth = std::find_if(catalog.skills.begin(), catalog.skills.end(),
         [](const auto &pair) { return pair.second.classCode == "sor" &&
@@ -119,6 +119,7 @@ void loadSorceressEffects(SkillCatalog &catalog, const DataTable &skills,
         if (skills.value(row, "anim") != "SC")
             throw std::runtime_error("Unsupported original sorceress cast mode");
         spec.effect = effect;
+        spec.sourceId = record->id;
         spec.mana = required(skills, row, "mana");
         spec.minimumMana = required(skills, row, "minmana");
         spec.manaPerLevel = required(skills, row, "lvlmana");
@@ -158,7 +159,39 @@ void loadSorceressEffects(SkillCatalog &catalog, const DataTable &skills,
             return visual;
         };
         spec.castOverlay = loadOverlay(skills.value(row, "castoverlay"));
-        if (effect == Skill::StaticField) {
+        if (effect == Skill::FrozenArmor) {
+            if (skills.value(row, "aurastat1") != "skill_armor_percent" ||
+                skills.value(row, "aurastatcalc1") != "ln12" ||
+                skills.value(row, "auraevent1") != "damagedinmelee" ||
+                required(skills, row, "auraeventfunc1") != 2 ||
+                skills.value(row, "auralencalc") != "ln34+(skill('Shiver Armor'.blvl)+skill('Chilling Armor'.blvl))*par7" ||
+                skills.value(row, "calc1") != "ln56*(100+((skill('Shiver Armor'.blvl)+skill('Chilling Armor'.blvl))*par8))/100")
+                throw std::runtime_error("Unsupported original Frozen Armor formula");
+            for (int parameter = 0; parameter < 8; ++parameter)
+                spec.armorParameters[size_t(parameter)] = required(skills, row, "Param" + std::to_string(parameter + 1));
+            for (auto name : {"Shiver Armor", "Chilling Armor"}) {
+                auto found = std::find_if(catalog.skills.begin(), catalog.skills.end(),
+                    [&](const auto &entry) { return entry.second.sourceName == name && entry.second.classCode == "sor"; });
+                if (found == catalog.skills.end()) throw std::runtime_error("Missing ice armor synergy");
+                spec.armorSynergySkills.push_back(found->first);
+            }
+            const DataTable states(archives.read("data/global/excel/states.txt"));
+            for (size_t state = 0; state < states.rows().size(); ++state)
+                if (states.value(state, "state") == skills.value(row, "aurastate")) {
+                    spec.stateGroup = required(states, state, "group");
+                    spec.stateOverlay = loadOverlay(states.value(state, "overlay1"));
+                    break;
+                }
+            if (spec.stateOverlay.id < 0) throw std::runtime_error("Missing Frozen Armor state overlay");
+            spec.hitOverlay = loadOverlay(skills.value(row, "cltoverlaya"));
+            for (size_t sound = 0; sound < sounds.rows().size(); ++sound)
+                if (sounds.value(sound, "Sound") == skills.value(row, "dosound")) {
+                    spec.activationSoundArt = "data/global/sfx/" + std::string(sounds.value(sound, "FileName"));
+                    break;
+                }
+            if (spec.activationSoundArt.empty() || !archives.contains(spec.activationSoundArt))
+                throw std::runtime_error("Missing Frozen Armor activation sound");
+        } else if (effect == Skill::StaticField) {
             if (skills.value(row, "calc1") != "par4" || skills.value(row, "calc2") != "par3" ||
                 skills.value(row, "aurarangecalc") != "ln12")
                 throw std::runtime_error("Unsupported original Static Field formula");

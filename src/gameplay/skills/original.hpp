@@ -38,6 +38,11 @@ struct OriginalSkillSpec {
     float missileVelocity = 0, missileLifetime = 0, impactRadius = 0;
     std::string missileArt, castSoundArt;
     OverlayVisual castOverlay, hitOverlay;
+    OverlayVisual stateOverlay;
+    int sourceId = -1, stateGroup = 0;
+    std::array<int, 8> armorParameters{};
+    std::vector<int> armorSynergySkills;
+    std::string activationSoundArt;
     std::vector<ImpactVisual> impacts;
     std::string impactSoundArt, releaseSoundArt;
 };
@@ -55,6 +60,8 @@ struct OriginalSkillCast {
     float visualDuration = 0, hitOverlayDuration = 0;
     int impactMissileId = -1;
     float impactDuration = 0;
+    int sourceId = -1, stateGroup = 0, stateOverlayId = -1, defensePercent = 0;
+    float buffDuration = 0, retaliationFreeze = 0;
 };
 OriginalSkillCast resolveOriginalSkill(const OriginalSkillSpec &spec, int rank,
                                        const std::map<int, int> &learned, int fireMasteryPercent = 0,
