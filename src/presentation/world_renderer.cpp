@@ -1,5 +1,6 @@
 #include "scene_view.hpp"
 #include <algorithm>
+#include <rlgl.h>
 namespace d2x {
 namespace {
 std::vector<std::pair<int, Vec>> terrainRegions(const GameSession &session) {
@@ -259,8 +260,9 @@ void SceneView::drawActors(Vec mouse) const {
             if (mode == "sc")
                 frame =
                     std::min(anim->count - 1,
-                             int((sim.player.lastCastDuration - sim.player.castTime) /
-                                 sim.player.lastCastDuration * anim->count));
+                             int((sim.player.lastCastDuration - sim.player.castTime) *
+                                 (sim.player.lastCastRate > 0 ? sim.player.lastCastRate :
+                                  float(anim->count) / sim.player.lastCastDuration)));
             if ((mode == "a1" || mode == "th") && sim.player.meleeTime > 0)
                 frame = std::clamp(int((sim.player.lastMeleeDuration - sim.player.meleeTime) /
                                        std::max(.001f, sim.player.lastMeleeDuration) * anim->count),
@@ -423,34 +425,43 @@ void SceneView::drawMagic() const {
     const auto &sim = session_.state();
     const auto &props = session_.region().objects;
 
-    for (const auto &missile : sim.area.missiles) {
-        if (missile.missileId < 0) continue;
-        auto found = assets_.projectileAnimations.find(missile.missileId);
-        if (found == assets_.projectileAnimations.end()) continue;
+    auto drawMissile = [&](int id, Vec position, Vec heading, float age) {
+        auto found = assets_.projectileAnimations.find(id);
+        if (found == assets_.projectileAnimations.end()) return;
         const auto &animation = found->second;
-        sprite(animation.frame(direction(missile.velocity, animation.directions),
-                               int(view_.animationTime * 25)), screen(missile.pos));
-    }
-    for (const auto &effect : sim.area.effects)
-        if (effect.skill == Skill::Teleport && !assets_.teleportOverlay.frames.empty()) {
-            const int frame = std::min(assets_.teleportOverlay.count - 1,
-                int(effect.age / effect.duration * assets_.teleportOverlay.count));
-            sprite(assets_.teleportOverlay.frame(0, frame), screen(effect.pos));
+        const auto visual = assets_.projectileVisuals.at(id);
+        const int frames = visual.frames > 0 ? std::min(animation.count, visual.frames) : animation.count;
+        if (frames <= 0) return;
+        int frame = int(age * visual.fps);
+        frame = visual.loop ? frame % frames : std::min(frame, frames - 1);
+        const bool translucent = assets_.translucentProjectiles.contains(id);
+        if (translucent) {
+            rlSetBlendFactors(0x0307, 1, 0x8006);
+            BeginBlendMode(BLEND_CUSTOM);
         }
-    if (auto found = assets_.projectileAnimations.find(assets_.frostNovaMissileId);
-        found != assets_.projectileAnimations.end()) {
-        for (const auto &effect : sim.area.effects)
-            if (effect.skill == Skill::FrostNova) {
-                const int count = std::clamp(int(assets_.frostNovaVelocity), 1, 64);
-                for (int index = 0; index < count; ++index) {
-                    const float angle = float(index) * 2.f * pi / float(count);
-                    const Vec heading{std::cos(angle), std::sin(angle)};
-                    const Vec point = effect.pos + heading * (assets_.frostNovaVelocity * effect.age);
-                    sprite(found->second.frame(direction(heading, found->second.directions),
-                                               int(view_.animationTime * 25)), screen(point));
-                }
+        sprite(animation.frame(direction(heading, animation.directions), frame), screen(position));
+        if (translucent) EndBlendMode();
+    };
+    for (const auto &missile : sim.area.missiles)
+        if (missile.missileId >= 0) drawMissile(missile.missileId, missile.pos, missile.velocity, missile.age);
+    for (const auto &effect : sim.area.effects)
+        if (effect.missileId >= 0) drawMissile(effect.missileId, effect.pos, {}, effect.age);
+    for (const auto &effect : sim.area.effects)
+        if (auto found = assets_.spellOverlays.find(effect.overlayId); found != assets_.spellOverlays.end()) {
+            const auto &overlay = found->second;
+            Vec position = effect.pos;
+            if (effect.attached == sim.player.id) position = sim.player.pos;
+            else if (effect.attached)
+                for (const auto &enemy : sim.area.enemies)
+                    if (enemy.id == effect.attached) { position = enemy.pos; break; }
+            if (overlay.visual.trans == 3) {
+                rlSetBlendFactors(0x0307, 1, 0x8006);
+                BeginBlendMode(BLEND_CUSTOM);
             }
-    }
+            const int frame = std::min(overlay.visual.frames - 1, int(effect.age * overlay.visual.fps));
+            sprite(overlay.animation.frame(0, frame), screen(position) + overlay.visual.offset);
+            if (overlay.visual.trans == 3) EndBlendMode();
+        }
 
     BeginBlendMode(BLEND_ADDITIVE);
     for (auto &prop : props)
@@ -475,6 +486,7 @@ void SceneView::drawMagic() const {
             DrawCircleV(rv(p), 6, {255, 210, 83, 255});
     }
     for (auto &e : sim.area.effects) {
+        if (e.missileId >= 0 || e.overlayId >= 0) continue;
         auto p = screen(e.pos);
         float t = e.age / e.duration, alpha = 1 - t;
         if (e.skill == Skill::Fireball) {

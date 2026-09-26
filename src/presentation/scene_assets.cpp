@@ -182,8 +182,13 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
     loadSkillIcons(archives, session.content());
     const auto &missiles = session.content().tables.at("missiles");
     for (size_t row = 0; row < missiles.rows().size(); ++row)
-        if (missiles.number(row, "Trans") == 1)
-            if (auto id = missiles.number(row, "Id")) translucentProjectiles.insert(*id);
+        if (auto id = missiles.number(row, "Id")) {
+            if (missiles.number(row, "Trans").value_or(0) != 0) translucentProjectiles.insert(*id);
+            projectileVisuals.emplace(*id, ProjectileVisual{
+                float(missiles.number(row, "animrate").value_or(1024)) * 25.f / 1024.f,
+                missiles.number(row, "LoopAnim").value_or(0) != 0,
+                missiles.number(row, "AnimLen").value_or(0)});
+        }
     for (const auto &[code, item] : session.content().items.entries())
         if (item.base.projectile && !item.base.projectile->art.empty() &&
             !projectileAnimations.contains(item.base.projectile->id)) {
@@ -230,16 +235,27 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
         }
     }
     for (const auto &[id, skill] : session.content().skills.skills)
-        if (skill.originalEffect && skill.originalEffect->effect == Skill::Teleport) {
-            teleportOverlay = graphics_.single(skill.originalEffect->visualArt);
-            if (teleportOverlay.frames.empty())
-                throw std::runtime_error("Original MPQ Teleport overlay is missing");
+        if (skill.originalEffect) {
+            for (const auto &impact : skill.originalEffect->impacts)
+                if (!projectileAnimations.contains(impact.missileId))
+                    projectileAnimations.emplace(impact.missileId,
+                        graphics_.single(impact.art, translucentProjectiles.contains(impact.missileId)));
+            if (!skill.originalEffect->impactSoundArt.empty())
+                audio.registerOriginal(archives, "missile-hit:" + std::to_string(skill.originalEffect->missileId),
+                                       skill.originalEffect->impactSoundArt);
+            if (!skill.originalEffect->releaseSoundArt.empty())
+                audio.registerOriginal(archives, "missile-release:" + std::to_string(skill.originalEffect->missileId),
+                                       skill.originalEffect->releaseSoundArt);
         }
     for (const auto &[id, skill] : session.content().skills.skills)
-        if (skill.originalEffect && skill.originalEffect->effect == Skill::FrostNova) {
-            frostNovaMissileId = skill.originalEffect->missileId;
-            frostNovaVelocity = skill.originalEffect->missileVelocity;
-        }
+        if (skill.originalEffect)
+            for (const auto &visual : {skill.originalEffect->castOverlay, skill.originalEffect->hitOverlay}) {
+                if (visual.id < 0 || spellOverlays.contains(visual.id)) continue;
+                auto animation = unitsGraphics_.single(visual.art, visual.trans == 3);
+                if (animation.count < visual.frames)
+                    throw std::runtime_error("Original skill overlay could not be decoded: " + visual.art);
+                spellOverlays.emplace(visual.id, SpellOverlay{std::move(animation), visual});
+            }
     for (const auto &[id, skill] : session.content().skills.skills)
         if (skill.originalEffect)
             audio.registerOriginal(archives, std::to_string(int(skill.originalEffect->effect)),

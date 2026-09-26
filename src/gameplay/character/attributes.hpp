@@ -43,6 +43,7 @@ struct CharacterAttributes {
     float manaRegen = 0;
 };
 int64_t allocatedPoints(const AttributeAllocation &allocation);
+float manaRecoveryRate(int maximumMana, int denominator, int recoveryBonus);
 bool allocateAttribute(AttributeAllocation &allocation, int &unspent, Attribute attribute);
 void mergeCharacterModifiers(CharacterModifiers &target, const CharacterModifiers &source);
 CharacterAttributes deriveCharacterAttributes(const CharacterDefinition &definition, int level,

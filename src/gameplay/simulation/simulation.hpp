@@ -18,6 +18,13 @@ class Simulation {
     const RoomLayout *rooms_ = nullptr;
     bool safeZone_ = false;
     bool forceRun_ = false;
+    struct PendingCast {
+      OriginalSkillCast skill;
+      Vec target;
+      int staticFieldMinimum = 0;
+      float remaining = 0;
+    };
+    std::optional<PendingCast> pendingCast_;
     WorldState state_;
     EquipmentStats equipmentStats_;
     CharacterAttributes characterStats_;
@@ -61,6 +68,7 @@ class Simulation {
     bool cast(Skill skill, Vec target);
     bool castOriginal(const OriginalSkillCast &skill, Vec target, bool teleportAllowed,
                       int staticFieldMinimum);
+    void releaseOriginalCast(const OriginalSkillCast &skill, Vec target, int staticFieldMinimum);
     void damage(Vec pos, float radius, float amount, EntityId source, float chill = 0,
                 MonsterDamageType type = MonsterDamageType::Physical);
     void damageEnemy(Enemy &enemy, float amount, EntityId source, float chill = 0,

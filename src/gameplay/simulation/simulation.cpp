@@ -8,6 +8,7 @@ Simulation::Simulation(EntityIds &ids) : ids_(ids) {
     heal();
 }
 void Simulation::clearActions() {
+    pendingCast_.reset();
     auto &p = state_.player;
     p.route.clear();
     p.attackTarget = {};
@@ -124,6 +125,18 @@ void Simulation::tick(float dt, Vec keyboard, bool forceRun) {
     state_.time += dt;
     for (auto &cooldown : p.cooldown)
         cooldown = std::max(0.f, cooldown - dt);
+    if (pendingCast_ && (p.dead || p.hitTime > 0)) {
+        pendingCast_.reset();
+        p.castTime = 0;
+    }
+    if (pendingCast_) {
+        pendingCast_->remaining -= dt;
+        if (pendingCast_->remaining <= .00001f) {
+            const auto cast = *pendingCast_;
+            pendingCast_.reset();
+            releaseOriginalCast(cast.skill, cast.target, cast.staticFieldMinimum);
+        }
+    }
     p.castTime = std::max(0.f, p.castTime - dt);
     p.spinTime = std::max(0.f, p.spinTime - dt);
     p.hitTime = std::max(0.f, p.hitTime - dt);

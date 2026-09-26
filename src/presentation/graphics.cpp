@@ -55,8 +55,8 @@ Sprite Graphics::upload(const IndexedFrame &f, bool translucent) {
     int left = f.width, top = f.height, right = -1, bottom = -1;
     for (size_t i = 0; i < pixels.size(); i++) {
         pixels[i] = color(palette[f.pixels[i]]);
-        if (translucent && pixels[i].a)
-            pixels[i].a = std::max({pixels[i].r, pixels[i].g, pixels[i].b});
+        if (translucent && !pixels[i].a)
+            pixels[i] = {0, 0, 0, 0};
         if (pixels[i].a) {
             int x = int(i % size_t(f.width)), y = int(i / size_t(f.width));
             left = std::min(left, x);

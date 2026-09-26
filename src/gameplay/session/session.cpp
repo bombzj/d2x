@@ -672,9 +672,13 @@ void GameSession::tick(float dt, Vec keyboard, bool forceRun) {
                     }
                     if (entry->originalEffect) {
                         const int rank = effectiveSkillRank(intent.id);
-                        const auto resolved = resolveOriginalSkill(*entry->originalEffect, rank,
+                        auto resolved = resolveOriginalSkill(*entry->originalEffect, rank,
                                                                     player.skillRanks, fireMasteryPercent(),
                                                                     lightningMasteryPercent());
+                        if (!applyOriginalCastTiming(resolved)) {
+                            simulation_.state_.message = "Original cast animation timing is unavailable";
+                            return;
+                        }
                         const int levelId = int(region().definition.id);
                         const bool teleportAllowed = content_.teleportByLevel.contains(levelId) &&
                             content_.teleportByLevel.at(levelId) != 0;

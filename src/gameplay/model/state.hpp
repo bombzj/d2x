@@ -51,6 +51,7 @@ struct PlayerState {
     bool leftHandAttack = false;
     Skill lastSkill = Skill::Fireball;
     float lastCastDuration = .32f;
+    float lastCastRate = 0;
     bool running = false, runningNow = false, moving = false, dead = false;
     uint64_t combatRandom = (uint64_t(666) << 32) | 210;
     unsigned nextWeapon = 0;
@@ -117,11 +118,21 @@ struct Missile {
     AttackElements attackElements{};
     int attackerLevel = 0, attackRating = 0; // Non-player physical projectiles.
     float nextHitDelay = 0;
+    float age = 0;
+    float acceleration = 0, maxVelocity = 0;
+    int impactMissileId = -1;
+    float impactDuration = 0;
+    int hitOverlayId = -1;
+    float hitOverlayDuration = 0;
+    EntityId lastHit;
 };
 struct Effect {
     Vec pos;
     Skill skill;
     float age = 0, duration = .8f;
+    int missileId = -1;
+    int overlayId = -1;
+    EntityId attached;
 };
 // Area combat state survives travel. Ground item ownership lives in session InventoryState.
 struct AreaState {

@@ -41,19 +41,34 @@ OriginalSkillCast resolveOriginalSkill(const OriginalSkillSpec &spec, int rank,
     };
     result.minimumDamage = damage(spec.minimumDamage, spec.minimumPerLevel);
     result.maximumDamage = damage(spec.maximumDamage, spec.maximumPerLevel);
-    const int64_t coldFrames = int64_t(spec.coldFrames) +
+    int64_t coldFrames = int64_t(spec.coldFrames) +
         int64_t(std::min(rank - 1, 7)) * spec.coldFramesPerLevel[0] +
         int64_t(std::clamp(rank - 8, 0, 8)) * spec.coldFramesPerLevel[1] +
         int64_t(std::max(rank - 16, 0)) * spec.coldFramesPerLevel[2];
+    if (auto found = learned.find(spec.coldSynergySkill); found != learned.end())
+        coldFrames += coldFrames * found->second * spec.coldSynergyPercent / 100;
     result.coldDuration = float(coldFrames) / 25.f;
     result.missileId = spec.missileId;
     result.missileNextDelay = float(spec.missileNextDelay) / 25.f;
     result.staticPercent = float(spec.staticPercent);
+    result.staticMinDamage = float(spec.staticMinDamage) / 256.f;
     result.staticRadius = float(spec.staticRange + (rank - 1) * spec.staticRangePerLevel);
-    result.visualDuration = float(spec.visualFrames) / 25.f;
-    result.missileVelocity = spec.missileVelocity;
-    result.missileLifetime = spec.missileLifetime;
+    result.castOverlayId = spec.castOverlay.id;
+    result.hitOverlayId = spec.hitOverlay.id;
+    if (spec.castOverlay.fps > 0)
+        result.visualDuration = float(spec.castOverlay.frames) / spec.castOverlay.fps;
+    if (spec.hitOverlay.fps > 0)
+        result.hitOverlayDuration = float(spec.hitOverlay.frames) / spec.hitOverlay.fps;
+    const int velocity = (int(spec.missileVelocity) + rank * spec.missileVelocityPerLevel / 8) * 256;
+    result.missileVelocity = float(velocity * 75 / 100) * 25.f / 4096.f;
+    result.missileAcceleration = float(spec.missileAcceleration) * 25.f / 4096.f;
+    result.missileMaxVelocity = float(spec.missileMaxVelocity * 256) * 25.f / 4096.f;
+    result.missileLifetime = spec.missileLifetime + float(rank * spec.missileRangePerLevel) / 25.f;
     result.impactRadius = spec.impactRadius;
+    if (!spec.impacts.empty()) {
+        result.impactMissileId = spec.impacts[0].missileId;
+        result.impactDuration = spec.impacts[0].duration;
+    }
     return result;
 }
 } // namespace d2x

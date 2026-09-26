@@ -35,8 +35,17 @@ class SceneAssets {
     std::map<int, SkillIcon> skillIcons;
     std::map<int, GpuAnimation> projectileAnimations;
     std::set<int> translucentProjectiles;
-    int frostNovaMissileId = -1;
-    float frostNovaVelocity = 0;
+    struct ProjectileVisual {
+        float fps = 25;
+        bool loop = false;
+        int frames = 0;
+    };
+    std::map<int, ProjectileVisual> projectileVisuals;
+    struct SpellOverlay {
+        GpuAnimation animation;
+        OriginalSkillSpec::OverlayVisual visual;
+    };
+    std::map<int, SpellOverlay> spellOverlays;
     std::map<std::string, GpuAnimation> skillTrees;
     Sprite attackIcon;
     std::vector<std::vector<Sprite>> regionTiles;
@@ -59,7 +68,7 @@ class SceneAssets {
     std::array<ObjectAnimationRule, 2> townPortalRules;
     std::array<GpuAnimation, 2> cainPortalAnimations;
     std::array<ObjectAnimationRule, 2> cainPortalRules;
-    GpuAnimation fireball, fireburst, teleportOverlay, panel, miniPanel, miniPanelButtons, miniPanelToggle,
+    GpuAnimation fireball, fireburst, panel, miniPanel, miniPanelButtons, miniPanelToggle,
         cursor, inventoryPanel, attributeButtons,
         attributePoints, weaponTabs, vendorPanel, vendorTabs,
         questBackground, questSockets, questTabs, questClose, questReplay, goldCoin,

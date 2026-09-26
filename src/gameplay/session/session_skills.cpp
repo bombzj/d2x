@@ -43,6 +43,33 @@ int GameSession::effectiveSkillRank(int id) const {
     return skillRank(*skill, state().player, characterDefinition_, characterStats().combat,
                      inventory_, playerContainers_, equipmentActor());
 }
+bool GameSession::applyOriginalCastTiming(OriginalSkillCast &cast) const {
+    std::string weapon = "hth";
+    const auto weaponSet = state().player.weaponSet;
+    for (auto slot : {weaponHandSlot(false, weaponSet), weaponHandSlot(true, weaponSet)}) {
+        const auto *item = inventory_.item(inventory_.equipped(playerContainers_, slot));
+        const auto *definition = item ? inventory_.catalog().find(item->definition) : nullptr;
+        if (!definition || !definition->equipment.isType("weap")) continue;
+        weapon = definition->base.weaponClass;
+        if (definition->equipment.twoHanded && (!definition->equipment.oneOrTwoHanded ||
+            !inventory_.equipped(playerContainers_, slot == weaponHandSlot(false, weaponSet) ?
+                weaponHandSlot(true, weaponSet) : weaponHandSlot(false, weaponSet))))
+            weapon = definition->equipment.twoHandWeaponClass;
+    }
+    auto timing = content_.skills.castTimings.find(characterAppearance() + "sc" + weapon);
+    if (timing == content_.skills.castTimings.end())
+        timing = content_.skills.castTimings.find(characterAppearance() + "schth");
+    if (timing == content_.skills.castTimings.end()) return false;
+    const auto &animation = timing->second;
+    const int faster = std::max(0, characterStats().combat.fasterCast);
+    const int rate = std::min(175, 100 + int(int64_t(120) * faster / (120 + faster)));
+    const int speed = std::max(1, animation.speed * rate / 100);
+    const int frames = std::max(1, (animation.frames * 256 + speed - 1) / speed - 1);
+    cast.castDuration = float(frames) / 25.f;
+    cast.castImpact = float(std::min(frames, (animation.actionFrame * 256 + speed - 1) / speed)) / 25.f;
+    cast.castRate = float(speed) * 25.f / 256.f;
+    return true;
+}
 int GameSession::fireMasteryPercent() const {
     for (const auto &[id, skill] : content_.skills.skills) {
         if (!skill.fireMasteryPerRank || skill.classCode != characterDefinition_.code) continue;
@@ -86,9 +113,8 @@ void GameSession::applyWarmth(CharacterAttributes &stats, const PlayerState &pla
         const int bonus = base + (rank - 1) * perLevel;
         stats.combat.manaRecovery += bonus;
     }
-    if (active && definition.manaRegen > 0)
-        stats.manaRegen = float(stats.maxMana) / definition.manaRegen *
-            float(std::max(0, 100 + stats.combat.manaRecovery)) / 100.f;
+    if (active)
+        stats.manaRegen = manaRecoveryRate(stats.maxMana, definition.manaRegen, stats.combat.manaRecovery);
 }
 bool GameSession::skillAvailable(int id) const {
     const auto *entry = content_.skills.find(id);

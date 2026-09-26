@@ -226,6 +226,7 @@ class GameSession {
     void applyCombatEffect(ActiveCombatEffect effect);
     bool skillAvailable(int id) const;
     int effectiveSkillRank(int id) const;
+    bool applyOriginalCastTiming(OriginalSkillCast &cast) const;
     int fireMasteryPercent() const;
     int lightningMasteryPercent() const;
     int coldPiercePercent() const;

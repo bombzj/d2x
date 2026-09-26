@@ -45,6 +45,7 @@ bool SkillSystem::cast(Simulation &simulation, Skill id, Vec target) {
     p.cooldown[index] = skill.cooldown;
     p.castTime = skill.castDuration;
     p.lastCastDuration = skill.castDuration;
+    p.lastCastRate = 0;
     auto aim = (target - p.pos).unit();
     if (aim.length() > 0)
         p.look = aim;

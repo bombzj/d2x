@@ -107,6 +107,17 @@ void Simulation::damage(Vec pos, float radius, float amount, EntityId source, fl
 void Simulation::updateMissiles(float dt) {
     auto &area = state_.area;
     for (auto &m : area.missiles) {
+        const int accelerationStep = int(m.age * 5.f + .00001f);
+        m.age += dt;
+        if (m.acceleration != 0 && int(m.age * 5.f + .00001f) > accelerationStep) {
+            const auto heading = m.velocity.unit();
+            float speed = std::max(0.f, m.velocity.length() + m.acceleration);
+            if (speed >= m.maxVelocity) {
+                speed = m.maxVelocity;
+                m.acceleration = 0;
+            }
+            m.velocity = heading * speed;
+        }
         if (m.hostile && m.hostileMode == 7) {
             m.remaining -= dt;
             if (!state_.player.dead && m.remaining > 0 &&
@@ -158,7 +169,7 @@ void Simulation::updateMissiles(float dt) {
                 }
                 next = m.pos + (next - m.pos) * clear;
             }
-            if (m.skill == Skill::Nova) {
+            if (m.skill == Skill::Nova || m.skill == Skill::FrostNova) {
                 const Vec motion = next - m.pos;
                 const float lengthSquared = motion.x * motion.x + motion.y * motion.y;
                 for (auto &enemy : area.enemies) {
@@ -167,10 +178,14 @@ void Simulation::updateMissiles(float dt) {
                     const float projection = lengthSquared > 0 ?
                         std::clamp((offset.x * motion.x + offset.y * motion.y) / lengthSquared, 0.f, 1.f) : 0.f;
                     const Vec closest = m.pos + motion * projection;
-                    if ((enemy.pos - closest).length() >= 1.2f ||
+                    if (enemy.id == m.lastHit || (enemy.pos - closest).length() >= 1.2f ||
                         state_.time < area.novaHitUntil[enemy.id]) continue;
+                    m.lastHit = enemy.id;
                     area.novaHitUntil[enemy.id] = state_.time + m.nextHitDelay;
-                    damageEnemy(enemy, m.damage, m.owner, 0, false, MonsterDamageType::Lightning);
+                    damageEnemy(enemy, m.damage, m.owner, m.chill, false, type);
+                    if (m.hitOverlayId >= 0)
+                        area.effects.push_back({enemy.pos, m.skill, 0, m.hitOverlayDuration,
+                                                -1, m.hitOverlayId, enemy.id});
                 }
                 m.pos = next;
                 m.remaining = wall ? 0 : m.remaining - dt;
@@ -195,9 +210,12 @@ void Simulation::updateMissiles(float dt) {
             m.remaining -= dt;
             if (wall || struck || m.remaining <= 0) {
                 m.remaining = 0;
+                if (!wall && !struck) continue;
+                if (m.impactMissileId >= 0)
+                    area.effects.push_back({m.pos, m.skill, 0, m.impactDuration, m.impactMissileId});
+                emit(MissileImpact{m.missileId, m.pos});
                 if (m.radius > 0) {
                     damage(m.pos, m.radius, m.damage, m.owner, m.chill, type);
-                    area.effects.push_back({m.pos, m.skill, 0, .55f});
                 } else if (struck)
                     damageEnemy(*struck, m.damage, m.owner, m.chill, false, type,
                                 false, true, m.skill == Skill::IceBlast);

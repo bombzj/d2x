@@ -5,6 +5,11 @@
 #include <stdexcept>
 
 namespace d2x {
+float manaRecoveryRate(int maximumMana, int denominator, int recoveryBonus) {
+    const int64_t frames = denominator > 0 ? int64_t(25) * denominator : 7500;
+    const int64_t base = std::max<int64_t>(1, int64_t(maximumMana) * 256 / frames);
+    return float(base * std::max(0, 100 + recoveryBonus) / 100) * 25.f / 256.f;
+}
 int64_t allocatedPoints(const AttributeAllocation &a) {
     return int64_t(a.strength) + a.dexterity + a.vitality + a.energy;
 }
@@ -113,8 +118,7 @@ CharacterAttributes deriveCharacterAttributes(const CharacterDefinition &d, int 
     result.combat = m.combat;
     result.blockFactor = d.blockFactor;
     // CharStats.ManaRegen is an engine denominator, not mana per second.
-    result.manaRegen = d.manaRegen > 0 ? float(result.maxMana) / d.manaRegen : 0;
-    result.manaRegen *= std::max(0, 100 + m.combat.manaRecovery) / 100.f;
+    result.manaRegen = manaRecoveryRate(result.maxMana, d.manaRegen, m.combat.manaRecovery);
     return result;
 }
 } // namespace d2x

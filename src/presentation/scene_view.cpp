@@ -252,6 +252,11 @@ void SceneView::advance(float dt) {
                                            value.mode == 2 ? sound->attack2 : sound->attack1);
                 } else if constexpr (std::is_same_v<T, EnemySkill2>) {
                     if (auto sound = soundFor(value.caster)) assets_.audio.play(sound->skill2);
+                } else if constexpr (std::is_same_v<T, MissileImpact>) {
+                    if ((screen(value.position) - Vec{W / 2.f, (H - HUD) / 2.f}).length() < W)
+                        assets_.audio.play("missile-hit:" + std::to_string(value.missileId));
+                } else if constexpr (std::is_same_v<T, MissileReleased>) {
+                    assets_.audio.play("missile-release:" + std::to_string(value.missileId));
                 } else if constexpr (std::is_same_v<T, EnemyHit>) {
                     if (auto sound = soundFor(value.victim)) assets_.audio.play(sound->hit);
                 } else if constexpr (std::is_same_v<T, EnemyDied>) {

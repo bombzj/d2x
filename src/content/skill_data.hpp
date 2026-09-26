@@ -31,6 +31,8 @@ struct SkillRecord {
     std::optional<std::pair<int, int>> coldPiercePerRank;
 };
 struct SkillCatalog {
+    struct CastTiming { int frames = 0, speed = 0, actionFrame = 0; };
+    std::map<std::string, CastTiming> castTimings;
     std::vector<ClassSkillTree> classes;
     std::map<int, SkillRecord> skills;
     const SkillRecord *find(int id) const;

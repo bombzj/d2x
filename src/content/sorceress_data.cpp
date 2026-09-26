@@ -1,6 +1,8 @@
 #include "sorceress_data.hpp"
+#include "resources/anim_data.hpp"
 #include <algorithm>
 #include <cctype>
+#include <set>
 #include <stdexcept>
 
 namespace d2x {
@@ -20,6 +22,26 @@ std::string lower(std::string_view value) {
 void loadSorceressEffects(SkillCatalog &catalog, const DataTable &skills,
                           const DataTable &missiles, const DataTable &overlays,
                           const DataTable &sounds, Archives &archives) {
+    const AnimDataTable animations(archives.read("data/global/animdata.d2"));
+    const DataTable weapons(archives.read("data/global/excel/weapons.txt"));
+    std::set<std::string> weaponClasses{"hth"};
+    for (size_t row = 0; row < weapons.rows().size(); ++row)
+        for (auto field : {"wclass", "2handedwclass"})
+            if (auto value = weapons.value(row, field); !value.empty()) weaponClasses.emplace(lower(value));
+    for (const auto &tree : catalog.classes)
+        for (const auto &weapon : weaponClasses) {
+            const auto key = tree.iconToken + "sc" + weapon;
+            std::string upperKey = key;
+            for (auto &letter : upperKey) letter = char(std::toupper(static_cast<unsigned char>(letter)));
+            const auto *animation = animations.find(upperKey);
+            if (!animation || animation->frames <= 1 || animation->frames > 144 || animation->speed <= 0) continue;
+            for (int frame = 0; frame < int(animation->frames); ++frame)
+                if (animation->frameFlags[size_t(frame)] == 1) {
+                    catalog.castTimings.emplace(key, SkillCatalog::CastTiming{
+                        int(animation->frames), animation->speed, frame});
+                    break;
+                }
+        }
     constexpr struct { std::string_view name; Skill effect; } supported[] = {
         {"Teleport", Skill::Teleport}, {"Fire Bolt", Skill::FireBolt},
         {"Fire Ball", Skill::Fireball}, {"Frost Nova", Skill::FrostNova},
@@ -94,6 +116,8 @@ void loadSorceressEffects(SkillCatalog &catalog, const DataTable &skills,
             if (skills.number(row, "Id") == record->id) break;
         if (row == skills.rows().size()) throw std::runtime_error("Original sorceress skill row is missing");
         OriginalSkillSpec spec;
+        if (skills.value(row, "anim") != "SC")
+            throw std::runtime_error("Unsupported original sorceress cast mode");
         spec.effect = effect;
         spec.mana = required(skills, row, "mana");
         spec.minimumMana = required(skills, row, "minmana");
@@ -114,22 +138,32 @@ void loadSorceressEffects(SkillCatalog &catalog, const DataTable &skills,
             std::string(sounds.value(soundRow, "FileName"));
         if (!archives.contains(spec.castSoundArt))
             throw std::runtime_error("Missing original sorceress cast sound art: " + std::string(name));
-        if (effect == Skill::Teleport) {
+        auto loadOverlay = [&](std::string_view overlayName) {
+            OriginalSkillSpec::OverlayVisual visual;
+            if (overlayName.empty()) return visual;
             size_t overlayRow = 0;
             for (; overlayRow < overlays.rows().size(); ++overlayRow)
-                if (overlays.value(overlayRow, "overlay") == "teleport") break;
+                if (overlays.value(overlayRow, "overlay") == overlayName) break;
             if (overlayRow == overlays.rows().size())
-                throw std::runtime_error("Original Teleport overlay is missing");
-            auto file = lower(overlays.value(overlayRow, "Filename"));
-            spec.visualFrames = required(overlays, overlayRow, "Frames");
-            spec.visualArt = "data/global/overlays/" + file + ".dcc";
-            if (file.empty() || spec.visualFrames <= 0 || !archives.contains(spec.visualArt))
-                throw std::runtime_error("Original Teleport overlay art is missing");
-        } else if (effect == Skill::StaticField) {
-            if (skills.value(row, "calc1") != "par4" ||
+                throw std::runtime_error("Missing original skill overlay: " + std::string(overlayName));
+            visual.id = int(overlayRow);
+            visual.frames = required(overlays, overlayRow, "Frames");
+            visual.fps = float(required(overlays, overlayRow, "AnimRate"));
+            visual.trans = required(overlays, overlayRow, "Trans");
+            visual.offset = {-float(required(overlays, overlayRow, "Xoffset")),
+                              float(required(overlays, overlayRow, "Yoffset"))};
+            visual.art = "data/global/overlays/" + lower(overlays.value(overlayRow, "Filename")) + ".dcc";
+            if (visual.frames <= 0 || visual.fps <= 0 || !archives.contains(visual.art))
+                throw std::runtime_error("Missing original skill overlay art: " + visual.art);
+            return visual;
+        };
+        spec.castOverlay = loadOverlay(skills.value(row, "castoverlay"));
+        if (effect == Skill::StaticField) {
+            if (skills.value(row, "calc1") != "par4" || skills.value(row, "calc2") != "par3" ||
                 skills.value(row, "aurarangecalc") != "ln12")
                 throw std::runtime_error("Unsupported original Static Field formula");
             spec.staticPercent = required(skills, row, "Param4");
+            spec.staticMinDamage = required(skills, row, "Param3");
             spec.staticRange = required(skills, row, "Param1");
             spec.staticRangePerLevel = required(skills, row, "Param2");
         } else if (effect != Skill::Teleport) {
@@ -144,6 +178,16 @@ void loadSorceressEffects(SkillCatalog &catalog, const DataTable &skills,
             if (spec.coldFrames > 0)
                 for (int index = 0; index < 3; ++index)
                     spec.coldFramesPerLevel[index] = required(skills, row, "ELevLen" + std::to_string(index + 1));
+            const auto lengthFormula = skills.value(row, "ELenSymPerCalc");
+            if (!lengthFormula.empty()) {
+                if (effect != Skill::IceBlast || lengthFormula != "(skill('Glacial Spike'.blvl))*par7")
+                    throw std::runtime_error("Unsupported original cold length synergy");
+                for (const auto &[id, entry] : catalog.skills)
+                    if (entry.classCode == "sor" && entry.sourceName == "Glacial Spike")
+                        spec.coldSynergySkill = id;
+                if (spec.coldSynergySkill < 0) throw std::runtime_error("Missing cold length synergy skill");
+                spec.coldSynergyPercent = required(skills, row, "Param7");
+            }
             const auto formula = skills.value(row, "EDmgSymPerCalc");
             if (!formula.empty()) {
                 const auto marker = formula.find("*par8");
@@ -177,25 +221,64 @@ void loadSorceressEffects(SkillCatalog &catalog, const DataTable &skills,
             if (missileName.empty() || missileRow == missiles.rows().size())
                 throw std::runtime_error("Missing original sorceress missile: " + std::string(name));
             spec.missileId = required(missiles, missileRow, "Id");
+            spec.hitOverlay = loadOverlay(missiles.value(missileRow, "ProgOverlay"));
             if (effect == Skill::IceBlast &&
                 (skills.value(row, "EType") != "cold" ||
                  required(missiles, missileRow, "pSrvDmgFunc") != 4 ||
                  required(missiles, missileRow, "CollideKill") != 1))
                 throw std::runtime_error("Unsupported original Ice Blast missile rules");
             spec.missileVelocity = float(required(missiles, missileRow, "Vel"));
+            spec.missileVelocityPerLevel = missiles.number(missileRow, "VelLev").value_or(0);
+            spec.missileRangePerLevel = missiles.number(missileRow, "LevRange").value_or(0);
+            spec.missileAcceleration = missiles.number(missileRow, "Accel").value_or(0);
+            spec.missileMaxVelocity = missiles.number(missileRow, "MaxVel").value_or(0);
             spec.missileLifetime = float(required(missiles, missileRow, "Range")) / 25.f;
-            spec.impactRadius = float(missiles.number(missileRow, "sHitPar1").value_or(0));
+            if (effect == Skill::Fireball) {
+                if (required(missiles, missileRow, "pSrvHitFunc") != 1)
+                    throw std::runtime_error("Unsupported original Fire Ball hit function");
+                spec.impactRadius = float(required(missiles, missileRow, "sHitPar1"));
+            }
             if (effect == Skill::Nova &&
                 (skills.value(row, "EType") != "ltng" ||
                  required(missiles, missileRow, "NextHit") != 1 ||
                  required(missiles, missileRow, "NextDelay") <= 0))
                 throw std::runtime_error("Unsupported original Nova missile rules");
-            if (effect == Skill::Nova)
+            if (effect == Skill::Nova || effect == Skill::FrostNova)
                 spec.missileNextDelay = required(missiles, missileRow, "NextDelay");
             auto file = lower(missiles.value(missileRow, "CelFile"));
             spec.missileArt = "data/global/missiles/" + file + ".dcc";
             if (file.empty() || !archives.contains(spec.missileArt))
                 throw std::runtime_error("Missing original sorceress missile art: " + std::string(name));
+            const auto travelSound = missiles.value(missileRow, "TravelSound");
+            for (size_t sound = 0; sound < sounds.rows().size(); ++sound)
+                if (!travelSound.empty() && sounds.value(sound, "Sound") == travelSound) {
+                    spec.releaseSoundArt = "data/global/sfx/" + std::string(sounds.value(sound, "FileName"));
+                    break;
+                }
+            if (!travelSound.empty() && (spec.releaseSoundArt.empty() || !archives.contains(spec.releaseSoundArt)))
+                throw std::runtime_error("Missing original missile release sound: " + std::string(travelSound));
+            if (effect == Skill::FireBolt || effect == Skill::Fireball ||
+                effect == Skill::IceBolt || effect == Skill::IceBlast) {
+                const auto impactName = missiles.value(missileRow, "ExplosionMissile");
+                for (size_t impactRow = 0; impactRow < missiles.rows().size(); ++impactRow)
+                    if (!impactName.empty() && missiles.value(impactRow, "Missile") == impactName) {
+                        const auto art = "data/global/missiles/" + lower(missiles.value(impactRow, "CelFile")) + ".dcc";
+                        if (!archives.contains(art)) throw std::runtime_error("Missing original missile impact art: " + art);
+                        spec.impacts.push_back({required(missiles, impactRow, "Id"), art,
+                            float(required(missiles, impactRow, "Range")) / 25.f});
+                        break;
+                    }
+                if (spec.impacts.empty())
+                    throw std::runtime_error("Missing original missile impact: " + std::string(impactName));
+                const auto hitSound = missiles.value(missileRow, "HitSound");
+                for (size_t sound = 0; sound < sounds.rows().size(); ++sound)
+                    if (!hitSound.empty() && sounds.value(sound, "Sound") == hitSound) {
+                        spec.impactSoundArt = "data/global/sfx/" + std::string(sounds.value(sound, "FileName"));
+                        break;
+                    }
+                if (spec.impactSoundArt.empty() || !archives.contains(spec.impactSoundArt))
+                    throw std::runtime_error("Missing original missile impact sound: " + std::string(hitSound));
+            }
         }
         catalog.skills.at(record->id).originalEffect = std::move(spec);
     }

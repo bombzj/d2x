@@ -15,6 +15,8 @@ struct SkillCast {
 struct MeleeAttack {
     EntityId actor, target;
 };
+struct MissileImpact { int missileId; Vec position; };
+struct MissileReleased { int missileId; };
 // Emitted once at the alive -> dead transition, including every fact a loot system needs.
 struct EnemyDied {
     EntityId victim, killer;
@@ -109,7 +111,7 @@ struct QuestAdvanced {
     ActOneQuest quest;
     uint32_t stage;
 };
-using GameEvent = std::variant<SkillCast, MeleeAttack, EnemyDied, EnemyAttacked, EnemySkill2, EnemyHit, PlayerDied, RegionEntered, ObjectInteracted, NpcDialogueStarted, ItemsIdentified, VendorItemBought, VendorItemSold,
+using GameEvent = std::variant<SkillCast, MissileImpact, MissileReleased, MeleeAttack, EnemyDied, EnemyAttacked, EnemySkill2, EnemyHit, PlayerDied, RegionEntered, ObjectInteracted, NpcDialogueStarted, ItemsIdentified, VendorItemBought, VendorItemSold,
                                ItemChange, InventoryRejected, InventoryApplied, ItemPickedUp, PickupFailed,
                                ItemUsed, BeltEquipped, StorageOpened, StorageClosed, InteractionFailed,
                                LootDeferred, WaypointActivated, QuestAdvanced, GambleStockOpened,
