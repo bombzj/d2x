@@ -89,6 +89,9 @@ int runGame(int argc, char **argv) {
         loadingFrames = loadingGraphics->single("data/global/ui/loading/loadingscreen.dc6");
         if (loadingFrames.frames.size() < 2)
             throw std::runtime_error("Original MPQ loading screen is missing or incomplete");
+    }
+    auto beginLoading = [&]() {
+        if (options.hidden) return;
         archives.setLoadingPulse([&, started = GetTime(), lastDraw = -1.0]() mutable {
             double now = GetTime();
             if (now - lastDraw < 1.0 / 30.0) return;
@@ -107,7 +110,8 @@ int runGame(int argc, char **argv) {
             EndDrawing();
         });
         archives.pulseLoading();
-    }
+    };
+    beginLoading();
     std::optional<SessionSnapshot> restored;
     std::optional<CharacterChoice> character;
     std::optional<RenderTarget> frontendTarget;
@@ -115,11 +119,11 @@ int runGame(int argc, char **argv) {
     if (frontend) {
         frontendTarget.emplace();
         archives.setLoadingPulse({});
-        loadingGraphics.reset();
         ShowCursor();
         character = chooseCharacter(archives, frontendTarget->handle);
         if (!character) return 0;
         HideCursor();
+        beginLoading();
     }
     if (character && !character->created) options.load = character->path.string();
     if (!options.load.empty()) {

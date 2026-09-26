@@ -36,7 +36,7 @@ cmake --build build --parallel
 
 在项目根目录使用 `Play.cmd`，或运行 `build/bin/d2x.exe`。程序默认读取 `assets/mpq2` 中的原始 MPQ；其他位置可用 `--mpq <目录>` 指定。MPQ 不参与编译，但运行时必须可用。源码入口为 `CMakeLists.txt`、`cmake/` 和 `src/`；许可和素材来源见 `LICENSE`、[第三方说明](THIRD_PARTY.md) 及 `docs/licenses/`。
 
-普通图形启动先显示资料片角色列表；可新建七职业普通角色、输入角色名、选择已有角色进入游戏，或确认删除角色。角色存放在运行目录的 `saves/`；按 F11 保存，正常退出自动保存。`--load`、`--hidden` 和调试／场景命令行参数仍直进游戏，不弹出选择界面。角色选择画面使用原始 MPQ 的扩展版背景与人物图形，不支持专家模式或原版 `.d2s`。
+普通图形启动及默认 `Play.cmd` 先显示资料片角色列表；可新建七职业普通角色、输入角色名、选择已有角色进入游戏，或确认删除角色。角色存放在运行目录的 `saves/`；按 F11 保存，正常退出自动保存。仅指定 `--mpq`、`--debug-pipe`、`--debug-run` 不再跳过角色界面；显式 `--load`、`--hidden`、`--level`、`--region` 等场景／批处理选项仍直进游戏。启动器仅在显式传入 `-Level`／`-Region` 时附带区域参数。角色确认后重新显示原 MPQ 加载动画，覆盖读档、世界构造和场景资源上传。角色前端只支持资料片普通角色，转换和专家模式控件禁用，不支持原版 `.d2s`。
 
 如果编译机器不能访问 GitHub，CMake 可使用 `external/raylib` 和 `external/stormlib` 的固定版本源码；系统编译器、CMake 和开发库仍需安装。当前源码存档格式见[存档说明](SAVES.md)，旧档不迁移。分发目录保留完整 `assets/mpq2`，EXE 直接读取原始 MPQ，不生成精简资源包或 ZIP。原 MPQ 文件清单见 [MPQ 资源](MPQ_RESOURCES.md)。
 

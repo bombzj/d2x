@@ -22,7 +22,9 @@ if(-not $Mpq){
 }
 Push-Location $projectRoot
 try{
-    $arguments=@('--level',"$Level",'--region',"$Region")
+    $arguments=@()
+    if($PSBoundParameters.ContainsKey('Level')){$arguments+=@('--level',"$Level")}
+    if($PSBoundParameters.ContainsKey('Region')){$arguments+=@('--region',"$Region")}
     if($Mpq){$arguments+=@('--mpq',$Mpq)}
     if(-not $NoDebugPipe){
         $arguments+=@('--debug-pipe',$PipeName)
