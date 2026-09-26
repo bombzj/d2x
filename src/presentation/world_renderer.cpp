@@ -433,7 +433,12 @@ void SceneView::drawMagic() const {
         const int frames = visual.frames > 0 ? std::min(animation.count, visual.frames) : animation.count;
         if (frames <= 0) return;
         int frame = int(age * visual.fps);
-        frame = visual.loop ? frame % frames : std::min(frame, frames - 1);
+        if (visual.loop && visual.loopEnd > visual.loopStart && visual.loopEnd <= frames && frame >= frames) {
+            frame -= frames;
+            if (frame >= visual.loopEnd)
+                frame = visual.loopStart + (frame - visual.loopEnd) % (visual.loopEnd - visual.loopStart);
+        }
+        else frame = visual.loop ? frame % frames : std::min(frame, frames - 1);
         const bool translucent = assets_.translucentProjectiles.contains(id);
         if (translucent) {
             rlSetBlendFactors(0x0307, 1, 0x8006);

@@ -117,6 +117,7 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
                 {"experience", state.player.experience}, {"level", state.player.level},
                 {"unspentAttributes", state.player.unspentAttributes},
                 {"unspentSkills", state.player.unspentSkills},
+                {"castRemaining", state.player.castTime},
                 {"strength", session.characterStats().strength},
                 {"dexterity", session.characterStats().dexterity},
                 {"vitality", session.characterStats().vitality},
@@ -126,6 +127,11 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
                 {"defense", session.equipmentStats().defense},
                 {"dead", state.player.dead}};
             const auto &combat = session.characterStats().combat;
+            result["missiles"] = Json::array();
+            for (const auto &missile : state.area.missiles)
+                result["missiles"].push_back({{"id", missile.id.value}, {"missileId", missile.missileId},
+                    {"x", missile.pos.x}, {"y", missile.pos.y}, {"vx", missile.velocity.x}, {"vy", missile.velocity.y},
+                    {"remaining", missile.remaining}, {"damage", missile.damage}, {"pathPoints", missile.path.size()}});
             result["combat"] = {
                 {"resistances", {{"fire", session.characterStats().fireResist},
                                   {"lightning", session.characterStats().lightningResist},
@@ -462,6 +468,20 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
                     {"available", session.skillAvailable(id)},
                     {"leftAllowed", entry.leftAllowed}, {"passive", entry.passive}});
             }
+        } else if (command == "cast-skill") {
+            const int id = request.at("id").get<int>();
+            const Vec target{request.at("x").get<float>(), request.at("y").get<float>()};
+            const auto *skill = session.content().skills.find(id);
+            if (!skill || !skill->originalEffect || !session.skillAvailable(id) ||
+                !std::isfinite(target.x) || !std::isfinite(target.y) || target.x < 0 || target.y < 0 ||
+                target.x >= session.map().grid.width || target.y >= session.map().grid.height)
+                throw std::runtime_error("An available implemented skill and an in-region target are required");
+            session.submit(UseClassSkill{id, target, {}});
+            session.tick(0);
+            view.advance(0);
+            result["accepted"] = std::any_of(session.events().begin(), session.events().end(),
+                [](const auto &event) { return std::holds_alternative<SkillCast>(event); });
+            result["castRemaining"] = session.state().player.castTime;
         } else if (command == "bind-skill-hotkey") {
             int key = request.at("key").get<int>();
             int id = request.at("id").get<int>();

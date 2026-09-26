@@ -13,6 +13,35 @@ int64_t levelBonus(int rank, const std::array<int, 5> &steps) {
     return result;
 }
 } // namespace
+std::vector<Vec> chargedBoltPath(Vec origin, Vec target, int index, int frames) {
+    int deltaX = int(target.x) - int(origin.x), deltaY = int(target.y) - int(origin.y);
+    const int absX = std::abs(deltaX), absY = std::abs(deltaY);
+    int directionIndex = -1;
+    if (absX < 2 * absY) {
+        if (absY >= 2 * absX) {
+            if (deltaX < 0) directionIndex = deltaY < -1 ? 5 : std::min(deltaY, 2) + 7;
+            else deltaX &= 1;
+        }
+    } else deltaY = deltaY >= 0 ? deltaY & 1 : -1;
+    if (directionIndex < 0) {
+        deltaX = std::clamp(deltaX, -2, 2);
+        directionIndex = deltaY < -1 ? 5 * deltaX + 10 : std::min(deltaY, 2) + 5 * deltaX + 12;
+    }
+    constexpr int directions[]{5,4,4,4,3,6,5,4,3,2,6,6,6,2,2,6,7,0,1,2,7,0,0,0,1};
+    constexpr Vec offsets[]{{1,0},{1,1},{0,1},{-1,1},{-1,0},{-1,-1},{0,-1},{1,-1}};
+    const int mainDirection = directions[directionIndex];
+    uint64_t seed = (uint64_t(666) << 32) | uint32_t(index + int(target.x));
+    Vec point{float(int(origin.x)) + .5f, float(int(origin.y)) + .5f};
+    std::vector<Vec> path{point};
+    for (int step = 0; step < std::min(77, frames) / 2; ++step) {
+        seed = uint64_t(uint32_t(seed)) * 0x6ac690c5ULL + (seed >> 32);
+        const int roll = int(uint32_t(seed) & 31);
+        const int offset = roll == 31 ? 1 : roll % 3 - 1;
+        point = point + offsets[(mainDirection + offset + 8) % 8] * 2.f;
+        path.push_back(point);
+    }
+    return path;
+}
 OriginalSkillCast resolveOriginalSkill(const OriginalSkillSpec &spec, int rank,
                                        const std::map<int, int> &learned, int fireMasteryPercent,
                                        int lightningMasteryPercent) {
@@ -49,6 +78,8 @@ OriginalSkillCast resolveOriginalSkill(const OriginalSkillSpec &spec, int rank,
         coldFrames += coldFrames * found->second * spec.coldSynergyPercent / 100;
     result.coldDuration = float(coldFrames) / 25.f;
     result.missileId = spec.missileId;
+    result.missileCount = std::min(spec.missileCountLimit,
+        spec.missileCount + (rank - 1) * spec.missileCountPerLevel);
     result.missileNextDelay = float(spec.missileNextDelay) / 25.f;
     result.staticPercent = float(spec.staticPercent);
     result.staticMinDamage = float(spec.staticMinDamage) / 256.f;

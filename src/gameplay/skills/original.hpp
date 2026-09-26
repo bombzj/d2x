@@ -33,6 +33,7 @@ struct OriginalSkillSpec {
     int staticPercent = 0, staticRange = 0, staticRangePerLevel = 0, staticMinDamage = 0;
     int missileId = -1;
     int missileNextDelay = 0;
+    int missileCount = 1, missileCountPerLevel = 0, missileCountLimit = 1;
     int missileVelocityPerLevel = 0, missileRangePerLevel = 0, missileAcceleration = 0, missileMaxVelocity = 0;
     float missileVelocity = 0, missileLifetime = 0, impactRadius = 0;
     std::string missileArt, castSoundArt;
@@ -47,6 +48,7 @@ struct OriginalSkillCast {
     float coldDuration = 0, missileVelocity = 0, missileLifetime = 0, impactRadius = 0;
     int missileId = -1;
     float missileNextDelay = 0;
+    int missileCount = 1;
     float missileAcceleration = 0, missileMaxVelocity = 0;
     float staticPercent = 0, staticRadius = 0, staticMinDamage = 0;
     int castOverlayId = -1, hitOverlayId = -1;
@@ -57,4 +59,5 @@ struct OriginalSkillCast {
 OriginalSkillCast resolveOriginalSkill(const OriginalSkillSpec &spec, int rank,
                                        const std::map<int, int> &learned, int fireMasteryPercent = 0,
                                        int lightningMasteryPercent = 0);
+std::vector<Vec> chargedBoltPath(Vec origin, Vec target, int index, int frames);
 } // namespace d2x

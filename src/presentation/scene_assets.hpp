@@ -39,6 +39,7 @@ class SceneAssets {
         float fps = 25;
         bool loop = false;
         int frames = 0;
+        int loopStart = 0, loopEnd = 0;
     };
     std::map<int, ProjectileVisual> projectileVisuals;
     struct SpellOverlay {

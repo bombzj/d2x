@@ -58,6 +58,28 @@ void Simulation::releaseOriginalCast(const OriginalSkillCast &skill, Vec target,
             if (amount > 0) damageEnemy(enemy, amount, player.id, 0, false,
                                         MonsterDamageType::Lightning, true);
         }
+    } else if (skill.effect == Skill::ChargedBolt) {
+        if ((target - player.pos).length() < 1) target = player.pos + player.look * 10;
+        for (int index = 0; index < skill.missileCount; ++index) {
+            player.combatRandom = uint64_t(uint32_t(player.combatRandom)) * 0x6ac690c5ULL +
+                                  (player.combatRandom >> 32);
+            const int minimum = int(skill.minimumDamage * 256), maximum = int(skill.maximumDamage * 256);
+            const float amount = float(minimum + uint32_t(player.combatRandom) % unsigned(maximum - minimum + 1)) / 256.f;
+            Missile missile;
+            missile.id = ids_.allocate();
+            missile.owner = player.id;
+            missile.pos = player.pos;
+            missile.velocity = player.look * skill.missileVelocity;
+            missile.remaining = skill.missileLifetime;
+            missile.skill = skill.effect;
+            missile.missileId = skill.missileId;
+            missile.damage = amount;
+            missile.hitOverlayId = skill.hitOverlayId;
+            missile.hitOverlayDuration = skill.hitOverlayDuration;
+            const auto path = chargedBoltPath(player.pos, target, index, int(skill.missileLifetime * 25 + .5f));
+            missile.path.assign(path.begin(), path.end());
+            state_.area.missiles.push_back(std::move(missile));
+        }
     } else if (skill.effect == Skill::FrostNova || skill.effect == Skill::Nova) {
         constexpr int directions = 64;
         constexpr int offsets[]{30, 29, 29, 28, 27, 26, 24, 23, 21, 19, 16, 14, 11, 8, 5, 2,

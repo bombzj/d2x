@@ -187,7 +187,9 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
             projectileVisuals.emplace(*id, ProjectileVisual{
                 float(missiles.number(row, "animrate").value_or(1024)) * 25.f / 1024.f,
                 missiles.number(row, "LoopAnim").value_or(0) != 0,
-                missiles.number(row, "AnimLen").value_or(0)});
+                missiles.number(row, "AnimLen").value_or(0),
+                missiles.number(row, "SubLoop").value_or(0) ? missiles.number(row, "SubStart").value_or(0) : 0,
+                missiles.number(row, "SubLoop").value_or(0) ? missiles.number(row, "SubStop").value_or(0) : 0});
         }
     for (const auto &[code, item] : session.content().items.entries())
         if (item.base.projectile && !item.base.projectile->art.empty() &&
@@ -201,7 +203,8 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
     for (const auto &[id, skill] : session.content().skills.skills)
         if (skill.originalEffect && skill.originalEffect->missileId >= 0 &&
             !projectileAnimations.contains(skill.originalEffect->missileId)) {
-            auto animation = graphics_.single(skill.originalEffect->missileArt,
+            auto &missileGraphics = skill.originalEffect->effect == Skill::ChargedBolt ? unitsGraphics_ : graphics_;
+            auto animation = missileGraphics.single(skill.originalEffect->missileArt,
                                               translucentProjectiles.contains(skill.originalEffect->missileId));
             if (animation.frames.empty())
                 throw std::runtime_error("Original MPQ skill missile art is missing: " + skill.sourceName);

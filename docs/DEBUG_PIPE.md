@@ -142,6 +142,8 @@ $offers = (.\scripts\Send-D2XCommand.ps1 -Command shop -Arguments @{ id = $vendo
 
 ## 命令
 
+`cast-skill` 接受原技能 `id` 和区域内目标 `x/y`，通过正式 `UseClassSkill` 提交，不绕过等级、法力或施法时序；`accepted` 表示开始了施法。`status.player.castRemaining` 返回动作剩余时间，`status.missiles` 只读返回当前弹体 ID、原导弹 ID、位置、速度、伤害、剩余寿命和路径点数。可用 `step` 逐帧观察，不直接修改技能结果。
+
 ### 快速授予佣兵
 
 ```powershell

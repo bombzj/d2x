@@ -125,6 +125,7 @@ struct Missile {
     int hitOverlayId = -1;
     float hitOverlayDuration = 0;
     EntityId lastHit;
+    std::deque<Vec> path;
 };
 struct Effect {
     Vec pos;

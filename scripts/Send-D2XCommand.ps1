@@ -9,7 +9,7 @@ param(
         'equip', 'use', 'portal', 'interact', 'talk', 'gossip', 'identify', 'identify-item', 'book-load', 'shop', 'buy',
         'grant-gold', 'gold-transfer', 'cube-drop', 'cube-open', 'grant-experience', 'grant-shrine', 'unlock-waypoints', 'allocate-attribute', 'reset-attributes',
         'switch-character', 'character-panel', 'quest-panel', 'skill-tree', 'skill-picker', 'skills',
-        'bind-skill-hotkey', 'learn-skill', 'reset-skills', 'travel', 'waypoint',
+        'bind-skill-hotkey', 'learn-skill', 'cast-skill', 'reset-skills', 'travel', 'waypoint',
         'kill', 'drop', 'pickup', 'move', 'step', 'pause', 'resume', 'save', 'load',
         'ui-input', 'screenshot', 'quit')]
     [string]$Command,

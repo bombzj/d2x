@@ -46,7 +46,7 @@ void loadSorceressEffects(SkillCatalog &catalog, const DataTable &skills,
         {"Teleport", Skill::Teleport}, {"Fire Bolt", Skill::FireBolt},
         {"Fire Ball", Skill::Fireball}, {"Frost Nova", Skill::FrostNova},
         {"Ice Bolt", Skill::IceBolt}, {"Nova", Skill::Nova},
-        {"Ice Blast", Skill::IceBlast},
+        {"Ice Blast", Skill::IceBlast}, {"Charged Bolt", Skill::ChargedBolt},
         {"Static Field", Skill::StaticField}};
     const auto warmth = std::find_if(catalog.skills.begin(), catalog.skills.end(),
         [](const auto &pair) { return pair.second.classCode == "sor" &&
@@ -213,7 +213,15 @@ void loadSorceressEffects(SkillCatalog &catalog, const DataTable &skills,
                     throw std::runtime_error("Original damage synergy has no supported target");
             }
             auto missileName = skills.value(row, "srvmissile");
-            if (effect == Skill::FrostNova || effect == Skill::Nova)
+            if (effect == Skill::ChargedBolt) {
+                const auto countFormula = skills.value(row, "calc1");
+                if ((countFormula != "min(24,ln12)" && countFormula != "\"min(24,ln12)\"") || !spec.lightningDamage)
+                    throw std::runtime_error("Unsupported original Charged Bolt formula");
+                spec.missileCount = required(skills, row, "Param1");
+                spec.missileCountPerLevel = required(skills, row, "Param2");
+                spec.missileCountLimit = 24;
+            }
+            if (effect == Skill::FrostNova || effect == Skill::Nova || effect == Skill::ChargedBolt)
                 missileName = skills.value(row, "srvmissilea");
             size_t missileRow = 0;
             for (; missileRow < missiles.rows().size(); ++missileRow)
@@ -233,6 +241,8 @@ void loadSorceressEffects(SkillCatalog &catalog, const DataTable &skills,
             spec.missileAcceleration = missiles.number(missileRow, "Accel").value_or(0);
             spec.missileMaxVelocity = missiles.number(missileRow, "MaxVel").value_or(0);
             spec.missileLifetime = float(required(missiles, missileRow, "Range")) / 25.f;
+            if (effect == Skill::ChargedBolt)
+                spec.missileLifetime = float(std::min(77, required(missiles, missileRow, "Range"))) / 25.f;
             if (effect == Skill::Fireball) {
                 if (required(missiles, missileRow, "pSrvHitFunc") != 1)
                     throw std::runtime_error("Unsupported original Fire Ball hit function");

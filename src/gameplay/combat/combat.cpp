@@ -131,6 +131,41 @@ void Simulation::updateMissiles(float dt) {
                     }
             continue;
         }
+        if (m.skill == Skill::ChargedBolt && !m.hostile) {
+            const float speed = m.velocity.length();
+            float distance = speed * std::min(dt, m.remaining);
+            while (distance > 0 && !m.path.empty() && m.remaining > 0) {
+                const Vec offset = m.path.front() - m.pos;
+                const float segmentLength = std::min(distance, offset.length());
+                if (segmentLength < .00001f) { m.path.pop_front(); continue; }
+                const Vec heading = offset.unit();
+                const Vec nextPoint = m.pos + heading * segmentLength;
+                if (!grid_->segment(m.pos, nextPoint)) { m.remaining = 0; break; }
+                Enemy *hit = nullptr;
+                float first = segmentLength;
+                for (auto &enemy : area.enemies) {
+                    if (enemy.hp <= 0 || !active(enemy.pos)) continue;
+                    const Vec relative = enemy.pos - m.pos;
+                    const float along = std::clamp(relative.x * heading.x + relative.y * heading.y, 0.f, segmentLength);
+                    if ((enemy.pos - (m.pos + heading * along)).length() < 1.2f && (!hit || along < first)) {
+                        hit = &enemy;
+                        first = along;
+                    }
+                }
+                m.velocity = heading * speed;
+                m.pos = hit ? m.pos + heading * first : nextPoint;
+                distance -= segmentLength;
+                if (hit) {
+                    damageEnemy(*hit, m.damage, m.owner, 0, false, MonsterDamageType::Lightning);
+                    if (m.hitOverlayId >= 0)
+                        area.effects.push_back({hit->pos, m.skill, 0, m.hitOverlayDuration,
+                                                -1, m.hitOverlayId, hit->id});
+                    m.remaining = 0;
+                } else if (offset.length() <= segmentLength + .00001f) m.path.pop_front();
+            }
+            m.remaining = m.path.empty() ? 0 : m.remaining - dt;
+            continue;
+        }
         auto next = m.pos + m.velocity * dt;
         if (m.hostile) {
             if (!grid_->segment(m.pos, next)) {
