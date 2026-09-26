@@ -263,6 +263,8 @@ void SceneView::drawActors(Vec mouse) const {
                              int((sim.player.lastCastDuration - sim.player.castTime) *
                                  (sim.player.lastCastRate > 0 ? sim.player.lastCastRate :
                                   float(anim->count) / sim.player.lastCastDuration)));
+            if (mode == "sc" && sim.player.channelSkill >= 0)
+                frame = std::min({anim->count - 1, 9, int(sim.player.channelAge * 25)});
             if ((mode == "a1" || mode == "th") && sim.player.meleeTime > 0)
                 frame = std::clamp(int((sim.player.lastMeleeDuration - sim.player.meleeTime) /
                                        std::max(.001f, sim.player.lastMeleeDuration) * anim->count),

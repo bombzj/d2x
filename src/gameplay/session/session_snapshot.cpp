@@ -988,6 +988,8 @@ void GameSession::restore(SessionSnapshot s) {
     static_assert(std::is_nothrow_move_assignable_v<InventoryState>);
     simulation_.state_ = std::move(s.world);
     simulation_.pendingCast_.reset();
+    simulation_.channel_.reset();
+    simulation_.state_.player.channelSkill = -1;
     simulation_.state_.player.castTime = 0;
     simulation_.state_.player.lastCastRate = 0;
     simulation_.lifeStealDivisor_ = content_.lifeStealDivisor.at(size_t(state().population.difficulty));

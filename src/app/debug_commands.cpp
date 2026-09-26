@@ -118,6 +118,7 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
                 {"unspentAttributes", state.player.unspentAttributes},
                 {"unspentSkills", state.player.unspentSkills},
                 {"castRemaining", state.player.castTime},
+                {"channelSkill", state.player.channelSkill}, {"channelAge", state.player.channelAge},
                 {"strength", session.characterStats().strength},
                 {"dexterity", session.characterStats().dexterity},
                 {"vitality", session.characterStats().vitality},
@@ -473,6 +474,11 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
                     {"available", session.skillAvailable(id)},
                     {"leftAllowed", entry.leftAllowed}, {"passive", entry.passive}});
             }
+        } else if (command == "stop-channel") {
+            session.submit(StopChannel{});
+            session.tick(0);
+            view.advance(0);
+            result["channelSkill"] = session.state().player.channelSkill;
         } else if (command == "cast-skill") {
             const int id = request.at("id").get<int>();
             const Vec target{request.at("x").get<float>(), request.at("y").get<float>()};
@@ -485,7 +491,8 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
             session.tick(0);
             view.advance(0);
             result["accepted"] = std::any_of(session.events().begin(), session.events().end(),
-                [](const auto &event) { return std::holds_alternative<SkillCast>(event); });
+                [](const auto &event) { return std::holds_alternative<SkillCast>(event); }) ||
+                session.state().player.channelSkill == id;
             result["castRemaining"] = session.state().player.castTime;
         } else if (command == "bind-skill-hotkey") {
             int key = request.at("key").get<int>();

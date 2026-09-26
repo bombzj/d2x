@@ -34,6 +34,7 @@ struct OriginalSkillSpec {
     int missileId = -1;
     int missileNextDelay = 0;
     int missileCount = 1, missileCountPerLevel = 0, missileCountLimit = 1;
+    int startMana = 0, flameFrames = 0, flameFramesPerLevel = 0;
     int missileVelocityPerLevel = 0, missileRangePerLevel = 0, missileAcceleration = 0, missileMaxVelocity = 0;
     float missileVelocity = 0, missileLifetime = 0, impactRadius = 0;
     std::string missileArt, castSoundArt;
@@ -54,6 +55,7 @@ struct OriginalSkillCast {
     int missileId = -1;
     float missileNextDelay = 0;
     int missileCount = 1;
+    float startMana = 0;
     float missileAcceleration = 0, missileMaxVelocity = 0;
     float staticPercent = 0, staticRadius = 0, staticMinDamage = 0;
     int castOverlayId = -1, hitOverlayId = -1;

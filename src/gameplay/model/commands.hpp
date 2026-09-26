@@ -37,6 +37,7 @@ struct UseClassSkill {
     EntityId enemy;
 };
 struct ToggleRun {};
+struct StopChannel {};
 struct SwitchWeaponSet {};
 struct StopMoving {};
 struct Interact {
@@ -119,5 +120,5 @@ using GameCommand =
                  SplitStack, MergeStacks, LoadBook, IdentifyItem, PickupItem, StopMoving, EquipBelt, UseItem, UseBeltColumn,
                  CloseStorage, TransferItem, UseExit, EquipItem, DebugKill, DebugSpawnMonster,
                  DebugDamageMonster, UseTownPortal, UseCainPortal, WaypointTravel, OpenGamble, RepairVendorItem,
-                 OpenHirelingList, HireMercenary, EquipHirelingItem, DebugGrantHireling>;
+                 OpenHirelingList, HireMercenary, EquipHirelingItem, DebugGrantHireling, StopChannel>;
 } // namespace d2x

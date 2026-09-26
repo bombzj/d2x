@@ -37,9 +37,9 @@ void SceneView::drawSkillIcon(std::optional<int> skill, Rectangle bounds) const 
     bool available = !player.dead && (!skill || (entry && session_.skillAvailable(*skill)));
     auto effect = entry ? implementedSkillEffect(*entry) : std::nullopt;
     if (entry && entry->originalEffect && session_.effectiveSkillRank(*skill) > 0)
-        available &= player.mana >= resolveOriginalSkill(*entry->originalEffect,
+        available &= player.mana >= std::max(player.channelSkill == *skill ? 0.f : float(entry->originalEffect->startMana), resolveOriginalSkill(*entry->originalEffect,
             session_.effectiveSkillRank(*skill), player.skillRanks, session_.fireMasteryPercent(),
-            session_.lightningMasteryPercent()).manaCost;
+            session_.lightningMasteryPercent()).manaCost);
     else if (effect) available &= player.mana >= skillDefinition(*effect).manaCost;
     imageAt(image, bounds, available ? WHITE : Color{95, 95, 95, 255});
     if (effect && (!entry || !entry->originalEffect) && player.cooldown[size_t(*effect)] > 0) {
@@ -167,6 +167,9 @@ void SceneView::drawSkillControls(Vec mouse) const {
                 session_.fireMasteryPercent(), session_.lightningMasteryPercent());
             detail = "Mana " + std::string(TextFormat("%.1f", value.manaCost));
             if (value.effect == Skill::Teleport) detail += " / Teleport to clear ground";
+            else if (value.effect == Skill::Inferno)
+                detail = "Mana/sec " + std::string(TextFormat("%.1f", value.manaCost * 12.5f)) +
+                    " / Damage/sec " + std::string(TextFormat("%.1f-%.1f", value.minimumDamage * 25, value.maximumDamage * 25));
             else if (value.effect == Skill::FrozenArmor)
                 detail += " / Defense +" + std::to_string(value.defensePercent) + "% / " +
                     std::to_string(int(value.buffDuration)) + " seconds";

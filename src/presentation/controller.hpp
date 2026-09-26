@@ -12,6 +12,7 @@ class SceneController {
     bool inventoryRight_ = false;
     bool releaseAfterLoad_ = false;
     bool skillGesture_ = false;
+    int channelInputSkill_ = -1;
     Vec movement_;
     bool temporaryRun_ = false;
     void click(Vec mouse);
@@ -29,6 +30,7 @@ class SceneController {
         movement_ = {};
         temporaryRun_ = false;
         skillGesture_ = false;
+        channelInputSkill_ = -1;
         releaseAfterLoad_ = true;
     }
     Vec movement() const { return movement_; }

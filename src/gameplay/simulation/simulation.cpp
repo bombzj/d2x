@@ -9,6 +9,7 @@ Simulation::Simulation(EntityIds &ids) : ids_(ids) {
 }
 void Simulation::clearActions() {
     pendingCast_.reset();
+    stopChannel();
     auto &p = state_.player;
     p.route.clear();
     p.attackTarget = {};
@@ -113,6 +114,8 @@ void Simulation::execute(const GameCommand &command) {
                 state_.player.running = !state_.player.running;
             else if constexpr (std::is_same_v<T, StopMoving>)
                 stopWalking();
+            else if constexpr (std::is_same_v<T, StopChannel>)
+                stopChannel();
         },
         command);
 }
@@ -123,6 +126,21 @@ void Simulation::tick(float dt, Vec keyboard, bool forceRun) {
     forceRun_ = forceRun;
     p.previous = p.pos;
     state_.time += dt;
+    if (channel_ && (p.dead || p.hitTime > 0 || keyboard.length() > .1f)) stopChannel();
+    if (channel_) {
+        p.channelAge += dt;
+        channel_->remaining -= dt;
+        while (channel_ && channel_->remaining < -.00001f) {
+            const bool consumeMana = channel_->pulses % 2 == 0;
+            if (consumeMana && p.mana < channel_->skill.manaCost) { stopChannel(); break; }
+            if (channel_->pulses == 0)
+                emit(MissileReleased{channel_->skill.missileId});
+            releaseOriginalCast(channel_->skill, channel_->target, 0, consumeMana);
+            ++channel_->pulses;
+            channel_->remaining += 1.f / 25.f;
+        }
+        if (channel_) p.castTime = 1;
+    }
     for (auto &cooldown : p.cooldown)
         cooldown = std::max(0.f, cooldown - dt);
     if (pendingCast_ && (p.dead || p.hitTime > 0)) {
@@ -184,6 +202,7 @@ void Simulation::tick(float dt, Vec keyboard, bool forceRun) {
         updateMonsters(dt);
         if (p.hp <= 0) {
             p.dead = true;
+            stopChannel();
             p.healing.clear();
             p.manaRestoration.clear();
             p.staminaBoost = 0;

@@ -47,7 +47,7 @@ void loadSorceressEffects(SkillCatalog &catalog, const DataTable &skills,
         {"Fire Ball", Skill::Fireball}, {"Frost Nova", Skill::FrostNova},
         {"Ice Bolt", Skill::IceBolt}, {"Nova", Skill::Nova},
         {"Ice Blast", Skill::IceBlast}, {"Charged Bolt", Skill::ChargedBolt}, {"Frozen Armor", Skill::FrozenArmor},
-        {"Static Field", Skill::StaticField}};
+        {"Inferno", Skill::Inferno}, {"Static Field", Skill::StaticField}};
     const auto warmth = std::find_if(catalog.skills.begin(), catalog.skills.end(),
         [](const auto &pair) { return pair.second.classCode == "sor" &&
             pair.second.sourceName == "Warmth"; });
@@ -116,7 +116,7 @@ void loadSorceressEffects(SkillCatalog &catalog, const DataTable &skills,
             if (skills.number(row, "Id") == record->id) break;
         if (row == skills.rows().size()) throw std::runtime_error("Original sorceress skill row is missing");
         OriginalSkillSpec spec;
-        if (skills.value(row, "anim") != "SC")
+        if (skills.value(row, "anim") != (effect == Skill::Inferno ? "SQ" : "SC"))
             throw std::runtime_error("Unsupported original sorceress cast mode");
         spec.effect = effect;
         spec.sourceId = record->id;
@@ -133,12 +133,13 @@ void loadSorceressEffects(SkillCatalog &catalog, const DataTable &skills,
         size_t soundRow = 0;
         for (; soundRow < sounds.rows().size(); ++soundRow)
             if (sounds.value(soundRow, "Sound") == soundName) break;
-        if (soundName.empty() || soundRow == sounds.rows().size())
+        if ((soundName.empty() || soundRow == sounds.rows().size()) && effect != Skill::Inferno)
             throw std::runtime_error("Missing original sorceress cast sound: " + std::string(name));
-        spec.castSoundArt = "data/global/sfx/" +
-            std::string(sounds.value(soundRow, "FileName"));
-        if (!archives.contains(spec.castSoundArt))
-            throw std::runtime_error("Missing original sorceress cast sound art: " + std::string(name));
+        if (!soundName.empty() && soundRow < sounds.rows().size()) {
+            spec.castSoundArt = "data/global/sfx/" + std::string(sounds.value(soundRow, "FileName"));
+            if (!archives.contains(spec.castSoundArt))
+                throw std::runtime_error("Missing original sorceress cast sound art: " + std::string(name));
+        }
         auto loadOverlay = [&](std::string_view overlayName) {
             OriginalSkillSpec::OverlayVisual visual;
             if (overlayName.empty()) return visual;
@@ -254,7 +255,17 @@ void loadSorceressEffects(SkillCatalog &catalog, const DataTable &skills,
                 spec.missileCountPerLevel = required(skills, row, "Param2");
                 spec.missileCountLimit = 24;
             }
-            if (effect == Skill::FrostNova || effect == Skill::Nova || effect == Skill::ChargedBolt)
+            if (effect == Skill::Inferno) {
+                if (skills.value(row, "calc1") != "ln12/2" || required(skills, row, "seqnum") != 6 ||
+                    required(skills, row, "seqinput") != 10 || !spec.fireDamage ||
+                    skills.number(row, "usemanaondo").value_or(0) != 0)
+                    throw std::runtime_error("Unsupported original Inferno sequence");
+                spec.startMana = required(skills, row, "startmana");
+                spec.flameFrames = required(skills, row, "Param1");
+                spec.flameFramesPerLevel = required(skills, row, "Param2");
+            }
+            if (effect == Skill::FrostNova || effect == Skill::Nova || effect == Skill::ChargedBolt ||
+                effect == Skill::Inferno)
                 missileName = skills.value(row, "srvmissilea");
             size_t missileRow = 0;
             for (; missileRow < missiles.rows().size(); ++missileRow)

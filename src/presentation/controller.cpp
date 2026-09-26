@@ -58,6 +58,13 @@ void SceneController::click(Vec mouse) {
 }
 bool SceneController::handle(const FrameInput &input, float elapsed) {
     auto &ui = view_.ui();
+    if (channelInputSkill_ >= 0 && (!input.focused || !input.rightHeld ||
+        !input.insideViewport || hudSurface(input.mouse) || ui.blocksWorld() || ui.inventory.open ||
+        input.movement.length() > .1f || input.leftPressed || input.leftHeld || input.inventory || input.escape ||
+        ui.rightSkill != channelInputSkill_)) {
+        session_.submit(StopChannel{});
+        channelInputSkill_ = -1;
+    }
     temporaryRun_ = input.focused && input.control && !input.showLoot;
     ui.showLoot = input.showLoot;
     if (releaseAfterLoad_) {
@@ -620,7 +627,11 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
                 click(input.mouse);
             repeatClick_ = 1.f / 6.f;
         }
-        if (input.rightHeld && !inventoryRight_) {
+        const auto *rightSkill = ui.rightSkill ? session_.content().skills.find(*ui.rightSkill) : nullptr;
+        const bool channeled = rightSkill && rightSkill->originalEffect &&
+            rightSkill->originalEffect->effect == Skill::Inferno;
+        if (input.rightHeld && !inventoryRight_ && (!channeled ||
+            (input.movement.length() <= .1f && !input.leftPressed && !input.leftHeld))) {
             EntityId target;
             for (const auto &enemy : session_.state().area.enemies)
                 if (enemy.hp > 0 && session_.active(enemy.pos) &&
@@ -628,9 +639,10 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
                     target = enemy.id;
                     break;
                 }
-            if (ui.rightSkill)
+            if (ui.rightSkill) {
                 session_.submit(UseClassSkill{*ui.rightSkill, view_.world(input.mouse), target});
-            else if (target)
+                if (channeled) channelInputSkill_ = *ui.rightSkill;
+            } else if (target)
                 session_.submit(Attack{target});
         }
     }

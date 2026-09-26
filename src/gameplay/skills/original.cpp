@@ -67,6 +67,7 @@ OriginalSkillCast resolveOriginalSkill(const OriginalSkillSpec &spec, int rank,
         int64_t(spec.mana) + int64_t(rank - 1) * spec.manaPerLevel) << spec.manaShift;
     const int64_t fixedMana = std::max<int64_t>(int64_t(spec.minimumMana) * 256, scaledMana);
     result.manaCost = float(fixedMana) / 256.f;
+    result.startMana = float(spec.startMana);
     int64_t synergy = 0;
     for (int id : spec.synergySkills)
         if (auto found = learned.find(id); found != learned.end()) synergy += found->second;
@@ -108,6 +109,8 @@ OriginalSkillCast resolveOriginalSkill(const OriginalSkillSpec &spec, int rank,
     result.missileAcceleration = float(spec.missileAcceleration) * 25.f / 4096.f;
     result.missileMaxVelocity = float(spec.missileMaxVelocity * 256) * 25.f / 4096.f;
     result.missileLifetime = spec.missileLifetime + float(rank * spec.missileRangePerLevel) / 25.f;
+    if (spec.effect == Skill::Inferno)
+        result.missileLifetime = float(std::max(1, (spec.flameFrames + (rank - 1) * spec.flameFramesPerLevel) / 2)) / 25.f;
     result.impactRadius = spec.impactRadius;
     if (!spec.impacts.empty()) {
         result.impactMissileId = spec.impacts[0].missileId;

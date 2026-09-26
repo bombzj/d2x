@@ -54,6 +54,8 @@ struct PlayerState {
     Skill lastSkill = Skill::Fireball;
     float lastCastDuration = .32f;
     float lastCastRate = 0;
+    int channelSkill = -1;
+    float channelAge = 0;
     bool running = false, runningNow = false, moving = false, dead = false;
     uint64_t combatRandom = (uint64_t(666) << 32) | 210;
     unsigned nextWeapon = 0;

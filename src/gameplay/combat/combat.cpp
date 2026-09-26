@@ -204,7 +204,7 @@ void Simulation::updateMissiles(float dt) {
                 }
                 next = m.pos + (next - m.pos) * clear;
             }
-            if (m.skill == Skill::Nova || m.skill == Skill::FrostNova) {
+            if (m.skill == Skill::Nova || m.skill == Skill::FrostNova || m.skill == Skill::Inferno) {
                 const Vec motion = next - m.pos;
                 const float lengthSquared = motion.x * motion.x + motion.y * motion.y;
                 for (auto &enemy : area.enemies) {
@@ -214,9 +214,9 @@ void Simulation::updateMissiles(float dt) {
                         std::clamp((offset.x * motion.x + offset.y * motion.y) / lengthSquared, 0.f, 1.f) : 0.f;
                     const Vec closest = m.pos + motion * projection;
                     if (enemy.id == m.lastHit || (enemy.pos - closest).length() >= 1.2f ||
-                        state_.time < area.novaHitUntil[enemy.id]) continue;
+                        (m.nextHitDelay > 0 && state_.time < area.novaHitUntil[enemy.id])) continue;
                     m.lastHit = enemy.id;
-                    area.novaHitUntil[enemy.id] = state_.time + m.nextHitDelay;
+                    if (m.nextHitDelay > 0) area.novaHitUntil[enemy.id] = state_.time + m.nextHitDelay;
                     damageEnemy(enemy, m.damage, m.owner, m.chill, false, type);
                     if (m.hitOverlayId >= 0)
                         area.effects.push_back({enemy.pos, m.skill, 0, m.hitOverlayDuration,

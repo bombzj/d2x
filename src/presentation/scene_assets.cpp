@@ -264,7 +264,7 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
                 spellOverlays.emplace(visual.id, SpellOverlay{std::move(animation), visual});
             }
     for (const auto &[id, skill] : session.content().skills.skills)
-        if (skill.originalEffect)
+        if (skill.originalEffect && !skill.originalEffect->castSoundArt.empty())
             audio.registerOriginal(archives, std::to_string(int(skill.originalEffect->effect)),
                                    skill.originalEffect->castSoundArt);
     for (const auto &tree : session.content().skills.classes) {

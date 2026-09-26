@@ -4,17 +4,34 @@
 #include <cstdint>
 
 namespace d2x {
+void Simulation::stopChannel() {
+    if (!channel_) return;
+    channel_.reset();
+    state_.player.channelSkill = -1;
+    state_.player.channelAge = 0;
+    state_.player.castTime = 0;
+}
 bool Simulation::castOriginal(const OriginalSkillCast &skill, Vec target, bool teleportAllowed,
                               int staticFieldMinimum) {
     auto &player = state_.player;
+    if (channel_) {
+        if (skill.effect == Skill::Inferno && !player.dead && player.hitTime <= 0) {
+            channel_->target = target;
+            const auto direction = (target - player.pos).unit();
+            if (direction.length() > 0) player.look = direction;
+            return true;
+        }
+        stopChannel();
+    }
     if (player.dead || player.castTime > 0 || player.spinTime > 0 || player.leapTime > 0 ||
         player.meleeTime > 0 || player.hitTime > 0 || skill.castDuration <= 0)
         return false;
+    if (skill.effect == Skill::Inferno && safeZone_) return false;
     if (skill.effect == Skill::Teleport && (!teleportAllowed || !grid_->walkable(target))) {
         state_.message = "Teleport needs permitted, clear ground";
         return false;
     }
-    if (player.mana < skill.manaCost) {
+    if (player.mana < std::max(skill.manaCost, skill.startMana)) {
         state_.message = "Not enough mana";
         return false;
     }
@@ -28,6 +45,14 @@ bool Simulation::castOriginal(const OriginalSkillCast &skill, Vec target, bool t
     player.attackTarget = {};
     player.throwAttack = player.leftHandAttack = false;
     state_.message.clear();
+    if (skill.effect == Skill::Inferno) {
+        player.mana -= skill.manaCost;
+        channel_ = ChannelCast{skill, target, skill.castImpact};
+        player.channelSkill = skill.sourceId;
+        player.channelAge = 0;
+        emit(SkillCast{player.id, skill.effect, player.pos});
+        return true;
+    }
     emit(SkillCast{player.id, skill.effect, player.pos});
     if (skill.castOverlayId >= 0)
         state_.area.effects.push_back({player.pos, skill.effect, 0, skill.visualDuration,
@@ -35,12 +60,13 @@ bool Simulation::castOriginal(const OriginalSkillCast &skill, Vec target, bool t
     pendingCast_ = PendingCast{skill, target, staticFieldMinimum, skill.castImpact};
     return true;
 }
-void Simulation::releaseOriginalCast(const OriginalSkillCast &skill, Vec target, int staticFieldMinimum) {
+void Simulation::releaseOriginalCast(const OriginalSkillCast &skill, Vec target, int staticFieldMinimum,
+                                     bool consumeMana) {
     auto &player = state_.player;
-    if (player.dead || player.mana < skill.manaCost ||
+    if (player.dead || (consumeMana && player.mana < skill.manaCost) ||
         (skill.effect == Skill::Teleport && !grid_->walkable(target))) return;
-    player.mana -= skill.manaCost;
-    if (skill.missileId >= 0) emit(MissileReleased{skill.missileId});
+    if (consumeMana) player.mana -= skill.manaCost;
+    if (skill.missileId >= 0 && skill.effect != Skill::Inferno) emit(MissileReleased{skill.missileId});
     if (skill.effect == Skill::FrozenArmor) {
         ActiveCombatEffect effect;
         effect.owner = player.id;

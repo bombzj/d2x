@@ -25,6 +25,13 @@ class Simulation {
       float remaining = 0;
     };
     std::optional<PendingCast> pendingCast_;
+    struct ChannelCast {
+      OriginalSkillCast skill;
+      Vec target;
+      float remaining = 0;
+      unsigned pulses = 0;
+    };
+    std::optional<ChannelCast> channel_;
     WorldState state_;
     EquipmentStats equipmentStats_;
     CharacterAttributes characterStats_;
@@ -69,7 +76,9 @@ class Simulation {
     bool cast(Skill skill, Vec target);
     bool castOriginal(const OriginalSkillCast &skill, Vec target, bool teleportAllowed,
                       int staticFieldMinimum);
-    void releaseOriginalCast(const OriginalSkillCast &skill, Vec target, int staticFieldMinimum);
+    void releaseOriginalCast(const OriginalSkillCast &skill, Vec target, int staticFieldMinimum,
+                 bool consumeMana = true);
+    void stopChannel();
     void damage(Vec pos, float radius, float amount, EntityId source, float chill = 0,
                 MonsterDamageType type = MonsterDamageType::Physical);
     void damageEnemy(Enemy &enemy, float amount, EntityId source, float chill = 0,

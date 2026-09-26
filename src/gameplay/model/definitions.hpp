@@ -6,7 +6,7 @@
 #include <vector>
 
 namespace d2x {
-enum class Skill { Fireball, FrostNova, Whirlwind, Teleport, Leap, WarCry, FireBolt, StaticField, IceBolt, Nova, IceBlast, ChargedBolt, FrozenArmor, Count };
+enum class Skill { Fireball, FrostNova, Whirlwind, Teleport, Leap, WarCry, FireBolt, StaticField, IceBolt, Nova, IceBlast, ChargedBolt, FrozenArmor, Inferno, Count };
 constexpr size_t skillCount = size_t(Skill::Count);
 enum class MonsterKind { Fallen, Zombie, Skeleton, CorruptRogue, Brute, Goatman, QuillRat,
                          Wraith, CorruptLancer, CorruptArcher, SkeletonBow, Bighead,

@@ -142,7 +142,9 @@ $offers = (.\scripts\Send-D2XCommand.ps1 -Command shop -Arguments @{ id = $vendo
 
 ## 命令
 
-`cast-skill` 接受原技能 `id` 和区域内目标 `x/y`，通过正式 `UseClassSkill` 提交，不绕过等级、法力或施法时序；`accepted` 表示开始了施法。`status.player.castRemaining` 返回动作剩余时间，`status.missiles` 只读返回当前弹体 ID、原导弹 ID、位置、速度、伤害、剩余寿命和路径点数。可用 `step` 逐帧观察，不直接修改技能结果。
+`cast-skill` 接受原技能 `id` 和区域内目标 `x/y`，通过正式 `UseClassSkill` 提交，不绕过等级、法力或施法时序；`accepted` 表示开始了施法或接受了已有引导的目标更新。`status.player.castRemaining` 返回动作剩余时间，`status.missiles` 只读返回当前弹体 ID、原导弹 ID、位置、速度、伤害、剩余寿命和路径点数。可用 `step` 逐帧观察，不直接修改技能结果。
+
+地狱之火 `cast-skill` 会持续引导，重复调用只更新目标；`stop-channel` 提交正式停止命令，不推进模拟。`status.player.channelSkill` 为原技能 ID，未引导为 -1，`channelAge` 为本次引导秒数。真实右键释放由控制器提交同一停止命令；命名管道持续施法不模拟鼠标按住，不等同于人工输入验收。
 
 `status.effects` 返回临时效果的原技能 ID、组、剩余时间、防御加成、冻结回击时长和叠层 ID；`monsters` 返回 `freeze/chill` 剩余时间，可观察防御冰甲的真实受击触发。
 

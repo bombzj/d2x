@@ -638,6 +638,7 @@ void GameSession::tick(float dt, Vec keyboard, bool forceRun) {
                          (!intent.right && !entry->leftAllowed)))) return;
                     auto &player = simulation_.state_.player;
                     player.selectedSkills[player.weaponSet * 2 + unsigned(intent.right)] = intent.skill;
+                    if (intent.right && intent.skill != player.channelSkill) simulation_.stopChannel();
                 } else if constexpr (std::is_same_v<T, DebugResetAttributes>) {
                     auto &player = simulation_.state_.player;
                     if (!player.dead && allocatedPoints(player.allocated)) {
@@ -648,6 +649,7 @@ void GameSession::tick(float dt, Vec keyboard, bool forceRun) {
                 } else if constexpr (std::is_same_v<T, DebugResetSkills>) {
                     auto &player = simulation_.state_.player;
                     if (!player.dead) {
+                        simulation_.stopChannel();
                         player.skillRanks.clear();
                         player.unspentSkills = player.level - 1;
                         for (const auto &difficulty : player.actOneQuests)
@@ -707,6 +709,7 @@ void GameSession::tick(float dt, Vec keyboard, bool forceRun) {
                         }
                         const auto &definition = definitionFor(target);
                         cancelExit(); cancelPickup(); cancelInteraction(); closeStorage();
+                        simulation_.stopChannel();
                         simulation_.stopWalking();
                         player.characterClass = definition.name;
                         characterDefinition_ = definition;

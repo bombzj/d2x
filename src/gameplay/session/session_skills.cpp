@@ -44,6 +44,12 @@ int GameSession::effectiveSkillRank(int id) const {
                      inventory_, playerContainers_, equipmentActor());
 }
 bool GameSession::applyOriginalCastTiming(OriginalSkillCast &cast) const {
+    if (cast.effect == Skill::Inferno) {
+        cast.castDuration = 15.f / 25.f;
+        cast.castImpact = 10.f / 25.f;
+        cast.castRate = 25;
+        return true;
+    }
     std::string weapon = "hth";
     const auto weaponSet = state().player.weaponSet;
     for (auto slot : {weaponHandSlot(false, weaponSet), weaponHandSlot(true, weaponSet)}) {
