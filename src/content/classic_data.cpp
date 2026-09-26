@@ -16,7 +16,7 @@
 namespace d2x {
 ClassicData loadClassicData(Archives &archives) {
     std::map<std::string, DataTable, std::less<>> tables;
-    for (auto name : {"misc", "weapons", "armor", "armtype", "belts", "monstats", "charstats", "skills", "experience", "inventory"})
+    for (auto name : {"misc", "weapons", "armor", "armtype", "belts", "monstats", "charstats", "skills", "experience", "inventory", "levels"})
         tables.emplace(name, DataTable(archives.read(std::string("data/global/excel/") + name + ".txt")));
     const auto &armtype = tables.at("armtype");
     if (!armtype.has("Token"))

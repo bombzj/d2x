@@ -25,7 +25,7 @@ Windows 使用 `scripts/build.ps1`，启动示例（默认读取 `assets/mpq2`�
 
 本机可用 `Play.cmd`。EXE 默认直接读取完整 `assets/mpq2`；其他位置可显式传 `--mpq <目录>`。
 
-当前源码为存档 v91／规则 v125-npc-monster-cadence；Windows Release 已构建，五个原始 MPQ 的分发目录已做营地 UI 冒烟，NPC／怪物行为及交易仍待定向验收。此前运行结果不能代替这些未覆盖项；Linux 尚未实际编译运行。佣兵 Hire／O 窗口和快速授予见 [佣兵](docs/HIRELINGS.md)，其余边界见 [开发基线](docs/baseline/DEVELOPMENT.md)。
+当前源码只使用原版 D2S v96，已接角色创建／列表与保存读取，不维护内部存档版本或旧档迁移。Windows Release 构建和原生存档／独立解析器往返已通过；最新独立分发包尚未更新，零售版客户端未验收。Linux 尚未实际编译运行。准确支持边界见[存档](docs/SAVES.md)；佣兵 Hire／O 窗口和快速授予见 [佣兵](docs/HIRELINGS.md)。
 
 ## 操作
 
@@ -40,7 +40,7 @@ Windows 使用 `scripts/build.ps1`，启动示例（默认读取 `assets/mpq2`�
 | O | 佣兵属性和装备面板，需已有佣兵 |
 | Alt、Tab、R、按住 Ctrl | 物品名称、地图、走跑切换、临时跑步 |
 | Ctrl+F2、PgUp／PgDn | 开发地图目录、翻页 |
-| F11、Ctrl+F11 | 保存、读取；默认 `saves/quick.d2xsave` |
+| F11、Ctrl+F11 | 保存、读取；默认 `saves/quick.d2s` |
 | P、M、Ctrl+R | 暂停、静音、开发用重置当前区 |
 | Ctrl+F1、Ctrl+F3、F12 | 帮助、碰撞网格、截图 |
 | Ctrl+Alt+G／E／A／T／C／W | 调试：加金币／经验、重置属性点、重置技能点、切换职业、激活当前 MPQ 中已构建区域的传送点 |

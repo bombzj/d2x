@@ -33,6 +33,8 @@
 
 ## 格式研究参考
 
+D2S 读写依据本地 D2MOO 的 `PlrSave2.h/.cpp`、`Items.cpp`、`ItemMods.cpp`、`PlrIntro.cpp` 与第一幕任务代码，原位宽与属性值仍来自当前 MPQ。免费重置字节另核对 [D2CE ActsInfo](https://github.com/WalterCouto/D2CE/blob/c246509f385790462979004aeeaf7a47696ed605/source/d2ce/ActsInfo.h) 的字段布局及同目录 `.cpp`，只作格式证据，未移植实现。`@dschu012/d2s` 2.0.36 仅安装在忽略的 `reference/d2s-validation` 中作独立读写验证，不是运行依赖，不随游戏分发；其附带定义不替代运行时 MPQ。
+
 本地 `reference/` 下的参考仓库均忽略提交，优先在本机核对，再按需要查其他来源：
 
 | 本地目录 | 固定提交 | 适用范围 |

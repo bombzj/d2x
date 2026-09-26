@@ -23,6 +23,11 @@ SceneView::SceneView(Archives &archives, const GameSession &session)
     view_.camera = project(session_.state().player.pos);
     view_.portalRevision = session_.state().portal.revision;
     view_.skillClass = session_.characterCode();
+    const auto &player = session_.state().player;
+    const auto left = player.selectedSkills[player.weaponSet * 2];
+    const auto right = player.selectedSkills[player.weaponSet * 2 + 1];
+    view_.leftSkill = left < 0 ? std::nullopt : std::optional<int>{left};
+    view_.rightSkill = right < 0 ? std::nullopt : std::optional<int>{right};
     revealAutomap();
     lighting_.update(session_.map().grid, session_.worldContent().level(int(session_.region().definition.id)),
                      session_.region().definition.id,
@@ -106,8 +111,11 @@ void SceneView::sessionRestored() {
     view_.lastDenRemaining.reset();
     view_.skillClass = session_.characterCode();
     view_.skillPage = 3;
-    view_.leftSkill.reset();
-    view_.rightSkill.reset();
+    const auto &player = session_.state().player;
+    const auto left = player.selectedSkills[player.weaponSet * 2];
+    const auto right = player.selectedSkills[player.weaponSet * 2 + 1];
+    view_.leftSkill = left < 0 ? std::nullopt : std::optional<int>{left};
+    view_.rightSkill = right < 0 ? std::nullopt : std::optional<int>{right};
     view_.weaponLeftSkills = {};
     view_.weaponRightSkills = {};
     view_.displayedWeaponSet = session_.state().player.weaponSet;
@@ -150,13 +158,7 @@ void SceneView::advance(float dt) {
                      session_.region().definition.id,
                      session_.state().player.pos, session_.characterStats().lightRadius);
     const auto &player = session_.state().player;
-    if (view_.displayedWeaponSet != player.weaponSet) {
-        view_.weaponLeftSkills[view_.displayedWeaponSet] = view_.leftSkill;
-        view_.weaponRightSkills[view_.displayedWeaponSet] = view_.rightSkill;
-        view_.displayedWeaponSet = player.weaponSet;
-        view_.leftSkill = view_.weaponLeftSkills[player.weaponSet];
-        view_.rightSkill = view_.weaponRightSkills[player.weaponSet];
-    }
+    view_.displayedWeaponSet = player.weaponSet;
     if (view_.skillClass != session_.characterCode()) {
         view_.skillClass = session_.characterCode();
         view_.npcGossipTurns.clear();
@@ -167,6 +169,10 @@ void SceneView::advance(float dt) {
         view_.weaponRightSkills = {};
         view_.skillPicker.reset();
     }
+    const auto left = player.selectedSkills[player.weaponSet * 2];
+    const auto right = player.selectedSkills[player.weaponSet * 2 + 1];
+    view_.leftSkill = left < 0 ? std::nullopt : std::optional<int>{left};
+    view_.rightSkill = right < 0 ? std::nullopt : std::optional<int>{right};
     auto learned = [&](std::optional<int> id) {
         if (!id) return true;
         auto entry = session_.content().skills.find(*id);

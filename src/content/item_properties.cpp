@@ -130,6 +130,28 @@ std::vector<ResolvedItemStat> resolveItemStats(const ClassicData &data,
     const ItemInstance &item, int level) {
     std::vector<ResolvedItemStat> result;
     if (!item.identified) return result;
+    if (item.nativeProperties) {
+        for (const auto &saved : item.savedStats) {
+            auto definition = std::find_if(data.itemStats.begin(), data.itemStats.end(),
+                [&](const auto &entry) { return entry.id == saved.id; });
+            if (definition == data.itemStats.end()) throw std::runtime_error("Unknown saved item stat");
+            int value = saved.value;
+            std::string effect = definition->name;
+            if (definition->operationBase == "level" &&
+                (definition->operation == 2 || definition->operation == 4 || definition->operation == 5)) {
+                value = int(int64_t(value) * std::clamp(level, 1, 99) /
+                    (int64_t(1) << std::clamp(definition->operationParameter, 0, 30)));
+                effect = definition->operationStat;
+                if (definition->operation == 5) {
+                    if (effect == "armorclass") effect = "item_armor_percent";
+                    else if (effect == "maxdamage") effect = "item_maxdamage_percent";
+                    else if (effect == "mindamage") effect = "item_mindamage_percent";
+                }
+            }
+            result.push_back({definition->name, std::move(effect), value, saved.parameter, saved.value});
+        }
+        return result;
+    }
     auto append = [&](const auto &properties, const auto &rolls) {
         if (properties.size() != rolls.size()) throw std::runtime_error("Item property roll count mismatch");
         for (size_t i = 0; i < properties.size(); ++i) {

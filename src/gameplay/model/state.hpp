@@ -31,6 +31,7 @@ struct PlayerState {
     EntityId id;
     std::string name = "Hero";
     std::string characterClass = "Barbarian";
+    std::string nativeSaveSections;
     Vec pos, previous, look{1, 0};
     std::deque<Vec> route;
     float hp = 0, mana = 0, stamina = 0;
@@ -64,6 +65,7 @@ struct PlayerState {
     std::vector<ActiveCombatEffect> combatEffects;
     int unspentSkills = 0;
     std::array<SkillHotkey, 8> skillHotkeys{};
+    std::array<int, 4> selectedSkills{-1, -1, -1, -1};
     ActOneQuestBook actOneQuests{};
     HirelingState hireling;
 };

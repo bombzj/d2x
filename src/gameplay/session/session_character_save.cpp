@@ -12,6 +12,42 @@ void requireSave(bool condition, const char *reason) {
 } // namespace
 
 SessionSnapshot GameSession::prepareCharacterRestore(SessionSnapshot character) const {
+    if (!character.contentFingerprint && !character.world.player.nativeSaveSections.empty()) {
+        character.contentFingerprint = contentFingerprint_;
+        for (const auto &region : regions_) character.maps.push_back(region.definition.mapPath);
+        uint64_t next = ids_.cursor();
+        std::map<EntityId, EntityId> containers;
+        auto remap = [&](EntityId &id) {
+            if (id) {
+                EntityId replacement{next++};
+                containers.emplace(id, replacement);
+                id = replacement;
+            }
+        };
+        remap(character.containers.backpack);
+        remap(character.containers.belt);
+        remap(character.containers.stash);
+        remap(character.containers.beltEquipment);
+        remap(character.containers.equipment);
+        remap(character.containers.cube);
+        remap(character.containers.hirelingEquipment);
+        InventoryState inventory;
+        for (const auto &[id, container] : character.inventory.containers) {
+            auto copy = container;
+            copy.id = containers.at(id);
+            copy.spec.owner = state().player.id;
+            inventory.containers.emplace(copy.id, copy);
+        }
+        for (auto &[id, item] : character.inventory.items) {
+            auto &location = std::get<ContainerLocation>(item.location);
+            location.container = containers.at(location.container);
+            item.id = EntityId{next++};
+            inventory.items.emplace(item.id, std::move(item));
+        }
+        character.world.player.id = state().player.id;
+        character.nextEntityId = next;
+        character.inventory = std::move(inventory);
+    }
     requireSave(character.contentFingerprint == contentFingerprint_,
                 "MPQ content or gameplay rules differ");
     requireSave(character.maps.size() == regions_.size(), "region count");

@@ -49,6 +49,9 @@ struct ItemHandle {
     uint64_t revision = 0;
 };
 struct ItemInstance {
+    struct SavedStat {
+        int id = 0, parameter = 0, value = 0;
+    };
     EntityId id;
     std::string definition;
     unsigned quantity = 1, durability = 0, charges = 0;
@@ -63,6 +66,13 @@ struct ItemInstance {
     int32_t grantedSkill = -1; // Original CharStats.StartSkill on the first starter item.
     std::vector<int32_t> propertyRolls;
     std::vector<ItemAffixInstance> affixes;
+    bool nativeProperties = false;
+    std::vector<SavedStat> savedStats;
+    std::array<std::vector<SavedStat>, 5> savedSetStats;
+    uint32_t nativeSeed = 0, nativeFlags = 0, nativeGraphic = 0, nativeFormat = 101;
+    bool nativeHasGraphic = false;
+    unsigned nativeQuestDifficulty = 0;
+    unsigned nativeMaxDurability = 0;
     ItemLocation location;
     ItemHandle handle() const { return {id, revision}; }
 };

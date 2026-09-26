@@ -369,8 +369,6 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
     reconcileCainObjects();
     Fingerprint fingerprint;
     fingerprint.add(content_.profile);
-    // Bump this rules revision when state interpretation or compiled rules change.
-    fingerprint.add("d2x-session-rules-v134-ice-blast");
     auto members = archives.used;
     for (const auto &member : members) {
         fingerprint.add(member);
@@ -632,6 +630,13 @@ void GameSession::tick(float dt, Vec keyboard, bool forceRun) {
                     for (auto &key : keys)
                         if (key.skill == intent.skill && key.right == intent.right) key.skill = -2;
                     keys[intent.index] = {intent.skill, intent.right};
+                } else if constexpr (std::is_same_v<T, SelectMouseSkill>) {
+                    const auto *entry = content_.skills.find(intent.skill);
+                    if (intent.skill < -1 || (intent.skill >= 0 &&
+                        (!entry || entry->passive || !skillAvailable(intent.skill) ||
+                         (!intent.right && !entry->leftAllowed)))) return;
+                    auto &player = simulation_.state_.player;
+                    player.selectedSkills[player.weaponSet * 2 + unsigned(intent.right)] = intent.skill;
                 } else if constexpr (std::is_same_v<T, DebugResetAttributes>) {
                     auto &player = simulation_.state_.player;
                     if (!player.dead && allocatedPoints(player.allocated)) {
@@ -708,6 +713,8 @@ void GameSession::tick(float dt, Vec keyboard, bool forceRun) {
                         hirelingOffers_.clear();
                         player.combatEffects.clear();
                         player.skillHotkeys = {};
+                        player.selectedSkills = {-1, -1, -1, -1};
+                        player.nativeSaveSections.clear();
                         player.weaponSet = 0;
                         player.npcIntroductions = {};
                         pendingNpcQuestMessages_.clear();

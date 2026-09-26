@@ -1,5 +1,7 @@
 #include "save_file.hpp"
 #include "save_codec.hpp"
+#include <algorithm>
+#include <cctype>
 #include <fstream>
 #include <stdexcept>
 #ifdef _WIN32
@@ -34,7 +36,7 @@ class SaveLock {
     }
 };
 } // namespace
-SessionSnapshot loadSave(const std::filesystem::path &path) {
+SessionSnapshot loadSave(const std::filesystem::path &path, const ClassicData &content) {
     std::ifstream file(path, std::ios::binary | std::ios::ate);
     if (!file)
         throw std::runtime_error("Cannot open save: " + path.string());
@@ -45,12 +47,19 @@ SessionSnapshot loadSave(const std::filesystem::path &path) {
     file.seekg(0);
     if (!file.read(reinterpret_cast<char *>(bytes.data()), std::streamsize(bytes.size())))
         throw std::runtime_error("Cannot read save: " + path.string());
-    return decodeSave(bytes);
+    return decodeSave(bytes, content);
 }
-void writeSave(const std::filesystem::path &path, SessionSnapshot snapshot) {
+void writeSave(const std::filesystem::path &path, const SessionSnapshot &snapshot, const ClassicData &content) {
     if (path.empty() || path.filename().empty())
         throw std::runtime_error("Save path must name a file");
-    auto bytes = encodeSave(std::move(snapshot));
+    auto extension = path.extension().string();
+    std::transform(extension.begin(), extension.end(), extension.begin(), [](unsigned char character) {
+        return char(std::tolower(character));
+    });
+    if (extension != ".d2s")
+        throw std::runtime_error("Character saves require the .d2s extension");
+    auto bytes = encodeSave(snapshot, content);
+    decodeSave(bytes, content);
     if (path.has_parent_path())
         std::filesystem::create_directories(path.parent_path());
     auto lockPath = path;

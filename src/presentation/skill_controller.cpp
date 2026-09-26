@@ -33,6 +33,7 @@ bool SceneController::handleSkills(const FrameInput &input) {
             if (skill >= 0 && !session_.skillAvailable(skill)) continue;
             (hotkeys[i].right ? ui.rightSkill : ui.leftSkill) =
                 skill < 0 ? std::nullopt : std::optional<int>{skill};
+            session_.submit(SelectMouseSkill{skill, hotkeys[i].right});
         }
     }
     if (!input.insideViewport)
@@ -44,6 +45,7 @@ bool SceneController::handleSkills(const FrameInput &input) {
             for (size_t i = 0; i < choices.size(); ++i)
                 if (CheckCollisionPointRec(rv(input.mouse), hudPickerSlot(right, int(i), int(choices.size())))) {
                     (right ? ui.rightSkill : ui.leftSkill) = choices[i];
+                    session_.submit(SelectMouseSkill{choices[i].value_or(-1), right});
                     break;
                 }
         }

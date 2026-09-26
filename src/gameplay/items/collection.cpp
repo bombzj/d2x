@@ -31,10 +31,12 @@ InventoryResult InventoryService::planTransfer(const TransferItem &command,
         return failure(InventoryError::RestrictedItem);
     unsigned remaining = source.quantity;
     std::vector<std::pair<EntityId, unsigned>> merges;
-    if (remaining && definition.maxStack > 1 && source.quality == ItemQuality::Normal)
+    if (remaining && definition.maxStack > 1 && source.quality == ItemQuality::Normal &&
+        source.savedStats.empty() && source.grantedSkill < 0)
         for (auto id : contents(backpack)) {
             const auto &target = state_.items.at(id);
             if (target.definition != source.definition || target.quality != source.quality ||
+                !target.savedStats.empty() || target.grantedSkill >= 0 ||
                 target.quantity >= maximumStack(target))
                 continue;
             if (auto error = checkHandle(target.handle()); error != InventoryError::None)

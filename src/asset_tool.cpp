@@ -28,7 +28,7 @@ int main(int argc, char **argv) {
                    "  ... presets [name-filter]\n  ... maze <level-ID> [map-seed] [difficulty:0-2]\n"
                    "  ... outdoor <level-ID> [map-seed]\n"
                    "  ... substitutions <LvlSub-type>\n"
-                   "  ... save-info <d2xsave>\n"
+                   "  ... save-info <file.d2s>\n"
                    "  ... treasure <TC-name> [seed] [monster-level]\n"
                    "  ... quality <item-code> <item-level> <MF> [seed] [unique set rare magic modifiers]\n"
                    "  ... loot-plan <TC-name> <item-level> <seed> [upgrade-level]\n"
@@ -166,9 +166,10 @@ int main(int argc, char **argv) {
                          : entry.status == d2x::LootEntryStatus::Empty ? "Empty" : "Deferred")
                       << ": " << entry.reason << '\n';
         } else if (command == "save-info" && argc == 4) {
-            auto snapshot = d2x::loadSave(argv[3]);
             auto data = d2x::loadClassicData(a);
-            std::cout << "Save format=81 lastRegion=" << int(snapshot.world.area.region)
+            auto snapshot = d2x::loadSave(argv[3], data);
+            std::cout << "Save format=D2S-v96 name=" << snapshot.world.player.name
+                      << " lastRegion=" << int(snapshot.world.area.region)
                       << " gold=" << snapshot.world.player.gold
                       << " level=" << snapshot.world.player.level
                       << " xp=" << snapshot.world.player.experience

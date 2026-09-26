@@ -69,11 +69,11 @@ int runGame(int argc, char **argv) {
                      "--difficulty <normal|nightmare|hell> --population-seed <uint32> "
                      "--map-seed <uint32> --seed <uint64> --inventory --skills --stash --screenshot <png> "
                      "--frames N --hidden --pack "
-                     "<new.mpq> --save <file.d2xsave> --load <file.d2xsave>\n"
+                     "<new.mpq> --save <file.d2s> --load <file.d2s>\n"
                      "--debug-pipe <name>: opt-in local Windows debug commands (starts paused).\n"
                      "--debug-run: start the debug-enabled game without pausing.\n"
                      "F11: save character; Ctrl+F11: start a new game in town from save. "
-                     "Default slot: saves/quick.d2xsave\n";
+                     "Default slot: saves/quick.d2s\n";
         return 0;
     }
     Archives archives;
@@ -127,7 +127,7 @@ int runGame(int argc, char **argv) {
     }
     if (character && !character->created) options.load = character->path.string();
     if (!options.load.empty()) {
-        restored = loadSave(options.load);
+        restored = loadSave(options.load, loadClassicData(archives));
         options.world.seed = restored->world.mapSeed;
         options.population.difficulty = restored->world.population.difficulty;
     }
@@ -146,8 +146,8 @@ int runGame(int argc, char **argv) {
     const std::string savePath = character ? character->path.string()
                                  : !options.save.empty()   ? options.save
                                  : !options.load.empty() ? options.load
-                                                         : "saves/quick.d2xsave";
-    if (character && character->created) writeSave(savePath, session.snapshot());
+                                                         : "saves/quick.d2s";
+    if (character && character->created) writeSave(savePath, session.snapshot(), session.content());
     frontendTarget.reset();
     SceneView view(archives, session);
     view.ui().travelMenu = options.maps;
@@ -200,13 +200,13 @@ int runGame(int argc, char **argv) {
         if (persistenceInput) {
             try {
                 if (input.load) {
-                    session.restore(loadSave(savePath));
+                    session.restore(loadSave(savePath, session.content()));
                     view.sessionRestored();
                     controller.resetInput();
                     accumulator = 0;
                     view.notice("Character loaded in town; monsters have reset.");
                 } else {
-                    writeSave(savePath, session.snapshot());
+                    writeSave(savePath, session.snapshot(), session.content());
                     view.notice("Character saved.");
                 }
                 std::cout << (input.load ? "Loaded " : "Saved ") << savePath << '\n';
@@ -249,10 +249,10 @@ int runGame(int argc, char **argv) {
     if (!options.screenshot.empty())
         target.save(options.screenshot);
     if (!options.save.empty()) {
-        writeSave(options.save, session.snapshot());
+        writeSave(options.save, session.snapshot(), session.content());
         std::cout << "Saved " << options.save << '\n';
     }
-    if (character) writeSave(savePath, session.snapshot());
+    if (character) writeSave(savePath, session.snapshot(), session.content());
     if (!options.pack.empty())
         view.collectMapVariants(archives);
     std::filesystem::create_directories("artifacts");

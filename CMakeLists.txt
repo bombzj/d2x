@@ -143,8 +143,13 @@ target_sources(d2x_session PRIVATE src/gameplay/session/session_cain_world.cpp s
 target_sources(d2x_session PRIVATE src/gameplay/npc/hireling.cpp)
 target_sources(d2x_session PRIVATE src/gameplay/npc/hireling_services.cpp)
 target_link_libraries(d2x_session PUBLIC d2x_gameplay d2x_world d2x_content d2x_population)
-add_library(d2x_persistence src/persistence/save_codec.cpp src/persistence/save_file.cpp)
-target_link_libraries(d2x_persistence PUBLIC d2x_gameplay d2x_items)
+add_library(d2x_persistence src/persistence/d2s_codec.cpp src/persistence/save_file.cpp
+  src/persistence/d2s_header.cpp src/persistence/d2s_fixed_sections.cpp
+  src/persistence/d2s_stats.cpp
+  src/persistence/d2s_items.cpp
+  src/persistence/d2s_inventory.cpp
+  src/persistence/d2s_skills.cpp)
+target_link_libraries(d2x_persistence PUBLIC d2x_gameplay d2x_items d2x_content)
 
 add_library(d2x_presentation
   src/presentation/graphics.cpp src/presentation/audio.cpp src/presentation/primitives.cpp

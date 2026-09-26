@@ -152,10 +152,12 @@ std::vector<Slot> listCharacters(std::string &warning, Graphics &graphics, const
     std::vector<Slot> slots;
     std::filesystem::create_directories("saves");
     for (const auto &file : std::filesystem::directory_iterator("saves")) {
-        if (!file.is_regular_file() || file.path().extension() != ".d2xsave" ||
+        auto extension = file.path().extension().string();
+        std::transform(extension.begin(), extension.end(), extension.begin(), [](unsigned char letter) { return char(std::tolower(letter)); });
+        if (!file.is_regular_file() || extension != ".d2s" ||
             file.path().stem() == "quick") continue;
         try {
-            const auto save = loadSave(file.path());
+            const auto save = loadSave(file.path(), content);
             const auto &player = save.world.player;
             if (!validName(player.name) || heroIndex(player.characterClass) < 0)
                 throw std::runtime_error("Unsupported expansion character");
@@ -320,7 +322,7 @@ std::optional<CharacterChoice> chooseCharacter(Archives &archives, RenderTexture
                                 return std::tolower(left) == std::tolower(right);
                             });
                     });
-                    auto path = std::filesystem::path("saves") / (name + ".d2xsave");
+                    auto path = std::filesystem::path("saves") / (name + ".d2s");
                     if (duplicate != slots.end() || std::filesystem::exists(path))
                         notice = "That character name is already in use.";
                     else return CharacterChoice{path, heroes[hero].name, name, true};
@@ -350,7 +352,7 @@ std::optional<CharacterChoice> chooseCharacter(Archives &archives, RenderTexture
             else if (click && hit(deleteButton, mouse) && selected >= 0) confirmDelete = true;
             else if ((enter || (click && hit(okayButton, mouse))) && selected >= 0) {
                 try {
-                    loadSave(slots[selected].path);
+                    loadSave(slots[selected].path, content);
                     return CharacterChoice{slots[selected].path, slots[selected].characterClass,
                                            slots[selected].name, false};
                 } catch (const std::exception &error) { notice = error.what(); }

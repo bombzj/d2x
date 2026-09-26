@@ -18,6 +18,24 @@ void GameSession::validateItemProperties(const SessionSnapshot &snapshot) const 
                    : value == property.minimum.value_or(0);
     };
     for (const auto &[id, item] : snapshot.inventory.items) {
+        if (item.nativeProperties) {
+            requireItem(item.propertyRolls.empty(), "native property rolls");
+            auto validateStats = [&](const auto &stats) {
+                requireItem(stats.size() <= 512, "native stat list");
+                std::set<std::pair<int, int>> unique;
+                for (const auto &stat : stats)
+                    requireItem(stat.id >= 0 && stat.id < 511 && stat.parameter >= 0 &&
+                        unique.emplace(stat.id, stat.parameter).second &&
+                        std::any_of(content_.itemStats.begin(), content_.itemStats.end(),
+                            [&](const auto &definition) { return definition.id == stat.id; }), "native stat identity");
+            };
+            validateStats(item.savedStats);
+            for (const auto &stats : item.savedSetStats) {
+                requireItem(stats.empty() || item.quality == ItemQuality::Set, "set stats on non-set item");
+                validateStats(stats);
+            }
+            continue;
+        }
         if (item.quality == ItemQuality::Normal) {
             requireItem(item.specialRow == -1 && item.gradeRow == -1 && item.requiredLevel == 0 &&
                             item.rarePrefixRow == -1 && item.rareSuffixRow == -1 &&

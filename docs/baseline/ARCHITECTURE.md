@@ -48,7 +48,7 @@
 - `content/equipment_data.*` 将原 ItemTypes／物品字段转换为只读装备规则；`gameplay/items/equipment_rules.*` 定义部位和类型查询，`equipment.cpp` 规划基础穿脱与左右手冲突。InventoryService 保持实例唯一归属；GameSession 提供可信角色需求，不接受 UI 指定属性。
 - `EquipItem` 提交实例版本及目标部位，空部位表示卸下，可指定背包／私人箱／地面目的地；穿戴时不能同时指定目的地。通用 Move／Transfer 不允许直接修改装备容器。腰带仍走 EquipBelt 原子缩容，二者共用需求校验；会话额外验证地面目的地碰撞与通路。表现层按原面板坐标显示部位，按真实库存加载原图，并从装备状态重建人物外观。
 - `gameplay/items/equipment_stats.*` 从普通装备实例派生基础武器伤害、防御、格挡及角色等级；`durability.cpp` 负责非堆叠装备损耗和版本事件。GameSession 在成功库存操作后刷新 Simulation 的只读派生缓存，并以回调协调战斗损耗；Simulation 不读取 MPQ 或设备输入。普通怪物准确率由会话提供类型化值，缺核实数据则不执行新增命中分支。
-- `d2x_assets <MPQ> save-info <d2xsave>` 只读显示装备部位、耐久、防御和随机状态；只解码，不代替 GameSession 的完整存档校验。
+- `d2x_assets <MPQ> save-info <file.d2s>` 只读解码原版 v96 角色与物品，不代替 GameSession 的完整会话校验。随机状态为新会话默认值，不是 D2S 字段。
 - `gameplay/simulation`：固定步调度与模拟生命周期；`combat`、`player`、`monsters`、`consumables`、`loot` 分别持有对应实现。
 - `content/skill_data.*` 从运行时 MPQ 原表建立七职业技能目录、通用动作、初始物品技能、位置、前置、等级与页签；`content/sorceress_data.*` 导入女巫优先技能的 MPQ 法力／伤害／协同／弹体定义与 Levels 传送许可；`content/item_projectiles.*` 把 Weapons／Missiles 原表转为只读弹体定义。`presentation/skill_tree_view.cpp` 和原 DC6 绘制技能树。会话持有原技能 ID 对应的等级和点数；UI 仅选择技能并提交命令。
 - `gameplay/combat/physical_projectiles.cpp` 接普通远程伤害与弹体，`InventoryService::consumeEquipped` 为会话提供可信的箭袋／投掷堆叠消耗；玩法层不读取 MPQ 或图形资源。
@@ -67,4 +67,4 @@
 - 怪物动画由 `SceneAssets::monsterAnimations` 按 MonsterKind 和动作索引；定义携带原 token／武器类别，组件按已核实 MonStats2 组合选择。合成结果记录组件完整性，缺动作或组件时明确拒绝加载，不回退到另一种怪物图片。普通类型仍复用公共近战，专属 AI 后续独立接入。
 - 新物品效果：从 `content` 导入定义，在玩法／事务服务执行；HUD 仅展示结果。
 - 新 UI：布局、绘制、命中分开；技能图标经 `Skills → SkillDesc → DC6`。
-- 修改持久状态：同步 `state`、`save_codec`、`session_snapshot` 与规则指纹。
+- 修改持久状态：核对原 D2S v96 字段，在 `persistence/d2s_*` 映射并同步 `state`、`session_snapshot` 与支持文档。不升级格式、不写私有字段或规则指纹；未支持数据明确拒绝。

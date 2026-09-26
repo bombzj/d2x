@@ -12,6 +12,7 @@ int InventoryService::propertyValue(const ItemInstance &item, std::string_view s
     return value;
 }
 unsigned InventoryService::maximumDurability(const ItemInstance &item) const {
+    if (item.nativeProperties) return item.nativeMaxDurability;
     auto base = catalog_.find(item.definition)->maxDurability;
     if (!base) return 0;
     if (item.quality == ItemQuality::Inferior) base = std::max(1u, base / 3);

@@ -106,8 +106,20 @@ CharacterModifiers resolveEquipmentModifiers(const ClassicData &content,
                 const int count = int(pieces[record.set].size());
                 const int full = int(std::count_if(content.setItems.begin(), content.setItems.end(),
                     [&](const auto &other) { return other.set == record.set; }));
+                if (item.nativeProperties && record.setAddFunction == 2) {
+                    for (size_t index = 0; index < item.savedSetStats.size(); ++index) {
+                        const std::string key = record.set + ":native:" + std::to_string(id.value) + ":" + std::to_string(index);
+                        if (count < int(index) + 2 || item.savedSetStats[index].empty() || appliedSetBonuses.contains(key)) continue;
+                        auto bonus = item;
+                        bonus.savedStats = item.savedSetStats[index];
+                        addItem(content, bonus, inventory.catalog().find(item.definition)->equipment.isType("weap"), baseActor.level, total);
+                        appliedSetBonuses.insert(key);
+                        changed = true;
+                    }
+                }
                 int localIndex = 0, globalIndex = 0;
                 for (const auto &bonus : record.setBonuses) {
+                    if (item.nativeProperties && bonus.perItem) continue;
                     const std::string key = record.set + (bonus.perItem ? ":item:" + std::to_string(id.value) : ":set") +
                         ":" + std::to_string(bonus.perItem ? localIndex++ : globalIndex++);
                     if (appliedSetBonuses.contains(key) || count < (bonus.pieces ? bonus.pieces : full) ||
