@@ -51,9 +51,10 @@ void SceneView::drawSkillTree(Vec mouse) const {
         DrawTexturePro(texture, {0, 0, float(texture.width), float(texture.height)}, bounds,
                        {0, 0}, 0, value || itemGranted ? WHITE : Color{92, 92, 92, 255});
         if (value || itemGranted) {
-            auto count = std::to_string(effective) + (itemGranted ? "*" : "");
+            auto count = std::to_string(effective);
             painter_.label(count, int(bounds.x + bounds.width - painter_.measure(count, 12) - 2),
-                           int(bounds.y + bounds.height - 14), 12, parchment);
+                           int(bounds.y + bounds.height - 14), 12,
+                           itemGranted ? Color{105, 105, 255, 255} : parchment);
         }
         if (CheckCollisionPointRec(rv(mouse), bounds))
             DrawRectangleLinesEx(bounds, 1, ready ? gold : Color{115, 106, 91, 255});

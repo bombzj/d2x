@@ -77,6 +77,7 @@ class SceneAssets {
         storagePanel, cubePanel, beltPanel, beltSocket, orbs,
         globeOverlap, runButton, button;
     std::array<GpuAnimation, 6> actOneQuestIcons;
+    std::array<Rectangle, 6> actOneQuestFaces{};
     GpuAnimation hirelingPanel, hirelingScroll, hirelingHead, hirelingArmor, hirelingWeapon;
     struct OverlayArt {
         GpuAnimation animation;

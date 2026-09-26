@@ -28,6 +28,7 @@ SceneView::SceneView(Archives &archives, const GameSession &session)
     const auto right = player.selectedSkills[player.weaponSet * 2 + 1];
     view_.leftSkill = left < 0 ? std::nullopt : std::optional<int>{left};
     view_.rightSkill = right < 0 ? std::nullopt : std::optional<int>{right};
+    resetQuestAnimations();
     revealAutomap();
     lighting_.update(session_.map().grid, session_.worldContent().level(int(session_.region().definition.id)),
                      session_.region().definition.id,
@@ -103,11 +104,14 @@ void SceneView::sessionRestored() {
     assets_.loadHeroEquipment(session_);
     view_.inventory = {};
     view_.characterOpen = false;
+    view_.pointButtonPressed.reset();
     view_.hirelingOpen = view_.hireListOpen = false;
     view_.skillTreeOpen = false;
     view_.questOpen = false;
     view_.questNotice = false;
     view_.questUpdated = view_.questSelected = -1;
+    view_.questPressed = -1;
+    resetQuestAnimations();
     view_.lastDenRemaining.reset();
     view_.skillClass = session_.characterCode();
     view_.skillPage = 3;
@@ -142,6 +146,7 @@ void SceneView::sessionRestored() {
 void SceneView::advanceUi(float dt) {
     view_.noticeTime = std::max(0.f, view_.noticeTime - dt);
     advanceNpcDialogue(dt);
+    advanceQuestAnimations(dt);
 }
 void SceneView::advance(float dt) {
     revealAutomap();
@@ -374,6 +379,7 @@ void SceneView::advance(float dt) {
                 } else if constexpr (std::is_same_v<T, WaypointActivated>) {
                     notice("Waypoint activated.", false);
                 } else if constexpr (std::is_same_v<T, QuestAdvanced>) {
+                    queueQuestAnimation(value.quest, value.stage);
                     view_.questUpdated = int(questIndex(value.quest));
                     view_.questNotice = !view_.questOpen;
                     if (value.quest == ActOneQuest::ToolsOfTheTrade &&

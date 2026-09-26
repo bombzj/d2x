@@ -57,7 +57,7 @@ Linux 使用原生 CMake，见 [构建与分发](../BUILD_AND_SHARE.md)。格式
 | 怪物 | `content/monster_catalog.cpp`、`world/population.cpp`、`gameplay/monster_activation.cpp` |
 | 物品 | `content/classic_data.cpp`、`lod_data.cpp`、`gameplay/items` |
 | 技能／HUD | `gameplay/definitions.cpp`、`skills.cpp`、`presentation/hud_layout.hpp`、`skill_assets.cpp` |
-| 保存 | `gameplay/session_snapshot.cpp`、`persistence/save_codec.cpp` |
+| 保存 | `gameplay/session/session_character_save.cpp`、`session_restore.cpp`、`persistence/d2s_codec.cpp` |
 
 ## 修改约定
 

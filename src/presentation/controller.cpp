@@ -60,6 +60,13 @@ void SceneController::click(Vec mouse) {
 }
 bool SceneController::handle(const FrameInput &input, float elapsed) {
     auto &ui = view_.ui();
+    if (!input.focused || ui.blocksWorld() || session_.state().player.dead ||
+        input.escape || input.inventory || input.character || input.skillTree || input.quests ||
+        input.hireling || input.storage || input.rightPressed || input.movement.length() > .1f) {
+        ui.pointButtonPressed.reset();
+        ui.questPressed = -1;
+    }
+    if (!ui.questOpen) ui.questPressed = -1;
     if (inputRegion_ != session_.state().area.region) {
         leftCombatTarget_ = rightCombatTarget_ = {};
         inputRegion_ = session_.state().area.region;
@@ -93,6 +100,34 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
         ui.inventory.cancelGesture();
         ui.skillPicker.reset();
         return true;
+    }
+    if (ui.pointButtonPressed) {
+        const bool skill = *ui.pointButtonPressed;
+        const bool enabled = skill ? session_.state().player.unspentSkills > 0
+                                   : session_.state().player.unspentAttributes > 0;
+        if (input.leftReleased) {
+            ui.pointButtonPressed.reset();
+            if (enabled && input.insideViewport &&
+                CheckCollisionPointRec(rv(input.mouse), skill ? hudSkillTreeButton() : hudCharacterButton())) {
+                if (skill) { ui.skillTreeOpen = true; ui.skillPicker.reset(); }
+                else ui.characterOpen = true;
+            }
+            return true;
+        }
+        if (!enabled || !input.leftHeld) ui.pointButtonPressed.reset();
+        else return true;
+    }
+    if (ui.questPressed >= 0) {
+        const int index = ui.questPressed;
+        if (input.leftReleased) {
+            ui.questPressed = -1;
+            if (input.insideViewport && session_.quest(questDisplayOrder[size_t(index)]).stage &&
+                CheckCollisionPointRec(rv(input.mouse), questIconBounds(index)))
+                ui.questSelected = index;
+            return true;
+        }
+        if (!input.leftHeld) ui.questPressed = -1;
+        else return true;
     }
     repeatClick_ -= elapsed;
     if (ui.blocksWorld() || input.escape || input.inventory || input.weaponSwap ||
@@ -409,14 +444,15 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
     if (input.insideViewport && input.leftPressed && !ui.blocksWorld() &&
         session_.state().player.unspentAttributes > 0 &&
         CheckCollisionPointRec(rv(input.mouse), hudCharacterButton())) {
-        ui.characterOpen = true;
+        ui.pointButtonPressed = false;
+        pickupClick_ = true;
         return true;
     }
     if (input.insideViewport && input.leftPressed && !ui.blocksWorld() &&
         session_.state().player.unspentSkills > 0 &&
         CheckCollisionPointRec(rv(input.mouse), hudSkillTreeButton())) {
-        ui.skillTreeOpen = true;
-        ui.skillPicker.reset();
+        ui.pointButtonPressed = true;
+        pickupClick_ = true;
         return true;
     }
     if (input.insideViewport && input.leftPressed && !ui.blocksWorld() &&
@@ -602,7 +638,8 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
                 for (int index = 0; index < 6; ++index)
                     if (session_.quest(questDisplayOrder[size_t(index)]).stage &&
                         CheckCollisionPointRec(rv(input.mouse), questIconBounds(index))) {
-                        ui.questSelected = index;
+                        ui.questPressed = index;
+                        pickupClick_ = true;
                         break;
                     }
         }

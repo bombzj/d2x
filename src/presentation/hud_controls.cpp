@@ -82,10 +82,10 @@ void SceneView::drawControlPanel() const {
         DrawRectangleRec(experience, WHITE);
     }
     imageAt(assets_.runButton.frame(0, player.running ? 2 : 0), hudRunButton());
-    if (player.unspentAttributes > 0)
-        imageAt(assets_.attributeButtons.frame(0, 0), hudCharacterButton());
-    if (player.unspentSkills > 0)
-        imageAt(assets_.attributeButtons.frame(0, 0), hudSkillTreeButton());
+    imageAt(assets_.attributeButtons.frame(0, player.unspentAttributes > 0
+        ? (view_.pointButtonPressed == false ? 1 : 0) : 2), hudCharacterButton());
+    imageAt(assets_.attributeButtons.frame(0, player.unspentSkills > 0
+        ? (view_.pointButtonPressed == true ? 1 : 0) : 2), hudSkillTreeButton());
     imageAt(assets_.miniPanelToggle.frame(0, view_.miniPanelOpen ? 2 : 0), hudMenuButton());
     if (view_.miniPanelOpen) {
         if (const auto *background = assets_.miniPanel.frame(0, 0))
@@ -220,12 +220,10 @@ void SceneView::drawSkillControls(Vec mouse) const {
                std::to_string(session_.characterStats().maxStamina);
     if (session_.state().player.unspentAttributes > 0 &&
         CheckCollisionPointRec(rv(mouse), hudCharacterButton())) {
-        imageAt(assets_.attributeButtons.frame(0, 1), hudCharacterButton());
         hint = "New attribute points [A]";
     }
     if (session_.state().player.unspentSkills > 0 &&
         CheckCollisionPointRec(rv(mouse), hudSkillTreeButton())) {
-        imageAt(assets_.attributeButtons.frame(0, 1), hudSkillTreeButton());
         hint = "New skill points [S]";
     }
     if (CheckCollisionPointRec(rv(mouse), hudExperience())) {

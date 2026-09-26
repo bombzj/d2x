@@ -5,7 +5,7 @@
 #include <stdexcept>
 
 namespace d2x {
-void GameSession::validateItemProperties(const SessionSnapshot &snapshot) const {
+void GameSession::validateItemProperties(const CharacterSaveData &snapshot) const {
     auto requireItem = [](bool condition, const char *reason) {
         if (!condition)
             throw std::runtime_error(std::string("Invalid save item: ") + reason);

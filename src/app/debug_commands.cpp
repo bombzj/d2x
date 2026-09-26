@@ -199,10 +199,10 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
             result["automap"]["layers"] = Json::array();
             for (const auto &[region, cells] : view.automapLayers())
                 result["automap"]["layers"].push_back({{"region", int(region)}, {"exploredCells", cells}});
-            auto snapshot = session.snapshot();
-            result["lootRandom"] = snapshot.loot.randomState;
-            result["settled"] = snapshot.loot.settled.size();
-            result["uniqueRowsSeen"] = snapshot.loot.usedUniques.size();
+            auto loot = session.lootState();
+            result["lootRandom"] = loot.randomState;
+            result["settled"] = loot.settled.size();
+            result["uniqueRowsSeen"] = loot.usedUniques.size();
             result["heroAppearanceError"] = view.heroAppearanceError();
             result["look"] = {state.player.look.x, state.player.look.y};
             result["routePoints"] = state.player.route.size();
@@ -694,7 +694,7 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
             result["ticks"] = ticks;
         } else if (command == "pause") paused = true;
         else if (command == "resume") paused = false;
-        else if (command == "save") writeSave(savePath, session.snapshot(), session.content());
+        else if (command == "save") writeSave(savePath, session.characterSave(), session.content());
         else if (command == "load") {
             const bool running = session.state().player.running;
             session.restore(loadSave(savePath, session.content()));

@@ -99,19 +99,19 @@ void exportQuests(const PlayerState &player, D2sFixedSections &sections) {
                 sections.introductions[28 + difficulty * 8 + (index + 1) / 8] |= uint8_t(1u << ((index + 1) % 8));
     }
 }
-void waypoints(SessionSnapshot &snapshot, D2sFixedSections &sections, const ClassicData &content, bool writing) {
+void waypoints(CharacterSaveData &snapshot, D2sFixedSections &sections, const ClassicData &content, bool writing) {
     const auto &levels = content.tables.at("levels");
-    const auto offset = 8 + size_t(snapshot.world.population.difficulty) * 24 + 2;
+    const auto offset = 8 + size_t(snapshot.difficulty) * 24 + 2;
     for (size_t row = 0; row < levels.rows().size(); ++row) {
         const auto id = levels.number(row, "Id"), waypoint = levels.number(row, "Waypoint");
         if (!id || !waypoint || *waypoint < 0 || *waypoint >= 39) continue;
         auto &value = sections.waypoints[offset + size_t(*waypoint) / 8];
         const auto bit = uint8_t(1u << (*waypoint % 8));
         if (writing) {
-            if (snapshot.world.waypoints.contains(RegionId(*id))) value |= bit;
+            if (snapshot.waypoints.contains(RegionId(*id))) value |= bit;
         } else if (value & bit) {
             require(*id >= 1 && *id <= 39, "waypoints outside supported Act I");
-            snapshot.world.waypoints.emplace(RegionId(*id), 0.f);
+            snapshot.waypoints.emplace(RegionId(*id), 0.f);
         }
     }
 }
@@ -160,9 +160,13 @@ void exportMerc(D2sHeader &header, const PlayerState &player, const ClassicData 
     header.mercFlags = merc.hp <= 0 ? 0x10000 : 0;
     header.mercExperience = uint32_t(merc.experience);
 }
-void verifyCharacter(const SessionSnapshot &snapshot, const ClassicData &content) {
-    const auto &player = snapshot.world.player;
+void verifyCharacter(const CharacterSaveData &snapshot, const ClassicData &content) {
+    const auto &player = snapshot.player;
     const auto &definition = characterDefinition(content, player.characterClass);
+    require(snapshot.difficulty >= 0 && snapshot.difficulty <= 2,
+        "invalid difficulty");
+    require(player.weaponSet < 2 && (content.stashLayout.expansion || !player.weaponSet),
+        "invalid weapon set");
     require(player.level >= 1 && player.level <= 99 && player.allocated.strength >= 0 && player.allocated.dexterity >= 0 &&
         player.allocated.energy >= 0 && player.allocated.vitality >= 0 && player.unspentAttributes >= 0 &&
         allocatedPoints(player.allocated) + player.unspentAttributes == int64_t(player.level - 1) * definition.statPerLevel,
@@ -187,14 +191,37 @@ void verifyCharacter(const SessionSnapshot &snapshot, const ClassicData &content
             (skill && !skill->passive && (key.right || skill->leftAllowed)), "invalid hotkey skill");
     }
     int rewards = 0;
-    for (const auto &difficulty : player.actOneQuests) rewards += difficulty[0].stage == 4;
+        for (const auto &difficulty : player.actOneQuests) {
+        const auto &den = difficulty[0];
+        require(den.stage <= uint32_t(DenStage::Rewarded) && !(den.flags & ~denRespecUsed) &&
+                (!(den.flags & denRespecUsed) || den.stage == uint32_t(DenStage::Rewarded)),
+            "Den of Evil quest progress");
+        require(difficulty[1].stage <= uint32_t(BurialStage::Rewarded) && !difficulty[1].flags,
+            "Burial Grounds quest progress");
+        const auto &cain = difficulty[2];
+        require(cain.stage <= uint32_t(CainStage::Rewarded) &&
+                !(cain.flags & ~(cainStoneCountMask | cainRescuedByRogues)) &&
+                (cain.flags & cainStoneCountMask) <= 5 &&
+                (!(cain.flags & cainRescuedByRogues) || cain.stage == uint32_t(CainStage::Rewarded)),
+            "Search for Cain quest progress");
+        require(difficulty[3].stage <= uint32_t(TowerStage::CountessSlain) && !difficulty[3].flags,
+            "Forgotten Tower quest progress");
+        require(difficulty[4].stage <= uint32_t(ToolsStage::Imbued) && !difficulty[4].flags,
+            "Tools of the Trade quest progress");
+        require(difficulty[5].stage <= uint32_t(SlaughterStage::Completed) && !difficulty[5].flags,
+            "Sisters to the Slaughter quest progress");
+        rewards += den.stage == uint32_t(DenStage::Rewarded);
+        }
     require(player.unspentSkills >= 0 && points == player.level - 1 + rewards, "unsupported skill rewards or allocation");
     const auto &thresholds = content.experienceByClass.at(player.characterClass);
     require(size_t(player.level) < thresholds.size() && player.experience >= thresholds[player.level] &&
         (player.level == 99 || player.experience < thresholds[player.level + 1]), "experience/level mismatch");
+    require(player.gold <= unsigned(player.level) * 10000 && player.bankGold <= (player.level <= 30
+                ? 50000u * (unsigned(player.level) / 10u + 1u)
+                : 50000u * (unsigned(player.level) / 2u + 1u)), "gold limit");
 }
 } // namespace
-SessionSnapshot decodeSave(std::span<const uint8_t> bytes, const ClassicData &content) {
+CharacterSaveData decodeSave(std::span<const uint8_t> bytes, const ClassicData &content) {
     require(bytes.size() <= maxSaveBytes, "file too large");
     auto header = readD2sHeader(bytes);
     require(!(header.flags & (4 | 8 | 0x40)), "hardcore, dead or ladder character unsupported");
@@ -204,18 +231,18 @@ SessionSnapshot decodeSave(std::span<const uint8_t> bytes, const ClassicData &co
             require(!(word(sections.quests, 10 + difficulty * 96 + offset) & 0x81),
                     "quest rewards from later acts are not implemented");
     }
-    SessionSnapshot snapshot;
+    CharacterSaveData snapshot;
     initializeD2sInventory(snapshot, content);
-    auto &player = snapshot.world.player;
+    auto &player = snapshot.player;
     player.name = header.name; player.characterClass = classes[header.characterClass]; player.level = header.level;
     player.weaponSet = header.weaponSet;
     player.nativeSaveSections.assign(reinterpret_cast<const char *>(bytes.data()), fixedEnd);
-    snapshot.world.mapSeed = header.mapSeed;
-    snapshot.world.population.difficulty = header.difficulty;
+    snapshot.mapSeed = header.mapSeed;
+    snapshot.difficulty = header.difficulty;
     for (unsigned difficulty = 0; difficulty < 3; ++difficulty)
-        if (header.towns[difficulty] & 0x80) snapshot.world.population.difficulty = int(difficulty);
-    require((header.towns[size_t(snapshot.world.population.difficulty)] & 7) == 0, "last act is not supported");
-    snapshot.world.area.region = RegionId::Encampment;
+        if (header.towns[difficulty] & 0x80) snapshot.difficulty = int(difficulty);
+    require((header.towns[size_t(snapshot.difficulty)] & 7) == 0, "last act is not supported");
+    snapshot.lastRegion = RegionId::Encampment;
     size_t cursor = fixedEnd;
     const auto stats = readD2sStats(bytes.subspan(cursor), content.tables.at("itemstatcost"));
     cursor += stats.bytesRead;
@@ -266,8 +293,8 @@ SessionSnapshot decodeSave(std::span<const uint8_t> bytes, const ClassicData &co
     if (header.mercSeed) items(true);
     require(word(bytes, cursor) == 0x666B && cursor + 3 == bytes.size() && bytes[cursor + 2] == 0,
             "Iron Golem or trailing data is not supported");
-    auto &cain = player.actOneQuests[size_t(snapshot.world.population.difficulty)][2];
-    auto &tools = player.actOneQuests[size_t(snapshot.world.population.difficulty)][4];
+    auto &cain = player.actOneQuests[size_t(snapshot.difficulty)][2];
+    auto &tools = player.actOneQuests[size_t(snapshot.difficulty)][4];
     for (const auto &[id, item] : snapshot.inventory.items) {
         if (cain.stage < 7 && item.definition == "bks") cain.stage = uint32_t(CainStage::BarkAcquired);
         if (cain.stage < 7 && item.definition == "bkd") cain.stage = uint32_t(CainStage::ScrollTranslated);
@@ -276,10 +303,10 @@ SessionSnapshot decodeSave(std::span<const uint8_t> bytes, const ClassicData &co
     verifyCharacter(snapshot, content);
     return snapshot;
 }
-Bytes encodeSave(const SessionSnapshot &source, const ClassicData &content) {
+Bytes encodeSave(const CharacterSaveData &source, const ClassicData &content) {
     verifyCharacter(source, content);
     auto snapshot = source;
-    const auto &player = snapshot.world.player;
+    const auto &player = snapshot.player;
     auto found = std::find(classes.begin(), classes.end(), player.characterClass);
     require(found != classes.end(), "unknown character class");
     Bytes bytes(d2sHeaderSize, 0);
@@ -311,11 +338,11 @@ Bytes encodeSave(const SessionSnapshot &source, const ClassicData &content) {
     }
     header.name = player.name; header.characterClass = uint8_t(found - classes.begin());
     header.weaponSet = player.weaponSet; header.level = uint8_t(player.level);
-    header.mapSeed = snapshot.world.mapSeed; header.difficulty = uint8_t(snapshot.world.population.difficulty);
+    header.mapSeed = snapshot.mapSeed; header.difficulty = uint8_t(snapshot.difficulty);
     header.saved = uint32_t(std::time(nullptr)); if (!header.created) header.created = header.saved;
     for (auto &town : header.towns) town &= 0x7F;
     header.towns[header.difficulty] = 0x80;
-    header.lastLevel = unsigned(snapshot.world.area.region); header.lastTown = 1;
+    header.lastLevel = unsigned(snapshot.lastRegion); header.lastTown = 1;
     for (size_t index = 0; index < player.skillHotkeys.size(); ++index) {
         const auto &key = player.skillHotkeys[index];
         header.hotkeys[index] = key.skill == -2 ? UINT32_MAX

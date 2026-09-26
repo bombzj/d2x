@@ -1,5 +1,6 @@
 #pragma once
 #include "gameplay/quest/state.hpp"
+#include "hud_layout.hpp"
 #include "inventory_panel.hpp"
 #include "primitives.hpp"
 #include <array>
@@ -23,7 +24,7 @@ inline Rectangle questTabBounds(int index) { return questArtRect(6.f + index * 6
 inline Rectangle questCloseBounds() { return questArtRect(278, 391, 32, 32); }
 inline Rectangle questReplayBounds() { return questArtRect(228, 393, 32, 32); }
 inline Rectangle questNoticeBounds() {
-    return {32 * classicPanelScale, H - HUD - 48 * classicPanelScale,
-            32 * classicPanelScale, 32 * classicPanelScale};
+    const float size = 32 * classicPanelScale;
+    return {32 * classicPanelScale, hudGlobe(false).y - size, size, size};
 }
 } // namespace d2x

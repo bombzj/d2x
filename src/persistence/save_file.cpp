@@ -36,7 +36,7 @@ class SaveLock {
     }
 };
 } // namespace
-SessionSnapshot loadSave(const std::filesystem::path &path, const ClassicData &content) {
+CharacterSaveData loadSave(const std::filesystem::path &path, const ClassicData &content) {
     std::ifstream file(path, std::ios::binary | std::ios::ate);
     if (!file)
         throw std::runtime_error("Cannot open save: " + path.string());
@@ -49,7 +49,7 @@ SessionSnapshot loadSave(const std::filesystem::path &path, const ClassicData &c
         throw std::runtime_error("Cannot read save: " + path.string());
     return decodeSave(bytes, content);
 }
-void writeSave(const std::filesystem::path &path, const SessionSnapshot &snapshot, const ClassicData &content) {
+void writeSave(const std::filesystem::path &path, const CharacterSaveData &snapshot, const ClassicData &content) {
     if (path.empty() || path.filename().empty())
         throw std::runtime_error("Save path must name a file");
     auto extension = path.extension().string();

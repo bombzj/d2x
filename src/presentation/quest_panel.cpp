@@ -13,6 +13,8 @@ constexpr std::array completedStages = {
     uint32_t(DenStage::Rewarded), uint32_t(BurialStage::Rewarded),
     uint32_t(CainStage::Rewarded), uint32_t(TowerStage::CountessSlain),
     uint32_t(ToolsStage::Imbued), uint32_t(SlaughterStage::Completed)};
+constexpr float questAnimationSeconds = 3.f;
+constexpr int questCompletedFrame = 24;
 // Internal transition stages are not the original quest-log string IDs.
 // Keys are from the mounted TBL; A1Q3's reward-pending status uses qstsa1q32b.
 std::string_view descriptionKey(ActOneQuest quest, uint32_t stage) {
@@ -66,6 +68,51 @@ void drawArt(const Sprite *image, Rectangle bounds, Color tint = WHITE) {
 }
 } // namespace
 
+void SceneView::resetQuestAnimations() {
+    questAnimations_ = {};
+    for (size_t index = 0; index < questDisplayOrder.size(); ++index)
+        questAnimations_[index].completed =
+            session_.quest(questDisplayOrder[index]).stage >= completedStages[index];
+}
+
+void SceneView::queueQuestAnimation(ActOneQuest quest, uint32_t stage) {
+    const auto found = std::find(questDisplayOrder.begin(), questDisplayOrder.end(), quest);
+    if (found == questDisplayOrder.end()) return;
+    const auto index = size_t(found - questDisplayOrder.begin());
+    auto &animation = questAnimations_[index];
+    const bool completed = stage >= completedStages[index];
+    if (completed && !animation.completed) {
+        animation.phase = QuestCompletionAnimation::Phase::Pending;
+        animation.elapsed = 0;
+    } else if (!completed) {
+        animation.phase = QuestCompletionAnimation::Phase::Idle;
+        animation.elapsed = 0;
+    }
+    animation.completed = completed;
+}
+
+void SceneView::advanceQuestAnimations(float dt) {
+    for (size_t index = 0; index < questAnimations_.size(); ++index) {
+        auto &animation = questAnimations_[index];
+        if (!view_.questOpen) {
+            if (animation.phase == QuestCompletionAnimation::Phase::Playing)
+                animation.phase = QuestCompletionAnimation::Phase::Idle;
+            continue;
+        }
+        if (animation.phase == QuestCompletionAnimation::Phase::Pending) {
+            animation.phase = QuestCompletionAnimation::Phase::Playing;
+            animation.elapsed = 0;
+            view_.questSelected = int(index);
+            assets_.audio.play("quest_done");
+        } else if (animation.phase == QuestCompletionAnimation::Phase::Playing) {
+            animation.elapsed += dt;
+            const auto &art = assets_.actOneQuestIcons[size_t(questArtNumbers[index] - 1)];
+            if (animation.elapsed * art.count / questAnimationSeconds >= questCompletedFrame)
+                animation.phase = QuestCompletionAnimation::Phase::Idle;
+        }
+    }
+}
+
 void SceneView::drawQuests(Vec) const {
     if (!view_.questOpen) return;
     const auto panel = questBounds();
@@ -91,13 +138,33 @@ void SceneView::drawQuests(Vec) const {
     for (int index = 0; index < int(questDisplayOrder.size()); ++index) {
         const auto bounds = questIconBounds(index);
         const auto &record = session_.quest(questDisplayOrder[size_t(index)]);
-        const int artFrame = !record.stage ? 26 :
+        int artFrame = !record.stage ? 26 :
                              record.stage >= completedStages[size_t(index)] ? 24 : 25;
         drawArt(assets_.questSockets.frame(0, 0), bounds);
         const auto iconBounds = questArtRect(24.f + float(index % 3) * 100.f,
                                             37.f + float(index / 3) * 95.f, 72, 86);
-        drawArt(assets_.actOneQuestIcons[size_t(questArtNumbers[size_t(index)] - 1)]
-                    .frame(0, artFrame), iconBounds);
+        const auto artIndex = size_t(questArtNumbers[size_t(index)] - 1);
+        const auto &art = assets_.actOneQuestIcons[artIndex];
+        const auto &animation = questAnimations_[size_t(index)];
+        const bool completing = animation.phase == QuestCompletionAnimation::Phase::Playing;
+        if (completing)
+            artFrame = std::min(questCompletedFrame,
+                               int(animation.elapsed * art.count / questAnimationSeconds));
+        const auto *icon = art.frame(0, artFrame);
+        drawArt(icon, iconBounds);
+        const auto face = assets_.actOneQuestFaces[artIndex];
+        if (icon && !completing && view_.questPressed == index && record.stage && face.width > 2 && face.height > 2) {
+            const auto *inactive = art.frame(0, 26);
+            const float scaleX = iconBounds.width / icon->texture.width;
+            const float scaleY = iconBounds.height / icon->texture.height;
+            const Rectangle destination{iconBounds.x + face.x * scaleX, iconBounds.y + face.y * scaleY,
+                                        face.width * scaleX, face.height * scaleY};
+            DrawTexturePro(inactive->texture, face, destination, {0, 0}, 0, WHITE);
+            DrawTexturePro(icon->texture, {face.x + 2, face.y, face.width - 2, face.height - 2},
+                           {destination.x, destination.y + 2 * scaleY,
+                            destination.width - 2 * scaleX, destination.height - 2 * scaleY},
+                           {0, 0}, 0, WHITE);
+        }
         if (index == view_.questSelected)
             drawArt(assets_.questSockets.frame(0, 1), bounds);
     }

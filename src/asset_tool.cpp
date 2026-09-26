@@ -23,7 +23,7 @@ int main(int argc, char **argv) {
         if (argc < 3) {
             std::cout
                 << "d2x_assets <archive-or-folder> list [wildcard]\n  ... text <txt-member>\n  ... hex <member> [byte-count]\n  ... ds1-paths <ds1-member>\n  ... extract <member> <destination>\n  "
-                   "... preview <dc6-or-dcc-member> <sheet.png>\n  ... pack <manifest.txt> <new.mpq>\n"
+                   "... preview <dc6-or-dcc-member> <sheet.png> [first-frame]\n  ... pack <manifest.txt> <new.mpq>\n"
                    "  ... item <code>\n  ... drops <monster-class>\n  ... maps [Act-I-level-ID]\n"
                    "  ... presets [name-filter]\n  ... maze <level-ID> [map-seed] [difficulty:0-2]\n"
                    "  ... outdoor <level-ID> [map-seed]\n"
@@ -168,18 +168,17 @@ int main(int argc, char **argv) {
         } else if (command == "save-info" && argc == 4) {
             auto data = d2x::loadClassicData(a);
             auto snapshot = d2x::loadSave(argv[3], data);
-            std::cout << "Save format=D2S-v96 name=" << snapshot.world.player.name
-                      << " lastRegion=" << int(snapshot.world.area.region)
-                      << " gold=" << snapshot.world.player.gold
-                      << " level=" << snapshot.world.player.level
-                      << " xp=" << snapshot.world.player.experience
-                      << " unspentAttributes=" << snapshot.world.player.unspentAttributes
-                      << " allocated=" << snapshot.world.player.allocated.strength << ','
-                      << snapshot.world.player.allocated.dexterity << ','
-                      << snapshot.world.player.allocated.vitality << ','
-                      << snapshot.world.player.allocated.energy
-                      << " time=" << snapshot.world.time << " life=" << snapshot.world.player.hp
-                      << " combatRandom=" << snapshot.world.player.combatRandom
+            std::cout << "Save format=D2S-v96 name=" << snapshot.player.name
+                      << " lastRegion=" << int(snapshot.lastRegion)
+                      << " gold=" << snapshot.player.gold
+                      << " level=" << snapshot.player.level
+                      << " xp=" << snapshot.player.experience
+                      << " unspentAttributes=" << snapshot.player.unspentAttributes
+                      << " allocated=" << snapshot.player.allocated.strength << ','
+                      << snapshot.player.allocated.dexterity << ','
+                      << snapshot.player.allocated.vitality << ','
+                      << snapshot.player.allocated.energy
+                      << " life=" << snapshot.player.hp
                       << " creationRandom=" << snapshot.inventory.creationRandom << '\n';
             for (const auto &[id, item] : snapshot.inventory.items) {
                 auto location = std::get_if<d2x::ContainerLocation>(&item.location);
@@ -470,18 +469,21 @@ int main(int argc, char **argv) {
             auto b = a.read(argv[3]);
             d2x::writeFile(argv[4], b);
             std::cout << "Extracted " << b.size() << " bytes\n";
-        } else if (command == "preview" && argc == 5) {
+        } else if (command == "preview" && (argc == 5 || argc == 6)) {
             auto b = a.read(argv[3]);
             auto anim = d2x::normalize(argv[3]).ends_with(".dcc") ? d2x::decodeDcc(b) : d2x::decodeDc6(b);
             auto pal = d2x::decodePalette(a.read("data/global/palette/act1/pal.dat"));
-            int w = 1, h = 1, count = std::min(16, int(anim.frames.size()));
+            const int first = argc == 6 ? std::stoi(argv[5]) : 0;
+            if (first < 0 || first >= int(anim.frames.size()))
+                throw std::runtime_error("Preview first frame is out of range");
+            int w = 1, h = 1, count = std::min(16, int(anim.frames.size()) - first);
             for (int i = 0; i < count; i++) {
-                w = std::max(w, anim.frames[i].width);
-                h = std::max(h, anim.frames[i].height);
+                w = std::max(w, anim.frames[first + i].width);
+                h = std::max(h, anim.frames[first + i].height);
             }
             Image img = GenImageColor((w + 8) * 4, (h + 8) * ((count + 3) / 4), {32, 32, 32, 255});
             for (int i = 0; i < count; i++) {
-                auto &f = anim.frames[i];
+                auto &f = anim.frames[first + i];
                 for (int y = 0; y < f.height; y++)
                     for (int x = 0; x < f.width; x++) {
                         auto p = pal[f.pixels[y * f.width + x]];

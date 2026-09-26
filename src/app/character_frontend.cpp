@@ -97,9 +97,9 @@ void centered(const UiPainter &text, const std::string &caption, int y, int size
               Color color = labelColor) {
     text.label(caption, (screenWidth - text.measure(caption, size)) / 2, y, size, color);
 }
-GpuAnimation loadPortrait(Graphics &graphics, const ClassicData &content, const SessionSnapshot &save) {
+GpuAnimation loadPortrait(Graphics &graphics, const ClassicData &content, const CharacterSaveData &save) {
     const auto character = std::find_if(content.characters.begin(), content.characters.end(), [&](const auto &entry) {
-        return entry.name == save.world.player.characterClass;
+        return entry.name == save.player.characterClass;
     });
     if (character == content.characters.end() || content.armorTypes.empty())
         throw std::runtime_error("Character portrait definition unavailable");
@@ -123,7 +123,7 @@ GpuAnimation loadPortrait(Graphics &graphics, const ClassicData &content, const 
     }
     std::string weapon = "hth";
     std::vector<std::string> weaponClasses;
-    const auto weaponSet = save.world.player.weaponSet;
+    const auto weaponSet = save.player.weaponSet;
     for (bool left : {false, true}) {
         const auto *item = equipped(weaponHandSlot(left, weaponSet));
         if (!item || item->appearance.token.empty()) continue;
@@ -158,7 +158,7 @@ std::vector<Slot> listCharacters(std::string &warning, Graphics &graphics, const
             file.path().stem() == "quick") continue;
         try {
             const auto save = loadSave(file.path(), content);
-            const auto &player = save.world.player;
+            const auto &player = save.player;
             if (!validName(player.name) || heroIndex(player.characterClass) < 0)
                 throw std::runtime_error("Unsupported expansion character");
             slots.push_back({file.path(), player.name, player.characterClass, player.level,
@@ -259,6 +259,8 @@ std::optional<CharacterChoice> chooseCharacter(Archives &archives, RenderTexture
     const std::array<int, 7> descriptionIds{5128, 22519, 5129, 5130, 5132, 5131, 22518};
     HideCursor();
     bool awaitRelease = true;
+    int lastClickedSlot = -1;
+    double lastClickTime = 0;
     while (!WindowShouldClose()) {
         const float elapsed = std::min(GetFrameTime(), .1f);
         bool transitioning = false;
@@ -336,15 +338,26 @@ std::optional<CharacterChoice> chooseCharacter(Archives &archives, RenderTexture
             int direction = int(IsKeyPressed(KEY_PAGE_DOWN)) - int(IsKeyPressed(KEY_PAGE_UP));
             float wheel = GetMouseWheelMove();
             direction += wheel < 0 ? 1 : wheel > 0 ? -1 : 0;
-            if (direction) page = std::clamp(page + direction, 0, std::max(0, (int(slots.size()) - 1) / 8));
+            if (direction) {
+                page = std::clamp(page + direction, 0, std::max(0, (int(slots.size()) - 1) / 8));
+                lastClickedSlot = -1;
+            }
+            bool openSelected = enter || (click && hit(okayButton, mouse));
+            bool clickedSlot = false;
             for (int i = 0; i < 8; ++i) {
                 int index = page * 8 + i;
                 Rectangle bounds{37.f + (i % 2) * 272.f, 86.f + (i / 2) * 92.f, 272, 92};
                 if (index < int(slots.size()) && click && hit(bounds, mouse)) {
+                    const double now = GetTime();
+                    openSelected |= index == lastClickedSlot && now - lastClickTime < 1.25;
                     selected = index;
                     notice.clear();
+                    lastClickedSlot = index;
+                    lastClickTime = now;
+                    clickedSlot = true;
                 }
             }
+            if (click && !clickedSlot) lastClickedSlot = -1;
             if (escape || (click && hit(backButton, mouse))) return std::nullopt;
             if (click && hit(newButton, mouse)) {
                 creating = true;
@@ -354,7 +367,7 @@ std::optional<CharacterChoice> chooseCharacter(Archives &archives, RenderTexture
                 for (auto &preview : previews) { preview.pose = HeroPose::Idle; preview.elapsed = 0; }
             }
             else if (click && hit(deleteButton, mouse) && selected >= 0) confirmDelete = true;
-            else if ((enter || (click && hit(okayButton, mouse))) && selected >= 0) {
+            else if (openSelected && selected >= 0) {
                 try {
                     loadSave(slots[selected].path, content);
                     return CharacterChoice{slots[selected].path, slots[selected].characterClass,
@@ -469,7 +482,8 @@ std::optional<CharacterChoice> chooseCharacter(Archives &archives, RenderTexture
             drawButton(buttonText, cancelButton, {280, 340, 96, 32}, localized(5167));
             drawButton(buttonText, cancelButton, {420, 340, 96, 32}, localized(5166));
         }
-        sprite(cursor.frame(0, 0), {mouse.x, mouse.y});
+        if (const auto *pointer = cursor.frame(0, 0))
+            sprite(pointer, {mouse.x, mouse.y - pointer->texture.height});
         rlPopMatrix();
         EndScissorMode();
         EndTextureMode();

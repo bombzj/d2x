@@ -27,10 +27,12 @@ struct ViewState {
     bool automapNames = true;
     Vec automapOffset;
     bool characterOpen = false;
+    std::optional<bool> pointButtonPressed;
     bool hirelingOpen = false, hireListOpen = false;
     int hireListScroll = 0;
     bool questOpen = false;
     int questSelected = -1;
+    int questPressed = -1;
     bool questNotice = false;
     int questUpdated = -1;
     std::optional<unsigned> lastDenRemaining;
@@ -70,6 +72,16 @@ class SceneView {
     UiPainter painter_;
     UiPainter speechPainter_;
     ViewState view_;
+    struct QuestCompletionAnimation {
+        enum class Phase { Idle, Pending, Playing };
+        Phase phase = Phase::Idle;
+        bool completed = false;
+        float elapsed = 0;
+    };
+    std::array<QuestCompletionAnimation, size_t(ActOneQuest::Count)> questAnimations_{};
+    void resetQuestAnimations();
+    void queueQuestAnimation(ActOneQuest quest, uint32_t stage);
+    void advanceQuestAnimations(float dt);
     std::map<EntityId, float> landingAge_;
     std::map<EntityId, Vec> monsterPositions_, monsterLooks_;
     std::map<EntityId, float> nextMonsterFootstep_, nextMonsterNeutral_;

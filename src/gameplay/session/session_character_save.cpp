@@ -1,4 +1,5 @@
 #include "gameplay/session/session.hpp"
+#include "content/equipment_modifiers.hpp"
 #include <algorithm>
 #include <stdexcept>
 #include <variant>
@@ -11,10 +12,38 @@ void requireSave(bool condition, const char *reason) {
 }
 } // namespace
 
-SessionSnapshot GameSession::prepareCharacterRestore(SessionSnapshot character) const {
-    if (!character.contentFingerprint && !character.world.player.nativeSaveSections.empty()) {
-        character.contentFingerprint = contentFingerprint_;
-        for (const auto &region : regions_) character.maps.push_back(region.definition.mapPath);
+CharacterSaveData GameSession::characterSave() const {
+    CharacterSaveData result;
+    result.player = state().player;
+    result.mapSeed = state().mapSeed;
+    result.difficulty = state().population.difficulty;
+    result.lastRegion = state().area.region;
+    result.waypoints = state().waypoints;
+    result.containers = playerContainers_;
+    for (auto id : {playerContainers_.backpack, playerContainers_.belt, playerContainers_.stash,
+                    playerContainers_.beltEquipment, playerContainers_.equipment,
+                    playerContainers_.cube, playerContainers_.hirelingEquipment})
+        if (id) result.inventory.containers.emplace(id, inventory_.state().containers.at(id));
+    for (const auto &[id, item] : inventory_.state().items)
+        if (std::holds_alternative<ContainerLocation>(item.location))
+            result.inventory.items.emplace(id, item);
+    const auto &player = result.player;
+    const auto base = deriveCharacterAttributes(characterDefinition_, player.level, player.allocated);
+    const EquipmentActor actor{characterDefinition_.code, base.strength, base.dexterity,
+                               player.level, base.blockFactor, player.weaponSet};
+    const auto modifiers = resolveEquipmentModifiers(content_, inventory_, playerContainers_, actor);
+    const auto limits = deriveCharacterAttributes(characterDefinition_, player.level, player.allocated, modifiers);
+    result.player.hp = std::min(player.hp, float(limits.maxLife));
+    result.player.mana = std::min(player.mana, float(limits.maxMana));
+    result.player.stamina = std::min(player.stamina, float(limits.maxStamina));
+    inventory_.validateSnapshot(result.inventory, result.containers, player.id);
+    validateItemProperties(result);
+    return result;
+}
+
+CharacterSaveData GameSession::prepareCharacterRestore(CharacterSaveData character) const {
+    requireSave(!character.player.nativeSaveSections.empty(), "restore requires decoded D2S character data");
+    {
         uint64_t next = ids_.cursor();
         std::map<EntityId, EntityId> containers;
         auto remap = [&](EntityId &id) {
@@ -44,23 +73,17 @@ SessionSnapshot GameSession::prepareCharacterRestore(SessionSnapshot character) 
             item.id = EntityId{next++};
             inventory.items.emplace(item.id, std::move(item));
         }
-        character.world.player.id = state().player.id;
+        character.player.id = state().player.id;
         character.nextEntityId = next;
         character.inventory = std::move(inventory);
     }
-    requireSave(character.contentFingerprint == contentFingerprint_,
-                "MPQ content or gameplay rules differ");
-    requireSave(character.maps.size() == regions_.size(), "region count");
-    for (size_t i = 0; i < regions_.size(); ++i)
-        requireSave(character.maps[i] == regions_[i].definition.mapPath,
-                    "map configuration differs; check --level/--variant/--preset");
     requireSave(std::all_of(character.inventory.items.begin(), character.inventory.items.end(),
                             [](const auto &entry) {
                                 return std::holds_alternative<ContainerLocation>(entry.second.location);
                             }), "ground item in character save");
 
     auto lastRegion = std::find_if(regions_.begin(), regions_.end(),
-        [&](const Region &region) { return region.definition.id == character.world.area.region; });
+        [&](const Region &region) { return region.definition.id == character.lastRegion; });
     requireSave(lastRegion != regions_.end(), "last visited region");
     auto level = worldContent_.levels().find(int(lastRegion->definition.id));
     int act = level == worldContent_.levels().end() ? 0 : level->second.act;
@@ -71,40 +94,16 @@ SessionSnapshot GameSession::prepareCharacterRestore(SessionSnapshot character) 
     });
     requireSave(town != regions_.end(), "act town is unavailable");
 
-    // This snapshot is never written to disk. It supplies the complete value
-    // model expected by the existing semantic validator and atomic restore.
-    SessionSnapshot fresh = snapshot();
-    fresh.contentFingerprint = character.contentFingerprint;
-    fresh.nextEntityId = std::max(fresh.nextEntityId, character.nextEntityId);
-    fresh.maps = std::move(character.maps);
-    fresh.world.mapSeed = character.world.mapSeed;
-    fresh.world.population.difficulty = character.world.population.difficulty;
-    fresh.world.time = character.world.time;
-    fresh.world.waypoints = std::move(character.world.waypoints);
-    fresh.world.message.clear();
-    fresh.world.portal = {};
-    fresh.world.player = std::move(character.world.player);
-    fresh.world.player.pos = town->map.spawn;
-    fresh.world.player.previous = town->map.spawn;
-    if (fresh.world.player.hireling.sourceRow >= 0) {
-        fresh.world.player.hireling.pos = town->map.spawn;
-        fresh.world.player.hireling.route.clear();
-        fresh.world.player.hireling.moving = false;
+    character.player.pos = town->map.spawn;
+    character.player.previous = town->map.spawn;
+    if (character.player.hireling.sourceRow >= 0) {
+        character.player.hireling.pos = town->map.spawn;
+        character.player.hireling.route.clear();
+        character.player.hireling.moving = false;
     }
-    fresh.world.player.dead = false;
-    fresh.world.player.hp = std::max(1.f, fresh.world.player.hp);
-    fresh.world.area = {};
-    fresh.world.area.region = town->definition.id;
-    fresh.world.area.initialized = true;
-    for (size_t i = 0; i < regions_.size(); ++i) {
-        fresh.inactiveAreas[i] = {};
-        fresh.inactiveAreas[i].region = regions_[i].definition.id;
-    }
-    fresh.inventory = std::move(character.inventory);
-    fresh.containers = character.containers;
-    fresh.loot = {loot_.randomState(), {}, {}};
-    fresh.npcMotions = initialNpcMotions_;
-    fresh.soldVendorOffers.clear();
-    return fresh;
+    character.player.dead = false;
+    character.player.hp = std::max(1.f, character.player.hp);
+    character.lastRegion = town->definition.id;
+    return character;
 }
 } // namespace d2x

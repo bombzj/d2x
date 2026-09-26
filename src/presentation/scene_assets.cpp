@@ -131,9 +131,29 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
     questBackground = uiGraphics_.single("data/global/ui/menu/questbackground.dc6");
     questSockets = uiGraphics_.single("data/global/ui/menu/questsockets.dc6");
     questTabs = uiGraphics_.single("data/global/ui/menu/expquesttabs.dc6");
-    for (int quest = 0; quest < 6; ++quest)
-        actOneQuestIcons[size_t(quest)] = uiGraphics_.single(
-            "data/global/ui/menu/a1q" + std::to_string(quest + 1) + ".dc6");
+    for (size_t quest = 0; quest < actOneQuestIcons.size(); ++quest) {
+        const auto path = "data/global/ui/menu/a1q" + std::to_string(quest + 1) + ".dc6";
+        actOneQuestIcons[quest] = uiGraphics_.single(path);
+        const auto *animation = uiGraphics_.animation(path);
+        if (!animation || animation->frames.size() < 27) continue;
+        const auto &active = animation->frames[25];
+        const auto &inactive = animation->frames[26];
+        if (active.width != inactive.width || active.height != inactive.height)
+            throw std::runtime_error("Quest status frames have different dimensions");
+        int left = active.width, top = active.height, right = -1, bottom = -1;
+        for (int row = 0; row < active.height; ++row)
+            for (int column = 0; column < active.width; ++column) {
+                const auto pixel = size_t(row) * active.width + column;
+                if (active.pixels[pixel] == inactive.pixels[pixel]) continue;
+                left = std::min(left, column);
+                top = std::min(top, row);
+                right = std::max(right, column);
+                bottom = std::max(bottom, row);
+            }
+        if (right >= left && bottom >= top)
+            actOneQuestFaces[quest] = {float(left), float(top), float(right - left + 1),
+                                      float(bottom - top + 1)};
+    }
     questClose = unitsGraphics_.single("data/global/ui/panel/buysellbtn.dc6");
     questReplay = unitsGraphics_.single("data/global/ui/menu/questlast.dc6");
     goldCoin = unitsGraphics_.single("data/global/ui/panel/goldcoinbtn.dc6");

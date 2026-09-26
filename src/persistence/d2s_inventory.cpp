@@ -64,12 +64,12 @@ std::vector<D2sStat> extraProperties(const ClassicData &content, const ItemInsta
     return result;
 }
 } // namespace
-void initializeD2sInventory(SessionSnapshot &snapshot, const ClassicData &content) {
-    snapshot.world.player.id = EntityId{1};
+void initializeD2sInventory(CharacterSaveData &snapshot, const ClassicData &content) {
+    snapshot.player.id = EntityId{1};
     snapshot.nextEntityId = 2;
     auto add = [&](EntityId &id, ContainerKind kind, int width, int height) {
         id = EntityId{snapshot.nextEntityId++};
-        snapshot.inventory.containers.emplace(id, ContainerState{id, {snapshot.world.player.id, kind, width, height}});
+        snapshot.inventory.containers.emplace(id, ContainerState{id, {snapshot.player.id, kind, width, height}});
     };
     add(snapshot.containers.backpack, ContainerKind::Backpack, 10, 4);
     add(snapshot.containers.belt, ContainerKind::Belt, 4, 1);
@@ -79,7 +79,7 @@ void initializeD2sInventory(SessionSnapshot &snapshot, const ClassicData &conten
     add(snapshot.containers.hirelingEquipment, ContainerKind::Equipment, int(EquipmentSlot::Count), 1);
     add(snapshot.containers.cube, ContainerKind::Cube, content.cubeLayout.columns, content.cubeLayout.rows);
 }
-void importD2sItem(SessionSnapshot &snapshot, const D2sItem &source, const ClassicData &content, bool hireling) {
+void importD2sItem(CharacterSaveData &snapshot, const D2sItem &source, const ClassicData &content, bool hireling) {
     const auto *definition = content.items.find(source.code);
     require(definition != nullptr && source.quality > 0 && source.quality < qualities.size(), "item identity");
     ItemInstance item;
@@ -166,7 +166,7 @@ void importD2sItem(SessionSnapshot &snapshot, const D2sItem &source, const Class
     item.location = location;
     snapshot.inventory.items.emplace(item.id, std::move(item));
 }
-D2sItem exportD2sItem(const SessionSnapshot &snapshot, const ItemInstance &item, const ClassicData &content) {
+D2sItem exportD2sItem(const CharacterSaveData &snapshot, const ItemInstance &item, const ClassicData &content) {
     const auto *definition = content.items.find(item.definition);
     require(definition != nullptr, "unknown base item");
     D2sItem output;
@@ -179,7 +179,7 @@ D2sItem exportD2sItem(const SessionSnapshot &snapshot, const ItemInstance &item,
     output.format = item.nativeFormat;
     output.hasGraphic = item.nativeHasGraphic;
     output.graphic = item.nativeGraphic;
-    output.questDifficulty = item.nativeProperties ? item.nativeQuestDifficulty : unsigned(snapshot.world.population.difficulty);
+    output.questDifficulty = item.nativeProperties ? item.nativeQuestDifficulty : unsigned(snapshot.difficulty);
     if (content.tables.at(definition->base.sourceTable).number(definition->base.sourceRow, "compactsave").value_or(0))
         output.flags |= 0x00200000;
     output.quality = unsigned(std::find(qualities.begin() + 1, qualities.end(), item.quality) - qualities.begin());
@@ -207,7 +207,7 @@ D2sItem exportD2sItem(const SessionSnapshot &snapshot, const ItemInstance &item,
         const auto extras = extraProperties(content, item);
         auto identified = item;
         identified.identified = true;
-        const auto resolved = resolveItemStats(content, identified, snapshot.world.player.level);
+        const auto resolved = resolveItemStats(content, identified, snapshot.player.level);
         std::map<std::pair<int, int>, int64_t> stats;
         for (const auto &stat : resolved) {
             auto found = std::find_if(content.itemStats.begin(), content.itemStats.end(),
@@ -230,7 +230,7 @@ D2sItem exportD2sItem(const SessionSnapshot &snapshot, const ItemInstance &item,
                         (!bonus.property.directRoll || bonus.property.minimum == bonus.property.maximum),
                         "random set bonus has no saved roll");
                     const auto resolved = resolvePropertyStats(content, bonus.property,
-                        bonus.property.minimum.value_or(0), snapshot.world.player.level);
+                        bonus.property.minimum.value_or(0), snapshot.player.level);
                     require(!resolved.empty(), "unsupported set bonus " + bonus.property.code);
                     auto &list = output.setStats[size_t(bonus.pieces - 2)];
                     for (const auto &stat : resolved) {

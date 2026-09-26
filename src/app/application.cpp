@@ -160,7 +160,7 @@ int runGame(int argc, char **argv) {
     for (;;) {
         const bool returnToCharacters = [&]() {
             beginLoading();
-            std::optional<SessionSnapshot> restored;
+            std::optional<CharacterSaveData> restored;
             std::optional<CharacterChoice> character;
             std::optional<RenderTarget> frontendTarget;
             const bool frontend = !options.directGame;
@@ -178,16 +178,16 @@ int runGame(int argc, char **argv) {
                 options.load = character->path.string();
             if (!options.load.empty()) {
                 restored = loadSave(options.load, loadClassicData(archives));
-                options.world.seed = restored->world.mapSeed;
-                options.population.difficulty = restored->world.population.difficulty;
+                options.world.seed = restored->mapSeed;
+                options.population.difficulty = restored->difficulty;
             }
             GameSession session(archives, options.world, options.region, options.lootSeed, options.population,
                                 character                        ? character->characterClass
-                                : restored                       ? restored->world.player.characterClass
+                                : restored                       ? restored->player.characterClass
                                 : options.characterClass.empty() ? "Barbarian"
                                                                  : options.characterClass,
                                 character  ? character->name
-                                : restored ? restored->world.player.name
+                                : restored ? restored->player.name
                                            : "Hero");
             std::cout << "MPQ data: " << session.content().profile << ", "
                       << session.inventory().catalog().entries().size() << " items, "
@@ -204,7 +204,7 @@ int runGame(int argc, char **argv) {
                                          : !options.load.empty() ? options.load
                                                                  : "saves/quick.d2s";
             if (character && character->created)
-                writeSave(savePath, session.snapshot(), session.content());
+                writeSave(savePath, session.characterSave(), session.content());
             frontendTarget.reset();
             SceneView view(archives, session);
             view.ui().miniPanelOpen = preferences.miniPanelOpen;
@@ -247,8 +247,27 @@ int runGame(int argc, char **argv) {
             float accumulator = 0;
             int frames = 0;
             bool returningToCharacters = false;
+            const bool ownsSave = character.has_value() || !options.save.empty() || !options.load.empty();
+            auto saveBeforeExit = [&]() {
+                try {
+                    if (session.hasPendingCommands()) {
+                        session.tick(0);
+                        view.advance(0);
+                    }
+                    if (ownsSave) {
+                        writeSave(savePath, session.characterSave(), session.content());
+                        std::cout << "Saved " << savePath << '\n';
+                    }
+                    return true;
+                } catch (const std::exception &error) {
+                    std::cerr << error.what() << '\n';
+                    view.notice(std::string("Save failed; game kept open: ") + error.what(), true);
+                    return false;
+                }
+            };
             std::optional<FrameInput> debugInput;
-            while (!WindowShouldClose()) {
+            while (true) {
+                bool exitRequested = WindowShouldClose();
                 debugPipe.poll([&](const std::string &request) {
                     return debugCommand(
                         request, session, view, debugPaused, debugQuit, savePath,
@@ -261,8 +280,11 @@ int runGame(int argc, char **argv) {
                             debugInput = std::move(input);
                         });
                 });
-                if (debugQuit)
-                    break;
+                exitRequested |= debugQuit;
+                if (exitRequested) {
+                    if (saveBeforeExit()) break;
+                    debugQuit = false;
+                }
                 float dt = std::min(GetFrameTime(), .1f);
                 auto viewport = currentViewport();
                 auto input = pollInput(viewport);
@@ -281,7 +303,7 @@ int runGame(int argc, char **argv) {
                             accumulator = 0;
                             view.notice("Character loaded in town; monsters have reset.");
                         } else {
-                            writeSave(savePath, session.snapshot(), session.content());
+                            writeSave(savePath, session.characterSave(), session.content());
                             view.notice("Character saved.");
                         }
                         std::cout << (input.load ? "Loaded " : "Saved ") << savePath << '\n';
@@ -290,14 +312,9 @@ int runGame(int argc, char **argv) {
                         view.notice(error.what(), true);
                     }
                 } else if (!controller.handle(input, dt)) {
-                    try {
-                        if (character || !options.save.empty() || !options.load.empty())
-                            writeSave(savePath, session.snapshot(), session.content());
+                    if (saveBeforeExit()) {
                         returningToCharacters = true;
                         break;
-                    } catch (const std::exception &error) {
-                        std::cerr << error.what() << '\n';
-                        view.notice(std::string("Cannot return to characters: ") + error.what(), true);
                     }
                 }
                 // Modal windows suspend world time, but their commands still have to
@@ -329,18 +346,14 @@ int runGame(int argc, char **argv) {
                 EndDrawing();
                 if (input.screenshot)
                     target.save("artifacts/d2x-capture.png");
-                if (options.frameLimit > 0 && ++frames >= options.frameLimit)
-                    break;
+                if (options.frameLimit > 0 && ++frames >= options.frameLimit) {
+                    if (saveBeforeExit()) break;
+                    options.frameLimit = 0;
+                }
             }
             syncPreferences(true);
             if (!options.screenshot.empty())
                 target.save(options.screenshot);
-            if (!returningToCharacters && !options.save.empty()) {
-                writeSave(options.save, session.snapshot(), session.content());
-                std::cout << "Saved " << options.save << '\n';
-            }
-            if (!returningToCharacters && character)
-                writeSave(savePath, session.snapshot(), session.content());
             if (!options.pack.empty())
                 view.collectMapVariants(archives);
             std::filesystem::create_directories("artifacts");

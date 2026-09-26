@@ -4,6 +4,7 @@ SoundBank::SoundBank(Archives &a) {
     const std::pair<const char *, const char *> files[] = {
         {"drink", "item/potiondrink.wav"},
         {"belt", "item/belt.wav"},
+        {"quest_done", "cursor/questdone.wav"},
         {"0", "skill/sorceress/fireball1.wav"},
         {"1", "skill/sorceress/novaice.wav"},
         {"2", "skill/barbarian/circle1.wav"},

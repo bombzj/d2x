@@ -11,7 +11,7 @@
 #include "gameplay/quest/forgotten_tower.hpp"
 #include "gameplay/quest/tools_of_trade.hpp"
 #include "gameplay/quest/sisters_to_slaughter.hpp"
-#include "gameplay/session/session_snapshot.hpp"
+#include "gameplay/session/character_save.hpp"
 #include "gameplay/simulation/simulation.hpp"
 #include "world/population.hpp"
 #include "world/region.hpp"
@@ -34,6 +34,14 @@ struct HirelingCombatStats {
     CombatModifiers combat;
 };
 class GameSession {
+    struct NpcMotionState {
+        EntityId id;
+        Vec position, look;
+        std::deque<Vec> route;
+        float wait = 0;
+        int target = -1;
+        uint64_t random = 0;
+    };
     EntityIds ids_;
     ClassicData content_;
     CharacterDefinition characterDefinition_;
@@ -171,9 +179,9 @@ class GameSession {
     void beginPickup(ItemHandle item);
     void updatePickup();
     void cancelPickup();
-    int validateSnapshot(const SessionSnapshot &snapshot) const;
-    SessionSnapshot prepareCharacterRestore(SessionSnapshot character) const;
-    void validateItemProperties(const SessionSnapshot &snapshot) const;
+    int validateCharacterRestore(const CharacterSaveData &data) const;
+    CharacterSaveData prepareCharacterRestore(CharacterSaveData character) const;
+    void validateItemProperties(const CharacterSaveData &snapshot) const;
     void spawnDebugMonster(const DebugSpawnMonster &command);
     void damageDebugMonster(const DebugDamageMonster &command);
     std::optional<MonsterCombatProfile> resolvedMonsterCombat(
@@ -215,9 +223,10 @@ class GameSession {
         return content_.experienceByClass.at(state().player.characterClass);
     }
     uint64_t maximumExperience() const { return experienceThresholds().back(); }
-    SessionSnapshot snapshot() const;
+    CharacterSaveData characterSave() const;
+    LootState lootState() const { return loot_.snapshot(); }
     // Validate completely before replacing live state; a rejected load changes nothing.
-    void restore(SessionSnapshot snapshot);
+    void restore(CharacterSaveData snapshot);
     const InventoryService &inventory() const { return inventory_; }
     const EquipmentStats &equipmentStats() const { return simulation_.equipmentStats_; }
     const CharacterAttributes &characterStats() const { return simulation_.characterStats_; }

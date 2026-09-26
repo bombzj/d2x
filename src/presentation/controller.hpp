@@ -33,6 +33,8 @@ class SceneController {
         movement_ = {};
         temporaryRun_ = false;
         skillGesture_ = false;
+        view_.ui().pointButtonPressed.reset();
+        view_.ui().questPressed = -1;
         channelInputSkill_ = -1;
         leftCombatTarget_ = rightCombatTarget_ = {};
         leftTargetSkill_.reset();

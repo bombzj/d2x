@@ -28,11 +28,12 @@
 - Esc 先关闭面板／对话，无面板时返回角色列表：角色来自列表、`--load` 或指定了 `--save` 时先保存到当前存档路径，失败则留在原会话。`--class` 且没有 `--save` 的临时角色不自动落盘。返回列表后清除上一局的地图／存档启动选项，不把新选择的角色写回上一角色文件；关闭窗口／调试 quit 与返回列表分开处理。
 - 普通图形启动先选择或创建资料片角色，所选角色在正常退出时自动保存。`--load <路径>` 直接启动载入；`--save <路径>` 设置存档路径，并在正常退出时保存。只指定 `--load` 时沿用该路径；命令行直进游戏而未指定 `--save` 不自动保存。
 - `--class <MPQ 职业名>` 直接构造新的一级角色，不经过前端、不读取或自动创建 D2S；与 `--load` 互斥。测试场景可通过 `Play.cmd -Class Sorceress` 新建，或 `Play.cmd -Load <输入.d2s> -Save <输出.d2s>` 从已有场景开始并保留原档；只有显式保存才把临时角色写入磁盘。
-- 覆盖前保留上一份 `<路径>.bak`。快速载入若地图种子或难度与当前进程不同会拒绝，改用 `--load` 重启。
+- 覆盖前保留上一份 `<路径>.bak`。快速载入若地图种子或难度与当前进程不同会拒绝，改用 `--load` 重启。窗口关闭、调试 quit 和帧数退出均先保存有归属的角色；失败则显示错误并保留当前会话，不以抛出异常销毁未保存角色。系统强制终止、断电和进程崩溃不在此保护范围内。
 
 ## 编码和校验
 
-- `persistence/d2s_codec.cpp` 组装文件，`d2s_header/fixed_sections/stats/skills/items/inventory` 负责原布局与映射；`SessionSnapshot` 只作为内存恢复边界。会话重建内部 ID、按当前 MPQ 完整校验，再一次性提交。
+- `gameplay/session/character_save.hpp::CharacterSaveData` 是角色存档值边界，不包含区域怪物、弹体、NPC 运动、地面掉落和死亡结算。`characterSave()` 只收集角色和容器物品；`persistence/d2s_codec.cpp` 与 `d2s_header/fixed_sections/stats/skills/items/inventory` 逐项写入原字段，角色内存中的短时动作不被序列化。`session_restore.cpp` 校验新角色与装备、重建内部 ID 和空白新局，再提交状态。
+- 原 `GameSession::snapshot()` 和整局世界校验已删除：现有测试及联机无调用，普通沉沦魔见尸记忆被误判为复活目标曾阻止保存。怪物 AI、商店售出、NPC 路径及战斗状态均不得作为角色保存的前置条件。库存值校验与 `LootState` 的小型状态接口仍有实际用途，不与整局快照混用。
 - `AA55AA55`、原版本 96、长度、原循环移位累加校验和；小端低位优先位流，属性位宽来自 `ItemStatCost`。文件上限 16 MiB。保存先在内存编码并解码验证，再使用锁目录、同目录临时文件和备份原子替换。
 - `CharStats/Experience/Skills/inventory` 及物品原表校验成长、技能、装备、箱子尺寸和属性；恢复时重算装备与角色派生值。磁盘不携带或检查本项目版本指纹。
 

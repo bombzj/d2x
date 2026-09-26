@@ -40,7 +40,7 @@
 ## 物品与存档
 
 - 当前角色存档格式 v91，规则 d2x-session-rules-v126-npc-interact；拒绝 v1–v90 与不同内容／规则指纹。职业成长、经验、技能等级／前置、F1–F8 绑定、初始物品授予技能和箱子尺寸均按运行时 MPQ 校验。只编码角色当前资源、持久成长、钱包、私人箱金币、书页数、方块内容与其他容器内物品、传送点、地图配置、第一幕任务进度与佣兵身份／等级／经验／生命及装备；临时战斗状态及本局怪物状态不编码。恢复时重新计算装备、移动和光照等角色派生属性。
-- 调试 Travel 不修改解锁记录；普通 WaypointTravel 重新校验源点与目标，不相信 UI 已禁用按钮。传送点 NU／OP（Operating）／ON（Opened）的帧数、速率、循环和起帧来自 Objects.FrameCnt／FrameDelta／CycleAnim／Start；当前难度与角色都固定在同一 SessionSnapshot 中，不提供跨难度迁移。
+- 调试 Travel 不修改解锁记录；普通 WaypointTravel 重新校验源点与目标，不相信 UI 已禁用按钮。传送点 NU／OP（Operating）／ON（Opened）的帧数、速率、循环和起帧来自 Objects.FrameCnt／FrameDelta／CycleAnim／Start；当前难度与角色记录在 `CharacterSaveData` 中，快速读档不提供跨难度迁移。
 - 野外传送点固定分组通过 MapPiece.substitutionGroup 裁剪原图层和分组内部原对象，保持每格 DT1 资源作用域；非完整通用 LvlSub。回城蓝门使用原 TP 资源，不写入静态地图对象列表，不分配临时地图对象 ID。
 
 - LoD 掉落数据含 852 个原表 TC 和 160 个 ItemTypes 自动类别；怪物 TC 引用在生成类别后重新按名称解析，不把运行时数组下标存入存档。自动类别使用原 weapons/armor/misc 行顺序和主类型 rarity，排除任务物品及不允许生成的条目，投掷药剂不混入其他类别。
