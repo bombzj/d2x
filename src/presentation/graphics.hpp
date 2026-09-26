@@ -34,9 +34,9 @@ class Graphics {
     ~Graphics();
     Graphics(const Graphics &) = delete;
     Graphics &operator=(const Graphics &) = delete;
-    Sprite upload(const IndexedFrame &frame);
+    Sprite upload(const IndexedFrame &frame, bool translucent = false);
     const Animation *animation(const std::string &path);
-    GpuAnimation single(const std::string &path);
+    GpuAnimation single(const std::string &path, bool translucent = false);
     GpuAnimation composite(const std::string &type, const std::string &token, const std::string &mode,
                            const std::string &weapon,
                            const std::array<const char *, 16> *equipment = nullptr,

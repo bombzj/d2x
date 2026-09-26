@@ -246,11 +246,15 @@ ClassicData loadClassicData(Archives &archives) {
         for (size_t index = 0; index < data.staticFieldMinimum.size(); ++index) {
             auto value = difficulties.number(index, "StaticFieldMin");
             auto penalty = difficulties.number(index, "ResistPenalty");
+            auto freezeDivisor = difficulties.number(index, "MonsterFreezeDivisor");
             if (!value || *value < 0 || *value > 100)
                 throw std::runtime_error("Invalid original Static Field difficulty limit");
             if (!penalty || *penalty < -200 || *penalty > 100)
                 throw std::runtime_error("Invalid original resistance difficulty penalty");
+            if (!freezeDivisor || *freezeDivisor <= 0)
+                throw std::runtime_error("Invalid original monster freeze divisor");
             data.staticFieldMinimum[index] = *value;
+            data.monsterFreezeDivisor[index] = *freezeDivisor;
             data.resistancePenalty[index] = *penalty;
         }
     }

@@ -6,13 +6,17 @@
 namespace d2x {
 void Simulation::damageEnemy(Enemy &enemy, float amount, EntityId source, float chill,
                              bool ignoreActivation, MonsterDamageType type, bool alreadyMitigated,
-                             bool playerKillEffects) {
+                             bool playerKillEffects, bool freezeHit) {
     if (enemy.hp <= 0 || (!ignoreActivation && !active(enemy.pos)))
         return;
     if (!ignoreActivation && !alreadyMitigated && monsterResistance_)
         if (auto resistance = monsterResistance_(enemy, state_.area.region, type)) {
-            amount = mitigateMonsterDamage(amount, *resistance);
-            if (type == MonsterDamageType::Cold && *resistance >= 100) chill = 0;
+            const int pierce = type == MonsterDamageType::Cold && source == state_.player.id &&
+                               *resistance < 100 && coldPierce_ ? coldPierce_() : 0;
+            const int effectiveResistance = *resistance - pierce;
+            amount = mitigateMonsterDamage(amount, effectiveResistance);
+            if (type == MonsterDamageType::Cold)
+                chill *= float(std::clamp(100 - effectiveResistance, 0, 200)) / 100.f;
         }
     if (amount <= 0) return;
     enemy.hp = std::max(0.f, enemy.hp - amount);
@@ -25,9 +29,21 @@ void Simulation::damageEnemy(Enemy &enemy, float amount, EntityId source, float 
             enemy.aiRetaliate = true;
     if (enemy.skill2Remaining > 0)
         enemy.skill2Remaining = enemy.skill2Duration = 0;
-    enemy.chill = std::max(enemy.chill, chill);
+    if (freezeHit && monsterFreezable_) {
+        if (auto freezable = monsterFreezable_(enemy)) {
+            if (*freezable && chill > 0 && enemy.hp > 0) {
+                enemy.freeze = std::max(enemy.freeze, chill / monsterFreezeDivisor_);
+                enemy.route.clear();
+            } else if (!*freezable) {
+                enemy.chill = std::max(enemy.chill, chill);
+            }
+        }
+    } else {
+        enemy.chill = std::max(enemy.chill, chill);
+    }
     if (enemy.hp > 0) emit(EnemyHit{enemy.id, enemy.kind});
     if (enemy.hp == 0) {
+        enemy.freeze = 0;
         enemy.resurrectionRemaining = enemy.resurrectionDuration = 0;
         if (playerKillEffects && source == state_.player.id && !state_.player.dead) {
             auto &player = state_.player;
@@ -130,6 +146,8 @@ void Simulation::updateMissiles(float dt) {
             continue;
         }
         if (!m.physical && m.missileId >= 0) {
+            const auto type = m.skill == Skill::Nova ? MonsterDamageType::Lightning :
+                m.chill > 0 ? MonsterDamageType::Cold : MonsterDamageType::Fire;
             const bool wall = !grid_->segment(m.pos, next);
             if (wall) {
                 float clear = 0.f, blocked = 1.f;
@@ -139,6 +157,24 @@ void Simulation::updateMissiles(float dt) {
                     else blocked = middle;
                 }
                 next = m.pos + (next - m.pos) * clear;
+            }
+            if (m.skill == Skill::Nova) {
+                const Vec motion = next - m.pos;
+                const float lengthSquared = motion.x * motion.x + motion.y * motion.y;
+                for (auto &enemy : area.enemies) {
+                    if (enemy.hp <= 0 || !active(enemy.pos)) continue;
+                    const Vec offset = enemy.pos - m.pos;
+                    const float projection = lengthSquared > 0 ?
+                        std::clamp((offset.x * motion.x + offset.y * motion.y) / lengthSquared, 0.f, 1.f) : 0.f;
+                    const Vec closest = m.pos + motion * projection;
+                    if ((enemy.pos - closest).length() >= 1.2f ||
+                        state_.time < area.novaHitUntil[enemy.id]) continue;
+                    area.novaHitUntil[enemy.id] = state_.time + m.nextHitDelay;
+                    damageEnemy(enemy, m.damage, m.owner, 0, false, MonsterDamageType::Lightning);
+                }
+                m.pos = next;
+                m.remaining = wall ? 0 : m.remaining - dt;
+                continue;
             }
             Enemy *struck = nullptr;
             float first = 2.f;
@@ -160,12 +196,11 @@ void Simulation::updateMissiles(float dt) {
             if (wall || struck || m.remaining <= 0) {
                 m.remaining = 0;
                 if (m.radius > 0) {
-                    damage(m.pos, m.radius, m.damage, m.owner, m.chill,
-                           m.chill > 0 ? MonsterDamageType::Cold : MonsterDamageType::Fire);
+                    damage(m.pos, m.radius, m.damage, m.owner, m.chill, type);
                     area.effects.push_back({m.pos, m.skill, 0, .55f});
                 } else if (struck)
-                    damageEnemy(*struck, m.damage, m.owner, m.chill, false,
-                                m.chill > 0 ? MonsterDamageType::Cold : MonsterDamageType::Fire);
+                    damageEnemy(*struck, m.damage, m.owner, m.chill, false, type,
+                                false, true, m.skill == Skill::IceBlast);
             }
             continue;
         }
@@ -222,5 +257,6 @@ void Simulation::updateMissiles(float dt) {
         }
     }
     std::erase_if(area.missiles, [](const Missile &m) { return m.remaining <= 0; });
+    std::erase_if(area.novaHitUntil, [this](const auto &entry) { return entry.second <= state_.time; });
 }
 } // namespace d2x

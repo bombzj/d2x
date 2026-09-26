@@ -196,7 +196,7 @@ void SceneView::advance(float dt) {
                         assets_.audio.play(sound->second.footstep);
                         next = now + sound->second.footstepInterval;
                     }
-                } else if (enemy.attack <= 0 && enemy.stun <= 0 &&
+                } else if (enemy.attack <= 0 && enemy.stun <= 0 && enemy.freeze <= 0 &&
                            sound->second.neutralInterval > 0) {
                     auto &next = nextMonsterNeutral_[enemy.id];
                     if (now >= next) {

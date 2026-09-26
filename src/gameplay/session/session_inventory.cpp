@@ -38,6 +38,9 @@ void GameSession::refreshCharacter(bool fillGains) {
     mergeCharacterModifiers(modifiers, effects);
     auto current = deriveCharacterAttributes(characterDefinition_, player.level, player.allocated,
                                              modifiers, simulation_.resistancePenalty_);
+    EquipmentActor actor{characterDefinition_.code, current.strength, current.dexterity, player.level,
+                         current.blockFactor, player.weaponSet};
+    applyWarmth(current, player, characterDefinition_, inventory_, playerContainers_, actor);
     if (fillGains) {
         if (player.hp > 0) player.hp += current.maxLife - previous.maxLife;
         player.mana += current.maxMana - previous.maxMana;
@@ -47,8 +50,6 @@ void GameSession::refreshCharacter(bool fillGains) {
     player.mana = std::clamp(player.mana, 0.f, float(current.maxMana));
     player.stamina = std::clamp(player.stamina, 0.f, float(current.maxStamina));
     simulation_.characterStats_ = current;
-    EquipmentActor actor{characterDefinition_.code, current.strength, current.dexterity, player.level,
-                         current.blockFactor, player.weaponSet};
     simulation_.equipmentStats_ = deriveEquipmentStats(inventory_, playerContainers_, actor,
                                                        modifiers.defense, modifiers.combat);
 }

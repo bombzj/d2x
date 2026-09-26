@@ -50,7 +50,9 @@ CharacterActionStats characterActionStats(const GameSession &session, std::optio
         const int rank = session.effectiveSkillRank(*skill);
         if (rank < 1) return {};
         const auto cast = resolveOriginalSkill(*entry->originalEffect, rank,
-                                               session.state().player.skillRanks);
+                                               session.state().player.skillRanks,
+                                               session.fireMasteryPercent(),
+                                               session.lightningMasteryPercent());
         if (cast.effect == Skill::Teleport || cast.effect == Skill::StaticField) return {};
         return {damageText(int64_t(cast.minimumDamage), int64_t(cast.maximumDamage)), ""};
     }

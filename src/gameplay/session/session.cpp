@@ -144,6 +144,19 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
             return combat->resistances[size_t(type)];
         return std::nullopt;
     };
+    simulation_.coldPierce_ = [this] { return coldPiercePercent(); };
+    simulation_.monsterFreezeDivisor_ = content_.monsterFreezeDivisor.at(size_t(population.difficulty));
+    simulation_.monsterFreezable_ = [this](const Enemy &enemy) -> std::optional<bool> {
+        const auto *record = monsterContent_.find(enemy.identity.monster);
+        if (!record) return std::nullopt;
+        if (record->boss || enemy.identity.rank == MonsterRank::Boss ||
+            enemy.identity.rank == MonsterRank::Unique ||
+            enemy.identity.rank == MonsterRank::SuperUnique ||
+            enemy.identity.rank == MonsterRank::Champion) return false;
+        if (record->coldEffect.at(size_t(state().population.difficulty)) >= 0)
+            return std::nullopt;
+        return true;
+    };
     simulation_.monsterAi_ = [this](const Enemy &enemy)
         -> std::optional<MonsterAiProfile> {
         if (!baseMonsterRank(enemy.identity.rank))
@@ -357,7 +370,7 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
     Fingerprint fingerprint;
     fingerprint.add(content_.profile);
     // Bump this rules revision when state interpretation or compiled rules change.
-    fingerprint.add("d2x-session-rules-v127-character-name");
+    fingerprint.add("d2x-session-rules-v134-ice-blast");
     auto members = archives.used;
     for (const auto &member : members) {
         fingerprint.add(member);
@@ -581,6 +594,8 @@ void GameSession::tick(float dt, Vec keyboard, bool forceRun) {
                     transactGold(intent);
                 } else if constexpr (std::is_same_v<T, DebugDropCube>) {
                     dropDebugCube();
+                } else if constexpr (std::is_same_v<T, DebugSpawnItem>) {
+                    spawnDebugItem(intent);
                 } else if constexpr (std::is_same_v<T, DebugGrantExperience>) {
                     grantExperience(intent.amount);
                 } else if constexpr (std::is_same_v<T, DebugUnlockWaypoints>) {
@@ -607,6 +622,7 @@ void GameSession::tick(float dt, Vec keyboard, bool forceRun) {
                         if (!player.skillRanks.contains(prerequisite)) return;
                     ++player.skillRanks[intent.id];
                     --player.unspentSkills;
+                    if (entry->manaRecoveryPerRank) refreshCharacter();
                 } else if constexpr (std::is_same_v<T, BindSkillHotkey>) {
                     auto &keys = simulation_.state_.player.skillHotkeys;
                     if (intent.index >= keys.size() || intent.skill < -2 ||
@@ -632,6 +648,7 @@ void GameSession::tick(float dt, Vec keyboard, bool forceRun) {
                             if (difficulty.at(questIndex(ActOneQuest::DenOfEvil)).stage ==
                                 uint32_t(DenStage::Rewarded))
                                 ++player.unspentSkills;
+                        refreshCharacter();
                     }
                 } else if constexpr (std::is_same_v<T, UseClassSkill>) {
                     const auto *entry = content_.skills.find(intent.id);
@@ -651,7 +668,8 @@ void GameSession::tick(float dt, Vec keyboard, bool forceRun) {
                     if (entry->originalEffect) {
                         const int rank = effectiveSkillRank(intent.id);
                         const auto resolved = resolveOriginalSkill(*entry->originalEffect, rank,
-                                                                    player.skillRanks);
+                                                                    player.skillRanks, fireMasteryPercent(),
+                                                                    lightningMasteryPercent());
                         const int levelId = int(region().definition.id);
                         const bool teleportAllowed = content_.teleportByLevel.contains(levelId) &&
                             content_.teleportByLevel.at(levelId) != 0;

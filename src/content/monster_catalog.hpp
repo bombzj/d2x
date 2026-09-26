@@ -16,6 +16,7 @@ struct MonsterRecord {
     size_t sourceRow = 0;
     int index = -1, rarity = 0, minGroup = 0, maxGroup = 0, partyMin = 0, partyMax = 0;
     int sparse = 0, alignment = 0, normalLevel = 0, transLevel = 0;
+    std::array<int, 3> coldEffect{};
     int localBlood = 0, bleed = 0, overlayHeight = 0;
     std::optional<int> normalAttackRating;
     std::optional<int> normalAttackRating2;

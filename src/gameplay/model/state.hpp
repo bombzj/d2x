@@ -77,7 +77,7 @@ struct Enemy {
     int attackMode = 1;
     float skill2Remaining = 0, skill2Duration = 0;
     float resurrectionRemaining = 0, resurrectionDuration = 0;
-    float stun = 0, deathAge = 0, hitFlash = 0, rethink = 0;
+    float stun = 0, freeze = 0, deathAge = 0, hitFlash = 0, rethink = 0;
     float aiWait = 0;
     bool aiPursuing = false;
     bool aiEscaping = false;
@@ -114,6 +114,7 @@ struct Missile {
     float slowDuration = 0;
     AttackElements attackElements{};
     int attackerLevel = 0, attackRating = 0; // Non-player physical projectiles.
+    float nextHitDelay = 0;
 };
 struct Effect {
     Vec pos;
@@ -127,6 +128,7 @@ struct AreaState {
     std::vector<MonsterSpawn> pendingSpawns;
     std::vector<Missile> missiles;
     std::vector<Effect> effects;
+    std::map<EntityId, float> novaHitUntil;
     int kills = 0;
     bool initialized = false;
 };

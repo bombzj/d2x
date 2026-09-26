@@ -41,6 +41,7 @@ struct ClassicData {
     SkillCatalog skills;
     std::map<int, int> teleportByLevel;
     std::array<int, 3> staticFieldMinimum{};
+    std::array<int, 3> monsterFreezeDivisor{};
     std::array<int, 3> resistancePenalty{};
     std::array<int, 3> lifeStealDivisor{1, 1, 1}, manaStealDivisor{1, 1, 1};
     StashLayout stashLayout;

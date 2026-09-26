@@ -19,6 +19,12 @@ const SkillDefinition &skillDefinition(Skill id) {
          {Skill::FireBolt, "FIRE BOLT", "FIRE BOLT", "Original MPQ fire projectile", 0, 0, .32f, 0,
           0, 0, 0, 0, 0},
          {Skill::StaticField, "STATIC FIELD", "STATIC FIELD", "Original MPQ life reduction", 0, 0, .32f, 0,
+          0, 0, 0, 0, 0},
+         {Skill::IceBolt, "ICE BOLT", "ICE BOLT", "Original MPQ cold projectile", 0, 0, .32f, 0,
+          0, 0, 0, 0, 0},
+         {Skill::Nova, "NOVA", "NOVA", "Original MPQ lightning missiles", 0, 0, .32f, 0,
+          0, 0, 0, 0, 0},
+         {Skill::IceBlast, "ICE BLAST", "ICE BLAST", "Original MPQ freezing projectile", 0, 0, .32f, 0,
           0, 0, 0, 0, 0}}};
     auto index = size_t(id);
     if (index >= skills.size())

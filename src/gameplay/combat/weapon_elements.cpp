@@ -102,7 +102,9 @@ void Simulation::resolveWeaponHit(Enemy &enemy, float physical, EntityId source,
              {elements.cold, MonsterDamageType::Cold},
              {elements.magic, MonsterDamageType::Magic}}) {
         if (amount <= 0) continue;
-        const int resist = resistance(type);
+        const int originalResist = resistance(type);
+        const int resist = type == MonsterDamageType::Cold && source == state_.player.id &&
+                   originalResist < 100 && coldPierce_ ? originalResist - coldPierce_() : originalResist;
         total += mitigateMonsterDamage(amount, resist);
         if (type == MonsterDamageType::Cold && elements.coldDuration > 0) {
             chill = elements.coldDuration * float(std::clamp(100 - resist, 0, 200)) / 100.f;

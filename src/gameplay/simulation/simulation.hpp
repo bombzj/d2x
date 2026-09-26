@@ -34,6 +34,9 @@ class Simulation {
     std::function<int(const Enemy &)> monsterDrain_;
     int lifeStealDivisor_ = 1, manaStealDivisor_ = 1;
     std::function<std::optional<int>(const Enemy &, RegionId, MonsterDamageType)> monsterResistance_;
+    std::function<int()> coldPierce_;
+    std::function<std::optional<bool>(const Enemy &)> monsterFreezable_;
+    int monsterFreezeDivisor_ = 1;
     std::function<std::optional<MonsterAiProfile>(const Enemy &)> monsterAi_;
     std::function<bool(RegionId)> zombieForcedPursuit_;
     std::function<std::optional<float>(const MonsterIdentity &)> monsterGetHitDuration_;
@@ -63,7 +66,8 @@ class Simulation {
     void damageEnemy(Enemy &enemy, float amount, EntityId source, float chill = 0,
                      bool ignoreActivation = false,
                      MonsterDamageType type = MonsterDamageType::Physical,
-                     bool alreadyMitigated = false, bool playerKillEffects = true);
+                     bool alreadyMitigated = false, bool playerKillEffects = true,
+                     bool freezeHit = false);
     void meleeDamage(Enemy &enemy, bool leftHand = false);
     void updatePotions(float dt);
     void updatePlayer(float dt, Vec keyboard);

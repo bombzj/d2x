@@ -180,10 +180,15 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
         throw std::runtime_error("Classic HUD resources are missing from the mounted MPQ.");
     button = graphics_.single("data/global/ui/panel/mediumbuttonblank.dc6");
     loadSkillIcons(archives, session.content());
+    const auto &missiles = session.content().tables.at("missiles");
+    for (size_t row = 0; row < missiles.rows().size(); ++row)
+        if (missiles.number(row, "Trans") == 1)
+            if (auto id = missiles.number(row, "Id")) translucentProjectiles.insert(*id);
     for (const auto &[code, item] : session.content().items.entries())
         if (item.base.projectile && !item.base.projectile->art.empty() &&
             !projectileAnimations.contains(item.base.projectile->id)) {
-            auto animation = graphics_.single(item.base.projectile->art);
+            auto animation = graphics_.single(item.base.projectile->art,
+                                              translucentProjectiles.contains(item.base.projectile->id));
             if (animation.frames.empty())
                 throw std::runtime_error("Original MPQ missile art is missing: " + code);
             projectileAnimations.emplace(item.base.projectile->id, std::move(animation));
@@ -191,7 +196,8 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
     for (const auto &[id, skill] : session.content().skills.skills)
         if (skill.originalEffect && skill.originalEffect->missileId >= 0 &&
             !projectileAnimations.contains(skill.originalEffect->missileId)) {
-            auto animation = graphics_.single(skill.originalEffect->missileArt);
+            auto animation = graphics_.single(skill.originalEffect->missileArt,
+                                              translucentProjectiles.contains(skill.originalEffect->missileId));
             if (animation.frames.empty())
                 throw std::runtime_error("Original MPQ skill missile art is missing: " + skill.sourceName);
             projectileAnimations.emplace(skill.originalEffect->missileId, std::move(animation));
@@ -202,20 +208,22 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
             const auto &projectile = mode == 1 ? monster.attack1Projectile : monster.attack2Projectile;
             const auto &art = mode == 1 ? monster.attack1ProjectileArt : monster.attack2ProjectileArt;
             if (!projectile || projectileAnimations.contains(projectile->id)) continue;
-            auto animation = graphics_.single(art);
+            auto animation = graphics_.single(art, translucentProjectiles.contains(projectile->id));
             if (animation.frames.empty())
                 throw std::runtime_error("Original MPQ monster missile art is missing: " + id);
             projectileAnimations.emplace(projectile->id, std::move(animation));
         }
         for (const auto &spell : monster.spells) {
             if (!spell || projectileAnimations.contains(spell->projectile.id)) continue;
-            auto animation = graphics_.single(spell->art);
+            auto animation = graphics_.single(spell->art,
+                                              translucentProjectiles.contains(spell->projectile.id));
             if (animation.frames.empty())
                 throw std::runtime_error("Original MPQ monster spell art is missing: " + id);
             projectileAnimations.emplace(spell->projectile.id, std::move(animation));
         }
         if (monster.web && !projectileAnimations.contains(monster.web->missileId)) {
-            auto animation = graphics_.single(monster.web->art);
+            auto animation = graphics_.single(monster.web->art,
+                                              translucentProjectiles.contains(monster.web->missileId));
             if (animation.frames.empty())
                 throw std::runtime_error("Original MPQ spider web art is missing: " + id);
             projectileAnimations.emplace(monster.web->missileId, std::move(animation));

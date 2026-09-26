@@ -109,11 +109,15 @@ class GameSession {
     void validateStorage();
     void closeStorage();
     void spawnLoot(std::span<const LootDrop> drops, RegionId region, Vec origin);
+    void spawnDebugItem(const DebugSpawnItem &command);
     InventoryAccess inventoryAccess() const;
     EquipmentActor equipmentActor() const;
     EquipmentActor equipmentActor(const PlayerState &player) const;
     const CharacterDefinition &definitionFor(std::string_view name) const;
     void refreshCharacter(bool fillGains = false);
+    void applyWarmth(CharacterAttributes &stats, const PlayerState &player,
+                     const CharacterDefinition &definition, const InventoryService &inventory,
+                     const PlayerContainers &containers, const EquipmentActor &actor) const;
     void expireCombatEffects();
     void grantExperience(uint64_t amount);
     void createStarterEquipment();
@@ -222,6 +226,9 @@ class GameSession {
     void applyCombatEffect(ActiveCombatEffect effect);
     bool skillAvailable(int id) const;
     int effectiveSkillRank(int id) const;
+    int fireMasteryPercent() const;
+    int lightningMasteryPercent() const;
+    int coldPiercePercent() const;
     const PlayerContainers &playerContainers() const { return playerContainers_; }
     StorageAccess storage() const;
     const WorldObject *object(EntityId id) const;

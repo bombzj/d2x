@@ -11,12 +11,16 @@ struct OriginalSkillSpec {
     Skill effect = Skill::Fireball;
     int mana = 0, minimumMana = 0, manaPerLevel = 0, manaShift = 8;
     int minimumDamage = 0, maximumDamage = 0, hitShift = 8;
+    bool fireDamage = false;
+    bool lightningDamage = false;
     std::array<int, 5> minimumPerLevel{}, maximumPerLevel{};
     int synergyPercent = 0;
     std::vector<int> synergySkills;
     int coldFrames = 0;
+    std::array<int, 3> coldFramesPerLevel{};
     int staticPercent = 0, staticRange = 0, staticRangePerLevel = 0;
     int missileId = -1;
+    int missileNextDelay = 0;
     float missileVelocity = 0, missileLifetime = 0, impactRadius = 0;
     std::string missileArt, visualArt, castSoundArt;
     int visualFrames = 0;
@@ -26,9 +30,11 @@ struct OriginalSkillCast {
     float manaCost = 0, minimumDamage = 0, maximumDamage = 0;
     float coldDuration = 0, missileVelocity = 0, missileLifetime = 0, impactRadius = 0;
     int missileId = -1;
+    float missileNextDelay = 0;
     float staticPercent = 0, staticRadius = 0;
     float visualDuration = 0;
 };
 OriginalSkillCast resolveOriginalSkill(const OriginalSkillSpec &spec, int rank,
-                                       const std::map<int, int> &learned);
+                                       const std::map<int, int> &learned, int fireMasteryPercent = 0,
+                                       int lightningMasteryPercent = 0);
 } // namespace d2x

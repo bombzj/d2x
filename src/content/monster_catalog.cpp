@@ -56,6 +56,11 @@ MonsterCatalog::MonsterCatalog(Archives &archives, const DataTable &stats) {
         m.sparse = n("sparsePopulate");
         m.normalLevel = n("Level");
         m.transLevel = n("TransLvl");
+        for (int difficulty = 0; difficulty < 3; ++difficulty) {
+            const char *field = difficulty == 0 ? "ColdEffect" :
+                                difficulty == 1 ? "ColdEffect(N)" : "ColdEffect(H)";
+            m.coldEffect[difficulty] = stats.number(row, field).value_or(0);
+        }
         m.normalCombat = loadMonsterNormalCombat(stats, row, levels ? &*levels : nullptr);
         for (int difficulty = 0; difficulty < 3; ++difficulty)
             m.aiProfiles[difficulty] = loadMonsterAiProfile(stats, row, m.ai, difficulty);

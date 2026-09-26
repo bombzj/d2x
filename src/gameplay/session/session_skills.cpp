@@ -2,38 +2,93 @@
 #include <algorithm>
 
 namespace d2x {
-int GameSession::effectiveSkillRank(int id) const {
+namespace {
+int skillRank(const SkillRecord &skill, const PlayerState &player, const CharacterDefinition &definition,
+              const CombatModifiers &mods, const InventoryService &inventory,
+              const PlayerContainers &containers, const EquipmentActor &actor) {
+    const int id = skill.id;
     int rank = 0;
-    if (auto learned = state().player.skillRanks.find(id);
-        learned != state().player.skillRanks.end()) rank = learned->second;
-    for (auto slot : {weaponHandSlot(false, state().player.weaponSet),
-                      weaponHandSlot(true, state().player.weaponSet)}) {
-        const auto *item = inventory_.item(inventory_.equipped(playerContainers_, slot));
+    if (auto learned = player.skillRanks.find(id);
+        learned != player.skillRanks.end()) rank = learned->second;
+    for (auto slot : {weaponHandSlot(false, player.weaponSet),
+                      weaponHandSlot(true, player.weaponSet)}) {
+        const auto *item = inventory.item(inventory.equipped(containers, slot));
         if (item && item->quantity && item->grantedSkill == id &&
-            (!inventory_.catalog().find(item->definition)->maxDurability || item->durability) &&
-            inventory_.equipmentRequirements(item->handle(), equipmentActor()) == InventoryError::None)
+            (!inventory.catalog().find(item->definition)->maxDurability || item->durability) &&
+            inventory.equipmentRequirements(item->handle(), actor) == InventoryError::None)
             ++rank;
     }
-    const auto &mods = characterStats().combat;
-    const auto *skill = content_.skills.find(id);
-    if (!skill) return rank;
     auto bonus = [](const auto &values, int key) {
         auto found = values.find(key);
         return found == values.end() ? 0 : found->second;
     };
-    const bool native = skill->classCode == characterDefinition_.code;
+    const bool native = skill.classCode == definition.code;
     if (native) rank += bonus(mods.singleSkills, id);
     const int nonClass = bonus(mods.nonClassSkills, id);
     rank += native ? std::min(3, nonClass) : nonClass;
     if (rank > 0) {
         rank += mods.allSkills;
         if (native) {
-            rank += bonus(mods.classSkills, int(characterDefinition_.sourceRow));
-            if (skill->page > 0)
-                rank += bonus(mods.tabSkills, int(characterDefinition_.sourceRow) * 8 + skill->page - 1);
+            rank += bonus(mods.classSkills, int(definition.sourceRow));
+            if (skill.page > 0)
+                rank += bonus(mods.tabSkills, int(definition.sourceRow) * 8 + skill.page - 1);
         }
     }
     return std::max(0, rank);
+}
+}
+int GameSession::effectiveSkillRank(int id) const {
+    const auto *skill = content_.skills.find(id);
+    if (!skill) return 0;
+    return skillRank(*skill, state().player, characterDefinition_, characterStats().combat,
+                     inventory_, playerContainers_, equipmentActor());
+}
+int GameSession::fireMasteryPercent() const {
+    for (const auto &[id, skill] : content_.skills.skills) {
+        if (!skill.fireMasteryPerRank || skill.classCode != characterDefinition_.code) continue;
+        const int rank = effectiveSkillRank(id);
+        if (rank <= 0) return 0;
+        const auto [base, perLevel] = *skill.fireMasteryPerRank;
+        return base + (rank - 1) * perLevel;
+    }
+    return 0;
+}
+int GameSession::lightningMasteryPercent() const {
+    for (const auto &[id, skill] : content_.skills.skills) {
+        if (!skill.lightningMasteryPerRank || skill.classCode != characterDefinition_.code) continue;
+        const int rank = effectiveSkillRank(id);
+        if (rank <= 0) return 0;
+        const auto [base, perLevel] = *skill.lightningMasteryPerRank;
+        return base + (rank - 1) * perLevel;
+    }
+    return 0;
+}
+int GameSession::coldPiercePercent() const {
+    for (const auto &[id, skill] : content_.skills.skills) {
+        if (!skill.coldPiercePerRank || skill.classCode != characterDefinition_.code) continue;
+        const int rank = effectiveSkillRank(id);
+        if (rank <= 0) return 0;
+        const auto [base, perLevel] = *skill.coldPiercePerRank;
+        return base + (rank - 1) * perLevel;
+    }
+    return 0;
+}
+void GameSession::applyWarmth(CharacterAttributes &stats, const PlayerState &player,
+                              const CharacterDefinition &definition, const InventoryService &inventory,
+                              const PlayerContainers &containers, const EquipmentActor &actor) const {
+    bool active = false;
+    for (const auto &[id, skill] : content_.skills.skills) {
+        if (!skill.manaRecoveryPerRank || skill.classCode != definition.code) continue;
+        const int rank = skillRank(skill, player, definition, stats.combat, inventory, containers, actor);
+        if (rank <= 0) continue;
+        active = true;
+        const auto [base, perLevel] = *skill.manaRecoveryPerRank;
+        const int bonus = base + (rank - 1) * perLevel;
+        stats.combat.manaRecovery += bonus;
+    }
+    if (active && definition.manaRegen > 0)
+        stats.manaRegen = float(stats.maxMana) / definition.manaRegen *
+            float(std::max(0, 100 + stats.combat.manaRecovery)) / 100.f;
 }
 bool GameSession::skillAvailable(int id) const {
     const auto *entry = content_.skills.find(id);

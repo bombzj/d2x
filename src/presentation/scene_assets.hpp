@@ -3,6 +3,7 @@
 #include "content/automap_data.hpp"
 #include "gameplay/session/session.hpp"
 #include "primitives.hpp"
+#include <set>
 
 namespace d2x {
 // GPU and audio handles belong to the view, never to saveable game state.
@@ -33,6 +34,7 @@ class SceneAssets {
     };
     std::map<int, SkillIcon> skillIcons;
     std::map<int, GpuAnimation> projectileAnimations;
+    std::set<int> translucentProjectiles;
     int frostNovaMissileId = -1;
     float frostNovaVelocity = 0;
     std::map<std::string, GpuAnimation> skillTrees;

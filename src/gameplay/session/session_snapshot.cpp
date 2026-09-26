@@ -339,10 +339,12 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
     std::set<EntityId> deadEnemies, resurrectedEnemies;
     auto validateArea = [&](const AreaState &area, size_t index, bool active) {
         require(area.region == regions_[index].definition.id, "area identity");
-        require(area.enemies.size() <= 65536 && area.missiles.size() <= 65536 && area.effects.size() <= 65536,
+        require(area.enemies.size() <= 65536 && area.missiles.size() <= 65536 && area.effects.size() <= 65536 &&
+                area.novaHitUntil.size() <= area.enemies.size(),
                 "too many actors");
         require(area.initialized || (area.enemies.empty() && area.pendingSpawns.empty() &&
-                                     area.missiles.empty() && area.effects.empty() && area.kills == 0),
+                         area.missiles.empty() && area.effects.empty() &&
+                         area.novaHitUntil.empty() && area.kills == 0),
                 "uninitialized area has actors");
         if (active)
             require(area.initialized, "active area is uninitialized");
@@ -426,7 +428,7 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
                         "resurrected monster identity");
                 resurrectedEnemies.insert(enemy.id);
             }
-            for (auto timer : {enemy.chill, enemy.stun, enemy.deathAge, enemy.hitFlash,
+            for (auto timer : {enemy.chill, enemy.stun, enemy.freeze, enemy.deathAge, enemy.hitFlash,
                                enemy.poisonRemaining, enemy.poisonPerSecond})
                 scalar(timer);
             require((enemy.poisonRemaining == 0) == (enemy.poisonPerSecond == 0),
@@ -730,6 +732,19 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
             }
         }
         require(area.kills == dead, "area kill count");
+        const auto nova = std::find_if(content_.skills.skills.begin(), content_.skills.skills.end(),
+            [](const auto &pair) { return pair.second.originalEffect &&
+                pair.second.originalEffect->effect == Skill::Nova; });
+        const float novaNextDelay = nova == content_.skills.skills.end() ? 0.f :
+            float(nova->second.originalEffect->missileNextDelay) / 25.f;
+        for (const auto &[enemyId, until] : area.novaHitUntil) {
+            require(std::any_of(area.enemies.begin(), area.enemies.end(),
+                        [&](const Enemy &enemy) { return enemy.id == enemyId; }),
+                "Nova hit target identity");
+            scalar(until);
+            require(novaNextDelay > 0 && until <= s.world.time + novaNextDelay + .001f,
+                "Nova hit interval");
+        }
         for (const auto &missile : area.missiles) {
             registerId(missile.id);
             if (missile.hostile) {
@@ -783,6 +798,10 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
             scalar(missile.radius);
             scalar(missile.chill);
             scalar(missile.slowDuration);
+            scalar(missile.nextHitDelay);
+            require(missile.skill == Skill::Nova ? !missile.hostile && !missile.physical &&
+                        missile.nextHitDelay == novaNextDelay : missile.nextHitDelay == 0,
+                    "original Nova hit interval");
             for (auto value : {missile.attackElements.fire, missile.attackElements.lightning,
                                missile.attackElements.cold, missile.attackElements.magic,
                                missile.attackElements.poisonPerSecond,
@@ -817,7 +836,8 @@ int GameSession::validateSnapshot(const SessionSnapshot &s) const {
         if (int(i) == current) {
             const auto &unused = s.inactiveAreas[i];
             require(!unused.initialized && unused.pendingSpawns.empty() && unused.enemies.empty() &&
-                        unused.missiles.empty() && unused.effects.empty() && unused.kills == 0 &&
+                        unused.missiles.empty() && unused.effects.empty() &&
+                        unused.novaHitUntil.empty() && unused.kills == 0 &&
                         unused.region == s.world.area.region,
                     "duplicate active area");
             validateArea(s.world.area, i, true);
@@ -948,6 +968,8 @@ void GameSession::restore(SessionSnapshot s) {
                                                      content_.resistancePenalty.at(size_t(s.world.population.difficulty)));
     EquipmentActor actor{characterDefinition.code, characterStats.strength, characterStats.dexterity,
                          s.world.player.level, characterStats.blockFactor, s.world.player.weaponSet};
+    applyWarmth(characterStats, s.world.player, characterDefinition, equipmentInventory,
+                s.containers, actor);
     auto equipmentStats = deriveEquipmentStats(equipmentInventory, s.containers, actor,
                                                modifiers.defense, modifiers.combat);
     std::map<EntityId, std::vector<VendorOffer>> nextVendorStocks;

@@ -36,6 +36,7 @@ void Simulation::updateMonsters(float dt) {
             }
         enemy.chill = std::max(0.f, enemy.chill - dt);
         enemy.stun = std::max(0.f, enemy.stun - dt);
+        enemy.freeze = std::max(0.f, enemy.freeze - dt);
         enemy.rethink = std::max(0.f, enemy.rethink - dt);
         enemy.aiWait = std::max(0.f, enemy.aiWait - dt);
         enemy.webAuraRemaining = std::max(0.f, enemy.webAuraRemaining - dt);
@@ -59,7 +60,7 @@ void Simulation::updateMonsters(float dt) {
             enemy.attackMode = 1;
             continue;
         }
-        if (enemy.stun > 0) {
+        if (enemy.stun > 0 || enemy.freeze > 0) {
             enemy.attack = enemy.attackDuration = 0;
             enemy.attackImpact = -1;
             enemy.attackMode = 1;

@@ -8,6 +8,7 @@
 #include <map>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace d2x {
@@ -24,6 +25,10 @@ struct SkillRecord {
     std::vector<int> prerequisites;
     bool leftAllowed = false, passive = false;
     std::optional<OriginalSkillSpec> originalEffect;
+    std::optional<std::pair<int, int>> manaRecoveryPerRank;
+    std::optional<std::pair<int, int>> fireMasteryPerRank;
+    std::optional<std::pair<int, int>> lightningMasteryPerRank;
+    std::optional<std::pair<int, int>> coldPiercePerRank;
 };
 struct SkillCatalog {
     std::vector<ClassSkillTree> classes;

@@ -309,6 +309,7 @@ void SceneView::drawActors(Vec mouse) const {
             const auto *deathTiming = session_.monsterContent().motion(e.kind, "dt");
             std::string mode = e.hp <= 0 ? (animations.contains("dd") && deathTiming &&
                                                e.deathAge >= deathTiming->duration ? "dd" : "dt")
+                              : e.freeze > 0 ? "nu"
                               : e.resurrectionRemaining > 0 && animations.contains("s1") ? "s1"
                               : (e.stun > 0 || e.hitFlash > 0) && animations.contains("gh") ? "gh"
                               : e.skill2Remaining > 0 && animations.contains("s2") ? "s2"
@@ -328,6 +329,7 @@ void SceneView::drawActors(Vec mouse) const {
                                          : e.hp <= 0 ? 20.f : 12.f;
                 int frame = e.hp <= 0 ? (mode == "dd" ? 0
                                         : std::min(anim->count - 1, int(e.deathAge * fps)))
+                            : e.freeze > 0 ? 0
                             : e.stun > 0 && !animations.contains("gh") ? 0
                             : int(view_.animationTime * (e.chill > 0 ? fps * .42f : fps) + item.index);
                 if ((mode == "a1" || mode == "a2" || mode == "sc" || mode == "s1") &&
@@ -350,7 +352,7 @@ void SceneView::drawActors(Vec mouse) const {
                 spriteShadow(image, item.p);
                 drawSelectableSprite(image, item.p, e.id == hotEnemy,
                                      e.hitFlash > 0 ? Color{255, 175, 155, 255}
-                                     : e.chill > 0  ? Color{115, 175, 255, 255}
+                                     : (e.chill > 0 || e.freeze > 0) ? Color{115, 175, 255, 255}
                                                     : WHITE);
             }
             if (e.stun > 0)
@@ -436,7 +438,7 @@ void SceneView::drawMagic() const {
             sprite(assets_.teleportOverlay.frame(0, frame), screen(effect.pos));
         }
     if (auto found = assets_.projectileAnimations.find(assets_.frostNovaMissileId);
-        found != assets_.projectileAnimations.end())
+        found != assets_.projectileAnimations.end()) {
         for (const auto &effect : sim.area.effects)
             if (effect.skill == Skill::FrostNova) {
                 const int count = std::clamp(int(assets_.frostNovaVelocity), 1, 64);
@@ -448,6 +450,7 @@ void SceneView::drawMagic() const {
                                                int(view_.animationTime * 25)), screen(point));
                 }
             }
+    }
 
     BeginBlendMode(BLEND_ADDITIVE);
     for (auto &prop : props)

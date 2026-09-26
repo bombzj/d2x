@@ -57,6 +57,22 @@ bool Simulation::castOriginal(const OriginalSkillCast &skill, Vec target, bool t
             damageEnemy(enemy, amount, player.id, skill.coldDuration, false,
                         MonsterDamageType::Cold);
         }
+    } else if (skill.effect == Skill::Nova) {
+        constexpr int directions = 64;
+        constexpr float pi = 3.14159265358979323846f;
+        for (int index = 0; index < directions; ++index) {
+            const float angle = float(index) * 2.f * pi / directions;
+            const Vec heading{std::cos(angle), std::sin(angle)};
+            player.combatRandom = uint64_t(uint32_t(player.combatRandom)) * 0x6ac690c5ULL +
+                                  (player.combatRandom >> 32);
+            const float fraction = float(uint32_t(player.combatRandom)) / 4294967295.f;
+            const float amount = skill.minimumDamage +
+                (skill.maximumDamage - skill.minimumDamage) * fraction;
+            state_.area.missiles.push_back({ids_.allocate(), player.id, player.pos,
+                heading * skill.missileVelocity, skill.missileLifetime, skill.effect,
+                false, skill.missileId, amount});
+            state_.area.missiles.back().nextHitDelay = skill.missileNextDelay;
+        }
     } else {
         player.combatRandom = uint64_t(uint32_t(player.combatRandom)) * 0x6ac690c5ULL +
                               (player.combatRandom >> 32);
@@ -65,7 +81,7 @@ bool Simulation::castOriginal(const OriginalSkillCast &skill, Vec target, bool t
                              (skill.maximumDamage - skill.minimumDamage) * fraction;
         state_.area.missiles.push_back({ids_.allocate(), player.id, player.pos + player.look * .7f,
             player.look * skill.missileVelocity, skill.missileLifetime, skill.effect,
-            false, skill.missileId, amount, skill.impactRadius, 0});
+            false, skill.missileId, amount, skill.impactRadius, skill.coldDuration});
     }
     return true;
 }
