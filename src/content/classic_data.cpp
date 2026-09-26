@@ -15,6 +15,7 @@
 
 namespace d2x {
 ClassicData loadClassicData(Archives &archives) {
+    const ClassicStrings strings(archives);
     std::map<std::string, DataTable, std::less<>> tables;
     for (auto name : {"misc", "weapons", "armor", "armtype", "belts", "monstats", "charstats", "skills", "experience", "inventory", "levels"})
         tables.emplace(name, DataTable(archives.read(std::string("data/global/excel/") + name + ".txt")));
@@ -66,7 +67,9 @@ ClassicData loadClassicData(Archives &archives) {
                 continue;
             ItemDefinition item;
             item.code = value("code");
-            item.name = value("name");
+            const auto nameKey = value("namestr");
+            const auto displayName = strings.find(nameKey.empty() ? item.code : nameKey);
+            item.name = displayName.empty() ? value("name") : std::string(displayName);
             item.family = family;
             item.width = number("invwidth").value_or(0);
             item.height = number("invheight").value_or(0);
@@ -214,7 +217,6 @@ ClassicData loadClassicData(Archives &archives) {
     {
         data.tables.emplace("skilldesc", DataTable(archives.read("data/global/excel/skilldesc.txt")));
         data.hirelingLayout = loadHirelingLayout(data.tables.at("inventory"));
-        ClassicStrings strings(archives);
         data.itemStrings = strings.entries();
         const DataTable hireDescriptions(archives.read("data/global/excel/hiredesc.txt"));
         for (size_t row = 0; row < hireDescriptions.rows().size(); ++row) {

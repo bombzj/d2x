@@ -40,4 +40,10 @@ cmake --build build --parallel
 
 如果编译机器不能访问 GitHub，CMake 可使用 `external/raylib` 和 `external/stormlib` 的固定版本源码；系统编译器、CMake 和开发库仍需安装。当前源码存档格式见[存档说明](SAVES.md)，旧档不迁移。分发目录保留完整 `assets/mpq2`，EXE 直接读取原始 MPQ，不生成精简资源包或 ZIP。原 MPQ 文件清单见 [MPQ 资源](MPQ_RESOURCES.md)。
 
+## 当前本地分发目录
+
+2026-09-26 物品显示审查包位于忽略目录 `artifacts/item-display-release-20260926/`，入口为其中的 `Play.cmd`。包含 Release EXE、现有启动／调试脚本、许可与文档，以及五个原始 MPQ；旧分发目录、源码资源和用户存档未覆盖。仅供持有这些原资源的本机使用，原 MPQ 不纳入源码提交。
+
+已从包自身工作目录与 `assets/mpq2` 启动，载入独立测试 D2S、打开背包、导出截图、保存新 D2S，再用包内程序加载该存档，两次退出码均为 0。构建命令为 `scripts/build.ps1 -Configuration Release`；本轮未新增测试脚本，仓库 `tests/` 当前为空。运行验证覆盖四品质生成／拾取、储物箱与方块往返、玩家和佣兵装备、恰西购买／确认出售及存档重载；不是所有物品组合或像素级视觉还原的验收。截图与运行日志保留在忽略的 `artifacts/`，包内日志为 `package-runtime.log`、`package-reload.log`。
+
 依赖说明依据 [raylib 官方 Linux 构建文档](https://github.com/raysan5/raylib/wiki/Working-on-GNU-Linux)、[StormLib 官方源码](https://github.com/ladislav-zezula/StormLib) 及本项目固定版本的 CMake 配置。

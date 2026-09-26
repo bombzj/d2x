@@ -269,7 +269,11 @@ void SceneView::drawNpcShop(Vec mouse) const {
                            popup, {0, 0}, 0, WHITE);
         }
         if (const auto *item = session_.inventory().item(view_.shopSaleConfirm->id)) {
-            painter_.label(itemName(*item), int(popup.x) + 22, int(popup.y) + 47, 14, gold);
+            const auto name = itemName(*item);
+            int fontSize = 16;
+            while (fontSize > 1 && painter_.measure(name, fontSize) > popup.width - 44) --fontSize;
+            painter_.inBox(name, {popup.x + 22, popup.y + 40, popup.width - 44, 32},
+                           fontSize, itemColor(item->quality));
             if (auto quote = session_.vendorSaleQuote(view_.dialogueObject, *view_.shopSaleConfirm))
                 painter_.label("SELL FOR " + std::to_string(*quote) + " GOLD?",
                                int(popup.x) + 24, int(popup.y) + 88, 14, parchment);
@@ -293,8 +297,11 @@ void SceneView::drawNpcShop(Vec mouse) const {
         });
         if (found != items.end()) {
             auto visual = vendorItem(*found->offer, session_.content(), view_.shopGamble);
-            painter_.label(itemName(visual),
-                           int(popup.x) + 22, int(popup.y) + 47, 14, gold);
+            const auto name = itemName(visual);
+            int fontSize = 16;
+            while (fontSize > 1 && painter_.measure(name, fontSize) > popup.width - 44) --fontSize;
+            painter_.inBox(name, {popup.x + 22, popup.y + 40, popup.width - 44, 32},
+                           fontSize, itemColor(visual.quality));
             painter_.label(std::to_string(session_.vendorPurchasePrice(view_.dialogueObject, *found->offer, view_.shopGamble)) + " GOLD?",
                            int(popup.x) + 24, int(popup.y) + 88, 14, parchment);
         }

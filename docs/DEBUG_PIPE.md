@@ -98,6 +98,19 @@ $spawn = .\scripts\Send-D2XCommand.ps1 -Command monster-spawn -Arguments @{monst
 
 `item` 只读查询单件实例的品质原行、词缀行、属性掷值、书的页数、位置及从 MPQ 适配的外观 token；`status` 给出钱包和私人箱金币，以及本局出现过的暗金原行数量。
 
+可用 `item-spawn` 在人物脚边生成已鉴定的原 MPQ 装备，快速检查地面文字和拾入背包后的悬停说明。`code` 为当前 MPQ 的武器或护甲代码，`quality` 只接受 `magic`（蓝）、`rare`（黄）、`set`（绿）、`unique`（暗金），`level` 为 1–99 的物品等级。须选择该品质在原表中可生成的底材与等级；缺词缀、特殊行或原图时会明确拒绝。响应返回新实例 `id`，之后可用 `ground`、`pickup`、`item` 查看。
+
+```powershell
+.\scripts\Send-D2XCommand.ps1 -Command item-spawn -Arguments @{ code = 'cap'; quality = 'magic'; level = 30 }
+.\scripts\Send-D2XCommand.ps1 -Command item-spawn -Arguments @{ code = 'cap'; quality = 'rare'; level = 30 }
+.\scripts\Send-D2XCommand.ps1 -Command item-spawn -Arguments @{ code = 'cap'; quality = 'set'; level = 30 }
+.\scripts\Send-D2XCommand.ps1 -Command item-spawn -Arguments @{ code = 'cap'; quality = 'unique'; level = 30 }
+```
+
+该命令复用正式词缀／特殊行掷值与库存创建，但有意绕过 TC、品质概率及同局暗金唯一限制；不能拿它证明自然掉落正确，也不会计入正式掉落结算。调试物品可进入正常角色存档，重要现场请使用独立 `--save` 路径。2026-09-26 Release 已实际调用四种品质生成、拾取及 D2S 保存／重载；无效代码拒绝且不增加物品。PowerShell 客户端白名单已包含 `item-spawn`。
+
+`ui-input` 可附带 `screenshot=true`，在该输入处理后的同一帧保存 `artifacts/d2x-capture.png`，用于准确捕获悬停提示。`showLoot=true` 模拟该帧显示地面标签。`status.ui` 的 `purchaseConfirmation`、`saleConfirmation`（物品 ID，0 表示无）和 `shopRepair` 只读反映当前交易界面，截图前应先确认 `shop=true`。单独 `screenshot` 命令仍保存上一张已绘制帧到 `artifacts/debug-pipe.png`。
+
 调试职业可在角色存活时切换。`Ctrl+Alt+C` 按 MPQ `CharStats` 的职业顺序循环；管道省略 `class` 也循环，指定原表职业名则直达：
 
 ```powershell
@@ -156,6 +169,7 @@ $offers = (.\scripts\Send-D2XCommand.ps1 -Command shop -Arguments @{ id = $vendo
 | ground | 无 | 当前区域地面物品 ID、版本、代码、数量、品质、特殊行号、物品等级、坐标 |
 | inventory | 无 | 所有角色容器内物品及钱包；包含背包、腰带、装备和私人箱，不改变箱子访问权 |
 | item | `id` | 查询单件地面或容器物品的原行、属性掷值、位置与装备外观参数，不改变状态 |
+| item-spawn | `code` 原 MPQ 武器／护甲代码、`quality` 为 magic／rare／set／unique、`level` 1–99 | 调试生成已鉴定装备在脚边；返回实例 ID，缺少原表行或资源时拒绝 |
 | objects | 无 | 当前场景对象名称、原内容键、位置、可绘制标志，以及入口／边界预设信息 |
 | exits | 无 | 当前出口名称、slot、访问坐标与启用状态 |
 | view | `x`、`y` | 只移动相机并查询附近墙格键值与隐藏标志；下一次模拟步恢复跟随，不修改玩家位置 |
@@ -202,7 +216,7 @@ $offers = (.\scripts\Send-D2XCommand.ps1 -Command shop -Arguments @{ id = $vendo
 | screenshot | 无 | 保存最近渲染画面到 `artifacts/debug-pipe.png`；命令返回前一已完成帧，立即移动后可在下一请求截取 |
 | quit | 无 | 正常退出；若启动指定 `--save`，退出时仍会保存 |
 
-kill 和 drop 都不进行攻击命中／伤害计算，因此用于验证死亡和掉落链，不能作为普通战斗伤害验证。drop 确实杀死怪物并消耗当前掉落随机状态，同一实体不能重复结算；生成物仍落在怪物原位置，远处拾取须正常移动。kill 的屏幕范围按当前 SceneView 投影与背包遮挡判断，不保证像素级遮挡或墙后可见性。没有批量清屏、改随机种子、绕过上限的任意钱包写入、直接造物品或任意代码执行命令。当前品质生成以 TC 叶子和怪物死亡为入口；直接指定物品代码／品质入包会绕过原概率、词缀、失败降级及同局暗金限制，暂不提供。可用 `drop` 生成真实实例，再经正常拾取和库存事务检查。
+kill 和 drop 都不进行攻击命中／伤害计算，因此用于验证死亡和掉落链，不能作为普通战斗伤害验证。drop 确实杀死怪物并消耗当前掉落随机状态，同一实体不能重复结算；生成物仍落在怪物原位置，远处拾取须正常移动。kill 的屏幕范围按当前 SceneView 投影与背包遮挡判断，不保证像素级遮挡或墙后可见性。没有批量清屏、改随机种子、绕过上限的任意钱包写入或任意代码执行命令。`item-spawn` 是受限的品质显示入口，使用原 MPQ 掷值但不代表正式 TC 和品质概率；真实掉落须用 `drop`，再经正常拾取和库存事务检查。
 
 ## 协议和安全
 

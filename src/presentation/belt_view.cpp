@@ -75,11 +75,7 @@ void SceneView::drawItemTooltip(const ItemInstance &item, Vec anchor,
     const auto &definition = *session_.inventory().catalog().find(item.definition);
     std::vector<std::string> lines{itemName(item)};
     std::vector<Color> colors;
-    Color nameColor = WHITE;
-    if (item.quality == ItemQuality::Magic) nameColor = {105, 105, 255, 255};
-    if (item.quality == ItemQuality::Rare) nameColor = {255, 255, 100, 255};
-    if (item.quality == ItemQuality::Set) nameColor = {0, 220, 0, 255};
-    if (item.quality == ItemQuality::Unique) nameColor = gold;
+    const Color nameColor = itemColor(item.quality);
     colors.push_back(nameColor);
     auto line = [&](std::string value, Color color = WHITE) {
         if (!value.empty()) { lines.push_back(std::move(value)); colors.push_back(color); }
@@ -165,14 +161,23 @@ void SceneView::drawItemTooltip(const ItemInstance &item, Vec anchor,
                             line(object.name);
         }
     }
-    constexpr size_t rowsPerColumn = 28;
-    constexpr int rowHeight = 18;
-    const size_t columns = (lines.size() + rowsPerColumn - 1) / rowsPerColumn;
-    std::vector<int> widths(columns, 0);
-    for (size_t i = 0; i < lines.size(); ++i)
-        widths[i / rowsPerColumn] = std::max(widths[i / rowsPerColumn], painter_.measure(lines[i], 12) + 24);
+    int fontSize = 16, rowHeight = 20;
+    size_t rowsPerColumn = 0, columns = 0;
+    std::vector<int> widths;
     int width = 0;
-    for (int size : widths) width += size;
+    for (;;) {
+        rowHeight = fontSize + 4;
+        rowsPerColumn = size_t((H - HUD - 34) / rowHeight);
+        columns = (lines.size() + rowsPerColumn - 1) / rowsPerColumn;
+        widths.assign(columns, 0);
+        for (size_t index = 0; index < lines.size(); ++index)
+            widths[index / rowsPerColumn] = std::max(widths[index / rowsPerColumn],
+                painter_.measure(lines[index], fontSize) + 24);
+        width = 0;
+        for (int size : widths) width += size;
+        if (width <= W - 16 || fontSize == 1) break;
+        --fontSize;
+    }
     const float height = float(std::min(lines.size(), rowsPerColumn) * rowHeight + 18);
     Rectangle box{std::clamp(anchor.x - width, 8.f, std::max(8.f, W - width - 8.f)),
                   std::clamp(anchor.y - height - 12, 8.f, std::max(8.f, H - HUD - height - 8.f)),
@@ -182,8 +187,8 @@ void SceneView::drawItemTooltip(const ItemInstance &item, Vec anchor,
     for (size_t column = 0; column < columns; ++column) {
         for (size_t row = 0; row < rowsPerColumn && column * rowsPerColumn + row < lines.size(); ++row) {
             size_t i = column * rowsPerColumn + row;
-            painter_.label(lines[i], columnX + (widths[column] - painter_.measure(lines[i], 12)) / 2,
-                           int(box.y + 10 + row * rowHeight), 12, colors[i]);
+            painter_.inBox(lines[i], {float(columnX), box.y + 9 + float(row * rowHeight),
+                                      float(widths[column]), float(rowHeight)}, fontSize, colors[i]);
         }
         columnX += widths[column];
     }

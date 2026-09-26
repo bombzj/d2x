@@ -2,22 +2,20 @@
 #include <algorithm>
 
 namespace d2x {
-namespace {
-Color itemColor(ItemQuality quality) {
+Color SceneView::itemColor(ItemQuality quality) {
     switch (quality) {
     case ItemQuality::Magic:
-        return {120, 150, 255, 255};
+        return {105, 105, 255, 255};
     case ItemQuality::Rare:
-        return {255, 230, 100, 255};
+        return {255, 255, 100, 255};
     case ItemQuality::Set:
-        return {90, 220, 90, 255};
+        return {0, 255, 0, 255};
     case ItemQuality::Unique:
-        return gold;
+        return {199, 179, 119, 255};
     default:
-        return {225, 224, 215, 255};
+        return WHITE;
     }
 }
-} // namespace
 Rectangle SceneView::lootBounds(const ItemInstance &item) const {
     auto p = screen(std::get<GroundLocation>(item.location).position);
     auto animation = assets_.itemGround.find(SceneAssets::itemArtKey(item));
@@ -64,10 +62,14 @@ std::vector<SceneView::LootLabel> SceneView::lootLabels(Vec mouse) const {
         if (ground.x < 0 || ground.x > W || ground.y < 70 || ground.y > H - HUD - 38)
             continue;
         std::string text = itemName(item);
-        if (item.quantity > 1)
+        if (item.definition == "gld")
+            text = std::to_string(item.quantity) + " " + text;
+        else if (item.quantity > 1)
             text += " x" + std::to_string(item.quantity);
-        float width = float(painter_.measure(text, 14) + 8);
-        Rectangle box{std::clamp(ground.x - width / 2, 4.f, W - width - 4), ground.y - 30, width, 20};
+        int fontSize = 16;
+        while (fontSize > 1 && painter_.measure(text, fontSize) > W - 16) --fontSize;
+        float width = float(std::min(W - 8, painter_.measure(text, fontSize) + 8));
+        Rectangle box{std::clamp(ground.x - width / 2, 4.f, W - width - 4), ground.y - 30, width, 22};
         bool placed = false;
         // Alternate rows above and below the drop; drawing and clicking use this same layout.
         for (int step = 0; step < 42; ++step) {
@@ -123,7 +125,9 @@ void SceneView::drawLootLabels(Vec mouse) const {
         bool selected = label.item.id == session_.pickupTarget();
         DrawRectangleRec(label.bounds, hot || selected ? Color{47, 47, 47, 235}
                                                          : Color{0, 0, 0, 218});
-        painter_.label(label.text, int(label.bounds.x + 4), int(label.bounds.y + 2), 14, label.color);
+        int fontSize = 16;
+        while (fontSize > 1 && painter_.measure(label.text, fontSize) > label.bounds.width - 8) --fontSize;
+        painter_.inBox(label.text, label.bounds, fontSize, label.color);
     }
 }
 } // namespace d2x

@@ -124,6 +124,7 @@ class SceneView {
                          std::string_view priceLabel = "Cost") const;
     const SpecialItemRecord *specialItem(const ItemInstance &item) const;
     std::string itemName(const ItemInstance &item) const;
+    static Color itemColor(ItemQuality quality);
     void itemButton(Rectangle bounds, const char *label, Color color) const;
     void drawItemIcon(const ItemInstance &item, Rectangle bounds, Color tint = WHITE) const;
     void drawInventoryCursor(Vec mouse) const;

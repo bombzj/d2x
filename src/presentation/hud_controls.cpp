@@ -38,7 +38,8 @@ void SceneView::drawSkillIcon(std::optional<int> skill, Rectangle bounds) const 
     auto effect = entry ? implementedSkillEffect(*entry) : std::nullopt;
     if (entry && entry->originalEffect && session_.effectiveSkillRank(*skill) > 0)
         available &= player.mana >= resolveOriginalSkill(*entry->originalEffect,
-            session_.effectiveSkillRank(*skill), player.skillRanks).manaCost;
+            session_.effectiveSkillRank(*skill), player.skillRanks, session_.fireMasteryPercent(),
+            session_.lightningMasteryPercent()).manaCost;
     else if (effect) available &= player.mana >= skillDefinition(*effect).manaCost;
     imageAt(image, bounds, available ? WHITE : Color{95, 95, 95, 255});
     if (effect && (!entry || !entry->originalEffect) && player.cooldown[size_t(*effect)] > 0) {
@@ -162,7 +163,8 @@ void SceneView::drawSkillControls(Vec mouse) const {
         std::string detail;
         if (entry && entry->originalEffect && session_.effectiveSkillRank(*choice) > 0) {
             const auto value = resolveOriginalSkill(*entry->originalEffect,
-                session_.effectiveSkillRank(*choice), session_.state().player.skillRanks);
+                session_.effectiveSkillRank(*choice), session_.state().player.skillRanks,
+                session_.fireMasteryPercent(), session_.lightningMasteryPercent());
             detail = "Mana " + std::string(TextFormat("%.1f", value.manaCost));
             if (value.effect == Skill::Teleport) detail += " / Teleport to clear ground";
             else if (value.effect == Skill::StaticField)

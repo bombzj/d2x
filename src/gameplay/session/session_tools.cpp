@@ -1,5 +1,7 @@
 #include "gameplay/session/session.hpp"
 #include "content/item_magic_loot.hpp"
+#include "content/item_grades.hpp"
+#include "gameplay/loot/special.hpp"
 #include <algorithm>
 
 namespace d2x {
@@ -8,6 +10,50 @@ QuestRecord &tools(WorldState &world) {
     return world.player.actOneQuests.at(size_t(world.population.difficulty))
         .at(questIndex(ActOneQuest::ToolsOfTheTrade));
 }
+}
+void GameSession::spawnDebugItem(const DebugSpawnItem &command) {
+    auto reject = [&](const std::string &reason) { simulation_.emit(InteractionFailed{{}, reason}); };
+    const auto *base = content_.items.find(command.code);
+    auto ground = dropLocation();
+    if (state().player.dead || !base || !base->equipment.known ||
+        (base->family != ItemFamily::Weapon && base->family != ItemFamily::Armor) ||
+        command.level < 1 || command.level > 99 || !ground) {
+        reject("Original equipment or a walkable drop location is unavailable.");
+        return;
+    }
+    uint64_t random = inventory_.state_.creationRandom;
+    ItemGeneration generation;
+    if (command.quality == ItemQuality::Magic || command.quality == ItemQuality::Rare) {
+        if (!base->artAvailable) { reject("Original base item art is missing."); return; }
+        auto rolled = rollAffixItem(content_, *base, command.quality, command.level, random,
+                                    characterDefinition_.code);
+        if (!rolled.deferred.empty()) { reject(rolled.deferred); return; }
+        generation = std::move(rolled.generation);
+        random = rolled.randomState;
+    } else if (command.quality == ItemQuality::Set || command.quality == ItemQuality::Unique) {
+        const auto &records = command.quality == ItemQuality::Set ? content_.setItems : content_.uniqueItems;
+        auto selected = rollSpecialItem(records, command.code, command.level, random);
+        if (!selected.row) { reject("No eligible original special item at this level."); return; }
+        const auto &record = *std::find_if(records.begin(), records.end(),
+            [&](const auto &entry) { return entry.row == *selected.row; });
+        if (!record.artAvailable) { reject("Original special item art is missing."); return; }
+        auto properties = rollSpecialProperties(record, selected.randomState);
+        generation.quality = command.quality;
+        generation.specialRow = int32_t(record.row);
+        generation.requiredLevel = record.requiredLevel;
+        generation.propertyRolls = std::move(properties.values);
+        random = properties.randomState;
+    } else {
+        reject("Debug item quality must be magic, rare, set or unique.");
+        return;
+    }
+    const auto previousRandom = inventory_.state_.creationRandom;
+    inventory_.state_.creationRandom = random;
+    auto created = inventory_.createItem(command.code, 1, *ground, unsigned(command.level), generation);
+    if (!created) inventory_.state_.creationRandom = previousRandom;
+    if (!created) { reject(inventoryErrorText(created.error)); return; }
+    inventory_.state_.items.at(created.item).identified = true;
+    publishInventory(std::move(created), {});
 }
 void GameSession::activateMalus(const WorldObject &source) {
     auto &record = tools(simulation_.state_);

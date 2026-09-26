@@ -25,7 +25,7 @@ Windows 使用 `scripts/build.ps1`，启动示例（默认读取 `assets/mpq2`�
 
 本机可用 `Play.cmd`。EXE 默认直接读取完整 `assets/mpq2`；其他位置可显式传 `--mpq <目录>`。
 
-当前源码只使用原版 D2S v96，已接角色创建／列表与保存读取，不维护内部存档版本或旧档迁移。Windows Release 构建和原生存档／独立解析器往返已通过；最新独立分发包尚未更新，零售版客户端未验收。Linux 尚未实际编译运行。准确支持边界见[存档](docs/SAVES.md)；佣兵 Hire／O 窗口和快速授予见 [佣兵](docs/HIRELINGS.md)。
+当前源码只使用原版 D2S v96，已接角色创建／列表与保存读取，不维护内部存档版本或旧档迁移。Windows Release 构建和原生存档／独立解析器往返已通过；2026-09-26 物品显示审查已更新本地独立分发目录，并通过包内启动、保存和重载，入口及验证范围见[构建与运行](docs/BUILD_AND_SHARE.md#当前本地分发目录)。零售版客户端未验收，Linux 尚未实际编译运行。准确支持边界见[存档](docs/SAVES.md)；佣兵 Hire／O 窗口和快速授予见 [佣兵](docs/HIRELINGS.md)。
 
 ## 操作
 

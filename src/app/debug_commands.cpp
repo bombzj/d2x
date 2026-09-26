@@ -42,6 +42,8 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
         };
         if (command == "ui-input") {
             FrameInput frame;
+            frame.screenshot = request.value("screenshot", false);
+            frame.showLoot = request.value("showLoot", false);
             frame.mouse = {request.value("x", 0.f), request.value("y", 0.f)};
             if (!std::isfinite(frame.mouse.x) || !std::isfinite(frame.mouse.y) ||
                 frame.mouse.x < 0 || frame.mouse.x >= W || frame.mouse.y < 0 || frame.mouse.y >= H)
@@ -170,6 +172,9 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
             const auto leftAction = characterActionStats(session, view.ui().leftSkill);
             const auto rightAction = characterActionStats(session, view.ui().rightSkill);
             result["ui"] = {{"shop", view.ui().shopOpen}, {"npcMenu", view.ui().npcMenu},
+                {"shopRepair", view.ui().shopRepair},
+                {"purchaseConfirmation", view.ui().shopConfirm.has_value()},
+                {"saleConfirmation", view.ui().shopSaleConfirm ? view.ui().shopSaleConfirm->id.value : 0},
                 {"dialogue", !view.ui().dialogue.empty()}, {"dialogueOffset", view.ui().dialogueOffset},
                 {"questNotice", view.ui().questNotice}, {"quests", view.ui().questOpen},
                 {"inventory", view.ui().inventory.open}, {"weaponSet", state.player.weaponSet},
@@ -367,6 +372,31 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
                     break;
                 }
             if (!result.contains("id")) throw std::runtime_error("Cube was not dropped");
+        } else if (command == "item-spawn") {
+            const auto code = request.at("code").get<std::string>();
+            const auto quality = request.at("quality").get<std::string>();
+            const int level = request.at("level").get<int>();
+            ItemQuality kind;
+            if (quality == "magic") kind = ItemQuality::Magic;
+            else if (quality == "rare") kind = ItemQuality::Rare;
+            else if (quality == "set") kind = ItemQuality::Set;
+            else if (quality == "unique") kind = ItemQuality::Unique;
+            else throw std::runtime_error("quality must be magic, rare, set or unique");
+            if (level < 1 || level > 99) throw std::runtime_error("level must be 1..99");
+            session.submit(DebugSpawnItem{code, kind, level});
+            session.tick(0);
+            view.advance(0);
+            for (const auto &event : session.events()) {
+                if (auto failed = std::get_if<InteractionFailed>(&event); failed)
+                    throw std::runtime_error(failed->reason);
+                if (auto changed = std::get_if<ItemChange>(&event);
+                    changed && changed->kind == ItemChangeKind::Created)
+                    result["id"] = changed->item.value;
+            }
+            if (!result.contains("id")) throw std::runtime_error("Item was not created");
+            result["code"] = code;
+            result["quality"] = quality;
+            result["level"] = level;
         } else if (command == "unlock-waypoints") {
             if (session.state().player.dead)
                 throw std::runtime_error("Dead player cannot activate waypoints");
