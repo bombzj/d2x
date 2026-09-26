@@ -52,9 +52,8 @@ void SceneView::drawInventory(Vec mouse) const {
         if (slot == EquipmentSlot::LeftHand) slot = weaponHandSlot(true, weaponSet);
         auto bounds = equipmentBounds(slot);
         auto equipped = inventory.item(inventory.equipped(session_.playerContainers(), slot));
-        if (equipped) {
-            drawItemIcon(*equipped, bounds,
-                         ui.drag && ui.drag->moved && ui.drag->item.id == equipped->id ? Fade(WHITE, .3f) : WHITE);
+        if (equipped && !(ui.drag && ui.drag->item.id == equipped->id)) {
+            drawItemIcon(*equipped, bounds);
             if (inventory.catalog().find(equipped->definition)->maxStack > 1) {
                 auto quantity = std::to_string(equipped->quantity);
                 painter_.label(quantity, int(bounds.x + bounds.width - painter_.measure(quantity, 12) - 4),
@@ -67,7 +66,8 @@ void SceneView::drawInventory(Vec mouse) const {
                 hovered = equipped->id;
         }
     }
-    auto drop = inventoryDrop(session_, ui, mouse, view_.hirelingOpen);
+    const bool overShop = view_.shopOpen && CheckCollisionPointRec(rv(mouse), classicSideBounds(false));
+    auto drop = overShop ? InventoryDrop{} : inventoryDrop(session_, ui, mouse, view_.hirelingOpen);
     std::string hint = ui.pending                  ? "Moving item..."
                        : ui.drag && ui.drag->moved ? drop.description
                                                    : "Select an item or drag it to another slot.";
@@ -103,7 +103,7 @@ void SceneView::drawInventory(Vec mouse) const {
                 view_.shopRepair ? session_.vendorRepairQuote(view_.dialogueObject, item->handle()) :
                 view_.shopOpen ? session_.vendorSaleQuote(view_.dialogueObject, item->handle()) : std::nullopt,
                 false, view_.shopRepair ? "Repair" : view_.shopOpen ? "Sell" : "Cost");
-    } else if (ui.drag && ui.drag->moved && !hint.empty()) {
+    } else if (ui.drag && ui.drag->moved && !overShop && !hint.empty()) {
         int width = painter_.measure(hint, 12) + 24;
         frame({panel.x - width - 12, 450, float(width), 30});
         painter_.label(hint, int(panel.x - width), 459, 12,
@@ -146,17 +146,18 @@ void SceneView::drawInventory(Vec mouse) const {
             itemButton(goldDialogButton(index), index ? "CANCEL" : "OK", gold);
     }
 }
-void SceneView::drawInventoryCursor(Vec mouse) const {
+bool SceneView::drawInventoryCursor(Vec mouse) const {
     const auto &ui = view_.inventory;
-    if (!ui.drag || !ui.drag->moved || view_.blocksWorld())
-        return;
+    if (!ui.drag || view_.gameMenuOpen ||
+        (view_.blocksWorld() && !view_.shopOpen))
+        return false;
     const auto *item = session_.inventory().item(ui.drag->item.id);
     if (!item || item->revision != ui.drag->item.revision)
-        return;
+        return false;
     const auto &definition = *session_.inventory().catalog().find(item->definition);
     drawItemIcon(*item,
                  {mouse.x - ui.drag->pixelOffset.x, mouse.y - ui.drag->pixelOffset.y,
-                  definition.width * inventoryCellSize, definition.height * inventoryCellSize},
-                 Fade(WHITE, .85f));
+                  definition.width * inventoryCellSize, definition.height * inventoryCellSize});
+    return true;
 }
 } // namespace d2x

@@ -209,8 +209,8 @@ void SceneView::drawBelt(Vec mouse) const {
             auto box = beltSlot({column, row});
             auto item = inventory.item(inventory.itemAt(belt->id, {column, row}));
             if (item) {
-                bool dragged = ui.drag && ui.drag->moved && ui.drag->item.id == item->id;
-                drawItemIcon(*item, box, dragged ? Fade(WHITE, .3f) : WHITE);
+                bool dragged = ui.drag && ui.drag->item.id == item->id;
+                if (!dragged) drawItemIcon(*item, box);
             }
             if (CheckCollisionPointRec(rv(mouse), box))
                 DrawRectangleLinesEx(box, 1, parchment);

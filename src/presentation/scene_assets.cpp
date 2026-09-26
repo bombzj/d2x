@@ -122,6 +122,16 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
     cursor = unitsGraphics_.single("data/global/ui/cursor/ohand.dc6");
     if (cursor.frames.empty())
         throw std::runtime_error("Original pointer is missing: data/global/ui/cursor/ohand.dc6");
+    constexpr std::array menuLabels{"options", "exit", "returntogame"};
+    for (size_t index = 0; index < menuLabels.size(); ++index) {
+        gameMenuLabels[index] = unitsGraphics_.single(
+            std::string("data/local/ui/eng/") + menuLabels[index] + ".dc6");
+        if (gameMenuLabels[index].frames.empty())
+            throw std::runtime_error("Original Escape menu label is missing: " + std::string(menuLabels[index]));
+    }
+    gameMenuMarker = unitsGraphics_.single("data/global/ui/cursor/pentspin.dc6");
+    if (gameMenuMarker.frames.empty())
+        throw std::runtime_error("Original Escape menu marker is missing");
     inventoryPanel = uiGraphics_.single("data/global/ui/panel/invchar6.dc6");
     {
         weaponTabs = uiGraphics_.single("data/global/ui/panel/invchar6tab.dc6");

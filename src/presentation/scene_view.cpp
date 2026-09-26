@@ -105,6 +105,10 @@ void SceneView::sessionRestored() {
     view_.inventory = {};
     view_.characterOpen = false;
     view_.pointButtonPressed.reset();
+    view_.gameMenuOpen = false;
+    view_.gameMenuSelected = 2;
+    view_.gameMenuPressed = -1;
+    view_.gameMenuTime = 0;
     view_.hirelingOpen = view_.hireListOpen = false;
     view_.skillTreeOpen = false;
     view_.questOpen = false;
@@ -128,7 +132,7 @@ void SceneView::sessionRestored() {
     cancelNpcDialogue();
     view_.npcGossipTurns.clear();
     view_.shopOpen = false;
-    view_.shopSaleConfirm.reset();
+    view_.shopSalePending.reset();
     view_.npcMenu = false;
     view_.camera = project(session_.state().player.pos);
     view_.clickAge = 10;
@@ -145,6 +149,7 @@ void SceneView::sessionRestored() {
 }
 void SceneView::advanceUi(float dt) {
     view_.noticeTime = std::max(0.f, view_.noticeTime - dt);
+    if (view_.gameMenuOpen) view_.gameMenuTime += dt;
     advanceNpcDialogue(dt);
     advanceQuestAnimations(dt);
 }
@@ -321,6 +326,7 @@ void SceneView::advance(float dt) {
                         view_.inventory.cancelGesture();
                     }
                 } else if constexpr (std::is_same_v<T, InteractionFailed>) {
+                    view_.shopSalePending.reset();
                     notice(value.reason, true);
                     if (view_.npcMenu || view_.shopOpen || !view_.dialogue.empty())
                         view_.dialogueStatus = value.reason;
@@ -440,7 +446,9 @@ void SceneView::advance(float dt) {
                     if (view_.shopOpen) scrollNpcShop(0);
                 } else if constexpr (std::is_same_v<T, VendorItemSold>) {
                     view_.dialogueStatus.clear();
-                    view_.shopSaleConfirm.reset();
+                    view_.shopSalePending.reset();
+                    if (view_.inventory.drag && view_.inventory.drag->item.id == value.item)
+                        view_.inventory.drag.reset();
                     notice("Sold for " + std::to_string(value.price) + " gold.");
                 }
             },

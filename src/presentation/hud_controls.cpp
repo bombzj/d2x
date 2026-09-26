@@ -94,7 +94,7 @@ void SceneView::drawControlPanel() const {
         for (int index = 0; index < 7; ++index)
             if (const auto *icon = assets_.miniPanelButtons.frame(0, frames[index]))
                 imageAt(icon, hudMiniButton(*icon, index),
-                        index == 4 || index == 6 ? Color{120, 120, 120, 255} : WHITE);
+                        index == 4 ? Color{120, 120, 120, 255} : WHITE);
     }
 }
 std::optional<int> SceneView::miniPanelAt(Vec mouse) const {
@@ -212,7 +212,7 @@ void SceneView::drawSkillControls(Vec mouse) const {
     if (auto button = miniPanelAt(mouse); button && *button >= 0) {
         constexpr const char *labels[] = {"Character [C]", "Inventory [I]", "Skill Tree [S]",
                                           "Automap [TAB]", "Message unavailable", "Quest Log [Q]",
-                                          "Game menu unavailable"};
+                                          "Game menu [Esc]"};
         hint = labels[*button];
     }
     if (CheckCollisionPointRec(rv(mouse), hudStamina()))

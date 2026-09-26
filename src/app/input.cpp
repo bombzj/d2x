@@ -59,6 +59,7 @@ FrameInput pollInput(const Viewport &viewport) {
     input.automapNames = !input.control && IsKeyPressed(KEY_F12);
     input.travel = input.control && IsKeyPressed(KEY_F2);
     input.pageDelta = int(IsKeyPressed(KEY_PAGE_DOWN)) - int(IsKeyPressed(KEY_PAGE_UP));
+    input.menuDelta = int(IsKeyPressed(KEY_DOWN)) - int(IsKeyPressed(KEY_UP));
     input.collision = input.control && IsKeyPressed(KEY_F3);
     input.pause = IsKeyPressed(KEY_P);
     input.mute = IsKeyPressed(KEY_M);

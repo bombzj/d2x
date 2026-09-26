@@ -109,7 +109,7 @@ $spawn = .\scripts\Send-D2XCommand.ps1 -Command monster-spawn -Arguments @{monst
 
 该命令复用正式词缀／特殊行掷值与库存创建，但有意绕过 TC、品质概率及同局暗金唯一限制；不能拿它证明自然掉落正确，也不会计入正式掉落结算。调试物品可进入正常角色存档，重要现场请使用独立 `--save` 路径。2026-09-26 Release 已实际调用四种品质生成、拾取及 D2S 保存／重载；无效代码拒绝且不增加物品。PowerShell 客户端白名单已包含 `item-spawn`。
 
-`ui-input` 可附带 `screenshot=true`，在该输入处理后的同一帧保存 `artifacts/d2x-capture.png`，用于准确捕获悬停提示。`showLoot=true` 模拟该帧显示地面标签。`status.ui` 的 `purchaseConfirmation`、`saleConfirmation`（物品 ID，0 表示无）和 `shopRepair` 只读反映当前交易界面，截图前应先确认 `shop=true`。单独 `screenshot` 命令仍保存上一张已绘制帧到 `artifacts/debug-pipe.png`。
+`ui-input` 可附带 `screenshot=true`，在该输入处理后的同一帧保存 `artifacts/d2x-capture.png`，用于准确捕获悬停提示。`showLoot=true` 模拟该帧显示地面标签。`status.ui` 的 `purchaseConfirmation`、`salePending`（待售物品 ID，0 表示无）和 `shopRepair` 只读反映当前交易界面；旧 `saleConfirmation` 为兼容查询保留固定值 0，不再有背包单击出售确认。截图前应先确认 `shop=true`。单独 `screenshot` 命令仍保存上一张已绘制帧到 `artifacts/debug-pipe.png`。
 
 调试不同职业时，`Play.cmd -Class Sorceress -DebugPaused` 可直接创建全新的女巫进入城镇，无需角色界面和存档；`-Level 8` 可指定邪恶洞窟。EXE 使用 `--class Sorceress --level 8 --debug-pipe d2x-debug`。职业名按 MPQ 原名传入：`Amazon`、`Sorceress`、`Necromancer`、`Paladin`、`Barbarian`、`Druid`、`Assassin`。新角色走正式一级属性与初始装备构造，不是原地改写旧角色。
 

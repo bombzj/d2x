@@ -19,6 +19,7 @@ class SceneController {
     Vec movement_;
     bool temporaryRun_ = false;
     void click(Vec mouse);
+    void openGameMenu(Vec mouse);
     bool handleInventory(const FrameInput &input);
     bool handleSkills(const FrameInput &input);
     void toggleInventory();

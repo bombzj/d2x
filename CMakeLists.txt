@@ -171,13 +171,13 @@ target_sources(d2x_presentation PRIVATE src/presentation/automap_assets.cpp src/
 target_sources(d2x_presentation PRIVATE src/presentation/lighting_view.cpp)
 
 add_executable(d2x src/main.cpp src/app/application.cpp src/app/options.cpp src/app/input.cpp
-  src/app/character_frontend.cpp)
+  src/app/character_frontend.cpp src/app/crash_report.cpp)
 target_sources(d2x PRIVATE src/app/debug_pipe.cpp src/app/debug_commands.cpp src/app/debug_inventory.cpp
     src/app/debug_item_actions.cpp src/app/debug_monsters.cpp src/app/debug_hireling.cpp)
 target_link_libraries(d2x PRIVATE d2x_presentation d2x_persistence)
 target_link_libraries(d2x PRIVATE nlohmann_json::nlohmann_json)
 if(WIN32)
-  target_link_libraries(d2x PRIVATE advapi32)
+  target_link_libraries(d2x PRIVATE advapi32 dbghelp)
 endif()
 add_executable(d2x_assets src/asset_tool.cpp)
 target_link_libraries(d2x_assets PRIVATE d2x_content d2x_world d2x_population d2x_persistence raylib)

@@ -165,6 +165,7 @@ int runGame(int argc, char **argv) {
             std::optional<RenderTarget> frontendTarget;
             const bool frontend = !options.directGame;
             if (frontend) {
+                std::cout << "Character frontend: preparing\n" << std::flush;
                 frontendTarget.emplace();
                 archives.setLoadingPulse({});
                 ShowCursor();
@@ -256,7 +257,7 @@ int runGame(int argc, char **argv) {
                     }
                     if (ownsSave) {
                         writeSave(savePath, session.characterSave(), session.content());
-                        std::cout << "Saved " << savePath << '\n';
+                        std::cout << "Saved " << savePath << '\n' << std::flush;
                     }
                     return true;
                 } catch (const std::exception &error) {
@@ -292,7 +293,7 @@ int runGame(int argc, char **argv) {
                     input = std::move(*debugInput);
                     debugInput.reset();
                 }
-                bool persistenceInput = input.focused && (input.save || input.load);
+                bool persistenceInput = input.focused && !view.ui().gameMenuOpen && (input.save || input.load);
                 if (persistenceInput) {
                     try {
                         if (input.load) {
@@ -314,6 +315,7 @@ int runGame(int argc, char **argv) {
                 } else if (!controller.handle(input, dt)) {
                     if (saveBeforeExit()) {
                         returningToCharacters = true;
+                        std::cout << "Character session: returning to list\n" << std::flush;
                         break;
                     }
                 }
@@ -352,6 +354,8 @@ int runGame(int argc, char **argv) {
                 }
             }
             syncPreferences(true);
+            if (returningToCharacters)
+                std::cout << "Character session: finalizing resources\n" << std::flush;
             if (!options.screenshot.empty())
                 target.save(options.screenshot);
             if (!options.pack.empty())
@@ -364,10 +368,13 @@ int runGame(int argc, char **argv) {
                 throw std::runtime_error("Cannot write resource manifest");
             if (!options.pack.empty())
                 archives.packUsed(options.pack);
+            if (returningToCharacters)
+                std::cout << "Character session: releasing resources\n" << std::flush;
             return returningToCharacters;
         }();
         if (!returnToCharacters)
             return 0;
+        std::cout << "Character session: released\n" << std::flush;
         AppOptions next;
         next.mpq = options.mpq;
         next.hidden = options.hidden;

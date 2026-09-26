@@ -56,7 +56,6 @@ std::vector<std::string> describeItemStats(const ClassicData &data, const ItemIn
         if (found == data.itemStats.end() || !found->descriptionFunction) continue;
         const auto &stat = *found;
         auto description = text(number < 0 ? stat.negative : stat.positive);
-        if (description.empty()) continue;
         const int function = stat.descriptionFunction;
         int shown = number;
         if (function == 5) shown = number * 100 / 128;
@@ -101,6 +100,7 @@ std::vector<std::string> describeItemStats(const ClassicData &data, const ItemIn
         } else if (function >= 14 && function != 20) {
             continue; // Layered skill triggers/charges have a separate formatter.
         }
+        if (description.empty()) continue;
         auto placeholder = description.find("%d");
         if (placeholder != std::string::npos)
             description.replace(placeholder, 2, std::to_string(shown));

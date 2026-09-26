@@ -50,7 +50,7 @@ void SceneView::cancelNpcDialogue() {
 void SceneView::displayNpcDialogue(EntityId object, std::string speaker, std::string text) {
     view_.dialogueObject = object;
     view_.shopOpen = false;
-    view_.shopSaleConfirm.reset();
+    view_.shopSalePending.reset();
     view_.npcMenu = false;
     view_.npcTopics = false;
     view_.shopPage = 0;

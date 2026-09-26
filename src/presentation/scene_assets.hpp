@@ -78,6 +78,8 @@ class SceneAssets {
         globeOverlap, runButton, button;
     std::array<GpuAnimation, 6> actOneQuestIcons;
     std::array<Rectangle, 6> actOneQuestFaces{};
+    std::array<GpuAnimation, 3> gameMenuLabels;
+    GpuAnimation gameMenuMarker;
     GpuAnimation hirelingPanel, hirelingScroll, hirelingHead, hirelingArmor, hirelingWeapon;
     struct OverlayArt {
         GpuAnimation animation;

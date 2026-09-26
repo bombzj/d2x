@@ -90,10 +90,10 @@ void SceneView::drawHireling(Vec mouse) const {
         if (mirrored) id = inventory.equipped(slots, EquipmentSlot::RightHand);
         if (const auto *item = inventory.item(id)) {
             if (mirrored) DrawRectangleRec(box, {73, 0, 0, 160});
-            const bool dragged = view_.inventory.drag && view_.inventory.drag->moved &&
+            const bool dragged = view_.inventory.drag &&
                                  view_.inventory.drag->item.id == id;
-            drawItemIcon(*item, box, dragged ? Fade(WHITE, .3f) :
-                                    mirrored ? Color{160, 150, 150, 150} : WHITE);
+            if (!dragged)
+                drawItemIcon(*item, box, mirrored ? Color{160, 150, 150, 150} : WHITE);
             if (CheckCollisionPointRec(rv(mouse), box)) hovered = id;
         } else {
             const auto &art = index == 0 ? assets_.hirelingHead :

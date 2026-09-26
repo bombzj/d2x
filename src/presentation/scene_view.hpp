@@ -22,6 +22,10 @@ struct ViewState {
     float clickAge = 10, zoom = 1;
     bool help = false, automap = false, debug = false, pause = false, travelMenu = false;
     bool miniPanelOpen = false;
+    bool gameMenuOpen = false;
+    int gameMenuSelected = 2, gameMenuPressed = -1;
+    float gameMenuTime = 0;
+    Vec gameMenuMouse;
     bool minimapRight = false;
     bool automapLarge = false;
     bool automapNames = true;
@@ -43,7 +47,7 @@ struct ViewState {
     int shopPage = 0;
     int shopCategory = 0;
     std::optional<uint32_t> shopConfirm;
-    std::optional<ItemHandle> shopSaleConfirm;
+    std::optional<ItemHandle> shopSalePending;
     EntityId waypointSource;
     int travelPage = 0;
     float animationTime = 0, heroTime = 0, stepClock = 0;
@@ -62,7 +66,7 @@ struct ViewState {
     std::string lootNotice;
     float noticeTime = 0;
     bool noticeError = false;
-    bool blocksWorld() const { return pause || travelMenu || help || npcMenu || shopOpen || hireListOpen || !dialogue.empty(); }
+    bool blocksWorld() const { return gameMenuOpen || pause || travelMenu || help || npcMenu || shopOpen || hireListOpen || !dialogue.empty(); }
 };
 class SceneView {
     const GameSession &session_;
@@ -111,6 +115,7 @@ class SceneView {
     void drawMinimap(bool large) const;
     void revealAutomap();
     void drawHud() const;
+    void drawGameMenu() const;
     void drawNpcDialogue() const;
     void displayNpcDialogue(EntityId object, std::string speaker, std::string text);
     void advanceNpcDialogue(float dt);
@@ -143,10 +148,12 @@ class SceneView {
     static Color itemColor(ItemQuality quality);
     void itemButton(Rectangle bounds, const char *label, Color color) const;
     void drawItemIcon(const ItemInstance &item, Rectangle bounds, Color tint = WHITE) const;
-    void drawInventoryCursor(Vec mouse) const;
+    bool drawInventoryCursor(Vec mouse) const;
     void orb(bool mana, float fraction) const;
 
   public:
+        Rectangle gameMenuItemBounds(int index) const;
+        int gameMenuAt(Vec mouse) const;
     Rectangle hirelingSlotBounds(size_t index) const;
     std::optional<int> miniPanelAt(Vec mouse) const;
     const LevelExit *exitAt(Vec mouse) const;
@@ -177,11 +184,11 @@ class SceneView {
     bool startNpcTopic(ActOneQuest quest);
     bool openNpcShop(bool gamble = false);
     void closeNpcShop();
+    bool npcShopDropAt(Vec mouse) const;
     int clickNpcMenu(Vec mouse);
     void scrollNpcDialogue(int amount);
     bool closeNpcDialogue();
     std::optional<uint32_t> clickNpcShop(Vec mouse, bool directBuy = false);
-    std::optional<ItemHandle> clickNpcSaleConfirm(Vec mouse);
     std::optional<RegionId> clickWaypointMenu(Vec mouse);
     void scrollNpcShop(int pages);
     bool showNextNpcGossip();

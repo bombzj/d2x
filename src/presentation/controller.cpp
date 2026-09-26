@@ -7,6 +7,26 @@
 #include <array>
 
 namespace d2x {
+void SceneController::openGameMenu(Vec mouse) {
+    auto &ui = view_.ui();
+    if (ui.inventory.open) toggleInventory();
+    ui.inventory.cancelGesture();
+    ui.skillPicker.reset();
+    ui.characterOpen = ui.hirelingOpen = ui.skillTreeOpen = ui.questOpen = false;
+    ui.pointButtonPressed.reset();
+    ui.questPressed = -1;
+    ui.gameMenuOpen = true;
+    ui.gameMenuSelected = 2;
+    ui.gameMenuPressed = -1;
+    ui.gameMenuTime = 0;
+    ui.gameMenuMouse = mouse;
+    ui.showLoot = false;
+    movement_ = {};
+    leftCombatTarget_ = rightCombatTarget_ = {};
+    channelInputSkill_ = -1;
+    session_.submit(StopMoving{});
+    session_.submit(StopChannel{});
+}
 void SceneController::click(Vec mouse) {
     auto &ui = view_.ui();
     view_.cancelNpcDialogue();
@@ -99,6 +119,38 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
     if (!input.focused) {
         ui.inventory.cancelGesture();
         ui.skillPicker.reset();
+        ui.gameMenuPressed = -1;
+        return true;
+    }
+    if (ui.gameMenuOpen) {
+        leftCombatTarget_ = rightCombatTarget_ = {};
+        ui.showLoot = false;
+        auto resume = [&] {
+            ui.gameMenuOpen = false;
+            ui.gameMenuPressed = -1;
+            releaseAfterLoad_ = true;
+        };
+        if (input.escape) {
+            resume();
+            return true;
+        }
+        const int hovered = input.insideViewport ? view_.gameMenuAt(input.mouse) : -1;
+        if ((input.mouse - ui.gameMenuMouse).length() > 0 || input.leftPressed) {
+            if (hovered >= 0) ui.gameMenuSelected = hovered;
+            ui.gameMenuMouse = input.mouse;
+        }
+        if (input.menuDelta) {
+            ui.gameMenuSelected = std::clamp(ui.gameMenuSelected + input.menuDelta, 0, 2);
+            ui.gameMenuPressed = -1;
+        }
+        int activated = input.enter ? ui.gameMenuSelected : -1;
+        if (input.leftPressed) ui.gameMenuPressed = hovered;
+        if (input.leftReleased) {
+            if (hovered >= 0 && hovered == ui.gameMenuPressed) activated = hovered;
+            ui.gameMenuPressed = -1;
+        } else if (!input.leftHeld) ui.gameMenuPressed = -1;
+        if (activated == 1) return false;
+        if (activated == 2) resume();
         return true;
     }
     if (ui.pointButtonPressed) {
@@ -249,7 +301,7 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
         }
     }
     if (ui.shopOpen) {
-        auto saleItemAt = [&]() -> const ItemInstance * {
+        auto repairItemAt = [&]() -> const ItemInstance * {
             const auto &inventory = session_.inventory();
             EntityId id;
             if (auto cell = inventoryCell(input.mouse))
@@ -258,32 +310,49 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
                 id = inventory.equipped(session_.playerContainers(), *slot);
             return inventory.item(id);
         };
-        if (ui.shopSaleConfirm) {
-            if (input.escape) ui.shopSaleConfirm.reset();
-            else if (input.enter) {
-                auto item = *ui.shopSaleConfirm;
-                ui.shopSaleConfirm.reset();
-                session_.submit(SellVendorItem{ui.dialogueObject, item});
-            } else if (input.insideViewport && input.leftPressed)
-                if (auto item = view_.clickNpcSaleConfirm(input.mouse))
-                    session_.submit(SellVendorItem{ui.dialogueObject, *item});
-            return true;
-        }
+        if (ui.shopSalePending) return true;
         if (input.escape) {
-            if (ui.shopRepair) ui.shopRepair = false;
+            if (ui.inventory.drag || ui.inventory.identify || ui.inventory.split || ui.inventory.goldDialog)
+                ui.inventory.cancelGesture();
+            else if (ui.shopRepair) ui.shopRepair = false;
             else if (ui.shopConfirm)
                 ui.shopConfirm.reset();
             else {
                 view_.closeNpcShop();
                 session_.submit(EndNpcConversation{ui.dialogueObject});
             }
+        } else if (input.inventory || (!ui.shopConfirm && !ui.inventory.split && !ui.inventory.goldDialog &&
+                   input.insideViewport && input.leftPressed &&
+                   CheckCollisionPointRec(rv(input.mouse), inventoryClose()))) {
+            view_.closeNpcShop();
+            session_.submit(EndNpcConversation{ui.dialogueObject});
+        } else if (ui.inventory.drag) {
+            const auto *source = session_.inventory().item(ui.inventory.drag->item.id);
+            if (!source || source->revision != ui.inventory.drag->item.revision || input.rightPressed)
+                return handleInventory(input);
+            if ((input.mouse - ui.inventory.drag->pressedAt).length() > 4)
+                ui.inventory.drag->moved = true;
+            const bool drop = ui.inventory.drag->pickedUp ? input.leftPressed :
+                input.leftReleased && ui.inventory.drag->moved;
+            if (input.insideViewport && CheckCollisionPointRec(rv(input.mouse), classicSideBounds(false))) {
+                if (drop) {
+                    ui.inventory.drag->pickedUp = ui.inventory.drag->moved = true;
+                    inventoryClick_ = true;
+                    if (view_.npcShopDropAt(input.mouse)) {
+                        if (session_.vendorSaleQuote(ui.dialogueObject, source->handle())) {
+                            ui.shopSalePending = source->handle();
+                            session_.submit(SellVendorItem{ui.dialogueObject, source->handle()});
+                        } else view_.notice("That item cannot be sold here.", true);
+                    }
+                }
+                return true;
+            }
+            return handleInventory(input);
+        } else if (ui.inventory.identify || ui.inventory.split || ui.inventory.goldDialog) {
+            return handleInventory(input);
         } else {
             if (input.pageDelta) view_.scrollNpcShop(-input.pageDelta);
             if (!ui.shopConfirm && input.insideViewport && input.leftPressed &&
-                CheckCollisionPointRec(rv(input.mouse), inventoryClose())) {
-                view_.closeNpcShop();
-                session_.submit(EndNpcConversation{ui.dialogueObject});
-            } else if (!ui.shopConfirm && input.insideViewport && input.leftPressed &&
                        session_.content().stashLayout.expansion &&
                        weaponTabAt(input.mouse).has_value()) {
                 if (*weaponTabAt(input.mouse) != session_.state().player.weaponSet)
@@ -292,16 +361,14 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
                 const auto slot = *ui.shopConfirm;
                 ui.shopConfirm.reset();
                 session_.submit(BuyVendorItem{ui.dialogueObject, slot, ui.shopGamble});
-            } else if (!ui.shopConfirm && input.insideViewport && input.leftPressed &&
-                       CheckCollisionPointRec(rv(input.mouse), inventoryBounds())) {
-                if (const auto *item = saleItemAt()) {
-                    if (ui.shopRepair)
+            } else if (!ui.shopConfirm && input.insideViewport &&
+                       (inventorySurface(ui.inventory, input.mouse) ||
+                        CheckCollisionPointRec(rv(input.mouse), beltBounds(
+                            session_.inventory().container(session_.playerContainers().belt)->spec.rows)))) {
+                if (ui.shopRepair && input.leftPressed) {
+                    if (const auto *item = repairItemAt())
                         session_.submit(RepairVendorItem{ui.dialogueObject, item->handle()});
-                    else if (session_.vendorSaleQuote(ui.dialogueObject, item->handle()))
-                        ui.shopSaleConfirm = item->handle();
-                    else
-                        view_.notice("That item cannot be sold here.", true);
-                }
+                } else return handleInventory(input);
             } else if (input.insideViewport && input.leftPressed) {
                 if (auto slot = view_.clickNpcShop(input.mouse))
                     session_.submit(BuyVendorItem{ui.dialogueObject, *slot, ui.shopGamble});
@@ -309,14 +376,7 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
                     session_.submit(EndNpcConversation{ui.dialogueObject});
             } else if (input.insideViewport && input.rightPressed) {
                 inventoryRight_ = true;
-                if (CheckCollisionPointRec(rv(input.mouse), inventoryBounds())) {
-                    if (const auto *item = saleItemAt()) {
-                        if (ui.shopRepair)
-                            session_.submit(RepairVendorItem{ui.dialogueObject, item->handle()});
-                        else
-                            session_.submit(SellVendorItem{ui.dialogueObject, item->handle()});
-                    }
-                } else if (auto slot = view_.clickNpcShop(input.mouse, true))
+                if (auto slot = view_.clickNpcShop(input.mouse, true))
                     session_.submit(BuyVendorItem{ui.dialogueObject, *slot, ui.shopGamble});
             }
         }
@@ -465,8 +525,12 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
         if (auto button = view_.miniPanelAt(input.mouse)) {
             if (input.leftPressed) {
                 inventoryClick_ = true;
-                if (*button == 4 || *button == 6) {
+                if (*button == 4) {
                     view_.notice("This panel action is not available yet.", true);
+                    return true;
+                }
+                if (*button == 6) {
+                    openGameMenu(input.mouse);
                     return true;
                 }
                 FrameInput action;
@@ -521,8 +585,7 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
             ui.skillTreeOpen = false;
         else if (ui.questOpen)
             ui.questOpen = false;
-        else
-            return false;
+        else openGameMenu(input.mouse);
         inventoryClick_ = input.leftHeld || input.leftReleased;
         inventoryRight_ = input.rightHeld;
         return true;

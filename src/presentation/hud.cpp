@@ -3,6 +3,69 @@
 #include <algorithm>
 #include <cmath>
 namespace d2x {
+Rectangle SceneView::gameMenuItemBounds(int index) const {
+    float width = 0, height = 0, totalHeight = 0, top = 0;
+    for (size_t row = 0; row < assets_.gameMenuLabels.size(); ++row) {
+        float rowWidth = 0, rowHeight = 0;
+        for (const auto &part : assets_.gameMenuLabels[row].frames) {
+            rowWidth += part.texture.width;
+            rowHeight = std::max(rowHeight, float(part.texture.height));
+        }
+        if (int(row) < index) top += rowHeight + 10;
+        if (int(row) == index) { width = rowWidth; height = rowHeight; }
+        totalHeight += rowHeight + (row + 1 < assets_.gameMenuLabels.size() ? 10 : 0);
+    }
+    return {(W - width * hudScale) * .5f,
+            (H - totalHeight * hudScale) * .5f + top * hudScale,
+            width * hudScale, height * hudScale};
+}
+int SceneView::gameMenuAt(Vec mouse) const {
+    for (int index = 0; index < int(assets_.gameMenuLabels.size()); ++index)
+        if (CheckCollisionPointRec(rv(mouse), gameMenuItemBounds(index))) return index;
+    return -1;
+}
+void SceneView::drawGameMenu() const {
+    if (!view_.gameMenuOpen) return;
+    DrawRectangle(0, 0, W, H, {0, 0, 0, 100});
+    float widest = 0;
+    for (int index = 0; index < int(assets_.gameMenuLabels.size()); ++index) {
+        auto bounds = gameMenuItemBounds(index);
+        widest = std::max(widest, bounds.width);
+        for (const auto &part : assets_.gameMenuLabels[size_t(index)].frames) {
+            const auto &texture = part.texture;
+            DrawTexturePro(texture, {0, 0, float(texture.width), float(texture.height)},
+                           {bounds.x, bounds.y, texture.width * hudScale, texture.height * hudScale},
+                           {0, 0}, 0, WHITE);
+            bounds.x += texture.width * hudScale;
+        }
+    }
+    const auto selected = gameMenuItemBounds(view_.gameMenuSelected);
+    const auto &marker = assets_.gameMenuMarker;
+    const int frame = int(view_.gameMenuTime * marker.count) % marker.count;
+    for (bool right : {false, true}) {
+        const auto *image = marker.frame(0, right ? frame : marker.count - 1 - frame);
+        const float side = 54 * hudScale;
+        const float left = right ? (W + widest) * .5f + 26 * hudScale
+                                 : (W - widest) * .5f - 80 * hudScale;
+        DrawTexturePro(image->texture, {0, 0, float(image->texture.width), float(image->texture.height)},
+                       {left, selected.y + (selected.height - side) * .5f, side, side},
+                       {0, 0}, 0, WHITE);
+    }
+    if (view_.noticeError && view_.noticeTime > 0) {
+        std::string line;
+        int top = H - HUD - 90;
+        for (char letter : view_.lootNotice) {
+            if (letter == '\n' || painter_.measure(line + letter, 14) > W - 80) {
+                painter_.centered(line, top, 14, {245, 166, 135, 255});
+                line.clear();
+                top += 17;
+                if (top > H - 20) break;
+            }
+            if (letter != '\n') line += letter;
+        }
+        if (!line.empty()) painter_.centered(line, top, 14, {245, 166, 135, 255});
+    }
+}
 void SceneView::drawHud() const {
     const auto &sim = session_.state();
     drawControlPanel();
@@ -185,8 +248,10 @@ void SceneView::draw(Vec mouse) const {
     if (view_.npcMenu) drawNpcMenu(mouse);
     drawHirelingList(mouse);
     if (!view_.dialogue.empty()) drawNpcDialogue();
-    drawInventoryCursor(mouse);
-    if (const auto *pointer = assets_.cursor.frame(0, 0))
-        sprite(pointer, mouse - Vec{0, float(pointer->texture.height)});
+    const bool itemCursor = drawInventoryCursor(mouse);
+    drawGameMenu();
+    if (!itemCursor)
+        if (const auto *pointer = assets_.cursor.frame(0, 0))
+            sprite(pointer, mouse - Vec{0, float(pointer->texture.height)});
 }
 } // namespace d2x

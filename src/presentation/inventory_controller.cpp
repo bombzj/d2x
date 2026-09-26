@@ -243,12 +243,16 @@ bool SceneController::handleInventory(const FrameInput &input) {
         if (input.leftReleased) {
             if (ui.drag->moved && input.insideViewport) {
                 auto drop = inventoryDrop(session_, ui, input.mouse, view_.ui().hirelingOpen);
-                if (drop.command)
-                    queueInventory(std::move(*drop.command), source->id);
+                if (drop.command) {
+                    if (queueInventory(std::move(*drop.command), source->id)) {
+                        ui.drag.reset();
+                        return true;
+                    }
+                }
                 else if (drop.error != InventoryError::None)
                     view_.notice(inventoryErrorText(drop.error), true);
             }
-            if (ui.drag->moved)
+            if (ui.drag->moved && !input.insideViewport)
                 ui.drag.reset();
             else {
                 const auto &definition = *inventory.catalog().find(source->definition);
@@ -300,6 +304,11 @@ bool SceneController::handleInventory(const FrameInput &input) {
             if (!location || location->container != backpack)
                 view_.notice("Carry the cube in your backpack to open it.", true);
             else {
+                if (view_.ui().shopOpen) {
+                    const auto npc = view_.ui().dialogueObject;
+                    view_.closeNpcShop();
+                    session_.submit(EndNpcConversation{npc});
+                }
                 if (ui.storage) {
                     session_.submit(CloseStorage{});
                     ui.storage = {};
