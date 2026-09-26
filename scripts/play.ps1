@@ -12,19 +12,28 @@ param(
 $ErrorActionPreference='Stop'
 if($NoDebugPipe -and $DebugPaused){throw '-DebugPaused cannot be combined with -NoDebugPipe.'}
 if($Class -and $Load){throw 'Choose either -Class for a new character or -Load for a saved character.'}
+if($Mpq){$Mpq=$ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Mpq)}
 if($Load){$Load=$ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Load)}
 if($Save){$Save=$ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Save)}
 $projectRoot=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
-$exe=Join-Path $projectRoot 'build/bin/d2x.exe'
+$exe=Join-Path $projectRoot 'd2x.exe'
+if(-not (Test-Path -LiteralPath $exe)){$exe=Join-Path $projectRoot 'build/bin/d2x.exe'}
 if(-not (Test-Path -LiteralPath $exe)){$exe=Join-Path $projectRoot 'build/bin/Release/d2x.exe'}
-if(-not (Test-Path -LiteralPath $exe)){& (Join-Path $PSScriptRoot 'build.ps1');$exe=Join-Path $projectRoot 'build/bin/d2x.exe';if(-not (Test-Path -LiteralPath $exe)){$exe=Join-Path $projectRoot 'build/bin/Release/d2x.exe'}}
+if(-not (Test-Path -LiteralPath $exe)){
+    $buildScript=Join-Path $PSScriptRoot 'build.ps1'
+    if(-not (Test-Path -LiteralPath $buildScript)){throw 'D2X executable is missing. Rebuild the current package.'}
+    & $buildScript
+    $exe=Join-Path $projectRoot 'build/bin/d2x.exe'
+    if(-not (Test-Path -LiteralPath $exe)){$exe=Join-Path $projectRoot 'build/bin/Release/d2x.exe'}
+}
 if(-not $Mpq){
-    $fullSource=Join-Path $projectRoot 'assets/mpq2'
-    if(-not (Test-Path -LiteralPath (Join-Path $fullSource 'd2data.mpq')) -and
-       -not (Test-Path -LiteralPath (Join-Path $fullSource 'D2Data.mpq'))){
-        throw 'Lord of Destruction expansion MPQ files are required in assets/mpq2.'
+    $searchRoot=Get-Item -LiteralPath $projectRoot
+    while($searchRoot){
+        $fullSource=Join-Path $searchRoot.FullName 'assets/mpq2'
+        if(Test-Path -LiteralPath (Join-Path $fullSource 'd2data.mpq')){$Mpq=$fullSource;break}
+        $searchRoot=$searchRoot.Parent
     }
-    $Mpq=$fullSource
+    if(-not $Mpq){throw 'Original MPQs were not found. Supply -Mpq <assets/mpq2 folder>.'}
 }
 Push-Location $projectRoot
 try{

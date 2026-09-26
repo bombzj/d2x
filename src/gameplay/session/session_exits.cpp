@@ -13,9 +13,7 @@ bool atBoundary(const LevelExit &exit, const MapRecipe &recipe, Vec pos) {
                   : b.side == 2 ? pos.y - plane
                   : b.side == 3 ? plane - pos.x
                                 : plane - pos.y;
-    if (b.plane >= 0 && depth < -.8f)
-        return false;
-    return depth <= .8f && lateral >= b.start * 5 && lateral < b.end * 5;
+    return std::abs(depth) <= .8f && lateral >= b.start * 5 && lateral < b.end * 5;
 }
 } // namespace
 void GameSession::cancelExit() {
@@ -29,6 +27,12 @@ bool GameSession::routeBoundaryMove(Vec target) {
     for (const auto &exit : region().exits) {
         if (!exit.boundary || !exit.enabled)
             continue;
+        const auto &boundary = *exit.boundary;
+        const float plane = boundary.coordinate(source.width, source.height) * 5.f;
+        const float depth = boundary.side == 1 ? target.x - plane :
+            boundary.side == 2 ? target.y - plane :
+            boundary.side == 3 ? plane - target.x : plane - target.y;
+        if (depth >= 0) continue;
         auto dest = std::find_if(regions_.begin(), regions_.end(),
                                  [&](const auto &r) { return r.definition.id == exit.destination; });
         if (dest == regions_.end())
@@ -107,23 +111,28 @@ void GameSession::updateExit() {
                 auto target = destination->definition.id;
                 Vec arrival = back.arrival;
                 auto onward = boundaryMoveTarget_;
+                std::optional<Vec> coordinateOffset;
                 if (exit->boundary && back.boundary) {
                     const auto &a = region().recipe;
                     const auto &b = destination->recipe;
-                    Vec translated =
-                        p.pos + Vec{float((a.worldX - b.worldX) * 5), float((a.worldY - b.worldY) * 5)};
+                    coordinateOffset = Vec{float((a.worldX - b.worldX) * 5), float((a.worldY - b.worldY) * 5)};
+                    Vec translated = p.pos + *coordinateOffset;
                     int side = back.boundary->side;
                     float plane = back.boundary->coordinate(b.width, b.height) * 5.f;
                     if (side % 2)
                         translated.x = side == 1 ? plane + .5f : plane - .5f;
                     else
                         translated.y = side == 2 ? plane + .5f : plane - .5f;
-                    if (destination->map.grid.walkable(translated) &&
-                        destination->map.grid.segment(back.arrival, translated))
-                        arrival = translated;
+                    if ((translated - (p.pos + *coordinateOffset)).length() > 1.5f ||
+                        !atBoundary(back, b, translated) || !destination->map.grid.walkable(translated)) {
+                        cancelExit();
+                        simulation_.emit(InteractionFailed{{}, "The adjoining ground is blocked."});
+                        return;
+                    }
+                    arrival = translated;
                 }
                 cancelExit();
-                enter(target, arrival);
+                enter(target, arrival, coordinateOffset);
                 if (onward)
                     simulation_.execute(MoveTo{
                         *onward - Vec{destination->recipe.worldX * 5.f, destination->recipe.worldY * 5.f}});

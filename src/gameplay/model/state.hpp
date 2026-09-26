@@ -37,6 +37,7 @@ struct PlayerState {
         Vec target;
         int staticFieldMinimum = 0;
         float remaining = 0;
+        EntityId enemy;
     };
     struct ChannelCast {
         OriginalSkillCast skill;
@@ -44,6 +45,7 @@ struct PlayerState {
         float remaining = 0;
         unsigned pulses = 0;
         float age = 0;
+        EntityId enemy;
     };
     EntityId id;
     std::string name = "Hero";

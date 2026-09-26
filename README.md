@@ -25,6 +25,8 @@ Windows 使用 `scripts/build.ps1`，启动示例（默认读取 `assets/mpq2`�
 
 本机可用 `Play.cmd`。EXE 默认直接读取完整 `assets/mpq2`；其他位置可显式传 `--mpq <目录>`。
 
+本地打包运行 `scripts/package.ps1`，只更新固定 `dist/current/` 的程序和运行文件，不抽取或复制 MPQ。可在仓库根执行 `dist/current/Play.cmd -Mpq assets/mpq2`；包内默认存档与截图写入包目录。历史 `artifacts/` 中的重复 MPQ 和旧程序已清理，存档及画面资料保留，勿再使用旧包入口。
+
 调试时可直接创建指定职业进入游戏，不需要角色界面或已有存档：`Play.cmd -Class Sorceress`；附加 `-Level 8 -DebugPaused` 可直接进入暂停的邪恶洞窟现场。EXE 对应参数为 `--class Sorceress --level 8 --debug-pipe d2x-debug`。使用存档场景则传 `-Load <角色.d2s>`，需要保存结果时另传 `-Save <输出.d2s>`；`-Class` 与 `-Load` 互斥。新建直达角色未指定 `-Save` 时不自动保存。
 
 当前源码只使用原版 D2S v96，已接角色创建／列表与保存读取，不维护内部存档版本或旧档迁移。Windows Release 构建和原生存档／独立解析器往返已通过；2026-09-26 物品显示审查已更新本地独立分发目录，并通过包内启动、保存和重载，入口及验证范围见[构建与运行](docs/BUILD_AND_SHARE.md#当前本地分发目录)。零售版客户端未验收，Linux 尚未实际编译运行。准确支持边界见[存档](docs/SAVES.md)；佣兵 Hire／O 窗口和快速授予见 [佣兵](docs/HIRELINGS.md)。
@@ -34,7 +36,8 @@ Windows 使用 `scripts/build.ps1`，启动示例（默认读取 `assets/mpq2`�
 | 输入 | 功能 |
 | --- | --- |
 | 左键／方向键 | 寻路／辅助移动；野外边界直接跨区，洞口和楼梯点击进入 |
-| 左键点敌人／物品／NPC | 攻击／走近拾取／交互 |
+| 左键点敌人／物品／NPC | 单次攻击／走近拾取／交互；按住怪物持续攻击并锁定该目标 |
+| 右键按住怪物／空地 | 持续使用右技能；怪物目标不随鼠标移开改变，空地施法跟随朝向 |
 | NPC Trade 窗口左／右键点击背包或装备 | 确认出售／直接出售；修理模式左键修理 |
 | 左／右技能菜单悬停 + F1–F8 | 绑定对应鼠标键技能；单按 F1–F8 切换技能，不立即施法 |
 | 点击左右技能槽 | 展开当前职业已学技能菜单；Shift 左键使用左键技能 |

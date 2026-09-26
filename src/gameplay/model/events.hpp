@@ -33,6 +33,7 @@ struct PlayerDied {
 };
 struct RegionEntered {
     RegionId region;
+    std::optional<Vec> coordinateOffset;
 };
 struct ObjectInteracted {
     EntityId object;

@@ -282,7 +282,10 @@ void SceneView::advance(float dt) {
                     view_.inventory.cubeOpen = false;
                     landingAge_.clear();
                     view_.noticeTime = 0;
-                    view_.camera = project(session_.state().player.pos);
+                    if (value.coordinateOffset)
+                        view_.camera = view_.camera + project(*value.coordinateOffset);
+                    else
+                        view_.camera = project(session_.state().player.pos);
                     view_.dialogue.clear();
                     view_.shopOpen = false;
                     view_.npcMenu = false;

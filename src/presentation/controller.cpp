@@ -35,6 +35,8 @@ void SceneController::click(Vec mouse) {
     for (const auto &enemy : session_.state().area.enemies) {
         if (enemy.hp > 0 && session_.active(enemy.pos) &&
             (view_.screen(enemy.pos) - Vec{0, 25} - mouse).length() < 24) {
+            leftCombatTarget_ = enemy.id;
+            leftTargetSkill_ = ui.leftSkill;
             if (ui.leftSkill)
                 session_.submit(UseClassSkill{*ui.leftSkill, enemy.pos, enemy.id});
             else
@@ -58,8 +60,15 @@ void SceneController::click(Vec mouse) {
 }
 bool SceneController::handle(const FrameInput &input, float elapsed) {
     auto &ui = view_.ui();
+    if (inputRegion_ != session_.state().area.region) {
+        leftCombatTarget_ = rightCombatTarget_ = {};
+        inputRegion_ = session_.state().area.region;
+    }
+    if (!input.focused || !input.leftHeld || input.leftPressed || input.rightPressed) leftCombatTarget_ = {};
+    if (!input.focused || !input.rightHeld || input.rightPressed || input.leftPressed) rightCombatTarget_ = {};
     if (channelInputSkill_ >= 0 && (!input.focused || !input.rightHeld ||
-        !input.insideViewport || hudSurface(input.mouse) || ui.blocksWorld() || ui.inventory.open ||
+        ((!input.insideViewport || hudSurface(input.mouse)) && !rightCombatTarget_) ||
+        ui.blocksWorld() || ui.inventory.open ||
         input.movement.length() > .1f || input.leftPressed || input.leftHeld || input.inventory || input.escape ||
         ui.rightSkill != channelInputSkill_)) {
         session_.submit(StopChannel{});
@@ -86,6 +95,14 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
         return true;
     }
     repeatClick_ -= elapsed;
+    if (ui.blocksWorld() || input.escape || input.inventory || input.weaponSwap ||
+        input.movement.length() > .1f || session_.state().player.dead) {
+        if (leftCombatTarget_ || rightCombatTarget_) {
+            session_.submit(StopMoving{});
+            session_.submit(StopChannel{});
+        }
+        leftCombatTarget_ = rightCombatTarget_ = {};
+    }
     if (input.run)
         session_.submit(ToggleRun{});
     if (input.weaponSwap && session_.content().stashLayout.expansion &&
@@ -520,6 +537,27 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
         ui.inventory.cancelGesture();
         return true;
     }
+    if (leftCombatTarget_ || rightCombatTarget_) {
+        if (handleSkills(input)) return true;
+        for (int column = 0; column < 4; ++column)
+            if (input.belt[column]) session_.submit(UseBeltColumn{column});
+        const bool right = bool(rightCombatTarget_);
+        const auto target = right ? rightCombatTarget_ : leftCombatTarget_;
+        const auto skill = right ? ui.rightSkill : ui.leftSkill;
+        const auto &enemies = session_.state().area.enemies;
+        const auto found = std::find_if(enemies.begin(), enemies.end(),
+            [&](const Enemy &enemy) { return enemy.id == target && enemy.hp > 0; });
+        if (found != enemies.end() && session_.active(found->pos) &&
+            skill == (right ? rightTargetSkill_ : leftTargetSkill_)) {
+            if (skill) session_.submit(UseClassSkill{*skill, found->pos, target});
+            else session_.submit(Attack{target});
+        } else {
+            session_.submit(StopMoving{});
+            session_.submit(StopChannel{});
+            channelInputSkill_ = -1;
+        }
+        return true;
+    }
     if (ui.hirelingOpen && input.insideViewport &&
         CheckCollisionPointRec(rv(input.mouse), classicSideBounds(false))) {
         if (input.leftPressed && CheckCollisionPointRec(rv(input.mouse), hirelingClose())) {
@@ -615,8 +653,13 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
         if (input.leftPressed || (input.leftHeld && !pickupClick_ && repeatClick_ <= 0)) {
             if (input.shift && ui.leftSkill)
                 session_.submit(UseClassSkill{*ui.leftSkill, view_.world(input.mouse), {}});
-            else
+            else if (input.leftPressed)
                 click(input.mouse);
+            else {
+                ui.clickAt = view_.world(input.mouse);
+                ui.clickAge = 0;
+                session_.submit(MoveTo{ui.clickAt});
+            }
             repeatClick_ = 1.f / 6.f;
         }
         const auto *rightSkill = ui.rightSkill ? session_.content().skills.find(*ui.rightSkill) : nullptr;
@@ -626,13 +669,19 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
             (input.movement.length() <= .1f && !input.leftPressed && !input.leftHeld))) {
             EntityId target;
             for (const auto &enemy : session_.state().area.enemies)
-                if (enemy.hp > 0 && session_.active(enemy.pos) &&
+                if (input.rightPressed && enemy.hp > 0 && session_.active(enemy.pos) &&
                     (view_.screen(enemy.pos) - Vec{0, 25} - input.mouse).length() < 24) {
                     target = enemy.id;
                     break;
                 }
+            rightCombatTarget_ = target;
+            rightTargetSkill_ = ui.rightSkill;
+            Vec aim = view_.world(input.mouse);
+            if (target)
+                for (const auto &enemy : session_.state().area.enemies)
+                    if (enemy.id == target) { aim = enemy.pos; break; }
             if (ui.rightSkill) {
-                session_.submit(UseClassSkill{*ui.rightSkill, view_.world(input.mouse), target});
+                session_.submit(UseClassSkill{*ui.rightSkill, aim, target});
                 if (channeled) channelInputSkill_ = *ui.rightSkill;
             } else if (target)
                 session_.submit(Attack{target});

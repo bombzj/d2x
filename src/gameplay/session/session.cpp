@@ -413,7 +413,7 @@ void GameSession::grantExperience(uint64_t amount) {
     player.unspentSkills += player.level - before;
     refreshCharacter(true);
 }
-void GameSession::enter(RegionId id, std::optional<Vec> arrival) {
+void GameSession::enter(RegionId id, std::optional<Vec> arrival, std::optional<Vec> coordinateOffset) {
     auto found = std::find_if(regions_.begin(), regions_.end(),
                               [id](const Region &r) { return r.definition.id == id; });
     if (found == regions_.end())
@@ -430,7 +430,7 @@ void GameSession::enter(RegionId id, std::optional<Vec> arrival) {
     auto plan = inactiveAreas_[current_].initialized ? PopulationPlan{} : population(*found);
     simulation_.enterArea(found->map.grid, found->map.activation, arrival.value_or(found->map.spawn),
                           found->definition.safe,
-                          std::move(inactiveAreas_[current_]), plan.spawns);
+                          std::move(inactiveAreas_[current_]), plan.spawns, coordinateOffset);
     if (returnToTown) {
         // The single player town becomes unoccupied when leaving it. Rebuild
         // its stock on return using the current character level (SUnitProxy).
@@ -691,7 +691,7 @@ void GameSession::tick(float dt, Vec keyboard, bool forceRun) {
                             content_.teleportByLevel.at(levelId) != 0;
                         cancelExit(); cancelPickup(); cancelInteraction();
                         simulation_.castOriginal(simulation_.state_.player, resolved, intent.target, teleportAllowed,
-                            content_.staticFieldMinimum.at(size_t(state().population.difficulty)));
+                            content_.staticFieldMinimum.at(size_t(state().population.difficulty)), intent.enemy);
                         return;
                     }
                     auto effect = implementedSkillEffect(*entry);

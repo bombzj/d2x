@@ -61,7 +61,7 @@ class Simulation {
     bool firePhysicalProjectile(const Enemy &enemy, const WeaponDamage &weapon, bool thrown);
     bool cast(Skill skill, Vec target);
     bool castOriginal(PlayerState &player, const OriginalSkillCast &skill, Vec target, bool teleportAllowed,
-                      int staticFieldMinimum);
+                      int staticFieldMinimum, EntityId enemy = {});
     void releaseOriginalCast(PlayerState &player, const OriginalSkillCast &skill, Vec target,
                  int staticFieldMinimum, bool consumeMana = true);
     void advanceOriginalCasting(PlayerState &player, float dt, bool moving);
@@ -108,7 +108,7 @@ class Simulation {
     void tick(float dt, Vec keyboard, bool forceRun = false);
     AreaState leaveArea();
     void enterArea(const Grid &grid, const RoomLayout &rooms, Vec spawn, bool safeZone, AreaState area,
-                   std::span<const MonsterSpawn> monsters);
+                   std::span<const MonsterSpawn> monsters, std::optional<Vec> coordinateOffset = {});
     void restartArea(Vec spawn, std::span<const MonsterSpawn> monsters);
     void heal();
     void applyPotion(const PotionDefinition &potion);

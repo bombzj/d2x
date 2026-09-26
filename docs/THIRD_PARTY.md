@@ -52,6 +52,8 @@ D2S 读写依据本地 D2MOO 的 `PlrSave2.h/.cpp`、`Items.cpp`、`ItemMods.cpp
 
 本轮世界生成代码依据 D2MOO 的 `DrlgMaze`、`DrlgOutPlace`、`DrlgOutWild`、`DrlgOutdoors`、`DrlgRoomTile` 和 `DrlgDrlgVer` 适配；附近房间策略参考 `DrlgActivate`。这是实际代码适配来源，不是完整 DRLG 或逐种子等价实现。当前入口见 [地图](ACT1_MAPS.md) 与 [数据生命周期](baseline/DATA.md)。
 
+鼠标按住行为参考同一固定 Diablerie 快照的 `Engine/PlayerController.cs::FixedSelection/ControlPlayerUnit`、`Engine/MouseSelection.cs::Update`：按住时不重新选中光标下对象，技能请求区分单位目标与地面坐标。左右键按单位持续请求及近战追击核对同一固定 D2MOO 的 `D2Game/src/PLAYER/PlrMsg.cpp`，尤其 `Rcv0x09_LeftSkillOnUnitHold`、`Rcv0x10_RightSkillOnUnitHold` 与 `sub_6FC836D0`。Diablerie 的右键没有完整单位锁定分支，D2MOO 也不包含完整客户端输入循环；用户原版操作说明补充了左右键按住后不随光标换目标的依据。本项目独立适配到现有命令和角色状态，不引入参考代码或资源到分发包；本轮没有运行验证。
+
 墙角补片规则交叉核对 [D2MOO `DrlgRoomTile.cpp`](https://github.com/ThePhrozenKeep/D2MOO/blob/5596f5cb6c5251a0a07c6637d26458b06099d516/source/D2Common/src/Drlg/DrlgRoomTile.cpp) 与 [Diablerie `LevelBuilder.cs`](https://github.com/mofr/Diablerie/blob/9e42ef257228257825ebbbeb905d4b1d894b6e98/Assets/Scripts/Diablerie/Engine/World/LevelBuilder.cs)：DS1 方向 3 墙角同格绘制方向 4 补片；图像仍只取当前 MPQ。
 
 - [D2MOO](https://github.com/ThePhrozenKeep/D2MOO/tree/5596f5cb6c5251a0a07c6637d26458b06099d516)，固定提交 `5596f5cb6c5251a0a07c6637d26458b06099d516`，MIT，Copyright 2020–2025 The Phrozen Keep community。共有 DT1、隐藏空白瓦片和变体权重解释依据 DrlgRoomTile.cpp；生成边界参考 DrlgDrlg.cpp、DrlgPreset.cpp、DrlgMaze.cpp。许可见 [D2MOO.txt](licenses/D2MOO.txt)。没有移植完整 DRLG，也未执行参考仓库的游戏代码。

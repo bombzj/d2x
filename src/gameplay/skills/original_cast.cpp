@@ -12,6 +12,15 @@ void Simulation::stopChannel(PlayerState &player) {
 void Simulation::advanceOriginalCasting(PlayerState &player, float dt, bool moving) {
     auto &channel = player.channel;
     if (channel && (player.dead || player.hitTime > 0 || moving)) stopChannel(player);
+    if (channel && channel->enemy) {
+        const auto *enemy = findEnemy(channel->enemy);
+        if (!enemy || enemy->hp <= 0 || !active(enemy->pos)) stopChannel(player);
+        else {
+            channel->target = enemy->pos;
+            const auto direction = (enemy->pos - player.pos).unit();
+            if (direction.length() > 0) player.look = direction;
+        }
+    }
     if (channel) {
         channel->age += dt;
         channel->remaining -= dt;
@@ -34,17 +43,25 @@ void Simulation::advanceOriginalCasting(PlayerState &player, float dt, bool movi
     if (pendingCast) {
         pendingCast->remaining -= dt;
         if (pendingCast->remaining <= .00001f) {
-            const auto cast = *pendingCast;
+            auto cast = *pendingCast;
             pendingCast.reset();
+            if (cast.enemy) {
+                const auto *enemy = findEnemy(cast.enemy);
+                if (!enemy || enemy->hp <= 0 || !active(enemy->pos)) return;
+                cast.target = enemy->pos;
+                const auto direction = (cast.target - player.pos).unit();
+                if (direction.length() > 0) player.look = direction;
+            }
             releaseOriginalCast(player, cast.skill, cast.target, cast.staticFieldMinimum);
         }
     }
 }
 bool Simulation::castOriginal(PlayerState &player, const OriginalSkillCast &skill, Vec target, bool teleportAllowed,
-                              int staticFieldMinimum) {
+                              int staticFieldMinimum, EntityId enemy) {
     if (player.channel) {
         if (skill.effect == Skill::Inferno && !player.dead && player.hitTime <= 0) {
             player.channel->target = target;
+            player.channel->enemy = enemy;
             const auto direction = (target - player.pos).unit();
             if (direction.length() > 0) player.look = direction;
             return true;
@@ -74,7 +91,7 @@ bool Simulation::castOriginal(PlayerState &player, const OriginalSkillCast &skil
     state_.message.clear();
     if (skill.effect == Skill::Inferno) {
         player.mana -= skill.manaCost;
-        player.channel = PlayerState::ChannelCast{skill, target, skill.castImpact};
+        player.channel = PlayerState::ChannelCast{skill, target, skill.castImpact, 0, 0, enemy};
         emit(SkillCast{player.id, skill.effect, player.pos});
         return true;
     }
@@ -82,7 +99,7 @@ bool Simulation::castOriginal(PlayerState &player, const OriginalSkillCast &skil
     if (skill.castOverlayId >= 0)
         state_.area.effects.push_back({player.pos, skill.effect, 0, skill.visualDuration,
                                       -1, skill.castOverlayId, player.id});
-    player.pendingCast = PlayerState::PendingCast{skill, target, staticFieldMinimum, skill.castImpact};
+    player.pendingCast = PlayerState::PendingCast{skill, target, staticFieldMinimum, skill.castImpact, enemy};
     return true;
 }
 void Simulation::releaseOriginalCast(PlayerState &player, const OriginalSkillCast &skill, Vec target,

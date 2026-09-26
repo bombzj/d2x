@@ -79,7 +79,7 @@ class GameSession {
     std::vector<ShrineStatus> shrineStatuses_;
     std::vector<GameCommand> pending_;
     int current_ = -1;
-    void enter(RegionId id, std::optional<Vec> arrival = {});
+    void enter(RegionId id, std::optional<Vec> arrival = {}, std::optional<Vec> coordinateOffset = {});
     void beginExit(int slot);
     bool routeBoundaryMove(Vec target);
     void updateExit();

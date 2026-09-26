@@ -24,19 +24,19 @@ AreaState Simulation::leaveArea() {
     return std::move(state_.area);
 }
 void Simulation::enterArea(const Grid &grid, const RoomLayout &rooms, Vec spawn, bool safeZone, AreaState area,
-                           std::span<const MonsterSpawn> monsters) {
+                           std::span<const MonsterSpawn> monsters, std::optional<Vec> coordinateOffset) {
     grid_ = &grid;
     rooms_ = &rooms;
     safeZone_ = safeZone;
     state_.area = std::move(area);
     clearActions();
-    state_.player.pos = state_.player.previous = grid.nearest(spawn);
+    state_.player.pos = state_.player.previous = grid.walkable(spawn) ? spawn : grid.nearest(spawn);
     if (!state_.area.initialized) {
         state_.area.pendingSpawns.assign(monsters.begin(), monsters.end());
         state_.area.initialized = true;
     }
     activateMonsters();
-    emit(RegionEntered{state_.area.region});
+    emit(RegionEntered{state_.area.region, coordinateOffset});
 }
 void Simulation::restartArea(Vec spawn, std::span<const MonsterSpawn> monsters) {
     auto id = state_.area.region;

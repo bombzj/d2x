@@ -13,6 +13,9 @@ class SceneController {
     bool releaseAfterLoad_ = false;
     bool skillGesture_ = false;
     int channelInputSkill_ = -1;
+    EntityId leftCombatTarget_, rightCombatTarget_;
+    std::optional<int> leftTargetSkill_, rightTargetSkill_;
+    RegionId inputRegion_ = session_.state().area.region;
     Vec movement_;
     bool temporaryRun_ = false;
     void click(Vec mouse);
@@ -31,6 +34,10 @@ class SceneController {
         temporaryRun_ = false;
         skillGesture_ = false;
         channelInputSkill_ = -1;
+        leftCombatTarget_ = rightCombatTarget_ = {};
+        leftTargetSkill_.reset();
+        rightTargetSkill_.reset();
+        inputRegion_ = session_.state().area.region;
         releaseAfterLoad_ = true;
     }
     Vec movement() const { return movement_; }

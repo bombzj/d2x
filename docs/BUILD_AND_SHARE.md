@@ -54,14 +54,20 @@ cmake --build build --parallel
 
 示例输入必须是已有 D2S。`-Class` 与 `-Load` 互斥；脚本保存路径相对调用时工作目录解析，EXE 路径相对进程工作目录。存档加载仍从城镇开始，进入后可通过开发目录或管道 `travel` 到目标地图。不会通过测试入口原地改变现有角色职业。
 
-如果编译机器不能访问 GitHub，CMake 可使用 `external/raylib` 和 `external/stormlib` 的固定版本源码；系统编译器、CMake 和开发库仍需安装。当前源码存档格式见[存档说明](SAVES.md)，旧档不迁移。分发目录保留完整 `assets/mpq2`，EXE 直接读取原始 MPQ，不生成精简资源包或 ZIP。原 MPQ 文件清单见 [MPQ 资源](MPQ_RESOURCES.md)。
+如果编译机器不能访问 GitHub，CMake 可使用 `external/raylib` 和 `external/stormlib` 的固定版本源码；系统编译器、CMake 和开发库仍需安装。当前源码存档格式见[存档说明](SAVES.md)，旧档不迁移。原资源只维护项目 `assets/mpq2` 一份，EXE 通过 `--mpq` 读取，不为本地打包抽取或复制 MPQ，也不生成精简资源包。原 MPQ 文件清单见 [MPQ 资源](MPQ_RESOURCES.md)。
 
 ## 当前本地分发目录
 
-当前角色直达／城镇规则包为 `artifacts/character-start-town-release-20260926/`，入口 `Play.cmd`，包含本轮角色施法状态归属重构和原地换职业入口移除，以及五个原始 MPQ。正式命令 `scripts/build.ps1 -Configuration Release` 已通过；包内女巫和死灵法师新角色直达、正确初始装备、城镇十项禁用法术无扣蓝／无弹体、冰封装甲允许、野外充能弹及地狱之火、D2S 场景载入和独立输出均通过短程检查。参数 `--class` 与 `--load` 冲突明确拒绝；源场景档哈希未变，未指定保存的新角色没有生成默认档。没有新增测试脚本、用例或专用程序。截图与加载／职业日志在包内 `artifacts/`；未完成七职业全部技能、长时间交互、Linux 或多人联机验收。
+当前运行目录固定为 `dist/current/`，入口 `Play.cmd`，根目录放置 `d2x.exe`。在仓库根目录执行：
 
-2026-09-26 物品显示审查包位于忽略目录 `artifacts/item-display-release-20260926/`，入口为其中的 `Play.cmd`。包含 Release EXE、现有启动／调试脚本、许可与文档，以及五个原始 MPQ；旧分发目录、源码资源和用户存档未覆盖。仅供持有这些原资源的本机使用，原 MPQ 不纳入源码提交。
+```powershell
+.\scripts\build.ps1 -Configuration Release
+.\scripts\package.ps1
+.\dist\current\Play.cmd -Mpq .\assets\mpq2 -Class Sorceress
+```
 
-已从包自身工作目录与 `assets/mpq2` 启动，载入独立测试 D2S、打开背包、导出截图、保存新 D2S，再用包内程序加载该存档，两次退出码均为 0。构建命令为 `scripts/build.ps1 -Configuration Release`；本轮未新增测试脚本，仓库 `tests/` 当前为空。运行验证覆盖四品质生成／拾取、储物箱与方块往返、玩家和佣兵装备、恰西购买／确认出售及存档重载；不是所有物品组合或像素级视觉还原的验收。截图与运行日志保留在忽略的 `artifacts/`，包内日志为 `package-runtime.log`、`package-reload.log`。
+`package.ps1` 只复制已构建程序、两份运行脚本及说明／许可，覆盖更新同一目录，不复制 MPQ、不删除该目录的存档或截图、不运行程序。未指定 `-Mpq` 时启动脚本从运行目录向祖先目录寻找 `assets/mpq2`，因此包留在仓库内可直接双击；移到别处须传实际原资源路径。`-Mpq/-Load/-Save` 按调用时工作目录解析为绝对路径。程序工作目录为包根，默认角色存档和截图与包放在一起。整个 `dist/` 忽略 Git。
+
+2026-09-26 本轮鼠标目标保持和步行边界修订通过 Windows Release 构建并更新上述目录，按用户要求未运行游戏或测试；旧包的简测结果不能代替本轮鼠标手感和过界复验。八个历史包已清除 40 份与 `assets/mpq2` SHA-256 完全相同的 MPQ 副本及纯程序目录，共回收约 6539.4 MiB。原始 MPQ、旧压缩包、存档、截图、日志和参考资料保留；旧包目录仅供历史证据，不再作为运行入口。物品显示、技能及角色启动的既有短程记录保留在各 `artifacts/*2026092*/` 目录。
 
 依赖说明依据 [raylib 官方 Linux 构建文档](https://github.com/raysan5/raylib/wiki/Working-on-GNU-Linux)、[StormLib 官方源码](https://github.com/ladislav-zezula/StormLib) 及本项目固定版本的 CMake 配置。

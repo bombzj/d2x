@@ -25,7 +25,7 @@ void Simulation::attackEnemy(EntityId target, bool thrown, bool leftHand) {
     stopChannel(state_.player);
     auto &p = state_.player;
     auto *e = findEnemy(target);
-    if (p.dead || !e || e->hp <= 0)
+    if (p.dead || !e || e->hp <= 0 || p.meleeTime > 0)
         return;
     if ((thrown || leftHand) && std::none_of(equipmentStats_.weapons.begin(),
             equipmentStats_.weapons.begin() + equipmentStats_.weaponCount,
@@ -60,9 +60,10 @@ void Simulation::updatePlayer(float dt, Vec keyboard) {
     }
     if (p.attackTarget) {
         auto *e = findEnemy(p.attackTarget);
-        if (!e || e->hp <= 0)
+        if (!e || e->hp <= 0) {
             p.attackTarget = {};
-        else {
+            p.route.clear();
+        } else {
             const WeaponDamage *weapon = &equipmentStats_.weapons[0];
             bool foundSelected = false;
             if (p.throwAttack || p.leftHandAttack)
@@ -90,9 +91,10 @@ void Simulation::updatePlayer(float dt, Vec keyboard) {
                             p.meleeTime = p.lastMeleeDuration;
                             emit(MeleeAttack{p.id, e->id});
                             if (!projectile) meleeDamage(*e, p.leftHandAttack);
+                            p.attackTarget = {};
                         }
                     }
-                } else if (p.route.empty())
+                } else if (p.route.empty() || (p.route.back() - e->pos).length() > 1)
                     p.route = grid_->path(p.pos, e->pos);
             }
         }
