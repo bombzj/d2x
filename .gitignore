@@ -7,6 +7,8 @@
 /artifacts/
 /dist/
 /saves/
+/client-settings.json
+/client-settings.json.lock/
 *.d2xsave
 *.d2xsave.bak
 *.d2xsave.lock/

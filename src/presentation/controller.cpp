@@ -9,7 +9,7 @@
 namespace d2x {
 void SceneController::click(Vec mouse) {
     auto &ui = view_.ui();
-    ui.dialogue.clear();
+    view_.cancelNpcDialogue();
     if (auto portal = session_.cainPortalPosition(); portal &&
         (view_.screen(*portal) - Vec{0, 40} - mouse).length() < 45) {
         session_.submit(UseCainPortal{});
@@ -289,14 +289,12 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
     }
     if (!ui.dialogue.empty()) {
         if (input.escape) {
-            view_.closeNpcDialogue();
-            session_.submit(EndNpcConversation{ui.dialogueObject});
+            if (!view_.closeNpcDialogue()) session_.submit(EndNpcConversation{ui.dialogueObject});
         } else {
             if (input.pageDelta)
                 view_.scrollNpcDialogue(-input.pageDelta * 3);
             if (input.insideViewport && input.leftPressed) {
-                view_.closeNpcDialogue();
-                session_.submit(EndNpcConversation{ui.dialogueObject});
+                if (!view_.closeNpcDialogue()) session_.submit(EndNpcConversation{ui.dialogueObject});
             }
         }
         return true;

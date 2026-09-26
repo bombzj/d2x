@@ -695,7 +695,12 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
         } else if (command == "pause") paused = true;
         else if (command == "resume") paused = false;
         else if (command == "save") writeSave(savePath, session.snapshot(), session.content());
-        else if (command == "load") { session.restore(loadSave(savePath, session.content())); view.sessionRestored(); }
+        else if (command == "load") {
+            const bool running = session.state().player.running;
+            session.restore(loadSave(savePath, session.content()));
+            session.setRunning(running);
+            view.sessionRestored();
+        }
         else if (command == "screenshot") { screenshot("artifacts/debug-pipe.png"); result["path"] = "artifacts/debug-pipe.png"; }
         else if (command == "quit") quit = true;
         else throw std::runtime_error("Unknown debug command");

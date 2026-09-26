@@ -191,6 +191,7 @@ class GameSession {
     GameSession(const GameSession &) = delete;
     GameSession &operator=(const GameSession &) = delete;
     const WorldState &state() const { return simulation_.state(); }
+    void setRunning(bool running) { simulation_.state_.player.running = running; }
     const QuestRecord &quest(ActOneQuest id, int difficulty) const {
         return state().player.actOneQuests.at(size_t(difficulty)).at(questIndex(id));
     }

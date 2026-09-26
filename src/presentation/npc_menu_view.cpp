@@ -81,9 +81,7 @@ void SceneView::openNpcMenu(EntityId object, std::string speaker, bool firstIntr
     }
     view_.dialogueObject = object;
     view_.dialogueSpeaker = std::move(speaker);
-    view_.dialogue.clear();
-    view_.dialogueLines.clear();
-    view_.dialogueStatus.clear();
+    cancelNpcDialogue();
     view_.shopOpen = false;
     view_.npcMenu = true;
     view_.npcTopics = false;

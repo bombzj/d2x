@@ -32,6 +32,22 @@ std::string fontText(std::string text) {
 } // namespace
 
 void SceneView::openNpcDialogue(EntityId object, std::string speaker, std::string text) {
+    cancelNpcDialogue();
+    displayNpcDialogue(object, std::move(speaker), std::move(text));
+}
+
+void SceneView::cancelNpcDialogue() {
+    view_.pendingNpcDialogue.clear();
+    view_.dialogue.clear();
+    view_.dialogueLines.clear();
+    view_.dialogueStatus.clear();
+    view_.dialogueOffset = initialOffset;
+    view_.dialogueManualScroll = false;
+    view_.npcMenu = false;
+    view_.npcTopics = false;
+}
+
+void SceneView::displayNpcDialogue(EntityId object, std::string speaker, std::string text) {
     view_.dialogueObject = object;
     view_.shopOpen = false;
     view_.shopSaleConfirm.reset();
@@ -97,10 +113,15 @@ void SceneView::advanceNpcDialogue(float dt) {
         view_.dialogueOffset + dt * lineHeight / 2.2f);
 }
 
-void SceneView::closeNpcDialogue() {
-    view_.dialogue.clear();
-    view_.dialogueLines.clear();
-    view_.npcMenu = false;
+bool SceneView::closeNpcDialogue() {
+    if (!view_.pendingNpcDialogue.empty()) {
+        auto dialogue = std::move(view_.pendingNpcDialogue.front());
+        view_.pendingNpcDialogue.pop_front();
+        displayNpcDialogue(dialogue.object, std::move(dialogue.speaker), std::move(dialogue.text));
+        return true;
+    }
+    cancelNpcDialogue();
+    return false;
 }
 
 bool SceneView::showNextNpcGossip() {

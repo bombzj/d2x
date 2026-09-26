@@ -121,7 +121,7 @@ void SceneView::sessionRestored() {
     view_.displayedWeaponSet = session_.state().player.weaponSet;
     view_.travelMenu = view_.help = false;
     view_.skillPicker.reset();
-    view_.dialogue.clear();
+    cancelNpcDialogue();
     view_.npcGossipTurns.clear();
     view_.shopOpen = false;
     view_.shopSaleConfirm.reset();
@@ -286,7 +286,7 @@ void SceneView::advance(float dt) {
                         view_.camera = view_.camera + project(*value.coordinateOffset);
                     else
                         view_.camera = project(session_.state().player.pos);
-                    view_.dialogue.clear();
+                    cancelNpcDialogue();
                     view_.shopOpen = false;
                     view_.npcMenu = false;
                     view_.clickAge = 10;
@@ -307,7 +307,7 @@ void SceneView::advance(float dt) {
                     ui.storage = value.container;
                     ui.cubeOpen = false;
                     view_.questOpen = view_.characterOpen = view_.skillTreeOpen = view_.hirelingOpen = false;
-                    view_.dialogue.clear();
+                    cancelNpcDialogue();
                     view_.travelMenu = view_.help = false;
                     view_.clickAge = 10;
                 } else if constexpr (std::is_same_v<T, StorageClosed>) {
@@ -385,7 +385,10 @@ void SceneView::advance(float dt) {
                         value.stage == uint32_t(CainStage::PortalOpened))
                         view_.cainPortalAnimationStarted = view_.animationTime;
                 } else if constexpr (std::is_same_v<T, NpcDialogueStarted>) {
-                    openNpcDialogue(value.object, value.speaker, value.text);
+                    if (view_.dialogueObject == value.object && !view_.dialogue.empty())
+                        view_.pendingNpcDialogue.push_back(value);
+                    else
+                        openNpcDialogue(value.object, value.speaker, value.text);
                 } else if constexpr (std::is_same_v<T, ObjectInteracted>) {
                     if (value.interaction == Interaction::QuestTome) {
                         if (auto speech = questSpeech(session_.content().npcDialogues,

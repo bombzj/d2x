@@ -23,7 +23,7 @@ void SceneController::toggleInventory() {
     ui.inventory.cancelGesture();
     ui.help = ui.travelMenu = false;
     if (ui.inventory.open) {
-        ui.dialogue.clear();
+        view_.cancelNpcDialogue();
         ui.clickAge = 10;
         session_.submit(StopMoving{});
     }

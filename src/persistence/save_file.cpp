@@ -60,6 +60,12 @@ void writeSave(const std::filesystem::path &path, const SessionSnapshot &snapsho
         throw std::runtime_error("Character saves require the .d2s extension");
     auto bytes = encodeSave(snapshot, content);
     decodeSave(bytes, content);
+    writeFileAtomically(path, bytes, true);
+}
+void writeFileAtomically(const std::filesystem::path &path, std::span<const uint8_t> bytes,
+                         bool keepBackup) {
+    if (path.empty() || path.filename().empty())
+        throw std::runtime_error("Output path must name a file");
     if (path.has_parent_path())
         std::filesystem::create_directories(path.parent_path());
     auto lockPath = path;
@@ -76,7 +82,7 @@ void writeSave(const std::filesystem::path &path, const SessionSnapshot &snapsho
         if (!output)
             throw std::runtime_error("Cannot close temporary save");
     }
-    if (std::filesystem::exists(path)) {
+    if (keepBackup && std::filesystem::exists(path)) {
         // Prepare the backup before replacement; failure leaves the current save intact.
         auto backup = path;
         backup += ".bak";

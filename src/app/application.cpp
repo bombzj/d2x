@@ -10,9 +10,50 @@
 #include <algorithm>
 #include <fstream>
 #include <iostream>
+#include <nlohmann/json.hpp>
+#include <span>
 
 namespace d2x {
 namespace {
+struct ClientPreferences {
+    bool running = false;
+    bool miniPanelOpen = false;
+};
+constexpr auto preferencesPath = "client-settings.json";
+ClientPreferences loadClientPreferences() {
+    std::ifstream file(preferencesPath);
+    if (!file) return {};
+    try {
+        const auto settings = nlohmann::json::parse(file);
+        if (!settings.is_object()) {
+            std::cerr << "Invalid client settings: expected an object\n";
+            return {};
+        }
+        auto setting = [&](const char *key) {
+            const auto found = settings.find(key);
+            if (found == settings.end()) return false;
+            if (found->is_boolean()) return found->get<bool>();
+            std::cerr << "Invalid client setting: " << key << " must be boolean\n";
+            return false;
+        };
+        return {setting("running"), setting("miniPanelOpen")};
+    } catch (const nlohmann::json::exception &error) {
+        std::cerr << "Invalid client settings: " << error.what() << '\n';
+        return {};
+    }
+}
+bool saveClientPreferences(const ClientPreferences &preferences) {
+    try {
+        const auto text = nlohmann::json{{"running", preferences.running},
+                                       {"miniPanelOpen", preferences.miniPanelOpen}}.dump(2);
+        writeFileAtomically(preferencesPath,
+            std::span<const uint8_t>{reinterpret_cast<const uint8_t *>(text.data()), text.size()});
+        return true;
+    } catch (const std::exception &error) {
+        std::cerr << "Cannot write client settings: " << error.what() << '\n';
+        return false;
+    }
+}
 class Platform {
   public:
     explicit Platform(bool hidden) {
@@ -113,6 +154,9 @@ int runGame(int argc, char **argv) {
         });
         archives.pulseLoading();
     };
+    ClientPreferences preferences = loadClientPreferences();
+    bool preferencesDirty = false;
+    double preferencesRetryAt = 0;
     for (;;) {
         const bool returnToCharacters = [&]() {
             beginLoading();
@@ -154,6 +198,7 @@ int runGame(int argc, char **argv) {
                 session.restore(std::move(*restored));
                 std::cout << "Loaded " << options.load << '\n';
             }
+            session.setRunning(preferences.running);
             const std::string savePath = character               ? character->path.string()
                                          : !options.save.empty() ? options.save
                                          : !options.load.empty() ? options.load
@@ -162,6 +207,17 @@ int runGame(int argc, char **argv) {
                 writeSave(savePath, session.snapshot(), session.content());
             frontendTarget.reset();
             SceneView view(archives, session);
+            view.ui().miniPanelOpen = preferences.miniPanelOpen;
+            auto syncPreferences = [&](bool force = false) {
+                if (preferences.running != session.state().player.running ||
+                    preferences.miniPanelOpen != view.ui().miniPanelOpen) {
+                    preferences = {session.state().player.running, view.ui().miniPanelOpen};
+                    preferencesDirty = true;
+                }
+                if (!preferencesDirty || (!force && GetTime() < preferencesRetryAt)) return;
+                preferencesDirty = !saveClientPreferences(preferences);
+                preferencesRetryAt = GetTime() + 2;
+            };
             view.ui().travelMenu = options.maps;
             view.ui().inventory.open = options.inventory;
             if (options.skills && !options.inventory && !options.stash && !options.maps)
@@ -219,6 +275,7 @@ int runGame(int argc, char **argv) {
                     try {
                         if (input.load) {
                             session.restore(loadSave(savePath, session.content()));
+                            session.setRunning(preferences.running);
                             view.sessionRestored();
                             controller.resetInput();
                             accumulator = 0;
@@ -249,6 +306,7 @@ int runGame(int argc, char **argv) {
                     session.tick(0);
                     view.advance(0);
                 }
+                syncPreferences();
                 view.advanceUi(dt);
                 if (view.ui().blocksWorld() || persistenceInput || debugPaused)
                     accumulator = 0;
@@ -274,6 +332,7 @@ int runGame(int argc, char **argv) {
                 if (options.frameLimit > 0 && ++frames >= options.frameLimit)
                     break;
             }
+            syncPreferences(true);
             if (!options.screenshot.empty())
                 target.save(options.screenshot);
             if (!returningToCharacters && !options.save.empty()) {

@@ -151,17 +151,12 @@ void GameSession::completeInteraction(const WorldObject &object) {
             .at(size_t(state().population.difficulty));
         const bool first = intro && introductions.insert(object.name).second;
         const auto dialogue = npcQuestDialogue(object.name);
-        std::string text = first ? intro->text : std::string{};
-        // Activation collects the introduction and available quest messages
-        // in a scroll-text chain. All text still comes from the MPQ.
+        if (first) simulation_.emit(NpcDialogueStarted{object.id, object.name, intro->text});
         if (dialogue.automatic && dialogue.speech) {
-            if (!text.empty()) text += "\n\n";
-            text += dialogue.speech->text;
-        }
-        if (!text.empty()) {
-            simulation_.emit(NpcDialogueStarted{object.id, object.name, std::move(text)});
-            if (dialogue.automatic) talkToNpc(object.id);
-        } else simulation_.emit(ObjectInteracted{object.id, object.interaction, object.name});
+            simulation_.emit(NpcDialogueStarted{object.id, object.name, dialogue.speech->text});
+            talkToNpc(object.id);
+        } else if (!first)
+            simulation_.emit(ObjectInteracted{object.id, object.interaction, object.name});
         break;
     }
     case Interaction::Travel:

@@ -34,7 +34,7 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
         npcAlert.frames = overlays.number(row, "Frames").value_or(0);
         npcAlert.fps = overlays.number(row, "AnimRate").value_or(0);
         npcAlert.trans = overlays.number(row, "Trans").value_or(5);
-        npcAlert.offset = {-float(overlays.number(row, "Xoffset").value_or(0)),
+        npcAlert.offset = {float(overlays.number(row, "Xoffset").value_or(0)),
                            float(overlays.number(row, "Yoffset").value_or(0))};
         for (int height = 0; height < 4; ++height)
             npcAlert.heights[size_t(height)] = overlays.number(row,

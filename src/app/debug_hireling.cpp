@@ -38,7 +38,7 @@ void debugHireling(const std::string &command, const nlohmann::json &request,
         if (ui.npcMenu || ui.shopOpen || ui.hireListOpen || !ui.dialogue.empty())
             session.submit(EndNpcConversation{ui.dialogueObject});
         ui.npcMenu = ui.shopOpen = ui.hireListOpen = false;
-        ui.dialogue.clear();
+        view.cancelNpcDialogue();
         ui.characterOpen = ui.questOpen = ui.travelMenu = ui.help = false;
         ui.skillTreeOpen = false;
         ui.skillPicker.reset();

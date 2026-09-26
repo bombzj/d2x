@@ -4,6 +4,7 @@
 #include "lighting_view.hpp"
 #include "scene_assets.hpp"
 #include <cstdint>
+#include <deque>
 #include <map>
 
 namespace d2x {
@@ -48,6 +49,7 @@ struct ViewState {
     float portalAnimationStarted = -1;
     float cainPortalAnimationStarted = -1;
     std::string heroMode = "nu", dialogue, dialogueSpeaker, dialogueStatus;
+    std::deque<NpcDialogueStarted> pendingNpcDialogue;
     EntityId dialogueObject;
     EntityId imbueNpc;
     std::vector<std::string> dialogueLines;
@@ -98,6 +100,7 @@ class SceneView {
     void revealAutomap();
     void drawHud() const;
     void drawNpcDialogue() const;
+    void displayNpcDialogue(EntityId object, std::string speaker, std::string text);
     void advanceNpcDialogue(float dt);
     Rectangle worldViewport() const;
     void drawNpcMenu(Vec mouse) const;
@@ -155,6 +158,7 @@ class SceneView {
     void draw(Vec mouse) const;
     void notice(std::string text, bool error = false);
     void openNpcDialogue(EntityId object, std::string speaker, std::string text);
+    void cancelNpcDialogue();
     void openNpcMenu(EntityId object, std::string speaker, bool firstIntroduction);
     bool startNpcTalk();
     bool startNpcIntroduction();
@@ -163,7 +167,7 @@ class SceneView {
     void closeNpcShop();
     int clickNpcMenu(Vec mouse);
     void scrollNpcDialogue(int amount);
-    void closeNpcDialogue();
+    bool closeNpcDialogue();
     std::optional<uint32_t> clickNpcShop(Vec mouse, bool directBuy = false);
     std::optional<ItemHandle> clickNpcSaleConfirm(Vec mouse);
     std::optional<RegionId> clickWaypointMenu(Vec mouse);
