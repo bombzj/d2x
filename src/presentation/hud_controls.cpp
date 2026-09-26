@@ -43,7 +43,7 @@ void SceneView::drawSkillIcon(std::optional<int> skill, Rectangle bounds) const 
             session_.effectiveSkillRank(*skill), player.skillRanks, session_.fireMasteryPercent(),
             session_.lightningMasteryPercent()).manaCost);
     else if (effect) available &= player.mana >= skillDefinition(*effect).manaCost;
-    imageAt(image, bounds, available ? WHITE : Color{95, 95, 95, 255});
+    imageAt(image, bounds, available ? WHITE : Color{255, 64, 64, 255});
     if (effect && (!entry || !entry->originalEffect) && player.cooldown[size_t(*effect)] > 0) {
         auto time = std::string(TextFormat("%.1f", player.cooldown[size_t(*effect)]));
         DrawRectangleRec(bounds, {0, 0, 0, 115});

@@ -73,6 +73,7 @@ class GameSession {
     bool portalResources_ = false;
     std::optional<int> pendingExit_;
     std::optional<Vec> boundaryMoveTarget_;
+    std::optional<LevelExit::BoundaryPassage> boundaryPassage_;
     std::vector<Region> regions_;
     std::vector<NpcMotionState> initialNpcMotions_;
     std::vector<AreaState> inactiveAreas_;
@@ -81,6 +82,7 @@ class GameSession {
     int current_ = -1;
     void enter(RegionId id, std::optional<Vec> arrival = {}, std::optional<Vec> coordinateOffset = {});
     void beginExit(int slot);
+    bool beginBoundaryExit(const LevelExit &exit, std::optional<Vec> target);
     bool routeBoundaryMove(Vec target);
     void updateExit();
     void cancelExit();

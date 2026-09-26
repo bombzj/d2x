@@ -409,30 +409,38 @@ void alignPresetBoundary(Archives &archives, const WorldCatalog &catalog,
                          std::map<int, OutdoorPosition> &layout, int id, int preset) {
     auto &p = layout.at(id);
     auto recipe = catalog.preset(preset, catalog.level(id).levelType, id == 1 ? p.direction : 0);
+    auto &boundary = p.boundaries.front();
+    auto contact = boundary;
+    const int size = boundary.side % 2 ? p.height : p.width;
+    contact.start = std::clamp(boundary.contactStart, 0, size);
+    contact.end = std::clamp(boundary.contactEnd, 0, size);
+    recipe.width = p.width;
+    recipe.height = p.height;
+    recipe.boundaries = {contact};
     TileLibraryCache cache(archives);
     Map map;
     map.load(archives, cache, recipe);
-    auto &b = p.boundaries.front();
-    int best = -1, distance = 100000;
-    int size = (b.side % 2 ? p.height : p.width) * 5;
-    for (int t = 5; t < size - 5; ++t) {
-        int x = b.side == 1 ? 3 : b.side == 3 ? p.width * 5 - 3 : t;
-        int y = b.side == 2 ? 3 : b.side == 0 ? p.height * 5 - 3 : t;
-        if (map.grid.walkable(x, y) && std::abs(t - size / 2) < distance) {
-            best = t;
-            distance = std::abs(t - size / 2);
+    const Vec origin = id == 1 ? map.actSpawn() : map.spawn;
+    const auto reachable = map.grid.reachableFrom(origin);
+    int first = contact.end * 5, last = -1;
+    for (int lateral = contact.start * 5; lateral < contact.end * 5; ++lateral) {
+        const int column = boundary.side == 1 ? 0 : boundary.side == 3 ? p.width * 5 - 1 : lateral;
+        const int row = boundary.side == 2 ? 0 : boundary.side == 0 ? p.height * 5 - 1 : lateral;
+        if (map.grid.walkable(column, row) && reachable[size_t(row * map.grid.width + column)]) {
+            first = std::min(first, lateral);
+            last = lateral;
         }
     }
-    if (best < 0)
-        throw std::runtime_error("Native preset has no walkable connection on its linked edge: " +
-                                 recipe.ds1);
-    b.start = (best / 40) * 8;
-    b.end = b.start + 8;
-    auto &other = layout.at(b.destination);
+    if (last < 0)
+        throw std::runtime_error("Native preset has no reachable connection on its linked edge: " + recipe.ds1);
+    boundary.start = first / 5;
+    boundary.end = last / 5 + 1;
+    auto &other = layout.at(boundary.destination);
     for (auto &back : other.boundaries)
         if (back.destination == id) {
-            back.start = b.start + (b.side % 2 ? p.y - other.y : p.x - other.x);
-            back.end = back.start + 8;
+            const int offset = boundary.side % 2 ? p.y - other.y : p.x - other.x;
+            back.start = boundary.start + offset;
+            back.end = boundary.end + offset;
         }
 }
 } // namespace

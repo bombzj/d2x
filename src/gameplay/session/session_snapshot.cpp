@@ -1051,6 +1051,7 @@ void GameSession::restore(SessionSnapshot s) {
     pendingCainPortal_ = false;
     pendingExit_.reset();
     boundaryMoveTarget_.reset();
+    boundaryPassage_.reset();
     storage_ = {};
 }
 } // namespace d2x

@@ -5,17 +5,32 @@
 #include <stdexcept>
 namespace d2x {
 bool Grid::segment(Vec a, Vec b) const {
-    auto delta = b - a;
-    int steps = std::max(1, int(delta.length() * 5));
-    Vec prev = a;
-    for (int i = 0; i <= steps; i++) {
-        auto p = a + delta * (float(i) / steps);
-        if (!walkable(p))
-            return false;
-        if (int(p.x) != int(prev.x) && int(p.y) != int(prev.y) &&
-            (!walkable(int(p.x), int(prev.y)) || !walkable(int(prev.x), int(p.y))))
-            return false;
-        prev = p;
+    if (!walkable(a) || !walkable(b)) return false;
+    int column = int(std::floor(a.x)), row = int(std::floor(a.y));
+    const int endColumn = int(std::floor(b.x)), endRow = int(std::floor(b.y));
+    const double deltaX = double(b.x) - a.x, deltaY = double(b.y) - a.y;
+    const int stepX = deltaX > 0 ? 1 : deltaX < 0 ? -1 : 0;
+    const int stepY = deltaY > 0 ? 1 : deltaY < 0 ? -1 : 0;
+    const double infinity = std::numeric_limits<double>::infinity();
+    const double intervalX = stepX ? 1 / std::abs(deltaX) : infinity;
+    const double intervalY = stepY ? 1 / std::abs(deltaY) : infinity;
+    double crossingX = stepX ? (stepX > 0 ? column + 1.0 - a.x : a.x - column) * intervalX : infinity;
+    double crossingY = stepY ? (stepY > 0 ? row + 1.0 - a.y : a.y - row) * intervalY : infinity;
+    while (column != endColumn || row != endRow) {
+        if (column == endColumn || (row != endRow && crossingY < crossingX)) {
+            row += stepY;
+            crossingY += intervalY;
+        } else if (row == endRow || crossingX < crossingY) {
+            column += stepX;
+            crossingX += intervalX;
+        } else {
+            if (!walkable(column + stepX, row) || !walkable(column, row + stepY)) return false;
+            column += stepX;
+            row += stepY;
+            crossingX += intervalX;
+            crossingY += intervalY;
+        }
+        if (!walkable(column, row)) return false;
     }
     return true;
 }
@@ -34,6 +49,25 @@ bool Grid::lightSegment(Vec a, Vec b) const {
             return false;
     }
     return true;
+}
+Bytes Grid::reachableFrom(Vec origin) const {
+    Bytes reachable(blocked.size());
+    if (!walkable(origin)) return reachable;
+    std::vector<int> pending{int(origin.y) * width + int(origin.x)};
+    reachable[size_t(pending.front())] = 1;
+    for (size_t cursor = 0; cursor < pending.size(); ++cursor) {
+        const int cell = pending[cursor];
+        for (const auto offset : {std::pair{0, 1}, std::pair{1, 0}, std::pair{0, -1}, std::pair{-1, 0}}) {
+            const int column = cell % width + offset.first;
+            const int row = cell / width + offset.second;
+            if (!walkable(column, row)) continue;
+            const int next = row * width + column;
+            if (reachable[size_t(next)]) continue;
+            reachable[size_t(next)] = 1;
+            pending.push_back(next);
+        }
+    }
+    return reachable;
 }
 Vec Grid::nearest(Vec p) const {
     int px = std::clamp(int(p.x), 0, std::max(0, width - 1)),
@@ -139,11 +173,13 @@ std::deque<Vec> Grid::path(Vec from, Vec to) const {
         return out;
     for (int cur = goal; cur != start; cur = parents[cur])
         out.push_front({cur % width + .5f, cur / width + .5f});
+    out.push_front({start % width + .5f, start / width + .5f});
     out.push_back(to);
     // String-pull only across segments checked against the same collision grid.
     std::deque<Vec> smooth;
     Vec anchor = from;
     while (!out.empty()) {
+        if (!segment(anchor, out.front())) return {};
         size_t far = 0;
         while (far + 1 < out.size() && segment(anchor, out[far + 1]))
             far++;

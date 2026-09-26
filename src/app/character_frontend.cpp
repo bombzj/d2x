@@ -258,6 +258,7 @@ std::optional<CharacterChoice> chooseCharacter(Archives &archives, RenderTexture
     const Rectangle okayButton{628, 538, float(medium.width), float(medium.height)};
     const std::array<int, 7> descriptionIds{5128, 22519, 5129, 5130, 5132, 5131, 22518};
     HideCursor();
+    bool awaitRelease = true;
     while (!WindowShouldClose()) {
         const float elapsed = std::min(GetFrameTime(), .1f);
         bool transitioning = false;
@@ -277,10 +278,13 @@ std::optional<CharacterChoice> chooseCharacter(Archives &archives, RenderTexture
         Vector2 mouse = GetMousePosition();
         mouse = {((mouse.x - viewport.offset.x) / viewport.scale - offsetX) / frontScale,
              ((mouse.y - viewport.offset.y) / viewport.scale - offsetY) / frontScale};
-        bool click = IsMouseButtonPressed(MOUSE_BUTTON_LEFT) &&
+        if (awaitRelease && !IsKeyDown(KEY_ESCAPE) && !IsKeyDown(KEY_ENTER) &&
+            !IsKeyDown(KEY_KP_ENTER) && !IsMouseButtonDown(MOUSE_BUTTON_LEFT) &&
+            !IsMouseButtonDown(MOUSE_BUTTON_RIGHT)) awaitRelease = false;
+        bool click = !awaitRelease && IsMouseButtonPressed(MOUSE_BUTTON_LEFT) &&
                      hit({0, 0, screenWidth, screenHeight}, mouse);
-        bool enter = IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_KP_ENTER);
-        bool escape = IsKeyPressed(KEY_ESCAPE);
+        bool enter = !awaitRelease && (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_KP_ENTER));
+        bool escape = !awaitRelease && IsKeyPressed(KEY_ESCAPE);
         if (confirmDelete) {
             if (escape || (click && hit({280, 340, 96, 32}, mouse))) confirmDelete = false;
             else if (enter || (click && hit({420, 340, 96, 32}, mouse))) {

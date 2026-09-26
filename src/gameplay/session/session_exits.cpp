@@ -1,5 +1,6 @@
 #include "gameplay/session/session.hpp"
 #include <algorithm>
+#include <limits>
 
 namespace d2x {
 namespace {
@@ -15,15 +16,76 @@ bool atBoundary(const LevelExit &exit, const MapRecipe &recipe, Vec pos) {
                                 : plane - pos.y;
     return std::abs(depth) <= .8f && lateral >= b.start * 5 && lateral < b.end * 5;
 }
+bool atPassage(const LevelExit &exit, const MapRecipe &recipe, Vec pos,
+               const LevelExit::BoundaryPassage &passage) {
+    if (!atBoundary(exit, recipe, pos)) return false;
+    return exit.boundary->side % 2 ? int(std::floor(pos.y)) == int(std::floor(passage.departure.y)) :
+        int(std::floor(pos.x)) == int(std::floor(passage.departure.x));
+}
+float routeLength(Vec from, const std::deque<Vec> &route) {
+    float length = 0;
+    for (const auto point : route) {
+        length += (point - from).length();
+        from = point;
+    }
+    return length;
+}
 } // namespace
 void GameSession::cancelExit() {
     if (pendingExit_)
         simulation_.stopWalking();
     pendingExit_.reset();
     boundaryMoveTarget_.reset();
+    boundaryPassage_.reset();
+}
+bool GameSession::beginBoundaryExit(const LevelExit &exit, std::optional<Vec> target) {
+    if (!exit.enabled || !exit.boundary || state().player.dead) return false;
+    const auto destination = std::find_if(regions_.begin(), regions_.end(),
+        [&](const Region &candidate) { return candidate.definition.id == exit.destination; });
+    if (destination == regions_.end() || (target && !destination->map.grid.walkable(*target))) return false;
+    const Vec start = state().player.pos;
+    auto estimate = [&](const LevelExit::BoundaryPassage &passage) {
+        return (passage.departure - start).length() +
+            (target ? (*target - passage.arrival).length() : 0.f);
+    };
+    auto passages = exit.passages;
+    std::stable_sort(passages.begin(), passages.end(),
+        [&](const auto &left, const auto &right) { return estimate(left) < estimate(right); });
+    std::optional<LevelExit::BoundaryPassage> selected;
+    float best = std::numeric_limits<float>::infinity();
+    for (const auto &passage : passages) {
+        if (estimate(passage) >= best) break;
+        const auto approach = map().grid.path(start, passage.departure);
+        if (approach.empty()) continue;
+        float length = routeLength(start, approach);
+        if (length >= best) continue;
+        if (target) {
+            const auto onward = destination->map.grid.path(passage.arrival, *target);
+            if (onward.empty()) continue;
+            length += routeLength(passage.arrival, onward);
+        }
+        if (length < best) {
+            best = length;
+            selected = passage;
+        }
+    }
+    if (!selected) return false;
+    cancelExit();
+    cancelPickup();
+    cancelInteraction();
+    closeStorage();
+    pendingExit_ = exit.slot;
+    boundaryPassage_ = selected;
+    if (target)
+        boundaryMoveTarget_ = *target + Vec{destination->recipe.worldX * 5.f,
+                                           destination->recipe.worldY * 5.f};
+    simulation_.execute(MoveTo{selected->departure});
+    return true;
 }
 bool GameSession::routeBoundaryMove(Vec target) {
+    if (!std::isfinite(target.x) || !std::isfinite(target.y) || state().player.dead) return false;
     const auto &source = region().recipe;
+    bool adjoiningTarget = false;
     for (const auto &exit : region().exits) {
         if (!exit.boundary || !exit.enabled)
             continue;
@@ -41,12 +103,16 @@ bool GameSession::routeBoundaryMove(Vec target) {
         Vec global = target + Vec{source.worldX * 5.f, source.worldY * 5.f};
         Vec local = global - Vec{r.worldX * 5.f, r.worldY * 5.f};
         if (local.x >= 0 && local.y >= 0 && local.x < r.width * 5 && local.y < r.height * 5) {
-            beginExit(exit.slot);
-            boundaryMoveTarget_ = global;
-            return true;
+            adjoiningTarget = true;
+            if (beginBoundaryExit(exit, local)) return true;
         }
     }
-    return false;
+    if (adjoiningTarget) {
+        cancelExit();
+        simulation_.stopWalking();
+        simulation_.emit(InteractionFailed{{}, "No walkable route to the adjoining ground."});
+    }
+    return adjoiningTarget;
 }
 void GameSession::beginExit(int slot) {
     if (pendingExit_ == slot || state().player.dead)
@@ -63,6 +129,11 @@ void GameSession::beginExit(int slot) {
         simulation_.emit(InteractionFailed{{}, "This destination is not implemented yet."});
         return;
     }
+    if (exit->boundary) {
+        if (!beginBoundaryExit(*exit, std::nullopt))
+            simulation_.emit(InteractionFailed{{}, "No reachable passage to this area."});
+        return;
+    }
     pendingExit_ = slot;
     simulation_.execute(MoveTo{exit->accessPoint});
 }
@@ -76,7 +147,11 @@ void GameSession::updateExit() {
             int side = exit.boundary->side;
             bool outward = p.moving && p.look.x * outwardX[side] + p.look.y * outwardY[side] > 0;
             if (outward && atBoundary(exit, region().recipe, p.pos)) {
+                const auto passage = std::find_if(exit.passages.begin(), exit.passages.end(),
+                    [&](const auto &candidate) { return atPassage(exit, region().recipe, p.pos, candidate); });
+                if (passage == exit.passages.end()) continue;
                 pendingExit_ = exit.slot;
+                boundaryPassage_ = *passage;
                 break;
             }
         }
@@ -97,7 +172,7 @@ void GameSession::updateExit() {
     if (p.castTime > 0 || p.leapTime > 0 || p.spinTime > 0 || p.meleeTime > 0)
         return;
     if (exit->boundary
-            ? atBoundary(*exit, region().recipe, p.pos)
+            ? boundaryPassage_ && atPassage(*exit, region().recipe, p.pos, *boundaryPassage_)
             : ((p.pos - exit->accessPoint).length() <= 2 && map().grid.segment(p.pos, exit->accessPoint))) {
         auto destination = std::find_if(regions_.begin(), regions_.end(),
                                         [&](const auto &r) { return r.definition.id == exit->destination; });
@@ -106,7 +181,10 @@ void GameSession::updateExit() {
             return;
         }
         for (const auto &back : destination->exits)
-            if (back.destination == region().definition.id) {
+            if (back.destination == region().definition.id &&
+                bool(back.boundary) == bool(exit->boundary) &&
+                (!exit->boundary || (back.boundary->side == (exit->boundary->side + 2) % 4 &&
+                    boundaryPassage_ && atBoundary(back, destination->recipe, boundaryPassage_->arrival)))) {
                 // Explicit stair activation avoids arrival-triggered warp ping-pong.
                 auto target = destination->definition.id;
                 Vec arrival = back.arrival;
@@ -116,15 +194,12 @@ void GameSession::updateExit() {
                     const auto &a = region().recipe;
                     const auto &b = destination->recipe;
                     coordinateOffset = Vec{float((a.worldX - b.worldX) * 5), float((a.worldY - b.worldY) * 5)};
-                    Vec translated = p.pos + *coordinateOffset;
-                    int side = back.boundary->side;
-                    float plane = back.boundary->coordinate(b.width, b.height) * 5.f;
-                    if (side % 2)
-                        translated.x = side == 1 ? plane + .5f : plane - .5f;
+                    Vec translated = boundaryPassage_->arrival;
+                    if (exit->boundary->side % 2)
+                        translated.y += p.pos.y - boundaryPassage_->departure.y;
                     else
-                        translated.y = side == 2 ? plane + .5f : plane - .5f;
-                    if ((translated - (p.pos + *coordinateOffset)).length() > 1.5f ||
-                        !atBoundary(back, b, translated) || !destination->map.grid.walkable(translated)) {
+                        translated.x += p.pos.x - boundaryPassage_->departure.x;
+                    if (!atBoundary(back, b, translated) || !destination->map.grid.walkable(translated)) {
                         cancelExit();
                         simulation_.emit(InteractionFailed{{}, "The adjoining ground is blocked."});
                         return;
@@ -140,7 +215,8 @@ void GameSession::updateExit() {
             }
         cancelExit();
     } else if (p.route.empty()) {
-        simulation_.emit(InteractionFailed{{}, "Cannot reach these stairs."});
+        simulation_.emit(InteractionFailed{{}, exit->boundary ? "Cannot reach this boundary passage." :
+                                                                "Cannot reach these stairs."});
         cancelExit();
     }
 }

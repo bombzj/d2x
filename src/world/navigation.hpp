@@ -30,9 +30,13 @@ struct Grid {
     bool walkable(int x, int y) const {
         return x >= 0 && y >= 0 && x < width && y < height && !blocked[y * width + x];
     }
-    bool walkable(Vec p) const { return walkable(int(std::floor(p.x)), int(std::floor(p.y))); }
+    bool walkable(Vec p) const {
+        return std::isfinite(p.x) && std::isfinite(p.y) && p.x >= 0 && p.y >= 0 &&
+            p.x < width && p.y < height && walkable(int(std::floor(p.x)), int(std::floor(p.y)));
+    }
     bool segment(Vec a, Vec b) const;
     bool lightSegment(Vec a, Vec b) const;
+    Bytes reachableFrom(Vec origin) const;
     Vec nearest(Vec p) const;
     // Scene inspection arrival: an interior point of the largest walkable component.
     // Real level transitions must use the original linked warp coordinates instead.

@@ -5,6 +5,10 @@
 
 namespace d2x {
 void linkLevelExits(std::vector<Region> &regions, const WorldCatalog &catalog) {
+    std::map<RegionId, Bytes> reachable;
+    for (const auto &region : regions)
+        if (!region.recipe.boundaries.empty())
+            reachable.emplace(region.definition.id, region.map.grid.reachableFrom(region.map.spawn));
     for (auto &region : regions) {
         int id = int(region.definition.id);
         if (id < 1 || (id > 25 && (id < 28 || id > 37)))
@@ -56,42 +60,57 @@ void linkLevelExits(std::vector<Region> &regions, const WorldCatalog &catalog) {
             exit.name = target->definition.name;
             const auto &r = region.recipe;
             int plane = b.coordinate(r.width, r.height) * 5;
-            int best = -1;
-            float score = 1e9f;
-            for (int t = b.start * 5 + 2; t < b.end * 5 - 2; ++t) {
+            for (int t = b.start * 5; t < b.end * 5; ++t) {
                 Vec pos{b.side == 1   ? plane + .5f
                         : b.side == 3 ? plane - .5f
                                       : t + .5f,
                         b.side == 2   ? plane + .5f
                         : b.side == 0 ? plane - .5f
                                       : t + .5f};
-                if (!region.map.grid.walkable(pos))
+                if (!region.map.grid.walkable(pos) ||
+                    !reachable.at(region.definition.id)[size_t(int(pos.y) * region.map.grid.width + int(pos.x))])
                     continue;
-                int sourceId = int(region.definition.id);
-                if ((sourceId >= 26 && sourceId <= 28 && b.destination >= 26 && b.destination <= 28) ||
-                    (sourceId == 32 && b.destination == 33) || (sourceId == 33 && b.destination == 32)) {
-                    Vec across = pos + Vec{float((r.worldX - target->recipe.worldX) * 5),
-                                           float((r.worldY - target->recipe.worldY) * 5)};
-                    constexpr int outwardX[]{0, -1, 0, 1}, outwardY[]{1, 0, -1, 0};
-                    across = across + Vec{float(outwardX[b.side]), float(outwardY[b.side])};
-                    if (!target->map.grid.walkable(across))
-                        continue;
-                }
-                float value = std::abs(t - (b.start + b.end) * 2.5f);
-                if (value < score) {
-                    score = value;
-                    best = t;
-                    exit.position = pos;
-                }
+                Vec across = pos + Vec{float((r.worldX - target->recipe.worldX) * 5),
+                                       float((r.worldY - target->recipe.worldY) * 5)};
+                constexpr int outwardX[]{0, -1, 0, 1}, outwardY[]{1, 0, -1, 0};
+                across = across + Vec{float(outwardX[b.side]), float(outwardY[b.side])};
+                const auto &other = target->recipe;
+                const bool paired = std::any_of(other.boundaries.begin(), other.boundaries.end(),
+                    [&](const auto &back) {
+                        if (back.destination != int(region.definition.id) || back.side != (b.side + 2) % 4)
+                            return false;
+                        const float lateral = back.side % 2 ? across.y : across.x;
+                        const float normal = back.side % 2 ? across.x : across.y;
+                        const float plane = back.coordinate(other.width, other.height) * 5.f;
+                        const float inside = back.side == 1 || back.side == 2 ? .5f : -.5f;
+                        return lateral >= back.start * 5 && lateral < back.end * 5 &&
+                            std::abs(normal - plane - inside) < .01f;
+                    });
+                if (!paired || !target->map.grid.walkable(across) ||
+                    !reachable.at(target->definition.id)[size_t(int(across.y) * target->map.grid.width + int(across.x))])
+                    continue;
+                exit.passages.push_back({pos, across});
             }
-            if (best < 0)
+            if (exit.passages.empty())
                 throw std::runtime_error(
                     "Original outdoor border is not passable: " + std::to_string(int(region.definition.id)) +
                     " -> " + std::to_string(b.destination));
+            std::stable_sort(exit.passages.begin(), exit.passages.end(), [&](const auto &left, const auto &right) {
+                return (left.departure - region.map.spawn).length() < (right.departure - region.map.spawn).length();
+            });
+            bool selected = false;
+            for (const auto &passage : exit.passages) {
+                const auto approach = region.map.grid.path(region.map.spawn, passage.departure);
+                if (approach.empty()) continue;
+                exit.position = passage.departure;
+                exit.arrival = approach.size() > 1 ? approach[approach.size() - 2] : region.map.spawn;
+                selected = true;
+                break;
+            }
+            if (!selected)
+                throw std::runtime_error("Disconnected boundary passages: " + region.map.path +
+                                         " -> " + std::to_string(b.destination));
             exit.accessPoint = exit.position;
-            constexpr int inwardX[]{0, 1, 0, -1}, inwardY[]{-1, 0, 1, 0};
-            exit.arrival =
-                region.map.grid.nearest(exit.position + Vec{inwardX[b.side] * 8.f, inwardY[b.side] * 8.f});
             region.exits.push_back(exit);
         }
     }
@@ -105,7 +124,10 @@ void linkLevelExits(std::vector<Region> &regions, const WorldCatalog &catalog) {
             if (destination != regions.end())
                 exit.enabled =
                     std::any_of(destination->exits.begin(), destination->exits.end(),
-                                [&](const auto &back) { return back.destination == region.definition.id; });
+                                [&](const auto &back) {
+                                    return back.destination == region.definition.id &&
+                                        bool(back.boundary) == bool(exit.boundary);
+                                });
             std::cout << "  Exit " << int(region.definition.id) << ':' << exit.slot << " -> "
                       << int(exit.destination) << " warp=" << exit.warp << " at=" << exit.position.x << ','
                       << exit.position.y << " arrival=" << exit.arrival.x << ',' << exit.arrival.y

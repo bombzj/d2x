@@ -99,7 +99,8 @@ void Simulation::updatePlayer(float dt, Vec keyboard) {
             }
         }
     }
-    if (keyboard.length() > .1f && p.spinTime <= 0 && p.leapTime <= 0 && p.castTime <= 0) {
+    if (keyboard.length() > .1f && p.spinTime <= 0 && p.leapTime <= 0 && p.castTime <= 0 &&
+        p.meleeTime <= 0) {
         p.route.clear();
         p.attackTarget = {};
         p.throwAttack = false;
@@ -125,6 +126,16 @@ void Simulation::updatePlayer(float dt, Vec keyboard) {
     if (step.length() > .1f) {
         float distance = followingRoute ? std::min(dt * speed, remaining) : dt * speed;
         Vec next = p.pos + step * distance;
+        if (!followingRoute && distance > .0001f && !grid_->segment(p.pos, next)) {
+            float clear = 0, blocked = distance;
+            for (int iteration = 0; iteration < 12; ++iteration) {
+                const float middle = (clear + blocked) * .5f;
+                if (grid_->segment(p.pos, p.pos + step * middle)) clear = middle;
+                else blocked = middle;
+            }
+            distance = clear;
+            next = p.pos + step * distance;
+        }
         if (distance > 0.0001f && grid_->segment(p.pos, next)) {
             p.pos = next;
             if (followingRoute && distance >= remaining)

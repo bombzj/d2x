@@ -109,16 +109,22 @@ void SceneView::draw(Vec mouse) const {
     if (view_.automap)
         drawMinimap(view_.automapLarge);
     drawHud();
-    if (!view_.blocksWorld() && !view_.inventory.open && mouse.y < H - HUD) {
+    if (!view_.blocksWorld() && !view_.inventory.open && (view_.combatTarget || mouse.y < H - HUD)) {
         for (const auto &enemy : sim.area.enemies) {
             if (enemy.hp <= 0 || !session_.active(enemy.pos) ||
-                (screen(enemy.pos) - Vec{0, 25} - mouse).length() >= 24)
+                (view_.combatTarget ? enemy.id != view_.combatTarget :
+                    (screen(enemy.pos) - Vec{0, 25} - mouse).length() >= 24))
                 continue;
             const auto &identity = enemy.identity;
             auto title = identity.superUnique.empty() ? identity.monster : identity.superUnique;
             auto detail = std::string(monsterRankName(identity.rank));
             if (monsterImplementation(identity.monster).substitute)
                 detail += " / Fallen substitute";
+            const int width = std::clamp(painter_.measure(title, 16) + 24, 200, W - 32);
+            const int left = (W - width) / 2;
+            DrawRectangle(left, 73, width, 22, {24, 12, 12, 225});
+            DrawRectangle(left, 73, int(width * std::clamp(enemy.hp / enemy.maxHp, 0.f, 1.f)),
+                          22, {120, 26, 20, 235});
             painter_.centered(title, 76, 16, gold);
             painter_.centered(detail, 98, 10, parchment);
             break;

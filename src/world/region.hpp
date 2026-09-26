@@ -50,6 +50,9 @@ struct WorldObject {
     uint64_t npcRandom = 0;
 };
 struct LevelExit {
+    struct BoundaryPassage {
+        Vec departure, arrival;
+    };
     int slot = 0, warp = 0;
     RegionId destination{};
     std::string name;
@@ -58,6 +61,7 @@ struct LevelExit {
     bool enabled = false;
     // A boundary is crossed by walking; a DS1 warp requires explicit activation.
     std::optional<MapRecipe::Boundary> boundary;
+    std::vector<BoundaryPassage> passages;
 };
 struct Region {
     RegionDefinition definition;

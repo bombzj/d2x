@@ -113,159 +113,195 @@ int runGame(int argc, char **argv) {
         });
         archives.pulseLoading();
     };
-    beginLoading();
-    std::optional<SessionSnapshot> restored;
-    std::optional<CharacterChoice> character;
-    std::optional<RenderTarget> frontendTarget;
-    const bool frontend = !options.directGame;
-    if (frontend) {
-        frontendTarget.emplace();
-        archives.setLoadingPulse({});
-        ShowCursor();
-        character = chooseCharacter(archives, frontendTarget->handle);
-        if (!character) return 0;
-        HideCursor();
-        beginLoading();
-    }
-    if (character && !character->created) options.load = character->path.string();
-    if (!options.load.empty()) {
-        restored = loadSave(options.load, loadClassicData(archives));
-        options.world.seed = restored->world.mapSeed;
-        options.population.difficulty = restored->world.population.difficulty;
-    }
-    GameSession session(archives, options.world, options.region, options.lootSeed, options.population,
-                        character ? character->characterClass : restored ? restored->world.player.characterClass :
-                            options.characterClass.empty() ? "Barbarian" : options.characterClass,
-                        character ? character->name : restored ? restored->world.player.name : "Hero");
-    std::cout << "MPQ data: " << session.content().profile << ", "
-              << session.inventory().catalog().entries().size() << " items, "
-              << session.content().monsters.size() << " monsters, " << session.content().treasures.size()
-              << " treasure classes\n"
-              << LootSystem::unavailableReason << '\n';
-    if (!options.load.empty()) {
-        session.restore(std::move(*restored));
-        std::cout << "Loaded " << options.load << '\n';
-    }
-    const std::string savePath = character ? character->path.string()
-                                 : !options.save.empty()   ? options.save
-                                 : !options.load.empty() ? options.load
-                                                         : "saves/quick.d2s";
-    if (character && character->created) writeSave(savePath, session.snapshot(), session.content());
-    frontendTarget.reset();
-    SceneView view(archives, session);
-    view.ui().travelMenu = options.maps;
-    view.ui().inventory.open = options.inventory;
-    if (options.skills && !options.inventory && !options.stash && !options.maps)
-        view.ui().skillTreeOpen = true;
-    if (options.stash) {
-        bool found = false;
-        for (const auto &object : session.region().objects)
-            if (object.interaction == Interaction::Stash) {
-                session.submit(Interact{object.id});
-                found = true;
-                break;
+    for (;;) {
+        const bool returnToCharacters = [&]() {
+            beginLoading();
+            std::optional<SessionSnapshot> restored;
+            std::optional<CharacterChoice> character;
+            std::optional<RenderTarget> frontendTarget;
+            const bool frontend = !options.directGame;
+            if (frontend) {
+                frontendTarget.emplace();
+                archives.setLoadingPulse({});
+                ShowCursor();
+                character = chooseCharacter(archives, frontendTarget->handle);
+                if (!character)
+                    return false;
+                HideCursor();
+                beginLoading();
             }
-        if (!found)
-            throw std::runtime_error("--stash requires a region with an original stash object");
-    }
-    SceneController controller(session, view);
-    RenderTarget target;
-    archives.setLoadingPulse({});
-    DebugPipe debugPipe(options.debugPipe);
-    bool debugPaused = !options.debugPipe.empty() && !options.debugRun, debugQuit = false;
-    if (!options.debugPipe.empty() && options.hidden)
-        SetTargetFPS(60);
-    if (!options.debugPipe.empty())
-        std::cout << "Debug pipe ready: " << options.debugPipe
-                  << (debugPaused ? " (paused)\n" : " (running)\n") << std::flush;
-    float accumulator = 0;
-    int frames = 0;
-    std::optional<FrameInput> debugInput;
-    while (!WindowShouldClose()) {
-        debugPipe.poll([&](const std::string &request) {
-            return debugCommand(request, session, view, debugPaused, debugQuit, savePath,
-                                [&](const std::string &path) { target.save(path); },
-                                [&](FrameInput input) {
-                                    if (debugInput) throw std::runtime_error("UI input already queued for this frame");
-                                    debugInput = std::move(input);
-                                });
-        });
-        if (debugQuit)
-            break;
-        float dt = std::min(GetFrameTime(), .1f);
-        auto viewport = currentViewport();
-        auto input = pollInput(viewport);
-        if (debugInput) {
-            input = std::move(*debugInput);
-            debugInput.reset();
-        }
-        bool persistenceInput = input.focused && (input.save || input.load);
-        if (persistenceInput) {
-            try {
-                if (input.load) {
-                    session.restore(loadSave(savePath, session.content()));
-                    view.sessionRestored();
-                    controller.resetInput();
-                    accumulator = 0;
-                    view.notice("Character loaded in town; monsters have reset.");
-                } else {
-                    writeSave(savePath, session.snapshot(), session.content());
-                    view.notice("Character saved.");
+            if (character && !character->created)
+                options.load = character->path.string();
+            if (!options.load.empty()) {
+                restored = loadSave(options.load, loadClassicData(archives));
+                options.world.seed = restored->world.mapSeed;
+                options.population.difficulty = restored->world.population.difficulty;
+            }
+            GameSession session(archives, options.world, options.region, options.lootSeed, options.population,
+                                character                        ? character->characterClass
+                                : restored                       ? restored->world.player.characterClass
+                                : options.characterClass.empty() ? "Barbarian"
+                                                                 : options.characterClass,
+                                character  ? character->name
+                                : restored ? restored->world.player.name
+                                           : "Hero");
+            std::cout << "MPQ data: " << session.content().profile << ", "
+                      << session.inventory().catalog().entries().size() << " items, "
+                      << session.content().monsters.size() << " monsters, "
+                      << session.content().treasures.size() << " treasure classes\n"
+                      << LootSystem::unavailableReason << '\n';
+            if (!options.load.empty()) {
+                session.restore(std::move(*restored));
+                std::cout << "Loaded " << options.load << '\n';
+            }
+            const std::string savePath = character               ? character->path.string()
+                                         : !options.save.empty() ? options.save
+                                         : !options.load.empty() ? options.load
+                                                                 : "saves/quick.d2s";
+            if (character && character->created)
+                writeSave(savePath, session.snapshot(), session.content());
+            frontendTarget.reset();
+            SceneView view(archives, session);
+            view.ui().travelMenu = options.maps;
+            view.ui().inventory.open = options.inventory;
+            if (options.skills && !options.inventory && !options.stash && !options.maps)
+                view.ui().skillTreeOpen = true;
+            if (options.stash) {
+                bool found = false;
+                for (const auto &object : session.region().objects)
+                    if (object.interaction == Interaction::Stash) {
+                        session.submit(Interact{object.id});
+                        found = true;
+                        break;
+                    }
+                if (!found)
+                    throw std::runtime_error("--stash requires a region with an original stash object");
+            }
+            SceneController controller(session, view);
+            if (frontend) controller.resetInput();
+            RenderTarget target;
+            archives.setLoadingPulse({});
+            DebugPipe debugPipe(options.debugPipe);
+            bool debugPaused = !options.debugPipe.empty() && !options.debugRun, debugQuit = false;
+            if (!options.debugPipe.empty() && options.hidden)
+                SetTargetFPS(60);
+            if (!options.debugPipe.empty())
+                std::cout << "Debug pipe ready: " << options.debugPipe
+                          << (debugPaused ? " (paused)\n" : " (running)\n") << std::flush;
+            float accumulator = 0;
+            int frames = 0;
+            bool returningToCharacters = false;
+            std::optional<FrameInput> debugInput;
+            while (!WindowShouldClose()) {
+                debugPipe.poll([&](const std::string &request) {
+                    return debugCommand(
+                        request, session, view, debugPaused, debugQuit, savePath,
+                        [&](const std::string &path) {
+                            target.save(path);
+                        },
+                        [&](FrameInput input) {
+                            if (debugInput)
+                                throw std::runtime_error("UI input already queued for this frame");
+                            debugInput = std::move(input);
+                        });
+                });
+                if (debugQuit)
+                    break;
+                float dt = std::min(GetFrameTime(), .1f);
+                auto viewport = currentViewport();
+                auto input = pollInput(viewport);
+                if (debugInput) {
+                    input = std::move(*debugInput);
+                    debugInput.reset();
                 }
-                std::cout << (input.load ? "Loaded " : "Saved ") << savePath << '\n';
-            } catch (const std::exception &error) {
-                std::cerr << error.what() << '\n';
-                view.notice(error.what(), true);
+                bool persistenceInput = input.focused && (input.save || input.load);
+                if (persistenceInput) {
+                    try {
+                        if (input.load) {
+                            session.restore(loadSave(savePath, session.content()));
+                            view.sessionRestored();
+                            controller.resetInput();
+                            accumulator = 0;
+                            view.notice("Character loaded in town; monsters have reset.");
+                        } else {
+                            writeSave(savePath, session.snapshot(), session.content());
+                            view.notice("Character saved.");
+                        }
+                        std::cout << (input.load ? "Loaded " : "Saved ") << savePath << '\n';
+                    } catch (const std::exception &error) {
+                        std::cerr << error.what() << '\n';
+                        view.notice(error.what(), true);
+                    }
+                } else if (!controller.handle(input, dt)) {
+                    try {
+                        if (character || !options.save.empty() || !options.load.empty())
+                            writeSave(savePath, session.snapshot(), session.content());
+                        returningToCharacters = true;
+                        break;
+                    } catch (const std::exception &error) {
+                        std::cerr << error.what() << '\n';
+                        view.notice(std::string("Cannot return to characters: ") + error.what(), true);
+                    }
+                }
+                // Modal windows suspend world time, but their commands still have to
+                // commit and publish events before this frame is drawn.
+                if (session.hasPendingCommands()) {
+                    session.tick(0);
+                    view.advance(0);
+                }
+                view.advanceUi(dt);
+                if (view.ui().blocksWorld() || persistenceInput || debugPaused)
+                    accumulator = 0;
+                else
+                    accumulator += dt;
+                while (accumulator >= GameSession::fixedStep && !view.ui().blocksWorld()) {
+                    session.tick(GameSession::fixedStep, controller.movement(), controller.temporaryRun());
+                    view.advance(GameSession::fixedStep);
+                    accumulator -= GameSession::fixedStep;
+                }
+                view.ui().combatTarget = controller.combatTarget();
+                BeginTextureMode(target.handle);
+                view.draw(input.mouse);
+                EndTextureMode();
+                BeginDrawing();
+                ClearBackground(BLACK);
+                DrawTexturePro(target.handle.texture, {0, 0, float(W), -float(H)},
+                               {viewport.offset.x, viewport.offset.y, W * viewport.scale, H * viewport.scale},
+                               {0, 0}, 0, WHITE);
+                EndDrawing();
+                if (input.screenshot)
+                    target.save("artifacts/d2x-capture.png");
+                if (options.frameLimit > 0 && ++frames >= options.frameLimit)
+                    break;
             }
-        } else if (!controller.handle(input, dt))
-            break;
-        // Modal windows suspend world time, but their commands still have to
-        // commit and publish events before this frame is drawn.
-        if (session.hasPendingCommands()) {
-            session.tick(0);
-            view.advance(0);
-        }
-        view.advanceUi(dt);
-        if (view.ui().blocksWorld() || persistenceInput || debugPaused)
-            accumulator = 0;
-        else
-            accumulator += dt;
-        while (accumulator >= GameSession::fixedStep && !view.ui().blocksWorld()) {
-            session.tick(GameSession::fixedStep, controller.movement(), controller.temporaryRun());
-            view.advance(GameSession::fixedStep);
-            accumulator -= GameSession::fixedStep;
-        }
-        BeginTextureMode(target.handle);
-        view.draw(input.mouse);
-        EndTextureMode();
-        BeginDrawing();
-        ClearBackground(BLACK);
-        DrawTexturePro(target.handle.texture, {0, 0, float(W), -float(H)},
-                       {viewport.offset.x, viewport.offset.y, W * viewport.scale, H * viewport.scale}, {0, 0},
-                       0, WHITE);
-        EndDrawing();
-        if (input.screenshot)
-            target.save("artifacts/d2x-capture.png");
-        if (options.frameLimit > 0 && ++frames >= options.frameLimit)
-            break;
+            if (!options.screenshot.empty())
+                target.save(options.screenshot);
+            if (!returningToCharacters && !options.save.empty()) {
+                writeSave(options.save, session.snapshot(), session.content());
+                std::cout << "Saved " << options.save << '\n';
+            }
+            if (!returningToCharacters && character)
+                writeSave(savePath, session.snapshot(), session.content());
+            if (!options.pack.empty())
+                view.collectMapVariants(archives);
+            std::filesystem::create_directories("artifacts");
+            std::ofstream manifest("artifacts/mvp-manifest.txt");
+            for (const auto &name : archives.used)
+                manifest << name << '\n';
+            if (!manifest)
+                throw std::runtime_error("Cannot write resource manifest");
+            if (!options.pack.empty())
+                archives.packUsed(options.pack);
+            return returningToCharacters;
+        }();
+        if (!returnToCharacters)
+            return 0;
+        AppOptions next;
+        next.mpq = options.mpq;
+        next.hidden = options.hidden;
+        next.debugPipe = options.debugPipe;
+        next.debugRun = options.debugRun;
+        options = std::move(next);
     }
-    if (!options.screenshot.empty())
-        target.save(options.screenshot);
-    if (!options.save.empty()) {
-        writeSave(options.save, session.snapshot(), session.content());
-        std::cout << "Saved " << options.save << '\n';
-    }
-    if (character) writeSave(savePath, session.snapshot(), session.content());
-    if (!options.pack.empty())
-        view.collectMapVariants(archives);
-    std::filesystem::create_directories("artifacts");
-    std::ofstream manifest("artifacts/mvp-manifest.txt");
-    for (const auto &name : archives.used)
-        manifest << name << '\n';
-    if (!manifest)
-        throw std::runtime_error("Cannot write resource manifest");
-    if (!options.pack.empty())
-        archives.packUsed(options.pack);
-    return 0;
 }
 } // namespace d2x

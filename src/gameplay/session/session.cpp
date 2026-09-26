@@ -515,10 +515,10 @@ void GameSession::tick(float dt, Vec keyboard, bool forceRun) {
                         transitioned = true;
                     }
                 } else if constexpr (std::is_same_v<T, MoveTo>) {
+                    cancelPickup();
+                    cancelInteraction();
                     if (!routeBoundaryMove(intent.position)) {
                         cancelExit();
-                        cancelPickup();
-                        cancelInteraction();
                         simulation_.execute(command);
                     }
                 } else if constexpr (std::is_same_v<T, RestartArea>) {

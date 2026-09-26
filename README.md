@@ -46,6 +46,7 @@ Windows 使用 `scripts/build.ps1`，启动示例（默认读取 `assets/mpq2`�
 | Alt、Tab、R、按住 Ctrl | 物品名称、地图、走跑切换、临时跑步 |
 | Ctrl+F2、PgUp／PgDn | 开发地图目录、翻页 |
 | F11、Ctrl+F11 | 保存、读取；默认 `saves/quick.d2s` |
+| Esc | 先关闭当前面板／对话，无面板时保存有存档归属的角色并返回角色列表 |
 | P、M、Ctrl+R | 暂停、静音、开发用重置当前区 |
 | Ctrl+F1、Ctrl+F3、F12 | 帮助、碰撞网格、截图 |
 | Ctrl+Alt+G／E／A／T／W | 调试：加金币／经验、重置属性点、重置技能点、激活当前 MPQ 中已构建区域的传送点 |

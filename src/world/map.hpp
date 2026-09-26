@@ -28,6 +28,7 @@ struct Map {
     std::vector<Vec> warpArrivals;
     int unresolved = 0;
     void load(Archives &archives, TileLibraryCache &cache, const MapRecipe &recipe);
+    Vec actSpawn() const;
     int tileIndex(const MapCell &c, int x, int y) const;
 };
 } // namespace d2x

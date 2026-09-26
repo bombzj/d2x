@@ -145,29 +145,7 @@ std::vector<Region> loadRegions(Archives &archives, EntityIds &ids, const std::v
         region.definition = plan.definition;
         region.recipe = plan.recipe;
         region.map.load(archives, cache, plan.recipe);
-        if (region.definition.safe) {
-            // D2's act-spawn tile index 0 selects the DS1 main-30 group.
-            bool foundSpawn = false;
-            for (const auto &layer : region.map.data.walls) {
-                if (foundSpawn) break;
-                for (size_t index = 0; index < layer.size(); ++index) {
-                    const auto &cell = layer[index];
-                    if (!cell.occupied() || (cell.orientation != 10 && cell.orientation != 11) ||
-                        ((cell.value >> 20) & 63) != 30 || ((cell.value >> 8) & 255) > 4)
-                        continue;
-                    Vec marker{float(index % region.map.data.width * 5 + 3),
-                               float(index / region.map.data.width * 5 + 3)};
-                    Vec arrival = region.map.grid.nearest(marker);
-                    if (!region.map.grid.walkable(arrival) || (arrival - marker).length() > 5)
-                        throw std::runtime_error("Invalid DS1 act spawn marker: " + region.map.path);
-                    region.map.spawn = arrival;
-                    foundSpawn = true;
-                    break;
-                }
-            }
-            if (!foundSpawn)
-                throw std::runtime_error("Missing DS1 act spawn marker: " + region.map.path);
-        }
+        if (region.definition.safe) region.map.spawn = region.map.actSpawn();
         for (size_t index = 0; index < region.map.data.objects.size(); ++index) {
             const auto &source = region.map.data.objects[index];
             if (source.type == 1 && monsters.supported()) {

@@ -17,6 +17,7 @@ struct ViewState {
     int skillPage = 3;
     std::string skillClass;
     Vec camera, clickAt;
+    EntityId combatTarget;
     float clickAge = 10, zoom = 1;
     bool help = false, automap = false, debug = false, pause = false, travelMenu = false;
     bool miniPanelOpen = false;

@@ -41,6 +41,12 @@ class SceneController {
         releaseAfterLoad_ = true;
     }
     Vec movement() const { return movement_; }
+    EntityId combatTarget() const {
+      if (inputRegion_ != session_.state().area.region || session_.state().player.dead) return {};
+      if (rightCombatTarget_)
+        return view_.ui().rightSkill == rightTargetSkill_ ? rightCombatTarget_ : EntityId{};
+      return view_.ui().leftSkill == leftTargetSkill_ ? leftCombatTarget_ : EntityId{};
+    }
     bool temporaryRun() const { return temporaryRun_; }
 };
 } // namespace d2x
