@@ -22,6 +22,8 @@ AutomapCatalog::AutomapCatalog(Archives &archives) {
     DataTable types(archives.read("data/global/excel/lvltypes.txt"));
     DataTable automap(archives.read("data/global/excel/automap.txt"));
     DataTable objects(archives.read("data/global/excel/objects.txt"));
+    DataTable monsters(archives.read("data/global/excel/monstats.txt"));
+    DataTable monsterModes(archives.read("data/global/excel/monstats2.txt"));
     for (auto column : {"Name", "Id"})
         if (!types.has(column)) throw std::runtime_error("LvlTypes lacks automap level identity");
     for (auto column : {"LevelName", "TileName", "Style", "StartSequence",
@@ -52,21 +54,33 @@ AutomapCatalog::AutomapCatalog(Archives &archives) {
         if (auto id = objects.number(row, "Id"))
             if (auto cel = objects.number(row, "AutoMap"); cel && *cel > 0)
                 objectCels_[*id] = *cel;
+    std::map<std::string, int, std::less<>> monsterCels;
+    for (size_t row = 0; row < monsterModes.rows().size(); ++row)
+        if (auto cel = monsterModes.number(row, "automapCel"); cel && *cel > 0)
+            monsterCels[std::string(monsterModes.value(row, "Id"))] = *cel;
+    for (size_t row = 0; row < monsters.rows().size(); ++row) {
+        auto cel = monsterCels.find(monsters.value(row, "MonStatsEx"));
+        if (cel != monsterCels.end())
+            npcCels_[std::string(monsters.value(row, "Id"))] = cel->second;
+    }
 }
 
-int AutomapCatalog::tileCel(int levelType, const Tile &tile, int x, int y) const {
-    auto group = rules_.find({levelType, tile.orientation});
+int AutomapCatalog::tileCel(int levelType, const MapCell &cell, int x, int y) const {
+    if (levelType == 0) return -1;
+    const int style = int((cell.value >> 20) & 63);
+    const int sequence = int((cell.value >> 8) & 255);
+    auto group = rules_.find({levelType, cell.orientation});
     if (group == rules_.end()) return -1;
     for (const auto &rule : group->second) {
-        if ((rule.style != -1 && rule.style != tile.main) ||
-            (rule.first != -1 && (tile.sub < rule.first || tile.sub > rule.last))) continue;
+        if ((rule.style != -1 && rule.style != style) ||
+            (rule.first != -1 && (sequence < rule.first || sequence > rule.last))) continue;
         int count = 0;
         while (count < 4 && rule.cels[count] >= 0) ++count;
         if (!count) return -1;
         // Retail uses a shared automap RNG; coordinate selection keeps these visual
         // variants stable across redraws without changing gameplay random state.
         unsigned choice = unsigned(x) * 73856093u ^ unsigned(y) * 19349663u ^
-                          unsigned(tile.main) * 83492791u ^ unsigned(tile.sub);
+                          unsigned(style) * 83492791u ^ unsigned(sequence);
         return rule.cels[choice % unsigned(count)];
     }
     return -1;
@@ -75,5 +89,9 @@ int AutomapCatalog::tileCel(int levelType, const Tile &tile, int x, int y) const
 int AutomapCatalog::objectCel(int objectClass) const {
     auto found = objectCels_.find(objectClass);
     return found == objectCels_.end() ? -1 : found->second;
+}
+int AutomapCatalog::npcCel(std::string_view monsterClass) const {
+    auto found = npcCels_.find(monsterClass);
+    return found == npcCels_.end() ? -1 : found->second;
 }
 } // namespace d2x

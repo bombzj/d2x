@@ -289,10 +289,21 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
         ui.skillPicker.reset();
         ui.help = !ui.help;
     }
-    if (input.automap)
-        ui.automap = !ui.automap;
+    if (input.automap) {
+        if (input.shift) {
+            ui.automapLarge = !ui.automapLarge;
+            ui.automap = true;
+        } else {
+            ui.automap = !ui.automap;
+        }
+        ui.automapOffset = {};
+    }
     if (input.minimapSide)
         ui.minimapRight = !ui.minimapRight;
+    if (input.automapCenter)
+        ui.automapOffset = {};
+    if (input.automapNames)
+        ui.automapNames = !ui.automapNames;
     if (input.travel) {
         ui.waypointSource = {};
         ui.travelPage = 0;
@@ -593,7 +604,12 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
     if (handleSkills(input) || handleInventory(input))
         return true;
     if (ui.imbueNpc) return true;
-    movement_ = unproject(input.movement).unit();
+    if (ui.automap) {
+        ui.automapOffset = ui.automapOffset - input.movement * (120.f * elapsed);
+        movement_ = {};
+    } else {
+        movement_ = unproject(input.movement).unit();
+    }
     if (!input.insideViewport)
         return true;
     if (!hudSurface(input.mouse)) {

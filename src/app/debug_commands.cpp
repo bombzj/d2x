@@ -60,6 +60,14 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
             else if (key == "hireling" || key == "o") frame.hireling = true;
             else if (key == "weapon-swap") frame.weaponSwap = true;
             else if (key == "automap") frame.automap = true;
+            else if (key == "automap-size") frame.automap = frame.shift = true;
+            else if (key == "automap-side") frame.minimapSide = true;
+            else if (key == "automap-center") frame.automapCenter = true;
+            else if (key == "automap-names") frame.automapNames = true;
+            else if (key == "up") frame.movement.y = -1;
+            else if (key == "down") frame.movement.y = 1;
+            else if (key == "left") frame.movement.x = -1;
+            else if (key == "right") frame.movement.x = 1;
             else if (key == "run" || key == "r") frame.run = true;
             else if (key == "restart") frame.restart = true;
             else if (!key.empty()) throw std::runtime_error("Unsupported UI key");
@@ -167,6 +175,13 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
                 {"inventory", view.ui().inventory.open}, {"weaponSet", state.player.weaponSet},
                 {"leftDamage", leftAction.damage}, {"rightDamage", rightAction.damage}};
             result["travelMenu"] = view.ui().travelMenu;
+            result["automap"] = {{"open", view.ui().automap}, {"large", view.ui().automapLarge},
+                {"right", view.ui().minimapRight},
+                {"names", view.ui().automapNames},
+                {"offset", {view.ui().automapOffset.x, view.ui().automapOffset.y}}};
+            result["automap"]["layers"] = Json::array();
+            for (const auto &[region, cells] : view.automapLayers())
+                result["automap"]["layers"].push_back({{"region", int(region)}, {"exploredCells", cells}});
             auto snapshot = session.snapshot();
             result["lootRandom"] = snapshot.loot.randomState;
             result["settled"] = snapshot.loot.settled.size();

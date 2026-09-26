@@ -18,6 +18,8 @@ struct FrameInput {
     bool showLoot = false;
     bool help = false, automap = false, travel = false, collision = false;
     bool minimapSide = false;
+    bool automapCenter = false;
+    bool automapNames = false;
     bool hireling = false;
     bool pause = false, mute = false, run = false, restart = false, escape = false, screenshot = false;
     bool expandBelt = false, storage = false, weaponSwap = false;

@@ -18,6 +18,7 @@ class RoomLayout {
   public:
     RoomLayout() = default;
     RoomLayout(int width, int height, std::vector<RoomBounds> rooms);
+    const RoomBounds *room(Vec point) const;
     bool nearby(Vec observer, Vec point) const;
 };
 struct Grid {

@@ -56,6 +56,8 @@ FrameInput pollInput(const Viewport &viewport) {
     input.help = input.control && IsKeyPressed(KEY_F1);
     input.automap = IsKeyPressed(KEY_TAB);
     input.minimapSide = IsKeyPressed(KEY_V);
+    input.automapCenter = IsKeyPressed(KEY_HOME);
+    input.automapNames = !input.control && IsKeyPressed(KEY_F12);
     input.travel = input.control && IsKeyPressed(KEY_F2);
     input.pageDelta = int(IsKeyPressed(KEY_PAGE_DOWN)) - int(IsKeyPressed(KEY_PAGE_UP));
     input.collision = input.control && IsKeyPressed(KEY_F3);
@@ -64,7 +66,7 @@ FrameInput pollInput(const Viewport &viewport) {
     input.run = !input.control && IsKeyPressed(KEY_R);
     input.restart = input.control && IsKeyPressed(KEY_R);
     input.escape = IsKeyPressed(KEY_ESCAPE);
-    input.screenshot = IsKeyPressed(KEY_F12);
+    input.screenshot = input.control && IsKeyPressed(KEY_F12);
     input.save = IsKeyPressed(KEY_F11) && !input.control;
     input.load = IsKeyPressed(KEY_F11) && input.control;
     for (int i = 0; i < int(hotbarSlots); ++i)

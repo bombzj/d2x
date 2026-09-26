@@ -11,25 +11,32 @@ void SceneAssets::loadAutomap(const GameSession &session) {
         for (int y = 0; y < map.data.height; ++y)
             for (int x = 0; x < map.data.width; ++x) {
                 const size_t cellIndex = size_t(y) * map.data.width + x;
+                std::set<int> cellCels;
                 auto collect = [&](const auto &layers) {
                     for (const auto &layer : layers) {
                         const auto &cell = layer[cellIndex];
                         if (!cell.present()) continue;
-                        int index = map.tileIndex(cell, x, y);
-                        if (index < 0) continue;
-                        int cel = automapCatalog_.tileCel(region.recipe.levelType,
-                                                          *map.tiles[index], x, y);
-                        if (cel < 0) continue;
-                        stamps.push_back({x, y, cel});
-                        used.insert(cel);
+                        auto add = [&](const MapCell &tile) {
+                            int cel = automapCatalog_.tileCel(region.recipe.levelType, tile, x, y);
+                            if (cel < 0 || !cellCels.insert(cel).second) return;
+                            stamps.push_back({x, y, cel});
+                            used.insert(cel);
+                        };
+                        add(cell);
+                        if (cell.orientation == 3) {
+                            auto companion = cell;
+                            companion.orientation = 4;
+                            add(companion);
+                        }
                     }
                 };
                 collect(map.data.floors);
                 collect(map.data.walls);
             }
         for (const auto &object : region.objects) {
-            if (!object.npcClass.empty()) continue;
-            if (int cel = automapCatalog_.objectCel(object.objectClass); cel >= 0)
+            int cel = object.npcClass.empty() ? automapCatalog_.objectCel(object.objectClass)
+                                             : automapCatalog_.npcCel(object.npcClass);
+            if (cel >= 0)
                 used.insert(cel);
         }
     }
@@ -44,8 +51,12 @@ void SceneAssets::loadAutomap(const GameSession &session) {
         if (!art || art->frames.empty())
             throw std::runtime_error("Original MPQ automap art is missing");
         for (int cel : used)
-            if (cel < int(art->frames.size()))
-                automapCels[size].emplace(cel, graphics_.upload(art->frames[cel]));
+            if (cel < int(art->frames.size())) {
+                auto frame = art->frames[cel];
+                frame.x -= frame.width / 2;
+                frame.y -= frame.height - frame.width / 4;
+                automapCels[size].emplace(cel, graphics_.upload(frame));
+            }
     }
 }
 } // namespace d2x

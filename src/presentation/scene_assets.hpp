@@ -80,6 +80,7 @@ class SceneAssets {
     void loadHeroEquipment(const GameSession &session);
     const std::string &heroAppearanceError() const { return heroFailure_; }
     int automapObjectCel(int objectClass) const { return automapCatalog_.objectCel(objectClass); }
+    int automapNpcCel(std::string_view monsterClass) const { return automapCatalog_.npcCel(monsterClass); }
     void collectMapVariants(Archives &archives, const WorldCatalog &catalog, const MonsterCatalog &monsters);
     void loadMonsterAudio(Archives &archives, const MonsterCatalog &monsters);
 };

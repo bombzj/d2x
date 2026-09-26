@@ -37,6 +37,10 @@ int RoomLayout::roomAt(Vec point) const {
     }
     return best;
 }
+const RoomBounds *RoomLayout::room(Vec point) const {
+    const int index = roomAt(point);
+    return index < 0 ? nullptr : &rooms_[size_t(index)];
+}
 bool RoomLayout::nearby(Vec observer, Vec point) const {
     int a = roomAt(observer), b = roomAt(point);
     if (a < 0 || b < 0)

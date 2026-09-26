@@ -21,6 +21,9 @@ struct ViewState {
     bool help = false, automap = false, debug = false, pause = false, travelMenu = false;
     bool miniPanelOpen = false;
     bool minimapRight = false;
+    bool automapLarge = false;
+    bool automapNames = true;
+    Vec automapOffset;
     bool characterOpen = false;
     bool hirelingOpen = false, hireListOpen = false;
     int hireListScroll = 0;
@@ -134,6 +137,7 @@ class SceneView {
     ~SceneView();
     ViewState &ui() { return view_; }
     const ViewState &ui() const { return view_; }
+    std::vector<std::pair<RegionId, size_t>> automapLayers() const;
     Vec screen(Vec position) const;
     Vec world(Vec position) const;
     bool visible(const WorldObject &object) const;

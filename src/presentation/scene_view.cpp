@@ -88,6 +88,7 @@ void SceneView::notice(std::string text, bool error) {
 }
 void SceneView::sessionRestored() {
     exploredAutomap_.clear();
+    view_.automapOffset = {};
     roofOpacity_.clear();
     view_.waypointSource = {};
     monsterPositions_.clear();

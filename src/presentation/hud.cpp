@@ -72,7 +72,7 @@ void SceneView::drawHelp() const {
                            "P / M                      Pause / Mute",
                            "R                          Restore life",
                            "F11 / Ctrl + F11           Save / Restart in town",
-                           "F12                        Save screenshot",
+                           "F12 / Ctrl+F12             Map names / Screenshot",
                            "Ctrl+F1                   Close this panel"};
     for (int i = 0; i < int(std::size(lines)); i++)
         painter_.label(lines[i], W / 2 - 194, 216 + i * 23, 12,
@@ -107,7 +107,7 @@ void SceneView::draw(Vec mouse) const {
     drawObjectHint(mouse);
     EndScissorMode();
     if (view_.automap)
-        drawMinimap(false);
+        drawMinimap(view_.automapLarge);
     drawHud();
     if (!view_.blocksWorld() && !view_.inventory.open && mouse.y < H - HUD) {
         for (const auto &enemy : sim.area.enemies) {
