@@ -5,8 +5,10 @@
 #include "gameplay/monsters/monster_spawn.hpp"
 #include "gameplay/quest/state.hpp"
 #include "gameplay/npc/hireling.hpp"
+#include "gameplay/skills/original.hpp"
 #include <deque>
 #include <map>
+#include <optional>
 #include <set>
 #include <string>
 
@@ -30,6 +32,19 @@ struct ActiveCombatEffect {
     float startedAt = 0, retaliationFreeze = 0, hitOverlayDuration = 0;
 };
 struct PlayerState {
+    struct PendingCast {
+        OriginalSkillCast skill;
+        Vec target;
+        int staticFieldMinimum = 0;
+        float remaining = 0;
+    };
+    struct ChannelCast {
+        OriginalSkillCast skill;
+        Vec target;
+        float remaining = 0;
+        unsigned pulses = 0;
+        float age = 0;
+    };
     EntityId id;
     std::string name = "Hero";
     std::string characterClass = "Barbarian";
@@ -54,8 +69,10 @@ struct PlayerState {
     Skill lastSkill = Skill::Fireball;
     float lastCastDuration = .32f;
     float lastCastRate = 0;
-    int channelSkill = -1;
-    float channelAge = 0;
+    std::optional<PendingCast> pendingCast;
+    std::optional<ChannelCast> channel;
+    int channelSkill() const { return channel ? channel->skill.sourceId : -1; }
+    float channelAge() const { return channel ? channel->age : 0; }
     bool running = false, runningNow = false, moving = false, dead = false;
     uint64_t combatRandom = (uint64_t(666) << 32) | 210;
     unsigned nextWeapon = 0;

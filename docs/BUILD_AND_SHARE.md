@@ -36,11 +36,29 @@ cmake --build build --parallel
 
 在项目根目录使用 `Play.cmd`，或运行 `build/bin/d2x.exe`。程序默认读取 `assets/mpq2` 中的原始 MPQ；其他位置可用 `--mpq <目录>` 指定。MPQ 不参与编译，但运行时必须可用。源码入口为 `CMakeLists.txt`、`cmake/` 和 `src/`；许可和素材来源见 `LICENSE`、[第三方说明](THIRD_PARTY.md) 及 `docs/licenses/`。
 
-普通图形启动及默认 `Play.cmd` 先显示资料片角色列表；可新建七职业普通角色、输入角色名、选择已有角色进入游戏，或确认删除角色。角色以原版 D2S v96 存放在运行目录的 `saves/`；按 F11 保存，正常退出自动保存。仅指定 `--mpq`、`--debug-pipe`、`--debug-run` 不再跳过角色界面；显式 `--load`、`--hidden`、`--level`、`--region` 等场景／批处理选项仍直进游戏。启动器仅在显式传入 `-Level`／`-Region` 时附带区域参数。角色确认后重新显示原 MPQ 加载动画，覆盖读档、世界构造和场景资源上传。角色前端只支持资料片普通角色，转换和专家模式控件禁用；D2S 的明确支持范围见[存档](SAVES.md)，旧内部档不迁移。
+普通图形启动及默认 `Play.cmd` 先显示资料片角色列表；可新建七职业普通角色、输入角色名、选择已有角色进入游戏，或确认删除角色。角色以原版 D2S v96 存放在运行目录的 `saves/`；按 F11 保存，正常退出自动保存。仅指定 `--mpq`、`--debug-pipe`、`--debug-run` 不再跳过角色界面；显式 `--class`、`--load`、`--hidden`、`--level`、`--region` 等场景／批处理选项仍直进游戏。启动器仅在显式传入 `-Level`／`-Region` 时附带区域参数。角色确认后重新显示原 MPQ 加载动画，覆盖读档、世界构造和场景资源上传。角色前端只支持资料片普通角色，转换和专家模式控件禁用；D2S 的明确支持范围见[存档](SAVES.md)，旧内部档不迁移。
+
+直接选择职业开始测试，不经过 UI 或存档：
+
+```powershell
+.\Play.cmd -Class Sorceress
+.\Play.cmd -Class Necromancer -Level 8 -DebugPaused
+.\build\bin\d2x.exe --class Sorceress --level 8 --hidden --debug-pipe d2x-skill
+```
+
+`--class` 按当前 MPQ 原职业名匹配：`Amazon`、`Sorceress`、`Necromancer`、`Paladin`、`Barbarian`、`Druid`、`Assassin`；生成名为 Hero 的全新一级角色及本职业初始装备。未指定 `--save` 时不在退出时自动保存，手动 F11／管道 save 仍可保存。需要保留场景输入时使用独立输出：
+
+```powershell
+.\Play.cmd -Load .\saves\Scenario.d2s -Save .\artifacts\scenario-result.d2s -DebugPaused
+```
+
+示例输入必须是已有 D2S。`-Class` 与 `-Load` 互斥；脚本保存路径相对调用时工作目录解析，EXE 路径相对进程工作目录。存档加载仍从城镇开始，进入后可通过开发目录或管道 `travel` 到目标地图。不会通过测试入口原地改变现有角色职业。
 
 如果编译机器不能访问 GitHub，CMake 可使用 `external/raylib` 和 `external/stormlib` 的固定版本源码；系统编译器、CMake 和开发库仍需安装。当前源码存档格式见[存档说明](SAVES.md)，旧档不迁移。分发目录保留完整 `assets/mpq2`，EXE 直接读取原始 MPQ，不生成精简资源包或 ZIP。原 MPQ 文件清单见 [MPQ 资源](MPQ_RESOURCES.md)。
 
 ## 当前本地分发目录
+
+当前角色直达／城镇规则包为 `artifacts/character-start-town-release-20260926/`，入口 `Play.cmd`，包含本轮角色施法状态归属重构和原地换职业入口移除，以及五个原始 MPQ。正式命令 `scripts/build.ps1 -Configuration Release` 已通过；包内女巫和死灵法师新角色直达、正确初始装备、城镇十项禁用法术无扣蓝／无弹体、冰封装甲允许、野外充能弹及地狱之火、D2S 场景载入和独立输出均通过短程检查。参数 `--class` 与 `--load` 冲突明确拒绝；源场景档哈希未变，未指定保存的新角色没有生成默认档。没有新增测试脚本、用例或专用程序。截图与加载／职业日志在包内 `artifacts/`；未完成七职业全部技能、长时间交互、Linux 或多人联机验收。
 
 2026-09-26 物品显示审查包位于忽略目录 `artifacts/item-display-release-20260926/`，入口为其中的 `Play.cmd`。包含 Release EXE、现有启动／调试脚本、许可与文档，以及五个原始 MPQ；旧分发目录、源码资源和用户存档未覆盖。仅供持有这些原资源的本机使用，原 MPQ 不纳入源码提交。
 

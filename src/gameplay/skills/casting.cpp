@@ -10,6 +10,7 @@ bool SkillSystem::clearGround(const Simulation &simulation, Vec target, const Sk
             !((target - simulation.state_.player.pos).length() > skill.range);
 }
 bool SkillSystem::cast(Simulation &simulation, Skill id, Vec target) {
+    if (simulation.safeZone_) return false;
     struct Implementation {
         Effect effect;
         Validator validate;

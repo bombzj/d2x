@@ -51,6 +51,11 @@ AppOptions parseOptions(int argc, char **argv) {
             options.save = value();
         else if (arg == "--load")
             options.load = value();
+        else if (arg == "--class") {
+            options.characterClass = value();
+            if (options.characterClass.empty())
+                throw std::runtime_error("--class requires an MPQ character class name");
+        }
         else if (arg == "--frames")
             options.frameLimit = number();
         else if (arg == "--region")
@@ -96,6 +101,8 @@ AppOptions parseOptions(int argc, char **argv) {
     }
     if (options.frameLimit < 0)
         throw std::runtime_error("--frames must not be negative");
+    if (!options.characterClass.empty() && !options.load.empty())
+        throw std::runtime_error("Choose either --class for a new character or --load for a saved character");
     if (options.debugRun && options.debugPipe.empty())
         throw std::runtime_error("--debug-run requires --debug-pipe");
     if (options.world.variant < 0 || options.world.variant > 5)

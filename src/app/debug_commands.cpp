@@ -118,7 +118,7 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
                 {"unspentAttributes", state.player.unspentAttributes},
                 {"unspentSkills", state.player.unspentSkills},
                 {"castRemaining", state.player.castTime},
-                {"channelSkill", state.player.channelSkill}, {"channelAge", state.player.channelAge},
+                {"channelSkill", state.player.channelSkill()}, {"channelAge", state.player.channelAge()},
                 {"strength", session.characterStats().strength},
                 {"dexterity", session.characterStats().dexterity},
                 {"vitality", session.characterStats().vitality},
@@ -472,13 +472,14 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
                     {"requiredLevel", entry.requiredLevel}, {"prerequisites", entry.prerequisites},
                     {"rank", learned == player.skillRanks.end() ? 0 : learned->second},
                     {"available", session.skillAvailable(id)},
-                    {"leftAllowed", entry.leftAllowed}, {"passive", entry.passive}});
+                    {"leftAllowed", entry.leftAllowed}, {"passive", entry.passive},
+                    {"allowedInTown", entry.allowedInTown}});
             }
         } else if (command == "stop-channel") {
             session.submit(StopChannel{});
             session.tick(0);
             view.advance(0);
-            result["channelSkill"] = session.state().player.channelSkill;
+            result["channelSkill"] = session.state().player.channelSkill();
         } else if (command == "cast-skill") {
             const int id = request.at("id").get<int>();
             const Vec target{request.at("x").get<float>(), request.at("y").get<float>()};
@@ -492,8 +493,9 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
             view.advance(0);
             result["accepted"] = std::any_of(session.events().begin(), session.events().end(),
                 [](const auto &event) { return std::holds_alternative<SkillCast>(event); }) ||
-                session.state().player.channelSkill == id;
+                session.state().player.channelSkill() == id;
             result["castRemaining"] = session.state().player.castTime;
+            result["message"] = session.state().message;
         } else if (command == "bind-skill-hotkey") {
             int key = request.at("key").get<int>();
             int id = request.at("id").get<int>();
@@ -527,22 +529,6 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
             session.tick(0);
             view.advance(0);
             result["unspent"] = session.state().player.unspentSkills;
-        } else if (command == "switch-character") {
-            if (session.state().player.dead)
-                throw std::runtime_error("Switch character while alive");
-            std::string name = request.value("class", std::string{});
-            if (!name.empty() &&
-                std::none_of(session.content().characters.begin(), session.content().characters.end(),
-                    [&](const auto &entry) { return entry.name == name; }))
-                throw std::runtime_error("Unknown MPQ character class");
-            session.submit(DebugSwitchCharacter{name});
-            session.tick(0);
-            view.advance(0);
-            result["class"] = session.characterName();
-            result["appearance"] = session.characterAppearance();
-            result["level"] = session.state().player.level;
-            result["unspentAttributes"] = session.state().player.unspentAttributes;
-            result["unspentSkills"] = session.state().player.unspentSkills;
         } else if (command == "character-panel") {
             view.ui().characterOpen = request.value("open", true);
             result["open"] = view.ui().characterOpen;

@@ -9,6 +9,7 @@ struct AppOptions {
     WorldSelection world;
     std::string screenshot, pack;
     std::string save, load;
+    std::string characterClass;
     std::string debugPipe;
     bool debugRun = false;
     bool directGame = false;

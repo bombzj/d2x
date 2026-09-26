@@ -10,7 +10,7 @@ void Simulation::stopWalking() {
     state_.player.moving = false;
 }
 void Simulation::moveTo(Vec target) {
-    stopChannel();
+    stopChannel(state_.player);
     auto &p = state_.player;
     if (p.dead || p.leapTime > 0 || p.spinTime > 0)
         return;
@@ -21,7 +21,8 @@ void Simulation::moveTo(Vec target) {
     state_.message = p.route.empty() ? "That path is blocked" : "";
 }
 void Simulation::attackEnemy(EntityId target, bool thrown, bool leftHand) {
-    stopChannel();
+    if (safeZone_) return;
+    stopChannel(state_.player);
     auto &p = state_.player;
     auto *e = findEnemy(target);
     if (p.dead || !e || e->hp <= 0)

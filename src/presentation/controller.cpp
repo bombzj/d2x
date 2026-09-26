@@ -187,14 +187,6 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
             session_.submit(DebugResetAttributes{});
             view_.notice("Allocated attribute points returned.");
         }
-        if (input.debugCharacter) {
-            if (session_.state().player.dead)
-                view_.notice("Switch character while alive.", true);
-            else {
-                session_.submit(DebugSwitchCharacter{});
-                view_.notice("Switching character; level, attributes and skills reset.");
-            }
-        }
         if (input.debugTalents) {
             session_.submit(DebugResetSkills{});
             view_.notice("Allocated skill points returned.");

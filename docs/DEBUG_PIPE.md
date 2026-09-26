@@ -111,19 +111,15 @@ $spawn = .\scripts\Send-D2XCommand.ps1 -Command monster-spawn -Arguments @{monst
 
 `ui-input` 可附带 `screenshot=true`，在该输入处理后的同一帧保存 `artifacts/d2x-capture.png`，用于准确捕获悬停提示。`showLoot=true` 模拟该帧显示地面标签。`status.ui` 的 `purchaseConfirmation`、`saleConfirmation`（物品 ID，0 表示无）和 `shopRepair` 只读反映当前交易界面，截图前应先确认 `shop=true`。单独 `screenshot` 命令仍保存上一张已绘制帧到 `artifacts/debug-pipe.png`。
 
-调试职业可在角色存活时切换。`Ctrl+Alt+C` 按 MPQ `CharStats` 的职业顺序循环；管道省略 `class` 也循环，指定原表职业名则直达：
+调试不同职业时，`Play.cmd -Class Sorceress -DebugPaused` 可直接创建全新的女巫进入城镇，无需角色界面和存档；`-Level 8` 可指定邪恶洞窟。EXE 使用 `--class Sorceress --level 8 --debug-pipe d2x-debug`。职业名按 MPQ 原名传入：`Amazon`、`Sorceress`、`Necromancer`、`Paladin`、`Barbarian`、`Druid`、`Assassin`。新角色走正式一级属性与初始装备构造，不是原地改写旧角色。
 
-```powershell
-.\scripts\Send-D2XCommand.ps1 -Command switch-character
-.\scripts\Send-D2XCommand.ps1 -Command switch-character -Arguments @{ class = 'Sorceress' }
-```
-
-切换后等级、经验、属性和技能分配归零，生命／法力／耐力回满；背包、装备、佣兵及其装备与世界保留，超出一级携带上限的金币裁剪。`status.player.class` 和响应 `class` 可核对职业；职业成长、经验阈值和技能树始终从挂载的 MPQ 读取。
+有场景存档时使用 `Play.cmd -Load <角色.d2s> -Save <输出.d2s> -DebugPaused`，EXE 对应 `--load`／`--save`；`-Class` 与 `-Load` 互斥。脚本的存档路径按调用时工作目录解析。加载按原规则从城镇开始，可再用 `travel` 到目标区域。不要把输入场景档作为输出路径，除非确实要覆盖它；不指定 `-Save` 的命令行直进实例不会在退出时自动保存，手动 `save` 则使用下文默认路径规则。`status.player.class` 可核对职业。运行中的原地换职业命令和快捷键已移除。
 
 技能调试入口使用正式升级、分配和存档状态。先通过 `skills` 查看当前职业的原技能 ID、前置及 F1–F8 绑定，再用 `grant-experience` 获得升级技能点；`learn-skill` 遵守等级、前置和最大等级。`reset-skills` 与 `Ctrl+Alt+T` 归还已分配点，`skill-tree` 可指定 1–3 页打开界面并配合 `screenshot` 查看。`skill-picker` 打开左右技能菜单，`bind-skill-hotkey` 通过正式会话命令绑定或清除快捷键，便于复查存档。
 
+下例要求已进入女巫角色：
+
 ```powershell
-.\scripts\Send-D2XCommand.ps1 -Command switch-character -Arguments @{ class = 'Sorceress' }
 .\scripts\Send-D2XCommand.ps1 -Command skills | ConvertTo-Json -Depth 6
 .\scripts\Send-D2XCommand.ps1 -Command grant-experience -Arguments @{ amount = 10000 }
 .\scripts\Send-D2XCommand.ps1 -Command learn-skill -Arguments @{ id = 36 }
@@ -147,6 +143,8 @@ $offers = (.\scripts\Send-D2XCommand.ps1 -Command shop -Arguments @{ id = $vendo
 地狱之火 `cast-skill` 会持续引导，重复调用只更新目标；`stop-channel` 提交正式停止命令，不推进模拟。`status.player.channelSkill` 为原技能 ID，未引导为 -1，`channelAge` 为本次引导秒数。真实右键释放由控制器提交同一停止命令；命名管道持续施法不模拟鼠标按住，不等同于人工输入验收。
 
 `status.effects` 返回临时效果的原技能 ID、组、剩余时间、防御加成、冻结回击时长和叠层 ID；`monsters` 返回 `freeze/chill` 剩余时间，可观察防御冰甲的真实受击触发。
+
+`skills.skills[].allowedInTown` 为当前 MPQ 的城镇施法许可。城镇调用禁用的 `cast-skill` 返回 `accepted=false`、`message="This skill cannot be used in town"`，不扣蓝、不进入动作、不生成弹体。冰封装甲允许在城镇使用；技能选择、绑定与是否已学会不受城镇限制影响。
 
 ### 快速授予佣兵
 
@@ -205,7 +203,6 @@ $offers = (.\scripts\Send-D2XCommand.ps1 -Command shop -Arguments @{ id = $vendo
 | bind-skill-hotkey | `key` 1–8、`id` 原技能 ID；`-1` 普攻、`-2` 清除；可选 `right` 布尔值 | 用正式会话规则绑定 F1–F8，拒绝不可用、被动或不允许左键的技能 |
 | learn-skill | 技能 `id` | 按正式分配命令学习或升级技能；拒绝等级、前置或点数不满足的请求 |
 | reset-skills | 无 | 清空已分配技能并归还升级所得技能点；不会重置等级或经验 |
-| switch-character | 可选 `class`：MPQ `CharStats.class` 原名 | 存活时指定职业或循环下一职业；重置成长状态，保留物品和世界 |
 | character-panel | 可选 `open` 布尔值，默认 true | 打开或关闭角色面板，便于结合 `screenshot` 对照职业外观和数值 |
 | skill-tree | 可选 `open` 布尔值和 `page` 1–3 | 打开或关闭当前职业技能树并切到指定页，便于结合 `screenshot` 查看布局 |
 | skill-picker | 可选 `open`、`right` 布尔值，默认 true | 打开或关闭左／右技能菜单，便于结合 `screenshot` 查看图标与快捷键标签 |
@@ -217,7 +214,7 @@ $offers = (.\scripts\Send-D2XCommand.ps1 -Command shop -Arguments @{ id = $vendo
 | move | `x`、`y` | 校验当前地图可行走坐标，提交正常 MoveTo 并执行一个固定步，不是传送 |
 | step | `ticks`，默认 1，范围 1–250 | 同步推进固定步，每步 1/25 秒，包含 AI、伤害、死亡及拾取；不会暂停怪物单独移动玩家 |
 | pause / resume | 无 | 暂停／恢复实时模拟；调试暂停独立于游戏菜单暂停 |
-| save / load | 无 | 使用启动时 `--save`、否则 `--load`、否则 `saves/quick.d2xsave`；保存角色，载入后在城镇开启新的一局；不能通过请求任意指定路径 |
+| save / load | 无 | 使用启动时 `--save`、否则 `--load`、否则 `saves/quick.d2s`；保存角色，载入后在城镇开启新的一局；不能通过请求任意指定路径 |
 | ui-input | 可选 `x`、`y`、`button`（left／right）、`key`（escape／enter／inventory／character／quests／weapon-swap／automap／r／run／restart） | 排入下一帧的正常 SceneController 输入，坐标基于 1066×680；不直接调用购买或加点事务，适合核对实际界面路径；返回 queued 后在后续请求查看状态 |
 | screenshot | 无 | 保存最近渲染画面到 `artifacts/debug-pipe.png`；命令返回前一已完成帧，立即移动后可在下一请求截取 |
 | quit | 无 | 正常退出；若启动指定 `--save`，退出时仍会保存 |

@@ -92,6 +92,7 @@ SkillCatalog loadSkillCatalog(const DataTable &skills, const DataTable &descript
         entry.maximumRank = required(skills, row, "maxlvl");
         entry.leftAllowed = skills.number(row, "leftskill").value_or(0) != 0;
         entry.passive = skills.number(row, "passive").value_or(0) != 0;
+        entry.allowedInTown = skills.number(row, "InTown").value_or(0) != 0;
         if (entry.page < 1 || entry.page > 3 || entry.row < 1 || entry.row > 6 ||
             entry.column < 1 || entry.column > 3 || entry.iconCell < 0 ||
             entry.requiredLevel < 1 || entry.maximumRank < 1)
@@ -125,6 +126,7 @@ SkillCatalog loadSkillCatalog(const DataTable &skills, const DataTable &descript
         entry.requiredLevel = 1;
         entry.maximumRank = 1;
         entry.leftAllowed = skills.number(row, "leftskill").value_or(0) != 0;
+        entry.allowedInTown = skills.number(row, "InTown").value_or(0) != 0;
         if (entry.iconCell < 0 || !catalog.skills.emplace(entry.id, std::move(entry)).second ||
             !commonByName.emplace(normalized(name), *id).second)
             throw std::runtime_error("Invalid original common skill");

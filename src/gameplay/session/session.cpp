@@ -638,7 +638,7 @@ void GameSession::tick(float dt, Vec keyboard, bool forceRun) {
                          (!intent.right && !entry->leftAllowed)))) return;
                     auto &player = simulation_.state_.player;
                     player.selectedSkills[player.weaponSet * 2 + unsigned(intent.right)] = intent.skill;
-                    if (intent.right && intent.skill != player.channelSkill) simulation_.stopChannel();
+                    if (intent.right && intent.skill != player.channelSkill()) simulation_.stopChannel(player);
                 } else if constexpr (std::is_same_v<T, DebugResetAttributes>) {
                     auto &player = simulation_.state_.player;
                     if (!player.dead && allocatedPoints(player.allocated)) {
@@ -649,7 +649,7 @@ void GameSession::tick(float dt, Vec keyboard, bool forceRun) {
                 } else if constexpr (std::is_same_v<T, DebugResetSkills>) {
                     auto &player = simulation_.state_.player;
                     if (!player.dead) {
-                        simulation_.stopChannel();
+                        simulation_.stopChannel(player);
                         player.skillRanks.clear();
                         player.unspentSkills = player.level - 1;
                         for (const auto &difficulty : player.actOneQuests)
@@ -662,6 +662,10 @@ void GameSession::tick(float dt, Vec keyboard, bool forceRun) {
                     const auto *entry = content_.skills.find(intent.id);
                     const auto &player = state().player;
                     if (!entry || entry->passive || player.dead || !skillAvailable(intent.id)) return;
+                    if (region().definition.safe && !entry->allowedInTown) {
+                        simulation_.state_.message = "This skill cannot be used in town";
+                        return;
+                    }
                     if (entry->classCode.empty()) {
                         if (!intent.enemy) return;
                         cancelExit(); cancelPickup(); cancelInteraction();
@@ -686,7 +690,7 @@ void GameSession::tick(float dt, Vec keyboard, bool forceRun) {
                         const bool teleportAllowed = content_.teleportByLevel.contains(levelId) &&
                             content_.teleportByLevel.at(levelId) != 0;
                         cancelExit(); cancelPickup(); cancelInteraction();
-                        simulation_.castOriginal(resolved, intent.target, teleportAllowed,
+                        simulation_.castOriginal(simulation_.state_.player, resolved, intent.target, teleportAllowed,
                             content_.staticFieldMinimum.at(size_t(state().population.difficulty)));
                         return;
                     }
@@ -697,47 +701,6 @@ void GameSession::tick(float dt, Vec keyboard, bool forceRun) {
                         simulation_.execute(CastSkill{*effect, intent.target});
                     else
                         simulation_.execute(Attack{intent.enemy});
-                } else if constexpr (std::is_same_v<T, DebugSwitchCharacter>) {
-                    auto &player = simulation_.state_.player;
-                    if (!player.dead) {
-                        std::string target = intent.name;
-                        if (target.empty()) {
-                            auto found = std::find_if(content_.characters.begin(), content_.characters.end(),
-                                [&](const auto &entry) { return entry.name == player.characterClass; });
-                            target = (std::next(found) == content_.characters.end()
-                                          ? content_.characters.front() : *std::next(found)).name;
-                        }
-                        const auto &definition = definitionFor(target);
-                        cancelExit(); cancelPickup(); cancelInteraction(); closeStorage();
-                        simulation_.stopChannel();
-                        simulation_.stopWalking();
-                        player.characterClass = definition.name;
-                        characterDefinition_ = definition;
-                        player.level = 1; player.experience = 0;
-                        player.allocated = {}; player.unspentAttributes = 0;
-                        player.skillRanks.clear(); player.unspentSkills = 0;
-                        player.actOneQuests = {};
-                        // A debug class switch keeps owned mercenary equipment and identity together.
-                        hirelingOffers_.clear();
-                        player.combatEffects.clear();
-                        player.skillHotkeys = {};
-                        player.selectedSkills = {-1, -1, -1, -1};
-                        player.nativeSaveSections.clear();
-                        player.weaponSet = 0;
-                        player.npcIntroductions = {};
-                        pendingNpcQuestMessages_.clear();
-                        player.gold = std::min(player.gold, 10000u);
-                        player.bankGold = std::min(player.bankGold, 50000u);
-                        player.castTime = player.spinTime = player.leapTime = 0;
-                        player.hitTime = player.meleeTime = 0;
-                        player.attackTarget = {};
-                        player.throwAttack = player.leftHandAttack = false;
-                        player.cooldown.fill(0);
-                        player.healing.clear(); player.manaRestoration.clear();
-                        player.staminaBoost = 0;
-                        refreshCharacter();
-                        simulation_.heal();
-                    }
                 } else if constexpr (std::is_same_v<T, MoveItem> || std::is_same_v<T, SwapItems> ||
                                      std::is_same_v<T, SplitStack> || std::is_same_v<T, MergeStacks> ||
                                      std::is_same_v<T, LoadBook> ||

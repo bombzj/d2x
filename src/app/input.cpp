@@ -43,7 +43,6 @@ FrameInput pollInput(const Viewport &viewport) {
         input.debugExperience = IsKeyPressed(KEY_E);
         input.debugAttributes = characterA;
         input.debugTalents = skillT;
-        input.debugCharacter = characterC;
         input.debugWaypoints = IsKeyPressed(KEY_W);
         input.character = false;
         input.skillTree = false;

@@ -23,7 +23,7 @@ struct SkillRecord {
     int requiredLevel = 0, maximumRank = 0;
     std::string classCode, sourceName, name, description;
     std::vector<int> prerequisites;
-    bool leftAllowed = false, passive = false;
+    bool leftAllowed = false, passive = false, allowedInTown = false;
     std::optional<OriginalSkillSpec> originalEffect;
     std::optional<std::pair<int, int>> manaRecoveryPerRank;
     std::optional<std::pair<int, int>> fireMasteryPerRank;

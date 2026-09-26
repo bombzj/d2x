@@ -4,29 +4,56 @@
 #include <cstdint>
 
 namespace d2x {
-void Simulation::stopChannel() {
-    if (!channel_) return;
-    channel_.reset();
-    state_.player.channelSkill = -1;
-    state_.player.channelAge = 0;
-    state_.player.castTime = 0;
+void Simulation::stopChannel(PlayerState &player) {
+    if (!player.channel) return;
+    player.channel.reset();
+    player.castTime = 0;
 }
-bool Simulation::castOriginal(const OriginalSkillCast &skill, Vec target, bool teleportAllowed,
+void Simulation::advanceOriginalCasting(PlayerState &player, float dt, bool moving) {
+    auto &channel = player.channel;
+    if (channel && (player.dead || player.hitTime > 0 || moving)) stopChannel(player);
+    if (channel) {
+        channel->age += dt;
+        channel->remaining -= dt;
+        while (channel && channel->remaining < -.00001f) {
+            const bool consumeMana = channel->pulses % 2 == 0;
+            if (consumeMana && player.mana < channel->skill.manaCost) { stopChannel(player); break; }
+            if (channel->pulses == 0)
+                emit(MissileReleased{channel->skill.missileId});
+            releaseOriginalCast(player, channel->skill, channel->target, 0, consumeMana);
+            ++channel->pulses;
+            channel->remaining += 1.f / 25.f;
+        }
+        if (channel) player.castTime = 1;
+    }
+    auto &pendingCast = player.pendingCast;
+    if (pendingCast && (player.dead || player.hitTime > 0)) {
+        pendingCast.reset();
+        player.castTime = 0;
+    }
+    if (pendingCast) {
+        pendingCast->remaining -= dt;
+        if (pendingCast->remaining <= .00001f) {
+            const auto cast = *pendingCast;
+            pendingCast.reset();
+            releaseOriginalCast(player, cast.skill, cast.target, cast.staticFieldMinimum);
+        }
+    }
+}
+bool Simulation::castOriginal(PlayerState &player, const OriginalSkillCast &skill, Vec target, bool teleportAllowed,
                               int staticFieldMinimum) {
-    auto &player = state_.player;
-    if (channel_) {
+    if (player.channel) {
         if (skill.effect == Skill::Inferno && !player.dead && player.hitTime <= 0) {
-            channel_->target = target;
+            player.channel->target = target;
             const auto direction = (target - player.pos).unit();
             if (direction.length() > 0) player.look = direction;
             return true;
         }
-        stopChannel();
+        stopChannel(player);
     }
     if (player.dead || player.castTime > 0 || player.spinTime > 0 || player.leapTime > 0 ||
         player.meleeTime > 0 || player.hitTime > 0 || skill.castDuration <= 0)
         return false;
-    if (skill.effect == Skill::Inferno && safeZone_) return false;
     if (skill.effect == Skill::Teleport && (!teleportAllowed || !grid_->walkable(target))) {
         state_.message = "Teleport needs permitted, clear ground";
         return false;
@@ -47,9 +74,7 @@ bool Simulation::castOriginal(const OriginalSkillCast &skill, Vec target, bool t
     state_.message.clear();
     if (skill.effect == Skill::Inferno) {
         player.mana -= skill.manaCost;
-        channel_ = ChannelCast{skill, target, skill.castImpact};
-        player.channelSkill = skill.sourceId;
-        player.channelAge = 0;
+        player.channel = PlayerState::ChannelCast{skill, target, skill.castImpact};
         emit(SkillCast{player.id, skill.effect, player.pos});
         return true;
     }
@@ -57,12 +82,11 @@ bool Simulation::castOriginal(const OriginalSkillCast &skill, Vec target, bool t
     if (skill.castOverlayId >= 0)
         state_.area.effects.push_back({player.pos, skill.effect, 0, skill.visualDuration,
                                       -1, skill.castOverlayId, player.id});
-    pendingCast_ = PendingCast{skill, target, staticFieldMinimum, skill.castImpact};
+    player.pendingCast = PlayerState::PendingCast{skill, target, staticFieldMinimum, skill.castImpact};
     return true;
 }
-void Simulation::releaseOriginalCast(const OriginalSkillCast &skill, Vec target, int staticFieldMinimum,
-                                     bool consumeMana) {
-    auto &player = state_.player;
+void Simulation::releaseOriginalCast(PlayerState &player, const OriginalSkillCast &skill, Vec target,
+                                     int staticFieldMinimum, bool consumeMana) {
     if (player.dead || (consumeMana && player.mana < skill.manaCost) ||
         (skill.effect == Skill::Teleport && !grid_->walkable(target))) return;
     if (consumeMana) player.mana -= skill.manaCost;

@@ -35,9 +35,11 @@ void SceneView::drawSkillIcon(std::optional<int> skill, Rectangle bounds) const 
     auto icon = skill ? assets_.skillIcons.find(*skill) : assets_.skillIcons.end();
     const auto *image = icon == assets_.skillIcons.end() ? &assets_.attackIcon : &icon->second.sprite;
     bool available = !player.dead && (!skill || (entry && session_.skillAvailable(*skill)));
+    if (session_.region().definition.safe)
+        available &= entry && entry->allowedInTown;
     auto effect = entry ? implementedSkillEffect(*entry) : std::nullopt;
     if (entry && entry->originalEffect && session_.effectiveSkillRank(*skill) > 0)
-        available &= player.mana >= std::max(player.channelSkill == *skill ? 0.f : float(entry->originalEffect->startMana), resolveOriginalSkill(*entry->originalEffect,
+        available &= player.mana >= std::max(player.channelSkill() == *skill ? 0.f : float(entry->originalEffect->startMana), resolveOriginalSkill(*entry->originalEffect,
             session_.effectiveSkillRank(*skill), player.skillRanks, session_.fireMasteryPercent(),
             session_.lightningMasteryPercent()).manaCost);
     else if (effect) available &= player.mana >= skillDefinition(*effect).manaCost;

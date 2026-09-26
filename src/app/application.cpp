@@ -70,6 +70,8 @@ int runGame(int argc, char **argv) {
                      "--map-seed <uint32> --seed <uint64> --inventory --skills --stash --screenshot <png> "
                      "--frames N --hidden --pack "
                      "<new.mpq> --save <file.d2s> --load <file.d2s>\n"
+                     "--class <MPQ class name>: start a new character directly without the frontend or a save.\n"
+                     "Choose --class or --load, not both. New direct characters auto-save only with --save.\n"
                      "--debug-pipe <name>: opt-in local Windows debug commands (starts paused).\n"
                      "--debug-run: start the debug-enabled game without pausing.\n"
                      "F11: save character; Ctrl+F11: start a new game in town from save. "
@@ -132,8 +134,9 @@ int runGame(int argc, char **argv) {
         options.population.difficulty = restored->world.population.difficulty;
     }
     GameSession session(archives, options.world, options.region, options.lootSeed, options.population,
-                        character ? character->characterClass : "Barbarian",
-                        character ? character->name : "Hero");
+                        character ? character->characterClass : restored ? restored->world.player.characterClass :
+                            options.characterClass.empty() ? "Barbarian" : options.characterClass,
+                        character ? character->name : restored ? restored->world.player.name : "Hero");
     std::cout << "MPQ data: " << session.content().profile << ", "
               << session.inventory().catalog().entries().size() << " items, "
               << session.content().monsters.size() << " monsters, " << session.content().treasures.size()

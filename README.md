@@ -25,6 +25,8 @@ Windows 使用 `scripts/build.ps1`，启动示例（默认读取 `assets/mpq2`�
 
 本机可用 `Play.cmd`。EXE 默认直接读取完整 `assets/mpq2`；其他位置可显式传 `--mpq <目录>`。
 
+调试时可直接创建指定职业进入游戏，不需要角色界面或已有存档：`Play.cmd -Class Sorceress`；附加 `-Level 8 -DebugPaused` 可直接进入暂停的邪恶洞窟现场。EXE 对应参数为 `--class Sorceress --level 8 --debug-pipe d2x-debug`。使用存档场景则传 `-Load <角色.d2s>`，需要保存结果时另传 `-Save <输出.d2s>`；`-Class` 与 `-Load` 互斥。新建直达角色未指定 `-Save` 时不自动保存。
+
 当前源码只使用原版 D2S v96，已接角色创建／列表与保存读取，不维护内部存档版本或旧档迁移。Windows Release 构建和原生存档／独立解析器往返已通过；2026-09-26 物品显示审查已更新本地独立分发目录，并通过包内启动、保存和重载，入口及验证范围见[构建与运行](docs/BUILD_AND_SHARE.md#当前本地分发目录)。零售版客户端未验收，Linux 尚未实际编译运行。准确支持边界见[存档](docs/SAVES.md)；佣兵 Hire／O 窗口和快速授予见 [佣兵](docs/HIRELINGS.md)。
 
 ## 操作
@@ -43,9 +45,9 @@ Windows 使用 `scripts/build.ps1`，启动示例（默认读取 `assets/mpq2`�
 | F11、Ctrl+F11 | 保存、读取；默认 `saves/quick.d2s` |
 | P、M、Ctrl+R | 暂停、静音、开发用重置当前区 |
 | Ctrl+F1、Ctrl+F3、F12 | 帮助、碰撞网格、截图 |
-| Ctrl+Alt+G／E／A／T／C／W | 调试：加金币／经验、重置属性点、重置技能点、切换职业、激活当前 MPQ 中已构建区域的传送点 |
+| Ctrl+Alt+G／E／A／T／W | 调试：加金币／经验、重置属性点、重置技能点、激活当前 MPQ 中已构建区域的传送点 |
 | Ctrl+Alt+B | 在脚边掉落一件赫拉迪克方块；已有方块时不会重复生成 |
 
-参数包括 `--level`、`--map-seed`、`--difficulty normal|nightmare|hell`、`--population-seed`、`--save/--load`。`--seed` 仅控制预留掉落随机状态；模板查看使用 `--preset <Def> --level-type <ID>`。
+参数包括 `--class`、`--level`、`--map-seed`、`--difficulty normal|nightmare|hell`、`--population-seed`、`--save/--load`。`--seed` 仅控制预留掉落随机状态；模板查看使用 `--preset <Def> --level-type <ID>`。城镇按原 `Skills.InTown` 限制施法，攻击法术与传送不可用，冰封装甲等原表允许的技能仍可用。
 
 源码使用 GPL-3.0，暴雪素材权利独立，见 [第三方说明](docs/THIRD_PARTY.md)。

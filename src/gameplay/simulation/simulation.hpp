@@ -18,20 +18,6 @@ class Simulation {
     const RoomLayout *rooms_ = nullptr;
     bool safeZone_ = false;
     bool forceRun_ = false;
-    struct PendingCast {
-      OriginalSkillCast skill;
-      Vec target;
-      int staticFieldMinimum = 0;
-      float remaining = 0;
-    };
-    std::optional<PendingCast> pendingCast_;
-    struct ChannelCast {
-      OriginalSkillCast skill;
-      Vec target;
-      float remaining = 0;
-      unsigned pulses = 0;
-    };
-    std::optional<ChannelCast> channel_;
     WorldState state_;
     EquipmentStats equipmentStats_;
     CharacterAttributes characterStats_;
@@ -74,11 +60,12 @@ class Simulation {
     void attackEnemy(EntityId target, bool thrown, bool leftHand);
     bool firePhysicalProjectile(const Enemy &enemy, const WeaponDamage &weapon, bool thrown);
     bool cast(Skill skill, Vec target);
-    bool castOriginal(const OriginalSkillCast &skill, Vec target, bool teleportAllowed,
+    bool castOriginal(PlayerState &player, const OriginalSkillCast &skill, Vec target, bool teleportAllowed,
                       int staticFieldMinimum);
-    void releaseOriginalCast(const OriginalSkillCast &skill, Vec target, int staticFieldMinimum,
-                 bool consumeMana = true);
-    void stopChannel();
+    void releaseOriginalCast(PlayerState &player, const OriginalSkillCast &skill, Vec target,
+                 int staticFieldMinimum, bool consumeMana = true);
+    void advanceOriginalCasting(PlayerState &player, float dt, bool moving);
+    static void stopChannel(PlayerState &player);
     void damage(Vec pos, float radius, float amount, EntityId source, float chill = 0,
                 MonsterDamageType type = MonsterDamageType::Physical);
     void damageEnemy(Enemy &enemy, float amount, EntityId source, float chill = 0,
