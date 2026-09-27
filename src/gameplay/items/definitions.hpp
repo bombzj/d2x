@@ -40,6 +40,7 @@ struct ItemDefinition {
     bool autoBelt = false;
     bool imbueable = false;
     int beltRows = 0; // Zero is not an equippable belt; row zero is the ready row.
+    std::string betterGem; // Misc.bettergem; empty/non means no upgrade.
     std::string bookScroll;
     unsigned bookCapacity = 0, bookInitialCharges = 0, bookChargeCost = 0;
     ItemBaseStats base;

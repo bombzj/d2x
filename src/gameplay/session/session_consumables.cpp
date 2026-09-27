@@ -33,8 +33,8 @@ void GameSession::useItem(ItemHandle handle) {
     const auto *definition = inventory_.catalog().find(code);
     if (content_.isPortalScroll(code) || content_.isPortalScroll(definition->bookScroll)) {
         auto &portal = simulation_.state_.portal;
-        TownPortalState next{true, portal.revision + 1, region().definition.id,
-                             state().player.pos, *townPortalArrival_};
+        TownPortalState next{true, state().nextPortalRevision + 1, region().definition.id,
+                             state().player.pos, *townPortalArrival_, state().time};
         auto result = definition->bookScroll.empty()
                           ? inventory_.consume(handle, 1, inventoryAccess())
                           : inventory_.consumeBookCharge(handle, inventoryAccess());
@@ -43,6 +43,7 @@ void GameSession::useItem(ItemHandle handle) {
             cancelPickup();
             cancelInteraction();
             portal = next;
+            simulation_.state_.nextPortalRevision = next.revision;
         }
         bool consumed = bool(result);
         publishInventory(std::move(result), handle.id);
@@ -75,7 +76,7 @@ InventoryError GameSession::previewPortalScroll(ItemHandle handle) const {
         int(region().definition.id) < 2 || int(region().definition.id) > 39 ||
         !map().grid.walkable(player.pos))
         return InventoryError::UnsupportedUse;
-    if (state().portal.revision == std::numeric_limits<uint64_t>::max())
+    if (state().nextPortalRevision == std::numeric_limits<uint64_t>::max())
         return InventoryError::RevisionExhausted;
     return InventoryError::None;
 }
@@ -89,34 +90,54 @@ std::optional<Vec> GameSession::portalPosition() const {
         return portal.fieldPosition;
     return std::nullopt;
 }
+const TownPortalState *GameSession::findPortal(uint64_t revision) const {
+    if (state().portal.active && state().portal.revision == revision) return &state().portal;
+    for (const auto &portal : state().publicPortals)
+        if (portal.active && portal.revision == revision) return &portal;
+    return nullptr;
+}
+std::vector<GameSession::PortalView> GameSession::portals(RegionId region) const {
+    std::vector<PortalView> result;
+    auto append = [&](const TownPortalState &portal) {
+        if (!portal.active) return;
+        if (region == RegionId::Encampment)
+            result.push_back({portal.revision, portal.townPosition, portal.openedAt});
+        else if (region == portal.field)
+            result.push_back({portal.revision, portal.fieldPosition, portal.openedAt});
+    };
+    append(state().portal);
+    for (const auto &portal : state().publicPortals) append(portal);
+    return result;
+}
 void GameSession::beginPortal(uint64_t revision) {
-    auto position = portalPosition();
-    if (!position || state().portal.revision != revision || state().player.dead)
-        return;
+    const auto *portal = findPortal(revision);
+    if (!portal || state().player.dead) return;
+    const bool town = region().definition.id == RegionId::Encampment;
+    if (!town && region().definition.id != portal->field) return;
+    const Vec position = town ? portal->townPosition : portal->fieldPosition;
     cancelExit();
     cancelPickup();
     cancelInteraction();
     closeStorage();
     pendingPortal_ = revision;
-    if ((state().player.pos - *position).length() > portalReach_)
-        simulation_.execute(MoveTo{*position});
+    if ((state().player.pos - position).length() > portalReach_)
+        simulation_.execute(MoveTo{position});
 }
 void GameSession::updatePortal() {
-    if (!pendingPortal_)
-        return;
-    auto position = portalPosition();
+    if (!pendingPortal_) return;
+    const auto *portal = findPortal(*pendingPortal_);
     const auto &player = state().player;
-    if (!position || *pendingPortal_ != state().portal.revision || player.dead) {
+    const bool returning = region().definition.id == RegionId::Encampment;
+    if (!portal || player.dead || (!returning && region().definition.id != portal->field)) {
         cancelInteraction();
         return;
     }
-    if (player.castTime > 0 || player.meleeTime > 0)
-        return;
-    if ((player.pos - *position).length() <= portalReach_ && map().grid.segment(player.pos, *position)) {
-        bool returning = region().definition.id == RegionId::Encampment;
-        auto destination = returning ? state().portal.field : RegionId::Encampment;
-        Vec arrival = returning ? state().portal.fieldPosition : state().portal.townPosition;
-        if (returning)
+    if (player.castTime > 0 || player.meleeTime > 0) return;
+    const Vec position = returning ? portal->townPosition : portal->fieldPosition;
+    if ((player.pos - position).length() <= portalReach_ && map().grid.segment(player.pos, position)) {
+        const auto destination = returning ? portal->field : RegionId::Encampment;
+        const Vec arrival = returning ? portal->fieldPosition : portal->townPosition;
+        if (returning && portal->consumedOnReturn)
             simulation_.state_.portal.active = false;
         enter(destination, arrival);
     } else if (player.route.empty()) {

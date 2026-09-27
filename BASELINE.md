@@ -2,14 +2,16 @@
 
 更新：2026-09-27。供维护者和协作 agent 从当前代码继续工作。
 
-未提交修订审查（2026-09-27）：按用户确认的 LoD 1.13c，以当前 `assets/mpq2` 原表／COF 和本地固定 reference 为依据。下表是源码审阅结论，未构建、测试、启动游戏、打包或提交；不以历史二进制证明本批效果。C++20/CMake、D2S v96 和角色保存语义不变，新增状态及运动参数只在本局维持。
+祭坛实际效果（2026-09-27）：当前 1.13c MPQ 的 22 个非空 Code 已全部分派，原退休项 4→2、5→3、16→18 后共 19 种实际效果。包含恢复、十种限时属性、独立公共回城门、宝石升级、Storm 火球、怪物强化及爆炸／毒素药瓶与掉落；参数和规则逐项见 [交互物体](docs/INTERACTIVE_OBJECTS.md#祭坛实际效果2026-09-27)。怪物祭坛的随机词缀、勇士变体、元素／诅咒／光环／受击闪电／死亡爆炸／传送／多重射击及已有直属随从初始化接入共用模型，见 [怪物](docs/MONSTERS.md#怪物祭坛强化)。限时状态统一处理诅咒互斥、替换、到期、死亡和耐力移除恢复；重置采用原 1200 帧／表中分钟加 1。角色存档仍为 D2S v96，无世界或临时状态字段变化。既有毒雾／抛物线和精确渲染待验收范围不因本批功能接入而宣称解决。本批全部实现后已通过 Windows Release 编译并更新 dist/current；未编写或运行测试，未启动游戏；交付说明见 [构建](docs/BUILD_AND_SHARE.md)。
+
+修订审查（2026-09-27，已提交 a26bdc9）：按用户确认的 LoD 1.13c，以当前 `assets/mpq2` 原表／COF 和本地固定 reference 为依据。下表是该次源码审阅结论，不以历史二进制证明画面验收。C++20/CMake、D2S v96 和角色保存语义不变，新增状态及运动参数只在本局维持。
 
 | 问题 | 当前源码及补充修正 | 依据／尚待确认 |
 | --- | --- | --- |
 | Dark Hunter 追击停顿、偏慢 | 追击持续至近战、失去目标、受击／冻结或路径失败；不再每走三格重掷。寻路使用行走碰撞。速度改为基础 75 加 `aip4`，冰冷另加真实身份的 `ColdEffect`；动画跟随相同百分比。 | D2MOO AiThink、AiTactics、PathMisc、Monster.cpp、Units、MonsterTbls；原概率、Velocity、Run、AnimData 来自 MPQ。路径／帧调度仍为项目适配，见 [怪物](docs/MONSTERS.md)。 |
 | 死亡特效黑边 | COF 透明且效果 3 的层保留层序软加色，普通层明确恢复普通混合，透明索引不参与换色。 | 当前 `CRDT1HS.cof` 的 S3 和 Diablerie COF／SoftAdditive；不是原 PL2 逐色查表等价，其余效果暂缓。 |
 | 死后掉落偏晚 | 保留当帧结算／创建，原 flippy 由创建事件起播，移除等待完整 DT 的展示隐藏期。 | D2MOO 死亡入口与 Diablerie UnitDied；见 [物品完成度](docs/ITEM_COMPLETION.md)。 |
-| 祭坛领取前后图案缺失 | Code 6–15 的状态映射集中在内容层；原 overlay1/2 用于祭坛及玩家。生命周期接 CombatEffectSet，领取替换、到期和死亡统一移除。 | MPQ States／Overlay、D2MOO 状态及高度索引；播放速度按 Diablerie `AnimRate × 1.5` 适配。精确定位／混合待画面验收；战斗加成和特殊效果仍暂缓，见 [物体](docs/INTERACTIVE_OBJECTS.md)。 |
+| 祭坛领取前后图案缺失 | Code 6–15 的状态映射集中在内容层；原 overlay1/2 用于祭坛及玩家。生命周期接 CombatEffectSet，领取替换、到期和死亡统一移除。 | MPQ States／Overlay、D2MOO 状态及高度索引；播放速度按 Diablerie `AnimRate × 1.5` 适配。精确定位／混合待画面验收；战斗加成和特殊效果现已接入，见 [物体](docs/INTERACTIVE_OBJECTS.md)。 |
 | 小地图墙线太晚 | 共用每轴间隔小于 6 地图格的邻房范围，连续户外边界两侧按同一世界坐标揭示。 | D2MOO 邻房列表 → Clients → LEVEL_AddClient → 0x07，OpenD2 将该包标为 MAPREVEAL；按用户要求，有参考项目依据即可，本项不再以 1.13c 精确时机作为待办；房间布局仍为项目适配，见 [自动地图](docs/AUTOMAP.md)。 |
 | 耐力药水不变蓝 | 按 `stambarblue` 显示；读取原 5000 恢复加成、750 帧，重复饮用延时。修正为奔跑消耗与恢复独立计算，治疗不再误清有益药效。 | MPQ Misc／States、D2MOO SkillItem／PlrModes／SUnitNpc；颜色取 OpenDiablo2 HUD 与通用 UI 蓝适配，1.13c 精确蓝色仍未核实。 |
 | 解毒／解冻拒用 | `pSpell=6/9` 共用三组 stat/calc 和整数到期帧，按 cstate 清除状态及旧毒／冷计时器；原 50 抗性、10 最大抗性、750 帧生效。 | D2MOO SkillItem 与当前 MPQ；未知属性／公式不部分执行。见 [药剂](docs/BELT_AND_CONSUMABLES.md)。 |

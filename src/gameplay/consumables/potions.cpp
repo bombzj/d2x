@@ -26,7 +26,7 @@ void Simulation::applyPotion(const PotionDefinition &potion) {
     if (potion.curesCold) p.chill = 0;
     if (potion.state.id >= 0) {
         for (int cured : potion.cureStates)
-            if (cured >= 0) p.combatEffects.removeState(cured);
+            if (cured >= 0) combatEffectsChanged(p.combatEffects.removeState(cured));
         EffectFrame duration = potion.durationFrames;
         for (const auto &existing : p.combatEffects.entries())
             if (existing.spec.state.id == potion.state.id && existing.expiresAt &&
@@ -37,8 +37,8 @@ void Simulation::applyPotion(const PotionDefinition &potion) {
         effect.source = {CombatEffectSource::Item, p.id, potion.state.id, 0};
         effect.duration = duration;
         effect.modifiers = potion.modifiers;
-        p.combatEffects.apply(std::move(effect), state_.frame);
-        if (combatEffectsChanged_) combatEffectsChanged_();
+        const auto applied = p.combatEffects.apply(std::move(effect), state_.frame);
+        combatEffectsChanged(applied.removed);
     }
 }
 void Simulation::updatePotions(float dt) {

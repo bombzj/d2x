@@ -24,7 +24,6 @@ SceneView::SceneView(Archives &archives, const GameSession &session)
     highlightShader_ = LoadShaderFromMemory(nullptr, highlightFragment);
     highlightTransform_ = GetShaderLocation(highlightShader_, "highlightTransform");
     view_.camera = project(session_.state().player.pos);
-    view_.portalRevision = session_.state().portal.revision;
     view_.skillClass = session_.characterCode();
     const auto &player = session_.state().player;
     const auto left = player.selectedSkills[player.weaponSet * 2];
@@ -143,8 +142,6 @@ void SceneView::sessionRestored() {
     view_.camera = project(session_.state().player.pos);
     view_.clickAge = 10;
     view_.animationTime = view_.heroTime = view_.stepClock = 0;
-    view_.portalRevision = session_.state().portal.revision;
-    view_.portalAnimationStarted = -1;
     view_.cainPortalAnimationStarted = -1;
     view_.heroMode = playerAnimationMode(session_.state().player);
     landingAge_.clear();
@@ -485,11 +482,6 @@ void SceneView::advance(float dt) {
             view_.inventory.cubeOpen = false;
             view_.inventory.cancelGesture();
         }
-    }
-    const auto &portal = session_.state().portal;
-    if (portal.active && portal.revision != view_.portalRevision) {
-        view_.portalRevision = portal.revision;
-        view_.portalAnimationStarted = view_.animationTime;
     }
     view_.animationTime += dt;
     view_.heroTime += dt * (player.chill > 0 ? .5f : 1.f) *

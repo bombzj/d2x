@@ -22,6 +22,9 @@ void mergeCombatModifiers(CombatModifiers &a, const CombatModifiers &b) {
 #define D2X_ADD(field) add(a.field, b.field)
     D2X_ADD(damagePercent); D2X_ADD(attackRatingPercent);
     D2X_ADD(defensePercent);
+    D2X_ADD(experiencePercent);
+    a.preventPoison = a.preventPoison || b.preventPoison;
+    a.preventBurn = a.preventBurn || b.preventBurn;
     D2X_ADD(minimumDamagePercent); D2X_ADD(maximumDamagePercent);
     D2X_ADD(normalDamage); D2X_ADD(minimumDamage); D2X_ADD(maximumDamage);
     D2X_ADD(fireMinimum); D2X_ADD(fireMaximum);

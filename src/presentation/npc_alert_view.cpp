@@ -21,6 +21,7 @@ void SceneView::drawNpcAlerts() const {
 }
 void SceneView::drawShrineOverlays() const {
     auto drawLayer = [&](const SceneAssets::OverlayArt &visual, Vec at, int heightIndex) {
+        if (visual.frames <= 0 || visual.fps <= 0) return;
         const int frameIndex = int(view_.animationTime * visual.fps) % visual.frames;
         const auto *frame = visual.animation.frame(0, frameIndex);
         if (!frame || !frame->texture.id) return;
@@ -54,6 +55,19 @@ void SceneView::drawShrineOverlays() const {
         // The same native function returns 1 for a player.
         drawPair(found->second, screen(session_.state().player.pos), 1);
         break;
+    }
+}
+void SceneView::drawCombatStateOverlays(const CombatEffectSet &effects, Vec at, int height, bool back) const {
+    for (const auto &effect : effects.entries()) {
+        if (!effect.activeAt(session_.state().frame)) continue;
+        const auto found = assets_.combatStateOverlays.find(effect.spec.state.id);
+        if (found == assets_.combatStateOverlays.end()) continue;
+        const auto &art = found->second[back ? 1 : 0];
+        if (art.frames <= 0 || art.fps <= 0) continue;
+        const auto *frame = art.animation.frame(0, int(view_.animationTime * art.fps) % art.frames);
+        const Vec position = at + art.offset + Vec{0, float(art.heights[size_t(std::clamp(height, 0, 3))])};
+        if (art.trans == 3) softAdditiveSprite(frame, position);
+        else sprite(frame, position);
     }
 }
 } // namespace d2x

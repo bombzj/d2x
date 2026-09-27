@@ -21,6 +21,7 @@ struct CombatStateDefinition {
     bool removeOnHit = false;
     std::array<bool, 3> stayOnDeath{};
     bool staminaBarBlue = false;
+    bool curse = false;
 };
 enum class CombatEffectSource { Skill, Monster, Shrine, Item, Environment };
 struct EffectSource {
@@ -56,6 +57,7 @@ struct CombatEffectSpec {
     std::optional<EffectFrame> duration; // No value means source-controlled lifetime.
     CharacterModifiers modifiers;
     EffectVisual visual;
+    bool restoreStaminaOnRemoval = false;
     std::vector<EffectReaction> reactions;
 };
 struct ActiveCombatEffect {

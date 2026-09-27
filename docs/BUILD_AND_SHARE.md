@@ -1,5 +1,7 @@
 # 构建与运行
 
+祭坛效果交付（2026-09-27）：19 种实际效果及 3 个退休编号映射全部接入后，Windows Release 编译通过，固定运行包更新至 `dist/current`。构建还存在此前物品／商店／佣兵聚合初始化告警，本批新增字段告警已清理；没有运行测试或游戏，视觉与实际交互等待用户验收。参数、参考及系统边界见 [交互物体](INTERACTIVE_OBJECTS.md) 和 [怪物](MONSTERS.md)。包仍引用已有 `assets/mpq2`，保留目录内现有存档与产物，不复制 MPQ 或 reference。
+
 ## Linux 支持状态
 
 核心代码使用 C++20、标准文件系统、raylib 和 StormLib。存档替换单独区分 Windows 的 MoveFileExW 与其他系统的 rename；玩法、数据和存档编码不依赖 Win32。两个依赖都有 Linux 构建支持，运行时读取 `assets/mpq2` 的原始 MPQ。CMake 只在 Windows 定义相关宏，只对 MinGW 使用 Windows 静态链接选项。

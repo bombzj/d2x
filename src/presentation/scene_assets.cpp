@@ -80,6 +80,32 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
         }
         shrineOverlays.emplace(code, std::move(art));
     }
+    for (const char *name : {"amplifydamage", "might", "holyfire", "blessedaim", "holywind",
+                             "holywindcold", "holyshock", "fanaticism", "conviction"}) {
+        const auto &state = states.at(name);
+        std::array<OverlayArt, 2> art;
+        for (size_t layer = 0; layer < art.size(); ++layer) {
+            const auto &name = layer == 0 ? state.overlay : state.secondaryOverlay;
+            if (name.empty()) continue;
+            size_t row = 0;
+            while (row < overlays.rows().size() && overlays.value(row, "overlay") != name) ++row;
+            if (row == overlays.rows().size()) throw std::runtime_error("Missing monster state overlay");
+            auto &visual = art[layer];
+            visual.animation = unitsGraphics_.single("data/global/overlays/" +
+                std::string(overlays.value(row, "Filename")) + ".dcc", true);
+            visual.frames = overlays.number(row, "Frames").value_or(0);
+            visual.fps = overlays.number(row, "AnimRate").value_or(0) * 1.5f;
+            visual.trans = overlays.number(row, "Trans").value_or(5);
+            visual.offset = {float(overlays.number(row, "Xoffset").value_or(0)),
+                             float(overlays.number(row, "Yoffset").value_or(0))};
+            for (int height = 0; height < 4; ++height)
+                visual.heights[size_t(height)] = overlays.number(row,
+                    "Height" + std::to_string(height + 1)).value_or(0);
+            if (visual.frames <= 0 || visual.fps <= 0 || visual.animation.count < visual.frames)
+                throw std::runtime_error("Invalid monster state overlay");
+        }
+        combatStateOverlays.emplace(state.definition.id, std::move(art));
+    }
     for (const auto &region : session.regions()) {
         std::vector<Sprite> tiles;
         for (const auto &tile : region.map.tiles)
@@ -283,6 +309,8 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
             loadProjectile(item.base.projectile->id, item.base.projectile->art);
             for (const auto &resource : item.base.projectile->resources) loadProjectile(resource.id, resource.art);
         }
+    for (const auto &[id, entry] : session.content().monsterSpecialMissiles)
+        loadProjectile(id, entry.visual.art);
     // HitOilPotion creates its main explosion plus one of the two original
     // debris animations. The main effect already comes from the impact event's
     // gameplay visual; the alternatives belong only to presentation.

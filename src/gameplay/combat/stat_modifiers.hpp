@@ -52,6 +52,8 @@ struct CombatModifiers {
     int lifeLeech = 0, manaLeech = 0;
     int crushingBlow = 0, openWounds = 0, deadlyStrike = 0;
     int magicFind = 0, goldFind = 0;
+    int experiencePercent = 0;
+    bool preventPoison = false, preventBurn = false;
     int reducedPrices = 0;
     int poisonLengthResist = 0;
     int replenishLife = 0, manaRecovery = 0, lifeOnKill = 0, manaOnKill = 0;

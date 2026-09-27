@@ -116,6 +116,10 @@ struct Enemy {
     float openWoundsRemaining = 0, openWoundsPerSecond = 0;
     EntityId openWoundsSource;
     bool openWoundsPlayerEffects = true;
+    EffectFrame nextAuraFrame = 0, nextUniqueLightningFrame = 0, deathEnchantmentFrame = 0;
+    EffectFrame pendingUniqueLightningFrame = 0;
+    std::optional<Vec> teleportTarget = std::nullopt;
+    CombatEffectSet combatEffects;
 };
 struct Missile {
     EntityId id, owner;
@@ -148,6 +152,8 @@ struct Missile {
     AttackTargetModifiers targetModifiers = {};
     bool playerAttack = false;
     int skillId = -1, skillRank = 0;
+    std::optional<MonsterDamageType> hostileElement = std::nullopt;
+    bool killOnHit = true;
 };
 struct Effect {
     Vec pos;
@@ -173,6 +179,8 @@ struct TownPortalState {
     uint64_t revision = 0;
     RegionId field = RegionId::Encampment;
     Vec fieldPosition, townPosition;
+    float openedAt = 0;
+    bool consumedOnReturn = true;
 };
 struct WorldState {
     uint32_t mapSeed = 210;
@@ -183,6 +191,8 @@ struct WorldState {
     float time = 0;
     std::string message;
     TownPortalState portal;
+    std::vector<TownPortalState> publicPortals;
+    uint64_t nextPortalRevision = 0;
     std::map<RegionId, float> waypoints;
 };
 } // namespace d2x

@@ -22,7 +22,8 @@ void Simulation::beginMonsterAttack(Enemy &enemy, int forcedMode) {
         if (auto combat = monsterNormalCombat_(enemy.identity, state_.area.region);
             combat && combat->attack2Damage)
             enemy.attackMode = chooseAttackMode(enemy, *ai);
-    const float chillScale = enemy.chill > 0 ? 2.f : 1.f;
+    const int auraRate = enemy.combatEffects.modifiers(state_.frame).combat.attackRate;
+    const float chillScale = float(enemy.chill > 0 ? 200 : 100) / float(std::max(15, 100 + auraRate));
     if (auto timing = monsterAttackTiming_ ? monsterAttackTiming_(enemy, enemy.attackMode) : std::nullopt) {
         enemy.attackDuration = timing->duration * chillScale;
         enemy.attackImpact = timing->impact * chillScale;
@@ -55,6 +56,7 @@ void Simulation::launchMonsterProjectile(Enemy &enemy) {
     state_.area.missiles.push_back({ids_.allocate(), enemy.id, enemy.pos,
         direction * projectile->velocity, projectile->lifetime, SkillBehavior::None,
         true, projectile->id, 0, 0, 0, true, enemy.attackMode});
+    replicateMonsterMissile(enemy, state_.area.missiles.back());
 }
 void Simulation::launchMonsterSpell(Enemy &enemy) {
     const auto spell = monsterSpell_ ? monsterSpell_(enemy, enemy.attackMode) : std::nullopt;
@@ -67,6 +69,7 @@ void Simulation::launchMonsterSpell(Enemy &enemy) {
     state_.area.missiles.push_back({ids_.allocate(), enemy.id, enemy.pos,
         direction * spell->projectile.velocity, spell->projectile.lifetime, SkillBehavior::None,
         false, spell->projectile.id, damage, 0, 0, true, enemy.attackMode});
+    replicateMonsterMissile(enemy, state_.area.missiles.back());
 }
 void Simulation::resolveMonsterAttack(Enemy &enemy, int modeOverride, bool projectile) {
     auto &player = state_.player;
@@ -78,7 +81,10 @@ void Simulation::resolveMonsterAttack(Enemy &enemy, int modeOverride, bool proje
     const bool running = player.runningNow && player.moving;
     if (!running && monsterAccuracy_)
         if (auto accuracy = monsterAccuracy_(enemy, state_.area.region, mode)) {
-            const auto chance = physicalHitChance(accuracy->level, accuracy->attackRating,
+            const int auraRating = enemy.combatEffects.modifiers(state_.frame).combat.attackRatingPercent +
+                (enemy.identity.enchantment ? enemy.identity.enchantment->attackRatingPercent : 0);
+            const auto chance = physicalHitChance(accuracy->level,
+                int(int64_t(accuracy->attackRating) * std::max(0, 100 + auraRating) / 100),
                                                    equipmentStats_.level, equipmentStats_.defense);
             enemy.combatRandom = uint64_t(uint32_t(enemy.combatRandom)) * 0x6ac690c5ULL +
                                  (enemy.combatRandom >> 32);
@@ -119,11 +125,15 @@ void Simulation::resolveMonsterAttack(Enemy &enemy, int modeOverride, bool proje
                                  (enemy.combatRandom >> 32);
             if (uint32_t(enemy.combatRandom) % 100 < unsigned(*chance)) damage *= 2.f;
         }
+    const int damagePercent = (enemy.identity.enchantment ? enemy.identity.enchantment->damagePercent : 0) +
+        enemy.combatEffects.modifiers(state_.frame).combat.damagePercent;
+    damage = float(int64_t(damage * 256.f) * std::max(0, 100 + damagePercent) / 100) / 256.f;
     const float physicalDealt = hurtPlayer(damage, MonsterDamageType::Physical);
     if (!projectile && physicalDealt > 0 && enemy.hp > 0)
         triggerCombatEffects(player, CombatEffectEvent::DamagedInMelee, enemy);
     if (combat && player.hp > 0)
         applyMonsterElements(enemy, *combat, mode);
+    if (player.hp > 0) applyMonsterEnchantmentHit(enemy);
     if (wearEquipment_) wearEquipment_({}, true);
 }
 } // namespace d2x

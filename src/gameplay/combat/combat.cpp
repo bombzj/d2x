@@ -58,6 +58,14 @@ void Simulation::damageEnemy(Enemy &enemy, float amount, EntityId source, float 
     } else {
         enemy.chill = std::max(enemy.chill, chill);
     }
+    if (enemy.identity.enchantment) {
+        const auto &mods = *enemy.identity.enchantment;
+        if (enemy.hp > 0 && type != MonsterDamageType::Poison && mods.has(17) &&
+            !enemy.pendingUniqueLightningFrame)
+            enemy.pendingUniqueLightningFrame = state_.frame + 2;
+        if (enemy.hp == 0 && (mods.has(9) || mods.has(18)))
+            enemy.deathEnchantmentFrame = state_.frame + 4;
+    }
     if (enemy.hp > 0 && type != MonsterDamageType::Poison) emit(EnemyHit{enemy.id, enemy.kind});
     if (enemy.hp == 0) {
         enemy.freeze = 0;
@@ -83,6 +91,7 @@ void Simulation::damageEnemy(Enemy &enemy, float amount, EntityId source, float 
         enemy.webAuraRemaining = enemy.webTrailDistance = 0;
         enemy.attack = enemy.attackDuration = 0;
         enemy.attackImpact = -1;
+        enemy.teleportTarget.reset();
         enemy.attackMode = 1;
         ++state_.area.kills;
         emit(EnemyDied{enemy.id, source, enemy.kind, state_.area.region, enemy.pos, enemy.identity,
@@ -128,6 +137,7 @@ void Simulation::updateMissiles(float dt) {
             }
             m.velocity = heading * speed;
         }
+        if (m.hostileElement) { advanceHostileElementMissile(m, dt); continue; }
         if (m.hostile && m.hostileMode == 7) {
             m.remaining -= dt;
             if (!state_.player.dead && m.remaining > 0 &&

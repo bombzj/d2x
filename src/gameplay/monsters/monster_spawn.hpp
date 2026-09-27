@@ -1,5 +1,6 @@
 #pragma once
 #include "gameplay/model/definitions.hpp"
+#include "gameplay/monsters/unique_modifiers.hpp"
 #include <array>
 #include <cstdint>
 #include <optional>
@@ -19,6 +20,8 @@ struct MonsterIdentity {
     MonsterRank rank = MonsterRank::Normal;
     SpawnOrigin origin = SpawnOrigin::Density;
     uint32_t group = 0;
+    std::optional<MonsterEnchantment> enchantment = std::nullopt;
+    std::string ownerSpawnKey = {}; // Original setboss party ownership within this region.
 };
 struct MonsterSpawn {
     MonsterIdentity identity;

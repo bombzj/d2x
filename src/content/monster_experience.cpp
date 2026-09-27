@@ -69,6 +69,10 @@ MonsterExperienceAward resolveMonsterExperience(const ClassicData &data, const M
         break;
     }
     }
+    if (request.identity.enchantment) {
+        bonusLevel = request.identity.enchantment->levelBonus;
+        rankFactor = request.identity.enchantment->experienceFactor;
+    }
     result.monsterLevel = *level + bonusLevel;
     uint64_t award = base * rankFactor;
     const int delta = request.playerLevel - result.monsterLevel;

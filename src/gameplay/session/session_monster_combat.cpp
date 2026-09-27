@@ -1,13 +1,15 @@
 #include "session.hpp"
+#include "content/monster_enchantment.hpp"
 
 namespace d2x {
 std::optional<MonsterCombatProfile> GameSession::resolvedMonsterCombat(
     const MonsterIdentity &identity, RegionId region) const {
-    if (identity.rank != MonsterRank::Normal && identity.rank != MonsterRank::Minion)
+    if (!identity.enchantment && identity.rank != MonsterRank::Normal && identity.rank != MonsterRank::Minion)
         return std::nullopt;
     const auto key = std::pair{identity.monster, region};
     if (auto cached = monsterCombatCache_.find(key); cached != monsterCombatCache_.end())
-        return cached->second;
+        return cached->second && identity.enchantment
+            ? enchantedMonsterCombat(*cached->second, *identity.enchantment) : cached->second;
     const auto *monster = monsterContent_.find(identity.monster);
     const auto area = worldContent_.levels().find(int(region));
     if (!monster || !monster->hostile() || monster->boss || area == worldContent_.levels().end() ||
@@ -19,6 +21,6 @@ std::optional<MonsterCombatProfile> GameSession::resolvedMonsterCombat(
                                             content_.tables.at("monlvl"), difficulty,
                                             area->second.population.level[difficulty]);
     monsterCombatCache_.emplace(key, profile);
-    return profile;
+    return profile && identity.enchantment ? enchantedMonsterCombat(*profile, *identity.enchantment) : profile;
 }
 } // namespace d2x

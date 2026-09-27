@@ -51,8 +51,6 @@ struct ViewState {
     EntityId waypointSource;
     int travelPage = 0;
     float animationTime = 0, heroTime = 0, stepClock = 0;
-    uint64_t portalRevision = 0;
-    float portalAnimationStarted = -1;
     float cainPortalAnimationStarted = -1;
     std::string heroMode = "nu", dialogue, dialogueSpeaker, dialogueStatus;
     std::deque<NpcDialogueStarted> pendingNpcDialogue;
@@ -123,6 +121,7 @@ class SceneView {
     void drawLighting() const;
     void drawNpcAlerts() const;
     void drawShrineOverlays() const;
+    void drawCombatStateOverlays(const CombatEffectSet &effects, Vec screenPosition, int height, bool back) const;
     void drawPanelFrame(bool right) const;
     void drawMinimap(bool large) const;
     void revealAutomap();

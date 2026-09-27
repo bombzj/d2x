@@ -53,7 +53,7 @@ target_sources(d2x_content PRIVATE src/content/skill_animation.cpp)
 target_sources(d2x_content PRIVATE src/content/item_projectiles.cpp src/content/missile_effects.cpp)
 target_sources(d2x_content PRIVATE src/content/monster_experience.cpp)
 target_sources(d2x_content PRIVATE src/content/monster_combat.cpp)
-target_sources(d2x_content PRIVATE src/content/monster_difficulty_combat.cpp)
+target_sources(d2x_content PRIVATE src/content/monster_difficulty_combat.cpp src/content/monster_enchantment.cpp)
 target_sources(d2x_content PRIVATE src/content/monster_ai_data.cpp)
 target_sources(d2x_content PRIVATE src/content/monster_spell_data.cpp)
 target_sources(d2x_content PRIVATE src/content/monster_animation.cpp)
@@ -93,7 +93,7 @@ add_library(d2x_gameplay
     src/gameplay/monsters/blood_hawk_ai.cpp
     src/gameplay/monsters/arach_web.cpp
     src/gameplay/monsters/arach_ai.cpp
-  src/gameplay/monsters/monster_element.cpp
+  src/gameplay/monsters/monster_element.cpp src/gameplay/monsters/monster_enchantments.cpp
   src/gameplay/monsters/skeleton_ai.cpp src/gameplay/monsters/brute_ai.cpp
   src/gameplay/monsters/corrupt_rogue_ai.cpp
   src/gameplay/monsters/goatman_ai.cpp
@@ -123,13 +123,13 @@ target_sources(d2x_gameplay PRIVATE src/gameplay/loot/special.cpp)
 target_sources(d2x_gameplay PRIVATE src/gameplay/quest/den_of_evil.cpp src/gameplay/quest/burial_grounds.cpp src/gameplay/quest/search_for_cain.cpp src/gameplay/quest/forgotten_tower.cpp src/gameplay/quest/tools_of_trade.cpp src/gameplay/quest/sisters_to_slaughter.cpp)
 target_sources(d2x_gameplay PRIVATE src/gameplay/loot/affix.cpp)
 target_sources(d2x_gameplay PRIVATE src/gameplay/effects/state.cpp src/gameplay/effects/reactions.cpp)
-target_sources(d2x_content PRIVATE src/content/state_data.cpp)
+target_sources(d2x_content PRIVATE src/content/state_data.cpp src/content/shrine_data.cpp)
 target_link_libraries(d2x_gameplay PUBLIC d2x_navigation)
 target_link_libraries(d2x_content PUBLIC d2x_gameplay)
 add_library(d2x_population src/world/population.cpp)
 target_link_libraries(d2x_population PUBLIC d2x_content d2x_gameplay)
 add_library(d2x_session src/gameplay/session/session.cpp src/gameplay/session/session_skills.cpp src/gameplay/session/session_loot.cpp src/gameplay/session/session_inventory.cpp src/gameplay/session/session_consumables.cpp src/gameplay/session/session_gold.cpp src/gameplay/session/session_interaction.cpp src/gameplay/session/session_restore.cpp src/gameplay/session/session_exits.cpp src/gameplay/session/session_monster_combat.cpp)
-target_sources(d2x_session PRIVATE src/gameplay/session/session_objects.cpp)
+target_sources(d2x_session PRIVATE src/gameplay/session/session_objects.cpp src/gameplay/session/session_shrines.cpp)
 target_sources(d2x_session PRIVATE src/gameplay/npc/identification.cpp src/gameplay/npc/service.cpp src/gameplay/npc/movement.cpp)
 target_sources(d2x_session PRIVATE src/gameplay/npc/store.cpp src/gameplay/npc/purchase.cpp)
 target_sources(d2x_session PRIVATE src/gameplay/session/session_item_snapshot.cpp)

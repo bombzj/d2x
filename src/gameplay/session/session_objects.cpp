@@ -83,50 +83,17 @@ void GameSession::activateShrine(EntityId id) {
     });
     if (found == objects.end() || found->interaction != Interaction::Shrine ||
         found->shrineCode <= 0) return;
-    applyShrine(found->shrineCode, found->shrineName, found->shrineEffect,
-                found->shrineDuration);
+    if (!applyShrine(found->shrineCode, found->id, found->pos)) return;
     found->operatedAt = state().time;
     found->interaction = Interaction::None;
     simulation_.emit(ObjectInteracted{id, Interaction::Shrine, found->shrineName});
 }
-void GameSession::applyShrine(int code, std::string name, std::string effect, float duration) {
-    auto &player = simulation_.state_.player;
-    if (code == 1) {
-        player.hp = float(simulation_.characterStats_.maxLife);
-        player.mana = float(simulation_.characterStats_.maxMana);
-    } else if (code == 2) {
-        player.hp = float(simulation_.characterStats_.maxLife);
-    } else if (code == 3) {
-        player.mana = float(simulation_.characterStats_.maxMana);
-    }
-    if (duration > 0) {
-        const auto record = content_.states.find(shrineStateName(code));
-        if (record == content_.states.end()) return; // Unverified special shrine state.
-        CombatEffectSpec stateEffect;
-        stateEffect.state = record->second.definition;
-        stateEffect.source = {CombatEffectSource::Shrine, player.id, code, 0};
-        stateEffect.duration = EffectFrame(duration * 25.f + .5f);
-        // Attributes remain deferred, but display lifetime must obey the same
-        // MPQ death/expiry rules as every other state, including stambarblue.
-        for (const auto &previous : shrineStatuses_) player.combatEffects.remove(previous.stateEffect);
-        const auto applied = player.combatEffects.apply(std::move(stateEffect), state().frame);
-        shrineStatuses_.clear();
-        shrineStatuses_.push_back({code, std::move(name), std::move(effect), state().time + duration,
-                                   applied.handle});
-        refreshCharacter();
-    }
-}
 void GameSession::grantShrine(int code) {
-    if (state().player.dead || code <= 0) return;
-    const auto &table = content_.tables.at("shrines");
-    for (size_t row = 0; row < table.rows().size(); ++row)
-        if (table.number(row, "Code") == code) {
-            const std::string name(table.value(row, "Shrine name"));
-            applyShrine(code, name, std::string(table.value(row, "Effect")),
-                        float(table.number(row, "Duration in frames").value_or(0)) / 25.f);
-            simulation_.emit(ObjectInteracted{{}, Interaction::Shrine, name});
-            return;
-        }
+    code = activeShrineCode(code);
+    const auto found = content_.shrines.find(code);
+    if (state().player.dead || found == content_.shrines.end()) return;
+    if (applyShrine(code, {}, state().player.pos))
+        simulation_.emit(ObjectInteracted{{}, Interaction::Shrine, found->second.name});
 }
 void GameSession::drinkWell(EntityId id) {
     auto &objects = regions_.at(current_).objects;

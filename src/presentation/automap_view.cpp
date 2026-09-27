@@ -126,13 +126,8 @@ void SceneView::drawMinimap(bool large) const {
             if (!object.questHidden)
                 marker(object.npcClass.empty() ? assets_.automapObjectCel(object.objectClass)
                                                : assets_.automapNpcCel(object.npcClass), object.pos);
-        const auto &portal = session_.state().portal;
-        if (portal.active) {
-            if (portal.field == region.definition.id)
-                marker(assets_.automapObjectCel(59), portal.fieldPosition);
-            if (region.definition.id == RegionId::Encampment)
-                marker(assets_.automapObjectCel(59), portal.townPosition);
-        }
+        for (const auto &portal : session_.portals(region.definition.id))
+            marker(assets_.automapObjectCel(59), portal.position);
         if (index == session_.regionIndex())
             if (auto cainPortal = session_.cainPortalPosition())
                 marker(assets_.automapObjectCel(60), *cainPortal);

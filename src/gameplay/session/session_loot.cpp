@@ -67,7 +67,8 @@ void GameSession::settleDeaths() {
             auto experience = resolveMonsterExperience(content_, monsterContent_, worldContent_,
                 {death.identity, death.region, death.difficulty, state().player.level});
             if (experience.deferred.empty())
-                grantExperience(experience.amount);
+                grantExperience(experience.amount + experience.amount *
+                    uint64_t(std::max(0, characterStats().combat.experiencePercent)) / 100);
             else
                 std::cout << "Monster experience deferred: id=" << death.victim.value
                           << " reason=" << experience.deferred << '\n';

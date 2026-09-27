@@ -10,6 +10,11 @@
 #include <functional>
 
 namespace d2x {
+struct MonsterMissileCast {
+    SkillCastSpec skill;
+    MonsterDamageType element;
+    bool killOnHit = true;
+};
 class Simulation {
     friend class GameSession;
     EntityIds &ids_;
@@ -24,6 +29,7 @@ class Simulation {
     EquipmentStats equipmentStats_;
     CharacterAttributes characterStats_;
     std::function<void()> combatEffectsChanged_;
+    void combatEffectsChanged(std::span<const RemovedCombatEffect> removed);
     void triggerCombatEffects(PlayerState &player, CombatEffectEvent event, Enemy &other);
     int resistancePenalty_ = 0;
     std::function<void(EntityId, bool)> wearEquipment_;
@@ -93,11 +99,19 @@ class Simulation {
     void updatePotions(float dt);
     void updatePlayer(float dt, Vec keyboard);
     void updateMonsters(float dt);
+    void updateMonsterEnchantments();
+    void applyMonsterEnchantmentHit(Enemy &enemy);
+    void launchMonsterEnchantmentMissiles(Enemy &enemy, int missileId);
+    void advanceHostileElementMissile(Missile &missile, float dt);
+    bool tryMonsterTeleport(Enemy &enemy);
+    std::function<std::optional<MonsterMissileCast>(int, int)> monsterSpecialMissile_;
     bool handleMonsterSpecialAi(Enemy &enemy, const MonsterAiProfile &ai,
                                 float distance, bool clear);
     void beginMonsterAttack(Enemy &enemy, int forcedMode = 0);
     void resolveMonsterAttack(Enemy &enemy, int modeOverride = 0, bool projectile = false);
     void launchMonsterProjectile(Enemy &enemy);
+    void replicateMonsterMissile(const Enemy &enemy, Missile missile);
+    std::set<int> noMultiShotMissiles_, unspreadMultiShotMissiles_;
     void launchMonsterSpell(Enemy &enemy);
     void resolveMonsterSpell(Enemy &enemy, const Missile &missile);
     void resolveMonsterResurrection(Enemy &enemy);

@@ -30,6 +30,7 @@ EffectApplication CombatEffectSet::apply(CombatEffectSpec spec, EffectFrame now)
     ActiveCombatEffect effect{{nextHandle_}, std::move(spec), now, {}};
     if (effect.spec.duration) effect.expiresAt = now + *effect.spec.duration;
     auto replaces = [&](const ActiveCombatEffect &existing) {
+        if (effect.spec.state.curse && existing.spec.state.curse) return true;
         if (effect.spec.state.group > 0 && existing.spec.state.group == effect.spec.state.group)
             return true;
         if (existing.spec.state.id != effect.spec.state.id) return false;

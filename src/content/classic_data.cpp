@@ -12,6 +12,7 @@
 #include "special_items.hpp"
 #include "sorceress_data.hpp"
 #include "weapon_skill_data.hpp"
+#include "monster_enchantment.hpp"
 #include <algorithm>
 #include <iterator>
 #include <stdexcept>
@@ -20,7 +21,7 @@ namespace d2x {
 ClassicData loadClassicData(Archives &archives) {
     const ClassicStrings strings(archives);
     std::map<std::string, DataTable, std::less<>> tables;
-    for (auto name : {"misc", "weapons", "armor", "armtype", "belts", "monstats", "charstats", "skills", "experience", "inventory", "levels"})
+    for (auto name : {"monumod", "monstats2", "montype", "difficultylevels", "misc", "weapons", "armor", "armtype", "belts", "monstats", "charstats", "skills", "experience", "inventory", "levels"})
         tables.emplace(name, DataTable(archives.read(std::string("data/global/excel/") + name + ".txt")));
     const auto &armtype = tables.at("armtype");
     if (!armtype.has("Token"))
@@ -74,6 +75,7 @@ ClassicData loadClassicData(Archives &archives) {
             const auto displayName = strings.find(nameKey.empty() ? item.code : nameKey);
             item.name = displayName.empty() ? value("name") : std::string(displayName);
             item.family = family;
+            if (family == ItemFamily::Misc) item.betterGem = value("bettergem");
             item.width = number("invwidth").value_or(0);
             item.height = number("invheight").value_or(0);
             item.maxStack = number("stackable").value_or(0) ? std::max(1, number("maxstack").value_or(1)) : 1;
@@ -254,7 +256,9 @@ ClassicData loadClassicData(Archives &archives) {
         data.skills = loadSkillCatalog(data.tables.at("skills"), data.tables.at("skilldesc"),
                                        data.tables.at("charstats"), data.characters, strings);
         loadSkillAnimations(data.skills, data.tables.at("weapons"), archives);
+        data.shrines = loadShrines(data.tables.at("shrines"));
         data.states = loadCombatStates(DataTable(archives.read("data/global/excel/states.txt")));
+        loadMonsterEnchantmentResources(data, archives);
         const DataTable overlays(archives.read("data/global/excel/overlay.txt"));
         const DataTable sounds(archives.read("data/global/excel/sounds.txt"));
         loadSorceressEffects(data.skills, data.tables.at("skills"), data.tables.at("missiles"),
@@ -265,7 +269,6 @@ ClassicData loadClassicData(Archives &archives) {
             if (auto id = levels.number(row, "Id"); id && *id > 0)
                 if (auto allowed = levels.number(row, "Teleport"))
                     data.teleportByLevel.emplace(*id, *allowed);
-        data.tables.emplace("difficultylevels", DataTable(archives.read("data/global/excel/difficultylevels.txt")));
         const auto &difficulties = data.tables.at("difficultylevels");
         if (difficulties.rows().size() < data.staticFieldMinimum.size())
             throw std::runtime_error("Missing original Static Field difficulty limits");

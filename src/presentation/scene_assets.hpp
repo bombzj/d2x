@@ -91,7 +91,7 @@ class SceneAssets {
         int frames = 0, trans = 5;
         float fps = 0;
     } npcAlert;
-    std::map<int, std::array<OverlayArt, 2>> shrineOverlays;
+    std::map<int, std::array<OverlayArt, 2>> shrineOverlays, combatStateOverlays;
     SceneAssets(Archives &archives, const GameSession &session);
     static std::string itemArtKey(const ItemInstance &item);
     void loadInventoryArt(const GameSession &session);

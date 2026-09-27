@@ -25,7 +25,8 @@ struct CharacterModifiers {
     int attackRating = 0, defense = 0;
     int fireResist = 0, coldResist = 0, lightningResist = 0, poisonResist = 0;
     int lightRadius = 0;
-    int fasterMoveVelocity = 0, velocityPercent = 0;
+    int fasterMoveVelocity = 0, velocityPercent = 0, otherAnimationRate = 0;
+    int staminaPercent = 0;
     int torsoSpeed = 0, staminaDrainPercent = 0, staminaRecoveryBonus = 0;
     CombatModifiers combat;
 };
@@ -38,7 +39,7 @@ struct CharacterAttributes {
     int lightRadius = 13;
     float walkSpeed = 0, runSpeed = 0, staminaDrain = 0;
     float walkAnimationRate = 0, runAnimationRate = 0;
-    int staminaRecoveryBonus = 0;
+    int staminaRecoveryBonus = 0, staminaPercent = 0, otherAnimationRate = 0;
     CombatModifiers combat;
     int blockFactor = 0;
     float manaRegen = 0;

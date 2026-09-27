@@ -21,10 +21,10 @@ void GameSession::updateSlaughterQuest(const EnemyDied &death) {
         simulation_.emit(QuestAdvanced{ActOneQuest::SearchForCain, cain.stage});
     }
     if (portalResources_ && townPortalArrival_ && portalReach_ > 0 &&
-        state().portal.revision < UINT64_MAX) {
+        state().nextPortalRevision < UINT64_MAX) {
         auto position = map().grid.nearest(death.position);
-        simulation_.state_.portal = {true, state().portal.revision + 1,
-            death.region, position, *townPortalArrival_};
+        simulation_.state_.portal = {true, ++simulation_.state_.nextPortalRevision,
+            death.region, position, *townPortalArrival_, state().time};
     }
 }
 void GameSession::completeActOne(EntityId npc) {

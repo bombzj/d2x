@@ -11,6 +11,7 @@
 #include "hireling_data.hpp"
 #include "skill_data.hpp"
 #include "state_data.hpp"
+#include "shrine_data.hpp"
 #include "vendor_data.hpp"
 #include "resources/archive.hpp"
 #include "resources/data_table.hpp"
@@ -32,6 +33,12 @@ struct StashLayout {
     bool expansion = false;
 };
 // Version-specific MPQ adapter. Rules consume typed records, not archive handles or TXT cells.
+struct MonsterSpecialMissile {
+    SkillSpec spec;
+    ProjectileResource visual;
+    int element = -1;
+    bool killOnHit = true;
+};
 struct ClassicData {
     std::map<int, MissileCollisionRule> missileCollisions;
     ClassicData(ItemCatalog itemCatalog, std::map<std::string, DataTable, std::less<>> sourceTables,
@@ -43,6 +50,9 @@ struct ClassicData {
     std::vector<CharacterDefinition> characters;
     SkillCatalog skills;
     CombatStateCatalog states;
+    ShrineCatalog shrines;
+    std::map<int, MonsterSpecialMissile> monsterSpecialMissiles;
+    std::set<int> noMultiShotMissiles, unspreadMultiShotMissiles;
     std::map<int, int> teleportByLevel;
     std::array<int, 3> staticFieldMinimum{};
     std::array<int, 3> monsterFreezeDivisor{};

@@ -22,6 +22,8 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
       monsterContent_(archives, content_.tables.at("monstats")), loot_(lootSeed) {
     simulation_.state_.player.characterClass = std::move(characterClass);
     simulation_.missileCollisions_ = content_.missileCollisions;
+    simulation_.noMultiShotMissiles_ = content_.noMultiShotMissiles;
+    simulation_.unspreadMultiShotMissiles_ = content_.unspreadMultiShotMissiles;
     simulation_.state_.player.name = std::move(characterName);
     characterDefinition_ = definitionFor(state().player.characterClass);
     simulation_.state_.population = population;
@@ -35,6 +37,7 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
     };
     simulation_.resistancePenalty_ = content_.resistancePenalty.at(size_t(population.difficulty));
     simulation_.state_.mapSeed = selection.seed;
+    shrineRandom_ = (uint64_t(666) << 32) | selection.seed;
     inventory_.state_.creationRandom = (uint64_t(666) << 32) | uint32_t(lootSeed);
     inventory_.groundPlacement_ = [this](const GroundLocation &origin, const GroundLocation &target) {
         if (origin.region != target.region) return false;
@@ -130,6 +133,12 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
         if (!rating) return std::nullopt;
         return MonsterAccuracy{record->normalLevel, *rating};
     };
+    simulation_.monsterSpecialMissile_ = [this](int id, int rank) -> std::optional<MonsterMissileCast> {
+        auto found = content_.monsterSpecialMissiles.find(id);
+        if (found == content_.monsterSpecialMissiles.end()) return std::nullopt;
+        return MonsterMissileCast{resolveSkill(found->second.spec, rank, {}),
+            MonsterDamageType(found->second.element), found->second.killOnHit};
+    };
     simulation_.resolveMissileSkill_ = [this](int id, int rank) {
         const auto *entry = content_.skills.find(id);
         if (!entry || !entry->spell) throw std::runtime_error("Missing originating missile skill");
@@ -193,14 +202,16 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
         // UNITS_GetBaseVelocity always uses Velocity, including RN. Monster.cpp
         // starts velocitypercent at 75; AI velocity stats add to that base.
         const int rate = monsterMovementPercent(*record, state().population.difficulty,
-                                                velocityPercent, enemy.chill > 0);
+                                                velocityPercent + (enemy.identity.enchantment
+                                                    ? enemy.identity.enchantment->velocityPercent : 0), enemy.chill > 0);
         return float((*record->walkVelocity << 8) * rate / 100) * 25.f / 4096.f;
     };
     simulation_.monsterWalkSpeed_ = [this](const Enemy &enemy) {
         const auto *record = monsterContent_.find(enemy.identity.monster);
         if (!record || !record->walkVelocity) return std::optional<float>{};
         // Legacy callers apply their own movement modifiers outside this base.
-        return std::optional<float>{float((*record->walkVelocity << 8) * 75 / 100) * 25.f / 4096.f};
+        return std::optional<float>{float((*record->walkVelocity << 8) *
+            (75 + (enemy.identity.enchantment ? enemy.identity.enchantment->velocityPercent : 0)) / 100) * 25.f / 4096.f};
     };
     simulation_.monsterNormalCombat_ = [this](const MonsterIdentity &identity, RegionId region)
         -> std::optional<MonsterNormalCombat> {
@@ -243,7 +254,7 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
     };
     simulation_.monsterAi_ = [this](const Enemy &enemy)
         -> std::optional<MonsterAiProfile> {
-        if (!baseMonsterRank(enemy.identity.rank))
+        if (!enemy.identity.enchantment && !baseMonsterRank(enemy.identity.rank))
             return std::nullopt;
         const auto *record = monsterContent_.find(enemy.identity.monster);
         if (!record || record->boss) return std::nullopt;

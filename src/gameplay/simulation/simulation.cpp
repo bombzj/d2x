@@ -118,6 +118,12 @@ void Simulation::execute(const GameCommand &command) {
         },
         command);
 }
+void Simulation::combatEffectsChanged(std::span<const RemovedCombatEffect> removed) {
+    if (combatEffectsChanged_) combatEffectsChanged_();
+    for (const auto &entry : removed)
+        if (entry.effect.spec.restoreStaminaOnRemoval)
+            state_.player.stamina = float(characterStats_.maxStamina);
+}
 void Simulation::tick(float dt, Vec keyboard, bool forceRun) {
     if (!grid_ || dt <= 0)
         return;
@@ -126,8 +132,8 @@ void Simulation::tick(float dt, Vec keyboard, bool forceRun) {
     p.previous = p.pos;
     ++state_.frame;
     state_.time += dt;
-    if (!p.combatEffects.expire(state_.frame).empty() && combatEffectsChanged_)
-        combatEffectsChanged_();
+    if (auto removed = p.combatEffects.expire(state_.frame); !removed.empty())
+        combatEffectsChanged(removed);
     advanceSkillCasting(p, dt, keyboard.length() > .1f);
     advanceWeaponAttack();
     p.castTime = std::max(0.f, p.castTime - dt);
@@ -172,13 +178,13 @@ void Simulation::tick(float dt, Vec keyboard, bool forceRun) {
         }
         updatePlayer(dt, keyboard);
         activateMonsters();
+        updateMonsterEnchantments();
         updateMonsters(dt);
     }
     updateMissiles(dt);
     if (!p.dead && p.hp <= 0) {
         p.dead = true;
-        if (!p.combatEffects.onDeath(EffectUnitKind::Player).empty() && combatEffectsChanged_)
-            combatEffectsChanged_();
+        combatEffectsChanged(p.combatEffects.onDeath(EffectUnitKind::Player));
         stopChannel(p);
         p.pendingCast.reset();
         p.weaponAttack.reset();

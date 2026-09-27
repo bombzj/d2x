@@ -70,6 +70,7 @@ MonsterLootEntry resolveMonsterLoot(const ClassicData &data, const MonsterCatalo
     }
     if (!superUnique && !request.identity.superUnique.empty())
         return defer("Super unique identity conflicts with monster rank");
+    if (request.identity.enchantment) bonus = request.identity.enchantment->levelBonus;
     result.itemLevel = *level + bonus;
     if (result.itemLevel > 99)
         return defer("Monster item level exceeds supported instance range");

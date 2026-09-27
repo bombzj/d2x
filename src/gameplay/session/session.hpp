@@ -104,7 +104,12 @@ class GameSession {
     void activateLootObject(EntityId object);
     void activateShrine(EntityId object);
     void grantShrine(int code);
-    void applyShrine(int code, std::string name, std::string effect, float duration);
+    bool applyShrine(int code, EntityId source, Vec position);
+    bool applySpecialShrine(const ShrineDefinition &shrine, Vec position);
+    bool upgradeShrineMonster(Vec position);
+    bool openShrinePortal();
+    const TownPortalState *findPortal(uint64_t revision) const;
+    uint64_t shrineRandom_ = 0x29a;
     void drinkWell(EntityId object);
     void updateObjectTimers();
     void identifyWithCain(EntityId npc);
@@ -255,6 +260,8 @@ class GameSession {
     unsigned vendorPurchasePrice(EntityId npc, const VendorOffer &offer, bool gamble) const;
     EntityId interactionTarget() const { return pendingInteraction_; }
     EntityId pickupTarget() const { return pickup_.id; }
+    struct PortalView { uint64_t revision; Vec position; float openedAt; };
+    std::vector<PortalView> portals(RegionId region) const;
     std::optional<Vec> portalPosition() const;
     std::optional<Vec> cainPortalPosition() const;
     std::array<int, 5> cainStoneSequence() const { return cainStoneOrder(); }

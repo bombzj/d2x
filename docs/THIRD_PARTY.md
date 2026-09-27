@@ -31,6 +31,8 @@
 
 运行时 TXT 字段查找还核对了 D2MOO `D2Common/src/DataTbls/ItemsTbls.cpp` 的小写字段绑定与当前 MPQ 的 `StrBonus`／`DexBonus` 列名，采用通用 ASCII 忽略大小写查找；伤害比例参照 `D2Game/src/UNIT/SUnitDmg.cpp::SUNITDMG_ApplyDamageBonuses`。Talk 的多任务条目参照 `QUESTS_InitScrollTextChain` 逐任务追加消息的规则，文本和标题仍来自当前 MPQ。资料片背包资源路径与 OpenDiablo2 `resource_paths.go` 核对，实际加载当前 MPQ 的 `invchar6.dc6`／`invchar6Tab.dc6`。
 
+祭坛效果适配本地 D2MOO 固定 `5596f5c` 的 `ObjMode.cpp` 各 SHRINES 处理器、`SUnitDmg.cpp` 状态及经验规则、`D2Common/Skills.cpp` 的 shrine_skill；怪物强化适配 `MonsterUnique.cpp` 的选取、初始化、光环和事件，以及 `MonsterSpawn.cpp` 的 setboss 直属随从关系。新增 C++ 类型及执行器使用当前 MPQ 的 Shrines、MonUMod、MonStats/2、MonType、MonLvl、DifficultyLevels、Skills、Missiles 与 States/Overlay；MIT 归属仍为上述 D2MOO 许可。限时祭坛／诅咒／光环图形播放速度仍沿 Diablerie `Overlay.Create` 的参考适配，未声称完整 D2Client 等价。覆盖与限制见 [交互物体](INTERACTIVE_OBJECTS.md) 和 [怪物](MONSTERS.md)。
+
 ## 格式研究参考
 
 投掷药瓶客户端特效另核对 [D2R Data Guide（Corrected）的 Missiles.txt](https://locbones.github.io/D2R_DataGuide/#missilestxt)：`CltHit03/HitOilPotion` 为主爆炸加 `CltHitSubMissile2/3` 随机二选一，`CltDo03/04` 分别说明尾迹和区域烟雾子效果。这里只借用函数／字段含义，所有 ID、图像和参数仍读取当前 1.13c MPQ，不复制第三方数据或代码。该说明没有给出旧客户端烟雾精确节拍和随机采样算法；不能据此宣称与原版逐帧一致。RandStart 与旧版 Phrozen Keep 指南的描述存在冲突，暂缓该字段；具体范围见 [通用攻击](COMMON_ATTACKS.md)。

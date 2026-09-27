@@ -36,9 +36,9 @@ void SceneController::click(Vec mouse) {
         pickupClick_ = true;
         return;
     }
-    if (auto portal = session_.portalPosition(); portal &&
-        (view_.screen(*portal) - Vec{0, 40} - mouse).length() < 45) {
-        session_.submit(UseTownPortal{session_.state().portal.revision});
+    for (const auto &portal : session_.portals(session_.region().definition.id)) {
+        if ((view_.screen(portal.position) - Vec{0, 40} - mouse).length() >= 45) continue;
+        session_.submit(UseTownPortal{portal.revision});
         pickupClick_ = true;
         return;
     }

@@ -62,6 +62,7 @@ void addStat(std::string_view stat, int value, CombatModifiers &m) {
     else if (stat == "item_deadlystrike") target = &m.deadlyStrike;
     else if (stat == "item_magicbonus") target = &m.magicFind;
     else if (stat == "item_goldbonus") target = &m.goldFind;
+    else if (stat == "item_addexperience") target = &m.experiencePercent;
     else if (stat == "item_reducedprices") target = &m.reducedPrices;
     else if (stat == "item_poisonlengthresist") target = &m.poisonLengthResist;
     else if (stat == "hpregen") target = &m.replenishLife;

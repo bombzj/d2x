@@ -32,6 +32,7 @@ void Simulation::applyMonsterElements(Enemy &enemy, const MonsterNormalCombat &c
             continue;
         }
         if (slot->type == "pois") {
+            if (characterStats_.combat.preventPoison) continue;
             // D2MOO writes 10 * elemental damage as HP regeneration units per
             // frame (256 units per HP), for twice the MonStats duration.
             const float rate = float(10 * value * 25) / 256.f *

@@ -42,6 +42,7 @@ void assignShrine(WorldObject &object, const Table &rows, int levelId, uint32_t 
     object.shrineName = resolved->at("Shrine name");
     object.shrineEffect = resolved->at("Effect");
     object.shrineDuration = float(number(*resolved, "Duration in frames")) / 25.f;
-    object.shrineReset = float(number(*resolved, "reset time in minutes")) * 60.f;
+    object.shrineReset = number(*resolved, "reset time in minutes") > 0
+        ? float(number(*resolved, "reset time in minutes") * 1200 + 1) / 25.f : 0.f;
 }
 } // namespace d2x

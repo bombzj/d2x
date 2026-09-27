@@ -43,8 +43,10 @@ void mergeCharacterModifiers(CharacterModifiers &a, const CharacterModifiers &b)
     add(a.lightRadius, b.lightRadius);
     add(a.fasterMoveVelocity, b.fasterMoveVelocity);
     add(a.velocityPercent, b.velocityPercent);
+    add(a.otherAnimationRate, b.otherAnimationRate);
     add(a.staminaDrainPercent, b.staminaDrainPercent);
     add(a.staminaRecoveryBonus, b.staminaRecoveryBonus);
+    add(a.staminaPercent, b.staminaPercent);
     a.torsoSpeed = std::max(a.torsoSpeed, b.torsoSpeed);
     mergeCombatModifiers(a.combat, b.combat);
 }
@@ -81,6 +83,8 @@ CharacterAttributes deriveCharacterAttributes(const CharacterDefinition &d, int 
     result.maxStamina = bounded(int64_t(quarter(d.stamina, d.staminaPerLevel,
                                                 int64_t(a.vitality) + m.vitality,
                                                 d.staminaPerVitality, level)) + m.maxStamina, 1);
+    result.maxStamina = bounded(int64_t(result.maxStamina) *
+        std::max<int64_t>(0, 100LL + m.staminaPercent) / 100, 1);
     result.baseAttackRating = bounded(int64_t(result.dexterity) * 5 - 35 + d.toHitFactor + m.attackRating);
     result.attackRating = bounded(int64_t(result.baseAttackRating) *
                                   std::max<int64_t>(0, 100LL + m.combat.attackRatingPercent) / 100);
@@ -116,6 +120,8 @@ CharacterAttributes deriveCharacterAttributes(const CharacterDefinition &d, int 
     drain = std::max<int64_t>(1, drain);
     result.staminaDrain = float(drain) * 25.f / 256.f;
     result.staminaRecoveryBonus = m.staminaRecoveryBonus;
+    result.staminaPercent = m.staminaPercent;
+    result.otherAnimationRate = m.otherAnimationRate;
     result.combat = m.combat;
     result.blockFactor = d.blockFactor;
     // CharStats.ManaRegen is an engine denominator, not mana per second.

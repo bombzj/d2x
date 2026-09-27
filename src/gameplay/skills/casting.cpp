@@ -111,8 +111,8 @@ void Simulation::releaseSkillCast(PlayerState &player, const SkillCastSpec &skil
     if (skill.appliedEffect) {
         auto effect = *skill.appliedEffect;
         effect.source.entity = player.id;
-        player.combatEffects.apply(std::move(effect), state_.frame);
-        if (combatEffectsChanged_) combatEffectsChanged_();
+        const auto applied = player.combatEffects.apply(std::move(effect), state_.frame);
+        combatEffectsChanged(applied.removed);
         emit(SkillActivated{skill.sourceId});
     } else if (skill.effect == SkillBehavior::Teleport) {
         player.pos = player.previous = target;

@@ -135,11 +135,14 @@ void SceneView::drawActors(Vec mouse) const {
     const bool canHover = !view_.blocksWorld() && !view_.inventory.drag &&
                           !hudSurface(mouse) && CheckCollisionPointRec(rv(mouse), worldViewport());
     const auto cainPortal = session_.cainPortalPosition();
-    const auto townPortal = session_.portalPosition();
+    const auto portals = session_.portals(sim.area.region);
     const bool hotCainPortal = canHover && cainPortal &&
         (screen(*cainPortal) - Vec{0, 40} - mouse).length() < 45;
-    const bool hotTownPortal = canHover && !hotCainPortal && townPortal &&
-        (screen(*townPortal) - Vec{0, 40} - mouse).length() < 45;
+    int hotPortal = -1;
+    if (canHover && !hotCainPortal)
+        for (int i = 0; i < int(portals.size()); ++i)
+            if ((screen(portals[i].position) - Vec{0, 40} - mouse).length() < 45) { hotPortal = i; break; }
+    const bool hotTownPortal = hotPortal >= 0;
     const bool hotExit = canHover && !hotCainPortal && !hotTownPortal && exitAt(mouse);
     const auto hotLabelItem = canHover && !hotCainPortal && !hotTownPortal && !hotExit
                                   ? lootAt(mouse, true) : std::nullopt;
@@ -221,9 +224,9 @@ void SceneView::drawActors(Vec mouse) const {
         auto point = screen(sim.player.hireling.pos);
         draw.push_back({point.y, 6, 0, point});
     }
-    if (auto position = session_.portalPosition()) {
-        auto point = screen(*position);
-        draw.push_back({point.y, 5, 0, point});
+    for (int i = 0; i < int(portals.size()); ++i) {
+        auto point = screen(portals[i].position);
+        draw.push_back({point.y, 5, i, point});
     }
     if (auto position = session_.cainPortalPosition()) {
         auto point = screen(*position);
@@ -257,9 +260,11 @@ void SceneView::drawActors(Vec mouse) const {
             auto f = anim->frame(direction(look, anim->directions), frame);
             auto p = item.p;
             spriteShadow(f, item.p);
+            if (!sim.player.dead) drawCombatStateOverlays(sim.player.combatEffects, p, 1, true);
             sprite(f, p, sim.player.dead ? Color{185, 185, 185, 255}
                          : sim.player.chill > 0 ? Color{115, 175, 255, 255}
                          : sim.player.poisonRemaining > 0 ? Color{145, 210, 115, 255} : WHITE);
+            if (!sim.player.dead) drawCombatStateOverlays(sim.player.combatEffects, p, 1, false);
         } else if (item.type == 6) {
             const auto &hireling = sim.player.hireling;
             const auto &animations = assets_.hirelingAnimations;
@@ -321,11 +326,13 @@ void SceneView::drawActors(Vec mouse) const {
                         const auto rate = mode == "rn" ? record->runAnimationRate : record->walkAnimationRate;
                         if (rate) {
                             const int percentage = monsterMovementPercent(*record, sim.population.difficulty,
-                                *e.movementVelocityPercent, e.chill > 0);
+                                *e.movementVelocityPercent + (e.identity.enchantment ? e.identity.enchantment->velocityPercent : 0), e.chill > 0);
                             fps = float(std::clamp(*rate * percentage / 100, 0, 32767)) * 25.f / 256.f;
                             nativeMovementRate = true;
                         }
                     }
+                if ((mode == "wl" || mode == "rn") && !nativeMovementRate && e.identity.enchantment)
+                    fps *= float(75 + e.identity.enchantment->velocityPercent) / 75.f;
                 int frame = e.hp <= 0 ? (mode == "dd" ? 0
                                         : std::min(anim->count - 1, int(e.deathAge * fps)))
                             : e.freeze > 0 ? 0
@@ -349,10 +356,14 @@ void SceneView::drawActors(Vec mouse) const {
                                                            : sim.player.pos - monster.position,
                               anim->directions), frame);
                 spriteShadow(image, item.p);
+                const auto *record = session_.monsterContent().find(e.identity.monster);
+                const int height = record ? record->overlayHeight - 1 : 0;
+                if (e.hp > 0) drawCombatStateOverlays(e.combatEffects, item.p, height, true);
                 drawSelectableSprite(image, item.p, e.id == hotEnemy,
                                      e.hitFlash > 0 ? Color{255, 175, 155, 255}
                                      : (e.chill > 0 || e.freeze > 0) ? Color{115, 175, 255, 255}
                                                     : WHITE);
+                if (e.hp > 0) drawCombatStateOverlays(e.combatEffects, item.p, height, false);
             }
             if (e.stun > 0)
                 for (int i = 0; i < 3; i++) {
@@ -367,16 +378,11 @@ void SceneView::drawActors(Vec mouse) const {
             }
         } else if (item.type == 5) {
             size_t mode = 1;
-            float elapsed = view_.animationTime;
-            if (view_.portalAnimationStarted >= 0 && view_.portalRevision == sim.portal.revision) {
-                elapsed = std::max(0.f, view_.animationTime - view_.portalAnimationStarted);
-                const auto &opening = assets_.townPortalRules[0];
-                const float duration = opening.frames / opening.fps;
-                if (elapsed < duration)
-                    mode = 0;
-                else
-                    elapsed -= duration;
-            }
+            float elapsed = std::max(0.f, sim.time - portals[item.index].openedAt);
+            const auto &opening = assets_.townPortalRules[0];
+            const float duration = opening.frames / opening.fps;
+            if (elapsed < duration) mode = 0;
+            else elapsed -= duration;
             const auto &rule = assets_.townPortalRules[mode];
             int frame = rule.start + int(elapsed * rule.fps);
             if (rule.cycle)
@@ -386,7 +392,7 @@ void SceneView::drawActors(Vec mouse) const {
             // The classic portal COF uses translucent draw effects. Additive composition keeps
             // its black palette entries from becoming an opaque oval over the world.
             BeginBlendMode(BLEND_ADDITIVE);
-            drawSelectableSprite(assets_.townPortalAnimations[mode].frame(0, frame), item.p, hotTownPortal);
+            drawSelectableSprite(assets_.townPortalAnimations[mode].frame(0, frame), item.p, item.index == hotPortal);
             EndBlendMode();
             const std::string name = sim.area.region == RegionId::Encampment ? "Return Portal" : "Rogue Encampment";
             painter_.label(name, int(item.p.x) - painter_.measure(name, 12) / 2, int(item.p.y) - 100, 12, gold);

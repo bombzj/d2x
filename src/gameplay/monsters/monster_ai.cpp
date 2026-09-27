@@ -40,6 +40,9 @@ void Simulation::updateMonsters(float dt) {
         enemy.rethink = std::max(0.f, enemy.rethink - dt);
         enemy.aiWait = std::max(0.f, enemy.aiWait - dt);
         enemy.movementVelocityPercent.reset();
+        if (enemy.attack <= 0 && enemy.rethink <= 0 && enemy.stun <= 0 && enemy.freeze <= 0 &&
+            enemy.hitFlash <= 0 && enemy.skill2Remaining <= 0 && enemy.resurrectionRemaining <= 0 &&
+            tryMonsterTeleport(enemy)) continue;
         enemy.webAuraRemaining = std::max(0.f, enemy.webAuraRemaining - dt);
         if (enemy.webAuraRemaining == 0) enemy.webTrailDistance = 0;
         if (player.dead || player.hp <= 0) {
@@ -58,6 +61,7 @@ void Simulation::updateMonsters(float dt) {
             enemy.skill2Remaining = enemy.skill2Duration = 0;
             enemy.attack = enemy.attackDuration = 0;
             enemy.attackImpact = -1;
+            enemy.teleportTarget.reset();
             enemy.attackMode = 1;
             continue;
         }
@@ -70,6 +74,7 @@ void Simulation::updateMonsters(float dt) {
             }
             enemy.attack = enemy.attackDuration = 0;
             enemy.attackImpact = -1;
+            enemy.teleportTarget.reset();
             enemy.attackMode = 1;
             enemy.skill2Remaining = enemy.skill2Duration = 0;
             enemy.aiCorpse = {};
@@ -92,7 +97,11 @@ void Simulation::updateMonsters(float dt) {
                 enemy.attackImpact -= dt;
                 if (enemy.attackImpact <= 0) {
                     enemy.attackImpact = -1;
-                    if (enemy.attackMode == 3 && monsterResurrection_ &&
+                    if (enemy.teleportTarget) {
+                        if (grid_->walkable(*enemy.teleportTarget)) enemy.pos = *enemy.teleportTarget;
+                        enemy.teleportTarget.reset();
+                    }
+                    else if (enemy.attackMode == 3 && monsterResurrection_ &&
                         monsterResurrection_(enemy))
                         resolveMonsterResurrection(enemy);
                     else if (enemy.attackMode == 3 && monsterWeb_ &&

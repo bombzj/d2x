@@ -133,7 +133,9 @@ class Planner {
             if (auto minion = lookup(leader.minions[i % classes]))
                 // A normal monster's party uses normal monster creation. Flag 64
                 // suppresses recursion; it does not grant an elite minion rank.
-                add(*minion, pos, 4, MonsterRank::Normal, origin, key + ".party." + std::to_string(i));
+                if (add(*minion, pos, 4, MonsterRank::Normal, origin, key + ".party." + std::to_string(i)) &&
+                    leader.ownsParty)
+                    result_.spawns.back().identity.ownerSpawnKey = key;
     }
     const MonsterRecord *choose(bool elite) {
         const MonsterRecord *monster = nullptr;

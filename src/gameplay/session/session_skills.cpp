@@ -55,7 +55,8 @@ bool GameSession::applySkillCastTiming(SkillCastSpec &cast) const {
     if (timing == content_.skills.castTimings.end()) return false;
     const auto &animation = timing->second;
     const int faster = std::max(0, characterStats().combat.fasterCast);
-    const int rate = std::min(175, 100 + int(int64_t(120) * faster / (120 + faster)));
+    const int rate = std::clamp(100 + int(int64_t(120) * faster / (120 + faster)) +
+                               characterStats().otherAnimationRate, 15, 175);
     const int speed = std::max(1, animation.speed * rate / 100);
     const int frames = std::max(1, (animation.frames * 256 + speed - 1) / speed - 1);
     cast.castDuration = float(frames) / 25.f;
