@@ -65,8 +65,17 @@ void SceneView::drawControlPanel() const {
     drawSkillIcon(view_.leftSkill, hudSkillSlot(false));
     drawSkillIcon(view_.rightSkill, hudSkillSlot(true));
     auto stamina = hudStamina();
-    stamina.width *= std::clamp(player.stamina / session_.characterStats().maxStamina, 0.f, 1.f);
-    DrawRectangleRec(stamina, {170, 136, 68, 175});
+    const float staminaFraction = std::clamp(player.stamina / session_.characterStats().maxStamina, 0.f, 1.f);
+    stamina.width *= staminaFraction;
+    const auto effects = player.combatEffects.entries();
+    const bool blueStamina = std::any_of(effects.begin(), effects.end(), [&](const auto &effect) {
+            return effect.activeAt(session_.state().frame) && effect.spec.state.staminaBarBlue;
+        });
+    // OpenDiablo2 HUD supplies ordinary/low stamina colors and alpha. Blue
+    // uses its shared UI blue; the original 1.13c bar color remains unverified.
+    const Color staminaColor = blueStamina ? Color{105, 105, 255, 200}
+        : staminaFraction < .25f ? Color{255, 0, 0, 200} : Color{175, 136, 72, 200};
+    DrawRectangleRec(stamina, staminaColor);
     const auto &thresholds = session_.experienceThresholds();
     const size_t level = size_t(player.level);
     if (level + 1 < thresholds.size() && thresholds[level + 1] > thresholds[level]) {

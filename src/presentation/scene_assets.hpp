@@ -40,8 +40,11 @@ class SceneAssets {
         bool loop = false;
         int frames = 0;
         int loopStart = 0, loopEnd = 0;
+        float lifetime = 0;
     };
     std::map<int, ProjectileVisual> projectileVisuals;
+    // Client-only impact alternatives (CltHit03); never damage-bearing missiles.
+    std::map<int, std::array<int, 2>> projectileImpactVariants;
     struct SpellOverlay {
         GpuAnimation animation;
         SkillSpec::OverlayVisual visual;
@@ -85,8 +88,10 @@ class SceneAssets {
         GpuAnimation animation;
         Vec offset;
         std::array<int, 4> heights{};
-        int frames = 0, fps = 0, trans = 5;
+        int frames = 0, trans = 5;
+        float fps = 0;
     } npcAlert;
+    std::map<int, std::array<OverlayArt, 2>> shrineOverlays;
     SceneAssets(Archives &archives, const GameSession &session);
     static std::string itemArtKey(const ItemInstance &item);
     void loadInventoryArt(const GameSession &session);

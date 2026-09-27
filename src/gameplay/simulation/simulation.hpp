@@ -17,6 +17,7 @@ class Simulation {
     const RoomLayout *rooms_ = nullptr;
     std::map<int, MissileCollisionRule> missileCollisions_;
     bool missilePathClear(int missileId, Vec from, Vec to) const;
+    bool clipMissilePath(int missileId, Vec from, Vec &to) const;
     bool safeZone_ = false;
     bool forceRun_ = false;
     WorldState state_;
@@ -34,7 +35,7 @@ class Simulation {
     std::function<std::optional<MonsterAccuracy>(const Enemy &, RegionId, int)> monsterAccuracy_;
     std::function<std::optional<MonsterDefense>(const Enemy &, RegionId)> monsterDefense_;
     std::function<std::optional<float>(const Enemy &)> monsterWalkSpeed_;
-    std::function<std::optional<float>(const Enemy &)> monsterRunSpeed_;
+    std::function<std::optional<float>(const Enemy &, int)> monsterMoveSpeed_;
     std::function<std::optional<MonsterNormalCombat>(const MonsterIdentity &, RegionId)> monsterNormalCombat_;
     std::function<std::optional<int>(const Enemy &, RegionId)> monsterCriticalChance_;
     std::function<std::optional<int>(const Enemy &, RegionId)> monsterDamageRegen_;

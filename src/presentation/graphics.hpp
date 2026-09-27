@@ -3,13 +3,20 @@
 #include "resources/formats.hpp"
 #include <raylib.h>
 #include <unordered_map>
+#include <vector>
 namespace d2x {
+struct SpriteLayer {
+    Texture2D texture{};
+    int x = 0, y = 0;
+    bool softAdditive = false;
+};
 struct Sprite {
     Texture2D texture{};
     int x = 0, y = 0;
     int hitX = 0, hitY = 0, hitWidth = 0, hitHeight = 0;
     Texture2D shadowTexture{};
     int shadowX = 0, shadowY = 0;
+    std::vector<SpriteLayer> layers;
 };
 struct GpuAnimation {
     int directions = 0, count = 0;

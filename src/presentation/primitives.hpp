@@ -26,6 +26,7 @@ class UiPainter {
 };
 int direction(Vec look, int count);
 void sprite(const Sprite *sprite, Vec position, Color tint = WHITE);
+void softAdditiveSprite(const Sprite *sprite, Vec position, Color tint = WHITE);
 void spriteShadow(const Sprite *sprite, Vec position);
 void frame(Rectangle bounds, Color border = gold);
 void diamond(Vec position, float radius, Color color);

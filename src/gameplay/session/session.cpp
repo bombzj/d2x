@@ -186,17 +186,21 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
         return std::nullopt;
     };
     auto worldSelection = selection;
-    simulation_.monsterWalkSpeed_ = [this](const Enemy &enemy) -> std::optional<float> {
+    simulation_.monsterMoveSpeed_ = [this](const Enemy &enemy, int velocityPercent) -> std::optional<float> {
         const auto *record = monsterContent_.find(enemy.identity.monster);
         if (!record || !record->walkVelocity)
             return std::nullopt;
-        return float((*record->walkVelocity << 8) * 75 / 100) * 25.f / 4096.f;
+        // UNITS_GetBaseVelocity always uses Velocity, including RN. Monster.cpp
+        // starts velocitypercent at 75; AI velocity stats add to that base.
+        const int rate = monsterMovementPercent(*record, state().population.difficulty,
+                                                velocityPercent, enemy.chill > 0);
+        return float((*record->walkVelocity << 8) * rate / 100) * 25.f / 4096.f;
     };
-    simulation_.monsterRunSpeed_ = [this](const Enemy &enemy) -> std::optional<float> {
+    simulation_.monsterWalkSpeed_ = [this](const Enemy &enemy) {
         const auto *record = monsterContent_.find(enemy.identity.monster);
-        if (!record || !record->runVelocity)
-            return std::nullopt;
-        return float((*record->runVelocity << 8) * 75 / 100) * 25.f / 4096.f;
+        if (!record || !record->walkVelocity) return std::optional<float>{};
+        // Legacy callers apply their own movement modifiers outside this base.
+        return std::optional<float>{float((*record->walkVelocity << 8) * 75 / 100) * 25.f / 4096.f};
     };
     simulation_.monsterNormalCombat_ = [this](const MonsterIdentity &identity, RegionId region)
         -> std::optional<MonsterNormalCombat> {

@@ -44,8 +44,7 @@ InventoryError InventoryService::equipmentRequirements(ItemHandle handle, const 
     const auto &source = *item(handle.id);
     const auto &definition = *catalog_.find(source.definition);
     if (!source.identified) return InventoryError::Unidentified;
-    if (!definition.equipment.known ||
-        definition.equipment.types.empty() || definition.equipment.isType("tpot"))
+    if (!definition.equipment.known || definition.equipment.types.empty())
         return InventoryError::UnsupportedEquipment;
     if (!definition.equipment.requiredClass.empty() &&
         definition.equipment.requiredClass != actor.characterClass)

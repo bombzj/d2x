@@ -1,5 +1,6 @@
 #include "primitives.hpp"
 #include <algorithm>
+#include <rlgl.h>
 namespace d2x {
 int UiPainter::measure(const std::string &text, int size) const {
     if (font.ready) {
@@ -31,7 +32,25 @@ int direction(Vec look, int count) {
 void sprite(const Sprite *s, Vec p, Color tint) {
     if (!s || !s->texture.id)
         return;
+    if (!s->layers.empty()) {
+        for (const auto &layer : s->layers) {
+            if (layer.softAdditive) {
+                // Diablerie Materials.SoftAdditive: OneMinusDstColor, One.
+                rlSetBlendFactors(0x0307, 1, 0x8006);
+                BeginBlendMode(BLEND_CUSTOM);
+            } else BeginBlendMode(BLEND_ALPHA);
+            DrawTexture(layer.texture, int(p.x + layer.x), int(p.y + layer.y), tint);
+            EndBlendMode();
+        }
+        return;
+    }
     DrawTexture(s->texture, int(p.x + s->x), int(p.y + s->y), tint);
+}
+void softAdditiveSprite(const Sprite *s, Vec p, Color tint) {
+    rlSetBlendFactors(0x0307, 1, 0x8006);
+    BeginBlendMode(BLEND_CUSTOM);
+    sprite(s, p, tint);
+    EndBlendMode();
 }
 void spriteShadow(const Sprite *s, Vec p) {
     if (s && s->shadowTexture.id)

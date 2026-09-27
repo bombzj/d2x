@@ -97,6 +97,8 @@ void SceneView::notice(std::string text, bool error) {
     view_.noticeTime = 4;
 }
 void SceneView::sessionRestored() {
+    clientMissiles_.clear();
+    projectileVisualRandom_ = 1;
     exploredAutomap_.clear();
     view_.automapOffset = {};
     roofOpacity_.clear();
@@ -158,6 +160,7 @@ void SceneView::advanceUi(float dt) {
     advanceQuestAnimations(dt);
 }
 void SceneView::advance(float dt) {
+    advanceMissileVisuals(dt);
     revealAutomap();
     const auto &currentRegion = session_.region();
     const auto &popups = currentRegion.map.data.roofPopups;
@@ -240,11 +243,6 @@ void SceneView::advance(float dt) {
     for (auto &[id, age] : landingAge_)
         age += dt;
     std::erase_if(landingAge_, [](const auto &pair) { return pair.second > 4; });
-    std::vector<std::pair<Vec, float>> deathLandingDelays;
-    for (const auto &event : session_.events())
-        if (const auto *death = std::get_if<EnemyDied>(&event))
-            if (const auto *motion = session_.monsterContent().motion(death->kind, "dt"))
-                deathLandingDelays.emplace_back(death->position, motion->duration);
     auto soundFor = [&](EntityId id) -> const SceneAssets::MonsterAudio * {
         auto enemy = std::find_if(session_.state().area.enemies.begin(),
                                   session_.state().area.enemies.end(),
@@ -270,6 +268,7 @@ void SceneView::advance(float dt) {
                 } else if constexpr (std::is_same_v<T, EnemySkill2>) {
                     if (auto sound = soundFor(value.caster)) assets_.audio.play(sound->skill2);
                 } else if constexpr (std::is_same_v<T, MissileImpact>) {
+                    createMissileImpactVisuals(value.missileId, value.position);
                     if ((screen(value.position) - Vec{W / 2.f, (H - HUD) / 2.f}).length() < W)
                         assets_.audio.play("missile-hit:" + std::to_string(value.missileId));
                 } else if constexpr (std::is_same_v<T, MissileReleased>) {
@@ -285,6 +284,7 @@ void SceneView::advance(float dt) {
                     else assets_.audio.play("impact");
                 }
                 else if constexpr (std::is_same_v<T, RegionEntered>) {
+                    clientMissiles_.clear();
                     view_.hireListOpen = view_.hirelingOpen = false;
                     nextMonsterFootstep_.clear();
                     nextMonsterNeutral_.clear();
@@ -390,13 +390,7 @@ void SceneView::advance(float dt) {
                         if (auto ground = std::get_if<GroundLocation>(&*value.after);
                             ground && ground->region == session_.region().definition.id &&
                             (value.kind == ItemChangeKind::Created || value.kind == ItemChangeKind::Moved))
-                            landingAge_[value.item] = [&] {
-                                if (value.kind == ItemChangeKind::Created)
-                                    for (const auto &[position, delay] : deathLandingDelays)
-                                        if ((ground->position - position).length() <= 6.f)
-                                            return -delay;
-                                return 0.f;
-                            }();
+                            landingAge_[value.item] = 0.f;
                 } else if constexpr (std::is_same_v<T, WaypointActivated>) {
                     notice("Waypoint activated.", false);
                 } else if constexpr (std::is_same_v<T, QuestAdvanced>) {

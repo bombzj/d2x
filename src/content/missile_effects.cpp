@@ -17,6 +17,21 @@ size_t linked(const DataTable &table, size_t row, std::string_view field) {
     throw std::runtime_error("Missing missile effect link: " + std::string(field));
 }
 } // namespace
+void requireFixedMissileDamage(const DataTable &missiles, size_t row) {
+    const auto zero = [&](std::string_view field) {
+        return missiles.value(row, field).empty() || missiles.number(row, field) == 0;
+    };
+    // The fixed-table path must never silently discard a new source, formula,
+    // level progression or mastery flag when additional missiles are imported.
+    for (const auto field : {"Skill", "MissileSkill", "SrcDamage", "SrcMissDmg", "ApplyMastery",
+                             "DmgSymPerCalc", "EDmgSymPerCalc", "ELenSymPerCalc",
+                             "ELevLen1", "ELevLen2", "ELevLen3"})
+        if (!zero(field)) throw std::runtime_error("Unresolved missile damage field: " + std::string(field));
+    for (const auto prefix : {"MinLevDam", "MaxLevDam", "MinELev", "MaxELev"})
+        for (int tier = 1; tier <= 5; ++tier)
+            if (!zero(std::string(prefix) + std::to_string(tier)))
+                throw std::runtime_error("Unresolved missile damage progression");
+}
 ProjectileResource loadProjectileResource(const DataTable &missiles, size_t row, Archives &archives) {
     auto file = std::string(missiles.value(row, "CelFile"));
     std::transform(file.begin(), file.end(), file.begin(), [](unsigned char c) { return char(std::tolower(c)); });
@@ -45,7 +60,9 @@ MissileImpactSpec loadMissileImpact(const DataTable &missiles, size_t row, Archi
             required(missiles, child, "MissileSkill") != 1 || missiles.value(child, "EType") != "fire" ||
             missiles.number(child, "SrcDamage").value_or(0) != 0 ||
             missiles.number(row, "sHitPar1").value_or(0) != 0 ||
-            !missiles.value(row, "HitSubMissile2").empty())
+            !missiles.value(row, "HitSubMissile2").empty() ||
+            !missiles.value(row, "HitSubMissile3").empty() ||
+            !missiles.value(row, "HitSubMissile4").empty())
             throw std::runtime_error("Unsupported secondary area missile");
         AreaMissileSpec area;
         area.missileId = required(missiles, child, "Id");
@@ -65,6 +82,13 @@ MissileImpactSpec loadMissileImpact(const DataTable &missiles, size_t row, Archi
         const bool skillDamage = !missiles.value(child, "Skill").empty() &&
                                  missiles.number(child, "SrcDamage") == -1;
         if (required(missiles, child, "pSrvDoFunc") != 3 ||
+            required(missiles, child, "CollideType") != 3 ||
+            required(missiles, child, "LastCollide") != 1 ||
+            missiles.number(child, "CollideKill").value_or(0) != 0 ||
+            missiles.number(child, "pSrvHitFunc").value_or(0) != 0 ||
+            missiles.number(child, "ToHit").value_or(0) != 0 ||
+            missiles.number(child, "NextHit").value_or(0) != 0 ||
+            (skillDamage && missiles.value(child, "Skill") != missiles.value(row, "Skill")) ||
             (!skillDamage && missiles.value(child, "EType") != "pois"))
             throw std::runtime_error("Unsupported native poison-cloud behavior");
         const auto visual = loadProjectileResource(missiles, child, archives);
@@ -76,6 +100,7 @@ MissileImpactSpec loadMissileImpact(const DataTable &missiles, size_t row, Archi
         if (shift < 0 || shift > 8) throw std::runtime_error("Invalid poison-cloud damage shift");
         cloud.damageFromSkill = skillDamage;
         if (!skillDamage) {
+            requireFixedMissileDamage(missiles, child);
             cloud.minimum = required(missiles, child, "EMin") * (1 << shift);
             cloud.maximum = required(missiles, child, "EMax") * (1 << shift);
             cloud.poisonFrames = required(missiles, child, "ELen");

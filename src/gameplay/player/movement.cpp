@@ -102,15 +102,19 @@ void Simulation::updatePlayer(float dt, Vec keyboard) {
             p.route.clear();
     }
     float staminaRate = 0;
-    if (p.moving && running && !safeZone_ && p.staminaBoost <= 0)
+    if (p.moving && running && !safeZone_)
         staminaRate = -characterStats_.staminaDrain;
-    else if (!p.moving || !running || characterStats_.staminaRecoveryBonus >= 1000) {
-        // D2Game regenerates 1/256 of maximum stamina per frame while idle,
-        // half that while walking; movement at zero stamina must first stop.
-        if (!p.moving || p.stamina >= 1.f || safeZone_) {
-            const float factor = p.moving && !running ? .5f : 1.f;
-            staminaRate = float(characterStats_.maxStamina) * 25.f / 256.f * factor *
-                          std::max(0.f, 1.f + characterStats_.staminaRecoveryBonus / 100.f);
+    const bool walking = p.moving && !running;
+    const bool idle = !p.moving && p.castTime <= 0 && p.meleeTime <= 0 && p.hitTime <= 0 &&
+                      p.channelSkill() < 0;
+    if (idle || walking || characterStats_.staminaRecoveryBonus >= 1000) {
+        // PlrModes: running drain and EVENTS_StaminaRegen are independent.
+        // A large recovery stat permits regeneration in non-walk/idle modes;
+        // it does not switch off drain. Preserve the native 8.8 rounding.
+        if (!walking || p.stamina >= 1.f || safeZone_) {
+            int64_t recovery = (int64_t(characterStats_.maxStamina) * 256) >> (walking ? 9 : 8);
+            recovery += recovery * characterStats_.staminaRecoveryBonus / 100;
+            staminaRate += float(std::max<int64_t>(0, recovery)) * 25.f / 256.f;
         }
     }
     p.stamina = std::clamp(p.stamina + dt * staminaRate, 0.f, float(characterStats_.maxStamina));

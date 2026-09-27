@@ -24,6 +24,7 @@ class RoomLayout {
     RoomLayout() = default;
     RoomLayout(int width, int height, std::vector<RoomBounds> rooms);
     const RoomBounds *room(Vec point) const;
+    std::vector<const RoomBounds *> nearRooms(const RoomBounds &observer) const;
     bool nearby(Vec observer, Vec point) const;
 };
 struct Grid {

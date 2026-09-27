@@ -20,7 +20,6 @@ void loadItemProjectiles(std::vector<ItemDefinition> &items, const DataTable &mi
     };
     auto number = [&](size_t row, std::string_view field) { return missiles.number(row, field).value_or(0); };
     // MISSILES_CreateMissileFromParams: 75% velocity, 4096 path units per subtile.
-    auto velocity = [](int precise) { return float(precise * 75 / 100) * 25.f / 4096.f; };
     for (auto &item : items) {
         if (item.family != ItemFamily::Weapon ||
             !(item.equipment.isType("miss") || item.equipment.throwable)) continue;
@@ -33,7 +32,9 @@ void loadItemProjectiles(std::vector<ItemDefinition> &items, const DataTable &mi
         if (found == ids.end()) throw std::runtime_error("Missing original weapon missile: " + item.code);
         const auto row = found->second;
         const auto visual = loadProjectileResource(missiles, row, archives);
-        WeaponProjectileSpec spec{id, velocity(required(row, "Vel") * 256), visual.lifetime, visual.art};
+        const int velocity = required(row, "Vel") * 256 * 75 / 100;
+        WeaponProjectileSpec spec{id, float(velocity) * 25.f / 4096.f, visual.lifetime, visual.art};
+        spec.velocityUnits = velocity;
         if (spec.speed <= 0) throw std::runtime_error("Invalid weapon missile velocity: " + item.code);
         if (!item.equipment.isType("tpot")) {
             if (required(row, "SrcDamage") != 128 || required(row, "pSrvDoFunc") != 1 ||
@@ -44,11 +45,13 @@ void loadItemProjectiles(std::vector<ItemDefinition> &items, const DataTable &mi
             const int hit = required(row, "pSrvHitFunc");
             const auto type = missiles.value(row, "EType");
             if (required(row, "CollideType") != 6 || number(row, "SrcDamage") != 0 ||
+                required(row, "pSrvDoFunc") != 1 || required(row, "AlwaysExplode") != 1 ||
                 !((hit == 3 && type == "fire") || (hit == 2 && type == "pois")))
                 throw std::runtime_error("Unsupported throwing potion: " + item.code);
             spec.groundTargeted = true;
             spec.impact = loadMissileImpact(missiles, row, archives, spec.resources);
             if (spec.impact->radius > 0) {
+                requireFixedMissileDamage(missiles, row);
                 const int shift = required(row, "HitShift");
                 if (shift < 0 || shift > 8) throw std::runtime_error("Invalid projectile damage shift");
                 spec.damage[0] = {required(row, "MinDamage") * (1 << shift),

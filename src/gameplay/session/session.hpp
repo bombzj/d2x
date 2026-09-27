@@ -18,8 +18,10 @@
 
 namespace d2x {
 struct ShrineStatus {
+    int code = 0;
     std::string name, effect;
     float until = 0;
+    EffectHandle stateEffect;
 };
 struct NpcQuestDialogue {
     const NpcSpeech *speech = nullptr;

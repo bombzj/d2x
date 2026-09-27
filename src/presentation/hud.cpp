@@ -164,6 +164,7 @@ void SceneView::draw(Vec mouse) const {
     drawActors(mouse);
     drawMagic();
     drawLighting();
+    drawShrineOverlays();
     drawNpcAlerts();
     drawLootLabels(mouse);
     drawExitHint(mouse);

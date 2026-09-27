@@ -39,6 +39,7 @@ void Simulation::updateMonsters(float dt) {
         enemy.freeze = std::max(0.f, enemy.freeze - dt);
         enemy.rethink = std::max(0.f, enemy.rethink - dt);
         enemy.aiWait = std::max(0.f, enemy.aiWait - dt);
+        enemy.movementVelocityPercent.reset();
         enemy.webAuraRemaining = std::max(0.f, enemy.webAuraRemaining - dt);
         if (enemy.webAuraRemaining == 0) enemy.webTrailDistance = 0;
         if (player.dead || player.hp <= 0) {
@@ -60,7 +61,13 @@ void Simulation::updateMonsters(float dt) {
             enemy.attackMode = 1;
             continue;
         }
-        if (enemy.stun > 0 || enemy.freeze > 0) {
+        if (enemy.stun > 0 || enemy.freeze > 0 ||
+            (enemy.kind == MonsterKind::CorruptRogue && enemy.hitFlash > 0)) {
+            if (enemy.kind == MonsterKind::CorruptRogue) {
+                enemy.aiPursuing = false;
+                enemy.aiRunning = false;
+                enemy.route.clear();
+            }
             enemy.attack = enemy.attackDuration = 0;
             enemy.attackImpact = -1;
             enemy.attackMode = 1;
@@ -269,15 +276,16 @@ void Simulation::updateMonsters(float dt) {
                 }
                 enemy.aiRunning = action == CorruptLancerMovement::Run;
             }
-            if (rogueAi && enemy.aiAdvanceRemaining <= 0) {
+            if (rogueAi && !enemy.aiPursuing) {
                 const auto action = corruptRogueMovement(
                     enemy, *ai, distance, state_.population.difficulty);
                 if (action == CorruptRogueMovement::Idle) {
                     enemy.route.clear();
+                    enemy.aiRunning = false;
                     continue;
                 }
                 enemy.aiRunning = action == CorruptRogueMovement::Run;
-                enemy.aiAdvanceRemaining = enemy.aiRunning ? 3.f : 1.f;
+                enemy.aiPursuing = true;
             }
             if (skeletonAi && !skeletonApproaches(enemy, *ai)) {
                 enemy.route.clear();
@@ -312,7 +320,7 @@ void Simulation::updateMonsters(float dt) {
                 if (enemy.route.empty()) continue;
                 destination = enemy.route.front();
                 enemy.rethink = 0;
-            } else if (clear) {
+            } else if (grid_->segment(enemy.pos, player.pos)) {
                 enemy.route.clear();
                 enemy.rethink = 0;
             } else {
@@ -330,7 +338,7 @@ void Simulation::updateMonsters(float dt) {
                     if (fallenAi) enemy.aiCommanded = false;
                     if (rogueAi) {
                         enemy.aiRunning = false;
-                        enemy.aiAdvanceRemaining = 0;
+                        enemy.aiPursuing = false;
                     }
                     if (lancerAi) enemy.aiRunning = false;
                     if (archerAi) enemy.aiRunning = false;
@@ -341,15 +349,17 @@ void Simulation::updateMonsters(float dt) {
             auto offset = destination - enemy.pos;
             auto originalSpeed = monsterWalkSpeed_ ? monsterWalkSpeed_(enemy) : std::nullopt;
             float speed = originalSpeed.value_or(definition.speed) * (enemy.chill > 0 ? .42f : 1.f);
-            if (rogueAi && enemy.aiRunning) {
-                const auto runSpeed = monsterRunSpeed_ ? monsterRunSpeed_(enemy) : std::nullopt;
-                speed = runSpeed.value_or(originalSpeed.value_or(definition.speed)) *
-                        (1.f + float(ai->params[3]) / 100.f) * (enemy.chill > 0 ? .42f : 1.f);
+            if (rogueAi) {
+                enemy.movementVelocityPercent = 75 + (enemy.aiRunning ? ai->params[3] : 0);
+                const auto runSpeed = monsterMoveSpeed_
+                    ? monsterMoveSpeed_(enemy, *enemy.movementVelocityPercent) : std::nullopt;
+                speed = runSpeed.value_or(speed);
             }
             if ((lancerAi || archerAi) && enemy.aiRunning) {
-                const auto runSpeed = monsterRunSpeed_ ? monsterRunSpeed_(enemy) : std::nullopt;
-                speed = runSpeed.value_or(originalSpeed.value_or(definition.speed)) *
-                        (enemy.chill > 0 ? .42f : 1.f);
+                // CorruptLancer/CorruptArcher set an engine +100 velocity stat.
+                enemy.movementVelocityPercent = 175;
+                const auto runSpeed = monsterMoveSpeed_ ? monsterMoveSpeed_(enemy, 175) : std::nullopt;
+                speed = runSpeed.value_or(speed);
             }
             if (bruteAi) speed *= bruteWalkMultiplier(enemy);
             if (enemy.kind == MonsterKind::BloodHawk && enemy.aiCharged && ai)
@@ -360,9 +370,8 @@ void Simulation::updateMonsters(float dt) {
                 const float moved = (next - enemy.pos).length();
                 enemy.pos = next;
                 if (enemy.webAuraRemaining > 0) leaveSpiderWeb(enemy, moved);
-                if (rogueAi || skeletonBowAi || skeletonMageAi) {
+                if (skeletonBowAi || skeletonMageAi) {
                     enemy.aiAdvanceRemaining = std::max(0.f, enemy.aiAdvanceRemaining - moved);
-                    if (rogueAi && enemy.aiAdvanceRemaining == 0) enemy.aiRunning = false;
                 }
             } else {
                 enemy.route.clear();
@@ -370,7 +379,7 @@ void Simulation::updateMonsters(float dt) {
                 if (fallenAi) enemy.aiCommanded = false;
                 if (rogueAi) {
                     enemy.aiRunning = false;
-                    enemy.aiAdvanceRemaining = 0;
+                    enemy.aiPursuing = false;
                 }
                 if (lancerAi) enemy.aiRunning = false;
                 if (archerAi) enemy.aiRunning = false;
@@ -380,7 +389,7 @@ void Simulation::updateMonsters(float dt) {
             enemy.rethink = 0;
             if (rogueAi) {
                 enemy.aiRunning = false;
-                enemy.aiAdvanceRemaining = 0;
+                enemy.aiPursuing = false;
             }
             if (lancerAi) enemy.aiRunning = false;
             if (archerAi) enemy.aiRunning = false;
@@ -406,7 +415,10 @@ void Simulation::updateMonsters(float dt) {
                     continue;
                 }
             }
-            if (rogueAi && !corruptRogueAttacks(enemy, *ai)) continue;
+            if (rogueAi) {
+                enemy.aiPursuing = enemy.aiRunning = false;
+                if (!corruptRogueAttacks(enemy, *ai)) continue;
+            }
             if (goatmanAi && !goatmanAttacks(enemy, *ai)) continue;
             if (wraithAi && !wraithAttacks(enemy, *ai)) continue;
             if (lancerAi && !corruptLancerAttacks(enemy, *ai)) continue;

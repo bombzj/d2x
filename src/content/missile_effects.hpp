@@ -6,7 +6,8 @@
 
 namespace d2x {
 ProjectileResource loadProjectileResource(const DataTable &missiles, size_t row, Archives &archives);
-// Imports fixed-table SrvHit 1/2/3/44 effects. Skill-dependent radius/damage
+void requireFixedMissileDamage(const DataTable &missiles, size_t row);
+// Imports SrvHit 1/2/3/4/44 effects. Skill-dependent radius/damage
 // formulas must be resolved by the skill importer before entering gameplay.
 MissileImpactSpec loadMissileImpact(const DataTable &missiles, size_t row, Archives &archives,
                                     std::vector<ProjectileResource> &resources);

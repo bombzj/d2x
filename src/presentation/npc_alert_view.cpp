@@ -1,4 +1,5 @@
 #include "scene_view.hpp"
+#include <algorithm>
 
 namespace d2x {
 void SceneView::drawNpcAlerts() const {
@@ -16,6 +17,43 @@ void SceneView::drawNpcAlerts() const {
         if (overlay.trans == 3) BeginBlendMode(BLEND_ADDITIVE);
         sprite(overlay.animation.frame(0, frame), at);
         if (overlay.trans == 3) EndBlendMode();
+    }
+}
+void SceneView::drawShrineOverlays() const {
+    auto drawLayer = [&](const SceneAssets::OverlayArt &visual, Vec at, int heightIndex) {
+        const int frameIndex = int(view_.animationTime * visual.fps) % visual.frames;
+        const auto *frame = visual.animation.frame(0, frameIndex);
+        if (!frame || !frame->texture.id) return;
+        at = at + visual.offset;
+        at.y += visual.heights[size_t(heightIndex)];
+        if (visual.trans == 3) softAdditiveSprite(frame, at);
+        else sprite(frame, at);
+    };
+    auto drawPair = [&](const std::array<SceneAssets::OverlayArt, 2> &art, Vec at,
+                        int heightIndex) {
+        // States.txt overlay2 is the shimmer behind overlay1's shrine symbol.
+        drawLayer(art[1], at, heightIndex);
+        drawLayer(art[0], at, heightIndex);
+    };
+    for (const auto &[region, offset] : session_.sceneRegions())
+        for (const auto &object : session_.regions()[region].objects) {
+            if (object.interaction != Interaction::Shrine || !visible(object)) continue;
+            const auto found = assets_.shrineOverlays.find(object.shrineCode);
+            if (found == assets_.shrineOverlays.end()) continue;
+            // D2MOO UNITS_GetOverlayHeight returns 0 for an object.
+            drawPair(found->second, screen(object.pos + offset), 0);
+        }
+    if (session_.state().player.dead) return;
+    for (auto it = session_.shrineStatuses().rbegin(); it != session_.shrineStatuses().rend(); ++it) {
+        const auto found = assets_.shrineOverlays.find(it->code);
+        if (found == assets_.shrineOverlays.end()) continue;
+        const auto effects = session_.state().player.combatEffects.entries();
+        if (std::none_of(effects.begin(), effects.end(), [&](const ActiveCombatEffect &effect) {
+                return effect.handle == it->stateEffect && effect.activeAt(session_.state().frame);
+            })) continue;
+        // The same native function returns 1 for a player.
+        drawPair(found->second, screen(session_.state().player.pos), 1);
+        break;
     }
 }
 } // namespace d2x

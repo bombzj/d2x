@@ -18,8 +18,6 @@ Color SceneView::itemColor(ItemQuality quality) {
 }
 const Sprite *SceneView::groundItemSprite(const ItemInstance &item) const {
     const auto age = landingAge_.find(item.id);
-    if (age != landingAge_.end() && age->second < 0)
-        return nullptr;
     auto animation = assets_.itemGround.find(SceneAssets::itemArtKey(item));
     if (animation == assets_.itemGround.end() || animation->second.count <= 0)
         return nullptr;
@@ -36,8 +34,6 @@ Rectangle SceneView::lootBounds(const ItemInstance &item) const {
     return {};
 }
 void SceneView::drawGroundItem(EntityId id, bool highlighted) const {
-    if (auto age = landingAge_.find(id); age != landingAge_.end() && age->second < 0)
-        return;
     const auto &item = *session_.inventory().item(id);
     auto p = screen(std::get<GroundLocation>(item.location).position);
     if (p.x < -80 || p.x > W + 80 || p.y < -80 || p.y > H - HUD + 80)
@@ -50,8 +46,6 @@ std::vector<SceneView::LootLabel> SceneView::lootLabels(Vec mouse) const {
     std::vector<LootLabel> layout, visible;
     const auto &inventory = session_.inventory();
     for (auto id : inventory.groundItems(session_.region().definition.id)) {
-        if (auto age = landingAge_.find(id); age != landingAge_.end() && age->second < 0)
-            continue;
         const auto &item = *inventory.item(id);
         auto ground = screen(std::get<GroundLocation>(item.location).position);
         if (ground.x < 0 || ground.x > W || ground.y < 70 || ground.y > H - HUD - 38)
@@ -96,8 +90,6 @@ std::optional<ItemHandle> SceneView::lootAt(Vec mouse, bool labelsOnly) const {
         float distance = 1000;
         const auto &inventory = session_.inventory();
         for (auto id : inventory.groundItems(session_.region().definition.id)) {
-            if (auto age = landingAge_.find(id); age != landingAge_.end() && age->second < 0)
-                continue;
             const auto &item = *inventory.item(id);
             if (!CheckCollisionPointRec(rv(mouse), lootBounds(item)))
                 continue;

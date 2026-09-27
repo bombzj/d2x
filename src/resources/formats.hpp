@@ -70,6 +70,7 @@ struct Cof {
     int layers = 0, frames = 0, directions = 0;
     std::vector<int> components;
     std::vector<bool> shadows, transparent;
+    std::vector<uint8_t> drawEffects;
     std::vector<std::string> weapons;
     Bytes order;
     int componentAt(int dir, int frame, int layer) const;

@@ -41,6 +41,21 @@ const RoomBounds *RoomLayout::room(Vec point) const {
     const int index = roomAt(point);
     return index < 0 ? nullptr : &rooms_[size_t(index)];
 }
+std::vector<const RoomBounds *> RoomLayout::nearRooms(const RoomBounds &observer) const {
+    std::vector<const RoomBounds *> near;
+    // D2MOO DRLGROOM near-room list uses a gap below six game tiles on
+    // each axis. RoomBounds are in subtiles (five per game tile).
+    constexpr int nearGap = 6 * 5;
+    for (const auto &candidate : rooms_) {
+        const int gapX = std::max({observer.x - candidate.x - candidate.width,
+                                   candidate.x - observer.x - observer.width, 0});
+        const int gapY = std::max({observer.y - candidate.y - candidate.height,
+                                   candidate.y - observer.y - observer.height, 0});
+        if (gapX < nearGap && gapY < nearGap)
+            near.push_back(&candidate);
+    }
+    return near;
+}
 bool RoomLayout::nearby(Vec observer, Vec point) const {
     int a = roomAt(observer), b = roomAt(point);
     if (a < 0 || b < 0)

@@ -47,12 +47,12 @@ void Simulation::resolveMissileImpact(const Missile &missile, std::vector<Missil
                              payload.poisonDuration, missile.owner, true);
     };
     if (spec.radius > 0) {
-        // SrvHit01/44 -> sub_6FD10200: integer-subtile radius and missile-barrier LOS.
+        // SrvHit01/44 -> sub_6FD10200 uses filter 0x8583. It does not include
+        // sub_6FD0FA00's 0x200 line-of-sight test; only flight stops at barriers.
         for (auto &enemy : state_.area.enemies) {
             const float dx = std::floor(enemy.pos.x) - std::floor(missile.pos.x);
             const float dy = std::floor(enemy.pos.y) - std::floor(missile.pos.y);
-            if (dx * dx + dy * dy <= spec.radius * spec.radius &&
-                grid_->collisionSegment(missile.pos, enemy.pos, 0x04)) hit(enemy);
+            if (dx * dx + dy * dy <= spec.radius * spec.radius) hit(enemy);
         }
     } else if (direct) hit(*direct);
     if (spec.areaMissile) {
@@ -99,17 +99,9 @@ void Simulation::resolveMissileImpact(const Missile &missile, std::vector<Missil
         for (int i = 0; i < 15; i += burst.subStep) launch(offsets[i + 1], burst.subSpeed);
 }
 void Simulation::advanceGroundTargetedMissile(Missile &missile, float dt, std::vector<Missile> &spawned) {
-    const Vec next = missile.pos + missile.velocity * std::min(dt, missile.remaining);
-    const bool blocked = !missilePathClear(missile.missileId, missile.pos, next);
-    if (blocked) {
-        float clear = 0, wall = 1;
-        for (int step = 0; step < 12; ++step) {
-            const float middle = (clear + wall) * .5f;
-            if (missilePathClear(missile.missileId, missile.pos, missile.pos + (next - missile.pos) * middle)) clear = middle;
-            else wall = middle;
-        }
-        missile.pos = missile.pos + (next - missile.pos) * clear;
-    } else missile.pos = next;
+    Vec next = missile.pos + missile.velocity * std::min(dt, missile.remaining);
+    const bool blocked = clipMissilePath(missile.missileId, missile.pos, next);
+    missile.pos = next;
     missile.remaining = blocked ? 0 : std::max(0.f, missile.remaining - dt);
     // CollideType 6 collides with terrain only. Resolve the impact at expiry/terrain.
     if (missile.remaining <= .00001f) {
@@ -119,8 +111,14 @@ void Simulation::advanceGroundTargetedMissile(Missile &missile, float dt, std::v
 }
 void Simulation::advancePoisonCloud(Missile &missile, float dt) {
     const auto &cloud = *missile.poisonCloud;
-    const Vec next = missile.pos + missile.velocity * std::min(dt, missile.remaining);
-    if (!missilePathClear(missile.missileId, missile.pos, next)) {
+    Vec next = missile.pos + missile.velocity * std::min(dt, missile.remaining);
+    const bool blocked = clipMissilePath(missile.missileId, missile.pos, next);
+    missile.remaining = std::max(0.f, missile.remaining - dt);
+    // SrvDo03 -> HandleMissileCollision expires before querying units. A wall
+    // farther along this step must not discard a contact on the clear prefix.
+    if (missile.remaining <= .00001f ||
+        (blocked && !missilePathClear(missile.missileId, missile.pos, missile.pos))) {
+        missile.pos = next;
         missile.remaining = 0;
         return;
     }
@@ -142,6 +140,6 @@ void Simulation::advancePoisonCloud(Missile &missile, float dt) {
         applyEnemyPoison(*struck, float(rate) * 25.f / 256.f, float(cloud.poisonFrames) / 25.f, missile.owner, true);
     }
     missile.pos = next;
-    missile.remaining = std::max(0.f, missile.remaining - dt);
+    if (blocked) missile.remaining = 0;
 }
 } // namespace d2x

@@ -16,6 +16,7 @@ bool Simulation::firePhysicalProjectile(Vec target, const WeaponDamage &weapon, 
     const auto &spec = *selected.projectile;
     if (std::abs(target.x - player.pos.x) >= 100 || std::abs(target.y - player.pos.y) >= 100) return false;
     const bool potion = thrown && selected.potion;
+    if (potion && spec.velocityUnits <= 0) return false;
     // Resolve the launch snapshot before removing the final equipped stack.
     const auto priorRandom = player.combatRandom;
     AttackElements elements;
@@ -67,10 +68,11 @@ bool Simulation::firePhysicalProjectile(Vec target, const WeaponDamage &weapon, 
         missile.groundTargeted = spec.groundTargeted;
         missile.impact = spec.impact;
         missile.impactDamage = impactDamage;
-        // Native 0x400 launch flag expires the bottle at its aimed distance.
-        const int frames = std::max(1, int(std::max(1, missileDistance(player.pos, target)) * 25.f / spec.speed));
+        // MISSILES_CreateMissileFromParams, flag 0x400: integer distance changes
+        // the remaining frames only; it does not rescale the original velocity.
+        const int frames = std::max(1, int(int64_t(std::max(1, missileDistance(player.pos, target))) *
+                                           4096 / spec.velocityUnits));
         missile.remaining = float(frames) / 25.f;
-        missile.velocity = (target - player.pos) * (1.f / missile.remaining);
     }
     state_.area.missiles.push_back(std::move(missile));
     emit(MissileReleased{skill ? skill->missileId : spec.id});
@@ -78,30 +80,26 @@ bool Simulation::firePhysicalProjectile(Vec target, const WeaponDamage &weapon, 
 }
 void Simulation::advancePhysicalMissile(Missile &missile, float dt, std::vector<Missile> &spawned) {
     Vec next = missile.pos + missile.velocity * std::min(dt, missile.remaining);
-    const bool wall = !missilePathClear(missile.missileId, missile.pos, next);
-    if (wall) {
-        float clear = 0, blocked = 1;
-        for (int step = 0; step < 12; ++step) {
-            const float middle = (clear + blocked) * .5f;
-            if (missilePathClear(missile.missileId, missile.pos, missile.pos + (next - missile.pos) * middle)) clear = middle;
-            else blocked = middle;
-        }
-        next = missile.pos + (next - missile.pos) * clear;
-    }
+    const bool wall = clipMissilePath(missile.missileId, missile.pos, next);
+    const float remaining = std::max(0.f, missile.remaining - dt);
+    const bool expired = remaining <= .00001f;
     Enemy *struck = nullptr;
     float first = 2;
     const auto collision = missileCollisions_.find(missile.missileId);
     if (collision == missileCollisions_.end()) { missile.remaining = 0; return; }
-    for (auto &enemy : state_.area.enemies) {
-        if (enemy.hp <= 0 || !active(enemy.pos) || enemy.id == missile.lastHit) continue;
-        const int size = monsterSize_ ? monsterSize_(enemy) : 0;
-        if (auto at = missileUnitIntersection(missile.pos, next, collision->second.size, enemy.pos, size);
-            at && *at < first) { first = *at; struck = &enemy; }
-    }
+    if (!expired)
+        for (auto &enemy : state_.area.enemies) {
+            if (enemy.hp <= 0 || !active(enemy.pos) || enemy.id == missile.lastHit) continue;
+            const int size = monsterSize_ ? monsterSize_(enemy) : 0;
+            if (auto at = missileUnitIntersection(missile.pos, next, collision->second.size, enemy.pos, size);
+                at && *at < first) { first = *at; struck = &enemy; }
+        }
     missile.pos = struck ? missile.pos + (next - missile.pos) * first : next;
-    missile.remaining = wall || struck ? 0 : std::max(0.f, missile.remaining - dt);
+    // Expiry precedes unit hits, and must set exactly zero so the update removes
+    // the missile. A small positive residue must not detonate again next tick.
+    missile.remaining = wall || struck || expired ? 0 : remaining;
     // AlwaysExplode runs the native hit effect on a failed to-hit roll, terrain and expiry too.
-    if (missile.remaining <= .00001f && missile.impact) resolveMissileImpact(missile, spawned, struck);
+    if (missile.remaining == 0 && missile.impact) resolveMissileImpact(missile, spawned, struck);
     if (!struck) return;
     missile.lastHit = struck->id;
     const auto defense = monsterDefense_ ? monsterDefense_(*struck, state_.area.region) : std::nullopt;

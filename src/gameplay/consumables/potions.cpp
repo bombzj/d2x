@@ -17,8 +17,28 @@ void Simulation::applyPotion(const PotionDefinition &potion) {
         break;
     case PotionKind::Stamina:
         p.stamina = characterStats_.maxStamina;
-        p.staminaBoost += potion.seconds;
         break;
+    case PotionKind::Remedy: break;
+    }
+    // Bridge the legacy ailment timers from the imported cure-state columns,
+    // not from the potion's item identity. New effects use removeState below.
+    if (potion.curesPoison) p.poisonRemaining = p.poisonPerSecond = 0;
+    if (potion.curesCold) p.chill = 0;
+    if (potion.state.id >= 0) {
+        for (int cured : potion.cureStates)
+            if (cured >= 0) p.combatEffects.removeState(cured);
+        EffectFrame duration = potion.durationFrames;
+        for (const auto &existing : p.combatEffects.entries())
+            if (existing.spec.state.id == potion.state.id && existing.expiresAt &&
+                *existing.expiresAt > state_.frame)
+                duration += *existing.expiresAt - state_.frame;
+        CombatEffectSpec effect;
+        effect.state = potion.state;
+        effect.source = {CombatEffectSource::Item, p.id, potion.state.id, 0};
+        effect.duration = duration;
+        effect.modifiers = potion.modifiers;
+        p.combatEffects.apply(std::move(effect), state_.frame);
+        if (combatEffectsChanged_) combatEffectsChanged_();
     }
 }
 void Simulation::updatePotions(float dt) {
@@ -40,9 +60,5 @@ void Simulation::updatePotions(float dt) {
     };
     restore(p.healing, p.hp, float(characterStats_.maxLife));
     restore(p.manaRestoration, p.mana, float(characterStats_.maxMana));
-    if (p.staminaBoost > 0) {
-        p.staminaBoost = std::max(0.f, p.staminaBoost - dt);
-        p.stamina = characterStats_.maxStamina;
-    }
 }
 } // namespace d2x

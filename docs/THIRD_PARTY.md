@@ -33,6 +33,8 @@
 
 ## 格式研究参考
 
+投掷药瓶客户端特效另核对 [D2R Data Guide（Corrected）的 Missiles.txt](https://locbones.github.io/D2R_DataGuide/#missilestxt)：`CltHit03/HitOilPotion` 为主爆炸加 `CltHitSubMissile2/3` 随机二选一，`CltDo03/04` 分别说明尾迹和区域烟雾子效果。这里只借用函数／字段含义，所有 ID、图像和参数仍读取当前 1.13c MPQ，不复制第三方数据或代码。该说明没有给出旧客户端烟雾精确节拍和随机采样算法；不能据此宣称与原版逐帧一致。RandStart 与旧版 Phrozen Keep 指南的描述存在冲突，暂缓该字段；具体范围见 [通用攻击](COMMON_ATTACKS.md)。
+
 连续关卡边界的实体可见性核对本地 D2MOO 固定 `5596f5c` 的 `D2Common/src/Drlg/DrlgActivate.cpp::DRLGACTIVATE_ChangeClientRoom`、`DRLGACTIVATE_RoomSetAndPropagateStatus` 及 `DRLGACTIVATE_RoomExPropagateSetStatus`：新旧观察房间通过 `ppRoomsNear` 传播状态，不把当前 LevelId 当作整片单位的绘制开关。本项目用现有房间矩形及地图世界偏移实现相邻可见性，沿用 MIT 归属；未移植完整激活和 AI 调度，边界见 [地图](ACT1_MAPS.md)。
 
 物件标签核对本地 OpenDiablo2 固定 `7f92c57` 的 `d2mapentity/object.go::Label`、`d2player/hud.go` 与 `d2ui/label.go::processColorTokens`：普通物件名走白色 Font16。地面物品标题核对 Diablerie 固定 `9e42ef2` 的 `Engine/Item.cs::GetTitle`，仅金币包含数量。地面动画核对该项目 `Entities/Loot.cs`、`SpriteAnimator.cs` 与 `IO/D2Formats/DC6.cs`，以及 DGEngine 固定 `ae6dcab` 的 `DC6ImageContainer.cpp` 底边偏移；素材／名称路径仍在运行时读取用户 MPQ，没有写入箭矢专用图形或帧数。OpenDiablo2 的 `factory.go::NewItem` 使用 Units 调色板，Diablerie Loot 使用 Act1；参考实现不能单独证明原版客户端逐像素结果，地面原图缓存修复及未验收范围见 [物品完成度](ITEM_COMPLETION.md)。

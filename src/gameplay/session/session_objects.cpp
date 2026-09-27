@@ -100,10 +100,20 @@ void GameSession::applyShrine(int code, std::string name, std::string effect, fl
         player.mana = float(simulation_.characterStats_.maxMana);
     }
     if (duration > 0) {
-        std::erase_if(shrineStatuses_, [&](const ShrineStatus &status) {
-            return status.name == name;
-        });
-        shrineStatuses_.push_back({std::move(name), std::move(effect), state().time + duration});
+        const auto record = content_.states.find(shrineStateName(code));
+        if (record == content_.states.end()) return; // Unverified special shrine state.
+        CombatEffectSpec stateEffect;
+        stateEffect.state = record->second.definition;
+        stateEffect.source = {CombatEffectSource::Shrine, player.id, code, 0};
+        stateEffect.duration = EffectFrame(duration * 25.f + .5f);
+        // Attributes remain deferred, but display lifetime must obey the same
+        // MPQ death/expiry rules as every other state, including stambarblue.
+        for (const auto &previous : shrineStatuses_) player.combatEffects.remove(previous.stateEffect);
+        const auto applied = player.combatEffects.apply(std::move(stateEffect), state().frame);
+        shrineStatuses_.clear();
+        shrineStatuses_.push_back({code, std::move(name), std::move(effect), state().time + duration,
+                                   applied.handle});
+        refreshCharacter();
     }
 }
 void GameSession::grantShrine(int code) {
@@ -152,7 +162,12 @@ void GameSession::drinkWell(EntityId id) {
 }
 void GameSession::updateObjectTimers() {
     const float now = state().time;
-    std::erase_if(shrineStatuses_, [now](const ShrineStatus &status) { return status.until <= now; });
+    const auto effects = state().player.combatEffects.entries();
+    std::erase_if(shrineStatuses_, [&](const ShrineStatus &status) {
+        return std::none_of(effects.begin(), effects.end(), [&](const ActiveCombatEffect &effect) {
+            return effect.handle == status.stateEffect && effect.activeAt(state().frame);
+        });
+    });
     for (auto &region : regions_)
         for (auto &object : region.objects) {
             if (object.operateFn == 22 && object.parameters[2] > 0 && object.parameters[0] > 0 &&

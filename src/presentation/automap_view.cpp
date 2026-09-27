@@ -45,12 +45,26 @@ void SceneView::revealAutomap() {
         return;
     }
     const Vec player = session_.state().player.pos;
-    if (const auto *room = map.activation.room(player)) {
-        for (int y = std::max(0, room->y / 5);
-             y <= std::min(map.data.height - 1, (room->y + room->height) / 5); ++y)
-            for (int x = std::max(0, room->x / 5);
-                 x <= std::min(map.data.width - 1, (room->x + room->width) / 5); ++x)
-                seen[size_t(y) * map.data.width + x] = 1;
+    if (const auto *observer = map.activation.room(player)) {
+        // Native client room updates include adjacent outdoor levels. Compare
+        // room bounds in one coordinate system; stairs/portals are not connected.
+        for (const auto &[index, offset] : automapRegions(session_)) {
+            const auto &adjacent = session_.regions()[index];
+            const auto &data = adjacent.map.data;
+            RoomBounds localObserver = *observer;
+            localObserver.x -= int(offset.x);
+            localObserver.y -= int(offset.y);
+            auto &revealed = exploredAutomap_[adjacent.definition.id];
+            if (revealed.size() != size_t(data.width) * data.height)
+                revealed.assign(size_t(data.width) * data.height, 0);
+            for (const auto *room : adjacent.map.activation.nearRooms(localObserver)) {
+                for (int y = std::max(0, room->y / 5);
+                     y <= std::min(data.height - 1, (room->y + room->height) / 5); ++y)
+                    for (int x = std::max(0, room->x / 5);
+                         x <= std::min(data.width - 1, (room->x + room->width) / 5); ++x)
+                        revealed[size_t(y) * data.width + x] = 1;
+            }
+        }
     } else {
         const int x = int(std::floor(player.x / 5.f));
         const int y = int(std::floor(player.y / 5.f));

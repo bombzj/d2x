@@ -9,6 +9,18 @@ bool Simulation::missilePathClear(int missileId, Vec from, Vec to) const {
     const auto found = missileCollisions_.find(missileId);
     return found != missileCollisions_.end() && grid_->missileSegment(from, to, found->second);
 }
+bool Simulation::clipMissilePath(int missileId, Vec from, Vec &to) const {
+    if (missilePathClear(missileId, from, to)) return false;
+    float clear = 0, blocked = 1;
+    const auto delta = to - from;
+    for (int step = 0; step < 12; ++step) {
+        const float middle = (clear + blocked) * .5f;
+        if (missilePathClear(missileId, from, from + delta * middle)) clear = middle;
+        else blocked = middle;
+    }
+    to = from + delta * clear;
+    return true;
+}
 void Simulation::damageEnemy(Enemy &enemy, float amount, EntityId source, float chill,
                              bool ignoreActivation, MonsterDamageType type, bool alreadyMitigated,
                              bool playerKillEffects, bool freezeHit) {
@@ -57,6 +69,7 @@ void Simulation::damageEnemy(Enemy &enemy, float amount, EntityId source, float 
         }
         enemy.deathAge = 0;
         enemy.route.clear();
+        enemy.aiPursuing = false;
         enemy.aiEscaping = false;
         enemy.aiCommanded = false;
         enemy.aiCircling = false;

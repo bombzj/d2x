@@ -9,6 +9,10 @@
 #include <stdexcept>
 
 namespace d2x {
+int monsterMovementPercent(const MonsterRecord &record, int difficulty, int percentage, bool chilled) {
+    // Cold is another velocity stat, not a multiplier on the AI's boosted speed.
+    return std::max(25, percentage + (chilled ? record.coldEffect.at(size_t(difficulty)) : 0));
+}
 MonsterCatalog::MonsterCatalog(Archives &archives, const DataTable &stats) {
     if (!stats.has("Id") || !stats.has("hcIdx") || !stats.has("MonStatsEx")) {
         diagnostics_.push_back("Population disabled: this MonStats schema needs a version-specific adapter.");
@@ -187,6 +191,36 @@ MonsterCatalog::MonsterCatalog(Archives &archives, const DataTable &stats) {
     }
     if (archives.contains("data/global/animdata.d2")) {
         AnimDataTable animations(archives.read("data/global/animdata.d2"));
+        auto animationRate = [&](const MonsterRecord &actor, std::string_view mode) -> std::optional<int> {
+            const auto weapon = monsterModeWeapon(archives, actor.token, mode, actor.baseWeapon);
+            if (weapon.empty()) return std::nullopt;
+            auto key = actor.token + std::string(mode) + weapon;
+            for (char &ch : key) ch = char(std::toupper(static_cast<unsigned char>(ch)));
+            const auto *record = animations.find(key);
+            return record && record->speed > 0 ? std::optional<int>{int(record->speed)} : std::nullopt;
+        };
+        // D2MOO MonsterTbls: variants scale base-ID rates by Velocity/Run;
+        // pre-expansion RN uses half the base WL rate, not the RN AnimData rate.
+        for (auto &[id, actor] : monsters_) {
+            if (monsterImplementation(id).substitute) continue;
+            const auto base = monsters_.find(actor.base);
+            if (base == monsters_.end()) continue;
+            const auto walk = animationRate(base->second, "wl");
+            const auto run = actor.index < 410
+                ? (walk ? std::optional<int>{*walk / 2} : std::nullopt)
+                : animationRate(base->second, "rn");
+            auto scaled = [&](std::optional<int> rate, std::optional<int> velocity,
+                              std::optional<int> baseVelocity) -> std::optional<int> {
+                if (!rate) return std::nullopt;
+                if (actor.id != base->second.id && baseVelocity && *baseVelocity > 0) {
+                    if (!velocity) return std::nullopt;
+                    *rate = *rate * *velocity / *baseVelocity;
+                }
+                return std::clamp(*rate, 0, 32767);
+            };
+            actor.walkAnimationRate = scaled(walk, actor.walkVelocity, base->second.walkVelocity);
+            actor.runAnimationRate = scaled(run, actor.runVelocity, base->second.runVelocity);
+        }
         for (const auto &[id, actor] : monsters_)
             if (actor.ai == "Hireable") {
                 auto weapon = monsterModeWeapon(archives, actor.token, "a1", actor.baseWeapon);

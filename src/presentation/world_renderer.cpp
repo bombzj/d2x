@@ -313,13 +313,24 @@ void SceneView::drawActors(Vec mouse) const {
                 anim = &animations.at("nu");
             if (!anim->frames.empty()) {
                 const auto *motion = session_.monsterContent().motion(e.kind, mode);
-                const float fps = motion ? float(motion->frames) / motion->duration
-                                         : e.hp <= 0 ? 20.f : 12.f;
+                float fps = motion ? float(motion->frames) / motion->duration
+                                   : e.hp <= 0 ? 20.f : 12.f;
+                bool nativeMovementRate = false;
+                if ((mode == "wl" || mode == "rn") && e.movementVelocityPercent)
+                    if (const auto *record = session_.monsterContent().find(e.identity.monster)) {
+                        const auto rate = mode == "rn" ? record->runAnimationRate : record->walkAnimationRate;
+                        if (rate) {
+                            const int percentage = monsterMovementPercent(*record, sim.population.difficulty,
+                                *e.movementVelocityPercent, e.chill > 0);
+                            fps = float(std::clamp(*rate * percentage / 100, 0, 32767)) * 25.f / 256.f;
+                            nativeMovementRate = true;
+                        }
+                    }
                 int frame = e.hp <= 0 ? (mode == "dd" ? 0
                                         : std::min(anim->count - 1, int(e.deathAge * fps)))
                             : e.freeze > 0 ? 0
                             : e.stun > 0 && !animations.contains("gh") ? 0
-                            : int(view_.animationTime * (e.chill > 0 ? fps * .42f : fps) + e.id.value % anim->count);
+                            : int(view_.animationTime * (e.chill > 0 && !nativeMovementRate ? fps * .42f : fps) + e.id.value % anim->count);
                 if ((mode == "a1" || mode == "a2" || mode == "sc" || mode == "s1") &&
                     e.attackDuration > 0)
                     frame = std::clamp(int((e.attackDuration - e.attack) / e.attackDuration * anim->count),
@@ -438,6 +449,8 @@ void SceneView::drawMagic() const {
         if (missile.missileId >= 0) drawMissile(missile.missileId, missile.pos, missile.velocity, missile.age, missile.remaining);
     for (const auto &effect : sim.area.effects)
         if (effect.missileId >= 0) drawMissile(effect.missileId, effect.pos, {}, effect.age, effect.duration - effect.age);
+    for (const auto &effect : clientMissiles_)
+        drawMissile(effect.missileId, effect.pos, effect.velocity, effect.age, effect.duration - effect.age);
     for (const auto &effect : sim.area.effects)
         if (auto found = assets_.spellOverlays.find(effect.overlayId); found != assets_.spellOverlays.end()) {
             const auto &overlay = found->second;

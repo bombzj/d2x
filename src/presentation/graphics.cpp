@@ -116,6 +116,7 @@ GpuAnimation Graphics::composite(const std::string &type, const std::string &tok
     auto cof = decodeCof(bytes);
     std::map<int, const Animation *> parts;
     std::array<bool, 16> castsShadow{};
+    std::array<bool, 16> softAdditive{};
     int omitted = 0;
     static const std::string codes[] = {"hd", "tr", "lg", "ra", "la", "rh", "lh", "sh",
                                         "s1", "s2", "s3", "s4", "s5", "s6", "s7", "s8"};
@@ -124,6 +125,7 @@ GpuAnimation Graphics::composite(const std::string &type, const std::string &tok
         if (c < 0 || c >= 16)
             throw std::runtime_error("Invalid COF component");
         castsShadow[size_t(c)] = cof.shadows[size_t(i)] && !cof.transparent[size_t(i)];
+        softAdditive[size_t(c)] = cof.transparent[size_t(i)] && cof.drawEffects[size_t(i)] == 3;
         if (equipment && std::string_view((*equipment)[c]) == "nil") {
             ++omitted;
             continue;
@@ -152,6 +154,9 @@ GpuAnimation Graphics::composite(const std::string &type, const std::string &tok
     gpu.directions = cof.directions;
     gpu.count = cof.frames;
     gpu.completeComposite = parts.size() + omitted == size_t(cof.layers);
+    const bool splitLayers = std::any_of(parts.begin(), parts.end(), [&](const auto &part) {
+        return softAdditive[size_t(part.first)];
+    });
     for (int d = 0; d < cof.directions; d++)
         for (int f = 0; f < cof.frames; f++) {
             static constexpr int order8[] = {4, 0, 5, 1, 6, 2, 7, 3};
@@ -188,25 +193,58 @@ GpuAnimation Graphics::composite(const std::string &type, const std::string &tok
             merged.y = top;
             merged.pixels.resize(size_t(merged.width) * merged.height);
             IndexedFrame shadowMask = merged;
+            IndexedFrame segment = merged;
+            std::vector<SpriteLayer> layers;
+            bool segmentHasPixels = false;
+            auto recolor = [&](IndexedFrame &image) {
+                if (colorMap)
+                    for (auto &index : image.pixels)
+                        if (index) index = (*colorMap)[index];
+            };
+            auto flushSegment = [&] {
+                if (!segmentHasPixels) return;
+                recolor(segment);
+                const auto uploaded = upload(segment);
+                layers.push_back({uploaded.texture, uploaded.x, uploaded.y, false});
+                std::fill(segment.pixels.begin(), segment.pixels.end(), 0);
+                segmentHasPixels = false;
+            };
             for (int l = 0; l < cof.layers; l++) {
                 const int component = cof.componentAt(cofDirection, f, l);
                 auto p = get(component);
                 if (!p)
                     continue;
+                const bool additive = splitLayers && softAdditive[size_t(component)];
+                if (additive) flushSegment();
+                IndexedFrame additiveFrame;
+                if (additive) {
+                    additiveFrame = merged;
+                    std::fill(additiveFrame.pixels.begin(), additiveFrame.pixels.end(), 0);
+                }
                 for (int y = 0; y < p->height; y++)
                     for (int x = 0; x < p->width; x++) {
                         auto index = p->pixels[y * p->width + x];
                         if (index) {
                             const auto pixel = size_t(y + p->y - top) * merged.width + x + p->x - left;
                             merged.pixels[pixel] = index;
+                            if (splitLayers) {
+                                (additive ? additiveFrame : segment).pixels[pixel] = index;
+                                if (!additive) segmentHasPixels = true;
+                            }
                             if (castsShadow[size_t(component)]) shadowMask.pixels[pixel] = 1;
                         }
                     }
+                if (additive) {
+                    recolor(additiveFrame);
+                    const auto uploaded = upload(additiveFrame, true);
+                    if (uploaded.texture.id)
+                        layers.push_back({uploaded.texture, uploaded.x, uploaded.y, true});
+                }
             }
-            if (colorMap)
-                for (auto &index : merged.pixels)
-                    index = (*colorMap)[index];
+            if (splitLayers) flushSegment();
+            recolor(merged);
             auto frame = upload(merged);
+            frame.layers = std::move(layers);
             const auto shadow = upload(projectShadow(shadowMask));
             frame.shadowTexture = shadow.texture;
             frame.shadowX = shadow.x;

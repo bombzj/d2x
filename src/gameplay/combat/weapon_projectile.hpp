@@ -12,5 +12,6 @@ struct WeaponProjectileSpec {
     std::array<DamageRange, 6> damage{}; // Native damage in 1/256 HP.
     std::optional<MissileImpactSpec> impact = {};
     std::vector<ProjectileResource> resources = {};
+    int velocityUnits = 0; // Native path units per frame, after the 75% launch factor.
 };
 } // namespace d2x

@@ -88,6 +88,15 @@ class SceneView {
     void queueQuestAnimation(ActOneQuest quest, uint32_t stage);
     void advanceQuestAnimations(float dt);
     std::map<EntityId, float> landingAge_;
+    struct ClientMissile {
+        int missileId = -1;
+        Vec pos, velocity;
+        float age = 0, duration = 0;
+    };
+    std::vector<ClientMissile> clientMissiles_;
+    uint64_t projectileVisualRandom_ = 1;
+    void createMissileImpactVisuals(int missileId, Vec position);
+    void advanceMissileVisuals(float dt);
     std::map<EntityId, Vec> monsterPositions_, monsterLooks_;
     std::map<EntityId, float> nextMonsterFootstep_, nextMonsterNeutral_;
     std::set<EntityId> movingMonsters_;
@@ -113,6 +122,7 @@ class SceneView {
     void drawMagic() const;
     void drawLighting() const;
     void drawNpcAlerts() const;
+    void drawShrineOverlays() const;
     void drawPanelFrame(bool right) const;
     void drawMinimap(bool large) const;
     void revealAutomap();

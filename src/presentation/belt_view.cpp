@@ -131,6 +131,8 @@ void SceneView::drawItemTooltip(const ItemInstance &item, Vec anchor,
                 line("Restores " + std::to_string(int(potion->amount * 100)) + "% Life and Mana");
             else if (potion->kind == PotionKind::Stamina)
                 line("Restores Stamina");
+            if (potion->curesPoison) line("Cures Poison");
+            if (potion->curesCold) line("Cures Cold");
             if (potion->seconds > 0) line("Duration: " + std::to_string(int(potion->seconds)) + " seconds");
         }
         const auto actor = session_.characterStats();

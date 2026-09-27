@@ -24,6 +24,7 @@ struct MonsterRecord {
     std::optional<int> normalDefense;
     std::optional<int> walkVelocity;
     std::optional<int> runVelocity;
+    std::optional<int> walkAnimationRate, runAnimationRate;
     std::optional<MonsterNormalCombat> normalCombat;
     std::optional<MonsterProjectile> attack1Projectile;
     std::string attack1ProjectileArt;
@@ -46,6 +47,7 @@ struct MonsterRecord {
                (!inert || ai == "FoulCrowNest") && alignment == 0;
     }
 };
+int monsterMovementPercent(const MonsterRecord &record, int difficulty, int percentage, bool chilled);
 struct SuperUniqueRecord {
     std::string id, monster, name;
     int index = -1, minGroup = 0, maxGroup = 0;

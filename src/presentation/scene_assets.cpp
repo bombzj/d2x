@@ -4,6 +4,7 @@
 #include "world/outdoor.hpp"
 #include <algorithm>
 #include <string_view>
+#include <utility>
 
 namespace d2x {
 namespace {
@@ -44,6 +45,41 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
     if (npcAlert.frames <= 0 || npcAlert.fps <= 0 ||
         npcAlert.animation.count < npcAlert.frames)
         throw std::runtime_error("Original NPC alert overlay is missing or invalid");
+    // D2MOO ObjMode.cpp maps shrine codes 6–15 to states 128–137.
+    // The current MPQ States.txt selects the icon and shimmer for each state.
+    const auto &states = session.content().states;
+    for (int code = 6; code <= 15; ++code) {
+        const auto stateName = shrineStateName(code);
+        const auto state = states.find(stateName);
+        if (state == states.end())
+            throw std::runtime_error("Original shrine state is missing: " + std::string(stateName));
+        std::array<OverlayArt, 2> art;
+        for (size_t layer = 0; layer < art.size(); ++layer) {
+            const auto &overlayName = layer == 0 ? state->second.overlay : state->second.secondaryOverlay;
+            size_t overlayRow = 0;
+            while (overlayRow < overlays.rows().size() &&
+                   overlays.value(overlayRow, "overlay") != overlayName)
+                ++overlayRow;
+            if (overlayName.empty() || overlayRow == overlays.rows().size())
+                throw std::runtime_error("Original shrine overlay is missing: " + std::string(stateName));
+            auto &visual = art[layer];
+            visual.animation = unitsGraphics_.single("data/global/overlays/" +
+                std::string(overlays.value(overlayRow, "Filename")) + ".dcc", true);
+            visual.frames = overlays.number(overlayRow, "Frames").value_or(0);
+            // Diablerie Overlay.Create uses AnimRate * 1.5 for client timing.
+            // Reference adaptation, not a verified original D2Client formula.
+            visual.fps = overlays.number(overlayRow, "AnimRate").value_or(0) * 1.5f;
+            visual.trans = overlays.number(overlayRow, "Trans").value_or(5);
+            visual.offset = {float(overlays.number(overlayRow, "Xoffset").value_or(0)),
+                             float(overlays.number(overlayRow, "Yoffset").value_or(0))};
+            for (int height = 0; height < 4; ++height)
+                visual.heights[size_t(height)] = overlays.number(overlayRow,
+                    "Height" + std::to_string(height + 1)).value_or(0);
+            if (visual.frames <= 0 || visual.fps <= 0 || visual.animation.count < visual.frames)
+                throw std::runtime_error("Original shrine art is missing: " + std::string(overlayName));
+        }
+        shrineOverlays.emplace(code, std::move(art));
+    }
     for (const auto &region : session.regions()) {
         std::vector<Sprite> tiles;
         for (const auto &tile : region.map.tiles)
@@ -217,7 +253,8 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
                 missiles.number(row, "LoopAnim").value_or(0) != 0,
                 missiles.number(row, "AnimLen").value_or(0),
                 missiles.number(row, "SubLoop").value_or(0) ? missiles.number(row, "SubStart").value_or(0) : 0,
-                missiles.number(row, "SubLoop").value_or(0) ? missiles.number(row, "SubStop").value_or(0) : 0});
+                missiles.number(row, "SubLoop").value_or(0) ? missiles.number(row, "SubStop").value_or(0) : 0,
+                float(missiles.number(row, "Range").value_or(0)) / 25.f});
         }
     const DataTable projectileSounds(archives.read("data/global/excel/sounds.txt"));
     auto loadProjectile = [&](int id, const std::string &art) {
@@ -246,6 +283,37 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
             loadProjectile(item.base.projectile->id, item.base.projectile->art);
             for (const auto &resource : item.base.projectile->resources) loadProjectile(resource.id, resource.art);
         }
+    // HitOilPotion creates its main explosion plus one of the two original
+    // debris animations. The main effect already comes from the impact event's
+    // gameplay visual; the alternatives belong only to presentation.
+    for (size_t row = 0; row < missiles.rows().size(); ++row) {
+        const auto id = missiles.number(row, "Id");
+        if (!id || !projectileAnimations.contains(*id) || missiles.number(row, "pCltHitFunc") != 3) continue;
+        std::array<int, 2> variants{-1, -1};
+        for (size_t i = 0; i < variants.size(); ++i) {
+            const auto name = missiles.value(row, "CltHitSubMissile" + std::to_string(i + 2));
+            if (name.empty()) continue;
+            for (size_t child = 0; child < missiles.rows().size(); ++child) {
+                if (missiles.value(child, "Missile") != name) continue;
+                const int childId = missiles.number(child, "Id").value_or(-1);
+                if (childId < 0 || missiles.number(child, "pCltDoFunc") != 1 ||
+                    missiles.number(child, "Explosion") != 1 ||
+                    missiles.number(child, "Vel").value_or(0) != 0)
+                    throw std::runtime_error("Unsupported client impact animation: " + std::string(name));
+                loadProjectile(childId, "data/global/missiles/" + std::string(missiles.value(child, "CelFile")) + ".dcc");
+                auto &visual = projectileVisuals.at(childId);
+                if (visual.frames <= 0 || visual.fps <= 0 || visual.loop)
+                    throw std::runtime_error("Invalid client impact animation: " + std::string(name));
+                // These Explosion-only rows have no Range. Their original
+                // non-looping animation is the entire visual lifetime.
+                if (visual.lifetime <= 0) visual.lifetime = float(visual.frames) / visual.fps;
+                variants[i] = childId;
+                break;
+            }
+            if (variants[i] < 0) throw std::runtime_error("Missing client impact animation: " + std::string(name));
+        }
+        if (variants[0] >= 0 || variants[1] >= 0) projectileImpactVariants.emplace(*id, variants);
+    }
     for (const auto &[id, skill] : session.content().skills.skills)
         if (skill.spell && skill.spell->missileId >= 0 &&
             !projectileAnimations.contains(skill.spell->missileId)) {

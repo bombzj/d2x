@@ -3,9 +3,17 @@
 #include <stdexcept>
 
 namespace d2x {
+std::string_view shrineStateName(int code) {
+    // D2MOO ObjMode.cpp gpShrineTable: engine code -> States.txt identity.
+    static constexpr std::array<std::string_view, 10> names{
+        "shrine_armor", "shrine_combat", "shrine_resist_fire", "shrine_resist_cold",
+        "shrine_resist_lightning", "shrine_resist_poison", "shrine_skill",
+        "shrine_mana_regen", "shrine_stamina", "shrine_experience"};
+    return code >= 6 && code <= 15 ? names[size_t(code - 6)] : std::string_view{};
+}
 CombatStateCatalog loadCombatStates(const DataTable &states) {
-    for (const char *field : {"state", "id", "group", "remhit", "plrstaydeath",
-                              "monstaydeath", "bossstaydeath", "overlay1"})
+    for (const char *field : {"state", "id", "group", "remhit", "stambarblue", "plrstaydeath",
+                              "monstaydeath", "bossstaydeath", "overlay1", "overlay2"})
         if (!states.has(field)) throw std::runtime_error("Missing States.txt field: " + std::string(field));
     CombatStateCatalog result;
     std::set<int> ids;
@@ -26,8 +34,10 @@ CombatStateCatalog loadCombatStates(const DataTable &states) {
         if ((!states.value(row, "group").empty() && !group) || (group && *group < 0))
             throw std::runtime_error("Invalid States.txt group");
         CombatStateRecord record{{*id, group.value_or(0), flag("remhit"),
-            {flag("plrstaydeath"), flag("monstaydeath"), flag("bossstaydeath")}},
-            std::string(states.value(row, "overlay1"))};
+            {flag("plrstaydeath"), flag("monstaydeath"), flag("bossstaydeath")},
+            flag("stambarblue")},
+            std::string(states.value(row, "overlay1")),
+            std::string(states.value(row, "overlay2"))};
         if (!result.emplace(std::string(name), std::move(record)).second)
             throw std::runtime_error("Duplicate States.txt name");
     }

@@ -72,7 +72,7 @@ Cof decodeCof(const Bytes &b) {
         c.shadows.push_back(r.u8() != 0);
         r.skip(1); // Selectable.
         c.transparent.push_back(r.u8() != 0);
-        r.skip(1); // Draw effect.
+        c.drawEffects.push_back(r.u8());
         std::string w;
         for (int j = 0; j < 4; j++) {
             auto ch = r.u8();

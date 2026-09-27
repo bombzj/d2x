@@ -55,7 +55,6 @@ struct PlayerState {
     int webSlowPercent = 0;
     EntityId webSource;
     std::deque<Restoration> healing, manaRestoration;
-    float staminaBoost = 0;
     EntityId attackTarget;
     std::optional<Vec> attackPosition;
     bool attackStationary = false;
@@ -101,6 +100,7 @@ struct Enemy {
     bool aiCommanded = false;
     bool aiCircling = false;
     bool aiRunning = false;
+    std::optional<int> movementVelocityPercent;
     bool aiRetaliate = false;
     bool aiCharged = false;
     float aiAdvanceRemaining = 0;

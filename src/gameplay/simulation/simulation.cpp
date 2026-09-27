@@ -53,7 +53,8 @@ void Simulation::heal() {
     p.stamina = characterStats_.maxStamina;
     p.healing.clear();
     p.manaRestoration.clear();
-    p.staminaBoost = 0;
+    // NPC healing cures ailments; it does not dispel beneficial item states.
+    // D2MOO SUNITNPC_HealPlayer removes poison/freeze/curable states only.
     p.chill = 0;
     p.poisonRemaining = p.poisonPerSecond = 0;
     p.webSlowRemaining = 0;
@@ -186,7 +187,6 @@ void Simulation::tick(float dt, Vec keyboard, bool forceRun) {
         p.castTime = 0;
         p.healing.clear();
         p.manaRestoration.clear();
-        p.staminaBoost = 0;
         p.chill = 0;
         p.poisonRemaining = p.poisonPerSecond = 0;
         p.route.clear();

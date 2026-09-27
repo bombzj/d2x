@@ -1,4 +1,5 @@
 #pragma once
+#include "core/id.hpp"
 #include "gameplay/character/attributes.hpp"
 #include <array>
 #include <cstdint>
@@ -19,6 +20,7 @@ struct CombatStateDefinition {
     int id = -1, group = 0;
     bool removeOnHit = false;
     std::array<bool, 3> stayOnDeath{};
+    bool staminaBarBlue = false;
 };
 enum class CombatEffectSource { Skill, Monster, Shrine, Item, Environment };
 struct EffectSource {

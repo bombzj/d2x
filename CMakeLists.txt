@@ -167,6 +167,7 @@ target_sources(d2x_presentation PRIVATE src/presentation/hireling_assets.cpp)
 target_sources(d2x_presentation PRIVATE src/presentation/hireling_view.cpp)
 target_sources(d2x_presentation PRIVATE src/presentation/automap_assets.cpp src/presentation/automap_view.cpp)
 target_sources(d2x_presentation PRIVATE src/presentation/lighting_view.cpp)
+target_sources(d2x_presentation PRIVATE src/presentation/projectile_view.cpp)
 
 add_executable(d2x src/main.cpp src/app/application.cpp src/app/options.cpp src/app/input.cpp
   src/app/character_frontend.cpp src/app/crash_report.cpp)
