@@ -24,8 +24,6 @@ void SceneController::toggleInventory() {
     ui.help = ui.travelMenu = false;
     if (ui.inventory.open) {
         view_.cancelNpcDialogue();
-        ui.clickAge = 10;
-        session_.submit(StopMoving{});
     }
 }
 bool SceneController::queueInventory(GameCommand command, EntityId source) {

@@ -84,6 +84,12 @@ bool Grid::missileSegment(Vec a, Vec b, MissileCollisionRule rule) const {
             clear(x - 1, y + 1) && clear(x + 1, y + 1));
     }, false);
 }
+bool Grid::collisionSegment(Vec a, Vec b, uint16_t mask) const {
+    return clearSegment(a, b, width, height, [&](int x, int y) {
+        return x >= 0 && y >= 0 && x < width && y < height &&
+            !((terrainCollision[size_t(y) * width + x] | objectMask(x, y)) & mask);
+    }, false);
+}
 bool Grid::lightSegment(Vec a, Vec b) const {
     auto delta = b - a;
     int steps = std::max(1, int(delta.length() * 5));

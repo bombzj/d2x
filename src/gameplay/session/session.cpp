@@ -3,6 +3,7 @@
 #include "content/item_properties.hpp"
 #include "core/fingerprint.hpp"
 #include <algorithm>
+#include <cmath>
 #include <iostream>
 #include <iterator>
 #include <stdexcept>
@@ -35,6 +36,43 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
     simulation_.resistancePenalty_ = content_.resistancePenalty.at(size_t(population.difficulty));
     simulation_.state_.mapSeed = selection.seed;
     inventory_.state_.creationRandom = (uint64_t(666) << 32) | uint32_t(lootSeed);
+    inventory_.groundPlacement_ = [this](const GroundLocation &origin, const GroundLocation &target) {
+        if (origin.region != target.region) return false;
+        const auto found = std::find_if(regions_.begin(), regions_.end(),
+            [&](const Region &region) { return region.definition.id == target.region; });
+        if (found == regions_.end()) return false;
+        const auto &grid = found->map.grid;
+        // D2MOO drop mask: WALL | OBJECT | DOOR | NO_PATH | PET (ITEM is in InventoryService).
+        // The field ray checks WALL | DOOR, not character walking collision.
+        if (!grid.collisionSegment(target.position, target.position, 0x3c01) ||
+            !grid.collisionSegment(origin.position, target.position, 0x0801)) return false;
+        // Path.cpp / COLLISION_SetMaskWithPattern: NO_PATH or PET presence is
+        // the center cell for sizes 1/2, a five-cell cross for size 3. Corpses have neither.
+        auto occupies = [&](Vec position, int size) {
+            if (size <= 0) return false;
+            const float distance = std::abs(std::floor(position.x) - std::floor(target.position.x)) +
+                                   std::abs(std::floor(position.y) - std::floor(target.position.y));
+            return distance <= (size == 3 ? 1.f : 0.f);
+        };
+        if (state().area.region == target.region) {
+            const auto &player = state().player;
+            if (!player.dead && occupies(player.pos, 2)) return false; // UNITS_GetUnitSizeX(PLAYER).
+            if (player.hireling.active())
+                for (const auto &[id, monster] : monsterContent_.monsters())
+                    if (monster.index == player.hireling.classId &&
+                        occupies(player.hireling.pos, monster.collisionSize)) return false;
+        }
+        const auto &area = areaState(int(found - regions_.begin()));
+        for (const auto &enemy : area.enemies)
+            if (enemy.hp > 0)
+                if (const auto *monster = monsterContent_.find(enemy.identity.monster);
+                    monster && occupies(enemy.pos, monster->collisionSize)) return false;
+        for (const auto &object : found->objects)
+            if (!object.npcClass.empty())
+                if (const auto *monster = monsterContent_.find(object.npcClass);
+                    monster && occupies(object.pos, monster->collisionSize)) return false;
+        return true;
+    };
     inventory_.itemProperties_ = [this](const ItemInstance &item) {
         auto identified = item;
         identified.identified = true; // Physical limits exist before identification.
@@ -472,8 +510,7 @@ bool GameSession::inventoryDestinationAllowed(const ItemDestination &destination
         return ground->region == region().definition.id && std::isfinite(ground->position.x) &&
                std::isfinite(ground->position.y) && ground->position.x >= 0 && ground->position.y >= 0 &&
                ground->position.x < map().grid.width && ground->position.y < map().grid.height &&
-               map().grid.walkable(ground->position) &&
-               map().grid.segment(state().player.pos, ground->position);
+               map().grid.collisionSegment(state().player.pos, ground->position, 0x0801);
     return true;
 }
 void GameSession::publishInventory(InventoryResult result, EntityId requested) {

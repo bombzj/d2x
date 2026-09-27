@@ -73,6 +73,7 @@ class SceneView {
     SceneAssets assets_;
     LightingView lighting_;
     Shader highlightShader_{};
+    int highlightTransform_ = -1;
     UiPainter painter_;
     UiPainter speechPainter_;
     ViewState view_;
@@ -101,13 +102,14 @@ class SceneView {
         Color color;
     };
     std::vector<LootLabel> lootLabels(Vec mouse) const;
+    const Sprite *groundItemSprite(const ItemInstance &item) const;
     Rectangle lootBounds(const ItemInstance &item) const;
     void drawGroundItem(EntityId item, bool highlighted) const;
     void drawLootLabels(Vec mouse) const;
     void drawTerrain() const;
     void drawActors(Vec mouse) const;
     void drawSelectableSprite(const Sprite *image, Vec position, bool highlighted,
-                              Color tint = WHITE) const;
+                              Color tint = WHITE, Vector2 highlight = {2.f, 1.f}) const;
     void drawMagic() const;
     void drawLighting() const;
     void drawNpcAlerts() const;
@@ -119,7 +121,6 @@ class SceneView {
     void drawNpcDialogue() const;
     void displayNpcDialogue(EntityId object, std::string speaker, std::string text);
     void advanceNpcDialogue(float dt);
-    Rectangle worldViewport() const;
     void drawNpcMenu(Vec mouse) const;
     void drawNpcShop(Vec mouse) const;
     void drawWaypointMenu(Vec mouse) const;
@@ -158,6 +159,7 @@ class SceneView {
     void orb(bool mana, float fraction) const;
 
   public:
+    Rectangle worldViewport() const;
         Rectangle gameMenuItemBounds(int index) const;
         int gameMenuAt(Vec mouse) const;
     Rectangle hirelingSlotBounds(size_t index) const;

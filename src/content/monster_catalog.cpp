@@ -148,6 +148,7 @@ MonsterCatalog::MonsterCatalog(Archives &archives, const DataTable &stats) {
         m.bleed = extended.number(extra->second, "Bleed").value_or(0);
         m.castsShadow = extended.number(extra->second, "Shadow").value_or(0) != 0;
         m.overlayHeight = extended.number(extra->second, "OverlayHeight").value_or(0);
+        m.collisionSize = extended.number(extra->second, "SizeX").value_or(0);
         m.getHitMode = extended.number(extra->second, "mGH").value_or(0) != 0;
         m.deadMode = extended.number(extra->second, "mDD").value_or(0) != 0;
         m.skill2Mode = extended.number(extra->second, "mS2").value_or(0) != 0;

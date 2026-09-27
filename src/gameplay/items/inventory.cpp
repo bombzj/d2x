@@ -90,6 +90,12 @@ PlayerContainers InventoryService::createPlayerContainers(EntityId player) {
 }
 bool InventoryService::overlaps(const ItemDefinition &a, const ItemLocation &aPosition,
                                 const ItemDefinition &b, const ItemLocation &bPosition) const {
+    if (const auto *left = std::get_if<GroundLocation>(&aPosition)) {
+        const auto *right = std::get_if<GroundLocation>(&bPosition);
+        return right && left->region == right->region &&
+            std::floor(left->position.x) == std::floor(right->position.x) &&
+            std::floor(left->position.y) == std::floor(right->position.y);
+    }
     auto left = std::get_if<ContainerLocation>(&aPosition);
     auto right = std::get_if<ContainerLocation>(&bPosition);
     return left && right && left->container == right->container && left->cell.x < right->cell.x + b.width &&
@@ -172,6 +178,16 @@ InventoryError InventoryService::checkPlacement(const ItemDefinition &definition
         if (!std::isfinite(ground->position.x) || !std::isfinite(ground->position.y) ||
             ground->position.x < 0 || ground->position.y < 0)
             return InventoryError::InvalidLocation;
+        if (groundPlacement_ && !groundPlacement_(*ground, *ground))
+            return InventoryError::InvalidLocation;
+        for (const auto &[id, other] : state_.items) {
+            if (id == ignore || id == alsoIgnore) continue;
+            const auto *placed = std::get_if<GroundLocation>(&other.location);
+            if (placed && placed->region == ground->region &&
+                std::floor(placed->position.x) == std::floor(ground->position.x) &&
+                std::floor(placed->position.y) == std::floor(ground->position.y))
+                return InventoryError::Occupied;
+        }
         return InventoryError::None;
     }
     const auto &position = std::get<ContainerLocation>(location);
@@ -211,7 +227,8 @@ std::optional<Cell> InventoryService::findSpace(EntityId id, std::string_view co
     return std::nullopt;
 }
 InventoryError InventoryService::resolve(const ItemDefinition &def, const ItemDestination &destination,
-                                         ItemLocation &location, EntityId ignore) const {
+                                         ItemLocation &location, EntityId ignore,
+                                         std::optional<Vec> groundOrigin) const {
     return std::visit(
         [&](const auto &value) {
             if constexpr (std::is_same_v<std::decay_t<decltype(value)>, AutoPlace>) {
@@ -225,6 +242,33 @@ InventoryError InventoryService::resolve(const ItemDefinition &def, const ItemDe
                 if (!slot)
                     return InventoryError::NoSpace;
                 location = ContainerLocation{value.container, *slot};
+            } else if constexpr (std::is_same_v<std::decay_t<decltype(value)>, GroundLocation>) {
+                if (!std::isfinite(value.position.x) || !std::isfinite(value.position.y) ||
+                    value.position.x < 0 || value.position.y < 0)
+                    return InventoryError::InvalidLocation;
+                const Vec origin{std::floor(value.position.x) + .5f, std::floor(value.position.y) + .5f};
+                const GroundLocation field{value.region, groundOrigin.value_or(value.position)};
+                // D2MOO COLLISION_GetFreeCoordinatesWithField: size 1, item occupancy,
+                // expanding search below 50 subtiles, with a clear field from the drop origin.
+                for (int radius = 0; radius < 50; ++radius) {
+                    std::optional<GroundLocation> best;
+                    int distance = 2 * radius + 1;
+                    for (int y = -radius; y <= radius; ++y)
+                        for (int x = -radius; x <= radius; ++x) {
+                            if (std::max(std::abs(x), std::abs(y)) != radius ||
+                                std::abs(x) + std::abs(y) >= distance) continue;
+                            GroundLocation candidate{value.region, origin + Vec{float(x), float(y)}};
+                            if (checkPlacement(def, candidate, ignore) != InventoryError::None ||
+                                (groundPlacement_ && !groundPlacement_(field, candidate))) continue;
+                            best = candidate;
+                            distance = std::abs(x) + std::abs(y);
+                        }
+                    if (best) {
+                        location = *best;
+                        return InventoryError::None;
+                    }
+                }
+                return InventoryError::NoSpace;
             } else
                 location = value;
             return checkPlacement(def, location, ignore);

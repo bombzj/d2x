@@ -172,7 +172,8 @@ void SceneView::draw(Vec mouse) const {
     if (view_.automap)
         drawMinimap(view_.automapLarge);
     drawHud();
-    if (!view_.blocksWorld() && !view_.inventory.open && (view_.combatTarget || mouse.y < H - HUD)) {
+    if (!view_.blocksWorld() && !view_.inventory.drag && (view_.combatTarget ||
+        (!hudSurface(mouse) && CheckCollisionPointRec(rv(mouse), worldViewport())))) {
         for (const auto &monster : visibleMonsters()) {
             const auto &enemy = *monster.enemy;
             if (enemy.hp <= 0 ||
@@ -180,17 +181,28 @@ void SceneView::draw(Vec mouse) const {
                     (screen(monster.position) - Vec{0, 25} - mouse).length() >= 24))
                 continue;
             const auto &identity = enemy.identity;
-            auto title = identity.superUnique.empty() ? identity.monster : identity.superUnique;
-            auto detail = std::string(monsterRankName(identity.rank));
-            if (monsterImplementation(identity.monster).substitute)
-                detail += " / Fallen substitute";
-            const int width = std::clamp(painter_.measure(title, 16) + 24, 200, W - 32);
+            const auto *record = session_.monsterContent().find(identity.monster);
+            const auto *unique = session_.monsterContent().superUnique(identity.superUnique);
+            const auto &strings = session_.content().itemStrings; // Original merged TBL strings.
+            const auto key = unique ? unique->name : record ? record->name : std::string{};
+            const auto name = strings.find(key);
+            if (name == strings.end() || name->second.empty()) continue;
+            const auto &title = name->second;
+            Color titleColor = WHITE;
+            if (identity.rank == MonsterRank::Champion)
+                titleColor = {105, 105, 255, 255};
+            else if (identity.rank == MonsterRank::Unique || identity.rank == MonsterRank::SuperUnique ||
+                     identity.rank == MonsterRank::Boss)
+                titleColor = {199, 179, 119, 255};
+            // Diablerie EnemyBar.prefab: top-center, 150x20, Font16 over a red life fill.
+            int fontSize = 16;
+            while (fontSize > 1 && painter_.measure(title, fontSize) > W - 40) --fontSize;
+            const int width = std::clamp(painter_.measure(title, fontSize) + 8, 150, W - 32);
             const int left = (W - width) / 2;
-            DrawRectangle(left, 73, width, 22, {24, 12, 12, 225});
-            DrawRectangle(left, 73, int(width * std::clamp(enemy.hp / enemy.maxHp, 0.f, 1.f)),
-                          22, {120, 26, 20, 235});
-            painter_.centered(title, 76, 16, gold);
-            painter_.centered(detail, 98, 10, parchment);
+            DrawRectangle(left, 22, width, 20, {0, 0, 0, 122});
+            DrawRectangle(left, 22, int(width * std::clamp(enemy.hp / std::max(1.f, enemy.maxHp), 0.f, 1.f)),
+                          20, {191, 6, 6, 64});
+            painter_.centered(title, 24, fontSize, titleColor);
             break;
         }
     }

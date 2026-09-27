@@ -2,7 +2,7 @@
 
 namespace d2x {
 const LevelExit *SceneView::exitAt(Vec mouse) const {
-    if (hudSurface(mouse) || view_.blocksWorld())
+    if (hudSurface(mouse) || view_.blocksWorld() || !CheckCollisionPointRec(rv(mouse), worldViewport()))
         return nullptr;
     for (const auto &exit : session_.region().exits) {
         auto p = screen(exit.position);
@@ -15,7 +15,7 @@ const LevelExit *SceneView::exitAt(Vec mouse) const {
     return nullptr;
 }
 void SceneView::drawExitHint(Vec mouse) const {
-    if (view_.inventory.open || view_.inventory.drag)
+    if (view_.inventory.drag)
         return;
     if (const auto *exit = exitAt(mouse)) {
         auto p = screen(exit->position);
@@ -28,7 +28,8 @@ void SceneView::drawExitHint(Vec mouse) const {
     }
 }
 void SceneView::drawObjectHint(Vec mouse) const {
-    if (view_.inventory.open || view_.inventory.drag || view_.blocksWorld() || mouse.y >= H - HUD)
+    if (view_.inventory.drag || view_.blocksWorld() || hudSurface(mouse) ||
+        !CheckCollisionPointRec(rv(mouse), worldViewport()))
         return;
     const auto *object = objectAt(mouse);
     if (!object || object->name.empty() || exitAt(mouse))

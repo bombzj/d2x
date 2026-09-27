@@ -18,6 +18,7 @@ struct MonsterRecord {
     int sparse = 0, alignment = 0, normalLevel = 0, transLevel = 0;
     std::array<int, 3> coldEffect{};
     int localBlood = 0, bleed = 0, overlayHeight = 0;
+    int collisionSize = 0;
     std::optional<int> normalAttackRating;
     std::optional<int> normalAttackRating2;
     std::optional<int> normalDefense;

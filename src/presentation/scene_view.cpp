@@ -10,9 +10,11 @@ in vec2 fragTexCoord;
 in vec4 fragColor;
 out vec4 finalColor;
 uniform sampler2D texture0;
+uniform vec2 highlightTransform;
 void main() {
     vec4 pixel = texture(texture0, fragTexCoord) * fragColor;
-    finalColor = vec4(min(pixel.rgb * 2.0, vec3(1.0)), pixel.a);
+    vec3 color = (pixel.rgb * highlightTransform.x - 0.5) * highlightTransform.y + 0.5;
+    finalColor = vec4(clamp(color, vec3(0.0), vec3(1.0)), pixel.a);
 }
 )";
 } // namespace
@@ -20,6 +22,7 @@ SceneView::SceneView(Archives &archives, const GameSession &session)
     : session_(session), assets_(archives, session), painter_(assets_.font),
       speechPainter_(assets_.speechFont) {
     highlightShader_ = LoadShaderFromMemory(nullptr, highlightFragment);
+    highlightTransform_ = GetShaderLocation(highlightShader_, "highlightTransform");
     view_.camera = project(session_.state().player.pos);
     view_.portalRevision = session_.state().portal.revision;
     view_.skillClass = session_.characterCode();
@@ -38,11 +41,14 @@ SceneView::~SceneView() {
     if (highlightShader_.id)
         UnloadShader(highlightShader_);
 }
-void SceneView::drawSelectableSprite(const Sprite *image, Vec position, bool highlighted, Color tint) const {
+void SceneView::drawSelectableSprite(const Sprite *image, Vec position, bool highlighted, Color tint,
+                                     Vector2 highlight) const {
     if (!image || !image->texture.id)
         return;
-    if (highlighted && highlightShader_.id)
+    if (highlighted && highlightShader_.id) {
+        SetShaderValue(highlightShader_, highlightTransform_, &highlight, SHADER_UNIFORM_VEC2);
         BeginShaderMode(highlightShader_);
+    }
     sprite(image, position, tint);
     if (highlighted && highlightShader_.id)
         EndShaderMode();

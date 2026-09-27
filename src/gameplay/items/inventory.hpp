@@ -12,6 +12,9 @@ class InventoryService {
     ItemCatalog catalog_;
     InventoryState state_;
     std::function<std::vector<ResolvedItemStat>(const ItemInstance &)> itemProperties_;
+    // World collision query only; item occupancy is checked against this service's state,
+    // including private equipment transaction drafts.
+    std::function<bool(const GroundLocation &, const GroundLocation &)> groundPlacement_;
     std::set<int32_t> singleCarryUniques_;
     struct ReplenishTimer { float elapsed = 0; bool repeated = false; };
     std::map<std::pair<EntityId, bool>, ReplenishTimer> replenishTimers_;
@@ -28,7 +31,8 @@ class InventoryService {
     InventoryError checkPlacement(const ItemDefinition &definition, const ItemLocation &location,
                                   EntityId ignore = {}, EntityId alsoIgnore = {}) const;
     InventoryError resolve(const ItemDefinition &definition, const ItemDestination &destination,
-                           ItemLocation &location, EntityId ignore = {}) const;
+                           ItemLocation &location, EntityId ignore = {},
+                           std::optional<Vec> groundOrigin = std::nullopt) const;
     bool overlaps(const ItemDefinition &a, const ItemLocation &aPosition, const ItemDefinition &b,
                   const ItemLocation &bPosition) const;
     InventoryResult planTransfer(const TransferItem &command, const InventoryAccess &access) const;
@@ -87,7 +91,8 @@ class InventoryService {
     PlayerContainers createPlayerContainers(EntityId player);
     InventoryResult createItem(std::string_view definition, unsigned quantity,
                                const ItemDestination &destination, unsigned level = 1,
-                               const ItemGeneration &generation = {});
+                               const ItemGeneration &generation = {},
+                               std::optional<Vec> groundOrigin = std::nullopt);
     InventoryResult move(const MoveItem &command, const InventoryAccess &access);
     InventoryResult swap(const SwapItems &command, const InventoryAccess &access);
     InventoryResult split(const SplitStack &command, const InventoryAccess &access);

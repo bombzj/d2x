@@ -80,15 +80,18 @@ void GameSession::spawnLoot(std::span<const LootDrop> drops, RegionId id, Vec or
     if (region == regions_.end())
         throw std::logic_error("Loot references an unknown region");
     const auto &grid = region->map.grid;
-    origin = grid.nearest(origin);
-    if (!grid.walkable(origin))
-        throw std::logic_error("Loot origin has no walkable ground");
     for (const auto &drop : drops) {
-        Vec position = grid.nearest(origin + drop.offset);
-        if (!grid.segment(origin, position))
+        Vec position = origin + drop.offset;
+        // Items.cpp starts at the drop offset if that room exists. The common
+        // item resolver checks drop collision and the field from the actual source.
+        if (position.x < 0 || position.y < 0 || position.x >= grid.width || position.y >= grid.height)
             position = origin;
         auto result = inventory_.createItem(drop.code, drop.quantity, GroundLocation{id, position},
-                                            drop.level, drop.generation);
+                                            drop.level, drop.generation, origin);
+        if (result.error == InventoryError::NoSpace) {
+            simulation_.emit(LootDeferred{{}, "No free ground cell for this drop."});
+            continue;
+        }
         if (!result)
             throw std::logic_error("Invalid loot definition or placement");
         publishInventory(std::move(result), {});
@@ -155,7 +158,7 @@ void GameSession::updatePickup() {
     // Pickup is deliberately closer than generic container access; walls also block the hand-off.
     access.reach = 1.8f;
     if ((ground->position - player.pos).length() <= access.reach &&
-        map().grid.segment(player.pos, ground->position)) {
+        map().grid.collisionSegment(player.pos, ground->position, 0x0801)) {
         auto definition = item->definition;
         unsigned quantity = item->quantity;
         if (inventory_.catalog().find(definition)->equipment.isType("gold")) {

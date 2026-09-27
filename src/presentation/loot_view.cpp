@@ -16,13 +16,23 @@ Color SceneView::itemColor(ItemQuality quality) {
         return WHITE;
     }
 }
+const Sprite *SceneView::groundItemSprite(const ItemInstance &item) const {
+    const auto age = landingAge_.find(item.id);
+    if (age != landingAge_.end() && age->second < 0)
+        return nullptr;
+    auto animation = assets_.itemGround.find(SceneAssets::itemArtKey(item));
+    if (animation == assets_.itemGround.end() || animation->second.count <= 0)
+        return nullptr;
+    const auto &anim = animation->second;
+    const int index = age == landingAge_.end() ? anim.count - 1
+                                              : std::min(anim.count - 1, int(age->second * 25));
+    return anim.frame(0, index);
+}
 Rectangle SceneView::lootBounds(const ItemInstance &item) const {
     auto p = screen(std::get<GroundLocation>(item.location).position);
-    auto animation = assets_.itemGround.find(SceneAssets::itemArtKey(item));
-    if (animation != assets_.itemGround.end())
-        if (auto frame = animation->second.frame(0, animation->second.count - 1))
-            return {p.x + frame->x - 5, p.y + frame->y - 5, float(frame->texture.width + 10),
-                    float(frame->texture.height + 10)};
+    if (auto frame = groundItemSprite(item))
+        return {p.x + frame->x - 5, p.y + frame->y - 5, float(frame->texture.width + 10),
+                float(frame->texture.height + 10)};
     return {};
 }
 void SceneView::drawGroundItem(EntityId id, bool highlighted) const {
@@ -32,14 +42,9 @@ void SceneView::drawGroundItem(EntityId id, bool highlighted) const {
     auto p = screen(std::get<GroundLocation>(item.location).position);
     if (p.x < -80 || p.x > W + 80 || p.y < -80 || p.y > H - HUD + 80)
         return;
-    auto animation = assets_.itemGround.find(SceneAssets::itemArtKey(item));
-    if (animation != assets_.itemGround.end() && animation->second.count > 0) {
-        const auto &anim = animation->second;
-        auto age = landingAge_.find(id);
-        int index =
-            age == landingAge_.end() ? anim.count - 1 : std::min(anim.count - 1, int(age->second * 25));
-        drawSelectableSprite(anim.frame(0, index), p, highlighted);
-    }
+    // Diablerie Loot.selected / Materials.SetRendererHighlighted. Preserve the MPQ
+    // pixels and alpha; highlight the same current frame used for hit testing.
+    drawSelectableSprite(groundItemSprite(item), p, highlighted, WHITE, {3.f, 1.01f});
 }
 std::vector<SceneView::LootLabel> SceneView::lootLabels(Vec mouse) const {
     std::vector<LootLabel> layout, visible;

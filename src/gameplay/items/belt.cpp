@@ -73,6 +73,7 @@ InventoryResult InventoryService::planBelt(const EquipBelt &command, const Playe
     // or capacity changes never mutate live items, revisions or container sizes.
     InventoryService draft(ids_, catalog_, stashDimensions_, cubeDimensions_);
     draft.itemProperties_ = itemProperties_;
+    draft.groundPlacement_ = groundPlacement_;
     draft.state_ = state_;
     InventoryResult result;
     result.item = source.id;

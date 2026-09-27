@@ -131,7 +131,7 @@ void SceneView::drawActors(Vec mouse) const {
 
     // Follow the same priority as SceneController::click so overlapping targets
     // do not all brighten at once. Only the sprite is highlighted, not its shadow.
-    const bool canHover = !view_.blocksWorld() && !view_.inventory.open && !view_.inventory.drag &&
+    const bool canHover = !view_.blocksWorld() && !view_.inventory.drag &&
                           !hudSurface(mouse) && CheckCollisionPointRec(rv(mouse), worldViewport());
     const auto cainPortal = session_.cainPortalPosition();
     const auto townPortal = session_.portalPosition();

@@ -94,9 +94,11 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
     if (!input.focused || !input.leftHeld || input.leftPressed || input.rightPressed) leftCombatTarget_ = {};
     if (!input.focused || !input.rightHeld || input.rightPressed || input.leftPressed) rightCombatTarget_ = {};
     if (channelInputSkill_ >= 0 && (!input.focused || !input.rightHeld ||
-        ((!input.insideViewport || hudSurface(input.mouse)) && !rightCombatTarget_) ||
-        ui.blocksWorld() || ui.inventory.open ||
-        input.movement.length() > .1f || input.leftPressed || input.leftHeld || input.inventory || input.escape ||
+        ((!input.insideViewport || hudSurface(input.mouse) ||
+          !CheckCollisionPointRec(rv(input.mouse), view_.worldViewport())) && !rightCombatTarget_) ||
+        ui.blocksWorld() || ui.inventory.drag || ui.inventory.split || ui.inventory.goldDialog ||
+        ui.inventory.identify || input.movement.length() > .1f || input.leftPressed || input.leftHeld ||
+        (input.escape && !ui.inventory.open) ||
         ui.rightSkill != channelInputSkill_)) {
         session_.submit(StopChannel{});
         channelInputSkill_ = -1;
@@ -182,7 +184,7 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
         else return true;
     }
     repeatClick_ -= elapsed;
-    if (ui.blocksWorld() || input.escape || input.inventory || input.weaponSwap ||
+    if (ui.blocksWorld() || (input.escape && !ui.inventory.open) || input.weaponSwap ||
         input.movement.length() > .1f || session_.state().player.dead) {
         if (leftCombatTarget_ || rightCombatTarget_) {
             session_.submit(StopMoving{});
@@ -445,9 +447,6 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
     }
     if (input.inventory) {
         toggleInventory();
-        inventoryClick_ = input.leftHeld || input.leftReleased;
-        inventoryRight_ = input.rightHeld;
-        return true;
     }
     if (input.character && !ui.blocksWorld()) {
         ui.characterOpen = !ui.characterOpen;
@@ -586,8 +585,8 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
         else if (ui.questOpen)
             ui.questOpen = false;
         else openGameMenu(input.mouse);
-        inventoryClick_ = input.leftHeld || input.leftReleased;
-        inventoryRight_ = input.rightHeld;
+        inventoryClick_ = inventoryClick_ || input.leftPressed;
+        inventoryRight_ = inventoryRight_ || input.rightPressed;
         return true;
     }
     if (ui.travelMenu && !ui.help) {
@@ -634,10 +633,12 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
         ui.inventory.cancelGesture();
         return true;
     }
-    if (leftCombatTarget_ || rightCombatTarget_) {
-        if (handleSkills(input)) return true;
+    // Skill hotkeys and belt keys remain live while a non-modal side panel is open.
+    if (handleSkills(input)) return true;
+    if (!ui.inventory.drag && !ui.inventory.split && !ui.inventory.goldDialog && !ui.inventory.identify)
         for (int column = 0; column < 4; ++column)
             if (input.belt[column]) session_.submit(UseBeltColumn{column});
+    if (leftCombatTarget_ || rightCombatTarget_) {
         const bool right = bool(rightCombatTarget_);
         const auto target = right ? rightCombatTarget_ : leftCombatTarget_;
         const auto skill = right ? ui.rightSkill : ui.leftSkill;
@@ -732,11 +733,7 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
         ui.skillPicker.reset();
         ui.inventory.beltExpanded = !ui.inventory.beltExpanded;
     }
-    if (!ui.inventory.drag && !ui.inventory.split)
-        for (int i = 0; i < 4; ++i)
-            if (input.belt[i])
-                session_.submit(UseBeltColumn{i});
-    if (handleSkills(input) || handleInventory(input))
+    if (handleInventory(input))
         return true;
     if (ui.imbueNpc) return true;
     if (ui.automap) {
@@ -747,7 +744,7 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
     }
     if (!input.insideViewport)
         return true;
-    if (!hudSurface(input.mouse)) {
+    if (!hudSurface(input.mouse) && CheckCollisionPointRec(rv(input.mouse), view_.worldViewport())) {
         if (input.leftPressed || (input.leftHeld && !pickupClick_ && repeatClick_ <= 0)) {
             if (input.shift && ui.leftSkill)
                 session_.submit(UseClassSkill{*ui.leftSkill, view_.world(input.mouse), {}});

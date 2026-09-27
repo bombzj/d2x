@@ -20,7 +20,7 @@ InventoryResult prepared(EntityId item, unsigned quantity) {
 } // namespace
 InventoryResult InventoryService::createItem(std::string_view code, unsigned quantity,
                                              const ItemDestination &destination, unsigned level,
-                                             const ItemGeneration &generation) {
+                                             const ItemGeneration &generation, std::optional<Vec> groundOrigin) {
     if (level < 1 || level > 99)
         return failure(InventoryError::InvalidRequest);
     auto definition = catalog_.find(code);
@@ -52,7 +52,7 @@ InventoryResult InventoryService::createItem(std::string_view code, unsigned qua
         int(generation.quality) < 0 || int(generation.quality) > int(ItemQuality::Inferior))
         return failure(InventoryError::InvalidRequest);
     ItemLocation location;
-    if (auto error = resolve(*definition, destination, location); error != InventoryError::None)
+    if (auto error = resolve(*definition, destination, location, {}, groundOrigin); error != InventoryError::None)
         return failure(error);
     ItemInstance instance;
     instance.definition = definition->code;

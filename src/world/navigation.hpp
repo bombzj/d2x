@@ -53,6 +53,7 @@ struct Grid {
             p.x < width && p.y < height && walkable(int(std::floor(p.x)), int(std::floor(p.y)));
     }
     bool segment(Vec a, Vec b, EntityId ignoredObject = {}) const;
+    bool collisionSegment(Vec a, Vec b, uint16_t mask) const;
     bool missileSegment(Vec a, Vec b, MissileCollisionRule rule) const;
     bool lightSegment(Vec a, Vec b) const;
     Bytes reachableFrom(Vec origin) const;

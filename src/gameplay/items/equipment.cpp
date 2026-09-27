@@ -88,6 +88,7 @@ InventoryResult InventoryService::planEquipment(const EquipItem &command, const 
         return reject(InventoryError::InvalidRequest);
     InventoryService draft(ids_, catalog_, stashDimensions_, cubeDimensions_);
     draft.itemProperties_ = itemProperties_;
+    draft.groundPlacement_ = groundPlacement_;
     draft.state_ = state_;
     InventoryResult result;
     result.item = source.id;
