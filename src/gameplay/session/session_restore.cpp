@@ -141,18 +141,23 @@ void GameSession::restore(CharacterSaveData data) {
     applyWarmth(characterStats, data.player, definition, equipmentInventory, data.containers, actor);
     const auto equipmentStats = deriveEquipmentStats(equipmentInventory, data.containers, actor,
                                                      modifiers.defense, modifiers.combat, characterStats.baseAttackRating);
+    auto nextRandom = random_;
     std::map<EntityId, std::vector<VendorOffer>> nextVendorStocks;
     for (const auto &region : regions_)
         for (const auto &object : region.objects)
             if (auto vendor = content_.vendors.find(object.npcClass); vendor != content_.vendors.end()) {
-                const uint64_t seed = (uint64_t(data.mapSeed) << 32) | object.id.value;
+                const uint64_t seed = childRandom(nextRandom);
                 nextVendorStocks.emplace(object.id, planVendorStock(content_, vendor->second,
                     unsigned(data.player.level), data.difficulty, seed));
             }
     WorldState nextWorld;
     nextWorld.mapSeed = data.mapSeed;
+    nextWorld.population = state().population;
     nextWorld.population.difficulty = data.difficulty;
     nextWorld.player = std::move(data.player);
+    nextWorld.player.combatRandom = childRandom(nextRandom);
+    nextWorld.player.hireling.combatRandom = childRandom(nextRandom);
+    data.inventory.creationRandom = childRandom(nextRandom);
     nextWorld.waypoints = std::move(data.waypoints);
     nextWorld.area.region = data.lastRegion;
     nextWorld.area.initialized = true;
@@ -164,6 +169,11 @@ void GameSession::restore(CharacterSaveData data) {
     static_assert(std::is_nothrow_move_assignable_v<WorldState>);
     static_assert(std::is_nothrow_move_assignable_v<InventoryState>);
     simulation_.state_ = std::move(nextWorld);
+    random_ = nextRandom;
+    simulation_.unitRandom_ = childRandom(random_);
+    shrineRandom_ = childRandom(random_);
+    visualRandom_ = childRandom(random_);
+    cainRandom_ = childRandom(random_);
     simulation_.lifeStealDivisor_ = content_.lifeStealDivisor.at(size_t(state().population.difficulty));
     simulation_.manaStealDivisor_ = content_.manaStealDivisor.at(size_t(state().population.difficulty));
     characterDefinition_ = std::move(restoredDefinition);
@@ -177,7 +187,7 @@ void GameSession::restore(CharacterSaveData data) {
     inventory_.replenishTimers_.clear();
     inactiveAreas_.swap(nextAreas);
     playerContainers_ = data.containers;
-    loot_.restore({loot_.randomState(), {}, {}});
+    loot_.restore({childRandom(random_), {}, {}});
     vendorStocks_.swap(nextVendorStocks);
     gambleStocks_.clear();
     hirelingOffers_.clear();
@@ -199,6 +209,16 @@ void GameSession::restore(CharacterSaveData data) {
                     object.interaction = Interaction::Loot;
                 }
             }
+    for (auto &region : regions_) {
+        region.objectSeed = childRandom(random_);
+        for (auto &object : region.objects) {
+            if (!object.chest) continue;
+            auto &chest = *object.chest;
+            const auto &level = worldContent_.level(int(region.definition.id));
+            if (!level.objectLevel) throw std::logic_error("Chest lacks native object level");
+            resetChestRandom(chest, *level.objectLevel, region.objectSeed);
+        }
+    }
     for (auto &motion : npcMotions)
         for (auto &region : regions_)
             for (auto &object : region.objects)
@@ -209,7 +229,7 @@ void GameSession::restore(CharacterSaveData data) {
                     object.npcRoute.swap(motion.route);
                     object.npcWait = motion.wait;
                     object.npcTarget = motion.target;
-                    object.npcRandom = motion.random;
+                    object.npcRandom = childRandom(random_);
                 }
     ids_.next_ = data.nextEntityId;
     current_ = current;
@@ -217,6 +237,7 @@ void GameSession::restore(CharacterSaveData data) {
     for (auto &region : regions_) region.refreshObjectCollision(state().time);
     pending_.clear();
     pickup_ = {};
+    pickupToCursor_ = false;
     pendingInteraction_ = {};
     pendingInteractionRepath_ = false;
     engagedNpc_ = {};

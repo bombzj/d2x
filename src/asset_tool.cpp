@@ -12,6 +12,8 @@
 #include "world/outdoor.hpp"
 #include "world/population.hpp"
 #include "world/world_report.hpp"
+#include "core/random.hpp"
+#include "core/random_seed.hpp"
 #include <algorithm>
 #include <charconv>
 #include <fstream>
@@ -110,7 +112,7 @@ int main(int argc, char **argv) {
                     throw std::runtime_error("Invalid quality argument");
                 return value;
             };
-            uint64_t seed = (uint64_t(666) << 32) | 210;
+            uint64_t seed = d2x::initialRandom(d2x::freshSeed());
             if (argc >= 7) {
                 auto text = std::string_view(argv[6]);
                 auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), seed);
@@ -236,7 +238,7 @@ int main(int argc, char **argv) {
             }
         } else if ((command == "maze" || command == "outdoor") && argc >= 4 && argc <= 6) {
             d2x::WorldCatalog catalog(a);
-            uint32_t seed = d2x::defaultMapSeed;
+            uint32_t seed = d2x::freshSeed();
             if (argc >= 5) {
                 std::string value = argv[4];
                 auto [end, error] = std::from_chars(value.data(), value.data() + value.size(), seed);
@@ -255,7 +257,7 @@ int main(int argc, char **argv) {
                           << room.ds1 << '\n';
             d2x::TileLibraryCache cache(a);
             d2x::Map map;
-            map.load(a, cache, recipe);
+            map.load(a, cache, recipe, seed);
             for (const auto &b : recipe.boundaries) {
                 std::cout << "  boundary -> " << b.destination << " side=" << b.side << " span=" << b.start
                           << ':' << b.end << '\n';
@@ -282,6 +284,7 @@ int main(int argc, char **argv) {
                     }
         } else if (command == "population" && argc >= 4 && argc <= 6) {
             d2x::PopulationSettings settings;
+            settings.seed = d2x::freshSeed();
             if (argc >= 5) {
                 std::string difficulty = argv[4];
                 if (difficulty == "normal")
@@ -310,7 +313,7 @@ int main(int argc, char **argv) {
             const auto &preset = world.presets().at(recipe.preset);
             d2x::Map map;
             d2x::TileLibraryCache cache(a);
-            map.load(a, cache, recipe);
+            map.load(a, cache, recipe, settings.seed);
             auto plan = d2x::planPopulation(monsters, &level, preset, map, settings);
             d2x::writePopulationReport(std::cout, plan, &level, preset, settings);
         } else if (command == "maps" && (argc == 3 || argc == 4)) {
@@ -334,7 +337,7 @@ int main(int argc, char **argv) {
             auto data = d2x::loadClassicData(a);
             if (data.profile != "lod-named-txt-v1")
                 throw std::runtime_error("Treasure selection requires the LoD named table profile");
-            uint64_t seed = (uint64_t(666) << 32) | 210;
+            uint64_t seed = d2x::initialRandom(d2x::freshSeed());
             if (argc >= 5) {
                 auto text = std::string_view(argv[4]);
                 auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), seed);

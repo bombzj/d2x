@@ -1,3 +1,4 @@
+#include "core/random.hpp"
 #include "gameplay/npc/store.hpp"
 #include "item_magic_loot.hpp"
 #include "item_properties.hpp"
@@ -7,8 +8,7 @@
 namespace d2x {
 namespace {
 unsigned below(uint64_t &seed, unsigned bound) {
-    seed = uint64_t(uint32_t(seed)) * 0x6ac690c5ULL + (seed >> 32);
-    return bound ? uint32_t(seed) % bound : 0;
+    return limitedRandom(seed, bound);
 }
 unsigned price(const ClassicData &data, const ItemDefinition &base, int level) {
     const auto &table = data.tables.at(base.base.sourceTable);

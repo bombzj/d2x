@@ -1,3 +1,4 @@
+#include "core/random.hpp"
 #include "hireling_data.hpp"
 #include <stdexcept>
 #include <algorithm>
@@ -105,11 +106,12 @@ std::vector<HirelingOffer> planHirelingOffers(const std::vector<HirelingDefiniti
     auto b = std::from_chars(lastKey.data() + prefix, lastKey.data() + lastKey.size(), last);
     if (a.ec != std::errc{} || b.ec != std::errc{} || first > last) return {};
     auto random = [](uint64_t &value, unsigned bound) {
-        value = uint64_t(uint32_t(value)) * 0x6ac690c5ULL + (value >> 32);
+        rollRandom(value);
         return bound ? uint32_t(value) % bound : uint32_t(value);
     };
     std::vector<uint32_t> seeds(size_t(last - first + 1));
-    for (auto &value : seeds) value = random(seed, 0);
+    for (auto &value : seeds)
+        do { value = random(seed, 0); } while (!value); // D2S uses zero for no mercenary.
     std::vector<bool> available(seeds.size());
     // SUnitNpc: ten distinct candidates selected from the full original name range.
     for (size_t count = 0; count < std::min<size_t>(10, seeds.size()); ++count) {
@@ -120,14 +122,14 @@ std::vector<HirelingOffer> planHirelingOffers(const std::vector<HirelingDefiniti
     std::vector<HirelingOffer> result;
     for (size_t index = 0; index < seeds.size(); ++index) {
         if (!available[index]) continue;
-        uint64_t local = (uint64_t(666) << 32) | seeds[index];
+        uint64_t local = initialRandom(seeds[index]);
         const auto &d = *pool[random(local, unsigned(pool.size()))];
         const int levelRoll = int32_t(random(local, 0)) % 5;
         const int level = std::max(1, d.level + std::min(levelRoll, playerLevel - d.level));
         std::ostringstream key;
         key << firstKey.substr(0, prefix) << std::setw(int(firstKey.size() - prefix))
             << std::setfill('0') << first + int(index);
-        result.push_back({uint32_t(index + 1), d.sourceRow, level, key.str(), deriveHirelingStats(d, level)});
+        result.push_back({uint32_t(index + 1), d.sourceRow, level, key.str(), deriveHirelingStats(d, level), seeds[index]});
     }
     return result;
 }

@@ -1,3 +1,4 @@
+#include "core/random.hpp"
 #include "inventory.hpp"
 #include <algorithm>
 #include <array>
@@ -75,7 +76,7 @@ InventoryResult InventoryService::wearEquipment(const PlayerContainers &containe
                                                 bool defending, uint64_t &randomState,
                                                 unsigned weaponSet) {
     auto roll = [&](unsigned bound) {
-        randomState = uint64_t(uint32_t(randomState)) * 0x6ac690c5ULL + (randomState >> 32);
+        rollRandom(randomState);
         return bound ? uint32_t(randomState) % bound : 0u;
     };
     EntityId selected = weapon;

@@ -406,7 +406,7 @@ class Wilderness {
 };
 
 void alignPresetBoundary(Archives &archives, const WorldCatalog &catalog,
-                         std::map<int, OutdoorPosition> &layout, int id, int preset) {
+                         std::map<int, OutdoorPosition> &layout, int id, int preset, uint32_t worldSeed) {
     auto &p = layout.at(id);
     auto recipe = catalog.preset(preset, catalog.level(id).levelType, id == 1 ? p.direction : 0);
     auto &boundary = p.boundaries.front();
@@ -419,7 +419,8 @@ void alignPresetBoundary(Archives &archives, const WorldCatalog &catalog,
     recipe.boundaries = {contact};
     TileLibraryCache cache(archives);
     Map map;
-    map.load(archives, cache, recipe);
+    Seed tileRoot(worldSeed);
+    map.load(archives, cache, recipe, tileRoot.next() + uint32_t(id));
     const Vec origin = id == 1 ? map.actSpawn() : map.spawn;
     const auto reachable = map.grid.reachableFrom(origin);
     int first = contact.end * 5, last = -1;
@@ -447,8 +448,8 @@ void alignPresetBoundary(Archives &archives, const WorldCatalog &catalog,
 std::map<int, MapRecipe> generateAct1Outdoors(Archives &archives, const WorldCatalog &catalog,
                                               uint32_t seed) {
     auto layout = layoutAct1(catalog, seed);
-    alignPresetBoundary(archives, catalog, layout, 1, 1);
-    alignPresetBoundary(archives, catalog, layout, 26, 165);
+    alignPresetBoundary(archives, catalog, layout, 1, 1, seed);
+    alignPresetBoundary(archives, catalog, layout, 26, 165, seed);
     std::map<int, MapRecipe> result;
     for (const auto &[id, p] : layout) {
         auto recipe = id == 1    ? catalog.preset(1, 1, p.direction)

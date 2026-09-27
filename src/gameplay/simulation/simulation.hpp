@@ -18,6 +18,7 @@ struct MonsterMissileCast {
 class Simulation {
     friend class GameSession;
     EntityIds &ids_;
+    uint64_t unitRandom_ = 0; // Initialized by GameSession before spawning.
     const Grid *grid_ = nullptr; // Borrowed from GameSession's stable region storage.
     const RoomLayout *rooms_ = nullptr;
     std::map<int, MissileCollisionRule> missileCollisions_;
@@ -67,7 +68,7 @@ class Simulation {
     Enemy *findEnemy(EntityId id);
     float hurtPlayer(float amount, MonsterDamageType type);
     AttackElements rollAttackElements(EntityId weapon, const CombatModifiers *modifiers = nullptr,
-                                      const SkillCastSpec *skill = nullptr);
+                                      const SkillCastSpec *skill = nullptr, uint64_t *randomState = nullptr);
     void resolveWeaponHit(Enemy &enemy, float physical, EntityId source,
                           const AttackElements &elements);
     void moveTo(Vec target);

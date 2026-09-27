@@ -1,5 +1,6 @@
 #pragma once
 #include "content/classic_data.hpp"
+#include "core/random.hpp"
 #include "content/monster_difficulty_combat.hpp"
 #include "gameplay/items/inventory.hpp"
 #include "gameplay/loot/loot.hpp"
@@ -45,6 +46,8 @@ class GameSession {
         uint64_t random = 0;
     };
     EntityIds ids_;
+    uint64_t random_;
+    uint64_t visualRandom_ = 0, cainRandom_ = 0;
     ClassicData content_;
     CharacterDefinition characterDefinition_;
     WorldCatalog worldContent_;
@@ -64,6 +67,7 @@ class GameSession {
                                      {content_.cubeLayout.columns, content_.cubeLayout.rows}};
     LootSystem loot_;
     ItemHandle pickup_{};
+    bool pickupToCursor_ = false;
     PlayerContainers playerContainers_;
     StorageAccess storage_;
     EntityId pendingInteraction_;
@@ -109,7 +113,7 @@ class GameSession {
     bool upgradeShrineMonster(Vec position);
     bool openShrinePortal();
     const TownPortalState *findPortal(uint64_t revision) const;
-    uint64_t shrineRandom_ = 0x29a;
+    uint64_t shrineRandom_ = 0;
     void drinkWell(EntityId object);
     void updateObjectTimers();
     void identifyWithCain(EntityId npc);
@@ -183,7 +187,7 @@ class GameSession {
     void updatePortal();
     InventoryError previewPortalScroll(ItemHandle item) const;
     void useBeltColumn(int column);
-    void beginPickup(ItemHandle item);
+    void beginPickup(ItemHandle item, bool toCursor);
     void updatePickup();
     void cancelPickup();
     int validateCharacterRestore(const CharacterSaveData &data) const;
@@ -200,11 +204,12 @@ class GameSession {
     const HirelingDefinition *hirelingDefinition() const;
     HirelingCombatStats hirelingStats() const;
     static constexpr float fixedStep = 1.f / 25.f;
-    GameSession(Archives &archives, const WorldSelection &selection, int startRegion = -1,
-                uint64_t lootSeed = LootSystem::defaultSeed, PopulationSettings population = {},
+    GameSession(Archives &archives, const WorldSelection &selection, int startRegion,
+                uint32_t sessionSeed, PopulationSettings population,
                 std::string characterClass = "Barbarian", std::string characterName = "Hero");
     GameSession(const GameSession &) = delete;
     GameSession &operator=(const GameSession &) = delete;
+    uint64_t visualSeed() const { return visualRandom_; }
     const WorldState &state() const { return simulation_.state(); }
     void setRunning(bool running) { simulation_.state_.player.running = running; }
     const QuestRecord &quest(ActOneQuest id, int difficulty) const {
@@ -259,6 +264,9 @@ class GameSession {
     std::optional<unsigned> vendorSaleQuote(EntityId npc, ItemHandle item) const;
     unsigned vendorPurchasePrice(EntityId npc, const VendorOffer &offer, bool gamble) const;
     EntityId interactionTarget() const { return pendingInteraction_; }
+    const ItemInstance *cursorItem() const {
+        return inventory_.item(inventory_.itemAt(playerContainers_.cursor, {}));
+    }
     EntityId pickupTarget() const { return pickup_.id; }
     struct PortalView { uint64_t revision; Vec position; float openedAt; };
     std::vector<PortalView> portals(RegionId region) const;

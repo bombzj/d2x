@@ -1,3 +1,4 @@
+#include "core/random.hpp"
 #include "gameplay/session/session.hpp"
 #include "content/object_loot.hpp"
 #include "content/item_quality.hpp"
@@ -8,8 +9,7 @@
 namespace d2x {
 namespace {
 uint32_t roll(uint64_t &state, uint32_t bound) {
-    state = uint64_t(uint32_t(state)) * 0x6ac690c5ULL + (state >> 32);
-    return bound ? uint32_t(state) % bound : 0;
+    return limitedRandom(state, bound);
 }
 } // namespace
 void GameSession::activateLootObject(EntityId id) {

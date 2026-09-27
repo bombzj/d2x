@@ -1,3 +1,4 @@
+#include "core/random.hpp"
 #include "gameplay/session/session.hpp"
 #include <algorithm>
 #include <stdexcept>
@@ -22,14 +23,13 @@ std::array<int, 5> GameSession::cainStoneOrder() const {
     classes.erase(std::unique(classes.begin(), classes.end()), classes.end());
     if (classes.size() != 5)
         throw std::runtime_error("Original Stony Field lacks five Cairn Stones");
-    uint64_t random = (uint64_t(state().mapSeed) << 32) |
-        uint32_t(state().population.difficulty + 1);
-    for (size_t count = classes.size(); count > 1; --count) {
-        random = uint64_t(uint32_t(random)) * 0x6ac690c5ULL + (random >> 32);
-        std::swap(classes[count - 1], classes[uint32_t(random) % count]);
-    }
+    uint64_t random = cainRandom_; // One puzzle order per game; reads never advance the stream.
+    // A1Q4_InitQuestData: fill random unoccupied slots, retry collisions.
     std::array<int, 5> result{};
-    std::copy(classes.begin(), classes.end(), result.begin());
+    for (size_t index = 0; index < classes.size();) {
+        const auto slot = limitedRandom(random, unsigned(result.size()));
+        if (!result[slot]) result[slot] = classes[index++];
+    }
     return result;
 }
 

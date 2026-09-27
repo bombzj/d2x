@@ -1,3 +1,4 @@
+#include "core/random.hpp"
 #include "chest.hpp"
 #include <algorithm>
 #include <array>
@@ -6,8 +7,7 @@
 namespace d2x {
 namespace {
 uint32_t roll(uint64_t &seed, uint32_t bound) {
-    seed = uint64_t(uint32_t(seed)) * 0x6ac690c5ULL + (seed >> 32);
-    return bound ? uint32_t(seed) % bound : 0;
+    return limitedRandom(seed, bound);
 }
 int number(const std::map<std::string, std::string> &row, const char *key) {
     const auto &value = row.at(key);
@@ -40,12 +40,8 @@ void initializeChests(Region &region, const WorldCatalog &catalog, const Table &
         const int level = *area->second.objectLevel;
         ChestState chest;
         chest.sparkly = init == 57 || (object.chest && object.chest->sparkly);
-        // InitFunction03/57: the trap roll precedes the lock roll, on every difficulty.
-        if (roll(region.objectSeed, 100) < unsigned(level / 8 + 5))
-            chest.trap = uint8_t(roll(region.objectSeed, 8) + 1);
-        if (number(*row, "Lockable"))
-            chest.locked = roll(region.objectSeed, 100) < unsigned(level / 2 + 8);
-        chest.lootSeed = (uint64_t(666) << 32) | (roll(region.objectSeed, 65534) + 1);
+        chest.lockable = number(*row, "Lockable") != 0;
+        resetChestRandom(chest, level, region.objectSeed);
         object.chest = chest;
         if (object.animationMode != 0) object.interaction = Interaction::None;
     }

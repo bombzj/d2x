@@ -11,7 +11,7 @@ namespace d2x {
 enum class MonsterRank { Normal, Minion, Champion, Unique, SuperUnique, Boss };
 enum class SpawnOrigin { Density, Preset, Debug, Summoned };
 struct PopulationSettings {
-    uint32_t seed = 0xd2;
+    uint32_t seed = 0; // Supplied by the application/session; zero is a valid explicit seed.
     int difficulty = 0; // Normal, Nightmare, Hell. Independent of loot randomness.
 };
 // Content identity survives implementation substitution, travel, death and saving.

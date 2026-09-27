@@ -21,6 +21,8 @@ void main() {
 SceneView::SceneView(Archives &archives, const GameSession &session)
     : session_(session), assets_(archives, session), painter_(assets_.font),
       speechPainter_(assets_.speechFont) {
+    projectileVisualRandom_ = session_.visualSeed();
+    view_.inventory.syncCursor(session_);
     highlightShader_ = LoadShaderFromMemory(nullptr, highlightFragment);
     highlightTransform_ = GetShaderLocation(highlightShader_, "highlightTransform");
     view_.camera = project(session_.state().player.pos);
@@ -97,7 +99,7 @@ void SceneView::notice(std::string text, bool error) {
 }
 void SceneView::sessionRestored() {
     clientMissiles_.clear();
-    projectileVisualRandom_ = 1;
+    projectileVisualRandom_ = session_.visualSeed();
     exploredAutomap_.clear();
     view_.automapOffset = {};
     roofOpacity_.clear();
@@ -108,6 +110,7 @@ void SceneView::sessionRestored() {
     assets_.loadInventoryArt(session_);
     assets_.loadHeroEquipment(session_);
     view_.inventory = {};
+    view_.inventory.syncCursor(session_);
     view_.characterOpen = false;
     view_.pointButtonPressed.reset();
     view_.gameMenuOpen = false;
@@ -371,7 +374,9 @@ void SceneView::advance(float dt) {
                     auto name = picked ? itemName(*picked) :
                                          (definition ? definition->name : value.definition);
                     if (value.quantity > 1)
-                        name += " x" + std::to_string(value.quantity);
+                        name += definition && definition->bookCapacity
+                            ? " (" + std::to_string(value.quantity) + " pages)"
+                            : " x" + std::to_string(value.quantity);
                     notice("Picked up: " + name, false);
                 } else if constexpr (std::is_same_v<T, ItemChange>) {
                     const auto *item = session_.inventory().item(value.item);
@@ -486,6 +491,7 @@ void SceneView::advance(float dt) {
             view_.inventory.cancelGesture();
         }
     }
+    view_.inventory.syncCursor(session_);
     view_.animationTime += dt;
     view_.heroTime += dt * (player.chill > 0 ? .5f : 1.f) *
                       (player.moving && player.webSlowRemaining > 0

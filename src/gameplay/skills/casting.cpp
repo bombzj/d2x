@@ -1,3 +1,4 @@
+#include "core/random.hpp"
 #include "gameplay/simulation/simulation.hpp"
 #include <algorithm>
 #include <cmath>
@@ -134,12 +135,12 @@ void Simulation::releaseSkillCast(PlayerState &player, const SkillCastSpec &skil
     } else if (skill.effect == SkillBehavior::ChargedBolt) {
         if ((target - player.pos).length() < 1) target = player.pos + player.look * 10;
         for (int index = 0; index < skill.missileCount; ++index) {
-            player.combatRandom = uint64_t(uint32_t(player.combatRandom)) * 0x6ac690c5ULL +
-                                  (player.combatRandom >> 32);
+            rollRandom(player.combatRandom);
             const int minimum = int(skill.minimumDamage * 256), maximum = int(skill.maximumDamage * 256);
             const float amount = float(minimum + uint32_t(player.combatRandom) % unsigned(maximum - minimum + 1)) / 256.f;
             Missile missile;
             missile.id = ids_.allocate();
+            missile.combatRandom = childRandom(unitRandom_);
             missile.owner = player.id;
             missile.pos = player.pos;
             missile.velocity = player.look * skill.missileVelocity;
@@ -161,14 +162,14 @@ void Simulation::releaseSkillCast(PlayerState &player, const SkillCastSpec &skil
             0, 2, 5, 8, 11, 14, 16, 19, 21, 23, 24, 26, 27, 28, 29, 29};
         for (int index = 0; index < directions; ++index) {
             const Vec heading = Vec{float(offsets[index]), float(offsets[(index + 48) % directions])}.unit();
-            player.combatRandom = uint64_t(uint32_t(player.combatRandom)) * 0x6ac690c5ULL +
-                                  (player.combatRandom >> 32);
+            rollRandom(player.combatRandom);
             const float fraction = float(uint32_t(player.combatRandom)) / 4294967295.f;
             const float amount = skill.minimumDamage +
                 (skill.maximumDamage - skill.minimumDamage) * fraction;
             state_.area.missiles.push_back({ids_.allocate(), player.id, player.pos,
                 heading * skill.missileVelocity, skill.missileLifetime, skill.effect,
                 false, skill.missileId, amount, 0, skill.coldDuration});
+            state_.area.missiles.back().combatRandom = childRandom(unitRandom_);
             state_.area.missiles.back().nextHitDelay = skill.missileNextDelay;
             state_.area.missiles.back().acceleration = skill.missileAcceleration;
             state_.area.missiles.back().maxVelocity = skill.missileMaxVelocity;
@@ -178,8 +179,7 @@ void Simulation::releaseSkillCast(PlayerState &player, const SkillCastSpec &skil
     } else if (skill.effect == SkillBehavior::FireBolt || skill.effect == SkillBehavior::Fireball ||
                skill.effect == SkillBehavior::IceBolt || skill.effect == SkillBehavior::IceBlast ||
                skill.effect == SkillBehavior::Inferno) {
-        player.combatRandom = uint64_t(uint32_t(player.combatRandom)) * 0x6ac690c5ULL +
-                              (player.combatRandom >> 32);
+        rollRandom(player.combatRandom);
         const float fraction = float(uint32_t(player.combatRandom)) / 4294967295.f;
         const float amount = skill.minimumDamage +
                              (skill.maximumDamage - skill.minimumDamage) * fraction;
@@ -194,7 +194,7 @@ void Simulation::releaseSkillCast(PlayerState &player, const SkillCastSpec &skil
         missile.impactDamage.channels[size_t(cold ? MonsterDamageType::Cold : MonsterDamageType::Fire)] = amount;
         missile.impactDamage.coldDuration = skill.coldDuration;
         missile.impactDamage.freeze = skill.effect == SkillBehavior::IceBlast;
-        missile.combatRandom = player.combatRandom;
+        missile.combatRandom = childRandom(unitRandom_);
     }
 }
 } // namespace d2x

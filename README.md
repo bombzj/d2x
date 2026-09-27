@@ -52,6 +52,6 @@ Windows 使用 `scripts/build.ps1`，启动示例（默认读取 `assets/mpq2`�
 | Ctrl+Alt+G／E／A／T／W | 调试：加金币／经验、重置属性点、重置技能点、激活当前 MPQ 中已构建区域的传送点 |
 | Ctrl+Alt+B | 在脚边掉落一件赫拉迪克方块；已有方块时不会重复生成 |
 
-参数包括 `--class`、`--level`、`--map-seed`、`--difficulty normal|nightmare|hell`、`--population-seed`、`--save/--load`。`--seed` 仅控制预留掉落随机状态；模板查看使用 `--preset <Def> --level-type <ID>`。城镇按原 `Skills.InTown` 限制施法，攻击法术与传送不可用，冰封装甲等原表允许的技能仍可用。
+参数包括 `--class`、`--level`、`--map-seed`、`--difficulty normal|nightmare|hell`、`--population-seed`、`--save/--load`。新游戏默认生成新种子；`--seed <uint32>` 固定整局初始随机源，`--map-seed`／`--population-seed` 可单独覆盖地图／人口计划。载入 D2S 保留原地图种子，玩法使用新局随机流，见 [随机机制](docs/RANDOMNESS.md)；模板查看使用 `--preset <Def> --level-type <ID>`。城镇按原 `Skills.InTown` 限制施法，攻击法术与传送不可用，冰封装甲等原表允许的技能仍可用。
 
 源码使用 GPL-3.0，暴雪素材权利独立，见 [第三方说明](docs/THIRD_PARTY.md)。

@@ -1,4 +1,5 @@
 #include "spec.hpp"
+#include "core/random.hpp"
 #include <algorithm>
 #include <cstdint>
 #include <limits>
@@ -30,11 +31,12 @@ std::vector<Vec> chargedBoltPath(Vec origin, Vec target, int index, int frames) 
     constexpr int directions[]{5,4,4,4,3,6,5,4,3,2,6,6,6,2,2,6,7,0,1,2,7,0,0,0,1};
     constexpr Vec offsets[]{{1,0},{1,1},{0,1},{-1,1},{-1,0},{-1,-1},{0,-1},{1,-1}};
     const int mainDirection = directions[directionIndex];
-    uint64_t seed = (uint64_t(666) << 32) | uint32_t(index + int(target.x));
+    // SkillSor.cpp SKILLS_MissileInit_ChargedBolt deliberately seeds from bolt index + path X.
+    uint64_t seed = initialRandom(uint32_t(index + int(target.x)));
     Vec point{float(int(origin.x)) + .5f, float(int(origin.y)) + .5f};
     std::vector<Vec> path{point};
     for (int step = 0; step < std::min(77, frames) / 2; ++step) {
-        seed = uint64_t(uint32_t(seed)) * 0x6ac690c5ULL + (seed >> 32);
+        rollRandom(seed);
         const int roll = int(uint32_t(seed) & 31);
         const int offset = roll == 31 ? 1 : roll % 3 - 1;
         point = point + offsets[(mainDirection + offset + 8) % 8] * 2.f;

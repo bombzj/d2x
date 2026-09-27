@@ -1,3 +1,4 @@
+#include "core/random.hpp"
 #include "object_loot.hpp"
 #include "item_quality.hpp"
 #include <iterator>
@@ -5,8 +6,7 @@
 namespace d2x {
 namespace {
 uint32_t roll(uint64_t &seed, uint32_t bound) {
-    seed = uint64_t(uint32_t(seed)) * 0x6ac690c5ULL + (seed >> 32);
-    return bound ? uint32_t(seed) % bound : 0;
+    return limitedRandom(seed, bound);
 }
 bool magical(ItemQuality quality) {
     return quality == ItemQuality::Magic || quality == ItemQuality::Rare ||

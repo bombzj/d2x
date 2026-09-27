@@ -1,3 +1,4 @@
+#include "core/random.hpp"
 #include "gameplay/session/session.hpp"
 #include "content/character_attributes.hpp"
 #include "content/item_properties.hpp"
@@ -16,10 +17,10 @@ bool baseMonsterRank(MonsterRank rank) {
 }
 } // namespace
 GameSession::GameSession(Archives &archives, const WorldSelection &selection, int startRegion,
-                         uint64_t lootSeed, PopulationSettings population, std::string characterClass,
+                         uint32_t sessionSeed, PopulationSettings population, std::string characterClass,
                          std::string characterName)
-    : content_(loadClassicData(archives)), worldContent_(archives),
-      monsterContent_(archives, content_.tables.at("monstats")), loot_(lootSeed) {
+    : random_(initialRandom(sessionSeed)), content_(loadClassicData(archives)), worldContent_(archives),
+      monsterContent_(archives, content_.tables.at("monstats")), loot_(childRandom(random_)) {
     simulation_.state_.player.characterClass = std::move(characterClass);
     simulation_.missileCollisions_ = content_.missileCollisions;
     simulation_.noMultiShotMissiles_ = content_.noMultiShotMissiles;
@@ -37,8 +38,11 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
     };
     simulation_.resistancePenalty_ = content_.resistancePenalty.at(size_t(population.difficulty));
     simulation_.state_.mapSeed = selection.seed;
-    shrineRandom_ = (uint64_t(666) << 32) | selection.seed;
-    inventory_.state_.creationRandom = (uint64_t(666) << 32) | uint32_t(lootSeed);
+    shrineRandom_ = childRandom(random_);
+    inventory_.state_.creationRandom = childRandom(random_);
+    visualRandom_ = childRandom(random_);
+    cainRandom_ = childRandom(random_);
+    simulation_.unitRandom_ = childRandom(random_);
     inventory_.groundPlacement_ = [this](const GroundLocation &origin, const GroundLocation &target) {
         if (origin.region != target.region) return false;
         const auto found = std::find_if(regions_.begin(), regions_.end(),
@@ -117,7 +121,7 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
         const auto *record = monsterContent_.find(enemy.identity.monster);
         return record ? record->collisionSize : 0;
     };
-    simulation_.state_.player.combatRandom = (uint64_t(666) << 32) | selection.seed;
+    simulation_.state_.player.combatRandom = childRandom(simulation_.unitRandom_);
     simulation_.monsterAccuracy_ = [this](const Enemy &enemy, RegionId region, int mode)
         -> std::optional<MonsterAccuracy> {
         if (auto combat = resolvedMonsterCombat(enemy.identity, region)) {
@@ -400,7 +404,7 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
     };
     worldSelection.difficulty = population.difficulty;
     auto plan = planWorld(archives, worldContent_, worldSelection);
-    regions_ = loadRegions(archives, ids_, plan.regions, monsterContent_, worldContent_, selection.seed);
+    regions_ = loadRegions(archives, ids_, plan.regions, monsterContent_, worldContent_, selection.seed, rollRandom(random_));
     for (const auto &region : regions_)
         for (const auto &object : region.objects)
             if (!object.npcPath.empty())
@@ -411,7 +415,7 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
         for (const auto &object : region.objects)
             if (auto vendor = content_.vendors.find(object.npcClass);
                 vendor != content_.vendors.end()) {
-                uint64_t seed = (uint64_t(selection.seed) << 32) | object.id.value;
+                uint64_t seed = childRandom(random_);
                 vendorStocks_.emplace(object.id, planVendorStock(content_, vendor->second,
                                                                   equipmentActor().level,
                                                                   population.difficulty, seed));
@@ -531,9 +535,8 @@ void GameSession::enter(RegionId id, std::optional<Vec> arrival, std::optional<V
         for (const auto &npc : found->objects)
             if (auto vendor = content_.vendors.find(npc.npcClass); vendor != content_.vendors.end()) {
                 auto &seed = inventory_.state_.creationRandom;
-                seed = uint64_t(uint32_t(seed)) * 0x6ac690c5ULL + (seed >> 32);
                 auto stock = planVendorStock(content_, vendor->second, unsigned(state().player.level),
-                    state().population.difficulty, seed ^ npc.id.value);
+                    state().population.difficulty, childRandom(seed));
                 vendorStocks_[npc.id] = std::move(stock);
                 soldVendorOffers_.erase(npc.id);
                 gambleStocks_.erase(npc.id);
@@ -627,7 +630,7 @@ void GameSession::tick(float dt, Vec keyboard, bool forceRun) {
                 } else if constexpr (std::is_same_v<T, PickupItem>) {
                     cancelExit();
                     cancelInteraction();
-                    beginPickup(intent.item);
+                    beginPickup(intent.item, intent.toCursor);
                 } else if constexpr (std::is_same_v<T, UseItem>)
                     useItem(intent.item);
                 else if constexpr (std::is_same_v<T, SwitchWeaponSet>) {

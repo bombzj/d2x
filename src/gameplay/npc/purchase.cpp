@@ -170,7 +170,6 @@ void GameSession::buyVendorItem(EntityId npc, uint32_t slot, bool gamble) {
     auto sold = soldVendorOffers_;
     if (!gamble && !found->permanent)
         sold[npc].insert(slot);
-    auto creationRandom = inventory_.state_.creationRandom;
     auto purchased = inventory_.createItem(found->code, found->quantity,
                                             AutoPlace{playerContainers_.backpack}, found->level,
                                             found->generation);
@@ -181,7 +180,6 @@ void GameSession::buyVendorItem(EntityId npc, uint32_t slot, bool gamble) {
     auto item = purchased.item;
     inventory_.state_.items.at(item).defense = found->defense;
     inventory_.state_.items.at(item).identified = true;
-    inventory_.state_.creationRandom = creationRandom;
     auto &player = simulation_.state_.player;
     unsigned walletPaid = std::min(player.gold, paid);
     player.gold -= walletPaid;

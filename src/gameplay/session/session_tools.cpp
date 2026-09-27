@@ -124,10 +124,10 @@ void GameSession::imbueWithCharsi(const ImbueItem &command) {
         return;
     }
     publishInventory(std::move(removed), command.item.id);
+    inventory_.state_.creationRandom = generated.randomState;
     auto created = inventory_.createItem(code, 1,
         ContainerLocation{playerContainers_.backpack, cell}, unsigned(level), generated.generation);
     if (!created) throw std::logic_error("Imbue replacement failed after validated same-size removal");
-    inventory_.state_.creationRandom = generated.randomState;
     publishInventory(std::move(created), {});
     if (toolsAdvance(record, ToolsStage::Imbued))
         simulation_.emit(QuestAdvanced{ActOneQuest::ToolsOfTheTrade, record.stage});

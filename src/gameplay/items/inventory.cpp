@@ -61,6 +61,10 @@ EntityId InventoryService::createContainer(ContainerSpec specification) {
         if (specification.columns != int(EquipmentSlot::Count) || specification.rows != 1)
             throw std::invalid_argument("Invalid equipment container dimensions");
         break;
+    case ContainerKind::Cursor:
+        if (specification.columns != 1 || specification.rows != 1)
+            throw std::invalid_argument("Cursor holds one item");
+        break;
     case ContainerKind::BeltEquipment:
     case ContainerKind::Backpack:
     case ContainerKind::Belt:
@@ -78,6 +82,7 @@ EntityId InventoryService::createContainer(ContainerSpec specification) {
 PlayerContainers InventoryService::createPlayerContainers(EntityId player) {
     // The stash dimensions are adapted from the mounted MPQ inventory.txt by content.
     PlayerContainers result;
+    result.cursor = createContainer({player, ContainerKind::Cursor, 1, 1});
     result.backpack = createContainer({player, ContainerKind::Backpack, 10, 4});
     result.belt = createContainer({player, ContainerKind::Belt, 4, 1});
     result.stash = createContainer({player, ContainerKind::Stash, stashDimensions_.x, stashDimensions_.y});
@@ -203,7 +208,9 @@ InventoryError InventoryService::checkPlacement(const ItemDefinition &definition
     if (c->spec.kind == ContainerKind::Belt &&
         (!definition.beltAllowed || definition.width != 1 || definition.height != 1))
         return InventoryError::RestrictedItem;
-    if (position.cell.x < 0 || position.cell.y < 0 || definition.width > c->spec.columns ||
+    if (c->spec.kind == ContainerKind::Cursor) {
+        if (position.cell != Cell{}) return InventoryError::OutOfBounds;
+    } else if (position.cell.x < 0 || position.cell.y < 0 || definition.width > c->spec.columns ||
         definition.height > c->spec.rows || position.cell.x > c->spec.columns - definition.width ||
         position.cell.y > c->spec.rows - definition.height)
         return InventoryError::OutOfBounds;
@@ -220,6 +227,9 @@ std::optional<Cell> InventoryService::findSpace(EntityId id, std::string_view co
     auto def = catalog_.find(code);
     if (!c || !def)
         return std::nullopt;
+    if (c->spec.kind == ContainerKind::Cursor)
+        return checkPlacement(*def, ContainerLocation{id, {}}, ignore) == InventoryError::None
+            ? std::optional<Cell>{Cell{}} : std::nullopt;
     for (int y = 0; y <= c->spec.rows - def->height; ++y)
         for (int x = 0; x <= c->spec.columns - def->width; ++x)
             if (checkPlacement(*def, ContainerLocation{id, {x, y}}, ignore) == InventoryError::None)

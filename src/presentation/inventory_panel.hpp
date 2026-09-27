@@ -11,6 +11,7 @@ struct InventoryDrag {
     Vec pressedAt, pixelOffset;
     bool moved = false;
     bool pickedUp = false;
+    bool onCursor = false;
 };
 struct SplitDialog {
     ItemHandle item;
@@ -30,8 +31,9 @@ struct InventoryUi {
     std::optional<SplitDialog> split;
     std::optional<ItemHandle> identify;
     std::optional<GoldDialog> goldDialog;
+    void syncCursor(const GameSession &session);
     void cancelGesture() {
-        drag.reset();
+        if (drag && !drag->onCursor) drag.reset();
         split.reset();
         identify.reset();
         goldDialog.reset();

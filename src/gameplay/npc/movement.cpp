@@ -1,10 +1,11 @@
+#include "core/random.hpp"
 #include "gameplay/session/session.hpp"
 #include <algorithm>
 
 namespace d2x {
 namespace {
 uint32_t roll(uint64_t &state, uint32_t bound) {
-    state = uint64_t(uint32_t(state)) * 0x6ac690c5ULL + (state >> 32);
+    rollRandom(state);
     return uint32_t(state) % bound;
 }
 } // namespace
@@ -19,7 +20,7 @@ void GameSession::advanceNpcPaths(float dt) {
             npc.id == engagedNpc_)
             continue;
         if (!npc.npcRandom)
-            npc.npcRandom = (uint64_t(state().mapSeed) << 32) | npc.id.value;
+            npc.npcRandom = childRandom(random_);
         npc.npcWait = std::max(0.f, npc.npcWait - dt);
         if (npc.npcWait > 0)
             continue;

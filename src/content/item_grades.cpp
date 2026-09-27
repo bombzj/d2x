@@ -1,3 +1,4 @@
+#include "core/random.hpp"
 #include "item_grades.hpp"
 #include "item_properties.hpp"
 #include "gameplay/loot/special.hpp"
@@ -81,8 +82,7 @@ GradeGenerationResult rollItemGrade(const ClassicData &data, const ItemDefinitio
         result.deferred = "No original grade row for " + item.code;
         return result;
     }
-    result.randomState = uint64_t(uint32_t(result.randomState)) * 0x6ac690c5ULL +
-                         (result.randomState >> 32);
+    rollRandom(result.randomState);
     const auto *selected = candidates[uint32_t(result.randomState) % candidates.size()];
     result.generation.gradeRow = int32_t(selected->row);
     if (quality == ItemQuality::Superior) {

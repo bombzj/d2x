@@ -68,10 +68,14 @@ bool GameSession::claimCainReward() {
     auto generated = rollAffixItem(content_, *ring, quality, level,
                                    inventory_.state_.creationRandom, characterDefinition_.code);
     if (!generated.deferred.empty()) return false;
+    const auto previousRandom = inventory_.state_.creationRandom;
+    inventory_.state_.creationRandom = generated.randomState;
     auto created = inventory_.createItem(ring->code, 1,
         ContainerLocation{playerContainers_.backpack, *cell}, unsigned(level), generated.generation);
-    if (!created) return false;
-    inventory_.state_.creationRandom = generated.randomState;
+    if (!created) {
+        inventory_.state_.creationRandom = previousRandom;
+        return false;
+    }
     publishInventory(std::move(created), {});
     if (cainAdvance(record, CainStage::Rewarded))
         simulation_.emit(QuestAdvanced{ActOneQuest::SearchForCain, record.stage});

@@ -1,3 +1,4 @@
+#include "core/random.hpp"
 #include "monster_enchantment.hpp"
 #include "missile_effects.hpp"
 #include <algorithm>
@@ -7,7 +8,7 @@
 namespace d2x {
 namespace {
 uint32_t roll(uint64_t &seed, unsigned bound) {
-    seed = uint64_t(uint32_t(seed)) * 0x6ac690c5ULL + (seed >> 32);
+    rollRandom(seed);
     return bound ? uint32_t(seed) % bound : uint32_t(seed);
 }
 int number(const DataTable &table, size_t row, std::string_view field) {

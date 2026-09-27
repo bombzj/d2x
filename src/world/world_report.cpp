@@ -2,14 +2,17 @@
 #include "cow_level.hpp"
 #include "maze.hpp"
 #include "outdoor.hpp"
+#include "core/random_seed.hpp"
 #include <set>
 
 namespace d2x {
 void writeWorldReport(std::ostream &out, Archives &archives, const WorldCatalog &catalog, int selected) {
+    const auto seed = freshSeed();
+    out << "World report seed=" << seed << '\n';
     std::set<std::string> allMissing;
     int count = 0, ready = 0;
     auto outdoor = outdoorMissing(archives, catalog).empty()
-                       ? generateAct1Outdoors(archives, catalog, defaultMapSeed)
+                       ? generateAct1Outdoors(archives, catalog, seed)
                        : std::map<int, MapRecipe>{};
     for (const auto &[id, level] : catalog.levels()) {
         if (level.act != 0 || (selected && id != selected))
@@ -22,7 +25,7 @@ void writeWorldReport(std::ostream &out, Archives &archives, const WorldCatalog 
             available.reason.clear();
         }
         if (supportsMaze(id)) {
-            available.recipe = generateMaze(catalog, id, defaultMapSeed, 0);
+            available.recipe = generateMaze(catalog, id, seed, 0);
             available.missing = mazeMissing(archives, catalog, id);
             available.reason.clear();
         }
@@ -30,7 +33,7 @@ void writeWorldReport(std::ostream &out, Archives &archives, const WorldCatalog 
             available.missing = cowLevelMissing(archives, catalog);
             available.reason.clear();
             if (available.missing.empty())
-                available.recipe = generateCowLevel(archives, catalog, defaultMapSeed);
+                available.recipe = generateCowLevel(archives, catalog, seed);
         }
         ready += available.ready();
         const char *kind = level.generation == GenerationKind::Preset ? "preset"

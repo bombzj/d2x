@@ -1,4 +1,5 @@
 #include "gameplay/simulation/simulation.hpp"
+#include "core/random.hpp"
 #include <algorithm>
 #include <type_traits>
 
@@ -69,15 +70,14 @@ void Simulation::spawnEnemies(std::span<const MonsterSpawn> spawns) {
     for (const auto &spawn : spawns) {
         Enemy enemy;
         enemy.id = ids_.allocate();
-        enemy.combatRandom = (uint64_t(666) << 32) | (state_.population.seed ^ uint32_t(enemy.id.value));
+        enemy.combatRandom = childRandom(unitRandom_);
         enemy.identity = spawn.identity;
         enemy.kind = spawn.kind;
         enemy.pos = spawn.position;
         enemy.maxHp = monsterDefinition(enemy.kind).maxLife;
         if (monsterNormalCombat_)
             if (auto combat = monsterNormalCombat_(enemy.identity, area.region)) {
-                enemy.combatRandom = uint64_t(uint32_t(enemy.combatRandom)) * 0x6ac690c5ULL +
-                                     (enemy.combatRandom >> 32);
+                rollRandom(enemy.combatRandom);
                 enemy.maxHp = float(combat->minLife +
                     uint32_t(enemy.combatRandom) % unsigned(combat->maxLife - combat->minLife + 1));
             }

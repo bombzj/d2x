@@ -1,3 +1,4 @@
+#include "core/random.hpp"
 #include "object_loot.hpp"
 #include <algorithm>
 #include <cstdlib>
@@ -55,8 +56,7 @@ LootPlan planAct1RackLoot(const ClassicData &data, const WorldCatalog &world, Re
     }
     int level = std::max(1, area->second.population.level[size_t(difficulty)] - 1);
     auto random = [&](uint32_t bound) {
-        plan.randomState = uint64_t(uint32_t(plan.randomState)) * 0x6ac690c5ULL +
-                           (plan.randomState >> 32);
+        rollRandom(plan.randomState);
         return bound ? uint32_t(plan.randomState) % bound : 0;
     };
     for (int attempt = 0; attempt < (weapon ? 6 : 1); ++attempt) {

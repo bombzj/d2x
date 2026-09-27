@@ -1,3 +1,4 @@
+#include "core/random.hpp"
 #include "session.hpp"
 #include "content/monster_enchantment.hpp"
 #include <algorithm>
@@ -8,8 +9,7 @@
 namespace d2x {
 namespace {
 uint32_t shrineRoll(uint64_t &seed, uint32_t bound) {
-    seed = uint64_t(uint32_t(seed)) * 0x6ac690c5ULL + (seed >> 32);
-    return bound ? uint32_t(seed) % bound : 0;
+    return limitedRandom(seed, bound);
 }
 }
 bool GameSession::applyShrine(int code, EntityId source, Vec position) {
@@ -143,7 +143,7 @@ bool GameSession::applySpecialShrine(const ShrineDefinition &shrine, Vec positio
                 missile.impact = skill.missileImpact;
                 missile.impactDamage.channels[size_t(MonsterDamageType::Fire)] = damage;
                 missile.skillRank = rank;
-                missile.combatRandom = shrineRandom_;
+                missile.combatRandom = childRandom(simulation_.unitRandom_);
                 simulation_.state_.area.missiles.push_back(std::move(missile));
             }
         simulation_.emit(MissileReleased{skill.missileId});
@@ -178,7 +178,7 @@ bool GameSession::applySpecialShrine(const ShrineDefinition &shrine, Vec positio
                 missile.impactDamage.channels[channel] = float(range.minimum +
                     int(shrineRoll(shrineRandom_, unsigned(std::max(0, range.maximum - range.minimum))))) / 256.f;
             }
-            missile.combatRandom = shrineRandom_;
+            missile.combatRandom = childRandom(simulation_.unitRandom_);
             simulation_.state_.area.missiles.push_back(std::move(missile));
         }
         simulation_.emit(MissileReleased{missileId});

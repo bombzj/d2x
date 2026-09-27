@@ -4,6 +4,7 @@
 #include "resources/archive.hpp"
 #include "resources/formats.hpp"
 #include <memory>
+#include <tuple>
 namespace d2x {
 class TileLibraryCache {
     Archives &archives_;
@@ -20,6 +21,8 @@ struct Map {
     std::vector<const Tile *> tiles;
     std::map<uint32_t, std::vector<int>> lookup;
     std::vector<std::map<uint32_t, std::vector<int>>> scopedLookup;
+    // Chosen once at load: collision, automap and rendering read the same DT1 variant.
+    std::map<std::tuple<int, int, size_t, uint32_t>, int> tileChoices;
     Grid grid;
     std::string name, path;
     Vec spawn;
@@ -27,7 +30,7 @@ struct Map {
     RoomLayout activation;
     std::vector<Vec> warpArrivals;
     int unresolved = 0;
-    void load(Archives &archives, TileLibraryCache &cache, const MapRecipe &recipe);
+    void load(Archives &archives, TileLibraryCache &cache, const MapRecipe &recipe, uint32_t seed);
     Vec actSpawn() const;
     int tileIndex(const MapCell &c, int x, int y) const;
 };

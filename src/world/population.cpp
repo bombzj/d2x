@@ -1,7 +1,8 @@
 #include "population.hpp"
+#include "core/random.hpp"
 // Population rules adapted with reference to D2MOO (MIT), commit 5596f5cb6c5251a0a07c6637d26458b06099d516.
 // Copyright (c) 2020-2025 The Phrozen Keep community. See docs/licenses/D2MOO.txt.
-// Spatial placement and RNG remain project adapters; see docs/MONSTER_POPULATION.md.
+// Spatial placement and stream scheduling remain project adapters; see docs/MONSTER_POPULATION.md.
 #include <algorithm>
 #include <ostream>
 #include <set>
@@ -9,20 +10,11 @@
 
 namespace d2x {
 namespace {
-// Defined unsigned arithmetic/modulo keeps plans reproducible across C++ platforms.
-// This is a project seed stream, not the original game's multi-stream RNG.
 class Random {
     uint64_t state_;
-
   public:
-    explicit Random(uint32_t seed) : state_(seed) {}
-    uint32_t below(uint32_t bound) {
-        state_ += 0x9e3779b97f4a7c15ULL;
-        uint64_t x = state_;
-        x = (x ^ (x >> 30)) * 0xbf58476d1ce4e5b9ULL;
-        x = (x ^ (x >> 27)) * 0x94d049bb133111ebULL;
-        return bound ? uint32_t((x ^ (x >> 31)) % bound) : 0;
-    }
+    explicit Random(uint32_t seed) : state_(initialRandom(seed)) {}
+    uint32_t below(uint32_t bound) { return limitedRandom(state_, bound); }
     int between(int first, int last) {
         if (first < 0 || last < first || last > 1024)
             throw std::runtime_error("Invalid MPQ monster group range");
@@ -395,11 +387,8 @@ PopulationPlan planPopulation(const MonsterCatalog &catalog, const LevelRecord *
                               const PresetRecord &preset, const Map &map, PopulationSettings settings) {
     if (settings.difficulty < 0 || settings.difficulty > 2)
         throw std::runtime_error("Population difficulty must be 0..2");
-    uint32_t seed = 2166136261u ^ settings.seed;
-    for (unsigned char c : normalize(map.path))
-        seed = (seed ^ c) * 16777619u;
-    seed = (seed ^ uint32_t(level ? level->id : 10000 + preset.id)) * 16777619u;
-    seed = (seed ^ uint32_t(settings.difficulty)) * 16777619u;
+    auto parent = initialRandom(settings.seed);
+    const uint32_t seed = rollRandom(parent) + uint32_t(level ? level->id : preset.id);
     return Planner(catalog, level, preset, map, settings, seed).run();
 }
 void writePopulationReport(std::ostream &out, const PopulationPlan &plan, const LevelRecord *level,

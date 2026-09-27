@@ -20,7 +20,7 @@
 - `outdoor_layout` 管区域坐标；`outdoor` 管矩形边界和原预设；`maze` 管 Cave/Crypt/Barracks/Jail/Catacombs 房间图。兵营连接房使用原表固定变体，即使 `Files=0` 也不能遗漏其三个定向资源。
 - `MapRecipe::Boundary::plane` 为可选的局部连接平面；缺省仍使用地图外边缘。兵营与外侧回廊按原版偏移对齐，两侧均可行走的位置才作为跨区入口，不移除原图碰撞。
 - `exits` 解析隐藏与可见出口，按 `Vis/Warp` 关联；`session_exits` 管走近、跨区和返回。
-- 地图种子默认 210；`--map-seed` 与刷怪种子、掉落种子独立。难度影响迷宫房间数。
+- 地图种子默认由新局随机源派生；`--seed` 固定整局，`--map-seed` 与 `--population-seed` 可分别覆盖。难度影响迷宫房间数。
 - 地形目前启动时整体装载。房间激活只管理怪物，不是完整地形流式加载。
 
 ## 怪物

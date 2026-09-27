@@ -27,9 +27,19 @@
 
 绿色预览表示当前规则允许；红色表示越界、占用冲突、堆叠已满或其他拒绝原因。占格数表示已占面积；空格分散时，大物品仍可能没有放置空间。自动放置不会重新排序全部库存。右键药剂会饮用，右键可穿脱适用装备。详见 [腰带与物品使用](BELT_AND_CONSUMABLES.md)。
 
-按下拿起时立即以物品图像替换普通手形光标，背包、装备和腰带来源槽不再绘制淡影。数据中的来源归属保留至事务成功；拖动在松开时提交，点选在第二次点击有效目标时提交，不提前移除或复制权威物品。来源版本变化时取消手势，操作失败保留原数据；预览拒绝的放置保留手持以便重新选择位置。拖到腰带格可放置或交换，窗口外拖放取消；HUD 或面板内无效目标不丢失物品，可右键或 Esc 取消。
+背包打开时拾取地面物品，进入独立 Cursor 容器，即使背包已满也可拿起；已有手持物品则拒绝继续拾取。金币仍直接进入钱包。依据 D2MOO ItemMode.cpp::D2GAME_PickupItemEx_6FC42B80 与 Diablerie PlayerController.Take / Player.Take(preferHands)。Cursor 不占背包格，可放置、合并、交换、装备或丢回地面；交换出的物品继续手持，右键不取消，Esc 关闭面板，原生 D2S mode 4 保存此位置。
 
-打开 NPC 商店不改变玩家库存右键操作：药剂仍饮用，卷轴／书仍使用或进入鉴定选择，装备沿用现有穿脱；左键拿起后向商店货物区投放才出售，见 [NPC 交易](NPC_TRADE.md)。参考 Diablerie 的 `InventoryGrid.OnPointerDown` 及 `PlayerController.OnHandsItemChanged` 实现拿放和光标替换；当前游戏交换后直接完成两件物品的事务，不继续手持换出的物品，取消回原位、仅视觉拿起不立即解除装备加成仍是项目适配。新增商店输入与持物绘制尚未构建或运行验收。
+对背包／装备内尚未提交的拖动，按下拿起时立即以物品图像替换普通手形光标，背包、装备和腰带来源槽不再绘制淡影。数据中的来源归属保留至事务成功；拖动在松开时提交，点选在第二次点击有效目标时提交，不提前移除或复制权威物品。来源版本变化时取消手势，操作失败保留原数据；预览拒绝的放置保留手持以便重新选择位置。拖到腰带格可放置或交换，窗口外拖放取消；HUD 或面板内无效目标不丢失物品，可右键或 Esc 取消。
+
+打开 NPC 商店不改变玩家库存右键操作：药剂仍饮用，卷轴／书仍使用或进入鉴定选择，装备沿用现有穿脱；左键拿起后向商店货物区投放才出售，见 [NPC 交易](NPC_TRADE.md)。参考 Diablerie 的 `InventoryGrid.OnPointerDown` 及 `PlayerController.OnHandsItemChanged` 实现拿放和光标替换；背包内的预提交拖动交换后直接完成两件物品的事务，取消回原位、仅视觉拿起不立即解除装备加成仍是项目适配。新增商店输入与持物绘制尚未构建或运行验收。
+
+## 自动拾取与合并
+
+背包关闭时先合并再找空位：卷轴按 Books 配对填入背包内未满的书；书按 D2MOO sub_6FC43BF0 每次填充一本匹配书，余页留在地面。AutoStack 物品优先补装备，再补背包已有堆叠，最后沿用腰带／背包放置。满背包不会撤销已完成的合并，剩余数量保留在地面并提示；私人箱、方块和佣兵装备不参与地面自动补充。
+
+AutoStack 来自当前 MPQ ItemTypes，包含箭矢／弩矢、钥匙、投掷药瓶和投掷武器，不以物品代码列白名单。共用兼容规则参考 D2Common ITEMS_AreStackablesEqual：底材、普通／超强／劣质品质、品质行、无形标志、伤害一致且无孔；其他品质不合并。完整吞并堆叠时保留较低耐久，容量仍包含原 item_extra_stack。手动合并与拾取共享兼容判断。
+
+依据 D2MOO ItemMode.cpp 的 D2GAME_PickupItem_6FC43340、sub_6FC437F0、sub_6FC43BF0，D2Inventory.cpp 的 FindFillableBook／FindEquippedItemForStack／FindBackPackItemForStack，以及 OpenDiablo2 item_types_record.go 对 AutoStack 的定义。适配区别：D2MOO 所存版本的后备背包搜索受 Quiver 限制；本项目按本次需求，对所有 AutoStack 类型搜索背包，符合 OpenDiablo2 的字段定义，避免钥匙／药瓶／标枪另占格。
 
 ## 实现入口
 

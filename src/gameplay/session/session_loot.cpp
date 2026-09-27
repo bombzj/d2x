@@ -24,9 +24,10 @@ void GameSession::settleDeaths() {
         updateSlaughterQuest(death);
         LootRequest request{death.victim, death.identity, death.region, death.difficulty,
                             questFirstKill};
+        request.sourceSeed = true;
         if (death.identity.origin == SpawnOrigin::Summoned) {
             LootPlan empty;
-            empty.randomState = loot_.randomState();
+            empty.randomState = death.lootRandom;
             loot_.settle(request, std::move(empty));
             continue;
         }
@@ -34,7 +35,7 @@ void GameSession::settleDeaths() {
         std::cout << "Monster loot entry: id=" << death.victim.value << " monster=" << death.identity.monster
                   << " rank=" << monsterRankName(death.identity.rank);
         LootPlan plan;
-        plan.randomState = loot_.randomState();
+        plan.randomState = death.lootRandom;
         if (entry.status == LootEntryStatus::Ready) {
             auto ratios = content_.tables.find("itemratio");
             if (ratios == content_.tables.end())
@@ -102,9 +103,10 @@ void GameSession::cancelPickup() {
     if (pickup_.id)
         simulation_.stopWalking();
     pickup_ = {};
+    pickupToCursor_ = false;
 }
-void GameSession::beginPickup(ItemHandle handle) {
-    if (pickup_.id == handle.id && pickup_.revision == handle.revision)
+void GameSession::beginPickup(ItemHandle handle, bool toCursor) {
+    if (pickup_.id == handle.id && pickup_.revision == handle.revision && pickupToCursor_ == toCursor)
         return;
     cancelPickup();
     const auto *item = inventory_.item(handle.id);
@@ -115,23 +117,24 @@ void GameSession::beginPickup(ItemHandle handle) {
     }
     const auto *ground = std::get_if<GroundLocation>(&item->location);
     const auto &player = state().player;
-    if (player.dead || !ground || ground->region != region().definition.id) {
+    if (player.dead || cursorItem() || !ground || ground->region != region().definition.id) {
         simulation_.emit(InventoryRejected{handle.id, InventoryError::AccessDenied});
         return;
     }
     simulation_.stopWalking();
     simulation_.execute(MoveTo{ground->position});
-    if (player.route.empty()) {
+    if (player.route.empty() && (ground->position - player.pos).length() > 1.8f) {
         simulation_.emit(PickupFailed{handle.id, "Cannot reach that item."});
         return;
     }
     pickup_ = handle;
+    pickupToCursor_ = toCursor;
 }
 void GameSession::updatePickup() {
     if (!pickup_.id)
         return;
     const auto &player = state().player;
-    if (player.dead) {
+    if (player.dead || cursorItem()) {
         cancelPickup();
         return;
     }
@@ -176,16 +179,19 @@ void GameSession::updatePickup() {
                 simulation_.emit(ItemPickedUp{handle.id, std::move(definition), amount});
             return;
         }
-        auto beltSlot = inventory_.beltSpace(playerContainers_.belt, definition, true);
-        auto result =
-            beltSlot ? inventory_.move(MoveItem{handle, ContainerLocation{playerContainers_.belt, *beltSlot}},
-                                       access)
-                     : inventory_.collect(handle, playerContainers_.backpack, access);
+        auto result = pickupToCursor_
+            ? inventory_.move(MoveItem{handle, ContainerLocation{playerContainers_.cursor, {}}}, access)
+            : inventory_.collect(handle, playerContainers_, access);
+        quantity = result.transferred;
+        const bool remainder = inventory_.item(handle.id) &&
+            std::holds_alternative<GroundLocation>(inventory_.item(handle.id)->location);
         bool collected = bool(result);
         cancelPickup();
         publishInventory(std::move(result), handle.id);
         if (collected)
             simulation_.emit(ItemPickedUp{handle.id, std::move(definition), quantity});
+        if (collected && remainder)
+            simulation_.emit(PickupFailed{handle.id, "Merged what fits. The remainder stays on the ground."});
     } else if (player.route.empty()) {
         cancelPickup();
         simulation_.emit(PickupFailed{handle.id, "Cannot reach that item."});

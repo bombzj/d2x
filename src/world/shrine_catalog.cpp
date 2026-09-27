@@ -10,14 +10,13 @@ int number(const std::map<std::string, std::string> &row, const char *key) {
     return found == row.end() || found->second.empty() ? 0 : std::stoi(found->second);
 }
 } // namespace
-void assignShrine(WorldObject &object, const Table &rows, int levelId, uint32_t worldSeed) {
+void assignShrine(WorldObject &object, const Table &rows, int levelId, uint64_t &random) {
     if (object.interaction != Interaction::Shrine) return;
     if (rows.size() < 2) throw std::runtime_error("MPQ Shrines.txt has no usable types");
-    Seed random(worldSeed ^ (uint32_t(levelId) * 0x9e3779b9u) ^ uint32_t(object.id.value));
     int shrineClass = 0;
     if (object.parameters[0]) {
         shrineClass = object.parameters[0] == 1 ? 2 : object.parameters[0] == 2 ? 3 : 4;
-        if (shrineClass == 4 && random.below(10) == 0) shrineClass = 1;
+        if (shrineClass == 4 && limitedRandom(random, 10) == 0) shrineClass = 1;
     }
     std::vector<const std::map<std::string, std::string> *> candidates;
     for (const auto &row : rows)
@@ -26,7 +25,7 @@ void assignShrine(WorldObject &object, const Table &rows, int levelId, uint32_t 
     if (candidates.empty()) throw std::runtime_error("MPQ Shrines.txt lacks the selected effect class");
     const std::map<std::string, std::string> *chosen = nullptr;
     for (int attempt = 0; attempt < 8; ++attempt) {
-        chosen = candidates[size_t(random.below(int(candidates.size())))];
+        chosen = candidates[size_t(limitedRandom(random, uint32_t(candidates.size())))];
         if (levelId >= number(*chosen, "LevelMin")) break;
     }
     int code = number(*chosen, "Code");

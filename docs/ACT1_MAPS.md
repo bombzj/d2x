@@ -61,7 +61,7 @@ DT1 图像共享；像素与碰撞使用同一瓦片变体。隐藏出口仍参�
 
 ## 种子和工具
 
-- `--map-seed`：地图种子，默认 210；`--population-seed`：独立刷怪种子。
+- `--map-seed`：覆盖地图种子；`--population-seed`：覆盖人口计划种子；默认由新局随机源派生，`--seed <uint32>` 固定整局。
 - `--difficulty normal|nightmare|hell`：同时影响迷宫房间数和刷怪配置。
 - `d2x_assets assets/mpq2 maze 10 210 0`：洞穴／地穴房间配方。
 - `d2x_assets assets/mpq2 outdoor 6 210`：野外配方、边界及碰撞条带。

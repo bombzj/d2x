@@ -28,6 +28,7 @@ struct HirelingOffer {
     int sourceRow = -1, level = 0;
     std::string nameKey;
     HirelingStats stats;
+    uint32_t seed = 0;
 };
 struct HirelingLayout {
     // Head, torso, right arm, left arm; original Hireling row, panel-local pixels.

@@ -53,10 +53,11 @@ void populateAct1WorldObjects(Region &region, EntityIds &ids, const WorldCatalog
     const auto level = catalog.levels().find(levelId);
     if (level == catalog.levels().end() || level->second.act != 0 || region.definition.safe)
         return;
+    Seed parent(worldSeed);
     for (size_t roomIndex = 0; roomIndex < region.map.rooms.size(); ++roomIndex) {
         const auto &room = region.map.rooms[roomIndex];
         if (!room.populate || room.width < 8 || room.height < 8) continue;
-        Seed selection(worldSeed ^ (uint32_t(levelId) * 0x9e3779b9u) ^ uint32_t(roomIndex));
+        Seed selection(parent.next());
         for (size_t slot = 0; slot < level->second.objectGroups.size(); ++slot) {
             const int groupId = level->second.objectGroups[slot];
             if (!groupId || selection.below(100) > level->second.objectProbabilities[slot]) continue;
@@ -108,8 +109,7 @@ void populateAct1WorldObjects(Region &region, EntityIds &ids, const WorldCatalog
             int count = std::clamp(density * ((room.width * room.height) >> 7) >> 8, 0, 32);
             if (chest) count = std::max(0, density * ((room.width * room.height) >> 7) >> 8);
             if (barrel) count = std::min(8, count * 2);
-            Seed placement(worldSeed ^ (uint32_t(levelId) * 0x85ebca6bu) ^
-                           (uint32_t(roomIndex) * 0xc2b2ae35u) ^ uint32_t(slot));
+            Seed placement(selection.next());
             const int size = std::max(integer(*record, "SizeX"), integer(*record, "SizeY"));
             const int sizeX = integer(*record, "SizeX"), sizeY = integer(*record, "SizeY");
             if (chest && (room.width <= sizeX + 1 || room.height <= sizeY + 1)) continue;

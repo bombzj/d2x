@@ -1,5 +1,6 @@
 #include "gameplay/simulation/simulation.hpp"
 #include "gameplay/combat/damage_resolution.hpp"
+#include "core/random.hpp"
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
@@ -72,8 +73,8 @@ void Simulation::resolveMissileImpact(const Missile &missile, std::vector<Missil
         child.groundTargeted = true;
         child.impact = MissileImpactSpec{};
         child.impact->radius = area.radius;
-        child.combatRandom = missile.combatRandom + child.id.value;
-        child.combatRandom = uint64_t(uint32_t(child.combatRandom)) * 0x6ac690c5ULL + (child.combatRandom >> 32);
+        child.combatRandom = childRandom(unitRandom_);
+        rollRandom(child.combatRandom);
         const uint64_t span = uint64_t(std::max<int64_t>(0, maximum - minimum));
         child.impactDamage.channels[size_t(area.element)] =
             float(minimum + (span ? uint32_t(child.combatRandom) % span : 0)) / 256.f;
@@ -91,7 +92,7 @@ void Simulation::resolveMissileImpact(const Missile &missile, std::vector<Missil
         Missile next{ids_.allocate(), missile.owner, origin, heading.unit() * speed,
             float(cloud.lifetimeFrames) / 25.f, SkillBehavior::None, false, cloud.missileId};
         next.poisonCloud = cloud;
-        next.combatRandom = missile.combatRandom + next.id.value;
+        next.combatRandom = childRandom(unitRandom_);
         spawned.push_back(std::move(next));
     };
     for (int i = 0; i < 16; i += burst.mainStep) launch(offsets[i], burst.mainSpeed);
@@ -134,7 +135,7 @@ void Simulation::advancePoisonCloud(Missile &missile, float dt) {
     }
     if (struck) {
         missile.lastHit = struck->id; // Native LastCollide suppresses the previous unit only.
-        missile.combatRandom = uint64_t(uint32_t(missile.combatRandom)) * 0x6ac690c5ULL + (missile.combatRandom >> 32);
+        rollRandom(missile.combatRandom);
         const auto span = uint32_t(std::max(0, cloud.maximum - cloud.minimum));
         const int rate = cloud.minimum + (span ? uint32_t(missile.combatRandom) % span : 0);
         applyEnemyPoison(*struck, float(rate) * 25.f / 256.f, float(cloud.poisonFrames) / 25.f, missile.owner, true);

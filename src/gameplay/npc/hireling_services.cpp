@@ -53,6 +53,8 @@ void GameSession::assignHireling(const HirelingOffer &offer) {
     if (found == content_.hirelings.end()) return;
     auto &player = simulation_.state_.player;
     HirelingState next;
+    next.seed = offer.seed;
+    next.combatRandom = childRandom(simulation_.unitRandom_);
     next.sourceRow = offer.sourceRow; next.classId = found->classId;
     next.nameKey = offer.nameKey; next.level = offer.level;
     next.hp = float(offer.stats.life); next.experience = offer.stats.experience;

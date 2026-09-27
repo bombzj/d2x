@@ -138,6 +138,7 @@ void importMerc(PlayerState &player, const D2sHeader &header, const ClassicData 
     }
     require(definition != nullptr, "unsupported hireling type");
     auto &merc = player.hireling;
+    merc.seed = header.mercSeed;
     merc.sourceRow = definition->sourceRow; merc.classId = definition->classId;
     merc.nameKey = mercName(*definition, header.mercName);
     merc.level = level; merc.experience = header.mercExperience;
@@ -149,7 +150,8 @@ void exportMerc(D2sHeader &header, const PlayerState &player, const ClassicData 
     auto definition = std::find_if(content.hirelings.begin(), content.hirelings.end(),
         [&](const auto &entry) { return entry.sourceRow == merc.sourceRow; });
     require(definition != content.hirelings.end() && merc.experience <= UINT32_MAX, "hireling metadata");
-    header.mercSeed = header.mercSeed ? header.mercSeed : 1;
+    require(merc.seed != 0, "missing hireling seed");
+    header.mercSeed = merc.seed;
     header.mercType = uint16_t(definition->id);
     bool found = false;
     for (unsigned index = 0; index < 256; ++index) {

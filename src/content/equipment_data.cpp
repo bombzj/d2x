@@ -7,7 +7,7 @@ namespace d2x {
 void loadEquipmentDefinitions(std::vector<ItemDefinition> &items, const DataTable &types,
                               const std::map<std::string, DataTable, std::less<>> &tables) {
     for (auto column : {"Code", "Equiv1", "Equiv2", "Body", "BodyLoc1", "BodyLoc2", "Class", "Shoots",
-                        "Quiver", "Throwable", "Repair"})
+                        "Quiver", "Throwable", "Repair", "AutoStack"})
         if (!types.has(column))
             throw std::runtime_error("ItemTypes lacks equipment column: " + std::string(column));
     std::map<std::string, size_t, std::less<>> rows;
@@ -43,6 +43,7 @@ void loadEquipmentDefinitions(std::vector<ItemDefinition> &items, const DataTabl
             }
         equipment.shoots = types.value(row, "Shoots");
         equipment.quiver = types.value(row, "Quiver");
+        item.autoStack = types.number(row, "AutoStack").value_or(0) != 0;
         equipment.throwable = types.number(row, "Throwable").value_or(0) != 0;
         equipment.repairable = types.number(row, "Repair").value_or(0) != 0;
         std::set<std::string, std::less<>> visiting, complete;

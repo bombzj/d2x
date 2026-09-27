@@ -67,7 +67,7 @@ struct PlayerState {
     int channelSkill() const { return channel ? channel->skill.sourceId : -1; }
     float channelAge() const { return channel ? channel->age : 0; }
     bool running = false, runningNow = false, moving = false, dead = false;
-    uint64_t combatRandom = (uint64_t(666) << 32) | 210;
+    uint64_t combatRandom = 0; // Initialized on unit creation.
     unsigned weaponSet = 0;
     unsigned gold = 0, bankGold = 0;
     std::array<std::set<std::string>, 3> npcIntroductions;
@@ -109,7 +109,7 @@ struct Enemy {
     bool resurrected = false;
     float webAuraRemaining = 0, webTrailDistance = 0;
     std::deque<Vec> route;
-    uint64_t combatRandom = (uint64_t(666) << 32) | 210;
+    uint64_t combatRandom = 0; // Initialized on unit creation.
     float poisonRemaining = 0, poisonPerSecond = 0;
     EntityId poisonSource;
     bool poisonPlayerEffects = true;
@@ -183,7 +183,7 @@ struct TownPortalState {
     bool consumedOnReturn = true;
 };
 struct WorldState {
-    uint32_t mapSeed = 210;
+    uint32_t mapSeed = 0;
     PopulationSettings population;
     PlayerState player;
     AreaState area;

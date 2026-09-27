@@ -34,10 +34,11 @@ struct ItemDefinition {
     unsigned maxStack = 1, maxDurability = 0;
     bool beltAllowed = false, usable = false;
     bool opensCube = false;
+    int targetCursor = -1; // Misc.spellicon or Books.SpellIcon; frame in cursor/spells.dc6.
     std::string icon, groundAnimation;
     std::vector<std::string> inventoryIcons;
     bool artAvailable = false;
-    bool autoBelt = false;
+    bool autoBelt = false, autoStack = false;
     bool imbueable = false;
     int beltRows = 0; // Zero is not an equippable belt; row zero is the ready row.
     std::string betterGem; // Misc.bettergem; empty/non means no upgrade.

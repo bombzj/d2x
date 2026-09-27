@@ -1,5 +1,7 @@
 #include "map.hpp"
 #include "map_assembly.hpp"
+#include "core/random.hpp"
+#include <limits>
 #include <algorithm>
 #include <iostream>
 namespace d2x {
@@ -19,25 +21,8 @@ Vec Map::actSpawn() const {
     throw std::runtime_error("Missing DS1 act spawn marker: " + path);
 }
 int Map::tileIndex(const MapCell &c, int x, int y) const {
-    const auto &candidates = scopedLookup.at(c.libraryScope);
-    auto it = candidates.find(c.key());
-    if (it == candidates.end() || it->second.empty())
-        return -1;
-    // DT1 rarity is the native variant weight. Coordinate hashing only stabilizes
-    // this preset viewer; it does not reproduce the original room seed sequence.
-    uint64_t total = 0;
-    for (int index : it->second)
-        total += std::max(0, tiles[index]->rarity);
-    if (!total)
-        return it->second.front();
-    uint64_t choice = (uint32_t(x) * 73856093u ^ uint32_t(y) * 19349663u) % total;
-    for (int index : it->second) {
-        auto weight = uint64_t(std::max(0, tiles[index]->rarity));
-        if (choice < weight)
-            return index;
-        choice -= weight;
-    }
-    return it->second.back();
+    auto found = tileChoices.find({x, y, c.libraryScope, c.key()});
+    return found == tileChoices.end() ? -1 : found->second;
 }
 std::shared_ptr<const std::vector<Tile>> TileLibraryCache::load(const std::string &path) {
     auto key = normalize(path);
@@ -48,7 +33,7 @@ std::shared_ptr<const std::vector<Tile>> TileLibraryCache::load(const std::strin
     libraries_.emplace(key, decoded);
     return decoded;
 }
-void Map::load(Archives &a, TileLibraryCache &cache, const MapRecipe &recipe) {
+void Map::load(Archives &a, TileLibraryCache &cache, const MapRecipe &recipe, uint32_t seed) {
     const auto &ds1 = recipe.ds1;
     path = name = ds1;
     data = assembleMap(a, recipe);
@@ -107,6 +92,43 @@ void Map::load(Archives &a, TileLibraryCache &cache, const MapRecipe &recipe) {
                 cell.value = (30u << 20) | 0x80000002u;
     if (tiles.empty())
         throw std::runtime_error("No DT1 tiles for " + ds1);
+    tileChoices.clear();
+    auto tileRandom = initialRandom(seed);
+    auto chooseTile = [&](const MapCell &cell, int x, int y) {
+        auto key = std::tuple{x, y, cell.libraryScope, cell.key()};
+        if (tileChoices.contains(key)) return;
+        const auto &scope = scopedLookup.at(cell.libraryScope);
+        auto found = scope.find(cell.key());
+        if (found == scope.end() || found->second.empty()) return;
+        uint64_t total = 0;
+        for (int index : found->second) total += std::max(0, tiles[index]->rarity);
+        if (total > std::numeric_limits<uint32_t>::max())
+            throw std::runtime_error("DT1 rarity total exceeds native random range");
+        // DRLGROOMTILE_GetTileCache: weighted D2Seed roll, or first entry if all weights are zero.
+        auto choice = limitedRandom(tileRandom, uint32_t(total));
+        int selected = found->second.front();
+        if (total)
+            for (int index : found->second) {
+                const auto weight = uint32_t(std::max(0, tiles[index]->rarity));
+                if (choice < weight) { selected = index; break; }
+                choice -= weight;
+            }
+        tileChoices.emplace(key, selected);
+    };
+    for (int y = 0; y < data.height; ++y)
+        for (int x = 0; x < data.width; ++x) {
+            auto choose = [&](MapCell cell) {
+                if (!cell.occupied()) return;
+                chooseTile(cell, x, y);
+                if (cell.orientation == 3) {
+                    cell.orientation = 4;
+                    chooseTile(cell, x, y);
+                }
+            };
+            for (const auto &layer : data.floors) choose(layer[y * data.width + x]);
+            for (const auto &layer : data.walls) choose(layer[y * data.width + x]);
+            choose(data.shadows[y * data.width + x]);
+        }
     grid = Grid(data.width * 5, data.height * 5);
     std::fill(grid.blocked.begin(), grid.blocked.end(), 1);
     std::fill(grid.lightBlocked.begin(), grid.lightBlocked.end(), 1);

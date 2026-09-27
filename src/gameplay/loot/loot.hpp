@@ -39,7 +39,7 @@ struct LootRequest {
     RegionId region = RegionId::Encampment;
     int difficulty = 0;
     bool questFirstKill = false;
-    bool sourceSeed = false; // Chests own a loot stream; settling must not replace the shared stream.
+    bool sourceSeed = false; // Unit/chest loot streams must not replace the shared object stream.
 };
 struct LootDrop {
     std::string code;
@@ -65,8 +65,7 @@ class LootSystem {
     std::set<uint32_t> usedUniques_;
 
   public:
-    static constexpr uint64_t defaultSeed = 0xd2;
-    explicit LootSystem(uint64_t seed = defaultSeed) : randomState_(seed) {}
+    explicit LootSystem(uint64_t seed) : randomState_(seed) {}
     bool settled(EntityId source) const { return settled_.contains(source); }
     uint64_t randomState() const { return randomState_; }
     const std::set<uint32_t> &usedUniques() const { return usedUniques_; }

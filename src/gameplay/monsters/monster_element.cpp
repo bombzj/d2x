@@ -1,3 +1,4 @@
+#include "core/random.hpp"
 #include "gameplay/simulation/simulation.hpp"
 #include <algorithm>
 #include <optional>
@@ -6,8 +7,7 @@
 namespace d2x {
 namespace {
 unsigned roll(Enemy &enemy, unsigned limit) {
-    enemy.combatRandom = uint64_t(uint32_t(enemy.combatRandom)) * 0x6ac690c5ULL +
-                         (enemy.combatRandom >> 32);
+    rollRandom(enemy.combatRandom);
     return uint32_t(enemy.combatRandom) % limit;
 }
 std::optional<MonsterDamageType> damageType(std::string_view type) {

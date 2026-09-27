@@ -264,8 +264,16 @@ void SceneView::draw(Vec mouse) const {
     if (!view_.dialogue.empty()) drawNpcDialogue();
     const bool itemCursor = drawInventoryCursor(mouse);
     drawGameMenu();
-    if (!itemCursor)
-        if (const auto *pointer = assets_.cursor.frame(0, 0))
+    if (!itemCursor) {
+        const Sprite *pointer = assets_.cursor.frame(0, 0);
+        if (const auto &targeting = view_.inventory.identify) {
+            const auto *item = session_.inventory().item(targeting->id);
+            const auto *definition = item ? session_.inventory().catalog().find(item->definition) : nullptr;
+            if (definition && item->revision == targeting->revision && definition->targetCursor >= 0)
+                pointer = assets_.targetingCursors.frame(0, definition->targetCursor);
+        }
+        if (pointer)
             sprite(pointer, mouse - Vec{0, float(pointer->texture.height)});
+    }
 }
 } // namespace d2x

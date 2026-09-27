@@ -8,7 +8,7 @@
 
 底栏、球体、按钮、技能图标使用原版 Sky 调色板；场景继续使用 Act1 调色板。腰带底行直接落在面板原有四个格子内，额外行使用 `ctrlpnl_popbelt.dc6`。
 
-默认鼠标使用原 MPQ 的 `data/global/ui/cursor/ohand.dc6` 和 Units 调色板，原始帧偏移配合帧高定位鼠标热点，依据 OpenDiablo2 `resource_paths.go`／`gui_manager.go`。此前误用 `gaunt.dc6` 后以边界颜色猜测透明索引的补丁已移除；正确图形使用 DC6 自身的透明像素。此修正尚待用户画面验收。
+默认鼠标使用原 MPQ 的 `data/global/ui/cursor/ohand.dc6` 和 Units 调色板，原始帧偏移配合帧高定位鼠标热点，依据 OpenDiablo2 `resource_paths.go`／`gui_manager.go`。此前误用 `gaunt.dc6` 后以边界颜色猜测透明索引的补丁已移除；正确图形使用 DC6 自身的透明像素。此修正尚待用户画面验收。 鉴定卷轴／书的目标模式改用原 `cursor/spells.dc6`；帧号来自 Books.SpellIcon（当前 MPQ 鉴定为 0），其他物品读 Misc.spellicon，参照 D2MOO `ITEMS_GetSpellIcon` 和 `SKILLITEM_pSpell01_Initializer` 的 0x3F 目标光标编号。Units 调色板及热点继续使用上述参考项目的帧偏移／帧高定位；不是猜测放大镜帧号，也不另画图标。成功提交鉴定、右键／Esc 取消、关闭面板或来源卷轴／书失效后，随统一鉴定状态恢复普通指针。
 
 正常游戏不常驻 D2X／MPQ 资源字样、等级调试文字或快捷键提示，这些保留在 Ctrl+F3 调试视图中；用于衬托顶部文字的黑色渐变已移除。Tab 开关角落地图，V 交换左右，默认关闭；细节与标记缺口见 [自动地图](AUTOMAP.md)。
 

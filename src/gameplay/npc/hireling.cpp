@@ -1,3 +1,4 @@
+#include "core/random.hpp"
 #include "gameplay/session/session.hpp"
 #include <algorithm>
 
@@ -43,23 +44,22 @@ void GameSession::advanceHireling(float dt) {
             hireling.moving = false;
             hireling.look = (target->pos - hireling.pos).unit();
             if (hireling.attackTimer <= 0) {
-                player.combatRandom = uint64_t(uint32_t(player.combatRandom)) * 0x6ac690c5ULL +
-                                      (player.combatRandom >> 32);
+                rollRandom(hireling.combatRandom);
                 auto spread = unsigned(stats.weapon.maximum - stats.weapon.minimum + 1);
                 float damage = float(stats.weapon.minimum +
-                                     int(uint32_t(player.combatRandom) % spread)) / 256.f;
+                                     int(uint32_t(hireling.combatRandom) % spread)) / 256.f;
                 simulation_.state_.area.missiles.push_back({ids_.allocate(), player.id,
                     hireling.pos, hireling.look * projectile.velocity,
                     projectile.lifetime, SkillBehavior::None, true, projectile.id, damage});
                 auto &missile = simulation_.state_.area.missiles.back();
-                missile.attackElements = simulation_.rollAttackElements(stats.weapon.item, &stats.combat);
+                missile.attackElements = simulation_.rollAttackElements(stats.weapon.item, &stats.combat, nullptr, &hireling.combatRandom);
                 missile.attackElements.playerKillEffects = false;
                 missile.attackElements.ranged = true;
                 missile.attackElements.attackerLevel = hireling.level;
                 missile.attackElements.lifeLeech = missile.attackElements.manaLeech = 0;
                 missile.attackerLevel = hireling.level;
                 missile.attackRating = stats.base.attackRating;
-                missile.combatRandom = player.combatRandom;
+                missile.combatRandom = childRandom(simulation_.unitRandom_);
                 hireling.attackTimer = timing->duration;
             }
             return;

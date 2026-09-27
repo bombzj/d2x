@@ -1,3 +1,4 @@
+#include "core/random.hpp"
 #include "gameplay/simulation/simulation.hpp"
 #include "gameplay/combat/accuracy.hpp"
 #include <algorithm>
@@ -24,7 +25,7 @@ bool Simulation::firePhysicalProjectile(Vec target, const WeaponDamage &weapon, 
     elements.ranged = true;
     const auto roll = [&](int minimum, int maximum) {
         if (maximum < minimum) std::swap(minimum, maximum);
-        player.combatRandom = uint64_t(uint32_t(player.combatRandom)) * 0x6ac690c5ULL + (player.combatRandom >> 32);
+        rollRandom(player.combatRandom);
         const auto span = uint32_t(std::max(0, maximum - minimum));
         return float(minimum + (span ? uint32_t(player.combatRandom) % span : 0)) / 256.f;
     };
@@ -54,7 +55,7 @@ bool Simulation::firePhysicalProjectile(Vec target, const WeaponDamage &weapon, 
     missile.targetModifiers = selected.target;
     missile.playerAttack = true;
     missile.physicalDamagePercent = potion ? 0 : selected.projectileDamagePercent;
-    missile.combatRandom = player.combatRandom;
+    missile.combatRandom = childRandom(unitRandom_);
     if (skill) {
         missile.skillId = skill->sourceId;
         missile.skillRank = skill->rank;
@@ -105,7 +106,7 @@ void Simulation::advancePhysicalMissile(Missile &missile, float dt, std::vector<
     const auto defense = monsterDefense_ ? monsterDefense_(*struck, state_.area.region) : std::nullopt;
     if (!defense) { state_.message = "Original monster defense is unavailable."; return; }
     if (missile.attackerLevel <= 0) return;
-    missile.combatRandom = uint64_t(uint32_t(missile.combatRandom)) * 0x6ac690c5ULL + (missile.combatRandom >> 32);
+    rollRandom(missile.combatRandom);
     const int chance = missile.playerAttack ? weaponHitChance(missile.attackerLevel,
         missile.baseAttackRating, missile.attackRatingPercent, missile.targetModifiers, *defense, struck->identity.rank) :
         physicalHitChance(missile.attackerLevel, missile.attackRating, defense->level, defense->defense);

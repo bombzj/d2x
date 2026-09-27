@@ -182,6 +182,10 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
     cursor = unitsGraphics_.single("data/global/ui/cursor/ohand.dc6");
     if (cursor.frames.empty())
         throw std::runtime_error("Original pointer is missing: data/global/ui/cursor/ohand.dc6");
+    targetingCursors = unitsGraphics_.single("data/global/ui/cursor/spells.dc6");
+    for (const auto &[code, item] : session.inventory().catalog().entries())
+        if (item.targetCursor >= 0 && item.targetCursor >= targetingCursors.count)
+            throw std::runtime_error("Original targeting cursor is missing for " + code);
     constexpr std::array menuLabels{"options", "exit", "returntogame"};
     for (size_t index = 0; index < menuLabels.size(); ++index) {
         gameMenuLabels[index] = unitsGraphics_.single(
@@ -553,7 +557,7 @@ void SceneAssets::loadProps(const Region &region) {
     }
 }
 void SceneAssets::collectMapVariants(Archives &archives, const WorldCatalog &catalog,
-                                     const MonsterCatalog &monsters) {
+                                     const MonsterCatalog &monsters, uint32_t mapSeed, uint32_t objectSeed) {
     collectMazeResources(archives, catalog);
     std::vector<RegionPlan> plans;
     if (cowLevelMissing(archives, catalog).empty()) {
@@ -609,7 +613,7 @@ void SceneAssets::collectMapVariants(Archives &archives, const WorldCatalog &cat
     }
     // A separate importer-owned ID space cannot modify the live session or saves.
     EntityIds ids;
-    for (const auto &region : loadRegions(archives, ids, plans, monsters, catalog, 0))
+    for (const auto &region : loadRegions(archives, ids, plans, monsters, catalog, mapSeed, objectSeed))
         loadProps(region);
 }
 } // namespace d2x

@@ -57,7 +57,8 @@ InventoryResult InventoryService::planBelt(const EquipBelt &command, const Playe
     const auto &source = *item(command.item.id);
     auto location = std::get_if<ContainerLocation>(&source.location);
     if (!location ||
-        (location->container != containers.backpack && location->container != containers.beltEquipment))
+        (location->container != containers.backpack && location->container != containers.beltEquipment &&
+         location->container != containers.cursor))
         return failure(InventoryError::AccessDenied);
     auto definition = catalog_.find(source.definition);
     if (!definition->beltRows)
@@ -104,7 +105,7 @@ InventoryResult InventoryService::planBelt(const EquipBelt &command, const Playe
             return failure(InventoryError::RevisionExhausted);
         if (previous) {
             const auto &old = *draft.item(previous);
-            auto target = ContainerLocation{containers.backpack, location->cell};
+            auto target = ContainerLocation{location->container, location->cell};
             if (draft.checkPlacement(*catalog_.find(old.definition), target) != InventoryError::None)
                 return failure(InventoryError::NoSpace);
             if (!relocate(previous, target))

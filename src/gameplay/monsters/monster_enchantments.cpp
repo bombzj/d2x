@@ -1,4 +1,5 @@
 #include "gameplay/simulation/simulation.hpp"
+#include "core/random.hpp"
 #include "gameplay/monsters/monster_wander.hpp"
 #include <algorithm>
 #include <cmath>
@@ -139,6 +140,7 @@ void Simulation::launchMonsterEnchantmentMissiles(Enemy &enemy, int missileId) {
         Missile missile{ids_.allocate(), enemy.id, enemy.pos, heading.unit() * skill->missileVelocity,
             skill->missileLifetime, skill->effect, false, missileId,
             rollDamage(enemy, skill->minimumDamage, skill->maximumDamage), 0, skill->coldDuration, true};
+        missile.combatRandom = childRandom(unitRandom_);
         missile.hostileElement = definition->element;
         missile.killOnHit = definition->killOnHit;
         missile.nextHitDelay = skill->missileNextDelay;
@@ -244,6 +246,7 @@ void Simulation::replicateMonsterMissile(const Enemy &enemy, Missile missile) {
     for (float direction : {-1.f, 1.f}) {
         auto copy = missile;
         copy.id = ids_.allocate();
+        copy.combatRandom = childRandom(unitRandom_);
         copy.velocity = (state_.player.pos + side * direction - copy.pos).unit() * missile.velocity.length();
         state_.area.missiles.push_back(std::move(copy));
     }

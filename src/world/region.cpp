@@ -1,4 +1,5 @@
 #include "region.hpp"
+#include "core/random.hpp"
 #include "resources/presets.hpp"
 #include "object_population.hpp"
 #include "shrine_catalog.hpp"
@@ -185,20 +186,22 @@ void configureWorldObject(WorldObject &object, const Table &objectRows) {
 }
 std::vector<Region> loadRegions(Archives &archives, EntityIds &ids, const std::vector<RegionPlan> &plans,
                                 const MonsterCatalog &monsters, const WorldCatalog &catalog,
-                                uint32_t worldSeed) {
+                                uint32_t mapSeed, uint32_t objectSeed) {
     auto objectRows = decodeTable(archives.read("data/global/excel/objects.txt"));
     auto groupRows = decodeTable(archives.read("data/global/excel/objgroup.txt"));
     auto shrineRows = decodeTable(archives.read("data/global/excel/shrines.txt"));
     TileLibraryCache cache(archives);
     std::vector<Region> regions;
     regions.reserve(plans.size());
+    auto objectsRandom = initialRandom(objectSeed);
+    auto mapRandom = initialRandom(mapSeed);
+    const auto levelSeed = rollRandom(mapRandom);
     for (const auto &plan : plans) {
         Region region;
         region.definition = plan.definition;
-        region.objectSeed = (uint64_t(666) << 32) |
-            (worldSeed ^ (uint32_t(region.definition.id) * 0x9e3779b9u));
+        region.objectSeed = childRandom(objectsRandom);
         region.recipe = plan.recipe;
-        region.map.load(archives, cache, plan.recipe);
+        region.map.load(archives, cache, plan.recipe, levelSeed + uint32_t(region.definition.id));
         if (region.definition.safe) region.map.spawn = region.map.actSpawn();
         for (size_t index = 0; index < region.map.data.objects.size(); ++index) {
             const auto &source = region.map.data.objects[index];
@@ -280,7 +283,7 @@ std::vector<Region> loadRegions(Archives &archives, EntityIds &ids, const std::v
             object.facing = (source.x + source.y) % 8;
             region.objects.push_back(std::move(object));
         }
-        populateAct1WorldObjects(region, ids, catalog, objectRows, groupRows, worldSeed);
+        populateAct1WorldObjects(region, ids, catalog, objectRows, groupRows, rollRandom(region.objectSeed));
         initializeChests(region, catalog, objectRows);
         if (int(region.definition.id) == 2) {
             const auto *navi = monsters.find("navi");
@@ -306,7 +309,7 @@ std::vector<Region> loadRegions(Archives &archives, EntityIds &ids, const std::v
             }
         }
         for (auto &object : region.objects)
-            assignShrine(object, shrineRows, int(region.definition.id), worldSeed);
+            assignShrine(object, shrineRows, int(region.definition.id), region.objectSeed);
         region.refreshObjectCollision(0);
         region.map.spawn = region.map.grid.nearest(region.map.spawn);
         for (auto &object : region.objects)

@@ -1,3 +1,4 @@
+#include "core/random.hpp"
 #include "item_quality.hpp"
 #include "item_magic_loot.hpp"
 #include "item_grades.hpp"
@@ -161,7 +162,7 @@ LootPlan planItemLoot(const ClassicData &data, const DataTable &ratios, std::str
             auto below = [&](unsigned bound) {
                 if (!bound)
                     return 0u;
-                random = uint64_t(uint32_t(random)) * 0x6ac690c5ULL + (random >> 32);
+                rollRandom(random);
                 return uint32_t(random) % bound;
             };
             unsigned quantity = 1;

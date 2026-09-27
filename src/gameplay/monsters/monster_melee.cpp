@@ -1,3 +1,4 @@
+#include "core/random.hpp"
 #include "gameplay/simulation/simulation.hpp"
 #include "gameplay/combat/accuracy.hpp"
 #include "gameplay/monsters/monster_wander.hpp"
@@ -56,6 +57,7 @@ void Simulation::launchMonsterProjectile(Enemy &enemy) {
     state_.area.missiles.push_back({ids_.allocate(), enemy.id, enemy.pos,
         direction * projectile->velocity, projectile->lifetime, SkillBehavior::None,
         true, projectile->id, 0, 0, 0, true, enemy.attackMode});
+    state_.area.missiles.back().combatRandom = childRandom(unitRandom_);
     replicateMonsterMissile(enemy, state_.area.missiles.back());
 }
 void Simulation::launchMonsterSpell(Enemy &enemy) {
@@ -69,6 +71,7 @@ void Simulation::launchMonsterSpell(Enemy &enemy) {
     state_.area.missiles.push_back({ids_.allocate(), enemy.id, enemy.pos,
         direction * spell->projectile.velocity, spell->projectile.lifetime, SkillBehavior::None,
         false, spell->projectile.id, damage, 0, 0, true, enemy.attackMode});
+    state_.area.missiles.back().combatRandom = childRandom(unitRandom_);
     replicateMonsterMissile(enemy, state_.area.missiles.back());
 }
 void Simulation::resolveMonsterAttack(Enemy &enemy, int modeOverride, bool projectile) {
@@ -86,15 +89,13 @@ void Simulation::resolveMonsterAttack(Enemy &enemy, int modeOverride, bool proje
             const auto chance = physicalHitChance(accuracy->level,
                 int(int64_t(accuracy->attackRating) * std::max(0, 100 + auraRating) / 100),
                                                    equipmentStats_.level, equipmentStats_.defense);
-            enemy.combatRandom = uint64_t(uint32_t(enemy.combatRandom)) * 0x6ac690c5ULL +
-                                 (enemy.combatRandom >> 32);
+            rollRandom(enemy.combatRandom);
             if (uint32_t(enemy.combatRandom) % 100 >= unsigned(chance)) return;
         }
     int block = equipmentStats_.blockChance;
     if (running) block /= 3;
     if (block > 0) {
-        player.combatRandom = uint64_t(uint32_t(player.combatRandom)) * 0x6ac690c5ULL +
-                              (player.combatRandom >> 32);
+        rollRandom(player.combatRandom);
         if (uint32_t(player.combatRandom) % 100 < unsigned(block)) return;
     }
     float damage = monsterDefinition(enemy.kind).damage;
@@ -105,24 +106,21 @@ void Simulation::resolveMonsterAttack(Enemy &enemy, int modeOverride, bool proje
         if (!range && (projectile || mode == 2)) damage = 0;
         if (range) {
             const auto [minimum, maximum] = *range;
-            enemy.combatRandom = uint64_t(uint32_t(enemy.combatRandom)) * 0x6ac690c5ULL +
-                                 (enemy.combatRandom >> 32);
+            rollRandom(enemy.combatRandom);
             damage = float(minimum + uint32_t(enemy.combatRandom) % unsigned(maximum - minimum + 1));
         }
     }
     if (projectile && monsterProjectile_)
         if (auto spec = monsterProjectile_(enemy, mode)) {
             damage = damage * float(spec->sourceDamage) / 128.f;
-            enemy.combatRandom = uint64_t(uint32_t(enemy.combatRandom)) * 0x6ac690c5ULL +
-                                 (enemy.combatRandom >> 32);
+            rollRandom(enemy.combatRandom);
             damage += float(spec->minimumDamage +
                             uint32_t(enemy.combatRandom) %
                                 unsigned(spec->maximumDamage - spec->minimumDamage + 1));
         }
     if (monsterCriticalChance_)
         if (auto chance = monsterCriticalChance_(enemy, state_.area.region); chance && *chance > 0) {
-            enemy.combatRandom = uint64_t(uint32_t(enemy.combatRandom)) * 0x6ac690c5ULL +
-                                 (enemy.combatRandom >> 32);
+            rollRandom(enemy.combatRandom);
             if (uint32_t(enemy.combatRandom) % 100 < unsigned(*chance)) damage *= 2.f;
         }
     const int damagePercent = (enemy.identity.enchantment ? enemy.identity.enchantment->damagePercent : 0) +

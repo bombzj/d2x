@@ -1,6 +1,7 @@
 #pragma once
 #include "gameplay/loot/loot.hpp"
 #include "world/region.hpp"
+#include <optional>
 #include <string>
 
 namespace d2x {
@@ -15,7 +16,8 @@ struct AppOptions {
     bool directGame = false;
     bool hidden = false, help = false, inventory = false, stash = false, maps = false, skills = false;
     int frameLimit = 0, region = -1;
-    uint64_t lootSeed = LootSystem::defaultSeed;
+    std::optional<uint32_t> seed;
+    bool mapSeedExplicit = false, populationSeedExplicit = false;
     PopulationSettings population;
 };
 AppOptions parseOptions(int argc, char **argv);

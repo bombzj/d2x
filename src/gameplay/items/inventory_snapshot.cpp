@@ -18,6 +18,10 @@ void InventoryService::validateSnapshot(const InventoryState &state, const Playe
                                      ContainerKind::BeltEquipment, ContainerKind::Equipment, ContainerKind::Equipment};
     std::vector<int> widths{10, 4, stashDimensions_.x, 2, int(EquipmentSlot::Count), int(EquipmentSlot::Count)};
     std::vector<int> heights{4, 0, stashDimensions_.y, 1, 1, 1};
+    ids.push_back(containers.cursor);
+    kinds.push_back(ContainerKind::Cursor);
+    widths.push_back(1);
+    heights.push_back(1);
     if (cubeDimensions_.x > 0 && cubeDimensions_.y > 0) {
         ids.push_back(containers.cube);
         kinds.push_back(ContainerKind::Cube);
@@ -87,6 +91,12 @@ void InventoryService::validateSnapshot(const InventoryState &state, const Playe
             "duplicate carry1 unique item");
         const auto &c = found->second.spec;
         auto cell = location->cell;
+        if (c.kind == ContainerKind::Cursor) {
+            auto &cells = occupied.at(location->container);
+            require(cell == Cell{} && !cells[0], "cursor occupancy");
+            cells[0] = true;
+            continue;
+        }
         if (c.kind == ContainerKind::Equipment) {
             require(cell.y == 0 && cell.x >= 0 && cell.x < int(EquipmentSlot::Count) &&
                         EquipmentSlot(cell.x) != EquipmentSlot::Belt &&

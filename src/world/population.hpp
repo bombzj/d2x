@@ -13,7 +13,7 @@ struct PopulationPlan {
 };
 // Content + terrain -> immutable spawn instructions. No entity allocation or renderer dependencies.
 // Generated maps supply room footprints and linked warp arrivals. Complete presets
-// retain the scene adapter; exact original population seed streams remain pending.
+// retain the scene adapter; the original room allocation/stream scheduling is not reproduced byte for byte.
 PopulationPlan planPopulation(const MonsterCatalog &catalog, const LevelRecord *level,
                               const PresetRecord &preset, const Map &map, PopulationSettings settings);
 void writePopulationReport(std::ostream &out, const PopulationPlan &plan, const LevelRecord *level,

@@ -75,7 +75,8 @@ InventoryResult InventoryService::planEquipment(const EquipItem &command, const 
     const auto &source = *item(command.item.id);
     auto location = std::get_if<ContainerLocation>(&source.location);
     if (!location ||
-        (location->container != containers.backpack && location->container != containers.equipment))
+        (location->container != containers.backpack && location->container != containers.equipment &&
+         location->container != containers.cursor))
         return reject(InventoryError::AccessDenied);
     const auto &definition = *catalog_.find(source.definition);
     if (command.slot) {
@@ -127,7 +128,9 @@ InventoryResult InventoryService::planEquipment(const EquipItem &command, const 
             error != InventoryError::None)
             return reject(error);
         if (previous && previous != source.id)
-            if (auto error = returnToPack(previous); error != InventoryError::None)
+            if (auto error = location->container == containers.cursor
+                    ? relocate(previous, ContainerLocation{containers.cursor, {}}) : returnToPack(previous);
+                error != InventoryError::None)
                 return reject(error);
         if (slot == EquipmentSlot::RightHand || slot == EquipmentSlot::LeftHand ||
             slot == EquipmentSlot::AlternateRightHand || slot == EquipmentSlot::AlternateLeftHand) {

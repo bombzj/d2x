@@ -48,7 +48,7 @@ void SceneController::click(Vec mouse) {
         return;
     }
     if (auto item = view_.lootAt(mouse, true)) {
-        session_.submit(PickupItem{*item});
+        session_.submit(PickupItem{*item, ui.inventory.open});
         pickupClick_ = true;
         return;
     }
@@ -70,7 +70,7 @@ void SceneController::click(Vec mouse) {
         return;
     }
     if (auto item = view_.lootAt(mouse)) {
-        session_.submit(PickupItem{*item});
+        session_.submit(PickupItem{*item, ui.inventory.open});
         pickupClick_ = true;
         return;
     }
@@ -80,6 +80,7 @@ void SceneController::click(Vec mouse) {
 }
 bool SceneController::handle(const FrameInput &input, float elapsed) {
     auto &ui = view_.ui();
+    ui.inventory.syncCursor(session_);
     if (!input.focused || ui.blocksWorld() || session_.state().player.dead ||
         input.escape || input.inventory || input.character || input.skillTree || input.quests ||
         input.hireling || input.storage || input.rightPressed || input.movement.length() > .1f) {
@@ -314,7 +315,7 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
         };
         if (ui.shopSalePending) return true;
         if (input.escape) {
-            if (ui.inventory.drag || ui.inventory.identify || ui.inventory.split || ui.inventory.goldDialog)
+            if ((ui.inventory.drag && !ui.inventory.drag->onCursor) || ui.inventory.identify || ui.inventory.split || ui.inventory.goldDialog)
                 ui.inventory.cancelGesture();
             else if (ui.shopRepair) ui.shopRepair = false;
             else if (ui.shopConfirm)
@@ -570,7 +571,7 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
             ui.help = false;
         else if (ui.travelMenu)
             ui.travelMenu = false;
-        else if (ui.inventory.drag || ui.inventory.split)
+        else if ((ui.inventory.drag && !ui.inventory.drag->onCursor) || ui.inventory.split)
             ui.inventory.cancelGesture();
         else if (ui.inventory.open) {
             toggleInventory();

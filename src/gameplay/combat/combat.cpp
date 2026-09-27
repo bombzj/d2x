@@ -1,3 +1,4 @@
+#include "core/random.hpp"
 #include "gameplay/simulation/simulation.hpp"
 #include "gameplay/combat/accuracy.hpp"
 #include "gameplay/combat/damage_resolution.hpp"
@@ -95,19 +96,17 @@ void Simulation::damageEnemy(Enemy &enemy, float amount, EntityId source, float 
         enemy.attackMode = 1;
         ++state_.area.kills;
         emit(EnemyDied{enemy.id, source, enemy.kind, state_.area.region, enemy.pos, enemy.identity,
-                       state_.population.difficulty, !playerKillEffects});
+                       state_.population.difficulty, !playerKillEffects, enemy.combatRandom});
     }
 }
 void Simulation::meleeDamage(Enemy &enemy, const WeaponDamage &weapon) {
     auto &player = state_.player;
-    player.combatRandom = uint64_t(uint32_t(player.combatRandom)) * 0x6ac690c5ULL +
-                          (player.combatRandom >> 32);
+    rollRandom(player.combatRandom);
     const auto defense = monsterDefense_ ? monsterDefense_(enemy, state_.area.region) : std::nullopt;
     if (!defense) { state_.message = "Original monster defense is unavailable."; return; }
     if (uint32_t(player.combatRandom) % 100 >= unsigned(weaponHitChance(player.level,
         weapon.baseAttackRating, weapon.attackRatingPercent, weapon.target, *defense, enemy.identity.rank))) return;
-    player.combatRandom = uint64_t(uint32_t(player.combatRandom)) * 0x6ac690c5ULL +
-                          (player.combatRandom >> 32);
+    rollRandom(player.combatRandom);
     const int targetBonus = (defense->demon ? std::max(0, weapon.target.demonDamage) : 0) +
         (defense->undead ? std::max(0, weapon.target.undeadDamage + (weapon.blunt ? 50 : 0)) : 0);
     const int bonus = std::max(-90, weapon.damagePercent + targetBonus);

@@ -76,7 +76,7 @@ struct ItemInstance {
     ItemLocation location;
     ItemHandle handle() const { return {id, revision}; }
 };
-enum class ContainerKind { Backpack, Belt, Stash, Chest, BeltEquipment, Equipment, Cube };
+enum class ContainerKind { Backpack, Belt, Stash, Chest, BeltEquipment, Equipment, Cube, Cursor };
 struct ContainerSpec {
     EntityId owner;
     ContainerKind kind = ContainerKind::Backpack;
@@ -87,11 +87,11 @@ struct ContainerState {
     ContainerSpec spec;
 };
 struct PlayerContainers {
-    EntityId backpack, belt, stash, beltEquipment, equipment, cube, hirelingEquipment;
+    EntityId backpack, belt, stash, beltEquipment, equipment, cube, hirelingEquipment, cursor;
 };
 // Location is authoritative. Occupancy is derived, never a second mutable copy.
 struct InventoryState {
-    uint64_t creationRandom = (uint64_t(666) << 32) | 210;
+    uint64_t creationRandom = 0; // Initialized by the owning session, not serialized in D2S.
     std::map<EntityId, ItemInstance> items;
     std::map<EntityId, ContainerState> containers;
 };

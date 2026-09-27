@@ -71,11 +71,13 @@ AppOptions parseOptions(int argc, char **argv) {
             else
                 throw std::runtime_error("--difficulty expects normal, nightmare or hell");
         } else if (arg == "--map-seed") {
+            options.mapSeedExplicit = true;
             auto seed = value();
             auto [end, error] = std::from_chars(seed.data(), seed.data() + seed.size(), options.world.seed);
             if (error != std::errc{} || end != seed.data() + seed.size())
                 throw std::runtime_error("--map-seed requires an unsigned 32-bit decimal integer");
         } else if (arg == "--population-seed") {
+            options.populationSeedExplicit = true;
             auto seed = value();
             auto [end, error] =
                 std::from_chars(seed.data(), seed.data() + seed.size(), options.population.seed);
@@ -83,9 +85,11 @@ AppOptions parseOptions(int argc, char **argv) {
                 throw std::runtime_error("--population-seed requires an unsigned 32-bit decimal integer");
         } else if (arg == "--seed") {
             auto text = value();
-            auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), options.lootSeed);
+            uint32_t seed = 0;
+            auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), seed);
             if (error != std::errc{} || end != text.data() + text.size())
-                throw std::runtime_error("--seed requires an unsigned 64-bit decimal integer");
+                throw std::runtime_error("--seed requires an unsigned 32-bit decimal integer");
+            options.seed = seed;
         } else if (arg == "--hidden")
             options.hidden = true;
         else if (arg == "--stash")

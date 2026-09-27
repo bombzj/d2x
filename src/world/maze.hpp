@@ -1,9 +1,9 @@
 #pragma once
+// World seeds are selected at the application boundary.
 #include "content/world_catalog.hpp"
 
 namespace d2x {
 // Immutable generation plan. Geometry, archive decoding and runtime state remain separate.
-inline constexpr uint32_t defaultMapSeed = 210;
 std::vector<int> mazePresets();
 int mazePresetType(int preset);
 int mazePresetVariants(const WorldCatalog &catalog, int preset);

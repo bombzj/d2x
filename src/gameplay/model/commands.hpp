@@ -112,6 +112,7 @@ struct UseTownPortal {
 struct UseCainPortal {};
 struct PickupItem {
     ItemHandle item;
+    bool toCursor = false;
 };
 // UI supplies intentions; only the gameplay layer changes authoritative state.
 using GameCommand =

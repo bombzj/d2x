@@ -47,7 +47,7 @@ void validate(const D2sItem &item, const ItemDefinition &definition, const Class
     require(item.code.size() >= 1 && item.code.size() <= 4, "base code");
     require((item.flags & (0x2000000u | 0x800u | 0x10000u | 0x1000000u | 0x4000000u | 0x400000u)) == 0,
             "socketed, ear, gamble, personalized, runeword or ethereal item");
-    require(item.mode == 0 || item.mode == 1 || item.mode == 2, "location");
+    require(item.mode == 0 || item.mode == 1 || item.mode == 2 || item.mode == 4, "location");
     require(bool(item.flags & compact) == flag(content, definition, "compactsave"), "compact flag");
     require(item.quality >= 1 && item.quality <= 7, "quality");
     require(item.level >= 1 && item.level <= 99, "item level");
@@ -95,7 +95,7 @@ D2sItemRead readD2sItem(std::span<const uint8_t> bytes, const ClassicData &conte
     item.flags = bits.read(32);
     item.format = bits.read(10);
     item.mode = bits.read(3);
-    require(item.mode <= 2, "ground/cursor/socket item");
+    require(item.mode <= 2 || item.mode == 4, "ground/socket item");
     item.body = bits.read(4);
     item.x = bits.read(4);
     item.y = bits.read(4);

@@ -82,6 +82,7 @@ ClassicData loadClassicData(Archives &archives) {
             item.maxDurability = std::max(0, number("durability").value_or(0));
             item.beltAllowed = family == ItemFamily::Misc && number("belt").value_or(0) != 0;
             item.usable = number("useable").value_or(0) != 0;
+            item.targetCursor = number("spellicon").value_or(-1);
             item.opensCube = family == ItemFamily::Misc &&
                              value("type") == "ques" && number("pSpell") == 7;
             item.autoBelt = number("autobelt").value_or(0) != 0;
@@ -145,6 +146,12 @@ ClassicData loadClassicData(Archives &archives) {
         const auto &books = tables.at("books");
         const auto &misc = tables.at("misc");
         for (auto &item : items) {
+            // ITEMS_GetSpellIcon uses Books for both scrolls and tomes, overriding
+            // Misc.spellicon (which is -1 for the original identify items).
+            for (size_t row = 0; row < books.rows().size(); ++row)
+                if (books.value(row, "ScrollSpellCode") == item.code ||
+                    books.value(row, "BookSpellCode") == item.code)
+                    item.targetCursor = books.number(row, "SpellIcon").value_or(-1);
             if (item.base.type != "book") continue;
             for (size_t row = 0; row < books.rows().size(); ++row) {
                 if (books.value(row, "BookSpellCode") != item.code) continue;

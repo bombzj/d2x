@@ -33,6 +33,7 @@ class InventoryService {
     InventoryError resolve(const ItemDefinition &definition, const ItemDestination &destination,
                            ItemLocation &location, EntityId ignore = {},
                            std::optional<Vec> groundOrigin = std::nullopt) const;
+    bool stackablesEqual(const ItemInstance &first, const ItemInstance &second) const;
     bool overlaps(const ItemDefinition &a, const ItemLocation &aPosition, const ItemDefinition &b,
                   const ItemLocation &bPosition) const;
     InventoryResult planTransfer(const TransferItem &command, const InventoryAccess &access) const;
@@ -103,7 +104,7 @@ class InventoryService {
     InventoryResult consume(ItemHandle item, unsigned quantity, const InventoryAccess &access);
     // Trusted combat consumption; ordinary UI consume cannot address equipment slots.
     InventoryResult consumeEquipped(EntityId item, const PlayerContainers &containers);
-    // All-or-nothing pickup: fill compatible stacks, then place the remainder in a free rectangle.
-    InventoryResult collect(ItemHandle item, EntityId backpack, const InventoryAccess &access);
+    // Automatic pickup keeps successful merges even when the remainder cannot fit.
+    InventoryResult collect(ItemHandle item, const PlayerContainers &containers, const InventoryAccess &access);
 };
 } // namespace d2x

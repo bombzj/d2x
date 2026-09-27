@@ -1,3 +1,4 @@
+#include "core/random.hpp"
 #include "scene_view.hpp"
 #include <algorithm>
 
@@ -7,8 +8,7 @@ void SceneView::createMissileImpactVisuals(int missileId, Vec position) {
     if (found == assets_.projectileImpactVariants.end()) return;
     // Presentation has its own random stream; debris cannot change damage,
     // accuracy, loot or the simulation's entity allocation order.
-    projectileVisualRandom_ = uint64_t(uint32_t(projectileVisualRandom_)) * 0x6ac690c5ULL +
-                              (projectileVisualRandom_ >> 32);
+    rollRandom(projectileVisualRandom_);
     const int id = found->second[uint32_t(projectileVisualRandom_) % found->second.size()];
     if (id < 0) return;
     clientMissiles_.push_back({id, position, {}, 0, assets_.projectileVisuals.at(id).lifetime});

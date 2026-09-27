@@ -1,3 +1,4 @@
+#include "core/random.hpp"
 #include "store.hpp"
 #include "content/item_grades.hpp"
 #include "content/item_magic_loot.hpp"
@@ -10,8 +11,7 @@
 namespace d2x {
 namespace {
 unsigned below(uint64_t &random, unsigned bound) {
-    random = uint64_t(uint32_t(random)) * 0x6ac690c5ULL + (random >> 32);
-    return bound ? uint32_t(random) % bound : 0;
+    return limitedRandom(random, bound);
 }
 }
 bool npcCanRepair(std::string_view npc) {

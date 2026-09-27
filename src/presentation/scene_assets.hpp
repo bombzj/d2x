@@ -73,7 +73,7 @@ class SceneAssets {
     std::array<GpuAnimation, 2> cainPortalAnimations;
     std::array<ObjectAnimationRule, 2> cainPortalRules;
     GpuAnimation panel, miniPanel, miniPanelButtons, miniPanelToggle,
-        cursor, inventoryPanel, attributeButtons,
+        cursor, targetingCursors, inventoryPanel, attributeButtons,
         attributePoints, weaponTabs, vendorPanel, vendorTabs,
         questBackground, questSockets, questTabs, questClose, questReplay, goldCoin,
         vendorButtons, vendorConfirm, waypointBorder, waypointPanel, waypointTabs, waypointIcons,
@@ -99,7 +99,7 @@ class SceneAssets {
     const std::string &heroAppearanceError() const { return heroFailure_; }
     int automapObjectCel(int objectClass) const { return automapCatalog_.objectCel(objectClass); }
     int automapNpcCel(std::string_view monsterClass) const { return automapCatalog_.npcCel(monsterClass); }
-    void collectMapVariants(Archives &archives, const WorldCatalog &catalog, const MonsterCatalog &monsters);
+    void collectMapVariants(Archives &archives, const WorldCatalog &catalog, const MonsterCatalog &monsters, uint32_t mapSeed, uint32_t objectSeed);
     void loadMonsterAudio(Archives &archives, const MonsterCatalog &monsters);
 };
 } // namespace d2x

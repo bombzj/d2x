@@ -76,9 +76,7 @@ InventoryError InventoryService::preview(const MergeStacks &command, const Inven
     const auto &definition = *catalog_.find(source.definition);
     if (definition.maxStack <= 1)
         return InventoryError::NotStackable;
-    if (source.definition != target.definition || source.quality != ItemQuality::Normal ||
-        target.quality != ItemQuality::Normal || !source.savedStats.empty() ||
-        !target.savedStats.empty() || source.grantedSkill >= 0 || target.grantedSkill >= 0)
+    if (!stackablesEqual(source, target))
         return InventoryError::IncompatibleStack;
     if (auto error = checkAccess(source.location, access); error != InventoryError::None)
         return error;

@@ -92,7 +92,7 @@ class SceneView {
         float age = 0, duration = 0;
     };
     std::vector<ClientMissile> clientMissiles_;
-    uint64_t projectileVisualRandom_ = 1;
+    uint64_t projectileVisualRandom_ = 0;
     void createMissileImpactVisuals(int missileId, Vec position);
     void advanceMissileVisuals(float dt);
     std::map<EntityId, Vec> monsterPositions_, monsterLooks_;
@@ -211,7 +211,8 @@ class SceneView {
     bool showNextNpcGossip();
     void sessionRestored();
     void collectMapVariants(Archives &archives) {
-        assets_.collectMapVariants(archives, session_.worldContent(), session_.monsterContent());
+        assets_.collectMapVariants(archives, session_.worldContent(), session_.monsterContent(),
+                                   session_.state().mapSeed, uint32_t(session_.visualSeed()));
     }
     std::vector<WorldEntry> travelEntries() const;
 };

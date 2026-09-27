@@ -1,3 +1,4 @@
+#include "core/random.hpp"
 #include "gameplay/simulation/simulation.hpp"
 #include "gameplay/combat/damage_resolution.hpp"
 #include <algorithm>
@@ -6,16 +7,14 @@
 
 namespace d2x {
 namespace {
-unsigned roll(PlayerState &player, unsigned limit) {
-    player.combatRandom = uint64_t(uint32_t(player.combatRandom)) * 0x6ac690c5ULL +
-                          (player.combatRandom >> 32);
-    return uint32_t(player.combatRandom) % limit;
+unsigned roll(uint64_t &random, unsigned limit) {
+    return limitedRandom(random, limit);
 }
-float range(PlayerState &player, int64_t low, int64_t high, int shift = 8) {
+float range(uint64_t &random, int64_t low, int64_t high, int shift = 8) {
     if (high <= 0) return 0;
     low = std::clamp<int64_t>(low * (1 << shift), 0, std::numeric_limits<int>::max());
     high = std::clamp<int64_t>(high * (1 << shift), low, std::numeric_limits<int>::max());
-    return float(low + (high > low ? roll(player, unsigned(high - low)) : 0)) / float(1 << shift);
+    return float(low + (high > low ? roll(random, unsigned(high - low)) : 0)) / float(1 << shift);
 }
 AttackDamageRange boundedRange(int low, int high, int ownLow, int ownHigh) {
     if (int64_t(high) + ownHigh <= 0) return {};
@@ -38,17 +37,18 @@ AttackElementRanges attackElementRanges(const CombatModifiers &combat, EntityId 
     };
 }
 AttackElements Simulation::rollAttackElements(EntityId weapon, const CombatModifiers *modifiers,
-                                               const SkillCastSpec *skill) {
+                                               const SkillCastSpec *skill, uint64_t *randomState) {
     const auto &m = modifiers ? *modifiers : characterStats_.combat;
     auto &player = state_.player;
+    auto &random = randomState ? *randomState : player.combatRandom;
     WeaponModifiers own;
     if (auto found = m.weapons.find(weapon); found != m.weapons.end()) own = found->second;
     const auto ranges = attackElementRanges(m, weapon);
     AttackElements result;
-    result.fire = range(player, ranges.fire.minimum, ranges.fire.maximum);
-    result.lightning = range(player, ranges.lightning.minimum, ranges.lightning.maximum);
-    result.cold = range(player, ranges.cold.minimum, ranges.cold.maximum);
-    result.magic = range(player, ranges.magic.minimum, ranges.magic.maximum);
+    result.fire = range(random, ranges.fire.minimum, ranges.fire.maximum);
+    result.lightning = range(random, ranges.lightning.minimum, ranges.lightning.maximum);
+    result.cold = range(random, ranges.cold.minimum, ranges.cold.maximum);
+    result.magic = range(random, ranges.magic.minimum, ranges.magic.maximum);
     const bool skillPoison = skill && skill->poisonDuration > 0;
     const int64_t poisonMin = int64_t(m.poisonMinimum) + own.poisonMinimum +
                              (skillPoison ? int64_t(skill->minimumDamage * 256.f) : 0);
@@ -58,17 +58,17 @@ AttackElements Simulation::rollAttackElements(EntityId weapon, const CombatModif
                                 (skillPoison ? int64_t(skill->poisonDuration * 25.f + .001f) : 0);
     if (poisonMax > 0 && poisonFrames > 0) {
         // MISSILE_AddStatsToDamage adds the skill length but not a poison-source count.
-        result.poisonPerSecond = range(player, poisonMin, poisonMax, 0) * 25.f / 256.f;
+        result.poisonPerSecond = range(random, poisonMin, poisonMax, 0) * 25.f / 256.f;
         result.poisonDuration = float(poisonFrames /
                                 std::max<int64_t>(1, int64_t(m.poisonSources) + own.poisonSources)) / 25.f;
     }
     if (result.cold > 0) result.coldDuration = float(int64_t(m.coldFrames) + own.coldFrames) / 25.f;
     const int64_t deadly = int64_t(m.deadlyStrike) + own.deadlyStrike;
-    if (deadly > 0) result.deadly = roll(player, 100) < unsigned(std::min<int64_t>(deadly, 100));
+    if (deadly > 0) result.deadly = roll(random, 100) < unsigned(std::min<int64_t>(deadly, 100));
     const int crushing = std::clamp(m.crushingBlow + own.crushingBlow, 0, 100);
     const int wounds = std::clamp(m.openWounds + own.openWounds, 0, 100);
-    result.crushing = crushing && roll(player, 100) < unsigned(crushing);
-    result.openWounds = wounds && roll(player, 100) < unsigned(wounds);
+    result.crushing = crushing && roll(random, 100) < unsigned(crushing);
+    result.openWounds = wounds && roll(random, 100) < unsigned(wounds);
     result.lifeLeech = std::max(0, m.lifeLeech + own.lifeLeech);
     result.manaLeech = std::max(0, m.manaLeech + own.manaLeech);
     result.attackerLevel = player.level;

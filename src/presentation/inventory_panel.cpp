@@ -87,6 +87,17 @@ std::vector<ContainerGrid> inventoryGrids(const GameSession &session, const Inve
     }
     return grids;
 }
+void InventoryUi::syncCursor(const GameSession &session) {
+    if (const auto *item = session.cursorItem()) {
+        if (!drag || !drag->onCursor || drag->item.id != item->id) {
+            const auto &definition = *session.inventory().catalog().find(item->definition);
+            drag = InventoryDrag{item->handle(), {definition.width / 2, definition.height / 2}, {},
+                {definition.width * inventoryCellSize / 2, definition.height * inventoryCellSize / 2},
+                true, true, true};
+        } else drag->item = item->handle();
+        identify.reset();
+    } else if (drag && drag->onCursor) drag.reset();
+}
 bool inventorySurface(const InventoryUi &ui, Vec mouse) {
     return (ui.open && CheckCollisionPointRec(rv(mouse), classicSideBounds(true))) ||
            ((ui.storage || ui.cubeOpen) && CheckCollisionPointRec(rv(mouse), classicSideBounds(false)));
@@ -130,7 +141,8 @@ InventoryDrop inventoryDrop(const GameSession &session, const InventoryUi &ui, V
     bool equipped = location && (location->container == containers.equipment ||
                                   location->container == containers.hirelingEquipment ||
                                   location->container == containers.beltEquipment);
-    if (sourceGrid == grids.end() && !equipped) {
+    if (sourceGrid == grids.end() && !equipped &&
+        (!location || location->container != containers.cursor)) {
         drop.error = InventoryError::AccessDenied;
         drop.description = inventoryErrorText(drop.error);
         return drop;
@@ -174,16 +186,17 @@ InventoryDrop inventoryDrop(const GameSession &session, const InventoryUi &ui, V
                 auto targetCell = std::get<ContainerLocation>(target->location).cell;
                 drop.bounds = grid.itemBounds(targetCell, definition);
                 const auto *targetDefinition = inventory.catalog().find(target->definition);
-                if (!ui.forceSwap && targetDefinition->bookScroll == source->definition) {
+                if (!ui.forceSwap && targetDefinition->bookCapacity &&
+                    (targetDefinition->bookScroll == source->definition || target->definition == source->definition)) {
                     drop.command = LoadBook{source->handle(), target->handle()};
-                    drop.description = "Put scroll in tome";
+                    drop.description = "Add pages to tome";
                 } else if (!ui.forceSwap && definition.maxStack > 1 && target->definition == source->definition) {
                     drop.command = MergeStacks{source->handle(), target->handle()};
                     drop.description = "Merge into this stack";
                 } else {
                     drop.command = SwapItems{source->handle(), target->handle()};
                     drop.description = "Swap both items";
-                    drop.otherBounds =
+                    if (sourceGrid != grids.end()) drop.otherBounds =
                         sourceGrid->itemBounds(location->cell, *inventory.catalog().find(target->definition));
                 }
             } else {

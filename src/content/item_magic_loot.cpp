@@ -1,3 +1,4 @@
+#include "core/random.hpp"
 #include "item_magic_loot.hpp"
 #include "gameplay/loot/affix.hpp"
 #include "gameplay/loot/special.hpp"
@@ -31,8 +32,7 @@ AffixGenerationResult rollAffixItem(const ClassicData &data, const ItemDefinitio
             }
             if (candidates.empty())
                 return -1;
-            result.randomState = uint64_t(uint32_t(result.randomState)) * 0x6ac690c5ULL +
-                                 (result.randomState >> 32);
+            rollRandom(result.randomState);
             return int32_t(candidates[uint32_t(result.randomState) % candidates.size()]->row);
         };
         result.generation.rarePrefixRow = chooseName(std::span<const RareNameRecord>(data.rarePrefixes));
@@ -70,8 +70,7 @@ AffixGenerationResult rollAffixItem(const ClassicData &data, const ItemDefinitio
         append(false, !prefix);
     } else {
         auto below = [&](uint32_t limit) {
-            result.randomState = uint64_t(uint32_t(result.randomState)) * 0x6ac690c5ULL +
-                                 (result.randomState >> 32);
+            rollRandom(result.randomState);
             return uint32_t(result.randomState) % limit;
         };
         // ItemsMagic::sub_6FC53760: rare jewels request 3-4 affixes,

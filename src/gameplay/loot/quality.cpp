@@ -1,3 +1,4 @@
+#include "core/random.hpp"
 #include "quality.hpp"
 #include <algorithm>
 #include <limits>
@@ -60,8 +61,7 @@ QualityRoll rollItemQuality(const ItemQualityRules &rules, int itemLevel, int ma
             throw std::runtime_error("Quality probability exceeds supported range");
         int64_t roll = -1;
         if (chance > 0) {
-            result.randomState = uint64_t(uint32_t(result.randomState)) * 0x6ac690c5ULL +
-                                 (result.randomState >> 32);
+            rollRandom(result.randomState);
             roll = uint32_t(result.randomState) % uint32_t(chance);
         }
         result.checks.push_back({quality, chance, roll});

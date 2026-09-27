@@ -83,7 +83,7 @@ struct Region {
 struct WorldSelection {
     int level = 1, preset = 0, levelType = 0, variant = 0;
     std::string map;
-    uint32_t seed = defaultMapSeed;
+    uint32_t seed = 0; // Application chooses a fresh seed or restores the native map seed.
     int difficulty = 0;
 };
 struct RegionPlan {
@@ -106,5 +106,5 @@ WorldPlan planWorld(Archives &archives, const WorldCatalog &catalog, WorldSelect
 void linkLevelExits(std::vector<Region> &regions, const WorldCatalog &catalog);
 std::vector<Region> loadRegions(Archives &archives, EntityIds &ids, const std::vector<RegionPlan> &plans,
                                 const MonsterCatalog &monsters, const WorldCatalog &catalog,
-                                uint32_t worldSeed);
+                                uint32_t mapSeed, uint32_t objectSeed);
 } // namespace d2x

@@ -1,3 +1,4 @@
+#include "core/random.hpp"
 #include "special.hpp"
 #include <algorithm>
 #include <limits>
@@ -22,7 +23,7 @@ SpecialItemRoll rollSpecialItem(std::span<const SpecialItemRecord> records, std:
     result.randomState = seed;
     if (!total)
         return result;
-    result.randomState = uint64_t(uint32_t(seed)) * 0x6ac690c5ULL + (seed >> 32);
+    rollRandom(result.randomState);
     int64_t chosen = uint32_t(result.randomState) % uint32_t(total);
     for (const auto *record : eligible) {
         chosen -= std::max(1, record->rarity);
@@ -46,8 +47,7 @@ SpecialPropertyRoll rollDisplayProperties(std::span<const PropertyRange> propert
             uint64_t width = uint64_t(int64_t(maximum) - minimum) + 1;
             if (width > uint64_t(std::numeric_limits<uint32_t>::max()))
                 throw std::runtime_error("Special property range exceeds supported random width");
-            result.randomState = uint64_t(uint32_t(result.randomState)) * 0x6ac690c5ULL +
-                                 (result.randomState >> 32);
+            rollRandom(result.randomState);
             value = int32_t(int64_t(minimum) + uint32_t(result.randomState) % uint32_t(width));
         }
         result.values.push_back(value);

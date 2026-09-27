@@ -18,6 +18,8 @@ struct HirelingState {
     bool moving = false;
     float attackTimer = 0;
     uint64_t experience = 0;
+    uint32_t seed = 0;
+    uint64_t combatRandom = 0;
     bool active() const { return sourceRow >= 0 && hp > 0; }
 };
 } // namespace d2x

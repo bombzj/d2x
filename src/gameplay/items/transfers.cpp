@@ -1,6 +1,8 @@
 #include "inventory.hpp"
+#include "core/random.hpp"
 #include <algorithm>
 #include <limits>
+#include <stdexcept>
 
 namespace d2x {
 namespace {
@@ -77,19 +79,23 @@ InventoryResult InventoryService::createItem(std::string_view code, unsigned qua
     if (auto error = checkCarryLimit(instance, location, state_); error != InventoryError::None)
         return failure(error);
     if (quantity > maximumStack(instance)) return failure(InventoryError::InvalidQuantity);
+    if (!state_.creationRandom)
+        throw std::logic_error("Item creation requires an initialized session random stream");
     uint64_t nextRandom = state_.creationRandom;
+    instance.nativeSeed = rollRandom(nextRandom);
+    auto itemRandom = initialRandom(instance.nativeSeed);
     if (!definition->inventoryIcons.empty()) {
-        nextRandom = uint64_t(uint32_t(nextRandom)) * 0x6ac690c5ULL + (nextRandom >> 32);
+        rollRandom(itemRandom);
         instance.nativeHasGraphic = true;
-        instance.nativeGraphic = uint32_t(nextRandom) % uint32_t(definition->inventoryIcons.size());
+        instance.nativeGraphic = uint32_t(itemRandom) % uint32_t(definition->inventoryIcons.size());
     }
     if (definition->family == ItemFamily::Armor) {
         auto minimum = definition->base.minDefense;
         auto maximum = definition->base.maxDefense;
         if (!minimum || !maximum || *minimum < 0 || *maximum < *minimum || *maximum > 1000000)
             return failure(InventoryError::UnsupportedEquipment);
-        nextRandom = uint64_t(uint32_t(nextRandom)) * 0x6ac690c5ULL + (nextRandom >> 32);
-        instance.defense = *minimum + uint32_t(nextRandom) % uint32_t(*maximum - *minimum + 1);
+        rollRandom(itemRandom);
+        instance.defense = *minimum + uint32_t(itemRandom) % uint32_t(*maximum - *minimum + 1);
         if (instance.quality == ItemQuality::Inferior) instance.defense = std::max(1, instance.defense * 75 / 100);
         if (propertyValue(instance, "item_armor_percent")) instance.defense = *maximum + 1;
     }
@@ -170,6 +176,8 @@ InventoryResult InventoryService::merge(const MergeStacks &command, const Invent
         {source.id, source.revision + 1,
          remaining ? ItemChangeKind::QuantityChanged : ItemChangeKind::Removed, source.location,
          remaining ? std::optional<ItemLocation>{source.location} : std::nullopt, remaining});
+    if (!remaining && catalog_.find(source.definition)->maxDurability)
+        target.durability = std::min(target.durability, source.durability);
     target.quantity += quantity;
     ++target.revision;
     if (remaining == 0)

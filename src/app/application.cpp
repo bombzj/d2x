@@ -2,6 +2,8 @@
 #include "character_frontend.hpp"
 #include "input.hpp"
 #include "options.hpp"
+#include "core/random.hpp"
+#include "core/random_seed.hpp"
 #include "debug_pipe.hpp"
 #include "debug_commands.hpp"
 #include "persistence/save_file.hpp"
@@ -108,11 +110,13 @@ int runGame(int argc, char **argv) {
                      "--preset <LvlPrest Def> --level-type <LvlTypes ID> "
                      "--map <complete preset DS1> --region <scene index> "
                      "--difficulty <normal|nightmare|hell> --population-seed <uint32> "
-                     "--map-seed <uint32> --seed <uint64> --inventory --skills --stash --screenshot <png> "
+                     "--map-seed <uint32> --seed <uint32> --inventory --skills --stash --screenshot <png> "
                      "--frames N --hidden --pack "
                      "<new.mpq> --save <file.d2s> --load <file.d2s>\n"
                      "--class <MPQ class name>: start a new character directly without the frontend or a save.\n"
                      "Choose --class or --load, not both. New direct characters auto-save only with --save.\n"
+                     "--seed <uint32>: reproducible whole-game root; default is a fresh seed per game.\n"
+                     "--map-seed and --population-seed override individual plans; D2S keeps its saved map seed.\n"
                      "--debug-pipe <name>: opt-in local Windows debug commands (starts paused).\n"
                      "--debug-run: start the debug-enabled game without pausing.\n"
                      "F11: save character; Ctrl+F11: start a new game in town from save. "
@@ -175,14 +179,20 @@ int runGame(int argc, char **argv) {
                 HideCursor();
                 beginLoading();
             }
-            if (character && !character->created)
-                options.load = character->path.string();
+            if (character)
+                options.load = character->created ? std::string{} : character->path.string();
+            const uint32_t rootSeed = options.seed ? *options.seed : freshSeed();
+            uint64_t random = initialRandom(rootSeed);
+            const uint32_t mapSeed = rollRandom(random), populationSeed = rollRandom(random);
+            const uint32_t sessionSeed = rollRandom(random);
+            if (!options.mapSeedExplicit) options.world.seed = mapSeed;
+            if (!options.populationSeedExplicit) options.population.seed = populationSeed;
             if (!options.load.empty()) {
                 restored = loadSave(options.load, loadClassicData(archives));
                 options.world.seed = restored->mapSeed;
                 options.population.difficulty = restored->difficulty;
             }
-            GameSession session(archives, options.world, options.region, options.lootSeed, options.population,
+            GameSession session(archives, options.world, options.region, sessionSeed, options.population,
                                 character                        ? character->characterClass
                                 : restored                       ? restored->player.characterClass
                                 : options.characterClass.empty() ? "Barbarian"
@@ -190,6 +200,8 @@ int runGame(int argc, char **argv) {
                                 character  ? character->name
                                 : restored ? restored->player.name
                                            : "Hero");
+            std::cout << "Game seed=" << rootSeed << " map=" << options.world.seed
+                      << " population=" << options.population.seed << " session=" << sessionSeed << '\n';
             std::cout << "MPQ data: " << session.content().profile << ", "
                       << session.inventory().catalog().entries().size() << " items, "
                       << session.content().monsters.size() << " monsters, "

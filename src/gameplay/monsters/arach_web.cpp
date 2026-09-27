@@ -1,4 +1,5 @@
 #include "gameplay/simulation/simulation.hpp"
+#include "core/random.hpp"
 
 namespace d2x {
 void Simulation::activateSpiderWeb(Enemy &arach) {
@@ -16,6 +17,7 @@ void Simulation::leaveSpiderWeb(Enemy &arach, float moved) {
     arach.webTrailDistance -= 1.f;
     Missile missile;
     missile.id = ids_.allocate();
+    missile.combatRandom = childRandom(unitRandom_);
     missile.owner = arach.id;
     missile.pos = arach.pos;
     missile.remaining = web->lifetime;

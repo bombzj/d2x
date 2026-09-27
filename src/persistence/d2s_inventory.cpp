@@ -71,6 +71,7 @@ void initializeD2sInventory(CharacterSaveData &snapshot, const ClassicData &cont
         id = EntityId{snapshot.nextEntityId++};
         snapshot.inventory.containers.emplace(id, ContainerState{id, {snapshot.player.id, kind, width, height}});
     };
+    add(snapshot.containers.cursor, ContainerKind::Cursor, 1, 1);
     add(snapshot.containers.backpack, ContainerKind::Backpack, 10, 4);
     add(snapshot.containers.belt, ContainerKind::Belt, 4, 1);
     add(snapshot.containers.stash, ContainerKind::Stash, content.stashLayout.columns, content.stashLayout.rows);
@@ -153,6 +154,9 @@ void importD2sItem(CharacterSaveData &snapshot, const D2sItem &source, const Cla
             location = {snapshot.containers.beltEquipment, {}};
             snapshot.inventory.containers.at(snapshot.containers.belt).spec.rows = definition->beltRows;
         }
+    } else if (source.mode == 4) {
+        require(!hireling, "cursor hireling item");
+        location = {snapshot.containers.cursor, {}};
     } else if (source.mode == 2) {
         require(!hireling && source.x < 16 && source.y == 0, "belt coordinates");
         location = {snapshot.containers.belt, {int(source.x % 4), int(source.x / 4)}};
@@ -172,7 +176,7 @@ D2sItem exportD2sItem(const CharacterSaveData &snapshot, const ItemInstance &ite
     D2sItem output;
     output.code = item.definition;
     output.level = item.level;
-    output.seed = item.nativeProperties ? item.nativeSeed : uint32_t(item.id.value);
+    output.seed = item.nativeSeed;
     output.flags = item.nativeProperties ? item.nativeFlags : 0x00800000;
     output.flags = (output.flags & ~0x00080110u) | 0x00800000u | (item.identified ? 0x10u : 0u);
     if (definition->maxDurability && !item.durability) output.flags |= 0x100;
@@ -253,6 +257,9 @@ D2sItem exportD2sItem(const CharacterSaveData &snapshot, const ItemInstance &ite
         location->container == containers.beltEquipment) {
         output.mode = 1;
         output.body = location->container == containers.beltEquipment ? 8 : unsigned(location->cell.x + 1);
+        output.page = 0;
+    } else if (location->container == containers.cursor) {
+        output.mode = 4; // D2Items.h: IMODE_ONCURSOR; native v96 location, no grid coordinates.
         output.page = 0;
     } else if (location->container == containers.belt) {
         output.mode = 2; output.page = 0;

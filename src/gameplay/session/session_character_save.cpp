@@ -22,7 +22,7 @@ CharacterSaveData GameSession::characterSave() const {
     result.containers = playerContainers_;
     for (auto id : {playerContainers_.backpack, playerContainers_.belt, playerContainers_.stash,
                     playerContainers_.beltEquipment, playerContainers_.equipment,
-                    playerContainers_.cube, playerContainers_.hirelingEquipment})
+                    playerContainers_.cube, playerContainers_.hirelingEquipment, playerContainers_.cursor})
         if (id) result.inventory.containers.emplace(id, inventory_.state().containers.at(id));
     for (const auto &[id, item] : inventory_.state().items)
         if (std::holds_alternative<ContainerLocation>(item.location))
@@ -60,6 +60,7 @@ CharacterSaveData GameSession::prepareCharacterRestore(CharacterSaveData charact
         remap(character.containers.equipment);
         remap(character.containers.cube);
         remap(character.containers.hirelingEquipment);
+        remap(character.containers.cursor);
         InventoryState inventory;
         for (const auto &[id, container] : character.inventory.containers) {
             auto copy = container;

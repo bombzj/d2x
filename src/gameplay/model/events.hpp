@@ -28,6 +28,7 @@ struct EnemyDied {
     MonsterIdentity identity;
     int difficulty = 0;
     bool hirelingKill = false;
+    uint64_t lootRandom = 0;
 };
 struct PlayerDied {
     EntityId player;

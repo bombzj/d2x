@@ -1,3 +1,4 @@
+#include "core/random.hpp"
 #include "loot.hpp"
 #include <algorithm>
 #include <functional>
@@ -59,8 +60,7 @@ TreasureRoll selectTreasure(std::span<const TreasureClass> classes, std::string_
                 if (selected >= total)
                     break;
             } else {
-                result.randomState = uint64_t(uint32_t(result.randomState)) * 0x6ac690c5ULL +
-                                     (result.randomState >> 32);
+                rollRandom(result.randomState);
                 selected = uint32_t(result.randomState) % uint32_t(bound);
                 selected -= record.noDrop.value_or(0);
                 if (selected < 0) {

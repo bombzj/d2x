@@ -43,7 +43,7 @@ bool SceneController::queueInventory(GameCommand command, EntityId source) {
     else if (std::holds_alternative<MergeStacks>(command))
         ui.pendingMessage = "Stacks merged.";
     else if (std::holds_alternative<LoadBook>(command))
-        ui.pendingMessage = "Scroll added to tome.";
+        ui.pendingMessage = "Tome pages updated.";
     else if (std::holds_alternative<IdentifyItem>(command))
         ui.pendingMessage = "Item identified.";
     else if (std::holds_alternative<EquipBelt>(command))
@@ -221,7 +221,7 @@ bool SceneController::handleInventory(const FrameInput &input) {
         }
         if (input.rightPressed) {
             inventoryRight_ = true;
-            ui.drag.reset();
+            if (!ui.drag->onCursor) ui.drag.reset();
             return true;
         }
         if (ui.drag->pickedUp) {

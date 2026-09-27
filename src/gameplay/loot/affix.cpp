@@ -1,3 +1,4 @@
+#include "core/random.hpp"
 #include "affix.hpp"
 #include <algorithm>
 #include <limits>
@@ -23,8 +24,7 @@ MagicAffixRoll rollMagicAffix(std::span<const MagicAffixRecord> records,
     MagicAffixRoll result;
     result.randomState = seed;
     auto below = [&](uint32_t bound) {
-        result.randomState = uint64_t(uint32_t(result.randomState)) * 0x6ac690c5ULL +
-                             (result.randomState >> 32);
+        rollRandom(result.randomState);
         return uint32_t(result.randomState) % bound;
     };
     const auto coin = below(2);

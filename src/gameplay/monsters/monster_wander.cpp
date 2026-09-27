@@ -1,11 +1,11 @@
+#include "core/random.hpp"
 #include "monster_wander.hpp"
 #include <algorithm>
 #include <utility>
 
 namespace d2x {
 uint32_t monsterAiRandom(Enemy &enemy) {
-    enemy.combatRandom = uint64_t(uint32_t(enemy.combatRandom)) * 0x6ac690c5ULL +
-                         (enemy.combatRandom >> 32);
+    rollRandom(enemy.combatRandom);
     return uint32_t(enemy.combatRandom);
 }
 
