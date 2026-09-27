@@ -1,36 +1,63 @@
 #include "item_projectiles.hpp"
-#include <algorithm>
-#include <cctype>
+#include "missile_effects.hpp"
+#include <map>
 #include <stdexcept>
 
 namespace d2x {
 void loadItemProjectiles(std::vector<ItemDefinition> &items, const DataTable &missiles,
                          Archives &archives) {
-    std::optional<int> crossbowBolt;
+    std::map<std::string, size_t, std::less<>> names;
+    std::map<int, size_t> ids;
     for (size_t row = 0; row < missiles.rows().size(); ++row)
-        if (missiles.value(row, "Missile") == "bolt")
-            crossbowBolt = missiles.number(row, "Id");
+        if (auto id = missiles.number(row, "Id")) {
+            names.emplace(missiles.value(row, "Missile"), row);
+            ids.emplace(*id, row);
+        }
+    auto required = [&](size_t row, std::string_view field) {
+        auto value = missiles.number(row, field);
+        if (!value) throw std::runtime_error("Missing weapon missile field: " + std::string(field));
+        return *value;
+    };
+    auto number = [&](size_t row, std::string_view field) { return missiles.number(row, field).value_or(0); };
+    // MISSILES_CreateMissileFromParams: 75% velocity, 4096 path units per subtile.
+    auto velocity = [](int precise) { return float(precise * 75 / 100) * 25.f / 4096.f; };
     for (auto &item : items) {
         if (item.family != ItemFamily::Weapon ||
-            !(item.equipment.isType("miss") || item.equipment.isType("thro"))) continue;
-        // The engine selects the bolt missile for crossbows; other weapons use Weapons.missiletype.
-        auto missileId = item.equipment.isType("xbow") ? crossbowBolt :
-            item.base.projectile ? std::optional<int>(item.base.projectile->id) : std::nullopt;
-        if (!missileId) throw std::runtime_error("Missing original weapon missile ID: " + item.code);
-        size_t row = 0;
-        for (; row < missiles.rows().size(); ++row)
-            if (missiles.number(row, "Id") == missileId) break;
-        if (row == missiles.rows().size())
-            throw std::runtime_error("Unknown original missile ID: " + item.code);
-        auto speed = missiles.number(row, "Vel");
-        auto range = missiles.number(row, "Range");
-        auto file = std::string(missiles.value(row, "CelFile"));
-        std::transform(file.begin(), file.end(), file.begin(),
-                       [](unsigned char ch) { return char(std::tolower(ch)); });
-        auto path = "data/global/missiles/" + file + ".dcc";
-        if (!speed || *speed <= 0 || !range || *range <= 0 || file.empty() || !archives.contains(path))
-            throw std::runtime_error("Incomplete original missile resource: " + item.code);
-        item.base.projectile = ItemBaseStats::Projectile{*missileId, float(*speed), float(*range) / 25.f, path};
+            !(item.equipment.isType("miss") || item.equipment.throwable)) continue;
+        int id = -1;
+        if (item.equipment.isType("xbow")) {
+            auto bolt = names.find("bolt");
+            if (bolt != names.end()) id = required(bolt->second, "Id");
+        } else if (item.base.projectile) id = item.base.projectile->id;
+        auto found = ids.find(id);
+        if (found == ids.end()) throw std::runtime_error("Missing original weapon missile: " + item.code);
+        const auto row = found->second;
+        const auto visual = loadProjectileResource(missiles, row, archives);
+        WeaponProjectileSpec spec{id, velocity(required(row, "Vel") * 256), visual.lifetime, visual.art};
+        if (spec.speed <= 0) throw std::runtime_error("Invalid weapon missile velocity: " + item.code);
+        if (!item.equipment.isType("tpot")) {
+            if (required(row, "SrcDamage") != 128 || required(row, "pSrvDoFunc") != 1 ||
+                number(row, "pSrvHitFunc") != 0)
+                throw std::runtime_error("Unsupported weapon missile behavior: " + item.code);
+        } else {
+            // Item/missile names do not reliably identify tiers; the MPQ mapping is authoritative.
+            const int hit = required(row, "pSrvHitFunc");
+            const auto type = missiles.value(row, "EType");
+            if (required(row, "CollideType") != 6 || number(row, "SrcDamage") != 0 ||
+                !((hit == 3 && type == "fire") || (hit == 2 && type == "pois")))
+                throw std::runtime_error("Unsupported throwing potion: " + item.code);
+            spec.groundTargeted = true;
+            spec.impact = loadMissileImpact(missiles, row, archives, spec.resources);
+            if (spec.impact->radius > 0) {
+                const int shift = required(row, "HitShift");
+                if (shift < 0 || shift > 8) throw std::runtime_error("Invalid projectile damage shift");
+                spec.damage[0] = {required(row, "MinDamage") * (1 << shift),
+                                  required(row, "MaxDamage") * (1 << shift)};
+                spec.damage[2] = {required(row, "EMin") * (1 << shift),
+                                  required(row, "EMax") * (1 << shift)};
+            }
+        }
+        item.base.projectile = std::move(spec);
     }
 }
 } // namespace d2x

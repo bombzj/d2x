@@ -139,6 +139,8 @@ MonsterCatalog::MonsterCatalog(Archives &archives, const DataTable &stats) {
         m.npc = n("npc") != 0;
         m.interact = n("interact") != 0;
         m.boss = n("boss") != 0 || n("primeevil") != 0;
+        m.demon = n("demon") != 0;
+        m.undead = n("lUndead") != 0 || n("hUndead") != 0;
         auto extra = extendedRows.find(stats.value(row, "MonStatsEx"));
         if (extra == extendedRows.end())
             throw std::runtime_error("Missing MonStats2 record for " + m.id);

@@ -7,6 +7,8 @@
 #include "gameplay/quest/state.hpp"
 #include "gameplay/npc/hireling.hpp"
 #include "gameplay/skills/spec.hpp"
+#include "gameplay/combat/weapon_attack.hpp"
+#include "gameplay/combat/weapon_projectile.hpp"
 #include <deque>
 #include <map>
 #include <optional>
@@ -45,7 +47,7 @@ struct PlayerState {
     std::deque<Vec> route;
     float hp = 0, mana = 0, stamina = 0;
     float castTime = 0, hitTime = 0, deathTime = 0, meleeTime = 0;
-    float lastMeleeDuration = 0;
+    std::optional<WeaponAttackState> weaponAttack;
     float chill = 0;
     float poisonRemaining = 0, poisonPerSecond = 0;
     float webSlowRemaining = 0;
@@ -54,6 +56,8 @@ struct PlayerState {
     std::deque<Restoration> healing, manaRestoration;
     float staminaBoost = 0;
     EntityId attackTarget;
+    std::optional<Vec> attackPosition;
+    bool attackStationary = false;
     bool throwAttack = false;
     bool leftHandAttack = false;
     float lastCastDuration = 0;
@@ -64,7 +68,6 @@ struct PlayerState {
     float channelAge() const { return channel ? channel->age : 0; }
     bool running = false, runningNow = false, moving = false, dead = false;
     uint64_t combatRandom = (uint64_t(666) << 32) | 210;
-    unsigned nextWeapon = 0;
     unsigned weaponSet = 0;
     unsigned gold = 0, bankGold = 0;
     std::array<std::set<std::string>, 3> npcIntroductions;
@@ -126,16 +129,23 @@ struct Missile {
     int hostileMode = 0;
     float slowDuration = 0;
     AttackElements attackElements{};
-    int attackerLevel = 0, attackRating = 0; // Non-player physical projectiles.
+    int attackerLevel = 0, attackRating = 0;
     float nextHitDelay = 0;
     float age = 0;
     float acceleration = 0, maxVelocity = 0;
-    int impactMissileId = -1;
-    float impactDuration = 0;
     int hitOverlayId = -1;
     float hitOverlayDuration = 0;
     EntityId lastHit{};
     std::deque<Vec> path{};
+    bool groundTargeted = false;
+    std::optional<MissileImpactSpec> impact;
+    MissileImpactDamage impactDamage;
+    std::optional<PoisonCloudSpec> poisonCloud;
+    uint64_t combatRandom = 0;
+    int physicalDamagePercent = 0;
+    int baseAttackRating = 0, attackRatingPercent = 0;
+    AttackTargetModifiers targetModifiers;
+    bool playerAttack = false;
 };
 struct Effect {
     Vec pos;

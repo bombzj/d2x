@@ -1,5 +1,5 @@
 #include "sorceress_data.hpp"
-#include "resources/anim_data.hpp"
+#include "missile_effects.hpp"
 #include <algorithm>
 #include <cctype>
 #include <set>
@@ -22,26 +22,6 @@ std::string lower(std::string_view value) {
 void loadSorceressEffects(SkillCatalog &catalog, const DataTable &skills,
                           const DataTable &missiles, const DataTable &overlays,
                           const DataTable &sounds, const CombatStateCatalog &states, Archives &archives) {
-    const AnimDataTable animations(archives.read("data/global/animdata.d2"));
-    const DataTable weapons(archives.read("data/global/excel/weapons.txt"));
-    std::set<std::string> weaponClasses{"hth"};
-    for (size_t row = 0; row < weapons.rows().size(); ++row)
-        for (auto field : {"wclass", "2handedwclass"})
-            if (auto value = weapons.value(row, field); !value.empty()) weaponClasses.emplace(lower(value));
-    for (const auto &tree : catalog.classes)
-        for (const auto &weapon : weaponClasses) {
-            const auto key = tree.iconToken + "sc" + weapon;
-            std::string upperKey = key;
-            for (auto &letter : upperKey) letter = char(std::toupper(static_cast<unsigned char>(letter)));
-            const auto *animation = animations.find(upperKey);
-            if (!animation || animation->frames <= 1 || animation->frames > 144 || animation->speed <= 0) continue;
-            for (int frame = 0; frame < int(animation->frames); ++frame)
-                if (animation->frameFlags[size_t(frame)] == 1) {
-                    catalog.castTimings.emplace(key, SkillCatalog::CastTiming{
-                        int(animation->frames), animation->speed, frame});
-                    break;
-                }
-        }
     constexpr struct { std::string_view name; SkillBehavior effect; } supported[] = {
         {"Teleport", SkillBehavior::Teleport}, {"Fire Bolt", SkillBehavior::FireBolt},
         {"Fire Ball", SkillBehavior::Fireball}, {"Frost Nova", SkillBehavior::FrostNova},
@@ -287,7 +267,10 @@ void loadSorceressEffects(SkillCatalog &catalog, const DataTable &skills,
             if (effect == SkillBehavior::Fireball) {
                 if (required(missiles, missileRow, "pSrvHitFunc") != 1)
                     throw std::runtime_error("Unsupported original Fire Ball hit function");
-                spec.impactRadius = float(required(missiles, missileRow, "sHitPar1"));
+                std::vector<ProjectileResource> resources;
+                spec.missileImpact = loadMissileImpact(missiles, missileRow, archives, resources);
+                for (const auto &resource : resources)
+                    spec.impacts.push_back({resource.id, resource.art, resource.lifetime});
             }
             if (effect == SkillBehavior::Nova &&
                 (skills.value(row, "EType") != "ltng" ||
@@ -311,16 +294,17 @@ void loadSorceressEffects(SkillCatalog &catalog, const DataTable &skills,
             if (effect == SkillBehavior::FireBolt || effect == SkillBehavior::Fireball ||
                 effect == SkillBehavior::IceBolt || effect == SkillBehavior::IceBlast) {
                 const auto impactName = missiles.value(missileRow, "ExplosionMissile");
-                for (size_t impactRow = 0; impactRow < missiles.rows().size(); ++impactRow)
+                for (size_t impactRow = 0; spec.impacts.empty() && impactRow < missiles.rows().size(); ++impactRow)
                     if (!impactName.empty() && missiles.value(impactRow, "Missile") == impactName) {
-                        const auto art = "data/global/missiles/" + lower(missiles.value(impactRow, "CelFile")) + ".dcc";
-                        if (!archives.contains(art)) throw std::runtime_error("Missing original missile impact art: " + art);
-                        spec.impacts.push_back({required(missiles, impactRow, "Id"), art,
-                            float(required(missiles, impactRow, "Range")) / 25.f});
+                        const auto resource = loadProjectileResource(missiles, impactRow, archives);
+                        spec.impacts.push_back({resource.id, resource.art, resource.lifetime});
                         break;
                     }
                 if (spec.impacts.empty())
                     throw std::runtime_error("Missing original missile impact: " + std::string(impactName));
+                if (!spec.missileImpact) spec.missileImpact.emplace();
+                spec.missileImpact->visualId = spec.impacts.front().missileId;
+                spec.missileImpact->visualDuration = spec.impacts.front().duration;
                 const auto hitSound = missiles.value(missileRow, "HitSound");
                 for (size_t sound = 0; sound < sounds.rows().size(); ++sound)
                     if (!hitSound.empty() && sounds.value(sound, "Sound") == hitSound) {

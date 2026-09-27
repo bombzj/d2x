@@ -6,7 +6,7 @@
 namespace d2x {
 EquipmentStats deriveEquipmentStats(const InventoryService &inventory, const PlayerContainers &containers,
                                     const EquipmentActor &actor, int bonusDefense,
-                                    const CombatModifiers &combat) {
+                                    const CombatModifiers &combat, int baseAttackRating) {
     EquipmentStats result;
     result.level = std::max(1, actor.level);
     int count = 0;
@@ -29,6 +29,7 @@ EquipmentStats deriveEquipmentStats(const InventoryService &inventory, const Pla
         if (!item)
             continue;
         const auto &definition = *inventory.catalog().find(item->definition);
+        result.appearanceDefinitions[size_t(index)] = definition.code;
         if (definition.family == ItemFamily::Armor) {
             int64_t armor = item->defense;
             if (auto found = combat.armorPercent.find(item->id); found != combat.armorPercent.end()) {
@@ -81,52 +82,103 @@ EquipmentStats deriveEquipmentStats(const InventoryService &inventory, const Pla
         baseHigh += own.maximum + own.normalDamage;
         int64_t low = std::max<int64_t>(1, baseLow + combat.normalDamage + combat.minimumDamage) * 256;
         int64_t high = std::max<int64_t>(low / 256 + 1, baseHigh + combat.normalDamage + combat.maximumDamage) * 256;
-        low += low * std::max<int64_t>(bonus + combat.minimumDamagePercent, -90) / 100;
-        high += high * std::max<int64_t>(bonus + combat.maximumDamagePercent, -90) / 100;
-        high = std::max(high, low + 256);
+        const auto rawMinimum = low, rawMaximum = high;
+        low += low * (std::max<int64_t>(bonus, -90) + combat.minimumDamagePercent) / 100;
+        high += high * (std::max<int64_t>(bonus, -90) + combat.maximumDamagePercent) / 100;
+        low = std::max<int64_t>(0, low);
+        high = std::max(high, low);
         if (low < 0 || high > std::numeric_limits<int>::max())
             throw std::runtime_error("Equipment damage exceeds supported range");
         auto &weapon = result.weapons[count++];
         weapon = {item->id, int(low), int(high), definition.equipment.isType("miss")};
+        weapon.meleeBaseMinimum = int(rawMinimum);
+        weapon.meleeBaseMaximum = int(rawMaximum);
+        weapon.damagePercent = int(bonus);
+        weapon.minimumDamagePercent = combat.minimumDamagePercent;
+        weapon.maximumDamagePercent = combat.maximumDamagePercent;
+        weapon.baseAttackRating = baseAttackRating + own.attackRating;
+        weapon.attackRatingPercent = combat.attackRatingPercent + own.attackRatingPercent;
+        weapon.target = combat.target;
+        mergeAttackTargetModifiers(weapon.target, own.target);
+        weapon.blunt = definition.equipment.isType("blun");
         weapon.leftHand = item == left;
-        weapon.throwable = definition.equipment.isType("thro");
+        weapon.throwable = definition.equipment.throwable;
+        weapon.potion = definition.equipment.isType("tpot");
+        weapon.rangeAdder = definition.base.rangeAdder;
+        weapon.baseSpeed = definition.base.speed.value_or(0);
+        weapon.weaponClass = definition.base.weaponClass;
+        weapon.attackRating = int(std::clamp<int64_t>((int64_t(baseAttackRating) + own.attackRating) *
+            std::max<int64_t>(0, 100LL + combat.attackRatingPercent + own.attackRatingPercent) / 100,
+            0, std::numeric_limits<int>::max()));
+        weapon.fasterAttack = combat.fasterAttack + own.fasterAttack;
+        result.animationClass = twoHands ? definition.equipment.twoHandWeaponClass : weapon.weaponClass;
         if (weapon.ranged || weapon.throwable) {
             if (!definition.base.projectile)
                 throw std::runtime_error("Missing original weapon projectile: " + definition.code);
-            weapon.missileId = definition.base.projectile->id;
-            weapon.missileSpeed = definition.base.projectile->speed;
-            weapon.missileLifetime = definition.base.projectile->lifetime;
+            weapon.projectile = definition.base.projectile;
+            weapon.projectileDamagePercent = int(std::max<int64_t>(-90, bonus +
+                std::max(combat.minimumDamagePercent, combat.maximumDamagePercent)));
         }
-        if (weapon.throwable) {
+        if (weapon.ranged) {
+            // MISSILE_CalculateDamageData transfers min/max weapon stats, not item_normaldamage.
+            weapon.projectileMinimum = int(std::max<int64_t>(0, baseLow - own.normalDamage + combat.minimumDamage) * 256);
+            weapon.projectileMaximum = int(std::max<int64_t>(0, baseHigh - own.normalDamage + combat.maximumDamage) * 256);
+            weapon.minimum = int(int64_t(weapon.projectileMinimum) * (100 + weapon.projectileDamagePercent) / 100);
+            weapon.maximum = int(int64_t(weapon.projectileMaximum) * (100 + weapon.projectileDamagePercent) / 100);
+        }
+        if (weapon.throwable && !weapon.potion) {
             auto tmin = definition.base.throwMin;
             auto tmax = definition.base.throwMax;
             if (!tmin || !tmax || *tmin < 0 || *tmax < *tmin)
                 throw std::runtime_error("Unverified original throw damage: " + definition.code);
-            const int64_t scaleLow = std::max<int64_t>(10, 100 + bonus + combat.minimumDamagePercent);
-            const int64_t scaleHigh = std::max<int64_t>(10, 100 + bonus + combat.maximumDamagePercent);
             const auto rawLow = item->quality == ItemQuality::Inferior ? std::max(2, *tmin * 75 / 100) : *tmin;
             const auto rawHigh = item->quality == ItemQuality::Inferior ? std::max(1, *tmax * 75 / 100) : *tmax;
-            const auto localLow = int64_t(rawLow) * (100 + own.enhancedMinimum) / 100 + own.minimum + own.normalDamage;
-            const auto localHigh = int64_t(rawHigh) * (100 + own.enhancedMaximum) / 100 + own.maximum + own.normalDamage;
-            const int64_t throwLow = std::max<int64_t>(1, localLow + combat.normalDamage +
-                                      combat.minimumDamage) * 256 * scaleLow / 100;
-            const int64_t throwHigh = std::max<int64_t>(throwLow + 256,
-                std::max<int64_t>(2, localHigh + combat.normalDamage + combat.maximumDamage) *
-                256 * scaleHigh / 100);
+            const auto localLow = int64_t(rawLow) * (100 + own.enhancedMinimum) / 100 + own.minimum;
+            const auto localHigh = int64_t(rawHigh) * (100 + own.enhancedMaximum) / 100 + own.maximum;
+            const auto rawMinimum = std::max<int64_t>(0, localLow + combat.minimumDamage) * 256;
+            const auto rawMaximum = std::max<int64_t>(rawMinimum, (localHigh + combat.maximumDamage) * 256);
+            const int64_t throwLow = rawMinimum * (100 + weapon.projectileDamagePercent) / 100;
+            const int64_t throwHigh = rawMaximum * (100 + weapon.projectileDamagePercent) / 100;
             if (throwLow < 0 || throwHigh > std::numeric_limits<int>::max())
                 throw std::runtime_error("Equipment throw damage exceeds supported range");
             weapon.throwMinimum = int(throwLow);
             weapon.throwMaximum = int(throwHigh);
+            weapon.projectileMinimum = int(rawMinimum);
+            weapon.projectileMaximum = int(rawMaximum);
         }
     }
     if (count)
         result.weaponCount = count;
     else {
-        const auto scale = std::max<int64_t>(10, 100 + actor.strength + combat.damagePercent);
-        result.weapons[0].minimum = int(std::max<int64_t>(1, 1 + combat.normalDamage + combat.minimumDamage) *
-                                        256 * scale / 100);
-        result.weapons[0].maximum = int(std::max<int64_t>(2, 2 + combat.normalDamage + combat.maximumDamage) *
-                                        256 * scale / 100);
+        const auto bonus = std::max<int64_t>(-90, actor.strength + combat.damagePercent);
+        const int64_t low = std::max<int64_t>(1, std::max(1, combat.minimumDamage) + combat.normalDamage) * 256;
+        const int64_t high = std::max<int64_t>(low + 256,
+            int64_t(std::max(2, combat.maximumDamage) + combat.normalDamage) * 256);
+        auto &fists = result.weapons[0];
+        fists.meleeBaseMinimum = int(low);
+        fists.meleeBaseMaximum = int(high);
+        fists.damagePercent = actor.strength + combat.damagePercent;
+        fists.minimumDamagePercent = combat.minimumDamagePercent;
+        fists.maximumDamagePercent = combat.maximumDamagePercent;
+        fists.baseAttackRating = baseAttackRating;
+        fists.attackRatingPercent = combat.attackRatingPercent;
+        fists.target = combat.target;
+        fists.minimum = int(std::clamp<int64_t>(low + low * (bonus + combat.minimumDamagePercent) / 100,
+                                              0, std::numeric_limits<int>::max()));
+        fists.maximum = int(std::clamp<int64_t>(high + high * (bonus + combat.maximumDamagePercent) / 100,
+                                              fists.minimum, std::numeric_limits<int>::max()));
+        fists.attackRating = int(std::clamp<int64_t>(int64_t(baseAttackRating) *
+            std::max<int64_t>(0, 100LL + combat.attackRatingPercent) / 100, 0, std::numeric_limits<int>::max()));
+        fists.fasterAttack = combat.fasterAttack;
+    }
+    if (count == 2) {
+        const auto &primary = result.weapons[0].weaponClass;
+        const auto &secondary = result.weapons[1].weaponClass;
+        result.animationClass = primary == "ht1" && secondary == "ht1" ? "ht2" :
+            primary == "1ht" ? (secondary == "1ht" ? "1jt" : "1st") :
+                               (secondary == "1ht" ? "1js" : "1ss");
+        const int speed = (result.weapons[0].baseSpeed + result.weapons[1].baseSpeed) / 2;
+        for (auto &weapon : result.weapons) weapon.baseSpeed = speed;
     }
     return result;
 }

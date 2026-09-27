@@ -19,7 +19,7 @@ void addStats(std::span<const ResolvedItemStat> stats, EntityId item, bool weapo
         else if (stat.effect == "maxhp") target = &mods.maxLife;
         else if (stat.effect == "maxmana") target = &mods.maxMana;
         else if (stat.effect == "maxstamina") target = &mods.maxStamina;
-        else if (stat.effect == "tohit") target = &mods.attackRating;
+        else if (stat.effect == "tohit" && !weapon) target = &mods.attackRating;
         else if (stat.effect == "armorclass") target = &mods.defense;
         else if (stat.effect == "fireresist") target = &mods.fireResist;
         else if (stat.effect == "coldresist") target = &mods.coldResist;

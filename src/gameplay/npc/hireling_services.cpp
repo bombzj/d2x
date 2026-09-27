@@ -145,13 +145,12 @@ HirelingCombatStats GameSession::hirelingStats(const HirelingState &hireling,
     combat.minimumDamage += result.base.damageMin - (armed ? 0 : 1);
     combat.maximumDamage += result.base.damageMax - (armed ? 0 : 2);
     auto equipment = deriveEquipmentStats(inventory, slots, actor,
-        result.base.defense + modifiers.defense, combat);
+        result.base.defense + modifiers.defense, combat, result.base.attackRating + modifiers.attackRating);
     result.weapon = equipment.weapons[0];
     result.base.defense = equipment.defense;
     result.base.damageMin = result.weapon.minimum / 256;
     result.base.damageMax = result.weapon.maximum / 256;
-    result.base.attackRating = std::max(0, (result.base.attackRating + modifiers.attackRating) *
-        (100 + combat.attackRatingPercent) / 100);
+    result.base.attackRating = result.weapon.attackRating;
     // Mercenaries use Hireling.txt's resistance, without player difficulty penalties.
     auto resist = [&](int bonus, int maximum) {
         return std::clamp(result.base.resist + bonus, -100, std::clamp(75 + maximum, 0, 95));

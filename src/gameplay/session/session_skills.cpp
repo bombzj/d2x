@@ -50,19 +50,8 @@ bool GameSession::applySkillCastTiming(SkillCastSpec &cast) const {
         cast.castRate = 25;
         return true;
     }
-    std::string weapon = "hth";
-    const auto weaponSet = state().player.weaponSet;
-    for (auto slot : {weaponHandSlot(false, weaponSet), weaponHandSlot(true, weaponSet)}) {
-        const auto *item = inventory_.item(inventory_.equipped(playerContainers_, slot));
-        const auto *definition = item ? inventory_.catalog().find(item->definition) : nullptr;
-        if (!definition || !definition->equipment.isType("weap")) continue;
-        weapon = definition->base.weaponClass;
-        if (definition->equipment.twoHanded && (!definition->equipment.oneOrTwoHanded ||
-            !inventory_.equipped(playerContainers_, slot == weaponHandSlot(false, weaponSet) ?
-                weaponHandSlot(true, weaponSet) : weaponHandSlot(false, weaponSet))))
-            weapon = definition->equipment.twoHandWeaponClass;
-    }
-    auto timing = content_.skills.castTimings.find(characterAppearance() + "sc" + weapon);
+    auto timing = content_.skills.castTimings.find(characterAppearance() + "sc" +
+                                                  equipmentStats().animationClass);
     if (timing == content_.skills.castTimings.end()) return false;
     const auto &animation = timing->second;
     const int faster = std::max(0, characterStats().combat.fasterCast);
@@ -133,13 +122,12 @@ void GameSession::useSkill(const UseSkill &intent) {
         return;
     }
     if (entry->basicAction != BasicSkillAction::None) {
-        if (!intent.enemy) return;
         cancelExit(); cancelPickup(); cancelInteraction();
         const bool thrown = entry->basicAction == BasicSkillAction::Throw ||
                             entry->basicAction == BasicSkillAction::LeftHandThrow;
         const bool leftHand = entry->basicAction == BasicSkillAction::LeftHandSwing ||
                               entry->basicAction == BasicSkillAction::LeftHandThrow;
-        simulation_.execute(Attack{intent.enemy, thrown, leftHand});
+        simulation_.execute(Attack{intent.enemy, thrown, leftHand, intent.target, intent.stationary});
         return;
     }
     if (entry->spell) {

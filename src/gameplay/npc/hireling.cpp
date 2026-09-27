@@ -59,6 +59,7 @@ void GameSession::advanceHireling(float dt) {
                 missile.attackElements.lifeLeech = missile.attackElements.manaLeech = 0;
                 missile.attackerLevel = hireling.level;
                 missile.attackRating = stats.base.attackRating;
+                missile.combatRandom = player.combatRandom;
                 hireling.attackTimer = timing->duration;
             }
             return;

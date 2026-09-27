@@ -114,6 +114,7 @@ SkillCatalog loadSkillCatalog(const DataTable &skills, const DataTable &descript
         else if (name == "Throw") entry.basicAction = BasicSkillAction::Throw;
         else if (name == "Left Hand Swing") entry.basicAction = BasicSkillAction::LeftHandSwing;
         else if (name == "Left Hand Throw") entry.basicAction = BasicSkillAction::LeftHandThrow;
+        entry.animationMode = normalized(skills.value(row, "anim"));
         entry.name = name;
         auto display = strings.find(descriptions.value(description->second, "str name"));
         if (!display.empty()) entry.name = display;

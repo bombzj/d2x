@@ -17,9 +17,10 @@ void SceneAssets::loadHeroEquipment(const GameSession &session) {
     auto parts = baseParts;
     std::string appearanceIssue;
     const auto &inventory = session.inventory();
-    const auto &containers = session.playerContainers();
+    const auto &attack = session.state().player.weaponAttack;
     auto equipped = [&](EquipmentSlot slot) -> const ItemDefinition * {
-        const auto *item = inventory.item(inventory.equipped(containers, slot));
+        if (attack) return inventory.catalog().find(attack->appearanceDefinitions[size_t(slot)]);
+        const auto *item = session.usableEquipment(slot);
         return item ? inventory.catalog().find(item->definition) : nullptr;
     };
     if (const auto *head = equipped(EquipmentSlot::Head)) {
@@ -40,9 +41,7 @@ void SceneAssets::loadHeroEquipment(const GameSession &session) {
                 parts[components[index]] = torso->appearance.body[index];
         }
     }
-    std::string weapon = "hth";
-    int weapons = 0;
-    std::array<std::string, 2> weaponClasses;
+    const auto &weapon = attack ? attack->weaponClass : session.equipmentStats().animationClass;
     const auto weaponSet = session.state().player.weaponSet;
     for (auto slot : {weaponHandSlot(false, weaponSet), weaponHandSlot(true, weaponSet)}) {
         const auto *definition = equipped(slot);
@@ -56,25 +55,23 @@ void SceneAssets::loadHeroEquipment(const GameSession &session) {
         }
         int index = appearance.component;
         if (definition->equipment.isType("weap")) {
-            weaponClasses[weapons++] = definition->base.weaponClass;
             index = slot == weaponHandSlot(true, weaponSet) ? 6 : 5;
-            weapon = definition->base.weaponClass;
-            if (definition->equipment.twoHanded &&
-                (!definition->equipment.oneOrTwoHanded ||
-                 !equipped(slot == weaponHandSlot(false, weaponSet)
-                               ? weaponHandSlot(true, weaponSet)
-                               : weaponHandSlot(false, weaponSet))))
-                weapon = definition->equipment.twoHandWeaponClass;
         }
         parts[index] = appearance.token;
     }
-    if (weapons == 2)
-        weapon = weaponClasses[0] == "1ht" ? (weaponClasses[1] == "1ht" ? "1jt" : "1st")
-                                           : (weaponClasses[1] == "1ht" ? "1js" : "1ss");
     std::string key = appearance + ":" + weapon;
     for (const auto &part : parts)
         key += ":" + part;
     key += ":" + appearanceIssue;
+    const auto *primary = equipped(weaponHandSlot(false, weaponSet));
+    const auto *secondary = equipped(weaponHandSlot(true, weaponSet));
+    if (!primary || !primary->equipment.isType("weap")) primary = secondary;
+    const bool normalAttack = !primary || !primary->equipment.isType("tpot");
+    const bool throwAttack = primary && primary->equipment.throwable;
+    const bool leftSwing = secondary && secondary->equipment.isType("weap") && !secondary->equipment.isType("tpot");
+    const bool leftThrow = secondary && secondary->equipment.throwable;
+    key += ":" + std::to_string(normalAttack) + std::to_string(throwAttack) +
+           std::to_string(leftSwing) + std::to_string(leftThrow);
     if (heroKey_ == key)
         return;
     auto pointers = [](const std::array<std::string, 16> &tokens) {
@@ -89,16 +86,20 @@ void SceneAssets::loadHeroEquipment(const GameSession &session) {
         std::map<std::string, GpuAnimation> animations;
         const auto baseEquipment = pointers(baseParts);
         const auto equipment = pointers(parts);
-        for (auto mode : {"nu", "wl", "rn", "a1", "th", "sc", "gh", "dt"}) {
+        for (auto mode : {"nu", "wl", "rn", "a1", "th", "s3", "s4", "sc", "gh", "dt"}) {
+            const bool attackMode = std::string_view(mode) == "a1" || std::string_view(mode) == "th" ||
+                                std::string_view(mode) == "s3" || std::string_view(mode) == "s4";
+            if ((std::string_view(mode) == "a1" && !normalAttack) ||
+                (std::string_view(mode) == "th" && !throwAttack) ||
+                (std::string_view(mode) == "s3" && !leftSwing) ||
+                (std::string_view(mode) == "s4" && !leftThrow)) continue;
+            if (attackMode && !session.content().skills.attackTimings.contains(appearance + mode + weapon)) continue;
             const bool death = std::string_view(mode) == "dt";
             auto animation = graphics_.composite("chars", appearance, mode, death ? "hth" : weapon,
                                                   death ? &baseEquipment : &equipment);
-            // TH is only authored for weapon classes that can throw. Other equipped
-            // weapon classes keep their complete A1 appearance without a false error.
-            if (std::string_view(mode) == "th" &&
-                (animation.frames.empty() || !animation.completeComposite))
-                animation = graphics_.composite("chars", appearance, "a1", weapon, &equipment);
             if (animation.frames.empty() || !animation.completeComposite) {
+                if (attackMode) throw std::runtime_error("Original equipped attack art is incomplete: " +
+                                                     appearance + mode + weapon);
                 if (!death && heroFailure_.empty())
                     heroFailure_ = "Equipment appearance unavailable: " + std::string(mode) + weapon;
                 animation = graphics_.composite("chars", appearance, mode, "hth", &baseEquipment);

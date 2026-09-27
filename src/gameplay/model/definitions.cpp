@@ -114,8 +114,4 @@ const MonsterDefinition &monsterDefinition(MonsterKind id) {
     }
     throw std::out_of_range("Unknown monster definition");
 }
-const PlayerRules &playerRules() {
-    static const PlayerRules rules;
-    return rules;
-}
 } // namespace d2x

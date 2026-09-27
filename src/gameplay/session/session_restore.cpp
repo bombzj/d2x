@@ -140,7 +140,7 @@ void GameSession::restore(CharacterSaveData data) {
                                data.player.level, characterStats.blockFactor, data.player.weaponSet};
     applyWarmth(characterStats, data.player, definition, equipmentInventory, data.containers, actor);
     const auto equipmentStats = deriveEquipmentStats(equipmentInventory, data.containers, actor,
-                                                     modifiers.defense, modifiers.combat);
+                                                     modifiers.defense, modifiers.combat, characterStats.baseAttackRating);
     std::map<EntityId, std::vector<VendorOffer>> nextVendorStocks;
     for (const auto &region : regions_)
         for (const auto &object : region.objects)

@@ -15,7 +15,8 @@ void Simulation::clearActions() {
     p.attackTarget = {};
     p.throwAttack = p.leftHandAttack = false;
     p.castTime = p.meleeTime = p.hitTime = 0;
-    p.lastMeleeDuration = 0;
+    p.weaponAttack.reset();
+    p.attackPosition.reset();
     p.moving = false;
     p.runningNow = false;
     state_.message.clear();
@@ -100,7 +101,7 @@ void Simulation::execute(const GameCommand &command) {
             if constexpr (std::is_same_v<T, MoveTo>)
                 moveTo(intent.position);
             else if constexpr (std::is_same_v<T, Attack>)
-                attackEnemy(intent.target, intent.thrown, intent.leftHand);
+                requestAttack(intent);
             else if constexpr (std::is_same_v<T, DebugKill>) {
                 if (!state_.player.dead)
                     if (auto enemy = findEnemy(intent.target);
@@ -127,6 +128,7 @@ void Simulation::tick(float dt, Vec keyboard, bool forceRun) {
     if (!p.combatEffects.expire(state_.frame).empty() && combatEffectsChanged_)
         combatEffectsChanged_();
     advanceSkillCasting(p, dt, keyboard.length() > .1f);
+    advanceWeaponAttack();
     p.castTime = std::max(0.f, p.castTime - dt);
     p.hitTime = std::max(0.f, p.hitTime - dt);
     p.chill = std::max(0.f, p.chill - dt);
@@ -135,7 +137,6 @@ void Simulation::tick(float dt, Vec keyboard, bool forceRun) {
         p.webSlowPercent = 0;
         p.webSource = {};
     }
-    p.meleeTime = std::max(0.f, p.meleeTime - dt);
     p.moving = false;
     if (p.dead)
         p.deathTime += dt;
@@ -149,7 +150,7 @@ void Simulation::tick(float dt, Vec keyboard, bool forceRun) {
             const float elapsed = std::min(dt, e.poisonRemaining);
             e.poisonRemaining -= elapsed;
             damageEnemy(e, e.poisonPerSecond * elapsed, e.poisonSource, 0, false,
-                        MonsterDamageType::Poison, false, e.poisonPlayerEffects);
+                        MonsterDamageType::Poison, true, e.poisonPlayerEffects);
             if (e.poisonRemaining <= 0) e.poisonPerSecond = 0;
         }
         if (e.hp > 0 && e.openWoundsRemaining > 0) {
@@ -179,6 +180,9 @@ void Simulation::tick(float dt, Vec keyboard, bool forceRun) {
             combatEffectsChanged_();
         stopChannel(p);
         p.pendingCast.reset();
+        p.weaponAttack.reset();
+        p.attackPosition.reset();
+        p.meleeTime = 0;
         p.castTime = 0;
         p.healing.clear();
         p.manaRestoration.clear();

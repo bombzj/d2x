@@ -219,14 +219,32 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
                 missiles.number(row, "SubLoop").value_or(0) ? missiles.number(row, "SubStart").value_or(0) : 0,
                 missiles.number(row, "SubLoop").value_or(0) ? missiles.number(row, "SubStop").value_or(0) : 0});
         }
+    const DataTable projectileSounds(archives.read("data/global/excel/sounds.txt"));
+    auto loadProjectile = [&](int id, const std::string &art) {
+        if (projectileAnimations.contains(id)) return;
+        auto animation = graphics_.single(art, translucentProjectiles.contains(id));
+        if (animation.frames.empty()) throw std::runtime_error("Original projectile art is missing: " + art);
+        projectileAnimations.emplace(id, std::move(animation));
+        for (size_t row = 0; row < missiles.rows().size(); ++row) {
+            if (missiles.number(row, "Id") != id) continue;
+            for (const auto &[field, event] : {std::pair{"TravelSound", "missile-release:"},
+                                              std::pair{"HitSound", "missile-hit:"}}) {
+                const auto sound = missiles.value(row, field);
+                if (sound.empty()) continue;
+                for (size_t soundRow = 0; soundRow < projectileSounds.rows().size(); ++soundRow)
+                    if (projectileSounds.value(soundRow, "Sound") == sound) {
+                        audio.registerOriginal(archives, std::string(event) + std::to_string(id),
+                            "data/global/sfx/" + std::string(projectileSounds.value(soundRow, "FileName")));
+                        break;
+                    }
+            }
+            break;
+        }
+    };
     for (const auto &[code, item] : session.content().items.entries())
-        if (item.base.projectile && !item.base.projectile->art.empty() &&
-            !projectileAnimations.contains(item.base.projectile->id)) {
-            auto animation = graphics_.single(item.base.projectile->art,
-                                              translucentProjectiles.contains(item.base.projectile->id));
-            if (animation.frames.empty())
-                throw std::runtime_error("Original MPQ missile art is missing: " + code);
-            projectileAnimations.emplace(item.base.projectile->id, std::move(animation));
+        if (item.base.projectile && !item.base.projectile->art.empty()) {
+            loadProjectile(item.base.projectile->id, item.base.projectile->art);
+            for (const auto &resource : item.base.projectile->resources) loadProjectile(resource.id, resource.art);
         }
     for (const auto &[id, skill] : session.content().skills.skills)
         if (skill.spell && skill.spell->missileId >= 0 &&

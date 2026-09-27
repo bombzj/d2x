@@ -1,6 +1,7 @@
 #pragma once
 #include "gameplay/model/definitions.hpp"
 #include "gameplay/effects/state.hpp"
+#include "gameplay/combat/missile_effects.hpp"
 #include <array>
 #include <map>
 #include <string>
@@ -37,7 +38,8 @@ struct SkillSpec {
     int missileCount = 1, missileCountPerLevel = 0, missileCountLimit = 1;
     int startMana = 0, flameFrames = 0, flameFramesPerLevel = 0;
     int missileVelocityPerLevel = 0, missileRangePerLevel = 0, missileAcceleration = 0, missileMaxVelocity = 0;
-    float missileVelocity = 0, missileLifetime = 0, impactRadius = 0;
+    float missileVelocity = 0, missileLifetime = 0;
+    std::optional<MissileImpactSpec> missileImpact;
     std::string missileArt, castSoundArt;
     OverlayVisual castOverlay, hitOverlay;
     OverlayVisual stateOverlay;
@@ -53,7 +55,8 @@ struct SkillCastSpec {
     SkillBehavior effect = SkillBehavior::None;
     float castDuration = 0, castImpact = 0, castRate = 0;
     float manaCost = 0, minimumDamage = 0, maximumDamage = 0;
-    float coldDuration = 0, missileVelocity = 0, missileLifetime = 0, impactRadius = 0;
+    float coldDuration = 0, missileVelocity = 0, missileLifetime = 0;
+    std::optional<MissileImpactSpec> missileImpact;
     int missileId = -1;
     float missileNextDelay = 0;
     int missileCount = 1;
@@ -62,8 +65,6 @@ struct SkillCastSpec {
     float staticPercent = 0, staticRadius = 0, staticMinDamage = 0;
     int castOverlayId = -1, hitOverlayId = -1;
     float visualDuration = 0, hitOverlayDuration = 0;
-    int impactMissileId = -1;
-    float impactDuration = 0;
     int sourceId = -1;
     std::optional<CombatEffectSpec> appliedEffect;
 };

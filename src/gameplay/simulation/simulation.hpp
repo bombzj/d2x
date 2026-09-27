@@ -27,6 +27,9 @@ class Simulation {
     int resistancePenalty_ = 0;
     std::function<void(EntityId, bool)> wearEquipment_;
     std::function<bool(EntityId, bool)> spendProjectile_;
+    std::function<bool(EntityId, bool)> canSpendProjectile_;
+    std::function<std::optional<WeaponAttackTiming>(const WeaponDamage &, bool, bool)> attackTiming_;
+    std::function<int(const Enemy &)> monsterSize_;
     std::function<std::optional<MonsterAccuracy>(const Enemy &, RegionId, int)> monsterAccuracy_;
     std::function<std::optional<MonsterDefense>(const Enemy &, RegionId)> monsterDefense_;
     std::function<std::optional<float>(const Enemy &)> monsterWalkSpeed_;
@@ -59,22 +62,29 @@ class Simulation {
     void resolveWeaponHit(Enemy &enemy, float physical, EntityId source,
                           const AttackElements &elements);
     void moveTo(Vec target);
-    void attackEnemy(EntityId target, bool thrown, bool leftHand);
-    bool firePhysicalProjectile(const Enemy &enemy, const WeaponDamage &weapon, bool thrown);
+    void requestAttack(const Attack &attack);
+    const WeaponDamage *attackWeapon(bool thrown, bool leftHand) const;
+    bool meleeReach(const Enemy &enemy, const WeaponDamage &weapon) const;
+    bool beginWeaponAttack(Vec aim, EntityId target, const WeaponDamage &weapon, bool thrown, bool leftHand);
+    void advanceWeaponAttack();
+    bool firePhysicalProjectile(Vec target, const WeaponDamage &weapon, bool thrown);
+    void advancePhysicalMissile(Missile &missile, float dt);
+    void resolveMissileImpact(const Missile &missile, std::vector<Missile> &spawned, Enemy *direct = nullptr);
+    void advanceGroundTargetedMissile(Missile &missile, float dt, std::vector<Missile> &spawned);
+    void advancePoisonCloud(Missile &missile, float dt);
+    void applyEnemyPoison(Enemy &enemy, float rate, float duration, EntityId source, bool playerKillEffects);
     bool beginSkillCast(PlayerState &player, const SkillCastSpec &skill, Vec target, bool teleportAllowed,
                       int staticFieldMinimum, EntityId enemy = {});
     void releaseSkillCast(PlayerState &player, const SkillCastSpec &skill, Vec target,
                  int staticFieldMinimum, bool consumeMana = true);
     void advanceSkillCasting(PlayerState &player, float dt, bool moving);
     static void stopChannel(PlayerState &player);
-    void damage(Vec pos, float radius, float amount, EntityId source, float chill = 0,
-                MonsterDamageType type = MonsterDamageType::Physical);
     void damageEnemy(Enemy &enemy, float amount, EntityId source, float chill = 0,
                      bool ignoreActivation = false,
                      MonsterDamageType type = MonsterDamageType::Physical,
                      bool alreadyMitigated = false, bool playerKillEffects = true,
                      bool freezeHit = false);
-    void meleeDamage(Enemy &enemy, bool leftHand = false);
+    void meleeDamage(Enemy &enemy, const WeaponDamage &weapon);
     void updatePotions(float dt);
     void updatePlayer(float dt, Vec keyboard);
     void updateMonsters(float dt);

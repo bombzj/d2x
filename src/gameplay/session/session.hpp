@@ -229,6 +229,7 @@ class GameSession {
     void restore(CharacterSaveData snapshot);
     const InventoryService &inventory() const { return inventory_; }
     const EquipmentStats &equipmentStats() const { return simulation_.equipmentStats_; }
+    const ItemInstance *usableEquipment(EquipmentSlot slot) const;
     const CharacterAttributes &characterStats() const { return simulation_.characterStats_; }
     const std::string &characterName() const { return characterDefinition_.name; }
     const std::string &characterCode() const { return characterDefinition_.code; }

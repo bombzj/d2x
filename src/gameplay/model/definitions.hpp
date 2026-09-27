@@ -22,14 +22,10 @@ struct MonsterDefinition {
     const char *token;
     float maxLife, speed, damage, attackInterval, sightRange, attackRange;
 };
-struct PlayerRules {
-    float meleeRange = 2, meleeRadius = 1.2f, meleeDuration = .48f;
-};
 struct RegionDefinition {
     RegionId id;
     std::string name, mapPath;
     bool safe = false;
 };
 const MonsterDefinition &monsterDefinition(MonsterKind id);
-const PlayerRules &playerRules();
 } // namespace d2x

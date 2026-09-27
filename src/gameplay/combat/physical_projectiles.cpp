@@ -1,35 +1,103 @@
 #include "gameplay/simulation/simulation.hpp"
 #include "gameplay/combat/accuracy.hpp"
 #include <algorithm>
+#include <cmath>
 
 namespace d2x {
-bool Simulation::firePhysicalProjectile(const Enemy &enemy, const WeaponDamage &weapon, bool thrown) {
+bool Simulation::firePhysicalProjectile(Vec target, const WeaponDamage &weapon, bool thrown) {
     auto &player = state_.player;
-    const auto selected = weapon; // Ammo consumption can rebuild the equipment cache.
+    const auto selected = weapon;
+    if (!selected.projectile || (thrown && !selected.throwable)) return false;
+    const auto &spec = *selected.projectile;
+    if (std::abs(target.x - player.pos.x) >= 100 || std::abs(target.y - player.pos.y) >= 100) return false;
+    const bool potion = thrown && selected.potion;
+    // Resolve the launch snapshot before removing the final equipped stack.
     const auto priorRandom = player.combatRandom;
-    auto elements = rollAttackElements(selected.item);
+    AttackElements elements;
+    if (!potion) elements = rollAttackElements(selected.item);
     elements.ranged = true;
+    const auto roll = [&](int minimum, int maximum) {
+        if (maximum < minimum) std::swap(minimum, maximum);
+        player.combatRandom = uint64_t(uint32_t(player.combatRandom)) * 0x6ac690c5ULL + (player.combatRandom >> 32);
+        const auto span = uint32_t(std::max(0, maximum - minimum));
+        return float(minimum + (span ? uint32_t(player.combatRandom) % span : 0)) / 256.f;
+    };
+    const float physical = potion ? 0 :
+        roll(selected.projectileMinimum, selected.projectileMaximum);
+    MissileImpactDamage impactDamage;
+    if (potion)
+        for (size_t channel = 0; channel < spec.damage.size(); ++channel)
+            if (spec.damage[channel].maximum > 0)
+                impactDamage.channels[channel] = roll(spec.damage[channel].minimum, spec.damage[channel].maximum);
+    const int level = player.level;
     if (!spendProjectile_ || !spendProjectile_(selected.item, thrown)) {
         player.combatRandom = priorRandom;
-        player.attackTarget = {};
-        player.throwAttack = false;
-        player.leftHandAttack = false;
         state_.message = thrown ? "No throwing weapon remains." : "Matching arrows or bolts are required.";
         return false;
     }
-    player.combatRandom = uint64_t(uint32_t(player.combatRandom)) * 0x6ac690c5ULL +
-                          (player.combatRandom >> 32);
-    const int minimum = thrown ? selected.throwMinimum : selected.minimum;
-    const int maximum = thrown ? selected.throwMaximum : selected.maximum;
-    const uint64_t span = uint64_t(maximum) - uint64_t(minimum) + 1;
-    const float damage = float(int64_t(minimum) + int64_t(uint32_t(player.combatRandom) % span)) / 256.f;
-    const Vec direction = (enemy.pos - player.pos).unit();
-    state_.area.missiles.push_back({ids_.allocate(), player.id, player.pos,
-        direction * selected.missileSpeed, selected.missileLifetime, SkillBehavior::None,
-        true, selected.missileId, damage});
-    state_.area.missiles.back().attackElements = elements;
-    if (wearEquipment_ && !thrown)
-        wearEquipment_(selected.item, false);
+    const Vec direction = (target - player.pos).unit();
+    Missile missile{ids_.allocate(), player.id, player.pos, direction * spec.speed,
+        spec.lifetime, SkillBehavior::None, true, spec.id, physical};
+    missile.attackElements = elements;
+    missile.attackerLevel = level;
+    missile.attackRating = selected.attackRating;
+    missile.baseAttackRating = selected.baseAttackRating;
+    missile.attackRatingPercent = selected.attackRatingPercent;
+    missile.targetModifiers = selected.target;
+    missile.playerAttack = true;
+    missile.physicalDamagePercent = potion ? 0 : selected.projectileDamagePercent;
+    missile.combatRandom = player.combatRandom;
+    if (potion) {
+        missile.physical = false;
+        missile.groundTargeted = spec.groundTargeted;
+        missile.impact = spec.impact;
+        missile.impactDamage = impactDamage;
+        // Native 0x400 launch flag expires the bottle at its aimed distance.
+        const int frames = std::max(1, int(std::max(1, missileDistance(player.pos, target)) * 25.f / spec.speed));
+        missile.remaining = float(frames) / 25.f;
+        missile.velocity = (target - player.pos) * (1.f / missile.remaining);
+    }
+    state_.area.missiles.push_back(std::move(missile));
+    emit(MissileReleased{spec.id});
     return true;
+}
+void Simulation::advancePhysicalMissile(Missile &missile, float dt) {
+    Vec next = missile.pos + missile.velocity * std::min(dt, missile.remaining);
+    const bool wall = !missilePathClear(missile.missileId, missile.pos, next);
+    if (wall) {
+        float clear = 0, blocked = 1;
+        for (int step = 0; step < 12; ++step) {
+            const float middle = (clear + blocked) * .5f;
+            if (missilePathClear(missile.missileId, missile.pos, missile.pos + (next - missile.pos) * middle)) clear = middle;
+            else blocked = middle;
+        }
+        next = missile.pos + (next - missile.pos) * clear;
+    }
+    Enemy *struck = nullptr;
+    float first = 2;
+    const auto collision = missileCollisions_.find(missile.missileId);
+    if (collision == missileCollisions_.end()) { missile.remaining = 0; return; }
+    for (auto &enemy : state_.area.enemies) {
+        if (enemy.hp <= 0 || !active(enemy.pos) || enemy.id == missile.lastHit) continue;
+        const int size = monsterSize_ ? monsterSize_(enemy) : 0;
+        if (auto at = missileUnitIntersection(missile.pos, next, collision->second.size, enemy.pos, size);
+            at && *at < first) { first = *at; struck = &enemy; }
+    }
+    missile.pos = struck ? missile.pos + (next - missile.pos) * first : next;
+    missile.remaining = wall || struck ? 0 : std::max(0.f, missile.remaining - dt);
+    if (!struck) return;
+    missile.lastHit = struck->id;
+    const auto defense = monsterDefense_ ? monsterDefense_(*struck, state_.area.region) : std::nullopt;
+    if (!defense) { state_.message = "Original monster defense is unavailable."; return; }
+    if (missile.attackerLevel <= 0) return;
+    missile.combatRandom = uint64_t(uint32_t(missile.combatRandom)) * 0x6ac690c5ULL + (missile.combatRandom >> 32);
+    const int chance = missile.playerAttack ? weaponHitChance(missile.attackerLevel,
+        missile.baseAttackRating, missile.attackRatingPercent, missile.targetModifiers, *defense, struck->identity.rank) :
+        physicalHitChance(missile.attackerLevel, missile.attackRating, defense->level, defense->defense);
+    if (uint32_t(missile.combatRandom) % 100 >= unsigned(chance)) return;
+    const int64_t raw = int64_t(missile.damage * 256.f);
+    const int percent = std::max(-90, missile.physicalDamagePercent + targetDamageBonus(missile.targetModifiers, *defense));
+    const float physical = float(raw + raw * percent / 100) / 256.f;
+    resolveWeaponHit(*struck, physical, missile.owner, missile.attackElements);
 }
 } // namespace d2x

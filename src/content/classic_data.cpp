@@ -6,6 +6,7 @@
 #include "item_affixes.hpp"
 #include "item_properties.hpp"
 #include "item_projectiles.hpp"
+#include "skill_animation.hpp"
 #include "item_consumables.hpp"
 #include "item_grades.hpp"
 #include "special_items.hpp"
@@ -100,7 +101,7 @@ ClassicData loadClassicData(Archives &archives) {
             base.throwMin = number("minmisdam");
             base.throwMax = number("maxmisdam");
             if (auto id = number("missiletype"); id && *id >= 0)
-                base.projectile = ItemBaseStats::Projectile{*id};
+                base.projectile = WeaponProjectileSpec{*id};
             base.minDefense = number("minac");
             base.maxDefense = number("maxac");
             base.requiredStrength = number("reqstr");
@@ -110,6 +111,7 @@ ClassicData loadClassicData(Archives &archives) {
             base.magicLevel = number("magic lvl");
             base.cost = number("cost");
             base.speed = number("speed");
+            base.rangeAdder = number("rangeadder").value_or(0);
             base.strengthBonus = number("strbonus");
             base.dexterityBonus = number("dexbonus");
             base.block = number("block");
@@ -250,6 +252,7 @@ ClassicData loadClassicData(Archives &archives) {
                 data.hirelingStrings.emplace(key, value);
         data.skills = loadSkillCatalog(data.tables.at("skills"), data.tables.at("skilldesc"),
                                        data.tables.at("charstats"), data.characters, strings);
+        loadSkillAnimations(data.skills, data.tables.at("weapons"), archives);
         data.states = loadCombatStates(DataTable(archives.read("data/global/excel/states.txt")));
         const DataTable overlays(archives.read("data/global/excel/overlay.txt"));
         const DataTable sounds(archives.read("data/global/excel/sounds.txt"));

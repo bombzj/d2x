@@ -11,7 +11,14 @@ void add(int &target, int value) {
     target = int(sum);
 }
 }
+void mergeAttackTargetModifiers(AttackTargetModifiers &a, const AttackTargetModifiers &b) {
+    add(a.demonDamage, b.demonDamage); add(a.undeadDamage, b.undeadDamage);
+    add(a.demonAttackRating, b.demonAttackRating); add(a.undeadAttackRating, b.undeadAttackRating);
+    add(a.defenseReduction, b.defenseReduction);
+    a.ignoreDefense |= b.ignoreDefense;
+}
 void mergeCombatModifiers(CombatModifiers &a, const CombatModifiers &b) {
+    mergeAttackTargetModifiers(a.target, b.target);
 #define D2X_ADD(field) add(a.field, b.field)
     D2X_ADD(damagePercent); D2X_ADD(attackRatingPercent);
     D2X_ADD(defensePercent);
@@ -32,6 +39,7 @@ void mergeCombatModifiers(CombatModifiers &a, const CombatModifiers &b) {
     D2X_ADD(coldAbsorb); D2X_ADD(magicAbsorb);
     D2X_ADD(lifePercent); D2X_ADD(manaPercent); D2X_ADD(blockBonus);
     D2X_ADD(fasterAttack); D2X_ADD(fasterCast);
+    D2X_ADD(attackRate);
     D2X_ADD(fasterHitRecovery); D2X_ADD(fasterBlock);
     D2X_ADD(lifeLeech); D2X_ADD(manaLeech);
     D2X_ADD(crushingBlow); D2X_ADD(openWounds); D2X_ADD(deadlyStrike);
@@ -48,6 +56,10 @@ void mergeCombatModifiers(CombatModifiers &a, const CombatModifiers &b) {
     for (auto [id, value] : b.tabSkills) add(a.tabSkills[id], value);
     for (const auto &[id, bonus] : b.weapons) {
         auto &target = a.weapons[id];
+        mergeAttackTargetModifiers(target.target, bonus.target);
+        add(target.attackRating, bonus.attackRating);
+        add(target.attackRatingPercent, bonus.attackRatingPercent);
+        add(target.fasterAttack, bonus.fasterAttack);
         add(target.minimum, bonus.minimum);
         add(target.maximum, bonus.maximum);
         add(target.normalDamage, bonus.normalDamage);

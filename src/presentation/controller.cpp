@@ -746,8 +746,17 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
         return true;
     if (!hudSurface(input.mouse) && CheckCollisionPointRec(rv(input.mouse), view_.worldViewport())) {
         if (input.leftPressed || (input.leftHeld && !pickupClick_ && repeatClick_ <= 0)) {
-            if (input.shift && ui.leftSkill)
-                session_.submit(UseSkill{*ui.leftSkill, view_.world(input.mouse), {}});
+            if (input.shift) {
+                EntityId target;
+                for (const auto &enemy : session_.state().area.enemies)
+                    if (enemy.hp > 0 && session_.active(enemy.pos) &&
+                        (view_.screen(enemy.pos) - Vec{0, 25} - input.mouse).length() < 24) {
+                        target = enemy.id;
+                        break;
+                    }
+                if (ui.leftSkill) session_.submit(UseSkill{*ui.leftSkill, view_.world(input.mouse), target, true});
+                else session_.submit(Attack{target, false, false, view_.world(input.mouse), true});
+            }
             else if (input.leftPressed)
                 click(input.mouse);
             else {
@@ -778,8 +787,8 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
             if (ui.rightSkill) {
                 session_.submit(UseSkill{*ui.rightSkill, aim, target});
                 if (channeled) channelInputSkill_ = *ui.rightSkill;
-            } else if (target)
-                session_.submit(Attack{target});
+            } else
+                session_.submit(Attack{target, false, false, aim});
         }
     }
     return true;

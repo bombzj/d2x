@@ -39,6 +39,7 @@ struct MonsterRecord {
     bool getHitMode = false, deadMode = false, skill2Mode = false, runMode = false;
     bool castMode = false, sequenceMode = false;
     bool castsShadow = false;
+    bool demon = false, undead = false;
     std::array<std::string, 2> minions;
     bool hostile() const {
         return enabled && killable && !npc && !critter &&

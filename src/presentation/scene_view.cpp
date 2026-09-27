@@ -82,7 +82,7 @@ std::string playerAnimationMode(const PlayerState &p) {
     return p.dead                              ? "dt"
            : p.hitTime > 0  ? "gh"
            : p.castTime > 0                    ? "sc"
-           : p.meleeTime > 0                ? (p.throwAttack ? "th" : "a1")
+           : p.weaponAttack                 ? p.weaponAttack->timing.mode.c_str()
            : p.moving                          ? (p.runningNow ? "rn" : "wl")
                                                : "nu";
 }
@@ -260,9 +260,9 @@ void SceneView::advance(float dt) {
                 if constexpr (std::is_same_v<T, SkillCast>) {
                     view_.heroTime = 0;
                     assets_.audio.play("skill-cast:" + std::to_string(value.skillId));
-                } else if constexpr (std::is_same_v<T, MeleeAttack>) {
+                } else if constexpr (std::is_same_v<T, WeaponAttackStarted>) {
                     view_.heroTime = 0;
-                    assets_.audio.play("swing");
+                    if (!value.projectile) assets_.audio.play("swing");
                 } else if constexpr (std::is_same_v<T, EnemyAttacked>) {
                     if (auto sound = soundFor(value.attacker))
                         assets_.audio.play(value.mode >= 3 ? sound->skill1 :

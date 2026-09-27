@@ -33,6 +33,7 @@ struct CharacterAttributes {
     int strength = 0, dexterity = 0, vitality = 0, energy = 0;
     int maxLife = 1, maxMana = 1, maxStamina = 1;
     int attackRating = 0, defense = 0;
+    int baseAttackRating = 0; // Before percentage and selected-weapon contributions.
     int fireResist = 0, coldResist = 0, lightningResist = 0, poisonResist = 0;
     int lightRadius = 13;
     float walkSpeed = 0, runSpeed = 0, staminaDrain = 0;

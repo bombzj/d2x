@@ -11,11 +11,11 @@ unsigned roll(PlayerState &player, unsigned limit) {
                           (player.combatRandom >> 32);
     return uint32_t(player.combatRandom) % limit;
 }
-float range(PlayerState &player, int64_t low, int64_t high) {
+float range(PlayerState &player, int64_t low, int64_t high, int shift = 8) {
     if (high <= 0) return 0;
-    low = std::clamp<int64_t>(low, 0, std::numeric_limits<int>::max());
-    high = std::clamp<int64_t>(high, low, std::numeric_limits<int>::max());
-    return float(low + roll(player, unsigned(high - low + 1)));
+    low = std::clamp<int64_t>(low * (1 << shift), 0, std::numeric_limits<int>::max());
+    high = std::clamp<int64_t>(high * (1 << shift), low, std::numeric_limits<int>::max());
+    return float(low + (high > low ? roll(player, unsigned(high - low)) : 0)) / float(1 << shift);
 }
 AttackDamageRange boundedRange(int low, int high, int ownLow, int ownHigh) {
     if (int64_t(high) + ownHigh <= 0) return {};
@@ -51,7 +51,7 @@ AttackElements Simulation::rollAttackElements(EntityId weapon, const CombatModif
     if (int64_t(m.poisonMaximum) + own.poisonMaximum > 0 &&
         int64_t(m.poisonFrames) + own.poisonFrames > 0) {
         result.poisonPerSecond = range(player, int64_t(m.poisonMinimum) + own.poisonMinimum,
-                                       int64_t(m.poisonMaximum) + own.poisonMaximum) * 25.f / 256.f;
+                                       int64_t(m.poisonMaximum) + own.poisonMaximum, 0) * 25.f / 256.f;
         result.poisonDuration = float(int64_t(m.poisonFrames) + own.poisonFrames) /
                                 float(std::max<int64_t>(1, int64_t(m.poisonSources) + own.poisonSources) * 25);
     }
@@ -69,9 +69,17 @@ AttackElements Simulation::rollAttackElements(EntityId weapon, const CombatModif
 }
 void Simulation::resolveWeaponHit(Enemy &enemy, float physical, EntityId source,
                                   const AttackElements &elements) {
+    std::array<int, 6> resistances{};
+    for (size_t channel = 0; channel < resistances.size(); ++channel) {
+        const auto value = monsterResistance_ ? monsterResistance_(enemy, state_.area.region, MonsterDamageType(channel)) : std::nullopt;
+        if (!value) {
+            state_.message = "Original monster resistance data is unavailable.";
+            return;
+        }
+        resistances[channel] = *value;
+    }
     auto resistance = [&](MonsterDamageType type) {
-        return monsterResistance_
-            ? monsterResistance_(enemy, state_.area.region, type).value_or(0) : 0;
+        return resistances[size_t(type)];
     };
     if (elements.crushing) {
         const auto rank = enemy.identity.rank;
@@ -129,13 +137,23 @@ void Simulation::resolveWeaponHit(Enemy &enemy, float physical, EntityId source,
         enemy.openWoundsSource = source;
         enemy.openWoundsPlayerEffects = elements.playerKillEffects;
     }
-    if (enemy.hp <= 0 || elements.poisonPerSecond <= 0 || elements.poisonDuration <= 0) return;
-    const float rate = resistance(MonsterDamageType::Poison) >= 100 ? 0.f : elements.poisonPerSecond;
+    applyEnemyPoison(enemy, elements.poisonPerSecond, elements.poisonDuration, source, elements.playerKillEffects);
+}
+void Simulation::applyEnemyPoison(Enemy &enemy, float rawRate, float duration, EntityId source, bool playerKillEffects) {
+    if (enemy.hp <= 0 || rawRate <= 0 || duration <= 0) return;
+    const auto resistance = monsterResistance_ ?
+        monsterResistance_(enemy, state_.area.region, MonsterDamageType::Poison) : std::nullopt;
+    if (!resistance) {
+        state_.message = "Original monster poison resistance is unavailable.";
+        return;
+    }
+    // The native poison state stores already mitigated HP regeneration per frame.
+    const float rate = mitigateMonsterDamage(rawRate / 25.f, *resistance) * 25.f;
     if (rate > 0 && rate >= enemy.poisonPerSecond) {
         enemy.poisonPerSecond = rate;
-        enemy.poisonRemaining = elements.poisonDuration;
+        enemy.poisonRemaining = duration;
         enemy.poisonSource = source;
-        enemy.poisonPlayerEffects = elements.playerKillEffects;
+        enemy.poisonPlayerEffects = playerKillEffects;
     }
 }
 } // namespace d2x

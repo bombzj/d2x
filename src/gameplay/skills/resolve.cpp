@@ -120,11 +120,7 @@ SkillCastSpec resolveSkill(const SkillSpec &spec, int rank,
     result.missileLifetime = spec.missileLifetime + float(rank * spec.missileRangePerLevel) / 25.f;
     if (spec.effect == SkillBehavior::Inferno)
         result.missileLifetime = float(std::max(1, (spec.flameFrames + (rank - 1) * spec.flameFramesPerLevel) / 2)) / 25.f;
-    result.impactRadius = spec.impactRadius;
-    if (!spec.impacts.empty()) {
-        result.impactMissileId = spec.impacts[0].missileId;
-        result.impactDuration = spec.impacts[0].duration;
-    }
+    result.missileImpact = spec.missileImpact;
     return result;
 }
 } // namespace d2x

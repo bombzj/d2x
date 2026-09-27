@@ -14,6 +14,7 @@ void add(int &target, int value) {
 void addStat(std::string_view stat, int value, CombatModifiers &m) {
     int *target = nullptr;
     if (stat == "damagepercent") target = &m.damagePercent;
+    else if (stat == "attackrate") target = &m.attackRate;
     else if (stat == "item_mindamage_percent") target = &m.minimumDamagePercent;
     else if (stat == "item_maxdamage_percent") target = &m.maximumDamagePercent;
     else if (stat == "item_normaldamage") target = &m.normalDamage;
@@ -77,6 +78,13 @@ void applyEquipmentStat(const ResolvedItemStat &resolved, EntityId item, bool we
                          CombatModifiers &mods) {
     const auto &stat = resolved.effect;
     const int value = resolved.value;
+    auto &target = weapon ? mods.weapons[item].target : mods.target;
+    if (stat == "item_demondamage_percent") { add(target.demonDamage, value); return; }
+    if (stat == "item_undeaddamage_percent") { add(target.undeadDamage, value); return; }
+    if (stat == "item_demon_tohit") { add(target.demonAttackRating, value); return; }
+    if (stat == "item_undead_tohit") { add(target.undeadAttackRating, value); return; }
+    if (stat == "item_fractionaltargetac") { add(target.defenseReduction, value); return; }
+    if (stat == "item_ignoretargetac") { target.ignoreDefense |= value != 0; return; }
     if (stat == "item_addclassskills") { add(mods.classSkills[resolved.layer], value); return; }
     if (stat == "item_singleskill") { add(mods.singleSkills[resolved.layer], value); return; }
     if (stat == "item_nonclassskill") { add(mods.nonClassSkills[resolved.layer], value); return; }
@@ -93,7 +101,10 @@ void applyEquipmentStat(const ResolvedItemStat &resolved, EntityId item, bool we
     int *ownValue = nullptr;
     if (weapon) {
         auto &own = mods.weapons[item];
-        if (stat == "firemindam") ownValue = &own.fireMinimum;
+        if (stat == "tohit") ownValue = &own.attackRating;
+        else if (stat == "item_tohit_percent") ownValue = &own.attackRatingPercent;
+        else if (stat == "item_fasterattackrate") ownValue = &own.fasterAttack;
+        else if (stat == "firemindam") ownValue = &own.fireMinimum;
         else if (stat == "firemaxdam") ownValue = &own.fireMaximum;
         else if (stat == "lightmindam") ownValue = &own.lightningMinimum;
         else if (stat == "lightmaxdam") ownValue = &own.lightningMaximum;

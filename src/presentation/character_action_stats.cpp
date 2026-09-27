@@ -7,15 +7,25 @@ namespace {
 std::string damageText(int64_t minimum, int64_t maximum) {
     return std::to_string(minimum) + "-" + std::to_string(maximum);
 }
-std::string weaponDamage(const GameSession &session, bool thrown, bool leftHand) {
+CharacterActionStats weaponStats(const GameSession &session, bool thrown, bool leftHand) {
     const auto &equipment = session.equipmentStats();
     const auto &combat = session.characterStats().combat;
-    std::string value;
     for (int index = 0; index < equipment.weaponCount; ++index) {
         const auto &weapon = equipment.weapons[index];
-        if ((thrown && !weapon.throwable) || (leftHand && !weapon.leftHand)) continue;
-        // Ordinary melee alternates dual weapons; ordinary ranged fire uses the first weapon.
-        if (!thrown && !leftHand && index > 0 && equipment.weapons[0].ranged) break;
+        if (leftHand && (!weapon.item || !weapon.leftHand)) continue;
+        if ((thrown && !weapon.throwable) || (!thrown && weapon.potion)) return {};
+        if (thrown && weapon.potion && weapon.projectile) {
+            const auto &spec = *weapon.projectile;
+            if (spec.impact && spec.impact->cloudBurst) {
+                const auto &cloud = spec.impact->cloudBurst->cloud;
+                return {damageText(int64_t(cloud.minimum) * cloud.poisonFrames / 256,
+                                   int64_t(cloud.maximum) * cloud.poisonFrames / 256) +
+                        " / " + std::to_string(cloud.poisonFrames / 25) + "s", ""};
+            }
+            int64_t minimum = 0, maximum = 0;
+            for (const auto &range : spec.damage) { minimum += range.minimum; maximum += range.maximum; }
+            return {damageText(minimum / 256, maximum / 256), ""};
+        }
         const auto elements = attackElementRanges(combat, weapon.item);
         const int64_t elementalMinimum = int64_t(elements.fire.minimum) + elements.lightning.minimum +
                                          elements.cold.minimum + elements.magic.minimum;
@@ -23,27 +33,22 @@ std::string weaponDamage(const GameSession &session, bool thrown, bool leftHand)
                                          elements.cold.maximum + elements.magic.maximum;
         const int minimum = thrown ? weapon.throwMinimum : weapon.minimum;
         const int maximum = thrown ? weapon.throwMaximum : weapon.maximum;
-        if (!value.empty()) value += "/";
-        value += damageText(int64_t(minimum) / 256 + elementalMinimum,
-                            int64_t(maximum) / 256 + elementalMaximum);
-        if (thrown || leftHand) break;
+        return {damageText(int64_t(minimum) / 256 + elementalMinimum,
+                           int64_t(maximum) / 256 + elementalMaximum), std::to_string(weapon.attackRating)};
     }
-    return value;
+    return {};
 }
 } // namespace
 
 CharacterActionStats characterActionStats(const GameSession &session, std::optional<int> skill) {
-    const auto rating = std::to_string(session.characterStats().attackRating);
-    const auto normal = [&]() { return CharacterActionStats{weaponDamage(session, false, false), rating}; };
-    if (!skill) return normal();
+    if (!skill) return weaponStats(session, false, false);
     const auto *entry = session.content().skills.find(*skill);
     if (!entry || !session.skillAvailable(*skill) || entry->passive) return {};
     if (entry->basicAction != BasicSkillAction::None) {
         const bool thrown = entry->basicAction == BasicSkillAction::Throw || entry->basicAction == BasicSkillAction::LeftHandThrow;
         const bool leftHand = entry->basicAction == BasicSkillAction::LeftHandThrow ||
                               entry->basicAction == BasicSkillAction::LeftHandSwing;
-        auto damage = weaponDamage(session, thrown, leftHand);
-        return {damage, damage.empty() ? "" : rating};
+        return weaponStats(session, thrown, leftHand);
     }
     if (entry->spell) {
         const int rank = session.effectiveSkillRank(*skill);

@@ -26,6 +26,7 @@ struct SkillRecord {
     std::vector<int> prerequisites;
     bool leftAllowed = false, passive = false, allowedInTown = false;
     BasicSkillAction basicAction = BasicSkillAction::None;
+    std::string animationMode;
     std::optional<SkillSpec> spell;
     bool executable() const { return !passive && (spell || basicAction != BasicSkillAction::None); }
     std::optional<std::pair<int, int>> manaRecoveryPerRank;
@@ -36,6 +37,7 @@ struct SkillRecord {
 struct SkillCatalog {
     struct CastTiming { int frames = 0, speed = 0, actionFrame = 0; };
     std::map<std::string, CastTiming> castTimings;
+    std::map<std::string, CastTiming> attackTimings;
     std::vector<ClassSkillTree> classes;
     std::map<int, SkillRecord> skills;
     const SkillRecord *find(int id) const;

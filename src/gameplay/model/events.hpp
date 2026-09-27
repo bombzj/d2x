@@ -12,8 +12,9 @@ struct SkillCast {
     int skillId = -1;
     Vec position;
 };
-struct MeleeAttack {
+struct WeaponAttackStarted {
     EntityId actor, target;
+    bool projectile = false;
 };
 struct MissileImpact { int missileId; Vec position; };
 struct MissileReleased { int missileId; };
@@ -113,7 +114,7 @@ struct QuestAdvanced {
     ActOneQuest quest;
     uint32_t stage;
 };
-using GameEvent = std::variant<SkillCast, SkillActivated, MissileImpact, MissileReleased, MeleeAttack, EnemyDied, EnemyAttacked, EnemySkill2, EnemyHit, PlayerDied, RegionEntered, ObjectInteracted, NpcDialogueStarted, ItemsIdentified, VendorItemBought, VendorItemSold,
+using GameEvent = std::variant<SkillCast, SkillActivated, MissileImpact, MissileReleased, WeaponAttackStarted, EnemyDied, EnemyAttacked, EnemySkill2, EnemyHit, PlayerDied, RegionEntered, ObjectInteracted, NpcDialogueStarted, ItemsIdentified, VendorItemBought, VendorItemSold,
                                ItemChange, InventoryRejected, InventoryApplied, ItemPickedUp, PickupFailed,
                                ItemUsed, BeltEquipped, StorageOpened, StorageClosed, InteractionFailed,
                                LootDeferred, WaypointActivated, QuestAdvanced, GambleStockOpened,

@@ -3,9 +3,18 @@
 #include <map>
 
 namespace d2x {
+struct AttackTargetModifiers {
+    int demonDamage = 0, undeadDamage = 0;
+    int demonAttackRating = 0, undeadAttackRating = 0;
+    int defenseReduction = 0;
+    bool ignoreDefense = false;
+};
+void mergeAttackTargetModifiers(AttackTargetModifiers &target, const AttackTargetModifiers &source);
 // Equipment, skills, monster states and timed effects contribute to the same
 // derived combat snapshot. Values here are already decoded from MPQ stat IDs.
 struct WeaponModifiers {
+    AttackTargetModifiers target;
+    int attackRating = 0, attackRatingPercent = 0, fasterAttack = 0;
     int minimum = 0, maximum = 0;
     int normalDamage = 0;
     int enhancedMinimum = 0, enhancedMaximum = 0;
@@ -18,6 +27,7 @@ struct WeaponModifiers {
     int lifeLeech = 0, manaLeech = 0, crushingBlow = 0, openWounds = 0;
 };
 struct CombatModifiers {
+    AttackTargetModifiers target;
     int damagePercent = 0, attackRatingPercent = 0;
     int defensePercent = 0;
     int minimumDamagePercent = 0, maximumDamagePercent = 0;
@@ -38,6 +48,7 @@ struct CombatModifiers {
     int lifePercent = 0, manaPercent = 0;
     int blockBonus = 0;
     int fasterAttack = 0, fasterCast = 0, fasterHitRecovery = 0, fasterBlock = 0;
+    int attackRate = 0; // Skill/state attack-rate contribution; not item IAS.
     int lifeLeech = 0, manaLeech = 0;
     int crushingBlow = 0, openWounds = 0, deadlyStrike = 0;
     int magicFind = 0, goldFind = 0;

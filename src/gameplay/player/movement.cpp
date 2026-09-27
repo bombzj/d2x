@@ -5,6 +5,7 @@ namespace d2x {
 void Simulation::stopWalking() {
     state_.player.route.clear();
     state_.player.attackTarget = {};
+    state_.player.attackPosition.reset();
     state_.player.throwAttack = false;
     state_.player.leftHandAttack = false;
     state_.player.moving = false;
@@ -15,33 +16,14 @@ void Simulation::moveTo(Vec target) {
     if (p.dead)
         return;
     p.attackTarget = {};
+    p.attackPosition.reset();
     p.throwAttack = false;
     p.leftHandAttack = false;
     p.route = grid_->path(p.pos, target, true);
     state_.message = p.route.empty() ? "That path is blocked" : "";
 }
-void Simulation::attackEnemy(EntityId target, bool thrown, bool leftHand) {
-    if (safeZone_) return;
-    stopChannel(state_.player);
-    auto &p = state_.player;
-    auto *e = findEnemy(target);
-    if (p.dead || !e || e->hp <= 0 || p.meleeTime > 0)
-        return;
-    if ((thrown || leftHand) && std::none_of(equipmentStats_.weapons.begin(),
-            equipmentStats_.weapons.begin() + equipmentStats_.weaponCount,
-            [=](const WeaponDamage &weapon) { return (!thrown || weapon.throwable) &&
-                (!leftHand || weapon.leftHand); })) {
-        state_.message = thrown ? "A throwing weapon is required." : "A left-hand weapon is required.";
-        return;
-    }
-    p.attackTarget = target;
-    p.throwAttack = thrown;
-    p.leftHandAttack = leftHand;
-    p.route = grid_->path(p.pos, e->pos);
-}
 void Simulation::updatePlayer(float dt, Vec keyboard) {
     auto &p = state_.player;
-    const auto &rules = playerRules();
     p.mana = std::min(float(characterStats_.maxMana), p.mana + dt * characterStats_.manaRegen);
     if (characterStats_.combat.replenishLife)
         p.hp = std::clamp(p.hp + dt * characterStats_.combat.replenishLife * 25.f / 256.f,
@@ -49,57 +31,39 @@ void Simulation::updatePlayer(float dt, Vec keyboard) {
     Vec step;
     float remaining = 0;
     bool followingRoute = false;
-    if (p.attackTarget) {
-        auto *e = findEnemy(p.attackTarget);
-        if (!e || e->hp <= 0) {
+    if (p.attackTarget || p.attackPosition) {
+        auto *enemy = findEnemy(p.attackTarget);
+        const auto *weapon = attackWeapon(p.throwAttack, p.leftHandAttack);
+        if (!weapon || (p.attackTarget && (!enemy || enemy->hp <= 0))) {
             p.attackTarget = {};
+            p.attackPosition.reset();
             p.route.clear();
         } else {
-            const WeaponDamage *weapon = &equipmentStats_.weapons[0];
-            bool foundSelected = false;
-            if (p.throwAttack || p.leftHandAttack)
-                for (int index = 0; index < equipmentStats_.weaponCount; ++index)
-                    if ((!p.throwAttack || equipmentStats_.weapons[index].throwable) &&
-                        (!p.leftHandAttack || equipmentStats_.weapons[index].leftHand)) {
-                        weapon = &equipmentStats_.weapons[index];
-                        foundSelected = true;
-                        break;
-                    }
-            if ((p.throwAttack || p.leftHandAttack) && !foundSelected) {
-                p.attackTarget = {};
-                p.throwAttack = false;
-                p.leftHandAttack = false;
-                state_.message = "The selected weapon is no longer equipped.";
-            } else {
-                const bool projectile = p.throwAttack || weapon->ranged;
-                const float range = projectile ? weapon->missileSpeed * weapon->missileLifetime : rules.meleeRange;
-                const bool clear = projectile ? missilePathClear(weapon->missileId, p.pos, e->pos)
-                                              : grid_->segment(p.pos, e->pos);
-                if ((e->pos - p.pos).length() < range && clear) {
-                    p.route.clear();
-                    if (p.castTime <= 0 && p.meleeTime <= 0) {
-                        p.look = (e->pos - p.pos).unit();
-                        if (!projectile || firePhysicalProjectile(*e, *weapon, p.throwAttack)) {
-                            p.lastMeleeDuration = rules.meleeDuration * (p.chill > 0 ? 2.f : 1.f);
-                            p.meleeTime = p.lastMeleeDuration;
-                            emit(MeleeAttack{p.id, e->id});
-                            if (!projectile) meleeDamage(*e, p.leftHandAttack);
-                            p.attackTarget = {};
-                        }
-                    }
-                } else if (p.route.empty() || (p.route.back() - e->pos).length() > 1)
-                    p.route = grid_->path(p.pos, e->pos);
-            }
+            const Vec aim = enemy ? enemy->pos : *p.attackPosition;
+            const bool projectile = p.throwAttack || weapon->ranged;
+            const bool inRange = p.attackStationary || !enemy || (projectile ?
+                (weapon->projectile && missileDistance(p.pos, aim) <
+                    weapon->projectile->speed * weapon->projectile->lifetime) : meleeReach(*enemy, *weapon));
+            if (inRange) {
+                p.route.clear();
+                if (p.castTime <= 0 && p.meleeTime <= 0 && p.hitTime <= 0) {
+                    beginWeaponAttack(aim, p.attackTarget, *weapon, p.throwAttack, p.leftHandAttack);
+                    p.attackTarget = {};
+                    p.attackPosition.reset();
+                }
+            } else if (p.route.empty() || (p.route.back() - aim).length() > 1)
+                p.route = grid_->path(p.pos, aim);
         }
     }
     if (keyboard.length() > .1f && p.castTime <= 0 &&
-        p.meleeTime <= 0) {
+        p.meleeTime <= 0 && p.hitTime <= 0) {
         p.route.clear();
         p.attackTarget = {};
+        p.attackPosition.reset();
         p.throwAttack = false;
         p.leftHandAttack = false;
         step = keyboard.unit();
-    } else if (!p.route.empty() && p.castTime <= 0 && p.meleeTime <= 0) {
+    } else if (!p.route.empty() && p.castTime <= 0 && p.meleeTime <= 0 && p.hitTime <= 0) {
         while (!p.route.empty() && (p.route.front() - p.pos).length() < .01f)
             p.route.pop_front();
         if (!p.route.empty()) {

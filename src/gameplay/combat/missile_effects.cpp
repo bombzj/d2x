@@ -1,0 +1,113 @@
+#include "gameplay/simulation/simulation.hpp"
+#include "gameplay/combat/damage_resolution.hpp"
+#include <algorithm>
+#include <cmath>
+
+namespace d2x {
+void Simulation::resolveMissileImpact(const Missile &missile, std::vector<Missile> &spawned, Enemy *direct) {
+    if (!missile.impact) return;
+    const auto &spec = *missile.impact;
+    const auto &payload = missile.impactDamage;
+    emit(MissileImpact{missile.missileId, missile.pos});
+    if (spec.visualId >= 0)
+        state_.area.effects.push_back({missile.pos, 0, spec.visualDuration, spec.visualId});
+    auto hit = [&](Enemy &enemy) {
+        if (enemy.hp <= 0 || !active(enemy.pos)) return;
+        float total = 0, chill = 0;
+        for (size_t channel = 0; channel < size_t(MonsterDamageType::Poison); ++channel) {
+            if (payload.channels[channel] <= 0) continue;
+            const auto type = MonsterDamageType(channel);
+            const auto resistance = monsterResistance_ ? monsterResistance_(enemy, state_.area.region, type) : std::nullopt;
+            if (!resistance) {
+                state_.message = "Original monster resistance data is unavailable.";
+                return;
+            }
+            const int pierce = type == MonsterDamageType::Cold && missile.owner == state_.player.id &&
+                               *resistance < 100 && coldPierce_ ? coldPierce_() : 0;
+            const int effective = *resistance - pierce;
+            total += mitigateMonsterDamage(payload.channels[channel], effective);
+            if (type == MonsterDamageType::Cold)
+                chill = payload.coldDuration * float(std::clamp(100 - effective, 0, 200)) / 100.f;
+        }
+        // Combine channels after independent resistance calculations: one hit reaction/kill.
+        damageEnemy(enemy, total, missile.owner, chill, false, MonsterDamageType::Physical,
+                    true, true, payload.freeze);
+        if (enemy.hp > 0 && payload.poisonDuration > 0)
+            applyEnemyPoison(enemy, payload.channels[size_t(MonsterDamageType::Poison)],
+                             payload.poisonDuration, missile.owner, true);
+    };
+    if (spec.radius > 0) {
+        // SrvHit01/44 -> sub_6FD10200: integer-subtile radius and missile-barrier LOS.
+        for (auto &enemy : state_.area.enemies) {
+            const float dx = std::floor(enemy.pos.x) - std::floor(missile.pos.x);
+            const float dy = std::floor(enemy.pos.y) - std::floor(missile.pos.y);
+            if (dx * dx + dy * dy <= spec.radius * spec.radius &&
+                grid_->collisionSegment(missile.pos, enemy.pos, 0x04)) hit(enemy);
+        }
+    } else if (direct) hit(*direct);
+    if (!spec.cloudBurst) return;
+    // MISSMODE_CreatePoisonCloudHitSubmissiles: fixed 16-direction offsets,
+    // with two independently selected rings, velocities and loop count.
+    constexpr Vec offsets[16]{{0,2},{1,2},{2,2},{2,1},{2,0},{2,-1},{2,-2},{1,-2},
+                              {0,-2},{-1,-2},{-2,-2},{-2,-1},{-2,0},{-2,1},{-2,2},{-1,2}};
+    const auto &burst = *spec.cloudBurst;
+    const auto &cloud = burst.cloud;
+    const Vec origin = direct ? direct->pos : missile.pos;
+    auto launch = [&](Vec heading, float speed) {
+        Missile next{ids_.allocate(), missile.owner, origin, heading.unit() * speed,
+            float(cloud.lifetimeFrames) / 25.f, SkillBehavior::None, false, cloud.missileId};
+        next.poisonCloud = cloud;
+        next.combatRandom = missile.combatRandom + next.id.value;
+        spawned.push_back(std::move(next));
+    };
+    for (int i = 0; i < 16; i += burst.mainStep) launch(offsets[i], burst.mainSpeed);
+    if (burst.subStep > 0)
+        for (int i = 0; i < 15; i += burst.subStep) launch(offsets[i + 1], burst.subSpeed);
+}
+void Simulation::advanceGroundTargetedMissile(Missile &missile, float dt, std::vector<Missile> &spawned) {
+    const Vec next = missile.pos + missile.velocity * std::min(dt, missile.remaining);
+    const bool blocked = !missilePathClear(missile.missileId, missile.pos, next);
+    if (blocked) {
+        float clear = 0, wall = 1;
+        for (int step = 0; step < 12; ++step) {
+            const float middle = (clear + wall) * .5f;
+            if (missilePathClear(missile.missileId, missile.pos, missile.pos + (next - missile.pos) * middle)) clear = middle;
+            else wall = middle;
+        }
+        missile.pos = missile.pos + (next - missile.pos) * clear;
+    } else missile.pos = next;
+    missile.remaining = blocked ? 0 : std::max(0.f, missile.remaining - dt);
+    // CollideType 6 collides with terrain only. Resolve the impact at expiry/terrain.
+    if (missile.remaining <= .00001f) {
+        missile.remaining = 0;
+        resolveMissileImpact(missile, spawned);
+    }
+}
+void Simulation::advancePoisonCloud(Missile &missile, float dt) {
+    const auto &cloud = *missile.poisonCloud;
+    const Vec next = missile.pos + missile.velocity * std::min(dt, missile.remaining);
+    if (!missilePathClear(missile.missileId, missile.pos, next)) {
+        missile.remaining = 0;
+        return;
+    }
+    Enemy *struck = nullptr;
+    float first = 2;
+    for (auto &enemy : state_.area.enemies) {
+        if (enemy.hp <= 0 || !active(enemy.pos) || enemy.id == missile.lastHit) continue;
+        const int size = monsterSize_ ? monsterSize_(enemy) : 0;
+        if (auto at = missileUnitIntersection(missile.pos, next, cloud.size, enemy.pos, size); at && *at < first) {
+            first = *at;
+            struck = &enemy;
+        }
+    }
+    if (struck) {
+        missile.lastHit = struck->id; // Native LastCollide suppresses the previous unit only.
+        missile.combatRandom = uint64_t(uint32_t(missile.combatRandom)) * 0x6ac690c5ULL + (missile.combatRandom >> 32);
+        const auto span = uint32_t(std::max(0, cloud.maximum - cloud.minimum));
+        const int rate = cloud.minimum + (span ? uint32_t(missile.combatRandom) % span : 0);
+        applyEnemyPoison(*struck, float(rate) * 25.f / 256.f, float(cloud.poisonFrames) / 25.f, missile.owner, true);
+    }
+    missile.pos = next;
+    missile.remaining = std::max(0.f, missile.remaining - dt);
+}
+} // namespace d2x

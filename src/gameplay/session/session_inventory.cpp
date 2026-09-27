@@ -12,6 +12,14 @@ CharacterModifiers activeModifiers(const PlayerState &player, EffectFrame now) {
 EquipmentActor GameSession::equipmentActor() const {
     return equipmentActor(state().player);
 }
+const ItemInstance *GameSession::usableEquipment(EquipmentSlot slot) const {
+    const auto *item = inventory_.item(inventory_.equipped(playerContainers_, slot));
+    if (!item || !item->quantity) return nullptr;
+    const auto *definition = inventory_.catalog().find(item->definition);
+    if (!definition || (definition->maxDurability && !item->durability) ||
+        inventory_.equipmentRequirements(item->handle(), equipmentActor()) != InventoryError::None) return nullptr;
+    return item;
+}
 EquipmentActor GameSession::equipmentActor(const PlayerState &player) const {
     auto effects = activeModifiers(player, state().frame);
     auto base = deriveCharacterAttributes(characterDefinition_, player.level, player.allocated, effects);
@@ -47,7 +55,7 @@ void GameSession::refreshCharacter(bool fillGains) {
     player.stamina = std::clamp(player.stamina, 0.f, float(current.maxStamina));
     simulation_.characterStats_ = current;
     simulation_.equipmentStats_ = deriveEquipmentStats(inventory_, playerContainers_, actor,
-                                                       modifiers.defense, modifiers.combat);
+                                                       modifiers.defense, modifiers.combat, current.baseAttackRating);
 }
 void GameSession::createStarterEquipment() {
     const auto &characters = content_.tables.at("charstats");

@@ -6,8 +6,6 @@
 
 namespace d2x {
 bool Simulation::missilePathClear(int missileId, Vec from, Vec to) const {
-    // Only legacy demonstration effects have no original missile identity.
-    if (missileId < 0) return grid_->missileSegment(from, to, {0x04, 1});
     const auto found = missileCollisions_.find(missileId);
     return found != missileCollisions_.end() && grid_->missileSegment(from, to, found->second);
 }
@@ -27,14 +25,14 @@ void Simulation::damageEnemy(Enemy &enemy, float amount, EntityId source, float 
         }
     if (amount <= 0) return;
     enemy.hp = std::max(0.f, enemy.hp - amount);
-    enemy.hitFlash = 0;
-    if (enemy.hp > 0)
+    if (type != MonsterDamageType::Poison) enemy.hitFlash = 0;
+    if (enemy.hp > 0 && type != MonsterDamageType::Poison)
         enemy.hitFlash = monsterGetHitDuration_
             ? monsterGetHitDuration_(enemy.identity).value_or(.12f) : .12f;
     if (enemy.hp > 0 && monsterAi_)
         if (auto ai = monsterAi_(enemy); ai && ai->kind == MonsterAiKind::QuillRat)
             enemy.aiRetaliate = true;
-    if (enemy.skill2Remaining > 0)
+    if (enemy.skill2Remaining > 0 && type != MonsterDamageType::Poison)
         enemy.skill2Remaining = enemy.skill2Duration = 0;
     if (freezeHit && monsterFreezable_) {
         if (auto freezable = monsterFreezable_(enemy)) {
@@ -48,7 +46,7 @@ void Simulation::damageEnemy(Enemy &enemy, float amount, EntityId source, float 
     } else {
         enemy.chill = std::max(enemy.chill, chill);
     }
-    if (enemy.hp > 0) emit(EnemyHit{enemy.id, enemy.kind});
+    if (enemy.hp > 0 && type != MonsterDamageType::Poison) emit(EnemyHit{enemy.id, enemy.kind});
     if (enemy.hp == 0) {
         enemy.freeze = 0;
         enemy.resurrectionRemaining = enemy.resurrectionDuration = 0;
@@ -78,44 +76,36 @@ void Simulation::damageEnemy(Enemy &enemy, float amount, EntityId source, float 
                        state_.population.difficulty, !playerKillEffects});
     }
 }
-void Simulation::meleeDamage(Enemy &enemy, bool leftHand) {
+void Simulation::meleeDamage(Enemy &enemy, const WeaponDamage &weapon) {
     auto &player = state_.player;
-    const WeaponDamage *weapon = &equipmentStats_.weapons[player.nextWeapon % equipmentStats_.weaponCount];
-    if (leftHand) {
-        for (int index = 0; index < equipmentStats_.weaponCount; ++index)
-            if (equipmentStats_.weapons[index].leftHand) weapon = &equipmentStats_.weapons[index];
-    } else
-        player.nextWeapon = (player.nextWeapon + 1) % equipmentStats_.weaponCount;
     player.combatRandom = uint64_t(uint32_t(player.combatRandom)) * 0x6ac690c5ULL +
                           (player.combatRandom >> 32);
-    if (monsterDefense_)
-        if (auto defense = monsterDefense_(enemy, state_.area.region)) {
-            if (uint32_t(player.combatRandom) % 100 >=
-                unsigned(physicalHitChance(player.level, characterStats_.attackRating,
-                                           defense->level, defense->defense)))
-                return;
-            player.combatRandom = uint64_t(uint32_t(player.combatRandom)) * 0x6ac690c5ULL +
-                                  (player.combatRandom >> 32);
-        }
-    auto range = uint32_t(weapon->maximum - weapon->minimum) + 1;
-    auto damage = weapon->minimum + (range ? uint32_t(player.combatRandom) % range : 0);
-    resolveWeaponHit(enemy, float(damage) / 256.f, player.id, rollAttackElements(weapon->item));
-    if (wearEquipment_ && weapon->item)
-        wearEquipment_(weapon->item, false);
-}
-void Simulation::damage(Vec pos, float radius, float amount, EntityId source, float chill,
-                        MonsterDamageType type) {
-    for (auto &e : state_.area.enemies) {
-        if (e.hp <= 0 || !active(e.pos) || (e.pos - pos).length() > radius)
-            continue;
-        damageEnemy(e, amount, source, chill, false, type);
-    }
+    const auto defense = monsterDefense_ ? monsterDefense_(enemy, state_.area.region) : std::nullopt;
+    if (!defense) { state_.message = "Original monster defense is unavailable."; return; }
+    if (uint32_t(player.combatRandom) % 100 >= unsigned(weaponHitChance(player.level,
+        weapon.baseAttackRating, weapon.attackRatingPercent, weapon.target, *defense, enemy.identity.rank))) return;
+    player.combatRandom = uint64_t(uint32_t(player.combatRandom)) * 0x6ac690c5ULL +
+                          (player.combatRandom >> 32);
+    const int targetBonus = (defense->demon ? std::max(0, weapon.target.demonDamage) : 0) +
+        (defense->undead ? std::max(0, weapon.target.undeadDamage + (weapon.blunt ? 50 : 0)) : 0);
+    const int bonus = std::max(-90, weapon.damagePercent + targetBonus);
+    const int64_t minimum = weapon.meleeBaseMinimum + int64_t(weapon.meleeBaseMinimum) *
+                            (bonus + weapon.minimumDamagePercent) / 100;
+    const int64_t maximum = weapon.meleeBaseMaximum + int64_t(weapon.meleeBaseMaximum) *
+                            (bonus + weapon.maximumDamagePercent) / 100;
+    const auto range = uint32_t(std::max<int64_t>(0, maximum - minimum));
+    const auto damage = std::max<int64_t>(0, minimum + (range ? uint32_t(player.combatRandom) % range : 0));
+    resolveWeaponHit(enemy, float(damage) / 256.f, player.id, rollAttackElements(weapon.item));
+    if (wearEquipment_ && weapon.item) wearEquipment_(weapon.item, false);
 }
 void Simulation::updateMissiles(float dt) {
     auto &area = state_.area;
+    std::vector<Missile> spawned;
     for (auto &m : area.missiles) {
         const int accelerationStep = int(m.age * 5.f + .00001f);
         m.age += dt;
+        if (m.groundTargeted) { advanceGroundTargetedMissile(m, dt, spawned); continue; }
+        if (m.poisonCloud) { advancePoisonCloud(m, dt); continue; }
         if (m.acceleration != 0 && int(m.age * 5.f + .00001f) > accelerationStep) {
             const auto heading = m.velocity.unit();
             float speed = std::max(0.f, m.velocity.length() + m.acceleration);
@@ -236,16 +226,15 @@ void Simulation::updateMissiles(float dt) {
             Enemy *struck = nullptr;
             float first = 2.f;
             const Vec motion = next - m.pos;
-            const float lengthSquared = motion.x * motion.x + motion.y * motion.y;
+            const auto collision = missileCollisions_.find(m.missileId);
+            if (collision == missileCollisions_.end()) { m.remaining = 0; continue; }
             for (auto &enemy : area.enemies) {
                 if (enemy.hp <= 0 || !active(enemy.pos)) continue;
-                const Vec offset = enemy.pos - m.pos;
-                const float projection = lengthSquared > 0 ?
-                    std::clamp((offset.x * motion.x + offset.y * motion.y) / lengthSquared, 0.f, 1.f) : 0.f;
-                const Vec closest = m.pos + motion * projection;
-                if ((enemy.pos - closest).length() < 1.2f && projection < first) {
+                const int size = monsterSize_ ? monsterSize_(enemy) : 0;
+                if (auto at = missileUnitIntersection(m.pos, next, collision->second.size, enemy.pos, size);
+                    at && *at < first) {
                     struck = &enemy;
-                    first = projection;
+                    first = *at;
                 }
             }
             m.pos = struck ? m.pos + motion * first : next;
@@ -253,59 +242,18 @@ void Simulation::updateMissiles(float dt) {
             if (wall || struck || m.remaining <= 0) {
                 m.remaining = 0;
                 if (!wall && !struck) continue;
-                if (m.impactMissileId >= 0)
-                    area.effects.push_back({m.pos, 0, m.impactDuration, m.impactMissileId});
-                emit(MissileImpact{m.missileId, m.pos});
-                if (m.radius > 0) {
-                    damage(m.pos, m.radius, m.damage, m.owner, m.chill, type);
-                } else if (struck)
+                if (m.impact) resolveMissileImpact(m, spawned, struck);
+                else if (struck)
                     damageEnemy(*struck, m.damage, m.owner, m.chill, false, type,
                                 false, true, m.behavior == SkillBehavior::IceBlast);
             }
             continue;
         }
-        if (m.physical) {
-            if (!missilePathClear(m.missileId, m.pos, next)) {
-                m.remaining = 0;
-                continue;
-            }
-            Enemy *struck = nullptr;
-            float first = 2.f;
-            const Vec motion = next - m.pos;
-            const float lengthSquared = motion.x * motion.x + motion.y * motion.y;
-            for (auto &enemy : area.enemies) {
-                if (enemy.hp <= 0 || !active(enemy.pos)) continue;
-                const Vec offset = enemy.pos - m.pos;
-                const float projection = lengthSquared > 0 ?
-                    std::clamp((offset.x * motion.x + offset.y * motion.y) / lengthSquared, 0.f, 1.f) : 0.f;
-                const Vec closest = m.pos + motion * projection;
-                if ((enemy.pos - closest).length() < 1.2f && projection < first) {
-                    struck = &enemy;
-                    first = projection;
-                }
-            }
-            m.pos = next;
-            m.remaining -= dt;
-            if (struck) {
-                m.remaining = 0;
-                auto &player = state_.player;
-                player.combatRandom = uint64_t(uint32_t(player.combatRandom)) * 0x6ac690c5ULL +
-                                      (player.combatRandom >> 32);
-                bool hit = true;
-                if (monsterDefense_)
-                    if (auto defense = monsterDefense_(*struck, state_.area.region))
-                        hit = uint32_t(player.combatRandom) % 100 <
-                            unsigned(physicalHitChance(m.attackerLevel > 0 ? m.attackerLevel : player.level,
-                                                       m.attackerLevel > 0 ? m.attackRating :
-                                                           characterStats_.attackRating,
-                                                       defense->level, defense->defense));
-                if (hit) resolveWeaponHit(*struck, m.damage, m.owner, m.attackElements);
-            }
-            continue;
-        }
+        if (m.physical) { advancePhysicalMissile(m, dt); continue; }
         throw std::logic_error("Missile has no native execution definition");
     }
     std::erase_if(area.missiles, [](const Missile &m) { return m.remaining <= 0; });
+    for (auto &missile : spawned) area.missiles.push_back(std::move(missile));
     std::erase_if(area.novaHitUntil, [this](const auto &entry) { return entry.second <= state_.time; });
 }
 } // namespace d2x

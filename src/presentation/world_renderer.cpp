@@ -1,5 +1,6 @@
 #include "scene_view.hpp"
 #include <algorithm>
+#include <cmath>
 #include <rlgl.h>
 namespace d2x {
 std::vector<SceneView::VisibleMonster> SceneView::visibleMonsters() const {
@@ -251,10 +252,8 @@ void SceneView::drawActors(Vec mouse) const {
                                  sim.player.lastCastRate));
             if (mode == "sc" && sim.player.channel)
                 frame = std::min({anim->count - 1, 9, int(sim.player.channelAge() * 25)});
-            if ((mode == "a1" || mode == "th") && sim.player.meleeTime > 0)
-                frame = std::clamp(int((sim.player.lastMeleeDuration - sim.player.meleeTime) /
-                                       std::max(.001f, sim.player.lastMeleeDuration) * anim->count),
-                                   0, anim->count - 1);
+            if (sim.player.weaponAttack && mode == sim.player.weaponAttack->timing.mode)
+                frame = std::min(anim->count - 1, sim.player.weaponAttack->animationFrame());
             auto f = anim->frame(direction(look, anim->directions), frame);
             auto p = item.p;
             spriteShadow(f, item.p);
@@ -412,7 +411,7 @@ void SceneView::drawMagic() const {
     const auto &sim = session_.state();
     const auto &props = session_.region().objects;
 
-    auto drawMissile = [&](int id, Vec position, Vec heading, float age) {
+    auto drawMissile = [&](int id, Vec position, Vec heading, float age, float remaining) {
         auto found = assets_.projectileAnimations.find(id);
         if (found == assets_.projectileAnimations.end()) return;
         const auto &animation = found->second;
@@ -420,10 +419,11 @@ void SceneView::drawMagic() const {
         const int frames = visual.frames > 0 ? std::min(animation.count, visual.frames) : animation.count;
         if (frames <= 0) return;
         int frame = int(age * visual.fps);
-        if (visual.loop && visual.loopEnd > visual.loopStart && visual.loopEnd <= frames && frame >= frames) {
-            frame -= frames;
-            if (frame >= visual.loopEnd)
-                frame = visual.loopStart + (frame - visual.loopEnd) % (visual.loopEnd - visual.loopStart);
+        if (visual.loopEnd > visual.loopStart && visual.loopEnd <= frames && frame >= visual.loopStart) {
+            const int tail = frames - visual.loopEnd;
+            const int left = std::max(0, int(std::ceil(remaining * visual.fps)));
+            frame = left <= tail ? std::min(frames - 1, frames - left) :
+                visual.loopStart + (frame - visual.loopStart) % (visual.loopEnd - visual.loopStart);
         }
         else frame = visual.loop ? frame % frames : std::min(frame, frames - 1);
         const bool translucent = assets_.translucentProjectiles.contains(id);
@@ -435,9 +435,9 @@ void SceneView::drawMagic() const {
         if (translucent) EndBlendMode();
     };
     for (const auto &missile : sim.area.missiles)
-        if (missile.missileId >= 0) drawMissile(missile.missileId, missile.pos, missile.velocity, missile.age);
+        if (missile.missileId >= 0) drawMissile(missile.missileId, missile.pos, missile.velocity, missile.age, missile.remaining);
     for (const auto &effect : sim.area.effects)
-        if (effect.missileId >= 0) drawMissile(effect.missileId, effect.pos, {}, effect.age);
+        if (effect.missileId >= 0) drawMissile(effect.missileId, effect.pos, {}, effect.age, effect.duration - effect.age);
     for (const auto &effect : sim.area.effects)
         if (auto found = assets_.spellOverlays.find(effect.overlayId); found != assets_.spellOverlays.end()) {
             const auto &overlay = found->second;

@@ -94,6 +94,26 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
             publishInventory(std::move(result), {});
     };
     simulation_.combatEffectsChanged_ = [this] { refreshCharacter(); };
+    simulation_.attackTiming_ = [this](const WeaponDamage &weapon, bool thrown, bool leftHand)
+        -> std::optional<WeaponAttackTiming> {
+        const auto action = thrown ? (leftHand ? BasicSkillAction::LeftHandThrow : BasicSkillAction::Throw) :
+                                     (leftHand ? BasicSkillAction::LeftHandSwing : BasicSkillAction::Attack);
+        const auto skill = std::find_if(content_.skills.skills.begin(), content_.skills.skills.end(),
+            [action](const auto &entry) { return entry.second.basicAction == action; });
+        if (skill == content_.skills.skills.end()) return std::nullopt;
+        const auto &mode = skill->second.animationMode;
+        auto found = content_.skills.attackTimings.find(characterAppearance() + mode + equipmentStats().animationClass);
+        if (found == content_.skills.attackTimings.end()) return std::nullopt;
+        const auto &data = found->second;
+        const int skillRate = characterStats().combat.attackRate - (state().player.chill > 0 ? 50 : 0);
+        return WeaponAttackTiming{mode, data.frames,
+            effectiveAttackSpeed(data.speed, weapon.fasterAttack, weapon.baseSpeed, skillRate),
+            data.actionFrame, attackStartingFrame(characterCode(), weapon.weaponClass, mode)};
+    };
+    simulation_.monsterSize_ = [this](const Enemy &enemy) {
+        const auto *record = monsterContent_.find(enemy.identity.monster);
+        return record ? record->collisionSize : 0;
+    };
     simulation_.state_.player.combatRandom = (uint64_t(666) << 32) | selection.seed;
     simulation_.monsterAccuracy_ = [this](const Enemy &enemy, RegionId region, int mode)
         -> std::optional<MonsterAccuracy> {
@@ -136,17 +156,28 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
         if (applied) publishInventory(std::move(result), {});
         return applied;
     };
+    simulation_.canSpendProjectile_ = [this](EntityId weapon, bool thrown) {
+        const auto *item = inventory_.item(weapon);
+        if (!item || !item->quantity) return false;
+        if (thrown) return inventory_.catalog().find(item->definition)->equipment.throwable;
+        const auto *definition = inventory_.catalog().find(item->definition);
+        if (!definition || definition->equipment.shoots.empty()) return false;
+        for (auto slot : {weaponHandSlot(false, state().player.weaponSet), weaponHandSlot(true, state().player.weaponSet)}) {
+            const auto *ammo = inventory_.item(inventory_.equipped(playerContainers_, slot));
+            if (ammo && ammo->id != weapon && ammo->quantity &&
+                inventory_.catalog().find(ammo->definition)->equipment.isType(definition->equipment.shoots)) return true;
+        }
+        return false;
+    };
     simulation_.monsterDefense_ = [this](const Enemy &enemy, RegionId region)
         -> std::optional<MonsterDefense> {
-        if (auto combat = resolvedMonsterCombat(enemy.identity, region))
-            return combat->defense ? std::optional<MonsterDefense>{{combat->level, *combat->defense}}
-                                   : std::nullopt;
-        if (state().population.difficulty != 0 || !baseMonsterRank(enemy.identity.rank))
-            return std::nullopt;
         const auto *record = monsterContent_.find(enemy.identity.monster);
-        if (!record || record->boss || !record->normalDefense)
-            return std::nullopt;
-        return MonsterDefense{record->normalLevel, *record->normalDefense};
+        if (!record) return std::nullopt;
+        if (auto combat = resolvedMonsterCombat(enemy.identity, region))
+            return combat->defense ? std::optional<MonsterDefense>{{combat->level, *combat->defense,
+                                        record->demon, record->undead, record->boss}}
+                                   : std::nullopt;
+        return std::nullopt;
     };
     auto worldSelection = selection;
     simulation_.monsterWalkSpeed_ = [this](const Enemy &enemy) -> std::optional<float> {
@@ -582,7 +613,11 @@ void GameSession::tick(float dt, Vec keyboard, bool forceRun) {
                     auto &player = simulation_.state_.player;
                     if (!player.dead && content_.stashLayout.expansion) {
                         player.weaponSet ^= 1u;
-                        player.nextWeapon = 0;
+                        player.weaponAttack.reset();
+                        player.attackTarget = {};
+                        player.throwAttack = player.leftHandAttack = false;
+                        player.attackPosition.reset();
+                        player.meleeTime = 0;
                         refreshCharacter();
                     }
                 }

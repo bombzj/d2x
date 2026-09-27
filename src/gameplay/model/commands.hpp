@@ -4,6 +4,7 @@
 #include "gameplay/model/definitions.hpp"
 #include "gameplay/character/attributes.hpp"
 #include <string>
+#include <optional>
 #include <variant>
 
 namespace d2x {
@@ -14,6 +15,8 @@ struct Attack {
     EntityId target;
     bool thrown = false;
     bool leftHand = false;
+    std::optional<Vec> position;
+    bool stationary = false;
 };
 struct DebugKill {
     EntityId target;
@@ -31,6 +34,7 @@ struct UseSkill {
     int id = -1;
     Vec target;
     EntityId enemy;
+    bool stationary = false;
 };
 struct ToggleRun {};
 struct StopChannel {};

@@ -36,6 +36,7 @@ struct MonsterAccuracy {
 struct MonsterDefense {
     int level = 1;
     int defense = 0;
+    bool demon = false, undead = false, boss = false;
 };
 enum class MonsterDamageType { Physical, Magic, Fire, Lightning, Cold, Poison };
 struct MonsterElementAttack {

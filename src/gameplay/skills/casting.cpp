@@ -87,6 +87,7 @@ bool Simulation::beginSkillCast(PlayerState &player, const SkillCastSpec &skill,
     player.route.clear();
     player.attackTarget = {};
     player.throwAttack = player.leftHandAttack = false;
+    player.attackPosition.reset();
     state_.message.clear();
     if (skill.effect == SkillBehavior::Inferno) {
         player.mana -= skill.manaCost;
@@ -184,11 +185,16 @@ void Simulation::releaseSkillCast(PlayerState &player, const SkillCastSpec &skil
                              (skill.maximumDamage - skill.minimumDamage) * fraction;
         state_.area.missiles.push_back({ids_.allocate(), player.id, player.pos + player.look * .7f,
             player.look * skill.missileVelocity, skill.missileLifetime, skill.effect,
-            false, skill.missileId, amount, skill.impactRadius, skill.coldDuration});
+            false, skill.missileId, amount, 0, skill.coldDuration});
         state_.area.missiles.back().acceleration = skill.missileAcceleration;
         state_.area.missiles.back().maxVelocity = skill.missileMaxVelocity;
-        state_.area.missiles.back().impactMissileId = skill.impactMissileId;
-        state_.area.missiles.back().impactDuration = skill.impactDuration;
+        auto &missile = state_.area.missiles.back();
+        missile.impact = skill.missileImpact;
+        const bool cold = skill.effect == SkillBehavior::IceBolt || skill.effect == SkillBehavior::IceBlast;
+        missile.impactDamage.channels[size_t(cold ? MonsterDamageType::Cold : MonsterDamageType::Fire)] = amount;
+        missile.impactDamage.coldDuration = skill.coldDuration;
+        missile.impactDamage.freeze = skill.effect == SkillBehavior::IceBlast;
+        missile.combatRandom = player.combatRandom;
     }
 }
 } // namespace d2x
