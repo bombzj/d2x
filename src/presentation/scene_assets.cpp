@@ -377,6 +377,7 @@ void SceneAssets::loadInventoryArt(const GameSession &session) {
             auto image = graphics_.single(groundPath);
             if (image.frames.empty())
                 throw std::runtime_error("Original ground art missing: " + item.definition);
+            // DC6 bottom-edge origin, also used by Diablerie's loot sprite pivot.
             for (auto &frame : image.frames)
                 frame.y -= frame.texture.height;
             itemGround.insert_or_assign(artKey, std::move(image));
@@ -413,7 +414,7 @@ void SceneAssets::loadProps(const Region &region) {
             waypointAnimations.emplace(object.key, std::move(animations));
             continue;
         }
-        if (object.interaction == Interaction::Loot || object.interaction == Interaction::Shrine ||
+        if (object.interaction == Interaction::Door || object.interaction == Interaction::Loot || object.interaction == Interaction::Shrine ||
             object.interaction == Interaction::Well || object.interaction == Interaction::QuestTree ||
             object.interaction == Interaction::QuestStone ||
             object.interaction == Interaction::QuestGibbet ||

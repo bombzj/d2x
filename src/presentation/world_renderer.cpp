@@ -2,23 +2,14 @@
 #include <algorithm>
 #include <rlgl.h>
 namespace d2x {
-namespace {
-std::vector<std::pair<int, Vec>> terrainRegions(const GameSession &session) {
-    std::vector<std::pair<int, Vec>> result{{session.regionIndex(), {}}};
-    const auto &origin = session.region().recipe;
-    for (int i = 0; i < int(session.regions().size()); ++i) {
-        const auto &r = session.regions()[i];
-        if (i == session.regionIndex())
-            continue;
-        if (std::any_of(origin.boundaries.begin(), origin.boundaries.end(),
-                        [&](const auto &b) { return b.destination == int(r.definition.id); }))
-            result.push_back({i,
-                              {float((r.recipe.worldX - origin.worldX) * 5),
-                               float((r.recipe.worldY - origin.worldY) * 5)}});
-    }
+std::vector<SceneView::VisibleMonster> SceneView::visibleMonsters() const {
+    std::vector<VisibleMonster> result;
+    for (const auto &[index, offset] : session_.sceneRegions())
+        for (const auto &enemy : session_.areaState(index).enemies)
+            if (session_.roomVisible(index, enemy.pos))
+                result.push_back({&enemy, enemy.pos + offset, index});
     return result;
 }
-} // namespace
 const Sprite *SceneView::objectSprite(const WorldObject &object, RegionId region) const {
     if (auto waypoint = assets_.waypointAnimations.find(object.key);
         waypoint != assets_.waypointAnimations.end()) {
@@ -42,13 +33,12 @@ const Sprite *SceneView::objectSprite(const WorldObject &object, RegionId region
     }
     if (auto modes = assets_.objectModeAnimations.find(object.key);
         modes != assets_.objectModeAnimations.end()) {
-        int mode = object.animationMode;
+        int mode = object.modeAt(session_.state().time);
         float elapsed = view_.animationTime;
         if (object.operatedAt >= 0 && object.operateFn != 22) {
             elapsed = std::max(0.f, session_.state().time - object.operatedAt);
             const auto &operating = object.animationRules[1];
             const float duration = operating.fps > 0 ? operating.frames / operating.fps : 0;
-            mode = elapsed < duration ? 1 : 2;
             if (mode == 2) elapsed -= duration;
         }
         mode = std::clamp(mode, 0, 2);
@@ -105,7 +95,7 @@ const WorldObject *SceneView::objectAt(Vec mouse) const {
     return nearest;
 }
 void SceneView::drawTerrain() const {
-    for (const auto &[region, offset] : terrainRegions(session_)) {
+    for (const auto &[region, offset] : session_.sceneRegions()) {
         const auto &map = session_.regions()[region].map;
         const auto &tiles = assets_.regionTiles[region];
 
@@ -137,6 +127,7 @@ void SceneView::drawTerrain() const {
 }
 void SceneView::drawActors(Vec mouse) const {
     const auto &sim = session_.state();
+    const auto monsters = visibleMonsters();
 
     // Follow the same priority as SceneController::click so overlapping targets
     // do not all brighten at once. Only the sprite is highlighted, not its shadow.
@@ -153,10 +144,10 @@ void SceneView::drawActors(Vec mouse) const {
                                   ? lootAt(mouse, true) : std::nullopt;
     EntityId hotEnemy;
     if (canHover && !hotCainPortal && !hotTownPortal && !hotExit && !hotLabelItem)
-        for (const auto &enemy : sim.area.enemies)
-            if (enemy.hp > 0 && session_.active(enemy.pos) &&
-                (screen(enemy.pos) - Vec{0, 25} - mouse).length() < 24) {
-                hotEnemy = enemy.id;
+        for (const auto &monster : monsters)
+            if (monster.enemy->hp > 0 &&
+                (screen(monster.position) - Vec{0, 25} - mouse).length() < 24) {
+                hotEnemy = monster.enemy->id;
                 break;
             }
     const auto *hotObject = canHover && !hotCainPortal && !hotTownPortal && !hotExit &&
@@ -180,7 +171,7 @@ void SceneView::drawActors(Vec mouse) const {
         auto p = screen(std::get<GroundLocation>(item.location).position);
         draw.push_back({p.y - .1f, 4, i, p});
     }
-    for (const auto &[region, offset] : terrainRegions(session_)) {
+    for (const auto &[region, offset] : session_.sceneRegions()) {
         const auto &map = session_.regions()[region].map;
         for (int y = 0; y < map.data.height; y++)
             for (int x = 0; x < map.data.width; x++) {
@@ -219,11 +210,9 @@ void SceneView::drawActors(Vec mouse) const {
             draw.push_back({p.y, 3, i, p, region});
         }
     }
-    for (int i = 0; i < int(sim.area.enemies.size()); i++) {
-        const auto &e = sim.area.enemies[i];
-        if (!session_.active(e.pos))
-            continue;
-        auto p = screen(e.pos);
+    for (int i = 0; i < int(monsters.size()); i++) {
+        const auto &e = *monsters[i].enemy;
+        auto p = screen(monsters[i].position);
         draw.push_back({e.hp > 0 ? p.y : p.y - 1.f, 2, i, p});
     }
     draw.push_back({screen(sim.player.pos).y, 1, 0, screen(sim.player.pos)});
@@ -306,7 +295,8 @@ void SceneView::drawActors(Vec mouse) const {
             else frame = std::min(frame, rule.start + rule.frames - 1);
             drawSelectableSprite(assets_.cainPortalAnimations[mode].frame(0, frame), item.p, hotCainPortal);
         } else if (item.type == 2) {
-            auto &e = sim.area.enemies[item.index];
+            const auto &monster = monsters[item.index];
+            const auto &e = *monster.enemy;
             const auto variant = assets_.monsterVariantAnimations.find(e.identity.monster);
             const auto &animations = variant == assets_.monsterVariantAnimations.end()
                                          ? assets_.monsterAnimations.at(e.kind) : variant->second;
@@ -335,7 +325,7 @@ void SceneView::drawActors(Vec mouse) const {
                                         : std::min(anim->count - 1, int(e.deathAge * fps)))
                             : e.freeze > 0 ? 0
                             : e.stun > 0 && !animations.contains("gh") ? 0
-                            : int(view_.animationTime * (e.chill > 0 ? fps * .42f : fps) + item.index);
+                            : int(view_.animationTime * (e.chill > 0 ? fps * .42f : fps) + e.id.value % anim->count);
                 if ((mode == "a1" || mode == "a2" || mode == "sc" || mode == "s1") &&
                     e.attackDuration > 0)
                     frame = std::clamp(int((e.attackDuration - e.attack) / e.attackDuration * anim->count),
@@ -351,7 +341,7 @@ void SceneView::drawActors(Vec mouse) const {
                                        0, anim->count - 1);
                 const auto *image = anim->frame(
                     direction(monsterLooks_.contains(e.id) ? monsterLooks_.at(e.id)
-                                                           : sim.player.pos - e.pos,
+                                                           : sim.player.pos - monster.position,
                               anim->directions), frame);
                 spriteShadow(image, item.p);
                 drawSelectableSprite(image, item.p, e.id == hotEnemy,

@@ -119,7 +119,7 @@ void Simulation::updateMonsters(float dt) {
             const auto ai = monsterAi_ ? monsterAi_(enemy) : std::nullopt;
             if (ai && ai->kind == MonsterAiKind::QuillRat && enemy.aiWait == 0 &&
                 (player.pos - enemy.pos).length() < monsterDefinition(enemy.kind).sightRange &&
-                grid_->segment(enemy.pos, player.pos)) {
+                grid_->missileSegment(enemy.pos, player.pos, {0x04, 1})) {
                 enemy.route.clear();
                 enemy.aiEscaping = false;
                 beginMonsterAttack(enemy, 2);
@@ -212,7 +212,8 @@ void Simulation::updateMonsters(float dt) {
         const bool skeletonMageAi = ai && ai->kind == MonsterAiKind::SkeletonMage;
         const bool fetishAi = ai && ai->kind == MonsterAiKind::Fetish;
         const bool vampireAi = ai && ai->kind == MonsterAiKind::Vampire;
-        bool clear = grid_->segment(enemy.pos, player.pos);
+        // Native AI missile-barrier LOS is independent of ground walkability.
+        bool clear = grid_->missileSegment(enemy.pos, player.pos, {0x04, 1});
         if (ai && handleMonsterSpecialAi(enemy, *ai, distance, clear)) continue;
         if (skeletonBowAi) {
             const auto action = skeletonBowThink(enemy, *ai, distance, clear);

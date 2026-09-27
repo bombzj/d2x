@@ -214,6 +214,7 @@ void GameSession::restore(CharacterSaveData data) {
     ids_.next_ = data.nextEntityId;
     current_ = current;
     reconcileCainObjects();
+    for (auto &region : regions_) region.refreshObjectCollision(state().time);
     pending_.clear();
     pickup_ = {};
     pendingInteraction_ = {};

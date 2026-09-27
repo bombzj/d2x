@@ -23,7 +23,7 @@ Rectangle SceneView::lootBounds(const ItemInstance &item) const {
         if (auto frame = animation->second.frame(0, animation->second.count - 1))
             return {p.x + frame->x - 5, p.y + frame->y - 5, float(frame->texture.width + 10),
                     float(frame->texture.height + 10)};
-    return {p.x - 12, p.y - 10, 24, 20};
+    return {};
 }
 void SceneView::drawGroundItem(EntityId id, bool highlighted) const {
     if (auto age = landingAge_.find(id); age != landingAge_.end() && age->second < 0)
@@ -39,16 +39,6 @@ void SceneView::drawGroundItem(EntityId id, bool highlighted) const {
         int index =
             age == landingAge_.end() ? anim.count - 1 : std::min(anim.count - 1, int(age->second * 25));
         drawSelectableSprite(anim.frame(0, index), p, highlighted);
-    } else {
-        // Older compact packs remain playable, with a visible fallback for missing graphics.
-        Color color = itemColor(item.quality);
-        if (highlighted) {
-            color.r = uint8_t(std::min(255, int(color.r) * 2));
-            color.g = uint8_t(std::min(255, int(color.g) * 2));
-            color.b = uint8_t(std::min(255, int(color.b) * 2));
-        }
-        diamond(p, 7, color);
-        DrawCircleV(rv(p), 2, highlighted ? WHITE : parchment);
     }
 }
 std::vector<SceneView::LootLabel> SceneView::lootLabels(Vec mouse) const {
@@ -62,10 +52,9 @@ std::vector<SceneView::LootLabel> SceneView::lootLabels(Vec mouse) const {
         if (ground.x < 0 || ground.x > W || ground.y < 70 || ground.y > H - HUD - 38)
             continue;
         std::string text = itemName(item);
+        // Diablerie Item.GetTitle: only gold includes its quantity in the title.
         if (item.definition == "gld")
             text = std::to_string(item.quantity) + " " + text;
-        else if (item.quantity > 1)
-            text += " x" + std::to_string(item.quantity);
         int fontSize = 16;
         while (fontSize > 1 && painter_.measure(text, fontSize) > W - 16) --fontSize;
         float width = float(std::min(W - 8, painter_.measure(text, fontSize) + 8));

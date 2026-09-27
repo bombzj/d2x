@@ -173,10 +173,11 @@ void SceneView::draw(Vec mouse) const {
         drawMinimap(view_.automapLarge);
     drawHud();
     if (!view_.blocksWorld() && !view_.inventory.open && (view_.combatTarget || mouse.y < H - HUD)) {
-        for (const auto &enemy : sim.area.enemies) {
-            if (enemy.hp <= 0 || !session_.active(enemy.pos) ||
+        for (const auto &monster : visibleMonsters()) {
+            const auto &enemy = *monster.enemy;
+            if (enemy.hp <= 0 ||
                 (view_.combatTarget ? enemy.id != view_.combatTarget :
-                    (screen(enemy.pos) - Vec{0, 25} - mouse).length() >= 24))
+                    (screen(monster.position) - Vec{0, 25} - mouse).length() >= 24))
                 continue;
             const auto &identity = enemy.identity;
             auto title = identity.superUnique.empty() ? identity.monster : identity.superUnique;

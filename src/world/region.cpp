@@ -10,6 +10,18 @@
 
 namespace d2x {
 namespace {
+int actOneObjectClass(const MapObject &source, int version) {
+    if (version <= 5) return source.id == 573 ? -1 : source.id;
+    if (source.id >= 150) return source.id - 150;
+    // D2MOO DRLGPRESET_GetObjectIndexFromObjPreset, Act I (MIT; docs/licenses/D2MOO.txt).
+    static constexpr int classes[150]{
+        12,37,39,35,36,5,17,18,19,20,21,22,30,70,70,69,69,29,31,33,34,37,61,65,66,
+        8,26,28,82,2,81,84,83,78,61,103,108,119,580,130,159,163,169,160,161,162,104,105,106,107,
+        179,180,119,157,247,248,155,174,175,139,140,141,144,6,240,241,242,54,55,56,57,58,171,178,239,
+        245,250,111,138,132,164,165,77,85,86,262,263,264,265,50,51,79,53,1,3,7,46,38,256,257,
+        258,129,267,268,269,581,351,352,353,374,385,397,321};
+    return source.id >= 0 && classes[source.id] ? classes[source.id] : -1;
+}
 void appearanceKey(WorldObject &object) {
     const auto &a = object.appearance;
     object.key = a.category + a.token + a.mode + a.weapon;
@@ -34,14 +46,29 @@ void classify(WorldObject &object, const Table &objectRows) {
         object.name = it->second;
     if (object.appearance.category == "objects") {
         auto record = std::find_if(objectRows.begin(), objectRows.end(), [&](const auto &row) {
+            if (object.objectClass >= 0)
+                return !row.at("Id").empty() && std::stoi(row.at("Id")) == object.objectClass;
             auto sourceToken = row.find("Token");
             if (sourceToken == row.end() || normalize(sourceToken->second) != normalize(token))
                 return false;
-            return object.objectClass < 0 || std::stoi(row.at("Id")) == object.objectClass;
+            return true;
         });
+        if (record == objectRows.end() && object.objectClass >= 0)
+            throw std::runtime_error("Missing original object identity: " + std::to_string(object.objectClass));
         if (record != objectRows.end()) {
             object.objectClass = std::stoi(record->at("Id"));
+            object.appearance.token = normalize(record->at("Token"));
             object.animationMode = objectMode(object.appearance.mode);
+            object.collisionWidth = std::stoi(record->at("SizeX"));
+            object.collisionHeight = std::stoi(record->at("SizeY"));
+            if (object.collisionWidth < 0 || object.collisionHeight < 0)
+                throw std::runtime_error("Invalid original object collision size");
+            const bool door = record->at("IsDoor") == "1";
+            const bool missile = record->at("BlockMissile") == "1";
+            const auto &subclass = record->at("SubClass");
+            // UNITS_GetCollisionMask: doors/objects and missile barriers differ.
+            object.collisionMask = door ? (record->at("BlocksVis") == "1" ? 0x0806 : missile ? 0x0804 : 0x0400)
+                : (!subclass.empty() && (std::stoi(subclass) & 4)) ? 0x8000 : missile ? 0x0404 : 0x0400;
             for (size_t index = 0; index < object.animationRules.size(); ++index) {
                 auto &rule = object.animationRules[index];
                 const auto suffix = std::to_string(index);
@@ -50,9 +77,11 @@ void classify(WorldObject &object, const Table &objectRows) {
                 rule.fps = float(std::stoi(record->at("FrameDelta" + suffix))) * 25.f / 256.f;
                 rule.cycle = record->at("CycleAnim" + suffix) == "1";
                 rule.enabled = record->at("Mode" + suffix) == "1";
+                object.hasCollision[index] = record->at("HasCollision" + suffix) == "1";
             }
             const auto &operation = record->at("OperateFn");
             object.operateFn = operation.empty() ? 0 : std::stoi(operation);
+            if (door && object.operateFn == 8) object.interaction = Interaction::Door;
             object.objectDamage = record->at("Damage").empty() ? 0 : std::stoi(record->at("Damage"));
             for (size_t index = 0; index < object.parameters.size(); ++index) {
                 const auto &value = record->at("Parm" + std::to_string(index));
@@ -127,6 +156,24 @@ void classify(WorldObject &object, const Table &objectRows) {
     object.flame = token == "rb" || token == "to";
 }
 } // namespace
+int WorldObject::modeAt(float time) const {
+    if (operatedAt < 0 || operateFn == 22) return std::clamp(animationMode, 0, 7);
+    const auto &operating = animationRules[1];
+    const float duration = operating.fps > 0 ? operating.frames / operating.fps : 0;
+    return std::max(0.f, time - operatedAt) < duration ? 1 : 2;
+}
+void Region::refreshObjectCollision(float time) {
+    std::vector<Grid::Obstacle> obstacles;
+    for (const auto &object : objects) {
+        if (object.questHidden || object.collisionWidth <= 0 || object.collisionHeight <= 0 ||
+            !object.hasCollision[size_t(object.modeAt(time))]) continue;
+        // COLLISION_CreateBoundingBox: integer subtile center, including even sizes.
+        obstacles.push_back({object.id, int(std::floor(object.pos.x)) - object.collisionWidth / 2,
+            int(std::floor(object.pos.y)) - object.collisionHeight / 2,
+            object.collisionWidth, object.collisionHeight, object.collisionMask});
+    }
+    map.grid.setObstacles(std::move(obstacles));
+}
 void configureWorldObject(WorldObject &object, const Table &objectRows) {
     classify(object, objectRows);
     appearanceKey(object);
@@ -192,6 +239,10 @@ std::vector<Region> loadRegions(Archives &archives, EntityIds &ids, const std::v
                 }
             }
             object.appearance = {preset->category, preset->token, preset->mode, preset->weapon, {}};
+            if (source.type == 2 && region.map.data.act == 0) {
+                object.objectClass = actOneObjectClass(source, region.map.data.version);
+                if (object.objectClass < 0) { ++region.unsupportedObjects; continue; }
+            }
             for (size_t i = 0; i < object.appearance.equipment.size(); ++i)
                 object.appearance.equipment[i] = preset->gear[i];
             configureWorldObject(object, objectRows);
@@ -232,6 +283,10 @@ std::vector<Region> loadRegions(Archives &archives, EntityIds &ids, const std::v
         }
         for (auto &object : region.objects)
             assignShrine(object, shrineRows, int(region.definition.id), worldSeed);
+        region.refreshObjectCollision(0);
+        region.map.spawn = region.map.grid.nearest(region.map.spawn);
+        for (auto &object : region.objects)
+            object.accessPoint = region.map.grid.nearest(object.pos);
         std::cout << "  DS1 objects: " << region.objects.size() << " appearances, "
                   << region.unsupportedObjects << " records await original unit rules\n";
         regions.push_back(std::move(region));

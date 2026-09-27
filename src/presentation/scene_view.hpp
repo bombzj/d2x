@@ -146,6 +146,12 @@ class SceneView {
     const SpecialItemRecord *specialItem(const ItemInstance &item) const;
     std::string itemName(const ItemInstance &item) const;
     static Color itemColor(ItemQuality quality);
+    struct VisibleMonster {
+        const Enemy *enemy;
+        Vec position;
+        int region;
+    };
+    std::vector<VisibleMonster> visibleMonsters() const;
     void itemButton(Rectangle bounds, const char *label, Color color) const;
     void drawItemIcon(const ItemInstance &item, Rectangle bounds, Color tint = WHITE) const;
     bool drawInventoryCursor(Vec mouse) const;

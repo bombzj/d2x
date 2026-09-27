@@ -34,7 +34,7 @@ void GameSession::advanceHireling(float dt) {
         float closest = projectile.velocity * projectile.lifetime;
         for (const auto &enemy : state().area.enemies) {
             if (enemy.hp <= 0 || !simulation_.active(enemy.pos) ||
-                !map().grid.segment(hireling.pos, enemy.pos)) continue;
+                !simulation_.missilePathClear(projectile.id, hireling.pos, enemy.pos)) continue;
             float distance = (enemy.pos - hireling.pos).length();
             if (distance < closest) { closest = distance; target = &enemy; }
         }

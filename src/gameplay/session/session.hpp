@@ -263,6 +263,12 @@ class GameSession {
     const Region &region() const { return regions_.at(current_); }
     const std::vector<Region> &regions() const { return regions_; }
     int regionIndex() const { return current_; }
+    // Current area and areas joined by continuous ground, in current-area coordinates.
+    std::vector<std::pair<int, Vec>> sceneRegions() const;
+    const AreaState &areaState(int index) const {
+        return index == current_ ? state().area : inactiveAreas_.at(index);
+    }
+    bool roomVisible(int index, Vec position) const;
     std::span<const GameEvent> events() const { return simulation_.events(); }
     void submit(GameCommand command) { pending_.push_back(std::move(command)); }
     bool hasPendingCommands() const { return !pending_.empty(); }

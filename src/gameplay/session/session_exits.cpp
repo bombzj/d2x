@@ -31,6 +31,40 @@ float routeLength(Vec from, const std::deque<Vec> &route) {
     return length;
 }
 } // namespace
+std::vector<std::pair<int, Vec>> GameSession::sceneRegions() const {
+    std::vector<std::pair<int, Vec>> result{{current_, {}}};
+    const auto &origin = region().recipe;
+    for (int index = 0; index < int(regions_.size()); ++index) {
+        const auto &candidate = regions_[index];
+        if (index == current_ ||
+            std::none_of(origin.boundaries.begin(), origin.boundaries.end(), [&](const auto &boundary) {
+                return boundary.destination == int(candidate.definition.id);
+            })) continue;
+        result.push_back({index, {float((candidate.recipe.worldX - origin.worldX) * 5),
+                                  float((candidate.recipe.worldY - origin.worldY) * 5)}});
+    }
+    return result;
+}
+bool GameSession::roomVisible(int index, Vec position) const {
+    if (index == current_) return active(position);
+    const auto &candidate = regions_.at(index);
+    const auto &origin = region().recipe;
+    if (std::none_of(origin.boundaries.begin(), origin.boundaries.end(), [&](const auto &boundary) {
+            return boundary.destination == int(candidate.definition.id);
+        })) return false;
+    const auto *observer = map().activation.room(state().player.pos);
+    const auto *target = candidate.map.activation.room(position);
+    if (!observer || !target) return false;
+    // DRLG propagates room visibility across continuous level boundaries too.
+    // Compare the actual rooms in one coordinate space; do not clamp the observer
+    // to the nearest room of a different level (which would reveal distant rooms).
+    const int dx = (candidate.recipe.worldX - origin.worldX) * 5;
+    const int dy = (candidate.recipe.worldY - origin.worldY) * 5;
+    return observer->x <= target->x + dx + target->width &&
+           target->x + dx <= observer->x + observer->width &&
+           observer->y <= target->y + dy + target->height &&
+           target->y + dy <= observer->y + observer->height;
+}
 void GameSession::cancelExit() {
     if (pendingExit_)
         simulation_.stopWalking();
@@ -42,7 +76,8 @@ bool GameSession::beginBoundaryExit(const LevelExit &exit, std::optional<Vec> ta
     if (!exit.enabled || !exit.boundary || state().player.dead) return false;
     const auto destination = std::find_if(regions_.begin(), regions_.end(),
         [&](const Region &candidate) { return candidate.definition.id == exit.destination; });
-    if (destination == regions_.end() || (target && !destination->map.grid.walkable(*target))) return false;
+    if (destination == regions_.end()) return false;
+    const bool approachBlockedTarget = target && !destination->map.grid.walkable(*target);
     const Vec start = state().player.pos;
     auto estimate = [&](const LevelExit::BoundaryPassage &passage) {
         return (passage.departure - start).length() +
@@ -53,18 +88,22 @@ bool GameSession::beginBoundaryExit(const LevelExit &exit, std::optional<Vec> ta
         [&](const auto &left, const auto &right) { return estimate(left) < estimate(right); });
     std::optional<LevelExit::BoundaryPassage> selected;
     float best = std::numeric_limits<float>::infinity();
+    float bestGap = std::numeric_limits<float>::infinity();
     for (const auto &passage : passages) {
-        if (estimate(passage) >= best) break;
+        if (!approachBlockedTarget && estimate(passage) >= best) break;
         const auto approach = map().grid.path(start, passage.departure);
         if (approach.empty()) continue;
         float length = routeLength(start, approach);
-        if (length >= best) continue;
+        if (!approachBlockedTarget && length >= best) continue;
+        float gap = 0;
         if (target) {
-            const auto onward = destination->map.grid.path(passage.arrival, *target);
-            if (onward.empty()) continue;
+            const auto onward = destination->map.grid.path(passage.arrival, *target, approachBlockedTarget);
+            if (onward.empty() && (!approachBlockedTarget || !destination->map.grid.walkable(passage.arrival))) continue;
             length += routeLength(passage.arrival, onward);
+            gap = ((onward.empty() ? passage.arrival : onward.back()) - *target).length();
         }
-        if (length < best) {
+        if (gap < bestGap || (gap == bestGap && length < best)) {
+            bestGap = gap;
             best = length;
             selected = passage;
         }

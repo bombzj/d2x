@@ -17,7 +17,7 @@ void Simulation::moveTo(Vec target) {
     p.attackTarget = {};
     p.throwAttack = false;
     p.leftHandAttack = false;
-    p.route = grid_->path(p.pos, target);
+    p.route = grid_->path(p.pos, target, true);
     state_.message = p.route.empty() ? "That path is blocked" : "";
 }
 void Simulation::attackEnemy(EntityId target, bool thrown, bool leftHand) {
@@ -82,7 +82,9 @@ void Simulation::updatePlayer(float dt, Vec keyboard) {
             } else {
                 const bool projectile = p.throwAttack || weapon->ranged;
                 const float range = projectile ? weapon->missileSpeed * weapon->missileLifetime : rules.meleeRange;
-                if ((e->pos - p.pos).length() < range && grid_->segment(p.pos, e->pos)) {
+                const bool clear = projectile ? missilePathClear(weapon->missileId, p.pos, e->pos)
+                                              : grid_->segment(p.pos, e->pos);
+                if ((e->pos - p.pos).length() < range && clear) {
                     p.route.clear();
                     if (p.castTime <= 0 && p.meleeTime <= 0 && p.leapTime <= 0 && p.spinTime <= 0) {
                         p.look = (e->pos - p.pos).unit();

@@ -31,11 +31,16 @@ struct WorldObject {
     int objectClass = -1, operateFn = 0, objectDamage = 0;
     std::array<int, 8> parameters{};
     float operatedAt = -1;
+    float lastDoorOperation = -1;
     int remainingUses = 0;
     int shrineCode = 0;
     std::string shrineName, shrineEffect;
     float shrineDuration = 0, shrineReset = 0;
     std::array<ObjectAnimationRule, 8> animationRules{};
+    int collisionWidth = 0, collisionHeight = 0;
+    uint16_t collisionMask = 0;
+    std::array<bool, 8> hasCollision{};
+    int modeAt(float time) const;
     std::array<float, 3> waypointFps{};
     // Authored DS1 map AI path and current NPC motion. Only NPCs with original
     // path nodes and a MonStats walking AI may move.
@@ -70,6 +75,7 @@ struct Region {
     std::vector<WorldObject> objects;
     std::vector<LevelExit> exits;
     size_t unsupportedObjects = 0;
+    void refreshObjectCollision(float time);
 };
 struct WorldSelection {
     int level = 1, preset = 0, levelType = 0, variant = 0;

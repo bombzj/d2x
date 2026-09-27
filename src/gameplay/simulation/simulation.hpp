@@ -16,6 +16,8 @@ class Simulation {
     EntityIds &ids_;
     const Grid *grid_ = nullptr; // Borrowed from GameSession's stable region storage.
     const RoomLayout *rooms_ = nullptr;
+    std::map<int, MissileCollisionRule> missileCollisions_;
+    bool missilePathClear(int missileId, Vec from, Vec to) const;
     bool safeZone_ = false;
     bool forceRun_ = false;
     WorldState state_;

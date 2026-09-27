@@ -194,16 +194,19 @@ void SceneView::advance(float dt) {
     if (!assets_.heroAppearanceError().empty() && view_.lootNotice != assets_.heroAppearanceError())
         notice(assets_.heroAppearanceError(), true);
     movingMonsters_.clear();
-    for (const auto &enemy : session_.state().area.enemies) {
-        auto [previous, inserted] = monsterPositions_.try_emplace(enemy.id, enemy.pos);
-        auto delta = enemy.pos - previous->second;
+    for (const auto &monster : visibleMonsters()) {
+        const auto &enemy = *monster.enemy;
+        const auto &recipe = session_.regions()[monster.region].recipe;
+        const Vec worldPosition = enemy.pos + Vec{recipe.worldX * 5.f, recipe.worldY * 5.f};
+        auto [previous, inserted] = monsterPositions_.try_emplace(enemy.id, worldPosition);
+        auto delta = worldPosition - previous->second;
         if (!inserted && delta.length() > .0001f && enemy.hp > 0) {
             movingMonsters_.insert(enemy.id);
             monsterLooks_[enemy.id] = delta.unit();
         } else if (!monsterLooks_.contains(enemy.id) || (enemy.hp > 0 && enemy.attack > 0))
-            monsterLooks_[enemy.id] = (session_.state().player.pos - enemy.pos).unit();
-        previous->second = enemy.pos;
-        if (enemy.hp > 0 && session_.active(enemy.pos))
+            monsterLooks_[enemy.id] = (session_.state().player.pos - monster.position).unit();
+        previous->second = worldPosition;
+        if (enemy.hp > 0)
             if (auto sound = assets_.monsterAudio.find(enemy.identity.monster);
                 sound != assets_.monsterAudio.end()) {
                 const float now = session_.state().time;
@@ -369,8 +372,15 @@ void SceneView::advance(float dt) {
                     notice("Picked up: " + name, false);
                 } else if constexpr (std::is_same_v<T, ItemChange>) {
                     const auto *item = session_.inventory().item(value.item);
-                    if (item && !assets_.itemIcons.contains(SceneAssets::itemArtKey(*item)))
-                        assets_.loadInventoryArt(session_);
+                    if (item) {
+                        const auto key = SceneAssets::itemArtKey(*item);
+                        const auto icon = assets_.itemIcons.find(key);
+                        const auto ground = assets_.itemGround.find(key);
+                        // Vendor stock can preload the icon without loading the ground animation.
+                        if (icon == assets_.itemIcons.end() || icon->second.frames.empty() ||
+                            ground == assets_.itemGround.end() || ground->second.frames.empty())
+                            assets_.loadInventoryArt(session_);
+                    }
                     landingAge_.erase(value.item);
                     if (value.after)
                         if (auto ground = std::get_if<GroundLocation>(&*value.after);

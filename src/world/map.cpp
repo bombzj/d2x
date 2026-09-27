@@ -110,9 +110,29 @@ void Map::load(Archives &a, TileLibraryCache &cache, const MapRecipe &recipe) {
     grid = Grid(data.width * 5, data.height * 5);
     std::fill(grid.blocked.begin(), grid.blocked.end(), 1);
     std::fill(grid.lightBlocked.begin(), grid.lightBlocked.end(), 1);
+    // Native room grids start clear and OR all tile layers (D2Collision.cpp).
+    // Gaps between assembled rooms have no collision grid and stop missiles;
+    // a missing floor inside a real room is not itself a missile barrier.
+    if (!recipe.pieces.empty()) {
+        std::fill(grid.terrainCollision.begin(), grid.terrainCollision.end(), 0x0f);
+        for (const auto &room : rooms)
+            for (int y = std::max(0, room.y); y < std::min(grid.height, room.y + room.height); ++y)
+                for (int x = std::max(0, room.x); x < std::min(grid.width, room.x + room.width); ++x)
+                    grid.terrainCollision[size_t(y) * grid.width + x] = 0;
+    }
     for (int y = 0; y < data.height; y++)
         for (int x = 0; x < data.width; x++) {
-            auto apply = [&](const MapCell &c, bool floor) {
+            // Clear the initial void once, then OR every authored layer. A
+            // decorative Floor2 must not erase Floor1's collision footprint.
+            if (std::any_of(data.floors.begin(), data.floors.end(), [&](const auto &layer) {
+                    return layer[y * data.width + x].occupied();
+                }))
+                for (int sy = 0; sy < 5; ++sy)
+                    for (int sx = 0; sx < 5; ++sx) {
+                        const size_t index = size_t(y * 5 + sy) * grid.width + x * 5 + sx;
+                        grid.blocked[index] = grid.lightBlocked[index] = 0;
+                    }
+            auto apply = [&](const MapCell &c) {
                 if (!c.occupied())
                     return;
                 if ((c.orientation == 10 || c.orientation == 11) && ((c.value >> 20) & 63) >= 8)
@@ -132,31 +152,40 @@ void Map::load(Archives &a, TileLibraryCache &cache, const MapRecipe &recipe) {
                     return;
                 }
                 const auto &t = *tiles[idx];
-                if (c.orientation == 10 || c.orientation == 11 || c.orientation == 15)
+                if (c.orientation == 10 || c.orientation == 11)
                     return;
-                for (int sy = 0; sy < 5; sy++)
-                    for (int sx = 0; sx < 5; sx++) {
-                        auto flag = t.flags[(4 - sy) * 5 + sx];
-                        bool blocked = (flag & 1) || (c.value & (1u << 17));
-                        auto index = (y * 5 + sy) * grid.width + x * 5 + sx;
-                        auto &dest = grid.blocked[index];
-                        auto &light = grid.lightBlocked[index];
-                        if (floor)
-                            dest = blocked ? 1 : 0;
-                        else if (blocked)
-                            dest = 1;
-                        // DT1 bit 2 blocks LOS and light; bit 32 blocks light
-                        // without blocking LOS. They must both affect lighting.
-                        if (floor)
-                            light = (flag & (2 | 32)) ? 1 : 0;
-                        else if (flag & (2 | 32))
-                            light = 1;
-                    }
+                auto applyCollision = [&](const Tile &tile) {
+                    // DT1 0x04 = COLLIDE_MISSILE_BARRIER. DS1 bFillLOS (bit 16)
+                    // maps through MAPTILE_FILL_LOS to that same flag; neither
+                    // DT1 0x01 nor DS1 bUnwalkable (bit 17) blocks mode 3 missiles.
+                    for (int sy = 0; sy < 5; ++sy)
+                        for (int sx = 0; sx < 5; ++sx) {
+                            auto flags = tile.flags[(4 - sy) * 5 + sx];
+                            if (c.value & (1u << 16)) flags |= 0x04;
+                            if (c.value & (1u << 17)) flags |= 0x01;
+                            const size_t index = size_t(y * 5 + sy) * grid.width + x * 5 + sx;
+                            grid.terrainCollision[index] |= flags;
+                            // COLLIDE_MASK_PLAYER_PATH includes WALL and NOPLAYER.
+                            if (flags & (0x01 | 0x08)) grid.blocked[index] = 1;
+                            if (flags & (0x02 | 0x20)) grid.lightBlocked[index] = 1;
+                        }
+                };
+                applyCollision(t);
+                if (c.orientation == 3) {
+                    // DRLGROOMTILE_InitWallTileData creates both halves. Match
+                    // the companion tile already used by the world renderer.
+                    auto companion = c;
+                    companion.orientation = 4;
+                    const int corner = tileIndex(companion, x, y);
+                    if (corner < 0)
+                        throw std::runtime_error("Missing DT1 corner collision tile in " + ds1);
+                    applyCollision(*tiles[corner]);
+                }
             };
             for (auto &l : data.floors)
-                apply(l[y * data.width + x], true);
+                apply(l[y * data.width + x]);
             for (auto &l : data.walls)
-                apply(l[y * data.width + x], false);
+                apply(l[y * data.width + x]);
             const auto &shadow = data.shadows[y * data.width + x];
             if (shadow.present() && tileIndex(shadow, x, y) < 0) {
                 ++unresolved;
@@ -182,8 +211,10 @@ void Map::load(Archives &a, TileLibraryCache &cache, const MapRecipe &recipe) {
                     return edge && t >= b.start * 5 && t < b.end * 5;
                 });
             if (x >= width || y >= height ||
-                (!opening && (x < 2 || y < 2 || x >= width - 2 || y >= height - 2)))
+                (!opening && (x < 2 || y < 2 || x >= width - 2 || y >= height - 2))) {
                 grid.blocked[y * grid.width + x] = grid.lightBlocked[y * grid.width + x] = 1;
+                grid.terrainCollision[y * grid.width + x] |= 0x0f;
+            }
         }
     if (unresolved)
         throw std::runtime_error("Unresolved DT1 cells in " + ds1 +

@@ -20,6 +20,7 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
     : content_(loadClassicData(archives)), worldContent_(archives),
       monsterContent_(archives, content_.tables.at("monstats")), loot_(lootSeed) {
     simulation_.state_.player.characterClass = std::move(characterClass);
+    simulation_.missileCollisions_ = content_.missileCollisions;
     simulation_.state_.player.name = std::move(characterName);
     characterDefinition_ = definitionFor(state().player.characterClass);
     simulation_.state_.population = population;
@@ -488,6 +489,7 @@ void GameSession::publishInventory(InventoryResult result, EntityId requested) {
 }
 void GameSession::tick(float dt, Vec keyboard, bool forceRun) {
     simulation_.beginTick();
+    for (auto &region : regions_) region.refreshObjectCollision(state().time);
     validateStorage();
     auto commands = std::move(pending_);
     pending_.clear();
@@ -730,12 +732,14 @@ void GameSession::tick(float dt, Vec keyboard, bool forceRun) {
         cancelPickup();
         cancelInteraction();
     }
+    regions_.at(current_).refreshObjectCollision(state().time);
     simulation_.tick(dt, transitioned ? Vec{} : keyboard, forceRun);
     auto replenished = inventory_.replenish(dt);
     if (!replenished.changes.empty()) publishInventory(std::move(replenished), {});
     advanceHireling(dt);
     expireCombatEffects();
     updateObjectTimers();
+    regions_.at(current_).refreshObjectCollision(state().time);
     advanceNpcPaths(dt);
     settleDeaths();
     updateDenQuest();
@@ -743,6 +747,7 @@ void GameSession::tick(float dt, Vec keyboard, bool forceRun) {
     updateCainQuestItems();
     updateToolsQuestItems();
     updateInteraction();
+    regions_.at(current_).refreshObjectCollision(state().time);
     updatePortal();
     updateCainPortal();
     updateExit();

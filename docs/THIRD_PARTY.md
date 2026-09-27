@@ -33,6 +33,10 @@
 
 ## 格式研究参考
 
+连续关卡边界的实体可见性核对本地 D2MOO 固定 `5596f5c` 的 `D2Common/src/Drlg/DrlgActivate.cpp::DRLGACTIVATE_ChangeClientRoom`、`DRLGACTIVATE_RoomSetAndPropagateStatus` 及 `DRLGACTIVATE_RoomExPropagateSetStatus`：新旧观察房间通过 `ppRoomsNear` 传播状态，不把当前 LevelId 当作整片单位的绘制开关。本项目用现有房间矩形及地图世界偏移实现相邻可见性，沿用 MIT 归属；未移植完整激活和 AI 调度，边界见 [地图](ACT1_MAPS.md)。
+
+物件标签核对本地 OpenDiablo2 固定 `7f92c57` 的 `d2mapentity/object.go::Label`、`d2player/hud.go` 与 `d2ui/label.go::processColorTokens`：普通物件名走白色 Font16。地面物品标题核对 Diablerie 固定 `9e42ef2` 的 `Engine/Item.cs::GetTitle`，仅金币包含数量。地面动画核对该项目 `Entities/Loot.cs`、`SpriteAnimator.cs` 与 `IO/D2Formats/DC6.cs`，以及 DGEngine 固定 `ae6dcab` 的 `DC6ImageContainer.cpp` 底边偏移；素材／名称路径仍在运行时读取用户 MPQ，没有写入箭矢专用图形或帧数。OpenDiablo2 的 `factory.go::NewItem` 使用 Units 调色板，Diablerie Loot 使用 Act1；参考实现不能单独证明原版客户端逐像素结果，地面原图缓存修复及未验收范围见 [物品完成度](ITEM_COMPLETION.md)。
+
 D2S 读写依据本地 D2MOO 的 `PlrSave2.h/.cpp`、`Items.cpp`、`ItemMods.cpp`、`PlrIntro.cpp` 与第一幕任务代码，原位宽与属性值仍来自当前 MPQ。免费重置字节另核对 [D2CE ActsInfo](https://github.com/WalterCouto/D2CE/blob/c246509f385790462979004aeeaf7a47696ed605/source/d2ce/ActsInfo.h) 的字段布局及同目录 `.cpp`，只作格式证据，未移植实现。`@dschu012/d2s` 2.0.36 仅安装在忽略的 `reference/d2s-validation` 中作独立读写验证，不是运行依赖，不随游戏分发；其附带定义不替代运行时 MPQ。
 
 本地 `reference/` 下的参考仓库均忽略提交，优先在本机核对，再按需要查其他来源：
@@ -55,6 +59,8 @@ D2S 读写依据本地 D2MOO 的 `PlrSave2.h/.cpp`、`Items.cpp`、`ItemMods.cpp
 鼠标按住行为参考同一固定 Diablerie 快照的 `Engine/PlayerController.cs::FixedSelection/ControlPlayerUnit`、`Engine/MouseSelection.cs::Update`：按住时不重新选中光标下对象，技能请求区分单位目标与地面坐标。左右键按单位持续请求及近战追击核对同一固定 D2MOO 的 `D2Game/src/PLAYER/PlrMsg.cpp`，尤其 `Rcv0x09_LeftSkillOnUnitHold`、`Rcv0x10_RightSkillOnUnitHold` 与 `sub_6FC836D0`。Diablerie 的右键没有完整单位锁定分支，D2MOO 也不包含完整客户端输入循环；用户原版操作说明补充了左右键按住后不随光标换目标的依据。本项目独立适配到现有命令和角色状态，不引入参考代码或资源到分发包；本轮没有运行验证。
 
 墙角补片规则交叉核对 [D2MOO `DrlgRoomTile.cpp`](https://github.com/ThePhrozenKeep/D2MOO/blob/5596f5cb6c5251a0a07c6637d26458b06099d516/source/D2Common/src/Drlg/DrlgRoomTile.cpp) 与 [Diablerie `LevelBuilder.cs`](https://github.com/mofr/Diablerie/blob/9e42ef257228257825ebbbeb905d4b1d894b6e98/Assets/Scripts/Diablerie/Engine/World/LevelBuilder.cs)：DS1 方向 3 墙角同格绘制方向 4 补片；图像仍只取当前 MPQ。
+
+通用碰撞与障碍目标靠近依据同一固定 D2MOO 的 `D2Collision.cpp`、`DrlgRoomTile.cpp`、`Path/Step.cpp`、`Path/AStar.cpp`、`Units/Units.cpp`、`MISSILES/MissMode.cpp` 和 `OBJECTS/ObjMode.cpp`。第一幕 DS1→Objects 身份索引适配 `DrlgPreset.cpp::DRLGPRESET_GetObjectIndexFromObjPreset`，这是引擎索引映射；对象尺寸／各模式碰撞／是否阻弹及弹体模式／尺寸仍动态读取当前 MPQ，不按石头名或示例记录覆写参数。沿用 MIT 归属和 [D2MOO 许可](licenses/D2MOO.txt)。
 
 - [D2MOO](https://github.com/ThePhrozenKeep/D2MOO/tree/5596f5cb6c5251a0a07c6637d26458b06099d516)，固定提交 `5596f5cb6c5251a0a07c6637d26458b06099d516`，MIT，Copyright 2020–2025 The Phrozen Keep community。共有 DT1、隐藏空白瓦片和变体权重解释依据 DrlgRoomTile.cpp；生成边界参考 DrlgDrlg.cpp、DrlgPreset.cpp、DrlgMaze.cpp。许可见 [D2MOO.txt](licenses/D2MOO.txt)。没有移植完整 DRLG，也未执行参考仓库的游戏代码。
 

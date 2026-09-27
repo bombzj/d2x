@@ -4,6 +4,12 @@
 #include <algorithm>
 
 namespace d2x {
+bool Simulation::missilePathClear(int missileId, Vec from, Vec to) const {
+    // Only legacy demonstration effects have no original missile identity.
+    if (missileId < 0) return grid_->missileSegment(from, to, {0x04, 1});
+    const auto found = missileCollisions_.find(missileId);
+    return found != missileCollisions_.end() && grid_->missileSegment(from, to, found->second);
+}
 void Simulation::damageEnemy(Enemy &enemy, float amount, EntityId source, float chill,
                              bool ignoreActivation, MonsterDamageType type, bool alreadyMitigated,
                              bool playerKillEffects, bool freezeHit) {
@@ -140,7 +146,7 @@ void Simulation::updateMissiles(float dt) {
                 if (segmentLength < .00001f) { m.path.pop_front(); continue; }
                 const Vec heading = offset.unit();
                 const Vec nextPoint = m.pos + heading * segmentLength;
-                if (!grid_->segment(m.pos, nextPoint)) { m.remaining = 0; break; }
+                if (!missilePathClear(m.missileId, m.pos, nextPoint)) { m.remaining = 0; break; }
                 Enemy *hit = nullptr;
                 float first = segmentLength;
                 for (auto &enemy : area.enemies) {
@@ -168,7 +174,7 @@ void Simulation::updateMissiles(float dt) {
         }
         auto next = m.pos + m.velocity * dt;
         if (m.hostile) {
-            if (!grid_->segment(m.pos, next)) {
+            if (!missilePathClear(m.missileId, m.pos, next)) {
                 m.remaining = 0;
                 continue;
             }
@@ -194,12 +200,12 @@ void Simulation::updateMissiles(float dt) {
         if (!m.physical && m.missileId >= 0) {
             const auto type = m.skill == Skill::Nova ? MonsterDamageType::Lightning :
                 m.chill > 0 ? MonsterDamageType::Cold : MonsterDamageType::Fire;
-            const bool wall = !grid_->segment(m.pos, next);
+            const bool wall = !missilePathClear(m.missileId, m.pos, next);
             if (wall) {
                 float clear = 0.f, blocked = 1.f;
                 for (int step = 0; step < 9; ++step) {
                     const float middle = (clear + blocked) * .5f;
-                    if (grid_->segment(m.pos, m.pos + (next - m.pos) * middle)) clear = middle;
+                    if (missilePathClear(m.missileId, m.pos, m.pos + (next - m.pos) * middle)) clear = middle;
                     else blocked = middle;
                 }
                 next = m.pos + (next - m.pos) * clear;
@@ -258,7 +264,7 @@ void Simulation::updateMissiles(float dt) {
             continue;
         }
         if (m.physical) {
-            if (!grid_->segment(m.pos, next)) {
+            if (!missilePathClear(m.missileId, m.pos, next)) {
                 m.remaining = 0;
                 continue;
             }
@@ -296,7 +302,7 @@ void Simulation::updateMissiles(float dt) {
             }
             continue;
         }
-        bool hit = !grid_->segment(m.pos, next);
+        bool hit = !missilePathClear(m.missileId, m.pos, next);
         for (const auto &e : area.enemies)
             if (e.hp > 0 && active(e.pos) && (e.pos - next).length() < 1.3f)
                 hit = true;

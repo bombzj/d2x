@@ -4,6 +4,13 @@
 #include <limits>
 
 namespace d2x {
+namespace {
+Vec interactionPoint(const Grid &grid, const WorldObject &object) {
+    // Some authored targets sit on a blocked terrain tile. Preserve their
+    // external access point; ignore only the target object's own footprint.
+    return grid.segment(object.pos, object.pos, object.id) ? object.pos : object.accessPoint;
+}
+} // namespace
 const WorldObject *GameSession::object(EntityId id) const {
     const auto &objects = region().objects;
     auto found = std::find_if(objects.begin(), objects.end(), [id](const auto &o) { return o.id == id; });
@@ -12,24 +19,23 @@ const WorldObject *GameSession::object(EntityId id) const {
 bool GameSession::canReach(const WorldObject &object) const {
     const auto &player = state().player;
     return !player.dead && (player.pos - object.pos).length() <= object.reach &&
-           (player.pos - object.accessPoint).length() <= object.reach &&
-           map().grid.segment(player.pos, object.accessPoint);
+           map().grid.segment(player.pos, interactionPoint(map().grid, object), object.id);
 }
 std::optional<Vec> GameSession::interactionApproach(const WorldObject &object) const {
     const auto &grid = map().grid;
     const Vec from = state().player.pos;
+    const Vec access = interactionPoint(grid, object);
     std::optional<Vec> best;
     float bestCost = std::numeric_limits<float>::infinity();
     const int radius = int(std::ceil(object.reach));
-    const int centerX = int(object.accessPoint.x), centerY = int(object.accessPoint.y);
+    const int centerX = int(object.pos.x), centerY = int(object.pos.y);
     for (int y = centerY - radius; y <= centerY + radius; ++y)
         for (int x = centerX - radius; x <= centerX + radius; ++x) {
             if (!grid.walkable(x, y))
                 continue;
             Vec candidate{x + .5f, y + .5f};
             if ((candidate - object.pos).length() > object.reach ||
-                (candidate - object.accessPoint).length() > object.reach ||
-                !grid.segment(candidate, object.accessPoint))
+                !grid.segment(candidate, access, object.id))
                 continue;
             auto path = grid.path(from, candidate);
             if (path.empty() && (from - candidate).length() > .01f)
@@ -93,9 +99,7 @@ void GameSession::interact(EntityId id) {
     pendingInteraction_ = id;
     simulation_.stopWalking();
     if (!canReach(*target)) {
-        if (target->npcPath.empty())
-            simulation_.execute(MoveTo{target->accessPoint});
-        else if (auto approach = interactionApproach(*target))
+        if (auto approach = interactionApproach(*target))
             simulation_.execute(MoveTo{*approach});
     }
     updateInteraction();
@@ -135,6 +139,40 @@ void GameSession::completeInteraction(const WorldObject &object) {
         }
     }
     switch (object.interaction) {
+    case Interaction::Door: {
+        auto &objects = regions_.at(current_).objects;
+        auto found = std::find_if(objects.begin(), objects.end(), [&](const WorldObject &value) {
+            return value.id == object.id;
+        });
+        if (found == objects.end() || (found->lastDoorOperation >= 0 &&
+            state().time < found->lastDoorOperation + .5f)) break;
+        const int mode = found->modeAt(state().time);
+        if (mode != 0 && mode != 2) break; // Locked/special modes need their own original rules.
+        if (mode == 2) {
+            const int left = int(std::floor(found->pos.x)) - found->collisionWidth / 2;
+            const int bottom = int(std::floor(found->pos.y)) - found->collisionHeight / 2;
+            const auto occupies = [&](Vec pos) {
+                const int x = int(std::floor(pos.x)), y = int(std::floor(pos.y));
+                return x >= left && x < left + found->collisionWidth &&
+                    y >= bottom && y < bottom + found->collisionHeight;
+            };
+            // Native door operation refuses to close on units/corpses.
+            if (occupies(state().player.pos) ||
+                (state().player.hireling.active() && occupies(state().player.hireling.pos)) ||
+                std::any_of(state().area.enemies.begin(), state().area.enemies.end(),
+                    [&](const Enemy &enemy) { return occupies(enemy.pos); }) ||
+                std::any_of(objects.begin(), objects.end(), [&](const WorldObject &other) {
+                    return other.appearance.category == "monsters" && occupies(other.pos);
+                })) break;
+        }
+        // OBJECTS_OperateFunction08_Door changes NU <-> ON directly.
+        found->operatedAt = -1;
+        found->animationMode = mode == 0 ? 2 : 0;
+        found->lastDoorOperation = state().time;
+        regions_.at(current_).refreshObjectCollision(state().time);
+        simulation_.emit(ObjectInteracted{found->id, Interaction::Door, found->name});
+        break;
+    }
     case Interaction::Stash:
         storage_ = {object.id, playerContainers_.stash};
         simulation_.emit(StorageOpened{object.id, playerContainers_.stash});

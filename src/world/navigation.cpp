@@ -4,10 +4,17 @@
 #include <queue>
 #include <stdexcept>
 namespace d2x {
-bool Grid::segment(Vec a, Vec b) const {
-    if (!walkable(a) || !walkable(b)) return false;
+namespace {
+template <class Clear>
+bool clearSegment(Vec a, Vec b, int width, int height, Clear clear, bool blockCorners) {
+    const auto inside = [=](Vec p) {
+        return std::isfinite(p.x) && std::isfinite(p.y) && p.x >= 0 && p.y >= 0 &&
+            p.x < width && p.y < height;
+    };
+    if (!inside(a) || !inside(b)) return false;
     int column = int(std::floor(a.x)), row = int(std::floor(a.y));
     const int endColumn = int(std::floor(b.x)), endRow = int(std::floor(b.y));
+    if (!clear(column, row) || !clear(endColumn, endRow)) return false;
     const double deltaX = double(b.x) - a.x, deltaY = double(b.y) - a.y;
     const int stepX = deltaX > 0 ? 1 : deltaX < 0 ? -1 : 0;
     const int stepY = deltaY > 0 ? 1 : deltaY < 0 ? -1 : 0;
@@ -24,15 +31,58 @@ bool Grid::segment(Vec a, Vec b) const {
             column += stepX;
             crossingX += intervalX;
         } else {
-            if (!walkable(column + stepX, row) || !walkable(column, row + stepY)) return false;
+            if (blockCorners && (!clear(column + stepX, row) || !clear(column, row + stepY))) return false;
             column += stepX;
             row += stepY;
             crossingX += intervalX;
             crossingY += intervalY;
         }
-        if (!walkable(column, row)) return false;
+        if (!clear(column, row)) return false;
     }
     return true;
+}
+} // namespace
+void Grid::setObstacles(std::vector<Obstacle> next) {
+    if (next == obstacles) return;
+    obstacles = std::move(next);
+    std::fill(objectCollision.begin(), objectCollision.end(), 0);
+    for (const auto &obstacle : obstacles)
+        for (int y = std::max(0, obstacle.y); y < std::min(height, obstacle.y + obstacle.height); ++y)
+            for (int x = std::max(0, obstacle.x); x < std::min(width, obstacle.x + obstacle.width); ++x)
+                objectCollision[size_t(y) * width + x] |= obstacle.mask;
+}
+uint16_t Grid::objectMask(int x, int y, EntityId ignored) const {
+    if (x < 0 || y < 0 || x >= width || y >= height) return 0xffff;
+    if (!ignored) return objectCollision[size_t(y) * width + x];
+    uint16_t mask = 0;
+    for (const auto &obstacle : obstacles)
+        if (obstacle.id != ignored && x >= obstacle.x && y >= obstacle.y &&
+            x < obstacle.x + obstacle.width && y < obstacle.y + obstacle.height)
+            mask |= obstacle.mask;
+    return mask;
+}
+bool Grid::segment(Vec a, Vec b, EntityId ignoredObject) const {
+    return clearSegment(a, b, width, height, [&](int x, int y) {
+        return x >= 0 && y >= 0 && x < width && y < height && !blocked[size_t(y) * width + x] &&
+            !(objectMask(x, y, ignoredObject) & 0x0c00);
+    }, true);
+}
+bool Grid::missileSegment(Vec a, Vec b, MissileCollisionRule rule) const {
+    // D2MOO COLLISION_CheckMaskWithSize: 0/1 point, 2 cross, 3 square.
+    if (rule.size < 0 || rule.size > 3) return false;
+    const auto clear = [&](int x, int y) {
+        if (x < 0 || y < 0 || x >= width || y >= height) return false;
+        // Step.cpp stops missile travel on WALL/BARRIER only. Other mode bits
+        // find units; e.g. DT1 water sharing unit bits must not stop travel.
+        return !((terrainCollision[size_t(y) * width + x] | objectMask(x, y)) & rule.mask & 0x0005);
+    };
+    return clearSegment(a, b, width, height, [&](int x, int y) {
+        if (!clear(x, y)) return false;
+        if (rule.size <= 1) return true;
+        if (!clear(x - 1, y) || !clear(x + 1, y) || !clear(x, y - 1) || !clear(x, y + 1)) return false;
+        return rule.size == 2 || (clear(x - 1, y - 1) && clear(x + 1, y - 1) &&
+            clear(x - 1, y + 1) && clear(x + 1, y + 1));
+    }, false);
 }
 bool Grid::lightSegment(Vec a, Vec b) const {
     auto delta = b - a;
@@ -85,7 +135,7 @@ Vec Grid::inspectionArrival() const {
     size_t largest = 0;
     Vec result{};
     for (int start = 0; start < int(blocked.size()); ++start) {
-        if (blocked[start] || visited[start])
+        if (!walkable(start % width, start / width) || visited[start])
             continue;
         component.clear();
         component.push_back(start);
@@ -123,9 +173,10 @@ Vec Grid::inspectionArrival() const {
         throw std::runtime_error("No walkable scene arrival");
     return result;
 }
-std::deque<Vec> Grid::path(Vec from, Vec to) const {
+std::deque<Vec> Grid::path(Vec from, Vec to, bool allowPartial) const {
     std::deque<Vec> out;
-    if (!walkable(from) || !walkable(to))
+    if (!walkable(from) || !std::isfinite(to.x) || !std::isfinite(to.y) ||
+        to.x < 0 || to.y < 0 || to.x >= width || to.y >= height || (!allowPartial && !walkable(to)))
         return out;
     if (segment(from, to)) {
         out.push_back(to);
@@ -141,14 +192,29 @@ std::deque<Vec> Grid::path(Vec from, Vec to) const {
         int dx = std::abs(id % width - goal % width), dy = std::abs(id / width - goal / width);
         return std::max(dx, dy) + .41421356f * std::min(dx, dy);
     };
+    float nearestPossible = 0;
+    if (allowPartial && !walkable(to)) {
+        nearestPossible = std::numeric_limits<float>::infinity();
+        const int gx = goal % width, gy = goal / width;
+        for (int radius = 1; radius <= std::max(width, height) && radius <= nearestPossible; ++radius)
+            for (int y = std::max(0, gy - radius); y <= std::min(height - 1, gy + radius); ++y)
+                for (int x = std::max(0, gx - radius); x <= std::min(width - 1, gx + radius); ++x)
+                    if ((std::abs(x - gx) == radius || std::abs(y - gy) == radius) && walkable(x, y))
+                        nearestPossible = std::min(nearestPossible, heuristic(y * width + x));
+    }
     costs[start] = 0;
+    int closest = start;
     open.emplace(heuristic(start), start);
     while (!open.empty()) {
         int cur = open.top().second;
         open.pop();
         if (closed[cur])
             continue;
-        if (cur == goal)
+        // Native AStar retains its best reachable node when the goal is blocked.
+        if (heuristic(cur) < heuristic(closest) ||
+            (heuristic(cur) == heuristic(closest) && costs[cur] < costs[closest]))
+            closest = cur;
+        if (cur == goal || (allowPartial && heuristic(cur) <= nearestPossible))
             break;
         closed[cur] = 1;
         for (int dy = -1; dy <= 1; dy++)
@@ -169,8 +235,11 @@ std::deque<Vec> Grid::path(Vec from, Vec to) const {
                 }
             }
     }
-    if (start != goal && parents[goal] < 0)
-        return out;
+    if (start != goal && parents[goal] < 0) {
+        if (!allowPartial || closest == start) return out;
+        goal = closest;
+        to = {goal % width + .5f, goal / width + .5f};
+    }
     for (int cur = goal; cur != start; cur = parents[cur])
         out.push_front({cur % width + .5f, cur / width + .5f});
     out.push_front({start % width + .5f, start / width + .5f});

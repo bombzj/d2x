@@ -13,6 +13,7 @@
 #include "vendor_data.hpp"
 #include "resources/archive.hpp"
 #include "resources/data_table.hpp"
+#include "world/navigation.hpp"
 #include <array>
 #include <cstdint>
 #include <set>
@@ -31,6 +32,7 @@ struct StashLayout {
 };
 // Version-specific MPQ adapter. Rules consume typed records, not archive handles or TXT cells.
 struct ClassicData {
+    std::map<int, MissileCollisionRule> missileCollisions;
     ClassicData(ItemCatalog itemCatalog, std::map<std::string, DataTable, std::less<>> sourceTables,
                 std::string sourceProfile)
         : items(std::move(itemCatalog)), tables(std::move(sourceTables)),
