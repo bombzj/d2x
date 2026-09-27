@@ -17,10 +17,10 @@ struct WeaponDamage {
     int meleeBaseMinimum = 256, meleeBaseMaximum = 512, damagePercent = 0;
     int minimumDamagePercent = 0, maximumDamagePercent = 0;
     int baseAttackRating = 0, attackRatingPercent = 0;
-    AttackTargetModifiers target;
+    AttackTargetModifiers target = {};
     bool blunt = false;
-    std::optional<WeaponProjectileSpec> projectile;
-    std::vector<std::string> types;
+    std::optional<WeaponProjectileSpec> projectile = {};
+    std::vector<std::string> types = {};
 };
 struct EquipmentStats {
     std::string animationClass = "hth";

@@ -15,7 +15,7 @@ struct Attack {
     EntityId target;
     bool thrown = false;
     bool leftHand = false;
-    std::optional<Vec> position;
+    std::optional<Vec> position = {};
     bool stationary = false;
 };
 struct DebugKill {

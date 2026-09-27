@@ -63,6 +63,7 @@ struct SkillSpec {
 };
 struct SkillCastSpec {
     SkillBehavior effect = SkillBehavior::None;
+    int rank = 0;
     float castDuration = 0, castImpact = 0, castRate = 0;
     float manaCost = 0, minimumDamage = 0, maximumDamage = 0;
     float coldDuration = 0, missileVelocity = 0, missileLifetime = 0;

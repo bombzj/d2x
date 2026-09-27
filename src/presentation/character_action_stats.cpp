@@ -50,8 +50,10 @@ CharacterActionStats weaponStats(const GameSession &session, bool thrown, bool l
         const int rating = int(std::clamp<int64_t>(int64_t(weapon.baseAttackRating) *
             std::max(0, 100 + weapon.attackRatingPercent + (skill ? skill->weapon->attackRating : 0)) / 100,
             0, std::numeric_limits<int>::max()));
-        return {damageText(int64_t(minimum) / 256 + elementalMinimum + poisonMinimum,
-                           int64_t(maximum) / 256 + elementalMaximum + poisonMaximum), std::to_string(rating)};
+        const int64_t skillMinimum = skill && skill->poisonDuration == 0 ? int64_t(skill->minimumDamage) : 0;
+        const int64_t skillMaximum = skill && skill->poisonDuration == 0 ? int64_t(skill->maximumDamage) : 0;
+        return {damageText(int64_t(minimum) / 256 + elementalMinimum + poisonMinimum + skillMinimum,
+                           int64_t(maximum) / 256 + elementalMaximum + poisonMaximum + skillMaximum), std::to_string(rating)};
     }
     return {};
 }

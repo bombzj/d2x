@@ -22,9 +22,9 @@ struct WeaponAttackState {
     WeaponAttackTiming timing;
     bool thrown = false, released = false;
     int ticks = 0;
-    std::string weaponClass;
+    std::string weaponClass = {};
     std::array<std::string, size_t(EquipmentSlot::Count)> appearanceDefinitions{};
-    std::optional<SkillCastSpec> skill;
+    std::optional<SkillCastSpec> skill = {};
     int animationFrame() const;
 };
 int effectiveAttackSpeed(int animationSpeed, int itemIAS, int baseWeaponSpeed, int skillRate);

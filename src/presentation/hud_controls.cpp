@@ -38,10 +38,13 @@ void SceneView::drawSkillIcon(std::optional<int> skill, Rectangle bounds) const 
     bool available = !player.dead && (!skill || (entry && entry->executable() && session_.skillAvailable(*skill)));
     if (session_.region().definition.safe)
         available &= entry && entry->allowedInTown;
-    if (entry && entry->spell && session_.effectiveSkillRank(*skill) > 0)
-        available &= player.mana >= std::max(player.channelSkill() == *skill ? 0.f : float(entry->spell->startMana), resolveSkill(*entry->spell,
+    if (entry && entry->spell && session_.effectiveSkillRank(*skill) > 0) {
+        const auto resolved = resolveSkill(*entry->spell,
             session_.effectiveSkillRank(*skill), player.skillRanks, session_.fireMasteryPercent(),
-            session_.lightningMasteryPercent()).manaCost);
+            session_.lightningMasteryPercent());
+        available &= player.mana >= std::max(player.channelSkill() == *skill ? 0.f : float(entry->spell->startMana), resolved.manaCost);
+        if (resolved.weapon) available &= session_.weaponSkillReady(resolved);
+    }
     imageAt(image, bounds, available ? WHITE : Color{255, 64, 64, 255});
 }
 void SceneView::drawControlPanel() const {
@@ -171,6 +174,13 @@ void SceneView::drawSkillControls(Vec mouse) const {
             else if (value.effect == SkillBehavior::StaticField)
                 detail += " / " + std::to_string(int(value.staticPercent)) + "% current life, range " +
                     std::to_string(int(value.staticRadius));
+            else if (value.weapon && value.poisonDuration > 0)
+                detail += " / Poison " + std::string(TextFormat("%.1f-%.1f over %.1fs",
+                    value.minimumDamage * value.poisonDuration * 25.f,
+                    value.maximumDamage * value.poisonDuration * 25.f, value.poisonDuration));
+            else if (value.weapon && value.missileImpact && value.missileImpact->areaMissile)
+                detail += " / Fire " + std::string(TextFormat("%.1f-%.1f", value.minimumDamage, value.maximumDamage)) +
+                    " + weapon fire damage";
             else detail += " / Damage " + std::string(TextFormat("%.1f", value.minimumDamage)) +
                 "-" + std::string(TextFormat("%.1f", value.maximumDamage));
         } else detail = !entry ? "Normal weapon attack"

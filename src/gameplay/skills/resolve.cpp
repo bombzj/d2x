@@ -50,6 +50,7 @@ SkillCastSpec resolveSkill(const SkillSpec &spec, int rank,
         throw std::runtime_error("Unsupported original skill rank or shift");
     SkillCastSpec result;
     result.effect = spec.effect;
+    result.rank = rank;
     result.sourceId = spec.sourceId;
     if (spec.effect == SkillBehavior::FrozenArmor) {
         int synergyRanks = 0;
@@ -129,6 +130,11 @@ SkillCastSpec resolveSkill(const SkillSpec &spec, int rank,
     if (spec.effect == SkillBehavior::Inferno)
         result.missileLifetime = float(std::max(1, (spec.flameFrames + (rank - 1) * spec.flameFramesPerLevel) / 2)) / 25.f;
     result.missileImpact = spec.missileImpact;
+    if (result.missileImpact && result.missileImpact->areaMissile) {
+        auto &area = *result.missileImpact->areaMissile;
+        area.minimum = int(result.minimumDamage * 256.f);
+        area.maximum = int(result.maximumDamage * 256.f);
+    }
     if (result.missileImpact && result.missileImpact->cloudBurst) {
         auto &cloud = result.missileImpact->cloudBurst->cloud;
         if (cloud.damageFromSkill) {

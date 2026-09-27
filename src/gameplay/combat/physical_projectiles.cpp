@@ -55,6 +55,8 @@ bool Simulation::firePhysicalProjectile(Vec target, const WeaponDamage &weapon, 
     missile.physicalDamagePercent = potion ? 0 : selected.projectileDamagePercent;
     missile.combatRandom = player.combatRandom;
     if (skill) {
+        missile.skillId = skill->sourceId;
+        missile.skillRank = skill->rank;
         missile.impact = skill->missileImpact;
         if (skill->weapon->manaOnRelease) player.mana = std::max(0.f, player.mana - skill->manaCost);
         if (skill->weapon->delayFrames > 0)

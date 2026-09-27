@@ -18,21 +18,26 @@ size_t named(const DataTable &table, std::string_view column, std::string_view v
 } // namespace
 void loadWeaponSkills(SkillCatalog &catalog, const DataTable &skills, const DataTable &missiles,
                       const DataTable &sounds, Archives &archives) {
-    for (const auto name : {"Plague Javelin"}) {
+    for (const auto name : {"Plague Javelin", "Exploding Arrow"}) {
+        const bool plague = std::string_view(name) == "Plague Javelin";
         const auto row = named(skills, "skill", name);
         auto &entry = catalog.skills.at(required(skills, row, "Id"));
         const auto missile = named(missiles, "Missile", skills.value(row, "srvmissile"));
         if (entry.classCode != "ama" || required(skills, row, "srvstfunc") != 4 ||
             required(skills, row, "decquant") != 1 || required(skills, row, "UseAttackRate") != 1 ||
-            required(skills, row, "SrcDam") != 128 || skills.value(row, "anim") != "TH" ||
-            skills.value(row, "itypea1") != "jave" || skills.value(row, "EType") != "pois" ||
-            missiles.value(missile, "Skill") != name || required(missiles, missile, "pSrvHitFunc") != 2 ||
+            required(skills, row, "SrcDam") != 128 || skills.value(row, "anim") != (plague ? "TH" : "A1") ||
+            skills.value(row, "itypea1") != (plague ? "jave" : "miss") ||
+            skills.value(row, "EType") != (plague ? "pois" : "fire") ||
+            (plague && missiles.value(missile, "Skill") != name) ||
+            (!plague && (!missiles.value(missile, "Skill").empty() || required(missiles, missile, "SrcDamage") != 128)) ||
+            required(missiles, missile, "pSrvDoFunc") != (plague ? 3 : 1) ||
+            required(missiles, missile, "pSrvHitFunc") != (plague ? 2 : 4) ||
             required(missiles, missile, "AlwaysExplode") != 1)
             throw std::runtime_error("Unsupported original weapon skill: " + std::string(name));
         SkillSpec spec;
         spec.sourceId = entry.id;
         spec.effect = SkillBehavior::WeaponProjectile;
-        spec.weapon = WeaponSkillSpec{std::string(skills.value(row, "itypea1")), true,
+        spec.weapon = WeaponSkillSpec{std::string(skills.value(row, "itypea1")), plague,
             skills.number(row, "usemanaondo").value_or(0) != 0,
             required(skills, row, "ToHit"), required(skills, row, "LevToHit"),
             skills.number(row, "delay").value_or(0)};
@@ -47,14 +52,18 @@ void loadWeaponSkills(SkillCatalog &catalog, const DataTable &skills, const Data
             spec.minimumPerLevel[tier] = required(skills, row, "EMinLev" + std::to_string(tier + 1));
             spec.maximumPerLevel[tier] = required(skills, row, "EMaxLev" + std::to_string(tier + 1));
         }
-        if (skills.value(row, "EDmgSymPerCalc") != "(skill('Poison Javelin'.blvl))*par8")
-            throw std::runtime_error("Unsupported Plague Javelin synergy formula");
+        if (skills.value(row, "EDmgSymPerCalc") != (plague ? "(skill('Poison Javelin'.blvl))*par8" :
+                                                           "(skill('Fire Arrow'.blvl)) * par8"))
+            throw std::runtime_error("Unsupported weapon skill synergy formula");
         spec.synergyPercent = required(skills, row, "Param8");
-        spec.synergySkills.push_back(required(skills, named(skills, "skill", "Poison Javelin"), "Id"));
-        spec.poisonDamage = true;
-        spec.poisonFrames = required(skills, row, "ELen");
-        for (int tier = 0; tier < 3; ++tier)
-            spec.poisonFramesPerLevel[tier] = required(skills, row, "ELevLen" + std::to_string(tier + 1));
+        spec.synergySkills.push_back(required(skills, named(skills, "skill", plague ? "Poison Javelin" : "Fire Arrow"), "Id"));
+        spec.poisonDamage = plague;
+        spec.fireDamage = !plague;
+        if (plague) {
+            spec.poisonFrames = required(skills, row, "ELen");
+            for (int tier = 0; tier < 3; ++tier)
+                spec.poisonFramesPerLevel[tier] = required(skills, row, "ELevLen" + std::to_string(tier + 1));
+        }
         const auto resource = loadProjectileResource(missiles, missile, archives);
         spec.missileId = resource.id;
         spec.missileArt = resource.art;
@@ -76,6 +85,10 @@ void loadWeaponSkills(SkillCatalog &catalog, const DataTable &skills, const Data
         spec.castSoundArt = sound(skills.value(row, "stsound"));
         spec.releaseSoundArt = sound(missiles.value(missile, "TravelSound"));
         spec.impactSoundArt = sound(missiles.value(missile, "HitSound"));
+        if (!plague) {
+            const auto explosion = named(missiles, "Missile", missiles.value(missile, "ExplosionMissile"));
+            spec.impactSoundArt = sound(missiles.value(explosion, "TravelSound"));
+        }
         entry.spell = std::move(spec);
     }
 }

@@ -29,6 +29,7 @@ class Simulation {
     std::function<bool(EntityId, bool)> spendProjectile_;
     std::function<bool(EntityId, bool)> canSpendProjectile_;
     std::function<std::optional<WeaponAttackTiming>(const WeaponDamage &, bool, bool)> attackTiming_;
+    std::function<SkillCastSpec(int, int)> resolveMissileSkill_;
     std::function<int(const Enemy &)> monsterSize_;
     std::function<std::optional<MonsterAccuracy>(const Enemy &, RegionId, int)> monsterAccuracy_;
     std::function<std::optional<MonsterDefense>(const Enemy &, RegionId)> monsterDefense_;

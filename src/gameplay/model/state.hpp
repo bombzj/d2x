@@ -139,14 +139,15 @@ struct Missile {
     EntityId lastHit{};
     std::deque<Vec> path{};
     bool groundTargeted = false;
-    std::optional<MissileImpactSpec> impact;
-    MissileImpactDamage impactDamage;
-    std::optional<PoisonCloudSpec> poisonCloud;
+    std::optional<MissileImpactSpec> impact = {};
+    MissileImpactDamage impactDamage = {};
+    std::optional<PoisonCloudSpec> poisonCloud = {};
     uint64_t combatRandom = 0;
     int physicalDamagePercent = 0;
     int baseAttackRating = 0, attackRatingPercent = 0;
-    AttackTargetModifiers targetModifiers;
+    AttackTargetModifiers targetModifiers = {};
     bool playerAttack = false;
+    int skillId = -1, skillRank = 0;
 };
 struct Effect {
     Vec pos;

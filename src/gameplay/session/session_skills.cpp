@@ -154,6 +154,16 @@ void GameSession::useSkill(const UseSkill &intent) {
     }
     simulation_.state_.message = "This skill effect is not implemented";
 }
+bool GameSession::weaponSkillReady(const SkillCastSpec &skill) const {
+    if (!skill.weapon) return false;
+    const auto &action = *skill.weapon;
+    const auto &player = state().player;
+    if (player.dead || player.mana < skill.manaCost ||
+        (action.delayFrames > 0 && state().frame < player.skillDelayUntil)) return false;
+    const auto *weapon = simulation_.attackWeapon(action.thrown, false);
+    return weapon && std::find(weapon->types.begin(), weapon->types.end(), action.requiredType) != weapon->types.end() &&
+        simulation_.canSpendProjectile_ && simulation_.canSpendProjectile_(weapon->item, action.thrown);
+}
 bool GameSession::skillAvailable(int id) const {
     const auto *entry = content_.skills.find(id);
     if (!entry) return false;

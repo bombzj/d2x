@@ -130,6 +130,12 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
         if (!rating) return std::nullopt;
         return MonsterAccuracy{record->normalLevel, *rating};
     };
+    simulation_.resolveMissileSkill_ = [this](int id, int rank) {
+        const auto *entry = content_.skills.find(id);
+        if (!entry || !entry->spell) throw std::runtime_error("Missing originating missile skill");
+        return resolveSkill(*entry->spell, rank, state().player.skillRanks,
+                            fireMasteryPercent(), lightningMasteryPercent());
+    };
     simulation_.spendProjectile_ = [this](EntityId weapon, bool thrown) {
         const auto *item = inventory_.item(weapon);
         if (!item) return false;

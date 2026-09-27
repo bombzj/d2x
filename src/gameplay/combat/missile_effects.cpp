@@ -2,11 +2,21 @@
 #include "gameplay/combat/damage_resolution.hpp"
 #include <algorithm>
 #include <cmath>
+#include <stdexcept>
 
 namespace d2x {
 void Simulation::resolveMissileImpact(const Missile &missile, std::vector<Missile> &spawned, Enemy *direct) {
     if (!missile.impact) return;
-    const auto &spec = *missile.impact;
+    auto spec = *missile.impact;
+    if (missile.skillId >= 0 && (spec.cloudBurst || spec.areaMissile)) {
+        // A native child inherits the parent's rank, then resolves its damage
+        // from the current owner. The parent projectile retains its launch snapshot.
+        if (!resolveMissileSkill_ || missile.owner != state_.player.id)
+            throw std::runtime_error("Missile owner has no skill resolver");
+        const auto skill = resolveMissileSkill_(missile.skillId, missile.skillRank);
+        if (!skill.missileImpact) throw std::runtime_error("Missing originating missile impact");
+        spec = *skill.missileImpact;
+    }
     const auto &payload = missile.impactDamage;
     emit(MissileImpact{missile.missileId, missile.pos});
     if (spec.visualId >= 0)
@@ -45,6 +55,30 @@ void Simulation::resolveMissileImpact(const Missile &missile, std::vector<Missil
                 grid_->collisionSegment(missile.pos, enemy.pos, 0x04)) hit(enemy);
         }
     } else if (direct) hit(*direct);
+    if (spec.areaMissile) {
+        const auto &area = *spec.areaMissile;
+        int64_t minimum = area.minimum, maximum = area.maximum;
+        if (area.addEquipmentElement) {
+            // Native child creation reads the owner's equipment at impact, not
+            // the weapon carried by the original arrow. Other owners need their own resolver.
+            if (missile.owner != state_.player.id) return;
+            const auto ranges = attackElementRanges(characterStats_.combat, equipmentStats_.weapons[0].item);
+            const AttackDamageRange channels[]{ {}, ranges.magic, ranges.fire, ranges.lightning, ranges.cold, {} };
+            minimum += int64_t(channels[size_t(area.element)].minimum) * 256;
+            maximum += int64_t(channels[size_t(area.element)].maximum) * 256;
+        }
+        Missile child{ids_.allocate(), missile.owner, missile.pos, {}, float(area.delayFrames) / 25.f,
+            SkillBehavior::None, false, area.missileId};
+        child.groundTargeted = true;
+        child.impact = MissileImpactSpec{};
+        child.impact->radius = area.radius;
+        child.combatRandom = missile.combatRandom + child.id.value;
+        child.combatRandom = uint64_t(uint32_t(child.combatRandom)) * 0x6ac690c5ULL + (child.combatRandom >> 32);
+        const uint64_t span = uint64_t(std::max<int64_t>(0, maximum - minimum));
+        child.impactDamage.channels[size_t(area.element)] =
+            float(minimum + (span ? uint32_t(child.combatRandom) % span : 0)) / 256.f;
+        spawned.push_back(std::move(child));
+    }
     if (!spec.cloudBurst) return;
     // MISSMODE_CreatePoisonCloudHitSubmissiles: fixed 16-direction offsets,
     // with two independently selected rings, velocities and loop count.

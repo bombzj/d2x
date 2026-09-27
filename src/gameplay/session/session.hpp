@@ -237,6 +237,7 @@ class GameSession {
     unsigned bankGoldLimit() const;
     unsigned groundGoldLimit() const;
     bool skillAvailable(int id) const;
+    bool weaponSkillReady(const SkillCastSpec &skill) const;
     int effectiveSkillRank(int id) const;
     bool applySkillCastTiming(SkillCastSpec &cast) const;
     int fireMasteryPercent() const;
