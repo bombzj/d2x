@@ -38,6 +38,7 @@ struct ItemDefinition {
     bool beltAllowed = false, usable = false;
     bool opensCube = false;
     std::string icon, groundAnimation;
+    std::vector<std::string> inventoryIcons;
     bool artAvailable = false;
     bool autoBelt = false;
     bool imbueable = false;

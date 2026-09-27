@@ -324,10 +324,13 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
     unitsGraphics_.releaseDecoded();
 }
 std::string SceneAssets::itemArtKey(const ItemInstance &item) {
-    if (item.specialRow < 0)
-        return item.definition;
-    return item.definition + "#" + std::to_string(int(item.quality)) + ":" +
-           std::to_string(item.specialRow);
+    std::string key = item.definition;
+    if (item.nativeHasGraphic)
+        key += ":gfx:" + std::to_string(item.nativeGraphic);
+    if (item.specialRow >= 0)
+        key += "#" + std::to_string(int(item.quality)) + ":" + std::to_string(item.specialRow) +
+               (item.identified ? ":identified" : ":unidentified");
+    return key;
 }
 void SceneAssets::loadInventoryArt(const GameSession &session) {
     const auto &inventory = session.inventory();
@@ -348,13 +351,17 @@ void SceneAssets::loadInventoryArt(const GameSession &session) {
         const auto &definition = *inventory.catalog().find(item.definition);
         auto artKey = itemArtKey(item);
         std::string iconPath = definition.icon, groundPath = definition.groundAnimation;
+        if (!definition.inventoryIcons.empty()) {
+            const auto graphic = item.nativeHasGraphic ? item.nativeGraphic : 0u;
+            iconPath = definition.inventoryIcons[std::min(size_t(graphic), definition.inventoryIcons.size() - 1)];
+        }
         if (item.specialRow >= 0) {
             const auto &records = item.quality == ItemQuality::Unique ? session.content().uniqueItems
                                                                         : session.content().setItems;
             auto found = std::find_if(records.begin(), records.end(),
                                       [&](const auto &record) { return int32_t(record.row) == item.specialRow; });
             if (found != records.end()) {
-                if (!found->icon.empty()) iconPath = found->icon;
+                if (item.identified && !found->icon.empty()) iconPath = found->icon;
                 if (!found->groundAnimation.empty()) groundPath = found->groundAnimation;
             }
         }

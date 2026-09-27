@@ -26,6 +26,9 @@ InventoryResult InventoryService::planTransfer(const TransferItem &command,
         return failure(InventoryError::UnknownContainer);
     if (auto error = checkDestinationAccess(AutoPlace{backpack}, access); error != InventoryError::None)
         return failure(error);
+    if (auto error = checkCarryLimit(source, ContainerLocation{backpack, {}}, state_);
+        error != InventoryError::None)
+        return failure(error);
     const auto &definition = *catalog_.find(source.definition);
     if (definition.equipment.isType("gold"))
         return failure(InventoryError::RestrictedItem);

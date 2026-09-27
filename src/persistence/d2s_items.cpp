@@ -122,7 +122,11 @@ D2sItemRead readD2sItem(std::span<const uint8_t> bytes, const ClassicData &conte
         switch (item.quality) {
         case 1: case 3: item.fileIndex = bits.read(3); break;
         case 2:
-            require(!definition->equipment.isType("char") && !definition->equipment.isType("body"), "normal charm/body part");
+            require(!definition->equipment.isType("body"), "normal body part");
+            if (definition->equipment.isType("char")) {
+                const bool prefix = bits.read(1) != 0;
+                (prefix ? item.prefixes[0] : item.suffixes[0]) = bits.read(11);
+            }
             if (definition->equipment.isType("book") || definition->equipment.isType("scro")) item.book = bits.read(5);
             break;
         case 4: item.prefixes[0] = bits.read(11); item.suffixes[0] = bits.read(11); break;
@@ -178,7 +182,14 @@ Bytes writeD2sItem(const D2sItem &item, const ClassicData &content) {
         switch (item.quality) {
         case 1: case 3: bits.write(item.fileIndex, 3); break;
         case 2:
-            require(!definition->equipment.isType("char") && !definition->equipment.isType("body"), "normal charm/body part");
+            require(!definition->equipment.isType("body"), "normal body part");
+            if (definition->equipment.isType("char")) {
+                require(!(item.prefixes[0] && item.suffixes[0]) && !item.prefixes[1] &&
+                            !item.prefixes[2] && !item.suffixes[1] && !item.suffixes[2],
+                        "normal charm has more than one affix");
+                bits.write(item.prefixes[0] != 0, 1);
+                bits.write(item.prefixes[0] ? item.prefixes[0] : item.suffixes[0], 11);
+            }
             if (definition->equipment.isType("book") || definition->equipment.isType("scro")) bits.write(item.book, 5);
             break;
         case 4: bits.write(item.prefixes[0], 11); bits.write(item.suffixes[0], 11); break;

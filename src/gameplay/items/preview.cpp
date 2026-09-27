@@ -14,7 +14,7 @@ InventoryError InventoryService::preview(const MoveItem &command, const Inventor
     if (auto error = resolve(*catalog_.find(source.definition), command.destination, destination, source.id);
         error != InventoryError::None)
         return error;
-    return InventoryError::None;
+    return checkCarryLimit(source, destination, state_);
 }
 InventoryError InventoryService::preview(const SwapItems &command, const InventoryAccess &access) const {
     if (command.first.id == command.second.id)
@@ -34,6 +34,12 @@ InventoryError InventoryService::preview(const SwapItems &command, const Invento
     if (auto error = checkPlacement(a, second.location, first.id, second.id); error != InventoryError::None)
         return error;
     if (auto error = checkPlacement(b, first.location, first.id, second.id); error != InventoryError::None)
+        return error;
+    if (auto error = checkCarryLimit(first, second.location, state_, second.id);
+        error != InventoryError::None)
+        return error;
+    if (auto error = checkCarryLimit(second, first.location, state_, first.id);
+        error != InventoryError::None)
         return error;
     // Ignoring both old footprints is insufficient: the proposed new footprints must not overlap each other.
     if (overlaps(a, second.location, b, first.location))

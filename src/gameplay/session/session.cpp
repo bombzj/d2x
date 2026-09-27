@@ -39,6 +39,9 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
         identified.identified = true; // Physical limits exist before identification.
         return resolveItemStats(content_, identified, 1);
     };
+    for (const auto &record : content_.uniqueItems)
+        if (record.carryOne)
+            inventory_.singleCarryUniques_.insert(int32_t(record.row));
     playerContainers_ = inventory_.createPlayerContainers(state().player.id);
     refreshCharacter();
     simulation_.heal();

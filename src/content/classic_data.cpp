@@ -158,6 +158,10 @@ ClassicData loadClassicData(Archives &archives) {
     }
     loadItemAppearances(items, tables, armorTypes);
     loadEquipmentDefinitions(items, tables.at("itemtypes"), tables);
+    for (auto &item : items)
+        if (std::any_of(item.inventoryIcons.begin(), item.inventoryIcons.end(),
+                        [&](const auto &icon) { return !archives.contains(icon); }))
+            item.artAvailable = false;
     loadItemProjectiles(items, tables.at("missiles"), archives);
     ClassicData data{ItemCatalog(std::move(items)), std::move(tables),
                      "lod-named-txt-v1"};

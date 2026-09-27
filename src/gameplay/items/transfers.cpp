@@ -74,8 +74,15 @@ InventoryResult InventoryService::createItem(std::string_view code, unsigned qua
     instance.durability = definition->maxDurability;
     instance.location = location;
     instance.durability = maximumDurability(instance);
+    if (auto error = checkCarryLimit(instance, location, state_); error != InventoryError::None)
+        return failure(error);
     if (quantity > maximumStack(instance)) return failure(InventoryError::InvalidQuantity);
     uint64_t nextRandom = state_.creationRandom;
+    if (!definition->inventoryIcons.empty()) {
+        nextRandom = uint64_t(uint32_t(nextRandom)) * 0x6ac690c5ULL + (nextRandom >> 32);
+        instance.nativeHasGraphic = true;
+        instance.nativeGraphic = uint32_t(nextRandom) % uint32_t(definition->inventoryIcons.size());
+    }
     if (definition->family == ItemFamily::Armor) {
         auto minimum = definition->base.minDefense;
         auto maximum = definition->base.maxDefense;

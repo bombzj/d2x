@@ -84,6 +84,7 @@ void loadSpecialItemData(ClassicData &data) {
             if (uniqueItem) {
                 record.noLimit = table.number(row, "nolimit").value_or(0) != 0;
                 record.ladder = table.number(row, "ladder").value_or(0) != 0;
+                record.carryOne = table.number(row, "carry1").value_or(0) != 0;
             } else {
                 record.set = table.value(row, "set");
                 record.setAddFunction = table.number(row, "add func").value_or(0);

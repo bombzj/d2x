@@ -368,7 +368,8 @@ void SceneView::advance(float dt) {
                         name += " x" + std::to_string(value.quantity);
                     notice("Picked up: " + name, false);
                 } else if constexpr (std::is_same_v<T, ItemChange>) {
-                    if (value.kind == ItemChangeKind::Created)
+                    const auto *item = session_.inventory().item(value.item);
+                    if (item && !assets_.itemIcons.contains(SceneAssets::itemArtKey(*item)))
                         assets_.loadInventoryArt(session_);
                     landingAge_.erase(value.item);
                     if (value.after)
@@ -422,6 +423,7 @@ void SceneView::advance(float dt) {
                           openNpcMenu(value.object, value.name, value.firstIntroduction);
                     }
                 } else if constexpr (std::is_same_v<T, ItemsIdentified>) {
+                    assets_.loadInventoryArt(session_);
                     view_.dialogueStatus = value.count
                         ? "Identified " + std::to_string(value.count) + " item(s) for " +
                               std::to_string(value.goldSpent) + " gold."

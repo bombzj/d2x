@@ -22,6 +22,15 @@ void loadEquipmentDefinitions(std::vector<ItemDefinition> &items, const DataTabl
         if (found == rows.end())
             throw std::runtime_error("Unknown primary item type: " + item.code);
         size_t row = found->second;
+        const int graphics = types.number(row, "VarInvGfx").value_or(0);
+        if (graphics < 0 || graphics > 6)
+            throw std::runtime_error("Invalid original inventory graphic count: " + item.code);
+        for (int index = 1; index <= graphics; ++index) {
+            const auto file = types.value(row, "InvGfx" + std::to_string(index));
+            if (file.empty())
+                throw std::runtime_error("Missing original inventory graphic: " + item.code);
+            item.inventoryIcons.push_back("data/global/items/" + std::string(file) + ".dc6");
+        }
         if (types.number(row, "Body").value_or(0))
             for (auto column : {"BodyLoc1", "BodyLoc2"}) {
                 auto code = types.value(row, column);

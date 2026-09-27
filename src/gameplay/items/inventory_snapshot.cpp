@@ -43,6 +43,8 @@ void InventoryService::validateSnapshot(const InventoryState &state, const Playe
         require(bool(id) && id == item.id && !state.containers.contains(id), "item ID");
         auto def = catalog_.find(item.definition);
         require(def != nullptr, "unknown definition");
+        const bool nativeNormalCharm = item.nativeProperties && item.quality == ItemQuality::Normal &&
+                                       def->equipment.isType("char");
         if (def->family == ItemFamily::Armor)
             require(def->base.minDefense && def->base.maxDefense &&
                         item.defense >= (item.quality == ItemQuality::Inferior ?
@@ -59,7 +61,7 @@ void InventoryService::validateSnapshot(const InventoryState &state, const Playe
                     item.durability <= maximumDurability(item) && item.revision > 0 && item.level > 0 &&
                     item.level <= 99 && int(item.quality) >= 0 &&
                     int(item.quality) <= int(ItemQuality::Inferior) &&
-                    (item.identified || (item.quality == ItemQuality::Magic ||
+                    (item.identified || nativeNormalCharm || (item.quality == ItemQuality::Magic ||
                                          item.quality == ItemQuality::Rare ||
                                          item.quality == ItemQuality::Set ||
                                          item.quality == ItemQuality::Unique)) &&
@@ -70,7 +72,8 @@ void InventoryService::validateSnapshot(const InventoryState &state, const Playe
                     item.propertyRolls.size() <= 16 && item.affixes.size() <= 6 &&
                     (item.quality != ItemQuality::Normal ||
                      (item.specialRow == -1 && item.gradeRow == -1 &&
-                      item.propertyRolls.empty() && item.affixes.empty())) &&
+                      item.propertyRolls.empty() &&
+                      (item.affixes.empty() || (nativeNormalCharm && item.affixes.size() == 1)))) &&
                     ((item.quality == ItemQuality::Set || item.quality == ItemQuality::Unique) ==
                      (item.specialRow >= 0)),
                 "item parameters");
@@ -80,6 +83,8 @@ void InventoryService::validateSnapshot(const InventoryState &state, const Playe
             continue; // GameSession checks the region and world position.
         auto found = state.containers.find(location->container);
         require(found != state.containers.end(), "item container reference");
+        require(checkCarryLimit(item, item.location, state) == InventoryError::None,
+            "duplicate carry1 unique item");
         const auto &c = found->second.spec;
         auto cell = location->cell;
         if (c.kind == ContainerKind::Equipment) {

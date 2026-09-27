@@ -3,6 +3,7 @@
 #include "operations.hpp"
 #include "modifiers.hpp"
 #include <functional>
+#include <set>
 
 namespace d2x {
 class InventoryService {
@@ -11,6 +12,7 @@ class InventoryService {
     ItemCatalog catalog_;
     InventoryState state_;
     std::function<std::vector<ResolvedItemStat>(const ItemInstance &)> itemProperties_;
+    std::set<int32_t> singleCarryUniques_;
     struct ReplenishTimer { float elapsed = 0; bool repeated = false; };
     std::map<std::pair<EntityId, bool>, ReplenishTimer> replenishTimers_;
     Cell stashDimensions_;
@@ -21,6 +23,8 @@ class InventoryService {
     InventoryError checkAccess(const ItemLocation &location, const InventoryAccess &access) const;
     InventoryError checkDestinationAccess(const ItemDestination &destination,
                                           const InventoryAccess &access) const;
+    InventoryError checkCarryLimit(const ItemInstance &item, const ItemLocation &destination,
+                                   const InventoryState &state, EntityId ignore = {}) const;
     InventoryError checkPlacement(const ItemDefinition &definition, const ItemLocation &location,
                                   EntityId ignore = {}, EntityId alsoIgnore = {}) const;
     InventoryError resolve(const ItemDefinition &definition, const ItemDestination &destination,

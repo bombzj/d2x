@@ -144,6 +144,27 @@ InventoryError InventoryService::checkDestinationAccess(const ItemDestination &d
         },
         destination);
 }
+InventoryError InventoryService::checkCarryLimit(const ItemInstance &source,
+                                                 const ItemLocation &destination,
+                                                 const InventoryState &state, EntityId ignore) const {
+    if (source.quality != ItemQuality::Unique || !singleCarryUniques_.contains(source.specialRow))
+        return InventoryError::None;
+    auto ownerAt = [&](const ItemLocation &location) -> EntityId {
+        const auto *position = std::get_if<ContainerLocation>(&location);
+        if (!position) return {};
+        const auto found = state.containers.find(position->container);
+        if (found == state.containers.end() || found->second.spec.kind == ContainerKind::Chest)
+            return {};
+        return found->second.spec.owner;
+    };
+    const auto owner = ownerAt(destination);
+    if (!owner) return InventoryError::None;
+    for (const auto &[id, other] : state.items)
+        if (id != source.id && id != ignore && other.quality == ItemQuality::Unique &&
+            other.specialRow == source.specialRow && ownerAt(other.location) == owner)
+            return InventoryError::RestrictedItem;
+    return InventoryError::None;
+}
 InventoryError InventoryService::checkPlacement(const ItemDefinition &definition,
                                                 const ItemLocation &location, EntityId ignore,
                                                 EntityId alsoIgnore) const {

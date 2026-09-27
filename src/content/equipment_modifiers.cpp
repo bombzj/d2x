@@ -55,8 +55,10 @@ CharacterModifiers resolveEquipmentModifiers(const ClassicData &content,
     for (auto id : inventory.contents(containers.backpack)) {
         const auto &item = *inventory.item(id);
         const auto &definition = *inventory.catalog().find(item.definition);
-        if (item.identified && definition.equipment.isType("char") &&
-            baseActor.level >= std::max(item.requiredLevel, definition.base.requiredLevel.value_or(0)))
+        if (definition.equipment.isType("char") && item.quantity &&
+            (!definition.maxDurability || item.durability) &&
+            !(item.nativeProperties && (item.nativeFlags & (0x00000100u | 0x00004000u))) &&
+            inventory.equipmentRequirements(item.handle(), baseActor) == InventoryError::None)
             addItem(content, item, false, baseActor.level, total);
     }
     for (int pass = 0; pass < int(EquipmentSlot::Count); ++pass) {

@@ -22,6 +22,7 @@ struct SpecialItemRecord {
     std::string name, code, set, icon, groundAnimation;
     int level = 0, rarity = 1;
     bool noLimit = false, ladder = false, cowOnly = false;
+    bool carryOne = false;
     bool artAvailable = false;
     int requiredLevel = 0;
     int setAddFunction = 0;
