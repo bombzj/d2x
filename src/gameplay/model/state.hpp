@@ -1,11 +1,12 @@
 #pragma once
 #include "core/id.hpp"
+#include "gameplay/effects/state.hpp"
 #include "gameplay/model/definitions.hpp"
 #include "gameplay/character/attributes.hpp"
 #include "gameplay/monsters/monster_spawn.hpp"
 #include "gameplay/quest/state.hpp"
 #include "gameplay/npc/hireling.hpp"
-#include "gameplay/skills/original.hpp"
+#include "gameplay/skills/spec.hpp"
 #include <deque>
 #include <map>
 #include <optional>
@@ -20,27 +21,16 @@ struct SkillHotkey {
     int skill = -2; // -2 unbound, -1 ordinary attack, otherwise MPQ skill ID.
     bool right = true;
 };
-// Transient skill, monster, shrine and item states share a single modifier
-// source. Runtime triggers may add entries; character saves omit them.
-struct ActiveCombatEffect {
-    CombatEffectSource source = CombatEffectSource::Skill;
-    EntityId owner;
-    int sourceId = -1;
-    float expiresAt = 0;
-    CharacterModifiers modifiers;
-    int group = 0, overlayId = -1, hitOverlayId = -1;
-    float startedAt = 0, retaliationFreeze = 0, hitOverlayDuration = 0;
-};
 struct PlayerState {
     struct PendingCast {
-        OriginalSkillCast skill;
+        SkillCastSpec skill;
         Vec target;
         int staticFieldMinimum = 0;
         float remaining = 0;
         EntityId enemy;
     };
     struct ChannelCast {
-        OriginalSkillCast skill;
+        SkillCastSpec skill;
         Vec target;
         float remaining = 0;
         unsigned pulses = 0;
@@ -54,22 +44,19 @@ struct PlayerState {
     Vec pos, previous, look{1, 0};
     std::deque<Vec> route;
     float hp = 0, mana = 0, stamina = 0;
-    float castTime = 0, spinTime = 0, leapTime = 0, hitTime = 0, deathTime = 0, meleeTime = 0;
+    float castTime = 0, hitTime = 0, deathTime = 0, meleeTime = 0;
     float lastMeleeDuration = 0;
     float chill = 0;
     float poisonRemaining = 0, poisonPerSecond = 0;
     float webSlowRemaining = 0;
     int webSlowPercent = 0;
     EntityId webSource;
-    Vec leapStart, leapEnd;
-    std::array<float, skillCount> cooldown{};
     std::deque<Restoration> healing, manaRestoration;
     float staminaBoost = 0;
     EntityId attackTarget;
     bool throwAttack = false;
     bool leftHandAttack = false;
-    Skill lastSkill = Skill::Fireball;
-    float lastCastDuration = .32f;
+    float lastCastDuration = 0;
     float lastCastRate = 0;
     std::optional<PendingCast> pendingCast;
     std::optional<ChannelCast> channel;
@@ -86,7 +73,7 @@ struct PlayerState {
     AttributeAllocation allocated;
     int unspentAttributes = 0;
     std::map<int, int> skillRanks;
-    std::vector<ActiveCombatEffect> combatEffects;
+    CombatEffectSet combatEffects;
     int unspentSkills = 0;
     std::array<SkillHotkey, 8> skillHotkeys{};
     std::array<int, 4> selectedSkills{-1, -1, -1, -1};
@@ -130,7 +117,7 @@ struct Missile {
     EntityId id, owner;
     Vec pos, velocity;
     float remaining = 2;
-    Skill skill = Skill::Fireball;
+    SkillBehavior behavior = SkillBehavior::None;
     bool physical = false;
     int missileId = -1;
     float damage = 0;
@@ -147,16 +134,15 @@ struct Missile {
     float impactDuration = 0;
     int hitOverlayId = -1;
     float hitOverlayDuration = 0;
-    EntityId lastHit;
-    std::deque<Vec> path;
+    EntityId lastHit{};
+    std::deque<Vec> path{};
 };
 struct Effect {
     Vec pos;
-    Skill skill;
     float age = 0, duration = .8f;
     int missileId = -1;
     int overlayId = -1;
-    EntityId attached;
+    EntityId attached{};
 };
 // Area combat state survives travel. Ground item ownership lives in session InventoryState.
 struct AreaState {
@@ -181,6 +167,7 @@ struct WorldState {
     PopulationSettings population;
     PlayerState player;
     AreaState area;
+    EffectFrame frame = 0;
     float time = 0;
     std::string message;
     TownPortalState portal;

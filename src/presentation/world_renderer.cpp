@@ -238,9 +238,7 @@ void SceneView::drawActors(Vec mouse) const {
             auto *anim = &assets_.hero.at(mode);
             if (anim->frames.empty())
                 anim = &assets_.hero.at("nu");
-            auto look = sim.player.spinTime > 0
-                            ? Vec{std::cos(view_.animationTime * 24), std::sin(view_.animationTime * 24)}
-                            : sim.player.look;
+            auto look = sim.player.look;
             const float movementRate = mode == "rn" ? session_.characterStats().runAnimationRate
                                        : mode == "wl" ? session_.characterStats().walkAnimationRate : 25.f;
             int frame = int(view_.heroTime * movementRate);
@@ -250,8 +248,7 @@ void SceneView::drawActors(Vec mouse) const {
                 frame =
                     std::min(anim->count - 1,
                              int((sim.player.lastCastDuration - sim.player.castTime) *
-                                 (sim.player.lastCastRate > 0 ? sim.player.lastCastRate :
-                                  float(anim->count) / sim.player.lastCastDuration)));
+                                 sim.player.lastCastRate));
             if (mode == "sc" && sim.player.channel)
                 frame = std::min({anim->count - 1, 9, int(sim.player.channelAge() * 25)});
             if ((mode == "a1" || mode == "th") && sim.player.meleeTime > 0)
@@ -260,8 +257,6 @@ void SceneView::drawActors(Vec mouse) const {
                                    0, anim->count - 1);
             auto f = anim->frame(direction(look, anim->directions), frame);
             auto p = item.p;
-            if (sim.player.leapTime > 0)
-                p.y -= std::sin(sim.player.leapTime / skillDefinition(Skill::Leap).duration * pi) * 95;
             spriteShadow(f, item.p);
             sprite(f, p, sim.player.dead ? Color{185, 185, 185, 255}
                          : sim.player.chill > 0 ? Color{115, 175, 255, 255}
@@ -460,11 +455,11 @@ void SceneView::drawMagic() const {
             if (overlay.visual.trans == 3) EndBlendMode();
         }
 
-    for (const auto &effect : sim.player.combatEffects)
-        if (!sim.player.dead && effect.expiresAt > sim.time)
-            if (auto found = assets_.spellOverlays.find(effect.overlayId); found != assets_.spellOverlays.end()) {
+    for (const auto &effect : sim.player.combatEffects.entries())
+        if (!sim.player.dead && effect.activeAt(sim.frame))
+            if (auto found = assets_.spellOverlays.find(effect.spec.visual.overlayId); found != assets_.spellOverlays.end()) {
                 const auto &overlay = found->second;
-                const int frame = int((sim.time - effect.startedAt) * overlay.visual.fps) % overlay.visual.frames;
+                const int frame = int((float(sim.frame - effect.startedAt) / 25.f) * overlay.visual.fps) % overlay.visual.frames;
                 if (overlay.visual.trans == 3) {
                     rlSetBlendFactors(0x0307, 1, 0x8006);
                     BeginBlendMode(BLEND_CUSTOM);
@@ -479,55 +474,6 @@ void SceneView::drawMagic() const {
             float flicker = std::sin(view_.animationTime * 9 + prop.pos.x) * 7;
             DrawCircleGradient(int(p.x), int(p.y) - 15, 65 + flicker, {126, 65, 12, 35}, {0, 0, 0, 0});
         }
-    for (auto &m : sim.area.missiles) {
-        if (m.physical || m.missileId >= 0) continue;
-        auto p = screen(m.pos);
-        auto v = project(m.velocity).unit();
-        for (int i = 12; i >= 0; i--)
-            DrawCircleV(rv(p - v * float(i * 3)), float(3 + i * .18f),
-                        {uint8_t(125 + i * 7), uint8_t(18 + i * 3), 3, uint8_t(140 - i * 8)});
-        DrawCircleGradient(int(p.x), int(p.y), 29, {255, 89, 13, 100}, {0, 0, 0, 0});
-        if (!assets_.fireball.frames.empty())
-            sprite(assets_.fireball.frame(direction(m.velocity, assets_.fireball.directions),
-                                          int(view_.animationTime * 25)),
-                   p);
-        else
-            DrawCircleV(rv(p), 6, {255, 210, 83, 255});
-    }
-    for (auto &e : sim.area.effects) {
-        if (e.missileId >= 0 || e.overlayId >= 0) continue;
-        auto p = screen(e.pos);
-        float t = e.age / e.duration, alpha = 1 - t;
-        if (e.skill == Skill::Fireball) {
-            DrawCircleGradient(int(p.x), int(p.y) - 10, 25 + t * 65, {255, 96, 15, uint8_t(alpha * 180)},
-                               {0, 0, 0, 0});
-            if (!assets_.fireburst.frames.empty())
-                sprite(assets_.fireburst.frame(
-                           0, std::min(assets_.fireburst.count - 1, int(t * assets_.fireburst.count))),
-                       p);
-        }
-        if (e.skill == Skill::WarCry || e.skill == Skill::Leap) {
-            for (int j = 0; j < 3; j++) {
-                float radius = std::max(0.f, t - j * .12f) * 105;
-                DrawEllipseLines(int(p.x), int(p.y) - j * 7, radius, radius * .5f,
-                                 {224, 192, 120, uint8_t(alpha * 200)});
-            }
-            for (int j = 0; j < 20; j++) {
-                float angle = j * 2 * pi / 20;
-                DrawCircle(int(p.x + std::cos(angle) * t * 72), int(p.y + std::sin(angle) * t * 30), 2,
-                           {209, 180, 110, uint8_t(alpha * 150)});
-            }
-        }
-    }
-    if (sim.player.spinTime > 0) {
-        auto p = screen(sim.player.pos);
-        for (int j = 0; j < 3; j++)
-            for (int i = 0; i < 20; i++) {
-                float a = view_.animationTime * 19 + i * .09f + j * 2 * pi / 3;
-                Vec q = p + Vec{std::cos(a) * (31 + j * 5), std::sin(a) * (14 + j * 3) - 18};
-                DrawCircleV(rv(q), 1.7f, {199, 222, 237, uint8_t(20 + i * 10)});
-            }
-    }
     EndBlendMode();
 }
 } // namespace d2x

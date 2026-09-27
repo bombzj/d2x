@@ -64,6 +64,8 @@ D2S 读写依据本地 D2MOO 的 `PlrSave2.h/.cpp`、`Items.cpp`、`ItemMods.cpp
 
 - [D2MOO](https://github.com/ThePhrozenKeep/D2MOO/tree/5596f5cb6c5251a0a07c6637d26458b06099d516)，固定提交 `5596f5cb6c5251a0a07c6637d26458b06099d516`，MIT，Copyright 2020–2025 The Phrozen Keep community。共有 DT1、隐藏空白瓦片和变体权重解释依据 DrlgRoomTile.cpp；生成边界参考 DrlgDrlg.cpp、DrlgPreset.cpp、DrlgMaze.cpp。许可见 [D2MOO.txt](licenses/D2MOO.txt)。没有移植完整 DRLG，也未执行参考仓库的游戏代码。
 
+  通用技能状态结构还核对同一快照的 `Skills.cpp::sub_6FD11C90`（按目标原状态组互斥）、`SkillSor.cpp::SKILLS_SrvDo018_DefensiveBuff`／`SKILLS_CurseStateCallback_DefensiveBuff`（状态属性列表、事件注册及移除）和 `D2States.cpp`（死亡保留标志）。当前状态 ID、组、标志、叠层仍读取用户 MPQ 的 States.txt，玩法容器为本项目独立 C++ 实现；不纳入参考表或声称已复刻所有 Buff。
+
   女巫技能还核对了该快照的 `D2Common/src/D2Skills.cpp`（等级伤害分段与定点法力）、`D2Game/src/SKILLS/SkillSor.cpp`（传送的 Levels 许可与静电力场生命下限）。本项目从用户 MPQ 在运行时读取每个技能和难度的实际数值；现有战斗系统尚不具备原版完整施法帧、抗性与逐弹命中规则。
 
   怪物生成阶段还依据该固定提交的 MonsterRegion、MonsterChoose、MonsterSpawn、MonsterUnique、MonsterTbls 和 D2Common Monsters，适配区域选择／密度、随从、精英、固定首领和家族链规则。当前使用本项目的 DS1 空间与随机流适配，不声称逐种子或逐帧等价。代码入口和执行／暂缓字段见 [怪物生成](MONSTER_POPULATION.md)；原始 MonStats2、MonPreset、SuperUniques、MonPlace、MonUMod 表来自用户 MPQ。

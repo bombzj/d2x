@@ -1,5 +1,6 @@
 #pragma once
 #include "gameplay/model/definitions.hpp"
+#include "gameplay/effects/state.hpp"
 #include <array>
 #include <map>
 #include <string>
@@ -7,7 +8,7 @@
 
 namespace d2x {
 // Typed values imported from Skills.txt and Missiles.txt. No archive data enters gameplay.
-struct OriginalSkillSpec {
+struct SkillSpec {
     struct OverlayVisual {
         int id = -1, frames = 0, trans = 5;
         float fps = 0;
@@ -19,7 +20,7 @@ struct OriginalSkillSpec {
         std::string art;
         float duration = 0;
     };
-    Skill effect = Skill::Fireball;
+    SkillBehavior effect = SkillBehavior::None;
     int mana = 0, minimumMana = 0, manaPerLevel = 0, manaShift = 8;
     int minimumDamage = 0, maximumDamage = 0, hitShift = 8;
     bool fireDamage = false;
@@ -40,15 +41,16 @@ struct OriginalSkillSpec {
     std::string missileArt, castSoundArt;
     OverlayVisual castOverlay, hitOverlay;
     OverlayVisual stateOverlay;
-    int sourceId = -1, stateGroup = 0;
+    int sourceId = -1;
+    CombatStateDefinition state;
     std::array<int, 8> armorParameters{};
     std::vector<int> armorSynergySkills;
     std::string activationSoundArt;
     std::vector<ImpactVisual> impacts;
     std::string impactSoundArt, releaseSoundArt;
 };
-struct OriginalSkillCast {
-    Skill effect = Skill::Fireball;
+struct SkillCastSpec {
+    SkillBehavior effect = SkillBehavior::None;
     float castDuration = 0, castImpact = 0, castRate = 0;
     float manaCost = 0, minimumDamage = 0, maximumDamage = 0;
     float coldDuration = 0, missileVelocity = 0, missileLifetime = 0, impactRadius = 0;
@@ -62,11 +64,11 @@ struct OriginalSkillCast {
     float visualDuration = 0, hitOverlayDuration = 0;
     int impactMissileId = -1;
     float impactDuration = 0;
-    int sourceId = -1, stateGroup = 0, stateOverlayId = -1, defensePercent = 0;
-    float buffDuration = 0, retaliationFreeze = 0;
+    int sourceId = -1;
+    std::optional<CombatEffectSpec> appliedEffect;
 };
-OriginalSkillCast resolveOriginalSkill(const OriginalSkillSpec &spec, int rank,
-                                       const std::map<int, int> &learned, int fireMasteryPercent = 0,
-                                       int lightningMasteryPercent = 0);
+SkillCastSpec resolveSkill(const SkillSpec &spec, int rank,
+                           const std::map<int, int> &learned, int fireMasteryPercent = 0,
+                           int lightningMasteryPercent = 0);
 std::vector<Vec> chargedBoltPath(Vec origin, Vec target, int index, int frames);
 } // namespace d2x

@@ -125,10 +125,10 @@ class GameSession {
     EquipmentActor equipmentActor(const PlayerState &player) const;
     const CharacterDefinition &definitionFor(std::string_view name) const;
     void refreshCharacter(bool fillGains = false);
+    void useSkill(const UseSkill &intent);
     void applyWarmth(CharacterAttributes &stats, const PlayerState &player,
                      const CharacterDefinition &definition, const InventoryService &inventory,
                      const PlayerContainers &containers, const EquipmentActor &actor) const;
-    void expireCombatEffects();
     void grantExperience(uint64_t amount);
     void createStarterEquipment();
     bool inventoryDestinationAllowed(const ItemDestination &destination) const;
@@ -235,10 +235,9 @@ class GameSession {
     const std::string &characterAppearance() const { return characterDefinition_.appearance; }
     unsigned bankGoldLimit() const;
     unsigned groundGoldLimit() const;
-    void applyCombatEffect(ActiveCombatEffect effect);
     bool skillAvailable(int id) const;
     int effectiveSkillRank(int id) const;
-    bool applyOriginalCastTiming(OriginalSkillCast &cast) const;
+    bool applySkillCastTiming(SkillCastSpec &cast) const;
     int fireMasteryPercent() const;
     int lightningMasteryPercent() const;
     int coldPiercePercent() const;

@@ -80,10 +80,8 @@ void SceneView::drawLighting() const {
 }
 std::string playerAnimationMode(const PlayerState &p) {
     return p.dead                              ? "dt"
-           : p.leapTime > 0                    ? "a1"
-           : p.hitTime > 0 && p.spinTime <= 0  ? "gh"
+           : p.hitTime > 0  ? "gh"
            : p.castTime > 0                    ? "sc"
-           : p.spinTime > 0                 ? "a1"
            : p.meleeTime > 0                ? (p.throwAttack ? "th" : "a1")
            : p.moving                          ? (p.runningNow ? "rn" : "wl")
                                                : "nu";
@@ -261,7 +259,7 @@ void SceneView::advance(float dt) {
                 using T = std::decay_t<decltype(value)>;
                 if constexpr (std::is_same_v<T, SkillCast>) {
                     view_.heroTime = 0;
-                    assets_.audio.play(std::to_string(int(value.skill)));
+                    assets_.audio.play("skill-cast:" + std::to_string(value.skillId));
                 } else if constexpr (std::is_same_v<T, MeleeAttack>) {
                     view_.heroTime = 0;
                     assets_.audio.play("swing");
@@ -277,7 +275,7 @@ void SceneView::advance(float dt) {
                 } else if constexpr (std::is_same_v<T, MissileReleased>) {
                     assets_.audio.play("missile-release:" + std::to_string(value.missileId));
                 } else if constexpr (std::is_same_v<T, SkillActivated>) {
-                    assets_.audio.play("skill-active:" + std::to_string(int(value.skill)));
+                    assets_.audio.play("skill-active:" + std::to_string(value.skillId));
                 } else if constexpr (std::is_same_v<T, EnemyHit>) {
                     if (auto sound = soundFor(value.victim)) assets_.audio.play(sound->hit);
                 } else if constexpr (std::is_same_v<T, EnemyDied>) {

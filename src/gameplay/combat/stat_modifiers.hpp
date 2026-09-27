@@ -51,7 +51,6 @@ struct CombatModifiers {
     std::map<EntityId, int> armorPercent;
 };
 
-enum class CombatEffectSource { Skill, Monster, Shrine, Item, Environment };
 // Snapshot at attack launch so projectile damage does not change in flight.
 struct AttackElements {
     float fire = 0, lightning = 0, cold = 0, magic = 0;

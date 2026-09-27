@@ -53,7 +53,7 @@ void Simulation::launchMonsterProjectile(Enemy &enemy) {
         throw std::runtime_error("Monster projectile is missing");
     const auto direction = (state_.player.pos - enemy.pos).unit();
     state_.area.missiles.push_back({ids_.allocate(), enemy.id, enemy.pos,
-        direction * projectile->velocity, projectile->lifetime, Skill::Fireball,
+        direction * projectile->velocity, projectile->lifetime, SkillBehavior::None,
         true, projectile->id, 0, 0, 0, true, enemy.attackMode});
 }
 void Simulation::launchMonsterSpell(Enemy &enemy) {
@@ -65,12 +65,12 @@ void Simulation::launchMonsterSpell(Enemy &enemy) {
     const float damage = float(spell->minimumDamage +
         monsterAiRandom(enemy) % unsigned(spell->maximumDamage - spell->minimumDamage + 1));
     state_.area.missiles.push_back({ids_.allocate(), enemy.id, enemy.pos,
-        direction * spell->projectile.velocity, spell->projectile.lifetime, Skill::Fireball,
+        direction * spell->projectile.velocity, spell->projectile.lifetime, SkillBehavior::None,
         false, spell->projectile.id, damage, 0, 0, true, enemy.attackMode});
 }
 void Simulation::resolveMonsterAttack(Enemy &enemy, int modeOverride, bool projectile) {
     auto &player = state_.player;
-    if ((!projectile && enemy.hp <= 0) || player.dead || player.hp <= 0 || player.leapTime > 0 ||
+    if ((!projectile && enemy.hp <= 0) || player.dead || player.hp <= 0 ||
         (!projectile && ((player.pos - enemy.pos).length() >= monsterDefinition(enemy.kind).attackRange ||
                          !grid_->segment(enemy.pos, player.pos))))
         return;
@@ -121,22 +121,7 @@ void Simulation::resolveMonsterAttack(Enemy &enemy, int modeOverride, bool proje
         }
     const float physicalDealt = hurtPlayer(damage, MonsterDamageType::Physical);
     if (!projectile && physicalDealt > 0 && enemy.hp > 0)
-        for (const auto &effect : player.combatEffects) {
-            if (effect.expiresAt <= state_.time || effect.retaliationFreeze <= 0) continue;
-            const int resistance = monsterResistance_ ?
-                monsterResistance_(enemy, state_.area.region, MonsterDamageType::Cold).value_or(0) : 0;
-            const float duration = float(int(effect.retaliationFreeze * 25) *
-                std::clamp(100 - resistance, 0, 200) / 100) / 25.f;
-            if (auto freezable = monsterFreezable_ ? monsterFreezable_(enemy) : std::nullopt) {
-                if (*freezable) {
-                    enemy.freeze = std::max(enemy.freeze, float(int(duration * 25) / monsterFreezeDivisor_) / 25.f);
-                    if (enemy.freeze > 0) enemy.route.clear();
-                } else enemy.chill = std::max(enemy.chill, duration);
-            }
-            if (effect.hitOverlayId >= 0)
-                state_.area.effects.push_back({enemy.pos, Skill::FrozenArmor, 0, effect.hitOverlayDuration,
-                                              -1, effect.hitOverlayId, enemy.id});
-        }
+        triggerCombatEffects(player, CombatEffectEvent::DamagedInMelee, enemy);
     if (combat && player.hp > 0)
         applyMonsterElements(enemy, *combat, mode);
     if (wearEquipment_) wearEquipment_({}, true);

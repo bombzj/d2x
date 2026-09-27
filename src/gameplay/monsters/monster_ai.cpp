@@ -386,8 +386,7 @@ void Simulation::updateMonsters(float dt) {
             if (archerAi) enemy.aiRunning = false;
         }
         if (!skeletonBowAi && !skeletonMageAi && !bigheadAi && !fetishAi && !vampireAi &&
-            (player.pos - enemy.pos).length() < definition.attackRange &&
-            player.leapTime <= 0 && grid_->segment(enemy.pos, player.pos)) {
+            (player.pos - enemy.pos).length() < definition.attackRange && grid_->segment(enemy.pos, player.pos)) {
             if (skeletonAi && !skeletonAttacks(enemy, *ai))
                 continue;
             if (fallenAi) {

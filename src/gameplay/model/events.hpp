@@ -9,7 +9,7 @@
 namespace d2x {
 struct SkillCast {
     EntityId actor;
-    Skill skill;
+    int skillId = -1;
     Vec position;
 };
 struct MeleeAttack {
@@ -17,7 +17,7 @@ struct MeleeAttack {
 };
 struct MissileImpact { int missileId; Vec position; };
 struct MissileReleased { int missileId; };
-struct SkillActivated { Skill skill; };
+struct SkillActivated { int skillId = -1; };
 // Emitted once at the alive -> dead transition, including every fact a loot system needs.
 struct EnemyDied {
     EntityId victim, killer;

@@ -93,7 +93,7 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
         if (!result || !result.changes.empty())
             publishInventory(std::move(result), {});
     };
-            simulation_.applyCombatEffect_ = [this](ActiveCombatEffect effect) { applyCombatEffect(std::move(effect)); };
+    simulation_.combatEffectsChanged_ = [this] { refreshCharacter(); };
     simulation_.state_.player.combatRandom = (uint64_t(666) << 32) | selection.seed;
     simulation_.monsterAccuracy_ = [this](const Enemy &enemy, RegionId region, int mode)
         -> std::optional<MonsterAccuracy> {
@@ -700,49 +700,8 @@ void GameSession::tick(float dt, Vec keyboard, bool forceRun) {
                                 ++player.unspentSkills;
                         refreshCharacter();
                     }
-                } else if constexpr (std::is_same_v<T, UseClassSkill>) {
-                    const auto *entry = content_.skills.find(intent.id);
-                    const auto &player = state().player;
-                    if (!entry || entry->passive || player.dead || !skillAvailable(intent.id)) return;
-                    if (region().definition.safe && !entry->allowedInTown) {
-                        simulation_.state_.message = "This skill cannot be used in town";
-                        return;
-                    }
-                    if (entry->classCode.empty()) {
-                        if (!intent.enemy) return;
-                        cancelExit(); cancelPickup(); cancelInteraction();
-                        if (entry->sourceName == "Throw" || entry->sourceName == "Left Hand Throw")
-                            simulation_.execute(Attack{intent.enemy, true,
-                                entry->sourceName == "Left Hand Throw"});
-                        else if (entry->sourceName == "Kick" || entry->sourceName == "Left Hand Swing")
-                            simulation_.execute(Attack{intent.enemy, false,
-                                entry->sourceName == "Left Hand Swing"});
-                        return; // Unsummon has no target until summoned allies exist.
-                    }
-                    if (entry->originalEffect) {
-                        const int rank = effectiveSkillRank(intent.id);
-                        auto resolved = resolveOriginalSkill(*entry->originalEffect, rank,
-                                                                    player.skillRanks, fireMasteryPercent(),
-                                                                    lightningMasteryPercent());
-                        if (!applyOriginalCastTiming(resolved)) {
-                            simulation_.state_.message = "Original cast animation timing is unavailable";
-                            return;
-                        }
-                        const int levelId = int(region().definition.id);
-                        const bool teleportAllowed = content_.teleportByLevel.contains(levelId) &&
-                            content_.teleportByLevel.at(levelId) != 0;
-                        cancelExit(); cancelPickup(); cancelInteraction();
-                        simulation_.castOriginal(simulation_.state_.player, resolved, intent.target, teleportAllowed,
-                            content_.staticFieldMinimum.at(size_t(state().population.difficulty)), intent.enemy);
-                        return;
-                    }
-                    auto effect = implementedSkillEffect(*entry);
-                    if (!effect && !intent.enemy) return;
-                    cancelExit(); cancelPickup(); cancelInteraction();
-                    if (effect)
-                        simulation_.execute(CastSkill{*effect, intent.target});
-                    else
-                        simulation_.execute(Attack{intent.enemy});
+                } else if constexpr (std::is_same_v<T, UseSkill>) {
+                    useSkill(intent);
                 } else if constexpr (std::is_same_v<T, MoveItem> || std::is_same_v<T, SwapItems> ||
                                      std::is_same_v<T, SplitStack> || std::is_same_v<T, MergeStacks> ||
                                      std::is_same_v<T, LoadBook> ||
@@ -751,7 +710,7 @@ void GameSession::tick(float dt, Vec keyboard, bool forceRun) {
                     executeInventory(command);
                 else {
                     if constexpr (std::is_same_v<T, MoveTo> || std::is_same_v<T, Attack> ||
-                                  std::is_same_v<T, CastSkill> || std::is_same_v<T, StopMoving>) {
+                                  std::is_same_v<T, StopMoving>) {
                         cancelExit();
                         cancelPickup();
                         cancelInteraction();
@@ -774,7 +733,6 @@ void GameSession::tick(float dt, Vec keyboard, bool forceRun) {
     auto replenished = inventory_.replenish(dt);
     if (!replenished.changes.empty()) publishInventory(std::move(replenished), {});
     advanceHireling(dt);
-    expireCombatEffects();
     updateObjectTimers();
     regions_.at(current_).refreshObjectCollision(state().time);
     advanceNpcPaths(dt);

@@ -250,10 +250,11 @@ ClassicData loadClassicData(Archives &archives) {
                 data.hirelingStrings.emplace(key, value);
         data.skills = loadSkillCatalog(data.tables.at("skills"), data.tables.at("skilldesc"),
                                        data.tables.at("charstats"), data.characters, strings);
+        data.states = loadCombatStates(DataTable(archives.read("data/global/excel/states.txt")));
         const DataTable overlays(archives.read("data/global/excel/overlay.txt"));
         const DataTable sounds(archives.read("data/global/excel/sounds.txt"));
         loadSorceressEffects(data.skills, data.tables.at("skills"), data.tables.at("missiles"),
-                             overlays, sounds, archives);
+                             overlays, sounds, data.states, archives);
         const DataTable levels(archives.read("data/global/excel/levels.txt"));
         for (size_t row = 0; row < levels.rows().size(); ++row)
             if (auto id = levels.number(row, "Id"); id && *id > 0)

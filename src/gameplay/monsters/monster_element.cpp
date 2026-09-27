@@ -58,7 +58,7 @@ void Simulation::applyMonsterElements(Enemy &enemy, const MonsterNormalCombat &c
 }
 void Simulation::resolveMonsterSpell(Enemy &enemy, const Missile &missile) {
     auto &player = state_.player;
-    if (player.dead || player.hp <= 0 || player.leapTime > 0) return;
+    if (player.dead || player.hp <= 0) return;
     const auto spell = monsterSpell_ ? monsterSpell_(enemy, missile.hostileMode) : std::nullopt;
     if (!spell || spell->projectile.id != missile.missileId) return;
     const auto type = damageType(spell->element);

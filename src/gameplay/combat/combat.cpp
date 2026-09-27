@@ -2,6 +2,7 @@
 #include "gameplay/combat/accuracy.hpp"
 #include "gameplay/combat/damage_resolution.hpp"
 #include <algorithm>
+#include <stdexcept>
 
 namespace d2x {
 bool Simulation::missilePathClear(int missileId, Vec from, Vec to) const {
@@ -137,7 +138,7 @@ void Simulation::updateMissiles(float dt) {
                     }
             continue;
         }
-        if (m.skill == Skill::ChargedBolt && !m.hostile) {
+        if (m.behavior == SkillBehavior::ChargedBolt && !m.hostile) {
             const float speed = m.velocity.length();
             float distance = speed * std::min(dt, m.remaining);
             while (distance > 0 && !m.path.empty() && m.remaining > 0) {
@@ -164,7 +165,7 @@ void Simulation::updateMissiles(float dt) {
                 if (hit) {
                     damageEnemy(*hit, m.damage, m.owner, 0, false, MonsterDamageType::Lightning);
                     if (m.hitOverlayId >= 0)
-                        area.effects.push_back({hit->pos, m.skill, 0, m.hitOverlayDuration,
+                        area.effects.push_back({hit->pos, 0, m.hitOverlayDuration,
                                                 -1, m.hitOverlayId, hit->id});
                     m.remaining = 0;
                 } else if (offset.length() <= segmentLength + .00001f) m.path.pop_front();
@@ -198,7 +199,7 @@ void Simulation::updateMissiles(float dt) {
             continue;
         }
         if (!m.physical && m.missileId >= 0) {
-            const auto type = m.skill == Skill::Nova ? MonsterDamageType::Lightning :
+            const auto type = m.behavior == SkillBehavior::Nova ? MonsterDamageType::Lightning :
                 m.chill > 0 ? MonsterDamageType::Cold : MonsterDamageType::Fire;
             const bool wall = !missilePathClear(m.missileId, m.pos, next);
             if (wall) {
@@ -210,7 +211,7 @@ void Simulation::updateMissiles(float dt) {
                 }
                 next = m.pos + (next - m.pos) * clear;
             }
-            if (m.skill == Skill::Nova || m.skill == Skill::FrostNova || m.skill == Skill::Inferno) {
+            if (m.behavior == SkillBehavior::Nova || m.behavior == SkillBehavior::FrostNova || m.behavior == SkillBehavior::Inferno) {
                 const Vec motion = next - m.pos;
                 const float lengthSquared = motion.x * motion.x + motion.y * motion.y;
                 for (auto &enemy : area.enemies) {
@@ -225,7 +226,7 @@ void Simulation::updateMissiles(float dt) {
                     if (m.nextHitDelay > 0) area.novaHitUntil[enemy.id] = state_.time + m.nextHitDelay;
                     damageEnemy(enemy, m.damage, m.owner, m.chill, false, type);
                     if (m.hitOverlayId >= 0)
-                        area.effects.push_back({enemy.pos, m.skill, 0, m.hitOverlayDuration,
+                        area.effects.push_back({enemy.pos, 0, m.hitOverlayDuration,
                                                 -1, m.hitOverlayId, enemy.id});
                 }
                 m.pos = next;
@@ -253,13 +254,13 @@ void Simulation::updateMissiles(float dt) {
                 m.remaining = 0;
                 if (!wall && !struck) continue;
                 if (m.impactMissileId >= 0)
-                    area.effects.push_back({m.pos, m.skill, 0, m.impactDuration, m.impactMissileId});
+                    area.effects.push_back({m.pos, 0, m.impactDuration, m.impactMissileId});
                 emit(MissileImpact{m.missileId, m.pos});
                 if (m.radius > 0) {
                     damage(m.pos, m.radius, m.damage, m.owner, m.chill, type);
                 } else if (struck)
                     damageEnemy(*struck, m.damage, m.owner, m.chill, false, type,
-                                false, true, m.skill == Skill::IceBlast);
+                                false, true, m.behavior == SkillBehavior::IceBlast);
             }
             continue;
         }
@@ -302,18 +303,7 @@ void Simulation::updateMissiles(float dt) {
             }
             continue;
         }
-        bool hit = !missilePathClear(m.missileId, m.pos, next);
-        for (const auto &e : area.enemies)
-            if (e.hp > 0 && active(e.pos) && (e.pos - next).length() < 1.3f)
-                hit = true;
-        m.pos = next;
-        m.remaining -= dt;
-        if (hit) {
-            m.remaining = 0;
-            const auto &skill = skillDefinition(m.skill);
-            damage(m.pos, skill.radius, skill.damage, m.owner, 0, MonsterDamageType::Fire);
-            area.effects.push_back({m.pos, m.skill, 0, .55f});
-        }
+        throw std::logic_error("Missile has no native execution definition");
     }
     std::erase_if(area.missiles, [](const Missile &m) { return m.remaining <= 0; });
     std::erase_if(area.novaHitUntil, [this](const auto &entry) { return entry.second <= state_.time; });

@@ -5,14 +5,13 @@
 #include "gameplay/model/state.hpp"
 #include "world/navigation.hpp"
 #include "gameplay/items/equipment_stats.hpp"
-#include "gameplay/skills/original.hpp"
+#include "gameplay/skills/spec.hpp"
 #include <span>
 #include <functional>
 
 namespace d2x {
 class Simulation {
     friend class GameSession;
-    friend class SkillSystem;
     EntityIds &ids_;
     const Grid *grid_ = nullptr; // Borrowed from GameSession's stable region storage.
     const RoomLayout *rooms_ = nullptr;
@@ -23,7 +22,8 @@ class Simulation {
     WorldState state_;
     EquipmentStats equipmentStats_;
     CharacterAttributes characterStats_;
-    std::function<void(ActiveCombatEffect)> applyCombatEffect_;
+    std::function<void()> combatEffectsChanged_;
+    void triggerCombatEffects(PlayerState &player, CombatEffectEvent event, Enemy &other);
     int resistancePenalty_ = 0;
     std::function<void(EntityId, bool)> wearEquipment_;
     std::function<bool(EntityId, bool)> spendProjectile_;
@@ -61,12 +61,11 @@ class Simulation {
     void moveTo(Vec target);
     void attackEnemy(EntityId target, bool thrown, bool leftHand);
     bool firePhysicalProjectile(const Enemy &enemy, const WeaponDamage &weapon, bool thrown);
-    bool cast(Skill skill, Vec target);
-    bool castOriginal(PlayerState &player, const OriginalSkillCast &skill, Vec target, bool teleportAllowed,
+    bool beginSkillCast(PlayerState &player, const SkillCastSpec &skill, Vec target, bool teleportAllowed,
                       int staticFieldMinimum, EntityId enemy = {});
-    void releaseOriginalCast(PlayerState &player, const OriginalSkillCast &skill, Vec target,
+    void releaseSkillCast(PlayerState &player, const SkillCastSpec &skill, Vec target,
                  int staticFieldMinimum, bool consumeMana = true);
-    void advanceOriginalCasting(PlayerState &player, float dt, bool moving);
+    void advanceSkillCasting(PlayerState &player, float dt, bool moving);
     static void stopChannel(PlayerState &player);
     void damage(Vec pos, float radius, float amount, EntityId source, float chill = 0,
                 MonsterDamageType type = MonsterDamageType::Physical);

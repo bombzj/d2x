@@ -25,7 +25,7 @@ bool Simulation::firePhysicalProjectile(const Enemy &enemy, const WeaponDamage &
     const float damage = float(int64_t(minimum) + int64_t(uint32_t(player.combatRandom) % span)) / 256.f;
     const Vec direction = (enemy.pos - player.pos).unit();
     state_.area.missiles.push_back({ids_.allocate(), player.id, player.pos,
-        direction * selected.missileSpeed, selected.missileLifetime, Skill::Fireball,
+        direction * selected.missileSpeed, selected.missileLifetime, SkillBehavior::None,
         true, selected.missileId, damage});
     state_.area.missiles.back().attackElements = elements;
     if (wearEquipment_ && !thrown)

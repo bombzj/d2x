@@ -118,10 +118,6 @@ void GameSession::beginPickup(ItemHandle handle) {
         simulation_.emit(InventoryRejected{handle.id, InventoryError::AccessDenied});
         return;
     }
-    if (player.leapTime > 0 || player.spinTime > 0) {
-        simulation_.emit(PickupFailed{handle.id, "Finish your skill before picking up an item."});
-        return;
-    }
     simulation_.stopWalking();
     simulation_.execute(MoveTo{ground->position});
     if (player.route.empty()) {
@@ -152,7 +148,7 @@ void GameSession::updatePickup() {
         simulation_.emit(InventoryRejected{handle.id, InventoryError::AccessDenied});
         return;
     }
-    if (player.castTime > 0 || player.meleeTime > 0 || player.leapTime > 0 || player.spinTime > 0)
+    if (player.castTime > 0 || player.meleeTime > 0)
         return;
     auto access = inventoryAccess();
     // Pickup is deliberately closer than generic container access; walls also block the hand-off.

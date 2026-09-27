@@ -21,7 +21,7 @@ std::string lower(std::string_view value) {
 } // namespace
 void loadSorceressEffects(SkillCatalog &catalog, const DataTable &skills,
                           const DataTable &missiles, const DataTable &overlays,
-                          const DataTable &sounds, Archives &archives) {
+                          const DataTable &sounds, const CombatStateCatalog &states, Archives &archives) {
     const AnimDataTable animations(archives.read("data/global/animdata.d2"));
     const DataTable weapons(archives.read("data/global/excel/weapons.txt"));
     std::set<std::string> weaponClasses{"hth"};
@@ -42,12 +42,12 @@ void loadSorceressEffects(SkillCatalog &catalog, const DataTable &skills,
                     break;
                 }
         }
-    constexpr struct { std::string_view name; Skill effect; } supported[] = {
-        {"Teleport", Skill::Teleport}, {"Fire Bolt", Skill::FireBolt},
-        {"Fire Ball", Skill::Fireball}, {"Frost Nova", Skill::FrostNova},
-        {"Ice Bolt", Skill::IceBolt}, {"Nova", Skill::Nova},
-        {"Ice Blast", Skill::IceBlast}, {"Charged Bolt", Skill::ChargedBolt}, {"Frozen Armor", Skill::FrozenArmor},
-        {"Inferno", Skill::Inferno}, {"Static Field", Skill::StaticField}};
+    constexpr struct { std::string_view name; SkillBehavior effect; } supported[] = {
+        {"Teleport", SkillBehavior::Teleport}, {"Fire Bolt", SkillBehavior::FireBolt},
+        {"Fire Ball", SkillBehavior::Fireball}, {"Frost Nova", SkillBehavior::FrostNova},
+        {"Ice Bolt", SkillBehavior::IceBolt}, {"Nova", SkillBehavior::Nova},
+        {"Ice Blast", SkillBehavior::IceBlast}, {"Charged Bolt", SkillBehavior::ChargedBolt}, {"Frozen Armor", SkillBehavior::FrozenArmor},
+        {"Inferno", SkillBehavior::Inferno}, {"Static Field", SkillBehavior::StaticField}};
     const auto warmth = std::find_if(catalog.skills.begin(), catalog.skills.end(),
         [](const auto &pair) { return pair.second.classCode == "sor" &&
             pair.second.sourceName == "Warmth"; });
@@ -115,8 +115,8 @@ void loadSorceressEffects(SkillCatalog &catalog, const DataTable &skills,
         for (; row < skills.rows().size(); ++row)
             if (skills.number(row, "Id") == record->id) break;
         if (row == skills.rows().size()) throw std::runtime_error("Original sorceress skill row is missing");
-        OriginalSkillSpec spec;
-        if (skills.value(row, "anim") != (effect == Skill::Inferno ? "SQ" : "SC"))
+        SkillSpec spec;
+        if (skills.value(row, "anim") != (effect == SkillBehavior::Inferno ? "SQ" : "SC"))
             throw std::runtime_error("Unsupported original sorceress cast mode");
         spec.effect = effect;
         spec.sourceId = record->id;
@@ -127,13 +127,13 @@ void loadSorceressEffects(SkillCatalog &catalog, const DataTable &skills,
         spec.hitShift = required(skills, row, "HitShift");
         spec.fireDamage = skills.value(row, "EType") == "fire";
         spec.lightningDamage = skills.value(row, "EType") == "ltng";
-        if ((effect == Skill::FireBolt || effect == Skill::Fireball) && !spec.fireDamage)
+        if ((effect == SkillBehavior::FireBolt || effect == SkillBehavior::Fireball) && !spec.fireDamage)
             throw std::runtime_error("Unsupported original fire spell element");
         const auto soundName = skills.value(row, "stsound");
         size_t soundRow = 0;
         for (; soundRow < sounds.rows().size(); ++soundRow)
             if (sounds.value(soundRow, "Sound") == soundName) break;
-        if ((soundName.empty() || soundRow == sounds.rows().size()) && effect != Skill::Inferno)
+        if ((soundName.empty() || soundRow == sounds.rows().size()) && effect != SkillBehavior::Inferno)
             throw std::runtime_error("Missing original sorceress cast sound: " + std::string(name));
         if (!soundName.empty() && soundRow < sounds.rows().size()) {
             spec.castSoundArt = "data/global/sfx/" + std::string(sounds.value(soundRow, "FileName"));
@@ -141,7 +141,7 @@ void loadSorceressEffects(SkillCatalog &catalog, const DataTable &skills,
                 throw std::runtime_error("Missing original sorceress cast sound art: " + std::string(name));
         }
         auto loadOverlay = [&](std::string_view overlayName) {
-            OriginalSkillSpec::OverlayVisual visual;
+            SkillSpec::OverlayVisual visual;
             if (overlayName.empty()) return visual;
             size_t overlayRow = 0;
             for (; overlayRow < overlays.rows().size(); ++overlayRow)
@@ -160,7 +160,7 @@ void loadSorceressEffects(SkillCatalog &catalog, const DataTable &skills,
             return visual;
         };
         spec.castOverlay = loadOverlay(skills.value(row, "castoverlay"));
-        if (effect == Skill::FrozenArmor) {
+        if (effect == SkillBehavior::FrozenArmor) {
             if (skills.value(row, "aurastat1") != "skill_armor_percent" ||
                 skills.value(row, "aurastatcalc1") != "ln12" ||
                 skills.value(row, "auraevent1") != "damagedinmelee" ||
@@ -176,13 +176,10 @@ void loadSorceressEffects(SkillCatalog &catalog, const DataTable &skills,
                 if (found == catalog.skills.end()) throw std::runtime_error("Missing ice armor synergy");
                 spec.armorSynergySkills.push_back(found->first);
             }
-            const DataTable states(archives.read("data/global/excel/states.txt"));
-            for (size_t state = 0; state < states.rows().size(); ++state)
-                if (states.value(state, "state") == skills.value(row, "aurastate")) {
-                    spec.stateGroup = required(states, state, "group");
-                    spec.stateOverlay = loadOverlay(states.value(state, "overlay1"));
-                    break;
-                }
+            const auto state = states.find(skills.value(row, "aurastate"));
+            if (state == states.end()) throw std::runtime_error("Missing Frozen Armor state");
+            spec.state = state->second.definition;
+            spec.stateOverlay = loadOverlay(state->second.overlay);
             if (spec.stateOverlay.id < 0) throw std::runtime_error("Missing Frozen Armor state overlay");
             spec.hitOverlay = loadOverlay(skills.value(row, "cltoverlaya"));
             for (size_t sound = 0; sound < sounds.rows().size(); ++sound)
@@ -192,7 +189,7 @@ void loadSorceressEffects(SkillCatalog &catalog, const DataTable &skills,
                 }
             if (spec.activationSoundArt.empty() || !archives.contains(spec.activationSoundArt))
                 throw std::runtime_error("Missing Frozen Armor activation sound");
-        } else if (effect == Skill::StaticField) {
+        } else if (effect == SkillBehavior::StaticField) {
             if (skills.value(row, "calc1") != "par4" || skills.value(row, "calc2") != "par3" ||
                 skills.value(row, "aurarangecalc") != "ln12")
                 throw std::runtime_error("Unsupported original Static Field formula");
@@ -200,7 +197,7 @@ void loadSorceressEffects(SkillCatalog &catalog, const DataTable &skills,
             spec.staticMinDamage = required(skills, row, "Param3");
             spec.staticRange = required(skills, row, "Param1");
             spec.staticRangePerLevel = required(skills, row, "Param2");
-        } else if (effect != Skill::Teleport) {
+        } else if (effect != SkillBehavior::Teleport) {
             spec.minimumDamage = required(skills, row, "EMin");
             spec.maximumDamage = required(skills, row, "EMax");
             for (int index = 0; index < 5; ++index) {
@@ -214,7 +211,7 @@ void loadSorceressEffects(SkillCatalog &catalog, const DataTable &skills,
                     spec.coldFramesPerLevel[index] = required(skills, row, "ELevLen" + std::to_string(index + 1));
             const auto lengthFormula = skills.value(row, "ELenSymPerCalc");
             if (!lengthFormula.empty()) {
-                if (effect != Skill::IceBlast || lengthFormula != "(skill('Glacial Spike'.blvl))*par7")
+                if (effect != SkillBehavior::IceBlast || lengthFormula != "(skill('Glacial Spike'.blvl))*par7")
                     throw std::runtime_error("Unsupported original cold length synergy");
                 for (const auto &[id, entry] : catalog.skills)
                     if (entry.classCode == "sor" && entry.sourceName == "Glacial Spike")
@@ -247,7 +244,7 @@ void loadSorceressEffects(SkillCatalog &catalog, const DataTable &skills,
                     throw std::runtime_error("Original damage synergy has no supported target");
             }
             auto missileName = skills.value(row, "srvmissile");
-            if (effect == Skill::ChargedBolt) {
+            if (effect == SkillBehavior::ChargedBolt) {
                 const auto countFormula = skills.value(row, "calc1");
                 if ((countFormula != "min(24,ln12)" && countFormula != "\"min(24,ln12)\"") || !spec.lightningDamage)
                     throw std::runtime_error("Unsupported original Charged Bolt formula");
@@ -255,7 +252,7 @@ void loadSorceressEffects(SkillCatalog &catalog, const DataTable &skills,
                 spec.missileCountPerLevel = required(skills, row, "Param2");
                 spec.missileCountLimit = 24;
             }
-            if (effect == Skill::Inferno) {
+            if (effect == SkillBehavior::Inferno) {
                 if (skills.value(row, "calc1") != "ln12/2" || required(skills, row, "seqnum") != 6 ||
                     required(skills, row, "seqinput") != 10 || !spec.fireDamage ||
                     skills.number(row, "usemanaondo").value_or(0) != 0)
@@ -264,8 +261,8 @@ void loadSorceressEffects(SkillCatalog &catalog, const DataTable &skills,
                 spec.flameFrames = required(skills, row, "Param1");
                 spec.flameFramesPerLevel = required(skills, row, "Param2");
             }
-            if (effect == Skill::FrostNova || effect == Skill::Nova || effect == Skill::ChargedBolt ||
-                effect == Skill::Inferno)
+            if (effect == SkillBehavior::FrostNova || effect == SkillBehavior::Nova || effect == SkillBehavior::ChargedBolt ||
+                effect == SkillBehavior::Inferno)
                 missileName = skills.value(row, "srvmissilea");
             size_t missileRow = 0;
             for (; missileRow < missiles.rows().size(); ++missileRow)
@@ -274,7 +271,7 @@ void loadSorceressEffects(SkillCatalog &catalog, const DataTable &skills,
                 throw std::runtime_error("Missing original sorceress missile: " + std::string(name));
             spec.missileId = required(missiles, missileRow, "Id");
             spec.hitOverlay = loadOverlay(missiles.value(missileRow, "ProgOverlay"));
-            if (effect == Skill::IceBlast &&
+            if (effect == SkillBehavior::IceBlast &&
                 (skills.value(row, "EType") != "cold" ||
                  required(missiles, missileRow, "pSrvDmgFunc") != 4 ||
                  required(missiles, missileRow, "CollideKill") != 1))
@@ -285,19 +282,19 @@ void loadSorceressEffects(SkillCatalog &catalog, const DataTable &skills,
             spec.missileAcceleration = missiles.number(missileRow, "Accel").value_or(0);
             spec.missileMaxVelocity = missiles.number(missileRow, "MaxVel").value_or(0);
             spec.missileLifetime = float(required(missiles, missileRow, "Range")) / 25.f;
-            if (effect == Skill::ChargedBolt)
+            if (effect == SkillBehavior::ChargedBolt)
                 spec.missileLifetime = float(std::min(77, required(missiles, missileRow, "Range"))) / 25.f;
-            if (effect == Skill::Fireball) {
+            if (effect == SkillBehavior::Fireball) {
                 if (required(missiles, missileRow, "pSrvHitFunc") != 1)
                     throw std::runtime_error("Unsupported original Fire Ball hit function");
                 spec.impactRadius = float(required(missiles, missileRow, "sHitPar1"));
             }
-            if (effect == Skill::Nova &&
+            if (effect == SkillBehavior::Nova &&
                 (skills.value(row, "EType") != "ltng" ||
                  required(missiles, missileRow, "NextHit") != 1 ||
                  required(missiles, missileRow, "NextDelay") <= 0))
                 throw std::runtime_error("Unsupported original Nova missile rules");
-            if (effect == Skill::Nova || effect == Skill::FrostNova)
+            if (effect == SkillBehavior::Nova || effect == SkillBehavior::FrostNova)
                 spec.missileNextDelay = required(missiles, missileRow, "NextDelay");
             auto file = lower(missiles.value(missileRow, "CelFile"));
             spec.missileArt = "data/global/missiles/" + file + ".dcc";
@@ -311,8 +308,8 @@ void loadSorceressEffects(SkillCatalog &catalog, const DataTable &skills,
                 }
             if (!travelSound.empty() && (spec.releaseSoundArt.empty() || !archives.contains(spec.releaseSoundArt)))
                 throw std::runtime_error("Missing original missile release sound: " + std::string(travelSound));
-            if (effect == Skill::FireBolt || effect == Skill::Fireball ||
-                effect == Skill::IceBolt || effect == Skill::IceBlast) {
+            if (effect == SkillBehavior::FireBolt || effect == SkillBehavior::Fireball ||
+                effect == SkillBehavior::IceBolt || effect == SkillBehavior::IceBlast) {
                 const auto impactName = missiles.value(missileRow, "ExplosionMissile");
                 for (size_t impactRow = 0; impactRow < missiles.rows().size(); ++impactRow)
                     if (!impactName.empty() && missiles.value(impactRow, "Missile") == impactName) {
@@ -334,7 +331,7 @@ void loadSorceressEffects(SkillCatalog &catalog, const DataTable &skills,
                     throw std::runtime_error("Missing original missile impact sound: " + std::string(hitSound));
             }
         }
-        catalog.skills.at(record->id).originalEffect = std::move(spec);
+        catalog.skills.at(record->id).spell = std::move(spec);
     }
 }
 } // namespace d2x

@@ -14,7 +14,7 @@ void Simulation::clearActions() {
     p.route.clear();
     p.attackTarget = {};
     p.throwAttack = p.leftHandAttack = false;
-    p.castTime = p.spinTime = p.leapTime = p.meleeTime = p.hitTime = 0;
+    p.castTime = p.meleeTime = p.hitTime = 0;
     p.lastMeleeDuration = 0;
     p.moving = false;
     p.runningNow = false;
@@ -41,7 +41,6 @@ void Simulation::enterArea(const Grid &grid, const RoomLayout &rooms, Vec spawn,
 void Simulation::restartArea(Vec spawn, std::span<const MonsterSpawn> monsters) {
     auto id = state_.area.region;
     heal();
-    state_.player.cooldown.fill(0);
     AreaState area;
     area.region = id;
     enterArea(*grid_, *rooms_, spawn, safeZone_, std::move(area), monsters);
@@ -108,8 +107,6 @@ void Simulation::execute(const GameCommand &command) {
                         enemy && enemy->hp > 0 && (intent.ignoreActivation || active(enemy->pos)))
                         damageEnemy(*enemy, enemy->hp, state_.player.id, 0, intent.ignoreActivation);
             }
-            else if constexpr (std::is_same_v<T, CastSkill>)
-                cast(intent.skill, intent.target);
             else if constexpr (std::is_same_v<T, ToggleRun>)
                 state_.player.running = !state_.player.running;
             else if constexpr (std::is_same_v<T, StopMoving>)
@@ -125,12 +122,12 @@ void Simulation::tick(float dt, Vec keyboard, bool forceRun) {
     auto &p = state_.player;
     forceRun_ = forceRun;
     p.previous = p.pos;
+    ++state_.frame;
     state_.time += dt;
-    advanceOriginalCasting(p, dt, keyboard.length() > .1f);
-    for (auto &cooldown : p.cooldown)
-        cooldown = std::max(0.f, cooldown - dt);
+    if (!p.combatEffects.expire(state_.frame).empty() && combatEffectsChanged_)
+        combatEffectsChanged_();
+    advanceSkillCasting(p, dt, keyboard.length() > .1f);
     p.castTime = std::max(0.f, p.castTime - dt);
-    p.spinTime = std::max(0.f, p.spinTime - dt);
     p.hitTime = std::max(0.f, p.hitTime - dt);
     p.chill = std::max(0.f, p.chill - dt);
     p.webSlowRemaining = std::max(0.f, p.webSlowRemaining - dt);
@@ -174,23 +171,27 @@ void Simulation::tick(float dt, Vec keyboard, bool forceRun) {
         updatePlayer(dt, keyboard);
         activateMonsters();
         updateMonsters(dt);
-        if (p.hp <= 0) {
-            p.dead = true;
-            stopChannel(p);
-            p.healing.clear();
-            p.manaRestoration.clear();
-            p.staminaBoost = 0;
-            p.chill = 0;
-            p.poisonRemaining = p.poisonPerSecond = 0;
-            p.route.clear();
-            p.attackTarget = {};
-            p.throwAttack = false;
-            p.leftHandAttack = false;
-            state_.message = "You have died. Press Ctrl+R to return.";
-            emit(PlayerDied{p.id});
-        }
     }
     updateMissiles(dt);
+    if (!p.dead && p.hp <= 0) {
+        p.dead = true;
+        if (!p.combatEffects.onDeath(EffectUnitKind::Player).empty() && combatEffectsChanged_)
+            combatEffectsChanged_();
+        stopChannel(p);
+        p.pendingCast.reset();
+        p.castTime = 0;
+        p.healing.clear();
+        p.manaRestoration.clear();
+        p.staminaBoost = 0;
+        p.chill = 0;
+        p.poisonRemaining = p.poisonPerSecond = 0;
+        p.route.clear();
+        p.attackTarget = {};
+        p.throwAttack = false;
+        p.leftHandAttack = false;
+        state_.message = "You have died. Press Ctrl+R to return.";
+        emit(PlayerDied{p.id});
+    }
     if (!p.dead && state_.area.pendingSpawns.empty() && !state_.area.enemies.empty() &&
         state_.area.kills == int(state_.area.enemies.size()))
         state_.message = "Area cleared. Ctrl+F2: travel onward. Ctrl+R: repopulate the area.";

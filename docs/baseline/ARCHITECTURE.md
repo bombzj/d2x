@@ -56,7 +56,8 @@
 - `gameplay/simulation`：固定步调度与模拟生命周期；`combat`、`player`、`monsters`、`consumables`、`loot` 分别持有对应实现。
 - `content/skill_data.*` 从运行时 MPQ 原表建立七职业技能目录、通用动作、初始物品技能、位置、前置、等级与页签；`content/sorceress_data.*` 导入女巫优先技能的 MPQ 法力／伤害／协同／弹体定义与 Levels 传送许可；`content/item_projectiles.*` 把 Weapons／Missiles 原表转为只读弹体定义。`presentation/skill_tree_view.cpp` 和原 DC6 绘制技能树。会话持有原技能 ID 对应的等级和点数；UI 仅选择技能并提交命令。
 - `gameplay/combat/physical_projectiles.cpp` 接普通远程伤害与弹体，`InventoryService::consumeEquipped` 为会话提供可信的箭袋／投掷堆叠消耗；玩法层不读取 MPQ 或图形资源。
-- `gameplay/skills/original.cpp` 按原分段等级增量、定点法力及协同计算女巫技能值，`original_cast.cpp` 实施传送和原弹体；其他已有演示效果仍由 `casting.cpp` 与 `definitions.cpp` 处理。其余主动技能在敌人目标上回退普通攻击，空地无效果；被动技能只记录等级。完整施法帧、抗性、Buff 与其他原版效果尚未实现。
+- `UseSkill → GameSession::useSkill → resolveSkill → Simulation::beginSkillCast` 是原 ID 驱动的技能入口；`gameplay/skills/spec.hpp` 为类型化定义，`resolve.cpp` 计算等级／协同，`casting.cpp` 推进出手和引导。原演示定义、直接枚举施法、旋风／跳跃特例已删除；未实现技能明确拒绝，不代替为普通攻击。已接入四项被动，其余仅记录等级。
+- `content/state_data.*` 导入原 States；`gameplay/effects/state.*` 独立管理目标单位的状态容器、来源／原状态／实例身份、25 Hz 生命周期、重施与组互斥、数值和反应。冰封装甲经 `SkillCastSpec.appliedEffect` 接入，移除反应与实例同寿命。`effects/reactions.cpp` 实施已核实的近战冻结事件；完整光环、诅咒、周期伤害、其他单位的属性消费者仍待逐项接入，详见 [技能](../SKILLS.md#状态效果系统)。
 - `world/maze`：`room_graph.hpp` 持有房间连接与特殊房放置，`generation.cpp` 编排增长、主题替换及配方输出，`cave.cpp`／`crypt.cpp` 提供家族配置；`barracks.cpp` 管兵营入口、楼梯／铁匠房及外侧回廊坐标连接，`resources.cpp` 按家族检查并枚举原资源。`world/maze.hpp` 保留公共入口。静态家族配置不消费随机数；不得随意调整生成各阶段或变体选择的随机数调用顺序。
 
 - 新地图家族：新增 `world` 生成器，返回 `MapRecipe`，接 `region_catalog`；不修改 DS1 解码器来硬塞布局。

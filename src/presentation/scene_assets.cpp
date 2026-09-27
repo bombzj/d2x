@@ -66,7 +66,6 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
         hirelingHead.frames.empty() || hirelingArmor.frames.empty() || hirelingWeapon.frames.empty())
         throw std::runtime_error("Original expansion hireling panel resources are missing");
     loadMonsterAudio(archives, session.monsterContent());
-    fireball = graphics_.single("data/global/missiles/fireball.dcc");
     const auto objectRows = decodeTable(archives.read("data/global/excel/objects.txt"));
     auto portalRecord = std::find_if(objectRows.begin(), objectRows.end(), [](const auto &row) {
         auto id = row.find("Id");
@@ -112,7 +111,6 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
         if (!rule.enabled || rule.fps <= 0)
             throw std::runtime_error("Invalid original Tristram portal animation rules");
     }
-    fireburst = graphics_.single("data/global/missiles/shamanfireballexplodefinal.dcc");
     panel = uiGraphics_.single("data/global/ui/panel/800ctrlpnl7.dc6");
     miniPanel = uiGraphics_.single("data/global/ui/panel/minipanel_s.dc6");
     miniPanelButtons = uiGraphics_.single("data/global/ui/panel/minipanelbtn.dc6");
@@ -231,14 +229,14 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
             projectileAnimations.emplace(item.base.projectile->id, std::move(animation));
         }
     for (const auto &[id, skill] : session.content().skills.skills)
-        if (skill.originalEffect && skill.originalEffect->missileId >= 0 &&
-            !projectileAnimations.contains(skill.originalEffect->missileId)) {
-            auto &missileGraphics = skill.originalEffect->effect == Skill::ChargedBolt ? unitsGraphics_ : graphics_;
-            auto animation = missileGraphics.single(skill.originalEffect->missileArt,
-                                              translucentProjectiles.contains(skill.originalEffect->missileId));
+        if (skill.spell && skill.spell->missileId >= 0 &&
+            !projectileAnimations.contains(skill.spell->missileId)) {
+            auto &missileGraphics = skill.spell->effect == SkillBehavior::ChargedBolt ? unitsGraphics_ : graphics_;
+            auto animation = missileGraphics.single(skill.spell->missileArt,
+                                              translucentProjectiles.contains(skill.spell->missileId));
             if (animation.frames.empty())
                 throw std::runtime_error("Original MPQ skill missile art is missing: " + skill.sourceName);
-            projectileAnimations.emplace(skill.originalEffect->missileId, std::move(animation));
+            projectileAnimations.emplace(skill.spell->missileId, std::move(animation));
         }
     for (const auto &[id, monster] : session.monsterContent().monsters()) {
         if (monsterImplementation(id).substitute) continue;
@@ -268,25 +266,25 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
         }
     }
     for (const auto &[id, skill] : session.content().skills.skills)
-        if (skill.originalEffect) {
-            for (const auto &impact : skill.originalEffect->impacts)
+        if (skill.spell) {
+            for (const auto &impact : skill.spell->impacts)
                 if (!projectileAnimations.contains(impact.missileId))
                     projectileAnimations.emplace(impact.missileId,
                         graphics_.single(impact.art, translucentProjectiles.contains(impact.missileId)));
-            if (!skill.originalEffect->impactSoundArt.empty())
-                audio.registerOriginal(archives, "missile-hit:" + std::to_string(skill.originalEffect->missileId),
-                                       skill.originalEffect->impactSoundArt);
-            if (!skill.originalEffect->releaseSoundArt.empty())
-                audio.registerOriginal(archives, "missile-release:" + std::to_string(skill.originalEffect->missileId),
-                                       skill.originalEffect->releaseSoundArt);
-            if (!skill.originalEffect->activationSoundArt.empty())
-                audio.registerOriginal(archives, "skill-active:" + std::to_string(int(skill.originalEffect->effect)),
-                                       skill.originalEffect->activationSoundArt);
+            if (!skill.spell->impactSoundArt.empty())
+                audio.registerOriginal(archives, "missile-hit:" + std::to_string(skill.spell->missileId),
+                                       skill.spell->impactSoundArt);
+            if (!skill.spell->releaseSoundArt.empty())
+                audio.registerOriginal(archives, "missile-release:" + std::to_string(skill.spell->missileId),
+                                       skill.spell->releaseSoundArt);
+            if (!skill.spell->activationSoundArt.empty())
+                audio.registerOriginal(archives, "skill-active:" + std::to_string(id),
+                                       skill.spell->activationSoundArt);
         }
     for (const auto &[id, skill] : session.content().skills.skills)
-        if (skill.originalEffect)
-            for (const auto &visual : {skill.originalEffect->castOverlay, skill.originalEffect->hitOverlay,
-                                      skill.originalEffect->stateOverlay}) {
+        if (skill.spell)
+            for (const auto &visual : {skill.spell->castOverlay, skill.spell->hitOverlay,
+                                      skill.spell->stateOverlay}) {
                 if (visual.id < 0 || spellOverlays.contains(visual.id)) continue;
                 auto animation = unitsGraphics_.single(visual.art, visual.trans == 3);
                 if (animation.count < visual.frames)
@@ -294,9 +292,9 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
                 spellOverlays.emplace(visual.id, SpellOverlay{std::move(animation), visual});
             }
     for (const auto &[id, skill] : session.content().skills.skills)
-        if (skill.originalEffect && !skill.originalEffect->castSoundArt.empty())
-            audio.registerOriginal(archives, std::to_string(int(skill.originalEffect->effect)),
-                                   skill.originalEffect->castSoundArt);
+        if (skill.spell && !skill.spell->castSoundArt.empty())
+            audio.registerOriginal(archives, "skill-cast:" + std::to_string(id),
+                                   skill.spell->castSoundArt);
     for (const auto &tree : session.content().skills.classes) {
         auto art = graphics_.single("data/global/ui/spells/skltree_" + tree.backgroundToken + "_back.dc6");
         if (art.frames.size() < 16)

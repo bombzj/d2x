@@ -208,7 +208,7 @@ void GameSession::updateExit() {
         return;
     }
     const auto &p = state().player;
-    if (p.castTime > 0 || p.leapTime > 0 || p.spinTime > 0 || p.meleeTime > 0)
+    if (p.castTime > 0 || p.meleeTime > 0)
         return;
     if (exit->boundary
             ? boundaryPassage_ && atPassage(*exit, region().recipe, p.pos, *boundaryPassage_)

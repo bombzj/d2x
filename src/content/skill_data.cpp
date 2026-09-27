@@ -23,15 +23,6 @@ const ClassSkillTree *SkillCatalog::tree(std::string_view code) const {
         [code](const auto &entry) { return entry.classCode == code; });
     return found == classes.end() ? nullptr : &*found;
 }
-std::optional<Skill> implementedSkillEffect(const SkillRecord &record) {
-    if (record.sourceName == "Fire Ball") return Skill::Fireball;
-    if (record.sourceName == "Frost Nova") return Skill::FrostNova;
-    if (record.sourceName == "Whirlwind") return Skill::Whirlwind;
-    if (record.sourceName == "Teleport") return Skill::Teleport;
-    if (record.sourceName == "Leap Attack") return Skill::Leap;
-    if (record.sourceName == "War Cry") return Skill::WarCry;
-    return std::nullopt;
-}
 SkillCatalog loadSkillCatalog(const DataTable &skills, const DataTable &descriptions,
                               const DataTable &characterStats,
                               const std::vector<CharacterDefinition> &characters,
@@ -119,6 +110,10 @@ SkillCatalog loadSkillCatalog(const DataTable &skills, const DataTable &descript
         SkillRecord entry;
         entry.id = *id;
         entry.sourceName = name;
+        if (name == "Attack") entry.basicAction = BasicSkillAction::Attack;
+        else if (name == "Throw") entry.basicAction = BasicSkillAction::Throw;
+        else if (name == "Left Hand Swing") entry.basicAction = BasicSkillAction::LeftHandSwing;
+        else if (name == "Left Hand Throw") entry.basicAction = BasicSkillAction::LeftHandThrow;
         entry.name = name;
         auto display = strings.find(descriptions.value(description->second, "str name"));
         if (!display.empty()) entry.name = display;

@@ -68,7 +68,7 @@ InventoryError GameSession::previewPortalScroll(ItemHandle handle) const {
     if (!location || location->container != playerContainers_.backpack ||
         (!inventory_.catalog().find(item->definition)->bookScroll.empty() && !item->charges) ||
         player.dead ||
-        player.hp <= 0 || region().definition.safe || player.leapTime > 0 || player.spinTime > 0 ||
+        player.hp <= 0 || region().definition.safe ||
         player.castTime > 0 || player.meleeTime > 0)
         return InventoryError::AccessDenied;
     if (!townPortalArrival_ || !portalResources_ || portalReach_ <= 0 ||
@@ -110,7 +110,7 @@ void GameSession::updatePortal() {
         cancelInteraction();
         return;
     }
-    if (player.castTime > 0 || player.meleeTime > 0 || player.leapTime > 0 || player.spinTime > 0)
+    if (player.castTime > 0 || player.meleeTime > 0)
         return;
     if ((player.pos - *position).length() <= portalReach_ && map().grid.segment(player.pos, *position)) {
         bool returning = region().definition.id == RegionId::Encampment;

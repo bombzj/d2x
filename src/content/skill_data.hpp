@@ -1,7 +1,7 @@
 #pragma once
 #include "gameplay/character/attributes.hpp"
 #include "gameplay/model/definitions.hpp"
-#include "gameplay/skills/original.hpp"
+#include "gameplay/skills/spec.hpp"
 #include "resources/data_table.hpp"
 #include "string_table.hpp"
 #include <array>
@@ -18,13 +18,16 @@ struct ClassSkillTree {
     std::vector<int> commonSkills;
     std::optional<int> starterSkill;
 };
+enum class BasicSkillAction { None, Attack, Throw, LeftHandSwing, LeftHandThrow };
 struct SkillRecord {
     int id = -1, page = 0, row = 0, column = 0, iconCell = -1;
     int requiredLevel = 0, maximumRank = 0;
     std::string classCode, sourceName, name, description;
     std::vector<int> prerequisites;
     bool leftAllowed = false, passive = false, allowedInTown = false;
-    std::optional<OriginalSkillSpec> originalEffect;
+    BasicSkillAction basicAction = BasicSkillAction::None;
+    std::optional<SkillSpec> spell;
+    bool executable() const { return !passive && (spell || basicAction != BasicSkillAction::None); }
     std::optional<std::pair<int, int>> manaRecoveryPerRank;
     std::optional<std::pair<int, int>> fireMasteryPerRank;
     std::optional<std::pair<int, int>> lightningMasteryPerRank;
@@ -42,6 +45,4 @@ SkillCatalog loadSkillCatalog(const DataTable &skills, const DataTable &descript
                               const DataTable &characterStats,
                               const std::vector<CharacterDefinition> &characters,
                               const ClassicStrings &strings);
-// Legacy MVP effects; Sorceress original effects take precedence when available.
-std::optional<Skill> implementedSkillEffect(const SkillRecord &record);
 } // namespace d2x

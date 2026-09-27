@@ -44,7 +44,7 @@ class SceneAssets {
     std::map<int, ProjectileVisual> projectileVisuals;
     struct SpellOverlay {
         GpuAnimation animation;
-        OriginalSkillSpec::OverlayVisual visual;
+        SkillSpec::OverlayVisual visual;
     };
     std::map<int, SpellOverlay> spellOverlays;
     std::map<std::string, GpuAnimation> skillTrees;
@@ -69,7 +69,7 @@ class SceneAssets {
     std::array<ObjectAnimationRule, 2> townPortalRules;
     std::array<GpuAnimation, 2> cainPortalAnimations;
     std::array<ObjectAnimationRule, 2> cainPortalRules;
-    GpuAnimation fireball, fireburst, panel, miniPanel, miniPanelButtons, miniPanelToggle,
+    GpuAnimation panel, miniPanel, miniPanelButtons, miniPanelToggle,
         cursor, inventoryPanel, attributeButtons,
         attributePoints, weaponTabs, vendorPanel, vendorTabs,
         questBackground, questSockets, questTabs, questClose, questReplay, goldCoin,

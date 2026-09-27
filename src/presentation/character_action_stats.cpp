@@ -38,36 +38,26 @@ CharacterActionStats characterActionStats(const GameSession &session, std::optio
     if (!skill) return normal();
     const auto *entry = session.content().skills.find(*skill);
     if (!entry || !session.skillAvailable(*skill) || entry->passive) return {};
-    if (entry->classCode.empty()) {
-        if (entry->sourceName == "Unsummon") return {};
-        const bool thrown = entry->sourceName == "Throw" || entry->sourceName == "Left Hand Throw";
-        const bool leftHand = entry->sourceName == "Left Hand Throw" ||
-                              entry->sourceName == "Left Hand Swing";
+    if (entry->basicAction != BasicSkillAction::None) {
+        const bool thrown = entry->basicAction == BasicSkillAction::Throw || entry->basicAction == BasicSkillAction::LeftHandThrow;
+        const bool leftHand = entry->basicAction == BasicSkillAction::LeftHandThrow ||
+                              entry->basicAction == BasicSkillAction::LeftHandSwing;
         auto damage = weaponDamage(session, thrown, leftHand);
         return {damage, damage.empty() ? "" : rating};
     }
-    if (entry->originalEffect) {
+    if (entry->spell) {
         const int rank = session.effectiveSkillRank(*skill);
         if (rank < 1) return {};
-        const auto cast = resolveOriginalSkill(*entry->originalEffect, rank,
+        const auto cast = resolveSkill(*entry->spell, rank,
                                                session.state().player.skillRanks,
                                                session.fireMasteryPercent(),
                                                session.lightningMasteryPercent());
-        if (cast.effect == Skill::Teleport || cast.effect == Skill::StaticField ||
-            cast.effect == Skill::FrozenArmor) return {};
-        if (cast.effect == Skill::Inferno)
+        if (cast.effect == SkillBehavior::Teleport || cast.effect == SkillBehavior::StaticField ||
+            cast.effect == SkillBehavior::FrozenArmor) return {};
+        if (cast.effect == SkillBehavior::Inferno)
             return {damageText(int64_t(cast.minimumDamage * 25), int64_t(cast.maximumDamage * 25)) + "/s", ""};
         return {damageText(int64_t(cast.minimumDamage), int64_t(cast.maximumDamage)), ""};
     }
-    if (auto effect = implementedSkillEffect(*entry)) {
-        const auto &definition = skillDefinition(*effect);
-        if (*effect == Skill::Whirlwind)
-            return {std::to_string(int(definition.damage)) + "/s", ""};
-        if (*effect == Skill::Leap || *effect == Skill::WarCry)
-            return {damageText(int(definition.damage), int(definition.damage)), ""};
-        return {};
-    }
-    // Class skills without their own effect currently execute an ordinary attack.
-    return normal();
+    return {};
 }
 } // namespace d2x

@@ -29,7 +29,7 @@ void GameSession::activateLootObject(EntityId id) {
                                 state().population.difficulty, found->operateFn == 20,
                                 plan.randomState);
     } else if (found->operateFn == 7) {
-        simulation_.state_.area.effects.push_back({found->pos, Skill::Fireball, 0, .5f});
+        // Native barrel explosion art is not implemented; do not reuse a demo spell.
         auto damage = [&](float life) {
             const float minimum = std::max(life / 32.f, 1.f / 256.f);
             const float maximum = std::max(life / 8.f, minimum + 1.f / 256.f);

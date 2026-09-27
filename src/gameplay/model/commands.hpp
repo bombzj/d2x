@@ -27,11 +27,7 @@ struct DebugDamageMonster {
     EntityId target;
     float amount = 0;
 };
-struct CastSkill {
-    Skill skill;
-    Vec target;
-};
-struct UseClassSkill {
+struct UseSkill {
     int id = -1;
     Vec target;
     EntityId enemy;
@@ -115,7 +111,7 @@ struct PickupItem {
 };
 // UI supplies intentions; only the gameplay layer changes authoritative state.
 using GameCommand =
-    std::variant<MoveTo, Attack, CastSkill, UseClassSkill, ToggleRun, SwitchWeaponSet, Interact, IdentifyWithCain, EndNpcConversation, TalkToNpc, ClaimAkaraRespec, ImbueItem, CompleteActOne, BuyVendorItem, SellVendorItem, DebugGrantGold, DebugDropCube, DebugSpawnItem, GoldTransaction, DebugGrantExperience, AllocateAttribute, AllocateSkill, BindSkillHotkey, SelectMouseSkill, DebugResetAttributes, DebugResetSkills, DebugUnlockWaypoints, DebugGrantShrine, Travel, RestartArea, MoveItem, SwapItems,
+    std::variant<MoveTo, Attack, UseSkill, ToggleRun, SwitchWeaponSet, Interact, IdentifyWithCain, EndNpcConversation, TalkToNpc, ClaimAkaraRespec, ImbueItem, CompleteActOne, BuyVendorItem, SellVendorItem, DebugGrantGold, DebugDropCube, DebugSpawnItem, GoldTransaction, DebugGrantExperience, AllocateAttribute, AllocateSkill, BindSkillHotkey, SelectMouseSkill, DebugResetAttributes, DebugResetSkills, DebugUnlockWaypoints, DebugGrantShrine, Travel, RestartArea, MoveItem, SwapItems,
                  SplitStack, MergeStacks, LoadBook, IdentifyItem, PickupItem, StopMoving, EquipBelt, UseItem, UseBeltColumn,
                  CloseStorage, TransferItem, UseExit, EquipItem, DebugKill, DebugSpawnMonster,
                  DebugDamageMonster, UseTownPortal, UseCainPortal, WaypointTravel, OpenGamble, RepairVendorItem,

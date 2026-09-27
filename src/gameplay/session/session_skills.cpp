@@ -43,8 +43,8 @@ int GameSession::effectiveSkillRank(int id) const {
     return skillRank(*skill, state().player, characterDefinition_, characterStats().combat,
                      inventory_, playerContainers_, equipmentActor());
 }
-bool GameSession::applyOriginalCastTiming(OriginalSkillCast &cast) const {
-    if (cast.effect == Skill::Inferno) {
+bool GameSession::applySkillCastTiming(SkillCastSpec &cast) const {
+    if (cast.effect == SkillBehavior::Inferno) {
         cast.castDuration = 15.f / 25.f;
         cast.castImpact = 10.f / 25.f;
         cast.castRate = 25;
@@ -63,8 +63,6 @@ bool GameSession::applyOriginalCastTiming(OriginalSkillCast &cast) const {
             weapon = definition->equipment.twoHandWeaponClass;
     }
     auto timing = content_.skills.castTimings.find(characterAppearance() + "sc" + weapon);
-    if (timing == content_.skills.castTimings.end())
-        timing = content_.skills.castTimings.find(characterAppearance() + "schth");
     if (timing == content_.skills.castTimings.end()) return false;
     const auto &animation = timing->second;
     const int faster = std::max(0, characterStats().combat.fasterCast);
@@ -121,6 +119,47 @@ void GameSession::applyWarmth(CharacterAttributes &stats, const PlayerState &pla
     }
     if (active)
         stats.manaRegen = manaRecoveryRate(stats.maxMana, definition.manaRegen, stats.combat.manaRecovery);
+}
+void GameSession::useSkill(const UseSkill &intent) {
+    const auto *entry = content_.skills.find(intent.id);
+    const auto &player = state().player;
+    if (!entry || entry->passive || player.dead || !skillAvailable(intent.id)) return;
+    if (!entry->executable()) {
+        simulation_.state_.message = "This skill effect is not implemented";
+        return;
+    }
+    if (region().definition.safe && !entry->allowedInTown) {
+        simulation_.state_.message = "This skill cannot be used in town";
+        return;
+    }
+    if (entry->basicAction != BasicSkillAction::None) {
+        if (!intent.enemy) return;
+        cancelExit(); cancelPickup(); cancelInteraction();
+        const bool thrown = entry->basicAction == BasicSkillAction::Throw ||
+                            entry->basicAction == BasicSkillAction::LeftHandThrow;
+        const bool leftHand = entry->basicAction == BasicSkillAction::LeftHandSwing ||
+                              entry->basicAction == BasicSkillAction::LeftHandThrow;
+        simulation_.execute(Attack{intent.enemy, thrown, leftHand});
+        return;
+    }
+    if (entry->spell) {
+        const int rank = effectiveSkillRank(intent.id);
+        auto resolved = resolveSkill(*entry->spell, rank,
+                                     player.skillRanks, fireMasteryPercent(),
+                                     lightningMasteryPercent());
+        if (!applySkillCastTiming(resolved)) {
+            simulation_.state_.message = "Original cast animation timing is unavailable";
+            return;
+        }
+        const int levelId = int(region().definition.id);
+        const bool teleportAllowed = content_.teleportByLevel.contains(levelId) &&
+            content_.teleportByLevel.at(levelId) != 0;
+        cancelExit(); cancelPickup(); cancelInteraction();
+        simulation_.beginSkillCast(simulation_.state_.player, resolved, intent.target, teleportAllowed,
+            content_.staticFieldMinimum.at(size_t(state().population.difficulty)), intent.enemy);
+        return;
+    }
+    simulation_.state_.message = "This skill effect is not implemented";
 }
 bool GameSession::skillAvailable(int id) const {
     const auto *entry = content_.skills.find(id);

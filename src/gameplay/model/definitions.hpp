@@ -6,8 +6,8 @@
 #include <vector>
 
 namespace d2x {
-enum class Skill { Fireball, FrostNova, Whirlwind, Teleport, Leap, WarCry, FireBolt, StaticField, IceBolt, Nova, IceBlast, ChargedBolt, FrozenArmor, Inferno, Count };
-constexpr size_t skillCount = size_t(Skill::Count);
+// Execution behavior is not a Skills.txt identity or a persistent ID.
+enum class SkillBehavior { None, Fireball, FrostNova, Teleport, FireBolt, StaticField, IceBolt, Nova, IceBlast, ChargedBolt, FrozenArmor, Inferno };
 enum class MonsterKind { Fallen, Zombie, Skeleton, CorruptRogue, Brute, Goatman, QuillRat,
                          Wraith, CorruptLancer, CorruptArcher, SkeletonBow, Bighead,
                          HellBovine, SkeletonMage, Fetish, Vampire, FallenShaman,
@@ -17,19 +17,12 @@ enum class RegionId { Encampment = 1 };
 enum class Interaction { None, Talk, Heal, Travel, Stash, Loot, Shrine, Well,
                          QuestTree, QuestStone, QuestGibbet, QuestTome, QuestMalus, Door };
 
-struct SkillDefinition {
-    Skill id;
-    const char *name, *shortName, *description;
-    float manaCost, cooldown, castDuration, damage, radius, range, duration, chill, stun;
-    float projectileSpeed = 0;
-};
 struct MonsterDefinition {
     MonsterKind id;
     const char *token;
     float maxLife, speed, damage, attackInterval, sightRange, attackRange;
 };
 struct PlayerRules {
-    float spinSpeed = 8;
     float meleeRange = 2, meleeRadius = 1.2f, meleeDuration = .48f;
 };
 struct RegionDefinition {
@@ -37,7 +30,6 @@ struct RegionDefinition {
     std::string name, mapPath;
     bool safe = false;
 };
-const SkillDefinition &skillDefinition(Skill id);
 const MonsterDefinition &monsterDefinition(MonsterKind id);
 const PlayerRules &playerRules();
 } // namespace d2x

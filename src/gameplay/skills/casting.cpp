@@ -1,61 +1,194 @@
 #include "gameplay/simulation/simulation.hpp"
-#include "gameplay/skills/execution.hpp"
+#include <algorithm>
+#include <cmath>
+#include <cstdint>
 
 namespace d2x {
-bool Simulation::cast(Skill id, Vec target) {
-    return SkillSystem::cast(*this, id, target);
+void Simulation::stopChannel(PlayerState &player) {
+    if (!player.channel) return;
+    player.channel.reset();
+    player.castTime = 0;
 }
-bool SkillSystem::clearGround(const Simulation &simulation, Vec target, const SkillDefinition &skill) {
-    return simulation.grid_->walkable(target) &&
-            !((target - simulation.state_.player.pos).length() > skill.range);
+void Simulation::advanceSkillCasting(PlayerState &player, float dt, bool moving) {
+    auto &channel = player.channel;
+    if (channel && (player.dead || player.hitTime > 0 || moving)) stopChannel(player);
+    if (channel && channel->enemy) {
+        const auto *enemy = findEnemy(channel->enemy);
+        if (!enemy || enemy->hp <= 0 || !active(enemy->pos)) stopChannel(player);
+        else {
+            channel->target = enemy->pos;
+            const auto direction = (enemy->pos - player.pos).unit();
+            if (direction.length() > 0) player.look = direction;
+        }
+    }
+    if (channel) {
+        channel->age += dt;
+        channel->remaining -= dt;
+        while (channel && channel->remaining < -.00001f) {
+            const bool consumeMana = channel->pulses % 2 == 0;
+            if (consumeMana && player.mana < channel->skill.manaCost) { stopChannel(player); break; }
+            if (channel->pulses == 0)
+                emit(MissileReleased{channel->skill.missileId});
+            releaseSkillCast(player, channel->skill, channel->target, 0, consumeMana);
+            ++channel->pulses;
+            channel->remaining += 1.f / 25.f;
+        }
+        if (channel) player.castTime = 1;
+    }
+    auto &pendingCast = player.pendingCast;
+    if (pendingCast && (player.dead || player.hitTime > 0)) {
+        pendingCast.reset();
+        player.castTime = 0;
+    }
+    if (pendingCast) {
+        pendingCast->remaining -= dt;
+        if (pendingCast->remaining <= .00001f) {
+            auto cast = *pendingCast;
+            pendingCast.reset();
+            if (cast.enemy) {
+                const auto *enemy = findEnemy(cast.enemy);
+                if (!enemy || enemy->hp <= 0 || !active(enemy->pos)) return;
+                cast.target = enemy->pos;
+                const auto direction = (cast.target - player.pos).unit();
+                if (direction.length() > 0) player.look = direction;
+            }
+            releaseSkillCast(player, cast.skill, cast.target, cast.staticFieldMinimum);
+        }
+    }
 }
-bool SkillSystem::cast(Simulation &simulation, Skill id, Vec target) {
-    if (simulation.safeZone_) return false;
-    struct Implementation {
-        Effect effect;
-        Validator validate;
-        const char *failure;
-    };
-    static constexpr std::array<Implementation, skillCount> implementations{{
-        {nullptr, nullptr, nullptr}, // Sorceress spells use the MPQ-derived original cast path.
-        {nullptr, nullptr, nullptr},
-        {whirlwind, nullptr, nullptr},
-        {nullptr, nullptr, nullptr},
-        {leap, clearGround, "Leap needs clear ground within range"},
-        {warCry, nullptr, nullptr},
-    }};
-    auto &state = simulation.state_;
-    auto &p = state.player;
-    auto index = size_t(id);
-    if (index >= skillCount || p.dead || p.castTime > 0 || p.spinTime > 0 || p.leapTime > 0 ||
-        p.cooldown[index] > 0)
+bool Simulation::beginSkillCast(PlayerState &player, const SkillCastSpec &skill, Vec target, bool teleportAllowed,
+                              int staticFieldMinimum, EntityId enemy) {
+    if (player.channel) {
+        if (skill.sourceId == player.channel->skill.sourceId && !player.dead && player.hitTime <= 0) {
+            player.channel->target = target;
+            player.channel->enemy = enemy;
+            const auto direction = (target - player.pos).unit();
+            if (direction.length() > 0) player.look = direction;
+            return true;
+        }
+        stopChannel(player);
+    }
+    if (player.dead || player.castTime > 0 ||
+        player.meleeTime > 0 || player.hitTime > 0 || skill.castDuration <= 0)
         return false;
-    const auto &skill = skillDefinition(id);
-    if (p.mana < skill.manaCost) {
-        state.message = "Not enough mana";
+    if (skill.effect == SkillBehavior::Teleport && (!teleportAllowed || !grid_->walkable(target))) {
+        state_.message = "Teleport needs permitted, clear ground";
         return false;
     }
-    const auto &implementation = implementations[index];
-    if (!implementation.effect)
-        return false;
-    if (implementation.validate && !implementation.validate(simulation, target, skill)) {
-        state.message = implementation.failure;
+    if (player.mana < std::max(skill.manaCost, skill.startMana)) {
+        state_.message = "Not enough mana";
         return false;
     }
-    p.mana -= skill.manaCost;
-    p.cooldown[index] = skill.cooldown;
-    p.castTime = skill.castDuration;
-    p.lastCastDuration = skill.castDuration;
-    p.lastCastRate = 0;
-    auto aim = (target - p.pos).unit();
-    if (aim.length() > 0)
-        p.look = aim;
-    p.route.clear();
-    p.attackTarget = {};
-    p.lastSkill = id;
-    state.message.clear();
-    simulation.emit(SkillCast{p.id, id, p.pos});
-    implementation.effect(simulation, target, skill);
+    const Vec aim = (target - player.pos).unit();
+    if (aim.length() > 0) player.look = aim;
+    player.castTime = skill.castDuration;
+    player.lastCastDuration = player.castTime;
+    player.lastCastRate = skill.castRate;
+    player.route.clear();
+    player.attackTarget = {};
+    player.throwAttack = player.leftHandAttack = false;
+    state_.message.clear();
+    if (skill.effect == SkillBehavior::Inferno) {
+        player.mana -= skill.manaCost;
+        player.channel = PlayerState::ChannelCast{skill, target, skill.castImpact, 0, 0, enemy};
+        emit(SkillCast{player.id, skill.sourceId, player.pos});
+        return true;
+    }
+    emit(SkillCast{player.id, skill.sourceId, player.pos});
+    if (skill.castOverlayId >= 0)
+        state_.area.effects.push_back({player.pos, 0, skill.visualDuration,
+                                      -1, skill.castOverlayId, player.id});
+    player.pendingCast = PlayerState::PendingCast{skill, target, staticFieldMinimum, skill.castImpact, enemy};
     return true;
+}
+void Simulation::releaseSkillCast(PlayerState &player, const SkillCastSpec &skill, Vec target,
+                                     int staticFieldMinimum, bool consumeMana) {
+    if (player.dead || (consumeMana && player.mana < skill.manaCost) ||
+        (skill.effect == SkillBehavior::Teleport && !grid_->walkable(target))) return;
+    if (consumeMana) player.mana -= skill.manaCost;
+    if (skill.missileId >= 0 && skill.effect != SkillBehavior::Inferno) emit(MissileReleased{skill.missileId});
+    if (skill.appliedEffect) {
+        auto effect = *skill.appliedEffect;
+        effect.source.entity = player.id;
+        player.combatEffects.apply(std::move(effect), state_.frame);
+        if (combatEffectsChanged_) combatEffectsChanged_();
+        emit(SkillActivated{skill.sourceId});
+    } else if (skill.effect == SkillBehavior::Teleport) {
+        player.pos = player.previous = target;
+    } else if (skill.effect == SkillBehavior::StaticField) {
+        for (auto &enemy : state_.area.enemies) {
+            if (enemy.hp <= 0 || !active(enemy.pos) ||
+                (enemy.pos - player.pos).length() > skill.staticRadius) continue;
+            const int hitpoints = int(enemy.hp);
+            if (hitpoints < 1 || (staticFieldMinimum > 0 &&
+                hitpoints <= int(enemy.maxHp) * staticFieldMinimum / 100)) continue;
+            float amount = std::max(skill.staticMinDamage,
+                float(std::min(hitpoints * int(skill.staticPercent) / 100, hitpoints - 1)));
+            if (monsterResistance_)
+                if (auto resistance = monsterResistance_(enemy, state_.area.region, MonsterDamageType::Lightning))
+                    amount *= float(std::clamp(100 - *resistance, 0, 100)) / 100.f;
+            if (amount > 0) damageEnemy(enemy, amount, player.id, 0, false,
+                                        MonsterDamageType::Lightning, true);
+        }
+    } else if (skill.effect == SkillBehavior::ChargedBolt) {
+        if ((target - player.pos).length() < 1) target = player.pos + player.look * 10;
+        for (int index = 0; index < skill.missileCount; ++index) {
+            player.combatRandom = uint64_t(uint32_t(player.combatRandom)) * 0x6ac690c5ULL +
+                                  (player.combatRandom >> 32);
+            const int minimum = int(skill.minimumDamage * 256), maximum = int(skill.maximumDamage * 256);
+            const float amount = float(minimum + uint32_t(player.combatRandom) % unsigned(maximum - minimum + 1)) / 256.f;
+            Missile missile;
+            missile.id = ids_.allocate();
+            missile.owner = player.id;
+            missile.pos = player.pos;
+            missile.velocity = player.look * skill.missileVelocity;
+            missile.remaining = skill.missileLifetime;
+            missile.behavior = skill.effect;
+            missile.missileId = skill.missileId;
+            missile.damage = amount;
+            missile.hitOverlayId = skill.hitOverlayId;
+            missile.hitOverlayDuration = skill.hitOverlayDuration;
+            const auto path = chargedBoltPath(player.pos, target, index, int(skill.missileLifetime * 25 + .5f));
+            missile.path.assign(path.begin(), path.end());
+            state_.area.missiles.push_back(std::move(missile));
+        }
+    } else if (skill.effect == SkillBehavior::FrostNova || skill.effect == SkillBehavior::Nova) {
+        constexpr int directions = 64;
+        constexpr int offsets[]{30, 29, 29, 28, 27, 26, 24, 23, 21, 19, 16, 14, 11, 8, 5, 2,
+            0, -2, -5, -8, -11, -14, -16, -19, -21, -23, -24, -26, -27, -28, -29, -29,
+            -30, -29, -29, -28, -27, -26, -24, -23, -21, -19, -16, -14, -11, -8, -5, -2,
+            0, 2, 5, 8, 11, 14, 16, 19, 21, 23, 24, 26, 27, 28, 29, 29};
+        for (int index = 0; index < directions; ++index) {
+            const Vec heading = Vec{float(offsets[index]), float(offsets[(index + 48) % directions])}.unit();
+            player.combatRandom = uint64_t(uint32_t(player.combatRandom)) * 0x6ac690c5ULL +
+                                  (player.combatRandom >> 32);
+            const float fraction = float(uint32_t(player.combatRandom)) / 4294967295.f;
+            const float amount = skill.minimumDamage +
+                (skill.maximumDamage - skill.minimumDamage) * fraction;
+            state_.area.missiles.push_back({ids_.allocate(), player.id, player.pos,
+                heading * skill.missileVelocity, skill.missileLifetime, skill.effect,
+                false, skill.missileId, amount, 0, skill.coldDuration});
+            state_.area.missiles.back().nextHitDelay = skill.missileNextDelay;
+            state_.area.missiles.back().acceleration = skill.missileAcceleration;
+            state_.area.missiles.back().maxVelocity = skill.missileMaxVelocity;
+            state_.area.missiles.back().hitOverlayId = skill.hitOverlayId;
+            state_.area.missiles.back().hitOverlayDuration = skill.hitOverlayDuration;
+        }
+    } else if (skill.effect == SkillBehavior::FireBolt || skill.effect == SkillBehavior::Fireball ||
+               skill.effect == SkillBehavior::IceBolt || skill.effect == SkillBehavior::IceBlast ||
+               skill.effect == SkillBehavior::Inferno) {
+        player.combatRandom = uint64_t(uint32_t(player.combatRandom)) * 0x6ac690c5ULL +
+                              (player.combatRandom >> 32);
+        const float fraction = float(uint32_t(player.combatRandom)) / 4294967295.f;
+        const float amount = skill.minimumDamage +
+                             (skill.maximumDamage - skill.minimumDamage) * fraction;
+        state_.area.missiles.push_back({ids_.allocate(), player.id, player.pos + player.look * .7f,
+            player.look * skill.missileVelocity, skill.missileLifetime, skill.effect,
+            false, skill.missileId, amount, skill.impactRadius, skill.coldDuration});
+        state_.area.missiles.back().acceleration = skill.missileAcceleration;
+        state_.area.missiles.back().maxVelocity = skill.missileMaxVelocity;
+        state_.area.missiles.back().impactMissileId = skill.impactMissileId;
+        state_.area.missiles.back().impactDuration = skill.impactDuration;
+    }
 }
 } // namespace d2x

@@ -58,7 +58,7 @@ void SceneController::click(Vec mouse) {
             leftCombatTarget_ = enemy.id;
             leftTargetSkill_ = ui.leftSkill;
             if (ui.leftSkill)
-                session_.submit(UseClassSkill{*ui.leftSkill, enemy.pos, enemy.id});
+                session_.submit(UseSkill{*ui.leftSkill, enemy.pos, enemy.id});
             else
                 session_.submit(Attack{enemy.id});
             return;
@@ -647,7 +647,7 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
             [&](const Enemy &enemy) { return enemy.id == target && enemy.hp > 0; });
         if (found != enemies.end() && session_.active(found->pos) &&
             skill == (right ? rightTargetSkill_ : leftTargetSkill_)) {
-            if (skill) session_.submit(UseClassSkill{*skill, found->pos, target});
+            if (skill) session_.submit(UseSkill{*skill, found->pos, target});
             else session_.submit(Attack{target});
         } else {
             session_.submit(StopMoving{});
@@ -747,7 +747,7 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
     if (!hudSurface(input.mouse) && CheckCollisionPointRec(rv(input.mouse), view_.worldViewport())) {
         if (input.leftPressed || (input.leftHeld && !pickupClick_ && repeatClick_ <= 0)) {
             if (input.shift && ui.leftSkill)
-                session_.submit(UseClassSkill{*ui.leftSkill, view_.world(input.mouse), {}});
+                session_.submit(UseSkill{*ui.leftSkill, view_.world(input.mouse), {}});
             else if (input.leftPressed)
                 click(input.mouse);
             else {
@@ -758,8 +758,8 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
             repeatClick_ = 1.f / 6.f;
         }
         const auto *rightSkill = ui.rightSkill ? session_.content().skills.find(*ui.rightSkill) : nullptr;
-        const bool channeled = rightSkill && rightSkill->originalEffect &&
-            rightSkill->originalEffect->effect == Skill::Inferno;
+        const bool channeled = rightSkill && rightSkill->spell &&
+            rightSkill->spell->effect == SkillBehavior::Inferno;
         if (input.rightHeld && !inventoryRight_ && (!channeled ||
             (input.movement.length() <= .1f && !input.leftPressed && !input.leftHeld))) {
             EntityId target;
@@ -776,7 +776,7 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
                 for (const auto &enemy : session_.state().area.enemies)
                     if (enemy.id == target) { aim = enemy.pos; break; }
             if (ui.rightSkill) {
-                session_.submit(UseClassSkill{*ui.rightSkill, aim, target});
+                session_.submit(UseSkill{*ui.rightSkill, aim, target});
                 if (channeled) channelInputSkill_ = *ui.rightSkill;
             } else if (target)
                 session_.submit(Attack{target});

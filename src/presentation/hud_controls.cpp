@@ -33,23 +33,16 @@ void SceneView::drawSkillIcon(std::optional<int> skill, Rectangle bounds) const 
     const auto &player = session_.state().player;
     const auto *entry = skill ? session_.content().skills.find(*skill) : nullptr;
     auto icon = skill ? assets_.skillIcons.find(*skill) : assets_.skillIcons.end();
-    const auto *image = icon == assets_.skillIcons.end() ? &assets_.attackIcon : &icon->second.sprite;
-    bool available = !player.dead && (!skill || (entry && session_.skillAvailable(*skill)));
+    const auto *image = !skill ? &assets_.attackIcon
+                              : icon != assets_.skillIcons.end() ? &icon->second.sprite : nullptr;
+    bool available = !player.dead && (!skill || (entry && entry->executable() && session_.skillAvailable(*skill)));
     if (session_.region().definition.safe)
         available &= entry && entry->allowedInTown;
-    auto effect = entry ? implementedSkillEffect(*entry) : std::nullopt;
-    if (entry && entry->originalEffect && session_.effectiveSkillRank(*skill) > 0)
-        available &= player.mana >= std::max(player.channelSkill() == *skill ? 0.f : float(entry->originalEffect->startMana), resolveOriginalSkill(*entry->originalEffect,
+    if (entry && entry->spell && session_.effectiveSkillRank(*skill) > 0)
+        available &= player.mana >= std::max(player.channelSkill() == *skill ? 0.f : float(entry->spell->startMana), resolveSkill(*entry->spell,
             session_.effectiveSkillRank(*skill), player.skillRanks, session_.fireMasteryPercent(),
             session_.lightningMasteryPercent()).manaCost);
-    else if (effect) available &= player.mana >= skillDefinition(*effect).manaCost;
     imageAt(image, bounds, available ? WHITE : Color{255, 64, 64, 255});
-    if (effect && (!entry || !entry->originalEffect) && player.cooldown[size_t(*effect)] > 0) {
-        auto time = std::string(TextFormat("%.1f", player.cooldown[size_t(*effect)]));
-        DrawRectangleRec(bounds, {0, 0, 0, 115});
-        painter_.label(time, int(bounds.x + (bounds.width - painter_.measure(time, 12)) / 2),
-                       int(bounds.y + bounds.height / 2 - 6), 12, parchment);
-    }
 }
 void SceneView::drawControlPanel() const {
     const auto &player = session_.state().player;
@@ -121,7 +114,7 @@ std::vector<std::optional<int>> SceneView::skillChoices(bool right) const {
         const auto *entry = session_.content().skills.find(id);
         if (!entry || (right == false && !entry->leftAllowed)) continue;
         if (entry->sourceName == "Throw" || entry->sourceName == "Left Hand Throw" ||
-            entry->sourceName == "Kick" || entry->sourceName == "Left Hand Swing" ||
+            entry->basicAction == BasicSkillAction::Attack || entry->basicAction == BasicSkillAction::LeftHandSwing ||
             entry->sourceName == "Unsummon")
             choices.push_back(id);
     }
@@ -162,34 +155,32 @@ void SceneView::drawSkillControls(Vec mouse) const {
         auto choice = *hovered;
         auto entry = choice ? session_.content().skills.find(*choice) : nullptr;
         auto name = entry ? entry->name : "Attack";
-        auto effect = entry ? implementedSkillEffect(*entry) : std::nullopt;
         std::string detail;
-        if (entry && entry->originalEffect && session_.effectiveSkillRank(*choice) > 0) {
-            const auto value = resolveOriginalSkill(*entry->originalEffect,
+        if (entry && entry->spell && session_.effectiveSkillRank(*choice) > 0) {
+            const auto value = resolveSkill(*entry->spell,
                 session_.effectiveSkillRank(*choice), session_.state().player.skillRanks,
                 session_.fireMasteryPercent(), session_.lightningMasteryPercent());
             detail = "Mana " + std::string(TextFormat("%.1f", value.manaCost));
-            if (value.effect == Skill::Teleport) detail += " / Teleport to clear ground";
-            else if (value.effect == Skill::Inferno)
+            if (value.effect == SkillBehavior::Teleport) detail += " / Teleport to clear ground";
+            else if (value.effect == SkillBehavior::Inferno)
                 detail = "Mana/sec " + std::string(TextFormat("%.1f", value.manaCost * 12.5f)) +
                     " / Damage/sec " + std::string(TextFormat("%.1f-%.1f", value.minimumDamage * 25, value.maximumDamage * 25));
-            else if (value.effect == Skill::FrozenArmor)
-                detail += " / Defense +" + std::to_string(value.defensePercent) + "% / " +
-                    std::to_string(int(value.buffDuration)) + " seconds";
-            else if (value.effect == Skill::StaticField)
+            else if (value.appliedEffect)
+                detail += " / Defense +" + std::to_string(value.appliedEffect->modifiers.combat.defensePercent) + "% / " +
+                    std::to_string(value.appliedEffect->duration.value() / 25) + " seconds";
+            else if (value.effect == SkillBehavior::StaticField)
                 detail += " / " + std::to_string(int(value.staticPercent)) + "% current life, range " +
                     std::to_string(int(value.staticRadius));
             else detail += " / Damage " + std::string(TextFormat("%.1f", value.minimumDamage)) +
                 "-" + std::string(TextFormat("%.1f", value.maximumDamage));
-        } else detail = !entry ? "Normal weapon attack" : effect
-            ? std::string(skillDefinition(*effect).description)
+        } else detail = !entry ? "Normal weapon attack"
             : entry->sourceName == "Throw" || entry->sourceName == "Left Hand Throw"
                 ? "Throw equipped weapon; consumes one from the stack"
-            : entry->sourceName == "Kick" || entry->sourceName == "Left Hand Swing"
+            : entry->basicAction == BasicSkillAction::Attack || entry->basicAction == BasicSkillAction::LeftHandSwing
                 ? "Uses the current basic melee damage"
             : entry->sourceName == "Unsummon"
                 ? "No summoned ally is available"
-                : "Effect pending; enemy target uses normal attack";
+                : "Effect not implemented";
         float y = H - (view_.skillPicker ? 108 : 55) * hudScale - 60;
         DrawRectangle(W / 2 - 260, int(y), 520, 52, {0, 0, 0, 225});
         painter_.centered(name, int(y + 7), 16, gold);

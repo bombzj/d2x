@@ -12,7 +12,7 @@ void Simulation::stopWalking() {
 void Simulation::moveTo(Vec target) {
     stopChannel(state_.player);
     auto &p = state_.player;
-    if (p.dead || p.leapTime > 0 || p.spinTime > 0)
+    if (p.dead)
         return;
     p.attackTarget = {};
     p.throwAttack = false;
@@ -49,15 +49,6 @@ void Simulation::updatePlayer(float dt, Vec keyboard) {
     Vec step;
     float remaining = 0;
     bool followingRoute = false;
-    if (p.leapTime > 0) {
-        const auto &skill = skillDefinition(Skill::Leap);
-        p.leapTime = std::max(0.f, p.leapTime - dt);
-        p.pos = p.leapStart + (p.leapEnd - p.leapStart) * (1 - p.leapTime / skill.duration);
-        if (p.leapTime <= 0) {
-            damage(p.pos, skill.radius, skill.damage, p.id);
-            state_.area.effects.push_back({p.pos, Skill::Leap, 0, .5f});
-        }
-    }
     if (p.attackTarget) {
         auto *e = findEnemy(p.attackTarget);
         if (!e || e->hp <= 0) {
@@ -86,7 +77,7 @@ void Simulation::updatePlayer(float dt, Vec keyboard) {
                                               : grid_->segment(p.pos, e->pos);
                 if ((e->pos - p.pos).length() < range && clear) {
                     p.route.clear();
-                    if (p.castTime <= 0 && p.meleeTime <= 0 && p.leapTime <= 0 && p.spinTime <= 0) {
+                    if (p.castTime <= 0 && p.meleeTime <= 0) {
                         p.look = (e->pos - p.pos).unit();
                         if (!projectile || firePhysicalProjectile(*e, *weapon, p.throwAttack)) {
                             p.lastMeleeDuration = rules.meleeDuration * (p.chill > 0 ? 2.f : 1.f);
@@ -101,14 +92,14 @@ void Simulation::updatePlayer(float dt, Vec keyboard) {
             }
         }
     }
-    if (keyboard.length() > .1f && p.spinTime <= 0 && p.leapTime <= 0 && p.castTime <= 0 &&
+    if (keyboard.length() > .1f && p.castTime <= 0 &&
         p.meleeTime <= 0) {
         p.route.clear();
         p.attackTarget = {};
         p.throwAttack = false;
         p.leftHandAttack = false;
         step = keyboard.unit();
-    } else if (!p.route.empty() && p.castTime <= 0 && p.leapTime <= 0 && p.meleeTime <= 0) {
+    } else if (!p.route.empty() && p.castTime <= 0 && p.meleeTime <= 0) {
         while (!p.route.empty() && (p.route.front() - p.pos).length() < .01f)
             p.route.pop_front();
         if (!p.route.empty()) {
@@ -120,8 +111,7 @@ void Simulation::updatePlayer(float dt, Vec keyboard) {
     }
     const bool running = (p.running || forceRun_) && (safeZone_ || p.stamina > 0);
     p.runningNow = running;
-    float speed = p.spinTime > 0 ? rules.spinSpeed
-                                : running ? characterStats_.runSpeed : characterStats_.walkSpeed;
+    float speed = running ? characterStats_.runSpeed : characterStats_.walkSpeed;
     if (p.chill > 0) speed *= .5f;
     if (p.webSlowRemaining > 0)
         speed *= std::max(0.f, 1.f + float(p.webSlowPercent) / 100.f);
@@ -143,8 +133,7 @@ void Simulation::updatePlayer(float dt, Vec keyboard) {
             if (followingRoute && distance >= remaining)
                 p.route.pop_front();
             p.moving = true;
-            if (p.spinTime <= 0)
-                p.look = step;
+            p.look = step;
         } else if (distance > 0.0001f)
             p.route.clear();
     }
@@ -161,9 +150,5 @@ void Simulation::updatePlayer(float dt, Vec keyboard) {
         }
     }
     p.stamina = std::clamp(p.stamina + dt * staminaRate, 0.f, float(characterStats_.maxStamina));
-    if (p.spinTime > 0) {
-        const auto &skill = skillDefinition(Skill::Whirlwind);
-        damage(p.pos, skill.radius, dt * skill.damage, p.id);
-    }
 }
 } // namespace d2x

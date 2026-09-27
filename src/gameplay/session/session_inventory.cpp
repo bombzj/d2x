@@ -5,19 +5,15 @@
 
 namespace d2x {
 namespace {
-CharacterModifiers activeModifiers(const PlayerState &player, float now) {
-    CharacterModifiers result;
-    for (const auto &effect : player.combatEffects)
-        if (effect.expiresAt > now)
-            mergeCharacterModifiers(result, effect.modifiers);
-    return result;
+CharacterModifiers activeModifiers(const PlayerState &player, EffectFrame now) {
+    return player.combatEffects.modifiers(now);
 }
 }
 EquipmentActor GameSession::equipmentActor() const {
     return equipmentActor(state().player);
 }
 EquipmentActor GameSession::equipmentActor(const PlayerState &player) const {
-    auto effects = activeModifiers(player, state().time);
+    auto effects = activeModifiers(player, state().frame);
     auto base = deriveCharacterAttributes(characterDefinition_, player.level, player.allocated, effects);
     EquipmentActor baseActor{characterDefinition_.code, base.strength, base.dexterity, player.level,
                              base.blockFactor, player.weaponSet};
@@ -30,7 +26,7 @@ EquipmentActor GameSession::equipmentActor(const PlayerState &player) const {
 void GameSession::refreshCharacter(bool fillGains) {
     auto &player = simulation_.state_.player;
     const auto previous = simulation_.characterStats_;
-    auto effects = activeModifiers(player, state().time);
+    auto effects = activeModifiers(player, state().frame);
     auto base = deriveCharacterAttributes(characterDefinition_, player.level, player.allocated, effects);
     EquipmentActor baseActor{characterDefinition_.code, base.strength, base.dexterity, player.level,
                              base.blockFactor, player.weaponSet};

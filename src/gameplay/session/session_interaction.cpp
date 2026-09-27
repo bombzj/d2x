@@ -113,7 +113,7 @@ void GameSession::updateInteraction() {
         cancelInteraction();
         return;
     }
-    if (player.castTime > 0 || player.meleeTime > 0 || player.leapTime > 0 || player.spinTime > 0)
+    if (player.castTime > 0 || player.meleeTime > 0)
         return;
     if (canReach(*target)) {
         cancelInteraction();
@@ -246,7 +246,7 @@ bool GameSession::travelWaypoint(const WaypointTravel &command) {
     if (!source || source->name != "Waypoint" || source->interaction != Interaction::Travel ||
         !canReach(*source) || !waypointUnlocked(region().definition.id) ||
         !waypointUnlocked(command.destination) || state().player.castTime > 0 ||
-        state().player.meleeTime > 0 || state().player.leapTime > 0 || state().player.spinTime > 0) {
+        state().player.meleeTime > 0) {
         simulation_.emit(InteractionFailed{command.source, "Waypoint unavailable or not activated."});
         return false;
     }

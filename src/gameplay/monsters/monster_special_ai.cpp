@@ -15,7 +15,7 @@ bool Simulation::handleMonsterSpecialAi(Enemy &enemy, const MonsterAiProfile &ai
     const auto &player = state_.player;
     if (ai.kind == MonsterAiKind::Arach) {
         const bool inCombat = clear &&
-            distance < monsterDefinition(enemy.kind).attackRange && player.leapTime <= 0;
+            distance < monsterDefinition(enemy.kind).attackRange;
         const auto action = arachThink(enemy, ai, distance, inCombat);
         if (action == ArachAction::Attack || action == ArachAction::Web) {
             enemy.route.clear();
@@ -49,7 +49,7 @@ bool Simulation::handleMonsterSpecialAi(Enemy &enemy, const MonsterAiProfile &ai
     }
     if (ai.kind == MonsterAiKind::BloodHawk) {
         const bool inCombat = clear &&
-            distance < monsterDefinition(enemy.kind).attackRange && player.leapTime <= 0;
+            distance < monsterDefinition(enemy.kind).attackRange;
         const auto action = bloodHawkThink(enemy, ai, distance, inCombat);
         if (action == BloodHawkAction::Attack) {
             enemy.route.clear();
@@ -81,7 +81,7 @@ bool Simulation::handleMonsterSpecialAi(Enemy &enemy, const MonsterAiProfile &ai
             corpse = &candidate;
         }
         const bool inCombat = clear &&
-            distance < monsterDefinition(enemy.kind).attackRange && player.leapTime <= 0;
+            distance < monsterDefinition(enemy.kind).attackRange;
         const auto decision = fallenShamanThink(enemy, ai, distance, inCombat, corpse != nullptr);
         if (decision.commandMinions)
             for (auto &other : state_.area.enemies)
@@ -112,8 +112,7 @@ bool Simulation::handleMonsterSpecialAi(Enemy &enemy, const MonsterAiProfile &ai
         return true;
     }
     if (ai.kind == MonsterAiKind::Vampire) {
-        const bool inCombat = clear && distance < monsterDefinition(enemy.kind).attackRange &&
-                              player.leapTime <= 0;
+        const bool inCombat = clear && distance < monsterDefinition(enemy.kind).attackRange;
         const auto action = vampireThink(enemy, ai, distance, inCombat);
         if (action == VampireAction::Retreat) {
             if (!monsterStartRetreat(enemy, player.pos, 8, *grid_))
@@ -138,8 +137,7 @@ bool Simulation::handleMonsterSpecialAi(Enemy &enemy, const MonsterAiProfile &ai
         }
     }
     if (ai.kind == MonsterAiKind::Fetish) {
-        const bool inCombat = clear && distance < monsterDefinition(enemy.kind).attackRange &&
-                              player.leapTime <= 0;
+        const bool inCombat = clear && distance < monsterDefinition(enemy.kind).attackRange;
         const int lifePercent = characterStats_.maxLife > 0
             ? std::clamp(int(player.hp * 100.f / float(characterStats_.maxLife)), 0, 100) : 0;
         const auto action = fetishThink(enemy, ai, distance, inCombat, lifePercent);

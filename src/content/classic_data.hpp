@@ -10,6 +10,7 @@
 #include "npc_dialogue.hpp"
 #include "hireling_data.hpp"
 #include "skill_data.hpp"
+#include "state_data.hpp"
 #include "vendor_data.hpp"
 #include "resources/archive.hpp"
 #include "resources/data_table.hpp"
@@ -41,6 +42,7 @@ struct ClassicData {
     std::map<std::string, DataTable, std::less<>> tables;
     std::vector<CharacterDefinition> characters;
     SkillCatalog skills;
+    CombatStateCatalog states;
     std::map<int, int> teleportByLevel;
     std::array<int, 3> staticFieldMinimum{};
     std::array<int, 3> monsterFreezeDivisor{};

@@ -174,10 +174,14 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
             }
             result["combat"]["activeEffects"] = state.player.combatEffects.size();
             result["effects"] = Json::array();
-            for (const auto &effect : state.player.combatEffects)
-                result["effects"].push_back({{"sourceId", effect.sourceId}, {"group", effect.group},
-                    {"remaining", effect.expiresAt - state.time}, {"defensePercent", effect.modifiers.combat.defensePercent},
-                    {"retaliationFreeze", effect.retaliationFreeze}, {"overlayId", effect.overlayId}});
+            for (const auto &effect : state.player.combatEffects.entries())
+                result["effects"].push_back({{"handle", effect.handle.value},
+                    {"stateId", effect.spec.state.id}, {"sourceId", effect.spec.source.definition},
+                    {"sourceEntity", effect.spec.source.entity.value}, {"sourceLevel", effect.spec.source.level},
+                    {"group", effect.spec.state.group},
+                    {"remaining", effect.expiresAt ? Json(double(*effect.expiresAt - state.frame) / 25.) : Json(nullptr)},
+                    {"defensePercent", effect.spec.modifiers.combat.defensePercent},
+                    {"reactions", effect.spec.reactions.size()}, {"overlayId", effect.spec.visual.overlayId}});
             result["region"] = int(state.area.region);
             result["kills"] = state.area.kills;
             result["paused"] = paused;
@@ -485,11 +489,11 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
             const int id = request.at("id").get<int>();
             const Vec target{request.at("x").get<float>(), request.at("y").get<float>()};
             const auto *skill = session.content().skills.find(id);
-            if (!skill || !skill->originalEffect || !session.skillAvailable(id) ||
+            if (!skill || !skill->spell || !session.skillAvailable(id) ||
                 !std::isfinite(target.x) || !std::isfinite(target.y) || target.x < 0 || target.y < 0 ||
                 target.x >= session.map().grid.width || target.y >= session.map().grid.height)
                 throw std::runtime_error("An available implemented skill and an in-region target are required");
-            session.submit(UseClassSkill{id, target, {}});
+            session.submit(UseSkill{id, target, {}});
             session.tick(0);
             view.advance(0);
             result["accepted"] = std::any_of(session.events().begin(), session.events().end(),

@@ -1,4 +1,4 @@
-#include "original.hpp"
+#include "spec.hpp"
 #include <algorithm>
 #include <cstdint>
 #include <limits>
@@ -42,26 +42,35 @@ std::vector<Vec> chargedBoltPath(Vec origin, Vec target, int index, int frames) 
     }
     return path;
 }
-OriginalSkillCast resolveOriginalSkill(const OriginalSkillSpec &spec, int rank,
-                                       const std::map<int, int> &learned, int fireMasteryPercent,
-                                       int lightningMasteryPercent) {
-    if (rank < 1 || rank > 255 || spec.manaShift < 0 || spec.manaShift > 15 ||
-        spec.hitShift < 0 || spec.hitShift > 15)
+SkillCastSpec resolveSkill(const SkillSpec &spec, int rank,
+                           const std::map<int, int> &learned, int fireMasteryPercent,
+                           int lightningMasteryPercent) {
+    if (spec.effect == SkillBehavior::None || spec.sourceId < 0 || rank < 1 || rank > 255 ||
+        spec.manaShift < 0 || spec.manaShift > 15 || spec.hitShift < 0 || spec.hitShift > 15)
         throw std::runtime_error("Unsupported original skill rank or shift");
-    OriginalSkillCast result;
+    SkillCastSpec result;
     result.effect = spec.effect;
     result.sourceId = spec.sourceId;
-    result.stateGroup = spec.stateGroup;
-    result.stateOverlayId = spec.stateOverlay.id;
-    if (spec.effect == Skill::FrozenArmor) {
+    if (spec.effect == SkillBehavior::FrozenArmor) {
         int synergyRanks = 0;
         for (int id : spec.armorSynergySkills)
             if (auto found = learned.find(id); found != learned.end()) synergyRanks += found->second;
         const auto &parameters = spec.armorParameters;
-        result.defensePercent = parameters[0] + (rank - 1) * parameters[1];
-        result.buffDuration = float(parameters[2] + (rank - 1) * parameters[3] + synergyRanks * parameters[6]) / 25.f;
-        result.retaliationFreeze = float((parameters[4] + (rank - 1) * parameters[5]) *
+        CombatEffectSpec armor;
+        armor.state = spec.state;
+        armor.source = {CombatEffectSource::Skill, {}, spec.sourceId, rank};
+        armor.stacking = EffectStacking::ReplaceState;
+        const int64_t frames = int64_t(parameters[2]) + int64_t(rank - 1) * parameters[3] +
+                               int64_t(synergyRanks) * parameters[6];
+        if (frames <= 0) throw std::runtime_error("Invalid skill state duration");
+        armor.duration = EffectFrame(frames);
+        armor.modifiers.combat.defensePercent = parameters[0] + (rank - 1) * parameters[1];
+        armor.visual.overlayId = spec.stateOverlay.id;
+        const float freeze = float((parameters[4] + (rank - 1) * parameters[5]) *
             (100 + synergyRanks * parameters[7]) / 100) / 25.f;
+        armor.reactions.push_back({CombatEffectEvent::DamagedInMelee,
+            FreezeAttacker{freeze, spec.hitOverlay.id, float(spec.hitOverlay.frames) / spec.hitOverlay.fps}});
+        result.appliedEffect = std::move(armor);
     }
     const int64_t scaledMana = std::max<int64_t>(0,
         int64_t(spec.mana) + int64_t(rank - 1) * spec.manaPerLevel) << spec.manaShift;
@@ -109,7 +118,7 @@ OriginalSkillCast resolveOriginalSkill(const OriginalSkillSpec &spec, int rank,
     result.missileAcceleration = float(spec.missileAcceleration) * 25.f / 4096.f;
     result.missileMaxVelocity = float(spec.missileMaxVelocity * 256) * 25.f / 4096.f;
     result.missileLifetime = spec.missileLifetime + float(rank * spec.missileRangePerLevel) / 25.f;
-    if (spec.effect == Skill::Inferno)
+    if (spec.effect == SkillBehavior::Inferno)
         result.missileLifetime = float(std::max(1, (spec.flameFrames + (rank - 1) * spec.flameFramesPerLevel) / 2)) / 25.f;
     result.impactRadius = spec.impactRadius;
     if (!spec.impacts.empty()) {

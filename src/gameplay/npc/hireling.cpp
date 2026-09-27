@@ -50,7 +50,7 @@ void GameSession::advanceHireling(float dt) {
                                      int(uint32_t(player.combatRandom) % spread)) / 256.f;
                 simulation_.state_.area.missiles.push_back({ids_.allocate(), player.id,
                     hireling.pos, hireling.look * projectile.velocity,
-                    projectile.lifetime, Skill::Fireball, true, projectile.id, damage});
+                    projectile.lifetime, SkillBehavior::None, true, projectile.id, damage});
                 auto &missile = simulation_.state_.area.missiles.back();
                 missile.attackElements = simulation_.rollAttackElements(stats.weapon.item, &stats.combat);
                 missile.attackElements.playerKillEffects = false;

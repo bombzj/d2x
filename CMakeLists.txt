@@ -112,19 +112,15 @@ add_library(d2x_gameplay
 target_sources(d2x_gameplay PRIVATE src/gameplay/character/attributes.cpp)
 target_sources(d2x_gameplay PRIVATE src/gameplay/combat/accuracy.cpp)
 target_sources(d2x_gameplay PRIVATE src/gameplay/combat/physical_projectiles.cpp)
-target_sources(d2x_gameplay PRIVATE src/gameplay/skills/original.cpp)
-target_sources(d2x_gameplay PRIVATE src/gameplay/skills/original_cast.cpp)
+target_sources(d2x_gameplay PRIVATE src/gameplay/skills/resolve.cpp)
 target_sources(d2x_gameplay PRIVATE src/gameplay/monsters/monster_spawn.cpp src/gameplay/monsters/monster_activation.cpp)
 target_sources(d2x_gameplay PRIVATE src/gameplay/loot/treasure.cpp)
 target_sources(d2x_gameplay PRIVATE src/gameplay/loot/quality.cpp)
 target_sources(d2x_gameplay PRIVATE src/gameplay/loot/special.cpp)
 target_sources(d2x_gameplay PRIVATE src/gameplay/quest/den_of_evil.cpp src/gameplay/quest/burial_grounds.cpp src/gameplay/quest/search_for_cain.cpp src/gameplay/quest/forgotten_tower.cpp src/gameplay/quest/tools_of_trade.cpp src/gameplay/quest/sisters_to_slaughter.cpp)
 target_sources(d2x_gameplay PRIVATE src/gameplay/loot/affix.cpp)
-target_sources(d2x_gameplay PRIVATE
-  src/gameplay/skills/definitions.cpp
-  src/gameplay/skills/fireball.cpp src/gameplay/skills/frost_nova.cpp
-  src/gameplay/skills/whirlwind.cpp src/gameplay/skills/teleport.cpp
-  src/gameplay/skills/leap.cpp src/gameplay/skills/war_cry.cpp)
+target_sources(d2x_gameplay PRIVATE src/gameplay/effects/state.cpp src/gameplay/effects/reactions.cpp)
+target_sources(d2x_content PRIVATE src/content/state_data.cpp)
 target_link_libraries(d2x_gameplay PUBLIC d2x_navigation)
 target_link_libraries(d2x_content PUBLIC d2x_gameplay)
 add_library(d2x_population src/world/population.cpp)
@@ -135,7 +131,6 @@ target_sources(d2x_session PRIVATE src/gameplay/npc/identification.cpp src/gamep
 target_sources(d2x_session PRIVATE src/gameplay/npc/store.cpp src/gameplay/npc/purchase.cpp)
 target_sources(d2x_session PRIVATE src/gameplay/session/session_item_snapshot.cpp)
 target_sources(d2x_session PRIVATE src/gameplay/session/session_character_save.cpp)
-target_sources(d2x_session PRIVATE src/gameplay/session/session_effects.cpp)
 target_sources(d2x_session PRIVATE src/gameplay/session/session_debug_monsters.cpp)
 target_sources(d2x_session PRIVATE src/gameplay/session/session_quests.cpp)
 target_sources(d2x_session PRIVATE src/gameplay/session/session_quest_dialogue.cpp)
