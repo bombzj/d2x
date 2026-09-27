@@ -31,6 +31,8 @@
 
 运行时 TXT 字段查找还核对了 D2MOO `D2Common/src/DataTbls/ItemsTbls.cpp` 的小写字段绑定与当前 MPQ 的 `StrBonus`／`DexBonus` 列名，采用通用 ASCII 忽略大小写查找；伤害比例参照 `D2Game/src/UNIT/SUnitDmg.cpp::SUNITDMG_ApplyDamageBonuses`。Talk 的多任务条目参照 `QUESTS_InitScrollTextChain` 逐任务追加消息的规则，文本和标题仍来自当前 MPQ。资料片背包资源路径与 OpenDiablo2 `resource_paths.go` 核对，实际加载当前 MPQ 的 `invchar6.dc6`／`invchar6Tab.dc6`。
 
+宝箱生成、上锁、背包钥匙扣减和普通／特殊箱掉落适配本地 D2MOO 固定 `5596f5c` 的 `OBJECTS/Objects.cpp`、`ObjMode.cpp`、`ITEMS/ItemMode.cpp`、`Items.cpp` 与 `D2Common/DataTbls/MonsterTbls.cpp`；实际 Lockable、MonLvl1、难度等级、TC、ItemRatio、品质、钥匙堆叠、原图／文本／声音仍读取当前 MPQ。`world/chest.cpp`、`content/chest_loot.cpp` 的规则来源适用上述 MIT 许可；覆盖、随机流适配和陷阱等限制见 [交互物体](INTERACTIVE_OBJECTS.md#上锁宝箱2026-09-27)。
+
 祭坛效果适配本地 D2MOO 固定 `5596f5c` 的 `ObjMode.cpp` 各 SHRINES 处理器、`SUnitDmg.cpp` 状态及经验规则、`D2Common/Skills.cpp` 的 shrine_skill；怪物强化适配 `MonsterUnique.cpp` 的选取、初始化、光环和事件，以及 `MonsterSpawn.cpp` 的 setboss 直属随从关系。新增 C++ 类型及执行器使用当前 MPQ 的 Shrines、MonUMod、MonStats/2、MonType、MonLvl、DifficultyLevels、Skills、Missiles 与 States/Overlay；MIT 归属仍为上述 D2MOO 许可。限时祭坛／诅咒／光环图形播放速度仍沿 Diablerie `Overlay.Create` 的参考适配，未声称完整 D2Client 等价。覆盖与限制见 [交互物体](INTERACTIVE_OBJECTS.md) 和 [怪物](MONSTERS.md)。
 
 ## 格式研究参考

@@ -283,6 +283,12 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
                 float(missiles.number(row, "Range").value_or(0)) / 25.f});
         }
     const DataTable projectileSounds(archives.read("data/global/excel/sounds.txt"));
+    for (size_t row = 0; row < projectileSounds.rows().size(); ++row) {
+        const std::string name(projectileSounds.value(row, "Sound"));
+        if (name != "item_key_used" && !name.ends_with("_needkey_1")) continue;
+        const auto path = normalize("data/global/sfx/" + std::string(projectileSounds.value(row, "FileName")));
+        if (archives.contains(path)) audio.registerOriginal(archives, "chest." + name, path);
+    }
     auto loadProjectile = [&](int id, const std::string &art) {
         if (projectileAnimations.contains(id)) return;
         auto animation = graphics_.single(art, translucentProjectiles.contains(id));

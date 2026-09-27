@@ -9,7 +9,7 @@ namespace d2x {
 LootPlan planItemLoot(const ClassicData &data, const DataTable &ratios, std::string_view root,
                       int itemLevel, int upgradeLevel, uint64_t seed,
                       const std::set<size_t> &usedUniques, std::string_view characterClass,
-                      int magicFind, int goldFind) {
+                      int magicFind, int goldFind, std::optional<DropQuality> forcedQuality) {
     if (data.profile != "lod-named-txt-v1" || itemLevel < 1 || itemLevel > 99 ||
         upgradeLevel < 0 || upgradeLevel > 99)
         throw std::runtime_error("Unsupported item loot profile or level");
@@ -44,10 +44,17 @@ LootPlan planItemLoot(const ClassicData &data, const DataTable &ratios, std::str
                 return true;
             }
             auto rules = loadItemQualityRules(data, ratios, item->code);
-            auto quality = rollItemQuality(rules, itemLevel, std::clamp(magicFind, 0, 1000000),
-                                           selection.quality, random);
-            random = quality.randomState;
-            auto requested = quality.quality;
+            DropQuality requested;
+            if (forcedQuality) {
+                // ItemMode::sub_6FC4C5F0: type restrictions still apply to forced qualities.
+                requested = rules.normalOnly ? DropQuality::Normal
+                    : rules.uniqueOnly ? DropQuality::Unique : *forcedQuality;
+            } else {
+                auto quality = rollItemQuality(rules, itemLevel, std::clamp(magicFind, 0, 1000000),
+                                               selection.quality, random);
+                random = quality.randomState;
+                requested = quality.quality;
+            }
             ItemGeneration generation;
             while (requested != DropQuality::Normal) {
                 if (requested == DropQuality::Unique || requested == DropQuality::Set) {

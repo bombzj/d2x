@@ -22,6 +22,7 @@ struct LevelRecord {
     std::string name;
     int width = 0, height = 0, subtype = -1, theme = -1, waypoint = -1;
     int shrineSubstitution = -1;
+    std::optional<int> objectLevel; // Levels.MonLvl1, not the expansion/difficulty level.
     int offsetX = 0, offsetY = 0, depend = 0;
     std::array<int, 8> visible{}, warps{}, objectGroups{}, objectProbabilities{};
     LevelPopulation population;

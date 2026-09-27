@@ -39,8 +39,10 @@ const Sprite *SceneView::objectSprite(const WorldObject &object, RegionId region
         if (object.operatedAt >= 0 && object.operateFn != 22) {
             elapsed = std::max(0.f, session_.state().time - object.operatedAt);
             const auto &operating = object.animationRules[1];
-            const float duration = operating.fps > 0 ? operating.frames / operating.fps : 0;
-            if (mode == 2) elapsed -= duration;
+            const float duration = object.chest
+                ? (operating.enabled ? float(operating.frames + 1) / 25.f : 0)
+                : operating.fps > 0 ? operating.frames / operating.fps : 0;
+            if (mode == 2) elapsed = std::max(0.f, elapsed - duration);
         }
         mode = std::clamp(mode, 0, 2);
         const auto &animation = modes->second[size_t(mode)];

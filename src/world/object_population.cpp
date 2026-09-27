@@ -26,6 +26,26 @@ bool clear(const Region &region, Vec point, int extent, bool avoidObjects = true
             if ((object.pos - point).length() < float(extent + 3)) return false;
     return true;
 }
+bool clearChest(const Region &region, Vec point, int width, int height) {
+    // OBJECTS_CreateObject / COLLISION_CheckMaskWithSizeXY: native size plus six.
+    // Objects have not yet been installed in Grid, so include their real footprints.
+    const int left = int(point.x) - width / 2, top = int(point.y) - height / 2;
+    const auto &grid = region.map.grid;
+    constexpr uint16_t placementMask = 0x3f11;
+    for (int y = top; y < top + height; ++y)
+        for (int x = left; x < left + width; ++x)
+            if (x < 0 || y < 0 || x >= grid.width || y >= grid.height ||
+                (grid.terrainCollision[size_t(y) * grid.width + x] & placementMask)) return false;
+    for (const auto &object : region.objects) {
+        if (object.questHidden || !object.hasCollision[size_t(object.modeAt(0))] ||
+            !(object.collisionMask & placementMask)) continue;
+        const int x = int(object.pos.x) - object.collisionWidth / 2;
+        const int y = int(object.pos.y) - object.collisionHeight / 2;
+        if (left < x + object.collisionWidth && left + width > x &&
+            top < y + object.collisionHeight && top + height > y) return false;
+    }
+    return true;
+}
 } // namespace
 void populateAct1WorldObjects(Region &region, EntityIds &ids, const WorldCatalog &catalog,
                               const Table &objectRows, const Table &groupRows, uint32_t worldSeed) {
@@ -66,6 +86,12 @@ void populateAct1WorldObjects(Region &region, EntityIds &ids, const WorldCatalog
                                 (normalize(record->at("Name")) == "casket" ||
                                  normalize(record->at("Name")) == "sarcophagus");
             const bool barrel = operation == 5 && populate == 4;
+            const bool chest = operation == 4 && populate == 3;
+            if (chest && std::any_of(region.objects.begin(), region.objects.end(),
+                [&](const WorldObject &object) {
+                    return object.operateFn == 23 && object.pos.x >= room.x && object.pos.y >= room.y &&
+                        object.pos.x < room.x + room.width && object.pos.y < room.y + room.height;
+                })) continue; // Native object population skips waypoint rooms.
             if (!((operation == 4 && populate == 3) || casket || barrel || shrine || well ||
                   (operation == 14 && (populate == 3 || populate == 6 || populate == 7))))
                 continue;
@@ -80,17 +106,21 @@ void populateAct1WorldObjects(Region &region, EntityIds &ids, const WorldCatalog
                 if (existing >= 4 || existing > int(region.map.rooms.size()) / 8) continue;
             }
             int count = std::clamp(density * ((room.width * room.height) >> 7) >> 8, 0, 32);
+            if (chest) count = std::max(0, density * ((room.width * room.height) >> 7) >> 8);
             if (barrel) count = std::min(8, count * 2);
             Seed placement(worldSeed ^ (uint32_t(levelId) * 0x85ebca6bu) ^
                            (uint32_t(roomIndex) * 0xc2b2ae35u) ^ uint32_t(slot));
             const int size = std::max(integer(*record, "SizeX"), integer(*record, "SizeY"));
+            const int sizeX = integer(*record, "SizeX"), sizeY = integer(*record, "SizeY");
+            if (chest && (room.width <= sizeX + 1 || room.height <= sizeY + 1)) continue;
             const int extent = well ? size + 4 : size / 2 + 3;
             const auto explodingBarrel = barrel ? std::find_if(objectRows.begin(), objectRows.end(),
                 [](const auto &row) {
                     return normalize(row.at("Name")) == "barrel" && integer(row, "OperateFn") == 7;
                 }) : objectRows.end();
             auto add = [&](Vec point, int index, bool clustered = false) {
-                if (!clear(region, point, extent, !clustered)) return false;
+                if (chest ? !clearChest(region, point, sizeX + 6, sizeY + 6)
+                          : !clear(region, point, extent, !clustered)) return false;
                 const auto *appearance = barrel && explodingBarrel != objectRows.end() &&
                     placement.below(3) == 0 ? &*explodingBarrel : record;
                 WorldObject object;
@@ -162,8 +192,12 @@ void populateAct1WorldObjects(Region &region, EntityIds &ids, const WorldCatalog
             }
             for (int index = 0; index < count; ++index) {
                 for (int attempt = 0; attempt < 5; ++attempt) {
-                    const int x = room.x + 1 + placement.below(room.width - 2);
-                    const int y = room.y + 1 + placement.below(room.height - 2);
+                    const int x = chest ? room.x + placement.below(room.width - sizeX - 1)
+                                        : room.x + 1 + placement.below(room.width - 2);
+                    const int y = chest ? room.y + placement.below(room.height - sizeY - 1)
+                                        : room.y + 1 + placement.below(room.height - 2);
+                    if (chest && (x < room.x + 1 || y < room.y + 1 ||
+                                  x >= room.x + room.width - 1 || y >= room.y + room.height - 1)) continue;
                     const Vec point{float(x) + .5f, float(y) + .5f};
                     if (add(point, index)) break;
                 }

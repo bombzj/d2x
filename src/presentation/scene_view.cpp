@@ -332,6 +332,8 @@ void SceneView::advance(float dt) {
                 } else if constexpr (std::is_same_v<T, InteractionFailed>) {
                     view_.shopSalePending.reset();
                     notice(value.reason, true);
+                    if (value.needsKey)
+                        assets_.audio.play("chest." + normalize(session_.state().player.characterClass) + "_needkey_1");
                     if (view_.npcMenu || view_.shopOpen || !view_.dialogue.empty())
                         view_.dialogueStatus = value.reason;
                 } else if constexpr (std::is_same_v<T, LootDeferred>) {
@@ -408,6 +410,7 @@ void SceneView::advance(float dt) {
                     else
                         openNpcDialogue(value.object, value.speaker, value.text);
                 } else if constexpr (std::is_same_v<T, ObjectInteracted>) {
+                    if (value.unlockedChest) assets_.audio.play("chest.item_key_used");
                     if (value.interaction == Interaction::QuestTome) {
                         if (auto speech = questSpeech(session_.content().npcDialogues,
                                                       "A1Q5", "Init", "QuestTome"))

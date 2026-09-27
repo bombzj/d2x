@@ -22,9 +22,41 @@ void GameSession::activateLootObject(EntityId id) {
          found->operateFn != 19 && found->operateFn != 20) ||
         loot_.settled(id))
         return;
+    if (state().player.dead || state().player.hp <= 0 || found->operatedAt >= 0 ||
+        found->modeAt(state().time) != 0) return;
+    ItemHandle key;
+    const bool unlocking = found->chest && found->chest->locked;
+    if (unlocking && characterDefinition_.code != "ass") {
+        // ItemMode::DoKeyCheck: only inv page 0; never stash, cube, belt or cursor.
+        for (auto itemId : inventory_.contents(playerContainers_.backpack)) {
+            const auto *item = inventory_.item(itemId);
+            const auto *definition = inventory_.catalog().find(item->definition);
+            if (item->quantity && definition && definition->equipment.isType("key")) {
+                key = item->handle();
+                break;
+            }
+        }
+        if (!key.id) {
+            simulation_.emit(InteractionFailed{id, "I need a key.", true});
+            return;
+        }
+    }
     LootPlan plan;
     plan.randomState = loot_.randomState();
-    if (found->operateFn == 19 || found->operateFn == 20) {
+    auto objectSeed = regions_.at(current_).objectSeed;
+    if (found->chest) {
+        std::set<size_t> usedUniques;
+        for (auto row : loot_.usedUniques()) usedUniques.insert(size_t(row));
+        plan = planChestLoot(content_, resolveObjectTreasure(content_, worldContent_,
+            region().definition.id, state().population.difficulty), *found->chest,
+            found->objectClass, objectSeed, usedUniques, characterDefinition_.code,
+            characterStats().combat.magicFind, characterStats().combat.goldFind);
+        // Unsupported data must not consume a key or permanently empty a chest.
+        if (!plan.deferred.empty()) {
+            simulation_.emit(LootDeferred{id, plan.deferred});
+            return;
+        }
+    } else if (found->operateFn == 19 || found->operateFn == 20) {
         plan = planAct1RackLoot(content_, worldContent_, region().definition.id,
                                 state().population.difficulty, found->operateFn == 20,
                                 plan.randomState);
@@ -44,7 +76,7 @@ void GameSession::activateLootObject(EntityId id) {
                 roll(plan.randomState, 100) < 65)
                 simulation_.damageEnemy(enemy, damage(enemy.hp), id);
     } else {
-        const auto entry = resolveAct1ObjectTreasure(content_, worldContent_, region().definition.id,
+        const auto entry = resolveObjectTreasure(content_, worldContent_, region().definition.id,
                                                       state().population.difficulty);
         if (!entry.deferred.empty()) {
             plan.deferred = entry.deferred;
@@ -69,12 +101,24 @@ void GameSession::activateLootObject(EntityId id) {
     }
     if (!plan.deferred.empty())
         simulation_.emit(LootDeferred{id, plan.deferred});
-    auto drops = loot_.settle({id, {}, region().definition.id, state().population.difficulty},
+    if (key.id) {
+        auto consumed = inventory_.consume(key, 1, inventoryAccess());
+        const bool succeeded = bool(consumed);
+        publishInventory(std::move(consumed), key.id);
+        if (!succeeded) return;
+    }
+    if (found->chest) {
+        found->chest->locked = false;
+        found->chest->lootSeed = plan.randomState;
+        regions_.at(current_).objectSeed = objectSeed;
+    }
+    auto drops = loot_.settle({id, {}, region().definition.id, state().population.difficulty,
+                              false, found->chest.has_value()},
                               std::move(plan));
     spawnLoot(drops, region().definition.id, found->pos);
     found->operatedAt = state().time;
     found->interaction = Interaction::None;
-    simulation_.emit(ObjectInteracted{id, Interaction::Loot, found->name});
+    simulation_.emit(ObjectInteracted{id, Interaction::Loot, found->name, false, unlocking});
 }
 void GameSession::activateShrine(EntityId id) {
     auto &objects = regions_.at(current_).objects;

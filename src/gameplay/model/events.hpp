@@ -41,6 +41,7 @@ struct ObjectInteracted {
     Interaction interaction;
     std::string name;
     bool firstIntroduction = false;
+    bool unlockedChest = false;
 };
 struct NpcDialogueStarted {
     EntityId object;
@@ -98,6 +99,7 @@ struct StorageClosed {
 struct InteractionFailed {
     EntityId object;
     std::string reason;
+    bool needsKey = false;
 };
 struct PickupFailed {
     EntityId item;

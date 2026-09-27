@@ -35,9 +35,14 @@ void SceneView::drawObjectHint(Vec mouse) const {
     if (!object || object->name.empty() || exitAt(mouse))
         return;
     const Vec p = screen(object->pos);
+    std::string label = object->name;
+    if (object->chest && object->chest->locked) {
+        const auto &strings = session_.content().itemStrings;
+        if (auto name = strings.find("lockedchest"); name != strings.end()) label = name->second;
+    }
     // OpenDiablo2 HUD uses Font16; uncolored Object.Label text defaults to white.
-    const int width = painter_.measure(object->name, 16);
+    const int width = painter_.measure(label, 16);
     DrawRectangle(int(p.x - width / 2 - 8), int(p.y - 70), width + 16, 24, {0, 0, 0, 210});
-    painter_.label(object->name, int(p.x - width / 2), int(p.y - 65), 16, WHITE);
+    painter_.label(label, int(p.x - width / 2), int(p.y - 65), 16, WHITE);
 }
 } // namespace d2x

@@ -76,6 +76,7 @@ WorldCatalog::WorldCatalog(Archives &archives) {
                 record.theme = number("SubTheme", -1);
                 record.waypoint = number("Waypoint", -1);
                 record.shrineSubstitution = number("SubShrine", -1);
+                record.objectLevel = table.number(row, "MonLvl1");
                 auto &population = record.population;
                 population.supported = table.has("mon1") && table.has("MonDen(N)");
                 population.types = number("NumMon");

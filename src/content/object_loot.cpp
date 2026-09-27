@@ -1,31 +1,40 @@
 #include "object_loot.hpp"
 #include <algorithm>
+#include <cstdlib>
 
 namespace d2x {
-ObjectTreasureEntry resolveAct1ObjectTreasure(const ClassicData &data, const WorldCatalog &world,
+ObjectTreasureEntry resolveObjectTreasure(const ClassicData &data, const WorldCatalog &world,
                                                RegionId region, int difficulty) {
     ObjectTreasureEntry result;
     const auto &levels = world.levels();
     const auto area = levels.find(int(region));
-    const auto first = levels.find(2);
-    const auto last = levels.find(37);
-    if (difficulty < 0 || difficulty > 2 || area == levels.end() || first == levels.end() ||
-        last == levels.end() || area->second.act != first->second.act ||
-        !area->second.population.supported) {
-        result.deferred = "Object treasure requires a supported Act I area and difficulty";
+    if (difficulty < 0 || difficulty > 2 || area == levels.end() ||
+        area->second.act < 0 || area->second.act >= 5 || !area->second.population.supported) {
+        result.deferred = "Object treasure requires an MPQ area and difficulty";
+        return result;
+    }
+    // ObjMode.cpp::OBJMODE_DropFromChestTCWithQuality. Act V starts at town level zero.
+    constexpr int bounds[5][2]{{2, 37}, {41, 73}, {76, 102}, {104, 108}, {109, 132}};
+    const int act = area->second.act;
+    const auto first = levels.find(bounds[act][0]);
+    const auto last = levels.find(bounds[act][1]);
+    if (first == levels.end() || last == levels.end()) {
+        result.deferred = "MPQ Levels lacks the chest tier boundary areas";
         return result;
     }
     const int level = area->second.population.level[size_t(difficulty)];
     const int minimum = first->second.population.level[size_t(difficulty)];
     const int maximum = last->second.population.level[size_t(difficulty)];
-    if (level < 1 || level > 99 || minimum < 1 || maximum < minimum) {
-        result.deferred = "MPQ area levels do not resolve an Act I chest tier";
+    if (level < 1 || level > 99 || minimum < 0 || maximum < 0) {
+        result.deferred = "MPQ area levels do not resolve a chest tier";
         return result;
     }
-    const int offset = (maximum - minimum + 1) / 3;
+    const int offset = (std::abs(maximum - minimum) + 1) / 3;
     int tier = level >= minimum + offset ? 1 : 0;
     if (level >= minimum + 2 * offset) tier = 2;
-    const std::string name = "Act 1 Chest " + std::string(1, char('A' + tier));
+    constexpr const char *suffixes[]{"", " (N)", " (H)"};
+    const std::string name = "Act " + std::to_string(act + 1) + suffixes[difficulty] +
+        " Chest " + char('A' + tier);
     if (std::none_of(data.treasures.begin(), data.treasures.end(),
                      [&](const auto &record) { return record.name == name; })) {
         result.deferred = "MPQ TreasureClassEx lacks " + name;

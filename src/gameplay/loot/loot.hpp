@@ -39,6 +39,7 @@ struct LootRequest {
     RegionId region = RegionId::Encampment;
     int difficulty = 0;
     bool questFirstKill = false;
+    bool sourceSeed = false; // Chests own a loot stream; settling must not replace the shared stream.
 };
 struct LootDrop {
     std::string code;

@@ -2,6 +2,7 @@
 #include "resources/presets.hpp"
 #include "object_population.hpp"
 #include "shrine_catalog.hpp"
+#include "chest.hpp"
 #include <algorithm>
 #include <cctype>
 #include <iostream>
@@ -159,6 +160,10 @@ void classify(WorldObject &object, const Table &objectRows) {
 int WorldObject::modeAt(float time) const {
     if (operatedAt < 0 || operateFn == 22) return std::clamp(animationMode, 0, 7);
     const auto &operating = animationRules[1];
+    if (chest) {
+        // ChestEnd schedules ENDANIM at FrameCnt1 + 1 ticks (25 Hz).
+        return operating.enabled && time - operatedAt < float(operating.frames + 1) / 25.f ? 1 : 2;
+    }
     const float duration = operating.fps > 0 ? operating.frames / operating.fps : 0;
     return std::max(0.f, time - operatedAt) < duration ? 1 : 2;
 }
@@ -190,6 +195,8 @@ std::vector<Region> loadRegions(Archives &archives, EntityIds &ids, const std::v
     for (const auto &plan : plans) {
         Region region;
         region.definition = plan.definition;
+        region.objectSeed = (uint64_t(666) << 32) |
+            (worldSeed ^ (uint32_t(region.definition.id) * 0x9e3779b9u));
         region.recipe = plan.recipe;
         region.map.load(archives, cache, plan.recipe);
         if (region.definition.safe) region.map.spawn = region.map.actSpawn();
@@ -206,7 +213,15 @@ std::vector<Region> loadRegions(Archives &archives, EntityIds &ids, const std::v
             auto preset = std::find_if(std::begin(presets), std::end(presets), [&](const auto &p) {
                 return p.type == source.type && p.id == source.id;
             });
-            if (preset == std::end(presets)) {
+            const int originalClass = source.type == 2 && region.map.data.act == 0
+                ? actOneObjectClass(source, region.map.data.version) : -1;
+            const int resolvedClass = resolveAct1ChestPreset(originalClass, int(region.definition.id), region.objectSeed);
+            auto chestRow = std::find_if(objectRows.begin(), objectRows.end(), [&](const auto &row) {
+                return !row.at("Id").empty() && std::stoi(row.at("Id")) == resolvedClass &&
+                    (row.at("OperateFn") == "4" || originalClass == 580 || originalClass == 581);
+            });
+            const bool nativeChest = chestRow != objectRows.end();
+            if (preset == std::end(presets) && !nativeChest) {
                 ++region.unsupportedObjects;
                 continue;
             }
@@ -238,13 +253,21 @@ std::vector<Region> loadRegions(Archives &archives, EntityIds &ids, const std::v
                     }
                 }
             }
-            object.appearance = {preset->category, preset->token, preset->mode, preset->weapon, {}};
+            if (nativeChest) {
+                object.appearance = {"objects", normalize(chestRow->at("Token")), "nu", "hth", {}};
+                if (originalClass == 580 && resolvedClass != 371) {
+                    object.chest.emplace();
+                    object.chest->sparkly = true;
+                }
+            } else {
+                object.appearance = {preset->category, preset->token, preset->mode, preset->weapon, {}};
+                for (size_t i = 0; i < object.appearance.equipment.size(); ++i)
+                    object.appearance.equipment[i] = preset->gear[i];
+            }
             if (source.type == 2 && region.map.data.act == 0) {
-                object.objectClass = actOneObjectClass(source, region.map.data.version);
+                object.objectClass = resolvedClass;
                 if (object.objectClass < 0) { ++region.unsupportedObjects; continue; }
             }
-            for (size_t i = 0; i < object.appearance.equipment.size(); ++i)
-                object.appearance.equipment[i] = preset->gear[i];
             configureWorldObject(object, objectRows);
             // A named neutral monster is not necessarily a conversation target.
             // MonStats.interact is the original client/server eligibility flag;
@@ -258,6 +281,7 @@ std::vector<Region> loadRegions(Archives &archives, EntityIds &ids, const std::v
             region.objects.push_back(std::move(object));
         }
         populateAct1WorldObjects(region, ids, catalog, objectRows, groupRows, worldSeed);
+        initializeChests(region, catalog, objectRows);
         if (int(region.definition.id) == 2) {
             const auto *navi = monsters.find("navi");
             for (const auto &piece : region.recipe.pieces) {

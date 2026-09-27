@@ -22,6 +22,7 @@ add_library(d2x_navigation src/world/navigation.cpp src/world/room_activation.cp
 target_link_libraries(d2x_navigation PUBLIC d2x_core)
 add_library(d2x_world src/world/map.cpp src/world/map_assembly.cpp src/world/maze.cpp src/world/outdoor.cpp src/world/outdoor_layout.cpp src/world/region.cpp src/world/region_catalog.cpp src/world/exits.cpp src/world/world_report.cpp)
 target_sources(d2x_world PRIVATE src/world/object_population.cpp)
+target_sources(d2x_world PRIVATE src/world/chest.cpp)
 target_sources(d2x_world PRIVATE src/world/shrine_catalog.cpp)
 target_sources(d2x_world PRIVATE
   src/world/outdoor_substitution.cpp
@@ -63,6 +64,7 @@ target_sources(d2x_content PRIVATE src/content/equipment_data.cpp)
 target_sources(d2x_content PRIVATE src/content/item_appearance.cpp)
 target_sources(d2x_content PRIVATE src/content/monster_loot.cpp)
 target_sources(d2x_content PRIVATE src/content/object_loot.cpp)
+target_sources(d2x_content PRIVATE src/content/chest_loot.cpp)
 target_sources(d2x_content PRIVATE src/content/item_quality.cpp)
 target_sources(d2x_content PRIVATE src/content/item_loot.cpp)
 target_sources(d2x_content PRIVATE src/content/special_items.cpp)
