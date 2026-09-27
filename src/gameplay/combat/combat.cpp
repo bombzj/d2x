@@ -249,7 +249,7 @@ void Simulation::updateMissiles(float dt) {
             }
             continue;
         }
-        if (m.physical) { advancePhysicalMissile(m, dt); continue; }
+        if (m.physical) { advancePhysicalMissile(m, dt, spawned); continue; }
         throw std::logic_error("Missile has no native execution definition");
     }
     std::erase_if(area.missiles, [](const Missile &m) { return m.remaining <= 0; });

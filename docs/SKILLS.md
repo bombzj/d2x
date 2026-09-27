@@ -4,11 +4,11 @@
 
 运行时读取原 MPQ 的 `Skills.txt`、`SkillDesc.txt`、`CharStats.txt`、英文 TBL 字符串和七套 `skltree_*_back.dc6`／职业图标。当前资料片原表中，七个职业各有 30 个技能，分布在 `SkillPage` 1–3、`SkillRow` 1–6、`SkillColumn` 1–3。节点身份是原 `Skills.Id`，位置、图标和页签名称来自原表及原图，不维护抽取后的技能清单。用户提供的角色／法师技能树截图保存在忽略的 `artifacts/character-skill-layout-reference-cn.png`，仅用于核对版面。
 
-当前接入 11 项女巫主动技能：火弹、充能弹、冰弹、冰封装甲、地狱之火、静电力场、冰霜新星、冰风暴、火球、闪电新星、传送；四项被动为暖气及火焰／闪电／冰冷支配。其余主动技能（包括野蛮人旋风、跳跃攻击和战嗥）没有执行效果；其余被动只记录等级。七职业原节点、升级点数、等级／前置门槛保留，名称与页签使用英文原资源。
+当前接入 11 项女巫主动技能：火弹、充能弹、冰弹、冰封装甲、地狱之火、静电力场、冰霜新星、冰风暴、火球、闪电新星、传送；四项被动为暖气及火焰／闪电／冰冷支配。亚马逊已接入瘟疫标枪，数值、原动作和边界见 [亚马逊技能](AMAZON_SKILLS.md)。其余主动技能（包括野蛮人旋风、跳跃攻击和战嗥）没有执行效果；其余被动只记录等级。七职业原节点、升级点数、等级／前置门槛保留，名称与页签使用英文原资源。
 
 ## 执行结构
 
-- `content/skill_data.*` 建立原技能身份、学习门槛及 `BasicSkillAction`；`content/sorceress_data.*` 只为已核实的法术提供 `SkillSpec`。无定义的技能不登记执行行为。
+- `content/skill_data.*` 建立原技能身份、学习门槛及 `BasicSkillAction`；`content/sorceress_data.*` 和 `content/weapon_skill_data.*` 只为已核实的法术／武器技能提供 `SkillSpec`。无定义的技能不登记执行行为。
 - `UseSkill` 是按原 `Skills.Id` 提交的唯一技能命令。`GameSession::useSkill` 在 `session_skills.cpp` 统一检查技能可用性、实现状态、城镇许可、等级及原施法动作，随后生成 `SkillCastSpec`。普通武器攻击仍共用 `Attack`；没有按内部枚举直接施放的旁路。
 - `skillAvailable` 表示角色拥有技能，`SkillRecord::executable()` 表示主动效果已接入；学习、选择、绑定不等同于能够施放。未实现主动技能显示禁用色、提示效果未实现、属性面板留空，不扣蓝、不开始动作，也不转为普通攻击。
 - `gameplay/skills/resolve.cpp` 是等级、基础等级协同、支配和定点费用的纯计算入口；`casting.cpp` 负责开始、出手、持续引导和结束。`SkillBehavior` 仅标识已实现的执行算法；存档、输入、事件与声音键使用原技能 ID，不使用该枚举的顺序。
@@ -40,7 +40,7 @@
 
 点击左／右技能槽展开菜单，鼠标悬停目标图标后按 `F1–F8` 绑定到该鼠标键；之后单按对应功能键只切换技能，不立即施法。已绑定技能在菜单图标上标注功能键，绑定写入当前存档。调试管道的 `skills` 返回当前 MPQ 的技能 ID、前置及现有绑定；`bind-skill-hotkey` 使用同一会话规则，可用于快速检查。`grant-experience` 升级后按原门槛调用 `learn-skill` 可逐项解锁传送等技能。原操作依据[暴雪 Arreat Summit 控制说明](https://classic.battle.net/diablo2exp/basics/controls.shtml)。
 
-普通攻击、弓弩、Throw／左右手动作现在共用原 AnimData 出手帧及逐武器数值；出手帧扣除匹配箭袋或投掷堆叠，弹体保存发射快照。六种投掷药瓶按当前 MPQ 的真实弹体映射接入。爆炸、命中视觉与移动毒云由通用 `MissileImpactSpec` 配置，火球也使用同一执行器；药瓶没有独占的爆炸／毒云代码。数值、入口、原版证据及未完成细节见 [通用攻击与导弹效果](COMMON_ATTACKS.md)。本批未构建、测试、运行或打包，不能将普通攻击标为全面复刻。
+普通攻击、弓弩、Throw／左右手动作现在共用原 AnimData 出手帧及逐武器数值；出手帧扣除匹配箭袋或投掷堆叠，弹体保存发射快照。六种投掷药瓶按当前 MPQ 的真实弹体映射接入。爆炸、命中视觉与移动毒云由通用 `MissileImpactSpec` 配置，火球也使用同一执行器；药瓶没有独占的爆炸／毒云代码。数值、入口、原版证据及未完成细节见 [通用攻击与导弹效果](COMMON_ATTACKS.md)。通用攻击已编译打包，未运行测试或游戏；不能将普通攻击标为全面复刻。
 
 ## 女巫优先技能
 

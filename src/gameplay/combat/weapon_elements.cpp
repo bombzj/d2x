@@ -37,7 +37,8 @@ AttackElementRanges attackElementRanges(const CombatModifiers &combat, EntityId 
         boundedRange(combat.magicMinimum, combat.magicMaximum, own.magicMinimum, own.magicMaximum)
     };
 }
-AttackElements Simulation::rollAttackElements(EntityId weapon, const CombatModifiers *modifiers) {
+AttackElements Simulation::rollAttackElements(EntityId weapon, const CombatModifiers *modifiers,
+                                               const SkillCastSpec *skill) {
     const auto &m = modifiers ? *modifiers : characterStats_.combat;
     auto &player = state_.player;
     WeaponModifiers own;
@@ -48,12 +49,18 @@ AttackElements Simulation::rollAttackElements(EntityId weapon, const CombatModif
     result.lightning = range(player, ranges.lightning.minimum, ranges.lightning.maximum);
     result.cold = range(player, ranges.cold.minimum, ranges.cold.maximum);
     result.magic = range(player, ranges.magic.minimum, ranges.magic.maximum);
-    if (int64_t(m.poisonMaximum) + own.poisonMaximum > 0 &&
-        int64_t(m.poisonFrames) + own.poisonFrames > 0) {
-        result.poisonPerSecond = range(player, int64_t(m.poisonMinimum) + own.poisonMinimum,
-                                       int64_t(m.poisonMaximum) + own.poisonMaximum, 0) * 25.f / 256.f;
-        result.poisonDuration = float(int64_t(m.poisonFrames) + own.poisonFrames) /
-                                float(std::max<int64_t>(1, int64_t(m.poisonSources) + own.poisonSources) * 25);
+    const bool skillPoison = skill && skill->poisonDuration > 0;
+    const int64_t poisonMin = int64_t(m.poisonMinimum) + own.poisonMinimum +
+                             (skillPoison ? int64_t(skill->minimumDamage * 256.f) : 0);
+    const int64_t poisonMax = int64_t(m.poisonMaximum) + own.poisonMaximum +
+                             (skillPoison ? int64_t(skill->maximumDamage * 256.f) : 0);
+    const int64_t poisonFrames = int64_t(m.poisonFrames) + own.poisonFrames +
+                                (skillPoison ? int64_t(skill->poisonDuration * 25.f + .001f) : 0);
+    if (poisonMax > 0 && poisonFrames > 0) {
+        // MISSILE_AddStatsToDamage adds the skill length but not a poison-source count.
+        result.poisonPerSecond = range(player, poisonMin, poisonMax, 0) * 25.f / 256.f;
+        result.poisonDuration = float(poisonFrames /
+                                std::max<int64_t>(1, int64_t(m.poisonSources) + own.poisonSources)) / 25.f;
     }
     if (result.cold > 0) result.coldDuration = float(int64_t(m.coldFrames) + own.coldFrames) / 25.f;
     const int64_t deadly = int64_t(m.deadlyStrike) + own.deadlyStrike;

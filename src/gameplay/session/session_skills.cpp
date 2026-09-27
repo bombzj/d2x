@@ -135,6 +135,11 @@ void GameSession::useSkill(const UseSkill &intent) {
         auto resolved = resolveSkill(*entry->spell, rank,
                                      player.skillRanks, fireMasteryPercent(),
                                      lightningMasteryPercent());
+        if (resolved.weapon) {
+            cancelExit(); cancelPickup(); cancelInteraction();
+            simulation_.beginWeaponSkill(resolved, intent.target, intent.enemy);
+            return;
+        }
         if (!applySkillCastTiming(resolved)) {
             simulation_.state_.message = "Original cast animation timing is unavailable";
             return;

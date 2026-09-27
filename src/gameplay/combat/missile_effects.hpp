@@ -14,6 +14,7 @@ struct PoisonCloudSpec {
     int minimum = 0, maximum = 0, poisonFrames = 0; // 1/256 HP per tick.
     int lifetimeFrames = 0, size = 0;
     int puffId = -1;
+    bool damageFromSkill = false;
 };
 struct PoisonCloudBurstSpec {
     PoisonCloudSpec cloud;

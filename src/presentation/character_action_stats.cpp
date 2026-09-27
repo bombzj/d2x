@@ -1,19 +1,24 @@
 #include "character_action_stats.hpp"
 #include "gameplay/session/session.hpp"
+#include <algorithm>
 #include <cstdint>
+#include <limits>
 
 namespace d2x {
 namespace {
 std::string damageText(int64_t minimum, int64_t maximum) {
     return std::to_string(minimum) + "-" + std::to_string(maximum);
 }
-CharacterActionStats weaponStats(const GameSession &session, bool thrown, bool leftHand) {
+CharacterActionStats weaponStats(const GameSession &session, bool thrown, bool leftHand,
+                                 const SkillCastSpec *skill = nullptr) {
     const auto &equipment = session.equipmentStats();
     const auto &combat = session.characterStats().combat;
     for (int index = 0; index < equipment.weaponCount; ++index) {
         const auto &weapon = equipment.weapons[index];
         if (leftHand && (!weapon.item || !weapon.leftHand)) continue;
         if ((thrown && !weapon.throwable) || (!thrown && weapon.potion)) return {};
+        if (skill && std::find(weapon.types.begin(), weapon.types.end(), skill->weapon->requiredType) == weapon.types.end())
+            return {};
         if (thrown && weapon.potion && weapon.projectile) {
             const auto &spec = *weapon.projectile;
             if (spec.impact && spec.impact->cloudBurst) {
@@ -33,8 +38,20 @@ CharacterActionStats weaponStats(const GameSession &session, bool thrown, bool l
                                          elements.cold.maximum + elements.magic.maximum;
         const int minimum = thrown ? weapon.throwMinimum : weapon.minimum;
         const int maximum = thrown ? weapon.throwMaximum : weapon.maximum;
-        return {damageText(int64_t(minimum) / 256 + elementalMinimum,
-                           int64_t(maximum) / 256 + elementalMaximum), std::to_string(weapon.attackRating)};
+        int64_t poisonMinimum = 0, poisonMaximum = 0;
+        if (skill && skill->poisonDuration > 0) {
+            WeaponModifiers own;
+            if (auto found = combat.weapons.find(weapon.item); found != combat.weapons.end()) own = found->second;
+            const int64_t frames = (int64_t(skill->poisonDuration * 25.f + .001f) + combat.poisonFrames + own.poisonFrames) /
+                std::max(1, combat.poisonSources + own.poisonSources);
+            poisonMinimum = (int64_t(skill->minimumDamage * 256.f) + combat.poisonMinimum + own.poisonMinimum) * frames / 256;
+            poisonMaximum = (int64_t(skill->maximumDamage * 256.f) + combat.poisonMaximum + own.poisonMaximum) * frames / 256;
+        }
+        const int rating = int(std::clamp<int64_t>(int64_t(weapon.baseAttackRating) *
+            std::max(0, 100 + weapon.attackRatingPercent + (skill ? skill->weapon->attackRating : 0)) / 100,
+            0, std::numeric_limits<int>::max()));
+        return {damageText(int64_t(minimum) / 256 + elementalMinimum + poisonMinimum,
+                           int64_t(maximum) / 256 + elementalMaximum + poisonMaximum), std::to_string(rating)};
     }
     return {};
 }
@@ -57,6 +74,7 @@ CharacterActionStats characterActionStats(const GameSession &session, std::optio
                                                session.state().player.skillRanks,
                                                session.fireMasteryPercent(),
                                                session.lightningMasteryPercent());
+        if (cast.weapon) return weaponStats(session, cast.weapon->thrown, false, &cast);
         if (cast.effect == SkillBehavior::Teleport || cast.effect == SkillBehavior::StaticField ||
             cast.effect == SkillBehavior::FrozenArmor) return {};
         if (cast.effect == SkillBehavior::Inferno)

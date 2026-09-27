@@ -4,17 +4,22 @@
 #include <cmath>
 
 namespace d2x {
-bool Simulation::firePhysicalProjectile(Vec target, const WeaponDamage &weapon, bool thrown) {
+bool Simulation::firePhysicalProjectile(Vec target, const WeaponDamage &weapon, bool thrown,
+                                        const SkillCastSpec *skill) {
     auto &player = state_.player;
     const auto selected = weapon;
     if (!selected.projectile || (thrown && !selected.throwable)) return false;
+    if (skill && (!skill->weapon || (skill->weapon->manaOnRelease && player.mana < skill->manaCost))) {
+        state_.message = "Not enough mana";
+        return false;
+    }
     const auto &spec = *selected.projectile;
     if (std::abs(target.x - player.pos.x) >= 100 || std::abs(target.y - player.pos.y) >= 100) return false;
     const bool potion = thrown && selected.potion;
     // Resolve the launch snapshot before removing the final equipped stack.
     const auto priorRandom = player.combatRandom;
     AttackElements elements;
-    if (!potion) elements = rollAttackElements(selected.item);
+    if (!potion) elements = rollAttackElements(selected.item, nullptr, skill);
     elements.ranged = true;
     const auto roll = [&](int minimum, int maximum) {
         if (maximum < minimum) std::swap(minimum, maximum);
@@ -36,17 +41,25 @@ bool Simulation::firePhysicalProjectile(Vec target, const WeaponDamage &weapon, 
         return false;
     }
     const Vec direction = (target - player.pos).unit();
-    Missile missile{ids_.allocate(), player.id, player.pos, direction * spec.speed,
-        spec.lifetime, SkillBehavior::None, true, spec.id, physical};
+    Missile missile{ids_.allocate(), player.id, player.pos,
+        direction * (skill ? skill->missileVelocity : spec.speed),
+        skill ? skill->missileLifetime : spec.lifetime, SkillBehavior::None, true,
+        skill ? skill->missileId : spec.id, physical};
     missile.attackElements = elements;
     missile.attackerLevel = level;
     missile.attackRating = selected.attackRating;
     missile.baseAttackRating = selected.baseAttackRating;
-    missile.attackRatingPercent = selected.attackRatingPercent;
+    missile.attackRatingPercent = selected.attackRatingPercent + (skill ? skill->weapon->attackRating : 0);
     missile.targetModifiers = selected.target;
     missile.playerAttack = true;
     missile.physicalDamagePercent = potion ? 0 : selected.projectileDamagePercent;
     missile.combatRandom = player.combatRandom;
+    if (skill) {
+        missile.impact = skill->missileImpact;
+        if (skill->weapon->manaOnRelease) player.mana = std::max(0.f, player.mana - skill->manaCost);
+        if (skill->weapon->delayFrames > 0)
+            player.skillDelayUntil = state_.frame + EffectFrame(skill->weapon->delayFrames);
+    }
     if (potion) {
         missile.physical = false;
         missile.groundTargeted = spec.groundTargeted;
@@ -58,10 +71,10 @@ bool Simulation::firePhysicalProjectile(Vec target, const WeaponDamage &weapon, 
         missile.velocity = (target - player.pos) * (1.f / missile.remaining);
     }
     state_.area.missiles.push_back(std::move(missile));
-    emit(MissileReleased{spec.id});
+    emit(MissileReleased{skill ? skill->missileId : spec.id});
     return true;
 }
-void Simulation::advancePhysicalMissile(Missile &missile, float dt) {
+void Simulation::advancePhysicalMissile(Missile &missile, float dt, std::vector<Missile> &spawned) {
     Vec next = missile.pos + missile.velocity * std::min(dt, missile.remaining);
     const bool wall = !missilePathClear(missile.missileId, missile.pos, next);
     if (wall) {
@@ -85,6 +98,8 @@ void Simulation::advancePhysicalMissile(Missile &missile, float dt) {
     }
     missile.pos = struck ? missile.pos + (next - missile.pos) * first : next;
     missile.remaining = wall || struck ? 0 : std::max(0.f, missile.remaining - dt);
+    // AlwaysExplode runs the native hit effect on a failed to-hit roll, terrain and expiry too.
+    if (missile.remaining <= .00001f && missile.impact) resolveMissileImpact(missile, spawned, struck);
     if (!struck) return;
     missile.lastHit = struck->id;
     const auto defense = monsterDefense_ ? monsterDefense_(*struck, state_.area.region) : std::nullopt;

@@ -8,6 +8,12 @@
 #include <vector>
 
 namespace d2x {
+// Weapon skills use the ordinary attack animation, equipment and ammunition pipeline.
+struct WeaponSkillSpec {
+    std::string requiredType;
+    bool thrown = false, manaOnRelease = false;
+    int attackRating = 0, attackRatingPerLevel = 0, delayFrames = 0;
+};
 // Typed values imported from Skills.txt and Missiles.txt. No archive data enters gameplay.
 struct SkillSpec {
     struct OverlayVisual {
@@ -26,6 +32,10 @@ struct SkillSpec {
     int minimumDamage = 0, maximumDamage = 0, hitShift = 8;
     bool fireDamage = false;
     bool lightningDamage = false;
+    bool poisonDamage = false;
+    int poisonFrames = 0;
+    std::array<int, 3> poisonFramesPerLevel{};
+    std::optional<WeaponSkillSpec> weapon;
     std::array<int, 5> minimumPerLevel{}, maximumPerLevel{};
     int synergyPercent = 0;
     std::vector<int> synergySkills;
@@ -56,6 +66,8 @@ struct SkillCastSpec {
     float castDuration = 0, castImpact = 0, castRate = 0;
     float manaCost = 0, minimumDamage = 0, maximumDamage = 0;
     float coldDuration = 0, missileVelocity = 0, missileLifetime = 0;
+    float poisonDuration = 0;
+    std::optional<WeaponSkillSpec> weapon;
     std::optional<MissileImpactSpec> missileImpact;
     int missileId = -1;
     float missileNextDelay = 0;

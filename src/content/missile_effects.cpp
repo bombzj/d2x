@@ -40,7 +40,10 @@ MissileImpactSpec loadMissileImpact(const DataTable &missiles, size_t row, Archi
         resources.push_back(visual);
     } else if (hit == 2) {
         const auto child = linked(missiles, row, "HitSubMissile1");
-        if (required(missiles, child, "pSrvDoFunc") != 3 || missiles.value(child, "EType") != "pois")
+        const bool skillDamage = !missiles.value(child, "Skill").empty() &&
+                                 missiles.number(child, "SrcDamage") == -1;
+        if (required(missiles, child, "pSrvDoFunc") != 3 ||
+            (!skillDamage && missiles.value(child, "EType") != "pois"))
             throw std::runtime_error("Unsupported native poison-cloud behavior");
         const auto visual = loadProjectileResource(missiles, child, archives);
         resources.push_back(visual);
@@ -49,9 +52,12 @@ MissileImpactSpec loadMissileImpact(const DataTable &missiles, size_t row, Archi
         cloud.missileId = visual.id;
         const int shift = missiles.number(child, "HitShift").value_or(0);
         if (shift < 0 || shift > 8) throw std::runtime_error("Invalid poison-cloud damage shift");
-        cloud.minimum = required(missiles, child, "EMin") * (1 << shift);
-        cloud.maximum = required(missiles, child, "EMax") * (1 << shift);
-        cloud.poisonFrames = required(missiles, child, "ELen");
+        cloud.damageFromSkill = skillDamage;
+        if (!skillDamage) {
+            cloud.minimum = required(missiles, child, "EMin") * (1 << shift);
+            cloud.maximum = required(missiles, child, "EMax") * (1 << shift);
+            cloud.poisonFrames = required(missiles, child, "ELen");
+        }
         cloud.lifetimeFrames = required(missiles, child, "Range");
         if (missiles.number(child, "SubLoop").value_or(0))
             cloud.lifetimeFrames += missiles.number(row, "sHitPar3").value_or(0) *
@@ -60,7 +66,7 @@ MissileImpactSpec loadMissileImpact(const DataTable &missiles, size_t row, Archi
         burst.mainStep = std::max(1, required(missiles, row, "sHitPar2"));
         burst.subStep = missiles.number(row, "sHitPar1").value_or(0);
         if (burst.subStep < 0 || cloud.minimum < 0 || cloud.maximum < cloud.minimum ||
-            cloud.poisonFrames <= 0 || cloud.lifetimeFrames <= 0 || cloud.size < 0 || cloud.size > 3)
+            (!skillDamage && cloud.poisonFrames <= 0) || cloud.lifetimeFrames <= 0 || cloud.size < 0 || cloud.size > 3)
             throw std::runtime_error("Invalid native poison-cloud parameters");
         const auto speed = [](int value) { return float(value * 128 * 75 / 100) * 25.f / 4096.f; };
         burst.mainSpeed = speed(required(missiles, child, "Param1"));

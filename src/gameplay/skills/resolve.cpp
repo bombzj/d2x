@@ -100,6 +100,14 @@ SkillCastSpec resolveSkill(const SkillSpec &spec, int rank,
     if (auto found = learned.find(spec.coldSynergySkill); found != learned.end())
         coldFrames += coldFrames * found->second * spec.coldSynergyPercent / 100;
     result.coldDuration = float(coldFrames) / 25.f;
+    const int64_t poisonFrames = int64_t(spec.poisonFrames) +
+        int64_t(std::min(rank - 1, 7)) * spec.poisonFramesPerLevel[0] +
+        int64_t(std::clamp(rank - 8, 0, 8)) * spec.poisonFramesPerLevel[1] +
+        int64_t(std::max(rank - 16, 0)) * spec.poisonFramesPerLevel[2];
+    result.poisonDuration = float(poisonFrames) / 25.f;
+    result.weapon = spec.weapon;
+    if (result.weapon)
+        result.weapon->attackRating += (rank - 1) * result.weapon->attackRatingPerLevel;
     result.missileId = spec.missileId;
     result.missileCount = std::min(spec.missileCountLimit,
         spec.missileCount + (rank - 1) * spec.missileCountPerLevel);
@@ -121,6 +129,17 @@ SkillCastSpec resolveSkill(const SkillSpec &spec, int rank,
     if (spec.effect == SkillBehavior::Inferno)
         result.missileLifetime = float(std::max(1, (spec.flameFrames + (rank - 1) * spec.flameFramesPerLevel) / 2)) / 25.f;
     result.missileImpact = spec.missileImpact;
+    if (result.missileImpact && result.missileImpact->cloudBurst) {
+        auto &cloud = result.missileImpact->cloudBurst->cloud;
+        if (cloud.damageFromSkill) {
+            if (!spec.poisonDamage || poisonFrames <= 0)
+                throw std::runtime_error("Poison cloud requires resolved poison skill damage");
+            cloud.minimum = int(result.minimumDamage * 256.f);
+            cloud.maximum = int(result.maximumDamage * 256.f);
+            cloud.poisonFrames = int(poisonFrames);
+            cloud.damageFromSkill = false;
+        }
+    }
     return result;
 }
 } // namespace d2x

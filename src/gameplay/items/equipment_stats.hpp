@@ -20,6 +20,7 @@ struct WeaponDamage {
     AttackTargetModifiers target;
     bool blunt = false;
     std::optional<WeaponProjectileSpec> projectile;
+    std::vector<std::string> types;
 };
 struct EquipmentStats {
     std::string animationClass = "hth";

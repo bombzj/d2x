@@ -60,6 +60,32 @@ bool Simulation::beginWeaponAttack(Vec aim, EntityId target, const WeaponDamage 
     emit(WeaponAttackStarted{p.id, target, thrown || weapon.ranged});
     return true;
 }
+bool Simulation::beginWeaponSkill(const SkillCastSpec &skill, Vec aim, EntityId target) {
+    auto &p = state_.player;
+    if (!skill.weapon || safeZone_ || p.dead || p.weaponAttack || p.hitTime > 0) return false;
+    const auto &action = *skill.weapon;
+    if (action.delayFrames > 0 && state_.frame < p.skillDelayUntil) {
+        state_.message = "This skill is still recovering.";
+        return false;
+    }
+    const auto *weapon = attackWeapon(action.thrown, false);
+    if (!weapon || std::find(weapon->types.begin(), weapon->types.end(), action.requiredType) == weapon->types.end()) {
+        state_.message = "This skill requires the matching weapon type.";
+        return false;
+    }
+    if (p.mana < skill.manaCost) { state_.message = "Not enough mana"; return false; }
+    stopChannel(p);
+    if (auto *enemy = findEnemy(target); enemy && enemy->hp > 0) aim = enemy->pos;
+    if (!beginWeaponAttack(aim, target, *weapon, action.thrown, false)) return false;
+    p.weaponAttack->skill = skill;
+    p.attackTarget = {};
+    p.attackPosition.reset();
+    p.throwAttack = p.leftHandAttack = false;
+    if (!action.manaOnRelease) p.mana -= skill.manaCost;
+    state_.message.clear();
+    emit(SkillCast{p.id, skill.sourceId, p.pos});
+    return true;
+}
 void Simulation::advanceWeaponAttack() {
     auto &p = state_.player;
     if (!p.weaponAttack) return;
@@ -82,7 +108,7 @@ void Simulation::advanceWeaponAttack() {
             auto *enemy = findEnemy(attack.target);
             const Vec aim = enemy && enemy->hp > 0 ? enemy->pos : attack.aim;
             if (attack.thrown || selected.ranged)
-                firePhysicalProjectile(aim, selected, attack.thrown);
+                firePhysicalProjectile(aim, selected, attack.thrown, attack.skill ? &*attack.skill : nullptr);
             else if (enemy && enemy->hp > 0 && meleeReach(*enemy, selected))
                 meleeDamage(*enemy, selected);
         }

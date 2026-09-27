@@ -58,7 +58,8 @@ class Simulation {
     std::vector<GameEvent> events_;
     Enemy *findEnemy(EntityId id);
     float hurtPlayer(float amount, MonsterDamageType type);
-    AttackElements rollAttackElements(EntityId weapon, const CombatModifiers *modifiers = nullptr);
+    AttackElements rollAttackElements(EntityId weapon, const CombatModifiers *modifiers = nullptr,
+                                      const SkillCastSpec *skill = nullptr);
     void resolveWeaponHit(Enemy &enemy, float physical, EntityId source,
                           const AttackElements &elements);
     void moveTo(Vec target);
@@ -66,9 +67,11 @@ class Simulation {
     const WeaponDamage *attackWeapon(bool thrown, bool leftHand) const;
     bool meleeReach(const Enemy &enemy, const WeaponDamage &weapon) const;
     bool beginWeaponAttack(Vec aim, EntityId target, const WeaponDamage &weapon, bool thrown, bool leftHand);
+    bool beginWeaponSkill(const SkillCastSpec &skill, Vec aim, EntityId target);
     void advanceWeaponAttack();
-    bool firePhysicalProjectile(Vec target, const WeaponDamage &weapon, bool thrown);
-    void advancePhysicalMissile(Missile &missile, float dt);
+    bool firePhysicalProjectile(Vec target, const WeaponDamage &weapon, bool thrown,
+                                const SkillCastSpec *skill = nullptr);
+    void advancePhysicalMissile(Missile &missile, float dt, std::vector<Missile> &spawned);
     void resolveMissileImpact(const Missile &missile, std::vector<Missile> &spawned, Enemy *direct = nullptr);
     void advanceGroundTargetedMissile(Missile &missile, float dt, std::vector<Missile> &spawned);
     void advancePoisonCloud(Missile &missile, float dt);

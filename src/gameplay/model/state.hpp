@@ -48,6 +48,7 @@ struct PlayerState {
     float hp = 0, mana = 0, stamina = 0;
     float castTime = 0, hitTime = 0, deathTime = 0, meleeTime = 0;
     std::optional<WeaponAttackState> weaponAttack;
+    EffectFrame skillDelayUntil = 0;
     float chill = 0;
     float poisonRemaining = 0, poisonPerSecond = 0;
     float webSlowRemaining = 0;

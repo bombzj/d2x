@@ -48,7 +48,7 @@ add_library(d2x_content src/content/classic_data.cpp src/content/lod_data.cpp sr
 target_sources(d2x_content PRIVATE src/content/character_progression.cpp)
 target_sources(d2x_content PRIVATE src/content/character_attributes.cpp)
 target_sources(d2x_content PRIVATE src/content/string_table.cpp src/content/skill_data.cpp)
-target_sources(d2x_content PRIVATE src/content/sorceress_data.cpp)
+target_sources(d2x_content PRIVATE src/content/sorceress_data.cpp src/content/weapon_skill_data.cpp)
 target_sources(d2x_content PRIVATE src/content/skill_animation.cpp)
 target_sources(d2x_content PRIVATE src/content/item_projectiles.cpp src/content/missile_effects.cpp)
 target_sources(d2x_content PRIVATE src/content/monster_experience.cpp)

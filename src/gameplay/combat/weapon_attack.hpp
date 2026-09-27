@@ -2,6 +2,7 @@
 #include "core/id.hpp"
 #include "core/math.hpp"
 #include "gameplay/items/equipment_rules.hpp"
+#include "gameplay/skills/spec.hpp"
 #include <array>
 #include <string>
 #include <string_view>
@@ -23,6 +24,7 @@ struct WeaponAttackState {
     int ticks = 0;
     std::string weaponClass;
     std::array<std::string, size_t(EquipmentSlot::Count)> appearanceDefinitions{};
+    std::optional<SkillCastSpec> skill;
     int animationFrame() const;
 };
 int effectiveAttackSpeed(int animationSpeed, int itemIAS, int baseWeaponSpeed, int skillRate);
