@@ -47,8 +47,8 @@ void GameSession::settleDeaths() {
                 plan = planItemLoot(content_, ratios->second, entry.treasureClass, entry.itemLevel,
                                     entry.upgradeLevel, plan.randomState, usedUniques,
                                     characterDefinition_.code,
-                                    simulation_.characterStats_.combat.magicFind,
-                                    simulation_.characterStats_.combat.goldFind);
+                                    simulation_.characterStats_.combat.magicFind + (death.hirelingKill ? hirelingStats().combat.magicFind : 0),
+                                    simulation_.characterStats_.combat.goldFind + (death.hirelingKill ? hirelingStats().combat.goldFind : 0));
             }
             std::cout << " TC=" << entry.treasureClass << " itemLevel=" << entry.itemLevel
                       << " upgradeLevel=" << entry.upgradeLevel << " drops=" << plan.drops.size()

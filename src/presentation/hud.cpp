@@ -81,11 +81,12 @@ void SceneView::drawHud() const {
                            int(bounds.y) - 19, 13, WHITE);
     }
     if (view_.debug && !view_.npcMenu && view_.dialogue.empty() && !view_.shopOpen) {
-        painter_.label("D2X", 22, 20, 20, gold);
-        painter_.label("CLASSIC ENGINE / C++", 72, 24, 10, {154, 149, 129, 255});
+        const int legendX = hirelingPortraitVisible() ? int(74 * classicPanelScale) : 22;
+        painter_.label("D2X", legendX, 20, 20, gold);
+        painter_.label("CLASSIC ENGINE / C++", legendX + 50, 24, 10, {154, 149, 129, 255});
         painter_.label("LV " + std::to_string(sim.player.level) + "  XP " +
                            std::to_string(sim.player.experience),
-                       22, 48, 10, {154, 149, 129, 255});
+                       legendX, 48, 10, {154, 149, 129, 255});
         int worldWidth = view_.inventory.open && !view_.inventory.storage ? int(inventoryBounds().x) : W;
         const auto &regionName = session_.region().definition.name;
         painter_.label(regionName, (worldWidth - painter_.measure(regionName, 20)) / 2, 20, 20, gold);
@@ -173,6 +174,7 @@ void SceneView::draw(Vec mouse) const {
     if (view_.automap)
         drawMinimap(view_.automapLarge);
     drawHud();
+    drawHirelingPortrait();
     if (!view_.blocksWorld() && !view_.inventory.drag && (view_.combatTarget ||
         (!hudSurface(mouse) && CheckCollisionPointRec(rv(mouse), worldViewport())))) {
         for (const auto &monster : visibleMonsters()) {

@@ -18,7 +18,7 @@ struct MonsterRecord {
     int sparse = 0, alignment = 0, normalLevel = 0, transLevel = 0;
     std::array<int, 3> coldEffect{};
     int localBlood = 0, bleed = 0, overlayHeight = 0;
-    int collisionSize = 0;
+    int collisionSize = 0, hitClass = 0;
     std::optional<int> normalAttackRating;
     std::optional<int> normalAttackRating2;
     std::optional<int> normalDefense;
@@ -40,7 +40,7 @@ struct MonsterRecord {
     bool getHitMode = false, deadMode = false, skill2Mode = false, runMode = false;
     bool castMode = false, sequenceMode = false;
     bool castsShadow = false;
-    bool demon = false, undead = false, ownsParty = false;
+    bool demon = false, undead = false, ownsParty = false, primeEvil = false;
     std::array<std::string, 2> minions;
     bool hostile() const {
         return enabled && killable && !npc && !critter &&
@@ -64,6 +64,7 @@ class MonsterCatalog {
     std::map<std::string, MonsterRecord, std::less<>> monsters_;
     std::map<MonsterKind, MonsterAttackTiming> attacks_;
     std::map<int, MonsterAttackTiming> hirelingAttacks_;
+    std::map<int, std::map<std::string, MonsterMotionTiming, std::less<>>> hirelingMotions_;
     std::map<MonsterKind, MonsterAttackTiming> attacks2_;
     std::map<MonsterKind, MonsterAttackTiming> casts_;
     std::map<MonsterKind, std::map<std::string, MonsterMotionTiming, std::less<>>> motions_;
@@ -90,6 +91,12 @@ class MonsterCatalog {
     const MonsterAttackTiming *hirelingAttackTiming(int classId) const {
         auto found = hirelingAttacks_.find(classId);
         return found == hirelingAttacks_.end() ? nullptr : &found->second;
+    }
+    const MonsterMotionTiming *hirelingMotion(int classId, std::string_view mode) const {
+        auto actor = hirelingMotions_.find(classId);
+        if (actor == hirelingMotions_.end()) return nullptr;
+        auto found = actor->second.find(mode);
+        return found == actor->second.end() ? nullptr : &found->second;
     }
     const MonsterMotionTiming *motion(MonsterKind kind, std::string_view mode) const {
         auto kinds = motions_.find(kind);

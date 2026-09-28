@@ -117,6 +117,14 @@ void Simulation::releaseSkillCast(PlayerState &player, const SkillCastSpec &skil
         emit(SkillActivated{skill.sourceId});
     } else if (skill.effect == SkillBehavior::Teleport) {
         player.pos = player.previous = target;
+        // PetType.hireable.warp=1: SrvDo027 -> SUnit -> PlayerPets relocates
+        // living hirelings to the owner's destination, including through walls.
+        if (player.hireling.active()) {
+            auto &merc = player.hireling;
+            merc.pos = target; merc.route.clear(); merc.moving = false;
+            merc.attack.reset(); merc.attackTimer = merc.thinkTimer = 0;
+            merc.animationTime = 0;
+        }
     } else if (skill.effect == SkillBehavior::StaticField) {
         for (auto &enemy : state_.area.enemies) {
             if (enemy.hp <= 0 || !active(enemy.pos) ||

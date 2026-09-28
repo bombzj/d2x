@@ -1,13 +1,17 @@
 #pragma once
 #include "core/math.hpp"
+#include "core/id.hpp"
+#include "gameplay/effects/state.hpp"
+#include "gameplay/combat/weapon_attack.hpp"
 #include <deque>
 #include <string>
 #include <cstdint>
 
 namespace d2x {
 // The quest reward is a character-owned hireling. Position and route are
-// session state; the character save records identity, level, experience and life.
+// session state; native D2S records identity, experience, equipment and death status.
 struct HirelingState {
+    EntityId id; // Runtime identity; D2S identifies a mercenary by its seed.
     int sourceRow = -1;
     int classId = -1;
     std::string nameKey;
@@ -17,6 +21,17 @@ struct HirelingState {
     std::deque<Vec> route;
     bool moving = false;
     float attackTimer = 0;
+    std::optional<WeaponAttackState> attack;
+    float thinkTimer = 0, hitTime = 0, hitDuration = 0, deathAge = 0;
+    float baseHitDuration = 0, deathDuration = 0, animationTime = 0, animationRate = 0;
+    float chill = 0, poisonRemaining = 0, poisonPerSecond = 0;
+    float webSlowRemaining = 0;
+    int webSlowPercent = 0, collisionSize = 0, attackBias = 0;
+    RegionId corpseRegion = RegionId::Encampment;
+    bool corpseVisible = false;
+    struct Healing { float remaining = 0, rate = 0; };
+    std::deque<Healing> healing;
+    CombatEffectSet combatEffects;
     uint64_t experience = 0;
     uint32_t seed = 0;
     uint64_t combatRandom = 0;

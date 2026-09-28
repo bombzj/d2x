@@ -9,5 +9,6 @@ namespace d2x {
 CharacterModifiers resolveEquipmentModifiers(const ClassicData &content,
                                               const InventoryService &inventory,
                                               const PlayerContainers &containers,
-                                              const EquipmentActor &baseActor);
+                                              const EquipmentActor &baseActor,
+                                              EntityId excludedItem = {});
 } // namespace d2x

@@ -75,7 +75,15 @@ AttackElements Simulation::rollAttackElements(EntityId weapon, const CombatModif
     return result;
 }
 void Simulation::resolveWeaponHit(Enemy &enemy, float physical, EntityId source,
-                                  const AttackElements &elements) {
+                                  const AttackElements &originalElements) {
+    auto elements = originalElements;
+    if (!elements.playerKillEffects && monsterDefense_)
+        if (const auto defense = monsterDefense_(enemy, state_.area.region); defense && defense->boss) {
+            auto scale = [&](float value) { return float(int64_t(value * 256.f) * hirelingBossDamagePercent_ / 100) / 256.f; };
+            physical = scale(physical); elements.fire = scale(elements.fire);
+            elements.cold = scale(elements.cold); elements.lightning = scale(elements.lightning);
+            elements.magic = scale(elements.magic); elements.poisonPerSecond = scale(elements.poisonPerSecond / 25.f) * 25.f;
+        }
     std::array<int, 6> resistances{};
     for (size_t channel = 0; channel < resistances.size(); ++channel) {
         const auto value = monsterResistance_ ? monsterResistance_(enemy, state_.area.region, MonsterDamageType(channel)) : std::nullopt;
@@ -107,8 +115,13 @@ void Simulation::resolveWeaponHit(Enemy &enemy, float physical, EntityId source,
             return float(damage * (int64_t(percent) * 64 / std::max(1, divisor)) / 100 * drain / 100 / 64) / 256.f;
         };
         auto &p = state_.player;
-        p.hp = std::min(float(characterStats_.maxLife), p.hp + leeched(elements.lifeLeech, lifeStealDivisor_));
-        p.mana = std::min(float(characterStats_.maxMana), p.mana + leeched(elements.manaLeech, manaStealDivisor_));
+        if (elements.playerKillEffects) {
+            p.hp = std::min(float(characterStats_.maxLife), p.hp + leeched(elements.lifeLeech, lifeStealDivisor_));
+            p.mana = std::min(float(characterStats_.maxMana), p.mana + leeched(elements.manaLeech, manaStealDivisor_));
+        } else if (p.hireling.active() && hirelingAttributes_) {
+            p.hireling.hp = std::min(float(hirelingAttributes_().maxLife),
+                p.hireling.hp + leeched(elements.lifeLeech, lifeStealDivisor_));
+        }
     }
     float chill = 0;
     for (auto [amount, type] : {
@@ -118,7 +131,7 @@ void Simulation::resolveWeaponHit(Enemy &enemy, float physical, EntityId source,
              {elements.magic, MonsterDamageType::Magic}}) {
         if (amount <= 0) continue;
         const int originalResist = resistance(type);
-        const int resist = type == MonsterDamageType::Cold && source == state_.player.id &&
+        const int resist = type == MonsterDamageType::Cold && elements.playerKillEffects && source == state_.player.id &&
                    originalResist < 100 && coldPierce_ ? originalResist - coldPierce_() : originalResist;
         total += mitigateMonsterDamage(amount, resist);
         if (type == MonsterDamageType::Cold && elements.coldDuration > 0) {

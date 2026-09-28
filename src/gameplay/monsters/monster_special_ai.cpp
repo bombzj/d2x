@@ -13,6 +13,7 @@ namespace d2x {
 bool Simulation::handleMonsterSpecialAi(Enemy &enemy, const MonsterAiProfile &ai,
                                         float distance, bool clear) {
     const auto &player = state_.player;
+    const Vec targetPosition = monsterTargetPosition(enemy);
     if (ai.kind == MonsterAiKind::Arach) {
         const bool inCombat = clear &&
             distance < monsterDefinition(enemy.kind).attackRange;
@@ -23,12 +24,12 @@ bool Simulation::handleMonsterSpecialAi(Enemy &enemy, const MonsterAiProfile &ai
             return true;
         }
         if (action == ArachAction::Retreat) {
-            if (!monsterStartRetreat(enemy, player.pos, ai.params[3], *grid_))
+            if (!monsterStartRetreat(enemy, targetPosition, ai.params[3], *grid_))
                 enemy.aiWait = 15.f / 25.f;
             return true;
         }
         if (action == ArachAction::Circle) {
-            if (!monsterStartCircle(enemy, player.pos, 6, *grid_))
+            if (!monsterStartCircle(enemy, targetPosition, 6, *grid_))
                 enemy.aiWait = 15.f / 25.f;
             return true;
         }
@@ -57,12 +58,12 @@ bool Simulation::handleMonsterSpecialAi(Enemy &enemy, const MonsterAiProfile &ai
             return true;
         }
         if (action == BloodHawkAction::Retreat) {
-            if (!monsterStartRetreat(enemy, player.pos, 4, *grid_))
+            if (!monsterStartRetreat(enemy, targetPosition, 4, *grid_))
                 beginMonsterAttack(enemy, 1);
             return true;
         }
         if (action == BloodHawkAction::Circle) {
-            if (monsterStartCircle(enemy, player.pos, 4, *grid_)) return true;
+            if (monsterStartCircle(enemy, targetPosition, 4, *grid_)) return true;
         }
         return false;
     }
@@ -106,7 +107,7 @@ bool Simulation::handleMonsterSpecialAi(Enemy &enemy, const MonsterAiProfile &ai
             return true;
         }
         if (decision.action == FallenShamanAction::Circle &&
-            !monsterStartCircle(enemy, player.pos, 3, *grid_))
+            !monsterStartCircle(enemy, targetPosition, 3, *grid_))
             enemy.aiWait = 10.f / 25.f;
         if (!enemy.aiCircling) enemy.route.clear();
         return true;
@@ -115,12 +116,12 @@ bool Simulation::handleMonsterSpecialAi(Enemy &enemy, const MonsterAiProfile &ai
         const bool inCombat = clear && distance < monsterDefinition(enemy.kind).attackRange;
         const auto action = vampireThink(enemy, ai, distance, inCombat);
         if (action == VampireAction::Retreat) {
-            if (!monsterStartRetreat(enemy, player.pos, 8, *grid_))
+            if (!monsterStartRetreat(enemy, targetPosition, 8, *grid_))
                 enemy.aiWait = 10.f / 25.f;
             return true;
         }
         if (action == VampireAction::Circle) {
-            if (!monsterStartCircle(enemy, player.pos, 4, *grid_))
+            if (!monsterStartCircle(enemy, targetPosition, 4, *grid_))
                 enemy.aiWait = 10.f / 25.f;
             return true;
         }
@@ -138,16 +139,18 @@ bool Simulation::handleMonsterSpecialAi(Enemy &enemy, const MonsterAiProfile &ai
     }
     if (ai.kind == MonsterAiKind::Fetish) {
         const bool inCombat = clear && distance < monsterDefinition(enemy.kind).attackRange;
-        const int lifePercent = characterStats_.maxLife > 0
-            ? std::clamp(int(player.hp * 100.f / float(characterStats_.maxLife)), 0, 100) : 0;
+        const auto targetStats = enemy.targetHireling ? hirelingAttributes_() : characterStats_;
+        const float life = enemy.targetHireling ? player.hireling.hp : player.hp;
+        const int lifePercent = targetStats.maxLife > 0
+            ? std::clamp(int(life * 100.f / float(targetStats.maxLife)), 0, 100) : 0;
         const auto action = fetishThink(enemy, ai, distance, inCombat, lifePercent);
         if (action == FetishAction::Retreat) {
-            if (!monsterStartRetreat(enemy, player.pos, 14, *grid_))
+            if (!monsterStartRetreat(enemy, targetPosition, 14, *grid_))
                 fetishRetreatFailed(enemy);
             return true;
         }
         if (action == FetishAction::Circle) {
-            if (!monsterStartCircle(enemy, player.pos, 4, *grid_))
+            if (!monsterStartCircle(enemy, targetPosition, 4, *grid_))
                 enemy.aiWait = 10.f / 25.f;
             return true;
         }
@@ -164,10 +167,10 @@ bool Simulation::handleMonsterSpecialAi(Enemy &enemy, const MonsterAiProfile &ai
     if (ai.kind == MonsterAiKind::SkeletonMage) {
         auto action = skeletonMageThink(enemy, ai, distance, clear);
         if (action == SkeletonMageAction::Retreat)
-            action = monsterStartRetreat(enemy, player.pos, 5, *grid_)
+            action = monsterStartRetreat(enemy, targetPosition, 5, *grid_)
                 ? SkeletonMageAction::Idle : SkeletonMageAction::Fire;
         if (action == SkeletonMageAction::Circle) {
-            if (!monsterStartCircle(enemy, player.pos, 4, *grid_))
+            if (!monsterStartCircle(enemy, targetPosition, 4, *grid_))
                 enemy.aiWait = float(ai.params[7]) / 25.f;
             action = SkeletonMageAction::Idle;
         }
@@ -185,10 +188,10 @@ bool Simulation::handleMonsterSpecialAi(Enemy &enemy, const MonsterAiProfile &ai
         auto action = bigheadThink(enemy, ai, distance, clear,
                                    monsterDefinition(enemy.kind).attackRange);
         if (action == BigheadAction::Retreat)
-            action = monsterStartRetreat(enemy, player.pos, 5, *grid_)
+            action = monsterStartRetreat(enemy, targetPosition, 5, *grid_)
                 ? BigheadAction::Idle : BigheadAction::Fire;
         if (action == BigheadAction::Circle) {
-            if (!monsterStartCircle(enemy, player.pos, 4, *grid_))
+            if (!monsterStartCircle(enemy, targetPosition, 4, *grid_))
                 enemy.aiWait = 10.f / 25.f;
             action = BigheadAction::Idle;
         }

@@ -59,6 +59,7 @@ MonsterCatalog::MonsterCatalog(Archives &archives, const DataTable &stats) {
         m.partyMax = n("PartyMax");
         m.sparse = n("sparsePopulate");
         m.normalLevel = n("Level");
+        m.primeEvil = n("primeevil") != 0;
         m.transLevel = n("TransLvl");
         for (int difficulty = 0; difficulty < 3; ++difficulty) {
             const char *field = difficulty == 0 ? "ColdEffect" :
@@ -98,6 +99,17 @@ MonsterCatalog::MonsterCatalog(Archives &archives, const DataTable &stats) {
             return std::nullopt;
         };
         m.attack1Projectile = loadProjectile(stats.value(row, "MissA1"), m.attack1ProjectileArt);
+        // RogueMissile is the hireling's ordinary attack (SkillMonst SrvDo110),
+        // referenced by MonStats.Skill1, not by the empty MissA1 column.
+        if (m.ai == "Hireable" && !m.attack1Projectile)
+            for (size_t skillRow = 0; skillRow < skills.rows().size(); ++skillRow)
+                if (skills.value(skillRow, "skill") == stats.value(row, "Skill1") &&
+                    skills.number(skillRow, "srvdofunc") == 110 && stats.value(row, "Sk1mode") == "A1") {
+                    m.attack1Projectile = loadProjectile(skills.value(skillRow, "srvmissilea"), m.attack1ProjectileArt);
+                    if (m.attack1Projectile)
+                        m.attack1Projectile->velocity = float(int(m.attack1Projectile->velocity) * 256 * 75 / 100) * 25.f / 4096.f;
+                    break;
+                }
         m.attack2Projectile = loadProjectile(stats.value(row, "MissA2"), m.attack2ProjectileArt);
         if (m.walkVelocity && (*m.walkVelocity < 0 || *m.walkVelocity > 255))
             throw std::runtime_error("Unsupported monster Velocity: " + m.id);
@@ -156,6 +168,7 @@ MonsterCatalog::MonsterCatalog(Archives &archives, const DataTable &stats) {
         m.castsShadow = extended.number(extra->second, "Shadow").value_or(0) != 0;
         m.overlayHeight = extended.number(extra->second, "OverlayHeight").value_or(0);
         m.collisionSize = extended.number(extra->second, "SizeX").value_or(0);
+        m.hitClass = extended.number(extra->second, "HitClass").value_or(0);
         m.getHitMode = extended.number(extra->second, "mGH").value_or(0) != 0;
         m.deadMode = extended.number(extra->second, "mDD").value_or(0) != 0;
         m.skill2Mode = extended.number(extra->second, "mS2").value_or(0) != 0;
@@ -203,7 +216,7 @@ MonsterCatalog::MonsterCatalog(Archives &archives, const DataTable &stats) {
         // D2MOO MonsterTbls: variants scale base-ID rates by Velocity/Run;
         // pre-expansion RN uses half the base WL rate, not the RN AnimData rate.
         for (auto &[id, actor] : monsters_) {
-            if (monsterImplementation(id).substitute) continue;
+            if (monsterImplementation(id).substitute && actor.ai != "Hireable") continue;
             const auto base = monsters_.find(actor.base);
             if (base == monsters_.end()) continue;
             const auto walk = animationRate(base->second, "wl");
@@ -230,6 +243,12 @@ MonsterCatalog::MonsterCatalog(Archives &archives, const DataTable &stats) {
                             animations, actor.token, 1, weapon,
                             actor.attack1Projectile ? 2 : 1))
                         hirelingAttacks_.emplace(actor.index, *timing);
+                for (auto mode : {"nu", "wl", "gh", "dt", "dd"}) {
+                    const auto modeWeapon = monsterModeWeapon(archives, actor.token, mode, actor.baseWeapon);
+                    if (!modeWeapon.empty())
+                        if (auto timing = loadMonsterMotionTiming(animations, actor.token, mode, modeWeapon))
+                            hirelingMotions_[actor.index].emplace(mode, *timing);
+                }
             }
         std::map<MonsterKind, const MonsterRecord *> actors;
         for (const auto &[id, record] : monsters_) {

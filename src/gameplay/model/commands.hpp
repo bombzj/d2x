@@ -60,6 +60,8 @@ struct CompleteActOne { EntityId npc; };
 struct OpenGamble { EntityId npc; };
 struct OpenHirelingList { EntityId npc; };
 struct HireMercenary { EntityId npc; uint32_t slot = 0; };
+struct ResurrectHireling { EntityId npc; };
+struct UseHirelingPotion { ItemHandle item; };
 struct EquipHirelingItem {
     ItemHandle item;
     std::optional<EquipmentSlot> slot;
@@ -120,5 +122,5 @@ using GameCommand =
                  SplitStack, MergeStacks, LoadBook, IdentifyItem, PickupItem, StopMoving, EquipBelt, UseItem, UseBeltColumn,
                  CloseStorage, TransferItem, UseExit, EquipItem, DebugKill, DebugSpawnMonster,
                  DebugDamageMonster, UseTownPortal, UseCainPortal, WaypointTravel, OpenGamble, RepairVendorItem,
-                 OpenHirelingList, HireMercenary, EquipHirelingItem, DebugGrantHireling, StopChannel>;
+                 OpenHirelingList, HireMercenary, EquipHirelingItem, DebugGrantHireling, ResurrectHireling, UseHirelingPotion, StopChannel>;
 } // namespace d2x

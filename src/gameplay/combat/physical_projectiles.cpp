@@ -107,7 +107,7 @@ void Simulation::advancePhysicalMissile(Missile &missile, float dt, std::vector<
     if (!defense) { state_.message = "Original monster defense is unavailable."; return; }
     if (missile.attackerLevel <= 0) return;
     rollRandom(missile.combatRandom);
-    const int chance = missile.playerAttack ? weaponHitChance(missile.attackerLevel,
+    const int chance = (missile.playerAttack || !missile.attackElements.playerKillEffects) ? weaponHitChance(missile.attackerLevel,
         missile.baseAttackRating, missile.attackRatingPercent, missile.targetModifiers, *defense, struck->identity.rank) :
         physicalHitChance(missile.attackerLevel, missile.attackRating, defense->level, defense->defense);
     if (uint32_t(missile.combatRandom) % 100 >= unsigned(chance)) return;

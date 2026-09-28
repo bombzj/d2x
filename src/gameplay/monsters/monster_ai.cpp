@@ -28,6 +28,17 @@ void Simulation::updateMonsters(float dt) {
     for (auto &enemy : state_.area.enemies) {
         if (enemy.hp <= 0 || !active(enemy.pos))
             continue;
+        const auto &merc = player.hireling;
+        if (enemy.attack <= 0) {
+            const bool chooseMerc = merc.active() && !safeZone_ && active(merc.pos) &&
+                (player.dead || (merc.pos - enemy.pos).length() < (player.pos - enemy.pos).length()) &&
+                grid_->missileSegment(enemy.pos, merc.pos, {0x04, 1});
+            if (chooseMerc != enemy.targetHireling) {
+                enemy.route.clear(); enemy.rethink = 0; enemy.aiPursuing = false;
+            }
+            enemy.targetHireling = chooseMerc;
+        }
+        const Vec targetPosition = monsterTargetPosition(enemy);
         if (enemy.hp < enemy.maxHp && enemy.poisonRemaining <= 0 &&
             enemy.openWoundsRemaining <= 0 && monsterDamageRegen_)
             if (auto rate = monsterDamageRegen_(enemy, state_.area.region)) {
@@ -45,7 +56,7 @@ void Simulation::updateMonsters(float dt) {
             tryMonsterTeleport(enemy)) continue;
         enemy.webAuraRemaining = std::max(0.f, enemy.webAuraRemaining - dt);
         if (enemy.webAuraRemaining == 0) enemy.webTrailDistance = 0;
-        if (player.dead || player.hp <= 0) {
+        if (enemy.targetHireling ? !merc.active() : (player.dead || player.hp <= 0)) {
             enemy.route.clear();
             enemy.aiPursuing = false;
             enemy.aiEscaping = false;
@@ -134,8 +145,8 @@ void Simulation::updateMonsters(float dt) {
             enemy.aiRetaliate = false;
             const auto ai = monsterAi_ ? monsterAi_(enemy) : std::nullopt;
             if (ai && ai->kind == MonsterAiKind::QuillRat && enemy.aiWait == 0 &&
-                (player.pos - enemy.pos).length() < monsterDefinition(enemy.kind).sightRange &&
-                grid_->missileSegment(enemy.pos, player.pos, {0x04, 1})) {
+                (targetPosition - enemy.pos).length() < monsterDefinition(enemy.kind).sightRange &&
+                grid_->missileSegment(enemy.pos, targetPosition, {0x04, 1})) {
                 enemy.route.clear();
                 enemy.aiEscaping = false;
                 beginMonsterAttack(enemy, 2);
@@ -163,7 +174,7 @@ void Simulation::updateMonsters(float dt) {
                     (corpse.pos - enemy.pos).length() >= 15.f) continue;
                 const auto duration = monsterDeathDuration_(corpse);
                 if (duration && corpse.deathAge <= *duration &&
-                    fallenStartEscape(enemy, player.pos, *grid_)) {
+                    fallenStartEscape(enemy, targetPosition, *grid_)) {
                     enemy.aiCorpse = corpse.id;
                     break;
                 }
@@ -185,7 +196,7 @@ void Simulation::updateMonsters(float dt) {
             continue;
         }
         const auto &definition = monsterDefinition(enemy.kind);
-        auto delta = player.pos - enemy.pos;
+        auto delta = targetPosition - enemy.pos;
         float distance = delta.length();
         if (fallenAi && !enemy.aiCommanded && enemy.aiWait == 0 && enemy.route.empty() &&
             distance < 15.f &&
@@ -229,7 +240,7 @@ void Simulation::updateMonsters(float dt) {
         const bool fetishAi = ai && ai->kind == MonsterAiKind::Fetish;
         const bool vampireAi = ai && ai->kind == MonsterAiKind::Vampire;
         // Native AI missile-barrier LOS is independent of ground walkability.
-        bool clear = grid_->missileSegment(enemy.pos, player.pos, {0x04, 1});
+        bool clear = grid_->missileSegment(enemy.pos, targetPosition, {0x04, 1});
         if (ai && handleMonsterSpecialAi(enemy, *ai, distance, clear)) continue;
         if (skeletonBowAi) {
             const auto action = skeletonBowThink(enemy, *ai, distance, clear);
@@ -250,7 +261,7 @@ void Simulation::updateMonsters(float dt) {
                 continue;
             }
             if (clear && distance < 6.f && corruptArcherRetreats(enemy, *ai) &&
-                monsterStartRetreat(enemy, player.pos, 12, *grid_)) {
+                monsterStartRetreat(enemy, targetPosition, 12, *grid_)) {
                 enemy.aiRunning = false;
                 continue;
             }
@@ -268,7 +279,7 @@ void Simulation::updateMonsters(float dt) {
                 beginMonsterAttack(enemy, 2);
                 continue;
             }
-            if (monsterStartRetreat(enemy, player.pos, ai->params[3], *grid_)) continue;
+            if (monsterStartRetreat(enemy, targetPosition, ai->params[3], *grid_)) continue;
             if (distance < 4.f) {
                 beginMonsterAttack(enemy, 2);
                 continue;
@@ -318,7 +329,7 @@ void Simulation::updateMonsters(float dt) {
                 enemy, *ai, distance,
                 zombieForcedPursuit_ && zombieForcedPursuit_(state_.area.region));
             const bool wanders = zombieWanders || fallenMove == FallenMovement::Wander;
-            Vec destination = player.pos;
+            Vec destination = targetPosition;
             if (wanders) {
                 while (!enemy.route.empty() && (enemy.route.front() - enemy.pos).length() < .25f)
                     enemy.route.pop_front();
@@ -329,7 +340,7 @@ void Simulation::updateMonsters(float dt) {
                 if (enemy.route.empty()) continue;
                 destination = enemy.route.front();
                 enemy.rethink = 0;
-            } else if (grid_->segment(enemy.pos, player.pos)) {
+            } else if (grid_->segment(enemy.pos, targetPosition)) {
                 enemy.route.clear();
                 enemy.rethink = 0;
             } else {
@@ -340,7 +351,7 @@ void Simulation::updateMonsters(float dt) {
                     enemy.rethink = 0;
                 }
                 if (enemy.rethink <= 0) {
-                    enemy.route = grid_->path(enemy.pos, player.pos);
+                    enemy.route = grid_->path(enemy.pos, targetPosition);
                     enemy.rethink = .7f;
                 }
                 if (enemy.route.empty()) {
@@ -404,7 +415,7 @@ void Simulation::updateMonsters(float dt) {
             if (archerAi) enemy.aiRunning = false;
         }
         if (!skeletonBowAi && !skeletonMageAi && !bigheadAi && !fetishAi && !vampireAi &&
-            (player.pos - enemy.pos).length() < definition.attackRange && grid_->segment(enemy.pos, player.pos)) {
+            (targetPosition - enemy.pos).length() < definition.attackRange && grid_->segment(enemy.pos, targetPosition)) {
             if (skeletonAi && !skeletonAttacks(enemy, *ai))
                 continue;
             if (fallenAi) {
@@ -419,7 +430,7 @@ void Simulation::updateMonsters(float dt) {
                 const auto action = bruteCombat(enemy, *ai);
                 if (action == BruteCombat::Idle) continue;
                 if (action == BruteCombat::Circle) {
-                    if (!monsterStartCircle(enemy, player.pos, 4, *grid_))
+                    if (!monsterStartCircle(enemy, targetPosition, 4, *grid_))
                         enemy.aiWait = 15.f / 25.f;
                     continue;
                 }

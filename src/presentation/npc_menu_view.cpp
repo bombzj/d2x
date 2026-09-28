@@ -37,6 +37,8 @@ std::vector<MenuEntry> entries(const GameSession &session, EntityId npc, std::st
     }
     if (npcCanGamble(npcClass))
         result.push_back({"Gamble", 9});
+    if (session.canResurrectHireling(npc))
+        result.push_back({"Resurrect: " + std::to_string(session.hirelingResurrectionCost()), 12});
     if (session.canHireFrom(npc))
         result.push_back({"Hire", 10});
     if (npcClass.starts_with("cain"))

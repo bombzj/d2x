@@ -53,7 +53,7 @@ void Simulation::launchMonsterProjectile(Enemy &enemy) {
     const auto projectile = monsterProjectile_ ? monsterProjectile_(enemy, enemy.attackMode) : std::nullopt;
     if (!projectile || projectile->id < 0 || projectile->velocity <= 0 || projectile->lifetime <= 0)
         throw std::runtime_error("Monster projectile is missing");
-    const auto direction = (state_.player.pos - enemy.pos).unit();
+    const auto direction = (monsterTargetPosition(enemy) - enemy.pos).unit();
     state_.area.missiles.push_back({ids_.allocate(), enemy.id, enemy.pos,
         direction * projectile->velocity, projectile->lifetime, SkillBehavior::None,
         true, projectile->id, 0, 0, 0, true, enemy.attackMode});
@@ -65,7 +65,7 @@ void Simulation::launchMonsterSpell(Enemy &enemy) {
     if (!spell || spell->projectile.id < 0 || spell->projectile.velocity <= 0 ||
         spell->projectile.lifetime <= 0 || spell->maximumDamage < spell->minimumDamage)
         throw std::runtime_error("Monster spell projectile is missing");
-    const auto direction = (state_.player.pos - enemy.pos).unit();
+    const auto direction = (monsterTargetPosition(enemy) - enemy.pos).unit();
     const float damage = float(spell->minimumDamage +
         monsterAiRandom(enemy) % unsigned(spell->maximumDamage - spell->minimumDamage + 1));
     state_.area.missiles.push_back({ids_.allocate(), enemy.id, enemy.pos,
@@ -74,25 +74,30 @@ void Simulation::launchMonsterSpell(Enemy &enemy) {
     state_.area.missiles.back().combatRandom = childRandom(unitRandom_);
     replicateMonsterMissile(enemy, state_.area.missiles.back());
 }
-void Simulation::resolveMonsterAttack(Enemy &enemy, int modeOverride, bool projectile) {
+void Simulation::resolveMonsterAttack(Enemy &enemy, int modeOverride, bool projectile, bool hitHireling) {
     auto &player = state_.player;
-    if ((!projectile && enemy.hp <= 0) || player.dead || player.hp <= 0 ||
-        (!projectile && ((player.pos - enemy.pos).length() >= monsterDefinition(enemy.kind).attackRange ||
-                         !grid_->segment(enemy.pos, player.pos))))
+    hitHireling = projectile ? hitHireling : enemy.targetHireling;
+    const Vec targetPosition = hitHireling ? player.hireling.pos : player.pos;
+    const auto targetStats = hitHireling ? hirelingAttributes_() : characterStats_;
+    if ((!projectile && enemy.hp <= 0) ||
+        (hitHireling ? !player.hireling.active() : (player.dead || player.hp <= 0)) ||
+        (!projectile && ((targetPosition - enemy.pos).length() >= monsterDefinition(enemy.kind).attackRange ||
+                         !grid_->segment(enemy.pos, targetPosition))))
         return;
     const int mode = modeOverride ? modeOverride : enemy.attackMode;
-    const bool running = player.runningNow && player.moving;
+    const bool running = !hitHireling && player.runningNow && player.moving;
     if (!running && monsterAccuracy_)
         if (auto accuracy = monsterAccuracy_(enemy, state_.area.region, mode)) {
             const int auraRating = enemy.combatEffects.modifiers(state_.frame).combat.attackRatingPercent +
                 (enemy.identity.enchantment ? enemy.identity.enchantment->attackRatingPercent : 0);
             const auto chance = physicalHitChance(accuracy->level,
                 int(int64_t(accuracy->attackRating) * std::max(0, 100 + auraRating) / 100),
-                                                   equipmentStats_.level, equipmentStats_.defense);
+                                                   hitHireling ? player.hireling.level : equipmentStats_.level,
+                                                   hitHireling ? targetStats.defense : equipmentStats_.defense);
             rollRandom(enemy.combatRandom);
             if (uint32_t(enemy.combatRandom) % 100 >= unsigned(chance)) return;
         }
-    int block = equipmentStats_.blockChance;
+    int block = hitHireling ? 0 : equipmentStats_.blockChance;
     if (running) block /= 3;
     if (block > 0) {
         rollRandom(player.combatRandom);
@@ -126,12 +131,19 @@ void Simulation::resolveMonsterAttack(Enemy &enemy, int modeOverride, bool proje
     const int damagePercent = (enemy.identity.enchantment ? enemy.identity.enchantment->damagePercent : 0) +
         enemy.combatEffects.modifiers(state_.frame).combat.damagePercent;
     damage = float(int64_t(damage * 256.f) * std::max(0, 100 + damagePercent) / 100) / 256.f;
-    const float physicalDealt = hurtPlayer(damage, MonsterDamageType::Physical);
-    if (!projectile && physicalDealt > 0 && enemy.hp > 0)
+    const float previousHirelingHp = player.hireling.hp;
+    const float physicalDealt = hitHireling ? hurtHireling(hirelingIncomingDamage(enemy, damage), MonsterDamageType::Physical, false) :
+        hurtPlayer(damage, MonsterDamageType::Physical);
+    if (!hitHireling && !projectile && physicalDealt > 0 && enemy.hp > 0)
         triggerCombatEffects(player, CombatEffectEvent::DamagedInMelee, enemy);
-    if (combat && player.hp > 0)
-        applyMonsterElements(enemy, *combat, mode);
-    if (player.hp > 0) applyMonsterEnchantmentHit(enemy);
-    if (wearEquipment_) wearEquipment_({}, true);
+    if (combat && (hitHireling ? player.hireling.active() : player.hp > 0))
+        applyMonsterElements(enemy, *combat, mode, hitHireling);
+    if (hitHireling ? player.hireling.active() : player.hp > 0) applyMonsterEnchantmentHit(enemy, hitHireling);
+    if (hitHireling) {
+        const float total = previousHirelingHp - player.hireling.hp;
+        const int baseClass = monsterHitProperties_ ? monsterHitProperties_(enemy).first : 0;
+        recoverHireling(total, total > physicalDealt ? 0 : baseClass);
+    }
+    if (!hitHireling && wearEquipment_) wearEquipment_({}, true);
 }
 } // namespace d2x

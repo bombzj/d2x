@@ -26,7 +26,7 @@ void SceneAssets::loadHirelingAnimations(Archives &archives, const GameSession &
     for (size_t index = 0; index < actor->specialVariants.size(); ++index)
         if (!actor->specialVariants[index].empty())
             equipment[index + 8] = actor->specialVariants[index].c_str();
-    for (auto mode : {"nu", "wl", "a1"}) {
+    for (auto mode : {"nu", "wl", "a1", "gh", "dt", "dd"}) {
         auto weapon = monsterModeWeapon(archives, actor->token, mode, actor->baseWeapon);
         if (weapon.empty())
             throw std::runtime_error("Original Act I hireling COF is missing");

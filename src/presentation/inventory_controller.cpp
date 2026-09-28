@@ -52,7 +52,7 @@ bool SceneController::queueInventory(GameCommand command, EntityId source) {
         ui.pendingMessage = "Equipment changed.";
     else if (std::holds_alternative<TransferItem>(command))
         ui.pendingMessage = "Item transferred.";
-    else if (std::holds_alternative<UseItem>(command))
+    else if (std::holds_alternative<UseItem>(command) || std::holds_alternative<UseHirelingPotion>(command))
         ui.pendingMessage = "Item used.";
     else {
         const auto &move = std::get<MoveItem>(command);
@@ -358,6 +358,8 @@ bool SceneController::handleInventory(const FrameInput &input) {
             if (hitGrid && (hitGrid->container == ui.storage ||
                             hitGrid->container == session_.playerContainers().cube))
                 view_.notice("Move this item to your backpack before using it.", true);
+            else if (input.shift && hitGrid && hitGrid->container == containers.belt)
+                queueInventory(UseHirelingPotion{item->handle()}, item->id);
             else
                 changeEquipment(*item);
         } else

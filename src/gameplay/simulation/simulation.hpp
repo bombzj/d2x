@@ -29,6 +29,14 @@ class Simulation {
     WorldState state_;
     EquipmentStats equipmentStats_;
     CharacterAttributes characterStats_;
+    std::function<CharacterAttributes()> hirelingAttributes_;
+    int hirelingBossDamagePercent_ = 100;
+    float hurtHireling(float amount, MonsterDamageType type, bool hitRecovery = true, bool alreadyMitigated = false);
+    void recoverHireling(float damage, int hitClass = 0);
+    float hirelingIncomingDamage(const Enemy &enemy, float damage) const;
+    std::function<std::pair<int, bool>(const Enemy &)> monsterHitProperties_;
+    Vec monsterTargetPosition(const Enemy &enemy) const;
+    std::optional<std::pair<bool, float>> hostileMissileTarget(const Missile &missile, Vec to) const;
     std::function<void()> combatEffectsChanged_;
     void combatEffectsChanged(std::span<const RemovedCombatEffect> removed);
     void triggerCombatEffects(PlayerState &player, CombatEffectEvent event, Enemy &other);
@@ -101,7 +109,7 @@ class Simulation {
     void updatePlayer(float dt, Vec keyboard);
     void updateMonsters(float dt);
     void updateMonsterEnchantments();
-    void applyMonsterEnchantmentHit(Enemy &enemy);
+    void applyMonsterEnchantmentHit(Enemy &enemy, bool hitHireling = false);
     void launchMonsterEnchantmentMissiles(Enemy &enemy, int missileId);
     void advanceHostileElementMissile(Missile &missile, float dt);
     bool tryMonsterTeleport(Enemy &enemy);
@@ -109,18 +117,20 @@ class Simulation {
     bool handleMonsterSpecialAi(Enemy &enemy, const MonsterAiProfile &ai,
                                 float distance, bool clear);
     void beginMonsterAttack(Enemy &enemy, int forcedMode = 0);
-    void resolveMonsterAttack(Enemy &enemy, int modeOverride = 0, bool projectile = false);
+    void resolveMonsterAttack(Enemy &enemy, int modeOverride = 0, bool projectile = false,
+                               bool hitHireling = false);
     void launchMonsterProjectile(Enemy &enemy);
     void replicateMonsterMissile(const Enemy &enemy, Missile missile);
     std::set<int> noMultiShotMissiles_, unspreadMultiShotMissiles_;
     void launchMonsterSpell(Enemy &enemy);
-    void resolveMonsterSpell(Enemy &enemy, const Missile &missile);
+    void resolveMonsterSpell(Enemy &enemy, const Missile &missile, bool hitHireling = false);
     void resolveMonsterResurrection(Enemy &enemy);
     std::optional<MonsterSpawn> nestSpawn(Enemy &enemy,
                                          std::span<const MonsterSpawn> queued);
     void activateSpiderWeb(Enemy &enemy);
     void leaveSpiderWeb(Enemy &enemy, float moved);
-    void applyMonsterElements(Enemy &enemy, const MonsterNormalCombat &combat, int mode);
+    void applyMonsterElements(Enemy &enemy, const MonsterNormalCombat &combat, int mode,
+                                bool hitHireling = false);
     void updateMissiles(float dt);
     void spawnEnemies(std::span<const MonsterSpawn> spawns);
     void activateMonsters();

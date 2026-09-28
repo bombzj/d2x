@@ -35,6 +35,8 @@ struct HirelingCombatStats {
     int fireResist = 0, coldResist = 0, lightningResist = 0, poisonResist = 0;
     WeaponDamage weapon;
     CombatModifiers combat;
+    int displayDamageMin = 0, displayDamageMax = 0;
+    int fasterMoveVelocity = 0, velocityPercent = 0, vitality = 0;
 };
 class GameSession {
     struct NpcMotionState {
@@ -169,8 +171,12 @@ class GameSession {
     bool assignKashyaHireling();
     void openHirelingList(EntityId npc);
     void hireMercenary(const HireMercenary &command);
+    void resurrectHireling(EntityId npc);
+    void useHirelingPotion(ItemHandle item);
+    InventoryError previewHirelingPotion(ItemHandle item) const;
     void equipHirelingItem(const EquipHirelingItem &command);
     InventoryError previewHirelingEquipment(const EquipHirelingItem &command) const;
+    EquipmentActor hirelingEquipmentActor(std::optional<EquipmentSlot> replacedSlot) const;
     bool ensureHirelingOffers(EntityId npc);
     void assignHireling(const HirelingOffer &offer);
     void grantDebugHireling();
@@ -186,7 +192,7 @@ class GameSession {
     void beginPortal(uint64_t revision);
     void updatePortal();
     InventoryError previewPortalScroll(ItemHandle item) const;
-    void useBeltColumn(int column);
+    void useBeltColumn(int column, bool hireling);
     void beginPickup(ItemHandle item, bool toCursor);
     void updatePickup();
     void cancelPickup();
@@ -200,6 +206,8 @@ class GameSession {
 
   public:
     bool canHireFrom(EntityId npc) const;
+    bool canResurrectHireling(EntityId npc) const;
+    unsigned hirelingResurrectionCost() const;
     const std::vector<HirelingOffer> *hirelingOffers(EntityId npc) const;
     const HirelingDefinition *hirelingDefinition() const;
     HirelingCombatStats hirelingStats() const;

@@ -91,6 +91,7 @@ struct Enemy {
     float hp = 100, maxHp = 100, chill = 0, attack = 0;
     float attackDuration = 0, attackImpact = -1;
     int attackMode = 1;
+    bool targetHireling = false;
     float skill2Remaining = 0, skill2Duration = 0;
     float resurrectionRemaining = 0, resurrectionDuration = 0;
     float stun = 0, freeze = 0, deathAge = 0, hitFlash = 0, rethink = 0;

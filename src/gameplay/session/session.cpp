@@ -28,6 +28,7 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
     simulation_.state_.player.name = std::move(characterName);
     characterDefinition_ = definitionFor(state().player.characterClass);
     simulation_.state_.population = population;
+    simulation_.hirelingBossDamagePercent_ = content_.hirelingBossDamagePercent.at(size_t(population.difficulty));
     simulation_.lifeStealDivisor_ = content_.lifeStealDivisor.at(size_t(population.difficulty));
     simulation_.manaStealDivisor_ = content_.manaStealDivisor.at(size_t(population.difficulty));
     simulation_.monsterDrain_ = [this](const Enemy &enemy) {
@@ -101,6 +102,19 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
             publishInventory(std::move(result), {});
     };
     simulation_.combatEffectsChanged_ = [this] { refreshCharacter(); };
+    simulation_.monsterHitProperties_ = [this](const Enemy &enemy) {
+        const auto *record = monsterContent_.find(enemy.identity.monster);
+        return record ? std::pair{record->hitClass, record->primeEvil} : std::pair{0, false};
+    };
+    simulation_.hirelingAttributes_ = [this] {
+        const auto merc = hirelingStats();
+        CharacterAttributes result;
+        result.maxLife = merc.base.life; result.defense = merc.base.defense;
+        result.fireResist = merc.fireResist; result.coldResist = merc.coldResist;
+        result.lightningResist = merc.lightningResist; result.poisonResist = merc.poisonResist;
+        result.combat = merc.combat;
+        return result;
+    };
     simulation_.attackTiming_ = [this](const WeaponDamage &weapon, bool thrown, bool leftHand)
         -> std::optional<WeaponAttackTiming> {
         const auto action = thrown ? (leftHand ? BasicSkillAction::LeftHandThrow : BasicSkillAction::Throw) :
@@ -546,7 +560,8 @@ void GameSession::enter(RegionId id, std::optional<Vec> arrival, std::optional<V
         auto &hireling = simulation_.state_.player.hireling;
         hireling.pos = state().player.pos;
         hireling.route.clear();
-        hireling.moving = false;
+        hireling.attack.reset(); hireling.attackTimer = 0;
+        hireling.moving = false; hireling.animationTime = 0;
     }
     onQuestRegionEntered(id);
     std::cout << "Room activation: created=" << state().area.enemies.size()
@@ -648,7 +663,7 @@ void GameSession::tick(float dt, Vec keyboard, bool forceRun) {
                 else if constexpr (std::is_same_v<T, IdentifyItem>)
                     identifyItem(intent);
                 else if constexpr (std::is_same_v<T, UseBeltColumn>)
-                    useBeltColumn(intent.column);
+                    useBeltColumn(intent.column, intent.hireling);
                 else if constexpr (std::is_same_v<T, CloseStorage>)
                     closeStorage();
                 else if constexpr (std::is_same_v<T, Interact>) {
@@ -675,6 +690,10 @@ void GameSession::tick(float dt, Vec keyboard, bool forceRun) {
                     openHirelingList(intent.npc);
                 } else if constexpr (std::is_same_v<T, HireMercenary>) {
                     hireMercenary(intent);
+                } else if constexpr (std::is_same_v<T, ResurrectHireling>) {
+                    resurrectHireling(intent.npc);
+                } else if constexpr (std::is_same_v<T, UseHirelingPotion>) {
+                    useHirelingPotion(intent.item);
                 } else if constexpr (std::is_same_v<T, EquipHirelingItem>) {
                     equipHirelingItem(intent);
                 } else if constexpr (std::is_same_v<T, DebugGrantHireling>) {

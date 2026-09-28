@@ -6,6 +6,9 @@ namespace d2x {
 void loadLodTreasureData(ClassicData &data) {
     const auto &difficultyTable = data.tables.at("difficultylevels");
     for (size_t difficulty = 0; difficulty < 3; ++difficulty) {
+        const auto mercDamage = difficultyTable.number(difficulty, "HireableBossDamagePercent");
+        if (!mercDamage || *mercDamage < 0) throw std::runtime_error("Missing original hireling boss damage ratio");
+        data.hirelingBossDamagePercent[difficulty] = *mercDamage;
         data.lifeStealDivisor[difficulty] = std::max(1, difficultyTable.number(difficulty, "LifeStealDivisor").value_or(1));
         data.manaStealDivisor[difficulty] = std::max(1, difficultyTable.number(difficulty, "ManaStealDivisor").value_or(1));
     }

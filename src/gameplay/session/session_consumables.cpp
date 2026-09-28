@@ -145,7 +145,7 @@ void GameSession::updatePortal() {
         simulation_.emit(InteractionFailed{{}, "Cannot reach the town portal."});
     }
 }
-void GameSession::useBeltColumn(int column) {
+void GameSession::useBeltColumn(int column, bool hireling) {
     auto belt = inventory_.container(playerContainers_.belt);
     if (!belt || column < 0 || column >= belt->spec.columns) {
         simulation_.emit(InventoryRejected{{}, InventoryError::InvalidRequest});
@@ -154,7 +154,8 @@ void GameSession::useBeltColumn(int column) {
     // A manually rearranged column may have a hole; use its lowest occupied cell.
     for (int row = 0; row < belt->spec.rows; ++row)
         if (auto item = inventory_.item(inventory_.itemAt(belt->id, {column, row}))) {
-            useItem(item->handle());
+            if (hireling) useHirelingPotion(item->handle());
+            else useItem(item->handle());
             return;
         }
     simulation_.emit(PickupFailed{{}, "That belt column is empty."});

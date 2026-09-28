@@ -52,5 +52,6 @@ struct EquipmentActor {
     int strength = 0, dexterity = 0, level = 1;
     int blockFactor = 0;
     unsigned weaponSet = 0;
+    bool hireling = false;
 };
 } // namespace d2x

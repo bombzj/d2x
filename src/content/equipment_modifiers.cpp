@@ -48,7 +48,8 @@ void addItem(const ClassicData &content, const ItemInstance &item, bool weapon,
 CharacterModifiers resolveEquipmentModifiers(const ClassicData &content,
                                               const InventoryService &inventory,
                                               const PlayerContainers &containers,
-                                              const EquipmentActor &baseActor) {
+                                              const EquipmentActor &baseActor,
+                                              EntityId excludedItem) {
     CharacterModifiers total;
     std::set<EntityId> active;
     std::set<std::string> appliedSetBonuses;
@@ -67,7 +68,7 @@ CharacterModifiers resolveEquipmentModifiers(const ClassicData &content,
         for (int slot = 0; slot < int(EquipmentSlot::Count); ++slot) {
             if (!weaponSlotActive(EquipmentSlot(slot), baseActor.weaponSet)) continue;
             const auto *item = inventory.item(inventory.equipped(containers, EquipmentSlot(slot)));
-            if (!item || active.contains(item->id)) continue;
+            if (!item || item->id == excludedItem || active.contains(item->id)) continue;
             const auto *definition = inventory.catalog().find(item->definition);
             if (!definition || !item->identified || !item->quantity || (definition->maxDurability && item->durability == 0)) continue;
             EquipmentActor actor = baseActor;

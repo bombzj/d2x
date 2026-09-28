@@ -79,7 +79,9 @@ int GameSession::validateCharacterRestore(const CharacterSaveData &data) const {
     const auto &hireling = player.hireling;
     if (hireling.sourceRow >= 0) {
         const auto stats = hirelingStats(hireling, equipmentInventory, data.containers);
-        require(std::isfinite(hireling.hp) && hireling.hp >= 0 && hireling.hp <= stats.base.life &&
+        // Native D2S carries a death flag, not current HP. Its decoded base-life
+        // marker is replaced by equipped maximum life after restore.
+        require(std::isfinite(hireling.hp) && hireling.hp >= 0 &&
                     hireling.experience >= stats.base.experience &&
                     (!stats.base.nextExperience || hireling.experience < stats.base.nextExperience),
                 "hireling life or experience");
@@ -232,6 +234,12 @@ void GameSession::restore(CharacterSaveData data) {
                     object.npcRandom = childRandom(random_);
                 }
     ids_.next_ = data.nextEntityId;
+    if (simulation_.state_.player.hireling.sourceRow >= 0) {
+        auto &merc = simulation_.state_.player.hireling;
+        merc.id = ids_.allocate();
+        merc.pos = simulation_.state_.player.pos;
+        if (merc.hp > 0) merc.hp = float(hirelingStats().base.life);
+    }
     current_ = current;
     reconcileCainObjects();
     for (auto &region : regions_) region.refreshObjectCollision(state().time);

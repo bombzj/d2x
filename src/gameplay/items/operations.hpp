@@ -72,6 +72,7 @@ struct IdentifyItem {
 };
 struct UseBeltColumn {
     int column;
+    bool hireling = false;
 };
 struct SwapItems {
     ItemHandle first, second;

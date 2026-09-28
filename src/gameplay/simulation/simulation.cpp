@@ -61,6 +61,12 @@ void Simulation::heal() {
     p.webSlowRemaining = 0;
     p.webSlowPercent = 0;
     p.webSource = {};
+    if (p.hireling.active() && hirelingAttributes_) {
+        auto &merc = p.hireling;
+        merc.hp = float(hirelingAttributes_().maxLife);
+        merc.chill = merc.poisonRemaining = merc.poisonPerSecond = 0;
+        merc.webSlowRemaining = 0; merc.healing.clear();
+    }
     p.dead = false;
     p.deathTime = 0;
 }

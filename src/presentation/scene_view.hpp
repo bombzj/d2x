@@ -144,6 +144,7 @@ class SceneView {
     void drawInventory(Vec mouse) const;
     void drawCharacter(Vec mouse) const;
     void drawHireling(Vec mouse) const;
+    void drawHirelingPortrait() const;
     void drawHirelingList(Vec mouse) const;
     std::string hirelingName(std::string_view key) const;
     void drawStorage(Vec mouse) const;
@@ -172,6 +173,7 @@ class SceneView {
         Rectangle gameMenuItemBounds(int index) const;
         int gameMenuAt(Vec mouse) const;
     Rectangle hirelingSlotBounds(size_t index) const;
+    bool hirelingPortraitVisible() const;
     std::optional<int> miniPanelAt(Vec mouse) const;
     const LevelExit *exitAt(Vec mouse) const;
     SceneView(Archives &archives, const GameSession &session);

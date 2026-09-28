@@ -119,12 +119,13 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
         throw std::runtime_error("Character animations missing; supply the classic MPQ resources.");
     loadMonsterAnimations(archives, session);
     loadHirelingAnimations(archives, session);
+    hirelingPortrait = uiGraphics_.single("data/global/ui/hireables/rogueicon.dc6");
     hirelingPanel = uiGraphics_.single("data/global/ui/panel/npcinv.dc6");
     hirelingScroll = uiGraphics_.single("data/global/ui/panel/scrollbar.dc6");
     hirelingHead = uiGraphics_.single("data/global/ui/panel/inv_helm_glove.dc6");
     hirelingArmor = uiGraphics_.single("data/global/ui/panel/inv_armor.dc6");
     hirelingWeapon = uiGraphics_.single("data/global/ui/panel/inv_weapons.dc6");
-    if (hirelingPanel.frames.size() < 4 || hirelingScroll.frames.size() < 6 ||
+    if (hirelingPortrait.frames.empty() || hirelingPanel.frames.size() < 4 || hirelingScroll.frames.size() < 6 ||
         hirelingHead.frames.empty() || hirelingArmor.frames.empty() || hirelingWeapon.frames.empty())
         throw std::runtime_error("Original expansion hireling panel resources are missing");
     loadMonsterAudio(archives, session.monsterContent());

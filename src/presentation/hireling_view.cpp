@@ -1,8 +1,31 @@
 #include "scene_view.hpp"
 #include "hireling_panel.hpp"
 #include <algorithm>
+#include <cmath>
 
 namespace d2x {
+bool SceneView::hirelingPortraitVisible() const {
+    return session_.state().player.hireling.active() && worldViewport().x == 0 && !view_.blocksWorld();
+}
+void SceneView::drawHirelingPortrait() const {
+    if (!hirelingPortraitVisible()) return;
+    const auto &merc = session_.state().player.hireling;
+    const auto portrait = hirelingPortraitBounds();
+    const auto bar = hirelingLifeBounds();
+    const auto stats = session_.hirelingStats();
+    const float life = std::clamp(merc.hp / std::max(1, stats.base.life), 0.f, 1.f);
+    DrawRectangleRec(bar, {36, 20, 12, 255});
+    DrawRectangleRec({bar.x, bar.y, std::floor(bar.width * life), bar.height}, {0, 128, 0, 255});
+    if (const auto *frame = assets_.hirelingPortrait.frame(0, 0)) {
+        const auto &t = frame->texture;
+        DrawTexturePro(t, {0, 0, float(t.width), float(t.height)}, portrait, {0, 0}, 0, WHITE);
+    }
+    const auto name = hirelingName(merc.nameKey);
+    const int size = std::max(8, int(9 * classicPanelScale));
+    painter_.label(name, int(portrait.x + (portrait.width - painter_.measure(name, size)) / 2),
+                   int(portrait.y + portrait.height + 2 * classicPanelScale), size, WHITE);
+}
+
 Rectangle SceneView::hirelingSlotBounds(size_t index) const {
     const auto &box = session_.content().hirelingLayout.slots.at(index);
     return hirelingArtRect(float(box[0]), float(box[1]), float(box[2] - box[0]), float(box[3] - box[1]));
@@ -117,14 +140,19 @@ void SceneView::drawHireling(Vec mouse) const {
     cell("Life", 161, 199, 51, 17);
     cell(std::to_string(int(hireling.hp)) + " / " + std::to_string(stats.base.life), 212, 199, 98, 17, true);
     cell("Experience", 7, 222, 121, 14);
-    cell(std::to_string(hireling.experience), 7, 238, 121, 18, true);
+    auto number = [](uint64_t value) {
+        auto text = std::to_string(value);
+        for (int index = int(text.size()) - 3; index > 0; index -= 3) text.insert(size_t(index), ",");
+        return text;
+    };
+    cell(number(hireling.experience), 7, 238, 121, 18, true);
     cell("Level", 134, 222, 45, 14);
     cell(std::to_string(hireling.level), 134, 238, 45, 18, true);
     cell("Next Level", 186, 222, 123, 14);
-    cell(std::to_string(stats.base.nextExperience), 186, 238, 123, 18, true);
+    cell(number(stats.base.nextExperience), 186, 238, 123, 18, true);
     const char *labels[] = {"Strength", "Dexterity", "Damage", "Defense"};
     const std::string values[] = {std::to_string(stats.base.strength), std::to_string(stats.base.dexterity),
-        std::to_string(stats.base.damageMin) + "-" + std::to_string(stats.base.damageMax), std::to_string(stats.base.defense)};
+        std::to_string(stats.displayDamageMin) + "-" + std::to_string(stats.displayDamageMax), std::to_string(stats.base.defense)};
     const char *resists[] = {"Fire", "Cold", "Lightning", "Poison"};
     const int numbers[] = {stats.fireResist, stats.coldResist, stats.lightningResist, stats.poisonResist};
     for (int index = 0; index < 4; ++index) {

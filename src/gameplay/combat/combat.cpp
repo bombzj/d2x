@@ -76,6 +76,11 @@ void Simulation::damageEnemy(Enemy &enemy, float amount, EntityId source, float 
             player.hp = std::min(float(characterStats_.maxLife), player.hp + characterStats_.combat.lifeOnKill);
             player.mana = std::min(float(characterStats_.maxMana), player.mana + characterStats_.combat.manaOnKill);
         }
+        if (!playerKillEffects && source == state_.player.id && state_.player.hireling.active() && hirelingAttributes_) {
+            const auto stats = hirelingAttributes_();
+            auto &merc = state_.player.hireling;
+            merc.hp = std::min(float(stats.maxLife), merc.hp + stats.combat.lifeOnKill);
+        }
         enemy.deathAge = 0;
         enemy.route.clear();
         enemy.aiPursuing = false;
@@ -119,6 +124,22 @@ void Simulation::meleeDamage(Enemy &enemy, const WeaponDamage &weapon) {
     resolveWeaponHit(enemy, float(damage) / 256.f, player.id, rollAttackElements(weapon.item));
     if (wearEquipment_ && weapon.item) wearEquipment_(weapon.item, false);
 }
+std::optional<std::pair<bool, float>> Simulation::hostileMissileTarget(const Missile &missile, Vec to) const {
+    const auto rule = missileCollisions_.find(missile.missileId);
+    if (rule == missileCollisions_.end()) return std::nullopt;
+    std::optional<std::pair<bool, float>> hit;
+    const auto &p = state_.player;
+    auto consider = [&](bool merc, EntityId id, Vec position, int size) {
+        if (missile.lastHit == id) return;
+        const auto delayed = state_.area.novaHitUntil.find(id);
+        if (missile.nextHitDelay && delayed != state_.area.novaHitUntil.end() && delayed->second > state_.time) return;
+        if (auto at = missileUnitIntersection(missile.pos, to, rule->second.size, position, size);
+            at && (!hit || *at < hit->second)) hit = std::pair{merc, *at};
+    };
+    if (!p.dead && p.hp > 0) consider(false, p.id, p.pos, 2);
+    if (p.hireling.active()) consider(true, p.hireling.id, p.hireling.pos, p.hireling.collisionSize);
+    return hit;
+}
 void Simulation::updateMissiles(float dt) {
     auto &area = state_.area;
     std::vector<Missile> spawned;
@@ -147,6 +168,13 @@ void Simulation::updateMissiles(float dt) {
                             std::max(state_.player.webSlowRemaining, m.slowDuration);
                         state_.player.webSlowPercent = web->slowPercent;
                         state_.player.webSource = owner->id;
+                    }
+            auto &merc = state_.player.hireling;
+            if (merc.active() && m.remaining > 0 && (merc.pos - m.pos).length() < m.radius)
+                if (auto *owner = findEnemy(m.owner))
+                    if (auto web = monsterWeb_ ? monsterWeb_(*owner) : std::nullopt) {
+                        merc.webSlowRemaining = std::max(merc.webSlowRemaining, m.slowDuration);
+                        merc.webSlowPercent = web->slowPercent;
                     }
             continue;
         }
@@ -187,25 +215,15 @@ void Simulation::updateMissiles(float dt) {
         }
         auto next = m.pos + m.velocity * dt;
         if (m.hostile) {
-            if (!missilePathClear(m.missileId, m.pos, next)) {
-                m.remaining = 0;
-                continue;
-            }
-            const Vec motion = next - m.pos;
-            const float lengthSquared = motion.x * motion.x + motion.y * motion.y;
-            const Vec offset = state_.player.pos - m.pos;
-            const float projection = lengthSquared > 0 ?
-                std::clamp((offset.x * motion.x + offset.y * motion.y) / lengthSquared, 0.f, 1.f) : 0.f;
-            const Vec closest = m.pos + motion * projection;
-            const bool struck = !state_.player.dead &&
-                (state_.player.pos - closest).length() < 1.2f;
-            m.pos = struck ? closest : next;
-            m.remaining -= dt;
+            const bool wall = clipMissilePath(m.missileId, m.pos, next);
+            const auto struck = m.remaining > dt ? hostileMissileTarget(m, next) : std::nullopt;
+            m.pos = struck ? m.pos + (next - m.pos) * struck->second : next;
+            m.remaining = wall ? 0 : std::max(0.f, m.remaining - dt);
             if (struck) {
                 m.remaining = 0;
                 if (auto *source = findEnemy(m.owner)) {
-                    if (m.hostileMode >= 3) resolveMonsterSpell(*source, m);
-                    else resolveMonsterAttack(*source, m.hostileMode, true);
+                    if (m.hostileMode >= 3) resolveMonsterSpell(*source, m, struck->first);
+                    else resolveMonsterAttack(*source, m.hostileMode, true, struck->first);
                 }
             }
             continue;

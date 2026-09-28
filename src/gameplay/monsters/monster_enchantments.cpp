@@ -37,6 +37,10 @@ void Simulation::updateMonsterEnchantments() {
                     hurtPlayer(damage, MonsterDamageType::Physical);
                     hurtPlayer(damage, MonsterDamageType::Fire);
                 }
+                if (state_.player.hireling.active() && inRange(enemy.pos, state_.player.hireling.pos, float(radius))) {
+                    hurtHireling(damage, MonsterDamageType::Physical);
+                    hurtHireling(damage, MonsterDamageType::Fire);
+                }
                 if (monsterSpecialMissile_)
                     if (const auto visual = monsterSpecialMissile_(117, 1))
                         state_.area.effects.push_back({enemy.pos, 0, visual->skill.missileLifetime, 117});
@@ -74,6 +78,11 @@ void Simulation::updateMonsterEnchantments() {
                 if (aura.element >= 0)
                     hurtPlayer(rollDamage(enemy, aura.minimumDamage, aura.maximumDamage), MonsterDamageType(aura.element));
             }
+            auto &merc = state_.player.hireling;
+            if (merc.active() && inRange(enemy.pos, merc.pos, aura.radius) && rooms_->nearby(enemy.pos, merc.pos)) {
+                if (aura.state.id >= 0) apply(merc.combatEffects, false);
+                if (aura.element >= 0) hurtHireling(rollDamage(enemy, aura.minimumDamage, aura.maximumDamage), MonsterDamageType(aura.element));
+            }
         } else {
             for (auto &ally : state_.area.enemies)
                 if (ally.hp > 0 && rooms_->nearby(enemy.pos, ally.pos) && inRange(enemy.pos, ally.pos, aura.radius))
@@ -81,9 +90,18 @@ void Simulation::updateMonsterEnchantments() {
         }
     }
 }
-void Simulation::applyMonsterEnchantmentHit(Enemy &enemy) {
+void Simulation::applyMonsterEnchantmentHit(Enemy &enemy, bool hitHireling) {
     if (!enemy.identity.enchantment) return;
     const auto &mods = *enemy.identity.enchantment;
+    auto &player = state_.player;
+    auto &merc = player.hireling;
+    const auto stats = hitHireling ? hirelingAttributes_() : characterStats_;
+    auto &poisonRate = hitHireling ? merc.poisonPerSecond : player.poisonPerSecond;
+    auto &poisonTime = hitHireling ? merc.poisonRemaining : player.poisonRemaining;
+    auto &chill = hitHireling ? merc.chill : player.chill;
+    auto hurt = [&](float amount, MonsterDamageType type) {
+        return hitHireling ? hurtHireling(hirelingIncomingDamage(enemy, amount), type, false) : hurtPlayer(amount, type);
+    };
     auto elements = mods.elements;
     int coldFrames = mods.coldFrames, poisonFrames = mods.poisonFrames;
     if (mods.has(27)) {
@@ -98,36 +116,40 @@ void Simulation::applyMonsterEnchantmentHit(Enemy &enemy) {
         if (!elements[channel].maximum) continue;
         const float amount = rollDamage(enemy, float(elements[channel].minimum), float(elements[channel].maximum));
         if (channel == size_t(MonsterDamageType::Poison)) {
-            if (characterStats_.combat.preventPoison) continue;
-            const float rate = amount * 25.f / 256.f * float(100 - characterStats_.poisonResist) / 100.f;
+            if (stats.combat.preventPoison) continue;
+            const float rate = (hitHireling ? hirelingIncomingDamage(enemy, amount) : amount) * 25.f / 256.f * float(100 - stats.poisonResist) / 100.f;
             const float duration = float(poisonFrames) / 25.f *
-                float(std::clamp(100 - characterStats_.combat.poisonLengthResist, 0, 200)) / 100.f;
-            if (rate >= state_.player.poisonPerSecond && duration > 0) {
-                state_.player.poisonPerSecond = rate;
-                state_.player.poisonRemaining = duration;
+                float(std::clamp(100 - stats.combat.poisonLengthResist, 0, 200)) / 100.f;
+            if (rate >= poisonRate && duration > 0) {
+                poisonRate = rate;
+                poisonTime = duration;
             }
         } else {
-            hurtPlayer(amount, MonsterDamageType(channel));
-            if (channel == size_t(MonsterDamageType::Cold) && !characterStats_.combat.cannotBeFrozen)
-                state_.player.chill = std::max(state_.player.chill, float(coldFrames) / 25.f *
-                    float(100 - characterStats_.coldResist) / 100.f *
-                    (characterStats_.combat.halfFreezeDuration ? .5f : 1.f));
+            hurt(amount, MonsterDamageType(channel));
+            if (channel == size_t(MonsterDamageType::Cold) && !stats.combat.cannotBeFrozen)
+                chill = std::max(chill, float(coldFrames) / 25.f *
+                    float(100 - stats.coldResist) / 100.f *
+                    (stats.combat.halfFreezeDuration ? .5f : 1.f));
         }
     }
-    if (mods.manaDamage.maximum > 0)
+    if (!hitHireling && mods.manaDamage.maximum > 0)
         state_.player.mana = std::max(0.f, state_.player.mana -
             rollDamage(enemy, float(mods.manaDamage.minimum), float(mods.manaDamage.maximum)));
     if (mods.aura && mods.aura->element >= 0)
-        hurtPlayer(rollDamage(enemy, mods.aura->minimumDamage, mods.aura->maximumDamage) *
+        hurt(rollDamage(enemy, mods.aura->minimumDamage, mods.aura->maximumDamage) *
                    mods.aura->elementalMultiplier, MonsterDamageType(mods.aura->element));
-    if (mods.curse && (monsterAiRandom(enemy) & 3) != 0 && !state_.player.dead &&
-        inRange(enemy.pos, state_.player.pos, std::clamp(mods.curse->radius, 1.f, 40.f))) {
-        CombatEffectSpec effect;
-        effect.state = mods.curse->state;
-        effect.source = {CombatEffectSource::Monster, enemy.id, mods.curse->skill, mods.curse->rank};
-        effect.duration = EffectFrame(mods.curse->periodFrames);
-        effect.modifiers = mods.curse->modifiers;
-        combatEffectsChanged(state_.player.combatEffects.apply(std::move(effect), state_.frame).removed);
+    if (mods.curse && (monsterAiRandom(enemy) & 3) != 0) {
+        auto curse = [&](CombatEffectSet &effects) {
+            CombatEffectSpec effect;
+            effect.state = mods.curse->state;
+            effect.source = {CombatEffectSource::Monster, enemy.id, mods.curse->skill, mods.curse->rank};
+            effect.duration = EffectFrame(mods.curse->periodFrames);
+            effect.modifiers = mods.curse->modifiers;
+            return effects.apply(std::move(effect), state_.frame).removed;
+        };
+        const float radius = std::clamp(mods.curse->radius, 1.f, 40.f);
+        if (!player.dead && inRange(enemy.pos, player.pos, radius)) combatEffectsChanged(curse(player.combatEffects));
+        if (merc.active() && inRange(enemy.pos, merc.pos, radius)) curse(merc.combatEffects);
     }
 }
 void Simulation::launchMonsterEnchantmentMissiles(Enemy &enemy, int missileId) {
@@ -173,17 +195,23 @@ void Simulation::advanceHostileElementMissile(Missile &missile, float dt) {
         const bool blocked = clipMissilePath(missile.missileId, missile.pos, target);
         const auto collision = missileCollisions_.find(missile.missileId);
         if (collision == missileCollisions_.end()) { missile.remaining = 0; return; }
-        if (!state_.player.dead && missile.lastHit != state_.player.id &&
-            missileUnitIntersection(missile.pos, target, collision->second.size, state_.player.pos, 2) &&
-            (!missile.nextHitDelay || state_.time >= state_.area.novaHitUntil[state_.player.id])) {
-            missile.lastHit = state_.player.id;
-            if (missile.nextHitDelay) state_.area.novaHitUntil[state_.player.id] = state_.time + missile.nextHitDelay;
-            hurtPlayer(missile.damage, *missile.hostileElement);
-            if (*missile.hostileElement == MonsterDamageType::Cold && !characterStats_.combat.cannotBeFrozen)
-                state_.player.chill = std::max(state_.player.chill, missile.chill *
-                    float(100 - characterStats_.coldResist) / 100.f *
-                    (characterStats_.combat.halfFreezeDuration ? .5f : 1.f));
-            if (missile.killOnHit) missile.remaining = 0;
+        if (auto hit = hostileMissileTarget(missile, target)) {
+            auto &player = state_.player;
+            const bool merc = hit->first;
+            const auto stats = merc ? hirelingAttributes_() : characterStats_;
+            missile.lastHit = merc ? player.hireling.id : player.id;
+            if (missile.nextHitDelay) state_.area.novaHitUntil[missile.lastHit] = state_.time + missile.nextHitDelay;
+            if (merc) hurtHireling(missile.damage, *missile.hostileElement);
+            else hurtPlayer(missile.damage, *missile.hostileElement);
+            if (*missile.hostileElement == MonsterDamageType::Cold && !stats.combat.cannotBeFrozen) {
+                auto &chill = merc ? player.hireling.chill : player.chill;
+                chill = std::max(chill, missile.chill * float(100 - stats.coldResist) / 100.f *
+                    (stats.combat.halfFreezeDuration ? .5f : 1.f));
+            }
+            if (missile.killOnHit) {
+                target = missile.pos + (target - missile.pos) * hit->second;
+                missile.remaining = 0;
+            }
         }
         missile.pos = target;
         if (blocked) missile.remaining = 0;
@@ -208,14 +236,14 @@ bool Simulation::tryMonsterTeleport(Enemy &enemy) {
     const auto &mods = *enemy.identity.enchantment;
     if (monsterAiRandom(enemy) % 100 >= 40 ||
         (enemy.hp * 100 >= enemy.maxHp * 30 &&
-            (mods.melee || (enemy.pos - state_.player.pos).length() >= 10)) ||
+            (mods.melee || (enemy.pos - monsterTargetPosition(enemy)).length() >= 10)) ||
         monsterAiRandom(enemy) % 100 >= 15) return false;
     const auto *room = rooms_->room(enemy.pos);
     if (!room || room->width < 3 || room->height < 3) return false;
     for (int attempt = 0; attempt < 20; ++attempt) {
         const Vec target{float(room->x + 1 + monsterAiRandom(enemy) % unsigned(room->width - 1)) + .5f,
                          float(room->y + 1 + monsterAiRandom(enemy) % unsigned(room->height - 1)) + .5f};
-        if (!grid_->walkable(target) || (target - state_.player.pos).length() < 2) continue;
+        if (!grid_->walkable(target) || (target - monsterTargetPosition(enemy)).length() < 2) continue;
         bool occupied = false;
         for (const auto &other : state_.area.enemies)
             if (other.id != enemy.id && other.hp > 0 && (other.pos - target).length() < 2) occupied = true;
@@ -240,14 +268,14 @@ void Simulation::replicateMonsterMissile(const Enemy &enemy, Missile missile) {
     if (!enemy.identity.enchantment || !enemy.identity.enchantment->has(29) ||
         noMultiShotMissiles_.contains(missile.missileId)) return;
     const auto sign = [](float value) { return value < 0 ? -1.f : value > 0 ? 1.f : 0.f; };
-    const Vec difference = enemy.pos - state_.player.pos;
+    const Vec difference = enemy.pos - monsterTargetPosition(enemy);
     const Vec side = unspreadMultiShotMissiles_.contains(missile.missileId) ? Vec{} :
         Vec{-sign(difference.y), sign(difference.x)};
     for (float direction : {-1.f, 1.f}) {
         auto copy = missile;
         copy.id = ids_.allocate();
         copy.combatRandom = childRandom(unitRandom_);
-        copy.velocity = (state_.player.pos + side * direction - copy.pos).unit() * missile.velocity.length();
+        copy.velocity = (monsterTargetPosition(enemy) + side * direction - copy.pos).unit() * missile.velocity.length();
         state_.area.missiles.push_back(std::move(copy));
     }
 }

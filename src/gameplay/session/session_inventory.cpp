@@ -168,6 +168,8 @@ InventoryError GameSession::previewInventory(const GameCommand &command) const {
                 return inventory_.preview(intent, playerContainers_, inventoryAccess(), equipmentActor());
             } else if constexpr (std::is_same_v<T, EquipHirelingItem>) {
                 return previewHirelingEquipment(intent);
+            } else if constexpr (std::is_same_v<T, UseHirelingPotion>) {
+                return previewHirelingPotion(intent.item);
             } else if constexpr (std::is_same_v<T, UseItem>) {
                 const auto *source = inventory_.item(intent.item.id);
                 if (source && (content_.isPortalScroll(source->definition) ||

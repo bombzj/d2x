@@ -81,6 +81,7 @@ void SceneController::click(Vec mouse) {
 bool SceneController::handle(const FrameInput &input, float elapsed) {
     auto &ui = view_.ui();
     ui.inventory.syncCursor(session_);
+    if (!session_.state().player.hireling.active()) ui.hirelingOpen = false;
     if (!input.focused || ui.blocksWorld() || session_.state().player.dead ||
         input.escape || input.inventory || input.character || input.skillTree || input.quests ||
         input.hireling || input.storage || input.rightPressed || input.movement.length() > .1f) {
@@ -217,6 +218,7 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
             session_.submit(OpenGamble{ui.dialogueObject});
         }
         else if (action == 10) session_.submit(OpenHirelingList{ui.dialogueObject});
+        else if (action == 12) session_.submit(ResurrectHireling{ui.dialogueObject});
         else if (action == 3)
             session_.submit(IdentifyWithCain{ui.dialogueObject});
         else if (action == 6)
@@ -455,7 +457,7 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
         return true;
     }
     if (input.hireling && !ui.blocksWorld()) {
-        ui.hirelingOpen = !ui.hirelingOpen && session_.state().player.hireling.sourceRow >= 0;
+        ui.hirelingOpen = !ui.hirelingOpen && session_.state().player.hireling.active();
         if (ui.hirelingOpen) {
             if (ui.inventory.storage || ui.inventory.cubeOpen) toggleInventory();
             ui.characterOpen = ui.questOpen = false;
@@ -638,7 +640,25 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
     if (handleSkills(input)) return true;
     if (!ui.inventory.drag && !ui.inventory.split && !ui.inventory.goldDialog && !ui.inventory.identify)
         for (int column = 0; column < 4; ++column)
-            if (input.belt[column]) session_.submit(UseBeltColumn{column});
+            if (input.belt[column]) session_.submit(UseBeltColumn{column, input.shift});
+    if (view_.hirelingPortraitVisible() && input.insideViewport &&
+        (CheckCollisionPointRec(rv(input.mouse), hirelingPortraitBounds()) ||
+         CheckCollisionPointRec(rv(input.mouse), hirelingLifeBounds()))) {
+        leftCombatTarget_ = rightCombatTarget_ = {};
+        if (ui.inventory.drag) {
+            const auto drag = *ui.inventory.drag;
+            const bool drop = drag.pickedUp ? input.leftPressed : input.leftReleased;
+            if (drop && queueInventory(UseHirelingPotion{drag.item}, drag.item.id)) ui.inventory.drag.reset();
+        } else if (input.leftPressed && !ui.inventory.identify && !ui.inventory.pending) {
+            ui.hirelingOpen = true;
+            ui.characterOpen = ui.questOpen = false;
+            session_.submit(StopMoving{});
+            session_.submit(StopChannel{});
+            channelInputSkill_ = -1;
+            pickupClick_ = true;
+        }
+        return true;
+    }
     if (leftCombatTarget_ || rightCombatTarget_) {
         const bool right = bool(rightCombatTarget_);
         const auto target = right ? rightCombatTarget_ : leftCombatTarget_;
@@ -674,9 +694,8 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
                 const auto id = session_.inventory().equipped(slots, order[index]);
                 const auto *item = session_.inventory().item(id);
                 if (item) {
-                    const auto &d = *session_.inventory().catalog().find(item->definition);
-                    ui.inventory.drag = InventoryDrag{item->handle(), {}, input.mouse,
-                        {d.width * inventoryCellSize / 2, d.height * inventoryCellSize / 2}};
+                    queueInventory(EquipHirelingItem{item->handle(), std::nullopt,
+                        ContainerLocation{slots.cursor, {}}}, id);
                 }
                 break;
             }

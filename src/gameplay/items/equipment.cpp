@@ -128,10 +128,15 @@ InventoryResult InventoryService::planEquipment(const EquipItem &command, const 
             error != InventoryError::None)
             return reject(error);
         if (previous && previous != source.id)
-            if (auto error = location->container == containers.cursor
-                    ? relocate(previous, ContainerLocation{containers.cursor, {}}) : returnToPack(previous);
-                error != InventoryError::None)
+        {
+            if (actor.hireling || location->container == containers.cursor) {
+                const auto occupied = draft.itemAt(containers.cursor, {});
+                if (occupied && occupied != previous) return reject(InventoryError::NoSpace);
+                if (auto error = relocate(previous, ContainerLocation{containers.cursor, {}});
+                    error != InventoryError::None) return reject(error);
+            } else if (auto error = returnToPack(previous); error != InventoryError::None)
                 return reject(error);
+        }
         if (slot == EquipmentSlot::RightHand || slot == EquipmentSlot::LeftHand ||
             slot == EquipmentSlot::AlternateRightHand || slot == EquipmentSlot::AlternateLeftHand) {
             auto opposite = slot == EquipmentSlot::RightHand ? EquipmentSlot::LeftHand :

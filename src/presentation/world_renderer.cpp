@@ -222,7 +222,8 @@ void SceneView::drawActors(Vec mouse) const {
         draw.push_back({e.hp > 0 ? p.y : p.y - 1.f, 2, i, p});
     }
     draw.push_back({screen(sim.player.pos).y, 1, 0, screen(sim.player.pos)});
-    if (sim.player.hireling.active() && session_.active(sim.player.hireling.pos)) {
+    if ((sim.player.hireling.active() || (sim.player.hireling.corpseVisible &&
+         sim.player.hireling.corpseRegion == sim.area.region)) && session_.active(sim.player.hireling.pos)) {
         auto point = screen(sim.player.hireling.pos);
         draw.push_back({point.y, 6, 0, point});
     }
@@ -270,18 +271,24 @@ void SceneView::drawActors(Vec mouse) const {
         } else if (item.type == 6) {
             const auto &hireling = sim.player.hireling;
             const auto &animations = assets_.hirelingAnimations;
-            auto mode = hireling.attackTimer > .2f ? "a1" : hireling.moving ? "wl" : "nu";
+            const char *mode = !hireling.active() ? (hireling.deathAge < hireling.deathDuration ? "dt" : "dd") :
+                hireling.hitTime > 0 ? "gh" : hireling.attack ? "a1" : hireling.moving ? "wl" : "nu";
             auto found = animations.find(mode);
             if (found != animations.end()) {
                 const auto &animation = found->second;
-                const auto *frame = animation.frame(direction(hireling.look, animation.directions),
-                                                    int(view_.animationTime * 12));
+                int index = int(hireling.animationTime);
+                if (!hireling.active())
+                    index = std::string_view(mode) == "dt" ? std::min(animation.count - 1,
+                        int(hireling.deathAge / std::max(.04f, hireling.deathDuration) * animation.count)) : 0;
+                else if (hireling.hitTime > 0)
+                    index = std::min(animation.count - 1, int((1 - hireling.hitTime / hireling.hitDuration) * animation.count));
+                else if (hireling.attack) index = std::min(animation.count - 1, hireling.attack->animationFrame());
+                const auto *frame = animation.frame(direction(hireling.look, animation.directions), index);
                 spriteShadow(frame, item.p);
-                sprite(frame, item.p);
-                auto name = session_.content().hirelingStrings.find(hireling.nameKey);
-                if (name != session_.content().hirelingStrings.end())
-                    painter_.label(name->second, int(item.p.x) - painter_.measure(name->second, 11) / 2,
-                                   int(item.p.y) - 60, 11, gold);
+                if (hireling.active()) drawCombatStateOverlays(hireling.combatEffects, item.p, 1, true);
+                sprite(frame, item.p, hireling.chill > 0 ? Color{115, 175, 255, 255} :
+                    hireling.poisonRemaining > 0 ? Color{145, 210, 115, 255} : WHITE);
+                if (hireling.active()) drawCombatStateOverlays(hireling.combatEffects, item.p, 1, false);
             }
         } else if (item.type == 7) {
             float elapsed = view_.cainPortalAnimationStarted < 0 ? 999.f :
