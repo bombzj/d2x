@@ -2,6 +2,8 @@
 
 更新：2026-09-28。供维护者和协作 agent 从当前代码继续工作。
 
+战斗／阵营与召唤骷髅（2026-09-28）：完成公共单位身份、主人／队伍与定向阵营关系、选敌、弹体碰撞、伤害／状态／受击／死亡及收益归属重构，随后接入死灵法师 Raise Skeleton 的原尸体规则、MPQ 属性、宠物行为、SK 动画和头像计数。玩家、罗格与骷髅共用战斗入口；原环境伤害覆盖全部参与单位。范围与扩展入口见 [战斗阵营](docs/COMBAT_FACTIONS.md)，使用方法与适配边界见 [死灵法师召唤](docs/NECROMANCER_SKILLS.md)。仍为单玩家世界，未实现联机或其他幕友军／复活技能；D2S v96 不变，骷髅仅在本局存在。Windows Release 编译通过并交付固定 `dist/current`；按用户要求不编写或运行测试、不启动游戏，画面和行为留待用户验收。
+
 第一幕佣兵（2026-09-28）：按装备、属性、行为、头像顺序接入原版罗格。装备卸下／替换使用真实 Cursor，需求校验排除旧装备；裸装伤害、命中、防御和面板元素伤害与实战共用派生结果。普通箭按 MPQ RogueMissile／rogue1 与 RGA1HTH 出手帧释放，加入敌方选中佣兵、承伤／受击／死亡、药剂、Kashya 收费复活、吸血／恢复与佣兵击杀 MF。头像使用 rogueicon.dc6，O 页沿用 npcinv.dc6 和原槽位。技能及装备触发技能／光环按要求暂缓，其他幕不开放；现有世界寻路及目标选择适配边界见 [佣兵](docs/HIRELINGS.md)。D2S v96 保持原佣兵死亡标志与 jf 装备段，无私有指纹或格式迁移；临时动作和药效不入档。Windows Release 构建／固定运行包交付见 [构建](docs/BUILD_AND_SHARE.md)，不启动游戏、不编写或运行测试，实机验收留给用户。
 
 鉴定／拾取／随机机制（2026-09-27；光标定位源码修订 2026-09-28）：鉴定鼠标使用当前 MPQ Books.SpellIcon 与原 spells.dc6。光标统一经显式纹理热点绘制，修复鉴定图案误减整张图高而上移 33 像素；普通手形按 OpenDiablo2 的帧偏移／帧高转换热点，游戏内及角色前端共用入口，目标图案按 Diablerie 显式热点接口与当前原图适配左上热点。光标修订已随 2026-09-28 佣兵批次编译并更新运行包，未运行游戏或测试，等待用户查看。开背包拾取进入真实 Cursor 位置，支持交换、装备、丢回地面和原生 D2S mode 4 保存。自动拾取先填匹配书和 AutoStack 堆叠，满背包保留已合并数量，余量留地。新局随机种子不再固定，--seed 可复现整局；共用 D2Seed，修复读档随机流回落、实体 ID 拼种子、人口自定义 RNG 和地砖坐标散列。规则、reference 证据及适配差异见 [背包](docs/INVENTORY_UI.md)、[经典 HUD](docs/CLASSIC_HUD.md)、[随机机制](docs/RANDOMNESS.md)；原生 v96 不加私有指纹／尾段。此前功能批次 Windows Release 已编译通过并更新 dist/current，未运行游戏或测试；构建交付状态见 [构建](docs/BUILD_AND_SHARE.md)。
@@ -77,6 +79,8 @@ NPC 滚动字幕按用户原版截图把 `FontFormal12` 字形缩至面板基准
 | [开发与交接](docs/baseline/DEVELOPMENT.md) | 构建、资源、协作约定、当前检查状态 |
 | [战斗数值](docs/COMBAT_NUMBERS.md) | MPQ 属性映射、伤害派生与限时效果边界 |
 | [通用攻击](docs/COMMON_ATTACKS.md) | 空手／武器、弓弩、投掷与共享导弹效果 |
+| [战斗阵营](docs/COMBAT_FACTIONS.md) | 单位身份、关系、公共伤害及收益归属 |
+| [死灵法师召唤](docs/NECROMANCER_SKILLS.md) | 召唤骷髅数据、行为、原图与使用入口 |
 | [Agent 约定](AGENTS.md) | 开始修改前必读 |
 
 专题细节：

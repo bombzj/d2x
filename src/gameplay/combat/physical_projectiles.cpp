@@ -53,7 +53,7 @@ bool Simulation::firePhysicalProjectile(Vec target, const WeaponDamage &weapon, 
     missile.baseAttackRating = selected.baseAttackRating;
     missile.attackRatingPercent = selected.attackRatingPercent + (skill ? skill->weapon->attackRating : 0);
     missile.targetModifiers = selected.target;
-    missile.playerAttack = true;
+    missile.weaponAttack = true;
     missile.physicalDamagePercent = potion ? 0 : selected.projectileDamagePercent;
     missile.combatRandom = childRandom(unitRandom_);
     if (skill) {
@@ -84,36 +84,28 @@ void Simulation::advancePhysicalMissile(Missile &missile, float dt, std::vector<
     const bool wall = clipMissilePath(missile.missileId, missile.pos, next);
     const float remaining = std::max(0.f, missile.remaining - dt);
     const bool expired = remaining <= .00001f;
-    Enemy *struck = nullptr;
-    float first = 2;
-    const auto collision = missileCollisions_.find(missile.missileId);
-    if (collision == missileCollisions_.end()) { missile.remaining = 0; return; }
-    if (!expired)
-        for (auto &enemy : state_.area.enemies) {
-            if (enemy.hp <= 0 || !active(enemy.pos) || enemy.id == missile.lastHit) continue;
-            const int size = monsterSize_ ? monsterSize_(enemy) : 0;
-            if (auto at = missileUnitIntersection(missile.pos, next, collision->second.size, enemy.pos, size);
-                at && *at < first) { first = *at; struck = &enemy; }
-        }
+    const auto contact = expired ? std::nullopt : missileTarget(missile, next);
+    const auto struck = contact ? combatUnit(contact->first) : CombatUnit{};
+    const float first = contact ? contact->second : 2.f;
     missile.pos = struck ? missile.pos + (next - missile.pos) * first : next;
     // Expiry precedes unit hits, and must set exactly zero so the update removes
     // the missile. A small positive residue must not detonate again next tick.
     missile.remaining = wall || struck || expired ? 0 : remaining;
     // AlwaysExplode runs the native hit effect on a failed to-hit roll, terrain and expiry too.
-    if (missile.remaining == 0 && missile.impact) resolveMissileImpact(missile, spawned, struck);
+    if (missile.remaining == 0 && missile.impact) resolveMissileImpact(missile, spawned, struck ? struck.id : EntityId{});
     if (!struck) return;
-    missile.lastHit = struck->id;
-    const auto defense = monsterDefense_ ? monsterDefense_(*struck, state_.area.region) : std::nullopt;
-    if (!defense) { state_.message = "Original monster defense is unavailable."; return; }
+    missile.lastHit = struck.id;
+    const MonsterDefense defense{struck.stats.level, struck.stats.attributes.defense,
+        struck.stats.demon, struck.stats.undead, struck.stats.boss};
     if (missile.attackerLevel <= 0) return;
     rollRandom(missile.combatRandom);
-    const int chance = (missile.playerAttack || !missile.attackElements.playerKillEffects) ? weaponHitChance(missile.attackerLevel,
-        missile.baseAttackRating, missile.attackRatingPercent, missile.targetModifiers, *defense, struck->identity.rank) :
-        physicalHitChance(missile.attackerLevel, missile.attackRating, defense->level, defense->defense);
+    const int chance = missile.weaponAttack ? weaponHitChance(missile.attackerLevel,
+        missile.baseAttackRating, missile.attackRatingPercent, missile.targetModifiers, defense, struck.stats.rank) :
+        physicalHitChance(missile.attackerLevel, missile.attackRating, defense.level, defense.defense);
     if (uint32_t(missile.combatRandom) % 100 >= unsigned(chance)) return;
     const int64_t raw = int64_t(missile.damage * 256.f);
-    const int percent = std::max(-90, missile.physicalDamagePercent + targetDamageBonus(missile.targetModifiers, *defense));
+    const int percent = std::max(-90, missile.physicalDamagePercent + targetDamageBonus(missile.targetModifiers, defense));
     const float physical = float(raw + raw * percent / 100) / 256.f;
-    resolveWeaponHit(*struck, physical, missile.owner, missile.attackElements);
+    resolveWeaponHit(struck.id, physical, missile.owner, missile.attackElements);
 }
 } // namespace d2x

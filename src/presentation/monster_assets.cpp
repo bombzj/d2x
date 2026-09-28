@@ -5,7 +5,7 @@ namespace d2x {
 void SceneAssets::loadMonsterAnimations(Archives &archives, const GameSession &session) {
     const auto &content = session.monsterContent();
     auto loadActor = [&](MonsterKind kind, const MonsterRecord &actor,
-                         std::map<std::string, GpuAnimation> &animations) {
+                         std::map<std::string, GpuAnimation> &animations, size_t shield = 0) {
         const auto &definition = monsterDefinition(kind);
         if (normalize(actor.token) != definition.token)
             throw std::runtime_error("Monster token differs from implemented art: " + actor.id);
@@ -18,6 +18,8 @@ void SceneAssets::loadMonsterAnimations(Archives &archives, const GameSession &s
             throw std::runtime_error("Monster TransLvl requires missing palshift.dat: " + actor.id);
         std::array<const char *, 16> equipment;
         equipment.fill("");
+        if (kind == MonsterKind::NecroSkeleton)
+            equipment[7] = actor.shieldVariants.at(shield).c_str();
         if (!actor.rightHandVariant.empty()) equipment[5] = actor.rightHandVariant.c_str();
         if (!actor.leftHandVariant.empty()) equipment[6] = actor.leftHandVariant.c_str();
         for (size_t index = 0; index < actor.specialVariants.size(); ++index)
@@ -45,7 +47,7 @@ void SceneAssets::loadMonsterAnimations(Archives &archives, const GameSession &s
             if (std::string_view(mode) == "dd" && !actor.deadMode) continue;
             if (std::string_view(mode) == "s2" && (kind != MonsterKind::Fallen || !actor.skill2Mode)) continue;
             if (std::string_view(mode) == "s1" && kind != MonsterKind::FoulCrowNest &&
-                kind != MonsterKind::Fallen) continue;
+                kind != MonsterKind::Fallen && kind != MonsterKind::NecroSkeleton) continue;
             const auto weapon = content.modeWeapon(kind, mode);
             if (weapon.empty())
                 throw std::runtime_error("Monster mode COF missing: " + actor.id + "/" + mode);
@@ -105,11 +107,11 @@ void SceneAssets::loadMonsterAnimations(Archives &archives, const GameSession &s
             if (!timing || animations.at("s2").count != timing->frames)
                 throw std::runtime_error("Monster S2 AnimData/COF frame mismatch: " + actor.id);
         }
-        if (kind == MonsterKind::Fallen) {
+        if (kind == MonsterKind::Fallen || kind == MonsterKind::NecroSkeleton) {
             const auto *timing = content.motion(kind, "s1");
             if (!timing || !animations.contains("s1") ||
                 animations.at("s1").count != timing->frames)
-                throw std::runtime_error("Original Fallen resurrection animation missing: " + actor.id);
+                throw std::runtime_error("Original monster resurrection animation missing: " + actor.id);
         }
         for (auto mode : {"nu", "wl", "rn", "gh", "dt", "dd"})
             if (auto animation = animations.find(mode); animation != animations.end()) {
@@ -121,7 +123,7 @@ void SceneAssets::loadMonsterAnimations(Archives &archives, const GameSession &s
                      kind == MonsterKind::CorruptArcher || kind == MonsterKind::SkeletonBow ||
                      kind == MonsterKind::Bighead || kind == MonsterKind::HellBovine ||
                      kind == MonsterKind::SkeletonMage || kind == MonsterKind::Fetish ||
-                     kind == MonsterKind::Vampire ||
+                     kind == MonsterKind::Vampire || kind == MonsterKind::NecroSkeleton ||
                      kind == MonsterKind::FallenShaman ||
                      kind == MonsterKind::FoulCrowNest ||
                      kind == MonsterKind::BloodHawk ||
@@ -141,6 +143,10 @@ void SceneAssets::loadMonsterAnimations(Archives &archives, const GameSession &s
             loadActor(implementation.kind, actor, monsterAnimations[implementation.kind]);
         else
             loadActor(implementation.kind, actor, monsterVariantAnimations[id]);
+        if (implementation.kind == MonsterKind::NecroSkeleton)
+            for (size_t shield = 1; shield < actor.shieldVariants.size(); ++shield)
+                loadActor(implementation.kind, actor,
+                          monsterVariantAnimations[id + "#sh" + std::to_string(shield)], shield);
     }
     for (int index = 0; index < int(MonsterKind::Count); ++index)
         if (!baseActors.contains(MonsterKind(index)))

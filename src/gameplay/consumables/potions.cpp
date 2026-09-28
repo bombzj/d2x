@@ -12,11 +12,11 @@ void Simulation::applyPotion(const PotionDefinition &potion) {
         p.manaRestoration.push_back({potion.amount, potion.amount / potion.seconds});
         break;
     case PotionKind::Rejuvenation:
-        p.hp = std::min(float(characterStats_.maxLife), p.hp + characterStats_.maxLife * potion.amount);
-        p.mana = std::min(float(characterStats_.maxMana), p.mana + characterStats_.maxMana * potion.amount);
+        p.hp = std::min(float(state_.player.attributes.maxLife), p.hp + state_.player.attributes.maxLife * potion.amount);
+        p.mana = std::min(float(state_.player.attributes.maxMana), p.mana + state_.player.attributes.maxMana * potion.amount);
         break;
     case PotionKind::Stamina:
-        p.stamina = characterStats_.maxStamina;
+        p.stamina = state_.player.attributes.maxStamina;
         break;
     case PotionKind::Remedy: break;
     }
@@ -58,7 +58,7 @@ void Simulation::updatePotions(float dt) {
         if (value >= maximum)
             queue.clear();
     };
-    restore(p.healing, p.hp, float(characterStats_.maxLife));
-    restore(p.manaRestoration, p.mana, float(characterStats_.maxMana));
+    restore(p.healing, p.hp, float(state_.player.attributes.maxLife));
+    restore(p.manaRestoration, p.mana, float(state_.player.attributes.maxMana));
 }
 } // namespace d2x

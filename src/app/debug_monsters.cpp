@@ -95,7 +95,7 @@ void listMonsters(Json &result, const Json &request, const GameSession &session,
             {"skill2Remaining", enemy.skill2Remaining},
             {"hostileProjectiles", std::count_if(session.state().area.missiles.begin(),
                 session.state().area.missiles.end(),
-                [&](const Missile &missile) { return missile.hostile && missile.owner == enemy.id; })},
+                [&](const Missile &missile) { return missile.monsterAttack && missile.owner == enemy.id; })},
             {"attackMode", enemy.attackMode}, {"attackRemaining", enemy.attack},
             {"impactRemaining", enemy.attackImpact}};
         const auto *record = session.monsterContent().find(enemy.identity.monster);

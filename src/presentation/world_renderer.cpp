@@ -7,8 +7,14 @@ std::vector<SceneView::VisibleMonster> SceneView::visibleMonsters() const {
     std::vector<VisibleMonster> result;
     for (const auto &[index, offset] : session_.sceneRegions())
         for (const auto &enemy : session_.areaState(index).enemies)
-            if (session_.roomVisible(index, enemy.pos))
+            if (!enemy.corpseConsumed && session_.roomVisible(index, enemy.pos))
                 result.push_back({&enemy, enemy.pos + offset, index});
+    for (const auto &pet : session_.state().companions) {
+        const auto *death = session_.monsterContent().motion(pet.kind, "dt");
+        if ((pet.hp > 0 || (death && pet.deathAge < death->duration)) &&
+            session_.roomVisible(session_.regionIndex(), pet.pos))
+            result.push_back({&pet, pet.pos, session_.regionIndex()});
+    }
     return result;
 }
 const Sprite *SceneView::objectSprite(const WorldObject &object, RegionId region) const {
@@ -148,11 +154,14 @@ void SceneView::drawActors(Vec mouse) const {
     const bool hotExit = canHover && !hotCainPortal && !hotTownPortal && exitAt(mouse);
     const auto hotLabelItem = canHover && !hotCainPortal && !hotTownPortal && !hotExit
                                   ? lootAt(mouse, true) : std::nullopt;
+    const auto *selectedSkill = view_.rightSkill ? session_.content().skills.find(*view_.rightSkill) : nullptr;
+    const bool corpseSkill = selectedSkill && selectedSkill->spell && selectedSkill->spell->summon;
     EntityId hotEnemy;
     if (canHover && !hotCainPortal && !hotTownPortal && !hotExit && !hotLabelItem)
         for (const auto &monster : monsters)
-            if (monster.enemy->hp > 0 &&
-                (screen(monster.position) - Vec{0, 25} - mouse).length() < 24) {
+            if ((corpseSkill ? session_.usableCorpse(monster.enemy->id) :
+                 monster.enemy->hp > 0 && session_.canAttack(sim.player.id, monster.enemy->id)) &&
+                (screen(monster.position) - Vec{0, corpseSkill ? 0.f : 25.f} - mouse).length() < 24) {
                 hotEnemy = monster.enemy->id;
                 break;
             }
@@ -305,7 +314,8 @@ void SceneView::drawActors(Vec mouse) const {
         } else if (item.type == 2) {
             const auto &monster = monsters[item.index];
             const auto &e = *monster.enemy;
-            const auto variant = assets_.monsterVariantAnimations.find(e.identity.monster);
+            const auto variant = assets_.monsterVariantAnimations.find(e.identity.monster +
+                (e.allegiance.role == CombatRole::Summon && e.summonShield > 0 ? "#sh" + std::to_string(e.summonShield) : ""));
             const auto &animations = variant == assets_.monsterVariantAnimations.end()
                                          ? assets_.monsterAnimations.at(e.kind) : variant->second;
             const auto *deathTiming = session_.monsterContent().motion(e.kind, "dt");
@@ -362,7 +372,7 @@ void SceneView::drawActors(Vec mouse) const {
                                        0, anim->count - 1);
                 const auto *image = anim->frame(
                     direction(monsterLooks_.contains(e.id) ? monsterLooks_.at(e.id)
-                                                           : sim.player.pos - monster.position,
+                                                           : e.combatTarget ? session_.combatPosition(e.combatTarget) - monster.position : Vec{1, 0},
                               anim->directions), frame);
                 spriteShadow(image, item.p);
                 const auto *record = session_.monsterContent().find(e.identity.monster);

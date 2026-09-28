@@ -15,7 +15,6 @@
 
 namespace d2x {
 void Simulation::updateMonsters(float dt) {
-    auto &player = state_.player;
     std::vector<MonsterSpawn> nestSpawns;
     auto beginFallenShout = [&](Enemy &enemy) {
         const auto duration = monsterSkill2Duration_ ? monsterSkill2Duration_(enemy) : std::nullopt;
@@ -28,15 +27,10 @@ void Simulation::updateMonsters(float dt) {
     for (auto &enemy : state_.area.enemies) {
         if (enemy.hp <= 0 || !active(enemy.pos))
             continue;
-        const auto &merc = player.hireling;
         if (enemy.attack <= 0) {
-            const bool chooseMerc = merc.active() && !safeZone_ && active(merc.pos) &&
-                (player.dead || (merc.pos - enemy.pos).length() < (player.pos - enemy.pos).length()) &&
-                grid_->missileSegment(enemy.pos, merc.pos, {0x04, 1});
-            if (chooseMerc != enemy.targetHireling) {
-                enemy.route.clear(); enemy.rethink = 0; enemy.aiPursuing = false;
-            }
-            enemy.targetHireling = chooseMerc;
+            const auto target = chooseTarget(enemy.id);
+            if (target != enemy.combatTarget) { enemy.route.clear(); enemy.rethink = 0; enemy.aiPursuing = false; }
+            enemy.combatTarget = target;
         }
         const Vec targetPosition = monsterTargetPosition(enemy);
         if (enemy.hp < enemy.maxHp && enemy.poisonRemaining <= 0 &&
@@ -46,6 +40,7 @@ void Simulation::updateMonsters(float dt) {
                 enemy.hp = std::min(enemy.maxHp, enemy.hp + perFrame / 256.f * dt * 25.f);
             }
         enemy.chill = std::max(0.f, enemy.chill - dt);
+        enemy.webSlowRemaining = std::max(0.f, enemy.webSlowRemaining - dt);
         enemy.stun = std::max(0.f, enemy.stun - dt);
         enemy.freeze = std::max(0.f, enemy.freeze - dt);
         enemy.rethink = std::max(0.f, enemy.rethink - dt);
@@ -56,7 +51,7 @@ void Simulation::updateMonsters(float dt) {
             tryMonsterTeleport(enemy)) continue;
         enemy.webAuraRemaining = std::max(0.f, enemy.webAuraRemaining - dt);
         if (enemy.webAuraRemaining == 0) enemy.webTrailDistance = 0;
-        if (enemy.targetHireling ? !merc.active() : (player.dead || player.hp <= 0)) {
+        if (!combatUnit(enemy.combatTarget).alive() || !canAttack(enemy.id, enemy.combatTarget)) {
             enemy.route.clear();
             enemy.aiPursuing = false;
             enemy.aiEscaping = false;
@@ -170,7 +165,7 @@ void Simulation::updateMonsters(float dt) {
         const bool archerAi = ai && ai->kind == MonsterAiKind::CorruptArcher;
         if (fallenAi && !enemy.aiEscaping && monsterDeathDuration_)
             for (const auto &corpse : state_.area.enemies) {
-                if (corpse.hp > 0 || corpse.id == enemy.id || corpse.id == enemy.aiCorpse ||
+                if (relation(enemy.id, corpse.id) != Relation::Allied || corpse.corpseConsumed || corpse.hp > 0 || corpse.id == enemy.id || corpse.id == enemy.aiCorpse ||
                     (corpse.pos - enemy.pos).length() >= 15.f) continue;
                 const auto duration = monsterDeathDuration_(corpse);
                 if (duration && corpse.deathAge <= *duration &&
@@ -208,7 +203,7 @@ void Simulation::updateMonsters(float dt) {
             monsterAiRandom(enemy) % 100 < unsigned(ai->params[0]) &&
             beginFallenShout(enemy)) {
             for (auto &other : state_.area.enemies)
-                if (other.hp > 0 && other.identity.group == enemy.identity.group &&
+                if (relation(enemy.id, other.id) == Relation::Allied && other.hp > 0 && other.identity.group == enemy.identity.group &&
                     other.kind == MonsterKind::Fallen && monsterAi_ && monsterAi_(other))
                     other.aiCommanded = true;
             continue;

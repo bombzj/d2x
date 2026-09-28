@@ -157,7 +157,8 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
         return MonsterMissileCast{resolveSkill(found->second.spec, rank, {}),
             MonsterDamageType(found->second.element), found->second.killOnHit};
     };
-    simulation_.resolveMissileSkill_ = [this](int id, int rank) {
+    simulation_.resolveMissileSkill_ = [this](EntityId actor, int id, int rank) {
+        if (actor != state().player.id) throw std::runtime_error("Skill attributes unavailable for this actor");
         const auto *entry = content_.skills.find(id);
         if (!entry || !entry->spell) throw std::runtime_error("Missing originating missile skill");
         return resolveSkill(*entry->spell, rank, state().player.skillRanks,
@@ -220,7 +221,7 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
         // UNITS_GetBaseVelocity always uses Velocity, including RN. Monster.cpp
         // starts velocitypercent at 75; AI velocity stats add to that base.
         const int rate = monsterMovementPercent(*record, state().population.difficulty,
-                                                velocityPercent + (enemy.identity.enchantment
+                                                velocityPercent + (enemy.webSlowRemaining > 0 ? enemy.webSlowPercent : 0) + (enemy.identity.enchantment
                                                     ? enemy.identity.enchantment->velocityPercent : 0), enemy.chill > 0);
         return float((*record->walkVelocity << 8) * rate / 100) * 25.f / 4096.f;
     };
@@ -257,7 +258,11 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
             return combat->resistances[size_t(type)];
         return std::nullopt;
     };
-    simulation_.coldPierce_ = [this] { return coldPiercePercent(); };
+    simulation_.corpseSelectable_ = [this](const Enemy &corpse) {
+        const auto *record = monsterContent_.find(corpse.identity.monster);
+        return record && record->corpseSelectable && record->walkVelocity.value_or(0) != 0;
+    };
+    simulation_.coldPierce_ = [this](EntityId actor) { return actor == state().player.id ? coldPiercePercent() : 0; };
     simulation_.monsterFreezeDivisor_ = content_.monsterFreezeDivisor.at(size_t(population.difficulty));
     simulation_.monsterFreezable_ = [this](const Enemy &enemy) -> std::optional<bool> {
         const auto *record = monsterContent_.find(enemy.identity.monster);
@@ -341,7 +346,8 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
     };
     simulation_.monsterDeathDuration_ = [this](const Enemy &enemy)
         -> std::optional<float> {
-        if (monsterImplementation(enemy.identity.monster).substitute) return std::nullopt;
+        // The approved hostile substitute uses its displayed original DT, while
+        // corpse eligibility is still resolved from the real monster identity.
         const auto *motion = monsterContent_.motion(enemy.kind, "dt");
         return motion ? std::optional<float>(motion->duration) : std::nullopt;
     };
@@ -355,7 +361,7 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
     };
     simulation_.monsterResurrectionDuration_ = [this](const Enemy &enemy)
         -> std::optional<float> {
-        if (enemy.kind != MonsterKind::Fallen ||
+        if ((enemy.kind != MonsterKind::Fallen && enemy.kind != MonsterKind::NecroSkeleton) ||
             monsterImplementation(enemy.identity.monster).substitute) return std::nullopt;
         const auto *motion = monsterContent_.motion(enemy.kind, "s1");
         return motion ? std::optional<float>(motion->duration) : std::nullopt;
@@ -807,6 +813,13 @@ void GameSession::tick(float dt, Vec keyboard, bool forceRun) {
         cancelInteraction();
     }
     regions_.at(current_).refreshObjectCollision(state().time);
+    std::set<int> summonSkills;
+    for (const auto &pet : state().companions)
+        if (pet.hp > 0 && pet.allegiance.owner == state().player.id) summonSkills.insert(pet.summonSkill);
+    for (int skill : summonSkills) {
+        const int rank = effectiveSkillRank(skill);
+        simulation_.enforceSummonLimit(state().player.id, skill, rank < 4 ? rank : 2 + rank / 3);
+    }
     simulation_.tick(dt, transitioned ? Vec{} : keyboard, forceRun);
     auto replenished = inventory_.replenish(dt);
     if (!replenished.changes.empty()) publishInventory(std::move(replenished), {});

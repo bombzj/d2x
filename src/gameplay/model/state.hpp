@@ -1,5 +1,7 @@
 #pragma once
 #include "core/id.hpp"
+#include "gameplay/combat/unit.hpp"
+#include "gameplay/items/equipment_stats.hpp"
 #include "gameplay/effects/state.hpp"
 #include "gameplay/model/definitions.hpp"
 #include "gameplay/character/attributes.hpp"
@@ -40,6 +42,9 @@ struct PlayerState {
         EntityId enemy;
     };
     EntityId id;
+    CombatIdentity allegiance{1, {}, 0, CombatRole::Player};
+    CharacterAttributes attributes;
+    EquipmentStats equipment;
     std::string name = "Hero";
     std::string characterClass = "Barbarian";
     std::string nativeSaveSections;
@@ -51,6 +56,8 @@ struct PlayerState {
     EffectFrame skillDelayUntil = 0;
     float chill = 0;
     float poisonRemaining = 0, poisonPerSecond = 0;
+    EntityId poisonSource, openWoundsSource;
+    float openWoundsRemaining = 0, openWoundsPerSecond = 0;
     float webSlowRemaining = 0;
     int webSlowPercent = 0;
     EntityId webSource;
@@ -91,11 +98,18 @@ struct Enemy {
     float hp = 100, maxHp = 100, chill = 0, attack = 0;
     float attackDuration = 0, attackImpact = -1;
     int attackMode = 1;
-    bool targetHireling = false;
+    CombatIdentity allegiance{2, {}, 0, CombatRole::Monster};
+    EntityId combatTarget;
+    std::optional<UnitCombatStats> intrinsicCombat;
+    bool corpseConsumed = false;
+    int summonSkill = -1, summonRank = 0;
+    int summonShield = 0;
     float skill2Remaining = 0, skill2Duration = 0;
     float resurrectionRemaining = 0, resurrectionDuration = 0;
     float stun = 0, freeze = 0, deathAge = 0, hitFlash = 0, rethink = 0;
     float aiWait = 0;
+    float webSlowRemaining = 0;
+    int webSlowPercent = 0;
     bool aiPursuing = false;
     bool aiEscaping = false;
     bool aiCommanded = false;
@@ -113,10 +127,8 @@ struct Enemy {
     uint64_t combatRandom = 0; // Initialized on unit creation.
     float poisonRemaining = 0, poisonPerSecond = 0;
     EntityId poisonSource;
-    bool poisonPlayerEffects = true;
     float openWoundsRemaining = 0, openWoundsPerSecond = 0;
     EntityId openWoundsSource;
-    bool openWoundsPlayerEffects = true;
     EffectFrame nextAuraFrame = 0, nextUniqueLightningFrame = 0, deathEnchantmentFrame = 0;
     EffectFrame pendingUniqueLightningFrame = 0;
     std::optional<Vec> teleportTarget = std::nullopt;
@@ -131,8 +143,8 @@ struct Missile {
     int missileId = -1;
     float damage = 0;
     float radius = 0, chill = 0;
-    bool hostile = false;
-    int hostileMode = 0;
+    bool monsterAttack = false; // Payload format, never a faction/target filter.
+    int monsterAttackMode = 0;
     float slowDuration = 0;
     AttackElements attackElements{};
     int attackerLevel = 0, attackRating = 0;
@@ -151,9 +163,9 @@ struct Missile {
     int physicalDamagePercent = 0;
     int baseAttackRating = 0, attackRatingPercent = 0;
     AttackTargetModifiers targetModifiers = {};
-    bool playerAttack = false;
+    bool weaponAttack = false;
     int skillId = -1, skillRank = 0;
-    std::optional<MonsterDamageType> hostileElement = std::nullopt;
+    std::optional<MonsterDamageType> fixedElement = std::nullopt;
     bool killOnHit = true;
 };
 struct Effect {
@@ -187,6 +199,8 @@ struct WorldState {
     uint32_t mapSeed = 0;
     PopulationSettings population;
     PlayerState player;
+    std::vector<Enemy> companions; // Owner-bound monsters travel with their controller.
+    CombatRelations relations;
     AreaState area;
     EffectFrame frame = 0;
     float time = 0;

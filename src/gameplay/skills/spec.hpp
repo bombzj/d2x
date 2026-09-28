@@ -2,6 +2,7 @@
 #include "gameplay/model/definitions.hpp"
 #include "gameplay/effects/state.hpp"
 #include "gameplay/combat/missile_effects.hpp"
+#include "gameplay/combat/unit.hpp"
 #include <array>
 #include <map>
 #include <string>
@@ -14,6 +15,25 @@ struct WeaponSkillSpec {
     bool thrown = false, manaOnRelease = false;
     int attackRating = 0, attackRatingPerLevel = 0, delayFrames = 0;
 };
+struct SummonSkillSpec {
+    std::string monster, iconArt;
+    MonsterKind kind = MonsterKind::NecroSkeleton;
+    int masterySkill = -1, resistSkill = -1;
+    int masteryLife = 0, masteryDamage = 0;
+    int lifePerRank = 0, damagePerRank = 0, attackPerRank = 0, defensePerRank = 0;
+    int shieldChance = 0, shieldVariants = 0, resistMinimum = 0, resistMaximum = 0;
+    std::array<int, 5> damageSteps{};
+    std::array<UnitCombatStats, 3> base;
+    std::vector<std::array<int, 3>> levelDefense, levelAttack;
+};
+struct SummonCastSpec {
+    std::string monster;
+    MonsterKind kind = MonsterKind::NecroSkeleton;
+    UnitCombatStats stats;
+    int limit = 0, shieldChance = 0, shieldVariants = 0;
+};
+SummonCastSpec resolveSummon(const SummonSkillSpec &spec, int rank, int mastery, int resist,
+                            int ownerLevel, int difficulty);
 // Typed values imported from Skills.txt and Missiles.txt. No archive data enters gameplay.
 struct SkillSpec {
     struct OverlayVisual {
@@ -36,6 +56,7 @@ struct SkillSpec {
     int poisonFrames = 0;
     std::array<int, 3> poisonFramesPerLevel{};
     std::optional<WeaponSkillSpec> weapon;
+    std::optional<SummonSkillSpec> summon;
     std::array<int, 5> minimumPerLevel{}, maximumPerLevel{};
     int synergyPercent = 0;
     std::vector<int> synergySkills;
@@ -69,6 +90,7 @@ struct SkillCastSpec {
     float coldDuration = 0, missileVelocity = 0, missileLifetime = 0;
     float poisonDuration = 0;
     std::optional<WeaponSkillSpec> weapon;
+    std::optional<SummonCastSpec> summon;
     std::optional<MissileImpactSpec> missileImpact;
     int missileId = -1;
     float missileNextDelay = 0;

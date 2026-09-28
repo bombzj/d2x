@@ -3,8 +3,8 @@
 
 namespace d2x {
 const WeaponDamage *Simulation::attackWeapon(bool thrown, bool leftHand) const {
-    for (int index = 0; index < equipmentStats_.weaponCount; ++index) {
-        const auto &weapon = equipmentStats_.weapons[index];
+    for (int index = 0; index < state_.player.equipment.weaponCount; ++index) {
+        const auto &weapon = state_.player.equipment.weapons[index];
         if (leftHand && (!weapon.item || !weapon.leftHand)) continue;
         if (thrown && !weapon.throwable) return nullptr;
         if (!thrown && weapon.potion) return nullptr; // SrvDo001 rejects missile potions.
@@ -12,29 +12,30 @@ const WeaponDamage *Simulation::attackWeapon(bool thrown, bool leftHand) const {
     }
     return nullptr;
 }
-bool Simulation::meleeReach(const Enemy &enemy, const WeaponDamage &weapon) const {
-    const int size = monsterSize_ ? monsterSize_(enemy) : 0;
-    return size > 0 && meleeDistance(state_.player.pos, 2, enemy.pos, size) <= weapon.rangeAdder + 1 &&
-           grid_->segment(state_.player.pos, enemy.pos);
+bool Simulation::meleeReach(EntityId defender, const WeaponDamage &weapon) const {
+    auto target = const_cast<Simulation *>(this)->combatUnit(defender);
+    return target.alive() && canAttack(state_.player.id, defender) && target.stats.collisionSize > 0 &&
+        meleeDistance(state_.player.pos, 2, *target.position, target.stats.collisionSize) <= weapon.rangeAdder + 1 &&
+        grid_->segment(state_.player.pos, *target.position);
 }
 void Simulation::requestAttack(const Attack &attack) {
     auto &p = state_.player;
     if (safeZone_ || p.dead || p.weaponAttack || p.castTime > 0 || p.hitTime > 0) return;
-    auto *enemy = findEnemy(attack.target);
-    if ((!enemy || enemy->hp <= 0) && !attack.position) return;
+    auto enemy = combatUnit(attack.target);
+    if ((!enemy.alive() || !canAttack(p.id, enemy.id)) && !attack.position) return;
     if (!attackWeapon(attack.thrown, attack.leftHand)) {
         state_.message = attack.thrown ? "A usable throwing weapon is required." :
                                         "No usable weapon for this attack.";
         return;
     }
     stopChannel(p);
-    p.attackTarget = enemy && enemy->hp > 0 ? enemy->id : EntityId{};
+    p.attackTarget = enemy.alive() && canAttack(p.id, enemy.id) ? enemy.id : EntityId{};
     p.attackPosition = attack.position;
     p.attackStationary = attack.stationary;
     p.throwAttack = attack.thrown;
     p.leftHandAttack = attack.leftHand;
     p.route.clear();
-    if (p.attackTarget && !p.attackStationary) p.route = grid_->path(p.pos, enemy->pos);
+    if (p.attackTarget && !p.attackStationary) p.route = grid_->path(p.pos, *enemy.position);
 }
 bool Simulation::beginWeaponAttack(Vec aim, EntityId target, const WeaponDamage &weapon,
                                    bool thrown, bool leftHand) {
@@ -53,8 +54,8 @@ bool Simulation::beginWeaponAttack(Vec aim, EntityId target, const WeaponDamage 
     if ((aim - p.pos).length() < .001f) aim = p.pos + p.look;
     p.look = (aim - p.pos).unit();
     p.weaponAttack = WeaponAttackState{weapon.item, target, aim, *timing, thrown};
-    p.weaponAttack->weaponClass = equipmentStats_.animationClass;
-    p.weaponAttack->appearanceDefinitions = equipmentStats_.appearanceDefinitions;
+    p.weaponAttack->weaponClass = state_.player.equipment.animationClass;
+    p.weaponAttack->appearanceDefinitions = state_.player.equipment.appearanceDefinitions;
     p.meleeTime = float(timing->durationTicks()) / 25.f;
     p.route.clear();
     emit(WeaponAttackStarted{p.id, target, thrown || weapon.ranged});
@@ -75,7 +76,7 @@ bool Simulation::beginWeaponSkill(const SkillCastSpec &skill, Vec aim, EntityId 
     }
     if (p.mana < skill.manaCost) { state_.message = "Not enough mana"; return false; }
     stopChannel(p);
-    if (auto *enemy = findEnemy(target); enemy && enemy->hp > 0) aim = enemy->pos;
+    if (auto enemy = combatUnit(target); enemy.alive() && canAttack(p.id, enemy.id)) aim = *enemy.position;
     if (!beginWeaponAttack(aim, target, *weapon, action.thrown, false)) return false;
     p.weaponAttack->skill = skill;
     p.attackTarget = {};
@@ -99,18 +100,18 @@ void Simulation::advanceWeaponAttack() {
     if (!attack.released && attack.ticks >= attack.timing.actionTick()) {
         attack.released = true;
         // Equipment can change during the wind-up. Never substitute another hand or fists.
-        auto weapon = std::find_if(equipmentStats_.weapons.begin(),
-            equipmentStats_.weapons.begin() + equipmentStats_.weaponCount,
+        auto weapon = std::find_if(state_.player.equipment.weapons.begin(),
+            state_.player.equipment.weapons.begin() + state_.player.equipment.weaponCount,
             [&](const WeaponDamage &candidate) { return candidate.item == attack.weapon; });
-        if (weapon != equipmentStats_.weapons.begin() + equipmentStats_.weaponCount &&
-            equipmentStats_.animationClass == attack.weaponClass) {
+        if (weapon != state_.player.equipment.weapons.begin() + state_.player.equipment.weaponCount &&
+            state_.player.equipment.animationClass == attack.weaponClass) {
             const auto selected = *weapon; // Consuming the last missile can refresh this cache.
-            auto *enemy = findEnemy(attack.target);
-            const Vec aim = enemy && enemy->hp > 0 ? enemy->pos : attack.aim;
+            auto enemy = combatUnit(attack.target);
+            const Vec aim = enemy.alive() && canAttack(p.id, enemy.id) ? *enemy.position : attack.aim;
             if (attack.thrown || selected.ranged)
                 firePhysicalProjectile(aim, selected, attack.thrown, attack.skill ? &*attack.skill : nullptr);
-            else if (enemy && enemy->hp > 0 && meleeReach(*enemy, selected))
-                meleeDamage(*enemy, selected);
+            else if (enemy.alive() && canAttack(p.id, enemy.id) && meleeReach(enemy.id, selected))
+                meleeDamage(enemy.id, selected);
         }
     }
     p.meleeTime = float(std::max(0, attack.timing.durationTicks() - attack.ticks)) / 25.f;

@@ -4,7 +4,7 @@
 namespace d2x {
 bool fallenShamanResurrectionTarget(const Enemy &shaman, const Enemy &corpse,
                                    const MonsterResurrection &skill) {
-    return shaman.kind == MonsterKind::FallenShaman && corpse.hp <= 0 &&
+    return shaman.kind == MonsterKind::FallenShaman && corpse.hp <= 0 && !corpse.corpseConsumed &&
            corpse.id != shaman.id && corpse.kind == MonsterKind::Fallen &&
            !skill.minion.empty() && corpse.identity.monster == skill.minion &&
            corpse.identity.group == shaman.identity.group &&

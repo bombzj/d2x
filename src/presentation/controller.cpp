@@ -53,7 +53,7 @@ void SceneController::click(Vec mouse) {
         return;
     }
     for (const auto &enemy : session_.state().area.enemies) {
-        if (enemy.hp > 0 && session_.active(enemy.pos) &&
+        if (enemy.hp > 0 && session_.canAttack(session_.state().player.id, enemy.id) && session_.active(enemy.pos) &&
             (view_.screen(enemy.pos) - Vec{0, 25} - mouse).length() < 24) {
             leftCombatTarget_ = enemy.id;
             leftTargetSkill_ = ui.leftSkill;
@@ -769,7 +769,7 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
             if (input.shift) {
                 EntityId target;
                 for (const auto &enemy : session_.state().area.enemies)
-                    if (enemy.hp > 0 && session_.active(enemy.pos) &&
+                    if (enemy.hp > 0 && session_.canAttack(session_.state().player.id, enemy.id) && session_.active(enemy.pos) &&
                         (view_.screen(enemy.pos) - Vec{0, 25} - input.mouse).length() < 24) {
                         target = enemy.id;
                         break;
@@ -789,16 +789,19 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
         const auto *rightSkill = ui.rightSkill ? session_.content().skills.find(*ui.rightSkill) : nullptr;
         const bool channeled = rightSkill && rightSkill->spell &&
             rightSkill->spell->effect == SkillBehavior::Inferno;
+        const bool corpseSkill = rightSkill && rightSkill->spell && rightSkill->spell->summon.has_value();
         if (input.rightHeld && !inventoryRight_ && (!channeled ||
             (input.movement.length() <= .1f && !input.leftPressed && !input.leftHeld))) {
             EntityId target;
             for (const auto &enemy : session_.state().area.enemies)
-                if (input.rightPressed && enemy.hp > 0 && session_.active(enemy.pos) &&
-                    (view_.screen(enemy.pos) - Vec{0, 25} - input.mouse).length() < 24) {
+                if ((corpseSkill ? session_.usableCorpse(enemy.id) :
+                     input.rightPressed && enemy.hp > 0 && session_.canAttack(session_.state().player.id, enemy.id)) &&
+                    session_.active(enemy.pos) &&
+                    (view_.screen(enemy.pos) - Vec{0, corpseSkill ? 0.f : 25.f} - input.mouse).length() < 24) {
                     target = enemy.id;
                     break;
                 }
-            rightCombatTarget_ = target;
+            rightCombatTarget_ = corpseSkill ? EntityId{} : target;
             rightTargetSkill_ = ui.rightSkill;
             Vec aim = view_.world(input.mouse);
             if (target)

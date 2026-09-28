@@ -24,63 +24,31 @@ bool Simulation::clipMissilePath(int missileId, Vec from, Vec &to) const {
 }
 void Simulation::damageEnemy(Enemy &enemy, float amount, EntityId source, float chill,
                              bool ignoreActivation, MonsterDamageType type, bool alreadyMitigated,
-                             bool playerKillEffects, bool freezeHit) {
-    if (enemy.hp <= 0 || (!ignoreActivation && !active(enemy.pos)))
-        return;
-    if (!ignoreActivation && !alreadyMitigated && monsterResistance_)
-        if (auto resistance = monsterResistance_(enemy, state_.area.region, type)) {
-            const int pierce = type == MonsterDamageType::Cold && source == state_.player.id &&
-                               *resistance < 100 && coldPierce_ ? coldPierce_() : 0;
-            const int effectiveResistance = *resistance - pierce;
-            amount = mitigateMonsterDamage(amount, effectiveResistance);
-            if (type == MonsterDamageType::Cold)
-                chill *= float(std::clamp(100 - effectiveResistance, 0, 200)) / 100.f;
-        }
-    if (amount <= 0) return;
-    enemy.hp = std::max(0.f, enemy.hp - amount);
-    if (type != MonsterDamageType::Poison) enemy.hitFlash = 0;
-    if (enemy.hp > 0 && type != MonsterDamageType::Poison)
-        enemy.hitFlash = monsterGetHitDuration_
-            ? monsterGetHitDuration_(enemy.identity).value_or(.12f) : .12f;
+                             bool freezeHit) {
+    if (!ignoreActivation && !active(enemy.pos)) return;
+    dealDamage({source, enemy.id, amount, type, chill, alreadyMitigated, true, freezeHit,
+                ignoreActivation ? DamagePermission::Debug : DamagePermission::Hostile});
+}
+void Simulation::onMonsterDamaged(Enemy &enemy, const DamageRequest &request, float dealt) {
+    if (dealt <= 0) return;
+    const auto type = request.type;
+    const auto source = request.attacker;
     if (enemy.hp > 0 && monsterAi_)
         if (auto ai = monsterAi_(enemy); ai && ai->kind == MonsterAiKind::QuillRat)
             enemy.aiRetaliate = true;
-    if (enemy.skill2Remaining > 0 && type != MonsterDamageType::Poison)
-        enemy.skill2Remaining = enemy.skill2Duration = 0;
-    if (freezeHit && monsterFreezable_) {
-        if (auto freezable = monsterFreezable_(enemy)) {
-            if (*freezable && chill > 0 && enemy.hp > 0) {
-                enemy.freeze = std::max(enemy.freeze, chill / monsterFreezeDivisor_);
-                enemy.route.clear();
-            } else if (!*freezable) {
-                enemy.chill = std::max(enemy.chill, chill);
-            }
-        }
-    } else {
-        enemy.chill = std::max(enemy.chill, chill);
-    }
     if (enemy.identity.enchantment) {
         const auto &mods = *enemy.identity.enchantment;
-        if (enemy.hp > 0 && type != MonsterDamageType::Poison && mods.has(17) &&
+        if (enemy.hp > 0 && type != MonsterDamageType::Poison &&
+            request.permission != DamagePermission::ExistingEffect && mods.has(17) &&
             !enemy.pendingUniqueLightningFrame)
             enemy.pendingUniqueLightningFrame = state_.frame + 2;
         if (enemy.hp == 0 && (mods.has(9) || mods.has(18)))
             enemy.deathEnchantmentFrame = state_.frame + 4;
     }
-    if (enemy.hp > 0 && type != MonsterDamageType::Poison) emit(EnemyHit{enemy.id, enemy.kind});
     if (enemy.hp == 0) {
+        enemy.hitFlash = 0;
         enemy.freeze = 0;
         enemy.resurrectionRemaining = enemy.resurrectionDuration = 0;
-        if (playerKillEffects && source == state_.player.id && !state_.player.dead) {
-            auto &player = state_.player;
-            player.hp = std::min(float(characterStats_.maxLife), player.hp + characterStats_.combat.lifeOnKill);
-            player.mana = std::min(float(characterStats_.maxMana), player.mana + characterStats_.combat.manaOnKill);
-        }
-        if (!playerKillEffects && source == state_.player.id && state_.player.hireling.active() && hirelingAttributes_) {
-            const auto stats = hirelingAttributes_();
-            auto &merc = state_.player.hireling;
-            merc.hp = std::min(float(stats.maxLife), merc.hp + stats.combat.lifeOnKill);
-        }
         enemy.deathAge = 0;
         enemy.route.clear();
         enemy.aiPursuing = false;
@@ -99,21 +67,30 @@ void Simulation::damageEnemy(Enemy &enemy, float amount, EntityId source, float 
         enemy.attackImpact = -1;
         enemy.teleportTarget.reset();
         enemy.attackMode = 1;
+        enemy.combatEffects.onDeath(EffectUnitKind::Monster);
+        if (enemy.allegiance.role == CombatRole::Summon) { enemy.corpseConsumed = true; return; }
         ++state_.area.kills;
-        emit(EnemyDied{enemy.id, source, enemy.kind, state_.area.region, enemy.pos, enemy.identity,
-                       state_.population.difficulty, !playerKillEffects, enemy.combatRandom});
+        const auto controller = combatUnit(controllingPlayer(source));
+        const auto attacker = combatUnit(source);
+        const auto ownerMods = controller ? controller.stats.attributes.combat : CombatModifiers{};
+        const auto mercMods = attacker && attacker.identity.role == CombatRole::Hireling ? attacker.stats.attributes.combat : CombatModifiers{};
+        emit(EnemyDied{enemy.id, controllingPlayer(source), enemy.kind, state_.area.region, enemy.pos, enemy.identity,
+                       state_.population.difficulty, source, enemy.combatRandom,
+                       ownerMods.magicFind + mercMods.magicFind, ownerMods.goldFind + mercMods.goldFind});
     }
 }
-void Simulation::meleeDamage(Enemy &enemy, const WeaponDamage &weapon) {
+void Simulation::meleeDamage(EntityId defender, const WeaponDamage &weapon) {
     auto &player = state_.player;
     rollRandom(player.combatRandom);
-    const auto defense = monsterDefense_ ? monsterDefense_(enemy, state_.area.region) : std::nullopt;
-    if (!defense) { state_.message = "Original monster defense is unavailable."; return; }
+    const auto target = combatUnit(defender);
+    if (!target.alive() || !canAttack(player.id, defender)) return;
+    const MonsterDefense defense{target.stats.level, target.stats.attributes.defense,
+        target.stats.demon, target.stats.undead, target.stats.boss};
     if (uint32_t(player.combatRandom) % 100 >= unsigned(weaponHitChance(player.level,
-        weapon.baseAttackRating, weapon.attackRatingPercent, weapon.target, *defense, enemy.identity.rank))) return;
+        weapon.baseAttackRating, weapon.attackRatingPercent, weapon.target, defense, target.stats.rank))) return;
     rollRandom(player.combatRandom);
-    const int targetBonus = (defense->demon ? std::max(0, weapon.target.demonDamage) : 0) +
-        (defense->undead ? std::max(0, weapon.target.undeadDamage + (weapon.blunt ? 50 : 0)) : 0);
+    const int targetBonus = (defense.demon ? std::max(0, weapon.target.demonDamage) : 0) +
+        (defense.undead ? std::max(0, weapon.target.undeadDamage + (weapon.blunt ? 50 : 0)) : 0);
     const int bonus = std::max(-90, weapon.damagePercent + targetBonus);
     const int64_t minimum = weapon.meleeBaseMinimum + int64_t(weapon.meleeBaseMinimum) *
                             (bonus + weapon.minimumDamagePercent) / 100;
@@ -121,24 +98,8 @@ void Simulation::meleeDamage(Enemy &enemy, const WeaponDamage &weapon) {
                             (bonus + weapon.maximumDamagePercent) / 100;
     const auto range = uint32_t(std::max<int64_t>(0, maximum - minimum));
     const auto damage = std::max<int64_t>(0, minimum + (range ? uint32_t(player.combatRandom) % range : 0));
-    resolveWeaponHit(enemy, float(damage) / 256.f, player.id, rollAttackElements(weapon.item));
+    resolveWeaponHit(defender, float(damage) / 256.f, player.id, rollAttackElements(weapon.item));
     if (wearEquipment_ && weapon.item) wearEquipment_(weapon.item, false);
-}
-std::optional<std::pair<bool, float>> Simulation::hostileMissileTarget(const Missile &missile, Vec to) const {
-    const auto rule = missileCollisions_.find(missile.missileId);
-    if (rule == missileCollisions_.end()) return std::nullopt;
-    std::optional<std::pair<bool, float>> hit;
-    const auto &p = state_.player;
-    auto consider = [&](bool merc, EntityId id, Vec position, int size) {
-        if (missile.lastHit == id) return;
-        const auto delayed = state_.area.novaHitUntil.find(id);
-        if (missile.nextHitDelay && delayed != state_.area.novaHitUntil.end() && delayed->second > state_.time) return;
-        if (auto at = missileUnitIntersection(missile.pos, to, rule->second.size, position, size);
-            at && (!hit || *at < hit->second)) hit = std::pair{merc, *at};
-    };
-    if (!p.dead && p.hp > 0) consider(false, p.id, p.pos, 2);
-    if (p.hireling.active()) consider(true, p.hireling.id, p.hireling.pos, p.hireling.collisionSize);
-    return hit;
 }
 void Simulation::updateMissiles(float dt) {
     auto &area = state_.area;
@@ -149,148 +110,74 @@ void Simulation::updateMissiles(float dt) {
         if (m.groundTargeted) { advanceGroundTargetedMissile(m, dt, spawned); continue; }
         if (m.poisonCloud) { advancePoisonCloud(m, dt); continue; }
         if (m.acceleration != 0 && int(m.age * 5.f + .00001f) > accelerationStep) {
-            const auto heading = m.velocity.unit();
             float speed = std::max(0.f, m.velocity.length() + m.acceleration);
-            if (speed >= m.maxVelocity) {
-                speed = m.maxVelocity;
-                m.acceleration = 0;
-            }
-            m.velocity = heading * speed;
+            if (speed >= m.maxVelocity) { speed = m.maxVelocity; m.acceleration = 0; }
+            m.velocity = m.velocity.unit() * speed;
         }
-        if (m.hostileElement) { advanceHostileElementMissile(m, dt); continue; }
-        if (m.hostile && m.hostileMode == 7) {
+        if (m.monsterAttack && m.monsterAttackMode == 7) {
             m.remaining -= dt;
-            if (!state_.player.dead && m.remaining > 0 &&
-                (state_.player.pos - m.pos).length() < m.radius)
+            if (m.remaining > 0)
                 if (auto *owner = findEnemy(m.owner))
-                    if (auto web = monsterWeb_ ? monsterWeb_(*owner) : std::nullopt) {
-                        state_.player.webSlowRemaining =
-                            std::max(state_.player.webSlowRemaining, m.slowDuration);
-                        state_.player.webSlowPercent = web->slowPercent;
-                        state_.player.webSource = owner->id;
-                    }
-            auto &merc = state_.player.hireling;
-            if (merc.active() && m.remaining > 0 && (merc.pos - m.pos).length() < m.radius)
-                if (auto *owner = findEnemy(m.owner))
-                    if (auto web = monsterWeb_ ? monsterWeb_(*owner) : std::nullopt) {
-                        merc.webSlowRemaining = std::max(merc.webSlowRemaining, m.slowDuration);
-                        merc.webSlowPercent = web->slowPercent;
-                    }
+                    if (auto web = monsterWeb_ ? monsterWeb_(*owner) : std::nullopt)
+                        for (auto target : combatUnits())
+                            if (target.alive() && canAttack(m.owner, target.id) && (*target.position - m.pos).length() < m.radius)
+                                applyWeb(target.id, m.slowDuration, web->slowPercent);
             continue;
         }
-        if (m.behavior == SkillBehavior::ChargedBolt && !m.hostile) {
-            const float speed = m.velocity.length();
-            float distance = speed * std::min(dt, m.remaining);
-            while (distance > 0 && !m.path.empty() && m.remaining > 0) {
-                const Vec offset = m.path.front() - m.pos;
-                const float segmentLength = std::min(distance, offset.length());
-                if (segmentLength < .00001f) { m.path.pop_front(); continue; }
-                const Vec heading = offset.unit();
-                const Vec nextPoint = m.pos + heading * segmentLength;
-                if (!missilePathClear(m.missileId, m.pos, nextPoint)) { m.remaining = 0; break; }
-                Enemy *hit = nullptr;
-                float first = segmentLength;
-                for (auto &enemy : area.enemies) {
-                    if (enemy.hp <= 0 || !active(enemy.pos)) continue;
-                    const Vec relative = enemy.pos - m.pos;
-                    const float along = std::clamp(relative.x * heading.x + relative.y * heading.y, 0.f, segmentLength);
-                    if ((enemy.pos - (m.pos + heading * along)).length() < 1.2f && (!hit || along < first)) {
-                        hit = &enemy;
-                        first = along;
-                    }
-                }
-                m.velocity = heading * speed;
-                m.pos = hit ? m.pos + heading * first : nextPoint;
-                distance -= segmentLength;
-                if (hit) {
-                    damageEnemy(*hit, m.damage, m.owner, 0, false, MonsterDamageType::Lightning);
-                    if (m.hitOverlayId >= 0)
-                        area.effects.push_back({hit->pos, 0, m.hitOverlayDuration,
-                                                -1, m.hitOverlayId, hit->id});
-                    m.remaining = 0;
-                } else if (offset.length() <= segmentLength + .00001f) m.path.pop_front();
-            }
-            m.remaining = m.path.empty() ? 0 : m.remaining - dt;
-            continue;
-        }
-        auto next = m.pos + m.velocity * dt;
-        if (m.hostile) {
-            const bool wall = clipMissilePath(m.missileId, m.pos, next);
-            const auto struck = m.remaining > dt ? hostileMissileTarget(m, next) : std::nullopt;
-            m.pos = struck ? m.pos + (next - m.pos) * struck->second : next;
-            m.remaining = wall ? 0 : std::max(0.f, m.remaining - dt);
-            if (struck) {
-                m.remaining = 0;
+        if (m.physical && !m.monsterAttack) { advancePhysicalMissile(m, dt, spawned); continue; }
+        const auto type = m.fixedElement.value_or(
+            m.behavior == SkillBehavior::Nova || m.behavior == SkillBehavior::ChargedBolt ? MonsterDamageType::Lightning :
+            m.chill > 0 ? MonsterDamageType::Cold : MonsterDamageType::Fire);
+        auto hit = [&](EntityId defender) {
+            m.lastHit = defender;
+            if (m.nextHitDelay > 0) area.novaHitUntil[defender] = state_.time + m.nextHitDelay;
+            if (m.monsterAttack && !m.fixedElement) {
                 if (auto *source = findEnemy(m.owner)) {
-                    if (m.hostileMode >= 3) resolveMonsterSpell(*source, m, struck->first);
-                    else resolveMonsterAttack(*source, m.hostileMode, true, struck->first);
+                    if (m.monsterAttackMode >= 3) resolveMonsterSpell(*source, m, defender);
+                    else resolveMonsterAttack(*source, m.monsterAttackMode, true, defender);
                 }
-            }
-            continue;
-        }
-        if (!m.physical && m.missileId >= 0) {
-            const auto type = m.behavior == SkillBehavior::Nova ? MonsterDamageType::Lightning :
-                m.chill > 0 ? MonsterDamageType::Cold : MonsterDamageType::Fire;
-            const bool wall = !missilePathClear(m.missileId, m.pos, next);
-            if (wall) {
-                float clear = 0.f, blocked = 1.f;
-                for (int step = 0; step < 9; ++step) {
-                    const float middle = (clear + blocked) * .5f;
-                    if (missilePathClear(m.missileId, m.pos, m.pos + (next - m.pos) * middle)) clear = middle;
-                    else blocked = middle;
-                }
-                next = m.pos + (next - m.pos) * clear;
-            }
-            if (m.behavior == SkillBehavior::Nova || m.behavior == SkillBehavior::FrostNova || m.behavior == SkillBehavior::Inferno) {
-                const Vec motion = next - m.pos;
-                const float lengthSquared = motion.x * motion.x + motion.y * motion.y;
-                for (auto &enemy : area.enemies) {
-                    if (enemy.hp <= 0 || !active(enemy.pos)) continue;
-                    const Vec offset = enemy.pos - m.pos;
-                    const float projection = lengthSquared > 0 ?
-                        std::clamp((offset.x * motion.x + offset.y * motion.y) / lengthSquared, 0.f, 1.f) : 0.f;
-                    const Vec closest = m.pos + motion * projection;
-                    if (enemy.id == m.lastHit || (enemy.pos - closest).length() >= 1.2f ||
-                        (m.nextHitDelay > 0 && state_.time < area.novaHitUntil[enemy.id])) continue;
-                    m.lastHit = enemy.id;
-                    if (m.nextHitDelay > 0) area.novaHitUntil[enemy.id] = state_.time + m.nextHitDelay;
-                    damageEnemy(enemy, m.damage, m.owner, m.chill, false, type);
-                    if (m.hitOverlayId >= 0)
-                        area.effects.push_back({enemy.pos, 0, m.hitOverlayDuration,
-                                                -1, m.hitOverlayId, enemy.id});
+            } else if (m.impact) resolveMissileImpact(m, spawned, defender);
+            else dealDamage({m.owner, defender, m.damage, type, m.chill, false, true,
+                             m.behavior == SkillBehavior::IceBlast});
+            if (m.hitOverlayId >= 0)
+                area.effects.push_back({unitPosition(defender), 0, m.hitOverlayDuration, -1, m.hitOverlayId, defender});
+        };
+        const bool piercing = !m.killOnHit || m.behavior == SkillBehavior::Nova ||
+            m.behavior == SkillBehavior::FrostNova || m.behavior == SkillBehavior::Inferno;
+        auto advance = [&](Vec next) {
+            const bool wall = clipMissilePath(m.missileId, m.pos, next);
+            const auto collision = missileCollisions_.find(m.missileId);
+            if (collision == missileCollisions_.end()) { m.remaining = 0; return; }
+            if (piercing) {
+                for (auto target : combatUnits()) {
+                    if (!target.alive() || !canAttack(m.owner, target.id) || !active(*target.position) || target.id == m.lastHit) continue;
+                    if (m.nextHitDelay > 0 && area.novaHitUntil[target.id] > state_.time) continue;
+                    if (missileUnitIntersection(m.pos, next, collision->second.size, *target.position, target.stats.collisionSize)) hit(target.id);
                 }
                 m.pos = next;
-                m.remaining = wall ? 0 : m.remaining - dt;
-                continue;
+            } else {
+                const auto contact = missileTarget(m, next);
+                m.pos = contact ? m.pos + (next - m.pos) * contact->second : next;
+                if (contact) { hit(contact->first); m.remaining = 0; }
+                else if (wall && m.impact) resolveMissileImpact(m, spawned);
             }
-            Enemy *struck = nullptr;
-            float first = 2.f;
-            const Vec motion = next - m.pos;
-            const auto collision = missileCollisions_.find(m.missileId);
-            if (collision == missileCollisions_.end()) { m.remaining = 0; continue; }
-            for (auto &enemy : area.enemies) {
-                if (enemy.hp <= 0 || !active(enemy.pos)) continue;
-                const int size = monsterSize_ ? monsterSize_(enemy) : 0;
-                if (auto at = missileUnitIntersection(m.pos, next, collision->second.size, enemy.pos, size);
-                    at && *at < first) {
-                    struck = &enemy;
-                    first = *at;
-                }
+            if (wall) m.remaining = 0;
+        };
+        m.remaining = std::max(0.f, m.remaining - dt);
+        if (m.remaining <= .00001f) { m.remaining = 0; continue; }
+        if (m.behavior == SkillBehavior::ChargedBolt) {
+            float distance = m.velocity.length() * dt;
+            while (distance > 0 && !m.path.empty() && m.remaining > 0) {
+                const Vec delta = m.path.front() - m.pos;
+                const float step = std::min(distance, delta.length());
+                if (step < .00001f) { m.path.pop_front(); continue; }
+                m.velocity = delta.unit() * m.velocity.length();
+                advance(m.pos + delta.unit() * step);
+                distance -= step;
+                if (step >= delta.length() - .00001f) m.path.pop_front();
             }
-            m.pos = struck ? m.pos + motion * first : next;
-            m.remaining -= dt;
-            if (wall || struck || m.remaining <= 0) {
-                m.remaining = 0;
-                if (!wall && !struck) continue;
-                if (m.impact) resolveMissileImpact(m, spawned, struck);
-                else if (struck)
-                    damageEnemy(*struck, m.damage, m.owner, m.chill, false, type,
-                                false, true, m.behavior == SkillBehavior::IceBlast);
-            }
-            continue;
-        }
-        if (m.physical) { advancePhysicalMissile(m, dt, spawned); continue; }
-        throw std::logic_error("Missile has no native execution definition");
+            if (m.path.empty()) m.remaining = 0;
+        } else advance(m.pos + m.velocity * dt);
     }
     std::erase_if(area.missiles, [](const Missile &m) { return m.remaining <= 0; });
     for (auto &missile : spawned) area.missiles.push_back(std::move(missile));

@@ -70,7 +70,6 @@ struct AttackElements {
     float poisonPerSecond = 0, poisonDuration = 0, coldDuration = 0;
     bool deadly = false;
     bool crushing = false, openWounds = false, ranged = false;
-    bool playerKillEffects = true;
     int lifeLeech = 0, manaLeech = 0, attackerLevel = 1;
 };
 struct AttackDamageRange {

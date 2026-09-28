@@ -27,9 +27,11 @@ struct EnemyDied {
     Vec position;
     MonsterIdentity identity;
     int difficulty = 0;
-    bool hirelingKill = false;
+    EntityId attacker; // Actual source; killer is the controlling player receiving credit.
     uint64_t lootRandom = 0;
+    int magicFind = 0, goldFind = 0;
 };
+struct UnitDied { EntityId victim; }; // Presentation/lifecycle notification; carries no loot entitlement.
 struct PlayerDied {
     EntityId player;
 };
@@ -117,7 +119,7 @@ struct QuestAdvanced {
     ActOneQuest quest;
     uint32_t stage;
 };
-using GameEvent = std::variant<SkillCast, SkillActivated, MissileImpact, MissileReleased, WeaponAttackStarted, EnemyDied, EnemyAttacked, EnemySkill2, EnemyHit, PlayerDied, RegionEntered, ObjectInteracted, NpcDialogueStarted, ItemsIdentified, VendorItemBought, VendorItemSold,
+using GameEvent = std::variant<SkillCast, SkillActivated, MissileImpact, MissileReleased, WeaponAttackStarted, UnitDied, EnemyDied, EnemyAttacked, EnemySkill2, EnemyHit, PlayerDied, RegionEntered, ObjectInteracted, NpcDialogueStarted, ItemsIdentified, VendorItemBought, VendorItemSold,
                                ItemChange, InventoryRejected, InventoryApplied, ItemPickedUp, PickupFailed,
                                ItemUsed, BeltEquipped, StorageOpened, StorageClosed, InteractionFailed,
                                LootDeferred, WaypointActivated, QuestAdvanced, GambleStockOpened,

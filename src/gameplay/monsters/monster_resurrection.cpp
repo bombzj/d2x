@@ -9,6 +9,7 @@ void Simulation::resolveMonsterResurrection(Enemy &shaman) {
     auto *corpse = targetId ? findEnemy(targetId) : nullptr;
     const auto ai = monsterAi_ ? monsterAi_(shaman) : std::nullopt;
     if (!skill || !corpse || !ai || ai->kind != MonsterAiKind::FallenShaman ||
+        relation(shaman.id, corpse->id) != Relation::Allied ||
         !fallenShamanResurrectionTarget(shaman, *corpse, *skill) ||
         (corpse->pos - shaman.pos).length() > float(ai->params[3])) return;
     const auto duration = monsterDeathDuration_ ? monsterDeathDuration_(*corpse) : std::nullopt;

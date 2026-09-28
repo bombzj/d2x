@@ -88,7 +88,7 @@ void GameSession::grantHirelingExperience(const EnemyDied &death) {
     const auto bonus = std::max(0, 100 + hirelingStats().combat.experiencePercent);
     uint64_t amount = std::min(award.amount * unsigned(bonus) / 100,
                                (stats.nextExperience - stats.experience) >> 6);
-    if (!death.hirelingKill) amount = amount * 86 / 256;
+    if (death.attacker != state().player.hireling.id) amount = amount * 86 / 256;
     hireling.experience += amount;
     if (hireling.experience < stats.nextExperience) return;
     ++hireling.level;

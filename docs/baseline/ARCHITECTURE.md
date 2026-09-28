@@ -9,6 +9,8 @@
 | `world` | 地图计划、拼接、图层、共享 DT1、出口 | `planWorld`、`MapRecipe`、`Map`、`Region` |
 | `world/population.*` | 内容和地图 → 生成指令；不分配 ID | `planPopulation`、`PopulationPlan` |
 | `gameplay` | 25 Hz 战斗状态和规则；不依赖 MPQ／raylib | `Simulation`、`WorldState`、`GameCommand` |
+| `gameplay/combat/unit.*` | 公共单位视图、阵营／主人关系、伤害过滤、减伤和死亡 | `CombatUnit`、`CombatIdentity`、`DamageRequest` |
+| `gameplay/skills/summoning.cpp` | 尸体消耗、宠物创建、上限、跟随与旅行；复用公共战斗 | `summonFromCorpse`、`updateCompanions` |
 | `gameplay/character` | 角色已分配点、类型化成长与派生资源／战斗快照；不读 MPQ | `deriveCharacterAttributes` |
 | `gameplay/items` | 物品／容器唯一状态及事务 | `InventoryService` |
 | `gameplay/npc` | NPC 路径移动、凯恩鉴定与商店购买 | `advanceNpcPaths`、`planCainIdentification`、`planVendorStock`、`buyVendorItem` |
@@ -29,7 +31,7 @@
 - `d2x_population → content/gameplay`；怪物计划与实体创建分离。
 - `GameSession` 持有区域、模拟、物品服务和掉落状态。`Simulation` 借用稳定区域网格与房间索引。
 - 待施法与持续引导是角色状态：`PlayerState.pendingCast/channel` 拥有技能参数、目标和计时，`Simulation` 仅推进，内部开始／推进／停止／释放函数显式接收角色引用。角色销毁或替换不留下会话级施法槽；引导显示从同一份状态派生，不参与 D2S 编码。
-- 当前仍是单玩家世界：`WorldState.player`、命令接收者、当前区域、属性／装备缓存以及部分战斗回调均依赖唯一玩家。未来多人须将玩家按实体 ID 管理、由可信命令来源路由到角色，并使区域上下文及派生属性按角色获取；单个玩家退出／加载不得执行当前单人 `restore` 的全局新局重置。本次只解除施法状态所有权的限制，未实现网络同步或完整多角色模拟。
+- 战斗通过 `combat/unit.*` 的实体 ID、CombatUnit 访问视图、阵营／所有权关系与公共伤害入口执行。玩家、佣兵、怪物共享选敌、碰撞过滤、减伤、持续伤害和击杀归属；派生属性／装备快照属于 PlayerState。规则和扩展边界见 [战斗阵营](../COMBAT_FACTIONS.md)。当前仍为单操控角色世界，命令、库存、区域激活和网络同步尚未实现多人；未来注册其他玩家时必须提供其实体状态、属性和可信命令来源，退出／加载不能沿用本地 restore 的全局重置。
 - 当前区与非当前区状态只能存在一份；UI 不直接修改角色、物品或怪物。
 - 图形按区域共享缓存；跨野外边界绘制相邻区域，碰撞与区域状态仍由会话切换。
 - 步行边界由 `world/exits.cpp` 根据两侧原碰撞及连通区域生成 `LevelExit.passages`；会话按角色和点击终点选择可达通道，并保持世界坐标终点。`Grid::reachableFrom` 共用于预设开口识别和通道筛选；`Grid::segment` 的逐格碰撞与 A*／路径平滑共用网格。通道和待过界选择属于地图／会话运行状态，不进入 D2S。已构建且用户确认行走修复可用，不能据此视为完整跨区寻路或多人区域流式加载已实现。

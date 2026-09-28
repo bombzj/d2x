@@ -14,11 +14,11 @@ void Simulation::advanceSkillCasting(PlayerState &player, float dt, bool moving)
     auto &channel = player.channel;
     if (channel && (player.dead || player.hitTime > 0 || moving)) stopChannel(player);
     if (channel && channel->enemy) {
-        const auto *enemy = findEnemy(channel->enemy);
-        if (!enemy || enemy->hp <= 0 || !active(enemy->pos)) stopChannel(player);
+        const auto enemy = combatUnit(channel->enemy);
+        if (!enemy.alive() || !canAttack(player.id, enemy.id) || !active(*enemy.position)) stopChannel(player);
         else {
-            channel->target = enemy->pos;
-            const auto direction = (enemy->pos - player.pos).unit();
+            channel->target = *enemy.position;
+            const auto direction = (*enemy.position - player.pos).unit();
             if (direction.length() > 0) player.look = direction;
         }
     }
@@ -47,13 +47,18 @@ void Simulation::advanceSkillCasting(PlayerState &player, float dt, bool moving)
             auto cast = *pendingCast;
             pendingCast.reset();
             if (cast.enemy) {
-                const auto *enemy = findEnemy(cast.enemy);
-                if (!enemy || enemy->hp <= 0 || !active(enemy->pos)) return;
-                cast.target = enemy->pos;
-                const auto direction = (cast.target - player.pos).unit();
-                if (direction.length() > 0) player.look = direction;
+                if (cast.skill.summon) {
+                    if (!usableCorpse(cast.enemy)) return;
+                    cast.target = unitPosition(cast.enemy);
+                } else {
+                    const auto enemy = combatUnit(cast.enemy);
+                    if (!enemy.alive() || !canAttack(player.id, enemy.id) || !active(*enemy.position)) return;
+                    cast.target = *enemy.position;
+                    const auto direction = (cast.target - player.pos).unit();
+                    if (direction.length() > 0) player.look = direction;
+                }
             }
-            releaseSkillCast(player, cast.skill, cast.target, cast.staticFieldMinimum);
+            releaseSkillCast(player, cast.skill, cast.target, cast.staticFieldMinimum, true, cast.enemy);
         }
     }
 }
@@ -75,6 +80,11 @@ bool Simulation::beginSkillCast(PlayerState &player, const SkillCastSpec &skill,
     if (skill.effect == SkillBehavior::Teleport && (!teleportAllowed || !grid_->walkable(target))) {
         state_.message = "Teleport needs permitted, clear ground";
         return false;
+    }
+    if (skill.summon) {
+        if (!enemy) enemy = corpseNear(target);
+        if (!usableCorpse(enemy)) { state_.message = "A usable monster corpse is required"; return false; }
+        target = unitPosition(enemy);
     }
     if (player.mana < std::max(skill.manaCost, skill.startMana)) {
         state_.message = "Not enough mana";
@@ -104,9 +114,16 @@ bool Simulation::beginSkillCast(PlayerState &player, const SkillCastSpec &skill,
     return true;
 }
 void Simulation::releaseSkillCast(PlayerState &player, const SkillCastSpec &skill, Vec target,
-                                     int staticFieldMinimum, bool consumeMana) {
+                                     int staticFieldMinimum, bool consumeMana, EntityId targetUnit) {
     if (player.dead || (consumeMana && player.mana < skill.manaCost) ||
         (skill.effect == SkillBehavior::Teleport && !grid_->walkable(target))) return;
+    if (skill.summon) {
+        if (summonFromCorpse(player, skill, targetUnit)) {
+            if (consumeMana) player.mana -= skill.manaCost;
+            emit(SkillActivated{skill.sourceId});
+        }
+        return;
+    }
     if (consumeMana) player.mana -= skill.manaCost;
     if (skill.missileId >= 0 && skill.effect != SkillBehavior::Inferno) emit(MissileReleased{skill.missileId});
     if (skill.appliedEffect) {
@@ -117,6 +134,7 @@ void Simulation::releaseSkillCast(PlayerState &player, const SkillCastSpec &skil
         emit(SkillActivated{skill.sourceId});
     } else if (skill.effect == SkillBehavior::Teleport) {
         player.pos = player.previous = target;
+        relocateCompanions(player.id, target);
         // PetType.hireable.warp=1: SrvDo027 -> SUnit -> PlayerPets relocates
         // living hirelings to the owner's destination, including through walls.
         if (player.hireling.active()) {
@@ -126,19 +144,14 @@ void Simulation::releaseSkillCast(PlayerState &player, const SkillCastSpec &skil
             merc.animationTime = 0;
         }
     } else if (skill.effect == SkillBehavior::StaticField) {
-        for (auto &enemy : state_.area.enemies) {
-            if (enemy.hp <= 0 || !active(enemy.pos) ||
-                (enemy.pos - player.pos).length() > skill.staticRadius) continue;
-            const int hitpoints = int(enemy.hp);
-            if (hitpoints < 1 || (staticFieldMinimum > 0 &&
-                hitpoints <= int(enemy.maxHp) * staticFieldMinimum / 100)) continue;
-            float amount = std::max(skill.staticMinDamage,
-                float(std::min(hitpoints * int(skill.staticPercent) / 100, hitpoints - 1)));
-            if (monsterResistance_)
-                if (auto resistance = monsterResistance_(enemy, state_.area.region, MonsterDamageType::Lightning))
-                    amount *= float(std::clamp(100 - *resistance, 0, 100)) / 100.f;
-            if (amount > 0) damageEnemy(enemy, amount, player.id, 0, false,
-                                        MonsterDamageType::Lightning, true);
+        for (auto unit : combatUnits()) {
+            if (!unit.alive() || !canAttack(player.id, unit.id) || !active(*unit.position) ||
+                (*unit.position - player.pos).length() > skill.staticRadius) continue;
+            const int hitpoints = int(*unit.life);
+            if (hitpoints < 1 || (staticFieldMinimum > 0 && hitpoints <= unit.stats.attributes.maxLife * staticFieldMinimum / 100)) continue;
+            float amount = std::max(skill.staticMinDamage, float(std::min(hitpoints * int(skill.staticPercent) / 100, hitpoints - 1)));
+            amount *= float(std::clamp(100 - unitResistance(unit, MonsterDamageType::Lightning), 0, 100)) / 100.f;
+            dealDamage({player.id, unit.id, amount, MonsterDamageType::Lightning, 0, true});
         }
     } else if (skill.effect == SkillBehavior::ChargedBolt) {
         if ((target - player.pos).length() < 1) target = player.pos + player.look * 10;

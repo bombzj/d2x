@@ -58,6 +58,7 @@ class SceneAssets {
     std::array<std::map<int, Sprite>, 2> automapCels;
     std::map<std::string, GpuAnimation> propAnimations, npcWalkAnimations, hero;
     std::map<std::string, GpuAnimation> hirelingAnimations;
+    std::map<int, GpuAnimation> summonPortraits;
     std::map<std::string, std::array<GpuAnimation, 3>> waypointAnimations;
     std::map<std::string, std::array<GpuAnimation, 3>> objectModeAnimations;
     std::map<MonsterKind, std::map<std::string, GpuAnimation>> monsterAnimations;

@@ -6,15 +6,15 @@
 #include <stdexcept>
 
 namespace d2x {
-void Simulation::resolveMissileImpact(const Missile &missile, std::vector<Missile> &spawned, Enemy *direct) {
+void Simulation::resolveMissileImpact(const Missile &missile, std::vector<Missile> &spawned, EntityId direct) {
     if (!missile.impact) return;
     auto spec = *missile.impact;
     if (missile.skillId >= 0 && (spec.cloudBurst || spec.areaMissile)) {
         // A native child inherits the parent's rank, then resolves its damage
         // from the current owner. The parent projectile retains its launch snapshot.
-        if (!resolveMissileSkill_ || missile.owner != state_.player.id)
+        if (!resolveMissileSkill_)
             throw std::runtime_error("Missile owner has no skill resolver");
-        const auto skill = resolveMissileSkill_(missile.skillId, missile.skillRank);
+        const auto skill = resolveMissileSkill_(missile.owner, missile.skillId, missile.skillRank);
         if (!skill.missileImpact) throw std::runtime_error("Missing originating missile impact");
         spec = *skill.missileImpact;
     }
@@ -22,48 +22,34 @@ void Simulation::resolveMissileImpact(const Missile &missile, std::vector<Missil
     emit(MissileImpact{missile.missileId, missile.pos});
     if (spec.visualId >= 0)
         state_.area.effects.push_back({missile.pos, 0, spec.visualDuration, spec.visualId});
-    auto hit = [&](Enemy &enemy) {
-        if (enemy.hp <= 0 || !active(enemy.pos)) return;
-        float total = 0, chill = 0;
-        for (size_t channel = 0; channel < size_t(MonsterDamageType::Poison); ++channel) {
-            if (payload.channels[channel] <= 0) continue;
-            const auto type = MonsterDamageType(channel);
-            const auto resistance = monsterResistance_ ? monsterResistance_(enemy, state_.area.region, type) : std::nullopt;
-            if (!resistance) {
-                state_.message = "Original monster resistance data is unavailable.";
-                return;
-            }
-            const int pierce = type == MonsterDamageType::Cold && missile.owner == state_.player.id &&
-                               *resistance < 100 && coldPierce_ ? coldPierce_() : 0;
-            const int effective = *resistance - pierce;
-            total += mitigateMonsterDamage(payload.channels[channel], effective);
-            if (type == MonsterDamageType::Cold)
-                chill = payload.coldDuration * float(std::clamp(100 - effective, 0, 200)) / 100.f;
-        }
-        // Combine channels after independent resistance calculations: one hit reaction/kill.
-        damageEnemy(enemy, total, missile.owner, chill, false, MonsterDamageType::Physical,
-                    true, true, payload.freeze);
-        if (enemy.hp > 0 && payload.poisonDuration > 0)
-            applyEnemyPoison(enemy, payload.channels[size_t(MonsterDamageType::Poison)],
-                             payload.poisonDuration, missile.owner, true);
+    auto hit = [&](CombatUnit target) {
+        if (!target.alive() || !active(*target.position) || !canAttack(missile.owner, target.id)) return;
+        DamageRequest request{missile.owner, target.id};
+        request.channels = payload.channels;
+        request.channels[size_t(MonsterDamageType::Poison)] = 0;
+        request.chill = payload.coldDuration * float(std::clamp(100 - unitResistance(target, MonsterDamageType::Cold), 0, 200)) / 100.f;
+        request.freeze = payload.freeze;
+        dealDamage(request);
+        if (payload.poisonDuration > 0)
+            applyPoison(target.id, payload.channels[size_t(MonsterDamageType::Poison)], payload.poisonDuration, missile.owner);
     };
     if (spec.radius > 0) {
-        // SrvHit01/44 -> sub_6FD10200 uses filter 0x8583. It does not include
-        // sub_6FD0FA00's 0x200 line-of-sight test; only flight stops at barriers.
-        for (auto &enemy : state_.area.enemies) {
-            const float dx = std::floor(enemy.pos.x) - std::floor(missile.pos.x);
-            const float dy = std::floor(enemy.pos.y) - std::floor(missile.pos.y);
-            if (dx * dx + dy * dy <= spec.radius * spec.radius) hit(enemy);
+        for (auto target : combatUnits()) {
+            const float dx = std::floor(target.position->x) - std::floor(missile.pos.x);
+            const float dy = std::floor(target.position->y) - std::floor(missile.pos.y);
+            if (dx * dx + dy * dy <= spec.radius * spec.radius) hit(target);
         }
-    } else if (direct) hit(*direct);
+    } else if (direct) hit(combatUnit(direct));
     if (spec.areaMissile) {
         const auto &area = *spec.areaMissile;
         int64_t minimum = area.minimum, maximum = area.maximum;
         if (area.addEquipmentElement) {
             // Native child creation reads the owner's equipment at impact, not
             // the weapon carried by the original arrow. Other owners need their own resolver.
-            if (missile.owner != state_.player.id) return;
-            const auto ranges = attackElementRanges(characterStats_.combat, equipmentStats_.weapons[0].item);
+            const auto owner = combatUnit(missile.owner);
+            if (!owner) return;
+            const auto weapon = owner.player ? owner.player->equipment.weapons[0].item : EntityId{};
+            const auto ranges = attackElementRanges(owner.stats.attributes.combat, weapon);
             const AttackDamageRange channels[]{ {}, ranges.magic, ranges.fire, ranges.lightning, ranges.cold, {} };
             minimum += int64_t(channels[size_t(area.element)].minimum) * 256;
             maximum += int64_t(channels[size_t(area.element)].maximum) * 256;
@@ -87,7 +73,7 @@ void Simulation::resolveMissileImpact(const Missile &missile, std::vector<Missil
                               {0,-2},{-1,-2},{-2,-2},{-2,-1},{-2,0},{-2,1},{-2,2},{-1,2}};
     const auto &burst = *spec.cloudBurst;
     const auto &cloud = burst.cloud;
-    const Vec origin = direct ? direct->pos : missile.pos;
+    const Vec origin = direct ? unitPosition(direct) : missile.pos;
     auto launch = [&](Vec heading, float speed) {
         Missile next{ids_.allocate(), missile.owner, origin, heading.unit() * speed,
             float(cloud.lifetimeFrames) / 25.f, SkillBehavior::None, false, cloud.missileId};
@@ -123,22 +109,20 @@ void Simulation::advancePoisonCloud(Missile &missile, float dt) {
         missile.remaining = 0;
         return;
     }
-    Enemy *struck = nullptr;
+    CombatUnit struck;
     float first = 2;
-    for (auto &enemy : state_.area.enemies) {
-        if (enemy.hp <= 0 || !active(enemy.pos) || enemy.id == missile.lastHit) continue;
-        const int size = monsterSize_ ? monsterSize_(enemy) : 0;
-        if (auto at = missileUnitIntersection(missile.pos, next, cloud.size, enemy.pos, size); at && *at < first) {
-            first = *at;
-            struck = &enemy;
+    for (auto target : combatUnits()) {
+        if (!target.alive() || !canAttack(missile.owner, target.id) || !active(*target.position) || target.id == missile.lastHit) continue;
+        if (auto at = missileUnitIntersection(missile.pos, next, cloud.size, *target.position, target.stats.collisionSize); at && *at < first) {
+            first = *at; struck = target;
         }
     }
     if (struck) {
-        missile.lastHit = struck->id; // Native LastCollide suppresses the previous unit only.
+        missile.lastHit = struck.id;
         rollRandom(missile.combatRandom);
         const auto span = uint32_t(std::max(0, cloud.maximum - cloud.minimum));
         const int rate = cloud.minimum + (span ? uint32_t(missile.combatRandom) % span : 0);
-        applyEnemyPoison(*struck, float(rate) * 25.f / 256.f, float(cloud.poisonFrames) / 25.f, missile.owner, true);
+        applyPoison(struck.id, float(rate) * 25.f / 256.f, float(cloud.poisonFrames) / 25.f, missile.owner);
     }
     missile.pos = next;
     if (blocked) missile.remaining = 0;

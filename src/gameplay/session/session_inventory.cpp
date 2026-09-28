@@ -33,7 +33,7 @@ EquipmentActor GameSession::equipmentActor(const PlayerState &player) const {
 }
 void GameSession::refreshCharacter(bool fillGains) {
     auto &player = simulation_.state_.player;
-    const auto previous = simulation_.characterStats_;
+    const auto previous = simulation_.state_.player.attributes;
     auto effects = activeModifiers(player, state().frame);
     auto base = deriveCharacterAttributes(characterDefinition_, player.level, player.allocated, effects);
     EquipmentActor baseActor{characterDefinition_.code, base.strength, base.dexterity, player.level,
@@ -53,8 +53,8 @@ void GameSession::refreshCharacter(bool fillGains) {
     player.hp = std::clamp(player.hp, 0.f, float(current.maxLife));
     player.mana = std::clamp(player.mana, 0.f, float(current.maxMana));
     player.stamina = std::clamp(player.stamina, 0.f, float(current.maxStamina));
-    simulation_.characterStats_ = current;
-    simulation_.equipmentStats_ = deriveEquipmentStats(inventory_, playerContainers_, actor,
+    simulation_.state_.player.attributes = current;
+    simulation_.state_.player.equipment = deriveEquipmentStats(inventory_, playerContainers_, actor,
                                                        modifiers.defense, modifiers.combat, current.baseAttackRating);
 }
 void GameSession::createStarterEquipment() {

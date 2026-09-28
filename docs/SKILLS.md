@@ -4,11 +4,11 @@
 
 运行时读取原 MPQ 的 `Skills.txt`、`SkillDesc.txt`、`CharStats.txt`、英文 TBL 字符串和七套 `skltree_*_back.dc6`／职业图标。当前资料片原表中，七个职业各有 30 个技能，分布在 `SkillPage` 1–3、`SkillRow` 1–6、`SkillColumn` 1–3。节点身份是原 `Skills.Id`，位置、图标和页签名称来自原表及原图，不维护抽取后的技能清单。用户提供的角色／法师技能树截图保存在忽略的 `artifacts/character-skill-layout-reference-cn.png`，仅用于核对版面。
 
-当前接入 11 项女巫主动技能：火弹、充能弹、冰弹、冰封装甲、地狱之火、静电力场、冰霜新星、冰风暴、火球、闪电新星、传送；四项被动为暖气及火焰／闪电／冰冷支配。亚马逊已接入瘟疫标枪与爆炸箭，数值、原动作和边界见 [亚马逊技能](AMAZON_SKILLS.md)。其余主动技能（包括野蛮人旋风、跳跃攻击和战嗥）没有执行效果；其余被动只记录等级。七职业原节点、升级点数、等级／前置门槛保留，名称与页签使用英文原资源。
+当前接入 11 项女巫主动技能：火弹、充能弹、冰弹、冰封装甲、地狱之火、静电力场、冰霜新星、冰风暴、火球、闪电新星、传送；四项被动为暖气及火焰／闪电／冰冷支配。亚马逊已接入瘟疫标枪与爆炸箭，数值、原动作和边界见 [亚马逊技能](AMAZON_SKILLS.md)。死灵法师已接入召唤骷髅，骷髅支配与召唤抵抗参与召唤属性，详见 [死灵法师召唤](NECROMANCER_SKILLS.md)。其余主动技能（包括野蛮人旋风、跳跃攻击和战嗥）没有执行效果；未列出的被动只记录等级。七职业原节点、升级点数、等级／前置门槛保留，名称与页签使用英文原资源。
 
 ## 执行结构
 
-- `content/skill_data.*` 建立原技能身份、学习门槛及 `BasicSkillAction`；`content/sorceress_data.*` 和 `content/weapon_skill_data.*` 只为已核实的法术／武器技能提供 `SkillSpec`。无定义的技能不登记执行行为。
+- `content/skill_data.*` 建立原技能身份、学习门槛及 `BasicSkillAction`；`content/sorceress_data.*` 、`content/weapon_skill_data.*` 和 `content/necromancer_data.*` 只为已核实的法术／武器技能提供 `SkillSpec`。无定义的技能不登记执行行为。
 - `UseSkill` 是按原 `Skills.Id` 提交的唯一技能命令。`GameSession::useSkill` 在 `session_skills.cpp` 统一检查技能可用性、实现状态、城镇许可、等级及原施法动作，随后生成 `SkillCastSpec`。普通武器攻击仍共用 `Attack`；没有按内部枚举直接施放的旁路。
 - `skillAvailable` 表示角色拥有技能，`SkillRecord::executable()` 表示主动效果已接入；学习、选择、绑定不等同于能够施放。未实现主动技能显示禁用色、提示效果未实现、属性面板留空，不扣蓝、不开始动作，也不转为普通攻击。
 - `gameplay/skills/resolve.cpp` 是等级、基础等级协同、支配和定点费用的纯计算入口；`casting.cpp` 负责开始、出手、持续引导和结束。`SkillBehavior` 仅标识已实现的执行算法；存档、输入、事件与声音键使用原技能 ID，不使用该枚举的顺序。

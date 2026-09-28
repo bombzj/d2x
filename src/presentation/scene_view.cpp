@@ -211,7 +211,7 @@ void SceneView::advance(float dt) {
             movingMonsters_.insert(enemy.id);
             monsterLooks_[enemy.id] = delta.unit();
         } else if (!monsterLooks_.contains(enemy.id) || (enemy.hp > 0 && enemy.attack > 0))
-            monsterLooks_[enemy.id] = (session_.state().player.pos - monster.position).unit();
+            monsterLooks_[enemy.id] = (enemy.combatTarget ? session_.combatPosition(enemy.combatTarget) - monster.position : Vec{1, 0}).unit();
         previous->second = worldPosition;
         if (enemy.hp > 0)
             if (auto sound = assets_.monsterAudio.find(enemy.identity.monster);
@@ -244,10 +244,10 @@ void SceneView::advance(float dt) {
         age += dt;
     std::erase_if(landingAge_, [](const auto &pair) { return pair.second > 4; });
     auto soundFor = [&](EntityId id) -> const SceneAssets::MonsterAudio * {
-        auto enemy = std::find_if(session_.state().area.enemies.begin(),
-                                  session_.state().area.enemies.end(),
-                                  [id](const Enemy &candidate) { return candidate.id == id; });
-        if (enemy == session_.state().area.enemies.end()) return nullptr;
+        const Enemy *enemy = nullptr;
+        for (const auto &candidate : session_.state().area.enemies) if (candidate.id == id) enemy = &candidate;
+        if (!enemy) for (const auto &candidate : session_.state().companions) if (candidate.id == id) enemy = &candidate;
+        if (!enemy) return nullptr;
         auto sound = assets_.monsterAudio.find(enemy->identity.monster);
         return sound == assets_.monsterAudio.end() ? nullptr : &sound->second;
     };
@@ -277,11 +277,8 @@ void SceneView::advance(float dt) {
                     assets_.audio.play("skill-active:" + std::to_string(value.skillId));
                 } else if constexpr (std::is_same_v<T, EnemyHit>) {
                     if (auto sound = soundFor(value.victim)) assets_.audio.play(sound->hit);
-                } else if constexpr (std::is_same_v<T, EnemyDied>) {
-                    if (auto sound = assets_.monsterAudio.find(value.identity.monster);
-                        sound != assets_.monsterAudio.end())
-                        assets_.audio.play(sound->second.death);
-                    else assets_.audio.play("impact");
+                } else if constexpr (std::is_same_v<T, UnitDied>) {
+                    if (auto sound = soundFor(value.victim)) assets_.audio.play(sound->death);
                 }
                 else if constexpr (std::is_same_v<T, RegionEntered>) {
                     clientMissiles_.clear();

@@ -74,39 +74,35 @@ void Simulation::launchMonsterSpell(Enemy &enemy) {
     state_.area.missiles.back().combatRandom = childRandom(unitRandom_);
     replicateMonsterMissile(enemy, state_.area.missiles.back());
 }
-void Simulation::resolveMonsterAttack(Enemy &enemy, int modeOverride, bool projectile, bool hitHireling) {
-    auto &player = state_.player;
-    hitHireling = projectile ? hitHireling : enemy.targetHireling;
-    const Vec targetPosition = hitHireling ? player.hireling.pos : player.pos;
-    const auto targetStats = hitHireling ? hirelingAttributes_() : characterStats_;
-    if ((!projectile && enemy.hp <= 0) ||
-        (hitHireling ? !player.hireling.active() : (player.dead || player.hp <= 0)) ||
-        (!projectile && ((targetPosition - enemy.pos).length() >= monsterDefinition(enemy.kind).attackRange ||
-                         !grid_->segment(enemy.pos, targetPosition))))
-        return;
+void Simulation::resolveMonsterAttack(Enemy &enemy, int modeOverride, bool projectile, EntityId defender) {
+    if (!defender) defender = enemy.combatTarget;
+    auto target = combatUnit(defender);
+    if (!target.alive() || !canAttack(enemy.id, defender) || (!projectile && enemy.hp <= 0)) return;
+    const bool inReach = enemy.intrinsicCombat
+        ? meleeDistance(enemy.pos, enemy.intrinsicCombat->collisionSize, *target.position, target.stats.collisionSize) <= 1
+        : (*target.position - enemy.pos).length() < monsterDefinition(enemy.kind).attackRange;
+    if (!projectile && (!inReach || !grid_->segment(enemy.pos, *target.position))) return;
     const int mode = modeOverride ? modeOverride : enemy.attackMode;
-    const bool running = !hitHireling && player.runningNow && player.moving;
-    if (!running && monsterAccuracy_)
-        if (auto accuracy = monsterAccuracy_(enemy, state_.area.region, mode)) {
-            const int auraRating = enemy.combatEffects.modifiers(state_.frame).combat.attackRatingPercent +
-                (enemy.identity.enchantment ? enemy.identity.enchantment->attackRatingPercent : 0);
-            const auto chance = physicalHitChance(accuracy->level,
-                int(int64_t(accuracy->attackRating) * std::max(0, 100 + auraRating) / 100),
-                                                   hitHireling ? player.hireling.level : equipmentStats_.level,
-                                                   hitHireling ? targetStats.defense : equipmentStats_.defense);
-            rollRandom(enemy.combatRandom);
-            if (uint32_t(enemy.combatRandom) % 100 >= unsigned(chance)) return;
-        }
-    int block = hitHireling ? 0 : equipmentStats_.blockChance;
-    if (running) block /= 3;
-    if (block > 0) {
-        rollRandom(player.combatRandom);
-        if (uint32_t(player.combatRandom) % 100 < unsigned(block)) return;
+    const auto source = combatUnit(enemy.id);
+    const auto accuracy = enemy.intrinsicCombat ? std::optional<MonsterAccuracy>{{source.stats.level, source.stats.attributes.attackRating}} :
+        monsterAccuracy_ ? monsterAccuracy_(enemy, state_.area.region, mode) : std::nullopt;
+    const bool running = target.player && target.player->runningNow && target.player->moving;
+    if (!running && accuracy) {
+        const int auraRating = enemy.combatEffects.modifiers(state_.frame).combat.attackRatingPercent +
+            (enemy.identity.enchantment ? enemy.identity.enchantment->attackRatingPercent : 0);
+        const int chance = physicalHitChance(accuracy->level,
+            int(int64_t(accuracy->attackRating) * std::max(0, 100 + auraRating) / 100),
+            target.stats.level, target.stats.attributes.defense);
+        if (limitedRandom(enemy.combatRandom, 100) >= unsigned(chance)) return;
     }
+    if (target.stats.block > 0 && limitedRandom(*target.random, 100) < unsigned(target.stats.block)) return;
     float damage = monsterDefinition(enemy.kind).damage;
     const auto combat = monsterNormalCombat_
                             ? monsterNormalCombat_(enemy.identity, state_.area.region) : std::nullopt;
-    if (combat) {
+    if (enemy.intrinsicCombat) {
+        const int minimum = int(source.stats.minimumDamage * 256.f), maximum = int(source.stats.maximumDamage * 256.f);
+        damage = float(minimum + int(limitedRandom(enemy.combatRandom, unsigned(std::max(0, maximum - minimum))))) / 256.f;
+    } else if (combat) {
         auto range = mode == 2 ? combat->attack2Damage : combat->attack1Damage;
         if (!range && (projectile || mode == 2)) damage = 0;
         if (range) {
@@ -123,7 +119,8 @@ void Simulation::resolveMonsterAttack(Enemy &enemy, int modeOverride, bool proje
                             uint32_t(enemy.combatRandom) %
                                 unsigned(spec->maximumDamage - spec->minimumDamage + 1));
         }
-    if (monsterCriticalChance_)
+    if (enemy.intrinsicCombat && limitedRandom(enemy.combatRandom, 100) < unsigned(source.stats.critical)) damage *= 2.f;
+    if (!enemy.intrinsicCombat && monsterCriticalChance_)
         if (auto chance = monsterCriticalChance_(enemy, state_.area.region); chance && *chance > 0) {
             rollRandom(enemy.combatRandom);
             if (uint32_t(enemy.combatRandom) % 100 < unsigned(*chance)) damage *= 2.f;
@@ -131,19 +128,14 @@ void Simulation::resolveMonsterAttack(Enemy &enemy, int modeOverride, bool proje
     const int damagePercent = (enemy.identity.enchantment ? enemy.identity.enchantment->damagePercent : 0) +
         enemy.combatEffects.modifiers(state_.frame).combat.damagePercent;
     damage = float(int64_t(damage * 256.f) * std::max(0, 100 + damagePercent) / 100) / 256.f;
-    const float previousHirelingHp = player.hireling.hp;
-    const float physicalDealt = hitHireling ? hurtHireling(hirelingIncomingDamage(enemy, damage), MonsterDamageType::Physical, false) :
-        hurtPlayer(damage, MonsterDamageType::Physical);
-    if (!hitHireling && !projectile && physicalDealt > 0 && enemy.hp > 0)
-        triggerCombatEffects(player, CombatEffectEvent::DamagedInMelee, enemy);
-    if (combat && (hitHireling ? player.hireling.active() : player.hp > 0))
-        applyMonsterElements(enemy, *combat, mode, hitHireling);
-    if (hitHireling ? player.hireling.active() : player.hp > 0) applyMonsterEnchantmentHit(enemy, hitHireling);
-    if (hitHireling) {
-        const float total = previousHirelingHp - player.hireling.hp;
-        const int baseClass = monsterHitProperties_ ? monsterHitProperties_(enemy).first : 0;
-        recoverHireling(total, total > physicalDealt ? 0 : baseClass);
-    }
-    if (!hitHireling && wearEquipment_) wearEquipment_({}, true);
+    const float previousLife = *target.life;
+    const float physicalDealt = dealDamage({enemy.id, defender, damage, MonsterDamageType::Physical, 0, false, false});
+    if (!projectile && physicalDealt > 0 && enemy.hp > 0)
+        triggerCombatEffects(defender, CombatEffectEvent::DamagedInMelee, enemy.id);
+    if (combat && !enemy.intrinsicCombat && target.alive()) applyMonsterElements(enemy, *combat, mode, defender, false);
+    if (target.alive()) applyMonsterEnchantmentHit(enemy, defender, false);
+    const float total = previousLife - *target.life;
+    recoverUnit(defender, enemy.id, total, total > physicalDealt);
+    if (target.player && wearEquipment_) wearEquipment_({}, true);
 }
 } // namespace d2x

@@ -8,6 +8,27 @@ bool SceneView::hirelingPortraitVisible() const {
     return session_.state().player.hireling.active() && worldViewport().x == 0 && !view_.blocksWorld();
 }
 void SceneView::drawHirelingPortrait() const {
+    if (worldViewport().x == 0 && !view_.blocksWorld()) {
+        std::map<int, int> counts;
+        for (const auto &pet : session_.state().companions)
+            if (pet.hp > 0 && pet.allegiance.owner == session_.state().player.id) ++counts[pet.summonSkill];
+        float x = hirelingPortraitBounds().x;
+        if (hirelingPortraitVisible()) x += hirelingPortraitBounds().width + 12 * classicPanelScale;
+        for (const auto &[skill, count] : counts) {
+            auto portrait = assets_.summonPortraits.find(skill);
+            if (portrait == assets_.summonPortraits.end()) continue;
+            const auto *frame = portrait->second.frame(0, 0);
+            if (!frame) continue;
+            const auto &texture = frame->texture;
+            Rectangle bounds{x, hirelingPortraitBounds().y, texture.width * classicPanelScale, texture.height * classicPanelScale};
+            DrawTexturePro(texture, {0, 0, float(texture.width), float(texture.height)}, bounds, {0, 0}, 0, WHITE);
+            const auto amount = std::to_string(count);
+            const int size = std::max(8, int(9 * classicPanelScale));
+            painter_.label(amount, int(bounds.x + (bounds.width - painter_.measure(amount, size)) / 2),
+                           int(bounds.y + bounds.height + 2 * classicPanelScale), size, WHITE);
+            x += bounds.width + 12 * classicPanelScale;
+        }
+    }
     if (!hirelingPortraitVisible()) return;
     const auto &merc = session_.state().player.hireling;
     const auto portrait = hirelingPortraitBounds();

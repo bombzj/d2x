@@ -23,8 +23,8 @@ void Simulation::leaveSpiderWeb(Enemy &arach, float moved) {
     missile.remaining = web->lifetime;
     missile.missileId = web->missileId;
     missile.radius = web->radius;
-    missile.hostile = true;
-    missile.hostileMode = 7;
+    missile.monsterAttack = true;
+    missile.monsterAttackMode = 7;
     missile.slowDuration = web->slowDuration;
     state_.area.missiles.push_back(missile);
 }

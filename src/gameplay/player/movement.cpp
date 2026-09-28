@@ -24,26 +24,26 @@ void Simulation::moveTo(Vec target) {
 }
 void Simulation::updatePlayer(float dt, Vec keyboard) {
     auto &p = state_.player;
-    p.mana = std::min(float(characterStats_.maxMana), p.mana + dt * characterStats_.manaRegen);
-    if (characterStats_.combat.replenishLife)
-        p.hp = std::clamp(p.hp + dt * characterStats_.combat.replenishLife * 25.f / 256.f,
-                          1.f, float(characterStats_.maxLife));
+    p.mana = std::min(float(state_.player.attributes.maxMana), p.mana + dt * state_.player.attributes.manaRegen);
+    if (state_.player.attributes.combat.replenishLife)
+        p.hp = std::clamp(p.hp + dt * state_.player.attributes.combat.replenishLife * 25.f / 256.f,
+                          1.f, float(state_.player.attributes.maxLife));
     Vec step;
     float remaining = 0;
     bool followingRoute = false;
     if (p.attackTarget || p.attackPosition) {
-        auto *enemy = findEnemy(p.attackTarget);
+        auto enemy = combatUnit(p.attackTarget);
         const auto *weapon = attackWeapon(p.throwAttack, p.leftHandAttack);
-        if (!weapon || (p.attackTarget && (!enemy || enemy->hp <= 0))) {
+        if (!weapon || (p.attackTarget && (!enemy.alive() || !canAttack(p.id, enemy.id)))) {
             p.attackTarget = {};
             p.attackPosition.reset();
             p.route.clear();
         } else {
-            const Vec aim = enemy ? enemy->pos : *p.attackPosition;
+            const Vec aim = enemy ? *enemy.position : *p.attackPosition;
             const bool projectile = p.throwAttack || weapon->ranged;
             const bool inRange = p.attackStationary || !enemy || (projectile ?
                 (weapon->projectile && missileDistance(p.pos, aim) <
-                    weapon->projectile->speed * weapon->projectile->lifetime) : meleeReach(*enemy, *weapon));
+                    weapon->projectile->speed * weapon->projectile->lifetime) : meleeReach(enemy.id, *weapon));
             if (inRange) {
                 p.route.clear();
                 if (p.castTime <= 0 && p.meleeTime <= 0 && p.hitTime <= 0) {
@@ -75,7 +75,7 @@ void Simulation::updatePlayer(float dt, Vec keyboard) {
     }
     const bool running = (p.running || forceRun_) && (safeZone_ || p.stamina > 0);
     p.runningNow = running;
-    float speed = running ? characterStats_.runSpeed : characterStats_.walkSpeed;
+    float speed = running ? state_.player.attributes.runSpeed : state_.player.attributes.walkSpeed;
     if (p.chill > 0) speed *= .5f;
     if (p.webSlowRemaining > 0)
         speed *= std::max(0.f, 1.f + float(p.webSlowPercent) / 100.f);
@@ -103,20 +103,20 @@ void Simulation::updatePlayer(float dt, Vec keyboard) {
     }
     float staminaRate = 0;
     if (p.moving && running && !safeZone_)
-        staminaRate = -characterStats_.staminaDrain;
+        staminaRate = -state_.player.attributes.staminaDrain;
     const bool walking = p.moving && !running;
     const bool idle = !p.moving && p.castTime <= 0 && p.meleeTime <= 0 && p.hitTime <= 0 &&
                       p.channelSkill() < 0;
-    if (idle || walking || characterStats_.staminaRecoveryBonus >= 1000) {
+    if (idle || walking || state_.player.attributes.staminaRecoveryBonus >= 1000) {
         // PlrModes: running drain and EVENTS_StaminaRegen are independent.
         // A large recovery stat permits regeneration in non-walk/idle modes;
         // it does not switch off drain. Preserve the native 8.8 rounding.
         if (!walking || p.stamina >= 1.f || safeZone_) {
-            int64_t recovery = (int64_t(characterStats_.maxStamina) * 256) >> (walking ? 9 : 8);
-            recovery += recovery * characterStats_.staminaRecoveryBonus / 100;
+            int64_t recovery = (int64_t(state_.player.attributes.maxStamina) * 256) >> (walking ? 9 : 8);
+            recovery += recovery * state_.player.attributes.staminaRecoveryBonus / 100;
             staminaRate += float(std::max<int64_t>(0, recovery)) * 25.f / 256.f;
         }
     }
-    p.stamina = std::clamp(p.stamina + dt * staminaRate, 0.f, float(characterStats_.maxStamina));
+    p.stamina = std::clamp(p.stamina + dt * staminaRate, 0.f, float(state_.player.attributes.maxStamina));
 }
 } // namespace d2x

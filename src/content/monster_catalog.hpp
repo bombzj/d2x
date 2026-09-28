@@ -12,6 +12,7 @@ namespace d2x {
 struct MonsterRecord {
     std::string id, base, next, name, token, ai, spawn, sound, baseWeapon;
     std::string rightHandVariant, leftHandVariant;
+    std::vector<std::string> shieldVariants;
     std::array<std::string, 8> specialVariants;
     size_t sourceRow = 0;
     int index = -1, rarity = 0, minGroup = 0, maxGroup = 0, partyMin = 0, partyMax = 0;
@@ -39,7 +40,7 @@ struct MonsterRecord {
     bool killable = false, npc = false, interact = false, critter = false, inert = false, boss = false;
     bool getHitMode = false, deadMode = false, skill2Mode = false, runMode = false;
     bool castMode = false, sequenceMode = false;
-    bool castsShadow = false;
+    bool castsShadow = false, corpseSelectable = false;
     bool demon = false, undead = false, ownsParty = false, primeEvil = false;
     std::array<std::string, 2> minions;
     bool hostile() const {

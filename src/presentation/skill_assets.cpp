@@ -2,6 +2,12 @@
 
 namespace d2x {
 void SceneAssets::loadSkillIcons(Archives &, const ClassicData &content) {
+    for (const auto &[id, entry] : content.skills.skills)
+        if (entry.spell && entry.spell->summon) {
+            auto icon = uiGraphics_.single(entry.spell->summon->iconArt);
+            if (icon.frames.empty()) throw std::runtime_error("Missing original summon portrait");
+            summonPortraits.emplace(id, std::move(icon));
+        }
     const auto &skills = content.tables.at("skills");
     auto descriptionTable = content.tables.find("skilldesc");
     std::map<std::string, GpuAnimation> sheets;

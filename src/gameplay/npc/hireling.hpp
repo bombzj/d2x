@@ -1,6 +1,7 @@
 #pragma once
 #include "core/math.hpp"
 #include "core/id.hpp"
+#include "gameplay/combat/unit.hpp"
 #include "gameplay/effects/state.hpp"
 #include "gameplay/combat/weapon_attack.hpp"
 #include <deque>
@@ -12,6 +13,7 @@ namespace d2x {
 // session state; native D2S records identity, experience, equipment and death status.
 struct HirelingState {
     EntityId id; // Runtime identity; D2S identifies a mercenary by its seed.
+    CombatIdentity allegiance{1, {}, 0, CombatRole::Hireling};
     int sourceRow = -1;
     int classId = -1;
     std::string nameKey;
@@ -25,6 +27,8 @@ struct HirelingState {
     float thinkTimer = 0, hitTime = 0, hitDuration = 0, deathAge = 0;
     float baseHitDuration = 0, deathDuration = 0, animationTime = 0, animationRate = 0;
     float chill = 0, poisonRemaining = 0, poisonPerSecond = 0;
+    EntityId poisonSource, openWoundsSource;
+    float openWoundsRemaining = 0, openWoundsPerSecond = 0;
     float webSlowRemaining = 0;
     int webSlowPercent = 0, collisionSize = 0, attackBias = 0;
     RegionId corpseRegion = RegionId::Encampment;

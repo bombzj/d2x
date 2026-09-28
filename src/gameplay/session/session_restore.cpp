@@ -179,8 +179,8 @@ void GameSession::restore(CharacterSaveData data) {
     simulation_.lifeStealDivisor_ = content_.lifeStealDivisor.at(size_t(state().population.difficulty));
     simulation_.manaStealDivisor_ = content_.manaStealDivisor.at(size_t(state().population.difficulty));
     characterDefinition_ = std::move(restoredDefinition);
-    simulation_.characterStats_ = characterStats;
-    simulation_.equipmentStats_ = equipmentStats;
+    simulation_.state_.player.attributes = characterStats;
+    simulation_.state_.player.equipment = equipmentStats;
     simulation_.grid_ = &regions_[current].map.grid;
     simulation_.rooms_ = &regions_[current].map.activation;
     simulation_.safeZone_ = regions_[current].definition.safe;

@@ -49,7 +49,7 @@ add_library(d2x_content src/content/classic_data.cpp src/content/lod_data.cpp sr
 target_sources(d2x_content PRIVATE src/content/character_progression.cpp)
 target_sources(d2x_content PRIVATE src/content/character_attributes.cpp)
 target_sources(d2x_content PRIVATE src/content/string_table.cpp src/content/skill_data.cpp)
-target_sources(d2x_content PRIVATE src/content/sorceress_data.cpp src/content/weapon_skill_data.cpp)
+target_sources(d2x_content PRIVATE src/content/sorceress_data.cpp src/content/weapon_skill_data.cpp src/content/necromancer_data.cpp)
 target_sources(d2x_content PRIVATE src/content/skill_animation.cpp)
 target_sources(d2x_content PRIVATE src/content/item_projectiles.cpp src/content/missile_effects.cpp)
 target_sources(d2x_content PRIVATE src/content/monster_experience.cpp)
@@ -85,9 +85,10 @@ target_link_libraries(d2x_content PUBLIC d2x_resources d2x_items)
 add_library(d2x_gameplay
   src/gameplay/model/definitions.cpp src/gameplay/simulation/simulation.cpp src/gameplay/player/movement.cpp
   src/gameplay/combat/combat.cpp src/gameplay/combat/stat_modifiers.cpp
+  src/gameplay/combat/unit.cpp
   src/gameplay/combat/damage_resolution.cpp src/gameplay/combat/player_damage.cpp
   src/gameplay/combat/weapon_elements.cpp
-  src/gameplay/skills/casting.cpp
+  src/gameplay/skills/casting.cpp src/gameplay/skills/summoning.cpp
   src/gameplay/monsters/monster_ai.cpp src/gameplay/monsters/monster_melee.cpp
   src/gameplay/monsters/monster_special_ai.cpp
     src/gameplay/monsters/monster_resurrection.cpp

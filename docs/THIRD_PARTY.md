@@ -37,6 +37,8 @@
 
 祭坛效果适配本地 D2MOO 固定 `5596f5c` 的 `ObjMode.cpp` 各 SHRINES 处理器、`SUnitDmg.cpp` 状态及经验规则、`D2Common/Skills.cpp` 的 shrine_skill；怪物强化适配 `MonsterUnique.cpp` 的选取、初始化、光环和事件，以及 `MonsterSpawn.cpp` 的 setboss 直属随从关系。新增 C++ 类型及执行器使用当前 MPQ 的 Shrines、MonUMod、MonStats/2、MonType、MonLvl、DifficultyLevels、Skills、Missiles 与 States/Overlay；MIT 归属仍为上述 D2MOO 许可。限时祭坛／诅咒／光环图形播放速度仍沿 Diablerie `Overlay.Create` 的参考适配，未声称完整 D2Client 等价。覆盖与限制见 [交互物体](INTERACTIVE_OBJECTS.md) 和 [怪物](MONSTERS.md)。
 
+战斗关系、公共伤害与死灵法师召唤适配同一 D2MOO 固定快照的 SUnit／SUnitDmg、SkillNec、D2Skills、Monster、AiThink、PlayerPets 及 ObjEval；具体函数见 [阵营](COMBAT_FACTIONS.md) 和 [召唤](NECROMANCER_SKILLS.md)。所有技能参数、骷髅数值、组件和动画仍取当前 MPQ，不纳入参考表或资源。规则适配保留上述 D2MOO MIT 归属。
+
 ## 格式研究参考
 
 投掷药瓶客户端特效另核对 [D2R Data Guide（Corrected）的 Missiles.txt](https://locbones.github.io/D2R_DataGuide/#missilestxt)：`CltHit03/HitOilPotion` 为主爆炸加 `CltHitSubMissile2/3` 随机二选一，`CltDo03/04` 分别说明尾迹和区域烟雾子效果。这里只借用函数／字段含义，所有 ID、图像和参数仍读取当前 1.13c MPQ，不复制第三方数据或代码。该说明没有给出旧客户端烟雾精确节拍和随机采样算法；不能据此宣称与原版逐帧一致。RandStart 与旧版 Phrozen Keep 指南的描述存在冲突，暂缓该字段；具体范围见 [通用攻击](COMMON_ATTACKS.md)。

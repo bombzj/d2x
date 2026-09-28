@@ -136,6 +136,11 @@ void GameSession::useSkill(const UseSkill &intent) {
         auto resolved = resolveSkill(*entry->spell, rank,
                                      player.skillRanks, fireMasteryPercent(),
                                      lightningMasteryPercent());
+        if (entry->spell->summon) {
+            const auto &definition = *entry->spell->summon;
+            resolved.summon = resolveSummon(definition, rank, effectiveSkillRank(definition.masterySkill),
+                effectiveSkillRank(definition.resistSkill), player.level, state().population.difficulty);
+        }
         if (resolved.weapon) {
             cancelExit(); cancelPickup(); cancelInteraction();
             simulation_.beginWeaponSkill(resolved, intent.target, intent.enemy);

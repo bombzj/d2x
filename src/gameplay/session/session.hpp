@@ -228,6 +228,9 @@ class GameSession {
     std::vector<std::pair<ActOneQuest, const NpcSpeech *>> npcQuestTopics(std::string_view speaker) const;
     bool npcQuestAlert(const WorldObject &npc) const;
     std::optional<unsigned> denMonstersRemaining() const;
+    bool usableCorpse(EntityId id) const { return simulation_.usableCorpse(id); }
+    Vec combatPosition(EntityId id) const { return simulation_.unitPosition(id); }
+    bool canAttack(EntityId actor, EntityId target) const { return simulation_.canAttack(actor, target); }
     bool active(Vec position) const { return simulation_.active(position); }
     const ClassicData &content() const { return content_; }
     const WorldCatalog &worldContent() const { return worldContent_; }
@@ -248,9 +251,9 @@ class GameSession {
     // Validate completely before replacing live state; a rejected load changes nothing.
     void restore(CharacterSaveData snapshot);
     const InventoryService &inventory() const { return inventory_; }
-    const EquipmentStats &equipmentStats() const { return simulation_.equipmentStats_; }
+    const EquipmentStats &equipmentStats() const { return simulation_.state_.player.equipment; }
     const ItemInstance *usableEquipment(EquipmentSlot slot) const;
-    const CharacterAttributes &characterStats() const { return simulation_.characterStats_; }
+    const CharacterAttributes &characterStats() const { return simulation_.state_.player.attributes; }
     const std::string &characterName() const { return characterDefinition_.name; }
     const std::string &characterCode() const { return characterDefinition_.code; }
     const std::string &characterAppearance() const { return characterDefinition_.appearance; }

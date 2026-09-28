@@ -38,7 +38,7 @@ AttackElementRanges attackElementRanges(const CombatModifiers &combat, EntityId 
 }
 AttackElements Simulation::rollAttackElements(EntityId weapon, const CombatModifiers *modifiers,
                                                const SkillCastSpec *skill, uint64_t *randomState) {
-    const auto &m = modifiers ? *modifiers : characterStats_.combat;
+    const auto &m = modifiers ? *modifiers : state_.player.attributes.combat;
     auto &player = state_.player;
     auto &random = randomState ? *randomState : player.combatRandom;
     WeaponModifiers own;
@@ -74,106 +74,76 @@ AttackElements Simulation::rollAttackElements(EntityId weapon, const CombatModif
     result.attackerLevel = player.level;
     return result;
 }
-void Simulation::resolveWeaponHit(Enemy &enemy, float physical, EntityId source,
+void Simulation::resolveWeaponHit(EntityId defender, float physical, EntityId source,
                                   const AttackElements &originalElements) {
+    auto target = combatUnit(defender);
+    if (!target.alive() || !target.stats.resolved || !canAttack(source, defender)) return;
+    if (target.stats.block > 0 && limitedRandom(*target.random, 100) < unsigned(target.stats.block)) return;
     auto elements = originalElements;
-    if (!elements.playerKillEffects && monsterDefense_)
-        if (const auto defense = monsterDefense_(enemy, state_.area.region); defense && defense->boss) {
-            auto scale = [&](float value) { return float(int64_t(value * 256.f) * hirelingBossDamagePercent_ / 100) / 256.f; };
-            physical = scale(physical); elements.fire = scale(elements.fire);
-            elements.cold = scale(elements.cold); elements.lightning = scale(elements.lightning);
-            elements.magic = scale(elements.magic); elements.poisonPerSecond = scale(elements.poisonPerSecond / 25.f) * 25.f;
-        }
-    std::array<int, 6> resistances{};
-    for (size_t channel = 0; channel < resistances.size(); ++channel) {
-        const auto value = monsterResistance_ ? monsterResistance_(enemy, state_.area.region, MonsterDamageType(channel)) : std::nullopt;
-        if (!value) {
-            state_.message = "Original monster resistance data is unavailable.";
-            return;
-        }
-        resistances[channel] = *value;
-    }
-    auto resistance = [&](MonsterDamageType type) {
-        return resistances[size_t(type)];
+    auto mitigate = [&](float amount, MonsterDamageType type) {
+        const auto damage = resolveIncoming(source, target, amount, type);
+        restoreUnit(defender, damage.absorbed);
+        return damage.dealt;
     };
     if (elements.crushing) {
-        const auto rank = enemy.identity.rank;
-        const bool boss = rank == MonsterRank::Boss || rank == MonsterRank::Unique || rank == MonsterRank::SuperUnique;
-        const int divisor = (boss ? 8 : 4) * (elements.ranged ? 2 : 1);
-        // Crushing blow uses current HP and ignores negative physical resistance.
-        const float crushing = enemy.hp / divisor *
-            (100 - std::clamp(resistance(MonsterDamageType::Physical), 0, 100)) / 100.f;
-        enemy.hp = std::max(1.f / 256.f, enemy.hp - crushing);
+        const auto rank = target.stats.rank;
+        const bool boss = target.stats.boss || rank == MonsterRank::Unique || rank == MonsterRank::SuperUnique;
+        const int divisor = (target.identity.role == CombatRole::Player || target.identity.role == CombatRole::Hireling ? 10 : boss ? 8 : 4) *
+                            (elements.ranged ? 2 : 1);
+        const float crushing = *target.life / divisor *
+            (100 - std::clamp(unitResistance(target, MonsterDamageType::Physical), 0, 100)) / 100.f;
+        *target.life = std::max(1.f / 256.f, *target.life - crushing);
     }
-    const float dealtPhysical = mitigateMonsterDamage(elements.deadly ? physical * 2.f : physical,
-                                        resistance(MonsterDamageType::Physical));
+    const float dealtPhysical = mitigate(elements.deadly ? physical * 2.f : physical, MonsterDamageType::Physical);
     float total = dealtPhysical;
-    if (source == state_.player.id && monsterDrain_) {
-        const int drain = std::max(0, monsterDrain_(enemy));
-        const int64_t damage = int64_t(std::min(enemy.hp, dealtPhysical) * 256.f);
-        auto leeched = [&](int percent, int divisor) {
-            return float(damage * (int64_t(percent) * 64 / std::max(1, divisor)) / 100 * drain / 100 / 64) / 256.f;
-        };
-        auto &p = state_.player;
-        if (elements.playerKillEffects) {
-            p.hp = std::min(float(characterStats_.maxLife), p.hp + leeched(elements.lifeLeech, lifeStealDivisor_));
-            p.mana = std::min(float(characterStats_.maxMana), p.mana + leeched(elements.manaLeech, manaStealDivisor_));
-        } else if (p.hireling.active() && hirelingAttributes_) {
-            p.hireling.hp = std::min(float(hirelingAttributes_().maxLife),
-                p.hireling.hp + leeched(elements.lifeLeech, lifeStealDivisor_));
-        }
-    }
+    const int64_t damage = int64_t(std::min(*target.life, dealtPhysical) * 256.f);
+    auto leeched = [&](int percent, int divisor) {
+        return float(damage * (int64_t(percent) * 64 / std::max(1, divisor)) / 100 * target.stats.drain / 100 / 64) / 256.f;
+    };
+    restoreUnit(source, leeched(elements.lifeLeech, lifeStealDivisor_), leeched(elements.manaLeech, manaStealDivisor_));
     float chill = 0;
-    for (auto [amount, type] : {
-             std::pair{elements.fire, MonsterDamageType::Fire},
-             {elements.lightning, MonsterDamageType::Lightning},
-             {elements.cold, MonsterDamageType::Cold},
+    for (auto [amount, type] : {std::pair{elements.fire, MonsterDamageType::Fire},
+             {elements.lightning, MonsterDamageType::Lightning}, {elements.cold, MonsterDamageType::Cold},
              {elements.magic, MonsterDamageType::Magic}}) {
         if (amount <= 0) continue;
-        const int originalResist = resistance(type);
-        const int resist = type == MonsterDamageType::Cold && elements.playerKillEffects && source == state_.player.id &&
-                   originalResist < 100 && coldPierce_ ? originalResist - coldPierce_() : originalResist;
-        total += mitigateMonsterDamage(amount, resist);
-        if (type == MonsterDamageType::Cold && elements.coldDuration > 0) {
-            chill = elements.coldDuration * float(std::clamp(100 - resist, 0, 200)) / 100.f;
-        }
+        total += mitigate(amount, type);
+        if (type == MonsterDamageType::Cold)
+            chill = elements.coldDuration * float(std::clamp(100 - unitResistance(target, type), 0, 200)) / 100.f;
     }
-    damageEnemy(enemy, total, source, chill, false, MonsterDamageType::Physical, true,
-                elements.playerKillEffects);
-    if (enemy.hp > 0 && total > 0 && elements.openWounds) {
-        // D2MOO SKILLITEM_CalculateOpenWoundsHpRegen / EventFunc15; 200 frames.
+    dealDamage({source, defender, total, MonsterDamageType::Physical, chill, true});
+    if (target.alive() && total > 0 && elements.openWounds) {
         int framesDamage = 40;
         const int increments[] = {9, 18, 27, 36, 45};
         int remaining = std::max(0, elements.attackerLevel - 1);
         for (int tier = 0; tier < 5 && remaining; ++tier) {
             const int levels = std::min(remaining, tier == 0 ? 14 : tier == 4 ? 99 : 15);
-            framesDamage += levels * increments[tier];
-            remaining -= levels;
+            framesDamage += levels * increments[tier]; remaining -= levels;
         }
-        if (enemy.identity.rank == MonsterRank::Champion || enemy.identity.rank == MonsterRank::Unique ||
-            enemy.identity.rank == MonsterRank::SuperUnique) framesDamage /= 2;
-        enemy.openWoundsRemaining = 8.f;
-        enemy.openWoundsPerSecond = framesDamage * 25.f / 256.f;
-        enemy.openWoundsSource = source;
-        enemy.openWoundsPlayerEffects = elements.playerKillEffects;
+        if (target.identity.role == CombatRole::Player) framesDamage /= elements.ranged ? 8 : 4;
+        else if (target.stats.rank == MonsterRank::Champion || target.stats.rank == MonsterRank::Unique ||
+                 target.stats.rank == MonsterRank::SuperUnique) framesDamage /= 2;
+        auto apply = [&](auto &record) {
+            record.openWoundsRemaining = 8.f;
+            record.openWoundsPerSecond = framesDamage * 25.f / 256.f; record.openWoundsSource = source;
+        };
+        if (target.player) apply(*target.player);
+        else if (target.hireling) apply(*target.hireling);
+        else apply(*target.monster);
     }
-    applyEnemyPoison(enemy, elements.poisonPerSecond, elements.poisonDuration, source, elements.playerKillEffects);
+    applyPoison(defender, elements.poisonPerSecond, elements.poisonDuration, source);
 }
-void Simulation::applyEnemyPoison(Enemy &enemy, float rawRate, float duration, EntityId source, bool playerKillEffects) {
-    if (enemy.hp <= 0 || rawRate <= 0 || duration <= 0) return;
-    const auto resistance = monsterResistance_ ?
-        monsterResistance_(enemy, state_.area.region, MonsterDamageType::Poison) : std::nullopt;
-    if (!resistance) {
-        state_.message = "Original monster poison resistance is unavailable.";
-        return;
-    }
-    // The native poison state stores already mitigated HP regeneration per frame.
-    const float rate = mitigateMonsterDamage(rawRate / 25.f, *resistance) * 25.f;
-    if (rate > 0 && rate >= enemy.poisonPerSecond) {
-        enemy.poisonPerSecond = rate;
-        enemy.poisonRemaining = duration;
-        enemy.poisonSource = source;
-        enemy.poisonPlayerEffects = playerKillEffects;
+void Simulation::applyPoison(EntityId defender, float rawRate, float duration, EntityId source) {
+    auto target = combatUnit(defender);
+    if (!target.alive() || !canAttack(source, defender) || rawRate <= 0 || duration <= 0 ||
+        target.stats.attributes.combat.preventPoison) return;
+    const float rate = resolveIncoming(source, target, rawRate / 25.f, MonsterDamageType::Poison).dealt * 25.f;
+    const auto &mods = target.stats.attributes.combat;
+    duration *= float(std::clamp(100 - mods.poisonLengthResist, 0, 200)) / 100.f;
+    if (rate > 0 && rate >= *target.poisonRate && duration > 0) {
+        *target.poisonRate = rate; *target.poisonTime = duration;
+        if (target.player) target.player->poisonSource = source;
+        else if (target.hireling) target.hireling->poisonSource = source;
+        else target.monster->poisonSource = source;
     }
 }
 } // namespace d2x

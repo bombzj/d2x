@@ -38,11 +38,6 @@ void GameSession::advanceHireling(float dt) {
     const auto base = deriveHirelingStats(*definition, merc.level);
     const int regen = base.life * 256 / 2000 + stats.combat.replenishLife;
     float lifeDelta = float(regen) / 256.f * 25.f * dt;
-    if (merc.poisonRemaining > 0) {
-        lifeDelta -= merc.poisonPerSecond * std::min(dt, merc.poisonRemaining);
-        merc.poisonRemaining = std::max(0.f, merc.poisonRemaining - dt);
-        if (!merc.poisonRemaining) merc.poisonPerSecond = 0;
-    }
     float healingTime = dt;
     while (!merc.healing.empty() && healingTime > 0) {
         auto &heal = merc.healing.front();
@@ -52,13 +47,7 @@ void GameSession::advanceHireling(float dt) {
         lifeDelta += amount;
         if (heal.remaining <= .0001f) merc.healing.pop_front();
     }
-    if (lifeDelta < 0) {
-        // MonsterMode stat regeneration combines poison, recovery and innate
-        // regeneration. Poison is lethal outside town, without hit recovery.
-        const float damage = region().definition.safe ? std::min(-lifeDelta, std::max(0.f, merc.hp - 1.f)) : -lifeDelta;
-        simulation_.hurtHireling(damage, MonsterDamageType::Poison, false, true);
-        if (!merc.active()) return;
-    } else merc.hp = std::min(float(stats.base.life), merc.hp + lifeDelta);
+    merc.hp = std::min(float(stats.base.life), merc.hp + lifeDelta);
     if (merc.hp >= stats.base.life) merc.healing.clear();
     if (merc.hitTime > 0) { merc.moving = false; return; }
     const auto *timing = monsterContent_.hirelingAttackTiming(merc.classId);
@@ -70,18 +59,17 @@ void GameSession::advanceHireling(float dt) {
             attack.released = true;
             if (!region().definition.safe && actor->attack1Projectile) {
                 const auto &projectile = *actor->attack1Projectile;
-                for (const auto &enemy : state().area.enemies)
-                    if (enemy.id == attack.target && enemy.hp > 0) { attack.aim = enemy.pos; break; }
+                if (auto target = simulation_.combatUnit(attack.target); target.alive()) attack.aim = *target.position;
                 merc.look = (attack.aim - merc.pos).unit();
                 const auto &weapon = stats.weapon;
                 const int spread = std::max(0, weapon.projectileMaximum - weapon.projectileMinimum);
                 const int raw = weapon.projectileMinimum + int(limitedRandom(merc.combatRandom, unsigned(spread)));
-                Missile missile{ids_.allocate(), player.id, merc.pos, merc.look * projectile.velocity,
+                Missile missile{ids_.allocate(), merc.id, merc.pos, merc.look * projectile.velocity,
                     projectile.lifetime, SkillBehavior::None, true, projectile.id,
                     float(int64_t(raw) * projectile.sourceDamage / 128) / 256.f};
                 missile.attackElements = simulation_.rollAttackElements(weapon.item, &stats.combat, nullptr, &merc.combatRandom);
-                missile.attackElements.playerKillEffects = false;
                 missile.attackElements.ranged = true;
+                missile.weaponAttack = true;
                 missile.attackElements.attackerLevel = merc.level;
                 missile.attackElements.manaLeech = 0;
                 missile.attackerLevel = merc.level;
@@ -163,14 +151,14 @@ void GameSession::advanceHireling(float dt) {
     if (merc.thinkTimer > 0) return;
     merc.thinkTimer = 5.f / 25.f;
     if (hurry) return;
-    const Enemy *target = nullptr;
+    CombatUnit target;
     int closest = 25;
     if (!region().definition.safe && actor->attack1Projectile && timing)
-        for (const auto &enemy : state().area.enemies) {
-            const int distance = std::max(0, missileDistance(merc.pos, enemy.pos) - 2);
-            if (enemy.hp > 0 && simulation_.active(enemy.pos) && distance < closest &&
-                simulation_.missilePathClear(actor->attack1Projectile->id, merc.pos, enemy.pos)) {
-                closest = distance; target = &enemy;
+        for (auto candidate : simulation_.combatUnits()) {
+            const int distance = std::max(0, missileDistance(merc.pos, *candidate.position) - 2);
+            if (candidate.alive() && simulation_.canAttack(merc.id, candidate.id) && simulation_.active(*candidate.position) && distance < closest &&
+                simulation_.missilePathClear(actor->attack1Projectile->id, merc.pos, *candidate.position)) {
+                closest = distance; target = candidate;
             }
         }
     if (target) {
@@ -179,9 +167,9 @@ void GameSession::advanceHireling(float dt) {
         merc.attackBias = attackNow ? 0 : merc.attackBias + 10;
         if (closest < 4 && limitedRandom(merc.combatRandom, 100) < 50) {
             if (ownerDistance > 4)
-                if (auto position = around(player.pos, 4, target->pos)) merc.route = map().grid.path(merc.pos, *position);
+                if (auto position = around(player.pos, 4, *target.position)) merc.route = map().grid.path(merc.pos, *position);
             if (merc.route.empty())
-                if (auto position = around(merc.pos, 4, target->pos)) merc.route = map().grid.path(merc.pos, *position);
+                if (auto position = around(merc.pos, 4, *target.position)) merc.route = map().grid.path(merc.pos, *position);
             if (!merc.route.empty()) return;
         }
         if (!attackNow) { merc.thinkTimer = 10.f / 25.f; return; }
@@ -191,11 +179,11 @@ void GameSession::advanceHireling(float dt) {
         const int speed = effectiveAttackSpeed(baseRate, stats.weapon.fasterAttack,
                                                stats.weapon.baseSpeed, cold + stats.combat.attackRate);
         WeaponAttackState attack;
-        attack.weapon = stats.weapon.item; attack.target = target->id; attack.aim = target->pos;
+        attack.weapon = stats.weapon.item; attack.target = target.id; attack.aim = *target.position;
         attack.timing = {"a1", timing->frames, speed, actionFrame, 0};
         merc.attackTimer = float(attack.timing.durationTicks()) / 25.f;
         merc.attack = std::move(attack);
-        merc.look = (target->pos - merc.pos).unit();
+        merc.look = (*target.position - merc.pos).unit();
         return;
     }
     if (ownerDistance <= 1 || limitedRandom(merc.combatRandom, 100) < 5)

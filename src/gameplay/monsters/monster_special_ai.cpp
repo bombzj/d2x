@@ -12,7 +12,6 @@
 namespace d2x {
 bool Simulation::handleMonsterSpecialAi(Enemy &enemy, const MonsterAiProfile &ai,
                                         float distance, bool clear) {
-    const auto &player = state_.player;
     const Vec targetPosition = monsterTargetPosition(enemy);
     if (ai.kind == MonsterAiKind::Arach) {
         const bool inCombat = clear &&
@@ -72,7 +71,7 @@ bool Simulation::handleMonsterSpecialAi(Enemy &enemy, const MonsterAiProfile &ai
         Enemy *corpse = nullptr;
         float closest = float(ai.params[3]);
         for (auto &candidate : state_.area.enemies) {
-            if (!skill || !fallenShamanResurrectionTarget(enemy, candidate, *skill)) continue;
+            if (relation(enemy.id, candidate.id) != Relation::Allied || !skill || !fallenShamanResurrectionTarget(enemy, candidate, *skill)) continue;
             const float separation = (candidate.pos - enemy.pos).length();
             if (separation > closest) continue;
             const auto duration = monsterDeathDuration_
@@ -86,7 +85,7 @@ bool Simulation::handleMonsterSpecialAi(Enemy &enemy, const MonsterAiProfile &ai
         const auto decision = fallenShamanThink(enemy, ai, distance, inCombat, corpse != nullptr);
         if (decision.commandMinions)
             for (auto &other : state_.area.enemies)
-                if (other.hp > 0 && other.kind == MonsterKind::Fallen &&
+                if (relation(enemy.id, other.id) == Relation::Allied && other.hp > 0 && other.kind == MonsterKind::Fallen &&
                     other.identity.group == enemy.identity.group &&
                     !monsterImplementation(other.identity.monster).substitute)
                     other.aiCommanded = true;
@@ -139,8 +138,9 @@ bool Simulation::handleMonsterSpecialAi(Enemy &enemy, const MonsterAiProfile &ai
     }
     if (ai.kind == MonsterAiKind::Fetish) {
         const bool inCombat = clear && distance < monsterDefinition(enemy.kind).attackRange;
-        const auto targetStats = enemy.targetHireling ? hirelingAttributes_() : characterStats_;
-        const float life = enemy.targetHireling ? player.hireling.hp : player.hp;
+        const auto target = combatUnit(enemy.combatTarget);
+        const auto targetStats = target.stats.attributes;
+        const float life = target.alive() ? *target.life : 0;
         const int lifePercent = targetStats.maxLife > 0
             ? std::clamp(int(life * 100.f / float(targetStats.maxLife)), 0, 100) : 0;
         const auto action = fetishThink(enemy, ai, distance, inCombat, lifePercent);

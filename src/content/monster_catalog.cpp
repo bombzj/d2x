@@ -169,6 +169,7 @@ MonsterCatalog::MonsterCatalog(Archives &archives, const DataTable &stats) {
         m.overlayHeight = extended.number(extra->second, "OverlayHeight").value_or(0);
         m.collisionSize = extended.number(extra->second, "SizeX").value_or(0);
         m.hitClass = extended.number(extra->second, "HitClass").value_or(0);
+        m.corpseSelectable = extended.number(extra->second, "corpseSel").value_or(0) != 0;
         m.getHitMode = extended.number(extra->second, "mGH").value_or(0) != 0;
         m.deadMode = extended.number(extra->second, "mDD").value_or(0) != 0;
         m.skill2Mode = extended.number(extra->second, "mS2").value_or(0) != 0;
@@ -184,6 +185,14 @@ MonsterCatalog::MonsterCatalog(Archives &archives, const DataTable &stats) {
             if (variant.ends_with('"')) variant.pop_back();
             return variant;
         };
+        auto shields = std::string(extended.value(extra->second, "SHv"));
+        std::erase(shields, '"');
+        for (size_t start = 0; start < shields.size();) {
+            const auto end = shields.find(',', start);
+            m.shieldVariants.push_back(shields.substr(start, end == std::string::npos ? end : end - start));
+            if (end == std::string::npos) break;
+            start = end + 1;
+        }
         m.rightHandVariant = firstVariant("RHv");
         m.leftHandVariant = firstVariant("LHv");
         for (int index = 0; index < 8; ++index)

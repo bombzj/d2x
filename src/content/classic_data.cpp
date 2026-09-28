@@ -12,6 +12,7 @@
 #include "special_items.hpp"
 #include "sorceress_data.hpp"
 #include "weapon_skill_data.hpp"
+#include "necromancer_data.hpp"
 #include "monster_enchantment.hpp"
 #include <algorithm>
 #include <iterator>
@@ -271,6 +272,8 @@ ClassicData loadClassicData(Archives &archives) {
         loadSorceressEffects(data.skills, data.tables.at("skills"), data.tables.at("missiles"),
                              overlays, sounds, data.states, archives);
         loadWeaponSkills(data.skills, data.tables.at("skills"), data.tables.at("missiles"), sounds, archives);
+        loadNecromancerSummons(data.skills, data.tables.at("skills"), data.tables.at("monstats"),
+            data.tables.at("monstats2"), data.tables.at("monlvl"), sounds, archives);
         const DataTable levels(archives.read("data/global/excel/levels.txt"));
         for (size_t row = 0; row < levels.rows().size(); ++row)
             if (auto id = levels.number(row, "Id"); id && *id > 0)

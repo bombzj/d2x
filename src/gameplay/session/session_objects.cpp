@@ -62,19 +62,25 @@ void GameSession::activateLootObject(EntityId id) {
                                 plan.randomState);
     } else if (found->operateFn == 7) {
         // Native barrel explosion art is not implemented; do not reuse a demo spell.
-        auto damage = [&](float life) {
-            const float minimum = std::max(life / 32.f, 1.f / 256.f);
-            const float maximum = std::max(life / 8.f, minimum + 1.f / 256.f);
-            return (minimum + (maximum - minimum) * float(roll(plan.randomState, 1000)) / 999.f) *
-                   float(found->objectDamage) / 100.f;
-        };
-        auto &player = simulation_.state_.player;
-        if ((player.pos - found->pos).length() <= 3.f && roll(plan.randomState, 100) < 65)
-            player.hp -= damage(player.hp);
-        for (auto &enemy : simulation_.state_.area.enemies)
-            if (enemy.hp > 0 && (enemy.pos - found->pos).length() <= 3.f &&
-                roll(plan.randomState, 100) < 65)
-                simulation_.damageEnemy(enemy, damage(enemy.hp), id);
+        // ObjEval::OBJEVAL_ApplyTrapObjectDamage: an environment hazard hits
+        // every eligible unit independently of faction, with the same mitigation.
+        for (auto target : simulation_.combatUnits()) {
+            if (!target.alive() || (found->pos - *target.position).length() > 3.f ||
+                !map().grid.missileSegment(found->pos, *target.position, {0x04, 1})) continue;
+            const int level = target.stats.level;
+            const auto &attributes = target.stats.attributes;
+            const int parameter = 2 * (int(uint8_t(level + int(roll(plan.randomState, unsigned(level >> 2))))) -
+                5 * (attributes.dexterity >> 1) - level);
+            const int chance = std::max(parameter - attributes.defense + 125, 65);
+            if (int(roll(plan.randomState, 100)) >= chance) continue;
+            const int life = int(*target.life * 256.f);
+            const int minimum = std::max(life >> 5, 1), maximum = std::max(life >> 3, minimum + 1);
+            const float damage = float((minimum + int(roll(plan.randomState, unsigned(maximum - minimum + 256)))) *
+                int64_t(found->objectDamage) / 100) / 256.f;
+            DamageRequest request{id, target.id, damage};
+            request.permission = DamagePermission::Environment;
+            simulation_.dealDamage(request);
+        }
     } else {
         const auto entry = resolveObjectTreasure(content_, worldContent_, region().definition.id,
                                                       state().population.difficulty);
@@ -147,7 +153,7 @@ void GameSession::drinkWell(EntityId id) {
     if (found == objects.end() || found->interaction != Interaction::Well ||
         found->remainingUses <= 0 || found->parameters[2] <= 0) return;
     auto &player = simulation_.state_.player;
-    const auto &stats = simulation_.characterStats_;
+    const auto &stats = simulation_.state_.player.attributes;
     const float fraction = float(found->parameters[1]) / 256.f;
     bool used = false;
     auto restore = [&](float &value, int maximum) {

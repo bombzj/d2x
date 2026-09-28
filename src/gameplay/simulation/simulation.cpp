@@ -38,6 +38,7 @@ void Simulation::enterArea(const Grid &grid, const RoomLayout &rooms, Vec spawn,
         state_.area.initialized = true;
     }
     activateMonsters();
+    relocateCompanions(state_.player.id, state_.player.pos);
     emit(RegionEntered{state_.area.region, coordinateOffset});
 }
 void Simulation::restartArea(Vec spawn, std::span<const MonsterSpawn> monsters) {
@@ -49,9 +50,9 @@ void Simulation::restartArea(Vec spawn, std::span<const MonsterSpawn> monsters) 
 }
 void Simulation::heal() {
     auto &p = state_.player;
-    p.hp = characterStats_.maxLife;
-    p.mana = characterStats_.maxMana;
-    p.stamina = characterStats_.maxStamina;
+    p.hp = state_.player.attributes.maxLife;
+    p.mana = state_.player.attributes.maxMana;
+    p.stamina = state_.player.attributes.maxStamina;
     p.healing.clear();
     p.manaRestoration.clear();
     // NPC healing cures ailments; it does not dispel beneficial item states.
@@ -97,7 +98,9 @@ void Simulation::spawnEnemies(std::span<const MonsterSpawn> spawns) {
 Enemy *Simulation::findEnemy(EntityId id) {
     auto &enemies = state_.area.enemies;
     auto found = std::find_if(enemies.begin(), enemies.end(), [id](const Enemy &e) { return e.id == id; });
-    return found == enemies.end() ? nullptr : &*found;
+    if (found != enemies.end()) return &*found;
+    for (auto &companion : state_.companions) if (companion.id == id) return &companion;
+    return nullptr;
 }
 void Simulation::execute(const GameCommand &command) {
     if (!grid_)
@@ -128,7 +131,7 @@ void Simulation::combatEffectsChanged(std::span<const RemovedCombatEffect> remov
     if (combatEffectsChanged_) combatEffectsChanged_();
     for (const auto &entry : removed)
         if (entry.effect.spec.restoreStaminaOnRemoval)
-            state_.player.stamina = float(characterStats_.maxStamina);
+            state_.player.stamina = float(state_.player.attributes.maxStamina);
 }
 void Simulation::tick(float dt, Vec keyboard, bool forceRun) {
     if (!grid_ || dt <= 0)
@@ -153,40 +156,43 @@ void Simulation::tick(float dt, Vec keyboard, bool forceRun) {
     p.moving = false;
     if (p.dead)
         p.deathTime += dt;
-    for (auto &e : state_.area.enemies) {
-        if (!active(e.pos))
-            continue;
-        e.hitFlash = std::max(0.f, e.hitFlash - dt);
-        if (e.hp <= 0)
-            e.deathAge += dt;
-        else if (e.poisonRemaining > 0) {
-            const float elapsed = std::min(dt, e.poisonRemaining);
-            e.poisonRemaining -= elapsed;
-            damageEnemy(e, e.poisonPerSecond * elapsed, e.poisonSource, 0, false,
-                        MonsterDamageType::Poison, true, e.poisonPlayerEffects);
-            if (e.poisonRemaining <= 0) e.poisonPerSecond = 0;
+    for (auto unit : combatUnits()) {
+        if (!active(*unit.position)) continue;
+        if (unit.monster) {
+            unit.monster->hitFlash = std::max(0.f, unit.monster->hitFlash - dt);
+            if (!unit.alive()) unit.monster->deathAge += dt;
         }
-        if (e.hp > 0 && e.openWoundsRemaining > 0) {
-            const float elapsed = std::min(dt, e.openWoundsRemaining);
-            e.openWoundsRemaining -= elapsed;
-            damageEnemy(e, e.openWoundsPerSecond * elapsed, e.openWoundsSource, 0, false,
-                        MonsterDamageType::Physical, true, e.openWoundsPlayerEffects);
-            if (e.openWoundsRemaining <= 0) e.openWoundsPerSecond = 0;
-        }
+        if (!unit.alive()) continue;
+        auto periodic = [&](auto &record) {
+            if (record.poisonRemaining > 0) {
+                const float elapsed = std::min(dt, record.poisonRemaining);
+                record.poisonRemaining -= elapsed;
+                float amount = record.poisonPerSecond * elapsed;
+                // Player poison cannot deliver the killing blow; monster poison can.
+                if (unit.player || safeZone_) amount = std::min(amount, std::max(0.f, *unit.life - 1.f));
+                dealDamage({record.poisonSource, unit.id, amount, MonsterDamageType::Poison, 0, true, false, false, DamagePermission::ExistingEffect});
+                if (record.poisonRemaining <= 0) record.poisonPerSecond = 0;
+            }
+            if (record.openWoundsRemaining > 0) {
+                const float elapsed = std::min(dt, record.openWoundsRemaining);
+                record.openWoundsRemaining -= elapsed;
+                dealDamage({record.openWoundsSource, unit.id, record.openWoundsPerSecond * elapsed,
+                            MonsterDamageType::Physical, 0, true, false, false, DamagePermission::ExistingEffect});
+                if (record.openWoundsRemaining <= 0) record.openWoundsPerSecond = 0;
+            }
+        };
+        if (unit.player) periodic(*unit.player);
+        else if (unit.hireling) periodic(*unit.hireling);
+        else periodic(*unit.monster);
     }
     if (!p.dead) {
         updatePotions(dt);
-        if (p.poisonRemaining > 0) {
-            const float elapsed = std::min(dt, p.poisonRemaining);
-            p.hp = std::max(1.f, p.hp - elapsed * p.poisonPerSecond);
-            p.poisonRemaining -= elapsed;
-            if (p.poisonRemaining <= 0) p.poisonPerSecond = 0;
-        }
         updatePlayer(dt, keyboard);
         activateMonsters();
-        updateMonsterEnchantments();
-        updateMonsters(dt);
     }
+    updateMonsterEnchantments();
+    updateMonsters(dt);
+    updateCompanions(dt);
     updateMissiles(dt);
     if (!p.dead && p.hp <= 0) {
         p.dead = true;
@@ -206,6 +212,8 @@ void Simulation::tick(float dt, Vec keyboard, bool forceRun) {
         p.throwAttack = false;
         p.leftHandAttack = false;
         state_.message = "You have died. Press Ctrl+R to return.";
+        for (const auto &pet : state_.companions)
+            if (pet.hp > 0 && pet.allegiance.owner == p.id) enforceSummonLimit(p.id, pet.summonSkill, 0);
         emit(PlayerDied{p.id});
     }
     if (!p.dead && state_.area.pendingSpawns.empty() && !state_.area.enemies.empty() &&

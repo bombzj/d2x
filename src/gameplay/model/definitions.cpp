@@ -68,11 +68,15 @@ const MonsterDefinition &monsterDefinition(MonsterKind id) {
     static const MonsterDefinition arach{MonsterKind::Arach, "sp", fallen.maxLife,
                                          fallen.speed, fallen.damage, fallen.attackInterval,
                                          fallen.sightRange, fallen.attackRange};
+    // Summon life, movement, damage and timing are required original content; zero prevents fallback combat.
+    static const MonsterDefinition necroSkeleton{MonsterKind::NecroSkeleton, "sk", 0, 0, 0, 0, 24, 1.8f};
     switch (id) {
     case MonsterKind::Fallen:
         return fallen;
     case MonsterKind::Zombie:
         return zombie;
+    case MonsterKind::NecroSkeleton:
+        return necroSkeleton;
     case MonsterKind::Skeleton:
         return skeleton;
     case MonsterKind::CorruptRogue:

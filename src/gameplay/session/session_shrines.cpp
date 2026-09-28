@@ -36,7 +36,7 @@ bool GameSession::applyShrine(int code, EntityId source, Vec position) {
     case 7: {
         // ObjMode::OBJMODE_GetToHitPercentage snapshots Attack's flat to-hit.
         // Its integer percentage division and extra class factor are intentional.
-        const auto &weapon = simulation_.equipmentStats_.weapons[0];
+        const auto &weapon = simulation_.state_.player.equipment.weapons[0];
         const int64_t rate = weapon.potion ? 0 : weapon.baseAttackRating;
         const int64_t bonus = rate * (weapon.attackRatingPercent / 100 + 1) +
                               characterDefinition_.toHitFactor;
@@ -129,9 +129,7 @@ bool GameSession::applySpecialShrine(const ShrineDefinition &shrine, Vec positio
             // Direct stat subtraction bypasses resistances and does not award kills.
             hp -= float(int64_t(std::floor(hp)) * shrine.argument0 / 100);
         };
-        reduce(player.hp, player.pos);
-        if (player.hireling.active()) reduce(player.hireling.hp, player.hireling.pos);
-        for (auto &enemy : simulation_.state_.area.enemies) reduce(enemy.hp, enemy.pos);
+        for (auto target : simulation_.combatUnits()) reduce(*target.life, *target.position);
         for (int x = 1; x <= 4; ++x)
             for (int y = 1; y <= 4; ++y) {
                 const Vec direction{float((x & 1 ? 1 : -1) * 5 * x),

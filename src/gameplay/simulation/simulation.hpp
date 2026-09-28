@@ -5,6 +5,7 @@
 #include "gameplay/model/state.hpp"
 #include "world/navigation.hpp"
 #include "gameplay/items/equipment_stats.hpp"
+#include "gameplay/combat/damage_resolution.hpp"
 #include "gameplay/skills/spec.hpp"
 #include <span>
 #include <functional>
@@ -27,25 +28,45 @@ class Simulation {
     bool safeZone_ = false;
     bool forceRun_ = false;
     WorldState state_;
-    EquipmentStats equipmentStats_;
-    CharacterAttributes characterStats_;
     std::function<CharacterAttributes()> hirelingAttributes_;
     int hirelingBossDamagePercent_ = 100;
-    float hurtHireling(float amount, MonsterDamageType type, bool hitRecovery = true, bool alreadyMitigated = false);
     void recoverHireling(float damage, int hitClass = 0);
-    float hirelingIncomingDamage(const Enemy &enemy, float damage) const;
+
     std::function<std::pair<int, bool>(const Enemy &)> monsterHitProperties_;
     Vec monsterTargetPosition(const Enemy &enemy) const;
-    std::optional<std::pair<bool, float>> hostileMissileTarget(const Missile &missile, Vec to) const;
+    CombatUnit combatUnit(EntityId id);
+    std::vector<CombatUnit> combatUnits();
+    EntityId controllingPlayer(EntityId id) const;
+    Relation relation(EntityId first, EntityId second) const;
+    EntityId chooseTarget(EntityId actor, float range = 100);
+    Vec unitPosition(EntityId id) const;
+    int unitResistance(const CombatUnit &unit, MonsterDamageType type) const;
+    float incomingDamage(EntityId attacker, EntityId defender, float amount) const;
+    ResolvedDamage resolveIncoming(EntityId attacker, const CombatUnit &defender, float amount, MonsterDamageType type);
+    float dealDamage(const DamageRequest &request);
+    void recoverUnit(EntityId defender, EntityId attacker, float damage, bool elemental = false);
+    void restoreUnit(EntityId id, float life, float mana = 0);
+    void applyPoison(EntityId defender, float rate, float duration, EntityId source);
+    void applyChill(EntityId defender, float duration, bool freeze = false);
+    void applyWeb(EntityId defender, float duration, int percent);
+    void onMonsterDamaged(Enemy &enemy, const DamageRequest &request, float dealt);
+    std::optional<std::pair<EntityId, float>> missileTarget(const Missile &missile, Vec to);
+    void updateCompanions(float dt);
+    std::function<bool(const Enemy &)> corpseSelectable_;
+    bool usableCorpse(EntityId id) const;
+    EntityId corpseNear(Vec target) const;
+    bool summonFromCorpse(PlayerState &owner, const SkillCastSpec &skill, EntityId corpse);
+    void relocateCompanions(EntityId owner, Vec destination, EntityId only = {});
+    void enforceSummonLimit(EntityId owner, int skill, int limit);
     std::function<void()> combatEffectsChanged_;
     void combatEffectsChanged(std::span<const RemovedCombatEffect> removed);
-    void triggerCombatEffects(PlayerState &player, CombatEffectEvent event, Enemy &other);
+    void triggerCombatEffects(EntityId target, CombatEffectEvent event, EntityId other);
     int resistancePenalty_ = 0;
     std::function<void(EntityId, bool)> wearEquipment_;
     std::function<bool(EntityId, bool)> spendProjectile_;
     std::function<bool(EntityId, bool)> canSpendProjectile_;
     std::function<std::optional<WeaponAttackTiming>(const WeaponDamage &, bool, bool)> attackTiming_;
-    std::function<SkillCastSpec(int, int)> resolveMissileSkill_;
+    std::function<SkillCastSpec(EntityId, int, int)> resolveMissileSkill_;
     std::function<int(const Enemy &)> monsterSize_;
     std::function<std::optional<MonsterAccuracy>(const Enemy &, RegionId, int)> monsterAccuracy_;
     std::function<std::optional<MonsterDefense>(const Enemy &, RegionId)> monsterDefense_;
@@ -57,7 +78,7 @@ class Simulation {
     std::function<int(const Enemy &)> monsterDrain_;
     int lifeStealDivisor_ = 1, manaStealDivisor_ = 1;
     std::function<std::optional<int>(const Enemy &, RegionId, MonsterDamageType)> monsterResistance_;
-    std::function<int()> coldPierce_;
+    std::function<int(EntityId)> coldPierce_;
     std::function<std::optional<bool>(const Enemy &)> monsterFreezable_;
     int monsterFreezeDivisor_ = 1;
     std::function<std::optional<MonsterAiProfile>(const Enemy &)> monsterAi_;
@@ -74,63 +95,61 @@ class Simulation {
     std::function<std::optional<MonsterWeb>(const Enemy &)> monsterWeb_;
     std::vector<GameEvent> events_;
     Enemy *findEnemy(EntityId id);
-    float hurtPlayer(float amount, MonsterDamageType type);
     AttackElements rollAttackElements(EntityId weapon, const CombatModifiers *modifiers = nullptr,
                                       const SkillCastSpec *skill = nullptr, uint64_t *randomState = nullptr);
-    void resolveWeaponHit(Enemy &enemy, float physical, EntityId source,
+    void resolveWeaponHit(EntityId defender, float physical, EntityId source,
                           const AttackElements &elements);
     void moveTo(Vec target);
     void requestAttack(const Attack &attack);
     const WeaponDamage *attackWeapon(bool thrown, bool leftHand) const;
-    bool meleeReach(const Enemy &enemy, const WeaponDamage &weapon) const;
+    bool meleeReach(EntityId defender, const WeaponDamage &weapon) const;
     bool beginWeaponAttack(Vec aim, EntityId target, const WeaponDamage &weapon, bool thrown, bool leftHand);
     bool beginWeaponSkill(const SkillCastSpec &skill, Vec aim, EntityId target);
     void advanceWeaponAttack();
     bool firePhysicalProjectile(Vec target, const WeaponDamage &weapon, bool thrown,
                                 const SkillCastSpec *skill = nullptr);
     void advancePhysicalMissile(Missile &missile, float dt, std::vector<Missile> &spawned);
-    void resolveMissileImpact(const Missile &missile, std::vector<Missile> &spawned, Enemy *direct = nullptr);
+    void resolveMissileImpact(const Missile &missile, std::vector<Missile> &spawned, EntityId direct = {});
     void advanceGroundTargetedMissile(Missile &missile, float dt, std::vector<Missile> &spawned);
     void advancePoisonCloud(Missile &missile, float dt);
-    void applyEnemyPoison(Enemy &enemy, float rate, float duration, EntityId source, bool playerKillEffects);
+
     bool beginSkillCast(PlayerState &player, const SkillCastSpec &skill, Vec target, bool teleportAllowed,
                       int staticFieldMinimum, EntityId enemy = {});
     void releaseSkillCast(PlayerState &player, const SkillCastSpec &skill, Vec target,
-                 int staticFieldMinimum, bool consumeMana = true);
+                 int staticFieldMinimum, bool consumeMana = true, EntityId targetUnit = {});
     void advanceSkillCasting(PlayerState &player, float dt, bool moving);
     static void stopChannel(PlayerState &player);
     void damageEnemy(Enemy &enemy, float amount, EntityId source, float chill = 0,
                      bool ignoreActivation = false,
                      MonsterDamageType type = MonsterDamageType::Physical,
-                     bool alreadyMitigated = false, bool playerKillEffects = true,
+                     bool alreadyMitigated = false,
                      bool freezeHit = false);
-    void meleeDamage(Enemy &enemy, const WeaponDamage &weapon);
+    void meleeDamage(EntityId defender, const WeaponDamage &weapon);
     void updatePotions(float dt);
     void updatePlayer(float dt, Vec keyboard);
     void updateMonsters(float dt);
     void updateMonsterEnchantments();
-    void applyMonsterEnchantmentHit(Enemy &enemy, bool hitHireling = false);
+    void applyMonsterEnchantmentHit(Enemy &enemy, EntityId defender = {}, bool recovery = true);
     void launchMonsterEnchantmentMissiles(Enemy &enemy, int missileId);
-    void advanceHostileElementMissile(Missile &missile, float dt);
     bool tryMonsterTeleport(Enemy &enemy);
     std::function<std::optional<MonsterMissileCast>(int, int)> monsterSpecialMissile_;
     bool handleMonsterSpecialAi(Enemy &enemy, const MonsterAiProfile &ai,
                                 float distance, bool clear);
     void beginMonsterAttack(Enemy &enemy, int forcedMode = 0);
     void resolveMonsterAttack(Enemy &enemy, int modeOverride = 0, bool projectile = false,
-                               bool hitHireling = false);
+                               EntityId defender = {});
     void launchMonsterProjectile(Enemy &enemy);
     void replicateMonsterMissile(const Enemy &enemy, Missile missile);
     std::set<int> noMultiShotMissiles_, unspreadMultiShotMissiles_;
     void launchMonsterSpell(Enemy &enemy);
-    void resolveMonsterSpell(Enemy &enemy, const Missile &missile, bool hitHireling = false);
+    void resolveMonsterSpell(Enemy &enemy, const Missile &missile, EntityId defender = {});
     void resolveMonsterResurrection(Enemy &enemy);
     std::optional<MonsterSpawn> nestSpawn(Enemy &enemy,
                                          std::span<const MonsterSpawn> queued);
     void activateSpiderWeb(Enemy &enemy);
     void leaveSpiderWeb(Enemy &enemy, float moved);
     void applyMonsterElements(Enemy &enemy, const MonsterNormalCombat &combat, int mode,
-                                bool hitHireling = false);
+                                EntityId defender = {}, bool recovery = true);
     void updateMissiles(float dt);
     void spawnEnemies(std::span<const MonsterSpawn> spawns);
     void activateMonsters();
@@ -139,6 +158,7 @@ class Simulation {
   public:
     explicit Simulation(EntityIds &ids);
     const WorldState &state() const { return state_; }
+    bool canAttack(EntityId attacker, EntityId defender) const;
     bool active(Vec position) const { return rooms_ && rooms_->nearby(state_.player.pos, position); }
     std::span<const GameEvent> events() const { return events_; }
     void beginTick() { events_.clear(); }
