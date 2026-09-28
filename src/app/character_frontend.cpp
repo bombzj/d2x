@@ -483,7 +483,7 @@ std::optional<CharacterChoice> chooseCharacter(Archives &archives, RenderTexture
             drawButton(buttonText, cancelButton, {420, 340, 96, 32}, localized(5166));
         }
         if (const auto *pointer = cursor.frame(0, 0))
-            sprite(pointer, {mouse.x, mouse.y - pointer->texture.height});
+            cursorSprite(pointer, {mouse.x, mouse.y}, handCursorHotspot(pointer));
         rlPopMatrix();
         EndScissorMode();
         EndTextureMode();

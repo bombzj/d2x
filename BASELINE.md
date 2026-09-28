@@ -1,8 +1,8 @@
 # 项目基线
 
-更新：2026-09-27。供维护者和协作 agent 从当前代码继续工作。
+更新：2026-09-28。供维护者和协作 agent 从当前代码继续工作。
 
-鉴定／拾取／随机机制（2026-09-27）：鉴定鼠标使用当前 MPQ Books.SpellIcon 与原 spells.dc6；开背包拾取进入真实 Cursor 位置，支持交换、装备、丢回地面和原生 D2S mode 4 保存。自动拾取先填匹配书和 AutoStack 堆叠，满背包保留已合并数量，余量留地。新局随机种子不再固定，--seed 可复现整局；共用 D2Seed，修复读档随机流回落、实体 ID 拼种子、人口自定义 RNG 和地砖坐标散列。规则、reference 证据及适配差异见 [背包](docs/INVENTORY_UI.md)、[经典 HUD](docs/CLASSIC_HUD.md)、[随机机制](docs/RANDOMNESS.md)；原生 v96 不加私有指纹／尾段。本批 Windows Release 已编译通过并更新 dist/current，未运行游戏或测试；构建交付状态见 [构建](docs/BUILD_AND_SHARE.md)。
+鉴定／拾取／随机机制（2026-09-27；光标定位源码修订 2026-09-28）：鉴定鼠标使用当前 MPQ Books.SpellIcon 与原 spells.dc6。光标统一经显式纹理热点绘制，修复鉴定图案误减整张图高而上移 33 像素；普通手形按 OpenDiablo2 的帧偏移／帧高转换热点，游戏内及角色前端共用入口，目标图案按 Diablerie 显式热点接口与当前原图适配左上热点。光标修订仅改源码和文档，未构建、运行检查、测试或打包，等待用户查看。开背包拾取进入真实 Cursor 位置，支持交换、装备、丢回地面和原生 D2S mode 4 保存。自动拾取先填匹配书和 AutoStack 堆叠，满背包保留已合并数量，余量留地。新局随机种子不再固定，--seed 可复现整局；共用 D2Seed，修复读档随机流回落、实体 ID 拼种子、人口自定义 RNG 和地砖坐标散列。规则、reference 证据及适配差异见 [背包](docs/INVENTORY_UI.md)、[经典 HUD](docs/CLASSIC_HUD.md)、[随机机制](docs/RANDOMNESS.md)；原生 v96 不加私有指纹／尾段。此前功能批次 Windows Release 已编译通过并更新 dist/current，未运行游戏或测试；构建交付状态见 [构建](docs/BUILD_AND_SHARE.md)。
 
 上锁宝箱（2026-09-27）：已接入 DS1／ObjGroup 宝箱共用初始化、580/581 原占位转换、基于 MonLvl1 的上锁概率、背包钥匙单把事务／末把移除、刺客免钥匙、缺钥匙提示与原声音、一次开启和双轮掉落。修复噩梦／地狱错误选取普通宝箱 TC，补齐特殊标志箱与 397 的独立掉落分支；状态／掉落不写入角色磁盘存档。原表参数、参考函数与边界见 [交互物体](docs/INTERACTIVE_OBJECTS.md#上锁宝箱2026-09-27)：箱陷阱执行及塔楼任务宝箱释放仍未接入。本批 Windows Release 已编译通过并更新 `dist/current`，未编写／运行测试或启动游戏；交付状态见 [构建](docs/BUILD_AND_SHARE.md)。
 

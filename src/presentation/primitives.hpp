@@ -26,6 +26,9 @@ class UiPainter {
 };
 int direction(Vec look, int count);
 void sprite(const Sprite *sprite, Vec position, Color tint = WHITE);
+// Cursor hotspots are texture-local, measured from the top-left pixel.
+Vec handCursorHotspot(const Sprite *sprite);
+void cursorSprite(const Sprite *sprite, Vec mouse, Vec hotspot);
 void softAdditiveSprite(const Sprite *sprite, Vec position, Color tint = WHITE);
 void spriteShadow(const Sprite *sprite, Vec position);
 void frame(Rectangle bounds, Color border = gold);

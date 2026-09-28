@@ -8,7 +8,11 @@
 
 底栏、球体、按钮、技能图标使用原版 Sky 调色板；场景继续使用 Act1 调色板。腰带底行直接落在面板原有四个格子内，额外行使用 `ctrlpnl_popbelt.dc6`。
 
-默认鼠标使用原 MPQ 的 `data/global/ui/cursor/ohand.dc6` 和 Units 调色板，原始帧偏移配合帧高定位鼠标热点，依据 OpenDiablo2 `resource_paths.go`／`gui_manager.go`。此前误用 `gaunt.dc6` 后以边界颜色猜测透明索引的补丁已移除；正确图形使用 DC6 自身的透明像素。此修正尚待用户画面验收。 鉴定卷轴／书的目标模式改用原 `cursor/spells.dc6`；帧号来自 Books.SpellIcon（当前 MPQ 鉴定为 0），其他物品读 Misc.spellicon，参照 D2MOO `ITEMS_GetSpellIcon` 和 `SKILLITEM_pSpell01_Initializer` 的 0x3F 目标光标编号。Units 调色板及热点继续使用上述参考项目的帧偏移／帧高定位；不是猜测放大镜帧号，也不另画图标。成功提交鉴定、右键／Esc 取消、关闭面板或来源卷轴／书失效后，随统一鉴定状态恢复普通指针。
+默认鼠标使用原 MPQ 的 `data/global/ui/cursor/ohand.dc6` 和 Units 调色板。游戏内与角色前端共用 `primitives.cpp::handCursorHotspot/cursorSprite`：按本地 OpenDiablo2 `gui_manager.go::renderCursor`／`animation.go::Render`，把普通手形的 `鼠标 + DC6 偏移 - 帧高` 转成纹理左上角坐标系的热点 `(-offsetX, height-offsetY)`。当前 MPQ 第 0 帧为 32×26、偏移 (-1,24)，故热点是 (1,2)，显示位置保持不变。此前误用 `gaunt.dc6` 后以边界颜色猜测透明索引的补丁已移除；正确图形使用 DC6 自身的透明像素。
+
+鉴定卷轴／书使用原 `cursor/spells.dc6` 和 Units 调色板；帧号来自 Books.SpellIcon（当前 MPQ 鉴定为 0），其他物品读 Misc.spellicon，编号依据 D2MOO `ITEMS_GetSpellIcon` 和 `SKILLITEM_pSpell01_Initializer` 的 0x3F 目标光标请求。DC6 帧头有绘制偏移但没有独立热点字段；当前 MPQ 的九帧均为 32×33、X/Y 偏移均为 0。旧代码误套普通手形的减帧高规则，导致鉴定图案整体高于真实鼠标 33 像素。现按图案左上指向标记使用 (0,0) 热点，由共用 `cursorSprite` 直接在 `鼠标 - 热点` 处绘制原纹理，不再叠加 DC6 原点或扣整张图高。成功提交鉴定、右键／Esc 取消、关闭面板或来源卷轴／书失效后，随统一鉴定状态恢复普通指针及其热点。
+
+显式热点接口参考本地 Diablerie `Engine/UI/SoftwareCursor.cs::SetCursor`：热点相对纹理左上角，缺省为零；其 `PlayerController.OnHandsItemChanged` 对手持物品另传图像中心，说明热点应由用途指定，不能把一个 DC6 绘制原点规则套到全部光标。此处 (0,0) 是上述接口与当前原图的适配，参考项目没有提供原版 D2Client 的完整目标光标热点表。库存拖动继续使用与目标占格一致的抓取偏移。2026-09-28 本次仅修改源码和文档，未构建、运行检查、测试或打包，等待用户画面验收。
 
 正常游戏不常驻 D2X／MPQ 资源字样、等级调试文字或快捷键提示，这些保留在 Ctrl+F3 调试视图中；用于衬托顶部文字的黑色渐变已移除。Tab 开关角落地图，V 交换左右，默认关闭；细节与标记缺口见 [自动地图](AUTOMAP.md)。
 

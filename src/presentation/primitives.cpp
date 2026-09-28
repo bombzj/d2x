@@ -46,6 +46,18 @@ void sprite(const Sprite *s, Vec p, Color tint) {
     }
     DrawTexture(s->texture, int(p.x + s->x), int(p.y + s->y), tint);
 }
+Vec handCursorHotspot(const Sprite *s) {
+    if (!s) return {};
+    // OpenDiablo2 GuiManager.renderCursor: mouse + DC6 offset - frame height.
+    // Convert ohand's bottom-origin placement to a texture-local hotspot once.
+    return {-float(s->x), float(s->texture.height - s->y)};
+}
+void cursorSprite(const Sprite *s, Vec mouse, Vec hotspot) {
+    if (!s || !s->texture.id) return;
+    // Diablerie SoftwareCursor.SetCursor uses an explicit top-left-relative hotspot.
+    // Raw DC6 offsets describe drawing origins, not a universal cursor hotspot.
+    DrawTexture(s->texture, int(mouse.x - hotspot.x), int(mouse.y - hotspot.y), WHITE);
+}
 void softAdditiveSprite(const Sprite *s, Vec p, Color tint) {
     rlSetBlendFactors(0x0307, 1, 0x8006);
     BeginBlendMode(BLEND_CUSTOM);

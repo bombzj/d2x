@@ -266,14 +266,17 @@ void SceneView::draw(Vec mouse) const {
     drawGameMenu();
     if (!itemCursor) {
         const Sprite *pointer = assets_.cursor.frame(0, 0);
+        Vec hotspot = handCursorHotspot(pointer);
         if (const auto &targeting = view_.inventory.identify) {
             const auto *item = session_.inventory().item(targeting->id);
             const auto *definition = item ? session_.inventory().catalog().find(item->definition) : nullptr;
-            if (definition && item->revision == targeting->revision && definition->targetCursor >= 0)
+            if (definition && item->revision == targeting->revision && definition->targetCursor >= 0) {
                 pointer = assets_.targetingCursors.frame(0, definition->targetCursor);
+                // spells.dc6 points from its top-left; it does not use ohand's origin.
+                hotspot = {};
+            }
         }
-        if (pointer)
-            sprite(pointer, mouse - Vec{0, float(pointer->texture.height)});
+        cursorSprite(pointer, mouse, hotspot);
     }
 }
 } // namespace d2x
