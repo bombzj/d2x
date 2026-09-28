@@ -1,4 +1,5 @@
 #include "scene_assets.hpp"
+#include "equipment_appearance.hpp"
 #include <algorithm>
 #include <iostream>
 #include <stdexcept>
@@ -53,10 +54,7 @@ void SceneAssets::loadHeroEquipment(const GameSession &session) {
                 appearanceIssue = "Unverified equipped hand appearance: " + definition->code;
             continue;
         }
-        int index = appearance.component;
-        if (definition->equipment.isType("weap")) {
-            index = slot == weaponHandSlot(true, weaponSet) ? 6 : 5;
-        }
+        const int index = equippedHandComponent(*definition, slot == weaponHandSlot(true, weaponSet));
         parts[index] = appearance.token;
     }
     std::string key = appearance + ":" + weapon;

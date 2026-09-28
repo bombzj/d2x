@@ -12,8 +12,9 @@ int UiPainter::measure(const std::string &text, int size) const {
     return MeasureText(text.c_str(), size);
 }
 int direction(Vec look, int count) {
-    auto s = project(look);
-    float a = std::atan2(s.y, s.x);
+    // Diablerie Iso.Direction quantizes world angles; DCC art is already projected.
+    // Rotate to the east-first mapping below without project's vertical compression.
+    float a = std::atan2(look.x + look.y, look.x - look.y);
     if (a < 0)
         a += 2 * pi;
     static constexpr int dir16[] = {7, 14, 3, 15, 4, 8, 0, 9, 5, 10, 1, 11, 6, 12, 2, 13};

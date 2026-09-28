@@ -24,6 +24,7 @@ class UiPainter {
     void centered(const std::string &text, int y, int size, Color color = parchment) const;
     void inBox(const std::string &text, Rectangle bounds, int size, Color color = parchment) const;
 };
+// World-space heading to the original interleaved DCC direction index.
 int direction(Vec look, int count);
 void sprite(const Sprite *sprite, Vec position, Color tint = WHITE);
 // Cursor hotspots are texture-local, measured from the top-left pixel.

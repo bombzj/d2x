@@ -3,6 +3,7 @@
 #include "content/string_table.hpp"
 #include "content/classic_data.hpp"
 #include "persistence/save_file.hpp"
+#include "presentation/equipment_appearance.hpp"
 #include "presentation/graphics.hpp"
 #include "presentation/primitives.hpp"
 #include <algorithm>
@@ -127,11 +128,10 @@ GpuAnimation loadPortrait(Graphics &graphics, const ClassicData &content, const 
     for (bool left : {false, true}) {
         const auto *item = equipped(weaponHandSlot(left, weaponSet));
         if (!item || item->appearance.token.empty()) continue;
-        int component = item->appearance.component;
+        const int component = equippedHandComponent(*item, left);
         if (item->equipment.isType("weap")) {
             weaponClasses.push_back(item->base.weaponClass);
             weapon = item->base.weaponClass;
-            component = left ? 6 : 5;
             if (item->equipment.twoHanded &&
                 (!item->equipment.oneOrTwoHanded || !equipped(weaponHandSlot(!left, weaponSet))))
                 weapon = item->equipment.twoHandWeaponClass;

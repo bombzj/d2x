@@ -39,6 +39,8 @@
 
 战斗关系、公共伤害与死灵法师召唤适配同一 D2MOO 固定快照的 SUnit／SUnitDmg、SkillNec、D2Skills、Monster、AiThink、PlayerPets 及 ObjEval；具体函数见 [阵营](COMBAT_FACTIONS.md) 和 [召唤](NECROMANCER_SKILLS.md)。所有技能参数、骷髅数值、组件和动画仍取当前 MPQ，不纳入参考表或资源。规则适配保留上述 D2MOO MIT 归属。
 
+角色手持武器组件选择核对本地 D2MOO 固定 `5596f5c` 的 `D2Common/src/D2Inventory.cpp::INVENTORY_GetCompositItem`；世界方向到 DCC 方向帧核对 Diablerie 固定 `9e42ef2` 的 `Engine/Iso.cs::Direction`、`Engine/IO/D2Formats/DirectionMapping.cs` 和 `Engine/Entities/Missile.cs::Create`。两者沿用上文 MIT 归属；弓的组件、女巫 COF／DCC 与 Arrow 的 32 方向仍取用户当前 MPQ，不引入参考资源。源码入口与未验收范围见 [通用攻击](COMMON_ATTACKS.md#武器组件与朝向)。
+
 ## 格式研究参考
 
 投掷药瓶客户端特效另核对 [D2R Data Guide（Corrected）的 Missiles.txt](https://locbones.github.io/D2R_DataGuide/#missilestxt)：`CltHit03/HitOilPotion` 为主爆炸加 `CltHitSubMissile2/3` 随机二选一，`CltDo03/04` 分别说明尾迹和区域烟雾子效果。这里只借用函数／字段含义，所有 ID、图像和参数仍读取当前 1.13c MPQ，不复制第三方数据或代码。该说明没有给出旧客户端烟雾精确节拍和随机采样算法；不能据此宣称与原版逐帧一致。RandStart 与旧版 Phrozen Keep 指南的描述存在冲突，暂缓该字段；具体范围见 [通用攻击](COMMON_ATTACKS.md)。

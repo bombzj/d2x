@@ -15,6 +15,14 @@
 
 UI 仍只提交 `Attack`／`UseSkill`。Shift 原地攻击保留当前指向的单位；近战出手时再次验证距离，空地挥击不制造范围伤害。弓弩和投掷允许瞄准空地。死亡、受击及换区会清除未释放攻击；切换武器组取消当前动作和待追击目标。
 
+## 武器组件与朝向
+
+角色世界动画与角色列表预览共用 `presentation/equipment_appearance.hpp::equippedHandComponent`：只有 `1hs`／`1ht`／`ht1` 武器按手位选择 RH／LH，其余保持原表 `component`。依据本地 D2MOO `D2Common/src/D2Inventory.cpp::INVENTORY_GetCompositItem`。当前 MPQ 的短弓 `sbw` 使用组件 6（LH），女巫 `SOA1BOW.cof` 包含 LH 而无 RH，对应原图 `chars/so/lh/solhsbwa1bow.dcc`；旧代码把所有主手武器强制放到 RH，导致弓被遗漏。这里只修正图层选择，双持主手仍遵循下文的项目边界。
+
+`presentation/primitives.cpp::direction` 接收世界坐标方向，在不压缩纵轴的 45° 旋转坐标中量化，再映射原 DCC 的 8／16／32 方向索引。依据 Diablerie `Engine/Iso.cs::Direction`、`Engine/IO/D2Formats/DirectionMapping.cs` 与 `Engine/Entities/Missile.cs::Create`；当前 MPQ `missiles/arrow.dcc` 为 32 方向、每方向 1 帧。原图已经包含等角投影，不能再用 `project()` 的半高屏幕角度选择方向帧。人物、佣兵、怪物与弹体共用该入口，运动、碰撞及伤害不变。
+
+2026-09-28 上述两项显示修订仅完成源码及原资源／reference 对照；按当前交接约定未构建、运行测试或游戏、打包，现有 `dist/current` 不含本次修订，实际画面待验收。
+
 ## 动作与基础数值
 
 - 普通攻击使用 A1，投掷使用 TH，左手挥击／投掷使用 S3／S4。读取原动作事件 1／2；缺原动画记录则拒绝动作，不使用固定攻击间隔或其他攻击动画替身。
