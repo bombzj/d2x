@@ -89,8 +89,7 @@ std::string playerAnimationMode(const PlayerState &p) {
 }
 bool SceneView::visible(const WorldObject &object) const {
     if (object.questHidden) return false;
-    auto found = assets_.propAnimations.find(object.key);
-    return found != assets_.propAnimations.end() && !found->second.frames.empty();
+    return assets_.propArtAvailable(object.key);
 }
 void SceneView::notice(std::string text, bool error) {
     view_.lootNotice = std::move(text);

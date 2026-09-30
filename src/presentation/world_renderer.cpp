@@ -18,6 +18,7 @@ std::vector<SceneView::VisibleMonster> SceneView::visibleMonsters() const {
     return result;
 }
 const Sprite *SceneView::objectSprite(const WorldObject &object, RegionId region) const {
+    assets_.ensurePropArt(object);
     if (auto waypoint = assets_.waypointAnimations.find(object.key);
         waypoint != assets_.waypointAnimations.end()) {
         auto activated = session_.state().waypoints.find(region);
@@ -106,7 +107,7 @@ const WorldObject *SceneView::objectAt(Vec mouse) const {
 void SceneView::drawTerrain() const {
     for (const auto &[region, offset] : session_.sceneRegions()) {
         const auto &map = session_.regions()[region].map;
-        const auto &tiles = assets_.regionTiles[region];
+        const auto &tiles = assets_.regionTileSprites(region);
 
         // All floors precede occluders. Walls and entities use the same projected depth.
         for (int sum = 0; sum < map.data.width + map.data.height; sum++)
@@ -247,7 +248,7 @@ void SceneView::drawActors(Vec mouse) const {
     std::stable_sort(draw.begin(), draw.end(), [](auto &a, auto &b) { return a.depth < b.depth; });
     for (auto item : draw) {
         if (item.type == 0) {
-            auto &s = assets_.regionTiles[item.region][item.index];
+            auto &s = assets_.regionTileSprites(item.region)[item.index];
             sprite(&s, item.p);
         } else if (item.type == 1) {
             const auto &mode = view_.heroMode;
@@ -438,7 +439,7 @@ void SceneView::drawActors(Vec mouse) const {
                                                 ? found->second[i] : 1.f);
         }
         if (alpha > 0.f)
-            sprite(&assets_.regionTiles[item.region][item.index], item.p,
+            sprite(&assets_.regionTileSprites(item.region)[item.index], item.p,
                    {255, 255, 255, uint8_t(alpha * 255.f)});
     }
 }

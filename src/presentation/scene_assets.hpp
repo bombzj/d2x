@@ -70,15 +70,24 @@ class SceneAssets {
     std::map<int, SpellOverlay> spellOverlays;
     std::map<std::string, GpuAnimation> skillTrees;
     Sprite attackIcon;
-    std::vector<std::vector<Sprite>> regionTiles;
+    // Region tiles and prop art are uploaded the first time their region is drawn,
+    // so a session no longer pays for every level in the act up front.
+    mutable std::vector<std::vector<Sprite>> regionTiles;
+    std::vector<std::vector<const Tile *>> regionTileSources;
+    mutable std::vector<bool> regionTilesUploaded;
+    std::set<std::string, std::less<>> propArtKeys;
+    mutable bool propArtReported = false;
+    void indexPropArt(const GameSession &session);
+    void loadPropObject(const WorldObject &object) const;
     std::vector<std::vector<AutomapStamp>> regionAutomap;
     // 0: original maximaps.dc6, 1: original maximap.dc6.
     std::array<std::map<int, Sprite>, 2> automapCels;
-    std::map<std::string, GpuAnimation> propAnimations, npcWalkAnimations, hero;
+    // Filled on first sighting; mutable so the const draw path can populate them.
+    mutable std::map<std::string, GpuAnimation> propAnimations, npcWalkAnimations, hero;
     std::map<std::string, GpuAnimation> hirelingAnimations;
     std::map<int, GpuAnimation> summonPortraits;
-    std::map<std::string, std::array<GpuAnimation, 3>> waypointAnimations;
-    std::map<std::string, std::array<GpuAnimation, 3>> objectModeAnimations;
+    mutable std::map<std::string, std::array<GpuAnimation, 3>> waypointAnimations;
+    mutable std::map<std::string, std::array<GpuAnimation, 3>> objectModeAnimations;
     struct MonsterAudio {
         std::string attack1, attack2, skill1, skill2, hit, death, footstep, neutral;
         float footstepInterval = 0, neutralInterval = 0;
@@ -117,6 +126,13 @@ class SceneAssets {
                                                                    std::string_view monsterClass,
                                                                    MonsterKind kind,
                                                                    int summonShield) const;
+    // Region terrain uploads on first draw, and prop art on first sighting.
+    const std::vector<Sprite> &regionTileSprites(size_t index) const;
+    void ensurePropArt(const WorldObject &object) const;
+    // True when the region tables promise art for this key; the draw path builds it.
+    bool propArtAvailable(std::string_view key) const {
+        return propArtKeys.contains(key);
+    }
     void loadInventoryArt(const GameSession &session);
     void loadHeroEquipment(const GameSession &session);
     const std::string &heroAppearanceError() const { return heroFailure_; }

@@ -3,6 +3,7 @@
 #include "world/cow_level.hpp"
 #include "world/outdoor.hpp"
 #include <algorithm>
+#include <cstdio>
 #include <string_view>
 #include <utility>
 
@@ -106,13 +107,12 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
         }
         combatStateOverlays.emplace(state.definition.id, std::move(art));
     }
-    for (const auto &region : session.regions()) {
-        std::vector<Sprite> tiles;
-        for (const auto &tile : region.map.tiles)
-            tiles.push_back(graphics_.upload(tile->image));
-        regionTiles.push_back(std::move(tiles));
-        loadProps(region);
-    }
+    regionTileSources.reserve(session.regions().size());
+    regionTiles.resize(session.regions().size());
+    regionTilesUploaded.assign(session.regions().size(), false);
+    for (const auto &region : session.regions())
+        regionTileSources.push_back(region.map.tiles);
+    indexPropArt(session);
     loadAutomap(session);
     loadHeroEquipment(session);
     if (hero.at("nu").frames.empty() || hero.at("rn").frames.empty())
@@ -508,53 +508,86 @@ void SceneAssets::loadInventoryArt(const GameSession &session) {
     }
     graphics_.releaseDecoded();
 }
+void SceneAssets::indexPropArt(const GameSession &session) {
+    for (const auto &region : session.regions())
+        for (const auto &object : region.objects)
+            propArtKeys.insert(object.key);
+}
+const std::vector<Sprite> &SceneAssets::regionTileSprites(size_t index) const {
+    if (!regionTilesUploaded.at(index)) {
+        regionTiles[index].clear();
+        regionTiles[index].reserve(regionTileSources.at(index).size());
+        for (const auto *tile : regionTileSources.at(index))
+            regionTiles[index].push_back(graphics_.upload(tile->image));
+        regionTilesUploaded[index] = true;
+    }
+    return regionTiles[index];
+}
+void SceneAssets::ensurePropArt(const WorldObject &object) const {
+    if (propAnimations.contains(object.key)) return;
+    // A missing component is reported once and the key stays empty, so the draw
+    // path neither retries every frame nor aborts the frame it is painting.
+    try {
+        loadPropObject(object);
+    } catch (const std::exception &error) {
+        if (!propArtReported) {
+            propArtReported = true;
+            std::fprintf(stderr, "Prop art unavailable: %s\n", error.what());
+        }
+        propAnimations.emplace(object.key, GpuAnimation{});
+    }
+}
+void SceneAssets::loadPropObject(const WorldObject &object) const {
+    const auto &appearance = object.appearance;
+    std::array<const char *, 16> equipment;
+    for (size_t i = 0; i < equipment.size(); ++i)
+        equipment[i] = appearance.equipment[i].c_str();
+    if (!object.npcPath.empty() && !npcWalkAnimations.contains(object.key)) {
+        auto walk = graphics_.composite(appearance.category, appearance.token, "wl",
+                                         appearance.weapon, &equipment);
+        if (!walk.frames.empty() && walk.completeComposite)
+            npcWalkAnimations.emplace(object.key, std::move(walk));
+    }
+    if (propAnimations.contains(object.key))
+        return;
+    if (object.name == "Waypoint" && object.interaction == Interaction::Travel) {
+        std::array<GpuAnimation, 3> animations;
+        // Objects.txt modes are NU, OP (operating), ON (opened).
+        const char *modes[] = {"nu", "op", "on"};
+        for (size_t index = 0; index < animations.size(); ++index) {
+            animations[index] = graphics_.composite(appearance.category, appearance.token, modes[index],
+                                                    appearance.weapon, &equipment);
+            if (animations[index].frames.empty() || !animations[index].completeComposite ||
+                object.waypointFps[index] <= 0)
+                throw std::runtime_error("Original waypoint animation unavailable: " + appearance.token + modes[index]);
+        }
+        propAnimations.emplace(object.key, animations[0]);
+        waypointAnimations.emplace(object.key, std::move(animations));
+        return;
+    }
+    if (object.interaction == Interaction::Door || object.interaction == Interaction::Loot || object.interaction == Interaction::Shrine ||
+        object.interaction == Interaction::Well || object.interaction == Interaction::QuestTree ||
+        object.interaction == Interaction::QuestStone ||
+        object.interaction == Interaction::QuestGibbet ||
+        object.interaction == Interaction::QuestTome ||
+        object.interaction == Interaction::QuestMalus) {
+        std::array<GpuAnimation, 3> animations;
+        const char *modes[] = {"nu", "op", "on"};
+        for (size_t index = 0; index < animations.size(); ++index)
+            animations[index] = graphics_.composite(appearance.category, appearance.token, modes[index],
+                                                    appearance.weapon, &equipment);
+        propAnimations.emplace(object.key, animations[0]);
+        objectModeAnimations.emplace(object.key, std::move(animations));
+        return;
+    }
+    propAnimations.emplace(object.key,
+                           graphics_.composite(appearance.category, appearance.token, appearance.mode,
+                                               appearance.weapon, &equipment));
+}
 void SceneAssets::loadProps(const Region &region) {
     for (const auto &object : region.objects) {
-        const auto &appearance = object.appearance;
-        std::array<const char *, 16> equipment;
-        for (size_t i = 0; i < equipment.size(); ++i)
-            equipment[i] = appearance.equipment[i].c_str();
-        if (!object.npcPath.empty() && !npcWalkAnimations.contains(object.key)) {
-            auto walk = graphics_.composite(appearance.category, appearance.token, "wl",
-                                             appearance.weapon, &equipment);
-            if (!walk.frames.empty() && walk.completeComposite)
-                npcWalkAnimations.emplace(object.key, std::move(walk));
-        }
-        if (propAnimations.contains(object.key))
-            continue;
-        if (object.name == "Waypoint" && object.interaction == Interaction::Travel) {
-            std::array<GpuAnimation, 3> animations;
-            // Objects.txt modes are NU, OP (operating), ON (opened).
-            const char *modes[] = {"nu", "op", "on"};
-            for (size_t index = 0; index < animations.size(); ++index) {
-                animations[index] = graphics_.composite(appearance.category, appearance.token, modes[index],
-                                                        appearance.weapon, &equipment);
-                if (animations[index].frames.empty() || !animations[index].completeComposite ||
-                    object.waypointFps[index] <= 0)
-                    throw std::runtime_error("Original waypoint animation unavailable: " + appearance.token + modes[index]);
-            }
-            propAnimations.emplace(object.key, animations[0]);
-            waypointAnimations.emplace(object.key, std::move(animations));
-            continue;
-        }
-        if (object.interaction == Interaction::Door || object.interaction == Interaction::Loot || object.interaction == Interaction::Shrine ||
-            object.interaction == Interaction::Well || object.interaction == Interaction::QuestTree ||
-            object.interaction == Interaction::QuestStone ||
-            object.interaction == Interaction::QuestGibbet ||
-            object.interaction == Interaction::QuestTome ||
-            object.interaction == Interaction::QuestMalus) {
-            std::array<GpuAnimation, 3> animations;
-            const char *modes[] = {"nu", "op", "on"};
-            for (size_t index = 0; index < animations.size(); ++index)
-                animations[index] = graphics_.composite(appearance.category, appearance.token, modes[index],
-                                                        appearance.weapon, &equipment);
-            propAnimations.emplace(object.key, animations[0]);
-            objectModeAnimations.emplace(object.key, std::move(animations));
-            continue;
-        }
-        propAnimations.emplace(object.key,
-                               graphics_.composite(appearance.category, appearance.token, appearance.mode,
-                                                   appearance.weapon, &equipment));
+        propArtKeys.insert(object.key);
+        loadPropObject(object);
     }
 }
 void SceneAssets::collectMapVariants(Archives &archives, const WorldCatalog &catalog,
