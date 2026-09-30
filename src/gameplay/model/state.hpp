@@ -183,6 +183,11 @@ struct Missile {
         int minimumDamage = 0, maximumDamage = 0, coldFrames = 0;
     };
     std::optional<BlizzardState> blizzard = std::nullopt;
+    struct FreezingAreaState {
+        int elapsedFrames = 0, lifetimeFrames = 0;
+        int minimumDamage = 0, maximumDamage = 0;
+    };
+    std::optional<FreezingAreaState> freezingArea = std::nullopt;
 };
 struct Effect {
     Vec pos;

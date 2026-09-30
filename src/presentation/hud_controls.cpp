@@ -194,6 +194,9 @@ void SceneView::drawSkillControls(Vec mouse) const {
                 detail += " / Cold damage per bolt " + std::string(TextFormat("%.1f-%.1f", value.minimumDamage, value.maximumDamage)) +
                     " / Chill " + std::string(TextFormat("%.1fs", value.coldDuration)) +
                     " / Delay " + std::string(TextFormat("%.1fs", float(value.delayFrames) / 25.f));
+            else if (value.freezingArea)
+                detail += " / Cold damage " + std::string(TextFormat("%.1f-%.1f", value.minimumDamage, value.maximumDamage)) +
+                    " / Freeze " + std::string(TextFormat("%.2fs", float(value.freezingArea->freezeFrames) / 25.f));
             else if (value.weapon && value.poisonDuration > 0)
                 detail += " / Poison " + std::string(TextFormat("%.1f-%.1f over %.1fs",
                     value.minimumDamage * value.poisonDuration * 25.f,

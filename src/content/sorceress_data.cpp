@@ -2,6 +2,7 @@
 #include "missile_effects.hpp"
 #include "frozen_orb_data.hpp"
 #include "blizzard_data.hpp"
+#include "glacial_spike_data.hpp"
 #include <algorithm>
 #include <cctype>
 #include <set>
@@ -30,7 +31,8 @@ void loadSorceressEffects(SkillCatalog &catalog, const DataTable &skills,
         {"Ice Bolt", SkillBehavior::IceBolt}, {"Nova", SkillBehavior::Nova},
         {"Ice Blast", SkillBehavior::IceBlast}, {"Charged Bolt", SkillBehavior::ChargedBolt}, {"Frozen Armor", SkillBehavior::FrozenArmor},
         {"Inferno", SkillBehavior::Inferno}, {"Static Field", SkillBehavior::StaticField},
-        {"Frozen Orb", SkillBehavior::FrozenOrb}, {"Blizzard", SkillBehavior::Blizzard}};
+        {"Frozen Orb", SkillBehavior::FrozenOrb}, {"Blizzard", SkillBehavior::Blizzard},
+        {"Glacial Spike", SkillBehavior::GlacialSpike}};
     const auto warmth = std::find_if(catalog.skills.begin(), catalog.skills.end(),
         [](const auto &pair) { return pair.second.classCode == "sor" &&
             pair.second.sourceName == "Warmth"; });
@@ -263,6 +265,8 @@ void loadSorceressEffects(SkillCatalog &catalog, const DataTable &skills,
             spec.missileId = required(missiles, missileRow, "Id");
             if (effect == SkillBehavior::Blizzard)
                 loadBlizzardMissiles(spec, skills, row, missiles, missileRow, archives);
+            if (effect == SkillBehavior::GlacialSpike)
+                loadGlacialSpikeMissiles(spec, skills, row, missiles, missileRow, archives);
             if (effect == SkillBehavior::FrozenOrb) {
                 if (skills.value(row, "EType") != "cold" ||
                     skills.value(row, "cltmissilea") != missileName ||
@@ -315,7 +319,8 @@ void loadSorceressEffects(SkillCatalog &catalog, const DataTable &skills,
             if (!travelSound.empty() && (spec.releaseSoundArt.empty() || !archives.contains(spec.releaseSoundArt)))
                 throw std::runtime_error("Missing original missile release sound: " + std::string(travelSound));
             if (effect == SkillBehavior::FireBolt || effect == SkillBehavior::Fireball ||
-                effect == SkillBehavior::IceBolt || effect == SkillBehavior::IceBlast) {
+                effect == SkillBehavior::IceBolt || effect == SkillBehavior::IceBlast ||
+                effect == SkillBehavior::GlacialSpike) {
                 const auto impactName = missiles.value(missileRow, "ExplosionMissile");
                 for (size_t impactRow = 0; spec.impacts.empty() && impactRow < missiles.rows().size(); ++impactRow)
                     if (!impactName.empty() && missiles.value(impactRow, "Missile") == impactName) {

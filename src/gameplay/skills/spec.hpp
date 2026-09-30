@@ -9,6 +9,15 @@
 #include <vector>
 
 namespace d2x {
+struct FreezingAreaSpec {
+    int radius = 0, radiusPerLevel = 0, radiusOverride = 0;
+    int freezeFrames = 0, freezeFramesPerLevel = 0, freezeOverride = 0;
+    int synergySkill = -1, synergyPercent = 0;
+    int ejectaId = -1;
+};
+struct FreezingAreaCastSpec {
+    int radius = 0, freezeFrames = 0;
+};
 struct BlizzardSpec {
     int radius = 0, emissionPeriod = 0;
     int shardId = -1, shardFrames = 0;
@@ -85,6 +94,7 @@ struct SkillSpec {
     std::optional<SummonSkillSpec> summon;
     std::optional<FrozenOrbSpec> frozenOrb;
     std::optional<BlizzardSpec> blizzard;
+    std::optional<FreezingAreaSpec> freezingArea;
     int delayFrames = 0;
     std::array<int, 5> minimumPerLevel{}, maximumPerLevel{};
     int synergyPercent = 0;
@@ -123,6 +133,7 @@ struct SkillCastSpec {
     std::optional<SummonCastSpec> summon;
     std::optional<FrozenOrbCastSpec> frozenOrb;
     std::optional<BlizzardSpec> blizzard;
+    std::optional<FreezingAreaCastSpec> freezingArea;
     int delayFrames = 0;
     std::optional<MissileImpactSpec> missileImpact;
     int missileId = -1;

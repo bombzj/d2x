@@ -86,6 +86,19 @@ SkillCastSpec resolveSkill(const SkillSpec &spec, int rank,
     result.sourceId = spec.sourceId;
     result.delayFrames = spec.delayFrames;
     result.blizzard = spec.blizzard;
+    if (spec.freezingArea) {
+        const auto &program = *spec.freezingArea;
+        int synergyRank = 0;
+        if (auto found = learned.find(program.synergySkill); found != learned.end()) synergyRank = found->second;
+        const int64_t frames = (int64_t(program.freezeFrames) + int64_t(rank - 1) * program.freezeFramesPerLevel) *
+                              (100 + int64_t(synergyRank) * program.synergyPercent) / 100;
+        if (frames < 0 || frames > std::numeric_limits<int>::max())
+            throw std::runtime_error("Original freeze duration exceeds supported range");
+        result.freezingArea = FreezingAreaCastSpec{
+            program.radiusOverride > 0 ? program.radiusOverride :
+                std::max(1, program.radius + (rank - 1) * program.radiusPerLevel),
+            program.freezeOverride > 0 ? program.freezeOverride : int(frames)};
+    }
     if (spec.effect == SkillBehavior::FrozenArmor) {
         int synergyRanks = 0;
         for (int id : spec.armorSynergySkills)

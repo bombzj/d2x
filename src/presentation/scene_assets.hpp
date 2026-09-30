@@ -82,6 +82,7 @@ class SceneAssets {
     std::map<int, ProjectileVisual> projectileVisuals;
     // Client-only impact alternatives (CltHit03); never damage-bearing missiles.
     std::map<int, std::array<int, 2>> projectileImpactVariants;
+    std::map<int, int> projectileFreezingEjecta;
     struct SpellOverlay {
         GpuAnimation animation;
         SkillSpec::OverlayVisual visual;

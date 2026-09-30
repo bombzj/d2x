@@ -169,6 +169,10 @@ class Simulation {
     bool blizzardTargetClear(Vec origin, Vec target) const;
     void launchBlizzard(PlayerState &player, const SkillCastSpec &skill, Vec target);
     void advanceBlizzard(Missile &missile, std::vector<Missile> &spawned);
+    void launchGlacialSpike(PlayerState &player, const SkillCastSpec &skill, Vec target);
+    void advanceGlacialSpike(Missile &missile);
+    void resolveGlacialSpikeImpact(Missile &missile);
+    void applyMissileFreeze(EntityId attacker, CombatUnit target, int frames);
     void spawnEnemies(std::span<const MonsterSpawn> spawns);
     void activateMonsters();
     void clearActions();

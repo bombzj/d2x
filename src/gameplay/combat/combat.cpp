@@ -107,6 +107,7 @@ void Simulation::updateMissiles(float dt) {
     for (auto &m : area.missiles) {
         if (m.frozenOrb) { advanceFrozenOrb(m, spawned); continue; }
         if (m.blizzard) { advanceBlizzard(m, spawned); continue; }
+        if (m.freezingArea) { advanceGlacialSpike(m); continue; }
         const int accelerationStep = int(m.age * 5.f + .00001f);
         m.age += dt;
         if (m.groundTargeted) { advanceGroundTargetedMissile(m, dt, spawned); continue; }

@@ -93,6 +93,7 @@ class SceneView {
         int missileId = -1;
         Vec pos, velocity;
         float age = 0, duration = 0;
+        Vec direction;
     };
     std::vector<ClientMissile> clientMissiles_;
     uint64_t projectileVisualRandom_ = 0;

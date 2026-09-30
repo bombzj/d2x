@@ -7,7 +7,7 @@
 
 namespace d2x {
 // Execution behavior is not a Skills.txt identity or a persistent ID.
-enum class SkillBehavior { None, Fireball, FrostNova, Teleport, FireBolt, StaticField, IceBolt, Nova, IceBlast, ChargedBolt, FrozenArmor, Inferno, WeaponProjectile, RaiseSkeleton, FrozenOrb, Blizzard };
+enum class SkillBehavior { None, Fireball, FrostNova, Teleport, FireBolt, StaticField, IceBolt, Nova, IceBlast, ChargedBolt, FrozenArmor, Inferno, WeaponProjectile, RaiseSkeleton, FrozenOrb, Blizzard, GlacialSpike };
 enum class MonsterKind { Fallen, Zombie, Skeleton, CorruptRogue, Brute, Goatman, QuillRat,
                          Wraith, CorruptLancer, CorruptArcher, SkeletonBow, Bighead,
                          HellBovine, SkeletonMage, Fetish, Vampire, FallenShaman,

@@ -162,6 +162,8 @@ void Simulation::releaseSkillCast(PlayerState &player, const SkillCastSpec &skil
         launchBlizzard(player, skill, target);
     } else if (skill.frozenOrb) {
         launchFrozenOrb(player, skill, target);
+    } else if (skill.freezingArea) {
+        launchGlacialSpike(player, skill, target);
     } else if (skill.effect == SkillBehavior::ChargedBolt) {
         if ((target - player.pos).length() < 1) target = player.pos + player.look * 10;
         for (int index = 0; index < skill.missileCount; ++index) {

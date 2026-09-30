@@ -326,6 +326,12 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
                 missiles.number(row, "Flicker").value_or(0) != 0});
         }
     const DataTable projectileSounds(archives.read("data/global/excel/sounds.txt"));
+    std::set<int> freezingProjectiles;
+    for (const auto &[id, skill] : session.content().skills.skills)
+        if (skill.spell && skill.spell->freezingArea) {
+            freezingProjectiles.insert(skill.spell->missileId);
+            projectileFreezingEjecta.emplace(skill.spell->missileId, skill.spell->freezingArea->ejectaId);
+        }
     for (const auto &[id, skill] : session.content().skills.skills) {
         if (!skill.spell || !skill.spell->blizzard) continue;
         const auto &program = *skill.spell->blizzard;
@@ -363,9 +369,12 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
                 for (size_t soundRow = 0; soundRow < projectileSounds.rows().size(); ++soundRow)
                     if (projectileSounds.value(soundRow, "Sound") == sound) {
                         const auto key = std::string(event) + std::to_string(id);
-                        if (std::string_view(field) == "TravelSound" && frozenOrbProjectiles.contains(id) &&
+                        if (std::string_view(field) == "TravelSound" &&
+                            (frozenOrbProjectiles.contains(id) || freezingProjectiles.contains(id)) &&
                             projectileSounds.number(soundRow, "Loop") == 1)
                             audio.registerTravelGroup(archives, key, projectileSounds, soundRow);
+                        else if (std::string_view(field) == "HitSound" && freezingProjectiles.contains(id))
+                            audio.registerOriginalGroup(archives, key, projectileSounds, soundRow);
                         else
                             audio.registerOriginal(archives, key,
                                 "data/global/sfx/" + std::string(projectileSounds.value(soundRow, "FileName")));
@@ -375,6 +384,9 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
             break;
         }
     };
+    for (const auto &[id, skill] : session.content().skills.skills)
+        if (skill.spell && skill.spell->freezingArea)
+            loadProjectile(skill.spell->missileId, skill.spell->missileArt);
     for (const auto &[code, item] : session.content().items.entries())
         if (item.base.projectile && !item.base.projectile->art.empty()) {
             loadProjectile(item.base.projectile->id, item.base.projectile->art);
@@ -455,7 +467,7 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
                 loadProjectile(impact.missileId, impact.art);
             for (const auto &child : skill.spell->submissileResources)
                 loadProjectile(child.id, child.art);
-            if (!skill.spell->impactSoundArt.empty())
+            if (!skill.spell->impactSoundArt.empty() && !skill.spell->freezingArea)
                 audio.registerOriginal(archives, "missile-hit:" + std::to_string(skill.spell->missileId),
                                        skill.spell->impactSoundArt);
             if (!skill.spell->releaseSoundArt.empty() &&
@@ -479,7 +491,7 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
     for (const auto &[id, skill] : session.content().skills.skills)
         if (skill.spell && !skill.spell->castSoundArt.empty()) {
             float volume = .45f;
-            if (skill.spell->frozenOrb || skill.spell->blizzard) {
+            if (skill.spell->frozenOrb || skill.spell->blizzard || skill.spell->freezingArea) {
                 const auto &skills = session.content().tables.at("skills");
                 bool found = false;
                 for (size_t row = 0; row < skills.rows().size(); ++row) {

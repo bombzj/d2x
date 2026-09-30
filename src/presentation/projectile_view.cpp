@@ -14,6 +14,17 @@ void SceneView::createBlizzardFall(int missileId, Vec position) {
     clientMissiles_.push_back({missileId, position, {}, 0, float(frames) / 25.f});
 }
 void SceneView::createMissileImpactVisuals(int missileId, Vec position) {
+    if (const auto ejecta = assets_.projectileFreezingEjecta.find(missileId);
+        ejecta != assets_.projectileFreezingEjecta.end()) {
+        // CltHit14's original directional ejecta already carries pixel motion
+        // in its DCC offsets; the table velocity is zero. Legacy multiplicity
+        // and offset randomization remain unverified, so only one is displayed.
+        constexpr Vec directions[]{{0,1},{-1,1},{-1,0},{-1,-1},{0,-1},{1,-1},{1,0},{1,1}};
+        const auto direction = directions[limitedRandom(projectileVisualRandom_, 8)];
+        clientMissiles_.push_back({ejecta->second, position, {}, 0,
+            assets_.projectileVisuals.at(ejecta->second).lifetime, direction});
+        return;
+    }
     const auto found = assets_.projectileImpactVariants.find(missileId);
     if (found == assets_.projectileImpactVariants.end()) return;
     // Presentation has its own random stream; debris cannot change damage,

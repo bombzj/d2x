@@ -497,7 +497,9 @@ void SceneView::drawActors(Vec mouse) const {
                 drawMissile(effect.missileId, effect.pos + offset, {}, effect.age, effect.duration - effect.age);
             } else if (item.type == 10) {
                 const auto &effect = clientMissiles_[item.index];
-                drawMissile(effect.missileId, effect.pos, effect.velocity, effect.age, effect.duration - effect.age);
+                drawMissile(effect.missileId, effect.pos,
+                    effect.direction.length() > 0 ? effect.direction : effect.velocity,
+                    effect.age, effect.duration - effect.age);
             } else if (item.type == 11) {
                 const auto &effect = session_.areaState(item.region).effects[item.index];
                 const auto &region = session_.regions()[item.region].recipe;
