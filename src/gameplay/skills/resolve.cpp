@@ -99,7 +99,7 @@ SkillCastSpec resolveSkill(const SkillSpec &spec, int rank,
                 std::max(1, program.radius + (rank - 1) * program.radiusPerLevel),
             program.freezeOverride > 0 ? program.freezeOverride : int(frames)};
     }
-    if (spec.effect == SkillBehavior::FrozenArmor) {
+    if (spec.effect == SkillBehavior::FrozenArmor || spec.effect == SkillBehavior::ShiverArmor) {
         int synergyRanks = 0;
         for (int id : spec.armorSynergySkills)
             if (auto found = learned.find(id); found != learned.end()) synergyRanks += found->second;
@@ -114,10 +114,12 @@ SkillCastSpec resolveSkill(const SkillSpec &spec, int rank,
         armor.duration = EffectFrame(frames);
         armor.modifiers.combat.defensePercent = parameters[0] + (rank - 1) * parameters[1];
         armor.visual.overlayId = spec.stateOverlay.id;
-        const float freeze = float((parameters[4] + (rank - 1) * parameters[5]) *
-            (100 + synergyRanks * parameters[7]) / 100) / 25.f;
-        armor.reactions.push_back({CombatEffectEvent::DamagedInMelee,
-            FreezeAttacker{freeze, spec.hitOverlay.id, float(spec.hitOverlay.frames) / spec.hitOverlay.fps}});
+        if (spec.effect == SkillBehavior::FrozenArmor) {
+            const float freeze = float((parameters[4] + (rank - 1) * parameters[5]) *
+                (100 + synergyRanks * parameters[7]) / 100) / 25.f;
+            armor.reactions.push_back({CombatEffectEvent::DamagedInMelee,
+                FreezeAttacker{freeze, spec.hitOverlay.id, float(spec.hitOverlay.frames) / spec.hitOverlay.fps}});
+        } else armor.reactions.push_back({CombatEffectEvent::AttackedInMelee, ColdMeleeRetaliation{}});
         result.appliedEffect = std::move(armor);
     }
     const int64_t scaledMana = std::max<int64_t>(0,

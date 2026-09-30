@@ -491,7 +491,8 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
     for (const auto &[id, skill] : session.content().skills.skills)
         if (skill.spell && !skill.spell->castSoundArt.empty()) {
             float volume = .45f;
-            if (skill.spell->frozenOrb || skill.spell->blizzard || skill.spell->freezingArea) {
+            if (skill.spell->frozenOrb || skill.spell->blizzard || skill.spell->freezingArea ||
+                skill.spell->effect == SkillBehavior::ShiverArmor) {
                 const auto &skills = session.content().tables.at("skills");
                 bool found = false;
                 for (size_t row = 0; row < skills.rows().size(); ++row) {

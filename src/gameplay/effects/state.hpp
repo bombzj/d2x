@@ -37,7 +37,7 @@ enum class EffectRemoval { Expired, Replaced, Death, Hit, Dispelled, SourceRemov
 struct EffectVisual {
     int overlayId = -1;
 };
-enum class CombatEffectEvent { DamagedInMelee };
+enum class CombatEffectEvent { DamagedInMelee, AttackedInMelee };
 struct FreezeAttacker {
     float duration = 0;
     int overlayId = -1;
@@ -45,7 +45,8 @@ struct FreezeAttacker {
 };
 // Add typed actions here as their original event functions are implemented.
 // Reactions belong to the effect; removal cannot leave registered callbacks.
-using EffectAction = std::variant<FreezeAttacker>;
+struct ColdMeleeRetaliation {};
+using EffectAction = std::variant<FreezeAttacker, ColdMeleeRetaliation>;
 struct EffectReaction {
     CombatEffectEvent event;
     EffectAction action;

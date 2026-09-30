@@ -438,16 +438,16 @@ void SceneView::drawActors(Vec mouse) const {
                                                                : e.combatTarget ? session_.combatPosition(e.combatTarget) - monster.position : Vec{1, 0},
                                   anim->directions), frame);
                     if (shadowsOnly) { spriteShadow(image, item.p); continue; }
-                    drawUnitSpellOverlays(e.id, monster.position, true, e.hp > 0 ? &e.combatEffects : nullptr);
                     const auto *record = session_.monsterContent().find(e.identity.monster);
                     const int height = record ? record->overlayHeight - 1 : 0;
+                    drawUnitSpellOverlays(e.id, monster.position, true, e.hp > 0 ? &e.combatEffects : nullptr, height);
                     if (e.hp > 0) drawCombatStateOverlays(e.combatEffects, item.p, height, true);
                     drawSelectableSprite(image, item.p, e.id == hotEnemy,
                                          e.hitFlash > 0 ? Color{255, 175, 155, 255}
                                          : (e.chill > 0 || e.freeze > 0) ? Color{115, 175, 255, 255}
                                                         : WHITE);
                     if (e.hp > 0) drawCombatStateOverlays(e.combatEffects, item.p, height, false);
-                    drawUnitSpellOverlays(e.id, monster.position, false, e.hp > 0 ? &e.combatEffects : nullptr);
+                    drawUnitSpellOverlays(e.id, monster.position, false, e.hp > 0 ? &e.combatEffects : nullptr, height);
                 }
                 if (shadowsOnly) continue;
                 if (e.stun > 0)
@@ -572,25 +572,26 @@ void SceneView::drawMissile(int id, Vec position, Vec heading, float age, float 
     sprite(image, at);
     if (translucent) EndBlendMode();
 }
-void SceneView::drawSpellOverlay(int id, Vec position, float age, bool loop) const {
+void SceneView::drawSpellOverlay(int id, Vec position, float age, bool loop, int height) const {
     const auto found = assets_.spellOverlays.find(id);
     if (found == assets_.spellOverlays.end()) return;
     const auto &overlay = found->second;
     if (overlay.visual.frames <= 0 || overlay.visual.fps <= 0) return;
     const int elapsed = std::max(0, int(age * overlay.visual.fps));
     const int frame = loop ? elapsed % overlay.visual.frames : std::min(overlay.visual.frames - 1, elapsed);
-    const Vec at = screen(position) + overlay.visual.offset;
+    const int heightOffset = height < 0 ? 75 : overlay.visual.heights[std::clamp(height, 0, 3)];
+    const Vec at = screen(position) + overlay.visual.offset + Vec{0, float(heightOffset)};
     if (overlay.visual.trans == 3) paletteBlend_.draw(overlay.animation.frame(0, frame), at);
     else sprite(overlay.animation.frame(0, frame), at);
 }
-void SceneView::drawUnitSpellOverlays(EntityId unit, Vec position, bool back, const CombatEffectSet *states) const {
+void SceneView::drawUnitSpellOverlays(EntityId unit, Vec position, bool back, const CombatEffectSet *states, int height) const {
     const auto &sim = session_.state();
     for (const auto &[region, offset] : session_.sceneRegions())
         for (const auto &effect : session_.areaState(region).effects)
             if (effect.attached == unit)
                 if (auto found = assets_.spellOverlays.find(effect.overlayId);
                     found != assets_.spellOverlays.end() && found->second.visual.preDraw == back)
-                    drawSpellOverlay(effect.overlayId, position, effect.age, false);
+                    drawSpellOverlay(effect.overlayId, position, effect.age, false, height);
     if (!states && unit == sim.player.id && !sim.player.dead) states = &sim.player.combatEffects;
     else if (!states && unit == sim.player.hireling.id && sim.player.hireling.active()) states = &sim.player.hireling.combatEffects;
     else if (!states) {
@@ -605,7 +606,7 @@ void SceneView::drawUnitSpellOverlays(EntityId unit, Vec position, bool back, co
             if (auto found = assets_.spellOverlays.find(effect.spec.visual.overlayId); found != assets_.spellOverlays.end()) {
                 const auto &overlay = found->second;
                 if (overlay.visual.preDraw == back)
-                    drawSpellOverlay(effect.spec.visual.overlayId, position, float(sim.frame - effect.startedAt) / 25.f, true);
+                    drawSpellOverlay(effect.spec.visual.overlayId, position, float(sim.frame - effect.startedAt) / 25.f, true, height);
             }
 }
 } // namespace d2x

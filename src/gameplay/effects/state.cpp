@@ -3,6 +3,7 @@
 #include <cmath>
 #include <limits>
 #include <stdexcept>
+#include <type_traits>
 
 namespace d2x {
 template<class Predicate>
@@ -22,10 +23,12 @@ EffectApplication CombatEffectSet::apply(CombatEffectSpec spec, EffectFrame now)
         (spec.duration && *spec.duration > std::numeric_limits<EffectFrame>::max() - now))
         throw std::overflow_error("Combat effect handle or lifetime exhausted");
     for (const auto &reaction : spec.reactions)
-        std::visit([](const FreezeAttacker &action) {
-            if (!std::isfinite(action.duration) || action.duration <= 0 ||
-                !std::isfinite(action.overlayDuration) || action.overlayDuration < 0)
-                throw std::invalid_argument("Invalid combat effect reaction");
+        std::visit([](const auto &action) {
+            if constexpr (std::is_same_v<std::decay_t<decltype(action)>, FreezeAttacker>) {
+                if (!std::isfinite(action.duration) || action.duration <= 0 ||
+                    !std::isfinite(action.overlayDuration) || action.overlayDuration < 0)
+                    throw std::invalid_argument("Invalid combat effect reaction");
+            }
         }, reaction.action);
     ActiveCombatEffect effect{{nextHandle_}, std::move(spec), now, {}};
     if (effect.spec.duration) effect.expiresAt = now + *effect.spec.duration;

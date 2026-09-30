@@ -78,7 +78,10 @@ void Simulation::resolveWeaponHit(EntityId defender, float physical, EntityId so
                                   const AttackElements &originalElements) {
     auto target = combatUnit(defender);
     if (!target.alive() || !target.stats.resolved || !canAttack(source, defender)) return;
-    if (target.stats.block > 0 && limitedRandom(*target.random, 100) < unsigned(target.stats.block)) return;
+    if (target.stats.block > 0 && limitedRandom(*target.random, 100) < unsigned(target.stats.block)) {
+        if (!originalElements.ranged) triggerCombatEffects(defender, CombatEffectEvent::AttackedInMelee, source);
+        return;
+    }
     auto elements = originalElements;
     auto mitigate = [&](float amount, MonsterDamageType type) {
         const auto damage = resolveIncoming(source, target, amount, type);
@@ -110,6 +113,7 @@ void Simulation::resolveWeaponHit(EntityId defender, float physical, EntityId so
         if (type == MonsterDamageType::Cold)
             chill = elements.coldDuration * float(std::clamp(100 - unitResistance(target, type), 0, 200)) / 100.f;
     }
+    if (!originalElements.ranged) triggerCombatEffects(defender, CombatEffectEvent::AttackedInMelee, source);
     dealDamage({source, defender, total, MonsterDamageType::Physical, chill, true});
     if (target.alive() && total > 0 && elements.openWounds) {
         int framesDamage = 40;

@@ -125,8 +125,8 @@ class SceneView {
     void drawSelectableSprite(const Sprite *image, Vec position, bool highlighted,
                               Color tint = WHITE, Vector2 highlight = {2.f, 1.f}) const;
     void drawMissile(int id, Vec position, Vec heading, float age, float remaining) const;
-    void drawSpellOverlay(int id, Vec position, float age, bool loop) const;
-    void drawUnitSpellOverlays(EntityId unit, Vec position, bool back, const CombatEffectSet *states = nullptr) const;
+    void drawSpellOverlay(int id, Vec position, float age, bool loop, int height = 1) const;
+    void drawUnitSpellOverlays(EntityId unit, Vec position, bool back, const CombatEffectSet *states = nullptr, int height = 1) const;
     void drawLighting() const;
     void drawNpcAlert(const WorldObject &npc, Vec at, bool back) const;
     void drawShrineOverlays(int code, Vec at, int height, bool back) const;

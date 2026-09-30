@@ -180,9 +180,13 @@ void SceneView::drawSkillControls(Vec mouse) const {
             else if (value.effect == SkillBehavior::Inferno)
                 detail = "Mana/sec " + std::string(TextFormat("%.1f", value.manaCost * 12.5f)) +
                     " / Damage/sec " + std::string(TextFormat("%.1f-%.1f", value.minimumDamage * 25, value.maximumDamage * 25));
-            else if (value.appliedEffect)
+            else if (value.appliedEffect) {
                 detail += " / Defense +" + std::to_string(value.appliedEffect->modifiers.combat.defensePercent) + "% / " +
                     std::to_string(value.appliedEffect->duration.value() / 25) + " seconds";
+                if (value.effect == SkillBehavior::ShiverArmor)
+                    detail += " / Retaliate cold " + std::string(TextFormat("%.1f-%.1f", value.minimumDamage, value.maximumDamage)) +
+                        " / Chill " + std::string(TextFormat("%.1fs", value.coldDuration));
+            }
             else if (value.effect == SkillBehavior::StaticField)
                 detail += " / " + std::to_string(int(value.staticPercent)) + "% current life, range " +
                     std::to_string(int(value.staticRadius));

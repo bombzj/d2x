@@ -93,9 +93,15 @@ void Simulation::resolveMonsterAttack(Enemy &enemy, int modeOverride, bool proje
         const int chance = physicalHitChance(accuracy->level,
             int(int64_t(accuracy->attackRating) * std::max(0, 100 + auraRating) / 100),
             target.stats.level, target.stats.attributes.defense);
-        if (limitedRandom(enemy.combatRandom, 100) >= unsigned(chance)) return;
+        if (limitedRandom(enemy.combatRandom, 100) >= unsigned(chance)) {
+            if (!projectile) triggerCombatEffects(defender, CombatEffectEvent::AttackedInMelee, enemy.id);
+            return;
+        }
     }
-    if (target.stats.block > 0 && limitedRandom(*target.random, 100) < unsigned(target.stats.block)) return;
+    if (target.stats.block > 0 && limitedRandom(*target.random, 100) < unsigned(target.stats.block)) {
+        if (!projectile) triggerCombatEffects(defender, CombatEffectEvent::AttackedInMelee, enemy.id);
+        return;
+    }
     float damage = monsterDefinition(enemy.kind).damage;
     const auto combat = monsterNormalCombat_
                             ? monsterNormalCombat_(enemy.identity, state_.area.region) : std::nullopt;
@@ -129,6 +135,7 @@ void Simulation::resolveMonsterAttack(Enemy &enemy, int modeOverride, bool proje
         enemy.combatEffects.modifiers(state_.frame).combat.damagePercent;
     damage = float(int64_t(damage * 256.f) * std::max(0, 100 + damagePercent) / 100) / 256.f;
     const float previousLife = *target.life;
+    if (!projectile) triggerCombatEffects(defender, CombatEffectEvent::AttackedInMelee, enemy.id);
     const float physicalDealt = dealDamage({enemy.id, defender, damage, MonsterDamageType::Physical, 0, false, false});
     if (!projectile && physicalDealt > 0 && enemy.hp > 0)
         triggerCombatEffects(defender, CombatEffectEvent::DamagedInMelee, enemy.id);

@@ -87,7 +87,10 @@ void Simulation::meleeDamage(EntityId defender, const WeaponDamage &weapon) {
     const MonsterDefense defense{target.stats.level, target.stats.attributes.defense,
         target.stats.demon, target.stats.undead, target.stats.boss};
     if (uint32_t(player.combatRandom) % 100 >= unsigned(weaponHitChance(player.level,
-        weapon.baseAttackRating, weapon.attackRatingPercent, weapon.target, defense, target.stats.rank))) return;
+        weapon.baseAttackRating, weapon.attackRatingPercent, weapon.target, defense, target.stats.rank))) {
+        triggerCombatEffects(defender, CombatEffectEvent::AttackedInMelee, player.id);
+        return;
+    }
     rollRandom(player.combatRandom);
     const int targetBonus = (defense.demon ? std::max(0, weapon.target.demonDamage) : 0) +
         (defense.undead ? std::max(0, weapon.target.undeadDamage + (weapon.blunt ? 50 : 0)) : 0);
