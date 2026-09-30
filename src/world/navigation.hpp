@@ -80,6 +80,9 @@ struct Grid {
     }
     bool segment(Vec a, Vec b, EntityId ignoredObject = {}, MovementCollisionRule rule = {}) const;
     bool collisionSegment(Vec a, Vec b, uint16_t mask) const;
+    // Object interaction uses the native shortened integer ray and flying
+    // player mask; approaching it still uses the full walking footprint.
+    bool interactionSegment(Vec a, Vec b, int targetSize, EntityId target) const;
     bool missileSegment(Vec a, Vec b, MissileCollisionRule rule) const;
     bool lightSegment(Vec a, Vec b) const;
     Bytes reachableFrom(Vec origin, MovementCollisionRule rule = {}) const;

@@ -62,7 +62,9 @@ void main() {
     vec3 light = ambient;
     if (all(greaterThanEqual(position, vec2(0.0))) &&
         all(lessThan(position, vec2(textureSize(texture0, 0)))))
-        light = max(light, texture(texture0, position / vec2(textureSize(texture0, 0))).rgb);
+        // Light texels are subtile corners, not centers: keep the integer
+        // world corner aligned with its texel center for Gouraud sampling.
+        light = max(light, texture(texture0, (position + 0.5) / vec2(textureSize(texture0, 0))).rgb);
     vec3 background = texelFetch(destination, ivec2(gl_FragCoord.xy), 0).rgb;
     // D2Gfx CmnSubtile: uint8 intensity >> 3 selects PL2 Shadows[0..31].
     // The software scalar table does not establish hardware colored-light

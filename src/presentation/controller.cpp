@@ -113,12 +113,32 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
             return true;
         releaseAfterLoad_ = false;
     }
-    if (!input.leftHeld && !input.leftReleased)
+    if (input.leftPressed || (!input.leftHeld && !input.leftReleased))
         inventoryClick_ = false;
-    if (!input.rightHeld)
+    if (input.rightPressed || !input.rightHeld)
         inventoryRight_ = false;
     if (!input.leftHeld)
         pickupClick_ = false;
+    // Diablerie PlayerController::FlushInput / Update (MIT): a consumed
+    // gesture must wait for mouse-up before the held button can drive the
+    // world again. Capture against the UI before close actions change its
+    // visibility or shift the camera; keep inventory drag handling live.
+    if (input.focused && input.insideViewport && (input.leftPressed || input.rightPressed)) {
+        const bool portrait = view_.hirelingPortraitVisible() &&
+            (CheckCollisionPointRec(rv(input.mouse), hirelingPortraitBounds()) ||
+             CheckCollisionPointRec(rv(input.mouse), hirelingLifeBounds()));
+        const bool questNotice = ui.questNotice && !ui.questOpen && !ui.characterOpen &&
+            !ui.inventory.storage && !ui.inventory.cubeOpen &&
+            CheckCollisionPointRec(rv(input.mouse), questNoticeBounds());
+        const bool onUi = ui.blocksWorld() || ui.skillPicker || ui.inventory.split ||
+            ui.inventory.goldDialog || ui.inventory.identify || hudSurface(input.mouse) ||
+            !CheckCollisionPointRec(rv(input.mouse), view_.worldViewport()) || portrait || questNotice ||
+            (ui.miniPanelOpen && view_.miniPanelAt(input.mouse).has_value());
+        if (onUi) {
+            inventoryClick_ = inventoryClick_ || input.leftPressed;
+            inventoryRight_ = inventoryRight_ || input.rightPressed;
+        }
+    }
     movement_ = {};
     if (!input.focused) {
         ui.inventory.cancelGesture();
@@ -549,7 +569,11 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
                 if (*button == 2) action.skillTree = true;
                 if (*button == 3) action.automap = true;
                 if (*button == 5) action.quests = true;
-                return handle(action, elapsed);
+                const bool handled = handle(action, elapsed);
+                // The synthetic shortcut has no mouse state. Preserve the
+                // original mini-panel press until the physical release.
+                inventoryClick_ = true;
+                return handled;
             }
             return true;
         }

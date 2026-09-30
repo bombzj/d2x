@@ -126,6 +126,49 @@ bool Grid::collisionSegment(Vec a, Vec b, uint16_t mask) const {
             !((terrainCollision[size_t(y) * width + x] | objectMask(x, y)) & mask);
     }, false);
 }
+bool Grid::interactionSegment(Vec a, Vec b, int targetSize, EntityId target) const {
+    if (!std::isfinite(a.x) || !std::isfinite(a.y) || !std::isfinite(b.x) || !std::isfinite(b.y) ||
+        a.x < 0 || a.y < 0 || a.x >= width || a.y >= height ||
+        b.x < 0 || b.y < 0 || b.x >= width || b.y >= height || targetSize < 0) return false;
+    int x = int(std::floor(a.x)), y = int(std::floor(a.y));
+    int endX = int(std::floor(b.x)), endY = int(std::floor(b.y));
+    const int dx = std::abs(endX - x), dy = std::abs(endY - y);
+    const int size = std::min(targetSize, 2);
+    // UNITS_TestCollisionBetweenInteractingUnits removes only the interacting
+    // units. UNITS_TestCollision shortens the ray on its dominant axes by
+    // their sizes; the ray uses DOOR | MISSILE_BARRIER (0x0804), not walking.
+    if (dx + dy < 2 + size) return true;
+    if (dx >= dy) {
+        const int direction = endX <= x ? -1 : 1;
+        x += 2 * direction;
+        endX -= size * direction;
+    }
+    if (dy >= dx) {
+        const int direction = endY <= y ? -1 : 1;
+        y += 2 * direction;
+        endY -= size * direction;
+    }
+    // COLLISION_RayTrace advances the major axis first, with deviation=0.
+    // Walking's supercover/corner checks would reject valid hand interactions.
+    const int rayX = std::abs(endX - x), rayY = std::abs(endY - y);
+    const int stepX = endX >= x ? 1 : -1, stepY = endY >= y ? 1 : -1;
+    const int steps = std::max(rayX, rayY);
+    int deviation = 0;
+    for (int step = 0; step <= steps; ++step) {
+        if (movementMask(x, y, target) & 0x0804) return false;
+        if (step == steps) return true;
+        if (rayX >= rayY) {
+            x += stepX;
+            deviation += rayY;
+            if (deviation >= rayX) { y += stepY; deviation -= rayX; }
+        } else {
+            y += stepY;
+            deviation += rayX;
+            if (deviation >= rayY) { x += stepX; deviation -= rayY; }
+        }
+    }
+    return true;
+}
 bool Grid::lightSegment(Vec a, Vec b) const {
     auto delta = b - a;
     int steps = std::max(1, int(delta.length() * 5));

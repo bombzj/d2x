@@ -23,6 +23,7 @@ class LightingView {
     Texture2D lightMap_{};
     std::vector<Color> pixels_;
     mutable std::vector<Color> lightPixels_;
+    mutable std::vector<Color> cornerPixels_;
     // Transient presentation state, initialized as ENVIRONMENT_AllocDrlgEnvironment.
     struct Environment {
         int ticks = 0, cycle = 2, intensity = 128;

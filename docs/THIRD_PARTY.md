@@ -34,6 +34,8 @@
 鉴定光标、手持拾取、自动合并和随机机制的本地参考入口见 [背包](INVENTORY_UI.md)、[经典 HUD](CLASSIC_HUD.md) 与 [随机机制](RANDOMNESS.md)。使用当前 MPQ 的 Books／ItemTypes／DT1 权重，D2MOO 的 D2Seed、SUnit、ItemMode、Items、D2Inventory、DrlgRoomTile，以及 OpenDiablo2 AutoStack 字段说明；参考仓库和导出图不纳入源码提交。
 
 宝箱生成、上锁、背包钥匙扣减和普通／特殊箱掉落适配本地 D2MOO 固定 `5596f5c` 的 `OBJECTS/Objects.cpp`、`ObjMode.cpp`、`ITEMS/ItemMode.cpp`、`Items.cpp` 与 `D2Common/DataTbls/MonsterTbls.cpp`；实际 Lockable、MonLvl1、难度等级、TC、ItemRatio、品质、钥匙堆叠、原图／文本／声音仍读取当前 MPQ。`world/chest.cpp`、`content/chest_loot.cpp` 的规则来源适用上述 MIT 许可；覆盖、随机流适配和陷阱等限制见 [交互物体](INTERACTIVE_OBJECTS.md#上锁宝箱2026-09-27)。
+物件靠近／操作范围另适配同快照 `D2Common/src/Units/Units.cpp` 的 `D2Common_10399`、`UNITS_IsObjectInInteractRange`、`UNITS_TestCollisionBetweenInteractingUnits/UNITS_TestCollision` 及 `D2Collision.cpp::COLLISION_RayTrace`，入口核对 `D2Game/src/PLAYER/PlrMsg.cpp` 对象交互分支。对象尺寸仍读取当前 MPQ，规则和原距离表沿用 MIT 归属，未纳入参考仓库或原资源。
+
 
 祭坛效果适配本地 D2MOO 固定 `5596f5c` 的 `ObjMode.cpp` 各 SHRINES 处理器、`SUnitDmg.cpp` 状态及经验规则、`D2Common/Skills.cpp` 的 shrine_skill；怪物强化适配 `MonsterUnique.cpp` 的选取、初始化、光环和事件，以及 `MonsterSpawn.cpp` 的 setboss 直属随从关系。新增 C++ 类型及执行器使用当前 MPQ 的 Shrines、MonUMod、MonStats/2、MonType、MonLvl、DifficultyLevels、Skills、Missiles 与 States/Overlay；MIT 归属仍为上述 D2MOO 许可。限时祭坛／诅咒／光环图形播放速度仍沿 Diablerie `Overlay.Create` 的参考适配，未声称完整 D2Client 等价。覆盖与限制见 [交互物体](INTERACTIVE_OBJECTS.md) 和 [怪物](MONSTERS.md)。
 
@@ -45,7 +47,7 @@
 
 ## 格式研究参考
 
-全局照明核对同一 D2MOO 固定快照的 `D2Common/src/D2Environment.cpp`、`D2Game/src/GAME/Game.cpp::GAME_UpdateEnvironment`、`D2Gfx/src/CmnSubtile.cpp`：环境初始状态、25 Hz 推进、昼夜整数／色表计算及 PL2 `intensity >> 3` 行选择独立适配为 C++ 展示代码，沿用 MIT 归属。原表布局交叉核对 OpenD2 `Engine/Palette.hpp` 和 OpenDiablo2 `d2pl2`，物件直径／室内规则交叉核对其 ObjectDetailRecord／LevelDetailsRecord；原 PL2、Levels、Objects、Missiles、MonStats2、Overlay 全部读取当前 MPQ。四个本地参考未提供完整 D2Client 点光衰减／彩光合成程序，保留的空间适配与明确暂缓内容见 [照明](LIGHTING.md)。
+全局照明核对同一 D2MOO 固定快照的 `D2Common/src/D2Environment.cpp`、`D2Game/src/GAME/Game.cpp::GAME_UpdateEnvironment`、`D2Gfx/src/CmnSubtile.cpp`：环境初始状态、25 Hz 推进、昼夜整数／色表计算、PL2 `intensity >> 3` 行选择及高质量地板子块的四邻点整数平均独立适配为 C++ 展示代码，沿用 MIT 归属。原表布局交叉核对 OpenD2 `Engine/Palette.hpp` 和 OpenDiablo2 `d2pl2`，物件直径／室内规则交叉核对其 ObjectDetailRecord／LevelDetailsRecord；原 PL2、Levels、Objects、Missiles、MonStats2、Overlay 全部读取当前 MPQ。四个本地参考未提供完整 D2Client 点光衰减／彩光合成程序，保留的空间适配与明确暂缓内容见 [照明](LIGHTING.md)。
 
 投掷药瓶客户端特效另核对 [D2R Data Guide（Corrected）的 Missiles.txt](https://locbones.github.io/D2R_DataGuide/#missilestxt)：`CltHit03/HitOilPotion` 为主爆炸加 `CltHitSubMissile2/3` 随机二选一，`CltDo03/04` 分别说明尾迹和区域烟雾子效果。这里只借用函数／字段含义，所有 ID、图像和参数仍读取当前 1.13c MPQ，不复制第三方数据或代码。该说明没有给出旧客户端烟雾精确节拍和随机采样算法；不能据此宣称与原版逐帧一致。RandStart 与旧版 Phrozen Keep 指南的描述存在冲突，暂缓该字段；具体范围见 [通用攻击](COMMON_ATTACKS.md)。
 
@@ -96,11 +98,11 @@ D2S 读写依据本地 D2MOO 的 `PlrSave2.h/.cpp`、`Items.cpp`、`ItemMods.cpp
 药剂恢复量与基本行为参考 [暴雪 Arreat Summit 药剂资料](https://classic.battle.net/diablo2exp/items/potions.shtml)。该说明包含资料片年代的规则，不是经典试玩 1.04 的逐帧规范；项目使用的持续时长、混用队列和耐力增强详见 [腰带与物品使用](BELT_AND_CONSUMABLES.md)，不可据此宣称完整复刻。
 
 
-私人储物箱读取当前 MPQ 的原 DS1 私人箱实体及 b6 COF/DCC；资料片面板为 `data/global/ui/panel/tradestash.dc6`，格子取自 `inventory.txt` Big Bank Page 1；不再提供经典模式回退。操作距离取自 `objects.txt` bank 记录。文件清单与版本边界见 [MPQ 资源](MPQ_RESOURCES.md)。
+私人储物箱读取当前 MPQ 的原 DS1 私人箱实体及 b6 COF/DCC；资料片面板为 `data/global/ui/panel/tradestash.dc6`，格子取自 `inventory.txt` Big Bank Page 1；不再提供经典模式回退。操作范围使用 bank 的原 SizeX/SizeY 与 D2MOO 对象操作规则，OperateRange 不再作为中心圆半径。文件清单与版本边界见 [MPQ 资源](MPQ_RESOURCES.md)。
 
 经典 HUD 的分块、球体偏移和 Sky 调色板参考 OpenDiablo2 [hud.go](https://github.com/OpenDiablo2/OpenDiablo2/blob/master/d2game/d2player/hud.go)／`globeWidget.go`。任务日志三列两行、选中时保留全部任务、图像状态帧和只显示已到达幕页签参考 [quest_log.go](https://github.com/OpenDiablo2/OpenDiablo2/blob/master/d2game/d2player/quest_log.go)；外框五块拼接和包裹金币／关闭按钮位置另核对 `d2core/d2ui/frame.go`、`d2game/d2player/inventory.go`，固定提交 `7f92c57`，GPL-3.0。本项目用 C++ 实现布局、绘制与输入，运行时素材来自用户 MPQ；见 [CLASSIC_HUD.md](CLASSIC_HUD.md) 与 [ACT1_QUESTS.md](ACT1_QUESTS.md)。
 
-顶部怪物生命条的布局／透明度／字体核对本地 Diablerie `Assets/Prefabs/EnemyBar.prefab` 与 `Game/UI/EnemyBar.cs`；普通白／勇士蓝／暗金金色分类补充核对[暴雪怪物说明](https://classic.battle.net/diablo2exp/monsters/basics.shtml)，RGB 使用 OpenDiablo2 `color_tokens.go`。地面悬停参照 Diablerie `Engine/Entities/Loot.cs`、`Engine/Materials.cs`、`Resources/Shaders/Sprite.shader`；背包非模态及场景鼠标过滤核对其 `InventoryPanel.cs`、`PlayerController.cs`、`MouseSelection.cs`。这些客户端参考不等同原版逐像素规范。地面单格占位／放置掩码／空位搜索另核对 D2MOO `D2Game/src/ITEMS/Items.cpp`、`ItemMode.cpp`、`D2Common/src/D2Collision.cpp`、`Path/Path.cpp`、`Units/Units.cpp`；运行时物体与单位尺寸仍来自用户 MPQ，参考仓库和抽取图像不纳入提交。
+顶部怪物生命条的布局／透明度／字体核对本地 Diablerie `Assets/Prefabs/EnemyBar.prefab` 与 `Game/UI/EnemyBar.cs`；普通白／勇士蓝／暗金金色分类补充核对[暴雪怪物说明](https://classic.battle.net/diablo2exp/monsters/basics.shtml)，RGB 使用 OpenDiablo2 `color_tokens.go`。地面悬停参照 Diablerie `Engine/Entities/Loot.cs`、`Engine/Materials.cs`、`Resources/Shaders/Sprite.shader`；背包非模态及场景鼠标过滤核对其 `InventoryPanel.cs`、`PlayerController.cs`、`MouseSelection.cs`。面板关闭后的按住隔离另核对同一 MIT 快照 `PlayerController.FlushInput/Update` 的等待松键及 `Ui.Hover` 过滤；独立适配到现有 C++ 鼠标消费状态，在面板关闭／视口改变前记录按下归属。该参考提供输入规则证据，没有完整原版 D2Client 的窗口事件实现。这些客户端参考不等同原版逐像素规范。地面单格占位／放置掩码／空位搜索另核对 D2MOO `D2Game/src/ITEMS/Items.cpp`、`ItemMode.cpp`、`D2Common/src/D2Collision.cpp`、`Path/Path.cpp`、`Units/Units.cpp`；运行时物体与单位尺寸仍来自用户 MPQ，参考仓库和抽取图像不纳入提交。
 
 NPC 提示和初见依据 D2MOO 固定提交 `5596f5c` 的 `A1Intro.cpp`、`A1Q0.cpp`、第一幕各任务 `ActiveFilterCallback` 与 `PLAYER/PlrIntro.cpp`；区分按难度保存的介绍和本局 GUID 反应列表。原图来自当前 `Overlay.txt/npcalert` 和 `NPCSpeechBalloon.dcc`，高度取 `MonStats2.OverlayHeight`；字段含义交叉核对 [Diablo II Data File Guide](https://wolfieeiflow.github.io/diabloiidatafileguide/#overlaytxt)。用户本批八张原版图用于确认接任务、剩余数、清空待领奖、外框和角落地图。本地 `reference/` 中固定版本的开源项目没有原版 D2Client 完整字幕时序／重播间隔实现；这与用户 MPQ 的完整性无关，当前未声称逐帧一致。
 

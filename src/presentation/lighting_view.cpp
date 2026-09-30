@@ -29,7 +29,8 @@ Color environmentColor(int intensity, Color color) {
             uint8_t(intensity * color.b / 255), 255};
 }
 } // namespace
-LightingView::LightingView() : pixels_(maskSide * maskSide, BLACK), lightPixels_(pixels_.size(), BLACK) {
+LightingView::LightingView() : pixels_(maskSide * maskSide, BLACK), lightPixels_(pixels_.size(), BLACK),
+                               cornerPixels_(pixels_.size(), BLACK) {
     Image image = GenImageColor(maskSide, maskSide, BLACK);
     lightMap_ = LoadTextureFromImage(image);
     UnloadImage(image);
@@ -137,7 +138,24 @@ void LightingView::draw(const PaletteBlendView &palette, const LevelRecord &leve
     };
     add({player, float(std::clamp(radius, 1, 18)), WHITE}, true);
     for (const auto &source : lights) add(source, false);
-    UpdateTexture(lightMap_, lightPixels_.data());
+    // D2Gfx CmnSubtile.cpp's high-quality tile path takes the integer mean
+    // of four neighbouring light samples at each subtile corner before
+    // Gouraud interpolation. Keep that neighbourhood averaging in this
+    // view adapter too; raw radial samples expose sharp contour boundaries.
+    const auto sample = [&](int x, int y) {
+        return x >= 0 && y >= 0 && x < maskSide && y < maskSide
+            ? lightPixels_[size_t(y) * maskSide + x] : ambient;
+    };
+    for (int y = 0; y < maskSide; ++y)
+        for (int x = 0; x < maskSide; ++x) {
+            const auto a = sample(x - 1, y - 1), b = sample(x, y - 1);
+            const auto c = sample(x - 1, y), d = sample(x, y);
+            cornerPixels_[size_t(y) * maskSide + x] = {
+                uint8_t((int(a.r) + b.r + c.r + d.r) >> 2),
+                uint8_t((int(a.g) + b.g + c.g + d.g) >> 2),
+                uint8_t((int(a.b) + b.b + c.b + d.b) >> 2), 255};
+        }
+    UpdateTexture(lightMap_, cornerPixels_.data());
     palette.drawLighting(lightMap_, player, playerScreen, {float(originX_), float(originY_)}, zoom, ambient);
 }
 } // namespace d2x

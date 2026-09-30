@@ -8,6 +8,7 @@ class SceneController {
     SceneView &view_;
     float repeatClick_ = 0;
     bool pickupClick_ = false;
+    // UI owns a mouse press through release, even if its panel closes.
     bool inventoryClick_ = false;
     bool inventoryRight_ = false;
     bool releaseAfterLoad_ = false;
