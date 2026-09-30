@@ -102,7 +102,7 @@ std::vector<std::string> Archives::list(const std::string &pattern) const {
     for (auto h : handles) {
         SFILE_FIND_DATA info{};
         HANDLE f = SFileFindFirstFile(h, pattern.c_str(), &info, nullptr);
-        if (f == nullptr || f == INVALID_HANDLE_VALUE)
+        if (f == nullptr)
             continue;
         do {
             result.insert(normalize(info.cFileName));
