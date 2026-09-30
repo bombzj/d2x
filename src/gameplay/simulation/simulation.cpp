@@ -32,7 +32,7 @@ void Simulation::enterArea(const Grid &grid, const RoomLayout &rooms, Vec spawn,
     safeZone_ = safeZone;
     state_.area = std::move(area);
     clearActions();
-    state_.player.pos = state_.player.previous = grid.walkable(spawn) ? spawn : grid.nearest(spawn);
+    state_.player.pos = state_.player.previous = grid.walkable(spawn, playerMovement) ? spawn : grid.nearest(spawn, playerMovement);
     if (!state_.area.initialized) {
         state_.area.pendingSpawns.assign(monsters.begin(), monsters.end());
         state_.area.initialized = true;

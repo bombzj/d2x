@@ -19,7 +19,7 @@ void Simulation::moveTo(Vec target) {
     p.attackPosition.reset();
     p.throwAttack = false;
     p.leftHandAttack = false;
-    p.route = grid_->path(p.pos, target, true);
+    p.route = grid_->path(p.pos, target, true, playerMovement);
     state_.message = p.route.empty() ? "That path is blocked" : "";
 }
 void Simulation::updatePlayer(float dt, Vec keyboard) {
@@ -52,7 +52,7 @@ void Simulation::updatePlayer(float dt, Vec keyboard) {
                     p.attackPosition.reset();
                 }
             } else if (p.route.empty() || (p.route.back() - aim).length() > 1)
-                p.route = grid_->path(p.pos, aim);
+                p.route = grid_->path(p.pos, aim, false, playerMovement);
         }
     }
     if (keyboard.length() > .1f && p.castTime <= 0 &&
@@ -82,17 +82,17 @@ void Simulation::updatePlayer(float dt, Vec keyboard) {
     if (step.length() > .1f) {
         float distance = followingRoute ? std::min(dt * speed, remaining) : dt * speed;
         Vec next = p.pos + step * distance;
-        if (!followingRoute && distance > .0001f && !grid_->segment(p.pos, next)) {
+        if (!followingRoute && distance > .0001f && !grid_->segment(p.pos, next, {}, playerMovement)) {
             float clear = 0, blocked = distance;
             for (int iteration = 0; iteration < 12; ++iteration) {
                 const float middle = (clear + blocked) * .5f;
-                if (grid_->segment(p.pos, p.pos + step * middle)) clear = middle;
+                if (grid_->segment(p.pos, p.pos + step * middle, {}, playerMovement)) clear = middle;
                 else blocked = middle;
             }
             distance = clear;
             next = p.pos + step * distance;
         }
-        if (distance > 0.0001f && grid_->segment(p.pos, next)) {
+        if (distance > 0.0001f && grid_->segment(p.pos, next, {}, playerMovement)) {
             p.pos = next;
             if (followingRoute && distance >= remaining)
                 p.route.pop_front();

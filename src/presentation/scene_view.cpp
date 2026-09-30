@@ -97,6 +97,7 @@ void SceneView::notice(std::string text, bool error) {
     view_.noticeTime = 4;
 }
 void SceneView::sessionRestored() {
+    lighting_.invalidate();
     clientMissiles_.clear();
     projectileVisualRandom_ = session_.visualSeed();
     exploredAutomap_.clear();

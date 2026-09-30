@@ -41,13 +41,18 @@ struct WorldObject {
     std::array<ObjectAnimationRule, 8> animationRules{};
     int collisionWidth = 0, collisionHeight = 0;
     uint16_t collisionMask = 0;
-    std::array<bool, 8> hasCollision{};
+    std::array<bool, 8> hasCollision{}, blocksLight{};
+    // Objects.txt screen offsets never alter the authored subtile or footprint.
+    Vec drawOffset;
+    bool draw = true, drawUnder = false;
+    std::array<int, 8> orderFlags{};
     int modeAt(float time) const;
     std::array<float, 3> waypointFps{};
     // Authored DS1 map AI path and current NPC motion. Only NPCs with original
     // path nodes and a MonStats walking AI may move.
     struct NpcPathNode { Vec position; int action = 1; };
     std::string npcClass;
+    MovementCollisionRule npcMovement;
     std::vector<NpcPathNode> npcPath;
     std::deque<Vec> npcRoute;
     Vec npcHome;

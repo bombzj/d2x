@@ -45,11 +45,16 @@ bool clearSegment(Vec a, Vec b, int width, int height, Clear clear, bool blockCo
 void Grid::setObstacles(std::vector<Obstacle> next) {
     if (next == obstacles) return;
     obstacles = std::move(next);
+    ++obstacleRevision;
     std::fill(objectCollision.begin(), objectCollision.end(), 0);
+    std::fill(objectLightBlocked.begin(), objectLightBlocked.end(), 0);
     for (const auto &obstacle : obstacles)
         for (int y = std::max(0, obstacle.y); y < std::min(height, obstacle.y + obstacle.height); ++y)
-            for (int x = std::max(0, obstacle.x); x < std::min(width, obstacle.x + obstacle.width); ++x)
-                objectCollision[size_t(y) * width + x] |= obstacle.mask;
+            for (int x = std::max(0, obstacle.x); x < std::min(width, obstacle.x + obstacle.width); ++x) {
+                const size_t index = size_t(y) * width + x;
+                objectCollision[index] |= obstacle.mask;
+                if (obstacle.blocksLight) objectLightBlocked[index] = 1;
+            }
 }
 uint16_t Grid::objectMask(int x, int y, EntityId ignored) const {
     if (x < 0 || y < 0 || x >= width || y >= height) return 0xffff;
@@ -61,10 +66,41 @@ uint16_t Grid::objectMask(int x, int y, EntityId ignored) const {
             mask |= obstacle.mask;
     return mask;
 }
-bool Grid::segment(Vec a, Vec b, EntityId ignoredObject) const {
+uint16_t Grid::movementMask(int x, int y, EntityId ignored) const {
+    for (const auto &neighbour : neighbours) {
+        const int lateral = neighbour.side % 2 ? y : x;
+        const int normal = neighbour.side % 2 ? x : y;
+        const bool outside = neighbour.side == 1 || neighbour.side == 2
+            ? normal < neighbour.plane : normal >= neighbour.plane;
+        if (!outside || lateral < neighbour.start || lateral >= neighbour.end) continue;
+        const int nx = x + neighbour.offsetX, ny = y + neighbour.offsetY;
+        const auto &other = *neighbour.grid;
+        if (nx >= 0 && ny >= 0 && nx < other.width && ny < other.height) {
+            const size_t index = size_t(ny) * other.width + nx;
+            return other.terrainCollision[index] | other.objectMask(nx, ny, ignored) |
+                (other.blocked[index] && !(other.terrainCollision[index] & 0x09) ? 0x01 : 0);
+        }
+    }
+    if (x < 0 || y < 0 || x >= width || y >= height) return 0xffff;
+    const size_t index = size_t(y) * width + x;
+    // Coarse outdoor planning grids have blocked cells without DT1 flags.
+    return terrainCollision[index] | objectMask(x, y, ignored) |
+        (blocked[index] && !(terrainCollision[index] & 0x09) ? 0x01 : 0);
+}
+bool Grid::movementClear(int x, int y, MovementCollisionRule rule, EntityId ignored) const {
+    if (rule.size < 0 || rule.size > 3) return false;
+    const auto clear = [&](int column, int row) { return !(movementMask(column, row, ignored) & rule.mask); };
+    if (!clear(x, y)) return false;
+    if (rule.size <= 1) return true;
+    // D2Collision COLLISION_CheckMaskWithPattern: small paths are a cross,
+    // big paths a 3x3 square. Never dilate/overwrite the underlying DT1 data.
+    if (!clear(x - 1, y) || !clear(x + 1, y) || !clear(x, y - 1) || !clear(x, y + 1)) return false;
+    return rule.size == 2 || (clear(x - 1, y - 1) && clear(x + 1, y - 1) &&
+        clear(x - 1, y + 1) && clear(x + 1, y + 1));
+}
+bool Grid::segment(Vec a, Vec b, EntityId ignoredObject, MovementCollisionRule rule) const {
     return clearSegment(a, b, width, height, [&](int x, int y) {
-        return x >= 0 && y >= 0 && x < width && y < height && !blocked[size_t(y) * width + x] &&
-            !(objectMask(x, y, ignoredObject) & 0x0c00);
+        return movementClear(x, y, rule, ignoredObject);
     }, true);
 }
 bool Grid::missileSegment(Vec a, Vec b, MissileCollisionRule rule) const {
@@ -101,14 +137,15 @@ bool Grid::lightSegment(Vec a, Vec b) const {
         int x = int(std::floor(p.x)), y = int(std::floor(p.y));
         if (x == targetX && y == targetY)
             return true;
-        if (x < 0 || y < 0 || x >= width || y >= height || lightBlocked[y * width + x])
+        if (x < 0 || y < 0 || x >= width || y >= height || lightBlocked[y * width + x] ||
+            objectLightBlocked[size_t(y) * width + x])
             return false;
     }
     return true;
 }
-Bytes Grid::reachableFrom(Vec origin) const {
+Bytes Grid::reachableFrom(Vec origin, MovementCollisionRule rule) const {
     Bytes reachable(blocked.size());
-    if (!walkable(origin)) return reachable;
+    if (!walkable(origin, rule)) return reachable;
     std::vector<int> pending{int(origin.y) * width + int(origin.x)};
     reachable[size_t(pending.front())] = 1;
     for (size_t cursor = 0; cursor < pending.size(); ++cursor) {
@@ -116,7 +153,7 @@ Bytes Grid::reachableFrom(Vec origin) const {
         for (const auto offset : {std::pair{0, 1}, std::pair{1, 0}, std::pair{0, -1}, std::pair{-1, 0}}) {
             const int column = cell % width + offset.first;
             const int row = cell / width + offset.second;
-            if (!walkable(column, row)) continue;
+            if (!walkable(column, row, rule)) continue;
             const int next = row * width + column;
             if (reachable[size_t(next)]) continue;
             reachable[size_t(next)] = 1;
@@ -125,13 +162,13 @@ Bytes Grid::reachableFrom(Vec origin) const {
     }
     return reachable;
 }
-Vec Grid::nearest(Vec p) const {
+Vec Grid::nearest(Vec p, MovementCollisionRule rule) const {
     int px = std::clamp(int(p.x), 0, std::max(0, width - 1)),
         py = std::clamp(int(p.y), 0, std::max(0, height - 1));
     for (int radius = 0; radius < std::max(width, height); radius++)
         for (int y = py - radius; y <= py + radius; y++)
             for (int x = px - radius; x <= px + radius; x++)
-                if ((std::abs(x - px) == radius || std::abs(y - py) == radius) && walkable(x, y))
+                if ((std::abs(x - px) == radius || std::abs(y - py) == radius) && walkable(x, y, rule))
                     return {x + .5f, y + .5f};
     return p;
 }
@@ -141,7 +178,7 @@ Vec Grid::inspectionArrival() const {
     size_t largest = 0;
     Vec result{};
     for (int start = 0; start < int(blocked.size()); ++start) {
-        if (!walkable(start % width, start / width) || visited[start])
+        if (!walkable(start % width, start / width, playerMovement) || visited[start])
             continue;
         component.clear();
         component.push_back(start);
@@ -153,7 +190,7 @@ Vec Grid::inspectionArrival() const {
             bool interior = true;
             for (int dy = -1; dy <= 1; ++dy)
                 for (int dx = -1; dx <= 1; ++dx)
-                    interior &= walkable(x + dx, y + dy);
+                    interior &= walkable(x + dx, y + dy, playerMovement);
             float dx = x + .5f - width * .5f, dy = y + .5f - height * .5f;
             float score = dx * dx + dy * dy + (interior ? 0.f : float(width * width + height * height));
             if (score < best) {
@@ -161,7 +198,7 @@ Vec Grid::inspectionArrival() const {
                 point = {x + .5f, y + .5f};
             }
             for (const auto &[ox, oy] : {std::pair{-1, 0}, {1, 0}, {0, -1}, {0, 1}}) {
-                if (!walkable(x + ox, y + oy))
+                if (!walkable(x + ox, y + oy, playerMovement))
                     continue;
                 int next = (y + oy) * width + x + ox;
                 if (!visited[next]) {
@@ -179,12 +216,12 @@ Vec Grid::inspectionArrival() const {
         throw std::runtime_error("No walkable scene arrival");
     return result;
 }
-std::deque<Vec> Grid::path(Vec from, Vec to, bool allowPartial) const {
+std::deque<Vec> Grid::path(Vec from, Vec to, bool allowPartial, MovementCollisionRule rule) const {
     std::deque<Vec> out;
-    if (!walkable(from) || !std::isfinite(to.x) || !std::isfinite(to.y) ||
-        to.x < 0 || to.y < 0 || to.x >= width || to.y >= height || (!allowPartial && !walkable(to)))
+    if (!walkable(from, rule) || !std::isfinite(to.x) || !std::isfinite(to.y) ||
+        to.x < 0 || to.y < 0 || to.x >= width || to.y >= height || (!allowPartial && !walkable(to, rule)))
         return out;
-    if (segment(from, to)) {
+    if (segment(from, to, {}, rule)) {
         out.push_back(to);
         return out;
     }
@@ -199,13 +236,13 @@ std::deque<Vec> Grid::path(Vec from, Vec to, bool allowPartial) const {
         return std::max(dx, dy) + .41421356f * std::min(dx, dy);
     };
     float nearestPossible = 0;
-    if (allowPartial && !walkable(to)) {
+    if (allowPartial && !walkable(to, rule)) {
         nearestPossible = std::numeric_limits<float>::infinity();
         const int gx = goal % width, gy = goal / width;
         for (int radius = 1; radius <= std::max(width, height) && radius <= nearestPossible; ++radius)
             for (int y = std::max(0, gy - radius); y <= std::min(height - 1, gy + radius); ++y)
                 for (int x = std::max(0, gx - radius); x <= std::min(width - 1, gx + radius); ++x)
-                    if ((std::abs(x - gx) == radius || std::abs(y - gy) == radius) && walkable(x, y))
+                    if ((std::abs(x - gx) == radius || std::abs(y - gy) == radius) && walkable(x, y, rule))
                         nearestPossible = std::min(nearestPossible, heuristic(y * width + x));
     }
     costs[start] = 0;
@@ -228,9 +265,9 @@ std::deque<Vec> Grid::path(Vec from, Vec to, bool allowPartial) const {
                 if (!dx && !dy)
                     continue;
                 int x = cur % width + dx, y = cur / width + dy;
-                if (!walkable(x, y))
+                if (!walkable(x, y, rule))
                     continue;
-                if (dx && dy && (!walkable(x - dx, y) || !walkable(x, y - dy)))
+                if (dx && dy && (!walkable(x - dx, y, rule) || !walkable(x, y - dy, rule)))
                     continue;
                 int next = y * width + x;
                 float cost = costs[cur] + (dx && dy ? 1.41421356f : 1.f);
@@ -254,9 +291,9 @@ std::deque<Vec> Grid::path(Vec from, Vec to, bool allowPartial) const {
     std::deque<Vec> smooth;
     Vec anchor = from;
     while (!out.empty()) {
-        if (!segment(anchor, out.front())) return {};
+        if (!segment(anchor, out.front(), {}, rule)) return {};
         size_t far = 0;
-        while (far + 1 < out.size() && segment(anchor, out[far + 1]))
+        while (far + 1 < out.size() && segment(anchor, out[far + 1], {}, rule))
             far++;
         anchor = out[far];
         smooth.push_back(anchor);

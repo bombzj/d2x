@@ -9,11 +9,13 @@ std::optional<MonsterSpawn> Simulation::nestSpawn(
     if (!source || !ai || ai->kind != MonsterAiKind::FoulCrowNest ||
         source->mode != "S1" || nest.aiLoop >= ai->params[2] ||
         state_.area.enemies.size() + queued.size() >= 65536) return std::nullopt;
+    Enemy child;
+    child.identity.monster = source->child;
     const std::array<Vec, 9> offsets{{{0, 3}, {1, 3}, {-1, 3}, {0, 2},
                                       {2, 2}, {-2, 2}, {2, 3}, {-2, 3}, {0, 4}}};
     for (const Vec offset : offsets) {
         const Vec position = nest.pos + offset;
-        if (!grid_->walkable(position) ||
+        if (!grid_->walkable(position, spawnRule(child)) ||
             (position - state_.player.pos).length() < .8f) continue;
         bool occupied = false;
         for (const auto &other : state_.area.enemies)

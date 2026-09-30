@@ -68,6 +68,14 @@ class Simulation {
     std::function<std::optional<WeaponAttackTiming>(const WeaponDamage &, bool, bool)> attackTiming_;
     std::function<SkillCastSpec(EntityId, int, int)> resolveMissileSkill_;
     std::function<int(const Enemy &)> monsterSize_;
+    std::function<MovementCollisionRule(const Enemy &)> monsterMovementRule_;
+    std::function<MovementCollisionRule(const Enemy &)> monsterSpawnRule_;
+    MovementCollisionRule movementRule(const Enemy &enemy) const {
+        return monsterMovementRule_ ? monsterMovementRule_(enemy) : MovementCollisionRule{0xffff, -1};
+    }
+    MovementCollisionRule spawnRule(const Enemy &enemy) const {
+        return monsterSpawnRule_ ? monsterSpawnRule_(enemy) : MovementCollisionRule{0xffff, -1};
+    }
     std::function<std::optional<MonsterAccuracy>(const Enemy &, RegionId, int)> monsterAccuracy_;
     std::function<std::optional<MonsterDefense>(const Enemy &, RegionId)> monsterDefense_;
     std::function<std::optional<float>(const Enemy &)> monsterWalkSpeed_;

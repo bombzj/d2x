@@ -116,6 +116,7 @@ class SceneAssets {
         std::array<int, 4> heights{};
         int frames = 0, trans = 5;
         float fps = 0;
+        bool preDraw = false;
     } npcAlert;
     std::map<int, std::array<OverlayArt, 2>> shrineOverlays, combatStateOverlays;
     SceneAssets(Archives &archives, const GameSession &session);

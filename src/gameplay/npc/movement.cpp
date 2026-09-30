@@ -36,7 +36,7 @@ void GameSession::advanceNpcPaths(float dt) {
                 npc.npcWait = 8.f / 25.f;
                 continue;
             }
-            npc.npcRoute = grid.path(npc.pos, target);
+            npc.npcRoute = grid.path(npc.pos, target, false, npc.npcMovement);
             // A map AI action lasts at most 12 thoughts in the original NPC AI.
             // Keep the route inside that budget instead of crossing the whole map.
             if (npc.npcRoute.size() > 12)
@@ -59,8 +59,8 @@ void GameSession::advanceNpcPaths(float dt) {
         float distance = delta.length();
         npc.npcLook = delta.unit();
         Vec next = npc.pos + npc.npcLook * std::min(distance, npc.npcVelocity * dt);
-        if ((next - npc.npcHome).length() > 8.f || !grid.walkable(next) ||
-            !grid.segment(npc.pos, next)) {
+        if ((next - npc.npcHome).length() > 8.f || !grid.walkable(next, npc.npcMovement) ||
+            !grid.segment(npc.pos, next, {}, npc.npcMovement)) {
             npc.npcRoute.clear();
             npc.npcWait = 120.f / 25.f;
             continue;

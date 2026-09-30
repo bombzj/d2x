@@ -27,7 +27,7 @@ const Sprite *SceneView::groundItemSprite(const ItemInstance &item) const {
     return anim.frame(0, index);
 }
 Rectangle SceneView::lootBounds(const ItemInstance &item) const {
-    auto p = screen(std::get<GroundLocation>(item.location).position);
+    auto p = screen(staticUnitPosition(std::get<GroundLocation>(item.location).position));
     if (auto frame = groundItemSprite(item))
         return {p.x + frame->x - 5, p.y + frame->y - 5, float(frame->texture.width + 10),
                 float(frame->texture.height + 10)};
@@ -35,7 +35,7 @@ Rectangle SceneView::lootBounds(const ItemInstance &item) const {
 }
 void SceneView::drawGroundItem(EntityId id, bool highlighted) const {
     const auto &item = *session_.inventory().item(id);
-    auto p = screen(std::get<GroundLocation>(item.location).position);
+    auto p = screen(staticUnitPosition(std::get<GroundLocation>(item.location).position));
     if (p.x < -80 || p.x > W + 80 || p.y < -80 || p.y > H - HUD + 80)
         return;
     // Diablerie Loot.selected / Materials.SetRendererHighlighted. Preserve the MPQ
@@ -47,7 +47,7 @@ std::vector<SceneView::LootLabel> SceneView::lootLabels(Vec mouse) const {
     const auto &inventory = session_.inventory();
     for (auto id : inventory.groundItems(session_.region().definition.id)) {
         const auto &item = *inventory.item(id);
-        auto ground = screen(std::get<GroundLocation>(item.location).position);
+        auto ground = screen(staticUnitPosition(std::get<GroundLocation>(item.location).position));
         if (ground.x < 0 || ground.x > W || ground.y < 70 || ground.y > H - HUD - 38)
             continue;
         std::string text = itemName(item);
@@ -93,7 +93,7 @@ std::optional<ItemHandle> SceneView::lootAt(Vec mouse, bool labelsOnly) const {
             const auto &item = *inventory.item(id);
             if (!CheckCollisionPointRec(rv(mouse), lootBounds(item)))
                 continue;
-            auto p = screen(std::get<GroundLocation>(item.location).position);
+            auto p = screen(staticUnitPosition(std::get<GroundLocation>(item.location).position));
             float candidate = (p - mouse).length();
             if (candidate < distance) {
                 closest = item.handle();

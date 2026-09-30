@@ -87,7 +87,7 @@ void GameSession::advanceHireling(float dt) {
         return;
     }
     auto open = [&](Vec position) {
-        if (!map().grid.walkable(position)) return false;
+        if (!map().grid.walkable(position, actor->movementRule())) return false;
         if (missileDistance(position, player.pos) < 2 &&
             (position - player.pos).length() <= (merc.pos - player.pos).length()) return false;
         for (const auto &enemy : state().area.enemies)
@@ -119,7 +119,7 @@ void GameSession::advanceHireling(float dt) {
     const bool hurry = ownerDistance > 24 || (ownerDistance > 16 && player.moving);
     merc.thinkTimer = std::max(0.f, merc.thinkTimer - dt);
     if (hurry && (merc.route.empty() || (merc.route.back() - player.pos).length() > 16)) {
-        if (auto position = around(player.pos, 4, merc.pos)) merc.route = map().grid.path(merc.pos, *position);
+        if (auto position = around(player.pos, 4, merc.pos)) merc.route = map().grid.path(merc.pos, *position, false, actor->movementRule());
     }
     if (!merc.route.empty()) {
         while (!merc.route.empty() && (merc.route.front() - merc.pos).length() < .01f) merc.route.pop_front();
@@ -132,7 +132,7 @@ void GameSession::advanceHireling(float dt) {
             rate = monsterMovementPercent(*actor, state().population.difficulty, rate, merc.chill > 0);
             const float speed = float((*actor->walkVelocity << 8) * rate / 100) * 25.f / 4096.f;
             const Vec next = merc.pos + offset.unit() * std::min(offset.length(), speed * dt);
-            if (map().grid.segment(merc.pos, next) && open(next)) {
+            if (map().grid.segment(merc.pos, next, {}, actor->movementRule()) && open(next)) {
                 merc.look = offset.unit(); merc.pos = next;
                 if (!merc.moving) merc.animationTime = 0;
                 merc.moving = true;
@@ -167,9 +167,9 @@ void GameSession::advanceHireling(float dt) {
         merc.attackBias = attackNow ? 0 : merc.attackBias + 10;
         if (closest < 4 && limitedRandom(merc.combatRandom, 100) < 50) {
             if (ownerDistance > 4)
-                if (auto position = around(player.pos, 4, *target.position)) merc.route = map().grid.path(merc.pos, *position);
+                if (auto position = around(player.pos, 4, *target.position)) merc.route = map().grid.path(merc.pos, *position, false, actor->movementRule());
             if (merc.route.empty())
-                if (auto position = around(merc.pos, 4, *target.position)) merc.route = map().grid.path(merc.pos, *position);
+                if (auto position = around(merc.pos, 4, *target.position)) merc.route = map().grid.path(merc.pos, *position, false, actor->movementRule());
             if (!merc.route.empty()) return;
         }
         if (!attackNow) { merc.thinkTimer = 10.f / 25.f; return; }
@@ -187,6 +187,6 @@ void GameSession::advanceHireling(float dt) {
         return;
     }
     if (ownerDistance <= 1 || limitedRandom(merc.combatRandom, 100) < 5)
-        if (auto position = around(player.pos, 4, merc.pos)) merc.route = map().grid.path(merc.pos, *position);
+        if (auto position = around(player.pos, 4, merc.pos)) merc.route = map().grid.path(merc.pos, *position, false, actor->movementRule());
 }
 } // namespace d2x

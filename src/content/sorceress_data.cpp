@@ -132,6 +132,7 @@ void loadSorceressEffects(SkillCatalog &catalog, const DataTable &skills,
             visual.frames = required(overlays, overlayRow, "Frames");
             visual.fps = float(required(overlays, overlayRow, "AnimRate"));
             visual.trans = required(overlays, overlayRow, "Trans");
+            visual.preDraw = overlays.number(overlayRow, "PreDraw").value_or(0) != 0;
             visual.offset = {-float(required(overlays, overlayRow, "Xoffset")),
                               float(required(overlays, overlayRow, "Yoffset"))};
             visual.art = "data/global/overlays/" + lower(overlays.value(overlayRow, "Filename")) + ".dcc";

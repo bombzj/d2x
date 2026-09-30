@@ -31,13 +31,13 @@ void SceneController::click(Vec mouse) {
     auto &ui = view_.ui();
     view_.cancelNpcDialogue();
     if (auto portal = session_.cainPortalPosition(); portal &&
-        (view_.screen(*portal) - Vec{0, 40} - mouse).length() < 45) {
+        (view_.screen(staticUnitPosition(*portal)) - Vec{0, 40} - mouse).length() < 45) {
         session_.submit(UseCainPortal{});
         pickupClick_ = true;
         return;
     }
     for (const auto &portal : session_.portals(session_.region().definition.id)) {
-        if ((view_.screen(portal.position) - Vec{0, 40} - mouse).length() >= 45) continue;
+        if ((view_.screen(staticUnitPosition(portal.position)) - Vec{0, 40} - mouse).length() >= 45) continue;
         session_.submit(UseTownPortal{portal.revision});
         pickupClick_ = true;
         return;

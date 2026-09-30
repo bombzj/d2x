@@ -36,6 +36,7 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
         npcAlert.frames = overlays.number(row, "Frames").value_or(0);
         npcAlert.fps = overlays.number(row, "AnimRate").value_or(0);
         npcAlert.trans = overlays.number(row, "Trans").value_or(5);
+        npcAlert.preDraw = overlays.number(row, "PreDraw").value_or(0) != 0;
         npcAlert.offset = {float(overlays.number(row, "Xoffset").value_or(0)),
                            float(overlays.number(row, "Yoffset").value_or(0))};
         for (int height = 0; height < 4; ++height)
@@ -71,6 +72,7 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
             // Reference adaptation, not a verified original D2Client formula.
             visual.fps = overlays.number(overlayRow, "AnimRate").value_or(0) * 1.5f;
             visual.trans = overlays.number(overlayRow, "Trans").value_or(5);
+            visual.preDraw = overlays.number(overlayRow, "PreDraw").value_or(0) != 0;
             visual.offset = {float(overlays.number(overlayRow, "Xoffset").value_or(0)),
                              float(overlays.number(overlayRow, "Yoffset").value_or(0))};
             for (int height = 0; height < 4; ++height)
@@ -97,6 +99,7 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
             visual.frames = overlays.number(row, "Frames").value_or(0);
             visual.fps = overlays.number(row, "AnimRate").value_or(0) * 1.5f;
             visual.trans = overlays.number(row, "Trans").value_or(5);
+            visual.preDraw = overlays.number(row, "PreDraw").value_or(0) != 0;
             visual.offset = {float(overlays.number(row, "Xoffset").value_or(0)),
                              float(overlays.number(row, "Yoffset").value_or(0))};
             for (int height = 0; height < 4; ++height)

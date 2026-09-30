@@ -77,7 +77,7 @@ bool GameSession::beginBoundaryExit(const LevelExit &exit, std::optional<Vec> ta
     const auto destination = std::find_if(regions_.begin(), regions_.end(),
         [&](const Region &candidate) { return candidate.definition.id == exit.destination; });
     if (destination == regions_.end()) return false;
-    const bool approachBlockedTarget = target && !destination->map.grid.walkable(*target);
+    const bool approachBlockedTarget = target && !destination->map.grid.walkable(*target, playerMovement);
     const Vec start = state().player.pos;
     auto estimate = [&](const LevelExit::BoundaryPassage &passage) {
         return (passage.departure - start).length() +
@@ -91,14 +91,14 @@ bool GameSession::beginBoundaryExit(const LevelExit &exit, std::optional<Vec> ta
     float bestGap = std::numeric_limits<float>::infinity();
     for (const auto &passage : passages) {
         if (!approachBlockedTarget && estimate(passage) >= best) break;
-        const auto approach = map().grid.path(start, passage.departure);
+        const auto approach = map().grid.path(start, passage.departure, false, playerMovement);
         if (approach.empty()) continue;
         float length = routeLength(start, approach);
         if (!approachBlockedTarget && length >= best) continue;
         float gap = 0;
         if (target) {
-            const auto onward = destination->map.grid.path(passage.arrival, *target, approachBlockedTarget);
-            if (onward.empty() && (!approachBlockedTarget || !destination->map.grid.walkable(passage.arrival))) continue;
+            const auto onward = destination->map.grid.path(passage.arrival, *target, approachBlockedTarget, playerMovement);
+            if (onward.empty() && (!approachBlockedTarget || !destination->map.grid.walkable(passage.arrival, playerMovement))) continue;
             length += routeLength(passage.arrival, onward);
             gap = ((onward.empty() ? passage.arrival : onward.back()) - *target).length();
         }
@@ -238,7 +238,7 @@ void GameSession::updateExit() {
                         translated.y += p.pos.y - boundaryPassage_->departure.y;
                     else
                         translated.x += p.pos.x - boundaryPassage_->departure.x;
-                    if (!atBoundary(back, b, translated) || !destination->map.grid.walkable(translated)) {
+                    if (!atBoundary(back, b, translated) || !destination->map.grid.walkable(translated, playerMovement)) {
                         cancelExit();
                         simulation_.emit(InteractionFailed{{}, "The adjoining ground is blocked."});
                         return;

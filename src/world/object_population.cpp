@@ -127,7 +127,7 @@ void populateAct1WorldObjects(Region &region, EntityIds &ids, const WorldCatalog
                 object.id = ids.allocate();
                 object.contentKey = "objgroup." + std::to_string(roomIndex) + "." +
                                     std::to_string(slot) + "." + std::to_string(index);
-                object.pos = point;
+                object.pos = {std::floor(point.x), std::floor(point.y)};
                 object.accessPoint = region.map.grid.nearest(point);
                 object.appearance = {"objects", normalize(appearance->at("Token")), "nu", "hth", {}};
                 object.objectClass = integer(*appearance, "Id");

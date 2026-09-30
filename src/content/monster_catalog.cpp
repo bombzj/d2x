@@ -157,6 +157,7 @@ MonsterCatalog::MonsterCatalog(Archives &archives, const DataTable &stats) {
         m.boss = n("boss") != 0 || n("primeevil") != 0;
         m.ownsParty = n("setboss") != 0 || m.base == "tentaclehead1";
         m.demon = n("demon") != 0;
+        m.flying = n("flying") != 0;
         m.undead = n("lUndead") != 0 || n("hUndead") != 0;
         auto extra = extendedRows.find(stats.value(row, "MonStatsEx"));
         if (extra == extendedRows.end())
@@ -168,6 +169,7 @@ MonsterCatalog::MonsterCatalog(Archives &archives, const DataTable &stats) {
         m.castsShadow = extended.number(extra->second, "Shadow").value_or(0) != 0;
         m.overlayHeight = extended.number(extra->second, "OverlayHeight").value_or(0);
         m.collisionSize = extended.number(extra->second, "SizeX").value_or(0);
+        m.spawnCollision = extended.number(extra->second, "spawnCol").value_or(0);
         m.hitClass = extended.number(extra->second, "HitClass").value_or(0);
         m.corpseSelectable = extended.number(extra->second, "corpseSel").value_or(0) != 0;
         m.getHitMode = extended.number(extra->second, "mGH").value_or(0) != 0;

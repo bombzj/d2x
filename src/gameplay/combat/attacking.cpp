@@ -35,7 +35,7 @@ void Simulation::requestAttack(const Attack &attack) {
     p.throwAttack = attack.thrown;
     p.leftHandAttack = attack.leftHand;
     p.route.clear();
-    if (p.attackTarget && !p.attackStationary) p.route = grid_->path(p.pos, *enemy.position);
+    if (p.attackTarget && !p.attackStationary) p.route = grid_->path(p.pos, *enemy.position, false, playerMovement);
 }
 bool Simulation::beginWeaponAttack(Vec aim, EntityId target, const WeaponDamage &weapon,
                                    bool thrown, bool leftHand) {

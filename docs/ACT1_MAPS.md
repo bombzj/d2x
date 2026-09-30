@@ -1,6 +1,6 @@
 # 第一幕地图
 
-当前源码按 MPQ `Levels.txt` 的生成类型为第一幕 39 个关卡建立地形入口，其中 1–37 已接探索路线；38 崔斯特瑞姆、39 牛场的任务传送门尚未接入。地图取自运行时 MPQ 的 DS1/DT1、`LvlPrest`、`LvlMaze` 和 `LvlSub`，不使用独立提取的数据文件。Windows Release 已用五个原始 MPQ 对 1–39 关逐张短帧启动并截图，39/39 正常退出；这不代替键鼠往返验收。
+当前源码按 MPQ `Levels.txt` 的生成类型为第一幕 39 个关卡建立地形入口；探索／任务入口以当前会话与任务模块为准。地图取自运行时 MPQ 的 DS1/DT1、`LvlPrest`、`LvlMaze` 和 `LvlSub`，不使用独立提取的数据文件。2026-09-23 曾用五个原始 MPQ 对 1–39 关逐张短帧启动并截图，39/39 正常退出；这是历史地形冒烟，不涵盖本次源码，也不代替键鼠往返验收。
 营地出生点从运行时 DS1 的城镇扫描标记选取；城镇奔跑不消耗耐力。当前只实现第一幕，后续各幕城镇可沿用原标记入口。NPC 与传送点点击范围跟随当前 MPQ 动画帧的非透明区域边界。
 
 ## 连续路线
@@ -9,7 +9,7 @@
 
 支线：邪恶洞窟；洞窟、地洞、深坑一／二层；地下通道二层；埋骨之地及两座墓穴；遗忘之塔入口及地窖一至五层。
 
-外侧回廊 27、兵营 28、监牢 29–31、内侧回廊 32、大教堂 33、地下墓穴 34–37 已通过原 Vis/Warp 或依赖关卡边界接入。崔斯特瑞姆 38 和牛场 39 可独立选关查看地形；它们在 `Levels.txt` 没有 Vis 连接，原入口由任务条件创建传送门。项目目前没有任务状态，不能把两张图无条件接成普通出口。
+外侧回廊 27、兵营 28、监牢 29–31、内侧回廊 32、大教堂 33、地下墓穴 34–37 已通过原 Vis/Warp 或依赖关卡边界接入。崔斯特瑞姆 38 和牛场 39 可独立选关查看地形；它们在 `Levels.txt` 没有 Vis 连接，原入口由任务条件创建传送门。任务传送门由会话／任务模块管理，不能把两张图无条件接成普通出口。
 
 野外通过边界行走；洞口／楼梯按原 LvlWarp 选择区域点击进入。返回保留区域状态。Ctrl+F2 是开发目录，不是原版传送点系统。
 
@@ -59,6 +59,24 @@
 
 DT1 图像共享；像素与碰撞使用同一瓦片变体。隐藏出口仍参与关联。缺少所需瓦片时报错，不铺替代地板。DS1 方向 3 的上方右墙角在同格叠绘当前 MPQ 中主／子索引相同、方向 4 的墙角部分；该配对规则见 D2MOO `DrlgRoomTile.cpp` 与 Diablerie `LevelBuilder.cs`，用于补齐营地与野外建筑的同类墙角缺口。屋顶独立于墙体最后绘制；DS1 orientation 10 的成对区域标记限定进入范围和对应屋顶主索引，角色进入时只让该组屋顶渐隐，离开后恢复，普通墙体不透明。拼接地图中的标记随预设一同平移。本轮墙角修正尚未构建或运行验收。
 
+## 坐标、绘制与阻挡
+
+2026-09-30 源码修订，仅核对本地参考源码和当前 MPQ，未构建、运行检查、测试、游戏或打包。
+
+| 范围 | 当前规则与修正 | 本地证据 |
+| --- | --- | --- |
+| 等距投影 | 子格 `(x,y)` 投影到 `(16(x−y),8(x+y))`；现有投影无需改动。动态单位保留精确坐标，初始为格心；静态对象、地面物品和对象式传送门按整数子格。修复静态对象统一加 `.5` 导致下移 8 像素。 | D2MOO `D2Dungeon.cpp`、`Units/Units.cpp::UNITS_InitializeStaticPath`、`Path/Path.cpp::PATH_AllocDynamicPath` |
+| 图像锚点 | DCC／DC6 的原帧偏移、COF 组件层序保留；不能用透明包围盒底边重新居中。DT1 地板 x=−80/y=0，上墙／影子按原块 minY+80，屋顶用 −RoofHeight。Objects Xoffset/Yoffset 只偏移原图及其命中框，不移动世界位置、碰撞或所属 Overlay。 | 当前营地 floor/fence/objects DT1、Objects；OpenD2 DT1、DGEngine DT1/DC6、DGEngine.core Sprite2、Diablerie COFRenderer |
+| 绘制顺序 | 先低墙（16–19）、地板及 DS1 阴影，再 COF 地面阴影；上墙与单位按宏格对角线／地面落点排序；同格墙角配片保持 DS1 层序，屋顶最终绘制。移除墙体 +64、尸体 −1、物品 −0.1 的深度猜测。按 Objects DrawUnder 和逐模式 OrderFlag 放置物体，悬停选择共用该顺序及像素偏移。 | OpenDiablo2 renderer 的四个 pass、Object.GetLayer；Diablerie Iso.SortingOrder／WorldRenderer／LevelBuilder |
+| 弹体与状态图 | 弹体、独立法术效果进入同一地面落点队列；当前及直接步行相邻区域共用偏移。附着 Overlay、祭坛图和 NPC 提示按 Overlay.PreDraw 在所属单位前／后绘制，再接受屋顶遮挡和世界暗层。 | 当前 Overlay；Diablerie Overlay.Create；OpenDiablo2 Missile.GetLayer |
+| 原阻挡 | DT1 的 25 标记按 `(4−sy)*5+sx` 读取，列序不反转；图像和阻挡取同一变体，按位合并地板、上／低墙、墙角配片、真实出口和屋顶，阴影不产生碰撞。DS1 FillLOS→0x04，Unwalkable→0x01，门／真实出口／Linkage→PRESET 0x10。真实房间初始为零；无地板图不自动造墙，无房间空隙用原无效掩码 0x27。 | D2MOO D2Collision／DrlgRoomTile、OpenD2 indexTable；当前 DT1 原标记 |
+| 行走体积 | 玩家 mask=0x1c09，普通怪物=0x3c01，飞行=0x1804，Wraith 家族=0x0804；动态 size 1/2 的路径 pattern 为十字，size 3 为 3×3。NPC、佣兵及召唤物按真实 MonStats/2 身份查询。人口和巢穴找位另读 spawnCol（0/default→0x3c01，1→0x01c0，2→0x3f11，3→0）及原 SizeX 的 point/cross/square；不把穿墙／飞行移动规则用作出生掩码。A*、平滑、键盘步进、传送落点和交互靠近站位使用对应规则，交互视线仍为点查询。连续边界体积按世界偏移读对侧真实标记和动态对象，不把额外 DS1 图形边行当碰撞房间。 | D2MOO Path.AllocDynamicPath／D2Collision.CheckMaskWithPattern；当前 MonStats.flying、MonStats2.SizeX/spawnCol |
+| 逐模式对象 | SizeX/SizeY／HasCollision、UNITS_GetCollisionMask 与 BlocksLight 各模式独立保留；开门／破坏后同步改变对象层与光照缓存，不清除底下地形或重叠对象。 | 当前 Objects；D2MOO Units／COLLISION_CreateBoundingBox |
+
+入口：`presentation/scene_geometry.hpp` 区分地面锚点与绘制顺序，`world_renderer.cpp` 组织层级，`world/map.cpp` 合并地形标记，`world/navigation.*` 查询形状与掩码，`world/exits.cpp` 绑定稳定相邻网格，`content/monster_catalog.*` 导入身份规则，`world/region.*` 同步对象模式。网格不持有 MPQ 或 GPU，UI 不写玩法状态，邻格引用只在区域容器装载完成后建立，不进入存档。
+
+这是对已核实规则的修正，不是完整 D2Client/DRLG 移植。动态单位 NO_PATH/PET 占位和拥挤绕行仍未完整进入网格；怪物 OpenDoors 的自动操作／锁门分支未接入，普通地面怪物暂保留 DOOR 阻挡，不因去掉掩码而穿过闭门。原客户端精确混合、阴影强度、Overlay 时钟／偏移与屋顶渐隐时序仍需画面对照；步行边界之外仍有项目的封边保护。新坐标、遮挡和窄门通路待用户实机查看。
+
 ## 种子和工具
 
 - `--map-seed`：覆盖地图种子；`--population-seed`：覆盖人口计划种子；默认由新局随机源派生，`--seed <uint32>` 固定整局。
@@ -69,11 +87,11 @@ DT1 图像共享；像素与碰撞使用同一瓦片变体。隐藏出口仍参�
 
 ## 边界
 
-- 原规则的局部适配，不承诺种子逐比特一致；DT1 rarity 仍使用位置散列。
+- 原规则的局部适配，不承诺种子逐比特一致；DT1 rarity 已按 D2Seed 加权选取，但流的调度仍为项目适配。
 - 野外已接矩形边界／预设分支、悬崖／河桥和适配道路；传送点使用 `LvlSub` 类型 4 原分组。此次接入类型 5 的神殿／治疗井：`Levels.SubShrine` 给出 LvlSub 类型编号，从该类型的前四条原表记录循环选择，在可用宏格叠加原 DS1 分组和对象。原版每区五处的规则来自 D2MOO `DRLGOUTDOORS_SpawnAct12Shrines`；宏格内位置和随机流是当前适配，已在本轮截图检查，位置仍为项目适配。
 - 通用野外主题仍缺失。当前唯一原始 `Trees.ds1` 位于 `d2data.mpq`，v12 文件声明 14 个分组，但尾部只有 13 个完整记录和 4 个字节；`d2exp.mpq`、`Patch_D2.mpq` 与 `d2x-act1.mpq` 没有另一份。解码器拒绝这份不完整数据；取得可核实的完整原资源或有依据的格式解释前不截断分组、不造替代主题。
 - 可选 Trees2（Def 40）在其原 DT1 掩码中缺少所引用的阴影瓦片，暂跳过该装饰；艾尼弗斯树仍用独立原预设。
-- 地形整体装载，怪物按附近房间创建／休眠。完整地形流式加载、两处任务门仍待实现；屋顶已按 DS1 标记做局部渐隐，尚未与原客户端逐场景核对时序和所有屋顶分组。
+- 地形整体装载，怪物按附近房间创建／休眠。完整地形流式加载仍待实现；任务门进度见任务模块；屋顶已按 DS1 标记做局部渐隐，尚未与原客户端逐场景核对时序和所有屋顶分组。
 - 本轮用种子 210、普通难度对 1–39 关各运行两帧，39 份截图及日志在忽略的 `artifacts/act1-map-review-20260923/`；日志没有未解析 DT1 瓦片。第四层另将镜头移到原 `andariel` 实体 (46.5,46.5) 并截取首领房。怪物身份正确，外观仍为已授权的敌对怪物替身。修道院大门出生画面中人物被立面半透明遮挡，需后续与原版画面对照；完整路径、门交互及更多种子未在此冒烟中验收。
 
 参考固定 [D2MOO](https://github.com/ThePhrozenKeep/D2MOO/tree/5596f5cb6c5251a0a07c6637d26458b06099d516) 的 DrlgMaze、DrlgOutPlace、DrlgOutWild、DrlgOutdoors、DrlgRoomTile、DrlgActivate；改编保留 MIT 归属，见 [许可](licenses/D2MOO.txt)。

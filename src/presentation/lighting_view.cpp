@@ -67,12 +67,14 @@ LightingView::~LightingView() {
 void LightingView::update(const Grid &grid, const LevelRecord &level, RegionId region, Vec player, int radius) {
     const int visibleRadius = level.isInside ? radius : std::max(radius, 26);
     int px = int(std::floor(player.x)), py = int(std::floor(player.y));
-    if (region == cachedRegion_ && px == cachedX_ && py == cachedY_ && visibleRadius == cachedRadius_)
+    if (region == cachedRegion_ && px == cachedX_ && py == cachedY_ && visibleRadius == cachedRadius_ &&
+        grid.obstacleRevision == cachedObstacleRevision_)
         return;
     cachedRegion_ = region;
     cachedX_ = px;
     cachedY_ = py;
     cachedRadius_ = visibleRadius;
+    cachedObstacleRevision_ = grid.obstacleRevision;
     originX_ = px - maskRadius;
     originY_ = py - maskRadius;
     for (int y = 0; y < maskSide; ++y)

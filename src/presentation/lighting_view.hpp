@@ -8,7 +8,7 @@
 #include <vector>
 
 namespace d2x {
-// View-only light mask. DT1 light-blocking flags supply visibility; no lighting state is saved.
+// View-only light mask. DT1 and object-mode flags supply visibility; no lighting state is saved.
 class LightingView {
     static constexpr int maskRadius = 30;
     static constexpr int maskSide = maskRadius * 2 + 1;
@@ -17,6 +17,7 @@ class LightingView {
     std::vector<Color> pixels_;
     RegionId cachedRegion_{};
     int cachedX_ = -1, cachedY_ = -1, cachedRadius_ = -1;
+    uint64_t cachedObstacleRevision_ = 0;
     int originX_ = 0, originY_ = 0;
 
   public:
@@ -24,6 +25,7 @@ class LightingView {
     ~LightingView();
     LightingView(const LightingView &) = delete;
     LightingView &operator=(const LightingView &) = delete;
+    void invalidate() { cachedRadius_ = -1; }
     void update(const Grid &grid, const LevelRecord &level, RegionId region, Vec player, int radius);
     void draw(const LevelRecord &level, Vec player, Vec playerScreen, float zoom, int radius,
               const std::vector<WorldObject> &objects) const;

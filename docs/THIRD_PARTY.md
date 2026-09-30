@@ -41,6 +41,8 @@
 
 角色手持武器组件选择核对本地 D2MOO 固定 `5596f5c` 的 `D2Common/src/D2Inventory.cpp::INVENTORY_GetCompositItem`；世界方向到 DCC 方向帧核对 Diablerie 固定 `9e42ef2` 的 `Engine/Iso.cs::Direction`、`Engine/IO/D2Formats/DirectionMapping.cs` 和 `Engine/Entities/Missile.cs::Create`。两者沿用上文 MIT 归属；弓的组件、女巫 COF／DCC 与 Arrow 的 32 方向仍取用户当前 MPQ，不引入参考资源。源码入口与未验收范围见 [通用攻击](COMMON_ATTACKS.md#武器组件与朝向)。
 
+场景坐标／绘制／阻挡核对的本地入口汇总见 [地图](ACT1_MAPS.md#坐标绘制与阻挡)。D2MOO 固定 `5596f5c` 的 D2Dungeon、Units、Path、D2Collision、DrlgRoomTile 提供投影、静态／动态坐标、路径形状与掩码、房间初始化和门／出口标志；MonsterSpawn 核对出生掩码与 spawnCol，沿用上述 MIT 归属。OpenD2 固定 `0578244` 的 Engine/DT1.cpp 的 indexTable 交叉核对子格倒行；DGEngine 固定 `ae6dcab` 的 DT1/DC6ImageContainer 和 DGEngine.core 固定 `dd600ab` 的 Sprite2/CompositeSprite 用于帧偏移与纹理原点核对，沿用上述许可。OpenDiablo2 固定 `7f92c57` 的 d2maprenderer/renderer.go、d2mapentity/object.go 与对象字段记录用于低墙／地板、上墙／单位、屋顶及 OrderFlag/DrawUnder 层级证据，GPL-3.0；Diablerie 固定 `9e42ef2` 的 Iso、WorldRenderer、LevelBuilder、COFRenderer、Overlay 提供独立落点排序、阴影层和 PreDraw 交叉证据，MIT。C++ 入口独立实现；原图、Objects/MonStats/Overlay 参数及 DT1 原标记仍来自当前 MPQ，参考表、仓库、导出文件不纳入源码。
+
 ## 格式研究参考
 
 投掷药瓶客户端特效另核对 [D2R Data Guide（Corrected）的 Missiles.txt](https://locbones.github.io/D2R_DataGuide/#missilestxt)：`CltHit03/HitOilPotion` 为主爆炸加 `CltHitSubMissile2/3` 随机二选一，`CltDo03/04` 分别说明尾迹和区域烟雾子效果。这里只借用函数／字段含义，所有 ID、图像和参数仍读取当前 1.13c MPQ，不复制第三方数据或代码。该说明没有给出旧客户端烟雾精确节拍和随机采样算法；不能据此宣称与原版逐帧一致。RandStart 与旧版 Phrozen Keep 指南的描述存在冲突，暂缓该字段；具体范围见 [通用攻击](COMMON_ATTACKS.md)。

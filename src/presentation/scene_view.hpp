@@ -3,6 +3,7 @@
 #include "inventory_panel.hpp"
 #include "lighting_view.hpp"
 #include "scene_assets.hpp"
+#include "scene_geometry.hpp"
 #include <cstdint>
 #include <deque>
 #include <map>
@@ -101,6 +102,7 @@ class SceneView {
     std::map<RegionId, std::vector<uint8_t>> exploredAutomap_;
     std::map<RegionId, std::vector<float>> roofOpacity_;
     const Sprite *objectSprite(const WorldObject &object, RegionId region) const;
+    Vec objectScreen(const WorldObject &object, Vec regionOffset = {}) const;
     struct LootLabel {
         ItemHandle item;
         std::string text;
@@ -118,9 +120,13 @@ class SceneView {
     void drawSelectableSprite(const Sprite *image, Vec position, bool highlighted,
                               Color tint = WHITE, Vector2 highlight = {2.f, 1.f}) const;
     void drawMagic() const;
+    void drawMissile(int id, Vec position, Vec heading, float age, float remaining) const;
+    void drawSpellOverlay(int id, Vec position, float age, bool loop) const;
+    void drawUnitSpellOverlays(EntityId unit, Vec position, bool back, const CombatEffectSet *states = nullptr) const;
     void drawLighting() const;
-    void drawNpcAlerts() const;
-    void drawShrineOverlays() const;
+    void drawNpcAlert(const WorldObject &npc, Vec at, bool back) const;
+    void drawShrineOverlays(int code, Vec at, int height, bool back) const;
+    void drawPlayerShrineOverlay(Vec at, bool back) const;
     void drawCombatStateOverlays(const CombatEffectSet &effects, Vec screenPosition, int height, bool back) const;
     void drawPanelFrame(bool right) const;
     void drawMinimap(bool large) const;

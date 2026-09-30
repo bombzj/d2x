@@ -37,8 +37,8 @@ class Planner {
     static constexpr size_t maxActors = 8192;
 
     void diagnostic(std::string message) { diagnostics_.insert(std::move(message)); }
-    bool valid(Vec p, bool protectArrival) const {
-        if (!map_.grid.walkable(p))
+    bool valid(Vec p, bool protectArrival, MovementCollisionRule rule) const {
+        if (!map_.grid.walkable(p, rule))
             return false;
         if (protectArrival) {
             // Protect original warp arrivals where available; WarpDist is squared.
@@ -62,28 +62,28 @@ class Planner {
             }
         return true;
     }
-    std::optional<Vec> near(Vec center, int radius, bool protectArrival) {
-        if (valid(center, protectArrival))
+    std::optional<Vec> near(Vec center, int radius, bool protectArrival, MovementCollisionRule rule) {
+        if (valid(center, protectArrival, rule))
             return center;
         // Bounded local adjustment only: never move a fixed boss to a remote chamber.
         std::vector<Vec> candidates;
         for (int y = -radius; y <= radius; ++y)
             for (int x = -radius; x <= radius; ++x) {
                 Vec p = center + Vec{float(x), float(y)};
-                if (valid(p, protectArrival) && map_.grid.segment(center, p))
+                if (valid(p, protectArrival, rule) && map_.grid.segment(center, p, {}, {rule.mask, 1}))
                     candidates.push_back(p);
             }
         if (candidates.empty())
             return {};
         return candidates[random_.below(uint32_t(candidates.size()))];
     }
-    std::optional<Vec> randomPosition() {
+    std::optional<Vec> randomPosition(MovementCollisionRule rule) {
         for (int attempt = 0; attempt < 20; ++attempt) {
             int x = densityRoom_ ? densityRoom_->x : 0, y = densityRoom_ ? densityRoom_->y : 0;
             int w = densityRoom_ ? densityRoom_->width : map_.grid.width;
             int h = densityRoom_ ? densityRoom_->height : map_.grid.height;
             Vec pos{x + float(random_.below(uint32_t(w))) + .5f, y + float(random_.below(uint32_t(h))) + .5f};
-            if (valid(pos, true))
+            if (valid(pos, true, rule))
                 return pos;
         }
         ++result_.rejectedPlacements;
@@ -105,7 +105,7 @@ class Planner {
             diagnostic("Population safety limit reached (8192 actors); remaining placements skipped.");
             return {};
         }
-        auto location = near(pos, radius, origin == SpawnOrigin::Density);
+        auto location = near(pos, radius, origin == SpawnOrigin::Density, monster.spawnRule());
         if (!location) {
             ++result_.rejectedPlacements;
             return {};
@@ -329,7 +329,7 @@ class Planner {
                 ++group_;
                 if (boss) {
                     auto selected = choose(true);
-                    auto pos = randomPosition();
+                    auto pos = selected ? randomPosition(selected->spawnRule()) : std::nullopt;
                     if (selected && pos)
                         elite(*selected, *pos, SpawnOrigin::Density, key);
                     continue;
@@ -341,7 +341,7 @@ class Planner {
                                 : random_.between(monster->minGroup, monster->maxGroup);
                 if (!count)
                     continue;
-                auto pos = randomPosition();
+                auto pos = randomPosition(monster->spawnRule());
                 if (!pos)
                     continue;
                 for (int member = 0; member < count; ++member) {

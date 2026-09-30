@@ -104,7 +104,7 @@ void Simulation::updateMonsters(float dt) {
                 if (enemy.attackImpact <= 0) {
                     enemy.attackImpact = -1;
                     if (enemy.teleportTarget) {
-                        if (grid_->walkable(*enemy.teleportTarget)) enemy.pos = *enemy.teleportTarget;
+                        if (grid_->walkable(*enemy.teleportTarget, movementRule(enemy))) enemy.pos = *enemy.teleportTarget;
                         enemy.teleportTarget.reset();
                     }
                     else if (enemy.attackMode == 3 && monsterResurrection_ &&
@@ -154,7 +154,7 @@ void Simulation::updateMonsters(float dt) {
             const float speed = originalSpeed.value_or(monsterDefinition(enemy.kind).speed) *
                                 (enemy.kind == MonsterKind::Brute ? bruteWalkMultiplier(enemy) : 1.f) *
                                 (enemy.chill > 0 ? .42f : 1.f);
-            monsterAdvanceCircle(enemy, *grid_, speed, dt);
+            monsterAdvanceCircle(enemy, *grid_, speed, dt, movementRule(enemy));
             leaveSpiderWeb(enemy, (enemy.pos - before).length());
             continue;
         }
@@ -169,7 +169,7 @@ void Simulation::updateMonsters(float dt) {
                     (corpse.pos - enemy.pos).length() >= 15.f) continue;
                 const auto duration = monsterDeathDuration_(corpse);
                 if (duration && corpse.deathAge <= *duration &&
-                    fallenStartEscape(enemy, targetPosition, *grid_)) {
+                    fallenStartEscape(enemy, targetPosition, *grid_, movementRule(enemy))) {
                     enemy.aiCorpse = corpse.id;
                     break;
                 }
@@ -186,7 +186,7 @@ void Simulation::updateMonsters(float dt) {
                                      1.f + float(ai->params[3]) / 100.f :
                                  enemy.kind == MonsterKind::QuillRat ? 1.f : 1.5f) *
                                 (enemy.chill > 0 ? .42f : 1.f);
-            fallenAdvanceEscape(enemy, *grid_, speed, dt);
+            fallenAdvanceEscape(enemy, *grid_, speed, dt, movementRule(enemy));
             leaveSpiderWeb(enemy, (enemy.pos - before).length());
             continue;
         }
@@ -256,7 +256,7 @@ void Simulation::updateMonsters(float dt) {
                 continue;
             }
             if (clear && distance < 6.f && corruptArcherRetreats(enemy, *ai) &&
-                monsterStartRetreat(enemy, targetPosition, 12, *grid_)) {
+                monsterStartRetreat(enemy, targetPosition, 12, *grid_, movementRule(enemy))) {
                 enemy.aiRunning = false;
                 continue;
             }
@@ -274,7 +274,7 @@ void Simulation::updateMonsters(float dt) {
                 beginMonsterAttack(enemy, 2);
                 continue;
             }
-            if (monsterStartRetreat(enemy, targetPosition, ai->params[3], *grid_)) continue;
+            if (monsterStartRetreat(enemy, targetPosition, ai->params[3], *grid_, movementRule(enemy))) continue;
             if (distance < 4.f) {
                 beginMonsterAttack(enemy, 2);
                 continue;
@@ -328,25 +328,25 @@ void Simulation::updateMonsters(float dt) {
             if (wanders) {
                 while (!enemy.route.empty() && (enemy.route.front() - enemy.pos).length() < .25f)
                     enemy.route.pop_front();
-                if (!enemy.route.empty() && !grid_->segment(enemy.pos, enemy.route.front()))
+                if (!enemy.route.empty() && !grid_->segment(enemy.pos, enemy.route.front(), {}, movementRule(enemy)))
                     enemy.route.clear();
                 if (enemy.route.empty())
-                    if (auto target = monsterWanderTarget(enemy, *grid_, 3)) enemy.route.push_back(*target);
+                    if (auto target = monsterWanderTarget(enemy, *grid_, 3, movementRule(enemy))) enemy.route.push_back(*target);
                 if (enemy.route.empty()) continue;
                 destination = enemy.route.front();
                 enemy.rethink = 0;
-            } else if (grid_->segment(enemy.pos, targetPosition)) {
+            } else if (grid_->segment(enemy.pos, targetPosition, {}, movementRule(enemy))) {
                 enemy.route.clear();
                 enemy.rethink = 0;
             } else {
                 while (!enemy.route.empty() && (enemy.route.front() - enemy.pos).length() < .25f)
                     enemy.route.pop_front();
-                if (!enemy.route.empty() && !grid_->segment(enemy.pos, enemy.route.front())) {
+                if (!enemy.route.empty() && !grid_->segment(enemy.pos, enemy.route.front(), {}, movementRule(enemy))) {
                     enemy.route.clear();
                     enemy.rethink = 0;
                 }
                 if (enemy.rethink <= 0) {
-                    enemy.route = grid_->path(enemy.pos, targetPosition);
+                    enemy.route = grid_->path(enemy.pos, targetPosition, false, movementRule(enemy));
                     enemy.rethink = .7f;
                 }
                 if (enemy.route.empty()) {
@@ -381,7 +381,7 @@ void Simulation::updateMonsters(float dt) {
                 speed *= 1.f + float(ai->params[4]) / 100.f;
             if (zombieAi && !zombieWanders) speed *= 4.f / 3.f;
             auto next = enemy.pos + offset.unit() * std::min(speed * dt, offset.length());
-            if (grid_->segment(enemy.pos, next)) {
+            if (grid_->segment(enemy.pos, next, {}, movementRule(enemy))) {
                 const float moved = (next - enemy.pos).length();
                 enemy.pos = next;
                 if (enemy.webAuraRemaining > 0) leaveSpiderWeb(enemy, moved);
@@ -425,7 +425,7 @@ void Simulation::updateMonsters(float dt) {
                 const auto action = bruteCombat(enemy, *ai);
                 if (action == BruteCombat::Idle) continue;
                 if (action == BruteCombat::Circle) {
-                    if (!monsterStartCircle(enemy, targetPosition, 4, *grid_))
+                    if (!monsterStartCircle(enemy, targetPosition, 4, *grid_, movementRule(enemy)))
                         enemy.aiWait = 15.f / 25.f;
                     continue;
                 }

@@ -34,7 +34,7 @@ void SceneView::drawObjectHint(Vec mouse) const {
     const auto *object = objectAt(mouse);
     if (!object || object->name.empty() || exitAt(mouse))
         return;
-    const Vec p = screen(object->pos);
+    const Vec p = objectScreen(*object);
     std::string label = object->name;
     if (object->chest && object->chest->locked) {
         const auto &strings = session_.content().itemStrings;

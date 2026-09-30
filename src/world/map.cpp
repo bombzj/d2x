@@ -13,8 +13,8 @@ Vec Map::actSpawn() const {
                 ((cell.value >> 20) & 63) != 30 || ((cell.value >> 8) & 255) > 4)
                 continue;
             const Vec marker{float(index % data.width * 5 + 3), float(index / data.width * 5 + 3)};
-            const Vec arrival = grid.nearest(marker);
-            if (!grid.walkable(arrival) || (arrival - marker).length() > 5)
+            const Vec arrival = grid.nearest(marker, playerMovement);
+            if (!grid.walkable(arrival, playerMovement) || (arrival - marker).length() > 5)
                 throw std::runtime_error("Invalid DS1 act spawn marker: " + path);
             return arrival;
         }
@@ -130,13 +130,11 @@ void Map::load(Archives &a, TileLibraryCache &cache, const MapRecipe &recipe, ui
             choose(data.shadows[y * data.width + x]);
         }
     grid = Grid(data.width * 5, data.height * 5);
-    std::fill(grid.blocked.begin(), grid.blocked.end(), 1);
-    std::fill(grid.lightBlocked.begin(), grid.lightBlocked.end(), 1);
     // Native room grids start clear and OR all tile layers (D2Collision.cpp).
     // Gaps between assembled rooms have no collision grid and stop missiles;
     // a missing floor inside a real room is not itself a missile barrier.
     if (!recipe.pieces.empty()) {
-        std::fill(grid.terrainCollision.begin(), grid.terrainCollision.end(), 0x0f);
+        std::fill(grid.terrainCollision.begin(), grid.terrainCollision.end(), 0x27);
         for (const auto &room : rooms)
             for (int y = std::max(0, room.y); y < std::min(grid.height, room.y + room.height); ++y)
                 for (int x = std::max(0, room.x); x < std::min(grid.width, room.x + room.width); ++x)
@@ -144,16 +142,6 @@ void Map::load(Archives &a, TileLibraryCache &cache, const MapRecipe &recipe, ui
     }
     for (int y = 0; y < data.height; y++)
         for (int x = 0; x < data.width; x++) {
-            // Clear the initial void once, then OR every authored layer. A
-            // decorative Floor2 must not erase Floor1's collision footprint.
-            if (std::any_of(data.floors.begin(), data.floors.end(), [&](const auto &layer) {
-                    return layer[y * data.width + x].occupied();
-                }))
-                for (int sy = 0; sy < 5; ++sy)
-                    for (int sx = 0; sx < 5; ++sx) {
-                        const size_t index = size_t(y * 5 + sy) * grid.width + x * 5 + sx;
-                        grid.blocked[index] = grid.lightBlocked[index] = 0;
-                    }
             auto apply = [&](const MapCell &c) {
                 if (!c.occupied())
                     return;
@@ -174,8 +162,6 @@ void Map::load(Archives &a, TileLibraryCache &cache, const MapRecipe &recipe, ui
                     return;
                 }
                 const auto &t = *tiles[idx];
-                if (c.orientation == 10 || c.orientation == 11)
-                    return;
                 auto applyCollision = [&](const Tile &tile) {
                     // DT1 0x04 = COLLIDE_MISSILE_BARRIER. DS1 bFillLOS (bit 16)
                     // maps through MAPTILE_FILL_LOS to that same flag; neither
@@ -185,11 +171,12 @@ void Map::load(Archives &a, TileLibraryCache &cache, const MapRecipe &recipe, ui
                             auto flags = tile.flags[(4 - sy) * 5 + sx];
                             if (c.value & (1u << 16)) flags |= 0x04;
                             if (c.value & (1u << 17)) flags |= 0x01;
+                            // MAPTILE_WALL_EXIT -> COLLIDE_PRESET for native
+                            // placement masks (not ordinary walking/missiles).
+                            if ((c.value & (1u << 28)) || (c.orientation >= 8 && c.orientation <= 11))
+                                flags |= 0x10;
                             const size_t index = size_t(y * 5 + sy) * grid.width + x * 5 + sx;
                             grid.terrainCollision[index] |= flags;
-                            // COLLIDE_MASK_PLAYER_PATH includes WALL and NOPLAYER.
-                            if (flags & (0x01 | 0x08)) grid.blocked[index] = 1;
-                            if (flags & (0x02 | 0x20)) grid.lightBlocked[index] = 1;
                         }
                 };
                 applyCollision(t);
@@ -216,6 +203,14 @@ void Map::load(Archives &a, TileLibraryCache &cache, const MapRecipe &recipe, ui
                               << '\n';
             }
         }
+    // Derive all consumers from the merged native flags. A room with no floor
+    // graphic starts clear, just like COLLISION_AllocRoomCollisionGrid; it is
+    // not an invisible walking/light barrier with a clear missile mask.
+    for (size_t index = 0; index < grid.terrainCollision.size(); ++index) {
+        const auto flags = grid.terrainCollision[index];
+        grid.blocked[index] = (flags & (0x01 | 0x08)) != 0;
+        grid.lightBlocked[index] = (flags & (0x02 | 0x20)) != 0;
+    }
     for (int y = 0; y < grid.height; y++)
         for (int x = 0; x < grid.width; x++) {
             int width = recipe.width ? recipe.width * 5 : grid.width;

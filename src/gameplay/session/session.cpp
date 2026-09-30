@@ -135,6 +135,14 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
         const auto *record = monsterContent_.find(enemy.identity.monster);
         return record ? record->collisionSize : 0;
     };
+    simulation_.monsterMovementRule_ = [this](const Enemy &enemy) {
+        const auto *record = monsterContent_.find(enemy.identity.monster);
+        return record ? record->movementRule() : MovementCollisionRule{0xffff, -1};
+    };
+    simulation_.monsterSpawnRule_ = [this](const Enemy &enemy) {
+        const auto *record = monsterContent_.find(enemy.identity.monster);
+        return record ? record->spawnRule() : MovementCollisionRule{0xffff, -1};
+    };
     simulation_.state_.player.combatRandom = childRandom(simulation_.unitRandom_);
     simulation_.monsterAccuracy_ = [this](const Enemy &enemy, RegionId region, int mode)
         -> std::optional<MonsterAccuracy> {

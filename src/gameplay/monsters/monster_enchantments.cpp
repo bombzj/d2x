@@ -184,7 +184,7 @@ bool Simulation::tryMonsterTeleport(Enemy &enemy) {
     for (int attempt = 0; attempt < 20; ++attempt) {
         const Vec target{float(room->x + 1 + monsterAiRandom(enemy) % unsigned(room->width - 1)) + .5f,
                          float(room->y + 1 + monsterAiRandom(enemy) % unsigned(room->height - 1)) + .5f};
-        if (!grid_->walkable(target) || (target - monsterTargetPosition(enemy)).length() < 2) continue;
+        if (!grid_->walkable(target, movementRule(enemy)) || (target - monsterTargetPosition(enemy)).length() < 2) continue;
         bool occupied = false;
         for (const auto &other : state_.area.enemies)
             if (other.id != enemy.id && other.hp > 0 && (other.pos - target).length() < 2) occupied = true;

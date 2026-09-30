@@ -3,6 +3,7 @@
 #include "resources/data_table.hpp"
 #include "content/monster_animation.hpp"
 #include "gameplay/monsters/monster_spawn.hpp"
+#include "world/navigation.hpp"
 #include <array>
 #include <map>
 #include <optional>
@@ -19,7 +20,7 @@ struct MonsterRecord {
     int sparse = 0, alignment = 0, normalLevel = 0, transLevel = 0;
     std::array<int, 3> coldEffect{};
     int localBlood = 0, bleed = 0, overlayHeight = 0;
-    int collisionSize = 0, hitClass = 0;
+    int collisionSize = 0, spawnCollision = 0, hitClass = 0;
     std::optional<int> normalAttackRating;
     std::optional<int> normalAttackRating2;
     std::optional<int> normalDefense;
@@ -42,7 +43,20 @@ struct MonsterRecord {
     bool castMode = false, sequenceMode = false;
     bool castsShadow = false, corpseSelectable = false;
     bool demon = false, undead = false, ownsParty = false, primeEvil = false;
+    bool flying = false;
     std::array<std::string, 2> minions;
+    MovementCollisionRule movementRule() const {
+        // PATH_AllocDynamicPath: Wraith's small pattern ignores walls, flying
+        // uses barriers. Door opening still requires a separate object action.
+        return {uint16_t(base == "wraith1" ? 0x0804 : flying ? 0x1804 : 0x3c01),
+            base == "wraith1" ? 2 : collisionSize == 1 || collisionSize == 2 ? 2 : collisionSize};
+    }
+    MovementCollisionRule spawnRule() const {
+        // MonsterSpawn uses MonStats2.spawnCol and CheckMaskWithSize, not
+        // PATH's flying/Wraith masks or small-unit path pattern.
+        return {uint16_t(spawnCollision == 1 ? 0x01c0 : spawnCollision == 2 ? 0x3f11 :
+            spawnCollision == 3 ? 0 : 0x3c01), collisionSize};
+    }
     bool hostile() const {
         return enabled && killable && !npc && !critter &&
                (!inert || ai == "FoulCrowNest") && alignment == 0;

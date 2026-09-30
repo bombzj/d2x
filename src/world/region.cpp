@@ -63,6 +63,10 @@ void classify(WorldObject &object, const Table &objectRows) {
             object.animationMode = objectMode(object.appearance.mode);
             object.collisionWidth = std::stoi(record->at("SizeX"));
             object.collisionHeight = std::stoi(record->at("SizeY"));
+            object.drawOffset = {float(std::stoi(record->at("Xoffset"))),
+                                 float(std::stoi(record->at("Yoffset")))};
+            object.draw = record->at("Draw") == "1";
+            object.drawUnder = record->at("DrawUnder") == "1";
             if (object.collisionWidth < 0 || object.collisionHeight < 0)
                 throw std::runtime_error("Invalid original object collision size");
             const bool door = record->at("IsDoor") == "1";
@@ -80,6 +84,8 @@ void classify(WorldObject &object, const Table &objectRows) {
                 rule.cycle = record->at("CycleAnim" + suffix) == "1";
                 rule.enabled = record->at("Mode" + suffix) == "1";
                 object.hasCollision[index] = record->at("HasCollision" + suffix) == "1";
+                object.blocksLight[index] = record->at("BlocksLight" + suffix) == "1";
+                object.orderFlags[index] = std::stoi(record->at("OrderFlag" + suffix));
             }
             const auto &operation = record->at("OperateFn");
             object.operateFn = operation.empty() ? 0 : std::stoi(operation);
@@ -171,12 +177,14 @@ int WorldObject::modeAt(float time) const {
 void Region::refreshObjectCollision(float time) {
     std::vector<Grid::Obstacle> obstacles;
     for (const auto &object : objects) {
-        if (object.questHidden || object.collisionWidth <= 0 || object.collisionHeight <= 0 ||
-            !object.hasCollision[size_t(object.modeAt(time))]) continue;
+        if (object.questHidden || object.collisionWidth <= 0 || object.collisionHeight <= 0) continue;
+        const size_t mode = size_t(object.modeAt(time));
+        if (!object.hasCollision[mode] && !object.blocksLight[mode]) continue;
         // COLLISION_CreateBoundingBox: integer subtile center, including even sizes.
         obstacles.push_back({object.id, int(std::floor(object.pos.x)) - object.collisionWidth / 2,
             int(std::floor(object.pos.y)) - object.collisionHeight / 2,
-            object.collisionWidth, object.collisionHeight, object.collisionMask});
+            object.collisionWidth, object.collisionHeight,
+            uint16_t(object.hasCollision[mode] ? object.collisionMask : 0), object.blocksLight[mode]});
     }
     map.grid.setObstacles(std::move(obstacles));
 }
@@ -231,14 +239,18 @@ std::vector<Region> loadRegions(Archives &archives, EntityIds &ids, const std::v
             WorldObject object;
             object.id = ids.allocate();
             object.contentKey = "ds1." + std::to_string(index);
-            object.pos = {source.x + .5f, source.y + .5f};
+            // UNITS_InitializeStaticPath uses integer coordinates; dynamic NPC
+            // paths use PATH_ToFP16Center. Do not move static props down 8 pixels.
+            const float fraction = source.type == 1 ? .5f : 0.f;
+            object.pos = {source.x + fraction, source.y + fraction};
             object.accessPoint = region.map.grid.nearest(object.pos);
             if (source.type == 1 && monsters.supported()) {
                 auto unit = monsters.preset(region.map.data.act, source.id, region.map.data.version);
                 if (const auto *monster = monsters.find(unit.id)) {
                     object.npcClass = monster->id;
+                    object.npcMovement = monster->movementRule();
                     if (monster->npc && monster->ai == "Npc" && monster->walkVelocity &&
-                        *monster->walkVelocity > 0 && region.map.grid.walkable(object.pos)) {
+                        *monster->walkVelocity > 0 && region.map.grid.walkable(object.pos, object.npcMovement)) {
                         object.npcHome = object.pos;
                         // Original path stores MonStats.Velocity << 8 in a 16.16
                         // position. Unit direction length is 4096, so one
@@ -248,8 +260,8 @@ std::vector<Region> loadRegions(Archives &archives, EntityIds &ids, const std::v
                             if ((node.action == 1 || node.action == 3) && node.x > 0 && node.y > 0) {
                                 Vec position{node.x + .5f, node.y + .5f};
                                 if ((position - object.npcHome).length() <= 8.f &&
-                                    region.map.grid.walkable(position) &&
-                                    !region.map.grid.path(object.pos, position).empty())
+                                    region.map.grid.walkable(position, object.npcMovement) &&
+                                    !region.map.grid.path(object.pos, position, false, object.npcMovement).empty())
                                     object.npcPath.push_back({position, node.action});
                             }
                         object.npcWait = 20.f / 25.f;
@@ -311,7 +323,7 @@ std::vector<Region> loadRegions(Archives &archives, EntityIds &ids, const std::v
         for (auto &object : region.objects)
             assignShrine(object, shrineRows, int(region.definition.id), region.objectSeed);
         region.refreshObjectCollision(0);
-        region.map.spawn = region.map.grid.nearest(region.map.spawn);
+        region.map.spawn = region.map.grid.nearest(region.map.spawn, playerMovement);
         for (auto &object : region.objects)
             object.accessPoint = region.map.grid.nearest(object.pos);
         std::cout << "  DS1 objects: " << region.objects.size() << " appearances, "

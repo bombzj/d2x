@@ -54,7 +54,7 @@ bool Simulation::summonFromCorpse(PlayerState &owner, const SkillCastSpec &skill
         state_.message = "Original summon animation is unavailable"; return false;
     }
     auto clear = [&](Vec position) {
-        if (!grid_->walkable(position)) return false;
+        if (!grid_->walkable(position, movementRule(pet))) return false;
         for (auto unit : combatUnits())
             if (unit.alive() && missileDistance(position, *unit.position) < spec.stats.collisionSize) return false;
         return true;
@@ -65,7 +65,7 @@ bool Simulation::summonFromCorpse(PlayerState &owner, const SkillCastSpec &skill
             for (int x = -radius; x <= radius && !placed; ++x) {
                 if (std::abs(x) != radius && std::abs(y) != radius) continue;
                 const Vec candidate = corpse->pos + Vec{float(x), float(y)};
-                if (clear(candidate) && grid_->segment(corpse->pos, candidate)) { pet.pos = candidate; placed = true; }
+                if (clear(candidate) && grid_->segment(corpse->pos, candidate, {}, movementRule(pet))) { pet.pos = candidate; placed = true; }
             }
     if (!placed) { state_.message = "No clear ground for this summon"; return false; }
     pet.id = ids_.allocate(); pet.combatRandom = childRandom(unitRandom_);
@@ -95,7 +95,7 @@ void Simulation::relocateCompanions(EntityId owner, Vec destination, EntityId on
                 for (int x = -radius; x <= radius && !placed; ++x) {
                     if (std::abs(x) != radius && std::abs(y) != radius) continue;
                     const Vec candidate = destination + Vec{float(x), float(y)};
-                    if (!grid_->walkable(candidate) || !grid_->segment(destination, candidate)) continue;
+                    if (!grid_->walkable(candidate, movementRule(pet)) || !grid_->segment(destination, candidate, {}, movementRule(pet))) continue;
                     bool occupied = false;
                     for (auto unit : combatUnits())
                         if (unit.id != pet.id && unit.alive() && missileDistance(candidate, *unit.position) < 2) { occupied = true; break; }
@@ -150,8 +150,8 @@ void Simulation::updateCompanions(float dt) {
                 if (limitedRandom(pet.combatRandom, 100) < 80) beginMonsterAttack(pet, 1);
                 continue;
             }
-            if (target.alive()) pet.route = grid_->path(pet.pos, *target.position);
-            else if (ownerDistance > 4) pet.route = grid_->path(pet.pos, *owner.position);
+            if (target.alive()) pet.route = grid_->path(pet.pos, *target.position, false, movementRule(pet));
+            else if (ownerDistance > 4) pet.route = grid_->path(pet.pos, *owner.position, false, movementRule(pet));
             else pet.route.clear();
         }
         if (pet.route.empty()) continue;
@@ -166,7 +166,7 @@ void Simulation::updateCompanions(float dt) {
         const Vec next = pet.pos + delta.unit() * std::min(delta.length(), *speed * dt);
         const auto neighbors = combatUnits();
         auto clear = [&](Vec point) {
-            if (!grid_->segment(pet.pos, point)) return false;
+            if (!grid_->segment(pet.pos, point, {}, movementRule(pet))) return false;
             for (const auto &unit : neighbors)
                 if (unit.id != pet.id && unit.alive() && missileDistance(point, *unit.position) < 2 &&
                     (point - *unit.position).length() < (pet.pos - *unit.position).length()) return false;

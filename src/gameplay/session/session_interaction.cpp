@@ -31,13 +31,13 @@ std::optional<Vec> GameSession::interactionApproach(const WorldObject &object) c
     const int centerX = int(object.pos.x), centerY = int(object.pos.y);
     for (int y = centerY - radius; y <= centerY + radius; ++y)
         for (int x = centerX - radius; x <= centerX + radius; ++x) {
-            if (!grid.walkable(x, y))
+            if (!grid.walkable(x, y, playerMovement))
                 continue;
             Vec candidate{x + .5f, y + .5f};
             if ((candidate - object.pos).length() > object.reach ||
                 !grid.segment(candidate, access, object.id))
                 continue;
-            auto path = grid.path(from, candidate);
+            auto path = grid.path(from, candidate, false, playerMovement);
             if (path.empty() && (from - candidate).length() > .01f)
                 continue;
             float cost = 0;

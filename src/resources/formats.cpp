@@ -154,12 +154,8 @@ std::vector<Tile> decodeDt1(const Bytes &b) {
         t.image.width = maxX;
         t.image.height = maxY - minY;
         t.image.x = -80;
-        t.image.y = minY + ((t.orientation == 0 || t.orientation == 15) ? 0 : -80);
         // DT1 wall coordinates end at y=0; their origin is the front corner of the floor.
-        if (t.orientation != 0 && t.orientation != 15)
-            t.image.y = minY + 80;
-        else if (t.orientation == 15)
-            t.image.y -= t.roofHeight;
+        t.image.y = t.orientation == 0 ? 0 : t.orientation == 15 ? -t.roofHeight : minY + 80;
         t.image.pixels.resize(size_t(maxX) * (maxY - minY));
         auto put = [&](int x, int y, uint8_t v) {
             y -= minY;

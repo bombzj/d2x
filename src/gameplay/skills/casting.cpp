@@ -77,7 +77,7 @@ bool Simulation::beginSkillCast(PlayerState &player, const SkillCastSpec &skill,
     if (player.dead || player.castTime > 0 ||
         player.meleeTime > 0 || player.hitTime > 0 || skill.castDuration <= 0)
         return false;
-    if (skill.effect == SkillBehavior::Teleport && (!teleportAllowed || !grid_->walkable(target))) {
+    if (skill.effect == SkillBehavior::Teleport && (!teleportAllowed || !grid_->walkable(target, playerMovement))) {
         state_.message = "Teleport needs permitted, clear ground";
         return false;
     }
@@ -116,7 +116,7 @@ bool Simulation::beginSkillCast(PlayerState &player, const SkillCastSpec &skill,
 void Simulation::releaseSkillCast(PlayerState &player, const SkillCastSpec &skill, Vec target,
                                      int staticFieldMinimum, bool consumeMana, EntityId targetUnit) {
     if (player.dead || (consumeMana && player.mana < skill.manaCost) ||
-        (skill.effect == SkillBehavior::Teleport && !grid_->walkable(target))) return;
+        (skill.effect == SkillBehavior::Teleport && !grid_->walkable(target, playerMovement))) return;
     if (skill.summon) {
         if (summonFromCorpse(player, skill, targetUnit)) {
             if (consumeMana) player.mana -= skill.manaCost;
