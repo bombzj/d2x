@@ -22,7 +22,7 @@ void loadFont(Graphics &graphics, Archives &archives, ClassicFont &font, std::st
 }
 } // namespace
 SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
-    : graphics_(archives), uiGraphics_(archives, "data/global/palette/sky/pal.dat"),
+    : archives_(archives), graphics_(archives), uiGraphics_(archives, "data/global/palette/sky/pal.dat"),
       unitsGraphics_(archives, "data/global/palette/units/pal.dat"),
       automapCatalog_(archives), audio(archives) {
     loadFont(uiGraphics_, archives, font, "font16");
@@ -117,7 +117,7 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
     loadHeroEquipment(session);
     if (hero.at("nu").frames.empty() || hero.at("rn").frames.empty())
         throw std::runtime_error("Character animations missing; supply the classic MPQ resources.");
-    loadMonsterAnimations(archives, session);
+    indexMonsterArt(session);
     loadHirelingAnimations(archives, session);
     hirelingPortrait = uiGraphics_.single("data/global/ui/hireables/rogueicon.dc6");
     hirelingPanel = uiGraphics_.single("data/global/ui/panel/npcinv.dc6");

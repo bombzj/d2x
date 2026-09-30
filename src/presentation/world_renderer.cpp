@@ -314,10 +314,9 @@ void SceneView::drawActors(Vec mouse) const {
         } else if (item.type == 2) {
             const auto &monster = monsters[item.index];
             const auto &e = *monster.enemy;
-            const auto variant = assets_.monsterVariantAnimations.find(e.identity.monster +
-                (e.allegiance.role == CombatRole::Summon && e.summonShield > 0 ? "#sh" + std::to_string(e.summonShield) : ""));
-            const auto &animations = variant == assets_.monsterVariantAnimations.end()
-                                         ? assets_.monsterAnimations.at(e.kind) : variant->second;
+            const auto &animations = assets_.monsterAnimationSet(
+                session_, e.identity.monster, e.kind,
+                e.allegiance.role == CombatRole::Summon ? e.summonShield : 0);
             const auto *deathTiming = session_.monsterContent().motion(e.kind, "dt");
             std::string mode = e.hp <= 0 ? (animations.contains("dd") && deathTiming &&
                                                e.deathAge >= deathTiming->duration ? "dd" : "dt")

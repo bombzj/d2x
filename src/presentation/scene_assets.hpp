@@ -8,12 +8,30 @@
 namespace d2x {
 // GPU and audio handles belong to the view, never to saveable game state.
 class SceneAssets {
-    Graphics graphics_;
+    Archives &archives_;
+    // Mutable so the const draw path can populate the on-demand caches below.
+    mutable Graphics graphics_;
     Graphics uiGraphics_;
     Graphics unitsGraphics_;
     AutomapCatalog automapCatalog_;
+    // One entry per implemented monster art set. Built without touching the MPQ so
+    // the first sighting of a class uploads its own frames instead of the whole act.
+    struct MonsterArtSource {
+        MonsterKind kind = MonsterKind::Fallen;
+        const MonsterRecord *actor = nullptr;
+        size_t shield = 0;
+        bool base = false;
+    };
+    std::map<std::string, MonsterArtSource, std::less<>> monsterArtSources;
+    std::map<MonsterKind, MonsterArtSource> baseMonsterArt;
+    // Filled on first sighting; mutable so the const draw path can populate them.
+    mutable std::map<MonsterKind, std::map<std::string, GpuAnimation>> monsterAnimations;
+    mutable std::map<std::string, std::map<std::string, GpuAnimation>, std::less<>>
+        monsterVariantAnimations;
     void loadProps(const Region &region);
-    void loadMonsterAnimations(Archives &archives, const GameSession &session);
+    void indexMonsterArt(const GameSession &session);
+    void loadMonsterActor(const GameSession &session, const MonsterArtSource &source,
+                          std::map<std::string, GpuAnimation> &animations) const;
     void loadHirelingAnimations(Archives &archives, const GameSession &session);
     void loadSkillIcons(Archives &archives, const ClassicData &content);
     void loadAutomap(const GameSession &session);
@@ -61,8 +79,6 @@ class SceneAssets {
     std::map<int, GpuAnimation> summonPortraits;
     std::map<std::string, std::array<GpuAnimation, 3>> waypointAnimations;
     std::map<std::string, std::array<GpuAnimation, 3>> objectModeAnimations;
-    std::map<MonsterKind, std::map<std::string, GpuAnimation>> monsterAnimations;
-    std::map<std::string, std::map<std::string, GpuAnimation>, std::less<>> monsterVariantAnimations;
     struct MonsterAudio {
         std::string attack1, attack2, skill1, skill2, hit, death, footstep, neutral;
         float footstepInterval = 0, neutralInterval = 0;
@@ -95,6 +111,12 @@ class SceneAssets {
     std::map<int, std::array<OverlayArt, 2>> shrineOverlays, combatStateOverlays;
     SceneAssets(Archives &archives, const GameSession &session);
     static std::string itemArtKey(const ItemInstance &item);
+    // Returns the frame set for a live unit, building and caching it on first use.
+    // Unimplemented classes keep the authorized substitute set, as at load time.
+    const std::map<std::string, GpuAnimation> &monsterAnimationSet(const GameSession &session,
+                                                                   std::string_view monsterClass,
+                                                                   MonsterKind kind,
+                                                                   int summonShield) const;
     void loadInventoryArt(const GameSession &session);
     void loadHeroEquipment(const GameSession &session);
     const std::string &heroAppearanceError() const { return heroFailure_; }
