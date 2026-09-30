@@ -166,6 +166,10 @@ MonsterCatalog::MonsterCatalog(Archives &archives, const DataTable &stats) {
         m.inert = extended.number(extra->second, "inert").value_or(0) != 0;
         m.localBlood = extended.number(extra->second, "localBlood").value_or(0);
         m.bleed = extended.number(extra->second, "Bleed").value_or(0);
+        m.lightRadius = extended.number(extra->second, "Light").value_or(0);
+        m.lightColor = {extended.number(extra->second, "light-r").value_or(0),
+                        extended.number(extra->second, "light-g").value_or(0),
+                        extended.number(extra->second, "light-b").value_or(0)};
         m.castsShadow = extended.number(extra->second, "Shadow").value_or(0) != 0;
         m.overlayHeight = extended.number(extra->second, "OverlayHeight").value_or(0);
         m.collisionSize = extended.number(extra->second, "SizeX").value_or(0);

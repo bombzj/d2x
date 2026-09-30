@@ -163,7 +163,6 @@ void SceneView::draw(Vec mouse) const {
             DrawCircleV(rv(screen(p)), 3, GREEN);
     }
     drawActors(mouse);
-    drawMagic();
     drawLighting();
     drawLootLabels(mouse);
     drawExitHint(mouse);

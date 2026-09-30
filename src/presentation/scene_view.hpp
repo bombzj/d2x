@@ -122,7 +122,6 @@ class SceneView {
     void drawActors(Vec mouse) const;
     void drawSelectableSprite(const Sprite *image, Vec position, bool highlighted,
                               Color tint = WHITE, Vector2 highlight = {2.f, 1.f}) const;
-    void drawMagic() const;
     void drawMissile(int id, Vec position, Vec heading, float age, float remaining) const;
     void drawSpellOverlay(int id, Vec position, float age, bool loop) const;
     void drawUnitSpellOverlays(EntityId unit, Vec position, bool back, const CombatEffectSet *states = nullptr) const;

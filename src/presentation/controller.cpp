@@ -283,8 +283,15 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
             view_.notice("Dropping the original cube near your feet.");
         }
         if (input.debugExperience) {
-            auto remaining = session_.maximumExperience() - session_.state().player.experience;
-            auto amount = std::min<uint64_t>(1000, remaining);
+            const auto &player = session_.state().player;
+            const auto &thresholds = session_.experienceThresholds();
+            uint64_t amount = 0;
+            if (size_t(player.level + 1) < thresholds.size()) {
+                const auto levelExperience = thresholds[size_t(player.level + 1)] -
+                                             thresholds[size_t(player.level)];
+                amount = levelExperience / 4 + (levelExperience % 4 != 0);
+                amount = std::min(amount, session_.maximumExperience() - player.experience);
+            }
             if (session_.state().player.dead)
                 view_.notice("Experience requires a living player.", true);
             else {

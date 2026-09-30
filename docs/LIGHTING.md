@@ -2,20 +2,31 @@
 
 ## 数据入口
 
-- `WorldCatalog` 在运行时从原 MPQ 的 `Levels.txt` 读取 `IsInside`、`LOSDraw` 和光色／强度字段。户外（包括第一幕营地与离城野外）使用较大的本地照明范围及可见的昏暗环境光。室内依据 `IsInside` 与 `LOSDraw` 选择环境光底值。
+- `WorldCatalog` 在运行时从当前 MPQ 的 `Levels.txt` 读取 `IsInside`、`LOSDraw`、`Intensity` 和 RGB。室内使用原表的环境光值，不再用 LOSDraw 选择 19%／27% 底值；户外使用环境昼夜状态，不再固定 53%。`NoPer` 是透视控制，与环境光无关。
 - 玩家基础光照半径为 13；`Properties.txt` 的 `light → item_lightradius` 经有效装备和已解析的物品词缀汇总，最终限制为 1–18。物品基础表的 `lightradius` 仍保留原字段，但不作为玩家属性加值；先前把其最大值叠到玩家半径属于错误。装备需求和耐久规则与其他属性共用。
-- `Objects.txt` 的原图仍由普通物件渲染；现有火焰物件在暗层中额外发光。
-- 冰封球父／子链由已导入的技能关联确定，展示层从当前 `Missiles.txt` 读取 Light 与 RGB：球体半径 6、冰弹半径 4、颜色 81/81/255；未为其他弹体猜测灯光程序。光源跟随真实弹体、InitSteps 可见期和消失时机，邻接区域坐标使用共享偏移，不保存灯光实例。
+- `SceneAssets.objectLights` 读取 `Objects.txt.Lit0–7`、RGB 和 Flicker；OpenDiablo2 将 Lit 定义为直径，当前换算半径为直径的一半。光源按对象原身份、NU／OP／ON／S1–5 模式选择；传送点使用真实激活阶段，回城门和凯恩红门使用与原图相同的开门／常开阶段。已移除按 rb/to Token 分类的统一火焰灯、16 盏限制及自造橙色渐变光圈。Flicker 元数据保留，未核实的闪烁程序暂缓，当前仅使用表中不加调制的基值。
+- 全部已接入弹体、命中特效与客户端碎片共用 `Missiles.Light`、RGB、InitSteps 和实际生命周期；不再限定冰封球。球体为 6、冰弹为 4、RGB 81/81/255。区域坐标使用共享偏移，只收集已激活房间中的来源；非零 Flicker 同样暂用基值，不自造随机闪动。
+- `MonsterCatalog` 按真实 MonStats 身份关联 `MonStatsEx → MonStats2.Light/light-r/light-g/light-b`；存活怪物／召唤物和 NPC 使用原值，敌对替身的原身份仍决定灯光。沉沦魔巫师为 Light=5、RGB 230/168/255，安达利尔为 Light=8、白光；没有按外观猜色。
+- Overlay 读取 `InitRadius/Radius` 和 RGB。已显示的瞬时／单位／状态叠层仅在两种半径相等时接入常量光源；半径增长／收缩的客户端程序未核实，明确暂缓，不能用自造插值补全。状态本身改变灯光色、怪物装备基础光与玩家光源颜色规则也仍待核实。
 
 ## 绘制
 
-`LightingView` 是纯展示层：角色光照经屏幕像素到地图坐标的等距逆投影求圆形距离衰减。户外均显示局部照明，地形不会把玩家周围切成黑暗楔形；洞穴等室内则叠加不受遮挡的圆形底光与受 DT1 子格遮挡的较亮光照。遮挡掩码以相邻子格线性插值，后方保留底光，避免整格黑块。室内远处另保留昏暗环境光。户外的可见光半径至少 26 个子格，远处环境亮度为 53%；洞穴底光取角色圆形衰减亮度的 35%。这些亮度与范围是当前画面对照参数，不改变角色的装备光照属性。暗层只覆盖世界图形，在地面物品标签、交互提示、小地图和 HUD 之前绘制。角色跨格、切换区域、光照半径变化、对象碰撞／遮光模式变化或会话恢复时重算遮挡掩码；掩码、贴图和着色器不进入存档。
+`LightingView` 是纯展示层。玩家在室内／室外均使用实际派生的 1–18 半径，移除户外至少 26 子格的扩大；室内遮光仍读 DT1 的 LOS／BlockLight 和 Objects.BlocksLight0–7，对象遮光开关独立于 HasCollision。已移除墙后额外保留 35% 玩家补光的经验规则；遮挡后只保留区域环境光及当前其他来源贡献。户外玩家光仍沿既有不投地形阴影的适配。角色跨格、切换区域、半径或对象遮挡版本改变、会话恢复时重算掩码。当前地图范围为玩家周围 61×61 子格；全部来源按该网格计算，并在等距逆投影后线性采样。掩码、GPU 资源、昼夜状态与灯光实例不进入 D2S。
 
-绘制暗层时先切换 raylib 着色器，再绑定视线贴图；切换着色器会提交上一批图形并清除登记的采样纹理，顺序颠倒会使角色自身光照失效，而火焰仍有亮度。户外掩码只限距离，室内掩码应用静态地形遮光位与 Objects.BlocksLight0–7 的独立对象层；对象原尺寸／位置与碰撞共享，遮光开关不依赖 HasCollision。
+户外环境时钟以 D2MOO `ENVIRONMENT_AllocDrlgEnvironment` 的 cycle=2、ticks=0、timeRate=128、初始强度 128／白色开始。`GAME_UpdateProgress → GAME_UpdateEnvironment` 证实每个 25 Hz 玩法帧推进；正常六段色表、夜间加速、整数切段、RGB 舍入与 `float(sin(angle))` 强度计算移入展示层，暂停不推进，室内不应用昼夜结果但时钟继续走。正常强度公式为 `int(float(sin(angle)) × 128 + 128 + 0.5)`，夜半区间 sine 减半；第五幕 170 上限、第四幕逐级趋近与巅峰 200／特殊色的原引擎分支保留。当前可玩世界仅第一幕；其他幕的完整环境生命周期、第二幕日蚀任务及天气／闪电影响未接入，不以这些分支宣称其他幕完成。
 
-冰封球彩光使用同一子格采样范围及既有半径衰减曲线，与角色／物件亮度逐通道取较大值，再以通道照度乘到世界颜色；没有弹体时与原标量暗层等效。RGB、半径和可见期来自原数据，原 D2Client 的彩光遮挡、光源合并规则、衰减表和 PL2 光照分级仍缺直接证据；本路径是现有光照模型的适配。`palette_blend_view.*` 接入的原 `pScreen` 表只解决弹体／施法叠层混色，不代表已移植原光照管线。依据、RGBA 背景量化与未验收边界见 [冰封球](SKILLS.md#冰封球依据与当前实现)。
+`PaletteBlendView` 在运行时读取当前 Act1 `pal.pl2` 的 `Shadows[32][256]`，偏移 `0x400`；标量／等强度灰光由 0–255 整数强度右移 3 位选取原行，再查原像素颜色索引，不再用 RGB 乘法模拟这部分明暗。彩光样本明确保留既有 RGB 乘色适配，暂不把标量表按各通道套用冒充硬件彩光。灰光中的暗部色阶和保亮色按原表结果保留；环境光不再与局部光做 `ambient + light × (1-ambient)` 的加亮。PL2 光照与既有 pScreen 混色共用原调色板及 RGB 反查缓存；GPU 复制当前世界画面，再查表覆盖世界视口。先切换着色器再登记纹理，lightMap 使用 texture0，其他四个纹理占用 raylib 的四个额外采样位。地面标题、交互文字、小地图与 HUD 在其后绘制，不受世界光照影响。
 
-本实现使用原表决定室内类型和装备词缀。基础 13 与最大 18 参照 [Blizzard 原物品说明](https://classic.battle.net/diablo2exp/items/magic/suf.shtml)，`light` 的属性 ID 从当前 MPQ `Properties.txt`／`ItemStatCost.txt` 读取。OpenDiablo2 将 DT1 子格位 `2` 标作 `BlockLOS`、位 `32` 标作 `BlockLight`；Diablerie 也将后者与视线区分。先前室内只读位 `2`，现两位都读。[D2MOO 的 D2Gfx 调试入口](https://github.com/ThePhrozenKeep/D2MOO/blob/5596f5cb6c5251a0a07c6637d26458b06099d516/source/D2Gfx/include/D2Gfx.h)同时接收 `pLight` 与 `pPlayerLight`；其[地板绘制函数保留的反编译注释](https://github.com/ThePhrozenKeep/D2MOO/blob/5596f5cb6c5251a0a07c6637d26458b06099d516/source/D2Gfx/src/CmnSubtile.cpp)描述高画质下相邻亮度采样插值。这些只支持分层和平滑采样方向，不能确定完整的 D2Client 合成公式。户外取消地形遮光和洞穴底光亮度还依据用户提供的原版对照图；光照曲线、火焰亮度、室外昼夜时序和原版调色板级别仍未获得可执行的客户端规则。物件的 BlocksLight 各模式已接入，门／物体改变模式会更新遮挡版本；这是原字段与现有射线模型的适配，不是完整客户端光照公式。2026-09-30 仅修改源码和文档，未构建、运行检查、测试或打包。角色、怪物和物件的半高斜向阴影仍独立于环境光。
+**不能据此确认整个项目的光照衰减已经与原版一致。** 仍未核实的入口如下：
+
+- `unverifiedFalloff` 明确保留旧的欧氏距离曲线：半径 22% 内恒定，随后 smoothstep 到边缘；这不是已证实的 D2Client 距离表。本地 D2MOO 没有 D2Client 光源生成实现，另三个参考客户端也没有完整距离衰减程序。未用线性／平方反比等新公式冒充原版。
+- 网格仍逐通道取较大值；环境 RGB 先按强度缩放。等强度灰光查原 Shadows 行；彩光继续原 RGB 乘色适配，未另造通道查表／归一化规则。D2Gfx 软件入口证明的是标量 `intensity >> 3`，不能证明经典硬件彩光合成方式；等强度白光的颜色变换已按原表，彩光整体等价仍暂缓。
+- 玩家室内光使用现有射线遮挡；其他光源暂没有原客户端的遮挡／穿墙规则。原地板 Gouraud 子块整数插值、单位落点取光、灯光生灭／淡出、Flicker 和动态 Overlay 半径仍未移植。
+- 当前世界缓冲仍为 RGBA。未染色且调色板 RGB 唯一的像素可准确恢复原索引；同 RGB 不同索引使用首项，染色／半透明／混合后的像素取最近原色。一次世界后处理也不等于原版按地砖和单位先取光、再做透明混色的顺序。完整索引帧缓冲、用户 Gamma 设置及 3D 硬件路径仍暂缓。
+
+本批 Windows Release 编译通过并更新固定运行包 `dist/current`；未运行测试、启动游戏或做画面验收，实际 GPU 着色器与显示效果由用户查看。球体混色与声音边界另见 [冰封球](SKILLS.md#冰封球依据与当前实现)。
+
+原版依据：基础 13 与最大 18 见 [Blizzard 物品说明](https://classic.battle.net/diablo2exp/items/magic/suf.shtml)，属性映射来自当前 Properties／ItemStatCost。室内／户外规则交叉核对本地 OpenDiablo2 `level_details_record.go::IsInside`；环境计算见 [D2MOO D2Environment.cpp](https://github.com/ThePhrozenKeep/D2MOO/blob/5596f5cb6c5251a0a07c6637d26458b06099d516/source/D2Common/src/D2Environment.cpp)，推进入口见同快照 `D2Game/src/GAME/Game.cpp::GAME_UpdateEnvironment`。原 PL2 排列见 OpenD2 `Engine/Palette.hpp` 与 OpenDiablo2 `d2pl2`；行选择及 Gouraud 缓存见 [D2Gfx CmnSubtile.cpp](https://github.com/ThePhrozenKeep/D2MOO/blob/5596f5cb6c5251a0a07c6637d26458b06099d516/source/D2Gfx/src/CmnSubtile.cpp) 的 `sub_6FA71070`、`sub_6FA73130`、`DGFX_InitGouraudCache_6FA72570`。物件模式及怪物 Light 字段见 D2MOO ObjectsTbls／MonsterTbls 和 OpenDiablo2 对应记录。DT1 的位 2／32 分别为 LOS／BlockLight，仍与单位半高斜向阴影独立。
 
 原版参考截图中的雨线尚未实现。OpenDiablo2 的 `LevelDetailsRecord.EnableRain` 和 Diablerie 的 `LevelInfo.rain` 证实 `Levels.Rain` 是区域天气许可；两个参考客户端未找到可直接核对的完整降雨实现。降雨开始／停止、密度、风向和天气光照时序仍未核实，不能仅因区域允许下雨就永久绘制雨线。正常世界绘制已移除原先供顶部开发文字使用的黑色渐变，不以固定遮罩冒充天气。
 

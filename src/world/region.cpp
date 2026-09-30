@@ -161,7 +161,6 @@ void classify(WorldObject &object, const Table &objectRows) {
         object.interaction = Interaction::Heal;
     else if (!object.name.empty() && token != "ck" && token != "cw")
         object.interaction = Interaction::Talk;
-    object.flame = token == "rb" || token == "to";
 }
 } // namespace
 int WorldObject::modeAt(float time) const {

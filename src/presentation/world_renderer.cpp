@@ -600,15 +600,4 @@ void SceneView::drawUnitSpellOverlays(EntityId unit, Vec position, bool back, co
                     drawSpellOverlay(effect.spec.visual.overlayId, position, float(sim.frame - effect.startedAt) / 25.f, true);
             }
 }
-void SceneView::drawMagic() const {
-    const auto &props = session_.region().objects;
-    BeginBlendMode(BLEND_ADDITIVE);
-    for (auto &prop : props)
-        if (prop.flame) {
-            auto p = objectScreen(prop);
-            float flicker = std::sin(view_.animationTime * 9 + prop.pos.x) * 7;
-            DrawCircleGradient(int(p.x), int(p.y) - 15, 65 + flicker, {126, 65, 12, 35}, {0, 0, 0, 0});
-        }
-    EndBlendMode();
-}
 } // namespace d2x

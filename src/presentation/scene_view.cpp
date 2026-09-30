@@ -76,24 +76,110 @@ void SceneView::drawLighting() const {
     const auto &region = session_.region();
     const auto &level = session_.worldContent().level(int(region.definition.id));
     const auto player = session_.state().player.pos;
-    std::vector<MissileLight> lights;
-    auto append = [&](int id, Vec position, float age) {
+    const auto &sim = session_.state();
+    std::vector<SceneLight> lights;
+    auto appendMissile = [&](int id, Vec position, float age) {
         const auto found = assets_.projectileVisuals.find(id);
         if (found == assets_.projectileVisuals.end()) return;
         const auto &visual = found->second;
-        // Frozen Orb has no flicker. Other skills keep their existing lighting
-        // until their client light programs have been checked independently.
-        if (!assets_.frozenOrbProjectiles.contains(id)) return;
+        // All missiles use their table light. Flicker keeps the unmodulated
+        // base value until its D2Client program is recovered.
         if (visual.lightRadius > 0 && age * 25.f + .00001f >= visual.initSteps)
-            lights.push_back({position, visual.lightRadius, visual.lightColor});
+            lights.push_back({position, float(visual.lightRadius), visual.lightColor});
     };
-    for (const auto &[id, offset] : session_.sceneRegions()) {
-        const auto &area = session_.areaState(id);
+    auto appendObject = [&](int objectClass, int mode, Vec position) {
+        const auto found = assets_.objectLights.find(objectClass);
+        if (found == assets_.objectLights.end()) return;
+        const auto &light = found->second;
+        // OpenDiablo2 ObjectDetailRecord.LightDiameter: Lit0..7 is a diameter.
+        const float radius = light.diameter[size_t(std::clamp(mode, 0, 7))] * .5f;
+        if (radius > 0) lights.push_back({position, radius, light.color});
+    };
+    auto appendOverlay = [&](int id, Vec position) {
+        const auto found = assets_.overlayLights.find(id);
+        if (found == assets_.overlayLights.end()) return;
+        const auto &light = found->second;
+        // Constant radii need no invented client timing. Growing/shrinking
+        // overlays remain deferred rather than guessing interpolation.
+        if (light.radius > 0 && light.initialRadius == light.radius)
+            lights.push_back({position, float(light.radius), light.color});
+    };
+    auto appendMonster = [&](std::string_view identity, Vec position) {
+        const auto *monster = session_.monsterContent().find(identity);
+        if (monster && monster->lightRadius > 0)
+            lights.push_back({position, float(monster->lightRadius),
+                {uint8_t(monster->lightColor[0]), uint8_t(monster->lightColor[1]),
+                 uint8_t(monster->lightColor[2]), 255}});
+    };
+    auto appendUnit = [&](EntityId id, Vec position, const CombatEffectSet &states) {
+        for (const auto &[index, offset] : session_.sceneRegions())
+            for (const auto &effect : session_.areaState(index).effects)
+                if (effect.attached == id && assets_.spellOverlays.contains(effect.overlayId))
+                    appendOverlay(effect.overlayId, position);
+        for (const auto &effect : states.entries()) {
+            if (!effect.activeAt(sim.frame)) continue;
+            if (assets_.spellOverlays.contains(effect.spec.visual.overlayId))
+                appendOverlay(effect.spec.visual.overlayId, position);
+            for (const auto &[name, record] : session_.content().states) {
+                if (record.definition.id != effect.spec.state.id) continue;
+                for (const auto &overlay : {record.overlay, record.secondaryOverlay})
+                    if (auto found = assets_.overlayIds.find(overlay); found != assets_.overlayIds.end())
+                        appendOverlay(found->second, position);
+                break;
+            }
+        }
+    };
+    for (const auto &[index, offset] : session_.sceneRegions()) {
+        const auto &area = session_.areaState(index);
+        const auto &sceneRegion = session_.regions()[index];
         for (const auto &missile : area.missiles)
-            append(missile.missileId, missile.pos + offset, missile.age);
+            if (session_.roomVisible(index, missile.pos))
+                appendMissile(missile.missileId, missile.pos + offset, missile.age);
+        for (const auto &effect : area.effects) {
+            if (!session_.roomVisible(index, effect.pos)) continue;
+            appendMissile(effect.missileId, effect.pos + offset, effect.age);
+            if (!effect.attached && assets_.spellOverlays.contains(effect.overlayId))
+                appendOverlay(effect.overlayId, effect.pos + offset);
+        }
+        for (const auto &object : sceneRegion.objects) {
+            if (object.questHidden || !session_.roomVisible(index, object.pos)) continue;
+            int mode = object.modeAt(sim.time);
+            if (object.interaction == Interaction::Travel) {
+                const auto activated = sim.waypoints.find(sceneRegion.definition.id);
+                mode = 0;
+                if (activated != sim.waypoints.end()) {
+                    const float duration = object.waypointFps[1] > 0
+                        ? object.animationRules[1].frames / object.waypointFps[1] : 0;
+                    mode = sim.time - activated->second < duration ? 1 : 2;
+                }
+            }
+            appendObject(object.objectClass, mode, object.pos + offset);
+            if (!object.npcClass.empty()) appendMonster(object.npcClass, object.pos + offset);
+        }
     }
-    lighting_.draw(level, player, screen(player), view_.zoom, session_.characterStats().lightRadius,
-                   region.objects, lights);
+    for (const auto &effect : clientMissiles_)
+        appendMissile(effect.missileId, effect.pos, effect.age);
+    for (const auto &monster : visibleMonsters()) {
+        if (monster.enemy->hp <= 0) continue;
+        appendMonster(monster.enemy->identity.monster, monster.position);
+        appendUnit(monster.enemy->id, monster.position, monster.enemy->combatEffects);
+    }
+    if (!sim.player.dead) appendUnit(sim.player.id, player, sim.player.combatEffects);
+    if (sim.player.hireling.active())
+        appendUnit(sim.player.hireling.id, sim.player.hireling.pos, sim.player.hireling.combatEffects);
+    for (const auto &portal : session_.portals(region.definition.id)) {
+        const auto &opening = assets_.townPortalRules[0];
+        const float duration = opening.frames / opening.fps;
+        appendObject(59, sim.time - portal.openedAt < duration ? 1 : 2, staticUnitPosition(portal.position));
+    }
+    if (const auto position = session_.cainPortalPosition()) {
+        const auto &opening = assets_.cainPortalRules[0];
+        const float elapsed = view_.cainPortalAnimationStarted < 0 ? 999.f
+            : std::max(0.f, view_.animationTime - view_.cainPortalAnimationStarted);
+        appendObject(60, elapsed < opening.frames / opening.fps ? 1 : 2, staticUnitPosition(*position));
+    }
+    lighting_.draw(paletteBlend_, level, player, screen(player), view_.zoom,
+                   session_.characterStats().lightRadius, lights);
 }
 std::string playerAnimationMode(const PlayerState &p) {
     return p.dead                              ? "dt"
@@ -115,6 +201,7 @@ void SceneView::notice(std::string text, bool error) {
 void SceneView::sessionRestored() {
     assets_.audio.resetEmitters();
     lighting_.invalidate();
+    lighting_.resetEnvironment();
     clientMissiles_.clear();
     projectileVisualRandom_ = session_.visualSeed();
     exploredAutomap_.clear();
@@ -178,6 +265,7 @@ void SceneView::advanceUi(float dt, bool worldPaused) {
     advanceQuestAnimations(dt);
 }
 void SceneView::advance(float dt) {
+    lighting_.advance(dt, session_.worldContent().level(int(session_.region().definition.id)));
     advanceMissileVisuals(dt);
     revealAutomap();
     const auto &currentRegion = session_.region();

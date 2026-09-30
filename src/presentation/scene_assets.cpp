@@ -30,6 +30,15 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
     loadFont(uiGraphics_, archives, speechFont, "fontformal12");
     const DataTable overlays(archives.read("data/global/excel/overlay.txt"));
     for (size_t row = 0; row < overlays.rows().size(); ++row) {
+        if (overlays.value(row, "Filename").empty()) continue;
+        overlayIds.emplace(overlays.value(row, "overlay"), int(row));
+        overlayLights.emplace(int(row), OverlayLight{
+            overlays.number(row, "InitRadius").value_or(0), overlays.number(row, "Radius").value_or(0),
+            {uint8_t(overlays.number(row, "Red").value_or(0)),
+             uint8_t(overlays.number(row, "Green").value_or(0)),
+             uint8_t(overlays.number(row, "Blue").value_or(0)), 255}});
+    }
+    for (size_t row = 0; row < overlays.rows().size(); ++row) {
         if (overlays.value(row, "overlay") != "npcalert") continue;
         const auto file = std::string(overlays.value(row, "Filename"));
         npcAlert.animation = unitsGraphics_.single("data/global/overlays/" + file + ".dcc");
@@ -133,6 +142,19 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
         throw std::runtime_error("Original expansion hireling panel resources are missing");
     loadMonsterAudio(archives, session.monsterContent());
     const auto objectRows = decodeTable(archives.read("data/global/excel/objects.txt"));
+    for (const auto &row : objectRows) {
+        if (row.at("Id").empty()) continue;
+        auto number = [&](const std::string &name) {
+            const auto &value = row.at(name);
+            return value.empty() ? 0 : std::stoi(value);
+        };
+        ObjectLight light;
+        for (size_t mode = 0; mode < light.diameter.size(); ++mode)
+            light.diameter[mode] = number("Lit" + std::to_string(mode));
+        light.color = {uint8_t(number("Red")), uint8_t(number("Green")), uint8_t(number("Blue")), 255};
+        light.flicker = number("Flicker") != 0;
+        objectLights.emplace(number("Id"), light);
+    }
     auto portalRecord = std::find_if(objectRows.begin(), objectRows.end(), [](const auto &row) {
         auto id = row.find("Id");
         return id != row.end() && id->second == "59";
@@ -300,7 +322,8 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
                 missiles.number(row, "Light").value_or(0),
                 {uint8_t(missiles.number(row, "Red").value_or(0)),
                  uint8_t(missiles.number(row, "Green").value_or(0)),
-                 uint8_t(missiles.number(row, "Blue").value_or(0)), 255}});
+                 uint8_t(missiles.number(row, "Blue").value_or(0)), 255},
+                missiles.number(row, "Flicker").value_or(0) != 0});
         }
     const DataTable projectileSounds(archives.read("data/global/excel/sounds.txt"));
     for (size_t row = 0; row < projectileSounds.rows().size(); ++row) {

@@ -92,11 +92,11 @@
 - 基础减速为 `200+25*(等级-1)` 帧，1 级 8 秒。目标免冰冻、半冻结时间、有效冷抗及冰冷支配／装备 `passive_cold_pierce` 参与时长；先半时长，再按抗性截断。冰免不被支配击破，最低有效抗性为 -100%。MonStats 的 ColdEffect=0 拒绝减速，负值怪物再除 DifficultyLevels 的 MonsterColdDivisor（普通／噩梦／地狱为 1/2/4），仍有效时最低保留一帧。此路径减速而不冻结。
 - 施法使用原 SC 动作／出手帧、`IceCastNew03` 15 帧叠层及冰系施法音。弹体按自身时间、原帧偏移和世界方向绘制；当前原 animrate=1024 与 AnimSpeed=16 的两种定点速率均对应每模拟帧一图帧。原弹体及施法叠层使用 Units 调色板；图形／方向交叉核对 Diablerie 的 `Engine/Entities/Missile.cs` 与 OpenDiablo2 `d2mapentity/factory.go`，散射节拍与数值以 D2MOO 和当前 MPQ 为准。
 - `palette_blend_view.*` 读取当前 MPQ `Act1/pal.pl2` 的 `pScreen` 表（偏移 `0x33500`，256×256 索引），接 `Missiles.Trans=1` 与 `Overlay.Trans=3`。格式交叉核对本地 OpenD2 `Engine/Palette.hpp` 与 OpenDiablo2 `d2pl2`，模式核对 OpenD2 `Renderer_GL.cpp` 和 Diablerie 材质。保留原 DCC 索引，按单位／弹体绘制顺序在 GPU 内复制对应背景矩形并查原混色表，不再用 RGB 公式代替它。已有世界缓冲仍为 RGBA：原调色板颜色恢复索引后查表，已着色／半透明混合的背景按最近颜色量化，相同 RGB 的重复索引无法完全恢复；这仍不等于全场景原索引合成。
-- `LightingView` 接球体 Light=6、冰弹 Light=4、RGB=81/81/255，光源跟随真实弹体、InitSteps 可见期与生命周期，邻接区域使用共享世界偏移。颜色以各通道亮度合成到场景照明，不生成圆形装饰图。半径和颜色取原表，衰减仍使用现有角色光照曲线及子格采样；原 D2Client 彩光遮挡、亮度合并及 PL2 光照级别尚未核实，见 [场景照明](LIGHTING.md)。
+- `LightingView` 接球体 Light=6、冰弹 Light=4、RGB=81/81/255，光源跟随实际弹体、InitSteps 与生命周期，邻接区域使用共享偏移；当前全部已接入弹体及命中特效共用原表光源，已移除冰封球限定。全局标量／灰光接当前 Act1 PL2 的 Shadows 32 行，按强度右移 3 位查原色，彩光暂留既有 RGB 乘色；未染色且 RGB 唯一的像素可恢复原索引。距离曲线仍在 `unverifiedFalloff` 明确暂留，彩光合并／遮挡、RGBA 量化及世界后处理顺序仍为适配，不代表冰封球或全项目照明已与原版等价，见 [场景照明](LIGHTING.md)。
 - `audio_emitters.cpp` 将 `frozenorbbolt.TravelSound` 的 `sorceress_glacialspike_1` 作为三种原 WAV 的分组，按原 Compound=4 的帧门槛选取创建音轨；各弹体拥有独立播放游标，不再重启同一个 Sound。原 22050 Hz 单声道 PCM 的 `smpl` 循环起点分别为 24220／30578／28407，均与 Sounds.Block 1 一致；含尾点的循环终点分别为 51867／59890／55903。先播放开头，随后无缝循环原采样区间。原 Volume 参与音轨音量；弹体消失后淡出，暂停暂停音轨，静音继续推进游标，换区／读档清理展示实例；声音随机流不进入玩法。分组和 Compound 单位参照 Diablerie `SoundInfo.cs/AudioManager.cs`，Fade Out=6 暂按该经典版参考的 6/25 秒适配，未把 D2R 文档的音频 tick 单位直接视作经典客户端证据。原距离衰减、声像、混响和声道优先级仍未复刻，声音准入沿用现有画面距离范围。
 - 原 `frozenorbexplode`（263）的 `IceOrbExplode.dcc` 已查阅，但当前 MPQ 的技能／父子链没有引用它。Diablerie `Game/MissileFunctions.cs::OnMissileLifetimeEnd` 仅创建 16 枚关联冰弹；[D2R Data Guide 的 Missiles.txt](https://locbones.github.io/D2R_DataGuide/#missilestxt) 的 CltHit30 说明也只有关联弹体圆盘，不能证明另有硬编码的 263 播放分支，因此仍暂缓该触发。`InitSteps` 隐藏期已接通用绘制，完整客户端叠层时序仍需原版对照。当前路径仍为本项目连续坐标与扫掠适配，未移植原定点路径／单位调度，不声明逐像素或逐帧等价。
 
-本次只使用已有资源工具读取 MPQ 表、DCC 头、原图、PL2 与 WAV 采样循环元数据；摘录／预览保留在忽略的 `artifacts/frozen-orb-20260930/`，不是运行验收。未新写测试、构建、运行检查、运行游戏或打包，待用户查看。D2S 字段及保存语义不变，飞行阶段、技能延迟、减速和展示音轨状态不写磁盘。
+本次只使用已有资源工具读取 MPQ 表、DCC 头、原图、PL2 与 WAV 采样循环元数据；摘录／预览保留在忽略的 `artifacts/frozen-orb-20260930/`，不是运行验收。随后按用户要求完成 Windows Release 编译并更新 `dist/current`；未新写或运行测试、运行游戏或做画面验收，待用户查看。D2S 字段及保存语义不变，飞行阶段、技能延迟、减速和展示音轨状态不写磁盘。
 
 ### 共同施法与显示
 
@@ -128,6 +128,6 @@
 
 ### 未核实边界
 
-此前八项主动技能修订时只核对源码、当前 MPQ 和编辑器诊断，后续物品审查已构建，但不能据此声称所有技能画面或逐帧行为已与原版等价。新增技能的逐项包内验证见上表。火球 `CltHitSubMissile1=fireexplosion2` 的额外散布图块、静电力场目标专属命中表现、冰封球以外的弹体动态光照、完整单位命中尺寸、叠层完整客户端时序仍待核实；通用地形／对象阻弹及弹体尺寸已按原表接入，尚未运行验收，边界见上文。不凭空生成这些细节。
+此前八项主动技能修订时只核对源码、当前 MPQ 和编辑器诊断，后续物品审查已构建，但不能据此声称所有技能画面或逐帧行为已与原版等价。新增技能的逐项包内验证见上表。火球 `CltHitSubMissile1=fireexplosion2` 的额外散布图块、静电力场目标专属命中表现、弹体灯光的精确衰减／遮挡／闪烁、完整单位命中尺寸、叠层完整客户端时序仍待核实；通用地形／对象阻弹及弹体尺寸已按原表接入，尚未运行验收，边界见上文。不凭空生成这些细节。
 
 当前仅保存原版 D2S v96 的角色技能等级、选择和八个快捷键；弹体、叠层、未完成施法和怪物临时状态不写入磁盘。本次重构未改变保存语义，效果实例／模拟帧不写入 D2S，内部行为枚举不再承担原技能身份。格式固定，支持度变化不升级格式，详见[存档说明](SAVES.md)。此前的技能树截图与存读档记录不代表本轮战斗效果已验收。

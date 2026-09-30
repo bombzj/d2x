@@ -54,6 +54,18 @@ class SceneAssets {
     std::map<int, GpuAnimation> projectileAnimations;
     std::set<int> translucentProjectiles;
     std::set<int> frozenOrbProjectiles;
+    struct ObjectLight {
+        std::array<int, 8> diameter{};
+        Color color{0, 0, 0, 255};
+        bool flicker = false; // Native modulation program is not yet recovered.
+    };
+    std::map<int, ObjectLight> objectLights;
+    struct OverlayLight {
+        int initialRadius = 0, radius = 0;
+        Color color{0, 0, 0, 255};
+    };
+    std::map<int, OverlayLight> overlayLights;
+    std::map<std::string, int, std::less<>> overlayIds;
     struct ProjectileVisual {
         float fps = 25;
         bool loop = false;
@@ -64,6 +76,7 @@ class SceneAssets {
         int trans = 0;
         int lightRadius = 0;
         Color lightColor{0, 0, 0, 255};
+        bool lightFlicker = false;
     };
     std::map<int, ProjectileVisual> projectileVisuals;
     // Client-only impact alternatives (CltHit03); never damage-bearing missiles.
