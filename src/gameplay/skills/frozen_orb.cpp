@@ -60,7 +60,7 @@ void Simulation::spawnFrozenOrbBolt(const Missile &orb, Vec target, bool nova, s
     emit(MissileReleased{child.missileId});
     spawned.push_back(std::move(child));
 }
-float Simulation::frozenOrbColdDuration(EntityId attacker, const CombatUnit &target, int frames) const {
+float Simulation::missileColdDuration(EntityId attacker, const CombatUnit &target, int frames) const {
     const auto &mods = target.stats.attributes.combat;
     if (frames <= 0 || mods.cannotBeFrozen) return 0;
     // Total damage processing halves the duration before resistance rounding.
@@ -126,7 +126,7 @@ void Simulation::advanceFrozenOrb(Missile &missile, std::vector<Missile> &spawne
         const float damage = float(minimum + limitedRandom(missile.combatRandom, span)) / 256.f;
         missile.damage = damage;
         dealDamage({missile.owner, contact->first, damage, MonsterDamageType::Cold,
-                    frozenOrbColdDuration(missile.owner, target, state.coldFrames)});
+                    missileColdDuration(missile.owner, target, state.coldFrames)});
         emit(MissileImpact{missile.missileId, missile.pos});
         missile.lastHit = contact->first;
         missile.remaining = 0;

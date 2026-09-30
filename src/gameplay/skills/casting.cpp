@@ -78,6 +78,7 @@ bool Simulation::beginSkillCast(PlayerState &player, const SkillCastSpec &skill,
         player.meleeTime > 0 || player.hitTime > 0 || skill.castDuration <= 0)
         return false;
     if (skill.delayFrames > 0 && state_.frame < player.skillDelayUntil) return false;
+    if (skill.blizzard && !blizzardTargetClear(player.pos, target)) return false;
     if (skill.effect == SkillBehavior::Teleport && (!teleportAllowed || !grid_->walkable(target, playerMovement))) {
         state_.message = "Teleport needs permitted, clear ground";
         return false;
@@ -125,6 +126,7 @@ void Simulation::releaseSkillCast(PlayerState &player, const SkillCastSpec &skil
         }
         return;
     }
+    if (skill.blizzard && !blizzardTargetClear(player.pos, target)) return;
     if (consumeMana) player.mana -= skill.manaCost;
     if (skill.delayFrames > 0)
         player.skillDelayUntil = state_.frame + EffectFrame(skill.delayFrames);
@@ -156,6 +158,8 @@ void Simulation::releaseSkillCast(PlayerState &player, const SkillCastSpec &skil
             amount *= float(std::clamp(100 - unitResistance(unit, MonsterDamageType::Lightning), 0, 100)) / 100.f;
             dealDamage({player.id, unit.id, amount, MonsterDamageType::Lightning, 0, true});
         }
+    } else if (skill.blizzard) {
+        launchBlizzard(player, skill, target);
     } else if (skill.frozenOrb) {
         launchFrozenOrb(player, skill, target);
     } else if (skill.effect == SkillBehavior::ChargedBolt) {

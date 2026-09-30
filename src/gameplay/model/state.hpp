@@ -176,6 +176,13 @@ struct Missile {
     std::optional<MonsterDamageType> fixedElement = std::nullopt;
     bool killOnHit = true;
     std::optional<FrozenOrbMissileState> frozenOrb = std::nullopt;
+    struct BlizzardState {
+        BlizzardSpec spec;
+        bool center = true;
+        int elapsedFrames = 0, lifetimeFrames = 0, spawnSeedX = 0;
+        int minimumDamage = 0, maximumDamage = 0, coldFrames = 0;
+    };
+    std::optional<BlizzardState> blizzard = std::nullopt;
 };
 struct Effect {
     Vec pos;

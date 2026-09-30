@@ -281,6 +281,7 @@ void SceneView::drawActors(Vec mouse) const {
         const auto &area = session_.areaState(region);
         for (int i = 0; i < int(area.missiles.size()); ++i) {
             const auto &missile = area.missiles[i];
+            if (missile.blizzard && !missile.blizzard->center) continue;
             const Vec position = missile.pos + offset;
             if (missile.missileId >= 0 && session_.roomVisible(region, missile.pos))
                 draw.push_back({sceneOrder(position, 1, false, 4), 8, i, screen(position), region});
@@ -553,15 +554,20 @@ void SceneView::drawMissile(int id, Vec position, Vec heading, float age, float 
     else frame = visual.loop ? frame % frames : std::min(frame, frames - 1);
     const bool translucent = assets_.translucentProjectiles.contains(id);
     const auto *image = animation.frame(direction(heading, animation.directions), frame);
+    Vec at = screen(position);
+    if (const auto fall = assets_.blizzardFalls.find(id); fall != assets_.blizzardFalls.end()) {
+        const int elapsed = std::max(0, int(age * 25.f + .00001f));
+        at.y -= float(std::max(0, fall->second.fallDistance - elapsed * fall->second.fallRate));
+    }
     if (visual.trans == 1) {
-        paletteBlend_.draw(image, screen(position));
+        paletteBlend_.draw(image, at);
         return;
     }
     if (translucent) {
         rlSetBlendFactors(0x0307, 1, 0x8006);
         BeginBlendMode(BLEND_CUSTOM);
     }
-    sprite(image, screen(position));
+    sprite(image, at);
     if (translucent) EndBlendMode();
 }
 void SceneView::drawSpellOverlay(int id, Vec position, float age, bool loop) const {

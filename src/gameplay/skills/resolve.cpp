@@ -85,6 +85,7 @@ SkillCastSpec resolveSkill(const SkillSpec &spec, int rank,
     result.rank = rank;
     result.sourceId = spec.sourceId;
     result.delayFrames = spec.delayFrames;
+    result.blizzard = spec.blizzard;
     if (spec.effect == SkillBehavior::FrozenArmor) {
         int synergyRanks = 0;
         for (int id : spec.armorSynergySkills)

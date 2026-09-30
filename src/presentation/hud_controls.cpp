@@ -186,6 +186,10 @@ void SceneView::drawSkillControls(Vec mouse) const {
             else if (value.effect == SkillBehavior::StaticField)
                 detail += " / " + std::to_string(int(value.staticPercent)) + "% current life, range " +
                     std::to_string(int(value.staticRadius));
+            else if (value.blizzard)
+                detail += " / Cold damage per shard " + std::string(TextFormat("%.1f-%.1f", value.minimumDamage, value.maximumDamage)) +
+                    " / Duration " + std::string(TextFormat("%.1fs", value.missileLifetime)) +
+                    " / Delay " + std::string(TextFormat("%.1fs", float(value.delayFrames) / 25.f));
             else if (value.frozenOrb)
                 detail += " / Cold damage per bolt " + std::string(TextFormat("%.1f-%.1f", value.minimumDamage, value.maximumDamage)) +
                     " / Chill " + std::string(TextFormat("%.1fs", value.coldDuration)) +

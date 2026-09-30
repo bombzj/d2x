@@ -3,6 +3,16 @@
 #include <algorithm>
 
 namespace d2x {
+void SceneView::createBlizzardFall(int missileId, Vec position) {
+    const auto found = assets_.blizzardFalls.find(missileId);
+    if (found == assets_.blizzardFalls.end()) return;
+    const auto &program = found->second;
+    // MPQ fall distance/rate are client fields, not the server Range=9.
+    // Use the damage-bearing shard's original art while CltDo13's variant
+    // selection and exact legacy initialization remain unverified.
+    const int frames = (program.fallDistance + program.fallRate - 1) / program.fallRate;
+    clientMissiles_.push_back({missileId, position, {}, 0, float(frames) / 25.f});
+}
 void SceneView::createMissileImpactVisuals(int missileId, Vec position) {
     const auto found = assets_.projectileImpactVariants.find(missileId);
     if (found == assets_.projectileImpactVariants.end()) return;
@@ -14,11 +24,23 @@ void SceneView::createMissileImpactVisuals(int missileId, Vec position) {
     clientMissiles_.push_back({id, position, {}, 0, assets_.projectileVisuals.at(id).lifetime});
 }
 void SceneView::advanceMissileVisuals(float dt) {
+    std::vector<ClientMissile> landed;
     for (auto &effect : clientMissiles_) {
         effect.age += dt;
         effect.pos = effect.pos + effect.velocity * dt;
+        if (effect.age + .00001f >= effect.duration) {
+            const auto found = assets_.blizzardFalls.find(effect.missileId);
+            if (found != assets_.blizzardFalls.end()) {
+                const auto &program = found->second;
+                // Keep overshoot so landing does not depend on render frequency.
+                landed.push_back({program.impactId, effect.pos, {},
+                    std::max(0.f, effect.age - effect.duration), float(program.impactFrames) / 25.f});
+            }
+        }
     }
     std::erase_if(clientMissiles_, [](const auto &effect) { return effect.age + .00001f >= effect.duration; });
+    for (auto &effect : landed)
+        if (effect.age + .00001f < effect.duration) clientMissiles_.push_back(std::move(effect));
 }
 void SceneView::syncMissileAudio() {
     std::vector<SoundEmitter> emitters;

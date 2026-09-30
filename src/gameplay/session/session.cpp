@@ -565,6 +565,7 @@ void GameSession::enter(RegionId id, std::optional<Vec> arrival, std::optional<V
     cancelInteraction();
     closeStorage();
     auto plan = inactiveAreas_[current_].initialized ? PopulationPlan{} : population(*found);
+    simulation_.missileWorldOrigin_ = {float(found->recipe.worldX * 5), float(found->recipe.worldY * 5)};
     simulation_.enterArea(found->map.grid, found->map.activation, arrival.value_or(found->map.spawn),
                           found->definition.safe,
                           std::move(inactiveAreas_[current_]), plan.spawns, coordinateOffset);

@@ -9,6 +9,12 @@
 #include <vector>
 
 namespace d2x {
+struct BlizzardSpec {
+    int radius = 0, emissionPeriod = 0;
+    int shardId = -1, shardFrames = 0;
+    int fallDistance = 0, fallRate = 0;
+    int impactId = -1, impactFrames = 0;
+};
 // Weapon skills use the ordinary attack animation, equipment and ammunition pipeline.
 struct WeaponSkillSpec {
     std::string requiredType;
@@ -78,6 +84,7 @@ struct SkillSpec {
     std::optional<WeaponSkillSpec> weapon;
     std::optional<SummonSkillSpec> summon;
     std::optional<FrozenOrbSpec> frozenOrb;
+    std::optional<BlizzardSpec> blizzard;
     int delayFrames = 0;
     std::array<int, 5> minimumPerLevel{}, maximumPerLevel{};
     int synergyPercent = 0;
@@ -115,6 +122,7 @@ struct SkillCastSpec {
     std::optional<WeaponSkillSpec> weapon;
     std::optional<SummonCastSpec> summon;
     std::optional<FrozenOrbCastSpec> frozenOrb;
+    std::optional<BlizzardSpec> blizzard;
     int delayFrames = 0;
     std::optional<MissileImpactSpec> missileImpact;
     int missileId = -1;

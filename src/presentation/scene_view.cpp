@@ -377,6 +377,8 @@ void SceneView::advance(float dt) {
                     createMissileImpactVisuals(value.missileId, value.position);
                     if ((screen(value.position) - Vec{W / 2.f, (H - HUD) / 2.f}).length() < W)
                         assets_.audio.play("missile-hit:" + std::to_string(value.missileId));
+                } else if constexpr (std::is_same_v<T, BlizzardShardCreated>) {
+                    createBlizzardFall(value.missileId, value.position);
                 } else if constexpr (std::is_same_v<T, MissileReleased>) {
                     assets_.audio.play("missile-release:" + std::to_string(value.missileId));
                 } else if constexpr (std::is_same_v<T, SkillActivated>) {

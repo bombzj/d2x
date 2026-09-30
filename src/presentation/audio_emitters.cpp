@@ -146,12 +146,15 @@ void SoundBank::registerTravelGroup(Archives &archives, std::string key, const D
             reader.seek(begin + length + (length & 1));
         }
         const int block = table.number(variant, "Block 1").value_or(-1);
-        if (!loop || block < 0 || unsigned(block) != loop->first ||
+        if ((loop ? block < 0 || unsigned(block) != loop->first : block != -1) ||
             table.number(variant, "Block 2").value_or(-1) != -1 ||
             table.number(variant, "Block 3").value_or(-1) != -1)
             throw std::runtime_error("Original travel WAV loop and Sounds.Block 1 disagree");
         Wave wave = LoadWaveFromMemory(".wav", bytes.data(), int(bytes.size()));
         if (!wave.data) throw std::runtime_error("Original travel WAV could not be decoded");
+        // Sounds.Loop without a smpl loop or Block markers loops the complete
+        // original clip (also used by the reference AudioManager).
+        if (!loop) loop = std::pair{0u, unsigned(wave.frameCount)};
         if (wave.channels < 1 || wave.channels > 2 || loop->first >= loop->second ||
             loop->second > wave.frameCount || (rate && rate != wave.sampleRate) ||
             (emitters_ && emitters_->sampleRate != wave.sampleRate)) {

@@ -97,6 +97,7 @@ class SceneView {
     std::vector<ClientMissile> clientMissiles_;
     uint64_t projectileVisualRandom_ = 0;
     void createMissileImpactVisuals(int missileId, Vec position);
+    void createBlizzardFall(int missileId, Vec position);
     void advanceMissileVisuals(float dt);
     void syncMissileAudio();
     std::map<EntityId, Vec> monsterPositions_, monsterLooks_;

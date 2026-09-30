@@ -326,6 +326,23 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
                 missiles.number(row, "Flicker").value_or(0) != 0});
         }
     const DataTable projectileSounds(archives.read("data/global/excel/sounds.txt"));
+    for (const auto &[id, skill] : session.content().skills.skills) {
+        if (!skill.spell || !skill.spell->blizzard) continue;
+        const auto &program = *skill.spell->blizzard;
+        blizzardFalls.emplace(program.shardId, program);
+        std::string_view travelSound;
+        for (size_t row = 0; row < missiles.rows().size(); ++row)
+            if (missiles.number(row, "Id") == skill.spell->missileId) {
+                travelSound = missiles.value(row, "TravelSound");
+                break;
+            }
+        for (size_t row = 0; row < projectileSounds.rows().size(); ++row)
+            if (projectileSounds.value(row, "Sound") == travelSound) {
+                audio.registerTravelGroup(archives, "missile-release:" + std::to_string(skill.spell->missileId),
+                                          projectileSounds, row);
+                break;
+            }
+    }
     for (size_t row = 0; row < projectileSounds.rows().size(); ++row) {
         const std::string name(projectileSounds.value(row, "Sound"));
         if (name != "item_key_used" && !name.ends_with("_needkey_1")) continue;
@@ -398,7 +415,7 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
     }
     for (const auto &[id, skill] : session.content().skills.skills)
         if (skill.spell && skill.spell->missileId >= 0 &&
-            !projectileAnimations.contains(skill.spell->missileId)) {
+            !skill.spell->missileArt.empty() && !projectileAnimations.contains(skill.spell->missileId)) {
             auto animation = unitsGraphics_.single(skill.spell->missileArt,
                                                    translucentProjectiles.contains(skill.spell->missileId));
             if (animation.frames.empty())
@@ -441,7 +458,8 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
             if (!skill.spell->impactSoundArt.empty())
                 audio.registerOriginal(archives, "missile-hit:" + std::to_string(skill.spell->missileId),
                                        skill.spell->impactSoundArt);
-            if (!skill.spell->releaseSoundArt.empty())
+            if (!skill.spell->releaseSoundArt.empty() &&
+                !audio.hasEmitterSound("missile-release:" + std::to_string(skill.spell->missileId)))
                 audio.registerOriginal(archives, "missile-release:" + std::to_string(skill.spell->missileId),
                                        skill.spell->releaseSoundArt);
             if (!skill.spell->activationSoundArt.empty())
@@ -461,7 +479,7 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
     for (const auto &[id, skill] : session.content().skills.skills)
         if (skill.spell && !skill.spell->castSoundArt.empty()) {
             float volume = .45f;
-            if (skill.spell->frozenOrb) {
+            if (skill.spell->frozenOrb || skill.spell->blizzard) {
                 const auto &skills = session.content().tables.at("skills");
                 bool found = false;
                 for (size_t row = 0; row < skills.rows().size(); ++row) {
@@ -471,14 +489,14 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
                         if (projectileSounds.value(soundRow, "Sound") != sound) continue;
                         const auto originalVolume = projectileSounds.number(soundRow, "Volume");
                         if (!originalVolume || *originalVolume < 0 || *originalVolume > 255)
-                            throw std::runtime_error("Original Frozen Orb cast sound volume is invalid");
+                            throw std::runtime_error("Original cold cast sound volume is invalid");
                         volume *= *originalVolume / 255.f;
                         found = true;
                         break;
                     }
                     break;
                 }
-                if (!found) throw std::runtime_error("Original Frozen Orb cast sound row is missing");
+                if (!found) throw std::runtime_error("Original cold cast sound row is missing");
             }
             audio.registerOriginal(archives, "skill-cast:" + std::to_string(id),
                                    skill.spell->castSoundArt, volume);

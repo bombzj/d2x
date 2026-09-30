@@ -22,6 +22,7 @@ class Simulation {
     uint64_t unitRandom_ = 0; // Initialized by GameSession before spawning.
     const Grid *grid_ = nullptr; // Borrowed from GameSession's stable region storage.
     const RoomLayout *rooms_ = nullptr;
+    Vec missileWorldOrigin_{}; // Native DRLG subcell origin, supplied by the session.
     std::map<int, MissileCollisionRule> missileCollisions_;
     bool missilePathClear(int missileId, Vec from, Vec to) const;
     bool clipMissilePath(int missileId, Vec from, Vec &to) const;
@@ -164,7 +165,10 @@ class Simulation {
     void launchFrozenOrb(PlayerState &player, const SkillCastSpec &skill, Vec target);
     void advanceFrozenOrb(Missile &missile, std::vector<Missile> &spawned);
     void spawnFrozenOrbBolt(const Missile &orb, Vec target, bool nova, std::vector<Missile> &spawned);
-    float frozenOrbColdDuration(EntityId attacker, const CombatUnit &target, int frames) const;
+    float missileColdDuration(EntityId attacker, const CombatUnit &target, int frames) const;
+    bool blizzardTargetClear(Vec origin, Vec target) const;
+    void launchBlizzard(PlayerState &player, const SkillCastSpec &skill, Vec target);
+    void advanceBlizzard(Missile &missile, std::vector<Missile> &spawned);
     void spawnEnemies(std::span<const MonsterSpawn> spawns);
     void activateMonsters();
     void clearActions();

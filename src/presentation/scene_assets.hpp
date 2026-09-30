@@ -54,6 +54,7 @@ class SceneAssets {
     std::map<int, GpuAnimation> projectileAnimations;
     std::set<int> translucentProjectiles;
     std::set<int> frozenOrbProjectiles;
+    std::map<int, BlizzardSpec> blizzardFalls;
     struct ObjectLight {
         std::array<int, 8> diameter{};
         Color color{0, 0, 0, 255};

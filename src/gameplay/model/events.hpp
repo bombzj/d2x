@@ -18,6 +18,8 @@ struct WeaponAttackStarted {
 };
 struct MissileImpact { int missileId; Vec position; };
 struct MissileReleased { int missileId; };
+// Ground damage source creation; presentation owns the independent falling sprite.
+struct BlizzardShardCreated { int missileId; Vec position; };
 struct SkillActivated { int skillId = -1; };
 // Emitted once at the alive -> dead transition, including every fact a loot system needs.
 struct EnemyDied {
@@ -119,7 +121,7 @@ struct QuestAdvanced {
     ActOneQuest quest;
     uint32_t stage;
 };
-using GameEvent = std::variant<SkillCast, SkillActivated, MissileImpact, MissileReleased, WeaponAttackStarted, UnitDied, EnemyDied, EnemyAttacked, EnemySkill2, EnemyHit, PlayerDied, RegionEntered, ObjectInteracted, NpcDialogueStarted, ItemsIdentified, VendorItemBought, VendorItemSold,
+using GameEvent = std::variant<SkillCast, SkillActivated, MissileImpact, MissileReleased, BlizzardShardCreated, WeaponAttackStarted, UnitDied, EnemyDied, EnemyAttacked, EnemySkill2, EnemyHit, PlayerDied, RegionEntered, ObjectInteracted, NpcDialogueStarted, ItemsIdentified, VendorItemBought, VendorItemSold,
                                ItemChange, InventoryRejected, InventoryApplied, ItemPickedUp, PickupFailed,
                                ItemUsed, BeltEquipped, StorageOpened, StorageClosed, InteractionFailed,
                                LootDeferred, WaypointActivated, QuestAdvanced, GambleStockOpened,

@@ -1,6 +1,7 @@
 #include "sorceress_data.hpp"
 #include "missile_effects.hpp"
 #include "frozen_orb_data.hpp"
+#include "blizzard_data.hpp"
 #include <algorithm>
 #include <cctype>
 #include <set>
@@ -29,7 +30,7 @@ void loadSorceressEffects(SkillCatalog &catalog, const DataTable &skills,
         {"Ice Bolt", SkillBehavior::IceBolt}, {"Nova", SkillBehavior::Nova},
         {"Ice Blast", SkillBehavior::IceBlast}, {"Charged Bolt", SkillBehavior::ChargedBolt}, {"Frozen Armor", SkillBehavior::FrozenArmor},
         {"Inferno", SkillBehavior::Inferno}, {"Static Field", SkillBehavior::StaticField},
-        {"Frozen Orb", SkillBehavior::FrozenOrb}};
+        {"Frozen Orb", SkillBehavior::FrozenOrb}, {"Blizzard", SkillBehavior::Blizzard}};
     const auto warmth = std::find_if(catalog.skills.begin(), catalog.skills.end(),
         [](const auto &pair) { return pair.second.classCode == "sor" &&
             pair.second.sourceName == "Warmth"; });
@@ -196,7 +197,9 @@ void loadSorceressEffects(SkillCatalog &catalog, const DataTable &skills,
             spec.coldFrames = skills.number(row, "ELen").value_or(0);
             if (spec.coldFrames > 0)
                 for (int index = 0; index < 3; ++index)
-                    spec.coldFramesPerLevel[index] = required(skills, row, "ELevLen" + std::to_string(index + 1));
+                    spec.coldFramesPerLevel[index] = effect == SkillBehavior::Blizzard ?
+                        skills.number(row, "ELevLen" + std::to_string(index + 1)).value_or(0) :
+                        required(skills, row, "ELevLen" + std::to_string(index + 1));
             const auto lengthFormula = skills.value(row, "ELenSymPerCalc");
             if (!lengthFormula.empty()) {
                 if (effect != SkillBehavior::IceBlast || lengthFormula != "(skill('Glacial Spike'.blvl))*par7")
@@ -250,7 +253,7 @@ void loadSorceressEffects(SkillCatalog &catalog, const DataTable &skills,
                 spec.flameFramesPerLevel = required(skills, row, "Param2");
             }
             if (effect == SkillBehavior::FrostNova || effect == SkillBehavior::Nova || effect == SkillBehavior::ChargedBolt ||
-                effect == SkillBehavior::Inferno)
+                effect == SkillBehavior::Inferno || effect == SkillBehavior::Blizzard)
                 missileName = skills.value(row, "srvmissilea");
             size_t missileRow = 0;
             for (; missileRow < missiles.rows().size(); ++missileRow)
@@ -258,6 +261,8 @@ void loadSorceressEffects(SkillCatalog &catalog, const DataTable &skills,
             if (missileName.empty() || missileRow == missiles.rows().size())
                 throw std::runtime_error("Missing original sorceress missile: " + std::string(name));
             spec.missileId = required(missiles, missileRow, "Id");
+            if (effect == SkillBehavior::Blizzard)
+                loadBlizzardMissiles(spec, skills, row, missiles, missileRow, archives);
             if (effect == SkillBehavior::FrozenOrb) {
                 if (skills.value(row, "EType") != "cold" ||
                     skills.value(row, "cltmissilea") != missileName ||
@@ -273,7 +278,7 @@ void loadSorceressEffects(SkillCatalog &catalog, const DataTable &skills,
                  required(missiles, missileRow, "pSrvDmgFunc") != 4 ||
                  required(missiles, missileRow, "CollideKill") != 1))
                 throw std::runtime_error("Unsupported original Ice Blast missile rules");
-            spec.missileVelocity = float(required(missiles, missileRow, "Vel"));
+            spec.missileVelocity = effect == SkillBehavior::Blizzard ? 0.f : float(required(missiles, missileRow, "Vel"));
             spec.missileVelocityPerLevel = missiles.number(missileRow, "VelLev").value_or(0);
             spec.missileRangePerLevel = missiles.number(missileRow, "LevRange").value_or(0);
             spec.missileAcceleration = missiles.number(missileRow, "Accel").value_or(0);
@@ -297,8 +302,9 @@ void loadSorceressEffects(SkillCatalog &catalog, const DataTable &skills,
             if (effect == SkillBehavior::Nova || effect == SkillBehavior::FrostNova)
                 spec.missileNextDelay = required(missiles, missileRow, "NextDelay");
             auto file = lower(missiles.value(missileRow, "CelFile"));
-            spec.missileArt = "data/global/missiles/" + file + ".dcc";
-            if (file.empty() || !archives.contains(spec.missileArt))
+            if (effect != SkillBehavior::Blizzard)
+                spec.missileArt = "data/global/missiles/" + file + ".dcc";
+            if (effect != SkillBehavior::Blizzard && (file.empty() || !archives.contains(spec.missileArt)))
                 throw std::runtime_error("Missing original sorceress missile art: " + std::string(name));
             const auto travelSound = missiles.value(missileRow, "TravelSound");
             for (size_t sound = 0; sound < sounds.rows().size(); ++sound)
