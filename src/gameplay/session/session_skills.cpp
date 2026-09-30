@@ -85,14 +85,15 @@ int GameSession::lightningMasteryPercent() const {
     return 0;
 }
 int GameSession::coldPiercePercent() const {
+    const int equipment = characterStats().combat.coldPierce;
     for (const auto &[id, skill] : content_.skills.skills) {
         if (!skill.coldPiercePerRank || skill.classCode != characterDefinition_.code) continue;
         const int rank = effectiveSkillRank(id);
-        if (rank <= 0) return 0;
+        if (rank <= 0) return equipment;
         const auto [base, perLevel] = *skill.coldPiercePerRank;
-        return base + (rank - 1) * perLevel;
+        return equipment + base + (rank - 1) * perLevel;
     }
-    return 0;
+    return equipment;
 }
 void GameSession::applyWarmth(CharacterAttributes &stats, const PlayerState &player,
                               const CharacterDefinition &definition, const InventoryService &inventory,
@@ -135,7 +136,7 @@ void GameSession::useSkill(const UseSkill &intent) {
         const int rank = effectiveSkillRank(intent.id);
         auto resolved = resolveSkill(*entry->spell, rank,
                                      player.skillRanks, fireMasteryPercent(),
-                                     lightningMasteryPercent());
+                                     lightningMasteryPercent(), characterStats().combat.coldSkillDamagePercent);
         if (entry->spell->summon) {
             const auto &definition = *entry->spell->summon;
             resolved.summon = resolveSummon(definition, rank, effectiveSkillRank(definition.masterySkill),

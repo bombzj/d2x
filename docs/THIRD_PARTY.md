@@ -80,7 +80,7 @@ D2S 读写依据本地 D2MOO 的 `PlrSave2.h/.cpp`、`Items.cpp`、`ItemMods.cpp
 
   通用技能状态结构还核对同一快照的 `Skills.cpp::sub_6FD11C90`（按目标原状态组互斥）、`SkillSor.cpp::SKILLS_SrvDo018_DefensiveBuff`／`SKILLS_CurseStateCallback_DefensiveBuff`（状态属性列表、事件注册及移除）和 `D2States.cpp`（死亡保留标志）。当前状态 ID、组、标志、叠层仍读取用户 MPQ 的 States.txt，玩法容器为本项目独立 C++ 实现；不纳入参考表或声称已复刻所有 Buff。
 
-  女巫技能还核对了该快照的 `D2Common/src/D2Skills.cpp`（等级伤害分段与定点法力）、`D2Game/src/SKILLS/SkillSor.cpp`（传送的 Levels 许可与静电力场生命下限）。本项目从用户 MPQ 在运行时读取每个技能和难度的实际数值；现有战斗系统尚不具备原版完整施法帧、抗性与逐弹命中规则。
+  女巫技能还核对了该快照的 `D2Common/src/D2Skills.cpp`（等级伤害分段、基础等级协同、装备冰伤加成与定点法力）、`D2Game/src/SKILLS/SkillSor.cpp`（传送的 Levels 许可与静电力场生命下限）、`D2Game/src/MISSILES/MissMode.cpp`（冰封球 SrvDo15／16、SrvHit29、寿命与命中顺序）、`D2Common/src/Units/Missile.cpp`（父子弹体伤害来源）及 `SUnitDmg.cpp`（冷抗、冰冷穿透与 MonsterColdDivisor）。冰封球原图、方向、创建／到期行为核对本地 Diablerie `9e42ef2` 的 `Engine/Entities/Missile.cs`、`Game/MissileFunctions.cs`；音效分组、Compound 与经典版淡出单位参照其 `Engine/Datasheets/SoundInfo.cs`、`Engine/AudioManager.cs`，MIT。PL2 格式与模式核对 OpenD2 `0578244` 的 `Engine/Palette.hpp/Renderer_GL.cpp`、OpenDiablo2 `7f92c57` 的 `d2pl2` 和 `d2enum/draw_effect.go`，GPL-3.0；Units 弹体调色板核对其 `d2mapentity/factory.go`。客户端字段／函数含义另核对 [D2R Data Guide](https://locbones.github.io/D2R_DataGuide/#missilestxt)，不移植其数据，也不把 D2R 音频 tick 单位直接视为经典版客户端规范。PL2 混色表、光源半径／色值、Sounds 分组和原 WAV 采样循环元数据均从当前用户 MPQ 读取；未纳入参考源码或导出资源。原定点路径、完整客户端动画／彩光及音频空间规则仍有缺口，范围见 [技能](SKILLS.md#冰封球依据与当前实现)，不声明全面复刻。
 
   怪物生成阶段还依据该固定提交的 MonsterRegion、MonsterChoose、MonsterSpawn、MonsterUnique、MonsterTbls 和 D2Common Monsters，适配区域选择／密度、随从、精英、固定首领和家族链规则。当前使用本项目的 DS1 空间与随机流适配，不声称逐种子或逐帧等价。代码入口和执行／暂缓字段见 [怪物生成](MONSTER_POPULATION.md)；原始 MonStats2、MonPreset、SuperUniques、MonPlace、MonUMod 表来自用户 MPQ。
 

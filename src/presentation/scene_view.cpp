@@ -19,7 +19,7 @@ void main() {
 )";
 } // namespace
 SceneView::SceneView(Archives &archives, const GameSession &session)
-    : session_(session), assets_(archives, session), painter_(assets_.font),
+    : session_(session), assets_(archives, session), paletteBlend_(archives), painter_(assets_.font),
       speechPainter_(assets_.speechFont) {
     projectileVisualRandom_ = session_.visualSeed();
     view_.inventory.syncCursor(session_);
@@ -76,8 +76,24 @@ void SceneView::drawLighting() const {
     const auto &region = session_.region();
     const auto &level = session_.worldContent().level(int(region.definition.id));
     const auto player = session_.state().player.pos;
+    std::vector<MissileLight> lights;
+    auto append = [&](int id, Vec position, float age) {
+        const auto found = assets_.projectileVisuals.find(id);
+        if (found == assets_.projectileVisuals.end()) return;
+        const auto &visual = found->second;
+        // Frozen Orb has no flicker. Other skills keep their existing lighting
+        // until their client light programs have been checked independently.
+        if (!assets_.frozenOrbProjectiles.contains(id)) return;
+        if (visual.lightRadius > 0 && age * 25.f + .00001f >= visual.initSteps)
+            lights.push_back({position, visual.lightRadius, visual.lightColor});
+    };
+    for (const auto &[id, offset] : session_.sceneRegions()) {
+        const auto &area = session_.areaState(id);
+        for (const auto &missile : area.missiles)
+            append(missile.missileId, missile.pos + offset, missile.age);
+    }
     lighting_.draw(level, player, screen(player), view_.zoom, session_.characterStats().lightRadius,
-                   region.objects);
+                   region.objects, lights);
 }
 std::string playerAnimationMode(const PlayerState &p) {
     return p.dead                              ? "dt"
@@ -97,6 +113,7 @@ void SceneView::notice(std::string text, bool error) {
     view_.noticeTime = 4;
 }
 void SceneView::sessionRestored() {
+    assets_.audio.resetEmitters();
     lighting_.invalidate();
     clientMissiles_.clear();
     projectileVisualRandom_ = session_.visualSeed();
@@ -153,7 +170,8 @@ void SceneView::sessionRestored() {
                      session_.region().definition.id,
                      session_.state().player.pos, session_.characterStats().lightRadius);
 }
-void SceneView::advanceUi(float dt) {
+void SceneView::advanceUi(float dt, bool worldPaused) {
+    assets_.audio.pauseEmitters(worldPaused || view_.blocksWorld());
     view_.noticeTime = std::max(0.f, view_.noticeTime - dt);
     if (view_.gameMenuOpen) view_.gameMenuTime += dt;
     advanceNpcDialogue(dt);
@@ -281,6 +299,7 @@ void SceneView::advance(float dt) {
                     if (auto sound = soundFor(value.victim)) assets_.audio.play(sound->death);
                 }
                 else if constexpr (std::is_same_v<T, RegionEntered>) {
+                    assets_.audio.resetEmitters();
                     clientMissiles_.clear();
                     view_.hireListOpen = view_.hirelingOpen = false;
                     nextMonsterFootstep_.clear();
@@ -509,6 +528,7 @@ void SceneView::advance(float dt) {
         if (player.webSlowRemaining > 0) speed *= std::max(0.f, 1.f + player.webSlowPercent / 100.f);
         view_.stepClock = 4.f / std::max(.1f, speed);
     }
+    syncMissileAudio();
 }
 std::vector<WorldEntry> SceneView::travelEntries() const {
     if (!view_.waypointSource)

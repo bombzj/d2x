@@ -134,6 +134,14 @@ struct Enemy {
     std::optional<Vec> teleportTarget = std::nullopt;
     CombatEffectSet combatEffects;
 };
+struct FrozenOrbMissileState {
+    enum class Phase { Orb, Bolt, Nova };
+    Phase phase = Phase::Orb;
+    FrozenOrbCastSpec spec;
+    int elapsedFrames = 0, emissionDirection = 0;
+    Vec novaTarget;
+    int minimumDamage = 0, maximumDamage = 0, coldFrames = 0;
+};
 struct Missile {
     EntityId id, owner;
     Vec pos, velocity;
@@ -167,6 +175,7 @@ struct Missile {
     int skillId = -1, skillRank = 0;
     std::optional<MonsterDamageType> fixedElement = std::nullopt;
     bool killOnHit = true;
+    std::optional<FrozenOrbMissileState> frozenOrb = std::nullopt;
 };
 struct Effect {
     Vec pos;

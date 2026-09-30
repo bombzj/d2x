@@ -2,6 +2,7 @@
 #include "input.hpp"
 #include "inventory_panel.hpp"
 #include "lighting_view.hpp"
+#include "palette_blend_view.hpp"
 #include "scene_assets.hpp"
 #include "scene_geometry.hpp"
 #include <cstdint>
@@ -71,6 +72,7 @@ class SceneView {
     const GameSession &session_;
     SceneAssets assets_;
     LightingView lighting_;
+    PaletteBlendView paletteBlend_;
     Shader highlightShader_{};
     int highlightTransform_ = -1;
     UiPainter painter_;
@@ -96,6 +98,7 @@ class SceneView {
     uint64_t projectileVisualRandom_ = 0;
     void createMissileImpactVisuals(int missileId, Vec position);
     void advanceMissileVisuals(float dt);
+    void syncMissileAudio();
     std::map<EntityId, Vec> monsterPositions_, monsterLooks_;
     std::map<EntityId, float> nextMonsterFootstep_, nextMonsterNeutral_;
     std::set<EntityId> movingMonsters_;
@@ -198,7 +201,7 @@ class SceneView {
     std::optional<ItemHandle> lootAt(Vec mouse, bool labelsOnly = false) const;
     void toggleMute() { assets_.audio.muted = !assets_.audio.muted; }
     void advance(float dt);
-    void advanceUi(float dt);
+    void advanceUi(float dt, bool worldPaused = false);
     void draw(Vec mouse) const;
     void notice(std::string text, bool error = false);
     void openNpcDialogue(EntityId object, std::string speaker, std::string text);

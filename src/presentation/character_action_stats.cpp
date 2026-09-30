@@ -75,7 +75,8 @@ CharacterActionStats characterActionStats(const GameSession &session, std::optio
         const auto cast = resolveSkill(*entry->spell, rank,
                                                session.state().player.skillRanks,
                                                session.fireMasteryPercent(),
-                                               session.lightningMasteryPercent());
+                                               session.lightningMasteryPercent(),
+                                               session.characterStats().combat.coldSkillDamagePercent);
         if (cast.weapon) return weaponStats(session, cast.weapon->thrown, false, &cast);
         if (cast.effect == SkillBehavior::Teleport || cast.effect == SkillBehavior::StaticField ||
             cast.effect == SkillBehavior::FrozenArmor) return {};

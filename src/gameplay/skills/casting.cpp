@@ -77,6 +77,7 @@ bool Simulation::beginSkillCast(PlayerState &player, const SkillCastSpec &skill,
     if (player.dead || player.castTime > 0 ||
         player.meleeTime > 0 || player.hitTime > 0 || skill.castDuration <= 0)
         return false;
+    if (skill.delayFrames > 0 && state_.frame < player.skillDelayUntil) return false;
     if (skill.effect == SkillBehavior::Teleport && (!teleportAllowed || !grid_->walkable(target, playerMovement))) {
         state_.message = "Teleport needs permitted, clear ground";
         return false;
@@ -125,6 +126,8 @@ void Simulation::releaseSkillCast(PlayerState &player, const SkillCastSpec &skil
         return;
     }
     if (consumeMana) player.mana -= skill.manaCost;
+    if (skill.delayFrames > 0)
+        player.skillDelayUntil = state_.frame + EffectFrame(skill.delayFrames);
     if (skill.missileId >= 0 && skill.effect != SkillBehavior::Inferno) emit(MissileReleased{skill.missileId});
     if (skill.appliedEffect) {
         auto effect = *skill.appliedEffect;
@@ -153,6 +156,8 @@ void Simulation::releaseSkillCast(PlayerState &player, const SkillCastSpec &skil
             amount *= float(std::clamp(100 - unitResistance(unit, MonsterDamageType::Lightning), 0, 100)) / 100.f;
             dealDamage({player.id, unit.id, amount, MonsterDamageType::Lightning, 0, true});
         }
+    } else if (skill.frozenOrb) {
+        launchFrozenOrb(player, skill, target);
     } else if (skill.effect == SkillBehavior::ChargedBolt) {
         if ((target - player.pos).length() < 1) target = player.pos + player.look * 10;
         for (int index = 0; index < skill.missileCount; ++index) {

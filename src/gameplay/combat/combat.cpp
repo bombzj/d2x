@@ -105,6 +105,7 @@ void Simulation::updateMissiles(float dt) {
     auto &area = state_.area;
     std::vector<Missile> spawned;
     for (auto &m : area.missiles) {
+        if (m.frozenOrb) { advanceFrozenOrb(m, spawned); continue; }
         const int accelerationStep = int(m.age * 5.f + .00001f);
         m.age += dt;
         if (m.groundTargeted) { advanceGroundTargetedMissile(m, dt, spawned); continue; }

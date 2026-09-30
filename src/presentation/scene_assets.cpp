@@ -279,6 +279,12 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
     button = graphics_.single("data/global/ui/panel/mediumbuttonblank.dc6");
     loadSkillIcons(archives, session.content());
     const auto &missiles = session.content().tables.at("missiles");
+    for (const auto &[id, skill] : session.content().skills.skills)
+        if (skill.spell && skill.spell->frozenOrb) {
+            frozenOrbProjectiles.insert(skill.spell->missileId);
+            frozenOrbProjectiles.insert(skill.spell->frozenOrb->bolt.missileId);
+            frozenOrbProjectiles.insert(skill.spell->frozenOrb->nova.missileId);
+        }
     for (size_t row = 0; row < missiles.rows().size(); ++row)
         if (auto id = missiles.number(row, "Id")) {
             if (missiles.number(row, "Trans").value_or(0) != 0) translucentProjectiles.insert(*id);
@@ -288,7 +294,13 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
                 missiles.number(row, "AnimLen").value_or(0),
                 missiles.number(row, "SubLoop").value_or(0) ? missiles.number(row, "SubStart").value_or(0) : 0,
                 missiles.number(row, "SubLoop").value_or(0) ? missiles.number(row, "SubStop").value_or(0) : 0,
-                float(missiles.number(row, "Range").value_or(0)) / 25.f});
+                float(missiles.number(row, "Range").value_or(0)) / 25.f,
+                missiles.number(row, "InitSteps").value_or(0),
+                missiles.number(row, "Trans").value_or(0),
+                missiles.number(row, "Light").value_or(0),
+                {uint8_t(missiles.number(row, "Red").value_or(0)),
+                 uint8_t(missiles.number(row, "Green").value_or(0)),
+                 uint8_t(missiles.number(row, "Blue").value_or(0)), 255}});
         }
     const DataTable projectileSounds(archives.read("data/global/excel/sounds.txt"));
     for (size_t row = 0; row < projectileSounds.rows().size(); ++row) {
@@ -299,7 +311,7 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
     }
     auto loadProjectile = [&](int id, const std::string &art) {
         if (projectileAnimations.contains(id)) return;
-        auto animation = graphics_.single(art, translucentProjectiles.contains(id));
+        auto animation = unitsGraphics_.single(art, translucentProjectiles.contains(id));
         if (animation.frames.empty()) throw std::runtime_error("Original projectile art is missing: " + art);
         projectileAnimations.emplace(id, std::move(animation));
         for (size_t row = 0; row < missiles.rows().size(); ++row) {
@@ -310,8 +322,13 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
                 if (sound.empty()) continue;
                 for (size_t soundRow = 0; soundRow < projectileSounds.rows().size(); ++soundRow)
                     if (projectileSounds.value(soundRow, "Sound") == sound) {
-                        audio.registerOriginal(archives, std::string(event) + std::to_string(id),
-                            "data/global/sfx/" + std::string(projectileSounds.value(soundRow, "FileName")));
+                        const auto key = std::string(event) + std::to_string(id);
+                        if (std::string_view(field) == "TravelSound" && frozenOrbProjectiles.contains(id) &&
+                            projectileSounds.number(soundRow, "Loop") == 1)
+                            audio.registerTravelGroup(archives, key, projectileSounds, soundRow);
+                        else
+                            audio.registerOriginal(archives, key,
+                                "data/global/sfx/" + std::string(projectileSounds.value(soundRow, "FileName")));
                         break;
                     }
             }
@@ -359,9 +376,8 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
     for (const auto &[id, skill] : session.content().skills.skills)
         if (skill.spell && skill.spell->missileId >= 0 &&
             !projectileAnimations.contains(skill.spell->missileId)) {
-            auto &missileGraphics = skill.spell->effect == SkillBehavior::ChargedBolt ? unitsGraphics_ : graphics_;
-            auto animation = missileGraphics.single(skill.spell->missileArt,
-                                              translucentProjectiles.contains(skill.spell->missileId));
+            auto animation = unitsGraphics_.single(skill.spell->missileArt,
+                                                   translucentProjectiles.contains(skill.spell->missileId));
             if (animation.frames.empty())
                 throw std::runtime_error("Original MPQ skill missile art is missing: " + skill.sourceName);
             projectileAnimations.emplace(skill.spell->missileId, std::move(animation));
@@ -396,9 +412,9 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
     for (const auto &[id, skill] : session.content().skills.skills)
         if (skill.spell) {
             for (const auto &impact : skill.spell->impacts)
-                if (!projectileAnimations.contains(impact.missileId))
-                    projectileAnimations.emplace(impact.missileId,
-                        graphics_.single(impact.art, translucentProjectiles.contains(impact.missileId)));
+                loadProjectile(impact.missileId, impact.art);
+            for (const auto &child : skill.spell->submissileResources)
+                loadProjectile(child.id, child.art);
             if (!skill.spell->impactSoundArt.empty())
                 audio.registerOriginal(archives, "missile-hit:" + std::to_string(skill.spell->missileId),
                                        skill.spell->impactSoundArt);
@@ -420,9 +436,30 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
                 spellOverlays.emplace(visual.id, SpellOverlay{std::move(animation), visual});
             }
     for (const auto &[id, skill] : session.content().skills.skills)
-        if (skill.spell && !skill.spell->castSoundArt.empty())
+        if (skill.spell && !skill.spell->castSoundArt.empty()) {
+            float volume = .45f;
+            if (skill.spell->frozenOrb) {
+                const auto &skills = session.content().tables.at("skills");
+                bool found = false;
+                for (size_t row = 0; row < skills.rows().size(); ++row) {
+                    if (skills.number(row, "Id") != id) continue;
+                    const auto sound = skills.value(row, "stsound");
+                    for (size_t soundRow = 0; soundRow < projectileSounds.rows().size(); ++soundRow) {
+                        if (projectileSounds.value(soundRow, "Sound") != sound) continue;
+                        const auto originalVolume = projectileSounds.number(soundRow, "Volume");
+                        if (!originalVolume || *originalVolume < 0 || *originalVolume > 255)
+                            throw std::runtime_error("Original Frozen Orb cast sound volume is invalid");
+                        volume *= *originalVolume / 255.f;
+                        found = true;
+                        break;
+                    }
+                    break;
+                }
+                if (!found) throw std::runtime_error("Original Frozen Orb cast sound row is missing");
+            }
             audio.registerOriginal(archives, "skill-cast:" + std::to_string(id),
-                                   skill.spell->castSoundArt);
+                                   skill.spell->castSoundArt, volume);
+        }
     for (const auto &tree : session.content().skills.classes) {
         auto art = graphics_.single("data/global/ui/spells/skltree_" + tree.backgroundToken + "_back.dc6");
         if (art.frames.size() < 16)

@@ -30,6 +30,7 @@ void mergeCombatModifiers(CombatModifiers &a, const CombatModifiers &b) {
     D2X_ADD(fireMinimum); D2X_ADD(fireMaximum);
     D2X_ADD(lightningMinimum); D2X_ADD(lightningMaximum);
     D2X_ADD(coldMinimum); D2X_ADD(coldMaximum); D2X_ADD(coldFrames);
+    D2X_ADD(coldSkillDamagePercent); D2X_ADD(coldPierce);
     D2X_ADD(magicMinimum); D2X_ADD(magicMaximum);
     D2X_ADD(poisonMinimum); D2X_ADD(poisonMaximum); D2X_ADD(poisonFrames); D2X_ADD(poisonSources);
     D2X_ADD(fireMaxResist); D2X_ADD(lightningMaxResist);

@@ -6,15 +6,23 @@
 #include "world/navigation.hpp"
 #include "world/region.hpp"
 #include <vector>
+#include <span>
 
 namespace d2x {
+struct MissileLight {
+    Vec position;
+    int radius = 0;
+    Color color{0, 0, 0, 255};
+};
 // View-only light mask. DT1 and object-mode flags supply visibility; no lighting state is saved.
 class LightingView {
     static constexpr int maskRadius = 30;
     static constexpr int maskSide = maskRadius * 2 + 1;
     Shader shader_{};
     Texture2D visibility_{};
+    Texture2D missileLighting_{};
     std::vector<Color> pixels_;
+    mutable std::vector<Color> missilePixels_;
     RegionId cachedRegion_{};
     int cachedX_ = -1, cachedY_ = -1, cachedRadius_ = -1;
     uint64_t cachedObstacleRevision_ = 0;
@@ -28,6 +36,6 @@ class LightingView {
     void invalidate() { cachedRadius_ = -1; }
     void update(const Grid &grid, const LevelRecord &level, RegionId region, Vec player, int radius);
     void draw(const LevelRecord &level, Vec player, Vec playerScreen, float zoom, int radius,
-              const std::vector<WorldObject> &objects) const;
+              const std::vector<WorldObject> &objects, std::span<const MissileLight> missiles) const;
 };
 } // namespace d2x

@@ -20,4 +20,17 @@ void SceneView::advanceMissileVisuals(float dt) {
     }
     std::erase_if(clientMissiles_, [](const auto &effect) { return effect.age + .00001f >= effect.duration; });
 }
+void SceneView::syncMissileAudio() {
+    std::vector<SoundEmitter> emitters;
+    for (const auto &[id, offset] : session_.sceneRegions())
+        for (const auto &missile : session_.areaState(id).missiles) {
+            const auto key = "missile-release:" + std::to_string(missile.missileId);
+            if (!assets_.audio.hasEmitterSound(key)) continue;
+            // Retain the existing scene sound admission range; exact legacy
+            // spatial falloff/panning and EAX are separate, unverified rules.
+            if ((screen(missile.pos + offset) - Vec{W / 2.f, (H - HUD) / 2.f}).length() < W)
+                emitters.push_back({missile.id, key});
+        }
+    assets_.audio.syncEmitters(emitters, session_.state().frame);
+}
 } // namespace d2x

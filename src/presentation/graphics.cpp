@@ -70,6 +70,14 @@ Sprite Graphics::upload(const IndexedFrame &f, bool translucent) {
     SetTextureFilter(t, TEXTURE_FILTER_POINT);
     textures.push_back(t);
     Sprite result{t, f.x, f.y};
+    if (translucent) {
+        for (size_t i = 0; i < pixels.size(); ++i)
+            pixels[i] = {f.pixels[i], 0, 0, uint8_t(f.pixels[i] ? 255 : 0)};
+        Image indices{pixels.data(), f.width, f.height, 1, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8};
+        result.indexedTexture = LoadTextureFromImage(indices);
+        SetTextureFilter(result.indexedTexture, TEXTURE_FILTER_POINT);
+        textures.push_back(result.indexedTexture);
+    }
     if (right >= left) {
         result.hitX = f.x + left;
         result.hitY = f.y + top;

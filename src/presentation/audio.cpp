@@ -24,15 +24,18 @@ SoundBank::SoundBank(Archives &a) {
     }
 }
 SoundBank::~SoundBank() {
+    emitters_.reset();
     for (auto [name, s] : sounds)
         UnloadSound(s);
 }
 void SoundBank::play(const std::string &name) {
+    // Looping travel sounds are owned by live missile entities, not this event.
+    if (hasEmitterSound(name)) return;
     auto it = sounds.find(name);
     if (enabled && !muted && it != sounds.end())
         PlaySound(it->second);
 }
-void SoundBank::registerOriginal(Archives &archives, std::string key, std::string_view path) {
+void SoundBank::registerOriginal(Archives &archives, std::string key, std::string_view path, float volume) {
     auto found = sounds.find(key);
     if (found != sounds.end()) {
         UnloadSound(found->second);
@@ -44,7 +47,7 @@ void SoundBank::registerOriginal(Archives &archives, std::string key, std::strin
     if (!wave.data) return;
     auto sound = LoadSoundFromWave(wave);
     UnloadWave(wave);
-    SetSoundVolume(sound, .45f);
+    SetSoundVolume(sound, volume);
     sounds.emplace(std::move(key), sound);
 }
 } // namespace d2x

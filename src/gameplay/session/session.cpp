@@ -170,7 +170,8 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
         const auto *entry = content_.skills.find(id);
         if (!entry || !entry->spell) throw std::runtime_error("Missing originating missile skill");
         return resolveSkill(*entry->spell, rank, state().player.skillRanks,
-                            fireMasteryPercent(), lightningMasteryPercent());
+                            fireMasteryPercent(), lightningMasteryPercent(),
+                            characterStats().combat.coldSkillDamagePercent);
     };
     simulation_.spendProjectile_ = [this](EntityId weapon, bool thrown) {
         const auto *item = inventory_.item(weapon);
@@ -272,6 +273,16 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
     };
     simulation_.coldPierce_ = [this](EntityId actor) { return actor == state().player.id ? coldPiercePercent() : 0; };
     simulation_.monsterFreezeDivisor_ = content_.monsterFreezeDivisor.at(size_t(population.difficulty));
+    simulation_.monsterColdDivisor_ = content_.monsterColdDivisor.at(size_t(population.difficulty));
+    simulation_.unitColdEffect_ = [this](const CombatUnit &unit) {
+        const MonsterRecord *record = nullptr;
+        if (unit.monster) record = monsterContent_.find(unit.monster->identity.monster);
+        else if (unit.hireling) {
+            for (const auto &[id, entry] : monsterContent_.monsters())
+                if (entry.index == unit.hireling->classId) { record = &entry; break; }
+        } else return -50;
+        return record ? record->coldEffect.at(size_t(state().population.difficulty)) : 0;
+    };
     simulation_.monsterFreezable_ = [this](const Enemy &enemy) -> std::optional<bool> {
         const auto *record = monsterContent_.find(enemy.identity.monster);
         if (!record) return std::nullopt;

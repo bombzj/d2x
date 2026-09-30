@@ -17,6 +17,8 @@ struct Sprite {
     Texture2D shadowTexture{};
     int shadowX = 0, shadowY = 0;
     std::vector<SpriteLayer> layers;
+    // Original DCC/DC6 indices for PL2 blending; zero remains transparent.
+    Texture2D indexedTexture{};
 };
 struct GpuAnimation {
     int directions = 0, count = 0;

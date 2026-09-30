@@ -76,7 +76,7 @@ std::vector<Vec> chargedBoltPath(Vec origin, Vec target, int index, int frames) 
 }
 SkillCastSpec resolveSkill(const SkillSpec &spec, int rank,
                            const std::map<int, int> &learned, int fireMasteryPercent,
-                           int lightningMasteryPercent) {
+                           int lightningMasteryPercent, int coldDamagePercent) {
     if (spec.effect == SkillBehavior::None || spec.sourceId < 0 || rank < 1 || rank > 255 ||
         spec.manaShift < 0 || spec.manaShift > 15 || spec.hitShift < 0 || spec.hitShift > 15)
         throw std::runtime_error("Unsupported original skill rank or shift");
@@ -84,6 +84,7 @@ SkillCastSpec resolveSkill(const SkillSpec &spec, int rank,
     result.effect = spec.effect;
     result.rank = rank;
     result.sourceId = spec.sourceId;
+    result.delayFrames = spec.delayFrames;
     if (spec.effect == SkillBehavior::FrozenArmor) {
         int synergyRanks = 0;
         for (int id : spec.armorSynergySkills)
@@ -118,7 +119,7 @@ SkillCastSpec resolveSkill(const SkillSpec &spec, int rank,
         const int64_t value = (int64_t(base) + levelBonus(rank, steps)) << spec.hitShift;
         const int64_t scaled = value * bonus / 100;
         const int mastery = spec.fireDamage ? fireMasteryPercent :
-            spec.lightningDamage ? lightningMasteryPercent : 0;
+            spec.lightningDamage ? lightningMasteryPercent : spec.coldDamage ? coldDamagePercent : 0;
         const int64_t mastered = scaled + scaled * mastery / 100;
         if (mastered < 0 || mastered > std::numeric_limits<int32_t>::max())
             throw std::runtime_error("Original skill damage exceeds supported range");
@@ -159,6 +160,22 @@ SkillCastSpec resolveSkill(const SkillSpec &spec, int rank,
     result.missileAcceleration = float(spec.missileAcceleration) * 25.f / 4096.f;
     result.missileMaxVelocity = float(spec.missileMaxVelocity * 256) * 25.f / 4096.f;
     result.missileLifetime = spec.missileLifetime + float(rank * spec.missileRangePerLevel) / 25.f;
+    if (spec.frozenOrb) {
+        const auto &orb = *spec.frozenOrb;
+        FrozenOrbCastSpec cast;
+        auto child = [rank](const FrozenOrbSpec::Child &source) {
+            const int velocity = (source.velocity + rank * source.velocityPerLevel / 8) * 256;
+            return FrozenOrbCastSpec::Child{source.missileId,
+                source.lifetimeFrames + rank * source.rangePerLevel,
+                float(velocity * 75 / 100) * 25.f / 4096.f};
+        };
+        cast.bolt = child(orb.bolt); cast.nova = child(orb.nova);
+        cast.lifetimeFrames = int(result.missileLifetime * 25.f + .5f);
+        cast.emissionPeriod = orb.emissionPeriod; cast.directionStep = orb.directionStep;
+        cast.burstStep = orb.burstStep;
+        cast.novaTurnFrames = orb.novaTurnFrames; cast.novaTurnPeriod = orb.novaTurnPeriod;
+        result.frozenOrb = cast;
+    }
     if (spec.effect == SkillBehavior::Inferno)
         result.missileLifetime = float(std::max(1, (spec.flameFrames + (rank - 1) * spec.flameFramesPerLevel) / 2)) / 25.f;
     result.missileImpact = spec.missileImpact;

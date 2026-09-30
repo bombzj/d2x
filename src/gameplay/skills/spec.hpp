@@ -34,6 +34,24 @@ struct SummonCastSpec {
 };
 SummonCastSpec resolveSummon(const SummonSkillSpec &spec, int rank, int mastery, int resist,
                             int ownerLevel, int difficulty);
+struct FrozenOrbSpec {
+    struct Child {
+        int missileId = -1, velocity = 0, velocityPerLevel = 0;
+        int lifetimeFrames = 0, rangePerLevel = 0;
+    };
+    Child bolt, nova;
+    int emissionPeriod = 1, directionStep = 0, burstStep = 1;
+    int novaTurnFrames = 0, novaTurnPeriod = 1;
+};
+struct FrozenOrbCastSpec {
+    struct Child {
+        int missileId = -1, lifetimeFrames = 0;
+        float speed = 0;
+    };
+    Child bolt, nova;
+    int lifetimeFrames = 0, emissionPeriod = 1, directionStep = 0, burstStep = 1;
+    int novaTurnFrames = 0, novaTurnPeriod = 1;
+};
 // Typed values imported from Skills.txt and Missiles.txt. No archive data enters gameplay.
 struct SkillSpec {
     struct OverlayVisual {
@@ -53,11 +71,14 @@ struct SkillSpec {
     int minimumDamage = 0, maximumDamage = 0, hitShift = 8;
     bool fireDamage = false;
     bool lightningDamage = false;
+    bool coldDamage = false;
     bool poisonDamage = false;
     int poisonFrames = 0;
     std::array<int, 3> poisonFramesPerLevel{};
     std::optional<WeaponSkillSpec> weapon;
     std::optional<SummonSkillSpec> summon;
+    std::optional<FrozenOrbSpec> frozenOrb;
+    int delayFrames = 0;
     std::array<int, 5> minimumPerLevel{}, maximumPerLevel{};
     int synergyPercent = 0;
     std::vector<int> synergySkills;
@@ -81,6 +102,7 @@ struct SkillSpec {
     std::vector<int> armorSynergySkills;
     std::string activationSoundArt;
     std::vector<ImpactVisual> impacts;
+    std::vector<ProjectileResource> submissileResources;
     std::string impactSoundArt, releaseSoundArt;
 };
 struct SkillCastSpec {
@@ -92,6 +114,8 @@ struct SkillCastSpec {
     float poisonDuration = 0;
     std::optional<WeaponSkillSpec> weapon;
     std::optional<SummonCastSpec> summon;
+    std::optional<FrozenOrbCastSpec> frozenOrb;
+    int delayFrames = 0;
     std::optional<MissileImpactSpec> missileImpact;
     int missileId = -1;
     float missileNextDelay = 0;
@@ -106,6 +130,6 @@ struct SkillCastSpec {
 };
 SkillCastSpec resolveSkill(const SkillSpec &spec, int rank,
                            const std::map<int, int> &learned, int fireMasteryPercent = 0,
-                           int lightningMasteryPercent = 0);
+                           int lightningMasteryPercent = 0, int coldDamagePercent = 0);
 std::vector<Vec> chargedBoltPath(Vec origin, Vec target, int index, int frames);
 } // namespace d2x

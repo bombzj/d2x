@@ -1,5 +1,6 @@
 #include "sorceress_data.hpp"
 #include "missile_effects.hpp"
+#include "frozen_orb_data.hpp"
 #include <algorithm>
 #include <cctype>
 #include <set>
@@ -27,7 +28,8 @@ void loadSorceressEffects(SkillCatalog &catalog, const DataTable &skills,
         {"Fire Ball", SkillBehavior::Fireball}, {"Frost Nova", SkillBehavior::FrostNova},
         {"Ice Bolt", SkillBehavior::IceBolt}, {"Nova", SkillBehavior::Nova},
         {"Ice Blast", SkillBehavior::IceBlast}, {"Charged Bolt", SkillBehavior::ChargedBolt}, {"Frozen Armor", SkillBehavior::FrozenArmor},
-        {"Inferno", SkillBehavior::Inferno}, {"Static Field", SkillBehavior::StaticField}};
+        {"Inferno", SkillBehavior::Inferno}, {"Static Field", SkillBehavior::StaticField},
+        {"Frozen Orb", SkillBehavior::FrozenOrb}};
     const auto warmth = std::find_if(catalog.skills.begin(), catalog.skills.end(),
         [](const auto &pair) { return pair.second.classCode == "sor" &&
             pair.second.sourceName == "Warmth"; });
@@ -105,8 +107,13 @@ void loadSorceressEffects(SkillCatalog &catalog, const DataTable &skills,
         spec.manaPerLevel = required(skills, row, "lvlmana");
         spec.manaShift = required(skills, row, "manashift");
         spec.hitShift = required(skills, row, "HitShift");
+        if (!skills.value(row, "delay").empty()) {
+            spec.delayFrames = required(skills, row, "delay");
+            if (spec.delayFrames < 0) throw std::runtime_error("Unsupported original skill delay");
+        }
         spec.fireDamage = skills.value(row, "EType") == "fire";
         spec.lightningDamage = skills.value(row, "EType") == "ltng";
+        spec.coldDamage = skills.value(row, "EType") == "cold";
         if ((effect == SkillBehavior::FireBolt || effect == SkillBehavior::Fireball) && !spec.fireDamage)
             throw std::runtime_error("Unsupported original fire spell element");
         const auto soundName = skills.value(row, "stsound");
@@ -251,6 +258,15 @@ void loadSorceressEffects(SkillCatalog &catalog, const DataTable &skills,
             if (missileName.empty() || missileRow == missiles.rows().size())
                 throw std::runtime_error("Missing original sorceress missile: " + std::string(name));
             spec.missileId = required(missiles, missileRow, "Id");
+            if (effect == SkillBehavior::FrozenOrb) {
+                if (skills.value(row, "EType") != "cold" ||
+                    skills.value(row, "cltmissilea") != missileName ||
+                    required(skills, row, "cltdofunc") != 29 ||
+                    skills.number(row, "SrcDam").value_or(0) != 0 ||
+                    skills.value(row, "anim") != "SC")
+                    throw std::runtime_error("Unsupported original Frozen Orb skill rules");
+                loadFrozenOrbMissiles(spec, missiles, missileRow, archives);
+            }
             spec.hitOverlay = loadOverlay(missiles.value(missileRow, "ProgOverlay"));
             if (effect == SkillBehavior::IceBlast &&
                 (skills.value(row, "EType") != "cold" ||

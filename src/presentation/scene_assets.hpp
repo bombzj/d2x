@@ -53,12 +53,17 @@ class SceneAssets {
     std::map<int, SkillIcon> skillIcons;
     std::map<int, GpuAnimation> projectileAnimations;
     std::set<int> translucentProjectiles;
+    std::set<int> frozenOrbProjectiles;
     struct ProjectileVisual {
         float fps = 25;
         bool loop = false;
         int frames = 0;
         int loopStart = 0, loopEnd = 0;
         float lifetime = 0;
+        int initSteps = 0;
+        int trans = 0;
+        int lightRadius = 0;
+        Color lightColor{0, 0, 0, 255};
     };
     std::map<int, ProjectileVisual> projectileVisuals;
     // Client-only impact alternatives (CltHit03); never damage-bearing missiles.

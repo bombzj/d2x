@@ -35,6 +35,7 @@ struct CombatModifiers {
     int fireMinimum = 0, fireMaximum = 0;
     int lightningMinimum = 0, lightningMaximum = 0;
     int coldMinimum = 0, coldMaximum = 0, coldFrames = 0;
+    int coldSkillDamagePercent = 0, coldPierce = 0;
     int magicMinimum = 0, magicMaximum = 0;
     int poisonMinimum = 0, poisonMaximum = 0, poisonFrames = 0, poisonSources = 0;
     int fireMaxResist = 0, lightningMaxResist = 0;

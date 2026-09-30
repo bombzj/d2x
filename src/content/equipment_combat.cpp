@@ -26,6 +26,8 @@ void addStat(std::string_view stat, int value, CombatModifiers &m) {
     else if (stat == "coldmindam") target = &m.coldMinimum;
     else if (stat == "coldmaxdam") target = &m.coldMaximum;
     else if (stat == "coldlength") target = &m.coldFrames;
+    else if (stat == "passive_cold_mastery") target = &m.coldSkillDamagePercent;
+    else if (stat == "passive_cold_pierce") target = &m.coldPierce;
     else if (stat == "magicmindam") target = &m.magicMinimum;
     else if (stat == "magicmaxdam") target = &m.magicMaximum;
     else if (stat == "poisonmindam") target = &m.poisonMinimum;

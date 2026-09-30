@@ -540,9 +540,10 @@ void SceneView::drawMissile(int id, Vec position, Vec heading, float age, float 
     if (found == assets_.projectileAnimations.end()) return;
     const auto &animation = found->second;
     const auto visual = assets_.projectileVisuals.at(id);
+    if (age * 25.f + .00001f < visual.initSteps) return;
     const int frames = visual.frames > 0 ? std::min(animation.count, visual.frames) : animation.count;
     if (frames <= 0) return;
-    int frame = int(age * visual.fps);
+    int frame = int(age * visual.fps + .00001f);
     if (visual.loopEnd > visual.loopStart && visual.loopEnd <= frames && frame >= visual.loopStart) {
         const int tail = frames - visual.loopEnd;
         const int left = std::max(0, int(std::ceil(remaining * visual.fps)));
@@ -551,11 +552,16 @@ void SceneView::drawMissile(int id, Vec position, Vec heading, float age, float 
     }
     else frame = visual.loop ? frame % frames : std::min(frame, frames - 1);
     const bool translucent = assets_.translucentProjectiles.contains(id);
+    const auto *image = animation.frame(direction(heading, animation.directions), frame);
+    if (visual.trans == 1) {
+        paletteBlend_.draw(image, screen(position));
+        return;
+    }
     if (translucent) {
         rlSetBlendFactors(0x0307, 1, 0x8006);
         BeginBlendMode(BLEND_CUSTOM);
     }
-    sprite(animation.frame(direction(heading, animation.directions), frame), screen(position));
+    sprite(image, screen(position));
     if (translucent) EndBlendMode();
 }
 void SceneView::drawSpellOverlay(int id, Vec position, float age, bool loop) const {
@@ -566,7 +572,7 @@ void SceneView::drawSpellOverlay(int id, Vec position, float age, bool loop) con
     const int elapsed = std::max(0, int(age * overlay.visual.fps));
     const int frame = loop ? elapsed % overlay.visual.frames : std::min(overlay.visual.frames - 1, elapsed);
     const Vec at = screen(position) + overlay.visual.offset;
-    if (overlay.visual.trans == 3) softAdditiveSprite(overlay.animation.frame(0, frame), at);
+    if (overlay.visual.trans == 3) paletteBlend_.draw(overlay.animation.frame(0, frame), at);
     else sprite(overlay.animation.frame(0, frame), at);
 }
 void SceneView::drawUnitSpellOverlays(EntityId unit, Vec position, bool back, const CombatEffectSet *states) const {

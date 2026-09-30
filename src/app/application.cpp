@@ -338,7 +338,7 @@ int runGame(int argc, char **argv) {
                     view.advance(0);
                 }
                 syncPreferences();
-                view.advanceUi(dt);
+                view.advanceUi(dt, persistenceInput || debugPaused);
                 if (view.ui().blocksWorld() || persistenceInput || debugPaused)
                     accumulator = 0;
                 else

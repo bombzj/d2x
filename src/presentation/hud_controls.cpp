@@ -41,8 +41,10 @@ void SceneView::drawSkillIcon(std::optional<int> skill, Rectangle bounds) const 
     if (entry && entry->spell && session_.effectiveSkillRank(*skill) > 0) {
         const auto resolved = resolveSkill(*entry->spell,
             session_.effectiveSkillRank(*skill), player.skillRanks, session_.fireMasteryPercent(),
-            session_.lightningMasteryPercent());
+            session_.lightningMasteryPercent(), session_.characterStats().combat.coldSkillDamagePercent);
         available &= player.mana >= std::max(player.channelSkill() == *skill ? 0.f : float(entry->spell->startMana), resolved.manaCost);
+        if (resolved.delayFrames > 0)
+            available &= session_.state().frame >= player.skillDelayUntil;
         if (resolved.weapon) available &= session_.weaponSkillReady(resolved);
     }
     imageAt(image, bounds, available ? WHITE : Color{255, 64, 64, 255});
@@ -171,7 +173,8 @@ void SceneView::drawSkillControls(Vec mouse) const {
         if (entry && entry->spell && session_.effectiveSkillRank(*choice) > 0) {
             const auto value = resolveSkill(*entry->spell,
                 session_.effectiveSkillRank(*choice), session_.state().player.skillRanks,
-                session_.fireMasteryPercent(), session_.lightningMasteryPercent());
+                session_.fireMasteryPercent(), session_.lightningMasteryPercent(),
+                session_.characterStats().combat.coldSkillDamagePercent);
             detail = "Mana " + std::string(TextFormat("%.1f", value.manaCost));
             if (value.effect == SkillBehavior::Teleport) detail += " / Teleport to clear ground";
             else if (value.effect == SkillBehavior::Inferno)
@@ -183,6 +186,10 @@ void SceneView::drawSkillControls(Vec mouse) const {
             else if (value.effect == SkillBehavior::StaticField)
                 detail += " / " + std::to_string(int(value.staticPercent)) + "% current life, range " +
                     std::to_string(int(value.staticRadius));
+            else if (value.frozenOrb)
+                detail += " / Cold damage per bolt " + std::string(TextFormat("%.1f-%.1f", value.minimumDamage, value.maximumDamage)) +
+                    " / Chill " + std::string(TextFormat("%.1fs", value.coldDuration)) +
+                    " / Delay " + std::string(TextFormat("%.1fs", float(value.delayFrames) / 25.f));
             else if (value.weapon && value.poisonDuration > 0)
                 detail += " / Poison " + std::string(TextFormat("%.1f-%.1f over %.1fs",
                     value.minimumDamage * value.poisonDuration * 25.f,

@@ -89,6 +89,8 @@ class Simulation {
     std::function<int(EntityId)> coldPierce_;
     std::function<std::optional<bool>(const Enemy &)> monsterFreezable_;
     int monsterFreezeDivisor_ = 1;
+    int monsterColdDivisor_ = 1;
+    std::function<int(const CombatUnit &)> unitColdEffect_;
     std::function<std::optional<MonsterAiProfile>(const Enemy &)> monsterAi_;
     std::function<bool(RegionId)> zombieForcedPursuit_;
     std::function<std::optional<float>(const MonsterIdentity &)> monsterGetHitDuration_;
@@ -159,6 +161,10 @@ class Simulation {
     void applyMonsterElements(Enemy &enemy, const MonsterNormalCombat &combat, int mode,
                                 EntityId defender = {}, bool recovery = true);
     void updateMissiles(float dt);
+    void launchFrozenOrb(PlayerState &player, const SkillCastSpec &skill, Vec target);
+    void advanceFrozenOrb(Missile &missile, std::vector<Missile> &spawned);
+    void spawnFrozenOrbBolt(const Missile &orb, Vec target, bool nova, std::vector<Missile> &spawned);
+    float frozenOrbColdDuration(EntityId attacker, const CombatUnit &target, int frames) const;
     void spawnEnemies(std::span<const MonsterSpawn> spawns);
     void activateMonsters();
     void clearActions();

@@ -49,7 +49,7 @@ add_library(d2x_content src/content/classic_data.cpp src/content/lod_data.cpp sr
 target_sources(d2x_content PRIVATE src/content/character_progression.cpp)
 target_sources(d2x_content PRIVATE src/content/character_attributes.cpp)
 target_sources(d2x_content PRIVATE src/content/string_table.cpp src/content/skill_data.cpp)
-target_sources(d2x_content PRIVATE src/content/sorceress_data.cpp src/content/weapon_skill_data.cpp src/content/necromancer_data.cpp)
+target_sources(d2x_content PRIVATE src/content/sorceress_data.cpp src/content/frozen_orb_data.cpp src/content/weapon_skill_data.cpp src/content/necromancer_data.cpp)
 target_sources(d2x_content PRIVATE src/content/skill_animation.cpp)
 target_sources(d2x_content PRIVATE src/content/item_projectiles.cpp src/content/missile_effects.cpp)
 target_sources(d2x_content PRIVATE src/content/monster_experience.cpp)
@@ -88,7 +88,7 @@ add_library(d2x_gameplay
   src/gameplay/combat/unit.cpp
   src/gameplay/combat/damage_resolution.cpp src/gameplay/combat/player_damage.cpp
   src/gameplay/combat/weapon_elements.cpp
-  src/gameplay/skills/casting.cpp src/gameplay/skills/summoning.cpp
+  src/gameplay/skills/casting.cpp src/gameplay/skills/summoning.cpp src/gameplay/skills/frozen_orb.cpp
   src/gameplay/monsters/monster_ai.cpp src/gameplay/monsters/monster_melee.cpp
   src/gameplay/monsters/monster_special_ai.cpp
     src/gameplay/monsters/monster_resurrection.cpp
@@ -170,6 +170,8 @@ target_sources(d2x_presentation PRIVATE src/presentation/hireling_assets.cpp)
 target_sources(d2x_presentation PRIVATE src/presentation/hireling_view.cpp)
 target_sources(d2x_presentation PRIVATE src/presentation/automap_assets.cpp src/presentation/automap_view.cpp)
 target_sources(d2x_presentation PRIVATE src/presentation/lighting_view.cpp)
+target_sources(d2x_presentation PRIVATE src/presentation/palette_blend_view.cpp)
+target_sources(d2x_presentation PRIVATE src/presentation/audio_emitters.cpp)
 target_sources(d2x_presentation PRIVATE src/presentation/projectile_view.cpp)
 
 add_executable(d2x src/main.cpp src/app/application.cpp src/app/options.cpp src/app/input.cpp
