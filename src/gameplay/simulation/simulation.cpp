@@ -73,6 +73,7 @@ void Simulation::heal() {
 }
 void Simulation::spawnEnemies(std::span<const MonsterSpawn> spawns) {
     auto &area = state_.area;
+    const size_t first = area.enemies.size();
     area.enemies.reserve(area.enemies.size() + spawns.size());
     for (const auto &spawn : spawns) {
         Enemy enemy;
@@ -82,8 +83,11 @@ void Simulation::spawnEnemies(std::span<const MonsterSpawn> spawns) {
         enemy.kind = spawn.kind;
         enemy.pos = spawn.position;
         enemy.maxHp = monsterDefinition(enemy.kind).maxLife;
+        auto baseIdentity = enemy.identity;
+        if (baseIdentity.rank == MonsterRank::Champion || baseIdentity.rank == MonsterRank::Unique)
+            baseIdentity.rank = MonsterRank::Normal;
         if (monsterNormalCombat_)
-            if (auto combat = monsterNormalCombat_(enemy.identity, area.region)) {
+            if (auto combat = monsterNormalCombat_(baseIdentity, area.region)) {
                 rollRandom(enemy.combatRandom);
                 enemy.maxHp = float(combat->minLife +
                     uint32_t(enemy.combatRandom) % unsigned(combat->maxLife - combat->minLife + 1));
@@ -93,6 +97,18 @@ void Simulation::spawnEnemies(std::span<const MonsterSpawn> spawns) {
             if (auto ai = monsterAi_(enemy); ai && ai->kind == MonsterAiKind::FoulCrowNest)
                 enemy.aiWait = float(ai->params[0]) / 25.f;
         area.enemies.push_back(std::move(enemy));
+    }
+    if (initializeNaturalElite_) {
+        for (size_t index = first; index < area.enemies.size(); ++index)
+            initializeNaturalElite_(area.enemies[index], nullptr);
+        for (size_t index = first; index < area.enemies.size(); ++index) {
+            auto &minion = area.enemies[index];
+            if (minion.identity.ownerSpawnKey.empty()) continue;
+            const auto owner = std::find_if(area.enemies.begin(), area.enemies.end(), [&](const Enemy &candidate) {
+                return candidate.identity.spawnKey == minion.identity.ownerSpawnKey;
+            });
+            if (owner != area.enemies.end()) initializeNaturalElite_(minion, &*owner);
+        }
     }
 }
 Enemy *Simulation::findEnemy(EntityId id) {

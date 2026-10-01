@@ -83,6 +83,7 @@ class Simulation {
     std::function<std::optional<float>(const Enemy &)> monsterWalkSpeed_;
     std::function<std::optional<float>(const Enemy &, int)> monsterMoveSpeed_;
     std::function<std::optional<MonsterNormalCombat>(const MonsterIdentity &, RegionId)> monsterNormalCombat_;
+    std::function<void(Enemy &, const Enemy *)> initializeNaturalElite_;
     std::function<std::optional<int>(const Enemy &, RegionId)> monsterCriticalChance_;
     std::function<std::optional<int>(const Enemy &, RegionId)> monsterDamageRegen_;
     std::function<int(const Enemy &)> monsterDrain_;

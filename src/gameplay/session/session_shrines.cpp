@@ -258,6 +258,7 @@ bool GameSession::upgradeShrineMonster(Vec) {
             state().population.difficulty, mods);
         const auto life = int64_t(minion.maxHp * 256.f) * (100 + inherited.lifePercent) / 100;
         minion.hp = minion.maxHp = float(std::max<int64_t>(1, life)) / 256.f;
+        minion.identity.rank = MonsterRank::Minion;
         minion.identity.enchantment = std::move(inherited);
     }
     // UMod2 operates on the existing HP roll and fully heals the transformed unit.

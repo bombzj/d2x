@@ -6,7 +6,8 @@
 namespace d2x {
 bool monsterShrineEligible(const ClassicData &data, const MonsterRecord &monster);
 MonsterEnchantment rollMonsterEnchantment(const ClassicData &data, const MonsterRecord &monster,
-    const MonsterCombatProfile &base, int difficulty, uint64_t &random, MonsterRank &rank);
+    const MonsterCombatProfile &base, int difficulty, uint64_t &random, MonsterRank &rank,
+    bool preserveRank = false, bool enableSkillEffects = true);
 MonsterEnchantment inheritedMonsterEnchantment(const ClassicData &data, const MonsterRecord &monster,
     const MonsterCombatProfile &base, int difficulty, const MonsterEnchantment &owner);
 MonsterCombatProfile enchantedMonsterCombat(MonsterCombatProfile base, const MonsterEnchantment &mods);

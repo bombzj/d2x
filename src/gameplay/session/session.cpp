@@ -3,6 +3,7 @@
 #include "gameplay/simulation/simulation.hpp"
 #include "content/character/character_attributes.hpp"
 #include "content/items/item_properties.hpp"
+#include "content/monsters/monster_enchantment.hpp"
 #include "core/fingerprint.hpp"
 #include <algorithm>
 #include <cmath>
@@ -116,6 +117,28 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
             publishInventory(std::move(result), {});
     };
     simulation_->combatEffectsChanged_ = [this] { refreshCharacter(); };
+    simulation_->initializeNaturalElite_ = [this](Enemy &enemy, const Enemy *owner) {
+        if (enemy.identity.enchantment || (owner ? owner->identity.rank != MonsterRank::Unique ||
+            !owner->identity.enchantment : enemy.identity.rank != MonsterRank::Champion &&
+            enemy.identity.rank != MonsterRank::Unique)) return;
+        const auto *record = monsterContent_.find(enemy.identity.monster);
+        if (!record || record->boss || monsterImplementation(record->id).substitute) return;
+        auto identity = enemy.identity;
+        identity.rank = MonsterRank::Normal;
+        const auto base = resolvedMonsterCombat(identity, state().area.region);
+        if (!base) throw std::runtime_error("Natural elite lacks original combat attributes: " + record->id);
+        auto modifiers = owner
+            ? inheritedMonsterEnchantment(content_, *record, *base, state().population.difficulty, *owner->identity.enchantment)
+            : rollMonsterEnchantment(content_, *record, *base, state().population.difficulty,
+                                     enemy.combatRandom, enemy.identity.rank, true, false);
+        int64_t life = int64_t(enemy.maxHp * 256.f);
+        life += life * modifiers.lifePercent / 100;
+        life = life * modifiers.lifeScalePercent / 100;
+        if (owner) enemy.identity.rank = MonsterRank::Minion;
+        enemy.identity.enchantment = std::move(modifiers);
+        enemy.hp = enemy.maxHp = float(std::max<int64_t>(1, life)) / 256.f;
+        enemy.nextAuraFrame = state().frame;
+    };
     simulation_->monsterHitProperties_ = [this](const Enemy &enemy) {
         const auto *record = monsterContent_.find(enemy.identity.monster);
         return record ? std::pair{record->hitClass, record->primeEvil} : std::pair{0, false};

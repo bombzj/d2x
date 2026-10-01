@@ -33,7 +33,7 @@ void Simulation::onMonsterDamaged(Enemy &enemy, const DamageRequest &request, fl
     if (dealt <= 0) return;
     const auto type = request.type;
     const auto source = request.attacker;
-    if (enemy.identity.enchantment) {
+    if (enemy.identity.enchantment && enemy.identity.enchantment->skillEffectsEnabled) {
         const auto &mods = *enemy.identity.enchantment;
         if (enemy.hp > 0 && type != MonsterDamageType::Poison &&
             request.permission != DamagePermission::ExistingEffect && mods.has(17) &&

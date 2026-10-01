@@ -21,6 +21,7 @@ void Simulation::updateMonsterEnchantments() {
         enemy.combatEffects.expire(state_.frame);
         if (!enemy.identity.enchantment || !active(enemy.pos)) continue;
         const auto &mods = *enemy.identity.enchantment;
+        if (!mods.skillEffectsEnabled) continue;
         if (enemy.pendingUniqueLightningFrame && state_.frame >= enemy.pendingUniqueLightningFrame) {
             enemy.pendingUniqueLightningFrame = 0;
             if (state_.frame >= enemy.nextUniqueLightningFrame) {
@@ -172,7 +173,8 @@ void Simulation::launchMonsterEnchantmentMissiles(Enemy &enemy, int missileId) {
     emit(MissileReleased{missileId});
 }
 bool Simulation::tryMonsterTeleport(Enemy &enemy) {
-    if (!enemy.identity.enchantment || !enemy.identity.enchantment->has(26) ||
+    if (!enemy.identity.enchantment || !enemy.identity.enchantment->skillEffectsEnabled ||
+        !enemy.identity.enchantment->has(26) ||
         !combatUnit(enemy.combatTarget).alive() || enemy.hp <= 0) return false;
     const auto &mods = *enemy.identity.enchantment;
     if (monsterAiRandom(enemy) % 100 >= 40 ||
@@ -208,7 +210,8 @@ bool Simulation::tryMonsterTeleport(Enemy &enemy) {
     return false;
 }
 void Simulation::replicateMonsterMissile(const Enemy &enemy, Missile missile) {
-    if (!enemy.identity.enchantment || !enemy.identity.enchantment->has(29) ||
+    if (!enemy.identity.enchantment || !enemy.identity.enchantment->skillEffectsEnabled ||
+        !enemy.identity.enchantment->has(29) ||
         noMultiShotMissiles_.contains(missile.missileId)) return;
     const auto sign = [](float value) { return value < 0 ? -1.f : value > 0 ? 1.f : 0.f; };
     const Vec difference = enemy.pos - monsterTargetPosition(enemy);

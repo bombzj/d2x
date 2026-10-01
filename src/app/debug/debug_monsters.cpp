@@ -105,6 +105,15 @@ void listMonsters(Json &result, const Json &request, const GameSession &session,
             {"actionDuration", enemy.attackDuration}, {"attackRatePercent", enemy.attackRatePercent},
             {"impactRemaining", enemy.attackImpact}};
         const auto *record = session.monsterContent().find(enemy.identity.monster);
+        if (enemy.identity.enchantment) {
+            const auto &enchantment = *enemy.identity.enchantment;
+            entry["enchantment"] = {{"ids", enchantment.ids}, {"nameSeed", enchantment.nameSeed},
+                {"skillEffectsEnabled", enchantment.skillEffectsEnabled},
+                {"level", enchantment.level}, {"levelBonus", enchantment.levelBonus},
+                {"experienceFactor", enchantment.experienceFactor}, {"lifePercent", enchantment.lifePercent},
+                {"lifeScalePercent", enchantment.lifeScalePercent}, {"damagePercent", enchantment.damagePercent},
+                {"attackRatingPercent", enchantment.attackRatingPercent}, {"velocityPercent", enchantment.velocityPercent}};
+        }
         if (record) entry["sourceAi"] = record->ai;
         if (auto combat = session.monsterCombatProfile(enemy.identity, session.state().area.region)) {
             entry["combat"] = {{"level", combat->level},

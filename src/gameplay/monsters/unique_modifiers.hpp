@@ -30,6 +30,7 @@ struct MonsterEnchantment {
     std::optional<MonsterAura> curse;
     float corpseExplosionMinimum = 0, corpseExplosionMaximum = 0;
     bool melee = false, stopRegeneration = true;
+    bool skillEffectsEnabled = true;
     bool has(int id) const {
         for (int value : ids) if (value == id) return true;
         return false;

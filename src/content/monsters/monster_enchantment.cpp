@@ -112,14 +112,17 @@ bool monsterShrineEligible(const ClassicData &data, const MonsterRecord &monster
     return number(extra, row, "mDT") && number(extra, row, "Height");
 }
 MonsterEnchantment rollMonsterEnchantment(const ClassicData &data, const MonsterRecord &monster,
-    const MonsterCombatProfile &base, int difficulty, uint64_t &random, MonsterRank &rank) {
+    const MonsterCombatProfile &base, int difficulty, uint64_t &random, MonsterRank &rank,
+    bool preserveRank, bool enableSkillEffects) {
     const auto &mods = data.tables.at("monumod"), &stats = data.tables.at("monstats");
     const auto &extra = data.tables.at("monstats2"), &types = data.tables.at("montype");
     const auto extraRow = namedRow(extra, "Id", stats.value(monster.sourceRow, "MonStatsEx"));
     constexpr const char *suffix[]{"", " (N)", " (H)"};
-    const bool champion = roll(random, 100) < unsigned(number(mods, 0, "constants"));
+    const bool champion = preserveRank ? rank == MonsterRank::Champion :
+        roll(random, 100) < unsigned(number(mods, 0, "constants"));
     rank = champion ? MonsterRank::Champion : MonsterRank::Unique;
     MonsterEnchantment result;
+    result.skillEffectsEnabled = enableSkillEffects;
     result.resistances = base.resistances;
     result.melee = number(stats, monster.sourceRow, "isMelee") != 0;
     std::set<std::string> lineage;
@@ -156,7 +159,7 @@ MonsterEnchantment rollMonsterEnchantment(const ClassicData &data, const Monster
     }
     result.nameSeed = uint16_t(roll(random, 0));
     auto constant = [&](int id) { return number(mods, size_t(id), "constants"); };
-    const int championDamage = number(data.tables.at("difficultylevels"), size_t(difficulty), "ChampionDmgBonus");
+    const int championDamage = number(data.tables.at("difficultylevels"), size_t(difficulty), "ChampionDamageBonus");
     result.lifePercent = constant(difficulty + (champion ? 4 : 7));
     if (champion && !result.has(39)) { result.levelBonus = 2; result.experienceFactor = 3; }
     const int level = std::clamp(base.level + result.levelBonus, 1, 99);
@@ -184,7 +187,9 @@ MonsterEnchantment rollMonsterEnchantment(const ClassicData &data, const Monster
             result.attackRatingPercent += constant(13) * championDamage / 100;
             break;
         case 6: result.velocityPercent += fast(); break;
-        case 7: result.curse = aura(data, 66, level / 5 + 1); break;
+        case 7:
+            if (enableSkillEffects) result.curse = aura(data, 66, level / 5 + 1);
+            break;
         case 8:
         case 27:
             for (int channel : {4, 2, 3})
@@ -203,6 +208,7 @@ MonsterEnchantment rollMonsterEnchantment(const ClassicData &data, const Monster
         case 28: result.defensePercent += 100; resist(0, 50); break;
         case 29: break; // Missile creation executes multishot.
         case 30: {
+            if (!enableSkillEffects) break;
             constexpr int skills[]{98, 102, 108, 114, 123, 122, 118};
             constexpr int divisors[]{6, 6, 5, 7, 8, 8, 8};
             uint64_t auraSeed = (uint64_t(666) << 32) | result.nameSeed;
@@ -231,7 +237,7 @@ MonsterEnchantment rollMonsterEnchantment(const ClassicData &data, const Monster
         const int rawHp = number(stats, monster.sourceRow, std::string("maxHP") + levelSuffix[difficulty]);
         const int maximum = number(stats, monster.sourceRow, "noRatio") ? rawHp :
             int(int64_t(rawHp) * number(levels, levelRow, std::string("L-HP") + levelSuffix[difficulty]) / 100);
-        const int scaled = maximum * number(data.tables.at("difficultylevels"), size_t(difficulty), "MonsterCEDmgPercent") / 100;
+        const int scaled = maximum * number(data.tables.at("difficultylevels"), size_t(difficulty), "MonsterCEDamagePercent") / 100;
         result.corpseExplosionMinimum = float(scaled * 60 / 100) / 4.f;
         result.corpseExplosionMaximum = float(scaled) / 4.f;
     }
@@ -245,10 +251,11 @@ MonsterEnchantment inheritedMonsterEnchantment(const ClassicData &data, const Mo
     result.resistances = base.resistances;
     result.level = std::clamp(base.level + result.levelBonus, 1, 99);
     result.stopRegeneration = false;
+    result.skillEffectsEnabled = owner.skillEffectsEnabled;
     const auto &mods = data.tables.at("monumod");
     auto constant = [&](int index) { return number(mods, size_t(index), "constants"); };
     result.lifePercent = constant(difficulty + 1);
-    const int bonus = number(data.tables.at("difficultylevels"), size_t(difficulty), "ChampionDmgBonus");
+    const int bonus = number(data.tables.at("difficultylevels"), size_t(difficulty), "ChampionDamageBonus");
     const auto &levels = data.tables.at("monlvl");
     constexpr const char *suffix[]{"", "(N)", "(H)"};
     const int damage = number(levels, numberedRow(levels, "Level", result.level),
