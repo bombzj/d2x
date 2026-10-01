@@ -899,11 +899,11 @@ void GameSession::tick(float dt, Vec keyboard, bool forceRun) {
         ? effectiveSkillRank(auraSkill) : 0;
     auto &activeAura = simulation_->state_.player.aura;
     if (activeAura && (activeAura->definition.skill != auraSkill || activeAura->definition.rank != auraRank)) {
-        const int state = activeAura->definition.ownerState.id;
+        const int ownerState = activeAura->definition.ownerState.id;
         const auto effects = simulation_->state_.player.combatEffects.entries();
         std::vector<EffectHandle> remove;
         for (const auto &effect : effects)
-            if (effect.spec.state.id == state && effect.spec.source.entity == simulation_->state_.player.id &&
+            if (effect.spec.state.id == ownerState && effect.spec.source.entity == simulation_->state_.player.id &&
                 effect.spec.source.definition == activeAura->definition.skill) remove.push_back(effect.handle);
         for (auto handle : remove) simulation_->state_.player.combatEffects.remove(handle);
         if (activeAura->definition.skill == 114 && !state().player.dead)

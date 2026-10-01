@@ -93,7 +93,7 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
         }
         shrineOverlays.emplace(code, std::move(art));
     }
-    for (const char *name : {"amplifydamage", "might", "holyfire", "blessedaim", "holywind",
+    for (const char *name : {"amplifydamage", "might", "resistfire", "defiance", "resistcold", "resistlight", "resistall", "holyfire", "blessedaim", "holywind",
                              "holywindcold", "holyshock", "fanaticism", "conviction"}) {
         const auto &state = states.at(name);
         std::array<OverlayArt, 2> art;

@@ -23,6 +23,18 @@ const ClassSkillTree *SkillCatalog::tree(std::string_view code) const {
         [code](const auto &entry) { return entry.classCode == code; });
     return found == classes.end() ? nullptr : &*found;
 }
+void applyAuraPassives(CharacterModifiers &modifiers, const SkillCatalog &skills,
+    const std::map<int, int> &learned, const CombatEffectSet &effects, EffectFrame frame) {
+    for (const auto &[id, skill] : skills.skills) {
+        const auto rank = learned.find(id);
+        if (rank == learned.end() || effects.hasState(skill.passiveSuppressedByState, frame)) continue;
+        modifiers.combat.attackRatingPercent += rank->second * skill.passiveAttackRatingPerBaseRank;
+        const int maximum = rank->second / 2;
+        if (skill.passiveMaxResistElement == 2) modifiers.combat.fireMaxResist += maximum;
+        else if (skill.passiveMaxResistElement == 3) modifiers.combat.lightningMaxResist += maximum;
+        else if (skill.passiveMaxResistElement == 4) modifiers.combat.coldMaxResist += maximum;
+    }
+}
 SkillCatalog loadSkillCatalog(const DataTable &skills, const DataTable &descriptions,
                               const DataTable &characterStats,
                               const std::vector<CharacterDefinition> &characters,

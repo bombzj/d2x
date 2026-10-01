@@ -104,9 +104,7 @@ int GameSession::validateCharacterRestore(const CharacterSaveData &data) const {
     const EquipmentActor baseActor{definition.code, base.strength, base.dexterity, player.level,
                                    base.blockFactor, player.weaponSet};
     auto modifiers = resolveEquipmentModifiers(content_, equipmentInventory, data.containers, baseActor);
-    for (const auto &[id, skill] : content_.skills.skills)
-        if (const auto rank = data.player.skillRanks.find(id); rank != data.player.skillRanks.end())
-            modifiers.combat.attackRatingPercent += rank->second * skill.passiveAttackRatingPerBaseRank;
+    applyAuraPassives(modifiers, content_.skills, data.player.skillRanks, data.player.combatEffects, 0);
     const auto stats = deriveCharacterAttributes(definition, player.level, player.allocated, modifiers);
     require(player.hp <= stats.maxLife && player.mana <= stats.maxMana &&
                 player.stamina <= stats.maxStamina, "character resource maximum");
@@ -140,9 +138,7 @@ void GameSession::restore(CharacterSaveData data) {
     const EquipmentActor baseActor{definition.code, base.strength, base.dexterity,
                                    data.player.level, base.blockFactor, data.player.weaponSet};
     auto modifiers = resolveEquipmentModifiers(content_, equipmentInventory, data.containers, baseActor);
-    for (const auto &[id, skill] : content_.skills.skills)
-        if (const auto rank = data.player.skillRanks.find(id); rank != data.player.skillRanks.end())
-            modifiers.combat.attackRatingPercent += rank->second * skill.passiveAttackRatingPerBaseRank;
+    applyAuraPassives(modifiers, content_.skills, data.player.skillRanks, data.player.combatEffects, 0);
     auto characterStats = deriveCharacterAttributes(definition, data.player.level,
         data.player.allocated, modifiers, content_.resistancePenalty.at(size_t(data.difficulty)));
     const EquipmentActor actor{definition.code, characterStats.strength, characterStats.dexterity,

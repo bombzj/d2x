@@ -41,7 +41,7 @@ SkillSpec elementalSpec(const DataTable &table, size_t row, bool missile) {
         spec.coldFramesPerLevel[i] = number(table, row, "ELevLen" + std::to_string(i + 1));
     return spec;
 }
-MonsterAura aura(const ClassicData &data, int skill, int rank) {
+MonsterAura aura(const ClassicData &data, int skill, int rank, const std::map<int, int> &learned = {}) {
     const auto &table = data.tables.at("skills");
     const auto row = numberedRow(table, "Id", skill);
     auto value = [&](std::string_view field) { return table.value(row, field); };
@@ -62,6 +62,11 @@ MonsterAura aura(const ClassicData &data, int skill, int rank) {
         if (formula == "-par5") return -parameter(5);
         if (formula == "-min(ln34,150)") return -std::min(linear(3), 150);
         if (formula == "toht") return n("ToHit") + (rank - 1) * n("LevToHit");
+        if (formula == "skill('Resist Fire'.blvl)" || formula == "skill('Resist Cold'.blvl)" ||
+            formula == "skill('Resist Lightning'.blvl)") {
+            const auto base = learned.find(skill);
+            return base != learned.end() ? base->second : 0;
+        }
         throw std::runtime_error("Unsupported monster aura formula: " + std::string(formula));
     };
     MonsterAura result;
@@ -90,6 +95,9 @@ MonsterAura aura(const ClassicData &data, int skill, int rank) {
         else if (stat == "coldresist") m.coldResist = amount;
         else if (stat == "lightresist") m.lightningResist = amount;
         else if (stat == "damageresist") m.combat.physicalResist = amount;
+        else if (stat == "maxfireresist") m.combat.fireMaxResist = amount;
+        else if (stat == "maxcoldresist") m.combat.coldMaxResist = amount;
+        else if (stat == "maxlightresist") m.combat.lightningMaxResist = amount;
         else throw std::runtime_error("Unsupported monster aura stat: " + std::string(stat));
     }
     if (skill == 122) result.ownerDamageBonus = linear(5) - linear(5) / 2;
@@ -115,7 +123,7 @@ MonsterAura aura(const ClassicData &data, int skill, int rank) {
 }
 }
 void loadAuraSkills(ClassicData &data) {
-    for (int skill : {98, 102, 108, 114, 118, 122, 123}) {
+    for (int skill : {98, 100, 102, 104, 105, 108, 110, 114, 118, 122, 123, 125}) {
         const auto definition = aura(data, skill, 1);
         if (definition.periodFrames < 5 || definition.ownerState.id < 0)
             throw std::runtime_error("Original aura lacks state or periodic data");
@@ -126,6 +134,18 @@ void loadAuraSkills(ClassicData &data) {
             if (table.value(row, "passivecalc1") != "skill('Blessed Aim'.blvl) * par8")
                 throw std::runtime_error("Unsupported original Blessed Aim passive formula");
             data.skills.skills.at(skill).passiveAttackRatingPerBaseRank = number(table, row, "Param8");
+            data.skills.skills.at(skill).passiveSuppressedByState = definition.ownerState.id;
+        }
+        if (skill == 100 || skill == 105 || skill == 110) {
+            const auto &table = data.tables.at("skills");
+            const auto row = numberedRow(table, "Id", skill);
+            const std::string expected = skill == 100 ? "skill('Resist Fire'.blvl)/2" :
+                skill == 105 ? "skill('Resist Cold'.blvl)/2" : "skill('Resist Lightning'.blvl)/2";
+            if (table.value(row, "passivecalc1") != expected)
+                throw std::runtime_error("Unsupported original resistance aura passive formula");
+            auto &record = data.skills.skills.at(skill);
+            record.passiveSuppressedByState = definition.ownerState.id;
+            record.passiveMaxResistElement = skill == 100 ? 2 : skill == 105 ? 4 : 3;
         }
     }
 }
@@ -134,7 +154,7 @@ std::optional<AuraDefinition> resolveAura(const ClassicData &data, int skill, in
     int lightningMasteryPercent, int coldMasteryPercent) {
     const auto *record = data.skills.find(skill);
     if (!record || !record->auraImplemented || rank <= 0) return std::nullopt;
-    auto result = aura(data, skill, rank);
+    auto result = aura(data, skill, rank, learned);
     int bonus = 100;
     for (const auto &[synergy, percent] : result.synergies)
         if (const auto found = learned.find(synergy); found != learned.end()) bonus += found->second * percent;

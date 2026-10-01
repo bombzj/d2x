@@ -30,6 +30,8 @@ struct SkillRecord {
     std::optional<SkillSpec> spell;
     bool auraImplemented = false;
     int passiveAttackRatingPerBaseRank = 0;
+    int passiveSuppressedByState = -1;
+    int passiveMaxResistElement = -1;
     bool executable() const { return !passive && (auraImplemented || spell || basicAction != BasicSkillAction::None); }
     std::optional<std::pair<int, int>> manaRecoveryPerRank;
     std::optional<std::pair<int, int>> fireMasteryPerRank;
@@ -49,4 +51,6 @@ SkillCatalog loadSkillCatalog(const DataTable &skills, const DataTable &descript
                               const DataTable &characterStats,
                               const std::vector<CharacterDefinition> &characters,
                               const ClassicStrings &strings);
+void applyAuraPassives(CharacterModifiers &modifiers, const SkillCatalog &skills,
+    const std::map<int, int> &learned, const CombatEffectSet &effects, EffectFrame frame);
 } // namespace d2x
