@@ -160,13 +160,27 @@ void Simulation::resolveMonsterAttack(Enemy &enemy, int modeOverride, bool proje
     damage = float(int64_t(damage * 256.f) * std::max(0, 100 + damagePercent) / 100) / 256.f;
     const float previousLife = *target.life;
     if (!projectile) triggerCombatEffects(defender, CombatEffectEvent::AttackedInMelee, enemy.id);
-    const float physicalDealt = dealDamage({enemy.id, defender, damage, MonsterDamageType::Physical, 0, false, false});
-    if (!projectile && physicalDealt > 0 && enemy.hp > 0)
+    DamageRequest hit{enemy.id, defender, damage, MonsterDamageType::Physical, 0, false, false};
+    const auto &elements = source.stats.attributes.combat;
+    for (auto [minimum, maximum, type] : {
+        std::tuple{elements.fireMinimum, elements.fireMaximum, MonsterDamageType::Fire},
+        std::tuple{elements.lightningMinimum, elements.lightningMaximum, MonsterDamageType::Lightning},
+        std::tuple{elements.coldMinimum, elements.coldMaximum, MonsterDamageType::Cold}})
+        if (maximum > 0) {
+            const float amount = float(minimum * 256 + limitedRandom(enemy.combatRandom,
+                unsigned(std::max(0, maximum - minimum) * 256))) / 256.f;
+            const auto projectileSpec = projectile && monsterProjectile_ ? monsterProjectile_(enemy, mode) : std::nullopt;
+            const int sourceDamage = projectileSpec ? projectileSpec->sourceDamage : 128;
+            hit.channels[size_t(type)] = float(int64_t(amount * 256.f) * sourceDamage / 128) / 256.f;
+        }
+    const float hitDealt = dealDamage(hit);
+    if (!projectile && hitDealt > 0 && enemy.hp > 0)
         triggerCombatEffects(defender, CombatEffectEvent::DamagedInMelee, enemy.id);
     if (combat && !enemy.intrinsicCombat && target.alive()) applyMonsterElements(enemy, *combat, mode, defender, false);
     if (target.alive()) applyMonsterEnchantmentHit(enemy, defender, false);
     const float total = previousLife - *target.life;
-    recoverUnit(defender, enemy.id, total, total > physicalDealt);
+    recoverUnit(defender, enemy.id, total, total > hitDealt ||
+        std::any_of(hit.channels.begin() + 1, hit.channels.end(), [](float amount) { return amount > 0; }));
     if (target.player && wearEquipment_) wearEquipment_({}, true);
 }
 } // namespace d2x

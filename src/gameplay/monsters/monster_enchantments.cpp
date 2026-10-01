@@ -46,8 +46,9 @@ void Simulation::updateMonsterEnchantments() {
             }
             if (mods.has(18)) launchMonsterEnchantmentMissiles(enemy, 194);
         }
-        if (enemy.hp <= 0 || !mods.aura || mods.aura->skill == 98 || mods.aura->skill == 108 ||
-            mods.aura->skill == 122 || mods.aura->skill == 123 || state_.frame < enemy.nextAuraFrame) continue;
+        if (enemy.hp <= 0 || !mods.aura || mods.aura->skill == 98 || mods.aura->skill == 102 || mods.aura->skill == 108 ||
+            mods.aura->skill == 114 || mods.aura->skill == 118 || mods.aura->skill == 122 ||
+            mods.aura->skill == 123 || state_.frame < enemy.nextAuraFrame) continue;
         const auto &aura = *mods.aura;
         enemy.nextAuraFrame = state_.frame + EffectFrame(aura.periodFrames);
         auto apply = [&](CombatEffectSet &effects, bool owner) {
@@ -117,7 +118,8 @@ void Simulation::applyMonsterEnchantmentHit(Enemy &enemy, EntityId defender, boo
     if (target.mana && mods.manaDamage.maximum > 0)
         *target.mana = std::max(0.f, *target.mana -
             rollDamage(enemy, float(mods.manaDamage.minimum), float(mods.manaDamage.maximum)));
-    if (mods.aura && mods.aura->element >= 0)
+    if (mods.aura && mods.aura->element >= 0 && mods.aura->skill != 102 &&
+        mods.aura->skill != 114 && mods.aura->skill != 118)
         hurt(rollDamage(enemy, mods.aura->minimumDamage, mods.aura->maximumDamage) *
                    mods.aura->elementalMultiplier, MonsterDamageType(mods.aura->element));
     if (mods.curse && (monsterAiRandom(enemy) & 3) != 0) {

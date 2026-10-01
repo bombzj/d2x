@@ -30,6 +30,18 @@ EffectApplication CombatEffectSet::apply(CombatEffectSpec spec, EffectFrame now)
                     throw std::invalid_argument("Invalid combat effect reaction");
             }
         }, reaction.action);
+    if (spec.stacking == EffectStacking::AuraLevel)
+        for (auto &existing : effects_)
+            if (existing.activeAt(now) && existing.spec.state.id == spec.state.id &&
+                existing.spec.source.definition == spec.source.definition) {
+                if (existing.spec.source.level > spec.source.level) return {existing.handle, {}};
+                if (existing.spec.source.level == spec.source.level) {
+                    existing.expiresAt = spec.duration ? std::optional<EffectFrame>{now + *spec.duration} : std::nullopt;
+                    existing.spec.modifiers = std::move(spec.modifiers);
+                    existing.spec.duration = spec.duration;
+                    return {existing.handle, {}};
+                }
+            }
     ActiveCombatEffect effect{{nextHandle_}, std::move(spec), now, {}};
     if (effect.spec.duration) effect.expiresAt = now + *effect.spec.duration;
     auto replaces = [&](const ActiveCombatEffect &existing) {
@@ -38,7 +50,8 @@ EffectApplication CombatEffectSet::apply(CombatEffectSpec spec, EffectFrame now)
             return true;
         if (existing.spec.state.id != effect.spec.state.id) return false;
         switch (effect.spec.stacking) {
-        case EffectStacking::ReplaceState: return true;
+        case EffectStacking::ReplaceState:
+        case EffectStacking::AuraLevel: return true;
         case EffectStacking::ReplaceSource:
             return existing.spec.source.kind == effect.spec.source.kind &&
                    existing.spec.source.entity == effect.spec.source.entity &&

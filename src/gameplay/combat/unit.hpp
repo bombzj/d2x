@@ -68,5 +68,6 @@ struct DamageRequest {
     std::array<float, 6> channels{}; // Optional simultaneous channels: one hit/death transition.
     int freezeFrames = 0; // Native unmitigated freeze length, resolved before the death transition.
     int hitClass = -1;
+    bool softHit = false;
 };
 } // namespace d2x

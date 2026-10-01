@@ -38,6 +38,8 @@ CombatStateCatalog loadCombatStates(const DataTable &states) {
             flag("stambarblue"), flag("curse"), flag("hide"), flag("shatter"), flag("udead")},
             std::string(states.value(row, "overlay1")),
             std::string(states.value(row, "overlay2"))};
+        if (record.overlay == "null") record.overlay.clear();
+        if (record.secondaryOverlay == "null") record.secondaryOverlay.clear();
         if (!result.emplace(std::string(name), std::move(record)).second)
             throw std::runtime_error("Duplicate States.txt name");
     }

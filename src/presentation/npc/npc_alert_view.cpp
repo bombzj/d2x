@@ -60,9 +60,11 @@ void SceneView::drawCombatStateOverlays(const CombatEffectSet &effects, Vec at, 
         for (int layer : {1, 0}) {
             const auto &art = found->second[size_t(layer)];
             if (art.frames <= 0 || art.fps <= 0 || art.preDraw != back) continue;
-            const auto *frame = art.animation.frame(0, int(view_.animationTime * art.fps) % art.frames);
+            const bool aura = effect.spec.stacking == EffectStacking::AuraLevel;
+            const float elapsed = aura ? float(session_.state().frame - effect.startedAt) / 25.f : view_.animationTime;
+            const auto *frame = art.animation.frame(0, int(elapsed * art.fps) % art.frames);
             const Vec position = at + art.offset + Vec{0, float(art.heights[size_t(std::clamp(height, 0, 3))])};
-            if (art.trans == 3) softAdditiveSprite(frame, position);
+            if (art.trans == 3) paletteBlend_.draw(frame, position);
             else sprite(frame, position);
         }
     }

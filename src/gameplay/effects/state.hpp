@@ -33,7 +33,7 @@ struct EffectSource {
 };
 // The caller must choose a verified reapplication rule. A nonzero state group
 // is exclusive on the recipient, independent of source or stacking policy.
-enum class EffectStacking { ReplaceState, ReplaceSource, Independent };
+enum class EffectStacking { ReplaceState, ReplaceSource, Independent, AuraLevel };
 enum class EffectRemoval { Expired, Replaced, Death, Hit, Dispelled, SourceRemoved, Cleared };
 struct EffectVisual {
     int overlayId = -1;

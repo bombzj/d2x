@@ -97,7 +97,7 @@ class Simulation {
     int monsterColdDivisor_ = 1;
     std::function<int(const CombatUnit &)> unitColdEffect_;
     void updateAuras();
-    std::function<bool(const CombatUnit &)> auraEligible_;
+    std::function<bool(const CombatUnit &, bool)> auraEligible_;
     std::function<std::optional<MonsterAiProfile>(const Enemy &)> monsterAi_;
     std::function<bool(RegionId)> zombieForcedPursuit_;
     std::function<std::optional<float>(const MonsterIdentity &)> monsterGetHitDuration_;

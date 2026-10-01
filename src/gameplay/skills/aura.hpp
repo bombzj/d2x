@@ -7,6 +7,8 @@ struct AuraDefinition {
     float radius = 0;
     CombatStateDefinition state, ownerState;
     CharacterModifiers modifiers;
+    CharacterModifiers ownerModifiers;
+    std::vector<std::pair<int, int>> synergies;
     int ownerDamageBonus = 0, elementalMultiplier = 0;
     int element = -1;
     float minimumDamage = 0, maximumDamage = 0;

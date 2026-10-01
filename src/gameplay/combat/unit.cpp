@@ -263,6 +263,8 @@ float Simulation::dealDamage(const DamageRequest &request) {
     }
     const bool purePoison = channels[size_t(MonsterDamageType::Poison)] > 0 &&
         std::none_of(channels.begin(), channels.end() - 1, [](float value) { return value > 0; });
+    if (request.softHit && target.alive() && target.monster && dealt > 0)
+        target.monster->hitDisplay = 4.f / 25.f;
     if (request.hitRecovery && !purePoison)
         recoverUnit(target.id, request.attacker, dealt,
             request.type != MonsterDamageType::Physical ||

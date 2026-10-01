@@ -103,6 +103,7 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
             size_t row = 0;
             while (row < overlays.rows().size() && overlays.value(row, "overlay") != name) ++row;
             if (row == overlays.rows().size()) throw std::runtime_error("Missing monster state overlay");
+            if (overlays.value(row, "Filename") == "null") continue;
             auto &visual = art[layer];
             visual.animation = unitsGraphics_.single("data/global/overlays/" +
                 std::string(overlays.value(row, "Filename")) + ".dcc", true);

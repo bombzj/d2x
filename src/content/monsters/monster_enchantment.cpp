@@ -101,14 +101,23 @@ MonsterAura aura(const ClassicData &data, int skill, int rank) {
         result.minimumDamage = damage.minimumDamage;
         result.maximumDamage = damage.maximumDamage;
         result.elementalMultiplier = parameter(5);
+        if (skill == 102 || skill == 114 || skill == 118) {
+            result.synergies = {{skill == 102 ? 100 : skill == 114 ? 105 : 110, parameter(8)}, {125, parameter(7)}};
+            auto &combat = result.ownerModifiers.combat;
+            const int minimum = skill == 118 ? 1 : int(result.minimumDamage * parameter(5));
+            const int maximum = int(result.maximumDamage * parameter(5));
+            if (skill == 102) { combat.fireMinimum = minimum; combat.fireMaximum = maximum; }
+            else if (skill == 114) { combat.coldMinimum = minimum; combat.coldMaximum = maximum; }
+            else { combat.lightningMinimum = minimum; combat.lightningMaximum = maximum; }
+        }
     }
     return result;
 }
 }
 void loadAuraSkills(ClassicData &data) {
-    for (int skill : {98, 108, 122, 123}) {
+    for (int skill : {98, 102, 108, 114, 118, 122, 123}) {
         const auto definition = aura(data, skill, 1);
-        if (definition.periodFrames < 5 || definition.state.id < 0 || definition.ownerState.id < 0)
+        if (definition.periodFrames < 5 || definition.ownerState.id < 0)
             throw std::runtime_error("Original aura lacks state or periodic data");
         data.skills.skills.at(skill).auraImplemented = true;
         if (skill == 108) {
@@ -120,10 +129,32 @@ void loadAuraSkills(ClassicData &data) {
         }
     }
 }
-std::optional<AuraDefinition> resolveAura(const ClassicData &data, int skill, int rank) {
+std::optional<AuraDefinition> resolveAura(const ClassicData &data, int skill, int rank,
+    const std::map<int, int> &learned, int fireMasteryPercent,
+    int lightningMasteryPercent, int coldMasteryPercent) {
     const auto *record = data.skills.find(skill);
     if (!record || !record->auraImplemented || rank <= 0) return std::nullopt;
-    return aura(data, skill, rank);
+    auto result = aura(data, skill, rank);
+    int bonus = 100;
+    for (const auto &[synergy, percent] : result.synergies)
+        if (const auto found = learned.find(synergy); found != learned.end()) bonus += found->second * percent;
+    if (skill != 118) result.minimumDamage = float(int64_t(result.minimumDamage * 256.f) * bonus / 100) / 256.f;
+    result.maximumDamage = float(int64_t(result.maximumDamage * 256.f) * bonus / 100) / 256.f;
+    const int mastery = result.element == 2 ? fireMasteryPercent :
+        result.element == 3 ? lightningMasteryPercent : result.element == 4 ? coldMasteryPercent : 0;
+    auto mastered = [&](float damage) {
+        const int64_t fixed = int64_t(damage * 256.f);
+        return float(fixed + fixed * mastery / 100) / 256.f;
+    };
+    result.minimumDamage = mastered(result.minimumDamage);
+    result.maximumDamage = mastered(result.maximumDamage);
+    auto &combat = result.ownerModifiers.combat;
+    const int minimum = skill == 118 ? 1 : int(result.minimumDamage * result.elementalMultiplier);
+    const int maximum = int(result.maximumDamage * result.elementalMultiplier);
+    if (skill == 102) { combat.fireMinimum = minimum; combat.fireMaximum = maximum; }
+    else if (skill == 114) { combat.coldMinimum = minimum; combat.coldMaximum = maximum; }
+    else if (skill == 118) { combat.lightningMinimum = minimum; combat.lightningMaximum = maximum; }
+    return result;
 }
 bool monsterShrineEligible(const ClassicData &data, const MonsterRecord &monster) {
     if (!monster.hostile() || monster.boss) return false;

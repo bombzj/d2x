@@ -117,13 +117,20 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
             publishInventory(std::move(result), {});
     };
     simulation_->combatEffectsChanged_ = [this] { refreshCharacter(); };
-    simulation_->auraEligible_ = [this](const CombatUnit &unit) {
+    simulation_->auraEligible_ = [this](const CombatUnit &unit, bool checkNoAura) {
         if (!unit.monster && !unit.hireling) return true;
         const MonsterRecord *monster = unit.monster ? monsterContent_.find(unit.monster->identity.monster) : nullptr;
         if (unit.hireling)
             for (const auto &[id, record] : monsterContent_.monsters())
                 if (record.index == unit.hireling->classId) { monster = &record; break; }
-        return monster && !content_.tables.at("monstats").number(monster->sourceRow, "noAura").value_or(0);
+        if (!monster || monster->npc) return false;
+        const auto &stats = content_.tables.at("monstats");
+        if (checkNoAura && stats.number(monster->sourceRow, "noAura").value_or(0)) return false;
+        const auto &extra = content_.tables.at("monstats2");
+        const auto identity = stats.value(monster->sourceRow, "MonStatsEx");
+        for (size_t row = 0; row < extra.rows().size(); ++row)
+            if (extra.value(row, "Id") == identity) return extra.number(row, "isAtt").value_or(0) != 0;
+        return false;
     };
     simulation_->initializeNaturalElite_ = [this](Enemy &enemy, const Enemy *owner) {
         if (enemy.identity.enchantment || (owner ? owner->identity.rank != MonsterRank::Unique ||
@@ -899,11 +906,19 @@ void GameSession::tick(float dt, Vec keyboard, bool forceRun) {
             if (effect.spec.state.id == state && effect.spec.source.entity == simulation_->state_.player.id &&
                 effect.spec.source.definition == activeAura->definition.skill) remove.push_back(effect.handle);
         for (auto handle : remove) simulation_->state_.player.combatEffects.remove(handle);
+        if (activeAura->definition.skill == 114 && !state().player.dead)
+            simulation_->state_.player.combatEffects.removeState(content_.states.at("shatter").definition.id);
         activeAura.reset();
         refreshCharacter();
     }
     if (!activeAura && auraRank > 0)
-        if (auto aura = resolveAura(content_, auraSkill, auraRank)) activeAura = ActiveAura{*aura, state().frame};
+        if (auto aura = resolveAura(content_, auraSkill, auraRank, state().player.skillRanks,
+            fireMasteryPercent(), lightningMasteryPercent(), characterStats().combat.coldSkillDamagePercent))
+            activeAura = ActiveAura{*aura, state().frame};
+    if (activeAura)
+        if (auto aura = resolveAura(content_, auraSkill, auraRank, state().player.skillRanks,
+            fireMasteryPercent(), lightningMasteryPercent(), characterStats().combat.coldSkillDamagePercent))
+            activeAura->definition = *aura;
     simulation_->tick(dt, transitioned ? Vec{} : keyboard, forceRun);
     auto replenished = inventory_.replenish(dt);
     if (!replenished.changes.empty()) publishInventory(std::move(replenished), {});
