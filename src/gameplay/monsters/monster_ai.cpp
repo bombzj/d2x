@@ -28,6 +28,7 @@ void Simulation::updateMonsters(float dt) {
     for (auto &enemy : state_.area.enemies) {
         if (enemy.hp <= 0 || !active(enemy.pos))
             continue;
+        if (advanceAuraKnockback(enemy, dt)) continue;
         const auto ai = monsterAi_ ? monsterAi_(enemy) : std::nullopt;
         if (enemy.attack <= 0 && !enemy.approach && !enemy.aiEscaping && !enemy.aiCircling) {
             const auto target = chooseTarget(enemy.id);

@@ -83,6 +83,8 @@ void Simulation::onMonsterDamaged(Enemy &enemy, const DamageRequest &request, fl
         enemy.attackImpact = -1;
         enemy.teleportTarget.reset();
         enemy.nestSpawnPosition.reset();
+        enemy.knockbackRemaining = enemy.knockbackDuration = 0;
+        enemy.knockbackDestination.reset();
         enemy.attackMode = 1;
         if (enemy.allegiance.role == CombatRole::Summon) { enemy.corpseConsumed = true; return; }
         ++state_.area.kills;

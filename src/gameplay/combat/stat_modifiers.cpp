@@ -44,6 +44,7 @@ void mergeCombatModifiers(CombatModifiers &a, const CombatModifiers &b) {
     D2X_ADD(lifePercent); D2X_ADD(manaPercent); D2X_ADD(blockBonus);
     D2X_ADD(fasterAttack); D2X_ADD(fasterCast);
     D2X_ADD(attackRate);
+    D2X_ADD(thornsPercent); D2X_ADD(concentrationChance);
     D2X_ADD(fasterHitRecovery); D2X_ADD(fasterBlock);
     D2X_ADD(lifeLeech); D2X_ADD(manaLeech);
     D2X_ADD(crushingBlow); D2X_ADD(openWounds); D2X_ADD(deadlyStrike);

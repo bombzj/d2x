@@ -386,6 +386,7 @@ void SceneView::drawActors(Vec mouse) const {
                 std::string mode = e.hp <= 0 ? (animations.contains("dd") && deathTiming &&
                                                    e.deathAge >= deathTiming->duration ? "dd" : "dt")
                                   : e.freeze > 0 ? "nu"
+                                  : e.knockbackRemaining > 0 && animations.contains("gh") ? "gh"
                                   : e.resurrectionRemaining > 0 && animations.contains("s1") ? "s1"
                                   : (e.stun > 0 || e.hitFlash > 0) && animations.contains("gh") ? "gh"
                                   : e.skill2Remaining > 0 && animations.contains("s2") ? "s2"
@@ -440,8 +441,10 @@ void SceneView::drawActors(Vec mouse) const {
                     if (mode == "gh" && e.hitFlash > 0 && e.hitRecoveryDuration > 0)
                         frame = std::clamp(int((e.hitRecoveryDuration - e.hitFlash) / e.hitRecoveryDuration * anim->count),
                                            0, anim->count - 1);
+                    if (mode == "gh" && e.knockbackRemaining > 0 && e.knockbackDuration > 0)
+                        frame = int((e.knockbackDuration - e.knockbackRemaining) / e.knockbackDuration * anim->count) % anim->count;
                     const auto *image = anim->frame(
-                        direction(monsterLooks_.contains(e.id) ? monsterLooks_.at(e.id)
+                        direction(e.knockbackRemaining > 0 ? e.knockbackFacing : monsterLooks_.contains(e.id) ? monsterLooks_.at(e.id)
                                                                : e.combatTarget ? session_.combatPosition(e.combatTarget) - monster.position : Vec{1, 0},
                                   anim->directions), frame);
                     if (shadowsOnly) { spriteShadow(image, item.p); continue; }

@@ -14,6 +14,8 @@ struct AuraDefinition {
     float minimumDamage = 0, maximumDamage = 0;
     float lifePerPulse = 0, manaPerPulse = 0;
     int harmfulDurationPercent = 100;
+    int redemptionChance = 0;
+    float redemptionLife = 0, redemptionMana = 0;
     bool hostile = false;
     uint32_t filter = 0;
 };

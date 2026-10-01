@@ -121,6 +121,9 @@ struct Enemy {
     float stun = 0, freeze = 0, deathAge = 0, hitFlash = 0, rethink = 0;
     float hitDisplay = 0;
     float hitRecoveryDuration = 0;
+    float knockbackRemaining = 0, knockbackDuration = 0;
+    std::optional<Vec> knockbackDestination;
+    Vec knockbackFacing;
     bool freezeActive = false; // Native freeze bit, including a zero-length post-divisor application.
     float aiWait = 0;
     float webSlowRemaining = 0;

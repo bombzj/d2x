@@ -117,6 +117,7 @@ void Simulation::updateCompanions(float dt) {
             continue;
         }
         pet.combatEffects.expire(state_.frame);
+        if (advanceAuraKnockback(pet, dt)) continue;
         pet.chill = std::max(0.f, pet.chill - dt); pet.freeze = std::max(0.f, pet.freeze - dt);
         pet.freezeActive = pet.freeze > 0;
         pet.stun = std::max(0.f, pet.stun - dt); pet.webSlowRemaining = std::max(0.f, pet.webSlowRemaining - dt);

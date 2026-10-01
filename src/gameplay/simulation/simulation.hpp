@@ -46,7 +46,7 @@ class Simulation {
     float incomingDamage(EntityId attacker, EntityId defender, float amount) const;
     ResolvedDamage resolveIncoming(EntityId attacker, const CombatUnit &defender, float amount, MonsterDamageType type);
     float dealDamage(const DamageRequest &request);
-    void recoverUnit(EntityId defender, EntityId attacker, float damage, bool elemental = false, int hitClass = -1);
+    void recoverUnit(EntityId defender, EntityId attacker, float damage, bool elemental = false, int hitClass = -1, bool forced = false);
     void restoreUnit(EntityId id, float life, float mana = 0);
     void applyPoison(EntityId defender, float rate, float duration, EntityId source);
     void applyChill(EntityId defender, float duration, bool freeze = false);
@@ -97,7 +97,13 @@ class Simulation {
     int monsterColdDivisor_ = 1;
     std::function<int(const CombatUnit &)> unitColdEffect_;
     void updateAuras();
+    void reflectThorns(EntityId attacker, EntityId defender, float physicalDamage);
+    void applyAuraKnockback(EntityId attacker, EntityId defender);
+    bool advanceAuraKnockback(Enemy &enemy, float dt);
+    int sanctuaryState_ = -1;
+    std::function<std::optional<float>(const Enemy &)> monsterKnockbackDuration_;
     std::function<bool(const CombatUnit &, bool)> auraEligible_;
+    std::function<bool(const Enemy &)> redemptionCorpseEligible_;
     std::function<std::optional<MonsterAiProfile>(const Enemy &)> monsterAi_;
     std::function<bool(RegionId)> zombieForcedPursuit_;
     std::function<std::optional<float>(const MonsterIdentity &)> monsterGetHitDuration_;

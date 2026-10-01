@@ -55,6 +55,9 @@ MonsterAura aura(const ClassicData &data, int skill, int rank, const std::map<in
     auto evaluate = [&](std::string_view formula) {
         if (formula == "ln12") return linear(1);
         if (formula == "ln34") return linear(3);
+        if (formula == "ln56") return linear(5);
+        if (formula == "par5") return parameter(5);
+        if (formula == "1") return 1;
         if (formula == "ln56/2") return linear(5) / 2;
         if (formula == "dm34") return diminishing(3);
         if (formula == "100-dm34") return 100 - diminishing(3);
@@ -84,7 +87,12 @@ MonsterAura aura(const ClassicData &data, int skill, int rank, const std::map<in
     result.filter = uint32_t(n("aurafilter"));
     result.radius = float(evaluate(value("aurarangecalc")));
     result.periodFrames = skill == 66 ? evaluate(value("auralencalc")) : n("perdelay");
-    result.hostile = skill == 66 || skill == 102 || skill == 114 || skill == 118 || skill == 123;
+    result.hostile = skill == 66 || skill == 102 || skill == 114 || skill == 118 || skill == 119 || skill == 123;
+    if (skill == 124) {
+        result.redemptionChance = evaluate(value("calc1"));
+        result.redemptionLife = float(evaluate(value("calc2")));
+        result.redemptionMana = float(evaluate(value("calc3")));
+    }
     const auto ownerState = value("aurastate");
     if (!ownerState.empty()) result.ownerState = data.states.at(std::string(ownerState)).definition;
     auto state = value("auratargetstate");
@@ -112,17 +120,21 @@ MonsterAura aura(const ClassicData &data, int skill, int rank, const std::map<in
         else if (stat == "maxfireresist") m.combat.fireMaxResist = amount;
         else if (stat == "maxcoldresist") m.combat.coldMaxResist = amount;
         else if (stat == "maxlightresist") m.combat.lightningMaxResist = amount;
+        else if (stat == "thorns_percent") m.combat.thornsPercent = amount;
+        else if (stat == "skill_concentration") m.combat.concentrationChance = amount;
+        else if (skill == 119 && result.state.id < 0) continue;
         else throw std::runtime_error("Unsupported monster aura stat: " + std::string(stat));
     }
     if (skill == 122) result.ownerDamageBonus = linear(5) - linear(5) / 2;
     const auto type = value("EType");
     if (!type.empty()) {
-        result.element = type == "fire" ? 2 : type == "ltng" ? 3 : type == "cold" ? 4 : -1;
+        result.element = type == "fire" ? 2 : type == "ltng" ? 3 : type == "cold" ? 4 : type == "mag" ? 1 : -1;
         if (result.element < 0) throw std::runtime_error("Unsupported monster aura damage");
         const auto damage = resolveSkill(elementalSpec(table, row, false), rank, {});
         result.minimumDamage = damage.minimumDamage;
         result.maximumDamage = damage.maximumDamage;
         result.elementalMultiplier = parameter(5);
+        if (skill == 119) result.synergies = {{109, parameter(8)}};
         if (skill == 102 || skill == 114 || skill == 118) {
             result.synergies = {{skill == 102 ? 100 : skill == 114 ? 105 : 110, parameter(8)}, {125, parameter(7)}};
             auto &combat = result.ownerModifiers.combat;
@@ -137,7 +149,7 @@ MonsterAura aura(const ClassicData &data, int skill, int rank, const std::map<in
 }
 }
 void loadAuraSkills(ClassicData &data) {
-    for (int skill : {98, 99, 100, 102, 104, 105, 108, 109, 110, 114, 115, 118, 120, 122, 123, 125}) {
+    for (int skill : {98, 99, 100, 102, 103, 104, 105, 108, 109, 110, 113, 114, 115, 118, 119, 120, 122, 123, 124, 125}) {
         const auto definition = aura(data, skill, 1);
         if (definition.periodFrames < 5 || definition.ownerState.id < 0)
             throw std::runtime_error("Original aura lacks state or periodic data");

@@ -22,6 +22,8 @@ void Simulation::resolveMonsterResurrection(Enemy &shaman) {
     if (!reviveDuration || *reviveDuration <= 0) return;
     corpse->hp = corpse->maxHp;
     corpse->deathAge = corpse->chill = corpse->stun = corpse->hitFlash = corpse->hitDisplay = 0;
+    corpse->knockbackRemaining = corpse->knockbackDuration = 0;
+    corpse->knockbackDestination.reset();
     corpse->aiAlerted = false;
     corpse->aiWait = 0;
     corpse->approach.reset();

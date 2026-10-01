@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <cmath>
 #include "core/random.hpp"
+#include "gameplay/monsters/monster_wander.hpp"
 
 namespace d2x {
 void Simulation::updateAuras() {
@@ -58,6 +59,22 @@ void Simulation::updateAuras() {
             if (target.player) combatEffectsChanged(removed);
         };
         apply(source, aura.ownerState, true);
+        if (aura.skill == 124) {
+            if (safeZone_) return;
+            for (auto &corpse : state_.area.enemies) {
+                if (!corpse.corpseAvailable() || !rooms_->nearby(*source.position, corpse.pos) ||
+                    !redemptionCorpseEligible_ || !redemptionCorpseEligible_(corpse)) continue;
+                const auto deathDuration = monsterDeathDuration_ ? monsterDeathDuration_(corpse) : std::nullopt;
+                if (!deathDuration || corpse.deathAge < *deathDuration) continue;
+                const float offsetX = std::floor(source.position->x) - std::floor(corpse.pos.x);
+                const float offsetY = std::floor(source.position->y) - std::floor(corpse.pos.y);
+                if (offsetX * offsetX + offsetY * offsetY > aura.radius * aura.radius) continue;
+                if (limitedRandom(*source.random, 100) >= unsigned(aura.redemptionChance)) continue;
+                restoreUnit(source.id, aura.redemptionLife, aura.redemptionMana);
+                corpse.corpseConsumed = true;
+            }
+            return;
+        }
         float pulseDamage = 0;
         if (aura.hostile && aura.element >= 0 && !safeZone_) {
             const int minimum = int(aura.minimumDamage * 256.f), maximum = int(aura.maximumDamage * 256.f);
@@ -85,6 +102,7 @@ void Simulation::updateAuras() {
                 hit.hitClass = 13;
                 hit.softHit = true;
                 dealDamage(hit);
+                if (aura.skill == 119) applyAuraKnockback(source.id, target.id);
             }
             if (aura.skill == 114 && target.monster && target.alive()) {
                 target.effects->removeState(shatterDeathState_.id);
@@ -109,5 +127,53 @@ void Simulation::updateAuras() {
              enemy.identity.enchantment->aura->skill == 114 || enemy.identity.enchantment->aura->skill == 118 ||
              enemy.identity.enchantment->aura->skill == 122 || enemy.identity.enchantment->aura->skill == 123))
             pulse(combatUnit(enemy.id), *enemy.identity.enchantment->aura, enemy.nextAuraFrame);
+}
+void Simulation::applyAuraKnockback(EntityId attacker, EntityId defender) {
+    const auto source = combatUnit(attacker), target = combatUnit(defender);
+    if (!source || !target.alive() || !target.monster) return;
+    auto &enemy = *target.monster;
+    const auto duration = monsterKnockbackDuration_ ? monsterKnockbackDuration_(enemy) : std::nullopt;
+    if (!duration) { recoverUnit(defender, attacker, 1, true, 13, true); return; }
+    const int offsetX = int(std::floor(enemy.pos.x)) - int(std::floor(source.position->x));
+    const int offsetY = int(std::floor(enemy.pos.y)) - int(std::floor(source.position->y));
+    const int divisor = std::max(std::abs(offsetX), std::abs(offsetY));
+    Vec destination = enemy.pos;
+    if (divisor > 0) destination = {std::floor(enemy.pos.x) + float(offsetX * 3 / divisor) + .5f,
+        std::floor(enemy.pos.y) + float(offsetY * 3 / divisor) + .5f};
+    monsterStopApproach(enemy);
+    enemy.route.clear();
+    enemy.attack = enemy.attackDuration = 0;
+    enemy.attackImpact = -1;
+    enemy.skill2Remaining = enemy.skill2Duration = 0;
+    enemy.teleportTarget.reset();
+    enemy.nestSpawnPosition.reset();
+    enemy.knockbackRemaining = enemy.knockbackDuration = *duration;
+    enemy.knockbackDestination = destination;
+    enemy.knockbackFacing = *source.position - enemy.pos;
+}
+bool Simulation::advanceAuraKnockback(Enemy &enemy, float dt) {
+    if (enemy.knockbackRemaining <= 0 || !enemy.knockbackDestination) return false;
+    const Vec delta = *enemy.knockbackDestination - enemy.pos;
+    const Vec next = enemy.pos + delta.unit() * std::min(delta.length(), 25.f * dt);
+    if (grid_->segment(enemy.pos, next, {}, movementRule(enemy))) enemy.pos = next;
+    else enemy.knockbackDestination = enemy.pos;
+    enemy.knockbackRemaining = std::max(0.f, enemy.knockbackRemaining - dt);
+    if (enemy.knockbackRemaining == 0) {
+        enemy.knockbackDestination.reset();
+        recoverUnit(enemy.id, {}, 1, false, 160, true);
+    }
+    return true;
+}
+void Simulation::reflectThorns(EntityId attacker, EntityId defender, float physicalDamage) {
+    const auto source = combatUnit(attacker), target = combatUnit(defender);
+    if (!source.alive() || !target.alive() || physicalDamage <= 0) return;
+    int percent = target.stats.attributes.combat.thornsPercent;
+    if (source.player || source.hireling) percent = (percent + 4) / 8;
+    if (percent <= 0) return;
+    const float reflected = float(int64_t(physicalDamage * 256.f) * percent / 100) / 256.f;
+    DamageRequest hit{defender, attacker, reflected, MonsterDamageType::Physical, 0, false, false};
+    hit.softHit = true;
+    hit.hitClass = 0x8d;
+    dealDamage(hit);
 }
 }

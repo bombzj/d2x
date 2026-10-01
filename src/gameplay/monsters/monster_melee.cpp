@@ -173,6 +173,17 @@ void Simulation::resolveMonsterAttack(Enemy &enemy, int modeOverride, bool proje
             const int sourceDamage = projectileSpec ? projectileSpec->sourceDamage : 128;
             hit.channels[size_t(type)] = float(int64_t(amount * 256.f) * sourceDamage / 128) / 256.f;
         }
+    const auto physicalDamage = resolveIncoming(enemy.id, target, hit.amount, MonsterDamageType::Physical);
+    hit.amount = physicalDamage.dealt;
+    restoreUnit(defender, physicalDamage.absorbed);
+    for (size_t channel = 1; channel < hit.channels.size(); ++channel) {
+        if (hit.channels[channel] <= 0) continue;
+        const auto resolved = resolveIncoming(enemy.id, target, hit.channels[channel], MonsterDamageType(channel));
+        hit.channels[channel] = resolved.dealt;
+        restoreUnit(defender, resolved.absorbed);
+    }
+    hit.mitigated = true;
+    if (!projectile) reflectThorns(enemy.id, defender, hit.amount);
     const float hitDealt = dealDamage(hit);
     if (!projectile && hitDealt > 0 && enemy.hp > 0)
         triggerCombatEffects(defender, CombatEffectEvent::DamagedInMelee, enemy.id);

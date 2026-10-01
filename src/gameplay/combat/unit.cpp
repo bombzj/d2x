@@ -182,10 +182,14 @@ ResolvedDamage Simulation::resolveIncoming(EntityId attacker, const CombatUnit &
     amount = incomingDamage(attacker, defender.id, amount);
     if (!defender.stats.monsterResistanceRules) return mitigatePlayerDamage(amount, type, defender.stats.attributes);
     int resistance = unitResistance(defender, type);
+    if (type == MonsterDamageType::Physical && resistance > 0 && defender.stats.undead) {
+        const auto source = combatUnit(attacker);
+        if (source && source.effects->hasState(sanctuaryState_, state_.frame)) resistance = 0;
+    }
     if (type == MonsterDamageType::Cold && resistance < 100 && coldPierce_) resistance -= coldPierce_(attacker);
     return {mitigateMonsterDamage(amount, resistance), 0};
 }
-void Simulation::recoverUnit(EntityId defender, EntityId attacker, float damage, bool elemental, int baseHitClass) {
+void Simulation::recoverUnit(EntityId defender, EntityId attacker, float damage, bool elemental, int baseHitClass, bool forced) {
     auto target = combatUnit(defender);
     if (!target.alive() || damage <= 0) return;
     if (target.monster) {
@@ -199,7 +203,7 @@ void Simulation::recoverUnit(EntityId defender, EntityId attacker, float damage,
         const int divisor = hitClass == 2 || hitClass == 6 || hitClass == 10 || hitClass == 11 ? 8 :
                             hitClass == 5 ? 64 : hitClass == 4 || hitClass == 8 ? 32 : 16;
         const int dealt = int(damage * 256.f), maximum = int(monster.maxHp * 256.f);
-        if (monster.stun <= 0 && (dealt < 256 || dealt < maximum / divisor ||
+        if (!forced && monster.stun <= 0 && (dealt < 256 || dealt < maximum / divisor ||
             (dealt < maximum / (divisor / 2) && !(rollRandom(monster.combatRandom) & 1)) ||
             (dealt < maximum / (divisor / 4) && !(rollRandom(monster.combatRandom) & 3)))) return;
         const auto duration = monsterGetHitDuration_ ? monsterGetHitDuration_(monster.identity) : std::nullopt;
@@ -222,7 +226,12 @@ void Simulation::recoverUnit(EntityId defender, EntityId attacker, float damage,
         const int hitClass = (baseHitClass >= 0 ? baseHitClass : source.monster && monsterHitProperties_
             ? monsterHitProperties_(*source.monster).first : elemental ? 13 : 0) & 15;
         recoverHireling(damage, hitClass);
-    } else if (target.player) target.player->hitTime = .16f;
+    } else if (target.player) {
+        const int chance = target.stats.attributes.combat.concentrationChance;
+        if (chance > 0 && (target.player->meleeTime > 0 || target.player->castTime > 0 || target.player->channelSkill() >= 0) &&
+            limitedRandom(*target.random, 100) < unsigned(chance)) return;
+        target.player->hitTime = .16f;
+    }
 }
 float Simulation::dealDamage(const DamageRequest &request) {
     auto target = combatUnit(request.defender);

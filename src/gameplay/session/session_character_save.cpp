@@ -103,6 +103,8 @@ CharacterSaveData GameSession::prepareCharacterRestore(CharacterSaveData charact
         character.player.hireling.moving = false;
     }
     character.player.dead = false;
+    character.player.aura.reset();
+    character.player.auraSuppressesManaRegen = false;
     character.player.hp = std::max(1.f, character.player.hp);
     character.lastRegion = town->definition.id;
     return character;

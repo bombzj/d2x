@@ -324,6 +324,11 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
         const auto *record = monsterContent_.find(corpse.identity.monster);
         return record && record->corpseSelectable && record->walkVelocity.value_or(0) != 0;
     };
+    simulation_->redemptionCorpseEligible_ = [this](const Enemy &corpse) {
+        const auto *record = monsterContent_.find(corpse.identity.monster);
+        return record && record->corpseSelectable && !record->npc &&
+            !content_.tables.at("monstats").number(record->sourceRow, "noAura").value_or(0);
+    };
     simulation_->coldPierce_ = [this](EntityId actor) { return actor == state().player.id ? coldPiercePercent() : 0; };
     simulation_->monsterFreezeDivisor_ = content_.monsterFreezeDivisor.at(size_t(population.difficulty));
     simulation_->monsterColdDivisor_ = content_.monsterColdDivisor.at(size_t(population.difficulty));
@@ -415,6 +420,21 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
         if (implementation.substitute || !record || !record->getHitMode) return std::nullopt;
         const auto *motion = monsterContent_.motion(implementation.kind, "gh");
         return motion ? std::optional<float>(motion->duration) : std::nullopt;
+    };
+    simulation_->sanctuaryState_ = content_.states.at("sanctuary").definition.id;
+    simulation_->monsterKnockbackDuration_ = [this](const Enemy &enemy) -> std::optional<float> {
+        const auto *record = monsterContent_.find(enemy.identity.monster);
+        if (!record || monsterImplementation(record->id).substitute) return std::nullopt;
+        const auto &stats = content_.tables.at("monstats");
+        const auto &extra = content_.tables.at("monstats2");
+        for (size_t row = 0; row < extra.rows().size(); ++row)
+            if (extra.value(row, "Id") == stats.value(record->sourceRow, "MonStatsEx")) {
+                if (!extra.number(row, "mKB").value_or(0) || !extra.number(row, "mWL").value_or(0)) return std::nullopt;
+                const auto *motion = monsterContent_.motion(enemy.kind, "gh");
+                if (!motion || record->walkAnimationRate.value_or(0) <= 0) return std::nullopt;
+                return float(motion->frames) * 256.f / (float(*record->walkAnimationRate) * 25.f);
+            }
+        return std::nullopt;
     };
     simulation_->monsterDeathDuration_ = [this](const Enemy &enemy)
         -> std::optional<float> {
