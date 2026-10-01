@@ -36,4 +36,7 @@ inline FamilyRules tombRules(int level) {
         rules.specialRooms.push_back(456);
     return rules;
 }
+inline FamilyRules lairRules(int level) {
+    return {481, 10, level == 64 ? std::vector<int>{} : std::vector<int>{501, 497}, 10, true};
+}
 } // namespace d2x::maze

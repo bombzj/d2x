@@ -38,6 +38,8 @@ MapData assembleMap(Archives &archives, const MapRecipe &recipe) {
     for (size_t pieceIndex = 0; pieceIndex < recipe.pieces.size(); ++pieceIndex) {
         const auto &piece = recipe.pieces[pieceIndex];
         auto source = decodeDs1(archives.read(piece.ds1));
+        if (recipe.act >= 0)
+            source.act = recipe.act;
         if (piece.substitutionGroup >= 0) {
             const auto group = source.substitutionGroups.at(size_t(piece.substitutionGroup));
             if (group.width != piece.width || group.height != piece.height || group.variants != 0)

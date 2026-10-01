@@ -95,7 +95,11 @@ MapRecipe RoomMaze::build(int level, uint32_t seed, int difficulty, int entrance
         if (!rooms_[parent].fixed)
             add(parent, direction, true);
     }
-    if (level == 47)
+    if (level == 64) {
+        special(2, 507);
+        special(3, 505);
+        special(0, 497);
+    } else if (level == 47)
         placeSewerEntrances();
     else if (level == 28)
         placeBarracks(entranceDirection);
@@ -116,7 +120,8 @@ MapRecipe RoomMaze::build(int level, uint32_t seed, int difficulty, int entrance
         int a = seed_.below(15), b = seed_.below(15);
         std::swap(offsets[a], offsets[b]);
     }
-    int remaining = level == 8 || (level >= 51 && level <= 54) ? 0 : std::max(2, int(rooms_.size()) / 5 + 1);
+    int remaining = level == 8 || (level >= 51 && level <= 54) || (level >= 62 && level <= 64)
+                        ? 0 : std::max(2, int(rooms_.size()) / 5 + 1);
     for (int attempt = 0; remaining && attempt < 2 * int(rooms_.size()); ++attempt) {
         for (auto i = rooms_.rbegin(); i != rooms_.rend(); ++i)
             if (!i->fixed && i->preset == base_ + offsets[cursor]) {
@@ -135,6 +140,7 @@ MapRecipe RoomMaze::build(int level, uint32_t seed, int difficulty, int entrance
     MapRecipe result;
     result.preset = base_ + 1; // Native population-enabled Crypt room family.
     result.levelType = catalog_.level(level).levelType;
+    result.act = catalog_.level(level).act;
     result.ds1 =
         "maze-v1/" + std::to_string(level) + "/" + std::to_string(seed) + "/" + std::to_string(difficulty);
     if (level == 28)
