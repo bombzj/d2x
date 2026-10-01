@@ -15,7 +15,7 @@ void placeAct1OutdoorShrines(Archives &archives, const WorldCatalog &catalog, co
                              std::span<int> occupied, MapRecipe &recipe, Seed &seed) {
     // The native Act I wilderness rule marks five eligible macro cells, cycling
     // through the first four rows of the LvlSub type named by Levels.SubShrine.
-    if (level.id < 2 || level.id > 7)
+    if ((level.id < 2 || level.id > 7) && (level.id < 41 || level.id > 46))
         return;
     std::vector<const SubstitutionRecord *> shrineRecords;
     for (const auto &record : catalog.substitutions())

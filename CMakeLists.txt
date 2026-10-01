@@ -30,6 +30,7 @@ target_sources(d2x_world PRIVATE
   src/world/outdoor/outdoor_river.cpp
   src/world/outdoor/outdoor_paths.cpp
   src/world/outdoor/outdoor_cliffs.cpp
+  src/world/outdoor/desert.cpp
   src/world/cow_level.cpp
   src/world/maze/generation.cpp src/world/maze/resources.cpp
   src/world/maze/cave.cpp src/world/maze/crypt.cpp src/world/maze/barracks.cpp

@@ -43,8 +43,10 @@ WorldPlan planWorld(Archives &archives, const WorldCatalog &catalog, WorldSelect
     auto missingOutdoor = outdoorMissing(archives, catalog);
     auto outdoors = missingOutdoor.empty() ? generateAct1Outdoors(archives, catalog, selection.seed)
                                            : std::map<int, MapRecipe>{};
+    auto deserts = generateAct2Outdoors(archives, catalog, selection.seed);
+    outdoors.insert(deserts.begin(), deserts.end());
     for (const auto &[id, level] : catalog.levels()) {
-        if (level.act != 0 && id != 40 && id != 50 && id != 73 && !supportsMaze(id))
+        if (level.act != 0 && level.act != 1)
             continue;
         auto available = catalog.availability(
             archives, id, id == 40 ? 1 : id == selection.level && !selection.preset ? selection.variant : 0);
@@ -53,7 +55,7 @@ WorldPlan planWorld(Archives &archives, const WorldCatalog &catalog, WorldSelect
             entry.destination = RegionId(id);
             entry.status = "Connected outdoor terrain";
             entry.missing.clear();
-            result.regions.push_back(makeRegion(*entry.destination, level.name, outdoors.at(id), id == 1));
+            result.regions.push_back(makeRegion(*entry.destination, level.name, outdoors.at(id), id == 1 || id == 40));
         } else if (id == 39) {
             entry.missing = cowLevelMissing(archives, catalog);
             entry.status = entry.missing.empty() ? "Generated cow terrain / quest portal unavailable"

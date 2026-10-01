@@ -60,6 +60,40 @@ void connect(OutdoorPosition &a, OutdoorPosition &b) {
                             to - (vertical ? b.y : b.x)});
 }
 } // namespace
+std::map<int, OutdoorPosition> layoutAct2(const WorldCatalog &catalog, uint32_t seed) {
+    Seed random(seed);
+    std::map<int, OutdoorPosition> result;
+    for (int id = 40; id <= 46; ++id) {
+        const auto &level = catalog.level(id);
+        result.emplace(id, OutdoorPosition{id, level.offsetX, level.offsetY, level.width, level.height, 0, {}});
+    }
+    int attempts = 0;
+    std::function<bool(int)> place = [&](int id) {
+        if (++attempts > 10000)
+            throw std::runtime_error("Act II outdoor layout exhausted");
+        if (id == 46)
+            return true;
+        int first = id == 41 ? 1 + random.below(2) : random.below(4);
+        for (int candidate = 0; candidate < (id == 41 ? 2 : 4); ++candidate) {
+            int direction = id == 41 ? 1 + (first - 1 + candidate) % 2 : (first + candidate) % 4;
+                 attach(result.at(id - 1), result.at(id), direction, id == 41 || id == 45 ? 0 : 1,
+                     id == 41 && direction == 2);
+            bool valid = true;
+            for (int previous = 40; previous < id - 1; ++previous)
+                if (overlaps(result.at(id), result.at(previous)))
+                    valid = false;
+            if (valid && place(id + 1))
+                return true;
+        }
+        return false;
+    };
+    if (!place(41))
+        throw std::runtime_error("Cannot place original Act II outdoor links");
+    result.at(40).direction = result.at(41).direction;
+    for (int id = 41; id <= 45; ++id)
+        connect(result.at(id - 1), result.at(id));
+    return result;
+}
 std::map<int, OutdoorPosition> layoutAct1(const WorldCatalog &catalog, uint32_t seed) {
     Seed rng(seed);
     std::map<int, OutdoorPosition> result;

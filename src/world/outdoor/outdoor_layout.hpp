@@ -9,4 +9,5 @@ struct OutdoorPosition {
 };
 // Coordinates and attachments are expressed in native tiles, never screen pixels.
 std::map<int, OutdoorPosition> layoutAct1(const WorldCatalog &catalog, uint32_t seed);
+std::map<int, OutdoorPosition> layoutAct2(const WorldCatalog &catalog, uint32_t seed);
 } // namespace d2x

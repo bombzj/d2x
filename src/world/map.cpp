@@ -147,6 +147,8 @@ void Map::load(Archives &a, TileLibraryCache &cache, const MapRecipe &recipe, ui
                     return;
                 if ((c.orientation == 10 || c.orientation == 11) && ((c.value >> 20) & 63) >= 8)
                     return;
+                if ((c.orientation == 10 || c.orientation == 11) && c.hidden())
+                    return;
                 int idx = tileIndex(c, x, y);
                 if (idx < 0) {
                     unresolved++;

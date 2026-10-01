@@ -408,7 +408,7 @@ class Wilderness {
 void alignPresetBoundary(Archives &archives, const WorldCatalog &catalog,
                          std::map<int, OutdoorPosition> &layout, int id, int preset, uint32_t worldSeed) {
     auto &p = layout.at(id);
-    auto recipe = catalog.preset(preset, catalog.level(id).levelType, id == 1 ? p.direction : 0);
+    auto recipe = catalog.preset(preset, catalog.level(id).levelType, id == 1 || id == 40 ? p.direction : 0);
     auto &boundary = p.boundaries.front();
     auto contact = boundary;
     const int size = boundary.side % 2 ? p.height : p.width;
@@ -421,7 +421,7 @@ void alignPresetBoundary(Archives &archives, const WorldCatalog &catalog,
     Map map;
     Seed tileRoot(worldSeed);
     map.load(archives, cache, recipe, tileRoot.next() + uint32_t(id));
-    const Vec origin = id == 1 ? map.actSpawn() : map.spawn;
+    const Vec origin = id == 1 || id == 40 ? map.actSpawn() : map.spawn;
     const auto reachable = map.grid.reachableFrom(origin);
     int first = contact.end * 5, last = -1;
     for (int lateral = contact.start * 5; lateral < contact.end * 5; ++lateral) {
@@ -460,6 +460,22 @@ std::map<int, MapRecipe> generateAct1Outdoors(Archives &archives, const WorldCat
         recipe.worldX = p.x;
         recipe.worldY = p.y;
         recipe.boundaries = p.boundaries;
+        result.emplace(id, std::move(recipe));
+    }
+    return result;
+}
+std::map<int, MapRecipe> generateAct2Outdoors(Archives &archives, const WorldCatalog &catalog, uint32_t seed) {
+    auto layout = layoutAct2(catalog, seed);
+    alignPresetBoundary(archives, catalog, layout, 40, 301, seed);
+    std::map<int, MapRecipe> result;
+    for (const auto &[id, position] : layout) {
+        auto recipe = id == 40 ? catalog.preset(301, 12, position.direction)
+                               : generateDesert(archives, catalog, position, seed);
+        recipe.width = position.width;
+        recipe.height = position.height;
+        recipe.worldX = position.x;
+        recipe.worldY = position.y;
+        recipe.boundaries = position.boundaries;
         result.emplace(id, std::move(recipe));
     }
     return result;

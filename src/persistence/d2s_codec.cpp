@@ -110,7 +110,7 @@ void waypoints(CharacterSaveData &snapshot, D2sFixedSections &sections, const Cl
         if (writing) {
             if (snapshot.waypoints.contains(RegionId(*id))) value |= bit;
         } else if (value & bit) {
-            require(*id >= 1 && *id <= 40, "waypoints outside Act I and Lut Gholein");
+            require(*id >= 1 && *id <= 74, "waypoints outside Act I and Act II");
             snapshot.waypoints.emplace(RegionId(*id), 0.f);
         }
     }
@@ -344,8 +344,9 @@ Bytes encodeSave(const CharacterSaveData &source, const ClassicData &content) {
     header.mapSeed = snapshot.mapSeed; header.difficulty = uint8_t(snapshot.difficulty);
     header.saved = uint32_t(std::time(nullptr)); if (!header.created) header.created = header.saved;
     for (auto &town : header.towns) town &= 0x7F;
-    header.towns[header.difficulty] = uint8_t(0x80 | (int(snapshot.lastRegion) == 40 ? 1 : 0));
-    header.lastLevel = unsigned(snapshot.lastRegion); header.lastTown = int(snapshot.lastRegion) == 40 ? 40 : 1;
+    const bool actTwo = int(snapshot.lastRegion) >= 40 && int(snapshot.lastRegion) <= 74;
+    header.towns[header.difficulty] = uint8_t(0x80 | (actTwo ? 1 : 0));
+    header.lastLevel = unsigned(snapshot.lastRegion); header.lastTown = actTwo ? 40 : 1;
     for (size_t index = 0; index < player.skillHotkeys.size(); ++index) {
         const auto &key = player.skillHotkeys[index];
         header.hotkeys[index] = key.skill == -2 ? UINT32_MAX
