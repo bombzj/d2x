@@ -6,6 +6,29 @@
 #include <numeric>
 
 namespace d2x::maze {
+void RoomMaze::placeArcane() {
+    int variant = seed_.next() & 3;
+    for (int branch = 0; branch < 4; ++branch) {
+        int parent = 0;
+        for (int index = 0; index < 15; ++index) {
+            int direction = branch;
+            if (index == 2 || index == 12)
+                direction += 3;
+            else if (index == 7 || index == 9)
+                direction += 1;
+            else if (index == 10 || index == 11 || index == 13 || index == 14)
+                direction += 2;
+            int added = add(parent, direction % 4, true);
+            if (added < 0)
+                throw std::runtime_error("Original Arcane branch overlaps another room");
+            if (index != 8 && index != 12) {
+                rooms_[added].variant = (variant + branch) % 4;
+                parent = added;
+            }
+        }
+    }
+    rooms_[0].variant = 4;
+}
 void RoomMaze::placeSewerEntrances() {
     auto edge = [&](int direction) {
         int chosen = -1;
@@ -67,6 +90,8 @@ MapRecipe RoomMaze::build(int level, uint32_t seed, int difficulty, int entrance
     if (count < 1 || count > 256)
         throw std::runtime_error("Invalid LvlMaze room count");
     rooms_.emplace_back(seed_.next());
+    if (level == 74)
+        placeArcane();
     if (catalog_.level(level).levelType == 17) {
         tombDirection = seed_.next() & 3;
         for (int index = 0; index < 3; ++index) {
@@ -120,7 +145,7 @@ MapRecipe RoomMaze::build(int level, uint32_t seed, int difficulty, int entrance
         int a = seed_.below(15), b = seed_.below(15);
         std::swap(offsets[a], offsets[b]);
     }
-    int remaining = level == 8 || (level >= 51 && level <= 54) || (level >= 62 && level <= 64)
+    int remaining = level == 8 || level == 74 || (level >= 51 && level <= 54) || (level >= 62 && level <= 64)
                         ? 0 : std::max(2, int(rooms_.size()) / 5 + 1);
     for (int attempt = 0; remaining && attempt < 2 * int(rooms_.size()); ++attempt) {
         for (auto i = rooms_.rbegin(); i != rooms_.rend(); ++i)
@@ -148,10 +173,10 @@ MapRecipe RoomMaze::build(int level, uint32_t seed, int difficulty, int entrance
     std::map<int, int> variants;
     for (auto i = rooms_.rbegin(); i != rooms_.rend(); ++i) {
         const auto &preset = catalog_.presets().at(i->preset);
-        if (i->variant < 0 && preset.files < 1)
+        if (i->variant < 0 && preset.files < 1 && level != 74)
             throw std::runtime_error("Maze room has no selectable DS1 variants");
         int variant = i->variant >= 0 ? i->variant : seed_.below(preset.files);
-        if (!(level >= 51 && level <= 54) && i->preset > base_ && i->preset < base_ + 16) {
+        if (level != 74 && !(level >= 51 && level <= 54) && i->preset > base_ && i->preset < base_ + 16) {
             auto [it, inserted] = variants.try_emplace(i->preset, variant);
             (void)inserted;
             it->second = (it->second + 1) % preset.files;

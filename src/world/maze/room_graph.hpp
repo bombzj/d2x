@@ -25,6 +25,7 @@ class RoomMaze {
     void placeBarracks(int direction);
     void initializeCatacombs(int level);
     void placeSewerEntrances();
+    void placeArcane();
     void pick(int i) {
         auto &room = rooms_[i];
         int type = catalog_.level(maze_.level).levelType;
@@ -80,6 +81,7 @@ class RoomMaze {
         if (chosen < 0)
             throw std::runtime_error("Maze generator cannot place the original stair room");
         rooms_[chosen].preset = first + offsets[direction];
+        rooms_[chosen].variant = -1;
         rooms_[chosen].fixed = true;
     }
 
@@ -89,7 +91,8 @@ class RoomMaze {
               Seed world(seed);
               return world.next() + uint32_t(level);
           }()),
-          family_(catalog.level(level).levelType == 18 ? lairRules(level)
+          family_(level == 74 ? FamilyRules{509, 12, {525}}
+              : catalog.level(level).levelType == 18 ? lairRules(level)
               : catalog.level(level).levelType == 17 ? tombRules(level)
               : level >= 51 && level <= 54 ? FamilyRules{level == 51 ? 353 : 357, 16, {}, 16, true}
               : catalog.level(level).levelType == 13 ? sewerRules(level)
