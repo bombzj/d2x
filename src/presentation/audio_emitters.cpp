@@ -220,6 +220,7 @@ void SoundBank::pauseEmitters(bool paused) {
     else ResumeAudioStream(emitters_->stream);
 }
 void SoundBank::resetEmitters() {
+    for (auto &[key, group] : originalGroups_) group.lastStart.reset();
     if (!emitters_) return;
     // Flush queued audio as well as the voices; a new region must not play
     // samples already mixed for missiles from the preceding scene.

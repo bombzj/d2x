@@ -41,6 +41,7 @@ struct MonsterSpecialMissile {
 };
 struct ClassicData {
     std::map<int, MissileCollisionRule> missileCollisions;
+    std::map<int, bool> missileReturnFire;
     ClassicData(ItemCatalog itemCatalog, std::map<std::string, DataTable, std::less<>> sourceTables,
                 std::string sourceProfile)
         : items(std::move(itemCatalog)), tables(std::move(sourceTables)),

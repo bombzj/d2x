@@ -17,11 +17,11 @@ std::vector<SceneView::VisibleMonster> SceneView::visibleMonsters() const {
     std::vector<VisibleMonster> result;
     for (const auto &[index, offset] : session_.sceneRegions())
         for (const auto &enemy : session_.areaState(index).enemies)
-            if (!enemy.corpseConsumed && session_.roomVisible(index, enemy.pos))
+            if (!enemy.corpseConsumed && !enemy.deathHidden && session_.roomVisible(index, enemy.pos))
                 result.push_back({&enemy, enemy.pos + offset, index});
     for (const auto &pet : session_.state().companions) {
         const auto *death = session_.monsterContent().motion(pet.kind, "dt");
-        if ((pet.hp > 0 || (death && pet.deathAge < death->duration)) &&
+        if (!pet.deathHidden && (pet.hp > 0 || (death && pet.deathAge < death->duration)) &&
             session_.roomVisible(session_.regionIndex(), pet.pos))
             result.push_back({&pet, pet.pos, session_.regionIndex()});
     }

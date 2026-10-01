@@ -6,7 +6,7 @@
 namespace d2x {
 bool Simulation::usableCorpse(EntityId id) const {
     const auto *corpse = const_cast<Simulation *>(this)->findEnemy(id);
-    if (!corpse || safeZone_ || corpse->hp > 0 || corpse->corpseConsumed || !active(corpse->pos) ||
+    if (!corpse || safeZone_ || !corpse->corpseAvailable() || !active(corpse->pos) ||
         !corpseSelectable_ || !corpseSelectable_(*corpse)) return false;
     const auto duration = monsterDeathDuration_ ? monsterDeathDuration_(*corpse) : std::nullopt;
     return duration && corpse->deathAge >= *duration;
@@ -118,6 +118,7 @@ void Simulation::updateCompanions(float dt) {
         }
         pet.combatEffects.expire(state_.frame);
         pet.chill = std::max(0.f, pet.chill - dt); pet.freeze = std::max(0.f, pet.freeze - dt);
+        pet.freezeActive = pet.freeze > 0;
         pet.stun = std::max(0.f, pet.stun - dt); pet.webSlowRemaining = std::max(0.f, pet.webSlowRemaining - dt);
         pet.rethink = std::max(0.f, pet.rethink - dt);
         if (pet.poisonRemaining <= 0 && pet.openWoundsRemaining <= 0)

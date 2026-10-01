@@ -242,6 +242,10 @@ ClassicData loadClassicData(Archives &archives) {
         if (mode < 0 || mode >= int(std::size(collisionMasks)) || size < 0 || size > 3)
             throw std::runtime_error("Unsupported original missile collision: " + std::to_string(*id));
         data.missileCollisions.emplace(*id, MissileCollisionRule{collisionMasks[mode], size});
+        const int returnFire = missiles.number(row, "ReturnFire").value_or(0);
+        if (returnFire != 0 && returnFire != 1)
+            throw std::runtime_error("Unsupported original missile ReturnFire: " + std::to_string(*id));
+        data.missileReturnFire.emplace(*id, returnFire == 1);
     }
     data.characters = loadCharacterDefinitions(data.tables.at("charstats"));
     data.hirelings = loadHirelingDefinitions(data.tables.at("hireling"));

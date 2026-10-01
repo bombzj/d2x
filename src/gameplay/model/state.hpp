@@ -102,11 +102,14 @@ struct Enemy {
     EntityId combatTarget;
     std::optional<UnitCombatStats> intrinsicCombat;
     bool corpseConsumed = false;
+    bool deathHidden = false, deathShattered = false, deathUnselectable = false;
+    bool corpseAvailable() const { return hp <= 0 && !corpseConsumed && !deathUnselectable; }
     int summonSkill = -1, summonRank = 0;
     int summonShield = 0;
     float skill2Remaining = 0, skill2Duration = 0;
     float resurrectionRemaining = 0, resurrectionDuration = 0;
     float stun = 0, freeze = 0, deathAge = 0, hitFlash = 0, rethink = 0;
+    bool freezeActive = false; // Native freeze bit, including a zero-length post-divisor application.
     float aiWait = 0;
     float webSlowRemaining = 0;
     int webSlowPercent = 0;
@@ -188,6 +191,11 @@ struct Missile {
         int minimumDamage = 0, maximumDamage = 0;
     };
     std::optional<FreezingAreaState> freezingArea = std::nullopt;
+    struct ColdRetaliationState {
+        int elapsedFrames = 0, lifetimeFrames = 0;
+        int minimumDamage = 0, maximumDamage = 0, coldFrames = 0;
+    };
+    std::optional<ColdRetaliationState> coldRetaliation = std::nullopt;
 };
 struct Effect {
     Vec pos;

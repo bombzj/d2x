@@ -46,8 +46,25 @@ void Simulation::onMonsterDamaged(Enemy &enemy, const DamageRequest &request, fl
             enemy.deathEnchantmentFrame = state_.frame + 4;
     }
     if (enemy.hp == 0) {
+        const auto target = combatUnit(enemy.id);
+        const auto deathKind = target.stats.boss ? EffectUnitKind::Boss : EffectUnitKind::Monster;
+        auto keepDeathState = [&](const CombatStateDefinition &state) {
+            if (!state.stayOnDeath[size_t(deathKind)]) return;
+            enemy.deathHidden |= state.hideOnDeath;
+            enemy.deathShattered |= state.shatterOnDeath;
+            enemy.deathUnselectable |= state.corpseUnselectable;
+        };
+        // Native freeze survives ordinary monster death, including a lethal
+        // freezing hit; bosses use the distinct bossstaydeath mask.
+        if (enemy.freezeActive || enemy.freeze > 0) keepDeathState(freezeDeathState_);
+        if (enemy.identity.enchantment && enemy.identity.enchantment->has(35))
+            keepDeathState(shatterDeathState_); // MONUMOD_ICESHATTERDEATH.
+        enemy.combatEffects.onDeath(deathKind);
+        for (const auto &effect : enemy.combatEffects.entries())
+            if (effect.activeAt(state_.frame)) keepDeathState(effect.spec.state);
         enemy.hitFlash = 0;
         enemy.freeze = 0;
+        enemy.freezeActive = false;
         enemy.resurrectionRemaining = enemy.resurrectionDuration = 0;
         enemy.deathAge = 0;
         enemy.route.clear();
@@ -67,7 +84,6 @@ void Simulation::onMonsterDamaged(Enemy &enemy, const DamageRequest &request, fl
         enemy.attackImpact = -1;
         enemy.teleportTarget.reset();
         enemy.attackMode = 1;
-        enemy.combatEffects.onDeath(EffectUnitKind::Monster);
         if (enemy.allegiance.role == CombatRole::Summon) { enemy.corpseConsumed = true; return; }
         ++state_.area.kills;
         const auto controller = combatUnit(controllingPlayer(source));
@@ -110,11 +126,12 @@ void Simulation::updateMissiles(float dt) {
     for (auto &m : area.missiles) {
         if (m.frozenOrb) { advanceFrozenOrb(m, spawned); continue; }
         if (m.blizzard) { advanceBlizzard(m, spawned); continue; }
-        if (m.freezingArea) { advanceGlacialSpike(m); continue; }
+        if (m.freezingArea) { advanceGlacialSpike(m, spawned); continue; }
+        if (m.coldRetaliation) { advanceChillingArmorBolt(m, spawned); continue; }
         const int accelerationStep = int(m.age * 5.f + .00001f);
         m.age += dt;
         if (m.groundTargeted) { advanceGroundTargetedMissile(m, dt, spawned); continue; }
-        if (m.poisonCloud) { advancePoisonCloud(m, dt); continue; }
+        if (m.poisonCloud) { advancePoisonCloud(m, dt, spawned); continue; }
         if (m.acceleration != 0 && int(m.age * 5.f + .00001f) > accelerationStep) {
             float speed = std::max(0.f, m.velocity.length() + m.acceleration);
             if (speed >= m.maxVelocity) { speed = m.maxVelocity; m.acceleration = 0; }
@@ -135,6 +152,7 @@ void Simulation::updateMissiles(float dt) {
             m.behavior == SkillBehavior::Nova || m.behavior == SkillBehavior::ChargedBolt ? MonsterDamageType::Lightning :
             m.chill > 0 ? MonsterDamageType::Cold : MonsterDamageType::Fire);
         auto hit = [&](EntityId defender) {
+            reactToMissile(m, defender, spawned);
             m.lastHit = defender;
             if (m.nextHitDelay > 0) area.novaHitUntil[defender] = state_.time + m.nextHitDelay;
             if (m.monsterAttack && !m.fixedElement) {
@@ -143,8 +161,14 @@ void Simulation::updateMissiles(float dt) {
                     else resolveMonsterAttack(*source, m.monsterAttackMode, true, defender);
                 }
             } else if (m.impact) resolveMissileImpact(m, spawned, defender);
-            else dealDamage({m.owner, defender, m.damage, type, m.chill, false, true,
-                             m.behavior == SkillBehavior::IceBlast});
+            else {
+                DamageRequest hit{m.owner, defender, m.damage, type, m.chill};
+                if (m.behavior == SkillBehavior::IceBlast) {
+                    hit.chill = 0;
+                    hit.freezeFrames = int(m.chill * 25.f + .5f);
+                }
+                dealDamage(hit);
+            }
             if (m.hitOverlayId >= 0)
                 area.effects.push_back({unitPosition(defender), 0, m.hitOverlayDuration, -1, m.hitOverlayId, defender});
         };

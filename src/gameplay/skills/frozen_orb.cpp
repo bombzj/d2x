@@ -120,6 +120,7 @@ void Simulation::advanceFrozenOrb(Missile &missile, std::vector<Missile> &spawne
     const auto contact = missileTarget(missile, next);
     missile.pos = contact ? missile.pos + (next - missile.pos) * contact->second : next;
     if (contact) {
+        reactToMissile(missile, contact->first, spawned);
         const auto target = combatUnit(contact->first);
         const int minimum = std::min(state.minimumDamage, state.maximumDamage);
         const uint32_t span = uint32_t(std::abs(state.maximumDamage - state.minimumDamage));

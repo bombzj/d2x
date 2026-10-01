@@ -23,6 +23,10 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
       monsterContent_(archives, content_.tables.at("monstats")), loot_(childRandom(random_)) {
     simulation_.state_.player.characterClass = std::move(characterClass);
     simulation_.missileCollisions_ = content_.missileCollisions;
+    simulation_.missileReturnFire_ = content_.missileReturnFire;
+    simulation_.freezeDeathState_ = content_.states.at("freeze").definition;
+    simulation_.shatterDeathState_ = content_.states.at("shatter").definition;
+    simulation_.uninterruptableState_ = content_.states.at("uninterruptable").definition.id;
     simulation_.noMultiShotMissiles_ = content_.noMultiShotMissiles;
     simulation_.unspreadMultiShotMissiles_ = content_.unspreadMultiShotMissiles;
     simulation_.state_.player.name = std::move(characterName);

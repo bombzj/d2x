@@ -7,6 +7,7 @@
 #include <cctype>
 #include <set>
 #include <stdexcept>
+#include <utility>
 
 namespace d2x {
 namespace {
@@ -32,7 +33,8 @@ void loadSorceressEffects(SkillCatalog &catalog, const DataTable &skills,
         {"Ice Blast", SkillBehavior::IceBlast}, {"Charged Bolt", SkillBehavior::ChargedBolt}, {"Frozen Armor", SkillBehavior::FrozenArmor},
         {"Inferno", SkillBehavior::Inferno}, {"Static Field", SkillBehavior::StaticField},
         {"Frozen Orb", SkillBehavior::FrozenOrb}, {"Blizzard", SkillBehavior::Blizzard},
-        {"Glacial Spike", SkillBehavior::GlacialSpike}, {"Shiver Armor", SkillBehavior::ShiverArmor}};
+        {"Glacial Spike", SkillBehavior::GlacialSpike}, {"Shiver Armor", SkillBehavior::ShiverArmor},
+        {"Chilling Armor", SkillBehavior::ChillingArmor}};
     const auto warmth = std::find_if(catalog.skills.begin(), catalog.skills.end(),
         [](const auto &pair) { return pair.second.classCode == "sor" &&
             pair.second.sourceName == "Warmth"; });
@@ -153,31 +155,35 @@ void loadSorceressEffects(SkillCatalog &catalog, const DataTable &skills,
             return visual;
         };
         spec.castOverlay = loadOverlay(skills.value(row, "castoverlay"));
-        if (effect == SkillBehavior::FrozenArmor || effect == SkillBehavior::ShiverArmor) {
+        if (effect == SkillBehavior::FrozenArmor || effect == SkillBehavior::ShiverArmor ||
+            effect == SkillBehavior::ChillingArmor) {
             const bool shiver = effect == SkillBehavior::ShiverArmor;
+            const bool frozen = effect == SkillBehavior::FrozenArmor;
             if (skills.value(row, "aurastat1") != "skill_armor_percent" ||
                 skills.value(row, "aurastatcalc1") != "ln12" ||
-                skills.value(row, "auraevent1") != (shiver ? "attackedinmelee" : "damagedinmelee") ||
-                required(skills, row, "auraeventfunc1") != (shiver ? 3 : 2) ||
+                skills.value(row, "auraevent1") != (frozen ? "damagedinmelee" : shiver ? "attackedinmelee" : "hitbymissile") ||
+                required(skills, row, "auraeventfunc1") != (frozen ? 2 : shiver ? 3 : 1) ||
                 skills.value(row, "auralencalc") != (shiver ?
                     "ln34+(skill('Frozen Armor'.blvl)+skill('Chilling Armor'.blvl))*par7" :
-                    "ln34+(skill('Shiver Armor'.blvl)+skill('Chilling Armor'.blvl))*par7") ||
-                (!shiver && skills.value(row, "calc1") != "ln56*(100+((skill('Shiver Armor'.blvl)+skill('Chilling Armor'.blvl))*par8))/100"))
+                    frozen ? "ln34+(skill('Shiver Armor'.blvl)+skill('Chilling Armor'.blvl))*par7" :
+                    "ln34+(skill('Frozen Armor'.blvl)+skill('Shiver Armor'.blvl))*par7") ||
+                (frozen && skills.value(row, "calc1") != "ln56*(100+((skill('Shiver Armor'.blvl)+skill('Chilling Armor'.blvl))*par8))/100"))
                 throw std::runtime_error("Unsupported original ice armor formula");
             for (int parameter = 0; parameter < 8; ++parameter)
-                spec.armorParameters[size_t(parameter)] = shiver && (parameter == 4 || parameter == 5) ? 0 :
+                spec.armorParameters[size_t(parameter)] = !frozen && (parameter == 4 || parameter == 5) ? 0 :
                     required(skills, row, "Param" + std::to_string(parameter + 1));
-            for (auto name : {shiver ? "Frozen Armor" : "Shiver Armor", "Chilling Armor"}) {
+            for (auto name : {frozen ? "Shiver Armor" : "Frozen Armor", frozen || shiver ? "Chilling Armor" : "Shiver Armor"}) {
                 auto found = std::find_if(catalog.skills.begin(), catalog.skills.end(),
                     [&](const auto &entry) { return entry.second.sourceName == name && entry.second.classCode == "sor"; });
                 if (found == catalog.skills.end()) throw std::runtime_error("Missing ice armor synergy");
                 spec.armorSynergySkills.push_back(found->first);
             }
             const auto state = states.find(skills.value(row, "aurastate"));
-            if (state == states.end()) throw std::runtime_error("Missing Frozen Armor state");
+            if (state == states.end()) throw std::runtime_error("Missing ice armor state");
             spec.state = state->second.definition;
             spec.stateOverlay = loadOverlay(state->second.overlay);
-            if (spec.stateOverlay.id < 0) throw std::runtime_error("Missing Frozen Armor state overlay");
+            if (spec.stateOverlay.id < 0 || spec.state.group != 1)
+                throw std::runtime_error("Missing ice armor overlay or original exclusive group");
             spec.hitOverlay = loadOverlay(skills.value(row, "cltoverlaya"));
             for (size_t sound = 0; sound < sounds.rows().size(); ++sound)
                 if (sounds.value(sound, "Sound") == skills.value(row, "dosound")) {
@@ -185,12 +191,14 @@ void loadSorceressEffects(SkillCatalog &catalog, const DataTable &skills,
                     break;
                 }
             if (spec.activationSoundArt.empty() || !archives.contains(spec.activationSoundArt))
-                throw std::runtime_error("Missing Frozen Armor activation sound");
-            if (shiver) {
+                throw std::runtime_error("Missing ice armor activation sound");
+            if (!frozen) {
                 if (required(skills, row, "srvdofunc") != 18 ||
-                    skills.value(row, "EDmgSymPerCalc") != "(skill('Frozen Armor'.blvl)+skill('Chilling Armor'.blvl))*par8" ||
+                    skills.value(row, "EDmgSymPerCalc") != (shiver ?
+                        "(skill('Frozen Armor'.blvl)+skill('Chilling Armor'.blvl))*par8" :
+                        "(skill('Frozen Armor'.blvl)+skill('Shiver Armor'.blvl))*par8") ||
                     !skills.value(row, "srvmissile").empty() || !spec.coldDamage)
-                    throw std::runtime_error("Unsupported Shiver Armor retaliation");
+                    throw std::runtime_error("Unsupported ice armor retaliation");
                 spec.minimumDamage = required(skills, row, "EMin");
                 spec.maximumDamage = required(skills, row, "EMax");
                 for (int tier = 0; tier < 5; ++tier) {
@@ -202,6 +210,8 @@ void loadSorceressEffects(SkillCatalog &catalog, const DataTable &skills,
                 spec.coldFrames = required(skills, row, "ELen");
                 for (int tier = 0; tier < 3; ++tier)
                     spec.coldFramesPerLevel[tier] = skills.number(row, "ELevLen" + std::to_string(tier + 1)).value_or(0);
+            }
+            if (shiver) {
                 // States.cltactivefunc=87's sparkle placement/initialization is
                 // not present in the local client reference. Keep its real art
                 // available without running this client-only template as damage.
@@ -217,6 +227,47 @@ void loadSorceressEffects(SkillCatalog &catalog, const DataTable &skills,
                         break;
                     }
                 if (!particleFound) throw std::runtime_error("Missing Shiver Armor original sparkle");
+            }
+            if (effect == SkillBehavior::ChillingArmor) {
+                const auto missileName = skills.value(row, "srvmissilea");
+                if (missileName != "chillingarmorbolt" || skills.value(row, "cltmissilea") != missileName)
+                    throw std::runtime_error("Unsupported Chilling Armor missile link");
+                size_t bolt = 0;
+                for (; bolt < missiles.rows().size(); ++bolt)
+                    if (missiles.value(bolt, "Missile") == missileName) break;
+                if (bolt == missiles.rows().size()) throw std::runtime_error("Missing Chilling Armor missile");
+                const auto expect = [&](std::string_view field, int value) {
+                    if (missiles.number(bolt, field).value_or(0) != value)
+                        throw std::runtime_error("Unsupported Chilling Armor bolt: " + std::string(field));
+                };
+                expect("pSrvDoFunc", 1); expect("pCltDoFunc", 1);
+                expect("CollideType", 3); expect("CollideKill", 1); expect("LastCollide", 1);
+                expect("Size", 1); expect("ReturnFire", 0); expect("ResultFlags", 4);
+                expect("NumDirections", 16); expect("LoopAnim", 1); expect("Trans", 1);
+                for (const auto field : {"pSrvHitFunc", "pSrvDmgFunc", "pCltHitFunc", "VelLev", "LevRange", "Accel",
+                                         "AlwaysExplode", "NextHit", "NextDelay", "ToHit", "SrcDamage", "SrcMissDmg",
+                                         "MissileSkill", "MinDamage", "MaxDamage", "EMin", "EMax", "ApplyMastery"})
+                    expect(field, 0);
+                if (missiles.value(bolt, "Skill") != name || !missiles.value(bolt, "EType").empty() ||
+                    !missiles.value(bolt, "ExplosionMissile").empty() ||
+                    required(missiles, bolt, "Vel") != required(missiles, bolt, "MaxVel"))
+                    throw std::runtime_error("Unsupported Chilling Armor bolt damage or motion");
+                const auto resource = loadProjectileResource(missiles, bolt, archives);
+                spec.missileId = resource.id; spec.missileArt = resource.art;
+                spec.missileLifetime = resource.lifetime;
+                spec.missileVelocity = float(required(missiles, bolt, "Vel"));
+                spec.missileMaxVelocity = required(missiles, bolt, "MaxVel");
+                for (const auto &[field, output] : {std::pair{"TravelSound", &spec.releaseSoundArt},
+                                                  std::pair{"HitSound", &spec.impactSoundArt}}) {
+                    const auto soundName = missiles.value(bolt, field);
+                    for (size_t sound = 0; sound < sounds.rows().size(); ++sound)
+                        if (!soundName.empty() && sounds.value(sound, "Sound") == soundName) {
+                            *output = "data/global/sfx/" + std::string(sounds.value(sound, "FileName"));
+                            break;
+                        }
+                    if (output->empty() || !archives.contains(*output))
+                        throw std::runtime_error("Missing Chilling Armor original bolt sound");
+                }
             }
         } else if (effect == SkillBehavior::StaticField) {
             if (skills.value(row, "calc1") != "par4" || skills.value(row, "calc2") != "par3" ||

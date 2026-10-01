@@ -376,7 +376,7 @@ void SceneView::advance(float dt) {
                 } else if constexpr (std::is_same_v<T, MissileImpact>) {
                     createMissileImpactVisuals(value.missileId, value.position);
                     if ((screen(value.position) - Vec{W / 2.f, (H - HUD) / 2.f}).length() < W)
-                        assets_.audio.play("missile-hit:" + std::to_string(value.missileId));
+                        assets_.audio.play("missile-hit:" + std::to_string(value.missileId), session_.state().frame);
                 } else if constexpr (std::is_same_v<T, BlizzardShardCreated>) {
                     createBlizzardFall(value.missileId, value.position);
                 } else if constexpr (std::is_same_v<T, MissileReleased>) {
@@ -386,7 +386,8 @@ void SceneView::advance(float dt) {
                 } else if constexpr (std::is_same_v<T, EnemyHit>) {
                     if (auto sound = soundFor(value.victim)) assets_.audio.play(sound->hit);
                 } else if constexpr (std::is_same_v<T, UnitDied>) {
-                    if (auto sound = soundFor(value.victim)) assets_.audio.play(sound->death);
+                    if (value.shattered) createIceShatter(value.position, value.size);
+                    else if (auto sound = soundFor(value.victim)) assets_.audio.play(sound->death);
                 }
                 else if constexpr (std::is_same_v<T, RegionEntered>) {
                     assets_.audio.resetEmitters();

@@ -70,6 +70,7 @@ void Simulation::advanceBlizzard(Missile &missile, std::vector<Missile> &spawned
     // HandleMissileCollision decrements before unit search; no damage on expiry.
     if (state.center || state.elapsedFrames == state.lifetimeFrames) return;
     if (const auto contact = missileTarget(missile, missile.pos)) {
+        reactToMissile(missile, contact->first, spawned);
         const auto target = combatUnit(contact->first);
         const int minimum = std::min(state.minimumDamage, state.maximumDamage);
         const uint32_t span = uint32_t(std::abs(state.maximumDamage - state.minimumDamage));

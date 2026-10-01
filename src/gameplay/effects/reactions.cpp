@@ -20,14 +20,12 @@ void Simulation::triggerCombatEffects(EntityId target, CombatEffectEvent event, 
                 const float damage = float(minimum + limitedRandom(*unit.random,
                     uint32_t(std::max(0, maximum - minimum)))) / 256.f;
                 dealDamage({target, other, damage, MonsterDamageType::Cold,
-                    missileColdDuration(target, attacker, int(skill.coldDuration * 25.f + .5f))});
+                    missileColdDuration(target, attacker, int(skill.coldDuration * 25.f + .5f)), false, false});
                 if (skill.hitOverlayId >= 0)
                     state_.area.effects.push_back({*attacker.position, 0, skill.hitOverlayDuration, -1, skill.hitOverlayId, other});
-            } else {
+            } else if constexpr (std::is_same_v<std::decay_t<decltype(action)>, FreezeAttacker>) {
                 const auto &freeze = action;
-                const float duration = float(int(freeze.duration * 25) *
-                    std::clamp(100 - unitResistance(attacker, MonsterDamageType::Cold), 0, 200) / 100) / 25.f;
-                applyChill(other, duration, true);
+                applyMissileFreeze(target, attacker, int(freeze.duration * 25.f + .5f));
                 if (freeze.overlayId >= 0)
                     state_.area.effects.push_back({*attacker.position, 0, freeze.overlayDuration, -1, freeze.overlayId, other});
             }

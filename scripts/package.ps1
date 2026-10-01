@@ -16,5 +16,5 @@ foreach($name in @('play.ps1','Send-D2XCommand.ps1')){
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination (Join-Path $destination 'scripts') -Force
 }
 Copy-Item -Path (Join-Path $projectRoot 'docs/*') -Destination (Join-Path $destination 'docs') -Recurse -Force
-Write-Host "Updated $destination. Original MPQs are shared through -Mpq or ancestor assets/mpq2."
+Write-Host "Updated $destination. Original MPQs can be beside d2x.exe, in ancestor assets/mpq2, or supplied through -Mpq."
 Write-Host 'Existing saves and artifacts in the run directory are preserved.'

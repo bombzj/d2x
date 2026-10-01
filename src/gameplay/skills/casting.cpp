@@ -130,7 +130,8 @@ void Simulation::releaseSkillCast(PlayerState &player, const SkillCastSpec &skil
     if (consumeMana) player.mana -= skill.manaCost;
     if (skill.delayFrames > 0)
         player.skillDelayUntil = state_.frame + EffectFrame(skill.delayFrames);
-    if (skill.missileId >= 0 && skill.effect != SkillBehavior::Inferno) emit(MissileReleased{skill.missileId});
+    if (skill.missileId >= 0 && skill.effect != SkillBehavior::Inferno && !skill.appliedEffect)
+        emit(MissileReleased{skill.missileId});
     if (skill.appliedEffect) {
         auto effect = *skill.appliedEffect;
         effect.source.entity = player.id;

@@ -326,12 +326,15 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
                 missiles.number(row, "Flicker").value_or(0) != 0});
         }
     const DataTable projectileSounds(archives.read("data/global/excel/sounds.txt"));
-    std::set<int> freezingProjectiles;
+    std::set<int> groupedColdProjectiles;
     for (const auto &[id, skill] : session.content().skills.skills)
         if (skill.spell && skill.spell->freezingArea) {
-            freezingProjectiles.insert(skill.spell->missileId);
+            groupedColdProjectiles.insert(skill.spell->missileId);
             projectileFreezingEjecta.emplace(skill.spell->missileId, skill.spell->freezingArea->ejectaId);
         }
+    for (const auto &[id, skill] : session.content().skills.skills)
+        if (skill.spell && skill.spell->effect == SkillBehavior::ChillingArmor)
+            groupedColdProjectiles.insert(skill.spell->missileId);
     for (const auto &[id, skill] : session.content().skills.skills) {
         if (!skill.spell || !skill.spell->blizzard) continue;
         const auto &program = *skill.spell->blizzard;
@@ -370,10 +373,10 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
                     if (projectileSounds.value(soundRow, "Sound") == sound) {
                         const auto key = std::string(event) + std::to_string(id);
                         if (std::string_view(field) == "TravelSound" &&
-                            (frozenOrbProjectiles.contains(id) || freezingProjectiles.contains(id)) &&
+                            (frozenOrbProjectiles.contains(id) || groupedColdProjectiles.contains(id)) &&
                             projectileSounds.number(soundRow, "Loop") == 1)
                             audio.registerTravelGroup(archives, key, projectileSounds, soundRow);
-                        else if (std::string_view(field) == "HitSound" && freezingProjectiles.contains(id))
+                        else if (std::string_view(field) == "HitSound" && groupedColdProjectiles.contains(id))
                             audio.registerOriginalGroup(archives, key, projectileSounds, soundRow);
                         else
                             audio.registerOriginal(archives, key,
@@ -385,8 +388,36 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
         }
     };
     for (const auto &[id, skill] : session.content().skills.skills)
-        if (skill.spell && skill.spell->freezingArea)
+        if (skill.spell && groupedColdProjectiles.contains(skill.spell->missileId))
             loadProjectile(skill.spell->missileId, skill.spell->missileArt);
+    auto loadShatter = [&](std::string_view name) {
+        for (size_t row = 0; row < missiles.rows().size(); ++row)
+            if (missiles.value(row, "Missile") == name) {
+                const auto id = missiles.number(row, "Id");
+                const auto art = missiles.value(row, "CelFile");
+                if (!id || art.empty() || art == "null") break;
+                loadProjectile(*id, "data/global/missiles/" + std::string(art) + ".dcc");
+                return *id;
+            }
+        throw std::runtime_error("Missing original ice shatter missile: " + std::string(name));
+    };
+    iceShatterProjectiles = {loadShatter("icebreaksmall"), loadShatter("icebreakmedium"), loadShatter("icebreaklarge")};
+    const int smallMelt = loadShatter("icebreaksmallmelt"), largeMelt = loadShatter("icebreaklargemelt");
+    iceShatterMelts = {{iceShatterProjectiles[0], smallMelt},
+                      {iceShatterProjectiles[1], largeMelt}, {iceShatterProjectiles[2], largeMelt}};
+    const auto shatterSound = [&]() -> std::string_view {
+        for (size_t row = 0; row < missiles.rows().size(); ++row)
+            if (missiles.number(row, "Id") == iceShatterProjectiles[0]) return missiles.value(row, "TravelSound");
+        return {};
+    }();
+    bool shatterSoundFound = false;
+    for (size_t row = 0; row < projectileSounds.rows().size(); ++row)
+        if (!shatterSound.empty() && projectileSounds.value(row, "Sound") == shatterSound) {
+            audio.registerOriginalGroup(archives, "monster-shatter", projectileSounds, row);
+            shatterSoundFound = true;
+            break;
+        }
+    if (!shatterSoundFound) throw std::runtime_error("Missing original ice shatter sound");
     for (const auto &[code, item] : session.content().items.entries())
         if (item.base.projectile && !item.base.projectile->art.empty()) {
             loadProjectile(item.base.projectile->id, item.base.projectile->art);
@@ -467,7 +498,7 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
                 loadProjectile(impact.missileId, impact.art);
             for (const auto &child : skill.spell->submissileResources)
                 loadProjectile(child.id, child.art);
-            if (!skill.spell->impactSoundArt.empty() && !skill.spell->freezingArea)
+            if (!skill.spell->impactSoundArt.empty() && !groupedColdProjectiles.contains(skill.spell->missileId))
                 audio.registerOriginal(archives, "missile-hit:" + std::to_string(skill.spell->missileId),
                                        skill.spell->impactSoundArt);
             if (!skill.spell->releaseSoundArt.empty() &&
@@ -492,7 +523,7 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
         if (skill.spell && !skill.spell->castSoundArt.empty()) {
             float volume = .45f;
             if (skill.spell->frozenOrb || skill.spell->blizzard || skill.spell->freezingArea ||
-                skill.spell->effect == SkillBehavior::ShiverArmor) {
+                skill.spell->effect == SkillBehavior::ShiverArmor || skill.spell->effect == SkillBehavior::ChillingArmor) {
                 const auto &skills = session.content().tables.at("skills");
                 bool found = false;
                 for (size_t row = 0; row < skills.rows().size(); ++row) {

@@ -27,13 +27,18 @@ if(-not (Test-Path -LiteralPath $exe)){
     if(-not (Test-Path -LiteralPath $exe)){$exe=Join-Path $projectRoot 'build/bin/Release/d2x.exe'}
 }
 if(-not $Mpq){
+    foreach($folder in @($projectRoot,(Split-Path -Parent $exe))){
+        if(Test-Path -LiteralPath (Join-Path $folder 'd2data.mpq') -PathType Leaf){$Mpq=$folder;break}
+    }
+}
+if(-not $Mpq){
     $searchRoot=Get-Item -LiteralPath $projectRoot
     while($searchRoot){
         $fullSource=Join-Path $searchRoot.FullName 'assets/mpq2'
         if(Test-Path -LiteralPath (Join-Path $fullSource 'd2data.mpq')){$Mpq=$fullSource;break}
         $searchRoot=$searchRoot.Parent
     }
-    if(-not $Mpq){throw 'Original MPQs were not found. Supply -Mpq <assets/mpq2 folder>.'}
+    if(-not $Mpq){throw 'Original MPQs were not found. Place them beside d2x.exe or supply -Mpq <folder>.'}
 }
 Push-Location $projectRoot
 try{

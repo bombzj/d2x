@@ -99,7 +99,8 @@ SkillCastSpec resolveSkill(const SkillSpec &spec, int rank,
                 std::max(1, program.radius + (rank - 1) * program.radiusPerLevel),
             program.freezeOverride > 0 ? program.freezeOverride : int(frames)};
     }
-    if (spec.effect == SkillBehavior::FrozenArmor || spec.effect == SkillBehavior::ShiverArmor) {
+    if (spec.effect == SkillBehavior::FrozenArmor || spec.effect == SkillBehavior::ShiverArmor ||
+        spec.effect == SkillBehavior::ChillingArmor) {
         int synergyRanks = 0;
         for (int id : spec.armorSynergySkills)
             if (auto found = learned.find(id); found != learned.end()) synergyRanks += found->second;
@@ -119,7 +120,9 @@ SkillCastSpec resolveSkill(const SkillSpec &spec, int rank,
                 (100 + synergyRanks * parameters[7]) / 100) / 25.f;
             armor.reactions.push_back({CombatEffectEvent::DamagedInMelee,
                 FreezeAttacker{freeze, spec.hitOverlay.id, float(spec.hitOverlay.frames) / spec.hitOverlay.fps}});
-        } else armor.reactions.push_back({CombatEffectEvent::AttackedInMelee, ColdMeleeRetaliation{}});
+        } else if (spec.effect == SkillBehavior::ShiverArmor)
+            armor.reactions.push_back({CombatEffectEvent::AttackedInMelee, ColdMeleeRetaliation{}});
+        else armor.reactions.push_back({CombatEffectEvent::HitByMissile, ColdMissileRetaliation{}});
         result.appliedEffect = std::move(armor);
     }
     const int64_t scaledMana = std::max<int64_t>(0,

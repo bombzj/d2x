@@ -22,6 +22,7 @@ struct CombatStateDefinition {
     std::array<bool, 3> stayOnDeath{};
     bool staminaBarBlue = false;
     bool curse = false;
+    bool hideOnDeath = false, shatterOnDeath = false, corpseUnselectable = false;
 };
 enum class CombatEffectSource { Skill, Monster, Shrine, Item, Environment };
 struct EffectSource {
@@ -37,7 +38,7 @@ enum class EffectRemoval { Expired, Replaced, Death, Hit, Dispelled, SourceRemov
 struct EffectVisual {
     int overlayId = -1;
 };
-enum class CombatEffectEvent { DamagedInMelee, AttackedInMelee };
+enum class CombatEffectEvent { DamagedInMelee, AttackedInMelee, HitByMissile };
 struct FreezeAttacker {
     float duration = 0;
     int overlayId = -1;
@@ -46,7 +47,8 @@ struct FreezeAttacker {
 // Add typed actions here as their original event functions are implemented.
 // Reactions belong to the effect; removal cannot leave registered callbacks.
 struct ColdMeleeRetaliation {};
-using EffectAction = std::variant<FreezeAttacker, ColdMeleeRetaliation>;
+struct ColdMissileRetaliation {};
+using EffectAction = std::variant<FreezeAttacker, ColdMeleeRetaliation, ColdMissileRetaliation>;
 struct EffectReaction {
     CombatEffectEvent event;
     EffectAction action;

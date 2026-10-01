@@ -29,6 +29,10 @@ void Simulation::resolveMissileImpact(const Missile &missile, std::vector<Missil
         request.channels[size_t(MonsterDamageType::Poison)] = 0;
         request.chill = payload.coldDuration * float(std::clamp(100 - unitResistance(target, MonsterDamageType::Cold), 0, 200)) / 100.f;
         request.freeze = payload.freeze;
+        if (payload.freeze) {
+            request.chill = 0;
+            request.freezeFrames = int(payload.coldDuration * 25.f + .5f);
+        }
         dealDamage(request);
         if (payload.poisonDuration > 0)
             applyPoison(target.id, payload.channels[size_t(MonsterDamageType::Poison)], payload.poisonDuration, missile.owner);
@@ -96,7 +100,7 @@ void Simulation::advanceGroundTargetedMissile(Missile &missile, float dt, std::v
         resolveMissileImpact(missile, spawned);
     }
 }
-void Simulation::advancePoisonCloud(Missile &missile, float dt) {
+void Simulation::advancePoisonCloud(Missile &missile, float dt, std::vector<Missile> &spawned) {
     const auto &cloud = *missile.poisonCloud;
     Vec next = missile.pos + missile.velocity * std::min(dt, missile.remaining);
     const bool blocked = clipMissilePath(missile.missileId, missile.pos, next);
@@ -118,6 +122,7 @@ void Simulation::advancePoisonCloud(Missile &missile, float dt) {
         }
     }
     if (struck) {
+        reactToMissile(missile, struck.id, spawned);
         missile.lastHit = struck.id;
         rollRandom(missile.combatRandom);
         const auto span = uint32_t(std::max(0, cloud.maximum - cloud.minimum));

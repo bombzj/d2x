@@ -24,6 +24,7 @@ class Simulation {
     const RoomLayout *rooms_ = nullptr;
     Vec missileWorldOrigin_{}; // Native DRLG subcell origin, supplied by the session.
     std::map<int, MissileCollisionRule> missileCollisions_;
+    std::map<int, bool> missileReturnFire_;
     bool missilePathClear(int missileId, Vec from, Vec to) const;
     bool clipMissilePath(int missileId, Vec from, Vec &to) const;
     bool safeZone_ = false;
@@ -90,6 +91,8 @@ class Simulation {
     std::function<int(EntityId)> coldPierce_;
     std::function<std::optional<bool>(const Enemy &)> monsterFreezable_;
     int monsterFreezeDivisor_ = 1;
+    CombatStateDefinition freezeDeathState_, shatterDeathState_;
+    int uninterruptableState_ = -1;
     int monsterColdDivisor_ = 1;
     std::function<int(const CombatUnit &)> unitColdEffect_;
     std::function<std::optional<MonsterAiProfile>(const Enemy &)> monsterAi_;
@@ -122,7 +125,7 @@ class Simulation {
     void advancePhysicalMissile(Missile &missile, float dt, std::vector<Missile> &spawned);
     void resolveMissileImpact(const Missile &missile, std::vector<Missile> &spawned, EntityId direct = {});
     void advanceGroundTargetedMissile(Missile &missile, float dt, std::vector<Missile> &spawned);
-    void advancePoisonCloud(Missile &missile, float dt);
+    void advancePoisonCloud(Missile &missile, float dt, std::vector<Missile> &spawned);
 
     bool beginSkillCast(PlayerState &player, const SkillCastSpec &skill, Vec target, bool teleportAllowed,
                       int staticFieldMinimum, EntityId enemy = {});
@@ -170,7 +173,9 @@ class Simulation {
     void launchBlizzard(PlayerState &player, const SkillCastSpec &skill, Vec target);
     void advanceBlizzard(Missile &missile, std::vector<Missile> &spawned);
     void launchGlacialSpike(PlayerState &player, const SkillCastSpec &skill, Vec target);
-    void advanceGlacialSpike(Missile &missile);
+    void advanceGlacialSpike(Missile &missile, std::vector<Missile> &spawned);
+    void reactToMissile(const Missile &incoming, EntityId target, std::vector<Missile> &spawned);
+    void advanceChillingArmorBolt(Missile &missile, std::vector<Missile> &spawned);
     void resolveGlacialSpikeImpact(Missile &missile);
     void applyMissileFreeze(EntityId attacker, CombatUnit target, int frames);
     void spawnEnemies(std::span<const MonsterSpawn> spawns);

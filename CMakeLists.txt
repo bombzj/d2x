@@ -88,7 +88,7 @@ add_library(d2x_gameplay
   src/gameplay/combat/unit.cpp
   src/gameplay/combat/damage_resolution.cpp src/gameplay/combat/player_damage.cpp
   src/gameplay/combat/weapon_elements.cpp
-  src/gameplay/skills/casting.cpp src/gameplay/skills/summoning.cpp src/gameplay/skills/frozen_orb.cpp src/gameplay/skills/blizzard.cpp src/gameplay/skills/glacial_spike.cpp
+  src/gameplay/skills/casting.cpp src/gameplay/skills/summoning.cpp src/gameplay/skills/frozen_orb.cpp src/gameplay/skills/blizzard.cpp src/gameplay/skills/glacial_spike.cpp src/gameplay/skills/chilling_armor.cpp
   src/gameplay/monsters/monster_ai.cpp src/gameplay/monsters/monster_melee.cpp
   src/gameplay/monsters/monster_special_ai.cpp
     src/gameplay/monsters/monster_resurrection.cpp

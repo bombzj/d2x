@@ -33,7 +33,13 @@ struct EnemyDied {
     uint64_t lootRandom = 0;
     int magicFind = 0, goldFind = 0;
 };
-struct UnitDied { EntityId victim; }; // Presentation/lifecycle notification; carries no loot entitlement.
+// Presentation/lifecycle notification; carries no loot entitlement.
+struct UnitDied {
+    EntityId victim;
+    bool shattered = false;
+    Vec position{};
+    int size = 0;
+};
 struct PlayerDied {
     EntityId player;
 };

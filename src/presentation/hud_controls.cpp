@@ -183,7 +183,7 @@ void SceneView::drawSkillControls(Vec mouse) const {
             else if (value.appliedEffect) {
                 detail += " / Defense +" + std::to_string(value.appliedEffect->modifiers.combat.defensePercent) + "% / " +
                     std::to_string(value.appliedEffect->duration.value() / 25) + " seconds";
-                if (value.effect == SkillBehavior::ShiverArmor)
+                if (value.effect == SkillBehavior::ShiverArmor || value.effect == SkillBehavior::ChillingArmor)
                     detail += " / Retaliate cold " + std::string(TextFormat("%.1f-%.1f", value.minimumDamage, value.maximumDamage)) +
                         " / Chill " + std::string(TextFormat("%.1fs", value.coldDuration));
             }

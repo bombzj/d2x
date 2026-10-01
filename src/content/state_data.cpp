@@ -13,7 +13,7 @@ std::string_view shrineStateName(int code) {
 }
 CombatStateCatalog loadCombatStates(const DataTable &states) {
     for (const char *field : {"state", "id", "group", "remhit", "stambarblue", "curse", "plrstaydeath",
-                              "monstaydeath", "bossstaydeath", "overlay1", "overlay2"})
+                              "monstaydeath", "bossstaydeath", "hide", "shatter", "udead", "overlay1", "overlay2"})
         if (!states.has(field)) throw std::runtime_error("Missing States.txt field: " + std::string(field));
     CombatStateCatalog result;
     std::set<int> ids;
@@ -35,7 +35,7 @@ CombatStateCatalog loadCombatStates(const DataTable &states) {
             throw std::runtime_error("Invalid States.txt group");
         CombatStateRecord record{{*id, group.value_or(0), flag("remhit"),
             {flag("plrstaydeath"), flag("monstaydeath"), flag("bossstaydeath")},
-            flag("stambarblue"), flag("curse")},
+            flag("stambarblue"), flag("curse"), flag("hide"), flag("shatter"), flag("udead")},
             std::string(states.value(row, "overlay1")),
             std::string(states.value(row, "overlay2"))};
         if (!result.emplace(std::string(name), std::move(record)).second)

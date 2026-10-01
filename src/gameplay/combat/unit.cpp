@@ -216,6 +216,11 @@ float Simulation::dealDamage(const DamageRequest &request) {
         }
         amount += value;
     }
+    // SUnitDmg applies cold/freeze before the alive -> dead transition. In
+    // particular a lethal freezing hit must retain its corpse state flags.
+    if (request.freezeFrames > 0) applyMissileFreeze(request.attacker, target, request.freezeFrames);
+    else if ((amount > 0 || absorbed > 0) && request.chill > 0)
+        applyChill(target.id, request.chill, request.freeze);
     if (amount <= 0 && absorbed <= 0) return 0;
     *target.life = std::min(float(target.stats.attributes.maxLife), *target.life + absorbed);
     const float dealt = std::min(*target.life, amount);
@@ -234,9 +239,9 @@ float Simulation::dealDamage(const DamageRequest &request) {
         recoverUnit(target.id, request.attacker, dealt,
             request.type != MonsterDamageType::Physical ||
             std::any_of(request.channels.begin() + 1, request.channels.end(), [](float value) { return value > 0; }));
-    if (target.alive() && request.chill > 0) applyChill(target.id, request.chill, request.freeze);
     if (!target.alive()) {
-        emit(UnitDied{target.id});
+        emit(UnitDied{target.id, target.monster && target.monster->deathShattered,
+                     *target.position, target.stats.collisionSize});
         const auto attacker = combatUnit(request.attacker);
         if (attacker) restoreUnit(attacker.id, float(attacker.stats.attributes.combat.lifeOnKill),
                                   float(attacker.stats.attributes.combat.manaOnKill));
@@ -245,9 +250,15 @@ float Simulation::dealDamage(const DamageRequest &request) {
 }
 void Simulation::applyChill(EntityId defender, float duration, bool freeze) {
     auto target = combatUnit(defender);
-    if (!target.alive() || target.stats.attributes.combat.cannotBeFrozen) return;
+    if (!target.alive() || duration <= 0 || target.stats.attributes.combat.cannotBeFrozen ||
+        (unitColdEffect_ && unitColdEffect_(target) == 0)) return;
+    if (freeze && target.monster && target.effects->hasState(uninterruptableState_, state_.frame)) return;
     if (freeze && target.monster && target.stats.freezable) {
-        target.monster->freeze = std::max(target.monster->freeze, duration / monsterFreezeDivisor_);
+        if (unitColdEffect_ && unitColdEffect_(target) >= 0) return;
+        const int frames = int(duration * 25.f + .00001f);
+        if (frames <= 0) return;
+        target.monster->freezeActive = true;
+        target.monster->freeze = std::max(target.monster->freeze, float(frames / monsterFreezeDivisor_) / 25.f);
         target.monster->route.clear();
     } else *target.chill = std::max(*target.chill, duration);
 }

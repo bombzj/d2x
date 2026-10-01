@@ -31,15 +31,23 @@ SoundBank::~SoundBank() {
     emitters_.reset();
     for (auto [name, s] : sounds)
         UnloadSound(s);
-    for (const auto &[name, variants] : originalGroups_)
-        for (auto sound : variants) UnloadSound(sound);
+    for (const auto &[name, group] : originalGroups_)
+        for (const auto &variant : group.sounds) UnloadSound(variant.sound);
 }
-void SoundBank::play(const std::string &name) {
+void SoundBank::play(const std::string &name, uint64_t frame) {
     // Looping travel sounds are owned by live missile entities, not this event.
     if (hasEmitterSound(name)) return;
     if (const auto group = originalGroups_.find(name); group != originalGroups_.end()) {
-        if (enabled && !muted && !group->second.empty())
-            PlaySound(group->second[limitedRandom(groupRandom_, uint32_t(group->second.size()))]);
+        auto &sound = group->second;
+        if (!enabled || muted || sound.sounds.empty()) return;
+        if (sound.lastStart && frame >= *sound.lastStart && frame - *sound.lastStart < sound.compound) return;
+        const auto &variant = sound.sounds[limitedRandom(groupRandom_, uint32_t(sound.sounds.size()))];
+        if (variant.deferInstance && IsSoundPlaying(variant.sound)) return;
+        sound.lastStart = frame;
+        // Stop Inst replaces the previous instance of the selected sound.
+        // A request rejected by Compound must not interrupt that instance.
+        if (variant.stopInstance) StopSound(variant.sound);
+        PlaySound(variant.sound);
         return;
     }
     auto it = sounds.find(name);
@@ -63,13 +71,25 @@ void SoundBank::registerOriginal(Archives &archives, std::string key, std::strin
 }
 void SoundBank::registerOriginalGroup(Archives &archives, std::string key, const DataTable &table, size_t row) {
     const int count = std::max(1, table.number(row, "Group Size").value_or(0));
+    const int compound = table.number(row, "Compound").value_or(0);
+    if (compound < 0) throw std::runtime_error("Unsupported original one-shot Compound rule");
     if (row + size_t(count) > table.rows().size()) throw std::runtime_error("Invalid original sound group");
     for (size_t variant = row; variant < row + size_t(count); ++variant)
-        for (const auto field : {"Loop", "Compound", "Duration", "Defer Inst", "Stop Inst", "Fade In", "Fade Out"})
+        for (const auto field : {"Loop", "Duration", "Fade In", "Fade Out"})
             if (table.number(variant, field).value_or(0) != 0)
                 throw std::runtime_error("Unsupported original one-shot sound group: " + std::string(field));
+    for (size_t variant = row; variant < row + size_t(count); ++variant) {
+        for (const auto field : {"Stop Inst", "Defer Inst"}) {
+            const int flag = table.number(variant, field).value_or(0);
+            if (flag != 0 && flag != 1)
+                throw std::runtime_error("Invalid original one-shot flag: " + std::string(field));
+        }
+    }
+    for (size_t variant = row; variant < row + size_t(count); ++variant)
+        if (table.number(variant, "Compound").value_or(0) != compound)
+            throw std::runtime_error("Inconsistent original one-shot Compound group");
     if (!enabled || originalGroups_.contains(key)) return;
-    std::vector<Sound> variants;
+    std::vector<OriginalSoundVariant> variants;
     variants.reserve(size_t(count));
     try {
         for (size_t variant = row; variant < row + size_t(count); ++variant) {
@@ -82,12 +102,13 @@ void SoundBank::registerOriginalGroup(Archives &archives, std::string key, const
             const auto sound = LoadSoundFromWave(wave);
             UnloadWave(wave);
             if (!sound.stream.buffer) throw std::runtime_error("Original sound group could not be loaded");
-            variants.push_back(sound);
+            variants.push_back({sound, table.number(variant, "Stop Inst").value_or(0) != 0,
+                                      table.number(variant, "Defer Inst").value_or(0) != 0});
             SetSoundVolume(sound, .45f * *volume / 255.f);
         }
-        originalGroups_.emplace(std::move(key), std::move(variants));
+        originalGroups_.emplace(std::move(key), OriginalSoundGroup{std::move(variants), unsigned(compound), {}});
     } catch (...) {
-        for (auto sound : variants) UnloadSound(sound);
+        for (const auto &variant : variants) UnloadSound(variant.sound);
         throw;
     }
 }

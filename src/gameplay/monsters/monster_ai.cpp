@@ -43,6 +43,7 @@ void Simulation::updateMonsters(float dt) {
         enemy.webSlowRemaining = std::max(0.f, enemy.webSlowRemaining - dt);
         enemy.stun = std::max(0.f, enemy.stun - dt);
         enemy.freeze = std::max(0.f, enemy.freeze - dt);
+        enemy.freezeActive = enemy.freeze > 0;
         enemy.rethink = std::max(0.f, enemy.rethink - dt);
         enemy.aiWait = std::max(0.f, enemy.aiWait - dt);
         enemy.movementVelocityPercent.reset();
@@ -165,7 +166,7 @@ void Simulation::updateMonsters(float dt) {
         const bool archerAi = ai && ai->kind == MonsterAiKind::CorruptArcher;
         if (fallenAi && !enemy.aiEscaping && monsterDeathDuration_)
             for (const auto &corpse : state_.area.enemies) {
-                if (relation(enemy.id, corpse.id) != Relation::Allied || corpse.corpseConsumed || corpse.hp > 0 || corpse.id == enemy.id || corpse.id == enemy.aiCorpse ||
+                if (relation(enemy.id, corpse.id) != Relation::Allied || !corpse.corpseAvailable() || corpse.id == enemy.id || corpse.id == enemy.aiCorpse ||
                     (corpse.pos - enemy.pos).length() >= 15.f) continue;
                 const auto duration = monsterDeathDuration_(corpse);
                 if (duration && corpse.deathAge <= *duration &&

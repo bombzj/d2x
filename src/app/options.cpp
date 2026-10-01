@@ -1,4 +1,5 @@
 #include "options.hpp"
+#include <raylib.h>
 #include <charconv>
 #include <filesystem>
 #include <stdexcept>
@@ -116,18 +117,24 @@ AppOptions parseOptions(int argc, char **argv) {
     if (!options.world.map.empty() && options.world.preset)
         throw std::runtime_error("Choose either --map or --preset");
     if (!explicitMpq) {
-        auto discover = [](const std::filesystem::path &root) -> std::string {
-            auto path = root / "assets/mpq2";
+        auto discover = [](const std::filesystem::path &path) -> std::string {
             if (std::filesystem::is_directory(path) &&
                 (std::filesystem::is_regular_file(path / "d2data.mpq") ||
                  std::filesystem::is_regular_file(path / "D2Data.mpq")))
                 return path.string();
             return {};
         };
-        auto discovered = discover(std::filesystem::current_path());
-        auto directory = std::filesystem::absolute(argv[0]).parent_path();
-        for (int depth = 0; discovered.empty() && depth < 5; ++depth) {
+        auto workingDirectory = std::filesystem::current_path();
+        auto directory = std::filesystem::path(GetApplicationDirectory());
+        if (!directory.has_filename())
+            directory = directory.parent_path();
+        auto discovered = discover(workingDirectory);
+        if (discovered.empty())
             discovered = discover(directory);
+        if (discovered.empty())
+            discovered = discover(workingDirectory / "assets/mpq2");
+        for (int depth = 0; discovered.empty() && depth < 5; ++depth) {
+            discovered = discover(directory / "assets/mpq2");
             if (directory == directory.parent_path())
                 break;
             directory = directory.parent_path();

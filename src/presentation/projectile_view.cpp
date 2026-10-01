@@ -3,6 +3,16 @@
 #include <algorithm>
 
 namespace d2x {
+void SceneView::createIceShatter(Vec position, int size) {
+    // Each original DCC already contains a complete burst of ice fragments.
+    // Use one burst at the monster anchor, with an independent visual variant.
+    const int id = assets_.iceShatterProjectiles[size_t(std::clamp(size - 1, 0, 2))];
+    constexpr Vec directions[]{{0,1},{-1,0},{0,-1},{1,0}};
+    const auto direction = directions[limitedRandom(projectileVisualRandom_, 4)];
+    clientMissiles_.push_back({id, position, {}, 0, assets_.projectileVisuals.at(id).lifetime, direction});
+    if ((screen(position) - Vec{W / 2.f, (H - HUD) / 2.f}).length() < W)
+        assets_.audio.play("monster-shatter", session_.state().frame);
+}
 void SceneView::createBlizzardFall(int missileId, Vec position) {
     const auto found = assets_.blizzardFalls.find(missileId);
     if (found == assets_.blizzardFalls.end()) return;
@@ -40,6 +50,11 @@ void SceneView::advanceMissileVisuals(float dt) {
         effect.age += dt;
         effect.pos = effect.pos + effect.velocity * dt;
         if (effect.age + .00001f >= effect.duration) {
+            if (const auto melt = assets_.iceShatterMelts.find(effect.missileId);
+                melt != assets_.iceShatterMelts.end())
+                landed.push_back({melt->second, effect.pos, {},
+                    std::max(0.f, effect.age - effect.duration),
+                    assets_.projectileVisuals.at(melt->second).lifetime, effect.direction});
             const auto found = assets_.blizzardFalls.find(effect.missileId);
             if (found != assets_.blizzardFalls.end()) {
                 const auto &program = found->second;

@@ -27,7 +27,8 @@ void Simulation::launchGlacialSpike(PlayerState &player, const SkillCastSpec &sk
     state_.area.missiles.push_back(std::move(missile));
 }
 void Simulation::applyMissileFreeze(EntityId attacker, CombatUnit target, int frames) {
-    if (!target.alive()) return;
+    if (!target.alive() || frames <= 0 ||
+        (target.monster && target.effects->hasState(uninterruptableState_, state_.frame))) return;
     const auto rank = target.stats.rank;
     // ApplyFreezeState turns freeze into cold slow for players, hirelings and
     // boss/unique/champion monsters. Ordinary nonnegative ColdEffect gets neither.
@@ -44,7 +45,11 @@ void Simulation::applyMissileFreeze(EntityId attacker, CombatUnit target, int fr
     if (resistance >= 100) return;
     if (target.stats.monsterResistanceRules && coldPierce_) resistance -= coldPierce_(attacker);
     frames = int(int64_t(frames) * (100 - std::clamp(resistance, -100, 100)) / 100);
+    if (frames <= 0) return;
     // FreezeDiv is distinct from ColdDiv, with integer truncation and no one-frame floor.
+    // The state bit is installed even if division truncates the duration to zero;
+    // a lethal hit can still preserve it before the next remove-state tick.
+    target.monster->freezeActive = true;
     frames /= monsterFreezeDivisor_;
     target.monster->freeze = std::max(target.monster->freeze, float(frames) / 25.f);
     if (frames > 0) target.monster->route.clear();
@@ -71,11 +76,12 @@ void Simulation::resolveGlacialSpikeImpact(Missile &missile) {
         if (dx * dx + dy * dy > int64_t(program.radius) * program.radius) continue;
         // Aura filter 0x8583 has no LOS bit; ApplyBlockOrDodge(1,0) has
         // no shield block. Passive avoidance belongs to the shared combat model.
-        dealDamage({missile.owner, target.id, damage, MonsterDamageType::Cold});
-        applyMissileFreeze(missile.owner, target, program.freezeFrames);
+        DamageRequest hit{missile.owner, target.id, damage, MonsterDamageType::Cold};
+        hit.freezeFrames = program.freezeFrames;
+        dealDamage(hit);
     }
 }
-void Simulation::advanceGlacialSpike(Missile &missile) {
+void Simulation::advanceGlacialSpike(Missile &missile, std::vector<Missile> &spawned) {
     auto &state = *missile.freezingArea;
     if (state.elapsedFrames >= state.lifetimeFrames) { missile.remaining = 0; return; }
     Vec next = missile.pos + missile.velocity * (1.f / 25.f);
@@ -86,8 +92,9 @@ void Simulation::advanceGlacialSpike(Missile &missile) {
     // HandleMissileCollision moves, decrements, then calls SrvHit13 on expiry.
     // Unit collision also detonates at the missile's current integer coordinates.
     const bool expired = state.elapsedFrames == state.lifetimeFrames;
-    const bool contact = !expired && missileTarget(missile, next).has_value();
+    const auto contact = expired ? std::nullopt : missileTarget(missile, next);
     missile.pos = next;
+    if (contact) reactToMissile(missile, contact->first, spawned);
     if (expired || contact || wall) {
         missile.remaining = 0;
         resolveGlacialSpikeImpact(missile);

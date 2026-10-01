@@ -17,13 +17,13 @@
 
 ## 构建与资源
 
-Windows 使用 `scripts/build.ps1`，启动示例（默认读取 `assets/mpq2`）：
+Windows 使用 `scripts/build.ps1`，启动示例（项目原资源位于 `assets/mpq2`）：
 
 ```powershell
 .\build\bin\d2x.exe --level 1 --map-seed 210
 ```
 
-本机可用 `Play.cmd`。EXE 默认直接读取完整 `assets/mpq2`；其他位置可显式传 `--mpq <目录>`。
+本机可用 `Play.cmd`。未指定 `--mpq` 时，EXE 先查工作目录、EXE 同目录中的原始 MPQ，再查原有 `assets/mpq2` 路径；其他位置可显式传 `--mpq <目录>`。目录以 `d2data.mpq`／`D2Data.mpq` 为识别入口，命中后读取同目录的全部 MPQ，不递归搜索子目录。
 
 本地打包运行 `scripts/package.ps1`，只更新固定 `dist/current/` 的程序和运行文件，不抽取或复制 MPQ。可在仓库根执行 `dist/current/Play.cmd -Mpq assets/mpq2`；包内默认存档与截图写入包目录。历史 `artifacts/` 中的重复 MPQ 和旧程序已清理，存档及画面资料保留，勿再使用旧包入口。
 
