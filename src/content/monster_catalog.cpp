@@ -183,6 +183,12 @@ MonsterCatalog::MonsterCatalog(Archives &archives, const DataTable &stats) {
         m.castMode = extended.number(extra->second, "mSC").value_or(0) != 0;
         m.sequenceMode = extended.number(extra->second, "mSQ").value_or(0) != 0;
         m.baseWeapon = extended.value(extra->second, "BaseW");
+        const int meleeRange = extended.number(extra->second, "MeleeRng").value_or(0);
+        if (meleeRange < 0 || meleeRange > 255)
+            throw std::runtime_error("Unsupported monster MeleeRng: " + m.id);
+        for (auto &profile : m.aiProfiles)
+            if (profile)
+                profile->meleeRange = meleeRange == 255 ? (m.baseWeapon == "2ht" ? 2 : 0) : meleeRange;
         auto firstVariant = [&](std::string_view field) {
             auto variant = std::string(extended.value(extra->second, field));
             if (variant.starts_with('"')) variant.erase(0, 1);

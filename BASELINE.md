@@ -20,7 +20,7 @@
 
 | 问题 | 当前源码及补充修正 | 依据／尚待确认 |
 | --- | --- | --- |
-| Dark Hunter 追击停顿、偏慢 | 追击持续至近战、失去目标、受击／冻结或路径失败；不再每走三格重掷。寻路使用行走碰撞。速度改为基础 75 加 `aip4`，冰冷另加真实身份的 `ColdEffect`；动画跟随相同百分比。 | D2MOO AiThink、AiTactics、PathMisc、Monster.cpp、Units、MonsterTbls；原概率、Velocity、Run、AnimData 来自 MPQ。路径／帧调度仍为项目适配，见 [怪物](docs/MONSTERS.md)。 |
+| Dark Hunter／Dark Spearwoman 短步停顿、移动速度 | 2026-10-01 源码补齐共用移动动作生命周期：CorruptRogue／CorruptLancer／Skeleton／Goatman／Wraith 仅在动作结束或实际中断后重新决策，保持各自概率、StepNum 目标停止距离及幽灵原半径坐标动作。长枪读取原 `MeleeRng=2`，起手与近战命中统一双方体积及 `MeleeRng + 1`；速度和动画共用原 75 基础、AI 加值、ColdEffect／蛛网／词缀。 | 当前 MPQ MonStats／MonStats2；D2MOO AiThink、AiTactics、AiUtil、Path／PathMisc、MonsterMode 与 Units。本次未构建、测试、运行、打包或提交，现有包不含修复；路径／目标选择／完整事件调度仍为项目适配，见 [怪物](docs/MONSTERS.md#移动动作与接近决策)。 |
 | 死亡特效黑边 | COF 透明且效果 3 的层保留层序软加色，普通层明确恢复普通混合，透明索引不参与换色。 | 当前 `CRDT1HS.cof` 的 S3 和 Diablerie COF／SoftAdditive；不是原 PL2 逐色查表等价，其余效果暂缓。 |
 | 死后掉落偏晚 | 保留当帧结算／创建，原 flippy 由创建事件起播，移除等待完整 DT 的展示隐藏期。 | D2MOO 死亡入口与 Diablerie UnitDied；见 [物品完成度](docs/ITEM_COMPLETION.md)。 |
 | 祭坛领取前后图案缺失 | Code 6–15 的状态映射集中在内容层；原 overlay1/2 用于祭坛及玩家。生命周期接 CombatEffectSet，领取替换、到期和死亡统一移除。 | MPQ States／Overlay、D2MOO 状态及高度索引；播放速度按 Diablerie `AnimRate × 1.5` 适配。精确定位／混合待画面验收；战斗加成和特殊效果现已接入，见 [物体](docs/INTERACTIVE_OBJECTS.md)。 |

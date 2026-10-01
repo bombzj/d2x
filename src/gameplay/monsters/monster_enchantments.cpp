@@ -196,6 +196,8 @@ bool Simulation::tryMonsterTeleport(Enemy &enemy) {
         enemy.teleportTarget = target;
         enemy.route.clear();
         enemy.aiPursuing = false;
+        enemy.approach.reset();
+        enemy.aiRunning = false;
         // The native monster teleport uses its A1 animation and action frame.
         enemy.attack = enemy.attackDuration = timing->duration;
         enemy.attackImpact = std::max(0.f, timing->impact);

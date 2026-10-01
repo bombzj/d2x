@@ -20,6 +20,7 @@ void Simulation::resolveMonsterResurrection(Enemy &shaman) {
     corpse->hp = corpse->maxHp;
     corpse->deathAge = corpse->chill = corpse->stun = corpse->hitFlash = 0;
     corpse->aiWait = 0;
+    corpse->approach.reset();
     corpse->aiPursuing = corpse->aiEscaping = corpse->aiCommanded = false;
     corpse->aiCircling = corpse->aiRunning = corpse->aiRetaliate = corpse->aiCharged = false;
     corpse->aiAdvanceRemaining = 0;

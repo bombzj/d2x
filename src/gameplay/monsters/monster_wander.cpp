@@ -1,12 +1,46 @@
 #include "core/random.hpp"
 #include "monster_wander.hpp"
 #include <algorithm>
+#include <cmath>
 #include <utility>
 
 namespace d2x {
 uint32_t monsterAiRandom(Enemy &enemy) {
     rollRandom(enemy.combatRandom);
     return uint32_t(enemy.combatRandom);
+}
+
+void monsterStartApproach(Enemy &enemy, int stopDistance, int velocityPercent, bool running,
+                          std::optional<Vec> destination) {
+    enemy.approach = MonsterApproach{destination, stopDistance, velocityPercent, running};
+    enemy.aiPursuing = true;
+    enemy.aiRunning = running;
+    enemy.route.clear();
+    enemy.rethink = 0;
+}
+void monsterStopApproach(Enemy &enemy) {
+    if (!enemy.approach) return;
+    enemy.approach.reset();
+    enemy.aiPursuing = enemy.aiRunning = false;
+    enemy.movementVelocityPercent.reset();
+    enemy.route.clear();
+    enemy.rethink = 0;
+}
+Vec monsterRadiusApproachTarget(Vec from, int size, Vec target, int radius) {
+    // AiTactics::MoveInRadiusToTarget(..., radius, 0), with the original
+    // integer coordinate offsets and AIUTIL's full-unit-size distance.
+    const int x = int(std::floor(from.x)), y = int(std::floor(from.y));
+    const int dx = int(std::floor(target.x)) - x, dy = int(std::floor(target.y)) - y;
+    const int ax = std::abs(dx), ay = std::abs(dy);
+    const int sx = std::abs(ax - size), sy = std::abs(ay - size);
+    const int distance = std::max(sx, sy) + std::min(sx, sy) / 2;
+    const int advance = std::min(distance, radius);
+    const int sum = std::max(ax + ay, advance);
+    int offsetX = sum > 0 ? advance * ax / sum : 0;
+    int offsetY = sum > 0 ? advance * ay / sum : 0;
+    while (offsetX + offsetY < advance) { ++offsetX; ++offsetY; }
+    return {float(x + offsetX * ((dx > 0) - (dx < 0))) + .5f,
+            float(y + offsetY * ((dy > 0) - (dy < 0))) + .5f};
 }
 
 std::optional<Vec> monsterWanderTarget(Enemy &enemy, const Grid &grid, int radius, MovementCollisionRule rule) {
@@ -32,6 +66,7 @@ bool monsterStartRetreat(Enemy &enemy, Vec target, int distance, const Grid &gri
         if (!grid.walkable(destination, rule)) continue;
         auto route = grid.path(enemy.pos, destination, false, rule);
         if (route.empty()) continue;
+        monsterStopApproach(enemy);
         enemy.route = std::move(route);
         enemy.aiEscaping = true;
         enemy.rethink = 0;
@@ -51,6 +86,7 @@ bool monsterStartCircle(Enemy &enemy, Vec target, int distance, const Grid &grid
         if (!grid.walkable(destination, rule)) continue;
         auto route = grid.path(enemy.pos, destination, false, rule);
         if (route.empty()) continue;
+        monsterStopApproach(enemy);
         enemy.route = std::move(route);
         enemy.aiCircling = true;
         enemy.aiWait = 0;

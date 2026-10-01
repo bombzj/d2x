@@ -68,6 +68,7 @@ void Simulation::onMonsterDamaged(Enemy &enemy, const DamageRequest &request, fl
         enemy.resurrectionRemaining = enemy.resurrectionDuration = 0;
         enemy.deathAge = 0;
         enemy.route.clear();
+        enemy.approach.reset();
         enemy.aiPursuing = false;
         enemy.aiEscaping = false;
         enemy.aiCommanded = false;

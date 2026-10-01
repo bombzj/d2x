@@ -4,6 +4,25 @@
 
 阶段记录中的“存读档”均是 v80 及更早版本的历史会话快照冒烟。当前 D2S v96 角色存档不保存怪物、尸体、弹体或怪物 AI 状态；载入后从城镇开始新的一局。冻结死亡现按原 States 的保留／碎裂／隐藏／禁选标志走公共入口；冰尖柱直接致死与冻结期间死亡均隐藏普通尸体，召唤、复活和见尸反应不能使用碎尸，收益仍正常结算。原碎冰／融化图与声音已接源码，精确客户端组合边界及未构建／运行／提交状态见 [冻结死亡](SKILLS.md#冻结死亡与尸体资格)。
 
+## 移动动作与接近决策
+
+Dark Spearwoman 的短步停顿来自 `updateMonsters` 每个 25 Hz 模拟帧重新调用 CorruptLancer 接近／跑动掷骰；普通难度当前 MPQ `cr_lancer1` 的 `aip1=60`、`aip3=9`，接近失败就进入 9 帧等待。此前仅对 CorruptRogue 保留追击，未覆盖长枪女盗贼、Goatman 与 Wraith 的同类调度问题。
+
+当前源码在 `Enemy.approach` 保存一次已接受的移动动作，`monster_wander.*` 共用开始／结束入口，`monster_ai.cpp` 在动作期间只推进移动，不重选目标或重掷接近／跑动概率。各 AI 的原接近、攻击及等待参数保持独立；新动作已满足到达条件时直接结束，不制造额外一帧短步。目标失效／超出现有视距、受击／眩晕／冻结、路径失败、攻击／传送、死亡和复活均清理动作。状态仅在本局存在，D2S v96 与保存语义不变。
+
+| AI 家族 | 原动作与到达条件 | 原速度百分比 |
+| --- | --- | --- |
+| CorruptLancer | 远距离必跑并记住冲锋后首击；近距离按自身 `aip1/4` 选择走／跑。跑的 StepNum 取原 `MeleeRng`，走取 3 | 走 75；跑 75 + 100 |
+| CorruptRogue | 走调用带标志的目标动作，StepNum 为 1；跑的 StepNum 为 3 | 走 75；跑 75 + 自身 `aip4` |
+| Skeleton（含牛）／Goatman | 各自接近概率成功后提交目标行走，StepNum 为 1 | 75 |
+| Wraith | 保留 `WalkInRadiusToTarget(..., 12, 0)` 的整数坐标目标；走到该目标后重新决策 | 75 |
+
+`WithSteps` 不是“走几格便停”。D2MOO `PATH_SetStepNum` 存储参数减 1，`PathMisc::sub_6FD5DB70` 按 `D2Common_10399` 的整数距离和双方体积判断目标到达；`MonsterMode` 在 WL／RN 动作结束后才转 Neutral 并触发 AI。原表 `cr_lancer1–3.MeleeRng=2`；内容层现把该字段及 255 的原武器类哨兵转为类型化范围。上述五类的近战决策与共用近战命中统一使用双方真实 SizeX 和 `MeleeRng + 1`，不再把长枪当作统一中心半径。CorruptRogue／CorruptLancer 的距离门槛使用原整数坐标近似距离；运动及 WL／RN 动画共用真实身份的 ColdEffect、蛛网和词缀速度修正。
+
+依据当前 `assets/mpq2` 的 MonStats／MonStats2、固定本地 D2MOO `AiThink::Fn002/009/010/012_019/036`、`AiTactics::MoveToTarget/MoveInRadiusToTarget`、`AiUtil::sub_6FCF2110`、`Path::PATH_SetStepNum`、`PathMisc` 与 `Units::UNITS_IsInMeleeRange`。Diablerie 的通用 MonsterController 仅用于区分其简化协程模型，不用其随机延时替代原 AI 参数。参考代码与原表未纳入源码。
+
+本次仅修改源码和文档，未构建、测试、启动游戏、打包或提交；现有 `dist/current` 不含本次修复。当前 A*、路径失败回退、目标选择、房间活跃范围和完整事件调度仍是项目适配，未宣称逐帧复刻原引擎。其他家族的有界推进、退避、绕行及技能动作须按各自原函数接入，不能直接套用本表的追击策略。
+
 ## 怪物祭坛强化
 
 2026-09-27：`content/monster_enchantment.*` 读取当前 MPQ 的 MonUMod／MonStats／MonStats2／MonType／MonLvl／DifficultyLevels／Skills／Missiles，`gameplay/monsters/monster_enchantments.cpp` 执行运行时行为。祭坛从玩家邻房范围选择最近、存活、正常站立或行走、普通级别且可死亡的敌对单位；排除 boss／primeevil、当前攻击／受击／冻结等不合格状态。无目标时按 ObjMode 消耗祭坛，不凭空创造敌人。

@@ -61,6 +61,7 @@ enum class MonsterAiKind { Skeleton, Brute, Zombie, Fallen, CorruptRogue, Goatma
 struct MonsterAiProfile {
     MonsterAiKind kind;
     std::array<int, 8> params{};
+    int meleeRange = 0; // Resolved MonStats2.MeleeRng, including the 255 weapon-class sentinel.
 };
 struct MonsterAttackTiming {
     float duration = 0;

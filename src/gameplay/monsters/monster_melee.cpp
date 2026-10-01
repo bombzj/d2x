@@ -13,6 +13,7 @@ int chooseAttackMode(Enemy &enemy, const MonsterAiProfile &rules) {
 }
 } // namespace
 void Simulation::beginMonsterAttack(Enemy &enemy, int forcedMode) {
+    monsterStopApproach(enemy);
     enemy.attackMode = forcedMode >= 3 ? forcedMode : forcedMode == 2 ? 2 : 1;
     const auto ai = monsterAi_ ? monsterAi_(enemy) : std::nullopt;
     if (!forcedMode && ai && (ai->kind == MonsterAiKind::Brute || ai->kind == MonsterAiKind::Skeleton ||
@@ -74,14 +75,25 @@ void Simulation::launchMonsterSpell(Enemy &enemy) {
     state_.area.missiles.back().combatRandom = childRandom(unitRandom_);
     replicateMonsterMissile(enemy, state_.area.missiles.back());
 }
+bool Simulation::monsterMeleeReach(const Enemy &enemy, EntityId defender) {
+    if (!defender) defender = enemy.combatTarget;
+    const auto target = combatUnit(defender);
+    if (!target.alive()) return false;
+    const auto ai = monsterAi_ ? monsterAi_(enemy) : std::nullopt;
+    const int size = enemy.intrinsicCombat ? enemy.intrinsicCombat->collisionSize
+                                         : monsterSize_ ? monsterSize_(enemy) : 2;
+    // UNITS_IsInMeleeRange: real unit sizes and MonStats2 range + 1; the
+    // same predicate governs the AI decision and the eventual melee hit.
+    const bool inReach = ai || enemy.intrinsicCombat
+        ? meleeDistance(enemy.pos, size, *target.position, target.stats.collisionSize) <= (ai ? ai->meleeRange : 0) + 1
+        : (*target.position - enemy.pos).length() < monsterDefinition(enemy.kind).attackRange;
+    return inReach && grid_->segment(enemy.pos, *target.position);
+}
 void Simulation::resolveMonsterAttack(Enemy &enemy, int modeOverride, bool projectile, EntityId defender) {
     if (!defender) defender = enemy.combatTarget;
     auto target = combatUnit(defender);
     if (!target.alive() || !canAttack(enemy.id, defender) || (!projectile && enemy.hp <= 0)) return;
-    const bool inReach = enemy.intrinsicCombat
-        ? meleeDistance(enemy.pos, enemy.intrinsicCombat->collisionSize, *target.position, target.stats.collisionSize) <= 1
-        : (*target.position - enemy.pos).length() < monsterDefinition(enemy.kind).attackRange;
-    if (!projectile && (!inReach || !grid_->segment(enemy.pos, *target.position))) return;
+    if (!projectile && !monsterMeleeReach(enemy, defender)) return;
     const int mode = modeOverride ? modeOverride : enemy.attackMode;
     const auto source = combatUnit(enemy.id);
     const auto accuracy = enemy.intrinsicCombat ? std::optional<MonsterAccuracy>{{source.stats.level, source.stats.attributes.attackRating}} :

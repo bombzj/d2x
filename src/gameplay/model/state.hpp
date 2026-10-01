@@ -90,6 +90,13 @@ struct PlayerState {
     ActOneQuestBook actOneQuests{};
     HirelingState hireling;
 };
+struct MonsterApproach {
+    // Target-unit movement uses D2Common_10399 and StepNum - 1. Coordinate
+    // actions (Wraith) retain the destination chosen by the AI until arrival.
+    std::optional<Vec> destination;
+    int stopDistance = 0, velocityPercent = 75;
+    bool running = false;
+};
 struct Enemy {
     EntityId id;
     MonsterKind kind = MonsterKind::Fallen;
@@ -118,6 +125,7 @@ struct Enemy {
     bool aiCommanded = false;
     bool aiCircling = false;
     bool aiRunning = false;
+    std::optional<MonsterApproach> approach;
     std::optional<int> movementVelocityPercent;
     bool aiRetaliate = false;
     bool aiCharged = false;

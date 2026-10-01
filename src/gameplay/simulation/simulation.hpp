@@ -150,6 +150,7 @@ class Simulation {
     bool handleMonsterSpecialAi(Enemy &enemy, const MonsterAiProfile &ai,
                                 float distance, bool clear);
     void beginMonsterAttack(Enemy &enemy, int forcedMode = 0);
+    bool monsterMeleeReach(const Enemy &enemy, EntityId defender = {});
     void resolveMonsterAttack(Enemy &enemy, int modeOverride = 0, bool projectile = false,
                                EntityId defender = {});
     void launchMonsterProjectile(Enemy &enemy);
