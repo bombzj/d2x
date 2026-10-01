@@ -89,7 +89,8 @@ class RoomMaze {
               Seed world(seed);
               return world.next() + uint32_t(level);
           }()),
-          family_(level >= 51 && level <= 54 ? FamilyRules{level == 51 ? 353 : 357, 16, {}, 16, true}
+          family_(catalog.level(level).levelType == 17 ? tombRules(level)
+              : level >= 51 && level <= 54 ? FamilyRules{level == 51 ? 353 : 357, 16, {}, 16, true}
               : catalog.level(level).levelType == 13 ? sewerRules(level)
               : level == 28                        ? barracksRules()
                   : level >= 29 && level <= 31          ? jailRules(level)

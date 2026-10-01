@@ -45,9 +45,38 @@ MapRecipe RoomMaze::build(int level, uint32_t seed, int difficulty, int entrance
         maze_.height != family_.roomHeight || maze_.merge < 0 || maze_.merge > 1000)
         throw std::runtime_error("Unsupported Room maze dimensions or difficulty");
     int count = maze_.difficultyRooms[difficulty];
+    int tombDirection = -1;
+    if (catalog_.level(level).levelType == 17) {
+        Seed act(seed);
+        act.next();
+        int staff = 0, boss = 0;
+        do {
+            staff = 66 + act.below(7);
+            boss = 66 + act.below(7);
+        } while (staff == boss);
+        if (level == staff) {
+            count *= 3;
+            family_.specialRooms.push_back(460);
+        } else if (level >= 66 && level <= 72)
+            family_.specialRooms.push_back(472);
+        if (level == boss) {
+            count *= 2;
+            family_.specialRooms.push_back(468);
+        }
+    }
     if (count < 1 || count > 256)
         throw std::runtime_error("Invalid LvlMaze room count");
     rooms_.emplace_back(seed_.next());
+    if (catalog_.level(level).levelType == 17) {
+        tombDirection = seed_.next() & 3;
+        for (int index = 0; index < 3; ++index) {
+            add(0, tombDirection, true);
+            tombDirection = (tombDirection + 1) % 4;
+        }
+        constexpr int entrances[]{447, 444, 446, 445};
+        rooms_[0].preset = entrances[tombDirection];
+        rooms_[0].fixed = true;
+    }
     if (level >= 34 && level <= 36)
         initializeCatacombs(level);
     if (family_.initialRing) {
@@ -71,7 +100,7 @@ MapRecipe RoomMaze::build(int level, uint32_t seed, int difficulty, int entrance
     else if (level == 28)
         placeBarracks(entranceDirection);
     else {
-        int direction = seed_.next() & 3;
+        int direction = tombDirection >= 0 ? (tombDirection + 2) % 4 : seed_.next() & 3;
         auto place = [&](int first) {
             special(direction, first);
             direction = (direction + 1) % 4;

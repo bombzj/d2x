@@ -44,7 +44,7 @@ WorldPlan planWorld(Archives &archives, const WorldCatalog &catalog, WorldSelect
     auto outdoors = missingOutdoor.empty() ? generateAct1Outdoors(archives, catalog, selection.seed)
                                            : std::map<int, MapRecipe>{};
     for (const auto &[id, level] : catalog.levels()) {
-        if (level.act != 0 && id != 40 && id != 50 && !supportsMaze(id))
+        if (level.act != 0 && id != 40 && id != 50 && id != 73 && !supportsMaze(id))
             continue;
         auto available = catalog.availability(
             archives, id, id == 40 ? 1 : id == selection.level && !selection.preset ? selection.variant : 0);

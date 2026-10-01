@@ -24,4 +24,16 @@ inline FamilyRules sewerRules(int level) {
         rules.specialRooms = {332, 349};
     return rules;
 }
+inline FamilyRules tombRules(int level) {
+    FamilyRules rules{413, 16, {}};
+    if (level >= 55 && level <= 58)
+        rules.specialRooms.push_back(448);
+    if (level == 57)
+        rules.specialRooms.push_back(476);
+    if (level == 59)
+        rules.specialRooms.insert(rules.specialRooms.end(), {472, 464, 452});
+    if (level == 60)
+        rules.specialRooms.push_back(456);
+    return rules;
+}
 } // namespace d2x::maze
