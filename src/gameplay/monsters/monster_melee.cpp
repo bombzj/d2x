@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <stdexcept>
 #include <tuple>
+#include <numbers>
 
 namespace d2x {
 namespace {
@@ -48,6 +49,12 @@ void Simulation::beginMonsterAttack(Enemy &enemy, int forcedMode) {
         enemy.attackImpact = 0;
     }
     enemy.attack = enemy.attackDuration;
+    enemy.attackEventIndex = 0;
+    if (enemy.kind == MonsterKind::Andariel && enemy.attackMode == 3) {
+        enemy.skillPosition = monsterTargetPosition(enemy);
+        if (auto timing = monsterAttackTiming_(enemy, 3); timing && !timing->eventTimes.empty())
+            enemy.attackImpact = timing->eventTimes.front();
+    }
     updateMonsterSpectralDamage(enemy);
     emit(EnemyAttacked{enemy.id, enemy.kind, enemy.attackMode});
     if (enemy.attackImpact <= 0) {
@@ -89,13 +96,31 @@ void Simulation::launchMonsterSpell(Enemy &enemy) {
     if (!spell || spell->projectile.id < 0 || spell->projectile.velocity <= 0 ||
         spell->projectile.lifetime <= 0 || spell->maximumDamage < spell->minimumDamage)
         throw std::runtime_error("Monster spell projectile is missing");
-    const auto direction = (monsterTargetPosition(enemy) - enemy.pos).unit();
+    auto direction = (monsterTargetPosition(enemy) - enemy.pos).unit();
     const float damage = float(spell->minimumDamage +
         monsterAiRandom(enemy) % unsigned(spell->maximumDamage - spell->minimumDamage + 1));
+    if (enemy.kind == MonsterKind::Andariel && enemy.attackMode == 3 && enemy.skillPosition) {
+        constexpr int horizontal[]{0,-1,-1,-1,0,1,1,1,0,-1,-2,-2,-2,-2,-2,-1,0,1,2,2,2,2,2,1,0,-3,-3,-3,0,3,3,3};
+        constexpr int vertical[]{-1,-1,0,1,1,1,0,-1,-2,-2,-2,-1,0,1,2,2,2,2,2,1,0,-1,-2,-2,-3,-3,0,3,3,3,0,-3};
+        constexpr int origins[]{29,28,27,26,25,24,31,30};
+        constexpr int fan[8][9]{{27,14,15,3,99,7,21,22,31},{26,12,13,2,99,6,19,20,30},
+            {25,10,11,1,99,5,17,18,29},{24,8,9,0,99,4,15,16,28},
+            {31,22,23,7,99,3,13,14,27},{30,20,7,6,99,2,1,12,26},
+            {29,18,19,5,99,1,9,10,25},{28,16,17,4,99,0,23,8,24}};
+        const Vec aim = *enemy.skillPosition - enemy.pos;
+        const int facing = (int(std::floor(std::atan2(aim.y, aim.x) *
+            4.f / std::numbers::pi_v<float> + .5f)) + 7) & 7;
+        const int origin = origins[facing];
+        Vec target{float(int(enemy.pos.x) + horizontal[origin]), float(int(enemy.pos.y) + vertical[origin])};
+        const int offset = fan[facing][std::min<size_t>(enemy.attackEventIndex, 8)];
+        if (offset != 99) target = target + Vec{float(horizontal[offset]), float(vertical[offset])};
+        direction = (target - Vec{float(int(enemy.pos.x)), float(int(enemy.pos.y))}).unit();
+    }
     state_.area.missiles.push_back({ids_.allocate(), enemy.id, enemy.pos,
         direction * spell->projectile.velocity, spell->projectile.lifetime, SkillBehavior::None,
         false, spell->projectile.id, damage, 0, 0, true, enemy.attackMode});
     state_.area.missiles.back().combatRandom = childRandom(unitRandom_);
+    state_.area.missiles.back().killOnHit = spell->killOnHit;
     replicateMonsterMissile(enemy, state_.area.missiles.back());
 }
 bool Simulation::monsterMeleeReach(const Enemy &enemy, EntityId defender, int rangeBonus) {

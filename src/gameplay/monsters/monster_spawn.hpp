@@ -59,7 +59,7 @@ struct MonsterNormalCombat {
 enum class MonsterAiKind { Skeleton, Brute, Zombie, Fallen, CorruptRogue, Goatman, QuillRat,
                            Wraith, CorruptLancer, CorruptArcher, SkeletonBow, Bighead,
                            SkeletonMage, Fetish, Vampire, FallenShaman, FoulCrowNest, BloodHawk,
-                           Arach, Smith, Griswold, BloodRaven, Countess };
+                           Arach, Smith, Griswold, BloodRaven, Countess, Andariel };
 struct MonsterAiProfile {
     MonsterAiKind kind;
     std::array<int, 8> params{};
@@ -71,6 +71,7 @@ struct MonsterAttackTiming {
     float impact = 0;
     int frames = 0;
     int sequenceFrames = 0;
+    std::vector<float> eventTimes = {};
 };
 struct MonsterProjectile {
     int id = -1;
@@ -89,6 +90,8 @@ struct MonsterSpell {
     std::string sourceSkill, mode, art, element;
     MonsterProjectile projectile;
     int minimumDamage = 0, maximumDamage = 0;
+    int poisonFrames = 0, hitShift = 8;
+    bool killOnHit = true;
 };
 struct MonsterResurrection {
     std::string sourceSkill, mode, minion;

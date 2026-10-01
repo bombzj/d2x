@@ -6,7 +6,7 @@
 namespace d2x {
 namespace {
 std::string resolveMode(std::string_view source, const DataTable &sequences, int event = 2) {
-    if (source == "SC") return "SC";
+    if (source == "SC" || source == "A1") return std::string(source);
     for (size_t row = 0; row < sequences.rows().size(); ++row)
         if (sequences.value(row, "sequence") == source &&
             sequences.number(row, "event").value_or(0) == event)
@@ -43,12 +43,28 @@ std::array<std::optional<MonsterSpell>, 4> loadMonsterSpells(
                 if (id && *id >= 0 && velocity && *velocity > 0 && range && *range > 0 &&
                     minimum && *minimum >= 0 && maximum && *maximum >= *minimum &&
                     *maximum <= 1000000 && (element == "fire" || element == "ltng" ||
-                    element == "cold" || element == "mag") && !file.empty() &&
+                    element == "cold" || element == "mag" || element == "pois") && !file.empty() &&
                     archives.contains(art))
                     result[size_t(slot)] = MonsterSpell{std::string(sourceSkill),
                         actionMode, art, std::string(element),
                         MonsterProjectile{*id, float(*velocity), float(*range) / 25.f},
-                        *minimum, *maximum};
+                        *minimum, *maximum, missiles.number(missileRow, "ELen").value_or(0),
+                        missiles.number(missileRow, "HitShift").value_or(0),
+                        monsters.value(monsterRow, "Id") != "andariel" ||
+                        missiles.number(missileRow, "CollideKill").value_or(0) != 0};
+                if (result[size_t(slot)] && monsters.value(monsterRow, "Id") == "andariel") {
+                    const int rank = std::max(1, monsters.number(monsterRow, "Sk" + std::to_string(slot + 1) + "lvl").value_or(1));
+                    const int counts[]{std::min(rank - 1, 7), std::clamp(rank - 8, 0, 8),
+                        std::clamp(rank - 16, 0, 6), std::clamp(rank - 22, 0, 6), std::max(rank - 28, 0)};
+                    auto &spell = *result[size_t(slot)];
+                    for (int bracket = 0; bracket < 5; ++bracket) {
+                        spell.minimumDamage += counts[bracket] * missiles.number(missileRow, "MinELev" + std::to_string(bracket + 1)).value_or(0);
+                        spell.maximumDamage += counts[bracket] * missiles.number(missileRow, "MaxELev" + std::to_string(bracket + 1)).value_or(0);
+                    }
+                    const int lengths[]{std::min(rank - 1, 7), std::clamp(rank - 8, 0, 8), std::max(rank - 16, 0)};
+                    for (int bracket = 0; bracket < 3; ++bracket)
+                        spell.poisonFrames += lengths[bracket] * missiles.number(missileRow, "ELevLen" + std::to_string(bracket + 1)).value_or(0);
+                }
                 break;
             }
             break;

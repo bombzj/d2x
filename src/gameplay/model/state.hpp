@@ -108,6 +108,7 @@ struct Enemy {
     float attackDuration = 0, attackImpact = -1;
     int attackMode = 1;
     int attackRatePercent = 100;
+    size_t attackEventIndex = 0;
     CombatIdentity allegiance{2, {}, 0, CombatRole::Monster};
     EntityId combatTarget;
     std::optional<UnitCombatStats> intrinsicCombat;

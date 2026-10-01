@@ -109,6 +109,7 @@ class MonsterCatalog {
     const auto &diagnostics() const { return diagnostics_; }
     const auto &monsters() const { return monsters_; }
     const MonsterAttackTiming *attackTiming(MonsterKind kind, int mode = 1) const {
+        if (mode == 4 && kind == MonsterKind::Andariel) mode = 1;
         if (mode == 4 && kind == MonsterKind::BloodRaven) {
             auto found = quickAttacks_.find(kind);
             return found == quickAttacks_.end() ? nullptr : &found->second;

@@ -193,6 +193,13 @@ void SceneAssets::loadMonsterActor(const GameSession &session, const MonsterArtS
             !actor.spells[0] || !actor.spells[3])
             throw std::runtime_error("Original monster SC spell resources missing: " + actor.id);
     }
+    if (kind == MonsterKind::Andariel) {
+        const auto *spray = content.attackTiming(kind, 3);
+        const auto *bolt = content.attackTiming(kind, 4);
+        if (!spray || spray->eventTimes.size() != 9 || !bolt || !animations.contains("sc") ||
+            !actor.spells[0] || !actor.spells[1])
+            throw std::runtime_error("Original Andariel skill actions are incomplete");
+    }
     if (actor.sequenceMode && kind == MonsterKind::FallenShaman) {
         const auto *timing = content.attackTiming(kind, 3);
         if (!timing || !animations.contains("a2") ||

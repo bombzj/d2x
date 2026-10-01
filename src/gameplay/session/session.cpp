@@ -366,13 +366,16 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
     };
     simulation_->monsterAi_ = [this](const Enemy &enemy)
         -> std::optional<MonsterAiProfile> {
-        if (!enemy.identity.enchantment && !baseMonsterRank(enemy.identity.rank) && enemy.kind != MonsterKind::BloodRaven)
+        if (!enemy.identity.enchantment && !baseMonsterRank(enemy.identity.rank) &&
+            enemy.kind != MonsterKind::BloodRaven && enemy.kind != MonsterKind::Andariel)
             return std::nullopt;
         const auto *record = monsterContent_.find(enemy.identity.monster);
-        if (!record || (record->boss && enemy.kind != MonsterKind::Griswold && enemy.kind != MonsterKind::BloodRaven))
+        if (!record || (record->boss && enemy.kind != MonsterKind::Griswold &&
+            enemy.kind != MonsterKind::BloodRaven && enemy.kind != MonsterKind::Andariel))
             return std::nullopt;
         auto profile = record->aiProfiles.at(state().population.difficulty);
         if (!profile) return std::nullopt;
+        if (profile->kind == MonsterAiKind::Andariel && enemy.kind == MonsterKind::Andariel) return profile;
         if (enemy.identity.superUnique == "The Countess") { profile->kind = MonsterAiKind::Countess; return profile; }
         if ((profile->kind == MonsterAiKind::Smith && enemy.kind == MonsterKind::Smith) ||
             (profile->kind == MonsterAiKind::Griswold && enemy.kind == MonsterKind::Griswold) ||
@@ -503,7 +506,7 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
     simulation_->monsterSpell_ = [this](const Enemy &enemy, int mode)
         -> std::optional<MonsterSpell> {
         if (mode < 3 || mode > 6 ||
-            (enemy.kind != MonsterKind::Vampire &&
+            (enemy.kind != MonsterKind::Vampire && enemy.kind != MonsterKind::Andariel &&
              !(enemy.kind == MonsterKind::FallenShaman && mode == 4)))
             return std::nullopt;
         const auto *record = monsterContent_.find(enemy.identity.monster);

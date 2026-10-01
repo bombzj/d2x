@@ -95,6 +95,11 @@ void Simulation::prepareMonsterElements(Enemy &enemy, const MonsterNormalCombat 
 void Simulation::resolveMonsterSpell(Enemy &enemy, const Missile &missile, EntityId defender) {
     const auto spell = monsterSpell_ ? monsterSpell_(enemy, missile.monsterAttackMode) : std::nullopt;
     if (!spell || spell->projectile.id != missile.missileId) return;
+    if (spell->element == "pois") {
+        applyPoison(defender, missile.damage * float(1 << spell->hitShift) * 25.f / 256.f,
+            float(spell->poisonFrames) / 25.f, enemy.id);
+        return;
+    }
     if (auto type = damageType(spell->element)) dealDamage({enemy.id, defender, missile.damage, *type});
 }
 } // namespace d2x

@@ -226,6 +226,7 @@ void Simulation::recoverUnit(EntityId defender, EntityId attacker, float damage,
         monster.attackImpact = -1;
         monster.teleportTarget.reset();
         monster.nestSpawnPosition.reset();
+        if (monster.kind == MonsterKind::Andariel) monster.skillPosition.reset();
         monster.skill2Remaining = monster.skill2Duration = 0;
         monster.aiCorpse = {};
         if (monster.identity.enchantment && monster.identity.enchantment->has(17))

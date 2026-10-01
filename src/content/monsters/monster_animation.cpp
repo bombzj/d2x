@@ -82,7 +82,12 @@ std::optional<MonsterAttackTiming> loadMonsterSequenceTiming(
     if (sequenceFrames <= 0 || sequenceFrames > 144 ||
         impactFrame < 0 || impactFrame >= sequenceFrames) return std::nullopt;
     const float frameTime = motion->duration / float(motion->frames);
-    return MonsterAttackTiming{frameTime * sequenceFrames,
+    MonsterAttackTiming result{frameTime * sequenceFrames,
                                frameTime * impactFrame, motion->frames, sequenceFrames};
+    for (size_t row = 0; row < sequences.rows().size(); ++row)
+        if (sequences.value(row, "sequence") == sequence && sequences.value(row, "mode") == sequenceMode &&
+            sequences.number(row, "event").value_or(0) == event)
+            result.eventTimes.push_back(frameTime * sequences.number(row, "frame").value());
+    return result;
 }
 } // namespace d2x

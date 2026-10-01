@@ -11,7 +11,7 @@ enum class SkillBehavior { None, Fireball, FrostNova, Teleport, FireBolt, Static
 enum class MonsterKind { Fallen, Zombie, Skeleton, CorruptRogue, Brute, Goatman, QuillRat,
                          Wraith, CorruptLancer, CorruptArcher, SkeletonBow, Bighead,
                          HellBovine, SkeletonMage, Fetish, Vampire, FallenShaman,
-                         FoulCrowNest, BloodHawk, Arach, NecroSkeleton, Smith, Griswold, BloodRaven, Count };
+                         FoulCrowNest, BloodHawk, Arach, NecroSkeleton, Smith, Griswold, BloodRaven, Andariel, Count };
 // Native Levels.txt IDs. Template previews occupy a separate range (10000 + Def).
 enum class RegionId { Encampment = 1 };
 enum class Interaction { None, Talk, Heal, Travel, Stash, Loot, Shrine, Well,

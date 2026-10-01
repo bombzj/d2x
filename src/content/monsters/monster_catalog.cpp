@@ -349,6 +349,10 @@ MonsterCatalog::MonsterCatalog(Archives &archives, const DataTable &stats) {
                     if (auto timing = loadMonsterActionTiming(
                             animations, actor->token, mode, weapon, 2))
                         casts_.emplace(kind, *timing);
+                } else if (std::string_view(mode) == "sc" && kind == MonsterKind::Andariel && actor->spells[0]) {
+                    if (auto timing = loadMonsterSequenceTiming(animations, sequences,
+                            stats.value(actor->sourceRow, "Sk1mode"), actor->token, mode, weapon, 2))
+                        casts_.emplace(kind, *timing);
                 } else if (std::string_view(mode) == "s1" &&
                            (kind == MonsterKind::FoulCrowNest || kind == MonsterKind::BloodRaven) && actor->nest &&
                            actor->nest->mode == "S1") {

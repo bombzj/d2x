@@ -8,6 +8,20 @@
 
 2026-10-01：复审依据当前源码、当前 `assets/mpq2` 的 Levels／MonStats／MonStats2／DifficultyLevels／MonPreset／SuperUniques，以及固定本地 D2MOO `5596f5c`。以下九项表格保留修复前的审阅证据；当前状态以本节各阶段交接为准，不能继续把旧源码行号视为现状。
 
+### 安达利尔战斗与掉落
+
+2026-10-01：andariel 注册真实 AN 原形，保留 MonStats 原 boss／primeevil 等级、MonLvl 比例、生命、近战、再生／暴击、抗性和体积；不装随机精英强化、不用区域等级替换 boss 等级。当前普通难度为 12 级、1024 HP、火抗 −50、毒抗 80。Fn034 按原 aip1–4 顺序决策：贴身按喷毒概率选 Skill1 或 A1；非近战先掷 5 帧等待，再掷攻击概率和喷毒／毒弹，失败持续走近。公共受击／GH、冷效果、毒抗、佣兵和召唤物 primeevil 伤害倍率、击杀收益沿现有消费者。
+
+技能动作：AndrialSpray（164）使用 seq_andarielspray 的 SC 18 帧、4–12 帧九个 event2；起手保存目标，原 SrvDo088 八方向／九事件偏移表逐枚发 andarielspray（32）。AndyPoisonBolt（201）以原 A1 共用动作事件发 andypoisonbolt（203），不能要求普通弓手 event2；最终冒烟发现这一错误后修复。Missiles 原速度／寿命分别为 15／40 帧、20／50 帧，毒速率 32–64 定点、HitShift=0、毒长度 400／800 帧；原 Sk*lvl 及分段字段在内容层解析，命中共用毒抗、毒长度抵抗、强毒覆盖和持续伤害，不把毒当即时魔法伤害。SC 保留原事件帧范围，受击打断清起手目标；A1／WL／GH／DT／DD、毒弹 DCC 与 MonSounds 由 MPQ 原资源加载。
+
+掉落和任务：死亡沿原 Boss 身份取 MonStats TCQuestId／TCQuestCP 对应的首杀 Andarielq，否则 Andariel；复用 TC／品质／物品生成和经验事务。未完成任务的玩家击杀额外按 A1Q6 原七种代码池掉两颗碎裂宝石和一颗普通宝石，不使用随机首领 TC；后续不重复任务宝石。死亡在邻房 35 范围的同阵营怪物预约 1–50 帧死亡，依据 QUESTSFX_Andariel。A1Q6、NPC 成功对白资格、凯恩代救及当前回城门复用已有任务链；不新增存档字段。
+
+依据本地 D2MOO 5596f5c：AiThink::Fn034、SkillMonst::SrvSt46／SrvDo088、D2Common Monsters::11053／11055、MonsterUnique::UMod28_Event、QUESTSFX::Andariel／MainHandler、A1Q6::Callback08／Timer_StatusCycler，公共 MonsterMode／SUnitDmg 及 MonStats TC 消费者。原表和原资源始终来自当前 assets/mpq2，不提交 reference 或抽取素材。
+
+普通难度包内证据（seed=210，临时女巫）：自然 andariel 非替身、combat 有效，原形截图已查看；A1／SC 决策实际发生，角色中毒约 14.92 秒、6.0546875 HP/秒；远距另观察到 32／203 两种毒弹和约 26.28 秒／4.00390625 HP/秒中毒。常规承伤 1024→1023；首杀日志 Andarielq、65 经验、额外 skc/skc/sku、deferred=null，A1Q6=3 和回城门开启；保留任务进度重建后日志 Andariel、无任务宝石。两个正常实例退出码 0，不读写角色存档、无新测试程序，仅普通难度。贴身弹体立即命中消失，因此弹体计数不构成九次释放逐帧认证；九事件来源已原表／源码核对。
+
+仍未完成：原路径整数方向量化目前按连续坐标角度映射原八方向，房间／寻路和弹体创建伤害快照仍沿项目适配。客户端 andycontrol0、火柱／落石／火墙死亡演出、原空间声音和精确事件节拍没有完整本地 D2Client 证据，未自造图块或演出；当前 DT／DD 和死亡声音不代表完整原结尾。回城门沿既有即时创建，不是 A1Q6 原任务定时器延迟。未穷举九事件朝向、抗毒装备／低生命全部分支、佣兵／召唤物战斗、死亡清场／任务门延迟及多人任务首杀规则；第二幕仍未实现。不能将本批核心战斗／掉落接入称为完整原引擎复刻，构建／包与提交状态见 [构建](BUILD_AND_SHARE.md)。
+
 ### 专属首领与毒系骨灰
 
 2026-10-01：Boneash 的 skmage_pois3 开放真实 SK 原组件／色表／声音、SkeletonMage 决策及 MissA1=skmage1；毒弹 SrcDamage=128 从 MonStats 的 A1 毒属性取得速率与时长，不自造毒系弹体或套火／电伤害。Boneash／Smith／Griswold／Countess 使用已有 SuperUnique 固定词缀、准确直属随从、生命与收益初始化。新增 Smith（5P）、Griswold（GZ）、BloodRaven（CR）原形索引和各自 AnimData／COF；Griswold、BloodRaven 保留 boss 原表等级，仅这两个身份开放已核实的战斗解析，其他 Boss 继续受限。普通 corruptrogue3 不进入女伯爵特殊状态。

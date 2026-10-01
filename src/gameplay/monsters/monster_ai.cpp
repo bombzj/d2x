@@ -148,6 +148,11 @@ void Simulation::updateMonsters(float dt) {
                         launchMonsterProjectile(enemy);
                     else
                         resolveMonsterAttack(enemy);
+                    if (enemy.kind == MonsterKind::Andariel && enemy.attackMode == 3)
+                        if (auto timing = monsterAttackTiming_(enemy, 3); timing &&
+                            ++enemy.attackEventIndex < timing->eventTimes.size())
+                            enemy.attackImpact = timing->eventTimes[enemy.attackEventIndex] -
+                                                 (enemy.attackDuration - enemy.attack);
                 }
             }
             if (enemy.attack == 0) {
@@ -155,6 +160,7 @@ void Simulation::updateMonsters(float dt) {
                 enemy.attackImpact = -1;
                 enemy.attackMode = 1;
                 enemy.aiCorpse = {};
+                if (enemy.kind == MonsterKind::Andariel) enemy.skillPosition.reset();
             }
             continue;
         }

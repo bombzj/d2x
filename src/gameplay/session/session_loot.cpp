@@ -3,6 +3,7 @@
 #include "content/monsters/monster_loot.hpp"
 #include "content/monsters/monster_experience.hpp"
 #include "content/items/item_quality.hpp"
+#include "core/random.hpp"
 #include <algorithm>
 #include <iostream>
 #include <stdexcept>
@@ -64,6 +65,15 @@ void GameSession::settleDeaths() {
                 plan.deferred = entry.reason;
             std::cout << (entry.status == LootEntryStatus::Empty ? " empty: " : " deferred: ")
                       << entry.reason << '\n';
+        }
+        if (questFirstKill && death.killer == state().player.id && plan.deferred.empty()) {
+            constexpr const char *chipped[]{"gcv", "gcr", "gcb", "gcy", "gcg", "gcw", "skc"};
+            constexpr const char *normal[]{"gsv", "gsr", "gsb", "gsy", "gsg", "gsw", "sku"};
+            for (int gem = 0; gem < 3; ++gem) {
+                const auto code = gem < 2 ? chipped[limitedRandom(random_, 7)] : normal[limitedRandom(random_, 7)];
+                if (!content_.items.find(code)) throw std::runtime_error("Missing Andariel quest gem");
+                plan.drops.push_back({code, 1, {}, unsigned(entry.itemLevel), {}});
+            }
         }
         if (!plan.deferred.empty())
             simulation_->emit(LootDeferred{death.victim, plan.deferred});

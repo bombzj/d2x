@@ -15,6 +15,14 @@ bool Simulation::handleMonsterSpecialAi(Enemy &enemy, const MonsterAiProfile &ai
                                         float distance, bool clear) {
     const Vec targetPosition = monsterTargetPosition(enemy);
     const bool inCombat = monsterMeleeReach(enemy);
+    if (ai.kind == MonsterAiKind::Andariel) {
+        auto chance = [&](int percent) { return monsterAiRandom(enemy) % 100 < unsigned(percent); };
+        if (inCombat) beginMonsterAttack(enemy, chance(ai.params[0]) ? 3 : 1);
+        else if (chance(ai.params[1])) enemy.aiWait = 5.f / 25.f;
+        else if (chance(ai.params[2])) beginMonsterAttack(enemy, chance(ai.params[3]) ? 3 : 4);
+        else monsterStartApproach(enemy, 1, 75, false);
+        return true;
+    }
     if (ai.kind == MonsterAiKind::Countess) {
         const auto *homeRoom = rooms_->room(enemy.aiHome);
         if (homeRoom != rooms_->room(enemy.pos) || homeRoom != rooms_->room(targetPosition) ||

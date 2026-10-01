@@ -1,5 +1,6 @@
 #include "gameplay/simulation/simulation.hpp"
 #include "gameplay/session/session.hpp"
+#include "core/random.hpp"
 
 namespace d2x {
 void GameSession::updateSlaughterQuest(const EnemyDied &death) {
@@ -9,6 +10,15 @@ void GameSession::updateSlaughterQuest(const EnemyDied &death) {
         return;
     auto &record = simulation_->state_.player.actOneQuests
         .at(size_t(state().population.difficulty)).at(questIndex(ActOneQuest::SistersToTheSlaughter));
+    if (auto *source = simulation_->findEnemy(death.victim))
+        for (auto &enemy : simulation_->state_.area.enemies) {
+            const int horizontal = int(enemy.pos.x) - int(death.position.x);
+            const int vertical = int(enemy.pos.y) - int(death.position.y);
+            if (enemy.hp > 0 && simulation_->relation(source->id, enemy.id) == Relation::Allied &&
+                region().map.activation.nearby(source->pos, enemy.pos) &&
+                horizontal * horizontal + vertical * vertical <= 35 * 35)
+                enemy.questDeathFrame = state().frame + 1 + limitedRandom(source->combatRandom, 50);
+        }
     if (!slaughterAdvance(record, SlaughterStage::AndarielSlain)) return;
     for (const auto *npc : {"Deckard Cain", "Akara", "Kashya"})
         pendingNpcQuestMessages_.insert(std::string("A1Q6/Successful/") + npc);

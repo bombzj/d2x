@@ -392,7 +392,8 @@ void SceneView::drawActors(Vec mouse) const {
                                   : e.skill2Remaining > 0 && animations.contains("s2") ? "s2"
                                   : e.attack > 0 ? (e.attackMode >= 3 ?
                                                                                                          (e.kind == MonsterKind::BloodRaven ? (e.attackMode == 3 ? "s1" : "a1") :
-                                                                                                            e.identity.superUnique == "The Countess" ? "a1" :
+                                                                                                            e.identity.superUnique == "The Countess" ||
+                                                                                                            (e.kind == MonsterKind::Andariel && e.attackMode == 4) ? "a1" :
                                                                                                             (e.kind == MonsterKind::FallenShaman ||
                                                        e.kind == MonsterKind::Arach) ? "a2" :
                                                       e.kind == MonsterKind::FoulCrowNest ? "s1" : "sc") :
@@ -434,7 +435,8 @@ void SceneView::drawActors(Vec mouse) const {
                         e.attackDuration > 0)
                         frame = std::clamp(int((e.attackDuration - e.attack) / e.attackDuration * anim->count),
                                            0, anim->count - 1);
-                    if (e.kind == MonsterKind::BloodRaven && e.attackDuration > 0 && e.attackMode >= 3)
+                    if ((e.kind == MonsterKind::BloodRaven || e.kind == MonsterKind::Andariel) &&
+                        e.attackDuration > 0 && e.attackMode >= 3)
                         if (const auto *timing = session_.monsterContent().attackTiming(e.kind, e.attackMode);
                             timing && timing->sequenceFrames > 0)
                             frame = std::clamp(int((e.attackDuration - e.attack) / e.attackDuration * timing->sequenceFrames),
