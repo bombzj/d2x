@@ -22,6 +22,7 @@ struct MonsterIdentity {
     uint32_t group = 0;
     std::optional<MonsterEnchantment> enchantment = std::nullopt;
     std::string ownerSpawnKey = {}; // Original setboss party ownership within this region.
+    bool championVariantAllowed = true;
 };
 struct MonsterSpawn {
     MonsterIdentity identity;

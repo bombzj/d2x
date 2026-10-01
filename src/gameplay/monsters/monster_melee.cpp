@@ -48,6 +48,7 @@ void Simulation::beginMonsterAttack(Enemy &enemy, int forcedMode) {
         enemy.attackImpact = 0;
     }
     enemy.attack = enemy.attackDuration;
+    updateMonsterSpectralDamage(enemy);
     emit(EnemyAttacked{enemy.id, enemy.kind, enemy.attackMode});
     if (enemy.attackImpact <= 0) {
         enemy.attackImpact = -1;
@@ -161,18 +162,20 @@ void Simulation::resolveMonsterAttack(Enemy &enemy, int modeOverride, bool proje
     const float previousLife = *target.life;
     if (!projectile) triggerCombatEffects(defender, CombatEffectEvent::AttackedInMelee, enemy.id);
     DamageRequest hit{enemy.id, defender, damage, MonsterDamageType::Physical, 0, false, false};
+    const auto projectileSpec = projectile && monsterProjectile_ ? monsterProjectile_(enemy, mode) : std::nullopt;
+    const int sourceDamage = projectileSpec ? projectileSpec->sourceDamage : 128;
     const auto &elements = source.stats.attributes.combat;
-    for (auto [minimum, maximum, type] : {
+    if (!enemy.identity.enchantment) for (auto [minimum, maximum, type] : {
         std::tuple{elements.fireMinimum, elements.fireMaximum, MonsterDamageType::Fire},
         std::tuple{elements.lightningMinimum, elements.lightningMaximum, MonsterDamageType::Lightning},
         std::tuple{elements.coldMinimum, elements.coldMaximum, MonsterDamageType::Cold}})
         if (maximum > 0) {
             const float amount = float(minimum * 256 + limitedRandom(enemy.combatRandom,
                 unsigned(std::max(0, maximum - minimum) * 256))) / 256.f;
-            const auto projectileSpec = projectile && monsterProjectile_ ? monsterProjectile_(enemy, mode) : std::nullopt;
-            const int sourceDamage = projectileSpec ? projectileSpec->sourceDamage : 128;
             hit.channels[size_t(type)] = float(int64_t(amount * 256.f) * sourceDamage / 128) / 256.f;
         }
+    if (combat && !enemy.intrinsicCombat) prepareMonsterElements(enemy, *combat, mode, hit, sourceDamage);
+    prepareMonsterEnchantmentHit(enemy, hit, sourceDamage);
     const auto physicalDamage = resolveIncoming(enemy.id, target, hit.amount, MonsterDamageType::Physical);
     hit.amount = physicalDamage.dealt;
     restoreUnit(defender, physicalDamage.absorbed);
@@ -183,12 +186,15 @@ void Simulation::resolveMonsterAttack(Enemy &enemy, int modeOverride, bool proje
         restoreUnit(defender, resolved.absorbed);
     }
     hit.mitigated = true;
+    applyMonsterCurse(enemy, defender);
+    if (hit.chill > 0) {
+        applyChill(defender, hit.chill);
+        hit.chill = 0;
+    }
     if (!projectile) reflectThorns(enemy.id, defender, hit.amount);
     const float hitDealt = dealDamage(hit);
     if (!projectile && hitDealt > 0 && enemy.hp > 0)
         triggerCombatEffects(defender, CombatEffectEvent::DamagedInMelee, enemy.id);
-    if (combat && !enemy.intrinsicCombat && target.alive()) applyMonsterElements(enemy, *combat, mode, defender, false);
-    if (target.alive()) applyMonsterEnchantmentHit(enemy, defender, false);
     const float total = previousLife - *target.life;
     recoverUnit(defender, enemy.id, total, total > hitDealt ||
         std::any_of(hit.channels.begin() + 1, hit.channels.end(), [](float amount) { return amount > 0; }));

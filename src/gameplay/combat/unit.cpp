@@ -111,6 +111,8 @@ CombatUnit Simulation::combatUnit(EntityId id) {
         stats.fireResist += modifiers.fireResist; stats.coldResist += modifiers.coldResist;
         stats.lightningResist += modifiers.lightningResist; stats.poisonResist += modifiers.poisonResist;
         mergeCombatModifiers(stats.combat, modifiers.combat);
+        if (monster->identity.enchantment && monster->identity.enchantment->has(38))
+            stats.combat.curseResistance = 100;
     }
     return unit;
 }
@@ -205,9 +207,15 @@ void Simulation::recoverUnit(EntityId defender, EntityId attacker, float damage,
         const int dealt = int(damage * 256.f), maximum = int(monster.maxHp * 256.f);
         if (!forced && monster.stun <= 0 && (dealt < 256 || dealt < maximum / divisor ||
             (dealt < maximum / (divisor / 2) && !(rollRandom(monster.combatRandom) & 1)) ||
-            (dealt < maximum / (divisor / 4) && !(rollRandom(monster.combatRandom) & 3)))) return;
+            (dealt < maximum / (divisor / 4) && !(rollRandom(monster.combatRandom) & 3)))) {
+            if (monster.hitFlash <= 0) triggerMonsterLightning(monster);
+            return;
+        }
         const auto duration = monsterGetHitDuration_ ? monsterGetHitDuration_(monster.identity) : std::nullopt;
-        if (!duration || *duration <= 0) return;
+        if (!duration || *duration <= 0) {
+            if (monster.hitFlash <= 0) triggerMonsterLightning(monster);
+            return;
+        }
         const int recovery = std::max(0, target.stats.attributes.combat.fasterHitRecovery);
         const int faster = recovery > 0 ? 120 * recovery / (120 + recovery) : 0;
         monster.hitFlash = monster.hitRecoveryDuration = *duration * 100.f / float(50 + faster);
@@ -220,6 +228,8 @@ void Simulation::recoverUnit(EntityId defender, EntityId attacker, float damage,
         monster.nestSpawnPosition.reset();
         monster.skill2Remaining = monster.skill2Duration = 0;
         monster.aiCorpse = {};
+        if (monster.identity.enchantment && monster.identity.enchantment->has(17))
+            monster.pendingUniqueLightningFrame = state_.frame + 2;
         emit(EnemyHit{defender, monster.kind});
     } else if (target.hireling) {
         const auto source = combatUnit(attacker);
@@ -272,8 +282,10 @@ float Simulation::dealDamage(const DamageRequest &request) {
     }
     const bool purePoison = channels[size_t(MonsterDamageType::Poison)] > 0 &&
         std::none_of(channels.begin(), channels.end() - 1, [](float value) { return value > 0; });
-    if (request.softHit && target.alive() && target.monster && dealt > 0)
+    if (request.softHit && target.alive() && target.monster && dealt > 0) {
         target.monster->hitDisplay = 4.f / 25.f;
+        if (target.monster->hitFlash <= 0) triggerMonsterLightning(*target.monster);
+    }
     if (request.hitRecovery && !purePoison)
         recoverUnit(target.id, request.attacker, dealt,
             request.type != MonsterDamageType::Physical ||

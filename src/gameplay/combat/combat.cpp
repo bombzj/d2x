@@ -31,14 +31,9 @@ void Simulation::damageEnemy(Enemy &enemy, float amount, EntityId source, float 
 }
 void Simulation::onMonsterDamaged(Enemy &enemy, const DamageRequest &request, float dealt) {
     if (dealt <= 0) return;
-    const auto type = request.type;
     const auto source = request.attacker;
-    if (enemy.identity.enchantment && enemy.identity.enchantment->skillEffectsEnabled) {
+    if (enemy.identity.enchantment) {
         const auto &mods = *enemy.identity.enchantment;
-        if (enemy.hp > 0 && type != MonsterDamageType::Poison &&
-            request.permission != DamagePermission::ExistingEffect && mods.has(17) &&
-            !enemy.pendingUniqueLightningFrame)
-            enemy.pendingUniqueLightningFrame = state_.frame + 2;
         if (enemy.hp == 0 && (mods.has(9) || mods.has(18)))
             enemy.deathEnchantmentFrame = state_.frame + 4;
     }
@@ -127,6 +122,7 @@ void Simulation::meleeDamage(EntityId defender, const WeaponDamage &weapon) {
 void Simulation::updateMissiles(float dt) {
     auto &area = state_.area;
     std::vector<Missile> spawned;
+    updatingMissiles_ = true;
     for (auto &m : area.missiles) {
         if (m.frozenOrb) { advanceFrozenOrb(m, spawned); continue; }
         if (m.blizzard) { advanceBlizzard(m, spawned); continue; }
@@ -214,7 +210,10 @@ void Simulation::updateMissiles(float dt) {
         } else advance(m.pos + m.velocity * dt);
     }
     std::erase_if(area.missiles, [](const Missile &m) { return m.remaining <= 0; });
+    updatingMissiles_ = false;
     for (auto &missile : spawned) area.missiles.push_back(std::move(missile));
+    for (auto &missile : deferredMonsterMissiles_) area.missiles.push_back(std::move(missile));
+    deferredMonsterMissiles_.clear();
     std::erase_if(area.novaHitUntil, [this](const auto &entry) { return entry.second <= state_.time; });
 }
 } // namespace d2x

@@ -25,6 +25,7 @@ class SceneAssets {
         const MonsterRecord *actor = nullptr;
         size_t shield = 0;
         bool base = false;
+        int paletteOverride = -1;
     };
     std::map<std::string, MonsterArtSource, std::less<>> monsterArtSources;
     std::map<MonsterKind, MonsterArtSource> baseMonsterArt;
@@ -32,6 +33,7 @@ class SceneAssets {
     mutable std::map<MonsterKind, std::map<std::string, GpuAnimation>> monsterAnimations;
     mutable std::map<std::string, std::map<std::string, GpuAnimation>, std::less<>>
         monsterVariantAnimations;
+    mutable std::map<std::string, std::vector<int>, std::less<>> elitePaletteChoices_;
     void loadProps(const Region &region);
     void indexMonsterArt(const GameSession &session);
     void loadMonsterActor(const GameSession &session, const MonsterArtSource &source,
@@ -152,7 +154,8 @@ class SceneAssets {
     const std::map<std::string, GpuAnimation> &monsterAnimationSet(const GameSession &session,
                                                                    std::string_view monsterClass,
                                                                    MonsterKind kind,
-                                                                   int summonShield) const;
+                                                                   int summonShield,
+                                                                   const MonsterIdentity *identity = nullptr) const;
     // Region terrain uploads on first draw, and prop art on first sighting.
     const std::vector<Sprite> &regionTileSprites(size_t index) const;
     void ensurePropArt(const WorldObject &object) const;

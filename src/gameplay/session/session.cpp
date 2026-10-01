@@ -38,6 +38,8 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
     simulation_->freezeDeathState_ = content_.states.at("freeze").definition;
     simulation_->shatterDeathState_ = content_.states.at("shatter").definition;
     simulation_->uninterruptableState_ = content_.states.at("uninterruptable").definition.id;
+    simulation_->attractState_ = content_.states.at("attract").definition.id;
+    simulation_->preventHealState_ = content_.states.at("preventheal").definition.id;
     simulation_->noMultiShotMissiles_ = content_.noMultiShotMissiles;
     simulation_->unspreadMultiShotMissiles_ = content_.unspreadMultiShotMissiles;
     simulation_->state_.player.name = std::move(characterName);
@@ -145,7 +147,7 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
         auto modifiers = owner
             ? inheritedMonsterEnchantment(content_, *record, *base, state().population.difficulty, *owner->identity.enchantment)
             : rollMonsterEnchantment(content_, *record, *base, state().population.difficulty,
-                                     enemy.combatRandom, enemy.identity.rank, true, false);
+                                     enemy.combatRandom, enemy.identity.rank, true, false, enemy.identity.championVariantAllowed);
         int64_t life = int64_t(enemy.maxHp * 256.f);
         life += life * modifiers.lifePercent / 100;
         life = life * modifiers.lifeScalePercent / 100;

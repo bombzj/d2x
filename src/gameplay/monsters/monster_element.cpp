@@ -19,8 +19,8 @@ std::optional<MonsterDamageType> damageType(std::string_view type) {
     return std::nullopt;
 }
 } // namespace
-void Simulation::applyMonsterElements(Enemy &enemy, const MonsterNormalCombat &combat, int mode, EntityId defender, bool recovery) {
-    auto target = combatUnit(defender);
+void Simulation::prepareMonsterElements(Enemy &enemy, const MonsterNormalCombat &combat, int mode, DamageRequest &hit, int sourceDamage) {
+    auto target = combatUnit(hit.defender);
     if (!target.alive()) return;
     for (const auto &slot : combat.elements) {
         if (!slot || slot->mode != (mode == 2 ? "A2" : "A1")) continue;
@@ -31,12 +31,14 @@ void Simulation::applyMonsterElements(Enemy &enemy, const MonsterNormalCombat &c
         if (slot->type == "mana") {
             if (target.mana) *target.mana = std::max(0.f, *target.mana - float(value));
         } else if (slot->type == "pois") {
-            applyPoison(defender, float(10 * value * 25) / 256.f, float(2 * slot->durationFrames) / 25.f, enemy.id);
+            applyPoison(hit.defender, float(int64_t(10 * value) * sourceDamage / 128) * 25.f / 256.f,
+                float(2 * slot->durationFrames) / 25.f, enemy.id);
         } else {
-            const float chill = slot->type == "cold" ? float(slot->durationFrames) / 25.f *
+            const float chill = slot->type == "cold" ? float(slot->durationFrames * sourceDamage / 128) / 25.f *
                 float(std::clamp(100 - unitResistance(target, MonsterDamageType::Cold), 0, 200)) / 100.f *
                 (target.stats.attributes.combat.halfFreezeDuration ? .5f : 1.f) : 0;
-            dealDamage({enemy.id, defender, float(value), *type, chill, false, recovery});
+            hit.channels[size_t(*type)] += float(int64_t(value) * 256 * sourceDamage / 128) / 256.f;
+            hit.chill += chill;
         }
     }
 }

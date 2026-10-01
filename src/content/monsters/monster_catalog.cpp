@@ -173,6 +173,9 @@ MonsterCatalog::MonsterCatalog(Archives &archives, const DataTable &stats) {
                         extended.number(extra->second, "light-b").value_or(0)};
         m.castsShadow = extended.number(extra->second, "Shadow").value_or(0) != 0;
         m.overlayHeight = extended.number(extra->second, "OverlayHeight").value_or(0);
+        m.uniqueTrans = {extended.number(extra->second, "Utrans").value_or(-1),
+            extended.number(extra->second, "Utrans(N)").value_or(-1),
+            extended.number(extra->second, "Utrans(H)").value_or(-1)};
         m.collisionSize = extended.number(extra->second, "SizeX").value_or(0);
         m.spawnCollision = extended.number(extra->second, "spawnCol").value_or(0);
         m.hitClass = extended.number(extra->second, "HitClass").value_or(0);

@@ -39,6 +39,7 @@ void addStat(std::string_view stat, int value, CombatModifiers &m) {
     else if (stat == "maxpoisonresist") target = &m.poisonMaxResist;
     else if (stat == "maxmagicresist") target = &m.magicMaxResist;
     else if (stat == "damageresist") target = &m.physicalResist;
+    else if (stat == "curse_resistance") target = &m.curseResistance;
     else if (stat == "magicresist") target = &m.magicResist;
     else if (stat == "normal_damage_reduction") target = &m.flatPhysicalReduction;
     else if (stat == "magic_damage_reduction") target = &m.flatMagicReduction;

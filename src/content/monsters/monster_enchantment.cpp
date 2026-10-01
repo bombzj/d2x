@@ -53,6 +53,8 @@ MonsterAura aura(const ClassicData &data, int skill, int rank, const std::map<in
         return std::min(high, low + (high - low) * 110 * rank / (rank + 6) / 100);
     };
     auto evaluate = [&](std::string_view formula) {
+        if (formula.size() >= 2 && formula.front() == '"' && formula.back() == '"')
+            formula = formula.substr(1, formula.size() - 2);
         if (formula == "ln12") return linear(1);
         if (formula == "ln34") return linear(3);
         if (formula == "ln56") return linear(5);
@@ -213,7 +215,7 @@ bool monsterShrineEligible(const ClassicData &data, const MonsterRecord &monster
 }
 MonsterEnchantment rollMonsterEnchantment(const ClassicData &data, const MonsterRecord &monster,
     const MonsterCombatProfile &base, int difficulty, uint64_t &random, MonsterRank &rank,
-    bool preserveRank, bool enableSkillEffects) {
+    bool preserveRank, bool enableSkillEffects, bool championVariantAllowed) {
     const auto &mods = data.tables.at("monumod"), &stats = data.tables.at("monstats");
     const auto &extra = data.tables.at("monstats2"), &types = data.tables.at("montype");
     const auto extraRow = namedRow(extra, "Id", stats.value(monster.sourceRow, "MonStatsEx"));
@@ -234,7 +236,8 @@ MonsterEnchantment rollMonsterEnchantment(const ClassicData &data, const Monster
         pending.emplace_back(types.value(row, "equiv1"));
         pending.emplace_back(types.value(row, "equiv2"));
     }
-    for (int pick = 0; pick < (champion ? 1 : difficulty + 1); ++pick) {
+    if (champion && !championVariantAllowed) result.ids.push_back(16);
+    for (int pick = 0; pick < (champion ? championVariantAllowed ? 1 : 0 : difficulty + 1); ++pick) {
         std::vector<std::pair<int, unsigned>> candidates;
         unsigned total = 0;
         for (size_t row = 0; row < mods.rows().size(); ++row) {
@@ -288,7 +291,7 @@ MonsterEnchantment rollMonsterEnchantment(const ClassicData &data, const Monster
             break;
         case 6: result.velocityPercent += fast(); break;
         case 7:
-            if (enableSkillEffects) result.curse = aura(data, 66, level / 5 + 1);
+            result.curse = aura(data, 66, level / 5 + 1);
             break;
         case 8:
         case 27:
@@ -389,6 +392,24 @@ MonsterCombatProfile enchantedMonsterCombat(MonsterCombatProfile result, const M
     return result;
 }
 void loadMonsterEnchantmentResources(ClassicData &data, Archives &archives) {
+    auto fragments = [&](const char *tableName, std::vector<std::string> &destination) {
+        const DataTable table(archives.read(std::string("data/global/excel/") + tableName + ".txt"));
+        for (size_t row = 0; row < table.rows().size(); ++row) {
+            const auto found = data.itemStrings.find(table.value(row, "Name"));
+            if (found != data.itemStrings.end() && !found->second.empty()) destination.push_back(found->second);
+        }
+    };
+    fragments("uniqueprefix", data.monsterNamePrefixes);
+    fragments("uniquesuffix", data.monsterNameSuffixes);
+    for (const auto &[id, key] : std::vector<std::pair<int, const char *>>{
+        {5, "uniquextrastrong"}, {6, "uniqueextrafast"}, {7, "uniquecursed"},
+        {8, "uniquemagicresistance"}, {9, "uniquefireenchanted"}, {17, "monsteruniqueprop2"},
+        {18, "monsteruniqueprop1"}, {25, "monsteruniqueprop3"}, {26, "monsteruniqueprop5"},
+        {27, "monsteruniqueprop4"}, {28, "monsteruniqueprop6"}, {29, "monsteruniqueprop7"},
+        {30, "monsteruniqueprop9"}, {16, "Champion"}, {36, "champghostlyX"},
+        {37, "champfanaticX"}, {38, "champpossessedX"}, {39, "champberserkX"}})
+        if (const auto found = data.itemStrings.find(key); found != data.itemStrings.end())
+            data.monsterModifierNames.emplace(id, found->second);
     const auto &missiles = data.tables.at("missiles");
     for (size_t row = 0; row < missiles.rows().size(); ++row) {
         const auto id = missiles.number(row, "Id");
@@ -406,6 +427,10 @@ void loadMonsterEnchantmentResources(ClassicData &data, Archives &archives) {
         entry.spec.sourceId = 0;
         entry.spec.missileId = id;
         entry.spec.missileVelocity = float(number(missiles, row, "Vel"));
+        if (id == 194) {
+            const auto frostNova = namedRow(missiles, "Missile", "frostnova");
+            entry.spec.missileVelocity = float(number(missiles, frostNova, "Vel"));
+        }
         entry.spec.missileLifetime = entry.visual.lifetime;
         entry.spec.missileNextDelay = number(missiles, row, "NextDelay");
         entry.spec.missileAcceleration = number(missiles, row, "Accel");
@@ -415,5 +440,44 @@ void loadMonsterEnchantmentResources(ClassicData &data, Archives &archives) {
         entry.killOnHit = number(missiles, row, "CollideKill") != 0;
         data.monsterSpecialMissiles.emplace(id, std::move(entry));
     }
+}
+std::string monsterDisplayName(const ClassicData &data, const MonsterIdentity &identity, std::string_view species) {
+    if (!identity.enchantment) return std::string(species);
+    const auto &mods = *identity.enchantment;
+    if (identity.rank == MonsterRank::Unique && !data.monsterNamePrefixes.empty() && !data.monsterNameSuffixes.empty()) {
+        uint64_t random = initialRandom(mods.nameSeed);
+        const auto &prefix = data.monsterNamePrefixes[limitedRandom(random, unsigned(data.monsterNamePrefixes.size()))];
+        const auto &suffix = data.monsterNameSuffixes[limitedRandom(random, unsigned(data.monsterNameSuffixes.size()))];
+        return prefix + " " + suffix;
+    }
+    if (identity.rank == MonsterRank::Champion) {
+        const int variant = mods.ids.empty() ? 16 : mods.ids.front();
+        const auto label = data.monsterModifierNames.find(variant);
+        if (label != data.monsterModifierNames.end()) {
+            const auto format = data.itemStrings.find("ChampionFormatX");
+            std::string title = format != data.itemStrings.end() ? format->second : "%0 %1";
+            auto replace = [&](std::string_view token, std::string_view text) {
+                const auto position = title.find(token);
+                if (position != std::string::npos) title.replace(position, token.size(), text);
+            };
+            replace("%0", label->second);
+            replace("%1", species);
+            return title;
+        }
+    }
+    return std::string(species);
+}
+std::string monsterModifierDescription(const ClassicData &data, const MonsterIdentity &identity) {
+    std::string result;
+    if (identity.rank == MonsterRank::Minion) {
+        if (const auto found = data.itemStrings.find("minion"); found != data.itemStrings.end()) return found->second;
+    }
+    if (!identity.enchantment || identity.rank == MonsterRank::Champion) return result;
+    for (int id : identity.enchantment->ids)
+        if (const auto found = data.monsterModifierNames.find(id); found != data.monsterModifierNames.end()) {
+            if (!result.empty()) result += " / ";
+            result += found->second;
+        }
+    return result;
 }
 } // namespace d2x

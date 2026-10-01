@@ -381,7 +381,7 @@ void SceneView::drawActors(Vec mouse) const {
                 const auto &e = *monster.enemy;
                 const auto &animations = assets_.monsterAnimationSet(
                     session_, e.identity.monster, e.kind,
-                    e.allegiance.role == CombatRole::Summon ? e.summonShield : 0);
+                    e.allegiance.role == CombatRole::Summon ? e.summonShield : 0, &e.identity);
                 const auto *deathTiming = session_.monsterContent().motion(e.kind, "dt");
                 std::string mode = e.hp <= 0 ? (animations.contains("dd") && deathTiming &&
                                                    e.deathAge >= deathTiming->duration ? "dd" : "dt")
@@ -452,10 +452,12 @@ void SceneView::drawActors(Vec mouse) const {
                     const int height = record ? record->overlayHeight - 1 : 0;
                     drawUnitSpellOverlays(e.id, monster.position, true, e.hp > 0 ? &e.combatEffects : nullptr, height);
                     if (e.hp > 0) drawCombatStateOverlays(e.combatEffects, item.p, height, true);
+                    Color monsterColor = e.hitDisplay > 0 ? Color{255, 175, 155, 255} :
+                        (e.chill > 0 || e.freeze > 0) ? Color{115, 175, 255, 255} : WHITE;
+                    if (e.hp > 0 && e.identity.enchantment && e.identity.enchantment->has(36))
+                        monsterColor.a = 160;
                     drawSelectableSprite(image, item.p, e.id == hotEnemy,
-                                         e.hitDisplay > 0 ? Color{255, 175, 155, 255}
-                                         : (e.chill > 0 || e.freeze > 0) ? Color{115, 175, 255, 255}
-                                                        : WHITE);
+                                         monsterColor);
                     if (e.hp > 0) drawCombatStateOverlays(e.combatEffects, item.p, height, false);
                     drawUnitSpellOverlays(e.id, monster.position, false, e.hp > 0 ? &e.combatEffects : nullptr, height);
                 }

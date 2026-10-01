@@ -15,6 +15,12 @@ void Simulation::updateAuras() {
         auto apply = [&](CombatUnit target, const CombatStateDefinition &state, bool owner) {
             if (state.id < 0) return;
             if (auraEligible_ && !auraEligible_(target, false)) return;
+            if (aura.skill == 123 && !owner) {
+                const AuraDefinition *ownAura = target.player && target.player->aura
+                    ? &target.player->aura->definition : target.monster && target.monster->identity.enchantment &&
+                        target.monster->identity.enchantment->aura ? &*target.monster->identity.enchantment->aura : nullptr;
+                if (ownAura && ownAura->skill == aura.skill && ownAura->rank > aura.rank) return;
+            }
             for (const auto &effect : target.effects->entries())
                 if (effect.activeAt(state_.frame) && effect.spec.state.id == state.id &&
                     effect.spec.source.definition == aura.skill && effect.spec.source.level > aura.rank) return;
@@ -56,7 +62,15 @@ void Simulation::updateAuras() {
                 reduce(effect.modifiers.coldResist, MonsterDamageType::Cold);
                 reduce(effect.modifiers.lightningResist, MonsterDamageType::Lightning);
             }
-            if (owner) effect.modifiers.combat.damagePercent += aura.ownerDamageBonus;
+            if (owner && source.player) effect.modifiers.combat.damagePercent += aura.ownerDamageBonus;
+            if (aura.skill == 122 && !owner)
+                for (const auto &existing : target.effects->entries())
+                    if (existing.activeAt(state_.frame) && existing.spec.state.id == state.id &&
+                        existing.spec.source.definition == aura.skill && existing.spec.source.level == aura.rank &&
+                        existing.spec.source.entity == target.id) {
+                        effect.modifiers.combat.damagePercent = existing.spec.modifiers.combat.damagePercent;
+                        effect.source.entity = target.id;
+                    }
             const auto removed = target.effects->apply(std::move(effect), state_.frame).removed;
             if (target.player) combatEffectsChanged(removed);
         };

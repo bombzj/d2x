@@ -39,6 +39,7 @@ EffectApplication CombatEffectSet::apply(CombatEffectSpec spec, EffectFrame now)
                     existing.expiresAt = spec.duration ? std::optional<EffectFrame>{now + *spec.duration} : std::nullopt;
                     existing.spec.modifiers = std::move(spec.modifiers);
                     existing.spec.duration = spec.duration;
+                    existing.spec.source = spec.source;
                     return {existing.handle, {}};
                 }
             }

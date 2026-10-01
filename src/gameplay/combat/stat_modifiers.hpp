@@ -58,6 +58,7 @@ struct CombatModifiers {
     bool preventPoison = false, preventBurn = false;
     int reducedPrices = 0;
     int poisonLengthResist = 0;
+    int curseResistance = 0;
     int replenishLife = 0, manaRecovery = 0, lifeOnKill = 0, manaOnKill = 0;
     int allSkills = 0;
     std::map<int, int> classSkills, singleSkills, nonClassSkills, tabSkills;

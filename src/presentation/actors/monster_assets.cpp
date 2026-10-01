@@ -1,6 +1,8 @@
 #include "gameplay/session/session.hpp"
 #include "presentation/scene_assets.hpp"
 #include "resources/monster_palshift.hpp"
+#include "core/random.hpp"
+#include <algorithm>
 
 namespace d2x {
 void SceneAssets::indexMonsterArt(const GameSession &session) {
@@ -24,7 +26,8 @@ void SceneAssets::indexMonsterArt(const GameSession &session) {
     }
 }
 const std::map<std::string, GpuAnimation> &SceneAssets::monsterAnimationSet(
-    const GameSession &session, std::string_view monsterClass, MonsterKind kind, int summonShield) const {
+    const GameSession &session, std::string_view monsterClass, MonsterKind kind, int summonShield,
+    const MonsterIdentity *identity) const {
     const std::string key = std::string(monsterClass) +
                             (summonShield > 0 ? "#sh" + std::to_string(summonShield) : std::string{});
     auto source = monsterArtSources.find(key);
@@ -40,6 +43,43 @@ const std::map<std::string, GpuAnimation> &SceneAssets::monsterAnimationSet(
             loadMonsterActor(session, base->second, target);
         }
         return target;
+    }
+    if (identity && identity->enchantment &&
+        (identity->rank == MonsterRank::Champion || identity->rank == MonsterRank::Unique)) {
+        const auto &actor = *source->second.actor;
+        auto [choices, inserted] = elitePaletteChoices_.try_emplace(std::string(monsterClass));
+        if (inserted) {
+            const std::string path = "data/global/monsters/" + normalize(actor.token) + "/cof/palshift.dat";
+            if (archives_.contains(path)) {
+                const auto data = archives_.read(path);
+                if (data.size() % 256 == 0 && actor.transLevel >= 0 &&
+                    size_t(actor.transLevel + 2) < data.size() / 256) {
+                    const auto normal = data.begin() + (actor.transLevel + 2) * 256;
+                    for (size_t index = 2; index < data.size() / 256; ++index) {
+                        const auto candidate = data.begin() + index * 256;
+                        if (data[index * 256] != 0 || std::equal(candidate, candidate + 256, normal)) continue;
+                        const bool duplicate = std::any_of(choices->second.begin(), choices->second.end(), [&](int palette) {
+                            return std::equal(candidate, candidate + 256, data.begin() + (palette + 2) * 256);
+                        });
+                        if (!duplicate) choices->second.push_back(int(index) - 2);
+                    }
+                }
+            }
+        }
+        if (!choices->second.empty()) {
+            uint64_t random = initialRandom(identity->enchantment->nameSeed);
+            const int configured = actor.uniqueTrans.at(size_t(session.state().population.difficulty));
+            const int palette = configured >= 0 && configured != 255 &&
+                std::find(choices->second.begin(), choices->second.end(), configured) != choices->second.end()
+                ? configured : choices->second[limitedRandom(random, unsigned(choices->second.size()))];
+            auto &target = monsterVariantAnimations[key + "#elite" + std::to_string(palette)];
+            if (target.empty()) {
+                auto art = source->second;
+                art.paletteOverride = palette;
+                loadMonsterActor(session, art, target);
+            }
+            return target;
+        }
     }
     auto &target = source->second.base ? monsterAnimations[source->second.kind]
                                       : monsterVariantAnimations[source->first];
@@ -60,7 +100,7 @@ void SceneAssets::loadMonsterActor(const GameSession &session, const MonsterArtS
                              "/cof/palshift.dat";
     std::optional<std::array<uint8_t, 256>> colors;
     if (archives_.contains(palettePath))
-        colors = monsterPalshift(archives_.read(palettePath), actor.transLevel);
+        colors = monsterPalshift(archives_.read(palettePath), entry.paletteOverride >= 0 ? entry.paletteOverride : actor.transLevel);
     else if (actor.transLevel != 0)
         throw std::runtime_error("Monster TransLvl requires missing palshift.dat: " + actor.id);
     std::array<const char *, 16> equipment;

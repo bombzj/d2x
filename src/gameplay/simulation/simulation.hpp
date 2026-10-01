@@ -94,9 +94,13 @@ class Simulation {
     int monsterFreezeDivisor_ = 1;
     CombatStateDefinition freezeDeathState_, shatterDeathState_;
     int uninterruptableState_ = -1;
+    int attractState_ = -1;
+    int preventHealState_ = -1;
     int monsterColdDivisor_ = 1;
     std::function<int(const CombatUnit &)> unitColdEffect_;
     void updateAuras();
+    void applyMonsterCurse(Enemy &enemy, EntityId defender);
+    void triggerMonsterLightning(Enemy &enemy);
     void reflectThorns(EntityId attacker, EntityId defender, float physicalDamage);
     void applyAuraKnockback(EntityId attacker, EntityId defender);
     bool advanceAuraKnockback(Enemy &enemy, float dt);
@@ -152,7 +156,8 @@ class Simulation {
     void updatePlayer(float dt, Vec keyboard);
     void updateMonsters(float dt);
     void updateMonsterEnchantments();
-    void applyMonsterEnchantmentHit(Enemy &enemy, EntityId defender = {}, bool recovery = true);
+    void prepareMonsterEnchantmentHit(Enemy &enemy, DamageRequest &hit, int sourceDamage);
+    void updateMonsterSpectralDamage(Enemy &enemy);
     void launchMonsterEnchantmentMissiles(Enemy &enemy, int missileId);
     bool tryMonsterTeleport(Enemy &enemy);
     std::function<std::optional<MonsterMissileCast>(int, int)> monsterSpecialMissile_;
@@ -173,9 +178,11 @@ class Simulation {
                                          std::span<const MonsterSpawn> queued);
     void activateSpiderWeb(Enemy &enemy);
     void leaveSpiderWeb(Enemy &enemy, float moved);
-    void applyMonsterElements(Enemy &enemy, const MonsterNormalCombat &combat, int mode,
-                                EntityId defender = {}, bool recovery = true);
+    void prepareMonsterElements(Enemy &enemy, const MonsterNormalCombat &combat, int mode,
+                                DamageRequest &hit, int sourceDamage);
     void updateMissiles(float dt);
+    bool updatingMissiles_ = false;
+    std::vector<Missile> deferredMonsterMissiles_;
     void launchFrozenOrb(PlayerState &player, const SkillCastSpec &skill, Vec target);
     void advanceFrozenOrb(Missile &missile, std::vector<Missile> &spawned);
     void spawnFrozenOrbBolt(const Missile &orb, Vec target, bool nova, std::vector<Missile> &spawned);

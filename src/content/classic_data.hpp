@@ -54,6 +54,8 @@ struct ClassicData {
     ShrineCatalog shrines;
     std::map<int, MonsterSpecialMissile> monsterSpecialMissiles;
     std::set<int> noMultiShotMissiles, unspreadMultiShotMissiles;
+    std::vector<std::string> monsterNamePrefixes, monsterNameSuffixes;
+    std::map<int, std::string> monsterModifierNames;
     std::map<int, int> teleportByLevel;
     std::array<int, 3> staticFieldMinimum{};
     std::array<int, 3> monsterFreezeDivisor{};

@@ -208,8 +208,10 @@ class Planner {
         int count = random_.between(low, high);
         for (int i = 0; minion && i < count; ++i)
             if (add(*minion, *leader, 4, rank == MonsterRank::Champion ? rank : MonsterRank::Minion, origin,
-                    key + ".minion." + std::to_string(i)) && rank != MonsterRank::Champion)
-                result_.spawns.back().identity.ownerSpawnKey = key + ".leader";
+                    key + ".minion." + std::to_string(i))) {
+                if (rank == MonsterRank::Champion) result_.spawns.back().identity.championVariantAllowed = false;
+                else result_.spawns.back().identity.ownerSpawnKey = key + ".leader";
+            }
     }
     const MonsterRecord *classVariant(const std::string &base) {
         if (!level_)

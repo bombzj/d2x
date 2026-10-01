@@ -1,6 +1,7 @@
 #include "gameplay/session/session.hpp"
 #include "presentation/scene_view.hpp"
 #include "quest_panel.hpp"
+#include "content/monsters/monster_enchantment.hpp"
 #include <algorithm>
 #include <cmath>
 namespace d2x {
@@ -188,7 +189,7 @@ void SceneView::draw(Vec mouse) const {
             const auto key = unique ? unique->name : record ? record->name : std::string{};
             const auto name = strings.find(key);
             if (name == strings.end() || name->second.empty()) continue;
-            const auto &title = name->second;
+            const auto title = unique ? name->second : monsterDisplayName(session_.content(), identity, name->second);
             Color titleColor = WHITE;
             if (identity.rank == MonsterRank::Champion)
                 titleColor = {105, 105, 255, 255};
@@ -204,6 +205,10 @@ void SceneView::draw(Vec mouse) const {
             DrawRectangle(left, 22, int(width * std::clamp(enemy.hp / std::max(1.f, enemy.maxHp), 0.f, 1.f)),
                           20, {191, 6, 6, 64});
             painter_.centered(title, 24, fontSize, titleColor);
+            const auto description = monsterModifierDescription(session_.content(), identity);
+            int descriptionSize = 12;
+            while (descriptionSize > 1 && painter_.measure(description, descriptionSize) > W - 40) --descriptionSize;
+            if (!description.empty()) painter_.centered(description, 45, descriptionSize, titleColor);
             break;
         }
     }

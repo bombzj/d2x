@@ -113,7 +113,13 @@ void Simulation::updateMonsters(float dt) {
                 if (enemy.attackImpact <= 0) {
                     enemy.attackImpact = -1;
                     if (enemy.teleportTarget) {
-                        if (grid_->walkable(*enemy.teleportTarget, movementRule(enemy))) enemy.pos = *enemy.teleportTarget;
+                        const int size = monsterSize_ ? monsterSize_(enemy) : 2;
+                        bool clear = grid_->walkable(*enemy.teleportTarget, {0x3c01, size});
+                        for (const auto &unit : combatUnits())
+                            if (unit.id != enemy.id && unit.alive() &&
+                                meleeDistance(*enemy.teleportTarget, size, *unit.position, unit.stats.collisionSize) <= 0)
+                                clear = false;
+                        if (clear) enemy.pos = *enemy.teleportTarget;
                         enemy.teleportTarget.reset();
                     }
                     else if (enemy.attackMode == 3 && monsterResurrection_ &&
