@@ -9,6 +9,11 @@ namespace {
 CharacterModifiers activeModifiers(const PlayerState &player, EffectFrame now) {
     return player.combatEffects.modifiers(now);
 }
+void applyPassiveRating(CharacterModifiers &modifiers, const PlayerState &player, const SkillCatalog &skills) {
+    for (const auto &[id, skill] : skills.skills)
+        if (const auto rank = player.skillRanks.find(id); rank != player.skillRanks.end())
+            modifiers.combat.attackRatingPercent += rank->second * skill.passiveAttackRatingPerBaseRank;
+}
 }
 EquipmentActor GameSession::equipmentActor() const {
     return equipmentActor(state().player);
@@ -41,6 +46,7 @@ void GameSession::refreshCharacter(bool fillGains) {
                              base.blockFactor, player.weaponSet};
     auto modifiers = resolveEquipmentModifiers(content_, inventory_, playerContainers_, baseActor);
     mergeCharacterModifiers(modifiers, effects);
+    applyPassiveRating(modifiers, player, content_.skills);
     auto current = deriveCharacterAttributes(characterDefinition_, player.level, player.allocated,
                                              modifiers, simulation_->resistancePenalty_);
     EquipmentActor actor{characterDefinition_.code, current.strength, current.dexterity, player.level,

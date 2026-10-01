@@ -105,11 +105,18 @@ MonsterAura aura(const ClassicData &data, int skill, int rank) {
 }
 }
 void loadAuraSkills(ClassicData &data) {
-    for (int skill : {98}) {
+    for (int skill : {98, 108}) {
         const auto definition = aura(data, skill, 1);
         if (definition.periodFrames < 5 || definition.state.id < 0 || definition.ownerState.id < 0)
             throw std::runtime_error("Original aura lacks state or periodic data");
         data.skills.skills.at(skill).auraImplemented = true;
+        if (skill == 108) {
+            const auto &table = data.tables.at("skills");
+            const auto row = numberedRow(table, "Id", skill);
+            if (table.value(row, "passivecalc1") != "skill('Blessed Aim'.blvl) * par8")
+                throw std::runtime_error("Unsupported original Blessed Aim passive formula");
+            data.skills.skills.at(skill).passiveAttackRatingPerBaseRank = number(table, row, "Param8");
+        }
     }
 }
 std::optional<AuraDefinition> resolveAura(const ClassicData &data, int skill, int rank) {

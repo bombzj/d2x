@@ -29,6 +29,7 @@ struct SkillRecord {
     std::string animationMode;
     std::optional<SkillSpec> spell;
     bool auraImplemented = false;
+    int passiveAttackRatingPerBaseRank = 0;
     bool executable() const { return !passive && (auraImplemented || spell || basicAction != BasicSkillAction::None); }
     std::optional<std::pair<int, int>> manaRecoveryPerRank;
     std::optional<std::pair<int, int>> fireMasteryPerRank;
