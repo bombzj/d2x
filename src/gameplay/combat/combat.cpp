@@ -124,6 +124,7 @@ void Simulation::updateMissiles(float dt) {
     std::vector<Missile> spawned;
     updatingMissiles_ = true;
     for (auto &m : area.missiles) {
+        if (m.firewall) { advanceMonsterFirewall(m, spawned); continue; }
         if (m.frozenOrb) { advanceFrozenOrb(m, spawned); continue; }
         if (m.blizzard) { advanceBlizzard(m, spawned); continue; }
         if (m.freezingArea) { advanceGlacialSpike(m, spawned); continue; }
@@ -157,7 +158,9 @@ void Simulation::updateMissiles(float dt) {
             if (m.nextHitDelay > 0) area.novaHitUntil[defender] = state_.time + m.nextHitDelay;
             if (m.monsterAttack && !m.fixedElement) {
                 if (auto *source = findEnemy(m.owner)) {
-                    if (m.monsterAttackMode >= 3) resolveMonsterSpell(*source, m, defender);
+                    if (source->kind == MonsterKind::BloodRaven && m.monsterAttackMode == 4)
+                        resolveMonsterAttack(*source, 1, true, defender);
+                    else if (m.monsterAttackMode >= 3) resolveMonsterSpell(*source, m, defender);
                     else resolveMonsterAttack(*source, m.monsterAttackMode, true, defender);
                 }
             } else if (m.impact) resolveMissileImpact(m, spawned, defender);

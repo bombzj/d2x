@@ -32,6 +32,9 @@ struct WorldObject {
     std::optional<ChestState> chest;
     std::array<int, 8> parameters{};
     float operatedAt = -1;
+    std::optional<uint64_t> towerRewardStart;
+    bool towerRewardOpened = false;
+    std::optional<uint64_t> towerRewardLastFrame;
     float lastDoorOperation = -1;
     int remainingUses = 0;
     int shrineCode = 0;

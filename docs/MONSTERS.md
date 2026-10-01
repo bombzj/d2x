@@ -8,6 +8,22 @@
 
 2026-10-01：复审依据当前源码、当前 `assets/mpq2` 的 Levels／MonStats／MonStats2／DifficultyLevels／MonPreset／SuperUniques，以及固定本地 D2MOO `5596f5c`。以下九项表格保留修复前的审阅证据；当前状态以本节各阶段交接为准，不能继续把旧源码行号视为现状。
 
+### 专属首领与毒系骨灰
+
+2026-10-01：Boneash 的 skmage_pois3 开放真实 SK 原组件／色表／声音、SkeletonMage 决策及 MissA1=skmage1；毒弹 SrcDamage=128 从 MonStats 的 A1 毒属性取得速率与时长，不自造毒系弹体或套火／电伤害。Boneash／Smith／Griswold／Countess 使用已有 SuperUnique 固定词缀、准确直属随从、生命与收益初始化。新增 Smith（5P）、Griswold（GZ）、BloodRaven（CR）原形索引和各自 AnimData／COF；Griswold、BloodRaven 保留 boss 原表等级，仅这两个身份开放已核实的战斗解析，其他 Boss 继续受限。普通 corruptrogue3 不进入女伯爵特殊状态。
+
+铁匠按 Fn098：贴身 A1，非近战以 75+(100−生命百分比)/2 的加法速率持续走近；原表空白的火伤字段不补造。格瑞斯华尔德按 Fn090：贴身 80% A1、非近战 50% 走近，否则等待 10 帧；固定 Mod7 共用成功攻击的伤害加深。女伯爵按 SpecialState13：保存出生锚点，当前房间索引不一致或离家超过 40 时返回，远处异房目标在出生点等待；四个原 DS1 MapAI 节点按顺序以 A1 出手施放，末次施放超过 700 帧重开循环；近战 aip3+10，非近战 aip1 跑近及 aip2 等待。CountessFirewall 由原技能关联 maker=653、fire=331，创建两侧垂直 maker 和中心火焰；maker 速度／7 帧与子火焰 1000 帧、HitShift=1、逐帧定点火伤、原 DCC 均来自 MPQ。
+
+血鸟按 Fn059：保留出生锚点、45／50 格警觉和回家约束、远距接近、每次决策累加 3 的召唤概率及 8+2×难度尝试上限；原随机轴／符号在目标附近选择 Nest 位置。S1 序列 20 帧、第 15 帧召真实 zombie2，复用局部出生检查且召唤单位无经验／掉落；Quick Strike 为原 7 帧 A1 序列、第 6 帧发 raven1，不压缩播放整个 A1 图。射击／绕行／退避沿原概率顺序，走跑及绕行速率由公共动作执行器消费。血鸟和女伯爵尸体禁选；血鸟死亡按 QUESTSFX 在邻房 35 范围的敌对亡灵预约 25–124 帧死亡，埋骨之地任务死亡入口和卡夏奖励资格仍共用现有正式任务链。
+
+任务联动：铁匠不以死亡直接完成交易工具，仍须 8 级、原 Malus 交互、拾取 hdm、交还恰西；格瑞斯华尔德的诅咒／死亡不替代原凯恩囚笼救援。女伯爵使用原固定 TC（包含原符文子表），首次任务完成为原 371 任务箱启动 towerchestspawner 的 400 帧／第 150 帧开启／8 帧金币间隔／范围 5 调度；三轮魔法 TC 和两瓶生命／两瓶法力沿 ObjMode，金币量沿等级规则。参数在内容层类型化，同帧重复命令不重复发金币，任务箱状态只留本局，未增加 D2S 字段。
+
+依据本地 D2MOO 5596f5c：AiThink::Fn064／Fn098／Fn090／SpecialState13／sub_6FCE5520／Fn059，MonsterUnique::SpawnSuperUnique，MonsterSpawn 的 BloodRaven 初始化，SkillMonst::SrvSt49／SrvDo091／SrvSt50／SrvDo092，SkillSor::SrvDo024，MissMode::SrvDo05／06／18，QUESTSFX::Bloodraven／MainHandler，A1Q5::Callback08／SpawnTowerChestMissiles，ObjMode::sub_6FC75EB0 及 Items 的原药剂选择；原数值与图始终读取当前 MPQ，不提交参考表或资源。
+
+普通难度运行证据（seed=210，临时女巫）：五个自然身份均为非替身且有有效 combat；骨灰毒伤 2.9296875 HP/秒、剩余约 7.32 秒；铁匠 154/404 HP 追击速率 106%；格瑞斯华尔德施加 skill66／rank2／state9 伤害加深；女伯爵 aiPhase=4、22 个原火焰、击杀正常 TC、塔楼 stage4，任务箱同帧物品 15→15；铁槌正式拾取后 A1Q3=4。血鸟序列时长 A1=.52／QuickStrike=.28／Nest=.8 秒，真实僵尸召唤、死亡后 A1Q2=3 且召唤僵尸 HP=0；原形截图已查看。最终序列帧、禁选状态及出生范围收尾后复验正常；最后绕行速率修订编译和运行退出码 0，但未观察到该分支，不能记为实机通过。未新增测试脚本／用例／专用程序、未读写角色存档；运行包和提交状态见 [构建](BUILD_AND_SHARE.md)。
+
+适配与未覆盖：原房间 D2Common_10095 的子房间判定以现有 RoomLayout 替代；MapAI／碰撞／maker 连续坐标路径和消费顺序不是原 DRLG／路径逐种子认证。Nest 搜索、血鸟完整技能起手空间许可／客户端声音与死亡闪电演出、火墙随机起帧／衰减／混色、塔楼不可见控制单位／生成器音效和金币自由格搜索仍沿现有执行器适配。未穷举 AI 概率、全体目标、塔楼重访时调度、完整恰西交还／灌注或卡夏领奖，不扩展其他幕／安达利尔。下方旧表的“替身／未解析”状态以本节为准。
+
 ### 已有基型固定金怪
 
 2026-10-01：仅开放 Bishibosh、Bonebreak、Coldcrow、Rakanishu、Treehead WoodFist、Pitspawn Fouldog、Corpsefire、The Cow King 的完整共用实例初始化；其他固定首领／Boss 不因此套普通基型公式。SuperUniques.Class／Mod1–3／MinGrp–MaxGrp／各难度 TC 与名称仍读当前 MPQ。首领保留 SuperUnique 身份，原普通生命先掷骰再应用独特生命百分比、等级 +3／经验五倍／停再生及固定词缀；普通不额外抽随机词缀，噩梦追加一项、地狱两项，沿 MonUMod 原过滤与权重、不重复固定项。直属随从复用 bUnique=false 的强化和收益，不继承主人事件。Stacks=0 的重复同区预设只放一次，重访保留已有区域实例。
@@ -102,10 +118,10 @@ Windows Release 已编译，未新增测试脚本、用例或专用程序。现�
 | Pitspawn Fouldog | `bighead2`／7,18 | 原基型已有；补固定强化与近战／闪电／退避规则 |
 | Corpsefire | `zombie1`／27 | 原基型已有；补固定强化并依赖 Zombie 收尾 |
 | The Cow King | `hellbovine`／8,17 | 原基型已有；补固定强化、随从、牛场任务资格与入口 |
-| Boneash | `skmage_pois3`／8,5,18 | 目前为敌对替身；开放真实骨灰外观／调色／音效、SkeletonMage AI 和原 `MissA1=skmage1` 毒弹，不以现有火／电变体替换 |
-| The Smith | `smith`／5 | 目前为敌对替身；原 Smith AI／外观／A1-A2 及元素、固定强化，接现有铁槌任务 |
-| Griswold | `griswold`／7 | 目前为敌对替身；原 Griswold AI／外观／攻击与诅咒初始化，遵守 boss 级别边界 |
-| The Countess | `corruptrogue3`／9 | 外观已有，自然首领当前无家族 AI；必须接 `AISPECIALSTATE_COUNTESS=13`、原出生点／房间返回与 MapAI 火墙、固定强化及随从，核对原符文 TC／任务宝箱。普通 corruptrogue3 不获得该特殊 AI |
+| Boneash | `skmage_pois3`／8,5,18 | 毒系真实基型／SkeletonMage／skmage1 与固定强化已接，普通毒伤冒烟通过，见专属首领节 |
+| The Smith | `smith`／5 | 原形、Fn098 A1／低生命加速、固定强化与铁槌任务已接；原空火伤不补造 |
+| Griswold | `griswold`／7 | 原形、Fn090、固定诅咒和原表 boss 属性已接；不代替凯恩囚笼救援 |
+| The Countess | `corruptrogue3`／9 | SpecialState13、出生锚点／房间返回／MapAI 火墙、固定强化与 TC／任务箱已接；普通 corruptrogue3 不获得该特殊 AI |
 
 另有 `bloodraven`（BloodRaven AI、`MissA1=raven1`、Nest／Quick Strike）与 `andariel`（Andariel AI、AndrialSpray／AndyPoisonBolt），当前均为敌对替身且专属 AI 未解析。血鸟还需原召唤／技能目标和死亡演出，安达利尔需独立 boss 链；对应本地 Fn059／034。Griswold／Smith 对应 Fn090／098，Countess 对应 SpecialState13，固定首领初始化依据 MonsterUnique。
 

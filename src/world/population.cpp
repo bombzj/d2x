@@ -189,6 +189,11 @@ class Planner {
         auto leader = add(monster, pos, 4, rank, origin, key + ".leader", unique ? unique->id : "");
         if (!leader)
             return;
+        if (unique && unique->id == "The Countess")
+            for (const auto &object : map_.data.objects)
+                if (object.type == 1 && catalog_.preset(map_.data.act, object.id, map_.data.version).id == unique->id)
+                    for (const auto &node : object.path)
+                        result_.spawns.back().skillPositions.push_back({node.x + .5f, node.y + .5f});
         ++result_.eliteGroups;
         int low = 3, high = 6; // Original random unique minion group range.
         if (rank == MonsterRank::Champion) {

@@ -15,6 +15,99 @@ bool Simulation::handleMonsterSpecialAi(Enemy &enemy, const MonsterAiProfile &ai
                                         float distance, bool clear) {
     const Vec targetPosition = monsterTargetPosition(enemy);
     const bool inCombat = monsterMeleeReach(enemy);
+    if (ai.kind == MonsterAiKind::Countess) {
+        const auto *homeRoom = rooms_->room(enemy.aiHome);
+        if (homeRoom != rooms_->room(enemy.pos) || homeRoom != rooms_->room(targetPosition) ||
+            missileDistance(enemy.pos, enemy.aiHome) > 40) {
+            if (missileDistance(enemy.pos, enemy.aiHome) > 0) {
+                monsterStartApproach(enemy, 0, 75, true, enemy.aiHome);
+                return true;
+            }
+            if (distance >= 25) { enemy.aiWait = 10.f / 25.f; return true; }
+        }
+        if (enemy.aiPhase >= int(enemy.skillPositions.size()) && state_.frame - enemy.skillCycleFrame > 700)
+            enemy.aiPhase = 0;
+        if (enemy.aiPhase < int(enemy.skillPositions.size()) && countessFirewall_) {
+            enemy.skillPosition = enemy.skillPositions[size_t(enemy.aiPhase++)];
+            enemy.skillCycleFrame = state_.frame;
+            beginMonsterAttack(enemy, 3);
+            return true;
+        }
+        if (inCombat) {
+            if (monsterAiRandom(enemy) % 100 < unsigned(ai.params[2] + 10)) beginMonsterAttack(enemy, 1);
+            else enemy.aiWait = float(ai.params[1]) / 25.f;
+        } else if (monsterAiRandom(enemy) % 100 < unsigned(ai.params[0]))
+            monsterStartApproach(enemy, 1, 175, true);
+        else enemy.aiWait = float(ai.params[1]) / 25.f;
+        return true;
+    }
+    if (ai.kind == MonsterAiKind::BloodRaven) {
+        auto chance = [&](int percent) { return monsterAiRandom(enemy) % 100 < unsigned(percent); };
+        const int homeDistance = missileDistance(enemy.pos, enemy.aiHome);
+        const int targetHomeDistance = missileDistance(targetPosition, enemy.aiHome);
+        if (distance > 45) { enemy.aiWait = 5.f / 25.f; return true; }
+        if (homeDistance > 50 || targetHomeDistance >= 50) enemy.aiPhase = 1;
+        if (enemy.aiPhase && homeDistance > 5) {
+            monsterStartApproach(enemy, 0, 175, true, enemy.aiHome);
+            return true;
+        }
+        enemy.aiPhase = 0;
+        if (distance > 20 && targetHomeDistance < 50) {
+            monsterStartApproach(enemy, std::max(12, int(distance) / 2) - 1, 175, true);
+            return true;
+        }
+        enemy.aiAdvanceRemaining += 3;
+        if (!inCombat && enemy.aiLoop < 8 + 2 * state_.population.difficulty &&
+            chance(int(enemy.aiAdvanceRemaining))) {
+            const int length = int(monsterAiRandom(enemy) % 15) + 5;
+            int horizontal = 0, vertical = 0;
+            if (monsterAiRandom(enemy) & 1) {
+                horizontal = length;
+                vertical = int(monsterAiRandom(enemy) % unsigned(length));
+            } else {
+                horizontal = int(monsterAiRandom(enemy) % unsigned(length));
+                vertical = length;
+            }
+            if (monsterAiRandom(enemy) & 1) horizontal = -horizontal;
+            if (monsterAiRandom(enemy) & 1) vertical = -vertical;
+            enemy.nestSpawnPosition = Vec{std::floor(targetPosition.x) + horizontal + .5f,
+                                         std::floor(targetPosition.y) + vertical + .5f};
+            enemy.aiAdvanceRemaining = 0;
+            ++enemy.aiLoop;
+            beginMonsterAttack(enemy, 3);
+            return true;
+        }
+        if (distance > 5) {
+            if (chance(5) && targetHomeDistance < 50) {
+                monsterStartApproach(enemy, 11, 175, true);
+                return true;
+            }
+            if (clear && chance(80)) {
+                beginMonsterAttack(enemy, chance(10 * (state_.population.difficulty + 4)) ? 4 : 1);
+                return true;
+            }
+            enemy.movementVelocityPercent = 125;
+            if (monsterStartCircle(enemy, targetPosition, 4, *grid_, movementRule(enemy))) return true;
+        }
+        if (distance < 12 && chance(30) &&
+            monsterStartRetreat(enemy, targetPosition, 12 - int(distance), *grid_, movementRule(enemy))) {
+            enemy.aiRunning = true;
+            return true;
+        }
+        beginMonsterAttack(enemy, 1);
+        return true;
+    }
+    if (ai.kind == MonsterAiKind::Smith || ai.kind == MonsterAiKind::Griswold) {
+        if (inCombat) {
+            if (ai.kind == MonsterAiKind::Smith || monsterAiRandom(enemy) % 100 < 80)
+                beginMonsterAttack(enemy, 1);
+            else enemy.aiWait = 10.f / 25.f;
+        } else if (ai.kind == MonsterAiKind::Smith || monsterAiRandom(enemy) % 100 < 50) {
+            const int health = std::clamp(int(enemy.hp * 100 / enemy.maxHp), 0, 100);
+            monsterStartApproach(enemy, 1, 75 + (ai.kind == MonsterAiKind::Smith ? (100 - health) / 2 : 0), false);
+        } else enemy.aiWait = 10.f / 25.f;
+        return true;
+    }
     if (ai.kind == MonsterAiKind::Arach) {
         const auto action = arachThink(enemy, ai, distance, inCombat);
         if (action == ArachAction::Attack || action == ArachAction::Web) {

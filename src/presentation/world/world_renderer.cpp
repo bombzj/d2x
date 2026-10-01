@@ -391,7 +391,9 @@ void SceneView::drawActors(Vec mouse) const {
                                   : (e.stun > 0 || e.hitFlash > 0) && animations.contains("gh") ? "gh"
                                   : e.skill2Remaining > 0 && animations.contains("s2") ? "s2"
                                   : e.attack > 0 ? (e.attackMode >= 3 ?
-                                                     ((e.kind == MonsterKind::FallenShaman ||
+                                                                                                         (e.kind == MonsterKind::BloodRaven ? (e.attackMode == 3 ? "s1" : "a1") :
+                                                                                                            e.identity.superUnique == "The Countess" ? "a1" :
+                                                                                                            (e.kind == MonsterKind::FallenShaman ||
                                                        e.kind == MonsterKind::Arach) ? "a2" :
                                                       e.kind == MonsterKind::FoulCrowNest ? "s1" : "sc") :
                                                      e.attackMode == 2 ? "a2" : "a1")
@@ -432,6 +434,11 @@ void SceneView::drawActors(Vec mouse) const {
                         e.attackDuration > 0)
                         frame = std::clamp(int((e.attackDuration - e.attack) / e.attackDuration * anim->count),
                                            0, anim->count - 1);
+                    if (e.kind == MonsterKind::BloodRaven && e.attackDuration > 0 && e.attackMode >= 3)
+                        if (const auto *timing = session_.monsterContent().attackTiming(e.kind, e.attackMode);
+                            timing && timing->sequenceFrames > 0)
+                            frame = std::clamp(int((e.attackDuration - e.attack) / e.attackDuration * timing->sequenceFrames),
+                                               0, anim->count - 1);
                     if (mode == "s2" && e.skill2Duration > 0)
                         frame = std::clamp(int((e.skill2Duration - e.skill2Remaining) /
                                                e.skill2Duration * anim->count), 0, anim->count - 1);

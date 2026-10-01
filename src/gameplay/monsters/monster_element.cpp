@@ -19,6 +19,56 @@ std::optional<MonsterDamageType> damageType(std::string_view type) {
     return std::nullopt;
 }
 } // namespace
+void Simulation::launchCountessFirewall(Enemy &enemy) {
+    const auto position = enemy.skillPosition;
+    enemy.skillPosition.reset();
+    if (!position || !countessFirewall_ || safeZone_) return;
+    const auto &definition = *countessFirewall_;
+    auto launch = [&](bool maker, Vec velocity) {
+        Missile missile{ids_.allocate(), enemy.id, *position, velocity,
+            float(maker ? definition.makerFrames : definition.fireFrames) / 25.f,
+            SkillBehavior::None, false, maker ? definition.makerId : definition.fireId};
+        missile.firewall = Missile::FirewallState{definition, maker, 0};
+        missile.combatRandom = childRandom(unitRandom_);
+        state_.area.missiles.push_back(std::move(missile));
+    };
+    const Vec difference = enemy.pos - *position;
+    const Vec heading{-difference.y, difference.x};
+    launch(true, heading.unit() * definition.velocity);
+    launch(true, heading.unit() * -definition.velocity);
+    launch(false, {});
+}
+void Simulation::advanceMonsterFirewall(Missile &missile, std::vector<Missile> &spawned) {
+    auto &firewall = *missile.firewall;
+    const auto &definition = firewall.definition;
+    if (++firewall.elapsedFrames >= (firewall.maker ? definition.makerFrames : definition.fireFrames)) {
+        missile.remaining = 0;
+        return;
+    }
+    missile.age += 1.f / 25.f;
+    missile.remaining = float((firewall.maker ? definition.makerFrames : definition.fireFrames) - firewall.elapsedFrames) / 25.f;
+    if (firewall.maker) {
+        Vec next = missile.pos + missile.velocity * (1.f / 25.f);
+        if (clipMissilePath(missile.missileId, missile.pos, next)) { missile.remaining = 0; return; }
+        if (int(next.x) != int(missile.pos.x) || int(next.y) != int(missile.pos.y)) {
+            Missile fire{ids_.allocate(), missile.owner, {std::floor(next.x) + .5f, std::floor(next.y) + .5f}, {},
+                float(definition.fireFrames) / 25.f, SkillBehavior::None, false, definition.fireId};
+            fire.firewall = Missile::FirewallState{definition, false, 0};
+            fire.combatRandom = childRandom(unitRandom_);
+            spawned.push_back(std::move(fire));
+        }
+        missile.pos = next;
+        return;
+    }
+    for (auto target : combatUnits())
+        if (target.alive() && canAttack(missile.owner, target.id) &&
+            missileUnitIntersection(missile.pos, missile.pos, definition.size, *target.position, target.stats.collisionSize)) {
+            rollRandom(missile.combatRandom);
+            const int damage = definition.minimumDamage + int(uint32_t(missile.combatRandom) %
+                unsigned(definition.maximumDamage - definition.minimumDamage + 1));
+            dealDamage({missile.owner, target.id, float(damage << definition.hitShift) / 256.f, MonsterDamageType::Fire});
+        }
+}
 void Simulation::prepareMonsterElements(Enemy &enemy, const MonsterNormalCombat &combat, int mode, DamageRequest &hit, int sourceDamage) {
     auto target = combatUnit(hit.defender);
     if (!target.alive()) return;

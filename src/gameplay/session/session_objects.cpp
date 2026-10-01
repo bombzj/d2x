@@ -188,6 +188,49 @@ void GameSession::updateObjectTimers() {
     });
     for (auto &region : regions_)
         for (auto &object : region.objects) {
+            if (object.towerRewardStart && region.definition.id == state().area.region &&
+                object.towerRewardLastFrame != state().frame) {
+                object.towerRewardLastFrame = state().frame;
+                if (const auto &reward = monsterContent_.towerReward()) {
+                    const int lifetime = reward->lifetimeFrames;
+                    const int opening = reward->openingFrame;
+                    const int interval = reward->goldInterval;
+                    const int radius = reward->radius;
+                    const int elapsed = int(state().frame - *object.towerRewardStart);
+                    if (elapsed >= lifetime) object.towerRewardStart.reset();
+                    else if (elapsed >= opening) {
+                        if (!object.towerRewardOpened) {
+                            const auto entry = resolveObjectTreasure(content_, worldContent_, region.definition.id,
+                                state().population.difficulty);
+                            std::set<size_t> usedUniques;
+                            for (auto unique : loot_.usedUniques()) usedUniques.insert(size_t(unique));
+                            ChestState chest;
+                            chest.lootSeed = region.objectSeed;
+                            auto plan = planChestLoot(content_, entry, chest, 371, region.objectSeed, usedUniques,
+                                characterDefinition_.code, 0, 0, state().population.difficulty);
+                            if (!plan.deferred.empty()) { simulation_->emit(LootDeferred{object.id, plan.deferred}); continue; }
+                            region.objectSeed = plan.randomState;
+                            auto drops = loot_.settle({object.id, {}, region.definition.id, state().population.difficulty}, std::move(plan));
+                            spawnLoot(drops, region.definition.id, object.pos);
+                            object.towerRewardOpened = true;
+                            object.operatedAt = now;
+                            object.animationMode = object.animationRules[1].enabled ? 1 : 2;
+                            object.interaction = Interaction::None;
+                            region.refreshObjectCollision(now);
+                        }
+                        if ((lifetime - elapsed) % interval == 0) {
+                            const auto entry = resolveObjectTreasure(content_, worldContent_, region.definition.id,
+                                state().population.difficulty);
+                            if (!entry.deferred.empty()) { simulation_->emit(LootDeferred{object.id, entry.deferred}); continue; }
+                            const Vec position = object.pos + Vec{float(int(roll(region.objectSeed, unsigned(2 * radius + 1))) - radius),
+                                float(int(roll(region.objectSeed, unsigned(2 * radius + 1))) - radius)};
+                            const unsigned quantity = unsigned(entry.itemLevel) + roll(region.objectSeed, unsigned(5 * entry.itemLevel));
+                            LootDrop gold{"gld", quantity, {}, unsigned(entry.itemLevel), {}};
+                            spawnLoot(std::span<const LootDrop>(&gold, 1), region.definition.id, position);
+                        }
+                    }
+                }
+            }
             if (object.operateFn == 22 && object.parameters[2] > 0 && object.parameters[0] > 0 &&
                 object.operatedAt >= 0 && now >= object.operatedAt +
                     float(object.parameters[0]) / 25.f) {

@@ -16,7 +16,7 @@ bool magical(ItemQuality quality) {
 LootPlan planChestLoot(const ClassicData &data, const ObjectTreasureEntry &entry,
                       const ChestState &chest, int objectClass, uint64_t &objectSeed,
                       const std::set<size_t> &usedUniques, std::string_view characterClass,
-                      int magicFind, int goldFind) {
+                      int magicFind, int goldFind, int difficulty) {
     LootPlan plan;
     plan.randomState = chest.lootSeed;
     plan.deferred = entry.deferred;
@@ -58,6 +58,12 @@ LootPlan planChestLoot(const ClassicData &data, const ObjectTreasureEntry &entry
         }
     };
     std::optional<DropQuality> quality;
+    if (objectClass == 371) {
+        for (int batch = 0; batch < 3; ++batch) drop(DropQuality::Magic);
+        direct(difficulty == 0 ? "hp1" : "hp3", 2);
+        direct(difficulty == 0 ? "mp1" : "mp3", 2);
+        return plan;
+    }
     if (chest.sparkly) quality = roll(objectSeed, 100) < 5 ? DropQuality::Rare : DropQuality::Magic;
     if (objectClass != 397) {
         if (roll(objectSeed, 100) >= 25 || chest.sparkly || chest.locked) {

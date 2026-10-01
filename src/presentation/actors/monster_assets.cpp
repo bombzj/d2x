@@ -145,7 +145,7 @@ void SceneAssets::loadMonsterActor(const GameSession &session, const MonsterArtS
              std::string_view(mode) == "gh")) continue;
         if (std::string_view(mode) == "rn" &&
             ((kind != MonsterKind::CorruptRogue && kind != MonsterKind::CorruptLancer &&
-              kind != MonsterKind::CorruptArcher) ||
+                            kind != MonsterKind::CorruptArcher && kind != MonsterKind::BloodRaven) ||
              !actor.runMode)) continue;
         if (std::string_view(mode) == "a2" && !content.attackTiming(kind, 2) &&
             !((kind == MonsterKind::FallenShaman || kind == MonsterKind::Arach) &&
@@ -156,7 +156,8 @@ void SceneAssets::loadMonsterActor(const GameSession &session, const MonsterArtS
         if (std::string_view(mode) == "dd" && !actor.deadMode) continue;
         if (std::string_view(mode) == "s2" && (kind != MonsterKind::Fallen || !actor.skill2Mode)) continue;
         if (std::string_view(mode) == "s1" && kind != MonsterKind::FoulCrowNest &&
-            kind != MonsterKind::Fallen && kind != MonsterKind::NecroSkeleton) continue;
+            kind != MonsterKind::Fallen && kind != MonsterKind::NecroSkeleton &&
+            kind != MonsterKind::BloodRaven) continue;
         const auto weapon = content.modeWeapon(kind, mode);
         if (weapon.empty())
             throw std::runtime_error("Monster mode COF missing: " + actor.id + "/" + mode);

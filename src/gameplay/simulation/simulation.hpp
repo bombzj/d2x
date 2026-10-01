@@ -119,6 +119,9 @@ class Simulation {
     std::function<std::optional<MonsterSpell>(const Enemy &, int)> monsterSpell_;
     std::function<std::optional<MonsterResurrection>(const Enemy &)> monsterResurrection_;
     std::function<std::optional<MonsterNest>(const Enemy &)> monsterNest_;
+    std::optional<MonsterFirewall> countessFirewall_;
+    void launchCountessFirewall(Enemy &enemy);
+    void advanceMonsterFirewall(Missile &missile, std::vector<Missile> &spawned);
     std::function<std::optional<MonsterWeb>(const Enemy &)> monsterWeb_;
     std::vector<GameEvent> events_;
     Enemy *findEnemy(EntityId id);

@@ -82,6 +82,10 @@ void Simulation::spawnEnemies(std::span<const MonsterSpawn> spawns) {
         enemy.identity = spawn.identity;
         enemy.kind = spawn.kind;
         enemy.pos = spawn.position;
+        enemy.aiHome = spawn.position;
+        enemy.skillPositions = spawn.skillPositions;
+        enemy.deathUnselectable = enemy.kind == MonsterKind::BloodRaven ||
+                     enemy.identity.superUnique == "The Countess";
         enemy.maxHp = monsterDefinition(enemy.kind).maxLife;
         auto baseIdentity = enemy.identity;
         if (baseIdentity.rank == MonsterRank::Champion || baseIdentity.rank == MonsterRank::Unique ||

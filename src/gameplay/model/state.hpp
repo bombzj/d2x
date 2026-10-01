@@ -140,6 +140,10 @@ struct Enemy {
     bool aiCharged = false;
     float aiAdvanceRemaining = 0;
     int aiPhase = 0, aiLoop = 0;
+    Vec aiHome;
+    std::vector<Vec> skillPositions;
+    EffectFrame skillCycleFrame = 0, questDeathFrame = 0;
+    std::optional<Vec> skillPosition;
     EffectFrame nestLastCastFrame = 0;
     std::optional<Vec> nestSpawnPosition;
     bool noTreasure = false;
@@ -216,6 +220,12 @@ struct Missile {
         int minimumDamage = 0, maximumDamage = 0, coldFrames = 0;
     };
     std::optional<ColdRetaliationState> coldRetaliation = std::nullopt;
+    struct FirewallState {
+        MonsterFirewall definition;
+        bool maker = false;
+        int elapsedFrames = 0;
+    };
+    std::optional<FirewallState> firewall = std::nullopt;
 };
 struct Effect {
     Vec pos;

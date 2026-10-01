@@ -1,5 +1,6 @@
 #include "gameplay/simulation/simulation.hpp"
 #include "gameplay/session/session.hpp"
+#include "core/random.hpp"
 #include <algorithm>
 
 namespace d2x {
@@ -61,6 +62,18 @@ void GameSession::updateBurialQuest(const EnemyDied &death) {
         .at(size_t(state().population.difficulty)).at(questIndex(ActOneQuest::SistersBurialGrounds));
     if (burialAdvanceOnBloodRaven(record))
         simulation_->emit(QuestAdvanced{ActOneQuest::SistersBurialGrounds, record.stage});
+    auto *source = simulation_->findEnemy(death.victim);
+    if (source)
+        for (auto &enemy : simulation_->state_.area.enemies) {
+            const auto *monster = monsterContent_.find(enemy.identity.monster);
+            const int horizontal = int(enemy.pos.x) - int(death.position.x);
+            const int vertical = int(enemy.pos.y) - int(death.position.y);
+            if (enemy.hp > 0 && monster && monster->undead &&
+                simulation_->relation(source->id, enemy.id) == Relation::Allied &&
+                region().map.activation.nearby(source->pos, enemy.pos) &&
+                horizontal * horizontal + vertical * vertical <= 35 * 35)
+                enemy.questDeathFrame = state().frame + 25 + limitedRandom(source->combatRandom, 100);
+        }
 }
 void GameSession::updateTowerQuest(const EnemyDied &death) {
     const auto *countess = monsterContent_.superUnique("The Countess");
@@ -69,8 +82,11 @@ void GameSession::updateTowerQuest(const EnemyDied &death) {
         death.identity.monster != countess->monster) return;
     auto &record = simulation_->state_.player.actOneQuests
         .at(size_t(state().population.difficulty)).at(questIndex(ActOneQuest::ForgottenTower));
-    if (towerAdvance(record, TowerStage::CountessSlain))
+    if (towerAdvance(record, TowerStage::CountessSlain)) {
         simulation_->emit(QuestAdvanced{ActOneQuest::ForgottenTower, record.stage});
+        for (auto &object : regions_.at(current_).objects)
+            if (object.objectClass == 371) object.towerRewardStart = state().frame;
+    }
 }
 
 void GameSession::talkToNpc(EntityId npc) {

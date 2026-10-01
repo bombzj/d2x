@@ -52,6 +52,14 @@ void Simulation::beginMonsterAttack(Enemy &enemy, int forcedMode) {
     emit(EnemyAttacked{enemy.id, enemy.kind, enemy.attackMode});
     if (enemy.attackImpact <= 0) {
         enemy.attackImpact = -1;
+        if (enemy.identity.superUnique == "The Countess" && enemy.attackMode == 3) {
+            launchCountessFirewall(enemy);
+            return;
+        }
+        if (enemy.kind == MonsterKind::BloodRaven && enemy.attackMode == 4) {
+            launchMonsterProjectile(enemy);
+            return;
+        }
         if (enemy.attackMode == 3 && monsterResurrection_ &&
             monsterResurrection_(enemy))
             resolveMonsterResurrection(enemy);

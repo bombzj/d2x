@@ -26,6 +26,9 @@ std::optional<MonsterAiProfile> loadMonsterAiProfile(const DataTable &stats, siz
     else if (ai == "FoulCrowNest") profile.kind = MonsterAiKind::FoulCrowNest;
     else if (ai == "BloodHawk") profile.kind = MonsterAiKind::BloodHawk;
     else if (ai == "Arach") profile.kind = MonsterAiKind::Arach;
+    else if (ai == "Smith") profile.kind = MonsterAiKind::Smith;
+    else if (ai == "Griswold") profile.kind = MonsterAiKind::Griswold;
+    else if (ai == "BloodRaven") profile.kind = MonsterAiKind::BloodRaven;
     else return std::nullopt;
     if (profile.kind == MonsterAiKind::Vampire) {
         const int velocity = stats.number(row, "Velocity").value_or(0);

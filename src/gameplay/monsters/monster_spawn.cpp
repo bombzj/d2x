@@ -2,6 +2,9 @@
 
 namespace d2x {
 MonsterImplementation monsterImplementation(const std::string &code) {
+    if (code == "smith") return {MonsterKind::Smith, false};
+    if (code == "griswold") return {MonsterKind::Griswold, false};
+    if (code == "bloodraven") return {MonsterKind::BloodRaven, false};
     if (code == "necroskeleton") return {MonsterKind::NecroSkeleton, false};
     if (code == "fallen1" || code == "fallen2" || code == "fallen3" || code == "fallen4" ||
         code == "fallen5")
@@ -39,7 +42,7 @@ MonsterImplementation monsterImplementation(const std::string &code) {
     if (code == "hellbovine")
         return {MonsterKind::HellBovine, false};
     if (code == "skmage_fire1" || code == "skmage_fire2" ||
-        code == "skmage_ltng1" || code == "skmage_ltng2")
+        code == "skmage_ltng1" || code == "skmage_ltng2" || code == "skmage_pois3")
         return {MonsterKind::SkeletonMage, false};
     if (code == "fetish1")
         return {MonsterKind::Fetish, false};

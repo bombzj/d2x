@@ -138,13 +138,15 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
         const auto *fixed = monsterContent_.superUnique(enemy.identity.superUnique);
         const bool supportedFixed = fixed && (fixed->id == "Bishibosh" || fixed->id == "Bonebreak" ||
             fixed->id == "Coldcrow" || fixed->id == "Rakanishu" || fixed->id == "Treehead WoodFist" ||
-            fixed->id == "Pitspawn Fouldog" || fixed->id == "Corpsefire" || fixed->id == "The Cow King");
+            fixed->id == "Pitspawn Fouldog" || fixed->id == "Corpsefire" || fixed->id == "The Cow King" ||
+            fixed->id == "Boneash" || fixed->id == "The Smith" || fixed->id == "Griswold" ||
+            fixed->id == "The Countess");
         if (enemy.identity.enchantment || (owner ? (owner->identity.rank != MonsterRank::Unique &&
             owner->identity.rank != MonsterRank::SuperUnique) ||
             !owner->identity.enchantment : enemy.identity.rank != MonsterRank::Champion &&
             enemy.identity.rank != MonsterRank::Unique && !supportedFixed)) return;
         const auto *record = monsterContent_.find(enemy.identity.monster);
-        if (!record || record->boss || monsterImplementation(record->id).substitute) return;
+        if (!record || (record->boss && !supportedFixed) || monsterImplementation(record->id).substitute) return;
         auto identity = enemy.identity;
         identity.rank = MonsterRank::Normal;
         const auto base = resolvedMonsterCombat(identity, state().area.region);
@@ -166,6 +168,7 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
         const auto *record = monsterContent_.find(enemy.identity.monster);
         return record ? std::pair{record->hitClass, record->primeEvil} : std::pair{0, false};
     };
+    simulation_->countessFirewall_ = monsterContent_.countessFirewall();
     simulation_->hirelingAttributes_ = [this] {
         const auto merc = hirelingStats();
         CharacterAttributes result;
@@ -329,6 +332,7 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
         return std::nullopt;
     };
     simulation_->corpseSelectable_ = [this](const Enemy &corpse) {
+        if (corpse.kind == MonsterKind::BloodRaven || corpse.identity.superUnique == "The Countess") return false;
         const auto *record = monsterContent_.find(corpse.identity.monster);
         return record && record->corpseSelectable && record->walkVelocity.value_or(0) != 0;
     };
@@ -362,12 +366,17 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
     };
     simulation_->monsterAi_ = [this](const Enemy &enemy)
         -> std::optional<MonsterAiProfile> {
-        if (!enemy.identity.enchantment && !baseMonsterRank(enemy.identity.rank))
+        if (!enemy.identity.enchantment && !baseMonsterRank(enemy.identity.rank) && enemy.kind != MonsterKind::BloodRaven)
             return std::nullopt;
         const auto *record = monsterContent_.find(enemy.identity.monster);
-        if (!record || record->boss) return std::nullopt;
+        if (!record || (record->boss && enemy.kind != MonsterKind::Griswold && enemy.kind != MonsterKind::BloodRaven))
+            return std::nullopt;
         auto profile = record->aiProfiles.at(state().population.difficulty);
         if (!profile) return std::nullopt;
+        if (enemy.identity.superUnique == "The Countess") { profile->kind = MonsterAiKind::Countess; return profile; }
+        if ((profile->kind == MonsterAiKind::Smith && enemy.kind == MonsterKind::Smith) ||
+            (profile->kind == MonsterAiKind::Griswold && enemy.kind == MonsterKind::Griswold) ||
+            (profile->kind == MonsterAiKind::BloodRaven && enemy.kind == MonsterKind::BloodRaven)) return profile;
         if (profile->kind == MonsterAiKind::Skeleton &&
             (enemy.kind == MonsterKind::Skeleton || enemy.kind == MonsterKind::HellBovine))
             return profile;
@@ -472,6 +481,7 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
     };
     simulation_->monsterAttackTiming_ = [this](const Enemy &enemy, int mode)
         -> std::optional<MonsterAttackTiming> {
+        if (enemy.identity.superUnique == "The Countess" && mode == 3) mode = 1;
         const auto *timing = monsterContent_.attackTiming(enemy.kind, mode);
         return timing ? std::optional<MonsterAttackTiming>(*timing) : std::nullopt;
     };
@@ -482,8 +492,9 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
             return std::nullopt;
         if (mode == 1 && (enemy.kind == MonsterKind::CorruptArcher ||
                           enemy.kind == MonsterKind::SkeletonBow ||
-                          enemy.kind == MonsterKind::SkeletonMage))
+                          enemy.kind == MonsterKind::SkeletonMage || enemy.kind == MonsterKind::BloodRaven))
             return record->attack1Projectile;
+        if (mode == 4 && enemy.kind == MonsterKind::BloodRaven) return record->attack1Projectile;
         if (mode == 2 && (enemy.kind == MonsterKind::QuillRat ||
                           enemy.kind == MonsterKind::Bighead))
             return record->attack2Projectile;
@@ -510,12 +521,13 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
     };
     simulation_->monsterNest_ = [this](const Enemy &enemy)
         -> std::optional<MonsterNest> {
-        if (enemy.kind != MonsterKind::FoulCrowNest ||
+        if ((enemy.kind != MonsterKind::FoulCrowNest && enemy.kind != MonsterKind::BloodRaven) ||
             monsterImplementation(enemy.identity.monster).substitute) return std::nullopt;
         const auto *record = monsterContent_.find(enemy.identity.monster);
         if (!record || !record->nest ||
             !monsterContent_.find(record->nest->child) ||
-            monsterImplementation(record->nest->child).kind != MonsterKind::BloodHawk ||
+            (monsterImplementation(record->nest->child).kind != MonsterKind::BloodHawk &&
+             monsterImplementation(record->nest->child).kind != MonsterKind::Zombie) ||
             monsterImplementation(record->nest->child).substitute) return std::nullopt;
         return record->nest;
     };

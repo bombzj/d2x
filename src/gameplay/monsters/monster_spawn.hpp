@@ -28,6 +28,7 @@ struct MonsterSpawn {
     MonsterIdentity identity;
     MonsterKind kind = MonsterKind::Fallen;
     Vec position;
+    std::vector<Vec> skillPositions = {};
 };
 struct MonsterImplementation {
     MonsterKind kind;
@@ -58,7 +59,7 @@ struct MonsterNormalCombat {
 enum class MonsterAiKind { Skeleton, Brute, Zombie, Fallen, CorruptRogue, Goatman, QuillRat,
                            Wraith, CorruptLancer, CorruptArcher, SkeletonBow, Bighead,
                            SkeletonMage, Fetish, Vampire, FallenShaman, FoulCrowNest, BloodHawk,
-                           Arach };
+                           Arach, Smith, Griswold, BloodRaven, Countess };
 struct MonsterAiProfile {
     MonsterAiKind kind;
     std::array<int, 8> params{};
@@ -69,11 +70,20 @@ struct MonsterAttackTiming {
     float duration = 0;
     float impact = 0;
     int frames = 0;
+    int sequenceFrames = 0;
 };
 struct MonsterProjectile {
     int id = -1;
     float velocity = 0, lifetime = 0;
     int minimumDamage = 0, maximumDamage = 0, sourceDamage = 0;
+};
+struct MonsterFirewall {
+    int makerId = -1, fireId = -1, makerFrames = 0, fireFrames = 0;
+    float velocity = 0;
+    int minimumDamage = 0, maximumDamage = 0, hitShift = 0, size = 1;
+};
+struct TowerReward {
+    int lifetimeFrames = 0, openingFrame = 0, goldInterval = 0, radius = 0;
 };
 struct MonsterSpell {
     std::string sourceSkill, mode, art, element;

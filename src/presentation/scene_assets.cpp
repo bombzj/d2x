@@ -427,6 +427,11 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
         }
     for (const auto &[id, entry] : session.content().monsterSpecialMissiles)
         loadProjectile(id, entry.visual.art);
+    if (const auto &firewall = session.monsterContent().countessFirewall())
+        for (size_t row = 0; row < missiles.rows().size(); ++row)
+            if (missiles.number(row, "Id") == firewall->makerId || missiles.number(row, "Id") == firewall->fireId)
+                loadProjectile(missiles.number(row, "Id").value(),
+                    "data/global/missiles/" + std::string(missiles.value(row, "CelFile")) + ".dcc");
     // HitOilPotion creates its main explosion plus one of the two original
     // debris animations. The main effect already comes from the impact event's
     // gameplay visual; the alternatives belong only to presentation.

@@ -14,7 +14,8 @@ std::optional<MonsterCombatProfile> loadMonsterCombatProfile(
     const auto nativeLevel = stats.number(row, "Level" + ending);
     const bool noRatio = stats.number(row, "noRatio").value_or(0) != 0;
     if (!nativeLevel || *nativeLevel < 1) return std::nullopt;
-    const int level = difficulty == 0 || noRatio ? *nativeLevel : areaLevel;
+    const bool boss = stats.number(row, "boss").value_or(0) != 0;
+    const int level = difficulty == 0 || noRatio || boss ? *nativeLevel : areaLevel;
     size_t levelRow = 0;
     for (; levelRow < levels.rows().size(); ++levelRow)
         if (levels.number(levelRow, "Level") == level) break;

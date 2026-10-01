@@ -70,7 +70,13 @@ const MonsterDefinition &monsterDefinition(MonsterKind id) {
                                          fallen.sightRange, fallen.attackRange};
     // Summon life, movement, damage and timing are required original content; zero prevents fallback combat.
     static const MonsterDefinition necroSkeleton{MonsterKind::NecroSkeleton, "sk", 0, 0, 0, 0, 24, 1.8f};
+    static const MonsterDefinition smith{MonsterKind::Smith, "5p", 0, 0, 0, 0, 40, 0};
+    static const MonsterDefinition griswold{MonsterKind::Griswold, "gz", 0, 0, 0, 0, 40, 0};
+    static const MonsterDefinition bloodRaven{MonsterKind::BloodRaven, "cr", 0, 0, 0, 0, 50, 0};
     switch (id) {
+    case MonsterKind::Smith: return smith;
+    case MonsterKind::Griswold: return griswold;
+    case MonsterKind::BloodRaven: return bloodRaven;
     case MonsterKind::Fallen:
         return fallen;
     case MonsterKind::Zombie:

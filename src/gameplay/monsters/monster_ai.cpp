@@ -28,6 +28,11 @@ void Simulation::updateMonsters(float dt) {
     for (auto &enemy : state_.area.enemies) {
         if (enemy.hp <= 0 || !active(enemy.pos))
             continue;
+        if (enemy.questDeathFrame && state_.frame >= enemy.questDeathFrame) {
+            enemy.questDeathFrame = 0;
+            damageEnemy(enemy, enemy.hp, {}, 0, true, MonsterDamageType::Physical, true);
+            continue;
+        }
         if (advanceAuraKnockback(enemy, dt)) continue;
         const auto ai = monsterAi_ ? monsterAi_(enemy) : std::nullopt;
         if (enemy.attack <= 0 && !enemy.approach && !enemy.aiEscaping && !enemy.aiCircling) {
@@ -122,6 +127,8 @@ void Simulation::updateMonsters(float dt) {
                         if (clear) enemy.pos = *enemy.teleportTarget;
                         enemy.teleportTarget.reset();
                     }
+                    else if (enemy.attackMode == 3 && enemy.identity.superUnique == "The Countess")
+                        launchCountessFirewall(enemy);
                     else if (enemy.attackMode == 3 && monsterResurrection_ &&
                         monsterResurrection_(enemy))
                         resolveMonsterResurrection(enemy);
@@ -133,6 +140,8 @@ void Simulation::updateMonsters(float dt) {
                         if (auto hatchling = nestSpawn(enemy, nestSpawns))
                             nestSpawns.push_back(std::move(*hatchling));
                     }
+                    else if (enemy.attackMode == 4 && enemy.kind == MonsterKind::BloodRaven)
+                        launchMonsterProjectile(enemy);
                     else if (enemy.attackMode >= 3)
                         launchMonsterSpell(enemy);
                     else if (monsterProjectile_ && monsterProjectile_(enemy, enemy.attackMode))
@@ -182,7 +191,8 @@ void Simulation::updateMonsters(float dt) {
         if (enemy.aiCircling) {
             const Vec before = enemy.pos;
             const int percentage = 75 + (enemy.kind == MonsterKind::Brute
-                ? int((bruteWalkMultiplier(enemy) - 1.f) * 100.f + .5f) : 0);
+                ? int((bruteWalkMultiplier(enemy) - 1.f) * 100.f + .5f) :
+                enemy.kind == MonsterKind::BloodRaven ? 50 : 0);
             enemy.movementVelocityPercent = percentage;
             const auto originalSpeed = monsterMoveSpeed_ ? monsterMoveSpeed_(enemy, percentage) : std::nullopt;
             const float speed = originalSpeed.value_or(monsterDefinition(enemy.kind).speed);
@@ -210,12 +220,13 @@ void Simulation::updateMonsters(float dt) {
             const int percentage = 75 + (enemy.kind == MonsterKind::Bighead ? 50 :
                 enemy.kind == MonsterKind::SkeletonMage ? 25 :
                 enemy.kind == MonsterKind::Fetish ? 50 :
+                enemy.kind == MonsterKind::BloodRaven ? 100 :
                 enemy.kind == MonsterKind::CorruptArcher ? 100 :
                 enemy.kind == MonsterKind::BloodHawk && ai ? ai->params[3] :
                 enemy.kind == MonsterKind::Vampire && ai ? ai->retreatVelocityBonus :
                 enemy.kind == MonsterKind::Fallen ? 50 : 0);
             enemy.movementVelocityPercent = percentage;
-            enemy.aiRunning = archerAi;
+            enemy.aiRunning = archerAi || enemy.kind == MonsterKind::BloodRaven;
             const auto originalSpeed = monsterMoveSpeed_ ? monsterMoveSpeed_(enemy, percentage) : std::nullopt;
             const float speed = originalSpeed.value_or(monsterDefinition(enemy.kind).speed);
             fallenAdvanceEscape(enemy, *grid_, speed, dt, movementRule(enemy));

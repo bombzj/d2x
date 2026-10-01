@@ -87,6 +87,7 @@ class MonsterCatalog {
     std::map<int, std::map<std::string, MonsterMotionTiming, std::less<>>> hirelingMotions_;
     std::map<MonsterKind, MonsterAttackTiming> attacks2_;
     std::map<MonsterKind, MonsterAttackTiming> casts_;
+    std::map<MonsterKind, MonsterAttackTiming> quickAttacks_;
     std::map<MonsterKind, std::map<std::string, MonsterMotionTiming, std::less<>>> motions_;
     std::map<MonsterKind, std::map<std::string, std::string, std::less<>>> modeWeapons_;
     std::map<int, std::string> indices_;
@@ -96,14 +97,22 @@ class MonsterCatalog {
     std::set<std::string, std::less<>> places_;
     std::vector<std::string> diagnostics_;
     int championChance_ = 0;
+    std::optional<MonsterFirewall> countessFirewall_;
+    std::optional<TowerReward> towerReward_;
 
   public:
     MonsterCatalog(Archives &archives, const DataTable &monstats);
     bool supported() const { return supported_; }
     int championChance() const { return championChance_; }
+    const auto &countessFirewall() const { return countessFirewall_; }
+    const auto &towerReward() const { return towerReward_; }
     const auto &diagnostics() const { return diagnostics_; }
     const auto &monsters() const { return monsters_; }
     const MonsterAttackTiming *attackTiming(MonsterKind kind, int mode = 1) const {
+        if (mode == 4 && kind == MonsterKind::BloodRaven) {
+            auto found = quickAttacks_.find(kind);
+            return found == quickAttacks_.end() ? nullptr : &found->second;
+        }
         const auto &source = mode >= 3 ? casts_ : mode == 2 ? attacks2_ : attacks_;
         auto found = source.find(kind);
         return found == source.end() ? nullptr : &found->second;

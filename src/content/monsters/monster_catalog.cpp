@@ -31,6 +31,34 @@ MonsterCatalog::MonsterCatalog(Archives &archives, const DataTable &stats) {
     DataTable missiles(archives.read("data/global/excel/missiles.txt"));
     DataTable skills(archives.read("data/global/excel/skills.txt"));
     DataTable sequences(archives.read("data/global/excel/monseq.txt"));
+    for (size_t row = 0; row < missiles.rows().size(); ++row)
+        if (missiles.value(row, "Missile") == "towerchestspawner") {
+            towerReward_ = TowerReward{missiles.number(row, "Range").value_or(0),
+                missiles.number(row, "Param1").value_or(0),
+                std::max(1, 4 * missiles.number(row, "Param2").value_or(0)),
+                missiles.number(row, "Param3").value_or(0)};
+            if (towerReward_->lifetimeFrames <= towerReward_->openingFrame ||
+                towerReward_->openingFrame < 0 || towerReward_->radius < 0 || towerReward_->radius > 100)
+                throw std::runtime_error("Invalid tower chest reward data");
+        }
+    for (size_t skillRow = 0; skillRow < skills.rows().size(); ++skillRow)
+        if (skills.value(skillRow, "skill") == "CountessFirewall" && skills.number(skillRow, "srvdofunc") == 24) {
+            std::optional<size_t> maker, fire;
+            for (size_t missileRow = 0; missileRow < missiles.rows().size(); ++missileRow) {
+                if (missiles.value(missileRow, "Missile") == skills.value(skillRow, "srvmissilea")) maker = missileRow;
+                if (missiles.value(missileRow, "Missile") == skills.value(skillRow, "srvmissileb")) fire = missileRow;
+            }
+            if (!maker || !fire || missiles.number(*maker, "pSrvDoFunc") != 6 ||
+                missiles.number(*fire, "pSrvDoFunc") != 5) throw std::runtime_error("Unsupported Countess firewall data");
+            auto number = [&](size_t row, const char *field) { return missiles.number(row, field).value_or(0); };
+            countessFirewall_ = MonsterFirewall{number(*maker, "Id"), number(*fire, "Id"),
+                number(*maker, "Range"), number(*fire, "Range"), float(number(*maker, "Vel")),
+                number(*fire, "EMin"), number(*fire, "EMax"), number(*fire, "HitShift"), number(*fire, "Size")};
+            if (countessFirewall_->makerFrames <= 0 || countessFirewall_->fireFrames <= 0 ||
+                countessFirewall_->velocity <= 0 || countessFirewall_->maximumDamage < countessFirewall_->minimumDamage ||
+                countessFirewall_->hitShift < 0 || countessFirewall_->hitShift > 8)
+                throw std::runtime_error("Invalid Countess firewall parameters");
+        }
     std::optional<DataTable> levels;
     if (archives.contains("data/global/excel/monlvl.txt"))
         levels.emplace(archives.read("data/global/excel/monlvl.txt"));
@@ -287,6 +315,10 @@ MonsterCatalog::MonsterCatalog(Archives &archives, const DataTable &stats) {
                 if (weapon.empty()) continue;
                 modeWeapons_[kind].emplace(mode, weapon);
                 if (std::string_view(mode) == "a1") {
+                    if (kind == MonsterKind::BloodRaven)
+                        if (auto timing = loadMonsterSequenceTiming(animations, sequences,
+                                stats.value(actor->sourceRow, "Sk2mode"), actor->token, mode, weapon, 2))
+                            quickAttacks_.emplace(kind, *timing);
                     if (auto timing = loadMonsterAttackTiming(
                             animations, actor->token, 1, weapon,
                             actor->attack1Projectile ? 2 : 1))
@@ -318,7 +350,7 @@ MonsterCatalog::MonsterCatalog(Archives &archives, const DataTable &stats) {
                             animations, actor->token, mode, weapon, 2))
                         casts_.emplace(kind, *timing);
                 } else if (std::string_view(mode) == "s1" &&
-                           kind == MonsterKind::FoulCrowNest && actor->nest &&
+                           (kind == MonsterKind::FoulCrowNest || kind == MonsterKind::BloodRaven) && actor->nest &&
                            actor->nest->mode == "S1") {
                     if (auto timing = loadMonsterSequenceTiming(
                             animations, sequences, actor->nest->sequence,

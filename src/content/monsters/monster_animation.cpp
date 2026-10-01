@@ -83,6 +83,6 @@ std::optional<MonsterAttackTiming> loadMonsterSequenceTiming(
         impactFrame < 0 || impactFrame >= sequenceFrames) return std::nullopt;
     const float frameTime = motion->duration / float(motion->frames);
     return MonsterAttackTiming{frameTime * sequenceFrames,
-                               frameTime * impactFrame, motion->frames};
+                               frameTime * impactFrame, motion->frames, sequenceFrames};
 }
 } // namespace d2x

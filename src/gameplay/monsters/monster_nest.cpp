@@ -9,12 +9,12 @@ std::optional<MonsterSpawn> Simulation::nestSpawn(
     const auto ai = monsterAi_ ? monsterAi_(nest) : std::nullopt;
     const auto origin = nest.nestSpawnPosition;
     nest.nestSpawnPosition.reset();
-    if (!source || !ai || !origin || ai->kind != MonsterAiKind::FoulCrowNest ||
+    if (!source || !ai || !origin || (ai->kind != MonsterAiKind::FoulCrowNest && ai->kind != MonsterAiKind::BloodRaven) ||
         source->mode != "S1" ||
         state_.area.enemies.size() + queued.size() >= 65536) return std::nullopt;
     Enemy child;
     child.identity.monster = source->child;
-    constexpr int radius = 3;
+    const int radius = ai->kind == MonsterAiKind::BloodRaven ? 1 : 3;
     int offsetX = 0, offsetY = 0;
     if (monsterAiRandom(nest) & 1) {
         offsetY = radius;
@@ -46,7 +46,7 @@ std::optional<MonsterSpawn> Simulation::nestSpawn(
                                 std::to_string(nest.aiLoop);
         MonsterSpawn spawn{{source->child, {}, key, MonsterRank::Normal,
                             SpawnOrigin::Summoned, nest.identity.group},
-                           MonsterKind::BloodHawk, position};
+                           monsterImplementation(source->child).kind, position};
         return spawn;
     }
     return std::nullopt;
