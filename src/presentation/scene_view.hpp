@@ -151,6 +151,7 @@ class SceneView {
     void drawSkillControls(Vec mouse) const;
     void drawSkillIcon(std::optional<int> skill, Rectangle bounds) const;
     void drawSkillTree(Vec mouse) const;
+    std::vector<std::string> auraSkillDetails(int skill, int rank, bool nextLevel = false) const;
     void drawQuests(Vec mouse) const;
     void drawHelp() const;
     void drawExitHint(Vec mouse) const;

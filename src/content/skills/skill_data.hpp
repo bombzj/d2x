@@ -29,6 +29,7 @@ struct SkillRecord {
     std::string animationMode;
     std::optional<SkillSpec> spell;
     bool auraImplemented = false;
+    bool auraImmediate = false;
     int passiveAttackRatingPerBaseRank = 0;
     int passiveSuppressedByState = -1;
     int passiveMaxResistElement = -1;

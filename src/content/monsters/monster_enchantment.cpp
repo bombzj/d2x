@@ -158,6 +158,8 @@ void loadAuraSkills(ClassicData &data) {
         if (definition.periodFrames < 5 || definition.ownerState.id < 0)
             throw std::runtime_error("Original aura lacks state or periodic data");
         data.skills.skills.at(skill).auraImplemented = true;
+        data.skills.skills.at(skill).auraImmediate = number(data.tables.at("skills"),
+            numberedRow(data.tables.at("skills"), "Id", skill), "immediate") != 0;
         if (skill == 108) {
             const auto &table = data.tables.at("skills");
             const auto row = numberedRow(table, "Id", skill);

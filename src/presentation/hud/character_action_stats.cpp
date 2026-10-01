@@ -63,6 +63,7 @@ CharacterActionStats characterActionStats(const GameSession &session, std::optio
     if (!skill) return weaponStats(session, false, false);
     const auto *entry = session.content().skills.find(*skill);
     if (!entry || !session.skillAvailable(*skill) || entry->passive) return {};
+    if (entry->auraImplemented) return weaponStats(session, false, false);
     if (entry->basicAction != BasicSkillAction::None) {
         const bool thrown = entry->basicAction == BasicSkillAction::Throw || entry->basicAction == BasicSkillAction::LeftHandThrow;
         const bool leftHand = entry->basicAction == BasicSkillAction::LeftHandThrow ||

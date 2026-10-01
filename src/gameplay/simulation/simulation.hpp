@@ -98,7 +98,7 @@ class Simulation {
     int preventHealState_ = -1;
     int monsterColdDivisor_ = 1;
     std::function<int(const CombatUnit &)> unitColdEffect_;
-    void updateAuras();
+    void updateAuras(bool playerOnly = false);
     void applyMonsterCurse(Enemy &enemy, EntityId defender);
     void triggerMonsterLightning(Enemy &enemy);
     void reflectThorns(EntityId attacker, EntityId defender, float physicalDamage);

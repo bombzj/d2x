@@ -1,5 +1,6 @@
 #include "gameplay/simulation/simulation.hpp"
 #include "session.hpp"
+#include "content/monsters/monster_enchantment.hpp"
 #include <algorithm>
 
 namespace d2x {
@@ -112,6 +113,49 @@ void GameSession::applyWarmth(CharacterAttributes &stats, const PlayerState &pla
     if (active)
         stats.manaRegen = manaRecoveryRate(stats.maxMana, definition.manaRegen, stats.combat.manaRecovery);
 }
+void GameSession::syncPlayerAura() {
+    auto &player = simulation_->state_.player;
+    const int skill = player.selectedSkills[player.weaponSet * 2 + 1];
+    const auto *record = content_.skills.find(skill);
+    const int rank = record && record->auraImplemented && !player.dead && skillAvailable(skill)
+        ? effectiveSkillRank(skill) : 0;
+    auto &activeAura = player.aura;
+    if (activeAura && (activeAura->definition.skill != skill || activeAura->definition.rank != rank)) {
+        std::vector<EffectHandle> remove;
+        for (const auto &effect : player.combatEffects.entries())
+            if (effect.spec.state.id == activeAura->definition.ownerState.id &&
+                effect.spec.source.entity == player.id && effect.spec.source.definition == activeAura->definition.skill)
+                remove.push_back(effect.handle);
+        for (auto handle : remove) player.combatEffects.remove(handle);
+        player.auraSuppressesManaRegen = false;
+        if (activeAura->definition.skill == 114 && !player.dead)
+            player.combatEffects.removeState(content_.states.at("shatter").definition.id);
+        activeAura.reset();
+        refreshCharacter();
+    }
+    if (rank <= 0) return;
+    auto definition = resolveAura(content_, skill, rank, player.skillRanks, fireMasteryPercent(),
+        lightningMasteryPercent(), characterStats().combat.coldSkillDamagePercent, effectiveSkillRank(99));
+    if (!definition) return;
+    if (activeAura) {
+        activeAura->definition = *definition;
+        return;
+    }
+    const EffectFrame period = EffectFrame(std::max(5, definition->periodFrames));
+    activeAura = ActiveAura{*definition, state().frame + period};
+    if (record->auraImmediate) {
+        activeAura->nextFrame = state().frame;
+        simulation_->updateAuras(true);
+    } else {
+        CombatEffectSpec effect;
+        effect.state = definition->ownerState;
+        effect.source = {CombatEffectSource::Skill, player.id, skill, rank};
+        effect.stacking = EffectStacking::AuraLevel;
+        effect.duration = period + 1;
+        const auto applied = player.combatEffects.apply(std::move(effect), state().frame);
+        simulation_->combatEffectsChanged(applied.removed);
+    }
+}
 void GameSession::useSkill(const UseSkill &intent) {
     const auto *entry = content_.skills.find(intent.id);
     const auto &player = state().player;
@@ -188,5 +232,24 @@ bool GameSession::skillAvailable(int id) const {
     if (entry->classCode != characterDefinition_.code &&
         !characterStats().combat.nonClassSkills.contains(id)) return false;
     return effectiveSkillRank(id) > 0;
+}
+int GameSession::nextSkillRequiredLevel(int id) const {
+    const auto *entry = content_.skills.find(id);
+    if (!entry) return 0;
+    const auto rank = state().player.skillRanks.find(id);
+    return entry->requiredLevel + (rank == state().player.skillRanks.end() ? 0 : rank->second);
+}
+bool GameSession::canAllocateSkill(int id) const {
+    const auto &player = state().player;
+    const auto *entry = content_.skills.find(id);
+    if (!entry || entry->classCode != characterDefinition_.code || player.dead ||
+        player.unspentSkills <= 0 || player.level < nextSkillRequiredLevel(id)) return false;
+    const auto current = player.skillRanks.find(id);
+    if (current != player.skillRanks.end() && current->second >= entry->maximumRank) return false;
+    for (int prerequisite : entry->prerequisites) {
+        const auto learned = player.skillRanks.find(prerequisite);
+        if (learned == player.skillRanks.end() || learned->second <= 0) return false;
+    }
+    return true;
 }
 } // namespace d2x

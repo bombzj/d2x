@@ -44,10 +44,7 @@ void SceneView::drawSkillTree(Vec mouse) const {
         const int value = rank == player.skillRanks.end() ? 0 : rank->second;
         const int effective = session_.effectiveSkillRank(id);
         const bool itemGranted = effective > value;
-        bool ready = player.unspentSkills > 0 && player.level >= entry.requiredLevel &&
-                     value < entry.maximumRank;
-        for (int prerequisite : entry.prerequisites)
-            ready &= player.skillRanks.contains(prerequisite);
+        const bool ready = session_.canAllocateSkill(id);
         const auto &texture = image->second.sprite.texture;
         DrawTexturePro(texture, {0, 0, float(texture.width), float(texture.height)}, bounds,
                        {0, 0}, 0, value || itemGranted ? WHITE : Color{92, 92, 92, 255});
@@ -96,22 +93,61 @@ void SceneView::drawSkillTree(Vec mouse) const {
     if (auto hovered = skillAt(mouse)) {
         const auto &entry = *session_.content().skills.find(*hovered);
         auto rank = player.skillRanks.find(*hovered);
+        const int baseRank = rank == player.skillRanks.end() ? 0 : rank->second;
+        const int effective = session_.effectiveSkillRank(*hovered);
         std::string label = entry.name + "  " +
-            std::to_string(rank == player.skillRanks.end() ? 0 : rank->second) + "/" +
+            std::to_string(baseRank) + "/" +
             std::to_string(entry.maximumRank);
-        if (session_.effectiveSkillRank(*hovered) >
-            (rank == player.skillRanks.end() ? 0 : rank->second))
-            label += "  Item +1";
-        if (player.level < entry.requiredLevel)
-            label += "  Requires level " + std::to_string(entry.requiredLevel);
-        else if (std::any_of(entry.prerequisites.begin(), entry.prerequisites.end(),
-                     [&](int prerequisite) { return !player.skillRanks.contains(prerequisite); }))
-            label += "  Requires earlier skill";
-        auto width = std::max(205, painter_.measure(label, 12) + 20);
-        auto box = Rectangle{panel.x - width - 8, mouse.y - 14, float(width), 31};
+        if (effective > baseRank)
+            label += "  Item +" + std::to_string(effective - baseRank);
+        std::vector<std::string> lines{label};
+        if (!entry.description.empty()) lines.push_back(entry.description);
+        if (player.level < session_.nextSkillRequiredLevel(*hovered))
+            lines.push_back("Requires level " + std::to_string(session_.nextSkillRequiredLevel(*hovered)));
+        for (int prerequisite : entry.prerequisites) {
+            const auto learned = player.skillRanks.find(prerequisite);
+            if (learned == player.skillRanks.end() || learned->second <= 0)
+                if (const auto *required = session_.content().skills.find(prerequisite))
+                    lines.push_back("Requires " + required->name);
+        }
+        if (entry.auraImplemented) {
+            if (effective > 0) {
+                lines.push_back("Current level " + std::to_string(effective));
+                const auto details = auraSkillDetails(*hovered, effective);
+                lines.insert(lines.end(), details.begin(), details.end());
+            }
+            if (baseRank < entry.maximumRank) {
+                const int next = std::max(1, effective + 1);
+                lines.push_back("Next level " + std::to_string(next));
+                const auto details = auraSkillDetails(*hovered, next, true);
+                lines.insert(lines.end(), details.begin(), details.end());
+            }
+        }
+        const int width = std::min(360, W - 20);
+        std::vector<std::string> wrapped;
+        for (const auto &text : lines) {
+            std::istringstream words(text);
+            std::string word, current;
+            while (words >> word) {
+                const auto candidate = current.empty() ? word : current + " " + word;
+                if (!current.empty() && painter_.measure(candidate, 12) > width - 20) {
+                    wrapped.push_back(current);
+                    current = word;
+                } else current = candidate;
+            }
+            if (!current.empty()) wrapped.push_back(current);
+        }
+        const int lineHeight = std::max(8, std::min(16, (H - 26) / std::max(1, int(wrapped.size()))));
+        const int textSize = std::min(12, lineHeight - 1);
+        const int height = lineHeight * int(wrapped.size()) + 16;
+        const float left = std::clamp(panel.x - width - 8, 5.f, float(W - width - 5));
+        const float top = std::clamp(mouse.y - 14, 5.f, float(std::max(5, H - height - 5)));
+        auto box = Rectangle{left, top, float(width), float(height)};
         DrawRectangleRec(box, {0, 0, 0, 230});
         DrawRectangleLinesEx(box, 1, gold);
-        painter_.label(label, int(box.x + 10), int(box.y + 8), 12, parchment);
+        for (size_t index = 0; index < wrapped.size(); ++index)
+            painter_.label(wrapped[index], int(box.x + 10), int(box.y + 8 + index * lineHeight), textSize,
+                index == 0 ? gold : parchment);
     }
 }
 } // namespace d2x

@@ -1,7 +1,10 @@
 #include "gameplay/session/session.hpp"
 #include "hud_layout.hpp"
 #include "presentation/scene_view.hpp"
+#include "content/monsters/monster_enchantment.hpp"
 #include <algorithm>
+#include <sstream>
+#include <tuple>
 
 namespace d2x {
 namespace {
@@ -39,6 +42,9 @@ void SceneView::drawSkillIcon(std::optional<int> skill, Rectangle bounds) const 
     bool available = !player.dead && (!skill || (entry && entry->executable() && session_.skillAvailable(*skill)));
     if (session_.region().definition.safe)
         available &= entry && entry->allowedInTown;
+    if (entry && entry->auraImplemented && session_.effectiveSkillRank(*skill) > 0)
+        if (const auto aura = resolveAura(session_.content(), *skill, session_.effectiveSkillRank(*skill)))
+            available &= player.mana >= aura->manaPerPulse;
     if (entry && entry->spell && session_.effectiveSkillRank(*skill) > 0) {
         const auto resolved = resolveSkill(*entry->spell,
             session_.effectiveSkillRank(*skill), player.skillRanks, session_.fireMasteryPercent(),
@@ -117,6 +123,63 @@ std::optional<int> SceneView::miniPanelAt(Vec mouse) const {
             return index;
     return -1;
 }
+std::vector<std::string> SceneView::auraSkillDetails(int skill, int rank, bool nextLevel) const {
+    auto learned = session_.state().player.skillRanks;
+    if (nextLevel) ++learned[skill];
+    const auto aura = resolveAura(session_.content(), skill, rank, learned, session_.fireMasteryPercent(),
+        session_.lightningMasteryPercent(), session_.characterStats().combat.coldSkillDamagePercent,
+        session_.effectiveSkillRank(99) + (nextLevel && skill == 99 ? 1 : 0));
+    if (!aura) return {};
+    std::vector<std::string> lines;
+    auto number = [](float value) { return std::string(TextFormat("%.1f", value)); };
+    const auto &stats = aura->modifiers;
+    const auto &combat = stats.combat;
+    lines.push_back("Radius: " + number(aura->radius * 2.f / 3.f) + " yards");
+    if (combat.damagePercent)
+        lines.push_back("Damage: +" + std::to_string(combat.damagePercent + aura->ownerDamageBonus) + "%" +
+            (aura->ownerDamageBonus ? " / Party: +" + std::to_string(combat.damagePercent) + "%" : ""));
+    if (combat.attackRatingPercent) lines.push_back("Attack rating: +" + std::to_string(combat.attackRatingPercent) + "%");
+    if (combat.defensePercent) lines.push_back("Defense: " + std::string(combat.defensePercent > 0 ? "+" : "") + std::to_string(combat.defensePercent) + "%");
+    if (combat.attackRate > 0) lines.push_back("Attack speed: +" + std::to_string(combat.attackRate) + "%");
+    if (stats.velocityPercent < 0) lines.push_back("Slows enemies: " + std::to_string(-stats.velocityPercent) + "%");
+    else if (stats.velocityPercent > 0) lines.push_back("Movement speed: +" + std::to_string(stats.velocityPercent) + "%");
+    for (const auto &[label, resist, maximum] : std::vector<std::tuple<const char *, int, int>>{
+        {"Fire", stats.fireResist, combat.fireMaxResist}, {"Cold", stats.coldResist, combat.coldMaxResist},
+        {"Lightning", stats.lightningResist, combat.lightningMaxResist}}) {
+        if (!resist && !maximum) continue;
+        std::string line = std::string(label) + " resist: " + (resist > 0 ? "+" : "") + std::to_string(resist) + "%";
+        if (maximum) line += " / Maximum: +" + std::to_string(maximum) + "%";
+        lines.push_back(std::move(line));
+    }
+    if (aura->element >= 0) {
+        const char *element = aura->element == 2 ? "Fire" : aura->element == 3 ? "Lightning" : aura->element == 4 ? "Cold" : "Magic";
+        lines.push_back(std::string(element) + " damage: " + number(aura->minimumDamage) + "-" + number(aura->maximumDamage) +
+            " / " + number(float(aura->periodFrames) / 25.f) + " seconds");
+        const auto &own = aura->ownerModifiers.combat;
+        const int minimum = own.fireMinimum + own.lightningMinimum + own.coldMinimum;
+        const int maximum = own.fireMaximum + own.lightningMaximum + own.coldMaximum;
+        if (maximum) lines.push_back("Attack damage: +" + std::to_string(minimum) + "-" + std::to_string(maximum));
+    }
+    if (aura->lifePerPulse > 0) lines.push_back("Heals: " + number(aura->lifePerPulse) + " / " + number(float(aura->periodFrames) / 25.f) + " seconds");
+    if (aura->harmfulDurationPercent < 100) lines.push_back("Poison / curse duration reduction: " + std::to_string(100 - aura->harmfulDurationPercent) + "%");
+    if (combat.manaRecovery) lines.push_back("Mana recovery: +" + std::to_string(combat.manaRecovery) + "%");
+    if (stats.staminaPercent) lines.push_back("Maximum stamina: +" + std::to_string(stats.staminaPercent) + "%");
+    if (stats.staminaRecoveryBonus) lines.push_back("Stamina recovery: +" + std::to_string(stats.staminaRecoveryBonus) + "%");
+    if (combat.thornsPercent) lines.push_back("Damage returned: " + std::to_string(combat.thornsPercent) + "%");
+    if (combat.concentrationChance) lines.push_back("Uninterruptible attack chance: " + std::to_string(combat.concentrationChance) + "%");
+    if (aura->redemptionChance) {
+        lines.push_back("Corpse redemption chance: " + std::to_string(aura->redemptionChance) + "%");
+        lines.push_back("Life / mana per corpse: " + number(aura->redemptionLife) + " / " + number(aura->redemptionMana));
+    }
+    if (aura->manaPerPulse > 0) lines.push_back("Mana per pulse: " + number(aura->manaPerPulse));
+    const auto *entry = session_.content().skills.find(skill);
+    const int baseRank = learned.contains(skill) ? learned.at(skill) : 0;
+    if (entry && entry->passiveAttackRatingPerBaseRank)
+        lines.push_back("Passive attack rating: +" + std::to_string(baseRank * entry->passiveAttackRatingPerBaseRank) + "%");
+    if (entry && entry->passiveMaxResistElement >= 0)
+        lines.push_back("Passive maximum resist: +" + std::to_string(baseRank / 2) + "%");
+    return lines;
+}
 bool SceneView::leftSkillAllowed(int skill) const {
     const auto *entry = session_.content().skills.find(skill);
     return entry && entry->leftAllowed;
@@ -171,6 +234,7 @@ void SceneView::drawSkillControls(Vec mouse) const {
         auto entry = choice ? session_.content().skills.find(*choice) : nullptr;
         auto name = entry ? entry->name : "Attack";
         std::string detail;
+        std::vector<std::string> detailLines;
         if (entry && entry->spell && session_.effectiveSkillRank(*choice) > 0) {
             const auto value = resolveSkill(*entry->spell,
                 session_.effectiveSkillRank(*choice), session_.state().player.skillRanks,
@@ -211,6 +275,8 @@ void SceneView::drawSkillControls(Vec mouse) const {
                     " + weapon fire damage";
             else detail += " / Damage " + std::string(TextFormat("%.1f", value.minimumDamage)) +
                 "-" + std::string(TextFormat("%.1f", value.maximumDamage));
+        } else if (entry && entry->auraImplemented) {
+            detailLines = auraSkillDetails(*choice, session_.effectiveSkillRank(*choice));
         } else detail = !entry ? "Normal weapon attack"
             : entry->sourceName == "Throw" || entry->sourceName == "Left Hand Throw"
                 ? "Throw equipped weapon; consumes one from the stack"
@@ -219,10 +285,28 @@ void SceneView::drawSkillControls(Vec mouse) const {
             : entry->sourceName == "Unsummon"
                 ? "No summoned ally is available"
                 : "Effect not implemented";
-        float y = H - (view_.skillPicker ? 108 : 55) * hudScale - 60;
-        DrawRectangle(W / 2 - 260, int(y), 520, 52, {0, 0, 0, 225});
+        if (detailLines.empty()) detailLines.push_back(detail);
+        const int width = std::min(520, W - 20);
+        std::vector<std::string> wrapped;
+        for (const auto &line : detailLines) {
+            std::istringstream words(line);
+            std::string word, current;
+            while (words >> word) {
+                const auto candidate = current.empty() ? word : current + " " + word;
+                if (!current.empty() && painter_.measure(candidate, 12) > width - 20) {
+                    wrapped.push_back(current);
+                    current = word;
+                } else current = candidate;
+            }
+            if (!current.empty()) wrapped.push_back(current);
+        }
+        const int height = 30 + int(wrapped.size()) * 16;
+        const float y = std::clamp(H - (view_.skillPicker ? 108 : 55) * hudScale - height - 8,
+            5.f, float(std::max(5, H - height - 5)));
+        DrawRectangle((W - width) / 2, int(y), width, height, {0, 0, 0, 225});
         painter_.centered(name, int(y + 7), 16, gold);
-        painter_.centered(detail, int(y + 29), 12);
+        for (size_t index = 0; index < wrapped.size(); ++index)
+            painter_.centered(wrapped[index], int(y + 29 + index * 16), 12);
     }
     for (bool mana : {false, true}) {
         if (!CheckCollisionPointRec(rv(mouse), hudGlobe(mana)))

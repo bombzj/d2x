@@ -832,17 +832,10 @@ void GameSession::tick(float dt, Vec keyboard, bool forceRun) {
                         refreshCharacter(true);
                 } else if constexpr (std::is_same_v<T, AllocateSkill>) {
                     auto &player = simulation_->state_.player;
-                    const auto *entry = content_.skills.find(intent.id);
-                    if (!entry || entry->classCode != characterDefinition_.code || player.dead ||
-                        player.unspentSkills <= 0 || player.level < entry->requiredLevel)
-                        return;
-                    const auto current = player.skillRanks.find(intent.id);
-                    if (current != player.skillRanks.end() && current->second >= entry->maximumRank) return;
-                    for (int prerequisite : entry->prerequisites)
-                        if (!player.skillRanks.contains(prerequisite)) return;
+                    if (!canAllocateSkill(intent.id)) return;
                     ++player.skillRanks[intent.id];
                     --player.unspentSkills;
-                    if (entry->manaRecoveryPerRank) refreshCharacter();
+                    refreshCharacter();
                 } else if constexpr (std::is_same_v<T, BindSkillHotkey>) {
                     auto &keys = simulation_->state_.player.skillHotkeys;
                     if (intent.index >= keys.size() || intent.skill < -2 ||
@@ -898,6 +891,7 @@ void GameSession::tick(float dt, Vec keyboard, bool forceRun) {
                 }
             },
             command);
+        syncPlayerAura();
         // A click queued in the previous region must not affect the new region.
         if (transitioned)
             break;
@@ -915,33 +909,7 @@ void GameSession::tick(float dt, Vec keyboard, bool forceRun) {
         const int rank = effectiveSkillRank(skill);
         simulation_->enforceSummonLimit(state().player.id, skill, rank < 4 ? rank : 2 + rank / 3);
     }
-    const int auraSkill = state().player.selectedSkills[state().player.weaponSet * 2 + 1];
-    const auto *auraRecord = content_.skills.find(auraSkill);
-    const int auraRank = auraRecord && auraRecord->auraImplemented && !state().player.dead
-        ? effectiveSkillRank(auraSkill) : 0;
-    auto &activeAura = simulation_->state_.player.aura;
-    if (activeAura && (activeAura->definition.skill != auraSkill || activeAura->definition.rank != auraRank)) {
-        const int ownerState = activeAura->definition.ownerState.id;
-        const auto effects = simulation_->state_.player.combatEffects.entries();
-        std::vector<EffectHandle> remove;
-        for (const auto &effect : effects)
-            if (effect.spec.state.id == ownerState && effect.spec.source.entity == simulation_->state_.player.id &&
-                effect.spec.source.definition == activeAura->definition.skill) remove.push_back(effect.handle);
-        for (auto handle : remove) simulation_->state_.player.combatEffects.remove(handle);
-        simulation_->state_.player.auraSuppressesManaRegen = false;
-        if (activeAura->definition.skill == 114 && !state().player.dead)
-            simulation_->state_.player.combatEffects.removeState(content_.states.at("shatter").definition.id);
-        activeAura.reset();
-        refreshCharacter();
-    }
-    if (!activeAura && auraRank > 0)
-        if (auto aura = resolveAura(content_, auraSkill, auraRank, state().player.skillRanks,
-            fireMasteryPercent(), lightningMasteryPercent(), characterStats().combat.coldSkillDamagePercent, effectiveSkillRank(99)))
-            activeAura = ActiveAura{*aura, state().frame};
-    if (activeAura)
-        if (auto aura = resolveAura(content_, auraSkill, auraRank, state().player.skillRanks,
-            fireMasteryPercent(), lightningMasteryPercent(), characterStats().combat.coldSkillDamagePercent, effectiveSkillRank(99)))
-            activeAura->definition = *aura;
+    syncPlayerAura();
     simulation_->tick(dt, transitioned ? Vec{} : keyboard, forceRun);
     auto replenished = inventory_.replenish(dt);
     if (!replenished.changes.empty()) publishInventory(std::move(replenished), {});

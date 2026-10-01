@@ -5,7 +5,7 @@
 #include "gameplay/monsters/monster_wander.hpp"
 
 namespace d2x {
-void Simulation::updateAuras() {
+void Simulation::updateAuras(bool playerOnly) {
     auto pulse = [&](CombatUnit source, const AuraDefinition &aura, EffectFrame &nextFrame) {
         if (!source.alive() || !active(*source.position) || state_.frame < nextFrame) return;
         const EffectFrame period = EffectFrame(std::max(5, aura.periodFrames));
@@ -137,6 +137,7 @@ void Simulation::updateAuras() {
     };
     if (state_.player.aura)
         pulse(combatUnit(state_.player.id), state_.player.aura->definition, state_.player.aura->nextFrame);
+    if (playerOnly) return;
     for (auto &enemy : state_.area.enemies)
         if (enemy.identity.enchantment && enemy.identity.enchantment->aura &&
             (enemy.identity.enchantment->aura->skill == 98 || enemy.identity.enchantment->aura->skill == 102 || enemy.identity.enchantment->aura->skill == 108 ||

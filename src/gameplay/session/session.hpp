@@ -144,6 +144,7 @@ class GameSession {
     const CharacterDefinition &definitionFor(std::string_view name) const;
     void refreshCharacter(bool fillGains = false);
     void useSkill(const UseSkill &intent);
+    void syncPlayerAura();
     void applyWarmth(CharacterAttributes &stats, const PlayerState &player,
                      const CharacterDefinition &definition, const InventoryService &inventory,
                      const PlayerContainers &containers, const EquipmentActor &actor) const;
@@ -266,6 +267,8 @@ class GameSession {
     unsigned bankGoldLimit() const;
     unsigned groundGoldLimit() const;
     bool skillAvailable(int id) const;
+    bool canAllocateSkill(int id) const;
+    int nextSkillRequiredLevel(int id) const;
     bool weaponSkillReady(const SkillCastSpec &skill) const;
     int effectiveSkillRank(int id) const;
     bool applySkillCastTiming(SkillCastSpec &cast) const;
