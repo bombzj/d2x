@@ -107,6 +107,7 @@ EquipmentStats deriveEquipmentStats(const InventoryService &inventory, const Pla
         weapon.rangeAdder = definition.base.rangeAdder;
         weapon.baseSpeed = definition.base.speed.value_or(0);
         weapon.weaponClass = definition.base.weaponClass;
+        weapon.hitClass = definition.base.hitClass;
         weapon.types = definition.equipment.types;
         weapon.attackRating = int(std::clamp<int64_t>((int64_t(baseAttackRating) + own.attackRating) *
             std::max<int64_t>(0, 100LL + combat.attackRatingPercent + own.attackRatingPercent) / 100,

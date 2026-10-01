@@ -33,9 +33,6 @@ void Simulation::onMonsterDamaged(Enemy &enemy, const DamageRequest &request, fl
     if (dealt <= 0) return;
     const auto type = request.type;
     const auto source = request.attacker;
-    if (enemy.hp > 0 && monsterAi_)
-        if (auto ai = monsterAi_(enemy); ai && ai->kind == MonsterAiKind::QuillRat)
-            enemy.aiRetaliate = true;
     if (enemy.identity.enchantment) {
         const auto &mods = *enemy.identity.enchantment;
         if (enemy.hp > 0 && type != MonsterDamageType::Poison &&
@@ -75,6 +72,7 @@ void Simulation::onMonsterDamaged(Enemy &enemy, const DamageRequest &request, fl
         enemy.aiCircling = false;
         enemy.aiRunning = false;
         enemy.aiRetaliate = false;
+        enemy.aiAlerted = false;
         enemy.aiCharged = false;
         enemy.aiAdvanceRemaining = 0;
         enemy.aiPhase = 0;
@@ -84,6 +82,7 @@ void Simulation::onMonsterDamaged(Enemy &enemy, const DamageRequest &request, fl
         enemy.attack = enemy.attackDuration = 0;
         enemy.attackImpact = -1;
         enemy.teleportTarget.reset();
+        enemy.nestSpawnPosition.reset();
         enemy.attackMode = 1;
         if (enemy.allegiance.role == CombatRole::Summon) { enemy.corpseConsumed = true; return; }
         ++state_.area.kills;
@@ -118,7 +117,9 @@ void Simulation::meleeDamage(EntityId defender, const WeaponDamage &weapon) {
                             (bonus + weapon.maximumDamagePercent) / 100;
     const auto range = uint32_t(std::max<int64_t>(0, maximum - minimum));
     const auto damage = std::max<int64_t>(0, minimum + (range ? uint32_t(player.combatRandom) % range : 0));
-    resolveWeaponHit(defender, float(damage) / 256.f, player.id, rollAttackElements(weapon.item));
+    auto elements = rollAttackElements(weapon.item);
+    elements.hitClass = weapon.hitClass;
+    resolveWeaponHit(defender, float(damage) / 256.f, player.id, elements);
     if (wearEquipment_ && weapon.item) wearEquipment_(weapon.item, false);
 }
 void Simulation::updateMissiles(float dt) {

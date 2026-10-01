@@ -46,7 +46,7 @@ class Simulation {
     float incomingDamage(EntityId attacker, EntityId defender, float amount) const;
     ResolvedDamage resolveIncoming(EntityId attacker, const CombatUnit &defender, float amount, MonsterDamageType type);
     float dealDamage(const DamageRequest &request);
-    void recoverUnit(EntityId defender, EntityId attacker, float damage, bool elemental = false);
+    void recoverUnit(EntityId defender, EntityId attacker, float damage, bool elemental = false, int hitClass = -1);
     void restoreUnit(EntityId id, float life, float mana = 0);
     void applyPoison(EntityId defender, float rate, float duration, EntityId source);
     void applyChill(EntityId defender, float duration, bool freeze = false);
@@ -150,7 +150,8 @@ class Simulation {
     bool handleMonsterSpecialAi(Enemy &enemy, const MonsterAiProfile &ai,
                                 float distance, bool clear);
     void beginMonsterAttack(Enemy &enemy, int forcedMode = 0);
-    bool monsterMeleeReach(const Enemy &enemy, EntityId defender = {});
+    void refreshMonsterAttackRate(Enemy &enemy);
+    bool monsterMeleeReach(const Enemy &enemy, EntityId defender = {}, int rangeBonus = 0);
     void resolveMonsterAttack(Enemy &enemy, int modeOverride = 0, bool projectile = false,
                                EntityId defender = {});
     void launchMonsterProjectile(Enemy &enemy);

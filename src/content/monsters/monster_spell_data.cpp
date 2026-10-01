@@ -81,7 +81,8 @@ std::optional<MonsterNest> loadMonsterNest(
         if (skills.value(row, "skill") == sourceSkill &&
             skills.number(row, "srvdofunc") == 91)
             return MonsterNest{std::string(sourceSkill), mode, std::string(child),
-                               std::string(sequence)};
+                               std::string(sequence), monsters.number(monsterRow, "spawnx").value_or(0),
+                               monsters.number(monsterRow, "spawny").value_or(0)};
     return std::nullopt;
 }
 std::optional<MonsterWeb> loadMonsterWeb(

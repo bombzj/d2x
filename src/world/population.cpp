@@ -207,8 +207,9 @@ class Planner {
                           : lookup(monster.minions[0]);
         int count = random_.between(low, high);
         for (int i = 0; minion && i < count; ++i)
-            add(*minion, *leader, 4, rank == MonsterRank::Champion ? rank : MonsterRank::Minion, origin,
-                key + ".minion." + std::to_string(i));
+            if (add(*minion, *leader, 4, rank == MonsterRank::Champion ? rank : MonsterRank::Minion, origin,
+                    key + ".minion." + std::to_string(i)) && rank != MonsterRank::Champion)
+                result_.spawns.back().identity.ownerSpawnKey = key + ".leader";
     }
     const MonsterRecord *classVariant(const std::string &base) {
         if (!level_)

@@ -12,6 +12,18 @@ int chooseAttackMode(Enemy &enemy, const MonsterAiProfile &rules) {
     return monsterAiRandom(enemy) % 100 < unsigned(rules.params[3]) ? 1 : 2;
 }
 } // namespace
+void Simulation::refreshMonsterAttackRate(Enemy &enemy) {
+    if (enemy.attack <= 0 || enemy.attackMode >= 3 || enemy.teleportTarget) return;
+    const int auraRate = enemy.combatEffects.modifiers(state_.frame).combat.attackRate;
+    const int coldRate = enemy.chill > 0 && unitColdEffect_ ? unitColdEffect_(combatUnit(enemy.id)) : 0;
+    const int rate = std::clamp(100 + auraRate + coldRate, 15, 175);
+    if (rate == enemy.attackRatePercent) return;
+    const float scale = float(enemy.attackRatePercent) / float(rate);
+    enemy.attack *= scale;
+    enemy.attackDuration *= scale;
+    if (enemy.attackImpact >= 0) enemy.attackImpact *= scale;
+    enemy.attackRatePercent = rate;
+}
 void Simulation::beginMonsterAttack(Enemy &enemy, int forcedMode) {
     monsterStopApproach(enemy);
     enemy.attackMode = forcedMode >= 3 ? forcedMode : forcedMode == 2 ? 2 : 1;
@@ -25,7 +37,9 @@ void Simulation::beginMonsterAttack(Enemy &enemy, int forcedMode) {
             combat && combat->attack2Damage)
             enemy.attackMode = chooseAttackMode(enemy, *ai);
     const int auraRate = enemy.combatEffects.modifiers(state_.frame).combat.attackRate;
-    const float chillScale = float(enemy.chill > 0 ? 200 : 100) / float(std::max(15, 100 + auraRate));
+    const int coldRate = enemy.chill > 0 && unitColdEffect_ ? unitColdEffect_(combatUnit(enemy.id)) : 0;
+    enemy.attackRatePercent = enemy.attackMode >= 3 ? 100 : std::clamp(100 + auraRate + coldRate, 15, 175);
+    const float chillScale = 100.f / float(enemy.attackRatePercent);
     if (auto timing = monsterAttackTiming_ ? monsterAttackTiming_(enemy, enemy.attackMode) : std::nullopt) {
         enemy.attackDuration = timing->duration * chillScale;
         enemy.attackImpact = timing->impact * chillScale;
@@ -75,17 +89,15 @@ void Simulation::launchMonsterSpell(Enemy &enemy) {
     state_.area.missiles.back().combatRandom = childRandom(unitRandom_);
     replicateMonsterMissile(enemy, state_.area.missiles.back());
 }
-bool Simulation::monsterMeleeReach(const Enemy &enemy, EntityId defender) {
+bool Simulation::monsterMeleeReach(const Enemy &enemy, EntityId defender, int rangeBonus) {
     if (!defender) defender = enemy.combatTarget;
     const auto target = combatUnit(defender);
     if (!target.alive()) return false;
     const auto ai = monsterAi_ ? monsterAi_(enemy) : std::nullopt;
     const int size = enemy.intrinsicCombat ? enemy.intrinsicCombat->collisionSize
                                          : monsterSize_ ? monsterSize_(enemy) : 2;
-    // UNITS_IsInMeleeRange: real unit sizes and MonStats2 range + 1; the
-    // same predicate governs the AI decision and the eventual melee hit.
     const bool inReach = ai || enemy.intrinsicCombat
-        ? meleeDistance(enemy.pos, size, *target.position, target.stats.collisionSize) <= (ai ? ai->meleeRange : 0) + 1
+        ? meleeDistance(enemy.pos, size, *target.position, target.stats.collisionSize) <= (ai ? ai->meleeRange : 0) + rangeBonus + 1
         : (*target.position - enemy.pos).length() < monsterDefinition(enemy.kind).attackRange;
     return inReach && grid_->segment(enemy.pos, *target.position);
 }
@@ -93,7 +105,7 @@ void Simulation::resolveMonsterAttack(Enemy &enemy, int modeOverride, bool proje
     if (!defender) defender = enemy.combatTarget;
     auto target = combatUnit(defender);
     if (!target.alive() || !canAttack(enemy.id, defender) || (!projectile && enemy.hp <= 0)) return;
-    if (!projectile && !monsterMeleeReach(enemy, defender)) return;
+    if (!projectile && !monsterMeleeReach(enemy, defender, enemy.intrinsicCombat ? 0 : 3)) return;
     const int mode = modeOverride ? modeOverride : enemy.attackMode;
     const auto source = combatUnit(enemy.id);
     const auto accuracy = enemy.intrinsicCombat ? std::optional<MonsterAccuracy>{{source.stats.level, source.stats.attributes.attackRating}} :

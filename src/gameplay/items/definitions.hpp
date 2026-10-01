@@ -23,6 +23,7 @@ struct ItemBaseStats {
     std::optional<int> level, magicLevel, cost, speed, block, sockets, rarity, spawnable, lightRadius;
     std::optional<int> strengthBonus, dexterityBonus;
     int rangeAdder = 0;
+    int hitClass = 0;
     std::optional<WeaponProjectileSpec> projectile;
     std::string sourceTable;
     size_t sourceRow = 0;

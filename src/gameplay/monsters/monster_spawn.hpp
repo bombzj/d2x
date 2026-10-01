@@ -62,6 +62,7 @@ struct MonsterAiProfile {
     MonsterAiKind kind;
     std::array<int, 8> params{};
     int meleeRange = 0; // Resolved MonStats2.MeleeRng, including the 255 weapon-class sentinel.
+    int retreatVelocityBonus = 0;
 };
 struct MonsterAttackTiming {
     float duration = 0;
@@ -83,6 +84,7 @@ struct MonsterResurrection {
 };
 struct MonsterNest {
     std::string sourceSkill, mode, child, sequence;
+    int spawnX = 0, spawnY = 0;
 };
 struct MonsterWeb {
     std::string sourceSkill, mode, art;

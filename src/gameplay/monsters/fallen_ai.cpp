@@ -23,6 +23,10 @@ FallenMovement fallenMovement(Enemy &enemy, const MonsterAiProfile &rules, float
 
 FallenCombat fallenCombat(Enemy &enemy, const MonsterAiProfile &rules) {
     if (enemy.aiWait > 0) return FallenCombat::Idle;
+    if (enemy.aiAlerted && !enemy.aiCommanded) {
+        enemy.aiAlerted = false;
+        return FallenCombat::Attack;
+    }
     if (monsterAiRandom(enemy) % 100 < unsigned(rules.params[2])) return FallenCombat::Attack;
     if (enemy.aiCommanded) {
         enemy.aiWait = 5.f / 25.f;
@@ -34,24 +38,12 @@ FallenCombat fallenCombat(Enemy &enemy, const MonsterAiProfile &rules) {
 }
 
 bool fallenStartEscape(Enemy &enemy, Vec player, const Grid &grid, MovementCollisionRule rule) {
-    // D2MOO's Fallen AI calls Escape(..., 12, 1) when it sees a fresh corpse.
-    // Escape uses the sign of the vector away from the current target.
-    const Vec away{float((enemy.pos.x > player.x) - (enemy.pos.x < player.x)),
-                   float((enemy.pos.y > player.y) - (enemy.pos.y < player.y))};
-    if (away.length() == 0) return false;
-    for (int distance = 12; distance >= 1; --distance) {
-        const Vec target = enemy.pos + away * float(distance);
-        if (!grid.walkable(target, rule)) continue;
-        auto route = grid.path(enemy.pos, target, false, rule);
-        if (route.empty()) continue;
-        enemy.route = std::move(route);
-        enemy.aiEscaping = true;
-        enemy.aiPursuing = false;
-        enemy.aiCommanded = false;
-        enemy.aiWait = 0;
-        return true;
-    }
-    return false;
+    if (!monsterStartRetreat(enemy, player, 12, grid, rule)) return false;
+    enemy.aiPursuing = false;
+    enemy.aiCommanded = false;
+    enemy.aiAlerted = true;
+    enemy.aiWait = 0;
+    return true;
 }
 
 void fallenAdvanceEscape(Enemy &enemy, const Grid &grid, float speed, float dt, MovementCollisionRule rule) {

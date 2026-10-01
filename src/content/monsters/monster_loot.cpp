@@ -55,7 +55,10 @@ MonsterLootEntry resolveMonsterLoot(const ClassicData &data, const MonsterCatalo
         bonus = 3;
         break;
     case MonsterRank::Minion:
-        return defer("Minion level bonus requires its owning group modifiers");
+        if (!request.identity.enchantment || request.identity.ownerSpawnKey.empty())
+            return defer("Minion level bonus requires its owning group modifiers");
+        bonus = request.identity.enchantment->levelBonus;
+        break;
     case MonsterRank::SuperUnique:
         superUnique = monsters.superUnique(request.identity.superUnique);
         if (!superUnique || superUnique->monster != monster->id)

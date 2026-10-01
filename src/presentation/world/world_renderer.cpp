@@ -409,18 +409,24 @@ void SceneView::drawActors(Vec mouse) const {
                             const auto rate = mode == "rn" ? record->runAnimationRate : record->walkAnimationRate;
                             if (rate) {
                                 const int percentage = monsterMovementPercent(*record, sim.population.difficulty,
-                                    *e.movementVelocityPercent + (e.identity.enchantment ? e.identity.enchantment->velocityPercent : 0), e.chill > 0);
+                                    *e.movementVelocityPercent + e.combatEffects.modifiers(sim.frame).velocityPercent +
+                                    (e.webSlowRemaining > 0 ? e.webSlowPercent : 0) +
+                                    (e.identity.enchantment ? e.identity.enchantment->velocityPercent : 0), e.chill > 0);
                                 fps = float(std::clamp(*rate * percentage / 100, 0, 32767)) * 25.f / 256.f;
                                 nativeMovementRate = true;
                             }
                         }
                     if ((mode == "wl" || mode == "rn") && !nativeMovementRate && e.identity.enchantment)
                         fps *= float(75 + e.identity.enchantment->velocityPercent) / 75.f;
+                    int coldRate = 100;
+                    if (e.chill > 0 && !nativeMovementRate && e.hp > 0)
+                        if (const auto *record = session_.monsterContent().find(e.identity.monster))
+                            coldRate = std::max(1, 100 + record->coldEffect.at(size_t(sim.population.difficulty)));
                     int frame = e.hp <= 0 ? (mode == "dd" ? 0
                                             : std::min(anim->count - 1, int(e.deathAge * fps)))
                                 : e.freeze > 0 ? 0
                                 : e.stun > 0 && !animations.contains("gh") ? 0
-                                : int(view_.animationTime * (e.chill > 0 && !nativeMovementRate ? fps * .42f : fps) + e.id.value % anim->count);
+                                : int(view_.animationTime * fps * float(coldRate) / 100.f + e.id.value % anim->count);
                     if ((mode == "a1" || mode == "a2" || mode == "sc" || mode == "s1") &&
                         e.attackDuration > 0)
                         frame = std::clamp(int((e.attackDuration - e.attack) / e.attackDuration * anim->count),
@@ -431,8 +437,8 @@ void SceneView::drawActors(Vec mouse) const {
                     if (mode == "s1" && e.resurrectionDuration > 0)
                         frame = std::clamp(int((e.resurrectionDuration - e.resurrectionRemaining) /
                                                e.resurrectionDuration * anim->count), 0, anim->count - 1);
-                    if (mode == "gh" && e.hitFlash > 0 && motion)
-                        frame = std::clamp(int((motion->duration - e.hitFlash) / motion->duration * anim->count),
+                    if (mode == "gh" && e.hitFlash > 0 && e.hitRecoveryDuration > 0)
+                        frame = std::clamp(int((e.hitRecoveryDuration - e.hitFlash) / e.hitRecoveryDuration * anim->count),
                                            0, anim->count - 1);
                     const auto *image = anim->frame(
                         direction(monsterLooks_.contains(e.id) ? monsterLooks_.at(e.id)
@@ -444,7 +450,7 @@ void SceneView::drawActors(Vec mouse) const {
                     drawUnitSpellOverlays(e.id, monster.position, true, e.hp > 0 ? &e.combatEffects : nullptr, height);
                     if (e.hp > 0) drawCombatStateOverlays(e.combatEffects, item.p, height, true);
                     drawSelectableSprite(image, item.p, e.id == hotEnemy,
-                                         e.hitFlash > 0 ? Color{255, 175, 155, 255}
+                                         e.hitDisplay > 0 ? Color{255, 175, 155, 255}
                                          : (e.chill > 0 || e.freeze > 0) ? Color{115, 175, 255, 255}
                                                         : WHITE);
                     if (e.hp > 0) drawCombatStateOverlays(e.combatEffects, item.p, height, false);

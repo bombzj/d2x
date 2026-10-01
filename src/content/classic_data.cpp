@@ -23,7 +23,7 @@ namespace d2x {
 ClassicData loadClassicData(Archives &archives) {
     const ClassicStrings strings(archives);
     std::map<std::string, DataTable, std::less<>> tables;
-    for (auto name : {"monumod", "monstats2", "montype", "difficultylevels", "misc", "weapons", "armor", "armtype", "belts", "monstats", "charstats", "skills", "experience", "inventory", "levels"})
+    for (auto name : {"monumod", "monstats2", "montype", "difficultylevels", "misc", "weapons", "armor", "armtype", "belts", "monstats", "charstats", "skills", "experience", "inventory", "levels", "hitclass"})
         tables.emplace(name, DataTable(archives.read(std::string("data/global/excel/") + name + ".txt")));
     const auto &armtype = tables.at("armtype");
     if (!armtype.has("Token"))
@@ -62,6 +62,12 @@ ClassicData loadClassicData(Archives &archives) {
     if (!tc.has("Treasure Class") || !tc.has("Prob10") || !tc.has("NoDrop"))
         throw std::runtime_error("Unsupported TreasureClassEx schema");
     std::vector<ItemDefinition> items;
+    std::map<std::string, int, std::less<>> hitClasses;
+    const auto &hitClassTable = tables.at("hitclass");
+    for (size_t row = 0; row < hitClassTable.rows().size(); ++row) {
+        const auto code = hitClassTable.value(row, "code");
+        if (!code.empty()) hitClasses.emplace(std::string(code), int(row));
+    }
     for (auto [name, family] : {std::pair{"misc", ItemFamily::Misc},
                                 {"weapons", ItemFamily::Weapon},
                                 {"armor", ItemFamily::Armor}}) {
@@ -100,6 +106,14 @@ ClassicData loadClassicData(Archives &archives) {
             base.type = value("type");
             base.secondaryType = value("type2");
             base.weaponClass = value("wclass");
+            if (family == ItemFamily::Weapon) {
+                const auto code = value("hit class");
+                if (!code.empty()) {
+                    const auto found = hitClasses.find(code);
+                    if (found == hitClasses.end()) throw std::runtime_error("Unknown original weapon hit class: " + code);
+                    base.hitClass = found->second;
+                }
+            }
             base.minDamage = number("mindam");
             base.maxDamage = number("maxdam");
             base.twoHandMin = number("2handmindam");

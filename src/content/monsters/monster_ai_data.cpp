@@ -1,5 +1,6 @@
 #include "monster_ai_data.hpp"
 #include <string>
+#include <algorithm>
 
 namespace d2x {
 std::optional<MonsterAiProfile> loadMonsterAiProfile(const DataTable &stats, size_t row,
@@ -26,6 +27,11 @@ std::optional<MonsterAiProfile> loadMonsterAiProfile(const DataTable &stats, siz
     else if (ai == "BloodHawk") profile.kind = MonsterAiKind::BloodHawk;
     else if (ai == "Arach") profile.kind = MonsterAiKind::Arach;
     else return std::nullopt;
+    if (profile.kind == MonsterAiKind::Vampire) {
+        const int velocity = stats.number(row, "Velocity").value_or(0);
+        const int run = stats.number(row, "Run").value_or(0);
+        if (velocity > 0) profile.retreatVelocityBonus = std::clamp(100 * run / velocity - 100, 0, 120);
+    }
     const std::string suffix = difficulty == 0 ? "" : difficulty == 1 ? "(N)" : "(H)";
     for (int index = 0; index < 8; ++index) {
         auto value = stats.number(row, "aip" + std::to_string(index + 1) + suffix);

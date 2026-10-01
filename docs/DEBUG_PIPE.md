@@ -75,7 +75,7 @@ $spawn = .\scripts\Send-D2XCommand.ps1 -Command monster-spawn -Arguments @{monst
 
 `aiCircling` 表示 Brute、Bighead 或 Skeleton Mage 正沿可走路径绕目标行走。可定点生成 `brute2`，逐次 `step` 后查询 `monsters`，在近战攻击两次 `aip3` 掷骰中首次失败、第二次成功时观察该状态和位移；绕行路线只在本局维持。
 
-`aiRunning` 表示 Corrupt Rogue 当前跑步动作；`aiPursuing` 表示该怪物已开始本次追击。`aiAdvanceRemaining` 仅表示 Skeleton Bow 或 Skeleton Mage 当前路径决策的剩余距离，不再用作 Corrupt Rogue 每三格重新决策的计时。可定点生成 `corruptrogue1`，逐帧推进并用 `monsters` 观察；该状态只在本局维持。
+`aiRunning` 表示当前移动使用 RN，`approaching` 表示已接受的目标／坐标动作，`movementVelocityPercent` 是移动基础 75 加 AI 的百分比，实际速度还叠身份 ColdEffect、蛛网、词缀与限时状态。骷髅弓手／法师不再用 `aiAdvanceRemaining` 保存行走预算；该兼容字段仅供蜘蛛临时动作距离选择，不能解释为剩余行走距离。`ownerSpawnKey` 给出直属归属，`hitRecoveryRemaining` 与 `hitDisplayRemaining` 分别表示真正 GH 和受击显示，软命中可只有后者。巢的 `aiLoop` 为施法尝试计数，`nestLastCastFrame` 为开始帧，`noTreasure` 表示原 NOTC。均为本局只读状态，不进入 D2S。
 
 `monsters` 的 `hostileProjectiles` 统计该怪物仍在飞行的敌方弹体；`aiRetaliate` 表示 Quill Rat 受击后待 A2 回击。可定点生成 `quillrat1` 后推进 6 帧观察原 `spike1` 发射，在本局继续推进观察命中；这两项状态不会进入 v83 角色存档。`aiEscaping` 对 Quill Rat 也表示其按 MPQ `aip4` 距离后撤。
 

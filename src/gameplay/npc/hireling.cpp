@@ -70,6 +70,7 @@ void GameSession::advanceHireling(float dt) {
                     float(int64_t(raw) * projectile.sourceDamage / 128) / 256.f};
                 missile.attackElements = simulation_->rollAttackElements(weapon.item, &stats.combat, nullptr, &merc.combatRandom);
                 missile.attackElements.ranged = true;
+                missile.attackElements.hitClass = weapon.hitClass;
                 missile.weaponAttack = true;
                 missile.attackElements.attackerLevel = merc.level;
                 missile.attackElements.manaLeech = 0;

@@ -1,8 +1,87 @@
 # 怪物实施计划
 
-怪物身份、区域名单、分组和掉落继续以运行时 MPQ 为准；类型替身只用于尚未实现的敌对外观。普通难度第一幕 `Levels.txt` 的 `mon1–mon10` 共 55 个唯一身份，现已覆盖。其他幕／难度的变体预留。普通级别怪物共用 `MonStats`／`MonLvl` 的三难度生命、A1／A2、命中、防御、暴击、再生和抗性解析；某行没有 A1 近战列时仍读取其余字段。共享数值只需集中核对，不逐个怪物重复验算。逐个核对原 `MonStats.Id`，同一家族的第一幕变体完成后统一打完整 MPQ 运行目录、冒烟并提交；精英、固定首领与 Boss 单列。通用地图寻路、目标调度和画面帧时钟仍是项目适配，验收不声称逐帧等同原引擎。
+怪物身份、区域名单、分组和掉落继续以运行时 MPQ 为准；类型替身只用于尚未实现的敌对外观。当前第一幕 `Levels.txt` 的 `mon1–mon10` 与 `nmon1–nmon10` 分别有 55 个唯一身份，名单相同，均已有外观与基础 AI 分支；这不代表完整行为已完成，当前缺口见下方复审。普通级别怪物共用 `MonStats`／`MonLvl` 的三难度生命、A1／A2、命中、防御、暴击、再生和抗性解析；某行没有 A1 近战列时仍读取其余字段。共享数值只需集中核对，不逐个怪物重复验算。精英、固定首领与 Boss 单列；本轮只审阅源码与原表。通用地图寻路、目标调度和画面帧时钟仍是项目适配，验收不声称逐帧等同原引擎。
 
 阶段记录中的“存读档”均是 v80 及更早版本的历史会话快照冒烟。当前 D2S v96 角色存档不保存怪物、尸体、弹体或怪物 AI 状态；载入后从城镇开始新的一局。冻结死亡现按原 States 的保留／碎裂／隐藏／禁选标志走公共入口；冰尖柱直接致死与冻结期间死亡均隐藏普通尸体，召唤、复活和见尸反应不能使用碎尸，收益仍正常结算。原碎冰／融化图与声音已接源码，精确客户端组合边界及未构建／运行／提交状态见 [冻结死亡](SKILLS.md#冻结死亡与尸体资格)。
+
+## Act 1 复审与下一步
+
+2026-10-01：复审依据当前源码、当前 `assets/mpq2` 的 Levels／MonStats／MonStats2／DifficultyLevels／MonPreset／SuperUniques，以及固定本地 D2MOO `5596f5c`。以下九项表格保留修复前的审阅证据；当前修复与验证状态以紧接的第一阶段记录为准，不能继续把旧源码行号视为现状。
+
+### 第一阶段修复与交接
+
+2026-10-01 收尾：第一阶段的已确认共用偏差与普通家族分支已按本地 D2MOO 逐入口补正，当前进入用户验收；本轮不进入第二阶段。这里的完成指阶段清单中的规则接入，不是完整原引擎、地图路径或所有变体的逐帧认证。
+
+本批接入普通家族的共用移动生命周期，已接受的目标、坐标、绕行和退避动作期间不重选目标或重掷概率；死亡、真实 GH、冻结、目标失效及路径失败清理动作。骷髅法师使用目标停止距离，弓手区分 20% 绕行与带目标距离的半径动作；女盗贼弓手先尝试 aip8 走近，再判断远距必跑。僵尸移除永久追击及自加 10 帧等待，追击使用 RN／175%；Brute、腐乌鸦、法师、女盗贼、Bighead、小矮人与退避／绕行共用基础 75 加 AI 属性、ColdEffect、蛛网、词缀及限时状态速度，位移与动画读取同一结果。
+
+普通家族起手共用真实体积的 MeleeRng+1，普通近战出伤增加原 +3；默认目标／Fallen 见尸使用无体积整数距离，Archer／SkeletonBow／SkeletonMage／Bighead 的有视线选敌阈值使用目标 FullUnitSize 整数距离。普通巫师直属尸体按 AiUtil::sub_6FCF1DC0 使用巫师 FullUnitSize 距离与 aip4² 阈值，并保留邻房遍历末个合格目标；不得混用暗金巫师的平方坐标回调。巫师按 Fn013 保留当前目标及有视线备选目标的两次独立射击机会。A1/A2 使用身份冷效果与 15–175 速率边界，动作进行中刷新速率时按旧／新百分比同步总时长、剩余时长和未出手时间，不重置已播放进度；原版怪物 SC/S 技能模式保留原动作时序。MonsterColdDivisor 移入 applyChill，冰封球等弹体不重复除。受击显示、AI 反应和真正 GH 分离；读取原 HitClass.txt／Weapons.hit class 并随武器攻击快照传递，按低于 1 HP、生命比例、随机门槛、冻结、不可打断、眩晕与 mGH 判定恢复，不再凭缺图补造 .12 秒 GH。Units 的 GH 专用公式为原 AnimData 速率乘 (50+120×FHR/(120+FHR))%，不受 ColdEffect／other_animrate 影响；此前 .24 秒 Brute GH 记录已被当前原 .48 秒结果取代。软命中不打断正在执行的移动，回击在动作完成后按家族规则选择，不把普通法师误套为弓手的强制射击。
+
+腐乌鸦恢复自身 3／4 格游走及 0／-50 速度加值，冲锋／退避沿自身参数；自身游走按 AiTactics::WalkCloseToUnit 先选轴、再偏移、再两次符号掷骰，仅请求一次路径，不失败重掷四次。退避按原整数坐标符号方向一次请求，不用切线备选或逐次缩短距离。蜘蛛补接敌决策计数、受击追击记忆与低生命 4／8／12 动作；小矮人循环只在动作结束后决策时推进。吸血鬼保留阶段、有视线技能目标、<=30 概率边界及 Run/Velocity 退避属性，退避失败在同一次决策中继续原分支，不额外重掷。Fallen 首领喊叫同时给自身和直属随从命令，等待／移动中不重新喊叫，见尸逃离后的首击记忆保留。
+
+巢从施法开始帧计时，AI 许可与技能出生分离：Fn043 原调用明确传两次 X，因此许可使用 (X,X+3) 的大小 2、0x3c01 掩码；不擅改该 reference 调用。通过许可才增加一次尝试并开始技能，开始时保存 MonStats.spawnx/spawny 的实际坐标，技能事件在保存坐标周围半径 3 的周界搜索实际出生点，不再使用自定义九点偏移。AI 失败使用 20–29 帧重试，技能出生失败不另改 AI 时钟／重试，达到上限后设置 NOTC；经验与 TC 资格分离。依据 MonsterSpawn::sub_6FC68350、Monsters::MONSTERS_GetSpawnMode_XY、SkillMonst::SrvSt49/SrvDo091 及 SpawnNormalMonster 的原注释分支。
+
+人口 elite 随从现记录准确 ownerSpawnKey；Fallen／Shaman 命令与普通巫师复活按直属关系选择，不按组号扩大。已有主人强化的 Minion 可按强化等级进入原普通 TC，不再在读取 enchantment 前统一暂缓。自然精英尚未初始化，因此其随从仍明确暂缓收益，不以记录直属键宣称强化已完成。
+
+Windows Release 已编译，未新增测试脚本、用例或专用程序。现有 debug 管道临时角色覆盖女盗贼 85% 走近及软命中后连续移动、法师 85% 接近后 A1、Brute .5 HP 软命中保持动作；本轮修正后 12 HP 命中 GH 为 .48 秒。巢新许可链在 (25.5,25.5) 正常孵出六只原幼鸟、达到 NOTC，击杀给 4 经验、无掉落且 deferred=null；旧 (32.5,25.5) 许可失败、计数 0，说明独立许可确实生效。地狱一级冰弹对 2625 HP 法师不产生 GH，冷时长约 1.5 秒；A1 中途由 100% 切为本身份 75%，总时长 .787692→1.050256 秒，保持进度。临时实例均已退出，未读写用户角色存档。包内最终启动及交付入口见 [构建与运行](BUILD_AND_SHARE.md)。D2S v96、角色保存语义和原 MPQ 不变；本轮授权提交源码与文档，产物和 reference 不入 Git。
+
+仍待人工验收与全局边界：未穷举所有变体／概率分支；房间目标获取、A*、动态拥挤、绕行路径类型 5/6 的几何适配及房间随机流消费仍非完整原引擎。巢周界搜索依据本地 SpawnNormalMonster 的反编译注释，复用当前单位占位检查，未宣称与零售版逐种子等价。当前用动作结束及受击反应标记承接本阶段 AI 3/19 和命令，不导入原引擎完整事件容器；上述共用世界边界不以第一阶段完成宣称解决。自然 Champion／Unique／SuperUnique／Boss 的战斗属性缺失及普通承伤拒绝路径仍未开放，属于第二至五阶段，不能通过删除级别限制套普通公式。自然精英强化、姓名／调色、完整直属收益及固定首领／专属 Boss 继续按下方顺序实施。
+
+普通与高难度名单均为 55 个身份；`umon1–10` 也有 55 个身份，以 `foulcrow1/2` 替换巢的两个身份。`monsterImplementation` 已覆盖这三组名单及巢孵出的鸟，没有发现名单内仍用替身的普通身份。三难度基础数值解析的 `L-HP/L-DM/L-TH/L-AC`、`noRatio`、抗性、`El1–3` 动作与难度列，以及 AI 参数难度后缀已有共用入口；本轮未发现需要逐个变体复制数值公式的依据。缺口集中在动作执行和身份初始化。
+
+### 修复前的共用偏差
+
+| 优先顺序 | 当前源码与影响 | 原依据／后续修正 |
+| --- | --- | --- |
+| 1 | `skeleton_mage_ai.cpp:12` 把 `aip2` 当作行走预算；`skeleton_bow_ai.cpp:16/23` 把绕行 3 与 `aip4` 当作直线推进预算，`monster_ai.cpp:437` 按实际位移递减。会提前结束或改变接近动作 | Fn064 的 `WalkToTargetUnitWithSteps(aip2)` 是目标停止距离；Fn037 的近距 20% 分支是 `sub_6FCD0E80(...,3)` 绕行，远距是 `WalkInRadiusToTarget(aip4,aip5)`。分别接目标动作、绕行动作与带目标距离的半径坐标动作，不能统一成走若干格 |
+| 2 | 共用 `Enemy.approach` 只接 CorruptRogue／CorruptLancer／Skeleton／Goatman／Wraith。Spider、Archer、Bighead 等仍在推进过程中调用决策；Fetish 的循环计数也可能按每帧递增。目标仍会在这些移动期间重新选择 | Fn026／035／004／030 和 MonsterMode 的 WL／RN 完成回调按动作完成触发下一次决策。扩展共用动作生命周期，保持每个家族的目标、模式、停止条件、阶段和独立概率 |
+| 3 | 其他家族的 AI 近战起手仍是中心欧氏距离 `attackRange`，而命中已经用整数体积距离；非近战阈值大多仍来自 `delta.length()`。同一个 `MeleeRng+1` 又同时用于起手和命中，遗漏原普通怪物近战的额外范围加值 | AiUtil 的 `bCombat` 调用 `UNITS_IsInMeleeRange(...,0)`；MonsterMode 普通近战调用 `SUNITDMG_GetResultFlags(...,0,0)`，怪物的 `nRange=3`，Units 判定为 `MeleeRng+nRangeBonus+1`。分离起手／普通近战命中范围；按每个 reference 调用选择 NoUnitSize、FullUnitSize 或单位距离，不以欧氏距离统一替代 |
+| 4 | 绕行、退避和多数家族仍走 `monsterWalkSpeed_` 加 `.42f` 冰冷倍率。Brute／BloodHawk 用乘法叠速度，Zombie 的旧分支为 `75×4/3=100`；原速度属性应加到基础 75。例如 Brute 最低生命档当前为 120%，原为 135%；Zombie 原追击为 175% | Fn007／005／003／030／035／064／004 的 `SetVelocity`，以及 Units 的移动百分比。统一用真实 Velocity 与加法速度属性，纳入本难度 ColdEffect、蛛网、词缀及状态。法师接近／退避原加值为 10／25，Bighead 退避为 50，Fetish 接近／退避为 50，Archer 走近／退避为 10／100。位移和动画共用同一结果 |
+| 5 | `monster_melee.cpp:28` 令所有冰冷攻击时长翻倍，不使用身份及难度 ColdEffect，也没有按原攻击速率上下限处理。通用 `applyChill` 不使用已加载的 MonsterColdDivisor；只有冰封球的独立入口执行该除数 | `SUNITDMG_ApplyColdState` 把 ColdEffect 加入 velocitypercent／attackrate／other_animrate，并按原 MonsterColdDivisor 缩短怪物冰冷时间。当前 MPQ 普通／噩梦／地狱除数为 1／2／4；不同身份 ColdEffect 不同。移入共用状态入口，避免冰封球重复除，保留整数帧及最低一帧规则；SC 等模式按 Units 的对应分支处理 |
+| 6 | `unit.cpp:186` 对每次非毒有效伤害都写入 hitFlash，缺少原软命中／GH 的分流；无 GH 资源还回退到 `.12f`。五类共用接近 AI 与刺猬会因此停步／取消动作，其他家族却可能继续攻击或行走 | SUnitDmg 的 `sub_6FCC1870` 区分冻结、纯毒、低于 1 HP、HitClass、生命比例、随机门槛和 MonStats2.mGH；ExecuteMissileDamage 再区分 GH 与 AI 状态 19，且检查不可打断状态。分离受击表现、实际恢复动作与 AI 反应，集中应用全部家族 |
+| 7 | 自然 Champion／Unique／SuperUnique 没有 enchantment；`resolvedMonsterCombat` 与 `monsterAi_` 因级别直接返回空，boss 也明确排除。已有原形的固定首领仍回退旧生命／伤害和通用追击；更严重的是 `unit.cpp:88` 令其 stats.resolved=false，`resolveIncoming` 拒绝需要减免计算的常规承伤。这是静态可达路径，未实机复现 | MonsterUnique 的自然生成、固定 Mod1–3、高难度追加词缀和等级初始化。把已有祭坛强化能力接到自然生成／固定首领入口，保留真实家族 AI；boss 走其原等级及专属初始化，不能仅删除限制后套区域等级公式。开放精英前须先补其有效战斗属性 |
+| 8 | `world/population.cpp::elite` 的随从没有记录原 ownerSpawnKey。自然精英随从虽读取普通基础数值，尚未应用主人强化／等级；经验按普通 Minion 分支，`monster_loot.cpp:58` 无条件暂缓 Minion 掉落，连有 enchantment 的随从也在使用其加值前返回 | MonsterUnique 的 SpawnMinions／UMod 初始化。补准确直属归属、继承数值、等级／经验与原 TC 选择；修复 Minion 掉落前置暂缓。不能按普通组号把全部同伴都强化 |
+| 9 | 巢的间隔从成功出鸟时重新开始，失败统一等 20 帧；原函数在施法开始记帧，并有 20–29 帧重试。达到上限后的巢未设置原 NOTC，仍可能按非空原 TC 掉落 | Fn043 的帧戳、尝试计数、随机重试与上限后 UNITFLAG_NOTC。区分孵化 AI 的时刻、技能出鸟事件、失败及掉落资格；不能仅看 aip1/aip3 已读就认为行为完整 |
+
+### 修复前的普通家族分支
+
+| 家族／第一幕身份 | 除共用缺口外的具体剩余项 |
+| --- | --- |
+| CorruptArcher：`cr_archer1–4` | 当前仅在距离不超过 aip5 时尝试 aip8 走近；Fn035 在远距必跑前先尝试走近，当前 MPQ 四只的三难度 aip8 都为 12。补正确分支顺序、WithSteps 停止距离、退避跑动及受击强制射击；不是仅高难度才有走近 |
+| SkeletonBow：`sk_archer1–3`；SkeletonMage：`skmage_fire1–2/skmage_ltng1–2` | 补原绕行／半径动作／目标动作；法师撤退失败射击、速度加值及受击反应。为后续毒系骨灰共用同一框架 |
+| Zombie：`zombie1–3`；Brute：`brute1–3` | 原 RN／速度属性、一次目标动作、受击特殊 AI 状态与绕行；现 Zombie 永久追击布尔值和自加 10 帧未警觉等待仍是简化适配 |
+| QuillRat：`quillrat1–4` | Fn014 的警觉范围外是 WalkCloseToUnit，自身附近游走；当前落入通用向敌人接近。补射击失败且退避失败后的游走，以及原受击／命令反应 |
+| BloodHawk：`foulcrow1–2`（普通／精英池及巢子单位） | 当前把原 WalkCloseToUnit 随机游走改成绕目标走或接近；补原 3／4 半径游走、0／-50 加值、冲锋／退避的自身 aip4/5、结束和受击反应 |
+| Arach：`arach1`；Fetish：`fetish1`；Vampire：`vampire5` | 蜘蛛缺原接敌计数周期、受击后追击记忆和低生命阶段的 4／8／12 动作区别；小矮人攻击循环须按原决策次数而非模拟帧；吸血鬼补动作期间阶段保持、受击强制分支及原冷却计数。当前 vampire5 三难度 aip5 均为 1，不因 Skill2/3 列存在而开放普通个体火墙／陨石 |
+| Fallen：`fallen1–4`；FallenShaman：`fallenshaman1–4`；Nest：`crownest1–2` | 见尸／同伴命令的原直属关系、受击与移动生命周期、巫师尸体搜索距离／目标调度、巢帧戳与 NOTC。既有复活、火弹、喊叫、子鸟身份仍复用，不重写数值 |
+
+### 超出普通怪物的实施顺序
+
+1. 先修上述共用动作、距离、状态／速度和直属随从入口，再收尾普通家族分支。不得通过新增随机等待来掩盖调度问题。
+2. 接自然勇士（含 Ghostly／Fanatic／Possessed／Berserk）、随机金怪及其直属随从：复用已存在的词缀数值／事件／光环能力，补生成时初始化、原随机姓名、精英调色与完整收益；祭坛实现只证明能力入口存在。
+3. 接下表可复用现有基型的固定首领，统一读取 SuperUniques.Class／Mod1–3／MinGrp–MaxGrp／TC 及高难度追加规则，不逐只复制强化公式。
+4. 开放骨灰的新基型，再接 Smith／Griswold／Countess／BloodRaven 的专属 AI 和技能／命令。现有任务死亡触发不等同这些怪物玩法已完成。
+5. 接 Andariel 的 boss 数值／抗性、毒喷／毒弹、近战与阶段决策、动作／音频、原首杀及后续掉落和任务联动；牛场入口、牛王击杀资格及奖励一并按原任务规则核对。
+
+| 固定首领 | 原 Class／固定 Mod1–3（0 省略） | 剩余实现 |
+| --- | --- | --- |
+| Bishibosh | `fallenshaman1`／8,9 | 原基型已有；补固定强化、直属随从及原技能／命令差异核对 |
+| Bonebreak | `skeleton1`／5,8 | 原基型已有；补固定强化、随从和收益 |
+| Coldcrow | `cr_archer1`／18 | 原基型已有；补固定强化并依赖 Archer 收尾 |
+| Rakanishu | `fallen2`／17,6 | 原基型已有；补固定强化、闪电事件和随从 |
+| Treehead WoodFist | `brute2`／5,6 | 原基型已有；补固定强化并依赖 Brute 收尾 |
+| Pitspawn Fouldog | `bighead2`／7,18 | 原基型已有；补固定强化与近战／闪电／退避规则 |
+| Corpsefire | `zombie1`／27 | 原基型已有；补固定强化并依赖 Zombie 收尾 |
+| The Cow King | `hellbovine`／8,17 | 原基型已有；补固定强化、随从、牛场任务资格与入口 |
+| Boneash | `skmage_pois3`／8,5,18 | 目前为敌对替身；开放真实骨灰外观／调色／音效、SkeletonMage AI 和原 `MissA1=skmage1` 毒弹，不以现有火／电变体替换 |
+| The Smith | `smith`／5 | 目前为敌对替身；原 Smith AI／外观／A1-A2 及元素、固定强化，接现有铁槌任务 |
+| Griswold | `griswold`／7 | 目前为敌对替身；原 Griswold AI／外观／攻击与诅咒初始化，遵守 boss 级别边界 |
+| The Countess | `corruptrogue3`／9 | 外观已有，自然首领当前无家族 AI；必须接 `AISPECIALSTATE_COUNTESS=13`、原出生点／房间返回与 MapAI 火墙、固定强化及随从，核对原符文 TC／任务宝箱。普通 corruptrogue3 不获得该特殊 AI |
+
+另有 `bloodraven`（BloodRaven AI、`MissA1=raven1`、Nest／Quick Strike）与 `andariel`（Andariel AI、AndrialSpray／AndyPoisonBolt），当前均为敌对替身且专属 AI 未解析。血鸟还需原召唤／技能目标和死亡演出，安达利尔需独立 boss 链；对应本地 Fn059／034。Griswold／Smith 对应 Fn090／098，Countess 对应 SpecialState13，固定首领初始化依据 MonsterUnique。
+
+`Flamespike the Crawler` 仍在当前 SuperUniques／Act 1 MonPreset，原 Class=`quillrat4`、固定 Mod=9,7；本轮仅确认表记录，尚未逐 DS1 核实当前 LoD 1.13c 是否实际放置，不纳入已证实的自然出场清单。`gargoyletrap`、`trap-horzmissile`、`trap-vertmissile` 也在 Act 1 MonPreset，分别依赖 GargoyleTrap／Trap-RightArrow／Trap-LeftArrow；列为环境陷阱阶段，须先核实实际 DS1、原可攻击／不可攻击标志与技能弹体，不能统一变成普通敌人。其他 place_group／任务条件放置仍按人口文档暂缓。
+
+本轮计划限 Act 1。其他幕怪物、全球特殊事件、友方宠物／其他幕佣兵不因这次清单自动开放。所有数值、技能、概率与资源仍从原 MPQ 读取；本轮没有推导新的怪物参数。
 
 ## 移动动作与接近决策
 
@@ -17,11 +96,11 @@ Dark Spearwoman 的短步停顿来自 `updateMonsters` 每个 25 Hz 模拟帧重
 | Skeleton（含牛）／Goatman | 各自接近概率成功后提交目标行走，StepNum 为 1 | 75 |
 | Wraith | 保留 `WalkInRadiusToTarget(..., 12, 0)` 的整数坐标目标；走到该目标后重新决策 | 75 |
 
-`WithSteps` 不是“走几格便停”。D2MOO `PATH_SetStepNum` 存储参数减 1，`PathMisc::sub_6FD5DB70` 按 `D2Common_10399` 的整数距离和双方体积判断目标到达；`MonsterMode` 在 WL／RN 动作结束后才转 Neutral 并触发 AI。原表 `cr_lancer1–3.MeleeRng=2`；内容层现把该字段及 255 的原武器类哨兵转为类型化范围。上述五类的近战决策与共用近战命中统一使用双方真实 SizeX 和 `MeleeRng + 1`，不再把长枪当作统一中心半径。CorruptRogue／CorruptLancer 的距离门槛使用原整数坐标近似距离；运动及 WL／RN 动画共用真实身份的 ColdEffect、蛛网和词缀速度修正。
+`WithSteps` 不是“走几格便停”。D2MOO `PATH_SetStepNum` 存储参数减 1，`PathMisc::sub_6FD5DB70` 按 `D2Common_10399` 的整数距离和双方体积判断目标到达；`MonsterMode` 在 WL／RN 动作结束后才转 Neutral 并触发 AI。原表 `cr_lancer1–3.MeleeRng=2`；内容层把该字段及 255 的原武器类哨兵转为类型化范围。当前第一阶段已扩展动作生命周期至普通家族，起手用 `MeleeRng+1`，普通出伤另加原 +3；移动及 WL／RN 动画共用 ColdEffect、蛛网、词缀和限时状态速度。几何路径仍为项目适配，不能以共享判定宣称原引擎逐帧等价。
 
 依据当前 `assets/mpq2` 的 MonStats／MonStats2、固定本地 D2MOO `AiThink::Fn002/009/010/012_019/036`、`AiTactics::MoveToTarget/MoveInRadiusToTarget`、`AiUtil::sub_6FCF2110`、`Path::PATH_SetStepNum`、`PathMisc` 与 `Units::UNITS_IsInMeleeRange`。Diablerie 的通用 MonsterController 仅用于区分其简化协程模型，不用其随机延时替代原 AI 参数。参考代码与原表未纳入源码。
 
-本次仅修改源码和文档，未构建、测试、启动游戏、打包或提交；现有 `dist/current` 不含本次修复。当前 A*、路径失败回退、目标选择、房间活跃范围和完整事件调度仍是项目适配，未宣称逐帧复刻原引擎。其他家族的有界推进、退避、绕行及技能动作须按各自原函数接入，不能直接套用本表的追击策略。
+五类移动动作最初提交为 `3f230f1`；当前第一阶段运行包已包含该修订及普通家族扩展，编译和定向冒烟见上方交接。A*、目标获取、房间活跃与完整事件容器仍是项目适配，不因本批动作生命周期补齐宣称逐帧复刻。
 
 ## 怪物祭坛强化
 

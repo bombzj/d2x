@@ -105,6 +105,7 @@ struct Enemy {
     float hp = 100, maxHp = 100, chill = 0, attack = 0;
     float attackDuration = 0, attackImpact = -1;
     int attackMode = 1;
+    int attackRatePercent = 100;
     CombatIdentity allegiance{2, {}, 0, CombatRole::Monster};
     EntityId combatTarget;
     std::optional<UnitCombatStats> intrinsicCombat;
@@ -116,6 +117,8 @@ struct Enemy {
     float skill2Remaining = 0, skill2Duration = 0;
     float resurrectionRemaining = 0, resurrectionDuration = 0;
     float stun = 0, freeze = 0, deathAge = 0, hitFlash = 0, rethink = 0;
+    float hitDisplay = 0;
+    float hitRecoveryDuration = 0;
     bool freezeActive = false; // Native freeze bit, including a zero-length post-divisor application.
     float aiWait = 0;
     float webSlowRemaining = 0;
@@ -128,9 +131,13 @@ struct Enemy {
     std::optional<MonsterApproach> approach;
     std::optional<int> movementVelocityPercent;
     bool aiRetaliate = false;
+    bool aiAlerted = false;
     bool aiCharged = false;
     float aiAdvanceRemaining = 0;
     int aiPhase = 0, aiLoop = 0;
+    EffectFrame nestLastCastFrame = 0;
+    std::optional<Vec> nestSpawnPosition;
+    bool noTreasure = false;
     EntityId aiCorpse;
     bool resurrected = false;
     float webAuraRemaining = 0, webTrailDistance = 0;

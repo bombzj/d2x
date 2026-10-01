@@ -1,5 +1,7 @@
 #include "gameplay/simulation/simulation.hpp"
 #include "damage_resolution.hpp"
+#include "core/random.hpp"
+#include "gameplay/monsters/monster_wander.hpp"
 #include <algorithm>
 #include <set>
 
@@ -183,18 +185,42 @@ ResolvedDamage Simulation::resolveIncoming(EntityId attacker, const CombatUnit &
     if (type == MonsterDamageType::Cold && resistance < 100 && coldPierce_) resistance -= coldPierce_(attacker);
     return {mitigateMonsterDamage(amount, resistance), 0};
 }
-void Simulation::recoverUnit(EntityId defender, EntityId attacker, float damage, bool elemental) {
+void Simulation::recoverUnit(EntityId defender, EntityId attacker, float damage, bool elemental, int baseHitClass) {
     auto target = combatUnit(defender);
     if (!target.alive() || damage <= 0) return;
     if (target.monster) {
         auto &monster = *target.monster;
-        monster.hitFlash = monsterGetHitDuration_ ? monsterGetHitDuration_(monster.identity).value_or(.12f) : .12f;
+        monster.hitDisplay = 4.f / 25.f;
+        if (monster.freezeActive || monster.combatEffects.hasState(uninterruptableState_, state_.frame)) return;
+        monster.aiRetaliate = true;
+        const auto source = combatUnit(attacker);
+        const int hitClass = (baseHitClass >= 0 ? baseHitClass : source.monster && monsterHitProperties_
+            ? monsterHitProperties_(*source.monster).first : elemental ? 13 : 0) & 15;
+        const int divisor = hitClass == 2 || hitClass == 6 || hitClass == 10 || hitClass == 11 ? 8 :
+                            hitClass == 5 ? 64 : hitClass == 4 || hitClass == 8 ? 32 : 16;
+        const int dealt = int(damage * 256.f), maximum = int(monster.maxHp * 256.f);
+        if (monster.stun <= 0 && (dealt < 256 || dealt < maximum / divisor ||
+            (dealt < maximum / (divisor / 2) && !(rollRandom(monster.combatRandom) & 1)) ||
+            (dealt < maximum / (divisor / 4) && !(rollRandom(monster.combatRandom) & 3)))) return;
+        const auto duration = monsterGetHitDuration_ ? monsterGetHitDuration_(monster.identity) : std::nullopt;
+        if (!duration || *duration <= 0) return;
+        const int recovery = std::max(0, target.stats.attributes.combat.fasterHitRecovery);
+        const int faster = recovery > 0 ? 120 * recovery / (120 + recovery) : 0;
+        monster.hitFlash = monster.hitRecoveryDuration = *duration * 100.f / float(50 + faster);
+        monsterStopApproach(monster);
+        monster.route.clear();
+        monster.aiEscaping = monster.aiCircling = monster.aiRunning = false;
+        monster.attack = monster.attackDuration = 0;
+        monster.attackImpact = -1;
+        monster.teleportTarget.reset();
+        monster.nestSpawnPosition.reset();
         monster.skill2Remaining = monster.skill2Duration = 0;
+        monster.aiCorpse = {};
         emit(EnemyHit{defender, monster.kind});
     } else if (target.hireling) {
         const auto source = combatUnit(attacker);
-        const int hitClass = !elemental && source.monster && monsterHitProperties_
-            ? monsterHitProperties_(*source.monster).first : 0;
+        const int hitClass = (baseHitClass >= 0 ? baseHitClass : source.monster && monsterHitProperties_
+            ? monsterHitProperties_(*source.monster).first : elemental ? 13 : 0) & 15;
         recoverHireling(damage, hitClass);
     } else if (target.player) target.player->hitTime = .16f;
 }
@@ -235,10 +261,12 @@ float Simulation::dealDamage(const DamageRequest &request) {
             merc.corpseRegion = state_.area.region; merc.corpseVisible = true; merc.deathAge = 0;
         }
     }
-    if (request.hitRecovery && request.type != MonsterDamageType::Poison)
+    const bool purePoison = channels[size_t(MonsterDamageType::Poison)] > 0 &&
+        std::none_of(channels.begin(), channels.end() - 1, [](float value) { return value > 0; });
+    if (request.hitRecovery && !purePoison)
         recoverUnit(target.id, request.attacker, dealt,
             request.type != MonsterDamageType::Physical ||
-            std::any_of(request.channels.begin() + 1, request.channels.end(), [](float value) { return value > 0; }));
+            std::any_of(request.channels.begin() + 1, request.channels.end(), [](float value) { return value > 0; }), request.hitClass);
     if (!target.alive()) {
         emit(UnitDied{target.id, target.monster && target.monster->deathShattered,
                      *target.position, target.stats.collisionSize});
@@ -260,7 +288,13 @@ void Simulation::applyChill(EntityId defender, float duration, bool freeze) {
         target.monster->freezeActive = true;
         target.monster->freeze = std::max(target.monster->freeze, float(frames / monsterFreezeDivisor_) / 25.f);
         target.monster->route.clear();
-    } else *target.chill = std::max(*target.chill, duration);
+    } else {
+        int frames = int(duration * 25.f + .00001f);
+        if (frames <= 0) return;
+        if ((target.monster || target.hireling) && unitColdEffect_ && unitColdEffect_(target) < 0)
+            frames /= std::max(1, monsterColdDivisor_);
+        *target.chill = std::max(*target.chill, float(std::max(1, frames)) / 25.f);
+    }
 }
 void Simulation::applyWeb(EntityId defender, float duration, int percent) {
     auto unit = combatUnit(defender);

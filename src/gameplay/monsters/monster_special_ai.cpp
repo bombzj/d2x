@@ -8,14 +8,14 @@
 #include "gameplay/monsters/arach_ai.hpp"
 #include "gameplay/monsters/monster_wander.hpp"
 #include <algorithm>
+#include <cmath>
 
 namespace d2x {
 bool Simulation::handleMonsterSpecialAi(Enemy &enemy, const MonsterAiProfile &ai,
                                         float distance, bool clear) {
     const Vec targetPosition = monsterTargetPosition(enemy);
+    const bool inCombat = monsterMeleeReach(enemy);
     if (ai.kind == MonsterAiKind::Arach) {
-        const bool inCombat = clear &&
-            distance < monsterDefinition(enemy.kind).attackRange;
         const auto action = arachThink(enemy, ai, distance, inCombat);
         if (action == ArachAction::Attack || action == ArachAction::Web) {
             enemy.route.clear();
@@ -23,14 +23,17 @@ bool Simulation::handleMonsterSpecialAi(Enemy &enemy, const MonsterAiProfile &ai
             return true;
         }
         if (action == ArachAction::Retreat) {
-            if (!monsterStartRetreat(enemy, targetPosition, ai.params[3], *grid_, movementRule(enemy)))
-                enemy.aiWait = 15.f / 25.f;
+            monsterStartRetreat(enemy, targetPosition, int(enemy.aiAdvanceRemaining), *grid_, movementRule(enemy));
             return true;
         }
         if (action == ArachAction::Circle) {
-            if (!monsterStartCircle(enemy, targetPosition, 6, *grid_, movementRule(enemy)))
-                enemy.aiWait = 15.f / 25.f;
+            monsterStartCircle(enemy, targetPosition, int(enemy.aiAdvanceRemaining), *grid_, movementRule(enemy));
             return true;
+        }
+        if (action == ArachAction::Wander) {
+            if (auto destination = monsterWanderTarget(enemy, *grid_, 6, movementRule(enemy)))
+                monsterStartApproach(enemy, 0, 75, false, *destination);
+            return !enemy.approach;
         }
         if (action == ArachAction::Idle) {
             enemy.route.clear();
@@ -40,16 +43,29 @@ bool Simulation::handleMonsterSpecialAi(Enemy &enemy, const MonsterAiProfile &ai
     }
     if (ai.kind == MonsterAiKind::FoulCrowNest) {
         enemy.route.clear();
-        if (distance <= 20.f && enemy.aiWait == 0 &&
-            enemy.aiLoop < ai.params[2] && monsterNest_ &&
-            monsterNest_(enemy) && monsterAttackTiming_ &&
-            monsterAttackTiming_(enemy, 3))
-            beginMonsterAttack(enemy, 3);
+        if (enemy.aiWait > 0) return true;
+        if (distance > 20.f) { enemy.aiWait = 1.f; return true; }
+        if (enemy.aiLoop >= ai.params[2]) { enemy.noTreasure = true; return true; }
+        if (state_.frame - enemy.nestLastCastFrame < EffectFrame(ai.params[0]) ||
+            !monsterNest_ || !monsterNest_(enemy)) {
+            enemy.aiWait = float(20 + monsterAiRandom(enemy) % 10) / 25.f;
+            return true;
+        }
+        enemy.nestLastCastFrame = state_.frame;
+        const Vec permission{std::floor(enemy.pos.x) + .5f, std::floor(enemy.pos.x) + 3.5f};
+        if (!monsterAttackTiming_ || !monsterAttackTiming_(enemy, 3) ||
+            !grid_->walkable(permission, {0x3c01, 2})) {
+            enemy.aiWait = float(20 + monsterAiRandom(enemy) % 10) / 25.f;
+            return true;
+        }
+        ++enemy.aiLoop;
+        const auto nest = monsterNest_(enemy);
+        enemy.nestSpawnPosition = Vec{std::floor(enemy.pos.x) + nest->spawnX + .5f,
+                                     std::floor(enemy.pos.y) + nest->spawnY + .5f};
+        beginMonsterAttack(enemy, 3);
         return true;
     }
     if (ai.kind == MonsterAiKind::BloodHawk) {
-        const bool inCombat = clear &&
-            distance < monsterDefinition(enemy.kind).attackRange;
         const auto action = bloodHawkThink(enemy, ai, distance, inCombat);
         if (action == BloodHawkAction::Attack) {
             enemy.route.clear();
@@ -61,32 +77,37 @@ bool Simulation::handleMonsterSpecialAi(Enemy &enemy, const MonsterAiProfile &ai
                 beginMonsterAttack(enemy, 1);
             return true;
         }
-        if (action == BloodHawkAction::Circle) {
-            if (monsterStartCircle(enemy, targetPosition, 4, *grid_, movementRule(enemy))) return true;
+        if (action == BloodHawkAction::Circle || action == BloodHawkAction::Approach) {
+            const bool slow = action == BloodHawkAction::Circle;
+            if (auto destination = monsterWanderTarget(enemy, *grid_, slow ? 4 : 3, movementRule(enemy)))
+                monsterStartApproach(enemy, 0, slow ? 25 : 75, false, *destination);
+            return !enemy.approach;
         }
         return false;
     }
     if (ai.kind == MonsterAiKind::FallenShaman) {
         const auto skill = monsterResurrection_ ? monsterResurrection_(enemy) : std::nullopt;
         Enemy *corpse = nullptr;
-        float closest = float(ai.params[3]);
+        float closest = float(ai.params[3] * ai.params[3]);
         for (auto &candidate : state_.area.enemies) {
-            if (relation(enemy.id, candidate.id) != Relation::Allied || !skill || !fallenShamanResurrectionTarget(enemy, candidate, *skill)) continue;
-            const float separation = (candidate.pos - enemy.pos).length();
+            if (!rooms_->nearby(enemy.pos, candidate.pos) || relation(enemy.id, candidate.id) != Relation::Allied ||
+                !skill || !fallenShamanResurrectionTarget(enemy, candidate, *skill)) continue;
+            const int size = monsterSize_ ? monsterSize_(enemy) : 2;
+            const float separation = float(monsterAiDistance(enemy.pos, size, candidate.pos));
             if (separation > closest) continue;
             const auto duration = monsterDeathDuration_
                 ? monsterDeathDuration_(candidate) : std::nullopt;
             if (!duration || candidate.deathAge < *duration) continue;
-            closest = separation;
             corpse = &candidate;
         }
-        const bool inCombat = clear &&
-            distance < monsterDefinition(enemy.kind).attackRange;
-        const auto decision = fallenShamanThink(enemy, ai, distance, inCombat, corpse != nullptr);
+        const auto alternate = combatUnit(chooseTarget(enemy.id));
+        const float alternateDistance = alternate.alive()
+            ? float(monsterAiDistance(*alternate.position, alternate.stats.collisionSize, enemy.pos)) : -1.f;
+        const auto decision = fallenShamanThink(enemy, ai, distance, inCombat, corpse != nullptr, alternateDistance);
         if (decision.commandMinions)
             for (auto &other : state_.area.enemies)
                 if (relation(enemy.id, other.id) == Relation::Allied && other.hp > 0 && other.kind == MonsterKind::Fallen &&
-                    other.identity.group == enemy.identity.group &&
+                    other.identity.ownerSpawnKey == enemy.identity.spawnKey &&
                     !monsterImplementation(other.identity.monster).substitute)
                     other.aiCommanded = true;
         if (decision.action == FallenShamanAction::Resurrect && corpse) {
@@ -96,6 +117,7 @@ bool Simulation::handleMonsterSpecialAi(Enemy &enemy, const MonsterAiProfile &ai
             return true;
         }
         if (decision.action == FallenShamanAction::Fire) {
+            if (decision.alternateTarget) enemy.combatTarget = alternate.id;
             enemy.route.clear();
             beginMonsterAttack(enemy, 4);
             return true;
@@ -112,13 +134,12 @@ bool Simulation::handleMonsterSpecialAi(Enemy &enemy, const MonsterAiProfile &ai
         return true;
     }
     if (ai.kind == MonsterAiKind::Vampire) {
-        const bool inCombat = clear && distance < monsterDefinition(enemy.kind).attackRange;
-        const auto action = vampireThink(enemy, ai, distance, inCombat);
-        if (action == VampireAction::Retreat) {
-            if (!monsterStartRetreat(enemy, targetPosition, 8, *grid_, movementRule(enemy)))
-                enemy.aiWait = 10.f / 25.f;
-            return true;
-        }
+        const auto target = combatUnit(chooseTarget(enemy.id));
+        const float spellDistance = target.alive()
+            ? float(monsterAiDistance(*target.position, target.stats.collisionSize, enemy.pos)) : -1.f;
+        const auto action = vampireThink(enemy, ai, distance, inCombat, spellDistance, [&] {
+            return monsterStartRetreat(enemy, targetPosition, 8, *grid_, movementRule(enemy));
+        });
         if (action == VampireAction::Circle) {
             if (!monsterStartCircle(enemy, targetPosition, 4, *grid_, movementRule(enemy)))
                 enemy.aiWait = 10.f / 25.f;
@@ -126,18 +147,18 @@ bool Simulation::handleMonsterSpecialAi(Enemy &enemy, const MonsterAiProfile &ai
         }
         if (action == VampireAction::Attack || action == VampireAction::CastFirst ||
             action == VampireAction::CastFourth) {
+            if (action != VampireAction::Attack && target.alive()) enemy.combatTarget = target.id;
             enemy.route.clear();
             beginMonsterAttack(enemy, action == VampireAction::CastFirst ? 3 :
                                       action == VampireAction::CastFourth ? 6 : 1);
             return true;
         }
         if (action == VampireAction::Idle) {
-            enemy.route.clear();
+            if (!enemy.aiEscaping) enemy.route.clear();
             return true;
         }
     }
     if (ai.kind == MonsterAiKind::Fetish) {
-        const bool inCombat = clear && distance < monsterDefinition(enemy.kind).attackRange;
         const auto target = combatUnit(enemy.combatTarget);
         const auto targetStats = target.stats.attributes;
         const float life = target.alive() ? *target.life : 0;
@@ -185,13 +206,16 @@ bool Simulation::handleMonsterSpecialAi(Enemy &enemy, const MonsterAiProfile &ai
         }
     }
     if (ai.kind == MonsterAiKind::Bighead) {
-        auto action = bigheadThink(enemy, ai, distance, clear,
-                                   monsterDefinition(enemy.kind).attackRange);
+        auto action = bigheadThink(enemy, ai, distance, clear, inCombat);
+        if (action == BigheadAction::Approach) {
+            const bool healthy = enemy.maxHp <= 0 || enemy.hp * 100 >= enemy.maxHp * ai.params[0];
+            monsterStartApproach(enemy, healthy ? 0 : 5, 75, false);
+        }
         if (action == BigheadAction::Retreat)
             action = monsterStartRetreat(enemy, targetPosition, 5, *grid_, movementRule(enemy))
                 ? BigheadAction::Idle : BigheadAction::Fire;
         if (action == BigheadAction::Circle) {
-            if (!monsterStartCircle(enemy, targetPosition, 4, *grid_, movementRule(enemy)))
+            if (!monsterStartCircle(enemy, targetPosition, 3, *grid_, movementRule(enemy)))
                 enemy.aiWait = 10.f / 25.f;
             action = BigheadAction::Idle;
         }

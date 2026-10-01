@@ -11,7 +11,7 @@ BloodHawkAction bloodHawkThink(Enemy &enemy, const MonsterAiProfile &rules,
         enemy.aiCharged = false;
         return BloodHawkAction::Attack;
     }
-    if (enemy.aiCharged) return BloodHawkAction::Approach;
+    enemy.aiCharged = false;
     if (inCombat) {
         enemy.aiCharged = false;
         return roll(rules.params[2]) ? BloodHawkAction::Attack

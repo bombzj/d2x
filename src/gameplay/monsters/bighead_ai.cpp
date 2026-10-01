@@ -3,12 +3,12 @@
 
 namespace d2x {
 BigheadAction bigheadThink(Enemy &enemy, const MonsterAiProfile &rules,
-                           float distance, bool clear, float meleeRange) {
+                           float distance, bool clear, bool inCombat) {
     if (enemy.aiWait > 0) return BigheadAction::Idle;
     const bool healthy = enemy.maxHp <= 0 ||
         enemy.hp * 100.f >= enemy.maxHp * float(rules.params[0]);
     if (healthy) {
-        if (clear && distance < meleeRange) return BigheadAction::Melee;
+        if (inCombat) return BigheadAction::Melee;
         if (clear && distance < 15.f &&
             monsterAiRandom(enemy) % 100 < unsigned(rules.params[2]))
             return BigheadAction::Fire;

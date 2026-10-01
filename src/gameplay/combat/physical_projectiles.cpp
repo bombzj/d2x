@@ -23,6 +23,7 @@ bool Simulation::firePhysicalProjectile(Vec target, const WeaponDamage &weapon, 
     AttackElements elements;
     if (!potion) elements = rollAttackElements(selected.item, nullptr, skill);
     elements.ranged = true;
+    elements.hitClass = selected.hitClass;
     const auto roll = [&](int minimum, int maximum) {
         if (maximum < minimum) std::swap(minimum, maximum);
         rollRandom(player.combatRandom);

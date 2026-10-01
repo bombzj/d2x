@@ -244,7 +244,8 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
         // UNITS_GetBaseVelocity always uses Velocity, including RN. Monster.cpp
         // starts velocitypercent at 75; AI velocity stats add to that base.
         const int rate = monsterMovementPercent(*record, state().population.difficulty,
-                                                velocityPercent + (enemy.webSlowRemaining > 0 ? enemy.webSlowPercent : 0) + (enemy.identity.enchantment
+                                                velocityPercent + enemy.combatEffects.modifiers(state().frame).velocityPercent +
+                                                (enemy.webSlowRemaining > 0 ? enemy.webSlowPercent : 0) + (enemy.identity.enchantment
                                                     ? enemy.identity.enchantment->velocityPercent : 0), enemy.chill > 0);
         return float((*record->walkVelocity << 8) * rate / 100) * 25.f / 4096.f;
     };

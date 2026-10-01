@@ -32,7 +32,12 @@ void GameSession::settleDeaths() {
             loot_.settle(request, std::move(empty));
             continue;
         }
-        const auto entry = resolveMonsterLoot(content_, monsterContent_, worldContent_, request);
+        const auto *victim = simulation_->findEnemy(death.victim);
+        auto entry = resolveMonsterLoot(content_, monsterContent_, worldContent_, request);
+        if (victim && victim->noTreasure) {
+            entry.status = LootEntryStatus::Empty;
+            entry.reason = "Original monster NOTC flag";
+        }
         std::cout << "Monster loot entry: id=" << death.victim.value << " monster=" << death.identity.monster
                   << " rank=" << monsterRankName(death.identity.rank);
         LootPlan plan;

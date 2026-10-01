@@ -72,7 +72,6 @@ float Simulation::missileColdDuration(EntityId attacker, const CombatUnit &targe
     if (frames <= 0) return 0;
     const int coldEffect = unitColdEffect_ ? unitColdEffect_(target) : 0;
     if (coldEffect == 0) return 0;
-    if ((target.monster || target.hireling) && coldEffect < 0) frames /= monsterColdDivisor_;
     return float(std::max(1, frames)) / 25.f;
 }
 void Simulation::advanceFrozenOrb(Missile &missile, std::vector<Missile> &spawned) {

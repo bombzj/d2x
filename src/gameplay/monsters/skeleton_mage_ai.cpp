@@ -1,15 +1,13 @@
 #include "skeleton_mage_ai.hpp"
 #include "monster_wander.hpp"
+#include <algorithm>
 
 namespace d2x {
 SkeletonMageAction skeletonMageThink(Enemy &enemy, const MonsterAiProfile &rules,
                                      float distance, bool clear) {
     if (enemy.aiWait > 0) return SkeletonMageAction::Idle;
-    if (enemy.aiAdvanceRemaining > 0 && distance > float(rules.params[1]))
-        return SkeletonMageAction::Approach;
-    enemy.aiAdvanceRemaining = 0;
     auto approach = [&] {
-        enemy.aiAdvanceRemaining = float(rules.params[1]);
+        monsterStartApproach(enemy, std::max(0, rules.params[1] - 1), 85, false);
         return SkeletonMageAction::Approach;
     };
     if (clear) {
