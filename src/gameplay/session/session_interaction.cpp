@@ -185,6 +185,60 @@ void GameSession::completeInteraction(const WorldObject &object) {
         }
     }
     switch (object.interaction) {
+    case Interaction::TeleportPad: {
+        const auto &map = region().map;
+        const auto *sourceRoom = map.activation.room(object.pos);
+        if (!sourceRoom) break;
+        const auto near = map.activation.nearRooms(*sourceRoom);
+        const WorldObject *destination = nullptr;
+        for (const auto &candidate : region().objects) {
+            if (candidate.id == object.id || candidate.objectClass != object.objectClass ||
+                candidate.interaction != Interaction::TeleportPad)
+                continue;
+            const auto *candidateRoom = map.activation.room(candidate.pos);
+            if (std::find(near.begin(), near.end(), candidateRoom) == near.end())
+                continue;
+            const bool sameRoom = candidateRoom == sourceRoom;
+            const bool destinationSameRoom = destination && map.activation.room(destination->pos) == sourceRoom;
+            if (!destination || (sameRoom && !destinationSameRoom) ||
+                (sameRoom == destinationSameRoom &&
+                 (candidate.pos - object.pos).length() < (destination->pos - object.pos).length()))
+                destination = &candidate;
+        }
+        if (!destination) {
+            simulation_->emit(InteractionFailed{object.id, "No linked teleport pad in nearby rooms."});
+            break;
+        }
+        std::optional<Vec> landing;
+        for (int radius = 0; radius <= 3 && !landing; ++radius)
+            for (int vertical = -radius; vertical <= radius && !landing; ++vertical)
+                for (int horizontal = -radius; horizontal <= radius; ++horizontal) {
+                    Vec point = destination->pos + Vec{float(horizontal), float(vertical)};
+                    if (map.grid.walkable(point, playerMovement)) {
+                        landing = point;
+                        break;
+                    }
+                }
+        if (!landing) {
+            simulation_->emit(InteractionFailed{object.id, "Teleport pad destination is blocked."});
+            break;
+        }
+        cancelExit();
+        cancelPickup();
+        auto &player = simulation_->state_.player;
+        player.pos = player.previous = *landing;
+        player.route.clear();
+        simulation_->relocateCompanions(player.id, *landing);
+        if (player.hireling.active()) {
+            player.hireling.pos = *landing;
+            player.hireling.route.clear();
+            player.hireling.moving = false;
+            player.hireling.attack.reset();
+            player.hireling.attackTimer = player.hireling.thinkTimer = 0;
+        }
+        simulation_->emit(ObjectInteracted{object.id, object.interaction, object.name});
+        break;
+    }
     case Interaction::Door: {
         auto &objects = regions_.at(current_).objects;
         auto found = std::find_if(objects.begin(), objects.end(), [&](const WorldObject &value) {

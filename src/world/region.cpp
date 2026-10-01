@@ -102,6 +102,7 @@ void classify(WorldObject &object, const Table &objectRows) {
             const auto &operation = record->at("OperateFn");
             object.operateFn = operation.empty() ? 0 : std::stoi(operation);
             if (door && object.operateFn == 8) object.interaction = Interaction::Door;
+            if (object.operateFn == 27) object.interaction = Interaction::TeleportPad;
             object.objectDamage = record->at("Damage").empty() ? 0 : std::stoi(record->at("Damage"));
             for (size_t index = 0; index < object.parameters.size(); ++index) {
                 const auto &value = record->at("Parm" + std::to_string(index));
