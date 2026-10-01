@@ -11,6 +11,7 @@ struct AuraDefinition {
     int element = -1;
     float minimumDamage = 0, maximumDamage = 0;
     bool hostile = false;
+    uint32_t filter = 0;
 };
 struct ActiveAura {
     AuraDefinition definition;

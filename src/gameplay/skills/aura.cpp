@@ -19,6 +19,17 @@ void Simulation::updateAuras() {
             effect.source = {CombatEffectSource::Skill, source.id, aura.skill, aura.rank};
             effect.duration = duration;
             if (!aura.hostile || !owner) effect.modifiers = aura.modifiers;
+            if (aura.skill == 123 && !owner && target.monster && !target.hireling) {
+                auto reduce = [&](int &value, MonsterDamageType type) {
+                    const auto base = target.monster->intrinsicCombat
+                        ? std::optional<int>{unitResistance(target, type)} : monsterResistance_
+                        ? monsterResistance_(*target.monster, state_.area.region, type) : std::nullopt;
+                    if (base && *base >= 100 && value < 0) value /= 5;
+                };
+                reduce(effect.modifiers.fireResist, MonsterDamageType::Fire);
+                reduce(effect.modifiers.coldResist, MonsterDamageType::Cold);
+                reduce(effect.modifiers.lightningResist, MonsterDamageType::Lightning);
+            }
             if (owner) effect.modifiers.combat.damagePercent += aura.ownerDamageBonus;
             const auto removed = target.effects->apply(std::move(effect), state_.frame).removed;
             if (target.player) combatEffectsChanged(removed);
@@ -26,7 +37,12 @@ void Simulation::updateAuras() {
         apply(source, aura.ownerState, true);
         for (auto target : combatUnits()) {
             if (!target.alive() || target.id == source.id || !rooms_->nearby(*source.position, *target.position)) continue;
-            if (auraEligible_ && !auraEligible_(target)) continue;
+            if (!aura.hostile && auraEligible_ && !auraEligible_(target)) continue;
+            if (aura.hostile && safeZone_) continue;
+            if ((aura.filter & 4) && !target.stats.undead) continue;
+            if ((aura.filter & 0x4000) && target.stats.boss) continue;
+            if ((aura.filter & 0x40000) && target.stats.primeEvil) continue;
+            if ((aura.filter & 0x200) && !grid_->collisionSegment(*source.position, *target.position, 4)) continue;
             const float offsetX = std::floor(source.position->x) - std::floor(target.position->x);
             const float offsetY = std::floor(source.position->y) - std::floor(target.position->y);
             if (offsetX * offsetX + offsetY * offsetY > aura.radius * aura.radius) continue;
@@ -39,7 +55,7 @@ void Simulation::updateAuras() {
     for (auto &enemy : state_.area.enemies)
         if (enemy.identity.enchantment && enemy.identity.enchantment->aura &&
             (enemy.identity.enchantment->aura->skill == 98 || enemy.identity.enchantment->aura->skill == 108 ||
-             enemy.identity.enchantment->aura->skill == 122))
+             enemy.identity.enchantment->aura->skill == 122 || enemy.identity.enchantment->aura->skill == 123))
             pulse(combatUnit(enemy.id), *enemy.identity.enchantment->aura, enemy.nextAuraFrame);
 }
 }

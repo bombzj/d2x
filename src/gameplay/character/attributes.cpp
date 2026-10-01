@@ -89,6 +89,7 @@ CharacterAttributes deriveCharacterAttributes(const CharacterDefinition &d, int 
     result.attackRating = bounded(int64_t(result.baseAttackRating) *
                                   std::max<int64_t>(0, 100LL + m.combat.attackRatingPercent) / 100);
     result.defense = bounded(int64_t(result.dexterity) / 4 + m.defense);
+    result.defense = bounded(int64_t(result.defense) * std::max(0, 100 + m.combat.defensePercent) / 100);
     auto resistance = [resistancePenalty](int value, int maximumBonus) {
         const int maximum = int(std::clamp(int64_t(75) + maximumBonus, int64_t(-100), int64_t(95)));
         return int(std::clamp(int64_t(value) + resistancePenalty, int64_t(-100), int64_t(maximum)));

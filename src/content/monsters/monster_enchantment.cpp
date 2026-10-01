@@ -67,6 +67,7 @@ MonsterAura aura(const ClassicData &data, int skill, int rank) {
     MonsterAura result;
     result.skill = skill;
     result.rank = rank;
+    result.filter = uint32_t(n("aurafilter"));
     result.radius = float(evaluate(value("aurarangecalc")));
     result.periodFrames = skill == 66 ? evaluate(value("auralencalc")) : n("perdelay");
     result.hostile = skill == 66 || skill == 102 || skill == 114 || skill == 118 || skill == 123;
@@ -105,7 +106,7 @@ MonsterAura aura(const ClassicData &data, int skill, int rank) {
 }
 }
 void loadAuraSkills(ClassicData &data) {
-    for (int skill : {98, 108, 122}) {
+    for (int skill : {98, 108, 122, 123}) {
         const auto definition = aura(data, skill, 1);
         if (definition.periodFrames < 5 || definition.state.id < 0 || definition.ownerState.id < 0)
             throw std::runtime_error("Original aura lacks state or periodic data");
