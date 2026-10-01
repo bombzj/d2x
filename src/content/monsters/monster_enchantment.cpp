@@ -85,6 +85,8 @@ MonsterAura aura(const ClassicData &data, int skill, int rank, const std::map<in
     result.rank = rank;
     result.manaPerPulse = float((int64_t(n("mana")) + int64_t(rank - 1) * n("lvlmana")) << n("manashift")) / 256.f;
     result.filter = uint32_t(n("aurafilter"));
+    result.hitClass = n("HitClass") ? n("HitClass") : 13;
+    result.resultFlags = uint32_t(n("ResultFlags")) | 0x20;
     result.radius = float(evaluate(value("aurarangecalc")));
     result.periodFrames = skill == 66 ? evaluate(value("auralencalc")) : n("perdelay");
     result.hostile = skill == 66 || skill == 102 || skill == 114 || skill == 118 || skill == 119 || skill == 123;

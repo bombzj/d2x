@@ -46,7 +46,9 @@ void Simulation::updateAuras() {
             if (aura.skill == 123 && !owner && target.monster && !target.hireling) {
                 auto reduce = [&](int &value, MonsterDamageType type) {
                     const auto base = target.monster->intrinsicCombat
-                        ? std::optional<int>{unitResistance(target, type)} : monsterResistance_
+                        ? std::optional<int>{type == MonsterDamageType::Fire ? target.monster->intrinsicCombat->attributes.fireResist :
+                            type == MonsterDamageType::Cold ? target.monster->intrinsicCombat->attributes.coldResist :
+                            target.monster->intrinsicCombat->attributes.lightningResist} : monsterResistance_
                         ? monsterResistance_(*target.monster, state_.area.region, type) : std::nullopt;
                     if (base && *base >= 100 && value < 0) value /= 5;
                 };
@@ -99,10 +101,10 @@ void Simulation::updateAuras() {
             apply(target, aura.state, false);
             if (pulseDamage > 0) {
                 DamageRequest hit{source.id, target.id, pulseDamage, MonsterDamageType(aura.element), 0, false, false};
-                hit.hitClass = 13;
-                hit.softHit = true;
+                hit.hitClass = aura.hitClass;
+                hit.softHit = (aura.resultFlags & 0x4000) != 0;
                 dealDamage(hit);
-                if (aura.skill == 119) applyAuraKnockback(source.id, target.id);
+                if (aura.resultFlags & 8) applyAuraKnockback(source.id, target.id);
             }
             if (aura.skill == 114 && target.monster && target.alive()) {
                 target.effects->removeState(shatterDeathState_.id);

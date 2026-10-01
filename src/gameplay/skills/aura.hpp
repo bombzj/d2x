@@ -11,6 +11,8 @@ struct AuraDefinition {
     std::vector<std::pair<int, int>> synergies;
     int ownerDamageBonus = 0, elementalMultiplier = 0;
     int element = -1;
+    int hitClass = 13;
+    uint32_t resultFlags = 0;
     float minimumDamage = 0, maximumDamage = 0;
     float lifePerPulse = 0, manaPerPulse = 0;
     int harmfulDurationPercent = 100;
