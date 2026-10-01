@@ -1,7 +1,8 @@
+#include "gameplay/simulation/simulation.hpp"
 #include "gameplay/session/session.hpp"
-#include "content/monster_loot.hpp"
-#include "content/monster_experience.hpp"
-#include "content/item_quality.hpp"
+#include "content/monsters/monster_loot.hpp"
+#include "content/monsters/monster_experience.hpp"
+#include "content/items/item_quality.hpp"
 #include <algorithm>
 #include <iostream>
 #include <stdexcept>
@@ -60,7 +61,7 @@ void GameSession::settleDeaths() {
                       << entry.reason << '\n';
         }
         if (!plan.deferred.empty())
-            simulation_.emit(LootDeferred{death.victim, plan.deferred});
+            simulation_->emit(LootDeferred{death.victim, plan.deferred});
         auto drops = loot_.settle(request, std::move(plan));
         spawnLoot(drops, death.region, death.position);
         if (death.killer == state().player.id) {
@@ -91,7 +92,7 @@ void GameSession::spawnLoot(std::span<const LootDrop> drops, RegionId id, Vec or
         auto result = inventory_.createItem(drop.code, drop.quantity, GroundLocation{id, position},
                                             drop.level, drop.generation, origin);
         if (result.error == InventoryError::NoSpace) {
-            simulation_.emit(LootDeferred{{}, "No free ground cell for this drop."});
+            simulation_->emit(LootDeferred{{}, "No free ground cell for this drop."});
             continue;
         }
         if (!result)
@@ -101,7 +102,7 @@ void GameSession::spawnLoot(std::span<const LootDrop> drops, RegionId id, Vec or
 }
 void GameSession::cancelPickup() {
     if (pickup_.id)
-        simulation_.stopWalking();
+        simulation_->stopWalking();
     pickup_ = {};
     pickupToCursor_ = false;
 }
@@ -111,20 +112,20 @@ void GameSession::beginPickup(ItemHandle handle, bool toCursor) {
     cancelPickup();
     const auto *item = inventory_.item(handle.id);
     if (!item || item->revision != handle.revision) {
-        simulation_.emit(
+        simulation_->emit(
             InventoryRejected{handle.id, item ? InventoryError::SourceChanged : InventoryError::UnknownItem});
         return;
     }
     const auto *ground = std::get_if<GroundLocation>(&item->location);
     const auto &player = state().player;
     if (player.dead || cursorItem() || !ground || ground->region != region().definition.id) {
-        simulation_.emit(InventoryRejected{handle.id, InventoryError::AccessDenied});
+        simulation_->emit(InventoryRejected{handle.id, InventoryError::AccessDenied});
         return;
     }
-    simulation_.stopWalking();
-    simulation_.execute(MoveTo{ground->position});
+    simulation_->stopWalking();
+    simulation_->execute(MoveTo{ground->position});
     if (player.route.empty() && (ground->position - player.pos).length() > 1.8f) {
-        simulation_.emit(PickupFailed{handle.id, "Cannot reach that item."});
+        simulation_->emit(PickupFailed{handle.id, "Cannot reach that item."});
         return;
     }
     pickup_ = handle;
@@ -142,14 +143,14 @@ void GameSession::updatePickup() {
     const auto *item = inventory_.item(handle.id);
     if (!item || item->revision != handle.revision) {
         cancelPickup();
-        simulation_.emit(
+        simulation_->emit(
             InventoryRejected{handle.id, item ? InventoryError::SourceChanged : InventoryError::UnknownItem});
         return;
     }
     const auto *ground = std::get_if<GroundLocation>(&item->location);
     if (!ground || ground->region != region().definition.id) {
         cancelPickup();
-        simulation_.emit(InventoryRejected{handle.id, InventoryError::AccessDenied});
+        simulation_->emit(InventoryRejected{handle.id, InventoryError::AccessDenied});
         return;
     }
     if (player.castTime > 0 || player.meleeTime > 0)
@@ -166,17 +167,17 @@ void GameSession::updatePickup() {
             unsigned amount = std::min(quantity, capacity - player.gold);
             if (!amount) {
                 cancelPickup();
-                simulation_.emit(PickupFailed{handle.id, "Gold carrying limit reached."});
+                simulation_->emit(PickupFailed{handle.id, "Gold carrying limit reached."});
                 return;
             }
             auto result = inventory_.consume(handle, amount, access);
             if (result)
-                simulation_.state_.player.gold += amount;
+                simulation_->state_.player.gold += amount;
             bool collected = bool(result);
             cancelPickup();
             publishInventory(std::move(result), handle.id);
             if (collected)
-                simulation_.emit(ItemPickedUp{handle.id, std::move(definition), amount});
+                simulation_->emit(ItemPickedUp{handle.id, std::move(definition), amount});
             return;
         }
         auto result = pickupToCursor_
@@ -189,12 +190,12 @@ void GameSession::updatePickup() {
         cancelPickup();
         publishInventory(std::move(result), handle.id);
         if (collected)
-            simulation_.emit(ItemPickedUp{handle.id, std::move(definition), quantity});
+            simulation_->emit(ItemPickedUp{handle.id, std::move(definition), quantity});
         if (collected && remainder)
-            simulation_.emit(PickupFailed{handle.id, "Merged what fits. The remainder stays on the ground."});
+            simulation_->emit(PickupFailed{handle.id, "Merged what fits. The remainder stays on the ground."});
     } else if (player.route.empty()) {
         cancelPickup();
-        simulation_.emit(PickupFailed{handle.id, "Cannot reach that item."});
+        simulation_->emit(PickupFailed{handle.id, "Cannot reach that item."});
     }
 }
 } // namespace d2x

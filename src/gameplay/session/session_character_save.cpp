@@ -1,5 +1,5 @@
 #include "gameplay/session/session.hpp"
-#include "content/equipment_modifiers.hpp"
+#include "content/items/equipment_modifiers.hpp"
 #include <algorithm>
 #include <stdexcept>
 #include <variant>

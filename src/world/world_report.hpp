@@ -1,5 +1,5 @@
 #pragma once
-#include "content/world_catalog.hpp"
+#include "content/world/world_catalog.hpp"
 #include <ostream>
 
 namespace d2x {

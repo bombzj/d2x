@@ -1,3 +1,4 @@
+#include "gameplay/simulation/simulation.hpp"
 #include "core/random.hpp"
 #include "gameplay/session/session.hpp"
 #include <algorithm>
@@ -34,7 +35,7 @@ std::array<int, 5> GameSession::cainStoneOrder() const {
 }
 
 void GameSession::reconcileCainObjects() {
-    auto stage = cain(simulation_.state_).stage;
+    auto stage = cain(simulation_->state_).stage;
     for (auto &region : regions_)
         for (auto &object : region.objects) {
             if (object.name == "Deckard Cain") {
@@ -46,7 +47,7 @@ void GameSession::reconcileCainObjects() {
         }
     if (stage < uint32_t(CainStage::ScrollTranslated)) return;
     auto order = cainStoneOrder();
-    unsigned count = cain(simulation_.state_).flags & cainStoneCountMask;
+    unsigned count = cain(simulation_->state_).flags & cainStoneCountMask;
     for (auto &region : regions_)
         if (region.definition.id == *stonyRegion_)
             for (auto &object : region.objects)
@@ -60,7 +61,7 @@ void GameSession::reconcileCainObjects() {
 }
 
 void GameSession::activateCainQuestObject(const WorldObject &source) {
-    auto &record = cain(simulation_.state_);
+    auto &record = cain(simulation_->state_);
     auto &objects = regions_.at(current_).objects;
     auto found = std::find_if(objects.begin(), objects.end(),
                               [&](const WorldObject &object) { return object.id == source.id; });
@@ -75,19 +76,19 @@ void GameSession::activateCainQuestObject(const WorldObject &source) {
             auto created = inventory_.createItem("bks", 1,
                 GroundLocation{region().definition.id, drop});
             if (!created) {
-                simulation_.emit(InteractionFailed{source.id, "The Bark Scroll could not be created."});
+                simulation_->emit(InteractionFailed{source.id, "The Bark Scroll could not be created."});
                 return;
             }
             publishInventory(std::move(created), {});
         }
         if (cainAdvance(record, CainStage::TreeOpened))
-            simulation_.emit(QuestAdvanced{ActOneQuest::SearchForCain, record.stage});
+            simulation_->emit(QuestAdvanced{ActOneQuest::SearchForCain, record.stage});
         found->operatedAt = state().time;
-        simulation_.emit(ObjectInteracted{source.id, source.interaction, source.name});
+        simulation_->emit(ObjectInteracted{source.id, source.interaction, source.name});
     } else if (source.interaction == Interaction::QuestStone &&
                stonyRegion_ && region().definition.id == *stonyRegion_) {
         if (record.stage < uint32_t(CainStage::ScrollTranslated)) {
-            simulation_.emit(InteractionFailed{source.id, "Bring the bark to Akara first."});
+            simulation_->emit(InteractionFailed{source.id, "Bring the bark to Akara first."});
             return;
         }
         if (record.stage >= uint32_t(CainStage::PortalOpened)) return;
@@ -106,9 +107,9 @@ void GameSession::activateCainQuestObject(const WorldObject &source) {
                     break;
                 }
             }
-            simulation_.emit(QuestAdvanced{ActOneQuest::SearchForCain, record.stage});
+            simulation_->emit(QuestAdvanced{ActOneQuest::SearchForCain, record.stage});
         }
-        simulation_.emit(ObjectInteracted{source.id, source.interaction, source.name});
+        simulation_->emit(ObjectInteracted{source.id, source.interaction, source.name});
     } else if (source.interaction == Interaction::QuestGibbet &&
                tristramRegion_ && region().definition.id == *tristramRegion_ &&
                record.stage >= uint32_t(CainStage::TristramEntered)) {
@@ -116,8 +117,8 @@ void GameSession::activateCainQuestObject(const WorldObject &source) {
             pendingNpcQuestMessages_.insert("A1Q4/RescuedByHero/Deckard Cain");
             found->operatedAt = state().time;
             reconcileCainObjects();
-            simulation_.emit(QuestAdvanced{ActOneQuest::SearchForCain, record.stage});
-            simulation_.emit(ObjectInteracted{source.id, source.interaction, source.name});
+            simulation_->emit(QuestAdvanced{ActOneQuest::SearchForCain, record.stage});
+            simulation_->emit(ObjectInteracted{source.id, source.interaction, source.name});
         }
     }
 }
@@ -145,7 +146,7 @@ bool GameSession::travelCainPortal() {
     if (!position || cainPortalReach_ <= 0 || state().player.dead ||
         (state().player.pos - *position).length() > cainPortalReach_ ||
         !map().grid.segment(state().player.pos, *position)) {
-        simulation_.emit(InteractionFailed{{}, "Cairn Stones portal is unavailable or too far away."});
+        simulation_->emit(InteractionFailed{{}, "Cairn Stones portal is unavailable or too far away."});
         return false;
     }
     auto destination = region().definition.id == *stonyRegion_ ? *tristramRegion_ : *stonyRegion_;
@@ -160,11 +161,11 @@ bool GameSession::beginCainPortal() {
     cancelInteraction();
     if ((state().player.pos - *position).length() <= cainPortalReach_)
         return travelCainPortal();
-    simulation_.stopWalking();
-    simulation_.execute(MoveTo{*position});
+    simulation_->stopWalking();
+    simulation_->execute(MoveTo{*position});
     pendingCainPortal_ = !state().player.route.empty();
     if (!pendingCainPortal_)
-        simulation_.emit(InteractionFailed{{}, "Cannot reach the Cairn Stones portal."});
+        simulation_->emit(InteractionFailed{{}, "Cannot reach the Cairn Stones portal."});
     return false;
 }
 void GameSession::updateCainPortal() {
@@ -178,7 +179,7 @@ void GameSession::updateCainPortal() {
         travelCainPortal();
     } else if (state().player.route.empty()) {
         pendingCainPortal_ = false;
-        simulation_.emit(InteractionFailed{{}, "Cannot reach the Cairn Stones portal."});
+        simulation_->emit(InteractionFailed{{}, "Cannot reach the Cairn Stones portal."});
     }
 }
 } // namespace d2x

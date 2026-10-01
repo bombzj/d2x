@@ -4,7 +4,7 @@
 
 ## 入口与顺序
 
-- `content/item_properties.cpp` 标出需要在生成实例时掷值的原属性函数；`content/equipment_modifiers.cpp` 和 `content/equipment_combat.cpp` 按原行、掷值及物品归属生成角色与逐武器修正。未知函数不猜效果。
+- `content/items/item_properties.cpp` 标出需要在生成实例时掷值的原属性函数；`content/items/equipment_modifiers.cpp` 和 `content/items/equipment_combat.cpp` 按原行、掷值及物品归属生成角色与逐武器修正。未知函数不猜效果。
 - `gameplay/character/attributes.cpp` 由职业、等级、已分配点、有效装备和限时效果统一派生资源、命中、防御和抗性；`gameplay/items/equipment_stats.cpp` 派生每把武器的定点物理伤害、护甲和盾牌格挡。失效装备不参与修正。
 - `gameplay/combat/weapon_elements.cpp` 在普通近战命中或箭矢／投掷发射时掷元素附伤、毒素和致命一击；即时元素范围与角色面板共用 `attackElementRanges`。弹体保留发射快照；`combat.cpp` 对每种伤害查怪物对应抗性。持续毒素在模拟帧中结算，死亡仍走同一个经验与掉落入口。
 - `gameplay/combat/damage_resolution.cpp` 将来袭伤害转成 1/256 生命单位，按固定减伤、抗性、百分比吸收和固定吸收顺序结算。四种元素抗性先应用当前难度的 MPQ 惩罚，普通上限 75%，加上限属性最多 95%；物理抗性最高 50%。冰冷和毒素持续时间另行受抗性、免冰冻与毒素长度修正影响。

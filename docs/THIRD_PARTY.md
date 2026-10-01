@@ -33,7 +33,7 @@
 
 鉴定光标、手持拾取、自动合并和随机机制的本地参考入口见 [背包](INVENTORY_UI.md)、[经典 HUD](CLASSIC_HUD.md) 与 [随机机制](RANDOMNESS.md)。使用当前 MPQ 的 Books／ItemTypes／DT1 权重，D2MOO 的 D2Seed、SUnit、ItemMode、Items、D2Inventory、DrlgRoomTile，以及 OpenDiablo2 AutoStack 字段说明；参考仓库和导出图不纳入源码提交。
 
-宝箱生成、上锁、背包钥匙扣减和普通／特殊箱掉落适配本地 D2MOO 固定 `5596f5c` 的 `OBJECTS/Objects.cpp`、`ObjMode.cpp`、`ITEMS/ItemMode.cpp`、`Items.cpp` 与 `D2Common/DataTbls/MonsterTbls.cpp`；实际 Lockable、MonLvl1、难度等级、TC、ItemRatio、品质、钥匙堆叠、原图／文本／声音仍读取当前 MPQ。`world/chest.cpp`、`content/chest_loot.cpp` 的规则来源适用上述 MIT 许可；覆盖、随机流适配和陷阱等限制见 [交互物体](INTERACTIVE_OBJECTS.md#上锁宝箱2026-09-27)。
+宝箱生成、上锁、背包钥匙扣减和普通／特殊箱掉落适配本地 D2MOO 固定 `5596f5c` 的 `OBJECTS/Objects.cpp`、`ObjMode.cpp`、`ITEMS/ItemMode.cpp`、`Items.cpp` 与 `D2Common/DataTbls/MonsterTbls.cpp`；实际 Lockable、MonLvl1、难度等级、TC、ItemRatio、品质、钥匙堆叠、原图／文本／声音仍读取当前 MPQ。`world/chest.cpp`、`content/items/chest_loot.cpp` 的规则来源适用上述 MIT 许可；覆盖、随机流适配和陷阱等限制见 [交互物体](INTERACTIVE_OBJECTS.md#上锁宝箱2026-09-27)。
 物件靠近／操作范围另适配同快照 `D2Common/src/Units/Units.cpp` 的 `D2Common_10399`、`UNITS_IsObjectInInteractRange`、`UNITS_TestCollisionBetweenInteractingUnits/UNITS_TestCollision` 及 `D2Collision.cpp::COLLISION_RayTrace`，入口核对 `D2Game/src/PLAYER/PlrMsg.cpp` 对象交互分支。对象尺寸仍读取当前 MPQ，规则和原距离表沿用 MIT 归属，未纳入参考仓库或原资源。
 
 

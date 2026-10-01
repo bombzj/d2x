@@ -1,4 +1,5 @@
 #include "controller.hpp"
+#include "scene_view.hpp"
 #include <algorithm>
 #include <charconv>
 

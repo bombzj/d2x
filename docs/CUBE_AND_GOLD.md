@@ -12,6 +12,6 @@
 
 ## 代码边界
 
-`content/classic_data.cpp` 适配 `misc.txt`、`books.txt` 与 `inventory.txt`；`gameplay/items/books.cpp` 处理原子装书、消耗页数；`gameplay/items/collection.cpp` 继续复用通用整件转移和堆叠；`gameplay/session/session_gold.cpp` 处理钱包／私人箱／地面金币和调试方块投放；`presentation/inventory_panel.cpp` 只生成拖放意图与格子预览；`presentation/cube_view.cpp` 只绘制 MPQ 原面板。命名管道有 `cube-drop`、`cube-open`、`book-load`、`identify-item` 和 `gold-transfer`，操作仍进入正式会话命令。
+`content/classic_data.cpp` 适配 `misc.txt`、`books.txt` 与 `inventory.txt`；`gameplay/items/books.cpp` 处理原子装书、消耗页数；`gameplay/items/collection.cpp` 继续复用通用整件转移和堆叠；`gameplay/session/session_gold.cpp` 处理钱包／私人箱／地面金币和调试方块投放；`presentation/inventory/inventory_panel.cpp` 只生成拖放意图与格子预览；`presentation/inventory/cube_view.cpp` 只绘制 MPQ 原面板。命名管道有 `cube-drop`、`cube-open`、`book-load`、`identify-item` 和 `gold-transfer`，操作仍进入正式会话命令。
 
 角色存档格式为 v82、规则指纹为 `d2x-session-rules-v116-books-gold-cube`；旧格式不自动迁移。原版 .d2s 导入、方块合成配方与共享储物箱仍未实现。Windows Release 构建通过，完整六 MPQ 运行目录 `dist/d2x-runtime-20260924-v82-r116-items-cube/` 短帧启动退出码为 0；管道检查卷轴装书、箭袋合并、金币存取与丢弃、方块携带／存放和存读档。原面板截图留在忽略的 `artifacts/reference-ui/`。没有新增测试脚本、测试用例或专用测试程序。

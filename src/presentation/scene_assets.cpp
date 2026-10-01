@@ -1,7 +1,8 @@
+#include "gameplay/session/session.hpp"
 #include "scene_assets.hpp"
 #include "resources/data_table.hpp"
 #include "world/cow_level.hpp"
-#include "world/outdoor.hpp"
+#include "world/outdoor/outdoor.hpp"
 #include <algorithm>
 #include <cstdio>
 #include <string_view>

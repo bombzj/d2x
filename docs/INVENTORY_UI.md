@@ -45,9 +45,9 @@ AutoStack 来自当前 MPQ ItemTypes，包含箭矢／弩矢、钥匙、投掷�
 
 | 文件 | 职责 |
 | --- | --- |
-| `src/presentation/inventory_panel.hpp/.cpp` | 面板状态、共同布局、命中格、拖放意图和预览 |
-| `src/presentation/inventory_controller.cpp` | 手势、快捷键、拆分数量、命令提交和输入拦截 |
-| `src/presentation/inventory_view.cpp` | 原版面板、图标、详情、数量、预览和拆分弹窗绘制 |
+| `src/presentation/inventory/inventory_panel.hpp/.cpp` | 面板状态、共同布局、命中格、拖放意图和预览 |
+| `src/presentation/inventory/inventory_controller.cpp` | 手势、快捷键、拆分数量、命令提交和输入拦截 |
+| `src/presentation/inventory/inventory_view.cpp` | 原版面板、图标、详情、数量、预览和拆分弹窗绘制 |
 | `src/gameplay/items/preview.cpp` | 移动、交换、拆分、合并共用的只读校验 |
 | `src/gameplay/session_inventory.cpp` | 当前世界访问校验、有效丢弃位置和库存命令执行 |
 

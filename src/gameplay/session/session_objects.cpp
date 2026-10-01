@@ -1,7 +1,8 @@
+#include "gameplay/simulation/simulation.hpp"
 #include "core/random.hpp"
 #include "gameplay/session/session.hpp"
-#include "content/object_loot.hpp"
-#include "content/item_quality.hpp"
+#include "content/items/object_loot.hpp"
+#include "content/items/item_quality.hpp"
 #include <algorithm>
 #include <cmath>
 #include <set>
@@ -37,7 +38,7 @@ void GameSession::activateLootObject(EntityId id) {
             }
         }
         if (!key.id) {
-            simulation_.emit(InteractionFailed{id, "I need a key.", true});
+            simulation_->emit(InteractionFailed{id, "I need a key.", true});
             return;
         }
     }
@@ -53,7 +54,7 @@ void GameSession::activateLootObject(EntityId id) {
             characterStats().combat.magicFind, characterStats().combat.goldFind);
         // Unsupported data must not consume a key or permanently empty a chest.
         if (!plan.deferred.empty()) {
-            simulation_.emit(LootDeferred{id, plan.deferred});
+            simulation_->emit(LootDeferred{id, plan.deferred});
             return;
         }
     } else if (found->operateFn == 19 || found->operateFn == 20) {
@@ -64,7 +65,7 @@ void GameSession::activateLootObject(EntityId id) {
         // Native barrel explosion art is not implemented; do not reuse a demo spell.
         // ObjEval::OBJEVAL_ApplyTrapObjectDamage: an environment hazard hits
         // every eligible unit independently of faction, with the same mitigation.
-        for (auto target : simulation_.combatUnits()) {
+        for (auto target : simulation_->combatUnits()) {
             if (!target.alive() || (found->pos - *target.position).length() > 3.f ||
                 !map().grid.missileSegment(found->pos, *target.position, {0x04, 1})) continue;
             const int level = target.stats.level;
@@ -79,7 +80,7 @@ void GameSession::activateLootObject(EntityId id) {
                 int64_t(found->objectDamage) / 100) / 256.f;
             DamageRequest request{id, target.id, damage};
             request.permission = DamagePermission::Environment;
-            simulation_.dealDamage(request);
+            simulation_->dealDamage(request);
         }
     } else {
         const auto entry = resolveObjectTreasure(content_, worldContent_, region().definition.id,
@@ -106,7 +107,7 @@ void GameSession::activateLootObject(EntityId id) {
         }
     }
     if (!plan.deferred.empty())
-        simulation_.emit(LootDeferred{id, plan.deferred});
+        simulation_->emit(LootDeferred{id, plan.deferred});
     if (key.id) {
         auto consumed = inventory_.consume(key, 1, inventoryAccess());
         const bool succeeded = bool(consumed);
@@ -124,7 +125,7 @@ void GameSession::activateLootObject(EntityId id) {
     spawnLoot(drops, region().definition.id, found->pos);
     found->operatedAt = state().time;
     found->interaction = Interaction::None;
-    simulation_.emit(ObjectInteracted{id, Interaction::Loot, found->name, false, unlocking});
+    simulation_->emit(ObjectInteracted{id, Interaction::Loot, found->name, false, unlocking});
 }
 void GameSession::activateShrine(EntityId id) {
     auto &objects = regions_.at(current_).objects;
@@ -136,14 +137,14 @@ void GameSession::activateShrine(EntityId id) {
     if (!applyShrine(found->shrineCode, found->id, found->pos)) return;
     found->operatedAt = state().time;
     found->interaction = Interaction::None;
-    simulation_.emit(ObjectInteracted{id, Interaction::Shrine, found->shrineName});
+    simulation_->emit(ObjectInteracted{id, Interaction::Shrine, found->shrineName});
 }
 void GameSession::grantShrine(int code) {
     code = activeShrineCode(code);
     const auto found = content_.shrines.find(code);
     if (state().player.dead || found == content_.shrines.end()) return;
     if (applyShrine(code, {}, state().player.pos))
-        simulation_.emit(ObjectInteracted{{}, Interaction::Shrine, found->second.name});
+        simulation_->emit(ObjectInteracted{{}, Interaction::Shrine, found->second.name});
 }
 void GameSession::drinkWell(EntityId id) {
     auto &objects = regions_.at(current_).objects;
@@ -152,8 +153,8 @@ void GameSession::drinkWell(EntityId id) {
     });
     if (found == objects.end() || found->interaction != Interaction::Well ||
         found->remainingUses <= 0 || found->parameters[2] <= 0) return;
-    auto &player = simulation_.state_.player;
-    const auto &stats = simulation_.state_.player.attributes;
+    auto &player = simulation_->state_.player;
+    const auto &stats = simulation_->state_.player.attributes;
     const float fraction = float(found->parameters[1]) / 256.f;
     bool used = false;
     auto restore = [&](float &value, int maximum) {
@@ -175,7 +176,7 @@ void GameSession::drinkWell(EntityId id) {
     --found->remainingUses;
     found->animationMode = 2 - found->remainingUses / found->parameters[2];
     if (!found->remainingUses) found->interaction = Interaction::None;
-    simulation_.emit(ObjectInteracted{id, Interaction::Well, found->name});
+    simulation_->emit(ObjectInteracted{id, Interaction::Well, found->name});
 }
 void GameSession::updateObjectTimers() {
     const float now = state().time;

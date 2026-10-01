@@ -1,6 +1,7 @@
+#include "gameplay/simulation/simulation.hpp"
 #include "gameplay/session/session.hpp"
-#include "content/item_magic_loot.hpp"
-#include "content/item_grades.hpp"
+#include "content/items/item_magic_loot.hpp"
+#include "content/items/item_grades.hpp"
 #include "gameplay/loot/special.hpp"
 #include <algorithm>
 
@@ -12,7 +13,7 @@ QuestRecord &tools(WorldState &world) {
 }
 }
 void GameSession::spawnDebugItem(const DebugSpawnItem &command) {
-    auto reject = [&](const std::string &reason) { simulation_.emit(InteractionFailed{{}, reason}); };
+    auto reject = [&](const std::string &reason) { simulation_->emit(InteractionFailed{{}, reason}); };
     const auto *base = content_.items.find(command.code);
     auto ground = dropLocation();
     if (state().player.dead || !base || !base->equipment.known ||
@@ -56,11 +57,11 @@ void GameSession::spawnDebugItem(const DebugSpawnItem &command) {
     publishInventory(std::move(created), {});
 }
 void GameSession::activateMalus(const WorldObject &source) {
-    auto &record = tools(simulation_.state_);
+    auto &record = tools(simulation_->state_);
     if (!barracksRegion_ || region().definition.id != *barracksRegion_ ||
         record.stage >= uint32_t(ToolsStage::RewardReady)) return;
     if (state().player.level < 8) {
-        simulation_.emit(InteractionFailed{source.id, "Level 8 is required to take the Horadric Malus."});
+        simulation_->emit(InteractionFailed{source.id, "Level 8 is required to take the Horadric Malus."});
         return;
     }
     bool exists = std::any_of(inventory_.state().items.begin(), inventory_.state().items.end(),
@@ -69,7 +70,7 @@ void GameSession::activateMalus(const WorldObject &source) {
         auto created = inventory_.createItem("hdm", 1,
             GroundLocation{region().definition.id, map().grid.nearest(source.accessPoint)});
         if (!created) {
-            simulation_.emit(InteractionFailed{source.id, "Original Horadric Malus is unavailable."});
+            simulation_->emit(InteractionFailed{source.id, "Original Horadric Malus is unavailable."});
             return;
         }
         publishInventory(std::move(created), {});
@@ -77,8 +78,8 @@ void GameSession::activateMalus(const WorldObject &source) {
     for (auto &object : regions_.at(current_).objects)
         if (object.id == source.id) object.operatedAt = state().time;
     if (toolsAdvance(record, ToolsStage::MalusDropped))
-        simulation_.emit(QuestAdvanced{ActOneQuest::ToolsOfTheTrade, record.stage});
-    simulation_.emit(ObjectInteracted{source.id, source.interaction, source.name});
+        simulation_->emit(QuestAdvanced{ActOneQuest::ToolsOfTheTrade, record.stage});
+    simulation_->emit(ObjectInteracted{source.id, source.interaction, source.name});
 }
 void GameSession::updateToolsQuestItems() {
     bool acquired = false;
@@ -86,17 +87,17 @@ void GameSession::updateToolsQuestItems() {
         if (const auto *picked = std::get_if<ItemPickedUp>(&event);
             picked && picked->definition == "hdm") acquired = true;
     if (!acquired) return;
-    auto &record = tools(simulation_.state_);
+    auto &record = tools(simulation_->state_);
     if (toolsAdvance(record, ToolsStage::MalusAcquired))
-        simulation_.emit(QuestAdvanced{ActOneQuest::ToolsOfTheTrade, record.stage});
+        simulation_->emit(QuestAdvanced{ActOneQuest::ToolsOfTheTrade, record.stage});
 }
 void GameSession::imbueWithCharsi(const ImbueItem &command) {
     const auto *npc = object(command.npc);
-    auto &record = tools(simulation_.state_);
+    auto &record = tools(simulation_->state_);
     if (!npc || npc->name != "Charsi" || engagedNpc_ != command.npc ||
         !canReach(*npc) || region().definition.id != RegionId::Encampment ||
         record.stage != uint32_t(ToolsStage::RewardReady)) {
-        simulation_.emit(InteractionFailed{command.npc, "Charsi's imbue reward is unavailable."});
+        simulation_->emit(InteractionFailed{command.npc, "Charsi's imbue reward is unavailable."});
         return;
     }
     const auto *item = inventory_.item(command.item.id);
@@ -106,7 +107,7 @@ void GameSession::imbueWithCharsi(const ImbueItem &command) {
         where->container != playerContainers_.backpack || !base || !base->imbueable ||
         item->quantity != 1 || (item->quality != ItemQuality::Normal &&
         item->quality != ItemQuality::Superior && item->quality != ItemQuality::Inferior)) {
-        simulation_.emit(InteractionFailed{command.npc, "Choose an unmodified weapon or armor in your backpack."});
+        simulation_->emit(InteractionFailed{command.npc, "Choose an unmodified weapon or armor in your backpack."});
         return;
     }
     const auto cell = where->cell;
@@ -115,12 +116,12 @@ void GameSession::imbueWithCharsi(const ImbueItem &command) {
     auto generated = rollAffixItem(content_, *base, ItemQuality::Rare, level,
                                    inventory_.state_.creationRandom, characterDefinition_.code);
     if (!generated.deferred.empty()) {
-        simulation_.emit(InteractionFailed{command.npc, generated.deferred});
+        simulation_->emit(InteractionFailed{command.npc, generated.deferred});
         return;
     }
     auto removed = inventory_.consume(command.item, 1, inventoryAccess());
     if (!removed) {
-        simulation_.emit(InteractionFailed{command.npc, "The selected item is unavailable."});
+        simulation_->emit(InteractionFailed{command.npc, "The selected item is unavailable."});
         return;
     }
     publishInventory(std::move(removed), command.item.id);
@@ -130,6 +131,6 @@ void GameSession::imbueWithCharsi(const ImbueItem &command) {
     if (!created) throw std::logic_error("Imbue replacement failed after validated same-size removal");
     publishInventory(std::move(created), {});
     if (toolsAdvance(record, ToolsStage::Imbued))
-        simulation_.emit(QuestAdvanced{ActOneQuest::ToolsOfTheTrade, record.stage});
+        simulation_->emit(QuestAdvanced{ActOneQuest::ToolsOfTheTrade, record.stage});
 }
 } // namespace d2x

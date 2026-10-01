@@ -1,5 +1,5 @@
 #include "cow_level.hpp"
-#include "outdoor_substitution.hpp"
+#include "world/outdoor/outdoor_substitution.hpp"
 #include <algorithm>
 #include <numeric>
 #include <set>

@@ -75,8 +75,8 @@
 
 `RoomLayout` 使用生成配方的实际范围；完整预设按 8×8 瓦片分块激活。这是附近房间策略，尚未移植原版完整激活调度；地形与人口计划也尚未按距离延迟生成。
 
-- `content/monster_catalog.*`：原表解析、命名引用、原生预设解析，不创建游戏单位。
-- `content/world_catalog.*`：区域人口配置和预设 Populate，与瓦片配方保持同一原始来源。
+- `content/monsters/monster_catalog.*`：原表解析、命名引用、原生预设解析，不创建游戏单位。
+- `content/world/world_catalog.*`：区域人口配置和预设 Populate，与瓦片配方保持同一原始来源。
 - `world/population.*` / `d2x_population`：只读内容和碰撞网格进入，值类型生成计划离开；独立于会话 ID 分配和渲染器。后续 DRLG 接入时替换空间／随机流适配，不在 AI 中读取 MPQ。
 - `gameplay/monster_spawn.*`：原始身份与实现注册表。新怪物实现只需逐项注册，生成器不需要复制每一种怪物的逻辑。
 - `GameSession`：首次进入或 R 时请求计划；`Simulation` 在本局保存待生成记录，`monster_activation.cpp` 按附近房间创建单位；死亡事件保留原身份。

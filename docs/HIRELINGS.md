@@ -34,10 +34,10 @@
 
 本地 D2MOO 固定快照 `5596f5c`：`PLAYER/PlrMsg.cpp::D2GAME_PACKETCALLBACK_Rcv0x61_DropPickupMercItem_6FC88930`、`D2Common/Monsters/Monsters.cpp` 的初始化／复活费用、`MONSTER/MonsterAI.cpp::MONSTERAI_UpdateMercStatsAndSkills`、`AI/AiThink.cpp::AITHINK_Fn061_Hireable` 及罗格分支、`UNIT/SUnitDmg.cpp` 的命中／经验／受击／伤害比例、`UNIT/SUnitNpc.cpp` 的雇佣／复活／宠物治疗、`UNIT/SUnit.cpp → PLAYER/PlayerPets.cpp` 的传送同行、`SKILLS/SkillMonst.cpp::SKILLS_SrvDo110_Hireable_RogueMissile`、`SKILLS/SkillItem.cpp` 的药剂处理、`D2Common/Units/Missile.cpp` 的佣兵伤害和 `D2Common/Units/Units.cpp` 的动作速度。表、COF、DCC、DC6、AnimData 和数值以当前 MPQ 为准；reference 和抽取文件不提交。
 
-- `content/hireling_data.*`：定义、候选与基础成长；`monster_catalog.*`：原箭和动作数据。
+- `content/npc/hireling_data.*`：定义、候选与基础成长；`monster_catalog.*`：原箭和动作数据。
 - `gameplay/npc/hireling_services.cpp`：雇佣、复活、装备、药剂、属性和经验；`hireling.cpp`：跟随及普通攻击。
 - `gameplay/monsters/`、`gameplay/combat/`：选敌、承伤、弹体、装备命中特效。
 - `presentation/hireling_*`：原图、装备页及头像；controller 仅提交玩法命令。
-- `app/debug_hireling.cpp`：沿用 `grant-hireling`、`hireling`、`hireling-panel`、`hireling-equip` 管道入口，详见 [命名管道](DEBUG_PIPE.md)。授予命令不改变 Blood Raven 任务；重复授予保留已有佣兵和装备。
+- `app/debug/debug_hireling.cpp`：沿用 `grant-hireling`、`hireling`、`hireling-panel`、`hireling-equip` 管道入口，详见 [命名管道](DEBUG_PIPE.md)。授予命令不改变 Blood Raven 任务；重复授予保留已有佣兵和装备。
 
 其他幕世界和佣兵不开放；技能选择、火／冰箭、Inner Sight、装备触发技能及光环继续暂缓。未实现的怪物依旧按项目许可使用保留真实身份的沉沦魔替身，不能据其外形验收原怪物全部战斗表现。没有编写测试脚本、测试用例或专用测试程序；本轮不运行游戏，实际交互与画面对照等待用户查看。

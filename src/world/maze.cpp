@@ -1,4 +1,4 @@
-#include "maze/room_graph.hpp"
+#include "world/maze/room_graph.hpp"
 
 namespace d2x {
 bool supportsMaze(int level) {

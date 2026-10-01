@@ -5,10 +5,10 @@
 ## 数据与入口
 
 - 运行时 MPQ：Weapons、Armor、Misc、ItemTypes、ItemRatio、TreasureClassEx、MagicPrefix／Suffix、RarePrefix／Suffix、UniqueItems、SetItems、Sets、QualityItems、LowQualityItems、Properties、ItemStatCost、NPC、Gamble、DifficultyLevels 和语言 TBL。
-- `content/item_properties.cpp` 将原属性指令与实例掷值解析成共同统计值，保留原 stat、layer、原值与按等级换算后的效果值。装备、说明和定价共用解析结果；不从界面文字反推效果。
-- `content/item_descriptions.cpp` 按 ItemStatCost 的说明优先级、函数、正负文本与 TBL 生成说明，合并元素／毒素伤害；商店与背包共用同一提示框。
-- `content/item_pricing.cpp` 按基础表、词缀／品质费用、ItemStatCost、NPC 倍率形成购买、出售和单件修理报价。尚不能解释的属性计价分支拒绝报价，不按普通价格出售。
-- `content/item_loot.cpp` 与 `gameplay/loot` 处理 TC、品质和实例；`gameplay/items` 负责数量、持久身份、位置、需求、耐久与事务。UI 只提交购买／修理等命令。
+- `content/items/item_properties.cpp` 将原属性指令与实例掷值解析成共同统计值，保留原 stat、layer、原值与按等级换算后的效果值。装备、说明和定价共用解析结果；不从界面文字反推效果。
+- `content/items/item_descriptions.cpp` 按 ItemStatCost 的说明优先级、函数、正负文本与 TBL 生成说明，合并元素／毒素伤害；商店与背包共用同一提示框。
+- `content/items/item_pricing.cpp` 按基础表、词缀／品质费用、ItemStatCost、NPC 倍率形成购买、出售和单件修理报价。尚不能解释的属性计价分支拒绝报价，不按普通价格出售。
+- `content/items/item_loot.cpp` 与 `gameplay/loot` 处理 TC、品质和实例；`gameplay/items` 负责数量、持久身份、位置、需求、耐久与事务。UI 只提交购买／修理等命令。
 
 ## 已接入源码
 

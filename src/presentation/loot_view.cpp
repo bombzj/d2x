@@ -1,3 +1,4 @@
+#include "gameplay/session/session.hpp"
 #include "scene_view.hpp"
 #include <algorithm>
 

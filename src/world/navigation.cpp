@@ -193,7 +193,7 @@ Bytes Grid::reachableFrom(Vec origin, MovementCollisionRule rule) const {
     reachable[size_t(pending.front())] = 1;
     for (size_t cursor = 0; cursor < pending.size(); ++cursor) {
         const int cell = pending[cursor];
-        for (const auto offset : {std::pair{0, 1}, std::pair{1, 0}, std::pair{0, -1}, std::pair{-1, 0}}) {
+        for (const auto &offset : {std::pair{0, 1}, std::pair{1, 0}, std::pair{0, -1}, std::pair{-1, 0}}) {
             const int column = cell % width + offset.first;
             const int row = cell / width + offset.second;
             if (!walkable(column, row, rule)) continue;

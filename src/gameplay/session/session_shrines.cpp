@@ -1,6 +1,7 @@
+#include "gameplay/simulation/simulation.hpp"
 #include "core/random.hpp"
 #include "session.hpp"
-#include "content/monster_enchantment.hpp"
+#include "content/monsters/monster_enchantment.hpp"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -14,7 +15,7 @@ uint32_t shrineRoll(uint64_t &seed, uint32_t bound) {
 }
 bool GameSession::applyShrine(int code, EntityId source, Vec position) {
     const auto found = content_.shrines.find(activeShrineCode(code));
-    auto &player = simulation_.state_.player;
+    auto &player = simulation_->state_.player;
     if (found == content_.shrines.end() || player.dead || player.hp <= 0) return false;
     const auto &shrine = found->second;
     code = shrine.code;
@@ -36,7 +37,7 @@ bool GameSession::applyShrine(int code, EntityId source, Vec position) {
     case 7: {
         // ObjMode::OBJMODE_GetToHitPercentage snapshots Attack's flat to-hit.
         // Its integer percentage division and extra class factor are intentional.
-        const auto &weapon = simulation_.state_.player.equipment.weapons[0];
+        const auto &weapon = simulation_->state_.player.equipment.weapons[0];
         const int64_t rate = weapon.potion ? 0 : weapon.baseAttackRating;
         const int64_t bonus = rate * (weapon.attackRatingPercent / 100 + 1) +
                               characterDefinition_.toHitFactor;
@@ -69,14 +70,14 @@ bool GameSession::applyShrine(int code, EntityId source, Vec position) {
     default: return false;
     }
     const auto applied = player.combatEffects.apply(std::move(effect), state().frame);
-    simulation_.combatEffectsChanged(applied.removed);
+    simulation_->combatEffectsChanged(applied.removed);
     shrineStatuses_.clear();
     shrineStatuses_.push_back({code, shrine.name, shrine.effect,
         state().time + float(shrine.durationFrames) / 25.f, applied.handle});
     return true;
 }
 bool GameSession::applySpecialShrine(const ShrineDefinition &shrine, Vec position) {
-    auto &player = simulation_.state_.player;
+    auto &player = simulation_->state_.player;
     if (shrine.code == 17) return openShrinePortal();
     if (shrine.code == 20) return upgradeShrineMonster(position);
     if (shrine.code == 18) {
@@ -129,7 +130,7 @@ bool GameSession::applySpecialShrine(const ShrineDefinition &shrine, Vec positio
             // Direct stat subtraction bypasses resistances and does not award kills.
             hp -= float(int64_t(std::floor(hp)) * shrine.argument0 / 100);
         };
-        for (auto target : simulation_.combatUnits()) reduce(*target.life, *target.position);
+        for (auto target : simulation_->combatUnits()) reduce(*target.life, *target.position);
         for (int x = 1; x <= 4; ++x)
             for (int y = 1; y <= 4; ++y) {
                 const Vec direction{float((x & 1 ? 1 : -1) * 5 * x),
@@ -141,10 +142,10 @@ bool GameSession::applySpecialShrine(const ShrineDefinition &shrine, Vec positio
                 missile.impact = skill.missileImpact;
                 missile.impactDamage.channels[size_t(MonsterDamageType::Fire)] = damage;
                 missile.skillRank = rank;
-                missile.combatRandom = childRandom(simulation_.unitRandom_);
-                simulation_.state_.area.missiles.push_back(std::move(missile));
+                missile.combatRandom = childRandom(simulation_->unitRandom_);
+                simulation_->state_.area.missiles.push_back(std::move(missile));
             }
-        simulation_.emit(MissileReleased{skill.missileId});
+        simulation_->emit(MissileReleased{skill.missileId});
         return true;
     }
     if (shrine.code == 21 || shrine.code == 22) {
@@ -176,10 +177,10 @@ bool GameSession::applySpecialShrine(const ShrineDefinition &shrine, Vec positio
                 missile.impactDamage.channels[channel] = float(range.minimum +
                     int(shrineRoll(shrineRandom_, unsigned(std::max(0, range.maximum - range.minimum))))) / 256.f;
             }
-            missile.combatRandom = childRandom(simulation_.unitRandom_);
-            simulation_.state_.area.missiles.push_back(std::move(missile));
+            missile.combatRandom = childRandom(simulation_->unitRandom_);
+            simulation_->state_.area.missiles.push_back(std::move(missile));
         }
-        simulation_.emit(MissileReleased{missileId});
+        simulation_->emit(MissileReleased{missileId});
         return true;
     }
     return false;
@@ -216,14 +217,14 @@ bool GameSession::openShrinePortal() {
     const Vec fieldOrigin = map().grid.walkable(desired) ? desired : state().player.pos;
     auto field = freePosition(region(), fieldOrigin), arrival = freePosition(*town, *townPortalArrival_);
     if (!field || !arrival) return false;
-    simulation_.state_.publicPortals.push_back({true, ++simulation_.state_.nextPortalRevision,
+    simulation_->state_.publicPortals.push_back({true, ++simulation_->state_.nextPortalRevision,
         region().definition.id, *field, *arrival, state().time, false});
     return true;
 }
 bool GameSession::upgradeShrineMonster(Vec) {
     Enemy *nearest = nullptr;
     float distance = std::numeric_limits<float>::max();
-    for (auto &enemy : simulation_.state_.area.enemies) {
+    for (auto &enemy : simulation_->state_.area.enemies) {
         // Original predicate only admits NU/WL, normal, hostile, mortal units.
         if (enemy.hp <= 0 || enemy.identity.rank != MonsterRank::Normal || enemy.identity.enchantment ||
             enemy.attack > 0 || enemy.hitFlash > 0 || enemy.freeze > 0 || enemy.stun > 0 ||
@@ -239,7 +240,7 @@ bool GameSession::upgradeShrineMonster(Vec) {
     const auto *record = monsterContent_.find(nearest->identity.monster);
     const auto base = resolvedMonsterCombat(nearest->identity, state().area.region);
     if (!base) {
-        simulation_.emit(InteractionFailed{{}, "Original monster combat data is unavailable."});
+        simulation_->emit(InteractionFailed{{}, "Original monster combat data is unavailable."});
         return false;
     }
     auto rank = MonsterRank::Unique;
@@ -247,7 +248,7 @@ bool GameSession::upgradeShrineMonster(Vec) {
                                        nearest->combatRandom, rank);
     // Only explicit original party ownership propagates the initialization.
     // Group membership alone also contains unrelated ordinary pack members.
-    for (auto &minion : simulation_.state_.area.enemies) {
+    for (auto &minion : simulation_->state_.area.enemies) {
         if (minion.hp <= 0 || minion.identity.enchantment || nearest->identity.spawnKey.empty() ||
             minion.identity.ownerSpawnKey != nearest->identity.spawnKey) continue;
         const auto *record = monsterContent_.find(minion.identity.monster);

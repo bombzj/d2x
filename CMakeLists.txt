@@ -20,16 +20,16 @@ target_link_libraries(d2x_resources PUBLIC d2x_core PRIVATE storm)
 
 add_library(d2x_navigation src/world/navigation.cpp src/world/room_activation.cpp)
 target_link_libraries(d2x_navigation PUBLIC d2x_core)
-add_library(d2x_world src/world/map.cpp src/world/map_assembly.cpp src/world/maze.cpp src/world/outdoor.cpp src/world/outdoor_layout.cpp src/world/region.cpp src/world/region_catalog.cpp src/world/exits.cpp src/world/world_report.cpp)
+add_library(d2x_world src/world/map.cpp src/world/map_assembly.cpp src/world/maze.cpp src/world/outdoor/outdoor.cpp src/world/outdoor/outdoor_layout.cpp src/world/region.cpp src/world/region_catalog.cpp src/world/exits.cpp src/world/world_report.cpp)
 target_sources(d2x_world PRIVATE src/world/object_population.cpp)
 target_sources(d2x_world PRIVATE src/world/chest.cpp)
 target_sources(d2x_world PRIVATE src/world/shrine_catalog.cpp)
 target_sources(d2x_world PRIVATE
-  src/world/outdoor_substitution.cpp
-  src/world/outdoor_shrines.cpp
-  src/world/outdoor_river.cpp
-  src/world/outdoor_paths.cpp
-  src/world/outdoor_cliffs.cpp
+  src/world/outdoor/outdoor_substitution.cpp
+  src/world/outdoor/outdoor_shrines.cpp
+  src/world/outdoor/outdoor_river.cpp
+  src/world/outdoor/outdoor_paths.cpp
+  src/world/outdoor/outdoor_cliffs.cpp
   src/world/cow_level.cpp
   src/world/maze/generation.cpp src/world/maze/resources.cpp
   src/world/maze/cave.cpp src/world/maze/crypt.cpp src/world/maze/barracks.cpp
@@ -45,40 +45,40 @@ add_library(d2x_items
   src/gameplay/items/inventory.cpp src/gameplay/items/transfers.cpp src/gameplay/items/collection.cpp
   src/gameplay/items/preview.cpp src/gameplay/items/belt.cpp src/gameplay/items/books.cpp src/gameplay/items/inventory_snapshot.cpp)
 target_link_libraries(d2x_items PUBLIC d2x_core)
-add_library(d2x_content src/content/classic_data.cpp src/content/lod_data.cpp src/content/world_catalog.cpp src/content/monster_catalog.cpp)
-target_sources(d2x_content PRIVATE src/content/character_progression.cpp)
-target_sources(d2x_content PRIVATE src/content/character_attributes.cpp)
-target_sources(d2x_content PRIVATE src/content/string_table.cpp src/content/skill_data.cpp)
-target_sources(d2x_content PRIVATE src/content/sorceress_data.cpp src/content/frozen_orb_data.cpp src/content/blizzard_data.cpp src/content/glacial_spike_data.cpp src/content/weapon_skill_data.cpp src/content/necromancer_data.cpp)
-target_sources(d2x_content PRIVATE src/content/skill_animation.cpp)
-target_sources(d2x_content PRIVATE src/content/item_projectiles.cpp src/content/missile_effects.cpp)
-target_sources(d2x_content PRIVATE src/content/monster_experience.cpp)
-target_sources(d2x_content PRIVATE src/content/monster_combat.cpp)
-target_sources(d2x_content PRIVATE src/content/monster_difficulty_combat.cpp src/content/monster_enchantment.cpp)
-target_sources(d2x_content PRIVATE src/content/monster_ai_data.cpp)
-target_sources(d2x_content PRIVATE src/content/monster_spell_data.cpp)
-target_sources(d2x_content PRIVATE src/content/monster_animation.cpp)
-target_sources(d2x_content PRIVATE src/content/equipment_modifiers.cpp)
-target_sources(d2x_content PRIVATE src/content/equipment_combat.cpp)
-target_sources(d2x_content PRIVATE src/content/equipment_data.cpp)
-target_sources(d2x_content PRIVATE src/content/item_appearance.cpp)
-target_sources(d2x_content PRIVATE src/content/monster_loot.cpp)
-target_sources(d2x_content PRIVATE src/content/object_loot.cpp)
-target_sources(d2x_content PRIVATE src/content/chest_loot.cpp)
-target_sources(d2x_content PRIVATE src/content/item_quality.cpp)
-target_sources(d2x_content PRIVATE src/content/item_loot.cpp)
-target_sources(d2x_content PRIVATE src/content/special_items.cpp)
-target_sources(d2x_content PRIVATE src/content/item_affixes.cpp)
-target_sources(d2x_content PRIVATE src/content/item_properties.cpp)
-target_sources(d2x_content PRIVATE src/content/item_descriptions.cpp src/content/item_pricing.cpp)
-target_sources(d2x_content PRIVATE src/content/item_consumables.cpp)
-target_sources(d2x_content PRIVATE src/content/item_magic_loot.cpp)
-target_sources(d2x_content PRIVATE src/content/item_grades.cpp)
-target_sources(d2x_content PRIVATE src/content/npc_dialogue.cpp)
-target_sources(d2x_content PRIVATE src/content/hireling_data.cpp)
-target_sources(d2x_content PRIVATE src/content/automap_data.cpp)
-target_sources(d2x_content PRIVATE src/content/vendor_data.cpp)
-target_sources(d2x_content PRIVATE src/content/gamble_stock.cpp)
+add_library(d2x_content src/content/classic_data.cpp src/content/lod_data.cpp src/content/world/world_catalog.cpp src/content/monsters/monster_catalog.cpp)
+target_sources(d2x_content PRIVATE src/content/character/character_progression.cpp)
+target_sources(d2x_content PRIVATE src/content/character/character_attributes.cpp)
+target_sources(d2x_content PRIVATE src/content/string_table.cpp src/content/skills/skill_data.cpp)
+target_sources(d2x_content PRIVATE src/content/skills/sorceress_data.cpp src/content/skills/frozen_orb_data.cpp src/content/skills/blizzard_data.cpp src/content/skills/glacial_spike_data.cpp src/content/skills/weapon_skill_data.cpp src/content/skills/necromancer_data.cpp)
+target_sources(d2x_content PRIVATE src/content/skills/skill_animation.cpp)
+target_sources(d2x_content PRIVATE src/content/items/item_projectiles.cpp src/content/skills/missile_effects.cpp)
+target_sources(d2x_content PRIVATE src/content/monsters/monster_experience.cpp)
+target_sources(d2x_content PRIVATE src/content/monsters/monster_combat.cpp)
+target_sources(d2x_content PRIVATE src/content/monsters/monster_difficulty_combat.cpp src/content/monsters/monster_enchantment.cpp)
+target_sources(d2x_content PRIVATE src/content/monsters/monster_ai_data.cpp)
+target_sources(d2x_content PRIVATE src/content/monsters/monster_spell_data.cpp)
+target_sources(d2x_content PRIVATE src/content/monsters/monster_animation.cpp)
+target_sources(d2x_content PRIVATE src/content/items/equipment_modifiers.cpp)
+target_sources(d2x_content PRIVATE src/content/items/equipment_combat.cpp)
+target_sources(d2x_content PRIVATE src/content/items/equipment_data.cpp)
+target_sources(d2x_content PRIVATE src/content/items/item_appearance.cpp)
+target_sources(d2x_content PRIVATE src/content/monsters/monster_loot.cpp)
+target_sources(d2x_content PRIVATE src/content/items/object_loot.cpp)
+target_sources(d2x_content PRIVATE src/content/items/chest_loot.cpp)
+target_sources(d2x_content PRIVATE src/content/items/item_quality.cpp)
+target_sources(d2x_content PRIVATE src/content/items/item_loot.cpp)
+target_sources(d2x_content PRIVATE src/content/items/special_items.cpp)
+target_sources(d2x_content PRIVATE src/content/items/item_affixes.cpp)
+target_sources(d2x_content PRIVATE src/content/items/item_properties.cpp)
+target_sources(d2x_content PRIVATE src/content/items/item_descriptions.cpp src/content/items/item_pricing.cpp)
+target_sources(d2x_content PRIVATE src/content/items/item_consumables.cpp)
+target_sources(d2x_content PRIVATE src/content/items/item_magic_loot.cpp)
+target_sources(d2x_content PRIVATE src/content/items/item_grades.cpp)
+target_sources(d2x_content PRIVATE src/content/npc/npc_dialogue.cpp)
+target_sources(d2x_content PRIVATE src/content/npc/hireling_data.cpp)
+target_sources(d2x_content PRIVATE src/content/world/automap_data.cpp)
+target_sources(d2x_content PRIVATE src/content/npc/vendor_data.cpp)
+target_sources(d2x_content PRIVATE src/content/npc/gamble_stock.cpp)
 target_link_libraries(d2x_content PUBLIC d2x_resources d2x_items)
 
 # Rules and state compile without raylib, StormLib, a window or an archive.
@@ -126,7 +126,7 @@ target_sources(d2x_gameplay PRIVATE src/gameplay/loot/special.cpp)
 target_sources(d2x_gameplay PRIVATE src/gameplay/quest/den_of_evil.cpp src/gameplay/quest/burial_grounds.cpp src/gameplay/quest/search_for_cain.cpp src/gameplay/quest/forgotten_tower.cpp src/gameplay/quest/tools_of_trade.cpp src/gameplay/quest/sisters_to_slaughter.cpp)
 target_sources(d2x_gameplay PRIVATE src/gameplay/loot/affix.cpp)
 target_sources(d2x_gameplay PRIVATE src/gameplay/effects/state.cpp src/gameplay/effects/reactions.cpp)
-target_sources(d2x_content PRIVATE src/content/state_data.cpp src/content/shrine_data.cpp)
+target_sources(d2x_content PRIVATE src/content/skills/state_data.cpp src/content/world/shrine_data.cpp)
 target_link_libraries(d2x_gameplay PUBLIC d2x_navigation)
 target_link_libraries(d2x_content PUBLIC d2x_gameplay)
 add_library(d2x_population src/world/population.cpp)
@@ -153,31 +153,31 @@ add_library(d2x_persistence src/persistence/d2s_codec.cpp src/persistence/save_f
 target_link_libraries(d2x_persistence PUBLIC d2x_gameplay d2x_items d2x_content)
 
 add_library(d2x_presentation
-  src/presentation/graphics.cpp src/presentation/audio.cpp src/presentation/primitives.cpp
-  src/presentation/scene_assets.cpp src/presentation/hero_assets.cpp src/presentation/scene_view.cpp
-  src/presentation/skill_assets.cpp src/presentation/hud_controls.cpp src/presentation/skill_controller.cpp
-  src/presentation/skill_tree_view.cpp src/presentation/quest_panel.cpp
-  src/presentation/npc_alert_view.cpp src/presentation/panel_frame.cpp
-  src/presentation/exit_view.cpp src/presentation/waypoint_view.cpp
-  src/presentation/world_renderer.cpp src/presentation/hud.cpp src/presentation/npc_dialogue_view.cpp src/presentation/npc_menu_view.cpp src/presentation/npc_shop_view.cpp src/presentation/controller.cpp
-  src/presentation/loot_view.cpp src/presentation/inventory_panel.cpp
-  src/presentation/character_panel.cpp src/presentation/character_action_stats.cpp
-  src/presentation/container_view.cpp src/presentation/storage_view.cpp src/presentation/cube_view.cpp src/presentation/belt_view.cpp src/presentation/inventory_view.cpp src/presentation/inventory_controller.cpp)
+  src/presentation/graphics/graphics.cpp src/presentation/audio/audio.cpp src/presentation/graphics/primitives.cpp
+  src/presentation/scene_assets.cpp src/presentation/actors/hero_assets.cpp src/presentation/scene_view.cpp
+  src/presentation/hud/skill_assets.cpp src/presentation/hud/hud_controls.cpp src/presentation/hud/skill_controller.cpp
+  src/presentation/hud/skill_tree_view.cpp src/presentation/hud/quest_panel.cpp
+  src/presentation/npc/npc_alert_view.cpp src/presentation/hud/panel_frame.cpp
+  src/presentation/hud/exit_view.cpp src/presentation/hud/waypoint_view.cpp
+  src/presentation/world/world_renderer.cpp src/presentation/hud/hud.cpp src/presentation/npc/npc_dialogue_view.cpp src/presentation/npc/npc_menu_view.cpp src/presentation/npc/npc_shop_view.cpp src/presentation/controller.cpp
+  src/presentation/loot_view.cpp src/presentation/inventory/inventory_panel.cpp
+  src/presentation/hud/character_panel.cpp src/presentation/hud/character_action_stats.cpp
+  src/presentation/inventory/container_view.cpp src/presentation/inventory/storage_view.cpp src/presentation/inventory/cube_view.cpp src/presentation/inventory/belt_view.cpp src/presentation/inventory/inventory_view.cpp src/presentation/inventory/inventory_controller.cpp)
 target_link_libraries(d2x_presentation PUBLIC d2x_session raylib)
-target_sources(d2x_presentation PRIVATE src/presentation/monster_audio.cpp)
-target_sources(d2x_presentation PRIVATE src/presentation/monster_assets.cpp)
-target_sources(d2x_presentation PRIVATE src/presentation/hireling_assets.cpp)
-target_sources(d2x_presentation PRIVATE src/presentation/hireling_view.cpp)
-target_sources(d2x_presentation PRIVATE src/presentation/automap_assets.cpp src/presentation/automap_view.cpp)
-target_sources(d2x_presentation PRIVATE src/presentation/lighting_view.cpp)
-target_sources(d2x_presentation PRIVATE src/presentation/palette_blend_view.cpp)
-target_sources(d2x_presentation PRIVATE src/presentation/audio_emitters.cpp)
-target_sources(d2x_presentation PRIVATE src/presentation/projectile_view.cpp)
+target_sources(d2x_presentation PRIVATE src/presentation/actors/monster_audio.cpp)
+target_sources(d2x_presentation PRIVATE src/presentation/actors/monster_assets.cpp)
+target_sources(d2x_presentation PRIVATE src/presentation/actors/hireling_assets.cpp)
+target_sources(d2x_presentation PRIVATE src/presentation/npc/hireling_view.cpp)
+target_sources(d2x_presentation PRIVATE src/presentation/world/automap_assets.cpp src/presentation/world/automap_view.cpp)
+target_sources(d2x_presentation PRIVATE src/presentation/world/lighting_view.cpp)
+target_sources(d2x_presentation PRIVATE src/presentation/world/palette_blend_view.cpp)
+target_sources(d2x_presentation PRIVATE src/presentation/audio/audio_emitters.cpp)
+target_sources(d2x_presentation PRIVATE src/presentation/world/projectile_view.cpp)
 
 add_executable(d2x src/main.cpp src/app/application.cpp src/app/options.cpp src/app/input.cpp
   src/app/character_frontend.cpp src/app/crash_report.cpp)
-target_sources(d2x PRIVATE src/app/debug_pipe.cpp src/app/debug_commands.cpp src/app/debug_inventory.cpp
-    src/app/debug_item_actions.cpp src/app/debug_monsters.cpp src/app/debug_hireling.cpp)
+target_sources(d2x PRIVATE src/app/debug/debug_pipe.cpp src/app/debug/debug_commands.cpp src/app/debug/debug_inventory.cpp
+    src/app/debug/debug_item_actions.cpp src/app/debug/debug_monsters.cpp src/app/debug/debug_hireling.cpp)
 target_link_libraries(d2x PRIVATE d2x_presentation d2x_persistence)
 target_link_libraries(d2x PRIVATE nlohmann_json::nlohmann_json)
 if(WIN32)

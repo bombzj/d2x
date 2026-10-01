@@ -1,3 +1,4 @@
+#include "resources/archive.hpp"
 #include "string_table.hpp"
 #include <cstdint>
 #include <stdexcept>

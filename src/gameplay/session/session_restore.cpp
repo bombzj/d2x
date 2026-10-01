@@ -1,6 +1,7 @@
+#include "gameplay/simulation/simulation.hpp"
 #include "gameplay/session/session.hpp"
-#include "content/equipment_modifiers.hpp"
-#include "content/npc_dialogue.hpp"
+#include "content/items/equipment_modifiers.hpp"
+#include "content/npc/npc_dialogue.hpp"
 #include <algorithm>
 #include <cmath>
 #include <set>
@@ -170,21 +171,21 @@ void GameSession::restore(CharacterSaveData data) {
     CharacterDefinition restoredDefinition = definition;
     static_assert(std::is_nothrow_move_assignable_v<WorldState>);
     static_assert(std::is_nothrow_move_assignable_v<InventoryState>);
-    simulation_.state_ = std::move(nextWorld);
+    simulation_->state_ = std::move(nextWorld);
     random_ = nextRandom;
-    simulation_.unitRandom_ = childRandom(random_);
+    simulation_->unitRandom_ = childRandom(random_);
     shrineRandom_ = childRandom(random_);
     visualRandom_ = childRandom(random_);
     cainRandom_ = childRandom(random_);
-    simulation_.lifeStealDivisor_ = content_.lifeStealDivisor.at(size_t(state().population.difficulty));
-    simulation_.manaStealDivisor_ = content_.manaStealDivisor.at(size_t(state().population.difficulty));
+    simulation_->lifeStealDivisor_ = content_.lifeStealDivisor.at(size_t(state().population.difficulty));
+    simulation_->manaStealDivisor_ = content_.manaStealDivisor.at(size_t(state().population.difficulty));
     characterDefinition_ = std::move(restoredDefinition);
-    simulation_.state_.player.attributes = characterStats;
-    simulation_.state_.player.equipment = equipmentStats;
-    simulation_.grid_ = &regions_[current].map.grid;
-    simulation_.rooms_ = &regions_[current].map.activation;
-    simulation_.safeZone_ = regions_[current].definition.safe;
-    simulation_.events_.clear();
+    simulation_->state_.player.attributes = characterStats;
+    simulation_->state_.player.equipment = equipmentStats;
+    simulation_->grid_ = &regions_[current].map.grid;
+    simulation_->rooms_ = &regions_[current].map.activation;
+    simulation_->safeZone_ = regions_[current].definition.safe;
+    simulation_->events_.clear();
     inventory_.state_ = std::move(data.inventory);
     inventory_.replenishTimers_.clear();
     inactiveAreas_.swap(nextAreas);
@@ -234,10 +235,10 @@ void GameSession::restore(CharacterSaveData data) {
                     object.npcRandom = childRandom(random_);
                 }
     ids_.next_ = data.nextEntityId;
-    if (simulation_.state_.player.hireling.sourceRow >= 0) {
-        auto &merc = simulation_.state_.player.hireling;
+    if (simulation_->state_.player.hireling.sourceRow >= 0) {
+        auto &merc = simulation_->state_.player.hireling;
         merc.id = ids_.allocate();
-        merc.pos = simulation_.state_.player.pos;
+        merc.pos = simulation_->state_.player.pos;
         if (merc.hp > 0) merc.hp = float(hirelingStats().base.life);
     }
     current_ = current;

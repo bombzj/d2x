@@ -1,5 +1,5 @@
 #include "session.hpp"
-#include "content/monster_enchantment.hpp"
+#include "content/monsters/monster_enchantment.hpp"
 
 namespace d2x {
 std::optional<MonsterCombatProfile> GameSession::resolvedMonsterCombat(

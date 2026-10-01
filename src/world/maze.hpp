@@ -1,6 +1,6 @@
 #pragma once
 // World seeds are selected at the application boundary.
-#include "content/world_catalog.hpp"
+#include "content/world/world_catalog.hpp"
 
 namespace d2x {
 // Immutable generation plan. Geometry, archive decoding and runtime state remain separate.

@@ -14,7 +14,7 @@
 
 ## 上锁宝箱（2026-09-27）
 
-`world/chest.cpp` 共用初始化 DS1 与 ObjGroup 生成的宝箱；`content/chest_loot.cpp` 规划掉落，`session_objects.cpp` 负责钥匙库存事务和一次性开启。界面只读取状态并发送原交互命令。概率不按 Token、角色等级或当前难度猜测，原图继续使用 Objects.Token 对应的 COF/DCC。
+`world/chest.cpp` 共用初始化 DS1 与 ObjGroup 生成的宝箱；`content/items/chest_loot.cpp` 规划掉落，`session_objects.cpp` 负责钥匙库存事务和一次性开启。界面只读取状态并发送原交互命令。概率不按 Token、角色等级或当前难度猜测，原图继续使用 Objects.Token 对应的 COF/DCC。
 
 | 环节 | 实现与依据 |
 | --- | --- |
@@ -34,7 +34,7 @@
 
 ## 祭坛实际效果（2026-09-27）
 
-`Objects.Parm0` 选择类别，`content/shrine_data.*` 导入当前 1.13c MPQ `Shrines.txt` 的 Code、Arg0/1、文本、持续帧数和重置时间，`session_shrines.cpp` 执行效果。22 个非空 Code 中，原引擎将 4→2、5→3、16→18；因此共有 19 种实际效果，调试领取也走相同映射。没有只显示提示而跳过效果的祭坛分支。
+`Objects.Parm0` 选择类别，`content/world/shrine_data.*` 导入当前 1.13c MPQ `Shrines.txt` 的 Code、Arg0/1、文本、持续帧数和重置时间，`session_shrines.cpp` 执行效果。22 个非空 Code 中，原引擎将 4→2、5→3、16→18；因此共有 19 种实际效果，调试领取也走相同映射。没有只显示提示而跳过效果的祭坛分支。
 
 | Code／效果 | 当前执行 | 原表数值与规则依据 |
 | --- | --- | --- |
@@ -60,7 +60,7 @@
 
 效果持续按 25 Hz 的整数帧。祭坛重置遵循 `ObjMode` 的 `gameFrame + 1200 * minutes + 1`，没有按现实一分钟误乘 1500；生命／法力及十种限时祭坛均读取各自原表重置值，经验和特殊祭坛为零时不会重置。即时恢复不擅自清除全部状态。限时效果共用 `CombatEffectSet` 和角色派生属性，按原 `States.curse` 与其他诅咒互斥，替换、到期及死亡统一撤销；耐力的移除回调在新属性重算后执行。
 
-Code 6–15 的原状态映射集中在 `content/state_data.cpp::shrineStateName`；表现层读取原 Overlay DCC、overlay1/2、Height1–4、X/Yoffset 与 Trans。未领取时显示在祭坛上，领取后显示在玩家头上；物体使用高度索引 0、玩家使用 1，依据 `UNITS_GetOverlayHeight`。当前祭坛图为 15 帧、AnimRate=8，沿 Diablerie `Overlay.Create` 的 AnimRate×1.5 播放，Trans=3 使用软加色。怪物光环和诅咒读取各自原状态图，overlay1/2 各自按 PreDraw 放在单位前后层，不把 secondaryOverlay 固定当作背层。客户端时钟、投影、定位及软加色仍是参考适配，未以字段存在代替原版逐像素验收。
+Code 6–15 的原状态映射集中在 `content/skills/state_data.cpp::shrineStateName`；表现层读取原 Overlay DCC、overlay1/2、Height1–4、X/Yoffset 与 Trans。未领取时显示在祭坛上，领取后显示在玩家头上；物体使用高度索引 0、玩家使用 1，依据 `UNITS_GetOverlayHeight`。当前祭坛图为 15 帧、AnimRate=8，沿 Diablerie `Overlay.Create` 的 AnimRate×1.5 播放，Trans=3 使用软加色。怪物光环和诅咒读取各自原状态图，overlay1/2 各自按 PreDraw 放在单位前后层，不把 secondaryOverlay 固定当作背层。客户端时钟、投影、定位及软加色仍是参考适配，未以字段存在代替原版逐像素验收。
 
 投瓶、爆炸和毒云复用普通药瓶的伤害、碰撞、固定速度／飞行帧、子弹体、原图及声音入口；没有另造祭坛专用粒子或伤害常数。此前用户指出的毒雾稀疏／光点感，以及旧客户端抛物线和烟雾发射节拍，仍属于 [通用攻击](COMMON_ATTACKS.md) 的画面待核实项，本轮不声称已经复刻该客户端表现。附近房间几何、路径、公共传送门找位和随机流仍为本项目适配；跨区域休眠和佣兵战斗覆盖沿用现有系统边界。
 

@@ -1,3 +1,4 @@
+#include "gameplay/simulation/simulation.hpp"
 #include "session.hpp"
 #include <algorithm>
 
@@ -116,11 +117,11 @@ void GameSession::useSkill(const UseSkill &intent) {
     const auto &player = state().player;
     if (!entry || entry->passive || player.dead || !skillAvailable(intent.id)) return;
     if (!entry->executable()) {
-        simulation_.state_.message = "This skill effect is not implemented";
+        simulation_->state_.message = "This skill effect is not implemented";
         return;
     }
     if (region().definition.safe && !entry->allowedInTown) {
-        simulation_.state_.message = "This skill cannot be used in town";
+        simulation_->state_.message = "This skill cannot be used in town";
         return;
     }
     if (entry->basicAction != BasicSkillAction::None) {
@@ -129,7 +130,7 @@ void GameSession::useSkill(const UseSkill &intent) {
                             entry->basicAction == BasicSkillAction::LeftHandThrow;
         const bool leftHand = entry->basicAction == BasicSkillAction::LeftHandSwing ||
                               entry->basicAction == BasicSkillAction::LeftHandThrow;
-        simulation_.execute(Attack{intent.enemy, thrown, leftHand, intent.target, intent.stationary});
+        simulation_->execute(Attack{intent.enemy, thrown, leftHand, intent.target, intent.stationary});
         return;
     }
     if (entry->spell) {
@@ -144,22 +145,22 @@ void GameSession::useSkill(const UseSkill &intent) {
         }
         if (resolved.weapon) {
             cancelExit(); cancelPickup(); cancelInteraction();
-            simulation_.beginWeaponSkill(resolved, intent.target, intent.enemy);
+            simulation_->beginWeaponSkill(resolved, intent.target, intent.enemy);
             return;
         }
         if (!applySkillCastTiming(resolved)) {
-            simulation_.state_.message = "Original cast animation timing is unavailable";
+            simulation_->state_.message = "Original cast animation timing is unavailable";
             return;
         }
         const int levelId = int(region().definition.id);
         const bool teleportAllowed = content_.teleportByLevel.contains(levelId) &&
             content_.teleportByLevel.at(levelId) != 0;
         cancelExit(); cancelPickup(); cancelInteraction();
-        simulation_.beginSkillCast(simulation_.state_.player, resolved, intent.target, teleportAllowed,
+        simulation_->beginSkillCast(simulation_->state_.player, resolved, intent.target, teleportAllowed,
             content_.staticFieldMinimum.at(size_t(state().population.difficulty)), intent.enemy);
         return;
     }
-    simulation_.state_.message = "This skill effect is not implemented";
+    simulation_->state_.message = "This skill effect is not implemented";
 }
 bool GameSession::weaponSkillReady(const SkillCastSpec &skill) const {
     if (!skill.weapon) return false;
@@ -167,9 +168,9 @@ bool GameSession::weaponSkillReady(const SkillCastSpec &skill) const {
     const auto &player = state().player;
     if (player.dead || player.mana < skill.manaCost ||
         (action.delayFrames > 0 && state().frame < player.skillDelayUntil)) return false;
-    const auto *weapon = simulation_.attackWeapon(action.thrown, false);
+    const auto *weapon = simulation_->attackWeapon(action.thrown, false);
     return weapon && std::find(weapon->types.begin(), weapon->types.end(), action.requiredType) != weapon->types.end() &&
-        simulation_.canSpendProjectile_ && simulation_.canSpendProjectile_(weapon->item, action.thrown);
+        simulation_->canSpendProjectile_ && simulation_->canSpendProjectile_(weapon->item, action.thrown);
 }
 bool GameSession::skillAvailable(int id) const {
     const auto *entry = content_.skills.find(id);

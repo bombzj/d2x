@@ -1,3 +1,4 @@
+#include "gameplay/simulation/simulation.hpp"
 #include "gameplay/session/session.hpp"
 #include <algorithm>
 
@@ -10,11 +11,11 @@ QuestRecord &denRecord(WorldState &world) {
 } // namespace
 
 void GameSession::onQuestRegionEntered(RegionId id) {
-    auto &book = simulation_.state_.player.actOneQuests
+    auto &book = simulation_->state_.player.actOneQuests
         .at(size_t(state().population.difficulty));
     auto advance = [&](ActOneQuest quest, auto transition) {
         auto &record = book.at(questIndex(quest));
-        if (transition(record)) simulation_.emit(QuestAdvanced{quest, record.stage});
+        if (transition(record)) simulation_->emit(QuestAdvanced{quest, record.stage});
     };
     if (denRegion_ && id == *denRegion_)
         advance(ActOneQuest::DenOfEvil, denAdvanceOnEntry);
@@ -48,28 +49,28 @@ void GameSession::updateDenQuest() {
     const auto &area = state().area;
     bool alive = std::any_of(area.enemies.begin(), area.enemies.end(),
                              [](const Enemy &enemy) { return enemy.hp > 0; });
-    auto &record = denRecord(simulation_.state_);
+    auto &record = denRecord(simulation_->state_);
     if (denAdvanceOnClear(record, area.kills > 0,
                           alive || !area.pendingSpawns.empty()))
-        simulation_.emit(QuestAdvanced{ActOneQuest::DenOfEvil, record.stage});
+        simulation_->emit(QuestAdvanced{ActOneQuest::DenOfEvil, record.stage});
 }
 void GameSession::updateBurialQuest(const EnemyDied &death) {
     if (!burialRegion_ || death.region != *burialRegion_ ||
         death.identity.monster != "bloodraven") return;
-    auto &record = simulation_.state_.player.actOneQuests
+    auto &record = simulation_->state_.player.actOneQuests
         .at(size_t(state().population.difficulty)).at(questIndex(ActOneQuest::SistersBurialGrounds));
     if (burialAdvanceOnBloodRaven(record))
-        simulation_.emit(QuestAdvanced{ActOneQuest::SistersBurialGrounds, record.stage});
+        simulation_->emit(QuestAdvanced{ActOneQuest::SistersBurialGrounds, record.stage});
 }
 void GameSession::updateTowerQuest(const EnemyDied &death) {
     const auto *countess = monsterContent_.superUnique("The Countess");
     if (!countess || !towerCellarRegion_ || death.region != *towerCellarRegion_ ||
         death.identity.superUnique != countess->id ||
         death.identity.monster != countess->monster) return;
-    auto &record = simulation_.state_.player.actOneQuests
+    auto &record = simulation_->state_.player.actOneQuests
         .at(size_t(state().population.difficulty)).at(questIndex(ActOneQuest::ForgottenTower));
     if (towerAdvance(record, TowerStage::CountessSlain))
-        simulation_.emit(QuestAdvanced{ActOneQuest::ForgottenTower, record.stage});
+        simulation_->emit(QuestAdvanced{ActOneQuest::ForgottenTower, record.stage});
 }
 
 void GameSession::talkToNpc(EntityId npc) {
@@ -82,22 +83,22 @@ void GameSession::talkToNpc(EntityId npc) {
         pendingNpcQuestMessages_.erase(dialogue.readKey);
     if (!dialogue.advancesQuest) return;
     const auto id = *dialogue.advancesQuest;
-    auto &record = simulation_.state_.player.actOneQuests
+    auto &record = simulation_->state_.player.actOneQuests
         .at(size_t(state().population.difficulty)).at(questIndex(id));
     auto changed = [&](bool advanced) {
-        if (advanced) simulation_.emit(QuestAdvanced{id, record.stage});
+        if (advanced) simulation_->emit(QuestAdvanced{id, record.stage});
     };
     switch (id) {
     case ActOneQuest::DenOfEvil:
         if (denClaimReward(record)) {
-            ++simulation_.state_.player.unspentSkills;
+            ++simulation_->state_.player.unspentSkills;
             changed(true);
         } else changed(denAdvanceOnTalk(record));
         break;
     case ActOneQuest::SistersBurialGrounds:
         if (record.stage == uint32_t(BurialStage::BloodRavenSlain)) {
             if (!assignKashyaHireling()) {
-                simulation_.emit(InteractionFailed{npc, "Original Rogue hireling data is unavailable."});
+                simulation_->emit(InteractionFailed{npc, "Original Rogue hireling data is unavailable."});
                 return;
             }
             changed(burialClaimReward(record));
@@ -109,7 +110,7 @@ void GameSession::talkToNpc(EntityId npc) {
             translateCainScroll(npc);
         else if (record.stage == uint32_t(CainStage::Rescued)) {
             if (!claimCainReward())
-                simulation_.emit(InteractionFailed{npc, "Make room for Akara's original ring reward."});
+                simulation_->emit(InteractionFailed{npc, "Make room for Akara's original ring reward."});
         } else if (record.stage == uint32_t(CainStage::Unstarted))
             changed(cainAdvance(record, CainStage::Assigned));
         break;
@@ -122,7 +123,7 @@ void GameSession::talkToNpc(EntityId npc) {
                     if (item && item->definition == "hdm") malus = item->handle();
                 }
             if (!malus.id) {
-                simulation_.emit(InteractionFailed{npc, "Bring the Horadric Malus to Charsi."});
+                simulation_->emit(InteractionFailed{npc, "Bring the Horadric Malus to Charsi."});
                 return;
             }
             const auto *held = inventory_.item(malus.id);
@@ -150,13 +151,13 @@ void GameSession::claimAkaraRespec(EntityId npc) {
     const auto *target = object(npc);
     if (!target || target->name != "Akara" || engagedNpc_ != npc ||
         region().definition.id != RegionId::Encampment || !canReach(*target)) {
-        simulation_.emit(InteractionFailed{npc, "Akara is unavailable or too far away."});
+        simulation_->emit(InteractionFailed{npc, "Akara is unavailable or too far away."});
         return;
     }
-    auto &player = simulation_.state_.player;
-    auto &record = denRecord(simulation_.state_);
+    auto &player = simulation_->state_.player;
+    auto &record = denRecord(simulation_->state_);
     if (!denClaimRespec(record)) {
-        simulation_.emit(InteractionFailed{npc, "No free respec remains for this difficulty."});
+        simulation_->emit(InteractionFailed{npc, "No free respec remains for this difficulty."});
         return;
     }
     player.unspentAttributes += allocatedPoints(player.allocated);
@@ -166,6 +167,6 @@ void GameSession::claimAkaraRespec(EntityId npc) {
     player.skillRanks.clear();
     player.skillHotkeys = {};
     refreshCharacter(true);
-    simulation_.emit(QuestAdvanced{ActOneQuest::DenOfEvil, record.stage});
+    simulation_->emit(QuestAdvanced{ActOneQuest::DenOfEvil, record.stage});
 }
 } // namespace d2x

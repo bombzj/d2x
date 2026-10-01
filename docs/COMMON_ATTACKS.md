@@ -6,20 +6,20 @@
 
 | 层 | 入口与职责 |
 | --- | --- |
-| 内容 | `content/skill_animation.*` 从 `Skills.anim`、`AnimData.d2` 与原 COF 建立职业／武器类／动作的帧数、速度及动作事件；`item_projectiles.*` 解析武器弹体、投掷种类与资源。 |
-| 效果适配 | `content/missile_effects.*` 导入固定表值的范围命中、命中视觉与毒云子导弹；技能公式须在内容／技能解析层求值，不能在玩法中按物品名猜测。 |
+| 内容 | `content/skills/skill_animation.*` 从 `Skills.anim`、`AnimData.d2` 与原 COF 建立职业／武器类／动作的帧数、速度及动作事件；`item_projectiles.*` 解析武器弹体、投掷种类与资源。 |
+| 效果适配 | `content/skills/missile_effects.*` 导入固定表值的范围命中、命中视觉与毒云子导弹；技能公式须在内容／技能解析层求值，不能在玩法中按物品名猜测。 |
 | 派生数值 | `items/equipment_stats.*` 为每把有效武器分别派生伤害、命中、IAS、基础速度、射程和目标类型加成。普通攻击不再轮流混用两把武器；显式左手动作选择左手。 |
 | 攻击过程 | `combat/attacking.cpp` 创建 `WeaponAttackState`，按 25 Hz 推进，在动作事件帧进行近战检定或发射；`weapon_attack.*` 提供帧量化、近战距离和弹体／单位占位求交。 |
 | 弹体 | `physical_projectiles.cpp` 保存发射时的伤害、命中、等级与元素快照；`missile_effects.cpp` 执行共享范围命中、落点命中及移动毒云。 |
-| 表现 | 人物读取同一个攻击帧状态；弹体及命中效果只按原 ID 加载 DCC、动画列与声音。`presentation/projectile_view.cpp` 管理无伤害的客户端子效果及独立随机流，不占用玩法实体 ID。攻击开始时保留装备定义及武器类，最后一枚投掷物耗尽不会在动作中途换成空手图。 |
+| 表现 | 人物读取同一个攻击帧状态；弹体及命中效果只按原 ID 加载 DCC、动画列与声音。`presentation/world/projectile_view.cpp` 管理无伤害的客户端子效果及独立随机流，不占用玩法实体 ID。攻击开始时保留装备定义及武器类，最后一枚投掷物耗尽不会在动作中途换成空手图。 |
 
 UI 仍只提交 `Attack`／`UseSkill`。Shift 原地攻击保留当前指向的单位；近战出手时再次验证距离，空地挥击不制造范围伤害。弓弩和投掷允许瞄准空地。死亡、受击及换区会清除未释放攻击；切换武器组取消当前动作和待追击目标。
 
 ## 武器组件与朝向
 
-角色世界动画与角色列表预览共用 `presentation/equipment_appearance.hpp::equippedHandComponent`：只有 `1hs`／`1ht`／`ht1` 武器按手位选择 RH／LH，其余保持原表 `component`。依据本地 D2MOO `D2Common/src/D2Inventory.cpp::INVENTORY_GetCompositItem`。当前 MPQ 的短弓 `sbw` 使用组件 6（LH），女巫 `SOA1BOW.cof` 包含 LH 而无 RH，对应原图 `chars/so/lh/solhsbwa1bow.dcc`；旧代码把所有主手武器强制放到 RH，导致弓被遗漏。这里只修正图层选择，双持主手仍遵循下文的项目边界。
+角色世界动画与角色列表预览共用 `presentation/actors/equipment_appearance.hpp::equippedHandComponent`：只有 `1hs`／`1ht`／`ht1` 武器按手位选择 RH／LH，其余保持原表 `component`。依据本地 D2MOO `D2Common/src/D2Inventory.cpp::INVENTORY_GetCompositItem`。当前 MPQ 的短弓 `sbw` 使用组件 6（LH），女巫 `SOA1BOW.cof` 包含 LH 而无 RH，对应原图 `chars/so/lh/solhsbwa1bow.dcc`；旧代码把所有主手武器强制放到 RH，导致弓被遗漏。这里只修正图层选择，双持主手仍遵循下文的项目边界。
 
-`presentation/primitives.cpp::direction` 接收世界坐标方向，在不压缩纵轴的 45° 旋转坐标中量化，再映射原 DCC 的 8／16／32 方向索引。依据 Diablerie `Engine/Iso.cs::Direction`、`Engine/IO/D2Formats/DirectionMapping.cs` 与 `Engine/Entities/Missile.cs::Create`；当前 MPQ `missiles/arrow.dcc` 为 32 方向、每方向 1 帧。原图已经包含等角投影，不能再用 `project()` 的半高屏幕角度选择方向帧。人物、佣兵、怪物与弹体共用该入口，运动、碰撞及伤害不变。
+`presentation/graphics/graphics/graphics/primitives.cpp::direction` 接收世界坐标方向，在不压缩纵轴的 45° 旋转坐标中量化，再映射原 DCC 的 8／16／32 方向索引。依据 Diablerie `Engine/Iso.cs::Direction`、`Engine/IO/D2Formats/DirectionMapping.cs` 与 `Engine/Entities/Missile.cs::Create`；当前 MPQ `missiles/arrow.dcc` 为 32 方向、每方向 1 帧。原图已经包含等角投影，不能再用 `project()` 的半高屏幕角度选择方向帧。人物、佣兵、怪物与弹体共用该入口，运动、碰撞及伤害不变。
 
 2026-09-28 上述两项显示修订仅完成源码及原资源／reference 对照；按当前交接约定未构建、运行测试或游戏、打包，现有 `dist/current` 不含本次修订，实际画面待验收。
 

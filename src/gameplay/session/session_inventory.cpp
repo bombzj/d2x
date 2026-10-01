@@ -1,5 +1,6 @@
+#include "gameplay/simulation/simulation.hpp"
 #include "gameplay/session/session.hpp"
-#include "content/equipment_modifiers.hpp"
+#include "content/items/equipment_modifiers.hpp"
 #include <algorithm>
 #include <type_traits>
 
@@ -32,8 +33,8 @@ EquipmentActor GameSession::equipmentActor(const PlayerState &player) const {
             stats.blockFactor, player.weaponSet};
 }
 void GameSession::refreshCharacter(bool fillGains) {
-    auto &player = simulation_.state_.player;
-    const auto previous = simulation_.state_.player.attributes;
+    auto &player = simulation_->state_.player;
+    const auto previous = simulation_->state_.player.attributes;
     auto effects = activeModifiers(player, state().frame);
     auto base = deriveCharacterAttributes(characterDefinition_, player.level, player.allocated, effects);
     EquipmentActor baseActor{characterDefinition_.code, base.strength, base.dexterity, player.level,
@@ -41,7 +42,7 @@ void GameSession::refreshCharacter(bool fillGains) {
     auto modifiers = resolveEquipmentModifiers(content_, inventory_, playerContainers_, baseActor);
     mergeCharacterModifiers(modifiers, effects);
     auto current = deriveCharacterAttributes(characterDefinition_, player.level, player.allocated,
-                                             modifiers, simulation_.resistancePenalty_);
+                                             modifiers, simulation_->resistancePenalty_);
     EquipmentActor actor{characterDefinition_.code, current.strength, current.dexterity, player.level,
                          current.blockFactor, player.weaponSet};
     applyWarmth(current, player, characterDefinition_, inventory_, playerContainers_, actor);
@@ -53,8 +54,8 @@ void GameSession::refreshCharacter(bool fillGains) {
     player.hp = std::clamp(player.hp, 0.f, float(current.maxLife));
     player.mana = std::clamp(player.mana, 0.f, float(current.maxMana));
     player.stamina = std::clamp(player.stamina, 0.f, float(current.maxStamina));
-    simulation_.state_.player.attributes = current;
-    simulation_.state_.player.equipment = deriveEquipmentStats(inventory_, playerContainers_, actor,
+    simulation_->state_.player.attributes = current;
+    simulation_->state_.player.equipment = deriveEquipmentStats(inventory_, playerContainers_, actor,
                                                        modifiers.defense, modifiers.combat, current.baseAttackRating);
 }
 void GameSession::createStarterEquipment() {
@@ -237,7 +238,7 @@ void GameSession::executeInventory(const GameCommand &command) {
                     requested = intent.source.id;
                 auto error = previewInventory(command);
                 if (error != InventoryError::None) {
-                    simulation_.emit(InventoryRejected{requested, error});
+                    simulation_->emit(InventoryRejected{requested, error});
                     return;
                 }
                 if constexpr (std::is_same_v<T, MoveItem>)
@@ -258,7 +259,7 @@ void GameSession::executeInventory(const GameCommand &command) {
                     bool applied = bool(result);
                     publishInventory(std::move(result), requested);
                     if (applied)
-                        simulation_.emit(BeltEquipped{});
+                        simulation_->emit(BeltEquipped{});
                 } else if constexpr (std::is_same_v<T, LoadBook>)
                     publishInventory(inventory_.loadBook(intent, inventoryAccess()), requested);
                 else

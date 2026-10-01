@@ -1,4 +1,5 @@
 #include "controller.hpp"
+#include "scene_view.hpp"
 #include "hud_layout.hpp"
 
 namespace d2x {

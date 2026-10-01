@@ -1,5 +1,5 @@
 #pragma once
-#include "content/world_catalog.hpp"
+#include "content/world/world_catalog.hpp"
 
 namespace d2x {
 MapRecipe generateCowLevel(Archives &archives, const WorldCatalog &catalog, uint32_t seed);

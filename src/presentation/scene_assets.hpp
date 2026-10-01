@@ -1,11 +1,15 @@
 #pragma once
-#include "audio.hpp"
-#include "content/automap_data.hpp"
-#include "gameplay/session/session.hpp"
-#include "primitives.hpp"
+#include "presentation/audio/audio.hpp"
+#include "content/world/automap_data.hpp"
+#include "gameplay/items/state.hpp"
+#include "gameplay/skills/spec.hpp"
+#include "world/region.hpp"
+#include "presentation/graphics/primitives.hpp"
 #include <set>
 
 namespace d2x {
+class GameSession;
+struct ClassicData;
 // GPU and audio handles belong to the view, never to saveable game state.
 class SceneAssets {
     Archives &archives_;

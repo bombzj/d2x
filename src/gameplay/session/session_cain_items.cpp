@@ -1,5 +1,6 @@
+#include "gameplay/simulation/simulation.hpp"
 #include "gameplay/session/session.hpp"
-#include "content/item_magic_loot.hpp"
+#include "content/items/item_magic_loot.hpp"
 
 namespace d2x {
 namespace {
@@ -16,14 +17,14 @@ void GameSession::updateCainQuestItems() {
             picked && picked->definition == "bks")
             acquiredBark = true;
     if (acquiredBark) {
-        auto &record = cain(simulation_.state_);
+        auto &record = cain(simulation_->state_);
         if (cainAdvance(record, CainStage::BarkAcquired))
-            simulation_.emit(QuestAdvanced{ActOneQuest::SearchForCain, record.stage});
+            simulation_->emit(QuestAdvanced{ActOneQuest::SearchForCain, record.stage});
     }
 }
 
 void GameSession::translateCainScroll(EntityId npc) {
-    auto &record = cain(simulation_.state_);
+    auto &record = cain(simulation_->state_);
     if (record.stage != uint32_t(CainStage::BarkAcquired)) return;
     ItemHandle bark;
     for (auto id : inventory_.contents(playerContainers_.backpack)) {
@@ -31,33 +32,33 @@ void GameSession::translateCainScroll(EntityId npc) {
         if (item && item->definition == "bks") { bark = item->handle(); break; }
     }
     if (!bark.id) {
-        simulation_.emit(InteractionFailed{npc, "Bring the Bark Scroll to Akara."});
+        simulation_->emit(InteractionFailed{npc, "Bring the Bark Scroll to Akara."});
         return;
     }
     auto cell = inventory_.findSpace(playerContainers_.backpack, "bkd", bark.id);
     if (!cell) {
-        simulation_.emit(InteractionFailed{npc, "Make room for the deciphered scroll."});
+        simulation_->emit(InteractionFailed{npc, "Make room for the deciphered scroll."});
         return;
     }
     auto removed = inventory_.consume(bark, 1, inventoryAccess());
     if (!removed) {
-        simulation_.emit(InteractionFailed{npc, "The Bark Scroll is unavailable."});
+        simulation_->emit(InteractionFailed{npc, "The Bark Scroll is unavailable."});
         return;
     }
     publishInventory(std::move(removed), bark.id);
     auto created = inventory_.createItem("bkd", 1,
         ContainerLocation{playerContainers_.backpack, *cell});
     if (!created) {
-        simulation_.emit(InteractionFailed{npc, "Original deciphered scroll could not be created."});
+        simulation_->emit(InteractionFailed{npc, "Original deciphered scroll could not be created."});
         return;
     }
     publishInventory(std::move(created), {});
     if (cainAdvance(record, CainStage::ScrollTranslated))
-        simulation_.emit(QuestAdvanced{ActOneQuest::SearchForCain, record.stage});
+        simulation_->emit(QuestAdvanced{ActOneQuest::SearchForCain, record.stage});
 }
 
 bool GameSession::claimCainReward() {
-    auto &record = cain(simulation_.state_);
+    auto &record = cain(simulation_->state_);
     if (record.stage != uint32_t(CainStage::Rescued)) return false;
     const auto *ring = content_.items.find("rin");
     auto cell = ring ? inventory_.findSpace(playerContainers_.backpack, ring->code) : std::nullopt;
@@ -78,7 +79,7 @@ bool GameSession::claimCainReward() {
     }
     publishInventory(std::move(created), {});
     if (cainAdvance(record, CainStage::Rewarded))
-        simulation_.emit(QuestAdvanced{ActOneQuest::SearchForCain, record.stage});
+        simulation_->emit(QuestAdvanced{ActOneQuest::SearchForCain, record.stage});
     return true;
 }
 } // namespace d2x

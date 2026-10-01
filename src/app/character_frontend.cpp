@@ -3,9 +3,9 @@
 #include "content/string_table.hpp"
 #include "content/classic_data.hpp"
 #include "persistence/save_file.hpp"
-#include "presentation/equipment_appearance.hpp"
-#include "presentation/graphics.hpp"
-#include "presentation/primitives.hpp"
+#include "presentation/actors/equipment_appearance.hpp"
+#include "presentation/graphics/graphics.hpp"
+#include "presentation/graphics/primitives.hpp"
 #include <algorithm>
 #include <array>
 #include <cctype>

@@ -36,9 +36,9 @@
 | Levels、LvlPrest、LvlTypes | 身份、生成类型、尺寸、DS1 槽位、DT1 掩码 |
 | LvlMaze | 各难度 Rooms、SizeX/Y、Merge |
 | LvlWarp | 方向、选择框、入口偏移、返回落点 |
-| `world/outdoor_layout.*` | 原区域连接表、矩形摆放、共享边界 |
-| `world/outdoor.*` | 8×8 地块、边界开口、洞口、墓地、特殊 DS1 |
-| `world/outdoor_shrines.*` | MPQ 神殿／治疗井分组放置 |
+| `world/outdoor/outdoor_layout.*` | 原区域连接表、矩形摆放、共享边界 |
+| `world/outdoor/outdoor.*` | 8×8 地块、边界开口、洞口、墓地、特殊 DS1 |
+| `world/outdoor/outdoor_shrines.*` | MPQ 神殿／治疗井分组放置 |
 | `world/maze.*` | Cave/Crypt 房间图、方向、合并、主题、特殊房 |
 | `world/map_assembly.*` | 原图层与对象平移，共享 DS1 额外边行 |
 | `world/exits.cpp` | Vis/Warp 与野外边界双向关联、可达性约束 |
@@ -73,7 +73,7 @@ DT1 图像共享；像素与碰撞使用同一瓦片变体。隐藏出口仍参�
 | 行走体积 | 玩家 mask=0x1c09，普通怪物=0x3c01，飞行=0x1804，Wraith 家族=0x0804；动态 size 1/2 的路径 pattern 为十字，size 3 为 3×3。NPC、佣兵及召唤物按真实 MonStats/2 身份查询。人口和巢穴找位另读 spawnCol（0/default→0x3c01，1→0x01c0，2→0x3f11，3→0）及原 SizeX 的 point/cross/square；不把穿墙／飞行移动规则用作出生掩码。A*、平滑、键盘步进、传送落点和交互靠近站位使用对应规则，交互视线仍为点查询。连续边界体积按世界偏移读对侧真实标记和动态对象，不把额外 DS1 图形边行当碰撞房间。 | D2MOO Path.AllocDynamicPath／D2Collision.CheckMaskWithPattern；当前 MonStats.flying、MonStats2.SizeX/spawnCol |
 | 逐模式对象 | SizeX/SizeY／HasCollision、UNITS_GetCollisionMask 与 BlocksLight 各模式独立保留；开门／破坏后同步改变对象层与光照缓存，不清除底下地形或重叠对象。 | 当前 Objects；D2MOO Units／COLLISION_CreateBoundingBox |
 
-入口：`presentation/scene_geometry.hpp` 区分地面锚点与绘制顺序，`world_renderer.cpp` 组织层级，`world/map.cpp` 合并地形标记，`world/navigation.*` 查询形状与掩码，`world/exits.cpp` 绑定稳定相邻网格，`content/monster_catalog.*` 导入身份规则，`world/region.*` 同步对象模式。网格不持有 MPQ 或 GPU，UI 不写玩法状态，邻格引用只在区域容器装载完成后建立，不进入存档。
+入口：`presentation/world/scene_geometry.hpp` 区分地面锚点与绘制顺序，`world_renderer.cpp` 组织层级，`world/map.cpp` 合并地形标记，`world/navigation.*` 查询形状与掩码，`world/exits.cpp` 绑定稳定相邻网格，`content/monsters/monster_catalog.*` 导入身份规则，`world/region.*` 同步对象模式。网格不持有 MPQ 或 GPU，UI 不写玩法状态，邻格引用只在区域容器装载完成后建立，不进入存档。
 
 这是对已核实规则的修正，不是完整 D2Client/DRLG 移植。动态单位 NO_PATH/PET 占位和拥挤绕行仍未完整进入网格；怪物 OpenDoors 的自动操作／锁门分支未接入，普通地面怪物暂保留 DOOR 阻挡，不因去掉掩码而穿过闭门。原客户端精确混合、阴影强度、Overlay 时钟／偏移与屋顶渐隐时序仍需画面对照；步行边界之外仍有项目的封边保护。新坐标、遮挡和窄门通路待用户实机查看。
 

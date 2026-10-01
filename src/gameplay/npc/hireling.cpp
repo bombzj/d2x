@@ -1,3 +1,4 @@
+#include "gameplay/simulation/simulation.hpp"
 #include "core/random.hpp"
 #include "gameplay/session/session.hpp"
 #include <algorithm>
@@ -16,8 +17,8 @@ bool GameSession::assignKashyaHireling() {
     return false;
 }
 void GameSession::advanceHireling(float dt) {
-    auto &merc = simulation_.state_.player.hireling;
-    auto &player = simulation_.state_.player;
+    auto &merc = simulation_->state_.player.hireling;
+    auto &player = simulation_->state_.player;
     if (merc.sourceRow < 0 || dt <= 0) return;
     if (!merc.active()) { merc.deathAge += dt; return; }
     merc.combatEffects.expire(state().frame);
@@ -59,7 +60,7 @@ void GameSession::advanceHireling(float dt) {
             attack.released = true;
             if (!region().definition.safe && actor->attack1Projectile) {
                 const auto &projectile = *actor->attack1Projectile;
-                if (auto target = simulation_.combatUnit(attack.target); target.alive()) attack.aim = *target.position;
+                if (auto target = simulation_->combatUnit(attack.target); target.alive()) attack.aim = *target.position;
                 merc.look = (attack.aim - merc.pos).unit();
                 const auto &weapon = stats.weapon;
                 const int spread = std::max(0, weapon.projectileMaximum - weapon.projectileMinimum);
@@ -67,7 +68,7 @@ void GameSession::advanceHireling(float dt) {
                 Missile missile{ids_.allocate(), merc.id, merc.pos, merc.look * projectile.velocity,
                     projectile.lifetime, SkillBehavior::None, true, projectile.id,
                     float(int64_t(raw) * projectile.sourceDamage / 128) / 256.f};
-                missile.attackElements = simulation_.rollAttackElements(weapon.item, &stats.combat, nullptr, &merc.combatRandom);
+                missile.attackElements = simulation_->rollAttackElements(weapon.item, &stats.combat, nullptr, &merc.combatRandom);
                 missile.attackElements.ranged = true;
                 missile.weaponAttack = true;
                 missile.attackElements.attackerLevel = merc.level;
@@ -78,9 +79,9 @@ void GameSession::advanceHireling(float dt) {
                 missile.attackRatingPercent = weapon.attackRatingPercent;
                 missile.targetModifiers = weapon.target;
                 missile.physicalDamagePercent = weapon.projectileDamagePercent;
-                missile.combatRandom = childRandom(simulation_.unitRandom_);
-                simulation_.state_.area.missiles.push_back(std::move(missile));
-                simulation_.emit(MissileReleased{projectile.id});
+                missile.combatRandom = childRandom(simulation_->unitRandom_);
+                simulation_->state_.area.missiles.push_back(std::move(missile));
+                simulation_->emit(MissileReleased{projectile.id});
             }
         }
         if (attack.ticks >= attack.timing.durationTicks()) { merc.attack.reset(); merc.attackTimer = 0; }
@@ -154,10 +155,10 @@ void GameSession::advanceHireling(float dt) {
     CombatUnit target;
     int closest = 25;
     if (!region().definition.safe && actor->attack1Projectile && timing)
-        for (auto candidate : simulation_.combatUnits()) {
+        for (auto candidate : simulation_->combatUnits()) {
             const int distance = std::max(0, missileDistance(merc.pos, *candidate.position) - 2);
-            if (candidate.alive() && simulation_.canAttack(merc.id, candidate.id) && simulation_.active(*candidate.position) && distance < closest &&
-                simulation_.missilePathClear(actor->attack1Projectile->id, merc.pos, *candidate.position)) {
+            if (candidate.alive() && simulation_->canAttack(merc.id, candidate.id) && simulation_->active(*candidate.position) && distance < closest &&
+                simulation_->missilePathClear(actor->attack1Projectile->id, merc.pos, *candidate.position)) {
                 closest = distance; target = candidate;
             }
         }

@@ -1,7 +1,7 @@
 #pragma once
 #include "content/classic_data.hpp"
 #include "core/random.hpp"
-#include "content/monster_difficulty_combat.hpp"
+#include "content/monsters/monster_difficulty_combat.hpp"
 #include "gameplay/items/inventory.hpp"
 #include "gameplay/loot/loot.hpp"
 #include "gameplay/model/interaction.hpp"
@@ -13,11 +13,16 @@
 #include "gameplay/quest/tools_of_trade.hpp"
 #include "gameplay/quest/sisters_to_slaughter.hpp"
 #include "gameplay/session/character_save.hpp"
-#include "gameplay/simulation/simulation.hpp"
+#include "gameplay/model/commands.hpp"
+#include "gameplay/model/events.hpp"
+#include "gameplay/model/state.hpp"
 #include "world/population.hpp"
 #include "world/region.hpp"
+#include <memory>
+#include <span>
 
 namespace d2x {
+class Simulation;
 struct ShrineStatus {
     int code = 0;
     std::string name, effect;
@@ -63,7 +68,7 @@ class GameSession {
     std::optional<RegionId> towerRegion_, towerCellarRegion_;
     std::optional<RegionId> barracksRegion_;
     std::optional<RegionId> catacombsFourRegion_;
-    Simulation simulation_{ids_};
+    std::unique_ptr<Simulation> simulation_;
     InventoryService inventory_{ids_, content_.items, {content_.stashLayout.columns,
                                                        content_.stashLayout.rows},
                                      {content_.cubeLayout.columns, content_.cubeLayout.rows}};
@@ -215,11 +220,12 @@ class GameSession {
     GameSession(Archives &archives, const WorldSelection &selection, int startRegion,
                 uint32_t sessionSeed, PopulationSettings population,
                 std::string characterClass = "Barbarian", std::string characterName = "Hero");
+    ~GameSession();
     GameSession(const GameSession &) = delete;
     GameSession &operator=(const GameSession &) = delete;
     uint64_t visualSeed() const { return visualRandom_; }
-    const WorldState &state() const { return simulation_.state(); }
-    void setRunning(bool running) { simulation_.state_.player.running = running; }
+    const WorldState &state() const;
+    void setRunning(bool running);
     const QuestRecord &quest(ActOneQuest id, int difficulty) const {
         return state().player.actOneQuests.at(size_t(difficulty)).at(questIndex(id));
     }
@@ -228,10 +234,10 @@ class GameSession {
     std::vector<std::pair<ActOneQuest, const NpcSpeech *>> npcQuestTopics(std::string_view speaker) const;
     bool npcQuestAlert(const WorldObject &npc) const;
     std::optional<unsigned> denMonstersRemaining() const;
-    bool usableCorpse(EntityId id) const { return simulation_.usableCorpse(id); }
-    Vec combatPosition(EntityId id) const { return simulation_.unitPosition(id); }
-    bool canAttack(EntityId actor, EntityId target) const { return simulation_.canAttack(actor, target); }
-    bool active(Vec position) const { return simulation_.active(position); }
+    bool usableCorpse(EntityId id) const;
+    Vec combatPosition(EntityId id) const;
+    bool canAttack(EntityId actor, EntityId target) const;
+    bool active(Vec position) const;
     const ClassicData &content() const { return content_; }
     const WorldCatalog &worldContent() const { return worldContent_; }
     const MonsterCatalog &monsterContent() const { return monsterContent_; }
@@ -251,9 +257,9 @@ class GameSession {
     // Validate completely before replacing live state; a rejected load changes nothing.
     void restore(CharacterSaveData snapshot);
     const InventoryService &inventory() const { return inventory_; }
-    const EquipmentStats &equipmentStats() const { return simulation_.state_.player.equipment; }
+    const EquipmentStats &equipmentStats() const { return state().player.equipment; }
     const ItemInstance *usableEquipment(EquipmentSlot slot) const;
-    const CharacterAttributes &characterStats() const { return simulation_.state_.player.attributes; }
+    const CharacterAttributes &characterStats() const { return state().player.attributes; }
     const std::string &characterName() const { return characterDefinition_.name; }
     const std::string &characterCode() const { return characterDefinition_.code; }
     const std::string &characterAppearance() const { return characterDefinition_.appearance; }
@@ -298,7 +304,7 @@ class GameSession {
         return index == current_ ? state().area : inactiveAreas_.at(index);
     }
     bool roomVisible(int index, Vec position) const;
-    std::span<const GameEvent> events() const { return simulation_.events(); }
+    std::span<const GameEvent> events() const;
     void submit(GameCommand command) { pending_.push_back(std::move(command)); }
     bool hasPendingCommands() const { return !pending_.empty(); }
     void tick(float dt, Vec keyboard = {}, bool forceRun = false);

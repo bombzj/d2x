@@ -1,3 +1,4 @@
+#include "gameplay/simulation/simulation.hpp"
 #include "gameplay/session/session.hpp"
 #include <algorithm>
 #include <limits>
@@ -67,7 +68,7 @@ bool GameSession::roomVisible(int index, Vec position) const {
 }
 void GameSession::cancelExit() {
     if (pendingExit_)
-        simulation_.stopWalking();
+        simulation_->stopWalking();
     pendingExit_.reset();
     boundaryMoveTarget_.reset();
     boundaryPassage_.reset();
@@ -118,7 +119,7 @@ bool GameSession::beginBoundaryExit(const LevelExit &exit, std::optional<Vec> ta
     if (target)
         boundaryMoveTarget_ = *target + Vec{destination->recipe.worldX * 5.f,
                                            destination->recipe.worldY * 5.f};
-    simulation_.execute(MoveTo{selected->departure});
+    simulation_->execute(MoveTo{selected->departure});
     return true;
 }
 bool GameSession::routeBoundaryMove(Vec target) {
@@ -148,8 +149,8 @@ bool GameSession::routeBoundaryMove(Vec target) {
     }
     if (adjoiningTarget) {
         cancelExit();
-        simulation_.stopWalking();
-        simulation_.emit(InteractionFailed{{}, "No walkable route to the adjoining ground."});
+        simulation_->stopWalking();
+        simulation_->emit(InteractionFailed{{}, "No walkable route to the adjoining ground."});
     }
     return adjoiningTarget;
 }
@@ -165,16 +166,16 @@ void GameSession::beginExit(int slot) {
     if (exit == region().exits.end())
         return;
     if (!exit->enabled) {
-        simulation_.emit(InteractionFailed{{}, "This destination is not implemented yet."});
+        simulation_->emit(InteractionFailed{{}, "This destination is not implemented yet."});
         return;
     }
     if (exit->boundary) {
         if (!beginBoundaryExit(*exit, std::nullopt))
-            simulation_.emit(InteractionFailed{{}, "No reachable passage to this area."});
+            simulation_->emit(InteractionFailed{{}, "No reachable passage to this area."});
         return;
     }
     pendingExit_ = slot;
-    simulation_.execute(MoveTo{exit->accessPoint});
+    simulation_->execute(MoveTo{exit->accessPoint});
 }
 void GameSession::updateExit() {
     if (!pendingExit_ && !state().player.dead) {
@@ -240,7 +241,7 @@ void GameSession::updateExit() {
                         translated.x += p.pos.x - boundaryPassage_->departure.x;
                     if (!atBoundary(back, b, translated) || !destination->map.grid.walkable(translated, playerMovement)) {
                         cancelExit();
-                        simulation_.emit(InteractionFailed{{}, "The adjoining ground is blocked."});
+                        simulation_->emit(InteractionFailed{{}, "The adjoining ground is blocked."});
                         return;
                     }
                     arrival = translated;
@@ -248,13 +249,13 @@ void GameSession::updateExit() {
                 cancelExit();
                 enter(target, arrival, coordinateOffset);
                 if (onward)
-                    simulation_.execute(MoveTo{
+                    simulation_->execute(MoveTo{
                         *onward - Vec{destination->recipe.worldX * 5.f, destination->recipe.worldY * 5.f}});
                 return;
             }
         cancelExit();
     } else if (p.route.empty()) {
-        simulation_.emit(InteractionFailed{{}, exit->boundary ? "Cannot reach this boundary passage." :
+        simulation_->emit(InteractionFailed{{}, exit->boundary ? "Cannot reach this boundary passage." :
                                                                 "Cannot reach these stairs."});
         cancelExit();
     }

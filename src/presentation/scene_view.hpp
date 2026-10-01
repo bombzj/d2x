@@ -1,15 +1,18 @@
 #pragma once
 #include "input.hpp"
-#include "inventory_panel.hpp"
-#include "lighting_view.hpp"
-#include "palette_blend_view.hpp"
+#include "presentation/inventory/inventory_panel.hpp"
+#include "presentation/world/lighting_view.hpp"
+#include "presentation/world/palette_blend_view.hpp"
 #include "scene_assets.hpp"
-#include "scene_geometry.hpp"
+#include "presentation/world/scene_geometry.hpp"
+#include "gameplay/model/state.hpp"
+#include "gameplay/model/events.hpp"
 #include <cstdint>
 #include <deque>
 #include <map>
 
 namespace d2x {
+struct SpecialItemRecord;
 struct ViewState {
     InventoryUi inventory;
     std::optional<int> leftSkill, rightSkill;
@@ -223,10 +226,7 @@ class SceneView {
     void scrollNpcShop(int pages);
     bool showNextNpcGossip();
     void sessionRestored();
-    void collectMapVariants(Archives &archives) {
-        assets_.collectMapVariants(archives, session_.worldContent(), session_.monsterContent(),
-                                   session_.state().mapSeed, uint32_t(session_.visualSeed()));
-    }
+    void collectMapVariants(Archives &archives);
     std::vector<WorldEntry> travelEntries() const;
 };
 std::string playerAnimationMode(const PlayerState &player);

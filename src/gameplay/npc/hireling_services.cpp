@@ -1,6 +1,7 @@
+#include "gameplay/simulation/simulation.hpp"
 #include "gameplay/session/session.hpp"
-#include "content/equipment_modifiers.hpp"
-#include "content/monster_experience.hpp"
+#include "content/items/equipment_modifiers.hpp"
+#include "content/monsters/monster_experience.hpp"
 #include <algorithm>
 #include <limits>
 
@@ -42,20 +43,20 @@ bool GameSession::ensureHirelingOffers(EntityId npc) {
 void GameSession::openHirelingList(EntityId npc) {
     if (engagedNpc_ != npc || state().player.dead || !region().definition.safe ||
         !canHireFrom(npc) || !ensureHirelingOffers(npc)) {
-        simulation_.emit(InteractionFailed{npc, "No mercenaries are available."});
+        simulation_->emit(InteractionFailed{npc, "No mercenaries are available."});
         return;
     }
-    simulation_.emit(HirelingListOpened{npc});
+    simulation_->emit(HirelingListOpened{npc});
 }
 void GameSession::assignHireling(const HirelingOffer &offer) {
     const auto found = std::find_if(content_.hirelings.begin(), content_.hirelings.end(),
         [&](const auto &d) { return d.sourceRow == offer.sourceRow; });
     if (found == content_.hirelings.end()) return;
-    auto &player = simulation_.state_.player;
+    auto &player = simulation_->state_.player;
     HirelingState next;
     next.id = ids_.allocate();
     next.seed = offer.seed;
-    next.combatRandom = childRandom(simulation_.unitRandom_);
+    next.combatRandom = childRandom(simulation_->unitRandom_);
     next.sourceRow = offer.sourceRow; next.classId = found->classId;
     next.nameKey = offer.nameKey; next.level = offer.level;
     next.hp = float(offer.stats.life); next.experience = offer.stats.experience;
@@ -77,7 +78,7 @@ void GameSession::grantDebugHireling() {
     }
 }
 void GameSession::grantHirelingExperience(const EnemyDied &death) {
-    auto &hireling = simulation_.state_.player.hireling;
+    auto &hireling = simulation_->state_.player.hireling;
     const auto *definition = hirelingDefinition();
     if (!definition || !hireling.active() || hireling.level >= state().player.level || hireling.level >= 99) return;
     const auto award = resolveMonsterExperience(content_, monsterContent_, worldContent_,
@@ -106,15 +107,15 @@ void GameSession::hireMercenary(const HireMercenary &command) {
         [&](const auto &offer) { return offer.slot == command.slot; });
     if (selected == offers->end()) return;
     const auto offer = *selected;
-    auto &player = simulation_.state_.player;
+    auto &player = simulation_->state_.player;
     if (uint64_t(player.gold) + player.bankGold < offer.stats.price) {
-        simulation_.emit(InteractionFailed{command.npc, "Not enough gold."});
+        simulation_->emit(InteractionFailed{command.npc, "Not enough gold."});
         return;
     }
     // Original hiring replaces the previous mercenary, including their equipment.
     for (auto id : inventory_.contents(playerContainers_.hirelingEquipment)) {
         const auto &item = *inventory_.item(id);
-        simulation_.emit(ItemChange{id, item.revision, ItemChangeKind::Removed,
+        simulation_->emit(ItemChange{id, item.revision, ItemChangeKind::Removed,
                                    item.location, {}, item.quantity});
         inventory_.state_.items.erase(id);
     }
@@ -124,7 +125,7 @@ void GameSession::hireMercenary(const HireMercenary &command) {
     auto &stock = hirelingOffers_.at(command.npc);
     std::erase_if(stock, [&](const auto &entry) { return entry.slot == command.slot; });
     engagedNpc_ = {};
-    simulation_.emit(HirelingHired{command.npc});
+    simulation_->emit(HirelingHired{command.npc});
 }
 unsigned GameSession::hirelingResurrectionCost() const {
     const auto &merc = state().player.hireling;
@@ -137,11 +138,11 @@ bool GameSession::canResurrectHireling(EntityId npc) const {
            merc.sourceRow >= 0 && !merc.active();
 }
 void GameSession::resurrectHireling(EntityId npc) {
-    auto &player = simulation_.state_.player;
+    auto &player = simulation_->state_.player;
     if (engagedNpc_ != npc || player.dead || !region().definition.safe || !canResurrectHireling(npc)) return;
     const unsigned cost = hirelingResurrectionCost();
     if (uint64_t(player.gold) + player.bankGold < cost) {
-        simulation_.emit(InteractionFailed{npc, "Not enough gold."});
+        simulation_->emit(InteractionFailed{npc, "Not enough gold."});
         return;
     }
     const unsigned wallet = std::min(player.gold, cost);
@@ -155,7 +156,7 @@ void GameSession::resurrectHireling(EntityId npc) {
     player.hireling = std::move(next);
     player.hireling.hp = float(hirelingStats().base.life);
     engagedNpc_ = {};
-    simulation_.emit(HirelingHired{npc});
+    simulation_->emit(HirelingHired{npc});
 }
 InventoryError GameSession::previewHirelingPotion(ItemHandle handle) const {
     if (auto error = inventory_.checkHandle(handle); error != InventoryError::None) return error;
@@ -174,7 +175,7 @@ InventoryError GameSession::previewHirelingPotion(ItemHandle handle) const {
 }
 void GameSession::useHirelingPotion(ItemHandle handle) {
     const auto error = previewHirelingPotion(handle);
-    if (error != InventoryError::None) { simulation_.emit(InventoryRejected{handle.id, error}); return; }
+    if (error != InventoryError::None) { simulation_->emit(InventoryRejected{handle.id, error}); return; }
     const auto &item = *inventory_.item(handle.id);
     const auto code = item.definition;
     const auto potion = *content_.potion(code);
@@ -183,7 +184,7 @@ void GameSession::useHirelingPotion(ItemHandle handle) {
     const bool consumed = bool(result);
     publishInventory(std::move(result), handle.id);
     if (!consumed) return;
-    auto &merc = simulation_.state_.player.hireling;
+    auto &merc = simulation_->state_.player.hireling;
     const auto stats = hirelingStats();
     if (potion.kind == PotionKind::Healing) {
         // Items::GetBonusLifeBasedOnClass gives monsters the same x2 multiplier
@@ -217,7 +218,7 @@ void GameSession::useHirelingPotion(ItemHandle handle) {
         effect.duration = duration; effect.modifiers = potion.modifiers;
         merc.combatEffects.apply(std::move(effect), state().frame);
     }
-    simulation_.emit(ItemUsed{handle.id, code});
+    simulation_->emit(ItemUsed{handle.id, code});
 }
 HirelingCombatStats GameSession::hirelingStats() const {
     return hirelingStats(state().player.hireling, inventory_, playerContainers_);
@@ -331,7 +332,7 @@ EquipmentActor GameSession::hirelingEquipmentActor(std::optional<EquipmentSlot> 
 }
 void GameSession::equipHirelingItem(const EquipHirelingItem &command) {
     if (auto error = previewHirelingEquipment(command); error != InventoryError::None) {
-        simulation_.emit(InventoryRejected{command.item.id, error});
+        simulation_->emit(InventoryRejected{command.item.id, error});
         return;
     }
     auto slots = playerContainers_;
@@ -341,7 +342,7 @@ void GameSession::equipHirelingItem(const EquipHirelingItem &command) {
                                    slots, inventoryAccess(), actor);
     const bool changed = bool(result);
     publishInventory(std::move(result), command.item.id);
-    if (changed) simulation_.state_.player.hireling.hp = std::min(state().player.hireling.hp,
+    if (changed) simulation_->state_.player.hireling.hp = std::min(state().player.hireling.hp,
                                                                float(hirelingStats().base.life));
 }
 } // namespace d2x

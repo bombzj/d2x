@@ -1,5 +1,5 @@
 #include "cow_level.hpp"
-#include "outdoor.hpp"
+#include "world/outdoor/outdoor.hpp"
 #include "region.hpp"
 #include <algorithm>
 

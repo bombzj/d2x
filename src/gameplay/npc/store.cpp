@@ -1,9 +1,9 @@
 #include "core/random.hpp"
 #include "store.hpp"
-#include "content/item_grades.hpp"
-#include "content/item_magic_loot.hpp"
-#include "content/item_pricing.hpp"
-#include "content/item_properties.hpp"
+#include "content/items/item_grades.hpp"
+#include "content/items/item_magic_loot.hpp"
+#include "content/items/item_pricing.hpp"
+#include "content/items/item_properties.hpp"
 #include <algorithm>
 #include <array>
 #include <stdexcept>
@@ -73,7 +73,7 @@ std::vector<VendorOffer> planVendorStock(const ClassicData &data, const VendorDe
             if (generation.quality == ItemQuality::Inferior) defense = std::max(1, defense * 75 / 100);
         }
         VendorOffer offer{uint32_t(offers.size() + 1), item->code, quantity, level, 0,
-                          defense, rule.storePage, rule.permanent};
+                          defense, rule.storePage, rule.permanent, {}, {}};
         offer.generation = std::move(generation);
         auto instance = vendorItem(offer, data);
         // Enhanced defense uses maxac+1 as the underlying armor roll.

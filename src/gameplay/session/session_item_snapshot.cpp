@@ -1,5 +1,5 @@
 #include "gameplay/session/session.hpp"
-#include "content/item_grades.hpp"
+#include "content/items/item_grades.hpp"
 #include <algorithm>
 #include <set>
 #include <stdexcept>

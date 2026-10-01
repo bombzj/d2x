@@ -1,6 +1,6 @@
 #pragma once
 #include "gameplay/loot/chest.hpp"
-#include "content/monster_catalog.hpp"
+#include "content/monsters/monster_catalog.hpp"
 #include "core/id.hpp"
 #include "gameplay/model/definitions.hpp"
 #include "map.hpp"

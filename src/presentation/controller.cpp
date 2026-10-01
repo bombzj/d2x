@@ -1,12 +1,37 @@
+#include "gameplay/session/session.hpp"
 #include "controller.hpp"
-#include "character_panel.hpp"
-#include "skill_tree.hpp"
-#include "quest_panel.hpp"
-#include "hireling_panel.hpp"
+#include "scene_view.hpp"
+#include "presentation/hud/character_panel.hpp"
+#include "presentation/hud/skill_tree.hpp"
+#include "presentation/hud/quest_panel.hpp"
+#include "presentation/npc/hireling_panel.hpp"
 #include <algorithm>
 #include <array>
 
 namespace d2x {
+SceneController::SceneController(GameSession &session, SceneView &view)
+    : session_(session), view_(view), inputRegion_(session.state().area.region) {}
+void SceneController::resetInput() {
+    repeatClick_ = 0;
+    pickupClick_ = inventoryClick_ = inventoryRight_ = false;
+    movement_ = {};
+    temporaryRun_ = false;
+    skillGesture_ = false;
+    view_.ui().pointButtonPressed.reset();
+    view_.ui().questPressed = -1;
+    channelInputSkill_ = -1;
+    leftCombatTarget_ = rightCombatTarget_ = {};
+    leftTargetSkill_.reset();
+    rightTargetSkill_.reset();
+    inputRegion_ = session_.state().area.region;
+    releaseAfterLoad_ = true;
+}
+EntityId SceneController::combatTarget() const {
+    if (inputRegion_ != session_.state().area.region || session_.state().player.dead) return {};
+    if (rightCombatTarget_)
+        return view_.ui().rightSkill == rightTargetSkill_ ? rightCombatTarget_ : EntityId{};
+    return view_.ui().leftSkill == leftTargetSkill_ ? leftCombatTarget_ : EntityId{};
+}
 void SceneController::openGameMenu(Vec mouse) {
     auto &ui = view_.ui();
     if (ui.inventory.open) toggleInventory();

@@ -1,0 +1,70 @@
+#include "gameplay/session/session.hpp"
+#include "presentation/scene_view.hpp"
+#include <algorithm>
+
+namespace d2x {
+void SceneView::drawNpcAlert(const WorldObject &npc, Vec at, bool back) const {
+    const auto &overlay = assets_.npcAlert;
+    if (overlay.preDraw != back || !session_.npcQuestAlert(npc)) return;
+    const int frame = int(view_.animationTime * overlay.fps) % overlay.frames;
+    const auto *record = session_.monsterContent().find(npc.npcClass);
+    if (record) {
+        const int height = record->overlayHeight - 1;
+        if (height < 0 || height >= int(overlay.heights.size())) return;
+        at = at + overlay.offset;
+        at.y += overlay.heights[size_t(height)];
+        // Overlay Trans=3 uses black-alpha blending. Keep the original DCC's
+        // anchor and MonStats2 height selection for every NPC.
+        if (overlay.trans == 3) BeginBlendMode(BLEND_ADDITIVE);
+        sprite(overlay.animation.frame(0, frame), at);
+        if (overlay.trans == 3) EndBlendMode();
+    }
+}
+void SceneView::drawShrineOverlays(int code, Vec at, int heightIndex, bool back) const {
+    const auto found = assets_.shrineOverlays.find(code);
+    if (found == assets_.shrineOverlays.end()) return;
+    auto drawLayer = [&](const SceneAssets::OverlayArt &visual, Vec at, int heightIndex) {
+        if (visual.frames <= 0 || visual.fps <= 0 || visual.preDraw != back) return;
+        const int frameIndex = int(view_.animationTime * visual.fps) % visual.frames;
+        const auto *frame = visual.animation.frame(0, frameIndex);
+        if (!frame || !frame->texture.id) return;
+        at = at + visual.offset;
+        at.y += visual.heights[size_t(heightIndex)];
+        if (visual.trans == 3) softAdditiveSprite(frame, at);
+        else sprite(frame, at);
+    };
+    // States secondary layer first; each original Overlay.PreDraw chooses
+    // whether it belongs behind or in front of this same world unit.
+    drawLayer(found->second[1], at, heightIndex);
+    drawLayer(found->second[0], at, heightIndex);
+}
+void SceneView::drawPlayerShrineOverlay(Vec at, bool back) const {
+    if (session_.state().player.dead) return;
+    for (auto it = session_.shrineStatuses().rbegin(); it != session_.shrineStatuses().rend(); ++it) {
+        const auto found = assets_.shrineOverlays.find(it->code);
+        if (found == assets_.shrineOverlays.end()) continue;
+        const auto effects = session_.state().player.combatEffects.entries();
+        if (std::none_of(effects.begin(), effects.end(), [&](const ActiveCombatEffect &effect) {
+                return effect.handle == it->stateEffect && effect.activeAt(session_.state().frame);
+            })) continue;
+        // The same native function returns 1 for a player.
+        drawShrineOverlays(it->code, at, 1, back);
+        break;
+    }
+}
+void SceneView::drawCombatStateOverlays(const CombatEffectSet &effects, Vec at, int height, bool back) const {
+    for (const auto &effect : effects.entries()) {
+        if (!effect.activeAt(session_.state().frame)) continue;
+        const auto found = assets_.combatStateOverlays.find(effect.spec.state.id);
+        if (found == assets_.combatStateOverlays.end()) continue;
+        for (int layer : {1, 0}) {
+            const auto &art = found->second[size_t(layer)];
+            if (art.frames <= 0 || art.fps <= 0 || art.preDraw != back) continue;
+            const auto *frame = art.animation.frame(0, int(view_.animationTime * art.fps) % art.frames);
+            const Vec position = at + art.offset + Vec{0, float(art.heights[size_t(std::clamp(height, 0, 3))])};
+            if (art.trans == 3) softAdditiveSprite(frame, position);
+            else sprite(frame, position);
+        }
+    }
+}
+} // namespace d2x

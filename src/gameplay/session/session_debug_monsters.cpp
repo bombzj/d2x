@@ -1,3 +1,4 @@
+#include "gameplay/simulation/simulation.hpp"
 #include "gameplay/session/session.hpp"
 #include <algorithm>
 #include <cmath>
@@ -17,7 +18,7 @@ std::optional<uint32_t> nextDebugGroup(const AreaState &area) {
 } // namespace
 
 std::string GameSession::debugSpawnError(std::string_view monster, Vec position) const {
-    if (state().player.dead || simulation_.safeZone_)
+    if (state().player.dead || simulation_->safeZone_)
         return "Monster spawn requires a living player outside town";
     const auto *record = monsterContent_.find(monster);
     if (!record || !record->hostile())
@@ -44,13 +45,13 @@ void GameSession::spawnDebugMonster(const DebugSpawnMonster &command) {
                         record->boss ? MonsterRank::Boss : MonsterRank::Normal,
                         SpawnOrigin::Debug, group},
                        monsterImplementation(record->id).kind, command.position};
-    simulation_.spawnEnemies(std::span<const MonsterSpawn>(&spawn, 1));
+    simulation_->spawnEnemies(std::span<const MonsterSpawn>(&spawn, 1));
 }
 
 void GameSession::damageDebugMonster(const DebugDamageMonster &command) {
     if (state().player.dead || !std::isfinite(command.amount) ||
         command.amount <= 0 || command.amount > 10000000.f) return;
-    if (auto *enemy = simulation_.findEnemy(command.target); enemy && enemy->hp > 0)
-        simulation_.damageEnemy(*enemy, command.amount, state().player.id, 0, true);
+    if (auto *enemy = simulation_->findEnemy(command.target); enemy && enemy->hp > 0)
+        simulation_->damageEnemy(*enemy, command.amount, state().player.id, 0, true);
 }
 } // namespace d2x

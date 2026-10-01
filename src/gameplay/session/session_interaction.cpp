@@ -1,3 +1,4 @@
+#include "gameplay/simulation/simulation.hpp"
 #include "gameplay/session/session.hpp"
 #include <algorithm>
 #include <cmath>
@@ -116,7 +117,7 @@ InventoryAccess GameSession::inventoryAccess() const {
 }
 void GameSession::closeStorage() {
     if (storage_)
-        simulation_.emit(StorageClosed{storage_.container});
+        simulation_->emit(StorageClosed{storage_.container});
     storage_ = {};
 }
 void GameSession::validateStorage() {
@@ -125,7 +126,7 @@ void GameSession::validateStorage() {
 }
 void GameSession::cancelInteraction() {
     if (pendingInteraction_ || pendingPortal_)
-        simulation_.stopWalking();
+        simulation_->stopWalking();
     pendingInteraction_ = {};
     pendingInteractionRepath_ = false;
     engagedNpc_ = {};
@@ -142,10 +143,10 @@ void GameSession::interact(EntityId id) {
     if (storage_.object != id)
         closeStorage();
     pendingInteraction_ = id;
-    simulation_.stopWalking();
+    simulation_->stopWalking();
     if (!canReach(*target)) {
         if (auto approach = interactionApproach(*target))
-            simulation_.execute(MoveTo{*approach});
+            simulation_->execute(MoveTo{*approach});
     }
     updateInteraction();
 }
@@ -167,19 +168,19 @@ void GameSession::updateInteraction() {
         if (!target->npcPath.empty() && !pendingInteractionRepath_) {
             pendingInteractionRepath_ = true;
             if (auto approach = interactionApproach(*target)) {
-                simulation_.execute(MoveTo{*approach});
+                simulation_->execute(MoveTo{*approach});
                 if (!state().player.route.empty())
                     return;
             }
         }
-        simulation_.emit(InteractionFailed{target->id, "Cannot reach that object."});
+        simulation_->emit(InteractionFailed{target->id, "Cannot reach that object."});
         cancelInteraction();
     }
 }
 void GameSession::completeInteraction(const WorldObject &object) {
     if (object.name == "Waypoint" && object.interaction == Interaction::Travel) {
-        if (simulation_.state_.waypoints.emplace(region().definition.id, state().time).second) {
-            simulation_.emit(WaypointActivated{object.id});
+        if (simulation_->state_.waypoints.emplace(region().definition.id, state().time).second) {
+            simulation_->emit(WaypointActivated{object.id});
             return;
         }
     }
@@ -215,35 +216,35 @@ void GameSession::completeInteraction(const WorldObject &object) {
         found->animationMode = mode == 0 ? 2 : 0;
         found->lastDoorOperation = state().time;
         regions_.at(current_).refreshObjectCollision(state().time);
-        simulation_.emit(ObjectInteracted{found->id, Interaction::Door, found->name});
+        simulation_->emit(ObjectInteracted{found->id, Interaction::Door, found->name});
         break;
     }
     case Interaction::Stash:
         storage_ = {object.id, playerContainers_.stash};
-        simulation_.emit(StorageOpened{object.id, playerContainers_.stash});
+        simulation_->emit(StorageOpened{object.id, playerContainers_.stash});
         break;
     case Interaction::Heal:
-        simulation_.heal();
+        simulation_->heal();
         [[fallthrough]];
     case Interaction::Talk: {
         if (introSpeech(content_.npcDialogues, object.name) || vendorStock(object.id) ||
             npcQuestDialogue(object.name).speech)
             engagedNpc_ = object.id;
         const auto *intro = introSpeech(content_.npcDialogues, object.name, state().player.characterClass);
-        auto &introductions = simulation_.state_.player.npcIntroductions
+        auto &introductions = simulation_->state_.player.npcIntroductions
             .at(size_t(state().population.difficulty));
         const bool first = intro && introductions.insert(object.name).second;
         const auto dialogue = npcQuestDialogue(object.name);
-        if (first) simulation_.emit(NpcDialogueStarted{object.id, object.name, intro->text});
+        if (first) simulation_->emit(NpcDialogueStarted{object.id, object.name, intro->text});
         if (dialogue.automatic && dialogue.speech) {
-            simulation_.emit(NpcDialogueStarted{object.id, object.name, dialogue.speech->text});
+            simulation_->emit(NpcDialogueStarted{object.id, object.name, dialogue.speech->text});
             talkToNpc(object.id);
         } else if (!first)
-            simulation_.emit(ObjectInteracted{object.id, object.interaction, object.name});
+            simulation_->emit(ObjectInteracted{object.id, object.interaction, object.name});
         break;
     }
     case Interaction::Travel:
-        simulation_.emit(ObjectInteracted{object.id, object.interaction, object.name});
+        simulation_->emit(ObjectInteracted{object.id, object.interaction, object.name});
         break;
     case Interaction::Loot:
         activateLootObject(object.id);
@@ -260,13 +261,13 @@ void GameSession::completeInteraction(const WorldObject &object) {
         activateCainQuestObject(object);
         break;
     case Interaction::QuestTome: {
-        auto &record = simulation_.state_.player.actOneQuests
+        auto &record = simulation_->state_.player.actOneQuests
             .at(size_t(state().population.difficulty)).at(questIndex(ActOneQuest::ForgottenTower));
         if (towerAdvance(record, TowerStage::TomeRead))
-            simulation_.emit(QuestAdvanced{ActOneQuest::ForgottenTower, record.stage});
+            simulation_->emit(QuestAdvanced{ActOneQuest::ForgottenTower, record.stage});
         for (auto &candidate : regions_.at(current_).objects)
             if (candidate.id == object.id) candidate.operatedAt = state().time;
-        simulation_.emit(ObjectInteracted{object.id, object.interaction, object.name});
+        simulation_->emit(ObjectInteracted{object.id, object.interaction, object.name});
         break;
     }
     case Interaction::QuestMalus:
@@ -281,8 +282,8 @@ void GameSession::unlockWaypoints() {
     for (const auto &region : regions_)
         for (const auto &object : region.objects)
             if (object.name == "Waypoint" && object.interaction == Interaction::Travel &&
-                simulation_.state_.waypoints.emplace(region.definition.id, state().time).second) {
-                simulation_.emit(WaypointActivated{object.id});
+                simulation_->state_.waypoints.emplace(region.definition.id, state().time).second) {
+                simulation_->emit(WaypointActivated{object.id});
                 break;
             }
 }
@@ -292,7 +293,7 @@ bool GameSession::travelWaypoint(const WaypointTravel &command) {
         !canReach(*source) || !waypointUnlocked(region().definition.id) ||
         !waypointUnlocked(command.destination) || state().player.castTime > 0 ||
         state().player.meleeTime > 0) {
-        simulation_.emit(InteractionFailed{command.source, "Waypoint unavailable or not activated."});
+        simulation_->emit(InteractionFailed{command.source, "Waypoint unavailable or not activated."});
         return false;
     }
     for (const auto &destination : regions_)
@@ -304,7 +305,7 @@ bool GameSession::travelWaypoint(const WaypointTravel &command) {
                     enter(command.destination, target.accessPoint);
                     return true;
                 }
-    simulation_.emit(InteractionFailed{command.source, "Destination waypoint is missing."});
+    simulation_->emit(InteractionFailed{command.source, "Destination waypoint is missing."});
     return false;
 }
 } // namespace d2x

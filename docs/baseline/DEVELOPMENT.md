@@ -65,10 +65,10 @@ Windows EXE 在 `main` 安装 `app/crash_report.cpp` 的未处理异常过滤器
 | 工作 | 优先阅读 |
 | --- | --- |
 | 地图 | `world/region_catalog.cpp`、`maze.cpp`、`outdoor*.cpp`、`map_assembly.cpp` |
-| 出口 | `world/exits.cpp`、`gameplay/session_exits.cpp`、`presentation/exit_view.cpp` |
-| 怪物 | `content/monster_catalog.cpp`、`world/population.cpp`、`gameplay/monster_activation.cpp` |
+| 出口 | `world/exits.cpp`、`gameplay/session_exits.cpp`、`presentation/hud/hud/exit_view.cpp` |
+| 怪物 | `content/monsters/monster_catalog.cpp`、`world/population.cpp`、`gameplay/monster_activation.cpp` |
 | 物品 | `content/classic_data.cpp`、`lod_data.cpp`、`gameplay/items` |
-| 技能／HUD | `gameplay/definitions.cpp`、`skills.cpp`、`presentation/hud_layout.hpp`、`skill_assets.cpp` |
+| 技能／HUD | `gameplay/definitions.cpp`、`skills.cpp`、`presentation/hud/hud/hud_layout.hpp`、`skill_assets.cpp` |
 | 保存 | `gameplay/session/session_character_save.cpp`、`session_restore.cpp`、`persistence/d2s_codec.cpp` |
 
 ## 修改约定

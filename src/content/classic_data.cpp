@@ -1,19 +1,20 @@
+#include "resources/archive.hpp"
 #include "classic_data.hpp"
-#include "character_attributes.hpp"
-#include "character_progression.hpp"
-#include "equipment_data.hpp"
-#include "item_appearance.hpp"
-#include "item_affixes.hpp"
-#include "item_properties.hpp"
-#include "item_projectiles.hpp"
-#include "skill_animation.hpp"
-#include "item_consumables.hpp"
-#include "item_grades.hpp"
-#include "special_items.hpp"
-#include "sorceress_data.hpp"
-#include "weapon_skill_data.hpp"
-#include "necromancer_data.hpp"
-#include "monster_enchantment.hpp"
+#include "content/character/character_attributes.hpp"
+#include "content/character/character_progression.hpp"
+#include "content/items/equipment_data.hpp"
+#include "content/items/item_appearance.hpp"
+#include "content/items/item_affixes.hpp"
+#include "content/items/item_properties.hpp"
+#include "content/items/item_projectiles.hpp"
+#include "content/skills/skill_animation.hpp"
+#include "content/items/item_consumables.hpp"
+#include "content/items/item_grades.hpp"
+#include "content/items/special_items.hpp"
+#include "content/skills/sorceress_data.hpp"
+#include "content/skills/weapon_skill_data.hpp"
+#include "content/skills/necromancer_data.hpp"
+#include "content/monsters/monster_enchantment.hpp"
 #include <algorithm>
 #include <iterator>
 #include <stdexcept>
@@ -105,8 +106,10 @@ ClassicData loadClassicData(Archives &archives) {
             base.twoHandMax = number("2handmaxdam");
             base.throwMin = number("minmisdam");
             base.throwMax = number("maxmisdam");
-            if (auto id = number("missiletype"); id && *id >= 0)
-                base.projectile = WeaponProjectileSpec{*id};
+            if (auto id = number("missiletype"); id && *id >= 0) {
+                base.projectile.emplace();
+                base.projectile->id = *id;
+            }
             base.minDefense = number("minac");
             base.maxDefense = number("maxac");
             base.requiredStrength = number("reqstr");

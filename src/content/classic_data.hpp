@@ -7,13 +7,12 @@
 #include "gameplay/loot/grade.hpp"
 #include "gameplay/loot/special.hpp"
 #include "gameplay/character/attributes.hpp"
-#include "npc_dialogue.hpp"
-#include "hireling_data.hpp"
-#include "skill_data.hpp"
-#include "state_data.hpp"
-#include "shrine_data.hpp"
-#include "vendor_data.hpp"
-#include "resources/archive.hpp"
+#include "content/npc/npc_dialogue.hpp"
+#include "content/npc/hireling_data.hpp"
+#include "content/skills/skill_data.hpp"
+#include "content/skills/state_data.hpp"
+#include "content/world/shrine_data.hpp"
+#include "content/npc/vendor_data.hpp"
 #include "resources/data_table.hpp"
 #include "world/navigation.hpp"
 #include <array>
@@ -22,6 +21,7 @@
 #include <utility>
 
 namespace d2x {
+class Archives;
 using ClassicTreasureClass = TreasureClass;
 struct ClassicMonsterData {
     std::string name, token;

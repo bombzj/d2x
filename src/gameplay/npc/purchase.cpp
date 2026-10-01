@@ -1,5 +1,6 @@
+#include "gameplay/simulation/simulation.hpp"
 #include "gameplay/session/session.hpp"
-#include "content/item_pricing.hpp"
+#include "content/items/item_pricing.hpp"
 #include <algorithm>
 #include <stdexcept>
 #include <limits>
@@ -69,13 +70,13 @@ std::optional<unsigned> GameSession::vendorSaleQuote(EntityId npc, ItemHandle ha
 void GameSession::sellVendorItem(const SellVendorItem &command) {
     const auto quote = vendorSaleQuote(command.vendor, command.item);
     if (!quote) {
-        simulation_.emit(InteractionFailed{command.vendor, "That item cannot be sold here."});
+        simulation_->emit(InteractionFailed{command.vendor, "That item cannot be sold here."});
         return;
     }
-    auto &player = simulation_.state_.player;
+    auto &player = simulation_->state_.player;
     const unsigned walletLimit = unsigned(player.level) * 10000u;
     if (*quote > walletLimit - player.gold) {
-        simulation_.emit(InteractionFailed{command.vendor, "Make room for the sale gold first."});
+        simulation_->emit(InteractionFailed{command.vendor, "Make room for the sale gold first."});
         return;
     }
     const auto item = inventory_.state_.items.at(command.item.id);
@@ -86,18 +87,18 @@ void GameSession::sellVendorItem(const SellVendorItem &command) {
     inventory_.state_.items.erase(item.id);
     player.gold += *quote;
     publishInventory(std::move(result), {});
-    simulation_.emit(VendorItemSold{command.vendor, item.id, *quote});
+    simulation_->emit(VendorItemSold{command.vendor, item.id, *quote});
 }
 void GameSession::repairVendorItem(const RepairVendorItem &command) {
     const auto quote = vendorRepairQuote(command.npc, command.item);
     if (engagedNpc_ != command.npc || state().player.dead || !region().definition.safe || !quote) {
-        simulation_.emit(InteractionFailed{command.npc, "That item cannot be repaired here."});
+        simulation_->emit(InteractionFailed{command.npc, "That item cannot be repaired here."});
         return;
     }
     if (!*quote) return;
-    auto &player = simulation_.state_.player;
+    auto &player = simulation_->state_.player;
     if (uint64_t(player.gold) + player.bankGold < *quote) {
-        simulation_.emit(InteractionFailed{command.npc, "Not enough gold to repair that item."});
+        simulation_->emit(InteractionFailed{command.npc, "Not enough gold to repair that item."});
         return;
     }
     auto &item = inventory_.state_.items.at(command.item.id);
@@ -128,7 +129,7 @@ void GameSession::openGamble(EntityId npc) {
     const auto *target = object(npc);
     if (!target || !npcCanGamble(target->npcClass) || engagedNpc_ != npc ||
         state().player.dead || !region().definition.safe) {
-        simulation_.emit(InteractionFailed{npc, "Gambling is unavailable."});
+        simulation_->emit(InteractionFailed{npc, "Gambling is unavailable."});
         return;
     }
     auto random = inventory_.state_.creationRandom;
@@ -137,9 +138,9 @@ void GameSession::openGamble(EntityId npc) {
             state().population.difficulty, random, loot_.usedUniques(), characterDefinition_.code);
         gambleStocks_[npc] = std::move(stock);
         inventory_.state_.creationRandom = random;
-        simulation_.emit(GambleStockOpened{npc});
+        simulation_->emit(GambleStockOpened{npc});
     } catch (const std::runtime_error &error) {
-        simulation_.emit(InteractionFailed{npc, error.what()});
+        simulation_->emit(InteractionFailed{npc, error.what()});
     }
 }
 bool GameSession::vendorOfferSold(EntityId npc, uint32_t slot) const {
@@ -153,18 +154,18 @@ void GameSession::buyVendorItem(EntityId npc, uint32_t slot, bool gamble) {
     // during a transaction, so distance is not rechecked on each purchase.
     if (!target || !stock || engagedNpc_ != npc || state().player.dead ||
         !region().definition.safe || (gamble && !npcCanGamble(target->npcClass))) {
-        simulation_.emit(InteractionFailed{npc, "Vendor is unavailable in this town."});
+        simulation_->emit(InteractionFailed{npc, "Vendor is unavailable in this town."});
         return;
     }
     auto found = std::find_if(stock->begin(), stock->end(),
                               [slot](const VendorOffer &offer) { return offer.slot == slot; });
     if (found == stock->end() || (!gamble && !found->permanent && vendorOfferSold(npc, slot))) {
-        simulation_.emit(InteractionFailed{npc, "That vendor item is no longer available."});
+        simulation_->emit(InteractionFailed{npc, "That vendor item is no longer available."});
         return;
     }
     const unsigned paid = vendorPurchasePrice(npc, *found, gamble);
     if (uint64_t(state().player.gold) + state().player.bankGold < paid) {
-        simulation_.emit(InteractionFailed{npc, "Not enough gold to buy that item."});
+        simulation_->emit(InteractionFailed{npc, "Not enough gold to buy that item."});
         return;
     }
     auto sold = soldVendorOffers_;
@@ -174,13 +175,13 @@ void GameSession::buyVendorItem(EntityId npc, uint32_t slot, bool gamble) {
                                             AutoPlace{playerContainers_.backpack}, found->level,
                                             found->generation);
     if (!purchased) {
-        simulation_.emit(InteractionFailed{npc, inventoryErrorText(purchased.error)});
+        simulation_->emit(InteractionFailed{npc, inventoryErrorText(purchased.error)});
         return;
     }
     auto item = purchased.item;
     inventory_.state_.items.at(item).defense = found->defense;
     inventory_.state_.items.at(item).identified = true;
-    auto &player = simulation_.state_.player;
+    auto &player = simulation_->state_.player;
     unsigned walletPaid = std::min(player.gold, paid);
     player.gold -= walletPaid;
     player.bankGold -= paid - walletPaid;
@@ -191,6 +192,6 @@ void GameSession::buyVendorItem(EntityId npc, uint32_t slot, bool gamble) {
         std::erase_if(gambleStocks_.at(npc), [slot](const auto &offer) { return offer.slot == slot; });
     }
     publishInventory(std::move(purchased), {});
-    simulation_.emit(VendorItemBought{npc, item, slot, paid});
+    simulation_->emit(VendorItemBought{npc, item, slot, paid});
 }
 } // namespace d2x

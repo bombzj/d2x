@@ -4,7 +4,7 @@
 
 ## 瘟疫标枪
 
-`content/weapon_skill_data.cpp` 导入 Skills 和 Missiles 原记录，`WeaponSkillSpec` 进入普通武器攻击执行链。只接受 ItemTypes 包含 `jave` 的可用武器；使用原 TH、IAS、WSM 和出手帧，消耗一支标枪。原 `usemanaondo=1` 在成功出手时扣蓝；`delay=100` 在出手后设置共享限时技能延迟。打断出手前动作不消耗标枪或法力，切换装备不把原攻击替换为空手。
+`content/skills/weapon_skill_data.cpp` 导入 Skills 和 Missiles 原记录，`WeaponSkillSpec` 进入普通武器攻击执行链。只接受 ItemTypes 包含 `jave` 的可用武器；使用原 TH、IAS、WSM 和出手帧，消耗一支标枪。原 `usemanaondo=1` 在成功出手时扣蓝；`delay=100` 在出手后设置共享限时技能延迟。打断出手前动作不消耗标枪或法力，切换装备不把原攻击替换为空手。
 
 法力为 `max(minmana, (mana + (等级 - 1) × lvlmana) × 2^manashift / 256)`；当前一级 7 点，每级增加 0.5 点。技能命中百分比为原 `ToHit + (等级 - 1) × LevToHit`，当前 30% 加每级 9%，与装备百分比在同一处计算。角色面板显示直接命中的武器／元素及完整毒伤合计和命中率数值。
 
@@ -24,7 +24,7 @@
 
 ## 入口和扩展边界
 
-- 原数据：`content/weapon_skill_data.*`；共用命中结构及资源导入：`content/missile_effects.*`。当前仅开放经过校验的两项技能；不同云团技能来源、未支持的命中行为和额外服务器子弹体会拒绝导入，不静默套用已有伤害。
+- 原数据：`content/skills/weapon_skill_data.*`；共用命中结构及资源导入：`content/skills/missile_effects.*`。当前仅开放经过校验的两项技能；不同云团技能来源、未支持的命中行为和额外服务器子弹体会拒绝导入，不静默套用已有伤害。
 - 技能等级解析：`gameplay/skills/resolve.cpp`；动作与消耗：`combat/attacking.cpp`、`physical_projectiles.cpp`；毒伤及云：`weapon_elements.cpp`、`missile_effects.cpp`。
 - 证据：D2MOO `Skills.cpp` 的 `sub_6FD11420`、`D2GAME_SKILLS_SetDelay_6FD11C00` 和技能开始／执行末段；`Units/Missile.cpp` 的伤害数据／毒源聚合；`MissMode.cpp` 的 `MISSMODE_CreatePoisonCloudHitSubmissiles`、`SrvHit02`、`SrvHit04`、`SrvHit01`、`MISSMODE_GetDamageValue`、`SrvDmgHitHandler`。
 - 前置技能可学点但未实现效果；原被动、穿透、怪物格挡、完整触发及毒素时长抗性等共用缺口见 [通用攻击](COMMON_ATTACKS.md)。临时动作、弹体和技能延迟不写 D2S，格式和保存语义不变。

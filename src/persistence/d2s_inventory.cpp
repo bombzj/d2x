@@ -1,5 +1,5 @@
 #include "d2s_inventory.hpp"
-#include "content/item_properties.hpp"
+#include "content/items/item_properties.hpp"
 #include <algorithm>
 #include <stdexcept>
 

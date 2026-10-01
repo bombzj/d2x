@@ -1,3 +1,4 @@
+#include "gameplay/simulation/simulation.hpp"
 #include "gameplay/session/session.hpp"
 #include <algorithm>
 
@@ -13,8 +14,8 @@ unsigned GameSession::groundGoldLimit() const {
     return 0;
 }
 void GameSession::transactGold(const GoldTransaction &command) {
-    auto &player = simulation_.state_.player;
-    auto reject = [&](const char *message) { simulation_.emit(InteractionFailed{{}, message}); };
+    auto &player = simulation_->state_.player;
+    auto reject = [&](const char *message) { simulation_->emit(InteractionFailed{{}, message}); };
     if (player.dead || !command.amount) {
         reject("Invalid gold amount.");
         return;
@@ -67,17 +68,17 @@ void GameSession::transactGold(const GoldTransaction &command) {
 }
 void GameSession::dropDebugCube() {
     if (state().player.dead || content_.cubeCode.empty()) {
-        simulation_.emit(InteractionFailed{{}, "The cube is unavailable here."});
+        simulation_->emit(InteractionFailed{{}, "The cube is unavailable here."});
         return;
     }
     for (const auto &[id, item] : inventory_.state().items)
         if (item.definition == content_.cubeCode) {
-            simulation_.emit(InteractionFailed{{}, "A Horadric Cube already exists."});
+            simulation_->emit(InteractionFailed{{}, "A Horadric Cube already exists."});
             return;
         }
     auto ground = dropLocation();
     if (!ground) {
-        simulation_.emit(InteractionFailed{{}, "No place to drop the cube here."});
+        simulation_->emit(InteractionFailed{{}, "No place to drop the cube here."});
         return;
     }
     publishInventory(inventory_.createItem(content_.cubeCode, 1, *ground), {});

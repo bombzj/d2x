@@ -4,7 +4,7 @@
 
 地图阶段新增 `lod-named-txt-v1` 适配器，用户完整包实际导入 659 条物品、734 条怪物、852 条 TreasureClassEx，并读取 `itemtypes.txt`。物品 type 保留命名类型；腰带容量由 armor.belt 指向 belts.txt 的原始行。TC 保留 Picks、NoDrop、group、level、四种品质修正和 Item1–10/Prob1–10，怪物按名称引用 TC，空引用保持为空。
 
-运行时直接从已挂载 MPQ 读取原表和图形，不依赖抽取后的独立文件。`misc.txt` 中的 pSpell／stat／calc／len 现由 `content/item_consumables.cpp` 适配为药剂和传送卷轴的只读定义；`charstats.txt` 决定初始物品代码、数量与装备位置。原表缺失效果字段时不补写物品数值。
+运行时直接从已挂载 MPQ 读取原表和图形，不依赖抽取后的独立文件。`misc.txt` 中的 pSpell／stat／calc／len 现由 `content/items/item_consumables.cpp` 适配为药剂和传送卷轴的只读定义；`charstats.txt` 决定初始物品代码、数量与装备位置。原表缺失效果字段时不补写物品数值。
 
 `d2x_assets assets/mpq2 drops fallen1` 可查看实际分支。例如普通沉沦魔 TC1 指向 Act 1 H2H A，原表为 Picks=1、NoDrop=100，四个分支权重依次 21／16／21／2。这些是原表权重，不是完整最终物品掉率。
 

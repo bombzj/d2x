@@ -8,7 +8,7 @@
 
 ## 执行结构
 
-- `content/skill_data.*` 建立原技能身份、学习门槛及 `BasicSkillAction`；`content/sorceress_data.*` 、`content/weapon_skill_data.*` 和 `content/necromancer_data.*` 只为已核实的法术／武器技能提供 `SkillSpec`。无定义的技能不登记执行行为。
+- `content/skills/skill_data.*` 建立原技能身份、学习门槛及 `BasicSkillAction`；`content/skills/sorceress_data.*` 、`content/skills/weapon_skill_data.*` 和 `content/skills/necromancer_data.*` 只为已核实的法术／武器技能提供 `SkillSpec`。无定义的技能不登记执行行为。
 - `UseSkill` 是按原 `Skills.Id` 提交的唯一技能命令。`GameSession::useSkill` 在 `session_skills.cpp` 统一检查技能可用性、实现状态、城镇许可、等级及原施法动作，随后生成 `SkillCastSpec`。普通武器攻击仍共用 `Attack`；没有按内部枚举直接施放的旁路。
 - `skillAvailable` 表示角色拥有技能，`SkillRecord::executable()` 表示主动效果已接入；学习、选择、绑定不等同于能够施放。未实现主动技能显示禁用色、提示效果未实现、属性面板留空，不扣蓝、不开始动作，也不转为普通攻击。
 - `gameplay/skills/resolve.cpp` 是等级、基础等级协同、支配和定点费用的纯计算入口；`casting.cpp` 负责开始、出手、持续引导和结束。`SkillBehavior` 仅标识已实现的执行算法；存档、输入、事件与声音键使用原技能 ID，不使用该枚举的顺序。
@@ -21,7 +21,7 @@
 
 | 部分 | 当前接口与约束 |
 | --- | --- |
-| 原状态定义 | `content/state_data.*` 从当前 MPQ 的 `States.txt` 导入原 ID、group、remhit、玩家／怪物／首领的 staydeath、hide／shatter／udead 和叠层名；不从技能名猜状态。 |
+| 原状态定义 | `content/skills/state_data.*` 从当前 MPQ 的 `States.txt` 导入原 ID、group、remhit、玩家／怪物／首领的 staydeath、hide／shatter／udead 和叠层名；不从技能名猜状态。 |
 | 来源与目标 | 容器归属于受影响单位；`EffectSource` 独立记录来源类别、实体、原技能／物品等定义 ID 和等级快照，施法者与受影响单位不混用。 |
 | 实例与时间 | 每容器分配不复用的 `EffectHandle`；开始／到期使用绝对 25 Hz `WorldState.frame`。无 duration 表示由来源显式维持的状态；跨区保留，读档创建新容器。 |
 | 重施与互斥 | 调用者显式选择 ReplaceState、ReplaceSource 或 Independent。非零原 group 在目标容器内互斥，不因来源不同而叠加；替换先准备再提交。 |
@@ -71,7 +71,7 @@
 | 冰封装甲（40） | 读取原防御百分比、持续时间、冻结时间、两种高级冰甲基础等级协同、互斥状态组与原叠层／声音。近战实际物理伤害后冻结攻击者，不造成反击伤害；首领仅减速。包 `artifacts/sorceress-frozen-armor-20260926/` 已验证 1 级防御 6→7、消耗 7 法力、120 秒持续、重施不叠加、到期恢复、近战冻结且怪物生命不变，以及 D2S 等级重载。冰甲临时效果从未写入 D2S，载入使用新角色状态，不存在从存档清除冰甲的步骤。当前三冰甲已按原 group=1 接入互斥；本批未运行交叉验收。 |
 | 充能弹（38） | 原 `min(24,ln12)` 弹数、闪电协同和支配、D2MOO `PATH_ComputePathChargedBolt` 的方向选择与随机偏转序列、两格路径点及 77 帧寿命上限；逐段碰撞，命中消失并播放原 lightning 叠层。使用原 DCC、Units 调色板、中段动画循环和声音。包 `artifacts/sorceress-charged-bolt-20260926/` 已验证第 7 帧释放 3 颗、耗蓝、分叉轨迹、到期清除、真实怪物生命 12→8.2421875，以及 D2S 等级重载。当前源码另按原表核实的模式 3／单子格尺寸分离地形阻弹，详见下文；此修复已随本次构建进入 `dist/current`，尚未运行，不包含在旧包验收中。动态单位碰撞、动态光照和逐像素对照仍未完整覆盖。 |
 
-`content/sorceress_data.cpp` 从当前 MPQ 的 `Skills.txt`、`Missiles.txt`、`Overlay.txt`、`Sounds.txt` 和 `AnimData.d2` 生成类型化定义。玩法不读取 MPQ 或 GPU 资源。等级伤害、法力定点数、基础等级协同依据 D2MOO `D2Common/src/D2Skills.cpp`；武器授予等级与已分配等级叠加，装备加技能不计入基础等级协同。
+`content/skills/sorceress_data.cpp` 从当前 MPQ 的 `Skills.txt`、`Missiles.txt`、`Overlay.txt`、`Sounds.txt` 和 `AnimData.d2` 生成类型化定义。玩法不读取 MPQ 或 GPU 资源。等级伤害、法力定点数、基础等级协同依据 D2MOO `D2Common/src/D2Skills.cpp`；武器授予等级与已分配等级叠加，装备加技能不计入基础等级协同。
 
 ### 通用弹体与地形碰撞
 
@@ -125,7 +125,7 @@ Shiver Armor（50）是本批先完成的技能。当前 MPQ 规定 12 级学习
 
 ### 冰尖柱依据与当前实现
 
-原技能为 Glacial Spike（55），18 级学习、Ice Blast 前置、左右键选择、城镇禁用及 SC 出手沿用当前 MPQ 的技能树和公共施法入口。`content/glacial_spike_data.*` 导入并校验 Skills／Missiles 原关联与公式；`gameplay/skills/glacial_spike.cpp` 执行独立的 25 Hz 飞行及范围冻结，不借用冰风暴的单体命中算法。
+原技能为 Glacial Spike（55），18 级学习、Ice Blast 前置、左右键选择、城镇禁用及 SC 出手沿用当前 MPQ 的技能树和公共施法入口。`content/skills/glacial_spike_data.*` 导入并校验 Skills／Missiles 原关联与公式；`gameplay/skills/glacial_spike.cpp` 执行独立的 25 Hz 飞行及范围冻结，不借用冰风暴的单体命中算法。
 
 | 原表项 | 当前 MPQ 与执行规则 |
 | --- | --- |
@@ -145,7 +145,7 @@ CltHit14 的关联与随机方向核对 [D2R Data Guide](https://locbones.github
 
 ### 暴风雪依据与当前实现
 
-原技能为 Blizzard（59）。`content/blizzard_data.*` 导入当前 MPQ 参数并核对函数／伤害来源；`gameplay/skills/blizzard.cpp` 在公共 25 Hz 模拟中执行，不在玩法读取 MPQ。等级、24 级学习门槛、Frost Nova／Glacial Spike 前置、城镇限制、右键资格、SC 动作及 `ice_cast_3` 叠层沿用原技能树和施法入口。
+原技能为 Blizzard（59）。`content/skills/blizzard_data.*` 导入当前 MPQ 参数并核对函数／伤害来源；`gameplay/skills/blizzard.cpp` 在公共 25 Hz 模拟中执行，不在玩法读取 MPQ。等级、24 级学习门槛、Frost Nova／Glacial Spike 前置、城镇限制、右键资格、SC 动作及 `ice_cast_3` 叠层沿用原技能树和施法入口。
 
 | 原表项 | 当前 MPQ 与执行规则 |
 | --- | --- |
@@ -167,7 +167,7 @@ CltHit14 的关联与随机方向核对 [D2R Data Guide](https://locbones.github
 
 ### 冰封球依据与当前实现
 
-入口为原技能 64，学习等级 30、前置暴风雪、左右键可选与城镇禁用均取原 `Skills/SkillDesc`。`content/frozen_orb_data.*` 核对父／子弹体函数和关联并导入类型化参数，`gameplay/skills/frozen_orb.cpp` 在 25 Hz 模拟中执行；缺原资源、伤害来源或函数不支持时明确拒绝，不退回单颗普通冰弹。
+入口为原技能 64，学习等级 30、前置暴风雪、左右键可选与城镇禁用均取原 `Skills/SkillDesc`。`content/skills/frozen_orb_data.*` 核对父／子弹体函数和关联并导入类型化参数，`gameplay/skills/frozen_orb.cpp` 在 25 Hz 模拟中执行；缺原资源、伤害来源或函数不支持时明确拒绝，不退回单颗普通冰弹。
 
 | 当前 MPQ 弹体 | 原函数与运动 | 原图与序列 |
 | --- | --- | --- |

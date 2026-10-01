@@ -1,8 +1,13 @@
+#include "gameplay/session/session.hpp"
 #include "scene_view.hpp"
 #include <algorithm>
 #include <type_traits>
 
 namespace d2x {
+void SceneView::collectMapVariants(Archives &archives) {
+    assets_.collectMapVariants(archives, session_.worldContent(), session_.monsterContent(),
+                               session_.state().mapSeed, uint32_t(session_.visualSeed()));
+}
 namespace {
 constexpr const char *highlightFragment = R"(
 #version 330

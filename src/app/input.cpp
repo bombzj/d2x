@@ -1,5 +1,5 @@
 #include "input.hpp"
-#include "presentation/primitives.hpp"
+#include "presentation/graphics/primitives.hpp"
 #include <algorithm>
 
 namespace d2x {

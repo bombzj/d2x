@@ -1,7 +1,7 @@
 #include "world_report.hpp"
 #include "cow_level.hpp"
 #include "maze.hpp"
-#include "outdoor.hpp"
+#include "world/outdoor/outdoor.hpp"
 #include "core/random_seed.hpp"
 #include <set>
 

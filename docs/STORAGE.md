@@ -22,10 +22,10 @@
 | `world/region.hpp/.cpp` | 只读场景组装，按 DS1 的物件序号、坐标和预设建立实体；读取 MPQ objects.txt 的储物箱操作距离 |
 | `gameplay/session_interaction.cpp` | 可取消的走近交互、距离与通路校验、临时 StorageAccess 授权及撤销；NPC 交互也不再远程触发 |
 | `gameplay/items/collection.cpp` | 通用整件转移计划／提交，供拾取和储物箱共享，预览与执行使用同一计划函数 |
-| `presentation/container_grid.hpp` | 仅处理任意容器的网格几何、格子命中和物品矩形，无存取规则 |
-| `presentation/container_view.cpp` | 包裹、储物箱共用物品格绘制、数量及高亮 |
-| `presentation/inventory_panel.cpp` | 当前可见容器注册和通用拖放意图，不再写死只向包裹移动 |
-| `presentation/storage_view.cpp` | MPQ 储物箱面板及按钮绘制 |
+| `presentation/inventory/container_grid.hpp` | 仅处理任意容器的网格几何、格子命中和物品矩形，无存取规则 |
+| `presentation/inventory/container_view.cpp` | 包裹、储物箱共用物品格绘制、数量及高亮 |
+| `presentation/inventory/inventory_panel.cpp` | 当前可见容器注册和通用拖放意图，不再写死只向包裹移动 |
+| `presentation/inventory/storage_view.cpp` | MPQ 储物箱面板及按钮绘制 |
 
 `GameSession` 保留协调职责，资源加载、场景构造和交互实现已分离。`LootSystem` 接受数据型 `LootRequest`，不依赖战斗事件类型；现有怪物掉落行为保持原有版本，本轮没有添加箱子掉落分支。
 
