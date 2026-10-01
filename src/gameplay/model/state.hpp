@@ -87,6 +87,7 @@ struct PlayerState {
     int unspentSkills = 0;
     std::array<SkillHotkey, 8> skillHotkeys{};
     std::array<int, 4> selectedSkills{-1, -1, -1, -1};
+    std::optional<ActiveAura> aura;
     ActOneQuestBook actOneQuests{};
     HirelingState hireling;
 };

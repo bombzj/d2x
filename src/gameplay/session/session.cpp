@@ -117,6 +117,14 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
             publishInventory(std::move(result), {});
     };
     simulation_->combatEffectsChanged_ = [this] { refreshCharacter(); };
+    simulation_->auraEligible_ = [this](const CombatUnit &unit) {
+        if (!unit.monster && !unit.hireling) return true;
+        const MonsterRecord *monster = unit.monster ? monsterContent_.find(unit.monster->identity.monster) : nullptr;
+        if (unit.hireling)
+            for (const auto &[id, record] : monsterContent_.monsters())
+                if (record.index == unit.hireling->classId) { monster = &record; break; }
+        return monster && !content_.tables.at("monstats").number(monster->sourceRow, "noAura").value_or(0);
+    };
     simulation_->initializeNaturalElite_ = [this](Enemy &enemy, const Enemy *owner) {
         if (enemy.identity.enchantment || (owner ? owner->identity.rank != MonsterRank::Unique ||
             !owner->identity.enchantment : enemy.identity.rank != MonsterRank::Champion &&
@@ -878,6 +886,24 @@ void GameSession::tick(float dt, Vec keyboard, bool forceRun) {
         const int rank = effectiveSkillRank(skill);
         simulation_->enforceSummonLimit(state().player.id, skill, rank < 4 ? rank : 2 + rank / 3);
     }
+    const int auraSkill = state().player.selectedSkills[state().player.weaponSet * 2 + 1];
+    const auto *auraRecord = content_.skills.find(auraSkill);
+    const int auraRank = auraRecord && auraRecord->auraImplemented && !state().player.dead
+        ? effectiveSkillRank(auraSkill) : 0;
+    auto &activeAura = simulation_->state_.player.aura;
+    if (activeAura && (activeAura->definition.skill != auraSkill || activeAura->definition.rank != auraRank)) {
+        const int state = activeAura->definition.ownerState.id;
+        const auto effects = simulation_->state_.player.combatEffects.entries();
+        std::vector<EffectHandle> remove;
+        for (const auto &effect : effects)
+            if (effect.spec.state.id == state && effect.spec.source.entity == simulation_->state_.player.id &&
+                effect.spec.source.definition == activeAura->definition.skill) remove.push_back(effect.handle);
+        for (auto handle : remove) simulation_->state_.player.combatEffects.remove(handle);
+        activeAura.reset();
+        refreshCharacter();
+    }
+    if (!activeAura && auraRank > 0)
+        if (auto aura = resolveAura(content_, auraSkill, auraRank)) activeAura = ActiveAura{*aura, state().frame};
     simulation_->tick(dt, transitioned ? Vec{} : keyboard, forceRun);
     auto replenished = inventory_.replenish(dt);
     if (!replenished.changes.empty()) publishInventory(std::move(replenished), {});

@@ -119,6 +119,7 @@ target_sources(d2x_gameplay PRIVATE src/gameplay/combat/physical_projectiles.cpp
 target_sources(d2x_gameplay PRIVATE src/gameplay/combat/weapon_attack.cpp src/gameplay/combat/attacking.cpp
   src/gameplay/combat/missile_effects.cpp)
 target_sources(d2x_gameplay PRIVATE src/gameplay/skills/resolve.cpp)
+target_sources(d2x_gameplay PRIVATE src/gameplay/skills/aura.cpp)
 target_sources(d2x_gameplay PRIVATE src/gameplay/monsters/monster_spawn.cpp src/gameplay/monsters/monster_activation.cpp)
 target_sources(d2x_gameplay PRIVATE src/gameplay/loot/treasure.cpp)
 target_sources(d2x_gameplay PRIVATE src/gameplay/loot/quality.cpp)

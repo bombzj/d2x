@@ -1,0 +1,19 @@
+#pragma once
+#include "gameplay/effects/state.hpp"
+
+namespace d2x {
+struct AuraDefinition {
+    int skill = -1, rank = 0, periodFrames = 0;
+    float radius = 0;
+    CombatStateDefinition state, ownerState;
+    CharacterModifiers modifiers;
+    int ownerDamageBonus = 0, elementalMultiplier = 0;
+    int element = -1;
+    float minimumDamage = 0, maximumDamage = 0;
+    bool hostile = false;
+};
+struct ActiveAura {
+    AuraDefinition definition;
+    EffectFrame nextFrame = 0;
+};
+}

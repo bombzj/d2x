@@ -104,6 +104,19 @@ MonsterAura aura(const ClassicData &data, int skill, int rank) {
     return result;
 }
 }
+void loadAuraSkills(ClassicData &data) {
+    for (int skill : {98}) {
+        const auto definition = aura(data, skill, 1);
+        if (definition.periodFrames < 5 || definition.state.id < 0 || definition.ownerState.id < 0)
+            throw std::runtime_error("Original aura lacks state or periodic data");
+        data.skills.skills.at(skill).auraImplemented = true;
+    }
+}
+std::optional<AuraDefinition> resolveAura(const ClassicData &data, int skill, int rank) {
+    const auto *record = data.skills.find(skill);
+    if (!record || !record->auraImplemented || rank <= 0) return std::nullopt;
+    return aura(data, skill, rank);
+}
 bool monsterShrineEligible(const ClassicData &data, const MonsterRecord &monster) {
     if (!monster.hostile() || monster.boss) return false;
     const auto &stats = data.tables.at("monstats"), &extra = data.tables.at("monstats2");
@@ -208,12 +221,13 @@ MonsterEnchantment rollMonsterEnchantment(const ClassicData &data, const Monster
         case 28: result.defensePercent += 100; resist(0, 50); break;
         case 29: break; // Missile creation executes multishot.
         case 30: {
-            if (!enableSkillEffects) break;
             constexpr int skills[]{98, 102, 108, 114, 123, 122, 118};
             constexpr int divisors[]{6, 6, 5, 7, 8, 8, 8};
             uint64_t auraSeed = (uint64_t(666) << 32) | result.nameSeed;
             const int choice = int(roll(auraSeed, level >= 20 ? 7 : 6));
-            result.aura = aura(data, skills[choice], std::clamp(level / divisors[choice], 1, 99));
+            const int auraRank = std::clamp(level / divisors[choice], 1, 99);
+            if (enableSkillEffects) result.aura = aura(data, skills[choice], auraRank);
+            else result.aura = resolveAura(data, skills[choice], auraRank);
             break;
         }
         case 16: case 36: case 37: case 38:

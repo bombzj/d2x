@@ -207,6 +207,7 @@ void Simulation::tick(float dt, Vec keyboard, bool forceRun) {
         activateMonsters();
     }
     updateMonsterEnchantments();
+    updateAuras();
     updateMonsters(dt);
     updateCompanions(dt);
     updateMissiles(dt);

@@ -287,6 +287,7 @@ ClassicData loadClassicData(Archives &archives) {
         loadSkillAnimations(data.skills, data.tables.at("weapons"), archives);
         data.shrines = loadShrines(data.tables.at("shrines"));
         data.states = loadCombatStates(DataTable(archives.read("data/global/excel/states.txt")));
+        loadAuraSkills(data);
         loadMonsterEnchantmentResources(data, archives);
         const DataTable overlays(archives.read("data/global/excel/overlay.txt"));
         const DataTable sounds(archives.read("data/global/excel/sounds.txt"));

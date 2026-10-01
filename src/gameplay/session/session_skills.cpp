@@ -124,6 +124,11 @@ void GameSession::useSkill(const UseSkill &intent) {
         simulation_->state_.message = "This skill cannot be used in town";
         return;
     }
+    if (entry->auraImplemented) {
+        simulation_->state_.player.selectedSkills[player.weaponSet * 2 + 1] = intent.id;
+        simulation_->stopChannel(simulation_->state_.player);
+        return;
+    }
     if (entry->basicAction != BasicSkillAction::None) {
         cancelExit(); cancelPickup(); cancelInteraction();
         const bool thrown = entry->basicAction == BasicSkillAction::Throw ||

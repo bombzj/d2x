@@ -1,5 +1,11 @@
 # 技能与状态效果
 
+## 通用光环逐项实施
+
+2026-10-01：按用户要求，每完成一个光环均编译、更新固定运行包、提交 Git 后再实现下一个；不启动游戏、不编写或运行测试。当前首先接入力量（98）：圣骑士右手选择维持，切换／失去有效等级／死亡取消本身来源，邻房友方状态按原周期自然到期；原 Skills 的状态、ln12 范围、ln34 物理伤害、50 帧周期、原 Overlay 均共用。玩家、佣兵／骷髅目标及已选中力量的自然精英使用同一类型化 AuraDefinition／updateAuras；低等级同种光环不覆盖高等级，不叠加两份伤害。原 noAura 目标过滤、包含边界的整数坐标平方距离、周期后加一帧的状态期限按 reference 接入。既有其他祭坛光环继续原路径，不能同时进两个执行器。
+
+依据本地 D2MOO SkillPal::SrvDo065／AuraCallback_BasicAura、Skills::sub_6FD10EC0／sub_6FD0FE80／SKILL_ComputePeriodicRate；当前 MPQ 为力量范围 16+2×(等级−1)、伤害百分比 40+10×(等级−1)，无耗蓝和施法动作。状态修改统一刷新真实装备／战斗属性，UI 只提交原技能选择。完整客户端声音／动画节拍仍按已有状态 Overlay 表现适配，不以编译代替人工验收。其他光环与阶段二剩余能力尚未完成，后续逐项更新本节。
+
 ## 原始数据与边界
 
 运行时读取原 MPQ 的 `Skills.txt`、`SkillDesc.txt`、`CharStats.txt`、英文 TBL 字符串和七套 `skltree_*_back.dc6`／职业图标。当前资料片原表中，七个职业各有 30 个技能，分布在 `SkillPage` 1–3、`SkillRow` 1–6、`SkillColumn` 1–3。节点身份是原 `Skills.Id`，位置、图标和页签名称来自原表及原图，不维护抽取后的技能清单。用户提供的角色／法师技能树截图保存在忽略的 `artifacts/character-skill-layout-reference-cn.png`，仅用于核对版面。
