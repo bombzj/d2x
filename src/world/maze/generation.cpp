@@ -87,7 +87,7 @@ MapRecipe RoomMaze::build(int level, uint32_t seed, int difficulty, int entrance
         int a = seed_.below(15), b = seed_.below(15);
         std::swap(offsets[a], offsets[b]);
     }
-    int remaining = level == 8 ? 0 : std::max(2, int(rooms_.size()) / 5 + 1);
+    int remaining = level == 8 || (level >= 51 && level <= 54) ? 0 : std::max(2, int(rooms_.size()) / 5 + 1);
     for (int attempt = 0; remaining && attempt < 2 * int(rooms_.size()); ++attempt) {
         for (auto i = rooms_.rbegin(); i != rooms_.rend(); ++i)
             if (!i->fixed && i->preset == base_ + offsets[cursor]) {
@@ -116,7 +116,7 @@ MapRecipe RoomMaze::build(int level, uint32_t seed, int difficulty, int entrance
         if (i->variant < 0 && preset.files < 1)
             throw std::runtime_error("Maze room has no selectable DS1 variants");
         int variant = i->variant >= 0 ? i->variant : seed_.below(preset.files);
-        if (i->preset > base_ && i->preset < base_ + 16) {
+        if (!(level >= 51 && level <= 54) && i->preset > base_ && i->preset < base_ + 16) {
             auto [it, inserted] = variants.try_emplace(i->preset, variant);
             (void)inserted;
             it->second = (it->second + 1) % preset.files;

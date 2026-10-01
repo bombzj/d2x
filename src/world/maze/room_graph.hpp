@@ -25,7 +25,17 @@ class RoomMaze {
     void placeBarracks(int direction);
     void initializeCatacombs(int level);
     void placeSewerEntrances();
-    void pick(int i) { rooms_[i].preset = base_ + rooms_[i].mask; }
+    void pick(int i) {
+        auto &room = rooms_[i];
+        int type = catalog_.level(maze_.level).levelType;
+        if (type == 14 || type == 15) {
+            constexpr int corners[]{0, 0, 0, 0, 0, 356, 355, 0, 0, 357, 354, 0, 0, 0, 0, 0};
+            room.preset = corners[room.mask] + (type == 15 ? 4 : 0);
+            room.variant = maze_.level == 52 && room.mask == 9 ? 2
+                           : maze_.level == 54 && (room.mask == 9 || room.mask == 6) ? 3 : -1;
+        } else
+            room.preset = base_ + room.mask;
+    }
     void link(int a, int b, int direction) {
         rooms_[a].mask |= bits[direction];
         rooms_[b].mask |= bits[(direction + 2) % 4];
@@ -79,7 +89,8 @@ class RoomMaze {
               Seed world(seed);
               return world.next() + uint32_t(level);
           }()),
-          family_(catalog.level(level).levelType == 13 ? sewerRules(level)
+          family_(level >= 51 && level <= 54 ? FamilyRules{level == 51 ? 353 : 357, 16, {}, 16, true}
+              : catalog.level(level).levelType == 13 ? sewerRules(level)
               : level == 28                        ? barracksRules()
                   : level >= 29 && level <= 31          ? jailRules(level)
                   : level >= 34 && level <= 36          ? catacombsRules(level)
