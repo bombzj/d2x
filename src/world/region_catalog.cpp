@@ -44,7 +44,7 @@ WorldPlan planWorld(Archives &archives, const WorldCatalog &catalog, WorldSelect
     auto outdoors = missingOutdoor.empty() ? generateAct1Outdoors(archives, catalog, selection.seed)
                                            : std::map<int, MapRecipe>{};
     for (const auto &[id, level] : catalog.levels()) {
-        if (level.act != 0 && id != 40)
+        if (level.act != 0 && id != 40 && id != 50)
             continue;
         auto available = catalog.availability(
             archives, id, id == 40 ? 1 : id == selection.level && !selection.preset ? selection.variant : 0);
@@ -145,7 +145,7 @@ WorldPlan planWorld(Archives &archives, const WorldCatalog &catalog, WorldSelect
         auto entry = std::find_if(result.entries.begin(), result.entries.end(),
                                   [&](const auto &e) { return e.level == selection.level; });
         if (entry == result.entries.end())
-            throw std::runtime_error("Only Act I levels and Lut Gholein are supported");
+            throw std::runtime_error("The selected level is not supported");
         if (!entry->destination)
             throw std::runtime_error("Level " + std::to_string(selection.level) +
                                      " unavailable: " + failure(*entry));
