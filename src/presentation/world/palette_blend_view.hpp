@@ -12,7 +12,7 @@ class PaletteBlendView {
     int destinationLocation_ = -1, paletteLocation_ = -1, tableLocation_ = -1, indicesLocation_ = -1;
 
   public:
-    explicit PaletteBlendView(Archives &archives);
+    explicit PaletteBlendView(Archives &archives, int act = 0);
     ~PaletteBlendView();
     PaletteBlendView(const PaletteBlendView &) = delete;
     PaletteBlendView &operator=(const PaletteBlendView &) = delete;

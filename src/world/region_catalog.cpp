@@ -44,10 +44,10 @@ WorldPlan planWorld(Archives &archives, const WorldCatalog &catalog, WorldSelect
     auto outdoors = missingOutdoor.empty() ? generateAct1Outdoors(archives, catalog, selection.seed)
                                            : std::map<int, MapRecipe>{};
     for (const auto &[id, level] : catalog.levels()) {
-        if (level.act != 0)
+        if (level.act != 0 && id != 40)
             continue;
         auto available = catalog.availability(
-            archives, id, id == selection.level && !selection.preset ? selection.variant : 0);
+            archives, id, id == 40 ? 1 : id == selection.level && !selection.preset ? selection.variant : 0);
         WorldEntry entry{id, level.name, available.reason, available.missing, {}};
         if (outdoors.contains(id)) {
             entry.destination = RegionId(id);
@@ -78,7 +78,7 @@ WorldPlan planWorld(Archives &archives, const WorldCatalog &catalog, WorldSelect
         } else if (available.ready()) {
             entry.destination = RegionId(id);
             entry.status = "Preset terrain ready";
-            result.regions.push_back(makeRegion(*entry.destination, level.name, *available.recipe, id == 1));
+            result.regions.push_back(makeRegion(*entry.destination, level.name, *available.recipe, id == 1 || id == 40));
         } else if (entry.status.empty())
             entry.status = "Missing MPQ resources";
         result.entries.push_back(std::move(entry));
@@ -145,7 +145,7 @@ WorldPlan planWorld(Archives &archives, const WorldCatalog &catalog, WorldSelect
         auto entry = std::find_if(result.entries.begin(), result.entries.end(),
                                   [&](const auto &e) { return e.level == selection.level; });
         if (entry == result.entries.end())
-            throw std::runtime_error("Only Act I levels are supported");
+            throw std::runtime_error("Only Act I levels and Lut Gholein are supported");
         if (!entry->destination)
             throw std::runtime_error("Level " + std::to_string(selection.level) +
                                      " unavailable: " + failure(*entry));

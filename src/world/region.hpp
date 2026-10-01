@@ -19,6 +19,7 @@ struct ObjectAnimationRule {
 };
 struct WorldObject {
     EntityId id;
+    int act = 0;
     Vec pos, accessPoint;
     // Stable content identity, independent of runtime allocation order, for future saves.
     std::string contentKey, key, name;

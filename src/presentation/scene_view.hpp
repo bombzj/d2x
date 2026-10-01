@@ -54,6 +54,7 @@ struct ViewState {
     std::optional<uint32_t> shopConfirm;
     std::optional<ItemHandle> shopSalePending;
     EntityId waypointSource;
+    int waypointAct = 0;
     int travelPage = 0;
     float animationTime = 0, heroTime = 0, stepClock = 0;
     float cainPortalAnimationStarted = -1;
@@ -76,6 +77,7 @@ class SceneView {
     SceneAssets assets_;
     LightingView lighting_;
     PaletteBlendView paletteBlend_;
+    PaletteBlendView actTwoPaletteBlend_;
     Shader highlightShader_{};
     int highlightTransform_ = -1;
     UiPainter painter_;

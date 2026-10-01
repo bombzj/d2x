@@ -1,4 +1,5 @@
 #include "presentation/scene_view.hpp"
+#include "gameplay/session/session.hpp"
 #include <algorithm>
 
 namespace d2x {
@@ -25,6 +26,12 @@ void drawTile(const GpuAnimation &art, int frame, Rectangle bounds) {
 } // namespace
 
 std::optional<RegionId> SceneView::clickWaypointMenu(Vec mouse) {
+    const auto origin = panelOrigin();
+    for (int act = 0; act < 2; ++act)
+        if (CheckCollisionPointRec(rv(mouse), {origin.x + act * 63 * scaleX, origin.y, 63 * scaleX, 45 * scaleY})) {
+            if (act == 0 || session_.waypointUnlocked(RegionId(40))) view_.waypointAct = act;
+            return {};
+        }
     if (CheckCollisionPointRec(rv(mouse), waypointClose())) {
         view_.travelMenu = false;
         return {};
@@ -53,8 +60,8 @@ void SceneView::drawWaypointMenu(Vec mouse) const {
                       sprite->texture.width * scaleX, sprite->texture.height * scaleY});
     int acts = std::min(5, assets_.waypointTabs.count / 2);
     for (int act = 0; act < acts; ++act)
-        if (const auto *sprite = assets_.waypointTabs.frame(0, act * 2 + (act == 0 ? 0 : 1)))
-            drawTile(assets_.waypointTabs, act * 2 + (act == 0 ? 0 : 1),
+        if (const auto *sprite = assets_.waypointTabs.frame(0, act * 2 + (act == view_.waypointAct ? 0 : 1)))
+            drawTile(assets_.waypointTabs, act * 2 + (act == view_.waypointAct ? 0 : 1),
                      {origin.x + act * 63 * scaleX, origin.y,
                       sprite->texture.width * scaleX, sprite->texture.height * scaleY});
 

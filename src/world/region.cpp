@@ -24,11 +24,23 @@ int actOneObjectClass(const MapObject &source, int version) {
         258,129,267,268,269,581,351,352,353,374,385,397,321};
     return source.id >= 0 && classes[source.id] ? classes[source.id] : -1;
 }
+int actTwoObjectClass(const MapObject &source, int version) {
+    if (version <= 5) return source.id;
+    if (source.id >= 150) return source.id - 150;
+    constexpr int classes[]{74,37,192,304,305,306,101,102,78,103,156,580,132,129,357,153,121,122,229,230,196,267,261,149,269,
+        4,9,52,94,95,142,143,5,6,87,88,146,146,147,148,240,241,242,243,176,177,198,246,29,160,
+        161,162,273,283,85,86,109,116,134,135,136,150,151,172,173,279,280,281,282,166,167,113,137,89,104,
+        105,106,107,154,171,178,270,271,272,266,274,244,284,288,298,289,296,297,287,286,285,290,291,292,293,
+        294,295,133,303,299,300,301,302,581,354,582,314,315,316,317,323,322,110,112,114,355,356,357,351,352,
+        353,152,374,387,389,390,391,388,397,402};
+    return source.id >= 0 && size_t(source.id) < std::size(classes) ? classes[source.id] : -1;
+}
 void appearanceKey(WorldObject &object) {
     const auto &a = object.appearance;
     object.key = a.category + a.token + a.mode + a.weapon;
     for (const auto &part : a.equipment)
         object.key += ":" + part;
+    object.key += ":act:" + std::to_string(object.act);
 }
 int objectMode(std::string_view mode) {
     if (mode == "nu") return 0;
@@ -224,18 +236,23 @@ std::vector<Region> loadRegions(Archives &archives, EntityIds &ids, const std::v
                 return p.type == source.type && p.id == source.id;
             });
             const int originalClass = source.type == 2 && region.map.data.act == 0
-                ? actOneObjectClass(source, region.map.data.version) : -1;
+                ? actOneObjectClass(source, region.map.data.version) :
+                source.type == 2 && region.map.data.act == 1 ? actTwoObjectClass(source, region.map.data.version) : -1;
             const int resolvedClass = resolveAct1ChestPreset(originalClass, int(region.definition.id), region.objectSeed);
             auto chestRow = std::find_if(objectRows.begin(), objectRows.end(), [&](const auto &row) {
                 return !row.at("Id").empty() && std::stoi(row.at("Id")) == resolvedClass &&
-                    (row.at("OperateFn") == "4" || originalClass == 580 || originalClass == 581);
+                    (row.at("OperateFn") == "4" || originalClass == 580 || originalClass == 581 ||
+                     region.map.data.act == 1);
             });
             const bool nativeChest = chestRow != objectRows.end();
-            if (preset == std::end(presets) && !nativeChest) {
+            const auto unit = source.type == 1 ? monsters.preset(region.map.data.act, source.id, region.map.data.version) : MonsterPreset{};
+            const auto *townNpc = region.map.data.act == 1 ? monsters.find(unit.id) : nullptr;
+            if ((preset == std::end(presets) || region.map.data.act == 1) && !nativeChest && !townNpc) {
                 ++region.unsupportedObjects;
                 continue;
             }
             WorldObject object;
+            object.act = region.map.data.act;
             object.id = ids.allocate();
             object.contentKey = "ds1." + std::to_string(index);
             // UNITS_InitializeStaticPath uses integer coordinates; dynamic NPC
@@ -267,7 +284,12 @@ std::vector<Region> loadRegions(Archives &archives, EntityIds &ids, const std::v
                     }
                 }
             }
-            if (nativeChest) {
+            if (townNpc) {
+                object.appearance = {"monsters", normalize(townNpc->token), "nu", townNpc->baseWeapon, {}};
+                object.appearance.equipment = townNpc->components;
+                object.name = std::string(townNpc->name);
+                object.interaction = Interaction::None;
+            } else if (nativeChest) {
                 object.appearance = {"objects", normalize(chestRow->at("Token")), "nu", "hth", {}};
                 if (originalClass == 580 && resolvedClass != 371) {
                     object.chest.emplace();
@@ -278,7 +300,7 @@ std::vector<Region> loadRegions(Archives &archives, EntityIds &ids, const std::v
                 for (size_t i = 0; i < object.appearance.equipment.size(); ++i)
                     object.appearance.equipment[i] = preset->gear[i];
             }
-            if (source.type == 2 && region.map.data.act == 0) {
+            if (source.type == 2 && (region.map.data.act == 0 || region.map.data.act == 1)) {
                 object.objectClass = resolvedClass;
                 if (object.objectClass < 0) { ++region.unsupportedObjects; continue; }
             }

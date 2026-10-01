@@ -52,7 +52,7 @@ std::vector<MenuEntry> entries(const GameSession &session, EntityId npc, std::st
     if (npcClass == "charsi" && session.quest(ActOneQuest::ToolsOfTheTrade).stage ==
                                     uint32_t(ToolsStage::RewardReady))
         result.push_back({"Imbue", 7});
-    if (npcClass == "warriv1" && session.quest(ActOneQuest::SistersToTheSlaughter).stage ==
+    if (npcClass == "warriv1" && session.quest(ActOneQuest::SistersToTheSlaughter).stage >=
                                    uint32_t(SlaughterStage::PassageReady))
         result.push_back({"Go East", 8});
     result.push_back({"Cancel", 4});

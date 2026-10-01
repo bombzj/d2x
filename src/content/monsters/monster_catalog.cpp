@@ -239,6 +239,10 @@ MonsterCatalog::MonsterCatalog(Archives &archives, const DataTable &stats) {
             start = end + 1;
         }
         m.rightHandVariant = firstVariant("RHv");
+        constexpr const char *componentFields[]{"HDv","TRv","LGv","RAv","LAv","RHv","LHv","SHv",
+            "S1v","S2v","S3v","S4v","S5v","S6v","S7v","S8v"};
+        for (size_t component = 0; component < m.components.size(); ++component)
+            m.components[component] = firstVariant(componentFields[component]);
         m.leftHandVariant = firstVariant("LHv");
         for (int index = 0; index < 8; ++index)
             m.specialVariants[size_t(index)] = firstVariant("S" + std::to_string(index + 1) + "v");

@@ -24,7 +24,8 @@ void loadFont(Graphics &graphics, Archives &archives, ClassicFont &font, std::st
 }
 } // namespace
 SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
-    : archives_(archives), graphics_(archives), uiGraphics_(archives, "data/global/palette/sky/pal.dat"),
+        : archives_(archives), graphics_(archives), actTwoGraphics_(archives, "data/global/palette/act2/pal.dat"),
+            uiGraphics_(archives, "data/global/palette/sky/pal.dat"),
       unitsGraphics_(archives, "data/global/palette/units/pal.dat"),
       automapCatalog_(archives), audio(archives) {
     loadFont(uiGraphics_, archives, font, "font16");
@@ -124,8 +125,10 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
     regionTileSources.reserve(session.regions().size());
     regionTiles.resize(session.regions().size());
     regionTilesUploaded.assign(session.regions().size(), false);
-    for (const auto &region : session.regions())
+    for (const auto &region : session.regions()) {
         regionTileSources.push_back(region.map.tiles);
+        regionActs_.push_back(region.map.data.act);
+    }
     indexPropArt(session);
     loadAutomap(session);
     loadHeroEquipment(session);
@@ -650,7 +653,7 @@ const std::vector<Sprite> &SceneAssets::regionTileSprites(size_t index) const {
         regionTiles[index].clear();
         regionTiles[index].reserve(regionTileSources.at(index).size());
         for (const auto *tile : regionTileSources.at(index))
-            regionTiles[index].push_back(graphics_.upload(tile->image));
+            regionTiles[index].push_back((regionActs_.at(index) == 1 ? actTwoGraphics_ : graphics_).upload(tile->image));
         regionTilesUploaded[index] = true;
     }
     return regionTiles[index];
@@ -670,12 +673,13 @@ void SceneAssets::ensurePropArt(const WorldObject &object) const {
     }
 }
 void SceneAssets::loadPropObject(const WorldObject &object) const {
+    auto &graphics = object.act == 1 ? actTwoGraphics_ : graphics_;
     const auto &appearance = object.appearance;
     std::array<const char *, 16> equipment;
     for (size_t i = 0; i < equipment.size(); ++i)
         equipment[i] = appearance.equipment[i].c_str();
     if (!object.npcPath.empty() && !npcWalkAnimations.contains(object.key)) {
-        auto walk = graphics_.composite(appearance.category, appearance.token, "wl",
+        auto walk = graphics.composite(appearance.category, appearance.token, "wl",
                                          appearance.weapon, &equipment);
         if (!walk.frames.empty() && walk.completeComposite)
             npcWalkAnimations.emplace(object.key, std::move(walk));
@@ -687,7 +691,7 @@ void SceneAssets::loadPropObject(const WorldObject &object) const {
         // Objects.txt modes are NU, OP (operating), ON (opened).
         const char *modes[] = {"nu", "op", "on"};
         for (size_t index = 0; index < animations.size(); ++index) {
-            animations[index] = graphics_.composite(appearance.category, appearance.token, modes[index],
+            animations[index] = graphics.composite(appearance.category, appearance.token, modes[index],
                                                     appearance.weapon, &equipment);
             if (animations[index].frames.empty() || !animations[index].completeComposite ||
                 object.waypointFps[index] <= 0)
@@ -706,14 +710,14 @@ void SceneAssets::loadPropObject(const WorldObject &object) const {
         std::array<GpuAnimation, 3> animations;
         const char *modes[] = {"nu", "op", "on"};
         for (size_t index = 0; index < animations.size(); ++index)
-            animations[index] = graphics_.composite(appearance.category, appearance.token, modes[index],
+            animations[index] = graphics.composite(appearance.category, appearance.token, modes[index],
                                                     appearance.weapon, &equipment);
         propAnimations.emplace(object.key, animations[0]);
         objectModeAnimations.emplace(object.key, std::move(animations));
         return;
     }
     propAnimations.emplace(object.key,
-                           graphics_.composite(appearance.category, appearance.token, appearance.mode,
+                           graphics.composite(appearance.category, appearance.token, appearance.mode,
                                                appearance.weapon, &equipment));
 }
 void SceneAssets::loadProps(const Region &region) {

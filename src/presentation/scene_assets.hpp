@@ -15,6 +15,7 @@ class SceneAssets {
     Archives &archives_;
     // Mutable so the const draw path can populate the on-demand caches below.
     mutable Graphics graphics_;
+    mutable Graphics actTwoGraphics_;
     Graphics uiGraphics_;
     Graphics unitsGraphics_;
     AutomapCatalog automapCatalog_;
@@ -103,6 +104,7 @@ class SceneAssets {
     // so a session no longer pays for every level in the act up front.
     mutable std::vector<std::vector<Sprite>> regionTiles;
     std::vector<std::vector<const Tile *>> regionTileSources;
+    std::vector<int> regionActs_;
     mutable std::vector<bool> regionTilesUploaded;
     std::set<std::string, std::less<>> propArtKeys;
     mutable bool propArtReported = false;

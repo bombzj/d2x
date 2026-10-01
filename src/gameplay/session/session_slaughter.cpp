@@ -1,6 +1,7 @@
 #include "gameplay/simulation/simulation.hpp"
 #include "gameplay/session/session.hpp"
 #include "core/random.hpp"
+#include <algorithm>
 
 namespace d2x {
 void GameSession::updateSlaughterQuest(const EnemyDied &death) {
@@ -45,8 +46,23 @@ void GameSession::completeActOne(EntityId npc) {
         return;
     auto &record = simulation_->state_.player.actOneQuests
         .at(size_t(state().population.difficulty)).at(questIndex(ActOneQuest::SistersToTheSlaughter));
-    if (record.stage != uint32_t(SlaughterStage::PassageReady)) return;
+    if (record.stage < uint32_t(SlaughterStage::PassageReady) || state().player.dead) return;
+    const auto destination = std::find_if(regions_.begin(), regions_.end(), [](const Region &region) {
+        return int(region.definition.id) == 40 && region.definition.safe;
+    });
+    if (destination == regions_.end()) {
+        simulation_->emit(InteractionFailed{npc, "Original Lut Gholein town is unavailable."});
+        return;
+    }
     if (slaughterAdvance(record, SlaughterStage::Completed))
         simulation_->emit(QuestAdvanced{ActOneQuest::SistersToTheSlaughter, record.stage});
+    engagedNpc_ = {};
+    enter(destination->definition.id);
+    for (const auto &object : region().objects)
+        if (object.name == "Waypoint" && object.interaction == Interaction::Travel) {
+            if (simulation_->state_.waypoints.emplace(region().definition.id, state().time).second)
+                simulation_->emit(WaypointActivated{object.id});
+            break;
+        }
 }
 } // namespace d2x

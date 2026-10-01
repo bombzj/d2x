@@ -15,6 +15,7 @@ struct MonsterRecord {
     std::string rightHandVariant, leftHandVariant;
     std::vector<std::string> shieldVariants;
     std::array<std::string, 8> specialVariants;
+    std::array<std::string, 16> components;
     size_t sourceRow = 0;
     int index = -1, rarity = 0, minGroup = 0, maxGroup = 0, partyMin = 0, partyMax = 0;
     int sparse = 0, alignment = 0, normalLevel = 0, transLevel = 0;

@@ -86,11 +86,11 @@ Texture2D upload(const Color *pixels, int width, int height) {
     return texture;
 }
 } // namespace
-PaletteBlendView::PaletteBlendView(Archives &archives) {
+PaletteBlendView::PaletteBlendView(Archives &archives, int act) {
     // OpenD2 PL2File::pScreen and OpenDiablo2 PL2::AdditiveBlend.
     // 256 RGBA entries, 49 one-index transforms, then three alpha tables.
     constexpr size_t screenOffset = 0x33500;
-    const auto bytes = archives.read("data/global/palette/act1/pal.pl2");
+    const auto bytes = archives.read("data/global/palette/act" + std::to_string(act + 1) + "/pal.pl2");
     if (bytes.size() < screenOffset + 256 * 256)
         throw std::runtime_error("Original Act 1 PL2 screen table is truncated");
     std::array<Color, 256> colors{};

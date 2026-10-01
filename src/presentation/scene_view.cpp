@@ -24,7 +24,7 @@ void main() {
 )";
 } // namespace
 SceneView::SceneView(Archives &archives, const GameSession &session)
-    : session_(session), assets_(archives, session), paletteBlend_(archives), painter_(assets_.font),
+    : session_(session), assets_(archives, session), paletteBlend_(archives), actTwoPaletteBlend_(archives, 1), painter_(assets_.font),
       speechPainter_(assets_.speechFont) {
     projectileVisualRandom_ = session_.visualSeed();
     view_.inventory.syncCursor(session_);
@@ -183,7 +183,7 @@ void SceneView::drawLighting() const {
             : std::max(0.f, view_.animationTime - view_.cainPortalAnimationStarted);
         appendObject(60, elapsed < opening.frames / opening.fps ? 1 : 2, staticUnitPosition(*position));
     }
-    lighting_.draw(paletteBlend_, level, player, screen(player), view_.zoom,
+    lighting_.draw(level.act == 1 ? actTwoPaletteBlend_ : paletteBlend_, level, player, screen(player), view_.zoom,
                    session_.characterStats().lightRadius, lights);
 }
 std::string playerAnimationMode(const PlayerState &p) {
@@ -540,6 +540,8 @@ void SceneView::advance(float dt) {
                         notice("Restored at: " + value.name);
                     } else if (value.interaction == Interaction::Travel) {
                         view_.waypointSource = value.name == "Waypoint" ? value.object : EntityId{};
+                        const auto level = session_.worldContent().levels().find(int(session_.state().area.region));
+                        view_.waypointAct = level == session_.worldContent().levels().end() ? 0 : level->second.act;
                         view_.travelPage = 0;
                         view_.travelMenu = true;
                       } else if (value.interaction == Interaction::Heal ||
@@ -637,6 +639,7 @@ std::vector<WorldEntry> SceneView::travelEntries() const {
             continue;
         const bool unlocked = session_.waypointUnlocked(region.definition.id);
         auto record = session_.worldContent().levels().find(int(region.definition.id));
+        if (record == session_.worldContent().levels().end() || record->second.act != view_.waypointAct) continue;
         int order = record == session_.worldContent().levels().end() ? 999 : record->second.waypoint;
         ordered.push_back({order, {int(region.definition.id), region.definition.name,
                           unlocked ? "Activated" : "Not activated", {},

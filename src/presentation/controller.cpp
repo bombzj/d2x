@@ -278,7 +278,6 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
         else if (action == 8) {
             session_.submit(CompleteActOne{ui.dialogueObject});
             ui.npcMenu = false;
-            view_.notice("The passage east is open. Act II travel is not yet available.");
         }
         else if (action == 4) {
             session_.submit(EndNpcConversation{ui.dialogueObject});

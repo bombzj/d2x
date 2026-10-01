@@ -110,7 +110,7 @@ void waypoints(CharacterSaveData &snapshot, D2sFixedSections &sections, const Cl
         if (writing) {
             if (snapshot.waypoints.contains(RegionId(*id))) value |= bit;
         } else if (value & bit) {
-            require(*id >= 1 && *id <= 39, "waypoints outside supported Act I");
+            require(*id >= 1 && *id <= 40, "waypoints outside Act I and Lut Gholein");
             snapshot.waypoints.emplace(RegionId(*id), 0.f);
         }
     }
@@ -243,8 +243,9 @@ CharacterSaveData decodeSave(std::span<const uint8_t> bytes, const ClassicData &
     snapshot.difficulty = header.difficulty;
     for (unsigned difficulty = 0; difficulty < 3; ++difficulty)
         if (header.towns[difficulty] & 0x80) snapshot.difficulty = int(difficulty);
-    require((header.towns[size_t(snapshot.difficulty)] & 7) == 0, "last act is not supported");
-    snapshot.lastRegion = RegionId::Encampment;
+    const auto act = header.towns[size_t(snapshot.difficulty)] & 7;
+    require(act <= 1, "last act is not supported");
+    snapshot.lastRegion = act == 1 ? RegionId(40) : RegionId::Encampment;
     size_t cursor = fixedEnd;
     const auto stats = readD2sStats(bytes.subspan(cursor), content.tables.at("itemstatcost"));
     cursor += stats.bytesRead;
@@ -343,8 +344,8 @@ Bytes encodeSave(const CharacterSaveData &source, const ClassicData &content) {
     header.mapSeed = snapshot.mapSeed; header.difficulty = uint8_t(snapshot.difficulty);
     header.saved = uint32_t(std::time(nullptr)); if (!header.created) header.created = header.saved;
     for (auto &town : header.towns) town &= 0x7F;
-    header.towns[header.difficulty] = 0x80;
-    header.lastLevel = unsigned(snapshot.lastRegion); header.lastTown = 1;
+    header.towns[header.difficulty] = uint8_t(0x80 | (int(snapshot.lastRegion) == 40 ? 1 : 0));
+    header.lastLevel = unsigned(snapshot.lastRegion); header.lastTown = int(snapshot.lastRegion) == 40 ? 40 : 1;
     for (size_t index = 0; index < player.skillHotkeys.size(); ++index) {
         const auto &key = player.skillHotkeys[index];
         header.hotkeys[index] = key.skill == -2 ? UINT32_MAX
