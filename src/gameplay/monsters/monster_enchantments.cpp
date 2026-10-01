@@ -46,7 +46,8 @@ void Simulation::updateMonsterEnchantments() {
             }
             if (mods.has(18)) launchMonsterEnchantmentMissiles(enemy, 194);
         }
-        if (enemy.hp <= 0 || !mods.aura || mods.aura->skill == 98 || mods.aura->skill == 108 || state_.frame < enemy.nextAuraFrame) continue;
+        if (enemy.hp <= 0 || !mods.aura || mods.aura->skill == 98 || mods.aura->skill == 108 ||
+            mods.aura->skill == 122 || state_.frame < enemy.nextAuraFrame) continue;
         const auto &aura = *mods.aura;
         enemy.nextAuraFrame = state_.frame + EffectFrame(aura.periodFrames);
         auto apply = [&](CombatEffectSet &effects, bool owner) {

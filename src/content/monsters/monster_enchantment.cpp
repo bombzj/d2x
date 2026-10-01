@@ -105,7 +105,7 @@ MonsterAura aura(const ClassicData &data, int skill, int rank) {
 }
 }
 void loadAuraSkills(ClassicData &data) {
-    for (int skill : {98, 108}) {
+    for (int skill : {98, 108, 122}) {
         const auto definition = aura(data, skill, 1);
         if (definition.periodFrames < 5 || definition.state.id < 0 || definition.ownerState.id < 0)
             throw std::runtime_error("Original aura lacks state or periodic data");

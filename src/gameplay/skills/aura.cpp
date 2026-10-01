@@ -38,7 +38,8 @@ void Simulation::updateAuras() {
         pulse(combatUnit(state_.player.id), state_.player.aura->definition, state_.player.aura->nextFrame);
     for (auto &enemy : state_.area.enemies)
         if (enemy.identity.enchantment && enemy.identity.enchantment->aura &&
-            (enemy.identity.enchantment->aura->skill == 98 || enemy.identity.enchantment->aura->skill == 108))
+            (enemy.identity.enchantment->aura->skill == 98 || enemy.identity.enchantment->aura->skill == 108 ||
+             enemy.identity.enchantment->aura->skill == 122))
             pulse(combatUnit(enemy.id), *enemy.identity.enchantment->aura, enemy.nextAuraFrame);
 }
 }
