@@ -23,6 +23,7 @@ struct CombatStateDefinition {
     bool staminaBarBlue = false;
     bool curse = false;
     bool hideOnDeath = false, shatterOnDeath = false, corpseUnselectable = false;
+    bool curable = false;
 };
 enum class CombatEffectSource { Skill, Monster, Shrine, Item, Environment };
 struct EffectSource {
@@ -100,6 +101,7 @@ class CombatEffectSet {
     std::vector<RemovedCombatEffect> onHit();
     std::vector<RemovedCombatEffect> remove(EffectHandle handle);
     std::vector<RemovedCombatEffect> removeState(int stateId);
+    void shortenCurableCurses(EffectFrame now, int remainingPercent);
     std::vector<RemovedCombatEffect> removeSource(CombatEffectSource kind, EntityId source);
     std::vector<RemovedCombatEffect> clear();
     bool hasState(int stateId, EffectFrame now) const;

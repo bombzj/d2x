@@ -41,7 +41,7 @@ SkillSpec elementalSpec(const DataTable &table, size_t row, bool missile) {
         spec.coldFramesPerLevel[i] = number(table, row, "ELevLen" + std::to_string(i + 1));
     return spec;
 }
-MonsterAura aura(const ClassicData &data, int skill, int rank, const std::map<int, int> &learned = {}) {
+MonsterAura aura(const ClassicData &data, int skill, int rank, const std::map<int, int> &learned = {}, int prayerRank = 0) {
     const auto &table = data.tables.at("skills");
     const auto row = numberedRow(table, "Id", skill);
     auto value = [&](std::string_view field) { return table.value(row, field); };
@@ -57,6 +57,14 @@ MonsterAura aura(const ClassicData &data, int skill, int rank, const std::map<in
         if (formula == "ln34") return linear(3);
         if (formula == "ln56/2") return linear(5) / 2;
         if (formula == "dm34") return diminishing(3);
+        if (formula == "100-dm34") return 100 - diminishing(3);
+        if (formula == "dm56") return diminishing(5);
+        if (formula == "edns") return int(resolveSkill(elementalSpec(table, row, false), rank, {}).minimumDamage * 256.f);
+        if (formula == "skill('Prayer'.edns)") {
+            if (prayerRank <= 0) return 0;
+            const auto prayerRow = numberedRow(table, "Id", 99);
+            return int(resolveSkill(elementalSpec(table, prayerRow, false), prayerRank, {}).minimumDamage * 256.f);
+        }
         if (formula == "-dm34") return -diminishing(3);
         if (formula == "-dm56") return -diminishing(5);
         if (formula == "-par5") return -parameter(5);
@@ -72,6 +80,7 @@ MonsterAura aura(const ClassicData &data, int skill, int rank, const std::map<in
     MonsterAura result;
     result.skill = skill;
     result.rank = rank;
+    result.manaPerPulse = float((int64_t(n("mana")) + int64_t(rank - 1) * n("lvlmana")) << n("manashift")) / 256.f;
     result.filter = uint32_t(n("aurafilter"));
     result.radius = float(evaluate(value("aurarangecalc")));
     result.periodFrames = skill == 66 ? evaluate(value("auralencalc")) : n("perdelay");
@@ -85,7 +94,12 @@ MonsterAura aura(const ClassicData &data, int skill, int rank, const std::map<in
         if (stat.empty()) continue;
         const int amount = evaluate(value("aurastatcalc" + std::to_string(slot)));
         auto &m = result.modifiers;
-        if (stat == "damagepercent") m.combat.damagePercent = amount;
+        if (stat == "item_poisonlengthresist") result.harmfulDurationPercent = amount;
+        else if (stat == "hitpoints") result.lifePerPulse = float(amount) / 256.f;
+        else if (stat == "staminarecoverybonus") m.staminaRecoveryBonus = amount;
+        else if (stat == "skill_staminapercent") m.staminaPercent = amount;
+        else if (stat == "manarecoverybonus") m.combat.manaRecovery = amount;
+        else if (stat == "damagepercent") m.combat.damagePercent = amount;
         else if (stat == "item_tohit_percent") m.combat.attackRatingPercent = amount;
         else if (stat == "attackrate") m.combat.attackRate = amount;
         else if (stat == "other_animrate") m.otherAnimationRate = amount;
@@ -123,7 +137,7 @@ MonsterAura aura(const ClassicData &data, int skill, int rank, const std::map<in
 }
 }
 void loadAuraSkills(ClassicData &data) {
-    for (int skill : {98, 100, 102, 104, 105, 108, 110, 114, 118, 122, 123, 125}) {
+    for (int skill : {98, 99, 100, 102, 104, 105, 108, 109, 110, 114, 115, 118, 120, 122, 123, 125}) {
         const auto definition = aura(data, skill, 1);
         if (definition.periodFrames < 5 || definition.ownerState.id < 0)
             throw std::runtime_error("Original aura lacks state or periodic data");
@@ -151,10 +165,10 @@ void loadAuraSkills(ClassicData &data) {
 }
 std::optional<AuraDefinition> resolveAura(const ClassicData &data, int skill, int rank,
     const std::map<int, int> &learned, int fireMasteryPercent,
-    int lightningMasteryPercent, int coldMasteryPercent) {
+    int lightningMasteryPercent, int coldMasteryPercent, int prayerRank) {
     const auto *record = data.skills.find(skill);
     if (!record || !record->auraImplemented || rank <= 0) return std::nullopt;
-    auto result = aura(data, skill, rank, learned);
+    auto result = aura(data, skill, rank, learned, prayerRank);
     int bonus = 100;
     for (const auto &[synergy, percent] : result.synergies)
         if (const auto found = learned.find(synergy); found != learned.end()) bonus += found->second * percent;

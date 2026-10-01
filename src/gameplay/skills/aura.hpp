@@ -12,6 +12,8 @@ struct AuraDefinition {
     int ownerDamageBonus = 0, elementalMultiplier = 0;
     int element = -1;
     float minimumDamage = 0, maximumDamage = 0;
+    float lifePerPulse = 0, manaPerPulse = 0;
+    int harmfulDurationPercent = 100;
     bool hostile = false;
     uint32_t filter = 0;
 };

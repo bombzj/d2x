@@ -906,6 +906,7 @@ void GameSession::tick(float dt, Vec keyboard, bool forceRun) {
             if (effect.spec.state.id == ownerState && effect.spec.source.entity == simulation_->state_.player.id &&
                 effect.spec.source.definition == activeAura->definition.skill) remove.push_back(effect.handle);
         for (auto handle : remove) simulation_->state_.player.combatEffects.remove(handle);
+        simulation_->state_.player.auraSuppressesManaRegen = false;
         if (activeAura->definition.skill == 114 && !state().player.dead)
             simulation_->state_.player.combatEffects.removeState(content_.states.at("shatter").definition.id);
         activeAura.reset();
@@ -913,11 +914,11 @@ void GameSession::tick(float dt, Vec keyboard, bool forceRun) {
     }
     if (!activeAura && auraRank > 0)
         if (auto aura = resolveAura(content_, auraSkill, auraRank, state().player.skillRanks,
-            fireMasteryPercent(), lightningMasteryPercent(), characterStats().combat.coldSkillDamagePercent))
+            fireMasteryPercent(), lightningMasteryPercent(), characterStats().combat.coldSkillDamagePercent, effectiveSkillRank(99)))
             activeAura = ActiveAura{*aura, state().frame};
     if (activeAura)
         if (auto aura = resolveAura(content_, auraSkill, auraRank, state().player.skillRanks,
-            fireMasteryPercent(), lightningMasteryPercent(), characterStats().combat.coldSkillDamagePercent))
+            fireMasteryPercent(), lightningMasteryPercent(), characterStats().combat.coldSkillDamagePercent, effectiveSkillRank(99)))
             activeAura->definition = *aura;
     simulation_->tick(dt, transitioned ? Vec{} : keyboard, forceRun);
     auto replenished = inventory_.replenish(dt);

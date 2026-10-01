@@ -10,18 +10,31 @@ void Simulation::updateAuras() {
         const EffectFrame period = EffectFrame(std::max(5, aura.periodFrames));
         nextFrame = state_.frame + period;
         const EffectFrame duration = nextFrame - state_.frame + 1;
+        bool restoredLife = false;
         auto apply = [&](CombatUnit target, const CombatStateDefinition &state, bool owner) {
             if (state.id < 0) return;
             if (auraEligible_ && !auraEligible_(target, false)) return;
             for (const auto &effect : target.effects->entries())
                 if (effect.activeAt(state_.frame) && effect.spec.state.id == state.id &&
                     effect.spec.source.definition == aura.skill && effect.spec.source.level > aura.rank) return;
+            const bool enoughMana = !source.player || *source.mana >= aura.manaPerPulse;
+            if (enoughMana && aura.harmfulDurationPercent < 100) {
+                target.effects->shortenCurableCurses(state_.frame, aura.harmfulDurationPercent);
+                const int poisonFrames = std::max(0, int(*target.poisonTime * 25.f + .0001f));
+                *target.poisonTime = float(poisonFrames * aura.harmfulDurationPercent / 100) / 25.f;
+                if (*target.poisonTime == 0) *target.poisonRate = 0;
+            }
+            if (enoughMana && aura.lifePerPulse > 0 && *target.life < target.stats.attributes.maxLife) {
+                const float before = *target.life;
+                restoreUnit(target.id, aura.lifePerPulse);
+                restoredLife |= *target.life > before;
+            }
             CombatEffectSpec effect;
             effect.state = state;
             effect.source = {CombatEffectSource::Skill, source.id, aura.skill, aura.rank};
             effect.stacking = EffectStacking::AuraLevel;
             effect.duration = duration;
-            if (!aura.hostile || !owner) effect.modifiers = aura.modifiers;
+            if ((!aura.hostile || !owner) && enoughMana) effect.modifiers = aura.modifiers;
             if (owner) mergeCharacterModifiers(effect.modifiers, aura.ownerModifiers);
             if (aura.skill == 114 && !owner) {
                 const int limit = unitColdEffect_ ? unitColdEffect_(target) : -50;
@@ -82,6 +95,10 @@ void Simulation::updateAuras() {
                     target.effects->apply(std::move(shatter), state_.frame);
                 }
             }
+        }
+        if (source.player && aura.manaPerPulse > 0) {
+            source.player->auraSuppressesManaRegen = restoredLife;
+            if (restoredLife) *source.mana -= aura.manaPerPulse;
         }
     };
     if (state_.player.aura)

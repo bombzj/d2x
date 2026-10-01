@@ -89,6 +89,13 @@ std::vector<RemovedCombatEffect> CombatEffectSet::remove(EffectHandle handle) {
 std::vector<RemovedCombatEffect> CombatEffectSet::removeState(int stateId) {
     return erase([=](const auto &effect) { return effect.spec.state.id == stateId; }, EffectRemoval::Dispelled);
 }
+void CombatEffectSet::shortenCurableCurses(EffectFrame now, int remainingPercent) {
+    if (remainingPercent < 0 || remainingPercent > 100)
+        throw std::invalid_argument("Invalid curse remaining duration percentage");
+    for (auto &effect : effects_)
+        if (effect.activeAt(now) && effect.spec.state.curse && effect.spec.state.curable && effect.expiresAt)
+            effect.expiresAt = now + (*effect.expiresAt - now) * unsigned(remainingPercent) / 100;
+}
 std::vector<RemovedCombatEffect> CombatEffectSet::removeSource(CombatEffectSource kind, EntityId source) {
     return erase([=](const auto &effect) { return effect.spec.source.kind == kind &&
                                                effect.spec.source.entity == source; }, EffectRemoval::SourceRemoved);

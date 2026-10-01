@@ -159,6 +159,8 @@ void Simulation::tick(float dt, Vec keyboard, bool forceRun) {
     state_.time += dt;
     if (auto removed = p.combatEffects.expire(state_.frame); !removed.empty())
         combatEffectsChanged(removed);
+    if (!p.aura || !p.combatEffects.hasState(p.aura->definition.ownerState.id, state_.frame))
+        p.auraSuppressesManaRegen = false;
     advanceSkillCasting(p, dt, keyboard.length() > .1f);
     advanceWeaponAttack();
     p.castTime = std::max(0.f, p.castTime - dt);

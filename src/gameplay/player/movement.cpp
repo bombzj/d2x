@@ -24,7 +24,8 @@ void Simulation::moveTo(Vec target) {
 }
 void Simulation::updatePlayer(float dt, Vec keyboard) {
     auto &p = state_.player;
-    p.mana = std::min(float(state_.player.attributes.maxMana), p.mana + dt * state_.player.attributes.manaRegen);
+    if (!p.auraSuppressesManaRegen)
+        p.mana = std::min(float(state_.player.attributes.maxMana), p.mana + dt * state_.player.attributes.manaRegen);
     if (state_.player.attributes.combat.replenishLife)
         p.hp = std::clamp(p.hp + dt * state_.player.attributes.combat.replenishLife * 25.f / 256.f,
                           1.f, float(state_.player.attributes.maxLife));
