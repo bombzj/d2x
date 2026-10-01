@@ -180,6 +180,7 @@ MonsterCatalog::MonsterCatalog(Archives &archives, const DataTable &stats) {
         m.spawnCollision = extended.number(extra->second, "spawnCol").value_or(0);
         m.hitClass = extended.number(extra->second, "HitClass").value_or(0);
         m.corpseSelectable = extended.number(extra->second, "corpseSel").value_or(0) != 0;
+        m.resurrectionMode = normalize(std::string(extended.value(extra->second, "ResurrectMode")));
         m.getHitMode = extended.number(extra->second, "mGH").value_or(0) != 0;
         m.deadMode = extended.number(extra->second, "mDD").value_or(0) != 0;
         m.skill2Mode = extended.number(extra->second, "mS2").value_or(0) != 0;
@@ -341,6 +342,10 @@ MonsterCatalog::MonsterCatalog(Archives &archives, const DataTable &stats) {
         u.index = uniques.number(row, "hcIdx").value();
         u.minGroup = uniques.number(row, "MinGrp").value_or(0);
         u.maxGroup = uniques.number(row, "MaxGrp").value_or(0);
+        u.autoPosition = uniques.number(row, "AutoPos").value_or(0) != 0;
+        u.stacks = uniques.number(row, "Stacks").value_or(0) != 0;
+        u.uniqueTrans = {uniques.number(row, "Utrans").value_or(0),
+            uniques.number(row, "Utrans(N)").value_or(0), uniques.number(row, "Utrans(H)").value_or(0)};
         for (int i = 0; i < 3; ++i)
             u.modifiers[i] = uniques.number(row, "Mod" + std::to_string(i + 1)).value_or(0);
         u.treasureClasses = {std::string(uniques.value(row, "TC")), std::string(uniques.value(row, "TC(N)")),

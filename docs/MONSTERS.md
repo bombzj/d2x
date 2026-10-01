@@ -8,6 +8,18 @@
 
 2026-10-01：复审依据当前源码、当前 `assets/mpq2` 的 Levels／MonStats／MonStats2／DifficultyLevels／MonPreset／SuperUniques，以及固定本地 D2MOO `5596f5c`。以下九项表格保留修复前的审阅证据；当前状态以本节各阶段交接为准，不能继续把旧源码行号视为现状。
 
+### 已有基型固定金怪
+
+2026-10-01：仅开放 Bishibosh、Bonebreak、Coldcrow、Rakanishu、Treehead WoodFist、Pitspawn Fouldog、Corpsefire、The Cow King 的完整共用实例初始化；其他固定首领／Boss 不因此套普通基型公式。SuperUniques.Class／Mod1–3／MinGrp–MaxGrp／各难度 TC 与名称仍读当前 MPQ。首领保留 SuperUnique 身份，原普通生命先掷骰再应用独特生命百分比、等级 +3／经验五倍／停再生及固定词缀；普通不额外抽随机词缀，噩梦追加一项、地狱两项，沿 MonUMod 原过滤与权重、不重复固定项。直属随从复用 bUnique=false 的强化和收益，不继承主人事件。Stacks=0 的重复同区预设只放一次，重访保留已有区域实例。
+
+Bishibosh 复用巫师原两次射击／近战／命令，再接暗金回调：附近普通沉沦魔或巫师尸体不要求直属／同变体，排除 Unique／Champion／SuperUnique、碎尸和不可选尸体；整数平方坐标距离与出手复验一致，保留遍历末个合格目标。MonStats2.ResurrectMode 在内容层类型化，巫师 NU 立即恢复，沉沦魔仍用原 S1；未虚构缺失的巫师 S1。普通巫师仍限原身份指定的准确直属沉沦魔。依据本地 D2MOO 5596f5c 的 MonsterUnique::D2GAME_SpawnSuperUnique_6FC6F690／SpawnMinions、AiThink::Fn013／TargetCallback_FallenShaman、SkillMonst::SrvDo097_Resurrect、MonsterSpawn::GetResurrectMode；墓穴 Bonebreak 使用既有 DrlgMaze 原 147–150 特殊房间，关卡为 18，不是洞窟第二层 13。
+
+固定首领用原 TBL 名称／金色血条／词缀描述；生命和死亡动画共用 SuperUniques.Utrans 三难度映射。当前 MPQ 的全局 randtransforms.dat 为 30 张映射，固定字段范围包含 31，按两张保留槽减 2 读取全局图，而不是普通 TransLvl+2 的物种 palshift.dat。原图长度与透明索引校验保留；本地 reference 没有完整客户端消费者，索引／混色仍为资源结构适配，不能声称逐像素认证。AutoPos 字段已读取，但仍沿当前 DS1 点位及局部调整，不是原房间自动选位；去重范围当前为区域规划器。原房间随机流、动态占位、完整模式事件／弹体创建快照及声音边界继续沿公共实现。
+
+普通难度包内冒烟：seed=210，临时女巫通过正式传送接近自然预设；八个首领均有真实基型、原家族 AI、有效 combat／enchantment、固定词缀和准确直属随从。随从数量按上列顺序为 2／5／4／8／2／4／5／6。常规 1 HP 承伤成立；Bonebreak／Pitspawn／牛王击杀固定 TC 正常，deferred=null，直属随从经验正常。Bishibosh 复活无主普通巫师至 7 HP；Rakanishu 受击同帧生成 8 枚 chargedbolt，Coldcrow 死亡 4 帧后 64 枚新星。牛王原图截图已查看。修复了冒烟发现的巫师 S1 缺图和 Utrans 读错局部色表；最后复活模式装载收尾另做普通复验。后续验证按用户要求只做普通难度，未穷举全部战斗／概率分支、火死亡伤害／诅咒／幽灵一击和客户端精确效果。未新增测试程序，临时角色不读写存档，D2S v96 不变。
+
+牛王本体与普通 Cow King TC 已接，正式牛场入口、牛王击杀资格与额外奖励仍暂缓：D2MOO A1Q4_CreateCowPortal 要求资料片 A5Q6 通关奖励标志、营地、A1Q4 CUSTOM6／7；当前项目没有第五幕通关流程，不伪造标志或以开发 travel 代替正式入口。本批没有改变这些任务或 D2S 字段。Windows Release 构建、固定运行包和授权提交状态见 [构建](BUILD_AND_SHARE.md)。下方阶段记录中的“固定首领未开放”不再适用于本节八项。
+
 ### 第二阶段基础接入与暂缓
 
 2026-10-01：自然 Champion／Unique 出生接入既有原表强化，保留人口已经选定的类别，不在实例化时再次掷勇士概率。每个实例先用真实身份普通数值掷基础生命，再按 MonUMod 原生命百分比／勇士变体比例强化既有生命；不按强化后的整数区间重掷。所有本批主人初始化后，按 ownerSpawnKey 查找准确主人，直属随从继承原 bUnique=false 的生命、+3 等级、经验五倍及强壮／快速／元素／法力燃烧数值，保留再生且不继承主人事件。勇士同伴独立初始化，不当作金怪随从；普通 Party 直属单位受强化时使用 Minion 收益类别。公共承伤、命中、再生、家族 AI、经验与 TC 读取实例 enchantment，自然精英不再因没有初始化而缺有效属性。未知或未实现基型仍保持既有边界，未开放 SuperUnique／Boss。

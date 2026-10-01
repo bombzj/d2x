@@ -10,6 +10,7 @@ struct FallenShamanDecision {
 };
 bool fallenShamanResurrectionTarget(const Enemy &shaman, const Enemy &corpse,
                                    const MonsterResurrection &skill);
+int fallenShamanCorpseDistance(const Enemy &shaman, const Enemy &corpse, int size);
 FallenShamanDecision fallenShamanThink(Enemy &enemy, const MonsterAiProfile &rules,
                                       float distance, bool inCombat, bool hasCorpse, float alternateDistance);
 } // namespace d2x

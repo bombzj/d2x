@@ -11,7 +11,7 @@
 
 namespace d2x {
 struct MonsterRecord {
-    std::string id, base, next, name, token, ai, spawn, sound, baseWeapon;
+    std::string id, base, next, name, token, ai, spawn, sound, baseWeapon, resurrectionMode;
     std::string rightHandVariant, leftHandVariant;
     std::vector<std::string> shieldVariants;
     std::array<std::string, 8> specialVariants;
@@ -70,6 +70,8 @@ struct SuperUniqueRecord {
     std::string id, monster, name;
     int index = -1, minGroup = 0, maxGroup = 0;
     std::array<int, 3> modifiers{};
+    std::array<int, 3> uniqueTrans{};
+    bool autoPosition = false, stacks = false;
     std::array<std::string, 3> treasureClasses;
 };
 enum class MonsterPresetKind { Unknown, Monster, SuperUnique, Place };

@@ -135,9 +135,14 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
         return false;
     };
     simulation_->initializeNaturalElite_ = [this](Enemy &enemy, const Enemy *owner) {
-        if (enemy.identity.enchantment || (owner ? owner->identity.rank != MonsterRank::Unique ||
+        const auto *fixed = monsterContent_.superUnique(enemy.identity.superUnique);
+        const bool supportedFixed = fixed && (fixed->id == "Bishibosh" || fixed->id == "Bonebreak" ||
+            fixed->id == "Coldcrow" || fixed->id == "Rakanishu" || fixed->id == "Treehead WoodFist" ||
+            fixed->id == "Pitspawn Fouldog" || fixed->id == "Corpsefire" || fixed->id == "The Cow King");
+        if (enemy.identity.enchantment || (owner ? (owner->identity.rank != MonsterRank::Unique &&
+            owner->identity.rank != MonsterRank::SuperUnique) ||
             !owner->identity.enchantment : enemy.identity.rank != MonsterRank::Champion &&
-            enemy.identity.rank != MonsterRank::Unique)) return;
+            enemy.identity.rank != MonsterRank::Unique && !supportedFixed)) return;
         const auto *record = monsterContent_.find(enemy.identity.monster);
         if (!record || record->boss || monsterImplementation(record->id).substitute) return;
         auto identity = enemy.identity;
@@ -147,7 +152,8 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
         auto modifiers = owner
             ? inheritedMonsterEnchantment(content_, *record, *base, state().population.difficulty, *owner->identity.enchantment)
             : rollMonsterEnchantment(content_, *record, *base, state().population.difficulty,
-                                     enemy.combatRandom, enemy.identity.rank, true, false, enemy.identity.championVariantAllowed);
+                                     enemy.combatRandom, enemy.identity.rank, true, false, enemy.identity.championVariantAllowed,
+                                     supportedFixed ? fixed : nullptr);
         int64_t life = int64_t(enemy.maxHp * 256.f);
         life += life * modifiers.lifePercent / 100;
         life = life * modifiers.lifeScalePercent / 100;
@@ -455,8 +461,12 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
     };
     simulation_->monsterResurrectionDuration_ = [this](const Enemy &enemy)
         -> std::optional<float> {
-        if ((enemy.kind != MonsterKind::Fallen && enemy.kind != MonsterKind::NecroSkeleton) ||
-            monsterImplementation(enemy.identity.monster).substitute) return std::nullopt;
+        const auto *record = monsterContent_.find(enemy.identity.monster);
+        if (!record || monsterImplementation(enemy.identity.monster).substitute) return std::nullopt;
+        if (enemy.kind == MonsterKind::FallenShaman)
+            return record->resurrectionMode == "nu" ? std::optional<float>(0.f) : std::nullopt;
+        if (enemy.kind != MonsterKind::Fallen && enemy.kind != MonsterKind::NecroSkeleton)
+            return std::nullopt;
         const auto *motion = monsterContent_.motion(enemy.kind, "s1");
         return motion ? std::optional<float>(motion->duration) : std::nullopt;
     };

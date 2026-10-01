@@ -93,7 +93,7 @@ bool Simulation::handleMonsterSpecialAi(Enemy &enemy, const MonsterAiProfile &ai
             if (!rooms_->nearby(enemy.pos, candidate.pos) || relation(enemy.id, candidate.id) != Relation::Allied ||
                 !skill || !fallenShamanResurrectionTarget(enemy, candidate, *skill)) continue;
             const int size = monsterSize_ ? monsterSize_(enemy) : 2;
-            const float separation = float(monsterAiDistance(enemy.pos, size, candidate.pos));
+            const float separation = float(fallenShamanCorpseDistance(enemy, candidate, size));
             if (separation > closest) continue;
             const auto duration = monsterDeathDuration_
                 ? monsterDeathDuration_(candidate) : std::nullopt;

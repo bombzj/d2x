@@ -4,13 +4,25 @@
 namespace d2x {
 bool fallenShamanResurrectionTarget(const Enemy &shaman, const Enemy &corpse,
                                    const MonsterResurrection &skill) {
+    const bool unique = shaman.identity.rank == MonsterRank::Unique ||
+                        shaman.identity.rank == MonsterRank::SuperUnique;
     return shaman.kind == MonsterKind::FallenShaman && corpse.corpseAvailable() &&
-           corpse.id != shaman.id && corpse.kind == MonsterKind::Fallen &&
-           !skill.minion.empty() && corpse.identity.monster == skill.minion &&
-           !shaman.identity.spawnKey.empty() && corpse.identity.ownerSpawnKey == shaman.identity.spawnKey &&
+           corpse.id != shaman.id && (unique ?
+               corpse.kind == MonsterKind::Fallen || corpse.kind == MonsterKind::FallenShaman :
+               corpse.kind == MonsterKind::Fallen && !skill.minion.empty() &&
+               corpse.identity.monster == skill.minion && !shaman.identity.spawnKey.empty() &&
+               corpse.identity.ownerSpawnKey == shaman.identity.spawnKey) &&
            (corpse.identity.rank == MonsterRank::Normal ||
             corpse.identity.rank == MonsterRank::Minion) &&
            !monsterImplementation(corpse.identity.monster).substitute;
+}
+int fallenShamanCorpseDistance(const Enemy &shaman, const Enemy &corpse, int size) {
+    if (shaman.identity.rank == MonsterRank::Unique || shaman.identity.rank == MonsterRank::SuperUnique) {
+        const int horizontal = int(shaman.pos.x) - int(corpse.pos.x);
+        const int vertical = int(shaman.pos.y) - int(corpse.pos.y);
+        return horizontal * horizontal + vertical * vertical;
+    }
+    return monsterAiDistance(shaman.pos, size, corpse.pos);
 }
 FallenShamanDecision fallenShamanThink(Enemy &enemy, const MonsterAiProfile &rules,
                                       float distance, bool inCombat, bool hasCorpse, float alternateDistance) {

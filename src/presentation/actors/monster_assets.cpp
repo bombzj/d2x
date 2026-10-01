@@ -44,6 +44,19 @@ const std::map<std::string, GpuAnimation> &SceneAssets::monsterAnimationSet(
         }
         return target;
     }
+    if (identity && identity->enchantment && identity->rank == MonsterRank::SuperUnique) {
+        if (const auto *fixed = session.monsterContent().superUnique(identity->superUnique)) {
+            const int palette = fixed->uniqueTrans.at(size_t(session.state().population.difficulty));
+            auto &target = monsterVariantAnimations[key + "#fixed" + std::to_string(palette)];
+            if (target.empty()) {
+                auto art = source->second;
+                art.paletteOverride = palette;
+                art.fixedPalette = true;
+                loadMonsterActor(session, art, target);
+            }
+            return target;
+        }
+    }
     if (identity && identity->enchantment &&
         (identity->rank == MonsterRank::Champion || identity->rank == MonsterRank::Unique)) {
         const auto &actor = *source->second.actor;
@@ -99,7 +112,16 @@ void SceneAssets::loadMonsterActor(const GameSession &session, const MonsterArtS
     const auto palettePath = "data/global/monsters/" + std::string(definition.token) +
                              "/cof/palshift.dat";
     std::optional<std::array<uint8_t, 256>> colors;
-    if (archives_.contains(palettePath))
+    if (entry.fixedPalette && entry.paletteOverride >= 2) {
+        const auto data = archives_.read("data/global/monsters/randtransforms.dat");
+        const auto offset = size_t(entry.paletteOverride - 2) * 256;
+        if (data.size() % 256 || offset + 256 > data.size())
+            throw std::runtime_error("Invalid MPQ SuperUnique Utrans: " + actor.id);
+        colors.emplace();
+        std::copy_n(data.begin() + offset, colors->size(), colors->begin());
+        if ((*colors)[0] != 0)
+            throw std::runtime_error("SuperUnique transform changes transparent index: " + actor.id);
+    } else if (archives_.contains(palettePath))
         colors = monsterPalshift(archives_.read(palettePath), entry.paletteOverride >= 0 ? entry.paletteOverride : actor.transLevel);
     else if (actor.transLevel != 0)
         throw std::runtime_error("Monster TransLvl requires missing palshift.dat: " + actor.id);

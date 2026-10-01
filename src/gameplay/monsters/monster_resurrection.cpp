@@ -13,13 +13,13 @@ void Simulation::resolveMonsterResurrection(Enemy &shaman) {
     if (!skill || !corpse || !ai || ai->kind != MonsterAiKind::FallenShaman ||
         relation(shaman.id, corpse->id) != Relation::Allied ||
         !fallenShamanResurrectionTarget(shaman, *corpse, *skill) ||
-        monsterAiDistance(shaman.pos, monsterSize_ ? monsterSize_(shaman) : 2, corpse->pos) >
+        fallenShamanCorpseDistance(shaman, *corpse, monsterSize_ ? monsterSize_(shaman) : 2) >
             ai->params[3] * ai->params[3]) return;
     const auto duration = monsterDeathDuration_ ? monsterDeathDuration_(*corpse) : std::nullopt;
     if (!duration || corpse->deathAge < *duration) return;
     const auto reviveDuration = monsterResurrectionDuration_
         ? monsterResurrectionDuration_(*corpse) : std::nullopt;
-    if (!reviveDuration || *reviveDuration <= 0) return;
+    if (!reviveDuration || *reviveDuration < 0) return;
     corpse->hp = corpse->maxHp;
     corpse->deathAge = corpse->chill = corpse->stun = corpse->hitFlash = corpse->hitDisplay = 0;
     corpse->knockbackRemaining = corpse->knockbackDuration = 0;

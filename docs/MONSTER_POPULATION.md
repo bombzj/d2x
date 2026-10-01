@@ -38,7 +38,7 @@
 | `MonStats.txt` | `Id/hcIdx`、`BaseId/NextInClass/Level`、`isSpawn`、`Rarity`、`MinGrp/MaxGrp`、`sparsePopulate`；`minion1/2`、`PartyMin/Max`；`placespawn/spawn`；启用、阵营、NPC、可杀及首领标记 |
 | `MonStats2.txt` | 通过 `MonStatsEx` 关联并识别 critter／inert，避免把环境单位当作替身敌人 |
 | `MonPreset.txt` | 按 Act 分段保留原始顺序和重复槽位；DS1 的怪物编号解析为普通怪物、固定首领或放置标记 |
-| `SuperUniques.txt` | 首领实际 `Class`、名字、随从范围，以及保留的 `Mod1..3` 与各难度 `TC` 名称 |
+| `SuperUniques.txt` | 首领实际 `Class`、名字、随从范围、`Mod1..3`、各难度 `TC/Utrans`、`Stacks` 去重；`AutoPos` 读取但原房间自动选位未移植 |
 | `MonPlace.txt` | 区分放置标记；支持 unique/champion、bloodraven、fallen/fallenshaman；其他规则明确报告 |
 | `MonUMod.txt` | 第 0 条 `constants` 决定随机精英转成勇士组的机会 |
 | DS1 | Act、固定怪物坐标、原对象索引、已生成 flag；动态怪物不重复绘制成静态物件 |
@@ -54,6 +54,8 @@
 `place_fallen` / `place_fallenshaman` 使用正常区域名单匹配家族，必要时根据 `NextInClass` 和正常区域等级推进，并执行第一幕黑色荒地／泰摩高地／深坑的原代码覆盖。模板没有所属 Levels 记录时不猜等级或名单。
 
 ## 当前地图适配边界
+
+2026-10-01：八个已有基型固定金怪现已接入实例初始化、词缀、直属数值及收益，范围和普通难度包内冒烟见 [固定金怪](MONSTERS.md#已有基型固定金怪)。本文此前“固定首领未初始化／随从暂缓”的描述仅适用于未开放项；指定八项不再受该限制。Stacks=0 在同一区域计划内去重，AutoPos 仍采用原 DS1 点位和局部调整；牛场任务入口不因开发目录可进入地图而完成。
 
 **当前是原表驱动的刷怪系统，不是原版 DRLG 逐种子等价实现。**
 

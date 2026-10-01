@@ -69,10 +69,18 @@ void deathDetails(Json &result, const GameSession &session, EntityId id,
 }
 void listMonsters(Json &result, const Json &request, const GameSession &session, const SceneView &view) {
     result["monsters"] = Json::array();
+    result["pending"] = Json::array();
+    if (!request.value("visible", true))
+        for (const auto &spawn : session.state().area.pendingSpawns)
+            result["pending"].push_back({{"monster", spawn.identity.monster},
+                {"superUnique", spawn.identity.superUnique}, {"spawnKey", spawn.identity.spawnKey},
+                {"ownerSpawnKey", spawn.identity.ownerSpawnKey}, {"rank", monsterRankName(spawn.identity.rank)},
+                {"x", spawn.position.x}, {"y", spawn.position.y}});
     for (const auto &enemy : session.state().area.enemies) {
         if (request.value("visible", true) && !onScreen(enemy, session, view)) continue;
         Json entry = {{"id", enemy.id.value}, {"group", enemy.identity.group},
             {"monster", enemy.identity.monster},
+            {"superUnique", enemy.identity.superUnique}, {"spawnKey", enemy.identity.spawnKey},
             {"rank", monsterRankName(enemy.identity.rank)}, {"hp", enemy.hp},
             {"maxHp", enemy.maxHp}, {"x", enemy.pos.x}, {"y", enemy.pos.y},
             {"freeze", enemy.freeze}, {"chill", enemy.chill},

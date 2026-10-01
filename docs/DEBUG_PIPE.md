@@ -71,6 +71,8 @@ $spawn = .\scripts\Send-D2XCommand.ps1 -Command monster-spawn -Arguments @{monst
 
 `monsters` 同时返回当前 `attackMode`、`attackRemaining`、`impactRemaining` 及已实现外观的 `attackDuration/attackImpact/attackFrames`；Brute、普通骷髅、僵尸和沉沦魔另有 `attack2Duration/attack2Impact/attack2Frames`。这些时序从挂载 MPQ 的 `AnimData.d2` 读取，可在暂停状态逐帧 `step`，确认 A2 模式与命中事件；角色载入将重置怪物。
 
+`monsters` 的已创建单位另返回 `superUnique` 与 `spawnKey`；`visible=false` 时还返回只读 `pending` 自然生成指令，包含身份、固定首领、生成键、直属归属、类别及坐标，没有实体 ID。它不会创建／激活单位，也不能把待生成记录直接传给击杀命令；仍需正常接近或正式技能进入附近房间，再查询已创建实体。
+
 `aiEscaping` 表示 Fallen 正沿见尸逃离路线移动；它与原身份、路线都只在本局维持。可在同一可走房间生成两只 `fallen1`，击杀其中一只再 `step` 一帧观察另一只。原死亡动作时长由运行时 MPQ 的 `AnimData.d2` 决定。`monsters` 同时返回原生成 `group`、`aiCommanded` 和 `skill2Remaining`，可观察同组命令和 S2 喊叫，后二者不会进入角色存档。
 
 `aiCircling` 表示 Brute、Bighead 或 Skeleton Mage 正沿可走路径绕目标行走。可定点生成 `brute2`，逐次 `step` 后查询 `monsters`，在近战攻击两次 `aip3` 掷骰中首次失败、第二次成功时观察该状态和位移；绕行路线只在本局维持。

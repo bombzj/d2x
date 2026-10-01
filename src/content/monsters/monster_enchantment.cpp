@@ -217,18 +217,23 @@ bool monsterShrineEligible(const ClassicData &data, const MonsterRecord &monster
 }
 MonsterEnchantment rollMonsterEnchantment(const ClassicData &data, const MonsterRecord &monster,
     const MonsterCombatProfile &base, int difficulty, uint64_t &random, MonsterRank &rank,
-    bool preserveRank, bool enableSkillEffects, bool championVariantAllowed) {
+    bool preserveRank, bool enableSkillEffects, bool championVariantAllowed, const SuperUniqueRecord *fixed) {
     const auto &mods = data.tables.at("monumod"), &stats = data.tables.at("monstats");
     const auto &extra = data.tables.at("monstats2"), &types = data.tables.at("montype");
     const auto extraRow = namedRow(extra, "Id", stats.value(monster.sourceRow, "MonStatsEx"));
     constexpr const char *suffix[]{"", " (N)", " (H)"};
-    const bool champion = preserveRank ? rank == MonsterRank::Champion :
+    const bool champion = fixed ? false : preserveRank ? rank == MonsterRank::Champion :
         roll(random, 100) < unsigned(number(mods, 0, "constants"));
-    rank = champion ? MonsterRank::Champion : MonsterRank::Unique;
+    rank = fixed ? MonsterRank::SuperUnique : champion ? MonsterRank::Champion : MonsterRank::Unique;
     MonsterEnchantment result;
     result.skillEffectsEnabled = enableSkillEffects;
     result.resistances = base.resistances;
     result.melee = number(stats, monster.sourceRow, "isMelee") != 0;
+    if (fixed)
+        for (int modifier : fixed->modifiers) {
+            if (!modifier) break;
+            if (modifier != 24) result.ids.push_back(modifier);
+        }
     std::set<std::string> lineage;
     std::vector<std::string> pending{std::string(stats.value(monster.sourceRow, "MonType"))};
     while (!pending.empty()) {
@@ -239,7 +244,7 @@ MonsterEnchantment rollMonsterEnchantment(const ClassicData &data, const Monster
         pending.emplace_back(types.value(row, "equiv2"));
     }
     if (champion && !championVariantAllowed) result.ids.push_back(16);
-    for (int pick = 0; pick < (champion ? championVariantAllowed ? 1 : 0 : difficulty + 1); ++pick) {
+    for (int pick = 0; pick < (fixed ? difficulty : champion ? championVariantAllowed ? 1 : 0 : difficulty + 1); ++pick) {
         std::vector<std::pair<int, unsigned>> candidates;
         unsigned total = 0;
         for (size_t row = 0; row < mods.rows().size(); ++row) {

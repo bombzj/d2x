@@ -31,6 +31,7 @@ class Planner {
     Random random_;
     std::vector<const MonsterRecord *> roster_;
     std::set<std::string> diagnostics_;
+    std::set<std::string> fixedUniques_;
     std::vector<uint8_t> occupied_;
     uint32_t group_ = 0;
     const Map::RoomBounds *densityRoom_ = nullptr;
@@ -267,7 +268,10 @@ class Planner {
             const MonsterRecord *monster = nullptr;
             if (unit.kind == MonsterPresetKind::SuperUnique) {
                 auto unique = catalog_.superUnique(unit.id);
+                if (!unique->stacks && fixedUniques_.contains(unique->id)) continue;
+                const auto before = result_.spawns.size();
                 elite(*catalog_.find(unique->monster), pos, SpawnOrigin::Preset, key, unique);
+                if (result_.spawns.size() != before) fixedUniques_.insert(unique->id);
                 continue;
             }
             if (unit.kind == MonsterPresetKind::Monster)

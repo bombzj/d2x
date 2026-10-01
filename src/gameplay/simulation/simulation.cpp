@@ -84,7 +84,8 @@ void Simulation::spawnEnemies(std::span<const MonsterSpawn> spawns) {
         enemy.pos = spawn.position;
         enemy.maxHp = monsterDefinition(enemy.kind).maxLife;
         auto baseIdentity = enemy.identity;
-        if (baseIdentity.rank == MonsterRank::Champion || baseIdentity.rank == MonsterRank::Unique)
+        if (baseIdentity.rank == MonsterRank::Champion || baseIdentity.rank == MonsterRank::Unique ||
+            baseIdentity.rank == MonsterRank::SuperUnique)
             baseIdentity.rank = MonsterRank::Normal;
         if (monsterNormalCombat_)
             if (auto combat = monsterNormalCombat_(baseIdentity, area.region)) {

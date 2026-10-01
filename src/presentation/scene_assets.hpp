@@ -26,6 +26,7 @@ class SceneAssets {
         size_t shield = 0;
         bool base = false;
         int paletteOverride = -1;
+        bool fixedPalette = false;
     };
     std::map<std::string, MonsterArtSource, std::less<>> monsterArtSources;
     std::map<MonsterKind, MonsterArtSource> baseMonsterArt;
