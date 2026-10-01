@@ -13,6 +13,8 @@ int mazePresetType(int preset) {
         return 8;
     if (preset >= 258 && preset <= 298)
         return 10;
+    if (preset >= 302 && preset <= 352)
+        return 13;
     throw std::runtime_error("Unsupported maze preset family");
 }
 int mazePresetVariants(const WorldCatalog &catalog, int preset) {
@@ -27,6 +29,8 @@ std::vector<int> mazePresets() {
     for (int id = 167; id <= 255; ++id)
         ids.push_back(id);
     for (int id = 258; id <= 298; ++id)
+        ids.push_back(id);
+    for (int id = 302; id <= 352; ++id)
         ids.push_back(id);
     return ids;
 }

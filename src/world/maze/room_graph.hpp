@@ -24,6 +24,7 @@ class RoomMaze {
     std::vector<Chamber> rooms_;
     void placeBarracks(int direction);
     void initializeCatacombs(int level);
+    void placeSewerEntrances();
     void pick(int i) { rooms_[i].preset = base_ + rooms_[i].mask; }
     void link(int a, int b, int direction) {
         rooms_[a].mask |= bits[direction];
@@ -78,7 +79,8 @@ class RoomMaze {
               Seed world(seed);
               return world.next() + uint32_t(level);
           }()),
-          family_(level == 28                           ? barracksRules()
+          family_(catalog.level(level).levelType == 13 ? sewerRules(level)
+              : level == 28                        ? barracksRules()
                   : level >= 29 && level <= 31          ? jailRules(level)
                   : level >= 34 && level <= 36          ? catacombsRules(level)
                   : catalog.level(level).levelType == 3 ? caveRules(level)

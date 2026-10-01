@@ -6,6 +6,40 @@
 #include <numeric>
 
 namespace d2x::maze {
+void RoomMaze::placeSewerEntrances() {
+    auto edge = [&](int direction) {
+        int chosen = -1;
+        for (int index = int(rooms_.size()) - 1; index >= 0; --index) {
+            if (rooms_[index].fixed)
+                continue;
+            bool occupied = std::any_of(rooms_.begin(), rooms_.end(), [&](const auto &room) {
+                return room.x == rooms_[index].x + dx[direction] &&
+                       room.y == rooms_[index].y + dy[direction];
+            });
+            if (!occupied && (chosen < 0 || (direction == 1 ? rooms_[index].y < rooms_[chosen].y
+                                                           : rooms_[index].x > rooms_[chosen].x)))
+                chosen = index;
+        }
+        if (chosen < 0)
+            throw std::runtime_error("Sewer entrance cannot extend the original maze");
+        return chosen;
+    };
+    int vertical = (seed_.next() & 1) ? 3 : 1;
+    int north = add(edge(1), 1, true);
+    north = add(north, 1, true);
+    int stair = add(north, 0, false);
+    rooms_[stair].preset = 333;
+    rooms_[stair].variant = 0;
+    rooms_[stair].fixed = true;
+    int east = add(edge(2), 2, true);
+    east = add(east, 2, true);
+    int dock = add(east, vertical, false);
+    add(dock, vertical, false);
+    rooms_[dock].preset = 336;
+    rooms_[dock].variant = 0;
+    rooms_[dock].fixed = true;
+    special(seed_.next() & 3, 337);
+}
 MapRecipe RoomMaze::build(int level, uint32_t seed, int difficulty, int entranceDirection) {
     if (difficulty < 0 || difficulty > 2 || maze_.width != family_.roomSize ||
         maze_.height != family_.roomHeight || maze_.merge < 0 || maze_.merge > 1000)
@@ -32,7 +66,9 @@ MapRecipe RoomMaze::build(int level, uint32_t seed, int difficulty, int entrance
         if (!rooms_[parent].fixed)
             add(parent, direction, true);
     }
-    if (level == 28)
+    if (level == 47)
+        placeSewerEntrances();
+    else if (level == 28)
         placeBarracks(entranceDirection);
     else {
         int direction = seed_.next() & 3;

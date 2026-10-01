@@ -3,7 +3,8 @@
 namespace d2x {
 bool supportsMaze(int level) {
     return (level >= 8 && level <= 12) || level == 18 || level == 19 || (level >= 21 && level <= 24) ||
-           (level >= 28 && level <= 31) || (level >= 34 && level <= 36);
+           (level >= 28 && level <= 31) || (level >= 34 && level <= 36) ||
+           (level >= 47 && level <= 49) || level == 65;
 }
 MapRecipe generateMaze(const WorldCatalog &catalog, int level, uint32_t seed, int difficulty,
                        int entranceDirection) {

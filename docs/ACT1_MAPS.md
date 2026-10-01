@@ -13,6 +13,8 @@
 
 ## 第二幕类型交付
 
+下水道家族（47–49、65）：依据 D2MOO `DRLGMAZE_ScanReplaceSpecialAct2SewersPresets`，读取原12格房间302–352、LvlMaze房间数／Merge，首层北／东延伸放两个城镇入口，二层原waypoint房、三层拉达曼特房、古代通道箱房。原房间图与主题替换共用既有生成器，随机流仍是适配。普通seed=210四关包内两帧启动均退出0、零缺砖，40↔47↔48↔49出口链接；65的沙漠目标尚未开放。查看48截图，日志／图在 `artifacts/act2-sewer-<level>-20261002.*`。未实现拉达曼特专属玩法／任务，未认证原DRLG种子等价或鼠标全程探索。
+
 2026-10-02：后宫一层（Level 50、LevelType 14）读取 LvlPrest 353 的唯一 File1 `Act2/Palace/Harem2.ds1`、Dt1Mask 79，按 D2MOO DrlgPreset 的完整关卡加载路径，不当作随机房间。共用出口扫描开放第二幕，原 Vis/Warp 标记建立鲁高因40与后宫50的双向楼梯；未加载目标仍禁用，未绕过宫殿任务门规则。Windows Release、固定包更新及包内普通 seed=210 两帧启动通过，进程退出0，截图和日志在 `artifacts/act2-harem-20261002.*`；只验证地形和出口关联，未验证任务资格及鼠标楼梯往返。第二幕后续类型仍逐项实施。
 
 ## 连续路线
