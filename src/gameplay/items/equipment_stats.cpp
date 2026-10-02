@@ -54,7 +54,7 @@ EquipmentStats deriveEquipmentStats(const InventoryService &inventory, const Pla
         }
     }
     result.defense = int(std::clamp<int64_t>(int64_t(result.defense) *
-        std::max(0, 100 + combat.defensePercent) / 100, 0, std::numeric_limits<int>::max()));
+        std::max(0, 100 + combat.defensePercent + (result.shield ? combat.shieldDefensePercent : 0)) / 100, 0, std::numeric_limits<int>::max()));
     for (auto item : {right, left}) {
         if (!item)
             continue;

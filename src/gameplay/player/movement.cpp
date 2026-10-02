@@ -33,6 +33,7 @@ void Simulation::updatePlayer(float dt, Vec keyboard) {
     if (state_.player.attributes.combat.replenishLife)
         p.hp = std::clamp(p.hp + dt * state_.player.attributes.combat.replenishLife * 25.f / 256.f,
                           1.f, float(state_.player.attributes.maxLife));
+    if (p.blockAnimation) return;
     if (p.charge) {
         ++p.charge->ticks;
         auto charge = *p.charge;

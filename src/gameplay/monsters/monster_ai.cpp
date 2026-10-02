@@ -34,8 +34,16 @@ void Simulation::updateMonsters(float dt) {
             }
             enemy.allegiance = conversion.original;
             enemy.combatEffects.removeState(conversion.state);
+            std::vector<EffectHandle> auras;
+            for (const auto &effect : enemy.combatEffects.entries())
+                if (effect.spec.stacking == EffectStacking::AuraLevel) auras.push_back(effect.handle);
+            for (const auto handle : auras) enemy.combatEffects.remove(handle);
             enemy.conversion.reset(); enemy.combatTarget = {};
             enemy.route.clear(); enemy.attack = enemy.attackDuration = 0; enemy.attackImpact = -1;
+            enemy.aiPursuing = enemy.aiEscaping = enemy.aiCircling = enemy.aiRunning = false;
+            enemy.aiCorpse = {};
+            enemy.skill2Remaining = enemy.skill2Duration = 0;
+            enemy.rethink = 0;
             monsterStopApproach(enemy);
         }
         if (enemy.hp <= 0 || !active(enemy.pos))

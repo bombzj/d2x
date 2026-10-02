@@ -2,6 +2,16 @@
 
 ## 圣骑士战斗技能
 
+### 收尾与冒烟
+
+2026-10-03：按本地D2MOO Units::GetDefense／UpdateBlockAnimRateAndVelocity，Holy Shield防御独立为条件属性，仍持有效盾时才参与最终防御；卸盾保留状态但取消增防，重新持盾恢复。BL原AnimData／COF及人物组件接实际格挡，基础速率无状态50、有状态100，FBR按120×FBR/(120+FBR)相加；格挡阻止并行攻击／施法／移动，死亡和换区清动作。转换恢复阵营清旧AuraLevel效果和旧AI动作，转换期间死亡不发敌方收益；突进起手发正式SkillCast，Vengeance成功命中按原32／48／64轮转HitClass。现有cast-skill增加可选target，通过同一UseSkill提交；新增诊断仅只读。
+
+简单冒烟使用最新Windows Release包、普通Paladin／seed210、原关卡8／城镇1，无输入／输出角色存档，不新增测试程序。30项技能均按正式升级及前置学习。观察：Holy Shield防御9→12，卸盾5、无盾拒绝施法，重新装备12；普通BL .20秒、神圣盾BL .08秒；Smite僵尸7→1.2578及击退，Holy Bolt击杀该亡灵；Sacrifice巨兽35→15.3594且玩家259→258.7305，Vengeance15.3594→4.5859，Zeal随后击杀。Conversion成功owner=1／faction=1，400帧后恢复owner=0／faction=2；独立转换友军治疗124.7188→129.8242，转换期间死亡经验增量0、drops为空。Blessed Hammer原92生成且77节点螺旋推进；Fist of the Heavens原233延迟及234子弹生成，独立亡灵73→27.91。Charge地面位移5格，隔离单位现场第4步开始SQ4命中段、第8步目标67→51.4844，随后动作结束。原图截图已查看，heroAppearanceError为空。
+
+较早Charge混合现场只观察到位移未掉血，不记伤害通过；最后隔离目标排除近旁敌人后才取得上述命中证据。一个超过250帧的管道请求被正常拒绝，改为250+150推进。所有临时实例正常退出0、stderr空，最后包短启动退出0。日志在忽略的artifacts/paladin-*-20261003*.log，截图在dist/current/artifacts/debug-pipe.png，不提交产物。有限冒烟不覆盖全等级／难度／装备／概率／房间和角色存档往返。
+
+仍未完成：Holy Shield特殊盾图在当前Skills／States无图形替换字段，本地参考无D2Client规则，公开Arreat Summit／DataGuide没有组件算法；保留真实原盾组件，不猜造图。完整原事件队列、精确客户端碰撞特效、三角查表边界及转换特殊AI／叛回伤害规则仍未认证。以下2026-10-02条目是实现时边界，本节补充收尾与运行证据，不宣称逐帧原版等价。
+
 2026-10-02：原10项战斗技能均已登记，连同20光环共30/30项有玩法入口；每项实现后分别Release链接并打包，再进入下一项。末批共用追击／耐久／叠层收尾后统一更新固定dist/current。未编写或运行测试、未启动游戏，不以构建替代战斗或原版画面认证。献祭、热诚、复仇、转换和重击使用原近战追击／出手链；新移动、阵营和限时效果均为本局状态，D2S v96不变。以下未认证项是实际边界，不表示已经完整准确复刻。
 
 Charge（107）：SkillPal::SrvSt31／SrvDo67，远目标独立加速移动，原150速度加值及最低50移动百分比、9法力、ln34及Vigor／Might基础点协同；到达近战范围后技能命中，起手已近身回普通攻击。SequenceTbls原SQ4为RN 0–7及A1 1／4／5／6／8／10／12，命中事件与显示接该映射。移动沿现有直线碰撞，不穿墙、不耗奔跑耐力；完整原序列速率、连续击退与路径重寻仍为适配，不运行游戏或测试。
@@ -14,7 +24,7 @@ Blessed Hammer（112）：SkillPal::SrvDo73、D2Common::GetConcentrationDamageBo
 
 Smite（97）：SkillPal::SrvDo150，实际可用盾牌、原S1／IAS时序、盾基础伤害与Holy Shield附伤、力量及原ln34增伤；不掷普通命中率、不附武器元素、致命一击或吸血。按[暴雪公开说明](https://classic.battle.net/diablo2exp/skills/paladin-combat.shtml)，重击消耗当前武器耐久而非盾牌耐久，压碎／开放伤口沿公共命中消费者。原眩晕上限250帧，移动怪物／非Boss资格及精英10%分支接已有stun；击退复用原路径适配。完整装备触发及原盾组件表现仍未认证，不运行游戏或测试。
 
-Holy Shield（117）：SkillPal::SrvSt36与SkillSor::SrvDo18，起手／出手必须实际装备可用盾，原holyshield限时状态、dm56格挡、ln34及Defiance基础点防御协同、原分段盾击附伤接公共属性。无原Overlay不创造光效；原盾牌组件变换与加速格挡动画仍待显示接入，状态不保存。不运行游戏或测试。
+Holy Shield（117）：SkillPal::SrvSt36与SkillSor::SrvDo18，起手／出手必须实际装备可用盾，原holyshield限时状态、dm56格挡、ln34及Defiance基础点防御协同、原分段盾击附伤接公共属性。无原Overlay不创造光效；2026-10-03补持盾条件防御与原BL加速动作并简单冒烟，特殊盾牌组件仍缺客户端依据。状态不保存。
 
 Vengeance（111）：按SkillPal::SrvSt35，A1原命中、物理与装备元素公共结算，另掷一次未含人物力量／技能增伤的武器基础伤害，分别乘原火／冰／电百分比及对应Resist／Salvation基础点协同；原冰冷时长、法力和命中从MPQ导入，属性面板使用同一解析比例。原HitClass轮转和完整装备支配事件尚未认证，不运行游戏或测试。
 

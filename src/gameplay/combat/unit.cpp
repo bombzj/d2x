@@ -210,6 +210,20 @@ ResolvedDamage Simulation::resolveIncoming(EntityId attacker, const CombatUnit &
     if (type == MonsterDamageType::Cold && resistance < 100 && coldPierce_) resistance -= coldPierce_(attacker);
     return {mitigateMonsterDamage(amount, resistance), 0};
 }
+void Simulation::blockUnit(EntityId defender) {
+    auto target = combatUnit(defender);
+    if (!target.alive() || !target.player || !target.player->equipment.shield) return;
+    auto &player = *target.player;
+    if (player.weaponAttack && player.weaponAttack->skill && !player.weaponAttack->skill->weapon->interruptible) return;
+    const auto *weapon = attackWeapon(false, false);
+    const auto timing = weapon && attackTiming_ ? attackTiming_(*weapon, false, false, "bl") : std::nullopt;
+    if (!timing) return;
+    player.pendingCast.reset(); stopChannel(player);
+    player.castTime = player.meleeTime = 0;
+    player.weaponAttack.reset(); player.charge.reset(); player.approachSkill.reset();
+    player.route.clear(); player.attackTarget = {}; player.attackPosition.reset();
+    player.blockAnimation = WeaponAttackState{{}, {}, player.pos, *timing, false};
+}
 void Simulation::recoverUnit(EntityId defender, EntityId attacker, float damage, bool elemental, int baseHitClass, bool forced) {
     auto target = combatUnit(defender);
     if (!target.alive() || damage <= 0) return;

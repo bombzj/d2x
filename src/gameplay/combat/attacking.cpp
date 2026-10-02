@@ -22,7 +22,7 @@ bool Simulation::meleeReach(EntityId defender, const WeaponDamage &weapon) const
 }
 void Simulation::requestAttack(const Attack &attack) {
     auto &p = state_.player;
-    if (safeZone_ || p.dead || p.charge || p.weaponAttack || p.castTime > 0 || p.hitTime > 0) return;
+    if (safeZone_ || p.dead || p.blockAnimation || p.charge || p.weaponAttack || p.castTime > 0 || p.hitTime > 0) return;
     auto enemy = combatUnit(attack.target);
     if ((!enemy.alive() || !canAttack(p.id, enemy.id)) && !attack.position) return;
     if (!attackWeapon(attack.thrown, attack.leftHand)) {
@@ -43,7 +43,7 @@ void Simulation::requestAttack(const Attack &attack) {
 bool Simulation::beginWeaponAttack(Vec aim, EntityId target, const WeaponDamage &weapon,
                                    bool thrown, bool leftHand, const WeaponSkillSpec *skill) {
     auto &p = state_.player;
-    if (p.charge || p.weaponAttack || p.castTime > 0 || p.hitTime > 0 || p.dead) return false;
+    if (p.blockAnimation || p.charge || p.weaponAttack || p.castTime > 0 || p.hitTime > 0 || p.dead) return false;
     const auto timing = attackTiming_ ? attackTiming_(weapon, thrown, leftHand, skill ? std::string_view(skill->mode) : std::string_view{}) : std::nullopt;
     if (!timing) {
         state_.message = "Original attack animation is unavailable for this equipment.";
@@ -66,7 +66,7 @@ bool Simulation::beginWeaponAttack(Vec aim, EntityId target, const WeaponDamage 
 }
 bool Simulation::beginWeaponSkill(const SkillCastSpec &skill, Vec aim, EntityId target) {
     auto &p = state_.player;
-    if (!skill.weapon || safeZone_ || p.dead || p.weaponAttack || p.hitTime > 0) return false;
+    if (!skill.weapon || safeZone_ || p.dead || p.blockAnimation || p.weaponAttack || p.hitTime > 0) return false;
     const auto &action = *skill.weapon;
     if (p.charge) return false;
     if (action.delayFrames > 0 && state_.frame < p.skillDelayUntil) {
@@ -107,6 +107,7 @@ bool Simulation::beginWeaponSkill(const SkillCastSpec &skill, Vec aim, EntityId 
         p.route.clear(); p.attackTarget = {}; p.attackPosition.reset();
         p.approachSkill.reset();
         stopChannel(p);
+        emit(SkillCast{p.id, skill.sourceId, p.pos});
         return true;
     }
     stopChannel(p);
@@ -220,6 +221,10 @@ void Simulation::advanceWeaponAttack() {
                     monster.combatTarget = {};
                     monsterStopApproach(monster);
                     monster.route.clear(); monster.attack = monster.attackDuration = 0; monster.attackImpact = -1;
+                    monster.aiPursuing = monster.aiEscaping = monster.aiCircling = monster.aiRunning = false;
+                    monster.aiCorpse = {};
+                    monster.skill2Remaining = monster.skill2Duration = 0;
+                    monster.rethink = 0;
                 }
             }
             if (attack.skill && attack.skill->effect == SkillBehavior::Zeal && --attack.remainingAttacks > 0 && p.hp > 0) {

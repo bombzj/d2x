@@ -119,6 +119,13 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
                 {"unspentAttributes", state.player.unspentAttributes},
                 {"unspentSkills", state.player.unspentSkills},
                 {"castRemaining", state.player.castTime},
+                {"attackRemaining", state.player.meleeTime},
+                {"attackSkill", state.player.weaponAttack && state.player.weaponAttack->skill ? state.player.weaponAttack->skill->sourceId : -1},
+                {"attackReleased", state.player.weaponAttack && state.player.weaponAttack->released},
+                {"charge", state.player.charge.has_value()},
+                {"blockRemaining", state.player.blockAnimation ?
+                    float(state.player.blockAnimation->timing.durationTicks() - state.player.blockAnimation->ticks) / 25.f : 0.f},
+                {"blockDuration", state.player.blockAnimation ? float(state.player.blockAnimation->timing.durationTicks()) / 25.f : 0.f},
                 {"channelSkill", state.player.channelSkill()}, {"channelAge", state.player.channelAge()},
                 {"strength", session.characterStats().strength},
                 {"dexterity", session.characterStats().dexterity},
@@ -181,7 +188,7 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
                     {"sourceEntity", effect.spec.source.entity.value}, {"sourceLevel", effect.spec.source.level},
                     {"group", effect.spec.state.group},
                     {"remaining", effect.expiresAt ? Json(double(*effect.expiresAt - state.frame) / 25.) : Json(nullptr)},
-                    {"defensePercent", effect.spec.modifiers.combat.defensePercent},
+                    {"defensePercent", effect.spec.modifiers.combat.defensePercent + effect.spec.modifiers.combat.shieldDefensePercent},
                     {"reactions", effect.spec.reactions.size()}, {"overlayId", effect.spec.visual.overlayId}});
             result["region"] = int(state.area.region);
             result["kills"] = state.area.kills;
@@ -500,7 +507,8 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
                 !std::isfinite(target.x) || !std::isfinite(target.y) || target.x < 0 || target.y < 0 ||
                 target.x >= session.map().grid.width || target.y >= session.map().grid.height)
                 throw std::runtime_error("An available implemented skill and an in-region target are required");
-            session.submit(UseSkill{id, target, {}});
+            const EntityId unit{request.value("target", uint64_t(0))};
+            session.submit(UseSkill{id, target, unit});
             session.tick(0);
             view.advance(0);
             result["accepted"] = std::any_of(session.events().begin(), session.events().end(),

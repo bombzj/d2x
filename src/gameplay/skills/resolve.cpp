@@ -105,7 +105,7 @@ SkillCastSpec resolveSkill(const SkillSpec &spec, int rank,
         shield.duration = EffectFrame(spec.armorParameters[0] + int64_t(rank - 1) * spec.armorParameters[1]);
         const auto synergy = learned.find(spec.armorSynergySkills.front());
         auto &combat = shield.modifiers.combat;
-        combat.defensePercent = spec.armorParameters[2] + (rank - 1) * spec.armorParameters[3] +
+        combat.shieldDefensePercent = spec.armorParameters[2] + (rank - 1) * spec.armorParameters[3] +
             (synergy == learned.end() ? 0 : synergy->second) * spec.armorParameters[7];
         combat.blockBonus = std::min(spec.armorParameters[5], spec.armorParameters[4] +
             (spec.armorParameters[5] - spec.armorParameters[4]) * (110 * rank / (rank + 6)) / 100);

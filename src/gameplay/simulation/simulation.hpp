@@ -165,6 +165,7 @@ class Simulation {
                      bool alreadyMitigated = false,
                      bool freezeHit = false);
     void meleeDamage(EntityId defender, const WeaponDamage &weapon);
+    void blockUnit(EntityId defender);
     void updatePotions(float dt);
     void updatePlayer(float dt, Vec keyboard);
     void updateMonsters(float dt);

@@ -54,6 +54,8 @@ struct PlayerState {
     float castTime = 0, hitTime = 0, deathTime = 0, meleeTime = 0;
     std::optional<WeaponAttackState> weaponAttack;
     std::optional<SkillCastSpec> approachSkill;
+    std::optional<WeaponAttackState> blockAnimation;
+    unsigned vengeanceHit = 0;
     struct ChargeState {
         SkillCastSpec skill;
         Vec target;

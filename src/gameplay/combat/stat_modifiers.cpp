@@ -43,6 +43,7 @@ void mergeCombatModifiers(CombatModifiers &a, const CombatModifiers &b) {
     D2X_ADD(coldAbsorb); D2X_ADD(magicAbsorb);
     D2X_ADD(lifePercent); D2X_ADD(manaPercent); D2X_ADD(blockBonus);
     D2X_ADD(smiteMinimum); D2X_ADD(smiteMaximum);
+    D2X_ADD(shieldDefensePercent);
     D2X_ADD(fasterAttack); D2X_ADD(fasterCast);
     D2X_ADD(attackRate);
     D2X_ADD(thornsPercent); D2X_ADD(concentrationChance);

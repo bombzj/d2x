@@ -112,6 +112,11 @@ void listMonsters(Json &result, const Json &request, const GameSession &session,
             {"attackMode", enemy.attackMode}, {"attackRemaining", enemy.attack},
             {"actionDuration", enemy.attackDuration}, {"attackRatePercent", enemy.attackRatePercent},
             {"impactRemaining", enemy.attackImpact}};
+        entry["owner"] = enemy.allegiance.owner.value;
+        entry["faction"] = enemy.allegiance.faction;
+        entry["stun"] = enemy.stun;
+        entry["conversionRemaining"] = enemy.conversion ?
+            Json(double(enemy.conversion->expiresAt > session.state().frame ? enemy.conversion->expiresAt - session.state().frame : 0) / 25.) : Json(nullptr);
         const auto *record = session.monsterContent().find(enemy.identity.monster);
         if (enemy.identity.enchantment) {
             const auto &enchantment = *enemy.identity.enchantment;

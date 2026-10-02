@@ -84,7 +84,7 @@ bool Simulation::beginSkillCast(PlayerState &player, const SkillCastSpec &skill,
         }
         stopChannel(player);
     }
-    if (player.dead || player.charge || player.castTime > 0 ||
+    if (player.dead || player.blockAnimation || player.charge || player.castTime > 0 ||
         player.meleeTime > 0 || player.hitTime > 0 || skill.castDuration <= 0)
         return false;
     if (skill.delayFrames > 0 && state_.frame < player.skillDelayUntil) return false;

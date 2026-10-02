@@ -157,6 +157,7 @@ void Simulation::resolveMonsterAttack(Enemy &enemy, int modeOverride, bool proje
         }
     }
     if (target.stats.block > 0 && limitedRandom(*target.random, 100) < unsigned(target.stats.block)) {
+        blockUnit(defender);
         if (!projectile) triggerCombatEffects(defender, CombatEffectEvent::AttackedInMelee, enemy.id);
         return;
     }

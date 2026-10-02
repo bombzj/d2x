@@ -82,6 +82,7 @@ void Simulation::onMonsterDamaged(Enemy &enemy, const DamageRequest &request, fl
         enemy.knockbackDestination.reset();
         enemy.attackMode = 1;
         if (enemy.allegiance.role == CombatRole::Summon) { enemy.corpseConsumed = true; return; }
+        if (enemy.conversion) return;
         ++state_.area.kills;
         const auto controller = combatUnit(controllingPlayer(source));
         const auto attacker = combatUnit(source);
@@ -130,6 +131,10 @@ void Simulation::meleeDamage(EntityId defender, const WeaponDamage &weapon) {
         elements.coldDuration += skill.coldDuration;
     }
     elements.hitClass = weapon.hitClass;
+    if (player.weaponAttack && player.weaponAttack->skill && player.weaponAttack->skill->effect == SkillBehavior::Vengeance) {
+        elements.hitClass = 32 + int(player.vengeanceHit % 3) * 16;
+        player.vengeanceHit = (player.vengeanceHit + 1) % 3;
+    }
     if (player.weaponAttack && player.weaponAttack->skill && player.weaponAttack->skill->effect == SkillBehavior::Charge) {
         elements.knockback = true;
         elements.hitClass = 112;
@@ -247,6 +252,7 @@ void Simulation::updateMissiles(float dt) {
                 if (contact) {
                     auto target = combatUnit(contact->first);
                     if (relation(m.owner, target.id) == Relation::Allied) {
+                        reactToMissile(m, target.id, spawned);
                         const int minimum = int(m.healingMinimum * 256.f), maximum = int(m.healingMaximum * 256.f);
                         const float amount = float(minimum + limitedRandom(m.combatRandom,
                             unsigned(std::max(0, maximum - minimum)))) / 256.f;

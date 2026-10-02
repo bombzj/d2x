@@ -19,6 +19,7 @@ void Simulation::clearActions() {
     p.weaponAttack.reset();
     p.charge.reset();
     p.approachSkill.reset();
+    p.blockAnimation.reset();
     p.attackPosition.reset();
     p.moving = false;
     p.runningNow = false;
@@ -163,6 +164,8 @@ void Simulation::tick(float dt, Vec keyboard, bool forceRun) {
     forceRun_ = forceRun;
     p.previous = p.pos;
     ++state_.frame;
+    if (p.blockAnimation && ++p.blockAnimation->ticks >= p.blockAnimation->timing.durationTicks())
+        p.blockAnimation.reset();
     state_.time += dt;
     if (auto removed = p.combatEffects.expire(state_.frame); !removed.empty())
         combatEffectsChanged(removed);
@@ -229,6 +232,8 @@ void Simulation::tick(float dt, Vec keyboard, bool forceRun) {
         p.pendingCast.reset();
         p.weaponAttack.reset();
         p.charge.reset();
+        p.blockAnimation.reset();
+        p.approachSkill.reset();
         p.attackPosition.reset();
         p.meleeTime = 0;
         p.castTime = 0;

@@ -79,6 +79,7 @@ void Simulation::resolveWeaponHit(EntityId defender, float physical, EntityId so
     auto target = combatUnit(defender);
     if (!target.alive() || !target.stats.resolved || !canAttack(source, defender)) return;
     if (!originalElements.smite && target.stats.block > 0 && limitedRandom(*target.random, 100) < unsigned(target.stats.block)) {
+        blockUnit(defender);
         if (!originalElements.ranged) triggerCombatEffects(defender, CombatEffectEvent::AttackedInMelee, source);
         return;
     }

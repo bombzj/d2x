@@ -190,6 +190,7 @@ void SceneView::drawLighting() const {
 }
 std::string playerAnimationMode(const PlayerState &p) {
     return p.dead                              ? "dt"
+            : p.blockAnimation ? "bl"
            : p.hitTime > 0  ? "gh"
            : p.castTime > 0                    ? "sc"
            : p.weaponAttack                 ? p.weaponAttack->timing.mode.c_str()

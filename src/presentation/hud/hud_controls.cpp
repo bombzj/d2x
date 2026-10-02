@@ -250,7 +250,8 @@ void SceneView::drawSkillControls(Vec mouse) const {
                 detail = "Mana/sec " + std::string(TextFormat("%.1f", value.manaCost * 12.5f)) +
                     " / Damage/sec " + std::string(TextFormat("%.1f-%.1f", value.minimumDamage * 25, value.maximumDamage * 25));
             else if (value.appliedEffect) {
-                detail += " / Defense +" + std::to_string(value.appliedEffect->modifiers.combat.defensePercent) + "% / " +
+                detail += " / Defense +" + std::to_string(value.appliedEffect->modifiers.combat.defensePercent +
+                    value.appliedEffect->modifiers.combat.shieldDefensePercent) + "% / " +
                     std::to_string(value.appliedEffect->duration.value() / 25) + " seconds";
                 if (value.effect == SkillBehavior::HolyShield)
                     detail += " / Block +" + std::to_string(value.appliedEffect->modifiers.combat.blockBonus) +

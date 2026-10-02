@@ -49,6 +49,7 @@ struct CombatModifiers {
     int lifePercent = 0, manaPercent = 0;
     int blockBonus = 0;
     int smiteMinimum = 0, smiteMaximum = 0;
+    int shieldDefensePercent = 0;
     int fasterAttack = 0, fasterCast = 0, fasterHitRecovery = 0, fasterBlock = 0;
     int attackRate = 0; // Skill/state attack-rate contribution; not item IAS.
     int thornsPercent = 0, concentrationChance = 0;

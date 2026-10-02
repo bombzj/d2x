@@ -198,6 +198,11 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
         auto found = content_.skills.attackTimings.find(characterAppearance() + mode + equipmentStats().animationClass);
         if (found == content_.skills.attackTimings.end()) return std::nullopt;
         const auto &data = found->second;
+        if (mode == "bl") {
+            const int faster = std::max(0, characterStats().combat.fasterBlock);
+            const int rate = (characterStats().combat.shieldDefensePercent > 0 ? 100 : 50) + 120 * faster / (120 + faster);
+            return WeaponAttackTiming{mode, data.frames, std::clamp(data.speed * rate / 100, 1, 32767), 0, 0};
+        }
         const int skillRate = characterStats().combat.attackRate - (state().player.chill > 0 ? 50 : 0);
         return WeaponAttackTiming{mode, data.frames,
             effectiveAttackSpeed(data.speed, weapon.fasterAttack, weapon.baseSpeed, skillRate),
