@@ -115,6 +115,21 @@ void listMonsters(Json &result, const Json &request, const GameSession &session,
         entry["owner"] = enemy.allegiance.owner.value;
         entry["faction"] = enemy.allegiance.faction;
         entry["stun"] = enemy.stun;
+        entry["combatTarget"] = enemy.combatTarget.value;
+        entry["attractedTarget"] = enemy.attractedTarget.value;
+        const auto modifiers = enemy.combatEffects.modifiers(session.state().frame);
+        entry["curseModifiers"] = {{"physicalResist", modifiers.combat.physicalResist},
+            {"fireResist", modifiers.fireResist}, {"coldResist", modifiers.coldResist},
+            {"lightningResist", modifiers.lightningResist}, {"poisonResist", modifiers.poisonResist},
+            {"damagePercent", modifiers.combat.damagePercent}, {"attackRate", modifiers.combat.attackRate},
+            {"velocityPercent", modifiers.velocityPercent}, {"ironMaiden", modifiers.combat.ironMaidenPercent},
+            {"lifeTap", modifiers.combat.lifeTapPercent}};
+        entry["effects"] = Json::array();
+        for (const auto &effect : enemy.combatEffects.entries())
+            if (effect.activeAt(session.state().frame))
+                entry["effects"].push_back({{"sourceId", effect.spec.source.definition},
+                    {"stateId", effect.spec.state.id},
+                    {"remaining", effect.expiresAt ? Json(double(*effect.expiresAt - session.state().frame) / 25.) : Json(nullptr)}});
         entry["conversionRemaining"] = enemy.conversion ?
             Json(double(enemy.conversion->expiresAt > session.state().frame ? enemy.conversion->expiresAt - session.state().frame : 0) / 25.) : Json(nullptr);
         const auto *record = session.monsterContent().find(enemy.identity.monster);

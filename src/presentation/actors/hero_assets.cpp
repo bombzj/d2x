@@ -69,8 +69,9 @@ void SceneAssets::loadHeroEquipment(const GameSession &session) {
     const bool throwAttack = primary && primary->equipment.throwable;
     const bool leftSwing = secondary && secondary->equipment.isType("weap") && !secondary->equipment.isType("tpot");
     const bool leftThrow = secondary && secondary->equipment.throwable;
+    const bool canBlock = bool(session.equipmentStats().shield);
     key += ":" + std::to_string(normalAttack) + std::to_string(throwAttack) +
-           std::to_string(leftSwing) + std::to_string(leftThrow);
+           std::to_string(leftSwing) + std::to_string(leftThrow) + std::to_string(canBlock);
     if (heroKey_ == key)
         return;
     auto pointers = [](const std::array<std::string, 16> &tokens) {
@@ -86,7 +87,7 @@ void SceneAssets::loadHeroEquipment(const GameSession &session) {
         const auto baseEquipment = pointers(baseParts);
         const auto equipment = pointers(parts);
         for (auto mode : {"nu", "wl", "rn", "a1", "th", "s1", "s3", "s4", "sc", "bl", "gh", "dt"}) {
-            if (std::string_view(mode) == "bl" && !session.content().skills.attackTimings.contains(appearance + mode + weapon)) continue;
+            if (std::string_view(mode) == "bl" && (!canBlock || !session.content().skills.attackTimings.contains(appearance + mode + weapon))) continue;
             const bool attackMode = std::string_view(mode) == "a1" || std::string_view(mode) == "th" ||
                                 std::string_view(mode) == "s1" || std::string_view(mode) == "s3" || std::string_view(mode) == "s4";
             if ((std::string_view(mode) == "a1" && !normalAttack) ||

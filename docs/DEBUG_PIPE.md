@@ -144,6 +144,8 @@ $offers = (.\scripts\Send-D2XCommand.ps1 -Command shop -Arguments @{ id = $vendo
 
 2026-10-03：cast-skill可选target为会话单位ID，沿正式UseSkill目标规则，不新增直接伤害入口。status.player新增attackRemaining／attackSkill／attackReleased、charge、blockRemaining／blockDuration只读动作诊断；monsters新增owner／faction／stun／conversionRemaining只读状态，转换未生效时剩余期限为null。神圣之盾effects.defensePercent包含条件盾防御的施放值，实际是否生效仍以当前装备及status.player.defense为准。
 
+诅咒收尾补充：monsters返回combatTarget／attractedTarget（无目标为0）、当前有效effects（sourceId、stateId、remaining秒，无期限为null）及curseModifiers（物理／四元素抗性、伤害百分比、攻速、移动、铁处女和偷取生命百分比）。这些是只读状态修正，不是最终伤害／原基础抗性；accepted只代表起手，须完成SC出手并确认effects，近敌受击可能打断施法。
+
 地狱之火 `cast-skill` 会持续引导，重复调用只更新目标；`stop-channel` 提交正式停止命令，不推进模拟。`status.player.channelSkill` 为原技能 ID，未引导为 -1，`channelAge` 为本次引导秒数。真实右键释放由控制器提交同一停止命令；命名管道持续施法不模拟鼠标按住，不等同于人工输入验收。
 
 `status.effects` 返回临时效果的原技能 ID、组、剩余时间、防御加成、冻结回击时长和叠层 ID；`monsters` 返回 `freeze/chill` 剩余时间，可观察防御冰甲的真实受击触发。
