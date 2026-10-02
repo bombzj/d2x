@@ -52,6 +52,7 @@ void SceneView::drawSkillIcon(std::optional<int> skill, Rectangle bounds) const 
         available &= player.mana >= std::max(player.channelSkill() == *skill ? 0.f : float(entry->spell->startMana), resolved.manaCost);
         if (resolved.delayFrames > 0)
             available &= session_.state().frame >= player.skillDelayUntil;
+        if (resolved.requiresShield) available &= bool(player.equipment.shield);
         if (resolved.weapon) available &= session_.weaponSkillReady(resolved);
     }
     imageAt(image, bounds, available ? WHITE : Color{255, 64, 64, 255});
@@ -251,6 +252,10 @@ void SceneView::drawSkillControls(Vec mouse) const {
             else if (value.appliedEffect) {
                 detail += " / Defense +" + std::to_string(value.appliedEffect->modifiers.combat.defensePercent) + "% / " +
                     std::to_string(value.appliedEffect->duration.value() / 25) + " seconds";
+                if (value.effect == SkillBehavior::HolyShield)
+                    detail += " / Block +" + std::to_string(value.appliedEffect->modifiers.combat.blockBonus) +
+                        " / Smite " + std::to_string(value.appliedEffect->modifiers.combat.smiteMinimum) +
+                        "-" + std::to_string(value.appliedEffect->modifiers.combat.smiteMaximum);
                 if (value.effect == SkillBehavior::ShiverArmor || value.effect == SkillBehavior::ChillingArmor)
                     detail += " / Retaliate cold " + std::string(TextFormat("%.1f-%.1f", value.minimumDamage, value.maximumDamage)) +
                         " / Chill " + std::string(TextFormat("%.1fs", value.coldDuration));
@@ -273,10 +278,26 @@ void SceneView::drawSkillControls(Vec mouse) const {
                 detail += " / Poison " + std::string(TextFormat("%.1f-%.1f over %.1fs",
                     value.minimumDamage * value.poisonDuration * 25.f,
                     value.maximumDamage * value.poisonDuration * 25.f, value.poisonDuration));
+            else if (value.effect == SkillBehavior::Zeal)
+                detail += " / Attacks " + std::to_string(value.weapon->attacks) +
+                    " / Physical +" + std::to_string(value.weapon->damagePercent) + "%";
+            else if (value.effect == SkillBehavior::Vengeance)
+                detail += " / Fire " + std::to_string(value.weapon->elementPercent[0]) +
+                    "% / Cold " + std::to_string(value.weapon->elementPercent[1]) +
+                    "% / Lightning " + std::to_string(value.weapon->elementPercent[2]) + "%";
             else if (value.effect == SkillBehavior::Sacrifice)
                 detail += " / Physical +" + std::to_string(value.weapon->damagePercent) +
                     "% / Attack +" + std::to_string(value.weapon->attackRating) +
                     "% / Self damage " + std::to_string(value.weapon->selfDamagePercent) + "%";
+            else if (value.effect == SkillBehavior::Smite)
+                detail += " / Shield damage +" + std::to_string(value.weapon->damagePercent) +
+                    "% / Stun " + std::string(TextFormat("%.2fs", float(value.weapon->stunFrames) / 25.f));
+            else if (value.effect == SkillBehavior::Conversion)
+                detail += " / Convert " + std::to_string(value.weapon->conversionChance) +
+                    "% / " + std::to_string(value.weapon->conversionFrames / 25) + " seconds";
+            else if (value.effect == SkillBehavior::Charge)
+                detail += " / Physical +" + std::to_string(value.weapon->damagePercent) +
+                    "% / Attack +" + std::to_string(value.weapon->attackRating) + "%";
             else if (value.weapon && value.missileImpact && value.missileImpact->areaMissile)
                 detail += " / Fire " + std::string(TextFormat("%.1f-%.1f", value.minimumDamage, value.maximumDamage)) +
                     " + weapon fire damage";

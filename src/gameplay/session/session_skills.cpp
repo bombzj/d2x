@@ -240,6 +240,10 @@ void GameSession::useSkill(const UseSkill &intent) {
                 effectiveSkillRank(definition.resistSkill), player.level, state().population.difficulty);
         }
         if (resolved.weapon) {
+            if (resolved.weapon->chargeVelocity > 0) {
+                resolved.missileVelocity = float(characterDefinition_.runVelocity * 256) * 25.f / 4096.f;
+                resolved.staticPercent = float(state().player.combatEffects.modifiers(state().frame).velocityPercent);
+            }
             cancelExit(); cancelPickup(); cancelInteraction();
             simulation_->beginWeaponSkill(resolved, intent.target, intent.enemy);
             return;
@@ -262,11 +266,12 @@ bool GameSession::weaponSkillReady(const SkillCastSpec &skill) const {
     if (!skill.weapon) return false;
     const auto &action = *skill.weapon;
     const auto &player = state().player;
-    if (player.dead || player.mana < skill.manaCost ||
+    if (player.dead || (player.mana < skill.manaCost && action.chargeVelocity == 0) ||
         (action.delayFrames > 0 && state().frame < player.skillDelayUntil)) return false;
     const auto *weapon = simulation_->attackWeapon(action.thrown, false);
-    return weapon && std::find(weapon->types.begin(), weapon->types.end(), action.requiredType) != weapon->types.end() &&
-        (!(action.thrown || weapon->ranged) ||
+    return weapon && (action.smite ? bool(player.equipment.shield) :
+        std::find(weapon->types.begin(), weapon->types.end(), action.requiredType) != weapon->types.end()) &&
+        (action.smite || !(action.thrown || weapon->ranged) ||
          (simulation_->canSpendProjectile_ && simulation_->canSpendProjectile_(weapon->item, action.thrown)));
 }
 bool GameSession::skillAvailable(int id) const {

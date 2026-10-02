@@ -40,6 +40,14 @@ struct MeteorSpec {
     int lightId = -1, mediumId = -1, smallId = -1;
     int mediumDensity = 1, smallDensity = 1;
 };
+struct HeavenSpec {
+    int delayFrames = 0, radius = 0, limit = 0, limitPerLevel = 0;
+    int boltId = -1, boltFrames = 0, boltVelocity = 0;
+    int minimum = 0, maximum = 0, synergySkill = -1, synergyPercent = 0;
+    std::array<int, 5> minimumPerLevel{}, maximumPerLevel{};
+    int healingMinimum = 0, healingMinimumPerLevel = 0;
+    int healingMaximum = 0, healingMaximumPerLevel = 0;
+};
 // Weapon skills use the ordinary attack animation, equipment and ammunition pipeline.
 struct WeaponSkillSpec {
     std::string requiredType;
@@ -47,6 +55,17 @@ struct WeaponSkillSpec {
     int attackRating = 0, attackRatingPerLevel = 0, delayFrames = 0;
     int damagePercent = 0, damagePerLevel = 0, selfDamagePercent = 0;
     std::map<int, int> damageSynergies;
+    int damageStartLevel = 1, attacks = 1, attackLimit = 1, rollbackPercent = 0;
+    bool interruptible = true;
+    std::array<int, 3> elementPercent{};
+    int elementPerLevel = 0;
+    std::array<std::map<int, int>, 3> elementSynergies;
+    bool smite = false;
+    std::string mode;
+    int stunFrames = 0, stunPerLevel = 0;
+    int conversionMinimum = 0, conversionMaximum = 0, conversionChance = 0, conversionFrames = 0;
+    CombatStateDefinition conversionState;
+    int chargeVelocity = 0;
 };
 struct SummonSkillSpec {
     std::string monster, iconArt;
@@ -115,17 +134,20 @@ struct SkillSpec {
     std::optional<BlizzardSpec> blizzard;
     std::optional<ArcSpec> arc;
     std::optional<MeteorSpec> meteor;
+    std::optional<HeavenSpec> heaven;
     std::optional<FreezingAreaSpec> freezingArea;
     std::optional<MonsterFirewall> firewall;
     int firewallRangePerLevel = 0;
     std::optional<std::pair<int, int>> diminishingDuration;
     std::optional<std::pair<int, int>> linearDuration;
     int shieldMaximum = 0, shieldManaFactor = 0, shieldSynergySkill = -1;
+    bool requiresShield = false, holyShield = false;
     int enchantAttackRating = 0, enchantAttackRatingPerLevel = 0;
     std::array<int, 4> healingParameters{};
     int healingSynergySkill = -1, healingSynergyPercent = 0;
     std::array<int, 5> stormParameters{};
     int telekinesisRange = 0, telekinesisKnockbackChance = 0;
+    int concentrationState = -1, concentrationFactor = 0;
     std::optional<std::pair<int, int>> hydraDuration;
     int hydraLimit = 0;
     std::map<int, int> weightedSynergies;
@@ -170,12 +192,15 @@ struct SkillCastSpec {
     std::optional<BlizzardSpec> blizzard;
     std::optional<ArcSpec> arc;
     std::optional<MeteorSpec> meteor;
+    std::optional<HeavenSpec> heaven;
     std::optional<FreezingAreaCastSpec> freezingArea;
     std::optional<MonsterFirewall> firewall;
     int delayFrames = 0;
     int shieldPercent = 0, shieldManaFactor = 0;
+    bool requiresShield = false;
     int stormPeriod = 0, stormRadius = 0;
     int telekinesisRange = 0, telekinesisKnockbackChance = 0;
+    int concentrationState = -1, concentrationFactor = 0;
     int hydraFrames = 0, hydraLimit = 0;
     std::optional<MissileImpactSpec> missileImpact;
     int missileId = -1;

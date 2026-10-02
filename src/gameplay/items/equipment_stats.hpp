@@ -30,6 +30,8 @@ struct EquipmentStats {
     int weaponCount = 1;
     int defense = 0, blockChance = 0;
     int level = 1;
+    EntityId shield;
+    int smiteMinimum = 0, smiteMaximum = 0;
 };
 EquipmentStats deriveEquipmentStats(const InventoryService &inventory, const PlayerContainers &containers,
                                     const EquipmentActor &actor, int bonusDefense = 0,

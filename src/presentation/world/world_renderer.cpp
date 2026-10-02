@@ -335,6 +335,8 @@ void SceneView::drawActors(Vec mouse) const {
                 }
                 if (sim.player.weaponAttack && mode == sim.player.weaponAttack->timing.mode)
                     frame = std::min(anim->count - 1, sim.player.weaponAttack->animationFrame());
+                if (sim.player.charge && mode == "rn")
+                    frame = std::min(anim->count - 1, int(sim.player.charge->ticks % 8));
                 auto f = anim->frame(direction(look, anim->directions), frame);
                 auto p = item.p;
                 if (shadowsOnly) { spriteShadow(f, item.p); continue; }

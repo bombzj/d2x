@@ -26,6 +26,18 @@ void Simulation::updateMonsters(float dt) {
         return true;
     };
     for (auto &enemy : state_.area.enemies) {
+        if (enemy.conversion && (state_.frame >= enemy.conversion->expiresAt || enemy.hp <= 0)) {
+            const auto conversion = *enemy.conversion;
+            if (conversion.level > conversion.convertedLevel) {
+                enemy.hp = std::max(0.f, float(int(conversion.maximumLife) * int(enemy.hp) / std::max(1, int(enemy.maxHp))));
+                enemy.maxHp = conversion.maximumLife;
+            }
+            enemy.allegiance = conversion.original;
+            enemy.combatEffects.removeState(conversion.state);
+            enemy.conversion.reset(); enemy.combatTarget = {};
+            enemy.route.clear(); enemy.attack = enemy.attackDuration = 0; enemy.attackImpact = -1;
+            monsterStopApproach(enemy);
+        }
         if (enemy.hp <= 0 || !active(enemy.pos))
             continue;
         if (enemy.questDeathFrame && state_.frame >= enemy.questDeathFrame) {

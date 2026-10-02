@@ -17,6 +17,8 @@ void Simulation::clearActions() {
     p.throwAttack = p.leftHandAttack = false;
     p.castTime = p.meleeTime = p.hitTime = 0;
     p.weaponAttack.reset();
+    p.charge.reset();
+    p.approachSkill.reset();
     p.attackPosition.reset();
     p.moving = false;
     p.runningNow = false;
@@ -226,6 +228,7 @@ void Simulation::tick(float dt, Vec keyboard, bool forceRun) {
         stopChannel(p);
         p.pendingCast.reset();
         p.weaponAttack.reset();
+        p.charge.reset();
         p.attackPosition.reset();
         p.meleeTime = 0;
         p.castTime = 0;

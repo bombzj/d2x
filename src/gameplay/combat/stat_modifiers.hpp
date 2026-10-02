@@ -48,6 +48,7 @@ struct CombatModifiers {
     int coldAbsorb = 0, magicAbsorb = 0;
     int lifePercent = 0, manaPercent = 0;
     int blockBonus = 0;
+    int smiteMinimum = 0, smiteMaximum = 0;
     int fasterAttack = 0, fasterCast = 0, fasterHitRecovery = 0, fasterBlock = 0;
     int attackRate = 0; // Skill/state attack-rate contribution; not item IAS.
     int thornsPercent = 0, concentrationChance = 0;
@@ -76,6 +77,7 @@ struct AttackElements {
     int lifeLeech = 0, manaLeech = 0, attackerLevel = 1;
     int hitClass = 0;
     int selfDamagePercent = 0;
+    bool smite = false, knockback = false;
 };
 struct AttackDamageRange {
     int minimum = 0, maximum = 0;

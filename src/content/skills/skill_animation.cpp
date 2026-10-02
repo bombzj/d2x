@@ -14,12 +14,13 @@ void loadSkillAnimations(SkillCatalog &catalog, const DataTable &weapons, Archiv
             for (auto &letter : value) letter = char(std::tolower(static_cast<unsigned char>(letter)));
             if (!value.empty()) classes.insert(value);
         }
-    std::set<std::string> modes{"sc"};
+    std::set<std::string> modes{"sc", "s1"};
     for (const auto &[id, skill] : catalog.skills)
         if (skill.basicAction != BasicSkillAction::None) modes.insert(skill.animationMode);
     for (const auto &tree : catalog.classes)
         for (const auto &weapon : classes)
             for (const auto &mode : modes) {
+                if (mode == "s1" && tree.classCode != "pal") continue;
                 const auto key = tree.iconToken + mode + weapon;
                 auto upper = key;
                 for (auto &letter : upper) letter = char(std::toupper(static_cast<unsigned char>(letter)));

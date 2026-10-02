@@ -53,6 +53,15 @@ struct PlayerState {
     float hp = 0, mana = 0, stamina = 0;
     float castTime = 0, hitTime = 0, deathTime = 0, meleeTime = 0;
     std::optional<WeaponAttackState> weaponAttack;
+    std::optional<SkillCastSpec> approachSkill;
+    struct ChargeState {
+        SkillCastSpec skill;
+        Vec target;
+        EntityId enemy;
+        float speed = 0;
+        unsigned ticks = 0;
+    };
+    std::optional<ChargeState> charge;
     EffectFrame skillDelayUntil = 0;
     float chill = 0;
     float poisonRemaining = 0, poisonPerSecond = 0;
@@ -119,6 +128,14 @@ struct Enemy {
     CombatIdentity allegiance{2, {}, 0, CombatRole::Monster};
     EntityId combatTarget;
     std::optional<UnitCombatStats> intrinsicCombat;
+    struct ConversionState {
+        CombatIdentity original;
+        EffectFrame expiresAt = 0;
+        int level = 0, convertedLevel = 0;
+        float maximumLife = 0;
+        int state = -1;
+    };
+    std::optional<ConversionState> conversion;
     bool corpseConsumed = false;
     bool deathHidden = false, deathShattered = false, deathUnselectable = false;
     bool corpseAvailable() const { return hp <= 0 && !corpseConsumed && !deathUnselectable; }
@@ -249,6 +266,8 @@ struct Missile {
     std::optional<ArcState> arc = std::nullopt;
     std::optional<MeteorSpec> meteor = std::nullopt;
     float healingMinimum = 0, healingMaximum = 0;
+    std::optional<HeavenSpec> heaven = std::nullopt;
+    EntityId heavenTarget{};
 };
 struct Effect {
     Vec pos;

@@ -84,6 +84,35 @@ SkillCastSpec resolveSkill(const SkillSpec &spec, int rank,
     result.effect = spec.effect;
     result.rank = rank;
     result.sourceId = spec.sourceId;
+    result.requiresShield = spec.requiresShield;
+    result.concentrationState = spec.concentrationState;
+    result.concentrationFactor = spec.concentrationFactor;
+    result.heaven = spec.heaven;
+    if (result.heaven) {
+        auto &heaven = *result.heaven;
+        heaven.limit += (rank - 1) * heaven.limitPerLevel;
+        const auto synergy = learned.find(heaven.synergySkill);
+        const int percent = 100 + (synergy == learned.end() ? 0 : synergy->second) * heaven.synergyPercent;
+        heaven.minimum = int((int64_t(heaven.minimum) + levelBonus(rank, heaven.minimumPerLevel)) * 256 * percent / 100);
+        heaven.maximum = int((int64_t(heaven.maximum) + levelBonus(rank, heaven.maximumPerLevel)) * 256 * percent / 100);
+        heaven.healingMinimum += (rank - 1) * heaven.healingMinimumPerLevel;
+        heaven.healingMaximum += (rank - 1) * heaven.healingMaximumPerLevel;
+    }
+    if (spec.holyShield) {
+        CombatEffectSpec shield;
+        shield.state = spec.state;
+        shield.source = {CombatEffectSource::Skill, {}, spec.sourceId, rank};
+        shield.duration = EffectFrame(spec.armorParameters[0] + int64_t(rank - 1) * spec.armorParameters[1]);
+        const auto synergy = learned.find(spec.armorSynergySkills.front());
+        auto &combat = shield.modifiers.combat;
+        combat.defensePercent = spec.armorParameters[2] + (rank - 1) * spec.armorParameters[3] +
+            (synergy == learned.end() ? 0 : synergy->second) * spec.armorParameters[7];
+        combat.blockBonus = std::min(spec.armorParameters[5], spec.armorParameters[4] +
+            (spec.armorParameters[5] - spec.armorParameters[4]) * (110 * rank / (rank + 6)) / 100);
+        combat.smiteMinimum = spec.minimumDamage + int(levelBonus(rank, spec.minimumPerLevel));
+        combat.smiteMaximum = spec.maximumDamage + int(levelBonus(rank, spec.maximumPerLevel));
+        result.appliedEffect = std::move(shield);
+    }
     if (spec.effect == SkillBehavior::HolyBolt) {
         const auto synergy = learned.find(spec.healingSynergySkill);
         const int percent = 100 + (synergy == learned.end() ? 0 : synergy->second) * spec.healingSynergyPercent;
@@ -229,7 +258,19 @@ SkillCastSpec resolveSkill(const SkillSpec &spec, int rank,
     result.weapon = spec.weapon;
     if (result.weapon) {
         result.weapon->attackRating += (rank - 1) * result.weapon->attackRatingPerLevel;
-        result.weapon->damagePercent += (rank - 1) * result.weapon->damagePerLevel;
+        result.weapon->damagePercent += std::max(0, rank - result.weapon->damageStartLevel) * result.weapon->damagePerLevel;
+        result.weapon->attacks = std::min(result.weapon->attackLimit, result.weapon->attacks + rank - 1);
+        result.weapon->stunFrames = std::min(250, result.weapon->stunFrames + (rank - 1) * result.weapon->stunPerLevel);
+        result.weapon->conversionChance = std::min(result.weapon->conversionMaximum, result.weapon->conversionMinimum +
+            (result.weapon->conversionMaximum - result.weapon->conversionMinimum) * (110 * rank / (rank + 6)) / 100);
+        for (size_t element = 0; element < result.weapon->elementPercent.size(); ++element) {
+            auto &percent = result.weapon->elementPercent[element];
+            percent += (rank - 1) * result.weapon->elementPerLevel;
+            for (const auto &[skill, bonus] : result.weapon->elementSynergies[element])
+                if (const auto found = learned.find(skill); found != learned.end()) percent += found->second * bonus;
+            const int mastery = element == 0 ? fireMasteryPercent : element == 1 ? coldDamagePercent : lightningMasteryPercent;
+            percent += percent * mastery / 100;
+        }
         for (const auto &[skill, percent] : result.weapon->damageSynergies)
             if (const auto found = learned.find(skill); found != learned.end())
                 result.weapon->damagePercent += found->second * percent;

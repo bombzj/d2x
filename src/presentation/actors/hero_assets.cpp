@@ -85,9 +85,9 @@ void SceneAssets::loadHeroEquipment(const GameSession &session) {
         std::map<std::string, GpuAnimation> animations;
         const auto baseEquipment = pointers(baseParts);
         const auto equipment = pointers(parts);
-        for (auto mode : {"nu", "wl", "rn", "a1", "th", "s3", "s4", "sc", "gh", "dt"}) {
+        for (auto mode : {"nu", "wl", "rn", "a1", "th", "s1", "s3", "s4", "sc", "gh", "dt"}) {
             const bool attackMode = std::string_view(mode) == "a1" || std::string_view(mode) == "th" ||
-                                std::string_view(mode) == "s3" || std::string_view(mode) == "s4";
+                                std::string_view(mode) == "s1" || std::string_view(mode) == "s3" || std::string_view(mode) == "s4";
             if ((std::string_view(mode) == "a1" && !normalAttack) ||
                 (std::string_view(mode) == "th" && !throwAttack) ||
                 (std::string_view(mode) == "s3" && !leftSwing) ||

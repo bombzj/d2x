@@ -9,12 +9,16 @@ void Simulation::stopWalking() {
     state_.player.throwAttack = false;
     state_.player.leftHandAttack = false;
     state_.player.moving = false;
+    state_.player.charge.reset();
+    state_.player.approachSkill.reset();
 }
 void Simulation::moveTo(Vec target) {
     stopChannel(state_.player);
     auto &p = state_.player;
     if (p.dead)
         return;
+    p.charge.reset();
+    p.approachSkill.reset();
     p.attackTarget = {};
     p.attackPosition.reset();
     p.throwAttack = false;
@@ -29,6 +33,32 @@ void Simulation::updatePlayer(float dt, Vec keyboard) {
     if (state_.player.attributes.combat.replenishLife)
         p.hp = std::clamp(p.hp + dt * state_.player.attributes.combat.replenishLife * 25.f / 256.f,
                           1.f, float(state_.player.attributes.maxLife));
+    if (p.charge) {
+        ++p.charge->ticks;
+        auto charge = *p.charge;
+        const auto *weapon = attackWeapon(false, false);
+        auto target = combatUnit(charge.enemy);
+        if (p.hp <= 0 || p.hitTime > 0 || !weapon || (charge.enemy && (!target.alive() || !canAttack(p.id, target.id)))) {
+            p.charge.reset();
+            return;
+        }
+        if (target) charge.target = *target.position;
+        if (target && meleeReach(target.id, *weapon)) {
+            p.charge.reset();
+            beginWeaponSkill(charge.skill, charge.target, target.id);
+            return;
+        }
+        const Vec delta = charge.target - p.pos;
+        const float distance = std::min(delta.length(), charge.speed * dt);
+        const Vec next = p.pos + delta.unit() * distance;
+        if (distance < .01f || !grid_->segment(p.pos, next, {}, playerMovement)) {
+            p.charge.reset();
+            return;
+        }
+        p.pos = next; p.look = delta.unit(); p.moving = true; p.runningNow = true;
+        if (distance >= delta.length() && !target) p.charge.reset();
+        return;
+    }
     Vec step;
     float remaining = 0;
     bool followingRoute = false;
@@ -38,17 +68,22 @@ void Simulation::updatePlayer(float dt, Vec keyboard) {
         if (!weapon || (p.attackTarget && (!enemy.alive() || !canAttack(p.id, enemy.id)))) {
             p.attackTarget = {};
             p.attackPosition.reset();
+            p.approachSkill.reset();
             p.route.clear();
         } else {
             const Vec aim = enemy ? *enemy.position : *p.attackPosition;
-            const bool projectile = p.throwAttack || weapon->ranged;
+            const bool projectile = (p.throwAttack || weapon->ranged) && !(p.approachSkill && p.approachSkill->weapon->smite);
             const bool inRange = p.attackStationary || !enemy || (projectile ?
                 (weapon->projectile && missileDistance(p.pos, aim) <
                     weapon->projectile->speed * weapon->projectile->lifetime) : meleeReach(enemy.id, *weapon));
             if (inRange) {
                 p.route.clear();
                 if (p.castTime <= 0 && p.meleeTime <= 0 && p.hitTime <= 0) {
-                    beginWeaponAttack(aim, p.attackTarget, *weapon, p.throwAttack, p.leftHandAttack);
+                    if (p.approachSkill) {
+                        const auto skill = *p.approachSkill;
+                        p.approachSkill.reset();
+                        beginWeaponSkill(skill, aim, p.attackTarget);
+                    } else beginWeaponAttack(aim, p.attackTarget, *weapon, p.throwAttack, p.leftHandAttack);
                     p.attackTarget = {};
                     p.attackPosition.reset();
                 }
@@ -59,6 +94,7 @@ void Simulation::updatePlayer(float dt, Vec keyboard) {
     if (keyboard.length() > .1f && p.castTime <= 0 &&
         p.meleeTime <= 0 && p.hitTime <= 0) {
         p.route.clear();
+        p.approachSkill.reset();
         p.attackTarget = {};
         p.attackPosition.reset();
         p.throwAttack = false;

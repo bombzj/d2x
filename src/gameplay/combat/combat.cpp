@@ -119,7 +119,21 @@ void Simulation::meleeDamage(EntityId defender, const WeaponDamage &weapon) {
         const int mastery = playerFireMastery_();
         elements.fire = float(int64_t(elements.fire * 256.f) * (100 + mastery) / 100) / 256.f;
     }
+    if (player.weaponAttack && player.weaponAttack->skill && player.weaponAttack->skill->effect == SkillBehavior::Vengeance) {
+        const auto &skill = *player.weaponAttack->skill;
+        const int minimum = std::max(256, weapon.meleeBaseMinimum);
+        const int maximum = std::max(minimum + 256, weapon.meleeBaseMaximum);
+        const int base = minimum + int(limitedRandom(player.combatRandom, unsigned(maximum - minimum)));
+        elements.fire += float(int64_t(base) * skill.weapon->elementPercent[0] / 100) / 256.f;
+        elements.cold += float(int64_t(base) * skill.weapon->elementPercent[1] / 100) / 256.f;
+        elements.lightning += float(int64_t(base) * skill.weapon->elementPercent[2] / 100) / 256.f;
+        elements.coldDuration += skill.coldDuration;
+    }
     elements.hitClass = weapon.hitClass;
+    if (player.weaponAttack && player.weaponAttack->skill && player.weaponAttack->skill->effect == SkillBehavior::Charge) {
+        elements.knockback = true;
+        elements.hitClass = 112;
+    }
     if (player.weaponAttack && player.weaponAttack->skill && player.weaponAttack->skill->weapon)
         elements.selfDamagePercent = player.weaponAttack->skill->weapon->selfDamagePercent;
     resolveWeaponHit(defender, float(damage) / 256.f, player.id, elements);
@@ -130,6 +144,36 @@ void Simulation::updateMissiles(float dt) {
     std::vector<Missile> spawned;
     updatingMissiles_ = true;
     for (auto &m : area.missiles) {
+        if (m.heaven) {
+            m.remaining = std::max(0.f, m.remaining - dt);
+            if (m.remaining > .00001f) continue;
+            m.remaining = 0;
+            const auto target = combatUnit(m.heavenTarget);
+            if (!target.alive()) continue;
+            dealDamage({m.owner, target.id, m.damage, MonsterDamageType::Lightning});
+            int count = 0;
+            for (auto candidate : combatUnits()) {
+                if (!candidate.alive() || !canAttack(m.owner, candidate.id) || !active(*candidate.position)) continue;
+                const int deltaX = int(candidate.position->x) - int(m.pos.x), deltaY = int(candidate.position->y) - int(m.pos.y);
+                if (deltaX * deltaX + deltaY * deltaY > m.heaven->radius * m.heaven->radius) continue;
+                if (count++ >= m.heaven->limit) break;
+                Vec heading = (*candidate.position - m.pos).unit();
+                if (heading.length() < .001f) {
+                    const auto owner = combatUnit(m.owner);
+                    heading = owner ? (m.pos - *owner.position).unit() : Vec{1, 0};
+                    if (heading.length() < .001f) heading = {1, 0};
+                }
+                Missile bolt{ids_.allocate(), m.owner, m.pos, heading * (float(m.heaven->boltVelocity * 256 * 75 / 100) * 25.f / 4096.f),
+                    float(m.heaven->boltFrames) / 25.f, SkillBehavior::HolyBolt, false, m.heaven->boltId};
+                bolt.damage = float(m.heaven->minimum + limitedRandom(m.combatRandom,
+                    unsigned(std::max(0, m.heaven->maximum - m.heaven->minimum)))) / 256.f;
+                bolt.fixedElement = MonsterDamageType::Magic;
+                bolt.healingMinimum = float(m.heaven->healingMinimum); bolt.healingMaximum = float(m.heaven->healingMaximum);
+                bolt.combatRandom = childRandom(unitRandom_);
+                spawned.push_back(std::move(bolt));
+            }
+            continue;
+        }
         if (m.arc) { advanceArc(m, spawned); continue; }
         if (m.meteor) { advanceMeteor(m, spawned); continue; }
         if (m.firewall) { advanceMonsterFirewall(m, spawned); continue; }
@@ -234,7 +278,7 @@ void Simulation::updateMissiles(float dt) {
         };
         m.remaining = std::max(0.f, m.remaining - dt);
         if (m.remaining <= .00001f) { m.remaining = 0; continue; }
-        if (m.behavior == SkillBehavior::ChargedBolt) {
+        if (m.behavior == SkillBehavior::ChargedBolt || m.behavior == SkillBehavior::BlessedHammer) {
             float distance = m.velocity.length() * dt;
             while (distance > 0 && !m.path.empty() && m.remaining > 0) {
                 const Vec delta = m.path.front() - m.pos;

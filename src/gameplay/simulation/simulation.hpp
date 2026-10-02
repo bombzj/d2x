@@ -69,7 +69,7 @@ class Simulation {
     std::function<void(EntityId, bool)> wearEquipment_;
     std::function<bool(EntityId, bool)> spendProjectile_;
     std::function<bool(EntityId, bool)> canSpendProjectile_;
-    std::function<std::optional<WeaponAttackTiming>(const WeaponDamage &, bool, bool)> attackTiming_;
+    std::function<std::optional<WeaponAttackTiming>(const WeaponDamage &, bool, bool, std::string_view)> attackTiming_;
     std::function<SkillCastSpec(EntityId, int, int)> resolveMissileSkill_;
     std::function<int(const Enemy &)> monsterSize_;
     std::function<MovementCollisionRule(const Enemy &)> monsterMovementRule_;
@@ -143,7 +143,7 @@ class Simulation {
     void requestAttack(const Attack &attack);
     const WeaponDamage *attackWeapon(bool thrown, bool leftHand) const;
     bool meleeReach(EntityId defender, const WeaponDamage &weapon) const;
-    bool beginWeaponAttack(Vec aim, EntityId target, const WeaponDamage &weapon, bool thrown, bool leftHand);
+    bool beginWeaponAttack(Vec aim, EntityId target, const WeaponDamage &weapon, bool thrown, bool leftHand, const WeaponSkillSpec *skill = nullptr);
     bool beginWeaponSkill(const SkillCastSpec &skill, Vec aim, EntityId target);
     void advanceWeaponAttack();
     bool firePhysicalProjectile(Vec target, const WeaponDamage &weapon, bool thrown,

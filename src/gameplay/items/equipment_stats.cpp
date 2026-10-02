@@ -43,6 +43,9 @@ EquipmentStats deriveEquipmentStats(const InventoryService &inventory, const Pla
             result.defense += int(armor);
         }
         if (definition.equipment.isType("shld")) {
+            result.shield = item->id;
+            result.smiteMinimum = definition.base.minDamage.value_or(0);
+            result.smiteMaximum = definition.base.maxDamage.value_or(0);
             auto block = definition.base.block;
             if (!block)
                 throw std::runtime_error("Unverified shield block: " + definition.code);

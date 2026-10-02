@@ -187,14 +187,14 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
         result.combat = merc.combat;
         return result;
     };
-    simulation_->attackTiming_ = [this](const WeaponDamage &weapon, bool thrown, bool leftHand)
+    simulation_->attackTiming_ = [this](const WeaponDamage &weapon, bool thrown, bool leftHand, std::string_view requestedMode)
         -> std::optional<WeaponAttackTiming> {
         const auto action = thrown ? (leftHand ? BasicSkillAction::LeftHandThrow : BasicSkillAction::Throw) :
                                      (leftHand ? BasicSkillAction::LeftHandSwing : BasicSkillAction::Attack);
         const auto skill = std::find_if(content_.skills.skills.begin(), content_.skills.skills.end(),
             [action](const auto &entry) { return entry.second.basicAction == action; });
         if (skill == content_.skills.skills.end()) return std::nullopt;
-        const auto &mode = skill->second.animationMode;
+        const std::string mode = requestedMode.empty() ? skill->second.animationMode : std::string(requestedMode);
         auto found = content_.skills.attackTimings.find(characterAppearance() + mode + equipmentStats().animationClass);
         if (found == content_.skills.attackTimings.end()) return std::nullopt;
         const auto &data = found->second;

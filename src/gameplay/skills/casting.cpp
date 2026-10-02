@@ -84,10 +84,12 @@ bool Simulation::beginSkillCast(PlayerState &player, const SkillCastSpec &skill,
         }
         stopChannel(player);
     }
-    if (player.dead || player.castTime > 0 ||
+    if (player.dead || player.charge || player.castTime > 0 ||
         player.meleeTime > 0 || player.hitTime > 0 || skill.castDuration <= 0)
         return false;
     if (skill.delayFrames > 0 && state_.frame < player.skillDelayUntil) return false;
+    if (skill.requiresShield && !player.equipment.shield) return false;
+    if (skill.heaven && (!combatUnit(enemy).alive() || !canAttack(player.id, enemy))) return false;
     if (skill.blizzard && !blizzardTargetClear(player.pos, target)) return false;
     if (skill.meteor && !blizzardTargetClear(player.pos, target)) return false;
     if (skill.hydraFrames > 0 && !blizzardTargetClear(player.pos, target)) return false;
@@ -113,6 +115,7 @@ bool Simulation::beginSkillCast(PlayerState &player, const SkillCastSpec &skill,
     player.lastCastRate = skill.castRate;
     player.lightningSequence = skill.arc.has_value();
     player.route.clear();
+    player.approachSkill.reset();
     player.attackTarget = {};
     player.throwAttack = player.leftHandAttack = false;
     player.attackPosition.reset();
@@ -151,6 +154,8 @@ void Simulation::releaseSkillCast(PlayerState &player, const SkillCastSpec &skil
         }
         return;
     }
+    if (skill.requiresShield && !player.equipment.shield) return;
+    if (skill.heaven && (!combatUnit(targetUnit).alive() || !canAttack(player.id, targetUnit))) return;
     if (consumeMana) player.mana -= skill.manaCost;
     if (skill.delayFrames > 0)
         player.skillDelayUntil = state_.frame + EffectFrame(skill.delayFrames);
@@ -204,6 +209,20 @@ void Simulation::releaseSkillCast(PlayerState &player, const SkillCastSpec &skil
             amount *= float(std::clamp(100 - unitResistance(unit, MonsterDamageType::Lightning), 0, 100)) / 100.f;
             dealDamage({player.id, unit.id, amount, MonsterDamageType::Lightning, 0, true});
         }
+    } else if (skill.heaven) {
+        const auto defender = combatUnit(targetUnit);
+        if (!defender.alive() || !canAttack(player.id, targetUnit)) return;
+        Missile missile{ids_.allocate(), player.id, target, {}, float(skill.heaven->delayFrames) / 25.f,
+            skill.effect, false, skill.missileId};
+        missile.heaven = skill.heaven;
+        missile.heavenTarget = targetUnit;
+        const int minimum = int(skill.minimumDamage * 256.f), maximum = int(skill.maximumDamage * 256.f);
+        missile.damage = float(minimum + limitedRandom(player.combatRandom, unsigned(std::max(0, maximum - minimum)))) / 256.f;
+        missile.skillId = skill.sourceId; missile.skillRank = skill.rank;
+        missile.hitOverlayId = skill.hitOverlayId; missile.hitOverlayDuration = skill.hitOverlayDuration;
+        missile.combatRandom = childRandom(unitRandom_);
+        state_.area.effects.push_back({target, 0, skill.hitOverlayDuration, -1, skill.hitOverlayId, targetUnit});
+        state_.area.missiles.push_back(std::move(missile));
     } else if (skill.arc || skill.meteor) {
         const Vec origin = skill.meteor ? Vec{std::floor(target.x) + .5f, std::floor(target.y) + .5f} :
             Vec{std::floor(player.pos.x) + .5f, std::floor(player.pos.y) + .5f};
@@ -289,6 +308,30 @@ void Simulation::releaseSkillCast(PlayerState &player, const SkillCastSpec &skil
             state_.area.missiles.back().hitOverlayId = skill.hitOverlayId;
             state_.area.missiles.back().hitOverlayDuration = skill.hitOverlayDuration;
         }
+    } else if (skill.effect == SkillBehavior::BlessedHammer) {
+        int percent = 100;
+        for (const auto &effect : player.combatEffects.entries())
+            if (effect.activeAt(state_.frame) && effect.spec.state.id == skill.concentrationState)
+                percent += effect.spec.modifiers.combat.damagePercent * skill.concentrationFactor / 8;
+        const int minimum = int(skill.minimumDamage * 256.f) * percent / 100;
+        const int maximum = int(skill.maximumDamage * 256.f) * percent / 100;
+        Missile missile{ids_.allocate(), player.id, player.pos, player.look * skill.missileVelocity,
+            skill.missileLifetime, skill.effect, false, skill.missileId};
+        missile.damage = float(minimum + limitedRandom(player.combatRandom, unsigned(std::max(0, maximum - minimum)))) / 256.f;
+        missile.fixedElement = MonsterDamageType::Magic;
+        missile.killOnHit = false;
+        missile.combatRandom = childRandom(unitRandom_);
+        Vec previous{std::floor(player.pos.x), std::floor(player.pos.y)};
+        for (int step = 1; missile.path.size() < 77; ++step) {
+            const float angle = float(step * 16) * 6.283185307179586f / 512.f;
+            const float radius = float(step * 9600) / 65536.f;
+            const Vec point{std::floor(player.pos.x + std::cos(angle) * radius),
+                            std::floor(player.pos.y + std::sin(angle) * radius)};
+            if (point.x == previous.x && point.y == previous.y) continue;
+            missile.path.push_back(point + Vec{.5f, .5f});
+            previous = point;
+        }
+        state_.area.missiles.push_back(std::move(missile));
     } else if (skill.effect == SkillBehavior::FireBolt || skill.effect == SkillBehavior::Fireball ||
                skill.effect == SkillBehavior::IceBolt || skill.effect == SkillBehavior::IceBlast ||
                skill.effect == SkillBehavior::Inferno || skill.effect == SkillBehavior::HolyBolt) {

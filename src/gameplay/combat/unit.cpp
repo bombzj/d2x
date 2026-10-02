@@ -106,6 +106,10 @@ CombatUnit Simulation::combatUnit(EntityId id) {
             }
         }
         const auto modifiers = monster->combatEffects.modifiers(state_.frame);
+        if (monster->conversion && monster->conversion->level > monster->conversion->convertedLevel) {
+            unit.stats.level = monster->conversion->convertedLevel;
+            unit.stats.attributes.maxLife = std::max(1, int(monster->maxHp));
+        }
         auto &stats = unit.stats.attributes;
         stats.defense = std::max(0, (stats.defense + modifiers.defense) * (100 + modifiers.combat.defensePercent) / 100);
         stats.fireResist += modifiers.fireResist; stats.coldResist += modifiers.coldResist;
@@ -253,6 +257,8 @@ void Simulation::recoverUnit(EntityId defender, EntityId attacker, float damage,
             ? monsterHitProperties_(*source.monster).first : elemental ? 13 : 0) & 15;
         recoverHireling(damage, hitClass);
     } else if (target.player) {
+        if (target.player->weaponAttack && target.player->weaponAttack->skill &&
+            target.player->weaponAttack->skill->weapon && !target.player->weaponAttack->skill->weapon->interruptible) return;
         const int chance = target.stats.attributes.combat.concentrationChance;
         if (chance > 0 && (target.player->meleeTime > 0 || target.player->castTime > 0 || target.player->channelSkill() >= 0) &&
             limitedRandom(*target.random, 100) < unsigned(chance)) return;

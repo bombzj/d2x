@@ -78,7 +78,7 @@ void Simulation::resolveWeaponHit(EntityId defender, float physical, EntityId so
                                   const AttackElements &originalElements) {
     auto target = combatUnit(defender);
     if (!target.alive() || !target.stats.resolved || !canAttack(source, defender)) return;
-    if (target.stats.block > 0 && limitedRandom(*target.random, 100) < unsigned(target.stats.block)) {
+    if (!originalElements.smite && target.stats.block > 0 && limitedRandom(*target.random, 100) < unsigned(target.stats.block)) {
         if (!originalElements.ranged) triggerCombatEffects(defender, CombatEffectEvent::AttackedInMelee, source);
         return;
     }
@@ -145,6 +145,7 @@ void Simulation::resolveWeaponHit(EntityId defender, float physical, EntityId so
         else apply(*target.monster);
     }
     applyPoison(defender, elements.poisonPerSecond, elements.poisonDuration, source);
+    if (elements.knockback && target.alive() && !target.stats.boss) applyAuraKnockback(source, defender);
 }
 void Simulation::applyPoison(EntityId defender, float rawRate, float duration, EntityId source) {
     auto target = combatUnit(defender);

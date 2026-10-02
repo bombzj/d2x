@@ -12,6 +12,10 @@ int WeaponAttackTiming::actionTick() const {
                       1, durationTicks());
 }
 int WeaponAttackState::animationFrame() const {
+    if (chargeSequence) {
+        constexpr int frames[]{1, 4, 5, 6, 8, 10, 12};
+        return frames[std::clamp(ticks * timing.speed / 256, 0, 6)];
+    }
     return std::clamp(timing.startFrame + ticks * timing.speed / 256, 0, timing.frames - 1);
 }
 int effectiveAttackSpeed(int animationSpeed, int itemIAS, int baseWeaponSpeed, int skillRate) {

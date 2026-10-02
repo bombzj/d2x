@@ -17,8 +17,14 @@ CharacterActionStats weaponStats(const GameSession &session, bool thrown, bool l
         const auto &weapon = equipment.weapons[index];
         if (leftHand && (!weapon.item || !weapon.leftHand)) continue;
         if ((thrown && !weapon.throwable) || (!thrown && weapon.potion)) return {};
-        if (skill && std::find(weapon.types.begin(), weapon.types.end(), skill->weapon->requiredType) == weapon.types.end())
+        if (skill && !skill->weapon->smite && std::find(weapon.types.begin(), weapon.types.end(), skill->weapon->requiredType) == weapon.types.end())
             return {};
+        if (skill && skill->weapon->smite) {
+            if (!equipment.shield) return {};
+            const int percent = std::max(0, 100 + session.characterStats().strength + combat.damagePercent + skill->weapon->damagePercent);
+            return {damageText(int64_t(equipment.smiteMinimum + combat.smiteMinimum + combat.normalDamage) * percent / 100,
+                int64_t(equipment.smiteMaximum + combat.smiteMaximum + combat.normalDamage) * percent / 100), ""};
+        }
         if (thrown && weapon.potion && weapon.projectile) {
             const auto &spec = *weapon.projectile;
             if (spec.impact && spec.impact->cloudBurst) {
@@ -32,10 +38,15 @@ CharacterActionStats weaponStats(const GameSession &session, bool thrown, bool l
             return {damageText(minimum / 256, maximum / 256), ""};
         }
         const auto elements = attackElementRanges(combat, weapon.item);
-        const int64_t elementalMinimum = int64_t(elements.fire.minimum) + elements.lightning.minimum +
+        int64_t elementalMinimum = int64_t(elements.fire.minimum) + elements.lightning.minimum +
                                          elements.cold.minimum + elements.magic.minimum;
-        const int64_t elementalMaximum = int64_t(elements.fire.maximum) + elements.lightning.maximum +
+        int64_t elementalMaximum = int64_t(elements.fire.maximum) + elements.lightning.maximum +
                                          elements.cold.maximum + elements.magic.maximum;
+        if (skill && skill->effect == SkillBehavior::Vengeance)
+            for (int percent : skill->weapon->elementPercent) {
+                elementalMinimum += int64_t(weapon.meleeBaseMinimum) * percent / 100 / 256;
+                elementalMaximum += int64_t(weapon.meleeBaseMaximum) * percent / 100 / 256;
+            }
         const int skillDamage = skill ? skill->weapon->damagePercent : 0;
         const int minimum = thrown ? weapon.throwMinimum : weapon.minimum +
             int(int64_t(weapon.meleeBaseMinimum) * skillDamage / 100);

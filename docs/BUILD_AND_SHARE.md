@@ -1,5 +1,7 @@
 # 构建与运行
 
+2026-10-02圣骑士战斗技能：Holy Bolt、Sacrifice、Zeal、Vengeance、Holy Shield、Smite、Blessed Hammer、Conversion、Fist of the Heavens和Charge依次实现、Release链接及更新固定dist/current；最终公共追击／显示字段／耐久及D2Common玩家SQ4帧映射收尾再次构建打包。全部30项原技能有玩法入口，但完整序列速率、盾牌组件与格挡动画、完整装备触发及转换特殊AI等仍有适配限制，详见[技能](SKILLS.md#圣骑士战斗技能)。按要求不编写或运行测试、不启动游戏，D2S v96与用户存档、MPQ和旧产物不改；入口为dist/current/Play.cmd。
+
 2026-10-02女巫与按需加载最终交付：Windows Release链接完成，固定dist/current包含Lightning／Chain Lightning／Meteor、区域按需解码及第四幕第三传送点修复。普通seed210临时角色联合冒烟确认闪电穿透、连锁下一目标、陨石延迟及地火，真实第四幕菜单第三行103→107、地下出口8→2与未载入城镇的回城祭坛通过；独立产物恢复40→旅行107另存→重载103及两条waypoint、随后首次加载4原五石通过，正常退出0、stderr空。相同隐藏两帧启动单次总耗时20.87→5.41秒（此前按需包4.97秒），地图解码142→5；包含进程退出且受缓存影响，最终包EXE与构建产物SHA256一致。无新增测试程序、不覆盖用户存档或输入档，D2S v96不变。原客户端精确视觉、完整连续跨区行走和全部存档组合尚未认证；具体边界见[技能](SKILLS.md#闪电连锁闪电与陨石)及[地图](ACT1_MAPS.md#按需加载与第四幕传送点)，此前分批条目仅为历史状态。
 
 2026-10-02最终五城镇冒烟与提交：修复Fortress原main33出生扫描和泰瑞尔同名DC6组件后，Windows Release链接并更新dist/current；包内普通Sorceress、seed210、--frames 2分别启动1／40／75／103／109，五次退出0、stderr空，原图零缺砖，五张截图已查看。证据在artifacts/town-smoke-<level>-20261002.log、对应-error日志与png；无角色存档读写、无新测试程序。源码／相关文档按本轮授权提交，用户已暂存AGENTS.md保留不提交；完整聊天、服务、存档往返及其他场景未覆盖，旧仅构建记录由本条启动证据补充。
