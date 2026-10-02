@@ -90,8 +90,36 @@ void SceneView::drawMinimap(bool large) const {
         return Vec{std::round(position.x), std::round(position.y)};
     };
     const auto &art = assets_.automapCels[large ? 1 : 0];
+    const Rectangle fadedCenter{area.x + area.width * .25f, area.y + area.height * .25f,
+        area.width * .5f, area.height * .5f};
+    auto mapSprite = [&](const Sprite &image, Vec position, bool npc = false) {
+        if (npc || view_.automapFade == AutomapFade::No) {
+            sprite(&image, position, WHITE);
+        } else if (view_.automapFade != AutomapFade::Center || !large) {
+            sprite(&image, position, {255, 255, 255, 128});
+        } else {
+            const float left = position.x + image.x, top = position.y + image.y;
+            auto clipped = [&](Rectangle clip, uint8_t alpha) {
+                const float clipLeft = std::max(left, clip.x), clipTop = std::max(top, clip.y);
+                const float clipRight = std::min(left + image.texture.width, clip.x + clip.width);
+                const float clipBottom = std::min(top + image.texture.height, clip.y + clip.height);
+                if (clipRight <= clipLeft || clipBottom <= clipTop) return;
+                const Rectangle source{clipLeft - left, clipTop - top,
+                    clipRight - clipLeft, clipBottom - clipTop};
+                DrawTexturePro(image.texture, source,
+                    {clipLeft, clipTop, source.width, source.height}, {0, 0}, 0, {255, 255, 255, alpha});
+            };
+            clipped({area.x, area.y, area.width, fadedCenter.y - area.y}, 255);
+            clipped({area.x, fadedCenter.y + fadedCenter.height, area.width,
+                area.y + area.height - fadedCenter.y - fadedCenter.height}, 255);
+            clipped({area.x, fadedCenter.y, fadedCenter.x - area.x, fadedCenter.height}, 255);
+            clipped({fadedCenter.x + fadedCenter.width, fadedCenter.y,
+                area.x + area.width - fadedCenter.x - fadedCenter.width, fadedCenter.height}, 255);
+            clipped(fadedCenter, 128);
+        }
+    };
     BeginScissorMode(int(area.x), int(area.y), int(area.width), int(area.height));
-    BeginBlendMode(BLEND_ADDITIVE);
+    BeginBlendMode(BLEND_ALPHA);
     for (const auto &[index, offset] : regions) {
         const auto &region = session_.regions()[index];
         const auto &map = region.map;
@@ -107,7 +135,7 @@ void SceneView::drawMinimap(bool large) const {
                 position.x + image.x > area.x + area.width ||
                 position.y + image.y + image.texture.height < area.y ||
                 position.y + image.y > area.y + area.height) continue;
-            sprite(&image, position, {255, 255, 255, uint8_t(large ? 225 : 245)});
+            mapSprite(image, position);
         }
     }
     for (const auto &[index, offset] : regions) {
@@ -115,18 +143,19 @@ void SceneView::drawMinimap(bool large) const {
         const auto &map = region.map;
         const auto seen = exploredAutomap_.find(region.definition.id);
         if (seen == exploredAutomap_.end()) continue;
-        auto marker = [&](int cel, Vec position) {
+        auto marker = [&](int cel, Vec position, bool npc = false) {
             auto cell = art.find(cel);
             if (cell == art.end()) return;
             int x = int(std::floor(position.x / 5.f)), y = int(std::floor(position.y / 5.f));
             if (x < 0 || y < 0 || x >= map.data.width || y >= map.data.height ||
                 !seen->second[size_t(y) * map.data.width + x]) return;
-            sprite(&cell->second, onMap(position + offset), WHITE);
+            mapSprite(cell->second, onMap(position + offset), npc);
         };
         for (const auto &object : region.objects)
             if (!object.questHidden)
                 marker(object.npcClass.empty() ? assets_.automapObjectCel(object.objectClass)
-                                               : assets_.automapNpcCel(object.npcClass), object.pos);
+                                               : assets_.automapNpcCel(object.npcClass), object.pos,
+                       !object.npcClass.empty());
         for (const auto &portal : session_.portals(region.definition.id))
             marker(assets_.automapObjectCel(59), portal.position);
         if (index == session_.regionIndex())

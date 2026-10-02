@@ -5,7 +5,14 @@
 #include <algorithm>
 #include <cmath>
 namespace d2x {
+int SceneView::gameMenuItemCount() const {
+    return view_.gameMenuPage == 2 ? 6 : view_.gameMenuPage == 1 ? 5 : 3;
+}
 Rectangle SceneView::gameMenuItemBounds(int index) const {
+    if (view_.gameMenuPage == 2)
+        return {130.f, 130.f + index * 65.f, W - 260.f, 46.f};
+    if (view_.gameMenuPage == 1)
+        return {180.f, 160.f + index * 70.f, W - 360.f, 48.f};
     float width = 0, height = 0, totalHeight = 0, top = 0;
     for (size_t row = 0; row < assets_.gameMenuLabels.size(); ++row) {
         float rowWidth = 0, rowHeight = 0;
@@ -22,13 +29,74 @@ Rectangle SceneView::gameMenuItemBounds(int index) const {
             width * hudScale, height * hudScale};
 }
 int SceneView::gameMenuAt(Vec mouse) const {
-    for (int index = 0; index < int(assets_.gameMenuLabels.size()); ++index)
+    for (int index = 0; index < gameMenuItemCount(); ++index)
         if (CheckCollisionPointRec(rv(mouse), gameMenuItemBounds(index))) return index;
     return -1;
 }
 void SceneView::drawGameMenu() const {
     if (!view_.gameMenuOpen) return;
     DrawRectangle(0, 0, W, H, {0, 0, 0, 100});
+    if (view_.gameMenuPage) {
+        auto size = [](const GpuAnimation &art) {
+            Vec result;
+            for (const auto &part : art.frames) {
+                result.x += part.texture.width;
+                result.y = std::max(result.y, float(part.texture.height));
+            }
+            return result;
+        };
+        auto label = [&](const GpuAnimation &art, Vec position, float scale, Color tint = WHITE) {
+            for (const auto &part : art.frames) {
+                DrawTexturePro(part.texture, {0, 0, float(part.texture.width), float(part.texture.height)},
+                    {position.x, position.y, part.texture.width * scale, part.texture.height * scale},
+                    {0, 0}, 0, tint);
+                position.x += part.texture.width * scale;
+            }
+        };
+        if (view_.gameMenuPage == 2) {
+            const auto dimensions = size(assets_.automapOptionsTitle);
+            const float scale = std::min(hudScale, (W - 160.f) / dimensions.x);
+            label(assets_.automapOptionsTitle, {(W - dimensions.x * scale) * .5f, 42}, scale);
+        }
+        for (int index = 0; index < gameMenuItemCount(); ++index) {
+            const auto bounds = gameMenuItemBounds(index);
+            const auto &art = view_.gameMenuPage == 1 ? assets_.optionsMenuLabels[size_t(index)]
+                : index == 5 ? assets_.optionsMenuLabels[4] : assets_.automapOptionLabels[size_t(index)];
+            const auto dimensions = size(art);
+            const float available = view_.gameMenuPage == 2 && index < 5 ? bounds.width * .68f : bounds.width;
+            const float scale = std::min(hudScale, std::min(available / dimensions.x, bounds.height / dimensions.y));
+            const bool centered = view_.gameMenuPage == 1 || index == 5;
+            label(art, {centered ? (W - dimensions.x * scale) * .5f : bounds.x,
+                    bounds.y + (bounds.height - dimensions.y * scale) * .5f}, scale);
+            if (view_.gameMenuPage == 2 && index < 5) {
+                const int value = index == 0 ? (view_.automapLarge ? 0 : 1)
+                    : index == 1 ? (view_.automapFade == AutomapFade::No ? 7
+                        : view_.automapFade == AutomapFade::Everything ? 8
+                        : view_.automapFade == AutomapFade::Center ? 9 : 6)
+                    : index == 2 ? (view_.automapCenterWhenCleared ? 5 : 4)
+                    : index == 3 ? (view_.automapParty ? 5 : 4) : (view_.automapNames ? 5 : 4);
+                const auto &valueArt = assets_.automapOptionValues[size_t(value)];
+                const auto valueSize = size(valueArt);
+                const float valueScale = std::min(hudScale, std::min(bounds.width * .28f / valueSize.x,
+                                                                    bounds.height / valueSize.y));
+                label(valueArt, {bounds.x + bounds.width - valueSize.x * valueScale,
+                    bounds.y + (bounds.height - valueSize.y * valueScale) * .5f}, valueScale);
+            }
+        }
+        const auto selected = gameMenuItemBounds(view_.gameMenuSelected);
+        const auto &marker = assets_.gameMenuMarker;
+        const int frame = int(view_.gameMenuTime * marker.count) % marker.count;
+        for (bool right : {false, true}) {
+            const auto *image = marker.frame(0, right ? frame : marker.count - 1 - frame);
+            const float side = 46.f;
+            DrawTexturePro(image->texture, {0, 0, float(image->texture.width), float(image->texture.height)},
+                {right ? W - 82.f : 36.f, selected.y + (selected.height - side) * .5f, side, side},
+                {0, 0}, 0, WHITE);
+        }
+        if (view_.noticeError && view_.noticeTime > 0)
+            painter_.centered(view_.lootNotice, H - HUD - 30, 14, {245, 166, 135, 255});
+        return;
+    }
     float widest = 0;
     for (int index = 0; index < int(assets_.gameMenuLabels.size()); ++index) {
         auto bounds = gameMenuItemBounds(index);

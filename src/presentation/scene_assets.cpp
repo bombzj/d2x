@@ -225,6 +225,19 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
             throw std::runtime_error("Original Escape menu label is missing: " + std::string(menuLabels[index]));
     }
     gameMenuMarker = unitsGraphics_.single("data/global/ui/cursor/pentspin.dc6");
+    constexpr std::array optionsLabels{"soundoptions", "videooptions", "automapoptions", "cfgoptions", "previous"};
+    constexpr std::array automapLabels{"automapmode", "automapfade", "automapcenter", "automapparty", "automappartynames"};
+    constexpr std::array optionValues{"full", "mini", "smalloff", "smallon", "smallno", "smallyes", "auto",
+        "no", "everything", "center"};
+    auto menuArt = [&](const char *name) {
+        auto art = unitsGraphics_.single(std::string("data/local/ui/eng/") + name + ".dc6");
+        if (art.frames.empty()) throw std::runtime_error("Original options label missing: " + std::string(name));
+        return art;
+    };
+    for (size_t index = 0; index < optionsLabels.size(); ++index) optionsMenuLabels[index] = menuArt(optionsLabels[index]);
+    for (size_t index = 0; index < automapLabels.size(); ++index) automapOptionLabels[index] = menuArt(automapLabels[index]);
+    for (size_t index = 0; index < optionValues.size(); ++index) automapOptionValues[index] = menuArt(optionValues[index]);
+    automapOptionsTitle = menuArt("automapoptions");
     if (gameMenuMarker.frames.empty())
         throw std::runtime_error("Original Escape menu marker is missing");
     inventoryPanel = uiGraphics_.single("data/global/ui/panel/invchar6.dc6");

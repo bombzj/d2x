@@ -41,6 +41,7 @@ void SceneController::openGameMenu(Vec mouse) {
     ui.pointButtonPressed.reset();
     ui.questPressed = -1;
     ui.gameMenuOpen = true;
+    ui.gameMenuPage = 0;
     ui.gameMenuSelected = 2;
     ui.gameMenuPressed = -1;
     ui.gameMenuTime = 0;
@@ -189,7 +190,7 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
             ui.gameMenuMouse = input.mouse;
         }
         if (input.menuDelta) {
-            ui.gameMenuSelected = std::clamp(ui.gameMenuSelected + input.menuDelta, 0, 2);
+            ui.gameMenuSelected = std::clamp(ui.gameMenuSelected + input.menuDelta, 0, view_.gameMenuItemCount() - 1);
             ui.gameMenuPressed = -1;
         }
         int activated = input.enter ? ui.gameMenuSelected : -1;
@@ -198,8 +199,34 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
             if (hovered >= 0 && hovered == ui.gameMenuPressed) activated = hovered;
             ui.gameMenuPressed = -1;
         } else if (!input.leftHeld) ui.gameMenuPressed = -1;
-        if (activated == 1) return false;
-        if (activated == 2) resume();
+        if (activated >= 0) {
+            if (ui.gameMenuPage == 0) {
+                if (activated == 0) { ui.gameMenuPage = 1; ui.gameMenuSelected = 4; }
+                if (activated == 1) return false;
+                if (activated == 2) resume();
+            } else if (ui.gameMenuPage == 1) {
+                if (activated == 2) { ui.gameMenuPage = 2; ui.gameMenuSelected = 5; }
+                else if (activated == 4) { ui.gameMenuPage = 0; ui.gameMenuSelected = 0; }
+                else view_.notice("This options page is not implemented.", true);
+            } else {
+                switch (activated) {
+                case 0:
+                    ui.automapLarge = !ui.automapLarge;
+                    if (!ui.automapLarge && ui.automapFade == AutomapFade::Center)
+                        ui.automapFade = AutomapFade::Everything;
+                    break;
+                case 1:
+                    ui.automapFade = static_cast<AutomapFade>((int(ui.automapFade) + 1) %
+                        (ui.automapLarge ? 4 : 3));
+                    break;
+                case 2: ui.automapCenterWhenCleared = !ui.automapCenterWhenCleared; break;
+                case 3: ui.automapParty = !ui.automapParty; break;
+                case 4: ui.automapNames = !ui.automapNames; break;
+                case 5: ui.gameMenuPage = 1; ui.gameMenuSelected = 2; break;
+                }
+            }
+            ui.gameMenuPressed = -1;
+        }
         return true;
     }
     if (ui.pointButtonPressed) {
@@ -455,13 +482,8 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
         ui.help = !ui.help;
     }
     if (input.automap) {
-        if (input.shift) {
-            ui.automapLarge = !ui.automapLarge;
-            ui.automap = true;
-        } else {
-            ui.automap = !ui.automap;
-        }
-        ui.automapOffset = {};
+        ui.automap = !ui.automap;
+        if (ui.automap && ui.automapCenterWhenCleared) ui.automapOffset = {};
     }
     if (input.minimapSide)
         ui.minimapRight = !ui.minimapRight;

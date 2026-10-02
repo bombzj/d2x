@@ -225,6 +225,7 @@ void SceneView::sessionRestored() {
     view_.characterOpen = false;
     view_.pointButtonPressed.reset();
     view_.gameMenuOpen = false;
+    view_.gameMenuPage = 0;
     view_.gameMenuSelected = 2;
     view_.gameMenuPressed = -1;
     view_.gameMenuTime = 0;

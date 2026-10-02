@@ -13,6 +13,7 @@
 
 namespace d2x {
 struct SpecialItemRecord;
+enum class AutomapFade { No, Everything, Auto, Center };
 struct ViewState {
     InventoryUi inventory;
     std::optional<int> leftSkill, rightSkill;
@@ -28,12 +29,15 @@ struct ViewState {
     bool help = false, automap = false, debug = false, pause = false, travelMenu = false;
     bool miniPanelOpen = false;
     bool gameMenuOpen = false;
+    int gameMenuPage = 0;
     int gameMenuSelected = 2, gameMenuPressed = -1;
     float gameMenuTime = 0;
     Vec gameMenuMouse;
     bool minimapRight = false;
     bool automapLarge = false;
     bool automapNames = true;
+    bool automapCenterWhenCleared = true, automapParty = true;
+    AutomapFade automapFade = AutomapFade::Auto;
     Vec automapOffset;
     bool characterOpen = false;
     std::optional<bool> pointButtonPressed;
@@ -189,6 +193,7 @@ class SceneView {
     Rectangle worldViewport() const;
         Rectangle gameMenuItemBounds(int index) const;
         int gameMenuAt(Vec mouse) const;
+        int gameMenuItemCount() const;
     Rectangle hirelingSlotBounds(size_t index) const;
     bool hirelingPortraitVisible() const;
     std::optional<int> miniPanelAt(Vec mouse) const;

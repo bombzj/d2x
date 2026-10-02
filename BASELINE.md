@@ -2,6 +2,10 @@
 
 更新：2026-10-02。供维护者和协作 agent 从当前代码继续工作。
 
+自动地图选项交付（2026-10-02，近似Fade）：原MPQ菜单与OpenDiablo2层级／返回／Esc规则接入，大小、居中、名称和队伍偏好保存客户端JSON，不改D2S。用户确认Center When Cleared为Yes重开居中、No保留偏移；方向键只平移内容，不移动屏幕显示区域；V左右切换和Home保留，无依据Shift+Tab尺寸快捷及调试入口删除。OpenDiablo2只有Fade菜单占位／事件说明，没有可复用绘制；D2MOO没有D2Client。按用户最新授权近似实现小图No／Everything／Auto、大图额外Center：常规alpha替代加法混合，No255、Everything／Auto128，NPC／人物不淡化，Auto不随移动变化；Center为显示区域中央半宽半高矩形，区内128区外255，按像素矩形切分边界，小图不提供Center。使用原no／everything／auto／center图块，automapFade字符串写配置，诊断fadeSupported=true／fadeApproximate=true。透明强度、Center范围、模式切换回退以及现有基点／缩放／人物标记仍非原客户端精确认证。Show Party无其他玩家消费者，声音／视频／键位页仍未实现。旧普通冒烟仅覆盖入口、四开关、暂停和配置落盘；本轮Release链接及静态诊断通过，按要求打包并提交源码／文档，不新增测试程序、不继续运行游戏，现有存档及原MPQ不改。详见[自动地图](docs/AUTOMAP.md)。
+
+读档地图生成修复（2026-10-02，用户读档待验收）：通用预设随机选择外侧回廊27的变体后，兵营28仍默认方向0，触发“Barracks entrance does not match the outer cloister”启动拒绝。planWorld现将实际回廊recipe.variant传给兵营generateMaze的entranceDirection，保留一致性校验，不改变地图种子或D2S格式，也不改现有存档。随自动地图批次通过Release链接和静态诊断并纳入交付；尚未实际加载用户存档，不把编译通过当作读档认证。
+
 五城镇最终包冒烟（2026-10-02）：按本轮授权，用dist/current的普通Sorceress、seed210对1／40／75／103／109各运行两帧并截图，五次退出0、stderr空，原城镇地形均零未解析格，截图已查看。首轮发现Fortress只有DS1 main33扫描标记，按D2MOO原到达索引11补充城镇main30缺失时的原main33入口；另发现泰瑞尔躯干仅有原DC6，按OpenDiablo2合成器规则在同名DCC不存在时读取DC6，最终包五城镇复验通过。未读写角色存档、未新增测试程序，日志／截图位于artifacts/town-smoke-<level>-20261002.*。本轮提交五幕地图与NPC通用化相关源码／文档，用户AGENTS.md暂存修改不纳入。完整NPC聊天／服务、行走与存档往返仍未覆盖；下文此前仅构建状态由本条五城镇启动证据补充，不视作其他场景或全玩法验收。
 
 原资源与固定引擎规则边界（2026-10-02）：移除world对象按外观token推NPC姓名的表；所有幕原NPC由MonPreset/MonStats.NameStr经TBL命名，对象名称取Objects.Name。首次介绍幕别优先来自MonPreset.Act，cain5无预设、tyrael1初见归属第四幕是D2MOO原位号例外；对白及第一幕任务语音统一按a1npc–a5npc的wave关联Sounds.Sound及NPC身份，不再维护Cain/Charsi任务分组姓名别名。传送点身份统一用原Objects.OperateFn=23与交互类型判定，不再依赖显示名；治疗资格按原NPC类而非PS外观。D2MOO的五幕DS1物件预设序号表、PlrIntro初见位号不是MPQ字段，不能从Objects.txt或MonPreset顺序推导，保留固定原规则。Windows Release已链接，固定包更新；按要求不运行游戏／测试或提交，界面与存档实际操作待验收。见[原NPC](docs/NPC_COMPLETION.md)和[地图](docs/ACT1_MAPS.md#五幕通用完整预设)。

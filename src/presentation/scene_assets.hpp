@@ -141,6 +141,10 @@ class SceneAssets {
     std::array<GpuAnimation, 6> actOneQuestIcons;
     std::array<Rectangle, 6> actOneQuestFaces{};
     std::array<GpuAnimation, 3> gameMenuLabels;
+    std::array<GpuAnimation, 5> optionsMenuLabels;
+    std::array<GpuAnimation, 5> automapOptionLabels;
+    GpuAnimation automapOptionsTitle;
+    std::array<GpuAnimation, 10> automapOptionValues;
     GpuAnimation gameMenuMarker;
     GpuAnimation hirelingPanel, hirelingScroll, hirelingHead, hirelingArmor, hirelingWeapon, hirelingPortrait;
     struct OverlayArt {

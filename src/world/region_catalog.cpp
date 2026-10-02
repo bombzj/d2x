@@ -82,10 +82,16 @@ WorldPlan planWorld(Archives &archives, const WorldCatalog &catalog, WorldSelect
                 missingMaze.empty() ? "Generated maze / linked stairs" : "Missing original maze resources";
             if (missingMaze.empty()) {
                 entry.destination = RegionId(id);
+                int entranceDirection = 0;
+                if (id == 28) {
+                    auto court = std::find_if(result.regions.begin(), result.regions.end(),
+                        [](const auto &region) { return int(region.definition.id) == 27; });
+                    if (court != result.regions.end())
+                        entranceDirection = court->recipe.variant;
+                }
                 result.regions.push_back(makeRegion(
                     *entry.destination, level.name,
-                    generateMaze(catalog, id, selection.seed, selection.difficulty,
-                                 selection.level == 27 && !selection.preset ? selection.variant : 0)));
+                    generateMaze(catalog, id, selection.seed, selection.difficulty, entranceDirection)));
             }
         } else if (available.ready()) {
             entry.destination = RegionId(id);

@@ -64,7 +64,6 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
             else if (key == "hireling" || key == "o") frame.hireling = true;
             else if (key == "weapon-swap") frame.weaponSwap = true;
             else if (key == "automap") frame.automap = true;
-            else if (key == "automap-size") frame.automap = frame.shift = true;
             else if (key == "automap-side") frame.minimapSide = true;
             else if (key == "automap-center") frame.automapCenter = true;
             else if (key == "automap-names") frame.automapNames = true;
@@ -200,6 +199,12 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
                 {"leftDamage", leftAction.damage}, {"rightDamage", rightAction.damage}};
             result["travelMenu"] = view.ui().travelMenu;
             result["automap"] = {{"open", view.ui().automap}, {"large", view.ui().automapLarge},
+                {"fadeSupported", true}, {"fadeApproximate", true},
+                {"fade", view.ui().automapFade == AutomapFade::No ? "no"
+                    : view.ui().automapFade == AutomapFade::Everything ? "everything"
+                    : view.ui().automapFade == AutomapFade::Center ? "center" : "auto"},
+                {"centerWhenCleared", view.ui().automapCenterWhenCleared},
+                {"party", view.ui().automapParty}, {"optionsPage", view.ui().gameMenuPage},
                 {"right", view.ui().minimapRight},
                 {"names", view.ui().automapNames},
                 {"offset", {view.ui().automapOffset.x, view.ui().automapOffset.y}}};
