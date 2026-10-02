@@ -15,6 +15,47 @@ int number(const DataTable &table, size_t row, std::string_view column) {
     return *value;
 }
 }
+void loadNecromancerCurses(SkillCatalog &catalog, const DataTable &skills, const DataTable &sounds,
+                          const CombatStateCatalog &states, Archives &archives) {
+    for (const auto name : {"Amplify Damage", "Weaken", "Decrepify", "Lower Resist"}) {
+        const auto row = rowOf(skills, "skill", name);
+        const bool decrepify = std::string_view(name) == "Decrepify";
+        const bool lowerResist = std::string_view(name) == "Lower Resist";
+        if (skills.value(row, "anim") != "SC" || number(skills, row, "srvdofunc") != 30 ||
+            skills.value(row, "aurarangecalc") != "ln12" || skills.value(row, "auralencalc") != "ln34" ||
+            skills.value(row, "aurastat1") != (lowerResist ? "fireresist" : decrepify ? "velocitypercent" : std::string_view(name) == "Weaken" ? "damagepercent" : "damageresist") ||
+            skills.value(row, "aurastatcalc1") != (lowerResist ? "-dm56" : decrepify ? "par5" : "-par5"))
+            throw std::runtime_error("Unsupported original curse: " + std::string(name));
+        SkillSpec spell;
+        spell.sourceId = number(skills, row, "Id"); spell.effect = SkillBehavior::Curse;
+        spell.mana = number(skills, row, "mana"); spell.minimumMana = number(skills, row, "minmana");
+        spell.manaPerLevel = number(skills, row, "lvlmana"); spell.manaShift = number(skills, row, "manashift");
+        CurseSpec curse;
+        curse.state = states.at(std::string(skills.value(row, "auratargetstate"))).definition;
+        curse.radius = number(skills, row, "Param1"); curse.radiusPerLevel = number(skills, row, "Param2");
+        curse.frames = number(skills, row, "Param3"); curse.framesPerLevel = number(skills, row, "Param4");
+        if (lowerResist) {
+            curse.resistMinimum = number(skills, row, "Param5");
+            curse.resistMaximum = number(skills, row, "Param6");
+            if (skills.value(row, "aurastat2") != "lightresist" || skills.value(row, "aurastat3") != "coldresist" ||
+                skills.value(row, "aurastat4") != "poisonresist") throw std::runtime_error("Unsupported Lower Resist stats");
+        } else if (decrepify) {
+            const int amount = number(skills, row, "Param5");
+            if (skills.value(row, "aurastat2") != "damagepercent" || skills.value(row, "aurastat3") != "damageresist" ||
+                skills.value(row, "aurastat4") != "attackrate") throw std::runtime_error("Unsupported Decrepify stats");
+            curse.modifiers.velocityPercent = amount;
+            curse.modifiers.combat.damagePercent = amount;
+            curse.modifiers.combat.physicalResist = amount;
+            curse.modifiers.combat.attackRate = amount;
+        } else if (std::string_view(name) == "Weaken") curse.modifiers.combat.damagePercent = -number(skills, row, "Param5");
+        else curse.modifiers.combat.physicalResist = -number(skills, row, "Param5");
+        spell.curse = curse;
+        const auto sound = rowOf(sounds, "Sound", skills.value(row, "stsound"));
+        spell.castSoundArt = "data/global/sfx/" + std::string(sounds.value(sound, "FileName"));
+        if (!archives.contains(spell.castSoundArt)) throw std::runtime_error("Missing original curse sound");
+        catalog.skills.at(spell.sourceId).spell = std::move(spell);
+    }
+}
 void loadNecromancerSummons(SkillCatalog &catalog, const DataTable &skills, const DataTable &monstats,
                            const DataTable &monstats2, const DataTable &monlvl, const DataTable &sounds,
                            Archives &archives) {

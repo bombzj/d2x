@@ -9,6 +9,14 @@
 #include <vector>
 
 namespace d2x {
+enum class CurseAi { None, DimVision, Terror, Confuse, Attract };
+struct CurseSpec {
+    CombatStateDefinition state;
+    int radius = 0, radiusPerLevel = 0, frames = 0, framesPerLevel = 0;
+    CharacterModifiers modifiers;
+    CurseAi ai = CurseAi::None;
+    int resistMinimum = 0, resistMaximum = 0;
+};
 struct FreezingAreaSpec {
     int radius = 0, radiusPerLevel = 0, radiusOverride = 0;
     int freezeFrames = 0, freezeFramesPerLevel = 0, freezeOverride = 0;
@@ -135,6 +143,7 @@ struct SkillSpec {
     std::optional<ArcSpec> arc;
     std::optional<MeteorSpec> meteor;
     std::optional<HeavenSpec> heaven;
+    std::optional<CurseSpec> curse;
     std::optional<FreezingAreaSpec> freezingArea;
     std::optional<MonsterFirewall> firewall;
     int firewallRangePerLevel = 0;
@@ -193,6 +202,7 @@ struct SkillCastSpec {
     std::optional<ArcSpec> arc;
     std::optional<MeteorSpec> meteor;
     std::optional<HeavenSpec> heaven;
+    std::optional<CurseSpec> curse;
     std::optional<FreezingAreaCastSpec> freezingArea;
     std::optional<MonsterFirewall> firewall;
     int delayFrames = 0;

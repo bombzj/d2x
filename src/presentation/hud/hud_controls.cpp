@@ -243,6 +243,9 @@ void SceneView::drawSkillControls(Vec mouse) const {
                 session_.characterStats().combat.coldSkillDamagePercent);
             detail = "Mana " + std::string(TextFormat("%.1f", value.manaCost));
             if (value.effect == SkillBehavior::Teleport) detail += " / Teleport to clear ground";
+            else if (value.curse)
+                detail += " / Radius " + std::to_string(value.curse->radius) +
+                    " / " + std::string(TextFormat("%.1fs", float(value.curse->frames) / 25.f));
             else if (value.effect == SkillBehavior::HolyBolt)
                 detail += " / Undead magic " + std::string(TextFormat("%.1f-%.1f", value.minimumDamage, value.maximumDamage)) +
                     " / Ally healing " + std::string(TextFormat("%.1f-%.1f", value.healingMinimum, value.healingMaximum));

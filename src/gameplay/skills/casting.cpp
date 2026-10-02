@@ -161,7 +161,41 @@ void Simulation::releaseSkillCast(PlayerState &player, const SkillCastSpec &skil
         player.skillDelayUntil = state_.frame + EffectFrame(skill.delayFrames);
     if (skill.missileId >= 0 && skill.effect != SkillBehavior::Inferno && !skill.appliedEffect)
         emit(MissileReleased{skill.missileId});
-    if (skill.effect == SkillBehavior::Telekinesis) {
+    if (skill.curse) {
+        for (auto defender : combatUnits()) {
+            if (!defender.alive() || !canAttack(player.id, defender.id) || !active(*defender.position) ||
+                defender.stats.collisionSize <= 0 || defender.stats.attributes.combat.curseResistance >= 100) continue;
+            if (curseEligible_ && !curseEligible_(defender, false)) continue;
+            if (defender.effects->hasState(attractState_, state_.frame)) continue;
+            const int deltaX = int(defender.position->x) - int(target.x), deltaY = int(defender.position->y) - int(target.y);
+            if (deltaX * deltaX + deltaY * deltaY > skill.curse->radius * skill.curse->radius) continue;
+            CombatEffectSpec curse;
+            curse.state = skill.curse->state;
+            curse.source = {CombatEffectSource::Skill, player.id, skill.sourceId, skill.rank};
+            curse.duration = EffectFrame(std::max(1, skill.curse->frames));
+            curse.modifiers = skill.curse->modifiers;
+            if (defender.stats.monsterResistanceRules && defender.identity.role != CombatRole::Hireling) {
+                auto base = defender.stats.attributes.combat.physicalResist;
+                for (const auto &effect : defender.effects->entries())
+                    if (effect.activeAt(state_.frame)) base -= effect.spec.modifiers.combat.physicalResist;
+                if (base >= 100) curse.modifiers.combat.physicalResist /= 5;
+                for (const auto type : {MonsterDamageType::Fire, MonsterDamageType::Cold, MonsterDamageType::Lightning, MonsterDamageType::Poison}) {
+                    int original = unitResistance(defender, type);
+                    for (const auto &effect : defender.effects->entries()) {
+                        if (!effect.activeAt(state_.frame)) continue;
+                        const auto &modifiers = effect.spec.modifiers;
+                        original -= type == MonsterDamageType::Fire ? modifiers.fireResist : type == MonsterDamageType::Cold ?
+                            modifiers.coldResist : type == MonsterDamageType::Lightning ? modifiers.lightningResist : modifiers.poisonResist;
+                    }
+                    auto &amount = type == MonsterDamageType::Fire ? curse.modifiers.fireResist : type == MonsterDamageType::Cold ?
+                        curse.modifiers.coldResist : type == MonsterDamageType::Lightning ? curse.modifiers.lightningResist : curse.modifiers.poisonResist;
+                    if (original >= 100 && amount < 0) amount /= 5;
+                }
+            }
+            combatEffectsChanged(defender.effects->apply(std::move(curse), state_.frame).removed);
+        }
+        emit(SkillActivated{skill.sourceId});
+    } else if (skill.effect == SkillBehavior::Telekinesis) {
         if (!telekinesisTarget_ || !telekinesisTarget_(targetUnit, skill.telekinesisRange, true)) return;
         const auto defender = combatUnit(targetUnit);
         if (defender.alive() && canAttack(player.id, defender.id)) {

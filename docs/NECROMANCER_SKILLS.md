@@ -1,6 +1,10 @@
-# 死灵法师召唤
+# 死灵法师技能
 
-当前接入 Raise Skeleton（Skills.Id 70），使用公共战斗单位与阵营接口。Skeleton Mastery（69）和 Summon Resist（89）的有效等级参与新召唤物属性；未开放其他死灵法师主动技能。
+当前接入 Raise Skeleton（Skills.Id 70），使用公共战斗单位与阵营接口。Skeleton Mastery（69）和 Summon Resist（89）的有效等级参与新召唤物属性。诅咒逐项实施状态见下节。
+
+## 诅咒逐项实现
+
+2026-10-03：Amplify Damage（66）、Weaken（72）、Decrepify（87）、Lower Resist（91）已逐项Release链接并更新dist/current，不运行测试或游戏。范围、等级期限、费用、原状态和声音从当前MPQ导入，SC出手后按目标中心整数平方范围／阵营和MonStats2.mA1资格施加；附体免诅咒、Attract不可覆盖及诅咒互斥沿公共状态。伤害加深／衰老减物抗、削弱／衰老减物理攻击、衰老移动／攻击速率均有现有消费者；降低抵抗只影响火冰电毒，不降魔抗。减抗按非佣兵怪物原基础抗性免疫独立除5，重施不累积。原状态叠层沿公共Overlay加载，精确客户端节拍和完整邻房过滤仍属现有世界适配，未实机认证。依据D2MOO SkillNec::SrvDo30、sub_6FD0B450／sub_6FD0B2B0／sub_6FD0B3D0及Skills::sub_6FD10360；临时诅咒不入D2S v96。
 
 ## 数据和规则
 

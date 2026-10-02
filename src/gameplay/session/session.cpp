@@ -135,6 +135,12 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
             if (extra.value(row, "Id") == identity) return extra.number(row, "isAtt").value_or(0) != 0;
         return false;
     };
+    simulation_->curseEligible_ = [this](const CombatUnit &unit, bool ai) {
+        if (!unit.monster) return !ai;
+        const auto *record = monsterContent_.find(unit.monster->identity.monster);
+        if (!record || !record->curseable || record->npc) return false;
+        return !ai || (!unit.stats.boss && unit.stats.rank == MonsterRank::Normal && record->walkVelocity.value_or(0) > 0);
+    };
     simulation_->initializeNaturalElite_ = [this](Enemy &enemy, const Enemy *owner) {
         const auto *fixed = monsterContent_.superUnique(enemy.identity.superUnique);
         const bool supportedFixed = fixed && (fixed->id == "Bishibosh" || fixed->id == "Bonebreak" ||

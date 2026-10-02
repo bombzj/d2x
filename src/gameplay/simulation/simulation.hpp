@@ -110,6 +110,7 @@ class Simulation {
     int sanctuaryState_ = -1;
     std::function<std::optional<float>(const Enemy &)> monsterKnockbackDuration_;
     std::function<bool(const CombatUnit &, bool)> auraEligible_;
+    std::function<bool(const CombatUnit &, bool)> curseEligible_;
     std::function<bool(const Enemy &)> redemptionCorpseEligible_;
     std::function<std::optional<MonsterAiProfile>(const Enemy &)> monsterAi_;
     std::function<bool(RegionId)> zombieForcedPursuit_;

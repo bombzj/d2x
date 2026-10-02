@@ -85,6 +85,17 @@ SkillCastSpec resolveSkill(const SkillSpec &spec, int rank,
     result.rank = rank;
     result.sourceId = spec.sourceId;
     result.requiresShield = spec.requiresShield;
+    result.curse = spec.curse;
+    if (result.curse) {
+        result.curse->radius += (rank - 1) * result.curse->radiusPerLevel;
+        result.curse->frames += (rank - 1) * result.curse->framesPerLevel;
+        if (result.curse->resistMaximum > 0) {
+            const int amount = -std::min(result.curse->resistMaximum, result.curse->resistMinimum +
+                (result.curse->resistMaximum - result.curse->resistMinimum) * (110 * rank / (rank + 6)) / 100);
+            auto &modifiers = result.curse->modifiers;
+            modifiers.fireResist = modifiers.coldResist = modifiers.lightningResist = modifiers.poisonResist = amount;
+        }
+    }
     result.concentrationState = spec.concentrationState;
     result.concentrationFactor = spec.concentrationFactor;
     result.heaven = spec.heaven;
