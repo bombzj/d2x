@@ -45,6 +45,47 @@ int GameSession::effectiveSkillRank(int id) const {
     return skillRank(*skill, state().player, characterDefinition_, characterStats().combat,
                      inventory_, playerContainers_, equipmentActor());
 }
+bool GameSession::telekinesisTarget(EntityId target, int range, bool operate) {
+    if (!target || state().player.dead || cursorItem()) return false;
+    auto within = [&](Vec position) {
+        const int deltaX = int(position.x) - int(state().player.pos.x);
+        const int deltaY = int(position.y) - int(state().player.pos.y);
+        return deltaX * deltaX + deltaY * deltaY <= range * range;
+    };
+    const auto unit = simulation_->combatUnit(target);
+    if (unit) return unit.alive() && !region().definition.safe && simulation_->canAttack(state().player.id, target) && within(*unit.position);
+    if (const auto *item = inventory_.item(target)) {
+        const auto *ground = std::get_if<GroundLocation>(&item->location);
+        const auto *definition = inventory_.catalog().find(item->definition);
+        if (!ground || !definition || ground->region != region().definition.id || !within(ground->position)) return false;
+        if (!operate) return true;
+        const auto &equipment = definition->equipment;
+        if (!equipment.isType("scro") && !equipment.isType("gold") && !equipment.isType("tpot") &&
+            !equipment.isType("misl") && !equipment.isType("poti") && !equipment.isType("key")) return true;
+        auto access = inventoryAccess();
+        access.reach = float(range);
+        const auto handle = item->handle();
+        const auto code = item->definition;
+        if (equipment.isType("gold")) {
+            auto &player = simulation_->state_.player;
+            const unsigned capacity = unsigned(player.level) * 10000;
+            const unsigned quantity = std::min(item->quantity, capacity - player.gold);
+            if (!quantity) return true;
+            auto result = inventory_.consume(handle, quantity, access);
+            if (result) { player.gold += quantity; simulation_->emit(ItemPickedUp{target, code, quantity}); }
+            publishInventory(std::move(result), target);
+        } else {
+            auto result = inventory_.collect(handle, playerContainers_, access);
+            if (result) simulation_->emit(ItemPickedUp{target, code, result.transferred});
+            publishInventory(std::move(result), target);
+        }
+        return true;
+    }
+    const auto *object = this->object(target);
+    if (!object || !object->npcClass.empty() || !within(object->pos)) return false;
+    if (operate) completeInteraction(*object);
+    return true;
+}
 bool GameSession::applySkillCastTiming(SkillCastSpec &cast) const {
     if (cast.effect == SkillBehavior::Inferno) {
         cast.castDuration = 15.f / 25.f;

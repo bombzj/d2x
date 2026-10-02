@@ -158,7 +158,7 @@ $offers = (.\scripts\Send-D2XCommand.ps1 -Command shop -Arguments @{ id = $vendo
 
 `grant_hireling` 也可使用。授予不需要任务、金币或 NPC 距离，按当前难度、角色等级及资料片 MPQ 生成一名罗格，默认打开属性面板；`open=$false` 可只领取。重复执行不替换已有佣兵或装备，`created` 表示本次是否新建；死亡角色拒绝领取。响应的 `hireling` 包含名字、等级、生命、经验、伤害、四抗和装备实例，未雇佣时查询为 `null`。`hireling-equip -Arguments @{id=物品ID;slot='rarm'}` 从背包装备；原部位代码可为 `head`、`tors`、`rarm`，省略 `slot` 卸下入背包，均复用正式装备限制。`ui-input` 的 `key='o'`／`'hireling'` 模拟 O 键。
 
-接口源码随 v89 加入；该版本曾完成构建，但这些命令尚未单独运行验收。更早的 EXE 不含这些命令。完整边界见 [资料片佣兵](HIRELINGS.md)。
+接口源码随 v89 加入；该版本曾完成构建，但这些命令尚未单独运行验收。更早的 EXE 不含这些命令。2026-10-02的hireling查询新增只读x/y、displayDamage和effects（stateId/sourceId/sourceLevel），用于精确定位和状态核对，不允许修改坐标或状态；最终包真实右键强化佣兵的原状态及战斗属性变化已观察到，详见[技能冒烟](SKILLS.md#本轮冒烟)。完整边界见 [资料片佣兵](HIRELINGS.md)。
 
 ### 命令表
 

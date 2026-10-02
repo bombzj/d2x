@@ -52,7 +52,7 @@ void Simulation::advanceMonsterFirewall(Missile &missile, std::vector<Missile> &
         if (clipMissilePath(missile.missileId, missile.pos, next)) { missile.remaining = 0; return; }
         if (int(next.x) != int(missile.pos.x) || int(next.y) != int(missile.pos.y)) {
             Missile fire{ids_.allocate(), missile.owner, {std::floor(next.x) + .5f, std::floor(next.y) + .5f}, {},
-                float(definition.fireFrames) / 25.f, SkillBehavior::None, false, definition.fireId};
+                float(definition.fireFrames) / 25.f, missile.behavior, false, definition.fireId};
             fire.firewall = Missile::FirewallState{definition, false, 0};
             fire.combatRandom = childRandom(unitRandom_);
             spawned.push_back(std::move(fire));
@@ -66,8 +66,70 @@ void Simulation::advanceMonsterFirewall(Missile &missile, std::vector<Missile> &
             rollRandom(missile.combatRandom);
             const int damage = definition.minimumDamage + int(uint32_t(missile.combatRandom) %
                 unsigned(definition.maximumDamage - definition.minimumDamage + 1));
-            dealDamage({missile.owner, target.id, float(damage << definition.hitShift) / 256.f, MonsterDamageType::Fire});
+            DamageRequest hit{missile.owner, target.id, float(damage << definition.hitShift) / 256.f, MonsterDamageType::Fire};
+            if (missile.behavior == SkillBehavior::FireWall || missile.behavior == SkillBehavior::Blaze) {
+                reactToMissile(missile, target.id, spawned);
+                rollRandom(missile.combatRandom);
+                hit.softHit = int(uint32_t(missile.combatRandom) & 127) < definition.softHitChance;
+                hit.hitRecovery = false;
+            }
+            dealDamage(hit);
         }
+}
+void Simulation::createBlazeTrail(PlayerState &player) {
+    if (safeZone_ || !player.moving || !resolveMissileSkill_ ||
+        (int(player.previous.x) == int(player.pos.x) && int(player.previous.y) == int(player.pos.y))) return;
+    for (const auto &effect : player.combatEffects.entries()) {
+        if (effect.spec.state.id != blazeState_ || !effect.activeAt(state_.frame) ||
+            effect.spec.source.kind != CombatEffectSource::Skill) continue;
+        const auto skill = resolveMissileSkill_(player.id, effect.spec.source.definition, effect.spec.source.level);
+        if (skill.effect != SkillBehavior::Blaze || !skill.firewall) continue;
+        const auto &definition = *skill.firewall;
+        Missile fire{ids_.allocate(), player.id, {float(int(player.pos.x)), float(int(player.pos.y))}, {},
+            float(definition.fireFrames) / 25.f, SkillBehavior::Blaze, false, definition.fireId};
+        fire.firewall = Missile::FirewallState{definition, false, 0};
+        fire.combatRandom = childRandom(unitRandom_);
+        state_.area.missiles.push_back(std::move(fire));
+    }
+}
+void Simulation::advanceThunderStorm(PlayerState &player) {
+    if (!player.thunderStorm || !resolveMissileSkill_) return;
+    const auto &effects = player.combatEffects.entries();
+    const auto effect = std::find_if(effects.begin(), effects.end(), [&](const auto &entry) {
+        return entry.handle == player.thunderStorm->effect && entry.activeAt(state_.frame);
+    });
+    if (player.dead || effect == effects.end()) { player.thunderStorm.reset(); return; }
+    if (state_.frame < player.thunderStorm->nextFrame) return;
+    const auto skill = resolveMissileSkill_(player.id, effect->spec.source.definition, effect->spec.source.level);
+    const auto period = EffectFrame(skill.stormPeriod);
+    player.thunderStorm->nextFrame = ((state_.frame + period - 1) / period) * period + 1;
+    if (safeZone_) return;
+    EntityId next, fallback;
+    for (const auto &target : combatUnits()) {
+        if (!target.alive() || !target.identity.attackable || !canAttack(player.id, target.id) ||
+            !active(*target.position)) continue;
+        const int deltaX = int(target.position->x) - int(player.pos.x);
+        const int deltaY = int(target.position->y) - int(player.pos.y);
+        if (deltaX * deltaX + deltaY * deltaY > skill.stormRadius * skill.stormRadius ||
+            !grid_->missileSegment(player.pos, *target.position, {0x04, 1})) continue;
+        if (!fallback || target.id < fallback) fallback = target.id;
+        if (target.id > player.thunderStorm->lastTarget && (!next || target.id < next)) next = target.id;
+    }
+    if (!next) next = fallback;
+    player.thunderStorm->lastTarget = next;
+    if (!next) return;
+    const int minimum = int(skill.minimumDamage * 256.f), maximum = int(skill.maximumDamage * 256.f);
+    const float amount = float(minimum + limitedRandom(player.combatRandom,
+        unsigned(std::max(0, maximum - minimum)))) / 256.f;
+    Missile missile{ids_.allocate(), player.id, unitPosition(next), {}, skill.missileLifetime,
+        SkillBehavior::ThunderStorm, false, skill.missileId};
+    missile.combatRandom = childRandom(unitRandom_);
+    std::vector<Missile> spawned;
+    reactToMissile(missile, next, spawned);
+    dealDamage({player.id, next, amount, MonsterDamageType::Lightning});
+    for (auto &child : spawned) state_.area.missiles.push_back(std::move(child));
+    state_.area.effects.push_back({missile.pos, 0, skill.missileLifetime, skill.missileId});
+    emit(MissileReleased{skill.missileId});
 }
 void Simulation::prepareMonsterElements(Enemy &enemy, const MonsterNormalCombat &combat, int mode, DamageRequest &hit, int sourceDamage) {
     auto target = combatUnit(hit.defender);

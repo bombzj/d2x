@@ -74,7 +74,13 @@ const MonsterDefinition &monsterDefinition(MonsterKind id) {
     static const MonsterDefinition griswold{MonsterKind::Griswold, "gz", 0, 0, 0, 0, 40, 0};
     static const MonsterDefinition bloodRaven{MonsterKind::BloodRaven, "cr", 0, 0, 0, 0, 50, 0};
     static const MonsterDefinition andariel{MonsterKind::Andariel, "an", 0, 0, 0, 0, 40, 0};
+    static const MonsterDefinition hydra1{MonsterKind::Hydra1, "hx", 0, 0, 0, 0, 25, 0};
+    static const MonsterDefinition hydra2{MonsterKind::Hydra2, "21", 0, 0, 0, 0, 25, 0};
+    static const MonsterDefinition hydra3{MonsterKind::Hydra3, "hz", 0, 0, 0, 0, 25, 0};
     switch (id) {
+    case MonsterKind::Hydra1: return hydra1;
+    case MonsterKind::Hydra2: return hydra2;
+    case MonsterKind::Hydra3: return hydra3;
     case MonsterKind::Andariel: return andariel;
     case MonsterKind::Smith: return smith;
     case MonsterKind::Griswold: return griswold;

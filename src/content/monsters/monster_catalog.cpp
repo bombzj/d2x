@@ -325,7 +325,7 @@ MonsterCatalog::MonsterCatalog(Archives &archives, const DataTable &stats) {
                             quickAttacks_.emplace(kind, *timing);
                     if (auto timing = loadMonsterAttackTiming(
                             animations, actor->token, 1, weapon,
-                            actor->attack1Projectile ? 2 : 1))
+                            actor->attack1Projectile || actor->ai == "Hydra" ? 2 : 1))
                         attacks_.emplace(kind, *timing);
                 } else if (std::string_view(mode) == "a2") {
                     if (kind == MonsterKind::Brute || kind == MonsterKind::Skeleton ||
@@ -364,7 +364,7 @@ MonsterCatalog::MonsterCatalog(Archives &archives, const DataTable &stats) {
                             animations, sequences, actor->nest->sequence,
                             actor->token, mode, weapon, 4))
                         casts_.emplace(kind, *timing);
-                } else if (std::string_view(mode) != "s2" || kind == MonsterKind::Fallen) {
+                } else if (std::string_view(mode) != "s2" || kind == MonsterKind::Fallen || actor->ai == "Hydra") {
                     if (auto timing = loadMonsterMotionTiming(animations, actor->token, mode, weapon))
                         motions_[kind].emplace(mode, *timing);
                 }

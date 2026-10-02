@@ -182,6 +182,21 @@ void Simulation::restoreUnit(EntityId id, float life, float mana) {
 ResolvedDamage Simulation::resolveIncoming(EntityId attacker, const CombatUnit &defender, float amount, MonsterDamageType type) {
     if (!defender.stats.resolved) { state_.message = "Original combat attributes are unavailable"; return {}; }
     amount = incomingDamage(attacker, defender.id, amount);
+    if (defender.player && defender.mana && type != MonsterDamageType::Poison && resolveMissileSkill_) {
+        for (const auto &effect : defender.effects->entries()) {
+            if (effect.spec.state.id != energyShieldState_ || !effect.activeAt(state_.frame)) continue;
+            const auto shield = resolveMissileSkill_(defender.id, effect.spec.source.definition, effect.spec.source.level);
+            int64_t mana = int64_t(*defender.mana * 256.f);
+            const int64_t fixed = std::max<int64_t>(0, int64_t(amount * 256.f));
+            const int64_t absorb = std::min(fixed * shield.shieldPercent / 100, mana * 16 / shield.shieldManaFactor);
+            mana = std::max<int64_t>(0, mana - absorb * shield.shieldManaFactor / 16);
+            amount = float(fixed - absorb) / 256.f;
+            *defender.mana = float(mana) / 256.f;
+            const auto handle = effect.handle;
+            if (mana == 0) combatEffectsChanged(defender.effects->remove(handle));
+            break;
+        }
+    }
     if (!defender.stats.monsterResistanceRules) return mitigatePlayerDamage(amount, type, defender.stats.attributes);
     int resistance = unitResistance(defender, type);
     if (type == MonsterDamageType::Physical && resistance > 0 && defender.stats.undead) {
@@ -252,10 +267,11 @@ float Simulation::dealDamage(const DamageRequest &request) {
     float amount = 0, absorbed = 0;
     auto channels = request.channels;
     channels[size_t(request.type)] += request.amount;
-    for (size_t channel = 0; channel < channels.size(); ++channel) {
-        float value = channels[channel];
+    constexpr MonsterDamageType order[]{MonsterDamageType::Physical, MonsterDamageType::Fire,
+        MonsterDamageType::Lightning, MonsterDamageType::Cold, MonsterDamageType::Magic, MonsterDamageType::Poison};
+    for (const auto type : order) {
+        float value = channels[size_t(type)];
         if (value <= 0) continue;
-        const auto type = MonsterDamageType(channel);
         if (!request.mitigated) {
             const auto damage = resolveIncoming(request.attacker, target, value, type);
             value = damage.dealt; absorbed += damage.absorbed;

@@ -35,7 +35,10 @@ void loadSorceressEffects(SkillCatalog &catalog, const DataTable &skills,
         {"Inferno", SkillBehavior::Inferno}, {"Static Field", SkillBehavior::StaticField},
         {"Frozen Orb", SkillBehavior::FrozenOrb}, {"Blizzard", SkillBehavior::Blizzard},
         {"Glacial Spike", SkillBehavior::GlacialSpike}, {"Shiver Armor", SkillBehavior::ShiverArmor},
-        {"Chilling Armor", SkillBehavior::ChillingArmor}};
+        {"Chilling Armor", SkillBehavior::ChillingArmor}, {"Fire Wall", SkillBehavior::FireWall},
+        {"Blaze", SkillBehavior::Blaze}, {"Energy Shield", SkillBehavior::EnergyShield},
+        {"Enchant", SkillBehavior::Enchant}, {"Thunder Storm", SkillBehavior::ThunderStorm},
+        {"Telekinesis", SkillBehavior::Telekinesis}, {"Hydra", SkillBehavior::Hydra}};
     const auto warmth = std::find_if(catalog.skills.begin(), catalog.skills.end(),
         [](const auto &pair) { return pair.second.classCode == "sor" &&
             pair.second.sourceName == "Warmth"; });
@@ -270,6 +273,34 @@ void loadSorceressEffects(SkillCatalog &catalog, const DataTable &skills,
                         throw std::runtime_error("Missing Chilling Armor original bolt sound");
                 }
             }
+        } else if (effect == SkillBehavior::EnergyShield) {
+            auto absorption = skills.value(row, "calc1");
+            if (absorption.size() >= 2 && absorption.front() == '"' && absorption.back() == '"')
+                absorption = absorption.substr(1, absorption.size() - 2);
+            if (required(skills, row, "srvdofunc") != 23 || skills.value(row, "auralencalc") != "ln12" ||
+                absorption != "min(edmn,95)" || skills.value(row, "calc2") != "par5-skill('Telekinesis'.blvl)" ||
+                skills.value(row, "auraevent1") != "absorbdamage" || required(skills, row, "auraeventfunc1") != 24)
+                throw std::runtime_error("Unsupported original Energy Shield");
+            const auto state = states.find(skills.value(row, "aurastate"));
+            if (state == states.end()) throw std::runtime_error("Missing Energy Shield state");
+            spec.state = state->second.definition;
+            spec.stateOverlay = loadOverlay(state->second.overlay);
+            spec.linearDuration = {required(skills, row, "Param1"), required(skills, row, "Param2")};
+            spec.shieldMaximum = 95;
+            spec.shieldManaFactor = required(skills, row, "Param5");
+            spec.minimumDamage = required(skills, row, "EMin");
+            for (int tier = 0; tier < 5; ++tier)
+                spec.minimumPerLevel[tier] = required(skills, row, "EMinLev" + std::to_string(tier + 1));
+            for (const auto &[id, entry] : catalog.skills)
+                if (entry.classCode == "sor" && entry.sourceName == "Telekinesis") spec.shieldSynergySkill = id;
+            if (spec.shieldSynergySkill < 0) throw std::runtime_error("Missing Energy Shield synergy");
+            for (size_t sound = 0; sound < sounds.rows().size(); ++sound)
+                if (sounds.value(sound, "Sound") == skills.value(row, "dosound")) {
+                    spec.activationSoundArt = "data/global/sfx/" + std::string(sounds.value(sound, "FileName"));
+                    break;
+                }
+            if (spec.activationSoundArt.empty() || !archives.contains(spec.activationSoundArt))
+                throw std::runtime_error("Missing Energy Shield activation sound");
         } else if (effect == SkillBehavior::StaticField) {
             if (skills.value(row, "calc1") != "par4" || skills.value(row, "calc2") != "par3" ||
                 skills.value(row, "aurarangecalc") != "ln12")
@@ -303,7 +334,27 @@ void loadSorceressEffects(SkillCatalog &catalog, const DataTable &skills,
                 spec.coldSynergyPercent = required(skills, row, "Param7");
             }
             const auto formula = skills.value(row, "EDmgSymPerCalc");
-            if (!formula.empty()) {
+            if (effect == SkillBehavior::FireWall || effect == SkillBehavior::Blaze) {
+                const bool blaze = effect == SkillBehavior::Blaze;
+                if (required(skills, row, "srvdofunc") != (blaze ? 23 : 24) ||
+                    formula != (blaze ? "skill('Warmth'.blvl)*par8+skill('Fire Wall'.blvl)*par7" :
+                        "(skill('Warmth'.blvl)*par8+skill('Inferno'.blvl)*par7"))
+                    throw std::runtime_error("Unsupported original Fire Wall skill");
+                for (const auto &[id, entry] : catalog.skills)
+                    if (entry.classCode == "sor" && (entry.sourceName == "Warmth" || entry.sourceName == (blaze ? "Fire Wall" : "Inferno")))
+                        spec.weightedSynergies.emplace(id, required(skills, row,
+                            entry.sourceName == "Warmth" ? "Param8" : "Param7"));
+                if (spec.weightedSynergies.size() != 2)
+                    throw std::runtime_error("Missing Fire Wall synergies");
+                if (blaze) {
+                    if (skills.value(row, "auralencalc") != "dm12" || !skills.value(row, "aurastat1").empty())
+                        throw std::runtime_error("Unsupported Blaze state formula");
+                    const auto state = states.find(skills.value(row, "aurastate"));
+                    if (state == states.end()) throw std::runtime_error("Missing Blaze state");
+                    spec.state = state->second.definition;
+                    spec.diminishingDuration = {required(skills, row, "Param1"), required(skills, row, "Param2")};
+                }
+            } else if (!formula.empty()) {
                 const auto marker = formula.find("*par8");
                 if (marker == std::string_view::npos || marker + 5 != formula.size())
                     throw std::runtime_error("Unsupported original damage synergy: " + std::string(name));
@@ -326,7 +377,77 @@ void loadSorceressEffects(SkillCatalog &catalog, const DataTable &skills,
                 if (spec.synergySkills.empty())
                     throw std::runtime_error("Original damage synergy has no supported target");
             }
+            if (effect == SkillBehavior::Telekinesis) {
+                if (required(skills, row, "srvstfunc") != 12 || required(skills, row, "srvdofunc") != 21 ||
+                    skills.value(row, "aurarangecalc") != "par1" || !spec.lightningDamage)
+                    throw std::runtime_error("Unsupported Telekinesis rules");
+                spec.telekinesisRange = required(skills, row, "Param1");
+                spec.telekinesisKnockbackChance = required(skills, row, "Param2");
+                for (size_t sound = 0; sound < sounds.rows().size(); ++sound)
+                    if (sounds.value(sound, "Sound") == skills.value(row, "dosound")) {
+                        spec.activationSoundArt = "data/global/sfx/" + std::string(sounds.value(sound, "FileName"));
+                        break;
+                    }
+                if (spec.activationSoundArt.empty() || !archives.contains(spec.activationSoundArt))
+                    throw std::runtime_error("Missing Telekinesis activation sound");
+                catalog.skills.at(record->id).spell = std::move(spec);
+                continue;
+            }
+            if (effect == SkillBehavior::Enchant) {
+                if (required(skills, row, "srvdofunc") != 25 || skills.value(row, "auralencalc") != "ln12" ||
+                    skills.value(row, "aurastat1") != "firemindam" || skills.value(row, "aurastatcalc1") != "enma" ||
+                    skills.value(row, "aurastat2") != "firemaxdam" || skills.value(row, "aurastatcalc2") != "exma" ||
+                    skills.value(row, "aurastat3") != "item_tohit_percent" || skills.value(row, "aurastatcalc3") != "toht")
+                    throw std::runtime_error("Unsupported original Enchant formulas");
+                const auto state = states.find(skills.value(row, "aurastate"));
+                if (state == states.end()) throw std::runtime_error("Missing Enchant state");
+                spec.state = state->second.definition;
+                spec.linearDuration = {required(skills, row, "Param1"), required(skills, row, "Param2")};
+                spec.enchantAttackRating = required(skills, row, "ToHit");
+                spec.enchantAttackRatingPerLevel = required(skills, row, "LevToHit");
+                catalog.skills.at(record->id).spell = std::move(spec);
+                continue;
+            }
             auto missileName = skills.value(row, "srvmissile");
+            if (effect == SkillBehavior::Hydra) {
+                if (required(skills, row, "srvdofunc") != 144 || skills.value(row, "summon") != "hydra1" ||
+                    skills.value(row, "summode") != "S2" || skills.value(row, "sumskill1") != "HydraMissile" ||
+                    skills.value(row, "sumsk1calc") != "lvl" ||
+                    skills.value(row, "sumskill2") != "Fire Bolt" || skills.value(row, "sumsk2calc") != "skill('Fire Bolt'.blvl)" ||
+                    skills.value(row, "sumskill3") != "Fire Ball" || skills.value(row, "sumsk3calc") != "skill('Fire Ball'.blvl)" ||
+                    skills.value(row, "passivestat1") != "passive_fire_mastery" ||
+                    skills.value(row, "passivecalc1") != "stat('passive_fire_mastery'.accr)")
+                    throw std::runtime_error("Unsupported Hydra summon rules");
+                const DataTable pets(archives.read("data/global/excel/pettype.txt"));
+                bool foundPet = false;
+                for (size_t pet = 0; pet < pets.rows().size(); ++pet)
+                    if (pets.value(pet, "pet type") == skills.value(row, "pettype")) {
+                        if (pets.number(pet, "warp").value_or(0) != 0 || required(pets, pet, "range") != 1)
+                            throw std::runtime_error("Unsupported Hydra travel rule");
+                        foundPet = true;
+                        break;
+                    }
+                if (!foundPet) throw std::runtime_error("Missing Hydra pet type");
+                spec.hydraDuration = {required(skills, row, "Param1"), required(skills, row, "Param2")};
+                spec.hydraLimit = required(skills, row, "petmax");
+                for (size_t child = 0; child < skills.rows().size(); ++child)
+                    if (skills.value(child, "skill") == skills.value(row, "sumskill1")) {
+                        missileName = skills.value(child, "srvmissile");
+                        break;
+                    }
+            }
+            if (effect == SkillBehavior::ThunderStorm) {
+                if (required(skills, row, "srvdofunc") != 29 || required(skills, row, "periodic") != 1 ||
+                    skills.value(row, "auralencalc") != "ln12" ||
+                    skills.value(row, "perdelay") != "(100-dm56) * par4/100 + par3")
+                    throw std::runtime_error("Unsupported Thunder Storm periodic state");
+                const auto state = states.find(skills.value(row, "aurastate"));
+                if (state == states.end()) throw std::runtime_error("Missing Thunder Storm state");
+                spec.state = state->second.definition;
+                spec.linearDuration = {required(skills, row, "Param1"), required(skills, row, "Param2")};
+                for (int parameter = 0; parameter < 5; ++parameter)
+                    spec.stormParameters[size_t(parameter)] = required(skills, row, "Param" + std::to_string(parameter + 3));
+            }
             if (effect == SkillBehavior::ChargedBolt) {
                 const auto countFormula = skills.value(row, "calc1");
                 if ((countFormula != "min(24,ln12)" && countFormula != "\"min(24,ln12)\"") || !spec.lightningDamage)
@@ -345,7 +466,8 @@ void loadSorceressEffects(SkillCatalog &catalog, const DataTable &skills,
                 spec.flameFramesPerLevel = required(skills, row, "Param2");
             }
             if (effect == SkillBehavior::FrostNova || effect == SkillBehavior::Nova || effect == SkillBehavior::ChargedBolt ||
-                effect == SkillBehavior::Inferno || effect == SkillBehavior::Blizzard)
+                effect == SkillBehavior::Inferno || effect == SkillBehavior::Blizzard || effect == SkillBehavior::FireWall ||
+                effect == SkillBehavior::Blaze || effect == SkillBehavior::ThunderStorm)
                 missileName = skills.value(row, "srvmissilea");
             size_t missileRow = 0;
             for (; missileRow < missiles.rows().size(); ++missileRow)
@@ -353,6 +475,38 @@ void loadSorceressEffects(SkillCatalog &catalog, const DataTable &skills,
             if (missileName.empty() || missileRow == missiles.rows().size())
                 throw std::runtime_error("Missing original sorceress missile: " + std::string(name));
             spec.missileId = required(missiles, missileRow, "Id");
+            if (effect == SkillBehavior::Blaze) {
+                if (required(missiles, missileRow, "pSrvDoFunc") != 5 ||
+                    required(missiles, missileRow, "pSrvDmgFunc") != 3 || missiles.value(missileRow, "Skill") != name)
+                    throw std::runtime_error("Unsupported Blaze fire missile");
+                MonsterFirewall program;
+                program.fireId = spec.missileId;
+                program.fireFrames = required(missiles, missileRow, "Range");
+                program.size = required(missiles, missileRow, "Size");
+                program.softHitChance = required(missiles, missileRow, "dParam1");
+                spec.firewall = program;
+            }
+            if (effect == SkillBehavior::FireWall) {
+                size_t fire = 0;
+                for (; fire < missiles.rows().size(); ++fire)
+                    if (missiles.value(fire, "Missile") == skills.value(row, "srvmissileb")) break;
+                if (fire == missiles.rows().size() || required(missiles, missileRow, "pSrvDoFunc") != 6 ||
+                    required(missiles, fire, "pSrvDoFunc") != 5 || required(missiles, fire, "pSrvDmgFunc") != 3 ||
+                    missiles.value(missileRow, "SubMissile1") != missiles.value(fire, "Missile") ||
+                    missiles.value(fire, "Skill") != name)
+                    throw std::runtime_error("Unsupported original Fire Wall missile chain");
+                const auto resource = loadProjectileResource(missiles, fire, archives);
+                spec.submissileResources.push_back(resource);
+                MonsterFirewall program;
+                program.makerId = spec.missileId;
+                program.fireId = resource.id;
+                program.makerFrames = required(missiles, missileRow, "Range");
+                program.fireFrames = required(missiles, fire, "Range");
+                program.size = required(missiles, fire, "Size");
+                program.softHitChance = required(missiles, fire, "dParam1");
+                spec.firewallRangePerLevel = required(missiles, missileRow, "LevRange");
+                spec.firewall = program;
+            }
             if (effect == SkillBehavior::Blizzard)
                 loadBlizzardMissiles(spec, skills, row, missiles, missileRow, archives);
             if (effect == SkillBehavior::GlacialSpike)
@@ -372,7 +526,7 @@ void loadSorceressEffects(SkillCatalog &catalog, const DataTable &skills,
                  required(missiles, missileRow, "pSrvDmgFunc") != 4 ||
                  required(missiles, missileRow, "CollideKill") != 1))
                 throw std::runtime_error("Unsupported original Ice Blast missile rules");
-            spec.missileVelocity = effect == SkillBehavior::Blizzard ? 0.f : float(required(missiles, missileRow, "Vel"));
+            spec.missileVelocity = effect == SkillBehavior::Blizzard || effect == SkillBehavior::Blaze ? 0.f : float(required(missiles, missileRow, "Vel"));
             spec.missileVelocityPerLevel = missiles.number(missileRow, "VelLev").value_or(0);
             spec.missileRangePerLevel = missiles.number(missileRow, "LevRange").value_or(0);
             spec.missileAcceleration = missiles.number(missileRow, "Accel").value_or(0);
@@ -410,7 +564,7 @@ void loadSorceressEffects(SkillCatalog &catalog, const DataTable &skills,
                 throw std::runtime_error("Missing original missile release sound: " + std::string(travelSound));
             if (effect == SkillBehavior::FireBolt || effect == SkillBehavior::Fireball ||
                 effect == SkillBehavior::IceBolt || effect == SkillBehavior::IceBlast ||
-                effect == SkillBehavior::GlacialSpike) {
+                effect == SkillBehavior::GlacialSpike || effect == SkillBehavior::Hydra) {
                 const auto impactName = missiles.value(missileRow, "ExplosionMissile");
                 for (size_t impactRow = 0; spec.impacts.empty() && impactRow < missiles.rows().size(); ++impactRow)
                     if (!impactName.empty() && missiles.value(impactRow, "Missile") == impactName) {

@@ -2,6 +2,9 @@
 
 namespace d2x {
 MonsterImplementation monsterImplementation(const std::string &code) {
+    if (code == "hydra1") return {MonsterKind::Hydra1, false};
+    if (code == "hydra2") return {MonsterKind::Hydra2, false};
+    if (code == "hydra3") return {MonsterKind::Hydra3, false};
     if (code == "andariel") return {MonsterKind::Andariel, false};
     if (code == "smith") return {MonsterKind::Smith, false};
     if (code == "griswold") return {MonsterKind::Griswold, false};

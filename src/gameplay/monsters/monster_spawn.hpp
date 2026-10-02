@@ -82,6 +82,7 @@ struct MonsterFirewall {
     int makerId = -1, fireId = -1, makerFrames = 0, fireFrames = 0;
     float velocity = 0;
     int minimumDamage = 0, maximumDamage = 0, hitShift = 0, size = 1;
+    int softHitChance = 0;
 };
 struct TowerReward {
     int lifetimeFrames = 0, openingFrame = 0, goldInterval = 0, radius = 0;

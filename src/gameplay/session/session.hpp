@@ -146,6 +146,7 @@ class GameSession {
     const CharacterDefinition &definitionFor(std::string_view name) const;
     void refreshCharacter(bool fillGains = false);
     void useSkill(const UseSkill &intent);
+    bool telekinesisTarget(EntityId target, int range, bool operate);
     void syncPlayerAura();
     void applyWarmth(CharacterAttributes &stats, const PlayerState &player,
                      const CharacterDefinition &definition, const InventoryService &inventory,

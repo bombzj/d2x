@@ -4,6 +4,92 @@
 #include <cmath>
 
 namespace d2x {
+bool Simulation::summonHydra(PlayerState &owner, const SkillCastSpec &skill, Vec target) {
+    if (owner.dead || safeZone_ || !blizzardTargetClear(owner.pos, target)) return false;
+    constexpr MonsterKind kinds[]{MonsterKind::Hydra1, MonsterKind::Hydra2, MonsterKind::Hydra3};
+    constexpr Vec offsets[]{{-1,-1}, {0,0}, {1,-1}};
+    bool created = false;
+    for (int head = 0; head < 3; ++head) {
+        Enemy pet;
+        pet.kind = kinds[head];
+        pet.identity.monster = "hydra" + std::to_string(head + 1);
+        pet.identity.origin = SpawnOrigin::Summoned;
+        pet.pos = Vec{std::floor(target.x) + .5f, std::floor(target.y) + .5f} + offsets[head];
+        if (!grid_->missileSegment(pet.pos, pet.pos, {5, 1})) continue;
+        const auto attack = monsterAttackTiming_ ? monsterAttackTiming_(pet, 1) : std::nullopt;
+        const auto rise = monsterSkill2Duration_ ? monsterSkill2Duration_(pet) : std::nullopt;
+        if (!attack || !rise) continue;
+        pet.id = ids_.allocate(); pet.combatRandom = childRandom(unitRandom_);
+        pet.identity.spawnKey = "pet." + std::to_string(pet.id.value);
+        pet.allegiance = {owner.allegiance.faction, owner.id, owner.allegiance.party, CombatRole::Summon, false};
+        pet.summonSkill = skill.sourceId; pet.summonRank = skill.rank;
+        pet.intrinsicCombat.emplace(); pet.intrinsicCombat->collisionSize = 0;
+        pet.hydra = Enemy::HydraState{skill, state_.area.region, state_.frame + EffectFrame(skill.hydraFrames), true};
+        pet.skill2Remaining = pet.skill2Duration = *rise;
+        state_.companions.push_back(std::move(pet)); created = true;
+    }
+    int count = 0;
+    for (const auto &pet : state_.companions) if (pet.hydra && pet.hydra->active) ++count;
+    for (auto &pet : state_.companions) {
+        if (count <= skill.hydraLimit) break;
+        if (!pet.hydra || !pet.hydra->active) continue;
+        pet.hydra->active = false; pet.deathAge = 0; --count;
+    }
+    return created;
+}
+void Simulation::advanceHydra(Enemy &pet, float dt) {
+    auto &hydra = *pet.hydra;
+    if (!hydra.active) { pet.deathAge += dt; return; }
+    if (state_.frame > hydra.expiresAt || state_.player.dead) {
+        hydra.active = false; pet.deathAge = 0; pet.attack = 0; return;
+    }
+    if (hydra.region != state_.area.region || safeZone_) return;
+    if (pet.skill2Remaining > 0) { pet.skill2Remaining = std::max(0.f, pet.skill2Remaining - dt); return; }
+    if (pet.attack > 0) {
+        pet.attack = std::max(0.f, pet.attack - dt);
+        if (pet.attackImpact >= 0) {
+            pet.attackImpact -= dt;
+            if (pet.attackImpact <= .00001f) {
+                pet.attackImpact = -1;
+                const auto target = combatUnit(pet.combatTarget);
+                if (target.alive() && canAttack(pet.id, target.id)) {
+                    const auto &skill = hydra.skill;
+                    const int minimum = int(skill.minimumDamage * 256.f), maximum = int(skill.maximumDamage * 256.f);
+                    Missile missile{ids_.allocate(), pet.id, pet.pos, (*target.position - pet.pos).unit() * skill.missileVelocity,
+                        skill.missileLifetime, SkillBehavior::Hydra, false, skill.missileId,
+                        float(minimum + limitedRandom(pet.combatRandom, unsigned(std::max(0, maximum - minimum)))) / 256.f};
+                    missile.combatRandom = childRandom(unitRandom_);
+                    missile.fixedElement = MonsterDamageType::Fire;
+                    missile.impact = skill.missileImpact;
+                    missile.impactDamage.channels[size_t(MonsterDamageType::Fire)] = missile.damage;
+                    state_.area.missiles.push_back(std::move(missile));
+                    emit(MissileReleased{skill.missileId});
+                }
+            }
+        }
+        return;
+    }
+    pet.rethink = std::max(0.f, pet.rethink - dt);
+    if (pet.rethink > 0) return;
+    pet.combatTarget = {};
+    float closest = 25;
+    for (const auto &target : combatUnits()) {
+        if (!target.alive() || !canAttack(pet.id, target.id) || !active(*target.position)) continue;
+        const float distance = float(missileDistance(pet.pos, *target.position));
+        if (distance < closest && grid_->missileSegment(pet.pos, *target.position, {0x04, 1})) {
+            closest = distance; pet.combatTarget = target.id;
+        }
+    }
+    if (pet.combatTarget && limitedRandom(pet.combatRandom, 100) < 60) {
+        const auto timing = monsterAttackTiming_(pet, 1);
+        if (timing) {
+            pet.attack = pet.attackDuration = timing->duration;
+            pet.attackImpact = timing->impact; pet.attackMode = 1;
+            return;
+        }
+    }
+    pet.rethink = 10.f / 25.f;
+}
 bool Simulation::usableCorpse(EntityId id) const {
     const auto *corpse = const_cast<Simulation *>(this)->findEnemy(id);
     if (!corpse || safeZone_ || !corpse->corpseAvailable() || !active(corpse->pos) ||
@@ -82,6 +168,7 @@ bool Simulation::summonFromCorpse(PlayerState &owner, const SkillCastSpec &skill
 }
 void Simulation::relocateCompanions(EntityId owner, Vec destination, EntityId only) {
     for (auto &pet : state_.companions) {
+        if (pet.hydra) continue;
         if (pet.allegiance.owner != owner || (only && pet.id != only)) continue;
         if (pet.hp <= 0) {
             if (!only) pet.deathAge = std::max(pet.deathAge,
@@ -108,6 +195,7 @@ void Simulation::relocateCompanions(EntityId owner, Vec destination, EntityId on
 }
 void Simulation::updateCompanions(float dt) {
     for (auto &pet : state_.companions) {
+        if (pet.hydra) { advanceHydra(pet, dt); continue; }
         if (pet.hp <= 0 || !pet.intrinsicCombat) continue;
         auto owner = combatUnit(pet.allegiance.owner);
         if (!owner.alive()) {

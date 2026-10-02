@@ -89,6 +89,12 @@ struct PlayerState {
     std::array<int, 4> selectedSkills{-1, -1, -1, -1};
     std::optional<ActiveAura> aura;
     bool auraSuppressesManaRegen = false;
+    struct ThunderStormState {
+        EffectHandle effect;
+        EffectFrame nextFrame = 0;
+        EntityId lastTarget;
+    };
+    std::optional<ThunderStormState> thunderStorm;
     ActOneQuestBook actOneQuests{};
     HirelingState hireling;
 };
@@ -150,6 +156,14 @@ struct Enemy {
     bool noTreasure = false;
     EntityId aiCorpse;
     bool resurrected = false;
+    struct HydraState {
+        SkillCastSpec skill;
+        RegionId region = RegionId::Encampment;
+        EffectFrame expiresAt = 0;
+        bool active = true;
+    };
+    std::optional<HydraState> hydra;
+    bool living() const { return hydra ? hydra->active : hp > 0; }
     float webAuraRemaining = 0, webTrailDistance = 0;
     std::deque<Vec> route;
     uint64_t combatRandom = 0; // Initialized on unit creation.

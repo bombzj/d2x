@@ -58,12 +58,18 @@ void debugHireling(const std::string &command, const nlohmann::json &request,
         {"type", definition->id}, {"subtype", definition->subtype}, {"nameKey", h.nameKey},
         {"name", name == session.content().itemStrings.end() ? h.nameKey : name->second},
         {"level", h.level}, {"hp", h.hp}, {"maxHp", s.base.life}, {"experience", h.experience},
+        {"x", h.pos.x}, {"y", h.pos.y},
+        {"displayDamage", {s.displayDamageMin, s.displayDamageMax}},
+        {"effects", Json::array()},
         {"nextExperience", s.base.nextExperience}, {"strength", s.base.strength},
         {"dexterity", s.base.dexterity}, {"defense", s.base.defense}, {"attackRating", s.base.attackRating},
         {"damage", {s.base.damageMin, s.base.damageMax}},
         {"resists", {s.fireResist, s.coldResist, s.lightningResist, s.poisonResist}},
         {"equipmentContainer", session.playerContainers().hirelingEquipment.value},
         {"equipment", Json::array()}};
+    for (const auto &effect : h.combatEffects.entries())
+        result["hireling"]["effects"].push_back({{"stateId", effect.spec.state.id},
+            {"sourceId", effect.spec.source.definition}, {"sourceLevel", effect.spec.source.level}});
     for (auto id : session.inventory().contents(session.playerContainers().hirelingEquipment)) {
         const auto &item = *session.inventory().item(id);
         const auto slot = EquipmentSlot(std::get<ContainerLocation>(item.location).cell.x);

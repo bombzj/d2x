@@ -211,10 +211,12 @@ void Simulation::tick(float dt, Vec keyboard, bool forceRun) {
     if (!p.dead) {
         updatePotions(dt);
         updatePlayer(dt, keyboard);
+        createBlazeTrail(p);
         activateMonsters();
     }
     updateMonsterEnchantments();
     updateAuras();
+    advanceThunderStorm(p);
     updateMonsters(dt);
     updateCompanions(dt);
     updateMissiles(dt);

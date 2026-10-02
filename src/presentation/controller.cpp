@@ -867,6 +867,8 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
         const bool channeled = rightSkill && rightSkill->spell &&
             rightSkill->spell->effect == SkillBehavior::Inferno;
         const bool corpseSkill = rightSkill && rightSkill->spell && rightSkill->spell->summon.has_value();
+        const bool enchant = rightSkill && rightSkill->spell && rightSkill->spell->effect == SkillBehavior::Enchant;
+        const bool telekinesis = rightSkill && rightSkill->spell && rightSkill->spell->effect == SkillBehavior::Telekinesis;
         if (input.rightHeld && !inventoryRight_ && (!channeled ||
             (input.movement.length() <= .1f && !input.leftPressed && !input.leftHeld))) {
             EntityId target;
@@ -879,7 +881,26 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
                     break;
                 }
             rightCombatTarget_ = corpseSkill ? EntityId{} : target;
+            if (enchant) {
+                target = {};
+                const auto &player = session_.state().player;
+                const auto &merc = player.hireling;
+                if (merc.active() && (view_.screen(merc.pos) - Vec{0, 25} - input.mouse).length() < 24)
+                    target = merc.id;
+                for (const auto &companion : session_.state().companions)
+                    if (companion.hp > 0 && session_.active(companion.pos) &&
+                        (view_.screen(companion.pos) - Vec{0, 25} - input.mouse).length() < 24) {
+                        target = companion.id;
+                        break;
+                    }
+                rightCombatTarget_ = {};
+            }
             rightTargetSkill_ = ui.rightSkill;
+            if (telekinesis && !target) {
+                if (const auto item = view_.lootAt(input.mouse)) target = item->id;
+                else if (const auto *object = view_.objectAt(input.mouse)) target = object->id;
+                rightCombatTarget_ = {};
+            }
             Vec aim = view_.world(input.mouse);
             if (target)
                 for (const auto &enemy : session_.state().area.enemies)

@@ -50,6 +50,12 @@ void Simulation::advanceSkillCasting(PlayerState &player, float dt, bool moving)
                 if (cast.skill.summon) {
                     if (!usableCorpse(cast.enemy)) return;
                     cast.target = unitPosition(cast.enemy);
+                } else if (cast.skill.effect == SkillBehavior::Telekinesis) {
+                    if (!telekinesisTarget_ || !telekinesisTarget_(cast.enemy, cast.skill.telekinesisRange, false)) return;
+                } else if (cast.skill.effect == SkillBehavior::Enchant) {
+                    const auto target = combatUnit(cast.enemy);
+                    if (!target.alive() || relation(player.id, target.id) != Relation::Allied || !active(*target.position))
+                        cast.enemy = {};
                 } else {
                     const auto enemy = combatUnit(cast.enemy);
                     if (!enemy.alive() || !canAttack(player.id, enemy.id) || !active(*enemy.position)) return;
@@ -79,6 +85,9 @@ bool Simulation::beginSkillCast(PlayerState &player, const SkillCastSpec &skill,
         return false;
     if (skill.delayFrames > 0 && state_.frame < player.skillDelayUntil) return false;
     if (skill.blizzard && !blizzardTargetClear(player.pos, target)) return false;
+    if (skill.hydraFrames > 0 && !blizzardTargetClear(player.pos, target)) return false;
+    if (skill.effect == SkillBehavior::Telekinesis &&
+        (!telekinesisTarget_ || !telekinesisTarget_(enemy, skill.telekinesisRange, false))) return false;
     if (skill.effect == SkillBehavior::Teleport && (!teleportAllowed || !grid_->walkable(target, playerMovement))) {
         state_.message = "Teleport needs permitted, clear ground";
         return false;
@@ -127,16 +136,45 @@ void Simulation::releaseSkillCast(PlayerState &player, const SkillCastSpec &skil
         return;
     }
     if (skill.blizzard && !blizzardTargetClear(player.pos, target)) return;
+    if (skill.hydraFrames > 0) {
+        if (summonHydra(player, skill, target)) {
+            if (consumeMana) player.mana -= skill.manaCost;
+            player.skillDelayUntil = state_.frame + EffectFrame(skill.delayFrames);
+            emit(SkillActivated{skill.sourceId});
+        }
+        return;
+    }
     if (consumeMana) player.mana -= skill.manaCost;
     if (skill.delayFrames > 0)
         player.skillDelayUntil = state_.frame + EffectFrame(skill.delayFrames);
     if (skill.missileId >= 0 && skill.effect != SkillBehavior::Inferno && !skill.appliedEffect)
         emit(MissileReleased{skill.missileId});
-    if (skill.appliedEffect) {
+    if (skill.effect == SkillBehavior::Telekinesis) {
+        if (!telekinesisTarget_ || !telekinesisTarget_(targetUnit, skill.telekinesisRange, true)) return;
+        const auto defender = combatUnit(targetUnit);
+        if (defender.alive() && canAttack(player.id, defender.id)) {
+            const int minimum = int(skill.minimumDamage * 256.f), maximum = int(skill.maximumDamage * 256.f);
+            const float amount = float(minimum + limitedRandom(player.combatRandom,
+                unsigned(std::max(0, maximum - minimum)))) / 256.f;
+            const bool knockback = limitedRandom(player.combatRandom, 100) < unsigned(skill.telekinesisKnockbackChance);
+            DamageRequest hit{player.id, defender.id, amount, MonsterDamageType::Lightning};
+            hit.hitClass = 109;
+            dealDamage(hit);
+            if (knockback && combatUnit(defender.id).alive()) applyAuraKnockback(player.id, defender.id);
+        }
+        emit(SkillActivated{skill.sourceId});
+    } else if (skill.appliedEffect) {
         auto effect = *skill.appliedEffect;
         effect.source.entity = player.id;
-        const auto applied = player.combatEffects.apply(std::move(effect), state_.frame);
+        auto recipient = skill.effect == SkillBehavior::Enchant ? combatUnit(targetUnit) : combatUnit(player.id);
+        if (!recipient.alive() || relation(player.id, recipient.id) != Relation::Allied) recipient = combatUnit(player.id);
+        const auto applied = recipient.effects->apply(std::move(effect), state_.frame);
         combatEffectsChanged(applied.removed);
+        if (skill.effect == SkillBehavior::ThunderStorm) {
+            const auto period = EffectFrame(skill.stormPeriod);
+            player.thunderStorm = PlayerState::ThunderStormState{applied.handle,
+                ((state_.frame + period - 1) / period) * period + 1, {}};
+        }
         emit(SkillActivated{skill.sourceId});
     } else if (skill.effect == SkillBehavior::Teleport) {
         player.pos = player.previous = target;
@@ -161,6 +199,21 @@ void Simulation::releaseSkillCast(PlayerState &player, const SkillCastSpec &skil
         }
     } else if (skill.blizzard) {
         launchBlizzard(player, skill, target);
+    } else if (skill.firewall) {
+        const auto &definition = *skill.firewall;
+        const Vec center{float(int(target.x)), float(int(target.y))};
+        const Vec difference{float(int(player.pos.x)) - center.x, float(int(player.pos.y)) - center.y};
+        const Vec heading = Vec{-difference.y, difference.x}.unit();
+        for (int part = 0; part < 3; ++part) {
+            const bool maker = part < 2;
+            Missile missile{ids_.allocate(), player.id, center,
+                maker ? heading * (part == 0 ? definition.velocity : -definition.velocity) : Vec{},
+                float(maker ? definition.makerFrames : definition.fireFrames) / 25.f,
+                skill.effect, false, maker ? definition.makerId : definition.fireId};
+            missile.firewall = Missile::FirewallState{definition, maker, 0};
+            missile.combatRandom = childRandom(unitRandom_);
+            state_.area.missiles.push_back(std::move(missile));
+        }
     } else if (skill.frozenOrb) {
         launchFrozenOrb(player, skill, target);
     } else if (skill.freezingArea) {

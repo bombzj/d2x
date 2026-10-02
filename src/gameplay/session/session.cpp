@@ -169,6 +169,14 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
         return record ? std::pair{record->hitClass, record->primeEvil} : std::pair{0, false};
     };
     simulation_->countessFirewall_ = monsterContent_.countessFirewall();
+    simulation_->playerFireMastery_ = [this] { return fireMasteryPercent(); };
+    simulation_->telekinesisTarget_ = [this](EntityId target, int range, bool operate) {
+        return telekinesisTarget(target, range, operate);
+    };
+    if (const auto blaze = content_.states.find("blaze"); blaze != content_.states.end())
+        simulation_->blazeState_ = blaze->second.definition.id;
+    if (const auto shield = content_.states.find("energyshield"); shield != content_.states.end())
+        simulation_->energyShieldState_ = shield->second.definition.id;
     simulation_->hirelingAttributes_ = [this] {
         const auto merc = hirelingStats();
         CharacterAttributes result;
@@ -467,7 +475,7 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
         -> std::optional<float> {
         const auto *record = monsterContent_.find(enemy.identity.monster);
         if (monsterImplementation(enemy.identity.monster).substitute || !record ||
-            !record->skill2Mode || enemy.kind != MonsterKind::Fallen) return std::nullopt;
+            !record->skill2Mode || (enemy.kind != MonsterKind::Fallen && record->ai != "Hydra")) return std::nullopt;
         const auto *motion = monsterContent_.motion(enemy.kind, "s2");
         return motion ? std::optional<float>(motion->duration) : std::nullopt;
     };
@@ -944,6 +952,8 @@ void GameSession::tick(float dt, Vec keyboard, bool forceRun) {
     for (const auto &pet : state().companions)
         if (pet.hp > 0 && pet.allegiance.owner == state().player.id) summonSkills.insert(pet.summonSkill);
     for (int skill : summonSkills) {
+        const auto *record = content_.skills.find(skill);
+        if (!record || !record->spell || !record->spell->summon) continue;
         const int rank = effectiveSkillRank(skill);
         simulation_->enforceSummonLimit(state().player.id, skill, rank < 4 ? rank : 2 + rank / 3);
     }

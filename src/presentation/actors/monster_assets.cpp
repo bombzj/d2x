@@ -105,6 +105,7 @@ void SceneAssets::loadMonsterActor(const GameSession &session, const MonsterArtS
     const auto &content = session.monsterContent();
     const auto kind = entry.kind;
     const auto &actor = *entry.actor;
+    const bool hydra = actor.ai == "Hydra";
     const size_t shield = entry.shield;
     const auto definition = monsterDefinition(kind);
     if (normalize(actor.token) != definition.token)
@@ -140,6 +141,8 @@ void SceneAssets::loadMonsterActor(const GameSession &session, const MonsterArtS
         if (!equipment[9][0]) equipment[9] = "lit";
     }
     for (auto mode : {"nu", "wl", "rn", "a1", "dt", "a2", "sc", "gh", "dd", "s1", "s2"}) {
+        if (hydra && std::string_view(mode) != "nu" && std::string_view(mode) != "a1" &&
+            std::string_view(mode) != "dt" && std::string_view(mode) != "dd" && std::string_view(mode) != "s2") continue;
         if (kind == MonsterKind::FoulCrowNest &&
             (std::string_view(mode) == "wl" || std::string_view(mode) == "a1" ||
              std::string_view(mode) == "gh")) continue;
@@ -154,7 +157,7 @@ void SceneAssets::loadMonsterActor(const GameSession &session, const MonsterArtS
             (!actor.castMode || !content.attackTiming(kind, 3))) continue;
         if (std::string_view(mode) == "gh" && !actor.getHitMode) continue;
         if (std::string_view(mode) == "dd" && !actor.deadMode) continue;
-        if (std::string_view(mode) == "s2" && (kind != MonsterKind::Fallen || !actor.skill2Mode)) continue;
+        if (std::string_view(mode) == "s2" && ((!hydra && kind != MonsterKind::Fallen) || !actor.skill2Mode)) continue;
         if (std::string_view(mode) == "s1" && kind != MonsterKind::FoulCrowNest &&
             kind != MonsterKind::Fallen && kind != MonsterKind::NecroSkeleton &&
             kind != MonsterKind::BloodRaven) continue;
@@ -178,6 +181,14 @@ void SceneAssets::loadMonsterActor(const GameSession &session, const MonsterArtS
     if (auto timing = content.attackTiming(kind);
         timing && animations.at("a1").count != timing->frames)
         throw std::runtime_error("Monster AnimData/COF frame mismatch: " + actor.id);
+    if (hydra) {
+        const auto *attack = content.attackTiming(kind);
+        const auto *rise = content.motion(kind, "s2");
+        const auto *death = content.motion(kind, "dt");
+        if (!attack || !rise || !death || !animations.contains("s2") ||
+            animations.at("s2").count != rise->frames || animations.at("dt").count != death->frames)
+            throw std::runtime_error("Original Hydra lifecycle animation missing: " + actor.id);
+    }
     if ((kind == MonsterKind::CorruptArcher || kind == MonsterKind::SkeletonBow ||
          kind == MonsterKind::SkeletonMage) &&
         actor.attack1Projectile &&

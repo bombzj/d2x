@@ -21,8 +21,9 @@ std::vector<SceneView::VisibleMonster> SceneView::visibleMonsters() const {
             if (!enemy.corpseConsumed && !enemy.deathHidden && session_.roomVisible(index, enemy.pos))
                 result.push_back({&enemy, enemy.pos + offset, index});
     for (const auto &pet : session_.state().companions) {
+        if (pet.hydra && pet.hydra->region != session_.region().definition.id) continue;
         const auto *death = session_.monsterContent().motion(pet.kind, "dt");
-        if (!pet.deathHidden && (pet.hp > 0 || (death && pet.deathAge < death->duration)) &&
+        if (!pet.deathHidden && (pet.living() || (death && pet.deathAge < death->duration)) &&
             session_.roomVisible(session_.regionIndex(), pet.pos))
             result.push_back({&pet, pet.pos, session_.regionIndex()});
     }
@@ -383,7 +384,7 @@ void SceneView::drawActors(Vec mouse) const {
                     session_, e.identity.monster, e.kind,
                     e.allegiance.role == CombatRole::Summon ? e.summonShield : 0, &e.identity);
                 const auto *deathTiming = session_.monsterContent().motion(e.kind, "dt");
-                std::string mode = e.hp <= 0 ? (animations.contains("dd") && deathTiming &&
+                std::string mode = !e.living() ? (animations.contains("dd") && deathTiming &&
                                                    e.deathAge >= deathTiming->duration ? "dd" : "dt")
                                   : e.freeze > 0 ? "nu"
                                   : e.knockbackRemaining > 0 && animations.contains("gh") ? "gh"
@@ -426,7 +427,7 @@ void SceneView::drawActors(Vec mouse) const {
                     if (e.chill > 0 && !nativeMovementRate && e.hp > 0)
                         if (const auto *record = session_.monsterContent().find(e.identity.monster))
                             coldRate = std::max(1, 100 + record->coldEffect.at(size_t(sim.population.difficulty)));
-                    int frame = e.hp <= 0 ? (mode == "dd" ? 0
+                    int frame = !e.living() ? (mode == "dd" ? 0
                                             : std::min(anim->count - 1, int(e.deathAge * fps)))
                                 : e.freeze > 0 ? 0
                                 : e.stun > 0 && !animations.contains("gh") ? 0

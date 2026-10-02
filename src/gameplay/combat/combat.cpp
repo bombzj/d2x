@@ -115,6 +115,10 @@ void Simulation::meleeDamage(EntityId defender, const WeaponDamage &weapon) {
     const auto range = uint32_t(std::max<int64_t>(0, maximum - minimum));
     const auto damage = std::max<int64_t>(0, minimum + (range ? uint32_t(player.combatRandom) % range : 0));
     auto elements = rollAttackElements(weapon.item);
+    if (playerFireMastery_ && elements.fire > 0) {
+        const int mastery = playerFireMastery_();
+        elements.fire = float(int64_t(elements.fire * 256.f) * (100 + mastery) / 100) / 256.f;
+    }
     elements.hitClass = weapon.hitClass;
     resolveWeaponHit(defender, float(damage) / 256.f, player.id, elements);
     if (wearEquipment_ && weapon.item) wearEquipment_(weapon.item, false);

@@ -58,6 +58,8 @@ class Simulation {
     bool usableCorpse(EntityId id) const;
     EntityId corpseNear(Vec target) const;
     bool summonFromCorpse(PlayerState &owner, const SkillCastSpec &skill, EntityId corpse);
+    bool summonHydra(PlayerState &owner, const SkillCastSpec &skill, Vec target);
+    void advanceHydra(Enemy &pet, float dt);
     void relocateCompanions(EntityId owner, Vec destination, EntityId only = {});
     void enforceSummonLimit(EntityId owner, int skill, int limit);
     std::function<void()> combatEffectsChanged_;
@@ -90,6 +92,7 @@ class Simulation {
     int lifeStealDivisor_ = 1, manaStealDivisor_ = 1;
     std::function<std::optional<int>(const Enemy &, RegionId, MonsterDamageType)> monsterResistance_;
     std::function<int(EntityId)> coldPierce_;
+    std::function<int()> playerFireMastery_;
     std::function<std::optional<bool>(const Enemy &)> monsterFreezable_;
     int monsterFreezeDivisor_ = 1;
     CombatStateDefinition freezeDeathState_, shatterDeathState_;
@@ -120,8 +123,13 @@ class Simulation {
     std::function<std::optional<MonsterResurrection>(const Enemy &)> monsterResurrection_;
     std::function<std::optional<MonsterNest>(const Enemy &)> monsterNest_;
     std::optional<MonsterFirewall> countessFirewall_;
+    int blazeState_ = -1;
+    int energyShieldState_ = -1;
     void launchCountessFirewall(Enemy &enemy);
     void advanceMonsterFirewall(Missile &missile, std::vector<Missile> &spawned);
+    void createBlazeTrail(PlayerState &player);
+    void advanceThunderStorm(PlayerState &player);
+    std::function<bool(EntityId, int, bool)> telekinesisTarget_;
     std::function<std::optional<MonsterWeb>(const Enemy &)> monsterWeb_;
     std::vector<GameEvent> events_;
     Enemy *findEnemy(EntityId id);
