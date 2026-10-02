@@ -101,6 +101,12 @@ bool GameSession::applySkillCastTiming(SkillCastSpec &cast) const {
     const int rate = std::clamp(100 + int(int64_t(120) * faster / (120 + faster)) +
                                characterStats().otherAnimationRate, 15, 175);
     const int speed = std::max(1, animation.speed * rate / 100);
+    if (cast.arc) {
+        cast.castDuration = float((19 * 256 + speed - 1) / speed) / 25.f;
+        cast.castImpact = float((7 * 256 + speed - 1) / speed) / 25.f;
+        cast.castRate = float(speed) * 25.f / 256.f;
+        return true;
+    }
     const int frames = std::max(1, (animation.frames * 256 + speed - 1) / speed - 1);
     cast.castDuration = float(frames) / 25.f;
     cast.castImpact = float(std::min(frames, (animation.actionFrame * 256 + speed - 1) / speed)) / 25.f;

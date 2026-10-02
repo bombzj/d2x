@@ -28,6 +28,7 @@ class RoomMaze {
     void placeArcane();
     void pick(int i) {
         auto &room = rooms_[i];
+        if (room.fixed) return;
         int type = catalog_.level(maze_.level).levelType;
         if (type == 14 || type == 15) {
             constexpr int corners[]{0, 0, 0, 0, 0, 356, 355, 0, 0, 357, 354, 0, 0, 0, 0, 0};

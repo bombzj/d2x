@@ -13,7 +13,7 @@ std::vector<std::pair<int, Vec>> automapRegions(const GameSession &session) {
         const auto &recipe = session.regions()[regions[next].first].recipe;
         for (int index = 0; index < int(session.regions().size()); ++index) {
             const auto &candidate = session.regions()[index];
-            if (included.contains(index) ||
+            if (included.contains(index) || !candidate.loaded ||
                 std::none_of(recipe.boundaries.begin(), recipe.boundaries.end(), [&](const auto &boundary) {
                     return boundary.destination == int(candidate.definition.id);
                 })) continue;

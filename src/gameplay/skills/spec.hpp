@@ -24,6 +24,22 @@ struct BlizzardSpec {
     int fallDistance = 0, fallRate = 0;
     int impactId = -1, impactFrames = 0;
 };
+struct ArcSpec {
+    int visualId = -1, subloops = 1;
+    int range = 0, count = 1, countPerLevel = 0;
+    int nextDelay = 0;
+};
+struct MeteorSpec {
+    int radius = 0, radiusPerLevel = 0, fireStep = 1;
+    int fireFrames = 0, fireFramesPerLevel = 0;
+    MonsterFirewall fire;
+    std::array<int, 5> fireMinimumPerLevel{}, fireMaximumPerLevel{};
+    int fireSynergySkill = -1, fireSynergyPercent = 0;
+    int fallId = -1, tailId = -1, explodeId = -1;
+    int fallStart = 0, fallSpeed = 0, explodeDensity = 1;
+    int lightId = -1, mediumId = -1, smallId = -1;
+    int mediumDensity = 1, smallDensity = 1;
+};
 // Weapon skills use the ordinary attack animation, equipment and ammunition pipeline.
 struct WeaponSkillSpec {
     std::string requiredType;
@@ -95,6 +111,8 @@ struct SkillSpec {
     std::optional<SummonSkillSpec> summon;
     std::optional<FrozenOrbSpec> frozenOrb;
     std::optional<BlizzardSpec> blizzard;
+    std::optional<ArcSpec> arc;
+    std::optional<MeteorSpec> meteor;
     std::optional<FreezingAreaSpec> freezingArea;
     std::optional<MonsterFirewall> firewall;
     int firewallRangePerLevel = 0;
@@ -145,6 +163,8 @@ struct SkillCastSpec {
     std::optional<SummonCastSpec> summon;
     std::optional<FrozenOrbCastSpec> frozenOrb;
     std::optional<BlizzardSpec> blizzard;
+    std::optional<ArcSpec> arc;
+    std::optional<MeteorSpec> meteor;
     std::optional<FreezingAreaCastSpec> freezingArea;
     std::optional<MonsterFirewall> firewall;
     int delayFrames = 0;

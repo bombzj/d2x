@@ -184,6 +184,24 @@ SkillCastSpec resolveSkill(const SkillSpec &spec, int rank,
     };
     result.minimumDamage = damage(spec.minimumDamage, spec.minimumPerLevel);
     result.maximumDamage = damage(spec.maximumDamage, spec.maximumPerLevel);
+    result.arc = spec.arc;
+    if (result.arc && spec.effect == SkillBehavior::ChainLightning)
+        result.arc->count = std::max(1, (spec.arc->count + (rank - 1) * spec.arc->countPerLevel) / 5);
+    result.meteor = spec.meteor;
+    if (result.meteor) {
+        auto &program = *result.meteor;
+        program.radius += (rank - 1) * program.radiusPerLevel;
+        program.fire.fireFrames = program.fireFrames + (rank - 1) * program.fireFramesPerLevel;
+        const auto synergy = learned.find(program.fireSynergySkill);
+        const int percent = 100 + (synergy == learned.end() ? 0 : synergy->second) * program.fireSynergyPercent;
+        auto fireDamage = [&](int base, const std::array<int, 5> &steps) {
+            const int64_t fixed = ((int64_t(base) + levelBonus(rank, steps)) << program.fire.hitShift) * percent / 100;
+            return int(fixed + fixed * fireMasteryPercent / 100);
+        };
+        program.fire.minimumDamage = fireDamage(spec.meteor->fire.minimumDamage, program.fireMinimumPerLevel);
+        program.fire.maximumDamage = fireDamage(spec.meteor->fire.maximumDamage, program.fireMaximumPerLevel);
+        program.fire.hitShift = 0;
+    }
     if (spec.effect == SkillBehavior::Enchant && result.appliedEffect) {
         auto &modifiers = result.appliedEffect->modifiers.combat;
         modifiers.fireMinimum = int(result.minimumDamage);

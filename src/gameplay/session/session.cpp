@@ -29,7 +29,8 @@ bool baseMonsterRank(MonsterRank rank) {
 GameSession::GameSession(Archives &archives, const WorldSelection &selection, int startRegion,
                          uint32_t sessionSeed, PopulationSettings population, std::string characterClass,
                          std::string characterName)
-    : random_(initialRandom(sessionSeed)), content_(loadClassicData(archives)), worldContent_(archives),
+        : random_(initialRandom(sessionSeed)), content_(loadClassicData(archives)), worldContent_(archives),
+            archives_(archives), tileCache_(archives),
             monsterContent_(archives, content_.tables.at("monstats")),
             simulation_(std::make_unique<Simulation>(ids_)), loot_(childRandom(random_)) {
     simulation_->state_.player.characterClass = std::move(characterClass);
@@ -551,30 +552,12 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
     };
     worldSelection.difficulty = population.difficulty;
     auto plan = planWorld(archives, worldContent_, worldSelection);
-    regions_ = loadRegions(archives, ids_, plan.regions, monsterContent_, worldContent_, selection.seed, rollRandom(random_));
-    for (auto &region : regions_)
-        for (auto &object : region.objects)
-            if (const auto *npc = monsterContent_.find(object.npcClass)) {
-                if (const auto name = content_.itemStrings.find(npc->name); name != content_.itemStrings.end())
-                    object.name = name->second;
-                if (npc->interact && !npc->hostile())
-                    object.interaction = npcCanHeal(object.npcClass) ? Interaction::Heal : Interaction::Talk;
-            }
-    for (const auto &region : regions_)
-        for (const auto &object : region.objects)
-            if (!object.npcPath.empty())
-                initialNpcMotions_.push_back({object.id, object.pos, object.npcLook,
-                                              object.npcRoute, object.npcWait,
-                                              object.npcTarget, object.npcRandom});
-    for (const auto &region : regions_)
-        for (const auto &object : region.objects)
-            if (auto vendor = content_.vendors.find(object.npcClass);
-                vendor != content_.vendors.end()) {
-                uint64_t seed = childRandom(random_);
-                vendorStocks_.emplace(object.id, planVendorStock(content_, vendor->second,
-                                                                  equipmentActor().level,
-                                                                  population.difficulty, seed));
-            }
+    auto mapRandom = initialRandom(selection.seed);
+    levelSeed_ = rollRandom(mapRandom);
+    regions_ = loadRegions(archives, ids_, plan.regions, monsterContent_, worldContent_, selection.seed, rollRandom(random_), true);
+    if (startRegion < -1 || startRegion >= int(regions_.size()))
+        throw std::out_of_range("--region exceeds the available scene count; prefer --level <Levels.txt ID>");
+    ensureRegion(startRegion < 0 ? plan.start : regions_[startRegion].definition.id, true);
     linkLevelExits(regions_, worldContent_);
     for (const auto &region : regions_)
         if (region.definition.safe)
@@ -594,6 +577,7 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
                     }
                 }
     DataTable portalObjects(archives.read("data/global/excel/objects.txt"));
+    content_.tables.emplace("objects", portalObjects);
     for (size_t row = 0; row < portalObjects.rows().size(); ++row)
         if (portalObjects.number(row, "Id").value_or(-1) == 59 &&
             portalObjects.number(row, "OperateFn").value_or(0) == 15)
@@ -649,6 +633,52 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
         throw std::out_of_range("--region exceeds the available scene count; prefer --level <Levels.txt ID>");
     enter(startRegion < 0 ? plan.start : regions_[startRegion].definition.id);
 }
+void GameSession::ensureRegion(RegionId id, bool neighbours) {
+    auto found = std::find_if(regions_.begin(), regions_.end(),
+        [&](const auto &region) { return region.definition.id == id; });
+    if (found == regions_.end()) return;
+    bool changed = false;
+    auto load = [&](Region &region) {
+        if (region.loaded) return;
+        loadRegion(archives_, ids_, region, tileCache_, monsterContent_, worldContent_, levelSeed_);
+        changed = true;
+        if (region.definition.safe)
+            for (const auto &layer : region.map.data.walls)
+                for (size_t index = 0; index < layer.size(); ++index) {
+                    const auto &cell = layer[index];
+                    if (cell.occupied() && (cell.orientation == 10 || cell.orientation == 11) &&
+                        ((cell.value >> 20) & 63) == 33) {
+                        const Vec point{float(index % region.map.data.width * 5 + 3),
+                            float(index / region.map.data.width * 5 + 3)};
+                        const auto arrival = region.map.grid.nearest(point);
+                        if (region.map.grid.walkable(arrival) && (arrival - point).length() <= 5) {
+                            townPortalArrivals_[region.definition.id] = arrival;
+                            if (region.definition.id == RegionId::Encampment) townPortalArrival_ = arrival;
+                        }
+                    }
+                }
+        for (auto &object : region.objects) {
+            if (const auto *npc = monsterContent_.find(object.npcClass)) {
+                if (const auto name = content_.itemStrings.find(npc->name); name != content_.itemStrings.end()) object.name = name->second;
+                if (npc->interact && !npc->hostile()) object.interaction = npcCanHeal(object.npcClass) ? Interaction::Heal : Interaction::Talk;
+            }
+            if (!object.npcPath.empty()) initialNpcMotions_.push_back({object.id, object.pos, object.npcLook,
+                object.npcRoute, object.npcWait, object.npcTarget, object.npcRandom});
+            if (auto vendor = content_.vendors.find(object.npcClass); vendor != content_.vendors.end())
+                vendorStocks_.emplace(object.id, planVendorStock(content_, vendor->second, equipmentActor().level,
+                    state().population.difficulty, childRandom(random_)));
+        }
+    };
+    load(*found);
+    if (neighbours)
+        for (const auto &boundary : found->recipe.boundaries)
+            for (auto &candidate : regions_)
+                if (int(candidate.definition.id) == boundary.destination) load(candidate);
+    if (changed) {
+        linkLevelExits(regions_, worldContent_);
+        reconcileCainObjects();
+    }
+}
 const CharacterDefinition &GameSession::definitionFor(std::string_view name) const {
     auto found = std::find_if(content_.characters.begin(), content_.characters.end(),
                               [name](const auto &entry) { return entry.name == name; });
@@ -670,6 +700,7 @@ void GameSession::grantExperience(uint64_t amount) {
     refreshCharacter(true);
 }
 void GameSession::enter(RegionId id, std::optional<Vec> arrival, std::optional<Vec> coordinateOffset) {
+    ensureRegion(id, true);
     auto found = std::find_if(regions_.begin(), regions_.end(),
                               [id](const Region &r) { return r.definition.id == id; });
     if (found == regions_.end())
@@ -760,6 +791,7 @@ void GameSession::tick(float dt, Vec keyboard, bool forceRun) {
                     transitioned = travelWaypoint(intent);
                 } else if constexpr (std::is_same_v<T, Travel>) {
                     if (!state().player.dead) {
+                        ensureRegion(intent.destination, true);
                         std::optional<Vec> arrival;
                         for (const auto &destination : regions_)
                             if (destination.definition.id == intent.destination)

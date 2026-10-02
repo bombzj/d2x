@@ -7,8 +7,11 @@ namespace d2x {
 void SceneAssets::loadAutomap(const GameSession &session) {
     std::set<int> used{317};
     regionTownAutomap.resize(session.regions().size());
+    regionAutomap.resize(session.regions().size());
+    regionAutomapLoaded.resize(session.regions().size(), false);
     for (size_t regionIndex = 0; regionIndex < session.regions().size(); ++regionIndex) {
         const auto &region = session.regions()[regionIndex];
+        if (!region.loaded || regionAutomapLoaded[regionIndex]) continue;
         const auto preset = session.worldContent().presets().find(region.recipe.preset);
         if (preset == session.worldContent().presets().end() || !preset->second.automap) continue;
         const int level = int(region.definition.id);
@@ -38,9 +41,12 @@ void SceneAssets::loadAutomap(const GameSession &session) {
             }
         }
     }
-    for (const auto &region : session.regions()) {
+    for (size_t index = 0; index < session.regions().size(); ++index) {
+        const auto &region = session.regions()[index];
+        if (!region.loaded || regionAutomapLoaded[index]) continue;
+        regionAutomapLoaded[index] = true;
         const auto &map = region.map;
-        auto &stamps = regionAutomap.emplace_back();
+        auto &stamps = regionAutomap[index];
         for (int y = 0; y < map.data.height; ++y)
             for (int x = 0; x < map.data.width; ++x) {
                 const size_t cellIndex = size_t(y) * map.data.width + x;
@@ -84,7 +90,7 @@ void SceneAssets::loadAutomap(const GameSession &session) {
         if (!art || art->frames.empty())
             throw std::runtime_error("Original MPQ automap art is missing");
         for (int cel : used)
-            if (cel < int(art->frames.size())) {
+            if (cel < int(art->frames.size()) && !automapCels[size].contains(cel)) {
                 auto frame = art->frames[cel];
                 frame.x -= frame.width / 2;
                 frame.y -= cel == 317 ? frame.height / 2 : frame.height - frame.width / 4;

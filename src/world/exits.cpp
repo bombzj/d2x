@@ -7,13 +7,16 @@
 namespace d2x {
 void linkLevelExits(std::vector<Region> &regions, const WorldCatalog &catalog) {
     for (auto &region : regions) {
+        region.exits.clear();
+        region.map.warpArrivals.clear();
         auto &neighbours = region.map.grid.neighbours;
         neighbours.clear();
+        if (!region.loaded) continue;
         for (const auto &boundary : region.recipe.boundaries) {
             auto other = std::find_if(regions.begin(), regions.end(), [&](const auto &candidate) {
                 return int(candidate.definition.id) == boundary.destination;
             });
-            if (other == regions.end() || !std::any_of(other->recipe.boundaries.begin(), other->recipe.boundaries.end(),
+            if (other == regions.end() || !other->loaded || !std::any_of(other->recipe.boundaries.begin(), other->recipe.boundaries.end(),
                 [&](const auto &back) { return back.destination == int(region.definition.id) &&
                     back.side == (boundary.side + 2) % 4; })) continue;
             neighbours.push_back({&other->map.grid,
@@ -25,11 +28,11 @@ void linkLevelExits(std::vector<Region> &regions, const WorldCatalog &catalog) {
     }
     std::map<RegionId, Bytes> reachable;
     for (const auto &region : regions)
-        if (!region.recipe.boundaries.empty())
+        if (region.loaded && !region.recipe.boundaries.empty())
             reachable.emplace(region.definition.id, region.map.grid.reachableFrom(region.map.spawn, playerMovement));
     for (auto &region : regions) {
         int id = int(region.definition.id);
-        if (!catalog.levels().contains(id))
+        if (!region.loaded || !catalog.levels().contains(id))
             continue;
         const auto &level = catalog.level(id);
         const auto &data = region.map.data;
@@ -98,10 +101,11 @@ void linkLevelExits(std::vector<Region> &regions, const WorldCatalog &catalog) {
                 }
     }
     for (auto &region : regions) {
+        if (!region.loaded) continue;
         for (const auto &b : region.recipe.boundaries) {
             auto target = std::find_if(regions.begin(), regions.end(),
                                        [&](const auto &r) { return int(r.definition.id) == b.destination; });
-            if (target == regions.end())
+            if (target == regions.end() || !target->loaded)
                 continue;
             LevelExit exit;
             exit.slot = 8 + b.destination;
@@ -173,7 +177,7 @@ void linkLevelExits(std::vector<Region> &regions, const WorldCatalog &catalog) {
                 return r.definition.id == exit.destination;
             });
             if (destination != regions.end())
-                exit.enabled =
+                exit.enabled = !destination->loaded ||
                     std::any_of(destination->exits.begin(), destination->exits.end(),
                                 [&](const auto &back) {
                                     return back.destination == region.definition.id &&

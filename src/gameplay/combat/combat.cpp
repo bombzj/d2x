@@ -128,6 +128,8 @@ void Simulation::updateMissiles(float dt) {
     std::vector<Missile> spawned;
     updatingMissiles_ = true;
     for (auto &m : area.missiles) {
+        if (m.arc) { advanceArc(m, spawned); continue; }
+        if (m.meteor) { advanceMeteor(m, spawned); continue; }
         if (m.firewall) { advanceMonsterFirewall(m, spawned); continue; }
         if (m.frozenOrb) { advanceFrozenOrb(m, spawned); continue; }
         if (m.blizzard) { advanceBlizzard(m, spawned); continue; }

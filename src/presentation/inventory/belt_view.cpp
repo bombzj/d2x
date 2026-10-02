@@ -157,11 +157,11 @@ void SceneView::drawItemTooltip(const ItemInstance &item, Vec anchor,
         }
         if (item.definition == "bkd") {
             line("Cairn Stones order:");
+            const auto &objects = session_.content().tables.at("objects");
             for (int objectClass : session_.cainStoneSequence())
-                for (const auto &region : session_.regions())
-                    for (const auto &object : region.objects)
-                        if (object.interaction == Interaction::QuestStone && object.objectClass == objectClass)
-                            line(object.name);
+                for (size_t row = 0; row < objects.rows().size(); ++row)
+                    if (objects.number(row, "Id").value_or(-1) == objectClass)
+                        line(std::string(objects.value(row, "Name")));
         }
     }
     int fontSize = 16, rowHeight = 20;

@@ -8,7 +8,9 @@ std::optional<RegionId> GameSession::portalTown(RegionId field) const {
     if (level == worldContent_.levels().end() || level->second.act < 0 || level->second.act >= 5)
         return std::nullopt;
     const auto town = RegionId(actTownLevels[size_t(level->second.act)]);
-    return townPortalArrivals_.contains(town) ? std::optional<RegionId>{town} : std::nullopt;
+    return std::any_of(regions_.begin(), regions_.end(), [&](const auto &region) {
+        return region.definition.id == town && region.definition.safe;
+    }) ? std::optional<RegionId>{town} : std::nullopt;
 }
 void GameSession::identifyItem(const IdentifyItem &command) {
     if (auto error = previewInventory(command); error != InventoryError::None) {
@@ -32,6 +34,14 @@ void GameSession::identifyItem(const IdentifyItem &command) {
     publishInventory(std::move(consumed), command.source.id);
 }
 void GameSession::useItem(ItemHandle handle) {
+    if (const auto *item = inventory_.item(handle.id)) {
+        const auto *definition = inventory_.catalog().find(item->definition);
+        if (definition && (content_.isPortalScroll(item->definition) || content_.isPortalScroll(definition->bookScroll))) {
+            const auto level = worldContent_.levels().find(int(region().definition.id));
+            if (level != worldContent_.levels().end() && level->second.act >= 0 && level->second.act < 5)
+                ensureRegion(RegionId(actTownLevels[size_t(level->second.act)]));
+        }
+    }
     auto error = previewInventory(UseItem{handle});
     if (error != InventoryError::None) {
         simulation_->emit(InventoryRejected{handle.id, error});
@@ -42,7 +52,7 @@ void GameSession::useItem(ItemHandle handle) {
     if (content_.isPortalScroll(code) || content_.isPortalScroll(definition->bookScroll)) {
         auto &portal = simulation_->state_.portal;
         const auto town = portalTown(region().definition.id);
-        if (!town) return;
+        if (!town || !townPortalArrivals_.contains(*town)) return;
         TownPortalState next{true, state().nextPortalRevision + 1, region().definition.id,
                      state().player.pos, townPortalArrivals_.at(*town), state().time};
         auto result = definition->bookScroll.empty()
@@ -85,6 +95,10 @@ InventoryError GameSession::previewPortalScroll(ItemHandle handle) const {
     if (!portalTown(region().definition.id) || !portalResources_ || portalReach_ <= 0 ||
         !map().grid.walkable(player.pos))
         return InventoryError::UnsupportedUse;
+    const auto town = *portalTown(region().definition.id);
+    for (const auto &region : regions_)
+        if (region.definition.id == town && region.loaded && !townPortalArrivals_.contains(town))
+            return InventoryError::UnsupportedUse;
     if (state().nextPortalRevision == std::numeric_limits<uint64_t>::max())
         return InventoryError::RevisionExhausted;
     return InventoryError::None;

@@ -25,6 +25,23 @@ void SceneView::createBlizzardFall(int missileId, Vec position) {
     clientMissiles_.push_back({missileId, position, {}, 0, float(frames) / 25.f, {}});
 }
 void SceneView::createMissileImpactVisuals(int missileId, Vec position) {
+    if (const auto meteor = assets_.meteorVisuals.find(missileId); meteor != assets_.meteorVisuals.end()) {
+        const auto &program = meteor->second;
+        auto ring = [&](int id, int density, float radius) {
+            const int count = std::max(1, density);
+            for (int index = 0; index < count; ++index) {
+                const float angle = 2.f * 3.14159265358979323846f * float(index) / float(count);
+                const Vec offset{std::cos(angle) * radius, std::sin(angle) * radius};
+                clientMissiles_.push_back({id, position + offset, {}, 0,
+                    assets_.projectileVisuals.at(id).lifetime, offset});
+            }
+        };
+        ring(program.explodeId, program.explodeDensity, 2.f);
+        ring(program.mediumId, program.mediumDensity, 3.f);
+        ring(program.smallId, program.smallDensity, 4.f);
+        clientMissiles_.push_back({program.lightId, position, {}, 0, float(program.fireFrames) / 25.f, {}});
+        return;
+    }
     if (const auto ejecta = assets_.projectileFreezingEjecta.find(missileId);
         ejecta != assets_.projectileFreezingEjecta.end()) {
         // CltHit14's original directional ejecta already carries pixel motion
@@ -46,6 +63,27 @@ void SceneView::createMissileImpactVisuals(int missileId, Vec position) {
     clientMissiles_.push_back({id, position, {}, 0, assets_.projectileVisuals.at(id).lifetime, {}});
 }
 void SceneView::advanceMissileVisuals(float dt) {
+    std::set<EntityId> activeArcs;
+    for (const auto &[region, offset] : session_.sceneRegions())
+        for (const auto &missile : session_.areaState(region).missiles) {
+            if (!missile.arc) continue;
+            activeArcs.insert(missile.id);
+            const int frame = int(missile.age * 25.f + .001f);
+            const auto previous = arcVisualFrames_.find(missile.id);
+            const int first = previous == arcVisualFrames_.end() ? 0 : previous->second + 1;
+            const auto &program = missile.arc->spec;
+            for (int step = first; step <= frame; ++step)
+                for (int segment = 0; segment < std::max(1, program.subloops); ++segment) {
+                    const float behind = float(frame - step) / 25.f +
+                        float(segment) / float(std::max(1, program.subloops) * 25);
+                    const Vec position = missile.pos + offset - missile.velocity * behind;
+                    clientMissiles_.push_back({program.visualId, position, {},
+                        float(frame - step) / 25.f,
+                        assets_.projectileVisuals.at(program.visualId).lifetime, missile.velocity});
+                }
+            arcVisualFrames_[missile.id] = frame;
+        }
+    std::erase_if(arcVisualFrames_, [&](const auto &entry) { return !activeArcs.contains(entry.first); });
     std::vector<ClientMissile> landed;
     for (auto &effect : clientMissiles_) {
         effect.age += dt;

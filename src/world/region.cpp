@@ -222,10 +222,7 @@ void configureWorldObject(WorldObject &object, const Table &objectRows) {
 }
 std::vector<Region> loadRegions(Archives &archives, EntityIds &ids, const std::vector<RegionPlan> &plans,
                                 const MonsterCatalog &monsters, const WorldCatalog &catalog,
-                                uint32_t mapSeed, uint32_t objectSeed) {
-    auto objectRows = decodeTable(archives.read("data/global/excel/objects.txt"));
-    auto groupRows = decodeTable(archives.read("data/global/excel/objgroup.txt"));
-    auto shrineRows = decodeTable(archives.read("data/global/excel/shrines.txt"));
+                                uint32_t mapSeed, uint32_t objectSeed, bool deferred) {
     TileLibraryCache cache(archives);
     std::vector<Region> regions;
     regions.reserve(plans.size());
@@ -237,7 +234,18 @@ std::vector<Region> loadRegions(Archives &archives, EntityIds &ids, const std::v
         region.definition = plan.definition;
         region.objectSeed = childRandom(objectsRandom);
         region.recipe = plan.recipe;
-        region.map.load(archives, cache, plan.recipe, levelSeed + uint32_t(region.definition.id));
+        if (!deferred) loadRegion(archives, ids, region, cache, monsters, catalog, levelSeed);
+        regions.push_back(std::move(region));
+    }
+    return regions;
+}
+void loadRegion(Archives &archives, EntityIds &ids, Region &region, TileLibraryCache &cache,
+                const MonsterCatalog &monsters, const WorldCatalog &catalog, uint32_t levelSeed) {
+        if (region.loaded) return;
+        auto objectRows = decodeTable(archives.read("data/global/excel/objects.txt"));
+        auto groupRows = decodeTable(archives.read("data/global/excel/objgroup.txt"));
+        auto shrineRows = decodeTable(archives.read("data/global/excel/shrines.txt"));
+        region.map.load(archives, cache, region.recipe, levelSeed + uint32_t(region.definition.id));
         if (region.definition.safe) region.map.spawn = region.map.actSpawn();
         for (size_t index = 0; index < region.map.data.objects.size(); ++index) {
             const auto &source = region.map.data.objects[index];
@@ -367,8 +375,6 @@ std::vector<Region> loadRegions(Archives &archives, EntityIds &ids, const std::v
             object.accessPoint = region.map.grid.nearest(object.pos);
         std::cout << "  DS1 objects: " << region.objects.size() << " appearances, "
                   << region.unsupportedObjects << " records await original unit rules\n";
-        regions.push_back(std::move(region));
-    }
-    return regions;
+        region.loaded = true;
 }
 } // namespace d2x

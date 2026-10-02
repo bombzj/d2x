@@ -65,6 +65,8 @@ class SceneAssets {
     std::set<int> translucentProjectiles;
     std::set<int> frozenOrbProjectiles;
     std::map<int, BlizzardSpec> blizzardFalls;
+    std::map<int, ArcSpec> arcVisuals;
+    std::map<int, MeteorSpec> meteorVisuals;
     struct ObjectLight {
         std::array<int, 8> diameter{};
         Color color{0, 0, 0, 255};
@@ -108,6 +110,8 @@ class SceneAssets {
     std::vector<std::vector<const Tile *>> regionTileSources;
     std::vector<int> regionPalettes_;
     mutable std::vector<bool> regionTilesUploaded;
+    std::vector<bool> regionAutomapLoaded;
+    void syncRegions(const GameSession &session);
     std::set<std::string, std::less<>> propArtKeys;
     mutable bool propArtReported = false;
     void indexPropArt(const GameSession &session);

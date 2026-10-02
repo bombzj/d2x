@@ -82,6 +82,7 @@ struct LevelExit {
     std::vector<BoundaryPassage> passages;
 };
 struct Region {
+    bool loaded = false;
     uint64_t objectSeed = 0;
     RegionDefinition definition;
     MapRecipe recipe;
@@ -117,5 +118,7 @@ WorldPlan planWorld(Archives &archives, const WorldCatalog &catalog, WorldSelect
 void linkLevelExits(std::vector<Region> &regions, const WorldCatalog &catalog);
 std::vector<Region> loadRegions(Archives &archives, EntityIds &ids, const std::vector<RegionPlan> &plans,
                                 const MonsterCatalog &monsters, const WorldCatalog &catalog,
-                                uint32_t mapSeed, uint32_t objectSeed);
+                                uint32_t mapSeed, uint32_t objectSeed, bool deferred = false);
+void loadRegion(Archives &archives, EntityIds &ids, Region &region, TileLibraryCache &cache,
+                const MonsterCatalog &monsters, const WorldCatalog &catalog, uint32_t levelSeed);
 } // namespace d2x

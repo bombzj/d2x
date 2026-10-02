@@ -69,6 +69,7 @@ struct PlayerState {
     bool leftHandAttack = false;
     float lastCastDuration = 0;
     float lastCastRate = 0;
+    bool lightningSequence = false;
     std::optional<PendingCast> pendingCast;
     std::optional<ChannelCast> channel;
     int channelSkill() const { return channel ? channel->skill.sourceId : -1; }
@@ -241,6 +242,12 @@ struct Missile {
         int elapsedFrames = 0;
     };
     std::optional<FirewallState> firewall = std::nullopt;
+    struct ArcState {
+        ArcSpec spec;
+        int remainingHits = 1, minimumDamage = 0, maximumDamage = 0;
+    };
+    std::optional<ArcState> arc = std::nullopt;
+    std::optional<MeteorSpec> meteor = std::nullopt;
 };
 struct Effect {
     Vec pos;

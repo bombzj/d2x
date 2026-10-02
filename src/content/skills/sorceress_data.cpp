@@ -38,7 +38,9 @@ void loadSorceressEffects(SkillCatalog &catalog, const DataTable &skills,
         {"Chilling Armor", SkillBehavior::ChillingArmor}, {"Fire Wall", SkillBehavior::FireWall},
         {"Blaze", SkillBehavior::Blaze}, {"Energy Shield", SkillBehavior::EnergyShield},
         {"Enchant", SkillBehavior::Enchant}, {"Thunder Storm", SkillBehavior::ThunderStorm},
-        {"Telekinesis", SkillBehavior::Telekinesis}, {"Hydra", SkillBehavior::Hydra}};
+        {"Telekinesis", SkillBehavior::Telekinesis}, {"Hydra", SkillBehavior::Hydra},
+        {"Lightning", SkillBehavior::Lightning}, {"Chain Lightning", SkillBehavior::ChainLightning},
+        {"Meteor", SkillBehavior::Meteor}};
     const auto warmth = std::find_if(catalog.skills.begin(), catalog.skills.end(),
         [](const auto &pair) { return pair.second.classCode == "sor" &&
             pair.second.sourceName == "Warmth"; });
@@ -107,8 +109,11 @@ void loadSorceressEffects(SkillCatalog &catalog, const DataTable &skills,
             if (skills.number(row, "Id") == record->id) break;
         if (row == skills.rows().size()) throw std::runtime_error("Original sorceress skill row is missing");
         SkillSpec spec;
-        if (skills.value(row, "anim") != (effect == SkillBehavior::Inferno ? "SQ" : "SC"))
+        const bool arc = effect == SkillBehavior::Lightning || effect == SkillBehavior::ChainLightning;
+        if (skills.value(row, "anim") != (effect == SkillBehavior::Inferno || arc ? "SQ" : "SC"))
             throw std::runtime_error("Unsupported original sorceress cast mode");
+        if (arc && (required(skills, row, "seqnum") != 12 || skills.value(row, "seqtrans") != "SC"))
+            throw std::runtime_error("Unsupported lightning sequence");
         spec.effect = effect;
         spec.sourceId = record->id;
         spec.mana = required(skills, row, "mana");
@@ -467,7 +472,8 @@ void loadSorceressEffects(SkillCatalog &catalog, const DataTable &skills,
             }
             if (effect == SkillBehavior::FrostNova || effect == SkillBehavior::Nova || effect == SkillBehavior::ChargedBolt ||
                 effect == SkillBehavior::Inferno || effect == SkillBehavior::Blizzard || effect == SkillBehavior::FireWall ||
-                effect == SkillBehavior::Blaze || effect == SkillBehavior::ThunderStorm)
+                effect == SkillBehavior::Blaze || effect == SkillBehavior::ThunderStorm ||
+                effect == SkillBehavior::ChainLightning || effect == SkillBehavior::Meteor)
                 missileName = skills.value(row, "srvmissilea");
             size_t missileRow = 0;
             for (; missileRow < missiles.rows().size(); ++missileRow)
@@ -475,6 +481,80 @@ void loadSorceressEffects(SkillCatalog &catalog, const DataTable &skills,
             if (missileName.empty() || missileRow == missiles.rows().size())
                 throw std::runtime_error("Missing original sorceress missile: " + std::string(name));
             spec.missileId = required(missiles, missileRow, "Id");
+            auto linkedMissile = [&](std::string_view missile) {
+                for (size_t child = 0; child < missiles.rows().size(); ++child)
+                    if (missiles.value(child, "Missile") == missile) return child;
+                throw std::runtime_error("Missing original skill missile link: " + std::string(missile));
+            };
+            if (arc) {
+                if (!spec.lightningDamage || required(missiles, missileRow, "pSrvDoFunc") != 1 ||
+                    required(missiles, missileRow, "pCltDoFunc") != 8)
+                    throw std::runtime_error("Unsupported lightning missile program");
+                ArcSpec program;
+                const auto visual = loadProjectileResource(missiles,
+                    linkedMissile(missiles.value(missileRow, "CltSubMissile1")), archives);
+                spec.submissileResources.push_back(visual);
+                program.visualId = visual.id;
+                program.subloops = required(missiles, missileRow, "CltParam1");
+                if (effect == SkillBehavior::ChainLightning) {
+                    if (skills.value(row, "calc1") != "ln34 / 5" || skills.value(row, "aurarangecalc") != "par1" ||
+                        required(missiles, missileRow, "pSrvHitFunc") != 12)
+                        throw std::runtime_error("Unsupported Chain Lightning rules");
+                    program.count = required(skills, row, "Param3");
+                    program.countPerLevel = required(skills, row, "Param4");
+                    program.range = required(skills, row, "Param1");
+                    program.nextDelay = required(missiles, missileRow, "NextDelay");
+                }
+                spec.arc = program;
+            }
+            if (effect == SkillBehavior::Meteor) {
+                if (required(skills, row, "srvdofunc") != 28 || required(missiles, missileRow, "pSrvHitFunc") != 14 ||
+                    skills.value(row, "aurarangecalc") != "ln12")
+                    throw std::runtime_error("Unsupported Meteor program");
+                MeteorSpec program;
+                program.radius = required(skills, row, "Param1");
+                program.radiusPerLevel = required(skills, row, "Param2");
+                program.fireFrames = required(skills, row, "Param3");
+                program.fireFramesPerLevel = required(skills, row, "Param4");
+                program.fireStep = std::max(1, required(missiles, missileRow, "sHitPar2"));
+                program.fallStart = required(missiles, missileRow, "CltParam1");
+                program.fallSpeed = required(missiles, missileRow, "CltParam2");
+                program.explodeDensity = required(missiles, missileRow, "cHitPar1");
+                program.mediumDensity = required(missiles, missileRow, "cHitPar2");
+                program.smallDensity = required(missiles, missileRow, "cHitPar3");
+                program.lightId = required(missiles, linkedMissile(missiles.value(missileRow, "CltHitSubMissile2")), "Id");
+                const auto fire = linkedMissile(missiles.value(missileRow, "HitSubMissile1"));
+                if (required(missiles, fire, "pSrvDoFunc") != 5 || required(missiles, fire, "pSrvDmgFunc") != 3 ||
+                    missiles.value(fire, "EDmgSymPerCalc") != "skill('Inferno'.blvl)*3" ||
+                    required(missiles, fire, "ApplyMastery") != 1)
+                    throw std::runtime_error("Unsupported Meteor fire damage");
+                program.fire.fireId = required(missiles, fire, "Id");
+                program.fire.minimumDamage = required(missiles, fire, "EMin");
+                program.fire.maximumDamage = required(missiles, fire, "Emax");
+                program.fire.hitShift = required(missiles, fire, "HitShift");
+                program.fire.size = required(missiles, fire, "Size");
+                program.fire.softHitChance = required(missiles, fire, "dParam1");
+                for (int tier = 0; tier < 5; ++tier) {
+                    program.fireMinimumPerLevel[tier] = required(missiles, fire, "MinELev" + std::to_string(tier + 1));
+                    program.fireMaximumPerLevel[tier] = required(missiles, fire, "MaxELev" + std::to_string(tier + 1));
+                }
+                for (const auto &[id, entry] : catalog.skills)
+                    if (entry.classCode == "sor" && entry.sourceName == "Inferno") program.fireSynergySkill = id;
+                program.fireSynergyPercent = 3;
+                auto resource = [&](std::string_view field) {
+                    const auto child = linkedMissile(missiles.value(missileRow, field));
+                    const auto visual = loadProjectileResource(missiles, child, archives);
+                    spec.submissileResources.push_back(visual);
+                    return visual.id;
+                };
+                program.fallId = resource("CltSubMissile1");
+                program.tailId = resource("CltSubMissile2");
+                program.explodeId = resource("CltHitSubMissile1");
+                spec.submissileResources.push_back(loadProjectileResource(missiles, fire, archives));
+                program.mediumId = resource("CltHitSubMissile3");
+                program.smallId = resource("CltHitSubMissile4");
+                spec.meteor = program;
+            }
             if (effect == SkillBehavior::Blaze) {
                 if (required(missiles, missileRow, "pSrvDoFunc") != 5 ||
                     required(missiles, missileRow, "pSrvDmgFunc") != 3 || missiles.value(missileRow, "Skill") != name)
@@ -526,7 +606,8 @@ void loadSorceressEffects(SkillCatalog &catalog, const DataTable &skills,
                  required(missiles, missileRow, "pSrvDmgFunc") != 4 ||
                  required(missiles, missileRow, "CollideKill") != 1))
                 throw std::runtime_error("Unsupported original Ice Blast missile rules");
-            spec.missileVelocity = effect == SkillBehavior::Blizzard || effect == SkillBehavior::Blaze ? 0.f : float(required(missiles, missileRow, "Vel"));
+            spec.missileVelocity = effect == SkillBehavior::Blizzard || effect == SkillBehavior::Blaze ||
+                effect == SkillBehavior::Meteor ? 0.f : float(required(missiles, missileRow, "Vel"));
             spec.missileVelocityPerLevel = missiles.number(missileRow, "VelLev").value_or(0);
             spec.missileRangePerLevel = missiles.number(missileRow, "LevRange").value_or(0);
             spec.missileAcceleration = missiles.number(missileRow, "Accel").value_or(0);
@@ -550,9 +631,9 @@ void loadSorceressEffects(SkillCatalog &catalog, const DataTable &skills,
             if (effect == SkillBehavior::Nova || effect == SkillBehavior::FrostNova)
                 spec.missileNextDelay = required(missiles, missileRow, "NextDelay");
             auto file = lower(missiles.value(missileRow, "CelFile"));
-            if (effect != SkillBehavior::Blizzard)
+            if (effect != SkillBehavior::Blizzard && effect != SkillBehavior::Lightning)
                 spec.missileArt = "data/global/missiles/" + file + ".dcc";
-            if (effect != SkillBehavior::Blizzard && (file.empty() || !archives.contains(spec.missileArt)))
+            if (effect != SkillBehavior::Blizzard && effect != SkillBehavior::Lightning && (file.empty() || !archives.contains(spec.missileArt)))
                 throw std::runtime_error("Missing original sorceress missile art: " + std::string(name));
             const auto travelSound = missiles.value(missileRow, "TravelSound");
             for (size_t sound = 0; sound < sounds.rows().size(); ++sound)

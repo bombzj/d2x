@@ -105,6 +105,7 @@ class SceneView {
         Vec direction;
     };
     std::vector<ClientMissile> clientMissiles_;
+    std::map<EntityId, int> arcVisualFrames_;
     uint64_t projectileVisualRandom_ = 0;
     void createMissileImpactVisuals(int missileId, Vec position);
     void createIceShatter(Vec position, int size);

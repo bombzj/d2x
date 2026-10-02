@@ -327,6 +327,12 @@ void SceneView::drawActors(Vec mouse) const {
                                      sim.player.lastCastRate));
                 if (mode == "sc" && sim.player.channel)
                     frame = std::min({anim->count - 1, 9, int(sim.player.channelAge() * 25)});
+                if (mode == "sc" && sim.player.lightningSequence) {
+                    constexpr int sequence[]{0,1,3,4,5,7,8,9,9,9,9,10,9,9,9,10,11,12,13};
+                    const int step = std::clamp(int((sim.player.lastCastDuration - sim.player.castTime) *
+                        sim.player.lastCastRate), 0, 18);
+                    frame = std::min(anim->count - 1, sequence[step]);
+                }
                 if (sim.player.weaponAttack && mode == sim.player.weaponAttack->timing.mode)
                     frame = std::min(anim->count - 1, sim.player.weaponAttack->animationFrame());
                 auto f = anim->frame(direction(look, anim->directions), frame);
@@ -511,6 +517,13 @@ void SceneView::drawActors(Vec mouse) const {
                 const auto &current = session_.region().recipe;
                 const Vec offset{(region.worldX - current.worldX) * 5.f, (region.worldY - current.worldY) * 5.f};
                 drawMissile(missile.missileId, missile.pos + offset, missile.velocity, missile.age, missile.remaining);
+                if (missile.meteor) {
+                    const auto &program = *missile.meteor;
+                    const float height = std::max(0.f, (float(program.fallStart) - missile.age * 25.f) * float(program.fallSpeed));
+                    const Vec elevated = missile.pos + offset + unproject({0, -height});
+                    drawMissile(program.tailId, elevated, {}, missile.age, missile.remaining);
+                    drawMissile(program.fallId, elevated, {}, missile.age, missile.remaining);
+                }
             } else if (item.type == 9) {
                 const auto &effect = session_.areaState(item.region).effects[item.index];
                 const auto &region = session_.regions()[item.region].recipe;

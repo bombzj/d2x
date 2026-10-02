@@ -273,6 +273,7 @@ void SceneView::advanceUi(float dt, bool worldPaused) {
     advanceQuestAnimations(dt);
 }
 void SceneView::advance(float dt) {
+    assets_.syncRegions(session_);
     lighting_.advance(dt, session_.worldContent().level(int(session_.region().definition.id)));
     advanceMissileVisuals(dt);
     revealAutomap();
@@ -400,6 +401,7 @@ void SceneView::advance(float dt) {
                 else if constexpr (std::is_same_v<T, RegionEntered>) {
                     assets_.audio.resetEmitters();
                     clientMissiles_.clear();
+                    arcVisualFrames_.clear();
                     view_.hireListOpen = view_.hirelingOpen = false;
                     nextMonsterFootstep_.clear();
                     nextMonsterNeutral_.clear();
@@ -637,13 +639,10 @@ std::vector<WorldEntry> SceneView::travelEntries() const {
         return session_.worldEntries();
     std::vector<std::pair<int, WorldEntry>> ordered;
     for (const auto &region : session_.regions()) {
-        if (std::none_of(region.objects.begin(), region.objects.end(), [](const auto &object) {
-                return object.isWaypoint();
-            }))
-            continue;
         const bool unlocked = session_.waypointUnlocked(region.definition.id);
         auto record = session_.worldContent().levels().find(int(region.definition.id));
         if (record == session_.worldContent().levels().end() || record->second.act != view_.waypointAct) continue;
+        if (record->second.waypoint < 0 || record->second.waypoint == 255) continue;
         int order = record == session_.worldContent().levels().end() ? 999 : record->second.waypoint;
         ordered.push_back({order, {int(region.definition.id), region.definition.name,
                           unlocked ? "Activated" : "Not activated", {},

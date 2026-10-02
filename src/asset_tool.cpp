@@ -491,7 +491,7 @@ int main(int argc, char **argv) {
             auto map = d2x::decodeDs1(a.read(member));
             std::cout << member << " version=" << map.version << " objects=" << map.objects.size() << '\n';
             for (const auto &object : map.objects)
-                if (!object.path.empty()) {
+                {
                     std::cout << "  type=" << object.type << " id=" << object.id << " at="
                               << object.x << ',' << object.y << " nodes=" << object.path.size() << '\n';
                     for (const auto &node : object.path)

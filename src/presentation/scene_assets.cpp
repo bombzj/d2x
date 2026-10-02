@@ -327,6 +327,11 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
             frozenOrbProjectiles.insert(skill.spell->frozenOrb->bolt.missileId);
             frozenOrbProjectiles.insert(skill.spell->frozenOrb->nova.missileId);
         }
+    for (const auto &[id, skill] : session.content().skills.skills) {
+        if (!skill.spell) continue;
+        if (skill.spell->arc) arcVisuals.emplace(skill.spell->missileId, *skill.spell->arc);
+        if (skill.spell->meteor) meteorVisuals.emplace(skill.spell->missileId, *skill.spell->meteor);
+    }
     for (size_t row = 0; row < missiles.rows().size(); ++row)
         if (auto id = missiles.number(row, "Id")) {
             if (missiles.number(row, "Trans").value_or(0) != 0) translucentProjectiles.insert(*id);
@@ -345,6 +350,9 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
                  uint8_t(missiles.number(row, "Blue").value_or(0)), 255},
                 missiles.number(row, "Flicker").value_or(0) != 0});
         }
+    for (const auto &[id, program] : meteorVisuals)
+        if (auto light = projectileVisuals.find(program.lightId); light != projectileVisuals.end())
+            light->second.lightRadius = 12;
     const DataTable projectileSounds(archives.read("data/global/excel/sounds.txt"));
     std::set<int> groupedColdProjectiles;
     for (const auto &[id, skill] : session.content().skills.skills)
@@ -672,6 +680,16 @@ const std::vector<Sprite> &SceneAssets::regionTileSprites(size_t index) const {
         regionTilesUploaded[index] = true;
     }
     return regionTiles[index];
+}
+void SceneAssets::syncRegions(const GameSession &session) {
+    bool changed = false;
+    for (size_t index = 0; index < session.regions().size(); ++index) {
+        const auto &region = session.regions()[index];
+        if (!region.loaded || !regionTileSources[index].empty()) continue;
+        regionTileSources[index] = region.map.tiles;
+        changed = true;
+    }
+    if (changed) { indexPropArt(session); loadAutomap(session); }
 }
 Graphics &SceneAssets::graphicsForAct(int act) const {
     if (act == 0) return graphics_;

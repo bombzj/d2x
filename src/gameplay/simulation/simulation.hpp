@@ -129,6 +129,8 @@ class Simulation {
     void advanceMonsterFirewall(Missile &missile, std::vector<Missile> &spawned);
     void createBlazeTrail(PlayerState &player);
     void advanceThunderStorm(PlayerState &player);
+    void advanceArc(Missile &missile, std::vector<Missile> &spawned);
+    void advanceMeteor(Missile &missile, std::vector<Missile> &spawned);
     std::function<bool(EntityId, int, bool)> telekinesisTarget_;
     std::function<std::optional<MonsterWeb>(const Enemy &)> monsterWeb_;
     std::vector<GameEvent> events_;

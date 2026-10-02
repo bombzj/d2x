@@ -17,6 +17,98 @@ bool Simulation::blizzardTargetClear(Vec origin, Vec target) const {
     return std::max(dx, dy) + std::min(dx, dy) / 2 <= 100 &&
            grid_->missileSegment(subcell(target), subcell(target), {5, 1});
 }
+void Simulation::advanceArc(Missile &missile, std::vector<Missile> &spawned) {
+    auto &arc = *missile.arc;
+    Vec next = missile.pos + missile.velocity * (1.f / 25.f);
+    const bool wall = clipMissilePath(missile.missileId, missile.pos, next);
+    missile.age += 1.f / 25.f;
+    missile.remaining = std::max(0.f, missile.remaining - 1.f / 25.f);
+    if (missile.remaining <= .00001f) { missile.remaining = 0; return; }
+    const auto collision = missileCollisions_.find(missile.missileId);
+    if (collision == missileCollisions_.end()) { missile.remaining = 0; return; }
+    std::vector<std::pair<float, EntityId>> contacts;
+    for (const auto &target : combatUnits()) {
+        if (!target.alive() || !canAttack(missile.owner, target.id) || !active(*target.position) ||
+            target.id == missile.lastHit) continue;
+        if (arc.spec.nextDelay > 0 && state_.area.novaHitUntil[target.id] > state_.time) continue;
+        if (const auto contact = missileUnitIntersection(missile.pos, next, collision->second.size,
+                *target.position, target.stats.collisionSize)) contacts.emplace_back(*contact, target.id);
+    }
+    std::sort(contacts.begin(), contacts.end());
+    for (const auto &[fraction, id] : contacts) {
+        reactToMissile(missile, id, spawned);
+        missile.lastHit = id;
+        if (arc.spec.nextDelay > 0) state_.area.novaHitUntil[id] = state_.time + float(arc.spec.nextDelay) / 25.f;
+        const float damage = float(arc.minimumDamage + limitedRandom(missile.combatRandom,
+            unsigned(std::max(0, arc.maximumDamage - arc.minimumDamage)))) / 256.f;
+        if (missile.hitOverlayId >= 0)
+            state_.area.effects.push_back({unitPosition(id), 0, missile.hitOverlayDuration,
+                -1, missile.hitOverlayId, id});
+        const Vec contact = missile.pos + (next - missile.pos) * fraction;
+        EntityId successor, fallback;
+        if (missile.behavior == SkillBehavior::ChainLightning && arc.remainingHits > 1) {
+            for (const auto &target : combatUnits()) {
+                if (target.id == id || !target.alive() || !canAttack(missile.owner, target.id) ||
+                    !active(*target.position)) continue;
+                const int deltaX = int(target.position->x) - int(contact.x);
+                const int deltaY = int(target.position->y) - int(contact.y);
+                if (deltaX * deltaX + deltaY * deltaY > arc.spec.range * arc.spec.range ||
+                    !grid_->missileSegment(contact, *target.position, {0x04, 1})) continue;
+                if (!fallback || target.id < fallback) fallback = target.id;
+                if (target.id > id && (!successor || target.id < successor)) successor = target.id;
+            }
+            if (!successor) successor = fallback;
+        }
+        if (successor && resolveMissileSkill_) {
+            const auto skill = resolveMissileSkill_(missile.owner, missile.skillId, missile.skillRank);
+            const Vec origin{std::floor(contact.x) + .5f, std::floor(contact.y) + .5f};
+            Missile child{ids_.allocate(), missile.owner, origin,
+                (unitPosition(successor) - origin).unit() * skill.missileVelocity,
+                skill.missileLifetime, missile.behavior, false, missile.missileId};
+            child.combatRandom = childRandom(unitRandom_);
+            child.skillId = missile.skillId; child.skillRank = missile.skillRank;
+            child.lastHit = id;
+            child.arc = Missile::ArcState{*skill.arc, arc.remainingHits - 1,
+                int(skill.minimumDamage * 256.f), int(skill.maximumDamage * 256.f)};
+            child.hitOverlayId = skill.hitOverlayId; child.hitOverlayDuration = skill.hitOverlayDuration;
+            spawned.push_back(std::move(child));
+            emit(MissileReleased{missile.missileId});
+        }
+        dealDamage({missile.owner, id, damage, MonsterDamageType::Lightning});
+        if (missile.behavior == SkillBehavior::ChainLightning) { missile.remaining = 0; next = contact; break; }
+    }
+    missile.pos = next;
+    if (wall) missile.remaining = 0;
+}
+void Simulation::advanceMeteor(Missile &missile, std::vector<Missile> &spawned) {
+    missile.age += 1.f / 25.f;
+    missile.remaining = std::max(0.f, missile.remaining - 1.f / 25.f);
+    if (missile.remaining > .00001f) return;
+    missile.remaining = 0;
+    if (!combatUnit(missile.owner)) return;
+    const auto &program = *missile.meteor;
+    for (const auto &target : combatUnits()) {
+        if (!target.alive() || !canAttack(missile.owner, target.id) || !active(*target.position)) continue;
+        const int deltaX = int(target.position->x) - int(missile.pos.x);
+        const int deltaY = int(target.position->y) - int(missile.pos.y);
+        if (deltaX * deltaX + deltaY * deltaY <= program.radius * program.radius)
+            dealDamage({missile.owner, target.id, missile.damage, MonsterDamageType::Fire});
+    }
+    emit(MissileImpact{missile.missileId, missile.pos});
+    constexpr Vec offsets[]{{2,-2},{-2,-2},{0,2},{0,5},{-3,3},{0,3},{3,3},{-1,2},{1,1},
+        {-1,-1},{2,-1},{-4,-2},{-3,-2},{-1,-3},{0,-4},{1,-3},{3,-3},{4,-2}};
+    auto fire = program.fire;
+    if (resolveMissileSkill_) fire = resolveMissileSkill_(missile.owner, missile.skillId, missile.skillRank).meteor->fire;
+    for (int index = 0; index < 18; index += program.fireStep) {
+        const Vec position = missile.pos + offsets[index];
+        if (!grid_->missileSegment(position, position, {5, 1})) continue;
+        Missile child{ids_.allocate(), missile.owner, position, {}, float(fire.fireFrames) / 25.f,
+            SkillBehavior::Meteor, false, fire.fireId};
+        child.combatRandom = childRandom(unitRandom_);
+        child.firewall = Missile::FirewallState{fire, false, 0};
+        spawned.push_back(std::move(child));
+    }
+}
 void Simulation::launchBlizzard(PlayerState &player, const SkillCastSpec &skill, Vec target) {
     if (!skill.blizzard) throw std::runtime_error("Missing Blizzard missile program");
     Missile center{ids_.allocate(), player.id, subcell(target), {}, skill.missileLifetime,

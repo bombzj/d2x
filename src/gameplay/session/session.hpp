@@ -58,6 +58,9 @@ class GameSession {
     ClassicData content_;
     CharacterDefinition characterDefinition_;
     WorldCatalog worldContent_;
+    Archives &archives_;
+    TileLibraryCache tileCache_;
+    uint32_t levelSeed_ = 0;
     MonsterCatalog monsterContent_;
     mutable std::map<std::pair<std::string, RegionId>, std::optional<MonsterCombatProfile>> monsterCombatCache_;
     std::vector<WorldEntry> worldEntries_;
@@ -104,6 +107,7 @@ class GameSession {
     std::vector<GameCommand> pending_;
     int current_ = -1;
     void enter(RegionId id, std::optional<Vec> arrival = {}, std::optional<Vec> coordinateOffset = {});
+    void ensureRegion(RegionId id, bool neighbours = false);
     void beginExit(int slot);
     bool beginBoundaryExit(const LevelExit &exit, std::optional<Vec> target);
     bool routeBoundaryMove(Vec target);

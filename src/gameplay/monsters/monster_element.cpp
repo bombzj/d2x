@@ -67,7 +67,8 @@ void Simulation::advanceMonsterFirewall(Missile &missile, std::vector<Missile> &
             const int damage = definition.minimumDamage + int(uint32_t(missile.combatRandom) %
                 unsigned(definition.maximumDamage - definition.minimumDamage + 1));
             DamageRequest hit{missile.owner, target.id, float(damage << definition.hitShift) / 256.f, MonsterDamageType::Fire};
-            if (missile.behavior == SkillBehavior::FireWall || missile.behavior == SkillBehavior::Blaze) {
+            if (missile.behavior == SkillBehavior::FireWall || missile.behavior == SkillBehavior::Blaze ||
+                missile.behavior == SkillBehavior::Meteor) {
                 reactToMissile(missile, target.id, spawned);
                 rollRandom(missile.combatRandom);
                 hit.softHit = int(uint32_t(missile.combatRandom) & 127) < definition.softHitChance;

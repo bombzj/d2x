@@ -20,6 +20,12 @@ std::array<int, 5> GameSession::cainStoneOrder() const {
             for (const auto &object : region.objects)
                 if (object.interaction == Interaction::QuestStone)
                     classes.push_back(object.objectClass);
+    if (classes.empty()) {
+        const auto &objects = content_.tables.at("objects");
+        for (size_t row = 0; row < objects.rows().size(); ++row)
+            if (objects.number(row, "OperateFn").value_or(0) == 9)
+                classes.push_back(int(objects.number(row, "Id").value_or(-1)));
+    }
     std::sort(classes.begin(), classes.end());
     classes.erase(std::unique(classes.begin(), classes.end()), classes.end());
     if (classes.size() != 5)
@@ -45,7 +51,10 @@ void GameSession::reconcileCainObjects() {
                     object.questHidden = true; // The prisoner is represented by the gibbet until rescued.
             }
         }
-    if (stage < uint32_t(CainStage::ScrollTranslated)) return;
+    if (stage < uint32_t(CainStage::ScrollTranslated) || !stonyRegion_ ||
+        !std::any_of(regions_.begin(), regions_.end(), [&](const auto &region) {
+            return region.definition.id == *stonyRegion_ && region.loaded;
+        })) return;
     auto order = cainStoneOrder();
     unsigned count = cain(simulation_->state_).flags & cainStoneCountMask;
     for (auto &region : regions_)

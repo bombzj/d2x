@@ -37,7 +37,7 @@ std::vector<std::pair<int, Vec>> GameSession::sceneRegions() const {
     const auto &origin = region().recipe;
     for (int index = 0; index < int(regions_.size()); ++index) {
         const auto &candidate = regions_[index];
-        if (index == current_ ||
+        if (index == current_ || !candidate.loaded ||
             std::none_of(origin.boundaries.begin(), origin.boundaries.end(), [&](const auto &boundary) {
                 return boundary.destination == int(candidate.definition.id);
             })) continue;
@@ -222,6 +222,12 @@ void GameSession::updateExit() {
     if (exit->boundary
             ? boundaryPassage_ && atPassage(*exit, region().recipe, p.pos, *boundaryPassage_)
             : ((p.pos - exit->accessPoint).length() <= 2 && map().grid.segment(p.pos, exit->accessPoint))) {
+        const auto destinationId = exit->destination;
+        const auto exitSlot = exit->slot;
+        ensureRegion(destinationId, true);
+        exit = std::find_if(region().exits.begin(), region().exits.end(),
+            [&](const auto &candidate) { return candidate.slot == exitSlot; });
+        if (exit == region().exits.end()) { cancelExit(); return; }
         auto destination = std::find_if(regions_.begin(), regions_.end(),
                                         [&](const auto &r) { return r.definition.id == exit->destination; });
         if (destination == regions_.end()) {

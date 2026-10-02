@@ -85,6 +85,7 @@ bool Simulation::beginSkillCast(PlayerState &player, const SkillCastSpec &skill,
         return false;
     if (skill.delayFrames > 0 && state_.frame < player.skillDelayUntil) return false;
     if (skill.blizzard && !blizzardTargetClear(player.pos, target)) return false;
+    if (skill.meteor && !blizzardTargetClear(player.pos, target)) return false;
     if (skill.hydraFrames > 0 && !blizzardTargetClear(player.pos, target)) return false;
     if (skill.effect == SkillBehavior::Telekinesis &&
         (!telekinesisTarget_ || !telekinesisTarget_(enemy, skill.telekinesisRange, false))) return false;
@@ -106,6 +107,7 @@ bool Simulation::beginSkillCast(PlayerState &player, const SkillCastSpec &skill,
     player.castTime = skill.castDuration;
     player.lastCastDuration = player.castTime;
     player.lastCastRate = skill.castRate;
+    player.lightningSequence = skill.arc.has_value();
     player.route.clear();
     player.attackTarget = {};
     player.throwAttack = player.leftHandAttack = false;
@@ -136,6 +138,7 @@ void Simulation::releaseSkillCast(PlayerState &player, const SkillCastSpec &skil
         return;
     }
     if (skill.blizzard && !blizzardTargetClear(player.pos, target)) return;
+    if (skill.meteor && !blizzardTargetClear(player.pos, target)) return;
     if (skill.hydraFrames > 0) {
         if (summonHydra(player, skill, target)) {
             if (consumeMana) player.mana -= skill.manaCost;
@@ -197,6 +200,26 @@ void Simulation::releaseSkillCast(PlayerState &player, const SkillCastSpec &skil
             amount *= float(std::clamp(100 - unitResistance(unit, MonsterDamageType::Lightning), 0, 100)) / 100.f;
             dealDamage({player.id, unit.id, amount, MonsterDamageType::Lightning, 0, true});
         }
+    } else if (skill.arc || skill.meteor) {
+        const Vec origin = skill.meteor ? Vec{std::floor(target.x) + .5f, std::floor(target.y) + .5f} :
+            Vec{std::floor(player.pos.x) + .5f, std::floor(player.pos.y) + .5f};
+        Missile missile{ids_.allocate(), player.id, origin,
+            skill.arc ? player.look * skill.missileVelocity : Vec{}, skill.missileLifetime,
+            skill.effect, false, skill.missileId};
+        missile.combatRandom = childRandom(unitRandom_);
+        missile.skillId = skill.sourceId; missile.skillRank = skill.rank;
+        if (skill.arc) {
+            missile.arc = Missile::ArcState{*skill.arc, skill.arc->count,
+                int(skill.minimumDamage * 256.f), int(skill.maximumDamage * 256.f)};
+            missile.hitOverlayId = skill.hitOverlayId; missile.hitOverlayDuration = skill.hitOverlayDuration;
+            missile.fixedElement = MonsterDamageType::Lightning;
+        } else {
+            missile.meteor = skill.meteor;
+            const int minimum = int(skill.minimumDamage * 256.f), maximum = int(skill.maximumDamage * 256.f);
+            missile.damage = float(minimum + limitedRandom(missile.combatRandom,
+                unsigned(std::max(0, maximum - minimum)))) / 256.f;
+        }
+        state_.area.missiles.push_back(std::move(missile));
     } else if (skill.blizzard) {
         launchBlizzard(player, skill, target);
     } else if (skill.firewall) {

@@ -369,6 +369,7 @@ bool GameSession::travelWaypoint(const WaypointTravel &command) {
         simulation_->emit(InteractionFailed{command.source, "Waypoint unavailable or not activated."});
         return false;
     }
+    ensureRegion(command.destination, true);
     for (const auto &destination : regions_)
         if (destination.definition.id == command.destination)
             for (const auto &target : destination.objects)

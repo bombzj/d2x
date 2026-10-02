@@ -189,6 +189,8 @@ bool GameSession::openShrinePortal() {
     const auto townId = portalTown(region().definition.id);
     if (!portalResources_ || !townId || portalReach_ <= 0 || region().definition.safe ||
         state().nextPortalRevision == std::numeric_limits<uint64_t>::max()) return false;
+    ensureRegion(*townId);
+    if (!townPortalArrivals_.contains(*townId)) return false;
     const auto town = std::find_if(regions_.begin(), regions_.end(), [&](const Region &entry) {
         return entry.definition.id == *townId;
     });

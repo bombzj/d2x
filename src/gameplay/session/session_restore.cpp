@@ -50,9 +50,8 @@ int GameSession::validateCharacterRestore(const CharacterSaveData &data) const {
         const auto destination = std::find_if(regions_.begin(), regions_.end(),
             [&](const Region &region) { return region.definition.id == id; });
         require(destination != regions_.end() &&
-                    std::any_of(destination->objects.begin(), destination->objects.end(), [](const auto &object) {
-                        return object.isWaypoint();
-                    }), "activated waypoint region");
+                    worldContent_.levels().contains(int(id)) && worldContent_.level(int(id)).waypoint >= 0 &&
+                    worldContent_.level(int(id)).waypoint != 255, "activated waypoint region");
     }
     inventory_.validateSnapshot(data.inventory, data.containers, player.id);
     validateItemProperties(data);
@@ -128,6 +127,9 @@ int GameSession::validateCharacterRestore(const CharacterSaveData &data) const {
 }
 
 void GameSession::restore(CharacterSaveData data) {
+    const auto level = worldContent_.levels().find(int(data.lastRegion));
+    if (level != worldContent_.levels().end() && level->second.act >= 0 && level->second.act < 5)
+        ensureRegion(RegionId(actTownLevels[size_t(level->second.act)]), true);
     data = prepareCharacterRestore(std::move(data));
     const int current = validateCharacterRestore(data);
     const auto &definition = definitionFor(data.player.characterClass);
