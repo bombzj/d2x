@@ -33,12 +33,42 @@ std::pair<EntityId, CombatIdentity> rootIdentity(const WorldState &state, Entity
 }
 }
 EntityId Simulation::controllingPlayer(EntityId id) const {
+    for (const auto &enemy : state_.area.enemies)
+        if (enemy.id == id) {
+            if (enemy.attractedUntil > state_.frame)
+                for (const auto &target : state_.area.enemies)
+                    if (target.id == enemy.attractedTarget)
+                        for (const auto &effect : target.combatEffects.entries())
+                            if (effect.activeAt(state_.frame) && effect.spec.curseAi == CurseAi::Attract &&
+                                effect.spec.source.entity == state_.player.id) return state_.player.id;
+            for (const auto &effect : enemy.combatEffects.entries())
+                if (effect.activeAt(state_.frame) && effect.spec.curseAi == CurseAi::Confuse &&
+                    effect.spec.source.entity == state_.player.id) return state_.player.id;
+        }
     const auto [root, identity] = rootIdentity(state_, id);
     return identity.role == CombatRole::Player ? root : EntityId{};
 }
 Relation Simulation::relation(EntityId first, EntityId second) const {
     if (!first || !second) return Relation::Neutral;
     if (first == second) return Relation::Allied;
+    const Enemy *firstMonster = nullptr, *secondMonster = nullptr;
+    for (const auto &enemy : state_.area.enemies) {
+        if (enemy.id == first) firstMonster = &enemy;
+        if (enemy.id == second) secondMonster = &enemy;
+    }
+    const bool hostileMonsters = firstMonster && secondMonster && !firstMonster->allegiance.owner && !secondMonster->allegiance.owner &&
+        state_.relations.factions.contains({firstMonster->allegiance.faction, state_.player.allegiance.faction}) &&
+        state_.relations.factions.at({firstMonster->allegiance.faction, state_.player.allegiance.faction}) == Relation::Hostile &&
+        state_.relations.factions.contains({secondMonster->allegiance.faction, state_.player.allegiance.faction}) &&
+        state_.relations.factions.at({secondMonster->allegiance.faction, state_.player.allegiance.faction}) == Relation::Hostile;
+    if (hostileMonsters)
+        if (firstMonster->attractedUntil > state_.frame && firstMonster->attractedTarget == second && secondMonster->hp > 0 &&
+            secondMonster->combatEffects.hasState(attractState_, state_.frame))
+            return Relation::Hostile;
+    if (hostileMonsters)
+        for (const auto *monster : {firstMonster, secondMonster})
+            for (const auto &effect : monster->combatEffects.entries())
+                if (effect.activeAt(state_.frame) && effect.spec.curseAi == CurseAi::Confuse) return Relation::Hostile;
     const auto [a, left] = rootIdentity(state_, first);
     const auto [b, right] = rootIdentity(state_, second);
     if (!a || !b) return Relation::Neutral;
@@ -136,6 +166,11 @@ Vec Simulation::monsterTargetPosition(const Enemy &enemy) const { return unitPos
 EntityId Simulation::chooseTarget(EntityId actor, float range) {
     auto source = combatUnit(actor);
     if (!source.alive()) return {};
+    if (source.monster && source.monster->attractedUntil > state_.frame) {
+        const auto target = combatUnit(source.monster->attractedTarget);
+        if (target.alive() && target.effects->hasState(attractState_, state_.frame) &&
+            canAttack(actor, target.id) && active(*target.position)) return target.id;
+    }
     EntityId result;
     // Target acquisition needs identity/geometry only; do not repeatedly derive
     // every candidate's resistances and equipment for every AI thinker.

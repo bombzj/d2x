@@ -106,6 +106,7 @@ void Simulation::resolveWeaponHit(EntityId defender, float physical, EntityId so
         *target.life = std::max(1.f / 256.f, *target.life - crushing);
     }
     const float dealtPhysical = mitigate(elements.deadly ? physical * 2.f : physical, MonsterDamageType::Physical);
+    healLifeTap(source, defender, dealtPhysical);
     float total = dealtPhysical;
     const int64_t damage = int64_t(std::min(*target.life, dealtPhysical) * 256.f);
     auto leeched = [&](int percent, int divisor) {
@@ -123,6 +124,7 @@ void Simulation::resolveWeaponHit(EntityId defender, float physical, EntityId so
     }
     if (!originalElements.ranged) triggerCombatEffects(defender, CombatEffectEvent::AttackedInMelee, source);
     if (!originalElements.ranged) reflectThorns(source, defender, dealtPhysical);
+    if (!originalElements.ranged) reflectIronMaiden(source, defender, dealtPhysical);
     DamageRequest hit{source, defender, total, MonsterDamageType::Physical, chill, true};
     hit.hitClass = elements.hitClass;
     dealDamage(hit);

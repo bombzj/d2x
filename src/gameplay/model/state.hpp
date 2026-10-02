@@ -129,6 +129,9 @@ struct Enemy {
     size_t attackEventIndex = 0;
     CombatIdentity allegiance{2, {}, 0, CombatRole::Monster};
     EntityId combatTarget;
+    CurseAi activeCurseAi = CurseAi::None;
+    EntityId attractedTarget;
+    EffectFrame attractedUntil = 0;
     std::optional<UnitCombatStats> intrinsicCombat;
     struct ConversionState {
         CombatIdentity original;

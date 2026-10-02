@@ -9,13 +9,16 @@
 #include <vector>
 
 namespace d2x {
-enum class CurseAi { None, DimVision, Terror, Confuse, Attract };
 struct CurseSpec {
     CombatStateDefinition state;
     int radius = 0, radiusPerLevel = 0, frames = 0, framesPerLevel = 0;
     CharacterModifiers modifiers;
     CurseAi ai = CurseAi::None;
     int resistMinimum = 0, resistMaximum = 0;
+    int reflectPercent = 0, reflectPerLevel = 0;
+    int lifeTapPercent = 0, lifeTapPerLevel = 0;
+    int healOverlay = -1;
+    float healOverlayDuration = 0;
 };
 struct FreezingAreaSpec {
     int radius = 0, radiusPerLevel = 0, radiusOverride = 0;

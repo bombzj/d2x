@@ -15,16 +15,22 @@ int number(const DataTable &table, size_t row, std::string_view column) {
     return *value;
 }
 }
-void loadNecromancerCurses(SkillCatalog &catalog, const DataTable &skills, const DataTable &sounds,
+void loadNecromancerCurses(SkillCatalog &catalog, const DataTable &skills, const DataTable &overlays, const DataTable &sounds,
                           const CombatStateCatalog &states, Archives &archives) {
-    for (const auto name : {"Amplify Damage", "Weaken", "Decrepify", "Lower Resist"}) {
+    for (const auto name : {"Amplify Damage", "Weaken", "Decrepify", "Lower Resist", "Iron Maiden", "Life Tap", "Dim Vision", "Terror", "Confuse", "Attract"}) {
         const auto row = rowOf(skills, "skill", name);
         const bool decrepify = std::string_view(name) == "Decrepify";
         const bool lowerResist = std::string_view(name) == "Lower Resist";
-        if (skills.value(row, "anim") != "SC" || number(skills, row, "srvdofunc") != 30 ||
+        const bool ironMaiden = std::string_view(name) == "Iron Maiden";
+        const bool lifeTap = std::string_view(name) == "Life Tap";
+        const bool dimVision = std::string_view(name) == "Dim Vision";
+        const bool terror = std::string_view(name) == "Terror";
+        const bool confuse = std::string_view(name) == "Confuse";
+        const bool attract = std::string_view(name) == "Attract";
+        if (skills.value(row, "anim") != "SC" || number(skills, row, "srvdofunc") != (attract ? 59 : confuse ? 61 : 30) ||
             skills.value(row, "aurarangecalc") != "ln12" || skills.value(row, "auralencalc") != "ln34" ||
-            skills.value(row, "aurastat1") != (lowerResist ? "fireresist" : decrepify ? "velocitypercent" : std::string_view(name) == "Weaken" ? "damagepercent" : "damageresist") ||
-            skills.value(row, "aurastatcalc1") != (lowerResist ? "-dm56" : decrepify ? "par5" : "-par5"))
+            skills.value(row, "aurastat1") != (ironMaiden || lifeTap || dimVision || terror || confuse || attract ? "" : lowerResist ? "fireresist" : decrepify ? "velocitypercent" : std::string_view(name) == "Weaken" ? "damagepercent" : "damageresist") ||
+            skills.value(row, "aurastatcalc1") != (ironMaiden || lifeTap || dimVision || terror || confuse || attract ? "" : lowerResist ? "-dm56" : decrepify ? "par5" : "-par5"))
             throw std::runtime_error("Unsupported original curse: " + std::string(name));
         SkillSpec spell;
         spell.sourceId = number(skills, row, "Id"); spell.effect = SkillBehavior::Curse;
@@ -34,7 +40,31 @@ void loadNecromancerCurses(SkillCatalog &catalog, const DataTable &skills, const
         curse.state = states.at(std::string(skills.value(row, "auratargetstate"))).definition;
         curse.radius = number(skills, row, "Param1"); curse.radiusPerLevel = number(skills, row, "Param2");
         curse.frames = number(skills, row, "Param3"); curse.framesPerLevel = number(skills, row, "Param4");
-        if (lowerResist) {
+        if (dimVision || terror || confuse || attract) {
+            curse.ai = attract ? CurseAi::Attract : confuse ? CurseAi::Confuse : terror ? CurseAi::Terror : CurseAi::DimVision;
+        } else if (lifeTap) {
+            if (skills.value(row, "calc1") != "ln56" || number(skills, row, "auraeventfunc1") != 5 ||
+                number(skills, row, "auraeventfunc2") != 5) throw std::runtime_error("Unsupported Life Tap events");
+            curse.lifeTapPercent = number(skills, row, "Param5");
+            curse.lifeTapPerLevel = number(skills, row, "Param6");
+            const auto overlay = rowOf(overlays, "overlay", skills.value(row, "prgoverlay"));
+            auto &visual = spell.hitOverlay;
+            visual.id = int(overlay); visual.frames = number(overlays, overlay, "Frames");
+            visual.fps = float(number(overlays, overlay, "AnimRate")); visual.trans = number(overlays, overlay, "Trans");
+            visual.preDraw = overlays.number(overlay, "PreDraw").value_or(0) != 0;
+            visual.offset = {-float(number(overlays, overlay, "Xoffset")), float(number(overlays, overlay, "Yoffset"))};
+            for (int height = 0; height < 4; ++height)
+                visual.heights[height] = number(overlays, overlay, "Height" + std::to_string(height + 1));
+            visual.art = "data/global/overlays/" + std::string(overlays.value(overlay, "Filename")) + ".dcc";
+            if (!archives.contains(visual.art) || visual.fps <= 0) throw std::runtime_error("Missing Life Tap healing overlay");
+            curse.healOverlay = visual.id; curse.healOverlayDuration = float(visual.frames) / visual.fps;
+        } else if (ironMaiden) {
+            if (skills.value(row, "calc1") != "ln56" || skills.value(row, "calc2") != "ln56/4" ||
+                skills.value(row, "calc3") != "ln56/4" || number(skills, row, "auraeventfunc1") != 4)
+                throw std::runtime_error("Unsupported Iron Maiden event");
+            curse.reflectPercent = number(skills, row, "Param5");
+            curse.reflectPerLevel = number(skills, row, "Param6");
+        } else if (lowerResist) {
             curse.resistMinimum = number(skills, row, "Param5");
             curse.resistMaximum = number(skills, row, "Param6");
             if (skills.value(row, "aurastat2") != "lightresist" || skills.value(row, "aurastat3") != "coldresist" ||

@@ -1,5 +1,7 @@
 # 构建与运行
 
+2026-10-03死灵法师诅咒：原十项逐一查当前MPQ／本地reference，按伤害加深、削弱、衰老、降低抵抗、铁处女、偷取生命、微暗灵视、恐惧、迷乱、吸引分别Windows Release链接并更新dist/current，再进入下一项。公共资格／控制关系与期限收尾后最终链接打包。用户要求不测试，本轮不编写或运行测试、不启动游戏，留用户实战与画面验收；D2S v96、MPQ与角色存档不改。原目标池／路径事件及客户端精确行为仍有适配或缺口，详见[诅咒实现](NECROMANCER_SKILLS.md#诅咒逐项实现)，不能把十项入口数量当完整原版认证。
+
 2026-10-03圣骑士收尾：Windows Release最终链接及dist/current更新；原BL格挡／神圣盾条件增防、转换生命周期与收益、突进起手事件、复仇HitClass轮转接入。普通seed210临时角色简单冒烟覆盖30项前置学习和10项战斗技能代表性行为，普通BL .20秒／神圣盾BL .08秒、转换到期恢复／死亡零收益、隔离Charge命中均有证据；最新包短启动退出0，各临时实例正常退出0、stderr空。无新测试程序或用户角色存档读写，D2S v96不变。特殊神圣盾图和完整原客户端／事件规则仍未完整还原，准确范围见[收尾与冒烟](SKILLS.md#收尾与冒烟)；产物在忽略的artifacts及dist/current，源码／文档提交，不提交MPQ或参考仓库。
 
 2026-10-02圣骑士战斗技能：Holy Bolt、Sacrifice、Zeal、Vengeance、Holy Shield、Smite、Blessed Hammer、Conversion、Fist of the Heavens和Charge依次实现、Release链接及更新固定dist/current；最终公共追击／显示字段／耐久及D2Common玩家SQ4帧映射收尾再次构建打包。全部30项原技能有玩法入口，但完整序列速率、盾牌组件与格挡动画、完整装备触发及转换特殊AI等仍有适配限制，详见[技能](SKILLS.md#圣骑士战斗技能)。按要求不编写或运行测试、不启动游戏，D2S v96与用户存档、MPQ和旧产物不改；入口为dist/current/Play.cmd。

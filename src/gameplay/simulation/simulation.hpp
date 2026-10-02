@@ -105,12 +105,16 @@ class Simulation {
     void applyMonsterCurse(Enemy &enemy, EntityId defender);
     void triggerMonsterLightning(Enemy &enemy);
     void reflectThorns(EntityId attacker, EntityId defender, float physicalDamage);
+    void reflectIronMaiden(EntityId attacker, EntityId defender, float physicalDamage);
+    void healLifeTap(EntityId attacker, EntityId defender, float physicalDamage);
     void applyAuraKnockback(EntityId attacker, EntityId defender);
     bool advanceAuraKnockback(Enemy &enemy, float dt);
     int sanctuaryState_ = -1;
     std::function<std::optional<float>(const Enemy &)> monsterKnockbackDuration_;
     std::function<bool(const CombatUnit &, bool)> auraEligible_;
     std::function<bool(const CombatUnit &, bool)> curseEligible_;
+    int aiCurseDivisor_ = 1;
+    std::function<int(const Enemy &)> terrorVelocityBonus_;
     std::function<bool(const Enemy &)> redemptionCorpseEligible_;
     std::function<std::optional<MonsterAiProfile>(const Enemy &)> monsterAi_;
     std::function<bool(RegionId)> zombieForcedPursuit_;

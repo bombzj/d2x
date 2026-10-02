@@ -46,6 +46,7 @@ struct MonsterRecord {
     bool getHitMode = false, deadMode = false, skill2Mode = false, runMode = false;
     bool castMode = false, sequenceMode = false;
     bool curseable = false;
+    bool switchAi = false;
     bool castsShadow = false, corpseSelectable = false;
     bool demon = false, undead = false, ownsParty = false, primeEvil = false;
     bool flying = false;

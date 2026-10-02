@@ -243,9 +243,16 @@ void SceneView::drawSkillControls(Vec mouse) const {
                 session_.characterStats().combat.coldSkillDamagePercent);
             detail = "Mana " + std::string(TextFormat("%.1f", value.manaCost));
             if (value.effect == SkillBehavior::Teleport) detail += " / Teleport to clear ground";
-            else if (value.curse)
+            else if (value.curse) {
+                const int divisor = value.curse->ai == CurseAi::None ? 1 : std::max(1,
+                    session_.content().tables.at("difficultylevels").number(size_t(session_.state().population.difficulty), "AiCurseDiv").value_or(1));
                 detail += " / Radius " + std::to_string(value.curse->radius) +
-                    " / " + std::string(TextFormat("%.1fs", float(value.curse->frames) / 25.f));
+                    " / " + std::string(TextFormat("%.1fs", float(value.curse->frames / divisor) / 25.f));
+                if (value.curse->modifiers.combat.ironMaidenPercent > 0)
+                    detail += " / Melee return " + std::to_string(value.curse->modifiers.combat.ironMaidenPercent) + "%";
+                if (value.curse->modifiers.combat.lifeTapPercent > 0)
+                    detail += " / Physical healing " + std::to_string(value.curse->modifiers.combat.lifeTapPercent) + "%";
+            }
             else if (value.effect == SkillBehavior::HolyBolt)
                 detail += " / Undead magic " + std::string(TextFormat("%.1f-%.1f", value.minimumDamage, value.maximumDamage)) +
                     " / Ally healing " + std::string(TextFormat("%.1f-%.1f", value.healingMinimum, value.healingMaximum));

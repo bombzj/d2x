@@ -89,6 +89,11 @@ bool Simulation::beginSkillCast(PlayerState &player, const SkillCastSpec &skill,
         return false;
     if (skill.delayFrames > 0 && state_.frame < player.skillDelayUntil) return false;
     if (skill.requiresShield && !player.equipment.shield) return false;
+    if (skill.curse && skill.curse->ai == CurseAi::Attract) {
+        const auto victim = combatUnit(enemy);
+        if (!victim.alive() || !canAttack(player.id, enemy) || !victim.monster ||
+            (curseEligible_ && !curseEligible_(victim, true))) return false;
+    }
     if (skill.heaven && (!combatUnit(enemy).alive() || !canAttack(player.id, enemy))) return false;
     if (skill.blizzard && !blizzardTargetClear(player.pos, target)) return false;
     if (skill.meteor && !blizzardTargetClear(player.pos, target)) return false;
@@ -155,6 +160,13 @@ void Simulation::releaseSkillCast(PlayerState &player, const SkillCastSpec &skil
         return;
     }
     if (skill.requiresShield && !player.equipment.shield) return;
+    if (skill.curse && skill.curse->ai == CurseAi::Attract) {
+        const auto victim = combatUnit(targetUnit);
+        if (!victim.alive() || !canAttack(player.id, targetUnit) || !victim.monster ||
+            (curseEligible_ && !curseEligible_(victim, true)) ||
+            (auraEligible_ && !auraEligible_(victim, false)) || victim.stats.attributes.combat.curseResistance >= 100 ||
+            victim.effects->hasState(attractState_, state_.frame)) return;
+    }
     if (skill.heaven && (!combatUnit(targetUnit).alive() || !canAttack(player.id, targetUnit))) return;
     if (consumeMana) player.mana -= skill.manaCost;
     if (skill.delayFrames > 0)
@@ -165,15 +177,36 @@ void Simulation::releaseSkillCast(PlayerState &player, const SkillCastSpec &skil
         for (auto defender : combatUnits()) {
             if (!defender.alive() || !canAttack(player.id, defender.id) || !active(*defender.position) ||
                 defender.stats.collisionSize <= 0 || defender.stats.attributes.combat.curseResistance >= 100) continue;
-            if (curseEligible_ && !curseEligible_(defender, false)) continue;
+            if (curseEligible_ && !curseEligible_(defender, skill.curse->ai != CurseAi::None)) continue;
+            if (auraEligible_ && !auraEligible_(defender, false)) continue;
             if (defender.effects->hasState(attractState_, state_.frame)) continue;
+            if (skill.curse->ai == CurseAi::DimVision && std::any_of(defender.effects->entries().begin(), defender.effects->entries().end(),
+                [this](const auto &effect) { return effect.activeAt(state_.frame) && effect.spec.curseAi == CurseAi::Confuse; })) continue;
             const int deltaX = int(defender.position->x) - int(target.x), deltaY = int(defender.position->y) - int(target.y);
             if (deltaX * deltaX + deltaY * deltaY > skill.curse->radius * skill.curse->radius) continue;
+            if (skill.curse->ai == CurseAi::Attract && defender.id != targetUnit) {
+                if (defender.monster) {
+                    defender.monster->attractedTarget = targetUnit;
+                    defender.monster->attractedUntil = state_.frame + EffectFrame(std::max(1, skill.curse->frames / aiCurseDivisor_));
+                    defender.monster->combatTarget = {};
+                    defender.monster->route.clear(); defender.monster->approach.reset(); defender.monster->rethink = 0;
+                    defender.monster->attack = defender.monster->attackDuration = 0;
+                    defender.monster->attackImpact = -1;
+                }
+                continue;
+            }
             CombatEffectSpec curse;
             curse.state = skill.curse->state;
             curse.source = {CombatEffectSource::Skill, player.id, skill.sourceId, skill.rank};
             curse.duration = EffectFrame(std::max(1, skill.curse->frames));
+            if (skill.curse->ai != CurseAi::None) curse.duration = EffectFrame(std::max(1, skill.curse->frames / aiCurseDivisor_));
+            curse.duration = EffectFrame(std::max<int64_t>(1, int64_t(*curse.duration) *
+                std::clamp(100 - defender.stats.attributes.combat.curseResistance, 0, 200) / 100));
+            curse.curseAi = skill.curse->ai;
+            curse.curseCenter = target;
             curse.modifiers = skill.curse->modifiers;
+            curse.lifeTapOverlay = skill.curse->healOverlay;
+            curse.lifeTapOverlayDuration = skill.curse->healOverlayDuration;
             if (defender.stats.monsterResistanceRules && defender.identity.role != CombatRole::Hireling) {
                 auto base = defender.stats.attributes.combat.physicalResist;
                 for (const auto &effect : defender.effects->entries())
@@ -193,6 +226,15 @@ void Simulation::releaseSkillCast(PlayerState &player, const SkillCastSpec &skil
                 }
             }
             combatEffectsChanged(defender.effects->apply(std::move(curse), state_.frame).removed);
+            if (skill.curse->ai != CurseAi::None && defender.monster) {
+                auto &monster = *defender.monster;
+                monster.route.clear(); monster.approach.reset(); monster.combatTarget = {};
+                monster.attack = monster.attackDuration = 0; monster.attackImpact = -1;
+                monster.skill2Remaining = monster.skill2Duration = 0;
+                monster.teleportTarget.reset(); monster.nestSpawnPosition.reset(); monster.aiCorpse = {};
+                monster.aiPursuing = monster.aiEscaping = monster.aiCircling = monster.aiRunning = false;
+                monster.rethink = 0;
+            }
         }
         emit(SkillActivated{skill.sourceId});
     } else if (skill.effect == SkillBehavior::Telekinesis) {

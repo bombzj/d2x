@@ -295,7 +295,7 @@ ClassicData loadClassicData(Archives &archives) {
                              overlays, sounds, data.states, archives);
         loadWeaponSkills(data.skills, data.tables.at("skills"), data.tables.at("missiles"), sounds, archives);
         loadPaladinSkills(data.skills, data.tables.at("skills"), data.tables.at("missiles"), overlays, sounds, data.states, archives);
-        loadNecromancerCurses(data.skills, data.tables.at("skills"), sounds, data.states, archives);
+        loadNecromancerCurses(data.skills, data.tables.at("skills"), overlays, sounds, data.states, archives);
         loadNecromancerSummons(data.skills, data.tables.at("skills"), data.tables.at("monstats"),
             data.tables.at("monstats2"), data.tables.at("monlvl"), sounds, archives);
         const DataTable levels(archives.read("data/global/excel/levels.txt"));

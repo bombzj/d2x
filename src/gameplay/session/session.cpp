@@ -139,7 +139,14 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
         if (!unit.monster) return !ai;
         const auto *record = monsterContent_.find(unit.monster->identity.monster);
         if (!record || !record->curseable || record->npc) return false;
-        return !ai || (!unit.stats.boss && unit.stats.rank == MonsterRank::Normal && record->walkVelocity.value_or(0) > 0);
+        return !ai || (!unit.stats.boss && unit.stats.rank != MonsterRank::Unique && unit.stats.rank != MonsterRank::SuperUnique &&
+            record->switchAi && !unit.effects->hasState(simulation_->uninterruptableState_, state().frame));
+    };
+    simulation_->aiCurseDivisor_ = std::max(1, content_.tables.at("difficultylevels").number(size_t(selection.difficulty), "AiCurseDiv").value_or(1));
+    simulation_->terrorVelocityBonus_ = [this](const Enemy &enemy) {
+        const auto *record = monsterContent_.find(enemy.identity.monster);
+        if (!record || record->walkVelocity.value_or(0) <= 0) return 0;
+        return std::clamp(100 * record->runVelocity.value_or(0) / *record->walkVelocity - 100, 0, 120);
     };
     simulation_->initializeNaturalElite_ = [this](Enemy &enemy, const Enemy *owner) {
         const auto *fixed = monsterContent_.superUnique(enemy.identity.superUnique);

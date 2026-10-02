@@ -193,4 +193,28 @@ void Simulation::reflectThorns(EntityId attacker, EntityId defender, float physi
     hit.hitClass = 0x8d;
     dealDamage(hit);
 }
+void Simulation::reflectIronMaiden(EntityId attacker, EntityId defender, float physicalDamage) {
+    const auto source = combatUnit(attacker), target = combatUnit(defender);
+    if (!source.alive() || !target.alive() || physicalDamage <= 0) return;
+    int percent = source.stats.attributes.combat.ironMaidenPercent;
+    if (source.player || source.hireling) percent /= 4;
+    if (percent <= 0) return;
+    DamageRequest hit{defender, attacker, float(int64_t(physicalDamage * 256.f) * percent / 100) / 256.f,
+        MonsterDamageType::Physical, 0, false, false};
+    hit.softHit = true;
+    hit.hitClass = 141;
+    hit.permission = DamagePermission::ExistingEffect;
+    dealDamage(hit);
+}
+void Simulation::healLifeTap(EntityId attacker, EntityId defender, float physicalDamage) {
+    const auto source = combatUnit(attacker), target = combatUnit(defender);
+    if (!source.alive() || !target.alive() || physicalDamage <= 0) return;
+    const int percent = target.stats.attributes.combat.lifeTapPercent;
+    if (percent <= 0) return;
+    restoreUnit(attacker, float(int64_t(physicalDamage * 256.f) * percent / 100) / 256.f);
+    for (const auto &effect : target.effects->entries())
+        if (effect.activeAt(state_.frame) && effect.spec.lifeTapOverlay >= 0)
+            state_.area.effects.push_back({*source.position, 0, effect.spec.lifeTapOverlayDuration,
+                -1, effect.spec.lifeTapOverlay, attacker});
+}
 }

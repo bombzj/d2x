@@ -211,6 +211,7 @@ MonsterCatalog::MonsterCatalog(Archives &archives, const DataTable &stats) {
         m.resurrectionMode = normalize(std::string(extended.value(extra->second, "ResurrectMode")));
         m.getHitMode = extended.number(extra->second, "mGH").value_or(0) != 0;
         m.curseable = extended.number(extra->second, "mA1").value_or(0) != 0;
+        m.switchAi = stats.number(row, "switchai").value_or(0) != 0 && extended.number(extra->second, "mWL").value_or(0) != 0;
         m.deadMode = extended.number(extra->second, "mDD").value_or(0) != 0;
         m.skill2Mode = extended.number(extra->second, "mS2").value_or(0) != 0;
         m.runMode = extended.number(extra->second, "mRN").value_or(0) != 0;

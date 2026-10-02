@@ -92,6 +92,7 @@ CharacterActionStats characterActionStats(const GameSession &session, std::optio
                                                session.fireMasteryPercent(),
                                                session.lightningMasteryPercent(),
                                                session.characterStats().combat.coldSkillDamagePercent);
+                            if (cast.curse) return {};
         if (cast.weapon) return weaponStats(session, cast.weapon->thrown, false, &cast);
         if (cast.effect == SkillBehavior::Teleport || cast.effect == SkillBehavior::StaticField ||
             cast.effect == SkillBehavior::FrozenArmor) return {};

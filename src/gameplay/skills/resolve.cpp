@@ -89,6 +89,8 @@ SkillCastSpec resolveSkill(const SkillSpec &spec, int rank,
     if (result.curse) {
         result.curse->radius += (rank - 1) * result.curse->radiusPerLevel;
         result.curse->frames += (rank - 1) * result.curse->framesPerLevel;
+        result.curse->modifiers.combat.ironMaidenPercent = result.curse->reflectPercent + (rank - 1) * result.curse->reflectPerLevel;
+        result.curse->modifiers.combat.lifeTapPercent = result.curse->lifeTapPercent + (rank - 1) * result.curse->lifeTapPerLevel;
         if (result.curse->resistMaximum > 0) {
             const int amount = -std::min(result.curse->resistMaximum, result.curse->resistMinimum +
                 (result.curse->resistMaximum - result.curse->resistMinimum) * (110 * rank / (rank + 6)) / 100);

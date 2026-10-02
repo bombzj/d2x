@@ -22,6 +22,10 @@ EffectApplication CombatEffectSet::apply(CombatEffectSpec spec, EffectFrame now)
     if (nextHandle_ == std::numeric_limits<uint64_t>::max() ||
         (spec.duration && *spec.duration > std::numeric_limits<EffectFrame>::max() - now))
         throw std::overflow_error("Combat effect handle or lifetime exhausted");
+    if (spec.state.curse)
+        for (const auto &effect : effects_)
+            if (effect.activeAt(now) && effect.spec.curseAi == CurseAi::Attract)
+                return {effect.handle, {}};
     for (const auto &reaction : spec.reactions)
         std::visit([](const auto &action) {
             if constexpr (std::is_same_v<std::decay_t<decltype(action)>, FreezeAttacker>) {
@@ -46,6 +50,7 @@ EffectApplication CombatEffectSet::apply(CombatEffectSpec spec, EffectFrame now)
     ActiveCombatEffect effect{{nextHandle_}, std::move(spec), now, {}};
     if (effect.spec.duration) effect.expiresAt = now + *effect.spec.duration;
     auto replaces = [&](const ActiveCombatEffect &existing) {
+        if (existing.spec.curseAi == CurseAi::Attract && effect.spec.curseAi != CurseAi::Attract) return false;
         if (effect.spec.state.curse && existing.spec.state.curse) return true;
         if (effect.spec.state.group > 0 && existing.spec.state.group == effect.spec.state.group)
             return true;

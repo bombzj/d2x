@@ -1,5 +1,6 @@
 #pragma once
 #include "core/id.hpp"
+#include "core/math.hpp"
 #include "gameplay/character/attributes.hpp"
 #include <array>
 #include <cstdint>
@@ -15,6 +16,7 @@ struct EffectHandle {
     auto operator<=>(const EffectHandle &) const = default;
 };
 enum class EffectUnitKind { Player, Monster, Boss };
+enum class CurseAi { None, DimVision, Terror, Confuse, Attract };
 // Imported States.txt fields. These describe a state, not a particular skill.
 struct CombatStateDefinition {
     int id = -1, group = 0;
@@ -62,6 +64,10 @@ struct CombatEffectSpec {
     CharacterModifiers modifiers;
     EffectVisual visual;
     bool restoreStaminaOnRemoval = false;
+    int lifeTapOverlay = -1;
+    float lifeTapOverlayDuration = 0;
+    CurseAi curseAi = CurseAi::None;
+    Vec curseCenter;
     std::vector<EffectReaction> reactions;
 };
 struct ActiveCombatEffect {

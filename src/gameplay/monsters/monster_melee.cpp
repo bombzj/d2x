@@ -220,12 +220,14 @@ void Simulation::resolveMonsterAttack(Enemy &enemy, int modeOverride, bool proje
         restoreUnit(defender, resolved.absorbed);
     }
     hit.mitigated = true;
+    healLifeTap(enemy.id, defender, hit.amount);
     applyMonsterCurse(enemy, defender);
     if (hit.chill > 0) {
         applyChill(defender, hit.chill);
         hit.chill = 0;
     }
     if (!projectile) reflectThorns(enemy.id, defender, hit.amount);
+    if (!projectile) reflectIronMaiden(enemy.id, defender, hit.amount);
     const float hitDealt = dealDamage(hit);
     if (!projectile && hitDealt > 0 && enemy.hp > 0)
         triggerCombatEffects(defender, CombatEffectEvent::DamagedInMelee, enemy.id);
