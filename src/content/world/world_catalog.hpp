@@ -5,6 +5,7 @@
 #include <optional>
 
 namespace d2x {
+inline constexpr std::array<int, 5> actTownLevels{1, 40, 75, 103, 109};
 enum class GenerationKind { None, Maze, Preset, Outdoor };
 struct LevelPopulation {
     bool supported = false, rangedFirst = false;
@@ -17,6 +18,7 @@ struct LevelPopulation {
 struct LevelRecord {
     int id = 0, act = 0, levelType = 0;
     bool isInside = false, losDraw = false;
+    bool town = false;
     int lightIntensity = 0, lightRed = 0, lightGreen = 0, lightBlue = 0;
     GenerationKind generation = GenerationKind::None;
     std::string name;

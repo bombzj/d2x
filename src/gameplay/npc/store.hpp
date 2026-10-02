@@ -19,6 +19,8 @@ struct VendorOffer {
 ItemInstance vendorItem(const VendorOffer &offer, const ClassicData &data, bool hidden = false);
 bool npcCanGamble(std::string_view npcClass);
 bool npcCanRepair(std::string_view npcClass);
+bool npcCanIdentify(std::string_view npcClass);
+bool npcCanHeal(std::string_view npcClass);
 std::vector<VendorOffer> planGambleStock(const ClassicData &data, unsigned playerLevel,
     int difficulty, uint64_t &seed, const std::set<uint32_t> &usedUniques,
     std::string_view characterClass);

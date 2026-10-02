@@ -24,9 +24,11 @@ void main() {
 )";
 } // namespace
 SceneView::SceneView(Archives &archives, const GameSession &session)
-    : session_(session), assets_(archives, session), paletteBlend_(archives), actTwoPaletteBlend_(archives, 1), painter_(assets_.font),
+    : session_(session), assets_(archives, session), paletteBlend_(archives), painter_(assets_.font),
       speechPainter_(assets_.speechFont) {
     projectileVisualRandom_ = session_.visualSeed();
+    for (int act = 1; act < int(actPaletteBlends_.size()); ++act)
+        actPaletteBlends_[size_t(act)] = std::make_unique<PaletteBlendView>(archives, act);
     view_.inventory.syncCursor(session_);
     highlightShader_ = LoadShaderFromMemory(nullptr, highlightFragment);
     highlightTransform_ = GetShaderLocation(highlightShader_, "highlightTransform");
@@ -183,7 +185,7 @@ void SceneView::drawLighting() const {
             : std::max(0.f, view_.animationTime - view_.cainPortalAnimationStarted);
         appendObject(60, elapsed < opening.frames / opening.fps ? 1 : 2, staticUnitPosition(*position));
     }
-    lighting_.draw(level.act == 1 ? actTwoPaletteBlend_ : paletteBlend_, level, player, screen(player), view_.zoom,
+    lighting_.draw(level.act == 0 ? paletteBlend_ : *actPaletteBlends_.at(size_t(level.act)), level, player, screen(player), view_.zoom,
                    session_.characterStats().lightRadius, lights);
 }
 std::string playerAnimationMode(const PlayerState &p) {
@@ -539,7 +541,8 @@ void SceneView::advance(float dt) {
                     } else if (value.interaction == Interaction::Well) {
                         notice("Restored at: " + value.name);
                     } else if (value.interaction == Interaction::Travel) {
-                        view_.waypointSource = value.name == "Waypoint" ? value.object : EntityId{};
+                        const auto *source = session_.object(value.object);
+                        view_.waypointSource = source && source->isWaypoint() ? value.object : EntityId{};
                         const auto level = session_.worldContent().levels().find(int(session_.state().area.region));
                         view_.waypointAct = level == session_.worldContent().levels().end() ? 0 : level->second.act;
                         view_.travelPage = 0;
@@ -634,7 +637,7 @@ std::vector<WorldEntry> SceneView::travelEntries() const {
     std::vector<std::pair<int, WorldEntry>> ordered;
     for (const auto &region : session_.regions()) {
         if (std::none_of(region.objects.begin(), region.objects.end(), [](const auto &object) {
-                return object.name == "Waypoint" && object.interaction == Interaction::Travel;
+                return object.isWaypoint();
             }))
             continue;
         const bool unlocked = session_.waypointUnlocked(region.definition.id);

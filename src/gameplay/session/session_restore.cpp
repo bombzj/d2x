@@ -41,14 +41,17 @@ int GameSession::validateCharacterRestore(const CharacterSaveData &data) const {
                 : 50000u * (unsigned(player.level) / 2u + 1u)), "bank gold limit");
     for (const auto &introductions : player.npcIntroductions)
         for (const auto &name : introductions)
-            require(introSpeech(content_.npcDialogues, name, player.characterClass) != nullptr,
+                require(content_.npcDialogues.speakers.contains(name) ||
+                    std::any_of(content_.npcDialogues.introductionKeys.begin(),
+                            content_.npcDialogues.introductionKeys.end(),
+                            [&](const auto &entry) { return entry.second == name; }),
                     "NPC introduction identity");
     for (const auto &[id, activated] : data.waypoints) {
         const auto destination = std::find_if(regions_.begin(), regions_.end(),
             [&](const Region &region) { return region.definition.id == id; });
         require(destination != regions_.end() &&
                     std::any_of(destination->objects.begin(), destination->objects.end(), [](const auto &object) {
-                        return object.name == "Waypoint" && object.interaction == Interaction::Travel;
+                        return object.isWaypoint();
                     }), "activated waypoint region");
     }
     inventory_.validateSnapshot(data.inventory, data.containers, player.id);

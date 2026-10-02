@@ -6,6 +6,7 @@
 #include "world/region.hpp"
 #include "presentation/graphics/primitives.hpp"
 #include <set>
+#include <memory>
 
 namespace d2x {
 class GameSession;
@@ -15,7 +16,8 @@ class SceneAssets {
     Archives &archives_;
     // Mutable so the const draw path can populate the on-demand caches below.
     mutable Graphics graphics_;
-    mutable Graphics actTwoGraphics_;
+    mutable std::array<std::unique_ptr<Graphics>, 5> actGraphics_;
+    Graphics &graphicsForAct(int act) const;
     Graphics uiGraphics_;
     Graphics unitsGraphics_;
     AutomapCatalog automapCatalog_;

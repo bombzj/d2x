@@ -63,6 +63,7 @@ struct WorldObject {
     float npcVelocity = 0, npcWait = 0;
     int npcTarget = -1;
     uint64_t npcRandom = 0;
+    bool isWaypoint() const { return operateFn == 23 && interaction == Interaction::Travel; }
 };
 struct LevelExit {
     struct BoundaryPassage {

@@ -2,6 +2,7 @@
 #include "world_catalog.hpp"
 #include "resources/data_table.hpp"
 #include <charconv>
+#include <algorithm>
 #include <set>
 #include <stdexcept>
 
@@ -59,6 +60,7 @@ WorldCatalog::WorldCatalog(Archives &archives) {
                 LevelRecord record;
                 record.id = number("Id");
                 record.act = number("Act");
+                record.town = std::find(actTownLevels.begin(), actTownLevels.end(), record.id) != actTownLevels.end();
                 record.levelType = number("LevelType");
                 record.isInside = number("IsInside") != 0;
                 record.losDraw = number("LOSDraw") != 0;
@@ -191,10 +193,10 @@ WorldCatalog::WorldCatalog(Archives &archives) {
         }
     }
     for (const auto &[id, level] : levels_) {
-        if (level.act != 0)
+        if (level.act < 0 || level.act > 4)
             continue;
         if (!types_.contains(level.levelType))
-            throw std::runtime_error("Unknown Act I LevelType");
+            throw std::runtime_error("Unknown MPQ LevelType");
         for (int i = 0; i < 8; ++i) {
             if (level.visible[i] && !levels_.contains(level.visible[i]))
                 throw std::runtime_error("Unknown Vis level");
@@ -269,6 +271,7 @@ LevelAvailability WorldCatalog::availability(Archives &archives, int levelId, in
             result.reason = "No LvlPrest record for this level";
         else {
             result.recipe = preset(selected->id, record.levelType, variant);
+            result.recipe->act = record.act;
             result.missing = missing(archives, *result.recipe);
         }
     } else {

@@ -329,7 +329,8 @@ ClassicData loadClassicData(Archives &archives) {
     data.armorTypes = std::move(armorTypes);
     data.vendors = loadVendorData(data.tables, data.items);
     if (archives.contains("data/local/docs/eng/a1npc.txt"))
-        data.npcDialogues = loadActOneNpcDialogues(archives);
+        data.npcDialogues = loadNpcDialogues(archives, data.tables.at("monstats"),
+            DataTable(archives.read("data/global/excel/monpreset.txt")), data.itemStrings);
     loadItemConsumables(data);
     {
         loadPropertyData(data);

@@ -24,16 +24,32 @@ int actOneObjectClass(const MapObject &source, int version) {
         258,129,267,268,269,581,351,352,353,374,385,397,321};
     return source.id >= 0 && classes[source.id] ? classes[source.id] : -1;
 }
-int actTwoObjectClass(const MapObject &source, int version) {
+int originalObjectClass(const MapObject &source, int version, int act) {
+    if (act == 0) return actOneObjectClass(source, version);
     if (version <= 5) return source.id;
     if (source.id >= 150) return source.id - 150;
-    constexpr int classes[]{74,37,192,304,305,306,101,102,78,103,156,580,132,129,357,153,121,122,229,230,196,267,261,149,269,
+    constexpr int classes[4][150]{{74,37,192,304,305,306,101,102,78,103,156,580,132,129,357,153,121,122,229,230,196,267,261,149,269,
         4,9,52,94,95,142,143,5,6,87,88,146,146,147,148,240,241,242,243,176,177,198,246,29,160,
         161,162,273,283,85,86,109,116,134,135,136,150,151,172,173,279,280,281,282,166,167,113,137,89,104,
         105,106,107,154,171,178,270,271,272,266,274,244,284,288,298,289,296,297,287,286,285,290,291,292,293,
         294,295,133,303,299,300,301,302,581,354,582,314,315,316,317,323,322,110,112,114,355,356,357,351,352,
-        353,152,374,387,389,390,391,388,397,402};
-    return source.id >= 0 && size_t(source.id) < std::size(classes) ? classes[source.id] : -1;
+        353,152,374,387,389,390,391,388,397,402},
+        {117,237,580,130,102,37,160,161,162,104,105,106,107,194,195,193,207,211,210,234,214,215,213,228,216,
+         227,217,235,218,219,220,221,223,224,267,269,581,170,325,184,190,191,197,199,200,201,202,206,278,120,
+         130,326,158,271,272,327,328,329,330,331,332,333,334,335,336,5,6,176,240,241,181,183,246,185,186,
+         187,188,203,204,205,208,209,169,323,324,196,212,225,244,351,352,353,360,361,362,365,251,252,208,283,
+         367,366,368,341,342,343,344,374,370,378,379,386,397,405,407,406},
+        {238,580,267,269,581,573,573,573,345,346,347,348,349,350,351,352,353,358,359,363,259,373,372,374,236,
+         249,226,231,232,93,97,123,124,96,225,233,222,125,126,127,128,375,376,254,253,342,255,392,393,394,
+         395,396,398,397,399,401,400,380,383,384,296,297,403,102,408,409},
+        {452,453,338,337,267,374,482,39,35,36,33,34,38,102,411,438,412,435,436,440,441,441,442,429,420,
+         431,430,413,432,433,418,419,424,425,416,414,415,427,428,421,422,423,426,451,267,443,444,445,446,447,
+         448,450,451,459,460,461,462,482,473,455,456,457,458,463,464,465,466,467,468,469,470,471,472,477,479,
+         480,481,483,484,485,486,487,454,437,508,488,493,493,495,497,499,503,509,512,489,490,514,515,493,498,
+         513,494,496,511,500,501,502,504,505,506,507,510,160,161,162,269,523,434,496,496,496,527,528,538,539,
+         542,543,546,547,548,549,550,551,552,555,553,554,557,541,544,559,560,564,567,568,536,537,563,570,397}};
+    if (act < 1 || act > 4 || source.id < 0 || source.id >= 150) return -1;
+    return classes[act - 1][source.id] ? classes[act - 1][source.id] : -1;
 }
 void appearanceKey(WorldObject &object) {
     const auto &a = object.appearance;
@@ -52,12 +68,6 @@ int objectMode(std::string_view mode) {
 }
 void classify(WorldObject &object, const Table &objectRows) {
     const auto &token = object.appearance.token;
-    static const std::map<std::string, std::string> names = {
-        {"gh", "Gheed"},    {"ps", "Akara"},        {"rc", "Kashya"},      {"ci", "Charsi"},
-        {"wa", "Warriv"},   {"dc", "Deckard Cain"}, {"rg", "Rogue Scout"}, {"b6", "Private Stash"},
-        {"wp", "Waypoint"}, {"ck", "Chicken"},      {"cw", "Cow"}};
-    if (auto it = names.find(token); it != names.end())
-        object.name = it->second;
     if (object.appearance.category == "objects") {
         auto record = std::find_if(objectRows.begin(), objectRows.end(), [&](const auto &row) {
             if (object.objectClass >= 0)
@@ -71,6 +81,7 @@ void classify(WorldObject &object, const Table &objectRows) {
             throw std::runtime_error("Missing original object identity: " + std::to_string(object.objectClass));
         if (record != objectRows.end()) {
             object.objectClass = std::stoi(record->at("Id"));
+            object.name = record->at("Name");
             object.appearance.token = normalize(record->at("Token"));
             object.animationMode = objectMode(object.appearance.mode);
             object.collisionWidth = std::stoi(record->at("SizeX"));
@@ -158,6 +169,7 @@ void classify(WorldObject &object, const Table &objectRows) {
         }
     }
     if (token == "b6") {
+        object.name = "Private Stash";
         object.interaction = Interaction::Stash;
         auto record = std::find_if(objectRows.begin(), objectRows.end(), [](const auto &row) {
             auto token = row.find("Token");
@@ -168,11 +180,11 @@ void classify(WorldObject &object, const Table &objectRows) {
         object.reach = float(std::stoi(record->at("OperateRange")));
         if (object.reach <= 0)
             throw std::runtime_error("Invalid bank interaction range in objects.txt");
-    } else if (token == "wp")
+    } else if (token == "wp") {
+        object.name = "Waypoint";
         object.interaction = Interaction::Travel;
-    else if (token == "ps")
-        object.interaction = Interaction::Heal;
-    else if (!object.name.empty() && token != "ck" && token != "cw")
+    } else if (object.appearance.category == "monsters" && !object.name.empty() &&
+               token != "ck" && token != "cw")
         object.interaction = Interaction::Talk;
 }
 } // namespace
@@ -236,19 +248,18 @@ std::vector<Region> loadRegions(Archives &archives, EntityIds &ids, const std::v
             auto preset = std::find_if(std::begin(presets), std::end(presets), [&](const auto &p) {
                 return p.type == source.type && p.id == source.id;
             });
-            const int originalClass = source.type == 2 && region.map.data.act == 0
-                ? actOneObjectClass(source, region.map.data.version) :
-                source.type == 2 && region.map.data.act == 1 ? actTwoObjectClass(source, region.map.data.version) : -1;
+            const int originalClass = source.type == 2
+                ? originalObjectClass(source, region.map.data.version, region.map.data.act) : -1;
             const int resolvedClass = resolveAct1ChestPreset(originalClass, int(region.definition.id), region.objectSeed);
             auto chestRow = std::find_if(objectRows.begin(), objectRows.end(), [&](const auto &row) {
                 return !row.at("Id").empty() && std::stoi(row.at("Id")) == resolvedClass &&
                     (row.at("OperateFn") == "4" || originalClass == 580 || originalClass == 581 ||
-                     region.map.data.act == 1);
+                     region.map.data.act != 0);
             });
             const bool nativeChest = chestRow != objectRows.end();
             const auto unit = source.type == 1 ? monsters.preset(region.map.data.act, source.id, region.map.data.version) : MonsterPreset{};
-            const auto *townNpc = region.map.data.act == 1 ? monsters.find(unit.id) : nullptr;
-            if ((preset == std::end(presets) || region.map.data.act == 1) && !nativeChest && !townNpc) {
+            const auto *townNpc = source.type == 1 ? monsters.find(unit.id) : nullptr;
+            if ((preset == std::end(presets) || region.map.data.act != 0) && !nativeChest && !townNpc) {
                 ++region.unsupportedObjects;
                 continue;
             }
@@ -301,7 +312,7 @@ std::vector<Region> loadRegions(Archives &archives, EntityIds &ids, const std::v
                 for (size_t i = 0; i < object.appearance.equipment.size(); ++i)
                     object.appearance.equipment[i] = preset->gear[i];
             }
-            if (source.type == 2 && (region.map.data.act == 0 || region.map.data.act == 1)) {
+            if (source.type == 2) {
                 object.objectClass = resolvedClass;
                 if (object.objectClass < 0) { ++region.unsupportedObjects; continue; }
             }

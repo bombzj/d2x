@@ -28,7 +28,7 @@ void linkLevelExits(std::vector<Region> &regions, const WorldCatalog &catalog) {
             reachable.emplace(region.definition.id, region.map.grid.reachableFrom(region.map.spawn, playerMovement));
     for (auto &region : regions) {
         int id = int(region.definition.id);
-        if (id < 1 || (id > 25 && (id < 28 || id > 37) && (id < 40 || id > 74)))
+        if (!catalog.levels().contains(id))
             continue;
         const auto &level = catalog.level(id);
         const auto &data = region.map.data;

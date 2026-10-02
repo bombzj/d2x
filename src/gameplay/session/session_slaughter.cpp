@@ -59,7 +59,7 @@ void GameSession::completeActOne(EntityId npc) {
     engagedNpc_ = {};
     enter(destination->definition.id);
     for (const auto &object : region().objects)
-        if (object.name == "Waypoint" && object.interaction == Interaction::Travel) {
+        if (object.isWaypoint()) {
             if (simulation_->state_.waypoints.emplace(region().definition.id, state().time).second)
                 simulation_->emit(WaypointActivated{object.id});
             break;

@@ -2,6 +2,8 @@
 #include "npc_dialogue.hpp"
 #include "resources/text.hpp"
 #include <charconv>
+#include <algorithm>
+#include <cctype>
 #include <stdexcept>
 
 namespace d2x {
@@ -15,10 +17,11 @@ std::string_view trim(std::string_view value) {
 }
 } // namespace
 
-NpcDialogues loadActOneNpcDialogues(Archives &archives) {
-    constexpr auto path = "data/local/docs/eng/a1npc.txt";
+namespace {
+NpcDialogues loadNpcDialogueFile(Archives &archives, int act) {
+    const auto path = "data/local/docs/eng/a" + std::to_string(act + 1) + "npc.txt";
     if (!archives.contains(path))
-        throw std::runtime_error("Original Act I NPC dialogue is missing");
+        throw std::runtime_error("Original NPC dialogue is missing: " + path);
     auto source = decodeText(archives.read(path));
     NpcDialogues result;
     std::string name, section, quest, state;
@@ -30,7 +33,7 @@ NpcDialogues loadActOneNpcDialogues(Archives &archives) {
                 speech.quest = quest;
                 speech.state = state;
             }
-            result[name].push_back(std::move(speech));
+            result[act == 0 ? name : "act" + std::to_string(act + 1) + ":" + name].push_back(std::move(speech));
         }
         speech = {};
     };
@@ -67,7 +70,7 @@ NpcDialogues loadActOneNpcDialogues(Archives &archives) {
             finish();
             state = trim(line.substr(6));
             name.clear();
-        } else if (line.starts_with("NAME:")) {
+        } else if (line.starts_with("NAME:") || line.starts_with("Name:")) {
             finish();
             name = trim(line.substr(5));
         } else if (line.starts_with("SPEED:")) {
@@ -94,59 +97,139 @@ NpcDialogues loadActOneNpcDialogues(Archives &archives) {
     finish();
     return result;
 }
+std::string speakerId(std::string_view value) {
+    std::string result(value);
+    while (!result.empty() && std::isdigit(static_cast<unsigned char>(result.back()))) result.pop_back();
+    return result;
+}
+std::string identityName(std::string_view value) {
+    std::string result;
+    for (unsigned char letter : value)
+        if (std::isalnum(letter)) result += char(std::tolower(letter));
+    return result;
+}
+bool matchesSpeaker(std::string_view id, std::string_view name, std::string_view speaker) {
+    const auto identity = identityName(speaker);
+    const auto monster = identityName(speakerId(id));
+    const auto display = identityName(name);
+    if (monster == identity || display == identity) return true;
+    if (monster.starts_with("cain") && identity == "cain" && display.ends_with("cain")) return true;
+    // A5Q3 calls Anya MONSTER_DREHYA in the original engine.
+    return monster == "drehya" && identity == "anya";
+}
+}
+std::string npcIntroductionKey(std::string_view npc, int act) {
+    return act == 0 ? std::string(npc) : "act" + std::to_string(act + 1) + ":" + std::string(npc);
+}
+NpcDialogues loadNpcDialogues(Archives &archives, const DataTable &monsters, const DataTable &presets,
+                             const std::map<std::string, std::string, std::less<>> &strings) {
+    NpcDialogues result;
+    for (int act = 0; act < 5; ++act)
+        result.merge(loadNpcDialogueFile(archives, act));
+    DataTable sounds(archives.read("data/global/excel/sounds.txt"));
+    std::map<std::string, std::string> soundNames;
+    for (size_t row = 0; row < sounds.rows().size(); ++row)
+        soundNames.try_emplace(normalize(std::string(sounds.value(row, "FileName"))), sounds.value(row, "Sound"));
+    for (auto &[group, speeches] : result)
+        for (auto &speech : speeches) {
+            const auto wave = normalize(speech.wave);
+            const auto separator = wave.find('\\');
+            const auto actName = std::string_view(wave).substr(0, separator);
+            if (actName.starts_with("act")) {
+                int number = 0;
+                const auto value = actName.substr(3);
+                const auto [end, error] = std::from_chars(value.data(), value.data() + value.size(), number);
+                if (error == std::errc{} && end == value.data() + value.size() && number > 0)
+                    speech.act = number - 1;
+            }
+            auto sound = soundNames.find(normalize(speech.wave));
+            if (sound == soundNames.end()) continue;
+            const auto &name = sound->second;
+            const auto actMarker = name.find("_act");
+            speech.speaker = name.substr(0, actMarker == std::string::npos ? name.find('_') : actMarker);
+            auto intro = name.find("_intro");
+            speech.introduction = speech.quest.empty() && intro != std::string::npos;
+            if (speech.introduction && intro + 6 < name.size())
+                speech.introClass = name.substr(intro + 7);
+            const auto gossip = name.find("_gossip_");
+            speech.gossip = speech.quest.empty() && gossip != std::string::npos &&
+                gossip + 8 < name.size() && std::isdigit(static_cast<unsigned char>(name[gossip + 8]));
+            for (size_t row = 0; row < monsters.rows().size(); ++row) {
+                if (!monsters.number(row, "interact").value_or(0)) continue;
+                auto nameKey = std::string(monsters.value(row, "NameStr"));
+                auto display = strings.find(nameKey);
+                const auto displayName = display == strings.end() ? nameKey : display->second;
+                if (!matchesSpeaker(monsters.value(row, "Id"), displayName, speech.speaker)) continue;
+                result.speakers[npcIntroductionKey(displayName, speech.act)] = speech.speaker;
+            }
+        }
+    constexpr unsigned nativeNpcClasses[]{147,148,150,155,154,265,175,176,177,178,202,200,210,201,198,199,244,
+        245,246,251,252,253,254,255,256,257,264,297,511,512,513,514,515,520};
+    std::map<std::string, int, std::less<>> presetActs;
+    for (size_t row = 0; row < presets.rows().size(); ++row)
+        if (auto act = presets.number(row, "Act"); act && *act >= 1 && *act <= 5)
+            presetActs.emplace(presets.value(row, "Place"), *act - 1);
+    for (unsigned index = 0; index < std::size(nativeNpcClasses); ++index)
+        for (size_t row = 0; row < monsters.rows().size(); ++row)
+            if (monsters.number(row, "hcIdx") == int(nativeNpcClasses[index])) {
+                auto nameKey = std::string(monsters.value(row, "NameStr"));
+                auto display = strings.find(nameKey);
+                const auto id = monsters.value(row, "Id");
+                // PlrIntro assigns Cain in Act I and Tyrael in Act IV to these bits;
+                // Cain5 has no MonPreset, while Tyrael1 also appears in Act II.
+                const int act = nativeNpcClasses[index] == 265 ? 0 : nativeNpcClasses[index] == 251 ? 3
+                    : presetActs.at(std::string(id));
+                result.introductionKeys.emplace(index + 1,
+                    npcIntroductionKey(display == strings.end() ? nameKey : display->second, act));
+                break;
+            }
+    return result;
+}
 
 const NpcSpeech *introSpeech(const NpcDialogues &dialogues, std::string_view npc,
-                             std::string_view characterClass) {
-    const auto key = npc == "Deckard Cain" ? "Cain" : std::string(npc);
-    const auto introKey = npc == "Warriv" ? "WarrivAct1Intro" : key + "Intro";
-    // ACT1Intro_Callback00_NpcActivate / ACT1Q0: class-specific greetings.
-    std::string suffix;
-    if (npc == "Akara" && characterClass == "Sorceress") suffix = "Sor";
-    if (npc == "Kashya" && characterClass == "Amazon") suffix = "Ama";
-    if (npc == "Charsi" && characterClass == "Barbarian") suffix = "Bar";
-    if (npc == "Gheed" && characterClass == "Necromancer") suffix = "Nec";
-    if (npc == "Warriv" && characterClass == "Paladin") suffix = "Pal";
-    if (!suffix.empty())
-        if (auto special = dialogues.find(introKey + suffix); special != dialogues.end())
-            for (const auto &speech : special->second)
-                if (speech.quest.empty()) return &speech;
-    auto intro = dialogues.find(introKey);
-    if (intro != dialogues.end())
-        for (const auto &speech : intro->second)
-            if (speech.quest.empty()) return &speech;
-    // Cain's first Act I speech is selected by his rescue quest, not generic gossip.
-    if (npc == "Deckard Cain") return nullptr;
-    auto generic = dialogues.find(key);
-    if (generic != dialogues.end())
-        for (const auto &speech : generic->second)
-            if (speech.quest.empty()) return &speech;
-    return nullptr;
+                             std::string_view characterClass, int act) {
+    auto speaker = dialogues.speakers.find(npcIntroductionKey(npc, act));
+    if (speaker == dialogues.speakers.end()) return nullptr;
+    std::string suffix(characterClass.substr(0, 3));
+    std::transform(suffix.begin(), suffix.end(), suffix.begin(), [](unsigned char letter) { return char(std::tolower(letter)); });
+    const NpcSpeech *generic = nullptr;
+    for (const auto &[group, speeches] : dialogues)
+        for (const auto &speech : speeches)
+            if (speech.act == act && speech.speaker == speaker->second && speech.introduction) {
+                if (!suffix.empty() && speech.introClass == suffix) return &speech;
+                if (speech.introClass.empty() && !generic) generic = &speech;
+            }
+    return generic;
 }
-const NpcSpeech *gossipSpeech(const NpcDialogues &dialogues, std::string_view npc, size_t turn) {
-    const auto key = npc == "Deckard Cain" ? "Cain" : std::string(npc);
-    auto group = dialogues.find(key);
-    if (group == dialogues.end())
-        return nullptr;
+const NpcSpeech *gossipSpeech(const NpcDialogues &dialogues, std::string_view npc, size_t turn, int act) {
+    auto speaker = dialogues.speakers.find(npcIntroductionKey(npc, act));
+    if (speaker == dialogues.speakers.end()) return nullptr;
     std::vector<const NpcSpeech *> generic;
-    for (const auto &speech : group->second) {
-        auto marker = speech.wave.find("_gossip_");
-        if (marker != std::string::npos && marker + 8 < speech.wave.size() &&
-            speech.wave[marker + 8] >= '0' && speech.wave[marker + 8] <= '9')
-            generic.push_back(&speech);
-    }
+    for (const auto &[group, speeches] : dialogues)
+        for (const auto &speech : speeches)
+            if (speech.act == act && speech.speaker == speaker->second && speech.gossip)
+                generic.push_back(&speech);
     if (generic.empty())
         return nullptr;
     return generic[turn % generic.size()];
 }
 const NpcSpeech *questSpeech(const NpcDialogues &dialogues, std::string_view quest,
                              std::string_view state, std::string_view npc) {
-    auto key = npc == "Deckard Cain" ? "Cain" : std::string(npc);
-    if (key == "Charsi") key = "CharsiMain";
-    auto group = dialogues.find(key);
-    if (group == dialogues.end()) return nullptr;
-    for (const auto &speech : group->second)
-        if (speech.quest == quest && speech.state == state)
-            return &speech;
+    const auto speaker = dialogues.speakers.find(npcIntroductionKey(npc, 0));
+    if (speaker == dialogues.speakers.end()) {
+        // Authored quest text on a book has no NPC voice/Sounds identity.
+        auto group = dialogues.find(npc);
+        if (group != dialogues.end())
+            for (const auto &speech : group->second)
+                if (speech.quest == quest && speech.state == state && speech.wave.empty())
+                    return &speech;
+        return nullptr;
+    }
+    for (const auto &[group, speeches] : dialogues)
+        for (const auto &speech : speeches)
+            if (speech.act == 0 && speech.speaker == speaker->second &&
+                speech.quest == quest && speech.state == state)
+                return &speech;
     return nullptr;
 }
 } // namespace d2x

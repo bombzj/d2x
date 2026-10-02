@@ -12,11 +12,13 @@ std::vector<MenuEntry> entries(const GameSession &session, EntityId npc, std::st
     std::vector<MenuEntry> result;
     const auto *npcObject = session.object(npc);
     const std::string_view npcClass = npcObject ? std::string_view(npcObject->npcClass) : std::string_view{};
+    const int act = npcObject ? npcObject->act : 0;
     if (topics) {
         if (introSpeech(session.content().npcDialogues, speaker,
-                        session.state().player.characterClass))
+                        session.state().player.characterClass, act))
             result.push_back({"Introduction", 11});
-        for (auto [id, speech] : session.npcQuestTopics(speaker)) {
+        for (auto [id, speech] : act == 0 ? session.npcQuestTopics(speaker)
+                        : decltype(session.npcQuestTopics(speaker)){}) {
             std::string key = "qsts" + speech->quest;
             std::transform(key.begin(), key.end(), key.begin(), [](unsigned char c) {
                 return char(std::tolower(c));
@@ -25,13 +27,13 @@ std::vector<MenuEntry> entries(const GameSession &session, EntityId npc, std::st
                 title != session.content().actOneQuestStrings.end())
                 result.push_back({title->second, 100 + int(questIndex(id))});
         }
-        if (gossipSpeech(session.content().npcDialogues, speaker, 0))
+        if (gossipSpeech(session.content().npcDialogues, speaker, 0, act))
             result.push_back({"Gossip", 5});
         result.push_back({"Cancel", 4});
         return result;
     }
-    if (introSpeech(session.content().npcDialogues, speaker, session.state().player.characterClass) ||
-        !session.npcQuestTopics(speaker).empty() || gossipSpeech(session.content().npcDialogues, speaker, 0))
+    if (introSpeech(session.content().npcDialogues, speaker, session.state().player.characterClass, act) ||
+        (act == 0 && !session.npcQuestTopics(speaker).empty()) || gossipSpeech(session.content().npcDialogues, speaker, 0, act))
         result.push_back({"Talk", 1});
     if (session.vendorStock(npc)) {
         result.push_back({npcCanRepair(npcClass) ? "Trade / Repair" : "Trade", 2});
@@ -42,7 +44,7 @@ std::vector<MenuEntry> entries(const GameSession &session, EntityId npc, std::st
         result.push_back({"Resurrect: " + std::to_string(session.hirelingResurrectionCost()), 12});
     if (session.canHireFrom(npc))
         result.push_back({"Hire", 10});
-    if (npcClass.starts_with("cain"))
+    if (npcCanIdentify(npcClass))
         result.push_back({"Identify Items", 3});
     if (npcClass == "akara") {
         const auto &quest = session.quest(ActOneQuest::DenOfEvil);
@@ -76,8 +78,9 @@ void SceneView::openNpcMenu(EntityId object, std::string speaker, bool firstIntr
     // A delayed interaction event must not reopen the menu over an active NPC view.
     if (view_.shopOpen || view_.hireListOpen || !view_.dialogue.empty()) return;
     if (firstIntroduction) {
+        const auto *npc = session_.object(object);
         if (auto intro = introSpeech(session_.content().npcDialogues, speaker,
-                                      session_.state().player.characterClass)) {
+                                      session_.state().player.characterClass, npc ? npc->act : 0)) {
             openNpcDialogue(object, std::move(speaker), intro->text);
             return;
         }
@@ -99,8 +102,9 @@ bool SceneView::startNpcTalk() {
 }
 bool SceneView::startNpcIntroduction() {
     if (!view_.npcMenu || !view_.npcTopics) return false;
+    const auto *npc = session_.object(view_.dialogueObject);
     const auto *speech = introSpeech(session_.content().npcDialogues, view_.dialogueSpeaker,
-                                     session_.state().player.characterClass);
+                                     session_.state().player.characterClass, npc ? npc->act : 0);
     if (!speech) return false;
     openNpcDialogue(view_.dialogueObject, view_.dialogueSpeaker, speech->text);
     return true;

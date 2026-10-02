@@ -17,6 +17,12 @@ unsigned below(uint64_t &random, unsigned bound) {
 bool npcCanRepair(std::string_view npc) {
     return npc == "charsi" || npc == "fara" || npc == "hratli" || npc == "halbu" || npc == "larzuk";
 }
+bool npcCanIdentify(std::string_view npc) {
+    return npc == "cain2" || npc == "cain3" || npc == "cain4" || npc == "cain5" || npc == "cain6";
+}
+bool npcCanHeal(std::string_view npc) {
+    return npc == "akara" || npc == "atma" || npc == "fara" || npc == "ormus" || npc == "jamella" || npc == "malah";
+}
 std::vector<VendorOffer> planVendorStock(const ClassicData &data, const VendorDefinition &vendor,
                                          unsigned playerLevel, int difficulty, uint64_t seed) {
     if (!playerLevel || playerLevel > 99 || difficulty < 0 || difficulty > 2 ||

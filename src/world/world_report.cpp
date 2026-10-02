@@ -14,11 +14,13 @@ void writeWorldReport(std::ostream &out, Archives &archives, const WorldCatalog 
     auto outdoor = outdoorMissing(archives, catalog).empty()
                        ? generateAct1Outdoors(archives, catalog, seed)
                        : std::map<int, MapRecipe>{};
+    auto deserts = generateAct2Outdoors(archives, catalog, seed);
+    outdoor.insert(deserts.begin(), deserts.end());
     for (const auto &[id, level] : catalog.levels()) {
-        if (level.act != 0 || (selected && id != selected))
+        if (selected && id != selected)
             continue;
         ++count;
-        auto available = catalog.availability(archives, id);
+        auto available = catalog.availability(archives, id, id == 40 ? 1 : 0);
         if (outdoor.contains(id)) {
             available.recipe = outdoor.at(id);
             available.missing.clear();

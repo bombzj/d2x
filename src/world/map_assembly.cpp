@@ -4,8 +4,11 @@
 namespace d2x {
 MapData assembleMap(Archives &archives, const MapRecipe &recipe) {
     MapData result;
-    if (recipe.pieces.empty())
-        return decodeDs1(archives.read(recipe.ds1));
+    if (recipe.pieces.empty()) {
+        auto source = decodeDs1(archives.read(recipe.ds1));
+        if (recipe.act >= 0) source.act = recipe.act;
+        return source;
+    }
     result.width = recipe.width ? recipe.width + 1 : 0;
     result.height = recipe.height ? recipe.height + 1 : 0;
     for (const auto &piece : recipe.pieces) {

@@ -77,7 +77,7 @@ class SceneView {
     SceneAssets assets_;
     LightingView lighting_;
     PaletteBlendView paletteBlend_;
-    PaletteBlendView actTwoPaletteBlend_;
+    std::array<std::unique_ptr<PaletteBlendView>, 5> actPaletteBlends_;
     Shader highlightShader_{};
     int highlightTransform_ = -1;
     UiPainter painter_;

@@ -572,7 +572,7 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
                     entry["trap"] = object.chest->trap;
                     entry["opened"] = object.operatedAt >= 0;
                 }
-                if (object.name == "Waypoint") {
+                if (object.isWaypoint()) {
                     entry["activated"] = session.waypointUnlocked(session.state().area.region);
                     entry["fps"] = object.waypointFps;
                 }

@@ -1,5 +1,13 @@
 # 构建与运行
 
+2026-10-02最终五城镇冒烟与提交：修复Fortress原main33出生扫描和泰瑞尔同名DC6组件后，Windows Release链接并更新dist/current；包内普通Sorceress、seed210、--frames 2分别启动1／40／75／103／109，五次退出0、stderr空，原图零缺砖，五张截图已查看。证据在artifacts/town-smoke-<level>-20261002.log、对应-error日志与png；无角色存档读写、无新测试程序。源码／相关文档按本轮授权提交，用户已暂存AGENTS.md保留不提交；完整聊天、服务、存档往返及其他场景未覆盖，旧仅构建记录由本条启动证据补充。
+
+2026-10-02 原资源绑定收尾：移除token→NPC姓名与任务对白分组别名，统一从MonPreset/MonStats/TBL及a1npc–a5npc/Sounds读实际名称和语音身份；传送点的操作身份改由Objects.OperateFn=23判断。D2MOO的DS1对象索引与原D2S初见位表为MPQ没有对应列的引擎规则，保持原编号。最终Windows Release链接成功、固定包已更新；不运行测试／游戏、不提交，实际画面和存档往返待验收。见[地图](ACT1_MAPS.md#五幕通用完整预设)和[NPC](NPC_COMPLETION.md)。
+
+2026-10-02 五幕通用完整预设与NPC加载：Windows Release已链接，按用户要求统一更新 `dist/current`，入口为 `dist/current/Play.cmd`。读取当前MPQ的完整LvlPrest、原五幕对象索引／中立NPC、各幕PAL／PL2及a1npc–a5npc；未实现的野外／迷宫类型仍显示不可用。仅完成编译和打包，不运行测试或游戏、不提交；后三幕各场景和NPC的视觉／碰撞／保存实际行为等待用户验收，详见 [地图](ACT1_MAPS.md#五幕通用完整预设) 和 [NPC](NPC_COMPLETION.md)。
+
+2026-10-02 NPC通用聊天修复：第二幕载入恢复原interact资格，原a1npc/a2npc共用解析，Sounds与MonStats/TBL动态绑定对白身份、介绍／职业分支和闲聊，菜单按幕查询；原D2S初见位保留D2MOO固定引擎身份顺序，删除编码层姓名名单。Windows Release最终链接成功并更新dist/current；按用户要求不测试、不启动游戏、不提交Git，聊天和保存实机验收未覆盖。资源、用户存档及v96格式保持，说明见 [NPC聊天](NPC_COMPLETION.md#第一幕与第二幕通用聊天)。
+
 2026-10-02第二幕地图：按后宫、下水道、宫殿、墓穴、虫穴、神秘避难所、沙漠顺序逐类型Release构建／更新dist/current／普通冒烟／独立提交。40–74全部地形类型有入口；每种新增地图短帧启动零缺砖、退出0，神秘避难所210/211与沙漠LutW/LutN普通检查通过。真实UI墓口66→46→66、42原waypoint正式激活／原WS保存重载及最终包新进程重载通过，九第二幕waypoint物件／WS兼容检查通过。随后原OperateFn27局部传送器收尾单独构建打包并正式交互往返／最终包复验通过，临时实例正常退出0；不新增测试程序，不改用户存档。包内与build EXE哈希一致，入口 `dist/current/Play.cmd`。原随机流、沙漠次级边缘／主题、全支路探索及第二幕任务门／玩法仍有缺口，详见 [类型覆盖](ACT1_MAPS.md#第二幕类型交付) 和 [保存](SAVES.md)。旧批次说明只反映当时范围。
 
 最新批次（2026-10-01，瓦瑞夫东行／鲁高因）：按 NPC 换幕、城镇 waypoint、原图绘制顺序实现，整批完成后统一 Windows Release 构建和更新固定 dist/current。包内普通 seed=210 经原安达利尔死亡事务及瓦瑞夫自动对白、真实 Go East 菜单进入40／A1Q6=5／激活 waypoint9；原页签实际点击两城双向往返通过。独立 artifacts/act2-town-flow-20261001.d2s 保存／重载恢复区域40和两城 waypoint，版本96／当前幕字节0x81；正常实例退出码0。原图日志57×57、943瓦片、0缺格、68外观／0未解析对象，截图已查看。末次存档 lastTown 修正通过 Release 链接；产物及用户存档不入 Git，未新增测试脚本。代码／文档按本轮授权提交，MPQ和旧产物保留。只开放原 LutW 城镇，不包含沙漠方向生成、LutN、第二幕野外／任务／NPC 服务，也不声明客户端完整像素等价，详见 [地图](ACT1_MAPS.md#鲁高因城镇) 和 [存档](SAVES.md)。

@@ -148,6 +148,8 @@ GpuAnimation Graphics::composite(const std::string &type, const std::string &tok
             gear = (*equipment)[c];
         auto path = base + codes[c] + "/" + token + codes[c] + gear + mode + cof.weapons[i] + ".dcc";
         auto part = animation(path);
+        if (!part && !archives.contains(path))
+            part = animation(path.substr(0, path.size() - 4) + ".dc6");
         if (!part && c == 7 && type != "chars")
             part =
                 animation(base + codes[c] + "/" + token + codes[c] + "buc" + mode + cof.weapons[i] + ".dcc");

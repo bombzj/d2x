@@ -1,7 +1,15 @@
-# 第一幕与第二幕地图
+# 五幕地图入口
 
 当前源码按 MPQ `Levels.txt` 的生成类型为第一幕 39 个关卡建立地形入口；探索／任务入口以当前会话与任务模块为准。地图取自运行时 MPQ 的 DS1/DT1、`LvlPrest`、`LvlMaze` 和 `LvlSub`，不使用独立提取的数据文件。2026-09-23 曾用五个原始 MPQ 对 1–39 关逐张短帧启动并截图，39/39 正常退出；这是历史地形冒烟，不涵盖本次源码，也不代替键鼠往返验收。
 营地和鲁高因出生点从运行时 DS1 的城镇扫描标记选取；城镇奔跑不消耗耐力。当前第一幕1–39与第二幕40–74均有地形目录入口，任务专用入口并非全部开放。NPC 与传送点点击范围跟随当前 MPQ 动画帧的非透明区域边界。
+
+## 五幕通用完整预设
+
+2026-10-02五城镇冒烟：最终包普通seed210对1／40／75／103／109分别短帧启动／截图，全部退出0、stderr空，原图分别57×41／57×57／65×49／33×25／41×41，零未解析格。第四幕原Fortress只有main33/sub0扫描标记，无main30；城镇出生优先main30组，缺失时消费原main33（D2MOO扫描映射到到达索引11），仍局部查找可站点、不添加猜测坐标。该选择是当前适配，不认证完整原到达随机流。截图已查看，证据在artifacts/town-smoke-<level>-20261002.*；完整鼠标行走／NPC交互与存档未覆盖。
+
+物件预设索引：DS1物件的幕内序号与Objects.Id的对应数组是D2MOO `DRLGPRESET_GetObjectIndexFromObjPreset` 固定引擎数据，当前MPQ Objects.txt不包含该逆映射；不能按Objects行号或Token替代。读出实际Objects.Id后，名称、图形、动画和操作取运行时原表，Waypoint按OperateFn=23识别而非比较英文名称。NPC身份从原MonPreset取得，所有幕的显示名称从MonStats.NameStr和TBL获取，不再按外观token映射姓名。其他幕次级任务物件仍以实际已接的操作规则为限。
+
+2026-10-02：`Levels.DrlgType=Preset` 且 `LvlPrest.LevelId` 唯一绑定的完整关卡沿同一原DS1/DT1入口加载。第一幕和第二幕原生成器保持独立；新增后三幕完整绑定19关：第三幕75、90、91、93–99、102；第四幕103；第五幕109、120、121、124、131、132、136。资料片中的其他 `DrlgType` 若需要迷宫／户外规则，仍标记不可用，不把LevelId绑定的特殊房当作通用迷宫的整关。多File变体按原有限随机选取，显式选图可指定有效变体。当前MPQ的Levels/LvlPrest/LvlTypes决定身份和瓦片库；原D2MOO的 `DRLGPRESET_GetObjectIndexFromObjPreset` 五幕映射用于DS1物件，MonPreset/MonStats/MonStats2加载原NPC身份与组件。城镇身份是D2MOO `DUNGEON_IsTownLevelId` 的固定1／40／75／103／109，不假称当前Levels存在Town列。原PAL/PL2随幕选择，默认Act I物品／英雄等跨幕外观仍需画面对照。当前五幕完整预设仅Windows Release编译、更新运行包；本轮按要求未启动游戏或测试，不能认定每个新增原房的图砖、碰撞、出生和NPC操作已实机通过。原任务门、回城门与各幕未实现的野外／迷宫仍有玩法／连通限制。
 
 ## 鲁高因城镇
 

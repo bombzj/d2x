@@ -128,8 +128,9 @@ bool SceneView::closeNpcDialogue() {
 bool SceneView::showNextNpcGossip() {
     if (!view_.npcMenu && view_.dialogue.empty())
         return false;
+    const auto *npc = session_.object(view_.dialogueObject);
     const auto *speech = gossipSpeech(session_.content().npcDialogues,
-                                      view_.dialogueSpeaker, view_.dialogueGossipTurn);
+                                      view_.dialogueSpeaker, view_.dialogueGossipTurn, npc ? npc->act : 0);
     if (!speech)
         return false;
     ++view_.dialogueGossipTurn;

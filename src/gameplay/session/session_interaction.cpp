@@ -178,7 +178,7 @@ void GameSession::updateInteraction() {
     }
 }
 void GameSession::completeInteraction(const WorldObject &object) {
-    if (object.name == "Waypoint" && object.interaction == Interaction::Travel) {
+    if (object.isWaypoint()) {
         if (simulation_->state_.waypoints.emplace(region().definition.id, state().time).second) {
             simulation_->emit(WaypointActivated{object.id});
             return;
@@ -281,14 +281,16 @@ void GameSession::completeInteraction(const WorldObject &object) {
         simulation_->heal();
         [[fallthrough]];
     case Interaction::Talk: {
-        if (introSpeech(content_.npcDialogues, object.name) || vendorStock(object.id) ||
-            npcQuestDialogue(object.name).speech)
+        if (introSpeech(content_.npcDialogues, object.name, {}, object.act) ||
+            gossipSpeech(content_.npcDialogues, object.name, 0, object.act) || vendorStock(object.id) ||
+            (object.act == 0 && npcQuestDialogue(object.name).speech))
             engagedNpc_ = object.id;
-        const auto *intro = introSpeech(content_.npcDialogues, object.name, state().player.characterClass);
+        const auto *intro = introSpeech(content_.npcDialogues, object.name, state().player.characterClass, object.act);
         auto &introductions = simulation_->state_.player.npcIntroductions
             .at(size_t(state().population.difficulty));
-        const bool first = intro && introductions.insert(object.name).second;
-        const auto dialogue = npcQuestDialogue(object.name);
+        const auto introductionKey = npcIntroductionKey(object.name, object.act);
+        const bool first = intro && introductions.insert(introductionKey).second;
+        const auto dialogue = object.act == 0 ? npcQuestDialogue(object.name) : NpcQuestDialogue{};
         if (first) simulation_->emit(NpcDialogueStarted{object.id, object.name, intro->text});
         if (dialogue.automatic && dialogue.speech) {
             simulation_->emit(NpcDialogueStarted{object.id, object.name, dialogue.speech->text});
@@ -335,7 +337,7 @@ void GameSession::unlockWaypoints() {
     if (state().player.dead) return;
     for (const auto &region : regions_)
         for (const auto &object : region.objects)
-            if (object.name == "Waypoint" && object.interaction == Interaction::Travel &&
+            if (object.isWaypoint() &&
                 simulation_->state_.waypoints.emplace(region.definition.id, state().time).second) {
                 simulation_->emit(WaypointActivated{object.id});
                 break;
@@ -343,7 +345,7 @@ void GameSession::unlockWaypoints() {
 }
 bool GameSession::travelWaypoint(const WaypointTravel &command) {
     const auto *source = object(command.source);
-    if (!source || source->name != "Waypoint" || source->interaction != Interaction::Travel ||
+    if (!source || !source->isWaypoint() ||
         !canReach(*source) || !waypointUnlocked(region().definition.id) ||
         !waypointUnlocked(command.destination) || state().player.castTime > 0 ||
         state().player.meleeTime > 0) {
@@ -353,7 +355,7 @@ bool GameSession::travelWaypoint(const WaypointTravel &command) {
     for (const auto &destination : regions_)
         if (destination.definition.id == command.destination)
             for (const auto &target : destination.objects)
-                if (target.name == "Waypoint" && target.interaction == Interaction::Travel) {
+                if (target.isWaypoint()) {
                     if (command.destination == region().definition.id)
                         return false;
                     enter(command.destination, target.accessPoint);

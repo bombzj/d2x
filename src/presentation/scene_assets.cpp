@@ -24,7 +24,7 @@ void loadFont(Graphics &graphics, Archives &archives, ClassicFont &font, std::st
 }
 } // namespace
 SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
-        : archives_(archives), graphics_(archives), actTwoGraphics_(archives, "data/global/palette/act2/pal.dat"),
+        : archives_(archives), graphics_(archives),
             uiGraphics_(archives, "data/global/palette/sky/pal.dat"),
       unitsGraphics_(archives, "data/global/palette/units/pal.dat"),
       automapCatalog_(archives), audio(archives) {
@@ -653,10 +653,17 @@ const std::vector<Sprite> &SceneAssets::regionTileSprites(size_t index) const {
         regionTiles[index].clear();
         regionTiles[index].reserve(regionTileSources.at(index).size());
         for (const auto *tile : regionTileSources.at(index))
-            regionTiles[index].push_back((regionActs_.at(index) == 1 ? actTwoGraphics_ : graphics_).upload(tile->image));
+            regionTiles[index].push_back(graphicsForAct(regionActs_.at(index)).upload(tile->image));
         regionTilesUploaded[index] = true;
     }
     return regionTiles[index];
+}
+Graphics &SceneAssets::graphicsForAct(int act) const {
+    if (act == 0) return graphics_;
+    auto &graphics = actGraphics_.at(size_t(act));
+    if (!graphics)
+        graphics = std::make_unique<Graphics>(archives_, "data/global/palette/act" + std::to_string(act + 1) + "/pal.dat");
+    return *graphics;
 }
 void SceneAssets::ensurePropArt(const WorldObject &object) const {
     if (propAnimations.contains(object.key)) return;
@@ -673,7 +680,7 @@ void SceneAssets::ensurePropArt(const WorldObject &object) const {
     }
 }
 void SceneAssets::loadPropObject(const WorldObject &object) const {
-    auto &graphics = object.act == 1 ? actTwoGraphics_ : graphics_;
+    auto &graphics = graphicsForAct(object.act);
     const auto &appearance = object.appearance;
     std::array<const char *, 16> equipment;
     for (size_t i = 0; i < equipment.size(); ++i)
@@ -686,7 +693,7 @@ void SceneAssets::loadPropObject(const WorldObject &object) const {
     }
     if (propAnimations.contains(object.key))
         return;
-    if (object.name == "Waypoint" && object.interaction == Interaction::Travel) {
+    if (object.isWaypoint()) {
         std::array<GpuAnimation, 3> animations;
         // Objects.txt modes are NU, OP (operating), ON (opened).
         const char *modes[] = {"nu", "op", "on"};
@@ -766,12 +773,13 @@ void SceneAssets::collectMapVariants(Archives &archives, const WorldCatalog &cat
         if (preset.level <= 0)
             continue;
         const auto &level = catalog.level(preset.level);
-        if (level.act != 0 || level.generation != GenerationKind::Preset)
+        if (level.generation != GenerationKind::Preset)
             continue;
         for (int variant = 0; variant < 6; ++variant) {
             if (preset.variants[variant].empty())
                 continue;
             auto recipe = catalog.preset(id, level.levelType, variant);
+            recipe.act = level.act;
             if (!catalog.missing(archives, recipe).empty())
                 continue;
             RegionDefinition definition;

@@ -2,6 +2,7 @@
 #include "d2s_header.hpp"
 #include "d2s_fixed_sections.hpp"
 #include "d2s_inventory.hpp"
+#include "content/world/world_catalog.hpp"
 #include "d2s_skills.hpp"
 #include "gameplay/quest/den_of_evil.hpp"
 #include "gameplay/quest/burial_grounds.hpp"
@@ -21,7 +22,6 @@ namespace {
 constexpr size_t fixedEnd = d2sHeaderSize + 298 + 80 + 52;
 constexpr std::array<const char *, 7> classes{"Amazon", "Sorceress", "Necromancer", "Paladin", "Barbarian", "Druid", "Assassin"};
 constexpr std::array<unsigned, 6> questSlots{1, 2, 4, 5, 3, 6};
-constexpr std::array<const char *, 6> npcKeys{"Gheed", "Akara", "Kashya", "Warriv", "Charsi", "Deckard Cain"};
 void require(bool condition, const std::string &reason) {
     if (!condition) throw std::runtime_error("D2S: " + reason);
 }
@@ -58,7 +58,7 @@ unsigned questBits(const QuestRecord &quest, size_t index) {
     }
     return 0;
 }
-void importQuests(PlayerState &player, const D2sFixedSections &sections) {
+void importQuests(PlayerState &player, const D2sFixedSections &sections, const NpcDialogues &dialogues) {
     for (size_t difficulty = 0; difficulty < 3; ++difficulty) {
         for (size_t index = 0; index < questSlots.size(); ++index) {
             const auto flags = word(sections.quests, 10 + difficulty * 96 + questSlots[index] * 2);
@@ -80,12 +80,12 @@ void importQuests(PlayerState &player, const D2sFixedSections &sections) {
             require(player.actOneQuests[difficulty][0].stage == uint32_t(DenStage::Rewarded), "respec without Den reward");
             player.actOneQuests[difficulty][0].flags |= denRespecUsed;
         }
-        for (size_t index = 0; index < npcKeys.size(); ++index)
-            if (sections.introductions[28 + difficulty * 8 + (index + 1) / 8] & (1u << ((index + 1) % 8)))
-                player.npcIntroductions[difficulty].insert(npcKeys[index]);
+        for (const auto &[bit, key] : dialogues.introductionKeys)
+            if (sections.introductions[28 + difficulty * 8 + bit / 8] & (1u << (bit % 8)))
+                player.npcIntroductions[difficulty].insert(key);
     }
 }
-void exportQuests(const PlayerState &player, D2sFixedSections &sections) {
+void exportQuests(const PlayerState &player, D2sFixedSections &sections, const NpcDialogues &dialogues) {
     for (size_t difficulty = 0; difficulty < 3; ++difficulty) {
         sections.quests[10 + difficulty * 96 + 0x52] = (player.actOneQuests[difficulty][0].flags & denRespecUsed) ? 1 : 0;
         for (size_t index = 0; index < questSlots.size(); ++index) {
@@ -94,9 +94,9 @@ void exportQuests(const PlayerState &player, D2sFixedSections &sections) {
             putWord(sections.quests, offset, (word(sections.quests, offset) & ~mask) |
                 questBits(player.actOneQuests[difficulty][index], index));
         }
-        for (size_t index = 0; index < npcKeys.size(); ++index)
-            if (player.npcIntroductions[difficulty].contains(npcKeys[index]))
-                sections.introductions[28 + difficulty * 8 + (index + 1) / 8] |= uint8_t(1u << ((index + 1) % 8));
+        for (const auto &[bit, key] : dialogues.introductionKeys)
+            if (player.npcIntroductions[difficulty].contains(key))
+                sections.introductions[28 + difficulty * 8 + bit / 8] |= uint8_t(1u << (bit % 8));
     }
 }
 void waypoints(CharacterSaveData &snapshot, D2sFixedSections &sections, const ClassicData &content, bool writing) {
@@ -110,7 +110,7 @@ void waypoints(CharacterSaveData &snapshot, D2sFixedSections &sections, const Cl
         if (writing) {
             if (snapshot.waypoints.contains(RegionId(*id))) value |= bit;
         } else if (value & bit) {
-            require(*id >= 1 && *id <= 74, "waypoints outside Act I and Act II");
+            require(*id >= 1 && *id < 137, "unknown waypoint level");
             snapshot.waypoints.emplace(RegionId(*id), 0.f);
         }
     }
@@ -244,8 +244,8 @@ CharacterSaveData decodeSave(std::span<const uint8_t> bytes, const ClassicData &
     for (unsigned difficulty = 0; difficulty < 3; ++difficulty)
         if (header.towns[difficulty] & 0x80) snapshot.difficulty = int(difficulty);
     const auto act = header.towns[size_t(snapshot.difficulty)] & 7;
-    require(act <= 1, "last act is not supported");
-    snapshot.lastRegion = act == 1 ? RegionId(40) : RegionId::Encampment;
+    require(unsigned(act) < actTownLevels.size(), "last act is not supported");
+    snapshot.lastRegion = RegionId(actTownLevels[act]);
     size_t cursor = fixedEnd;
     const auto stats = readD2sStats(bytes.subspan(cursor), content.tables.at("itemstatcost"));
     cursor += stats.bytesRead;
@@ -270,7 +270,7 @@ CharacterSaveData decodeSave(std::span<const uint8_t> bytes, const ClassicData &
         require((key >> 16) == 0 || (key >> 16) == 0xFFFF, "item-bound hotkey");
         player.skillHotkeys[index] = {int(key & 0x7FFF) == 0 ? -1 : int(key & 0x7FFF), (key & 0x8000) == 0};
     }
-    importQuests(player, sections);
+    importQuests(player, sections, content.npcDialogues);
     for (size_t index = 0; index < player.selectedSkills.size(); ++index) {
         const auto selected = header.selectedSkills[index];
         require((selected >> 16) == 0 || selected == UINT32_MAX, "item-bound mouse skill");
@@ -344,9 +344,16 @@ Bytes encodeSave(const CharacterSaveData &source, const ClassicData &content) {
     header.mapSeed = snapshot.mapSeed; header.difficulty = uint8_t(snapshot.difficulty);
     header.saved = uint32_t(std::time(nullptr)); if (!header.created) header.created = header.saved;
     for (auto &town : header.towns) town &= 0x7F;
-    const bool actTwo = int(snapshot.lastRegion) >= 40 && int(snapshot.lastRegion) <= 74;
-    header.towns[header.difficulty] = uint8_t(0x80 | (actTwo ? 1 : 0));
-    header.lastLevel = unsigned(snapshot.lastRegion); header.lastTown = actTwo ? 40 : 1;
+    unsigned currentAct = 0;
+    const auto &levels = content.tables.at("levels");
+    for (size_t row = 0; row < levels.rows().size(); ++row)
+        if (levels.number(row, "Id") == int(snapshot.lastRegion)) {
+            currentAct = unsigned(levels.number(row, "Act").value_or(0));
+            break;
+        }
+    require(currentAct < actTownLevels.size(), "unknown saved act");
+    header.towns[header.difficulty] = uint8_t(0x80 | currentAct);
+    header.lastLevel = unsigned(snapshot.lastRegion); header.lastTown = unsigned(actTownLevels[currentAct]);
     for (size_t index = 0; index < player.skillHotkeys.size(); ++index) {
         const auto &key = player.skillHotkeys[index];
         header.hotkeys[index] = key.skill == -2 ? UINT32_MAX
@@ -355,7 +362,7 @@ Bytes encodeSave(const CharacterSaveData &source, const ClassicData &content) {
     exportMerc(header, player, content);
     for (size_t index = 0; index < player.selectedSkills.size(); ++index)
         header.selectedSkills[index] = uint32_t(std::max(0, player.selectedSkills[index]));
-    exportQuests(player, sections);
+    exportQuests(player, sections, content.npcDialogues);
     waypoints(snapshot, sections, content, true);
     writeD2sFixedSections(bytes, sections);
     const auto &definition = characterDefinition(content, player.characterClass);

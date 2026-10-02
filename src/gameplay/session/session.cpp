@@ -545,13 +545,13 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
     auto plan = planWorld(archives, worldContent_, worldSelection);
     regions_ = loadRegions(archives, ids_, plan.regions, monsterContent_, worldContent_, selection.seed, rollRandom(random_));
     for (auto &region : regions_)
-        if (int(region.definition.id) == 40)
-            for (auto &object : region.objects)
-                if (const auto *npc = monsterContent_.find(object.npcClass)) {
-                    if (const auto name = content_.itemStrings.find(npc->name); name != content_.itemStrings.end())
-                        object.name = name->second;
-                    object.interaction = Interaction::None;
-                }
+        for (auto &object : region.objects)
+            if (const auto *npc = monsterContent_.find(object.npcClass)) {
+                if (const auto name = content_.itemStrings.find(npc->name); name != content_.itemStrings.end())
+                    object.name = name->second;
+                if (npc->interact && !npc->hostile())
+                    object.interaction = npcCanHeal(object.npcClass) ? Interaction::Heal : Interaction::Talk;
+            }
     for (const auto &region : regions_)
         for (const auto &object : region.objects)
             if (!object.npcPath.empty())
@@ -753,7 +753,7 @@ void GameSession::tick(float dt, Vec keyboard, bool forceRun) {
                         for (const auto &destination : regions_)
                             if (destination.definition.id == intent.destination)
                                 for (const auto &object : destination.objects)
-                                    if (object.name == "Waypoint" && object.interaction == Interaction::Travel) {
+                                    if (object.isWaypoint()) {
                                         arrival = object.accessPoint;
                                         break;
                                     }

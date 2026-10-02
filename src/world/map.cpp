@@ -6,18 +6,20 @@
 #include <iostream>
 namespace d2x {
 Vec Map::actSpawn() const {
-    for (const auto &layer : data.walls)
-        for (size_t index = 0; index < layer.size(); ++index) {
-            const auto &cell = layer[index];
-            if (!cell.occupied() || (cell.orientation != 10 && cell.orientation != 11) ||
-                ((cell.value >> 20) & 63) != 30 || ((cell.value >> 8) & 255) > 4)
-                continue;
-            const Vec marker{float(index % data.width * 5 + 3), float(index / data.width * 5 + 3)};
-            const Vec arrival = grid.nearest(marker, playerMovement);
-            if (!grid.walkable(arrival, playerMovement) || (arrival - marker).length() > 5)
-                throw std::runtime_error("Invalid DS1 act spawn marker: " + path);
-            return arrival;
-        }
+    for (unsigned markerType : {30u, 33u})
+        for (const auto &layer : data.walls)
+            for (size_t index = 0; index < layer.size(); ++index) {
+                const auto &cell = layer[index];
+                if (!cell.occupied() || (cell.orientation != 10 && cell.orientation != 11) ||
+                    ((cell.value >> 20) & 63) != markerType ||
+                    (markerType == 30 && ((cell.value >> 8) & 255) > 4))
+                    continue;
+                const Vec marker{float(index % data.width * 5 + 3), float(index / data.width * 5 + 3)};
+                const Vec arrival = grid.nearest(marker, playerMovement);
+                if (!grid.walkable(arrival, playerMovement) || (arrival - marker).length() > 5)
+                    throw std::runtime_error("Invalid DS1 act spawn marker: " + path);
+                return arrival;
+            }
     throw std::runtime_error("Missing DS1 act spawn marker: " + path);
 }
 int Map::tileIndex(const MapCell &c, int x, int y) const {

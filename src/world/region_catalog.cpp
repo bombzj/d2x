@@ -1,6 +1,7 @@
 #include "cow_level.hpp"
 #include "world/outdoor/outdoor.hpp"
 #include "region.hpp"
+#include "world/generation_seed.hpp"
 #include <algorithm>
 
 namespace d2x {
@@ -26,7 +27,7 @@ WorldPlan planWorld(Archives &archives, const WorldCatalog &catalog, WorldSelect
     if (!selection.map.empty()) {
         bool found = false;
         for (const auto &[id, preset] : catalog.presets()) {
-            if (preset.level <= 0 || catalog.level(preset.level).act != 0)
+            if (preset.level <= 0 || catalog.level(preset.level).generation != GenerationKind::Preset)
                 continue;
             for (int variant = 0; variant < 6; ++variant)
                 if (normalize(selection.map) == preset.variants[variant]) {
@@ -36,7 +37,7 @@ WorldPlan planWorld(Archives &archives, const WorldCatalog &catalog, WorldSelect
                 }
         }
         if (!found)
-            throw std::runtime_error("--map requires a complete Act I LvlPrest entry; use --preset and "
+            throw std::runtime_error("--map requires a complete LvlPrest entry; use --preset and "
                                      "--level-type for room previews");
     }
     WorldPlan result;
@@ -46,16 +47,25 @@ WorldPlan planWorld(Archives &archives, const WorldCatalog &catalog, WorldSelect
     auto deserts = generateAct2Outdoors(archives, catalog, selection.seed);
     outdoors.insert(deserts.begin(), deserts.end());
     for (const auto &[id, level] : catalog.levels()) {
-        if (level.act != 0 && level.act != 1)
+        if (level.act < 0 || level.act > 4)
             continue;
-        auto available = catalog.availability(
-            archives, id, id == 40 ? 1 : id == selection.level && !selection.preset ? selection.variant : 0);
+        int variant = id == selection.level && !selection.preset ? selection.variant : 0;
+        if (level.generation == GenerationKind::Preset && id != selection.level && !outdoors.contains(id)) {
+            Seed world(selection.seed);
+            Seed random(world.next() + uint32_t(id));
+            for (const auto &[presetId, preset] : catalog.presets())
+                if (preset.level == id) {
+                    variant = random.below(preset.files);
+                    break;
+                }
+        }
+        auto available = catalog.availability(archives, id, id == 40 ? 1 : variant);
         WorldEntry entry{id, level.name, available.reason, available.missing, {}};
         if (outdoors.contains(id)) {
             entry.destination = RegionId(id);
             entry.status = "Connected outdoor terrain";
             entry.missing.clear();
-            result.regions.push_back(makeRegion(*entry.destination, level.name, outdoors.at(id), id == 1 || id == 40));
+            result.regions.push_back(makeRegion(*entry.destination, level.name, outdoors.at(id), level.town));
         } else if (id == 39) {
             entry.missing = cowLevelMissing(archives, catalog);
             entry.status = entry.missing.empty() ? "Generated cow terrain / quest portal unavailable"
@@ -80,7 +90,7 @@ WorldPlan planWorld(Archives &archives, const WorldCatalog &catalog, WorldSelect
         } else if (available.ready()) {
             entry.destination = RegionId(id);
             entry.status = "Preset terrain ready";
-            result.regions.push_back(makeRegion(*entry.destination, level.name, *available.recipe, id == 1 || id == 40));
+            result.regions.push_back(makeRegion(*entry.destination, level.name, *available.recipe, level.town));
         } else if (entry.status.empty())
             entry.status = "Missing MPQ resources";
         result.entries.push_back(std::move(entry));
