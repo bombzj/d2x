@@ -101,7 +101,7 @@ bool Grid::movementClear(int x, int y, MovementCollisionRule rule, EntityId igno
 bool Grid::segment(Vec a, Vec b, EntityId ignoredObject, MovementCollisionRule rule) const {
     return clearSegment(a, b, width, height, [&](int x, int y) {
         return movementClear(x, y, rule, ignoredObject);
-    }, true);
+    }, rule.size <= 1);
 }
 bool Grid::missileSegment(Vec a, Vec b, MissileCollisionRule rule) const {
     // D2MOO COLLISION_CheckMaskWithSize: 0/1 point, 2 cross, 3 square.
@@ -193,10 +193,14 @@ Bytes Grid::reachableFrom(Vec origin, MovementCollisionRule rule) const {
     reachable[size_t(pending.front())] = 1;
     for (size_t cursor = 0; cursor < pending.size(); ++cursor) {
         const int cell = pending[cursor];
-        for (const auto &offset : {std::pair{0, 1}, std::pair{1, 0}, std::pair{0, -1}, std::pair{-1, 0}}) {
+        for (const auto &offset : {std::pair{0, 1}, std::pair{1, 0}, std::pair{0, -1}, std::pair{-1, 0},
+                                  std::pair{-1, -1}, std::pair{-1, 1}, std::pair{1, -1}, std::pair{1, 1}}) {
             const int column = cell % width + offset.first;
             const int row = cell / width + offset.second;
             if (!walkable(column, row, rule)) continue;
+            if (rule.size <= 1 && offset.first && offset.second &&
+                (!walkable(column - offset.first, row, rule) ||
+                 !walkable(column, row - offset.second, rule))) continue;
             const int next = row * width + column;
             if (reachable[size_t(next)]) continue;
             reachable[size_t(next)] = 1;
@@ -240,7 +244,8 @@ Vec Grid::inspectionArrival() const {
                 best = score;
                 point = {x + .5f, y + .5f};
             }
-            for (const auto &[ox, oy] : {std::pair{-1, 0}, {1, 0}, {0, -1}, {0, 1}}) {
+            for (const auto &[ox, oy] : {std::pair{-1, 0}, {1, 0}, {0, -1}, {0, 1},
+                                       std::pair{-1, -1}, std::pair{-1, 1}, std::pair{1, -1}, std::pair{1, 1}}) {
                 if (!walkable(x + ox, y + oy, playerMovement))
                     continue;
                 int next = (y + oy) * width + x + ox;
@@ -310,7 +315,7 @@ std::deque<Vec> Grid::path(Vec from, Vec to, bool allowPartial, MovementCollisio
                 int x = cur % width + dx, y = cur / width + dy;
                 if (!walkable(x, y, rule))
                     continue;
-                if (dx && dy && (!walkable(x - dx, y, rule) || !walkable(x, y - dy, rule)))
+                if (rule.size <= 1 && dx && dy && (!walkable(x - dx, y, rule) || !walkable(x, y - dy, rule)))
                     continue;
                 int next = y * width + x;
                 float cost = costs[cur] + (dx && dy ? 1.41421356f : 1.f);

@@ -12,6 +12,7 @@
 #include "world/outdoor/outdoor.hpp"
 #include "world/population.hpp"
 #include "world/world_report.hpp"
+#include "world/region.hpp"
 #include "core/random.hpp"
 #include "core/random_seed.hpp"
 #include <algorithm>
@@ -25,8 +26,8 @@ int main(int argc, char **argv) {
         if (argc < 3) {
             std::cout
                 << "d2x_assets <archive-or-folder> list [wildcard]\n  ... text <txt-member>\n  ... hex <member> [byte-count]\n  ... ds1-paths <ds1-member>\n  ... extract <member> <destination>\n  "
-                   "... preview <dc6-or-dcc-member> <sheet.png> [first-frame]\n  ... pack <manifest.txt> <new.mpq>\n"
-                   "  ... item <code>\n  ... drops <monster-class>\n  ... maps [Act-I-level-ID]\n"
+                   "... preview <dc6-or-dcc-member> <sheet.png> [first-frame] [columns] [frame-count]\n  ... pack <manifest.txt> <new.mpq>\n"
+                   "  ... item <code>\n  ... drops <monster-class>\n  ... maps [level-ID] [map-seed]\n"
                    "  ... presets [name-filter]\n  ... maze <level-ID> [map-seed] [difficulty:0-2]\n"
                    "  ... outdoor <level-ID> [map-seed]\n"
                    "  ... substitutions <LvlSub-type>\n"
@@ -225,7 +226,7 @@ int main(int argc, char **argv) {
                                     throw std::runtime_error("Substitution variant exceeds DS1 bounds");
                                 auto index = size_t(y) * data.width + x;
                                 auto wall = data.walls.empty() ? 0u : data.walls.front()[index].value;
-                                auto floor = data.floors.front()[index].value;
+                                auto floor = data.floors.empty() ? 0u : data.floors.front()[index].value;
                                 if (wall & 1)
                                     std::cout << ' ' << int((wall >> 8) & 255) - 1;
                                 else
@@ -245,11 +246,20 @@ int main(int argc, char **argv) {
                 if (error != std::errc{} || end != value.data() + value.size())
                     throw std::runtime_error("Map seed expects uint32");
             }
-            auto recipe = command == "maze" ? d2x::generateMaze(catalog, std::stoi(argv[3]), seed,
-                                                                argc == 6 ? std::stoi(argv[5]) : 0)
-                          : std::stoi(argv[3]) == 39
-                              ? d2x::generateCowLevel(a, catalog, seed)
-                              : d2x::generateAct1Outdoors(a, catalog, seed).at(std::stoi(argv[3]));
+            const int level = std::stoi(argv[3]);
+            d2x::MapRecipe recipe;
+            if (command == "maze")
+                recipe = d2x::generateMaze(catalog, level, seed, argc == 6 ? std::stoi(argv[5]) : 0);
+            else {
+                d2x::WorldSelection selection;
+                selection.level = level;
+                selection.seed = seed;
+                const auto plan = d2x::planWorld(a, catalog, selection);
+                const auto region = std::find_if(plan.regions.begin(), plan.regions.end(),
+                    [&](const auto &entry) { return int(entry.definition.id) == level; });
+                if (region == plan.regions.end()) throw std::runtime_error("Level has no runtime terrain");
+                recipe = region->recipe;
+            }
             std::cout << recipe.ds1 << " rooms=" << recipe.pieces.size() << '\n';
             for (const auto &room : recipe.pieces)
                 std::cout << "  room " << room.x << ',' << room.y << " size=" << room.width << 'x'
@@ -316,8 +326,27 @@ int main(int argc, char **argv) {
             map.load(a, cache, recipe, settings.seed);
             auto plan = d2x::planPopulation(monsters, &level, preset, map, settings);
             d2x::writePopulationReport(std::cout, plan, &level, preset, settings);
-        } else if (command == "maps" && (argc == 3 || argc == 4)) {
+        } else if (command == "maps" && (argc == 3 || argc == 4 || argc == 5)) {
             d2x::WorldCatalog catalog(a);
+            if (argc == 5) {
+                d2x::WorldSelection selection;
+                selection.level = std::stoi(argv[3]);
+                const std::string value = argv[4];
+                auto [end, error] = std::from_chars(value.data(), value.data() + value.size(), selection.seed);
+                if (error != std::errc{} || end != value.data() + value.size())
+                    throw std::runtime_error("Map seed expects uint32");
+                const auto plan = d2x::planWorld(a, catalog, selection);
+                d2x::DataTable stats(a.read("data/global/excel/monstats.txt"));
+                d2x::MonsterCatalog monsters(a, stats);
+                d2x::EntityIds ids;
+                auto regions = d2x::loadRegions(a, ids, plan.regions, monsters, catalog,
+                    selection.seed, selection.seed);
+                d2x::linkLevelExits(regions, catalog);
+                for (const auto &region : regions)
+                    std::cout << "Connected region " << int(region.definition.id)
+                        << " exits=" << region.exits.size() << " objects=" << region.objects.size() << '\n';
+                return 0;
+            }
             d2x::writeWorldReport(std::cout, a, catalog, argc == 4 ? std::stoi(argv[3]) : 0);
         } else if (command == "presets" && (argc == 3 || argc == 4)) {
             d2x::WorldCatalog catalog(a);
@@ -472,26 +501,31 @@ int main(int argc, char **argv) {
             auto b = a.read(argv[3]);
             d2x::writeFile(argv[4], b);
             std::cout << "Extracted " << b.size() << " bytes\n";
-        } else if (command == "preview" && (argc == 5 || argc == 6)) {
+        } else if (command == "preview" && (argc >= 5 && argc <= 8)) {
             auto b = a.read(argv[3]);
             auto anim = d2x::normalize(argv[3]).ends_with(".dcc") ? d2x::decodeDcc(b) : d2x::decodeDc6(b);
             auto pal = d2x::decodePalette(a.read("data/global/palette/act1/pal.dat"));
-            const int first = argc == 6 ? std::stoi(argv[5]) : 0;
+            const int first = argc >= 6 ? std::stoi(argv[5]) : 0;
             if (first < 0 || first >= int(anim.frames.size()))
                 throw std::runtime_error("Preview first frame is out of range");
-            int w = 1, h = 1, count = std::min(16, int(anim.frames.size()) - first);
+            const int columns = argc >= 7 ? std::stoi(argv[6]) : 4;
+            const int requested = argc >= 8 ? std::stoi(argv[7]) : 16;
+            if (columns < 1 || columns > 32 || requested < 1 || requested > 128)
+                throw std::runtime_error("Invalid preview layout");
+            const int gap = argc >= 7 ? 0 : 8;
+            int w = 1, h = 1, count = std::min(requested, int(anim.frames.size()) - first);
             for (int i = 0; i < count; i++) {
                 w = std::max(w, anim.frames[first + i].width);
                 h = std::max(h, anim.frames[first + i].height);
             }
-            Image img = GenImageColor((w + 8) * 4, (h + 8) * ((count + 3) / 4), {32, 32, 32, 255});
+            Image img = GenImageColor((w + gap) * columns, (h + gap) * ((count + columns - 1) / columns), {32, 32, 32, 255});
             for (int i = 0; i < count; i++) {
                 auto &f = anim.frames[first + i];
                 for (int y = 0; y < f.height; y++)
                     for (int x = 0; x < f.width; x++) {
                         auto p = pal[f.pixels[y * f.width + x]];
                         if (p.a)
-                            ImageDrawPixel(&img, (i % 4) * (w + 8) + x, (i / 4) * (h + 8) + y,
+                            ImageDrawPixel(&img, (i % columns) * (w + gap) + x, (i / columns) * (h + gap) + y,
                                            {p.r, p.g, p.b, p.a});
                     }
             }

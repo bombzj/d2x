@@ -135,7 +135,7 @@ class Desert {
           width_(position.width / 8), height_(position.height / 8), occupied_(width_ * height_) {
         recipe_.preset = 368;
         recipe_.levelType = 16;
-        recipe_.act = 1;
+        recipe_.act = catalog.level(position.level).act;
         recipe_.width = position.width;
         recipe_.height = position.height;
         recipe_.baseFloor = 0x40102;
@@ -145,6 +145,14 @@ class Desert {
     }
     MapRecipe build() {
         int level = position_.level;
+        if (level == 134) {
+            if (!place(389, 4, 4))
+                throw std::runtime_error("Original Matron's Den entrance does not fit");
+            borders();
+            for (int preset : {401,402,406,407,403,392,393}) randomPreset(preset);
+            placeAct1OutdoorShrines(archives_, catalog_, catalog_.level(level), occupied_, recipe_, random_);
+            return std::move(recipe_);
+        }
         if (level == 41) {
             bool north = position_.direction == 2;
             if (!place(north ? 363 : 362, north ? 0 : width_ - 1, north ? height_ - 1 : 0))

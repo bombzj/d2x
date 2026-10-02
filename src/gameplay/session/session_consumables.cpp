@@ -3,6 +3,13 @@
 #include <limits>
 
 namespace d2x {
+std::optional<RegionId> GameSession::portalTown(RegionId field) const {
+    const auto level = worldContent_.levels().find(int(field));
+    if (level == worldContent_.levels().end() || level->second.act < 0 || level->second.act >= 5)
+        return std::nullopt;
+    const auto town = RegionId(actTownLevels[size_t(level->second.act)]);
+    return townPortalArrivals_.contains(town) ? std::optional<RegionId>{town} : std::nullopt;
+}
 void GameSession::identifyItem(const IdentifyItem &command) {
     if (auto error = previewInventory(command); error != InventoryError::None) {
         simulation_->emit(InventoryRejected{command.source.id, error});
@@ -34,8 +41,10 @@ void GameSession::useItem(ItemHandle handle) {
     const auto *definition = inventory_.catalog().find(code);
     if (content_.isPortalScroll(code) || content_.isPortalScroll(definition->bookScroll)) {
         auto &portal = simulation_->state_.portal;
+        const auto town = portalTown(region().definition.id);
+        if (!town) return;
         TownPortalState next{true, state().nextPortalRevision + 1, region().definition.id,
-                             state().player.pos, *townPortalArrival_, state().time};
+                     state().player.pos, townPortalArrivals_.at(*town), state().time};
         auto result = definition->bookScroll.empty()
                           ? inventory_.consume(handle, 1, inventoryAccess())
                           : inventory_.consumeBookCharge(handle, inventoryAccess());
@@ -73,8 +82,7 @@ InventoryError GameSession::previewPortalScroll(ItemHandle handle) const {
         player.hp <= 0 || region().definition.safe ||
         player.castTime > 0 || player.meleeTime > 0)
         return InventoryError::AccessDenied;
-    if (!townPortalArrival_ || !portalResources_ || portalReach_ <= 0 ||
-        int(region().definition.id) < 2 || int(region().definition.id) > 39 ||
+    if (!portalTown(region().definition.id) || !portalResources_ || portalReach_ <= 0 ||
         !map().grid.walkable(player.pos))
         return InventoryError::UnsupportedUse;
     if (state().nextPortalRevision == std::numeric_limits<uint64_t>::max())
@@ -85,7 +93,7 @@ std::optional<Vec> GameSession::portalPosition() const {
     const auto &portal = state().portal;
     if (!portal.active)
         return std::nullopt;
-    if (region().definition.id == RegionId::Encampment)
+    if (portalTown(portal.field) == region().definition.id)
         return portal.townPosition;
     if (region().definition.id == portal.field)
         return portal.fieldPosition;
@@ -101,7 +109,7 @@ std::vector<GameSession::PortalView> GameSession::portals(RegionId region) const
     std::vector<PortalView> result;
     auto append = [&](const TownPortalState &portal) {
         if (!portal.active) return;
-        if (region == RegionId::Encampment)
+        if (portalTown(portal.field) == region)
             result.push_back({portal.revision, portal.townPosition, portal.openedAt});
         else if (region == portal.field)
             result.push_back({portal.revision, portal.fieldPosition, portal.openedAt});
@@ -113,7 +121,7 @@ std::vector<GameSession::PortalView> GameSession::portals(RegionId region) const
 void GameSession::beginPortal(uint64_t revision) {
     const auto *portal = findPortal(revision);
     if (!portal || state().player.dead) return;
-    const bool town = region().definition.id == RegionId::Encampment;
+    const bool town = portalTown(portal->field) == region().definition.id;
     if (!town && region().definition.id != portal->field) return;
     const Vec position = town ? portal->townPosition : portal->fieldPosition;
     cancelExit();
@@ -128,7 +136,7 @@ void GameSession::updatePortal() {
     if (!pendingPortal_) return;
     const auto *portal = findPortal(*pendingPortal_);
     const auto &player = state().player;
-    const bool returning = region().definition.id == RegionId::Encampment;
+    const bool returning = portal && portalTown(portal->field) == region().definition.id;
     if (!portal || player.dead || (!returning && region().definition.id != portal->field)) {
         cancelInteraction();
         return;
@@ -136,7 +144,9 @@ void GameSession::updatePortal() {
     if (player.castTime > 0 || player.meleeTime > 0) return;
     const Vec position = returning ? portal->townPosition : portal->fieldPosition;
     if ((player.pos - position).length() <= portalReach_ && map().grid.segment(player.pos, position)) {
-        const auto destination = returning ? portal->field : RegionId::Encampment;
+        const auto town = portalTown(portal->field);
+        if (!town) { cancelInteraction(); return; }
+        const auto destination = returning ? portal->field : *town;
         const Vec arrival = returning ? portal->fieldPosition : portal->townPosition;
         if (returning && portal->consumedOnReturn)
             simulation_->state_.portal.active = false;

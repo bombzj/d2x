@@ -94,6 +94,43 @@ std::map<int, OutdoorPosition> layoutAct2(const WorldCatalog &catalog, uint32_t 
         connect(result.at(id - 1), result.at(id));
     return result;
 }
+std::map<int, OutdoorPosition> layoutAct4(const WorldCatalog &catalog, uint32_t seed) {
+    Seed random(seed);
+    std::map<int, OutdoorPosition> result;
+    for (int id = 103; id <= 106; ++id) {
+        const auto &level = catalog.level(id);
+        result.emplace(id, OutdoorPosition{id, level.offsetX, level.offsetY,
+            level.width, level.height, 0, {}});
+    }
+    const bool opposite = !(random.next() & 1);
+    attach(result.at(103), result.at(104), 3, 0, opposite);
+    result.at(104).y += opposite ? -8 : 8;
+    result.at(104).flags = opposite ? 0x400000 : 0x800000;
+    int attempts = 0;
+    std::function<bool(int)> place = [&](int id) {
+        if (++attempts > 10000) throw std::runtime_error("Act IV outdoor layout exhausted");
+        if (id == 107) return true;
+        const int first = random.next() & 3;
+        for (int candidate = 0; candidate < 4; ++candidate) {
+            attach(result.at(id - 1), result.at(id), (first + candidate) % 4, 1, false);
+            bool valid = true;
+            for (int previous = 103; previous < id - 1; ++previous)
+                if (overlaps(result.at(id), result.at(previous))) valid = false;
+            if (valid && place(id + 1)) return true;
+        }
+        return false;
+    };
+    if (!place(105)) throw std::runtime_error("Cannot place original Act IV outdoor links");
+    for (int id = 104; id <= 106; ++id) connect(result.at(id - 1), result.at(id));
+    auto &townBoundary = result.at(103).boundaries.front();
+    auto &mesaBoundary = result.at(104).boundaries.front();
+    const int row = opposite ? 8 : 32;
+    mesaBoundary.start = row;
+    mesaBoundary.end = row + 24;
+    townBoundary.start = result.at(104).y + row - result.at(103).y;
+    townBoundary.end = townBoundary.start + 24;
+    return result;
+}
 std::map<int, OutdoorPosition> layoutAct1(const WorldCatalog &catalog, uint32_t seed) {
     Seed rng(seed);
     std::map<int, OutdoorPosition> result;

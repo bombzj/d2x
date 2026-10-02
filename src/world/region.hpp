@@ -20,6 +20,7 @@ struct ObjectAnimationRule {
 struct WorldObject {
     EntityId id;
     int act = 0;
+    int palette = -1;
     Vec pos, accessPoint;
     // Stable content identity, independent of runtime allocation order, for future saves.
     std::string contentKey, key, name;
@@ -74,6 +75,7 @@ struct LevelExit {
     std::string name;
     Vec position, accessPoint, arrival;
     WarpRecord selection;
+    EntityId stairObject;
     bool enabled = false;
     // A boundary is crossed by walking; a DS1 warp requires explicit activation.
     std::optional<MapRecipe::Boundary> boundary;

@@ -10,13 +10,12 @@ namespace {
 constexpr std::array<std::string_view, 20> tileNames{
     "fl", "wl", "wr", "wtlr", "wtll", "wtr", "wbl", "wbr", "wld", "wrd",
     "wle", "wre", "co", "sh", "tr", "rf", "ld", "rd", "fd", "fi"};
-std::string automapLevelName(std::string_view name) {
-    if (!name.starts_with("Act ")) return {};
-    auto separator = name.find(" - ");
-    if (separator == std::string_view::npos) return {};
-    return std::string(name.substr(4, separator - 4)) + " " +
-           std::string(name.substr(separator + 3));
-}
+constexpr std::array<std::string_view, 36> levelNames{
+    "None", "1 Town", "1 Wilderness", "1 Cave", "1 Crypt", "1 Monestary", "1 Courtyard",
+    "1 Barracks", "1 Jail", "1 Cathedral", "1 Catacombs", "1 Tristram", "2 Town", "2 Sewer",
+    "2 Harem", "2 Basement", "2 Desert", "2 Tomb", "2 Lair", "2 Arcane", "3 Town", "3 Jungle",
+    "3 Kurast", "3 Spider", "3 Dungeon", "3 Sewer", "4 Town", "4 Mesa", "4 Lava", "5 Town",
+    "5 Siege", "5 Barricade", "5 Temple", "5 Ice", "5 Baal", "5 Lava"};
 } // namespace
 
 AutomapCatalog::AutomapCatalog(Archives &archives) {
@@ -32,10 +31,11 @@ AutomapCatalog::AutomapCatalog(Archives &archives) {
         if (!automap.has(column)) throw std::runtime_error("Automap.txt lacks original cell rules");
     if (!objects.has("Id") || !objects.has("AutoMap"))
         throw std::runtime_error("Objects.txt lacks original automap markers");
-    std::map<int, std::string> levelNames;
+    std::map<int, std::string_view> namesByType;
     for (size_t row = 0; row < types.rows().size(); ++row)
         if (auto id = types.number(row, "Id"))
-            levelNames[*id] = automapLevelName(types.value(row, "Name"));
+            if (*id >= 0 && size_t(*id) < levelNames.size())
+                namesByType[*id] = levelNames[size_t(*id)];
     for (size_t row = 0; row < automap.rows().size(); ++row) {
         if (automap.value(row, "LevelName").empty() || automap.value(row, "TileName").empty())
             continue;
@@ -45,7 +45,7 @@ AutomapCatalog::AutomapCatalog(Archives &archives) {
         rule.last = automap.number(row, "EndSequence").value_or(-1);
         for (int i = 0; i < 4; ++i)
             rule.cels[i] = automap.number(row, "Cel" + std::to_string(i + 1)).value_or(-1);
-        for (const auto &[levelType, levelName] : levelNames)
+        for (const auto &[levelType, levelName] : namesByType)
             if (levelName == automap.value(row, "LevelName"))
                 for (int tileType = 0; tileType < int(tileNames.size()); ++tileType)
                     if (tileNames[tileType] == automap.value(row, "TileName"))
@@ -63,6 +63,9 @@ AutomapCatalog::AutomapCatalog(Archives &archives) {
         auto cel = monsterCels.find(monsters.value(row, "MonStatsEx"));
         if (cel != monsterCels.end())
             npcCels_[std::string(monsters.value(row, "Id"))] = cel->second;
+        else if (monsters.number(row, "interact").value_or(0) &&
+                 !monsters.number(row, "isAtt").value_or(0))
+            npcCels_[std::string(monsters.value(row, "Id"))] = 317;
     }
 }
 

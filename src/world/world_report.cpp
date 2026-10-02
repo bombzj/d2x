@@ -2,6 +2,7 @@
 #include "cow_level.hpp"
 #include "maze.hpp"
 #include "world/outdoor/outdoor.hpp"
+#include "region.hpp"
 #include "core/random_seed.hpp"
 #include <set>
 
@@ -11,32 +12,25 @@ void writeWorldReport(std::ostream &out, Archives &archives, const WorldCatalog 
     out << "World report seed=" << seed << '\n';
     std::set<std::string> allMissing;
     int count = 0, ready = 0;
-    auto outdoor = outdoorMissing(archives, catalog).empty()
-                       ? generateAct1Outdoors(archives, catalog, seed)
-                       : std::map<int, MapRecipe>{};
-    auto deserts = generateAct2Outdoors(archives, catalog, seed);
-    outdoor.insert(deserts.begin(), deserts.end());
+    WorldSelection selection;
+    selection.seed = seed;
+    const auto plan = planWorld(archives, catalog, selection);
     for (const auto &[id, level] : catalog.levels()) {
         if (selected && id != selected)
             continue;
         ++count;
-        auto available = catalog.availability(archives, id, id == 40 ? 1 : 0);
-        if (outdoor.contains(id)) {
-            available.recipe = outdoor.at(id);
-            available.missing.clear();
-            available.reason.clear();
-        }
-        if (supportsMaze(id)) {
-            available.recipe = generateMaze(catalog, id, seed, 0);
-            available.missing = mazeMissing(archives, catalog, id);
-            available.reason.clear();
-        }
-        if (id == 39) {
-            available.missing = cowLevelMissing(archives, catalog);
-            available.reason.clear();
-            if (available.missing.empty())
-                available.recipe = generateCowLevel(archives, catalog, seed);
-        }
+        LevelAvailability available;
+        const auto entry = std::find_if(plan.entries.begin(), plan.entries.end(),
+            [&](const auto &value) { return value.level == id; });
+        const auto region = std::find_if(plan.regions.begin(), plan.regions.end(),
+            [&](const auto &value) { return int(value.definition.id) == id; });
+        if (region != plan.regions.end()) {
+            available.recipe = region->recipe;
+            available.missing = catalog.missing(archives, region->recipe);
+        } else if (entry != plan.entries.end()) {
+            available.reason = entry->status;
+            available.missing = entry->missing;
+        } else available.reason = "No runtime world entry";
         ready += available.ready();
         const char *kind = level.generation == GenerationKind::Preset ? "preset"
                            : level.generation == GenerationKind::Maze ? "maze"
@@ -45,7 +39,7 @@ void writeWorldReport(std::ostream &out, Archives &archives, const WorldCatalog 
             << " size=" << level.width << 'x' << level.height << " | "
             << (available.ready()          ? (id == 39               ? "GENERATED COW TERRAIN / QUEST PORTAL PENDING"
                                               : supportsMaze(id)     ? "GENERATED MAZE READY"
-                                              : outdoor.contains(id) ? "CONNECTED OUTDOOR READY"
+                                              : level.generation == GenerationKind::Outdoor ? "GENERATED OUTDOOR TERRAIN READY"
                                                                      : "PRESET TERRAIN READY")
                 : available.reason.empty() ? "MISSING RESOURCES"
                                            : available.reason)
@@ -86,7 +80,7 @@ void writeWorldReport(std::ostream &out, Archives &archives, const WorldCatalog 
         }
     }
     if (!count)
-        throw std::runtime_error("Unknown Act I level");
+        throw std::runtime_error("Unknown level");
     out << "\n"
         << ready << '/' << count << " levels have supported terrain and its DS1/DT1 files (variant 0).\n"
         << "Levels 1..37 form the implemented Act I exploration route when all resources are present.\n"

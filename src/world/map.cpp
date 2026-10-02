@@ -101,6 +101,13 @@ void Map::load(Archives &a, TileLibraryCache &cache, const MapRecipe &recipe, ui
         if (tileChoices.contains(key)) return;
         const auto &scope = scopedLookup.at(cell.libraryScope);
         auto found = scope.find(cell.key());
+        if ((found == scope.end() || found->second.empty()) && cell.hidden()) {
+            const auto fallback = scope.find(10u);
+            if (fallback != scope.end() && !fallback->second.empty()) {
+                tileChoices.emplace(key, fallback->second.front());
+                return;
+            }
+        }
         if (found == scope.end() || found->second.empty()) return;
         uint64_t total = 0;
         for (int index : found->second) total += std::max(0, tiles[index]->rarity);

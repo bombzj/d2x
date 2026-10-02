@@ -17,6 +17,7 @@ struct LevelPopulation {
 };
 struct LevelRecord {
     int id = 0, act = 0, levelType = 0;
+    int palette = 0;
     bool isInside = false, losDraw = false;
     bool town = false;
     int lightIntensity = 0, lightRed = 0, lightGreen = 0, lightBlue = 0;
@@ -34,6 +35,7 @@ struct PresetRecord {
     std::string name;
     uint32_t dt1Mask = 0;
     bool fillBlanks = false, killEdge = false, populate = false;
+    bool automap = false;
     std::array<std::string, 6> variants;
 };
 struct MazeRecord {

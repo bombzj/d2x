@@ -1,5 +1,7 @@
 # 自动地图
 
+五幕地形批次修订（2026-10-02）：按D2MOO原LevelType名称表匹配Automap.LevelName，修正第五幕冰洞名称不一致；专用城镇图沿LvlPrest.AutoMap条件载入act2map(s)／act4map(s)／extnmap(s)，鲁高因按LutW／LutN变体选择原图组，不自画建筑轮廓。鲁高因每组5×4行优先拼接有点阵接缝统计支持，关卡中心锚点和精确缩放仍未认证。中立可交互NPC优先用MonStats2.automapCel，缺失时适配原蓝十字317，原资源帧不等于身份映射已核实。Release普通seed210鲁高因截图已显示建筑轮廓，实例退出0、stderr空，产物在artifacts/maps-priority-smoke-20261002/act2-automap.png。精确城镇对齐、NPC宽十字外观及人物标记列入地图暂缓难点，不宣称全面复刻完成。
+
 原先的角落地图从碰撞格采样单个边缘像素，显示范围、线条与标记均不是原版资源。本轮改为在运行时从原 MPQ 读取 `LvlTypes.txt`、`Automap.txt`、`Objects.txt`，按区域类型和 DS1 格子的方向、style、sequence 选择原自动地图 cel，不再要求该格先匹配到 DT1 图形瓦片；大图和角落图分别绘制 `maximap.dc6` 与 `maximaps.dc6`。边缘可见性按解码后 cel 的实际纹理范围裁剪，不再使用固定的 32 像素容差。普通怪物不再作为红点暴露在地图上，原表具有 `AutoMap` cel 的物件才绘制标记。
 
 `src/content/world/automap_data.*` 负责类型化原表规则；`src/presentation/world/automap_assets.cpp` 为每张地图准备图块且只上传实际使用的帧；`src/presentation/world/automap_view.cpp` 管理已探索房间与透明叠加绘制。当前大小图对 DC6 帧额外按宽高修正偏移并对齐整数像素，这不是已核实的原客户端基点规则；方向 3 墙角补方向 4，同格相同 cel 去重。探索复用 `RoomLayout`，包括固定场景的房间回退及共享边缘。沿无缝边界连接的已探索区域按 `worldX/worldY` 绘制，出城不再丢弃营地图块；洞口、楼梯和传送门不连接地图层。探索只在当前游戏视图中维持，读档重置，不改变存档格式。用户已指出当前绘制与原游戏有较大差别；读取原 DC6 不等于绘制复刻完成，基点、缩放、小图视口及人物标记仍待核对。本轮按用户授权改用常规alpha混合实现近似Fade，移除原加法混合及大小图固定alpha225／245，不宣称原客户端调色板混合等价。
@@ -18,7 +20,7 @@ Fade实测（用户，2026-10-02）：小图有No／Everything／Auto；No较亮
 
 验证范围：此前Release包普通Sorceress／seed210隔离实例验证Options→Automap Options入口、四项开关状态、菜单暂停及配置落盘；管道采用悬停加Enter，没有鼠标松键注入，真实点击未覆盖。该旧实例的Fade仍未实现，不能作为本轮绘制验证。实例退出0，无角色存档读写或新增测试程序，产物在artifacts/automap-options-smoke-20261002。本轮近似Fade、快捷键删除及兵营方向修复已通过Windows Release链接和静态诊断；不继续游戏冒烟，实际绘制／模式切换／配置重启读取及用户存档加载待验收。按本轮要求更新运行包并提交相关源码与文档，不包含MPQ、存档或产物。
 
-NPC 与 Stash 名称受名称开关控制；NPC 通过 `MonStats.MonStatsEx` 查询 `MonStats2.automapCel`，不再用 MonStats 编号查询 Objects。当前 MPQ 城镇 NPC 没有非零 automapCel，Objects 的 Portal 59／60 的 AutoMap 也为 0。D2MOO `D2C_AutomapCells` 已确认红十字 221／蓝十字 317，但没有身份到帧号的客户端映射。人物暂留旧自画十字、城镇 NPC 专属符号及动态传送门标记仍未复刻；旧实现不是验收标准，后续须以原版证据替换。
+NPC 与 Stash 名称受名称开关控制；NPC 通过 `MonStats.MonStatsEx` 查询 `MonStats2.automapCel`，不再用 MonStats 编号查询 Objects。当前 MPQ 城镇 NPC 没有非零automapCel，交互中立NPC现采用原317适配；Objects的Portal59／60 AutoMap仍为0。D2MOO `D2C_AutomapCells` 已确认红十字221／蓝十字317，但身份到帧号的完整客户端映射尚未取得。人物暂留旧自画十字，城镇NPC精确宽十字及动态传送门标记仍待对照；旧实现不是验收标准。
 
 依据包括 D2MOO `LevelsTbls.cpp` 的 Automap 表匹配及 `D2Constants.h`，OpenDiablo2 的 `monster_stats2_record.go`、`game_event.go` 和 `key_map.go`。补充核对 D2BS `f4b99bbe8de6916384991dfdd198ecf234cef1c0` 的 `D2Helpers.cpp::ScreenToAutomap` 等轴坐标公式；未移植其代码。原引擎 cel 变体使用共享随机流，当前按瓦片坐标稳定选择；精确基点、叠加透明度与标记仍待原版对照。
 

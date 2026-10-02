@@ -5,7 +5,39 @@
 
 namespace d2x {
 void SceneAssets::loadAutomap(const GameSession &session) {
-    std::set<int> used;
+    std::set<int> used{317};
+    regionTownAutomap.resize(session.regions().size());
+    for (size_t regionIndex = 0; regionIndex < session.regions().size(); ++regionIndex) {
+        const auto &region = session.regions()[regionIndex];
+        const auto preset = session.worldContent().presets().find(region.recipe.preset);
+        if (preset == session.worldContent().presets().end() || !preset->second.automap) continue;
+        const int level = int(region.definition.id);
+        const char *name = level == 40 ? "act2map" : level == 103 ? "act4map"
+                         : level == 109 ? "extnmap" : nullptr;
+        if (!name) continue;
+        const int columns = level == 40 ? 5 : level == 103 ? 2 : 3;
+        const int rows = level == 40 ? 4 : 2;
+        const int count = columns * rows;
+        const int group = level == 40 ? region.recipe.variant - 1 : 0;
+        if (group < 0 || group > (level == 40 ? 1 : 0))
+            throw std::runtime_error("Unsupported original town automap variant");
+        for (int size = 0; size < 2; ++size) {
+            const auto path = std::string("data/global/ui/automap/") + name + (size ? "" : "s") + ".dc6";
+            const auto *art = graphics_.animation(path);
+            if (!art || int(art->frames.size()) != count * (level == 40 ? 2 : 1))
+                throw std::runtime_error("Original town automap frames disagree with layout: " + path);
+            const int width = art->frames[size_t(group * count)].width;
+            const int height = art->frames[size_t(group * count)].height;
+            for (int index = 0; index < count; ++index) {
+                auto frame = art->frames[size_t(group * count + index)];
+                if (frame.width != width || frame.height != height)
+                    throw std::runtime_error("Inconsistent original town automap frame dimensions");
+                frame.x += (index % columns) * width - columns * width / 2;
+                frame.y += (index / columns) * height - rows * height / 2;
+                regionTownAutomap[regionIndex][size].push_back(graphics_.upload(frame));
+            }
+        }
+    }
     for (const auto &region : session.regions()) {
         const auto &map = region.map;
         auto &stamps = regionAutomap.emplace_back();
@@ -55,7 +87,7 @@ void SceneAssets::loadAutomap(const GameSession &session) {
             if (cel < int(art->frames.size())) {
                 auto frame = art->frames[cel];
                 frame.x -= frame.width / 2;
-                frame.y -= frame.height - frame.width / 4;
+                frame.y -= cel == 317 ? frame.height / 2 : frame.height - frame.width / 4;
                 automapCels[size].emplace(cel, graphics_.upload(frame));
             }
     }

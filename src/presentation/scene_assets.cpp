@@ -127,7 +127,9 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
     regionTilesUploaded.assign(session.regions().size(), false);
     for (const auto &region : session.regions()) {
         regionTileSources.push_back(region.map.tiles);
-        regionActs_.push_back(region.map.data.act);
+        const auto level = session.worldContent().levels().find(int(region.definition.id));
+        regionPalettes_.push_back(level == session.worldContent().levels().end()
+            ? region.map.data.act : level->second.palette);
     }
     indexPropArt(session);
     loadAutomap(session);
@@ -666,7 +668,7 @@ const std::vector<Sprite> &SceneAssets::regionTileSprites(size_t index) const {
         regionTiles[index].clear();
         regionTiles[index].reserve(regionTileSources.at(index).size());
         for (const auto *tile : regionTileSources.at(index))
-            regionTiles[index].push_back(graphicsForAct(regionActs_.at(index)).upload(tile->image));
+            regionTiles[index].push_back(graphicsForAct(regionPalettes_.at(index)).upload(tile->image));
         regionTilesUploaded[index] = true;
     }
     return regionTiles[index];
@@ -693,7 +695,7 @@ void SceneAssets::ensurePropArt(const WorldObject &object) const {
     }
 }
 void SceneAssets::loadPropObject(const WorldObject &object) const {
-    auto &graphics = graphicsForAct(object.act);
+    auto &graphics = graphicsForAct(object.palette < 0 ? object.act : object.palette);
     const auto &appearance = object.appearance;
     std::array<const char *, 16> equipment;
     for (size_t i = 0; i < equipment.size(); ++i)
@@ -721,7 +723,7 @@ void SceneAssets::loadPropObject(const WorldObject &object) const {
         waypointAnimations.emplace(object.key, std::move(animations));
         return;
     }
-    if (object.interaction == Interaction::Door || object.interaction == Interaction::Loot || object.interaction == Interaction::Shrine ||
+    if (object.interaction == Interaction::Door || object.interaction == Interaction::Stair || object.interaction == Interaction::Loot || object.interaction == Interaction::Shrine ||
         object.interaction == Interaction::Well || object.interaction == Interaction::QuestTree ||
         object.interaction == Interaction::QuestStone ||
         object.interaction == Interaction::QuestGibbet ||
@@ -776,7 +778,10 @@ void SceneAssets::collectMapVariants(Archives &archives, const WorldCatalog &cat
     // Include every generated-room object appearance, not only this seed's selection.
     for (int id : mazePresets())
         for (int variant = 0; variant < mazePresetVariants(catalog, id); ++variant) {
+            if (catalog.presets().at(id).variants[size_t(variant)].empty()) continue;
             auto recipe = catalog.preset(id, mazePresetType(id), variant);
+            const int type = recipe.levelType;
+            recipe.act = type >= 29 ? 4 : type >= 26 ? 3 : type >= 20 ? 2 : type >= 12 ? 1 : 0;
             RegionDefinition definition;
             definition.id = RegionId(10000 + id);
             definition.mapPath = recipe.ds1;

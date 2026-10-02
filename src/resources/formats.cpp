@@ -221,7 +221,7 @@ MapData decodeDs1(const Bytes &b) {
     if (m.version >= 9 && m.version <= 13)
         r.skip(8);
     int walls = r.u32(), floors = m.version >= 16 ? r.u32() : 1;
-    if (walls < 0 || walls > 4 || floors < 1 || floors > 2)
+    if (walls < 0 || walls > 4 || floors < 0 || floors > 2 || (!walls && !floors))
         throw std::runtime_error("Invalid DS1 layers");
     auto n = size_t(m.width) * m.height;
     static constexpr int dirs[] = {0, 1, 2,  1,  2,  3,  3,  5,  5,  6,  6,  7, 7,

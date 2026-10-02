@@ -57,6 +57,7 @@ void appearanceKey(WorldObject &object) {
     for (const auto &part : a.equipment)
         object.key += ":" + part;
     object.key += ":act:" + std::to_string(object.act);
+    object.key += ":pal:" + std::to_string(object.palette < 0 ? object.act : object.palette);
 }
 int objectMode(std::string_view mode) {
     if (mode == "nu") return 0;
@@ -114,6 +115,7 @@ void classify(WorldObject &object, const Table &objectRows) {
             object.operateFn = operation.empty() ? 0 : std::stoi(operation);
             if (door && object.operateFn == 8) object.interaction = Interaction::Door;
             if (object.operateFn == 27) object.interaction = Interaction::TeleportPad;
+            if (object.operateFn == 47 || object.operateFn == 50) object.interaction = Interaction::Stair;
             object.objectDamage = record->at("Damage").empty() ? 0 : std::stoi(record->at("Damage"));
             for (size_t index = 0; index < object.parameters.size(); ++index) {
                 const auto &value = record->at("Parm" + std::to_string(index));
@@ -195,6 +197,8 @@ int WorldObject::modeAt(float time) const {
         // ChestEnd schedules ENDANIM at FrameCnt1 + 1 ticks (25 Hz).
         return operating.enabled && time - operatedAt < float(operating.frames + 1) / 25.f ? 1 : 2;
     }
+    if (operateFn == 47)
+        return std::max(0.f, time - operatedAt) < float(operating.frames + 1) / 25.f ? 1 : 2;
     const float duration = operating.fps > 0 ? operating.frames / operating.fps : 0;
     return std::max(0.f, time - operatedAt) < duration ? 1 : 2;
 }
@@ -265,6 +269,8 @@ std::vector<Region> loadRegions(Archives &archives, EntityIds &ids, const std::v
             }
             WorldObject object;
             object.act = region.map.data.act;
+            const auto level = catalog.levels().find(int(region.definition.id));
+            object.palette = level == catalog.levels().end() ? object.act : level->second.palette;
             object.id = ids.allocate();
             object.contentKey = "ds1." + std::to_string(index);
             // UNITS_InitializeStaticPath uses integer coordinates; dynamic NPC

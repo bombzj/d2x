@@ -32,7 +32,7 @@ WorldCatalog::WorldCatalog(Archives &archives) {
         DataTable table(archives.read(std::string("data/global/excel/") + name + ".txt"));
         const std::map<std::string_view, std::vector<std::string_view>> required = {
             {"levels",
-             {"Id", "Act", "DrlgType", "LevelType", "SizeX", "SizeY", "LevelName", "Vis0", "Warp0",
+             {"Id", "Act", "Pal", "DrlgType", "LevelType", "SizeX", "SizeY", "LevelName", "Vis0", "Warp0",
               "IsInside", "LOSDraw", "Intensity", "Red", "Green", "Blue"}},
             {"lvlprest", {"Def", "LevelId", "File1", "File6", "Dt1Mask", "FillBlanks"}},
             {"lvltypes", {"Id", "File 1", "File 32"}},
@@ -60,6 +60,9 @@ WorldCatalog::WorldCatalog(Archives &archives) {
                 LevelRecord record;
                 record.id = number("Id");
                 record.act = number("Act");
+                record.palette = number("Pal");
+                if (record.palette < 0 || record.palette > 4)
+                    throw std::runtime_error("Unsupported MPQ level palette: " + std::to_string(record.id));
                 record.town = std::find(actTownLevels.begin(), actTownLevels.end(), record.id) != actTownLevels.end();
                 record.levelType = number("LevelType");
                 record.isInside = number("IsInside") != 0;
@@ -132,6 +135,7 @@ WorldCatalog::WorldCatalog(Archives &archives) {
                 record.fillBlanks = number("FillBlanks") != 0;
                 record.killEdge = number("KillEdge") != 0;
                 record.populate = number("Populate") != 0;
+                record.automap = number("AutoMap") != 0;
                 record.dt1Mask = mask(table, row);
                 for (int i = 0; i < 6; ++i)
                     record.variants[i] = member(table.value(row, "File" + std::to_string(i + 1)));
@@ -247,11 +251,17 @@ std::vector<std::string> WorldCatalog::terrainLibraries(int levelType, uint32_t 
 }
 std::vector<std::string> WorldCatalog::missing(Archives &archives, const MapRecipe &recipe) const {
     std::vector<std::string> result;
-    for (const auto &file : recipe.tileLibraries)
-        if (!archives.contains(file))
+    auto check = [&](const std::string &file) {
+        if (!archives.contains(file) && std::find(result.begin(), result.end(), file) == result.end())
             result.push_back(file);
-    if (!archives.contains(recipe.ds1))
-        result.push_back(recipe.ds1);
+    };
+    for (const auto &file : recipe.tileLibraries) check(file);
+    if (recipe.pieces.empty()) check(recipe.ds1);
+    else
+        for (const auto &piece : recipe.pieces) {
+            check(piece.ds1);
+            for (const auto &file : piece.tileLibraries) check(file);
+        }
     return result;
 }
 LevelAvailability WorldCatalog::availability(Archives &archives, int levelId, int variant) const {

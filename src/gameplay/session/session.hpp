@@ -89,6 +89,8 @@ class GameSession {
     std::optional<uint64_t> pendingPortal_;
     bool pendingCainPortal_ = false;
     std::optional<Vec> townPortalArrival_;
+    std::map<RegionId, Vec> townPortalArrivals_;
+    std::optional<RegionId> portalTown(RegionId field) const;
     float portalReach_ = 0;
     float cainPortalReach_ = 0;
     bool portalResources_ = false;

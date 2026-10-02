@@ -1,6 +1,7 @@
 #include "region.hpp"
 #include <algorithm>
 #include <iostream>
+#include <limits>
 #include <set>
 
 namespace d2x {
@@ -59,6 +60,39 @@ void linkLevelExits(std::vector<Region> &regions, const WorldCatalog &catalog) {
                     exit.arrival = region.map.grid.nearest(exit.position +
                                                            Vec{float(record->exitX), float(record->exitY)}, playerMovement);
                     exit.accessPoint = exit.arrival;
+                    const auto *warpRoom = region.map.activation.room(exit.position);
+                    const WorldObject *stair = nullptr;
+                    for (const auto &object : region.objects)
+                        if (object.interaction == Interaction::Stair &&
+                            region.map.activation.room(object.pos) == warpRoom &&
+                            (!stair || (object.pos - exit.position).length() < (stair->pos - exit.position).length()))
+                            stair = &object;
+                    if (stair) {
+                        exit.stairObject = stair->id;
+                        const auto connected = region.map.grid.reachableFrom(region.map.spawn, playerMovement);
+                        float bestDistance = std::numeric_limits<float>::infinity();
+                        std::optional<Vec> approach;
+                        const int radius = std::max(stair->collisionWidth, stair->collisionHeight) / 2 + 3;
+                        for (int row = int(stair->pos.y) - radius; row <= int(stair->pos.y) + radius; ++row)
+                            for (int column = int(stair->pos.x) - radius; column <= int(stair->pos.x) + radius; ++column) {
+                                if (!region.map.grid.walkable(column, row, playerMovement)) continue;
+                                if (!connected[size_t(row) * region.map.grid.width + column]) continue;
+                                const Vec point{column + .5f, row + .5f};
+                                const float distance = (point - exit.arrival).length();
+                                if (distance >= bestDistance || !region.map.grid.interactionSegment(point,
+                                    stair->pos, stair->collisionWidth, stair->id)) continue;
+                                approach = point;
+                                bestDistance = distance;
+                            }
+                        if (!approach) {
+                            throw std::runtime_error("No reachable original stair approach: " + region.map.path +
+                            " slot=" + std::to_string(slot) + " destination=" + std::to_string(int(exit.destination)) +
+                            " object=" + std::to_string(stair->objectClass) +
+                            " stair=" + std::to_string(stair->pos.x) + "," + std::to_string(stair->pos.y) +
+                            " warp=" + std::to_string(exit.position.x) + "," + std::to_string(exit.position.y));
+                        }
+                        exit.accessPoint = exit.arrival = *approach;
+                    }
                     region.exits.push_back(exit);
                     seen.insert(slot);
                 }
@@ -157,9 +191,24 @@ void linkLevelExits(std::vector<Region> &regions, const WorldCatalog &catalog) {
             int(region.definition.id) == 27 || int(region.definition.id) == 32 ||
             int(region.definition.id) == 33) {
             for (const auto &exit : region.exits)
-                if (exit.enabled && region.map.grid.path(region.map.spawn, exit.arrival, false, playerMovement).empty())
+                if (exit.enabled && region.map.grid.path(region.map.spawn, exit.arrival, false, playerMovement).empty()) {
+                    std::cerr << "Disconnected warp position=" << exit.position.x << ',' << exit.position.y
+                        << " arrival=" << exit.arrival.x << ',' << exit.arrival.y
+                        << " spawn=" << region.map.spawn.x << ',' << region.map.spawn.y << '\n';
+                    const auto connected = region.map.grid.reachableFrom(region.map.spawn, playerMovement);
+                    for (int row = int(exit.position.y) - 8; row <= int(exit.position.y) + 12; ++row) {
+                        for (int column = int(exit.position.x) - 8; column <= int(exit.position.x) + 12; ++column)
+                            std::cerr << (region.map.grid.walkable(column, row, playerMovement)
+                                ? connected[size_t(row) * region.map.grid.width + column] ? '.' : 'o' : '#');
+                        std::cerr << '\n';
+                    }
+                    for (const auto &object : region.objects)
+                        if ((object.pos - exit.position).length() < 20)
+                            std::cerr << "  nearby object=" << object.objectClass << " at=" << object.pos.x
+                                << ',' << object.pos.y << " collision=" << object.collisionMask << '\n';
                     throw std::runtime_error("Disconnected original level exit: " + region.map.path +
                                              " slot=" + std::to_string(exit.slot));
+                }
         }
     }
 }

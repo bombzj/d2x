@@ -169,6 +169,14 @@ void GameSession::beginExit(int slot) {
         simulation_->emit(InteractionFailed{{}, "This destination is not implemented yet."});
         return;
     }
+    if (exit->stairObject) {
+        const auto *stair = object(exit->stairObject);
+        if (!stair) return;
+        if (stair->modeAt(state().time) != 2) {
+            interact(stair->id);
+            return;
+        }
+    }
     if (exit->boundary) {
         if (!beginBoundaryExit(*exit, std::nullopt))
             simulation_->emit(InteractionFailed{{}, "No reachable passage to this area."});

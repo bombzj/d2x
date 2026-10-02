@@ -185,7 +185,7 @@ void SceneView::drawLighting() const {
             : std::max(0.f, view_.animationTime - view_.cainPortalAnimationStarted);
         appendObject(60, elapsed < opening.frames / opening.fps ? 1 : 2, staticUnitPosition(*position));
     }
-    lighting_.draw(level.act == 0 ? paletteBlend_ : *actPaletteBlends_.at(size_t(level.act)), level, player, screen(player), view_.zoom,
+    lighting_.draw(level.palette == 0 ? paletteBlend_ : *actPaletteBlends_.at(size_t(level.palette)), level, player, screen(player), view_.zoom,
                    session_.characterStats().lightRadius, lights);
 }
 std::string playerAnimationMode(const PlayerState &p) {

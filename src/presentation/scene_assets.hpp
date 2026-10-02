@@ -106,7 +106,7 @@ class SceneAssets {
     // so a session no longer pays for every level in the act up front.
     mutable std::vector<std::vector<Sprite>> regionTiles;
     std::vector<std::vector<const Tile *>> regionTileSources;
-    std::vector<int> regionActs_;
+    std::vector<int> regionPalettes_;
     mutable std::vector<bool> regionTilesUploaded;
     std::set<std::string, std::less<>> propArtKeys;
     mutable bool propArtReported = false;
@@ -115,6 +115,7 @@ class SceneAssets {
     std::vector<std::vector<AutomapStamp>> regionAutomap;
     // 0: original maximaps.dc6, 1: original maximap.dc6.
     std::array<std::map<int, Sprite>, 2> automapCels;
+    std::vector<std::array<std::vector<Sprite>, 2>> regionTownAutomap;
     // Filled on first sighting; mutable so the const draw path can populate them.
     mutable std::map<std::string, GpuAnimation> propAnimations, npcWalkAnimations, hero;
     std::map<std::string, GpuAnimation> hirelingAnimations;

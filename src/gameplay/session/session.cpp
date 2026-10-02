@@ -569,7 +569,7 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
             }
     linkLevelExits(regions_, worldContent_);
     for (const auto &region : regions_)
-        if (region.definition.id == RegionId::Encampment)
+        if (region.definition.safe)
             for (const auto &layer : region.map.data.walls)
                 for (size_t index = 0; index < layer.size(); ++index) {
                     const auto &cell = layer[index];
@@ -578,8 +578,11 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
                         Vec point{float(index % region.map.data.width * 5 + 3),
                                   float(index / region.map.data.width * 5 + 3)};
                         auto arrival = region.map.grid.nearest(point);
-                        if (region.map.grid.walkable(arrival) && (arrival - point).length() <= 5)
-                            townPortalArrival_ = arrival;
+                        if (region.map.grid.walkable(arrival) && (arrival - point).length() <= 5) {
+                            townPortalArrivals_[region.definition.id] = arrival;
+                            if (region.definition.id == RegionId::Encampment)
+                                townPortalArrival_ = arrival;
+                        }
                     }
                 }
     DataTable portalObjects(archives.read("data/global/excel/objects.txt"));

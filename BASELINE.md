@@ -2,6 +2,8 @@
 
 更新：2026-10-02。供维护者和协作 agent 从当前代码继续工作。
 
+五幕地形补齐交付（2026-10-02）：按用户最新要求优先补齐原MPQ关卡地形，任务门／专用传送门及自动地图精确表现等难点记录到[地图暂缓难点](docs/ACT1_MAPS.md#暂缓难点)，不以无条件入口或自造地图替代。后三幕迷宫／野外及133–134事件地形接入；实际世界计划报告退出0、136/136地形入口、0个缺失引用文件，不等于全功能完成。seed210／211普通完整世界出口与路径诊断通过。Release临时普通Sorceress／seed210完整启动、14个代表性关卡切换截图通过，真实UI上行楼梯51→50成功，实例退出0、stderr空；未穷举皇宫各层双楼梯或读写用户存档。自动地图补原城镇图、原LevelType绑定及NPC原cel适配，鲁高因截图已出现建筑，精确锚点／符号映射待对照。地形／静态物件PAL及照明PL2改取Levels.Pal，与Act身份分离，修正134误用第五幕配色；最终134／41／135／136普通两帧启动全部退出0、stderr空。验证产物在artifacts/maps-priority-smoke-20261002，不新增测试程序。本批按授权统一更新dist/current并提交源码／文档，包含用户AGENTS.md修改，不提交资源、存档或产物；D2S v96不变。
+
 自动地图选项交付（2026-10-02，近似Fade）：原MPQ菜单与OpenDiablo2层级／返回／Esc规则接入，大小、居中、名称和队伍偏好保存客户端JSON，不改D2S。用户确认Center When Cleared为Yes重开居中、No保留偏移；方向键只平移内容，不移动屏幕显示区域；V左右切换和Home保留，无依据Shift+Tab尺寸快捷及调试入口删除。OpenDiablo2只有Fade菜单占位／事件说明，没有可复用绘制；D2MOO没有D2Client。按用户最新授权近似实现小图No／Everything／Auto、大图额外Center：常规alpha替代加法混合，No255、Everything／Auto128，NPC／人物不淡化，Auto不随移动变化；Center为显示区域中央半宽半高矩形，区内128区外255，按像素矩形切分边界，小图不提供Center。使用原no／everything／auto／center图块，automapFade字符串写配置，诊断fadeSupported=true／fadeApproximate=true。透明强度、Center范围、模式切换回退以及现有基点／缩放／人物标记仍非原客户端精确认证。Show Party无其他玩家消费者，声音／视频／键位页仍未实现。旧普通冒烟仅覆盖入口、四开关、暂停和配置落盘；本轮Release链接及静态诊断通过，按要求打包并提交源码／文档，不新增测试程序、不继续运行游戏，现有存档及原MPQ不改。详见[自动地图](docs/AUTOMAP.md)。
 
 读档地图生成修复（2026-10-02，用户读档待验收）：通用预设随机选择外侧回廊27的变体后，兵营28仍默认方向0，触发“Barracks entrance does not match the outer cloister”启动拒绝。planWorld现将实际回廊recipe.variant传给兵营generateMaze的entranceDirection，保留一致性校验，不改变地图种子或D2S格式，也不改现有存档。随自动地图批次通过Release链接和静态诊断并纳入交付；尚未实际加载用户存档，不把编译通过当作读档认证。

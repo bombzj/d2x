@@ -186,10 +186,11 @@ bool GameSession::applySpecialShrine(const ShrineDefinition &shrine, Vec positio
     return false;
 }
 bool GameSession::openShrinePortal() {
-    if (!portalResources_ || !townPortalArrival_ || portalReach_ <= 0 || region().definition.safe ||
+    const auto townId = portalTown(region().definition.id);
+    if (!portalResources_ || !townId || portalReach_ <= 0 || region().definition.safe ||
         state().nextPortalRevision == std::numeric_limits<uint64_t>::max()) return false;
-    const auto town = std::find_if(regions_.begin(), regions_.end(), [](const Region &entry) {
-        return entry.definition.id == RegionId::Encampment;
+    const auto town = std::find_if(regions_.begin(), regions_.end(), [&](const Region &entry) {
+        return entry.definition.id == *townId;
     });
     if (town == regions_.end()) return false;
     // Search the existing collision field at each endpoint. Public portals have
@@ -215,7 +216,7 @@ bool GameSession::openShrinePortal() {
     };
     const Vec desired = state().player.pos + Vec{5, 5};
     const Vec fieldOrigin = map().grid.walkable(desired) ? desired : state().player.pos;
-    auto field = freePosition(region(), fieldOrigin), arrival = freePosition(*town, *townPortalArrival_);
+    auto field = freePosition(region(), fieldOrigin), arrival = freePosition(*town, townPortalArrivals_.at(*townId));
     if (!field || !arrival) return false;
     simulation_->state_.publicPortals.push_back({true, ++simulation_->state_.nextPortalRevision,
         region().definition.id, *field, *arrival, state().time, false});

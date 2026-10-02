@@ -125,6 +125,9 @@ void SceneView::drawMinimap(bool large) const {
         const auto &map = region.map;
         const auto seen = exploredAutomap_.find(region.definition.id);
         if (seen == exploredAutomap_.end()) continue;
+        for (const auto &image : assets_.regionTownAutomap[size_t(index)][large ? 1 : 0])
+            mapSprite(image, onMap(Vec{(map.data.width - 1) * 2.5f,
+                (map.data.height - 1) * 2.5f} + offset));
         for (const auto &stamp : assets_.regionAutomap[index]) {
             if (!seen->second[size_t(stamp.y) * map.data.width + stamp.x]) continue;
             auto cell = art.find(stamp.cel);

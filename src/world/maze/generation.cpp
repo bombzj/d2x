@@ -90,27 +90,77 @@ MapRecipe RoomMaze::build(int level, uint32_t seed, int difficulty, int entrance
     if (count < 1 || count > 256)
         throw std::runtime_error("Invalid LvlMaze room count");
     rooms_.emplace_back(seed_.next());
+    if (catalog_.level(level).levelType == 35) {
+        struct LavaBranch { int preset, direction, variant; };
+        constexpr LavaBranch branches[]{
+            {1054, 1, 0}, {1053, 3, 1}, {1054, 1, 1}, {1053, 3, 0},
+            {1055, 0, 1}, {1056, 2, 0}, {1055, 0, 0}, {1056, 2, 1}};
+        const int selected = 2 * (rooms_[0].seed.next() & 3);
+        for (int index = selected; index < selected + 2; ++index) {
+            const auto &branch = branches[index];
+            const int added = add(0, branch.direction, false);
+            if (added < 0) throw std::runtime_error("Original lava branch overlaps");
+            rooms_[added].preset = branch.preset;
+            rooms_[added].variant = branch.variant;
+            rooms_[added].fixed = true;
+        }
+        const int originalRooms = int(rooms_.size());
+        for (int index = 0; index < originalRooms; ++index)
+            for (int vertical = -1; vertical <= 1; ++vertical)
+                for (int horizontal = -1; horizontal <= 1; ++horizontal) {
+                    if (!vertical && !horizontal) continue;
+                    const int column = rooms_[index].x + horizontal;
+                    const int row = rooms_[index].y + vertical;
+                    if (std::any_of(rooms_.begin(), rooms_.end(), [&](const auto &room) {
+                        return room.x == column && room.y == row;
+                    })) continue;
+                    Chamber filler(seed_.next());
+                    filler.x = column;
+                    filler.y = row;
+                    filler.preset = 836;
+                    filler.fixed = true;
+                    rooms_.push_back(filler);
+                }
+    }
     if (level == 74)
         placeArcane();
-    if (catalog_.level(level).levelType == 17) {
+    if (catalog_.level(level).levelType == 17 || catalog_.level(level).levelType == 34) {
         tombDirection = seed_.next() & 3;
         for (int index = 0; index < 3; ++index) {
             add(0, tombDirection, true);
             tombDirection = (tombDirection + 1) % 4;
         }
         constexpr int entrances[]{447, 444, 446, 445};
-        rooms_[0].preset = entrances[tombDirection];
+        constexpr int baalEntrances[]{1075, 1077, 1076, 1074};
+        rooms_[0].preset = catalog_.level(level).levelType == 34
+            ? baalEntrances[tombDirection] : entrances[tombDirection];
         rooms_[0].fixed = true;
     }
     if (level >= 34 && level <= 36)
         initializeCatacombs(level);
     if (family_.initialRing) {
-        if (count < 4)
+        const int sideRooms = level == 92 ? 5 : 2;
+        if (count < 4 * (sideRooms - 1))
             throw std::runtime_error("Maze requires the original four-room starting layout");
-        int north = add(0, 1, false);
-        int west = add(north, 0, false);
-        int south = add(west, 3, false);
-        link(south, 0, 2);
+        int parent = 0;
+        for (int direction : {1, 0, 3, 2})
+            for (int step = 0; step < sideRooms - 1; ++step) {
+                if (direction == 2 && step == sideRooms - 2) {
+                    link(parent, 0, direction);
+                } else {
+                    parent = add(parent, direction, catalog_.level(level).act >= 2);
+                    if (parent < 0) throw std::runtime_error("Original maze initial ring overlaps");
+                }
+            }
+        if (level == 92)
+            for (auto &room : rooms_) {
+                const int corner = room.mask == 5 ? 735 : room.mask == 6 ? 736
+                                 : room.mask == 9 ? 737 : room.mask == 10 ? 738 : 0;
+                if (corner) {
+                    room.preset = corner;
+                    room.fixed = true;
+                }
+            }
     }
     for (int attempts = 0; int(rooms_.size()) < count; ++attempts) {
         if (attempts > count * 1000)
@@ -128,7 +178,71 @@ MapRecipe RoomMaze::build(int level, uint32_t seed, int difficulty, int entrance
         placeSewerEntrances();
     else if (level == 28)
         placeBarracks(entranceDirection);
-    else {
+    else if (level == 107) {
+        auto extend = [&](bool north, const std::vector<int> &presets) {
+            int parent = 0;
+            for (int index = 1; index < int(rooms_.size()); ++index)
+                if (north ? rooms_[index].y < rooms_[parent].y : rooms_[index].y > rooms_[parent].y)
+                    parent = index;
+            for (int preset : presets) {
+                const int added = add(parent, north ? 1 : 3, false);
+                if (added < 0) throw std::runtime_error("Original lava bridge overlaps");
+                rooms_[added].preset = preset;
+                rooms_[added].fixed = true;
+                parent = added;
+            }
+            return parent;
+        };
+        extend(false, {852});
+        const int lastBridge = extend(true, {855, 856, 856});
+        const bool east = seed_.next() & 1;
+        special(east ? 1 : 3, 853, east ? 854 : 853);
+        const int originalRooms = int(rooms_.size());
+        for (int index = 0; index < originalRooms; ++index) {
+            if (index == lastBridge) continue;
+            for (int vertical = -1; vertical <= 1; ++vertical)
+                for (int horizontal = -1; horizontal <= 1; ++horizontal) {
+                    if (!vertical && !horizontal) continue;
+                    const int column = rooms_[index].x + horizontal;
+                    const int row = rooms_[index].y + vertical;
+                    if (std::any_of(rooms_.begin(), rooms_.end(), [&](const auto &room) {
+                        return room.x == column && room.y == row;
+                    })) continue;
+                    Chamber filler(seed_.next());
+                    filler.x = column;
+                    filler.y = row;
+                    filler.preset = 836;
+                    filler.fixed = true;
+                    rooms_.push_back(filler);
+                }
+        }
+    }
+    else if (catalog_.level(level).levelType == 32) {
+        const int selected = seed_.below(3);
+        constexpr int corners[]{1042, 1043, 1045, 1044};
+        constexpr int down[]{1046, 1047, 1048};
+        constexpr int waypoint[]{1049, 1050, 1052, 1051};
+        for (auto &room : rooms_)
+            if (room.preset == corners[selected]) {
+                room.preset = down[selected];
+                room.fixed = true;
+            }
+        if (level == 123)
+            for (auto &room : rooms_)
+                if (room.preset == corners[(selected + 1) % 4]) {
+                    room.preset = waypoint[(selected + 1) % 4];
+                    room.fixed = true;
+                }
+    } else if (catalog_.level(level).levelType == 34) {
+        int direction = seed_.next() & 3;
+        auto placeMapped = [&](const std::array<int, 4> &presets) {
+            special(direction, 1078, presets[direction]);
+            direction = (direction + 1) % 4;
+        };
+        placeMapped({1078, 1080, 1079, 1081});
+        if (level == 129) placeMapped({1082, 1084, 1083, 1085});
+    }
+    else if (catalog_.level(level).levelType != 35) {
         int direction = tombDirection >= 0 ? (tombDirection + 2) % 4 : seed_.next() & 3;
         auto place = [&](int first) {
             special(direction, first);
@@ -136,6 +250,13 @@ MapRecipe RoomMaze::build(int level, uint32_t seed, int difficulty, int entrance
         };
         for (int preset : family_.specialRooms)
             place(preset);
+        if (catalog_.level(level).levelType == 33) {
+            if (level == 115) place(1030);
+            if (level == 113 || level == 115 || level == 118) {
+                constexpr int waypoint[]{1034, 1036, 1035, 1037};
+                special(direction, 1034, waypoint[direction]);
+            }
+        }
     }
     // Native basic-to-theme substitution scan: shuffled 15-entry list, bounded scan.
     std::array<int, 15> offsets;
@@ -145,7 +266,8 @@ MapRecipe RoomMaze::build(int level, uint32_t seed, int difficulty, int entrance
         int a = seed_.below(15), b = seed_.below(15);
         std::swap(offsets[a], offsets[b]);
     }
-    int remaining = level == 8 || level == 74 || (level >= 51 && level <= 54) || (level >= 62 && level <= 64)
+    int remaining = level == 8 || level == 74 || (level >= 51 && level <= 54) || (level >= 62 && level <= 64) ||
+                        level == 84 || level == 85 || catalog_.level(level).levelType >= 28
                         ? 0 : std::max(2, int(rooms_.size()) / 5 + 1);
     for (int attempt = 0; remaining && attempt < 2 * int(rooms_.size()); ++attempt) {
         for (auto i = rooms_.rbegin(); i != rooms_.rend(); ++i)
@@ -176,7 +298,8 @@ MapRecipe RoomMaze::build(int level, uint32_t seed, int difficulty, int entrance
         if (i->variant < 0 && preset.files < 1 && level != 74)
             throw std::runtime_error("Maze room has no selectable DS1 variants");
         int variant = i->variant >= 0 ? i->variant : seed_.below(preset.files);
-        if (level != 74 && !(level >= 51 && level <= 54) && i->preset > base_ && i->preset < base_ + 16) {
+        if (level != 74 && !(level >= 51 && level <= 54) && level != 84 && level != 85 &&
+            i->preset > base_ && i->preset < base_ + 16) {
             auto [it, inserted] = variants.try_emplace(i->preset, variant);
             (void)inserted;
             it->second = (it->second + 1) % preset.files;

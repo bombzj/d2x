@@ -185,6 +185,23 @@ void GameSession::completeInteraction(const WorldObject &object) {
         }
     }
     switch (object.interaction) {
+    case Interaction::Stair: {
+        auto &objects = regions_.at(current_).objects;
+        auto found = std::find_if(objects.begin(), objects.end(), [&](const auto &value) {
+            return value.id == object.id;
+        });
+        if (found == objects.end()) break;
+        const int mode = found->modeAt(state().time);
+        if (mode == 0 && found->operateFn == 47) {
+            found->operatedAt = state().time;
+            simulation_->emit(ObjectInteracted{found->id, found->interaction, found->name});
+        } else if (mode == 2) {
+            const auto exit = std::find_if(region().exits.begin(), region().exits.end(),
+                [&](const auto &value) { return value.stairObject == object.id; });
+            if (exit != region().exits.end()) beginExit(exit->slot);
+        }
+        break;
+    }
     case Interaction::TeleportPad: {
         const auto &map = region().map;
         const auto *sourceRoom = map.activation.room(object.pos);
