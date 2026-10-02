@@ -248,6 +248,7 @@ struct Missile {
     };
     std::optional<ArcState> arc = std::nullopt;
     std::optional<MeteorSpec> meteor = std::nullopt;
+    float healingMinimum = 0, healingMaximum = 0;
 };
 struct Effect {
     Vec pos;

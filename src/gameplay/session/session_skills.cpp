@@ -266,7 +266,8 @@ bool GameSession::weaponSkillReady(const SkillCastSpec &skill) const {
         (action.delayFrames > 0 && state().frame < player.skillDelayUntil)) return false;
     const auto *weapon = simulation_->attackWeapon(action.thrown, false);
     return weapon && std::find(weapon->types.begin(), weapon->types.end(), action.requiredType) != weapon->types.end() &&
-        simulation_->canSpendProjectile_ && simulation_->canSpendProjectile_(weapon->item, action.thrown);
+        (!(action.thrown || weapon->ranged) ||
+         (simulation_->canSpendProjectile_ && simulation_->canSpendProjectile_(weapon->item, action.thrown)));
 }
 bool GameSession::skillAvailable(int id) const {
     const auto *entry = content_.skills.find(id);

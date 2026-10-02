@@ -868,6 +868,7 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
             rightSkill->spell->effect == SkillBehavior::Inferno;
         const bool corpseSkill = rightSkill && rightSkill->spell && rightSkill->spell->summon.has_value();
         const bool enchant = rightSkill && rightSkill->spell && rightSkill->spell->effect == SkillBehavior::Enchant;
+        const bool holyBolt = rightSkill && rightSkill->spell && rightSkill->spell->effect == SkillBehavior::HolyBolt;
         const bool telekinesis = rightSkill && rightSkill->spell && rightSkill->spell->effect == SkillBehavior::Telekinesis;
         if (input.rightHeld && !inventoryRight_ && (!channeled ||
             (input.movement.length() <= .1f && !input.leftPressed && !input.leftHeld))) {
@@ -881,8 +882,8 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
                     break;
                 }
             rightCombatTarget_ = corpseSkill ? EntityId{} : target;
-            if (enchant) {
-                target = {};
+            if (enchant || holyBolt) {
+                if (enchant) target = {};
                 const auto &player = session_.state().player;
                 const auto &merc = player.hireling;
                 if (merc.active() && (view_.screen(merc.pos) - Vec{0, 25} - input.mouse).length() < 24)

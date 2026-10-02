@@ -84,6 +84,12 @@ SkillCastSpec resolveSkill(const SkillSpec &spec, int rank,
     result.effect = spec.effect;
     result.rank = rank;
     result.sourceId = spec.sourceId;
+    if (spec.effect == SkillBehavior::HolyBolt) {
+        const auto synergy = learned.find(spec.healingSynergySkill);
+        const int percent = 100 + (synergy == learned.end() ? 0 : synergy->second) * spec.healingSynergyPercent;
+        result.healingMinimum = float((spec.healingParameters[0] + (rank - 1) * spec.healingParameters[1]) * percent / 100);
+        result.healingMaximum = float((spec.healingParameters[2] + (rank - 1) * spec.healingParameters[3]) * percent / 100);
+    }
     result.delayFrames = spec.delayFrames;
     result.blizzard = spec.blizzard;
     result.telekinesisRange = spec.telekinesisRange;
@@ -221,8 +227,13 @@ SkillCastSpec resolveSkill(const SkillSpec &spec, int rank,
         int64_t(std::max(rank - 16, 0)) * spec.poisonFramesPerLevel[2];
     result.poisonDuration = float(poisonFrames) / 25.f;
     result.weapon = spec.weapon;
-    if (result.weapon)
+    if (result.weapon) {
         result.weapon->attackRating += (rank - 1) * result.weapon->attackRatingPerLevel;
+        result.weapon->damagePercent += (rank - 1) * result.weapon->damagePerLevel;
+        for (const auto &[skill, percent] : result.weapon->damageSynergies)
+            if (const auto found = learned.find(skill); found != learned.end())
+                result.weapon->damagePercent += found->second * percent;
+    }
     result.missileId = spec.missileId;
     result.missileCount = std::min(spec.missileCountLimit,
         spec.missileCount + (rank - 1) * spec.missileCountPerLevel);

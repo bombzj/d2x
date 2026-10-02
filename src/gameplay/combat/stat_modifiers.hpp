@@ -75,6 +75,7 @@ struct AttackElements {
     bool crushing = false, openWounds = false, ranged = false;
     int lifeLeech = 0, manaLeech = 0, attackerLevel = 1;
     int hitClass = 0;
+    int selfDamagePercent = 0;
 };
 struct AttackDamageRange {
     int minimum = 0, maximum = 0;

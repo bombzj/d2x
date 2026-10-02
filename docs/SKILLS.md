@@ -1,5 +1,11 @@
 # 技能与状态效果
 
+## 圣骑士战斗技能
+
+Sacrifice（96）：D2MOO SkillPal::SrvSt29／SrvDo64，A1原出手帧、近战类型门槛、原命中百分比及ln12物理增伤，Redemption／Fanaticism基础点分别按Param8／7协同；费用取MPQ，当前为零。成功近战命中按物理伤害与目标生命较小值的Param3百分比自伤，进入公共物理减伤而非扣最大生命；不向未命中／格挡目标伪造伤害。武器元素、吸血、耐久仍走共用入口，属性面板同步技能增伤与命中。公共伤害事件／原动作精确等价未认证，不运行游戏或测试。
+
+2026-10-02逐项实施：Holy Bolt（101）已接原SC施法、MPQ费用与分段魔法伤害、Blessed Hammer／Fist of the Heavens基础点协同和Prayer基础点治疗协同。按D2MOO MissMode::SrvHit07，非亡灵敌人不拦截，亡灵承受魔法伤害，友军恢复生命到上限；鼠标右键可选佣兵与召唤物。原HolyBoltMissile及声音读取MPQ。公共连续弹体路径与客户端叠层仍属适配，未运行游戏或测试，D2S v96不变。每项最终Release链接后更新dist/current；未完成项仍不登记执行。
+
 ## 圣骑士光环学习与切换
 
 2026-10-01：现有 20 个已实现光环对接原 Paladin 职业树，职业归属仍取 Skills.charclass=pal，不把光环改给亚马逊或罗格佣兵。原 SkillDesc 页签／节点／图标和 Skills.reqlevel／maxlvl／reqskill1–3／leftskill／InTown 保留；技能树左键提交 AllocateSkill，右手选择菜单显示已学光环，F1–F8 复用已有绑定／选择命令，武器组各自保存左右手技能。光环 leftskill 均未开放，只能右手选择维持，无须右键施法；重复点地不扣一次施法费用、不制造 SC 动作或重启当前光环。技能等级、选择与热键沿现有 D2S 字段，临时状态不入档。

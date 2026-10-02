@@ -45,6 +45,8 @@ struct WeaponSkillSpec {
     std::string requiredType;
     bool thrown = false, manaOnRelease = false;
     int attackRating = 0, attackRatingPerLevel = 0, delayFrames = 0;
+    int damagePercent = 0, damagePerLevel = 0, selfDamagePercent = 0;
+    std::map<int, int> damageSynergies;
 };
 struct SummonSkillSpec {
     std::string monster, iconArt;
@@ -120,6 +122,8 @@ struct SkillSpec {
     std::optional<std::pair<int, int>> linearDuration;
     int shieldMaximum = 0, shieldManaFactor = 0, shieldSynergySkill = -1;
     int enchantAttackRating = 0, enchantAttackRatingPerLevel = 0;
+    std::array<int, 4> healingParameters{};
+    int healingSynergySkill = -1, healingSynergyPercent = 0;
     std::array<int, 5> stormParameters{};
     int telekinesisRange = 0, telekinesisKnockbackChance = 0;
     std::optional<std::pair<int, int>> hydraDuration;
@@ -155,6 +159,7 @@ struct SkillSpec {
 struct SkillCastSpec {
     SkillBehavior effect = SkillBehavior::None;
     int rank = 0;
+    float healingMinimum = 0, healingMaximum = 0;
     float castDuration = 0, castImpact = 0, castRate = 0;
     float manaCost = 0, minimumDamage = 0, maximumDamage = 0;
     float coldDuration = 0, missileVelocity = 0, missileLifetime = 0;

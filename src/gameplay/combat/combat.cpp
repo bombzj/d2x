@@ -120,6 +120,8 @@ void Simulation::meleeDamage(EntityId defender, const WeaponDamage &weapon) {
         elements.fire = float(int64_t(elements.fire * 256.f) * (100 + mastery) / 100) / 256.f;
     }
     elements.hitClass = weapon.hitClass;
+    if (player.weaponAttack && player.weaponAttack->skill && player.weaponAttack->skill->weapon)
+        elements.selfDamagePercent = player.weaponAttack->skill->weapon->selfDamagePercent;
     resolveWeaponHit(defender, float(damage) / 256.f, player.id, elements);
     if (wearEquipment_ && weapon.item) wearEquipment_(weapon.item, false);
 }
@@ -187,7 +189,35 @@ void Simulation::updateMissiles(float dt) {
             const bool wall = clipMissilePath(m.missileId, m.pos, next);
             const auto collision = missileCollisions_.find(m.missileId);
             if (collision == missileCollisions_.end()) { m.remaining = 0; return; }
-            if (piercing) {
+            if (m.behavior == SkillBehavior::HolyBolt) {
+                std::optional<std::pair<EntityId, float>> contact;
+                for (auto target : combatUnits()) {
+                    if (!target.alive() || target.id == m.owner || !active(*target.position)) continue;
+                    const bool ally = relation(m.owner, target.id) == Relation::Allied;
+                    if (!ally && (!canAttack(m.owner, target.id) || !target.stats.undead)) continue;
+                    const auto intersection = missileUnitIntersection(m.pos, next, collision->second.size,
+                        *target.position, target.stats.collisionSize);
+                    if (intersection && (!contact || *intersection < contact->second)) contact = {target.id, *intersection};
+                }
+                m.pos = contact ? m.pos + (next - m.pos) * contact->second : next;
+                if (contact) {
+                    auto target = combatUnit(contact->first);
+                    if (relation(m.owner, target.id) == Relation::Allied) {
+                        const int minimum = int(m.healingMinimum * 256.f), maximum = int(m.healingMaximum * 256.f);
+                        const float amount = float(minimum + limitedRandom(m.combatRandom,
+                            unsigned(std::max(0, maximum - minimum)))) / 256.f;
+                        *target.life = std::min(float(target.stats.attributes.maxLife), *target.life + amount);
+                        if (m.hitOverlayId >= 0)
+                            area.effects.push_back({*target.position, 0, m.hitOverlayDuration, -1, m.hitOverlayId, target.id});
+                    } else {
+                        const int healingOverlay = m.hitOverlayId;
+                        m.hitOverlayId = -1;
+                        hit(target.id);
+                        m.hitOverlayId = healingOverlay;
+                    }
+                    m.remaining = 0;
+                }
+            } else if (piercing) {
                 for (auto target : combatUnits()) {
                     if (!target.alive() || !canAttack(m.owner, target.id) || !active(*target.position) || target.id == m.lastHit) continue;
                     if (m.nextHitDelay > 0 && area.novaHitUntil[target.id] > state_.time) continue;

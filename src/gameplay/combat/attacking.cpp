@@ -110,8 +110,14 @@ void Simulation::advanceWeaponAttack() {
             const Vec aim = enemy.alive() && canAttack(p.id, enemy.id) ? *enemy.position : attack.aim;
             if (attack.thrown || selected.ranged)
                 firePhysicalProjectile(aim, selected, attack.thrown, attack.skill ? &*attack.skill : nullptr);
-            else if (enemy.alive() && canAttack(p.id, enemy.id) && meleeReach(enemy.id, selected))
-                meleeDamage(enemy.id, selected);
+            else if (enemy.alive() && canAttack(p.id, enemy.id) && meleeReach(enemy.id, selected)) {
+                auto melee = selected;
+                if (attack.skill && attack.skill->weapon) {
+                    melee.damagePercent += attack.skill->weapon->damagePercent;
+                    melee.attackRatingPercent += attack.skill->weapon->attackRating;
+                }
+                meleeDamage(enemy.id, melee);
+            }
         }
     }
     p.meleeTime = float(std::max(0, attack.timing.durationTicks() - attack.ticks)) / 25.f;

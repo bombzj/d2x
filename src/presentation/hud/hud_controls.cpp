@@ -242,6 +242,9 @@ void SceneView::drawSkillControls(Vec mouse) const {
                 session_.characterStats().combat.coldSkillDamagePercent);
             detail = "Mana " + std::string(TextFormat("%.1f", value.manaCost));
             if (value.effect == SkillBehavior::Teleport) detail += " / Teleport to clear ground";
+            else if (value.effect == SkillBehavior::HolyBolt)
+                detail += " / Undead magic " + std::string(TextFormat("%.1f-%.1f", value.minimumDamage, value.maximumDamage)) +
+                    " / Ally healing " + std::string(TextFormat("%.1f-%.1f", value.healingMinimum, value.healingMaximum));
             else if (value.effect == SkillBehavior::Inferno)
                 detail = "Mana/sec " + std::string(TextFormat("%.1f", value.manaCost * 12.5f)) +
                     " / Damage/sec " + std::string(TextFormat("%.1f-%.1f", value.minimumDamage * 25, value.maximumDamage * 25));
@@ -270,6 +273,10 @@ void SceneView::drawSkillControls(Vec mouse) const {
                 detail += " / Poison " + std::string(TextFormat("%.1f-%.1f over %.1fs",
                     value.minimumDamage * value.poisonDuration * 25.f,
                     value.maximumDamage * value.poisonDuration * 25.f, value.poisonDuration));
+            else if (value.effect == SkillBehavior::Sacrifice)
+                detail += " / Physical +" + std::to_string(value.weapon->damagePercent) +
+                    "% / Attack +" + std::to_string(value.weapon->attackRating) +
+                    "% / Self damage " + std::to_string(value.weapon->selfDamagePercent) + "%";
             else if (value.weapon && value.missileImpact && value.missileImpact->areaMissile)
                 detail += " / Fire " + std::string(TextFormat("%.1f-%.1f", value.minimumDamage, value.maximumDamage)) +
                     " + weapon fire damage";

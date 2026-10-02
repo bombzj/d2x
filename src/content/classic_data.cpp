@@ -294,6 +294,7 @@ ClassicData loadClassicData(Archives &archives) {
         loadSorceressEffects(data.skills, data.tables.at("skills"), data.tables.at("missiles"),
                              overlays, sounds, data.states, archives);
         loadWeaponSkills(data.skills, data.tables.at("skills"), data.tables.at("missiles"), sounds, archives);
+        loadPaladinSkills(data.skills, data.tables.at("skills"), data.tables.at("missiles"), overlays, sounds, archives);
         loadNecromancerSummons(data.skills, data.tables.at("skills"), data.tables.at("monstats"),
             data.tables.at("monstats2"), data.tables.at("monlvl"), sounds, archives);
         const DataTable levels(archives.read("data/global/excel/levels.txt"));

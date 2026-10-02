@@ -36,8 +36,11 @@ CharacterActionStats weaponStats(const GameSession &session, bool thrown, bool l
                                          elements.cold.minimum + elements.magic.minimum;
         const int64_t elementalMaximum = int64_t(elements.fire.maximum) + elements.lightning.maximum +
                                          elements.cold.maximum + elements.magic.maximum;
-        const int minimum = thrown ? weapon.throwMinimum : weapon.minimum;
-        const int maximum = thrown ? weapon.throwMaximum : weapon.maximum;
+        const int skillDamage = skill ? skill->weapon->damagePercent : 0;
+        const int minimum = thrown ? weapon.throwMinimum : weapon.minimum +
+            int(int64_t(weapon.meleeBaseMinimum) * skillDamage / 100);
+        const int maximum = thrown ? weapon.throwMaximum : weapon.maximum +
+            int(int64_t(weapon.meleeBaseMaximum) * skillDamage / 100);
         int64_t poisonMinimum = 0, poisonMaximum = 0;
         if (skill && skill->poisonDuration > 0) {
             WeaponModifiers own;

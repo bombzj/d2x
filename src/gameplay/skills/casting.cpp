@@ -52,10 +52,14 @@ void Simulation::advanceSkillCasting(PlayerState &player, float dt, bool moving)
                     cast.target = unitPosition(cast.enemy);
                 } else if (cast.skill.effect == SkillBehavior::Telekinesis) {
                     if (!telekinesisTarget_ || !telekinesisTarget_(cast.enemy, cast.skill.telekinesisRange, false)) return;
-                } else if (cast.skill.effect == SkillBehavior::Enchant) {
+                } else if (cast.skill.effect == SkillBehavior::Enchant || cast.skill.effect == SkillBehavior::HolyBolt) {
                     const auto target = combatUnit(cast.enemy);
-                    if (!target.alive() || relation(player.id, target.id) != Relation::Allied || !active(*target.position))
+                    if (!target.alive() || !active(*target.position))
                         cast.enemy = {};
+                    else if (cast.skill.effect == SkillBehavior::HolyBolt) {
+                        cast.target = *target.position;
+                        player.look = (cast.target - player.pos).unit();
+                    } else if (relation(player.id, target.id) != Relation::Allied) cast.enemy = {};
                 } else {
                     const auto enemy = combatUnit(cast.enemy);
                     if (!enemy.alive() || !canAttack(player.id, enemy.id) || !active(*enemy.position)) return;
@@ -287,7 +291,7 @@ void Simulation::releaseSkillCast(PlayerState &player, const SkillCastSpec &skil
         }
     } else if (skill.effect == SkillBehavior::FireBolt || skill.effect == SkillBehavior::Fireball ||
                skill.effect == SkillBehavior::IceBolt || skill.effect == SkillBehavior::IceBlast ||
-               skill.effect == SkillBehavior::Inferno) {
+               skill.effect == SkillBehavior::Inferno || skill.effect == SkillBehavior::HolyBolt) {
         rollRandom(player.combatRandom);
         const float fraction = float(uint32_t(player.combatRandom)) / 4294967295.f;
         const float amount = skill.minimumDamage +
@@ -304,6 +308,15 @@ void Simulation::releaseSkillCast(PlayerState &player, const SkillCastSpec &skil
         missile.impactDamage.coldDuration = skill.coldDuration;
         missile.impactDamage.freeze = skill.effect == SkillBehavior::IceBlast;
         missile.combatRandom = childRandom(unitRandom_);
+        if (skill.effect == SkillBehavior::HolyBolt) {
+            missile.fixedElement = MonsterDamageType::Magic;
+            missile.hitOverlayId = skill.hitOverlayId;
+            missile.hitOverlayDuration = skill.hitOverlayDuration;
+            missile.healingMinimum = skill.healingMinimum;
+            missile.healingMaximum = skill.healingMaximum;
+            missile.skillId = skill.sourceId;
+            missile.skillRank = skill.rank;
+        }
     }
 }
 } // namespace d2x

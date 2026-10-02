@@ -82,6 +82,13 @@ void Simulation::resolveWeaponHit(EntityId defender, float physical, EntityId so
         if (!originalElements.ranged) triggerCombatEffects(defender, CombatEffectEvent::AttackedInMelee, source);
         return;
     }
+    if (originalElements.selfDamagePercent > 0) {
+        DamageRequest self{source, source, float(int64_t(std::min(*target.life, physical) * 256.f) *
+            originalElements.selfDamagePercent / 100) / 256.f, MonsterDamageType::Physical};
+        self.permission = DamagePermission::ExistingEffect;
+        self.hitRecovery = false;
+        dealDamage(self);
+    }
     auto elements = originalElements;
     auto mitigate = [&](float amount, MonsterDamageType type) {
         const auto damage = resolveIncoming(source, target, amount, type);

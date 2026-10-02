@@ -17,6 +17,97 @@ size_t named(const DataTable &table, std::string_view column, std::string_view v
     throw std::runtime_error("Missing weapon skill reference: " + std::string(value));
 }
 } // namespace
+void loadPaladinSkills(SkillCatalog &catalog, const DataTable &skills, const DataTable &missiles,
+                      const DataTable &overlays, const DataTable &sounds, Archives &archives) {
+    const auto row = named(skills, "skill", "Holy Bolt");
+    auto &entry = catalog.skills.at(required(skills, row, "Id"));
+    if (entry.classCode != "pal" || skills.value(row, "anim") != "SC" || skills.value(row, "EType") != "mag")
+        throw std::runtime_error("Unsupported original Holy Bolt");
+    SkillSpec spec;
+    spec.sourceId = entry.id;
+    spec.effect = SkillBehavior::HolyBolt;
+    spec.mana = required(skills, row, "mana");
+    spec.minimumMana = required(skills, row, "minmana");
+    spec.manaPerLevel = required(skills, row, "lvlmana");
+    spec.manaShift = required(skills, row, "manashift");
+    spec.hitShift = required(skills, row, "HitShift");
+    spec.minimumDamage = required(skills, row, "EMin");
+    spec.maximumDamage = required(skills, row, "EMax");
+    for (int tier = 0; tier < 5; ++tier) {
+        spec.minimumPerLevel[tier] = required(skills, row, "EMinLev" + std::to_string(tier + 1));
+        spec.maximumPerLevel[tier] = required(skills, row, "EMaxLev" + std::to_string(tier + 1));
+    }
+    if (skills.value(row, "calc1") != "ln12 * (100 + skill('Prayer'.blvl) * par7) / 100" ||
+        skills.value(row, "calc2") != "ln34 * (100 + skill('Prayer'.blvl) * par7) / 100" ||
+        skills.value(row, "EDmgSymPerCalc") != "(skill('Blessed Hammer'.blvl)+skill('Fist of the Heavens'.blvl))*par8")
+        throw std::runtime_error("Unsupported Holy Bolt formula");
+    for (int parameter = 0; parameter < 4; ++parameter)
+        spec.healingParameters[parameter] = required(skills, row, "Param" + std::to_string(parameter + 1));
+    spec.healingSynergySkill = required(skills, named(skills, "skill", "Prayer"), "Id");
+    spec.healingSynergyPercent = required(skills, row, "Param7");
+    spec.synergyPercent = required(skills, row, "Param8");
+    for (const auto name : {"Blessed Hammer", "Fist of the Heavens"})
+        spec.synergySkills.push_back(required(skills, named(skills, "skill", name), "Id"));
+    const auto missile = named(missiles, "Missile", skills.value(row, "srvmissile"));
+    if (required(missiles, missile, "pSrvHitFunc") != 7 || required(missiles, missile, "sHitPar1") != 1 ||
+        required(missiles, missile, "sHitPar2") != 1)
+        throw std::runtime_error("Unsupported Holy Bolt hit filter");
+    const auto overlay = named(overlays, "overlay", missiles.value(missile, "ProgOverlay"));
+    auto &visual = spec.hitOverlay;
+    visual.id = int(overlay);
+    visual.frames = required(overlays, overlay, "Frames");
+    visual.fps = float(required(overlays, overlay, "AnimRate"));
+    visual.trans = required(overlays, overlay, "Trans");
+    visual.preDraw = overlays.number(overlay, "PreDraw").value_or(0) != 0;
+    visual.offset = {-float(required(overlays, overlay, "Xoffset")), float(required(overlays, overlay, "Yoffset"))};
+    for (int height = 0; height < 4; ++height)
+        visual.heights[height] = required(overlays, overlay, "Height" + std::to_string(height + 1));
+    visual.art = "data/global/overlays/" + std::string(overlays.value(overlay, "Filename")) + ".dcc";
+    if (visual.frames <= 0 || visual.fps <= 0 || !archives.contains(visual.art))
+        throw std::runtime_error("Missing Holy Bolt healing overlay");
+    const auto resource = loadProjectileResource(missiles, missile, archives);
+    spec.missileId = resource.id;
+    spec.missileArt = resource.art;
+    spec.missileVelocity = float(required(missiles, missile, "Vel"));
+    spec.missileLifetime = resource.lifetime;
+    spec.missileVelocityPerLevel = missiles.number(missile, "VelLev").value_or(0);
+    spec.missileRangePerLevel = missiles.number(missile, "LevRange").value_or(0);
+    const auto sound = [&](std::string_view key) -> std::string {
+        if (key.empty()) return {};
+        const auto source = named(sounds, "Sound", key);
+        const auto path = "data/global/sfx/" + std::string(sounds.value(source, "FileName"));
+        if (!archives.contains(path)) throw std::runtime_error("Missing paladin skill sound: " + path);
+        return path;
+    };
+    spec.castSoundArt = sound(skills.value(row, "stsound"));
+    spec.releaseSoundArt = sound(missiles.value(missile, "TravelSound"));
+    spec.impactSoundArt = sound(missiles.value(missile, "HitSound"));
+    entry.spell = std::move(spec);
+    const auto sacrifice = named(skills, "skill", "Sacrifice");
+    if (required(skills, sacrifice, "srvstfunc") != 29 || required(skills, sacrifice, "srvdofunc") != 64 ||
+        skills.value(sacrifice, "calc1") != "ln12+skill('Redemption'.blvl)*par8+skill('Fanaticism'.blvl)*par7" ||
+        skills.value(sacrifice, "calc2") != "par3" || required(skills, sacrifice, "SrcDam") != 128 ||
+        skills.value(sacrifice, "anim") != "A1" || skills.value(sacrifice, "itypea1") != "mele")
+        throw std::runtime_error("Unsupported Sacrifice rules");
+    SkillSpec melee;
+    melee.sourceId = required(skills, sacrifice, "Id");
+    melee.effect = SkillBehavior::Sacrifice;
+    melee.mana = required(skills, sacrifice, "mana");
+    melee.minimumMana = required(skills, sacrifice, "minmana");
+    melee.manaPerLevel = required(skills, sacrifice, "lvlmana");
+    melee.manaShift = required(skills, sacrifice, "manashift");
+    melee.weapon = WeaponSkillSpec{};
+    auto &weapon = *melee.weapon;
+    weapon.requiredType = std::string(skills.value(sacrifice, "itypea1"));
+    weapon.attackRating = required(skills, sacrifice, "ToHit");
+    weapon.attackRatingPerLevel = required(skills, sacrifice, "LevToHit");
+    weapon.damagePercent = required(skills, sacrifice, "Param1");
+    weapon.damagePerLevel = required(skills, sacrifice, "Param2");
+    weapon.selfDamagePercent = required(skills, sacrifice, "Param3");
+    weapon.damageSynergies.emplace(required(skills, named(skills, "skill", "Redemption"), "Id"), required(skills, sacrifice, "Param8"));
+    weapon.damageSynergies.emplace(required(skills, named(skills, "skill", "Fanaticism"), "Id"), required(skills, sacrifice, "Param7"));
+    catalog.skills.at(melee.sourceId).spell = std::move(melee);
+}
 void loadWeaponSkills(SkillCatalog &catalog, const DataTable &skills, const DataTable &missiles,
                       const DataTable &sounds, Archives &archives) {
     for (const auto name : {"Plague Javelin", "Exploding Arrow"}) {
@@ -38,10 +129,13 @@ void loadWeaponSkills(SkillCatalog &catalog, const DataTable &skills, const Data
         SkillSpec spec;
         spec.sourceId = entry.id;
         spec.effect = SkillBehavior::WeaponProjectile;
-        spec.weapon = WeaponSkillSpec{std::string(skills.value(row, "itypea1")), plague,
-            skills.number(row, "usemanaondo").value_or(0) != 0,
-            required(skills, row, "ToHit"), required(skills, row, "LevToHit"),
-            skills.number(row, "delay").value_or(0)};
+        spec.weapon = WeaponSkillSpec{};
+        spec.weapon->requiredType = std::string(skills.value(row, "itypea1"));
+        spec.weapon->thrown = plague;
+        spec.weapon->manaOnRelease = skills.number(row, "usemanaondo").value_or(0) != 0;
+        spec.weapon->attackRating = required(skills, row, "ToHit");
+        spec.weapon->attackRatingPerLevel = required(skills, row, "LevToHit");
+        spec.weapon->delayFrames = skills.number(row, "delay").value_or(0);
         spec.mana = required(skills, row, "mana");
         spec.minimumMana = required(skills, row, "minmana");
         spec.manaPerLevel = required(skills, row, "lvlmana");
