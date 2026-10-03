@@ -183,7 +183,7 @@ D2sItem exportD2sItem(const CharacterSaveData &snapshot, const ItemInstance &ite
     output.format = item.nativeFormat;
     output.hasGraphic = item.nativeHasGraphic;
     output.graphic = item.nativeGraphic;
-    output.questDifficulty = item.nativeProperties ? item.nativeQuestDifficulty : unsigned(snapshot.difficulty);
+    output.questDifficulty = item.nativeQuestDifficulty;
     if (content.tables.at(definition->base.sourceTable).number(definition->base.sourceRow, "compactsave").value_or(0))
         output.flags |= 0x00200000;
     output.quality = unsigned(std::find(qualities.begin() + 1, qualities.end(), item.quality) - qualities.begin());

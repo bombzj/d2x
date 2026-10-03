@@ -70,13 +70,8 @@ MapRecipe RoomMaze::build(int level, uint32_t seed, int difficulty, int entrance
     int count = maze_.difficultyRooms[difficulty];
     int tombDirection = -1;
     if (catalog_.level(level).levelType == 17) {
-        Seed act(seed);
-        act.next();
-        int staff = 0, boss = 0;
-        do {
-            staff = 66 + act.below(7);
-            boss = 66 + act.below(7);
-        } while (staff == boss);
+        const auto tombs = actTwoTombs(seed);
+        const int staff = tombs[0], boss = tombs[1];
         if (level == staff) {
             count *= 3;
             family_.specialRooms.push_back(460);

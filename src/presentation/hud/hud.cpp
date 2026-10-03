@@ -282,6 +282,7 @@ void SceneView::draw(Vec mouse) const {
     }
     drawStorage(mouse);
     drawCube(mouse);
+    drawOrifice(mouse);
     drawCharacter(mouse);
     drawHireling(mouse);
     drawQuests(mouse);

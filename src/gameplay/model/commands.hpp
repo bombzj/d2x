@@ -57,6 +57,7 @@ struct ClaimAkaraRespec {
 };
 struct ImbueItem { EntityId npc; ItemHandle item; };
 struct CompleteActOne { EntityId npc; };
+struct CompleteActTwo { EntityId npc; };
 struct OpenGamble { EntityId npc; };
 struct OpenHirelingList { EntityId npc; };
 struct HireMercenary { EntityId npc; uint32_t slot = 0; };
@@ -79,6 +80,8 @@ struct DebugGrantGold {
 };
 struct DebugGrantHireling {};
 struct DebugDropCube {};
+struct TransmuteCube {};
+struct SubmitQuestItem { EntityId object; ItemHandle item; };
 struct DebugSpawnItem { std::string code; ItemQuality quality; int level = 1; };
 enum class GoldAction { Deposit, Withdraw, Drop };
 struct GoldTransaction {
@@ -122,5 +125,5 @@ using GameCommand =
                  SplitStack, MergeStacks, LoadBook, IdentifyItem, PickupItem, StopMoving, EquipBelt, UseItem, UseBeltColumn,
                  CloseStorage, TransferItem, UseExit, EquipItem, DebugKill, DebugSpawnMonster,
                  DebugDamageMonster, UseTownPortal, UseCainPortal, WaypointTravel, OpenGamble, RepairVendorItem,
-                 OpenHirelingList, HireMercenary, EquipHirelingItem, DebugGrantHireling, ResurrectHireling, UseHirelingPotion, StopChannel>;
+                 OpenHirelingList, HireMercenary, EquipHirelingItem, DebugGrantHireling, ResurrectHireling, UseHirelingPotion, StopChannel, TransmuteCube, CompleteActTwo, SubmitQuestItem>;
 } // namespace d2x

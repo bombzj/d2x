@@ -204,6 +204,10 @@ void GameSession::restore(CharacterSaveData data) {
     soldVendorOffers_.clear();
     shrineStatuses_.clear();
     for (auto &region : regions_)
+        std::erase_if(region.objects, [](const auto &object) {
+            return object.questDestination.has_value() || (object.objectClass == 100 && object.contentKey.empty());
+        });
+    for (auto &region : regions_)
         for (auto &object : region.objects)
             if (object.operatedAt >= 0) {
                 object.operatedAt = -1;
@@ -215,7 +219,8 @@ void GameSession::restore(CharacterSaveData data) {
                     object.interaction = Interaction::Shrine;
                 } else if (object.operateFn == 1 || object.operateFn == 3 || object.operateFn == 4 ||
                            object.operateFn == 5 || object.operateFn == 7 || object.operateFn == 14 ||
-                           object.operateFn == 19 || object.operateFn == 20) {
+                           object.operateFn == 19 || object.operateFn == 20 ||
+                           object.operateFn == 39 || object.operateFn == 40 || object.operateFn == 41) {
                     object.interaction = Interaction::Loot;
                 }
             }
@@ -249,7 +254,17 @@ void GameSession::restore(CharacterSaveData data) {
         if (merc.hp > 0) merc.hp = float(hirelingStats().base.life);
     }
     current_ = current;
+    auto &radament = simulation_->state_.player.actOneQuests.at(size_t(state().population.difficulty)).at(questIndex(QuestId::RadamentsLair));
+    if (radament.stage == uint32_t(RadamentStage::Rewarded) && (radament.flags & radamentBookPending) && !carriesQuestItem("ass")) {
+        radament.stage = uint32_t(RadamentStage::Unstarted);
+        radament.flags = 0;
+    }
+    tombOpeningFrame_.reset();
+    tombCollapseFrame_.reset();
+    for (auto &region : regions_) region.map.restoreTombWall();
+    sunDarkeningFrame_.reset();
     reconcileCainObjects();
+    updateActTwoObjects();
     for (auto &region : regions_) region.refreshObjectCollision(state().time);
     pending_.clear();
     pickup_ = {};

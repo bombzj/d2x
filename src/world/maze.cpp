@@ -1,6 +1,13 @@
 #include "world/maze/room_graph.hpp"
 
 namespace d2x {
+std::array<int, 2> actTwoTombs(uint32_t seed) {
+    Seed random(seed);
+    random.next();
+    int staff = 0, boss = 0;
+    do { staff = random.below(7); boss = random.below(7); } while (staff == boss);
+    return {66 + staff, 66 + boss};
+}
 bool supportsMaze(int level) {
     return (level >= 8 && level <= 12) || level == 18 || level == 19 || (level >= 21 && level <= 24) ||
            (level >= 28 && level <= 31) || (level >= 34 && level <= 36) ||

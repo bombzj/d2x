@@ -30,6 +30,14 @@ struct Map {
     RoomLayout activation;
     std::vector<Vec> warpArrivals;
     int unresolved = 0;
+    struct TombWall {
+      int x = 0, y = 0;
+      std::vector<MapCell> walls;
+      std::array<uint8_t, 25> collision{};
+    };
+    std::vector<TombWall> tombWalls;
+    bool openTombWall(Vec position);
+    void restoreTombWall();
     void load(Archives &archives, TileLibraryCache &cache, const MapRecipe &recipe, uint32_t seed);
     Vec actSpawn() const;
     int tileIndex(const MapCell &c, int x, int y) const;

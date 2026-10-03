@@ -40,6 +40,7 @@ ClassicData loadClassicData(Archives &archives) {
     tables.emplace(treasureName,
                    DataTable(archives.read(std::string("data/global/excel/") + treasureName + ".txt")));
     {
+        tables.emplace("cubemain", DataTable(archives.read("data/global/excel/cubemain.txt")));
         tables.emplace("books", DataTable(archives.read("data/global/excel/books.txt")));
         tables.emplace("shrines", DataTable(archives.read("data/global/excel/shrines.txt")));
         tables.emplace("monlvl", DataTable(archives.read("data/global/excel/monlvl.txt")));
@@ -268,6 +269,16 @@ ClassicData loadClassicData(Archives &archives) {
     data.hirelings = loadHirelingDefinitions(data.tables.at("hireling"));
     {
         data.tables.emplace("skilldesc", DataTable(archives.read("data/global/excel/skilldesc.txt")));
+        const auto &recipes = data.tables.at("cubemain");
+        for (size_t row = 0; row < recipes.rows().size(); ++row)
+            if (recipes.value(row, "output") == "hst" && recipes.number(row, "enabled").value_or(0)) {
+                if (recipes.number(row, "numinputs") != 2 || recipes.value(row, "input 1") != "msf" ||
+                    recipes.value(row, "input 2") != "vip")
+                    throw std::runtime_error("Unsupported original Horadric Staff recipe");
+                data.staffRecipeInputs = {std::string(recipes.value(row, "input 1")), std::string(recipes.value(row, "input 2"))};
+                data.staffRecipeOutput = recipes.value(row, "output");
+            }
+        if (data.staffRecipeOutput.empty()) throw std::runtime_error("Original Horadric Staff recipe is missing");
         data.hirelingLayout = loadHirelingLayout(data.tables.at("inventory"));
         data.itemStrings = strings.entries();
         const DataTable hireDescriptions(archives.read("data/global/excel/hiredesc.txt"));
@@ -277,7 +288,7 @@ ClassicData loadClassicData(Archives &archives) {
             if (!code.empty()) data.hirelingDescriptions.emplace(code, label);
         }
         for (const auto &[key, value] : strings.entries())
-            if (key.starts_with("qstsa1q") || key == "newquestlog" ||
+            if (key.starts_with("qstsa1q") || key.starts_with("qstsa2q") || key == "newquestlog" ||
                 key == "qstsComplete" || key == "noactivequest")
                 data.actOneQuestStrings.emplace(key, value);
             else if (key.starts_with("merc"))

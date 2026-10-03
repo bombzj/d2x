@@ -31,6 +31,7 @@ class LightingView {
     };
     std::array<Environment, 5> environments_{};
     float frameRemainder_ = 0;
+    bool eclipse_ = false;
     RegionId cachedRegion_{};
     int cachedX_ = -1, cachedY_ = -1, cachedRadius_ = -1;
     uint64_t cachedObstacleRevision_ = 0;
@@ -44,6 +45,7 @@ class LightingView {
     void invalidate() { cachedRadius_ = -1; }
     void advance(float dt, const LevelRecord &level);
     void resetEnvironment();
+    void setEclipse(bool active);
     void update(const Grid &grid, const LevelRecord &level, RegionId region, Vec player, int radius);
     void draw(const PaletteBlendView &palette, const LevelRecord &level, Vec player, Vec playerScreen,
               float zoom, int radius, std::span<const SceneLight> lights) const;

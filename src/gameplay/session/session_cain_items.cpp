@@ -11,6 +11,19 @@ QuestRecord &cain(WorldState &world) {
 } // namespace
 
 void GameSession::updateCainQuestItems() {
+    auto &staff = simulation_->state_.player.actOneQuests.at(size_t(state().population.difficulty)).at(questIndex(QuestId::HoradricStaff));
+    if (staff.stage < 6) {
+        uint32_t next = staff.stage;
+        for (const auto &[id, item] : inventory_.state().items) {
+            const auto *location = std::get_if<ContainerLocation>(&item.location);
+            if (!location || (location->container != playerContainers_.backpack && location->container != playerContainers_.cube &&
+                location->container != playerContainers_.equipment)) continue;
+            if (item.definition != content_.cubeCode && item.nativeQuestDifficulty < unsigned(state().population.difficulty)) continue;
+            if (item.definition == "tr1" || item.definition == content_.cubeCode || item.definition == "msf" || item.definition == "vip") next = std::max(next, 1u);
+            if (item.definition == "hst") next = 5;
+        }
+        if (staff.stage != next) { staff.stage = next; simulation_->emit(QuestAdvanced{QuestId::HoradricStaff, next}); }
+    }
     bool acquiredBark = false;
     for (const auto &event : events())
         if (const auto *picked = std::get_if<ItemPickedUp>(&event);

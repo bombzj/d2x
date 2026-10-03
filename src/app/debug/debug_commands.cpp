@@ -95,7 +95,10 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
                 {ActOneQuest::SearchForCain, "A1Q4"},
                 {ActOneQuest::ForgottenTower, "A1Q5"},
                 {ActOneQuest::ToolsOfTheTrade, "A1Q3"},
-                {ActOneQuest::SistersToTheSlaughter, "A1Q6"}};
+                {ActOneQuest::SistersToTheSlaughter, "A1Q6"},
+                {QuestId::RadamentsLair, "A2Q1"}, {QuestId::HoradricStaff, "A2Q2"},
+                {QuestId::TaintedSun, "A2Q3"}, {QuestId::ArcaneSanctuary, "A2Q4"},
+                {QuestId::Summoner, "A2Q5"}, {QuestId::SevenTombs, "A2Q6"}};
             for (const auto &[id, key] : quests) {
                 const auto &quest = session.quest(id);
                 result["quests"].push_back({{"id", key}, {"stage", quest.stage},

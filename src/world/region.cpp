@@ -115,6 +115,8 @@ void classify(WorldObject &object, const Table &objectRows) {
             object.operateFn = operation.empty() ? 0 : std::stoi(operation);
             if (door && object.operateFn == 8) object.interaction = Interaction::Door;
             if (object.operateFn == 27) object.interaction = Interaction::TeleportPad;
+            if (object.operateFn == 24 || object.operateFn == 25 || object.operateFn == 34 || object.operateFn == 42 || object.operateFn == 43)
+                object.interaction = Interaction::ActTwoQuest;
             if (object.operateFn == 47 || object.operateFn == 50) object.interaction = Interaction::Stair;
             object.objectDamage = record->at("Damage").empty() ? 0 : std::stoi(record->at("Damage"));
             for (size_t index = 0; index < object.parameters.size(); ++index) {
@@ -144,7 +146,8 @@ void classify(WorldObject &object, const Table &objectRows) {
                   normalize(record->at("Name")) == "sarcophagus")) ||
                 object.operateFn == 3 || object.operateFn == 4 || object.operateFn == 5 ||
                 object.operateFn == 7 || object.operateFn == 14 ||
-                object.operateFn == 19 || object.operateFn == 20) {
+                object.operateFn == 19 || object.operateFn == 20 ||
+                object.operateFn == 39 || object.operateFn == 40 || object.operateFn == 41) {
                 object.interaction = Interaction::Loot;
             } else if (object.operateFn == 2 && normalize(record->at("Name")) == "shrine") {
                 object.interaction = Interaction::Shrine;
@@ -231,6 +234,7 @@ std::vector<Region> loadRegions(Archives &archives, EntityIds &ids, const std::v
     const auto levelSeed = rollRandom(mapRandom);
     for (const auto &plan : plans) {
         Region region;
+        region.staffTombLevel = actTwoTombs(mapSeed)[0];
         region.definition = plan.definition;
         region.objectSeed = childRandom(objectsRandom);
         region.recipe = plan.recipe;
@@ -247,6 +251,7 @@ void loadRegion(Archives &archives, EntityIds &ids, Region &region, TileLibraryC
         auto shrineRows = decodeTable(archives.read("data/global/excel/shrines.txt"));
         region.map.load(archives, cache, region.recipe, levelSeed + uint32_t(region.definition.id));
         if (region.definition.safe) region.map.spawn = region.map.actSpawn();
+        size_t arcaneSymbol = 0;
         for (size_t index = 0; index < region.map.data.objects.size(); ++index) {
             const auto &source = region.map.data.objects[index];
             if (source.type == 1 && monsters.supported()) {
@@ -262,7 +267,12 @@ void loadRegion(Archives &archives, EntityIds &ids, Region &region, TileLibraryC
             });
             const int originalClass = source.type == 2
                 ? originalObjectClass(source, region.map.data.version, region.map.data.act) : -1;
-            const int resolvedClass = resolveAct1ChestPreset(originalClass, int(region.definition.id), region.objectSeed);
+            int resolvedClass = resolveAct1ChestPreset(originalClass, int(region.definition.id), region.objectSeed);
+            if (originalClass == 582 && int(region.definition.id) == 74) {
+                const auto missing = size_t(region.staffTombLevel - 66);
+                const auto offset = arcaneSymbol++ % 6;
+                resolvedClass = actTwoTombSymbols[offset >= missing ? offset + 1 : offset];
+            }
             auto chestRow = std::find_if(objectRows.begin(), objectRows.end(), [&](const auto &row) {
                 return !row.at("Id").empty() && std::stoi(row.at("Id")) == resolvedClass &&
                     (row.at("OperateFn") == "4" || originalClass == 580 || originalClass == 581 ||

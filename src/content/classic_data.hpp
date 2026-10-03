@@ -66,6 +66,8 @@ struct ClassicData {
     StashLayout stashLayout;
     StashLayout cubeLayout;
     std::string cubeCode;
+    std::array<std::string, 2> staffRecipeInputs;
+    std::string staffRecipeOutput;
     // Class name -> level-indexed cumulative XP thresholds from Experience.txt.
     std::map<std::string, std::vector<uint64_t>, std::less<>> experienceByClass;
     std::vector<ClassicTreasureClass> treasures;

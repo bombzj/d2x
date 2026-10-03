@@ -144,6 +144,7 @@ target_sources(d2x_session PRIVATE src/gameplay/session/session_item_snapshot.cp
 target_sources(d2x_session PRIVATE src/gameplay/session/session_character_save.cpp)
 target_sources(d2x_session PRIVATE src/gameplay/session/session_debug_monsters.cpp)
 target_sources(d2x_session PRIVATE src/gameplay/session/session_quests.cpp)
+target_sources(d2x_session PRIVATE src/gameplay/session/session_act_two.cpp)
 target_sources(d2x_session PRIVATE src/gameplay/session/session_quest_dialogue.cpp)
 target_sources(d2x_session PRIVATE src/gameplay/session/session_cain_world.cpp src/gameplay/session/session_cain_items.cpp src/gameplay/session/session_tools.cpp src/gameplay/session/session_slaughter.cpp)
 target_sources(d2x_session PRIVATE src/gameplay/npc/hireling.cpp)

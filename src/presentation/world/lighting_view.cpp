@@ -18,6 +18,11 @@ constexpr std::array<Cycle, 6> actFourCycles{{
     {0, {255, 20, 20, 255}}, {180, {255, 255, 30, 255}},
     {190, {20, 152, 193, 255}}, {200, {125, 144, 243, 255}}
 }};
+constexpr std::array<Cycle, 6> eclipseCycles{{
+    {300, {0, 30, 243, 255}}, {0, {0, 30, 244, 255}},
+    {60, {0, 30, 243, 255}}, {120, {0, 30, 243, 255}},
+    {180, {0, 30, 244, 255}}, {240, {0, 30, 243, 255}}
+}};
 // Preserve the existing distance adapter until D2Client's light-generation
 // table is recovered. Do not describe this spatial rule as native falloff.
 float unverifiedFalloff(float distance, float radius) {
@@ -42,6 +47,15 @@ LightingView::~LightingView() {
 void LightingView::resetEnvironment() {
     environments_ = {};
     frameRemainder_ = 0;
+    eclipse_ = false;
+}
+void LightingView::setEclipse(bool active) {
+    if (eclipse_ == active) return;
+    eclipse_ = active;
+    auto &environment = environments_[1];
+    environment.cycle = active ? 0 : 2;
+    environment.ticks = active ? 300 * 4 : 0;
+    environment.color = active ? eclipseCycles[0].color : WHITE;
 }
 void LightingView::advance(float dt, const LevelRecord &level) {
     if (dt <= 0 || level.act < 0 || level.act >= int(environments_.size())) return;
@@ -49,18 +63,20 @@ void LightingView::advance(float dt, const LevelRecord &level) {
     const int frames = int(frameRemainder_ + .000001f);
     frameRemainder_ = std::max(0.f, frameRemainder_ - frames);
     auto &environment = environments_[size_t(level.act)];
-    const auto &cycles = level.act == 3 ? actFourCycles : normalCycles;
+    const bool eclipse = level.act == 1 && eclipse_;
+    const int rate = eclipse ? 4 : timeRate;
+    const auto &cycles = eclipse ? eclipseCycles : level.act == 3 ? actFourCycles : normalCycles;
     for (int frame = 0; frame < frames; ++frame) {
         // GAME_UpdateProgress -> GAME_UpdateEnvironment: one update per 25 Hz frame.
         ++environment.ticks;
         if (level.act == 3) environment.ticks += 15;
         else if (environment.cycle == 5) environment.ticks += level.act == 2 ? 10 : 1;
-        if (environment.ticks >= 360 * timeRate) environment.ticks = 0;
+        if (environment.ticks >= 360 * rate) environment.ticks = 0;
         const int next = (environment.cycle + 1) % int(cycles.size());
-        if (environment.ticks > timeRate * cycles[size_t(next)].begin) {
+        if (environment.ticks > rate * cycles[size_t(next)].begin) {
             environment.cycle = next;
             // ENVIRONMENT_UpdateTicks uses the normal table here even in Act IV.
-            environment.ticks = timeRate * normalCycles[size_t(next)].begin;
+            environment.ticks = rate * (eclipse ? eclipseCycles : normalCycles)[size_t(next)].begin;
         }
         if (level.act == 3) {
             const int target = level.id == 103 ? 128 : level.id == 104 ? 64
@@ -68,6 +84,8 @@ void LightingView::advance(float dt, const LevelRecord &level) {
             environment.intensity += environment.intensity < target ? 1
                                    : environment.intensity > target ? -1 : 0;
             if (!environment.intensity) environment.intensity = target;
+        } else if (eclipse) {
+            environment.intensity = std::max(32, environment.intensity - 8);
         } else if (level.id == 120) {
             environment.intensity = 200; // Rocky Summit engine override.
         } else {
@@ -79,8 +97,8 @@ void LightingView::advance(float dt, const LevelRecord &level) {
         }
         const auto &current = cycles[size_t(environment.cycle)];
         const auto &following = cycles[size_t((environment.cycle + 1) % int(cycles.size()))];
-        const double ratio = double(environment.ticks - timeRate * current.begin) /
-                             double(timeRate * (following.begin - current.begin));
+        const double ratio = double(environment.ticks - rate * current.begin) /
+                     double(rate * (following.begin - current.begin));
         auto lerp = [&](uint8_t from, uint8_t to) {
             return uint8_t(int(double(from) + (double(to) - from) * ratio + .5));
         };

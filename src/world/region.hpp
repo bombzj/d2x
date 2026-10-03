@@ -31,6 +31,7 @@ struct WorldObject {
     int facing = 0;
     int animationMode = 0;
     int objectClass = -1, operateFn = 0, objectDamage = 0;
+    std::optional<RegionId> questDestination;
     std::optional<ChestState> chest;
     std::array<int, 8> parameters{};
     float operatedAt = -1;
@@ -83,6 +84,7 @@ struct LevelExit {
 };
 struct Region {
     bool loaded = false;
+    int staffTombLevel = 0;
     uint64_t objectSeed = 0;
     RegionDefinition definition;
     MapRecipe recipe;

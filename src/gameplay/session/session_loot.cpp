@@ -18,12 +18,52 @@ void GameSession::settleDeaths() {
     for (const auto &death : deaths) {
         if (loot_.settled(death.victim))
             continue;
-        const bool questFirstKill = death.identity.monster == "andariel" &&
+        const bool andarielFirstKill = death.identity.monster == "andariel" &&
             quest(ActOneQuest::SistersToTheSlaughter).stage < uint32_t(SlaughterStage::AndarielSlain) &&
             catacombsFourRegion_ && death.region == *catacombsFourRegion_;
+        const bool questFirstKill = andarielFirstKill || (death.identity.monster == "duriel" &&
+            int(death.region) == 73 && quest(QuestId::SevenTombs).stage < 5);
         updateBurialQuest(death);
         updateTowerQuest(death);
         updateSlaughterQuest(death);
+        if (death.identity.monster == "duriel" && int(death.region) == 73 && death.identity.origin != SpawnOrigin::Summoned) {
+            auto &record = simulation_->state_.player.actOneQuests.at(size_t(death.difficulty)).at(questIndex(QuestId::SevenTombs));
+            if (record.stage < 2) { record.stage = 2; simulation_->emit(QuestAdvanced{QuestId::SevenTombs, 2}); }
+            for (auto &object : regions_.at(current_).objects)
+                if (object.objectClass == 153) { object.operatedAt = state().time; object.animationMode = 2; }
+        }
+        if (death.identity.monster == "summoner" && int(death.region) == 74 && death.identity.origin != SpawnOrigin::Summoned) {
+            auto &book = simulation_->state_.player.actOneQuests.at(size_t(death.difficulty));
+            auto &summoner = book.at(questIndex(QuestId::Summoner));
+            if (summoner.stage < 2) { summoner.stage = 2; simulation_->emit(QuestAdvanced{QuestId::Summoner, 2}); }
+            auto &arcane = book.at(questIndex(QuestId::ArcaneSanctuary));
+            if (arcane.stage < 4) { arcane.stage = 4; simulation_->emit(QuestAdvanced{QuestId::ArcaneSanctuary, 4}); }
+        }
+        if (death.identity.monster == "radament" && int(death.region) == 49 &&
+            death.identity.origin != SpawnOrigin::Summoned) {
+            if (auto *source = simulation_->findEnemy(death.victim)) {
+                const auto &missiles = content_.tables.at("missiles");
+                int maximumDelay = 100;
+                for (size_t row = 0; row < missiles.rows().size(); ++row)
+                    if (missiles.value(row, "Missile") == "radamentdeath")
+                        maximumDelay = std::max(100, missiles.number(row, "Range").value_or(200) - 100);
+                for (auto &enemy : simulation_->state_.area.enemies) {
+                    const int horizontal = int(enemy.pos.x) - int(death.position.x);
+                    const int vertical = int(enemy.pos.y) - int(death.position.y);
+                    if (enemy.hp > 0 && simulation_->relation(source->id, enemy.id) == Relation::Allied &&
+                        region().map.activation.nearby(source->pos, enemy.pos) &&
+                        horizontal * horizontal + vertical * vertical <= 35 * 35)
+                        enemy.questDeathFrame = state().frame + 40 + limitedRandom(source->combatRandom, unsigned(maximumDelay - 40));
+                }
+            }
+            auto &record = simulation_->state_.player.actOneQuests
+                .at(size_t(death.difficulty)).at(questIndex(QuestId::RadamentsLair));
+            if (radamentAdvance(record, RadamentStage::Slain)) {
+                const LootDrop book{"ass", 1, {}, unsigned(state().player.level), {}};
+                spawnLoot(std::span(&book, 1), death.region, death.position);
+                simulation_->emit(QuestAdvanced{QuestId::RadamentsLair, record.stage});
+            }
+        }
         LootRequest request{death.victim, death.identity, death.region, death.difficulty,
                             questFirstKill};
         request.sourceSeed = true;
@@ -66,7 +106,7 @@ void GameSession::settleDeaths() {
             std::cout << (entry.status == LootEntryStatus::Empty ? " empty: " : " deferred: ")
                       << entry.reason << '\n';
         }
-        if (questFirstKill && death.killer == state().player.id && plan.deferred.empty()) {
+        if (andarielFirstKill && death.killer == state().player.id && plan.deferred.empty()) {
             constexpr const char *chipped[]{"gcv", "gcr", "gcb", "gcy", "gcg", "gcw", "skc"};
             constexpr const char *normal[]{"gsv", "gsr", "gsb", "gsy", "gsg", "gsw", "sku"};
             for (int gem = 0; gem < 3; ++gem) {
@@ -104,14 +144,22 @@ void GameSession::spawnLoot(std::span<const LootDrop> drops, RegionId id, Vec or
         // item resolver checks drop collision and the field from the actual source.
         if (position.x < 0 || position.y < 0 || position.x >= grid.width || position.y >= grid.height)
             position = origin;
+        const bool questUnique = drop.code == "msf" || drop.code == "vip" || drop.code == "hst";
+        const auto generation = questUnique ? questItemGeneration(drop.code, inventory_.state_.creationRandom) : drop.generation;
         auto result = inventory_.createItem(drop.code, drop.quantity, GroundLocation{id, position},
-                                            drop.level, drop.generation, origin);
+                            drop.level, generation, origin);
         if (result.error == InventoryError::NoSpace) {
             simulation_->emit(LootDeferred{{}, "No free ground cell for this drop."});
             continue;
         }
         if (!result)
             throw std::logic_error("Invalid loot definition or placement");
+        auto &item = inventory_.state_.items.at(result.item);
+        if (questUnique) item.identified = true;
+        const auto *definition = content_.items.find(item.definition);
+        if (definition && content_.tables.at(definition->base.sourceTable)
+                .number(definition->base.sourceRow, "questdiffcheck").value_or(0))
+            item.nativeQuestDifficulty = unsigned(state().population.difficulty);
         publishInventory(std::move(result), {});
     }
 }
@@ -166,6 +214,18 @@ void GameSession::updatePickup() {
     if (!ground || ground->region != region().definition.id) {
         cancelPickup();
         simulation_->emit(InventoryRejected{handle.id, InventoryError::AccessDenied});
+        return;
+    }
+    const auto *base = content_.items.find(item->definition);
+    const auto &table = content_.tables.at(base->base.sourceTable);
+    const bool questItem = table.number(base->base.sourceRow, "quest").value_or(0) != 0;
+    if (questItem && ((table.number(base->base.sourceRow, "questdiffcheck").value_or(0) &&
+        item->nativeQuestDifficulty < unsigned(state().population.difficulty)) ||
+        (item->definition == "ass" && !(quest(QuestId::RadamentsLair).flags & radamentBookPending)) ||
+        (table.number(base->base.sourceRow, "quest") == 10 && item->definition != content_.cubeCode &&
+         quest(QuestId::HoradricStaff).stage >= 6) || carriesQuestItem(item->definition))) {
+        cancelPickup();
+        simulation_->emit(InventoryRejected{handle.id, InventoryError::RestrictedItem});
         return;
     }
     if (player.castTime > 0 || player.meleeTime > 0)

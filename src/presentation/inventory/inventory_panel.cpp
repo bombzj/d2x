@@ -88,8 +88,12 @@ std::vector<ContainerGrid> inventoryGrids(const GameSession &session, const Inve
     }
     return grids;
 }
-void InventoryUi::syncCursor(const GameSession &session) {
+void InventoryUi::syncCursor(const GameSession &session, EntityId reserved) {
     if (const auto *item = session.cursorItem()) {
+        if (item->id == reserved) {
+            drag.reset();
+            return;
+        }
         if (!drag || !drag->onCursor || drag->item.id != item->id) {
             const auto &definition = *session.inventory().catalog().find(item->definition);
             drag = InventoryDrag{item->handle(), {definition.width / 2, definition.height / 2}, {},

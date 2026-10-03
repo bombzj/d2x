@@ -17,8 +17,7 @@ std::vector<MenuEntry> entries(const GameSession &session, EntityId npc, std::st
         if (introSpeech(session.content().npcDialogues, speaker,
                         session.state().player.characterClass, act))
             result.push_back({"Introduction", 11});
-        for (auto [id, speech] : act == 0 ? session.npcQuestTopics(speaker)
-                        : decltype(session.npcQuestTopics(speaker)){}) {
+        for (auto [id, speech] : session.npcQuestTopics(speaker)) {
             std::string key = "qsts" + speech->quest;
             std::transform(key.begin(), key.end(), key.begin(), [](unsigned char c) {
                 return char(std::tolower(c));
@@ -33,7 +32,7 @@ std::vector<MenuEntry> entries(const GameSession &session, EntityId npc, std::st
         return result;
     }
     if (introSpeech(session.content().npcDialogues, speaker, session.state().player.characterClass, act) ||
-        (act == 0 && !session.npcQuestTopics(speaker).empty()) || gossipSpeech(session.content().npcDialogues, speaker, 0, act))
+        !session.npcQuestTopics(speaker).empty() || gossipSpeech(session.content().npcDialogues, speaker, 0, act))
         result.push_back({"Talk", 1});
     if (session.vendorStock(npc)) {
         result.push_back({npcCanRepair(npcClass) ? "Trade / Repair" : "Trade", 2});
@@ -57,6 +56,9 @@ std::vector<MenuEntry> entries(const GameSession &session, EntityId npc, std::st
     if (npcClass == "warriv1" && session.quest(ActOneQuest::SistersToTheSlaughter).stage >=
                                    uint32_t(SlaughterStage::PassageReady))
         result.push_back({"Go East", 8});
+    if (npcClass == "meshif1" && session.quest(QuestId::SevenTombs).stage >= 5)
+        result.push_back({"Sail East", 13});
+    if (npcClass == "meshif2") result.push_back({"Sail West", 13});
     result.push_back({"Cancel", 4});
     return result;
 }

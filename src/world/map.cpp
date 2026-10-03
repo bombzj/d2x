@@ -5,6 +5,97 @@
 #include <algorithm>
 #include <iostream>
 namespace d2x {
+bool Map::openTombWall(Vec position) {
+    if (!tombWalls.empty()) return true;
+    const int column = int(std::floor(position.x / 5));
+    const int row = int(std::floor(position.y / 5));
+    if (column < 1 || row < 1 || column >= data.width - 1 || row >= data.height - 1) return false;
+    std::vector<std::pair<int, int>> opening;
+    for (int vertical = row - 1; vertical <= row + 1; ++vertical)
+        for (int horizontal = column - 1; horizontal <= column + 1; ++horizontal)
+            if (std::any_of(data.walls.begin(), data.walls.end(), [&](const auto &layer) {
+                const auto &cell = layer[size_t(vertical) * data.width + horizontal];
+                return cell.occupied() && cell.orientation >= 1 && cell.orientation <= 7 &&
+                    ((cell.value >> 20) & 63) == 8 && ((cell.value >> 8) & 255) <= 1;
+            })) opening.emplace_back(horizontal, vertical);
+    if (opening.empty()) {
+        const size_t entrance = size_t(row) * data.width + column;
+        const bool eastWall = std::any_of(data.walls.begin(), data.walls.end(), [&](const auto &layer) {
+            const auto &cell = layer[entrance];
+            return cell.occupied() && cell.orientation == 1 && ((cell.value >> 20) & 63) == 6 &&
+                (((cell.value >> 8) & 255) == 8 || ((cell.value >> 8) & 255) == 9);
+        });
+        if (eastWall)
+            for (int vertical = row - 1; vertical <= row; ++vertical)
+                if (std::any_of(data.walls.begin(), data.walls.end(), [&](const auto &layer) {
+                    const auto &cell = layer[size_t(vertical) * data.width + column];
+                    return cell.occupied() && cell.orientation == 1 && ((cell.value >> 20) & 63) == 6 &&
+                        (((cell.value >> 8) & 255) == 8 || ((cell.value >> 8) & 255) == 9);
+                })) opening.emplace_back(column, vertical);
+    }
+    if (opening.empty()) return false;
+    for (const auto &[wallColumn, wallRow] : opening) {
+        const size_t cellIndex = size_t(wallRow) * data.width + wallColumn;
+        TombWall saved;
+        saved.x = wallColumn;
+        saved.y = wallRow;
+        for (auto &layer : data.walls) {
+            auto &cell = layer[cellIndex];
+            saved.walls.push_back(cell);
+            const auto main = (cell.value >> 20) & 63;
+            const auto sub = (cell.value >> 8) & 255;
+            if ((main == 8 && sub <= 1 && cell.orientation >= 1 && cell.orientation <= 7) ||
+                (main == 6 && (sub == 8 || sub == 9) && cell.orientation == 1)) cell = {};
+        }
+        for (int vertical = 0; vertical < 5; ++vertical)
+            for (int horizontal = 0; horizontal < 5; ++horizontal) {
+                const size_t index = size_t(wallRow * 5 + vertical) * grid.width + wallColumn * 5 + horizontal;
+                saved.collision[size_t(vertical * 5 + horizontal)] = grid.terrainCollision[index];
+                uint8_t flags = 0;
+                auto merge = [&](const MapCell &cell) {
+                    if (!cell.occupied() || ((cell.orientation == 10 || cell.orientation == 11) &&
+                        (cell.hidden() || ((cell.value >> 20) & 63) >= 8))) return;
+                    const int tile = tileIndex(cell, wallColumn, wallRow);
+                    if (tile < 0) return;
+                    flags |= tiles[size_t(tile)]->flags[size_t((4 - vertical) * 5 + horizontal)];
+                    if (cell.orientation == 3) {
+                        auto companion = cell;
+                        companion.orientation = 4;
+                        const int corner = tileIndex(companion, wallColumn, wallRow);
+                        if (corner >= 0) flags |= tiles[size_t(corner)]->flags[size_t((4 - vertical) * 5 + horizontal)];
+                    }
+                    if (cell.value & (1u << 16)) flags |= 0x04;
+                    if (cell.value & (1u << 17)) flags |= 0x01;
+                    if ((cell.value & (1u << 28)) || (cell.orientation >= 8 && cell.orientation <= 11)) flags |= 0x10;
+                };
+                for (const auto &layer : data.floors) merge(layer[cellIndex]);
+                for (const auto &layer : data.walls) merge(layer[cellIndex]);
+                grid.terrainCollision[index] = flags;
+                grid.blocked[index] = (flags & 0x09) != 0;
+                grid.lightBlocked[index] = (flags & 0x22) != 0;
+            }
+        tombWalls.push_back(std::move(saved));
+    }
+    ++grid.obstacleRevision;
+    return true;
+}
+void Map::restoreTombWall() {
+    if (tombWalls.empty()) return;
+    for (const auto &saved : tombWalls) {
+        const size_t cellIndex = size_t(saved.y) * data.width + saved.x;
+        for (size_t layer = 0; layer < data.walls.size(); ++layer) data.walls[layer][cellIndex] = saved.walls[layer];
+        for (int vertical = 0; vertical < 5; ++vertical)
+            for (int horizontal = 0; horizontal < 5; ++horizontal) {
+                const size_t index = size_t(saved.y * 5 + vertical) * grid.width + saved.x * 5 + horizontal;
+                const auto flags = saved.collision[size_t(vertical * 5 + horizontal)];
+                grid.terrainCollision[index] = flags;
+                grid.blocked[index] = (flags & 0x09) != 0;
+                grid.lightBlocked[index] = (flags & 0x22) != 0;
+            }
+    }
+    tombWalls.clear();
+    ++grid.obstacleRevision;
+}
 Vec Map::actSpawn() const {
     for (unsigned markerType : {30u, 33u})
         for (const auto &layer : data.walls)

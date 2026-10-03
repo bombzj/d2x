@@ -56,6 +56,7 @@ class GameSession {
     uint64_t random_;
     uint64_t visualRandom_ = 0, cainRandom_ = 0;
     ClassicData content_;
+    Table questObjectRows_;
     CharacterDefinition characterDefinition_;
     WorldCatalog worldContent_;
     Archives &archives_;
@@ -109,6 +110,7 @@ class GameSession {
     void enter(RegionId id, std::optional<Vec> arrival = {}, std::optional<Vec> coordinateOffset = {});
     void ensureRegion(RegionId id, bool neighbours = false);
     void beginExit(int slot);
+    bool questExitAllowed(RegionId destination) const;
     bool beginBoundaryExit(const LevelExit &exit, std::optional<Vec> target);
     bool routeBoundaryMove(Vec target);
     void updateExit();
@@ -168,6 +170,7 @@ class GameSession {
     void updateTowerQuest(const EnemyDied &death);
     void updateSlaughterQuest(const EnemyDied &death);
     void completeActOne(EntityId npc);
+    void completeActTwo(EntityId npc);
     void activateCainQuestObject(const WorldObject &object);
     void updateCainQuestItems();
     void updateToolsQuestItems();
@@ -202,6 +205,13 @@ class GameSession {
     void identifyItem(const IdentifyItem &command);
     void transactGold(const GoldTransaction &command);
     void dropDebugCube();
+    void transmuteCube();
+    ItemGeneration questItemGeneration(std::string_view code, uint64_t &random) const;
+    void activateActTwoObject(EntityId id, std::optional<ItemHandle> submitted = {});
+    void updateActTwoObjects();
+    std::optional<EffectFrame> tombOpeningFrame_;
+    std::optional<EffectFrame> tombCollapseFrame_;
+    std::optional<EffectFrame> sunDarkeningFrame_;
     void beginPortal(uint64_t revision);
     void updatePortal();
     InventoryError previewPortalScroll(ItemHandle item) const;
@@ -218,6 +228,8 @@ class GameSession {
         const MonsterIdentity &identity, RegionId region) const;
 
   public:
+        bool carriesQuestItem(std::string_view code) const;
+        bool canInsertStaff(EntityId id) const;
     bool canHireFrom(EntityId npc) const;
     bool canResurrectHireling(EntityId npc) const;
     unsigned hirelingResurrectionCost() const;

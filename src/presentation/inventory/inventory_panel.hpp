@@ -33,7 +33,7 @@ struct InventoryUi {
     std::optional<SplitDialog> split;
     std::optional<ItemHandle> identify;
     std::optional<GoldDialog> goldDialog;
-    void syncCursor(const GameSession &session);
+    void syncCursor(const GameSession &session, EntityId reserved = {});
     void cancelGesture() {
         if (drag && !drag->onCursor) drag.reset();
         split.reset();
@@ -94,6 +94,17 @@ inline Rectangle storageClose() {
 }
 inline Rectangle cubeBounds() {
     return classicPanelBounds(false);
+}
+inline Rectangle orificeBounds() {
+    return {106 * inventoryScale, 98 * inventoryScale, 108 * inventoryScale, 164 * inventoryScale};
+}
+inline Rectangle orificeSlot() {
+    auto panel = orificeBounds();
+    return {panel.x + 16 * inventoryScale, panel.y + 12 * inventoryScale, 76 * inventoryScale, 108 * inventoryScale};
+}
+inline Rectangle orificeButton(bool confirm) {
+    auto panel = orificeBounds();
+    return {panel.x + (confirm ? 10 : 66) * inventoryScale, panel.y + 126 * inventoryScale, 32 * inventoryScale, 32 * inventoryScale};
 }
 inline Rectangle cubeClose() {
     auto p = cubeBounds();

@@ -106,7 +106,7 @@ void SceneController::click(Vec mouse) {
 }
 bool SceneController::handle(const FrameInput &input, float elapsed) {
     auto &ui = view_.ui();
-    ui.inventory.syncCursor(session_);
+    ui.inventory.syncCursor(session_, ui.orificeItem ? ui.orificeItem->id : EntityId{});
     if (!session_.state().player.hireling.active()) ui.hirelingOpen = false;
     if (!input.focused || ui.blocksWorld() || session_.state().player.dead ||
         input.escape || input.inventory || input.character || input.skillTree || input.quests ||
@@ -116,6 +116,8 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
     }
     if (!ui.questOpen) ui.questPressed = -1;
     if (inputRegion_ != session_.state().area.region) {
+        ui.orificeObject = {};
+        ui.orificeItem.reset();
         leftCombatTarget_ = rightCombatTarget_ = {};
         inputRegion_ = session_.state().area.region;
     }
@@ -249,7 +251,7 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
         const int index = ui.questPressed;
         if (input.leftReleased) {
             ui.questPressed = -1;
-            if (input.insideViewport && session_.quest(questDisplayOrder[size_t(index)]).stage &&
+            if (input.insideViewport && session_.quest(displayedQuest(ui.questAct, index)).stage &&
                 CheckCollisionPointRec(rv(input.mouse), questIconBounds(index)))
                 ui.questSelected = index;
             return true;
@@ -284,7 +286,7 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
         }
         else if (action == 11) view_.startNpcIntroduction();
         else if (action == 5) view_.showNextNpcGossip();
-        else if (action >= 100 && action < 106) view_.startNpcTopic(ActOneQuest(action - 100));
+        else if (action >= 100 && action < 100 + int(QuestId::Count)) view_.startNpcTopic(QuestId(action - 100));
         else if (action == 2) view_.openNpcShop();
         else if (action == 9) {
             session_.submit(OpenGamble{ui.dialogueObject});
@@ -304,6 +306,10 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
         }
         else if (action == 8) {
             session_.submit(CompleteActOne{ui.dialogueObject});
+            ui.npcMenu = false;
+        }
+        else if (action == 13) {
+            session_.submit(CompleteActTwo{ui.dialogueObject});
             ui.npcMenu = false;
         }
         else if (action == 4) {
@@ -545,19 +551,21 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
         if (ui.questOpen) {
             ui.hirelingOpen = false;
             const bool updated = ui.questNotice;
+            if (updated && ui.questUpdated >= 0) ui.questAct = ui.questUpdated / 6;
+            else ui.questAct = std::min(1, session_.worldContent().levels().at(int(session_.region().definition.id)).act);
             ui.questNotice = false;
             if (ui.questSelected < 0 || ui.questSelected >= int(questDisplayOrder.size()) ||
-                !session_.quest(questDisplayOrder[size_t(ui.questSelected)]).stage) {
+                !session_.quest(displayedQuest(ui.questAct, ui.questSelected)).stage) {
                 ui.questSelected = -1;
                 for (int index = 0; index < int(questDisplayOrder.size()); ++index)
-                    if (session_.quest(questDisplayOrder[size_t(index)]).stage) {
+                    if (session_.quest(displayedQuest(ui.questAct, index)).stage) {
                         ui.questSelected = index;
                         break;
                     }
             }
-            if (updated && ui.questUpdated >= 0 && ui.questUpdated < int(questDisplayOrder.size()) &&
-                session_.quest(questDisplayOrder[size_t(ui.questUpdated)]).stage)
-                ui.questSelected = ui.questUpdated;
+            if (updated && ui.questUpdated >= 0 && ui.questUpdated < int(QuestId::Count) &&
+                session_.quest(QuestId(ui.questUpdated)).stage)
+                ui.questSelected = ui.questUpdated % 6;
             ui.characterOpen = false;
             ui.skillTreeOpen = false;
             if (ui.inventory.open) toggleInventory();
@@ -643,6 +651,7 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
         ui.questOpen = false;
     }
     if (input.escape) {
+        if (ui.orificeObject) return handleInventory(input);
         if (ui.skillPicker) {
             ui.skillPicker.reset();
             skillGesture_ = true;
@@ -795,14 +804,24 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
         if (input.leftPressed) {
             if (CheckCollisionPointRec(rv(input.mouse), questCloseBounds()))
                 ui.questOpen = false;
-            else
+            else {
+                const int currentAct = session_.worldContent().levels().at(int(session_.region().definition.id)).act;
+                const int count = currentAct >= 1 || session_.quest(QuestId::SistersToTheSlaughter).stage >= uint32_t(SlaughterStage::Completed) ? 2 : 1;
+                for (int act = 0; act < count; ++act)
+                    if (CheckCollisionPointRec(rv(input.mouse), questTabBounds(act))) {
+                        ui.questAct = act;
+                        ui.questSelected = -1;
+                        ui.questPressed = -1;
+                        return true;
+                    }
                 for (int index = 0; index < 6; ++index)
-                    if (session_.quest(questDisplayOrder[size_t(index)]).stage &&
+                    if (session_.quest(displayedQuest(ui.questAct, index)).stage &&
                         CheckCollisionPointRec(rv(input.mouse), questIconBounds(index))) {
                         ui.questPressed = index;
                         pickupClick_ = true;
                         break;
                     }
+            }
         }
         return true;
     }

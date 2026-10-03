@@ -222,6 +222,8 @@ void SceneView::sessionRestored() {
     assets_.loadInventoryArt(session_);
     assets_.loadHeroEquipment(session_);
     view_.inventory = {};
+    view_.orificeObject = {};
+    view_.orificeItem.reset();
     view_.inventory.syncCursor(session_);
     view_.characterOpen = false;
     view_.pointButtonPressed.reset();
@@ -275,6 +277,8 @@ void SceneView::advanceUi(float dt, bool worldPaused) {
 }
 void SceneView::advance(float dt) {
     assets_.syncRegions(session_);
+    const auto sunStage = session_.quest(QuestId::TaintedSun).stage;
+    lighting_.setEclipse(sunStage > 0 && sunStage < 3);
     lighting_.advance(dt, session_.worldContent().level(int(session_.region().definition.id)));
     advanceMissileVisuals(dt);
     revealAutomap();
@@ -400,6 +404,8 @@ void SceneView::advance(float dt) {
                     else if (auto sound = soundFor(value.victim)) assets_.audio.play(sound->death);
                 }
                 else if constexpr (std::is_same_v<T, RegionEntered>) {
+                    view_.orificeObject = {};
+                    view_.orificeItem.reset();
                     assets_.audio.resetEmitters();
                     clientMissiles_.clear();
                     arcVisualFrames_.clear();
@@ -497,6 +503,9 @@ void SceneView::advance(float dt) {
                             : " x" + std::to_string(value.quantity);
                     notice("Picked up: " + name, false);
                 } else if constexpr (std::is_same_v<T, ItemChange>) {
+                    if (value.kind == ItemChangeKind::Removed && view_.inventory.drag &&
+                        view_.inventory.drag->item.id == value.item)
+                        view_.inventory.drag.reset();
                     const auto *item = session_.inventory().item(value.item);
                     if (item) {
                         const auto key = SceneAssets::itemArtKey(*item);
@@ -533,6 +542,20 @@ void SceneView::advance(float dt) {
                     else
                         openNpcDialogue(value.object, value.speaker, value.text);
                 } else if constexpr (std::is_same_v<T, ObjectInteracted>) {
+                    if (const auto *source = session_.object(value.object); source && source->operateFn == 25) {
+                        if (session_.quest(QuestId::HoradricStaff).stage < uint32_t(StaffStage::Submitted)) {
+                            view_.orificeObject = source->id;
+                            view_.orificeItem.reset();
+                            view_.inventory.open = true;
+                            view_.inventory.cubeOpen = false;
+                            view_.inventory.storage = {};
+                            view_.questOpen = view_.characterOpen = view_.skillTreeOpen = false;
+                            assets_.loadInventoryArt(session_);
+                        } else {
+                            view_.orificeObject = {};
+                            view_.orificeItem.reset();
+                        }
+                    }
                     if (value.unlockedChest) assets_.audio.play("chest.item_key_used");
                     if (value.interaction == Interaction::QuestTome) {
                         if (auto speech = questSpeech(session_.content().npcDialogues,
@@ -612,8 +635,12 @@ void SceneView::advance(float dt) {
             view_.inventory.cancelGesture();
         }
     }
-    view_.inventory.syncCursor(session_);
     view_.animationTime += dt;
+    if (view_.orificeObject && (!view_.inventory.open || player.dead || !session_.object(view_.orificeObject))) {
+        view_.orificeObject = {};
+        view_.orificeItem.reset();
+    }
+    view_.inventory.syncCursor(session_, view_.orificeItem ? view_.orificeItem->id : EntityId{});
     view_.heroTime += dt * (player.chill > 0 ? .5f : 1.f) *
                       (player.moving && player.webSlowRemaining > 0
                            ? std::max(0.f, 1.f + player.webSlowPercent / 100.f) : 1.f);

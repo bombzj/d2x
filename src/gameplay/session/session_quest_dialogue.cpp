@@ -105,6 +105,46 @@ GameSession::npcQuestTopics(std::string_view speaker) const {
     // QUESTS_InitScrollTextChain appends each active quest's NPC messages;
     // a Talk menu must retain all of these, rather than only the newest quest.
     std::vector<std::pair<ActOneQuest, const NpcSpeech *>> result;
+    if (worldContent_.levels().at(int(region().definition.id)).act == 1) {
+        if (int(region().definition.id) == 73) {
+            if (quest(QuestId::SevenTombs).stage >= 2)
+                if (const auto *speech = introSpeech(content_.npcDialogues, speaker, {}, 1))
+                    result.emplace_back(QuestId::SevenTombs, speech);
+            return result;
+        }
+        const auto stage = quest(QuestId::RadamentsLair).stage;
+        const auto state = stage == 0 ? "Init" : stage == 1 ? "AfterInit"
+            : stage == 2 ? "EarlyReturn" : "Successful";
+        if (stage < uint32_t(RadamentStage::Rewarded))
+            if (const auto *speech = questSpeech(content_.npcDialogues, "A2Q1", state, speaker))
+                result.emplace_back(QuestId::RadamentsLair, speech);
+        if (quest(QuestId::HoradricStaff).stage < 6) {
+            const auto staffState = carriesQuestItem("hst") ? "SuccessfulStaff" : carriesQuestItem("vip") ? "EarlyReturnCap"
+                : carriesQuestItem("msf") ? "EarlyReturnStave" : carriesQuestItem("tr1") ? "EarlyReturnScroll"
+                : carriesQuestItem(content_.cubeCode) ? "EarlyReturnCube" : nullptr;
+            if (staffState)
+                if (const auto *speech = questSpeech(content_.npcDialogues, "A2Q2", staffState, speaker))
+                    result.emplace_back(QuestId::HoradricStaff, speech);
+        }
+        const auto sun = quest(QuestId::TaintedSun).stage;
+        if (sun > 0 && sun < 4)
+            if (const auto *speech = questSpeech(content_.npcDialogues, "A2Q3", sun == 3 ? "Successful" : sun == 1 ? "AfterInit" : "EarlyReturn", speaker))
+                result.emplace_back(QuestId::TaintedSun, speech);
+        const auto arcane = quest(QuestId::ArcaneSanctuary).stage;
+        const auto summoner = quest(QuestId::Summoner).stage;
+        if (arcane >= 3 && summoner < 3)
+            if (const auto *speech = questSpeech(content_.npcDialogues, "A2Q5", summoner == 2 ? "Successful" : "EarlyReturn", speaker))
+                result.emplace_back(QuestId::Summoner, speech);
+        if (sun >= 3 || arcane > 0)
+            if (const auto *speech = questSpeech(content_.npcDialogues, "A2Q4", arcane == 0 ? "Init" : arcane < 3 ? "AfterInit" : arcane == 3 ? "EarlyReturn" : "Successful", speaker))
+                result.emplace_back(QuestId::ArcaneSanctuary, speech);
+        const auto tombs = quest(QuestId::SevenTombs).stage;
+        if (arcane > 0 || tombs > 0)
+            if (const auto *speech = questSpeech(content_.npcDialogues, "A2Q6", tombs == 0 ? "Init" : tombs >= 3 ? "Successful" : "AfterInit", speaker))
+                result.emplace_back(QuestId::SevenTombs, speech);
+        return result;
+    }
+    if (worldContent_.levels().at(int(region().definition.id)).act != 0) return result;
     for (auto [id, speech] : {
              std::pair{ActOneQuest::DenOfEvil, denSpeech(*this, speaker)},
              std::pair{ActOneQuest::SistersBurialGrounds, burialSpeech(*this, speaker)},
@@ -117,6 +157,27 @@ GameSession::npcQuestTopics(std::string_view speaker) const {
 }
 
 NpcQuestDialogue GameSession::npcQuestDialogue(std::string_view speaker) const {
+    if (worldContent_.levels().at(int(region().definition.id)).act == 1) {
+        for (auto [id, speech] : npcQuestTopics(speaker)) {
+            const auto stage = quest(id).stage;
+            const auto identity = content_.npcDialogues.speakers.find(npcIntroductionKey(speaker, 1));
+            const bool advances = identity != content_.npcDialogues.speakers.end() &&
+                ((id == QuestId::RadamentsLair && identity->second == "atma" && (stage == 0 || stage == uint32_t(RadamentStage::Slain))) ||
+                 (id == QuestId::HoradricStaff && speech->state == "EarlyReturnScroll" && !(quest(id).flags & 1)));
+            const bool ending = id == QuestId::SevenTombs && identity != content_.npcDialogues.speakers.end() &&
+                ((stage == 0 && identity->second == "jerhyn") || (stage == 2 && identity->second == "tyreal") ||
+                 (stage == 2 && identity->second == "tyrael") || (stage == 3 && identity->second == "jerhyn") ||
+                 (stage == 4 && identity->second == "meshif"));
+            const bool progresses = advances || ending || (id == QuestId::Summoner && stage == 2) || (id == QuestId::TaintedSun && (stage == 3 || (stage == 1 && identity != content_.npcDialogues.speakers.end() && identity->second == "drognan"))) ||
+                (id == QuestId::ArcaneSanctuary && identity != content_.npcDialogues.speakers.end() &&
+                 ((stage == 0 && identity->second == "drognan") || (stage == 1 && identity->second == "jerhyn")));
+            if (progresses) return {speech, id, true, {}};
+        }
+        const auto topics = npcQuestTopics(speaker);
+        if (!topics.empty()) return {topics.back().second, std::nullopt, false, {}};
+        return {};
+    }
+    if (worldContent_.levels().at(int(region().definition.id)).act != 0) return {};
     // The speech and the command use the same selected quest. In particular, an
     // unrelated completed quest must never mask Akara's scroll/reward dialogue.
     std::optional<ActOneQuest> advancing;
@@ -199,10 +260,10 @@ NpcQuestDialogue GameSession::npcQuestDialogue(std::string_view speaker) const {
 
 bool GameSession::npcQuestAlert(const WorldObject &npc) const {
     if (npc.questHidden || npc.npcClass.empty() || engagedNpc_ == npc.id ||
-        region().definition.id != RegionId::Encampment) return false;
+        !region().definition.safe) return false;
     const auto &introductions = state().player.npcIntroductions.at(size_t(state().population.difficulty));
     // ACT1Intro only marks Akara; A1Q0 marks Warriv. Other introductions have no alert.
-    if (!introductions.contains(npc.name) &&
+    if (npc.act == 0 && !introductions.contains(npc.name) &&
         introSpeech(content_.npcDialogues, npc.name, state().player.characterClass) &&
         (npc.name == "Warriv" || (npc.name == "Akara" &&
          quest(ActOneQuest::DenOfEvil).stage < uint32_t(DenStage::Rewarded)))) return true;

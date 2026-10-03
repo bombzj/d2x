@@ -7,6 +7,8 @@
 namespace d2x {
 void SceneController::toggleInventory() {
     auto &ui = view_.ui();
+    ui.orificeObject = {};
+    ui.orificeItem.reset();
     ui.skillPicker.reset();
     ui.skillTreeOpen = false;
     if (!ui.inventory.open && session_.state().player.dead) {
@@ -70,6 +72,51 @@ bool SceneController::handleInventory(const FrameInput &input) {
     ui.forceSwap = input.control;
     const auto &inventory = session_.inventory();
     EntityId backpack = session_.playerContainers().backpack;
+    auto &panel = view_.ui();
+    if (panel.orificeObject && (!ui.open || !session_.canInsertStaff(panel.orificeObject))) {
+        panel.orificeObject = {};
+        panel.orificeItem.reset();
+    }
+    if (panel.orificeObject) {
+        if (panel.orificeItem) {
+            const auto *item = inventory.item(panel.orificeItem->id);
+            if (!item || item->revision != panel.orificeItem->revision) panel.orificeItem.reset();
+        }
+        if (input.escape || (input.insideViewport && input.leftPressed && CheckCollisionPointRec(rv(input.mouse), orificeButton(false)))) {
+            panel.orificeObject = {};
+            panel.orificeItem.reset();
+            inventoryClick_ = true;
+            return true;
+        }
+        if (input.insideViewport && input.leftPressed && CheckCollisionPointRec(rv(input.mouse), orificeButton(true))) {
+            if (panel.orificeItem) session_.submit(SubmitQuestItem{panel.orificeObject, *panel.orificeItem});
+            inventoryClick_ = true;
+            return true;
+        }
+        if (input.insideViewport && CheckCollisionPointRec(rv(input.mouse), orificeSlot()) &&
+            (input.leftPressed || input.leftReleased)) {
+            if (ui.drag) {
+                const auto *item = inventory.item(ui.drag->item.id);
+                if (item && item->definition == session_.content().staffRecipeOutput && item->revision == ui.drag->item.revision) {
+                    panel.orificeItem = item->handle();
+                    ui.drag.reset();
+                } else view_.notice("Only the complete Horadric Staff fits here.", true);
+            } else if (input.leftPressed && panel.orificeItem) {
+                const auto *item = inventory.item(panel.orificeItem->id);
+                if (item) {
+                    const auto &definition = *inventory.catalog().find(item->definition);
+                    const auto *location = std::get_if<ContainerLocation>(&item->location);
+                    ui.drag = InventoryDrag{item->handle(), {definition.width / 2, definition.height / 2}, input.mouse,
+                        {definition.width * inventoryCellSize / 2, definition.height * inventoryCellSize / 2},
+                        true, true, location && location->container == session_.playerContainers().cursor};
+                }
+                panel.orificeItem.reset();
+            }
+            inventoryClick_ = true;
+            return true;
+        }
+        if (input.insideViewport && CheckCollisionPointRec(rv(input.mouse), orificeBounds())) return true;
+    }
     if (ui.open && input.insideViewport && input.leftPressed &&
         CheckCollisionPointRec(rv(input.mouse), inventoryClose())) {
         inventoryClick_ = true;
@@ -134,7 +181,7 @@ bool SceneController::handleInventory(const FrameInput &input) {
     if (ui.cubeOpen && input.insideViewport && input.leftPressed &&
         CheckCollisionPointRec(rv(input.mouse), cubeTransmute())) {
         inventoryClick_ = true;
-        view_.notice("The cube's transmutation is not available yet.", true);
+        session_.submit(TransmuteCube{});
         return true;
     }
     if (ui.goldDialog) {
@@ -215,6 +262,7 @@ bool SceneController::handleInventory(const FrameInput &input) {
         return true;
     }
     if (ui.drag) {
+        if (panel.orificeItem && panel.orificeItem->id == ui.drag->item.id) panel.orificeItem.reset();
         auto *source = inventory.item(ui.drag->item.id);
         if (!source || source->revision != ui.drag->item.revision) {
             ui.drag.reset();
@@ -225,6 +273,22 @@ bool SceneController::handleInventory(const FrameInput &input) {
             inventoryRight_ = true;
             if (!ui.drag->onCursor) ui.drag.reset();
             return true;
+        }
+        if (!panel.orificeObject && input.insideViewport && !ui.pending &&
+            (ui.drag->pickedUp ? input.leftPressed : ui.drag->moved && input.leftReleased) &&
+            CheckCollisionPointRec(rv(input.mouse), view_.worldViewport())) {
+            for (const auto &object : session_.region().objects)
+                if (session_.canInsertStaff(object.id) && view_.visible(object) &&
+                    (view_.screen(object.pos) + object.drawOffset - input.mouse).length() < 24) {
+                    panel.orificeObject = object.id;
+                    ui.open = true;
+                    ui.cubeOpen = false;
+                    panel.questOpen = panel.characterOpen = panel.skillTreeOpen = false;
+                    if (source->definition == session_.content().staffRecipeOutput) panel.orificeItem = source->handle();
+                    ui.drag.reset();
+                    inventoryClick_ = true;
+                    return true;
+                }
         }
         if (ui.drag->pickedUp) {
             if (input.leftPressed && input.insideViewport && !ui.pending) {

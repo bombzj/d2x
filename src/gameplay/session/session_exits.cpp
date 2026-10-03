@@ -74,7 +74,7 @@ void GameSession::cancelExit() {
     boundaryPassage_.reset();
 }
 bool GameSession::beginBoundaryExit(const LevelExit &exit, std::optional<Vec> target) {
-    if (!exit.enabled || !exit.boundary || state().player.dead) return false;
+    if (!exit.enabled || !exit.boundary || state().player.dead || !questExitAllowed(exit.destination)) return false;
     const auto destination = std::find_if(regions_.begin(), regions_.end(),
         [&](const Region &candidate) { return candidate.definition.id == exit.destination; });
     if (destination == regions_.end()) return false;
@@ -154,6 +154,14 @@ bool GameSession::routeBoundaryMove(Vec target) {
     }
     return adjoiningTarget;
 }
+bool GameSession::questExitAllowed(RegionId destination) const {
+    if (int(region().definition.id) == 40 && int(destination) == 50)
+        return quest(QuestId::ArcaneSanctuary).stage > 0;
+    if (int(destination) == 73)
+        return quest(QuestId::HoradricStaff).stage >= 6 && !tombOpeningFrame_ &&
+            int(region().definition.id) == actTwoTombs(state().mapSeed)[0];
+    return true;
+}
 void GameSession::beginExit(int slot) {
     if (pendingExit_ == slot || state().player.dead)
         return;
@@ -165,6 +173,10 @@ void GameSession::beginExit(int slot) {
                              [slot](const auto &e) { return e.slot == slot; });
     if (exit == region().exits.end())
         return;
+    if (!questExitAllowed(exit->destination)) {
+        simulation_->emit(InteractionFailed{{}, "This passage is still sealed by its quest."});
+        return;
+    }
     if (!exit->enabled) {
         simulation_->emit(InteractionFailed{{}, "This destination is not implemented yet."});
         return;
@@ -189,7 +201,7 @@ void GameSession::updateExit() {
     if (!pendingExit_ && !state().player.dead) {
         const auto &p = state().player;
         for (const auto &exit : region().exits) {
-            if (!exit.enabled || !exit.boundary)
+            if (!exit.enabled || !exit.boundary || !questExitAllowed(exit.destination))
                 continue;
             constexpr int outwardX[]{0, -1, 0, 1}, outwardY[]{1, 0, -1, 0};
             int side = exit.boundary->side;
@@ -212,7 +224,7 @@ void GameSession::updateExit() {
     }
     auto exit = std::find_if(region().exits.begin(), region().exits.end(),
                              [&](const auto &e) { return e.slot == *pendingExit_; });
-    if (exit == region().exits.end() || !exit->enabled) {
+    if (exit == region().exits.end() || !exit->enabled || !questExitAllowed(exit->destination)) {
         cancelExit();
         return;
     }

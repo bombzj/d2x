@@ -44,6 +44,7 @@ struct ViewState {
     bool hirelingOpen = false, hireListOpen = false;
     int hireListScroll = 0;
     bool questOpen = false;
+    int questAct = 0;
     int questSelected = -1;
     int questPressed = -1;
     bool questNotice = false;
@@ -66,6 +67,8 @@ struct ViewState {
     std::deque<NpcDialogueStarted> pendingNpcDialogue;
     EntityId dialogueObject;
     EntityId imbueNpc;
+    EntityId orificeObject;
+    std::optional<ItemHandle> orificeItem;
     std::vector<std::string> dialogueLines;
     float dialogueOffset = 0;
     bool dialogueManualScroll = false;
@@ -93,7 +96,7 @@ class SceneView {
         bool completed = false;
         float elapsed = 0;
     };
-    std::array<QuestCompletionAnimation, size_t(ActOneQuest::Count)> questAnimations_{};
+    std::array<QuestCompletionAnimation, size_t(QuestId::Count)> questAnimations_{};
     void resetQuestAnimations();
     void queueQuestAnimation(ActOneQuest quest, uint32_t stage);
     void advanceQuestAnimations(float dt);
@@ -171,6 +174,7 @@ class SceneView {
     std::string hirelingName(std::string_view key) const;
     void drawStorage(Vec mouse) const;
     void drawCube(Vec mouse) const;
+    void drawOrifice(Vec mouse) const;
     void drawContainerGrid(const ContainerGrid &grid, Vec mouse) const;
     void drawBelt(Vec mouse) const;
     void drawItemTooltip(const ItemInstance &item, Vec anchor,

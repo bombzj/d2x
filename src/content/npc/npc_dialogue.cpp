@@ -215,19 +215,21 @@ const NpcSpeech *gossipSpeech(const NpcDialogues &dialogues, std::string_view np
 }
 const NpcSpeech *questSpeech(const NpcDialogues &dialogues, std::string_view quest,
                              std::string_view state, std::string_view npc) {
-    const auto speaker = dialogues.speakers.find(npcIntroductionKey(npc, 0));
+    const int act = quest.size() > 2 && quest[0] == 'A' && quest[1] >= '1' && quest[1] <= '5'
+        ? quest[1] - '1' : 0;
+    const auto speaker = dialogues.speakers.find(npcIntroductionKey(npc, act));
     if (speaker == dialogues.speakers.end()) {
         // Authored quest text on a book has no NPC voice/Sounds identity.
-        auto group = dialogues.find(npc);
+        auto group = dialogues.find(act == 0 ? std::string(npc) : "act" + std::to_string(act + 1) + ":" + std::string(npc));
         if (group != dialogues.end())
             for (const auto &speech : group->second)
-                if (speech.quest == quest && speech.state == state && speech.wave.empty())
+                if (speech.quest == quest && speech.state == state)
                     return &speech;
         return nullptr;
     }
     for (const auto &[group, speeches] : dialogues)
         for (const auto &speech : speeches)
-            if (speech.act == 0 && speech.speaker == speaker->second &&
+            if (speech.act == act && speech.speaker == speaker->second &&
                 speech.quest == quest && speech.state == state)
                 return &speech;
     return nullptr;

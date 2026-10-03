@@ -12,7 +12,7 @@ void SceneView::drawContainerGrid(const ContainerGrid &grid, Vec mouse) const {
         auto box = grid.itemBounds(std::get<ContainerLocation>(item.location).cell,
                                    *inventory.catalog().find(item.definition));
         bool dragged = ui.drag && ui.drag->item.id == id;
-        if (dragged) continue;
+        if (dragged || (view_.orificeItem && view_.orificeItem->id == id)) continue;
         DrawRectangleRec({box.x + 1, box.y + 1, box.width - 2, box.height - 2},
                          id == hovered || id == ui.selected ? Color{83, 71, 37, 130}
                                                             : Color{30, 36, 26, 110});

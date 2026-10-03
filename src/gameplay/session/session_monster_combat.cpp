@@ -4,8 +4,9 @@
 namespace d2x {
 std::optional<MonsterCombatProfile> GameSession::resolvedMonsterCombat(
     const MonsterIdentity &identity, RegionId region) const {
+    const bool actTwoBoss = identity.monster == "radament" || identity.monster == "summoner" || identity.monster == "duriel";
     if (!identity.enchantment && identity.rank != MonsterRank::Normal && identity.rank != MonsterRank::Minion &&
-        identity.monster != "bloodraven" && identity.monster != "andariel")
+        identity.monster != "bloodraven" && identity.monster != "andariel" && !actTwoBoss)
         return std::nullopt;
     const auto key = std::pair{identity.monster, region};
     if (auto cached = monsterCombatCache_.find(key); cached != monsterCombatCache_.end())
@@ -14,7 +15,7 @@ std::optional<MonsterCombatProfile> GameSession::resolvedMonsterCombat(
     const auto *monster = monsterContent_.find(identity.monster);
     const auto area = worldContent_.levels().find(int(region));
     if (!monster || !monster->hostile() || (monster->boss && monster->id != "griswold" &&
-        monster->id != "bloodraven" && monster->id != "andariel") || area == worldContent_.levels().end() ||
+        monster->id != "bloodraven" && monster->id != "andariel" && !actTwoBoss) || area == worldContent_.levels().end() ||
         !area->second.population.supported)
         return std::nullopt;
     const int difficulty = state().population.difficulty;

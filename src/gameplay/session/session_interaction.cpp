@@ -138,7 +138,7 @@ void GameSession::interact(EntityId id) {
         return;
     cancelInteraction();
     const auto *target = object(id);
-    if (!target || target->interaction == Interaction::None || state().player.dead)
+    if (!target || target->questHidden || target->interaction == Interaction::None || state().player.dead)
         return;
     if (storage_.object != id)
         closeStorage();
@@ -155,7 +155,7 @@ void GameSession::updateInteraction() {
         return;
     auto target = object(pendingInteraction_);
     const auto &player = state().player;
-    if (!target || player.dead) {
+    if (!target || target->questHidden || player.dead) {
         cancelInteraction();
         return;
     }
@@ -185,6 +185,9 @@ void GameSession::completeInteraction(const WorldObject &object) {
         }
     }
     switch (object.interaction) {
+    case Interaction::ActTwoQuest:
+        activateActTwoObject(object.id);
+        break;
     case Interaction::Stair: {
         auto &objects = regions_.at(current_).objects;
         auto found = std::find_if(objects.begin(), objects.end(), [&](const auto &value) {
@@ -257,6 +260,7 @@ void GameSession::completeInteraction(const WorldObject &object) {
         break;
     }
     case Interaction::Door: {
+        if (object.objectClass == 153 && int(region().definition.id) == 73) return;
         auto &objects = regions_.at(current_).objects;
         auto found = std::find_if(objects.begin(), objects.end(), [&](const WorldObject &value) {
             return value.id == object.id;
@@ -300,17 +304,18 @@ void GameSession::completeInteraction(const WorldObject &object) {
     case Interaction::Talk: {
         if (introSpeech(content_.npcDialogues, object.name, {}, object.act) ||
             gossipSpeech(content_.npcDialogues, object.name, 0, object.act) || vendorStock(object.id) ||
-            (object.act == 0 && npcQuestDialogue(object.name).speech))
+            npcQuestDialogue(object.name).speech)
             engagedNpc_ = object.id;
         const auto *intro = introSpeech(content_.npcDialogues, object.name, state().player.characterClass, object.act);
         auto &introductions = simulation_->state_.player.npcIntroductions
             .at(size_t(state().population.difficulty));
         const auto introductionKey = npcIntroductionKey(object.name, object.act);
         const bool first = intro && introductions.insert(introductionKey).second;
-        const auto dialogue = object.act == 0 ? npcQuestDialogue(object.name) : NpcQuestDialogue{};
+        const auto dialogue = npcQuestDialogue(object.name);
         if (first) simulation_->emit(NpcDialogueStarted{object.id, object.name, intro->text});
         if (dialogue.automatic && dialogue.speech) {
-            simulation_->emit(NpcDialogueStarted{object.id, object.name, dialogue.speech->text});
+            if (!first || dialogue.speech != intro)
+                simulation_->emit(NpcDialogueStarted{object.id, object.name, dialogue.speech->text});
             talkToNpc(object.id);
         } else if (!first)
             simulation_->emit(ObjectInteracted{object.id, object.interaction, object.name});

@@ -596,6 +596,11 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
                 }
     DataTable portalObjects(archives.read("data/global/excel/objects.txt"));
     content_.tables.emplace("objects", portalObjects);
+    for (size_t row = 0; row < portalObjects.rows().size(); ++row) {
+        std::map<std::string, std::string> fields;
+        for (const auto &column : portalObjects.columns()) fields.emplace(column, portalObjects.value(row, column));
+        questObjectRows_.push_back(std::move(fields));
+    }
     for (size_t row = 0; row < portalObjects.rows().size(); ++row)
         if (portalObjects.number(row, "Id").value_or(-1) == 59 &&
             portalObjects.number(row, "OperateFn").value_or(0) == 15)
@@ -628,6 +633,7 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
     reconcileCainObjects();
     Fingerprint fingerprint;
     fingerprint.add(content_.profile);
+    fingerprint.add("act-two-quest-rules-v2-staff-opening");
     auto members = archives.used;
     for (const auto &member : members) {
         fingerprint.add(member);
@@ -758,6 +764,7 @@ void GameSession::enter(RegionId id, std::optional<Vec> arrival, std::optional<V
         hireling.moving = false; hireling.animationTime = 0;
     }
     onQuestRegionEntered(id);
+    updateActTwoObjects();
     std::cout << "Room activation: created=" << state().area.enemies.size()
               << " deferred=" << state().area.pendingSpawns.size() << '\n';
 }
@@ -877,6 +884,10 @@ void GameSession::tick(float dt, Vec keyboard, bool forceRun) {
                     const auto previousRegion = state().area.region;
                     completeActOne(intent.npc);
                     transitioned |= state().area.region != previousRegion;
+                } else if constexpr (std::is_same_v<T, CompleteActTwo>) {
+                    const auto previousRegion = state().area.region;
+                    completeActTwo(intent.npc);
+                    transitioned |= state().area.region != previousRegion;
                 } else if constexpr (std::is_same_v<T, BuyVendorItem>) {
                     buyVendorItem(intent.vendor, intent.slot, intent.gamble);
                 } else if constexpr (std::is_same_v<T, SellVendorItem>) {
@@ -910,6 +921,10 @@ void GameSession::tick(float dt, Vec keyboard, bool forceRun) {
                     transactGold(intent);
                 } else if constexpr (std::is_same_v<T, DebugDropCube>) {
                     dropDebugCube();
+                } else if constexpr (std::is_same_v<T, TransmuteCube>) {
+                    transmuteCube();
+                } else if constexpr (std::is_same_v<T, SubmitQuestItem>) {
+                    activateActTwoObject(intent.object, intent.item);
                 } else if constexpr (std::is_same_v<T, DebugSpawnItem>) {
                     spawnDebugItem(intent);
                 } else if constexpr (std::is_same_v<T, DebugGrantExperience>) {
@@ -962,10 +977,13 @@ void GameSession::tick(float dt, Vec keyboard, bool forceRun) {
                         simulation_->stopChannel(player);
                         player.skillRanks.clear();
                         player.unspentSkills = player.level - 1;
-                        for (const auto &difficulty : player.actOneQuests)
+                        for (const auto &difficulty : player.actOneQuests) {
                             if (difficulty.at(questIndex(ActOneQuest::DenOfEvil)).stage ==
                                 uint32_t(DenStage::Rewarded))
                                 ++player.unspentSkills;
+                            if (difficulty.at(questIndex(QuestId::RadamentsLair)).flags & radamentBookUsed)
+                                ++player.unspentSkills;
+                        }
                         refreshCharacter();
                     }
                 } else if constexpr (std::is_same_v<T, UseSkill>) {
@@ -1013,6 +1031,7 @@ void GameSession::tick(float dt, Vec keyboard, bool forceRun) {
     if (!replenished.changes.empty()) publishInventory(std::move(replenished), {});
     advanceHireling(dt);
     updateObjectTimers();
+    updateActTwoObjects();
     regions_.at(current_).refreshObjectCollision(state().time);
     advanceNpcPaths(dt);
     settleDeaths();

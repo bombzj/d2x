@@ -8,6 +8,8 @@ std::vector<int> mazePresets();
 int mazePresetType(int preset);
 int mazePresetVariants(const WorldCatalog &catalog, int preset);
 bool supportsMaze(int level);
+std::array<int, 2> actTwoTombs(uint32_t seed);
+inline constexpr std::array actTwoTombSymbols{313, 312, 308, 310, 311, 309, 307};
 MapRecipe generateMaze(const WorldCatalog &catalog, int level, uint32_t seed, int difficulty,
                        int entranceDirection = 0);
 std::vector<std::string> mazeMissing(Archives &archives, const WorldCatalog &catalog, int level = 0);

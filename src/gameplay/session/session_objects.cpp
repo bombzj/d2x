@@ -20,7 +20,8 @@ void GameSession::activateLootObject(EntityId id) {
     if (found == live.end() || found->interaction != Interaction::Loot ||
         (found->operateFn != 1 && found->operateFn != 3 && found->operateFn != 4 &&
          found->operateFn != 5 && found->operateFn != 7 && found->operateFn != 14 &&
-         found->operateFn != 19 && found->operateFn != 20) ||
+         found->operateFn != 19 && found->operateFn != 20 && found->operateFn != 39 &&
+         found->operateFn != 40 && found->operateFn != 41) ||
         loot_.settled(id))
         return;
     if (state().player.dead || state().player.hp <= 0 || found->operatedAt >= 0 ||
@@ -45,7 +46,31 @@ void GameSession::activateLootObject(EntityId id) {
     LootPlan plan;
     plan.randomState = loot_.randomState();
     auto objectSeed = regions_.at(current_).objectSeed;
-    if (found->chest) {
+    if (found->operateFn >= 39 && found->operateFn <= 41) {
+        const auto entry = resolveObjectTreasure(content_, worldContent_, region().definition.id, state().population.difficulty);
+        if (!entry.deferred.empty()) { simulation_->emit(LootDeferred{id, entry.deferred}); return; }
+        std::set<size_t> usedUniques;
+        for (auto row : loot_.usedUniques()) usedUniques.insert(size_t(row));
+        plan = planItemLoot(content_, content_.tables.at("itemratio"), entry.treasureClass,
+            entry.itemLevel, 0, objectSeed, usedUniques, characterDefinition_.code, 0, 0, DropQuality::Magic);
+        if (!plan.deferred.empty()) { simulation_->emit(LootDeferred{id, plan.deferred}); return; }
+        const auto code = found->operateFn == 39 ? content_.cubeCode : found->operateFn == 40 ? "tr1" : "msf";
+        bool carried = false;
+        for (const auto &[itemId, item] : inventory_.state().items)
+            if (const auto *location = std::get_if<ContainerLocation>(&item.location);
+                location && (location->container == playerContainers_.backpack ||
+                    location->container == playerContainers_.cube || location->container == playerContainers_.equipment))
+                if ((item.definition == code || (found->operateFn == 41 && item.definition == "hst")) &&
+                    (found->operateFn == 39 || item.nativeQuestDifficulty >= unsigned(state().population.difficulty))) carried = true;
+        const auto &staff = quest(QuestId::HoradricStaff);
+        if (!carried && (found->operateFn == 39 || staff.stage < 6) &&
+            (found->operateFn != 40 || !(staff.flags & 1)))
+            plan.drops.push_back({std::string(code), 1, {}, unsigned(entry.itemLevel), {}});
+        const int count = 5 + int(roll(plan.randomState, 5));
+        for (int index = 0; index < count; ++index)
+            plan.drops.push_back({"gld", 1 + roll(plan.randomState, 5), {2, 3}, 1, {}});
+        regions_.at(current_).objectSeed = plan.randomState;
+    } else if (found->chest) {
         std::set<size_t> usedUniques;
         for (auto row : loot_.usedUniques()) usedUniques.insert(size_t(row));
         plan = planChestLoot(content_, resolveObjectTreasure(content_, worldContent_,

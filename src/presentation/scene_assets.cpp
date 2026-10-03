@@ -249,10 +249,23 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
             throw std::runtime_error("Original alternate weapon panel artwork is missing");
     }
     questBackground = uiGraphics_.single("data/global/ui/menu/questbackground.dc6");
+    orificePanel = uiGraphics_.single("data/global/ui/menu/horadricback.dc6");
+    orificeButtons = uiGraphics_.single("data/global/ui/menu/okcancelbtn.dc6");
+    if (orificePanel.frames.empty() || orificeButtons.frames.size() < 2)
+        throw std::runtime_error("Original staff insertion panel is missing");
+    const auto &objects = session.content().tables.at("objects");
+    for (size_t symbol = 0; symbol < tombSymbols.size(); ++symbol)
+        for (size_t row = 0; row < objects.rows().size(); ++row)
+            if (objects.number(row, "Id") == actTwoTombSymbols[symbol]) {
+                const auto token = normalize(std::string(objects.value(row, "Token")));
+                tombSymbols[symbol] = unitsGraphics_.single("data/global/objects/" + token + "/tr/" + token + "trlitnuhth.dcc", true);
+            }
+    if (std::any_of(tombSymbols.begin(), tombSymbols.end(), [](const auto &symbol) { return symbol.frames.empty(); }))
+        throw std::runtime_error("Original tomb symbol artwork is missing");
     questSockets = uiGraphics_.single("data/global/ui/menu/questsockets.dc6");
     questTabs = uiGraphics_.single("data/global/ui/menu/expquesttabs.dc6");
     for (size_t quest = 0; quest < actOneQuestIcons.size(); ++quest) {
-        const auto path = "data/global/ui/menu/a1q" + std::to_string(quest + 1) + ".dc6";
+        const auto path = "data/global/ui/menu/a" + std::to_string(quest / 6 + 1) + "q" + std::to_string(quest % 6 + 1) + ".dc6";
         actOneQuestIcons[quest] = uiGraphics_.single(path);
         const auto *animation = uiGraphics_.animation(path);
         if (!animation || animation->frames.size() < 27) continue;
@@ -401,7 +414,7 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
                     if (projectileSounds.value(soundRow, "Sound") == sound) {
                         const auto key = std::string(event) + std::to_string(id);
                         if (std::string_view(field) == "TravelSound" &&
-                            (frozenOrbProjectiles.contains(id) || groupedColdProjectiles.contains(id)) &&
+                            (id == 338 || frozenOrbProjectiles.contains(id) || groupedColdProjectiles.contains(id)) &&
                             projectileSounds.number(soundRow, "Loop") == 1)
                             audio.registerTravelGroup(archives, key, projectileSounds, soundRow);
                         else if (std::string_view(field) == "HitSound" && groupedColdProjectiles.contains(id))
@@ -453,6 +466,9 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
         }
     for (const auto &[id, entry] : session.content().monsterSpecialMissiles)
         loadProjectile(id, entry.visual.art);
+    for (size_t row = 0; row < missiles.rows().size(); ++row)
+        if (missiles.number(row, "Id") == 338)
+            loadProjectile(338, "data/global/missiles/" + std::string(missiles.value(row, "CelFile")) + ".dcc");
     if (const auto &firewall = session.monsterContent().countessFirewall())
         for (size_t row = 0; row < missiles.rows().size(); ++row)
             if (missiles.number(row, "Id") == firewall->makerId || missiles.number(row, "Id") == firewall->fireId)
@@ -741,7 +757,7 @@ void SceneAssets::loadPropObject(const WorldObject &object) const {
         waypointAnimations.emplace(object.key, std::move(animations));
         return;
     }
-    if (object.interaction == Interaction::Door || object.interaction == Interaction::Stair || object.interaction == Interaction::Loot || object.interaction == Interaction::Shrine ||
+    if (object.objectClass == 153 || object.objectClass == 318 || object.interaction == Interaction::ActTwoQuest || object.interaction == Interaction::Door || object.interaction == Interaction::Stair || object.interaction == Interaction::Loot || object.interaction == Interaction::Shrine ||
         object.interaction == Interaction::Well || object.interaction == Interaction::QuestTree ||
         object.interaction == Interaction::QuestStone ||
         object.interaction == Interaction::QuestGibbet ||

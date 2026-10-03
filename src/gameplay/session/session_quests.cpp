@@ -18,6 +18,18 @@ void GameSession::onQuestRegionEntered(RegionId id) {
         auto &record = book.at(questIndex(quest));
         if (transition(record)) simulation_->emit(QuestAdvanced{quest, record.stage});
     };
+    auto &radament = book.at(questIndex(QuestId::RadamentsLair));
+    if (int(id) == 74 && book.at(questIndex(QuestId::ArcaneSanctuary)).stage < 3) {
+        book.at(questIndex(QuestId::ArcaneSanctuary)).stage = 3;
+        simulation_->emit(QuestAdvanced{QuestId::ArcaneSanctuary, 3});
+    }
+    if ((int(id) == 44 || int(id) == 45) && !book.at(questIndex(QuestId::TaintedSun)).stage && !sunDarkeningFrame_)
+        sunDarkeningFrame_ = state().frame + 15 + limitedRandom(random_, 2);
+    if (int(id) != 40 && quest(QuestId::RadamentsLair).stage == uint32_t(RadamentStage::Assigned))
+        if (const auto level = worldContent_.levels().find(int(id));
+            level != worldContent_.levels().end() && level->second.act == 1)
+            if (radamentAdvance(radament, RadamentStage::LeftTown))
+                simulation_->emit(QuestAdvanced{QuestId::RadamentsLair, radament.stage});
     if (denRegion_ && id == *denRegion_)
         advance(ActOneQuest::DenOfEvil, denAdvanceOnEntry);
     if (burialRegion_ && id == *burialRegion_)
@@ -92,7 +104,7 @@ void GameSession::updateTowerQuest(const EnemyDied &death) {
 void GameSession::talkToNpc(EntityId npc) {
     const auto *target = object(npc);
     if (!target || engagedNpc_ != npc ||
-        region().definition.id != RegionId::Encampment || !canReach(*target))
+        (!region().definition.safe && !(int(region().definition.id) == 73 && target->npcClass == "tyrael1")) || !canReach(*target))
         return;
     const auto dialogue = npcQuestDialogue(target->name);
     if (!dialogue.readKey.empty())
@@ -105,6 +117,38 @@ void GameSession::talkToNpc(EntityId npc) {
         if (advanced) simulation_->emit(QuestAdvanced{id, record.stage});
     };
     switch (id) {
+    case QuestId::SevenTombs:
+        if (target->npcClass == "tyrael1" && record.stage == 2) {
+            ensureRegion(RegionId(40));
+            if (!portalResources_ || !townPortalArrivals_.contains(RegionId(40))) return;
+            simulation_->state_.publicPortals.push_back({true, ++simulation_->state_.nextPortalRevision,
+                RegionId(73), map().grid.nearest(state().player.pos), townPortalArrivals_.at(RegionId(40)), state().time});
+            record.stage = 3;
+        } else if (target->npcClass == "jerhyn" && record.stage == 3) record.stage = 4;
+        else if (target->npcClass == "meshif1" && record.stage == 4) record.stage = 5;
+        else if (target->npcClass == "jerhyn" && !record.stage) record.stage = 1;
+        else return;
+        simulation_->emit(QuestAdvanced{id, record.stage});
+        break;
+    case QuestId::Summoner:
+        if (record.stage == 2) { record.stage = 3; simulation_->emit(QuestAdvanced{id, record.stage}); }
+        break;
+    case QuestId::TaintedSun:
+        record.stage = record.stage == 3 ? 4 : 2;
+        simulation_->emit(QuestAdvanced{id, record.stage});
+        break;
+    case QuestId::ArcaneSanctuary:
+        record.stage = std::max(record.stage, target->npcClass == "drognan" ? 1u : 2u);
+        simulation_->emit(QuestAdvanced{id, record.stage});
+        break;
+    case QuestId::HoradricStaff:
+        record.flags |= 1;
+        simulation_->emit(QuestAdvanced{id, record.stage});
+        break;
+    case QuestId::RadamentsLair:
+        changed(radamentAdvance(record, record.stage == uint32_t(RadamentStage::Slain)
+            ? RadamentStage::Rewarded : RadamentStage::Assigned));
+        break;
     case ActOneQuest::DenOfEvil:
         if (denClaimReward(record)) {
             ++simulation_->state_.player.unspentSkills;

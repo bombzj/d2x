@@ -49,6 +49,18 @@ void GameSession::useItem(ItemHandle handle) {
     }
     auto code = inventory_.item(handle.id)->definition;
     const auto *definition = inventory_.catalog().find(code);
+    if (code == "ass") {
+        auto result = inventory_.consume(handle, 1, inventoryAccess());
+        if (!result) { publishInventory(std::move(result), handle.id); return; }
+        auto &record = simulation_->state_.player.actOneQuests
+            .at(size_t(state().population.difficulty)).at(questIndex(QuestId::RadamentsLair));
+        record.flags = (record.flags & ~radamentBookPending) | radamentBookUsed;
+        ++simulation_->state_.player.unspentSkills;
+        publishInventory(std::move(result), handle.id);
+        simulation_->emit(ItemUsed{handle.id, std::move(code)});
+        simulation_->emit(QuestAdvanced{QuestId::RadamentsLair, record.stage});
+        return;
+    }
     if (content_.isPortalScroll(code) || content_.isPortalScroll(definition->bookScroll)) {
         auto &portal = simulation_->state_.portal;
         const auto town = portalTown(region().definition.id);

@@ -553,6 +553,24 @@ void SceneView::drawActors(Vec mouse) const {
                 drawNpcAlert(p, anchor, true);
                 if (p.interaction == Interaction::Shrine) drawShrineOverlays(p.shrineCode, anchor, 0, true);
                 if (p.draw) drawSelectableSprite(image, item.p, &p == hotObject);
+                if (p.operateFn == 25 && p.operatedAt >= 0 &&
+                    session_.quest(QuestId::HoradricStaff).stage >= uint32_t(StaffStage::Submitted)) {
+                    const auto &visual = assets_.projectileVisuals.at(338);
+                    const float age = std::max(0.f, sim.time - p.operatedAt);
+                    if (age < visual.lifetime) {
+                        const Vec destination = p.pos + Vec{-13, 3};
+                        const float extensionSeconds = std::max(.04f,
+                            float(std::max(1, (int(visual.lifetime * 25.f) - 75) / 20) * 20) / 25.f);
+                        const float extension = std::clamp(age / extensionSeconds, 0.f, 1.f);
+                        const float cycle = float(std::max(1, visual.frames)) / std::max(1.f, visual.fps);
+                        const int steps = int(std::ceil((destination - p.pos).length() * 2));
+                        for (int segment = 0; segment <= int(steps * extension); ++segment) {
+                            const float portion = float(segment) / steps;
+                            drawMissile(338, p.pos + (destination - p.pos) * portion,
+                                destination - p.pos, std::fmod(age + portion, cycle), visual.lifetime - age);
+                        }
+                    }
+                }
                 if (p.interaction == Interaction::Shrine) drawShrineOverlays(p.shrineCode, anchor, 0, false);
                 drawNpcAlert(p, anchor, false);
             }

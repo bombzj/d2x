@@ -141,10 +141,11 @@ class SceneAssets {
         attributePoints, weaponTabs, vendorPanel, vendorTabs,
         questBackground, questSockets, questTabs, questClose, questReplay, goldCoin,
         vendorButtons, vendorConfirm, waypointBorder, waypointPanel, waypointTabs, waypointIcons,
-        storagePanel, cubePanel, beltPanel, beltSocket, orbs,
+        storagePanel, cubePanel, orificePanel, orificeButtons, beltPanel, beltSocket, orbs,
         globeOverlap, runButton, button;
-    std::array<GpuAnimation, 6> actOneQuestIcons;
-    std::array<Rectangle, 6> actOneQuestFaces{};
+    std::array<GpuAnimation, 12> actOneQuestIcons;
+    std::array<Rectangle, 12> actOneQuestFaces{};
+    std::array<GpuAnimation, 7> tombSymbols;
     std::array<GpuAnimation, 3> gameMenuLabels;
     std::array<GpuAnimation, 5> optionsMenuLabels;
     std::array<GpuAnimation, 5> automapOptionLabels;

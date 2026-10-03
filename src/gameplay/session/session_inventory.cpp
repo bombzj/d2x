@@ -5,6 +5,47 @@
 #include <type_traits>
 
 namespace d2x {
+void GameSession::transmuteCube() {
+    auto reject = [&] { simulation_->emit(InteractionFailed{{}, "No supported original cube recipe matches these items."}); };
+    const auto carried = inventory_.contents(playerContainers_.backpack);
+    const bool hasCube = std::any_of(carried.begin(), carried.end(), [&](EntityId id) {
+        return inventory_.item(id)->definition == content_.cubeCode;
+    });
+    if (state().player.dead || !hasCube || cursorItem()) { reject(); return; }
+    const auto items = inventory_.contents(playerContainers_.cube);
+    if (items.size() != 2 || quest(QuestId::HoradricStaff).stage >= 6) { reject(); return; }
+    std::array<ItemHandle, 2> inputs{};
+    for (auto id : items) {
+        const auto *item = inventory_.item(id);
+        if (item->quantity != 1 || item->nativeQuestDifficulty < unsigned(state().population.difficulty)) { reject(); return; }
+        for (size_t index = 0; index < inputs.size(); ++index)
+            if (item->definition == content_.staffRecipeInputs[index]) inputs[index] = item->handle();
+    }
+    if (!inputs[0].id || !inputs[1].id) { reject(); return; }
+    InventoryService draft(ids_, inventory_.catalog(), {content_.stashLayout.columns, content_.stashLayout.rows},
+        {content_.cubeLayout.columns, content_.cubeLayout.rows});
+    draft.state_ = inventory_.state_;
+    draft.itemProperties_ = inventory_.itemProperties_;
+    draft.singleCarryUniques_ = inventory_.singleCarryUniques_;
+    InventoryResult transaction;
+    for (auto input : inputs) {
+        auto removed = draft.consume(input, 1, inventoryAccess());
+        if (!removed) { reject(); return; }
+        transaction.changes.insert(transaction.changes.end(), removed.changes.begin(), removed.changes.end());
+    }
+    const auto generation = questItemGeneration(content_.staffRecipeOutput, draft.state_.creationRandom);
+    auto created = draft.createItem(content_.staffRecipeOutput, 1, AutoPlace{playerContainers_.cube}, unsigned(state().player.level), generation);
+    if (!created) { reject(); return; }
+    draft.state_.items.at(created.item).nativeQuestDifficulty = unsigned(state().population.difficulty);
+    draft.state_.items.at(created.item).identified = true;
+    transaction.item = created.item;
+    transaction.changes.insert(transaction.changes.end(), created.changes.begin(), created.changes.end());
+    inventory_.state_ = std::move(draft.state_);
+    publishInventory(std::move(transaction), {});
+    auto &record = simulation_->state_.player.actOneQuests.at(size_t(state().population.difficulty)).at(questIndex(QuestId::HoradricStaff));
+    record.stage = 5;
+    simulation_->emit(QuestAdvanced{QuestId::HoradricStaff, record.stage});
+}
 namespace {
 CharacterModifiers activeModifiers(const PlayerState &player, EffectFrame now) {
     return player.combatEffects.modifiers(now);
@@ -177,6 +218,15 @@ InventoryError GameSession::previewInventory(const GameCommand &command) const {
                 return previewHirelingPotion(intent.item);
             } else if constexpr (std::is_same_v<T, UseItem>) {
                 const auto *source = inventory_.item(intent.item.id);
+                if (source && source->definition == "ass") {
+                    if (auto error = inventory_.checkHandle(intent.item); error != InventoryError::None) return error;
+                    const auto *location = std::get_if<ContainerLocation>(&source->location);
+                    return location && location->container == playerContainers_.backpack &&
+                        !state().player.dead && state().player.hp > 0 &&
+                        source->nativeQuestDifficulty >= unsigned(state().population.difficulty) &&
+                        (quest(QuestId::RadamentsLair).flags & radamentBookPending)
+                        ? InventoryError::None : InventoryError::AccessDenied;
+                }
                 if (source && (content_.isPortalScroll(source->definition) ||
                                content_.isPortalScroll(
                                    inventory_.catalog().find(source->definition)->bookScroll)))

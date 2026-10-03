@@ -118,6 +118,11 @@ void SceneView::syncMissileAudio() {
             if ((screen(missile.pos + offset) - Vec{W / 2.f, (H - HUD) / 2.f}).length() < W)
                 emitters.push_back({missile.id, key});
         }
+    for (const auto &object : session_.region().objects)
+        if (object.operateFn == 25 && object.operatedAt >= 0 &&
+            session_.state().time - object.operatedAt < assets_.projectileVisuals.at(338).lifetime &&
+            assets_.audio.hasEmitterSound("missile-release:338"))
+            emitters.push_back({object.id, "missile-release:338"});
     assets_.audio.syncEmitters(emitters, session_.state().frame);
 }
 } // namespace d2x
