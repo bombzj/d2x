@@ -1,7 +1,9 @@
 #pragma once
-#include "gameplay/model/state.hpp"
+#include "gameplay/monsters/ability_spec.hpp"
+#include "gameplay/monsters/ai_spec.hpp"
 
 namespace d2x {
+struct Enemy;
 enum class FallenShamanAction { Melee, Resurrect, Fire, Circle, Idle };
 struct FallenShamanDecision {
     FallenShamanAction action;

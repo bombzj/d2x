@@ -1,4 +1,5 @@
-#include "gameplay/session/session.hpp"
+#include "gameplay/character/runtime_record.hpp"
+#include "gameplay/session/session_impl.hpp"
 #include "content/items/equipment_modifiers.hpp"
 #include <algorithm>
 #include <stdexcept>
@@ -12,9 +13,9 @@ void requireSave(bool condition, const char *reason) {
 }
 } // namespace
 
-CharacterSaveData GameSession::characterSave() const {
+CharacterSaveData GameSessionImpl::characterSave() const {
     CharacterSaveData result;
-    result.player = state().player;
+    result.player = captureCharacterRecord(state().player);
     result.mapSeed = state().mapSeed;
     result.difficulty = state().population.difficulty;
     result.lastRegion = state().area.region;
@@ -41,7 +42,7 @@ CharacterSaveData GameSession::characterSave() const {
     return result;
 }
 
-CharacterSaveData GameSession::prepareCharacterRestore(CharacterSaveData character) const {
+CharacterSaveData GameSessionImpl::prepareCharacterRestore(CharacterSaveData character) const {
     requireSave(!character.player.nativeSaveSections.empty(), "restore requires decoded D2S character data");
     {
         uint64_t next = ids_.cursor();
@@ -95,16 +96,6 @@ CharacterSaveData GameSession::prepareCharacterRestore(CharacterSaveData charact
     });
     requireSave(town != regions_.end(), "act town is unavailable");
 
-    character.player.pos = town->map.spawn;
-    character.player.previous = town->map.spawn;
-    if (character.player.hireling.sourceRow >= 0) {
-        character.player.hireling.pos = town->map.spawn;
-        character.player.hireling.route.clear();
-        character.player.hireling.moving = false;
-    }
-    character.player.dead = false;
-    character.player.aura.reset();
-    character.player.auraSuppressesManaRegen = false;
     character.player.hp = std::max(1.f, character.player.hp);
     character.lastRegion = town->definition.id;
     return character;

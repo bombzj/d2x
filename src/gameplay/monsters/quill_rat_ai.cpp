@@ -1,3 +1,4 @@
+#include "gameplay/model/state.hpp"
 #include "quill_rat_ai.hpp"
 #include "monster_wander.hpp"
 

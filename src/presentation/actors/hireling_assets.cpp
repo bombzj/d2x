@@ -1,4 +1,6 @@
 #include "gameplay/session/session.hpp"
+#include "content/classic_data.hpp"
+#include "content/monsters/monster_catalog.hpp"
 #include "presentation/scene_assets.hpp"
 #include "content/monsters/monster_animation.hpp"
 #include <stdexcept>

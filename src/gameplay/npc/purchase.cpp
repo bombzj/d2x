@@ -1,12 +1,12 @@
 #include "gameplay/simulation/simulation.hpp"
-#include "gameplay/session/session.hpp"
+#include "gameplay/session/session_impl.hpp"
 #include "content/items/item_pricing.hpp"
 #include <algorithm>
 #include <stdexcept>
 #include <limits>
 
 namespace d2x {
-std::vector<int> GameSession::vendorQuestFactors(const VendorDefinition &vendor, bool repair, bool sale) const {
+std::vector<int> GameSessionImpl::vendorQuestFactors(const VendorDefinition &vendor, bool repair, bool sale) const {
     // The values are D2MOO QuestStateFlag IDs, not the quest log's display order.
     auto pendingOrRewarded = [&](int flag) {
         switch (flag) {
@@ -25,7 +25,7 @@ std::vector<int> GameSession::vendorQuestFactors(const VendorDefinition &vendor,
         if (pendingOrRewarded(price.flag)) result.push_back(repair ? price.repair : sale ? price.buy : price.sell);
     return result;
 }
-unsigned GameSession::vendorPurchasePrice(EntityId npc, const VendorOffer &offer, bool gamble) const {
+unsigned GameSessionImpl::vendorPurchasePrice(EntityId npc, const VendorOffer &offer, bool gamble) const {
     const int reduce = std::clamp(characterStats().combat.reducedPrices, 0, 99);
     if (gamble) return std::max(1u, offer.price - unsigned(uint64_t(offer.price) * reduce / 100));
     const auto *target = object(npc);
@@ -36,7 +36,7 @@ unsigned GameSession::vendorPurchasePrice(EntityId npc, const VendorOffer &offer
     return itemTradePrice(content_, vendorItem(offer, content_), vendor->second, false, factors, reduce)
         .value_or(offer.price);
 }
-std::optional<unsigned> GameSession::vendorRepairQuote(EntityId npc, ItemHandle handle) const {
+std::optional<unsigned> GameSessionImpl::vendorRepairQuote(EntityId npc, ItemHandle handle) const {
     const auto *target = object(npc);
     const auto *item = inventory_.item(handle.id);
     if (!target || !npcCanRepair(target->npcClass) || !item || item->revision != handle.revision)
@@ -49,7 +49,7 @@ std::optional<unsigned> GameSession::vendorRepairQuote(EntityId npc, ItemHandle 
     const auto factors = vendorQuestFactors(vendor->second, true);
     return itemTradePrice(content_, *item, vendor->second, true, factors, characterStats().combat.reducedPrices);
 }
-std::optional<unsigned> GameSession::vendorSaleQuote(EntityId npc, ItemHandle handle) const {
+std::optional<unsigned> GameSessionImpl::vendorSaleQuote(EntityId npc, ItemHandle handle) const {
     const auto *target = object(npc);
     const auto *item = inventory_.item(handle.id);
     if (!target || !vendorStock(npc) || engagedNpc_ != npc || state().player.dead ||
@@ -68,7 +68,7 @@ std::optional<unsigned> GameSession::vendorSaleQuote(EntityId npc, ItemHandle ha
     return itemTradePrice(content_, *item, vendor->second, false, factors, 0, true,
                           state().population.difficulty);
 }
-void GameSession::sellVendorItem(const SellVendorItem &command) {
+void GameSessionImpl::sellVendorItem(const SellVendorItem &command) {
     const auto quote = vendorSaleQuote(command.vendor, command.item);
     if (!quote) {
         simulation_->emit(InteractionFailed{command.vendor, "That item cannot be sold here."});
@@ -90,7 +90,7 @@ void GameSession::sellVendorItem(const SellVendorItem &command) {
     publishInventory(std::move(result), {});
     simulation_->emit(VendorItemSold{command.vendor, item.id, *quote});
 }
-void GameSession::repairVendorItem(const RepairVendorItem &command) {
+void GameSessionImpl::repairVendorItem(const RepairVendorItem &command) {
     const auto quote = vendorRepairQuote(command.npc, command.item);
     if (engagedNpc_ != command.npc || state().player.dead || !region().definition.safe || !quote) {
         simulation_->emit(InteractionFailed{command.npc, "That item cannot be repaired here."});
@@ -121,12 +121,12 @@ void GameSession::repairVendorItem(const RepairVendorItem &command) {
     ++item.revision;
     publishInventory(std::move(result), {});
 }
-const std::vector<VendorOffer> *GameSession::vendorStock(EntityId npc, bool gamble) const {
+const std::vector<VendorOffer> *GameSessionImpl::vendorStock(EntityId npc, bool gamble) const {
     const auto &stocks = gamble ? gambleStocks_ : vendorStocks_;
     auto found = stocks.find(npc);
     return found == stocks.end() ? nullptr : &found->second;
 }
-void GameSession::openGamble(EntityId npc) {
+void GameSessionImpl::openGamble(EntityId npc) {
     const auto *target = object(npc);
     if (!target || !npcCanGamble(target->npcClass) || engagedNpc_ != npc ||
         state().player.dead || !region().definition.safe) {
@@ -144,11 +144,11 @@ void GameSession::openGamble(EntityId npc) {
         simulation_->emit(InteractionFailed{npc, error.what()});
     }
 }
-bool GameSession::vendorOfferSold(EntityId npc, uint32_t slot) const {
+bool GameSessionImpl::vendorOfferSold(EntityId npc, uint32_t slot) const {
     auto found = soldVendorOffers_.find(npc);
     return found != soldVendorOffers_.end() && found->second.contains(slot);
 }
-void GameSession::buyVendorItem(EntityId npc, uint32_t slot, bool gamble) {
+void GameSessionImpl::buyVendorItem(EntityId npc, uint32_t slot, bool gamble) {
     const auto *target = object(npc);
     const auto *stock = vendorStock(npc, gamble);
     // Opening Trade already checked the NPC interaction range. NPCs may wander

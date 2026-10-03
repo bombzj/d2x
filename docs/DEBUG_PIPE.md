@@ -111,11 +111,11 @@ $spawn = .\scripts\Send-D2XCommand.ps1 -Command monster-spawn -Arguments @{monst
 
 该命令复用正式词缀／特殊行掷值与库存创建，但有意绕过 TC、品质概率及同局暗金唯一限制；不能拿它证明自然掉落正确，也不会计入正式掉落结算。调试物品可进入正常角色存档，重要现场请使用独立 `--save` 路径。2026-09-26 Release 已实际调用四种品质生成、拾取及 D2S 保存／重载；无效代码拒绝且不增加物品。PowerShell 客户端白名单已包含 `item-spawn`。
 
-`ui-input` 可附带 `screenshot=true`，在该输入处理后的同一帧保存 `artifacts/d2x-capture.png`，用于准确捕获悬停提示。`showLoot=true` 模拟该帧显示地面标签。`status.ui` 的 `purchaseConfirmation`、`salePending`（待售物品 ID，0 表示无）和 `shopRepair` 只读反映当前交易界面；旧 `saleConfirmation` 为兼容查询保留固定值 0，不再有背包单击出售确认。截图前应先确认 `shop=true`。单独 `screenshot` 命令仍保存上一张已绘制帧到 `artifacts/debug-pipe.png`。
+`ui-input` 的 `key` 还支持 `skill-tree` 和 `f1`–`f8`；打开技能菜单时 F 键绑定悬停项，菜单关闭时选择已绑定项。批量请求返回的是排队回执，每个条目按一帧处理，须等待队列处理后再查询／复制截图。`ui-input` 可附带 `screenshot=true`，在该输入处理后的同一帧保存 `artifacts/d2x-capture.png`，用于准确捕获悬停提示。`showLoot=true` 模拟该帧显示地面标签。`status.ui` 的 `purchaseConfirmation`、`salePending`（待售物品 ID，0 表示无）和 `shopRepair` 只读反映当前交易界面；旧 `saleConfirmation` 为兼容查询保留固定值 0，不再有背包单击出售确认。截图前应先确认 `shop=true`。单独 `screenshot` 命令仍保存上一张已绘制帧到 `artifacts/debug-pipe.png`。
 
 调试不同职业时，`Play.cmd -Class Sorceress -DebugPaused` 可直接创建全新的女巫进入城镇，无需角色界面和存档；`-Level 8` 可指定邪恶洞窟。EXE 使用 `--class Sorceress --level 8 --debug-pipe d2x-debug`。职业名按 MPQ 原名传入：`Amazon`、`Sorceress`、`Necromancer`、`Paladin`、`Barbarian`、`Druid`、`Assassin`。新角色走正式一级属性与初始装备构造，不是原地改写旧角色。
 
-有场景存档时使用 `Play.cmd -Load <角色.d2s> -Save <输出.d2s> -DebugPaused`，EXE 对应 `--load`／`--save`；`-Class` 与 `-Load` 互斥。脚本的存档路径按调用时工作目录解析。加载按原规则从城镇开始，可再用 `travel` 到目标区域。不要把输入场景档作为输出路径，除非确实要覆盖它；不指定 `-Save` 的命令行直进实例不会在退出时自动保存，手动 `save` 则使用下文默认路径规则。`status.player.class` 可核对职业。运行中的原地换职业命令和快捷键已移除。
+有场景存档时使用 `Play.cmd -Load <角色.d2s> -Save <输出.d2s> -DebugPaused`，EXE 对应 `--load`／`--save`；`-Class` 与 `-Load` 互斥。脚本的存档路径按调用时工作目录解析。加载按原规则从城镇开始，可再用 `travel` 到目标区域。不要把输入场景档作为输出路径，除非确实要覆盖它；新建直进角色不指定 `-Save` 时不会在退出时自动保存；带 `-Load` 的实例默认回写输入档，使用不同的 `-Save` 路径才能保留输入。手动 `save` 使用下文默认路径规则。`status.player.class` 可核对职业。运行中的原地换职业命令和快捷键已移除。
 
 技能调试入口使用正式升级、分配和存档状态。先通过 `skills` 查看当前职业的原技能 ID、前置及 F1–F8 绑定，再用 `grant-experience` 获得升级技能点；`learn-skill` 遵守等级、前置和最大等级。`reset-skills` 与 `Ctrl+Alt+T` 归还已分配点，`skill-tree` 可指定 1–3 页打开界面并配合 `screenshot` 查看。`skill-picker` 打开左右技能菜单，`bind-skill-hotkey` 通过正式会话命令绑定或清除快捷键，便于复查存档。
 
@@ -173,8 +173,8 @@ $offers = (.\scripts\Send-D2XCommand.ps1 -Command shop -Arguments @{ id = $vendo
 | hireling-panel | 可选 `open`，默认 true | 开关已有佣兵的 O 面板 |
 | hireling-equip | `id`，可选 `slot` | 正式佣兵装备事务；省略 slot 卸下入背包 |
 | status | 无 | 玩家坐标、生命、蛛网减速剩余时间／百分比、钱包、区域、击杀、已结算数、掉落随机状态、调试暂停状态，以及 ui 中的商店／NPC 菜单／字幕偏移／I、II 组／左右面板伤害 |
-| quest-status | 无 | 当前难度六项第一幕任务的阶段和标记，只读；A1Q3 灌注、A1Q4 石阵与 A1Q6 结局都使用正式会话状态 |
-| quest-panel | 可选 `open`、`selected`（-1 为总览，0–5 为六项） | 调试打开原 MPQ 任务面板，便于与 `screenshot` 查看布局 |
+| quest-status | 无 | 当前难度两幕十二项任务的阶段和标记，只读，使用正式会话状态 |
+| quest-panel | 可选 `open`、`selected`（-1 为总览，当前幕页内 0–5） | 调试打开原 MPQ 任务面板，不切换幕页或推进任务；选择未激活项仅供显示核对，不等同真实图标手势 |
 | monsters | `visible`，默认 true | 当前区域已创建怪物 ID、真实身份、召唤来源、等级类别、当前／最大生命、蛛网光环、原 AI 名、停顿／追击、当前攻击／命中剩余时间、MPQ A1 动作时长／命中时刻与帧数、坐标、屏幕内／激活状态；不含尚未创建计划 |
 | ground | 无 | 当前区域地面物品 ID、版本、代码、数量、品质、特殊行号、物品等级、坐标 |
 | inventory | 无 | 所有角色容器内物品及钱包；包含背包、腰带、装备和私人箱，不改变箱子访问权 |
@@ -221,7 +221,7 @@ $offers = (.\scripts\Send-D2XCommand.ps1 -Command shop -Arguments @{ id = $vendo
 | step | `ticks`，默认 1，范围 1–250 | 同步推进固定步，每步 1/25 秒，包含 AI、伤害、死亡及拾取；不会暂停怪物单独移动玩家 |
 | pause / resume | 无 | 暂停／恢复实时模拟；调试暂停独立于游戏菜单暂停 |
 | save / load | 无 | 使用启动时 `--save`、否则 `--load`、否则 `saves/quick.d2s`；保存角色，载入后在城镇开启新的一局；不能通过请求任意指定路径 |
-| ui-input | 可选 `x`、`y`、`button`（left／right）、`key`（escape／enter／inventory／character／quests／weapon-swap／automap／r／run／restart） | 排入下一帧的正常 SceneController 输入，坐标基于 1066×680；不直接调用购买或加点事务，适合核对实际界面路径；返回 queued 后在后续请求查看状态 |
+| ui-input | 单帧可选 `x`、`y`、`button`（left／right）、`key`，以及 `leftHeld`、`leftReleased`、`rightHeld`、`shift`、`control`、`backspace`、`text`（最多十位数字）；或 `frames` 数组（1–32 帧） | 排入正常 SceneController 输入，坐标基于 1066×680；批次全部校验后入队，每个真实应用帧处理一次。按下／按住移动／松开可核对真实拖放；单帧参数保持兼容。返回 queued 和帧数后在后续请求查看状态 |
 | screenshot | 无 | 保存最近渲染画面到 `artifacts/debug-pipe.png`；命令返回前一已完成帧，立即移动后可在下一请求截取 |
 | quit | 无 | 正常退出；若启动指定 `--save`，退出时仍会保存 |
 

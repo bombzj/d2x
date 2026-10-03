@@ -1,4 +1,7 @@
 #include "gameplay/session/session.hpp"
+#include "content/classic_data.hpp"
+#include "gameplay/model/state.hpp"
+#include "gameplay/items/inventory.hpp"
 #include "presentation/scene_view.hpp"
 #include "hireling_panel.hpp"
 #include <algorithm>
@@ -191,7 +194,7 @@ void SceneView::drawHireling(Vec mouse) const {
     }
     if (view_.inventory.drag && view_.inventory.drag->moved &&
         CheckCollisionPointRec(rv(mouse), classicSideBounds(false))) {
-        const auto drop = inventoryDrop(session_, view_.inventory, mouse, true);
+        const auto drop = inventoryDrop(inventoryView_, inventoryClient_, view_.inventory, mouse, true);
         if (drop.bounds.width > 0)
             DrawRectangleLinesEx(drop.bounds, 2,
                 drop.error == InventoryError::None ? Color{99, 202, 118, 255} : Color{240, 91, 68, 255});

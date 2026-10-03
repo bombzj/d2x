@@ -1,3 +1,4 @@
+#include "gameplay/monsters/implementation.hpp"
 #include "gameplay/simulation/simulation.hpp"
 #include "gameplay/monsters/monster_wander.hpp"
 #include <cmath>

@@ -1,7 +1,7 @@
 #pragma once
 #include "core/math.hpp"
 #include "core/id.hpp"
-#include "gameplay/combat/unit.hpp"
+#include "gameplay/combat/identity.hpp"
 #include "gameplay/effects/state.hpp"
 #include "gameplay/combat/weapon_attack.hpp"
 #include <deque>

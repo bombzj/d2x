@@ -1,9 +1,9 @@
 #include "gameplay/simulation/simulation.hpp"
-#include "gameplay/session/session.hpp"
+#include "gameplay/session/session_impl.hpp"
 #include <limits>
 
 namespace d2x {
-std::optional<RegionId> GameSession::portalTown(RegionId field) const {
+std::optional<RegionId> GameSessionImpl::portalTown(RegionId field) const {
     const auto level = worldContent_.levels().find(int(field));
     if (level == worldContent_.levels().end() || level->second.act < 0 || level->second.act >= 5)
         return std::nullopt;
@@ -12,7 +12,7 @@ std::optional<RegionId> GameSession::portalTown(RegionId field) const {
         return region.definition.id == town && region.definition.safe;
     }) ? std::optional<RegionId>{town} : std::nullopt;
 }
-void GameSession::identifyItem(const IdentifyItem &command) {
+void GameSessionImpl::identifyItem(const IdentifyItem &command) {
     if (auto error = previewInventory(command); error != InventoryError::None) {
         simulation_->emit(InventoryRejected{command.source.id, error});
         return;
@@ -33,7 +33,7 @@ void GameSession::identifyItem(const IdentifyItem &command) {
                                 target.location, target.location, target.quantity});
     publishInventory(std::move(consumed), command.source.id);
 }
-void GameSession::useItem(ItemHandle handle) {
+void GameSessionImpl::useItem(ItemHandle handle) {
     if (const auto *item = inventory_.item(handle.id)) {
         const auto *definition = inventory_.catalog().find(item->definition);
         if (definition && (content_.isPortalScroll(item->definition) || content_.isPortalScroll(definition->bookScroll))) {
@@ -92,7 +92,7 @@ void GameSession::useItem(ItemHandle handle) {
         simulation_->emit(ItemUsed{handle.id, std::move(code)});
     }
 }
-InventoryError GameSession::previewPortalScroll(ItemHandle handle) const {
+InventoryError GameSessionImpl::previewPortalScroll(ItemHandle handle) const {
     if (auto error = inventory_.checkHandle(handle); error != InventoryError::None)
         return error;
     const auto *item = inventory_.item(handle.id);
@@ -115,7 +115,7 @@ InventoryError GameSession::previewPortalScroll(ItemHandle handle) const {
         return InventoryError::RevisionExhausted;
     return InventoryError::None;
 }
-std::optional<Vec> GameSession::portalPosition() const {
+std::optional<Vec> GameSessionImpl::portalPosition() const {
     const auto &portal = state().portal;
     if (!portal.active)
         return std::nullopt;
@@ -125,13 +125,13 @@ std::optional<Vec> GameSession::portalPosition() const {
         return portal.fieldPosition;
     return std::nullopt;
 }
-const TownPortalState *GameSession::findPortal(uint64_t revision) const {
+const TownPortalState *GameSessionImpl::findPortal(uint64_t revision) const {
     if (state().portal.active && state().portal.revision == revision) return &state().portal;
     for (const auto &portal : state().publicPortals)
         if (portal.active && portal.revision == revision) return &portal;
     return nullptr;
 }
-std::vector<GameSession::PortalView> GameSession::portals(RegionId region) const {
+std::vector<GameSessionImpl::PortalView> GameSessionImpl::portals(RegionId region) const {
     std::vector<PortalView> result;
     auto append = [&](const TownPortalState &portal) {
         if (!portal.active) return;
@@ -144,7 +144,7 @@ std::vector<GameSession::PortalView> GameSession::portals(RegionId region) const
     for (const auto &portal : state().publicPortals) append(portal);
     return result;
 }
-void GameSession::beginPortal(uint64_t revision) {
+void GameSessionImpl::beginPortal(uint64_t revision) {
     const auto *portal = findPortal(revision);
     if (!portal || state().player.dead) return;
     const bool town = portalTown(portal->field) == region().definition.id;
@@ -158,7 +158,7 @@ void GameSession::beginPortal(uint64_t revision) {
     if ((state().player.pos - position).length() > portalReach_)
         simulation_->execute(MoveTo{position});
 }
-void GameSession::updatePortal() {
+void GameSessionImpl::updatePortal() {
     if (!pendingPortal_) return;
     const auto *portal = findPortal(*pendingPortal_);
     const auto &player = state().player;
@@ -182,7 +182,7 @@ void GameSession::updatePortal() {
         simulation_->emit(InteractionFailed{{}, "Cannot reach the town portal."});
     }
 }
-void GameSession::useBeltColumn(int column, bool hireling) {
+void GameSessionImpl::useBeltColumn(int column, bool hireling) {
     auto belt = inventory_.container(playerContainers_.belt);
     if (!belt || column < 0 || column >= belt->spec.columns) {
         simulation_->emit(InventoryRejected{{}, InventoryError::InvalidRequest});

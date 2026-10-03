@@ -2,7 +2,8 @@
 #include "presentation/audio/audio.hpp"
 #include "content/world/automap_data.hpp"
 #include "gameplay/items/state.hpp"
-#include "gameplay/skills/spec.hpp"
+#include "gameplay/skills/visual.hpp"
+#include "presentation/world/missile_visual.hpp"
 #include "world/region.hpp"
 #include "presentation/graphics/primitives.hpp"
 #include <set>
@@ -11,6 +12,8 @@
 namespace d2x {
 class GameSession;
 struct ClassicData;
+struct MonsterIdentity;
+struct MonsterEnchantment;
 // GPU and audio handles belong to the view, never to saveable game state.
 class SceneAssets {
     Archives &archives_;
@@ -64,9 +67,8 @@ class SceneAssets {
     std::map<int, GpuAnimation> projectileAnimations;
     std::set<int> translucentProjectiles;
     std::set<int> frozenOrbProjectiles;
-    std::map<int, BlizzardSpec> blizzardFalls;
-    std::map<int, ArcSpec> arcVisuals;
-    std::map<int, MeteorSpec> meteorVisuals;
+    std::map<int, BlizzardVisual> blizzardFalls;
+    std::map<int, MeteorVisual> meteorVisuals;
     struct ObjectLight {
         std::array<int, 8> diameter{};
         Color color{0, 0, 0, 255};
@@ -99,7 +101,7 @@ class SceneAssets {
     std::map<int, int> iceShatterMelts;
     struct SpellOverlay {
         GpuAnimation animation;
-        SkillSpec::OverlayVisual visual;
+        SkillOverlayVisual visual;
     };
     std::map<int, SpellOverlay> spellOverlays;
     std::map<std::string, GpuAnimation> skillTrees;
@@ -170,7 +172,8 @@ class SceneAssets {
                                                                    std::string_view monsterClass,
                                                                    MonsterKind kind,
                                                                    int summonShield,
-                                                                   const MonsterIdentity *identity = nullptr) const;
+                                                                   const MonsterIdentity *identity = nullptr,
+                                                                   const MonsterEnchantment *enchantment = nullptr) const;
     // Region terrain uploads on first draw, and prop art on first sighting.
     const std::vector<Sprite> &regionTileSprites(size_t index) const;
     void ensurePropArt(const WorldObject &object) const;

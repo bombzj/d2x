@@ -1,8 +1,11 @@
 #pragma once
 #include "content/monsters/monster_catalog.hpp"
 #include "gameplay/monsters/monster_spawn.hpp"
+#include "gameplay/monsters/population_settings.hpp"
 #include "map.hpp"
 #include <iosfwd>
+#include <string>
+#include <vector>
 
 namespace d2x {
 struct PopulationPlan {

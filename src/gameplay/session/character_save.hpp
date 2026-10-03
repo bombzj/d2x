@@ -1,6 +1,6 @@
 #pragma once
 #include "gameplay/items/state.hpp"
-#include "gameplay/model/state.hpp"
+#include "gameplay/character/record.hpp"
 
 namespace d2x {
 struct CharacterSaveData {
@@ -8,7 +8,7 @@ struct CharacterSaveData {
     uint32_t mapSeed = 0;
     int difficulty = 0;
     RegionId lastRegion = RegionId::Encampment;
-    PlayerState player;
+    CharacterRecord player;
     std::map<RegionId, float> waypoints;
     InventoryState inventory;
     PlayerContainers containers;

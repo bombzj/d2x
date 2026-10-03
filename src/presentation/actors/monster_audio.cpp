@@ -1,3 +1,4 @@
+#include "gameplay/monsters/implementation.hpp"
 #include "presentation/scene_assets.hpp"
 #include "resources/data_table.hpp"
 #include <algorithm>

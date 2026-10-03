@@ -1,82 +1,18 @@
 #include "spec.hpp"
-#include "core/random.hpp"
+#include "damage_curve.hpp"
+#include "resolve.hpp"
 #include <algorithm>
 #include <cstdint>
 #include <limits>
 #include <stdexcept>
 
 namespace d2x {
-namespace {
-int64_t levelBonus(int rank, const std::array<int, 5> &steps) {
-    int64_t result = 0;
-    for (int level = 2; level <= rank; ++level)
-        result += steps[level <= 8 ? 0 : level <= 16 ? 1 : level <= 22 ? 2 : level <= 28 ? 3 : 4];
-    return result;
-}
-} // namespace
-SummonCastSpec resolveSummon(const SummonSkillSpec &spec, int rank, int mastery, int resist,
-                            int ownerLevel, int difficulty) {
-    if (rank <= 0 || rank > 255 || difficulty < 0 || difficulty > 2 || ownerLevel < 1)
-        throw std::runtime_error("Invalid summon level or difficulty");
-    SummonCastSpec result;
-    result.monster = spec.monster; result.kind = spec.kind;
-    result.limit = rank < 4 ? rank : 2 + rank / 3;
-    result.shieldChance = rank > 2 ? spec.shieldChance : 0;
-    result.shieldVariants = spec.shieldVariants;
-    result.stats = spec.base[difficulty];
-    auto &stats = result.stats;
-    auto &attributes = stats.attributes;
-    stats.level = std::clamp(rank + 3 * ownerLevel / 4, 1, ownerLevel);
-    const auto level = std::min(size_t(stats.level), spec.levelDefense.size() - 1);
-    attributes.maxLife = int((int64_t(attributes.maxLife) + int64_t(mastery) * spec.masteryLife) *
-        (100 + int64_t(std::max(0, rank - 3)) * spec.lifePerRank) / 100);
-    attributes.attackRating += spec.levelAttack.at(level)[difficulty] + (rank + mastery) * spec.attackPerRank;
-    attributes.defense += spec.levelDefense.at(level)[difficulty] + (rank + mastery) * spec.defensePerRank;
-    const int64_t damage = int64_t(mastery) * spec.masteryDamage + levelBonus(rank, spec.damageSteps);
-    const int percent = 100 + std::max(0, rank - 3) * spec.damagePerRank;
-    stats.minimumDamage = float((int64_t(stats.minimumDamage * 256.f) + damage * 256) * percent / 100) / 256.f;
-    stats.maximumDamage = float((int64_t(stats.maximumDamage * 256.f) + damage * 256) * percent / 100) / 256.f;
-    if (resist > 0) {
-        const int bonus = std::min(spec.resistMaximum, spec.resistMinimum +
-            (spec.resistMaximum - spec.resistMinimum) * (110 * resist / (resist + 6)) / 100);
-        attributes.fireResist += bonus; attributes.coldResist += bonus;
-        attributes.lightningResist += bonus; attributes.poisonResist += bonus;
-    }
-    return result;
-}
-std::vector<Vec> chargedBoltPath(Vec origin, Vec target, int index, int frames) {
-    int deltaX = int(target.x) - int(origin.x), deltaY = int(target.y) - int(origin.y);
-    const int absX = std::abs(deltaX), absY = std::abs(deltaY);
-    int directionIndex = -1;
-    if (absX < 2 * absY) {
-        if (absY >= 2 * absX) {
-            if (deltaX < 0) directionIndex = deltaY < -1 ? 5 : std::min(deltaY, 2) + 7;
-            else deltaX &= 1;
-        }
-    } else deltaY = deltaY >= 0 ? deltaY & 1 : -1;
-    if (directionIndex < 0) {
-        deltaX = std::clamp(deltaX, -2, 2);
-        directionIndex = deltaY < -1 ? 5 * deltaX + 10 : std::min(deltaY, 2) + 5 * deltaX + 12;
-    }
-    constexpr int directions[]{5,4,4,4,3,6,5,4,3,2,6,6,6,2,2,6,7,0,1,2,7,0,0,0,1};
-    constexpr Vec offsets[]{{1,0},{1,1},{0,1},{-1,1},{-1,0},{-1,-1},{0,-1},{1,-1}};
-    const int mainDirection = directions[directionIndex];
-    // SkillSor.cpp SKILLS_MissileInit_ChargedBolt deliberately seeds from bolt index + path X.
-    uint64_t seed = initialRandom(uint32_t(index + int(target.x)));
-    Vec point{float(int(origin.x)) + .5f, float(int(origin.y)) + .5f};
-    std::vector<Vec> path{point};
-    for (int step = 0; step < std::min(77, frames) / 2; ++step) {
-        rollRandom(seed);
-        const int roll = int(uint32_t(seed) & 31);
-        const int offset = roll == 31 ? 1 : roll % 3 - 1;
-        point = point + offsets[(mainDirection + offset + 8) % 8] * 2.f;
-        path.push_back(point);
-    }
-    return path;
-}
-SkillCastSpec resolveSkill(const SkillSpec &spec, int rank,
-                           const std::map<int, int> &learned, int fireMasteryPercent,
-                           int lightningMasteryPercent, int coldDamagePercent) {
+SkillCastSpec resolveSkill(const SkillSpec &spec, const SkillEvaluationInput &input) {
+    const int rank = input.rank;
+    const auto &learned = input.synergyRanks;
+    const int fireMasteryPercent = input.fireMasteryPercent;
+    const int lightningMasteryPercent = input.lightningMasteryPercent;
+    const int coldDamagePercent = input.coldDamagePercent;
     if (spec.effect == SkillBehavior::None || spec.sourceId < 0 || rank < 1 || rank > 255 ||
         spec.manaShift < 0 || spec.manaShift > 15 || spec.hitShift < 0 || spec.hitShift > 15)
         throw std::runtime_error("Unsupported original skill rank or shift");
@@ -106,8 +42,8 @@ SkillCastSpec resolveSkill(const SkillSpec &spec, int rank,
         heaven.limit += (rank - 1) * heaven.limitPerLevel;
         const auto synergy = learned.find(heaven.synergySkill);
         const int percent = 100 + (synergy == learned.end() ? 0 : synergy->second) * heaven.synergyPercent;
-        heaven.minimum = int((int64_t(heaven.minimum) + levelBonus(rank, heaven.minimumPerLevel)) * 256 * percent / 100);
-        heaven.maximum = int((int64_t(heaven.maximum) + levelBonus(rank, heaven.maximumPerLevel)) * 256 * percent / 100);
+        heaven.minimum = int((int64_t(heaven.minimum) + skillLevelBonus(rank, heaven.minimumPerLevel)) * 256 * percent / 100);
+        heaven.maximum = int((int64_t(heaven.maximum) + skillLevelBonus(rank, heaven.maximumPerLevel)) * 256 * percent / 100);
         heaven.healingMinimum += (rank - 1) * heaven.healingMinimumPerLevel;
         heaven.healingMaximum += (rank - 1) * heaven.healingMaximumPerLevel;
     }
@@ -122,8 +58,8 @@ SkillCastSpec resolveSkill(const SkillSpec &spec, int rank,
             (synergy == learned.end() ? 0 : synergy->second) * spec.armorParameters[7];
         combat.blockBonus = std::min(spec.armorParameters[5], spec.armorParameters[4] +
             (spec.armorParameters[5] - spec.armorParameters[4]) * (110 * rank / (rank + 6)) / 100);
-        combat.smiteMinimum = spec.minimumDamage + int(levelBonus(rank, spec.minimumPerLevel));
-        combat.smiteMaximum = spec.maximumDamage + int(levelBonus(rank, spec.maximumPerLevel));
+        combat.smiteMinimum = spec.minimumDamage + int(skillLevelBonus(rank, spec.minimumPerLevel));
+        combat.smiteMaximum = spec.maximumDamage + int(skillLevelBonus(rank, spec.maximumPerLevel));
         result.appliedEffect = std::move(shield);
     }
     if (spec.effect == SkillBehavior::HolyBolt) {
@@ -157,7 +93,7 @@ SkillCastSpec resolveSkill(const SkillSpec &spec, int rank,
         result.appliedEffect = std::move(effect);
     }
     if (spec.shieldMaximum > 0) {
-        result.shieldPercent = std::min(spec.shieldMaximum, spec.minimumDamage + int(levelBonus(rank, spec.minimumPerLevel)));
+        result.shieldPercent = std::min(spec.shieldMaximum, spec.minimumDamage + int(skillLevelBonus(rank, spec.minimumPerLevel)));
         const auto synergy = learned.find(spec.shieldSynergySkill);
         result.shieldManaFactor = std::max(1, spec.shieldManaFactor - (synergy == learned.end() ? 0 : synergy->second));
     }
@@ -220,18 +156,10 @@ SkillCastSpec resolveSkill(const SkillSpec &spec, int rank,
     for (const auto &[id, percent] : spec.weightedSynergies)
         if (auto found = learned.find(id); found != learned.end()) weightedBonus += int64_t(found->second) * percent;
     const int64_t bonus = std::max<int64_t>(0, 100 + synergy * spec.synergyPercent + weightedBonus);
-    auto damage = [&](int base, const std::array<int, 5> &steps) {
-        const int64_t value = (int64_t(base) + levelBonus(rank, steps)) << spec.hitShift;
-        const int64_t scaled = value * bonus / 100;
-        const int mastery = spec.fireDamage ? fireMasteryPercent :
-            spec.lightningDamage ? lightningMasteryPercent : spec.coldDamage ? coldDamagePercent : 0;
-        const int64_t mastered = scaled + scaled * mastery / 100;
-        if (mastered < 0 || mastered > std::numeric_limits<int32_t>::max())
-            throw std::runtime_error("Original skill damage exceeds supported range");
-        return float(mastered) / 256.f;
-    };
-    result.minimumDamage = damage(spec.minimumDamage, spec.minimumPerLevel);
-    result.maximumDamage = damage(spec.maximumDamage, spec.maximumPerLevel);
+    const int damageMastery = spec.fireDamage ? fireMasteryPercent :
+        spec.lightningDamage ? lightningMasteryPercent : spec.coldDamage ? coldDamagePercent : 0;
+    result.minimumDamage = evaluateSkillDamage({spec.minimumDamage, spec.minimumPerLevel}, rank, spec.hitShift, bonus, damageMastery);
+    result.maximumDamage = evaluateSkillDamage({spec.maximumDamage, spec.maximumPerLevel}, rank, spec.hitShift, bonus, damageMastery);
     result.arc = spec.arc;
     if (result.arc && spec.effect == SkillBehavior::ChainLightning)
         result.arc->count = std::max(1, (spec.arc->count + (rank - 1) * spec.arc->countPerLevel) / 5);
@@ -243,7 +171,7 @@ SkillCastSpec resolveSkill(const SkillSpec &spec, int rank,
         const auto synergy = learned.find(program.fireSynergySkill);
         const int percent = 100 + (synergy == learned.end() ? 0 : synergy->second) * program.fireSynergyPercent;
         auto fireDamage = [&](int base, const std::array<int, 5> &steps) {
-            const int64_t fixed = ((int64_t(base) + levelBonus(rank, steps)) << program.fire.hitShift) * percent / 100;
+            const int64_t fixed = ((int64_t(base) + skillLevelBonus(rank, steps)) << program.fire.hitShift) * percent / 100;
             return int(fixed + fixed * fireMasteryPercent / 100);
         };
         program.fire.minimumDamage = fireDamage(spec.meteor->fire.minimumDamage, program.fireMinimumPerLevel);

@@ -1,0 +1,14 @@
+#pragma once
+#include "contracts/actor.hpp"
+
+namespace d2x {
+// The adapter binds the controlled actor. UI never chooses an authority or owner.
+class IActorClient {
+  public:
+    virtual ~IActorClient() = default;
+    virtual ActorView controlledActor() const = 0;
+    virtual void move(MoveIntent intent) = 0;
+    virtual void stopMoving() = 0;
+    virtual void toggleRun() = 0;
+};
+} // namespace d2x

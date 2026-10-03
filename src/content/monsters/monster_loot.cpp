@@ -1,3 +1,6 @@
+#include "content/classic_data.hpp"
+#include "content/monsters/monster_catalog.hpp"
+#include "content/world/world_catalog.hpp"
 #include "monster_loot.hpp"
 #include <algorithm>
 
@@ -55,9 +58,9 @@ MonsterLootEntry resolveMonsterLoot(const ClassicData &data, const MonsterCatalo
         bonus = 3;
         break;
     case MonsterRank::Minion:
-        if (!request.identity.enchantment || request.identity.ownerSpawnKey.empty())
+        if (!request.rewardModifiers || request.identity.ownerSpawnKey.empty())
             return defer("Minion level bonus requires its owning group modifiers");
-        bonus = request.identity.enchantment->levelBonus;
+        bonus = request.rewardModifiers->levelBonus;
         break;
     case MonsterRank::SuperUnique:
         superUnique = monsters.superUnique(request.identity.superUnique);
@@ -73,7 +76,7 @@ MonsterLootEntry resolveMonsterLoot(const ClassicData &data, const MonsterCatalo
     }
     if (!superUnique && !request.identity.superUnique.empty())
         return defer("Super unique identity conflicts with monster rank");
-    if (request.identity.enchantment) bonus = request.identity.enchantment->levelBonus;
+    if (request.rewardModifiers) bonus = request.rewardModifiers->levelBonus;
     result.itemLevel = *level + bonus;
     if (result.itemLevel > 99)
         return defer("Monster item level exceeds supported instance range");

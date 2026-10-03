@@ -1,16 +1,19 @@
+#include "gameplay/skills/weapon_caster.hpp"
+#include "gameplay/skills/caster.hpp"
+#include "gameplay/skills/runtime.hpp"
 #include "gameplay/simulation/simulation.hpp"
 #include "core/random.hpp"
 #include <algorithm>
 #include <type_traits>
 
 namespace d2x {
-Simulation::Simulation(EntityIds &ids) : ids_(ids) {
-    state_.player.id = ids_.allocate();
-    heal();
+void Simulation::emit(QuestAdvanced event) {
+    event.completed = event.stage >= questCompletionStage(event.quest);
+    events_.emplace_back(std::in_place_type<QuestAdvanced>, std::move(event));
 }
 void Simulation::clearActions() {
     state_.player.pendingCast.reset();
-    stopChannel(state_.player);
+    skills().stopChannel(skillCaster(state_.player.id));
     auto &p = state_.player;
     p.route.clear();
     p.attackTarget = {};
@@ -95,7 +98,7 @@ void Simulation::spawnEnemies(std::span<const MonsterSpawn> spawns) {
             baseIdentity.rank == MonsterRank::SuperUnique)
             baseIdentity.rank = MonsterRank::Normal;
         if (monsterNormalCombat_)
-            if (auto combat = monsterNormalCombat_(baseIdentity, area.region)) {
+            if (auto combat = monsterNormalCombat_(baseIdentity, area.region, nullptr)) {
                 rollRandom(enemy.combatRandom);
                 enemy.maxHp = float(combat->minLife +
                     uint32_t(enemy.combatRandom) % unsigned(combat->maxLife - combat->minLife + 1));
@@ -147,7 +150,7 @@ void Simulation::execute(const GameCommand &command) {
             else if constexpr (std::is_same_v<T, StopMoving>)
                 stopWalking();
             else if constexpr (std::is_same_v<T, StopChannel>)
-                stopChannel(state_.player);
+                skills().stopChannel(skillCaster(state_.player.id));
         },
         command);
 }
@@ -171,8 +174,8 @@ void Simulation::tick(float dt, Vec keyboard, bool forceRun) {
         combatEffectsChanged(removed);
     if (!p.aura || !p.combatEffects.hasState(p.aura->definition.ownerState.id, state_.frame))
         p.auraSuppressesManaRegen = false;
-    advanceSkillCasting(p, dt, keyboard.length() > .1f);
-    advanceWeaponAttack();
+    skills().advanceSkillCasting(skillCaster(p.id), dt, keyboard.length() > .1f);
+    skills().advanceWeaponAttack(skillWeaponCaster(p.id));
     p.castTime = std::max(0.f, p.castTime - dt);
     p.hitTime = std::max(0.f, p.hitTime - dt);
     p.chill = std::max(0.f, p.chill - dt);
@@ -187,8 +190,8 @@ void Simulation::tick(float dt, Vec keyboard, bool forceRun) {
     for (auto unit : combatUnits()) {
         if (!active(*unit.position)) continue;
         if (unit.monster) {
-            unit.monster->hitFlash = std::max(0.f, unit.monster->hitFlash - dt);
-            if (!unit.alive()) unit.monster->deathAge += dt;
+            unit.records.monster->hitFlash = std::max(0.f, unit.records.monster->hitFlash - dt);
+            if (!unit.alive()) unit.records.monster->deathAge += dt;
         }
         if (!unit.alive()) continue;
         auto periodic = [&](auto &record) {
@@ -209,26 +212,26 @@ void Simulation::tick(float dt, Vec keyboard, bool forceRun) {
                 if (record.openWoundsRemaining <= 0) record.openWoundsPerSecond = 0;
             }
         };
-        if (unit.player) periodic(*unit.player);
-        else if (unit.hireling) periodic(*unit.hireling);
-        else periodic(*unit.monster);
+        if (unit.player) periodic(*unit.records.player);
+        else if (unit.hireling) periodic(*unit.records.hireling);
+        else periodic(*unit.records.monster);
     }
     if (!p.dead) {
         updatePotions(dt);
         updatePlayer(dt, keyboard);
-        createBlazeTrail(p);
+        skills().createBlazeTrail(skillCaster(p.id));
         activateMonsters();
     }
     updateMonsterEnchantments();
-    updateAuras();
-    advanceThunderStorm(p);
+    skills().updateAuras();
+    skills().advanceThunderStorm(skillCaster(p.id));
     updateMonsters(dt);
     updateCompanions(dt);
     updateMissiles(dt);
     if (!p.dead && p.hp <= 0) {
         p.dead = true;
         combatEffectsChanged(p.combatEffects.onDeath(EffectUnitKind::Player));
-        stopChannel(p);
+        skills().stopChannel(skillCaster(p.id));
         p.pendingCast.reset();
         p.weaponAttack.reset();
         p.charge.reset();

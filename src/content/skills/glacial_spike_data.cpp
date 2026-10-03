@@ -1,3 +1,4 @@
+#include "gameplay/skills/spec.hpp"
 #include "resources/archive.hpp"
 #include "glacial_spike_data.hpp"
 #include "missile_effects.hpp"

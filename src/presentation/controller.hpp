@@ -1,12 +1,21 @@
 #pragma once
 #include "input.hpp"
-#include "gameplay/model/commands.hpp"
+#include "gameplay/items/intents.hpp"
 
 namespace d2x {
 class GameSession;
+class IActorClient;
+class IInventoryClient;
+class ICharacterClient;
+class INpcClient;
+struct InventoryItemView;
 class SceneView;
 class SceneController {
     GameSession &session_;
+    IActorClient &actorClient_;
+    IInventoryClient &inventoryClient_;
+    ICharacterClient &characterClient_;
+    INpcClient &npcClient_;
     SceneView &view_;
     float repeatClick_ = 0;
     bool pickupClick_ = false;
@@ -25,11 +34,22 @@ class SceneController {
     void openGameMenu(Vec mouse);
     bool handleInventory(const FrameInput &input);
     bool handleSkills(const FrameInput &input);
+    bool handleNpcMenu(const FrameInput &input);
+    bool handleNpcDialogue(const FrameInput &input);
+    bool handleQuestPress(const FrameInput &input);
+    bool handleQuestToggle(const FrameInput &input);
+    bool handleQuestPanel(const FrameInput &input);
     void toggleInventory();
-    bool queueInventory(GameCommand command, EntityId source);
+    bool queueInventory(InventoryIntent command, EntityId source);
+    bool inventoryQuestTargetValid(EntityId object) const;
+    bool openInventoryQuestTarget(Vec mouse, const InventoryItemView &item);
+    void submitInventoryQuest(EntityId object, ItemHandle item);
+    void submitImbue(ItemHandle item);
+    void endInventoryNpcConversation(EntityId npc);
 
   public:
-    SceneController(GameSession &session, SceneView &view);
+    SceneController(GameSession &session, IActorClient &actorClient, IInventoryClient &inventoryClient,
+                    ICharacterClient &characterClient, INpcClient &npcClient, SceneView &view);
     bool handle(const FrameInput &input, float elapsed);
     void resetInput();
     Vec movement() const { return movement_; }

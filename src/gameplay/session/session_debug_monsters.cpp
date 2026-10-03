@@ -1,5 +1,6 @@
+#include "gameplay/monsters/implementation.hpp"
 #include "gameplay/simulation/simulation.hpp"
-#include "gameplay/session/session.hpp"
+#include "gameplay/session/session_impl.hpp"
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -17,7 +18,7 @@ std::optional<uint32_t> nextDebugGroup(const AreaState &area) {
 }
 } // namespace
 
-std::string GameSession::debugSpawnError(std::string_view monster, Vec position) const {
+std::string GameSessionImpl::debugSpawnError(std::string_view monster, Vec position) const {
     if (state().player.dead || simulation_->safeZone_)
         return "Monster spawn requires a living player outside town";
     const auto *record = monsterContent_.find(monster);
@@ -37,7 +38,7 @@ std::string GameSession::debugSpawnError(std::string_view monster, Vec position)
     return {};
 }
 
-void GameSession::spawnDebugMonster(const DebugSpawnMonster &command) {
+void GameSessionImpl::spawnDebugMonster(const DebugSpawnMonster &command) {
     if (!debugSpawnError(command.monster, command.position).empty()) return;
     const auto *record = monsterContent_.find(command.monster);
     const uint32_t group = *nextDebugGroup(state().area);
@@ -48,7 +49,7 @@ void GameSession::spawnDebugMonster(const DebugSpawnMonster &command) {
     simulation_->spawnEnemies(std::span<const MonsterSpawn>(&spawn, 1));
 }
 
-void GameSession::damageDebugMonster(const DebugDamageMonster &command) {
+void GameSessionImpl::damageDebugMonster(const DebugDamageMonster &command) {
     if (state().player.dead || !std::isfinite(command.amount) ||
         command.amount <= 0 || command.amount > 10000000.f) return;
     if (auto *enemy = simulation_->findEnemy(command.target); enemy && enemy->hp > 0)

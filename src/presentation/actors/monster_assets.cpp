@@ -1,4 +1,8 @@
+#include "gameplay/skills/spec.hpp"
+#include "gameplay/monsters/implementation.hpp"
 #include "gameplay/session/session.hpp"
+#include "gameplay/model/state.hpp"
+#include "content/monsters/monster_catalog.hpp"
 #include "presentation/scene_assets.hpp"
 #include "resources/monster_palshift.hpp"
 #include "core/random.hpp"
@@ -27,7 +31,7 @@ void SceneAssets::indexMonsterArt(const GameSession &session) {
 }
 const std::map<std::string, GpuAnimation> &SceneAssets::monsterAnimationSet(
     const GameSession &session, std::string_view monsterClass, MonsterKind kind, int summonShield,
-    const MonsterIdentity *identity) const {
+    const MonsterIdentity *identity, const MonsterEnchantment *enchantment) const {
     const std::string key = std::string(monsterClass) +
                             (summonShield > 0 ? "#sh" + std::to_string(summonShield) : std::string{});
     auto source = monsterArtSources.find(key);
@@ -44,7 +48,7 @@ const std::map<std::string, GpuAnimation> &SceneAssets::monsterAnimationSet(
         }
         return target;
     }
-    if (identity && identity->enchantment && identity->rank == MonsterRank::SuperUnique) {
+    if (identity && enchantment && identity->rank == MonsterRank::SuperUnique) {
         if (const auto *fixed = session.monsterContent().superUnique(identity->superUnique)) {
             const int palette = fixed->uniqueTrans.at(size_t(session.state().population.difficulty));
             auto &target = monsterVariantAnimations[key + "#fixed" + std::to_string(palette)];
@@ -57,7 +61,7 @@ const std::map<std::string, GpuAnimation> &SceneAssets::monsterAnimationSet(
             return target;
         }
     }
-    if (identity && identity->enchantment &&
+    if (identity && enchantment &&
         (identity->rank == MonsterRank::Champion || identity->rank == MonsterRank::Unique)) {
         const auto &actor = *source->second.actor;
         auto [choices, inserted] = elitePaletteChoices_.try_emplace(std::string(monsterClass));
@@ -80,7 +84,7 @@ const std::map<std::string, GpuAnimation> &SceneAssets::monsterAnimationSet(
             }
         }
         if (!choices->second.empty()) {
-            uint64_t random = initialRandom(identity->enchantment->nameSeed);
+            uint64_t random = initialRandom(enchantment->nameSeed);
             const int configured = actor.uniqueTrans.at(size_t(session.state().population.difficulty));
             const int palette = configured >= 0 && configured != 255 &&
                 std::find(choices->second.begin(), choices->second.end(), configured) != choices->second.end()

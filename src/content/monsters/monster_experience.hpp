@@ -1,13 +1,20 @@
 #pragma once
-#include "content/classic_data.hpp"
-#include "monster_catalog.hpp"
-#include "content/world/world_catalog.hpp"
+#include "gameplay/monsters/identity.hpp"
+#include "gameplay/monsters/reward.hpp"
+#include "gameplay/model/definitions.hpp"
+#include <cstdint>
+#include <optional>
+#include <string>
 
 namespace d2x {
+struct ClassicData;
+class MonsterCatalog;
+class WorldCatalog;
 struct MonsterExperienceRequest {
     MonsterIdentity identity;
     RegionId region = RegionId::Encampment;
     int difficulty = 0, playerLevel = 1;
+    std::optional<MonsterRewardModifiers> rewardModifiers;
 };
 struct MonsterExperienceAward {
     uint64_t amount = 0;

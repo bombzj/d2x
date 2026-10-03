@@ -12,7 +12,7 @@ struct EntityId {
     auto operator<=>(const EntityId &) const = default;
 };
 class EntityIds {
-    friend class GameSession;
+    friend class GameSessionImpl;
     uint64_t next_ = 1;
 
   public:

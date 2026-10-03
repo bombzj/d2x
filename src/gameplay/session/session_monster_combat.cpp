@@ -1,17 +1,18 @@
-#include "session.hpp"
+#include "gameplay/simulation/simulation.hpp"
+#include "session_impl.hpp"
 #include "content/monsters/monster_enchantment.hpp"
 
 namespace d2x {
-std::optional<MonsterCombatProfile> GameSession::resolvedMonsterCombat(
-    const MonsterIdentity &identity, RegionId region) const {
+std::optional<MonsterCombatProfile> GameSessionImpl::resolvedMonsterCombat(
+    const MonsterIdentity &identity, RegionId region, const MonsterEnchantment *enchantment) const {
     const bool actTwoBoss = identity.monster == "radament" || identity.monster == "summoner" || identity.monster == "duriel";
-    if (!identity.enchantment && identity.rank != MonsterRank::Normal && identity.rank != MonsterRank::Minion &&
+    if (!enchantment && identity.rank != MonsterRank::Normal && identity.rank != MonsterRank::Minion &&
         identity.monster != "bloodraven" && identity.monster != "andariel" && !actTwoBoss)
         return std::nullopt;
     const auto key = std::pair{identity.monster, region};
     if (auto cached = monsterCombatCache_.find(key); cached != monsterCombatCache_.end())
-        return cached->second && identity.enchantment
-            ? enchantedMonsterCombat(*cached->second, *identity.enchantment) : cached->second;
+        return cached->second && enchantment
+            ? enchantedMonsterCombat(*cached->second, *enchantment) : cached->second;
     const auto *monster = monsterContent_.find(identity.monster);
     const auto area = worldContent_.levels().find(int(region));
     if (!monster || !monster->hostile() || (monster->boss && monster->id != "griswold" &&
@@ -24,6 +25,11 @@ std::optional<MonsterCombatProfile> GameSession::resolvedMonsterCombat(
                                             content_.tables.at("monlvl"), difficulty,
                                             area->second.population.level[difficulty]);
     monsterCombatCache_.emplace(key, profile);
-    return profile && identity.enchantment ? enchantedMonsterCombat(*profile, *identity.enchantment) : profile;
+    return profile && enchantment ? enchantedMonsterCombat(*profile, *enchantment) : profile;
+}
+std::optional<MonsterCombatProfile> GameSessionImpl::monsterCombatProfile(EntityId actor, RegionId region) const {
+    const auto *enemy = simulation_->findEnemy(actor);
+    if (!enemy) return std::nullopt;
+    return resolvedMonsterCombat(enemy->identity, region, enemy->enchantmentData());
 }
 } // namespace d2x

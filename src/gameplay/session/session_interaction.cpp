@@ -1,5 +1,5 @@
 #include "gameplay/simulation/simulation.hpp"
-#include "gameplay/session/session.hpp"
+#include "gameplay/session/session_impl.hpp"
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -56,16 +56,16 @@ bool interactionClear(const Grid &grid, Vec position, const WorldObject &object)
         grid.segment(position, interactionPoint(grid, object), object.id);
 }
 } // namespace
-const WorldObject *GameSession::object(EntityId id) const {
+const WorldObject *GameSessionImpl::object(EntityId id) const {
     const auto &objects = region().objects;
     auto found = std::find_if(objects.begin(), objects.end(), [id](const auto &o) { return o.id == id; });
     return found == objects.end() || found->questHidden ? nullptr : &*found;
 }
-bool GameSession::canReach(const WorldObject &object) const {
+bool GameSessionImpl::canReach(const WorldObject &object) const {
     const auto &player = state().player;
     return !player.dead && interactionClear(map().grid, player.pos, object);
 }
-std::optional<Vec> GameSession::interactionApproach(const WorldObject &object) const {
+std::optional<Vec> GameSessionImpl::interactionApproach(const WorldObject &object) const {
     const auto &grid = map().grid;
     const Vec from = state().player.pos;
     std::optional<Vec> best;
@@ -99,12 +99,12 @@ std::optional<Vec> GameSession::interactionApproach(const WorldObject &object) c
         }
     return best;
 }
-StorageAccess GameSession::storage() const {
+StorageAccess GameSessionImpl::storage() const {
     auto target = object(storage_.object);
     return target && target->interaction == Interaction::Stash && canReach(*target) ? storage_
                                                                                     : StorageAccess{};
 }
-InventoryAccess GameSession::inventoryAccess() const {
+InventoryAccess GameSessionImpl::inventoryAccess() const {
     const auto &player = state().player;
     InventoryAccess access{player.id, !player.dead, region().definition.id, player.pos, storage().container, 4, {}};
     if (playerContainers_.cube)
@@ -115,16 +115,16 @@ InventoryAccess GameSession::inventoryAccess() const {
             }
     return access;
 }
-void GameSession::closeStorage() {
+void GameSessionImpl::closeStorage() {
     if (storage_)
         simulation_->emit(StorageClosed{storage_.container});
     storage_ = {};
 }
-void GameSession::validateStorage() {
+void GameSessionImpl::validateStorage() {
     if (storage_ && !storage())
         closeStorage();
 }
-void GameSession::cancelInteraction() {
+void GameSessionImpl::cancelInteraction() {
     if (pendingInteraction_ || pendingPortal_)
         simulation_->stopWalking();
     pendingInteraction_ = {};
@@ -133,7 +133,7 @@ void GameSession::cancelInteraction() {
     pendingPortal_.reset();
     pendingCainPortal_ = false;
 }
-void GameSession::interact(EntityId id) {
+void GameSessionImpl::interact(EntityId id) {
     if (pendingInteraction_ == id)
         return;
     cancelInteraction();
@@ -150,7 +150,7 @@ void GameSession::interact(EntityId id) {
     }
     updateInteraction();
 }
-void GameSession::updateInteraction() {
+void GameSessionImpl::updateInteraction() {
     if (!pendingInteraction_)
         return;
     auto target = object(pendingInteraction_);
@@ -177,7 +177,7 @@ void GameSession::updateInteraction() {
         cancelInteraction();
     }
 }
-void GameSession::completeInteraction(const WorldObject &object) {
+void GameSessionImpl::completeInteraction(const WorldObject &object) {
     if (object.isWaypoint()) {
         if (simulation_->state_.waypoints.emplace(region().definition.id, state().time).second) {
             simulation_->emit(WaypointActivated{object.id});
@@ -355,7 +355,7 @@ void GameSession::completeInteraction(const WorldObject &object) {
         break;
     }
 }
-void GameSession::unlockWaypoints() {
+void GameSessionImpl::unlockWaypoints() {
     if (state().player.dead) return;
     for (const auto &region : regions_)
         for (const auto &object : region.objects)
@@ -365,7 +365,7 @@ void GameSession::unlockWaypoints() {
                 break;
             }
 }
-bool GameSession::travelWaypoint(const WaypointTravel &command) {
+bool GameSessionImpl::travelWaypoint(const WaypointTravel &command) {
     const auto *source = object(command.source);
     if (!source || !source->isWaypoint() ||
         !canReach(*source) || !waypointUnlocked(region().definition.id) ||

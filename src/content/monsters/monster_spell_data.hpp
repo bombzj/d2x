@@ -1,7 +1,9 @@
 #pragma once
 #include "resources/archive.hpp"
 #include "resources/data_table.hpp"
-#include "gameplay/monsters/monster_spawn.hpp"
+#include "gameplay/monsters/ability_spec.hpp"
+#include <array>
+#include <optional>
 
 namespace d2x {
 std::array<std::optional<MonsterSpell>, 4> loadMonsterSpells(

@@ -1,3 +1,5 @@
+#include "gameplay/combat/damage_request.hpp"
+#include "gameplay/skills/runtime.hpp"
 #include "gameplay/simulation/simulation.hpp"
 #include "gameplay/combat/damage_resolution.hpp"
 #include "core/random.hpp"
@@ -12,9 +14,9 @@ void Simulation::resolveMissileImpact(const Missile &missile, std::vector<Missil
     if (missile.skillId >= 0 && (spec.cloudBurst || spec.areaMissile)) {
         // A native child inherits the parent's rank, then resolves its damage
         // from the current owner. The parent projectile retains its launch snapshot.
-        if (!resolveMissileSkill_)
+        if (!resolveUnitSkill_)
             throw std::runtime_error("Missile owner has no skill resolver");
-        const auto skill = resolveMissileSkill_(missile.owner, missile.skillId, missile.skillRank);
+        const auto skill = resolveUnitSkill_(missile.owner, missile.skillId, missile.skillRank);
         if (!skill.missileImpact) throw std::runtime_error("Missing originating missile impact");
         spec = *skill.missileImpact;
     }
@@ -27,7 +29,7 @@ void Simulation::resolveMissileImpact(const Missile &missile, std::vector<Missil
         DamageRequest request{missile.owner, target.id};
         request.channels = payload.channels;
         request.channels[size_t(MonsterDamageType::Poison)] = 0;
-        request.chill = payload.coldDuration * float(std::clamp(100 - unitResistance(target, MonsterDamageType::Cold), 0, 200)) / 100.f;
+        request.chill = payload.coldDuration * float(std::clamp(100 - rawResistance(target.stats.attributes, MonsterDamageType::Cold), 0, 200)) / 100.f;
         request.freeze = payload.freeze;
         if (payload.freeze) {
             request.chill = 0;
@@ -52,7 +54,7 @@ void Simulation::resolveMissileImpact(const Missile &missile, std::vector<Missil
             // the weapon carried by the original arrow. Other owners need their own resolver.
             const auto owner = combatUnit(missile.owner);
             if (!owner) return;
-            const auto weapon = owner.player ? owner.player->equipment.weapons[0].item : EntityId{};
+            const auto weapon = owner.player ? owner.records.player->equipment.weapons[0].item : EntityId{};
             const auto ranges = attackElementRanges(owner.stats.attributes.combat, weapon);
             const AttackDamageRange channels[]{ {}, ranges.magic, ranges.fire, ranges.lightning, ranges.cold, {} };
             minimum += int64_t(channels[size_t(area.element)].minimum) * 256;
@@ -122,7 +124,7 @@ void Simulation::advancePoisonCloud(Missile &missile, float dt, std::vector<Miss
         }
     }
     if (struck) {
-        reactToMissile(missile, struck.id, spawned);
+        skills().reactToMissile(missile, struck.id, spawned);
         missile.lastHit = struck.id;
         rollRandom(missile.combatRandom);
         const auto span = uint32_t(std::max(0, cloud.maximum - cloud.minimum));

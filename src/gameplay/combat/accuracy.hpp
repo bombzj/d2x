@@ -1,6 +1,7 @@
 #pragma once
 #include "gameplay/combat/stat_modifiers.hpp"
-#include "gameplay/monsters/monster_spawn.hpp"
+#include "gameplay/monsters/combat_values.hpp"
+#include "gameplay/monsters/rank.hpp"
 
 namespace d2x {
 int physicalHitChance(int attackerLevel, int attackRating, int defenderLevel, int defense);

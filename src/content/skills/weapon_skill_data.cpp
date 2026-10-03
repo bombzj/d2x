@@ -1,3 +1,4 @@
+#include "gameplay/skills/spec.hpp"
 #include "resources/archive.hpp"
 #include "weapon_skill_data.hpp"
 #include "missile_effects.hpp"
@@ -88,7 +89,7 @@ void loadPaladinSkills(SkillCatalog &catalog, const DataTable &skills, const Dat
     spec.castSoundArt = sound(skills.value(row, "stsound"));
     spec.releaseSoundArt = sound(missiles.value(missile, "TravelSound"));
     spec.impactSoundArt = sound(missiles.value(missile, "HitSound"));
-    entry.spell = std::move(spec);
+    entry.spell = std::make_shared<const SkillSpec>(std::move(spec));
     const auto sacrifice = named(skills, "skill", "Sacrifice");
     if (required(skills, sacrifice, "srvstfunc") != 29 || required(skills, sacrifice, "srvdofunc") != 64 ||
         skills.value(sacrifice, "calc1") != "ln12+skill('Redemption'.blvl)*par8+skill('Fanaticism'.blvl)*par7" ||
@@ -112,7 +113,7 @@ void loadPaladinSkills(SkillCatalog &catalog, const DataTable &skills, const Dat
     weapon.selfDamagePercent = required(skills, sacrifice, "Param3");
     weapon.damageSynergies.emplace(required(skills, named(skills, "skill", "Redemption"), "Id"), required(skills, sacrifice, "Param8"));
     weapon.damageSynergies.emplace(required(skills, named(skills, "skill", "Fanaticism"), "Id"), required(skills, sacrifice, "Param7"));
-    catalog.skills.at(melee.sourceId).spell = std::move(melee);
+    catalog.skills.at(melee.sourceId).spell = std::make_shared<const SkillSpec>(std::move(melee));
     const auto zeal = named(skills, "skill", "Zeal");
     if (required(skills, zeal, "srvstfunc") != 37 || required(skills, zeal, "srvdofunc") != 13 ||
         formula(skills, zeal, "calc1") != "min((par5 + lvl -1), par6)" ||
@@ -137,7 +138,7 @@ void loadPaladinSkills(SkillCatalog &catalog, const DataTable &skills, const Dat
     sequence.rollbackPercent = required(skills, zeal, "Param2");
     sequence.interruptible = skills.number(zeal, "interrupt").value_or(0) != 0;
     sequence.damageSynergies.emplace(required(skills, sacrifice, "Id"), required(skills, zeal, "Param8"));
-    catalog.skills.at(combo.sourceId).spell = std::move(combo);
+    catalog.skills.at(combo.sourceId).spell = std::make_shared<const SkillSpec>(std::move(combo));
     const auto vengeance = named(skills, "skill", "Vengeance");
     SkillSpec elemental;
     elemental.sourceId = required(skills, vengeance, "Id");
@@ -166,7 +167,7 @@ void loadPaladinSkills(SkillCatalog &catalog, const DataTable &skills, const Dat
         elements.elementSynergies[element].emplace(required(skills, named(skills, "skill", "Salvation"), "Id"),
             required(skills, vengeance, "Param7"));
     }
-    catalog.skills.at(elemental.sourceId).spell = std::move(elemental);
+    catalog.skills.at(elemental.sourceId).spell = std::make_shared<const SkillSpec>(std::move(elemental));
     const auto holyShield = named(skills, "skill", "Holy Shield");
     if (skills.value(holyShield, "auralencalc") != "ln12" || skills.value(holyShield, "aurastatcalc1") != "dm56" ||
         skills.value(holyShield, "calc1") != "ln34+skill('Defiance'.blvl)*par8")
@@ -190,7 +191,7 @@ void loadPaladinSkills(SkillCatalog &catalog, const DataTable &skills, const Dat
         shield.armorParameters[parameter] = skills.number(holyShield, "Param" + std::to_string(parameter + 1)).value_or(0);
     shield.armorSynergySkills.push_back(required(skills, named(skills, "skill", "Defiance"), "Id"));
     shield.castSoundArt = sound(skills.value(holyShield, "stsound"));
-    catalog.skills.at(shield.sourceId).spell = std::move(shield);
+    catalog.skills.at(shield.sourceId).spell = std::make_shared<const SkillSpec>(std::move(shield));
     const auto smiteRow = named(skills, "skill", "Smite");
     if (required(skills, smiteRow, "srvdofunc") != 150 || skills.value(smiteRow, "anim") != "S1" ||
         skills.value(smiteRow, "calc1") != "ln34" || formula(skills, smiteRow, "calc2") != "min(250,ln12)")
@@ -209,7 +210,7 @@ void loadPaladinSkills(SkillCatalog &catalog, const DataTable &skills, const Dat
     smite.weapon->damagePerLevel = required(skills, smiteRow, "Param4");
     smite.weapon->stunFrames = required(skills, smiteRow, "Param1");
     smite.weapon->stunPerLevel = required(skills, smiteRow, "Param2");
-    catalog.skills.at(smite.sourceId).spell = std::move(smite);
+    catalog.skills.at(smite.sourceId).spell = std::make_shared<const SkillSpec>(std::move(smite));
     const auto hammerRow = named(skills, "skill", "Blessed Hammer");
     SkillSpec hammer;
     hammer.sourceId = required(skills, hammerRow, "Id");
@@ -241,7 +242,7 @@ void loadPaladinSkills(SkillCatalog &catalog, const DataTable &skills, const Dat
     hammer.castSoundArt = sound(skills.value(hammerRow, "stsound"));
     hammer.releaseSoundArt = sound(missiles.value(hammerMissile, "TravelSound"));
     hammer.impactSoundArt = sound(missiles.value(hammerMissile, "HitSound"));
-    catalog.skills.at(hammer.sourceId).spell = std::move(hammer);
+    catalog.skills.at(hammer.sourceId).spell = std::make_shared<const SkillSpec>(std::move(hammer));
     const auto conversionRow = named(skills, "skill", "Conversion");
     if (skills.value(conversionRow, "calc1") != "dm34" || skills.value(conversionRow, "auralencalc") != "ln12")
         throw std::runtime_error("Unsupported Conversion formula");
@@ -259,7 +260,7 @@ void loadPaladinSkills(SkillCatalog &catalog, const DataTable &skills, const Dat
     conversion.weapon->conversionFrames = required(skills, conversionRow, "Param1");
     conversion.state = states.at(std::string(skills.value(conversionRow, "auratargetstate"))).definition;
     conversion.weapon->conversionState = conversion.state;
-    catalog.skills.at(conversion.sourceId).spell = std::move(conversion);
+    catalog.skills.at(conversion.sourceId).spell = std::make_shared<const SkillSpec>(std::move(conversion));
     const auto heavenRow = named(skills, "skill", "Fist of the Heavens");
     SkillSpec heaven;
     heaven.sourceId = required(skills, heavenRow, "Id");
@@ -321,7 +322,7 @@ void loadPaladinSkills(SkillCatalog &catalog, const DataTable &skills, const Dat
     heaven.missileId = required(missiles, delayRow, "Id");
     heaven.castSoundArt = sound(skills.value(heavenRow, "stsound"));
     heaven.releaseSoundArt = sound(missiles.value(delayRow, "TravelSound"));
-    catalog.skills.at(heaven.sourceId).spell = std::move(heaven);
+    catalog.skills.at(heaven.sourceId).spell = std::make_shared<const SkillSpec>(std::move(heaven));
     const auto chargeRow = named(skills, "skill", "Charge");
     if (skills.value(chargeRow, "calc1") != "ln34+(skill('Vigor'.blvl)+skill('Might'.blvl))*par8" ||
         required(skills, chargeRow, "seqnum") != 4 || skills.value(chargeRow, "seqtrans") != "A1")
@@ -342,7 +343,7 @@ void loadPaladinSkills(SkillCatalog &catalog, const DataTable &skills, const Dat
     charge.weapon->attackRatingPerLevel = required(skills, chargeRow, "LevToHit");
     for (const auto name : {"Vigor", "Might"})
         charge.weapon->damageSynergies.emplace(required(skills, named(skills, "skill", name), "Id"), required(skills, chargeRow, "Param8"));
-    catalog.skills.at(charge.sourceId).spell = std::move(charge);
+    catalog.skills.at(charge.sourceId).spell = std::make_shared<const SkillSpec>(std::move(charge));
 }
 void loadWeaponSkills(SkillCatalog &catalog, const DataTable &skills, const DataTable &missiles,
                       const DataTable &sounds, Archives &archives) {
@@ -420,7 +421,7 @@ void loadWeaponSkills(SkillCatalog &catalog, const DataTable &skills, const Data
             const auto explosion = named(missiles, "Missile", missiles.value(missile, "ExplosionMissile"));
             spec.impactSoundArt = sound(missiles.value(explosion, "TravelSound"));
         }
-        entry.spell = std::move(spec);
+        entry.spell = std::make_shared<const SkillSpec>(std::move(spec));
     }
 }
 } // namespace d2x

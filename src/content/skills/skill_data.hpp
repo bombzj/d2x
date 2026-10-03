@@ -1,7 +1,8 @@
 #pragma once
 #include "gameplay/character/attributes.hpp"
-#include "gameplay/model/definitions.hpp"
-#include "gameplay/skills/spec.hpp"
+#include "content/skills/skill_metadata.hpp"
+#include <memory>
+#include "gameplay/skills/passive.hpp"
 #include "resources/data_table.hpp"
 #include "content/string_table.hpp"
 #include <array>
@@ -12,27 +13,21 @@
 #include <vector>
 
 namespace d2x {
+struct SkillSpec;
 struct ClassSkillTree {
     std::string classCode, iconToken, backgroundToken;
     std::array<std::string, 3> pageNames;
     std::vector<int> commonSkills;
     std::optional<int> starterSkill;
 };
-enum class BasicSkillAction { None, Attack, Throw, LeftHandSwing, LeftHandThrow };
-struct SkillRecord {
-    int id = -1, page = 0, row = 0, column = 0, iconCell = -1;
-    int requiredLevel = 0, maximumRank = 0;
-    std::string classCode, sourceName, name, description;
-    std::vector<int> prerequisites;
-    bool leftAllowed = false, passive = false, allowedInTown = false;
-    BasicSkillAction basicAction = BasicSkillAction::None;
-    std::string animationMode;
-    std::optional<SkillSpec> spell;
+// Metadata remains directly accessible for existing content consumers. The
+// execution definition is immutable and owned separately, not embedded here.
+struct SkillRecord : SkillMetadata {
+    std::shared_ptr<const SkillSpec> spell;
     bool auraImplemented = false;
     bool auraImmediate = false;
-    int passiveAttackRatingPerBaseRank = 0;
+    SkillPassiveSpec passiveContribution;
     int passiveSuppressedByState = -1;
-    int passiveMaxResistElement = -1;
     bool executable() const { return !passive && (auraImplemented || spell || basicAction != BasicSkillAction::None); }
     std::optional<std::pair<int, int>> manaRecoveryPerRank;
     std::optional<std::pair<int, int>> fireMasteryPerRank;
@@ -52,6 +47,4 @@ SkillCatalog loadSkillCatalog(const DataTable &skills, const DataTable &descript
                               const DataTable &characterStats,
                               const std::vector<CharacterDefinition> &characters,
                               const ClassicStrings &strings);
-void applyAuraPassives(CharacterModifiers &modifiers, const SkillCatalog &skills,
-    const std::map<int, int> &learned, const CombatEffectSet &effects, EffectFrame frame);
 } // namespace d2x

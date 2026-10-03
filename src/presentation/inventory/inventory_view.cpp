@@ -1,10 +1,9 @@
-#include "gameplay/session/session.hpp"
 #include "presentation/scene_view.hpp"
 #include <algorithm>
 
 namespace d2x {
-void SceneView::drawItemIcon(const ItemInstance &item, Rectangle bounds, Color tint) const {
-    auto found = assets_.itemIcons.find(SceneAssets::itemArtKey(item));
+void SceneView::drawItemArt(const std::string &key, const std::string &code, Rectangle bounds, Color tint) const {
+    auto found = assets_.itemIcons.find(key);
     auto icon = found == assets_.itemIcons.end() ? nullptr : found->second.frame(0, 0);
     if (icon && icon->texture.id) {
         float scale = std::min({inventoryScale, (bounds.width - 4) / icon->texture.width,
@@ -16,15 +15,22 @@ void SceneView::drawItemIcon(const ItemInstance &item, Rectangle bounds, Color t
             {0, 0}, 0, tint);
     } else {
         diamond({bounds.x + bounds.width / 2, bounds.y + bounds.height / 2}, 9, gold);
-        painter_.label(item.definition, int(bounds.x + 4), int(bounds.y + 4), 10, tint);
+        painter_.label(code, int(bounds.x + 4), int(bounds.y + 4), 10, tint);
     }
+}
+void SceneView::drawItemIcon(const InventoryItemView &item, Rectangle bounds, Color tint) const {
+    drawItemArt(item.artKey, item.definition, bounds, tint);
+}
+void SceneView::drawItemTooltip(const InventoryItemView &item, Vec anchor,
+                                std::optional<unsigned> price, std::string_view priceLabel) const {
+    drawItemText(item.tooltip, item.quality, anchor, price, priceLabel);
 }
 void SceneView::drawInventory(Vec mouse) const {
     const auto &ui = view_.inventory;
     if (!ui.open)
         return;
-    const auto &inventory = session_.inventory();
-    EntityId backpack = session_.playerContainers().backpack;
+    const auto &inventory = inventoryView_;
+    EntityId backpack = inventoryView_.containers.backpack;
     auto panel = inventoryBounds();
     drawPanelFrame(true);
     if (assets_.inventoryPanel.frames.size() >= 8)
@@ -38,8 +44,8 @@ void SceneView::drawInventory(Vec mouse) const {
         }
     auto hoverCell = inventoryCell(mouse);
     EntityId hovered = hoverCell ? inventory.itemAt(backpack, *hoverCell) : EntityId{};
-    const auto weaponSet = session_.state().player.weaponSet;
-    if (session_.content().stashLayout.expansion && weaponSet == 1)
+    const auto weaponSet = inventoryView_.weaponSet;
+    if (inventoryView_.stashLayout.expansion && weaponSet == 1)
         for (int hand = 0; hand < 2; ++hand) {
             const auto &tile = assets_.weaponTabs.frames[size_t(hand)].texture;
             DrawTexturePro(tile, {0, 0, float(tile.width), float(tile.height)},
@@ -52,10 +58,10 @@ void SceneView::drawInventory(Vec mouse) const {
         if (slot == EquipmentSlot::RightHand) slot = weaponHandSlot(false, weaponSet);
         if (slot == EquipmentSlot::LeftHand) slot = weaponHandSlot(true, weaponSet);
         auto bounds = equipmentBounds(slot);
-        auto equipped = inventory.item(inventory.equipped(session_.playerContainers(), slot));
+        auto equipped = inventory.item(inventory.equipped(inventoryView_.containers, slot));
         if (equipped && !(ui.drag && ui.drag->item.id == equipped->id)) {
             drawItemIcon(*equipped, bounds);
-            if (inventory.catalog().find(equipped->definition)->maxStack > 1) {
+            if (inventory.definition(equipped->definition)->maxStack > 1) {
                 auto quantity = std::to_string(equipped->quantity);
                 painter_.label(quantity, int(bounds.x + bounds.width - painter_.measure(quantity, 12) - 4),
                                int(bounds.y + bounds.height - 16), 12, equipped->quantity ? WHITE : RED);
@@ -68,11 +74,11 @@ void SceneView::drawInventory(Vec mouse) const {
         }
     }
     const bool overShop = view_.shopOpen && CheckCollisionPointRec(rv(mouse), classicSideBounds(false));
-    auto drop = overShop ? InventoryDrop{} : inventoryDrop(session_, ui, mouse, view_.hirelingOpen);
+    auto drop = overShop ? InventoryDrop{} : inventoryDrop(inventoryView_, inventoryClient_, ui, mouse, view_.hirelingOpen);
     std::string hint = ui.pending                  ? "Moving item..."
                        : ui.drag && ui.drag->moved ? drop.description
                                                    : "Select an item or drag it to another slot.";
-    for (const auto &grid : inventoryGrids(session_, ui))
+    for (const auto &grid : inventoryGrids(inventoryView_, ui))
         if (grid.container == backpack)
             drawContainerGrid(grid, mouse);
     if (ui.drag && ui.drag->moved && drop.bounds.width > 0) {
@@ -92,7 +98,7 @@ void SceneView::drawInventory(Vec mouse) const {
     if (const auto *close = assets_.questClose.frame(0, 10))
         DrawTexturePro(close->texture, {0, 0, float(close->texture.width), float(close->texture.height)},
                        inventoryClose(), {0, 0}, 0, WHITE);
-    painter_.label(std::to_string(session_.state().player.gold),
+    painter_.label(std::to_string(inventoryView_.gold),
                    int(goldField.x + 28 * inventoryScale), int(goldField.y + 4 * inventoryScale),
                    int(16 * inventoryScale), WHITE);
     if (ui.identify)
@@ -101,9 +107,7 @@ void SceneView::drawInventory(Vec mouse) const {
     if (!ui.split && !ui.drag) {
         if (auto item = inventory.item(hovered))
             drawItemTooltip(*item, {panel.x - 12, mouse.y},
-                view_.shopRepair ? session_.vendorRepairQuote(view_.dialogueObject, item->handle()) :
-                view_.shopOpen ? session_.vendorSaleQuote(view_.dialogueObject, item->handle()) : std::nullopt,
-                false, view_.shopRepair ? "Repair" : view_.shopOpen ? "Sell" : "Cost");
+                inventoryVendorPrice(item->handle()), view_.shopRepair ? "Repair" : view_.shopOpen ? "Sell" : "Cost");
     } else if (ui.drag && ui.drag->moved && !overShop && !hint.empty()) {
         int width = painter_.measure(hint, 12) + 24;
         frame({panel.x - width - 12, 450, float(width), 30});
@@ -152,10 +156,10 @@ bool SceneView::drawInventoryCursor(Vec mouse) const {
     if (!ui.drag || view_.gameMenuOpen ||
         (view_.blocksWorld() && !view_.shopOpen))
         return false;
-    const auto *item = session_.inventory().item(ui.drag->item.id);
+    const auto *item = inventoryView_.item(ui.drag->item.id);
     if (!item || item->revision != ui.drag->item.revision)
         return false;
-    const auto &definition = *session_.inventory().catalog().find(item->definition);
+    const auto &definition = *inventoryView_.definition(item->definition);
     drawItemIcon(*item,
                  {mouse.x - ui.drag->pixelOffset.x, mouse.y - ui.drag->pixelOffset.y,
                   definition.width * inventoryCellSize, definition.height * inventoryCellSize});

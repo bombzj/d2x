@@ -1,4 +1,5 @@
 #pragma once
+#include "contracts/inventory.hpp"
 #include "gameplay/items/definitions.hpp"
 #include "gameplay/items/state.hpp"
 #include "presentation/graphics/primitives.hpp"
@@ -16,6 +17,9 @@ struct ContainerGrid {
                 height * cellSize};
     }
     Rectangle itemBounds(Cell cell, const ItemDefinition &definition) const {
+        return cellBounds(cell, definition.width, definition.height);
+    }
+    Rectangle itemBounds(Cell cell, const InventoryDefinitionView &definition) const {
         return cellBounds(cell, definition.width, definition.height);
     }
     std::optional<Cell> cellAt(Vec mouse) const {

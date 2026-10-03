@@ -1,21 +1,21 @@
 #include "gameplay/simulation/simulation.hpp"
-#include "gameplay/session/session.hpp"
+#include "gameplay/session/session_impl.hpp"
 #include "content/items/equipment_modifiers.hpp"
 #include "content/monsters/monster_experience.hpp"
 #include <algorithm>
 #include <limits>
 
 namespace d2x {
-const HirelingDefinition *GameSession::hirelingDefinition() const {
+const HirelingDefinition *GameSessionImpl::hirelingDefinition() const {
     const auto row = state().player.hireling.sourceRow;
     for (const auto &entry : content_.hirelings) if (entry.sourceRow == row) return &entry;
     return nullptr;
 }
-const std::vector<HirelingOffer> *GameSession::hirelingOffers(EntityId npc) const {
+const std::vector<HirelingOffer> *GameSessionImpl::hirelingOffers(EntityId npc) const {
     auto found = hirelingOffers_.find(npc);
     return found == hirelingOffers_.end() ? nullptr : &found->second;
 }
-bool GameSession::canHireFrom(EntityId npc) const {
+bool GameSessionImpl::canHireFrom(EntityId npc) const {
     const auto *target = object(npc);
     const auto *seller = target ? monsterContent_.find(target->npcClass) : nullptr;
     if (!seller || !content_.stashLayout.expansion) return false;
@@ -27,7 +27,7 @@ bool GameSession::canHireFrom(EntityId npc) const {
                entry.difficulty == state().population.difficulty + 1;
     });
 }
-bool GameSession::ensureHirelingOffers(EntityId npc) {
+bool GameSessionImpl::ensureHirelingOffers(EntityId npc) {
     if (auto found = hirelingOffers(npc); found && !found->empty()) return true;
     const auto *target = object(npc);
     const auto *seller = target ? monsterContent_.find(target->npcClass) : nullptr;
@@ -40,7 +40,7 @@ bool GameSession::ensureHirelingOffers(EntityId npc) {
     inventory_.state_.creationRandom = random;
     return true;
 }
-void GameSession::openHirelingList(EntityId npc) {
+void GameSessionImpl::openHirelingList(EntityId npc) {
     if (engagedNpc_ != npc || state().player.dead || !region().definition.safe ||
         !canHireFrom(npc) || !ensureHirelingOffers(npc)) {
         simulation_->emit(InteractionFailed{npc, "No mercenaries are available."});
@@ -48,7 +48,7 @@ void GameSession::openHirelingList(EntityId npc) {
     }
     simulation_->emit(HirelingListOpened{npc});
 }
-void GameSession::assignHireling(const HirelingOffer &offer) {
+void GameSessionImpl::assignHireling(const HirelingOffer &offer) {
     const auto found = std::find_if(content_.hirelings.begin(), content_.hirelings.end(),
         [&](const auto &d) { return d.sourceRow == offer.sourceRow; });
     if (found == content_.hirelings.end()) return;
@@ -63,7 +63,7 @@ void GameSession::assignHireling(const HirelingOffer &offer) {
     next.pos = player.pos;
     player.hireling = std::move(next);
 }
-void GameSession::grantDebugHireling() {
+void GameSessionImpl::grantDebugHireling() {
     // Idempotent developer command: do not replace an existing hireling or their items.
     if (state().player.hireling.sourceRow >= 0 || state().player.dead) return;
     for (const auto &definition : content_.hirelings) {
@@ -77,12 +77,12 @@ void GameSession::grantDebugHireling() {
         return;
     }
 }
-void GameSession::grantHirelingExperience(const EnemyDied &death) {
+void GameSessionImpl::grantHirelingExperience(const EnemyDied &death) {
     auto &hireling = simulation_->state_.player.hireling;
     const auto *definition = hirelingDefinition();
     if (!definition || !hireling.active() || hireling.level >= state().player.level || hireling.level >= 99) return;
     const auto award = resolveMonsterExperience(content_, monsterContent_, worldContent_,
-        {death.identity, death.region, death.difficulty, hireling.level});
+        {death.identity, death.region, death.difficulty, hireling.level, death.rewardModifiers});
     if (!award.deferred.empty()) return;
     const auto stats = deriveHirelingStats(*definition, hireling.level);
     // SUnitDmg: cap one award to 1/64 of the level interval; owner's kills give 86/256.
@@ -99,7 +99,7 @@ void GameSession::grantHirelingExperience(const EnemyDied &death) {
     hireling.sourceRow = definition->sourceRow;
     hireling.hp = float(hirelingStats().base.life);
 }
-void GameSession::hireMercenary(const HireMercenary &command) {
+void GameSessionImpl::hireMercenary(const HireMercenary &command) {
     const auto *offers = hirelingOffers(command.npc);
     if (!offers || engagedNpc_ != command.npc || !region().definition.safe ||
         state().player.dead || !canHireFrom(command.npc)) return;
@@ -127,17 +127,17 @@ void GameSession::hireMercenary(const HireMercenary &command) {
     engagedNpc_ = {};
     simulation_->emit(HirelingHired{command.npc});
 }
-unsigned GameSession::hirelingResurrectionCost() const {
+unsigned GameSessionImpl::hirelingResurrectionCost() const {
     const auto &merc = state().player.hireling;
     return merc.sourceRow < 0 ? 0u : unsigned(std::min(50000, 15 * merc.level * merc.level / 2));
 }
-bool GameSession::canResurrectHireling(EntityId npc) const {
+bool GameSessionImpl::canResurrectHireling(EntityId npc) const {
     const auto *target = object(npc);
     const auto &merc = state().player.hireling;
     return target && target->npcClass == "kashya" && content_.stashLayout.expansion &&
            merc.sourceRow >= 0 && !merc.active();
 }
-void GameSession::resurrectHireling(EntityId npc) {
+void GameSessionImpl::resurrectHireling(EntityId npc) {
     auto &player = simulation_->state_.player;
     if (engagedNpc_ != npc || player.dead || !region().definition.safe || !canResurrectHireling(npc)) return;
     const unsigned cost = hirelingResurrectionCost();
@@ -158,7 +158,7 @@ void GameSession::resurrectHireling(EntityId npc) {
     engagedNpc_ = {};
     simulation_->emit(HirelingHired{npc});
 }
-InventoryError GameSession::previewHirelingPotion(ItemHandle handle) const {
+InventoryError GameSessionImpl::previewHirelingPotion(ItemHandle handle) const {
     if (auto error = inventory_.checkHandle(handle); error != InventoryError::None) return error;
     if (state().player.dead || !state().player.hireling.active()) return InventoryError::AccessDenied;
     const auto *item = inventory_.item(handle.id);
@@ -173,7 +173,7 @@ InventoryError GameSession::previewHirelingPotion(ItemHandle handle) const {
         return inventory_.previewDrink(handle, inventoryAccess());
     return InventoryError::None;
 }
-void GameSession::useHirelingPotion(ItemHandle handle) {
+void GameSessionImpl::useHirelingPotion(ItemHandle handle) {
     const auto error = previewHirelingPotion(handle);
     if (error != InventoryError::None) { simulation_->emit(InventoryRejected{handle.id, error}); return; }
     const auto &item = *inventory_.item(handle.id);
@@ -220,10 +220,10 @@ void GameSession::useHirelingPotion(ItemHandle handle) {
     }
     simulation_->emit(ItemUsed{handle.id, code});
 }
-HirelingCombatStats GameSession::hirelingStats() const {
+HirelingCombatStats GameSessionImpl::hirelingStats() const {
     return hirelingStats(state().player.hireling, inventory_, playerContainers_);
 }
-HirelingCombatStats GameSession::hirelingStats(const HirelingState &hireling,
+HirelingCombatStats GameSessionImpl::hirelingStats(const HirelingState &hireling,
     const InventoryService &inventory, const PlayerContainers &containers) const {
     HirelingCombatStats result;
     const HirelingDefinition *definition = nullptr;
@@ -290,7 +290,7 @@ HirelingCombatStats GameSession::hirelingStats(const HirelingState &hireling,
     result.velocityPercent = modifiers.velocityPercent;
     return result;
 }
-InventoryError GameSession::previewHirelingEquipment(const EquipHirelingItem &command) const {
+InventoryError GameSessionImpl::previewHirelingEquipment(const EquipHirelingItem &command) const {
     const auto *d = hirelingDefinition();
     if (!d || !state().player.hireling.active() || state().player.dead ||
         !map().activation.nearby(state().player.pos, state().player.hireling.pos))
@@ -314,7 +314,7 @@ InventoryError GameSession::previewHirelingEquipment(const EquipHirelingItem &co
     return inventory_.preview(EquipItem{command.item, command.slot, command.destination},
                               slots, inventoryAccess(), actor);
 }
-EquipmentActor GameSession::hirelingEquipmentActor(std::optional<EquipmentSlot> replacedSlot) const {
+EquipmentActor GameSessionImpl::hirelingEquipmentActor(std::optional<EquipmentSlot> replacedSlot) const {
     const auto &merc = state().player.hireling;
     const auto base = deriveHirelingStats(*hirelingDefinition(), merc.level);
     // PlrMsg::MERCS_EquipItem checks again after removing the replaced item.
@@ -330,7 +330,7 @@ EquipmentActor GameSession::hirelingEquipmentActor(std::optional<EquipmentSlot> 
     actor.dexterity += mods.dexterity;
     return actor;
 }
-void GameSession::equipHirelingItem(const EquipHirelingItem &command) {
+void GameSessionImpl::equipHirelingItem(const EquipHirelingItem &command) {
     if (auto error = previewHirelingEquipment(command); error != InventoryError::None) {
         simulation_->emit(InventoryRejected{command.item.id, error});
         return;

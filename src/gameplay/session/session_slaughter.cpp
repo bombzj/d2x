@@ -1,10 +1,10 @@
 #include "gameplay/simulation/simulation.hpp"
-#include "gameplay/session/session.hpp"
+#include "gameplay/session/session_impl.hpp"
 #include "core/random.hpp"
 #include <algorithm>
 
 namespace d2x {
-void GameSession::updateSlaughterQuest(const EnemyDied &death) {
+void GameSessionImpl::updateSlaughterQuest(const EnemyDied &death) {
     const auto *andariel = monsterContent_.find("andariel");
     if (!andariel || !catacombsFourRegion_ || death.region != *catacombsFourRegion_ ||
         death.identity.monster != andariel->id || death.identity.rank != MonsterRank::Boss)
@@ -39,7 +39,7 @@ void GameSession::updateSlaughterQuest(const EnemyDied &death) {
             death.region, position, *townPortalArrival_, state().time};
     }
 }
-void GameSession::completeActOne(EntityId npc) {
+void GameSessionImpl::completeActOne(EntityId npc) {
     const auto *warriv = object(npc);
     if (!warriv || warriv->name != "Warriv" || engagedNpc_ != npc ||
         !canReach(*warriv) || region().definition.id != RegionId::Encampment)

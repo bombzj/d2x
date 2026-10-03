@@ -1,3 +1,4 @@
+#include "gameplay/model/state.hpp"
 #include "zombie_ai.hpp"
 #include "monster_wander.hpp"
 

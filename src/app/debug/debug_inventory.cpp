@@ -1,5 +1,7 @@
 #include "debug_inventory.hpp"
 #include "gameplay/session/session.hpp"
+#include "content/classic_data.hpp"
+#include "gameplay/items/inventory.hpp"
 #include "presentation/scene_view.hpp"
 #include <nlohmann/json.hpp>
 #include <algorithm>

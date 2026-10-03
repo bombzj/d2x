@@ -1,3 +1,4 @@
+#include "gameplay/skills/runtime.hpp"
 #include "core/random.hpp"
 #include "gameplay/simulation/simulation.hpp"
 #include "gameplay/combat/accuracy.hpp"
@@ -92,7 +93,7 @@ void Simulation::advancePhysicalMissile(Missile &missile, float dt, std::vector<
     // Expiry precedes unit hits, and must set exactly zero so the update removes
     // the missile. A small positive residue must not detonate again next tick.
     missile.remaining = wall || struck || expired ? 0 : remaining;
-    if (struck) reactToMissile(missile, struck.id, spawned);
+    if (struck) skills().reactToMissile(missile, struck.id, spawned);
     // AlwaysExplode runs the native hit effect on a failed to-hit roll, terrain and expiry too.
     if (missile.remaining == 0 && missile.impact) resolveMissileImpact(missile, spawned, struck ? struck.id : EntityId{});
     if (!struck) return;

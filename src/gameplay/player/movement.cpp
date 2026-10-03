@@ -1,3 +1,6 @@
+#include "gameplay/skills/weapon_caster.hpp"
+#include "gameplay/skills/caster.hpp"
+#include "gameplay/skills/runtime.hpp"
 #include "gameplay/simulation/simulation.hpp"
 #include <algorithm>
 
@@ -13,7 +16,7 @@ void Simulation::stopWalking() {
     state_.player.approachSkill.reset();
 }
 void Simulation::moveTo(Vec target) {
-    stopChannel(state_.player);
+    skills().stopChannel(skillCaster(state_.player.id));
     auto &p = state_.player;
     if (p.dead)
         return;
@@ -35,29 +38,7 @@ void Simulation::updatePlayer(float dt, Vec keyboard) {
                           1.f, float(state_.player.attributes.maxLife));
     if (p.blockAnimation) return;
     if (p.charge) {
-        ++p.charge->ticks;
-        auto charge = *p.charge;
-        const auto *weapon = attackWeapon(false, false);
-        auto target = combatUnit(charge.enemy);
-        if (p.hp <= 0 || p.hitTime > 0 || !weapon || (charge.enemy && (!target.alive() || !canAttack(p.id, target.id)))) {
-            p.charge.reset();
-            return;
-        }
-        if (target) charge.target = *target.position;
-        if (target && meleeReach(target.id, *weapon)) {
-            p.charge.reset();
-            beginWeaponSkill(charge.skill, charge.target, target.id);
-            return;
-        }
-        const Vec delta = charge.target - p.pos;
-        const float distance = std::min(delta.length(), charge.speed * dt);
-        const Vec next = p.pos + delta.unit() * distance;
-        if (distance < .01f || !grid_->segment(p.pos, next, {}, playerMovement)) {
-            p.charge.reset();
-            return;
-        }
-        p.pos = next; p.look = delta.unit(); p.moving = true; p.runningNow = true;
-        if (distance >= delta.length() && !target) p.charge.reset();
+        skills().advanceCharge(skillWeaponCaster(p.id), dt);
         return;
     }
     Vec step;
@@ -83,7 +64,7 @@ void Simulation::updatePlayer(float dt, Vec keyboard) {
                     if (p.approachSkill) {
                         const auto skill = *p.approachSkill;
                         p.approachSkill.reset();
-                        beginWeaponSkill(skill, aim, p.attackTarget);
+                        skills().beginWeaponSkill(skillWeaponCaster(p.id), skill, aim, p.attackTarget);
                     } else beginWeaponAttack(aim, p.attackTarget, *weapon, p.throwAttack, p.leftHandAttack);
                     p.attackTarget = {};
                     p.attackPosition.reset();

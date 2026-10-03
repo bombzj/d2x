@@ -1,4 +1,3 @@
-#include "gameplay/session/session.hpp"
 #include "inventory_panel.hpp"
 #include "presentation/npc/hireling_panel.hpp"
 #include <algorithm>
@@ -56,9 +55,9 @@ Rectangle inventoryItemBounds(Cell cell, const ItemDefinition &definition) {
     return {grid.x + cell.x * inventoryCellSize, grid.y + cell.y * inventoryCellSize,
             definition.width * inventoryCellSize, definition.height * inventoryCellSize};
 }
-std::vector<ContainerGrid> inventoryGrids(const GameSession &session, const InventoryUi &ui) {
-    const auto &c = session.playerContainers();
-    int rows = ui.open || ui.beltExpanded ? session.inventory().container(c.belt)->spec.rows : 1;
+std::vector<ContainerGrid> inventoryGrids(const InventoryView &inventory, const InventoryUi &ui) {
+    const auto &c = inventory.containers;
+    int rows = ui.open || ui.beltExpanded ? inventory.container(c.belt)->rows : 1;
     auto belt = beltSlot({0, 0});
     std::vector<ContainerGrid> grids{
         {c.belt, {belt.x, belt.y}, {31 * hudScale, -32 * hudScale}, 4, rows, 29 * hudScale}};
@@ -67,10 +66,10 @@ std::vector<ContainerGrid> inventoryGrids(const GameSession &session, const Inve
         grids.push_back(
             {c.backpack, {p.x, p.y}, {inventoryCellSize, inventoryCellSize}, 10, 4, inventoryCellSize});
     }
-    if (ui.storage && session.storage().container == ui.storage) {
+    if (ui.storage && inventory.storage == ui.storage) {
         auto p = storageBounds();
-        const auto &spec = session.inventory().container(ui.storage)->spec;
-        const auto &layout = session.content().stashLayout;
+        const auto &spec = *inventory.container(ui.storage);
+        const auto &layout = inventory.stashLayout;
         grids.push_back({ui.storage,
                          {p.x + layout.left * inventoryScale, p.y + layout.top * inventoryScale},
                          {layout.cellSize * inventoryScale, layout.cellSize * inventoryScale},
@@ -80,7 +79,7 @@ std::vector<ContainerGrid> inventoryGrids(const GameSession &session, const Inve
     }
     if (ui.cubeOpen && c.cube) {
         auto p = cubeBounds();
-        const auto &layout = session.content().cubeLayout;
+        const auto &layout = inventory.cubeLayout;
         grids.push_back({c.cube,
                          {p.x + layout.left * inventoryScale, p.y + layout.top * inventoryScale},
                          {layout.cellSize * inventoryScale, layout.cellSize * inventoryScale},
@@ -88,14 +87,14 @@ std::vector<ContainerGrid> inventoryGrids(const GameSession &session, const Inve
     }
     return grids;
 }
-void InventoryUi::syncCursor(const GameSession &session, EntityId reserved) {
-    if (const auto *item = session.cursorItem()) {
+void InventoryUi::syncCursor(const InventoryView &inventory, EntityId reserved) {
+    if (const auto *item = inventory.cursorItem()) {
         if (item->id == reserved) {
             drag.reset();
             return;
         }
         if (!drag || !drag->onCursor || drag->item.id != item->id) {
-            const auto &definition = *session.inventory().catalog().find(item->definition);
+            const auto &definition = *inventory.definition(item->definition);
             drag = InventoryDrag{item->handle(), {definition.width / 2, definition.height / 2}, {},
                 {definition.width * inventoryCellSize / 2, definition.height * inventoryCellSize / 2},
                 true, true, true};
@@ -107,36 +106,35 @@ bool inventorySurface(const InventoryUi &ui, Vec mouse) {
     return (ui.open && CheckCollisionPointRec(rv(mouse), classicSideBounds(true))) ||
            ((ui.storage || ui.cubeOpen) && CheckCollisionPointRec(rv(mouse), classicSideBounds(false)));
 }
-InventoryDrop inventoryDrop(const GameSession &session, const InventoryUi &ui, Vec mouse, bool hirelingOpen) {
+InventoryDrop inventoryDrop(const InventoryView &inventory, const IInventoryClient &client, const InventoryUi &ui, Vec mouse, bool hirelingOpen) {
     InventoryDrop drop;
     if (!ui.drag)
         return drop;
-    const auto &inventory = session.inventory();
     const auto *source = inventory.item(ui.drag->item.id);
     if (!source || source->revision != ui.drag->item.revision) {
         drop.error = source ? InventoryError::SourceChanged : InventoryError::UnknownItem;
         drop.description = inventoryErrorText(drop.error);
         return drop;
     }
-    auto grids = inventoryGrids(session, ui);
+    auto grids = inventoryGrids(inventory, ui);
     auto location = std::get_if<ContainerLocation>(&source->location);
     auto sourceGrid = std::find_if(grids.begin(), grids.end(), [&](const auto &grid) {
         return location && grid.container == location->container;
     });
-    const auto &containers = session.playerContainers();
+    const auto &containers = inventory.containers;
     if (hirelingOpen && CheckCollisionPointRec(rv(mouse), classicSideBounds(false))) {
         constexpr EquipmentSlot order[] = {EquipmentSlot::Head, EquipmentSlot::Torso,
                                            EquipmentSlot::RightHand, EquipmentSlot::RightHand};
-        const auto &layout = session.content().hirelingLayout;
+        const auto &slots = inventory.hirelingSlots;
         drop.description = "Release to cancel";
-        for (size_t index = 0; index < layout.slots.size(); ++index) {
-            const auto &box = layout.slots[index];
+        for (size_t index = 0; index < slots.size(); ++index) {
+            const auto &box = slots[index];
             auto bounds = hirelingArtRect(float(box[0]), float(box[1]),
                                            float(box[2] - box[0]), float(box[3] - box[1]));
             if (!CheckCollisionPointRec(rv(mouse), bounds)) continue;
             drop.bounds = bounds;
             drop.command = EquipHirelingItem{source->handle(), order[index], {}};
-            drop.error = session.previewInventory(*drop.command);
+            drop.error = client.preview(*drop.command);
             drop.description = drop.error == InventoryError::None ? "Equip mercenary" :
                                                                    inventoryErrorText(drop.error);
             break;
@@ -152,7 +150,7 @@ InventoryDrop inventoryDrop(const GameSession &session, const InventoryUi &ui, V
         drop.description = inventoryErrorText(drop.error);
         return drop;
     }
-    const auto &definition = *inventory.catalog().find(source->definition);
+    const auto &definition = *inventory.definition(source->definition);
     auto removeTo = [&](ItemDestination destination) {
         if (location->container == containers.beltEquipment)
             drop.command.emplace(std::in_place_type<EquipBelt>, source->handle(), std::move(destination));
@@ -162,7 +160,7 @@ InventoryDrop inventoryDrop(const GameSession &session, const InventoryUi &ui, V
             drop.command.emplace(std::in_place_type<EquipItem>, source->handle(), std::nullopt,
                                  std::move(destination));
     };
-    if (auto slot = ui.open ? equipmentAt(mouse, session.state().player.weaponSet) : std::nullopt) {
+    if (auto slot = ui.open ? equipmentAt(mouse, inventory.weaponSet) : std::nullopt) {
         if (*slot == EquipmentSlot::Belt) {
             if (location->container == containers.beltEquipment) {
                 drop.bounds = equipmentBounds(*slot);
@@ -190,7 +188,7 @@ InventoryDrop inventoryDrop(const GameSession &session, const InventoryUi &ui, V
             if (target && target->id != source->id) {
                 auto targetCell = std::get<ContainerLocation>(target->location).cell;
                 drop.bounds = grid.itemBounds(targetCell, definition);
-                const auto *targetDefinition = inventory.catalog().find(target->definition);
+                const auto *targetDefinition = inventory.definition(target->definition);
                 if (!ui.forceSwap && targetDefinition->bookCapacity &&
                     (targetDefinition->bookScroll == source->definition || target->definition == source->definition)) {
                     drop.command = LoadBook{source->handle(), target->handle()};
@@ -202,7 +200,7 @@ InventoryDrop inventoryDrop(const GameSession &session, const InventoryUi &ui, V
                     drop.command = SwapItems{source->handle(), target->handle()};
                     drop.description = "Swap both items";
                     if (sourceGrid != grids.end()) drop.otherBounds =
-                        sourceGrid->itemBounds(location->cell, *inventory.catalog().find(target->definition));
+                        sourceGrid->itemBounds(location->cell, *inventory.definition(target->definition));
                 }
             } else {
                 drop.command = MoveItem{source->handle(), ContainerLocation{grid.container, origin}};
@@ -214,7 +212,7 @@ InventoryDrop inventoryDrop(const GameSession &session, const InventoryUi &ui, V
     if (equipped && !drop.command) {
         if (!inventorySurface(ui, mouse) && mouse.x >= 0 && mouse.x < W && mouse.y >= 0 &&
                    !hudSurface(mouse)) {
-            if (auto ground = session.dropLocation()) {
+            if (auto ground = inventory.dropLocation) {
                 removeTo(*ground);
                 drop.description = "Drop equipment";
             } else
@@ -222,7 +220,7 @@ InventoryDrop inventoryDrop(const GameSession &session, const InventoryUi &ui, V
         } else
             drop.description = "Release to cancel";
         if (drop.command)
-            drop.error = session.previewInventory(*drop.command);
+            drop.error = client.preview(*drop.command);
         if (drop.error != InventoryError::None)
             drop.description = inventoryErrorText(drop.error);
         return drop;
@@ -230,7 +228,7 @@ InventoryDrop inventoryDrop(const GameSession &session, const InventoryUi &ui, V
     if (!drop.command) {
         if (!inventorySurface(ui, mouse) && mouse.x >= 0 && mouse.x < W && mouse.y >= 0 &&
                    !hudSurface(mouse)) {
-            if (auto ground = session.dropLocation()) {
+            if (auto ground = inventory.dropLocation) {
                 drop.command = MoveItem{source->handle(), *ground};
                 drop.description = "Drop at your feet";
             } else
@@ -239,7 +237,7 @@ InventoryDrop inventoryDrop(const GameSession &session, const InventoryUi &ui, V
             drop.description = "Release to cancel";
     }
     if (drop.command)
-        drop.error = session.previewInventory(*drop.command);
+        drop.error = client.preview(*drop.command);
     if (drop.error != InventoryError::None)
         drop.description = inventoryErrorText(drop.error);
     return drop;

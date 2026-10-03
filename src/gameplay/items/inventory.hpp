@@ -7,7 +7,7 @@
 
 namespace d2x {
 class InventoryService {
-    friend class GameSession;
+    friend class GameSessionImpl;
     EntityIds &ids_;
     ItemCatalog catalog_;
     InventoryState state_;

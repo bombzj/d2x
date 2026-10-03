@@ -1,4 +1,3 @@
-#include "gameplay/session/session.hpp"
 #include "presentation/scene_view.hpp"
 
 namespace d2x {
@@ -16,7 +15,7 @@ void SceneView::drawOrifice(Vec mouse) const {
             confirm && !view_.orificeItem ? Color{100, 100, 100, 255} : WHITE);
     }
     if (view_.orificeItem) {
-        const auto *item = session_.inventory().item(view_.orificeItem->id);
+        const auto *item = inventoryView_.item(view_.orificeItem->id);
         if (item && item->revision == view_.orificeItem->revision) {
             drawItemIcon(*item, orificeSlot());
             if (CheckCollisionPointRec(rv(mouse), orificeSlot())) drawItemTooltip(*item, {bounds.x + bounds.width, mouse.y});
@@ -25,7 +24,7 @@ void SceneView::drawOrifice(Vec mouse) const {
 }
 void SceneView::drawCube(Vec mouse) const {
     const auto &ui = view_.inventory;
-    if (!ui.cubeOpen || !ui.open || !session_.playerContainers().cube) return;
+    if (!ui.cubeOpen || !ui.open || !inventoryView_.containers.cube) return;
     auto panel = cubeBounds();
     drawPanelFrame(false);
     for (int i = 0; i < 4; ++i) {
@@ -36,12 +35,12 @@ void SceneView::drawCube(Vec mouse) const {
                         tile.width * inventoryScale, tile.height * inventoryScale},
                        {0, 0}, 0, WHITE);
     }
-    for (const auto &grid : inventoryGrids(session_, ui))
-        if (grid.container == session_.playerContainers().cube) {
+    for (const auto &grid : inventoryGrids(inventoryView_, ui))
+        if (grid.container == inventoryView_.containers.cube) {
             drawContainerGrid(grid, mouse);
             if (!ui.drag && !ui.split && !ui.goldDialog)
                 if (auto cell = grid.cellAt(mouse))
-                    if (auto item = session_.inventory().item(session_.inventory().itemAt(grid.container, *cell)))
+                    if (auto item = inventoryView_.item(inventoryView_.itemAt(grid.container, *cell)))
                         drawItemTooltip(*item, {inventoryBounds().x - 12, mouse.y});
         }
 }

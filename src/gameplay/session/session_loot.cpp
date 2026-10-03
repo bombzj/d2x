@@ -1,5 +1,5 @@
 #include "gameplay/simulation/simulation.hpp"
-#include "gameplay/session/session.hpp"
+#include "gameplay/session/session_impl.hpp"
 #include "content/monsters/monster_loot.hpp"
 #include "content/monsters/monster_experience.hpp"
 #include "content/items/item_quality.hpp"
@@ -9,7 +9,7 @@
 #include <stdexcept>
 
 namespace d2x {
-void GameSession::settleDeaths() {
+void GameSessionImpl::settleDeaths() {
     // Publishing item events can reallocate the event vector; copy deaths before appending anything.
     std::vector<EnemyDied> deaths;
     for (const auto &event : events())
@@ -65,7 +65,7 @@ void GameSession::settleDeaths() {
             }
         }
         LootRequest request{death.victim, death.identity, death.region, death.difficulty,
-                            questFirstKill};
+                            questFirstKill, false, death.rewardModifiers};
         request.sourceSeed = true;
         if (death.identity.origin == SpawnOrigin::Summoned) {
             LootPlan empty;
@@ -122,7 +122,7 @@ void GameSession::settleDeaths() {
         if (death.killer == state().player.id) {
             grantHirelingExperience(death);
             auto experience = resolveMonsterExperience(content_, monsterContent_, worldContent_,
-                {death.identity, death.region, death.difficulty, state().player.level});
+                {death.identity, death.region, death.difficulty, state().player.level, death.rewardModifiers});
             if (experience.deferred.empty())
                 grantExperience(experience.amount + experience.amount *
                     uint64_t(std::max(0, characterStats().combat.experiencePercent)) / 100);
@@ -132,7 +132,7 @@ void GameSession::settleDeaths() {
         }
     }
 }
-void GameSession::spawnLoot(std::span<const LootDrop> drops, RegionId id, Vec origin) {
+void GameSessionImpl::spawnLoot(std::span<const LootDrop> drops, RegionId id, Vec origin) {
     auto region = std::find_if(regions_.begin(), regions_.end(),
                                [id](const Region &r) { return r.definition.id == id; });
     if (region == regions_.end())
@@ -163,13 +163,13 @@ void GameSession::spawnLoot(std::span<const LootDrop> drops, RegionId id, Vec or
         publishInventory(std::move(result), {});
     }
 }
-void GameSession::cancelPickup() {
+void GameSessionImpl::cancelPickup() {
     if (pickup_.id)
         simulation_->stopWalking();
     pickup_ = {};
     pickupToCursor_ = false;
 }
-void GameSession::beginPickup(ItemHandle handle, bool toCursor) {
+void GameSessionImpl::beginPickup(ItemHandle handle, bool toCursor) {
     if (pickup_.id == handle.id && pickup_.revision == handle.revision && pickupToCursor_ == toCursor)
         return;
     cancelPickup();
@@ -194,7 +194,7 @@ void GameSession::beginPickup(ItemHandle handle, bool toCursor) {
     pickup_ = handle;
     pickupToCursor_ = toCursor;
 }
-void GameSession::updatePickup() {
+void GameSessionImpl::updatePickup() {
     if (!pickup_.id)
         return;
     const auto &player = state().player;

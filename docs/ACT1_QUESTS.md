@@ -2,6 +2,8 @@
 
 第一幕六项任务的角色进度按难度保存。任务次序为邪恶洞窟、埋骨之地、凯恩的搜寻、遗忘之塔、交易的工具、屠杀的姐妹；玩家仍可提前进入部分区域，进度以实际交谈、交互和击杀事件推进。任务资料始终从运行时 MPQ 读取：`Levels.txt` 决定区域，DS1 与 `Objects.txt` 决定物件，`MonStats.txt`／`SuperUniques.txt` 决定目标身份，`Hireling.txt`、物品表、TBL 和 `a1npc.txt` 决定奖励、图标文字和对话。引擎事件次序参考 `reference/d2moo/source/D2Game/src/QUESTS/ACT1/`。
 
+当前解耦边界：任务身份单独在 `quest/id.hpp`，阶段和旗标仍由权威任务簿拥有；日志 UI 读取 `QuestView`，NPC 菜单／回顾读取 NPC 投影。完成事件在发出时附带该次转换的完成标志，UI 不解释完成阈值。原规则／D2S 位保持，入口及有限实际覆盖见 [NPC／任务基线](baseline/NPC_QUEST.md)，不视作第一幕全流程验收。
+
 | 任务 | 当前流程 |
 | --- | --- |
 | 邪恶洞窟 A1Q1 | 阿卡拉交谈；进入邪恶洞窟；杀尽已创建与待激活敌人；回阿卡拉领一个技能点，每难度可免费重置一次属性／技能。 |
@@ -13,8 +15,8 @@
 
 ## 代码入口
 
-- `src/gameplay/quest/` 每项一个短规则文件；`src/gameplay/session/session_quests.cpp` 连接 NPC 与死亡事件，凯恩物件、卷轴、恰西灌注和安达利尔结局另分文件。`session_quest_dialogue.cpp` 统一选出任务对白及其可推进的任务；UI 和交谈命令共用这一结果，其他任务的回顾对白不能遮蔽正在交付的任务。
-- `src/content/npc/npc_dialogue.cpp` 从 MPQ 解析任务状态对白；`src/presentation/hud/hud/quest_panel.cpp` 用原背景、任务图标和 TBL 绘制日志。Q 或红色 Quest Log 按钮打开，六项任务保持三列两行；选择只切换高亮与下方文字，关闭再打开保留选择，有更新时优先选更新项。目前只显示已到达的第一幕页签。插槽与图标分别按原尺寸绘制，外框复用 `panel_frame.cpp`。参考 [OpenDiablo2 的 quest_log.go](https://github.com/OpenDiablo2/OpenDiablo2/blob/master/d2game/d2player/quest_log.go) 和用户原版截图；UI 只读任务状态。
+- `src/gameplay/quest/` 每项一个短规则文件；`src/gameplay/session/session_quests.cpp` 连接 NPC 与死亡事件，凯恩物件、卷轴、恰西灌注和安达利尔结局另分文件。`session_quest_dialogue.cpp` 统一选出任务对白及其可推进的任务；本地适配和交谈命令复用这一选择，其他任务的回顾对白不能遮蔽正在交付的任务。
+- `src/content/npc/npc_dialogue.cpp` 从 MPQ 解析任务状态对白；`src/client/local_quest_client.cpp` 准备原日志文字，`src/presentation/hud/quest_panel.cpp` 消费投影与原背景／任务图标，`quest_controller.cpp` 处理手势。Q 或红色 Quest Log 按钮打开，六项任务保持三列两行；选择只切换高亮与下方文字，关闭再打开保留有效选择，有更新时优先选更新项。当前区域属于第二幕及以后，或第一幕已通关时显示两幕页签。插槽与图标分别按原尺寸绘制，外框复用 `panel_frame.cpp`。参考 [OpenDiablo2 的 quest_log.go](https://github.com/OpenDiablo2/OpenDiablo2/blob/master/d2game/d2player/quest_log.go) 和用户原版截图；UI 只读投影。
 - `src/persistence/d2s_codec.cpp` 保存三难度任务、各难度 NPC 初见记录、佣兵和奖励点数；格式为原 D2S v96。凯恩致谢及安达利尔死后逐 NPC 反应按 D2MOO 的 GUID 列表语义只保留在本局，不写入角色存档。
 - 管道 `quest-status` 读取任务阶段；`quest-panel` 配合 `screenshot` 查看原图面板。所有任务命令仍走正式会话规则。
 

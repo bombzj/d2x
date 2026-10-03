@@ -1,8 +1,9 @@
 #pragma once
 #include "core/id.hpp"
 #include "core/math.hpp"
+#include "gameplay/combat/geometry.hpp"
 #include "gameplay/items/equipment_rules.hpp"
-#include "gameplay/skills/spec.hpp"
+#include "gameplay/skills/cast_spec.hpp"
 #include <array>
 #include <string>
 #include <string_view>
@@ -31,7 +32,4 @@ struct WeaponAttackState {
 };
 int effectiveAttackSpeed(int animationSpeed, int itemIAS, int baseWeaponSpeed, int skillRate);
 int attackStartingFrame(std::string_view character, std::string_view weapon, std::string_view mode);
-int meleeDistance(Vec from, int fromSize, Vec to, int toSize);
-int missileDistance(Vec from, Vec to);
-std::optional<float> missileUnitIntersection(Vec from, Vec to, int missileSize, Vec unit, int unitSize);
 } // namespace d2x

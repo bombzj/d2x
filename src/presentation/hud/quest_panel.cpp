@@ -1,4 +1,3 @@
-#include "gameplay/session/session.hpp"
 #include "presentation/scene_view.hpp"
 #include "quest_panel.hpp"
 #include <algorithm>
@@ -8,72 +7,9 @@ namespace d2x {
 namespace {
 // The on-screen order differs from the a1qN resource numbering.
 constexpr std::array questArtNumbers = {1, 2, 4, 5, 3, 6};
-constexpr std::array titleKeys = {
-    "qstsa1q1", "qstsa1q2", "qstsa1q4", "qstsa1q5", "qstsa1q3", "qstsa1q6",
-    "qstsa2q1", "qstsa2q2", "qstsa2q3", "qstsa2q4", "qstsa2q5", "qstsa2q6"};
 size_t questArtIndex(size_t index) { return index < 6 ? size_t(questArtNumbers[index] - 1) : index; }
 constexpr float questAnimationSeconds = 3.f;
 constexpr int questCompletedFrame = 24;
-// Internal transition stages are not the original quest-log string IDs.
-// Keys are from the mounted TBL; A1Q3's reward-pending status uses qstsa1q32b.
-std::string_view descriptionKey(ActOneQuest quest, uint32_t stage) {
-    switch (quest) {
-    case QuestId::SevenTombs:
-        return stage == 4 ? "qstsa2q65" : stage == 3 ? "qstsa2q64" : stage == 2 ? "qstsa2q63" : "qstsa2q61";
-    case QuestId::Summoner:
-        return stage == 2 ? "qstsa2q53" : "qstsa2q51";
-    case QuestId::ArcaneSanctuary:
-        return stage >= 3 ? "qstsa2q42" : "qstsa2q41";
-    case QuestId::TaintedSun:
-        return stage == 3 ? "qstsa2q33" : stage == 2 ? "qstsa2q32" : "qstsa2q31a";
-    case QuestId::HoradricStaff:
-        return stage >= 5 ? "qstsa2q24" : "qstsa2q21";
-    case QuestId::RadamentsLair:
-        if (stage == uint32_t(RadamentStage::Assigned)) return "qstsa2q11";
-        if (stage == uint32_t(RadamentStage::LeftTown)) return "qstsa2q12";
-        if (stage == uint32_t(RadamentStage::Slain)) return "qstsa2q13";
-        break;
-    case ActOneQuest::DenOfEvil:
-        if (stage == uint32_t(DenStage::Assigned)) return "qstsa1q11";
-        if (stage == uint32_t(DenStage::Entered)) return "qstsa1q12";
-        if (stage == uint32_t(DenStage::Cleared)) return "qstsa1q15";
-        break;
-    case ActOneQuest::SistersBurialGrounds:
-        if (stage == uint32_t(BurialStage::Assigned)) return "qstsa1q21";
-        if (stage == uint32_t(BurialStage::Entered)) return "qstsa1q22";
-        if (stage == uint32_t(BurialStage::BloodRavenSlain)) return "qstsa1q23";
-        break;
-    case ActOneQuest::SearchForCain:
-        if (stage == uint32_t(CainStage::Assigned)) return "qstsa1q41";
-        if (stage == uint32_t(CainStage::TreeOpened)) return "qstsa1q41";
-        if (stage == uint32_t(CainStage::BarkAcquired)) return "qstsa1q42";
-        if (stage == uint32_t(CainStage::ScrollTranslated)) return "qstsa1q43";
-        if (stage == uint32_t(CainStage::PortalOpened)) return "qstsa1q44";
-        if (stage == uint32_t(CainStage::TristramEntered)) return "qstsa1q44";
-        if (stage == uint32_t(CainStage::Rescued)) return "qstsa1q46";
-        break;
-    case ActOneQuest::ForgottenTower:
-        if (stage == uint32_t(TowerStage::TomeRead)) return "qstsa1q51";
-        if (stage == uint32_t(TowerStage::TowerEntered)) return "qstsa1q51a";
-        if (stage == uint32_t(TowerStage::CellarEntered)) return "qstsa1q52";
-        break;
-    case ActOneQuest::ToolsOfTheTrade:
-        if (stage == uint32_t(ToolsStage::Assigned) ||
-            stage == uint32_t(ToolsStage::BarracksEntered) ||
-            stage == uint32_t(ToolsStage::MalusDropped)) return "qstsa1q31";
-        if (stage == uint32_t(ToolsStage::MalusAcquired)) return "qstsa1q32";
-        if (stage == uint32_t(ToolsStage::RewardReady)) return "qstsa1q32b";
-        break;
-    case ActOneQuest::SistersToTheSlaughter:
-        if (stage == uint32_t(SlaughterStage::Assigned)) return "qstsa1q61";
-        if (stage == uint32_t(SlaughterStage::CatacombsEntered)) return "qstsa1q62";
-        if (stage == uint32_t(SlaughterStage::AndarielSlain) ||
-            stage == uint32_t(SlaughterStage::PassageReady)) return "qstsa1q63";
-        break;
-    default: break;
-    }
-    return {};
-}
 void drawArt(const Sprite *image, Rectangle bounds, Color tint = WHITE) {
     if (!image || !image->texture.id) return;
     auto &texture = image->texture;
@@ -86,14 +22,13 @@ void SceneView::resetQuestAnimations() {
     questAnimations_ = {};
     for (size_t index = 0; index < questAnimations_.size(); ++index)
         questAnimations_[index].completed =
-            session_.quest(QuestId(index)).stage >= questCompletionStage(QuestId(index));
+            questView_.entry(QuestId(index)).completed;
 }
 
-void SceneView::queueQuestAnimation(ActOneQuest quest, uint32_t stage) {
+void SceneView::queueQuestAnimation(QuestId quest, bool completed) {
     const auto index = questIndex(quest);
     if (index >= questAnimations_.size()) return;
     auto &animation = questAnimations_[index];
-    const bool completed = stage >= questCompletionStage(quest);
     if (completed && !animation.completed) {
         animation.phase = QuestCompletionAnimation::Phase::Pending;
         animation.elapsed = 0;
@@ -139,23 +74,15 @@ void SceneView::drawQuests(Vec) const {
              panel.y + (index / 2) * tileHeight * inventoryScale,
              tile.width * inventoryScale, tile.height * inventoryScale}, {0, 0}, 0, WHITE);
     }
-    const int currentAct = session_.worldContent().levels().at(int(session_.region().definition.id)).act;
-    const int tabCount = currentAct >= 1 || session_.quest(QuestId::SistersToTheSlaughter).stage >= uint32_t(SlaughterStage::Completed) ? 2 : 1;
+    const int tabCount = questView_.tabCount;
     for (int act = 0; act < tabCount; ++act)
         drawArt(assets_.questTabs.frame(0, act * 2 + (act == view_.questAct ? 0 : 1)), questTabBounds(act));
-    auto title = [&](int index) -> std::string {
-        index += view_.questAct * 6;
-        auto found = session_.content().actOneQuestStrings.find(titleKeys[size_t(index)]);
-        return found == session_.content().actOneQuestStrings.end()
-                   ? titleKeys[size_t(index)] : found->second;
-    };
     for (int index = 0; index < int(questDisplayOrder.size()); ++index) {
         const auto bounds = questIconBounds(index);
         const auto id = displayedQuest(view_.questAct, index);
         const auto stateIndex = questIndex(id);
-        const auto &record = session_.quest(id);
-        int artFrame = !record.stage ? 26 :
-                             record.stage >= questCompletionStage(id) ? 24 : 25;
+        const auto &record = questView_.entry(id);
+        int artFrame = !record.active ? 26 : record.completed ? 24 : 25;
         drawArt(assets_.questSockets.frame(0, 0), bounds);
         const auto iconBounds = questArtRect(24.f + float(index % 3) * 100.f,
                                             37.f + float(index / 3) * 95.f, 72, 86);
@@ -169,7 +96,7 @@ void SceneView::drawQuests(Vec) const {
         const auto *icon = art.frame(0, artFrame);
         drawArt(icon, iconBounds);
         const auto face = assets_.actOneQuestFaces[artIndex];
-        if (icon && !completing && view_.questPressed == index && record.stage && face.width > 2 && face.height > 2) {
+        if (icon && !completing && view_.questPressed == index && record.active && face.width > 2 && face.height > 2) {
             const auto *inactive = art.frame(0, 26);
             const float scaleX = iconBounds.width / icon->texture.width;
             const float scaleY = iconBounds.height / icon->texture.height;
@@ -187,37 +114,13 @@ void SceneView::drawQuests(Vec) const {
     if (view_.questSelected >= 0 && view_.questSelected < int(questDisplayOrder.size())) {
         const int index = view_.questSelected;
         const auto id = displayedQuest(view_.questAct, index);
-        const auto &record = session_.quest(id);
-        const auto heading = title(index);
+        const auto &record = questView_.entry(id);
+        const auto &heading = record.title;
         const auto titleBounds = questArtRect(10, 233, 300, 21);
         const int textSize = int(12 * inventoryScale);
         speechPainter_.inBox(heading, titleBounds, textSize, WHITE);
-        std::string_view key;
-        if (record.stage > 0 || (id == QuestId::SevenTombs &&
-            session_.quest(QuestId::ArcaneSanctuary).stage >= uint32_t(ArcaneStage::JournalRead))) {
-            if (record.stage >= questCompletionStage(id))
-                key = "qstsComplete";
-            else key = descriptionKey(id, record.stage);
-            if (id == QuestId::HoradricStaff && record.stage < 6) {
-                const bool cube = session_.carriesQuestItem(session_.content().cubeCode);
-                const bool shaft = session_.carriesQuestItem("msf");
-                const bool head = session_.carriesQuestItem("vip");
-                const bool complete = session_.carriesQuestItem("hst");
-                key = complete ? "qstsa2q24" : cube && shaft && head ? "qstsa2q23" : record.flags & staffScrollExplained ? "qstsa2q22" : "qstsa2q25";
-            }
-            if (id == QuestId::SevenTombs && session_.quest(QuestId::ArcaneSanctuary).stage >= uint32_t(ArcaneStage::JournalRead) &&
-                record.stage < uint32_t(TombsStage::DurielSlain)) {
-                key = "qstsa2q61a";
-            }
-        }
-        const unsigned remaining = id == QuestId::DenOfEvil && record.stage == uint32_t(DenStage::Entered)
-                                       ? session_.denMonstersRemaining().value_or(0) : 0;
-        if (remaining > 0 && remaining <= 5)
-            key = remaining == 1 ? "qstsa1q140" : "qstsa1q14";
-        auto found = session_.content().actOneQuestStrings.find(key);
-        if (found != session_.content().actOneQuestStrings.end()) {
-            auto value = found->second;
-            if (key == "qstsa1q14") value += std::to_string(remaining);
+        if (record.description) {
+            const auto &value = *record.description;
             std::string line;
             int y = int(questArtRect(10, 253, 300, 0).y);
             const int left = int(questArtRect(10, 0, 0, 0).x);
@@ -245,8 +148,8 @@ void SceneView::drawQuests(Vec) const {
                 at = end;
             }
             flush();
-            if (key == "qstsa2q61a") {
-                const auto &symbol = assets_.tombSymbols.at(size_t(actTwoTombs(session_.state().mapSeed)[0] - 66));
+            if (record.tombSymbol) {
+                const auto &symbol = assets_.tombSymbols.at(size_t(*record.tombSymbol));
                 const auto *symbolFrame = symbol.frame(0, int(view_.animationTime * 25));
                 const float top = std::max(290.f, (float(y) - questArtRect(0, 0, 0, 0).y) / inventoryScale + 4);
                 const float size = std::min(70.f, 381.f - top);

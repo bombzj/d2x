@@ -1,5 +1,5 @@
 #pragma once
-#include "gameplay/monsters/monster_spawn.hpp"
+#include "gameplay/combat/damage_type.hpp"
 #include <array>
 #include <optional>
 #include <string>
@@ -27,7 +27,7 @@ struct PoisonCloudBurstSpec {
 struct AreaMissileSpec {
     int missileId = -1, delayFrames = 0;
     float radius = 0;
-    MonsterDamageType element = MonsterDamageType::Fire;
+    DamageType element = DamageType::Fire;
     int minimum = 0, maximum = 0; // Resolved skill contribution, 1/256 HP.
     bool addEquipmentElement = false;
 };
@@ -40,7 +40,7 @@ struct MissileImpactSpec {
     std::optional<PoisonCloudBurstSpec> cloudBurst = {};
     std::optional<AreaMissileSpec> areaMissile = {};
 };
-// MonsterDamageType order: physical, magic, fire, lightning, cold, poison.
+// DamageType order: physical, magic, fire, lightning, cold, poison.
 // Poison is a rate in HP/s; the other channels are HP per impact.
 struct MissileImpactDamage {
     std::array<float, 6> channels{};

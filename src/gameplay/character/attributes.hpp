@@ -1,14 +1,11 @@
 #pragma once
+#include "gameplay/character/allocation.hpp"
 #include <cstdint>
 #include <cstddef>
 #include <string>
 #include "gameplay/combat/stat_modifiers.hpp"
 
 namespace d2x {
-enum class Attribute { Strength, Dexterity, Vitality, Energy };
-struct AttributeAllocation {
-    int strength = 0, dexterity = 0, vitality = 0, energy = 0;
-};
 struct CharacterDefinition {
     std::string name, code, appearance;
     size_t sourceRow = 0;
@@ -44,9 +41,7 @@ struct CharacterAttributes {
     int blockFactor = 0;
     float manaRegen = 0;
 };
-int64_t allocatedPoints(const AttributeAllocation &allocation);
 float manaRecoveryRate(int maximumMana, int denominator, int recoveryBonus);
-bool allocateAttribute(AttributeAllocation &allocation, int &unspent, Attribute attribute);
 void mergeCharacterModifiers(CharacterModifiers &target, const CharacterModifiers &source);
 CharacterAttributes deriveCharacterAttributes(const CharacterDefinition &definition, int level,
                                                const AttributeAllocation &allocation,

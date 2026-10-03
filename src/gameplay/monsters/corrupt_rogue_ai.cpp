@@ -1,3 +1,4 @@
+#include "gameplay/model/state.hpp"
 #include "corrupt_rogue_ai.hpp"
 #include "monster_wander.hpp"
 

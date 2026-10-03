@@ -1,27 +1,10 @@
 #pragma once
+#include "gameplay/quest/id.hpp"
 #include <array>
 #include <cstddef>
 #include <cstdint>
 
 namespace d2x {
-enum class QuestId : uint8_t {
-    DenOfEvil,
-    SistersBurialGrounds,
-    SearchForCain,
-    ForgottenTower,
-    ToolsOfTheTrade,
-    SistersToTheSlaughter,
-    RadamentsLair,
-    HoradricStaff,
-    TaintedSun,
-    ArcaneSanctuary,
-    Summoner,
-    SevenTombs,
-    Count
-};
-using ActOneQuest = QuestId;
-inline constexpr size_t actOneQuestCount = 6;
-
 // Stage meanings belong to each quest's rule, not to the presentation layer.
 // The compact, difficulty-local record also leaves room for multi-step quests.
 struct QuestRecord {
@@ -30,9 +13,6 @@ struct QuestRecord {
 };
 using QuestBook = std::array<std::array<QuestRecord, size_t(QuestId::Count)>, 3>;
 using ActOneQuestBook = QuestBook;
-
-inline constexpr size_t questIndex(ActOneQuest quest) { return size_t(quest); }
-inline constexpr unsigned questAct(QuestId quest) { return questIndex(quest) < 6 ? 1 : 2; }
 
 enum class RadamentStage : uint32_t { Unstarted, Assigned, LeftTown, Slain, Rewarded };
 enum class StaffStage : uint32_t { Unstarted, ArtifactsFound = 1, Assembled = 5, Submitted = 6 };

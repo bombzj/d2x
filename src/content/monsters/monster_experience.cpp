@@ -1,3 +1,6 @@
+#include "content/classic_data.hpp"
+#include "content/monsters/monster_catalog.hpp"
+#include "content/world/world_catalog.hpp"
 #include "monster_experience.hpp"
 #include <algorithm>
 #include <array>
@@ -69,9 +72,9 @@ MonsterExperienceAward resolveMonsterExperience(const ClassicData &data, const M
         break;
     }
     }
-    if (request.identity.enchantment) {
-        bonusLevel = request.identity.enchantment->levelBonus;
-        rankFactor = request.identity.enchantment->experienceFactor;
+    if (request.rewardModifiers) {
+        bonusLevel = request.rewardModifiers->levelBonus;
+        rankFactor = request.rewardModifiers->experienceFactor;
     }
     result.monsterLevel = *level + bonusLevel;
     uint64_t award = base * rankFactor;

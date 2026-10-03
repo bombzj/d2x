@@ -1,5 +1,5 @@
 #pragma once
-#include "gameplay/quest/state.hpp"
+#include "gameplay/quest/id.hpp"
 #include "hud_layout.hpp"
 #include "presentation/inventory/inventory_panel.hpp"
 #include "presentation/graphics/primitives.hpp"

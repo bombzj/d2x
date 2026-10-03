@@ -1,9 +1,11 @@
 #pragma once
-#include "content/classic_data.hpp"
-#include "monster_catalog.hpp"
-#include "content/world/world_catalog.hpp"
+#include <string>
 
 namespace d2x {
+struct ClassicData;
+class MonsterCatalog;
+class WorldCatalog;
+struct LootRequest;
 enum class LootEntryStatus { Ready, Empty, Deferred };
 struct MonsterLootEntry {
     LootEntryStatus status = LootEntryStatus::Deferred;

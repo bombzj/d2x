@@ -1,6 +1,8 @@
+#include "gameplay/skills/spec.hpp"
 #include "resources/archive.hpp"
 #include "core/random.hpp"
 #include "monster_enchantment.hpp"
+#include "content/skills/aura_data.hpp"
 #include "content/skills/missile_effects.hpp"
 #include <algorithm>
 #include <stdexcept>
@@ -41,173 +43,7 @@ SkillSpec elementalSpec(const DataTable &table, size_t row, bool missile) {
         spec.coldFramesPerLevel[i] = number(table, row, "ELevLen" + std::to_string(i + 1));
     return spec;
 }
-MonsterAura aura(const ClassicData &data, int skill, int rank, const std::map<int, int> &learned = {}, int prayerRank = 0) {
-    const auto &table = data.tables.at("skills");
-    const auto row = numberedRow(table, "Id", skill);
-    auto value = [&](std::string_view field) { return table.value(row, field); };
-    auto n = [&](std::string_view field) { return number(table, row, field); };
-    auto parameter = [&](int index) { return n("Param" + std::to_string(index)); };
-    auto linear = [&](int first) { return parameter(first) + (rank - 1) * parameter(first + 1); };
-    auto diminishing = [&](int first) {
-        const int low = parameter(first), high = parameter(first + 1);
-        return std::min(high, low + (high - low) * 110 * rank / (rank + 6) / 100);
-    };
-    auto evaluate = [&](std::string_view formula) {
-        if (formula.size() >= 2 && formula.front() == '"' && formula.back() == '"')
-            formula = formula.substr(1, formula.size() - 2);
-        if (formula == "ln12") return linear(1);
-        if (formula == "ln34") return linear(3);
-        if (formula == "ln56") return linear(5);
-        if (formula == "par5") return parameter(5);
-        if (formula == "1") return 1;
-        if (formula == "ln56/2") return linear(5) / 2;
-        if (formula == "dm34") return diminishing(3);
-        if (formula == "100-dm34") return 100 - diminishing(3);
-        if (formula == "dm56") return diminishing(5);
-        if (formula == "edns") return int(resolveSkill(elementalSpec(table, row, false), rank, {}).minimumDamage * 256.f);
-        if (formula == "skill('Prayer'.edns)") {
-            if (prayerRank <= 0) return 0;
-            const auto prayerRow = numberedRow(table, "Id", 99);
-            return int(resolveSkill(elementalSpec(table, prayerRow, false), prayerRank, {}).minimumDamage * 256.f);
-        }
-        if (formula == "-dm34") return -diminishing(3);
-        if (formula == "-dm56") return -diminishing(5);
-        if (formula == "-par5") return -parameter(5);
-        if (formula == "-min(ln34,150)") return -std::min(linear(3), 150);
-        if (formula == "toht") return n("ToHit") + (rank - 1) * n("LevToHit");
-        if (formula == "skill('Resist Fire'.blvl)" || formula == "skill('Resist Cold'.blvl)" ||
-            formula == "skill('Resist Lightning'.blvl)") {
-            const auto base = learned.find(skill);
-            return base != learned.end() ? base->second : 0;
-        }
-        throw std::runtime_error("Unsupported monster aura formula: " + std::string(formula));
-    };
-    MonsterAura result;
-    result.skill = skill;
-    result.rank = rank;
-    result.manaPerPulse = float((int64_t(n("mana")) + int64_t(rank - 1) * n("lvlmana")) << n("manashift")) / 256.f;
-    result.filter = uint32_t(n("aurafilter"));
-    result.hitClass = n("HitClass") ? n("HitClass") : 13;
-    result.resultFlags = uint32_t(n("ResultFlags")) | 0x20;
-    result.radius = float(evaluate(value("aurarangecalc")));
-    result.periodFrames = skill == 66 ? evaluate(value("auralencalc")) : n("perdelay");
-    result.hostile = skill == 66 || skill == 102 || skill == 114 || skill == 118 || skill == 119 || skill == 123;
-    if (skill == 124) {
-        result.redemptionChance = evaluate(value("calc1"));
-        result.redemptionLife = float(evaluate(value("calc2")));
-        result.redemptionMana = float(evaluate(value("calc3")));
-    }
-    const auto ownerState = value("aurastate");
-    if (!ownerState.empty()) result.ownerState = data.states.at(std::string(ownerState)).definition;
-    auto state = value("auratargetstate");
-    if (!state.empty()) result.state = data.states.at(std::string(state)).definition;
-    for (int slot = 1; slot <= 6; ++slot) {
-        const auto stat = value("aurastat" + std::to_string(slot));
-        if (stat.empty()) continue;
-        const int amount = evaluate(value("aurastatcalc" + std::to_string(slot)));
-        auto &m = result.modifiers;
-        if (stat == "item_poisonlengthresist") result.harmfulDurationPercent = amount;
-        else if (stat == "hitpoints") result.lifePerPulse = float(amount) / 256.f;
-        else if (stat == "staminarecoverybonus") m.staminaRecoveryBonus = amount;
-        else if (stat == "skill_staminapercent") m.staminaPercent = amount;
-        else if (stat == "manarecoverybonus") m.combat.manaRecovery = amount;
-        else if (stat == "damagepercent") m.combat.damagePercent = amount;
-        else if (stat == "item_tohit_percent") m.combat.attackRatingPercent = amount;
-        else if (stat == "attackrate") m.combat.attackRate = amount;
-        else if (stat == "other_animrate") m.otherAnimationRate = amount;
-        else if (stat == "velocitypercent") m.velocityPercent = amount;
-        else if (stat == "skill_armor_percent") m.combat.defensePercent = amount;
-        else if (stat == "fireresist") m.fireResist = amount;
-        else if (stat == "coldresist") m.coldResist = amount;
-        else if (stat == "lightresist") m.lightningResist = amount;
-        else if (stat == "damageresist") m.combat.physicalResist = amount;
-        else if (stat == "maxfireresist") m.combat.fireMaxResist = amount;
-        else if (stat == "maxcoldresist") m.combat.coldMaxResist = amount;
-        else if (stat == "maxlightresist") m.combat.lightningMaxResist = amount;
-        else if (stat == "thorns_percent") m.combat.thornsPercent = amount;
-        else if (stat == "skill_concentration") m.combat.concentrationChance = amount;
-        else if (skill == 119 && result.state.id < 0) continue;
-        else throw std::runtime_error("Unsupported monster aura stat: " + std::string(stat));
-    }
-    if (skill == 122) result.ownerDamageBonus = linear(5) - linear(5) / 2;
-    const auto type = value("EType");
-    if (!type.empty()) {
-        result.element = type == "fire" ? 2 : type == "ltng" ? 3 : type == "cold" ? 4 : type == "mag" ? 1 : -1;
-        if (result.element < 0) throw std::runtime_error("Unsupported monster aura damage");
-        const auto damage = resolveSkill(elementalSpec(table, row, false), rank, {});
-        result.minimumDamage = damage.minimumDamage;
-        result.maximumDamage = damage.maximumDamage;
-        result.elementalMultiplier = parameter(5);
-        if (skill == 119) result.synergies = {{109, parameter(8)}};
-        if (skill == 102 || skill == 114 || skill == 118) {
-            result.synergies = {{skill == 102 ? 100 : skill == 114 ? 105 : 110, parameter(8)}, {125, parameter(7)}};
-            auto &combat = result.ownerModifiers.combat;
-            const int minimum = skill == 118 ? 1 : int(result.minimumDamage * parameter(5));
-            const int maximum = int(result.maximumDamage * parameter(5));
-            if (skill == 102) { combat.fireMinimum = minimum; combat.fireMaximum = maximum; }
-            else if (skill == 114) { combat.coldMinimum = minimum; combat.coldMaximum = maximum; }
-            else { combat.lightningMinimum = minimum; combat.lightningMaximum = maximum; }
-        }
-    }
-    return result;
-}
-}
-void loadAuraSkills(ClassicData &data) {
-    for (int skill : {98, 99, 100, 102, 103, 104, 105, 108, 109, 110, 113, 114, 115, 118, 119, 120, 122, 123, 124, 125}) {
-        const auto definition = aura(data, skill, 1);
-        if (definition.periodFrames < 5 || definition.ownerState.id < 0)
-            throw std::runtime_error("Original aura lacks state or periodic data");
-        data.skills.skills.at(skill).auraImplemented = true;
-        data.skills.skills.at(skill).auraImmediate = number(data.tables.at("skills"),
-            numberedRow(data.tables.at("skills"), "Id", skill), "immediate") != 0;
-        if (skill == 108) {
-            const auto &table = data.tables.at("skills");
-            const auto row = numberedRow(table, "Id", skill);
-            if (table.value(row, "passivecalc1") != "skill('Blessed Aim'.blvl) * par8")
-                throw std::runtime_error("Unsupported original Blessed Aim passive formula");
-            data.skills.skills.at(skill).passiveAttackRatingPerBaseRank = number(table, row, "Param8");
-            data.skills.skills.at(skill).passiveSuppressedByState = definition.ownerState.id;
-        }
-        if (skill == 100 || skill == 105 || skill == 110) {
-            const auto &table = data.tables.at("skills");
-            const auto row = numberedRow(table, "Id", skill);
-            const std::string expected = skill == 100 ? "skill('Resist Fire'.blvl)/2" :
-                skill == 105 ? "skill('Resist Cold'.blvl)/2" : "skill('Resist Lightning'.blvl)/2";
-            if (table.value(row, "passivecalc1") != expected)
-                throw std::runtime_error("Unsupported original resistance aura passive formula");
-            auto &record = data.skills.skills.at(skill);
-            record.passiveSuppressedByState = definition.ownerState.id;
-            record.passiveMaxResistElement = skill == 100 ? 2 : skill == 105 ? 4 : 3;
-        }
-    }
-}
-std::optional<AuraDefinition> resolveAura(const ClassicData &data, int skill, int rank,
-    const std::map<int, int> &learned, int fireMasteryPercent,
-    int lightningMasteryPercent, int coldMasteryPercent, int prayerRank) {
-    const auto *record = data.skills.find(skill);
-    if (!record || !record->auraImplemented || rank <= 0) return std::nullopt;
-    auto result = aura(data, skill, rank, learned, prayerRank);
-    int bonus = 100;
-    for (const auto &[synergy, percent] : result.synergies)
-        if (const auto found = learned.find(synergy); found != learned.end()) bonus += found->second * percent;
-    if (skill != 118) result.minimumDamage = float(int64_t(result.minimumDamage * 256.f) * bonus / 100) / 256.f;
-    result.maximumDamage = float(int64_t(result.maximumDamage * 256.f) * bonus / 100) / 256.f;
-    const int mastery = result.element == 2 ? fireMasteryPercent :
-        result.element == 3 ? lightningMasteryPercent : result.element == 4 ? coldMasteryPercent : 0;
-    auto mastered = [&](float damage) {
-        const int64_t fixed = int64_t(damage * 256.f);
-        return float(fixed + fixed * mastery / 100) / 256.f;
-    };
-    result.minimumDamage = mastered(result.minimumDamage);
-    result.maximumDamage = mastered(result.maximumDamage);
-    auto &combat = result.ownerModifiers.combat;
-    const int minimum = skill == 118 ? 1 : int(result.minimumDamage * result.elementalMultiplier);
-    const int maximum = int(result.maximumDamage * result.elementalMultiplier);
-    if (skill == 102) { combat.fireMinimum = minimum; combat.fireMaximum = maximum; }
-    else if (skill == 114) { combat.coldMinimum = minimum; combat.coldMaximum = maximum; }
-    else if (skill == 118) { combat.lightningMinimum = minimum; combat.lightningMaximum = maximum; }
-    return result;
-}
+} // namespace
 bool monsterShrineEligible(const ClassicData &data, const MonsterRecord &monster) {
     if (!monster.hostile() || monster.boss) return false;
     const auto &stats = data.tables.at("monstats"), &extra = data.tables.at("monstats2");
@@ -298,7 +134,7 @@ MonsterEnchantment rollMonsterEnchantment(const ClassicData &data, const Monster
             break;
         case 6: result.velocityPercent += fast(); break;
         case 7:
-            result.curse = aura(data, 66, level / 5 + 1);
+            result.curse = resolveBaseAura(data, 66, level / 5 + 1);
             break;
         case 8:
         case 27:
@@ -323,7 +159,7 @@ MonsterEnchantment rollMonsterEnchantment(const ClassicData &data, const Monster
             uint64_t auraSeed = (uint64_t(666) << 32) | result.nameSeed;
             const int choice = int(roll(auraSeed, level >= 20 ? 7 : 6));
             const int auraRank = std::clamp(level / divisors[choice], 1, 99);
-            if (enableSkillEffects) result.aura = aura(data, skills[choice], auraRank);
+            if (enableSkillEffects) result.aura = resolveBaseAura(data, skills[choice], auraRank);
             else result.aura = resolveAura(data, skills[choice], auraRank);
             break;
         }
@@ -448,9 +284,10 @@ void loadMonsterEnchantmentResources(ClassicData &data, Archives &archives) {
         data.monsterSpecialMissiles.emplace(id, std::move(entry));
     }
 }
-std::string monsterDisplayName(const ClassicData &data, const MonsterIdentity &identity, std::string_view species) {
-    if (!identity.enchantment) return std::string(species);
-    const auto &mods = *identity.enchantment;
+std::string monsterDisplayName(const ClassicData &data, const MonsterIdentity &identity, std::string_view species,
+    const MonsterEnchantment *enchantment) {
+    if (!enchantment) return std::string(species);
+    const auto &mods = *enchantment;
     if (identity.rank == MonsterRank::Unique && !data.monsterNamePrefixes.empty() && !data.monsterNameSuffixes.empty()) {
         uint64_t random = initialRandom(mods.nameSeed);
         const auto &prefix = data.monsterNamePrefixes[limitedRandom(random, unsigned(data.monsterNamePrefixes.size()))];
@@ -474,13 +311,14 @@ std::string monsterDisplayName(const ClassicData &data, const MonsterIdentity &i
     }
     return std::string(species);
 }
-std::string monsterModifierDescription(const ClassicData &data, const MonsterIdentity &identity) {
+std::string monsterModifierDescription(const ClassicData &data, const MonsterIdentity &identity,
+    const MonsterEnchantment *enchantment) {
     std::string result;
     if (identity.rank == MonsterRank::Minion) {
         if (const auto found = data.itemStrings.find("minion"); found != data.itemStrings.end()) return found->second;
     }
-    if (!identity.enchantment || identity.rank == MonsterRank::Champion) return result;
-    for (int id : identity.enchantment->ids)
+    if (!enchantment || identity.rank == MonsterRank::Champion) return result;
+    for (int id : enchantment->ids)
         if (const auto found = data.monsterModifierNames.find(id); found != data.monsterModifierNames.end()) {
             if (!result.empty()) result += " / ";
             result += found->second;

@@ -1,16 +1,15 @@
-#include "gameplay/session/session.hpp"
 #include "presentation/scene_view.hpp"
 
 namespace d2x {
 void SceneView::drawContainerGrid(const ContainerGrid &grid, Vec mouse) const {
-    const auto &inventory = session_.inventory();
+    const auto &inventory = inventoryView_;
     const auto &ui = view_.inventory;
     auto hover = grid.cellAt(mouse);
     EntityId hovered = hover ? inventory.itemAt(grid.container, *hover) : EntityId{};
     for (auto id : inventory.contents(grid.container)) {
         const auto &item = *inventory.item(id);
         auto box = grid.itemBounds(std::get<ContainerLocation>(item.location).cell,
-                                   *inventory.catalog().find(item.definition));
+                                   *inventory.definition(item.definition));
         bool dragged = ui.drag && ui.drag->item.id == id;
         if (dragged || (view_.orificeItem && view_.orificeItem->id == id)) continue;
         DrawRectangleRec({box.x + 1, box.y + 1, box.width - 2, box.height - 2},
@@ -19,7 +18,7 @@ void SceneView::drawContainerGrid(const ContainerGrid &grid, Vec mouse) const {
         drawItemIcon(item, box);
         if (id == hovered || id == ui.selected)
             DrawRectangleLinesEx(box, 1, id == hovered ? parchment : gold);
-        const auto *definition = inventory.catalog().find(item.definition);
+        const auto *definition = inventory.definition(item.definition);
         if (definition->maxStack > 1 || definition->bookCapacity) {
             auto quantity = std::to_string(definition->bookCapacity ? item.charges : item.quantity);
             int width = painter_.measure(quantity, 12);

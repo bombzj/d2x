@@ -1,4 +1,3 @@
-#include "gameplay/session/session.hpp"
 #include "presentation/controller.hpp"
 #include "presentation/scene_view.hpp"
 #include <algorithm>
@@ -11,12 +10,12 @@ void SceneController::toggleInventory() {
     ui.orificeItem.reset();
     ui.skillPicker.reset();
     ui.skillTreeOpen = false;
-    if (!ui.inventory.open && session_.state().player.dead) {
+    if (!ui.inventory.open && view_.inventoryView().dead) {
         view_.notice("Recover before opening your inventory.", true);
         return;
     }
     if (ui.inventory.storage) {
-        session_.submit(CloseStorage{});
+        inventoryClient_.submit(CloseStorage{});
         ui.inventory.storage = {};
         ui.inventory.open = false;
     } else if (ui.inventory.cubeOpen) {
@@ -30,11 +29,11 @@ void SceneController::toggleInventory() {
         view_.cancelNpcDialogue();
     }
 }
-bool SceneController::queueInventory(GameCommand command, EntityId source) {
+bool SceneController::queueInventory(InventoryIntent command, EntityId source) {
     auto &ui = view_.ui().inventory;
     if (ui.pending)
         return false;
-    auto error = session_.previewInventory(command);
+    auto error = inventoryClient_.preview(command);
     if (error != InventoryError::None) {
         view_.notice(inventoryErrorText(error), true);
         return false;
@@ -64,16 +63,16 @@ bool SceneController::queueInventory(GameCommand command, EntityId source) {
                                 ? "Item dropped on the ground."
                                 : "Item moved.";
     }
-    session_.submit(std::move(command));
+    inventoryClient_.submit(std::move(command));
     return true;
 }
 bool SceneController::handleInventory(const FrameInput &input) {
     auto &ui = view_.ui().inventory;
     ui.forceSwap = input.control;
-    const auto &inventory = session_.inventory();
-    EntityId backpack = session_.playerContainers().backpack;
+    const auto &inventory = view_.inventoryView();
+    EntityId backpack = view_.inventoryView().containers.backpack;
     auto &panel = view_.ui();
-    if (panel.orificeObject && (!ui.open || !session_.canInsertStaff(panel.orificeObject))) {
+    if (panel.orificeObject && (!ui.open || !inventoryQuestTargetValid(panel.orificeObject))) {
         panel.orificeObject = {};
         panel.orificeItem.reset();
     }
@@ -89,7 +88,7 @@ bool SceneController::handleInventory(const FrameInput &input) {
             return true;
         }
         if (input.insideViewport && input.leftPressed && CheckCollisionPointRec(rv(input.mouse), orificeButton(true))) {
-            if (panel.orificeItem) session_.submit(SubmitQuestItem{panel.orificeObject, *panel.orificeItem});
+            if (panel.orificeItem) submitInventoryQuest(panel.orificeObject, *panel.orificeItem);
             inventoryClick_ = true;
             return true;
         }
@@ -97,18 +96,18 @@ bool SceneController::handleInventory(const FrameInput &input) {
             (input.leftPressed || input.leftReleased)) {
             if (ui.drag) {
                 const auto *item = inventory.item(ui.drag->item.id);
-                if (item && item->definition == session_.content().staffRecipeOutput && item->revision == ui.drag->item.revision) {
+                if (item && item->definition == inventory.staffRecipeOutput && item->revision == ui.drag->item.revision) {
                     panel.orificeItem = item->handle();
                     ui.drag.reset();
                 } else view_.notice("Only the complete Horadric Staff fits here.", true);
             } else if (input.leftPressed && panel.orificeItem) {
                 const auto *item = inventory.item(panel.orificeItem->id);
                 if (item) {
-                    const auto &definition = *inventory.catalog().find(item->definition);
+                    const auto &definition = *inventory.definition(item->definition);
                     const auto *location = std::get_if<ContainerLocation>(&item->location);
                     ui.drag = InventoryDrag{item->handle(), {definition.width / 2, definition.height / 2}, input.mouse,
                         {definition.width * inventoryCellSize / 2, definition.height * inventoryCellSize / 2},
-                        true, true, location && location->container == session_.playerContainers().cursor};
+                        true, true, location && location->container == view_.inventoryView().containers.cursor};
                 }
                 panel.orificeItem.reset();
             }
@@ -130,11 +129,11 @@ bool SceneController::handleInventory(const FrameInput &input) {
         return true;
     }
     if (ui.open && !ui.drag && !ui.split && !ui.goldDialog && input.insideViewport &&
-        input.leftPressed && session_.content().stashLayout.expansion)
+        input.leftPressed && inventory.stashLayout.expansion)
         if (auto set = weaponTabAt(input.mouse)) {
             inventoryClick_ = true;
-            if (*set != session_.state().player.weaponSet)
-                session_.submit(SwitchWeaponSet{});
+            if (*set != inventory.weaponSet)
+                inventoryClient_.submit(SwitchWeaponSet{});
             return true;
         }
     if (ui.split) {
@@ -181,7 +180,7 @@ bool SceneController::handleInventory(const FrameInput &input) {
     if (ui.cubeOpen && input.insideViewport && input.leftPressed &&
         CheckCollisionPointRec(rv(input.mouse), cubeTransmute())) {
         inventoryClick_ = true;
-        session_.submit(TransmuteCube{});
+        inventoryClient_.submit(TransmuteCube{});
         return true;
     }
     if (ui.goldDialog) {
@@ -206,7 +205,7 @@ bool SceneController::handleInventory(const FrameInput &input) {
                 !amount || amount > ui.goldDialog->maximum)
                 view_.notice("Enter a gold amount within the available limit.", true);
             else {
-                session_.submit(GoldTransaction{ui.goldDialog->action, amount});
+                inventoryClient_.submit(GoldTransaction{ui.goldDialog->action, amount});
                 ui.goldDialog.reset();
             }
         }
@@ -214,17 +213,17 @@ bool SceneController::handleInventory(const FrameInput &input) {
         return true;
     }
     bool bankField = ui.storage && CheckCollisionPointRec(
-            rv(input.mouse), storageGold(session_.content().stashLayout.expansion));
+            rv(input.mouse), storageGold(inventory.stashLayout.expansion));
     if (ui.open && input.insideViewport && input.leftPressed && !ui.pending &&
         !ui.drag && (CheckCollisionPointRec(rv(input.mouse), inventoryGold()) || bankField)) {
         GoldAction action = bankField ? GoldAction::Withdraw :
                             ui.storage ? GoldAction::Deposit : GoldAction::Drop;
-        const auto &player = session_.state().player;
+        const auto &player = inventory;
         unsigned maximum = action == GoldAction::Withdraw
-            ? std::min(player.bankGold, unsigned(player.level) * 10000u - player.gold)
+            ? std::min(player.bankGold, inventory.walletLimit - player.gold)
             : action == GoldAction::Deposit
-                ? std::min(player.gold, session_.bankGoldLimit() - player.bankGold)
-                : std::min(player.gold, session_.groundGoldLimit());
+                ? std::min(player.gold, inventory.bankGoldLimit - player.bankGold)
+                : std::min(player.gold, inventory.groundGoldLimit);
         if (!maximum)
             view_.notice("No gold can be transferred here.", true);
         else
@@ -247,14 +246,14 @@ bool SceneController::handleInventory(const FrameInput &input) {
         if (input.leftPressed && input.insideViewport) {
             inventoryClick_ = true;
             EntityId target;
-            for (const auto &grid : inventoryGrids(session_, ui))
+            for (const auto &grid : inventoryGrids(inventory, ui))
                 if (auto cell = grid.cellAt(input.mouse)) {
                     target = inventory.itemAt(grid.container, *cell);
                     break;
                 }
             if (!target)
-                if (auto slot = equipmentAt(input.mouse, session_.state().player.weaponSet))
-                    target = inventory.equipped(session_.playerContainers(), *slot);
+                if (auto slot = equipmentAt(input.mouse, inventory.weaponSet))
+                    target = inventory.equipped(view_.inventoryView().containers, *slot);
             if (const auto *item = inventory.item(target))
                 if (queueInventory(IdentifyItem{*ui.identify, item->handle()}, source->id))
                     ui.identify.reset();
@@ -277,23 +276,12 @@ bool SceneController::handleInventory(const FrameInput &input) {
         if (!panel.orificeObject && input.insideViewport && !ui.pending &&
             (ui.drag->pickedUp ? input.leftPressed : ui.drag->moved && input.leftReleased) &&
             CheckCollisionPointRec(rv(input.mouse), view_.worldViewport())) {
-            for (const auto &object : session_.region().objects)
-                if (session_.canInsertStaff(object.id) && view_.visible(object) &&
-                    (view_.screen(object.pos) + object.drawOffset - input.mouse).length() < 24) {
-                    panel.orificeObject = object.id;
-                    ui.open = true;
-                    ui.cubeOpen = false;
-                    panel.questOpen = panel.characterOpen = panel.skillTreeOpen = false;
-                    if (source->definition == session_.content().staffRecipeOutput) panel.orificeItem = source->handle();
-                    ui.drag.reset();
-                    inventoryClick_ = true;
-                    return true;
-                }
+            if (openInventoryQuestTarget(input.mouse, *source)) return true;
         }
         if (ui.drag->pickedUp) {
             if (input.leftPressed && input.insideViewport && !ui.pending) {
                 inventoryClick_ = true;
-                auto drop = inventoryDrop(session_, ui, input.mouse, view_.ui().hirelingOpen);
+                auto drop = inventoryDrop(inventory, inventoryClient_, ui, input.mouse, view_.ui().hirelingOpen);
                 if (drop.command) {
                     if (queueInventory(std::move(*drop.command), source->id))
                         ui.drag.reset();
@@ -306,7 +294,7 @@ bool SceneController::handleInventory(const FrameInput &input) {
             ui.drag->moved = true;
         if (input.leftReleased) {
             if (ui.drag->moved && input.insideViewport) {
-                auto drop = inventoryDrop(session_, ui, input.mouse, view_.ui().hirelingOpen);
+                auto drop = inventoryDrop(inventory, inventoryClient_, ui, input.mouse, view_.ui().hirelingOpen);
                 if (drop.command) {
                     if (queueInventory(std::move(*drop.command), source->id)) {
                         ui.drag.reset();
@@ -319,7 +307,7 @@ bool SceneController::handleInventory(const FrameInput &input) {
             if (ui.drag->moved && !input.insideViewport)
                 ui.drag.reset();
             else {
-                const auto &definition = *inventory.catalog().find(source->definition);
+                const auto &definition = *inventory.definition(source->definition);
                 ui.drag->grab = {definition.width / 2, definition.height / 2};
                 ui.drag->pixelOffset = {definition.width * inventoryCellSize / 2,
                                         definition.height * inventoryCellSize / 2};
@@ -330,9 +318,9 @@ bool SceneController::handleInventory(const FrameInput &input) {
             ui.drag.reset();
         return true;
     }
-    const auto &containers = session_.playerContainers();
-    int rows = ui.open || ui.beltExpanded ? inventory.container(containers.belt)->spec.rows : 1;
-    auto grids = inventoryGrids(session_, ui);
+    const auto &containers = view_.inventoryView().containers;
+    int rows = ui.open || ui.beltExpanded ? inventory.container(containers.belt)->rows : 1;
+    auto grids = inventoryGrids(inventory, ui);
     const ContainerGrid *hitGrid = nullptr;
     std::optional<Cell> cell;
     for (const auto &grid : grids) {
@@ -342,7 +330,7 @@ bool SceneController::handleInventory(const FrameInput &input) {
             break;
         }
     }
-    auto equipmentSlot = ui.open ? equipmentAt(input.mouse, session_.state().player.weaponSet)
+    auto equipmentSlot = ui.open ? equipmentAt(input.mouse, inventory.weaponSet)
                                  : std::nullopt;
     bool equipment = equipmentSlot.has_value();
     bool inBelt = CheckCollisionPointRec(rv(input.mouse), beltBounds(rows));
@@ -356,13 +344,13 @@ bool SceneController::handleInventory(const FrameInput &input) {
     if (view_.ui().imbueNpc) {
         if (input.leftPressed) {
             if (const auto *item = inventory.item(hovered))
-                session_.submit(ImbueItem{view_.ui().imbueNpc, item->handle()});
+                submitImbue(item->handle());
             inventoryClick_ = true;
         }
         return true;
     }
-    auto changeEquipment = [&](const ItemInstance &item) {
-        const auto &definition = *inventory.catalog().find(item.definition);
+    auto changeEquipment = [&](const InventoryItemView &item) {
+        const auto &definition = *inventory.definition(item.definition);
         if (definition.opensCube) {
             auto location = std::get_if<ContainerLocation>(&item.location);
             if (!location || location->container != backpack)
@@ -371,10 +359,10 @@ bool SceneController::handleInventory(const FrameInput &input) {
                 if (view_.ui().shopOpen) {
                     const auto npc = view_.ui().dialogueObject;
                     view_.closeNpcShop();
-                    session_.submit(EndNpcConversation{npc});
+                    endInventoryNpcConversation(npc);
                 }
                 if (ui.storage) {
-                    session_.submit(CloseStorage{});
+                    inventoryClient_.submit(CloseStorage{});
                     ui.storage = {};
                 }
                 ui.cubeOpen = !ui.cubeOpen;
@@ -383,8 +371,7 @@ bool SceneController::handleInventory(const FrameInput &input) {
             }
             return true;
         }
-        if (session_.content().isIdentifyScroll(item.definition) ||
-            session_.content().isIdentifyScroll(definition.bookScroll)) {
+        if (definition.identifySource) {
             if (definition.bookCapacity && !item.charges)
                 view_.notice("This tome is empty.", true);
             else {
@@ -403,10 +390,10 @@ bool SceneController::handleInventory(const FrameInput &input) {
         for (int index = 0; index < int(EquipmentSlot::AlternateRightHand); ++index) {
             auto slot = EquipmentSlot(index);
             if (slot == EquipmentSlot::RightHand)
-                slot = weaponHandSlot(false, session_.state().player.weaponSet);
+                slot = weaponHandSlot(false, inventory.weaponSet);
             if (slot == EquipmentSlot::LeftHand)
-                slot = weaponHandSlot(true, session_.state().player.weaponSet);
-            if (slot == EquipmentSlot::Belt || !definition.equipment.fits(slot))
+                slot = weaponHandSlot(true, inventory.weaponSet);
+            if (slot == EquipmentSlot::Belt || !definition.fits(slot))
                 continue;
             if (!candidate)
                 candidate = slot;
@@ -422,7 +409,7 @@ bool SceneController::handleInventory(const FrameInput &input) {
     if (input.rightPressed && !ui.pending) {
         if (auto item = inventory.item(hovered)) {
             if (hitGrid && (hitGrid->container == ui.storage ||
-                            hitGrid->container == session_.playerContainers().cube))
+                            hitGrid->container == view_.inventoryView().containers.cube))
                 view_.notice("Move this item to your backpack before using it.", true);
             else if (input.shift && hitGrid && hitGrid->container == containers.belt)
                 queueInventory(UseHirelingPotion{item->handle()}, item->id);
@@ -435,12 +422,12 @@ bool SceneController::handleInventory(const FrameInput &input) {
     if (!input.leftPressed)
         return true;
     inventoryClick_ = true;
-    if (ui.pending || session_.state().player.dead)
+    if (ui.pending || view_.inventoryView().dead)
         return true;
     if (hitGrid || equipment) {
         ui.selected = hovered;
         if (const auto *item = inventory.item(hovered)) {
-            auto def = inventory.catalog().find(item->definition);
+            auto def = inventory.definition(item->definition);
             if (input.control && input.shift && item->quality == ItemQuality::Normal &&
                 item->quantity > 1 && !equipment) {
                 ui.split = SplitDialog{item->handle(), std::max(1u, item->quantity / 2),
@@ -453,7 +440,7 @@ bool SceneController::handleInventory(const FrameInput &input) {
                 } else if (equipment || def->beltRows)
                     changeEquipment(*item);
                 else if (hitGrid && hitGrid->container == backpack && def->beltAllowed) {
-                    auto space = inventory.beltSpace(containers.belt, def->code, false);
+                    auto space = inventoryClient_.beltSpace(def->code);
                     if (space)
                         queueInventory(MoveItem{item->handle(), ContainerLocation{containers.belt, *space}},
                                        item->id);

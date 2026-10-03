@@ -1,5 +1,7 @@
+#include "gameplay/skills/spec.hpp"
+#include "gameplay/monsters/implementation.hpp"
 #include "core/random.hpp"
-#include "gameplay/session/session.hpp"
+#include "gameplay/session/session_impl.hpp"
 #include "gameplay/simulation/simulation.hpp"
 #include "content/character/character_attributes.hpp"
 #include "content/items/item_properties.hpp"
@@ -13,20 +15,23 @@
 #include <type_traits>
 
 namespace d2x {
-GameSession::~GameSession() = default;
-const WorldState &GameSession::state() const { return simulation_->state(); }
-void GameSession::setRunning(bool running) { simulation_->state_.player.running = running; }
-bool GameSession::usableCorpse(EntityId id) const { return simulation_->usableCorpse(id); }
-Vec GameSession::combatPosition(EntityId id) const { return simulation_->unitPosition(id); }
-bool GameSession::canAttack(EntityId actor, EntityId target) const { return simulation_->canAttack(actor, target); }
-bool GameSession::active(Vec position) const { return simulation_->active(position); }
-std::span<const GameEvent> GameSession::events() const { return simulation_->events(); }
+GameSessionImpl::~GameSessionImpl() = default;
+const WorldState &GameSessionImpl::state() const { return simulation_->state(); }
+void GameSessionImpl::setRunning(bool running) {
+    simulation_->state_.player.running = running;
+    ++viewRevision_;
+}
+bool GameSessionImpl::usableCorpse(EntityId id) const { return simulation_->usableCorpse(id); }
+Vec GameSessionImpl::combatPosition(EntityId id) const { return simulation_->unitPosition(id); }
+bool GameSessionImpl::canAttack(EntityId actor, EntityId target) const { return simulation_->canAttack(actor, target); }
+bool GameSessionImpl::active(Vec position) const { return simulation_->active(position); }
+std::span<const GameEvent> GameSessionImpl::events() const { return simulation_->events(); }
 namespace {
 bool baseMonsterRank(MonsterRank rank) {
     return rank == MonsterRank::Normal || rank == MonsterRank::Minion;
 }
 } // namespace
-GameSession::GameSession(Archives &archives, const WorldSelection &selection, int startRegion,
+GameSessionImpl::GameSessionImpl(Archives &archives, const WorldSelection &selection, int startRegion,
                          uint32_t sessionSeed, PopulationSettings population, std::string characterClass,
                          std::string characterName)
         : random_(initialRandom(sessionSeed)), content_(loadClassicData(archives)), worldContent_(archives),
@@ -120,12 +125,12 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
             publishInventory(std::move(result), {});
     };
     simulation_->combatEffectsChanged_ = [this] { refreshCharacter(); };
-    simulation_->auraEligible_ = [this](const CombatUnit &unit, bool checkNoAura) {
+    simulation_->auraEligible_ = [this](const RuntimeCombatUnit &unit, bool checkNoAura) {
         if (!unit.monster && !unit.hireling) return true;
-        const MonsterRecord *monster = unit.monster ? monsterContent_.find(unit.monster->identity.monster) : nullptr;
+        const MonsterRecord *monster = unit.monster ? monsterContent_.find(unit.records.monster->identity.monster) : nullptr;
         if (unit.hireling)
             for (const auto &[id, record] : monsterContent_.monsters())
-                if (record.index == unit.hireling->classId) { monster = &record; break; }
+                if (record.index == unit.records.hireling->classId) { monster = &record; break; }
         if (!monster || monster->npc) return false;
         const auto &stats = content_.tables.at("monstats");
         if (checkNoAura && stats.number(monster->sourceRow, "noAura").value_or(0)) return false;
@@ -135,9 +140,9 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
             if (extra.value(row, "Id") == identity) return extra.number(row, "isAtt").value_or(0) != 0;
         return false;
     };
-    simulation_->curseEligible_ = [this](const CombatUnit &unit, bool ai) {
+    simulation_->curseEligible_ = [this](const RuntimeCombatUnit &unit, bool ai) {
         if (!unit.monster) return !ai;
-        const auto *record = monsterContent_.find(unit.monster->identity.monster);
+        const auto *record = monsterContent_.find(unit.records.monster->identity.monster);
         if (!record || !record->curseable || record->npc) return false;
         return !ai || (!unit.stats.boss && unit.stats.rank != MonsterRank::Unique && unit.stats.rank != MonsterRank::SuperUnique &&
             record->switchAi && !unit.effects->hasState(simulation_->uninterruptableState_, state().frame));
@@ -155,9 +160,9 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
             fixed->id == "Pitspawn Fouldog" || fixed->id == "Corpsefire" || fixed->id == "The Cow King" ||
             fixed->id == "Boneash" || fixed->id == "The Smith" || fixed->id == "Griswold" ||
             fixed->id == "The Countess");
-        if (enemy.identity.enchantment || (owner ? (owner->identity.rank != MonsterRank::Unique &&
+        if (enemy.enchantment || (owner ? (owner->identity.rank != MonsterRank::Unique &&
             owner->identity.rank != MonsterRank::SuperUnique) ||
-            !owner->identity.enchantment : enemy.identity.rank != MonsterRank::Champion &&
+            !owner->enchantment : enemy.identity.rank != MonsterRank::Champion &&
             enemy.identity.rank != MonsterRank::Unique && !supportedFixed)) return;
         const auto *record = monsterContent_.find(enemy.identity.monster);
         if (!record || (record->boss && !supportedFixed) || monsterImplementation(record->id).substitute) return;
@@ -166,7 +171,7 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
         const auto base = resolvedMonsterCombat(identity, state().area.region);
         if (!base) throw std::runtime_error("Natural elite lacks original combat attributes: " + record->id);
         auto modifiers = owner
-            ? inheritedMonsterEnchantment(content_, *record, *base, state().population.difficulty, *owner->identity.enchantment)
+            ? inheritedMonsterEnchantment(content_, *record, *base, state().population.difficulty, *owner->enchantment)
             : rollMonsterEnchantment(content_, *record, *base, state().population.difficulty,
                                      enemy.combatRandom, enemy.identity.rank, true, false, enemy.identity.championVariantAllowed,
                                      supportedFixed ? fixed : nullptr);
@@ -174,7 +179,7 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
         life += life * modifiers.lifePercent / 100;
         life = life * modifiers.lifeScalePercent / 100;
         if (owner) enemy.identity.rank = MonsterRank::Minion;
-        enemy.identity.enchantment = std::move(modifiers);
+        enemy.enchantment = std::move(modifiers);
         enemy.hp = enemy.maxHp = float(std::max<int64_t>(1, life)) / 256.f;
         enemy.nextAuraFrame = state().frame;
     };
@@ -183,7 +188,6 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
         return record ? std::pair{record->hitClass, record->primeEvil} : std::pair{0, false};
     };
     simulation_->countessFirewall_ = monsterContent_.countessFirewall();
-    simulation_->playerFireMastery_ = [this] { return fireMasteryPercent(); };
     simulation_->telekinesisTarget_ = [this](EntityId target, int range, bool operate) {
         return telekinesisTarget(target, range, operate);
     };
@@ -236,7 +240,7 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
     simulation_->state_.player.combatRandom = childRandom(simulation_->unitRandom_);
     simulation_->monsterAccuracy_ = [this](const Enemy &enemy, RegionId region, int mode)
         -> std::optional<MonsterAccuracy> {
-        if (auto combat = resolvedMonsterCombat(enemy.identity, region)) {
+        if (auto combat = resolvedMonsterCombat(enemy.identity, region, enemy.enchantmentData())) {
             auto rating = mode == 2 ? combat->attack2Rating : combat->attack1Rating;
             return rating ? std::optional<MonsterAccuracy>{{combat->level, *rating}} : std::nullopt;
         }
@@ -249,20 +253,7 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
         if (!rating) return std::nullopt;
         return MonsterAccuracy{record->normalLevel, *rating};
     };
-    simulation_->monsterSpecialMissile_ = [this](int id, int rank) -> std::optional<MonsterMissileCast> {
-        auto found = content_.monsterSpecialMissiles.find(id);
-        if (found == content_.monsterSpecialMissiles.end()) return std::nullopt;
-        return MonsterMissileCast{resolveSkill(found->second.spec, rank, {}),
-            MonsterDamageType(found->second.element), found->second.killOnHit};
-    };
-    simulation_->resolveMissileSkill_ = [this](EntityId actor, int id, int rank) {
-        if (actor != state().player.id) throw std::runtime_error("Skill attributes unavailable for this actor");
-        const auto *entry = content_.skills.find(id);
-        if (!entry || !entry->spell) throw std::runtime_error("Missing originating missile skill");
-        return resolveSkill(*entry->spell, rank, state().player.skillRanks,
-                            fireMasteryPercent(), lightningMasteryPercent(),
-                            characterStats().combat.coldSkillDamagePercent);
-    };
+    configureSkillSources();
     simulation_->spendProjectile_ = [this](EntityId weapon, bool thrown) {
         const auto *item = inventory_.item(weapon);
         if (!item) return false;
@@ -306,7 +297,7 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
         -> std::optional<MonsterDefense> {
         const auto *record = monsterContent_.find(enemy.identity.monster);
         if (!record) return std::nullopt;
-        if (auto combat = resolvedMonsterCombat(enemy.identity, region))
+        if (auto combat = resolvedMonsterCombat(enemy.identity, region, enemy.enchantmentData()))
             return combat->defense ? std::optional<MonsterDefense>{{combat->level, *combat->defense,
                                         record->demon, record->undead, record->boss}}
                                    : std::nullopt;
@@ -321,8 +312,8 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
         // starts velocitypercent at 75; AI velocity stats add to that base.
         const int rate = monsterMovementPercent(*record, state().population.difficulty,
                                                 velocityPercent + enemy.combatEffects.modifiers(state().frame).velocityPercent +
-                                                (enemy.webSlowRemaining > 0 ? enemy.webSlowPercent : 0) + (enemy.identity.enchantment
-                                                    ? enemy.identity.enchantment->velocityPercent : 0), enemy.chill > 0);
+                                                (enemy.webSlowRemaining > 0 ? enemy.webSlowPercent : 0) + (enemy.enchantment
+                                                    ? enemy.enchantment->velocityPercent : 0), enemy.chill > 0);
         return float((*record->walkVelocity << 8) * rate / 100) * 25.f / 4096.f;
     };
     simulation_->monsterWalkSpeed_ = [this](const Enemy &enemy) {
@@ -330,11 +321,12 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
         if (!record || !record->walkVelocity) return std::optional<float>{};
         // Legacy callers apply their own movement modifiers outside this base.
         return std::optional<float>{float((*record->walkVelocity << 8) *
-            (75 + (enemy.identity.enchantment ? enemy.identity.enchantment->velocityPercent : 0)) / 100) * 25.f / 4096.f};
+            (75 + (enemy.enchantment ? enemy.enchantment->velocityPercent : 0)) / 100) * 25.f / 4096.f};
     };
-    simulation_->monsterNormalCombat_ = [this](const MonsterIdentity &identity, RegionId region)
+    simulation_->monsterNormalCombat_ = [this](const MonsterIdentity &identity, RegionId region,
+                                               const MonsterEnchantment *enchantment)
         -> std::optional<MonsterNormalCombat> {
-        if (auto combat = resolvedMonsterCombat(identity, region)) return combat->damage;
+        if (auto combat = resolvedMonsterCombat(identity, region, enchantment)) return combat->damage;
         if (state().population.difficulty != 0 || !baseMonsterRank(identity.rank))
             return std::nullopt;
         const auto *record = monsterContent_.find(identity.monster);
@@ -342,19 +334,19 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
     };
     simulation_->monsterCriticalChance_ = [this](const Enemy &enemy, RegionId region)
         -> std::optional<int> {
-        if (auto combat = resolvedMonsterCombat(enemy.identity, region))
+        if (auto combat = resolvedMonsterCombat(enemy.identity, region, enemy.enchantmentData()))
             return combat->criticalChance;
         return std::nullopt;
     };
     simulation_->monsterDamageRegen_ = [this](const Enemy &enemy, RegionId region)
         -> std::optional<int> {
-        if (auto combat = resolvedMonsterCombat(enemy.identity, region))
+        if (auto combat = resolvedMonsterCombat(enemy.identity, region, enemy.enchantmentData()))
             return combat->damageRegen;
         return std::nullopt;
     };
     simulation_->monsterResistance_ = [this](const Enemy &enemy, RegionId region, MonsterDamageType type)
         -> std::optional<int> {
-        if (auto combat = resolvedMonsterCombat(enemy.identity, region))
+        if (auto combat = resolvedMonsterCombat(enemy.identity, region, enemy.enchantmentData()))
             return combat->resistances[size_t(type)];
         return std::nullopt;
     };
@@ -371,12 +363,12 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
     simulation_->coldPierce_ = [this](EntityId actor) { return actor == state().player.id ? coldPiercePercent() : 0; };
     simulation_->monsterFreezeDivisor_ = content_.monsterFreezeDivisor.at(size_t(population.difficulty));
     simulation_->monsterColdDivisor_ = content_.monsterColdDivisor.at(size_t(population.difficulty));
-    simulation_->unitColdEffect_ = [this](const CombatUnit &unit) {
+    simulation_->unitColdEffect_ = [this](const RuntimeCombatUnit &unit) {
         const MonsterRecord *record = nullptr;
-        if (unit.monster) record = monsterContent_.find(unit.monster->identity.monster);
+        if (unit.monster) record = monsterContent_.find(unit.records.monster->identity.monster);
         else if (unit.hireling) {
             for (const auto &[id, entry] : monsterContent_.monsters())
-                if (entry.index == unit.hireling->classId) { record = &entry; break; }
+                if (entry.index == unit.records.hireling->classId) { record = &entry; break; }
         } else return -50;
         return record ? record->coldEffect.at(size_t(state().population.difficulty)) : 0;
     };
@@ -393,7 +385,7 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
     };
     simulation_->monsterAi_ = [this](const Enemy &enemy)
         -> std::optional<MonsterAiProfile> {
-        if (!enemy.identity.enchantment && !baseMonsterRank(enemy.identity.rank) &&
+        if (!enemy.enchantment && !baseMonsterRank(enemy.identity.rank) &&
             enemy.kind != MonsterKind::BloodRaven && enemy.kind != MonsterKind::Andariel)
             return std::nullopt;
         const auto *record = monsterContent_.find(enemy.identity.monster);
@@ -657,7 +649,7 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
         throw std::out_of_range("--region exceeds the available scene count; prefer --level <Levels.txt ID>");
     enter(startRegion < 0 ? plan.start : regions_[startRegion].definition.id);
 }
-void GameSession::ensureRegion(RegionId id, bool neighbours) {
+void GameSessionImpl::ensureRegion(RegionId id, bool neighbours) {
     auto found = std::find_if(regions_.begin(), regions_.end(),
         [&](const auto &region) { return region.definition.id == id; });
     if (found == regions_.end()) return;
@@ -703,27 +695,18 @@ void GameSession::ensureRegion(RegionId id, bool neighbours) {
         reconcileCainObjects();
     }
 }
-const CharacterDefinition &GameSession::definitionFor(std::string_view name) const {
+const CharacterDefinition &GameSessionImpl::definitionFor(std::string_view name) const {
     auto found = std::find_if(content_.characters.begin(), content_.characters.end(),
                               [name](const auto &entry) { return entry.name == name; });
     if (found == content_.characters.end())
         throw std::runtime_error("Unknown MPQ character class: " + std::string(name));
     return *found;
 }
-void GameSession::grantExperience(uint64_t amount) {
-    auto &player = simulation_->state_.player;
-    if (!amount || player.dead) return;
-    const auto &thresholds = experienceThresholds();
-    player.experience += std::min(amount, thresholds.back() - player.experience);
-    int before = player.level;
-    while (size_t(player.level + 1) < thresholds.size() &&
-           player.experience >= thresholds[size_t(player.level + 1)])
-        ++player.level;
-    player.unspentAttributes += (player.level - before) * characterDefinition_.statPerLevel;
-    player.unspentSkills += player.level - before;
-    refreshCharacter(true);
+void GameSessionImpl::grantExperience(uint64_t amount) {
+    if (grantCharacterExperience(characterProgressionContext(), amount, experienceThresholds(),
+                                 characterDefinition_.statPerLevel)) refreshCharacter(true);
 }
-void GameSession::enter(RegionId id, std::optional<Vec> arrival, std::optional<Vec> coordinateOffset) {
+void GameSessionImpl::enter(RegionId id, std::optional<Vec> arrival, std::optional<Vec> coordinateOffset) {
     ensureRegion(id, true);
     auto found = std::find_if(regions_.begin(), regions_.end(),
                               [id](const Region &r) { return r.definition.id == id; });
@@ -768,7 +751,7 @@ void GameSession::enter(RegionId id, std::optional<Vec> arrival, std::optional<V
     std::cout << "Room activation: created=" << state().area.enemies.size()
               << " deferred=" << state().area.pendingSpawns.size() << '\n';
 }
-PopulationPlan GameSession::population(const Region &region) const {
+PopulationPlan GameSessionImpl::population(const Region &region) const {
     const auto level = worldContent_.levels().find(int(region.definition.id));
     const auto *record = level == worldContent_.levels().end() ? nullptr : &level->second;
     const auto &preset = worldContent_.presets().at(region.recipe.preset);
@@ -776,7 +759,7 @@ PopulationPlan GameSession::population(const Region &region) const {
     writePopulationReport(std::cout, plan, record, preset, state().population);
     return plan;
 }
-bool GameSession::inventoryDestinationAllowed(const ItemDestination &destination) const {
+bool GameSessionImpl::inventoryDestinationAllowed(const ItemDestination &destination) const {
     if (auto ground = std::get_if<GroundLocation>(&destination))
         return ground->region == region().definition.id && std::isfinite(ground->position.x) &&
                std::isfinite(ground->position.y) && ground->position.x >= 0 && ground->position.y >= 0 &&
@@ -784,7 +767,7 @@ bool GameSession::inventoryDestinationAllowed(const ItemDestination &destination
                map().grid.collisionSegment(state().player.pos, ground->position, 0x0801);
     return true;
 }
-void GameSession::publishInventory(InventoryResult result, EntityId requested) {
+void GameSessionImpl::publishInventory(InventoryResult result, EntityId requested) {
     if (!result)
         simulation_->emit(InventoryRejected{requested, result.error});
     else {
@@ -795,7 +778,7 @@ void GameSession::publishInventory(InventoryResult result, EntityId requested) {
             simulation_->emit(InventoryApplied{requested, result.item, result.transferred});
     }
 }
-void GameSession::tick(float dt, Vec keyboard, bool forceRun) {
+void GameSessionImpl::tick(float dt, Vec keyboard, bool forceRun) {
     simulation_->beginTick();
     for (auto &region : regions_) region.refreshObjectCollision(state().time);
     validateStorage();
@@ -938,54 +921,17 @@ void GameSession::tick(float dt, Vec keyboard, bool forceRun) {
                 } else if constexpr (std::is_same_v<T, DebugDamageMonster>) {
                     damageDebugMonster(intent);
                 } else if constexpr (std::is_same_v<T, AllocateAttribute>) {
-                    auto &player = simulation_->state_.player;
-                    if (!player.dead && allocateAttribute(player.allocated, player.unspentAttributes, intent.attribute))
-                        refreshCharacter(true);
+                    applyCharacterIntent(intent);
                 } else if constexpr (std::is_same_v<T, AllocateSkill>) {
-                    auto &player = simulation_->state_.player;
-                    if (!canAllocateSkill(intent.id)) return;
-                    ++player.skillRanks[intent.id];
-                    --player.unspentSkills;
-                    refreshCharacter();
+                    applyCharacterIntent(intent);
                 } else if constexpr (std::is_same_v<T, BindSkillHotkey>) {
-                    auto &keys = simulation_->state_.player.skillHotkeys;
-                    if (intent.index >= keys.size() || intent.skill < -2 ||
-                        (intent.skill >= 0 && (!skillAvailable(intent.skill) ||
-                            content_.skills.find(intent.skill)->passive ||
-                            (!intent.right && !content_.skills.find(intent.skill)->leftAllowed)))) return;
-                    for (auto &key : keys)
-                        if (key.skill == intent.skill && key.right == intent.right) key.skill = -2;
-                    keys[intent.index] = {intent.skill, intent.right};
+                    applyCharacterIntent(intent);
                 } else if constexpr (std::is_same_v<T, SelectMouseSkill>) {
-                    const auto *entry = content_.skills.find(intent.skill);
-                    if (intent.skill < -1 || (intent.skill >= 0 &&
-                        (!entry || entry->passive || !skillAvailable(intent.skill) ||
-                         (!intent.right && !entry->leftAllowed)))) return;
-                    auto &player = simulation_->state_.player;
-                    player.selectedSkills[player.weaponSet * 2 + unsigned(intent.right)] = intent.skill;
-                    if (intent.right && intent.skill != player.channelSkill()) simulation_->stopChannel(player);
+                    applyCharacterIntent(intent);
                 } else if constexpr (std::is_same_v<T, DebugResetAttributes>) {
-                    auto &player = simulation_->state_.player;
-                    if (!player.dead && allocatedPoints(player.allocated)) {
-                        player.unspentAttributes += allocatedPoints(player.allocated);
-                        player.allocated = {};
-                        refreshCharacter();
-                    }
+                    resetCharacterAttributePoints();
                 } else if constexpr (std::is_same_v<T, DebugResetSkills>) {
-                    auto &player = simulation_->state_.player;
-                    if (!player.dead) {
-                        simulation_->stopChannel(player);
-                        player.skillRanks.clear();
-                        player.unspentSkills = player.level - 1;
-                        for (const auto &difficulty : player.actOneQuests) {
-                            if (difficulty.at(questIndex(ActOneQuest::DenOfEvil)).stage ==
-                                uint32_t(DenStage::Rewarded))
-                                ++player.unspentSkills;
-                            if (difficulty.at(questIndex(QuestId::RadamentsLair)).flags & radamentBookUsed)
-                                ++player.unspentSkills;
-                        }
-                        refreshCharacter();
-                    }
+                    resetCharacterSkillPoints();
                 } else if constexpr (std::is_same_v<T, UseSkill>) {
                     useSkill(intent);
                 } else if constexpr (std::is_same_v<T, MoveItem> || std::is_same_v<T, SwapItems> ||
@@ -1045,5 +991,6 @@ void GameSession::tick(float dt, Vec keyboard, bool forceRun) {
     updateCainPortal();
     updateExit();
     validateStorage();
+    ++viewRevision_;
 }
 } // namespace d2x

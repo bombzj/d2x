@@ -1,4 +1,14 @@
+#include "gameplay/skills/spec.hpp"
+#include "gameplay/monsters/implementation.hpp"
+#include "client/item_art.hpp"
 #include "gameplay/session/session.hpp"
+#include "content/classic_data.hpp"
+#include "gameplay/model/state.hpp"
+#include "world/region.hpp"
+#include "gameplay/items/inventory.hpp"
+#include "content/monsters/monster_catalog.hpp"
+#include "content/world/world_catalog.hpp"
+#include "gameplay/npc/store.hpp"
 #include "scene_assets.hpp"
 #include "resources/data_table.hpp"
 #include "world/cow_level.hpp"
@@ -342,8 +352,13 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
         }
     for (const auto &[id, skill] : session.content().skills.skills) {
         if (!skill.spell) continue;
-        if (skill.spell->arc) arcVisuals.emplace(skill.spell->missileId, *skill.spell->arc);
-        if (skill.spell->meteor) meteorVisuals.emplace(skill.spell->missileId, *skill.spell->meteor);
+        if (skill.spell->meteor) {
+            const auto &program = *skill.spell->meteor;
+            meteorVisuals.emplace(skill.spell->missileId, MeteorVisual{
+                program.fireFrames, program.explodeId, program.explodeDensity,
+                program.lightId, program.mediumId, program.smallId,
+                program.mediumDensity, program.smallDensity});
+        }
     }
     for (size_t row = 0; row < missiles.rows().size(); ++row)
         if (auto id = missiles.number(row, "Id")) {
@@ -379,7 +394,8 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
     for (const auto &[id, skill] : session.content().skills.skills) {
         if (!skill.spell || !skill.spell->blizzard) continue;
         const auto &program = *skill.spell->blizzard;
-        blizzardFalls.emplace(program.shardId, program);
+        blizzardFalls.emplace(program.shardId, BlizzardVisual{
+            program.fallDistance, program.fallRate, program.impactId, program.impactFrames});
         std::string_view travelSound;
         for (size_t row = 0; row < missiles.rows().size(); ++row)
             if (missiles.number(row, "Id") == skill.spell->missileId) {
@@ -621,13 +637,7 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
     unitsGraphics_.releaseDecoded();
 }
 std::string SceneAssets::itemArtKey(const ItemInstance &item) {
-    std::string key = item.definition;
-    if (item.nativeHasGraphic)
-        key += ":gfx:" + std::to_string(item.nativeGraphic);
-    if (item.specialRow >= 0)
-        key += "#" + std::to_string(int(item.quality)) + ":" + std::to_string(item.specialRow) +
-               (item.identified ? ":identified" : ":unidentified");
-    return key;
+    return d2x::itemArtKey(item);
 }
 void SceneAssets::loadInventoryArt(const GameSession &session) {
     const auto &inventory = session.inventory();

@@ -1,10 +1,17 @@
+#include "gameplay/skills/spec.hpp"
+#include "gameplay/loot/loot.hpp"
 #include "presentation/scene_view.hpp"
 #include "gameplay/session/session.hpp"
+#include "content/classic_data.hpp"
+#include "gameplay/model/state.hpp"
+#include "world/region.hpp"
+#include "gameplay/items/inventory.hpp"
+#include "gameplay/npc/store.hpp"
+#include "gameplay/session/character_save.hpp"
 #include "debug_commands.hpp"
 #include "debug_inventory.hpp"
 #include "debug_monsters.hpp"
 #include "debug_hireling.hpp"
-#include "presentation/hud/character_action_stats.hpp"
 #include "persistence/save_file.hpp"
 #include <nlohmann/json.hpp>
 #include <algorithm>
@@ -29,7 +36,7 @@ const char *qualityName(ItemQuality quality) {
 std::string debugCommand(const std::string &text, GameSession &session, SceneView &view,
                          bool &paused, bool &quit, const std::string &savePath,
                          const std::function<void(const std::string &)> &screenshot,
-                         const std::function<void(FrameInput)> &input) {
+                         const std::function<void(std::vector<FrameInput>)> &input) {
     using Json = nlohmann::json;
     try {
         auto request = Json::parse(text);
@@ -43,38 +50,64 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
             return EntityId{value.get<uint64_t>()};
         };
         if (command == "ui-input") {
-            FrameInput frame;
-            frame.screenshot = request.value("screenshot", false);
-            frame.showLoot = request.value("showLoot", false);
-            frame.mouse = {request.value("x", 0.f), request.value("y", 0.f)};
-            if (!std::isfinite(frame.mouse.x) || !std::isfinite(frame.mouse.y) ||
-                frame.mouse.x < 0 || frame.mouse.x >= W || frame.mouse.y < 0 || frame.mouse.y >= H)
-                throw std::runtime_error("UI coordinates must be inside the logical viewport");
-            frame.insideViewport = true;
-            const auto button = request.value("button", std::string{});
-            if (button == "left") frame.leftPressed = frame.leftHeld = true;
-            else if (button == "right") frame.rightPressed = frame.rightHeld = true;
-            else if (!button.empty()) throw std::runtime_error("button must be left or right");
-            const auto key = request.value("key", std::string{});
-            if (key == "escape") frame.escape = true;
-            else if (key == "enter") frame.enter = true;
-            else if (key == "inventory") frame.inventory = true;
-            else if (key == "character") frame.character = true;
-            else if (key == "quests") frame.quests = true;
-            else if (key == "hireling" || key == "o") frame.hireling = true;
-            else if (key == "weapon-swap") frame.weaponSwap = true;
-            else if (key == "automap") frame.automap = true;
-            else if (key == "automap-side") frame.minimapSide = true;
-            else if (key == "automap-center") frame.automapCenter = true;
-            else if (key == "automap-names") frame.automapNames = true;
-            else if (key == "up") frame.movement.y = -1;
-            else if (key == "down") frame.movement.y = 1;
-            else if (key == "left") frame.movement.x = -1;
-            else if (key == "right") frame.movement.x = 1;
-            else if (key == "run" || key == "r") frame.run = true;
-            else if (key == "restart") frame.restart = true;
-            else if (!key.empty()) throw std::runtime_error("Unsupported UI key");
-            input(std::move(frame));
+            auto parseFrame = [](const Json &request) {
+                if (!request.is_object()) throw std::runtime_error("UI frame must be an object");
+                FrameInput frame;
+                frame.screenshot = request.value("screenshot", false);
+                frame.showLoot = request.value("showLoot", false);
+                frame.mouse = {request.value("x", 0.f), request.value("y", 0.f)};
+                if (!std::isfinite(frame.mouse.x) || !std::isfinite(frame.mouse.y) ||
+                    frame.mouse.x < 0 || frame.mouse.x >= W || frame.mouse.y < 0 || frame.mouse.y >= H)
+                    throw std::runtime_error("UI coordinates must be inside the logical viewport");
+                frame.insideViewport = true;
+                const auto button = request.value("button", std::string{});
+                if (button == "left") frame.leftPressed = frame.leftHeld = true;
+                else if (button == "right") frame.rightPressed = frame.rightHeld = true;
+                else if (!button.empty()) throw std::runtime_error("button must be left or right");
+                frame.leftHeld = request.value("leftHeld", frame.leftHeld);
+                frame.leftReleased = request.value("leftReleased", false);
+                frame.rightHeld = request.value("rightHeld", frame.rightHeld);
+                frame.shift = request.value("shift", false);
+                frame.control = request.value("control", false);
+                frame.backspace = request.value("backspace", false);
+                frame.text = request.value("text", std::string{});
+                if (frame.text.size() > 10 || !std::ranges::all_of(frame.text, [](char c) { return c >= '0' && c <= '9'; }))
+                    throw std::runtime_error("UI text must contain at most 10 decimal digits");
+                const auto key = request.value("key", std::string{});
+                if (key == "escape") frame.escape = true;
+                else if (key == "enter") frame.enter = true;
+                else if (key == "inventory") frame.inventory = true;
+                else if (key == "character") frame.character = true;
+                else if (key == "quests") frame.quests = true;
+                else if (key == "skill-tree") frame.skillTree = true;
+                else if (key.size() == 2 && key[0] == 'f' && key[1] >= '1' && key[1] <= '8')
+                    frame.skills[size_t(key[1] - '1')] = true;
+                else if (key == "hireling" || key == "o") frame.hireling = true;
+                else if (key == "weapon-swap") frame.weaponSwap = true;
+                else if (key == "automap") frame.automap = true;
+                else if (key == "automap-side") frame.minimapSide = true;
+                else if (key == "automap-center") frame.automapCenter = true;
+                else if (key == "automap-names") frame.automapNames = true;
+                else if (key == "up") frame.movement.y = -1;
+                else if (key == "down") frame.movement.y = 1;
+                else if (key == "left") frame.movement.x = -1;
+                else if (key == "right") frame.movement.x = 1;
+                else if (key == "run" || key == "r") frame.run = true;
+                else if (key == "restart") frame.restart = true;
+                else if (!key.empty()) throw std::runtime_error("Unsupported UI key");
+                return frame;
+            };
+            std::vector<FrameInput> frames;
+            if (request.contains("frames")) {
+                const auto &batch = request.at("frames");
+                if (!batch.is_array() || batch.empty() || batch.size() > 32)
+                    throw std::runtime_error("UI frames must be an array of 1 to 32 entries");
+                for (const auto &entry : batch) frames.push_back(parseFrame(entry));
+            } else {
+                frames.push_back(parseFrame(request));
+            }
+            result["frames"] = frames.size();
+            input(std::move(frames));
             result["queued"] = true;
         } else if (command == "grant-hireling" || command == "grant_hireling" || command == "hireling" ||
                    command == "hireling-panel" || command == "hireling-equip") {
@@ -105,6 +138,7 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
                                              {"flags", quest.flags}});
             }
         } else if (command == "status") {
+            view.refreshCharacterView();
             const auto &state = session.state();
             result["player"] = {{"x", state.player.pos.x}, {"y", state.player.pos.y},
                 {"hp", state.player.hp}, {"maxHp", session.characterStats().maxLife},
@@ -196,8 +230,8 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
             result["region"] = int(state.area.region);
             result["kills"] = state.area.kills;
             result["paused"] = paused;
-            const auto leftAction = characterActionStats(session, view.ui().leftSkill);
-            const auto rightAction = characterActionStats(session, view.ui().rightSkill);
+            const auto leftAction = view.characterView().actionDisplay(view.ui().leftSkill);
+            const auto rightAction = view.characterView().actionDisplay(view.ui().rightSkill);
             result["ui"] = {{"shop", view.ui().shopOpen}, {"npcMenu", view.ui().npcMenu},
                 {"shopRepair", view.ui().shopRepair},
                 {"purchaseConfirmation", view.ui().shopConfirm.has_value()},

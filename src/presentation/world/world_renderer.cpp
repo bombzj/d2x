@@ -1,4 +1,11 @@
+#include "gameplay/skills/spec.hpp"
+#include "client/actor_client.hpp"
 #include "gameplay/session/session.hpp"
+#include "content/classic_data.hpp"
+#include "gameplay/model/state.hpp"
+#include "world/region.hpp"
+#include "gameplay/items/inventory.hpp"
+#include "content/monsters/monster_catalog.hpp"
 #include "presentation/scene_view.hpp"
 #include <algorithm>
 #include <cmath>
@@ -162,6 +169,7 @@ void SceneView::drawTerrain() const {
         sprite(item.image, item.position, item.shadow ? Color{20, 22, 25, 100} : WHITE);
 }
 void SceneView::drawActors(Vec mouse) const {
+    const auto actor = actorClient_.controlledActor();
     const auto &sim = session_.state();
     const auto monsters = visibleMonsters();
 
@@ -263,7 +271,7 @@ void SceneView::drawActors(Vec mouse) const {
         auto p = screen(monsters[i].position);
         draw.push_back({sceneOrder(monsters[i].position, 1, false, e.hp > 0 ? 3 : 1), 2, i, p});
     }
-    draw.push_back({sceneOrder(sim.player.pos, 1, false, 3), 1, 0, screen(sim.player.pos)});
+    draw.push_back({sceneOrder(actor.position, 1, false, 3), 1, 0, screen(actor.position)});
     if ((sim.player.hireling.active() || (sim.player.hireling.corpseVisible &&
          sim.player.hireling.corpseRegion == sim.area.region)) && session_.active(sim.player.hireling.pos)) {
         auto point = screen(sim.player.hireling.pos);
@@ -314,42 +322,20 @@ void SceneView::drawActors(Vec mouse) const {
                 auto *anim = &assets_.hero.at(mode);
                 if (anim->frames.empty())
                     anim = &assets_.hero.at("nu");
-                auto look = sim.player.look;
-                const float movementRate = mode == "rn" ? session_.characterStats().runAnimationRate
-                                           : mode == "wl" ? session_.characterStats().walkAnimationRate : 25.f;
-                int frame = int(view_.heroTime * movementRate);
-                if (mode == "dt")
-                    frame = std::min(anim->count - 1, int(sim.player.deathTime * 20));
-                if (mode == "sc")
-                    frame =
-                        std::min(anim->count - 1,
-                                 int((sim.player.lastCastDuration - sim.player.castTime) *
-                                     sim.player.lastCastRate));
-                if (mode == "sc" && sim.player.channel)
-                    frame = std::min({anim->count - 1, 9, int(sim.player.channelAge() * 25)});
-                if (mode == "sc" && sim.player.lightningSequence) {
-                    constexpr int sequence[]{0,1,3,4,5,7,8,9,9,9,9,10,9,9,9,10,11,12,13};
-                    const int step = std::clamp(int((sim.player.lastCastDuration - sim.player.castTime) *
-                        sim.player.lastCastRate), 0, 18);
-                    frame = std::min(anim->count - 1, sequence[step]);
-                }
-                if (sim.player.weaponAttack && mode == sim.player.weaponAttack->timing.mode)
-                    frame = std::min(anim->count - 1, sim.player.weaponAttack->animationFrame());
-                if (sim.player.blockAnimation && mode == "bl")
-                    frame = std::min(anim->count - 1, sim.player.blockAnimation->animationFrame());
-                if (sim.player.charge && mode == "rn")
-                    frame = std::min(anim->count - 1, int(sim.player.charge->ticks % 8));
-                auto f = anim->frame(direction(look, anim->directions), frame);
+                int frame = int(view_.heroTime * actor.animationRate);
+                if (mode == actor.animationMode && actor.actionFrame)
+                    frame = std::min(anim->count - 1, *actor.actionFrame);
+                auto f = anim->frame(direction(actor.look, anim->directions), frame);
                 auto p = item.p;
                 if (shadowsOnly) { spriteShadow(f, item.p); continue; }
-                drawUnitSpellOverlays(sim.player.id, sim.player.pos, true);
+                drawUnitSpellOverlays(actor.id, actor.position, true);
                 drawPlayerShrineOverlay(p, true);
-                if (!sim.player.dead) drawCombatStateOverlays(sim.player.combatEffects, p, 1, true);
-                sprite(f, p, sim.player.dead ? Color{185, 185, 185, 255}
-                             : sim.player.chill > 0 ? Color{115, 175, 255, 255}
-                             : sim.player.poisonRemaining > 0 ? Color{145, 210, 115, 255} : WHITE);
-                if (!sim.player.dead) drawCombatStateOverlays(sim.player.combatEffects, p, 1, false);
-                drawUnitSpellOverlays(sim.player.id, sim.player.pos, false);
+                if (!actor.dead) drawCombatStateOverlays(sim.player.combatEffects, p, 1, true);
+                sprite(f, p, actor.dead ? Color{185, 185, 185, 255}
+                             : actor.chilled ? Color{115, 175, 255, 255}
+                             : actor.poisoned ? Color{145, 210, 115, 255} : WHITE);
+                if (!actor.dead) drawCombatStateOverlays(sim.player.combatEffects, p, 1, false);
+                drawUnitSpellOverlays(actor.id, actor.position, false);
                 drawPlayerShrineOverlay(p, false);
             } else if (item.type == 6) {
                 const auto &hireling = sim.player.hireling;
@@ -392,7 +378,7 @@ void SceneView::drawActors(Vec mouse) const {
                 const auto &e = *monster.enemy;
                 const auto &animations = assets_.monsterAnimationSet(
                     session_, e.identity.monster, e.kind,
-                    e.allegiance.role == CombatRole::Summon ? e.summonShield : 0, &e.identity);
+                    e.allegiance.role == CombatRole::Summon ? e.summonShield : 0, &e.identity, e.enchantmentData());
                 const auto *deathTiming = session_.monsterContent().motion(e.kind, "dt");
                 std::string mode = !e.living() ? (animations.contains("dd") && deathTiming &&
                                                    e.deathAge >= deathTiming->duration ? "dd" : "dt")
@@ -426,13 +412,13 @@ void SceneView::drawActors(Vec mouse) const {
                                 const int percentage = monsterMovementPercent(*record, sim.population.difficulty,
                                     *e.movementVelocityPercent + e.combatEffects.modifiers(sim.frame).velocityPercent +
                                     (e.webSlowRemaining > 0 ? e.webSlowPercent : 0) +
-                                    (e.identity.enchantment ? e.identity.enchantment->velocityPercent : 0), e.chill > 0);
+                                    (e.enchantment ? e.enchantment->velocityPercent : 0), e.chill > 0);
                                 fps = float(std::clamp(*rate * percentage / 100, 0, 32767)) * 25.f / 256.f;
                                 nativeMovementRate = true;
                             }
                         }
-                    if ((mode == "wl" || mode == "rn") && !nativeMovementRate && e.identity.enchantment)
-                        fps *= float(75 + e.identity.enchantment->velocityPercent) / 75.f;
+                    if ((mode == "wl" || mode == "rn") && !nativeMovementRate && e.enchantment)
+                        fps *= float(75 + e.enchantment->velocityPercent) / 75.f;
                     int coldRate = 100;
                     if (e.chill > 0 && !nativeMovementRate && e.hp > 0)
                         if (const auto *record = session_.monsterContent().find(e.identity.monster))
@@ -474,7 +460,7 @@ void SceneView::drawActors(Vec mouse) const {
                     if (e.hp > 0) drawCombatStateOverlays(e.combatEffects, item.p, height, true);
                     Color monsterColor = e.hitDisplay > 0 ? Color{255, 175, 155, 255} :
                         (e.chill > 0 || e.freeze > 0) ? Color{115, 175, 255, 255} : WHITE;
-                    if (e.hp > 0 && e.identity.enchantment && e.identity.enchantment->has(36))
+                    if (e.hp > 0 && e.enchantment && e.enchantment->has(36))
                         monsterColor.a = 160;
                     drawSelectableSprite(image, item.p, e.id == hotEnemy,
                                          monsterColor);
@@ -550,7 +536,7 @@ void SceneView::drawActors(Vec mouse) const {
                 const auto *image = objectSprite(p, session_.regions()[item.region].definition.id);
                 if (shadowsOnly) { if (p.draw) spriteShadow(image, item.p); continue; }
                 const Vec anchor = item.p - p.drawOffset;
-                drawNpcAlert(p, anchor, true);
+                drawNpcAlert(p.id, anchor, true);
                 if (p.interaction == Interaction::Shrine) drawShrineOverlays(p.shrineCode, anchor, 0, true);
                 if (p.draw) drawSelectableSprite(image, item.p, &p == hotObject);
                 if (p.operateFn == 25 && p.operatedAt >= 0 &&
@@ -572,7 +558,7 @@ void SceneView::drawActors(Vec mouse) const {
                     }
                 }
                 if (p.interaction == Interaction::Shrine) drawShrineOverlays(p.shrineCode, anchor, 0, false);
-                drawNpcAlert(p, anchor, false);
+                drawNpcAlert(p.id, anchor, false);
             }
         }
     }

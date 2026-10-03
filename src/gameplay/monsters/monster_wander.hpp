@@ -1,10 +1,11 @@
 #pragma once
-#include "gameplay/model/state.hpp"
+#include "core/math.hpp"
 #include "world/navigation.hpp"
 #include <cstdint>
 #include <optional>
 
 namespace d2x {
+struct Enemy;
 uint32_t monsterAiRandom(Enemy &enemy);
 int monsterAiDistance(Vec from, int size, Vec target);
 void monsterStartApproach(Enemy &enemy, int stopDistance, int velocityPercent, bool running,

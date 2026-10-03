@@ -2,7 +2,12 @@
 #include "resources/archive.hpp"
 #include "resources/data_table.hpp"
 #include "content/monsters/monster_animation.hpp"
-#include "gameplay/monsters/monster_spawn.hpp"
+#include "gameplay/monsters/kind.hpp"
+#include "gameplay/monsters/combat_values.hpp"
+#include "gameplay/monsters/ai_spec.hpp"
+#include "gameplay/monsters/ability_spec.hpp"
+#include "gameplay/skills/firewall_spec.hpp"
+#include "gameplay/loot/tower_reward.hpp"
 #include "world/navigation.hpp"
 #include <array>
 #include <map>

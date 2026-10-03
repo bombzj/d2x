@@ -1,8 +1,10 @@
 #pragma once
-#include "gameplay/model/state.hpp"
+#include "gameplay/monsters/ai_spec.hpp"
+#include "core/math.hpp"
 #include "world/navigation.hpp"
 
 namespace d2x {
+struct Enemy;
 enum class FallenMovement { Approach, Wander, Idle };
 enum class FallenCombat { Attack, Shout, Idle };
 FallenMovement fallenMovement(Enemy &enemy, const MonsterAiProfile &rules, float distance);

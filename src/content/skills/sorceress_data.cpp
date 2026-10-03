@@ -1,3 +1,4 @@
+#include "gameplay/skills/spec.hpp"
 #include "resources/archive.hpp"
 #include "sorceress_data.hpp"
 #include "missile_effects.hpp"
@@ -142,7 +143,7 @@ void loadSorceressEffects(SkillCatalog &catalog, const DataTable &skills,
                 throw std::runtime_error("Missing original sorceress cast sound art: " + std::string(name));
         }
         auto loadOverlay = [&](std::string_view overlayName) {
-            SkillSpec::OverlayVisual visual;
+            SkillOverlayVisual visual;
             if (overlayName.empty()) return visual;
             size_t overlayRow = 0;
             for (; overlayRow < overlays.rows().size(); ++overlayRow)
@@ -395,7 +396,7 @@ void loadSorceressEffects(SkillCatalog &catalog, const DataTable &skills,
                     }
                 if (spec.activationSoundArt.empty() || !archives.contains(spec.activationSoundArt))
                     throw std::runtime_error("Missing Telekinesis activation sound");
-                catalog.skills.at(record->id).spell = std::move(spec);
+                catalog.skills.at(record->id).spell = std::make_shared<const SkillSpec>(std::move(spec));
                 continue;
             }
             if (effect == SkillBehavior::Enchant) {
@@ -410,7 +411,7 @@ void loadSorceressEffects(SkillCatalog &catalog, const DataTable &skills,
                 spec.linearDuration = {required(skills, row, "Param1"), required(skills, row, "Param2")};
                 spec.enchantAttackRating = required(skills, row, "ToHit");
                 spec.enchantAttackRatingPerLevel = required(skills, row, "LevToHit");
-                catalog.skills.at(record->id).spell = std::move(spec);
+                catalog.skills.at(record->id).spell = std::make_shared<const SkillSpec>(std::move(spec));
                 continue;
             }
             auto missileName = skills.value(row, "srvmissile");
@@ -668,7 +669,7 @@ void loadSorceressEffects(SkillCatalog &catalog, const DataTable &skills,
                     throw std::runtime_error("Missing original missile impact sound: " + std::string(hitSound));
             }
         }
-        catalog.skills.at(record->id).spell = std::move(spec);
+        catalog.skills.at(record->id).spell = std::make_shared<const SkillSpec>(std::move(spec));
     }
 }
 } // namespace d2x

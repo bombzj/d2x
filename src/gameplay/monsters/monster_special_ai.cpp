@@ -1,3 +1,4 @@
+#include "gameplay/monsters/implementation.hpp"
 #include "gameplay/simulation/simulation.hpp"
 #include "gameplay/monsters/bighead_ai.hpp"
 #include "gameplay/monsters/skeleton_mage_ai.hpp"

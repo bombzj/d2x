@@ -1,3 +1,4 @@
+#include "gameplay/monsters/implementation.hpp"
 #include "population.hpp"
 #include "core/random.hpp"
 // Population rules adapted with reference to D2MOO (MIT), commit 5596f5cb6c5251a0a07c6637d26458b06099d516.
@@ -5,6 +6,7 @@
 // Spatial placement and stream scheduling remain project adapters; see docs/MONSTER_POPULATION.md.
 #include <algorithm>
 #include <ostream>
+#include <optional>
 #include <set>
 #include <stdexcept>
 

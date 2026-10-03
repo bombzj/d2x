@@ -1,5 +1,5 @@
 #include "core/random.hpp"
-#include "gameplay/session/session.hpp"
+#include "gameplay/session/session_impl.hpp"
 #include <algorithm>
 
 namespace d2x {
@@ -10,7 +10,7 @@ uint32_t roll(uint64_t &state, uint32_t bound) {
 }
 } // namespace
 
-void GameSession::advanceNpcPaths(float dt) {
+void GameSessionImpl::advanceNpcPaths(float dt) {
     if (dt <= 0)
         return;
     auto &active = regions_[current_];

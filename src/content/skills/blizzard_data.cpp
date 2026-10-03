@@ -1,3 +1,4 @@
+#include "gameplay/skills/spec.hpp"
 #include "resources/archive.hpp"
 #include "blizzard_data.hpp"
 #include "missile_effects.hpp"

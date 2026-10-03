@@ -1,71 +1,12 @@
-#include "gameplay/session/session.hpp"
 #include "presentation/scene_view.hpp"
-#include "content/npc/npc_dialogue.hpp"
 #include <algorithm>
 #include <cctype>
 
 namespace d2x {
 namespace {
-struct MenuEntry { std::string label; int action; };
-std::vector<MenuEntry> entries(const GameSession &session, EntityId npc, std::string_view speaker,
-                               bool topics) {
-    std::vector<MenuEntry> result;
-    const auto *npcObject = session.object(npc);
-    const std::string_view npcClass = npcObject ? std::string_view(npcObject->npcClass) : std::string_view{};
-    const int act = npcObject ? npcObject->act : 0;
-    if (topics) {
-        if (introSpeech(session.content().npcDialogues, speaker,
-                        session.state().player.characterClass, act))
-            result.push_back({"Introduction", 11});
-        for (auto [id, speech] : session.npcQuestTopics(speaker)) {
-            std::string key = "qsts" + speech->quest;
-            std::transform(key.begin(), key.end(), key.begin(), [](unsigned char c) {
-                return char(std::tolower(c));
-            });
-            if (auto title = session.content().actOneQuestStrings.find(key);
-                title != session.content().actOneQuestStrings.end())
-                result.push_back({title->second, 100 + int(questIndex(id))});
-        }
-        if (gossipSpeech(session.content().npcDialogues, speaker, 0, act))
-            result.push_back({"Gossip", 5});
-        result.push_back({"Cancel", 4});
-        return result;
-    }
-    if (introSpeech(session.content().npcDialogues, speaker, session.state().player.characterClass, act) ||
-        !session.npcQuestTopics(speaker).empty() || gossipSpeech(session.content().npcDialogues, speaker, 0, act))
-        result.push_back({"Talk", 1});
-    if (session.vendorStock(npc)) {
-        result.push_back({npcCanRepair(npcClass) ? "Trade / Repair" : "Trade", 2});
-    }
-    if (npcCanGamble(npcClass))
-        result.push_back({"Gamble", 9});
-    if (session.canResurrectHireling(npc))
-        result.push_back({"Resurrect: " + std::to_string(session.hirelingResurrectionCost()), 12});
-    if (session.canHireFrom(npc))
-        result.push_back({"Hire", 10});
-    if (npcCanIdentify(npcClass))
-        result.push_back({"Identify Items", 3});
-    if (npcClass == "akara") {
-        const auto &quest = session.quest(ActOneQuest::DenOfEvil);
-        if (quest.stage == uint32_t(DenStage::Rewarded) && !(quest.flags & denRespecUsed))
-            result.push_back({"Reset Stat/Skill Points", 6});
-    }
-    if (npcClass == "charsi" && session.quest(ActOneQuest::ToolsOfTheTrade).stage ==
-                                    uint32_t(ToolsStage::RewardReady))
-        result.push_back({"Imbue", 7});
-    if (npcClass == "warriv1" && session.quest(ActOneQuest::SistersToTheSlaughter).stage >=
-                                   uint32_t(SlaughterStage::PassageReady))
-        result.push_back({"Go East", 8});
-    if (npcClass == "meshif1" && session.quest(QuestId::SevenTombs).stage >= 5)
-        result.push_back({"Sail East", 13});
-    if (npcClass == "meshif2") result.push_back({"Sail West", 13});
-    result.push_back({"Cancel", 4});
-    return result;
-}
-Rectangle menuBounds(const SceneView &view, const GameSession &session, EntityId npc,
-                     std::string_view speaker, const std::vector<MenuEntry> &options) {
-    const auto *object = session.object(npc);
-    Vec point = object ? view.screen(object->pos) : Vec{W / 2.f, H / 2.f};
+Rectangle menuBounds(const SceneView &view, const NpcConversationView &npc,
+                     std::string_view speaker, const std::vector<NpcMenuEntry> &options) {
+    Vec point = npc.valid ? view.screen(npc.position) : Vec{W / 2.f, H / 2.f};
     size_t longest = speaker.size();
     for (const auto &entry : options)
         longest = std::max(longest, std::string_view(entry.label).size());
@@ -79,13 +20,10 @@ Rectangle menuBounds(const SceneView &view, const GameSession &session, EntityId
 void SceneView::openNpcMenu(EntityId object, std::string speaker, bool firstIntroduction) {
     // A delayed interaction event must not reopen the menu over an active NPC view.
     if (view_.shopOpen || view_.hireListOpen || !view_.dialogue.empty()) return;
-    if (firstIntroduction) {
-        const auto *npc = session_.object(object);
-        if (auto intro = introSpeech(session_.content().npcDialogues, speaker,
-                                      session_.state().player.characterClass, npc ? npc->act : 0)) {
-            openNpcDialogue(object, std::move(speaker), intro->text);
-            return;
-        }
+    refreshNpcView(object);
+    if (firstIntroduction && npcView_.introduction) {
+        openNpcDialogue(object, std::move(speaker), *npcView_.introduction);
+        return;
     }
     view_.dialogueObject = object;
     view_.dialogueSpeaker = std::move(speaker);
@@ -104,36 +42,33 @@ bool SceneView::startNpcTalk() {
 }
 bool SceneView::startNpcIntroduction() {
     if (!view_.npcMenu || !view_.npcTopics) return false;
-    const auto *npc = session_.object(view_.dialogueObject);
-    const auto *speech = introSpeech(session_.content().npcDialogues, view_.dialogueSpeaker,
-                                     session_.state().player.characterClass, npc ? npc->act : 0);
-    if (!speech) return false;
-    openNpcDialogue(view_.dialogueObject, view_.dialogueSpeaker, speech->text);
+    if (!npcView_.introduction) return false;
+    openNpcDialogue(view_.dialogueObject, view_.dialogueSpeaker, *npcView_.introduction);
     return true;
 }
 bool SceneView::startNpcTopic(ActOneQuest quest) {
     if (!view_.npcMenu || !view_.npcTopics) return false;
-    for (auto [id, speech] : session_.npcQuestTopics(view_.dialogueSpeaker))
-        if (id == quest) {
+    for (const auto &topic : npcView_.topics)
+        if (topic.quest == quest) {
             // Reviewing a topic is presentation only. Quest transitions are
             // acknowledged by the automatic dialogue on NPC activation.
-            openNpcDialogue(view_.dialogueObject, view_.dialogueSpeaker, speech->text);
+            openNpcDialogue(view_.dialogueObject, view_.dialogueSpeaker, topic.text);
             return true;
         }
     return false;
 }
-int SceneView::clickNpcMenu(Vec mouse) {
-    auto options = entries(session_, view_.dialogueObject, view_.dialogueSpeaker, view_.npcTopics);
-    auto bounds = menuBounds(*this, session_, view_.dialogueObject, view_.dialogueSpeaker, options);
+NpcMenuSelection SceneView::clickNpcMenu(Vec mouse) {
+    const auto &options = view_.npcTopics ? npcView_.talkEntries : npcView_.services;
+    auto bounds = menuBounds(*this, npcView_, view_.dialogueSpeaker, options);
     for (int row = 0; row < int(options.size()); ++row) {
         Rectangle choice{bounds.x + 5, bounds.y + 24 + row * 20.f, bounds.width - 10, 20};
-        if (CheckCollisionPointRec(rv(mouse), choice)) return options[size_t(row)].action;
+        if (CheckCollisionPointRec(rv(mouse), choice)) return options[size_t(row)].selection;
     }
-    return 0;
+    return {};
 }
 void SceneView::drawNpcMenu(Vec mouse) const {
-    auto options = entries(session_, view_.dialogueObject, view_.dialogueSpeaker, view_.npcTopics);
-    auto bounds = menuBounds(*this, session_, view_.dialogueObject, view_.dialogueSpeaker, options);
+    const auto &options = view_.npcTopics ? npcView_.talkEntries : npcView_.services;
+    auto bounds = menuBounds(*this, npcView_, view_.dialogueSpeaker, options);
     DrawRectangleRec(bounds, {0, 0, 0, 222});
     DrawRectangleLinesEx(bounds, 1, gold);
     std::string speaker = view_.dialogueSpeaker;

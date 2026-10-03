@@ -1,6 +1,13 @@
+#include "gameplay/skills/aura_owner.hpp"
+#include "gameplay/skills/weapon_caster.hpp"
+#include "gameplay/skills/caster.hpp"
+#include "gameplay/skills/spec.hpp"
+#include "gameplay/skills/rank_bonus.hpp"
+#include "gameplay/skills/runtime.hpp"
+#include "gameplay/skills/summon_resolve.hpp"
 #include "gameplay/simulation/simulation.hpp"
-#include "session.hpp"
-#include "content/monsters/monster_enchantment.hpp"
+#include "session_impl.hpp"
+#include "content/skills/aura_data.hpp"
 #include <algorithm>
 
 namespace d2x {
@@ -9,43 +16,37 @@ int skillRank(const SkillRecord &skill, const PlayerState &player, const Charact
               const CombatModifiers &mods, const InventoryService &inventory,
               const PlayerContainers &containers, const EquipmentActor &actor) {
     const int id = skill.id;
-    int rank = 0;
+    CharacterSkillRankInput input;
     if (auto learned = player.skillRanks.find(id);
-        learned != player.skillRanks.end()) rank = learned->second;
+        learned != player.skillRanks.end()) input.learned = learned->second;
     for (auto slot : {weaponHandSlot(false, player.weaponSet),
                       weaponHandSlot(true, player.weaponSet)}) {
         const auto *item = inventory.item(inventory.equipped(containers, slot));
         if (item && item->quantity && item->grantedSkill == id &&
             (!inventory.catalog().find(item->definition)->maxDurability || item->durability) &&
             inventory.equipmentRequirements(item->handle(), actor) == InventoryError::None)
-            ++rank;
+            ++input.granted;
     }
     auto bonus = [](const auto &values, int key) {
         auto found = values.find(key);
         return found == values.end() ? 0 : found->second;
     };
-    const bool native = skill.classCode == definition.code;
-    if (native) rank += bonus(mods.singleSkills, id);
-    const int nonClass = bonus(mods.nonClassSkills, id);
-    rank += native ? std::min(3, nonClass) : nonClass;
-    if (rank > 0) {
-        rank += mods.allSkills;
-        if (native) {
-            rank += bonus(mods.classSkills, int(definition.sourceRow));
-            if (skill.page > 0)
-                rank += bonus(mods.tabSkills, int(definition.sourceRow) * 8 + skill.page - 1);
-        }
-    }
-    return std::max(0, rank);
+    input.native = skill.classCode == definition.code;
+    input.singleSkill = bonus(mods.singleSkills, id);
+    input.nonClassSkill = bonus(mods.nonClassSkills, id);
+    input.allSkills = mods.allSkills;
+    input.classSkills = bonus(mods.classSkills, int(definition.sourceRow));
+    if (skill.page > 0) input.tabSkills = bonus(mods.tabSkills, int(definition.sourceRow) * 8 + skill.page - 1);
+    return resolveCharacterSkillRank(input);
 }
 }
-int GameSession::effectiveSkillRank(int id) const {
+int GameSessionImpl::effectiveSkillRank(int id) const {
     const auto *skill = content_.skills.find(id);
     if (!skill) return 0;
     return skillRank(*skill, state().player, characterDefinition_, characterStats().combat,
                      inventory_, playerContainers_, equipmentActor());
 }
-bool GameSession::telekinesisTarget(EntityId target, int range, bool operate) {
+bool GameSessionImpl::telekinesisTarget(EntityId target, int range, bool operate) {
     if (!target || state().player.dead || cursorItem()) return false;
     auto within = [&](Vec position) {
         const int deltaX = int(position.x) - int(state().player.pos.x);
@@ -86,7 +87,7 @@ bool GameSession::telekinesisTarget(EntityId target, int range, bool operate) {
     if (operate) completeInteraction(*object);
     return true;
 }
-bool GameSession::applySkillCastTiming(SkillCastSpec &cast) const {
+bool GameSessionImpl::applySkillCastTiming(SkillCastSpec &cast) const {
     if (cast.effect == SkillBehavior::Inferno) {
         cast.castDuration = 15.f / 25.f;
         cast.castImpact = 10.f / 25.f;
@@ -113,38 +114,32 @@ bool GameSession::applySkillCastTiming(SkillCastSpec &cast) const {
     cast.castRate = float(speed) * 25.f / 256.f;
     return true;
 }
-int GameSession::fireMasteryPercent() const {
+int GameSessionImpl::fireMasteryPercent() const {
     for (const auto &[id, skill] : content_.skills.skills) {
         if (!skill.fireMasteryPerRank || skill.classCode != characterDefinition_.code) continue;
         const int rank = effectiveSkillRank(id);
-        if (rank <= 0) return 0;
-        const auto [base, perLevel] = *skill.fireMasteryPerRank;
-        return base + (rank - 1) * perLevel;
+        return skillRankBonus(*skill.fireMasteryPerRank, rank);
     }
     return 0;
 }
-int GameSession::lightningMasteryPercent() const {
+int GameSessionImpl::lightningMasteryPercent() const {
     for (const auto &[id, skill] : content_.skills.skills) {
         if (!skill.lightningMasteryPerRank || skill.classCode != characterDefinition_.code) continue;
         const int rank = effectiveSkillRank(id);
-        if (rank <= 0) return 0;
-        const auto [base, perLevel] = *skill.lightningMasteryPerRank;
-        return base + (rank - 1) * perLevel;
+        return skillRankBonus(*skill.lightningMasteryPerRank, rank);
     }
     return 0;
 }
-int GameSession::coldPiercePercent() const {
+int GameSessionImpl::coldPiercePercent() const {
     const int equipment = characterStats().combat.coldPierce;
     for (const auto &[id, skill] : content_.skills.skills) {
         if (!skill.coldPiercePerRank || skill.classCode != characterDefinition_.code) continue;
         const int rank = effectiveSkillRank(id);
-        if (rank <= 0) return equipment;
-        const auto [base, perLevel] = *skill.coldPiercePerRank;
-        return equipment + base + (rank - 1) * perLevel;
+        return equipment + skillRankBonus(*skill.coldPiercePerRank, rank);
     }
     return equipment;
 }
-void GameSession::applyWarmth(CharacterAttributes &stats, const PlayerState &player,
+void GameSessionImpl::applyWarmth(CharacterAttributes &stats, const PlayerState &player,
                               const CharacterDefinition &definition, const InventoryService &inventory,
                               const PlayerContainers &containers, const EquipmentActor &actor) const {
     bool active = false;
@@ -153,57 +148,26 @@ void GameSession::applyWarmth(CharacterAttributes &stats, const PlayerState &pla
         const int rank = skillRank(skill, player, definition, stats.combat, inventory, containers, actor);
         if (rank <= 0) continue;
         active = true;
-        const auto [base, perLevel] = *skill.manaRecoveryPerRank;
-        const int bonus = base + (rank - 1) * perLevel;
+        const int bonus = skillRankBonus(*skill.manaRecoveryPerRank, rank);
         stats.combat.manaRecovery += bonus;
     }
     if (active)
         stats.manaRegen = manaRecoveryRate(stats.maxMana, definition.manaRegen, stats.combat.manaRecovery);
 }
-void GameSession::syncPlayerAura() {
+void GameSessionImpl::syncPlayerAura() {
     auto &player = simulation_->state_.player;
     const int skill = player.selectedSkills[player.weaponSet * 2 + 1];
     const auto *record = content_.skills.find(skill);
     const int rank = record && record->auraImplemented && !player.dead && skillAvailable(skill)
         ? effectiveSkillRank(skill) : 0;
-    auto &activeAura = player.aura;
-    if (activeAura && (activeAura->definition.skill != skill || activeAura->definition.rank != rank)) {
-        std::vector<EffectHandle> remove;
-        for (const auto &effect : player.combatEffects.entries())
-            if (effect.spec.state.id == activeAura->definition.ownerState.id &&
-                effect.spec.source.entity == player.id && effect.spec.source.definition == activeAura->definition.skill)
-                remove.push_back(effect.handle);
-        for (auto handle : remove) player.combatEffects.remove(handle);
-        player.auraSuppressesManaRegen = false;
-        if (activeAura->definition.skill == 114 && !player.dead)
-            player.combatEffects.removeState(content_.states.at("shatter").definition.id);
-        activeAura.reset();
-        refreshCharacter();
-    }
+    const SkillAuraOwner owner{player.id, player.dead, player.aura};
+    if (simulation_->skills().clearAuraIfChanged(owner, skill, rank)) refreshCharacter();
     if (rank <= 0) return;
     auto definition = resolveAura(content_, skill, rank, player.skillRanks, fireMasteryPercent(),
         lightningMasteryPercent(), characterStats().combat.coldSkillDamagePercent, effectiveSkillRank(99));
-    if (!definition) return;
-    if (activeAura) {
-        activeAura->definition = *definition;
-        return;
-    }
-    const EffectFrame period = EffectFrame(std::max(5, definition->periodFrames));
-    activeAura = ActiveAura{*definition, state().frame + period};
-    if (record->auraImmediate) {
-        activeAura->nextFrame = state().frame;
-        simulation_->updateAuras(true);
-    } else {
-        CombatEffectSpec effect;
-        effect.state = definition->ownerState;
-        effect.source = {CombatEffectSource::Skill, player.id, skill, rank};
-        effect.stacking = EffectStacking::AuraLevel;
-        effect.duration = period + 1;
-        const auto applied = player.combatEffects.apply(std::move(effect), state().frame);
-        simulation_->combatEffectsChanged(applied.removed);
-    }
+    if (definition) simulation_->skills().prepareAura(owner, *definition, record->auraImmediate);
 }
-void GameSession::useSkill(const UseSkill &intent) {
+void GameSessionImpl::useSkill(const UseSkill &intent) {
     const auto *entry = content_.skills.find(intent.id);
     const auto &player = state().player;
     if (!entry || entry->passive || player.dead || !skillAvailable(intent.id)) return;
@@ -217,7 +181,7 @@ void GameSession::useSkill(const UseSkill &intent) {
     }
     if (entry->auraImplemented) {
         simulation_->state_.player.selectedSkills[player.weaponSet * 2 + 1] = intent.id;
-        simulation_->stopChannel(simulation_->state_.player);
+        simulation_->skills().stopChannel(simulation_->skillCaster(simulation_->state_.player.id));
         return;
     }
     if (entry->basicAction != BasicSkillAction::None) {
@@ -231,9 +195,7 @@ void GameSession::useSkill(const UseSkill &intent) {
     }
     if (entry->spell) {
         const int rank = effectiveSkillRank(intent.id);
-        auto resolved = resolveSkill(*entry->spell, rank,
-                                     player.skillRanks, fireMasteryPercent(),
-                                     lightningMasteryPercent(), characterStats().combat.coldSkillDamagePercent);
+        auto resolved = skillSources_.resolve(*entry->spell, player.id, rank);
         if (entry->spell->summon) {
             const auto &definition = *entry->spell->summon;
             resolved.summon = resolveSummon(definition, rank, effectiveSkillRank(definition.masterySkill),
@@ -245,7 +207,7 @@ void GameSession::useSkill(const UseSkill &intent) {
                 resolved.staticPercent = float(state().player.combatEffects.modifiers(state().frame).velocityPercent);
             }
             cancelExit(); cancelPickup(); cancelInteraction();
-            simulation_->beginWeaponSkill(resolved, intent.target, intent.enemy);
+            simulation_->skills().beginWeaponSkill(simulation_->skillWeaponCaster(simulation_->state_.player.id), resolved, intent.target, intent.enemy);
             return;
         }
         if (!applySkillCastTiming(resolved)) {
@@ -256,13 +218,13 @@ void GameSession::useSkill(const UseSkill &intent) {
         const bool teleportAllowed = content_.teleportByLevel.contains(levelId) &&
             content_.teleportByLevel.at(levelId) != 0;
         cancelExit(); cancelPickup(); cancelInteraction();
-        simulation_->beginSkillCast(simulation_->state_.player, resolved, intent.target, teleportAllowed,
+        simulation_->skills().beginSkillCast(simulation_->skillCaster(simulation_->state_.player.id), resolved, intent.target, teleportAllowed,
             content_.staticFieldMinimum.at(size_t(state().population.difficulty)), intent.enemy);
         return;
     }
     simulation_->state_.message = "This skill effect is not implemented";
 }
-bool GameSession::weaponSkillReady(const SkillCastSpec &skill) const {
+bool GameSessionImpl::weaponSkillReady(const SkillCastSpec &skill) const {
     if (!skill.weapon) return false;
     const auto &action = *skill.weapon;
     const auto &player = state().player;
@@ -274,7 +236,7 @@ bool GameSession::weaponSkillReady(const SkillCastSpec &skill) const {
         (action.smite || !(action.thrown || weapon->ranged) ||
          (simulation_->canSpendProjectile_ && simulation_->canSpendProjectile_(weapon->item, action.thrown)));
 }
-bool GameSession::skillAvailable(int id) const {
+bool GameSessionImpl::skillAvailable(int id) const {
     const auto *entry = content_.skills.find(id);
     if (!entry) return false;
     const auto *tree = content_.skills.tree(characterDefinition_.code);
@@ -285,24 +247,5 @@ bool GameSession::skillAvailable(int id) const {
     if (entry->classCode != characterDefinition_.code &&
         !characterStats().combat.nonClassSkills.contains(id)) return false;
     return effectiveSkillRank(id) > 0;
-}
-int GameSession::nextSkillRequiredLevel(int id) const {
-    const auto *entry = content_.skills.find(id);
-    if (!entry) return 0;
-    const auto rank = state().player.skillRanks.find(id);
-    return entry->requiredLevel + (rank == state().player.skillRanks.end() ? 0 : rank->second);
-}
-bool GameSession::canAllocateSkill(int id) const {
-    const auto &player = state().player;
-    const auto *entry = content_.skills.find(id);
-    if (!entry || entry->classCode != characterDefinition_.code || player.dead ||
-        player.unspentSkills <= 0 || player.level < nextSkillRequiredLevel(id)) return false;
-    const auto current = player.skillRanks.find(id);
-    if (current != player.skillRanks.end() && current->second >= entry->maximumRank) return false;
-    for (int prerequisite : entry->prerequisites) {
-        const auto learned = player.skillRanks.find(prerequisite);
-        if (learned == player.skillRanks.end() || learned->second <= 0) return false;
-    }
-    return true;
 }
 } // namespace d2x

@@ -1,4 +1,6 @@
 #include "gameplay/session/session.hpp"
+#include "world/region.hpp"
+#include "content/world/world_catalog.hpp"
 #include "presentation/scene_assets.hpp"
 #include <set>
 #include <stdexcept>

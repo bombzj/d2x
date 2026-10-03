@@ -1,19 +1,19 @@
 #include "gameplay/simulation/simulation.hpp"
-#include "gameplay/session/session.hpp"
+#include "gameplay/session/session_impl.hpp"
 #include <algorithm>
 
 namespace d2x {
-unsigned GameSession::bankGoldLimit() const {
+unsigned GameSessionImpl::bankGoldLimit() const {
     // D2Common UNITS_GetStashGoldLimit; this engine rule has no MPQ column.
     const unsigned level = unsigned(state().player.level);
     return 50000u * (level <= 30 ? level / 10u + 1u : level / 2u + 1u);
 }
-unsigned GameSession::groundGoldLimit() const {
+unsigned GameSessionImpl::groundGoldLimit() const {
     for (const auto &[code, item] : inventory_.catalog().entries())
         if (item.equipment.isType("gold")) return item.maxStack;
     return 0;
 }
-void GameSession::transactGold(const GoldTransaction &command) {
+void GameSessionImpl::transactGold(const GoldTransaction &command) {
     auto &player = simulation_->state_.player;
     auto reject = [&](const char *message) { simulation_->emit(InteractionFailed{{}, message}); };
     if (player.dead || !command.amount) {
@@ -66,7 +66,7 @@ void GameSession::transactGold(const GoldTransaction &command) {
         }
     reject("The mounted MPQ has no gold item.");
 }
-void GameSession::dropDebugCube() {
+void GameSessionImpl::dropDebugCube() {
     if (state().player.dead || content_.cubeCode.empty()) {
         simulation_->emit(InteractionFailed{{}, "The cube is unavailable here."});
         return;

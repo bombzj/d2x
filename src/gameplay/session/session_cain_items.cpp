@@ -1,5 +1,5 @@
 #include "gameplay/simulation/simulation.hpp"
-#include "gameplay/session/session.hpp"
+#include "gameplay/session/session_impl.hpp"
 #include "content/items/item_magic_loot.hpp"
 
 namespace d2x {
@@ -10,7 +10,7 @@ QuestRecord &cain(WorldState &world) {
 }
 } // namespace
 
-void GameSession::updateCainQuestItems() {
+void GameSessionImpl::updateCainQuestItems() {
     auto &staff = simulation_->state_.player.actOneQuests.at(size_t(state().population.difficulty)).at(questIndex(QuestId::HoradricStaff));
     if (staff.stage < 6) {
         uint32_t next = staff.stage;
@@ -36,7 +36,7 @@ void GameSession::updateCainQuestItems() {
     }
 }
 
-void GameSession::translateCainScroll(EntityId npc) {
+void GameSessionImpl::translateCainScroll(EntityId npc) {
     auto &record = cain(simulation_->state_);
     if (record.stage != uint32_t(CainStage::BarkAcquired)) return;
     ItemHandle bark;
@@ -70,7 +70,7 @@ void GameSession::translateCainScroll(EntityId npc) {
         simulation_->emit(QuestAdvanced{ActOneQuest::SearchForCain, record.stage});
 }
 
-bool GameSession::claimCainReward() {
+bool GameSessionImpl::claimCainReward() {
     auto &record = cain(simulation_->state_);
     if (record.stage != uint32_t(CainStage::Rescued)) return false;
     const auto *ring = content_.items.find("rin");

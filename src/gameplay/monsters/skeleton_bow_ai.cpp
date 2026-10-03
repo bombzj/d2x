@@ -1,3 +1,4 @@
+#include "gameplay/model/state.hpp"
 #include "skeleton_bow_ai.hpp"
 #include "monster_wander.hpp"
 

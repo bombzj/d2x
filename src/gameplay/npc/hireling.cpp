@@ -1,11 +1,11 @@
 #include "gameplay/simulation/simulation.hpp"
 #include "core/random.hpp"
-#include "gameplay/session/session.hpp"
+#include "gameplay/session/session_impl.hpp"
 #include <algorithm>
 #include <cmath>
 
 namespace d2x {
-bool GameSession::assignKashyaHireling() {
+bool GameSessionImpl::assignKashyaHireling() {
     if (state().player.hireling.sourceRow >= 0) return true;
     for (const auto &npc : region().objects) {
         if (npc.npcClass != "kashya" || !ensureHirelingOffers(npc.id)) continue;
@@ -16,7 +16,7 @@ bool GameSession::assignKashyaHireling() {
     }
     return false;
 }
-void GameSession::advanceHireling(float dt) {
+void GameSessionImpl::advanceHireling(float dt) {
     auto &merc = simulation_->state_.player.hireling;
     auto &player = simulation_->state_.player;
     if (merc.sourceRow < 0 || dt <= 0) return;

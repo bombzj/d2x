@@ -1,5 +1,8 @@
 #pragma once
-#include "gameplay/effects/state.hpp"
+#include "gameplay/effects/definition.hpp"
+#include "gameplay/character/attributes.hpp"
+#include <utility>
+#include <vector>
 
 namespace d2x {
 struct AuraDefinition {

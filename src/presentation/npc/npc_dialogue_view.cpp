@@ -1,4 +1,3 @@
-#include "gameplay/session/session.hpp"
 #include "presentation/scene_view.hpp"
 #include <algorithm>
 
@@ -50,6 +49,7 @@ void SceneView::cancelNpcDialogue() {
 
 void SceneView::displayNpcDialogue(EntityId object, std::string speaker, std::string text) {
     view_.dialogueObject = object;
+    refreshNpcView(object);
     view_.shopOpen = false;
     view_.shopSalePending.reset();
     view_.npcMenu = false;
@@ -128,14 +128,11 @@ bool SceneView::closeNpcDialogue() {
 bool SceneView::showNextNpcGossip() {
     if (!view_.npcMenu && view_.dialogue.empty())
         return false;
-    const auto *npc = session_.object(view_.dialogueObject);
-    const auto *speech = gossipSpeech(session_.content().npcDialogues,
-                                      view_.dialogueSpeaker, view_.dialogueGossipTurn, npc ? npc->act : 0);
-    if (!speech)
-        return false;
+    if (npcView_.gossip.empty()) return false;
+    const auto text = npcView_.gossip[view_.dialogueGossipTurn % npcView_.gossip.size()];
     ++view_.dialogueGossipTurn;
     view_.npcGossipTurns[view_.dialogueSpeaker] = view_.dialogueGossipTurn;
-    openNpcDialogue(view_.dialogueObject, view_.dialogueSpeaker, speech->text);
+    openNpcDialogue(view_.dialogueObject, view_.dialogueSpeaker, text);
     return true;
 }
 

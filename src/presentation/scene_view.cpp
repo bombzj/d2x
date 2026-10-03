@@ -1,4 +1,15 @@
+#include "gameplay/skills/spec.hpp"
+#include "client/actor_client.hpp"
+#include "gameplay/quest/den_of_evil.hpp"
+#include "gameplay/quest/search_for_cain.hpp"
+#include "gameplay/quest/tools_of_trade.hpp"
 #include "gameplay/session/session.hpp"
+#include "content/classic_data.hpp"
+#include "gameplay/model/state.hpp"
+#include "world/region.hpp"
+#include "gameplay/items/inventory.hpp"
+#include "content/monsters/monster_catalog.hpp"
+#include "content/world/world_catalog.hpp"
 #include "scene_view.hpp"
 #include <algorithm>
 #include <type_traits>
@@ -23,18 +34,21 @@ void main() {
 }
 )";
 } // namespace
-SceneView::SceneView(Archives &archives, const GameSession &session)
-    : session_(session), assets_(archives, session), paletteBlend_(archives), painter_(assets_.font),
+SceneView::SceneView(Archives &archives, const GameSession &session, const IActorClient &actorClient, IInventoryClient &inventoryClient, ICharacterClient &characterClient, IQuestClient &questClient, INpcClient &npcClient)
+    : session_(session), actorClient_(actorClient), inventoryClient_(inventoryClient), characterClient_(characterClient), questClient_(questClient), npcClient_(npcClient), assets_(archives, session), paletteBlend_(archives), painter_(assets_.font),
       speechPainter_(assets_.speechFont) {
     projectileVisualRandom_ = session_.visualSeed();
     for (int act = 1; act < int(actPaletteBlends_.size()); ++act)
         actPaletteBlends_[size_t(act)] = std::make_unique<PaletteBlendView>(archives, act);
-    view_.inventory.syncCursor(session_);
+    refreshInventory();
+    refreshCharacterView();
+    refreshInteractions();
+    view_.inventory.syncCursor(inventoryView_);
     highlightShader_ = LoadShaderFromMemory(nullptr, highlightFragment);
     highlightTransform_ = GetShaderLocation(highlightShader_, "highlightTransform");
-    view_.camera = project(session_.state().player.pos);
-    view_.skillClass = session_.characterCode();
-    const auto &player = session_.state().player;
+    view_.camera = project(actorClient_.controlledActor().position);
+    view_.skillClass = characterView_.classCode;
+    const auto &player = characterView_;
     const auto left = player.selectedSkills[player.weaponSet * 2];
     const auto right = player.selectedSkills[player.weaponSet * 2 + 1];
     view_.leftSkill = left < 0 ? std::nullopt : std::optional<int>{left};
@@ -43,7 +57,7 @@ SceneView::SceneView(Archives &archives, const GameSession &session)
     revealAutomap();
     lighting_.update(session_.map().grid, session_.worldContent().level(int(session_.region().definition.id)),
                      session_.region().definition.id,
-                     session_.state().player.pos, session_.characterStats().lightRadius);
+                     actorClient_.controlledActor().position, actorClient_.controlledActor().lightRadius);
 }
 SceneView::~SceneView() {
     if (highlightShader_.id)
@@ -82,7 +96,8 @@ Vec SceneView::world(Vec p) const {
 void SceneView::drawLighting() const {
     const auto &region = session_.region();
     const auto &level = session_.worldContent().level(int(region.definition.id));
-    const auto player = session_.state().player.pos;
+    const auto actor = actorClient_.controlledActor();
+    const auto player = actor.position;
     const auto &sim = session_.state();
     std::vector<SceneLight> lights;
     auto appendMissile = [&](int id, Vec position, float age) {
@@ -186,16 +201,7 @@ void SceneView::drawLighting() const {
         appendObject(60, elapsed < opening.frames / opening.fps ? 1 : 2, staticUnitPosition(*position));
     }
     lighting_.draw(level.palette == 0 ? paletteBlend_ : *actPaletteBlends_.at(size_t(level.palette)), level, player, screen(player), view_.zoom,
-                   session_.characterStats().lightRadius, lights);
-}
-std::string playerAnimationMode(const PlayerState &p) {
-    return p.dead                              ? "dt"
-            : p.blockAnimation ? "bl"
-           : p.hitTime > 0  ? "gh"
-           : p.castTime > 0                    ? "sc"
-           : p.weaponAttack                 ? p.weaponAttack->timing.mode.c_str()
-           : p.moving                          ? (p.runningNow ? "rn" : "wl")
-                                               : "nu";
+                   actor.lightRadius, lights);
 }
 bool SceneView::visible(const WorldObject &object) const {
     if (object.questHidden) return false;
@@ -224,7 +230,10 @@ void SceneView::sessionRestored() {
     view_.inventory = {};
     view_.orificeObject = {};
     view_.orificeItem.reset();
-    view_.inventory.syncCursor(session_);
+    refreshInventory();
+    refreshCharacterView();
+    refreshInteractions();
+    view_.inventory.syncCursor(inventoryView_);
     view_.characterOpen = false;
     view_.pointButtonPressed.reset();
     view_.gameMenuOpen = false;
@@ -240,16 +249,16 @@ void SceneView::sessionRestored() {
     view_.questPressed = -1;
     resetQuestAnimations();
     view_.lastDenRemaining.reset();
-    view_.skillClass = session_.characterCode();
+    view_.skillClass = characterView_.classCode;
     view_.skillPage = 3;
-    const auto &player = session_.state().player;
+    const auto &player = characterView_;
     const auto left = player.selectedSkills[player.weaponSet * 2];
     const auto right = player.selectedSkills[player.weaponSet * 2 + 1];
     view_.leftSkill = left < 0 ? std::nullopt : std::optional<int>{left};
     view_.rightSkill = right < 0 ? std::nullopt : std::optional<int>{right};
     view_.weaponLeftSkills = {};
     view_.weaponRightSkills = {};
-    view_.displayedWeaponSet = session_.state().player.weaponSet;
+    view_.displayedWeaponSet = characterView_.weaponSet;
     view_.travelMenu = view_.help = false;
     view_.skillPicker.reset();
     cancelNpcDialogue();
@@ -257,16 +266,16 @@ void SceneView::sessionRestored() {
     view_.shopOpen = false;
     view_.shopSalePending.reset();
     view_.npcMenu = false;
-    view_.camera = project(session_.state().player.pos);
+    view_.camera = project(actorClient_.controlledActor().position);
     view_.clickAge = 10;
     view_.animationTime = view_.heroTime = view_.stepClock = 0;
     view_.cainPortalAnimationStarted = -1;
-    view_.heroMode = playerAnimationMode(session_.state().player);
+    view_.heroMode = actorClient_.controlledActor().animationMode;
     landingAge_.clear();
     revealAutomap();
     lighting_.update(session_.map().grid, session_.worldContent().level(int(session_.region().definition.id)),
                      session_.region().definition.id,
-                     session_.state().player.pos, session_.characterStats().lightRadius);
+                     actorClient_.controlledActor().position, actorClient_.controlledActor().lightRadius);
 }
 void SceneView::advanceUi(float dt, bool worldPaused) {
     assets_.audio.pauseEmitters(worldPaused || view_.blocksWorld());
@@ -275,7 +284,30 @@ void SceneView::advanceUi(float dt, bool worldPaused) {
     advanceNpcDialogue(dt);
     advanceQuestAnimations(dt);
 }
+void SceneView::refreshNpcView(EntityId npc) {
+    const auto &snapshot = npcClient_.read(npc);
+    if (snapshot.revision != npcView_.revision || snapshot.npc != npcView_.npc) npcView_ = snapshot;
+}
+void SceneView::refreshInteractions() {
+    const auto &quests = questClient_.read();
+    if (quests.revision != questView_.revision) questView_ = quests;
+    const auto &scene = npcClient_.scene();
+    if (scene.revision != npcScene_.revision) npcScene_ = scene;
+    refreshNpcView(view_.dialogueObject);
+}
+void SceneView::refreshCharacterView() {
+    const auto &snapshot = characterClient_.read();
+    if (snapshot.revision != characterView_.revision) characterView_ = snapshot;
+}
+void SceneView::refreshInventory() {
+    const auto &snapshot = inventoryClient_.read();
+    if (snapshot.revision != inventoryView_.revision) inventoryView_ = snapshot;
+}
 void SceneView::advance(float dt) {
+    refreshInventory();
+    refreshCharacterView();
+    refreshInteractions();
+    const auto actor = actorClient_.controlledActor();
     assets_.syncRegions(session_);
     const auto sunStage = session_.quest(QuestId::TaintedSun).stage;
     lighting_.setEclipse(sunStage > 0 && sunStage < 3);
@@ -288,16 +320,16 @@ void SceneView::advance(float dt) {
     if (opacity.size() != popups.size())
         opacity.assign(popups.size(), 1.f);
     for (size_t i = 0; i < popups.size(); ++i) {
-        const float target = popups[i].contains(session_.state().player.pos) ? 0.f : 1.f;
+        const float target = popups[i].contains(actor.position) ? 0.f : 1.f;
         opacity[i] += std::clamp(target - opacity[i], -4.f * dt, 4.f * dt);
     }
     lighting_.update(session_.map().grid, session_.worldContent().level(int(session_.region().definition.id)),
                      session_.region().definition.id,
-                     session_.state().player.pos, session_.characterStats().lightRadius);
-    const auto &player = session_.state().player;
+                     actorClient_.controlledActor().position, actorClient_.controlledActor().lightRadius);
+    const auto &player = characterView_;
     view_.displayedWeaponSet = player.weaponSet;
-    if (view_.skillClass != session_.characterCode()) {
-        view_.skillClass = session_.characterCode();
+    if (view_.skillClass != characterView_.classCode) {
+        view_.skillClass = characterView_.classCode;
         view_.npcGossipTurns.clear();
         view_.skillPage = 3;
         view_.leftSkill.reset();
@@ -312,8 +344,8 @@ void SceneView::advance(float dt) {
     view_.rightSkill = right < 0 ? std::nullopt : std::optional<int>{right};
     auto learned = [&](std::optional<int> id) {
         if (!id) return true;
-        auto entry = session_.content().skills.find(*id);
-        return entry && !entry->passive && session_.skillAvailable(*id);
+        const auto *entry = characterView_.skill(*id);
+        return entry && !entry->passive && entry->available;
     };
     if (!learned(view_.leftSkill)) view_.leftSkill.reset();
     if (!learned(view_.rightSkill)) view_.rightSkill.reset();
@@ -353,8 +385,8 @@ void SceneView::advance(float dt) {
                 }
             }
     }
-    const auto remaining = session_.denMonstersRemaining();
-    if (session_.quest(ActOneQuest::DenOfEvil).stage == uint32_t(DenStage::Entered) &&
+    const auto remaining = questView_.denRemaining;
+    if (questView_.showDenRemaining &&
         remaining && *remaining > 0 && *remaining <= 5 && remaining != view_.lastDenRemaining) {
         view_.questNotice = !view_.questOpen;
         view_.questUpdated = 0;
@@ -426,7 +458,7 @@ void SceneView::advance(float dt) {
                     if (value.coordinateOffset)
                         view_.camera = view_.camera + project(*value.coordinateOffset);
                     else
-                        view_.camera = project(session_.state().player.pos);
+                        view_.camera = project(actorClient_.controlledActor().position);
                     cancelNpcDialogue();
                     view_.shopOpen = false;
                     view_.npcMenu = false;
@@ -525,7 +557,7 @@ void SceneView::advance(float dt) {
                 } else if constexpr (std::is_same_v<T, WaypointActivated>) {
                     notice("Waypoint activated.", false);
                 } else if constexpr (std::is_same_v<T, QuestAdvanced>) {
-                    queueQuestAnimation(value.quest, value.stage);
+                    queueQuestAnimation(value.quest, value.completed);
                     view_.questUpdated = int(questIndex(value.quest));
                     view_.questNotice = !view_.questOpen;
                     if (value.quest == ActOneQuest::ToolsOfTheTrade &&
@@ -640,25 +672,19 @@ void SceneView::advance(float dt) {
         view_.orificeObject = {};
         view_.orificeItem.reset();
     }
-    view_.inventory.syncCursor(session_, view_.orificeItem ? view_.orificeItem->id : EntityId{});
-    view_.heroTime += dt * (player.chill > 0 ? .5f : 1.f) *
-                      (player.moving && player.webSlowRemaining > 0
-                           ? std::max(0.f, 1.f + player.webSlowPercent / 100.f) : 1.f);
-    auto mode = playerAnimationMode(player);
+    view_.inventory.syncCursor(inventoryView_, view_.orificeItem ? view_.orificeItem->id : EntityId{});
+    view_.heroTime += dt * actor.animationSpeed;
+    const auto &mode = actor.animationMode;
     if (mode != view_.heroMode) {
         view_.heroMode = mode;
         view_.heroTime = 0;
     }
-    view_.camera = view_.camera + (project(player.pos) - view_.camera) * std::min(1.f, dt * 10);
+    view_.camera = view_.camera + (project(actor.position) - view_.camera) * std::min(1.f, dt * 10);
     view_.clickAge += dt;
     view_.stepClock -= dt;
-    if (player.moving && view_.stepClock <= 0) {
+    if (actor.moving && view_.stepClock <= 0) {
         assets_.audio.play("step");
-        float speed = player.runningNow ? session_.characterStats().runSpeed
-                                        : session_.characterStats().walkSpeed;
-        if (player.chill > 0) speed *= .5f;
-        if (player.webSlowRemaining > 0) speed *= std::max(0.f, 1.f + player.webSlowPercent / 100.f);
-        view_.stepClock = 4.f / std::max(.1f, speed);
+        view_.stepClock = 4.f / std::max(.1f, actor.movementSpeed);
     }
     syncMissileAudio();
 }

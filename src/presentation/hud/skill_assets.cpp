@@ -1,3 +1,4 @@
+#include "gameplay/skills/spec.hpp"
 #include "presentation/scene_assets.hpp"
 #include "content/classic_data.hpp"
 

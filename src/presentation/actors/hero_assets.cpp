@@ -1,4 +1,7 @@
 #include "gameplay/session/session.hpp"
+#include "content/classic_data.hpp"
+#include "gameplay/model/state.hpp"
+#include "gameplay/items/inventory.hpp"
 #include "presentation/scene_assets.hpp"
 #include "equipment_appearance.hpp"
 #include <algorithm>

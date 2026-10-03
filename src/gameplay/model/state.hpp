@@ -1,14 +1,21 @@
 #pragma once
 #include "core/id.hpp"
-#include "gameplay/combat/unit.hpp"
+#include "gameplay/combat/identity.hpp"
+#include "gameplay/combat/relations.hpp"
+#include "gameplay/combat/stats.hpp"
 #include "gameplay/items/equipment_stats.hpp"
 #include "gameplay/effects/state.hpp"
 #include "gameplay/model/definitions.hpp"
 #include "gameplay/character/attributes.hpp"
+#include "gameplay/character/skill_choices.hpp"
 #include "gameplay/monsters/monster_spawn.hpp"
+#include "gameplay/monsters/population_settings.hpp"
+#include "gameplay/monsters/unique_modifiers.hpp"
 #include "gameplay/quest/state.hpp"
 #include "gameplay/npc/hireling.hpp"
-#include "gameplay/skills/spec.hpp"
+#include "gameplay/skills/cast_spec.hpp"
+#include "gameplay/skills/cast_state.hpp"
+#include "gameplay/skills/missile.hpp"
 #include "gameplay/combat/weapon_attack.hpp"
 #include "gameplay/combat/weapon_projectile.hpp"
 #include <deque>
@@ -21,26 +28,7 @@ namespace d2x {
 struct Restoration {
     float remaining, rate;
 };
-struct SkillHotkey {
-    int skill = -2; // -2 unbound, -1 ordinary attack, otherwise MPQ skill ID.
-    bool right = true;
-};
 struct PlayerState {
-    struct PendingCast {
-        SkillCastSpec skill;
-        Vec target;
-        int staticFieldMinimum = 0;
-        float remaining = 0;
-        EntityId enemy;
-    };
-    struct ChannelCast {
-        SkillCastSpec skill;
-        Vec target;
-        float remaining = 0;
-        unsigned pulses = 0;
-        float age = 0;
-        EntityId enemy;
-    };
     EntityId id;
     CombatIdentity allegiance{1, {}, 0, CombatRole::Player};
     CharacterAttributes attributes;
@@ -56,14 +44,7 @@ struct PlayerState {
     std::optional<SkillCastSpec> approachSkill;
     std::optional<WeaponAttackState> blockAnimation;
     unsigned vengeanceHit = 0;
-    struct ChargeState {
-        SkillCastSpec skill;
-        Vec target;
-        EntityId enemy;
-        float speed = 0;
-        unsigned ticks = 0;
-    };
-    std::optional<ChargeState> charge;
+    std::optional<ChargeSkillState> charge;
     EffectFrame skillDelayUntil = 0;
     float chill = 0;
     float poisonRemaining = 0, poisonPerSecond = 0;
@@ -81,8 +62,8 @@ struct PlayerState {
     float lastCastDuration = 0;
     float lastCastRate = 0;
     bool lightningSequence = false;
-    std::optional<PendingCast> pendingCast;
-    std::optional<ChannelCast> channel;
+    std::optional<PendingSkillCast> pendingCast;
+    std::optional<ChannelSkillCast> channel;
     int channelSkill() const { return channel ? channel->skill.sourceId : -1; }
     float channelAge() const { return channel ? channel->age : 0; }
     bool running = false, runningNow = false, moving = false, dead = false;
@@ -101,12 +82,7 @@ struct PlayerState {
     std::array<int, 4> selectedSkills{-1, -1, -1, -1};
     std::optional<ActiveAura> aura;
     bool auraSuppressesManaRegen = false;
-    struct ThunderStormState {
-        EffectHandle effect;
-        EffectFrame nextFrame = 0;
-        EntityId lastTarget;
-    };
-    std::optional<ThunderStormState> thunderStorm;
+    std::optional<ThunderStormRuntime> thunderStorm;
     ActOneQuestBook actOneQuests{};
     HirelingState hireling;
 };
@@ -121,6 +97,10 @@ struct Enemy {
     EntityId id;
     MonsterKind kind = MonsterKind::Fallen;
     MonsterIdentity identity;
+    std::optional<MonsterEnchantment> enchantment;
+    const MonsterEnchantment *enchantmentData() const {
+        return enchantment ? &*enchantment : nullptr;
+    }
     Vec pos;
     float hp = 100, maxHp = 100, chill = 0, attack = 0;
     float attackDuration = 0, attackImpact = -1;
@@ -198,88 +178,6 @@ struct Enemy {
     EffectFrame pendingUniqueLightningFrame = 0;
     std::optional<Vec> teleportTarget = std::nullopt;
     CombatEffectSet combatEffects;
-};
-struct FrozenOrbMissileState {
-    enum class Phase { Orb, Bolt, Nova };
-    Phase phase = Phase::Orb;
-    FrozenOrbCastSpec spec;
-    int elapsedFrames = 0, emissionDirection = 0;
-    Vec novaTarget;
-    int minimumDamage = 0, maximumDamage = 0, coldFrames = 0;
-};
-struct Missile {
-    EntityId id, owner;
-    Vec pos, velocity;
-    float remaining = 2;
-    SkillBehavior behavior = SkillBehavior::None;
-    bool physical = false;
-    int missileId = -1;
-    float damage = 0;
-    float radius = 0, chill = 0;
-    bool monsterAttack = false; // Payload format, never a faction/target filter.
-    int monsterAttackMode = 0;
-    float slowDuration = 0;
-    AttackElements attackElements{};
-    int attackerLevel = 0, attackRating = 0;
-    float nextHitDelay = 0;
-    float age = 0;
-    float acceleration = 0, maxVelocity = 0;
-    int hitOverlayId = -1;
-    float hitOverlayDuration = 0;
-    EntityId lastHit{};
-    std::deque<Vec> path{};
-    bool groundTargeted = false;
-    std::optional<MissileImpactSpec> impact = {};
-    MissileImpactDamage impactDamage = {};
-    std::optional<PoisonCloudSpec> poisonCloud = {};
-    uint64_t combatRandom = 0;
-    int physicalDamagePercent = 0;
-    int baseAttackRating = 0, attackRatingPercent = 0;
-    AttackTargetModifiers targetModifiers = {};
-    bool weaponAttack = false;
-    int skillId = -1, skillRank = 0;
-    std::optional<MonsterDamageType> fixedElement = std::nullopt;
-    bool killOnHit = true;
-    std::optional<FrozenOrbMissileState> frozenOrb = std::nullopt;
-    struct BlizzardState {
-        BlizzardSpec spec;
-        bool center = true;
-        int elapsedFrames = 0, lifetimeFrames = 0, spawnSeedX = 0;
-        int minimumDamage = 0, maximumDamage = 0, coldFrames = 0;
-    };
-    std::optional<BlizzardState> blizzard = std::nullopt;
-    struct FreezingAreaState {
-        int elapsedFrames = 0, lifetimeFrames = 0;
-        int minimumDamage = 0, maximumDamage = 0;
-    };
-    std::optional<FreezingAreaState> freezingArea = std::nullopt;
-    struct ColdRetaliationState {
-        int elapsedFrames = 0, lifetimeFrames = 0;
-        int minimumDamage = 0, maximumDamage = 0, coldFrames = 0;
-    };
-    std::optional<ColdRetaliationState> coldRetaliation = std::nullopt;
-    struct FirewallState {
-        MonsterFirewall definition;
-        bool maker = false;
-        int elapsedFrames = 0;
-    };
-    std::optional<FirewallState> firewall = std::nullopt;
-    struct ArcState {
-        ArcSpec spec;
-        int remainingHits = 1, minimumDamage = 0, maximumDamage = 0;
-    };
-    std::optional<ArcState> arc = std::nullopt;
-    std::optional<MeteorSpec> meteor = std::nullopt;
-    float healingMinimum = 0, healingMaximum = 0;
-    std::optional<HeavenSpec> heaven = std::nullopt;
-    EntityId heavenTarget{};
-};
-struct Effect {
-    Vec pos;
-    float age = 0, duration = .8f;
-    int missileId = -1;
-    int overlayId = -1;
-    EntityId attached{};
 };
 // Area combat state survives travel. Ground item ownership lives in session InventoryState.
 struct AreaState {

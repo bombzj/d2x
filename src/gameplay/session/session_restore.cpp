@@ -1,6 +1,8 @@
+#include "gameplay/character/runtime_record.hpp"
 #include "gameplay/simulation/simulation.hpp"
-#include "gameplay/session/session.hpp"
+#include "gameplay/session/session_impl.hpp"
 #include "content/items/equipment_modifiers.hpp"
+#include "content/skills/passive_data.hpp"
 #include "content/npc/npc_dialogue.hpp"
 #include <algorithm>
 #include <cmath>
@@ -16,7 +18,7 @@ void require(bool condition, const char *reason) {
 }
 } // namespace
 
-int GameSession::validateCharacterRestore(const CharacterSaveData &data) const {
+int GameSessionImpl::validateCharacterRestore(const CharacterSaveData &data) const {
     require(data.mapSeed == state().mapSeed,
             "map seed differs; reopen with --load or --map-seed");
     require(data.difficulty == state().population.difficulty &&
@@ -81,7 +83,7 @@ int GameSession::validateCharacterRestore(const CharacterSaveData &data) const {
     equipmentInventory.itemProperties_ = inventory_.itemProperties_;
     const auto &hireling = player.hireling;
     if (hireling.sourceRow >= 0) {
-        const auto stats = hirelingStats(hireling, equipmentInventory, data.containers);
+        const auto stats = hirelingStats(restoreHirelingRecord(hireling, {}), equipmentInventory, data.containers);
         // Native D2S carries a death flag, not current HP. Its decoded base-life
         // marker is replaced by equipped maximum life after restore.
         require(std::isfinite(hireling.hp) && hireling.hp >= 0 &&
@@ -106,7 +108,7 @@ int GameSession::validateCharacterRestore(const CharacterSaveData &data) const {
     const EquipmentActor baseActor{definition.code, base.strength, base.dexterity, player.level,
                                    base.blockFactor, player.weaponSet};
     auto modifiers = resolveEquipmentModifiers(content_, equipmentInventory, data.containers, baseActor);
-    applyAuraPassives(modifiers, content_.skills, data.player.skillRanks, data.player.combatEffects, 0);
+    applySkillPassives(modifiers, content_.skills, data.player.skillRanks, CombatEffectSet{}, 0);
     const auto stats = deriveCharacterAttributes(definition, player.level, player.allocated, modifiers);
     require(player.hp <= stats.maxLife && player.mana <= stats.maxMana &&
                 player.stamina <= stats.maxStamina, "character resource maximum");
@@ -126,29 +128,30 @@ int GameSession::validateCharacterRestore(const CharacterSaveData &data) const {
     return int(home - regions_.begin());
 }
 
-void GameSession::restore(CharacterSaveData data) {
+void GameSessionImpl::restore(CharacterSaveData data) {
     const auto level = worldContent_.levels().find(int(data.lastRegion));
     if (level != worldContent_.levels().end() && level->second.act >= 0 && level->second.act < 5)
         ensureRegion(RegionId(actTownLevels[size_t(level->second.act)]), true);
     data = prepareCharacterRestore(std::move(data));
     const int current = validateCharacterRestore(data);
-    const auto &definition = definitionFor(data.player.characterClass);
+    auto restoredPlayer = restoreCharacterRecord(std::move(data.player), regions_[current].map.spawn);
+    const auto &definition = definitionFor(restoredPlayer.characterClass);
     EntityIds validationIds;
     InventoryService equipmentInventory(validationIds, inventory_.catalog(),
                                         {content_.stashLayout.columns, content_.stashLayout.rows},
                                         {content_.cubeLayout.columns, content_.cubeLayout.rows});
     equipmentInventory.state_ = data.inventory;
     equipmentInventory.itemProperties_ = inventory_.itemProperties_;
-    const auto base = deriveCharacterAttributes(definition, data.player.level, data.player.allocated);
+    const auto base = deriveCharacterAttributes(definition, restoredPlayer.level, restoredPlayer.allocated);
     const EquipmentActor baseActor{definition.code, base.strength, base.dexterity,
-                                   data.player.level, base.blockFactor, data.player.weaponSet};
+                                   restoredPlayer.level, base.blockFactor, restoredPlayer.weaponSet};
     auto modifiers = resolveEquipmentModifiers(content_, equipmentInventory, data.containers, baseActor);
-    applyAuraPassives(modifiers, content_.skills, data.player.skillRanks, data.player.combatEffects, 0);
-    auto characterStats = deriveCharacterAttributes(definition, data.player.level,
-        data.player.allocated, modifiers, content_.resistancePenalty.at(size_t(data.difficulty)));
+    applySkillPassives(modifiers, content_.skills, restoredPlayer.skillRanks, restoredPlayer.combatEffects, 0);
+    auto characterStats = deriveCharacterAttributes(definition, restoredPlayer.level,
+        restoredPlayer.allocated, modifiers, content_.resistancePenalty.at(size_t(data.difficulty)));
     const EquipmentActor actor{definition.code, characterStats.strength, characterStats.dexterity,
-                               data.player.level, characterStats.blockFactor, data.player.weaponSet};
-    applyWarmth(characterStats, data.player, definition, equipmentInventory, data.containers, actor);
+                               restoredPlayer.level, characterStats.blockFactor, restoredPlayer.weaponSet};
+    applyWarmth(characterStats, restoredPlayer, definition, equipmentInventory, data.containers, actor);
     const auto equipmentStats = deriveEquipmentStats(equipmentInventory, data.containers, actor,
                                                      modifiers.defense, modifiers.combat, characterStats.baseAttackRating);
     auto nextRandom = random_;
@@ -158,13 +161,13 @@ void GameSession::restore(CharacterSaveData data) {
             if (auto vendor = content_.vendors.find(object.npcClass); vendor != content_.vendors.end()) {
                 const uint64_t seed = childRandom(nextRandom);
                 nextVendorStocks.emplace(object.id, planVendorStock(content_, vendor->second,
-                    unsigned(data.player.level), data.difficulty, seed));
+                    unsigned(restoredPlayer.level), data.difficulty, seed));
             }
     WorldState nextWorld;
     nextWorld.mapSeed = data.mapSeed;
     nextWorld.population = state().population;
     nextWorld.population.difficulty = data.difficulty;
-    nextWorld.player = std::move(data.player);
+    nextWorld.player = std::move(restoredPlayer);
     nextWorld.player.combatRandom = childRandom(nextRandom);
     nextWorld.player.hireling.combatRandom = childRandom(nextRandom);
     data.inventory.creationRandom = childRandom(nextRandom);
@@ -279,5 +282,6 @@ void GameSession::restore(CharacterSaveData data) {
     boundaryMoveTarget_.reset();
     boundaryPassage_.reset();
     storage_ = {};
+    ++viewRevision_;
 }
 } // namespace d2x

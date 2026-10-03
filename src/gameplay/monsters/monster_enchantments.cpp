@@ -1,3 +1,7 @@
+#include "gameplay/combat/damage_request.hpp"
+#include "gameplay/skills/runtime.hpp"
+#include "gameplay/skills/projectile_source.hpp"
+#include "gameplay/skills/projectile_path.hpp"
 #include "gameplay/simulation/simulation.hpp"
 #include "core/random.hpp"
 #include "gameplay/monsters/monster_wander.hpp"
@@ -19,8 +23,8 @@ bool inRange(Vec origin, Vec target, float radius) {
 void Simulation::updateMonsterEnchantments() {
     for (auto &enemy : state_.area.enemies) {
         enemy.combatEffects.expire(state_.frame);
-        if (!enemy.identity.enchantment || !active(enemy.pos)) continue;
-        const auto &mods = *enemy.identity.enchantment;
+        if (!enemy.enchantment || !active(enemy.pos)) continue;
+        const auto &mods = *enemy.enchantment;
         if (enemy.pendingUniqueLightningFrame && state_.frame >= enemy.pendingUniqueLightningFrame) {
             enemy.pendingUniqueLightningFrame = 0;
             if (state_.frame >= std::max<EffectFrame>(10, enemy.nextUniqueLightningFrame)) {
@@ -55,51 +59,18 @@ void Simulation::updateMonsterEnchantments() {
         if (enemy.hp <= 0 || !mods.aura || mods.aura->skill == 98 || mods.aura->skill == 102 || mods.aura->skill == 108 ||
             mods.aura->skill == 114 || mods.aura->skill == 118 || mods.aura->skill == 122 ||
             mods.aura->skill == 123 || state_.frame < enemy.nextAuraFrame) continue;
-        const auto &aura = *mods.aura;
-        enemy.nextAuraFrame = state_.frame + EffectFrame(aura.periodFrames);
-        auto apply = [&](CombatEffectSet &effects, bool owner) {
-            if (aura.state.id < 0) return std::vector<RemovedCombatEffect>{};
-            for (const auto &existing : effects.entries())
-                if (existing.activeAt(state_.frame) && existing.spec.state.id == aura.state.id &&
-                    existing.spec.source.level > aura.rank) return std::vector<RemovedCombatEffect>{};
-            CombatEffectSpec effect;
-            effect.state = aura.state;
-            effect.source = {CombatEffectSource::Monster, enemy.id, aura.skill, aura.rank};
-            effect.duration = EffectFrame(aura.periodFrames + 1);
-            effect.modifiers = aura.modifiers;
-            if (owner) effect.modifiers.combat.damagePercent += aura.ownerDamageBonus;
-            return effects.apply(std::move(effect), state_.frame).removed;
-        };
-        if (aura.hostile) {
-            if (aura.ownerState.id >= 0) {
-                CombatEffectSpec ownerEffect;
-                ownerEffect.state = aura.ownerState;
-                ownerEffect.source = {CombatEffectSource::Monster, enemy.id, aura.skill, aura.rank};
-                ownerEffect.duration = EffectFrame(aura.periodFrames + 1);
-                enemy.combatEffects.apply(std::move(ownerEffect), state_.frame);
-            }
-        }
-        for (auto target : combatUnits()) {
-            if (!target.alive() || !rooms_->nearby(enemy.pos, *target.position) || !inRange(enemy.pos, *target.position, aura.radius)) continue;
-            if (aura.hostile ? !canAttack(enemy.id, target.id) : relation(enemy.id, target.id) != Relation::Allied) continue;
-            if (aura.state.id >= 0) {
-                const auto removed = apply(*target.effects, target.id == enemy.id);
-                if (target.player) combatEffectsChanged(removed);
-            }
-            if (aura.hostile && aura.element >= 0)
-                dealDamage({enemy.id, target.id, rollDamage(enemy, aura.minimumDamage, aura.maximumDamage), MonsterDamageType(aura.element)});
-        }
+        skills().pulseLegacyAura(enemy.id, *mods.aura, enemy.nextAuraFrame);
     }
 }
 void Simulation::triggerMonsterLightning(Enemy &enemy) {
-    if (!enemy.identity.enchantment || !enemy.identity.enchantment->has(17) ||
+    if (!enemy.enchantment || !enemy.enchantment->has(17) ||
         state_.frame < std::max<EffectFrame>(10, enemy.nextUniqueLightningFrame)) return;
     enemy.nextUniqueLightningFrame = state_.frame + 10;
     launchMonsterEnchantmentMissiles(enemy, 195);
 }
 void Simulation::updateMonsterSpectralDamage(Enemy &enemy) {
-    if (!enemy.identity.enchantment || !enemy.identity.enchantment->has(27)) return;
-    auto &mods = *enemy.identity.enchantment;
+    if (!enemy.enchantment || !enemy.enchantment->has(27)) return;
+    auto &mods = *enemy.enchantment;
     constexpr int channels[]{2, 3, 1, 4, 5};
     const int channel = channels[monsterAiRandom(enemy) % 5];
     mods.elements[size_t(channel)] = mods.spectralDamage;
@@ -107,8 +78,8 @@ void Simulation::updateMonsterSpectralDamage(Enemy &enemy) {
     if (channel == 5) mods.poisonFrames += 40;
 }
 void Simulation::prepareMonsterEnchantmentHit(Enemy &enemy, DamageRequest &hit, int sourceDamage) {
-    if (!enemy.identity.enchantment) return;
-    const auto &mods = *enemy.identity.enchantment;
+    if (!enemy.enchantment) return;
+    const auto &mods = *enemy.enchantment;
     auto target = combatUnit(hit.defender);
     if (!target.alive()) return;
     const auto &stats = target.stats.attributes;
@@ -147,74 +118,21 @@ void Simulation::prepareMonsterEnchantmentHit(Enemy &enemy, DamageRequest &hit, 
             sourceDamage / 128) / 256.f;
 }
 void Simulation::applyMonsterCurse(Enemy &enemy, EntityId defender) {
-    if (!enemy.identity.enchantment || !enemy.identity.enchantment->curse) return;
-    const auto &definition = *enemy.identity.enchantment->curse;
-    const auto target = combatUnit(defender);
-    if (!target || (monsterAiRandom(enemy) & 3) == 0) return;
-    auto curse = [&](CombatUnit victim) {
-        if (auraEligible_ && !auraEligible_(victim, false)) return;
-        const int resistance = std::max(0, victim.stats.attributes.combat.curseResistance);
-        if (resistance >= 100 || victim.effects->hasState(attractState_, state_.frame)) return;
-        for (const auto &existing : victim.effects->entries())
-            if (existing.activeAt(state_.frame) && existing.spec.state.id == definition.state.id &&
-                existing.spec.source.definition == definition.skill && existing.spec.source.level > definition.rank) return;
-        CombatEffectSpec effect;
-        effect.state = definition.state;
-        effect.source = {CombatEffectSource::Monster, enemy.id, definition.skill, definition.rank};
-        effect.stacking = EffectStacking::AuraLevel;
-        effect.duration = EffectFrame(definition.periodFrames - int64_t(definition.periodFrames) * resistance / 100);
-        effect.modifiers = definition.modifiers;
-        const auto removed = victim.effects->apply(std::move(effect), state_.frame).removed;
-        if (victim.player) combatEffectsChanged(removed);
-    };
-    const float radius = std::clamp(definition.radius, 1.f, 40.f);
-    for (auto victim : combatUnits())
-        if (victim.alive() && canAttack(enemy.id, victim.id) &&
-            rooms_->nearby(*target.position, *victim.position) && inRange(*target.position, *victim.position, radius))
-            curse(victim);
+    if (!enemy.enchantment || !enemy.enchantment->curse) return;
+    skills().applyNativeCurse(enemy.id, defender, *enemy.enchantment->curse);
 }
 void Simulation::launchMonsterEnchantmentMissiles(Enemy &enemy, int missileId) {
-    if (!monsterSpecialMissile_ || !enemy.identity.enchantment) return;
-    const int rank = std::max(1, enemy.identity.enchantment->level / 2);
+    if (!monsterSpecialMissile_ || !enemy.enchantment) return;
+    const int rank = std::max(1, enemy.enchantment->level / 2);
     const auto definition = monsterSpecialMissile_(missileId, rank);
     if (!definition) return;
-    const auto *skill = &definition->skill;
-    auto launch = [&](Vec heading, int index) {
-        Missile missile{ids_.allocate(), enemy.id, enemy.pos, heading.unit() * skill->missileVelocity,
-            skill->missileLifetime, skill->effect, false, missileId,
-            rollDamage(enemy, skill->minimumDamage, skill->maximumDamage), 0, skill->coldDuration, true};
-        missile.combatRandom = childRandom(unitRandom_);
-        missile.fixedElement = definition->element;
-        missile.killOnHit = definition->killOnHit;
-        missile.nextHitDelay = skill->missileNextDelay;
-        missile.acceleration = skill->missileAcceleration;
-        missile.maxVelocity = skill->missileMaxVelocity;
-        if (missileId == 195) {
-            const auto path = chargedBoltPath(enemy.pos, enemy.pos + heading, index,
-                                              int(skill->missileLifetime * 25.f));
-            missile.path.assign(path.begin(), path.end());
-        }
-        if (updatingMissiles_) deferredMonsterMissiles_.push_back(std::move(missile));
-        else state_.area.missiles.push_back(std::move(missile));
-    };
-    if (missileId == 195) {
-        constexpr Vec directions[]{{0,-1},{1,0},{0,1},{-1,0}};
-        for (auto heading : directions)
-            for (int index = 0; index < 2; ++index) launch(heading, index);
-    } else {
-        constexpr int offsets[]{30,29,29,28,27,26,24,23,21,19,16,14,11,8,5,2,
-            0,-2,-5,-8,-11,-14,-16,-19,-21,-23,-24,-26,-27,-28,-29,-29,
-            -30,-29,-29,-28,-27,-26,-24,-23,-21,-19,-16,-14,-11,-8,-5,-2,
-            0,2,5,8,11,14,16,19,21,23,24,26,27,28,29,29};
-        for (int i = 0; i < 64; ++i) launch({float(offsets[i]), float(offsets[(i + 48) % 64])}, i);
-    }
-    emit(MissileReleased{missileId});
+    skills().releaseNativeBurst({enemy.id, enemy.pos, {}, enemy.combatRandom}, missileId, *definition);
 }
 bool Simulation::tryMonsterTeleport(Enemy &enemy) {
-    if (!enemy.identity.enchantment ||
-        !enemy.identity.enchantment->has(26) ||
+    if (!enemy.enchantment ||
+        !enemy.enchantment->has(26) ||
         !combatUnit(enemy.combatTarget).alive() || enemy.hp <= 0 || safeZone_) return false;
-    const auto &mods = *enemy.identity.enchantment;
+    const auto &mods = *enemy.enchantment;
     const bool melee = mods.melee || enemy.kind == MonsterKind::Bighead;
     const auto targetUnit = combatUnit(enemy.combatTarget);
     const int targetDistance = monsterAiDistance(enemy.pos, targetUnit.stats.collisionSize, *targetUnit.position);
@@ -256,8 +174,8 @@ bool Simulation::tryMonsterTeleport(Enemy &enemy) {
     return false;
 }
 void Simulation::replicateMonsterMissile(const Enemy &enemy, Missile missile) {
-    if (!enemy.identity.enchantment ||
-        !enemy.identity.enchantment->has(29) ||
+    if (!enemy.enchantment ||
+        !enemy.enchantment->has(29) ||
         noMultiShotMissiles_.contains(missile.missileId)) return;
     const auto sign = [](float value) { return value < 0 ? -1.f : value > 0 ? 1.f : 0.f; };
     const Vec target = monsterTargetPosition(enemy);

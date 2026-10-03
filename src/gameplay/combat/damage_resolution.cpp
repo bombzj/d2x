@@ -14,6 +14,17 @@ int64_t units(float amount) {
                             double(std::numeric_limits<int32_t>::max())));
 }
 }
+int rawResistance(const CharacterAttributes &stats, DamageType type) {
+    switch (type) {
+    case DamageType::Physical: return stats.combat.physicalResist;
+    case DamageType::Magic: return stats.combat.magicResist;
+    case DamageType::Fire: return stats.fireResist;
+    case DamageType::Lightning: return stats.lightningResist;
+    case DamageType::Cold: return stats.coldResist;
+    case DamageType::Poison: return stats.poisonResist;
+    }
+    return 0;
+}
 ResolvedDamage mitigatePlayerDamage(float amount, MonsterDamageType type,
                                     const CharacterAttributes &s) {
     const auto &m = s.combat;

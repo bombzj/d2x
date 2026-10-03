@@ -1,4 +1,3 @@
-#include "gameplay/session/session.hpp"
 #include "presentation/scene_view.hpp"
 #include "skill_tree.hpp"
 #include <algorithm>
@@ -8,17 +7,16 @@ namespace d2x {
 std::optional<int> SceneView::skillAt(Vec mouse) const {
     if (!view_.skillTreeOpen || !CheckCollisionPointRec(rv(mouse), skillTreeBounds()))
         return std::nullopt;
-    for (const auto &[id, skill] : session_.content().skills.skills)
-        if (skill.classCode == session_.characterCode() && skill.page == view_.skillPage &&
+    for (const auto &[id, skill] : characterView_.skills)
+        if (skill.classCode == characterView_.classCode && skill.page == view_.skillPage &&
             CheckCollisionPointRec(rv(mouse), skillTreeNode(skill.row, skill.column)))
             return id;
     return std::nullopt;
 }
 void SceneView::drawSkillTree(Vec mouse) const {
     if (!view_.skillTreeOpen) return;
-    const auto *tree = session_.content().skills.tree(session_.characterCode());
-    if (!tree) return;
-    auto art = assets_.skillTrees.find(tree->classCode);
+    if (!characterView_.hasSkillTree) return;
+    auto art = assets_.skillTrees.find(characterView_.classCode);
     if (art == assets_.skillTrees.end()) return;
     const auto panel = skillTreeBounds();
     drawPanelFrame(true);
@@ -34,17 +32,16 @@ void SceneView::drawSkillTree(Vec mouse) const {
     };
     layer(0);
     layer(4 + (view_.skillPage - 1) * 4);
-    const auto &player = session_.state().player;
-    for (const auto &[id, entry] : session_.content().skills.skills) {
-        if (entry.classCode != tree->classCode || entry.page != view_.skillPage) continue;
+    const auto &player = characterView_;
+    for (const auto &[id, entry] : characterView_.skills) {
+        if (entry.classCode != characterView_.classCode || entry.page != view_.skillPage) continue;
         auto bounds = skillTreeNode(entry.row, entry.column);
         auto image = assets_.skillIcons.find(id);
         if (image == assets_.skillIcons.end()) continue;
-        auto rank = player.skillRanks.find(id);
-        const int value = rank == player.skillRanks.end() ? 0 : rank->second;
-        const int effective = session_.effectiveSkillRank(id);
+        const int value = entry.baseRank;
+        const int effective = entry.effectiveRank;
         const bool itemGranted = effective > value;
-        const bool ready = session_.canAllocateSkill(id);
+        const bool ready = entry.canAllocate;
         const auto &texture = image->second.sprite.texture;
         DrawTexturePro(texture, {0, 0, float(texture.width), float(texture.height)}, bounds,
                        {0, 0}, 0, value || itemGranted ? WHITE : Color{92, 92, 92, 255});
@@ -59,7 +56,7 @@ void SceneView::drawSkillTree(Vec mouse) const {
     }
     for (int page = 1; page <= 3; ++page) {
         auto bounds = skillTreeTab(page);
-        const auto &name = tree->pageNames[page - 1];
+        const auto &name = characterView_.pageNames[page - 1];
         std::vector<std::string> lines;
         std::istringstream words(name);
         std::string word, line;
@@ -91,38 +88,7 @@ void SceneView::drawSkillTree(Vec mouse) const {
                {close.x + inset, close.y + close.height - inset}, 3, cross);
     EndScissorMode();
     if (auto hovered = skillAt(mouse)) {
-        const auto &entry = *session_.content().skills.find(*hovered);
-        auto rank = player.skillRanks.find(*hovered);
-        const int baseRank = rank == player.skillRanks.end() ? 0 : rank->second;
-        const int effective = session_.effectiveSkillRank(*hovered);
-        std::string label = entry.name + "  " +
-            std::to_string(baseRank) + "/" +
-            std::to_string(entry.maximumRank);
-        if (effective > baseRank)
-            label += "  Item +" + std::to_string(effective - baseRank);
-        std::vector<std::string> lines{label};
-        if (!entry.description.empty()) lines.push_back(entry.description);
-        if (player.level < session_.nextSkillRequiredLevel(*hovered))
-            lines.push_back("Requires level " + std::to_string(session_.nextSkillRequiredLevel(*hovered)));
-        for (int prerequisite : entry.prerequisites) {
-            const auto learned = player.skillRanks.find(prerequisite);
-            if (learned == player.skillRanks.end() || learned->second <= 0)
-                if (const auto *required = session_.content().skills.find(prerequisite))
-                    lines.push_back("Requires " + required->name);
-        }
-        if (entry.auraImplemented) {
-            if (effective > 0) {
-                lines.push_back("Current level " + std::to_string(effective));
-                const auto details = auraSkillDetails(*hovered, effective);
-                lines.insert(lines.end(), details.begin(), details.end());
-            }
-            if (baseRank < entry.maximumRank) {
-                const int next = std::max(1, effective + 1);
-                lines.push_back("Next level " + std::to_string(next));
-                const auto details = auraSkillDetails(*hovered, next, true);
-                lines.insert(lines.end(), details.begin(), details.end());
-            }
-        }
+        const auto &lines = characterView_.skill(*hovered)->treeTooltip;
         const int width = std::min(360, W - 20);
         std::vector<std::string> wrapped;
         for (const auto &text : lines) {

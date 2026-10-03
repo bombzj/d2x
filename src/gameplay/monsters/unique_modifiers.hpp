@@ -1,6 +1,6 @@
 #pragma once
-#include "gameplay/effects/state.hpp"
 #include "gameplay/skills/aura.hpp"
+#include "gameplay/monsters/reward.hpp"
 #include <array>
 #include <optional>
 #include <vector>
@@ -28,4 +28,10 @@ struct MonsterEnchantment {
         return false;
     }
 };
+// No live pointer escapes into a reward request or deferred death event.
+inline std::optional<MonsterRewardModifiers> monsterRewardModifiers(
+    const std::optional<MonsterEnchantment> &enchantment) {
+    if (!enchantment) return std::nullopt;
+    return MonsterRewardModifiers{enchantment->levelBonus, enchantment->experienceFactor};
+}
 } // namespace d2x

@@ -1,9 +1,9 @@
 #include "gameplay/simulation/simulation.hpp"
-#include "gameplay/session/session.hpp"
+#include "gameplay/session/session_impl.hpp"
 #include "identification.hpp"
 
 namespace d2x {
-void GameSession::identifyWithCain(EntityId npc) {
+void GameSessionImpl::identifyWithCain(EntityId npc) {
     const auto *target = object(npc);
     if (!target || !npcCanIdentify(target->npcClass) || engagedNpc_ != npc ||
         !region().definition.safe || !canReach(*target)) {

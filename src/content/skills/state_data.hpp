@@ -1,5 +1,5 @@
 #pragma once
-#include "gameplay/effects/state.hpp"
+#include "gameplay/effects/definition.hpp"
 #include "resources/data_table.hpp"
 #include <map>
 #include <string>

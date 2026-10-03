@@ -1,11 +1,12 @@
 #include "gameplay/simulation/simulation.hpp"
-#include "gameplay/session/session.hpp"
+#include "gameplay/session/session_impl.hpp"
 #include "content/items/equipment_modifiers.hpp"
+#include "content/skills/passive_data.hpp"
 #include <algorithm>
 #include <type_traits>
 
 namespace d2x {
-void GameSession::transmuteCube() {
+void GameSessionImpl::transmuteCube() {
     auto reject = [&] { simulation_->emit(InteractionFailed{{}, "No supported original cube recipe matches these items."}); };
     const auto carried = inventory_.contents(playerContainers_.backpack);
     const bool hasCube = std::any_of(carried.begin(), carried.end(), [&](EntityId id) {
@@ -51,13 +52,13 @@ CharacterModifiers activeModifiers(const PlayerState &player, EffectFrame now) {
     return player.combatEffects.modifiers(now);
 }
 void applyPassiveRating(CharacterModifiers &modifiers, const PlayerState &player, const SkillCatalog &skills, EffectFrame frame) {
-    applyAuraPassives(modifiers, skills, player.skillRanks, player.combatEffects, frame);
+    applySkillPassives(modifiers, skills, player.skillRanks, player.combatEffects, frame);
 }
 }
-EquipmentActor GameSession::equipmentActor() const {
+EquipmentActor GameSessionImpl::equipmentActor() const {
     return equipmentActor(state().player);
 }
-const ItemInstance *GameSession::usableEquipment(EquipmentSlot slot) const {
+const ItemInstance *GameSessionImpl::usableEquipment(EquipmentSlot slot) const {
     const auto *item = inventory_.item(inventory_.equipped(playerContainers_, slot));
     if (!item || !item->quantity) return nullptr;
     const auto *definition = inventory_.catalog().find(item->definition);
@@ -65,7 +66,7 @@ const ItemInstance *GameSession::usableEquipment(EquipmentSlot slot) const {
         inventory_.equipmentRequirements(item->handle(), equipmentActor()) != InventoryError::None) return nullptr;
     return item;
 }
-EquipmentActor GameSession::equipmentActor(const PlayerState &player) const {
+EquipmentActor GameSessionImpl::equipmentActor(const PlayerState &player) const {
     auto effects = activeModifiers(player, state().frame);
     auto base = deriveCharacterAttributes(characterDefinition_, player.level, player.allocated, effects);
     EquipmentActor baseActor{characterDefinition_.code, base.strength, base.dexterity, player.level,
@@ -76,7 +77,7 @@ EquipmentActor GameSession::equipmentActor(const PlayerState &player) const {
     return {characterDefinition_.code, stats.strength, stats.dexterity, player.level,
             stats.blockFactor, player.weaponSet};
 }
-void GameSession::refreshCharacter(bool fillGains) {
+void GameSessionImpl::refreshCharacter(bool fillGains) {
     auto &player = simulation_->state_.player;
     const auto previous = simulation_->state_.player.attributes;
     auto effects = activeModifiers(player, state().frame);
@@ -103,7 +104,7 @@ void GameSession::refreshCharacter(bool fillGains) {
     simulation_->state_.player.equipment = deriveEquipmentStats(inventory_, playerContainers_, actor,
                                                        modifiers.defense, modifiers.combat, current.baseAttackRating);
 }
-void GameSession::createStarterEquipment() {
+void GameSessionImpl::createStarterEquipment() {
     const auto &characters = content_.tables.at("charstats");
     const auto actor = equipmentActor();
     InventoryAccess access;
@@ -159,14 +160,14 @@ void GameSession::createStarterEquipment() {
             throw std::runtime_error("Cannot equip original starter item: " + std::string(code));
     }
 }
-bool GameSession::inventorySourceAllowed(EntityId id) const {
+bool GameSessionImpl::inventorySourceAllowed(EntityId id) const {
     const auto *item = inventory_.item(id);
     if (item)
         if (auto ground = std::get_if<GroundLocation>(&item->location))
             return inventoryDestinationAllowed(*ground);
     return true; // Missing IDs and stale revisions are reported by InventoryService.
 }
-InventoryError GameSession::previewInventory(const GameCommand &command) const {
+InventoryError GameSessionImpl::previewInventory(const GameCommand &command) const {
     return std::visit(
         [&](const auto &intent) {
             using T = std::decay_t<decltype(intent)>;
@@ -271,7 +272,7 @@ InventoryError GameSession::previewInventory(const GameCommand &command) const {
         },
         command);
 }
-void GameSession::executeInventory(const GameCommand &command) {
+void GameSessionImpl::executeInventory(const GameCommand &command) {
     std::visit(
         [&](const auto &intent) {
             using T = std::decay_t<decltype(intent)>;
@@ -322,7 +323,7 @@ void GameSession::executeInventory(const GameCommand &command) {
         },
         command);
 }
-std::optional<GroundLocation> GameSession::dropLocation() const {
+std::optional<GroundLocation> GameSessionImpl::dropLocation() const {
     const auto &player = state().player;
     if (player.dead)
         return std::nullopt;

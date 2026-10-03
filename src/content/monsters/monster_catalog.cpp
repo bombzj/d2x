@@ -1,3 +1,5 @@
+#include "gameplay/skills/spec.hpp"
+#include "gameplay/monsters/implementation.hpp"
 #include "resources/archive.hpp"
 #include "monster_catalog.hpp"
 #include "monster_combat.hpp"

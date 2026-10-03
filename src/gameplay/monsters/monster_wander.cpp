@@ -1,3 +1,4 @@
+#include "gameplay/model/state.hpp"
 #include "core/random.hpp"
 #include "monster_wander.hpp"
 #include <algorithm>

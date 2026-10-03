@@ -1,3 +1,4 @@
+#include "gameplay/skills/spec.hpp"
 #pragma once
 #include "gameplay/items/definitions.hpp"
 #include "gameplay/items/modifiers.hpp"

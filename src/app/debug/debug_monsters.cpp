@@ -1,5 +1,9 @@
+#include "gameplay/monsters/implementation.hpp"
 #include "debug_monsters.hpp"
 #include "gameplay/session/session.hpp"
+#include "gameplay/model/state.hpp"
+#include "gameplay/items/inventory.hpp"
+#include "content/monsters/monster_catalog.hpp"
 #include "presentation/scene_view.hpp"
 #include <nlohmann/json.hpp>
 #include <algorithm>
@@ -133,8 +137,8 @@ void listMonsters(Json &result, const Json &request, const GameSession &session,
         entry["conversionRemaining"] = enemy.conversion ?
             Json(double(enemy.conversion->expiresAt > session.state().frame ? enemy.conversion->expiresAt - session.state().frame : 0) / 25.) : Json(nullptr);
         const auto *record = session.monsterContent().find(enemy.identity.monster);
-        if (enemy.identity.enchantment) {
-            const auto &enchantment = *enemy.identity.enchantment;
+        if (enemy.enchantment) {
+            const auto &enchantment = *enemy.enchantment;
             entry["enchantment"] = {{"ids", enchantment.ids}, {"nameSeed", enchantment.nameSeed},
                 {"skillEffectsEnabled", enchantment.skillEffectsEnabled},
                 {"level", enchantment.level}, {"levelBonus", enchantment.levelBonus},
@@ -143,7 +147,7 @@ void listMonsters(Json &result, const Json &request, const GameSession &session,
                 {"attackRatingPercent", enchantment.attackRatingPercent}, {"velocityPercent", enchantment.velocityPercent}};
         }
         if (record) entry["sourceAi"] = record->ai;
-        if (auto combat = session.monsterCombatProfile(enemy.identity, session.state().area.region)) {
+        if (auto combat = session.monsterCombatProfile(enemy.id, session.state().area.region)) {
             entry["combat"] = {{"level", combat->level},
                                {"minLife", combat->damage.minLife},
                                {"maxLife", combat->damage.maxLife},

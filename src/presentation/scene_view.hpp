@@ -1,17 +1,22 @@
 #pragma once
 #include "input.hpp"
+#include "client/character_client.hpp"
+#include "client/quest_client.hpp"
+#include "client/npc_client.hpp"
 #include "presentation/inventory/inventory_panel.hpp"
 #include "presentation/world/lighting_view.hpp"
 #include "presentation/world/palette_blend_view.hpp"
 #include "scene_assets.hpp"
 #include "presentation/world/scene_geometry.hpp"
-#include "gameplay/model/state.hpp"
 #include "gameplay/model/events.hpp"
 #include <cstdint>
 #include <deque>
 #include <map>
 
 namespace d2x {
+struct Enemy;
+class CombatEffectSet;
+class IActorClient;
 struct SpecialItemRecord;
 enum class AutomapFade { No, Everything, Auto, Center };
 struct ViewState {
@@ -81,6 +86,16 @@ struct ViewState {
 };
 class SceneView {
     const GameSession &session_;
+    const IActorClient &actorClient_;
+    IInventoryClient &inventoryClient_;
+    InventoryView inventoryView_;
+    ICharacterClient &characterClient_;
+    CharacterView characterView_;
+    IQuestClient &questClient_;
+    QuestView questView_;
+    INpcClient &npcClient_;
+    NpcConversationView npcView_;
+    NpcSceneView npcScene_;
     SceneAssets assets_;
     LightingView lighting_;
     PaletteBlendView paletteBlend_;
@@ -98,7 +113,7 @@ class SceneView {
     };
     std::array<QuestCompletionAnimation, size_t(QuestId::Count)> questAnimations_{};
     void resetQuestAnimations();
-    void queueQuestAnimation(ActOneQuest quest, uint32_t stage);
+    void queueQuestAnimation(QuestId quest, bool completed);
     void advanceQuestAnimations(float dt);
     std::map<EntityId, float> landingAge_;
     struct ClientMissile {
@@ -142,7 +157,7 @@ class SceneView {
     void drawSpellOverlay(int id, Vec position, float age, bool loop, int height = 1) const;
     void drawUnitSpellOverlays(EntityId unit, Vec position, bool back, const CombatEffectSet *states = nullptr, int height = 1) const;
     void drawLighting() const;
-    void drawNpcAlert(const WorldObject &npc, Vec at, bool back) const;
+    void drawNpcAlert(EntityId npc, Vec at, bool back) const;
     void drawShrineOverlays(int code, Vec at, int height, bool back) const;
     void drawPlayerShrineOverlay(Vec at, bool back) const;
     void drawCombatStateOverlays(const CombatEffectSet &effects, Vec screenPosition, int height, bool back) const;
@@ -161,7 +176,6 @@ class SceneView {
     void drawSkillControls(Vec mouse) const;
     void drawSkillIcon(std::optional<int> skill, Rectangle bounds) const;
     void drawSkillTree(Vec mouse) const;
-    std::vector<std::string> auraSkillDetails(int skill, int rank, bool nextLevel = false) const;
     void drawQuests(Vec mouse) const;
     void drawHelp() const;
     void drawExitHint(Vec mouse) const;
@@ -180,7 +194,12 @@ class SceneView {
     void drawItemTooltip(const ItemInstance &item, Vec anchor,
                          std::optional<unsigned> price = {}, bool gamble = false,
                          std::string_view priceLabel = "Cost") const;
-    const SpecialItemRecord *specialItem(const ItemInstance &item) const;
+    void drawItemTooltip(const InventoryItemView &item, Vec anchor,
+                         std::optional<unsigned> price = {},
+                         std::string_view priceLabel = "Cost") const;
+    void drawItemText(std::vector<ItemTextLine> lines, ItemQuality quality, Vec anchor,
+                      std::optional<unsigned> price, std::string_view priceLabel) const;
+    std::optional<unsigned> inventoryVendorPrice(ItemHandle item) const;
     std::string itemName(const ItemInstance &item) const;
     static Color itemColor(ItemQuality quality);
     struct VisibleMonster {
@@ -191,6 +210,8 @@ class SceneView {
     std::vector<VisibleMonster> visibleMonsters() const;
     void itemButton(Rectangle bounds, const char *label, Color color) const;
     void drawItemIcon(const ItemInstance &item, Rectangle bounds, Color tint = WHITE) const;
+    void drawItemIcon(const InventoryItemView &item, Rectangle bounds, Color tint = WHITE) const;
+    void drawItemArt(const std::string &key, const std::string &code, Rectangle bounds, Color tint) const;
     bool drawInventoryCursor(Vec mouse) const;
     void orb(bool mana, float fraction) const;
 
@@ -203,10 +224,20 @@ class SceneView {
     bool hirelingPortraitVisible() const;
     std::optional<int> miniPanelAt(Vec mouse) const;
     const LevelExit *exitAt(Vec mouse) const;
-    SceneView(Archives &archives, const GameSession &session);
+    SceneView(Archives &archives, const GameSession &session, const IActorClient &actorClient,
+              IInventoryClient &inventoryClient, ICharacterClient &characterClient,
+              IQuestClient &questClient, INpcClient &npcClient);
     ~SceneView();
     ViewState &ui() { return view_; }
     const ViewState &ui() const { return view_; }
+    const InventoryView &inventoryView() const { return inventoryView_; }
+    void refreshInventory();
+    const CharacterView &characterView() const { return characterView_; }
+    void refreshCharacterView();
+    const QuestView &questView() const { return questView_; }
+    const NpcConversationView &npcView() const { return npcView_; }
+    void refreshInteractions();
+    void refreshNpcView(EntityId npc);
     std::vector<std::pair<RegionId, size_t>> automapLayers() const;
     Vec screen(Vec position) const;
     Vec world(Vec position) const;
@@ -231,7 +262,7 @@ class SceneView {
     bool openNpcShop(bool gamble = false);
     void closeNpcShop();
     bool npcShopDropAt(Vec mouse) const;
-    int clickNpcMenu(Vec mouse);
+    NpcMenuSelection clickNpcMenu(Vec mouse);
     void scrollNpcDialogue(int amount);
     bool closeNpcDialogue();
     std::optional<uint32_t> clickNpcShop(Vec mouse, bool directBuy = false);
@@ -242,5 +273,4 @@ class SceneView {
     void collectMapVariants(Archives &archives);
     std::vector<WorldEntry> travelEntries() const;
 };
-std::string playerAnimationMode(const PlayerState &player);
 } // namespace d2x

@@ -2,7 +2,9 @@
 #include "core/id.hpp"
 #include "gameplay/model/definitions.hpp"
 #include "gameplay/items/state.hpp"
-#include "gameplay/monsters/monster_spawn.hpp"
+#include "gameplay/monsters/identity.hpp"
+#include "gameplay/monsters/reward.hpp"
+#include <array>
 #include <set>
 #include <span>
 #include <string_view>
@@ -40,6 +42,7 @@ struct LootRequest {
     int difficulty = 0;
     bool questFirstKill = false;
     bool sourceSeed = false; // Unit/chest loot streams must not replace the shared object stream.
+    std::optional<MonsterRewardModifiers> rewardModifiers;
 };
 struct LootDrop {
     std::string code;

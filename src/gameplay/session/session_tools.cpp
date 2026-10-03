@@ -1,5 +1,5 @@
 #include "gameplay/simulation/simulation.hpp"
-#include "gameplay/session/session.hpp"
+#include "gameplay/session/session_impl.hpp"
 #include "content/items/item_magic_loot.hpp"
 #include "content/items/item_grades.hpp"
 #include "gameplay/loot/special.hpp"
@@ -12,7 +12,7 @@ QuestRecord &tools(WorldState &world) {
         .at(questIndex(ActOneQuest::ToolsOfTheTrade));
 }
 }
-void GameSession::spawnDebugItem(const DebugSpawnItem &command) {
+void GameSessionImpl::spawnDebugItem(const DebugSpawnItem &command) {
     auto reject = [&](const std::string &reason) { simulation_->emit(InteractionFailed{{}, reason}); };
     const auto *base = content_.items.find(command.code);
     auto ground = dropLocation();
@@ -56,7 +56,7 @@ void GameSession::spawnDebugItem(const DebugSpawnItem &command) {
     inventory_.state_.items.at(created.item).identified = true;
     publishInventory(std::move(created), {});
 }
-void GameSession::activateMalus(const WorldObject &source) {
+void GameSessionImpl::activateMalus(const WorldObject &source) {
     auto &record = tools(simulation_->state_);
     if (!barracksRegion_ || region().definition.id != *barracksRegion_ ||
         record.stage >= uint32_t(ToolsStage::RewardReady)) return;
@@ -81,7 +81,7 @@ void GameSession::activateMalus(const WorldObject &source) {
         simulation_->emit(QuestAdvanced{ActOneQuest::ToolsOfTheTrade, record.stage});
     simulation_->emit(ObjectInteracted{source.id, source.interaction, source.name});
 }
-void GameSession::updateToolsQuestItems() {
+void GameSessionImpl::updateToolsQuestItems() {
     bool acquired = false;
     for (const auto &event : events())
         if (const auto *picked = std::get_if<ItemPickedUp>(&event);
@@ -91,7 +91,7 @@ void GameSession::updateToolsQuestItems() {
     if (toolsAdvance(record, ToolsStage::MalusAcquired))
         simulation_->emit(QuestAdvanced{ActOneQuest::ToolsOfTheTrade, record.stage});
 }
-void GameSession::imbueWithCharsi(const ImbueItem &command) {
+void GameSessionImpl::imbueWithCharsi(const ImbueItem &command) {
     const auto *npc = object(command.npc);
     auto &record = tools(simulation_->state_);
     if (!npc || npc->name != "Charsi" || engagedNpc_ != command.npc ||

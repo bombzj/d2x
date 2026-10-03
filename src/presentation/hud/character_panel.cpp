@@ -1,7 +1,5 @@
-#include "gameplay/session/session.hpp"
 #include "presentation/scene_view.hpp"
 #include "character_panel.hpp"
-#include "character_action_stats.hpp"
 #include <algorithm>
 
 namespace d2x {
@@ -43,24 +41,22 @@ void SceneView::drawCharacter(Vec mouse) const {
         cell(value, 255, y, 57, 19, 11, gold, true);
     };
 
-    const auto &player = session_.state().player;
-    const auto &stats = session_.characterStats();
-    const auto &equipment = session_.equipmentStats();
+    const auto &player = characterView_;
+    const auto &stats = characterView_;
+    const auto &equipment = characterView_;
     cell(player.name, 10, 9, 173, 20, 14, gold, true);
-    cell(session_.characterName(), 191, 9, 120, 20, 14, gold, true);
+    cell(player.className, 191, 9, 120, 20, 14, gold, true);
     cell("Level", 11, 35, 45, 13, 10, parchment, true);
     cell(std::to_string(player.level), 11, 48, 45, 20, 13, gold, true);
     cell("Experience", 61, 35, 121, 13, 10, parchment, true);
     cell(std::to_string(player.experience), 61, 48, 121, 20, 12, gold, true);
-    const auto &thresholds = session_.experienceThresholds();
-    auto next = size_t(player.level + 1) < thresholds.size()
-                    ? std::to_string(thresholds[size_t(player.level + 1)]) : "MAX";
+    auto next = player.nextLevelExperience ? std::to_string(*player.nextLevelExperience) : "MAX";
     cell("Next Level", 191, 35, 120, 13, 10, parchment, true);
     cell(next, 191, 48, 120, 20, 12, gold, true);
 
     constexpr float attributeY[] = {83, 146, 230, 295};
     const char *names[] = {"Strength", "Dexterity", "Vitality", "Energy"};
-    const int values[] = {stats.strength, stats.dexterity, stats.vitality, stats.energy};
+    const int values[] = {stats.attributes[0], stats.attributes[1], stats.attributes[2], stats.attributes[3]};
     for (int index = 0; index < 4; ++index) {
         cell(names[index], 18, attributeY[index], 57, 19, 11, parchment);
         cell(std::to_string(values[index]), 75, attributeY[index], 38, 19, 12, gold, true);
@@ -73,8 +69,8 @@ void SceneView::drawCharacter(Vec mouse) const {
         }
     }
 
-    const auto leftAction = characterActionStats(session_, view_.leftSkill);
-    const auto rightAction = characterActionStats(session_, view_.rightSkill);
+    const auto leftAction = characterView_.actionDisplay(view_.leftSkill);
+    const auto rightAction = characterView_.actionDisplay(view_.rightSkill);
     paired("Damage", leftAction.damage, 83);
     paired("Attack Rating", leftAction.attackRating, 105);
     paired("Damage", rightAction.damage, 146);
@@ -83,11 +79,11 @@ void SceneView::drawCharacter(Vec mouse) const {
     paired("Stamina", std::to_string(int(player.stamina)) + "/" + std::to_string(stats.maxStamina), 230);
     paired("Life", std::to_string(int(player.hp)) + "/" + std::to_string(stats.maxLife), 252);
     paired("Mana", std::to_string(int(player.mana)) + "/" + std::to_string(stats.maxMana), 295);
-    paired("Fire Resist", std::to_string(stats.fireResist) + "%", 337);
-    paired("Cold Resist", std::to_string(stats.coldResist) + "%", 358);
-    paired("Lightning Resist", std::to_string(stats.lightningResist) + "%", 380);
-    paired("Poison Resist", std::to_string(stats.poisonResist) + "%", 402);
-    const auto &combat = stats.combat;
+    paired("Fire Resist", std::to_string(stats.resistances[0]) + "%", 337);
+    paired("Cold Resist", std::to_string(stats.resistances[1]) + "%", 358);
+    paired("Lightning Resist", std::to_string(stats.resistances[2]) + "%", 380);
+    paired("Poison Resist", std::to_string(stats.resistances[3]) + "%", 402);
+    const auto &combat = stats;
     cell("Block " + std::to_string(equipment.blockChance) + "%", 18, 317, 132, 12, 9, parchment);
     cell("Physical Resist " + std::to_string(std::clamp(combat.physicalResist, -100, 50)) +
              "%", 18, 330, 132, 12, 9, parchment);

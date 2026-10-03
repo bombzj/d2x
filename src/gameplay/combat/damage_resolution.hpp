@@ -1,8 +1,10 @@
 #pragma once
 #include "gameplay/character/attributes.hpp"
-#include "gameplay/monsters/monster_spawn.hpp"
+#include "gameplay/combat/damage_type.hpp"
 
 namespace d2x {
+// Uncapped attribute lookup; mitigation applies its own original limits.
+int rawResistance(const CharacterAttributes &attributes, DamageType type);
 struct ResolvedDamage {
     float dealt = 0;
     float absorbed = 0;

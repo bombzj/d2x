@@ -1,5 +1,15 @@
+#include "client/local_inventory_client.hpp"
+#include "client/local_character_client.hpp"
+#include "client/local_actor_client.hpp"
+#include "client/local_quest_client.hpp"
+#include "client/local_npc_client.hpp"
 #include "presentation/scene_view.hpp"
 #include "gameplay/session/session.hpp"
+#include "content/classic_data.hpp"
+#include "gameplay/model/state.hpp"
+#include "world/region.hpp"
+#include "gameplay/items/inventory.hpp"
+#include "gameplay/session/character_save.hpp"
 #include "application.hpp"
 #include "character_frontend.hpp"
 #include "input.hpp"
@@ -12,6 +22,7 @@
 #include "presentation/controller.hpp"
 #include "presentation/graphics/graphics.hpp"
 #include <algorithm>
+#include <deque>
 #include <fstream>
 #include <iostream>
 #include <nlohmann/json.hpp>
@@ -244,7 +255,12 @@ int runGame(int argc, char **argv) {
             if (character && character->created)
                 writeSave(savePath, session.characterSave(), session.content());
             frontendTarget.reset();
-            SceneView view(archives, session);
+            LocalActorClient actorClient(session);
+            LocalInventoryClient inventoryClient(session);
+            LocalCharacterClient characterClient(session);
+            LocalQuestClient questClient(session);
+            LocalNpcClient npcClient(session);
+            SceneView view(archives, session, actorClient, inventoryClient, characterClient, questClient, npcClient);
             view.ui().miniPanelOpen = preferences.miniPanelOpen;
             view.ui().automapLarge = preferences.automapLarge;
             view.ui().automapCenterWhenCleared = preferences.automapCenterWhenCleared;
@@ -278,7 +294,7 @@ int runGame(int argc, char **argv) {
                 if (!found)
                     throw std::runtime_error("--stash requires a region with an original stash object");
             }
-            SceneController controller(session, view);
+            SceneController controller(session, actorClient, inventoryClient, characterClient, npcClient, view);
             if (frontend) controller.resetInput();
             RenderTarget target;
             archives.setLoadingPulse({});
@@ -310,7 +326,7 @@ int runGame(int argc, char **argv) {
                     return false;
                 }
             };
-            std::optional<FrameInput> debugInput;
+            std::deque<FrameInput> debugInputs;
             while (true) {
                 bool exitRequested = WindowShouldClose();
                 debugPipe.poll([&](const std::string &request) {
@@ -319,10 +335,10 @@ int runGame(int argc, char **argv) {
                         [&](const std::string &path) {
                             target.save(path);
                         },
-                        [&](FrameInput input) {
-                            if (debugInput)
-                                throw std::runtime_error("UI input already queued for this frame");
-                            debugInput = std::move(input);
+                        [&](std::vector<FrameInput> frames) {
+                            if (debugInputs.size() + frames.size() > 32)
+                                throw std::runtime_error("UI input queue exceeds 32 frames");
+                            for (auto &frame : frames) debugInputs.push_back(std::move(frame));
                         });
                 });
                 exitRequested |= debugQuit;
@@ -333,9 +349,9 @@ int runGame(int argc, char **argv) {
                 float dt = std::min(GetFrameTime(), .1f);
                 auto viewport = currentViewport();
                 auto input = pollInput(viewport);
-                if (debugInput) {
-                    input = std::move(*debugInput);
-                    debugInput.reset();
+                if (!debugInputs.empty()) {
+                    input = std::move(debugInputs.front());
+                    debugInputs.pop_front();
                 }
                 bool persistenceInput = input.focused && !view.ui().gameMenuOpen && (input.save || input.load);
                 if (persistenceInput) {

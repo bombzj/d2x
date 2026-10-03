@@ -1,12 +1,11 @@
 #pragma once
 #include "container_grid.hpp"
-#include "gameplay/model/commands.hpp"
+#include "client/inventory_client.hpp"
 #include "gameplay/items/operations.hpp"
 #include "presentation/hud/hud_layout.hpp"
 #include "presentation/hud/classic_panel.hpp"
 
 namespace d2x {
-class GameSession;
 struct InventoryDrag {
     ItemHandle item;
     Cell grab;
@@ -33,7 +32,7 @@ struct InventoryUi {
     std::optional<SplitDialog> split;
     std::optional<ItemHandle> identify;
     std::optional<GoldDialog> goldDialog;
-    void syncCursor(const GameSession &session, EntityId reserved = {});
+    void syncCursor(const InventoryView &inventory, EntityId reserved = {});
     void cancelGesture() {
         if (drag && !drag->onCursor) drag.reset();
         split.reset();
@@ -143,14 +142,14 @@ inline Rectangle splitAdjust(int index) {
 std::optional<Cell> inventoryCell(Vec mouse);
 Rectangle inventoryItemBounds(Cell cell, const ItemDefinition &definition);
 struct InventoryDrop {
-    std::optional<GameCommand> command;
+    std::optional<InventoryIntent> command;
     InventoryError error = InventoryError::None;
     std::string description;
     Rectangle bounds{};
     std::optional<Rectangle> otherBounds;
 };
-std::vector<ContainerGrid> inventoryGrids(const GameSession &session, const InventoryUi &ui);
+std::vector<ContainerGrid> inventoryGrids(const InventoryView &inventory, const InventoryUi &ui);
 bool inventorySurface(const InventoryUi &ui, Vec mouse);
-InventoryDrop inventoryDrop(const GameSession &session, const InventoryUi &ui, Vec mouse,
+InventoryDrop inventoryDrop(const InventoryView &inventory, const IInventoryClient &client, const InventoryUi &ui, Vec mouse,
                             bool hirelingOpen = false);
 } // namespace d2x

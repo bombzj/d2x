@@ -1,9 +1,9 @@
-#include "gameplay/session/session.hpp"
+#include "gameplay/session/session_impl.hpp"
 #include <algorithm>
 
 namespace d2x {
 namespace {
-bool assignmentAvailable(const GameSession &session, ActOneQuest quest) {
+bool assignmentAvailable(const GameSessionImpl &session, ActOneQuest quest) {
     // Single-player projection of D2MOO's Act I SeqCallback chain. A later
     // quest can still start through entering its area or finding its item.
     // Charsi's level-8 check is for taking/returning the Malus, not her briefing.
@@ -20,7 +20,7 @@ bool assignmentAvailable(const GameSession &session, ActOneQuest quest) {
     default: return false;
     }
 }
-const NpcSpeech *denSpeech(const GameSession &session, std::string_view speaker) {
+const NpcSpeech *denSpeech(const GameSessionImpl &session, std::string_view speaker) {
     const auto stage = session.quest(ActOneQuest::DenOfEvil).stage;
     const char *state = nullptr;
     if (stage == uint32_t(DenStage::Unstarted)) {
@@ -35,7 +35,7 @@ const NpcSpeech *denSpeech(const GameSession &session, std::string_view speaker)
         result = questSpeech(dialogues, "A1Q1", "AfterInit", speaker);
     return result;
 }
-const NpcSpeech *burialSpeech(const GameSession &session, std::string_view speaker) {
+const NpcSpeech *burialSpeech(const GameSessionImpl &session, std::string_view speaker) {
     const auto stage = session.quest(ActOneQuest::SistersBurialGrounds).stage;
     const char *state = nullptr;
     if (stage == uint32_t(BurialStage::Unstarted)) {
@@ -51,7 +51,7 @@ const NpcSpeech *burialSpeech(const GameSession &session, std::string_view speak
         result = questSpeech(dialogues, "A1Q2", "AfterInit", speaker);
     return result;
 }
-const NpcSpeech *cainSpeech(const GameSession &session, std::string_view speaker) {
+const NpcSpeech *cainSpeech(const GameSessionImpl &session, std::string_view speaker) {
     const auto stage = session.quest(ActOneQuest::SearchForCain).stage;
     const char *state = nullptr;
     if (stage == uint32_t(CainStage::Unstarted)) {
@@ -70,7 +70,7 @@ const NpcSpeech *cainSpeech(const GameSession &session, std::string_view speaker
                     ? "RescuedByRogues" : "RescuedByHero";
     return state ? questSpeech(session.content().npcDialogues, "A1Q4", state, speaker) : nullptr;
 }
-const NpcSpeech *towerSpeech(const GameSession &session, std::string_view speaker) {
+const NpcSpeech *towerSpeech(const GameSessionImpl &session, std::string_view speaker) {
     const auto stage = session.quest(ActOneQuest::ForgottenTower).stage;
     if (stage == uint32_t(TowerStage::Unstarted)) return nullptr;
     const char *state = stage == uint32_t(TowerStage::CountessSlain) ? "Successful"
@@ -78,7 +78,7 @@ const NpcSpeech *towerSpeech(const GameSession &session, std::string_view speake
                         : "AfterInit";
     return questSpeech(session.content().npcDialogues, "A1Q5", state, speaker);
 }
-const NpcSpeech *toolsSpeech(const GameSession &session, std::string_view speaker) {
+const NpcSpeech *toolsSpeech(const GameSessionImpl &session, std::string_view speaker) {
     const auto stage = session.quest(ActOneQuest::ToolsOfTheTrade).stage;
     if (stage == uint32_t(ToolsStage::Unstarted) &&
         speaker == "Charsi" && assignmentAvailable(session, ActOneQuest::ToolsOfTheTrade))
@@ -87,7 +87,7 @@ const NpcSpeech *toolsSpeech(const GameSession &session, std::string_view speake
     const char *state = stage >= uint32_t(ToolsStage::MalusAcquired) ? "Successful" : "AfterInit";
     return questSpeech(session.content().npcDialogues, "A1Q3", state, speaker);
 }
-const NpcSpeech *slaughterSpeech(const GameSession &session, std::string_view speaker) {
+const NpcSpeech *slaughterSpeech(const GameSessionImpl &session, std::string_view speaker) {
     const auto stage = session.quest(ActOneQuest::SistersToTheSlaughter).stage;
     if (stage == uint32_t(SlaughterStage::Unstarted) && speaker == "Deckard Cain" &&
         assignmentAvailable(session, ActOneQuest::SistersToTheSlaughter))
@@ -101,7 +101,7 @@ const NpcSpeech *slaughterSpeech(const GameSession &session, std::string_view sp
 } // namespace
 
 std::vector<std::pair<ActOneQuest, const NpcSpeech *>>
-GameSession::npcQuestTopics(std::string_view speaker) const {
+GameSessionImpl::npcQuestTopics(std::string_view speaker) const {
     // QUESTS_InitScrollTextChain appends each active quest's NPC messages;
     // a Talk menu must retain all of these, rather than only the newest quest.
     std::vector<std::pair<ActOneQuest, const NpcSpeech *>> result;
@@ -156,7 +156,7 @@ GameSession::npcQuestTopics(std::string_view speaker) const {
     return result;
 }
 
-NpcQuestDialogue GameSession::npcQuestDialogue(std::string_view speaker) const {
+NpcQuestDialogue GameSessionImpl::npcQuestDialogue(std::string_view speaker) const {
     if (worldContent_.levels().at(int(region().definition.id)).act == 1) {
         for (auto [id, speech] : npcQuestTopics(speaker)) {
             const auto stage = quest(id).stage;
@@ -258,7 +258,7 @@ NpcQuestDialogue GameSession::npcQuestDialogue(std::string_view speaker) const {
     return {};
 }
 
-bool GameSession::npcQuestAlert(const WorldObject &npc) const {
+bool GameSessionImpl::npcQuestAlert(const WorldObject &npc) const {
     if (npc.questHidden || npc.npcClass.empty() || engagedNpc_ == npc.id ||
         !region().definition.safe) return false;
     const auto &introductions = state().player.npcIntroductions.at(size_t(state().population.difficulty));
@@ -270,7 +270,7 @@ bool GameSession::npcQuestAlert(const WorldObject &npc) const {
     return npcQuestDialogue(npc.name).automatic;
 }
 
-std::optional<unsigned> GameSession::denMonstersRemaining() const {
+std::optional<unsigned> GameSessionImpl::denMonstersRemaining() const {
     if (!denRegion_) return {};
     const AreaState *den = state().area.region == *denRegion_ ? &state().area : nullptr;
     if (!den)

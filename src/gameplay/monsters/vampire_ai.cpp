@@ -1,3 +1,4 @@
+#include "gameplay/model/state.hpp"
 #include "vampire_ai.hpp"
 #include "monster_wander.hpp"
 #include <algorithm>

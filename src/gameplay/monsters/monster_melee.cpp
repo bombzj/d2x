@@ -1,3 +1,5 @@
+#include "gameplay/combat/damage_request.hpp"
+#include "gameplay/skills/runtime.hpp"
 #include "core/random.hpp"
 #include "gameplay/simulation/simulation.hpp"
 #include "gameplay/combat/accuracy.hpp"
@@ -34,7 +36,7 @@ void Simulation::beginMonsterAttack(Enemy &enemy, int forcedMode) {
         monsterAttackTiming_ &&
         monsterAttackTiming_(enemy, 2) && monsterNormalCombat_ &&
         monsterAccuracy_ && monsterAccuracy_(enemy, state_.area.region, 2))
-        if (auto combat = monsterNormalCombat_(enemy.identity, state_.area.region);
+        if (auto combat = monsterNormalCombat_(enemy.identity, state_.area.region, enemy.enchantmentData());
             combat && combat->attack2Damage)
             enemy.attackMode = chooseAttackMode(enemy, *ai);
     const int auraRate = enemy.combatEffects.modifiers(state_.frame).combat.attackRate;
@@ -85,11 +87,10 @@ void Simulation::launchMonsterProjectile(Enemy &enemy) {
     if (!projectile || projectile->id < 0 || projectile->velocity <= 0 || projectile->lifetime <= 0)
         throw std::runtime_error("Monster projectile is missing");
     const auto direction = (monsterTargetPosition(enemy) - enemy.pos).unit();
-    state_.area.missiles.push_back({ids_.allocate(), enemy.id, enemy.pos,
+    auto &missile = skills().launchStraight({{}, enemy.id, enemy.pos,
         direction * projectile->velocity, projectile->lifetime, SkillBehavior::None,
         true, projectile->id, 0, 0, 0, true, enemy.attackMode});
-    state_.area.missiles.back().combatRandom = childRandom(unitRandom_);
-    replicateMonsterMissile(enemy, state_.area.missiles.back());
+    replicateMonsterMissile(enemy, missile);
 }
 void Simulation::launchMonsterSpell(Enemy &enemy) {
     const auto spell = monsterSpell_ ? monsterSpell_(enemy, enemy.attackMode) : std::nullopt;
@@ -116,12 +117,11 @@ void Simulation::launchMonsterSpell(Enemy &enemy) {
         if (offset != 99) target = target + Vec{float(horizontal[offset]), float(vertical[offset])};
         direction = (target - Vec{float(int(enemy.pos.x)), float(int(enemy.pos.y))}).unit();
     }
-    state_.area.missiles.push_back({ids_.allocate(), enemy.id, enemy.pos,
+    auto &missile = skills().launchStraight({{}, enemy.id, enemy.pos,
         direction * spell->projectile.velocity, spell->projectile.lifetime, SkillBehavior::None,
         false, spell->projectile.id, damage, 0, 0, true, enemy.attackMode});
-    state_.area.missiles.back().combatRandom = childRandom(unitRandom_);
-    state_.area.missiles.back().killOnHit = spell->killOnHit;
-    replicateMonsterMissile(enemy, state_.area.missiles.back());
+    missile.killOnHit = spell->killOnHit;
+    replicateMonsterMissile(enemy, missile);
 }
 bool Simulation::monsterMeleeReach(const Enemy &enemy, EntityId defender, int rangeBonus) {
     if (!defender) defender = enemy.combatTarget;
@@ -144,26 +144,26 @@ void Simulation::resolveMonsterAttack(Enemy &enemy, int modeOverride, bool proje
     const auto source = combatUnit(enemy.id);
     const auto accuracy = enemy.intrinsicCombat ? std::optional<MonsterAccuracy>{{source.stats.level, source.stats.attributes.attackRating}} :
         monsterAccuracy_ ? monsterAccuracy_(enemy, state_.area.region, mode) : std::nullopt;
-    const bool running = target.player && target.player->runningNow && target.player->moving;
+    const bool running = target.player && target.records.player->runningNow && target.records.player->moving;
     if (!running && accuracy) {
         const int auraRating = enemy.combatEffects.modifiers(state_.frame).combat.attackRatingPercent +
-            (enemy.identity.enchantment ? enemy.identity.enchantment->attackRatingPercent : 0);
+            (enemy.enchantment ? enemy.enchantment->attackRatingPercent : 0);
         const int chance = physicalHitChance(accuracy->level,
             int(int64_t(accuracy->attackRating) * std::max(0, 100 + auraRating) / 100),
             target.stats.level, target.stats.attributes.defense);
         if (limitedRandom(enemy.combatRandom, 100) >= unsigned(chance)) {
-            if (!projectile) triggerCombatEffects(defender, CombatEffectEvent::AttackedInMelee, enemy.id);
+            if (!projectile) skills().triggerCombatEffects(defender, CombatEffectEvent::AttackedInMelee, enemy.id);
             return;
         }
     }
     if (target.stats.block > 0 && limitedRandom(*target.random, 100) < unsigned(target.stats.block)) {
         blockUnit(defender);
-        if (!projectile) triggerCombatEffects(defender, CombatEffectEvent::AttackedInMelee, enemy.id);
+        if (!projectile) skills().triggerCombatEffects(defender, CombatEffectEvent::AttackedInMelee, enemy.id);
         return;
     }
     float damage = monsterDefinition(enemy.kind).damage;
     const auto combat = monsterNormalCombat_
-                            ? monsterNormalCombat_(enemy.identity, state_.area.region) : std::nullopt;
+                            ? monsterNormalCombat_(enemy.identity, state_.area.region, enemy.enchantmentData()) : std::nullopt;
     if (enemy.intrinsicCombat) {
         const int minimum = int(source.stats.minimumDamage * 256.f), maximum = int(source.stats.maximumDamage * 256.f);
         damage = float(minimum + int(limitedRandom(enemy.combatRandom, unsigned(std::max(0, maximum - minimum))))) / 256.f;
@@ -190,16 +190,16 @@ void Simulation::resolveMonsterAttack(Enemy &enemy, int modeOverride, bool proje
             rollRandom(enemy.combatRandom);
             if (uint32_t(enemy.combatRandom) % 100 < unsigned(*chance)) damage *= 2.f;
         }
-    const int damagePercent = (enemy.identity.enchantment ? enemy.identity.enchantment->damagePercent : 0) +
+    const int damagePercent = (enemy.enchantment ? enemy.enchantment->damagePercent : 0) +
         enemy.combatEffects.modifiers(state_.frame).combat.damagePercent;
     damage = float(int64_t(damage * 256.f) * std::max(0, 100 + damagePercent) / 100) / 256.f;
     const float previousLife = *target.life;
-    if (!projectile) triggerCombatEffects(defender, CombatEffectEvent::AttackedInMelee, enemy.id);
+    if (!projectile) skills().triggerCombatEffects(defender, CombatEffectEvent::AttackedInMelee, enemy.id);
     DamageRequest hit{enemy.id, defender, damage, MonsterDamageType::Physical, 0, false, false};
     const auto projectileSpec = projectile && monsterProjectile_ ? monsterProjectile_(enemy, mode) : std::nullopt;
     const int sourceDamage = projectileSpec ? projectileSpec->sourceDamage : 128;
     const auto &elements = source.stats.attributes.combat;
-    if (!enemy.identity.enchantment) for (auto [minimum, maximum, type] : {
+    if (!enemy.enchantment) for (auto [minimum, maximum, type] : {
         std::tuple{elements.fireMinimum, elements.fireMaximum, MonsterDamageType::Fire},
         std::tuple{elements.lightningMinimum, elements.lightningMaximum, MonsterDamageType::Lightning},
         std::tuple{elements.coldMinimum, elements.coldMaximum, MonsterDamageType::Cold}})
@@ -220,17 +220,17 @@ void Simulation::resolveMonsterAttack(Enemy &enemy, int modeOverride, bool proje
         restoreUnit(defender, resolved.absorbed);
     }
     hit.mitigated = true;
-    healLifeTap(enemy.id, defender, hit.amount);
+    skills().healLifeTap(enemy.id, defender, hit.amount);
     applyMonsterCurse(enemy, defender);
     if (hit.chill > 0) {
         applyChill(defender, hit.chill);
         hit.chill = 0;
     }
-    if (!projectile) reflectThorns(enemy.id, defender, hit.amount);
-    if (!projectile) reflectIronMaiden(enemy.id, defender, hit.amount);
+    if (!projectile) skills().reflectThorns(enemy.id, defender, hit.amount);
+    if (!projectile) skills().reflectIronMaiden(enemy.id, defender, hit.amount);
     const float hitDealt = dealDamage(hit);
     if (!projectile && hitDealt > 0 && enemy.hp > 0)
-        triggerCombatEffects(defender, CombatEffectEvent::DamagedInMelee, enemy.id);
+        skills().triggerCombatEffects(defender, CombatEffectEvent::DamagedInMelee, enemy.id);
     const float total = previousLife - *target.life;
     recoverUnit(defender, enemy.id, total, total > hitDealt ||
         std::any_of(hit.channels.begin() + 1, hit.channels.end(), [](float amount) { return amount > 0; }));

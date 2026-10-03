@@ -1,4 +1,6 @@
 #include "gameplay/session/session.hpp"
+#include "world/region.hpp"
+#include "gameplay/items/inventory.hpp"
 #include "scene_view.hpp"
 #include <algorithm>
 

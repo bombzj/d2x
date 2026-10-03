@@ -1,3 +1,7 @@
+#include "gameplay/combat/damage_request.hpp"
+#include "gameplay/skills/missile_rules.hpp"
+#include "gameplay/skills/weapon_contributions.hpp"
+#include "gameplay/skills/runtime.hpp"
 #include "core/random.hpp"
 #include "gameplay/simulation/simulation.hpp"
 #include "gameplay/combat/accuracy.hpp"
@@ -32,8 +36,8 @@ void Simulation::damageEnemy(Enemy &enemy, float amount, EntityId source, float 
 void Simulation::onMonsterDamaged(Enemy &enemy, const DamageRequest &request, float dealt) {
     if (dealt <= 0) return;
     const auto source = request.attacker;
-    if (enemy.identity.enchantment) {
-        const auto &mods = *enemy.identity.enchantment;
+    if (enemy.enchantment) {
+        const auto &mods = *enemy.enchantment;
         if (enemy.hp == 0 && (mods.has(9) || mods.has(18)))
             enemy.deathEnchantmentFrame = state_.frame + 4;
     }
@@ -49,7 +53,7 @@ void Simulation::onMonsterDamaged(Enemy &enemy, const DamageRequest &request, fl
         // Native freeze survives ordinary monster death, including a lethal
         // freezing hit; bosses use the distinct bossstaydeath mask.
         if (enemy.freezeActive || enemy.freeze > 0) keepDeathState(freezeDeathState_);
-        if (enemy.identity.enchantment && enemy.identity.enchantment->has(35))
+        if (enemy.enchantment && enemy.enchantment->has(35))
             keepDeathState(shatterDeathState_); // MONUMOD_ICESHATTERDEATH.
         enemy.combatEffects.onDeath(deathKind);
         for (const auto &effect : enemy.combatEffects.entries())
@@ -90,10 +94,11 @@ void Simulation::onMonsterDamaged(Enemy &enemy, const DamageRequest &request, fl
         const auto mercMods = attacker && attacker.identity.role == CombatRole::Hireling ? attacker.stats.attributes.combat : CombatModifiers{};
         emit(EnemyDied{enemy.id, controllingPlayer(source), enemy.kind, state_.area.region, enemy.pos, enemy.identity,
                        state_.population.difficulty, source, enemy.combatRandom,
-                       ownerMods.magicFind + mercMods.magicFind, ownerMods.goldFind + mercMods.goldFind});
+                       ownerMods.magicFind + mercMods.magicFind, ownerMods.goldFind + mercMods.goldFind,
+                       monsterRewardModifiers(enemy.enchantment)});
     }
 }
-void Simulation::meleeDamage(EntityId defender, const WeaponDamage &weapon) {
+void Simulation::meleeDamage(EntityId defender, const WeaponDamage &weapon, const SkillCastSpec *skill) {
     auto &player = state_.player;
     rollRandom(player.combatRandom);
     const auto target = combatUnit(defender);
@@ -102,7 +107,7 @@ void Simulation::meleeDamage(EntityId defender, const WeaponDamage &weapon) {
         target.stats.demon, target.stats.undead, target.stats.boss};
     if (uint32_t(player.combatRandom) % 100 >= unsigned(weaponHitChance(player.level,
         weapon.baseAttackRating, weapon.attackRatingPercent, weapon.target, defense, target.stats.rank))) {
-        triggerCombatEffects(defender, CombatEffectEvent::AttackedInMelee, player.id);
+        skills().triggerCombatEffects(defender, CombatEffectEvent::AttackedInMelee, player.id);
         return;
     }
     rollRandom(player.combatRandom);
@@ -116,31 +121,11 @@ void Simulation::meleeDamage(EntityId defender, const WeaponDamage &weapon) {
     const auto range = uint32_t(std::max<int64_t>(0, maximum - minimum));
     const auto damage = std::max<int64_t>(0, minimum + (range ? uint32_t(player.combatRandom) % range : 0));
     auto elements = rollAttackElements(weapon.item);
-    if (playerFireMastery_ && elements.fire > 0) {
-        const int mastery = playerFireMastery_();
+    if (fireMastery_ && elements.fire > 0) {
+        const int mastery = fireMastery_(player.id);
         elements.fire = float(int64_t(elements.fire * 256.f) * (100 + mastery) / 100) / 256.f;
     }
-    if (player.weaponAttack && player.weaponAttack->skill && player.weaponAttack->skill->effect == SkillBehavior::Vengeance) {
-        const auto &skill = *player.weaponAttack->skill;
-        const int minimum = std::max(256, weapon.meleeBaseMinimum);
-        const int maximum = std::max(minimum + 256, weapon.meleeBaseMaximum);
-        const int base = minimum + int(limitedRandom(player.combatRandom, unsigned(maximum - minimum)));
-        elements.fire += float(int64_t(base) * skill.weapon->elementPercent[0] / 100) / 256.f;
-        elements.cold += float(int64_t(base) * skill.weapon->elementPercent[1] / 100) / 256.f;
-        elements.lightning += float(int64_t(base) * skill.weapon->elementPercent[2] / 100) / 256.f;
-        elements.coldDuration += skill.coldDuration;
-    }
-    elements.hitClass = weapon.hitClass;
-    if (player.weaponAttack && player.weaponAttack->skill && player.weaponAttack->skill->effect == SkillBehavior::Vengeance) {
-        elements.hitClass = 32 + int(player.vengeanceHit % 3) * 16;
-        player.vengeanceHit = (player.vengeanceHit + 1) % 3;
-    }
-    if (player.weaponAttack && player.weaponAttack->skill && player.weaponAttack->skill->effect == SkillBehavior::Charge) {
-        elements.knockback = true;
-        elements.hitClass = 112;
-    }
-    if (player.weaponAttack && player.weaponAttack->skill && player.weaponAttack->skill->weapon)
-        elements.selfDamagePercent = player.weaponAttack->skill->weapon->selfDamagePercent;
+    applyWeaponSkillElements(elements, weapon, skill, player.combatRandom, player.vengeanceHit);
     resolveWeaponHit(defender, float(damage) / 256.f, player.id, elements);
     if (wearEquipment_ && weapon.item) wearEquipment_(weapon.item, false);
 }
@@ -149,43 +134,7 @@ void Simulation::updateMissiles(float dt) {
     std::vector<Missile> spawned;
     updatingMissiles_ = true;
     for (auto &m : area.missiles) {
-        if (m.heaven) {
-            m.remaining = std::max(0.f, m.remaining - dt);
-            if (m.remaining > .00001f) continue;
-            m.remaining = 0;
-            const auto target = combatUnit(m.heavenTarget);
-            if (!target.alive()) continue;
-            dealDamage({m.owner, target.id, m.damage, MonsterDamageType::Lightning});
-            int count = 0;
-            for (auto candidate : combatUnits()) {
-                if (!candidate.alive() || !canAttack(m.owner, candidate.id) || !active(*candidate.position)) continue;
-                const int deltaX = int(candidate.position->x) - int(m.pos.x), deltaY = int(candidate.position->y) - int(m.pos.y);
-                if (deltaX * deltaX + deltaY * deltaY > m.heaven->radius * m.heaven->radius) continue;
-                if (count++ >= m.heaven->limit) break;
-                Vec heading = (*candidate.position - m.pos).unit();
-                if (heading.length() < .001f) {
-                    const auto owner = combatUnit(m.owner);
-                    heading = owner ? (m.pos - *owner.position).unit() : Vec{1, 0};
-                    if (heading.length() < .001f) heading = {1, 0};
-                }
-                Missile bolt{ids_.allocate(), m.owner, m.pos, heading * (float(m.heaven->boltVelocity * 256 * 75 / 100) * 25.f / 4096.f),
-                    float(m.heaven->boltFrames) / 25.f, SkillBehavior::HolyBolt, false, m.heaven->boltId};
-                bolt.damage = float(m.heaven->minimum + limitedRandom(m.combatRandom,
-                    unsigned(std::max(0, m.heaven->maximum - m.heaven->minimum)))) / 256.f;
-                bolt.fixedElement = MonsterDamageType::Magic;
-                bolt.healingMinimum = float(m.heaven->healingMinimum); bolt.healingMaximum = float(m.heaven->healingMaximum);
-                bolt.combatRandom = childRandom(unitRandom_);
-                spawned.push_back(std::move(bolt));
-            }
-            continue;
-        }
-        if (m.arc) { advanceArc(m, spawned); continue; }
-        if (m.meteor) { advanceMeteor(m, spawned); continue; }
-        if (m.firewall) { advanceMonsterFirewall(m, spawned); continue; }
-        if (m.frozenOrb) { advanceFrozenOrb(m, spawned); continue; }
-        if (m.blizzard) { advanceBlizzard(m, spawned); continue; }
-        if (m.freezingArea) { advanceGlacialSpike(m, spawned); continue; }
-        if (m.coldRetaliation) { advanceChillingArmorBolt(m, spawned); continue; }
+        if (skills().advanceSpecialMissile(m, dt, spawned)) continue;
         const int accelerationStep = int(m.age * 5.f + .00001f);
         m.age += dt;
         if (m.groundTargeted) { advanceGroundTargetedMissile(m, dt, spawned); continue; }
@@ -206,68 +155,17 @@ void Simulation::updateMissiles(float dt) {
             continue;
         }
         if (m.physical && !m.monsterAttack) { advancePhysicalMissile(m, dt, spawned); continue; }
-        const auto type = m.fixedElement.value_or(
-            m.behavior == SkillBehavior::Nova || m.behavior == SkillBehavior::ChargedBolt ? MonsterDamageType::Lightning :
-            m.chill > 0 ? MonsterDamageType::Cold : MonsterDamageType::Fire);
-        auto hit = [&](EntityId defender) {
-            reactToMissile(m, defender, spawned);
-            m.lastHit = defender;
-            if (m.nextHitDelay > 0) area.novaHitUntil[defender] = state_.time + m.nextHitDelay;
-            if (m.monsterAttack && !m.fixedElement) {
-                if (auto *source = findEnemy(m.owner)) {
-                    if (source->kind == MonsterKind::BloodRaven && m.monsterAttackMode == 4)
-                        resolveMonsterAttack(*source, 1, true, defender);
-                    else if (m.monsterAttackMode >= 3) resolveMonsterSpell(*source, m, defender);
-                    else resolveMonsterAttack(*source, m.monsterAttackMode, true, defender);
-                }
-            } else if (m.impact) resolveMissileImpact(m, spawned, defender);
-            else {
-                DamageRequest hit{m.owner, defender, m.damage, type, m.chill};
-                if (m.behavior == SkillBehavior::IceBlast) {
-                    hit.chill = 0;
-                    hit.freezeFrames = int(m.chill * 25.f + .5f);
-                }
-                dealDamage(hit);
-            }
-            if (m.hitOverlayId >= 0)
-                area.effects.push_back({unitPosition(defender), 0, m.hitOverlayDuration, -1, m.hitOverlayId, defender});
-        };
-        const bool piercing = !m.killOnHit || m.behavior == SkillBehavior::Nova ||
-            m.behavior == SkillBehavior::FrostNova || m.behavior == SkillBehavior::Inferno;
+        auto hit = [&](EntityId defender) { skills().hitMissile(m, defender, spawned); };
+        const bool piercing = missilePierces(m);
         auto advance = [&](Vec next) {
             const bool wall = clipMissilePath(m.missileId, m.pos, next);
             const auto collision = missileCollisions_.find(m.missileId);
             if (collision == missileCollisions_.end()) { m.remaining = 0; return; }
-            if (m.behavior == SkillBehavior::HolyBolt) {
-                std::optional<std::pair<EntityId, float>> contact;
-                for (auto target : combatUnits()) {
-                    if (!target.alive() || target.id == m.owner || !active(*target.position)) continue;
-                    const bool ally = relation(m.owner, target.id) == Relation::Allied;
-                    if (!ally && (!canAttack(m.owner, target.id) || !target.stats.undead)) continue;
-                    const auto intersection = missileUnitIntersection(m.pos, next, collision->second.size,
-                        *target.position, target.stats.collisionSize);
-                    if (intersection && (!contact || *intersection < contact->second)) contact = {target.id, *intersection};
-                }
-                m.pos = contact ? m.pos + (next - m.pos) * contact->second : next;
-                if (contact) {
-                    auto target = combatUnit(contact->first);
-                    if (relation(m.owner, target.id) == Relation::Allied) {
-                        reactToMissile(m, target.id, spawned);
-                        const int minimum = int(m.healingMinimum * 256.f), maximum = int(m.healingMaximum * 256.f);
-                        const float amount = float(minimum + limitedRandom(m.combatRandom,
-                            unsigned(std::max(0, maximum - minimum)))) / 256.f;
-                        *target.life = std::min(float(target.stats.attributes.maxLife), *target.life + amount);
-                        if (m.hitOverlayId >= 0)
-                            area.effects.push_back({*target.position, 0, m.hitOverlayDuration, -1, m.hitOverlayId, target.id});
-                    } else {
-                        const int healingOverlay = m.hitOverlayId;
-                        m.hitOverlayId = -1;
-                        hit(target.id);
-                        m.hitOverlayId = healingOverlay;
-                    }
-                    m.remaining = 0;
-                }
-            } else if (piercing) {
+            if (skills().advanceHolyBolt(m, next, collision->second.size, spawned)) {
+                if (wall) m.remaining = 0;
+                return;
+            }
+            if (piercing) {
                 for (auto target : combatUnits()) {
                     if (!target.alive() || !canAttack(m.owner, target.id) || !active(*target.position) || target.id == m.lastHit) continue;
                     if (m.nextHitDelay > 0 && area.novaHitUntil[target.id] > state_.time) continue;
@@ -284,7 +182,7 @@ void Simulation::updateMissiles(float dt) {
         };
         m.remaining = std::max(0.f, m.remaining - dt);
         if (m.remaining <= .00001f) { m.remaining = 0; continue; }
-        if (m.behavior == SkillBehavior::ChargedBolt || m.behavior == SkillBehavior::BlessedHammer) {
+        if (missileFollowsPath(m)) {
             float distance = m.velocity.length() * dt;
             while (distance > 0 && !m.path.empty() && m.remaining > 0) {
                 const Vec delta = m.path.front() - m.pos;
@@ -301,8 +199,8 @@ void Simulation::updateMissiles(float dt) {
     std::erase_if(area.missiles, [](const Missile &m) { return m.remaining <= 0; });
     updatingMissiles_ = false;
     for (auto &missile : spawned) area.missiles.push_back(std::move(missile));
-    for (auto &missile : deferredMonsterMissiles_) area.missiles.push_back(std::move(missile));
-    deferredMonsterMissiles_.clear();
+    for (auto &missile : deferredMissiles_) area.missiles.push_back(std::move(missile));
+    deferredMissiles_.clear();
     std::erase_if(area.novaHitUntil, [this](const auto &entry) { return entry.second <= state_.time; });
 }
 } // namespace d2x

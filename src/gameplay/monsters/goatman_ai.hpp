@@ -1,7 +1,8 @@
 #pragma once
-#include "gameplay/model/state.hpp"
+#include "gameplay/monsters/ai_spec.hpp"
 
 namespace d2x {
+struct Enemy;
 bool goatmanApproaches(Enemy &enemy, const MonsterAiProfile &rules);
 bool goatmanAttacks(Enemy &enemy, const MonsterAiProfile &rules);
 } // namespace d2x

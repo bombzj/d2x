@@ -1,9 +1,19 @@
 #include "gameplay/session/session.hpp"
+#include "content/classic_data.hpp"
+#include "gameplay/model/state.hpp"
+#include "world/region.hpp"
+#include "gameplay/items/inventory.hpp"
+#include "gameplay/npc/store.hpp"
 #include "presentation/scene_view.hpp"
 #include <algorithm>
 #include <array>
 
 namespace d2x {
+std::optional<unsigned> SceneView::inventoryVendorPrice(ItemHandle item) const {
+    return view_.shopRepair ? session_.vendorRepairQuote(view_.dialogueObject, item)
+        : view_.shopOpen ? session_.vendorSaleQuote(view_.dialogueObject, item) : std::nullopt;
+}
+
 namespace {
 constexpr float scale = inventoryScale;
 Rectangle panelBounds() {

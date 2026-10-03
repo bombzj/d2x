@@ -1,4 +1,6 @@
 #include "gameplay/session/session.hpp"
+#include "gameplay/model/state.hpp"
+#include "world/region.hpp"
 #include "core/random.hpp"
 #include "presentation/scene_view.hpp"
 #include <algorithm>

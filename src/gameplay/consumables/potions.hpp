@@ -1,5 +1,6 @@
 #pragma once
-#include "gameplay/effects/state.hpp"
+#include "gameplay/effects/definition.hpp"
+#include "gameplay/character/attributes.hpp"
 #include <array>
 namespace d2x {
 enum class PotionKind { Healing, Mana, Rejuvenation, Stamina, Remedy };

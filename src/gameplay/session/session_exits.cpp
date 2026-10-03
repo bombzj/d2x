@@ -1,5 +1,5 @@
 #include "gameplay/simulation/simulation.hpp"
-#include "gameplay/session/session.hpp"
+#include "gameplay/session/session_impl.hpp"
 #include <algorithm>
 #include <limits>
 
@@ -32,7 +32,7 @@ float routeLength(Vec from, const std::deque<Vec> &route) {
     return length;
 }
 } // namespace
-std::vector<std::pair<int, Vec>> GameSession::sceneRegions() const {
+std::vector<std::pair<int, Vec>> GameSessionImpl::sceneRegions() const {
     std::vector<std::pair<int, Vec>> result{{current_, {}}};
     const auto &origin = region().recipe;
     for (int index = 0; index < int(regions_.size()); ++index) {
@@ -46,7 +46,7 @@ std::vector<std::pair<int, Vec>> GameSession::sceneRegions() const {
     }
     return result;
 }
-bool GameSession::roomVisible(int index, Vec position) const {
+bool GameSessionImpl::roomVisible(int index, Vec position) const {
     if (index == current_) return active(position);
     const auto &candidate = regions_.at(index);
     const auto &origin = region().recipe;
@@ -66,14 +66,14 @@ bool GameSession::roomVisible(int index, Vec position) const {
            observer->y <= target->y + dy + target->height &&
            target->y + dy <= observer->y + observer->height;
 }
-void GameSession::cancelExit() {
+void GameSessionImpl::cancelExit() {
     if (pendingExit_)
         simulation_->stopWalking();
     pendingExit_.reset();
     boundaryMoveTarget_.reset();
     boundaryPassage_.reset();
 }
-bool GameSession::beginBoundaryExit(const LevelExit &exit, std::optional<Vec> target) {
+bool GameSessionImpl::beginBoundaryExit(const LevelExit &exit, std::optional<Vec> target) {
     if (!exit.enabled || !exit.boundary || state().player.dead || !questExitAllowed(exit.destination)) return false;
     const auto destination = std::find_if(regions_.begin(), regions_.end(),
         [&](const Region &candidate) { return candidate.definition.id == exit.destination; });
@@ -122,7 +122,7 @@ bool GameSession::beginBoundaryExit(const LevelExit &exit, std::optional<Vec> ta
     simulation_->execute(MoveTo{selected->departure});
     return true;
 }
-bool GameSession::routeBoundaryMove(Vec target) {
+bool GameSessionImpl::routeBoundaryMove(Vec target) {
     if (!std::isfinite(target.x) || !std::isfinite(target.y) || state().player.dead) return false;
     const auto &source = region().recipe;
     bool adjoiningTarget = false;
@@ -154,7 +154,7 @@ bool GameSession::routeBoundaryMove(Vec target) {
     }
     return adjoiningTarget;
 }
-bool GameSession::questExitAllowed(RegionId destination) const {
+bool GameSessionImpl::questExitAllowed(RegionId destination) const {
     if (int(region().definition.id) == 40 && int(destination) == 50)
         return quest(QuestId::ArcaneSanctuary).stage > 0;
     if (int(destination) == 73)
@@ -162,7 +162,7 @@ bool GameSession::questExitAllowed(RegionId destination) const {
             int(region().definition.id) == actTwoTombs(state().mapSeed)[0];
     return true;
 }
-void GameSession::beginExit(int slot) {
+void GameSessionImpl::beginExit(int slot) {
     if (pendingExit_ == slot || state().player.dead)
         return;
     cancelExit();
@@ -197,7 +197,7 @@ void GameSession::beginExit(int slot) {
     pendingExit_ = slot;
     simulation_->execute(MoveTo{exit->accessPoint});
 }
-void GameSession::updateExit() {
+void GameSessionImpl::updateExit() {
     if (!pendingExit_ && !state().player.dead) {
         const auto &p = state().player;
         for (const auto &exit : region().exits) {

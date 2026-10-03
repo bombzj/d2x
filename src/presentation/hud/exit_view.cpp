@@ -1,4 +1,6 @@
 #include "gameplay/session/session.hpp"
+#include "content/classic_data.hpp"
+#include "world/region.hpp"
 #include "presentation/scene_view.hpp"
 
 namespace d2x {

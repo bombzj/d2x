@@ -1,8 +1,9 @@
 #pragma once
 #include "core/id.hpp"
-#include "gameplay/items/operations.hpp"
+#include "gameplay/items/intents.hpp"
 #include "gameplay/model/definitions.hpp"
-#include "gameplay/character/attributes.hpp"
+#include "gameplay/character/intents.hpp"
+#include "gameplay/npc/intents.hpp"
 #include <string>
 #include <optional>
 #include <variant>
@@ -38,63 +39,20 @@ struct UseSkill {
 };
 struct ToggleRun {};
 struct StopChannel {};
-struct SwitchWeaponSet {};
 struct StopMoving {};
 struct Interact {
     EntityId target;
 };
-struct IdentifyWithCain {
-    EntityId target;
-};
-struct EndNpcConversation {
-    EntityId target;
-};
-struct TalkToNpc {
-    EntityId target;
-};
-struct ClaimAkaraRespec {
-    EntityId target;
-};
-struct ImbueItem { EntityId npc; ItemHandle item; };
-struct CompleteActOne { EntityId npc; };
-struct CompleteActTwo { EntityId npc; };
-struct OpenGamble { EntityId npc; };
-struct OpenHirelingList { EntityId npc; };
-struct HireMercenary { EntityId npc; uint32_t slot = 0; };
-struct ResurrectHireling { EntityId npc; };
-struct UseHirelingPotion { ItemHandle item; };
-struct EquipHirelingItem {
-    ItemHandle item;
-    std::optional<EquipmentSlot> slot;
-    std::optional<ItemDestination> destination;
-};
-struct RepairVendorItem { EntityId npc; ItemHandle item; };
-struct BuyVendorItem {
-    EntityId vendor;
-    uint32_t slot = 0;
-    bool gamble = false;
-};
-struct SellVendorItem { EntityId vendor; ItemHandle item; };
 struct DebugGrantGold {
     unsigned amount = 0;
 };
 struct DebugGrantHireling {};
 struct DebugDropCube {};
-struct TransmuteCube {};
 struct SubmitQuestItem { EntityId object; ItemHandle item; };
 struct DebugSpawnItem { std::string code; ItemQuality quality; int level = 1; };
-enum class GoldAction { Deposit, Withdraw, Drop };
-struct GoldTransaction {
-    GoldAction action = GoldAction::Drop;
-    unsigned amount = 0;
-};
 struct DebugGrantExperience {
     uint64_t amount = 0;
 };
-struct AllocateAttribute { Attribute attribute = Attribute::Strength; };
-struct AllocateSkill { int id = -1; };
-struct BindSkillHotkey { unsigned index = 0; int skill = -2; bool right = true; };
-struct SelectMouseSkill { int skill = -1; bool right = true; };
 struct DebugResetAttributes {};
 struct DebugResetSkills {};
 struct DebugUnlockWaypoints {};
@@ -110,7 +68,6 @@ struct UseExit {
     int slot = 0;
 };
 struct RestartArea {};
-struct CloseStorage {};
 struct UseTownPortal {
     uint64_t revision;
 };

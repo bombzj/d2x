@@ -1,3 +1,4 @@
+#include "gameplay/skills/spec.hpp"
 #include "resources/archive.hpp"
 #include "necromancer_data.hpp"
 #include <stdexcept>
@@ -83,7 +84,7 @@ void loadNecromancerCurses(SkillCatalog &catalog, const DataTable &skills, const
         const auto sound = rowOf(sounds, "Sound", skills.value(row, "stsound"));
         spell.castSoundArt = "data/global/sfx/" + std::string(sounds.value(sound, "FileName"));
         if (!archives.contains(spell.castSoundArt)) throw std::runtime_error("Missing original curse sound");
-        catalog.skills.at(spell.sourceId).spell = std::move(spell);
+        catalog.skills.at(spell.sourceId).spell = std::make_shared<const SkillSpec>(std::move(spell));
     }
 }
 void loadNecromancerSummons(SkillCatalog &catalog, const DataTable &skills, const DataTable &monstats,
@@ -173,6 +174,6 @@ void loadNecromancerSummons(SkillCatalog &catalog, const DataTable &skills, cons
     if (!archives.contains(spec.iconArt) || !archives.contains(spell.castSoundArt))
         throw std::runtime_error("Missing original skeleton icon or cast sound");
     spell.summon = std::move(spec);
-    catalog.skills.at(spell.sourceId).spell = std::move(spell);
+    catalog.skills.at(spell.sourceId).spell = std::make_shared<const SkillSpec>(std::move(spell));
 }
 } // namespace d2x

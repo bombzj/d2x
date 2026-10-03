@@ -1,5 +1,5 @@
 #include "gameplay/simulation/simulation.hpp"
-#include "gameplay/session/session.hpp"
+#include "gameplay/session/session_impl.hpp"
 #include "world/maze.hpp"
 #include "gameplay/loot/special.hpp"
 #include "content/items/object_loot.hpp"
@@ -9,7 +9,7 @@
 #include <stdexcept>
 
 namespace d2x {
-ItemGeneration GameSession::questItemGeneration(std::string_view code, uint64_t &random) const {
+ItemGeneration GameSessionImpl::questItemGeneration(std::string_view code, uint64_t &random) const {
     ItemGeneration generation;
     if (code != "msf" && code != "vip" && code != "hst") return generation;
     const auto record = std::find_if(content_.uniqueItems.begin(), content_.uniqueItems.end(),
@@ -24,7 +24,7 @@ ItemGeneration GameSession::questItemGeneration(std::string_view code, uint64_t 
     generation.propertyRolls = std::move(properties.values);
     return generation;
 }
-bool GameSession::carriesQuestItem(std::string_view code) const {
+bool GameSessionImpl::carriesQuestItem(std::string_view code) const {
     for (const auto &[id, item] : inventory_.state().items) {
         const auto *location = std::get_if<ContainerLocation>(&item.location);
         if (!location || (location->container != playerContainers_.backpack &&
@@ -34,7 +34,7 @@ bool GameSession::carriesQuestItem(std::string_view code) const {
     }
     return false;
 }
-void GameSession::activateActTwoObject(EntityId id, std::optional<ItemHandle> submitted) {
+void GameSessionImpl::activateActTwoObject(EntityId id, std::optional<ItemHandle> submitted) {
     auto &objects = regions_.at(current_).objects;
     auto found = std::find_if(objects.begin(), objects.end(), [&](const auto &value) { return value.id == id; });
     if (found == objects.end() || state().player.dead || !canReach(*found)) return;
@@ -171,13 +171,13 @@ void GameSession::activateActTwoObject(EntityId id, std::optional<ItemHandle> su
         enter(destination);
     }
 }
-bool GameSession::canInsertStaff(EntityId id) const {
+bool GameSessionImpl::canInsertStaff(EntityId id) const {
     const auto target = std::find_if(region().objects.begin(), region().objects.end(), [&](const auto &value) { return value.id == id; });
     return target != region().objects.end() && target->operateFn == 25 && target->operatedAt < 0 && !state().player.dead &&
         int(region().definition.id) == actTwoTombs(state().mapSeed)[0] &&
         quest(QuestId::HoradricStaff).stage < uint32_t(StaffStage::Submitted) && canReach(*target);
 }
-void GameSession::updateActTwoObjects() {
+void GameSessionImpl::updateActTwoObjects() {
     auto &sun = simulation_->state_.player.actOneQuests.at(size_t(state().population.difficulty)).at(questIndex(QuestId::TaintedSun));
     if (sunDarkeningFrame_ && state().frame >= *sunDarkeningFrame_) {
         sunDarkeningFrame_.reset();
@@ -222,7 +222,7 @@ void GameSession::updateActTwoObjects() {
     region->objects.push_back(std::move(portal));
     region->refreshObjectCollision(state().time);
 }
-void GameSession::completeActTwo(EntityId npc) {
+void GameSessionImpl::completeActTwo(EntityId npc) {
     const auto *meshif = object(npc);
     if (!meshif || engagedNpc_ != npc || !canReach(*meshif) || state().player.dead) return;
     const bool east = meshif->npcClass == "meshif1" && int(region().definition.id) == 40;

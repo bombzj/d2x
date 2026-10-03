@@ -49,9 +49,12 @@ AutoStack 来自当前 MPQ ItemTypes，包含箭矢／弩矢、钥匙、投掷�
 | `src/presentation/inventory/inventory_controller.cpp` | 手势、快捷键、拆分数量、命令提交和输入拦截 |
 | `src/presentation/inventory/inventory_view.cpp` | 原版面板、图标、详情、数量、预览和拆分弹窗绘制 |
 | `src/gameplay/items/preview.cpp` | 移动、交换、拆分、合并共用的只读校验 |
-| `src/gameplay/session_inventory.cpp` | 当前世界访问校验、有效丢弃位置和库存命令执行 |
+| `src/contracts/inventory.hpp`、`src/client/inventory_client.hpp` | 本人库存值视图与窄意图接口；UI 不读取完整人物／原物品实例 |
+| `src/client/local_inventory_client.cpp` | 本地角色投影、预览与提交适配，复用原权威事务 |
+| `src/content/items/item_display.cpp` | 物品名称／提示文本，共享显式显示上下文 |
+| `src/gameplay/session/session_inventory.cpp` | 当前世界访问校验、有效丢弃位置和库存命令执行 |
 
-`InventoryUi` 只保存选中 ID、拖动的 ID/版本/偏移、拆分数量和一个待确认请求。权威数据仍只有 `InventoryState`。`InventoryApplied` 让成功及无变化操作都有完成回执；失败通过 `InventoryRejected`，因此同一件物品不能在上个操作未完成时被界面连续提交。
+`InventoryUi` 只保存选中 ID、拖动的 ID/版本/偏移、拆分数量和一个待确认请求。界面读取 `InventoryView` 值副本，权威数据仍只有 `InventoryState`。`InventoryApplied` 让成功及无变化操作都有完成回执；失败通过 `InventoryRejected`，因此同一件物品不能在上个操作未完成时被界面连续提交。当前解耦范围、兼容入口及最新实际 UI／存档冒烟见 [库存基线](baseline/INVENTORY.md)。
 
 原版图形资源从运行时 MPQ 读取，未嵌入 C++。面板取 `invchar.dc6` 的帧索引 4～7（从 0 计数），按照 320×432 的原尺寸拼接，再按 1.25 倍绘制；网格使用 `inventory.txt` 中的 29 像素单元和位置。上方保留原版装备区域，空腰带槽使用 inv_belt.dc6，详情移到提示框。自制的 AUTO PLACE／SPLIT／DROP 按钮、右上角 X 和面板底部战斗数值已移除；背包只在原金币栏显示金币数。
 

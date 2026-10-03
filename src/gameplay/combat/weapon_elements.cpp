@@ -1,3 +1,5 @@
+#include "gameplay/combat/damage_request.hpp"
+#include "gameplay/skills/runtime.hpp"
 #include "core/random.hpp"
 #include "gameplay/simulation/simulation.hpp"
 #include "gameplay/combat/damage_resolution.hpp"
@@ -80,7 +82,7 @@ void Simulation::resolveWeaponHit(EntityId defender, float physical, EntityId so
     if (!target.alive() || !target.stats.resolved || !canAttack(source, defender)) return;
     if (!originalElements.smite && target.stats.block > 0 && limitedRandom(*target.random, 100) < unsigned(target.stats.block)) {
         blockUnit(defender);
-        if (!originalElements.ranged) triggerCombatEffects(defender, CombatEffectEvent::AttackedInMelee, source);
+        if (!originalElements.ranged) skills().triggerCombatEffects(defender, CombatEffectEvent::AttackedInMelee, source);
         return;
     }
     if (originalElements.selfDamagePercent > 0) {
@@ -102,11 +104,11 @@ void Simulation::resolveWeaponHit(EntityId defender, float physical, EntityId so
         const int divisor = (target.identity.role == CombatRole::Player || target.identity.role == CombatRole::Hireling ? 10 : boss ? 8 : 4) *
                             (elements.ranged ? 2 : 1);
         const float crushing = *target.life / divisor *
-            (100 - std::clamp(unitResistance(target, MonsterDamageType::Physical), 0, 100)) / 100.f;
+            (100 - std::clamp(rawResistance(target.stats.attributes, MonsterDamageType::Physical), 0, 100)) / 100.f;
         *target.life = std::max(1.f / 256.f, *target.life - crushing);
     }
     const float dealtPhysical = mitigate(elements.deadly ? physical * 2.f : physical, MonsterDamageType::Physical);
-    healLifeTap(source, defender, dealtPhysical);
+    skills().healLifeTap(source, defender, dealtPhysical);
     float total = dealtPhysical;
     const int64_t damage = int64_t(std::min(*target.life, dealtPhysical) * 256.f);
     auto leeched = [&](int percent, int divisor) {
@@ -120,11 +122,11 @@ void Simulation::resolveWeaponHit(EntityId defender, float physical, EntityId so
         if (amount <= 0) continue;
         total += mitigate(amount, type);
         if (type == MonsterDamageType::Cold)
-            chill = elements.coldDuration * float(std::clamp(100 - unitResistance(target, type), 0, 200)) / 100.f;
+            chill = elements.coldDuration * float(std::clamp(100 - rawResistance(target.stats.attributes, type), 0, 200)) / 100.f;
     }
-    if (!originalElements.ranged) triggerCombatEffects(defender, CombatEffectEvent::AttackedInMelee, source);
-    if (!originalElements.ranged) reflectThorns(source, defender, dealtPhysical);
-    if (!originalElements.ranged) reflectIronMaiden(source, defender, dealtPhysical);
+    if (!originalElements.ranged) skills().triggerCombatEffects(defender, CombatEffectEvent::AttackedInMelee, source);
+    if (!originalElements.ranged) skills().reflectThorns(source, defender, dealtPhysical);
+    if (!originalElements.ranged) skills().reflectIronMaiden(source, defender, dealtPhysical);
     DamageRequest hit{source, defender, total, MonsterDamageType::Physical, chill, true};
     hit.hitClass = elements.hitClass;
     dealDamage(hit);
@@ -143,9 +145,9 @@ void Simulation::resolveWeaponHit(EntityId defender, float physical, EntityId so
             record.openWoundsRemaining = 8.f;
             record.openWoundsPerSecond = framesDamage * 25.f / 256.f; record.openWoundsSource = source;
         };
-        if (target.player) apply(*target.player);
-        else if (target.hireling) apply(*target.hireling);
-        else apply(*target.monster);
+        if (target.player) apply(*target.records.player);
+        else if (target.hireling) apply(*target.records.hireling);
+        else apply(*target.records.monster);
     }
     applyPoison(defender, elements.poisonPerSecond, elements.poisonDuration, source);
     if (elements.knockback && target.alive() && !target.stats.boss) applyAuraKnockback(source, defender);
@@ -159,9 +161,9 @@ void Simulation::applyPoison(EntityId defender, float rawRate, float duration, E
     duration *= float(std::clamp(100 - mods.poisonLengthResist, 0, 200)) / 100.f;
     if (rate > 0 && rate >= *target.poisonRate && duration > 0) {
         *target.poisonRate = rate; *target.poisonTime = duration;
-        if (target.player) target.player->poisonSource = source;
-        else if (target.hireling) target.hireling->poisonSource = source;
-        else target.monster->poisonSource = source;
+        if (target.player) target.records.player->poisonSource = source;
+        else if (target.hireling) target.records.hireling->poisonSource = source;
+        else target.records.monster->poisonSource = source;
     }
 }
 } // namespace d2x

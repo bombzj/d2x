@@ -1,4 +1,5 @@
 #pragma once
+#include "gameplay/monsters/population_settings.hpp"
 #include "gameplay/loot/loot.hpp"
 #include "world/region.hpp"
 #include <optional>

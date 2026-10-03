@@ -58,7 +58,7 @@ unsigned questBits(const QuestRecord &quest, size_t index) {
     }
     return 0;
 }
-void importQuests(PlayerState &player, const D2sFixedSections &sections, const NpcDialogues &dialogues) {
+void importQuests(CharacterRecord &player, const D2sFixedSections &sections, const NpcDialogues &dialogues) {
     for (size_t difficulty = 0; difficulty < 3; ++difficulty) {
         for (size_t index = 0; index < questSlots.size(); ++index) {
             const auto flags = word(sections.quests, 10 + difficulty * 96 + questSlots[index] * 2);
@@ -102,7 +102,7 @@ void importQuests(PlayerState &player, const D2sFixedSections &sections, const N
                 player.npcIntroductions[difficulty].insert(key);
     }
 }
-void exportQuests(const PlayerState &player, D2sFixedSections &sections, const NpcDialogues &dialogues) {
+void exportQuests(const CharacterRecord &player, D2sFixedSections &sections, const NpcDialogues &dialogues) {
     for (size_t difficulty = 0; difficulty < 3; ++difficulty) {
         sections.quests[10 + difficulty * 96 + 0x52] = (player.actOneQuests[difficulty][0].flags & denRespecUsed) ? 1 : 0;
         for (size_t index = 0; index < questSlots.size(); ++index) {
@@ -167,7 +167,7 @@ std::string mercName(const HirelingDefinition &definition, unsigned offset) {
     name << definition.nameFirst.substr(0, begin) << std::setw(int(definition.nameFirst.size() - begin)) << std::setfill('0') << number;
     return name.str();
 }
-void importMerc(PlayerState &player, const D2sHeader &header, const ClassicData &content) {
+void importMerc(CharacterRecord &player, const D2sHeader &header, const ClassicData &content) {
     if (!header.mercSeed) return;
     const HirelingDefinition *definition = nullptr;
     int level = 1;
@@ -187,7 +187,7 @@ void importMerc(PlayerState &player, const D2sHeader &header, const ClassicData 
     merc.level = level; merc.experience = header.mercExperience;
     merc.hp = header.mercFlags & 0x10000 ? 0.f : float(deriveHirelingStats(*definition, level).life);
 }
-void exportMerc(D2sHeader &header, const PlayerState &player, const ClassicData &content) {
+void exportMerc(D2sHeader &header, const CharacterRecord &player, const ClassicData &content) {
     const auto &merc = player.hireling;
     if (merc.sourceRow < 0) { header.mercSeed = 0; return; }
     auto definition = std::find_if(content.hirelings.begin(), content.hirelings.end(),

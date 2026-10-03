@@ -1,4 +1,11 @@
-#include "gameplay/simulation/simulation.hpp"
+#include "gameplay/combat/damage_request.hpp"
+#include "gameplay/skills/projectile_source.hpp"
+#include "gameplay/skills/missile.hpp"
+#include "gameplay/combat/unit.hpp"
+#include "gameplay/effects/state.hpp"
+#include "gameplay/skills/cast_spec.hpp"
+#include "gameplay/skills/world_port.hpp"
+#include "gameplay/skills/runtime.hpp"
 #include "core/random.hpp"
 #include <algorithm>
 #include <cmath>
@@ -20,33 +27,33 @@ Vec missileOrigin(Vec position) {
     return {std::floor(position.x) + .5f, std::floor(position.y) + .5f};
 }
 } // namespace
-void Simulation::launchFrozenOrb(PlayerState &player, const SkillCastSpec &skill, Vec target) {
+void SkillRuntime::launchFrozenOrb(SkillProjectileSource player, const SkillCastSpec &skill, Vec target) {
     if (!skill.frozenOrb) throw std::runtime_error("Missing Frozen Orb missile program");
     const Vec origin = missileOrigin(player.pos);
     Vec heading{std::floor(target.x) - std::floor(origin.x),
                 std::floor(target.y) - std::floor(origin.y)};
     if (heading.length() == 0) heading = {1, 1};
-    Missile missile{ids_.allocate(), player.id, origin, heading.unit() * skill.missileVelocity,
+    Missile missile{world_.allocate(), player.id, origin, heading.unit() * skill.missileVelocity,
         skill.missileLifetime, skill.effect, false, skill.missileId};
-    missile.combatRandom = childRandom(unitRandom_);
+    missile.combatRandom = world_.childSeed();
     missile.skillId = skill.sourceId; missile.skillRank = skill.rank;
     missile.killOnHit = false;
     missile.frozenOrb.emplace();
     missile.frozenOrb->spec = *skill.frozenOrb;
     // TargetX is independent of the path target and starts at zero in native missile data.
-    state_.area.missiles.push_back(std::move(missile));
+    world_.addMissile(std::move(missile));
 }
-void Simulation::spawnFrozenOrbBolt(const Missile &orb, Vec target, bool nova, std::vector<Missile> &spawned) {
+void SkillRuntime::spawnFrozenOrbBolt(const Missile &orb, Vec target, bool nova, std::vector<Missile> &spawned) {
     if (!combatUnit(orb.owner)) return;
-    if (!resolveMissileSkill_) throw std::runtime_error("Frozen Orb owner has no skill resolver");
+    if (!world_.hasResolver()) throw std::runtime_error("Frozen Orb owner has no skill resolver");
     // Each native child resolves the current owner's stats using the originating
     // skill rank. The parent has no Skill/MissileSkill damage to inherit.
-    const auto skill = resolveMissileSkill_(orb.owner, orb.skillId, orb.skillRank);
+    const auto skill = world_.resolve(orb.owner, orb.skillId, orb.skillRank);
     const auto &program = orb.frozenOrb->spec;
     const auto &motion = nova ? program.nova : program.bolt;
-    Missile child{ids_.allocate(), orb.owner, missileOrigin(orb.pos), target.unit() * motion.speed,
+    Missile child{world_.allocate(), orb.owner, missileOrigin(orb.pos), target.unit() * motion.speed,
         float(motion.lifetimeFrames) / 25.f, SkillBehavior::FrozenOrb, false, motion.missileId};
-    child.combatRandom = childRandom(unitRandom_);
+    child.combatRandom = world_.childSeed();
     child.skillId = orb.skillId; child.skillRank = orb.skillRank;
     child.fixedElement = MonsterDamageType::Cold;
     child.frozenOrb.emplace();
@@ -60,21 +67,7 @@ void Simulation::spawnFrozenOrbBolt(const Missile &orb, Vec target, bool nova, s
     emit(MissileReleased{child.missileId});
     spawned.push_back(std::move(child));
 }
-float Simulation::missileColdDuration(EntityId attacker, const CombatUnit &target, int frames) const {
-    const auto &mods = target.stats.attributes.combat;
-    if (frames <= 0 || mods.cannotBeFrozen) return 0;
-    // Total damage processing halves the duration before resistance rounding.
-    if (mods.halfFreezeDuration) frames /= 2;
-    int resistance = unitResistance(target, MonsterDamageType::Cold);
-    if (resistance >= 100) return 0;
-    if (target.stats.monsterResistanceRules && coldPierce_) resistance -= coldPierce_(attacker);
-    frames = int(int64_t(frames) * (100 - std::clamp(resistance, -100, 100)) / 100);
-    if (frames <= 0) return 0;
-    const int coldEffect = unitColdEffect_ ? unitColdEffect_(target) : 0;
-    if (coldEffect == 0) return 0;
-    return float(std::max(1, frames)) / 25.f;
-}
-void Simulation::advanceFrozenOrb(Missile &missile, std::vector<Missile> &spawned) {
+void SkillRuntime::advanceFrozenOrb(Missile &missile, std::vector<Missile> &spawned) {
     auto &state = *missile.frozenOrb;
     const auto &program = state.spec;
     const bool orb = state.phase == FrozenOrbMissileState::Phase::Orb;
@@ -97,7 +90,7 @@ void Simulation::advanceFrozenOrb(Missile &missile, std::vector<Missile> &spawne
         missile.velocity = (target - missile.pos).unit() * program.nova.speed;
     }
     Vec next = missile.pos + missile.velocity * (1.f / 25.f);
-    const bool blocked = clipMissilePath(missile.missileId, missile.pos, next);
+    const bool blocked = world_.clipPath(missile.missileId, missile.pos, next);
     ++state.elapsedFrames;
     missile.age = float(state.elapsedFrames) / 25.f;
     missile.remaining = float(std::max(0, lifetime - state.elapsedFrames)) / 25.f;
@@ -116,7 +109,7 @@ void Simulation::advanceFrozenOrb(Missile &missile, std::vector<Missile> &spawne
     // HandleMissileCollision moves, then decrements, then resolves expiry
     // before searching for units on the last frame.
     if (state.elapsedFrames == lifetime) { missile.pos = next; return; }
-    const auto contact = missileTarget(missile, next);
+    const auto contact = world_.missileTarget(missile, next);
     missile.pos = contact ? missile.pos + (next - missile.pos) * contact->second : next;
     if (contact) {
         reactToMissile(missile, contact->first, spawned);

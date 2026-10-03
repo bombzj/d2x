@@ -1,6 +1,6 @@
 #include "gameplay/simulation/simulation.hpp"
 #include "core/random.hpp"
-#include "gameplay/session/session.hpp"
+#include "gameplay/session/session_impl.hpp"
 #include <algorithm>
 #include <stdexcept>
 #include <vector>
@@ -13,7 +13,7 @@ QuestRecord &cain(WorldState &world) {
 }
 } // namespace
 
-std::array<int, 5> GameSession::cainStoneOrder() const {
+std::array<int, 5> GameSessionImpl::cainStoneOrder() const {
     std::vector<int> classes;
     for (const auto &region : regions_)
         if (region.definition.id == *stonyRegion_)
@@ -40,7 +40,7 @@ std::array<int, 5> GameSession::cainStoneOrder() const {
     return result;
 }
 
-void GameSession::reconcileCainObjects() {
+void GameSessionImpl::reconcileCainObjects() {
     auto stage = cain(simulation_->state_).stage;
     for (auto &region : regions_)
         for (auto &object : region.objects) {
@@ -69,7 +69,7 @@ void GameSession::reconcileCainObjects() {
                 }
 }
 
-void GameSession::activateCainQuestObject(const WorldObject &source) {
+void GameSessionImpl::activateCainQuestObject(const WorldObject &source) {
     auto &record = cain(simulation_->state_);
     auto &objects = regions_.at(current_).objects;
     auto found = std::find_if(objects.begin(), objects.end(),
@@ -132,7 +132,7 @@ void GameSession::activateCainQuestObject(const WorldObject &source) {
     }
 }
 
-std::optional<Vec> GameSession::cainPortalPosition() const {
+std::optional<Vec> GameSessionImpl::cainPortalPosition() const {
     if (quest(ActOneQuest::SearchForCain).stage < uint32_t(CainStage::PortalOpened))
         return std::nullopt;
     if (tristramRegion_ && region().definition.id == *tristramRegion_)
@@ -150,7 +150,7 @@ std::optional<Vec> GameSession::cainPortalPosition() const {
                        : std::nullopt;
 }
 
-bool GameSession::travelCainPortal() {
+bool GameSessionImpl::travelCainPortal() {
     auto position = cainPortalPosition();
     if (!position || cainPortalReach_ <= 0 || state().player.dead ||
         (state().player.pos - *position).length() > cainPortalReach_ ||
@@ -162,7 +162,7 @@ bool GameSession::travelCainPortal() {
     enter(destination);
     return true;
 }
-bool GameSession::beginCainPortal() {
+bool GameSessionImpl::beginCainPortal() {
     auto position = cainPortalPosition();
     if (!position || state().player.dead) return false;
     cancelExit();
@@ -177,7 +177,7 @@ bool GameSession::beginCainPortal() {
         simulation_->emit(InteractionFailed{{}, "Cannot reach the Cairn Stones portal."});
     return false;
 }
-void GameSession::updateCainPortal() {
+void GameSessionImpl::updateCainPortal() {
     if (!pendingCainPortal_) return;
     if (state().player.dead || !cainPortalPosition()) {
         pendingCainPortal_ = false;

@@ -1,11 +1,11 @@
-#include "gameplay/session/session.hpp"
+#include "gameplay/session/session_impl.hpp"
 #include "content/items/item_grades.hpp"
 #include <algorithm>
 #include <set>
 #include <stdexcept>
 
 namespace d2x {
-void GameSession::validateItemProperties(const CharacterSaveData &snapshot) const {
+void GameSessionImpl::validateItemProperties(const CharacterSaveData &snapshot) const {
     auto requireItem = [](bool condition, const char *reason) {
         if (!condition)
             throw std::runtime_error(std::string("Invalid save item: ") + reason);

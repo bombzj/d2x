@@ -1,5 +1,5 @@
 #pragma once
-#include "gameplay/monsters/monster_spawn.hpp"
+#include "gameplay/monsters/ai_spec.hpp"
 #include "resources/data_table.hpp"
 #include <optional>
 #include <string_view>

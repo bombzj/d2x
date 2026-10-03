@@ -1,19 +1,24 @@
-#include "gameplay/simulation/simulation.hpp"
+#include "gameplay/combat/damage_request.hpp"
+#include "gameplay/skills/missile.hpp"
+#include "gameplay/combat/unit.hpp"
+#include "gameplay/effects/state.hpp"
+#include "gameplay/skills/cast_spec.hpp"
+#include "gameplay/skills/world_port.hpp"
+#include "gameplay/skills/runtime.hpp"
 #include "core/random.hpp"
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
 
 namespace d2x {
-void Simulation::reactToMissile(const Missile &incoming, EntityId target, std::vector<Missile> &spawned) {
-    const auto enabled = missileReturnFire_.find(incoming.missileId);
-    if (enabled == missileReturnFire_.end() || !enabled->second) return;
+void SkillRuntime::reactToMissile(const Missile &incoming, EntityId target, std::vector<Missile> &spawned) {
+    if (!world_.returnFire(incoming.missileId)) return;
     const auto unit = combatUnit(target), owner = combatUnit(incoming.owner);
     if (!unit.alive() || !owner || !canAttack(target, incoming.owner)) return;
-    for (const auto &trigger : unit.effects->reactions(CombatEffectEvent::HitByMissile, state_.frame)) {
+    for (const auto &trigger : unit.effects->reactions(CombatEffectEvent::HitByMissile, world_.frame())) {
         if (!std::holds_alternative<ColdMissileRetaliation>(trigger.action)) continue;
-        if (!resolveMissileSkill_) throw std::runtime_error("Chilling Armor owner has no skill resolver");
-        const auto skill = resolveMissileSkill_(target, trigger.source.definition, trigger.source.level);
+        if (!world_.hasResolver()) throw std::runtime_error("Chilling Armor owner has no skill resolver");
+        const auto skill = world_.resolve(target, trigger.source.definition, trigger.source.level);
         if (skill.effect != SkillBehavior::ChillingArmor || skill.missileId < 0)
             throw std::runtime_error("Missing Chilling Armor retaliation missile");
         // EventFunc01 targets the hostile missile OWNER's current integer position.
@@ -23,9 +28,9 @@ void Simulation::reactToMissile(const Missile &incoming, EntityId target, std::v
         Vec heading{std::floor(owner.position->x) - std::floor(origin.x),
                     std::floor(owner.position->y) - std::floor(origin.y)};
         if (heading.length() == 0) heading = {1, 1};
-        Missile bolt{ids_.allocate(), target, origin, heading.unit() * skill.missileVelocity,
+        Missile bolt{world_.allocate(), target, origin, heading.unit() * skill.missileVelocity,
             skill.missileLifetime, skill.effect, false, skill.missileId};
-        bolt.combatRandom = childRandom(unitRandom_);
+        bolt.combatRandom = world_.childSeed();
         bolt.skillId = skill.sourceId; bolt.skillRank = skill.rank;
         bolt.fixedElement = MonsterDamageType::Cold;
         bolt.coldRetaliation.emplace();
@@ -41,21 +46,21 @@ void Simulation::reactToMissile(const Missile &incoming, EntityId target, std::v
         // Native client state event 1 is incomplete in the local reference;
         // display its linked original flash on the reacting armor owner.
         if (skill.hitOverlayId >= 0)
-            state_.area.effects.push_back({*unit.position, 0, skill.hitOverlayDuration, -1, skill.hitOverlayId, target});
+            world_.addEffect({*unit.position, 0, skill.hitOverlayDuration, -1, skill.hitOverlayId, target});
     }
 }
-void Simulation::advanceChillingArmorBolt(Missile &missile, std::vector<Missile> &spawned) {
+void SkillRuntime::advanceChillingArmorBolt(Missile &missile, std::vector<Missile> &spawned) {
     auto &state = *missile.coldRetaliation;
     if (state.elapsedFrames >= state.lifetimeFrames) { missile.remaining = 0; return; }
     Vec next = missile.pos + missile.velocity * (1.f / 25.f);
-    const bool wall = clipMissilePath(missile.missileId, missile.pos, next);
+    const bool wall = world_.clipPath(missile.missileId, missile.pos, next);
     ++state.elapsedFrames;
     missile.age = float(state.elapsedFrames) / 25.f;
     missile.remaining = float(state.lifetimeFrames - state.elapsedFrames) / 25.f;
     // SrvDo1 expires before unit search. No hit function, area explosion or
     // AlwaysExplode exists on this row, so terrain/expiry do not deal damage.
     if (state.elapsedFrames == state.lifetimeFrames) { missile.pos = next; return; }
-    const auto contact = missileTarget(missile, next);
+    const auto contact = world_.missileTarget(missile, next);
     missile.pos = contact ? missile.pos + (next - missile.pos) * contact->second : next;
     if (contact) {
         reactToMissile(missile, contact->first, spawned);

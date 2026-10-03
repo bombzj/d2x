@@ -1,5 +1,5 @@
 #pragma once
-#include "gameplay/character/attributes.hpp"
+#include "gameplay/character/allocation.hpp"
 #include "classic_panel.hpp"
 #include "presentation/graphics/primitives.hpp"
 #include <optional>

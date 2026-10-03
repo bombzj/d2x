@@ -1,26 +1,20 @@
 #pragma once
 #include "core/id.hpp"
+#include "gameplay/skills/events.hpp"
 #include "gameplay/model/definitions.hpp"
 #include "gameplay/items/operations.hpp"
-#include "gameplay/monsters/monster_spawn.hpp"
-#include "gameplay/quest/state.hpp"
+#include "gameplay/monsters/identity.hpp"
+#include "gameplay/monsters/reward.hpp"
+#include <optional>
+#include <string>
+#include "gameplay/quest/id.hpp"
 #include <variant>
 
 namespace d2x {
-struct SkillCast {
-    EntityId actor;
-    int skillId = -1;
-    Vec position;
-};
 struct WeaponAttackStarted {
     EntityId actor, target;
     bool projectile = false;
 };
-struct MissileImpact { int missileId; Vec position; };
-struct MissileReleased { int missileId; };
-// Ground damage source creation; presentation owns the independent falling sprite.
-struct BlizzardShardCreated { int missileId; Vec position; };
-struct SkillActivated { int skillId = -1; };
 // Emitted once at the alive -> dead transition, including every fact a loot system needs.
 struct EnemyDied {
     EntityId victim, killer;
@@ -32,6 +26,7 @@ struct EnemyDied {
     EntityId attacker; // Actual source; killer is the controlling player receiving credit.
     uint64_t lootRandom = 0;
     int magicFind = 0, goldFind = 0;
+    std::optional<MonsterRewardModifiers> rewardModifiers;
 };
 // Presentation/lifecycle notification; carries no loot entitlement.
 struct UnitDied {
@@ -126,6 +121,7 @@ struct WaypointActivated {
 struct QuestAdvanced {
     ActOneQuest quest;
     uint32_t stage;
+    bool completed = false; // Completion at this transition, before any later event.
 };
 using GameEvent = std::variant<SkillCast, SkillActivated, MissileImpact, MissileReleased, BlizzardShardCreated, WeaponAttackStarted, UnitDied, EnemyDied, EnemyAttacked, EnemySkill2, EnemyHit, PlayerDied, RegionEntered, ObjectInteracted, NpcDialogueStarted, ItemsIdentified, VendorItemBought, VendorItemSold,
                                ItemChange, InventoryRejected, InventoryApplied, ItemPickedUp, PickupFailed,

@@ -1,3 +1,6 @@
+#include "gameplay/combat/damage_request.hpp"
+#include "gameplay/skills/caster.hpp"
+#include "gameplay/skills/runtime.hpp"
 #include "gameplay/simulation/simulation.hpp"
 #include "damage_resolution.hpp"
 #include "core/random.hpp"
@@ -83,81 +86,6 @@ bool Simulation::canAttack(EntityId attacker, EntityId defender) const {
     const auto identity = identityOf(state_, defender);
     return !safeZone_ && identity && identity->attackable && relation(attacker, defender) == Relation::Hostile;
 }
-CombatUnit Simulation::combatUnit(EntityId id) {
-    CombatUnit unit;
-    unit.id = id;
-    auto &p = state_.player;
-    auto bind = [&](auto &record) {
-        unit.position = &record.pos; unit.life = &record.hp; unit.chill = &record.chill;
-        unit.poisonRate = &record.poisonPerSecond; unit.poisonTime = &record.poisonRemaining;
-        unit.random = &record.combatRandom; unit.effects = &record.combatEffects;
-        unit.identity = record.allegiance;
-    };
-    if (id && id == p.id) {
-        bind(p); unit.player = &p; unit.mana = &p.mana;
-        unit.stats.attributes = state_.player.attributes; unit.stats.level = p.level;
-        unit.stats.block = state_.player.equipment.blockChance;
-        if (p.runningNow && p.moving) { unit.stats.attributes.defense = 0; unit.stats.block /= 3; }
-    } else if (id && id == p.hireling.id && p.hireling.sourceRow >= 0 && hirelingAttributes_) {
-        auto &merc = p.hireling;
-        bind(merc); unit.hireling = &merc; unit.identity.owner = p.id;
-        unit.stats.attributes = hirelingAttributes_(); unit.stats.level = merc.level;
-        unit.stats.collisionSize = merc.collisionSize;
-    } else if (auto *monster = findEnemy(id)) {
-        bind(*monster); unit.monster = monster;
-        if (monster->intrinsicCombat) unit.stats = *monster->intrinsicCombat;
-        else {
-            auto &stats = unit.stats;
-            stats.monsterResistanceRules = true;
-            stats.attributes.maxLife = int(monster->maxHp);
-            const auto defense = monsterDefense_ ? monsterDefense_(*monster, state_.area.region) : std::nullopt;
-            stats.resolved = defense.has_value();
-            if (auto value = defense) {
-                stats.level = value->level; stats.attributes.defense = value->defense;
-                stats.demon = value->demon; stats.undead = value->undead; stats.boss = value->boss;
-            }
-            stats.rank = monster->identity.rank;
-            stats.collisionSize = monsterSize_ ? monsterSize_(*monster) : 2;
-            stats.drain = monsterDrain_ ? monsterDrain_(*monster) : 0;
-            stats.freezable = monsterFreezable_ && monsterFreezable_(*monster).value_or(false);
-            stats.primeEvil = monsterHitProperties_ && monsterHitProperties_(*monster).second;
-            if (monsterResistance_) {
-                auto resistance = [&](MonsterDamageType type) {
-                    const auto value = monsterResistance_(*monster, state_.area.region, type);
-                    if (!value) stats.resolved = false;
-                    return value.value_or(0);
-                };
-                stats.attributes.combat.physicalResist = resistance(MonsterDamageType::Physical);
-                stats.attributes.combat.magicResist = resistance(MonsterDamageType::Magic);
-                stats.attributes.fireResist = resistance(MonsterDamageType::Fire);
-                stats.attributes.coldResist = resistance(MonsterDamageType::Cold);
-                stats.attributes.lightningResist = resistance(MonsterDamageType::Lightning);
-                stats.attributes.poisonResist = resistance(MonsterDamageType::Poison);
-            }
-        }
-        const auto modifiers = monster->combatEffects.modifiers(state_.frame);
-        if (monster->conversion && monster->conversion->level > monster->conversion->convertedLevel) {
-            unit.stats.level = monster->conversion->convertedLevel;
-            unit.stats.attributes.maxLife = std::max(1, int(monster->maxHp));
-        }
-        auto &stats = unit.stats.attributes;
-        stats.defense = std::max(0, (stats.defense + modifiers.defense) * (100 + modifiers.combat.defensePercent) / 100);
-        stats.fireResist += modifiers.fireResist; stats.coldResist += modifiers.coldResist;
-        stats.lightningResist += modifiers.lightningResist; stats.poisonResist += modifiers.poisonResist;
-        mergeCombatModifiers(stats.combat, modifiers.combat);
-        if (monster->identity.enchantment && monster->identity.enchantment->has(38))
-            stats.combat.curseResistance = 100;
-    }
-    return unit;
-}
-std::vector<CombatUnit> Simulation::combatUnits() {
-    std::vector<CombatUnit> result;
-    result.push_back(combatUnit(state_.player.id));
-    if (auto merc = combatUnit(state_.player.hireling.id)) result.push_back(merc);
-    for (auto &monster : state_.area.enemies) result.push_back(combatUnit(monster.id));
-    for (auto &monster : state_.companions) result.push_back(combatUnit(monster.id));
-    return result;
-}
 Vec Simulation::unitPosition(EntityId id) const {
     auto unit = const_cast<Simulation *>(this)->combatUnit(id);
     return unit ? *unit.position : Vec{};
@@ -166,8 +94,8 @@ Vec Simulation::monsterTargetPosition(const Enemy &enemy) const { return unitPos
 EntityId Simulation::chooseTarget(EntityId actor, float range) {
     auto source = combatUnit(actor);
     if (!source.alive()) return {};
-    if (source.monster && source.monster->attractedUntil > state_.frame) {
-        const auto target = combatUnit(source.monster->attractedTarget);
+    if (source.monster && source.records.monster->attractedUntil > state_.frame) {
+        const auto target = combatUnit(source.records.monster->attractedTarget);
         if (target.alive() && target.effects->hasState(attractState_, state_.frame) &&
             canAttack(actor, target.id) && active(*target.position)) return target.id;
     }
@@ -186,18 +114,6 @@ EntityId Simulation::chooseTarget(EntityId actor, float range) {
     for (const auto &unit : state_.area.enemies) consider(unit.id, unit.pos, unit.hp);
     for (const auto &unit : state_.companions) consider(unit.id, unit.pos, unit.hp);
     return result;
-}
-int Simulation::unitResistance(const CombatUnit &unit, MonsterDamageType type) const {
-    const auto &stats = unit.stats.attributes;
-    switch (type) {
-    case MonsterDamageType::Physical: return stats.combat.physicalResist;
-    case MonsterDamageType::Magic: return stats.combat.magicResist;
-    case MonsterDamageType::Fire: return stats.fireResist;
-    case MonsterDamageType::Lightning: return stats.lightningResist;
-    case MonsterDamageType::Cold: return stats.coldResist;
-    case MonsterDamageType::Poison: return stats.poisonResist;
-    }
-    return 0;
 }
 float Simulation::incomingDamage(EntityId attacker, EntityId defender, float amount) const {
     auto &simulation = *const_cast<Simulation *>(this);
@@ -221,23 +137,10 @@ void Simulation::restoreUnit(EntityId id, float life, float mana) {
 ResolvedDamage Simulation::resolveIncoming(EntityId attacker, const CombatUnit &defender, float amount, MonsterDamageType type) {
     if (!defender.stats.resolved) { state_.message = "Original combat attributes are unavailable"; return {}; }
     amount = incomingDamage(attacker, defender.id, amount);
-    if (defender.player && defender.mana && type != MonsterDamageType::Poison && resolveMissileSkill_) {
-        for (const auto &effect : defender.effects->entries()) {
-            if (effect.spec.state.id != energyShieldState_ || !effect.activeAt(state_.frame)) continue;
-            const auto shield = resolveMissileSkill_(defender.id, effect.spec.source.definition, effect.spec.source.level);
-            int64_t mana = int64_t(*defender.mana * 256.f);
-            const int64_t fixed = std::max<int64_t>(0, int64_t(amount * 256.f));
-            const int64_t absorb = std::min(fixed * shield.shieldPercent / 100, mana * 16 / shield.shieldManaFactor);
-            mana = std::max<int64_t>(0, mana - absorb * shield.shieldManaFactor / 16);
-            amount = float(fixed - absorb) / 256.f;
-            *defender.mana = float(mana) / 256.f;
-            const auto handle = effect.handle;
-            if (mana == 0) combatEffectsChanged(defender.effects->remove(handle));
-            break;
-        }
-    }
+    if (defender.player && defender.mana && type != MonsterDamageType::Poison && resolveUnitSkill_)
+        amount = skills().absorbEnergyShield(defender.id, amount);
     if (!defender.stats.monsterResistanceRules) return mitigatePlayerDamage(amount, type, defender.stats.attributes);
-    int resistance = unitResistance(defender, type);
+    int resistance = rawResistance(defender.stats.attributes, type);
     if (type == MonsterDamageType::Physical && resistance > 0 && defender.stats.undead) {
         const auto source = combatUnit(attacker);
         if (source && source.effects->hasState(sanctuaryState_, state_.frame)) resistance = 0;
@@ -247,13 +150,13 @@ ResolvedDamage Simulation::resolveIncoming(EntityId attacker, const CombatUnit &
 }
 void Simulation::blockUnit(EntityId defender) {
     auto target = combatUnit(defender);
-    if (!target.alive() || !target.player || !target.player->equipment.shield) return;
-    auto &player = *target.player;
+    if (!target.alive() || !target.player || !target.records.player->equipment.shield) return;
+    auto &player = *target.records.player;
     if (player.weaponAttack && player.weaponAttack->skill && !player.weaponAttack->skill->weapon->interruptible) return;
     const auto *weapon = attackWeapon(false, false);
     const auto timing = weapon && attackTiming_ ? attackTiming_(*weapon, false, false, "bl") : std::nullopt;
     if (!timing) return;
-    player.pendingCast.reset(); stopChannel(player);
+    player.pendingCast.reset(); skills().stopChannel(skillCaster(player.id));
     player.castTime = player.meleeTime = 0;
     player.weaponAttack.reset(); player.charge.reset(); player.approachSkill.reset();
     player.route.clear(); player.attackTarget = {}; player.attackPosition.reset();
@@ -263,13 +166,13 @@ void Simulation::recoverUnit(EntityId defender, EntityId attacker, float damage,
     auto target = combatUnit(defender);
     if (!target.alive() || damage <= 0) return;
     if (target.monster) {
-        auto &monster = *target.monster;
+        auto &monster = *target.records.monster;
         monster.hitDisplay = 4.f / 25.f;
         if (monster.freezeActive || monster.combatEffects.hasState(uninterruptableState_, state_.frame)) return;
         monster.aiRetaliate = true;
         const auto source = combatUnit(attacker);
         const int hitClass = (baseHitClass >= 0 ? baseHitClass : source.monster && monsterHitProperties_
-            ? monsterHitProperties_(*source.monster).first : elemental ? 13 : 0) & 15;
+            ? monsterHitProperties_(*source.records.monster).first : elemental ? 13 : 0) & 15;
         const int divisor = hitClass == 2 || hitClass == 6 || hitClass == 10 || hitClass == 11 ? 8 :
                             hitClass == 5 ? 64 : hitClass == 4 || hitClass == 8 ? 32 : 16;
         const int dealt = int(damage * 256.f), maximum = int(monster.maxHp * 256.f);
@@ -297,21 +200,21 @@ void Simulation::recoverUnit(EntityId defender, EntityId attacker, float damage,
         if (monster.kind == MonsterKind::Andariel) monster.skillPosition.reset();
         monster.skill2Remaining = monster.skill2Duration = 0;
         monster.aiCorpse = {};
-        if (monster.identity.enchantment && monster.identity.enchantment->has(17))
+        if (monster.enchantment && monster.enchantment->has(17))
             monster.pendingUniqueLightningFrame = state_.frame + 2;
         emit(EnemyHit{defender, monster.kind});
     } else if (target.hireling) {
         const auto source = combatUnit(attacker);
         const int hitClass = (baseHitClass >= 0 ? baseHitClass : source.monster && monsterHitProperties_
-            ? monsterHitProperties_(*source.monster).first : elemental ? 13 : 0) & 15;
+            ? monsterHitProperties_(*source.records.monster).first : elemental ? 13 : 0) & 15;
         recoverHireling(damage, hitClass);
     } else if (target.player) {
-        if (target.player->weaponAttack && target.player->weaponAttack->skill &&
-            target.player->weaponAttack->skill->weapon && !target.player->weaponAttack->skill->weapon->interruptible) return;
+        if (target.records.player->weaponAttack && target.records.player->weaponAttack->skill &&
+            target.records.player->weaponAttack->skill->weapon && !target.records.player->weaponAttack->skill->weapon->interruptible) return;
         const int chance = target.stats.attributes.combat.concentrationChance;
-        if (chance > 0 && (target.player->meleeTime > 0 || target.player->castTime > 0 || target.player->channelSkill() >= 0) &&
+        if (chance > 0 && (target.records.player->meleeTime > 0 || target.records.player->castTime > 0 || target.records.player->channelSkill() >= 0) &&
             limitedRandom(*target.random, 100) < unsigned(chance)) return;
-        target.player->hitTime = .16f;
+        target.records.player->hitTime = .16f;
     }
 }
 float Simulation::dealDamage(const DamageRequest &request) {
@@ -342,9 +245,9 @@ float Simulation::dealDamage(const DamageRequest &request) {
     *target.life = std::min(float(target.stats.attributes.maxLife), *target.life + absorbed);
     const float dealt = std::min(*target.life, amount);
     *target.life = std::max(0.f, *target.life - amount);
-    if (target.monster) onMonsterDamaged(*target.monster, request, dealt);
+    if (target.monster) onMonsterDamaged(*target.records.monster, request, dealt);
     else if (target.hireling) {
-        auto &merc = *target.hireling;
+        auto &merc = *target.records.hireling;
         if (!target.alive()) {
             merc.attack.reset(); merc.attackTimer = 0; merc.route.clear(); merc.moving = false;
             merc.hitTime = 0; merc.healing.clear(); merc.chill = merc.poisonRemaining = merc.poisonPerSecond = 0;
@@ -355,15 +258,15 @@ float Simulation::dealDamage(const DamageRequest &request) {
     const bool purePoison = channels[size_t(MonsterDamageType::Poison)] > 0 &&
         std::none_of(channels.begin(), channels.end() - 1, [](float value) { return value > 0; });
     if (request.softHit && target.alive() && target.monster && dealt > 0) {
-        target.monster->hitDisplay = 4.f / 25.f;
-        if (target.monster->hitFlash <= 0) triggerMonsterLightning(*target.monster);
+        target.records.monster->hitDisplay = 4.f / 25.f;
+        if (target.records.monster->hitFlash <= 0) triggerMonsterLightning(*target.records.monster);
     }
     if (request.hitRecovery && !purePoison)
         recoverUnit(target.id, request.attacker, dealt,
             request.type != MonsterDamageType::Physical ||
             std::any_of(request.channels.begin() + 1, request.channels.end(), [](float value) { return value > 0; }), request.hitClass);
     if (!target.alive()) {
-        emit(UnitDied{target.id, target.monster && target.monster->deathShattered,
+        emit(UnitDied{target.id, target.monster && target.records.monster->deathShattered,
                      *target.position, target.stats.collisionSize});
         const auto attacker = combatUnit(request.attacker);
         if (attacker) restoreUnit(attacker.id, float(attacker.stats.attributes.combat.lifeOnKill),
@@ -380,9 +283,9 @@ void Simulation::applyChill(EntityId defender, float duration, bool freeze) {
         if (unitColdEffect_ && unitColdEffect_(target) >= 0) return;
         const int frames = int(duration * 25.f + .00001f);
         if (frames <= 0) return;
-        target.monster->freezeActive = true;
-        target.monster->freeze = std::max(target.monster->freeze, float(frames / monsterFreezeDivisor_) / 25.f);
-        target.monster->route.clear();
+        target.records.monster->freezeActive = true;
+        target.records.monster->freeze = std::max(target.records.monster->freeze, float(frames / monsterFreezeDivisor_) / 25.f);
+        target.records.monster->route.clear();
     } else {
         int frames = int(duration * 25.f + .00001f);
         if (frames <= 0) return;
@@ -395,9 +298,9 @@ void Simulation::applyWeb(EntityId defender, float duration, int percent) {
     auto unit = combatUnit(defender);
     if (!unit.alive()) return;
     auto apply = [&](auto &record) { record.webSlowRemaining = std::max(record.webSlowRemaining, duration); record.webSlowPercent = percent; };
-    if (unit.player) apply(*unit.player);
-    else if (unit.hireling) apply(*unit.hireling);
-    else if (unit.monster) apply(*unit.monster);
+    if (unit.player) apply(*unit.records.player);
+    else if (unit.hireling) apply(*unit.records.hireling);
+    else if (unit.monster) apply(*unit.records.monster);
 }
 std::optional<std::pair<EntityId, float>> Simulation::missileTarget(const Missile &missile, Vec to) {
     const auto rule = missileCollisions_.find(missile.missileId);

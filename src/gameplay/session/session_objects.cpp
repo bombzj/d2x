@@ -1,6 +1,7 @@
+#include "gameplay/combat/damage_request.hpp"
 #include "gameplay/simulation/simulation.hpp"
 #include "core/random.hpp"
-#include "gameplay/session/session.hpp"
+#include "gameplay/session/session_impl.hpp"
 #include "content/items/object_loot.hpp"
 #include "content/items/item_quality.hpp"
 #include <algorithm>
@@ -13,7 +14,7 @@ uint32_t roll(uint64_t &state, uint32_t bound) {
     return limitedRandom(state, bound);
 }
 } // namespace
-void GameSession::activateLootObject(EntityId id) {
+void GameSessionImpl::activateLootObject(EntityId id) {
     // Region objects are world state; a character-only disk restore rebuilds them.
     auto &live = regions_.at(current_).objects;
     auto found = std::find_if(live.begin(), live.end(), [id](const WorldObject &value) { return value.id == id; });
@@ -152,7 +153,7 @@ void GameSession::activateLootObject(EntityId id) {
     found->interaction = Interaction::None;
     simulation_->emit(ObjectInteracted{id, Interaction::Loot, found->name, false, unlocking});
 }
-void GameSession::activateShrine(EntityId id) {
+void GameSessionImpl::activateShrine(EntityId id) {
     auto &objects = regions_.at(current_).objects;
     auto found = std::find_if(objects.begin(), objects.end(), [id](const WorldObject &value) {
         return value.id == id;
@@ -164,14 +165,14 @@ void GameSession::activateShrine(EntityId id) {
     found->interaction = Interaction::None;
     simulation_->emit(ObjectInteracted{id, Interaction::Shrine, found->shrineName});
 }
-void GameSession::grantShrine(int code) {
+void GameSessionImpl::grantShrine(int code) {
     code = activeShrineCode(code);
     const auto found = content_.shrines.find(code);
     if (state().player.dead || found == content_.shrines.end()) return;
     if (applyShrine(code, {}, state().player.pos))
         simulation_->emit(ObjectInteracted{{}, Interaction::Shrine, found->second.name});
 }
-void GameSession::drinkWell(EntityId id) {
+void GameSessionImpl::drinkWell(EntityId id) {
     auto &objects = regions_.at(current_).objects;
     auto found = std::find_if(objects.begin(), objects.end(), [id](const WorldObject &value) {
         return value.id == id;
@@ -203,7 +204,7 @@ void GameSession::drinkWell(EntityId id) {
     if (!found->remainingUses) found->interaction = Interaction::None;
     simulation_->emit(ObjectInteracted{id, Interaction::Well, found->name});
 }
-void GameSession::updateObjectTimers() {
+void GameSessionImpl::updateObjectTimers() {
     const float now = state().time;
     const auto effects = state().player.combatEffects.entries();
     std::erase_if(shrineStatuses_, [&](const ShrineStatus &status) {

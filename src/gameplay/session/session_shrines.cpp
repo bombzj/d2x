@@ -1,6 +1,8 @@
+#include "gameplay/skills/spec.hpp"
+#include "gameplay/skills/resolve.hpp"
 #include "gameplay/simulation/simulation.hpp"
 #include "core/random.hpp"
-#include "session.hpp"
+#include "session_impl.hpp"
 #include "content/monsters/monster_enchantment.hpp"
 #include <algorithm>
 #include <array>
@@ -13,7 +15,7 @@ uint32_t shrineRoll(uint64_t &seed, uint32_t bound) {
     return limitedRandom(seed, bound);
 }
 }
-bool GameSession::applyShrine(int code, EntityId source, Vec position) {
+bool GameSessionImpl::applyShrine(int code, EntityId source, Vec position) {
     const auto found = content_.shrines.find(activeShrineCode(code));
     auto &player = simulation_->state_.player;
     if (found == content_.shrines.end() || player.dead || player.hp <= 0) return false;
@@ -76,7 +78,7 @@ bool GameSession::applyShrine(int code, EntityId source, Vec position) {
         state().time + float(shrine.durationFrames) / 25.f, applied.handle});
     return true;
 }
-bool GameSession::applySpecialShrine(const ShrineDefinition &shrine, Vec position) {
+bool GameSessionImpl::applySpecialShrine(const ShrineDefinition &shrine, Vec position) {
     auto &player = simulation_->state_.player;
     if (shrine.code == 17) return openShrinePortal();
     if (shrine.code == 20) return upgradeShrineMonster(position);
@@ -119,8 +121,8 @@ bool GameSession::applySpecialShrine(const ShrineDefinition &shrine, Vec positio
     if (shrine.code == 19) {
         const auto *entry = content_.skills.find(47); // Native missile 62 uses Fire Ball's damage.
         if (!entry || !entry->spell) return false;
-        const auto skill = resolveSkill(*entry->spell, rank, player.skillRanks,
-                                       fireMasteryPercent(), lightningMasteryPercent());
+        const auto skill = resolveSkill(*entry->spell, {rank, player.skillRanks,
+                                       fireMasteryPercent(), lightningMasteryPercent()});
         if (skill.missileId != 62 || !skill.missileImpact) return false;
         auto reduce = [&](float &hp, Vec target) {
             if (hp <= 0 || !map().activation.nearby(position, target)) return;
@@ -185,7 +187,7 @@ bool GameSession::applySpecialShrine(const ShrineDefinition &shrine, Vec positio
     }
     return false;
 }
-bool GameSession::openShrinePortal() {
+bool GameSessionImpl::openShrinePortal() {
     const auto townId = portalTown(region().definition.id);
     if (!portalResources_ || !townId || portalReach_ <= 0 || region().definition.safe ||
         state().nextPortalRevision == std::numeric_limits<uint64_t>::max()) return false;
@@ -224,12 +226,12 @@ bool GameSession::openShrinePortal() {
         region().definition.id, *field, *arrival, state().time, false});
     return true;
 }
-bool GameSession::upgradeShrineMonster(Vec) {
+bool GameSessionImpl::upgradeShrineMonster(Vec) {
     Enemy *nearest = nullptr;
     float distance = std::numeric_limits<float>::max();
     for (auto &enemy : simulation_->state_.area.enemies) {
         // Original predicate only admits NU/WL, normal, hostile, mortal units.
-        if (enemy.hp <= 0 || enemy.identity.rank != MonsterRank::Normal || enemy.identity.enchantment ||
+        if (enemy.hp <= 0 || enemy.identity.rank != MonsterRank::Normal || enemy.enchantment ||
             enemy.attack > 0 || enemy.hitFlash > 0 || enemy.freeze > 0 || enemy.stun > 0 ||
             enemy.skill2Remaining > 0 || enemy.resurrectionRemaining > 0 || enemy.aiRunning ||
             !map().activation.nearby(state().player.pos, enemy.pos)) continue;
@@ -252,7 +254,7 @@ bool GameSession::upgradeShrineMonster(Vec) {
     // Only explicit original party ownership propagates the initialization.
     // Group membership alone also contains unrelated ordinary pack members.
     for (auto &minion : simulation_->state_.area.enemies) {
-        if (minion.hp <= 0 || minion.identity.enchantment || nearest->identity.spawnKey.empty() ||
+        if (minion.hp <= 0 || minion.enchantment || nearest->identity.spawnKey.empty() ||
             minion.identity.ownerSpawnKey != nearest->identity.spawnKey) continue;
         const auto *record = monsterContent_.find(minion.identity.monster);
         const auto base = resolvedMonsterCombat(minion.identity, state().area.region);
@@ -262,14 +264,14 @@ bool GameSession::upgradeShrineMonster(Vec) {
         const auto life = int64_t(minion.maxHp * 256.f) * (100 + inherited.lifePercent) / 100;
         minion.hp = minion.maxHp = float(std::max<int64_t>(1, life)) / 256.f;
         minion.identity.rank = MonsterRank::Minion;
-        minion.identity.enchantment = std::move(inherited);
+        minion.enchantment = std::move(inherited);
     }
     // UMod2 operates on the existing HP roll and fully heals the transformed unit.
     int64_t life = int64_t(nearest->maxHp * 256.f);
     life += life * mods.lifePercent / 100;
     life = life * mods.lifeScalePercent / 100;
     nearest->identity.rank = rank;
-    nearest->identity.enchantment = std::move(mods);
+    nearest->enchantment = std::move(mods);
     nearest->hp = nearest->maxHp = float(std::max<int64_t>(1, life)) / 256.f;
     nearest->nextAuraFrame = state().frame;
     return true;
