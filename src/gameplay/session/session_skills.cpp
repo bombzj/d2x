@@ -8,49 +8,15 @@
 #include "gameplay/simulation/simulation.hpp"
 #include "session_impl.hpp"
 #include "content/skills/aura_data.hpp"
+#include "gameplay/items/equipment_inventory.hpp"
 #include <algorithm>
 
 namespace d2x {
-namespace {
-int skillRank(const SkillRecord &skill, const PlayerState &player, const CharacterDefinition &definition,
-              const CombatModifiers &mods, const InventoryService &inventory,
-              const PlayerContainers &containers, const EquipmentActor &actor) {
-    const int id = skill.id;
-    CharacterSkillRankInput input;
-    if (auto learned = player.skillRanks.find(id);
-        learned != player.skillRanks.end()) input.learned = learned->second;
-    for (auto slot : {weaponHandSlot(false, player.weaponSet),
-                      weaponHandSlot(true, player.weaponSet)}) {
-        const auto *item = inventory.item(inventory.equipped(containers, slot));
-        if (item && item->quantity && item->grantedSkill == id &&
-            (!inventory.catalog().find(item->definition)->maxDurability || item->durability) &&
-            inventory.equipmentRequirements(item->handle(), actor) == InventoryError::None)
-            ++input.granted;
-    }
-    auto bonus = [](const auto &values, int key) {
-        auto found = values.find(key);
-        return found == values.end() ? 0 : found->second;
-    };
-    input.native = skill.classCode == definition.code;
-    input.singleSkill = bonus(mods.singleSkills, id);
-    input.nonClassSkill = bonus(mods.nonClassSkills, id);
-    input.allSkills = mods.allSkills;
-    input.classSkills = bonus(mods.classSkills, int(definition.sourceRow));
-    if (skill.page > 0) input.tabSkills = bonus(mods.tabSkills, int(definition.sourceRow) * 8 + skill.page - 1);
-    return resolveCharacterSkillRank(input);
-}
-}
-int GameSessionImpl::effectiveSkillRank(int id) const {
-    const auto *skill = content_.skills.find(id);
-    if (!skill) return 0;
-    return skillRank(*skill, state().player, characterDefinition_, characterStats().combat,
-                     inventory_, playerContainers_, equipmentActor());
-}
 bool GameSessionImpl::telekinesisTarget(EntityId target, int range, bool operate) {
-    if (!target || state().player.dead || cursorItem()) return false;
+    if (!target || state().player.actions.dead || cursorItem()) return false;
     auto within = [&](Vec position) {
-        const int deltaX = int(position.x) - int(state().player.pos.x);
-        const int deltaY = int(position.y) - int(state().player.pos.y);
+        const int deltaX = int(position.x) - int(state().player.movement.pos.x);
+        const int deltaY = int(position.y) - int(state().player.movement.pos.y);
         return deltaX * deltaX + deltaY * deltaY <= range * range;
     };
     const auto unit = simulation_->combatUnit(target);
@@ -69,11 +35,11 @@ bool GameSessionImpl::telekinesisTarget(EntityId target, int range, bool operate
         const auto code = item->definition;
         if (equipment.isType("gold")) {
             auto &player = simulation_->state_.player;
-            const unsigned capacity = unsigned(player.level) * 10000;
-            const unsigned quantity = std::min(item->quantity, capacity - player.gold);
+            const unsigned capacity = unsigned(player.character.level) * 10000;
+            const unsigned quantity = std::min(item->quantity, capacity - player.character.gold);
             if (!quantity) return true;
             auto result = inventory_.consume(handle, quantity, access);
-            if (result) { player.gold += quantity; simulation_->emit(ItemPickedUp{target, code, quantity}); }
+            if (result) { player.character.gold += quantity; simulation_->emit(ItemPickedUp{target, code, quantity}); }
             publishInventory(std::move(result), target);
         } else {
             auto result = inventory_.collect(handle, playerContainers_, access);
@@ -139,13 +105,14 @@ int GameSessionImpl::coldPiercePercent() const {
     }
     return equipment;
 }
-void GameSessionImpl::applyWarmth(CharacterAttributes &stats, const PlayerState &player,
+void GameSessionImpl::applyWarmth(CharacterAttributes &stats, const CharacterState &character,
                               const CharacterDefinition &definition, const InventoryService &inventory,
                               const PlayerContainers &containers, const EquipmentActor &actor) const {
     bool active = false;
+    const auto loadout = borrowEquipmentLoadout(inventory, containers);
     for (const auto &[id, skill] : content_.skills.skills) {
         if (!skill.manaRecoveryPerRank || skill.classCode != definition.code) continue;
-        const int rank = skillRank(skill, player, definition, stats.combat, inventory, containers, actor);
+        const int rank = skillRank(skill, character, definition, stats.combat, loadout, actor);
         if (rank <= 0) continue;
         active = true;
         const int bonus = skillRankBonus(*skill.manaRecoveryPerRank, rank);
@@ -156,21 +123,21 @@ void GameSessionImpl::applyWarmth(CharacterAttributes &stats, const PlayerState 
 }
 void GameSessionImpl::syncPlayerAura() {
     auto &player = simulation_->state_.player;
-    const int skill = player.selectedSkills[player.weaponSet * 2 + 1];
+    const int skill = player.character.selectedSkills[player.character.weaponSet * 2 + 1];
     const auto *record = content_.skills.find(skill);
-    const int rank = record && record->auraImplemented && !player.dead && skillAvailable(skill)
+    const int rank = record && record->auraImplemented && !player.actions.dead && skillAvailable(skill)
         ? effectiveSkillRank(skill) : 0;
-    const SkillAuraOwner owner{player.id, player.dead, player.aura};
+    const SkillAuraOwner owner{player.id, player.actions.dead, player.skills.aura};
     if (simulation_->skills().clearAuraIfChanged(owner, skill, rank)) refreshCharacter();
     if (rank <= 0) return;
-    auto definition = resolveAura(content_, skill, rank, player.skillRanks, fireMasteryPercent(),
+    auto definition = resolveAura(content_, skill, rank, player.character.skillRanks, fireMasteryPercent(),
         lightningMasteryPercent(), characterStats().combat.coldSkillDamagePercent, effectiveSkillRank(99));
     if (definition) simulation_->skills().prepareAura(owner, *definition, record->auraImmediate);
 }
 void GameSessionImpl::useSkill(const UseSkill &intent) {
     const auto *entry = content_.skills.find(intent.id);
     const auto &player = state().player;
-    if (!entry || entry->passive || player.dead || !skillAvailable(intent.id)) return;
+    if (!entry || entry->passive || player.actions.dead || !skillAvailable(intent.id)) return;
     if (!entry->executable()) {
         simulation_->state_.message = "This skill effect is not implemented";
         return;
@@ -180,7 +147,7 @@ void GameSessionImpl::useSkill(const UseSkill &intent) {
         return;
     }
     if (entry->auraImplemented) {
-        simulation_->state_.player.selectedSkills[player.weaponSet * 2 + 1] = intent.id;
+        simulation_->state_.player.character.selectedSkills[player.character.weaponSet * 2 + 1] = intent.id;
         simulation_->skills().stopChannel(simulation_->skillCaster(simulation_->state_.player.id));
         return;
     }
@@ -199,7 +166,7 @@ void GameSessionImpl::useSkill(const UseSkill &intent) {
         if (entry->spell->summon) {
             const auto &definition = *entry->spell->summon;
             resolved.summon = resolveSummon(definition, rank, effectiveSkillRank(definition.masterySkill),
-                effectiveSkillRank(definition.resistSkill), player.level, state().population.difficulty);
+                effectiveSkillRank(definition.resistSkill), player.character.level, state().population.difficulty);
         }
         if (resolved.weapon) {
             if (resolved.weapon->chargeVelocity > 0) {
@@ -228,8 +195,8 @@ bool GameSessionImpl::weaponSkillReady(const SkillCastSpec &skill) const {
     if (!skill.weapon) return false;
     const auto &action = *skill.weapon;
     const auto &player = state().player;
-    if (player.dead || (player.mana < skill.manaCost && action.chargeVelocity == 0) ||
-        (action.delayFrames > 0 && state().frame < player.skillDelayUntil)) return false;
+    if (player.actions.dead || (player.resources.mana < skill.manaCost && action.chargeVelocity == 0) ||
+        (action.delayFrames > 0 && state().frame < player.skills.skillDelayUntil)) return false;
     const auto *weapon = simulation_->attackWeapon(action.thrown, false);
     return weapon && (action.smite ? bool(player.equipment.shield) :
         std::find(weapon->types.begin(), weapon->types.end(), action.requiredType) != weapon->types.end()) &&

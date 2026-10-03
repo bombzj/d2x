@@ -11,12 +11,12 @@ bool Simulation::firePhysicalProjectile(Vec target, const WeaponDamage &weapon, 
     auto &player = state_.player;
     const auto selected = weapon;
     if (!selected.projectile || (thrown && !selected.throwable)) return false;
-    if (skill && (!skill->weapon || (skill->weapon->manaOnRelease && player.mana < skill->manaCost))) {
+    if (skill && (!skill->weapon || (skill->weapon->manaOnRelease && player.resources.mana < skill->manaCost))) {
         state_.message = "Not enough mana";
         return false;
     }
     const auto &spec = *selected.projectile;
-    if (std::abs(target.x - player.pos.x) >= 100 || std::abs(target.y - player.pos.y) >= 100) return false;
+    if (std::abs(target.x - player.movement.pos.x) >= 100 || std::abs(target.y - player.movement.pos.y) >= 100) return false;
     const bool potion = thrown && selected.potion;
     if (potion && spec.velocityUnits <= 0) return false;
     // Resolve the launch snapshot before removing the final equipped stack.
@@ -38,14 +38,14 @@ bool Simulation::firePhysicalProjectile(Vec target, const WeaponDamage &weapon, 
         for (size_t channel = 0; channel < spec.damage.size(); ++channel)
             if (spec.damage[channel].maximum > 0)
                 impactDamage.channels[channel] = roll(spec.damage[channel].minimum, spec.damage[channel].maximum);
-    const int level = player.level;
+    const int level = player.character.level;
     if (!spendProjectile_ || !spendProjectile_(selected.item, thrown)) {
         player.combatRandom = priorRandom;
         state_.message = thrown ? "No throwing weapon remains." : "Matching arrows or bolts are required.";
         return false;
     }
-    const Vec direction = (target - player.pos).unit();
-    Missile missile{ids_.allocate(), player.id, player.pos,
+    const Vec direction = (target - player.movement.pos).unit();
+    Missile missile{ids_.allocate(), player.id, player.movement.pos,
         direction * (skill ? skill->missileVelocity : spec.speed),
         skill ? skill->missileLifetime : spec.lifetime, SkillBehavior::None, true,
         skill ? skill->missileId : spec.id, physical};
@@ -62,9 +62,9 @@ bool Simulation::firePhysicalProjectile(Vec target, const WeaponDamage &weapon, 
         missile.skillId = skill->sourceId;
         missile.skillRank = skill->rank;
         missile.impact = skill->missileImpact;
-        if (skill->weapon->manaOnRelease) player.mana = std::max(0.f, player.mana - skill->manaCost);
+        if (skill->weapon->manaOnRelease) player.resources.mana = std::max(0.f, player.resources.mana - skill->manaCost);
         if (skill->weapon->delayFrames > 0)
-            player.skillDelayUntil = state_.frame + EffectFrame(skill->weapon->delayFrames);
+            player.skills.skillDelayUntil = state_.frame + EffectFrame(skill->weapon->delayFrames);
     }
     if (potion) {
         missile.physical = false;
@@ -73,7 +73,7 @@ bool Simulation::firePhysicalProjectile(Vec target, const WeaponDamage &weapon, 
         missile.impactDamage = impactDamage;
         // MISSILES_CreateMissileFromParams, flag 0x400: integer distance changes
         // the remaining frames only; it does not rescale the original velocity.
-        const int frames = std::max(1, int(int64_t(std::max(1, missileDistance(player.pos, target))) *
+        const int frames = std::max(1, int(int64_t(std::max(1, missileDistance(player.movement.pos, target))) *
                                            4096 / spec.velocityUnits));
         missile.remaining = float(frames) / 25.f;
     }

@@ -1,6 +1,7 @@
 #pragma once
 #include "content/world/world_catalog.hpp"
 #include "navigation.hpp"
+#include "world/map_terrain.hpp"
 #include "resources/archive.hpp"
 #include "resources/formats.hpp"
 #include <memory>
@@ -16,20 +17,12 @@ class TileLibraryCache {
 };
 struct Map {
     using RoomBounds = d2x::RoomBounds;
-    MapData data;
-    std::vector<std::shared_ptr<const std::vector<Tile>>> libraries;
-    std::vector<const Tile *> tiles;
-    std::map<uint32_t, std::vector<int>> lookup;
-    std::vector<std::map<uint32_t, std::vector<int>>> scopedLookup;
-    // Chosen once at load: collision, automap and rendering read the same DT1 variant.
-    std::map<std::tuple<int, int, size_t, uint32_t>, int> tileChoices;
+    MapTerrain terrain;
     Grid grid;
-    std::string name, path;
     Vec spawn;
     std::vector<RoomBounds> rooms;
     RoomLayout activation;
     std::vector<Vec> warpArrivals;
-    int unresolved = 0;
     struct TombWall {
       int x = 0, y = 0;
       std::vector<MapCell> walls;

@@ -14,7 +14,7 @@
 
 `resolveIncoming` 处理攻击双方的原版倍率和目标减伤规则；`dealDamage` 处理实际生命变化、受击及死亡。可同时提交多个元素通道，避免同一次范围伤害产生多次死亡。`recoverUnit` 集中处理受击，普通怪物命中的物理与附加元素结算完成后只触发一次，保留佣兵命中类别／生命阈值；毒和撕裂的持续扣血不触发受击动作。玩家/佣兵抗性上限与普通怪物免疫规则仍有区别，PvP、佣兵对首领、首领对宠物倍率依据本地 D2MOO SUnitDmg，不以阵营编号推断。
 
-箭矢和持续伤害保留实际攻击者 ID。吸血、击杀恢复作用于攻击者；死亡事件单独携带控制玩家、实际攻击者及死亡时的 MF/GF 快照。无玩家主人的怪物击杀不借用当前玩家的属性或授予其经验。`UnitDied` 是无收益的通用死亡通知；只有可结算怪物死亡才发出带收益信息的 `EnemyDied`，骷髅死亡不会生成掉落。玩家属性和装备派生快照现归 `PlayerState` 所有，不再是模拟器的唯一全局战斗缓存。
+箭矢和持续伤害保留实际攻击者 ID。吸血、击杀恢复作用于攻击者；死亡事件单独携带控制玩家、实际攻击者及死亡时的 MF/GF 快照。第八项将 `EnemyDied` 独立到 `rewards/death.hpp` 并补原 NOTC 快照，奖励协调通过显式受益者与宿主端口执行，本轮已联合构建／有限冒烟，见[奖励基线](baseline/REWARDS.md)。无玩家主人的怪物击杀不借用当前玩家的属性或授予其经验。`UnitDied` 是无收益的通用死亡通知；只有可结算怪物死亡才发出带收益信息的 `EnemyDied`，骷髅死亡不会生成掉落。玩家属性和装备派生快照现归 `PlayerState` 所有，不再是模拟器的唯一全局战斗缓存。
 
 参考：`reference/d2moo/source/D2Game/src/UNIT/SUnit.cpp::SUNIT_AreUnitsAligned`、`SUnitDmg.cpp::SUNITDMG_CalculateTotalDamage`、`SUNITDMG_DistributeExperience`。原参数仍由当前 MPQ 内容层读取，参考代码不进入源码提交。
 

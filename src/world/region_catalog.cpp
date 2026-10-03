@@ -1,6 +1,8 @@
+#include "resources/formats.hpp"
+#include "world/maze.hpp"
 #include "cow_level.hpp"
 #include "world/outdoor/outdoor.hpp"
-#include "region.hpp"
+#include "world/plan.hpp"
 #include "world/generation_seed.hpp"
 #include <algorithm>
 

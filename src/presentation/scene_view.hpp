@@ -3,6 +3,8 @@
 #include "client/character_client.hpp"
 #include "client/quest_client.hpp"
 #include "client/npc_client.hpp"
+#include "client/map_client.hpp"
+#include "client/map_asset_source.hpp"
 #include "presentation/inventory/inventory_panel.hpp"
 #include "presentation/world/lighting_view.hpp"
 #include "presentation/world/palette_blend_view.hpp"
@@ -94,8 +96,14 @@ class SceneView {
     IQuestClient &questClient_;
     QuestView questView_;
     INpcClient &npcClient_;
+    IMapClient &mapClient_;
+    const IMapAssetSource &mapAssets_;
+    mutable MapSceneView mapView_;
     NpcConversationView npcView_;
     NpcSceneView npcScene_;
+    mutable ShopView shopView_;
+    mutable HirelingView hirelingView_;
+    mutable HirelingListView hirelingListView_;
     SceneAssets assets_;
     LightingView lighting_;
     PaletteBlendView paletteBlend_;
@@ -185,7 +193,6 @@ class SceneView {
     void drawHireling(Vec mouse) const;
     void drawHirelingPortrait() const;
     void drawHirelingList(Vec mouse) const;
-    std::string hirelingName(std::string_view key) const;
     void drawStorage(Vec mouse) const;
     void drawCube(Vec mouse) const;
     void drawOrifice(Vec mouse) const;
@@ -223,10 +230,10 @@ class SceneView {
     Rectangle hirelingSlotBounds(size_t index) const;
     bool hirelingPortraitVisible() const;
     std::optional<int> miniPanelAt(Vec mouse) const;
-    const LevelExit *exitAt(Vec mouse) const;
+    const ExitView *exitAt(Vec mouse) const;
     SceneView(Archives &archives, const GameSession &session, const IActorClient &actorClient,
               IInventoryClient &inventoryClient, ICharacterClient &characterClient,
-              IQuestClient &questClient, INpcClient &npcClient);
+              IQuestClient &questClient, INpcClient &npcClient, IMapClient &mapClient, const IMapAssetSource &mapAssets);
     ~SceneView();
     ViewState &ui() { return view_; }
     const ViewState &ui() const { return view_; }
@@ -236,6 +243,10 @@ class SceneView {
     void refreshCharacterView();
     const QuestView &questView() const { return questView_; }
     const NpcConversationView &npcView() const { return npcView_; }
+    const MapSceneView &mapView() const;
+    const ShopView &shopView() const;
+    const HirelingView &hirelingView() const;
+    const HirelingListView &hirelingListView() const;
     void refreshInteractions();
     void refreshNpcView(EntityId npc);
     std::vector<std::pair<RegionId, size_t>> automapLayers() const;
@@ -271,6 +282,6 @@ class SceneView {
     bool showNextNpcGossip();
     void sessionRestored();
     void collectMapVariants(Archives &archives);
-    std::vector<WorldEntry> travelEntries() const;
+    std::vector<TravelEntryView> travelEntries() const;
 };
 } // namespace d2x

@@ -2,9 +2,27 @@
 #include "gameplay/session/session_impl.hpp"
 #include "gameplay/simulation/simulation.hpp"
 #include "gameplay/skills/resolve.hpp"
+#include "gameplay/skills/rank_sources.hpp"
+#include "gameplay/items/skill_sources.hpp"
+#include "gameplay/items/equipment_inventory.hpp"
 #include <stdexcept>
 
 namespace d2x {
+int GameSessionImpl::skillRank(const SkillRecord &skill, const CharacterState &character,
+    const CharacterDefinition &definition, const CombatModifiers &bonuses,
+    const EquipmentLoadout &loadout, const EquipmentActor &actor) const {
+    const auto learned = character.skillRanks.find(skill.id);
+    const auto grants = equipmentSkillGrants(loadout, actor, skill.id);
+    return resolveSkillSourceRank({skill.id, learned == character.skillRanks.end() ? 0 : learned->second,
+        int(definition.sourceRow), skill.page, skill.classCode == definition.code}, grants, bonuses);
+}
+int GameSessionImpl::effectiveSkillRank(int id) const {
+    const auto *skill = content_.skills.find(id);
+    if (!skill) return 0;
+    return skillRank(*skill, state().player.character, characterDefinition_, characterStats().combat,
+        borrowEquipmentLoadout(inventory_, playerContainers_), equipmentActor());
+}
+
 void GameSessionImpl::configureSkillSources() {
     const EntityId actor = state().player.id;
     skillSources_.bind(actor, [this, actor] {
@@ -12,7 +30,7 @@ void GameSessionImpl::configureSkillSources() {
         // a PlayerState reference or caching modifiers at cast start.
         const auto &player = state().player;
         if (player.id != actor) throw std::runtime_error("Bound skill source actor changed");
-        return SkillSourceValues{player.skillRanks, fireMasteryPercent(), lightningMasteryPercent(),
+        return SkillSourceValues{player.character.skillRanks, fireMasteryPercent(), lightningMasteryPercent(),
                                  characterStats().combat.coldSkillDamagePercent};
     });
 

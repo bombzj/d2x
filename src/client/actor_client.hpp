@@ -7,8 +7,10 @@ class IActorClient {
   public:
     virtual ~IActorClient() = default;
     virtual ActorView controlledActor() const = 0;
+    virtual void control(ActorControlIntent intent) = 0;
     virtual void move(MoveIntent intent) = 0;
     virtual void stopMoving() = 0;
+    virtual void stopActions() = 0;
     virtual void toggleRun() = 0;
 };
 } // namespace d2x

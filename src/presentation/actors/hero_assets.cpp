@@ -22,7 +22,7 @@ void SceneAssets::loadHeroEquipment(const GameSession &session) {
     auto parts = baseParts;
     std::string appearanceIssue;
     const auto &inventory = session.inventory();
-    const auto &attack = session.state().player.weaponAttack;
+    const auto &attack = session.state().player.actions.weaponAttack;
     auto equipped = [&](EquipmentSlot slot) -> const ItemDefinition * {
         if (attack) return inventory.catalog().find(attack->appearanceDefinitions[size_t(slot)]);
         const auto *item = session.usableEquipment(slot);
@@ -47,7 +47,7 @@ void SceneAssets::loadHeroEquipment(const GameSession &session) {
         }
     }
     const auto &weapon = attack ? attack->weaponClass : session.equipmentStats().animationClass;
-    const auto weaponSet = session.state().player.weaponSet;
+    const auto weaponSet = session.state().player.character.weaponSet;
     for (auto slot : {weaponHandSlot(false, weaponSet), weaponHandSlot(true, weaponSet)}) {
         const auto *definition = equipped(slot);
         if (!definition || definition->appearance.component == 16)

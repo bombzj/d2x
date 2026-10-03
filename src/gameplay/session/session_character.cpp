@@ -12,16 +12,16 @@ SkillLearningRule learningRule(const SkillRecord &skill) {
 }
 CharacterProgressionContext GameSessionImpl::characterProgressionContext() {
     auto &p = simulation_->state_.player;
-    return {p.id, !p.dead, p.experience, p.level, p.unspentAttributes, p.unspentSkills, p.allocated};
+    return {p.id, !p.actions.dead, p.character.experience, p.character.level, p.character.unspentAttributes, p.character.unspentSkills, p.character.allocated};
 }
 CharacterSkillContext GameSessionImpl::characterSkillContext() const {
     auto &p = simulation_->state_.player;
-    return {p.id, characterDefinition_.code, p.level, !p.dead, p.unspentSkills,
-            p.skillRanks, p.skillHotkeys, p.selectedSkills, p.weaponSet};
+    return {p.id, characterDefinition_.code, p.character.level, !p.actions.dead, p.character.unspentSkills,
+            p.character.skillRanks, p.character.skillHotkeys, p.character.selectedSkills, p.character.weaponSet};
 }
 int GameSessionImpl::nextSkillRequiredLevel(int id) const {
     const auto *skill = content_.skills.find(id);
-    return skill ? d2x::nextSkillRequiredLevel(learningRule(*skill), state().player.skillRanks) : 0;
+    return skill ? d2x::nextSkillRequiredLevel(learningRule(*skill), state().player.character.skillRanks) : 0;
 }
 bool GameSessionImpl::canAllocateSkill(int id) const {
     const auto *skill = content_.skills.find(id);
@@ -44,7 +44,7 @@ void GameSessionImpl::applyCharacterIntent(const CharacterIntent &intent) {
                 bindCharacterSkill(context, value.index, value.right, eligibility);
             } else if (selectCharacterSkill(context, value.right, eligibility)) {
                 auto &p = simulation_->state_.player;
-                if (value.right && value.skill != p.channelSkill()) simulation_->skills().stopChannel(simulation_->skillCaster(p.id));
+                if (value.right && value.skill != p.skills.channelSkill()) simulation_->skills().stopChannel(simulation_->skillCaster(p.id));
             }
         }
     }, intent);
@@ -54,10 +54,10 @@ void GameSessionImpl::resetCharacterAttributePoints() {
 }
 void GameSessionImpl::resetCharacterSkillPoints() {
     auto &p = simulation_->state_.player;
-    if (p.dead) return;
+    if (p.actions.dead) return;
     simulation_->skills().stopChannel(simulation_->skillCaster(p.id));
     int rewarded = 0;
-    for (const auto &difficulty : p.actOneQuests) {
+    for (const auto &difficulty : p.character.actOneQuests) {
         if (difficulty.at(questIndex(ActOneQuest::DenOfEvil)).stage == uint32_t(DenStage::Rewarded)) ++rewarded;
         if (difficulty.at(questIndex(QuestId::RadamentsLair)).flags & radamentBookUsed) ++rewarded;
     }

@@ -1,6 +1,37 @@
-# 库存客户端边界基线
+# 库存、装备与技能来源基线
 
-更新：2026-10-03。对应 [技术改造方案](../TECHNICAL_REFACTOR_PLAN.md) P1 的库存 UI 切片；原 `InventoryService` 继续负责权威事务，P3 多所有者领域改造尚未完成。
+更新：2026-10-04。对应 [技术改造方案](../TECHNICAL_REFACTOR_PLAN.md) P1 库存 UI 切片及 P3 装备／来源基础切片；`InventoryService` 继续负责权威事务，完整 P3 尚未完成。第四项已随第五项通过 Windows Release 及代表性佣兵装备路径，完整规则回归尚未覆盖。
+
+第八项将 `ItemGeneration`／`ItemAffixInstance` 移到 `items/generation.hpp`；`items/state.hpp` 继续复用同一值定义，掉落计划不再包含完整库存状态。库存仍唯一拥有实际物品与位置，未改物品生成／保存字段；该批已随收尾构建／有限冒烟，见[奖励基线](REWARDS.md)。
+
+## 任务物品替换（第七项）
+
+`InventoryService::replaceItem` 在私有库存／ID 草稿中复验来源 handle、单件数量和访问，再消耗、创建并准备有序通知；成功一次移交库存、创建随机流和 ID 游标，失败不改原件。调用方可传已解析物品生成结果及准备好的随机流，库存不反查角色／任务；当前接入卷轴翻译与恰西灌注。成功仍按原移除→创建顺序发布，发布发生在完整事务提交之后；草稿仅用于低频替换，不用于每帧装备计算或通用多领域事务。
+
+本轮 Windows Release 及原树皮卷轴拾取／翻译／重复交谈简单冒烟通过，实际灌注及失败注入未验收，见[NPC／任务基线](NPC_QUEST.md#npc任务与奖励协调第七项)。不改变 D2S 或成功随机／ID 消费顺序，不是全库存／钱包／合成事务重写。
+
+## 装备与技能来源（第四项）
+
+| 入口 | 当前职责 |
+| --- | --- |
+| [`handle.hpp`](../../src/gameplay/items/handle.hpp)、[`errors.hpp`](../../src/gameplay/items/errors.hpp) | 独立物品 ID／revision 与库存错误值；原值和错误顺序不变，来源头不需要完整物品实例／事务头 |
+| [`equipment_loadout.*`](../../src/gameplay/items/equipment_loadout.hpp) | 短期只读借用：各槽位、背包物品及其定义，提供需求／有效装备查询；不持有库存或角色状态 |
+| [`equipment_inventory.*`](../../src/gameplay/items/equipment_inventory.cpp) | 从库存和显式容器建立借用，绑定需求属性解析；唯一包含库存服务的装备读取适配 |
+| [`equipment_requirements.*`](../../src/gameplay/items/equipment_requirements.cpp) | 校验鉴定、类型、职业、属性和等级；属性解析保持在前置拒绝之后；事务仍先核验 ItemHandle 版本 |
+| [`equipment_contributions.*`](../../src/gameplay/items/equipment_contributions.cpp)、[`equipment_combat.*`](../../src/gameplay/items/equipment_combat.cpp) | 护符、有效装备、需求闭包、套装去重、角色属性及战斗贡献；只接收类型化数据和属性解析函数，不读取 MPQ／内容目录 |
+| [`equipment_stats.*`](../../src/gameplay/items/equipment_stats.cpp) | 从借用装备及显式使用者／加成计算防御、格挡、武器伤害和外观；不包含 InventoryService |
+| [`content/items/equipment_modifiers.*`](../../src/content/items/equipment_modifiers.cpp)、[`equipment_set.hpp`](../../src/gameplay/items/equipment_set.hpp) | 内容加载后一次准备套装件数／门槛／指令索引；运行时按规则请求解析物品／套装属性。旧 content/items/equipment_combat 实现已迁到玩法并删除 |
+| [`items/skill_sources.*`](../../src/gameplay/items/skill_sources.cpp) | 按显式装备使用者筛选当前武器组的既有授予技能，返回物品 handle、技能 ID 和等级；不查询玩家或怪物 |
+| [`skills/rank_sources.*`](../../src/gameplay/skills/rank_sources.cpp) | 合成调用方提供的学习等级、合格授予和各类加成，复用原等级算术；不读取角色、怪物、库存或内容目录 |
+| [`session_character_stats.cpp`](../../src/gameplay/session/session_character_stats.cpp)、[`session_skill_sources.cpp`](../../src/gameplay/session/session_skill_sources.cpp) | 宿主准备角色属性／等级上下文，连接上述规则与原技能来源服务；库存事务与施法执行不再各自实现装备贡献／等级规则 |
+
+权威状态仍只有 `InventoryState` 一份。`EquipmentLoadout` 的物品／定义指针和解析函数只在一次同步权威调用内使用；库存提交、恢复、容器替换后重新建立，不缓存或传给客户端。装备预览借用原规划草稿；读档、角色刷新与佣兵派生均复用同一规则。派生装备值仍为可重算结果，不是第二份物品状态。模拟器、会话显示值及角色提示只包含 `combat/weapon_values.hpp`，不再借装备派生入口包含库存／装备规则头。
+
+保留原背包护符、当前武器组、损坏／数量／需求排除、槽位和闭包迭代顺序、套装件数与去重、替换佣兵旧装备排除，以及被动／Warmth／资源刷新时机。未新增属性、掉落概率或随机消费；D2S v96、字段映射、原生物品掷值、保存语义与规则指纹不变。
+
+已支持的来源是原 `grantedSkill` 授予与已有技能词缀加成。`ItemSkillGrant` 携带当前 handle／revision 作为来源事实，不是施法授权或充能消费事务；书本 `charges` 仍是原卷轴数量语义。真实充能／触发技能、消费时机、来源复验、多所有者上下文和会话 `friend` 的方块／NPC／恢复写入收口继续待实施，不能称完整 P3 完成。
+
+第四项已随第五项通过 Windows Release。简单冒烟通过真实 UI 购买／出售及佣兵头盔装备、卸到 Cursor、放回背包，防御 51→56→51；使用原派生规则和库存事务，见[NPC／任务基线](NPC_QUEST.md#商店与佣兵-ui第五项)。未重做套装闭包、全部需求／技能来源、全职业和保存往返；下方仍为此前库存 UI 批次证据。未新增测试程序、打包或提交 Git。
 
 ## 职责与入口
 
@@ -13,7 +44,7 @@
 | [`LocalInventoryClient`](../../src/client/local_inventory_client.cpp) | 绑定当前本地角色，映射本人容器及当前获准储物容器；预览／提交转回原会话校验和事务 |
 | [`content/items/item_display.cpp`](../../src/content/items/item_display.cpp) | 将原物品与显式角色显示上下文转换为名称／提示行；无会话、GPU 或活角色引用 |
 | [`presentation/inventory/`](../../src/presentation/inventory/) | 包裹、腰带、仓库、方块的显示、命中和手势；消费投影并通过客户端接口提交 |
-| [`presentation/items/item_display_compat.cpp`](../../src/presentation/items/item_display_compat.cpp) | 地面／NPC 等旧物品入口复用同一名称和提示计算，暂保留会话上下文适配 |
+| [`presentation/items/item_display_compat.cpp`](../../src/presentation/items/item_display_compat.cpp) | 地面／世界旧物品入口复用同一名称和提示计算，暂保留会话上下文适配；商店已改用客户端单项提示 |
 | [`presentation/npc/inventory_interactions.cpp`](../../src/presentation/npc/inventory_interactions.cpp) | 任务物品世界命中仍为兼容入口；灌注／结束 NPC 会话改经 `INpcClient`，与库存手势实现分开 |
 
 `d2x_client_api → core`，`d2x_client → client_api`；客户端查询实现不链接会话。`d2x_local_client → client`，私有依赖 `session`；应用负责组装。`presentation` 改为链接 `client`，但其他面板及 NPC／地面交互仍需 `session`。
@@ -29,7 +60,7 @@
 
 ## 当前限制
 
-预览和读取是同步本地接口；远端的缓存、异步操作回执、请求编号及断线处理尚未实现。本地适配按权威更新版本缓存，场景仅在版本变化时复制投影；相同渲染帧重复读取不重新生成库存，仍未测量大库存性能。版本／寿命约束见 [角色基线](CHARACTER.md)。NPC 商店报价／出售、地面拾取、佣兵面板及任务提交保留兼容调用，不能把本切片称为完整库存领域／客户端服务端分离。
+预览和读取是同步本地接口；远端的缓存、异步操作回执、请求编号及断线处理尚未实现。本地适配按权威更新版本缓存，场景仅在版本变化时复制投影；相同渲染帧重复读取不重新生成库存，仍未测量大库存性能。版本／寿命约束见 [角色基线](CHARACTER.md)。第五项已让商店报价／出售走 `INpcClient`，佣兵面板与手势读库存／佣兵投影，装备继续提交 `InventoryIntent`。地面拾取和任务物品世界命中仍保留兼容调用；不能把本切片称为完整库存领域／客户端服务端分离。
 
 NPC 购买／出售／修理等已有命令转发 `INpcClient` 后继续沿用原库存事务；复杂货架和报价查询仍未迁移，入口及一次购买的实际覆盖见 [NPC／任务基线](NPC_QUEST.md)。下方库存批次原有验证范围保持。
 

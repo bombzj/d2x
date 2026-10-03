@@ -1,9 +1,11 @@
 #pragma once
+#include "gameplay/model/definitions.hpp"
 #include "core/math.hpp"
 #include "core/id.hpp"
 #include "gameplay/combat/identity.hpp"
 #include "gameplay/effects/state.hpp"
 #include "gameplay/combat/weapon_attack.hpp"
+#include "gameplay/units/restoration.hpp"
 #include <deque>
 #include <string>
 #include <cstdint>
@@ -33,8 +35,7 @@ struct HirelingState {
     int webSlowPercent = 0, collisionSize = 0, attackBias = 0;
     RegionId corpseRegion = RegionId::Encampment;
     bool corpseVisible = false;
-    struct Healing { float remaining = 0, rate = 0; };
-    std::deque<Healing> healing;
+    std::deque<ResourceRestoration> healing;
     CombatEffectSet combatEffects;
     uint64_t experience = 0;
     uint32_t seed = 0;

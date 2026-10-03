@@ -8,7 +8,7 @@ std::optional<RegionId> GameSessionImpl::portalTown(RegionId field) const {
     if (level == worldContent_.levels().end() || level->second.act < 0 || level->second.act >= 5)
         return std::nullopt;
     const auto town = RegionId(actTownLevels[size_t(level->second.act)]);
-    return std::any_of(regions_.begin(), regions_.end(), [&](const auto &region) {
+    return std::any_of(world_.regions().begin(), world_.regions().end(), [&](const auto &region) {
         return region.definition.id == town && region.definition.safe;
     }) ? std::optional<RegionId>{town} : std::nullopt;
 }
@@ -52,10 +52,10 @@ void GameSessionImpl::useItem(ItemHandle handle) {
     if (code == "ass") {
         auto result = inventory_.consume(handle, 1, inventoryAccess());
         if (!result) { publishInventory(std::move(result), handle.id); return; }
-        auto &record = simulation_->state_.player.actOneQuests
+        auto &record = simulation_->state_.player.character.actOneQuests
             .at(size_t(state().population.difficulty)).at(questIndex(QuestId::RadamentsLair));
         record.flags = (record.flags & ~radamentBookPending) | radamentBookUsed;
-        ++simulation_->state_.player.unspentSkills;
+        ++simulation_->state_.player.character.unspentSkills;
         publishInventory(std::move(result), handle.id);
         simulation_->emit(ItemUsed{handle.id, std::move(code)});
         simulation_->emit(QuestAdvanced{QuestId::RadamentsLair, record.stage});
@@ -66,7 +66,7 @@ void GameSessionImpl::useItem(ItemHandle handle) {
         const auto town = portalTown(region().definition.id);
         if (!town || !townPortalArrivals_.contains(*town)) return;
         TownPortalState next{true, state().nextPortalRevision + 1, region().definition.id,
-                     state().player.pos, townPortalArrivals_.at(*town), state().time};
+                     state().player.movement.pos, townPortalArrivals_.at(*town), state().time};
         auto result = definition->bookScroll.empty()
                           ? inventory_.consume(handle, 1, inventoryAccess())
                           : inventory_.consumeBookCharge(handle, inventoryAccess());
@@ -100,15 +100,15 @@ InventoryError GameSessionImpl::previewPortalScroll(ItemHandle handle) const {
     const auto &player = state().player;
     if (!location || location->container != playerContainers_.backpack ||
         (!inventory_.catalog().find(item->definition)->bookScroll.empty() && !item->charges) ||
-        player.dead ||
-        player.hp <= 0 || region().definition.safe ||
-        player.castTime > 0 || player.meleeTime > 0)
+        player.actions.dead ||
+        player.resources.hp <= 0 || region().definition.safe ||
+        player.actions.castTime > 0 || player.actions.meleeTime > 0)
         return InventoryError::AccessDenied;
     if (!portalTown(region().definition.id) || !portalResources_ || portalReach_ <= 0 ||
-        !map().grid.walkable(player.pos))
+        !map().grid.walkable(player.movement.pos))
         return InventoryError::UnsupportedUse;
     const auto town = *portalTown(region().definition.id);
-    for (const auto &region : regions_)
+    for (const auto &region : world_.regions())
         if (region.definition.id == town && region.loaded && !townPortalArrivals_.contains(town))
             return InventoryError::UnsupportedUse;
     if (state().nextPortalRevision == std::numeric_limits<uint64_t>::max())
@@ -146,7 +146,7 @@ std::vector<GameSessionImpl::PortalView> GameSessionImpl::portals(RegionId regio
 }
 void GameSessionImpl::beginPortal(uint64_t revision) {
     const auto *portal = findPortal(revision);
-    if (!portal || state().player.dead) return;
+    if (!portal || state().player.actions.dead) return;
     const bool town = portalTown(portal->field) == region().definition.id;
     if (!town && region().definition.id != portal->field) return;
     const Vec position = town ? portal->townPosition : portal->fieldPosition;
@@ -155,7 +155,7 @@ void GameSessionImpl::beginPortal(uint64_t revision) {
     cancelInteraction();
     closeStorage();
     pendingPortal_ = revision;
-    if ((state().player.pos - position).length() > portalReach_)
+    if ((state().player.movement.pos - position).length() > portalReach_)
         simulation_->execute(MoveTo{position});
 }
 void GameSessionImpl::updatePortal() {
@@ -163,13 +163,13 @@ void GameSessionImpl::updatePortal() {
     const auto *portal = findPortal(*pendingPortal_);
     const auto &player = state().player;
     const bool returning = portal && portalTown(portal->field) == region().definition.id;
-    if (!portal || player.dead || (!returning && region().definition.id != portal->field)) {
+    if (!portal || player.actions.dead || (!returning && region().definition.id != portal->field)) {
         cancelInteraction();
         return;
     }
-    if (player.castTime > 0 || player.meleeTime > 0) return;
+    if (player.actions.castTime > 0 || player.actions.meleeTime > 0) return;
     const Vec position = returning ? portal->townPosition : portal->fieldPosition;
-    if ((player.pos - position).length() <= portalReach_ && map().grid.segment(player.pos, position)) {
+    if ((player.movement.pos - position).length() <= portalReach_ && map().grid.segment(player.movement.pos, position)) {
         const auto town = portalTown(portal->field);
         if (!town) { cancelInteraction(); return; }
         const auto destination = returning ? portal->field : *town;
@@ -177,7 +177,7 @@ void GameSessionImpl::updatePortal() {
         if (returning && portal->consumedOnReturn)
             simulation_->state_.portal.active = false;
         enter(destination, arrival);
-    } else if (player.route.empty()) {
+    } else if (player.movement.route.empty()) {
         cancelInteraction();
         simulation_->emit(InteractionFailed{{}, "Cannot reach the town portal."});
     }

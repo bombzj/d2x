@@ -12,13 +12,12 @@
 #include <iostream>
 #include <iterator>
 #include <stdexcept>
-#include <type_traits>
 
 namespace d2x {
 GameSessionImpl::~GameSessionImpl() = default;
 const WorldState &GameSessionImpl::state() const { return simulation_->state(); }
 void GameSessionImpl::setRunning(bool running) {
-    simulation_->state_.player.running = running;
+    simulation_->state_.player.movement.running = running;
     ++viewRevision_;
 }
 bool GameSessionImpl::usableCorpse(EntityId id) const { return simulation_->usableCorpse(id); }
@@ -35,10 +34,10 @@ GameSessionImpl::GameSessionImpl(Archives &archives, const WorldSelection &selec
                          uint32_t sessionSeed, PopulationSettings population, std::string characterClass,
                          std::string characterName)
         : random_(initialRandom(sessionSeed)), content_(loadClassicData(archives)), worldContent_(archives),
-            archives_(archives), tileCache_(archives),
+            archives_(archives), world_(archives),
             monsterContent_(archives, content_.tables.at("monstats")),
             simulation_(std::make_unique<Simulation>(ids_)), loot_(childRandom(random_)) {
-    simulation_->state_.player.characterClass = std::move(characterClass);
+    simulation_->state_.player.character.characterClass = std::move(characterClass);
     simulation_->missileCollisions_ = content_.missileCollisions;
     simulation_->missileReturnFire_ = content_.missileReturnFire;
     simulation_->freezeDeathState_ = content_.states.at("freeze").definition;
@@ -48,8 +47,8 @@ GameSessionImpl::GameSessionImpl(Archives &archives, const WorldSelection &selec
     simulation_->preventHealState_ = content_.states.at("preventheal").definition.id;
     simulation_->noMultiShotMissiles_ = content_.noMultiShotMissiles;
     simulation_->unspreadMultiShotMissiles_ = content_.unspreadMultiShotMissiles;
-    simulation_->state_.player.name = std::move(characterName);
-    characterDefinition_ = definitionFor(state().player.characterClass);
+    simulation_->state_.player.character.name = std::move(characterName);
+    characterDefinition_ = definitionFor(state().player.character.characterClass);
     simulation_->state_.population = population;
     simulation_->hirelingBossDamagePercent_ = content_.hirelingBossDamagePercent.at(size_t(population.difficulty));
     simulation_->lifeStealDivisor_ = content_.lifeStealDivisor.at(size_t(population.difficulty));
@@ -69,9 +68,9 @@ GameSessionImpl::GameSessionImpl(Archives &archives, const WorldSelection &selec
     simulation_->unitRandom_ = childRandom(random_);
     inventory_.groundPlacement_ = [this](const GroundLocation &origin, const GroundLocation &target) {
         if (origin.region != target.region) return false;
-        const auto found = std::find_if(regions_.begin(), regions_.end(),
+        const auto found = std::find_if(world_.regions().begin(), world_.regions().end(),
             [&](const Region &region) { return region.definition.id == target.region; });
-        if (found == regions_.end()) return false;
+        if (found == world_.regions().end()) return false;
         const auto &grid = found->map.grid;
         // D2MOO drop mask: WALL | OBJECT | DOOR | NO_PATH | PET (ITEM is in InventoryService).
         // The field ray checks WALL | DOOR, not character walking collision.
@@ -87,13 +86,13 @@ GameSessionImpl::GameSessionImpl(Archives &archives, const WorldSelection &selec
         };
         if (state().area.region == target.region) {
             const auto &player = state().player;
-            if (!player.dead && occupies(player.pos, 2)) return false; // UNITS_GetUnitSizeX(PLAYER).
+            if (!player.actions.dead && occupies(player.movement.pos, 2)) return false; // UNITS_GetUnitSizeX(PLAYER).
             if (player.hireling.active())
                 for (const auto &[id, monster] : monsterContent_.monsters())
                     if (monster.index == player.hireling.classId &&
                         occupies(player.hireling.pos, monster.collisionSize)) return false;
         }
-        const auto &area = areaState(int(found - regions_.begin()));
+        const auto &area = areaState(int(found - world_.regions().begin()));
         for (const auto &enemy : area.enemies)
             if (enemy.hp > 0)
                 if (const auto *monster = monsterContent_.find(enemy.identity.monster);
@@ -120,7 +119,7 @@ GameSessionImpl::GameSessionImpl(Archives &archives, const WorldSelection &selec
     simulation_->wearEquipment_ = [this](EntityId weapon, bool defending) {
         auto result = inventory_.wearEquipment(playerContainers_, weapon, defending,
                                                simulation_->state_.player.combatRandom,
-                                               simulation_->state_.player.weaponSet);
+                                               simulation_->state_.player.character.weaponSet);
         if (!result || !result.changes.empty())
             publishInventory(std::move(result), {});
     };
@@ -220,7 +219,7 @@ GameSessionImpl::GameSessionImpl(Archives &archives, const WorldSelection &selec
             const int rate = (characterStats().combat.shieldDefensePercent > 0 ? 100 : 50) + 120 * faster / (120 + faster);
             return WeaponAttackTiming{mode, data.frames, std::clamp(data.speed * rate / 100, 1, 32767), 0, 0};
         }
-        const int skillRate = characterStats().combat.attackRate - (state().player.chill > 0 ? 50 : 0);
+        const int skillRate = characterStats().combat.attackRate - (state().player.resources.chill > 0 ? 50 : 0);
         return WeaponAttackTiming{mode, data.frames,
             effectiveAttackSpeed(data.speed, weapon.fasterAttack, weapon.baseSpeed, skillRate),
             data.actionFrame, attackStartingFrame(characterCode(), weapon.weaponClass, mode)};
@@ -262,8 +261,8 @@ GameSessionImpl::GameSessionImpl(Archives &archives, const WorldSelection &selec
             const auto *definition = inventory_.catalog().find(item->definition);
             if (!definition || definition->equipment.shoots.empty()) return false;
             spent = {};
-            for (auto slot : {weaponHandSlot(false, state().player.weaponSet),
-                              weaponHandSlot(true, state().player.weaponSet)}) {
+            for (auto slot : {weaponHandSlot(false, state().player.character.weaponSet),
+                              weaponHandSlot(true, state().player.character.weaponSet)}) {
                 auto candidate = inventory_.equipped(playerContainers_, slot);
                 const auto *quiver = inventory_.item(candidate);
                 if (candidate == weapon || !quiver) continue;
@@ -286,7 +285,7 @@ GameSessionImpl::GameSessionImpl(Archives &archives, const WorldSelection &selec
         if (thrown) return inventory_.catalog().find(item->definition)->equipment.throwable;
         const auto *definition = inventory_.catalog().find(item->definition);
         if (!definition || definition->equipment.shoots.empty()) return false;
-        for (auto slot : {weaponHandSlot(false, state().player.weaponSet), weaponHandSlot(true, state().player.weaponSet)}) {
+        for (auto slot : {weaponHandSlot(false, state().player.character.weaponSet), weaponHandSlot(true, state().player.character.weaponSet)}) {
             const auto *ammo = inventory_.item(inventory_.equipped(playerContainers_, slot));
             if (ammo && ammo->id != weapon && ammo->quantity &&
                 inventory_.catalog().find(ammo->definition)->equipment.isType(definition->equipment.shoots)) return true;
@@ -562,22 +561,20 @@ GameSessionImpl::GameSessionImpl(Archives &archives, const WorldSelection &selec
     };
     worldSelection.difficulty = population.difficulty;
     auto plan = planWorld(archives, worldContent_, worldSelection);
-    auto mapRandom = initialRandom(selection.seed);
-    levelSeed_ = rollRandom(mapRandom);
-    regions_ = loadRegions(archives, ids_, plan.regions, monsterContent_, worldContent_, selection.seed, rollRandom(random_), true);
-    if (startRegion < -1 || startRegion >= int(regions_.size()))
+    world_.initialize(ids_, plan, monsterContent_, worldContent_, selection.seed, rollRandom(random_));
+    if (startRegion < -1 || startRegion >= int(world_.regions().size()))
         throw std::out_of_range("--region exceeds the available scene count; prefer --level <Levels.txt ID>");
-    ensureRegion(startRegion < 0 ? plan.start : regions_[startRegion].definition.id, true);
-    linkLevelExits(regions_, worldContent_);
-    for (const auto &region : regions_)
+    ensureRegion(startRegion < 0 ? plan.start : world_.regions()[startRegion].definition.id, true);
+    linkLevelExits(world_.regions(), worldContent_);
+    for (const auto &region : world_.regions())
         if (region.definition.safe)
-            for (const auto &layer : region.map.data.walls)
+            for (const auto &layer : region.map.terrain.data.walls)
                 for (size_t index = 0; index < layer.size(); ++index) {
                     const auto &cell = layer[index];
                     if (cell.occupied() && (cell.orientation == 10 || cell.orientation == 11) &&
                         ((cell.value >> 20) & 63) == 33) {
-                        Vec point{float(index % region.map.data.width * 5 + 3),
-                                  float(index / region.map.data.width * 5 + 3)};
+                        Vec point{float(index % region.map.terrain.data.width * 5 + 3),
+                                  float(index / region.map.terrain.data.width * 5 + 3)};
                         auto arrival = region.map.grid.nearest(point);
                         if (region.map.grid.walkable(arrival) && (arrival - point).length() <= 5) {
                             townPortalArrivals_[region.definition.id] = arrival;
@@ -607,7 +604,6 @@ GameSessionImpl::GameSessionImpl(Archives &archives, const WorldSelection &selec
         if (archives.contains(file)) archives.read(file);
         else portalResources_ = false;
     }
-    worldEntries_ = std::move(plan.entries);
     for (const auto &[id, level] : worldContent_.levels())
         if (level.act == 0) {
             if (level.name == "Den of Evil") denRegion_ = RegionId(id);
@@ -640,60 +636,12 @@ GameSessionImpl::GameSessionImpl(Archives &archives, const WorldSelection &selec
     for (const auto &record : content_.setItems)
         fingerprint.add(record.artAvailable ? "set-art" : "set-missing-art");
     contentFingerprint_ = fingerprint.value();
-    for (const auto &region : regions_) {
-        AreaState area;
-        area.region = region.definition.id;
-        inactiveAreas_.push_back(std::move(area));
-    }
-    if (startRegion < -1 || startRegion >= int(regions_.size()))
+    std::vector<RegionId> areaIds;
+    for (const auto &region : world_.regions()) areaIds.push_back(region.definition.id);
+    areas_.reset(areaIds);
+    if (startRegion < -1 || startRegion >= int(world_.regions().size()))
         throw std::out_of_range("--region exceeds the available scene count; prefer --level <Levels.txt ID>");
-    enter(startRegion < 0 ? plan.start : regions_[startRegion].definition.id);
-}
-void GameSessionImpl::ensureRegion(RegionId id, bool neighbours) {
-    auto found = std::find_if(regions_.begin(), regions_.end(),
-        [&](const auto &region) { return region.definition.id == id; });
-    if (found == regions_.end()) return;
-    bool changed = false;
-    auto load = [&](Region &region) {
-        if (region.loaded) return;
-        loadRegion(archives_, ids_, region, tileCache_, monsterContent_, worldContent_, levelSeed_);
-        changed = true;
-        if (region.definition.safe)
-            for (const auto &layer : region.map.data.walls)
-                for (size_t index = 0; index < layer.size(); ++index) {
-                    const auto &cell = layer[index];
-                    if (cell.occupied() && (cell.orientation == 10 || cell.orientation == 11) &&
-                        ((cell.value >> 20) & 63) == 33) {
-                        const Vec point{float(index % region.map.data.width * 5 + 3),
-                            float(index / region.map.data.width * 5 + 3)};
-                        const auto arrival = region.map.grid.nearest(point);
-                        if (region.map.grid.walkable(arrival) && (arrival - point).length() <= 5) {
-                            townPortalArrivals_[region.definition.id] = arrival;
-                            if (region.definition.id == RegionId::Encampment) townPortalArrival_ = arrival;
-                        }
-                    }
-                }
-        for (auto &object : region.objects) {
-            if (const auto *npc = monsterContent_.find(object.npcClass)) {
-                if (const auto name = content_.itemStrings.find(npc->name); name != content_.itemStrings.end()) object.name = name->second;
-                if (npc->interact && !npc->hostile()) object.interaction = npcCanHeal(object.npcClass) ? Interaction::Heal : Interaction::Talk;
-            }
-            if (!object.npcPath.empty()) initialNpcMotions_.push_back({object.id, object.pos, object.npcLook,
-                object.npcRoute, object.npcWait, object.npcTarget, object.npcRandom});
-            if (auto vendor = content_.vendors.find(object.npcClass); vendor != content_.vendors.end())
-                vendorStocks_.emplace(object.id, planVendorStock(content_, vendor->second, equipmentActor().level,
-                    state().population.difficulty, childRandom(random_)));
-        }
-    };
-    load(*found);
-    if (neighbours)
-        for (const auto &boundary : found->recipe.boundaries)
-            for (auto &candidate : regions_)
-                if (int(candidate.definition.id) == boundary.destination) load(candidate);
-    if (changed) {
-        linkLevelExits(regions_, worldContent_);
-        reconcileCainObjects();
-    }
+    enter(startRegion < 0 ? plan.start : world_.regions()[startRegion].definition.id);
 }
 const CharacterDefinition &GameSessionImpl::definitionFor(std::string_view name) const {
     auto found = std::find_if(content_.characters.begin(), content_.characters.end(),
@@ -706,65 +654,12 @@ void GameSessionImpl::grantExperience(uint64_t amount) {
     if (grantCharacterExperience(characterProgressionContext(), amount, experienceThresholds(),
                                  characterDefinition_.statPerLevel)) refreshCharacter(true);
 }
-void GameSessionImpl::enter(RegionId id, std::optional<Vec> arrival, std::optional<Vec> coordinateOffset) {
-    ensureRegion(id, true);
-    auto found = std::find_if(regions_.begin(), regions_.end(),
-                              [id](const Region &r) { return r.definition.id == id; });
-    if (found == regions_.end())
-        return;
-    int index = int(found - regions_.begin());
-    const bool returnToTown = current_ >= 0 && !regions_[current_].definition.safe && found->definition.safe;
-    if (current_ >= 0)
-        inactiveAreas_[current_] = simulation_->leaveArea();
-    current_ = index;
-    cancelExit();
-    cancelPickup();
-    cancelInteraction();
-    closeStorage();
-    auto plan = inactiveAreas_[current_].initialized ? PopulationPlan{} : population(*found);
-    simulation_->missileWorldOrigin_ = {float(found->recipe.worldX * 5), float(found->recipe.worldY * 5)};
-    simulation_->enterArea(found->map.grid, found->map.activation, arrival.value_or(found->map.spawn),
-                          found->definition.safe,
-                          std::move(inactiveAreas_[current_]), plan.spawns, coordinateOffset);
-    if (returnToTown) {
-        // The single player town becomes unoccupied when leaving it. Rebuild
-        // its stock on return using the current character level (SUnitProxy).
-        for (const auto &npc : found->objects)
-            if (auto vendor = content_.vendors.find(npc.npcClass); vendor != content_.vendors.end()) {
-                auto &seed = inventory_.state_.creationRandom;
-                auto stock = planVendorStock(content_, vendor->second, unsigned(state().player.level),
-                    state().population.difficulty, childRandom(seed));
-                vendorStocks_[npc.id] = std::move(stock);
-                soldVendorOffers_.erase(npc.id);
-                gambleStocks_.erase(npc.id);
-            }
-    }
-    if (simulation_->state_.player.hireling.active()) {
-        auto &hireling = simulation_->state_.player.hireling;
-        hireling.pos = state().player.pos;
-        hireling.route.clear();
-        hireling.attack.reset(); hireling.attackTimer = 0;
-        hireling.moving = false; hireling.animationTime = 0;
-    }
-    onQuestRegionEntered(id);
-    updateActTwoObjects();
-    std::cout << "Room activation: created=" << state().area.enemies.size()
-              << " deferred=" << state().area.pendingSpawns.size() << '\n';
-}
-PopulationPlan GameSessionImpl::population(const Region &region) const {
-    const auto level = worldContent_.levels().find(int(region.definition.id));
-    const auto *record = level == worldContent_.levels().end() ? nullptr : &level->second;
-    const auto &preset = worldContent_.presets().at(region.recipe.preset);
-    auto plan = planPopulation(monsterContent_, record, preset, region.map, state().population);
-    writePopulationReport(std::cout, plan, record, preset, state().population);
-    return plan;
-}
 bool GameSessionImpl::inventoryDestinationAllowed(const ItemDestination &destination) const {
     if (auto ground = std::get_if<GroundLocation>(&destination))
         return ground->region == region().definition.id && std::isfinite(ground->position.x) &&
                std::isfinite(ground->position.y) && ground->position.x >= 0 && ground->position.y >= 0 &&
                ground->position.x < map().grid.width && ground->position.y < map().grid.height &&
-               map().grid.collisionSegment(state().player.pos, ground->position, 0x0801);
+               map().grid.collisionSegment(state().player.movement.pos, ground->position, 0x0801);
     return true;
 }
 void GameSessionImpl::publishInventory(InventoryResult result, EntityId requested) {
@@ -777,220 +672,5 @@ void GameSessionImpl::publishInventory(InventoryResult result, EntityId requeste
         if (requested)
             simulation_->emit(InventoryApplied{requested, result.item, result.transferred});
     }
-}
-void GameSessionImpl::tick(float dt, Vec keyboard, bool forceRun) {
-    simulation_->beginTick();
-    for (auto &region : regions_) region.refreshObjectCollision(state().time);
-    validateStorage();
-    auto commands = std::move(pending_);
-    pending_.clear();
-    bool transitioned = false;
-    for (const auto &command : commands) {
-        std::visit(
-            [&](const auto &intent) {
-                using T = std::decay_t<decltype(intent)>;
-                if constexpr (std::is_same_v<T, UseExit>) {
-                    beginExit(intent.slot);
-                } else if constexpr (std::is_same_v<T, UseTownPortal>) {
-                    beginPortal(intent.revision);
-                } else if constexpr (std::is_same_v<T, UseCainPortal>) {
-                    transitioned = beginCainPortal();
-                } else if constexpr (std::is_same_v<T, WaypointTravel>) {
-                    transitioned = travelWaypoint(intent);
-                } else if constexpr (std::is_same_v<T, Travel>) {
-                    if (!state().player.dead) {
-                        ensureRegion(intent.destination, true);
-                        std::optional<Vec> arrival;
-                        for (const auto &destination : regions_)
-                            if (destination.definition.id == intent.destination)
-                                for (const auto &object : destination.objects)
-                                    if (object.isWaypoint()) {
-                                        arrival = object.accessPoint;
-                                        break;
-                                    }
-                        enter(intent.destination, arrival);
-                        transitioned = true;
-                    }
-                } else if constexpr (std::is_same_v<T, MoveTo>) {
-                    cancelPickup();
-                    cancelInteraction();
-                    if (!routeBoundaryMove(intent.position)) {
-                        cancelExit();
-                        simulation_->execute(command);
-                    }
-                } else if constexpr (std::is_same_v<T, RestartArea>) {
-                    cancelExit();
-                    cancelPickup();
-                    const auto &r = region();
-                    auto plan = population(r);
-                    simulation_->restartArea(r.map.spawn, plan.spawns);
-                    cancelInteraction();
-                    closeStorage();
-                    transitioned = true;
-                } else if constexpr (std::is_same_v<T, PickupItem>) {
-                    cancelExit();
-                    cancelInteraction();
-                    beginPickup(intent.item, intent.toCursor);
-                } else if constexpr (std::is_same_v<T, UseItem>)
-                    useItem(intent.item);
-                else if constexpr (std::is_same_v<T, SwitchWeaponSet>) {
-                    auto &player = simulation_->state_.player;
-                    if (!player.dead && content_.stashLayout.expansion) {
-                        player.weaponSet ^= 1u;
-                        player.weaponAttack.reset();
-                        player.attackTarget = {};
-                        player.throwAttack = player.leftHandAttack = false;
-                        player.attackPosition.reset();
-                        player.meleeTime = 0;
-                        refreshCharacter();
-                    }
-                }
-                else if constexpr (std::is_same_v<T, IdentifyItem>)
-                    identifyItem(intent);
-                else if constexpr (std::is_same_v<T, UseBeltColumn>)
-                    useBeltColumn(intent.column, intent.hireling);
-                else if constexpr (std::is_same_v<T, CloseStorage>)
-                    closeStorage();
-                else if constexpr (std::is_same_v<T, Interact>) {
-                    cancelExit();
-                    cancelPickup();
-                    interact(intent.target);
-                } else if constexpr (std::is_same_v<T, IdentifyWithCain>) {
-                    identifyWithCain(intent.target);
-                } else if constexpr (std::is_same_v<T, TalkToNpc>) {
-                    talkToNpc(intent.target);
-                } else if constexpr (std::is_same_v<T, ClaimAkaraRespec>) {
-                    claimAkaraRespec(intent.target);
-                } else if constexpr (std::is_same_v<T, ImbueItem>) {
-                    imbueWithCharsi(intent);
-                } else if constexpr (std::is_same_v<T, CompleteActOne>) {
-                    const auto previousRegion = state().area.region;
-                    completeActOne(intent.npc);
-                    transitioned |= state().area.region != previousRegion;
-                } else if constexpr (std::is_same_v<T, CompleteActTwo>) {
-                    const auto previousRegion = state().area.region;
-                    completeActTwo(intent.npc);
-                    transitioned |= state().area.region != previousRegion;
-                } else if constexpr (std::is_same_v<T, BuyVendorItem>) {
-                    buyVendorItem(intent.vendor, intent.slot, intent.gamble);
-                } else if constexpr (std::is_same_v<T, SellVendorItem>) {
-                    sellVendorItem(intent);
-                } else if constexpr (std::is_same_v<T, OpenGamble>) {
-                    openGamble(intent.npc);
-                } else if constexpr (std::is_same_v<T, OpenHirelingList>) {
-                    openHirelingList(intent.npc);
-                } else if constexpr (std::is_same_v<T, HireMercenary>) {
-                    hireMercenary(intent);
-                } else if constexpr (std::is_same_v<T, ResurrectHireling>) {
-                    resurrectHireling(intent.npc);
-                } else if constexpr (std::is_same_v<T, UseHirelingPotion>) {
-                    useHirelingPotion(intent.item);
-                } else if constexpr (std::is_same_v<T, EquipHirelingItem>) {
-                    equipHirelingItem(intent);
-                } else if constexpr (std::is_same_v<T, DebugGrantHireling>) {
-                    grantDebugHireling();
-                } else if constexpr (std::is_same_v<T, RepairVendorItem>) {
-                    repairVendorItem(intent);
-                } else if constexpr (std::is_same_v<T, EndNpcConversation>) {
-                    gambleStocks_.erase(intent.target);
-                    if (engagedNpc_ == intent.target)
-                        engagedNpc_ = {};
-                } else if constexpr (std::is_same_v<T, DebugGrantGold>) {
-                    auto &player = simulation_->state_.player;
-                    unsigned limit = unsigned(equipmentActor().level) * 10000;
-                    if (intent.amount && intent.amount <= limit - player.gold)
-                        player.gold += intent.amount;
-                } else if constexpr (std::is_same_v<T, GoldTransaction>) {
-                    transactGold(intent);
-                } else if constexpr (std::is_same_v<T, DebugDropCube>) {
-                    dropDebugCube();
-                } else if constexpr (std::is_same_v<T, TransmuteCube>) {
-                    transmuteCube();
-                } else if constexpr (std::is_same_v<T, SubmitQuestItem>) {
-                    activateActTwoObject(intent.object, intent.item);
-                } else if constexpr (std::is_same_v<T, DebugSpawnItem>) {
-                    spawnDebugItem(intent);
-                } else if constexpr (std::is_same_v<T, DebugGrantExperience>) {
-                    grantExperience(intent.amount);
-                } else if constexpr (std::is_same_v<T, DebugUnlockWaypoints>) {
-                    unlockWaypoints();
-                } else if constexpr (std::is_same_v<T, DebugGrantShrine>) {
-                    grantShrine(intent.code);
-                } else if constexpr (std::is_same_v<T, DebugSpawnMonster>) {
-                    spawnDebugMonster(intent);
-                } else if constexpr (std::is_same_v<T, DebugDamageMonster>) {
-                    damageDebugMonster(intent);
-                } else if constexpr (std::is_same_v<T, AllocateAttribute>) {
-                    applyCharacterIntent(intent);
-                } else if constexpr (std::is_same_v<T, AllocateSkill>) {
-                    applyCharacterIntent(intent);
-                } else if constexpr (std::is_same_v<T, BindSkillHotkey>) {
-                    applyCharacterIntent(intent);
-                } else if constexpr (std::is_same_v<T, SelectMouseSkill>) {
-                    applyCharacterIntent(intent);
-                } else if constexpr (std::is_same_v<T, DebugResetAttributes>) {
-                    resetCharacterAttributePoints();
-                } else if constexpr (std::is_same_v<T, DebugResetSkills>) {
-                    resetCharacterSkillPoints();
-                } else if constexpr (std::is_same_v<T, UseSkill>) {
-                    useSkill(intent);
-                } else if constexpr (std::is_same_v<T, MoveItem> || std::is_same_v<T, SwapItems> ||
-                                     std::is_same_v<T, SplitStack> || std::is_same_v<T, MergeStacks> ||
-                                     std::is_same_v<T, LoadBook> ||
-                                     std::is_same_v<T, EquipBelt> || std::is_same_v<T, TransferItem> ||
-                                     std::is_same_v<T, EquipItem>)
-                    executeInventory(command);
-                else {
-                    if constexpr (std::is_same_v<T, MoveTo> || std::is_same_v<T, Attack> ||
-                                  std::is_same_v<T, StopMoving>) {
-                        cancelExit();
-                        cancelPickup();
-                        cancelInteraction();
-                    }
-                    simulation_->execute(command);
-                }
-            },
-            command);
-        syncPlayerAura();
-        // A click queued in the previous region must not affect the new region.
-        if (transitioned)
-            break;
-    }
-    if (!transitioned && keyboard.length() > .1f) {
-        cancelExit();
-        cancelPickup();
-        cancelInteraction();
-    }
-    regions_.at(current_).refreshObjectCollision(state().time);
-    std::set<int> summonSkills;
-    for (const auto &pet : state().companions)
-        if (pet.hp > 0 && pet.allegiance.owner == state().player.id) summonSkills.insert(pet.summonSkill);
-    for (int skill : summonSkills) {
-        const auto *record = content_.skills.find(skill);
-        if (!record || !record->spell || !record->spell->summon) continue;
-        const int rank = effectiveSkillRank(skill);
-        simulation_->enforceSummonLimit(state().player.id, skill, rank < 4 ? rank : 2 + rank / 3);
-    }
-    syncPlayerAura();
-    simulation_->tick(dt, transitioned ? Vec{} : keyboard, forceRun);
-    auto replenished = inventory_.replenish(dt);
-    if (!replenished.changes.empty()) publishInventory(std::move(replenished), {});
-    advanceHireling(dt);
-    updateObjectTimers();
-    updateActTwoObjects();
-    regions_.at(current_).refreshObjectCollision(state().time);
-    advanceNpcPaths(dt);
-    settleDeaths();
-    updateDenQuest();
-    updatePickup();
-    updateCainQuestItems();
-    updateToolsQuestItems();
-    updateInteraction();
-    regions_.at(current_).refreshObjectCollision(state().time);
-    updatePortal();
-    updateCainPortal();
-    updateExit();
-    validateStorage();
-    ++viewRevision_;
 }
 } // namespace d2x

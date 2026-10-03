@@ -1,5 +1,6 @@
 #pragma once
-#include "gameplay/items/state.hpp"
+#include "gameplay/items/handle.hpp"
+#include <cstdint>
 #include <variant>
 
 namespace d2x {

@@ -1,7 +1,7 @@
 #pragma once
 #include "gameplay/monsters/identity.hpp"
 #include "gameplay/monsters/reward.hpp"
-#include "gameplay/model/definitions.hpp"
+#include "world/identity.hpp"
 #include <cstdint>
 #include <optional>
 #include <string>

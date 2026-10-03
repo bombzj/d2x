@@ -4,6 +4,7 @@
 #include <span>
 
 namespace d2x {
+struct ItemInstance;
 // Shared purchase, sale and repair quote. Sale uses NPC buy rates and difficulty caps.
 // Missing rule data defers the quote.
 std::optional<unsigned> itemTradePrice(const ClassicData &data, const ItemInstance &item,

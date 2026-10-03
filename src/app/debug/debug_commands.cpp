@@ -140,30 +140,30 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
         } else if (command == "status") {
             view.refreshCharacterView();
             const auto &state = session.state();
-            result["player"] = {{"x", state.player.pos.x}, {"y", state.player.pos.y},
-                {"hp", state.player.hp}, {"maxHp", session.characterStats().maxLife},
-                {"mana", state.player.mana}, {"maxMana", session.characterStats().maxMana},
-                {"stamina", state.player.stamina}, {"maxStamina", session.characterStats().maxStamina},
-                {"chill", state.player.chill},
-                {"poisonRemaining", state.player.poisonRemaining},
-                {"webSlowRemaining", state.player.webSlowRemaining},
-                {"webSlowPercent", state.player.webSlowPercent},
-                {"poisonPerSecond", state.player.poisonPerSecond},
-                {"gold", state.player.gold},
-                {"bankGold", state.player.bankGold},
-                {"class", state.player.characterClass},
-                {"experience", state.player.experience}, {"level", state.player.level},
-                {"unspentAttributes", state.player.unspentAttributes},
-                {"unspentSkills", state.player.unspentSkills},
-                {"castRemaining", state.player.castTime},
-                {"attackRemaining", state.player.meleeTime},
-                {"attackSkill", state.player.weaponAttack && state.player.weaponAttack->skill ? state.player.weaponAttack->skill->sourceId : -1},
-                {"attackReleased", state.player.weaponAttack && state.player.weaponAttack->released},
-                {"charge", state.player.charge.has_value()},
-                {"blockRemaining", state.player.blockAnimation ?
-                    float(state.player.blockAnimation->timing.durationTicks() - state.player.blockAnimation->ticks) / 25.f : 0.f},
-                {"blockDuration", state.player.blockAnimation ? float(state.player.blockAnimation->timing.durationTicks()) / 25.f : 0.f},
-                {"channelSkill", state.player.channelSkill()}, {"channelAge", state.player.channelAge()},
+            result["player"] = {{"x", state.player.movement.pos.x}, {"y", state.player.movement.pos.y},
+                {"hp", state.player.resources.hp}, {"maxHp", session.characterStats().maxLife},
+                {"mana", state.player.resources.mana}, {"maxMana", session.characterStats().maxMana},
+                {"stamina", state.player.resources.stamina}, {"maxStamina", session.characterStats().maxStamina},
+                {"chill", state.player.resources.chill},
+                {"poisonRemaining", state.player.resources.poisonRemaining},
+                {"webSlowRemaining", state.player.resources.webSlowRemaining},
+                {"webSlowPercent", state.player.resources.webSlowPercent},
+                {"poisonPerSecond", state.player.resources.poisonPerSecond},
+                {"gold", state.player.character.gold},
+                {"bankGold", state.player.character.bankGold},
+                {"class", state.player.character.characterClass},
+                {"experience", state.player.character.experience}, {"level", state.player.character.level},
+                {"unspentAttributes", state.player.character.unspentAttributes},
+                {"unspentSkills", state.player.character.unspentSkills},
+                {"castRemaining", state.player.actions.castTime},
+                {"attackRemaining", state.player.actions.meleeTime},
+                {"attackSkill", state.player.actions.weaponAttack && state.player.actions.weaponAttack->skill ? state.player.actions.weaponAttack->skill->sourceId : -1},
+                {"attackReleased", state.player.actions.weaponAttack && state.player.actions.weaponAttack->released},
+                {"charge", state.player.actions.charge.has_value()},
+                {"blockRemaining", state.player.actions.blockAnimation ?
+                    float(state.player.actions.blockAnimation->timing.durationTicks() - state.player.actions.blockAnimation->ticks) / 25.f : 0.f},
+                {"blockDuration", state.player.actions.blockAnimation ? float(state.player.actions.blockAnimation->timing.durationTicks()) / 25.f : 0.f},
+                {"channelSkill", state.player.skills.channelSkill()}, {"channelAge", state.player.skills.channelAge()},
                 {"strength", session.characterStats().strength},
                 {"dexterity", session.characterStats().dexterity},
                 {"vitality", session.characterStats().vitality},
@@ -171,7 +171,7 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
                 {"lightRadius", session.characterStats().lightRadius},
                 {"attackRating", session.characterStats().attackRating},
                 {"defense", session.equipmentStats().defense},
-                {"dead", state.player.dead}};
+                {"dead", state.player.actions.dead}};
             const auto &combat = session.characterStats().combat;
             result["missiles"] = Json::array();
             for (const auto &missile : state.area.missiles)
@@ -239,7 +239,7 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
                 {"salePending", view.ui().shopSalePending ? view.ui().shopSalePending->id.value : 0},
                 {"dialogue", !view.ui().dialogue.empty()}, {"dialogueOffset", view.ui().dialogueOffset},
                 {"questNotice", view.ui().questNotice}, {"quests", view.ui().questOpen},
-                {"inventory", view.ui().inventory.open}, {"weaponSet", state.player.weaponSet},
+                {"inventory", view.ui().inventory.open}, {"weaponSet", state.player.character.weaponSet},
                 {"leftDamage", leftAction.damage}, {"rightDamage", rightAction.damage}};
             result["travelMenu"] = view.ui().travelMenu;
             result["automap"] = {{"open", view.ui().automap}, {"large", view.ui().automapLarge},
@@ -260,8 +260,8 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
             result["settled"] = loot.settled.size();
             result["uniqueRowsSeen"] = loot.usedUniques.size();
             result["heroAppearanceError"] = view.heroAppearanceError();
-            result["look"] = {state.player.look.x, state.player.look.y};
-            result["routePoints"] = state.player.route.size();
+            result["look"] = {state.player.movement.look.x, state.player.movement.look.y};
+            result["routePoints"] = state.player.movement.route.size();
             result["waypoints"] = Json::array();
             for (const auto &[region, time] : state.waypoints)
                 result["waypoints"].push_back({{"level", int(region)}, {"activatedAt", time}});
@@ -283,7 +283,7 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
                     result["effect"] = std::string(table.value(row, "Effect"));
                     break;
                 }
-            if (!valid || session.state().player.dead)
+            if (!valid || session.state().player.actions.dead)
                 throw std::runtime_error("Unknown MPQ shrine code or player unavailable");
             session.submit(DebugGrantShrine{code}); step();
             result["code"] = code;
@@ -299,7 +299,7 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
             bool available = false;
             for (const auto &entry : session.worldEntries())
                 available |= entry.destination && int(*entry.destination) == level;
-            if (!available || session.state().player.dead)
+            if (!available || session.state().player.actions.dead)
                 throw std::runtime_error("Unavailable map catalog destination");
             session.submit(Travel{RegionId(level)}); step();
         } else if (command == "use") {
@@ -320,7 +320,7 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
             if (!used) throw std::runtime_error("Item use produced no result");
             result["used"] = id.value;
         } else if (command == "portal") {
-            if (!session.portalPosition() || session.state().player.dead)
+            if (!session.portalPosition() || session.state().player.actions.dead)
                 throw std::runtime_error("No usable portal in this region");
             auto revision = request.at("revision").get<uint64_t>();
             if (revision != session.state().portal.revision)
@@ -420,12 +420,12 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
             result["lines"] = view.ui().dialogueLines.size();
         } else if (command == "grant-gold") {
             unsigned amount = request.at("amount").get<unsigned>();
-            unsigned before = session.state().player.gold;
-            if (!amount || amount > unsigned(session.state().player.level) * 10000 - before)
+            unsigned before = session.state().player.character.gold;
+            if (!amount || amount > unsigned(session.state().player.character.level) * 10000 - before)
                 throw std::runtime_error("Gold grant exceeds the current wallet limit");
             session.submit(DebugGrantGold{amount});
             session.tick(0);
-            result["gold"] = session.state().player.gold;
+            result["gold"] = session.state().player.character.gold;
         } else if (command == "cube-drop") {
             session.submit(DebugDropCube{});
             session.tick(0);
@@ -466,7 +466,7 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
             result["quality"] = quality;
             result["level"] = level;
         } else if (command == "unlock-waypoints") {
-            if (session.state().player.dead)
+            if (session.state().player.actions.dead)
                 throw std::runtime_error("Dead player cannot activate waypoints");
             session.submit(DebugUnlockWaypoints{});
             session.tick(0);
@@ -475,14 +475,14 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
                 result["waypoints"].push_back(int(region));
         } else if (command == "grant-experience") {
             uint64_t amount = request.at("amount").get<uint64_t>();
-            if (!amount || session.state().player.dead)
+            if (!amount || session.state().player.actions.dead)
                 throw std::runtime_error("Experience grant requires a living player and positive amount");
             session.submit(DebugGrantExperience{amount});
             session.tick(0);
-            result["experience"] = session.state().player.experience;
-            result["level"] = session.state().player.level;
-            result["unspentAttributes"] = session.state().player.unspentAttributes;
-            result["unspentSkills"] = session.state().player.unspentSkills;
+            result["experience"] = session.state().player.character.experience;
+            result["level"] = session.state().player.character.level;
+            result["unspentAttributes"] = session.state().player.character.unspentAttributes;
+            result["unspentSkills"] = session.state().player.character.unspentSkills;
         } else if (command == "allocate-attribute") {
             auto name = request.at("attribute").get<std::string>();
             Attribute attribute;
@@ -491,25 +491,25 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
             else if (name == "vitality") attribute = Attribute::Vitality;
             else if (name == "energy") attribute = Attribute::Energy;
             else throw std::runtime_error("Unknown attribute");
-            if (session.state().player.dead || session.state().player.unspentAttributes <= 0)
+            if (session.state().player.actions.dead || session.state().player.character.unspentAttributes <= 0)
                 throw std::runtime_error("No attribute point available");
             session.submit(AllocateAttribute{attribute});
             session.tick(0);
-            result["unspentAttributes"] = session.state().player.unspentAttributes;
+            result["unspentAttributes"] = session.state().player.character.unspentAttributes;
         } else if (command == "reset-attributes") {
-            if (session.state().player.dead) throw std::runtime_error("Dead player cannot reset attributes");
+            if (session.state().player.actions.dead) throw std::runtime_error("Dead player cannot reset attributes");
             session.submit(DebugResetAttributes{});
             session.tick(0);
-            result["unspentAttributes"] = session.state().player.unspentAttributes;
+            result["unspentAttributes"] = session.state().player.character.unspentAttributes;
         } else if (command == "skills") {
             const auto &player = session.state().player;
             const auto &tree = session.content().skills;
             const auto *classTree = tree.tree(session.characterCode());
-            result["unspent"] = player.unspentSkills;
+            result["unspent"] = player.character.unspentSkills;
             result["skills"] = Json::array();
             result["common"] = Json::array();
             result["hotkeys"] = Json::array();
-            for (const auto &key : player.skillHotkeys)
+            for (const auto &key : player.character.skillHotkeys)
                 result["hotkeys"].push_back({{"id", key.skill}, {"right", key.right}});
             if (classTree) {
                 for (int id : classTree->commonSkills)
@@ -522,11 +522,11 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
             }
             for (const auto &[id, entry] : tree.skills) {
                 if (entry.classCode != session.characterCode()) continue;
-                const auto learned = player.skillRanks.find(id);
+                const auto learned = player.character.skillRanks.find(id);
                 result["skills"].push_back({{"id", id}, {"name", entry.name},
                     {"page", entry.page}, {"row", entry.row}, {"column", entry.column},
                     {"requiredLevel", entry.requiredLevel}, {"prerequisites", entry.prerequisites},
-                    {"rank", learned == player.skillRanks.end() ? 0 : learned->second},
+                    {"rank", learned == player.character.skillRanks.end() ? 0 : learned->second},
                     {"available", session.skillAvailable(id)},
                     {"leftAllowed", entry.leftAllowed}, {"passive", entry.passive},
                     {"allowedInTown", entry.allowedInTown}});
@@ -535,7 +535,7 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
             session.submit(StopChannel{});
             session.tick(0);
             view.advance(0);
-            result["channelSkill"] = session.state().player.channelSkill();
+            result["channelSkill"] = session.state().player.skills.channelSkill();
         } else if (command == "cast-skill") {
             const int id = request.at("id").get<int>();
             const Vec target{request.at("x").get<float>(), request.at("y").get<float>()};
@@ -550,8 +550,8 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
             view.advance(0);
             result["accepted"] = std::any_of(session.events().begin(), session.events().end(),
                 [](const auto &event) { return std::holds_alternative<SkillCast>(event); }) ||
-                session.state().player.channelSkill() == id;
-            result["castRemaining"] = session.state().player.castTime;
+                session.state().player.skills.channelSkill() == id;
+            result["castRemaining"] = session.state().player.actions.castTime;
             result["message"] = session.state().message;
         } else if (command == "bind-skill-hotkey") {
             int key = request.at("key").get<int>();
@@ -560,7 +560,7 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
             if (key < 1 || key > 8) throw std::runtime_error("Skill hotkey must be F1..F8");
             session.submit(BindSkillHotkey{unsigned(key - 1), id, right});
             session.tick(0);
-            const auto &binding = session.state().player.skillHotkeys[size_t(key - 1)];
+            const auto &binding = session.state().player.character.skillHotkeys[size_t(key - 1)];
             if (binding.skill != id || (id != -2 && binding.right != right))
                 throw std::runtime_error("Skill cannot be bound to this mouse button");
             result["key"] = key;
@@ -574,18 +574,18 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
             result["right"] = view.ui().skillPicker.value_or(true);
         } else if (command == "learn-skill") {
             int id = request.at("id").get<int>();
-            int before = session.state().player.unspentSkills;
+            int before = session.state().player.character.unspentSkills;
             session.submit(AllocateSkill{id});
             session.tick(0);
-            if (session.state().player.unspentSkills != before - 1)
+            if (session.state().player.character.unspentSkills != before - 1)
                 throw std::runtime_error("Skill point unavailable or prerequisite missing");
-            result["unspent"] = session.state().player.unspentSkills;
-            result["rank"] = session.state().player.skillRanks.at(id);
+            result["unspent"] = session.state().player.character.unspentSkills;
+            result["rank"] = session.state().player.character.skillRanks.at(id);
         } else if (command == "reset-skills") {
             session.submit(DebugResetSkills{});
             session.tick(0);
             view.advance(0);
-            result["unspent"] = session.state().player.unspentSkills;
+            result["unspent"] = session.state().player.character.unspentSkills;
         } else if (command == "character-panel") {
             view.ui().characterOpen = request.value("open", true);
             result["open"] = view.ui().characterOpen;
@@ -646,16 +646,16 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
             view.ui().camera = project(point);
             result["walls"] = Json::array();
             const auto &map = session.map();
-            for (int row = std::max(0, int(point.y / 5) - 5); row < std::min(map.data.height, int(point.y / 5) + 6); ++row)
-                for (int column = std::max(0, int(point.x / 5) - 5); column < std::min(map.data.width, int(point.x / 5) + 6); ++column)
-                    for (const auto &layer : map.data.walls) {
-                        const auto &cell = layer[row * map.data.width + column];
+            for (int row = std::max(0, int(point.y / 5) - 5); row < std::min(map.terrain.data.height, int(point.y / 5) + 6); ++row)
+                for (int column = std::max(0, int(point.x / 5) - 5); column < std::min(map.terrain.data.width, int(point.x / 5) + 6); ++column)
+                    for (const auto &layer : map.terrain.data.walls) {
+                        const auto &cell = layer[row * map.terrain.data.width + column];
                         if (!cell.occupied()) continue;
                         int tile = map.tileIndex(cell, column, row);
                         result["walls"].push_back({{"x", column}, {"y", row}, {"orientation", cell.orientation},
                             {"key", cell.key()}, {"hidden", cell.hidden()}, {"present", cell.present()},
-                            {"width", tile >= 0 ? map.tiles[tile]->image.width : -1},
-                            {"height", tile >= 0 ? map.tiles[tile]->image.height : -1}});
+                            {"width", tile >= 0 ? map.terrain.tiles[tile]->image.width : -1},
+                            {"height", tile >= 0 ? map.terrain.tiles[tile]->image.height : -1}});
                     }
         } else if (command == "equip") {
             const auto *item = session.inventory().item(entity());
@@ -715,8 +715,8 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
                 }
                 result["items"].push_back(std::move(entry));
             }
-            result["gold"] = session.state().player.gold;
-            result["bankGold"] = session.state().player.bankGold;
+            result["gold"] = session.state().player.character.gold;
+            result["bankGold"] = session.state().player.character.bankGold;
         } else if (command == "pickup") {
             const auto *item = session.inventory().item(entity());
             if (!item || !std::holds_alternative<GroundLocation>(item->location))
@@ -759,7 +759,7 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
         else if (command == "resume") paused = false;
         else if (command == "save") writeSave(savePath, session.characterSave(), session.content());
         else if (command == "load") {
-            const bool running = session.state().player.running;
+            const bool running = session.state().player.movement.running;
             session.restore(loadSave(savePath, session.content()));
             session.setRunning(running);
             view.sessionRestored();

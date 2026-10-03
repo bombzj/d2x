@@ -94,6 +94,12 @@ class InventoryService {
                                const ItemDestination &destination, unsigned level = 1,
                                const ItemGeneration &generation = {},
                                std::optional<Vec> groundOrigin = std::nullopt);
+    // Trusted reward/crafting replacement. Drafts consumption, creation, RNG and IDs;
+    // a rejected replacement leaves the original item and random stream intact.
+    InventoryResult replaceItem(ItemHandle source, std::string_view definition,
+                                const ItemDestination &destination, const InventoryAccess &access,
+                                unsigned level = 1, const ItemGeneration &generation = {},
+                                std::optional<uint64_t> preparedRandom = std::nullopt);
     InventoryResult move(const MoveItem &command, const InventoryAccess &access);
     InventoryResult swap(const SwapItems &command, const InventoryAccess &access);
     InventoryResult split(const SplitStack &command, const InventoryAccess &access);

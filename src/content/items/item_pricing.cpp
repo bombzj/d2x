@@ -1,4 +1,5 @@
 #include "item_pricing.hpp"
+#include "gameplay/items/state.hpp"
 #include "item_properties.hpp"
 #include <algorithm>
 #include <limits>

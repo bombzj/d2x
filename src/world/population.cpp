@@ -192,8 +192,8 @@ class Planner {
         if (!leader)
             return;
         if (unique && unique->id == "The Countess")
-            for (const auto &object : map_.data.objects)
-                if (object.type == 1 && catalog_.preset(map_.data.act, object.id, map_.data.version).id == unique->id)
+            for (const auto &object : map_.terrain.data.objects)
+                if (object.type == 1 && catalog_.preset(map_.terrain.data.act, object.id, map_.terrain.data.version).id == unique->id)
                     for (const auto &node : object.path)
                         result_.spawns.back().skillPositions.push_back({node.x + .5f, node.y + .5f});
         ++result_.eliteGroups;
@@ -260,15 +260,15 @@ class Planner {
         return result;
     }
     void fixed() {
-        for (size_t i = 0; i < map_.data.objects.size(); ++i) {
-            const auto &o = map_.data.objects[i];
+        for (size_t i = 0; i < map_.terrain.data.objects.size(); ++i) {
+            const auto &o = map_.terrain.data.objects[i];
             if (o.type != 1)
                 continue;
             if (o.flags & 1u) {
                 diagnostic("DS1 presets with already-spawned flag skipped.");
                 continue;
             }
-            auto unit = catalog_.preset(map_.data.act, o.id, map_.data.version);
+            auto unit = catalog_.preset(map_.terrain.data.act, o.id, map_.terrain.data.version);
             std::string key = "ds1." + std::to_string(i);
             Vec pos{o.x + .5f, o.y + .5f};
             ++group_;
@@ -323,7 +323,7 @@ class Planner {
         // Generated maps use actual room footprints, excluding empty gaps and DS1 border rows.
         auto rooms = map_.rooms;
         if (rooms.empty())
-            rooms.push_back({0, 0, (map_.data.width - 1) * 5, (map_.data.height - 1) * 5, true});
+            rooms.push_back({0, 0, (map_.terrain.data.width - 1) * 5, (map_.terrain.data.height - 1) * 5, true});
         for (const auto &room : rooms) {
             if (!room.populate)
                 continue;

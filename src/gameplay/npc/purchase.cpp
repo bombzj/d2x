@@ -52,8 +52,7 @@ std::optional<unsigned> GameSessionImpl::vendorRepairQuote(EntityId npc, ItemHan
 std::optional<unsigned> GameSessionImpl::vendorSaleQuote(EntityId npc, ItemHandle handle) const {
     const auto *target = object(npc);
     const auto *item = inventory_.item(handle.id);
-    if (!target || !vendorStock(npc) || engagedNpc_ != npc || state().player.dead ||
-        !region().definition.safe || !item || item->revision != handle.revision ||
+    if (!target || !vendorStock(npc) || !npcAccess(npc).townService() || !item || item->revision != handle.revision ||
         item->revision == std::numeric_limits<uint64_t>::max()) return {};
     const auto *location = std::get_if<ContainerLocation>(&item->location);
     if (!location || (location->container != playerContainers_.backpack &&
@@ -75,8 +74,8 @@ void GameSessionImpl::sellVendorItem(const SellVendorItem &command) {
         return;
     }
     auto &player = simulation_->state_.player;
-    const unsigned walletLimit = unsigned(player.level) * 10000u;
-    if (*quote > walletLimit - player.gold) {
+    const unsigned walletLimit = unsigned(player.character.level) * 10000u;
+    if (*quote > walletLimit - player.character.gold) {
         simulation_->emit(InteractionFailed{command.vendor, "Make room for the sale gold first."});
         return;
     }
@@ -86,19 +85,19 @@ void GameSessionImpl::sellVendorItem(const SellVendorItem &command) {
     result.changes.push_back({item.id, item.revision + 1, ItemChangeKind::Removed,
                               item.location, std::nullopt, 0});
     inventory_.state_.items.erase(item.id);
-    player.gold += *quote;
+    player.character.gold += *quote;
     publishInventory(std::move(result), {});
     simulation_->emit(VendorItemSold{command.vendor, item.id, *quote});
 }
 void GameSessionImpl::repairVendorItem(const RepairVendorItem &command) {
     const auto quote = vendorRepairQuote(command.npc, command.item);
-    if (engagedNpc_ != command.npc || state().player.dead || !region().definition.safe || !quote) {
+    if (!npcAccess(command.npc).townService() || !quote) {
         simulation_->emit(InteractionFailed{command.npc, "That item cannot be repaired here."});
         return;
     }
     if (!*quote) return;
     auto &player = simulation_->state_.player;
-    if (uint64_t(player.gold) + player.bankGold < *quote) {
+    if (uint64_t(player.character.gold) + player.character.bankGold < *quote) {
         simulation_->emit(InteractionFailed{command.npc, "Not enough gold to repair that item."});
         return;
     }
@@ -112,9 +111,9 @@ void GameSessionImpl::repairVendorItem(const RepairVendorItem &command) {
     if (definition.equipment.throwable && definition.equipment.repairable)
         result.changes.push_back({item.id, item.revision + 1, ItemChangeKind::QuantityChanged,
             item.location, item.location, inventory_.maximumStack(item)});
-    const unsigned walletPaid = std::min(player.gold, *quote);
-    player.gold -= walletPaid;
-    player.bankGold -= *quote - walletPaid;
+    const unsigned walletPaid = std::min(player.character.gold, *quote);
+    player.character.gold -= walletPaid;
+    player.character.bankGold -= *quote - walletPaid;
     item.durability = inventory_.maximumDurability(item);
     if (definition.equipment.throwable && definition.equipment.repairable)
         item.quantity = inventory_.maximumStack(item);
@@ -128,14 +127,13 @@ const std::vector<VendorOffer> *GameSessionImpl::vendorStock(EntityId npc, bool 
 }
 void GameSessionImpl::openGamble(EntityId npc) {
     const auto *target = object(npc);
-    if (!target || !npcCanGamble(target->npcClass) || engagedNpc_ != npc ||
-        state().player.dead || !region().definition.safe) {
+    if (!target || !npcCanGamble(target->npcClass) || !npcAccess(npc).townService()) {
         simulation_->emit(InteractionFailed{npc, "Gambling is unavailable."});
         return;
     }
     auto random = inventory_.state_.creationRandom;
     try {
-        auto stock = planGambleStock(content_, unsigned(state().player.level),
+        auto stock = planGambleStock(content_, unsigned(state().player.character.level),
             state().population.difficulty, random, loot_.usedUniques(), characterDefinition_.code);
         gambleStocks_[npc] = std::move(stock);
         inventory_.state_.creationRandom = random;
@@ -153,8 +151,7 @@ void GameSessionImpl::buyVendorItem(EntityId npc, uint32_t slot, bool gamble) {
     const auto *stock = vendorStock(npc, gamble);
     // Opening Trade already checked the NPC interaction range. NPCs may wander
     // during a transaction, so distance is not rechecked on each purchase.
-    if (!target || !stock || engagedNpc_ != npc || state().player.dead ||
-        !region().definition.safe || (gamble && !npcCanGamble(target->npcClass))) {
+    if (!target || !stock || !npcAccess(npc).townService() || (gamble && !npcCanGamble(target->npcClass))) {
         simulation_->emit(InteractionFailed{npc, "Vendor is unavailable in this town."});
         return;
     }
@@ -165,7 +162,7 @@ void GameSessionImpl::buyVendorItem(EntityId npc, uint32_t slot, bool gamble) {
         return;
     }
     const unsigned paid = vendorPurchasePrice(npc, *found, gamble);
-    if (uint64_t(state().player.gold) + state().player.bankGold < paid) {
+    if (uint64_t(state().player.character.gold) + state().player.character.bankGold < paid) {
         simulation_->emit(InteractionFailed{npc, "Not enough gold to buy that item."});
         return;
     }
@@ -183,9 +180,9 @@ void GameSessionImpl::buyVendorItem(EntityId npc, uint32_t slot, bool gamble) {
     inventory_.state_.items.at(item).defense = found->defense;
     inventory_.state_.items.at(item).identified = true;
     auto &player = simulation_->state_.player;
-    unsigned walletPaid = std::min(player.gold, paid);
-    player.gold -= walletPaid;
-    player.bankGold -= paid - walletPaid;
+    unsigned walletPaid = std::min(player.character.gold, paid);
+    player.character.gold -= walletPaid;
+    player.character.bankGold -= paid - walletPaid;
     soldVendorOffers_.swap(sold);
     if (gamble) {
         if (found->generation.quality == ItemQuality::Unique && found->generation.specialRow >= 0)

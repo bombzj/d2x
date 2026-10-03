@@ -35,21 +35,21 @@ bool GameSessionImpl::carriesQuestItem(std::string_view code) const {
     return false;
 }
 void GameSessionImpl::activateActTwoObject(EntityId id, std::optional<ItemHandle> submitted) {
-    auto &objects = regions_.at(current_).objects;
+    auto &objects = world_.at(current_).objects;
     auto found = std::find_if(objects.begin(), objects.end(), [&](const auto &value) { return value.id == id; });
-    if (found == objects.end() || state().player.dead || !canReach(*found)) return;
+    if (found == objects.end() || state().player.actions.dead || !canReach(*found)) return;
     const auto operation = found->operateFn;
     if (submitted && operation != 25) return;
-    auto &book = simulation_->state_.player.actOneQuests.at(size_t(state().population.difficulty));
+    auto &book = simulation_->state_.player.character.actOneQuests.at(size_t(state().population.difficulty));
     auto &staff = book.at(questIndex(QuestId::HoradricStaff));
     if (found->questDestination || operation == 34) {
         const auto destination = found->questDestination.value_or(RegionId(int(region().definition.id) == 54 ? 74 : 54));
         if (operation == 34 && int(region().definition.id) != 54 && int(region().definition.id) != 74) return;
         found->animationMode = 2;
         ensureRegion(destination);
-        const auto target = std::find_if(regions_.begin(), regions_.end(), [&](const auto &value) { return value.definition.id == destination; });
+        const auto target = std::find_if(world_.regions().begin(), world_.regions().end(), [&](const auto &value) { return value.definition.id == destination; });
         std::optional<Vec> arrival;
-        if (target != regions_.end())
+        if (target != world_.regions().end())
             for (const auto &portal : target->objects)
                 if ((portal.questDestination && *portal.questDestination == region().definition.id) ||
                     (operation == 34 && portal.operateFn == 34)) { arrival = target->map.grid.nearest(portal.pos); break; }
@@ -65,7 +65,7 @@ void GameSessionImpl::activateActTwoObject(EntityId id, std::optional<ItemHandle
         if (const auto *speech = questSpeech(content_.npcDialogues, "A2Q4", "Successful", "Narrator"))
             simulation_->emit(NpcDialogueStarted{id, name, speech->text});
         ensureRegion(RegionId(46));
-        for (auto &area : regions_) {
+        for (auto &area : world_.regions()) {
             if (int(area.definition.id) != 46 && int(area.definition.id) != 74) continue;
             if (std::any_of(area.objects.begin(), area.objects.end(), [](const auto &value) { return value.questDestination.has_value(); })) continue;
             WorldObject portal;
@@ -89,7 +89,7 @@ void GameSessionImpl::activateActTwoObject(EntityId id, std::optional<ItemHandle
         std::set<size_t> usedUniques;
         for (auto row : loot_.usedUniques()) usedUniques.insert(size_t(row));
         auto plan = planItemLoot(content_, content_.tables.at("itemratio"), entry.treasureClass,
-            entry.itemLevel, 0, regions_.at(current_).objectSeed, usedUniques, characterDefinition_.code, 0, 0, DropQuality::Magic);
+            entry.itemLevel, 0, world_.at(current_).objectSeed, usedUniques, characterDefinition_.code, 0, 0, DropQuality::Magic);
         if (!plan.deferred.empty()) { simulation_->emit(LootDeferred{id, plan.deferred}); return; }
         if (staff.stage < 6 && !carriesQuestItem("vip") && !carriesQuestItem("hst")) {
             plan.drops.push_back({"vip", 1, {}, unsigned(entry.itemLevel), {}});
@@ -97,7 +97,7 @@ void GameSessionImpl::activateActTwoObject(EntityId id, std::optional<ItemHandle
         const int count = 5 + int(limitedRandom(plan.randomState, 5));
         for (int index = 0; index < count; ++index)
             plan.drops.push_back({"gld", 1 + limitedRandom(plan.randomState, 5), {2, 3}, 1, {}});
-        regions_.at(current_).objectSeed = plan.randomState;
+        world_.at(current_).objectSeed = plan.randomState;
         auto drops = loot_.settle({id, {}, region().definition.id, state().population.difficulty}, std::move(plan));
         spawnLoot(drops, region().definition.id, found->pos);
         found->operatedAt = state().time;
@@ -129,7 +129,7 @@ void GameSessionImpl::activateActTwoObject(EntityId id, std::optional<ItemHandle
         auto openedMap = map();
         if (!openedMap.openTombWall(entrance.pos) ||
             (openedMap.grid.nearest(entrance.pos, playerMovement) - entrance.pos).length() > 5 ||
-            openedMap.grid.path(state().player.pos, openedMap.grid.nearest(entrance.pos, playerMovement), false, playerMovement).empty()) {
+            openedMap.grid.path(state().player.movement.pos, openedMap.grid.nearest(entrance.pos, playerMovement), false, playerMovement).empty()) {
             simulation_->emit(InteractionFailed{id, "The original tomb entrance is blocked; the staff has not been consumed."});
             return;
         }
@@ -173,17 +173,17 @@ void GameSessionImpl::activateActTwoObject(EntityId id, std::optional<ItemHandle
 }
 bool GameSessionImpl::canInsertStaff(EntityId id) const {
     const auto target = std::find_if(region().objects.begin(), region().objects.end(), [&](const auto &value) { return value.id == id; });
-    return target != region().objects.end() && target->operateFn == 25 && target->operatedAt < 0 && !state().player.dead &&
+    return target != region().objects.end() && target->operateFn == 25 && target->operatedAt < 0 && !state().player.actions.dead &&
         int(region().definition.id) == actTwoTombs(state().mapSeed)[0] &&
         quest(QuestId::HoradricStaff).stage < uint32_t(StaffStage::Submitted) && canReach(*target);
 }
 void GameSessionImpl::updateActTwoObjects() {
-    auto &sun = simulation_->state_.player.actOneQuests.at(size_t(state().population.difficulty)).at(questIndex(QuestId::TaintedSun));
+    auto &sun = simulation_->state_.player.character.actOneQuests.at(size_t(state().population.difficulty)).at(questIndex(QuestId::TaintedSun));
     if (sunDarkeningFrame_ && state().frame >= *sunDarkeningFrame_) {
         sunDarkeningFrame_.reset();
         if (!sun.stage) { sun.stage = 1; simulation_->emit(QuestAdvanced{QuestId::TaintedSun, sun.stage}); }
     }
-    for (auto &region : regions_)
+    for (auto &region : world_.regions())
         for (auto &object : region.objects)
             if (object.objectClass == 318)
                 object.animationMode = quest(QuestId::ArcaneSanctuary).stage > 0 ? 2 : 0;
@@ -193,8 +193,8 @@ void GameSessionImpl::updateActTwoObjects() {
                 object.animationMode = quest(QuestId::SevenTombs).stage >= 2 ? 2 : 0;
     if (quest(QuestId::HoradricStaff).stage < 6 || (tombCollapseFrame_ && state().frame < *tombCollapseFrame_)) return;
     const auto tomb = RegionId(actTwoTombs(state().mapSeed)[0]);
-    auto region = std::find_if(regions_.begin(), regions_.end(), [&](const auto &value) { return value.definition.id == tomb; });
-    if (region == regions_.end() || !region->loaded) return;
+    auto region = std::find_if(world_.regions().begin(), world_.regions().end(), [&](const auto &value) { return value.definition.id == tomb; });
+    if (region == world_.regions().end() || !region->loaded) return;
     if (std::any_of(region->objects.begin(), region->objects.end(), [](const auto &value) { return value.objectClass == 100; })) {
         if (!tombOpeningFrame_ || state().frame >= *tombOpeningFrame_) {
             tombOpeningFrame_.reset();
@@ -224,7 +224,7 @@ void GameSessionImpl::updateActTwoObjects() {
 }
 void GameSessionImpl::completeActTwo(EntityId npc) {
     const auto *meshif = object(npc);
-    if (!meshif || engagedNpc_ != npc || !canReach(*meshif) || state().player.dead) return;
+    if (!meshif || !npcAccess(npc).contact()) return;
     const bool east = meshif->npcClass == "meshif1" && int(region().definition.id) == 40;
     const bool west = meshif->npcClass == "meshif2" && int(region().definition.id) == 75;
     if ((!east && !west) || (east && quest(QuestId::SevenTombs).stage < 5)) return;

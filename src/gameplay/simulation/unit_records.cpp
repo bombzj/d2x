@@ -7,17 +7,26 @@ RuntimeCombatUnit Simulation::combatUnit(EntityId id) {
     unit.id = id;
     auto &p = state_.player;
     auto bind = [&](auto &record) {
-        unit.position = &record.pos; unit.life = &record.hp; unit.chill = &record.chill;
-        unit.poisonRate = &record.poisonPerSecond; unit.poisonTime = &record.poisonRemaining;
+        auto &resources = [&]() -> auto & {
+            if constexpr (requires { record.resources; }) return record.resources;
+            else return record;
+        }();
+        if constexpr (requires { record.movement; }) unit.position = &record.movement.pos;
+        else unit.position = &record.pos;
+        unit.life = &resources.hp; unit.chill = &resources.chill;
+        unit.poison = {&resources.poisonRemaining, &resources.poisonPerSecond, &resources.poisonSource};
+        unit.openWounds = {&resources.openWoundsRemaining, &resources.openWoundsPerSecond, &resources.openWoundsSource};
+        unit.webSlow = {&resources.webSlowRemaining, &resources.webSlowPercent};
+        if constexpr (requires { resources.webSource; }) unit.webSlow.source = &resources.webSource;
         unit.random = &record.combatRandom; unit.effects = &record.combatEffects;
         unit.identity = record.allegiance;
     };
     if (id && id == p.id) {
         bind(p);
-        unit.player = true; unit.records.player = &p; unit.mana = &p.mana;
-        unit.stats.attributes = state_.player.attributes; unit.stats.level = p.level;
+        unit.player = true; unit.records.player = &p; unit.mana = &p.resources.mana;
+        unit.stats.attributes = state_.player.attributes; unit.stats.level = p.character.level;
         unit.stats.block = state_.player.equipment.blockChance;
-        if (p.runningNow && p.moving) { unit.stats.attributes.defense = 0; unit.stats.block /= 3; }
+        if (p.movement.runningNow && p.movement.moving) { unit.stats.attributes.defense = 0; unit.stats.block /= 3; }
     } else if (id && id == p.hireling.id && p.hireling.sourceRow >= 0 && hirelingAttributes_) {
         auto &merc = p.hireling;
         bind(merc);

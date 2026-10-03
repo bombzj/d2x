@@ -6,7 +6,7 @@
 #include "resources/formats.hpp"
 #include "resources/text.hpp"
 #include "persistence/save_file.hpp"
-#include "gameplay/items/equipment_stats.hpp"
+#include "gameplay/items/equipment_rules.hpp"
 #include "world/cow_level.hpp"
 #include "world/maze.hpp"
 #include "world/outdoor/outdoor.hpp"
@@ -281,10 +281,10 @@ int main(int argc, char **argv) {
                     std::cout << '\n';
                 }
             }
-            for (const auto &layer : map.data.walls)
-                for (int y = 0; y < map.data.height; ++y)
-                    for (int x = 0; x < map.data.width; ++x) {
-                        const auto &cell = layer[y * map.data.width + x];
+            for (const auto &layer : map.terrain.data.walls)
+                for (int y = 0; y < map.terrain.data.height; ++y)
+                    for (int x = 0; x < map.terrain.data.width; ++x) {
+                        const auto &cell = layer[y * map.terrain.data.width + x];
                         if (cell.occupied() && (cell.orientation == 10 || cell.orientation == 11))
                             std::cout
                                 << "  warp marker " << x << ',' << y << " style=" << ((cell.value >> 20) & 63)

@@ -1,4 +1,5 @@
-#include "gameplay/model/state.hpp"
+#include "gameplay/units/movement.hpp"
+#include "gameplay/monsters/state.hpp"
 #include "fallen_ai.hpp"
 #include "monster_wander.hpp"
 #include <algorithm>
@@ -48,21 +49,8 @@ bool fallenStartEscape(Enemy &enemy, Vec player, const Grid &grid, MovementColli
 }
 
 void fallenAdvanceEscape(Enemy &enemy, const Grid &grid, float speed, float dt, MovementCollisionRule rule) {
-    while (!enemy.route.empty() && (enemy.route.front() - enemy.pos).length() < .25f)
-        enemy.route.pop_front();
-    if (enemy.route.empty()) {
-        enemy.aiEscaping = false;
-        return;
-    }
-    const Vec offset = enemy.route.front() - enemy.pos;
-    const Vec next = enemy.pos + offset.unit() * std::min(speed * dt, offset.length());
-    if (!grid.segment(enemy.pos, next, {}, rule)) {
-        enemy.route.clear();
-        enemy.aiEscaping = false;
-        return;
-    }
-    enemy.pos = next;
-    if ((enemy.route.front() - enemy.pos).length() < .25f) enemy.route.pop_front();
-    if (enemy.route.empty()) enemy.aiEscaping = false;
+    const auto result = advanceRouteMovement(enemy.pos, enemy.route, speed, dt, .25f,
+        [&](Vec from, Vec to) { return grid.segment(from, to, {}, rule); });
+    if (result != RouteMovement::Moving) enemy.aiEscaping = false;
 }
 } // namespace d2x

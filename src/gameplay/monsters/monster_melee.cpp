@@ -1,3 +1,4 @@
+#include "gameplay/units/actions.hpp"
 #include "gameplay/combat/damage_request.hpp"
 #include "gameplay/skills/runtime.hpp"
 #include "core/random.hpp"
@@ -22,9 +23,7 @@ void Simulation::refreshMonsterAttackRate(Enemy &enemy) {
     const int rate = std::clamp(100 + auraRate + coldRate, 15, 175);
     if (rate == enemy.attackRatePercent) return;
     const float scale = float(enemy.attackRatePercent) / float(rate);
-    enemy.attack *= scale;
-    enemy.attackDuration *= scale;
-    if (enemy.attackImpact >= 0) enemy.attackImpact *= scale;
+    rescaleTimedAction({enemy.attack, enemy.attackDuration, enemy.attackImpact}, scale);
     enemy.attackRatePercent = rate;
 }
 void Simulation::beginMonsterAttack(Enemy &enemy, int forcedMode) {
@@ -144,7 +143,7 @@ void Simulation::resolveMonsterAttack(Enemy &enemy, int modeOverride, bool proje
     const auto source = combatUnit(enemy.id);
     const auto accuracy = enemy.intrinsicCombat ? std::optional<MonsterAccuracy>{{source.stats.level, source.stats.attributes.attackRating}} :
         monsterAccuracy_ ? monsterAccuracy_(enemy, state_.area.region, mode) : std::nullopt;
-    const bool running = target.player && target.records.player->runningNow && target.records.player->moving;
+    const bool running = target.player && target.records.player->movement.runningNow && target.records.player->movement.moving;
     if (!running && accuracy) {
         const int auraRating = enemy.combatEffects.modifiers(state_.frame).combat.attackRatingPercent +
             (enemy.enchantment ? enemy.enchantment->attackRatingPercent : 0);

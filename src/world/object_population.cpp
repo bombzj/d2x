@@ -124,7 +124,7 @@ void populateAct1WorldObjects(Region &region, EntityIds &ids, const WorldCatalog
                 const auto *appearance = barrel && explodingBarrel != objectRows.end() &&
                     placement.below(3) == 0 ? &*explodingBarrel : record;
                 WorldObject object;
-                object.act = region.map.data.act;
+                object.act = region.map.terrain.data.act;
                 const auto level = catalog.levels().find(int(region.definition.id));
                 object.palette = level == catalog.levels().end() ? object.act : level->second.palette;
                 object.id = ids.allocate();

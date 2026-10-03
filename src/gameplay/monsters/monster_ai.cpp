@@ -1,3 +1,7 @@
+#include "gameplay/units/actions.hpp"
+#include "gameplay/units/movement.hpp"
+#include "gameplay/units/resources.hpp"
+#include "gameplay/units/impairments.hpp"
 #include "gameplay/simulation/simulation.hpp"
 #include "gameplay/monsters/skeleton_ai.hpp"
 #include "gameplay/monsters/brute_ai.hpp"
@@ -39,7 +43,7 @@ void Simulation::updateMonsters(float dt) {
                 if (effect.spec.stacking == EffectStacking::AuraLevel) auras.push_back(effect.handle);
             for (const auto handle : auras) enemy.combatEffects.remove(handle);
             enemy.conversion.reset(); enemy.combatTarget = {};
-            enemy.route.clear(); enemy.attack = enemy.attackDuration = 0; enemy.attackImpact = -1;
+            enemy.route.clear(); cancelTimedAction({enemy.attack, enemy.attackDuration, enemy.attackImpact});
             enemy.aiPursuing = enemy.aiEscaping = enemy.aiCircling = enemy.aiRunning = false;
             enemy.aiCorpse = {};
             enemy.skill2Remaining = enemy.skill2Duration = 0;
@@ -59,7 +63,7 @@ void Simulation::updateMonsters(float dt) {
             !attracted.effects->hasState(attractState_, state_.frame))) {
             enemy.attractedTarget = {}; enemy.attractedUntil = 0;
             monsterStopApproach(enemy); enemy.route.clear(); enemy.combatTarget = {};
-            enemy.attack = enemy.attackDuration = 0; enemy.attackImpact = -1;
+            cancelTimedAction({enemy.attack, enemy.attackDuration, enemy.attackImpact});
             enemy.rethink = 0;
         }
         CurseAi curseAi = CurseAi::None;
@@ -73,7 +77,7 @@ void Simulation::updateMonsters(float dt) {
             }
         if (enemy.activeCurseAi != curseAi) {
             monsterStopApproach(enemy); enemy.route.clear(); enemy.combatTarget = {};
-            enemy.attack = enemy.attackDuration = 0; enemy.attackImpact = -1;
+            cancelTimedAction({enemy.attack, enemy.attackDuration, enemy.attackImpact});
             enemy.skill2Remaining = enemy.skill2Duration = 0;
             enemy.teleportTarget.reset(); enemy.nestSpawnPosition.reset(); enemy.aiCorpse = {};
             enemy.aiEscaping = enemy.aiCircling = enemy.aiRunning = false;
@@ -89,16 +93,12 @@ void Simulation::updateMonsters(float dt) {
         const Vec targetPosition = monsterTargetPosition(enemy);
         if (enemy.hp < enemy.maxHp && enemy.poisonRemaining <= 0 &&
             enemy.openWoundsRemaining <= 0 && monsterDamageRegen_)
-            if (auto rate = monsterDamageRegen_(enemy, state_.area.region)) {
-                const auto perFrame = int(enemy.maxHp * 256.f * *rate / 4096.f);
-                enemy.hp = std::min(enemy.maxHp, enemy.hp + perFrame / 256.f * dt * 25.f);
-            }
-        enemy.chill = std::max(0.f, enemy.chill - dt);
+            if (auto rate = monsterDamageRegen_(enemy, state_.area.region))
+                advanceLifeRegeneration(enemy.hp, enemy.maxHp, *rate, dt, LifeRegenOrder::StepThenFrameRate);
+        advanceImpairments({&enemy.chill, &enemy.freeze, &enemy.stun, &enemy.freezeActive,
+                           {&enemy.webSlowRemaining, &enemy.webSlowPercent}},
+                          dt, WebSlowExpiry::RetainMetadata);
         enemy.hitDisplay = std::max(0.f, enemy.hitDisplay - dt);
-        enemy.webSlowRemaining = std::max(0.f, enemy.webSlowRemaining - dt);
-        enemy.stun = std::max(0.f, enemy.stun - dt);
-        enemy.freeze = std::max(0.f, enemy.freeze - dt);
-        enemy.freezeActive = enemy.freeze > 0;
         enemy.rethink = std::max(0.f, enemy.rethink - dt);
         enemy.aiWait = std::max(0.f, enemy.aiWait - dt);
         enemy.movementVelocityPercent.reset();
@@ -126,10 +126,10 @@ void Simulation::updateMonsters(float dt) {
                     const int ratio = terrorVelocityBonus_ ? terrorVelocityBonus_(enemy) : 0;
                     const float speed = monsterMoveSpeed_ ? monsterMoveSpeed_(enemy, 75 + std::min(120, std::max(0, ratio))).value_or(walk) : walk;
                     const auto delta = enemy.route.front() - enemy.pos;
-                    const auto next = enemy.pos + delta.unit() * std::min(delta.length(), speed * dt);
                     enemy.aiRunning = ratio > 0;
-                    if (grid_->segment(enemy.pos, next, {}, movementRule(enemy))) enemy.pos = next;
-                    else enemy.route.clear();
+                    if (!advanceMovement(enemy.pos, delta.unit(), std::min(delta.length(), speed * dt),
+                        [&](Vec from, Vec to) { return grid_->segment(from, to, {}, movementRule(enemy)); }).accepted)
+                        enemy.route.clear();
                     if (!enemy.route.empty() && (enemy.route.front() - enemy.pos).length() < .05f) enemy.route.pop_front();
                 }
             }
@@ -146,9 +146,9 @@ void Simulation::updateMonsters(float dt) {
             if (!enemy.route.empty()) {
                 const auto delta = enemy.route.front() - enemy.pos;
                 const float speed = monsterMoveSpeed_ ? monsterMoveSpeed_(enemy, 75).value_or(0) : 0;
-                const auto next = enemy.pos + delta.unit() * std::min(delta.length(), speed * dt);
-                if (grid_->segment(enemy.pos, next, {}, movementRule(enemy))) enemy.pos = next;
-                else enemy.route.clear();
+                if (!advanceMovement(enemy.pos, delta.unit(), std::min(delta.length(), speed * dt),
+                    [&](Vec from, Vec to) { return grid_->segment(from, to, {}, movementRule(enemy)); }).accepted)
+                    enemy.route.clear();
                 if (!enemy.route.empty() && (enemy.route.front() - enemy.pos).length() < .05f) enemy.route.pop_front();
             }
             if (enemy.attack <= 0) continue;
@@ -169,8 +169,7 @@ void Simulation::updateMonsters(float dt) {
             if (enemy.kind != MonsterKind::FoulCrowNest) enemy.aiLoop = 0;
             enemy.aiCorpse = {};
             enemy.skill2Remaining = enemy.skill2Duration = 0;
-            enemy.attack = enemy.attackDuration = 0;
-            enemy.attackImpact = -1;
+            cancelTimedAction({enemy.attack, enemy.attackDuration, enemy.attackImpact});
             enemy.teleportTarget.reset();
             enemy.nestSpawnPosition.reset();
             enemy.attackMode = 1;
@@ -181,8 +180,7 @@ void Simulation::updateMonsters(float dt) {
             monsterStopApproach(enemy);
             enemy.aiPursuing = enemy.aiRunning = enemy.aiEscaping = enemy.aiCircling = false;
             enemy.route.clear();
-            enemy.attack = enemy.attackDuration = 0;
-            enemy.attackImpact = -1;
+            cancelTimedAction({enemy.attack, enemy.attackDuration, enemy.attackImpact});
             enemy.teleportTarget.reset();
             enemy.nestSpawnPosition.reset();
             enemy.attackMode = 1;
@@ -201,58 +199,7 @@ void Simulation::updateMonsters(float dt) {
             continue;
         }
         if (enemy.attack > 0) {
-            refreshMonsterAttackRate(enemy);
-            enemy.attack = std::max(0.f, enemy.attack - dt);
-            if (enemy.attack < .00001f) enemy.attack = 0;
-            if (enemy.attackImpact >= 0) {
-                enemy.attackImpact -= dt;
-                if (enemy.attackImpact <= 0) {
-                    enemy.attackImpact = -1;
-                    if (enemy.teleportTarget) {
-                        const int size = monsterSize_ ? monsterSize_(enemy) : 2;
-                        bool clear = grid_->walkable(*enemy.teleportTarget, {0x3c01, size});
-                        for (const auto &unit : combatUnits())
-                            if (unit.id != enemy.id && unit.alive() &&
-                                meleeDistance(*enemy.teleportTarget, size, *unit.position, unit.stats.collisionSize) <= 0)
-                                clear = false;
-                        if (clear) enemy.pos = *enemy.teleportTarget;
-                        enemy.teleportTarget.reset();
-                    }
-                    else if (enemy.attackMode == 3 && enemy.identity.superUnique == "The Countess")
-                        launchCountessFirewall(enemy);
-                    else if (enemy.attackMode == 3 && monsterResurrection_ &&
-                        monsterResurrection_(enemy))
-                        resolveMonsterResurrection(enemy);
-                    else if (enemy.attackMode == 3 && monsterWeb_ &&
-                             monsterWeb_(enemy))
-                        activateSpiderWeb(enemy);
-                    else if (enemy.attackMode == 3 && monsterNest_ &&
-                             monsterNest_(enemy)) {
-                        if (auto hatchling = nestSpawn(enemy, nestSpawns))
-                            nestSpawns.push_back(std::move(*hatchling));
-                    }
-                    else if (enemy.attackMode == 4 && enemy.kind == MonsterKind::BloodRaven)
-                        launchMonsterProjectile(enemy);
-                    else if (enemy.attackMode >= 3)
-                        launchMonsterSpell(enemy);
-                    else if (curseAi != CurseAi::DimVision && monsterProjectile_ && monsterProjectile_(enemy, enemy.attackMode))
-                        launchMonsterProjectile(enemy);
-                    else
-                        resolveMonsterAttack(enemy);
-                    if (enemy.kind == MonsterKind::Andariel && enemy.attackMode == 3)
-                        if (auto timing = monsterAttackTiming_(enemy, 3); timing &&
-                            ++enemy.attackEventIndex < timing->eventTimes.size())
-                            enemy.attackImpact = timing->eventTimes[enemy.attackEventIndex] -
-                                                 (enemy.attackDuration - enemy.attack);
-                }
-            }
-            if (enemy.attack == 0) {
-                enemy.attackDuration = 0;
-                enemy.attackImpact = -1;
-                enemy.attackMode = 1;
-                enemy.aiCorpse = {};
-                if (enemy.kind == MonsterKind::Andariel) enemy.skillPosition.reset();
-            }
+            advanceMonsterAction(enemy, dt, curseAi, nestSpawns);
             continue;
         }
         if (enemy.aiRetaliate && !enemy.approach && !enemy.aiEscaping && !enemy.aiCircling &&
@@ -523,8 +470,7 @@ void Simulation::updateMonsters(float dt) {
                 ? *enemy.approach->destination : targetPosition;
             Vec destination = movementTarget;
             if (wanders) {
-                while (!enemy.route.empty() && (enemy.route.front() - enemy.pos).length() < .25f)
-                    enemy.route.pop_front();
+                discardReachedWaypoints(enemy.pos, enemy.route, .25f);
                 if (!enemy.route.empty() && !grid_->segment(enemy.pos, enemy.route.front(), {}, movementRule(enemy)))
                     enemy.route.clear();
                 if (enemy.route.empty())
@@ -537,8 +483,7 @@ void Simulation::updateMonsters(float dt) {
                 enemy.route.clear();
                 enemy.rethink = 0;
             } else {
-                while (!enemy.route.empty() && (enemy.route.front() - enemy.pos).length() < .25f)
-                    enemy.route.pop_front();
+                discardReachedWaypoints(enemy.pos, enemy.route, .25f);
                 if (!enemy.route.empty() && !grid_->segment(enemy.pos, enemy.route.front(), {}, movementRule(enemy))) {
                     enemy.route.clear();
                     enemy.rethink = 0;
@@ -570,10 +515,10 @@ void Simulation::updateMonsters(float dt) {
                     ? monsterMoveSpeed_(enemy, *enemy.movementVelocityPercent) : std::nullopt;
                 speed = runSpeed.value_or(speed);
             }
-            auto next = enemy.pos + offset.unit() * std::min(speed * dt, offset.length());
-            if (grid_->segment(enemy.pos, next, {}, movementRule(enemy))) {
-                const float moved = (next - enemy.pos).length();
-                enemy.pos = next;
+            const Vec before = enemy.pos;
+            if (advanceMovement(enemy.pos, offset.unit(), std::min(speed * dt, offset.length()),
+                [&](Vec from, Vec to) { return grid_->segment(from, to, {}, movementRule(enemy)); }).accepted) {
+                const float moved = (enemy.pos - before).length();
                 if (enemy.webAuraRemaining > 0) leaveSpiderWeb(enemy, moved);
             } else {
                 monsterStopApproach(enemy);

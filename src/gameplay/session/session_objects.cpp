@@ -16,7 +16,7 @@ uint32_t roll(uint64_t &state, uint32_t bound) {
 } // namespace
 void GameSessionImpl::activateLootObject(EntityId id) {
     // Region objects are world state; a character-only disk restore rebuilds them.
-    auto &live = regions_.at(current_).objects;
+    auto &live = world_.at(current_).objects;
     auto found = std::find_if(live.begin(), live.end(), [id](const WorldObject &value) { return value.id == id; });
     if (found == live.end() || found->interaction != Interaction::Loot ||
         (found->operateFn != 1 && found->operateFn != 3 && found->operateFn != 4 &&
@@ -25,7 +25,7 @@ void GameSessionImpl::activateLootObject(EntityId id) {
          found->operateFn != 40 && found->operateFn != 41) ||
         loot_.settled(id))
         return;
-    if (state().player.dead || state().player.hp <= 0 || found->operatedAt >= 0 ||
+    if (state().player.actions.dead || state().player.resources.hp <= 0 || found->operatedAt >= 0 ||
         found->modeAt(state().time) != 0) return;
     ItemHandle key;
     const bool unlocking = found->chest && found->chest->locked;
@@ -46,7 +46,7 @@ void GameSessionImpl::activateLootObject(EntityId id) {
     }
     LootPlan plan;
     plan.randomState = loot_.randomState();
-    auto objectSeed = regions_.at(current_).objectSeed;
+    auto objectSeed = world_.at(current_).objectSeed;
     if (found->operateFn >= 39 && found->operateFn <= 41) {
         const auto entry = resolveObjectTreasure(content_, worldContent_, region().definition.id, state().population.difficulty);
         if (!entry.deferred.empty()) { simulation_->emit(LootDeferred{id, entry.deferred}); return; }
@@ -70,7 +70,7 @@ void GameSessionImpl::activateLootObject(EntityId id) {
         const int count = 5 + int(roll(plan.randomState, 5));
         for (int index = 0; index < count; ++index)
             plan.drops.push_back({"gld", 1 + roll(plan.randomState, 5), {2, 3}, 1, {}});
-        regions_.at(current_).objectSeed = plan.randomState;
+        world_.at(current_).objectSeed = plan.randomState;
     } else if (found->chest) {
         std::set<size_t> usedUniques;
         for (auto row : loot_.usedUniques()) usedUniques.insert(size_t(row));
@@ -143,7 +143,7 @@ void GameSessionImpl::activateLootObject(EntityId id) {
     if (found->chest) {
         found->chest->locked = false;
         found->chest->lootSeed = plan.randomState;
-        regions_.at(current_).objectSeed = objectSeed;
+        world_.at(current_).objectSeed = objectSeed;
     }
     auto drops = loot_.settle({id, {}, region().definition.id, state().population.difficulty,
                               false, found->chest.has_value()},
@@ -154,7 +154,7 @@ void GameSessionImpl::activateLootObject(EntityId id) {
     simulation_->emit(ObjectInteracted{id, Interaction::Loot, found->name, false, unlocking});
 }
 void GameSessionImpl::activateShrine(EntityId id) {
-    auto &objects = regions_.at(current_).objects;
+    auto &objects = world_.at(current_).objects;
     auto found = std::find_if(objects.begin(), objects.end(), [id](const WorldObject &value) {
         return value.id == id;
     });
@@ -168,12 +168,12 @@ void GameSessionImpl::activateShrine(EntityId id) {
 void GameSessionImpl::grantShrine(int code) {
     code = activeShrineCode(code);
     const auto found = content_.shrines.find(code);
-    if (state().player.dead || found == content_.shrines.end()) return;
-    if (applyShrine(code, {}, state().player.pos))
+    if (state().player.actions.dead || found == content_.shrines.end()) return;
+    if (applyShrine(code, {}, state().player.movement.pos))
         simulation_->emit(ObjectInteracted{{}, Interaction::Shrine, found->second.name});
 }
 void GameSessionImpl::drinkWell(EntityId id) {
-    auto &objects = regions_.at(current_).objects;
+    auto &objects = world_.at(current_).objects;
     auto found = std::find_if(objects.begin(), objects.end(), [id](const WorldObject &value) {
         return value.id == id;
     });
@@ -188,13 +188,13 @@ void GameSessionImpl::drinkWell(EntityId id) {
         value = std::min(float(maximum), value + float(maximum) * fraction);
         used = true;
     };
-    if (found->parameters[3] & 2) restore(player.hp, stats.maxLife);
-    if (found->parameters[3] & 1) restore(player.mana, stats.maxMana);
-    restore(player.stamina, stats.maxStamina);
-    if (player.poisonRemaining > 0 || player.chill > 0 || player.webSlowRemaining > 0) {
-        player.poisonRemaining = player.poisonPerSecond = player.chill = player.webSlowRemaining = 0;
-        player.webSlowPercent = 0;
-        player.webSource = {};
+    if (found->parameters[3] & 2) restore(player.resources.hp, stats.maxLife);
+    if (found->parameters[3] & 1) restore(player.resources.mana, stats.maxMana);
+    restore(player.resources.stamina, stats.maxStamina);
+    if (player.resources.poisonRemaining > 0 || player.resources.chill > 0 || player.resources.webSlowRemaining > 0) {
+        player.resources.poisonRemaining = player.resources.poisonPerSecond = player.resources.chill = player.resources.webSlowRemaining = 0;
+        player.resources.webSlowPercent = 0;
+        player.resources.webSource = {};
         used = true;
     }
     if (!used) return;
@@ -212,7 +212,7 @@ void GameSessionImpl::updateObjectTimers() {
             return effect.handle == status.stateEffect && effect.activeAt(state().frame);
         });
     });
-    for (auto &region : regions_)
+    for (auto &region : world_.regions())
         for (auto &object : region.objects) {
             if (object.towerRewardStart && region.definition.id == state().area.region &&
                 object.towerRewardLastFrame != state().frame) {

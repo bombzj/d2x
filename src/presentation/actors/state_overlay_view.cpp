@@ -23,7 +23,7 @@ void SceneView::drawShrineOverlays(int code, Vec at, int heightIndex, bool back)
     drawLayer(found->second[0], at, heightIndex);
 }
 void SceneView::drawPlayerShrineOverlay(Vec at, bool back) const {
-    if (session_.state().player.dead) return;
+    if (session_.state().player.actions.dead) return;
     for (auto it = session_.shrineStatuses().rbegin(); it != session_.shrineStatuses().rend(); ++it) {
         const auto found = assets_.shrineOverlays.find(it->code);
         if (found == assets_.shrineOverlays.end()) continue;

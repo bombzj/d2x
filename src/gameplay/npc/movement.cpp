@@ -1,5 +1,7 @@
+#include "gameplay/units/movement.hpp"
 #include "core/random.hpp"
-#include "gameplay/session/session_impl.hpp"
+#include "movement.hpp"
+#include "world/region.hpp"
 #include <algorithm>
 
 namespace d2x {
@@ -10,17 +12,16 @@ uint32_t roll(uint64_t &state, uint32_t bound) {
 }
 } // namespace
 
-void GameSessionImpl::advanceNpcPaths(float dt) {
+void advanceNpcPaths(Region &active, EntityId pending, EntityId engaged, uint64_t &random, float dt) {
     if (dt <= 0)
         return;
-    auto &active = regions_[current_];
     const auto &grid = active.map.grid;
     for (auto &npc : active.objects) {
-        if (npc.npcPath.empty() || npc.npcVelocity <= 0 || npc.id == pendingInteraction_ ||
-            npc.id == engagedNpc_)
+        if (npc.npcPath.empty() || npc.npcVelocity <= 0 || npc.id == pending ||
+            npc.id == engaged)
             continue;
         if (!npc.npcRandom)
-            npc.npcRandom = childRandom(random_);
+            npc.npcRandom = childRandom(random);
         npc.npcWait = std::max(0.f, npc.npcWait - dt);
         if (npc.npcWait > 0)
             continue;
@@ -49,8 +50,7 @@ void GameSessionImpl::advanceNpcPaths(float dt) {
                 continue;
             }
         }
-        while (!npc.npcRoute.empty() && (npc.npcRoute.front() - npc.pos).length() < .01f)
-            npc.npcRoute.pop_front();
+        discardReachedWaypoints(npc.pos, npc.npcRoute, .01f);
         if (npc.npcRoute.empty()) {
             npc.npcWait = 120.f / 25.f;
             continue;
@@ -58,15 +58,14 @@ void GameSessionImpl::advanceNpcPaths(float dt) {
         Vec delta = npc.npcRoute.front() - npc.pos;
         float distance = delta.length();
         npc.npcLook = delta.unit();
-        Vec next = npc.pos + npc.npcLook * std::min(distance, npc.npcVelocity * dt);
-        if ((next - npc.npcHome).length() > 8.f || !grid.walkable(next, npc.npcMovement) ||
-            !grid.segment(npc.pos, next, {}, npc.npcMovement)) {
+        if (!advanceMovement(npc.pos, npc.npcLook, std::min(distance, npc.npcVelocity * dt),
+            [&](Vec from, Vec to) { return (to - npc.npcHome).length() <= 8.f &&
+                grid.walkable(to, npc.npcMovement) && grid.segment(from, to, {}, npc.npcMovement); }).accepted) {
             npc.npcRoute.clear();
             npc.npcWait = 120.f / 25.f;
             continue;
         }
-        npc.pos = next;
-        npc.accessPoint = grid.nearest(next);
+        npc.accessPoint = grid.nearest(npc.pos);
         if ((npc.npcRoute.front() - npc.pos).length() < .01f) {
             npc.npcRoute.pop_front();
             if (npc.npcRoute.empty())

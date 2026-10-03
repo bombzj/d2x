@@ -1,4 +1,4 @@
-#include "gameplay/model/state.hpp"
+#include "gameplay/monsters/state.hpp"
 #include "gameplay/monsters/implementation.hpp"
 #include "fallen_shaman_ai.hpp"
 #include "monster_wander.hpp"

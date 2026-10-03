@@ -67,9 +67,9 @@ void SkillRuntime::pulseAura(CombatUnit source, const AuraDefinition &aura, Effe
         const bool enoughMana = !source.player || *source.mana >= aura.manaPerPulse;
         if (enoughMana && aura.harmfulDurationPercent < 100) {
             target.effects->shortenCurableCurses(world_.frame(), aura.harmfulDurationPercent);
-            const int poisonFrames = std::max(0, int(*target.poisonTime * 25.f + .0001f));
-            *target.poisonTime = float(poisonFrames * aura.harmfulDurationPercent / 100) / 25.f;
-            if (*target.poisonTime == 0) *target.poisonRate = 0;
+            const int poisonFrames = std::max(0, int(*target.poison.remaining * 25.f + .0001f));
+            *target.poison.remaining = float(poisonFrames * aura.harmfulDurationPercent / 100) / 25.f;
+            if (*target.poison.remaining == 0) *target.poison.rate = 0;
         }
         if (enoughMana && aura.lifePerPulse > 0 && *target.life < target.stats.attributes.maxLife) {
             const float before = *target.life;

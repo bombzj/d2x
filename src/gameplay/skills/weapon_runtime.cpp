@@ -1,3 +1,4 @@
+#include "gameplay/units/actions.hpp"
 #include "gameplay/combat/geometry.hpp"
 #include "gameplay/combat/unit.hpp"
 #include "gameplay/skills/weapon_caster.hpp"
@@ -9,14 +10,7 @@
 
 namespace d2x {
 const WeaponDamage *SkillRuntime::attackWeapon(WeaponSkillCaster actor, bool thrown, bool leftHand) const {
-    for (int index = 0; index < actor.equipment.weaponCount; ++index) {
-        const auto &weapon = actor.equipment.weapons[index];
-        if (leftHand && (!weapon.item || !weapon.leftHand)) continue;
-        if (thrown && !weapon.throwable) return nullptr;
-        if (!thrown && weapon.potion) return nullptr;
-        return &weapon;
-    }
-    return nullptr;
+    return selectAttackWeapon(actor.equipment, thrown, leftHand);
 }
 bool SkillRuntime::beginWeaponSkill(WeaponSkillCaster p, const SkillCastSpec &skill, Vec aim, EntityId target) {
     if (!skill.weapon || world_.safeZone() || p.casting.dead || p.casting.blockAnimation || p.weaponAttack || p.casting.hitTime > 0) return false;
@@ -95,17 +89,14 @@ bool SkillRuntime::beginWeaponSkill(WeaponSkillCaster p, const SkillCastSpec &sk
 void SkillRuntime::advanceWeaponAttack(WeaponSkillCaster p) {
     if (!p.weaponAttack) return;
     if (p.casting.dead || p.life <= 0 || p.casting.hitTime > 0) {
-        p.weaponAttack.reset();
-        p.meleeTime = 0;
+        cancelWeaponAction(p);
         return;
     }
     auto &attack = *p.weaponAttack;
     if (attack.skill && attack.skill->weapon->smite && !p.equipment.shield) {
-        p.weaponAttack.reset(); p.meleeTime = 0; return;
+        cancelWeaponAction(p); return;
     }
-    ++attack.ticks;
-    if (!attack.released && attack.ticks >= attack.timing.actionTick()) {
-        attack.released = true;
+    if (advanceWeaponAction(attack)) {
         // Equipment can change during the wind-up. Never substitute another hand or fists.
         auto weapon = std::find_if(p.equipment.weapons.begin(),
             p.equipment.weapons.begin() + p.equipment.weaponCount,
@@ -173,7 +164,7 @@ void SkillRuntime::advanceWeaponAttack(WeaponSkillCaster p) {
             }
         }
     }
-    p.meleeTime = float(std::max(0, attack.timing.durationTicks() - attack.ticks)) / 25.f;
+    p.meleeTime = weaponActionRemaining(attack);
     if (p.meleeTime <= 0) p.weaponAttack.reset();
 }
 } // namespace d2x

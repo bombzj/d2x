@@ -1,4 +1,4 @@
-#include "gameplay/model/state.hpp"
+#include "gameplay/monsters/state.hpp"
 #include "corrupt_lancer_ai.hpp"
 #include "monster_wander.hpp"
 

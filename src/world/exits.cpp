@@ -5,7 +5,7 @@
 #include <set>
 
 namespace d2x {
-void linkLevelExits(std::vector<Region> &regions, const WorldCatalog &catalog) {
+void linkLevelExits(std::span<Region> regions, const WorldCatalog &catalog) {
     for (auto &region : regions) {
         region.exits.clear();
         region.map.warpArrivals.clear();
@@ -35,7 +35,7 @@ void linkLevelExits(std::vector<Region> &regions, const WorldCatalog &catalog) {
         if (!region.loaded || !catalog.levels().contains(id))
             continue;
         const auto &level = catalog.level(id);
-        const auto &data = region.map.data;
+        const auto &data = region.map.terrain.data;
         std::set<int> seen;
         for (const auto &layer : data.walls)
             for (int y = 0; y < data.height; ++y)
@@ -88,7 +88,7 @@ void linkLevelExits(std::vector<Region> &regions, const WorldCatalog &catalog) {
                                 bestDistance = distance;
                             }
                         if (!approach) {
-                            throw std::runtime_error("No reachable original stair approach: " + region.map.path +
+                            throw std::runtime_error("No reachable original stair approach: " + region.map.terrain.path +
                             " slot=" + std::to_string(slot) + " destination=" + std::to_string(int(exit.destination)) +
                             " object=" + std::to_string(stair->objectClass) +
                             " stair=" + std::to_string(stair->pos.x) + "," + std::to_string(stair->pos.y) +
@@ -163,7 +163,7 @@ void linkLevelExits(std::vector<Region> &regions, const WorldCatalog &catalog) {
                 break;
             }
             if (!selected)
-                throw std::runtime_error("Disconnected boundary passages: " + region.map.path +
+                throw std::runtime_error("Disconnected boundary passages: " + region.map.terrain.path +
                                          " -> " + std::to_string(b.destination));
             exit.accessPoint = exit.position;
             region.exits.push_back(exit);
@@ -210,7 +210,7 @@ void linkLevelExits(std::vector<Region> &regions, const WorldCatalog &catalog) {
                         if ((object.pos - exit.position).length() < 20)
                             std::cerr << "  nearby object=" << object.objectClass << " at=" << object.pos.x
                                 << ',' << object.pos.y << " collision=" << object.collisionMask << '\n';
-                    throw std::runtime_error("Disconnected original level exit: " + region.map.path +
+                    throw std::runtime_error("Disconnected original level exit: " + region.map.terrain.path +
                                              " slot=" + std::to_string(exit.slot));
                 }
         }

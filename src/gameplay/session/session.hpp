@@ -5,6 +5,8 @@
 #include "gameplay/model/events.hpp"
 #include "gameplay/model/interaction.hpp"
 #include "gameplay/session/session_views.hpp"
+#include "gameplay/player/frame_input.hpp"
+#include "gameplay/simulation/fixed_step.hpp"
 #include <memory>
 #include <span>
 #include <string_view>
@@ -46,7 +48,7 @@ class GameSession {
     const std::vector<HirelingOffer> *hirelingOffers(EntityId npc) const;
     const HirelingDefinition *hirelingDefinition() const;
     HirelingCombatStats hirelingStats() const;
-    static constexpr float fixedStep = 1.f / 25.f;
+    static constexpr float fixedStep = gameFixedStep;
     GameSession(Archives &archives, const WorldSelection &selection, int startRegion,
                 uint32_t sessionSeed, PopulationSettings population,
                 std::string characterClass = "Barbarian", std::string characterName = "Hero");
@@ -129,6 +131,9 @@ class GameSession {
     std::span<const GameEvent> events() const;
     void submit(GameCommand command);
     bool hasPendingCommands() const;
+    bool setPlayerInput(PlayerFrameInput input);
+    void advance(float dt);
+    // Host/debug compatibility: explicit control for this call, neutral by default.
     void tick(float dt, Vec keyboard = {}, bool forceRun = false);
 };
 } // namespace d2x

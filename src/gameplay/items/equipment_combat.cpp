@@ -1,5 +1,7 @@
 #include "equipment_combat.hpp"
 #include <algorithm>
+#include <cstdint>
+#include <string_view>
 #include <limits>
 #include <stdexcept>
 

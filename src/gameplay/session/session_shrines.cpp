@@ -18,12 +18,12 @@ uint32_t shrineRoll(uint64_t &seed, uint32_t bound) {
 bool GameSessionImpl::applyShrine(int code, EntityId source, Vec position) {
     const auto found = content_.shrines.find(activeShrineCode(code));
     auto &player = simulation_->state_.player;
-    if (found == content_.shrines.end() || player.dead || player.hp <= 0) return false;
+    if (found == content_.shrines.end() || player.actions.dead || player.resources.hp <= 0) return false;
     const auto &shrine = found->second;
     code = shrine.code;
     if (code <= 3) {
-        if (code != 3) player.hp = float(characterStats().maxLife);
-        if (code != 2) player.mana = float(characterStats().maxMana);
+        if (code != 3) player.resources.hp = float(characterStats().maxLife);
+        if (code != 2) player.resources.mana = float(characterStats().maxMana);
         return true;
     }
     if (code >= 17) return applySpecialShrine(shrine, position);
@@ -66,7 +66,7 @@ bool GameSessionImpl::applyShrine(int code, EntityId source, Vec position) {
         modifiers.staminaPercent = int(int64_t(shrine.argument0) * characterStats().staminaPercent / 100);
         modifiers.staminaRecoveryBonus = 1000;
         effect.restoreStaminaOnRemoval = true;
-        player.stamina = float(characterStats().maxStamina) + float(2 * modifiers.staminaPercent) / 256.f;
+        player.resources.stamina = float(characterStats().maxStamina) + float(2 * modifiers.staminaPercent) / 256.f;
         break;
     case 15: modifiers.combat.experiencePercent = shrine.argument0; break;
     default: return false;
@@ -99,8 +99,8 @@ bool GameSessionImpl::applySpecialShrine(const ShrineDefinition &shrine, Vec pos
             output = codes[shrineRoll(shrineRandom_, unsigned(codes.size()))];
         }
         const auto before = inventory_.state_;
-        auto result = inventory_.createItem(output, 1, GroundLocation{region().definition.id, player.pos},
-            unsigned(player.level), {}, player.pos);
+        auto result = inventory_.createItem(output, 1, GroundLocation{region().definition.id, player.movement.pos},
+            unsigned(player.character.level), {}, player.movement.pos);
         if (!result) {
             publishInventory(std::move(result), ingredient.id);
             return false;
@@ -117,11 +117,11 @@ bool GameSessionImpl::applySpecialShrine(const ShrineDefinition &shrine, Vec pos
         publishInventory(std::move(result), ingredient.id);
         return true;
     }
-    const int rank = std::clamp(player.level / 5, 1, 8);
+    const int rank = std::clamp(player.character.level / 5, 1, 8);
     if (shrine.code == 19) {
         const auto *entry = content_.skills.find(47); // Native missile 62 uses Fire Ball's damage.
         if (!entry || !entry->spell) return false;
-        const auto skill = resolveSkill(*entry->spell, {rank, player.skillRanks,
+        const auto skill = resolveSkill(*entry->spell, {rank, player.character.skillRanks,
                                        fireMasteryPercent(), lightningMasteryPercent()});
         if (skill.missileId != 62 || !skill.missileImpact) return false;
         auto reduce = [&](float &hp, Vec target) {
@@ -161,8 +161,8 @@ bool GameSessionImpl::applySpecialShrine(const ShrineDefinition &shrine, Vec pos
         const int count = shrine.argument0 + int(shrineRoll(shrineRandom_, unsigned(shrine.argument1 - shrine.argument0)));
         const auto code = shrine.code == 21 ? "opm" : "gpm";
         for (int i = 0; i < count; ++i) {
-            auto result = inventory_.createItem(code, 1, GroundLocation{region().definition.id, player.pos},
-                                               unsigned(player.level), {}, player.pos);
+            auto result = inventory_.createItem(code, 1, GroundLocation{region().definition.id, player.movement.pos},
+                                               unsigned(player.character.level), {}, player.movement.pos);
             publishInventory(std::move(result), {});
         }
         constexpr Vec offsets[]{{-6,6}, {-6,-6}, {0,6}, {0,-6}, {6,6}, {6,-6}};
@@ -193,10 +193,10 @@ bool GameSessionImpl::openShrinePortal() {
         state().nextPortalRevision == std::numeric_limits<uint64_t>::max()) return false;
     ensureRegion(*townId);
     if (!townPortalArrivals_.contains(*townId)) return false;
-    const auto town = std::find_if(regions_.begin(), regions_.end(), [&](const Region &entry) {
+    const auto town = std::find_if(world_.regions().begin(), world_.regions().end(), [&](const Region &entry) {
         return entry.definition.id == *townId;
     });
-    if (town == regions_.end()) return false;
+    if (town == world_.regions().end()) return false;
     // Search the existing collision field at each endpoint. Public portals have
     // no player owner: opening a scroll cannot replace them or consume them on return.
     auto freePosition = [&](const Region &region, Vec desired) -> std::optional<Vec> {
@@ -218,8 +218,8 @@ bool GameSessionImpl::openShrinePortal() {
             }
         return best;
     };
-    const Vec desired = state().player.pos + Vec{5, 5};
-    const Vec fieldOrigin = map().grid.walkable(desired) ? desired : state().player.pos;
+    const Vec desired = state().player.movement.pos + Vec{5, 5};
+    const Vec fieldOrigin = map().grid.walkable(desired) ? desired : state().player.movement.pos;
     auto field = freePosition(region(), fieldOrigin), arrival = freePosition(*town, townPortalArrivals_.at(*townId));
     if (!field || !arrival) return false;
     simulation_->state_.publicPortals.push_back({true, ++simulation_->state_.nextPortalRevision,
@@ -234,10 +234,10 @@ bool GameSessionImpl::upgradeShrineMonster(Vec) {
         if (enemy.hp <= 0 || enemy.identity.rank != MonsterRank::Normal || enemy.enchantment ||
             enemy.attack > 0 || enemy.hitFlash > 0 || enemy.freeze > 0 || enemy.stun > 0 ||
             enemy.skill2Remaining > 0 || enemy.resurrectionRemaining > 0 || enemy.aiRunning ||
-            !map().activation.nearby(state().player.pos, enemy.pos)) continue;
+            !map().activation.nearby(state().player.movement.pos, enemy.pos)) continue;
         const auto *record = monsterContent_.find(enemy.identity.monster);
         if (!record || !monsterShrineEligible(content_, *record)) continue;
-        const float candidate = (enemy.pos - state().player.pos).length();
+        const float candidate = (enemy.pos - state().player.movement.pos).length();
         if (candidate < distance) { nearest = &enemy; distance = candidate; }
     }
     // As in ObjMode, the shrine is spent even if no eligible unit is nearby.

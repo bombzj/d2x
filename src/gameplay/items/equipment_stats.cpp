@@ -1,25 +1,18 @@
 #include "equipment_stats.hpp"
+#include "definitions.hpp"
+#include "state.hpp"
 #include <algorithm>
 #include <limits>
 #include <stdexcept>
 
 namespace d2x {
-EquipmentStats deriveEquipmentStats(const InventoryService &inventory, const PlayerContainers &containers,
+EquipmentStats deriveEquipmentStats(const EquipmentLoadout &loadout,
                                     const EquipmentActor &actor, int bonusDefense,
                                     const CombatModifiers &combat, int baseAttackRating) {
     EquipmentStats result;
     result.level = std::max(1, actor.level);
     int count = 0;
-    auto usable = [&](EquipmentSlot slot) -> const ItemInstance * {
-        const auto *item = inventory.item(inventory.equipped(containers, slot));
-        if (!item)
-            return nullptr;
-        const auto &definition = *inventory.catalog().find(item->definition);
-        if ((definition.maxDurability && item->durability == 0) || !item->quantity ||
-            inventory.equipmentRequirements(item->handle(), actor) != InventoryError::None)
-            return nullptr;
-        return item;
-    };
+    auto usable = [&](EquipmentSlot slot) { return loadout.usable(slot, actor); };
     auto right = usable(weaponHandSlot(false, actor.weaponSet));
     auto left = usable(weaponHandSlot(true, actor.weaponSet));
     result.defense = actor.dexterity / 4 + bonusDefense;
@@ -28,7 +21,7 @@ EquipmentStats deriveEquipmentStats(const InventoryService &inventory, const Pla
         auto item = usable(EquipmentSlot(index));
         if (!item)
             continue;
-        const auto &definition = *inventory.catalog().find(item->definition);
+        const auto &definition = *loadout.find(item->id).definition;
         result.appearanceDefinitions[size_t(index)] = definition.code;
         if (definition.family == ItemFamily::Armor) {
             int64_t armor = item->defense;
@@ -58,7 +51,7 @@ EquipmentStats deriveEquipmentStats(const InventoryService &inventory, const Pla
     for (auto item : {right, left}) {
         if (!item)
             continue;
-        const auto &definition = *inventory.catalog().find(item->definition);
+        const auto &definition = *loadout.find(item->id).definition;
         if (!definition.equipment.isType("weap"))
             continue;
         bool twoHands = definition.equipment.isType("miss") || (definition.equipment.twoHanded &&

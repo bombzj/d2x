@@ -21,6 +21,11 @@ struct ActorView {
     int lightRadius = 0;
 };
 
+struct ActorControlIntent {
+    Vec direction;
+    bool forceRun = false;
+};
+
 struct MoveIntent {
     Vec destination;
 };

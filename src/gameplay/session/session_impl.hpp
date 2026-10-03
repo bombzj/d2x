@@ -6,6 +6,7 @@
 #include "gameplay/loot/loot.hpp"
 #include "gameplay/model/interaction.hpp"
 #include "gameplay/npc/store.hpp"
+#include "gameplay/npc/access.hpp"
 #include "gameplay/quest/den_of_evil.hpp"
 #include "gameplay/quest/burial_grounds.hpp"
 #include "gameplay/quest/search_for_cain.hpp"
@@ -17,18 +18,29 @@
 #include "gameplay/model/events.hpp"
 #include "gameplay/model/state.hpp"
 #include "world/population.hpp"
-#include "world/region.hpp"
+#include "world/region_store.hpp"
+#include "world/maze.hpp"
+#include "gameplay/areas/repository.hpp"
 #include <memory>
 #include <span>
 
 #include "gameplay/session/session.hpp"
 #include "gameplay/character/progression.hpp"
 #include "gameplay/character/learning.hpp"
+#include "gameplay/player/frame_input.hpp"
+#include "gameplay/simulation/fixed_step.hpp"
 #include "gameplay/skills/source.hpp"
 
 namespace d2x {
+struct EquipmentLoadout;
 class Simulation;
+enum class QuestReward;
+struct QuestDeathContext;
+struct QuestDeathPlan;
+struct DeathLootContext;
+enum class QuestDeathWaveKind;
 class GameSessionImpl {
+    class DeathSettlementAdapter;
     struct NpcMotionState {
         EntityId id;
         Vec position, look;
@@ -38,6 +50,8 @@ class GameSessionImpl {
         uint64_t random = 0;
     };
     EntityIds ids_;
+    PlayerFrameInput playerInput_;
+    bool dispatchCommands();
     uint64_t viewRevision_ = 1;
     uint64_t random_;
     uint64_t visualRandom_ = 0, cainRandom_ = 0;
@@ -46,11 +60,9 @@ class GameSessionImpl {
     CharacterDefinition characterDefinition_;
     WorldCatalog worldContent_;
     Archives &archives_;
-    TileLibraryCache tileCache_;
-    uint32_t levelSeed_ = 0;
+    RegionStore world_;
     MonsterCatalog monsterContent_;
     mutable std::map<std::pair<std::string, RegionId>, std::optional<MonsterCombatProfile>> monsterCombatCache_;
-    std::vector<WorldEntry> worldEntries_;
     uint64_t contentFingerprint_ = 0;
     std::optional<RegionId> denRegion_;
     std::optional<RegionId> burialRegion_;
@@ -88,9 +100,8 @@ class GameSessionImpl {
     std::optional<int> pendingExit_;
     std::optional<Vec> boundaryMoveTarget_;
     std::optional<LevelExit::BoundaryPassage> boundaryPassage_;
-    std::vector<Region> regions_;
     std::vector<NpcMotionState> initialNpcMotions_;
-    std::vector<AreaState> inactiveAreas_;
+    AreaRepository areas_;
     std::vector<ShrineStatus> shrineStatuses_;
     std::vector<GameCommand> pending_;
     int current_ = -1;
@@ -126,6 +137,9 @@ class GameSessionImpl {
     std::vector<int> vendorQuestFactors(const VendorDefinition &vendor, bool repair, bool sale = false) const;
     void advanceNpcPaths(float dt);
     bool canReach(const WorldObject &object) const;
+    NpcAccess npcAccess(EntityId npc) const;
+    bool deliverQuestReward(QuestReward reward, EntityId npc);
+    bool returnMalus(EntityId npc);
     std::optional<Vec> interactionApproach(const WorldObject &object) const;
     bool travelWaypoint(const WaypointTravel &command);
     void unlockWaypoints();
@@ -135,13 +149,15 @@ class GameSessionImpl {
     void spawnDebugItem(const DebugSpawnItem &command);
     InventoryAccess inventoryAccess() const;
     EquipmentActor equipmentActor() const;
-    EquipmentActor equipmentActor(const PlayerState &player) const;
     const CharacterDefinition &definitionFor(std::string_view name) const;
     void refreshCharacter(bool fillGains = false);
     void useSkill(const UseSkill &intent);
     bool telekinesisTarget(EntityId target, int range, bool operate);
     void syncPlayerAura();
-    void applyWarmth(CharacterAttributes &stats, const PlayerState &player,
+    int skillRank(const SkillRecord &skill, const CharacterState &character,
+        const CharacterDefinition &definition, const CombatModifiers &bonuses,
+        const EquipmentLoadout &loadout, const EquipmentActor &actor) const;
+    void applyWarmth(CharacterAttributes &stats, const CharacterState &character,
                      const CharacterDefinition &definition, const InventoryService &inventory,
                      const PlayerContainers &containers, const EquipmentActor &actor) const;
     void grantExperience(uint64_t amount);
@@ -156,11 +172,15 @@ class GameSessionImpl {
     void publishInventory(InventoryResult result, EntityId requested);
     void executeInventory(const GameCommand &command);
     void settleDeaths();
+    QuestDeathContext deathQuestContext(const EnemyDied &death) const;
+    void applyDeathQuest(const EnemyDied &death, const QuestDeathPlan &plan);
+    void applyDeathWave(const EnemyDied &death, QuestDeathWaveKind kind);
+    LootPlan planDeathLoot(const EnemyDied &death, const LootRequest &request,
+        DeathLootContext context, const std::set<uint32_t> &usedUniques);
+    void awardDeathExperience(const EnemyDied &death, EntityId beneficiary);
+    void publishDeathLootDeferred(EntityId source, std::string_view reason);
     void onQuestRegionEntered(RegionId id);
     void updateDenQuest();
-    void updateBurialQuest(const EnemyDied &death);
-    void updateTowerQuest(const EnemyDied &death);
-    void updateSlaughterQuest(const EnemyDied &death);
     void completeActOne(EntityId npc);
     void completeActTwo(EntityId npc);
     void activateCainQuestObject(const WorldObject &object);
@@ -171,11 +191,14 @@ class GameSessionImpl {
     void reconcileCainObjects();
     std::array<int, 5> cainStoneOrder() const;
     bool claimCainReward();
-    void translateCainScroll(EntityId npc);
+    bool translateCainScroll(EntityId npc);
     bool travelCainPortal();
     bool beginCainPortal();
     void updateCainPortal();
     void advanceHireling(float dt);
+    void advanceHirelingAttack(const MonsterRecord &actor, const HirelingCombatStats &stats);
+    void controlHireling(const MonsterRecord &actor, const HirelingCombatStats &stats,
+                        const MonsterAttackTiming *timing, float dt);
     bool assignKashyaHireling();
     void openHirelingList(EntityId npc);
     void hireMercenary(const HireMercenary &command);
@@ -231,7 +254,7 @@ class GameSessionImpl {
     const std::vector<HirelingOffer> *hirelingOffers(EntityId npc) const;
     const HirelingDefinition *hirelingDefinition() const;
     HirelingCombatStats hirelingStats() const;
-    static constexpr float fixedStep = 1.f / 25.f;
+    static constexpr float fixedStep = gameFixedStep;
     GameSessionImpl(Archives &archives, const WorldSelection &selection, int startRegion,
                 uint32_t sessionSeed, PopulationSettings population,
                 std::string characterClass = "Barbarian", std::string characterName = "Hero");
@@ -242,7 +265,7 @@ class GameSessionImpl {
     const WorldState &state() const;
     void setRunning(bool running);
     const QuestRecord &quest(ActOneQuest id, int difficulty) const {
-        return state().player.actOneQuests.at(size_t(difficulty)).at(questIndex(id));
+        return state().player.character.actOneQuests.at(size_t(difficulty)).at(questIndex(id));
     }
     const QuestRecord &quest(ActOneQuest id) const { return quest(id, state().population.difficulty); }
     NpcQuestDialogue npcQuestDialogue(std::string_view speaker) const;
@@ -257,11 +280,11 @@ class GameSessionImpl {
     const WorldCatalog &worldContent() const { return worldContent_; }
     const MonsterCatalog &monsterContent() const { return monsterContent_; }
     std::optional<MonsterCombatProfile> monsterCombatProfile(EntityId actor, RegionId region) const;
-    const auto &worldEntries() const { return worldEntries_; }
+    const auto &worldEntries() const { return world_.entries(); }
     const std::vector<ShrineStatus> &shrineStatuses() const { return shrineStatuses_; }
     uint64_t contentFingerprint() const { return contentFingerprint_; }
     const std::vector<uint64_t> &experienceThresholds() const {
-        return content_.experienceByClass.at(state().player.characterClass);
+        return content_.experienceByClass.at(state().player.character.characterClass);
     }
     uint64_t maximumExperience() const { return experienceThresholds().back(); }
     CharacterSaveData characterSave() const;
@@ -308,19 +331,21 @@ class GameSessionImpl {
     InventoryError previewInventory(const GameCommand &command) const;
     std::optional<GroundLocation> dropLocation() const;
     std::string debugSpawnError(std::string_view monster, Vec position) const;
-    const Map &map() const { return regions_.at(current_).map; }
-    const Region &region() const { return regions_.at(current_); }
-    const std::vector<Region> &regions() const { return regions_; }
+    const Map &map() const { return world_.at(current_).map; }
+    const Region &region() const { return world_.at(current_); }
+    const std::vector<Region> &regions() const { return world_.regions(); }
     int regionIndex() const { return current_; }
     // Current area and areas joined by continuous ground, in current-area coordinates.
     std::vector<std::pair<int, Vec>> sceneRegions() const;
     const AreaState &areaState(int index) const {
-        return index == current_ ? state().area : inactiveAreas_.at(index);
+        return index == current_ ? state().area : areas_.read(size_t(index));
     }
     bool roomVisible(int index, Vec position) const;
     std::span<const GameEvent> events() const;
     void submit(GameCommand command) { pending_.push_back(std::move(command)); }
     bool hasPendingCommands() const { return !pending_.empty(); }
+    bool setPlayerInput(PlayerFrameInput input);
+    void advance(float dt);
     void tick(float dt, Vec keyboard = {}, bool forceRun = false);
 };
 } // namespace d2x

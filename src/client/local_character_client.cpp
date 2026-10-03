@@ -21,19 +21,19 @@ const CharacterView &LocalCharacterClient::read() const {
     CharacterView view;
     view.revision = session_.viewRevision();
     view.actor = p.id;
-    view.name = p.name;
+    view.name = p.character.name;
     view.classCode = session_.characterCode();
     view.className = session_.characterName();
-    view.level = p.level;
-    view.experience = p.experience;
-    view.currentLevelExperience = thresholds.at(size_t(p.level));
-    if (size_t(p.level + 1) < thresholds.size()) view.nextLevelExperience = thresholds[size_t(p.level + 1)];
+    view.level = p.character.level;
+    view.experience = p.character.experience;
+    view.currentLevelExperience = thresholds.at(size_t(p.character.level));
+    if (size_t(p.character.level + 1) < thresholds.size()) view.nextLevelExperience = thresholds[size_t(p.character.level + 1)];
     view.maximumExperience = session_.maximumExperience();
-    view.unspentAttributes = p.unspentAttributes;
-    view.unspentSkills = p.unspentSkills;
+    view.unspentAttributes = p.character.unspentAttributes;
+    view.unspentSkills = p.character.unspentSkills;
     view.attributes = {stats.strength, stats.dexterity, stats.vitality, stats.energy};
     view.resistances = {stats.fireResist, stats.coldResist, stats.lightningResist, stats.poisonResist};
-    view.hp = p.hp; view.mana = p.mana; view.stamina = p.stamina;
+    view.hp = p.resources.hp; view.mana = p.resources.mana; view.stamina = p.resources.stamina;
     view.maxLife = stats.maxLife; view.maxMana = stats.maxMana; view.maxStamina = stats.maxStamina;
     view.defense = equipment.defense; view.blockChance = equipment.blockChance;
     const auto &combat = stats.combat;
@@ -42,15 +42,15 @@ const CharacterView &LocalCharacterClient::read() const {
     view.flatPhysicalReduction = combat.flatPhysicalReduction; view.flatMagicReduction = combat.flatMagicReduction;
     view.poisonLengthResist = std::clamp(combat.poisonLengthResist, 0, 100);
     view.fireAbsorbPercent = std::clamp(combat.fireAbsorbPercent, 0, 40);
-    view.dead = p.dead; view.running = p.running; view.weaponSet = p.weaponSet;
-    view.selectedSkills = p.selectedSkills; view.skillHotkeys = p.skillHotkeys;
+    view.dead = p.actions.dead; view.running = p.movement.running; view.weaponSet = p.character.weaponSet;
+    view.selectedSkills = p.character.selectedSkills; view.skillHotkeys = p.character.skillHotkeys;
     view.blueStamina = std::ranges::any_of(p.combatEffects.entries(), [&](const auto &effect) {
         return effect.activeAt(session_.state().frame) && effect.spec.state.staminaBarBlue;
     });
     const bool safe = session_.region().definition.safe;
-    view.attackUsable = !p.dead && !safe;
+    view.attackUsable = !p.actions.dead && !safe;
     const int fireMastery = session_.fireMasteryPercent(), lightningMastery = session_.lightningMasteryPercent();
-    CharacterDisplayContext display{stats, equipment, p.skillRanks, fireMastery, lightningMastery};
+    CharacterDisplayContext display{stats, equipment, p.character.skillRanks, fireMastery, lightningMastery};
     view.attack = describeCharacterAction(display, nullptr);
     const auto *tree = content.skills.tree(view.classCode);
     view.hasSkillTree = bool(tree);
@@ -62,28 +62,28 @@ const CharacterView &LocalCharacterClient::read() const {
         CharacterSkillView skill;
         skill.id = id; skill.page = entry.page; skill.row = entry.row; skill.column = entry.column;
         skill.classCode = entry.classCode; skill.name = entry.name;
-        const auto learned = p.skillRanks.find(id);
-        skill.baseRank = learned == p.skillRanks.end() ? 0 : learned->second;
+        const auto learned = p.character.skillRanks.find(id);
+        skill.baseRank = learned == p.character.skillRanks.end() ? 0 : learned->second;
         skill.effectiveRank = session_.effectiveSkillRank(id);
         skill.maximumRank = entry.maximumRank;
         skill.nextRequiredLevel = session_.nextSkillRequiredLevel(id);
         skill.passive = entry.passive; skill.leftAllowed = entry.leftAllowed;
         skill.available = session_.skillAvailable(id); skill.canAllocate = session_.canAllocateSkill(id);
-        skill.usableNow = !p.dead && entry.executable() && skill.available && (!safe || entry.allowedInTown);
+        skill.usableNow = !p.actions.dead && entry.executable() && skill.available && (!safe || entry.allowedInTown);
         std::optional<AuraDefinition> aura;
         if (entry.auraImplemented && skill.effectiveRank > 0) {
             // The HUD cost previously resolved the aura without mastery/synergy arguments.
             if (const auto cost = resolveAura(content, id, skill.effectiveRank))
-                skill.usableNow &= p.mana >= cost->manaPerPulse;
-            aura = resolveAura(content, id, skill.effectiveRank, p.skillRanks, fireMastery, lightningMastery,
+                skill.usableNow &= p.resources.mana >= cost->manaPerPulse;
+            aura = resolveAura(content, id, skill.effectiveRank, p.character.skillRanks, fireMastery, lightningMastery,
                                combat.coldSkillDamagePercent, session_.effectiveSkillRank(99));
         }
         std::optional<SkillCastSpec> cast;
         if (entry.spell && skill.effectiveRank > 0) {
-            cast = resolveSkill(*entry.spell, {skill.effectiveRank, p.skillRanks, fireMastery, lightningMastery,
+            cast = resolveSkill(*entry.spell, {skill.effectiveRank, p.character.skillRanks, fireMastery, lightningMastery,
                                 combat.coldSkillDamagePercent});
-            skill.usableNow &= p.mana >= std::max(p.channelSkill() == id ? 0.f : float(entry.spell->startMana), cast->manaCost);
-            if (cast->delayFrames > 0) skill.usableNow &= session_.state().frame >= p.skillDelayUntil;
+            skill.usableNow &= p.resources.mana >= std::max(p.skills.channelSkill() == id ? 0.f : float(entry.spell->startMana), cast->manaCost);
+            if (cast->delayFrames > 0) skill.usableNow &= session_.state().frame >= p.skills.skillDelayUntil;
             if (cast->requiresShield) skill.usableNow &= bool(equipment.shield);
             if (cast->weapon) skill.usableNow &= session_.weaponSkillReady(*cast);
         }
@@ -94,9 +94,9 @@ const CharacterView &LocalCharacterClient::read() const {
         if (skill.effectiveRank > skill.baseRank) title += "  Item +" + std::to_string(skill.effectiveRank - skill.baseRank);
         skill.treeTooltip.push_back(std::move(title));
         if (!entry.description.empty()) skill.treeTooltip.push_back(entry.description);
-        if (p.level < skill.nextRequiredLevel) skill.treeTooltip.push_back("Requires level " + std::to_string(skill.nextRequiredLevel));
+        if (p.character.level < skill.nextRequiredLevel) skill.treeTooltip.push_back("Requires level " + std::to_string(skill.nextRequiredLevel));
         for (int required : entry.prerequisites)
-            if (!p.skillRanks.contains(required) || p.skillRanks.at(required) <= 0)
+            if (!p.character.skillRanks.contains(required) || p.character.skillRanks.at(required) <= 0)
                 if (const auto *prerequisite = content.skills.find(required)) skill.treeTooltip.push_back("Requires " + prerequisite->name);
         if (entry.auraImplemented) {
             if (skill.effectiveRank > 0) {
@@ -108,7 +108,7 @@ const CharacterView &LocalCharacterClient::read() const {
             }
             if (skill.baseRank < entry.maximumRank) {
                 const int next = std::max(1, skill.effectiveRank + 1);
-                auto nextLearned = p.skillRanks;
+                auto nextLearned = p.character.skillRanks;
                 ++nextLearned[id];
                 skill.treeTooltip.push_back("Next level " + std::to_string(next));
                 if (const auto nextAura = resolveAura(content, id, next, nextLearned, fireMastery, lightningMastery,

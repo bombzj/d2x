@@ -1,5 +1,4 @@
 #include "presentation/scene_view.hpp"
-#include "gameplay/session/session.hpp"
 #include <algorithm>
 
 namespace d2x {
@@ -27,9 +26,9 @@ void drawTile(const GpuAnimation &art, int frame, Rectangle bounds) {
 
 std::optional<RegionId> SceneView::clickWaypointMenu(Vec mouse) {
     const auto origin = panelOrigin();
-    for (int act = 0; act < int(actTownLevels.size()); ++act)
+    for (int act = 0; act < int(mapView().waypointActs.size()); ++act)
         if (CheckCollisionPointRec(rv(mouse), {origin.x + act * 63 * scaleX, origin.y, 63 * scaleX, 45 * scaleY})) {
-            if (act == 0 || session_.waypointUnlocked(RegionId(actTownLevels[size_t(act)]))) view_.waypointAct = act;
+            if (mapView().waypointActs[size_t(act)]) view_.waypointAct = act;
             return {};
         }
     if (CheckCollisionPointRec(rv(mouse), waypointClose())) {

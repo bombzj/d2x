@@ -13,7 +13,7 @@ void debugHireling(const std::string &command, const nlohmann::json &request,
     using Json = nlohmann::json;
     if (command == "grant-hireling" || command == "grant_hireling") {
         const bool existed = session.state().player.hireling.sourceRow >= 0;
-        if (session.state().player.dead) throw std::runtime_error("Cannot grant a hireling while dead");
+        if (session.state().player.actions.dead) throw std::runtime_error("Cannot grant a hireling while dead");
         session.submit(DebugGrantHireling{});
         session.tick(0); view.advance(0);
         if (session.state().player.hireling.sourceRow < 0)

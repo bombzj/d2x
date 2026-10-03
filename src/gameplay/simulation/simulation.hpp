@@ -1,4 +1,5 @@
 #pragma once
+#include "gameplay/player/frame_input.hpp"
 #include "gameplay/monsters/ability_spec.hpp"
 #include "gameplay/monsters/ai_spec.hpp"
 #include "gameplay/monsters/animation_spec.hpp"
@@ -10,7 +11,7 @@
 #include "gameplay/simulation/unit_records.hpp"
 #include "gameplay/combat/damage_request.hpp"
 #include "world/navigation.hpp"
-#include "gameplay/items/equipment_stats.hpp"
+#include "gameplay/combat/weapon_values.hpp"
 #include "gameplay/combat/damage_resolution.hpp"
 #include "gameplay/skills/cast_spec.hpp"
 #include "gameplay/skills/native_cast.hpp"
@@ -25,6 +26,7 @@ struct SkillCaster;
 struct WeaponSkillCaster;
 class Simulation {
     friend class SimulationSkillWorld;
+    friend class SimulationPlayerControl;
     friend class GameSessionImpl;
     EntityIds &ids_;
     uint64_t unitRandom_ = 0; // Initialized by GameSession before spawning.
@@ -40,6 +42,11 @@ class Simulation {
     WorldState state_;
     std::unique_ptr<ISkillWorld> skillWorld_;
     SkillRuntime skills();
+    void beginPlayerStep(float dt, const PlayerFrameInput &input);
+    void advanceUnitDamage(float dt);
+    void advancePlayerStep(float dt, const PlayerFrameInput &input);
+    void finishPlayerStep();
+    void finishWorldStep(float dt);
     SkillCaster skillCaster(EntityId actor);
     WeaponSkillCaster skillWeaponCaster(EntityId actor);
     std::function<CharacterAttributes()> hirelingAttributes_;
@@ -65,6 +72,7 @@ class Simulation {
     void onMonsterDamaged(Enemy &enemy, const DamageRequest &request, float dealt);
     std::optional<std::pair<EntityId, float>> missileTarget(const Missile &missile, Vec to);
     void updateCompanions(float dt);
+    void advanceMonsterAction(Enemy &enemy, float dt, CurseAi curseAi, std::vector<MonsterSpawn> &nestSpawns);
     std::function<bool(const Enemy &)> corpseSelectable_;
     bool usableCorpse(EntityId id) const;
     EntityId corpseNear(Vec target) const;
@@ -165,7 +173,6 @@ class Simulation {
                      bool freezeHit = false);
     void meleeDamage(EntityId defender, const WeaponDamage &weapon, const SkillCastSpec *skill = nullptr);
     void blockUnit(EntityId defender);
-    void updatePotions(float dt);
     void updatePlayer(float dt, Vec keyboard);
     void updateMonsters(float dt);
     void updateMonsterEnchantments();
@@ -207,7 +214,7 @@ class Simulation {
     ~Simulation();
     const WorldState &state() const { return state_; }
     bool canAttack(EntityId attacker, EntityId defender) const;
-    bool active(Vec position) const { return rooms_ && rooms_->nearby(state_.player.pos, position); }
+    bool active(Vec position) const { return rooms_ && rooms_->nearby(state_.player.movement.pos, position); }
     std::span<const GameEvent> events() const { return events_; }
     void beginTick() { events_.clear(); }
     void emit(QuestAdvanced event);
@@ -215,7 +222,7 @@ class Simulation {
         events_.emplace_back(std::in_place_type<Event>, std::move(event));
     }
     void execute(const GameCommand &command);
-    void tick(float dt, Vec keyboard, bool forceRun = false);
+    void tick(float dt, const PlayerFrameInput &input);
     AreaState leaveArea();
     void enterArea(const Grid &grid, const RoomLayout &rooms, Vec spawn, bool safeZone, AreaState area,
                    std::span<const MonsterSpawn> monsters, std::optional<Vec> coordinateOffset = {});

@@ -4,6 +4,7 @@
 #include "gameplay/model/definitions.hpp"
 #include "gameplay/character/intents.hpp"
 #include "gameplay/npc/intents.hpp"
+#include "gameplay/areas/intents.hpp"
 #include <string>
 #include <optional>
 #include <variant>
@@ -57,21 +58,6 @@ struct DebugResetAttributes {};
 struct DebugResetSkills {};
 struct DebugUnlockWaypoints {};
 struct DebugGrantShrine { int code = 0; };
-struct Travel {
-    RegionId destination;
-};
-struct WaypointTravel {
-    EntityId source;
-    RegionId destination;
-};
-struct UseExit {
-    int slot = 0;
-};
-struct RestartArea {};
-struct UseTownPortal {
-    uint64_t revision;
-};
-struct UseCainPortal {};
 struct PickupItem {
     ItemHandle item;
     bool toCursor = false;

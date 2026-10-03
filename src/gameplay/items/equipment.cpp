@@ -1,5 +1,7 @@
 #include "inventory.hpp"
 #include "equipment_stats.hpp"
+#include "equipment_inventory.hpp"
+#include "equipment_requirements.hpp"
 #include <algorithm>
 #include <limits>
 
@@ -43,19 +45,8 @@ InventoryError InventoryService::equipmentRequirements(ItemHandle handle, const 
         return error;
     const auto &source = *item(handle.id);
     const auto &definition = *catalog_.find(source.definition);
-    if (!source.identified) return InventoryError::Unidentified;
-    if (!definition.equipment.known || definition.equipment.types.empty())
-        return InventoryError::UnsupportedEquipment;
-    if (!definition.equipment.requiredClass.empty() &&
-        definition.equipment.requiredClass != actor.characterClass)
-        return InventoryError::WrongClass;
-    const int requirementPercent = propertyValue(source, "item_req_percent");
-    auto requirement = [&](int base) { return std::max(0, base + base * requirementPercent / 100); };
-    if (actor.strength < requirement(definition.base.requiredStrength.value_or(0)) ||
-        actor.dexterity < requirement(definition.base.requiredDexterity.value_or(0)) ||
-        actor.level < std::max(definition.base.requiredLevel.value_or(0), source.requiredLevel))
-        return InventoryError::RequirementsNotMet;
-    return InventoryError::None;
+    return checkEquipmentRequirements(source, definition, actor,
+        [&] { return propertyValue(source, "item_req_percent"); });
 }
 InventoryResult InventoryService::planEquipment(const EquipItem &command, const PlayerContainers &containers,
                                                 const InventoryAccess &access, const EquipmentActor &actor,
@@ -152,7 +143,7 @@ InventoryResult InventoryService::planEquipment(const EquipItem &command, const 
     if (result.changes.empty())
         result.transferred = 0;
     try {
-        deriveEquipmentStats(draft, containers, actor);
+        deriveEquipmentStats(borrowEquipmentLoadout(draft, containers), actor);
     } catch (const std::runtime_error &) {
         return reject(InventoryError::UnsupportedEquipment);
     }

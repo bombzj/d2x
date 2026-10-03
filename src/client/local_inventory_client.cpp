@@ -18,13 +18,13 @@ const InventoryView &LocalInventoryClient::read() const {
     view.revision = session_.viewRevision();
     view.containers = session_.playerContainers();
     view.storage = session_.storage().container;
-    view.weaponSet = player.weaponSet;
-    view.gold = player.gold;
-    view.bankGold = player.bankGold;
-    view.walletLimit = unsigned(player.level) * 10000u;
+    view.weaponSet = player.character.weaponSet;
+    view.gold = player.character.gold;
+    view.bankGold = player.character.bankGold;
+    view.walletLimit = unsigned(player.character.level) * 10000u;
     view.bankGoldLimit = session_.bankGoldLimit();
     view.groundGoldLimit = session_.groundGoldLimit();
-    view.dead = player.dead;
+    view.dead = player.actions.dead;
     auto layout = [](const auto &value) {
         return InventoryLayoutView{value.columns, value.rows, value.left, value.top, value.cellSize, value.expansion};
     };
@@ -61,7 +61,7 @@ const InventoryView &LocalInventoryClient::read() const {
                     value.slots[slot] = definition.equipment.fits(EquipmentSlot(slot));
                 view.definitions.emplace(item.definition, std::move(value));
             }
-            ItemDisplayContext context{player.level, stats.strength, stats.dexterity,
+            ItemDisplayContext context{player.character.level, stats.strength, stats.dexterity,
                                        inventory.maximumDurability(item), {}};
             if (item.definition == "bkd") context.cainStones = session_.cainStoneSequence();
             auto display = describeInventoryItem(content, inventory.catalog(), item, context);

@@ -23,7 +23,7 @@ void debugItemAction(const std::string &command, const nlohmann::json &request,
         for (auto id : session.inventory().contents(session.playerContainers().backpack))
             if (session.inventory().item(id)->definition == session.content().cubeCode)
                 carried = true;
-        if (!carried || session.state().player.dead)
+        if (!carried || session.state().player.actions.dead)
             throw std::runtime_error("Carry the cube in your backpack to open it");
         if (view.ui().inventory.storage) {
             session.submit(CloseStorage{});
@@ -50,8 +50,8 @@ void debugItemAction(const std::string &command, const nlohmann::json &request,
         for (const auto &event : session.events())
             if (const auto *failed = std::get_if<InteractionFailed>(&event))
                 throw std::runtime_error(failed->reason);
-        result["gold"] = session.state().player.gold;
-        result["bankGold"] = session.state().player.bankGold;
+        result["gold"] = session.state().player.character.gold;
+        result["bankGold"] = session.state().player.character.bankGold;
         return;
     }
     GameCommand intent;

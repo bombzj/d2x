@@ -159,8 +159,8 @@ void SceneView::drawHud() const {
         const int legendX = hirelingPortraitVisible() ? int(74 * classicPanelScale) : 22;
         painter_.label("D2X", legendX, 20, 20, gold);
         painter_.label("CLASSIC ENGINE / C++", legendX + 50, 24, 10, {154, 149, 129, 255});
-        painter_.label("LV " + std::to_string(sim.player.level) + "  XP " +
-                           std::to_string(sim.player.experience),
+        painter_.label("LV " + std::to_string(sim.player.character.level) + "  XP " +
+                           std::to_string(sim.player.character.experience),
                        legendX, 48, 10, {154, 149, 129, 255});
         int worldWidth = view_.inventory.open && !view_.inventory.storage ? int(inventoryBounds().x) : W;
         const auto &regionName = session_.region().definition.name;
@@ -234,7 +234,7 @@ void SceneView::draw(Vec mouse) const {
                 if (!map.grid.walkable(x, y))
                     diamond(p, 7, {213, 65, 42, 90});
             }
-        for (auto p : sim.player.route)
+        for (auto p : sim.player.movement.route)
             DrawCircleV(rv(screen(p)), 3, GREEN);
     }
     drawActors(mouse);
@@ -297,7 +297,7 @@ void SceneView::draw(Vec mouse) const {
     drawBelt(mouse);
     if (view_.pause)
         painter_.centered("PAUSED", H / 2 - 40, 32, gold);
-    if (sim.player.dead) {
+    if (sim.player.actions.dead) {
         DrawRectangle(0, 100, W, 320, {0, 0, 0, 130});
         painter_.centered("YOU HAVE DIED", 250, 32, {187, 46, 30, 255});
         painter_.centered("Press Ctrl+R to restart this area", 300, 16);

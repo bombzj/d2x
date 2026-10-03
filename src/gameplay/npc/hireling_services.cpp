@@ -1,7 +1,8 @@
+#include "gameplay/items/equipment_inventory.hpp"
+#include "gameplay/items/equipment_stats.hpp"
 #include "gameplay/simulation/simulation.hpp"
 #include "gameplay/session/session_impl.hpp"
 #include "content/items/equipment_modifiers.hpp"
-#include "content/monsters/monster_experience.hpp"
 #include <algorithm>
 #include <limits>
 
@@ -20,7 +21,7 @@ bool GameSessionImpl::canHireFrom(EntityId npc) const {
     const auto *seller = target ? monsterContent_.find(target->npcClass) : nullptr;
     if (!seller || !content_.stashLayout.expansion) return false;
     // SUnitNpc hire eligibility; the current world implements Act I only.
-    if (target->npcClass == "kashya" && state().player.level < 8 &&
+    if (target->npcClass == "kashya" && state().player.character.level < 8 &&
         quest(ActOneQuest::SistersBurialGrounds).stage != uint32_t(BurialStage::Rewarded)) return false;
     return std::any_of(content_.hirelings.begin(), content_.hirelings.end(), [&](const auto &entry) {
         return entry.seller == seller->index && entry.act == 1 &&
@@ -34,14 +35,14 @@ bool GameSessionImpl::ensureHirelingOffers(EntityId npc) {
     if (!seller) return false;
     auto random = inventory_.state_.creationRandom;
     auto offers = planHirelingOffers(content_.hirelings, seller->index,
-        state().population.difficulty, state().player.level, random);
+        state().population.difficulty, state().player.character.level, random);
     if (offers.empty()) return false;
     hirelingOffers_[npc] = std::move(offers);
     inventory_.state_.creationRandom = random;
     return true;
 }
 void GameSessionImpl::openHirelingList(EntityId npc) {
-    if (engagedNpc_ != npc || state().player.dead || !region().definition.safe ||
+    if (!npcAccess(npc).townService() ||
         !canHireFrom(npc) || !ensureHirelingOffers(npc)) {
         simulation_->emit(InteractionFailed{npc, "No mercenaries are available."});
         return;
@@ -60,55 +61,32 @@ void GameSessionImpl::assignHireling(const HirelingOffer &offer) {
     next.sourceRow = offer.sourceRow; next.classId = found->classId;
     next.nameKey = offer.nameKey; next.level = offer.level;
     next.hp = float(offer.stats.life); next.experience = offer.stats.experience;
-    next.pos = player.pos;
+    next.pos = player.movement.pos;
     player.hireling = std::move(next);
 }
 void GameSessionImpl::grantDebugHireling() {
     // Idempotent developer command: do not replace an existing hireling or their items.
-    if (state().player.hireling.sourceRow >= 0 || state().player.dead) return;
+    if (state().player.hireling.sourceRow >= 0 || state().player.actions.dead) return;
     for (const auto &definition : content_.hirelings) {
         if (definition.act != 1 || definition.difficulty != state().population.difficulty + 1) continue;
         auto random = inventory_.state_.creationRandom;
         auto offers = planHirelingOffers(content_.hirelings, definition.seller,
-            state().population.difficulty, state().player.level, random);
+            state().population.difficulty, state().player.character.level, random);
         if (offers.empty()) return;
         assignHireling(offers.front());
         inventory_.state_.creationRandom = random;
         return;
     }
 }
-void GameSessionImpl::grantHirelingExperience(const EnemyDied &death) {
-    auto &hireling = simulation_->state_.player.hireling;
-    const auto *definition = hirelingDefinition();
-    if (!definition || !hireling.active() || hireling.level >= state().player.level || hireling.level >= 99) return;
-    const auto award = resolveMonsterExperience(content_, monsterContent_, worldContent_,
-        {death.identity, death.region, death.difficulty, hireling.level, death.rewardModifiers});
-    if (!award.deferred.empty()) return;
-    const auto stats = deriveHirelingStats(*definition, hireling.level);
-    // SUnitDmg: cap one award to 1/64 of the level interval; owner's kills give 86/256.
-    const auto bonus = std::max(0, 100 + hirelingStats().combat.experiencePercent);
-    uint64_t amount = std::min(award.amount * unsigned(bonus) / 100,
-                               (stats.nextExperience - stats.experience) >> 6);
-    if (death.attacker != state().player.hireling.id) amount = amount * 86 / 256;
-    hireling.experience += amount;
-    if (hireling.experience < stats.nextExperience) return;
-    ++hireling.level;
-    for (const auto &entry : content_.hirelings)
-        if (entry.id == definition->id && entry.difficulty == definition->difficulty &&
-            entry.level <= hireling.level && entry.level > definition->level) definition = &entry;
-    hireling.sourceRow = definition->sourceRow;
-    hireling.hp = float(hirelingStats().base.life);
-}
 void GameSessionImpl::hireMercenary(const HireMercenary &command) {
     const auto *offers = hirelingOffers(command.npc);
-    if (!offers || engagedNpc_ != command.npc || !region().definition.safe ||
-        state().player.dead || !canHireFrom(command.npc)) return;
+    if (!offers || !npcAccess(command.npc).townService() || !canHireFrom(command.npc)) return;
     auto selected = std::find_if(offers->begin(), offers->end(),
         [&](const auto &offer) { return offer.slot == command.slot; });
     if (selected == offers->end()) return;
     const auto offer = *selected;
     auto &player = simulation_->state_.player;
-    if (uint64_t(player.gold) + player.bankGold < offer.stats.price) {
+    if (uint64_t(player.character.gold) + player.character.bankGold < offer.stats.price) {
         simulation_->emit(InteractionFailed{command.npc, "Not enough gold."});
         return;
     }
@@ -119,8 +97,8 @@ void GameSessionImpl::hireMercenary(const HireMercenary &command) {
                                    item.location, {}, item.quantity});
         inventory_.state_.items.erase(id);
     }
-    const unsigned wallet = std::min(player.gold, offer.stats.price);
-    player.gold -= wallet; player.bankGold -= offer.stats.price - wallet;
+    const unsigned wallet = std::min(player.character.gold, offer.stats.price);
+    player.character.gold -= wallet; player.character.bankGold -= offer.stats.price - wallet;
     assignHireling(offer);
     auto &stock = hirelingOffers_.at(command.npc);
     std::erase_if(stock, [&](const auto &entry) { return entry.slot == command.slot; });
@@ -139,20 +117,20 @@ bool GameSessionImpl::canResurrectHireling(EntityId npc) const {
 }
 void GameSessionImpl::resurrectHireling(EntityId npc) {
     auto &player = simulation_->state_.player;
-    if (engagedNpc_ != npc || player.dead || !region().definition.safe || !canResurrectHireling(npc)) return;
+    if (!npcAccess(npc).townService() || !canResurrectHireling(npc)) return;
     const unsigned cost = hirelingResurrectionCost();
-    if (uint64_t(player.gold) + player.bankGold < cost) {
+    if (uint64_t(player.character.gold) + player.character.bankGold < cost) {
         simulation_->emit(InteractionFailed{npc, "Not enough gold."});
         return;
     }
-    const unsigned wallet = std::min(player.gold, cost);
-    player.gold -= wallet; player.bankGold -= cost - wallet;
+    const unsigned wallet = std::min(player.character.gold, cost);
+    player.character.gold -= wallet; player.character.bankGold -= cost - wallet;
     const auto previous = player.hireling;
     HirelingState next;
     next.id = ids_.allocate(); next.sourceRow = previous.sourceRow; next.classId = previous.classId;
     next.nameKey = previous.nameKey; next.level = previous.level; next.seed = previous.seed;
     next.experience = previous.experience; next.combatRandom = previous.combatRandom;
-    next.pos = player.pos;
+    next.pos = player.movement.pos;
     player.hireling = std::move(next);
     player.hireling.hp = float(hirelingStats().base.life);
     engagedNpc_ = {};
@@ -160,7 +138,7 @@ void GameSessionImpl::resurrectHireling(EntityId npc) {
 }
 InventoryError GameSessionImpl::previewHirelingPotion(ItemHandle handle) const {
     if (auto error = inventory_.checkHandle(handle); error != InventoryError::None) return error;
-    if (state().player.dead || !state().player.hireling.active()) return InventoryError::AccessDenied;
+    if (state().player.actions.dead || !state().player.hireling.active()) return InventoryError::AccessDenied;
     const auto *item = inventory_.item(handle.id);
     const auto *location = std::get_if<ContainerLocation>(&item->location);
     if (!location || (location->container != playerContainers_.backpack &&
@@ -245,7 +223,7 @@ HirelingCombatStats GameSessionImpl::hirelingStats(const HirelingState &hireling
     auto combat = modifiers.combat;
     combat.minimumDamage += result.base.damageMin;
     combat.maximumDamage += result.base.damageMax;
-    auto equipment = deriveEquipmentStats(inventory, slots, actor,
+    auto equipment = deriveEquipmentStats(borrowEquipmentLoadout(inventory, slots), actor,
         result.base.defense + modifiers.defense, combat,
         result.base.attackRating + 5 * actor.dexterity + modifiers.attackRating);
     result.weapon = equipment.weapons[0];
@@ -292,8 +270,8 @@ HirelingCombatStats GameSessionImpl::hirelingStats(const HirelingState &hireling
 }
 InventoryError GameSessionImpl::previewHirelingEquipment(const EquipHirelingItem &command) const {
     const auto *d = hirelingDefinition();
-    if (!d || !state().player.hireling.active() || state().player.dead ||
-        !map().activation.nearby(state().player.pos, state().player.hireling.pos))
+    if (!d || !state().player.hireling.active() || state().player.actions.dead ||
+        !map().activation.nearby(state().player.movement.pos, state().player.hireling.pos))
         return InventoryError::AccessDenied;
     const auto *item = inventory_.item(command.item.id);
     if (!item) return InventoryError::UnknownItem;

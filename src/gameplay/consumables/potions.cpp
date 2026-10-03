@@ -6,24 +6,24 @@ void Simulation::applyPotion(const PotionDefinition &potion) {
     auto &p = state_.player;
     switch (potion.kind) {
     case PotionKind::Healing:
-        p.healing.push_back({potion.amount, potion.amount / potion.seconds});
+        p.resources.healing.push_back({potion.amount, potion.amount / potion.seconds});
         break;
     case PotionKind::Mana:
-        p.manaRestoration.push_back({potion.amount, potion.amount / potion.seconds});
+        p.resources.manaRestoration.push_back({potion.amount, potion.amount / potion.seconds});
         break;
     case PotionKind::Rejuvenation:
-        p.hp = std::min(float(state_.player.attributes.maxLife), p.hp + state_.player.attributes.maxLife * potion.amount);
-        p.mana = std::min(float(state_.player.attributes.maxMana), p.mana + state_.player.attributes.maxMana * potion.amount);
+        p.resources.hp = std::min(float(state_.player.attributes.maxLife), p.resources.hp + state_.player.attributes.maxLife * potion.amount);
+        p.resources.mana = std::min(float(state_.player.attributes.maxMana), p.resources.mana + state_.player.attributes.maxMana * potion.amount);
         break;
     case PotionKind::Stamina:
-        p.stamina = state_.player.attributes.maxStamina;
+        p.resources.stamina = state_.player.attributes.maxStamina;
         break;
     case PotionKind::Remedy: break;
     }
     // Bridge the legacy ailment timers from the imported cure-state columns,
     // not from the potion's item identity. New effects use removeState below.
-    if (potion.curesPoison) p.poisonRemaining = p.poisonPerSecond = 0;
-    if (potion.curesCold) p.chill = 0;
+    if (potion.curesPoison) p.resources.poisonRemaining = p.resources.poisonPerSecond = 0;
+    if (potion.curesCold) p.resources.chill = 0;
     if (potion.state.id >= 0) {
         for (int cured : potion.cureStates)
             if (cured >= 0) combatEffectsChanged(p.combatEffects.removeState(cured));
@@ -40,25 +40,5 @@ void Simulation::applyPotion(const PotionDefinition &potion) {
         const auto applied = p.combatEffects.apply(std::move(effect), state_.frame);
         combatEffectsChanged(applied.removed);
     }
-}
-void Simulation::updatePotions(float dt) {
-    auto &p = state_.player;
-    auto restore = [dt](std::deque<Restoration> &queue, float &value, float maximum) {
-        float remaining = dt;
-        while (!queue.empty() && remaining > 0) {
-            auto &effect = queue.front();
-            float amount = std::min(effect.remaining, remaining * effect.rate);
-            remaining -= amount / effect.rate;
-            effect.remaining -= amount;
-            value = std::min(maximum, value + amount);
-            if (effect.remaining <= .0001f)
-                queue.pop_front();
-        }
-        // Reaching full wastes the unused restoration, matching consumable behavior.
-        if (value >= maximum)
-            queue.clear();
-    };
-    restore(p.healing, p.hp, float(state_.player.attributes.maxLife));
-    restore(p.manaRestoration, p.mana, float(state_.player.attributes.maxMana));
 }
 } // namespace d2x

@@ -6,7 +6,7 @@
 
 ## 当前范围
 
-更新：2026-10-03。当前仍是单机项目，联网后端尚未实现；以下为源码能力范围，构建和运行证据按批次分别记录。
+更新：2026-10-04。当前仍是单机项目，联网后端尚未实现；以下为源码能力范围，构建和运行证据按批次分别记录。
 
 - 五幕关卡 1–136 均有原 MPQ 地形生成入口，涵盖预设、迷宫和野外；当前区域及直接连续邻区按需解码，已访区域保留缓存。地形覆盖不等于全部任务入口／变体完成，详见[地图](docs/ACT1_MAPS.md)。
 - 七职业 COF/DCC 人物和装备外观、原表成长／四维加点，以及各 30 个技能树节点、学习门槛与 F1–F8 绑定。女巫 26 项主动及四项被动、圣骑士 30 项技能有玩法入口；死灵法师十项诅咒和骷髅召唤、部分亚马逊技能已接入。未实现技能仍拒绝执行，覆盖数量不代表完整原版等价，详见[技能](docs/SKILLS.md)。
@@ -24,14 +24,17 @@
 | 边界 | 当前入口与状态 |
 | --- | --- |
 | 会话与本地适配 | `GameSession` 为不透明外观，`GameSessionImpl` 负责权威组装；`client/local_*` 适配已迁移的人物、库存、角色、NPC／任务界面 |
-| 角色与保存 | `gameplay/character/` 提供保存值、成长与学习／选择规则；活角色和多玩家上下文尚未完整拆分 |
-| 单位与怪物 | `combat/{identity,relations,unit,damage_request}.*` 分别提供身份、关系、公共能力和伤害请求；具体记录绑定只在 `simulation/unit_records.*`，怪物生成头保留窄生成指令 |
-| 技能、被动与光环 | `gameplay/skills/` 承担纯求值及当前已实现技能的通用执行；来源传入等级／协同／加成，世界操作经 `world_port.hpp`／`weapon_port.hpp`，具体适配在 `simulation/skill_world.cpp` |
-| 后续改造 | 单位／活角色所有权、装备充能／触发来源、商店／佣兵和地图投影、跨领域事务与权威宿主；多人和网络在前置边界之后实施 |
+| 角色与保存 | `gameplay/character/` 提供保存值、成长与学习／选择规则；活角色按资料／资源／移动／动作／临时技能组合；多玩家与区域拥有者待实施 |
+| 单位与怪物 | `combat/{identity,relations,unit,damage_request}.*` 分别提供身份、关系、公共能力和伤害请求；具体记录绑定只在 `simulation/unit_records.*`，怪物生成头保留窄生成指令；`gameplay/units/` 提供公共资源／效果及移动／动作时钟；玩家、佣兵决策经窄控制端口调用，怪物原事件另由执行适配分派 |
+| 物品与装备 | `InventoryService` 唯一拥有物品状态及事务；`EquipmentLoadout` 提供短期借用，需求／属性与战斗贡献／装备派生独立；内容层解析原表，角色刷新留在宿主适配 |
+| 技能、被动与光环 | `gameplay/skills/` 承担纯求值及当前已实现技能的通用执行；`items/skill_sources.*` 筛选已有授予，`skills/rank_sources.*` 合成显式等级／加成；执行来源传入等级／协同／加成，世界操作经 `world_port.hpp`／`weapon_port.hpp`，具体适配在 `simulation/skill_world.cpp` |
+| 商店与佣兵 UI | `ShopView`、`HirelingView`／`HirelingListView` 提供显示；报价／单项提示经 `INpcClient`，装备用 `InventoryView`；交易／雇佣与装备操作提交窄意图，UI 不查询完整权威状态 |
+| 地图与区域 | `MapTerrain` 组合到活地图，`RegionStore` 管稳定槽位／资源缓存，`AreaRepository` 移交休眠战斗状态；自动地图／出口／传送点消费 `IMapClient`，图形准备经 `IMapAssetSource`，当前批未构建／测试 |
+| 后续改造 | 多玩家／并行活区、装备充能／触发来源、世界单位／物件显示与光照、跨领域事务和权威宿主；多人和网络在前置边界之后实施 |
 
-实施顺序与完成标准见[技术改造方案](docs/TECHNICAL_REFACTOR_PLAN.md)，当前边界见[单位基线](docs/baseline/UNITS.md)、[技能基线](docs/baseline/SKILL_RUNTIME.md)和[会话基线](docs/baseline/SESSION.md)。未来服务端保存完整角色／任务／库存，客户端只接收本人必要私有视图与其他可见单位的公开状态；单机继续通过本地权威适配复用规则。
+实施顺序与完成标准见[技术改造方案](docs/TECHNICAL_REFACTOR_PLAN.md)，当前边界见[库存／装备基线](docs/baseline/INVENTORY.md)、[单位基线](docs/baseline/UNITS.md)、[技能基线](docs/baseline/SKILL_RUNTIME.md)和[会话基线](docs/baseline/SESSION.md)。未来服务端保存完整角色／任务／库存，客户端只接收本人必要私有视图与其他可见单位的公开状态；单机继续通过本地权威适配复用规则。
 
-**源码与运行包状态**：公共单位／冗余清理已通过 Windows Release 编译／链接和三职业简单冒烟，覆盖女巫火弹、死灵诅咒／尸体召唤、圣骑士光环切换及脉冲；三个临时实例均退出 0、stderr 空，截图已查看。准确范围见[单位基线](docs/baseline/UNITS.md#验证范围)。未打包，`dist/current` 尚未包含这些重构改动；Linux、完整回归和联机未验证。
+**源码与运行包状态**：九项基础切片已完成。最后两项拆出死亡／首杀任务协调、掉落规划、经验与死亡波计算，以及会话命令／步进、模拟阶段、绑定玩家的连续输入和 25 Hz 时钟；表现目标的会话依赖收为 PRIVATE。Windows Release 游戏与资源工具链接及简单移动、技能击杀、NPC、奖励和临时 D2S 恢复冒烟通过，准确范围见[会话收尾基线](docs/baseline/SESSION.md#九项重构联合收尾与冒烟)与[奖励基线](docs/baseline/REWARDS.md)。第七项拆出 NPC 接触／路径、任务交谈与区域转换计划、奖励执行，并为卷轴翻译／灌注接入原子物品替换；见[NPC／任务基线](docs/baseline/NPC_QUEST.md#npc任务与奖励协调第七项)。第六／七项已通过 Windows Release 与简单交谈、卷轴、交易接触及地图显示冒烟，准确范围见上述基线与[地图基线](docs/baseline/MAP.md)；不据此认证全部任务、灌注或存档往返。前三项及第四／第五项的既有验证仍见[角色](docs/baseline/CHARACTER.md)、[单位](docs/baseline/UNITS.md)、NPC／任务基线。本轮已收尾并提交源码／文档，未打包，`dist/current` 尚未包含这些改动；暂不实施多人，复杂任务物件与跨服务事务、模拟器编排及真实装备充能／触发仍待继续拆分。
 
 ## 构建与资源
 

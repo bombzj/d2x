@@ -1,11 +1,15 @@
 #pragma once
-#include "content/classic_data.hpp"
 #include "gameplay/character/attributes.hpp"
-#include "gameplay/items/inventory.hpp"
+#include "core/id.hpp"
 
 namespace d2x {
-// Resolves only Properties.func1=1 direct instance rolls. Rebuild from base
-// attributes so an item's own bonus cannot satisfy its own requirement.
+struct ClassicData;
+class InventoryService;
+struct PlayerContainers;
+struct EquipmentActor;
+// Prepare definition facts after loading setItems, before publishing content.
+void prepareEquipmentSetData(ClassicData &content);
+// Adapt content property resolution to pure equipment contribution rules.
 CharacterModifiers resolveEquipmentModifiers(const ClassicData &content,
                                               const InventoryService &inventory,
                                               const PlayerContainers &containers,

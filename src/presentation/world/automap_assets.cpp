@@ -1,29 +1,26 @@
-#include "gameplay/session/session.hpp"
-#include "world/region.hpp"
-#include "content/world/world_catalog.hpp"
+#include "resources/formats.hpp"
 #include "presentation/scene_assets.hpp"
 #include <set>
 #include <stdexcept>
 
 namespace d2x {
-void SceneAssets::loadAutomap(const GameSession &session) {
+void SceneAssets::loadAutomap(const IMapAssetSource &source) {
     std::set<int> used{317};
-    regionTownAutomap.resize(session.regions().size());
-    regionAutomap.resize(session.regions().size());
-    regionAutomapLoaded.resize(session.regions().size(), false);
-    for (size_t regionIndex = 0; regionIndex < session.regions().size(); ++regionIndex) {
-        const auto &region = session.regions()[regionIndex];
+    regionTownAutomap.resize(source.size());
+    regionAutomap.resize(source.size());
+    regionAutomapLoaded.resize(source.size(), false);
+    for (size_t regionIndex = 0; regionIndex < source.size(); ++regionIndex) {
+        const auto &region = source.readAsset(regionIndex);
         if (!region.loaded || regionAutomapLoaded[regionIndex]) continue;
-        const auto preset = session.worldContent().presets().find(region.recipe.preset);
-        if (preset == session.worldContent().presets().end() || !preset->second.automap) continue;
-        const int level = int(region.definition.id);
+        if (!region.townAutomap) continue;
+        const int level = int(region.region);
         const char *name = level == 40 ? "act2map" : level == 103 ? "act4map"
                          : level == 109 ? "extnmap" : nullptr;
         if (!name) continue;
         const int columns = level == 40 ? 5 : level == 103 ? 2 : 3;
         const int rows = level == 40 ? 4 : 2;
         const int count = columns * rows;
-        const int group = level == 40 ? region.recipe.variant - 1 : 0;
+        const int group = level == 40 ? region.variant - 1 : 0;
         if (group < 0 || group > (level == 40 ? 1 : 0))
             throw std::runtime_error("Unsupported original town automap variant");
         for (int size = 0; size < 2; ++size) {
@@ -43,22 +40,22 @@ void SceneAssets::loadAutomap(const GameSession &session) {
             }
         }
     }
-    for (size_t index = 0; index < session.regions().size(); ++index) {
-        const auto &region = session.regions()[index];
+    for (size_t index = 0; index < source.size(); ++index) {
+        const auto &region = source.readAsset(index);
         if (!region.loaded || regionAutomapLoaded[index]) continue;
         regionAutomapLoaded[index] = true;
-        const auto &map = region.map;
+        const auto &data = *region.data;
         auto &stamps = regionAutomap[index];
-        for (int y = 0; y < map.data.height; ++y)
-            for (int x = 0; x < map.data.width; ++x) {
-                const size_t cellIndex = size_t(y) * map.data.width + x;
+        for (int y = 0; y < data.height; ++y)
+            for (int x = 0; x < data.width; ++x) {
+                const size_t cellIndex = size_t(y) * data.width + x;
                 std::set<int> cellCels;
                 auto collect = [&](const auto &layers) {
                     for (const auto &layer : layers) {
                         const auto &cell = layer[cellIndex];
                         if (!cell.present()) continue;
                         auto add = [&](const MapCell &tile) {
-                            int cel = automapCatalog_.tileCel(region.recipe.levelType, tile, x, y);
+                            int cel = automapCatalog_.tileCel(region.levelType, tile, x, y);
                             if (cel < 0 || !cellCels.insert(cel).second) return;
                             stamps.push_back({x, y, cel});
                             used.insert(cel);
@@ -71,10 +68,10 @@ void SceneAssets::loadAutomap(const GameSession &session) {
                         }
                     }
                 };
-                collect(map.data.floors);
-                collect(map.data.walls);
+                collect(data.floors);
+                collect(data.walls);
             }
-        for (const auto &object : region.objects) {
+        for (const auto &object : region.markers) {
             int cel = object.npcClass.empty() ? automapCatalog_.objectCel(object.objectClass)
                                              : automapCatalog_.npcCel(object.npcClass);
             if (cel >= 0)

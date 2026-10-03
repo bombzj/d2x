@@ -1,4 +1,5 @@
 #include "gameplay/combat/unit.hpp"
+#include "gameplay/units/movement.hpp"
 #include "gameplay/skills/weapon_caster.hpp"
 #include "gameplay/skills/weapon_port.hpp"
 #include "gameplay/skills/world_port.hpp"
@@ -23,12 +24,12 @@ void SkillRuntime::advanceCharge(WeaponSkillCaster p, float dt) {
     }
     const Vec delta = charge.target - p.casting.pos;
     const float distance = std::min(delta.length(), charge.speed * dt);
-    const Vec next = p.casting.pos + delta.unit() * distance;
-    if (distance < .01f || !weapons_.movementSegment(p.casting.id, p.casting.pos, next)) {
+    if (distance < .01f || !advanceMovement(p.casting.pos, delta.unit(), distance,
+        [&](Vec from, Vec to) { return weapons_.movementSegment(p.casting.id, from, to); }).accepted) {
         p.charge.reset();
         return;
     }
-    p.casting.pos = next; p.casting.look = delta.unit(); p.moving = true; p.runningNow = true;
+    p.casting.look = delta.unit(); p.moving = true; p.runningNow = true;
     if (distance >= delta.length() && !target) p.charge.reset();
 }
 } // namespace d2x

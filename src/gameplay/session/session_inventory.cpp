@@ -1,7 +1,5 @@
 #include "gameplay/simulation/simulation.hpp"
 #include "gameplay/session/session_impl.hpp"
-#include "content/items/equipment_modifiers.hpp"
-#include "content/skills/passive_data.hpp"
 #include <algorithm>
 #include <type_traits>
 
@@ -12,7 +10,7 @@ void GameSessionImpl::transmuteCube() {
     const bool hasCube = std::any_of(carried.begin(), carried.end(), [&](EntityId id) {
         return inventory_.item(id)->definition == content_.cubeCode;
     });
-    if (state().player.dead || !hasCube || cursorItem()) { reject(); return; }
+    if (state().player.actions.dead || !hasCube || cursorItem()) { reject(); return; }
     const auto items = inventory_.contents(playerContainers_.cube);
     if (items.size() != 2 || quest(QuestId::HoradricStaff).stage >= 6) { reject(); return; }
     std::array<ItemHandle, 2> inputs{};
@@ -35,7 +33,7 @@ void GameSessionImpl::transmuteCube() {
         transaction.changes.insert(transaction.changes.end(), removed.changes.begin(), removed.changes.end());
     }
     const auto generation = questItemGeneration(content_.staffRecipeOutput, draft.state_.creationRandom);
-    auto created = draft.createItem(content_.staffRecipeOutput, 1, AutoPlace{playerContainers_.cube}, unsigned(state().player.level), generation);
+    auto created = draft.createItem(content_.staffRecipeOutput, 1, AutoPlace{playerContainers_.cube}, unsigned(state().player.character.level), generation);
     if (!created) { reject(); return; }
     draft.state_.items.at(created.item).nativeQuestDifficulty = unsigned(state().population.difficulty);
     draft.state_.items.at(created.item).identified = true;
@@ -43,66 +41,9 @@ void GameSessionImpl::transmuteCube() {
     transaction.changes.insert(transaction.changes.end(), created.changes.begin(), created.changes.end());
     inventory_.state_ = std::move(draft.state_);
     publishInventory(std::move(transaction), {});
-    auto &record = simulation_->state_.player.actOneQuests.at(size_t(state().population.difficulty)).at(questIndex(QuestId::HoradricStaff));
+    auto &record = simulation_->state_.player.character.actOneQuests.at(size_t(state().population.difficulty)).at(questIndex(QuestId::HoradricStaff));
     record.stage = 5;
     simulation_->emit(QuestAdvanced{QuestId::HoradricStaff, record.stage});
-}
-namespace {
-CharacterModifiers activeModifiers(const PlayerState &player, EffectFrame now) {
-    return player.combatEffects.modifiers(now);
-}
-void applyPassiveRating(CharacterModifiers &modifiers, const PlayerState &player, const SkillCatalog &skills, EffectFrame frame) {
-    applySkillPassives(modifiers, skills, player.skillRanks, player.combatEffects, frame);
-}
-}
-EquipmentActor GameSessionImpl::equipmentActor() const {
-    return equipmentActor(state().player);
-}
-const ItemInstance *GameSessionImpl::usableEquipment(EquipmentSlot slot) const {
-    const auto *item = inventory_.item(inventory_.equipped(playerContainers_, slot));
-    if (!item || !item->quantity) return nullptr;
-    const auto *definition = inventory_.catalog().find(item->definition);
-    if (!definition || (definition->maxDurability && !item->durability) ||
-        inventory_.equipmentRequirements(item->handle(), equipmentActor()) != InventoryError::None) return nullptr;
-    return item;
-}
-EquipmentActor GameSessionImpl::equipmentActor(const PlayerState &player) const {
-    auto effects = activeModifiers(player, state().frame);
-    auto base = deriveCharacterAttributes(characterDefinition_, player.level, player.allocated, effects);
-    EquipmentActor baseActor{characterDefinition_.code, base.strength, base.dexterity, player.level,
-                             base.blockFactor, player.weaponSet};
-    auto modifiers = resolveEquipmentModifiers(content_, inventory_, playerContainers_, baseActor);
-    mergeCharacterModifiers(modifiers, effects);
-    auto stats = deriveCharacterAttributes(characterDefinition_, player.level, player.allocated, modifiers);
-    return {characterDefinition_.code, stats.strength, stats.dexterity, player.level,
-            stats.blockFactor, player.weaponSet};
-}
-void GameSessionImpl::refreshCharacter(bool fillGains) {
-    auto &player = simulation_->state_.player;
-    const auto previous = simulation_->state_.player.attributes;
-    auto effects = activeModifiers(player, state().frame);
-    auto base = deriveCharacterAttributes(characterDefinition_, player.level, player.allocated, effects);
-    EquipmentActor baseActor{characterDefinition_.code, base.strength, base.dexterity, player.level,
-                             base.blockFactor, player.weaponSet};
-    auto modifiers = resolveEquipmentModifiers(content_, inventory_, playerContainers_, baseActor);
-    mergeCharacterModifiers(modifiers, effects);
-    applyPassiveRating(modifiers, player, content_.skills, state().frame);
-    auto current = deriveCharacterAttributes(characterDefinition_, player.level, player.allocated,
-                                             modifiers, simulation_->resistancePenalty_);
-    EquipmentActor actor{characterDefinition_.code, current.strength, current.dexterity, player.level,
-                         current.blockFactor, player.weaponSet};
-    applyWarmth(current, player, characterDefinition_, inventory_, playerContainers_, actor);
-    if (fillGains) {
-        if (player.hp > 0) player.hp += current.maxLife - previous.maxLife;
-        player.mana += current.maxMana - previous.maxMana;
-        player.stamina += current.maxStamina - previous.maxStamina;
-    }
-    player.hp = std::clamp(player.hp, 0.f, float(current.maxLife));
-    player.mana = std::clamp(player.mana, 0.f, float(current.maxMana));
-    player.stamina = std::clamp(player.stamina, 0.f, float(current.maxStamina));
-    simulation_->state_.player.attributes = current;
-    simulation_->state_.player.equipment = deriveEquipmentStats(inventory_, playerContainers_, actor,
-                                                       modifiers.defense, modifiers.combat, current.baseAttackRating);
 }
 void GameSessionImpl::createStarterEquipment() {
     const auto &characters = content_.tables.at("charstats");
@@ -223,7 +164,7 @@ InventoryError GameSessionImpl::previewInventory(const GameCommand &command) con
                     if (auto error = inventory_.checkHandle(intent.item); error != InventoryError::None) return error;
                     const auto *location = std::get_if<ContainerLocation>(&source->location);
                     return location && location->container == playerContainers_.backpack &&
-                        !state().player.dead && state().player.hp > 0 &&
+                        !state().player.actions.dead && state().player.resources.hp > 0 &&
                         source->nativeQuestDifficulty >= unsigned(state().population.difficulty) &&
                         (quest(QuestId::RadamentsLair).flags & radamentBookPending)
                         ? InventoryError::None : InventoryError::AccessDenied;
@@ -325,11 +266,11 @@ void GameSessionImpl::executeInventory(const GameCommand &command) {
 }
 std::optional<GroundLocation> GameSessionImpl::dropLocation() const {
     const auto &player = state().player;
-    if (player.dead)
+    if (player.actions.dead)
         return std::nullopt;
-    Vec position = map().grid.nearest(player.pos + player.look.unit());
-    if (!map().grid.segment(player.pos, position) || (position - player.pos).length() > 4)
-        position = player.pos;
+    Vec position = map().grid.nearest(player.movement.pos + player.movement.look.unit());
+    if (!map().grid.segment(player.movement.pos, position) || (position - player.movement.pos).length() > 4)
+        position = player.movement.pos;
     GroundLocation location{region().definition.id, position};
     return inventoryDestinationAllowed(location) ? std::optional{location} : std::nullopt;
 }

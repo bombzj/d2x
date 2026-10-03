@@ -1,30 +1,30 @@
 #include "gameplay/character/runtime_record.hpp"
-#include "gameplay/model/state.hpp"
+#include "gameplay/player/state.hpp"
 #include <utility>
 
 namespace d2x {
 CharacterRecord captureCharacterRecord(const PlayerState &player) {
     CharacterRecord record;
     record.id = player.id;
-    record.name = player.name;
-    record.characterClass = player.characterClass;
-    record.nativeSaveSections = player.nativeSaveSections;
-    record.hp = player.hp;
-    record.mana = player.mana;
-    record.stamina = player.stamina;
-    record.weaponSet = player.weaponSet;
-    record.gold = player.gold;
-    record.bankGold = player.bankGold;
-    record.npcIntroductions = player.npcIntroductions;
-    record.experience = player.experience;
-    record.level = player.level;
-    record.allocated = player.allocated;
-    record.unspentAttributes = player.unspentAttributes;
-    record.skillRanks = player.skillRanks;
-    record.unspentSkills = player.unspentSkills;
-    record.skillHotkeys = player.skillHotkeys;
-    record.selectedSkills = player.selectedSkills;
-    record.actOneQuests = player.actOneQuests;
+    record.name = player.character.name;
+    record.characterClass = player.character.characterClass;
+    record.nativeSaveSections = player.character.nativeSaveSections;
+    record.hp = player.resources.hp;
+    record.mana = player.resources.mana;
+    record.stamina = player.resources.stamina;
+    record.weaponSet = player.character.weaponSet;
+    record.gold = player.character.gold;
+    record.bankGold = player.character.bankGold;
+    record.npcIntroductions = player.character.npcIntroductions;
+    record.experience = player.character.experience;
+    record.level = player.character.level;
+    record.allocated = player.character.allocated;
+    record.unspentAttributes = player.character.unspentAttributes;
+    record.skillRanks = player.character.skillRanks;
+    record.unspentSkills = player.character.unspentSkills;
+    record.skillHotkeys = player.character.skillHotkeys;
+    record.selectedSkills = player.character.selectedSkills;
+    record.actOneQuests = player.character.actOneQuests;
     const auto &merc = player.hireling;
     record.hireling = {merc.sourceRow, merc.classId, merc.nameKey, merc.level,
                       merc.hp, merc.experience, merc.seed};
@@ -47,27 +47,27 @@ HirelingState restoreHirelingRecord(const HirelingRecord &record, Vec position) 
 PlayerState restoreCharacterRecord(CharacterRecord record, Vec position) {
     PlayerState player;
     player.id = record.id;
-    player.name = std::move(record.name);
-    player.characterClass = std::move(record.characterClass);
-    player.nativeSaveSections = std::move(record.nativeSaveSections);
-    player.hp = record.hp;
-    player.mana = record.mana;
-    player.stamina = record.stamina;
-    player.weaponSet = record.weaponSet;
-    player.gold = record.gold;
-    player.bankGold = record.bankGold;
-    player.npcIntroductions = std::move(record.npcIntroductions);
-    player.experience = record.experience;
-    player.level = record.level;
-    player.allocated = record.allocated;
-    player.unspentAttributes = record.unspentAttributes;
-    player.skillRanks = std::move(record.skillRanks);
-    player.unspentSkills = record.unspentSkills;
-    player.skillHotkeys = record.skillHotkeys;
-    player.selectedSkills = record.selectedSkills;
-    player.actOneQuests = record.actOneQuests;
+    player.character.name = std::move(record.name);
+    player.character.characterClass = std::move(record.characterClass);
+    player.character.nativeSaveSections = std::move(record.nativeSaveSections);
+    player.resources.hp = record.hp;
+    player.resources.mana = record.mana;
+    player.resources.stamina = record.stamina;
+    player.character.weaponSet = record.weaponSet;
+    player.character.gold = record.gold;
+    player.character.bankGold = record.bankGold;
+    player.character.npcIntroductions = std::move(record.npcIntroductions);
+    player.character.experience = record.experience;
+    player.character.level = record.level;
+    player.character.allocated = record.allocated;
+    player.character.unspentAttributes = record.unspentAttributes;
+    player.character.skillRanks = std::move(record.skillRanks);
+    player.character.unspentSkills = record.unspentSkills;
+    player.character.skillHotkeys = record.skillHotkeys;
+    player.character.selectedSkills = record.selectedSkills;
+    player.character.actOneQuests = record.actOneQuests;
     player.hireling = restoreHirelingRecord(record.hireling, position);
-    player.pos = player.previous = position;
+    player.movement.pos = player.movement.previous = position;
     return player;
 }
 } // namespace d2x

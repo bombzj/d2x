@@ -5,7 +5,7 @@
 #include "gameplay/session/session.hpp"
 
 namespace d2x {
-// Ground loot and NPC stock still use the legacy item representation during P1.
+// Ground loot and remaining world interactions retain the legacy item adapter.
 std::string SceneView::itemName(const ItemInstance &item) const {
     return displayItemName(session_.content(), session_.inventory().catalog(), item);
 }
@@ -19,7 +19,7 @@ void SceneView::drawItemTooltip(const ItemInstance &item, Vec anchor, std::optio
         return;
     }
     const auto &stats = session_.characterStats();
-    ItemDisplayContext context{session_.state().player.level, stats.strength, stats.dexterity,
+    ItemDisplayContext context{session_.state().player.character.level, stats.strength, stats.dexterity,
         session_.inventory().maximumDurability(item), {}};
     if (item.definition == "bkd") context.cainStones = session_.cainStoneSequence();
     auto display = describeInventoryItem(session_.content(), session_.inventory().catalog(), item, context);

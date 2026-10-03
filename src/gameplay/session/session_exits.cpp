@@ -33,38 +33,12 @@ float routeLength(Vec from, const std::deque<Vec> &route) {
 }
 } // namespace
 std::vector<std::pair<int, Vec>> GameSessionImpl::sceneRegions() const {
-    std::vector<std::pair<int, Vec>> result{{current_, {}}};
-    const auto &origin = region().recipe;
-    for (int index = 0; index < int(regions_.size()); ++index) {
-        const auto &candidate = regions_[index];
-        if (index == current_ || !candidate.loaded ||
-            std::none_of(origin.boundaries.begin(), origin.boundaries.end(), [&](const auto &boundary) {
-                return boundary.destination == int(candidate.definition.id);
-            })) continue;
-        result.push_back({index, {float((candidate.recipe.worldX - origin.worldX) * 5),
-                                  float((candidate.recipe.worldY - origin.worldY) * 5)}});
-    }
-    return result;
+    return world_.sceneRegions(state().area.region);
 }
 bool GameSessionImpl::roomVisible(int index, Vec position) const {
     if (index == current_) return active(position);
-    const auto &candidate = regions_.at(index);
-    const auto &origin = region().recipe;
-    if (std::none_of(origin.boundaries.begin(), origin.boundaries.end(), [&](const auto &boundary) {
-            return boundary.destination == int(candidate.definition.id);
-        })) return false;
-    const auto *observer = map().activation.room(state().player.pos);
-    const auto *target = candidate.map.activation.room(position);
-    if (!observer || !target) return false;
-    // DRLG propagates room visibility across continuous level boundaries too.
-    // Compare the actual rooms in one coordinate space; do not clamp the observer
-    // to the nearest room of a different level (which would reveal distant rooms).
-    const int dx = (candidate.recipe.worldX - origin.worldX) * 5;
-    const int dy = (candidate.recipe.worldY - origin.worldY) * 5;
-    return observer->x <= target->x + dx + target->width &&
-           target->x + dx <= observer->x + observer->width &&
-           observer->y <= target->y + dy + target->height &&
-           target->y + dy <= observer->y + observer->height;
+    return world_.visibleRoom(state().area.region, state().player.movement.pos,
+        world_.at(size_t(index)).definition.id, position);
 }
 void GameSessionImpl::cancelExit() {
     if (pendingExit_)
@@ -74,12 +48,12 @@ void GameSessionImpl::cancelExit() {
     boundaryPassage_.reset();
 }
 bool GameSessionImpl::beginBoundaryExit(const LevelExit &exit, std::optional<Vec> target) {
-    if (!exit.enabled || !exit.boundary || state().player.dead || !questExitAllowed(exit.destination)) return false;
-    const auto destination = std::find_if(regions_.begin(), regions_.end(),
+    if (!exit.enabled || !exit.boundary || state().player.actions.dead || !questExitAllowed(exit.destination)) return false;
+    const auto destination = std::find_if(world_.regions().begin(), world_.regions().end(),
         [&](const Region &candidate) { return candidate.definition.id == exit.destination; });
-    if (destination == regions_.end()) return false;
+    if (destination == world_.regions().end()) return false;
     const bool approachBlockedTarget = target && !destination->map.grid.walkable(*target, playerMovement);
-    const Vec start = state().player.pos;
+    const Vec start = state().player.movement.pos;
     auto estimate = [&](const LevelExit::BoundaryPassage &passage) {
         return (passage.departure - start).length() +
             (target ? (*target - passage.arrival).length() : 0.f);
@@ -123,7 +97,7 @@ bool GameSessionImpl::beginBoundaryExit(const LevelExit &exit, std::optional<Vec
     return true;
 }
 bool GameSessionImpl::routeBoundaryMove(Vec target) {
-    if (!std::isfinite(target.x) || !std::isfinite(target.y) || state().player.dead) return false;
+    if (!std::isfinite(target.x) || !std::isfinite(target.y) || state().player.actions.dead) return false;
     const auto &source = region().recipe;
     bool adjoiningTarget = false;
     for (const auto &exit : region().exits) {
@@ -135,9 +109,9 @@ bool GameSessionImpl::routeBoundaryMove(Vec target) {
             boundary.side == 2 ? target.y - plane :
             boundary.side == 3 ? plane - target.x : plane - target.y;
         if (depth >= 0) continue;
-        auto dest = std::find_if(regions_.begin(), regions_.end(),
+        auto dest = std::find_if(world_.regions().begin(), world_.regions().end(),
                                  [&](const auto &r) { return r.definition.id == exit.destination; });
-        if (dest == regions_.end())
+        if (dest == world_.regions().end())
             continue;
         const auto &r = dest->recipe;
         Vec global = target + Vec{source.worldX * 5.f, source.worldY * 5.f};
@@ -163,7 +137,7 @@ bool GameSessionImpl::questExitAllowed(RegionId destination) const {
     return true;
 }
 void GameSessionImpl::beginExit(int slot) {
-    if (pendingExit_ == slot || state().player.dead)
+    if (pendingExit_ == slot || state().player.actions.dead)
         return;
     cancelExit();
     cancelPickup();
@@ -198,17 +172,17 @@ void GameSessionImpl::beginExit(int slot) {
     simulation_->execute(MoveTo{exit->accessPoint});
 }
 void GameSessionImpl::updateExit() {
-    if (!pendingExit_ && !state().player.dead) {
+    if (!pendingExit_ && !state().player.actions.dead) {
         const auto &p = state().player;
         for (const auto &exit : region().exits) {
             if (!exit.enabled || !exit.boundary || !questExitAllowed(exit.destination))
                 continue;
             constexpr int outwardX[]{0, -1, 0, 1}, outwardY[]{1, 0, -1, 0};
             int side = exit.boundary->side;
-            bool outward = p.moving && p.look.x * outwardX[side] + p.look.y * outwardY[side] > 0;
-            if (outward && atBoundary(exit, region().recipe, p.pos)) {
+            bool outward = p.movement.moving && p.movement.look.x * outwardX[side] + p.movement.look.y * outwardY[side] > 0;
+            if (outward && atBoundary(exit, region().recipe, p.movement.pos)) {
                 const auto passage = std::find_if(exit.passages.begin(), exit.passages.end(),
-                    [&](const auto &candidate) { return atPassage(exit, region().recipe, p.pos, candidate); });
+                    [&](const auto &candidate) { return atPassage(exit, region().recipe, p.movement.pos, candidate); });
                 if (passage == exit.passages.end()) continue;
                 pendingExit_ = exit.slot;
                 boundaryPassage_ = *passage;
@@ -218,7 +192,7 @@ void GameSessionImpl::updateExit() {
     }
     if (!pendingExit_)
         return;
-    if (state().player.dead) {
+    if (state().player.actions.dead) {
         cancelExit();
         return;
     }
@@ -229,20 +203,20 @@ void GameSessionImpl::updateExit() {
         return;
     }
     const auto &p = state().player;
-    if (p.castTime > 0 || p.meleeTime > 0)
+    if (p.actions.castTime > 0 || p.actions.meleeTime > 0)
         return;
     if (exit->boundary
-            ? boundaryPassage_ && atPassage(*exit, region().recipe, p.pos, *boundaryPassage_)
-            : ((p.pos - exit->accessPoint).length() <= 2 && map().grid.segment(p.pos, exit->accessPoint))) {
+            ? boundaryPassage_ && atPassage(*exit, region().recipe, p.movement.pos, *boundaryPassage_)
+            : ((p.movement.pos - exit->accessPoint).length() <= 2 && map().grid.segment(p.movement.pos, exit->accessPoint))) {
         const auto destinationId = exit->destination;
         const auto exitSlot = exit->slot;
         ensureRegion(destinationId, true);
         exit = std::find_if(region().exits.begin(), region().exits.end(),
             [&](const auto &candidate) { return candidate.slot == exitSlot; });
         if (exit == region().exits.end()) { cancelExit(); return; }
-        auto destination = std::find_if(regions_.begin(), regions_.end(),
+        auto destination = std::find_if(world_.regions().begin(), world_.regions().end(),
                                         [&](const auto &r) { return r.definition.id == exit->destination; });
-        if (destination == regions_.end()) {
+        if (destination == world_.regions().end()) {
             cancelExit();
             return;
         }
@@ -262,9 +236,9 @@ void GameSessionImpl::updateExit() {
                     coordinateOffset = Vec{float((a.worldX - b.worldX) * 5), float((a.worldY - b.worldY) * 5)};
                     Vec translated = boundaryPassage_->arrival;
                     if (exit->boundary->side % 2)
-                        translated.y += p.pos.y - boundaryPassage_->departure.y;
+                        translated.y += p.movement.pos.y - boundaryPassage_->departure.y;
                     else
-                        translated.x += p.pos.x - boundaryPassage_->departure.x;
+                        translated.x += p.movement.pos.x - boundaryPassage_->departure.x;
                     if (!atBoundary(back, b, translated) || !destination->map.grid.walkable(translated, playerMovement)) {
                         cancelExit();
                         simulation_->emit(InteractionFailed{{}, "The adjoining ground is blocked."});
@@ -280,7 +254,7 @@ void GameSessionImpl::updateExit() {
                 return;
             }
         cancelExit();
-    } else if (p.route.empty()) {
+    } else if (p.movement.route.empty()) {
         simulation_->emit(InteractionFailed{{}, exit->boundary ? "Cannot reach this boundary passage." :
                                                                 "Cannot reach these stairs."});
         cancelExit();

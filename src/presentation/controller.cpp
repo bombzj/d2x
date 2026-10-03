@@ -16,8 +16,8 @@
 #include <array>
 
 namespace d2x {
-SceneController::SceneController(GameSession &session, IActorClient &actorClient, IInventoryClient &inventoryClient, ICharacterClient &characterClient, INpcClient &npcClient, SceneView &view)
-    : session_(session), actorClient_(actorClient), inventoryClient_(inventoryClient), characterClient_(characterClient), npcClient_(npcClient), view_(view), inputRegion_(actorClient.controlledActor().region) {}
+SceneController::SceneController(GameSession &session, IActorClient &actorClient, IInventoryClient &inventoryClient, ICharacterClient &characterClient, INpcClient &npcClient, IMapClient &mapClient, SceneView &view)
+    : session_(session), actorClient_(actorClient), inventoryClient_(inventoryClient), characterClient_(characterClient), npcClient_(npcClient), mapClient_(mapClient), view_(view), inputRegion_(actorClient.controlledActor().region) {}
 void SceneController::resetInput() {
     repeatClick_ = 0;
     pickupClick_ = inventoryClick_ = inventoryRight_ = false;
@@ -63,23 +63,7 @@ void SceneController::openGameMenu(Vec mouse) {
 void SceneController::click(Vec mouse) {
     auto &ui = view_.ui();
     view_.cancelNpcDialogue();
-    if (auto portal = session_.cainPortalPosition(); portal &&
-        (view_.screen(staticUnitPosition(*portal)) - Vec{0, 40} - mouse).length() < 45) {
-        session_.submit(UseCainPortal{});
-        pickupClick_ = true;
-        return;
-    }
-    for (const auto &portal : session_.portals(session_.region().definition.id)) {
-        if ((view_.screen(staticUnitPosition(portal.position)) - Vec{0, 40} - mouse).length() >= 45) continue;
-        session_.submit(UseTownPortal{portal.revision});
-        pickupClick_ = true;
-        return;
-    }
-    if (const auto *exit = view_.exitAt(mouse)) {
-        session_.submit(UseExit{exit->slot});
-        pickupClick_ = true;
-        return;
-    }
+    if (handleMapClick(mouse)) return;
     if (auto item = view_.lootAt(mouse, true)) {
         session_.submit(PickupItem{*item, ui.inventory.open});
         pickupClick_ = true;
@@ -117,7 +101,7 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
     view_.refreshCharacterView();
     view_.refreshInteractions();
     ui.inventory.syncCursor(view_.inventoryView(), ui.orificeItem ? ui.orificeItem->id : EntityId{});
-    if (!session_.state().player.hireling.active()) ui.hirelingOpen = false;
+    if (!view_.hirelingView().active) ui.hirelingOpen = false;
     if (!input.focused || ui.blocksWorld() || actorClient_.controlledActor().dead ||
         input.escape || input.inventory || input.character || input.skillTree || input.quests ||
         input.hireling || input.storage || input.rightPressed || input.movement.length() > .1f) {
@@ -277,40 +261,11 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
         return true;
     }
     if (handleNpcMenu(input)) return true;
-    if (ui.hireListOpen) {
-        const auto *offers = session_.hirelingOffers(ui.dialogueObject);
-        const auto cancel = hirelingListCancel();
-        if (input.escape || (input.insideViewport && input.leftPressed &&
-            CheckCollisionPointRec(rv(input.mouse), cancel))) {
-            ui.hireListOpen = false;
-            npcClient_.submit(EndNpcConversation{ui.dialogueObject});
-            return true;
-        }
-        const int maximum = offers ? std::max(0, int(offers->size()) - hirelingVisibleRows) : 0;
-        ui.hireListScroll = std::clamp(ui.hireListScroll + input.pageDelta - input.quantityDelta, 0, maximum);
-        if (input.insideViewport && input.leftPressed) {
-            const auto bar = hirelingScrollBounds();
-            if (CheckCollisionPointRec(rv(input.mouse), bar)) {
-                const float local = (input.mouse.y - bar.y) / classicPanelScale;
-                if (local < 10) --ui.hireListScroll;
-                else if (local > 320) ++ui.hireListScroll;
-                else ui.hireListScroll = int(std::clamp((local - 10) / 310.f, 0.f, 1.f) * maximum + .5f);
-                ui.hireListScroll = std::clamp(ui.hireListScroll, 0, maximum);
-            } else if (offers) for (int row = 0; row < hirelingVisibleRows; ++row) {
-                const int index = ui.hireListScroll + row;
-                if (index >= int(offers->size())) break;
-                if (CheckCollisionPointRec(rv(input.mouse), hirelingListRow(row))) {
-                    npcClient_.submit(HireMercenary{ui.dialogueObject, offers->at(size_t(index)).slot});
-                    break;
-                }
-            }
-        }
-        return true;
-    }
+    if (handleHirelingList(input)) return true;
     if (!ui.blocksWorld()) {
         if (input.debugGold) {
-            unsigned capacity = unsigned(session_.state().player.level) * 10000;
-            unsigned amount = std::min(1000u, capacity - session_.state().player.gold);
+            unsigned capacity = unsigned(session_.state().player.character.level) * 10000;
+            unsigned amount = std::min(1000u, capacity - session_.state().player.character.gold);
             if (amount) session_.submit(DebugGrantGold{amount});
             view_.notice(amount ? "Gold +" + std::to_string(amount) : "Gold wallet is full.");
         }
@@ -322,11 +277,11 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
             const auto &player = session_.state().player;
             const auto &thresholds = session_.experienceThresholds();
             uint64_t amount = 0;
-            if (size_t(player.level + 1) < thresholds.size()) {
-                const auto levelExperience = thresholds[size_t(player.level + 1)] -
-                                             thresholds[size_t(player.level)];
+            if (size_t(player.character.level + 1) < thresholds.size()) {
+                const auto levelExperience = thresholds[size_t(player.character.level + 1)] -
+                                             thresholds[size_t(player.character.level)];
                 amount = levelExperience / 4 + (levelExperience % 4 != 0);
-                amount = std::min(amount, session_.maximumExperience() - player.experience);
+                amount = std::min(amount, session_.maximumExperience() - player.character.experience);
             }
             if (actorClient_.controlledActor().dead)
                 view_.notice("Experience requires a living player.", true);
@@ -348,88 +303,7 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
             view_.notice("Available waypoints activated.");
         }
     }
-    if (ui.shopOpen) {
-        auto repairItemAt = [&]() -> const ItemInstance * {
-            const auto &inventory = session_.inventory();
-            EntityId id;
-            if (auto cell = inventoryCell(input.mouse))
-                id = inventory.itemAt(session_.playerContainers().backpack, *cell);
-            if (auto slot = equipmentAt(input.mouse, session_.state().player.weaponSet))
-                id = inventory.equipped(session_.playerContainers(), *slot);
-            return inventory.item(id);
-        };
-        if (ui.shopSalePending) return true;
-        if (input.escape) {
-            if ((ui.inventory.drag && !ui.inventory.drag->onCursor) || ui.inventory.identify || ui.inventory.split || ui.inventory.goldDialog)
-                ui.inventory.cancelGesture();
-            else if (ui.shopRepair) ui.shopRepair = false;
-            else if (ui.shopConfirm)
-                ui.shopConfirm.reset();
-            else {
-                view_.closeNpcShop();
-                npcClient_.submit(EndNpcConversation{ui.dialogueObject});
-            }
-        } else if (input.inventory || (!ui.shopConfirm && !ui.inventory.split && !ui.inventory.goldDialog &&
-                   input.insideViewport && input.leftPressed &&
-                   CheckCollisionPointRec(rv(input.mouse), inventoryClose()))) {
-            view_.closeNpcShop();
-            npcClient_.submit(EndNpcConversation{ui.dialogueObject});
-        } else if (ui.inventory.drag) {
-            const auto *source = session_.inventory().item(ui.inventory.drag->item.id);
-            if (!source || source->revision != ui.inventory.drag->item.revision || input.rightPressed)
-                return handleInventory(input);
-            if ((input.mouse - ui.inventory.drag->pressedAt).length() > 4)
-                ui.inventory.drag->moved = true;
-            const bool drop = ui.inventory.drag->pickedUp ? input.leftPressed :
-                input.leftReleased && ui.inventory.drag->moved;
-            if (input.insideViewport && CheckCollisionPointRec(rv(input.mouse), classicSideBounds(false))) {
-                if (drop) {
-                    ui.inventory.drag->pickedUp = ui.inventory.drag->moved = true;
-                    inventoryClick_ = true;
-                    if (view_.npcShopDropAt(input.mouse)) {
-                        if (session_.vendorSaleQuote(ui.dialogueObject, source->handle())) {
-                            ui.shopSalePending = source->handle();
-                            npcClient_.submit(SellVendorItem{ui.dialogueObject, source->handle()});
-                        } else view_.notice("That item cannot be sold here.", true);
-                    }
-                }
-                return true;
-            }
-            return handleInventory(input);
-        } else if (ui.inventory.identify || ui.inventory.split || ui.inventory.goldDialog) {
-            return handleInventory(input);
-        } else {
-            if (input.pageDelta) view_.scrollNpcShop(-input.pageDelta);
-            if (!ui.shopConfirm && input.insideViewport && input.leftPressed &&
-                       session_.content().stashLayout.expansion &&
-                       weaponTabAt(input.mouse).has_value()) {
-                if (*weaponTabAt(input.mouse) != session_.state().player.weaponSet)
-                    session_.submit(SwitchWeaponSet{});
-            } else if (input.enter && ui.shopConfirm) {
-                const auto slot = *ui.shopConfirm;
-                ui.shopConfirm.reset();
-                npcClient_.submit(BuyVendorItem{ui.dialogueObject, slot, ui.shopGamble});
-            } else if (!ui.shopConfirm && input.insideViewport &&
-                       (inventorySurface(ui.inventory, input.mouse) ||
-                        CheckCollisionPointRec(rv(input.mouse), beltBounds(
-                            session_.inventory().container(session_.playerContainers().belt)->spec.rows)))) {
-                if (ui.shopRepair && input.leftPressed) {
-                    if (const auto *item = repairItemAt())
-                        npcClient_.submit(RepairVendorItem{ui.dialogueObject, item->handle()});
-                } else return handleInventory(input);
-            } else if (input.insideViewport && input.leftPressed) {
-                if (auto slot = view_.clickNpcShop(input.mouse))
-                    npcClient_.submit(BuyVendorItem{ui.dialogueObject, *slot, ui.shopGamble});
-                if (!ui.shopOpen)
-                    npcClient_.submit(EndNpcConversation{ui.dialogueObject});
-            } else if (input.insideViewport && input.rightPressed) {
-                inventoryRight_ = true;
-                if (auto slot = view_.clickNpcShop(input.mouse, true))
-                    npcClient_.submit(BuyVendorItem{ui.dialogueObject, *slot, ui.shopGamble});
-            }
-        }
-        return true;
-    }
+    if (handleNpcShop(input)) return true;
     if (handleNpcDialogue(input)) return true;
     if (input.help) {
         ui.skillPicker.reset();
@@ -483,15 +357,7 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
         if (ui.characterOpen) ui.questOpen = ui.hirelingOpen = false;
         return true;
     }
-    if (input.hireling && !ui.blocksWorld()) {
-        ui.hirelingOpen = !ui.hirelingOpen && session_.state().player.hireling.active();
-        if (ui.hirelingOpen) {
-            if (ui.inventory.storage || ui.inventory.cubeOpen) toggleInventory();
-            ui.characterOpen = ui.questOpen = false;
-            ui.inventory.cancelGesture();
-        }
-        return true;
-    }
+    if (handleHirelingToggle(input)) return true;
     if (handleQuestToggle(input)) return true;
     if (input.skillTree && !ui.blocksWorld()) {
         if (!view_.characterView().hasSkillTree) {
@@ -599,45 +465,7 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
         inventoryRight_ = inventoryRight_ || input.rightPressed;
         return true;
     }
-    if (ui.travelMenu && !ui.help) {
-        if (ui.waypointSource) {
-            if (input.insideViewport && input.leftPressed)
-                if (auto destination = view_.clickWaypointMenu(input.mouse)) {
-                    session_.submit(WaypointTravel{ui.waypointSource, *destination});
-                    ui.travelMenu = false;
-                    ui.pause = false;
-                }
-            return true;
-        }
-        const auto entries = view_.travelEntries();
-        int pages = (int(entries.size()) + worldPageSize - 1) / worldPageSize;
-        int delta = input.pageDelta;
-        if (input.insideViewport && input.leftPressed) {
-            if (CheckCollisionPointRec(rv(input.mouse), travelPageButton(false)))
-                --delta;
-            if (CheckCollisionPointRec(rv(input.mouse), travelPageButton(true)))
-                ++delta;
-        }
-        ui.travelPage = std::clamp(ui.travelPage + delta, 0, std::max(0, pages - 1));
-        for (int i = 0; i < worldPageSize && ui.travelPage * worldPageSize + i < int(entries.size()); ++i) {
-            if ((i < int(input.belt.size()) && input.belt[i]) ||
-                (input.insideViewport && input.leftPressed &&
-                 CheckCollisionPointRec(rv(input.mouse), travelSlot(i)))) {
-                const auto &entry = entries[ui.travelPage * worldPageSize + i];
-                if (!entry.destination) {
-                    view_.notice(entry.status + (entry.missing.empty() ? "" : ": " + entry.missing.front()),
-                                 true);
-                    return true;
-                }
-                session_.submit(Travel{*entry.destination});
-                ui.travelMenu = false;
-                // Opening a paused travel panel does not trap its queued transition.
-                ui.pause = false;
-                break;
-            }
-        }
-        return true;
-    }
+    if (handleTravel(input)) return true;
     if (ui.blocksWorld()) {
         ui.skillPicker.reset();
         ui.inventory.cancelGesture();
@@ -648,24 +476,7 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
     if (!ui.inventory.drag && !ui.inventory.split && !ui.inventory.goldDialog && !ui.inventory.identify)
         for (int column = 0; column < 4; ++column)
             if (input.belt[column]) inventoryClient_.submit(UseBeltColumn{column, input.shift});
-    if (view_.hirelingPortraitVisible() && input.insideViewport &&
-        (CheckCollisionPointRec(rv(input.mouse), hirelingPortraitBounds()) ||
-         CheckCollisionPointRec(rv(input.mouse), hirelingLifeBounds()))) {
-        leftCombatTarget_ = rightCombatTarget_ = {};
-        if (ui.inventory.drag) {
-            const auto drag = *ui.inventory.drag;
-            const bool drop = drag.pickedUp ? input.leftPressed : input.leftReleased;
-            if (drop && queueInventory(UseHirelingPotion{drag.item}, drag.item.id)) ui.inventory.drag.reset();
-        } else if (input.leftPressed && !ui.inventory.identify && !ui.inventory.pending) {
-            ui.hirelingOpen = true;
-            ui.characterOpen = ui.questOpen = false;
-            session_.submit(StopMoving{});
-            session_.submit(StopChannel{});
-            channelInputSkill_ = -1;
-            pickupClick_ = true;
-        }
-        return true;
-    }
+    if (handleHirelingPortrait(input)) return true;
     if (leftCombatTarget_ || rightCombatTarget_) {
         const bool right = bool(rightCombatTarget_);
         const auto target = right ? rightCombatTarget_ : leftCombatTarget_;
@@ -684,31 +495,7 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
         }
         return true;
     }
-    if (ui.hirelingOpen && input.insideViewport &&
-        CheckCollisionPointRec(rv(input.mouse), classicSideBounds(false))) {
-        if (input.leftPressed && CheckCollisionPointRec(rv(input.mouse), hirelingClose())) {
-            ui.hirelingOpen = false;
-            ui.inventory.cancelGesture();
-            return true;
-        }
-        if (ui.inventory.drag) return handleInventory(input);
-        if (!ui.inventory.pending && input.leftPressed) {
-            constexpr EquipmentSlot order[] = {EquipmentSlot::Head, EquipmentSlot::Torso,
-                                               EquipmentSlot::RightHand, EquipmentSlot::RightHand};
-            for (size_t index = 0; index < 4; ++index) {
-                if (!CheckCollisionPointRec(rv(input.mouse), view_.hirelingSlotBounds(index))) continue;
-                auto slots = view_.inventoryView().containers; slots.equipment = slots.hirelingEquipment;
-                const auto id = view_.inventoryView().equipped(slots, order[index]);
-                const auto *item = view_.inventoryView().item(id);
-                if (item) {
-                    queueInventory(EquipHirelingItem{item->handle(), std::nullopt,
-                        ContainerLocation{slots.cursor, {}}}, id);
-                }
-                break;
-            }
-        }
-        return true;
-    }
+    if (handleHirelingPanel(input)) return true;
     if (ui.characterOpen && input.insideViewport &&
         CheckCollisionPointRec(rv(input.mouse), classicSideBounds(false))) {
         if (input.leftPressed) {
@@ -799,9 +586,8 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
             rightCombatTarget_ = corpseSkill ? EntityId{} : target;
             if (enchant || holyBolt) {
                 if (enchant) target = {};
-                const auto &player = session_.state().player;
-                const auto &merc = player.hireling;
-                if (merc.active() && (view_.screen(merc.pos) - Vec{0, 25} - input.mouse).length() < 24)
+                const auto &merc = view_.hirelingView();
+                if (merc.active && (view_.screen(merc.position) - Vec{0, 25} - input.mouse).length() < 24)
                     target = merc.id;
                 for (const auto &companion : session_.state().companions)
                     if (companion.hp > 0 && session_.active(companion.pos) &&

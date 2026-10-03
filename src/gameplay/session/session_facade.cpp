@@ -89,5 +89,7 @@ bool GameSession::roomVisible(int index, Vec position) const { return impl_->roo
 std::span<const GameEvent> GameSession::events() const { return impl_->events(); }
 void GameSession::submit(GameCommand command) { impl_->submit(std::move(command)); }
 bool GameSession::hasPendingCommands() const { return impl_->hasPendingCommands(); }
+bool GameSession::setPlayerInput(PlayerFrameInput input) { return impl_->setPlayerInput(input); }
+void GameSession::advance(float dt) { impl_->advance(dt); }
 void GameSession::tick(float dt, Vec keyboard, bool forceRun) { impl_->tick(dt, keyboard, forceRun); }
 } // namespace d2x

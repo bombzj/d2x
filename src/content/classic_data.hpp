@@ -2,6 +2,7 @@
 #pragma once
 #include "gameplay/items/definitions.hpp"
 #include "gameplay/items/modifiers.hpp"
+#include "gameplay/items/equipment_set.hpp"
 #include "gameplay/consumables/potions.hpp"
 #include "gameplay/loot/loot.hpp"
 #include "gameplay/loot/affix.hpp"
@@ -84,6 +85,7 @@ struct ClassicData {
     std::string profile;
     std::vector<std::string> armorTypes;
     std::vector<SpecialItemRecord> uniqueItems, setItems;
+    std::vector<EquipmentSetPiece> equipmentSets; // Prepared once from setItems at load.
     std::vector<MagicAffixRecord> magicPrefixes, magicSuffixes;
     std::vector<RareNameRecord> rarePrefixes, rareSuffixes;
     std::vector<PropertyDefinition> properties;

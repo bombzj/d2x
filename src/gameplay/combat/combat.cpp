@@ -1,3 +1,4 @@
+#include "gameplay/units/actions.hpp"
 #include "gameplay/combat/damage_request.hpp"
 #include "gameplay/skills/missile_rules.hpp"
 #include "gameplay/skills/weapon_contributions.hpp"
@@ -78,8 +79,7 @@ void Simulation::onMonsterDamaged(Enemy &enemy, const DamageRequest &request, fl
         if (enemy.kind != MonsterKind::FoulCrowNest) enemy.aiLoop = 0;
         enemy.aiCorpse = {};
         enemy.webAuraRemaining = enemy.webTrailDistance = 0;
-        enemy.attack = enemy.attackDuration = 0;
-        enemy.attackImpact = -1;
+        cancelTimedAction({enemy.attack, enemy.attackDuration, enemy.attackImpact});
         enemy.teleportTarget.reset();
         enemy.nestSpawnPosition.reset();
         enemy.knockbackRemaining = enemy.knockbackDuration = 0;
@@ -95,7 +95,7 @@ void Simulation::onMonsterDamaged(Enemy &enemy, const DamageRequest &request, fl
         emit(EnemyDied{enemy.id, controllingPlayer(source), enemy.kind, state_.area.region, enemy.pos, enemy.identity,
                        state_.population.difficulty, source, enemy.combatRandom,
                        ownerMods.magicFind + mercMods.magicFind, ownerMods.goldFind + mercMods.goldFind,
-                       monsterRewardModifiers(enemy.enchantment)});
+                       monsterRewardModifiers(enemy.enchantment), enemy.noTreasure});
     }
 }
 void Simulation::meleeDamage(EntityId defender, const WeaponDamage &weapon, const SkillCastSpec *skill) {
@@ -105,7 +105,7 @@ void Simulation::meleeDamage(EntityId defender, const WeaponDamage &weapon, cons
     if (!target.alive() || !canAttack(player.id, defender)) return;
     const MonsterDefense defense{target.stats.level, target.stats.attributes.defense,
         target.stats.demon, target.stats.undead, target.stats.boss};
-    if (uint32_t(player.combatRandom) % 100 >= unsigned(weaponHitChance(player.level,
+    if (uint32_t(player.combatRandom) % 100 >= unsigned(weaponHitChance(player.character.level,
         weapon.baseAttackRating, weapon.attackRatingPercent, weapon.target, defense, target.stats.rank))) {
         skills().triggerCombatEffects(defender, CombatEffectEvent::AttackedInMelee, player.id);
         return;
@@ -125,7 +125,7 @@ void Simulation::meleeDamage(EntityId defender, const WeaponDamage &weapon, cons
         const int mastery = fireMastery_(player.id);
         elements.fire = float(int64_t(elements.fire * 256.f) * (100 + mastery) / 100) / 256.f;
     }
-    applyWeaponSkillElements(elements, weapon, skill, player.combatRandom, player.vengeanceHit);
+    applyWeaponSkillElements(elements, weapon, skill, player.combatRandom, player.actions.vengeanceHit);
     resolveWeaponHit(defender, float(damage) / 256.f, player.id, elements);
     if (wearEquipment_ && weapon.item) wearEquipment_(weapon.item, false);
 }

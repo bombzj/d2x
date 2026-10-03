@@ -19,7 +19,7 @@ std::optional<uint32_t> nextDebugGroup(const AreaState &area) {
 } // namespace
 
 std::string GameSessionImpl::debugSpawnError(std::string_view monster, Vec position) const {
-    if (state().player.dead || simulation_->safeZone_)
+    if (state().player.actions.dead || simulation_->safeZone_)
         return "Monster spawn requires a living player outside town";
     const auto *record = monsterContent_.find(monster);
     if (!record || !record->hostile())
@@ -28,7 +28,7 @@ std::string GameSessionImpl::debugSpawnError(std::string_view monster, Vec posit
         position.x < 0 || position.y < 0 || position.x >= map().grid.width ||
         position.y >= map().grid.height || !map().grid.walkable(position))
         return "Monster spawn position must be a walkable cell in the current region";
-    if ((position - state().player.pos).length() < .8f ||
+    if ((position - state().player.movement.pos).length() < .8f ||
         std::any_of(state().area.enemies.begin(), state().area.enemies.end(), [&](const Enemy &enemy) {
             return enemy.hp > 0 && (position - enemy.pos).length() < .8f;
         }))
@@ -50,7 +50,7 @@ void GameSessionImpl::spawnDebugMonster(const DebugSpawnMonster &command) {
 }
 
 void GameSessionImpl::damageDebugMonster(const DebugDamageMonster &command) {
-    if (state().player.dead || !std::isfinite(command.amount) ||
+    if (state().player.actions.dead || !std::isfinite(command.amount) ||
         command.amount <= 0 || command.amount > 10000000.f) return;
     if (auto *enemy = simulation_->findEnemy(command.target); enemy && enemy->hp > 0)
         simulation_->damageEnemy(*enemy, command.amount, state().player.id, 0, true);

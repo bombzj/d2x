@@ -1,10 +1,9 @@
 #pragma once
 #include "core/id.hpp"
-#include "gameplay/model/definitions.hpp"
-#include "gameplay/items/state.hpp"
-#include "gameplay/monsters/identity.hpp"
-#include "gameplay/monsters/reward.hpp"
+#include "gameplay/loot/request.hpp"
+#include "gameplay/loot/plan.hpp"
 #include <array>
+#include <cstddef>
 #include <set>
 #include <span>
 #include <string_view>
@@ -35,28 +34,6 @@ struct TreasureRoll {
 using TreasureVisitor = std::function<bool(const TreasureSelection &, uint64_t &)>;
 TreasureRoll selectTreasure(std::span<const TreasureClass> classes, std::string_view root, uint64_t seed,
                            int level = 0, const TreasureVisitor &visitor = {});
-struct LootRequest {
-    EntityId source;
-    MonsterIdentity identity;
-    RegionId region = RegionId::Encampment;
-    int difficulty = 0;
-    bool questFirstKill = false;
-    bool sourceSeed = false; // Unit/chest loot streams must not replace the shared object stream.
-    std::optional<MonsterRewardModifiers> rewardModifiers;
-};
-struct LootDrop {
-    std::string code;
-    unsigned quantity;
-    Vec offset;
-    unsigned level = 1;
-    ItemGeneration generation;
-};
-struct LootPlan {
-    uint64_t randomState = 0;
-    unsigned noDrops = 0;
-    std::string deferred;
-    std::vector<LootDrop> drops;
-};
 struct LootState {
     uint64_t randomState = 0;
     std::set<EntityId> settled;

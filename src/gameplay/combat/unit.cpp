@@ -1,3 +1,5 @@
+#include "gameplay/units/actions.hpp"
+#include "gameplay/skills/weapon_caster.hpp"
 #include "gameplay/combat/damage_request.hpp"
 #include "gameplay/skills/caster.hpp"
 #include "gameplay/skills/runtime.hpp"
@@ -109,7 +111,7 @@ EntityId Simulation::chooseTarget(EntityId actor, float range) {
             range = distance; result = id;
         }
     };
-    consider(state_.player.id, state_.player.pos, state_.player.hp);
+    consider(state_.player.id, state_.player.movement.pos, state_.player.resources.hp);
     if (state_.player.hireling.active()) consider(state_.player.hireling.id, state_.player.hireling.pos, state_.player.hireling.hp);
     for (const auto &unit : state_.area.enemies) consider(unit.id, unit.pos, unit.hp);
     for (const auto &unit : state_.companions) consider(unit.id, unit.pos, unit.hp);
@@ -152,15 +154,15 @@ void Simulation::blockUnit(EntityId defender) {
     auto target = combatUnit(defender);
     if (!target.alive() || !target.player || !target.records.player->equipment.shield) return;
     auto &player = *target.records.player;
-    if (player.weaponAttack && player.weaponAttack->skill && !player.weaponAttack->skill->weapon->interruptible) return;
+    if (player.actions.weaponAttack && player.actions.weaponAttack->skill && !player.actions.weaponAttack->skill->weapon->interruptible) return;
     const auto *weapon = attackWeapon(false, false);
     const auto timing = weapon && attackTiming_ ? attackTiming_(*weapon, false, false, "bl") : std::nullopt;
     if (!timing) return;
-    player.pendingCast.reset(); skills().stopChannel(skillCaster(player.id));
-    player.castTime = player.meleeTime = 0;
-    player.weaponAttack.reset(); player.charge.reset(); player.approachSkill.reset();
-    player.route.clear(); player.attackTarget = {}; player.attackPosition.reset();
-    player.blockAnimation = WeaponAttackState{{}, {}, player.pos, *timing, false};
+    player.skills.pendingCast.reset(); skills().stopChannel(skillCaster(player.id));
+    player.actions.castTime = 0;
+    cancelWeaponAction(skillWeaponCaster(player.id)); player.actions.charge.reset(); player.actions.approachSkill.reset();
+    player.movement.route.clear(); player.actions.attackTarget = {}; player.actions.attackPosition.reset();
+    player.actions.blockAnimation = WeaponAttackState{{}, {}, player.movement.pos, *timing, false};
 }
 void Simulation::recoverUnit(EntityId defender, EntityId attacker, float damage, bool elemental, int baseHitClass, bool forced) {
     auto target = combatUnit(defender);
@@ -193,8 +195,7 @@ void Simulation::recoverUnit(EntityId defender, EntityId attacker, float damage,
         monsterStopApproach(monster);
         monster.route.clear();
         monster.aiEscaping = monster.aiCircling = monster.aiRunning = false;
-        monster.attack = monster.attackDuration = 0;
-        monster.attackImpact = -1;
+        cancelTimedAction({monster.attack, monster.attackDuration, monster.attackImpact});
         monster.teleportTarget.reset();
         monster.nestSpawnPosition.reset();
         if (monster.kind == MonsterKind::Andariel) monster.skillPosition.reset();
@@ -209,12 +210,12 @@ void Simulation::recoverUnit(EntityId defender, EntityId attacker, float damage,
             ? monsterHitProperties_(*source.records.monster).first : elemental ? 13 : 0) & 15;
         recoverHireling(damage, hitClass);
     } else if (target.player) {
-        if (target.records.player->weaponAttack && target.records.player->weaponAttack->skill &&
-            target.records.player->weaponAttack->skill->weapon && !target.records.player->weaponAttack->skill->weapon->interruptible) return;
+        if (target.records.player->actions.weaponAttack && target.records.player->actions.weaponAttack->skill &&
+            target.records.player->actions.weaponAttack->skill->weapon && !target.records.player->actions.weaponAttack->skill->weapon->interruptible) return;
         const int chance = target.stats.attributes.combat.concentrationChance;
-        if (chance > 0 && (target.records.player->meleeTime > 0 || target.records.player->castTime > 0 || target.records.player->channelSkill() >= 0) &&
+        if (chance > 0 && (target.records.player->actions.meleeTime > 0 || target.records.player->actions.castTime > 0 || target.records.player->skills.channelSkill() >= 0) &&
             limitedRandom(*target.random, 100) < unsigned(chance)) return;
-        target.records.player->hitTime = .16f;
+        target.records.player->actions.hitTime = .16f;
     }
 }
 float Simulation::dealDamage(const DamageRequest &request) {
@@ -297,10 +298,8 @@ void Simulation::applyChill(EntityId defender, float duration, bool freeze) {
 void Simulation::applyWeb(EntityId defender, float duration, int percent) {
     auto unit = combatUnit(defender);
     if (!unit.alive()) return;
-    auto apply = [&](auto &record) { record.webSlowRemaining = std::max(record.webSlowRemaining, duration); record.webSlowPercent = percent; };
-    if (unit.player) apply(*unit.records.player);
-    else if (unit.hireling) apply(*unit.records.hireling);
-    else if (unit.monster) apply(*unit.records.monster);
+    *unit.webSlow.remaining = std::max(*unit.webSlow.remaining, duration);
+    *unit.webSlow.percent = percent;
 }
 std::optional<std::pair<EntityId, float>> Simulation::missileTarget(const Missile &missile, Vec to) {
     const auto rule = missileCollisions_.find(missile.missileId);

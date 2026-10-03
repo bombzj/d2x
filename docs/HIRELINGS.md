@@ -13,6 +13,8 @@
 - 共用现有装备效果：元素／毒伤、致命攻击、压碎、撕裂、吸血、恢复生命、击杀回血及命中／种族伤害修正。吸血与击杀回血归佣兵自身，不补玩家；佣兵无玩家法力池。佣兵击杀时，其 MF／金币加成与主人的加成相加，主人亲自击杀时不加佣兵装备。
 - 佣兵不消耗箭筒、不磨损装备耐久；初始已损坏装备不生效。完整词缀覆盖范围仍受 [物品完成度](ITEM_COMPLETION.md) 限制；没有据此宣称未实现词缀或技能已生效。
 
+第四项装备解耦后，佣兵属性与替换需求沿用相同 `EquipmentLoadout`／贡献／装备派生规则，仍由宿主显式传佣兵容器、基础属性和需排除的旧装备；没有改用玩家背包或玩家技能学习记录。已随第五项通过 Windows Release 与代表性头盔装备／卸下，未覆盖全部佣兵装备／药效，见[库存基线](baseline/INVENTORY.md#装备与技能来源第四项)。
+
 ## 行为和服务
 
 - 普通射箭从 `MonStats.Skill1 → Skills.RogueMissile (srvdofunc=110) → Missiles.rogue1` 解析，不能只读取罗格为空的 `MissA1`。箭的图像、碰撞、速度、存续时间和来源伤害来自 MPQ；`RGA1HTH` 为 15 帧、速度 256、索引 6 的事件 2，实际出手按速度后的动作帧触发。
@@ -35,9 +37,12 @@
 本地 D2MOO 固定快照 `5596f5c`：`PLAYER/PlrMsg.cpp::D2GAME_PACKETCALLBACK_Rcv0x61_DropPickupMercItem_6FC88930`、`D2Common/Monsters/Monsters.cpp` 的初始化／复活费用、`MONSTER/MonsterAI.cpp::MONSTERAI_UpdateMercStatsAndSkills`、`AI/AiThink.cpp::AITHINK_Fn061_Hireable` 及罗格分支、`UNIT/SUnitDmg.cpp` 的命中／经验／受击／伤害比例、`UNIT/SUnitNpc.cpp` 的雇佣／复活／宠物治疗、`UNIT/SUnit.cpp → PLAYER/PlayerPets.cpp` 的传送同行、`SKILLS/SkillMonst.cpp::SKILLS_SrvDo110_Hireable_RogueMissile`、`SKILLS/SkillItem.cpp` 的药剂处理、`D2Common/Units/Missile.cpp` 的佣兵伤害和 `D2Common/Units/Units.cpp` 的动作速度。表、COF、DCC、DC6、AnimData 和数值以当前 MPQ 为准；reference 和抽取文件不提交。
 
 - `content/npc/hireling_data.*`：定义、候选与基础成长；`monster_catalog.*`：原箭和动作数据。
-- `gameplay/npc/hireling_services.cpp`：雇佣、复活、装备、药剂、属性和经验；`hireling.cpp`：跟随及普通攻击。
+- `gameplay/npc/hireling_services.cpp`：雇佣、复活、装备、药剂、属性和经验；`hireling.cpp`：生命周期与固定步编排，`hireling_controller.cpp`：纯跟随／退避／攻击策略，`hireling_control.cpp`：地图／内容／目标本地适配，`hireling_actions.cpp`：原射箭结算。自然恢复与药剂累加归 `units/restoration.*`，减速期限归 `units/impairments.*`，移动与武器帧推进分别归 `units/movement.*`／`actions.*`。资源与动作续批随活角色组合通过 Windows Release 和跟随／独立击杀简单冒烟，全部佣兵装备／药效未回归，见[单位基线](baseline/UNITS.md)。
 - `gameplay/monsters/`、`gameplay/combat/`：选敌、承伤、弹体、装备命中特效。
-- `presentation/hireling_*`：原图、装备页及头像；controller 仅提交玩法命令。
+- `contracts/hireling.hpp`／`client/local_hireling_view.cpp`：本人佣兵详情与候选投影，本地实现解释原状态；UI 不接收成长表、属性掷值或来源种子。
+- `presentation/npc/hireling_view.cpp`／`commerce_controller.cpp`：原图、候选、装备页、头像及手势，只读佣兵／库存投影并提交 NPC／库存意图；肖像停止移动／引导经受控人物接口。
 - `app/debug/debug_hireling.cpp`：沿用 `grant-hireling`、`hireling`、`hireling-panel`、`hireling-equip` 管道入口，详见 [命名管道](DEBUG_PIPE.md)。授予命令不改变 Blood Raven 任务；重复授予保留已有佣兵和装备。
 
-其他幕世界和佣兵不开放；技能选择、火／冰箭、Inner Sight、装备触发技能及光环继续暂缓。未实现的怪物依旧按项目许可使用保留真实身份的沉沦魔替身，不能据其外形验收原怪物全部战斗表现。没有编写测试脚本、测试用例或专用测试程序；本轮不运行游戏，实际交互与画面对照等待用户查看。
+其他幕佣兵类型未开放；技能选择、火／冰箭、Inner Sight、装备触发技能及光环继续暂缓。未实现的怪物依旧按项目许可使用保留真实身份的沉沦魔替身，不能据其外形验收原怪物全部战斗表现。
+
+第五项 UI 解耦已通过 Windows Release 与简单冒烟：卡夏列表／原说明、真实雇佣 Annor 扣 217 金币、生命／经验／属性面板、头盔装备防御 51→56、卸下回到 51 并放回背包。截图已查看，临时实例退出 0、stderr 空；无存档读写、新测试程序、打包或 Git 提交。仅认证上述代表性路径，复活、药剂和完整佣兵 AI 未在本次重验；证据及范围见[NPC／任务基线](baseline/NPC_QUEST.md#商店与佣兵-ui第五项)。

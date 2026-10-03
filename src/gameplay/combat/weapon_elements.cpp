@@ -73,7 +73,7 @@ AttackElements Simulation::rollAttackElements(EntityId weapon, const CombatModif
     result.openWounds = wounds && roll(random, 100) < unsigned(wounds);
     result.lifeLeech = std::max(0, m.lifeLeech + own.lifeLeech);
     result.manaLeech = std::max(0, m.manaLeech + own.manaLeech);
-    result.attackerLevel = player.level;
+    result.attackerLevel = player.character.level;
     return result;
 }
 void Simulation::resolveWeaponHit(EntityId defender, float physical, EntityId source,
@@ -141,13 +141,9 @@ void Simulation::resolveWeaponHit(EntityId defender, float physical, EntityId so
         if (target.identity.role == CombatRole::Player) framesDamage /= elements.ranged ? 8 : 4;
         else if (target.stats.rank == MonsterRank::Champion || target.stats.rank == MonsterRank::Unique ||
                  target.stats.rank == MonsterRank::SuperUnique) framesDamage /= 2;
-        auto apply = [&](auto &record) {
-            record.openWoundsRemaining = 8.f;
-            record.openWoundsPerSecond = framesDamage * 25.f / 256.f; record.openWoundsSource = source;
-        };
-        if (target.player) apply(*target.records.player);
-        else if (target.hireling) apply(*target.records.hireling);
-        else apply(*target.records.monster);
+        *target.openWounds.remaining = 8.f;
+        *target.openWounds.rate = framesDamage * 25.f / 256.f;
+        *target.openWounds.source = source;
     }
     applyPoison(defender, elements.poisonPerSecond, elements.poisonDuration, source);
     if (elements.knockback && target.alive() && !target.stats.boss) applyAuraKnockback(source, defender);
@@ -159,11 +155,9 @@ void Simulation::applyPoison(EntityId defender, float rawRate, float duration, E
     const float rate = resolveIncoming(source, target, rawRate / 25.f, MonsterDamageType::Poison).dealt * 25.f;
     const auto &mods = target.stats.attributes.combat;
     duration *= float(std::clamp(100 - mods.poisonLengthResist, 0, 200)) / 100.f;
-    if (rate > 0 && rate >= *target.poisonRate && duration > 0) {
-        *target.poisonRate = rate; *target.poisonTime = duration;
-        if (target.player) target.records.player->poisonSource = source;
-        else if (target.hireling) target.records.hireling->poisonSource = source;
-        else target.records.monster->poisonSource = source;
+    if (rate > 0 && rate >= *target.poison.rate && duration > 0) {
+        *target.poison.rate = rate; *target.poison.remaining = duration;
+        *target.poison.source = source;
     }
 }
 } // namespace d2x

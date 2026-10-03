@@ -1,3 +1,4 @@
+#include "gameplay/units/actions.hpp"
 #include "gameplay/skills/caster.hpp"
 #include "gameplay/skills/runtime.hpp"
 #include "gameplay/simulation/simulation.hpp"
@@ -7,24 +8,17 @@
 
 namespace d2x {
 const WeaponDamage *Simulation::attackWeapon(bool thrown, bool leftHand) const {
-    for (int index = 0; index < state_.player.equipment.weaponCount; ++index) {
-        const auto &weapon = state_.player.equipment.weapons[index];
-        if (leftHand && (!weapon.item || !weapon.leftHand)) continue;
-        if (thrown && !weapon.throwable) return nullptr;
-        if (!thrown && weapon.potion) return nullptr; // SrvDo001 rejects missile potions.
-        return &weapon;
-    }
-    return nullptr;
+    return selectAttackWeapon(state_.player.equipment, thrown, leftHand);
 }
 bool Simulation::meleeReach(EntityId defender, const WeaponDamage &weapon) const {
     auto target = const_cast<Simulation *>(this)->combatUnit(defender);
     return target.alive() && canAttack(state_.player.id, defender) && target.stats.collisionSize > 0 &&
-        meleeDistance(state_.player.pos, 2, *target.position, target.stats.collisionSize) <= weapon.rangeAdder + 1 &&
-        grid_->segment(state_.player.pos, *target.position);
+        meleeDistance(state_.player.movement.pos, 2, *target.position, target.stats.collisionSize) <= weapon.rangeAdder + 1 &&
+        grid_->segment(state_.player.movement.pos, *target.position);
 }
 void Simulation::requestAttack(const Attack &attack) {
     auto &p = state_.player;
-    if (safeZone_ || p.dead || p.blockAnimation || p.charge || p.weaponAttack || p.castTime > 0 || p.hitTime > 0) return;
+    if (safeZone_ || p.actions.dead || p.actions.blockAnimation || p.actions.charge || p.actions.weaponAttack || p.actions.castTime > 0 || p.actions.hitTime > 0) return;
     auto enemy = combatUnit(attack.target);
     if ((!enemy.alive() || !canAttack(p.id, enemy.id)) && !attack.position) return;
     if (!attackWeapon(attack.thrown, attack.leftHand)) {
@@ -33,19 +27,19 @@ void Simulation::requestAttack(const Attack &attack) {
         return;
     }
     skills().stopChannel(skillCaster(p.id));
-    p.approachSkill.reset();
-    p.attackTarget = enemy.alive() && canAttack(p.id, enemy.id) ? enemy.id : EntityId{};
-    p.attackPosition = attack.position;
-    p.attackStationary = attack.stationary;
-    p.throwAttack = attack.thrown;
-    p.leftHandAttack = attack.leftHand;
-    p.route.clear();
-    if (p.attackTarget && !p.attackStationary) p.route = grid_->path(p.pos, *enemy.position, false, playerMovement);
+    p.actions.approachSkill.reset();
+    p.actions.attackTarget = enemy.alive() && canAttack(p.id, enemy.id) ? enemy.id : EntityId{};
+    p.actions.attackPosition = attack.position;
+    p.actions.attackStationary = attack.stationary;
+    p.actions.throwAttack = attack.thrown;
+    p.actions.leftHandAttack = attack.leftHand;
+    p.movement.route.clear();
+    if (p.actions.attackTarget && !p.actions.attackStationary) p.movement.route = grid_->path(p.movement.pos, *enemy.position, false, playerMovement);
 }
 bool Simulation::beginWeaponAttack(Vec aim, EntityId target, const WeaponDamage &weapon,
                                    bool thrown, bool leftHand, const WeaponSkillSpec *skill) {
     auto &p = state_.player;
-    if (p.blockAnimation || p.charge || p.weaponAttack || p.castTime > 0 || p.hitTime > 0 || p.dead) return false;
+    if (p.actions.blockAnimation || p.actions.charge || p.actions.weaponAttack || p.actions.castTime > 0 || p.actions.hitTime > 0 || p.actions.dead) return false;
     const auto timing = attackTiming_ ? attackTiming_(weapon, thrown, leftHand, skill ? std::string_view(skill->mode) : std::string_view{}) : std::nullopt;
     if (!timing) {
         state_.message = "Original attack animation is unavailable for this equipment.";
@@ -56,13 +50,13 @@ bool Simulation::beginWeaponAttack(Vec aim, EntityId target, const WeaponDamage 
         state_.message = thrown ? "No throwing weapon remains." : "Matching arrows or bolts are required.";
         return false;
     }
-    if ((aim - p.pos).length() < .001f) aim = p.pos + p.look;
-    p.look = (aim - p.pos).unit();
-    p.weaponAttack = WeaponAttackState{weapon.item, target, aim, *timing, thrown};
-    p.weaponAttack->weaponClass = state_.player.equipment.animationClass;
-    p.weaponAttack->appearanceDefinitions = state_.player.equipment.appearanceDefinitions;
-    p.meleeTime = float(timing->durationTicks()) / 25.f;
-    p.route.clear();
+    if ((aim - p.movement.pos).length() < .001f) aim = p.movement.pos + p.movement.look;
+    p.movement.look = (aim - p.movement.pos).unit();
+    p.actions.weaponAttack = WeaponAttackState{weapon.item, target, aim, *timing, thrown};
+    p.actions.weaponAttack->weaponClass = state_.player.equipment.animationClass;
+    p.actions.weaponAttack->appearanceDefinitions = state_.player.equipment.appearanceDefinitions;
+    p.actions.meleeTime = float(timing->durationTicks()) / 25.f;
+    p.movement.route.clear();
     emit(WeaponAttackStarted{p.id, target, thrown || weapon.ranged});
     return true;
 }

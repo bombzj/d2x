@@ -12,6 +12,7 @@
 #include "scene_assets.hpp"
 #include "resources/data_table.hpp"
 #include "world/cow_level.hpp"
+#include "world/maze.hpp"
 #include "world/outdoor/outdoor.hpp"
 #include <algorithm>
 #include <cstdio>
@@ -33,7 +34,7 @@ void loadFont(Graphics &graphics, Archives &archives, ClassicFont &font, std::st
     font.ready = true;
 }
 } // namespace
-SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
+SceneAssets::SceneAssets(Archives &archives, const GameSession &session, const IMapAssetSource &source)
         : archives_(archives), graphics_(archives),
             uiGraphics_(archives, "data/global/palette/sky/pal.dat"),
       unitsGraphics_(archives, "data/global/palette/units/pal.dat"),
@@ -132,17 +133,16 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session)
         }
         combatStateOverlays.emplace(state.definition.id, std::move(art));
     }
-    regionTileSources.reserve(session.regions().size());
-    regionTiles.resize(session.regions().size());
-    regionTilesUploaded.assign(session.regions().size(), false);
-    for (const auto &region : session.regions()) {
-        regionTileSources.push_back(region.map.tiles);
-        const auto level = session.worldContent().levels().find(int(region.definition.id));
-        regionPalettes_.push_back(level == session.worldContent().levels().end()
-            ? region.map.data.act : level->second.palette);
+    regionTileSources.reserve(source.size());
+    regionTiles.resize(source.size());
+    regionTilesUploaded.assign(source.size(), false);
+    for (size_t slot = 0; slot < source.size(); ++slot) {
+        const auto &asset = source.readAsset(slot);
+        regionTileSources.push_back(asset.tiles);
+        regionPalettes_.push_back(asset.palette);
     }
-    indexPropArt(session);
-    loadAutomap(session);
+    indexPropArt(source);
+    loadAutomap(source);
     loadHeroEquipment(session);
     if (hero.at("nu").frames.empty() || hero.at("rn").frames.empty())
         throw std::runtime_error("Character animations missing; supply the classic MPQ resources.");
@@ -692,10 +692,9 @@ void SceneAssets::loadInventoryArt(const GameSession &session) {
     }
     graphics_.releaseDecoded();
 }
-void SceneAssets::indexPropArt(const GameSession &session) {
-    for (const auto &region : session.regions())
-        for (const auto &object : region.objects)
-            propArtKeys.insert(object.key);
+void SceneAssets::indexPropArt(const IMapAssetSource &source) {
+    for (size_t slot = 0; slot < source.size(); ++slot)
+        for (const auto &key : source.readAsset(slot).propKeys) propArtKeys.insert(key);
 }
 const std::vector<Sprite> &SceneAssets::regionTileSprites(size_t index) const {
     if (!regionTilesUploaded.at(index)) {
@@ -707,15 +706,16 @@ const std::vector<Sprite> &SceneAssets::regionTileSprites(size_t index) const {
     }
     return regionTiles[index];
 }
-void SceneAssets::syncRegions(const GameSession &session) {
+void SceneAssets::syncRegions(const IMapAssetSource &source) {
     bool changed = false;
-    for (size_t index = 0; index < session.regions().size(); ++index) {
-        const auto &region = session.regions()[index];
-        if (!region.loaded || !regionTileSources[index].empty()) continue;
-        regionTileSources[index] = region.map.tiles;
+    for (size_t slot = 0; slot < source.size(); ++slot) {
+        const auto &asset = source.readAsset(slot);
+        if (!asset.loaded || !regionTileSources[slot].empty()) continue;
+        regionTileSources[slot] = asset.tiles;
+        regionPalettes_[slot] = asset.palette;
         changed = true;
     }
-    if (changed) { indexPropArt(session); loadAutomap(session); }
+    if (changed) { indexPropArt(source); loadAutomap(source); }
 }
 Graphics &SceneAssets::graphicsForAct(int act) const {
     if (act == 0) return graphics_;

@@ -133,10 +133,10 @@ void SceneView::drawTerrain() const {
         const auto &map = session_.regions()[region].map;
         const auto &tiles = assets_.regionTileSprites(region);
 
-        for (int sum = 0; sum < map.data.width + map.data.height; sum++)
-            for (int y = 0; y < map.data.height; y++) {
+        for (int sum = 0; sum < map.terrain.data.width + map.terrain.data.height; sum++)
+            for (int y = 0; y < map.terrain.data.height; y++) {
                 int x = sum - y;
-                if (x < 0 || x >= map.data.width)
+                if (x < 0 || x >= map.terrain.data.width)
                     continue;
                 const Vec worldPosition = Vec{x * 5.f, y * 5.f} + offset;
                 Vec p = screen(worldPosition);
@@ -148,17 +148,17 @@ void SceneView::drawTerrain() const {
                 };
                 // Lower DT1 walls (16..19) belong below floor/units, never in
                 // the ordinary occluder queue (OpenDiablo2 renderTilePass1).
-                for (const auto &layer : map.data.walls) {
-                    const auto &cell = layer[y * map.data.width + x];
+                for (const auto &layer : map.terrain.data.walls) {
+                    const auto &cell = layer[y * map.terrain.data.width + x];
                     if (cell.orientation >= 16 && cell.orientation <= 19) add(cell, 0);
                 }
-                for (auto &layer : map.data.floors) {
-                    auto &cell = layer[y * map.data.width + x];
+                for (auto &layer : map.terrain.data.floors) {
+                    auto &cell = layer[y * map.terrain.data.width + x];
                     if (!cell.present())
                         continue;
                     add(cell, 1);
                 }
-                auto &c = map.data.shadows[y * map.data.width + x];
+                auto &c = map.terrain.data.shadows[y * map.terrain.data.width + x];
                 if (c.present()) {
                     add(c, 2, true);
                 }
@@ -225,20 +225,20 @@ void SceneView::drawActors(Vec mouse) const {
     for (const auto &[region, offset] : session_.sceneRegions()) {
         const auto &map = session_.regions()[region].map;
         const auto &tiles = assets_.regionTileSprites(region);
-        for (int y = 0; y < map.data.height; y++)
-            for (int x = 0; x < map.data.width; x++) {
+        for (int y = 0; y < map.terrain.data.height; y++)
+            for (int x = 0; x < map.terrain.data.width; x++) {
                 const Vec position = Vec{x * 5.f, y * 5.f} + offset;
                 Vec p = screen(position);
-                for (size_t wallLayer = 0; wallLayer < map.data.walls.size(); ++wallLayer) {
-                    const auto &layer = map.data.walls[wallLayer];
-                    auto &cell = layer[y * map.data.width + x];
+                for (size_t wallLayer = 0; wallLayer < map.terrain.data.walls.size(); ++wallLayer) {
+                    const auto &layer = map.terrain.data.walls[wallLayer];
+                    auto &cell = layer[y * map.terrain.data.width + x];
                     if (!cell.present() || (cell.orientation >= 16 && cell.orientation <= 19))
                         continue;
                     int idx = map.tileIndex(cell, x, y);
                     if (idx >= 0) {
                         const int priority = -100 + int(wallLayer) * 2;
                         auto item = Item{sceneOrder(position, 1, true, priority), 0, idx, p, region, x, y};
-                        if (map.tiles[idx]->orientation == 15)
+                        if (map.terrain.tiles[idx]->orientation == 15)
                             { if (tileVisible(tiles[idx], p)) roofs.push_back(item); }
                         else {
                             if (tileVisible(tiles[idx], p)) draw.push_back(item);
@@ -569,10 +569,10 @@ void SceneView::drawActors(Vec mouse) const {
         float alpha = 1.f;
         const auto &region = session_.regions()[item.region];
         if (item.region == session_.regionIndex()) {
-            const auto &popups = region.map.data.roofPopups;
+            const auto &popups = region.map.terrain.data.roofPopups;
             auto found = roofOpacity_.find(region.definition.id);
             for (size_t i = 0; i < popups.size(); ++i)
-                if (popups[i].covers(item.tileX, item.tileY, region.map.tiles[item.index]->main))
+                if (popups[i].covers(item.tileX, item.tileY, region.map.terrain.tiles[item.index]->main))
                     alpha = std::min(alpha, found != roofOpacity_.end() && i < found->second.size()
                                                 ? found->second[i] : 1.f);
         }
@@ -635,7 +635,7 @@ void SceneView::drawUnitSpellOverlays(EntityId unit, Vec position, bool back, co
                 if (auto found = assets_.spellOverlays.find(effect.overlayId);
                     found != assets_.spellOverlays.end() && found->second.visual.preDraw == back)
                     drawSpellOverlay(effect.overlayId, position, effect.age, false, height);
-    if (!states && unit == sim.player.id && !sim.player.dead) states = &sim.player.combatEffects;
+    if (!states && unit == sim.player.id && !sim.player.actions.dead) states = &sim.player.combatEffects;
     else if (!states && unit == sim.player.hireling.id && sim.player.hireling.active()) states = &sim.player.hireling.combatEffects;
     else if (!states) {
         for (const auto &enemy : sim.area.enemies)

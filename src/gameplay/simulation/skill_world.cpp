@@ -1,3 +1,4 @@
+#include "gameplay/units/actions.hpp"
 #include "gameplay/combat/damage_request.hpp"
 #include "gameplay/skills/world_values.hpp"
 #include "gameplay/skills/world_port.hpp"
@@ -113,12 +114,11 @@ class SimulationSkillWorld final : public ISkillWorld, public ISkillWeaponWorld 
     }
     void beginCast(EntityId actor) override {
         auto &unit = player(actor);
-        unit.route.clear(); unit.approachSkill.reset(); unit.attackTarget = {};
-        unit.throwAttack = unit.leftHandAttack = false; unit.attackPosition.reset();
+        clearAttackIntent(simulation_.skillWeaponCaster(unit.id));
     }
     void teleport(EntityId actor, Vec target) override {
         auto &unit = player(actor);
-        unit.pos = unit.previous = target;
+        unit.movement.pos = unit.movement.previous = target;
         simulation_.relocateCompanions(actor, target);
         // PetType.hireable.warp=1: the owner's native teleport also warps the mercenary.
         if (unit.hireling.active()) {
@@ -139,13 +139,13 @@ class SimulationSkillWorld final : public ISkillWorld, public ISkillWeaponWorld 
         if (auto *unit = enemy(target)) {
             unit->attractedTarget = victim; unit->attractedUntil = until;
             unit->combatTarget = {}; unit->route.clear(); unit->approach.reset(); unit->rethink = 0;
-            unit->attack = unit->attackDuration = 0; unit->attackImpact = -1;
+            cancelTimedAction({unit->attack, unit->attackDuration, unit->attackImpact});
         }
     }
     void resetCurseAi(EntityId target) override {
         if (auto *unit = enemy(target)) {
             unit->route.clear(); unit->approach.reset(); unit->combatTarget = {};
-            unit->attack = unit->attackDuration = 0; unit->attackImpact = -1;
+            cancelTimedAction({unit->attack, unit->attackDuration, unit->attackImpact});
             unit->skill2Remaining = unit->skill2Duration = 0;
             unit->teleportTarget.reset(); unit->nestSpawnPosition.reset(); unit->aiCorpse = {};
             unit->aiPursuing = unit->aiEscaping = unit->aiCircling = unit->aiRunning = false;
@@ -156,7 +156,7 @@ class SimulationSkillWorld final : public ISkillWorld, public ISkillWeaponWorld 
     std::vector<SkillAuraSource> auraSources(bool playerOnly) override {
         std::vector<SkillAuraSource> result;
         auto &player = simulation_.state_.player;
-        if (player.aura) result.push_back({player.id, &player.aura->definition, &player.aura->nextFrame});
+        if (player.skills.aura) result.push_back({player.id, &player.skills.aura->definition, &player.skills.aura->nextFrame});
         if (!playerOnly)
             for (auto &unit : simulation_.state_.area.enemies)
                 if (unit.enchantment && unit.enchantment->aura) {
@@ -169,7 +169,7 @@ class SimulationSkillWorld final : public ISkillWorld, public ISkillWeaponWorld 
     }
     const AuraDefinition *ownAura(EntityId actor) const override {
         auto unit = simulation_.combatUnit(actor);
-        if (unit.player && unit.records.player->aura) return &unit.records.player->aura->definition;
+        if (unit.player && unit.records.player->skills.aura) return &unit.records.player->skills.aura->definition;
         if (unit.monster && unit.records.monster->enchantment && unit.records.monster->enchantment->aura)
             return &*unit.records.monster->enchantment->aura;
         return nullptr;
@@ -200,7 +200,7 @@ class SimulationSkillWorld final : public ISkillWorld, public ISkillWeaponWorld 
         return duration && unit->deathAge >= *duration;
     }
     void consumeCorpse(EntityId target) override { if (auto *unit = enemy(target)) unit->corpseConsumed = true; }
-    void suppressManaRegen(EntityId target, bool suppress) override { player(target).auraSuppressesManaRegen = suppress; }
+    void suppressManaRegen(EntityId target, bool suppress) override { player(target).skills.auraSuppressesManaRegen = suppress; }
     int blazeState() const override { return simulation_.blazeState_; }
     int energyShieldState() const override { return simulation_.energyShieldState_; }
     void freeze(EntityId actor, EntityId target, int frames) override {
@@ -297,7 +297,7 @@ void SimulationSkillWorld::convert(EntityId actor, const CombatUnit &target, con
     monster.allegiance.owner = actor;
     monster.combatTarget = {};
     monsterStopApproach(monster);
-    monster.route.clear(); monster.attack = monster.attackDuration = 0; monster.attackImpact = -1;
+    monster.route.clear(); cancelTimedAction({monster.attack, monster.attackDuration, monster.attackImpact});
     monster.aiPursuing = monster.aiEscaping = monster.aiCircling = monster.aiRunning = false;
     monster.aiCorpse = {};
     monster.skill2Remaining = monster.skill2Duration = 0;
@@ -313,18 +313,18 @@ SkillRuntime Simulation::skills() { return SkillRuntime{*skillWorld_, static_cas
 SkillCaster Simulation::skillCaster(EntityId actor) {
     auto &unit = state_.player;
     if (actor != unit.id) throw std::runtime_error("Actor has no casting capabilities");
-    return {unit.id, unit.pos, unit.previous, unit.look, unit.mana, unit.castTime,
-            unit.lastCastDuration, unit.lastCastRate, unit.skillDelayUntil, unit.lightningSequence,
-            unit.pendingCast, unit.channel, unit.thunderStorm, unit.combatEffects, unit.combatRandom,
-            unit.dead, bool(unit.blockAnimation), bool(unit.charge), unit.moving, bool(unit.equipment.shield),
-            unit.meleeTime, unit.hitTime};
+    return {unit.id, unit.movement.pos, unit.movement.previous, unit.movement.look, unit.resources.mana, unit.actions.castTime,
+            unit.skills.lastCastDuration, unit.skills.lastCastRate, unit.skills.skillDelayUntil, unit.skills.lightningSequence,
+            unit.skills.pendingCast, unit.skills.channel, unit.skills.thunderStorm, unit.combatEffects, unit.combatRandom,
+            unit.actions.dead, bool(unit.actions.blockAnimation), bool(unit.actions.charge), unit.movement.moving, bool(unit.equipment.shield),
+            unit.actions.meleeTime, unit.actions.hitTime};
 }
 WeaponSkillCaster Simulation::skillWeaponCaster(EntityId actor) {
     auto &unit = state_.player;
     if (actor != unit.id) throw std::runtime_error("Actor has no weapon action capabilities");
-    return {skillCaster(actor), unit.equipment, unit.weaponAttack, unit.charge, unit.approachSkill,
-            unit.route, unit.attackTarget, unit.attackPosition, unit.attackStationary,
-            unit.throwAttack, unit.leftHandAttack, unit.moving, unit.runningNow,
-            unit.meleeTime, unit.hp, unit.level};
+    return {skillCaster(actor), unit.equipment, unit.actions.weaponAttack, unit.actions.charge, unit.actions.approachSkill,
+            unit.movement.route, unit.actions.attackTarget, unit.actions.attackPosition, unit.actions.attackStationary,
+            unit.actions.throwAttack, unit.actions.leftHandAttack, unit.movement.moving, unit.movement.runningNow,
+            unit.actions.meleeTime, unit.resources.hp, unit.character.level};
 }
 } // namespace d2x

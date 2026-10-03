@@ -1,4 +1,5 @@
 #include "item_properties.hpp"
+#include "gameplay/items/state.hpp"
 #include <algorithm>
 #include <stdexcept>
 #include <charconv>

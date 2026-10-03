@@ -3,8 +3,7 @@
 #include "gameplay/skills/events.hpp"
 #include "gameplay/model/definitions.hpp"
 #include "gameplay/items/operations.hpp"
-#include "gameplay/monsters/identity.hpp"
-#include "gameplay/monsters/reward.hpp"
+#include "gameplay/rewards/death.hpp"
 #include <optional>
 #include <string>
 #include "gameplay/quest/id.hpp"
@@ -14,19 +13,6 @@ namespace d2x {
 struct WeaponAttackStarted {
     EntityId actor, target;
     bool projectile = false;
-};
-// Emitted once at the alive -> dead transition, including every fact a loot system needs.
-struct EnemyDied {
-    EntityId victim, killer;
-    MonsterKind kind;
-    RegionId region;
-    Vec position;
-    MonsterIdentity identity;
-    int difficulty = 0;
-    EntityId attacker; // Actual source; killer is the controlling player receiving credit.
-    uint64_t lootRandom = 0;
-    int magicFind = 0, goldFind = 0;
-    std::optional<MonsterRewardModifiers> rewardModifiers;
 };
 // Presentation/lifecycle notification; carries no loot entitlement.
 struct UnitDied {

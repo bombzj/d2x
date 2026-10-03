@@ -2,6 +2,7 @@
 #include "core/math.hpp"
 #include "gameplay/combat/identity.hpp"
 #include "gameplay/combat/stats.hpp"
+#include "gameplay/units/ailments.hpp"
 
 namespace d2x {
 struct CombatEffectSet;
@@ -11,7 +12,8 @@ struct CombatUnit {
     CombatIdentity identity;
     Vec *position = nullptr;
     float *life = nullptr, *mana = nullptr, *chill = nullptr;
-    float *poisonRate = nullptr, *poisonTime = nullptr;
+    PeriodicDamageView poison, openWounds;
+    WebSlowView webSlow;
     uint64_t *random = nullptr;
     CombatEffectSet *effects = nullptr;
     UnitCombatStats stats;

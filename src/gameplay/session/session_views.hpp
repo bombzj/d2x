@@ -1,7 +1,8 @@
 #pragma once
+#include "core/math.hpp"
 #include "content/npc/hireling_data.hpp"
 #include "gameplay/effects/state.hpp"
-#include "gameplay/items/equipment_stats.hpp"
+#include "gameplay/combat/weapon_values.hpp"
 #include "gameplay/quest/state.hpp"
 #include <array>
 #include <optional>

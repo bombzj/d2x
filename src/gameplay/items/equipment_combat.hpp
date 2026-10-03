@@ -1,5 +1,6 @@
 #pragma once
-#include "content/classic_data.hpp"
+#include "gameplay/items/modifiers.hpp"
+#include "core/id.hpp"
 #include "gameplay/combat/stat_modifiers.hpp"
 
 namespace d2x {

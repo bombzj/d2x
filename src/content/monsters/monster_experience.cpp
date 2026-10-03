@@ -2,8 +2,8 @@
 #include "content/monsters/monster_catalog.hpp"
 #include "content/world/world_catalog.hpp"
 #include "monster_experience.hpp"
-#include <algorithm>
-#include <array>
+#include "gameplay/rewards/experience.hpp"
+#include <utility>
 
 namespace d2x {
 MonsterExperienceAward resolveMonsterExperience(const ClassicData &data, const MonsterCatalog &monsters,
@@ -77,17 +77,6 @@ MonsterExperienceAward resolveMonsterExperience(const ClassicData &data, const M
         rankFactor = request.rewardModifiers->experienceFactor;
     }
     result.monsterLevel = *level + bonusLevel;
-    uint64_t award = base * rankFactor;
-    const int delta = request.playerLevel - result.monsterLevel;
-    // Original single-player level difference factors from D2MOO SUNITDMG_ComputeExperienceGain.
-    constexpr std::array lower{256, 256, 256, 256, 256, 256, 207, 159, 110, 61, 13};
-    constexpr std::array higher{256, 256, 256, 256, 256, 256, 225, 174, 92, 38, 5};
-    if (delta >= 0)
-        award = award * lower[std::min(delta, 10)] / 256;
-    else if (request.playerLevel < 25)
-        award = award * higher[std::min(-delta, 10)] / 256;
-    else
-        award = award * request.playerLevel / result.monsterLevel;
 
     std::optional<int> ratio, shift;
     for (size_t index = 0; index < experience.rows().size(); ++index) {
@@ -102,7 +91,7 @@ MonsterExperienceAward resolveMonsterExperience(const ClassicData &data, const M
         return defer("Missing original player experience ratio");
     if (*ratio < 0)
         return defer("Invalid original player experience ratio");
-    result.amount = award * uint64_t(*ratio) >> *shift;
+    result.amount = monsterExperienceGain(base, rankFactor, result.monsterLevel, request.playerLevel, *ratio, *shift);
     return result;
 }
 } // namespace d2x

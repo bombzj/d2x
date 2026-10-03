@@ -1,3 +1,5 @@
+#include "gameplay/units/movement.hpp"
+#include "gameplay/units/actions.hpp"
 #include "gameplay/simulation/simulation.hpp"
 #include "gameplay/monsters/monster_wander.hpp"
 #include <algorithm>
@@ -18,8 +20,7 @@ void Simulation::applyAuraKnockback(EntityId attacker, EntityId defender) {
         std::floor(enemy.pos.y) + float(offsetY * 3 / divisor) + .5f};
     monsterStopApproach(enemy);
     enemy.route.clear();
-    enemy.attack = enemy.attackDuration = 0;
-    enemy.attackImpact = -1;
+    cancelTimedAction({enemy.attack, enemy.attackDuration, enemy.attackImpact});
     enemy.skill2Remaining = enemy.skill2Duration = 0;
     enemy.teleportTarget.reset();
     enemy.nestSpawnPosition.reset();
@@ -30,9 +31,9 @@ void Simulation::applyAuraKnockback(EntityId attacker, EntityId defender) {
 bool Simulation::advanceAuraKnockback(Enemy &enemy, float dt) {
     if (enemy.knockbackRemaining <= 0 || !enemy.knockbackDestination) return false;
     const Vec delta = *enemy.knockbackDestination - enemy.pos;
-    const Vec next = enemy.pos + delta.unit() * std::min(delta.length(), 25.f * dt);
-    if (grid_->segment(enemy.pos, next, {}, movementRule(enemy))) enemy.pos = next;
-    else enemy.knockbackDestination = enemy.pos;
+    if (!advanceMovement(enemy.pos, delta.unit(), std::min(delta.length(), 25.f * dt),
+        [&](Vec from, Vec to) { return grid_->segment(from, to, {}, movementRule(enemy)); }).accepted)
+        enemy.knockbackDestination = enemy.pos;
     enemy.knockbackRemaining = std::max(0.f, enemy.knockbackRemaining - dt);
     if (enemy.knockbackRemaining == 0) {
         enemy.knockbackDestination.reset();

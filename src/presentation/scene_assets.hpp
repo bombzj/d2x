@@ -4,13 +4,20 @@
 #include "gameplay/items/state.hpp"
 #include "gameplay/skills/visual.hpp"
 #include "presentation/world/missile_visual.hpp"
-#include "world/region.hpp"
+#include "gameplay/monsters/kind.hpp"
+#include "client/map_asset_source.hpp"
+#include "world/object_animation.hpp"
 #include "presentation/graphics/primitives.hpp"
 #include <set>
 #include <memory>
 
 namespace d2x {
 class GameSession;
+class MonsterCatalog;
+class WorldCatalog;
+struct MonsterRecord;
+struct Region;
+struct WorldObject;
 struct ClassicData;
 struct MonsterIdentity;
 struct MonsterEnchantment;
@@ -47,7 +54,7 @@ class SceneAssets {
                           std::map<std::string, GpuAnimation> &animations) const;
     void loadHirelingAnimations(Archives &archives, const GameSession &session);
     void loadSkillIcons(Archives &archives, const ClassicData &content);
-    void loadAutomap(const GameSession &session);
+    void loadAutomap(const IMapAssetSource &source);
     std::string heroKey_;
     std::map<std::string, std::map<std::string, GpuAnimation>> heroCache_;
     std::map<std::string, std::string> heroErrors_;
@@ -113,10 +120,10 @@ class SceneAssets {
     std::vector<int> regionPalettes_;
     mutable std::vector<bool> regionTilesUploaded;
     std::vector<bool> regionAutomapLoaded;
-    void syncRegions(const GameSession &session);
+    void syncRegions(const IMapAssetSource &source);
     std::set<std::string, std::less<>> propArtKeys;
     mutable bool propArtReported = false;
-    void indexPropArt(const GameSession &session);
+    void indexPropArt(const IMapAssetSource &source);
     void loadPropObject(const WorldObject &object) const;
     std::vector<std::vector<AutomapStamp>> regionAutomap;
     // 0: original maximaps.dc6, 1: original maximap.dc6.
@@ -164,7 +171,7 @@ class SceneAssets {
         bool preDraw = false;
     } npcAlert;
     std::map<int, std::array<OverlayArt, 2>> shrineOverlays, combatStateOverlays;
-    SceneAssets(Archives &archives, const GameSession &session);
+    SceneAssets(Archives &archives, const GameSession &session, const IMapAssetSource &source);
     static std::string itemArtKey(const ItemInstance &item);
     // Returns the frame set for a live unit, building and caching it on first use.
     // Unimplemented classes keep the authorized substitute set, as at load time.

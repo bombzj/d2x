@@ -4,15 +4,21 @@
 
 后续分步解耦按 [技术改造方案](../TECHNICAL_REFACTOR_PLAN.md) 执行，覆盖客户端契约、角色／单位、技能、物品／库存、地图、NPC／任务／掉落及本地／远端后端。进度按模块基线记录，不能把尚未实施的规划目录或接口当作已存在。
 
+第八项死亡奖励源码已接入：`rewards/death_settlement.*` 只协调显式事实和宿主端口，`quest/death.*` 生成首杀／任务计划，`rewards/experience.*` 与 `death_wave.*` 提供纯计算；内容层准备掉落与经验表值，本地会话执行任务物件、库存交付和成长。`EnemyDied`、掉落请求／计划和物品生成值均已独立拆头。该批已随第九项收尾构建／有限冒烟，入口、执行顺序与限制见[奖励基线](REWARDS.md)。
+
+第九项本地宿主／固定步基础切片已收尾并构建／简单冒烟：会话命令／步进、模拟阶段与绑定连续输入分开，表现目标将会话依赖收为 PRIVATE；顺序、兼容入口与验证限制见[会话基线](SESSION.md#九项重构联合收尾与冒烟)。
+
 会话公共头隔离（P0）已完成：`GameSession` 通过不透明实现拥有原会话状态，现有查询／命令仍作兼容；Windows Release构建与临时角色移动／跨区／原D2S恢复冒烟通过。当前入口、生命周期与准确验证范围见 [会话基线](SESSION.md)。
 
 客户端移动／受控人物视图切片已接 `IActorClient` 和 `LocalActorClient`，真实点击、施法显示、跨区恢复及两实例退出 0 通过；完整 UI 迁移仍未完成，见 [客户端基线](CLIENT.md)。
 
 库存UI已接 `InventoryView`／`IInventoryClient`／`LocalInventoryClient`，包裹、腰带、仓库及方块沿用原事务；实际拖放、装备、转移、金币、Cursor保存恢复与独立加载通过，见 [库存基线](INVENTORY.md)。NPC／地面／佣兵兼容调用仍待迁移。
 
-角色保存值已独立为 `CharacterRecord`／`HirelingRecord`，编码实际依赖不再包含完整世界状态；成长／技能／佣兵保存恢复、临时效果清除与独立进程加载通过，见 [角色基线](CHARACTER.md)。成长／学习／选择规则已迁至 `character/progression.*`／`learning.*`，宿主传入本人上下文、任务奖励与装备等级来源；角色／技能 UI 通过 `CharacterView`／`ICharacterClient`。完整活角色所有权与多玩家上下文尚未完成；通用技能执行的已迁移范围见下文。
+角色保存值已独立为 `CharacterRecord`／`HirelingRecord`，编码实际依赖不再包含完整世界状态；成长／技能／佣兵保存恢复、临时效果清除与独立进程加载通过，见 [角色基线](CHARACTER.md)。成长／学习／选择规则已迁至 `character/progression.*`／`learning.*`，宿主传入本人上下文、任务奖励与装备等级来源；角色／技能 UI 通过 `CharacterView`／`ICharacterClient`。活角色已组合为资料／资源／移动／动作／临时技能，完整多玩家上下文和区域所有权尚未完成；通用技能执行的已迁移范围见下文。
 
-NPC 对白／菜单／任务提示和两幕日志已接 `INpcClient`／`IQuestClient`；原文与显示资格在本地适配准备，UI 不再包含任务簿或会话。任务、NPC 手势抽为独立控制实现，战斗／神殿叠层与 NPC 提示分文件。实际菜单、购买、完成事件与日记符号显示覆盖见 [NPC／任务基线](NPC_QUEST.md)；复杂商店／佣兵查询和 P7 事务尚未拆完。
+NPC 对白／菜单／任务提示、两幕日志与商店／佣兵显示已接 `INpcClient`／`IQuestClient`；原文、货架／报价、候选及属性在本地适配准备。对应 UI 不再包含任务簿、完整状态或会话；任务、NPC 和交易手势抽为独立控制实现，战斗／神殿叠层与 NPC 提示分文件。实际界面、交易／雇佣／装备和有限验证范围见[NPC／任务基线](NPC_QUEST.md)；世界任务物品命中、单位／物件显示、其他资源及 P7 权威事务尚未拆完。
+
+第六项地图／区域基础切片已接入并随第七项通过构建／有限冒烟：`MapTerrain` 与活导航分开；固定槽位／解码缓存归 `RegionStore`，休眠战斗状态归 `AreaRepository`，当前活区仍在模拟器。加载／跨区宿主编排移到 `session_regions.cpp`。自动地图、出口／传送点及门户手势读 `IMapClient` 值投影并提交原意图；地形及自动地图图形准备经单独 `IMapAssetSource`。区域 ID、计划、物件／出口类型拆头，SceneAssets 公共头不再包含完整 region；旧消费者在实现中显式声明依赖。完整世界显示／光照及多观察者调度待后续，见[地图基线](MAP.md)。
 
 公共单位续批：身份／关系／伤害请求分头，公共 `CombatUnit` 只保留能力与分类，具体记录绑定归内部 `RuntimeCombatUnit`；技能重复视图／转换和抗性虚查询已删除。当前清理已通过 Windows Release 与三职业简单冒烟，见 [单位基线](UNITS.md)。
 
@@ -46,6 +52,8 @@ NPC 对白／菜单／任务提示和两幕日志已接 `INpcClient`／`IQuestCl
 
 鼠标地面移动：`输入 → Controller → IActorClient → LocalActorClient → GameSession/Simulation → ActorView → View`。库存手势：`输入 → Controller → IInventoryClient → LocalInventoryClient → 原库存事务 → InventoryView/事件 → View`。NPC 服务同样经 `INpcClient → LocalNpcClient`；任务日志从 `LocalQuestClient → QuestView` 显示，选择与幕页手势不修改权威进度。其余操作仍经原会话命令链。
 
+第四项装备／来源基础切片已接入并随第五项通过 Windows Release：`items/equipment_loadout.*` 绑定短期借用，需求／贡献／战斗与装备派生规则不包含库存服务或完整内容目录；内容层解析原表并一次准备套装元数据。`items/skill_sources.*` 筛选已支持授予，`skills/rank_sources.*` 合成显式等级／加成；角色刷新独立到 `session_character_stats.cpp`。原内容层战斗贡献已迁移删除，本次仅做代表性佣兵装备冒烟，未认证全部规则或存档往返，详见[库存基线](INVENTORY.md#装备与技能来源第四项)。
+
 ## 目录与头文件边界
 
 - `content/{items,monsters,skills,character,npc,world}` 按原表所属领域组织；根层保留 `classic_data`、`lod_data` 和公共字符串表入口。
@@ -63,7 +71,7 @@ NPC 对白／菜单／任务提示和两幕日志已接 `INpcClient`／`IQuestCl
 - `d2x_content → resources/items/gameplay`，把原表适配为规则类型；`d2x_session → gameplay/world/content/population`，承担内容查询与按需区域加载。目录 `gameplay` 不能整体视为无 MPQ 依赖的库。
 - `d2x_persistence → gameplay/items/content`，使用内容定义校验原 D2S；它包含 `CharacterSaveData` 值类型，但不链接 `d2x_session`。`save_file.cpp` 的平台文件替换分支与 `d2s_*` 编码分离。
 - 原 MPQ 是内容数据的唯一运行时来源；`content` 在加载时解析原 TXT 并提供类型化只读定义。提取文件仅供人工核对，不随源码维护或提交。算法常量与 MPQ 内容字段应分开记录。
-- `content/character/character_attributes.*` 从 `CharStats.txt` 导入各职业起点与增长，`content/character/character_progression.*` 从 `Experience.txt` 导入各职业阈值；职业代码与原人物图形 token 在适配层匹配，不存放成长数值。`content/items/equipment_modifiers.*` 将装备实例的原 Properties 直接属性解译为 MPQ 无关的 `CharacterModifiers`。会话按需求闭包重算角色／装备快照；UI 只读显示，普通命中公式在 `gameplay/combat/accuracy.*`。
+- `content/character/character_attributes.*` 从 `CharStats.txt` 导入各职业起点与增长，`content/character/character_progression.*` 从 `Experience.txt` 导入各职业阈值；职业代码与原人物图形 token 在适配层匹配，不存放成长数值。`content/items/equipment_modifiers.*` 准备套装事实并绑定原属性解析，`items/equipment_contributions.*`／`equipment_combat.*` 执行需求闭包和属性／战斗贡献。`session_character_stats.cpp` 重算角色／装备快照；UI 只读显示，普通命中公式在 `gameplay/combat/accuracy.*`。
 - `d2x_world → content/navigation`；生成器只产出资源配方，不创建 GPU 对象。
 - `d2x_population → content/gameplay`；怪物计划与实体创建分离。
 - `GameSession` 持有区域、模拟、物品服务和掉落状态。`Simulation` 借用稳定区域网格与房间索引。
@@ -113,3 +121,5 @@ NPC 对白／菜单／任务提示和两幕日志已接 `INpcClient`／`IQuestCl
 - 新物品效果：从 `content` 导入定义，在玩法／事务服务执行；HUD 仅展示结果。
 - 新 UI：布局、绘制、命中分开；技能图标经 `Skills → SkillDesc → DC6`。
 - 修改持久状态：核对原 D2S v96 字段，在 `persistence/d2s_*` 映射并同步 `state`、`character_save` 与支持文档。不升级格式、不写私有字段或规则指纹；未支持数据明确拒绝。
+
+第七项将 NPC 路径移至 `d2x_world` 的区域推进，交互几何依赖轻量目标与导航；`d2x_gameplay` 中任务交谈／进入区域规则产出内部计划，不读取完整人物、怪物、库存或会话。宿主复验 `NpcAccess` 后执行原奖励，再提交任务记录；`d2x_items` 原子替换连接卷轴／灌注。实际编译依赖及冒烟边界见[NPC／任务基线](NPC_QUEST.md#npc任务与奖励协调第七项)。

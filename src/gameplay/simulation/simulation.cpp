@@ -1,10 +1,11 @@
-#include "gameplay/skills/weapon_caster.hpp"
-#include "gameplay/skills/caster.hpp"
+#include "gameplay/units/resources.hpp"
+#include "gameplay/units/actions.hpp"
 #include "gameplay/skills/runtime.hpp"
+#include "gameplay/skills/caster.hpp"
+#include "gameplay/skills/weapon_caster.hpp"
 #include "gameplay/simulation/simulation.hpp"
 #include "core/random.hpp"
 #include <algorithm>
-#include <type_traits>
 
 namespace d2x {
 void Simulation::emit(QuestAdvanced event) {
@@ -12,20 +13,16 @@ void Simulation::emit(QuestAdvanced event) {
     events_.emplace_back(std::in_place_type<QuestAdvanced>, std::move(event));
 }
 void Simulation::clearActions() {
-    state_.player.pendingCast.reset();
+    state_.player.skills.pendingCast.reset();
     skills().stopChannel(skillCaster(state_.player.id));
     auto &p = state_.player;
-    p.route.clear();
-    p.attackTarget = {};
-    p.throwAttack = p.leftHandAttack = false;
-    p.castTime = p.meleeTime = p.hitTime = 0;
-    p.weaponAttack.reset();
-    p.charge.reset();
-    p.approachSkill.reset();
-    p.blockAnimation.reset();
-    p.attackPosition.reset();
-    p.moving = false;
-    p.runningNow = false;
+    clearAttackIntent(skillWeaponCaster(p.id));
+    p.actions.castTime = p.actions.meleeTime = p.actions.hitTime = 0;
+    cancelWeaponAction(skillWeaponCaster(p.id));
+    p.actions.charge.reset();
+    p.actions.blockAnimation.reset();
+    p.movement.moving = false;
+    p.movement.runningNow = false;
     state_.message.clear();
 }
 AreaState Simulation::leaveArea() {
@@ -38,13 +35,13 @@ void Simulation::enterArea(const Grid &grid, const RoomLayout &rooms, Vec spawn,
     safeZone_ = safeZone;
     state_.area = std::move(area);
     clearActions();
-    state_.player.pos = state_.player.previous = grid.walkable(spawn, playerMovement) ? spawn : grid.nearest(spawn, playerMovement);
+    state_.player.movement.pos = state_.player.movement.previous = grid.walkable(spawn, playerMovement) ? spawn : grid.nearest(spawn, playerMovement);
     if (!state_.area.initialized) {
         state_.area.pendingSpawns.assign(monsters.begin(), monsters.end());
         state_.area.initialized = true;
     }
     activateMonsters();
-    relocateCompanions(state_.player.id, state_.player.pos);
+    relocateCompanions(state_.player.id, state_.player.movement.pos);
     emit(RegionEntered{state_.area.region, coordinateOffset});
 }
 void Simulation::restartArea(Vec spawn, std::span<const MonsterSpawn> monsters) {
@@ -56,26 +53,26 @@ void Simulation::restartArea(Vec spawn, std::span<const MonsterSpawn> monsters) 
 }
 void Simulation::heal() {
     auto &p = state_.player;
-    p.hp = state_.player.attributes.maxLife;
-    p.mana = state_.player.attributes.maxMana;
-    p.stamina = state_.player.attributes.maxStamina;
-    p.healing.clear();
-    p.manaRestoration.clear();
+    p.resources.hp = state_.player.attributes.maxLife;
+    p.resources.mana = state_.player.attributes.maxMana;
+    p.resources.stamina = state_.player.attributes.maxStamina;
+    p.resources.healing.clear();
+    p.resources.manaRestoration.clear();
     // NPC healing cures ailments; it does not dispel beneficial item states.
     // D2MOO SUNITNPC_HealPlayer removes poison/freeze/curable states only.
-    p.chill = 0;
-    p.poisonRemaining = p.poisonPerSecond = 0;
-    p.webSlowRemaining = 0;
-    p.webSlowPercent = 0;
-    p.webSource = {};
+    p.resources.chill = 0;
+    p.resources.poisonRemaining = p.resources.poisonPerSecond = 0;
+    p.resources.webSlowRemaining = 0;
+    p.resources.webSlowPercent = 0;
+    p.resources.webSource = {};
     if (p.hireling.active() && hirelingAttributes_) {
         auto &merc = p.hireling;
         merc.hp = float(hirelingAttributes_().maxLife);
         merc.chill = merc.poisonRemaining = merc.poisonPerSecond = 0;
         merc.webSlowRemaining = 0; merc.healing.clear();
     }
-    p.dead = false;
-    p.deathTime = 0;
+    p.actions.dead = false;
+    p.actions.deathTime = 0;
 }
 void Simulation::spawnEnemies(std::span<const MonsterSpawn> spawns) {
     auto &area = state_.area;
@@ -129,135 +126,8 @@ Enemy *Simulation::findEnemy(EntityId id) {
     for (auto &companion : state_.companions) if (companion.id == id) return &companion;
     return nullptr;
 }
-void Simulation::execute(const GameCommand &command) {
-    if (!grid_)
-        return;
-    std::visit(
-        [this](const auto &intent) {
-            using T = std::decay_t<decltype(intent)>;
-            if constexpr (std::is_same_v<T, MoveTo>)
-                moveTo(intent.position);
-            else if constexpr (std::is_same_v<T, Attack>)
-                requestAttack(intent);
-            else if constexpr (std::is_same_v<T, DebugKill>) {
-                if (!state_.player.dead)
-                    if (auto enemy = findEnemy(intent.target);
-                        enemy && enemy->hp > 0 && (intent.ignoreActivation || active(enemy->pos)))
-                        damageEnemy(*enemy, enemy->hp, state_.player.id, 0, intent.ignoreActivation);
-            }
-            else if constexpr (std::is_same_v<T, ToggleRun>)
-                state_.player.running = !state_.player.running;
-            else if constexpr (std::is_same_v<T, StopMoving>)
-                stopWalking();
-            else if constexpr (std::is_same_v<T, StopChannel>)
-                skills().stopChannel(skillCaster(state_.player.id));
-        },
-        command);
-}
 void Simulation::combatEffectsChanged(std::span<const RemovedCombatEffect> removed) {
     if (combatEffectsChanged_) combatEffectsChanged_();
-    for (const auto &entry : removed)
-        if (entry.effect.spec.restoreStaminaOnRemoval)
-            state_.player.stamina = float(state_.player.attributes.maxStamina);
-}
-void Simulation::tick(float dt, Vec keyboard, bool forceRun) {
-    if (!grid_ || dt <= 0)
-        return;
-    auto &p = state_.player;
-    forceRun_ = forceRun;
-    p.previous = p.pos;
-    ++state_.frame;
-    if (p.blockAnimation && ++p.blockAnimation->ticks >= p.blockAnimation->timing.durationTicks())
-        p.blockAnimation.reset();
-    state_.time += dt;
-    if (auto removed = p.combatEffects.expire(state_.frame); !removed.empty())
-        combatEffectsChanged(removed);
-    if (!p.aura || !p.combatEffects.hasState(p.aura->definition.ownerState.id, state_.frame))
-        p.auraSuppressesManaRegen = false;
-    skills().advanceSkillCasting(skillCaster(p.id), dt, keyboard.length() > .1f);
-    skills().advanceWeaponAttack(skillWeaponCaster(p.id));
-    p.castTime = std::max(0.f, p.castTime - dt);
-    p.hitTime = std::max(0.f, p.hitTime - dt);
-    p.chill = std::max(0.f, p.chill - dt);
-    p.webSlowRemaining = std::max(0.f, p.webSlowRemaining - dt);
-    if (p.webSlowRemaining == 0) {
-        p.webSlowPercent = 0;
-        p.webSource = {};
-    }
-    p.moving = false;
-    if (p.dead)
-        p.deathTime += dt;
-    for (auto unit : combatUnits()) {
-        if (!active(*unit.position)) continue;
-        if (unit.monster) {
-            unit.records.monster->hitFlash = std::max(0.f, unit.records.monster->hitFlash - dt);
-            if (!unit.alive()) unit.records.monster->deathAge += dt;
-        }
-        if (!unit.alive()) continue;
-        auto periodic = [&](auto &record) {
-            if (record.poisonRemaining > 0) {
-                const float elapsed = std::min(dt, record.poisonRemaining);
-                record.poisonRemaining -= elapsed;
-                float amount = record.poisonPerSecond * elapsed;
-                // Player poison cannot deliver the killing blow; monster poison can.
-                if (unit.player || safeZone_) amount = std::min(amount, std::max(0.f, *unit.life - 1.f));
-                dealDamage({record.poisonSource, unit.id, amount, MonsterDamageType::Poison, 0, true, false, false, DamagePermission::ExistingEffect});
-                if (record.poisonRemaining <= 0) record.poisonPerSecond = 0;
-            }
-            if (record.openWoundsRemaining > 0) {
-                const float elapsed = std::min(dt, record.openWoundsRemaining);
-                record.openWoundsRemaining -= elapsed;
-                dealDamage({record.openWoundsSource, unit.id, record.openWoundsPerSecond * elapsed,
-                            MonsterDamageType::Physical, 0, true, false, false, DamagePermission::ExistingEffect});
-                if (record.openWoundsRemaining <= 0) record.openWoundsPerSecond = 0;
-            }
-        };
-        if (unit.player) periodic(*unit.records.player);
-        else if (unit.hireling) periodic(*unit.records.hireling);
-        else periodic(*unit.records.monster);
-    }
-    if (!p.dead) {
-        updatePotions(dt);
-        updatePlayer(dt, keyboard);
-        skills().createBlazeTrail(skillCaster(p.id));
-        activateMonsters();
-    }
-    updateMonsterEnchantments();
-    skills().updateAuras();
-    skills().advanceThunderStorm(skillCaster(p.id));
-    updateMonsters(dt);
-    updateCompanions(dt);
-    updateMissiles(dt);
-    if (!p.dead && p.hp <= 0) {
-        p.dead = true;
-        combatEffectsChanged(p.combatEffects.onDeath(EffectUnitKind::Player));
-        skills().stopChannel(skillCaster(p.id));
-        p.pendingCast.reset();
-        p.weaponAttack.reset();
-        p.charge.reset();
-        p.blockAnimation.reset();
-        p.approachSkill.reset();
-        p.attackPosition.reset();
-        p.meleeTime = 0;
-        p.castTime = 0;
-        p.healing.clear();
-        p.manaRestoration.clear();
-        p.chill = 0;
-        p.poisonRemaining = p.poisonPerSecond = 0;
-        p.route.clear();
-        p.attackTarget = {};
-        p.throwAttack = false;
-        p.leftHandAttack = false;
-        state_.message = "You have died. Press Ctrl+R to return.";
-        for (const auto &pet : state_.companions)
-            if (pet.hp > 0 && pet.allegiance.owner == p.id) enforceSummonLimit(p.id, pet.summonSkill, 0);
-        emit(PlayerDied{p.id});
-    }
-    if (!p.dead && state_.area.pendingSpawns.empty() && !state_.area.enemies.empty() &&
-        state_.area.kills == int(state_.area.enemies.size()))
-        state_.message = "Area cleared. Ctrl+F2: travel onward. Ctrl+R: repopulate the area.";
-    for (auto &e : state_.area.effects)
-        e.age += dt;
-    std::erase_if(state_.area.effects, [](const Effect &e) { return e.age >= e.duration; });
+    restoreStaminaOnEffectRemoval(state_.player.resources.stamina, float(state_.player.attributes.maxStamina), removed);
 }
 } // namespace d2x

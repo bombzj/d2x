@@ -1,4 +1,5 @@
 #include "gameplay/loot/loot.hpp"
+#include <utility>
 
 namespace d2x {
 std::vector<LootDrop> LootSystem::settle(LootRequest request, LootPlan plan) {

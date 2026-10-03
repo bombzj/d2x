@@ -1,3 +1,5 @@
+#include "gameplay/items/equipment_inventory.hpp"
+#include "gameplay/items/equipment_stats.hpp"
 #include "gameplay/character/runtime_record.hpp"
 #include "gameplay/simulation/simulation.hpp"
 #include "gameplay/session/session_impl.hpp"
@@ -24,10 +26,10 @@ int GameSessionImpl::validateCharacterRestore(const CharacterSaveData &data) con
     require(data.difficulty == state().population.difficulty &&
                 data.difficulty >= 0 && data.difficulty <= 2,
             "difficulty differs; reopen with --load");
-    const auto home = std::find_if(regions_.begin(), regions_.end(), [&](const Region &region) {
+    const auto home = std::find_if(world_.regions().begin(), world_.regions().end(), [&](const Region &region) {
         return region.definition.id == data.lastRegion && region.definition.safe;
     });
-    require(home != regions_.end(), "act town is unavailable");
+    require(home != world_.regions().end(), "act town is unavailable");
     const auto &player = data.player;
     const auto &definition = definitionFor(player.characterClass);
     require(player.id == state().player.id && data.nextEntityId > 0, "player identity");
@@ -49,9 +51,9 @@ int GameSessionImpl::validateCharacterRestore(const CharacterSaveData &data) con
                             [&](const auto &entry) { return entry.second == name; }),
                     "NPC introduction identity");
     for (const auto &[id, activated] : data.waypoints) {
-        const auto destination = std::find_if(regions_.begin(), regions_.end(),
+        const auto destination = std::find_if(world_.regions().begin(), world_.regions().end(),
             [&](const Region &region) { return region.definition.id == id; });
-        require(destination != regions_.end() &&
+        require(destination != world_.regions().end() &&
                     worldContent_.levels().contains(int(id)) && worldContent_.level(int(id)).waypoint >= 0 &&
                     worldContent_.level(int(id)).waypoint != 255, "activated waypoint region");
     }
@@ -63,7 +65,7 @@ int GameSessionImpl::validateCharacterRestore(const CharacterSaveData &data) con
                 "duplicate or invalid entity ID");
     };
     registerId(player.id);
-    for (const auto &region : regions_)
+    for (const auto &region : world_.regions())
         for (const auto &object : region.objects) registerId(object.id);
     for (const auto &[id, container] : data.inventory.containers) registerId(id);
     unsigned cubes = 0, cubeContents = 0;
@@ -125,7 +127,7 @@ int GameSessionImpl::validateCharacterRestore(const CharacterSaveData &data) con
                                                            access, actor, nullptr);
         require(bool(plan) && plan.changes.empty(), "equipment requirements or hand combination");
     }
-    return int(home - regions_.begin());
+    return int(home - world_.regions().begin());
 }
 
 void GameSessionImpl::restore(CharacterSaveData data) {
@@ -134,34 +136,34 @@ void GameSessionImpl::restore(CharacterSaveData data) {
         ensureRegion(RegionId(actTownLevels[size_t(level->second.act)]), true);
     data = prepareCharacterRestore(std::move(data));
     const int current = validateCharacterRestore(data);
-    auto restoredPlayer = restoreCharacterRecord(std::move(data.player), regions_[current].map.spawn);
-    const auto &definition = definitionFor(restoredPlayer.characterClass);
+    auto restoredPlayer = restoreCharacterRecord(std::move(data.player), world_.regions()[current].map.spawn);
+    const auto &definition = definitionFor(restoredPlayer.character.characterClass);
     EntityIds validationIds;
     InventoryService equipmentInventory(validationIds, inventory_.catalog(),
                                         {content_.stashLayout.columns, content_.stashLayout.rows},
                                         {content_.cubeLayout.columns, content_.cubeLayout.rows});
     equipmentInventory.state_ = data.inventory;
     equipmentInventory.itemProperties_ = inventory_.itemProperties_;
-    const auto base = deriveCharacterAttributes(definition, restoredPlayer.level, restoredPlayer.allocated);
+    const auto base = deriveCharacterAttributes(definition, restoredPlayer.character.level, restoredPlayer.character.allocated);
     const EquipmentActor baseActor{definition.code, base.strength, base.dexterity,
-                                   restoredPlayer.level, base.blockFactor, restoredPlayer.weaponSet};
+                                   restoredPlayer.character.level, base.blockFactor, restoredPlayer.character.weaponSet};
     auto modifiers = resolveEquipmentModifiers(content_, equipmentInventory, data.containers, baseActor);
-    applySkillPassives(modifiers, content_.skills, restoredPlayer.skillRanks, restoredPlayer.combatEffects, 0);
-    auto characterStats = deriveCharacterAttributes(definition, restoredPlayer.level,
-        restoredPlayer.allocated, modifiers, content_.resistancePenalty.at(size_t(data.difficulty)));
+    applySkillPassives(modifiers, content_.skills, restoredPlayer.character.skillRanks, restoredPlayer.combatEffects, 0);
+    auto characterStats = deriveCharacterAttributes(definition, restoredPlayer.character.level,
+        restoredPlayer.character.allocated, modifiers, content_.resistancePenalty.at(size_t(data.difficulty)));
     const EquipmentActor actor{definition.code, characterStats.strength, characterStats.dexterity,
-                               restoredPlayer.level, characterStats.blockFactor, restoredPlayer.weaponSet};
-    applyWarmth(characterStats, restoredPlayer, definition, equipmentInventory, data.containers, actor);
-    const auto equipmentStats = deriveEquipmentStats(equipmentInventory, data.containers, actor,
+                               restoredPlayer.character.level, characterStats.blockFactor, restoredPlayer.character.weaponSet};
+    applyWarmth(characterStats, restoredPlayer.character, definition, equipmentInventory, data.containers, actor);
+    const auto equipmentStats = deriveEquipmentStats(borrowEquipmentLoadout(equipmentInventory, data.containers), actor,
                                                      modifiers.defense, modifiers.combat, characterStats.baseAttackRating);
     auto nextRandom = random_;
     std::map<EntityId, std::vector<VendorOffer>> nextVendorStocks;
-    for (const auto &region : regions_)
+    for (const auto &region : world_.regions())
         for (const auto &object : region.objects)
             if (auto vendor = content_.vendors.find(object.npcClass); vendor != content_.vendors.end()) {
                 const uint64_t seed = childRandom(nextRandom);
                 nextVendorStocks.emplace(object.id, planVendorStock(content_, vendor->second,
-                    unsigned(restoredPlayer.level), data.difficulty, seed));
+                    unsigned(restoredPlayer.character.level), data.difficulty, seed));
             }
     WorldState nextWorld;
     nextWorld.mapSeed = data.mapSeed;
@@ -174,9 +176,9 @@ void GameSessionImpl::restore(CharacterSaveData data) {
     nextWorld.waypoints = std::move(data.waypoints);
     nextWorld.area.region = data.lastRegion;
     nextWorld.area.initialized = true;
-    std::vector<AreaState> nextAreas(regions_.size());
-    for (size_t index = 0; index < regions_.size(); ++index)
-        nextAreas[index].region = regions_[index].definition.id;
+    std::vector<AreaState> nextAreas(world_.regions().size());
+    for (size_t index = 0; index < world_.regions().size(); ++index)
+        nextAreas[index].region = world_.regions()[index].definition.id;
     auto npcMotions = initialNpcMotions_;
     CharacterDefinition restoredDefinition = definition;
     static_assert(std::is_nothrow_move_assignable_v<WorldState>);
@@ -192,13 +194,13 @@ void GameSessionImpl::restore(CharacterSaveData data) {
     characterDefinition_ = std::move(restoredDefinition);
     simulation_->state_.player.attributes = characterStats;
     simulation_->state_.player.equipment = equipmentStats;
-    simulation_->grid_ = &regions_[current].map.grid;
-    simulation_->rooms_ = &regions_[current].map.activation;
-    simulation_->safeZone_ = regions_[current].definition.safe;
+    simulation_->grid_ = &world_.regions()[current].map.grid;
+    simulation_->rooms_ = &world_.regions()[current].map.activation;
+    simulation_->safeZone_ = world_.regions()[current].definition.safe;
     simulation_->events_.clear();
     inventory_.state_ = std::move(data.inventory);
     inventory_.replenishTimers_.clear();
-    inactiveAreas_.swap(nextAreas);
+    areas_.replace(std::move(nextAreas));
     playerContainers_ = data.containers;
     loot_.restore({childRandom(random_), {}, {}});
     vendorStocks_.swap(nextVendorStocks);
@@ -206,11 +208,11 @@ void GameSessionImpl::restore(CharacterSaveData data) {
     hirelingOffers_.clear();
     soldVendorOffers_.clear();
     shrineStatuses_.clear();
-    for (auto &region : regions_)
+    for (auto &region : world_.regions())
         std::erase_if(region.objects, [](const auto &object) {
             return object.questDestination.has_value() || (object.objectClass == 100 && object.contentKey.empty());
         });
-    for (auto &region : regions_)
+    for (auto &region : world_.regions())
         for (auto &object : region.objects)
             if (object.operatedAt >= 0) {
                 object.operatedAt = -1;
@@ -227,7 +229,7 @@ void GameSessionImpl::restore(CharacterSaveData data) {
                     object.interaction = Interaction::Loot;
                 }
             }
-    for (auto &region : regions_) {
+    for (auto &region : world_.regions()) {
         region.objectSeed = childRandom(random_);
         for (auto &object : region.objects) {
             if (!object.chest) continue;
@@ -238,7 +240,7 @@ void GameSessionImpl::restore(CharacterSaveData data) {
         }
     }
     for (auto &motion : npcMotions)
-        for (auto &region : regions_)
+        for (auto &region : world_.regions())
             for (auto &object : region.objects)
                 if (object.id == motion.id) {
                     object.pos = motion.position;
@@ -253,23 +255,24 @@ void GameSessionImpl::restore(CharacterSaveData data) {
     if (simulation_->state_.player.hireling.sourceRow >= 0) {
         auto &merc = simulation_->state_.player.hireling;
         merc.id = ids_.allocate();
-        merc.pos = simulation_->state_.player.pos;
+        merc.pos = simulation_->state_.player.movement.pos;
         if (merc.hp > 0) merc.hp = float(hirelingStats().base.life);
     }
     current_ = current;
-    auto &radament = simulation_->state_.player.actOneQuests.at(size_t(state().population.difficulty)).at(questIndex(QuestId::RadamentsLair));
+    auto &radament = simulation_->state_.player.character.actOneQuests.at(size_t(state().population.difficulty)).at(questIndex(QuestId::RadamentsLair));
     if (radament.stage == uint32_t(RadamentStage::Rewarded) && (radament.flags & radamentBookPending) && !carriesQuestItem("ass")) {
         radament.stage = uint32_t(RadamentStage::Unstarted);
         radament.flags = 0;
     }
     tombOpeningFrame_.reset();
     tombCollapseFrame_.reset();
-    for (auto &region : regions_) region.map.restoreTombWall();
+    for (auto &region : world_.regions()) region.map.restoreTombWall();
     sunDarkeningFrame_.reset();
     reconcileCainObjects();
     updateActTwoObjects();
-    for (auto &region : regions_) region.refreshObjectCollision(state().time);
+    for (auto &region : world_.regions()) region.refreshObjectCollision(state().time);
     pending_.clear();
+    playerInput_ = {};
     pickup_ = {};
     pickupToCursor_ = false;
     pendingInteraction_ = {};

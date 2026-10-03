@@ -244,7 +244,7 @@ NpcQuestDialogue GameSessionImpl::npcQuestDialogue(std::string_view speaker) con
                               cain == uint32_t(CainStage::BarkAcquired) && !carried("bks")) &&
                              !(*advancing == ActOneQuest::ToolsOfTheTrade &&
                               tools == uint32_t(ToolsStage::MalusAcquired) &&
-                              (state().player.level < 8 || !carried("hdm")));
+                              (state().player.character.level < 8 || !carried("hdm")));
         return {speech, speech && hasItem ? advancing : std::nullopt, speech && hasItem, {}};
     }
     // A1Q6's three separate NPC reaction lists are acknowledged independently.
@@ -261,10 +261,10 @@ NpcQuestDialogue GameSessionImpl::npcQuestDialogue(std::string_view speaker) con
 bool GameSessionImpl::npcQuestAlert(const WorldObject &npc) const {
     if (npc.questHidden || npc.npcClass.empty() || engagedNpc_ == npc.id ||
         !region().definition.safe) return false;
-    const auto &introductions = state().player.npcIntroductions.at(size_t(state().population.difficulty));
+    const auto &introductions = state().player.character.npcIntroductions.at(size_t(state().population.difficulty));
     // ACT1Intro only marks Akara; A1Q0 marks Warriv. Other introductions have no alert.
     if (npc.act == 0 && !introductions.contains(npc.name) &&
-        introSpeech(content_.npcDialogues, npc.name, state().player.characterClass) &&
+        introSpeech(content_.npcDialogues, npc.name, state().player.character.characterClass) &&
         (npc.name == "Warriv" || (npc.name == "Akara" &&
          quest(ActOneQuest::DenOfEvil).stage < uint32_t(DenStage::Rewarded)))) return true;
     return npcQuestDialogue(npc.name).automatic;
@@ -274,7 +274,7 @@ std::optional<unsigned> GameSessionImpl::denMonstersRemaining() const {
     if (!denRegion_) return {};
     const AreaState *den = state().area.region == *denRegion_ ? &state().area : nullptr;
     if (!den)
-        for (const auto &area : inactiveAreas_)
+        for (const auto &area : areas_.parked())
             if (area.region == *denRegion_) { den = &area; break; }
     if (!den || !den->initialized) return {};
     return unsigned(den->pendingSpawns.size()) + unsigned(std::count_if(

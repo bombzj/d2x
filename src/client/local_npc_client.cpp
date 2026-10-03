@@ -31,7 +31,7 @@ const NpcConversationView &LocalNpcClient::read(EntityId npc) const {
         const auto &content = session_.content();
         const auto &dialogues = content.npcDialogues;
         if (const auto *intro = introSpeech(dialogues, view.speaker,
-            session_.state().player.characterClass, object->act)) view.introduction = intro->text;
+            session_.state().player.character.characterClass, object->act)) view.introduction = intro->text;
         for (auto [id, speech] : session_.npcQuestTopics(view.speaker)) {
             std::string key = "qsts" + speech->quest;
             std::transform(key.begin(), key.end(), key.begin(), [](unsigned char c) { return char(std::tolower(c)); });

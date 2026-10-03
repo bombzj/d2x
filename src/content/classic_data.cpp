@@ -4,6 +4,7 @@
 #include "content/character/character_attributes.hpp"
 #include "content/character/character_progression.hpp"
 #include "content/items/equipment_data.hpp"
+#include "content/items/equipment_modifiers.hpp"
 #include "content/items/item_appearance.hpp"
 #include "content/items/item_affixes.hpp"
 #include "content/items/item_properties.hpp"
@@ -367,6 +368,7 @@ ClassicData loadClassicData(Archives &archives) {
         for (auto &record : data.setItems) {
             resolveSpecialArt(record);
         }
+        prepareEquipmentSetData(data);
         loadMagicAffixData(data);
         loadLodTreasureData(data);
         return data;

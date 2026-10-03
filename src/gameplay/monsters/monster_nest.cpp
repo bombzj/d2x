@@ -33,7 +33,7 @@ std::optional<MonsterSpawn> Simulation::nestSpawn(
         else if (offsetX == radius && offsetY > -radius) --offsetY;
         else --offsetX;
         if (!grid_->walkable(position, spawnRule(child)) ||
-            (position - state_.player.pos).length() < .8f) continue;
+            (position - state_.player.movement.pos).length() < .8f) continue;
         bool occupied = false;
         for (const auto &other : state_.area.enemies)
             if (other.hp > 0 && (position - other.pos).length() < .8f) {

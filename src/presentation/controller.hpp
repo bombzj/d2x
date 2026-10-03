@@ -8,6 +8,7 @@ class IActorClient;
 class IInventoryClient;
 class ICharacterClient;
 class INpcClient;
+class IMapClient;
 struct InventoryItemView;
 class SceneView;
 class SceneController {
@@ -16,6 +17,7 @@ class SceneController {
     IInventoryClient &inventoryClient_;
     ICharacterClient &characterClient_;
     INpcClient &npcClient_;
+    IMapClient &mapClient_;
     SceneView &view_;
     float repeatClick_ = 0;
     bool pickupClick_ = false;
@@ -31,11 +33,18 @@ class SceneController {
     Vec movement_;
     bool temporaryRun_ = false;
     void click(Vec mouse);
+    bool handleMapClick(Vec mouse);
+    bool handleTravel(const FrameInput &input);
     void openGameMenu(Vec mouse);
     bool handleInventory(const FrameInput &input);
     bool handleSkills(const FrameInput &input);
     bool handleNpcMenu(const FrameInput &input);
     bool handleNpcDialogue(const FrameInput &input);
+    bool handleNpcShop(const FrameInput &input);
+    bool handleHirelingList(const FrameInput &input);
+    bool handleHirelingPanel(const FrameInput &input);
+    bool handleHirelingPortrait(const FrameInput &input);
+    bool handleHirelingToggle(const FrameInput &input);
     bool handleQuestPress(const FrameInput &input);
     bool handleQuestToggle(const FrameInput &input);
     bool handleQuestPanel(const FrameInput &input);
@@ -49,7 +58,7 @@ class SceneController {
 
   public:
     SceneController(GameSession &session, IActorClient &actorClient, IInventoryClient &inventoryClient,
-                    ICharacterClient &characterClient, INpcClient &npcClient, SceneView &view);
+                    ICharacterClient &characterClient, INpcClient &npcClient, IMapClient &mapClient, SceneView &view);
     bool handle(const FrameInput &input, float elapsed);
     void resetInput();
     Vec movement() const { return movement_; }

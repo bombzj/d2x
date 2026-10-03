@@ -53,9 +53,9 @@ std::set<EntityId> itemIds(const GameSession &session) {
 }
 void deathDetails(Json &result, const GameSession &session, EntityId id,
                   const std::set<EntityId> &priorItems, uint64_t experienceBefore) {
-    result["experienceGained"] = session.state().player.experience - experienceBefore;
-    result["experience"] = session.state().player.experience;
-    result["level"] = session.state().player.level;
+    result["experienceGained"] = session.state().player.character.experience - experienceBefore;
+    result["experience"] = session.state().player.character.experience;
+    result["level"] = session.state().player.character.level;
     result["drops"] = Json::array();
     result["deferred"] = nullptr;
     for (const auto &event : session.events())
@@ -213,12 +213,12 @@ void debugMonsterCommand(const std::string &command, const Json &request, Json &
         const auto id = monsterId(request);
         const auto *enemy = findMonster(session, id);
         const float amount = request.at("amount").get<float>();
-        if (!enemy || enemy->hp <= 0 || session.state().player.dead ||
+        if (!enemy || enemy->hp <= 0 || session.state().player.actions.dead ||
             !std::isfinite(amount) || amount <= 0 || amount > 10000000.f)
             throw std::runtime_error("Damage requires a living current-region monster and positive finite amount");
         const float before = enemy->hp;
         const auto priorItems = itemIds(session);
-        const uint64_t experienceBefore = session.state().player.experience;
+        const uint64_t experienceBefore = session.state().player.character.experience;
         session.submit(DebugDamageMonster{id, amount});
         session.tick(0);
         view.advance(0);
@@ -233,19 +233,19 @@ void debugMonsterCommand(const std::string &command, const Json &request, Json &
         const bool direct = command != "kill";
         const auto *enemy = findMonster(session, id);
         if (!enemy || enemy->hp <= 0 || (!direct && !onScreen(*enemy, session, view)) ||
-            session.state().player.dead)
+            session.state().player.actions.dead)
             throw std::runtime_error(direct
                 ? "Target must be a living created monster in the current region; player must be alive"
                 : "Target must be a living visible active monster; player must be alive");
         const auto priorItems = direct ? itemIds(session) : std::set<EntityId>{};
-        const uint64_t experienceBefore = session.state().player.experience;
+        const uint64_t experienceBefore = session.state().player.character.experience;
         session.submit(DebugKill{id, direct});
         if (direct) { session.tick(0); view.advance(0); }
         else step();
         result["killed"] = id.value;
-        result["experienceGained"] = session.state().player.experience - experienceBefore;
-        result["experience"] = session.state().player.experience;
-        result["level"] = session.state().player.level;
+        result["experienceGained"] = session.state().player.character.experience - experienceBefore;
+        result["experience"] = session.state().player.character.experience;
+        result["level"] = session.state().player.character.level;
         if (direct) deathDetails(result, session, id, priorItems, experienceBefore);
     }
 }

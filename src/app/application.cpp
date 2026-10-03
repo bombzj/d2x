@@ -3,6 +3,7 @@
 #include "client/local_actor_client.hpp"
 #include "client/local_quest_client.hpp"
 #include "client/local_npc_client.hpp"
+#include "client/local_map_client.hpp"
 #include "presentation/scene_view.hpp"
 #include "gameplay/session/session.hpp"
 #include "content/classic_data.hpp"
@@ -19,6 +20,7 @@
 #include "app/debug/debug_pipe.hpp"
 #include "app/debug/debug_commands.hpp"
 #include "persistence/save_file.hpp"
+#include "gameplay/simulation/fixed_step.hpp"
 #include "presentation/controller.hpp"
 #include "presentation/graphics/graphics.hpp"
 #include <algorithm>
@@ -260,7 +262,8 @@ int runGame(int argc, char **argv) {
             LocalCharacterClient characterClient(session);
             LocalQuestClient questClient(session);
             LocalNpcClient npcClient(session);
-            SceneView view(archives, session, actorClient, inventoryClient, characterClient, questClient, npcClient);
+            LocalMapClient mapClient(session);
+            SceneView view(archives, session, actorClient, inventoryClient, characterClient, questClient, npcClient, mapClient, mapClient);
             view.ui().miniPanelOpen = preferences.miniPanelOpen;
             view.ui().automapLarge = preferences.automapLarge;
             view.ui().automapCenterWhenCleared = preferences.automapCenterWhenCleared;
@@ -268,7 +271,7 @@ int runGame(int argc, char **argv) {
             view.ui().automapNames = preferences.automapNames;
             view.ui().automapFade = preferences.automapFade;
             auto syncPreferences = [&](bool force = false) {
-                const ClientPreferences current{session.state().player.running, view.ui().miniPanelOpen,
+                const ClientPreferences current{session.state().player.movement.running, view.ui().miniPanelOpen,
                     view.ui().automapLarge, view.ui().automapCenterWhenCleared,
                     view.ui().automapParty, view.ui().automapNames, view.ui().automapFade};
                 if (preferences != current) {
@@ -294,7 +297,7 @@ int runGame(int argc, char **argv) {
                 if (!found)
                     throw std::runtime_error("--stash requires a region with an original stash object");
             }
-            SceneController controller(session, actorClient, inventoryClient, characterClient, npcClient, view);
+            SceneController controller(session, actorClient, inventoryClient, characterClient, npcClient, mapClient, view);
             if (frontend) controller.resetInput();
             RenderTarget target;
             archives.setLoadingPulse({});
@@ -305,7 +308,7 @@ int runGame(int argc, char **argv) {
             if (!options.debugPipe.empty())
                 std::cout << "Debug pipe ready: " << options.debugPipe
                           << (debugPaused ? " (paused)\n" : " (running)\n") << std::flush;
-            float accumulator = 0;
+            FixedStepClock worldClock;
             int frames = 0;
             bool returningToCharacters = false;
             const bool ownsSave = character.has_value() || !options.save.empty() || !options.load.empty();
@@ -361,7 +364,7 @@ int runGame(int argc, char **argv) {
                             session.setRunning(preferences.running);
                             view.sessionRestored();
                             controller.resetInput();
-                            accumulator = 0;
+                            worldClock.reset();
                             view.notice("Character loaded in town; monsters have reset.");
                         } else {
                             writeSave(savePath, session.characterSave(), session.content());
@@ -388,13 +391,14 @@ int runGame(int argc, char **argv) {
                 syncPreferences();
                 view.advanceUi(dt, persistenceInput || debugPaused);
                 if (view.ui().blocksWorld() || persistenceInput || debugPaused)
-                    accumulator = 0;
+                    worldClock.reset();
                 else
-                    accumulator += dt;
-                while (accumulator >= GameSession::fixedStep && !view.ui().blocksWorld()) {
-                    session.tick(GameSession::fixedStep, controller.movement(), controller.temporaryRun());
+                    worldClock.add(dt);
+                while (worldClock.ready() && !view.ui().blocksWorld()) {
+                    actorClient.control({controller.movement(), controller.temporaryRun()});
+                    session.advance(GameSession::fixedStep);
                     view.advance(GameSession::fixedStep);
-                    accumulator -= GameSession::fixedStep;
+                    worldClock.consume();
                 }
                 view.ui().combatTarget = controller.combatTarget();
                 BeginTextureMode(target.handle);

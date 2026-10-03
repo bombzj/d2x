@@ -1,3 +1,5 @@
+#include "content/monsters/monster_catalog.hpp"
+#include "world/maze.hpp"
 #include "region.hpp"
 #include "core/random.hpp"
 #include "resources/presets.hpp"
@@ -252,10 +254,10 @@ void loadRegion(Archives &archives, EntityIds &ids, Region &region, TileLibraryC
         region.map.load(archives, cache, region.recipe, levelSeed + uint32_t(region.definition.id));
         if (region.definition.safe) region.map.spawn = region.map.actSpawn();
         size_t arcaneSymbol = 0;
-        for (size_t index = 0; index < region.map.data.objects.size(); ++index) {
-            const auto &source = region.map.data.objects[index];
+        for (size_t index = 0; index < region.map.terrain.data.objects.size(); ++index) {
+            const auto &source = region.map.terrain.data.objects[index];
             if (source.type == 1 && monsters.supported()) {
-                auto unit = monsters.preset(region.map.data.act, source.id, region.map.data.version);
+                auto unit = monsters.preset(region.map.terrain.data.act, source.id, region.map.terrain.data.version);
                 auto monster = monsters.find(unit.id);
                 // Hostile presets and placement markers belong to the population system.
                 // Keep friendly NPC/critter appearances in the static object pipeline.
@@ -266,7 +268,7 @@ void loadRegion(Archives &archives, EntityIds &ids, Region &region, TileLibraryC
                 return p.type == source.type && p.id == source.id;
             });
             const int originalClass = source.type == 2
-                ? originalObjectClass(source, region.map.data.version, region.map.data.act) : -1;
+                ? originalObjectClass(source, region.map.terrain.data.version, region.map.terrain.data.act) : -1;
             int resolvedClass = resolveAct1ChestPreset(originalClass, int(region.definition.id), region.objectSeed);
             if (originalClass == 582 && int(region.definition.id) == 74) {
                 const auto missing = size_t(region.staffTombLevel - 66);
@@ -276,17 +278,17 @@ void loadRegion(Archives &archives, EntityIds &ids, Region &region, TileLibraryC
             auto chestRow = std::find_if(objectRows.begin(), objectRows.end(), [&](const auto &row) {
                 return !row.at("Id").empty() && std::stoi(row.at("Id")) == resolvedClass &&
                     (row.at("OperateFn") == "4" || originalClass == 580 || originalClass == 581 ||
-                     region.map.data.act != 0);
+                     region.map.terrain.data.act != 0);
             });
             const bool nativeChest = chestRow != objectRows.end();
-            const auto unit = source.type == 1 ? monsters.preset(region.map.data.act, source.id, region.map.data.version) : MonsterPreset{};
+            const auto unit = source.type == 1 ? monsters.preset(region.map.terrain.data.act, source.id, region.map.terrain.data.version) : MonsterPreset{};
             const auto *townNpc = source.type == 1 ? monsters.find(unit.id) : nullptr;
-            if ((preset == std::end(presets) || region.map.data.act != 0) && !nativeChest && !townNpc) {
+            if ((preset == std::end(presets) || region.map.terrain.data.act != 0) && !nativeChest && !townNpc) {
                 ++region.unsupportedObjects;
                 continue;
             }
             WorldObject object;
-            object.act = region.map.data.act;
+            object.act = region.map.terrain.data.act;
             const auto level = catalog.levels().find(int(region.definition.id));
             object.palette = level == catalog.levels().end() ? object.act : level->second.palette;
             object.id = ids.allocate();
@@ -297,7 +299,7 @@ void loadRegion(Archives &archives, EntityIds &ids, Region &region, TileLibraryC
             object.pos = {source.x + fraction, source.y + fraction};
             object.accessPoint = region.map.grid.nearest(object.pos);
             if (source.type == 1 && monsters.supported()) {
-                auto unit = monsters.preset(region.map.data.act, source.id, region.map.data.version);
+                auto unit = monsters.preset(region.map.terrain.data.act, source.id, region.map.terrain.data.version);
                 if (const auto *monster = monsters.find(unit.id)) {
                     object.npcClass = monster->id;
                     object.npcMovement = monster->movementRule();

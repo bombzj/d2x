@@ -1,4 +1,5 @@
-#include "gameplay/model/state.hpp"
+#include "gameplay/units/movement.hpp"
+#include "gameplay/monsters/state.hpp"
 #include "core/random.hpp"
 #include "monster_wander.hpp"
 #include <algorithm>
@@ -95,21 +96,8 @@ bool monsterStartCircle(Enemy &enemy, Vec target, int distance, const Grid &grid
     return false;
 }
 void monsterAdvanceCircle(Enemy &enemy, const Grid &grid, float speed, float dt, MovementCollisionRule rule) {
-    while (!enemy.route.empty() && (enemy.route.front() - enemy.pos).length() < .25f)
-        enemy.route.pop_front();
-    if (enemy.route.empty()) {
-        enemy.aiCircling = false;
-        return;
-    }
-    const Vec offset = enemy.route.front() - enemy.pos;
-    const Vec next = enemy.pos + offset.unit() * std::min(speed * dt, offset.length());
-    if (!grid.segment(enemy.pos, next, {}, rule)) {
-        enemy.route.clear();
-        enemy.aiCircling = false;
-        return;
-    }
-    enemy.pos = next;
-    if ((enemy.route.front() - enemy.pos).length() < .25f) enemy.route.pop_front();
-    if (enemy.route.empty()) enemy.aiCircling = false;
+    const auto result = advanceRouteMovement(enemy.pos, enemy.route, speed, dt, .25f,
+        [&](Vec from, Vec to) { return grid.segment(from, to, {}, rule); });
+    if (result != RouteMovement::Moving) enemy.aiCircling = false;
 }
 } // namespace d2x

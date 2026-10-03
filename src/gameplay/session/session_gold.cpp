@@ -5,7 +5,7 @@
 namespace d2x {
 unsigned GameSessionImpl::bankGoldLimit() const {
     // D2Common UNITS_GetStashGoldLimit; this engine rule has no MPQ column.
-    const unsigned level = unsigned(state().player.level);
+    const unsigned level = unsigned(state().player.character.level);
     return 50000u * (level <= 30 ? level / 10u + 1u : level / 2u + 1u);
 }
 unsigned GameSessionImpl::groundGoldLimit() const {
@@ -16,7 +16,7 @@ unsigned GameSessionImpl::groundGoldLimit() const {
 void GameSessionImpl::transactGold(const GoldTransaction &command) {
     auto &player = simulation_->state_.player;
     auto reject = [&](const char *message) { simulation_->emit(InteractionFailed{{}, message}); };
-    if (player.dead || !command.amount) {
+    if (player.actions.dead || !command.amount) {
         reject("Invalid gold amount.");
         return;
     }
@@ -26,24 +26,24 @@ void GameSessionImpl::transactGold(const GoldTransaction &command) {
             return;
         }
         if (command.action == GoldAction::Deposit) {
-            if (command.amount > player.gold || command.amount > bankGoldLimit() - player.bankGold) {
+            if (command.amount > player.character.gold || command.amount > bankGoldLimit() - player.character.bankGold) {
                 reject("Gold deposit exceeds your gold or stash limit.");
                 return;
             }
-            player.gold -= command.amount;
-            player.bankGold += command.amount;
+            player.character.gold -= command.amount;
+            player.character.bankGold += command.amount;
         } else {
-            const unsigned walletLimit = unsigned(player.level) * 10000u;
-            if (command.amount > player.bankGold || command.amount > walletLimit - player.gold) {
+            const unsigned walletLimit = unsigned(player.character.level) * 10000u;
+            if (command.amount > player.character.bankGold || command.amount > walletLimit - player.character.gold) {
                 reject("Gold withdrawal exceeds your stash or carrying limit.");
                 return;
             }
-            player.bankGold -= command.amount;
-            player.gold += command.amount;
+            player.character.bankGold -= command.amount;
+            player.character.gold += command.amount;
         }
         return;
     }
-    if (command.action != GoldAction::Drop || command.amount > player.gold ||
+    if (command.action != GoldAction::Drop || command.amount > player.character.gold ||
         command.amount > groundGoldLimit()) {
         reject("Gold drop exceeds your gold or pile limit.");
         return;
@@ -60,14 +60,14 @@ void GameSessionImpl::transactGold(const GoldTransaction &command) {
                 reject(inventoryErrorText(created.error));
                 return;
             }
-            player.gold -= command.amount;
+            player.character.gold -= command.amount;
             publishInventory(std::move(created), {});
             return;
         }
     reject("The mounted MPQ has no gold item.");
 }
 void GameSessionImpl::dropDebugCube() {
-    if (state().player.dead || content_.cubeCode.empty()) {
+    if (state().player.actions.dead || content_.cubeCode.empty()) {
         simulation_->emit(InteractionFailed{{}, "The cube is unavailable here."});
         return;
     }

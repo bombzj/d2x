@@ -2,7 +2,7 @@
 #include "gameplay/skills/resolve.hpp"
 #include "character_display.hpp"
 #include "gameplay/character/attributes.hpp"
-#include "gameplay/items/equipment_stats.hpp"
+#include "gameplay/combat/weapon_values.hpp"
 #include "content/skills/skill_data.hpp"
 #include "gameplay/skills/aura.hpp"
 #include "gameplay/skills/passive.hpp"

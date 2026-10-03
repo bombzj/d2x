@@ -1,3 +1,7 @@
+#include "gameplay/units/movement.hpp"
+#include "gameplay/units/actions.hpp"
+#include "gameplay/units/resources.hpp"
+#include "gameplay/units/impairments.hpp"
 #include "gameplay/simulation/simulation.hpp"
 #include "gameplay/skills/runtime.hpp"
 #include "gameplay/skills/projectile_source.hpp"
@@ -49,16 +53,10 @@ void Simulation::advanceHydra(Enemy &pet, float dt) {
     if (hydra.region != state_.area.region || safeZone_) return;
     if (pet.skill2Remaining > 0) { pet.skill2Remaining = std::max(0.f, pet.skill2Remaining - dt); return; }
     if (pet.attack > 0) {
-        pet.attack = std::max(0.f, pet.attack - dt);
-        if (pet.attackImpact >= 0) {
-            pet.attackImpact -= dt;
-            if (pet.attackImpact <= .00001f) {
-                pet.attackImpact = -1;
-                const auto target = combatUnit(pet.combatTarget);
-                if (target.alive() && canAttack(pet.id, target.id)) {
-                    skills().launchHydraBolt({pet.id, pet.pos, {}, pet.combatRandom}, hydra.skill, *target.position);
-                }
-            }
+        if (advanceTimedAction({pet.attack, pet.attackDuration, pet.attackImpact}, dt, 0.f, .00001f)) {
+            const auto target = combatUnit(pet.combatTarget);
+            if (target.alive() && canAttack(pet.id, target.id))
+                skills().launchHydraBolt({pet.id, pet.pos, {}, pet.combatRandom}, hydra.skill, *target.position);
         }
         return;
     }
@@ -200,12 +198,13 @@ void Simulation::updateCompanions(float dt) {
         }
         pet.combatEffects.expire(state_.frame);
         if (advanceAuraKnockback(pet, dt)) continue;
-        pet.chill = std::max(0.f, pet.chill - dt); pet.freeze = std::max(0.f, pet.freeze - dt);
-        pet.freezeActive = pet.freeze > 0;
-        pet.stun = std::max(0.f, pet.stun - dt); pet.webSlowRemaining = std::max(0.f, pet.webSlowRemaining - dt);
+        advanceImpairments({&pet.chill, &pet.freeze, &pet.stun, &pet.freezeActive,
+                           {&pet.webSlowRemaining, &pet.webSlowPercent}},
+                          dt, WebSlowExpiry::RetainMetadata);
         pet.rethink = std::max(0.f, pet.rethink - dt);
         if (pet.poisonRemaining <= 0 && pet.openWoundsRemaining <= 0)
-            pet.hp = std::min(pet.maxHp, pet.hp + float(int(pet.maxHp * 256.f * pet.intrinsicCombat->damageRegen / 4096.f)) / 256.f * 25.f * dt);
+            advanceLifeRegeneration(pet.hp, pet.maxHp, pet.intrinsicCombat->damageRegen,
+                                    dt, LifeRegenOrder::FrameRateThenStep);
         if (pet.resurrectionRemaining > 0) { pet.resurrectionRemaining = std::max(0.f, pet.resurrectionRemaining - dt); continue; }
         if (pet.hitFlash > 0 || pet.freeze > 0 || pet.stun > 0) {
             pet.attack = pet.attackDuration = 0; pet.attackImpact = -1; pet.route.clear(); continue;
@@ -213,17 +212,14 @@ void Simulation::updateCompanions(float dt) {
         const int ownerDistance = std::max(0, missileDistance(pet.pos, *owner.position) - 2);
         if (ownerDistance > 50) { relocateCompanions(owner.id, *owner.position, pet.id); continue; }
         if (pet.attack > 0) {
-            pet.attack = std::max(0.f, pet.attack - dt);
-            if (pet.attackImpact >= 0) {
-                pet.attackImpact -= dt;
-                if (pet.attackImpact <= .00001f) { pet.attackImpact = -1; resolveMonsterAttack(pet); }
-            }
+            if (advanceTimedAction({pet.attack, pet.attackDuration, pet.attackImpact}, dt, 0.f, .00001f))
+                resolveMonsterAttack(pet);
             continue;
         }
         if (pet.rethink <= 0) {
             pet.combatTarget = ownerDistance > 28 ? EntityId{} : chooseTarget(pet.id, 24);
-            if (owner.player && owner.records.player->attackTarget && canAttack(pet.id, owner.records.player->attackTarget)) {
-                const auto target = combatUnit(owner.records.player->attackTarget);
+            if (owner.player && owner.records.player->actions.attackTarget && canAttack(pet.id, owner.records.player->actions.attackTarget)) {
+                const auto target = combatUnit(owner.records.player->actions.attackTarget);
                 if (target.alive() && missileDistance(pet.pos, *target.position) < 36) pet.combatTarget = target.id;
             }
             pet.rethink = 10.f / 25.f;
@@ -239,7 +235,7 @@ void Simulation::updateCompanions(float dt) {
             else pet.route.clear();
         }
         if (pet.route.empty()) continue;
-        while (!pet.route.empty() && (pet.route.front() - pet.pos).length() < .05f) pet.route.pop_front();
+        discardReachedWaypoints(pet.pos, pet.route, .05f);
         if (pet.route.empty()) continue;
         int velocity = 75;
         if (ownerDistance > 28) velocity += pet.intrinsicCombat->followVelocityBonus;
@@ -247,7 +243,6 @@ void Simulation::updateCompanions(float dt) {
         const auto speed = monsterMoveSpeed_ ? monsterMoveSpeed_(pet, velocity) : std::nullopt;
         if (!speed) { pet.route.clear(); continue; }
         const Vec delta = pet.route.front() - pet.pos;
-        const Vec next = pet.pos + delta.unit() * std::min(delta.length(), *speed * dt);
         const auto neighbors = combatUnits();
         auto clear = [&](Vec point) {
             if (!grid_->segment(pet.pos, point, {}, movementRule(pet))) return false;
@@ -256,8 +251,8 @@ void Simulation::updateCompanions(float dt) {
                     (point - *unit.position).length() < (pet.pos - *unit.position).length()) return false;
             return true;
         };
-        if (clear(next)) pet.pos = next;
-        else {
+        if (!advanceMovement(pet.pos, delta.unit(), std::min(delta.length(), *speed * dt),
+            [&](Vec, Vec to) { return clear(to); }).accepted) {
             // The world's static pathfinder has no dynamic unit occupancy. Steer
             // around a blocked next step, then let it replan from that position.
             const auto heading = delta.unit();

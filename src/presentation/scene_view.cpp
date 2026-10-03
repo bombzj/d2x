@@ -34,8 +34,8 @@ void main() {
 }
 )";
 } // namespace
-SceneView::SceneView(Archives &archives, const GameSession &session, const IActorClient &actorClient, IInventoryClient &inventoryClient, ICharacterClient &characterClient, IQuestClient &questClient, INpcClient &npcClient)
-    : session_(session), actorClient_(actorClient), inventoryClient_(inventoryClient), characterClient_(characterClient), questClient_(questClient), npcClient_(npcClient), assets_(archives, session), paletteBlend_(archives), painter_(assets_.font),
+SceneView::SceneView(Archives &archives, const GameSession &session, const IActorClient &actorClient, IInventoryClient &inventoryClient, ICharacterClient &characterClient, IQuestClient &questClient, INpcClient &npcClient, IMapClient &mapClient, const IMapAssetSource &mapAssets)
+    : session_(session), actorClient_(actorClient), inventoryClient_(inventoryClient), characterClient_(characterClient), questClient_(questClient), npcClient_(npcClient), mapClient_(mapClient), mapAssets_(mapAssets), assets_(archives, session, mapAssets), paletteBlend_(archives), painter_(assets_.font),
       speechPainter_(assets_.speechFont) {
     projectileVisualRandom_ = session_.visualSeed();
     for (int act = 1; act < int(actPaletteBlends_.size()); ++act)
@@ -186,7 +186,7 @@ void SceneView::drawLighting() const {
         appendMonster(monster.enemy->identity.monster, monster.position);
         appendUnit(monster.enemy->id, monster.position, monster.enemy->combatEffects);
     }
-    if (!sim.player.dead) appendUnit(sim.player.id, player, sim.player.combatEffects);
+    if (!sim.player.actions.dead) appendUnit(sim.player.id, player, sim.player.combatEffects);
     if (sim.player.hireling.active())
         appendUnit(sim.player.hireling.id, sim.player.hireling.pos, sim.player.hireling.combatEffects);
     for (const auto &portal : session_.portals(region.definition.id)) {
@@ -214,6 +214,9 @@ void SceneView::notice(std::string text, bool error) {
 }
 void SceneView::sessionRestored() {
     assets_.audio.resetEmitters();
+    // Restore may load the act town for the first time. A paused frame can draw
+    // immediately without advance(), so prepare its terrain and prop sources now.
+    assets_.syncRegions(mapAssets_);
     lighting_.invalidate();
     lighting_.resetEnvironment();
     clientMissiles_.clear();
@@ -308,14 +311,14 @@ void SceneView::advance(float dt) {
     refreshCharacterView();
     refreshInteractions();
     const auto actor = actorClient_.controlledActor();
-    assets_.syncRegions(session_);
+    assets_.syncRegions(mapAssets_);
     const auto sunStage = session_.quest(QuestId::TaintedSun).stage;
     lighting_.setEclipse(sunStage > 0 && sunStage < 3);
     lighting_.advance(dt, session_.worldContent().level(int(session_.region().definition.id)));
     advanceMissileVisuals(dt);
     revealAutomap();
     const auto &currentRegion = session_.region();
-    const auto &popups = currentRegion.map.data.roofPopups;
+    const auto &popups = currentRegion.map.terrain.data.roofPopups;
     auto &opacity = roofOpacity_[currentRegion.definition.id];
     if (opacity.size() != popups.size())
         opacity.assign(popups.size(), 1.f);
@@ -492,7 +495,7 @@ void SceneView::advance(float dt) {
                     view_.shopSalePending.reset();
                     notice(value.reason, true);
                     if (value.needsKey)
-                        assets_.audio.play("chest." + normalize(session_.state().player.characterClass) + "_needkey_1");
+                        assets_.audio.play("chest." + normalize(session_.state().player.character.characterClass) + "_needkey_1");
                     if (view_.npcMenu || view_.shopOpen || !view_.dialogue.empty())
                         view_.dialogueStatus = value.reason;
                 } else if constexpr (std::is_same_v<T, LootDeferred>) {
@@ -600,10 +603,8 @@ void SceneView::advance(float dt) {
                     } else if (value.interaction == Interaction::Well) {
                         notice("Restored at: " + value.name);
                     } else if (value.interaction == Interaction::Travel) {
-                        const auto *source = session_.object(value.object);
-                        view_.waypointSource = source && source->isWaypoint() ? value.object : EntityId{};
-                        const auto level = session_.worldContent().levels().find(int(session_.state().area.region));
-                        view_.waypointAct = level == session_.worldContent().levels().end() ? 0 : level->second.act;
+                        view_.waypointSource = mapClient_.waypointSource(value.object) ? value.object : EntityId{};
+                        view_.waypointAct = mapView().act;
                         view_.travelPage = 0;
                         view_.travelMenu = true;
                       } else if (value.interaction == Interaction::Heal ||
@@ -687,27 +688,5 @@ void SceneView::advance(float dt) {
         view_.stepClock = 4.f / std::max(.1f, actor.movementSpeed);
     }
     syncMissileAudio();
-}
-std::vector<WorldEntry> SceneView::travelEntries() const {
-    if (!view_.waypointSource)
-        return session_.worldEntries();
-    std::vector<std::pair<int, WorldEntry>> ordered;
-    for (const auto &region : session_.regions()) {
-        const bool unlocked = session_.waypointUnlocked(region.definition.id);
-        auto record = session_.worldContent().levels().find(int(region.definition.id));
-        if (record == session_.worldContent().levels().end() || record->second.act != view_.waypointAct) continue;
-        if (record->second.waypoint < 0 || record->second.waypoint == 255) continue;
-        int order = record == session_.worldContent().levels().end() ? 999 : record->second.waypoint;
-        ordered.push_back({order, {int(region.definition.id), region.definition.name,
-                          unlocked ? "Activated" : "Not activated", {},
-                          unlocked ? std::optional<RegionId>{region.definition.id} : std::nullopt}});
-    }
-    std::sort(ordered.begin(), ordered.end(), [](const auto &a, const auto &b) {
-        return a.first == b.first ? a.second.level < b.second.level : a.first < b.first;
-    });
-    std::vector<WorldEntry> entries;
-    for (auto &[order, entry] : ordered)
-        entries.push_back(std::move(entry));
-    return entries;
 }
 } // namespace d2x

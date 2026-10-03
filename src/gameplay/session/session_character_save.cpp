@@ -84,17 +84,17 @@ CharacterSaveData GameSessionImpl::prepareCharacterRestore(CharacterSaveData cha
                                 return std::holds_alternative<ContainerLocation>(entry.second.location);
                             }), "ground item in character save");
 
-    auto lastRegion = std::find_if(regions_.begin(), regions_.end(),
+    auto lastRegion = std::find_if(world_.regions().begin(), world_.regions().end(),
         [&](const Region &region) { return region.definition.id == character.lastRegion; });
-    requireSave(lastRegion != regions_.end(), "last visited region");
+    requireSave(lastRegion != world_.regions().end(), "last visited region");
     auto level = worldContent_.levels().find(int(lastRegion->definition.id));
     int act = level == worldContent_.levels().end() ? 0 : level->second.act;
-    auto town = std::find_if(regions_.begin(), regions_.end(), [&](const Region &region) {
+    auto town = std::find_if(world_.regions().begin(), world_.regions().end(), [&](const Region &region) {
         auto record = worldContent_.levels().find(int(region.definition.id));
         return region.definition.safe && record != worldContent_.levels().end() &&
                record->second.act == act;
     });
-    requireSave(town != regions_.end(), "act town is unavailable");
+    requireSave(town != world_.regions().end(), "act town is unavailable");
 
     character.player.hp = std::max(1.f, character.player.hp);
     character.lastRegion = town->definition.id;
