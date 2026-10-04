@@ -47,6 +47,8 @@ unsigned questBits(const QuestRecord &quest, size_t index) {
 } // namespace
 void importD2sQuests(CharacterRecord &player, const D2sFixedSections &sections, const NpcDialogues &dialogues) {
     for (size_t difficulty = 0; difficulty < 3; ++difficulty) {
+        player.cowKingKilled[difficulty] = (word(sections.quests, 10 + difficulty * 96 +
+            questDefinition(QuestId::SearchForCain).nativeSlot * 2) & 0x400u) != 0;
         for (size_t act = 0; act < actCompletedSlots.size(); ++act)
             player.completedActs[difficulty][act] = (word(sections.quests,
                 10 + difficulty * 96 + actCompletedSlots[act] * 2) & 1u) != 0;
@@ -233,6 +235,9 @@ void exportD2sQuests(const CharacterRecord &player, D2sFixedSections &sections, 
             putWord(sections.quests, offset, (word(sections.quests, offset) & ~mask) |
                 questBits(player.quests[difficulty][index], index));
         }
+        const auto cowOffset = 10 + difficulty * 96 + questDefinition(QuestId::SearchForCain).nativeSlot * 2;
+        putWord(sections.quests, cowOffset, (word(sections.quests, cowOffset) & ~0x400u) |
+            (player.cowKingKilled[difficulty] ? 0x400u : 0u));
         const auto &radament = player.quests[difficulty][questIndex(QuestId::RadamentsLair)];
         const auto offset = 10 + difficulty * 96 + questDefinition(QuestId::RadamentsLair).nativeSlot * 2;
         const unsigned bits = radament.stage >= 4 ? 0x2001 : radament.stage == 3 ? 0x2002

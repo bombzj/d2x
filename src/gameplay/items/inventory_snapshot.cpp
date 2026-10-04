@@ -90,9 +90,9 @@ void InventoryService::validateSnapshot(const InventoryState &state, const Playe
                     item.charges <= def->bookCapacity &&
                     item.durability <= maximumDurability(item) && item.revision > 0 && item.level > 0 &&
                     item.level <= 99 && int(item.quality) >= 0 &&
-                    int(item.quality) <= int(ItemQuality::Inferior) &&
+                    int(item.quality) <= int(ItemQuality::Crafted) &&
                     (item.identified || nativeNormalCharm || (item.quality == ItemQuality::Magic ||
-                                         item.quality == ItemQuality::Rare ||
+                                         item.quality == ItemQuality::Rare || item.quality == ItemQuality::Crafted ||
                                          item.quality == ItemQuality::Set ||
                                          item.quality == ItemQuality::Unique)) &&
                     item.specialRow >= -1 && item.gradeRow >= -1 &&

@@ -646,7 +646,7 @@ GameSessionImpl::GameSessionImpl(Archives &archives, const WorldSelection &selec
     fingerprint.add("player-corpse-rules-v1");
     fingerprint.add("inventory-carry-rules-v2-native-quest-pairs");
     fingerprint.add("potion-class-rules-v1-native-restoration");
-    fingerprint.add("socket-rules-v1-native-children-runewords");
+    fingerprint.add("socket-rules-v1-native-children-runewords|cube-rules-v2-native-crafted-and-txt-indices");
     fingerprint.add("waypoint-rules-v1");
     fingerprint.add("map-rules-v9-native-trees-complete-groups");
     auto members = archives.used;

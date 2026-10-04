@@ -25,7 +25,7 @@ DataTable 保留列顺序、重复列名和空值，字段名按 ASCII 忽略大
 | ItemTypes | Equiv1／2 递归继承、BodyLoc、职业、Shoots／Quiver、Throwable／Repair／AutoStack、品质标志、MaxSock1／25／40、VarInvGfx／InvGfx、TC 类别；sock 继承链用于填充物校验 | StaffMods 等未形成天然技能生成规则 |
 | Gems | 运行时加载 68 个带 code 条目，含 35 种宝石／骷髅及 33 种符文；按三组 ModCode／Param／Min／Max 准备类型化属性，宿主 gemapplytype 选择组 | transform 染色与孔位叠层未消费。当前 scalar 掷值固定；若修改表出现 compact D2S 无字段保存的变量标量，则明确拒绝加载，不静默重掷 |
 | Runes | 加载 78 条 complete=1 原行的 server、itype／etype、Rune1…6、T1Code／Param／Min／Max；检查品质／类型／满孔／顺序，属性一次掷值、独立保存；名称及 D2S 身份取原 TBL | server 为元数据，当前没有天梯／联机模式过滤；触发施法、充能施法、装备光环等消费者仍有限，不能把全部原行解析等同全部效果生效 |
-| Cubemain | 原表有 146 条 enabled=1；绑定法杖／克林姆、8 条加孔相关配方及 1 条去镶嵌，孔配方读取类型／品质／qty、特殊暗金身份、输出等级及孔数原范围 | 其余语法、op、ladder／class、任意属性与多输出仍无通用解释器；不支持的孔配方限定明确报错，详见 [方块](CUBE_AND_GOLD.md) |
+| Cubemain | 当前 MPQ 全部 146 条 enabled=1 原配方，类型／品质／身份／qty、版本／难度／职业／模式、等级、固定属性、孔、修理／充能、升级、36 条 Crafted 与门户 | 当前 op=0／28；不声明任意修改版公式解释器或完整 Uber 首领／事件掉落，详见 [方块](CUBE_AND_GOLD.md) |
 | UniqueItems／SetItems／Sets | 原行、等级、需求、权重、属性指令／掷值、图形覆盖、nolimit、carry1、套装件数与部分分级加成 | 生成目录筛掉 disabled、version>100 和 lvl>99；carry1 另从完整 enabled 原行建立，避免事件行遗漏。ladder 虽进入记录，当前没有天梯模式，不能称为完整模式过滤 |
 | MagicPrefix／Suffix、RarePrefix／Suffix、QualityItems | 等级／类型／职业／组／frequency、原前后缀与稀有名称、优质／劣质选择及掷值 | 部分被过滤原行不会进入实例目录；失败暗金／套装额外耐久、完整原生成顺序及所有属性指令未完成 |
 | Properties | 保存最多七组 func／stat／set／val；解析 func 1–11、14–17、19–24；func14 写实际孔数，触发／充能编码技能层，符文之语 func23 设置无形物理标志 | `set` 没有通用解释；其余未知 func 仍会跳过，不能声称整件属性都有效。原技能属性可编码／保存不等于技能已执行；触发／充能的完整报价仍暂缓 |
@@ -53,3 +53,5 @@ TC 支持单人正 Picks 权重／NoDrop、负 Picks 顺序展开、嵌套、四
 ```
 
 其他查询包括 quality、special 和 loot-plan；是否有数据／图形／实例生成／战斗效果分别核对。原包来源及摘要见 [MPQ](../../resources/MPQ.md)，算法借鉴与许可见 [资料来源](../../resources/THIRD_PARTY.md)。
+
+原表编号：通用 TXT 解析跳过首列 `Expansion` 保留行，与当前原 BIN 行数一致；MagicPrefix／Suffix 在内存使用零基行，在 D2S 使用一基局部编号，UniqueItems／SetItems 原身份仍为零基。未知编号明确拒绝，不对旧错误编号静默迁移。

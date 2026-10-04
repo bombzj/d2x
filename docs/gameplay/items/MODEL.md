@@ -78,3 +78,5 @@ LootSystem／session_loot 连接怪物死亡掉落，包裹／腰带／箱子／
 `StorageAccess` 只由当前会话的世界交互授予。每次库存预览／提交都会重新检查原实体、存活、距离和通路；界面只能提交容器 ID，不能授予自己访问。箱子物品仍使用原来的唯一 ContainerLocation，不拷贝到界面或玩家包裹中。
 
 存档通过独立的库存校验入口检查所有者、定义、数量、占格、版本号及腰带容量；全部会话校验通过后才替换状态。见 [存档说明](../../modules/SAVES.md)。
+
+方块事务与 Crafted：typed 原配方匹配完整材料，输出和随机状态在库存草稿成功后一次提交；useitem 保留宿主身份，usetype／新物品另分配身份。Crafted 固定属性和词缀只掷一次并保存原生统计值；运行指纹为 `cube-rules-v2-native-crafted-and-txt-indices`，磁盘仍原 v96，规则与有限验证见 [方块](CUBE_AND_GOLD.md)。

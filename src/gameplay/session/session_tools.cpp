@@ -17,8 +17,7 @@ void GameSessionImpl::spawnDebugItem(const DebugSpawnItem &command) {
     const auto *base = content_.items.find(command.code);
     auto ground = dropLocation();
     if (state().player.actions.dead || !base || !base->equipment.known ||
-        (base->family == ItemFamily::Misc && !base->equipment.isType("sock") && !base->equipment.isType("scro") &&
-            !base->equipment.isType("ring") && !base->equipment.isType("amul")) ||
+        base->equipment.isType("gold") ||
         command.level < 1 || command.level > 99 || !ground) {
         reject("Original equipment or a walkable drop location is unavailable.");
         return;
@@ -45,6 +44,11 @@ void GameSessionImpl::spawnDebugItem(const DebugSpawnItem &command) {
         generation.requiredLevel = record.requiredLevel;
         generation.propertyRolls = std::move(properties.values);
         random = properties.randomState;
+    } else if (command.quality == ItemQuality::Inferior || command.quality == ItemQuality::Superior) {
+        if (!base->artAvailable) { reject("Original base item art is missing."); return; }
+        auto rolled = rollItemGrade(content_, *base, command.quality, random);
+        if (!rolled.deferred.empty()) { reject(rolled.deferred); return; }
+        generation = std::move(rolled.generation); random = rolled.randomState;
     } else if (command.quality == ItemQuality::Normal) {
         if (!base->artAvailable) { reject("Original base item art is missing."); return; }
     } else {

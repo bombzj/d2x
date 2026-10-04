@@ -36,6 +36,9 @@ DataTable::DataTable(const Bytes &bytes) {
         if (columns_.empty())
             columns_ = std::move(cells);
         else {
+            // Native TXT compilation omits this section marker. Counting it as
+            // a record shifts cube affix IDs and D2S special/affix identities.
+            if (cells.front() == "Expansion") continue;
             if (cells.size() > columns_.size())
                 throw std::runtime_error("Extra columns in MPQ data table");
             cells.resize(columns_.size());

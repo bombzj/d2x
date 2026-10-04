@@ -33,7 +33,7 @@ bool InventoryService::retainsEmptyStack(const ItemInstance &item) const {
     const auto &definition = *catalog_.find(item.definition);
     if (!definition.equipment.isType("weap") ||
         (!definition.equipment.throwable && definition.maxStack <= 1)) return false;
-    return item.quality == ItemQuality::Magic || item.quality == ItemQuality::Rare ||
+    return item.quality == ItemQuality::Magic || item.quality == ItemQuality::Rare || item.quality == ItemQuality::Crafted ||
            item.quality == ItemQuality::Set || item.quality == ItemQuality::Unique;
 }
 InventoryResult InventoryService::replenish(float dt) {

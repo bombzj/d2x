@@ -41,6 +41,7 @@ struct CharacterRecord {
     std::array<SkillHotkey, 8> skillHotkeys{};
     std::array<int, 4> selectedSkills{-1, -1, -1, -1};
     QuestBook quests{};
+    std::array<bool, 3> cowKingKilled{}; // Native A1Q4 CUSTOM6, per difficulty.
     // Native A1-A4 act-change records, separate from killing the act boss.
     std::array<std::array<bool, 4>, 3> completedActs{};
     HirelingRecord hireling;

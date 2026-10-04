@@ -48,7 +48,7 @@ void validate(const D2sItem &item, const ItemDefinition &definition, const Class
     require((item.flags & (0x2000000u | 0x10000u)) == 0, "ear or gamble item");
     require(item.mode == 0 || item.mode == 1 || item.mode == 2 || item.mode == 4 || item.mode == 6, "location");
     require(bool(item.flags & compact) == flag(content, definition, "compactsave"), "compact flag");
-    require(item.quality >= 1 && item.quality <= 7, "quality");
+    require(item.quality >= 1 && item.quality <= 8, "quality");
     require(item.level >= 1 && item.level <= 99, "item level");
     require(item.autoAffix == 0, "automatic affix");
 }
@@ -144,7 +144,7 @@ D2sItemRead readD2sItem(std::span<const uint8_t> bytes, const ClassicData &conte
             break;
         case 4: item.prefixes[0] = bits.read(11); item.suffixes[0] = bits.read(11); break;
         case 5: case 7: item.fileIndex = bits.read(12); break;
-        case 6:
+        case 6: case 8:
             item.rarePrefix = bits.read(8); item.rareSuffix = bits.read(8);
             for (size_t index = 0; index < 3; ++index) {
                 if (bits.read(1)) item.prefixes[index] = bits.read(11);
@@ -231,7 +231,7 @@ Bytes writeD2sItem(const D2sItem &item, const ClassicData &content) {
             break;
         case 4: bits.write(item.prefixes[0], 11); bits.write(item.suffixes[0], 11); break;
         case 5: case 7: bits.write(item.fileIndex, 12); break;
-        case 6:
+        case 6: case 8:
             bits.write(item.rarePrefix, 8); bits.write(item.rareSuffix, 8);
             for (size_t index = 0; index < 3; ++index) {
                 bits.write(item.prefixes[index] != 0, 1);

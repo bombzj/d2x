@@ -9,6 +9,8 @@ Color SceneView::itemColor(ItemQuality quality) {
     switch (quality) {
     case ItemQuality::Magic:
         return {105, 105, 255, 255};
+    case ItemQuality::Crafted:
+        return {255, 168, 0, 255};
     case ItemQuality::Rare:
         return {255, 255, 100, 255};
     case ItemQuality::Set:

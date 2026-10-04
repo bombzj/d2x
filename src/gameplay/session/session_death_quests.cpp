@@ -64,6 +64,9 @@ QuestDeathContext GameSessionImpl::deathQuestContext(const EnemyDied &death) con
     return context;
 }
 void GameSessionImpl::applyDeathQuest(const EnemyDied &death, const QuestDeathPlan &plan) {
+    if (int(death.region) == 39 && death.identity.superUnique == "The Cow King" &&
+        quest(QuestId::EveOfDestruction).stage >= questCompletionStage(QuestId::EveOfDestruction))
+        simulation_->state_.player.character.cowKingKilled.at(size_t(death.difficulty)) = true;
     auto &book = simulation_->state_.player.character.quests.at(size_t(death.difficulty));
     const auto slot = world_.index(death.region);
     if (slot < 0) throw std::logic_error("Quest death references an unknown region");

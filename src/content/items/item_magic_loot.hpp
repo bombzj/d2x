@@ -9,5 +9,5 @@ struct AffixGenerationResult {
 };
 AffixGenerationResult rollAffixItem(const ClassicData &data, const ItemDefinition &item,
                                     ItemQuality quality, int itemLevel, uint64_t seed,
-                                    std::string_view characterClass);
+                                    std::string_view characterClass, int preferredPrefix = 0, int preferredSuffix = 0);
 } // namespace d2x

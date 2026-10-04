@@ -248,3 +248,5 @@ kill 和 drop 都不进行攻击命中／伤害计算，因此用于验证死亡
 - view 会改变屏幕范围，kill 仍要求目标已激活且可见；drop 不受该屏幕约束。调试生成绕过自然 TC／部分同局资格，见 [物品支持](../gameplay/items/SUPPORT.md)。
 - 跨用户 ACL 拒绝与 Linux 实际运行尚未完整验证；本机管道不能充当网络服务协议。
 - 最新源码／运行包差异统一见 [项目基线](../../BASELINE.md)；旧运行记录不认证之后未经构建的源码。
+
+`item-spawn` 当前可生成原 Misc（金币除外），品质接受 normal／magic／rare／set／unique／inferior／superior；劣质／优质仍经过正式品质生成。Crafted 仅通过原方块合成创建，没有调试直接生成旁路。`cube-transmute` 使用完整原配方、资格和原子库存入口；当前全部 146 条启用配方冒烟范围见 [方块](../gameplay/items/CUBE_AND_GOLD.md)。

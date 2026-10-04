@@ -1,6 +1,7 @@
 #include "d2s_inventory.hpp"
 #include "content/items/item_properties.hpp"
 #include "content/items/socket_data.hpp"
+#include "content/items/cube_data.hpp"
 #include <algorithm>
 #include <stdexcept>
 
@@ -9,9 +10,9 @@ namespace {
 void require(bool condition, const std::string &reason) {
     if (!condition) throw std::runtime_error("D2S item mapping: " + reason);
 }
-constexpr std::array<ItemQuality, 8> qualities{ItemQuality::Normal, ItemQuality::Inferior,
+constexpr std::array<ItemQuality, 9> qualities{ItemQuality::Normal, ItemQuality::Inferior,
     ItemQuality::Normal, ItemQuality::Superior, ItemQuality::Magic, ItemQuality::Set,
-    ItemQuality::Rare, ItemQuality::Unique};
+    ItemQuality::Rare, ItemQuality::Unique, ItemQuality::Crafted};
 std::vector<D2sStat> extraProperties(const ClassicData &content, const ItemInstance &item) {
     std::vector<D2sStat> result;
     auto check = [&](const auto &properties) {
@@ -102,7 +103,9 @@ void importD2sItem(CharacterSaveData &snapshot, const D2sItem &source, const Cla
         item.specialRow = int(source.fileIndex);
         const auto &records = item.quality == ItemQuality::Unique ? content.uniqueItems : content.setItems;
         auto found = std::find_if(records.begin(), records.end(), [&](const auto &entry) { return entry.row == source.fileIndex; });
-        require(found != records.end() && found->code == item.definition, "special item row/base mismatch");
+        require(found != records.end() && (found->code == item.definition ||
+            content.cubeBases.at(item.definition).normal == found->code ||
+            content.cubeBases.at(item.definition).exceptional == found->code), "special item row/base mismatch");
         item.requiredLevel = found->requiredLevel;
     } else if (item.quality == ItemQuality::Superior || item.quality == ItemQuality::Inferior) {
         item.gradeRow = int(source.fileIndex);
@@ -115,12 +118,12 @@ void importD2sItem(CharacterSaveData &snapshot, const D2sItem &source, const Cla
         for (auto index : prefix ? source.prefixes : source.suffixes) {
             if (!index) continue;
             const auto &records = prefix ? content.magicPrefixes : content.magicSuffixes;
-            auto found = std::find_if(records.begin(), records.end(), [&](const auto &entry) { return entry.row == index; });
+            auto found = std::find_if(records.begin(), records.end(), [&](const auto &entry) { return entry.row == index - 1; });
             require(found != records.end(), "unknown affix ID");
-            item.affixes.push_back({prefix, int32_t(index), {}});
+            item.affixes.push_back({prefix, int32_t(index - 1), {}});
             item.requiredLevel = std::max(item.requiredLevel, found->requiredLevel);
         }
-    if (item.quality == ItemQuality::Rare) {
+    if ((item.quality == ItemQuality::Rare || item.quality == ItemQuality::Crafted)) {
         const auto suffixCount = content.tables.at("raresuffix").rows().size();
         require(source.rarePrefix > suffixCount && source.rareSuffix > 0 && source.rareSuffix <= suffixCount,
                 "rare name IDs");
@@ -132,6 +135,7 @@ void importD2sItem(CharacterSaveData &snapshot, const D2sItem &source, const Cla
             return int(entry.row) == item.rareSuffixRow;
         }), "unknown rare name rows");
     }
+    updateCubeRequiredLevel(content, item);
     require(source.durability <= source.maxDurability, "durability exceeds saved maximum");
     if (socketHost) {
         require(source.mode == 6 && definition->equipment.isType("sock") && source.socketedItems.empty() &&
@@ -224,10 +228,10 @@ D2sItem exportD2sItem(const CharacterSaveData &snapshot, const ItemInstance &ite
     output.fileIndex = unsigned(std::max(0, item.specialRow >= 0 ? item.specialRow : item.gradeRow));
     size_t prefix = 0, suffix = 0;
     for (const auto &affix : item.affixes) {
-        require(affix.row > 0 && (affix.prefix ? prefix : suffix) < 3, "affix index");
-        (affix.prefix ? output.prefixes[prefix++] : output.suffixes[suffix++]) = unsigned(affix.row);
+        require(affix.row >= 0 && (affix.prefix ? prefix : suffix) < 3, "affix index");
+        (affix.prefix ? output.prefixes[prefix++] : output.suffixes[suffix++]) = unsigned(affix.row + 1);
     }
-    if (item.quality == ItemQuality::Rare) {
+    if ((item.quality == ItemQuality::Rare || item.quality == ItemQuality::Crafted)) {
         output.rarePrefix = unsigned(item.rarePrefixRow + 1 + content.tables.at("raresuffix").rows().size());
         output.rareSuffix = unsigned(item.rareSuffixRow + 1);
     }

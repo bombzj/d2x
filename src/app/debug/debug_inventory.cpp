@@ -22,8 +22,8 @@ void debugItemInspect(const nlohmann::json &request, nlohmann::json &result,
     if (!item)
         throw std::runtime_error("Unknown item");
     const auto *definition = session.inventory().catalog().find(item->definition);
-    constexpr std::array<const char *, 7> qualities{"normal", "magic", "rare", "set", "unique",
-                                                   "superior", "inferior"};
+    constexpr std::array<const char *, 8> qualities{"normal", "magic", "rare", "set", "unique",
+                                                   "superior", "inferior", "crafted"};
     result["item"] = {{"id", item->id.value}, {"revision", item->revision},
                       {"code", item->definition}, {"name", definition->name},
                       {"quantity", item->quantity}, {"level", item->level},

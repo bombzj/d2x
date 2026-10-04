@@ -18,6 +18,7 @@ struct CharacterState {
     unsigned gold = 0, bankGold = 0;
     std::array<std::set<std::string>, 3> npcIntroductions;
     QuestPreludeBook questPreludes{};
+    std::array<bool, 3> cowKingKilled{};
     uint64_t experience = 0;
     int level = 1;
     AttributeAllocation allocated;

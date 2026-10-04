@@ -41,17 +41,17 @@ InventoryResult InventoryService::createItem(std::string_view code, unsigned qua
          (generation.specialRow < 0 || generation.gradeRow != -1 ||
           generation.rarePrefixRow != -1 || generation.rareSuffixRow != -1 ||
           !generation.affixes.empty())) ||
-        ((generation.quality == ItemQuality::Magic || generation.quality == ItemQuality::Rare) &&
+        ((generation.quality == ItemQuality::Magic || (generation.quality == ItemQuality::Rare || generation.quality == ItemQuality::Crafted)) &&
          (generation.specialRow != -1 || generation.gradeRow != -1 || generation.affixes.empty())) ||
         ((generation.quality == ItemQuality::Superior || generation.quality == ItemQuality::Inferior) &&
          (generation.gradeRow < 0 || generation.specialRow != -1 ||
           generation.rarePrefixRow != -1 || generation.rareSuffixRow != -1 ||
           !generation.affixes.empty())) ||
-        (generation.quality == ItemQuality::Rare &&
+        ((generation.quality == ItemQuality::Rare || generation.quality == ItemQuality::Crafted) &&
          (generation.rarePrefixRow < 0 || generation.rareSuffixRow < 0)) ||
         (generation.quality == ItemQuality::Magic &&
          (generation.rarePrefixRow != -1 || generation.rareSuffixRow != -1)) ||
-        int(generation.quality) < 0 || int(generation.quality) > int(ItemQuality::Inferior))
+        int(generation.quality) < 0 || int(generation.quality) > int(ItemQuality::Crafted))
         return failure(InventoryError::InvalidRequest);
     ItemLocation location;
     if (auto error = resolve(*definition, destination, location, {}, groundOrigin); error != InventoryError::None)

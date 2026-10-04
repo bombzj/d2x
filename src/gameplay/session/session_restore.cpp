@@ -328,6 +328,8 @@ void GameSessionImpl::restore(CharacterSaveData data) {
     pendingNpcQuestMessages_.clear();
     pendingPortal_.reset();
     pendingCainPortal_ = false;
+    cowPortalOpened_ = uberFinaleOpened_ = false;
+    uberPortalsOpened_.fill(false);
     pendingExit_.reset();
     boundaryMoveTarget_.reset();
     boundaryPassage_.reset();

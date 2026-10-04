@@ -54,7 +54,7 @@ LoD 运行时从原 MPQ `misc.txt` 识别五级生命、五级法力、回复、
 
 耐力条颜色：普通／低耐力使用 OpenDiablo2 hud.go 的 AF8848C8／FF0000C8 及 25% 阈值，蓝条使用该项目 color_tokens.go 的通用 UI 蓝 6969FF，沿用 HUD alpha C8。蓝条优先于低耐力颜色，过期后恢复普通判定；这替代了无来源的 70/130/220/205 选色，但通用 UI 蓝用于耐力条仍属参考适配，不能称为 1.13c 原条的精确蓝色。
 
-投掷药瓶按 ItemTypes 装备手位，Throw 发射并消耗堆叠；饮用和未实现的物品效果明确拒绝，数量不变。腰带穿戴校验原表需求并改变容量，属性消费者见 [物品支持](SUPPORT.md)。佣兵已有治疗、回复、解毒和解冻喂药入口，类型与限制见 [佣兵](../characters/HIRELINGS.md)。私人储物箱和赫拉迪克方块的存取已实现；合成支持法杖、克林姆两项任务与孔相关配方，详见 [方块](CUBE_AND_GOLD.md)。
+投掷药瓶按 ItemTypes 装备手位，Throw 发射并消耗堆叠；饮用和未实现的物品效果明确拒绝，数量不变。腰带穿戴校验原表需求并改变容量，属性消费者见 [物品支持](SUPPORT.md)。佣兵已有治疗、回复、解毒和解冻喂药入口，类型与限制见 [佣兵](../characters/HIRELINGS.md)。私人储物箱和赫拉迪克方块的存取已实现；合成支持当前 MPQ 全部 146 条启用配方及 36 条 Crafted，详见 [方块](CUBE_AND_GOLD.md)。
 
 ## MPQ 资源
 
@@ -74,3 +74,5 @@ LoD 运行时从原 MPQ `misc.txt` 识别五级生命、五级法力、回复、
 `EquipBelt`、`UseItem`、`UseBeltColumn` 是意图命令，权限由会话生成；`ItemUsed` 和 `BeltEquipped` 驱动音效。药效状态属于 `PlayerState`，MPQ 纹理属于 `SceneAssets`；D2S 保存角色与库存，不保存这些临时效果或 GPU 对象。
 
 此前已有 Windows 构建和有限腰带／饮用手势证据，实际范围见 [库存模块](../../modules/INVENTORY.md#构建与冒烟)；不认证全部药效和职业数值。本次职业倍率源码修正已随镶嵌构建通过，未逐职业运行验收，规则指纹增加 `potion-class-rules-v1-native-restoration`，临时药效仍不入 D2S。未编写测试脚本、用例或专用程序；Linux 保持标准 C++20／CMake 接口，但本机未实际编译运行 Linux 版本。
+
+Token of Absolution：原四精华合成，背包右键消耗一件，返还全部基础属性／已学技能点，保留奖励点数和阿卡拉每难度重置资格；原 TBL 名称与使用说明分别显示。独立临时角色使用及保存重载通过。

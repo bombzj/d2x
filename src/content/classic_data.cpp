@@ -9,6 +9,7 @@
 #include "content/items/item_affixes.hpp"
 #include "content/items/item_properties.hpp"
 #include "content/items/socket_data.hpp"
+#include "content/items/cube_data.hpp"
 #include "content/items/item_projectiles.hpp"
 #include "content/skills/skill_animation.hpp"
 #include "content/items/item_consumables.hpp"
@@ -92,6 +93,9 @@ ClassicData loadClassicData(Archives &archives) {
             const auto nameKey = value("namestr");
             const auto displayName = strings.find(nameKey.empty() ? item.code : nameKey);
             item.name = displayName.empty() ? value("name") : std::string(displayName);
+            if (item.code == "toa")
+                if (const auto separator = item.name.rfind('}'); separator != std::string::npos)
+                    item.name.erase(0, separator + 1);
             item.family = family;
             item.questTag = number("quest").value_or(0);
             item.gemApplyType = number("gemapplytype").value_or(-1);
@@ -367,6 +371,7 @@ ClassicData loadClassicData(Archives &archives) {
     {
         loadPropertyData(data);
         loadSocketData(data, strings);
+        loadCubeData(data);
         loadItemGrades(data);
         loadSpecialItemData(data);
         auto resolveSpecialArt = [&](SpecialItemRecord &record) {

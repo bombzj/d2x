@@ -7,161 +7,6 @@
 #include <type_traits>
 
 namespace d2x {
-void GameSessionImpl::transmuteCube() {
-    auto reject = [&] { simulation_->emit(InteractionFailed{{}, "No supported original cube recipe matches these items."}); };
-    const auto carried = inventory_.contents(playerContainers_.backpack);
-    const bool hasCube = std::any_of(carried.begin(), carried.end(), [&](EntityId id) {
-        return inventory_.item(id)->definition == content_.cubeCode;
-    });
-    if (state().player.actions.dead || !hasCube || cursorItem()) { reject(); return; }
-    const auto items = inventory_.contents(playerContainers_.cube);
-    for (const auto &recipe : content_.socketRecipes) {
-        if (recipe.version > 100 || state().population.difficulty < recipe.minimumDifficulty) continue;
-        for (auto target : items) {
-            const auto &original = *inventory_.item(target);
-            const auto &base = *inventory_.catalog().find(original.definition);
-            if (original.quantity != 1 || base.maxStack > 1 || !base.base.sockets.value_or(0) ||
-                (recipe.itemType != "any" && !base.equipment.isType(recipe.itemType)) ||
-                (recipe.quality && original.quality != *recipe.quality) ||
-                (recipe.requiresSockets && !original.sockets) ||
-                (recipe.requiresNoSockets && original.sockets)) continue;
-            std::vector<ItemHandle> inputs{original.handle()};
-            bool matched = true;
-            for (const auto &material : recipe.materials) {
-                unsigned count = 0;
-                for (auto id : items) {
-                    const auto &item = *inventory_.item(id);
-                    if (item.quantity != 1 || std::any_of(inputs.begin(), inputs.end(),
-                        [&](auto handle) { return handle.id == id; })) continue;
-                    const auto *definition = inventory_.catalog().find(item.definition);
-                    if ((material.type ? definition->equipment.isType(material.code) : item.definition == material.code) &&
-                        (material.uniqueRow < 0 || (item.quality == ItemQuality::Unique && item.specialRow == material.uniqueRow))) {
-                        inputs.push_back(item.handle());
-                        if (++count == material.quantity) break;
-                    }
-                }
-                matched &= count == material.quantity;
-            }
-            if (!matched || inputs.size() != items.size()) continue;
-            if (original.revision == UINT64_MAX) { reject(); return; }
-            InventoryService draft(ids_, inventory_.catalog(), {content_.stashLayout.columns, content_.stashLayout.rows},
-                {content_.cubeLayout.columns, content_.cubeLayout.rows});
-            draft.state_ = inventory_.state_; draft.itemProperties_ = inventory_.itemProperties_;
-            draft.singleCarryUniques_ = inventory_.singleCarryUniques_;
-            InventoryResult transaction;
-            const auto preserved = original; // A reroll removes the original host and all its socket children.
-            for (auto input : inputs) {
-                if (!recipe.rerollMagic && input.id == target) continue;
-                auto removed = draft.consume(input, 1, inventoryAccess());
-                if (!removed) { reject(); return; }
-                transaction.changes.insert(transaction.changes.end(), removed.changes.begin(), removed.changes.end());
-            }
-            if (recipe.rerollMagic) {
-                const int level = std::clamp(recipe.level ? recipe.level :
-                    recipe.playerLevelPercent * state().player.character.level / 100 +
-                    recipe.itemLevelPercent * int(preserved.level) / 100, 1, 99);
-                auto rolled = rollAffixItem(content_, base, ItemQuality::Magic, level,
-                    draft.state_.creationRandom, characterDefinition_.code);
-                if (!rolled.deferred.empty()) { reject(); return; }
-                draft.state_.creationRandom = rolled.randomState;
-                auto created = draft.createItem(preserved.definition, 1, std::get<ContainerLocation>(preserved.location),
-                    unsigned(level), rolled.generation);
-                if (!created) { reject(); return; }
-                target = created.item;
-                draft.state_.items.at(target).identified = true;
-                transaction.changes.insert(transaction.changes.end(), created.changes.begin(), created.changes.end());
-            }
-            auto &host = draft.state_.items.at(target);
-            const int limit = std::max(0, std::min({base.base.sockets.value_or(0),
-                base.base.socketsByLevel[host.level <= 25 ? 0 : host.level <= 40 ? 1 : 2], base.width * base.height, 6}));
-            if (!limit) { reject(); return; }
-            const int rolled = recipe.minimum + int(limitedRandom(draft.state_.creationRandom,
-                unsigned(recipe.maximum - recipe.minimum + 1)));
-            host.sockets = unsigned(std::min(rolled, limit)); host.nativeFlags |= 0x800u;
-            ++host.revision;
-            transaction.item = target; transaction.transferred = 1;
-            transaction.changes.push_back({target, host.revision, ItemChangeKind::PropertiesChanged,
-                host.location, host.location, host.quantity});
-            inventory_.state_ = std::move(draft.state_);
-            publishInventory(std::move(transaction), {}); return;
-        }
-    }
-    const auto &unsocket = content_.unsocketRecipe;
-    if (unsocket.enabled && unsocket.version <= 100 &&
-        state().population.difficulty >= unsocket.minimumDifficulty && items.size() == 3) {
-        EntityId target;
-        std::array<ItemHandle, 2> materials{};
-        for (auto id : items) {
-            const auto &item = *inventory_.item(id);
-            if (item.quantity != 1) continue;
-            for (size_t index = 0; index < materials.size(); ++index)
-                if (item.definition == unsocket.materials[index]) materials[index] = item.handle();
-            const auto *base = inventory_.catalog().find(item.definition);
-            if (item.sockets && (unsocket.itemType == "any" || base->equipment.isType(unsocket.itemType))) target = id;
-        }
-        if (target && materials[0].id && materials[1].id && materials[0].id != materials[1].id &&
-            target != materials[0].id && target != materials[1].id) {
-            InventoryService draft(ids_, inventory_.catalog(), {content_.stashLayout.columns, content_.stashLayout.rows},
-                {content_.cubeLayout.columns, content_.cubeLayout.rows});
-            draft.state_ = inventory_.state_; draft.itemProperties_ = inventory_.itemProperties_;
-            draft.singleCarryUniques_ = inventory_.singleCarryUniques_;
-            auto &host = draft.state_.items.at(target);
-            if (host.revision == UINT64_MAX) { reject(); return; }
-            InventoryResult transaction;
-            for (auto handle : materials) {
-                auto removed = draft.consume(handle, 1, inventoryAccess());
-                if (!removed) { reject(); return; }
-                transaction.changes.insert(transaction.changes.end(), removed.changes.begin(), removed.changes.end());
-            }
-            host.socketedItems.clear(); host.socketRequiredLevel = 0;
-            host.runewordRow = -1; host.runewordStats.clear(); host.nativeFlags &= ~0x4000000u;
-            ++host.revision;
-            transaction.item = target;
-            transaction.changes.push_back({target, host.revision, ItemChangeKind::PropertiesChanged,
-                host.location, host.location, host.quantity});
-            inventory_.state_ = std::move(draft.state_);
-            publishInventory(std::move(transaction), {});
-            return;
-        }
-    }
-    const bool khalim = items.size() == 4;
-    const QuestId questId = khalim ? QuestId::KhalimsWill : QuestId::HoradricStaff;
-    const std::span<const std::string> codes = khalim ? std::span<const std::string>(content_.khalimRecipe.inputs) :
-        std::span<const std::string>(content_.staffRecipe.inputs);
-    const auto &output = khalim ? content_.khalimRecipe.output : content_.staffRecipe.output;
-    if (items.size() != codes.size() || quest(questId).stage >= questCompletionStage(questId)) { reject(); return; }
-    std::vector<ItemHandle> inputs(codes.size());
-    for (auto id : items) {
-        const auto *item = inventory_.item(id);
-        if (item->quantity != 1 || item->nativeQuestDifficulty < unsigned(state().population.difficulty)) { reject(); return; }
-        for (size_t index = 0; index < inputs.size(); ++index)
-            if (item->definition == codes[index]) inputs[index] = item->handle();
-    }
-    if (std::any_of(inputs.begin(), inputs.end(), [](const auto &input) { return !input.id; })) { reject(); return; }
-    InventoryService draft(ids_, inventory_.catalog(), {content_.stashLayout.columns, content_.stashLayout.rows},
-        {content_.cubeLayout.columns, content_.cubeLayout.rows});
-    draft.state_ = inventory_.state_;
-    draft.itemProperties_ = inventory_.itemProperties_;
-    draft.singleCarryUniques_ = inventory_.singleCarryUniques_;
-    InventoryResult transaction;
-    for (auto input : inputs) {
-        auto removed = draft.consume(input, 1, inventoryAccess());
-        if (!removed) { reject(); return; }
-        transaction.changes.insert(transaction.changes.end(), removed.changes.begin(), removed.changes.end());
-    }
-    const auto generation = questItemGeneration(output, draft.state_.creationRandom);
-    auto created = draft.createItem(output, 1, AutoPlace{playerContainers_.cube}, unsigned(state().player.character.level), generation);
-    if (!created) { reject(); return; }
-    draft.state_.items.at(created.item).nativeQuestDifficulty = unsigned(state().population.difficulty);
-    draft.state_.items.at(created.item).identified = true;
-    transaction.item = created.item;
-    transaction.changes.insert(transaction.changes.end(), created.changes.begin(), created.changes.end());
-    inventory_.state_ = std::move(draft.state_);
-    publishInventory(std::move(transaction), {});
-    auto &record = simulation_->state_.player.character.quests.at(size_t(state().population.difficulty)).at(questIndex(questId));
-    record.stage = khalim ? 3 : 5;
-    simulation_->emit(QuestAdvanced{questId, record.stage});
-}
 void GameSessionImpl::createStarterEquipment() {
     const auto &characters = content_.tables.at("charstats");
     const auto actor = equipmentActor();
@@ -284,6 +129,13 @@ InventoryError GameSessionImpl::previewInventory(const GameCommand &command) con
                 return previewHirelingPotion(intent.item);
             } else if constexpr (std::is_same_v<T, UseItem>) {
                 const auto *source = inventory_.item(intent.item.id);
+                if (source && source->definition == "toa" && content_.items.find("toa")) {
+                    if (auto error = inventory_.checkHandle(intent.item); error != InventoryError::None) return error;
+                    const auto *location = std::get_if<ContainerLocation>(&source->location);
+                    return location && location->container == playerContainers_.backpack &&
+                        !state().player.actions.dead && state().player.resources.hp > 0
+                        ? InventoryError::None : InventoryError::AccessDenied;
+                }
                 if (source && source->definition == content_.prisonOfIce.scroll) {
                     if (auto error = inventory_.checkHandle(intent.item); error != InventoryError::None) return error;
                     const auto *location = std::get_if<ContainerLocation>(&source->location);

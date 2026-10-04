@@ -280,3 +280,7 @@ if(MINGW)
     target_link_options(${app} PRIVATE -static -static-libgcc -static-libstdc++)
   endforeach()
 endif()
+
+target_sources(d2x_items PRIVATE src/gameplay/items/cube.cpp)
+target_sources(d2x_content PRIVATE src/content/items/cube_data.cpp)
+target_sources(d2x_session PRIVATE src/gameplay/session/session_cube.cpp)

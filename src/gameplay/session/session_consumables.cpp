@@ -52,6 +52,16 @@ void GameSessionImpl::useItem(ItemHandle handle) {
     }
     auto code = inventory_.item(handle.id)->definition;
     const auto *definition = inventory_.catalog().find(code);
+    // The original 1.13+ TBL binds toa to right-click Stat/Skill Points reset.
+    if (code == "toa") {
+        auto result = inventory_.consume(handle, 1, inventoryAccess());
+        if (!result) { publishInventory(std::move(result), handle.id); return; }
+        resetCharacterAttributePoints();
+        resetCharacterSkillPoints();
+        publishInventory(std::move(result), handle.id);
+        simulation_->emit(ItemUsed{handle.id, std::move(code)});
+        return;
+    }
     if (code == content_.prisonOfIce.scroll) {
         auto result = inventory_.consume(handle, 1, inventoryAccess());
         if (!result) { publishInventory(std::move(result), handle.id); return; }

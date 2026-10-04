@@ -31,6 +31,7 @@ const char *qualityName(ItemQuality quality) {
     case ItemQuality::Unique: return "unique";
     case ItemQuality::Superior: return "superior";
     case ItemQuality::Inferior: return "inferior";
+    case ItemQuality::Crafted: return "crafted";
     }
     return "unknown";
 }
@@ -446,7 +447,9 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
             else if (quality == "rare") kind = ItemQuality::Rare;
             else if (quality == "set") kind = ItemQuality::Set;
             else if (quality == "unique") kind = ItemQuality::Unique;
-            else throw std::runtime_error("quality must be normal, magic, rare, set or unique");
+            else if (quality == "inferior") kind = ItemQuality::Inferior;
+            else if (quality == "superior") kind = ItemQuality::Superior;
+            else throw std::runtime_error("quality must be normal, inferior, superior, magic, rare, set or unique");
             if (level < 1 || level > 99) throw std::runtime_error("level must be 1..99");
             session.submit(DebugSpawnItem{code, kind, level, request.value("sockets", 0u), request.value("identified", true)});
             session.tick(0);

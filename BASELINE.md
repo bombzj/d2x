@@ -19,6 +19,7 @@
 
 | 批次 | 源码事实与验证范围 | `dist/current` |
 | --- | --- | --- |
+| 方块合成与 Crafted | 当前 MPQ 全部146条启用配方、36条 Crafted、原生 quality=8 与 TXT 编号、Token 使用及三类红门接入；Windows Release 和全部配方正式合成、物品保存重载、门户往返冒烟通过，具体消费者与事件首领限制见 [方块](docs/gameplay/items/CUBE_AND_GOLD.md) | 未打包，后续白骨技能批次同步 |
 | 物品／装备复核与镶嵌 | 对照当前 MPQ 和本地 reference，补齐宝石／符文／三品质 jewel 镶嵌、孔内身份与顺序、需求、符文之语、8 条加孔与去镶嵌配方、原生 D2S；同步 carry1、任务互斥及职业药剂修正。Windows Release 与有限实机冒烟通过，含 UI 拖入、属性和保存重载；效果消费者及原图孔位叠层仍有限，见 [物品支持](docs/gameplay/items/SUPPORT.md)、[参数覆盖](docs/gameplay/items/DATA.md) | 未打包，旧分发不含本批修改 |
 | 五幕地图复核与营地道路 | 核对当前MPQ与本地参考，修正交界地板／道路、主题替换、KillEdge、屋顶参数、熔岩动画、丛林实际连接及山顶零操作距离；Trees.ds1恢复完整13组，仅跳过原不完整末组。Windows Release及更新包通过；Trees修订后五种子各136区域加载／出口关联、原树显示及临时档重载复验通过，主批另有40张代表地图显示及营地往返步行记录，见[地图验证](docs/gameplay/world/MAPS.md#本批验证) | 已更新，包含Trees兼容、地图规则v9及当前文档 |
 | 九项基础重构、自动地图、五幕任务、死灵法师诅咒与启动音频修复 | 已有 Windows Release 与有限冒烟记录；各模块保留实际覆盖及未覆盖项 | 2026-10-04 既有包包含这些批次 |

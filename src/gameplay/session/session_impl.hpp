@@ -103,6 +103,8 @@ class GameSessionImpl {
     std::map<EntityId, std::vector<HirelingOffer>> hirelingOffers_;
     std::optional<uint64_t> pendingPortal_;
     bool pendingCainPortal_ = false;
+    bool cowPortalOpened_ = false, uberFinaleOpened_ = false;
+    std::array<bool, 3> uberPortalsOpened_{};
     std::optional<Vec> townPortalArrival_;
     std::map<RegionId, Vec> townPortalArrivals_;
     std::optional<RegionId> portalTown(RegionId field) const;

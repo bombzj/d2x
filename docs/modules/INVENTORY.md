@@ -88,3 +88,5 @@ Windows Release 游戏与资源工具构建通过，修正一处重复定义并�
 原法杖名称、耐久、伤害及附加技能提示，仓库、方块和 Cursor 截图已查看。最终构建后的独立两帧加载实例退出 0、stderr 空。该冒烟未覆盖商店交易、所有堆叠／拆分／鉴定组合、方块配方、多人或 Linux 运行。
 
 证据：`artifacts/refactor-inventory-build.log`、`artifacts/refactor-inventory-20261003/` 内 JSON、依赖记录、临时 D2S、日志及截图，均不纳入源码。未新增测试脚本、用例或专用程序，未读写用户角色档，未更新旧运行包。
+
+方块事务与 Crafted：typed 原配方匹配完整材料，输出和随机状态在库存草稿成功后一次提交；useitem 保留宿主身份，usetype／新物品另分配身份。Crafted 固定属性和词缀只掷一次并保存原生统计值；运行指纹为 `cube-rules-v2-native-crafted-and-txt-indices`，磁盘仍原 v96，规则与有限验证见 [方块](../gameplay/items/CUBE_AND_GOLD.md)。

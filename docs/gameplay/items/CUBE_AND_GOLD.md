@@ -8,44 +8,50 @@
 - 卷轴拖到 `books.txt` 指定的对应书上增加一页；满书拒绝，原卷轴留在原位。书的初始页数与容量读取 `misc.txt`。右键回城书消耗一页；右键鉴定卷轴或鉴定书后点击未鉴定物品。空书保留实例。
 - 打开私人储物箱时点击右侧包裹金币栏可存入，点击左侧箱子上方第一条金额栏可取出；第二条显示箱子金币上限。平时点击包裹金币栏可选择丢弃数量。输入数字后按 Enter 或点 OK。库存金币受等级 ×10000 限制，储物箱上限按原引擎等级公式计算，地面单堆上限读取金币原表。
 - `Ctrl+Alt+B` 在人物脚边掉落一件 MPQ 定义的赫拉迪克方块，已有方块时拒绝。正常拾取后右键背包中的方块打开原 `supertransmogrifier.dc6` 面板和 `inventory.txt` 的 3×4 格。背包与方块之间可拖动、交换、合并；Shift 点击可整件转移。方块不能放进自身；有物品时不能把方块丢在地上。关闭面板、换图、死亡不销毁内容，角色存档保存方块里的物品。
-- 合成按钮提交 TransmuteCube：支持原 cubemain 绑定的赫拉迪克法杖、克林姆的意志，以及下述 8 条加孔和去镶嵌配方；资格、材料、数量、难度和空光标均由宿主复验，副本库存成功后一次提交。不匹配时保留材料；通用全部配方尚未实现。
+- 合成按钮提交 TransmuteCube：支持当前 MPQ 的全部 146 条启用配方；资格、材料、数量、难度和空光标均由宿主复验，副本库存成功后一次提交。不匹配时保留材料和随机状态。
 
 ## 合成范围与原表语义
 
 “箱子合成”对应赫拉迪克方块；私人储物箱只负责存取，野外宝箱只负责交互／掉落。原版方块也用于普通物品制作；[暴雪方块说明](https://classic.battle.net/diablo2exp/items/cube.shtml)可交叉核对用途，实际配方、属性、限制仍以当前 MPQ 与对应原引擎分支为准，不从网页描述建立自定配方。
 
-2026-10-04 当前挂载 `cubemain.txt` 有 146 条 enabled=1 原行，不是本项目已支持的配方数。源码实际执行范围如下：
+2026-10-04 当前挂载 `cubemain.txt` 的 146 条 enabled=1 原行全部接入；未启用行不登记。配方数来自当前 MPQ，不写死规则或材料清单。
 
-| 配方类别／当前 MPQ 例子 | 本项目 |
+| 配方类别 | 当前行为 |
 | --- | --- |
-| `msf + vip → hst`、`qf1 + qhr + qey + qbr → qf2` | 两项已绑定原代码／输入数量；`session_inventory.cpp::transmuteCube` 使用私有库存草稿消耗、创建并一次提交，要求背包持有方块、空 Cursor、未完成对应任务、材料难度合格、没有多余物品 |
-| 同种同级宝石／骷髅升一级、符文升级（部分还需宝石） | 未实现；`Misc.BetterGem` 的祭坛升级入口不能代替方块配方 |
-| 回复药剂、普通药剂转换、箭矢／弩箭互换及投掷武器制作 | 未实现 |
-| 戒指／项链转换、魔法／稀有物品重掷、固定前后缀制作 | 仅接入三条加孔魔法武器重掷：标准宝石＋带孔武器、无瑕宝石／碎裂宝石＋魔法武器；原 lvl 优先，输出 30／30／25 级，重掷原词缀、销毁旧孔内物品；其余未实现 |
-| Hitpower／Blood／Caster／Safety Crafted 配方，含 jewel 材料 | 未实现；没有 Crafted 实例品质或 D2S 对应分支。jewel 不是宝石的替代名称 |
-| 基础装备打孔、稀有加孔 | 已接入普通且无孔的武器／身体护甲／头盔／盾牌四条原配方；从原 1–6 范围掷值，再按底材／等级／占格上限截断，不改成在实际上限内均匀抽样。三完美骷髅＋原暗金乔丹之石＋无孔稀有物品加 1 孔；特殊暗金按原行校验，不能用任意戒指替代 |
-| 去除孔内物品 | 按原 `useitem,uns`：Hel＋回城卷轴＋带孔物品，销毁全部填充物及符文之语列表，保留孔、底材和原属性；无形物理标志不因删除符文之语列表而自动恢复 |
-| 修理／补充数量、稀有／暗金底材升级 | 未实现；NPC 修理不能替代方块配方 |
-| Cow Portal、Pandemonium Portal／Finale Portal、Token of Absolution | 原表存在，方块入口未实现；生成门户还需要独立任务／地点／模式规则，不能当普通物品创建 |
+| 法杖、克林姆的意志 | 两条 op=28 配方按对应任务、材料难度和完成状态复验 |
+| 宝石／骷髅、符文 | 28 条宝石／骷髅升级、32 条符文升级；读取原 qty、宝石类型和模式条件 |
+| 药剂、箭袋、投掷武器 | 原回复／转换／制作配方；qty 表示根物品件数，不表示箭袋内部箭数，成功消耗整件材料 |
+| 魔法／稀有重掷、戒指／项链、固定词缀 | 原 lvl 优先；否则分别取整角色 plvl 和第一个匹配输入的 ilvl 百分比再相加；固定 pre／suf 使用原一基局部词缀编号 |
+| Hitpower／Blood／Caster／Safety | 36 条 Crafted；按原底材／品质、符文、完美宝石和 jewel 匹配。Jewel 的品质、鉴定与属性不影响制作属性 |
+| 加孔、去镶嵌 | 四类普通无孔底材打孔、三条魔法武器重掷加孔、乔丹之石稀有加孔、Hel 去镶嵌；掷原范围后截断孔上限，去镶嵌销毁填充物和符文之语列表并保留宿主 |
+| 修理、补充、升级 | 武器／护甲修理，原充能补满、可堆叠数量上限；八条稀有／暗金底材升级保留身份、品质、词缀与孔内物品，重新计算底材需求并保留原 +5／+7 等级需求属性 |
+| Token of Absolution | 原四精华制作；背包右键消耗一件，返还属性／技能点，保留任务奖励及阿卡拉重置资格 |
+| Cow／Pandemonium／Finale | 原城镇、难度、任务与本局次数检查，创建原 class60 双向红门；三种钥匙门在本局不重复目的地 |
 
-完整解释器仍需绑定以下字段，不应只按 description 文字匹配或只支持确切底材代码：
+### Crafted 与保存
 
-孔相关分支由 `content/items/socket_data.cpp` 绑定原 input／output／mod 字段、品质／sock／nos、材料类别／数量、特殊暗金原行、version／min diff、lvl／plvl／ilvl；玩法在私有草稿上匹配完整输入并一次提交。多余／错误材料或输出失败时保留原库存和随机状态。当前 8 条加孔与 1 条去镶嵌已有限实机验证，详见 [支持清单](SUPPORT.md)；没有覆盖当前 146 条 enabled 的完整配方表，也没有通用 op 或任意输出指令解释器。
+制作等级采用原表 plvl／ilvl 计算。固定属性按 mod 的 chance／param／min／max 掷值，与额外稀有可用词缀分别生成；附加词缀请求数为随机 0–4 与等级保底的较大者，等级超过 30／50／70 时保底为 2／3／4，否则为 1。前后缀各最多三个，共用组排重；实际数量受可用词缀池限制。需求为底材与词缀需求最大值加 10 加三倍附加词缀数，上限 98，再计入原额外需求属性。
 
-| 字段／语法 | 必须保留的含义与当前限制 |
-| --- | --- |
-| enabled、ladder、min diff、version、class、op／param／value | 配方启用、难度、模式／版本／职业及条件操作。当前任务加载器只筛 enabled 并核验固定输入；并未完整解释这些字段。两项任务资格由现有宿主规则复验，不代表通用 op=28 已移植 |
-| numinputs、input 1…7 | 有底材代码及 ItemTypes 类别，`qty=`、品质、孔／无形等限定；实际总材料数量和输入列数不同。七个 input 列不代表只允许七件材料 |
-| output、output b／c | 有新物品及 `useitem`／`usetype`、品质／前后缀／升级／孔／数量等修饰，也有门户操作；多输出、原物品保留与材料销毁需要统一原子计划 |
-| lvl、plvl、ilvl 与 b／c 对应列 | 输出等级可以依赖角色与输入等级，决定词缀和需求；不可固定为玩家等级 |
-| mod 1…5 及 b／c 对应列 | chance／param／min／max、固定属性与随机词缀是不同来源，须保留原掷值并与保存消费者一致 |
+实例为独立 Crafted 品质，橙色名称；固定属性和词缀掷值只生成一次，保留原名称／词缀身份并按 D2S 原 quality=8、稀有名称及三对前后缀字段保存。原表 `Expansion` 分隔行不占编号；前后缀磁盘编号一基，暗金／套装身份零基。没有项目私有磁盘格式或旧档静默重映射。
 
-本地依据：D2MOO `D2Common/DataTbls/HoradricCube.cpp` 的 InputParser／OutputParser 处理引号与逗号修饰，输入名称先查 ItemTypes 再查底材，亦可查暗金／套装身份；`D2Game/PLAYER/PlrTrade.cpp::PLRTRADE_CheckCubeInput`、`PLRTRADE_CreateCubeOutputs` 与末尾合成入口负责匹配、op 条件及输出。OpenDiablo2 的 `cubemain_record.go` 用于交叉核对字段，注释已承认其 class 语法是假设；Diablerie 的 `Player.Use` 方块分支为空，不能作为通用合成已实现的依据。参考边界见 [资料来源](../../resources/THIRD_PARTY.md)。
+### 门户条件
 
-两项任务配方只按当前已核实的窄分支执行，不匹配时保留材料。资源表存在、按钮可点击和物品可存入方块都不能证明通用合成完成；本次实际合成及保存往返覆盖镶嵌相关分支，未重新验收两项任务配方。
+牛关门在当前难度 Rogue Encampment 合成，需要同难度资料片巴尔完成、未杀牛王、本局未开牛门。牛王永久限制使用原 A1Q4 CUSTOM6 位；本局开门标志不写入角色。钥匙／器官门仅限地狱 Harrogath，钥匙依原随机起点循环选择本局尚未打开的 133–135，器官门到 136 且本局一次。原地图与门可往返；这不表示 Uber 首领完整 AI、事件掉落与地狱火炬生成已经完成。
+
+### 字段与原子性
+
+`content/items/cube_data.*` 绑定 enabled／ladder／version／class／min diff／op、numinputs、input1–7 类型／底材／特殊身份／品质／qty／孔／无形／级别限定，以及 output／output b／output c 的 useitem／usetype／copy／升级／孔／修理／充能／qty、lvl／plvl／ilvl、pre／suf 和五组 mod。第二、三输出字段原列为 `b lvl`、`b mod 1` 等前缀形式。当前原表条件只有 op=0／28，param／value 为空；不声明任意修改版条件或任意未来公式解释器已经完成，未知有效语法明确拒绝。
+
+`gameplay/items/cube.cpp` 对完整根物品集合按输入列次序匹配；方块多余材料、错误品质、未满足资格、空位不足均拒绝。`session_cube.cpp` 先准备库存草稿、输出、身份与随机状态，成功后一次提交。useitem 保留宿主 ID，usetype／新输出分配新 ID；改底材后再次校验尺寸、需求和原生属性。
+
+本地依据：D2MOO `HoradricCube.cpp` 的 InputParser／OutputParser，`PlrTrade.cpp` 的输入匹配、等级／属性与门户输出，`ItemsMagic.cpp::sub_6FC53CD0` 的制作词缀，`Items.cpp` 的需求与位流，`A1Q4.cpp` 的牛王限制；[暴雪制作说明](https://classic.battle.net/diablo2exp/items/crafteditems.shtml)补查用途。参数仍读当前 MPQ，参考源码不进入提交。
+
+### 本批冒烟
+
+Windows Release 构建通过。使用现有调试管道及独立临时角色，全部 36 条 Crafted、107 条其他物品配方均正式合成并原生保存／重载，三类门户正式创建；钥匙三目的地和最终门、牛门均往返原地图。另查 Token 使用后的返还和保存重载，查看原方块及红门画面。未新增测试脚本、用例或专用程序；日志／截图只在忽略的 `artifacts/cube-smoke-20261004/`。没有统计认证随机分布、全部非法输入／属性消费者、完整事件首领、原版客户端或 Linux 运行。
 
 ## 代码边界
 
-`content` 物品适配读取 `misc.txt`、`books.txt` 与 `inventory.txt`，`content/quest` 准备支持的任务配方；`gameplay/items/books.cpp` 处理原子装书、消耗页数；`gameplay/items/collection.cpp` 分别规划整件转移和地面拾取，共用堆叠资格；`gameplay/session/session_gold.cpp` 处理钱包／私人箱／地面金币和调试方块投放；`presentation/inventory/inventory_panel.cpp` 只生成拖放意图与格子预览；`presentation/inventory/cube_view.cpp` 只绘制 MPQ 原面板。命名管道有 `cube-drop`、`cube-open`、`book-load`、`identify-item` 和 `gold-transfer`，操作仍进入正式会话命令。
+`content` 物品适配读取 `misc.txt`、`books.txt` 与 `inventory.txt`，`content/items/cube_data.*` 导入原配方；`gameplay/items/books.cpp` 处理原子装书、消耗页数；`gameplay/items/collection.cpp` 分别规划整件转移和地面拾取，共用堆叠资格；`gameplay/session/session_gold.cpp` 处理钱包／私人箱／地面金币和调试方块投放；`presentation/inventory/inventory_panel.cpp` 只生成拖放意图与格子预览；`presentation/inventory/cube_view.cpp` 只绘制 MPQ 原面板。命名管道有 `cube-drop`、`cube-open`、`book-load`、`identify-item` 和 `gold-transfer`，操作仍进入正式会话命令。
 
-保存采用原 D2S v96；书页、金币、方块及内部物品按原字段保存，不恢复 UI 访问授权。共享储物箱和通用配方仍未实现；任务配方见 [第二幕](../quests/ACT2.md)、[第三幕](../quests/ACT3_5.md)，格式见 [存档](../../modules/SAVES.md)。既有堆叠／书页／金币有限检查不代替当前全部配方与键鼠验收。
+保存采用原 D2S v96；书页、金币、方块及内部物品按原字段保存，不恢复 UI 访问授权。共享储物箱仍未实现；任务配方见 [第二幕](../quests/ACT2.md)、[第三幕](../quests/ACT3_5.md)，格式见 [存档](../../modules/SAVES.md)。既有堆叠／书页／金币有限检查不代替当前全部配方与键鼠验收。
