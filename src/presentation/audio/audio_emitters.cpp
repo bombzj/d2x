@@ -15,9 +15,11 @@ namespace d2x {
 struct SoundBank::EmitterAudio {
     struct Sample {
         std::vector<float> pcm;
+        std::string soundId;
         unsigned channels = 0, frames = 0, loopBegin = 0, loopEnd = 0;
         unsigned fadeIn = 0, fadeOut = 0;
         float volume = 1;
+        bool deferInstance = false;
     };
     struct Group {
         std::vector<Sample> samples;
@@ -117,11 +119,17 @@ void SoundBank::registerTravelGroup(Archives &archives, std::string key, const D
     unsigned rate = 0;
     for (int i = 0; i < count; ++i) {
         const auto variant = row + size_t(i);
+        const std::string soundId(table.value(variant, "Sound"));
+        const int defer = table.number(variant, "Defer Inst").value_or(0);
+        if (defer != 0 && defer != 1)
+            throw std::runtime_error("Invalid original travel Defer Inst: " + soundId);
         if (table.number(variant, "Loop").value_or(0) != 1 ||
-            table.number(variant, "Defer Inst").value_or(0) ||
             table.number(variant, "Stop Inst").value_or(0) ||
             table.number(variant, "Duration").value_or(0))
-            throw std::runtime_error("Unsupported original travel sound instance rule");
+            throw std::runtime_error("Unsupported original travel sound instance rule: " + soundId +
+                " (Loop=" + std::to_string(table.number(variant, "Loop").value_or(0)) +
+                ", Stop Inst=" + std::to_string(table.number(variant, "Stop Inst").value_or(0)) +
+                ", Duration=" + std::to_string(table.number(variant, "Duration").value_or(0)) + ")");
         const auto bytes = archives.read("data/global/sfx/" + std::string(table.value(variant, "FileName")));
         Reader reader(bytes);
         if (reader.u32() != 0x46464952 || reader.u32() + uint64_t(8) != bytes.size() || reader.u32() != 0x45564157)
@@ -163,6 +171,8 @@ void SoundBank::registerTravelGroup(Archives &archives, std::string key, const D
         }
         rate = wave.sampleRate;
         EmitterAudio::Sample sample;
+        sample.soundId = soundId;
+        sample.deferInstance = defer != 0;
         sample.channels = wave.channels;
         sample.frames = wave.frameCount;
         sample.loopBegin = loop->first;
@@ -202,10 +212,18 @@ void SoundBank::syncEmitters(std::span<const SoundEmitter> live, uint64_t frame)
         auto &group = found->second;
         // A suppressed creation remains suppressed for that entity's lifetime.
         if (group.lastStart && frame - *group.lastStart < group.compound) continue;
-        group.lastStart = frame;
         rollRandom(emitters_->random);
         const auto index = uint32_t(emitters_->random) % group.samples.size();
-        emitters_->voices.emplace(emitter.entity, EmitterAudio::Voice{&group.samples[index]});
+        const auto &sample = group.samples[index];
+        // Defer Inst rejects a duplicate request while the original sound is
+        // playing, including its fade-out. Compare Sounds identities across
+        // event keys; different missile registrations can use the same sound.
+        if (sample.deferInstance && std::any_of(emitters_->voices.begin(), emitters_->voices.end(),
+                [&](const auto &entry) {
+                    return !entry.second.finished && entry.second.sample->soundId == sample.soundId;
+                })) continue;
+        group.lastStart = frame;
+        emitters_->voices.emplace(emitter.entity, EmitterAudio::Voice{&sample});
     }
     for (auto &[id, voice] : emitters_->voices)
         if (!present.contains(id)) voice.releasing = true;

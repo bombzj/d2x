@@ -1,3 +1,4 @@
+#include "gameplay/quest/acts/act_two_state.hpp"
 #include "gameplay/skills/spec.hpp"
 #include "client/actor_client.hpp"
 #include "gameplay/session/session.hpp"

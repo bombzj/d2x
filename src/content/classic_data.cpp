@@ -272,16 +272,7 @@ ClassicData loadClassicData(Archives &archives) {
     data.hirelings = loadHirelingDefinitions(data.tables.at("hireling"));
     {
         data.tables.emplace("skilldesc", DataTable(archives.read("data/global/excel/skilldesc.txt")));
-        const auto &recipes = data.tables.at("cubemain");
-        for (size_t row = 0; row < recipes.rows().size(); ++row)
-            if (recipes.value(row, "output") == "hst" && recipes.number(row, "enabled").value_or(0)) {
-                if (recipes.number(row, "numinputs") != 2 || recipes.value(row, "input 1") != "msf" ||
-                    recipes.value(row, "input 2") != "vip")
-                    throw std::runtime_error("Unsupported original Horadric Staff recipe");
-                data.staffRecipeInputs = {std::string(recipes.value(row, "input 1")), std::string(recipes.value(row, "input 2"))};
-                data.staffRecipeOutput = recipes.value(row, "output");
-            }
-        if (data.staffRecipeOutput.empty()) throw std::runtime_error("Original Horadric Staff recipe is missing");
+        data.staffRecipe = loadStaffRecipeContent(data.items, data.tables);
         data.hirelingLayout = loadHirelingLayout(data.tables.at("inventory"));
         data.itemStrings = strings.entries();
         const DataTable hireDescriptions(archives.read("data/global/excel/hiredesc.txt"));
@@ -291,9 +282,9 @@ ClassicData loadClassicData(Archives &archives) {
             if (!code.empty()) data.hirelingDescriptions.emplace(code, label);
         }
         for (const auto &[key, value] : strings.entries())
-            if (key.starts_with("qstsa1q") || key.starts_with("qstsa2q") || key == "newquestlog" ||
+            if ((key.size() >= 7 && key.starts_with("qstsa") && key[5] >= '1' && key[5] <= '5' && key[6] == 'q') || key == "newquestlog" ||
                 key == "qstsComplete" || key == "noactivequest")
-                data.actOneQuestStrings.emplace(key, value);
+                data.questStrings.emplace(key, value);
             else if (key.starts_with("merc"))
                 data.hirelingStrings.emplace(key, value);
         data.skills = loadSkillCatalog(data.tables.at("skills"), data.tables.at("skilldesc"),
@@ -347,6 +338,7 @@ ClassicData loadClassicData(Archives &archives) {
     if (archives.contains("data/local/docs/eng/a1npc.txt"))
         data.npcDialogues = loadNpcDialogues(archives, data.tables.at("monstats"),
             DataTable(archives.read("data/global/excel/monpreset.txt")), data.itemStrings);
+    data.questContent = loadQuestContent(archives, data.npcDialogues, data.questStrings);
     loadItemConsumables(data);
     {
         loadPropertyData(data);

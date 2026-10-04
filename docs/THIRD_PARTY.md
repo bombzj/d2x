@@ -59,6 +59,8 @@ D2S 读写依据本地 D2MOO 的 `PlrSave2.h/.cpp`、`Items.cpp`、`ItemMods.cpp
 
 本地 `reference/` 下的参考仓库均忽略提交，优先在本机核对，再按需要查其他来源：
 
+任务模块与第二幕提示本轮另核对 D2MOO 固定 `5596f5c` 的 `Quests.cpp` 回调登记，`ACT2/A2Q0.cpp`／`A2Intro.cpp` 的欢迎与初见分工、`A2Q1` 至 `A2Q6` 的 active filter／交谈回调，以及 `Quests.h`／`D2Constants.h` 原保存槽／位定义。杰海因生成位置另据 `A2Q4` 的 `InitializeJerhynStartObject`／`InitializeJerhynPalaceObject`／`InitializeJerhynMonster`，实际标记与初始化函数、位置和中立人物资源从当前 MPQ Objects／DS1／MonStats 取得；双位置记录／隐藏切换为本项目适配，守卫、GUID与移动演出未完整移植。杰海因欢迎与法杖材料确认只用这些原位，原对白和 Sounds 身份来自当前 MPQ；本项目独立实现值事实与计划分发，不纳入参考源码或资源。仍沿用 MIT 归属；未实施原全局／队伍任务系统，准确边界见[任务系统](QUEST_SYSTEM.md)。
+
 | 本地目录 | 固定提交 | 适用范围 |
 | --- | --- | --- |
 | `reference/d2moo/` | `5596f5c` | D2Common／D2Game 的规则、地图生成、掉落与 NPC；此快照没有 D2Client 角色属性／技能面板布局实现 |

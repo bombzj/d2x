@@ -621,7 +621,7 @@ GameSessionImpl::GameSessionImpl(Archives &archives, const WorldSelection &selec
     reconcileCainObjects();
     Fingerprint fingerprint;
     fingerprint.add(content_.profile);
-    fingerprint.add("act-two-quest-rules-v2-staff-opening");
+    fingerprint.add("quest-rules-v3-act-modules-preludes");
     auto members = archives.used;
     for (const auto &member : members) {
         fingerprint.add(member);

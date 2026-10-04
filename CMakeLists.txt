@@ -84,6 +84,7 @@ target_sources(d2x_content PRIVATE src/content/items/item_consumables.cpp)
 target_sources(d2x_content PRIVATE src/content/items/item_magic_loot.cpp)
 target_sources(d2x_content PRIVATE src/content/items/item_grades.cpp)
 target_sources(d2x_content PRIVATE src/content/npc/npc_dialogue.cpp)
+target_sources(d2x_content PRIVATE src/content/quest/quest_data.cpp)
 target_sources(d2x_content PRIVATE src/content/npc/hireling_data.cpp)
 target_sources(d2x_content PRIVATE src/content/world/automap_data.cpp)
 target_sources(d2x_content PRIVATE src/content/npc/vendor_data.cpp)
@@ -175,9 +176,14 @@ target_sources(d2x_session PRIVATE src/gameplay/session/session_item_snapshot.cp
 target_sources(d2x_session PRIVATE src/gameplay/session/session_character_save.cpp)
 target_sources(d2x_session PRIVATE src/gameplay/session/session_debug_monsters.cpp)
 target_sources(d2x_items PRIVATE src/gameplay/items/replacement.cpp)
-target_sources(d2x_gameplay PRIVATE src/gameplay/quest/npc_conversation.cpp src/gameplay/quest/region_entry.cpp
+target_sources(d2x_gameplay PRIVATE src/gameplay/quest/module.cpp src/gameplay/quest/region_entry.cpp
   src/gameplay/quest/death.cpp src/gameplay/rewards/death_settlement.cpp
   src/gameplay/rewards/experience.cpp src/gameplay/rewards/death_wave.cpp)
+target_sources(d2x_gameplay PRIVATE
+  src/gameplay/quest/acts/act_one_npc.cpp src/gameplay/quest/acts/act_two_npc.cpp
+  src/gameplay/quest/acts/act_one_conversation.cpp src/gameplay/quest/acts/act_two_conversation.cpp
+  src/gameplay/quest/acts/act_one_events.cpp src/gameplay/quest/acts/act_two_events.cpp
+  src/gameplay/quest/acts/act_one_log.cpp src/gameplay/quest/acts/act_two_log.cpp)
 target_sources(d2x_session PRIVATE src/gameplay/session/session_quests.cpp src/gameplay/session/session_quest_rewards.cpp
   src/gameplay/session/session_deaths.cpp src/gameplay/session/session_death_quests.cpp
   src/gameplay/session/session_death_experience.cpp)
@@ -196,11 +202,12 @@ add_library(d2x_persistence src/persistence/d2s_codec.cpp src/persistence/save_f
   src/persistence/d2s_items.cpp
   src/persistence/d2s_inventory.cpp
   src/persistence/d2s_skills.cpp)
+target_sources(d2x_persistence PRIVATE src/persistence/d2s_quests.cpp)
 target_link_libraries(d2x_persistence PUBLIC d2x_gameplay d2x_items d2x_content)
 
 add_library(d2x_client_api INTERFACE)
 target_link_libraries(d2x_client_api INTERFACE d2x_core)
-add_library(d2x_client src/client/inventory_view.cpp)
+add_library(d2x_client src/client/inventory_view.cpp src/client/automap_exploration.cpp)
 target_link_libraries(d2x_client PUBLIC d2x_client_api)
 add_library(d2x_local_client src/client/local_actor_client.cpp src/client/local_inventory_client.cpp
   src/client/local_character_client.cpp src/client/local_quest_client.cpp src/client/local_npc_client.cpp
@@ -238,7 +245,7 @@ target_sources(d2x_presentation PRIVATE src/presentation/inventory/item_tooltip.
 
 add_executable(d2x src/main.cpp src/app/application.cpp src/app/options.cpp src/app/input.cpp
   src/app/character_frontend.cpp src/app/crash_report.cpp)
-target_sources(d2x PRIVATE src/app/debug/debug_pipe.cpp src/app/debug/debug_commands.cpp src/app/debug/debug_inventory.cpp
+target_sources(d2x PRIVATE src/app/automap_save.cpp src/app/debug/debug_pipe.cpp src/app/debug/debug_commands.cpp src/app/debug/debug_inventory.cpp
     src/app/debug/debug_item_actions.cpp src/app/debug/debug_monsters.cpp src/app/debug/debug_hireling.cpp)
 target_link_libraries(d2x PRIVATE d2x_presentation d2x_persistence d2x_local_client)
 target_link_libraries(d2x PRIVATE nlohmann_json::nlohmann_json)

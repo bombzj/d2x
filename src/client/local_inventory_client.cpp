@@ -32,7 +32,7 @@ const InventoryView &LocalInventoryClient::read() const {
     view.cubeLayout = layout(content.cubeLayout);
     view.hirelingSlots = content.hirelingLayout.slots;
     view.cubeCode = content.cubeCode;
-    view.staffRecipeOutput = content.staffRecipeOutput;
+    view.staffRecipeOutput = content.staffRecipe.output;
     view.dropLocation = session_.dropLocation();
     const auto &owned = view.containers;
     // Only this player's containers and the current authorized storage are projected.

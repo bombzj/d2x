@@ -21,6 +21,7 @@ struct MapRegionView {
     RegionId id = RegionId::Encampment;
     int width = 0, height = 0;
     bool safe = false;
+    uint64_t layoutFingerprint = 0;
     std::vector<MapRect> revealRooms;
     std::vector<MapMarkerView> markers;
 };

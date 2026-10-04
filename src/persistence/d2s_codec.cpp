@@ -4,12 +4,7 @@
 #include "d2s_inventory.hpp"
 #include "content/world/world_catalog.hpp"
 #include "d2s_skills.hpp"
-#include "gameplay/quest/den_of_evil.hpp"
-#include "gameplay/quest/burial_grounds.hpp"
-#include "gameplay/quest/search_for_cain.hpp"
-#include "gameplay/quest/forgotten_tower.hpp"
-#include "gameplay/quest/tools_of_trade.hpp"
-#include "gameplay/quest/sisters_to_slaughter.hpp"
+#include "d2s_quests.hpp"
 #include <algorithm>
 #include <cmath>
 #include <ctime>
@@ -21,7 +16,6 @@ namespace d2x {
 namespace {
 constexpr size_t fixedEnd = d2sHeaderSize + 298 + 80 + 52;
 constexpr std::array<const char *, 7> classes{"Amazon", "Sorceress", "Necromancer", "Paladin", "Barbarian", "Druid", "Assassin"};
-constexpr std::array<unsigned, 6> questSlots{1, 2, 4, 5, 3, 6};
 void require(bool condition, const std::string &reason) {
     if (!condition) throw std::runtime_error("D2S: " + reason);
 }
@@ -43,104 +37,6 @@ const CharacterDefinition &characterDefinition(const ClassicData &content, const
         [&](const auto &entry) { return entry.name == name; });
     require(found != content.characters.end(), "unknown character class");
     return *found;
-}
-unsigned questBits(const QuestRecord &quest, size_t index) {
-    const auto stage = quest.stage;
-    switch (index) {
-    case 0: case 1:
-        return stage >= 4 ? 0x2001 : stage == 3 ? 0x2002 : stage == 2 ? 0x1C : stage == 1 ? 4 : 0;
-    case 2:
-        if (quest.flags & cainRescuedByRogues) return 0x8000;
-        return stage >= 8 ? 0x2001 : stage >= 7 ? 0x2002 : stage >= 4 ? 0x1C : stage >= 2 ? 0xC : stage == 1 ? 4 : 0;
-    case 3: return stage >= 4 ? 0x2001 : stage == 3 ? 0x1C : stage == 2 ? 0xC : stage == 1 ? 4 : 0;
-    case 4: return stage >= 6 ? 0x2001 : stage >= 5 ? 0x2002 : stage >= 2 ? 0xC : stage == 1 ? 4 : 0;
-    case 5: return stage >= 5 ? 0x2001 : stage >= 3 ? 0x2002 : stage == 2 ? 0x1C : stage == 1 ? 4 : 0;
-    }
-    return 0;
-}
-void importQuests(CharacterRecord &player, const D2sFixedSections &sections, const NpcDialogues &dialogues) {
-    for (size_t difficulty = 0; difficulty < 3; ++difficulty) {
-        for (size_t index = 0; index < questSlots.size(); ++index) {
-            const auto flags = word(sections.quests, 10 + difficulty * 96 + questSlots[index] * 2);
-            auto &quest = player.actOneQuests[difficulty][index];
-            const bool rewarded = flags & 1, pending = flags & 2, entered = flags & 0x10, started = flags & 0xC;
-            switch (index) {
-            case 0: case 1: quest.stage = rewarded ? 4 : pending ? 3 : entered ? 2 : started ? 1 : 0; break;
-            case 2:
-                quest.stage = rewarded ? 8 : pending ? 7 : entered ? 4 : started ? 1 : 0;
-                quest.flags = !rewarded && (flags & 0x8000) ? cainRescuedByRogues : 0;
-                if (quest.flags) quest.stage = uint32_t(CainStage::Rewarded);
-                break;
-            case 3: quest.stage = rewarded ? 4 : entered ? 3 : flags & 8 ? 2 : started ? 1 : 0; break;
-            case 4: quest.stage = rewarded ? 6 : pending ? 5 : flags & 8 ? 2 : started ? 1 : 0; break;
-            case 5: quest.stage = rewarded ? 5 : pending ? 3 : entered ? 2 : started ? 1 : 0; break;
-            }
-        }
-        if (sections.quests[10 + difficulty * 96 + 0x52]) {
-            require(player.actOneQuests[difficulty][0].stage == uint32_t(DenStage::Rewarded), "respec without Den reward");
-            player.actOneQuests[difficulty][0].flags |= denRespecUsed;
-        }
-        const auto radamentFlags = word(sections.quests, 10 + difficulty * 96 + 18);
-        auto &radament = player.actOneQuests[difficulty][questIndex(QuestId::RadamentsLair)];
-        radament.stage = radamentFlags & 1 ? 4 : radamentFlags & 2 ? 3 : radamentFlags & 8 ? 2 : radamentFlags & 4 ? 1 : 0;
-        radament.flags = radamentFlags & 0x20 ? radamentBookPending
-            : radament.stage >= uint32_t(RadamentStage::Slain) ? radamentBookUsed : 0;
-        const auto staffFlags = word(sections.quests, 10 + difficulty * 96 + 20);
-        auto &staff = player.actOneQuests[difficulty][questIndex(QuestId::HoradricStaff)];
-        staff.stage = staffFlags & 1 ? 6 : staffFlags & 0xC ? 1 : 0;
-        staff.flags = staffFlags & 8 ? 1 : 0;
-        const auto sunFlags = word(sections.quests, 10 + difficulty * 96 + 22);
-        player.actOneQuests[difficulty][questIndex(QuestId::TaintedSun)].stage = sunFlags & 1 ? 4 : sunFlags & 2 ? 3 : sunFlags & 8 ? 2 : sunFlags & 4 ? 1 : 0;
-        const auto arcaneFlags = word(sections.quests, 10 + difficulty * 96 + 24);
-        player.actOneQuests[difficulty][questIndex(QuestId::ArcaneSanctuary)].stage = arcaneFlags & 1 ? 4 : arcaneFlags & 0x10 ? 3 : arcaneFlags & 8 ? 2 : arcaneFlags & 4 ? 1 : 0;
-        const auto summonerFlags = word(sections.quests, 10 + difficulty * 96 + 26);
-        player.actOneQuests[difficulty][questIndex(QuestId::Summoner)].stage = summonerFlags & 1 ? 3 : summonerFlags & 2 ? 2 : summonerFlags & 4 ? 1 : 0;
-        const auto tombsFlags = word(sections.quests, 10 + difficulty * 96 + 28);
-        player.actOneQuests[difficulty][questIndex(QuestId::SevenTombs)].stage = tombsFlags & 1 ? 5 : tombsFlags & 0x10 ? 4 : tombsFlags & 8 ? 3 : tombsFlags & 0x20 ? 2 : tombsFlags & 4 ? 1 : 0;
-        for (const auto &[bit, key] : dialogues.introductionKeys)
-            if (sections.introductions[28 + difficulty * 8 + bit / 8] & (1u << (bit % 8)))
-                player.npcIntroductions[difficulty].insert(key);
-    }
-}
-void exportQuests(const CharacterRecord &player, D2sFixedSections &sections, const NpcDialogues &dialogues) {
-    for (size_t difficulty = 0; difficulty < 3; ++difficulty) {
-        sections.quests[10 + difficulty * 96 + 0x52] = (player.actOneQuests[difficulty][0].flags & denRespecUsed) ? 1 : 0;
-        for (size_t index = 0; index < questSlots.size(); ++index) {
-            const auto offset = 10 + difficulty * 96 + questSlots[index] * 2;
-            const unsigned mask = 0x201F | (index == 2 ? 0x8000 : 0);
-            putWord(sections.quests, offset, (word(sections.quests, offset) & ~mask) |
-                questBits(player.actOneQuests[difficulty][index], index));
-        }
-        const auto &radament = player.actOneQuests[difficulty][questIndex(QuestId::RadamentsLair)];
-        const auto offset = 10 + difficulty * 96 + 18;
-        const unsigned bits = radament.stage >= 4 ? 0x2001 : radament.stage == 3 ? 0x2002
-            : radament.stage == 2 ? 0xC : radament.stage == 1 ? 4 : 0;
-        putWord(sections.quests, offset, (word(sections.quests, offset) & ~0x202Fu) | bits |
-            (radament.flags & radamentBookPending ? 0x20 : 0));
-        const auto &staff = player.actOneQuests[difficulty][questIndex(QuestId::HoradricStaff)];
-        const auto staffOffset = 10 + difficulty * 96 + 20;
-        putWord(sections.quests, staffOffset, (word(sections.quests, staffOffset) & ~0x200Du) |
-            (staff.stage >= 6 ? 0x2001 : staff.stage ? 4 : 0) | (staff.flags & 1 ? 8 : 0));
-        const auto sun = player.actOneQuests[difficulty][questIndex(QuestId::TaintedSun)].stage;
-        const auto sunOffset = 10 + difficulty * 96 + 22;
-        putWord(sections.quests, sunOffset, (word(sections.quests, sunOffset) & ~0x200Fu) |
-            (sun >= 4 ? 0x2001 : sun == 3 ? 0x2002 : sun == 2 ? 0xC : sun == 1 ? 4 : 0));
-        const auto arcane = player.actOneQuests[difficulty][questIndex(QuestId::ArcaneSanctuary)].stage;
-        const auto arcaneOffset = 10 + difficulty * 96 + 24;
-        putWord(sections.quests, arcaneOffset, (word(sections.quests, arcaneOffset) & ~0x200Fu & ~0x10u) |
-            (arcane >= 4 ? 0x2001 : arcane == 3 ? 0x1C : arcane == 2 ? 0xC : arcane == 1 ? 4 : 0));
-        const auto summoner = player.actOneQuests[difficulty][questIndex(QuestId::Summoner)].stage;
-        const auto summonerOffset = 10 + difficulty * 96 + 26;
-        putWord(sections.quests, summonerOffset, (word(sections.quests, summonerOffset) & ~0x2007u) |
-            (summoner >= 3 ? 0x2001 : summoner == 2 ? 0x2002 : summoner == 1 ? 4 : 0));
-        const auto tombs = player.actOneQuests[difficulty][questIndex(QuestId::SevenTombs)].stage;
-        const auto tombsOffset = 10 + difficulty * 96 + 28;
-        putWord(sections.quests, tombsOffset, (word(sections.quests, tombsOffset) & ~0x203Du) |
-            (tombs >= 5 ? 0x2001 : tombs == 4 ? 0x2010 : tombs == 3 ? 0x2008 : tombs == 2 ? 0x20 : tombs == 1 ? 4 : 0));
-        for (const auto &[bit, key] : dialogues.introductionKeys)
-            if (player.npcIntroductions[difficulty].contains(key))
-                sections.introductions[28 + difficulty * 8 + bit / 8] |= uint8_t(1u << (bit % 8));
-    }
 }
 void waypoints(CharacterSaveData &snapshot, D2sFixedSections &sections, const ClassicData &content, bool writing) {
     const auto &levels = content.tables.at("levels");
@@ -235,41 +131,7 @@ void verifyCharacter(const CharacterSaveData &snapshot, const ClassicData &conte
         require(key.skill == -1 || key.skill == -2 ||
             (skill && !skill->passive && (key.right || skill->leftAllowed)), "invalid hotkey skill");
     }
-    int rewards = 0;
-        for (const auto &difficulty : player.actOneQuests) {
-        const auto &den = difficulty[0];
-        require(den.stage <= uint32_t(DenStage::Rewarded) && !(den.flags & ~denRespecUsed) &&
-                (!(den.flags & denRespecUsed) || den.stage == uint32_t(DenStage::Rewarded)),
-            "Den of Evil quest progress");
-        require(difficulty[1].stage <= uint32_t(BurialStage::Rewarded) && !difficulty[1].flags,
-            "Burial Grounds quest progress");
-        const auto &cain = difficulty[2];
-        require(cain.stage <= uint32_t(CainStage::Rewarded) &&
-                !(cain.flags & ~(cainStoneCountMask | cainRescuedByRogues)) &&
-                (cain.flags & cainStoneCountMask) <= 5 &&
-                (!(cain.flags & cainRescuedByRogues) || cain.stage == uint32_t(CainStage::Rewarded)),
-            "Search for Cain quest progress");
-        require(difficulty[3].stage <= uint32_t(TowerStage::CountessSlain) && !difficulty[3].flags,
-            "Forgotten Tower quest progress");
-        require(difficulty[4].stage <= uint32_t(ToolsStage::Imbued) && !difficulty[4].flags,
-            "Tools of the Trade quest progress");
-        require(difficulty[5].stage <= uint32_t(SlaughterStage::Completed) && !difficulty[5].flags,
-            "Sisters to the Slaughter quest progress");
-        rewards += den.stage == uint32_t(DenStage::Rewarded);
-        const auto &radament = difficulty[questIndex(QuestId::RadamentsLair)];
-        require(radament.stage <= uint32_t(RadamentStage::Rewarded) &&
-            !(radament.flags & ~(radamentBookPending | radamentBookUsed)) &&
-            radament.flags != (radamentBookPending | radamentBookUsed) &&
-            (!radament.flags || radament.stage >= uint32_t(RadamentStage::Slain)), "Radament quest progress");
-        rewards += bool(radament.flags & radamentBookUsed);
-        require(difficulty[questIndex(QuestId::HoradricStaff)].stage <= 6 &&
-            !(difficulty[questIndex(QuestId::HoradricStaff)].flags & ~1u), "Horadric Staff quest progress");
-        for (const auto &[id, maximum] : {std::pair{QuestId::TaintedSun, 4u},
-             std::pair{QuestId::ArcaneSanctuary, 4u}, std::pair{QuestId::Summoner, 3u},
-             std::pair{QuestId::SevenTombs, 5u}})
-            require(difficulty[questIndex(id)].stage <= maximum && !difficulty[questIndex(id)].flags,
-                "Act II quest progress");
-        }
+    const int rewards = validateD2sQuestRecords(player.quests);
     require(player.unspentSkills >= 0 && points == player.level - 1 + rewards, "unsupported skill rewards or allocation");
     const auto &thresholds = content.experienceByClass.at(player.characterClass);
     require(size_t(player.level) < thresholds.size() && player.experience >= thresholds[player.level] &&
@@ -326,7 +188,7 @@ CharacterSaveData decodeSave(std::span<const uint8_t> bytes, const ClassicData &
         require((key >> 16) == 0 || (key >> 16) == 0xFFFF, "item-bound hotkey");
         player.skillHotkeys[index] = {int(key & 0x7FFF) == 0 ? -1 : int(key & 0x7FFF), (key & 0x8000) == 0};
     }
-    importQuests(player, sections, content.npcDialogues);
+    importD2sQuests(player, sections, content.npcDialogues);
     for (size_t index = 0; index < player.selectedSkills.size(); ++index) {
         const auto selected = header.selectedSkills[index];
         require((selected >> 16) == 0 || selected == UINT32_MAX, "item-bound mouse skill");
@@ -352,15 +214,8 @@ CharacterSaveData decodeSave(std::span<const uint8_t> bytes, const ClassicData &
     if (header.mercSeed) items(true);
     require(word(bytes, cursor) == 0x666B && cursor + 3 == bytes.size() && bytes[cursor + 2] == 0,
             "Iron Golem or trailing data is not supported");
-    auto &cain = player.actOneQuests[size_t(snapshot.difficulty)][2];
-    auto &tools = player.actOneQuests[size_t(snapshot.difficulty)][4];
-    auto &staff = player.actOneQuests[size_t(snapshot.difficulty)][questIndex(QuestId::HoradricStaff)];
-    for (const auto &[id, item] : snapshot.inventory.items) {
-        if (cain.stage < 7 && item.definition == "bks") cain.stage = uint32_t(CainStage::BarkAcquired);
-        if (cain.stage < 7 && item.definition == "bkd") cain.stage = uint32_t(CainStage::ScrollTranslated);
-        if (tools.stage < 5 && item.definition == "hdm") tools.stage = uint32_t(ToolsStage::MalusAcquired);
-        if (staff.stage < 6 && item.definition == "hst" && item.nativeQuestDifficulty >= unsigned(snapshot.difficulty)) staff.stage = 5;
-    }
+    for (const auto &[id, item] : snapshot.inventory.items)
+        reconcileD2sQuestItem(player, snapshot.difficulty, item.definition, item.nativeQuestDifficulty);
     verifyCharacter(snapshot, content);
     return snapshot;
 }
@@ -420,7 +275,7 @@ Bytes encodeSave(const CharacterSaveData &source, const ClassicData &content) {
     exportMerc(header, player, content);
     for (size_t index = 0; index < player.selectedSkills.size(); ++index)
         header.selectedSkills[index] = uint32_t(std::max(0, player.selectedSkills[index]));
-    exportQuests(player, sections, content.npcDialogues);
+    exportD2sQuests(player, sections, content.npcDialogues);
     waypoints(snapshot, sections, content, true);
     writeD2sFixedSections(bytes, sections);
     const auto &definition = characterDefinition(content, player.characterClass);

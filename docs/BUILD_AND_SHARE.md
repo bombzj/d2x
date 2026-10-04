@@ -1,5 +1,11 @@
 # 构建与运行
 
+最新按幕任务模块及第二幕 NPC 提示批次已完成 Windows Release 游戏／资源工具构建和简单冒烟，修复卷轴解析歧义及杰海因原地图标记未生成 NPC；普通音频启动、欢迎／任务确认、临时存档同进程及独立恢复有证据。源码纳入本次提交，运行入口 `build/bin/d2x.exe`；本轮未重打包，`dist/current` 仍是下方音频修复／自动地图包。准确范围、日志及限制见[任务系统](QUEST_SYSTEM.md#限制与证据)。
+
+普通启动音频修复（2026-10-04）：`dist/current` 已纳入法杖原循环声音的 `Defer Inst` 重复实例处理，解决 `Unsupported original travel sound instance rule`。当前 `assets/mpq2` 可读取对应原表及 `quest/staffloop.wav`，本次无需补资源。Windows Release 构建日志 `artifacts/audio-startup-build-20261004.log`；同目录 `audio-startup-before-20261004.*.log` 和 `audio-startup-after-20261004.*.log` 记录非 hidden 女巫／区域1／seed210 两帧启动由退出1变为退出0、修复后stderr空。此前 hidden 冒烟跳过音频初始化，未覆盖此路径。未指定load/save，未读写角色档，未新增测试程序或提交Git；任务演出听感与完整流程仍待验收。
+
+当前运行包（2026-10-04，自动地图可见范围／保存）：Windows Release 构建更新 `dist/current`，包含九项系统重构及本轮原 DT1 可见格探索／`.d2xmap` 保存。入口 `dist/current/Play.cmd`。原 MPQ、包内已有角色与产物保留；搬移角色时将同名 `.d2s` 和 `.d2xmap` 一起携带。按用户后续授权简单冒烟确认136→152→168格渐进揭示，以及修复动态指纹后新进程返回原区域保留全部168格、缺失0；修复后两个实例退出0、stderr空。原客户端逐像素／节拍、全地图及Linux未认证，证据与适配边界见[自动地图](AUTOMAP.md)。最新构建日志 `artifacts/automap-visible-build-20261004.log` 和 `automap-visible-build-fix-20261004.log`。下方未打包说明仅描述旧批次。
+
 当前系统重构验证（2026-10-03）：公共单位／内部记录绑定与技能冗余清理按后续授权完成 Windows Release 全项目编译及游戏／资源工具链接；修复技能聚合伤害请求缺少显式包含。普通 seed210／区域8 的女巫、死灵法师和圣骑士临时实例覆盖火弹命中、诅咒／尸体召唤、光环切换及脉冲，三实例退出0、stderr空，截图已查看。未新增测试程序、未读写用户档、未打包，dist/current仍是此前包；完整覆盖与日志入口见[单位基线](baseline/UNITS.md#验证范围)，源码进度见[重构方案](TECHNICAL_REFACTOR_PLAN.md)。下方包验证记录保留其原批次范围。
 
 2026-10-03第二幕最终包最小冒烟：后续用户授权，dist/current/d2x.exe以普通Sorceress临时角色、整局seed210、区域68、hidden／frames2／screenshot运行，退出0、stderr空、地形零缺砖，截图已查看。未传load/save，未读写角色存档或新增测试程序。实际地图种子2531443764，区域68不据此认证为真墓；法杖合成／孔口操作／开墙与全任务流程未覆盖。源码文档授权提交，资源、截图日志和存档不纳入；下方未运行／未提交为此前状态。

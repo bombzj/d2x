@@ -1,10 +1,21 @@
 #include "resources/formats.hpp"
 #include "presentation/scene_assets.hpp"
+#include "core/fingerprint.hpp"
 #include <set>
 #include <stdexcept>
 
 namespace d2x {
 void SceneAssets::loadAutomap(const IMapAssetSource &source) {
+    if (!automapContentFingerprint) {
+        // An explicit stable input set, independent of start region, loading order and UI assets.
+        Fingerprint fingerprint;
+        fingerprint.add("d2x-automap-content-v1");
+        for (const auto *table : {"automap", "levels", "lvltypes", "lvlprest", "lvlmaze", "lvlsub", "objects", "monstats2"}) {
+            const auto path = std::string("data/global/excel/") + table + ".txt";
+            fingerprint.add(path); fingerprint.add(archives_.read(path));
+        }
+        automapContentFingerprint = fingerprint.value();
+    }
     std::set<int> used{317};
     regionTownAutomap.resize(source.size());
     regionAutomap.resize(source.size());

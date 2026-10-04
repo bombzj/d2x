@@ -5,9 +5,6 @@
 
 namespace d2x {
 namespace {
-// The on-screen order differs from the a1qN resource numbering.
-constexpr std::array questArtNumbers = {1, 2, 4, 5, 3, 6};
-size_t questArtIndex(size_t index) { return index < 6 ? size_t(questArtNumbers[index] - 1) : index; }
 constexpr float questAnimationSeconds = 3.f;
 constexpr int questCompletedFrame = 24;
 void drawArt(const Sprite *image, Rectangle bounds, Color tint = WHITE) {
@@ -42,7 +39,7 @@ void SceneView::queueQuestAnimation(QuestId quest, bool completed) {
 void SceneView::advanceQuestAnimations(float dt) {
     for (size_t index = 0; index < questAnimations_.size(); ++index) {
         auto &animation = questAnimations_[index];
-        if (!view_.questOpen || int(index / 6) != view_.questAct) {
+        if (!view_.questOpen || questView_.entry(QuestId(index)).act != view_.questAct) {
             if (animation.phase == QuestCompletionAnimation::Phase::Playing)
                 animation.phase = QuestCompletionAnimation::Phase::Idle;
             continue;
@@ -50,11 +47,11 @@ void SceneView::advanceQuestAnimations(float dt) {
         if (animation.phase == QuestCompletionAnimation::Phase::Pending) {
             animation.phase = QuestCompletionAnimation::Phase::Playing;
             animation.elapsed = 0;
-            view_.questSelected = int(index % 6);
+            view_.questSelected = int(questView_.entry(QuestId(index)).displaySlot);
             assets_.audio.play("quest_done");
         } else if (animation.phase == QuestCompletionAnimation::Phase::Playing) {
             animation.elapsed += dt;
-            const auto &art = assets_.actOneQuestIcons[questArtIndex(index)];
+            const auto &art = assets_.questIcons[questView_.entry(QuestId(index)).icon];
             if (animation.elapsed * art.count / questAnimationSeconds >= questCompletedFrame)
                 animation.phase = QuestCompletionAnimation::Phase::Idle;
         }
@@ -77,17 +74,17 @@ void SceneView::drawQuests(Vec) const {
     const int tabCount = questView_.tabCount;
     for (int act = 0; act < tabCount; ++act)
         drawArt(assets_.questTabs.frame(0, act * 2 + (act == view_.questAct ? 0 : 1)), questTabBounds(act));
-    for (int index = 0; index < int(questDisplayOrder.size()); ++index) {
+    for (int index = 0; index < int(questView_.quests(view_.questAct).size()); ++index) {
         const auto bounds = questIconBounds(index);
-        const auto id = displayedQuest(view_.questAct, index);
+        const auto id = questView_.displayed(view_.questAct, size_t(index));
         const auto stateIndex = questIndex(id);
         const auto &record = questView_.entry(id);
         int artFrame = !record.active ? 26 : record.completed ? 24 : 25;
         drawArt(assets_.questSockets.frame(0, 0), bounds);
         const auto iconBounds = questArtRect(24.f + float(index % 3) * 100.f,
                                             37.f + float(index / 3) * 95.f, 72, 86);
-        const auto artIndex = questArtIndex(stateIndex);
-        const auto &art = assets_.actOneQuestIcons[artIndex];
+        const auto artIndex = record.icon;
+        const auto &art = assets_.questIcons[artIndex];
         const auto &animation = questAnimations_[stateIndex];
         const bool completing = animation.phase == QuestCompletionAnimation::Phase::Playing;
         if (completing)
@@ -95,7 +92,7 @@ void SceneView::drawQuests(Vec) const {
                                int(animation.elapsed * art.count / questAnimationSeconds));
         const auto *icon = art.frame(0, artFrame);
         drawArt(icon, iconBounds);
-        const auto face = assets_.actOneQuestFaces[artIndex];
+        const auto face = assets_.questFaces[artIndex];
         if (icon && !completing && view_.questPressed == index && record.active && face.width > 2 && face.height > 2) {
             const auto *inactive = art.frame(0, 26);
             const float scaleX = iconBounds.width / icon->texture.width;
@@ -111,9 +108,9 @@ void SceneView::drawQuests(Vec) const {
         if (index == view_.questSelected)
             drawArt(assets_.questSockets.frame(0, 1), bounds);
     }
-    if (view_.questSelected >= 0 && view_.questSelected < int(questDisplayOrder.size())) {
+    if (view_.questSelected >= 0 && view_.questSelected < int(questView_.quests(view_.questAct).size())) {
         const int index = view_.questSelected;
-        const auto id = displayedQuest(view_.questAct, index);
+        const auto id = questView_.displayed(view_.questAct, size_t(index));
         const auto &record = questView_.entry(id);
         const auto &heading = record.title;
         const auto titleBounds = questArtRect(10, 233, 300, 21);

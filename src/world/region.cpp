@@ -283,6 +283,18 @@ void loadRegion(Archives &archives, EntityIds &ids, Region &region, TileLibraryC
             const bool nativeChest = chestRow != objectRows.end();
             const auto unit = source.type == 1 ? monsters.preset(region.map.terrain.data.act, source.id, region.map.terrain.data.version) : MonsterPreset{};
             const auto *townNpc = source.type == 1 ? monsters.find(unit.id) : nullptr;
+            int npcInitFn = 0;
+            if (region.map.terrain.data.act == 1 && chestRow != objectRows.end()) {
+                const auto &init = chestRow->at("InitFn");
+                // Objects' original initialization callbacks 18/19 place Jerhyn
+                // at the authored arrival/palace markers (D2MOO ACT2Q4).
+                if (init == "18" || init == "19") {
+                    townNpc = monsters.find("jerhyn");
+                    if (!townNpc || townNpc->hostile() || !townNpc->interact)
+                        throw std::runtime_error("Original neutral Jerhyn definition is missing");
+                    npcInitFn = std::stoi(init);
+                }
+            }
             if ((preset == std::end(presets) || region.map.terrain.data.act != 0) && !nativeChest && !townNpc) {
                 ++region.unsupportedObjects;
                 continue;
@@ -295,8 +307,13 @@ void loadRegion(Archives &archives, EntityIds &ids, Region &region, TileLibraryC
             object.contentKey = "ds1." + std::to_string(index);
             // UNITS_InitializeStaticPath uses integer coordinates; dynamic NPC
             // paths use PATH_ToFP16Center. Do not move static props down 8 pixels.
-            const float fraction = source.type == 1 ? .5f : 0.f;
+            const float fraction = source.type == 1 || npcInitFn ? .5f : 0.f;
             object.pos = {source.x + fraction, source.y + fraction};
+            object.npcInitFn = npcInitFn;
+            if (npcInitFn) {
+                object.pos = region.map.grid.nearest(object.pos, townNpc->movementRule());
+                object.questHidden = npcInitFn == 19;
+            }
             object.accessPoint = region.map.grid.nearest(object.pos);
             if (source.type == 1 && monsters.supported()) {
                 auto unit = monsters.preset(region.map.terrain.data.act, source.id, region.map.terrain.data.version);
@@ -323,6 +340,8 @@ void loadRegion(Archives &archives, EntityIds &ids, Region &region, TileLibraryC
                 }
             }
             if (townNpc) {
+                object.npcClass = townNpc->id;
+                object.npcMovement = townNpc->movementRule();
                 object.appearance = {"monsters", normalize(townNpc->token), "nu", townNpc->baseWeapon, {}};
                 object.appearance.equipment = townNpc->components;
                 object.name = std::string(townNpc->name);
@@ -338,7 +357,7 @@ void loadRegion(Archives &archives, EntityIds &ids, Region &region, TileLibraryC
                 for (size_t i = 0; i < object.appearance.equipment.size(); ++i)
                     object.appearance.equipment[i] = preset->gear[i];
             }
-            if (source.type == 2) {
+            if (source.type == 2 && !npcInitFn) {
                 object.objectClass = resolvedClass;
                 if (object.objectClass < 0) { ++region.unsupportedObjects; continue; }
             }
@@ -346,7 +365,7 @@ void loadRegion(Archives &archives, EntityIds &ids, Region &region, TileLibraryC
             // A named neutral monster is not necessarily a conversation target.
             // MonStats.interact is the original client/server eligibility flag;
             // for example town rogues are NPCs but have interact=0.
-            if (source.type == 1 && object.appearance.category == "monsters") {
+            if (object.appearance.category == "monsters") {
                 const auto *monster = monsters.find(object.npcClass);
                 if (!monster || !monster->interact)
                     object.interaction = Interaction::None;

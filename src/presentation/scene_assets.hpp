@@ -3,6 +3,7 @@
 #include "content/world/automap_data.hpp"
 #include "gameplay/items/state.hpp"
 #include "gameplay/skills/visual.hpp"
+#include "gameplay/quest/id.hpp"
 #include "presentation/world/missile_visual.hpp"
 #include "gameplay/monsters/kind.hpp"
 #include "client/map_asset_source.hpp"
@@ -126,6 +127,7 @@ class SceneAssets {
     void indexPropArt(const IMapAssetSource &source);
     void loadPropObject(const WorldObject &object) const;
     std::vector<std::vector<AutomapStamp>> regionAutomap;
+    uint64_t automapContentFingerprint = 0;
     // 0: original maximaps.dc6, 1: original maximap.dc6.
     std::array<std::map<int, Sprite>, 2> automapCels;
     std::vector<std::array<std::vector<Sprite>, 2>> regionTownAutomap;
@@ -152,8 +154,8 @@ class SceneAssets {
         vendorButtons, vendorConfirm, waypointBorder, waypointPanel, waypointTabs, waypointIcons,
         storagePanel, cubePanel, orificePanel, orificeButtons, beltPanel, beltSocket, orbs,
         globeOverlap, runButton, button;
-    std::array<GpuAnimation, 12> actOneQuestIcons;
-    std::array<Rectangle, 12> actOneQuestFaces{};
+    std::array<GpuAnimation, size_t(QuestId::Count)> questIcons;
+    std::array<Rectangle, size_t(QuestId::Count)> questFaces{};
     std::array<GpuAnimation, 7> tombSymbols;
     std::array<GpuAnimation, 3> gameMenuLabels;
     std::array<GpuAnimation, 5> optionsMenuLabels;

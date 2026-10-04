@@ -15,3 +15,7 @@
 *.log
 *.mpq
 *.MPQ
+
+*.d2xmap
+*.d2xmap.bak
+*.d2xmap.lock/

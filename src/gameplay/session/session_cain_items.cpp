@@ -5,13 +5,13 @@
 namespace d2x {
 namespace {
 QuestRecord &cain(WorldState &world) {
-    return world.player.character.actOneQuests.at(size_t(world.population.difficulty))
-        .at(questIndex(ActOneQuest::SearchForCain));
+    return world.player.character.quests.at(size_t(world.population.difficulty))
+        .at(questIndex(QuestId::SearchForCain));
 }
 } // namespace
 
 void GameSessionImpl::updateCainQuestItems() {
-    auto &staff = simulation_->state_.player.character.actOneQuests.at(size_t(state().population.difficulty)).at(questIndex(QuestId::HoradricStaff));
+    auto &staff = simulation_->state_.player.character.quests.at(size_t(state().population.difficulty)).at(questIndex(QuestId::HoradricStaff));
     if (staff.stage < 6) {
         uint32_t next = staff.stage;
         for (const auto &[id, item] : inventory_.state().items) {
@@ -19,8 +19,9 @@ void GameSessionImpl::updateCainQuestItems() {
             if (!location || (location->container != playerContainers_.backpack && location->container != playerContainers_.cube &&
                 location->container != playerContainers_.equipment)) continue;
             if (item.definition != content_.cubeCode && item.nativeQuestDifficulty < unsigned(state().population.difficulty)) continue;
-            if (item.definition == "tr1" || item.definition == content_.cubeCode || item.definition == "msf" || item.definition == "vip") next = std::max(next, 1u);
-            if (item.definition == "hst") next = 5;
+            if (item.definition == content_.staffRecipe.scroll || item.definition == content_.cubeCode ||
+                content_.staffRecipe.isComponent(item.definition)) next = std::max(next, 1u);
+            if (item.definition == content_.staffRecipe.output) next = 5;
         }
         if (staff.stage != next) { staff.stage = next; simulation_->emit(QuestAdvanced{QuestId::HoradricStaff, next}); }
     }
@@ -32,7 +33,7 @@ void GameSessionImpl::updateCainQuestItems() {
     if (acquiredBark) {
         auto &record = cain(simulation_->state_);
         if (cainAdvance(record, CainStage::BarkAcquired))
-            simulation_->emit(QuestAdvanced{ActOneQuest::SearchForCain, record.stage});
+            simulation_->emit(QuestAdvanced{QuestId::SearchForCain, record.stage});
     }
 }
 

@@ -8,6 +8,7 @@ enum class QuestReward { None, SkillPoint, Rogue, TranslateScroll, CainRing, Ret
 struct NpcQuestFacts {
     std::string_view npcClass;
     bool denRewarded = false;
+    uint32_t staffExplanation = 0;
 };
 // A decision is private to the authority, never a client permission or command.
 // The host performs the reward first, then commits this record and publishes it.

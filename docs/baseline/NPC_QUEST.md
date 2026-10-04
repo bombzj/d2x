@@ -4,6 +4,8 @@
 
 ## 已实施边界
 
+本轮任务扩展源码：第一／第二幕 NPC 提示／对白、交谈转换、区域进入／死亡和日志选择迁入 `quest/acts/`，经 `QuestModule` 登记；session 准备事实及执行计划。杰海因原 A2Q0 欢迎独立于普通初见和七座古墓，按原槽8位0保存；凯恩材料确认位及泰瑞尔墓内提示已接。任务簿统一命名 `quests`，日志位置由目录／投影提供，去除 UI 固定六项推算；`content/quest/quest_data.*` 统一绑定 MPQ 标题／对白／原图并解析法杖材料、产物与卷轴，欢迎由原 ActIntro 记录选择，触发／原位仍是 reference 规则。已有 ID 和原槽保留，运行指纹已更新；Windows Release 及简单冒烟通过；修复卷轴解析把方块计入候选的问题，按原 InitFn 接杰海因到达／宫殿位置。欢迎提示／确认与单位置显示、阿特玛分配、凯恩方块确认及临时 D2S 同进程／独立读取有证据，原提示和第二幕标题截图已查看。源码纳入本次提交，未重打包；三幕扩展和完整原全局任务阶段仍待实施。详见[任务系统](../QUEST_SYSTEM.md)；下方运行证据只适用于此前批次。
+
 | 入口 | 职责与限制 |
 | --- | --- |
 | [`contracts/quest.hpp`](../../src/contracts/quest.hpp)、[`IQuestClient`](../../src/client/quest_client.hpp) | 本人当前难度的日志标题／描述、启用／完成状态、幕页、洞窟剩余数与可显示真墓图案；不传任务旗标、其他玩家任务簿、库存或地图种子 |
@@ -11,9 +13,9 @@
 | [`contracts/npc.hpp`](../../src/contracts/npc.hpp)、[`INpcClient`](../../src/client/npc_client.hpp) | 请求对象的本人对白／服务菜单投影、场景任务提示及窄服务意图；不传完整人物、NPC 内容目录或可写服务对象 |
 | [`LocalNpcClient`](../../src/client/local_npc_client.cpp) | 绑定本地人物；按原职业／幕别选介绍，按原目录顺序准备闲聊和任务回顾；计算菜单资格及 MonStats2 提示高度，转发原权威命令 |
 | [`npc/intents.hpp`](../../src/gameplay/npc/intents.hpp) | 原鉴定／重置／灌注／旅行／交易／雇佣等意图的共用轻量定义；保留目标和物品版本，不带权限或客户端自报属性 |
-| [`quest/id.hpp`](../../src/gameplay/quest/id.hpp) | 单独定义原任务 ID 与幕别；实际阶段、旗标、任务簿与完成阈值仍在 `quest/state.hpp`／各任务规则 |
+| [`quest/id.hpp`](../../src/gameplay/quest/id.hpp)、[`catalog.hpp`](../../src/gameplay/quest/catalog.hpp) | 稳定内部 ID、幕／日志位置、原幕内任务号／图像槽及磁盘槽；共用记录在 `state.hpp`，第二幕阶段在 `acts/act_two_state.hpp` |
 
-任务、初见、奖励、钱包和库存的唯一权威拥有者保持不变。菜单可用性只供显示，提交后仍走原 NPC 身份、会话接触、距离、任务资格、余额和库存事务校验；客户端不能通过一项菜单资格取得长期授权。原 D2S v96、任务位映射、规则指纹及随机顺序保持。
+任务、初见、奖励、钱包和库存的唯一权威拥有者保持不变。菜单可用性只供显示，提交后仍走原 NPC 身份、会话接触、距离、任务资格、余额和库存事务校验；客户端不能通过一项菜单资格取得长期授权。原 D2S v96和既有任务槽保留；本轮增加原 A2Q0／法杖确认位支持并更新运行规则指纹，奖励／随机顺序保持。
 
 ## 界面与生命周期
 
@@ -54,7 +56,7 @@ Windows Release 游戏与资源工具已链接，包含此前第四项装备／�
 | [`npc/access.hpp`](../../src/gameplay/npc/access.hpp) | 显式操作者、目标、接触对象、区域、存活、可达及安全区事实；每次服务提交由权威适配重新准备，不接受客户端自报 |
 | [`world/interaction_geometry.*`](../../src/world/interaction_geometry.hpp) | 轻量目标几何＋导航网格决定原物件接触范围／遮挡及最短可达接近点；不读取人物／怪物／会话 |
 | [`npc/movement.*`](../../src/gameplay/npc/movement.hpp) | 显式区域、正在接近／交谈对象和随机流推进原 NPC 路径；不包含 session；宿主在原固定步位置调用 |
-| [`quest/npc_conversation.*`](../../src/gameplay/quest/npc_conversation.hpp) | 第一／第二幕现有交谈转换：只读一条任务记录与 NPC／前置任务事实，产出下一记录和奖励种类；不查人物、库存、地图、内容目录或 UI |
+| [`quest/npc_conversation.hpp`](../../src/gameplay/quest/npc_conversation.hpp)、[`module.cpp`](../../src/gameplay/quest/module.cpp) | 共用交谈事实／计划及分发；具体转换在 `acts/*_conversation.cpp`，不查人物、库存、地图、内容目录或 UI |
 | [`quest/region_entry.*`](../../src/gameplay/quest/region_entry.hpp) | 只读本人当前难度记录及显式区域事实，产出有序转换／日蚀调度请求；不读取完整人物／世界 |
 | [`session_quest_rewards.cpp`](../../src/gameplay/session/session_quest_rewards.cpp) | 私有权威执行入口：技能点、罗格、卷轴、戒指、归还 Malus、泰瑞尔公共门户；连接原库存／角色／世界服务，失败不提交任务进度 |
 | [`items/replacement.cpp`](../../src/gameplay/items/replacement.cpp) | 授权物品替换在私有草稿中消耗、创建及准备通知；成功一次移交库存、创建随机流和全局 ID 游标，失败保留原物品与随机状态 |

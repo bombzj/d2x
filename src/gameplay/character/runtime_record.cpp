@@ -16,6 +16,7 @@ CharacterRecord captureCharacterRecord(const PlayerState &player) {
     record.gold = player.character.gold;
     record.bankGold = player.character.bankGold;
     record.npcIntroductions = player.character.npcIntroductions;
+    record.questPreludes = player.character.questPreludes;
     record.experience = player.character.experience;
     record.level = player.character.level;
     record.allocated = player.character.allocated;
@@ -24,7 +25,7 @@ CharacterRecord captureCharacterRecord(const PlayerState &player) {
     record.unspentSkills = player.character.unspentSkills;
     record.skillHotkeys = player.character.skillHotkeys;
     record.selectedSkills = player.character.selectedSkills;
-    record.actOneQuests = player.character.actOneQuests;
+    record.quests = player.character.quests;
     const auto &merc = player.hireling;
     record.hireling = {merc.sourceRow, merc.classId, merc.nameKey, merc.level,
                       merc.hp, merc.experience, merc.seed};
@@ -57,6 +58,7 @@ PlayerState restoreCharacterRecord(CharacterRecord record, Vec position) {
     player.character.gold = record.gold;
     player.character.bankGold = record.bankGold;
     player.character.npcIntroductions = std::move(record.npcIntroductions);
+    player.character.questPreludes = record.questPreludes;
     player.character.experience = record.experience;
     player.character.level = record.level;
     player.character.allocated = record.allocated;
@@ -65,7 +67,7 @@ PlayerState restoreCharacterRecord(CharacterRecord record, Vec position) {
     player.character.unspentSkills = record.unspentSkills;
     player.character.skillHotkeys = record.skillHotkeys;
     player.character.selectedSkills = record.selectedSkills;
-    player.character.actOneQuests = record.actOneQuests;
+    player.character.quests = record.quests;
     player.hireling = restoreHirelingRecord(record.hireling, position);
     player.movement.pos = player.movement.previous = position;
     return player;

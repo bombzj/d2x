@@ -1,3 +1,4 @@
+#include "gameplay/quest/acts/act_two_state.hpp"
 #include "gameplay/simulation/simulation.hpp"
 #include "gameplay/session/session_impl.hpp"
 #include <algorithm>
@@ -16,7 +17,7 @@ void GameSessionImpl::spawnLoot(std::span<const LootDrop> drops, RegionId id, Ve
         // item resolver checks drop collision and the field from the actual source.
         if (position.x < 0 || position.y < 0 || position.x >= grid.width || position.y >= grid.height)
             position = origin;
-        const bool questUnique = drop.code == "msf" || drop.code == "vip" || drop.code == "hst";
+        const bool questUnique = content_.staffRecipe.isComponent(drop.code);
         const auto generation = questUnique ? questItemGeneration(drop.code, inventory_.state_.creationRandom) : drop.generation;
         auto result = inventory_.createItem(drop.code, drop.quantity, GroundLocation{id, position},
                             drop.level, generation, origin);

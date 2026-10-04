@@ -18,10 +18,7 @@ enum class QuestId : uint8_t {
     SevenTombs,
     Count
 };
-using ActOneQuest = QuestId;
-inline constexpr size_t actOneQuestCount = 6;
-
-inline constexpr size_t questIndex(ActOneQuest quest) { return size_t(quest); }
-inline constexpr unsigned questAct(QuestId quest) { return questIndex(quest) < 6 ? 1 : 2; }
+inline constexpr size_t questIndex(QuestId quest) { return size_t(quest); }
+inline constexpr size_t questActCount = 5;
 
 } // namespace d2x

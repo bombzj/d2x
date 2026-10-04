@@ -1,4 +1,5 @@
 #pragma once
+#include "client/automap_exploration.hpp"
 #include "input.hpp"
 #include "client/character_client.hpp"
 #include "client/quest_client.hpp"
@@ -141,7 +142,7 @@ class SceneView {
     std::map<EntityId, Vec> monsterPositions_, monsterLooks_;
     std::map<EntityId, float> nextMonsterFootstep_, nextMonsterNeutral_;
     std::set<EntityId> movingMonsters_;
-    std::map<RegionId, std::vector<uint8_t>> exploredAutomap_;
+    AutomapExploration exploredAutomap_;
     std::map<RegionId, std::vector<float>> roofOpacity_;
     const Sprite *objectSprite(const WorldObject &object, RegionId region) const;
     Vec objectScreen(const WorldObject &object, Vec regionOffset = {}) const;
@@ -172,6 +173,7 @@ class SceneView {
     void drawPanelFrame(bool right) const;
     void drawMinimap(bool large) const;
     void revealAutomap();
+    std::vector<AutomapVisibleCell> visibleAutomapCells() const;
     void drawHud() const;
     void drawGameMenu() const;
     void drawNpcDialogue() const;
@@ -269,7 +271,7 @@ class SceneView {
     void openNpcMenu(EntityId object, std::string speaker, bool firstIntroduction);
     bool startNpcTalk();
     bool startNpcIntroduction();
-    bool startNpcTopic(ActOneQuest quest);
+    bool startNpcTopic(QuestId quest);
     bool openNpcShop(bool gamble = false);
     void closeNpcShop();
     bool npcShopDropAt(Vec mouse) const;
@@ -281,6 +283,9 @@ class SceneView {
     void scrollNpcShop(int pages);
     bool showNextNpcGossip();
     void sessionRestored();
+    const AutomapLayers &automapExploration() const { return exploredAutomap_.layers(); }
+    uint64_t automapContentFingerprint() const { return assets_.automapContentFingerprint; }
+    bool restoreAutomapExploration(AutomapLayers layers);
     void collectMapVariants(Archives &archives);
     std::vector<TravelEntryView> travelEntries() const;
 };

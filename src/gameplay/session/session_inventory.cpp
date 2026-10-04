@@ -1,3 +1,4 @@
+#include "gameplay/quest/acts/act_two_state.hpp"
 #include "gameplay/simulation/simulation.hpp"
 #include "gameplay/session/session_impl.hpp"
 #include <algorithm>
@@ -18,7 +19,7 @@ void GameSessionImpl::transmuteCube() {
         const auto *item = inventory_.item(id);
         if (item->quantity != 1 || item->nativeQuestDifficulty < unsigned(state().population.difficulty)) { reject(); return; }
         for (size_t index = 0; index < inputs.size(); ++index)
-            if (item->definition == content_.staffRecipeInputs[index]) inputs[index] = item->handle();
+            if (item->definition == content_.staffRecipe.inputs[index]) inputs[index] = item->handle();
     }
     if (!inputs[0].id || !inputs[1].id) { reject(); return; }
     InventoryService draft(ids_, inventory_.catalog(), {content_.stashLayout.columns, content_.stashLayout.rows},
@@ -32,8 +33,8 @@ void GameSessionImpl::transmuteCube() {
         if (!removed) { reject(); return; }
         transaction.changes.insert(transaction.changes.end(), removed.changes.begin(), removed.changes.end());
     }
-    const auto generation = questItemGeneration(content_.staffRecipeOutput, draft.state_.creationRandom);
-    auto created = draft.createItem(content_.staffRecipeOutput, 1, AutoPlace{playerContainers_.cube}, unsigned(state().player.character.level), generation);
+    const auto generation = questItemGeneration(content_.staffRecipe.output, draft.state_.creationRandom);
+    auto created = draft.createItem(content_.staffRecipe.output, 1, AutoPlace{playerContainers_.cube}, unsigned(state().player.character.level), generation);
     if (!created) { reject(); return; }
     draft.state_.items.at(created.item).nativeQuestDifficulty = unsigned(state().population.difficulty);
     draft.state_.items.at(created.item).identified = true;
@@ -41,7 +42,7 @@ void GameSessionImpl::transmuteCube() {
     transaction.changes.insert(transaction.changes.end(), created.changes.begin(), created.changes.end());
     inventory_.state_ = std::move(draft.state_);
     publishInventory(std::move(transaction), {});
-    auto &record = simulation_->state_.player.character.actOneQuests.at(size_t(state().population.difficulty)).at(questIndex(QuestId::HoradricStaff));
+    auto &record = simulation_->state_.player.character.quests.at(size_t(state().population.difficulty)).at(questIndex(QuestId::HoradricStaff));
     record.stage = 5;
     simulation_->emit(QuestAdvanced{QuestId::HoradricStaff, record.stage});
 }

@@ -1,3 +1,4 @@
+#include "gameplay/quest/catalog.hpp"
 #include "gameplay/skills/spec.hpp"
 #include "gameplay/loot/loot.hpp"
 #include "presentation/scene_view.hpp"
@@ -13,6 +14,7 @@
 #include "debug_monsters.hpp"
 #include "debug_hireling.hpp"
 #include "persistence/save_file.hpp"
+#include "app/automap_save.hpp"
 #include <nlohmann/json.hpp>
 #include <algorithm>
 #include <cmath>
@@ -122,21 +124,16 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
         } else if (command == "quest-status") {
             result["difficulty"] = session.state().population.difficulty;
             result["quests"] = Json::array();
-            constexpr std::pair<ActOneQuest, const char *> quests[] = {
-                {ActOneQuest::DenOfEvil, "A1Q1"},
-                {ActOneQuest::SistersBurialGrounds, "A1Q2"},
-                {ActOneQuest::SearchForCain, "A1Q4"},
-                {ActOneQuest::ForgottenTower, "A1Q5"},
-                {ActOneQuest::ToolsOfTheTrade, "A1Q3"},
-                {ActOneQuest::SistersToTheSlaughter, "A1Q6"},
-                {QuestId::RadamentsLair, "A2Q1"}, {QuestId::HoradricStaff, "A2Q2"},
-                {QuestId::TaintedSun, "A2Q3"}, {QuestId::ArcaneSanctuary, "A2Q4"},
-                {QuestId::Summoner, "A2Q5"}, {QuestId::SevenTombs, "A2Q6"}};
-            for (const auto &[id, key] : quests) {
-                const auto &quest = session.quest(id);
-                result["quests"].push_back({{"id", key}, {"stage", quest.stage},
+            for (const auto &definition : questDefinitions) {
+                const auto &quest = session.quest(definition.id);
+                result["quests"].push_back({{"id", session.content().questContent.at(questIndex(definition.id)).speechKey}, {"stage", quest.stage},
                                              {"flags", quest.flags}});
             }
+            result["preludes"] = Json::array();
+            for (const auto &prelude : questPreludes)
+                result["preludes"].push_back({{"nativeSlot", prelude.nativeSlot},
+                    {"acknowledged", session.state().player.character.questPreludes
+                        .at(size_t(session.state().population.difficulty)).at(size_t(prelude.id))}});
         } else if (command == "status") {
             view.refreshCharacterView();
             const auto &state = session.state();
@@ -355,11 +352,11 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
                 throw std::runtime_error("No active NPC menu or original dialogue");
             result["speaker"] = view.ui().dialogueSpeaker;
             result["topics"] = Json::array();
-            for (auto [id, speech] : session.npcQuestTopics(view.ui().dialogueSpeaker))
+            for (auto [id, speech] : session.npcQuestTopics(view.ui().dialogueObject))
                 result["topics"].push_back({{"id", questIndex(id)}, {"quest", speech->quest}});
             if (request.contains("quest")) {
                 const int quest = request.at("quest").get<int>();
-                if (quest < 0 || quest >= 6 || !view.startNpcTopic(ActOneQuest(quest)))
+                if (quest < 0 || quest >= int(QuestId::Count) || !view.startNpcTopic(QuestId(quest)))
                     throw std::runtime_error("NPC has no available topic for that quest");
                 result["dialogue"] = view.ui().dialogue;
             }
@@ -591,7 +588,7 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
             result["open"] = view.ui().characterOpen;
         } else if (command == "quest-panel") {
             int selected = request.value("selected", -1);
-            if (selected < -1 || selected >= int(ActOneQuest::Count))
+            if (selected < -1 || selected >= int(QuestId::Count))
                 throw std::runtime_error("Quest selection must be -1..5");
             view.ui().questOpen = request.value("open", true);
             view.ui().questSelected = selected;
@@ -612,6 +609,8 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
                 Json entry = {{"id", object.id.value}, {"name", object.name},
                     {"key", object.contentKey}, {"x", object.pos.x}, {"y", object.pos.y},
                     {"renderable", view.visible(object)}, {"npcClass", object.npcClass},
+                    {"questAlert", session.npcQuestAlert(object)},
+                    {"questHidden", object.questHidden},
                     {"pathNodes", object.npcPath.size()}, {"sourceVelocity", object.npcVelocity},
                     {"class", object.objectClass}, {"operation", object.operateFn},
                     {"active", object.interaction != Interaction::None},
@@ -757,12 +756,13 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
             result["ticks"] = ticks;
         } else if (command == "pause") paused = true;
         else if (command == "resume") paused = false;
-        else if (command == "save") writeSave(savePath, session.characterSave(), session.content());
+        else if (command == "save") saveLocalGame(savePath, session, view);
         else if (command == "load") {
             const bool running = session.state().player.movement.running;
             session.restore(loadSave(savePath, session.content()));
             session.setRunning(running);
             view.sessionRestored();
+            restoreLocalAutomap(savePath, session, view);
         }
         else if (command == "screenshot") { screenshot("artifacts/debug-pipe.png"); result["path"] = "artifacts/debug-pipe.png"; }
         else if (command == "quit") quit = true;

@@ -3,6 +3,7 @@
 #include "gameplay/model/state.hpp"
 #include "world/region.hpp"
 #include "world/region_visibility.hpp"
+#include "core/fingerprint.hpp"
 #include <algorithm>
 #include <utility>
 
@@ -31,6 +32,35 @@ const MapSceneView &LocalMapClient::read() const {
         auto &value = view.regions[size_t(slot)];
         value.id = region.definition.id; value.safe = region.definition.safe;
         value.width = region.map.terrain.data.width; value.height = region.map.terrain.data.height;
+        if (!region.loaded) continue;
+        auto [fingerprintEntry, inserted] = layoutFingerprints_.try_emplace(value.id);
+        if (inserted) {
+            Fingerprint fingerprint;
+            auto number = [&](auto n) { fingerprint.add(std::to_string(n)); };
+            number(value.width); number(value.height); number(region.recipe.levelType); number(region.recipe.variant);
+            // Hash generation geometry: opening a quest wall must not invalidate discovery on reload.
+            std::map<size_t, const Map::TombWall *> closedWalls;
+            for (const auto &wall : region.map.tombWalls)
+                closedWalls.emplace(size_t(wall.y) * value.width + wall.x, &wall);
+            for (const auto &layers : {&region.map.terrain.data.floors, &region.map.terrain.data.walls}) {
+                number(layers->size());
+                for (size_t layerIndex = 0; layerIndex < layers->size(); ++layerIndex) {
+                    const auto &layer = (*layers)[layerIndex];
+                    number(layer.size());
+                    for (size_t cellIndex = 0; cellIndex < layer.size(); ++cellIndex) {
+                        const auto closed = closedWalls.find(cellIndex);
+                        const auto &cell = layers == &region.map.terrain.data.walls && closed != closedWalls.end()
+                            ? closed->second->walls.at(layerIndex) : layer[cellIndex];
+                        number(cell.value); number(cell.orientation);
+                    }
+                }
+            }
+            for (const auto &room : region.map.rooms) {
+                number(room.x); number(room.y); number(room.width); number(room.height);
+            }
+            fingerprintEntry->second = fingerprint.value();
+        }
+        value.layoutFingerprint = fingerprintEntry->second;
         if (observer) {
             auto local = *observer; local.x -= int(offset.x); local.y -= int(offset.y);
             for (const auto *room : region.map.activation.nearRooms(local))
@@ -106,5 +136,31 @@ const MapAssetView &LocalMapClient::readAsset(size_t slot) const {
         view.propKeys.push_back(object.key);
     }
     return view;
+}
+TerrainDrawBounds LocalMapClient::terrainBounds(size_t slot, int x, int y) const {
+    const auto &region = session_.regions().at(slot);
+    const auto &map = region.map;
+    const auto &data = map.terrain.data;
+    TerrainDrawBounds bounds;
+    if (!region.loaded || x < 0 || y < 0 || x >= data.width || y >= data.height) return bounds;
+    auto add = [&](const MapCell &cell) {
+        if (!cell.present() || cell.orientation == 15) return;
+        const int index = map.tileIndex(cell, x, y);
+        if (index < 0) return;
+        const auto &image = map.terrain.tiles.at(size_t(index))->image;
+        if (image.width <= 0 || image.height <= 0) return;
+        if (!bounds.width || !bounds.height) {
+            bounds = {image.x, image.y, image.width, image.height};
+        } else {
+            const int right = std::max(bounds.x + bounds.width, image.x + image.width);
+            const int bottom = std::max(bounds.y + bounds.height, image.y + image.height);
+            bounds.x = std::min(bounds.x, image.x); bounds.y = std::min(bounds.y, image.y);
+            bounds.width = right - bounds.x; bounds.height = bottom - bounds.y;
+        }
+    };
+    const size_t cell = size_t(y) * data.width + x;
+    for (const auto &layer : data.floors) add(layer.at(cell));
+    for (const auto &layer : data.walls) add(layer.at(cell));
+    return bounds;
 }
 } // namespace d2x

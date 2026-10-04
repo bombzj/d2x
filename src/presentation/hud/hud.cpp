@@ -150,8 +150,8 @@ void SceneView::drawHud() const {
         if (const auto *button = assets_.attributeButtons.frame(0, 0))
             DrawTexturePro(button->texture, {0, 0, float(button->texture.width), float(button->texture.height)},
                            bounds, {0, 0}, 0, WHITE);
-        const auto label = session_.content().actOneQuestStrings.find("newquestlog");
-        if (label != session_.content().actOneQuestStrings.end())
+        const auto label = session_.content().questStrings.find("newquestlog");
+        if (label != session_.content().questStrings.end())
             painter_.label(label->second, int(bounds.x + (bounds.width - painter_.measure(label->second, 13)) / 2),
                            int(bounds.y) - 19, 13, WHITE);
     }

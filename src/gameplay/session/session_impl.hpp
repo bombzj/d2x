@@ -32,6 +32,7 @@
 #include "gameplay/skills/source.hpp"
 
 namespace d2x {
+struct QuestNpcFacts;
 struct EquipmentLoadout;
 class Simulation;
 enum class QuestReward;
@@ -264,12 +265,13 @@ class GameSessionImpl {
     uint64_t visualSeed() const { return visualRandom_; }
     const WorldState &state() const;
     void setRunning(bool running);
-    const QuestRecord &quest(ActOneQuest id, int difficulty) const {
-        return state().player.character.actOneQuests.at(size_t(difficulty)).at(questIndex(id));
+    const QuestRecord &quest(QuestId id, int difficulty) const {
+        return state().player.character.quests.at(size_t(difficulty)).at(questIndex(id));
     }
-    const QuestRecord &quest(ActOneQuest id) const { return quest(id, state().population.difficulty); }
-    NpcQuestDialogue npcQuestDialogue(std::string_view speaker) const;
-    std::vector<std::pair<ActOneQuest, const NpcSpeech *>> npcQuestTopics(std::string_view speaker) const;
+    const QuestRecord &quest(QuestId id) const { return quest(id, state().population.difficulty); }
+    QuestNpcFacts questNpcFacts(const WorldObject &npc) const;
+    NpcQuestDialogue npcQuestDialogue(EntityId npc) const;
+    std::vector<std::pair<QuestId, const NpcSpeech *>> npcQuestTopics(EntityId npc) const;
     bool npcQuestAlert(const WorldObject &npc) const;
     std::optional<unsigned> denMonstersRemaining() const;
     bool usableCorpse(EntityId id) const;

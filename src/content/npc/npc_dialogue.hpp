@@ -10,11 +10,12 @@ namespace d2x {
 struct NpcSpeech {
     std::string text;
     std::string wave; // Original MPQ reference; playback is not implemented.
-    std::string quest, state; // SECTION:QUEST / QUEST / STATE from a1npc.txt.
+    std::string quest, state; // SECTION:QUEST / QUEST / STATE from aNnpc.txt.
     int speed = 0;
     int act = 0;
     std::string speaker, introClass;
-    bool introduction = false, gossip = false;
+    std::string soundId;
+    bool introduction = false, gossip = false, arrival = false;
 };
 struct NpcDialogues : std::map<std::string, std::vector<NpcSpeech>, std::less<>> {
     std::map<std::string, std::string, std::less<>> speakers;
@@ -28,4 +29,5 @@ const NpcSpeech *introSpeech(const NpcDialogues &dialogues, std::string_view npc
 const NpcSpeech *gossipSpeech(const NpcDialogues &dialogues, std::string_view npc, size_t turn, int act = 0);
 const NpcSpeech *questSpeech(const NpcDialogues &dialogues, std::string_view quest,
                              std::string_view state, std::string_view npc);
+const NpcSpeech *arrivalSpeech(const NpcDialogues &dialogues, std::string_view npc, int act);
 } // namespace d2x

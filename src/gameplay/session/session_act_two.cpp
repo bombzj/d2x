@@ -1,3 +1,4 @@
+#include "gameplay/quest/acts/act_two_state.hpp"
 #include "gameplay/simulation/simulation.hpp"
 #include "gameplay/session/session_impl.hpp"
 #include "world/maze.hpp"
@@ -11,7 +12,7 @@
 namespace d2x {
 ItemGeneration GameSessionImpl::questItemGeneration(std::string_view code, uint64_t &random) const {
     ItemGeneration generation;
-    if (code != "msf" && code != "vip" && code != "hst") return generation;
+    if (!content_.staffRecipe.isComponent(code)) return generation;
     const auto record = std::find_if(content_.uniqueItems.begin(), content_.uniqueItems.end(),
         [&](const auto &value) { return value.code == code; });
     if (record == content_.uniqueItems.end() || !record->artAvailable)
@@ -40,7 +41,7 @@ void GameSessionImpl::activateActTwoObject(EntityId id, std::optional<ItemHandle
     if (found == objects.end() || state().player.actions.dead || !canReach(*found)) return;
     const auto operation = found->operateFn;
     if (submitted && operation != 25) return;
-    auto &book = simulation_->state_.player.character.actOneQuests.at(size_t(state().population.difficulty));
+    auto &book = simulation_->state_.player.character.quests.at(size_t(state().population.difficulty));
     auto &staff = book.at(questIndex(QuestId::HoradricStaff));
     if (found->questDestination || operation == 34) {
         const auto destination = found->questDestination.value_or(RegionId(int(region().definition.id) == 54 ? 74 : 54));
@@ -91,8 +92,8 @@ void GameSessionImpl::activateActTwoObject(EntityId id, std::optional<ItemHandle
         auto plan = planItemLoot(content_, content_.tables.at("itemratio"), entry.treasureClass,
             entry.itemLevel, 0, world_.at(current_).objectSeed, usedUniques, characterDefinition_.code, 0, 0, DropQuality::Magic);
         if (!plan.deferred.empty()) { simulation_->emit(LootDeferred{id, plan.deferred}); return; }
-        if (staff.stage < 6 && !carriesQuestItem("vip") && !carriesQuestItem("hst")) {
-            plan.drops.push_back({"vip", 1, {}, unsigned(entry.itemLevel), {}});
+        if (staff.stage < 6 && !carriesQuestItem(content_.staffRecipe.inputs[1]) && !carriesQuestItem(content_.staffRecipe.output)) {
+            plan.drops.push_back({content_.staffRecipe.inputs[1], 1, {}, unsigned(entry.itemLevel), {}});
         }
         const int count = 5 + int(limitedRandom(plan.randomState, 5));
         for (int index = 0; index < count; ++index)
@@ -112,7 +113,7 @@ void GameSessionImpl::activateActTwoObject(EntityId id, std::optional<ItemHandle
         }
         const auto *source = submitted ? inventory_.item(submitted->id) : nullptr;
         const auto *location = source ? std::get_if<ContainerLocation>(&source->location) : nullptr;
-        if (!source || source->revision != submitted->revision || source->definition != "hst" ||
+        if (!source || source->revision != submitted->revision || source->definition != content_.staffRecipe.output ||
             source->nativeQuestDifficulty < unsigned(state().population.difficulty) || !location ||
             (location->container != playerContainers_.backpack && location->container != playerContainers_.cursor)) {
             simulation_->emit(InteractionFailed{id, "Place the complete Horadric Staff into the orifice."}); return;
@@ -148,7 +149,7 @@ void GameSessionImpl::activateActTwoObject(EntityId id, std::optional<ItemHandle
         for (auto container : {playerContainers_.backpack, playerContainers_.cube, playerContainers_.equipment, playerContainers_.cursor})
             for (auto itemId : inventory_.contents(container)) {
                 const auto *item = inventory_.item(itemId);
-                if (item->definition != "hst" && item->definition != "msf" && item->definition != "vip") continue;
+                if (!content_.staffRecipe.isComponent(item->definition)) continue;
                 if (item->nativeQuestDifficulty < unsigned(state().population.difficulty)) continue;
                 auto removed = container == playerContainers_.equipment ? inventory_.consumeEquipped(itemId, playerContainers_)
                     : inventory_.consume(item->handle(), item->quantity, inventoryAccess());
@@ -178,19 +179,29 @@ bool GameSessionImpl::canInsertStaff(EntityId id) const {
         quest(QuestId::HoradricStaff).stage < uint32_t(StaffStage::Submitted) && canReach(*target);
 }
 void GameSessionImpl::updateActTwoObjects() {
-    auto &sun = simulation_->state_.player.character.actOneQuests.at(size_t(state().population.difficulty)).at(questIndex(QuestId::TaintedSun));
+    auto &sun = simulation_->state_.player.character.quests.at(size_t(state().population.difficulty)).at(questIndex(QuestId::TaintedSun));
     if (sunDarkeningFrame_ && state().frame >= *sunDarkeningFrame_) {
         sunDarkeningFrame_.reset();
         if (!sun.stage) { sun.stage = 1; simulation_->emit(QuestAdvanced{QuestId::TaintedSun, sun.stage}); }
     }
-    for (auto &region : world_.regions())
+    const bool palaceReady = state().player.character.questPreludes.at(size_t(state().population.difficulty))
+        .at(size_t(QuestPreludeId::LutGholeinArrival)) ||
+        quest(QuestId::RadamentsLair).stage >= uint32_t(RadamentStage::Slain) ||
+        quest(QuestId::ArcaneSanctuary).stage > 0 || quest(QuestId::SevenTombs).stage > 0;
+    for (auto &region : world_.regions()) {
+        // Relocation waits until the arrival conversation ends.
+        const bool palace = palaceReady && std::none_of(region.objects.begin(), region.objects.end(),
+            [&](const auto &npc) { return npc.npcInitFn == 18 && engagedNpc_ == npc.id; });
         for (auto &object : region.objects)
-            if (object.objectClass == 318)
+            if (object.npcInitFn == 18 || object.npcInitFn == 19) {
+                object.questHidden = object.npcInitFn == (palace ? 18 : 19);
+            } else if (object.objectClass == 318)
                 object.animationMode = quest(QuestId::ArcaneSanctuary).stage > 0 ? 2 : 0;
             else if (int(region.definition.id) == 73 && object.npcClass == "tyrael1")
                 object.questHidden = quest(QuestId::SevenTombs).stage < 2;
             else if (int(region.definition.id) == 73 && object.objectClass == 153 && object.operatedAt < 0)
                 object.animationMode = quest(QuestId::SevenTombs).stage >= 2 ? 2 : 0;
+    }
     if (quest(QuestId::HoradricStaff).stage < 6 || (tombCollapseFrame_ && state().frame < *tombCollapseFrame_)) return;
     const auto tomb = RegionId(actTwoTombs(state().mapSeed)[0]);
     auto region = std::find_if(world_.regions().begin(), world_.regions().end(), [&](const auto &value) { return value.definition.id == tomb; });

@@ -8,8 +8,8 @@
 namespace d2x {
 namespace {
 QuestRecord &tools(WorldState &world) {
-    return world.player.character.actOneQuests.at(size_t(world.population.difficulty))
-        .at(questIndex(ActOneQuest::ToolsOfTheTrade));
+    return world.player.character.quests.at(size_t(world.population.difficulty))
+        .at(questIndex(QuestId::ToolsOfTheTrade));
 }
 }
 void GameSessionImpl::spawnDebugItem(const DebugSpawnItem &command) {
@@ -78,7 +78,7 @@ void GameSessionImpl::activateMalus(const WorldObject &source) {
     for (auto &object : world_.at(current_).objects)
         if (object.id == source.id) object.operatedAt = state().time;
     if (toolsAdvance(record, ToolsStage::MalusDropped))
-        simulation_->emit(QuestAdvanced{ActOneQuest::ToolsOfTheTrade, record.stage});
+        simulation_->emit(QuestAdvanced{QuestId::ToolsOfTheTrade, record.stage});
     simulation_->emit(ObjectInteracted{source.id, source.interaction, source.name});
 }
 void GameSessionImpl::updateToolsQuestItems() {
@@ -89,7 +89,7 @@ void GameSessionImpl::updateToolsQuestItems() {
     if (!acquired) return;
     auto &record = tools(simulation_->state_);
     if (toolsAdvance(record, ToolsStage::MalusAcquired))
-        simulation_->emit(QuestAdvanced{ActOneQuest::ToolsOfTheTrade, record.stage});
+        simulation_->emit(QuestAdvanced{QuestId::ToolsOfTheTrade, record.stage});
 }
 void GameSessionImpl::imbueWithCharsi(const ImbueItem &command) {
     const auto *npc = object(command.npc);
@@ -127,6 +127,6 @@ void GameSessionImpl::imbueWithCharsi(const ImbueItem &command) {
     }
     publishInventory(std::move(replaced), command.item.id);
     if (toolsAdvance(record, ToolsStage::Imbued))
-        simulation_->emit(QuestAdvanced{ActOneQuest::ToolsOfTheTrade, record.stage});
+        simulation_->emit(QuestAdvanced{QuestId::ToolsOfTheTrade, record.stage});
 }
 } // namespace d2x

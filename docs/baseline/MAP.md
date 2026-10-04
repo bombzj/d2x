@@ -25,7 +25,7 @@
 
 [`IMapClient`](../../src/client/map_client.hpp) 绑定当前本地操作者；[`LocalMapClient`](../../src/client/local_map_client.cpp) 解释原状态，按权威版本缓存场景，按版本＋来源＋幕页缓存旅行列表。场景保存独立值，借用仅至下一次对应读取／销毁；投影不授权操作。[`areas/intents.hpp`](../../src/gameplay/areas/intents.hpp) 独立原旅行、传送点、出口及门户意图，经原权威命令再次校验接触、距离、资格、到达点和门户 revision。开发目录的 Travel 仍是原开发入口，不是新增的远端旅行权限。
 
-自动地图绘制／揭示、出口提示、传送点菜单和地图手势分别在 `presentation/world/{automap_view,map_view,map_controller}.cpp`、`hud/{exit_view,waypoint_view}.cpp`，不再直接查询会话或完整状态。原普通物件提示单独留在 `world/object_hint.cpp`，主控制器的地图处理位置及凯恩门户 → 普通门户 → 出口的优先级保留。探索掩码、相机、屋顶渐隐、GPU 及自动地图图形继续由客户端拥有。
+自动地图绘制／揭示、出口提示、传送点菜单和地图手势分别在 `presentation/world/{automap_view,map_view,map_controller}.cpp`、`hud/{exit_view,waypoint_view}.cpp`，不再直接查询会话或完整状态。原普通物件提示单独留在 `world/object_hint.cpp`，主控制器的地图处理位置及凯恩门户 → 普通门户 → 出口的优先级保留。探索掩码由 `client/automap_exploration.*` 唯一拥有，SceneView 根据原 DT1 地板／墙图像与可用场景视口的相交采集可见格，在更新摄像机后将邻房候选内的格交给客户端合并，不再整房揭示；相机、屋顶渐隐、GPU 及自动地图图形继续由表现层拥有。`app/automap_save.*` 将探索保存到角色同名 `.d2xmap`，按难度／种子／内容和地形指纹恢复；原生 D2S 不加私有数据。文件格式、冲突处理和双文件保存限制见[存档](../SAVES.md#自动地图探索2026-10-04)。
 
 [`IMapAssetSource`](../../src/client/map_asset_source.hpp) 是单独的本地资源读取接口，不是网络契约。它只借用解码 DS1、共享 DT1 图像及图形索引事实，不返回 Region、WorldObject、Grid、MPQ 句柄或 GPU。地形修改由权威步骤完成，显示同步读取同一地形；此借用不复制第二份地图。当前没有卸载，解码数据／瓦片寿命覆盖源和场景；未来卸载须先增加句柄／版本与失效规则。
 
@@ -39,3 +39,5 @@
 - 原 DRLG、任务专用入口与客户端图形暂缓保持；本批不新增地图、替代图形、规则参数或随机消费。
 
 未改 D2S v96、保存字段、规则指纹或原 MPQ，未读写用户存档、打包或提交 Git。本轮集成构建修复 DS1 声明、怪物声音的显式依赖及表现所需 `world/object_animation.hpp` 值头。有限冒烟覆盖开发旅行 1→5→1→40→74 与已加载区返回、74 地形／自动地图显示（揭示 793 格），截图已查看，实例退出 0、stderr 空；连续边界往返、出口／传送点／门户实际旅行与读档资源同步未验收。准确证据与限制见[NPC／任务基线](NPC_QUEST.md#npc任务与奖励协调第七项)，不称完整 P6 验证。
+
+自动地图本轮证据（2026-10-04）：原区域3步行探索136→152→168，修复内容指纹后新进程重进并开发旅行返回3，原168格全部保留且因不同落点新增至298，丢失0。修复后两实例退出0、stderr空；区域8原墙线截图已查看。Windows Release与运行包更新，不新增测试程序、不提交Git；完整视口／跨区／传送及像素等价未认证。输入指纹固定八张原表，不能再用依赖已读资源集合的会话指纹作为探索兼容键；具体入口和日志见[自动地图](../AUTOMAP.md)。

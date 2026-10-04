@@ -10,6 +10,8 @@
 #include "content/world/world_catalog.hpp"
 #include "gameplay/npc/store.hpp"
 #include "scene_assets.hpp"
+#include "gameplay/quest/catalog.hpp"
+#include <cctype>
 #include "resources/data_table.hpp"
 #include "world/cow_level.hpp"
 #include "world/maze.hpp"
@@ -274,9 +276,10 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session, const I
         throw std::runtime_error("Original tomb symbol artwork is missing");
     questSockets = uiGraphics_.single("data/global/ui/menu/questsockets.dc6");
     questTabs = uiGraphics_.single("data/global/ui/menu/expquesttabs.dc6");
-    for (size_t quest = 0; quest < actOneQuestIcons.size(); ++quest) {
-        const auto path = "data/global/ui/menu/a" + std::to_string(quest / 6 + 1) + "q" + std::to_string(quest % 6 + 1) + ".dc6";
-        actOneQuestIcons[quest] = uiGraphics_.single(path);
+    for (const auto &definition : questDefinitions) {
+        const auto quest = size_t(definition.icon);
+        const auto &path = session.content().questContent.at(questIndex(definition.id)).iconPath;
+        questIcons[quest] = uiGraphics_.single(path);
         const auto *animation = uiGraphics_.animation(path);
         if (!animation || animation->frames.size() < 27) continue;
         const auto &active = animation->frames[25];
@@ -294,7 +297,7 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session, const I
                 bottom = std::max(bottom, row);
             }
         if (right >= left && bottom >= top)
-            actOneQuestFaces[quest] = {float(left), float(top), float(right - left + 1),
+            questFaces[quest] = {float(left), float(top), float(right - left + 1),
                                       float(bottom - top + 1)};
     }
     questClose = unitsGraphics_.single("data/global/ui/panel/buysellbtn.dc6");
@@ -303,7 +306,7 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session, const I
     if (questBackground.frames.size() < 4 || questSockets.frames.size() < 2 ||
         questTabs.frames.size() < 8 || questClose.frames.size() < 12 ||
         questReplay.frames.empty() || goldCoin.frames.size() < 2 ||
-        std::any_of(actOneQuestIcons.begin(), actOneQuestIcons.end(),
+        std::any_of(questIcons.begin(), questIcons.end(),
                     [](const GpuAnimation &icon) { return icon.frames.size() < 27; }))
         throw std::runtime_error("Original Act I quest panel artwork is missing");
     attributeButtons = graphics_.single("data/global/ui/panel/level.dc6");

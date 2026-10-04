@@ -1,3 +1,4 @@
+#include "gameplay/quest/acts/act_two_state.hpp"
 #include "gameplay/simulation/simulation.hpp"
 #include "gameplay/session/session_impl.hpp"
 #include <limits>
@@ -52,7 +53,7 @@ void GameSessionImpl::useItem(ItemHandle handle) {
     if (code == "ass") {
         auto result = inventory_.consume(handle, 1, inventoryAccess());
         if (!result) { publishInventory(std::move(result), handle.id); return; }
-        auto &record = simulation_->state_.player.character.actOneQuests
+        auto &record = simulation_->state_.player.character.quests
             .at(size_t(state().population.difficulty)).at(questIndex(QuestId::RadamentsLair));
         record.flags = (record.flags & ~radamentBookPending) | radamentBookUsed;
         ++simulation_->state_.player.character.unspentSkills;

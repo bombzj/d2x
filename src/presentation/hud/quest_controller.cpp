@@ -9,7 +9,7 @@ bool SceneController::handleQuestPress(const FrameInput &input) {
         const int index = ui.questPressed;
         if (input.leftReleased) {
             ui.questPressed = -1;
-            if (input.insideViewport && view_.questView().entry(displayedQuest(ui.questAct, index)).active &&
+            if (input.insideViewport && view_.questView().entry(view_.questView().displayed(ui.questAct, size_t(index))).active &&
                 CheckCollisionPointRec(rv(input.mouse), questIconBounds(index)))
                 ui.questSelected = index;
             return true;
@@ -28,21 +28,22 @@ bool SceneController::handleQuestToggle(const FrameInput &input) {
         if (ui.questOpen) {
             ui.hirelingOpen = false;
             const bool updated = ui.questNotice;
-            if (updated && ui.questUpdated >= 0) ui.questAct = ui.questUpdated / 6;
+            if (updated && ui.questUpdated >= 0 && ui.questUpdated < int(QuestId::Count))
+                ui.questAct = view_.questView().entry(QuestId(ui.questUpdated)).act;
             else ui.questAct = view_.questView().currentAct;
             ui.questNotice = false;
-            if (ui.questSelected < 0 || ui.questSelected >= int(questDisplayOrder.size()) ||
-                !view_.questView().entry(displayedQuest(ui.questAct, ui.questSelected)).active) {
+            if (ui.questSelected < 0 || ui.questSelected >= int(view_.questView().quests(ui.questAct).size()) ||
+                !view_.questView().entry(view_.questView().displayed(ui.questAct, size_t(ui.questSelected))).active) {
                 ui.questSelected = -1;
-                for (int index = 0; index < int(questDisplayOrder.size()); ++index)
-                    if (view_.questView().entry(displayedQuest(ui.questAct, index)).active) {
+                for (int index = 0; index < int(view_.questView().quests(ui.questAct).size()); ++index)
+                    if (view_.questView().entry(view_.questView().displayed(ui.questAct, size_t(index))).active) {
                         ui.questSelected = index;
                         break;
                     }
             }
             if (updated && ui.questUpdated >= 0 && ui.questUpdated < int(QuestId::Count) &&
                 view_.questView().entry(QuestId(ui.questUpdated)).active)
-                ui.questSelected = ui.questUpdated % 6;
+                ui.questSelected = int(view_.questView().entry(QuestId(ui.questUpdated)).displaySlot);
             ui.characterOpen = false;
             ui.skillTreeOpen = false;
             if (ui.inventory.open) toggleInventory();
@@ -67,8 +68,8 @@ bool SceneController::handleQuestPanel(const FrameInput &input) {
                         ui.questPressed = -1;
                         return true;
                     }
-                for (int index = 0; index < 6; ++index)
-                    if (view_.questView().entry(displayedQuest(ui.questAct, index)).active &&
+                for (int index = 0; index < int(view_.questView().quests(ui.questAct).size()); ++index)
+                    if (view_.questView().entry(view_.questView().displayed(ui.questAct, size_t(index))).active &&
                         CheckCollisionPointRec(rv(input.mouse), questIconBounds(index))) {
                         ui.questPressed = index;
                         pickupClick_ = true;

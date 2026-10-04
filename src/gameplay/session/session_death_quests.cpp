@@ -10,7 +10,7 @@
 namespace d2x {
 QuestDeathContext GameSessionImpl::deathQuestContext(const EnemyDied &death) const {
     QuestDeathContext context;
-    context.records = state().player.character.actOneQuests.at(size_t(death.difficulty));
+    context.records = state().player.character.quests.at(size_t(death.difficulty));
     context.burial = burialRegion_;
     context.towerCellar = towerCellarRegion_;
     context.catacombsFour = catacombsFourRegion_;
@@ -22,7 +22,7 @@ QuestDeathContext GameSessionImpl::deathQuestContext(const EnemyDied &death) con
     return context;
 }
 void GameSessionImpl::applyDeathQuest(const EnemyDied &death, const QuestDeathPlan &plan) {
-    auto &book = simulation_->state_.player.character.actOneQuests.at(size_t(death.difficulty));
+    auto &book = simulation_->state_.player.character.quests.at(size_t(death.difficulty));
     const auto slot = world_.index(death.region);
     if (slot < 0) throw std::logic_error("Quest death references an unknown region");
     for (const auto &step : plan.steps) std::visit([&](const auto &effect) {

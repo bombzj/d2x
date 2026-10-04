@@ -20,10 +20,10 @@ HirelingCombatStats GameSession::hirelingStats() const { return impl_->hirelingS
 uint64_t GameSession::visualSeed() const { return impl_->visualSeed(); }
 const WorldState & GameSession::state() const { return impl_->state(); }
 void GameSession::setRunning(bool running) { impl_->setRunning(running); }
-const QuestRecord & GameSession::quest(ActOneQuest id, int difficulty) const { return impl_->quest(id, difficulty); }
-const QuestRecord & GameSession::quest(ActOneQuest id) const { return impl_->quest(id); }
-NpcQuestDialogue GameSession::npcQuestDialogue(std::string_view speaker) const { return impl_->npcQuestDialogue(speaker); }
-std::vector<std::pair<ActOneQuest, const NpcSpeech *>> GameSession::npcQuestTopics(std::string_view speaker) const { return impl_->npcQuestTopics(speaker); }
+const QuestRecord & GameSession::quest(QuestId id, int difficulty) const { return impl_->quest(id, difficulty); }
+const QuestRecord & GameSession::quest(QuestId id) const { return impl_->quest(id); }
+NpcQuestDialogue GameSession::npcQuestDialogue(EntityId npc) const { return impl_->npcQuestDialogue(npc); }
+std::vector<std::pair<QuestId, const NpcSpeech *>> GameSession::npcQuestTopics(EntityId npc) const { return impl_->npcQuestTopics(npc); }
 bool GameSession::npcQuestAlert(const WorldObject &npc) const { return impl_->npcQuestAlert(npc); }
 std::optional<unsigned> GameSession::denMonstersRemaining() const { return impl_->denMonstersRemaining(); }
 bool GameSession::usableCorpse(EntityId id) const { return impl_->usableCorpse(id); }

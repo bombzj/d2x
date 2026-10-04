@@ -10,8 +10,8 @@ void GameSessionImpl::identifyWithCain(EntityId npc) {
         return;
     }
     auto plan = planCainIdentification(inventory_.state(), playerContainers_,
-        quest(ActOneQuest::SearchForCain).stage >= uint32_t(CainStage::Rescued) &&
-        !(quest(ActOneQuest::SearchForCain).flags & cainRescuedByRogues));
+        quest(QuestId::SearchForCain).stage >= uint32_t(CainStage::Rescued) &&
+        !(quest(QuestId::SearchForCain).flags & cainRescuedByRogues));
     if (plan.items.empty()) {
         simulation_->emit(ItemsIdentified{npc, 0, 0});
         return;

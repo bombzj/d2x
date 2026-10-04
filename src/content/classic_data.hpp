@@ -10,6 +10,7 @@
 #include "gameplay/loot/special.hpp"
 #include "gameplay/character/attributes.hpp"
 #include "content/npc/npc_dialogue.hpp"
+#include "content/quest/quest_data.hpp"
 #include "content/npc/hireling_data.hpp"
 #include "content/skills/skill_data.hpp"
 #include "content/skills/state_data.hpp"
@@ -68,14 +69,14 @@ struct ClassicData {
     StashLayout stashLayout;
     StashLayout cubeLayout;
     std::string cubeCode;
-    std::array<std::string, 2> staffRecipeInputs;
-    std::string staffRecipeOutput;
+    StaffRecipeContent staffRecipe;
     // Class name -> level-indexed cumulative XP thresholds from Experience.txt.
     std::map<std::string, std::vector<uint64_t>, std::less<>> experienceByClass;
     std::vector<ClassicTreasureClass> treasures;
     std::vector<ClassicMonsterData> monsters;
     NpcDialogues npcDialogues;
-    std::map<std::string, std::string, std::less<>> actOneQuestStrings;
+    QuestContentCatalog questContent;
+    std::map<std::string, std::string, std::less<>> questStrings;
     std::map<std::string, std::string, std::less<>> hirelingStrings;
     std::map<std::string, std::string, std::less<>> itemStrings;
     std::vector<HirelingDefinition> hirelings;

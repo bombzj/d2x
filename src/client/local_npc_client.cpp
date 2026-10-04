@@ -9,7 +9,6 @@
 #include "content/monsters/monster_catalog.hpp"
 #include "world/region.hpp"
 #include <algorithm>
-#include <cctype>
 #include <utility>
 
 namespace d2x {
@@ -32,13 +31,10 @@ const NpcConversationView &LocalNpcClient::read(EntityId npc) const {
         const auto &dialogues = content.npcDialogues;
         if (const auto *intro = introSpeech(dialogues, view.speaker,
             session_.state().player.character.characterClass, object->act)) view.introduction = intro->text;
-        for (auto [id, speech] : session_.npcQuestTopics(view.speaker)) {
-            std::string key = "qsts" + speech->quest;
-            std::transform(key.begin(), key.end(), key.begin(), [](unsigned char c) { return char(std::tolower(c)); });
-            auto title = content.actOneQuestStrings.find(key);
-            view.topics.push_back({id, title == content.actOneQuestStrings.end() ? std::string{} : title->second, speech->text});
-            if (title != content.actOneQuestStrings.end())
-                view.talkEntries.push_back({title->second, {NpcMenuAction::QuestTopic, id}});
+        for (auto [id, speech] : session_.npcQuestTopics(npc)) {
+            const auto &title = content.questContent.at(questIndex(id)).title;
+            view.topics.push_back({id, title, speech->text});
+            view.talkEntries.push_back({title, {NpcMenuAction::QuestTopic, id}});
         }
         // Preserve gossipSpeech's catalog order and cyclic selection without
         // exposing the full NPC catalog or another player's quest context.

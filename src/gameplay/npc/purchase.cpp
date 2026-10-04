@@ -1,3 +1,4 @@
+#include "gameplay/quest/acts/act_two_state.hpp"
 #include "gameplay/simulation/simulation.hpp"
 #include "gameplay/session/session_impl.hpp"
 #include "content/items/item_pricing.hpp"
@@ -10,12 +11,12 @@ std::vector<int> GameSessionImpl::vendorQuestFactors(const VendorDefinition &ven
     // The values are D2MOO QuestStateFlag IDs, not the quest log's display order.
     auto pendingOrRewarded = [&](int flag) {
         switch (flag) {
-        case 1: return quest(ActOneQuest::DenOfEvil).stage >= uint32_t(DenStage::Cleared);
-        case 2: return quest(ActOneQuest::SistersBurialGrounds).stage >= uint32_t(BurialStage::BloodRavenSlain);
-        case 3: return quest(ActOneQuest::ToolsOfTheTrade).stage >= uint32_t(ToolsStage::RewardReady);
-        case 4: return quest(ActOneQuest::SearchForCain).stage >= uint32_t(CainStage::Rescued);
-        case 5: return quest(ActOneQuest::ForgottenTower).stage >= uint32_t(TowerStage::CountessSlain);
-        case 6: return quest(ActOneQuest::SistersToTheSlaughter).stage >= uint32_t(SlaughterStage::AndarielSlain);
+        case 1: return quest(QuestId::DenOfEvil).stage >= uint32_t(DenStage::Cleared);
+        case 2: return quest(QuestId::SistersBurialGrounds).stage >= uint32_t(BurialStage::BloodRavenSlain);
+        case 3: return quest(QuestId::ToolsOfTheTrade).stage >= uint32_t(ToolsStage::RewardReady);
+        case 4: return quest(QuestId::SearchForCain).stage >= uint32_t(CainStage::Rescued);
+        case 5: return quest(QuestId::ForgottenTower).stage >= uint32_t(TowerStage::CountessSlain);
+        case 6: return quest(QuestId::SistersToTheSlaughter).stage >= uint32_t(SlaughterStage::AndarielSlain);
         case 9: return quest(QuestId::RadamentsLair).stage >= uint32_t(RadamentStage::Slain);
         default: return false;
         }

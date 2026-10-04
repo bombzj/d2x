@@ -56,6 +56,7 @@ struct WorldObject {
     // path nodes and a MonStats walking AI may move.
     struct NpcPathNode { Vec position; int action = 1; };
     std::string npcClass;
+    int npcInitFn = 0; // Original Objects.InitFn for a quest-spawned NPC marker.
     MovementCollisionRule npcMovement;
     std::vector<NpcPathNode> npcPath;
     std::deque<Vec> npcRoute;

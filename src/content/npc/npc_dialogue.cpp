@@ -33,6 +33,8 @@ NpcDialogues loadNpcDialogueFile(Archives &archives, int act) {
                 speech.quest = quest;
                 speech.state = state;
             }
+            speech.act = act; // Books without a wave still belong to their source act.
+            speech.arrival = speech.quest.empty() && name.ends_with("ActIntro");
             result[act == 0 ? name : "act" + std::to_string(act + 1) + ":" + name].push_back(std::move(speech));
         }
         speech = {};
@@ -132,23 +134,14 @@ NpcDialogues loadNpcDialogues(Archives &archives, const DataTable &monsters, con
         soundNames.try_emplace(normalize(std::string(sounds.value(row, "FileName"))), sounds.value(row, "Sound"));
     for (auto &[group, speeches] : result)
         for (auto &speech : speeches) {
-            const auto wave = normalize(speech.wave);
-            const auto separator = wave.find('\\');
-            const auto actName = std::string_view(wave).substr(0, separator);
-            if (actName.starts_with("act")) {
-                int number = 0;
-                const auto value = actName.substr(3);
-                const auto [end, error] = std::from_chars(value.data(), value.data() + value.size(), number);
-                if (error == std::errc{} && end == value.data() + value.size() && number > 0)
-                    speech.act = number - 1;
-            }
             auto sound = soundNames.find(normalize(speech.wave));
             if (sound == soundNames.end()) continue;
             const auto &name = sound->second;
+            speech.soundId = name;
             const auto actMarker = name.find("_act");
             speech.speaker = name.substr(0, actMarker == std::string::npos ? name.find('_') : actMarker);
             auto intro = name.find("_intro");
-            speech.introduction = speech.quest.empty() && intro != std::string::npos;
+            speech.introduction = speech.quest.empty() && !speech.arrival && intro != std::string::npos;
             if (speech.introduction && intro + 6 < name.size())
                 speech.introClass = name.substr(intro + 7);
             const auto gossip = name.find("_gossip_");
@@ -231,6 +224,15 @@ const NpcSpeech *questSpeech(const NpcDialogues &dialogues, std::string_view que
         for (const auto &speech : speeches)
             if (speech.act == act && speech.speaker == speaker->second &&
                 speech.quest == quest && speech.state == state)
+                return &speech;
+    return nullptr;
+}
+const NpcSpeech *arrivalSpeech(const NpcDialogues &dialogues, std::string_view npc, int act) {
+    const auto identity = dialogues.speakers.find(npcIntroductionKey(npc, act));
+    if (identity == dialogues.speakers.end()) return nullptr;
+    for (const auto &[group, speeches] : dialogues)
+        for (const auto &speech : speeches)
+            if (speech.act == act && speech.speaker == identity->second && speech.arrival)
                 return &speech;
     return nullptr;
 }

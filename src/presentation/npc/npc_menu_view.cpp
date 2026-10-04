@@ -46,7 +46,7 @@ bool SceneView::startNpcIntroduction() {
     openNpcDialogue(view_.dialogueObject, view_.dialogueSpeaker, *npcView_.introduction);
     return true;
 }
-bool SceneView::startNpcTopic(ActOneQuest quest) {
+bool SceneView::startNpcTopic(QuestId quest) {
     if (!view_.npcMenu || !view_.npcTopics) return false;
     for (const auto &topic : npcView_.topics)
         if (topic.quest == quest) {

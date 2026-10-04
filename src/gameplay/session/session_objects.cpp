@@ -55,13 +55,14 @@ void GameSessionImpl::activateLootObject(EntityId id) {
         plan = planItemLoot(content_, content_.tables.at("itemratio"), entry.treasureClass,
             entry.itemLevel, 0, objectSeed, usedUniques, characterDefinition_.code, 0, 0, DropQuality::Magic);
         if (!plan.deferred.empty()) { simulation_->emit(LootDeferred{id, plan.deferred}); return; }
-        const auto code = found->operateFn == 39 ? content_.cubeCode : found->operateFn == 40 ? "tr1" : "msf";
+        const auto &code = found->operateFn == 39 ? content_.cubeCode : found->operateFn == 40
+            ? content_.staffRecipe.scroll : content_.staffRecipe.inputs[0];
         bool carried = false;
         for (const auto &[itemId, item] : inventory_.state().items)
             if (const auto *location = std::get_if<ContainerLocation>(&item.location);
                 location && (location->container == playerContainers_.backpack ||
                     location->container == playerContainers_.cube || location->container == playerContainers_.equipment))
-                if ((item.definition == code || (found->operateFn == 41 && item.definition == "hst")) &&
+                if ((item.definition == code || (found->operateFn == 41 && item.definition == content_.staffRecipe.output)) &&
                     (found->operateFn == 39 || item.nativeQuestDifficulty >= unsigned(state().population.difficulty))) carried = true;
         const auto &staff = quest(QuestId::HoradricStaff);
         if (!carried && (found->operateFn == 39 || staff.stage < 6) &&

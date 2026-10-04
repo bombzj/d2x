@@ -29,7 +29,7 @@
 | `main.cpp`、`app/` / `d2x` | 参数、角色前端、窗口、设备输入、固定步主循环、保存入口、本机调试与崩溃记录 | `app/application.cpp`、`app/input.cpp`、`app/debug/` |
 | `asset_tool.cpp` / `d2x_assets` | 独立资源查询、导出、预览、地图／掉落报告及存档摘要工具 | `asset_tool.cpp` |
 
-需要特别区分：`gameplay/session` 和 `gameplay/npc` 的宿主适配编入 `d2x_session`；`npc/hireling_controller.cpp` 是不读内容／会话的纯控制策略，编入 `d2x_gameplay`，只借用已解析能力；宿主适配可依赖内容与地图；`d2x_gameplay` 才是隔离 MPQ、窗口和 GPU 的规则库。第二幕任务目前主要在 `session_act_two.cpp` 协调，`quest/id.hpp` 单独定义任务身份；`quest/state.hpp` 保存两幕共十二项、三难度任务记录。客户端日志投影不包含这份任务簿。
+需要特别区分：`gameplay/session` 和 `gameplay/npc` 的宿主适配编入 `d2x_session`；`npc/hireling_controller.cpp` 是不读内容／会话的纯控制策略，编入 `d2x_gameplay`，只借用已解析能力；宿主适配可依赖内容与地图；`d2x_gameplay` 才是隔离 MPQ、窗口和 GPU 的规则库。任务身份／显示／原保存槽由 `quest/id.hpp` 和 `catalog.hpp` 分工，`content/quest/quest_data.*` 统一绑定 MPQ 文字／原图与法杖配方及材料角色；`quest/acts/` 登记各幕 NPC、交谈、事件及日志规则，`session_act_two.cpp` 继续协调第二幕专用物件演出。本人三难度 `quests` 与非日志 `questPreludes` 属角色，客户端投影不包含任务簿；D2S 任务编码在 `persistence/d2s_quests.*`，详见[任务系统](QUEST_SYSTEM.md)。本批 Windows Release 与有限 NPC／临时存档冒烟通过，未重打包；准确范围见任务系统。
 
 第四项装备／来源已接入并随第五项通过 Windows Release：`d2x_items` 拥有纯装备贡献／战斗规则，原 `content/items/equipment_combat.*` 已删除；`content/items/equipment_modifiers.*` 只准备套装定义事实、绑定属性解析和库存借用适配。`skills/rank_sources.*` 在 `d2x_gameplay` 中只合成显式学习等级／授予／加成，避免 items 反向依赖技能执行。模拟器、会话显示值及角色提示只包含 `combat/weapon_values.hpp`；宿主 `session_character_stats.cpp` 重算人物，`session_skill_sources.cpp` 准备来源，库存事务及施法文件保留各自职责。借用寿命、有限冒烟范围及尚未接入的充能／触发消费见[库存基线](baseline/INVENTORY.md#装备与技能来源第四项)；未测量编译收益。
 
@@ -144,7 +144,7 @@ app/input.cpp 读取设备 → FrameInput
 | 2 | `session.cpp` 同时负责大量回调注入、区域加载和命令分发；私有 `GameSessionImpl` 通过 `friend` 访问模拟／库存内部 | 先按初始化、区域生命周期、命令分发拆实现文件，再按事务收窄写接口；保持随机数消耗、命令处理和死亡结算顺序 |
 | 3 | `controller.cpp` 集中处理多种面板与场景手势，已有库存／技能子目录可延续 | 将独立面板处理移到对应功能目录；鼠标消费到松开、目标锁定和面板关闭顺序继续共用总控制器 |
 | 4 | `ClassicData` 同时暴露原表和大量领域定义，`session.hpp`／`SceneAssets` 携带较多公共类型 | 优先提供物品、技能、怪物的窄查询入口，逐步把原表解释收回内容适配层；按实际收益使用前置声明，不先拆大量新库 |
-| 5 | 保存值已抽出，运行 `PlayerState` 已按资料／资源／移动／动作／临时技能组合；`ActOneQuest`／`actOneQuests` 名称已承载两幕任务 | 继续拆多玩家／区域拥有者和剩余协调，并统一通用任务命名；保持原 D2S 映射，不静默迁移旧档，语义变更同步规则指纹与文档 |
+| 5 | 保存值已抽出，运行 `PlayerState` 已按资料／资源／移动／动作／临时技能组合；任务已统一 `QuestId`／`quests` 名称，并拆按幕模块及独立欢迎记录 | 继续拆多玩家／区域拥有者和剩余协调；保持原 D2S 映射，不静默迁移旧档，语义变更同步规则指纹与文档 |
 | 6 | CMake 的同一目标多次追加源码，大多内部依赖仍为 `PUBLIC` | 按目标／领域集中源码清单，逐项区分公开接口与实现依赖；收窄链接可见性前核对静态库和最终可执行文件需求 |
 
 角色、怪物、主动技能、被动和光环的本地参考证据与进一步拆分边界见 [参考项目设计比较](ARCHITECTURE_REFERENCE.md)。其中技能来源、参数与当前行为执行已实际迁移，完整通用单位／多玩家生命周期仍待实施；当前状态以模块基线为准。

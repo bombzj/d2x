@@ -8,13 +8,13 @@
 namespace d2x {
 namespace {
 QuestRecord &denRecord(WorldState &world) {
-    return world.player.character.actOneQuests.at(size_t(world.population.difficulty))
-        .at(questIndex(ActOneQuest::DenOfEvil));
+    return world.player.character.quests.at(size_t(world.population.difficulty))
+        .at(questIndex(QuestId::DenOfEvil));
 }
 } // namespace
 
 void GameSessionImpl::onQuestRegionEntered(RegionId id) {
-    auto &book = simulation_->state_.player.character.actOneQuests
+    auto &book = simulation_->state_.player.character.quests
         .at(size_t(state().population.difficulty));
     const auto level = worldContent_.levels().find(int(id));
     const QuestEntryFacts facts{int(id), level == worldContent_.levels().end() ? -1 : level->second.act,
@@ -38,22 +38,26 @@ void GameSessionImpl::updateDenQuest() {
     auto &record = denRecord(simulation_->state_);
     if (denAdvanceOnClear(record, area.kills > 0,
                           alive || !area.pendingSpawns.empty()))
-        simulation_->emit(QuestAdvanced{ActOneQuest::DenOfEvil, record.stage});
+        simulation_->emit(QuestAdvanced{QuestId::DenOfEvil, record.stage});
 }
 void GameSessionImpl::talkToNpc(EntityId npc) {
     const auto *target = object(npc);
     const auto access = npcAccess(npc);
     if (!target || !access.contact() ||
         (!access.safe && !(int(access.region) == 73 && target->npcClass == "tyrael1"))) return;
-    const auto dialogue = npcQuestDialogue(target->name);
+    const auto dialogue = npcQuestDialogue(npc);
     if (!dialogue.readKey.empty())
         pendingNpcQuestMessages_.erase(dialogue.readKey);
+    if (dialogue.prelude) {
+        simulation_->state_.player.character.questPreludes
+            .at(size_t(state().population.difficulty)).at(size_t(*dialogue.prelude)) = true;
+    }
     if (!dialogue.advancesQuest) return;
     const auto id = *dialogue.advancesQuest;
-    auto &record = simulation_->state_.player.character.actOneQuests
+    auto &record = simulation_->state_.player.character.quests
         .at(size_t(state().population.difficulty)).at(questIndex(id));
     const auto plan = planNpcQuest(id, record, {target->npcClass,
-        quest(ActOneQuest::DenOfEvil).stage >= uint32_t(DenStage::Rewarded)});
+        quest(QuestId::DenOfEvil).stage >= uint32_t(DenStage::Rewarded), dialogue.staffExplanation});
     if (!plan || !deliverQuestReward(plan->reward, npc)) return;
     record = plan->next;
     simulation_->emit(QuestAdvanced{id, record.stage});
@@ -74,6 +78,6 @@ void GameSessionImpl::claimAkaraRespec(EntityId npc) {
     resetCharacterAttributes(characterProgressionContext());
     refundCharacterSkills(characterSkillContext());
     refreshCharacter(true);
-    simulation_->emit(QuestAdvanced{ActOneQuest::DenOfEvil, record.stage});
+    simulation_->emit(QuestAdvanced{QuestId::DenOfEvil, record.stage});
 }
 } // namespace d2x

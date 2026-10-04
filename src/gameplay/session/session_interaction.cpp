@@ -234,14 +234,14 @@ void GameSessionImpl::completeInteraction(const WorldObject &object) {
     case Interaction::Talk: {
         if (introSpeech(content_.npcDialogues, object.name, {}, object.act) ||
             gossipSpeech(content_.npcDialogues, object.name, 0, object.act) || vendorStock(object.id) ||
-            npcQuestDialogue(object.name).speech)
+            npcQuestDialogue(object.id).speech)
             engagedNpc_ = object.id;
         const auto *intro = introSpeech(content_.npcDialogues, object.name, state().player.character.characterClass, object.act);
         auto &introductions = simulation_->state_.player.character.npcIntroductions
             .at(size_t(state().population.difficulty));
         const auto introductionKey = npcIntroductionKey(object.name, object.act);
         const bool first = intro && introductions.insert(introductionKey).second;
-        const auto dialogue = npcQuestDialogue(object.name);
+        const auto dialogue = npcQuestDialogue(object.id);
         if (first) simulation_->emit(NpcDialogueStarted{object.id, object.name, intro->text});
         if (dialogue.automatic && dialogue.speech) {
             if (!first || dialogue.speech != intro)
@@ -269,10 +269,10 @@ void GameSessionImpl::completeInteraction(const WorldObject &object) {
         activateCainQuestObject(object);
         break;
     case Interaction::QuestTome: {
-        auto &record = simulation_->state_.player.character.actOneQuests
-            .at(size_t(state().population.difficulty)).at(questIndex(ActOneQuest::ForgottenTower));
+        auto &record = simulation_->state_.player.character.quests
+            .at(size_t(state().population.difficulty)).at(questIndex(QuestId::ForgottenTower));
         if (towerAdvance(record, TowerStage::TomeRead))
-            simulation_->emit(QuestAdvanced{ActOneQuest::ForgottenTower, record.stage});
+            simulation_->emit(QuestAdvanced{QuestId::ForgottenTower, record.stage});
         for (auto &candidate : world_.at(current_).objects)
             if (candidate.id == object.id) candidate.operatedAt = state().time;
         simulation_->emit(ObjectInteracted{object.id, object.interaction, object.name});

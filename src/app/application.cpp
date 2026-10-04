@@ -12,6 +12,7 @@
 #include "gameplay/items/inventory.hpp"
 #include "gameplay/session/character_save.hpp"
 #include "application.hpp"
+#include "app/automap_save.hpp"
 #include "character_frontend.hpp"
 #include "input.hpp"
 #include "options.hpp"
@@ -264,6 +265,7 @@ int runGame(int argc, char **argv) {
             LocalNpcClient npcClient(session);
             LocalMapClient mapClient(session);
             SceneView view(archives, session, actorClient, inventoryClient, characterClient, questClient, npcClient, mapClient, mapClient);
+            if (!options.load.empty()) restoreLocalAutomap(savePath, session, view);
             view.ui().miniPanelOpen = preferences.miniPanelOpen;
             view.ui().automapLarge = preferences.automapLarge;
             view.ui().automapCenterWhenCleared = preferences.automapCenterWhenCleared;
@@ -319,7 +321,7 @@ int runGame(int argc, char **argv) {
                         view.advance(0);
                     }
                     if (ownsSave) {
-                        writeSave(savePath, session.characterSave(), session.content());
+                        saveLocalGame(savePath, session, view);
                         std::cout << "Saved " << savePath << '\n' << std::flush;
                     }
                     return true;
@@ -363,11 +365,13 @@ int runGame(int argc, char **argv) {
                             session.restore(loadSave(savePath, session.content()));
                             session.setRunning(preferences.running);
                             view.sessionRestored();
+                            const bool mapRestored = restoreLocalAutomap(savePath, session, view);
                             controller.resetInput();
                             worldClock.reset();
-                            view.notice("Character loaded in town; monsters have reset.");
+                            if (mapRestored)
+                                view.notice("Character loaded in town; monsters have reset.");
                         } else {
-                            writeSave(savePath, session.characterSave(), session.content());
+                            saveLocalGame(savePath, session, view);
                             view.notice("Character saved.");
                         }
                         std::cout << (input.load ? "Loaded " : "Saved ") << savePath << '\n';

@@ -105,7 +105,7 @@ struct WaypointActivated {
     EntityId object;
 };
 struct QuestAdvanced {
-    ActOneQuest quest;
+    QuestId quest;
     uint32_t stage;
     bool completed = false; // Completion at this transition, before any later event.
 };

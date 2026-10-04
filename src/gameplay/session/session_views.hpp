@@ -4,6 +4,7 @@
 #include "gameplay/effects/state.hpp"
 #include "gameplay/combat/weapon_values.hpp"
 #include "gameplay/quest/state.hpp"
+#include "gameplay/quest/prelude.hpp"
 #include <array>
 #include <optional>
 #include <string>
@@ -18,9 +19,12 @@ struct ShrineStatus {
 };
 struct NpcQuestDialogue {
     const NpcSpeech *speech = nullptr;
-    std::optional<ActOneQuest> advancesQuest;
+    std::optional<QuestId> advancesQuest;
     bool automatic = false;
     std::string readKey;
+    std::optional<QuestPreludeId> prelude;
+    bool alert = false;
+    uint32_t staffExplanation = 0;
 };
 struct HirelingCombatStats {
     HirelingStats base;

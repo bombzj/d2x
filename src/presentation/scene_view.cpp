@@ -1,3 +1,4 @@
+#include "gameplay/quest/acts/act_two_state.hpp"
 #include "gameplay/skills/spec.hpp"
 #include "client/actor_client.hpp"
 #include "gameplay/quest/den_of_evil.hpp"
@@ -316,7 +317,6 @@ void SceneView::advance(float dt) {
     lighting_.setEclipse(sunStage > 0 && sunStage < 3);
     lighting_.advance(dt, session_.worldContent().level(int(session_.region().definition.id)));
     advanceMissileVisuals(dt);
-    revealAutomap();
     const auto &currentRegion = session_.region();
     const auto &popups = currentRegion.map.terrain.data.roofPopups;
     auto &opacity = roofOpacity_[currentRegion.definition.id];
@@ -563,12 +563,12 @@ void SceneView::advance(float dt) {
                     queueQuestAnimation(value.quest, value.completed);
                     view_.questUpdated = int(questIndex(value.quest));
                     view_.questNotice = !view_.questOpen;
-                    if (value.quest == ActOneQuest::ToolsOfTheTrade &&
+                    if (value.quest == QuestId::ToolsOfTheTrade &&
                         value.stage == uint32_t(ToolsStage::Imbued)) {
                         view_.imbueNpc = {};
                         view_.inventory.open = false;
                     }
-                    if (value.quest == ActOneQuest::SearchForCain &&
+                    if (value.quest == QuestId::SearchForCain &&
                         value.stage == uint32_t(CainStage::PortalOpened))
                         view_.cainPortalAnimationStarted = view_.animationTime;
                 } else if constexpr (std::is_same_v<T, NpcDialogueStarted>) {
@@ -681,6 +681,7 @@ void SceneView::advance(float dt) {
         view_.heroTime = 0;
     }
     view_.camera = view_.camera + (project(actor.position) - view_.camera) * std::min(1.f, dt * 10);
+    revealAutomap();
     view_.clickAge += dt;
     view_.stepClock -= dt;
     if (actor.moving && view_.stepClock <= 0) {

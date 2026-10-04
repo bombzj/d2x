@@ -1,3 +1,4 @@
+#include "gameplay/quest/acts/act_two_state.hpp"
 #include "gameplay/items/equipment_inventory.hpp"
 #include "gameplay/items/equipment_stats.hpp"
 #include "gameplay/character/runtime_record.hpp"
@@ -259,7 +260,7 @@ void GameSessionImpl::restore(CharacterSaveData data) {
         if (merc.hp > 0) merc.hp = float(hirelingStats().base.life);
     }
     current_ = current;
-    auto &radament = simulation_->state_.player.character.actOneQuests.at(size_t(state().population.difficulty)).at(questIndex(QuestId::RadamentsLair));
+    auto &radament = simulation_->state_.player.character.quests.at(size_t(state().population.difficulty)).at(questIndex(QuestId::RadamentsLair));
     if (radament.stage == uint32_t(RadamentStage::Rewarded) && (radament.flags & radamentBookPending) && !carriesQuestItem("ass")) {
         radament.stage = uint32_t(RadamentStage::Unstarted);
         radament.flags = 0;

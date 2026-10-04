@@ -8,8 +8,8 @@
 namespace d2x {
 namespace {
 QuestRecord &cain(WorldState &world) {
-    return world.player.character.actOneQuests.at(size_t(world.population.difficulty))
-        .at(questIndex(ActOneQuest::SearchForCain));
+    return world.player.character.quests.at(size_t(world.population.difficulty))
+        .at(questIndex(QuestId::SearchForCain));
 }
 } // namespace
 
@@ -91,7 +91,7 @@ void GameSessionImpl::activateCainQuestObject(const WorldObject &source) {
             publishInventory(std::move(created), {});
         }
         if (cainAdvance(record, CainStage::TreeOpened))
-            simulation_->emit(QuestAdvanced{ActOneQuest::SearchForCain, record.stage});
+            simulation_->emit(QuestAdvanced{QuestId::SearchForCain, record.stage});
         found->operatedAt = state().time;
         simulation_->emit(ObjectInteracted{source.id, source.interaction, source.name});
     } else if (source.interaction == Interaction::QuestStone &&
@@ -116,7 +116,7 @@ void GameSessionImpl::activateCainQuestObject(const WorldObject &source) {
                     break;
                 }
             }
-            simulation_->emit(QuestAdvanced{ActOneQuest::SearchForCain, record.stage});
+            simulation_->emit(QuestAdvanced{QuestId::SearchForCain, record.stage});
         }
         simulation_->emit(ObjectInteracted{source.id, source.interaction, source.name});
     } else if (source.interaction == Interaction::QuestGibbet &&
@@ -126,14 +126,14 @@ void GameSessionImpl::activateCainQuestObject(const WorldObject &source) {
             pendingNpcQuestMessages_.insert("A1Q4/RescuedByHero/Deckard Cain");
             found->operatedAt = state().time;
             reconcileCainObjects();
-            simulation_->emit(QuestAdvanced{ActOneQuest::SearchForCain, record.stage});
+            simulation_->emit(QuestAdvanced{QuestId::SearchForCain, record.stage});
             simulation_->emit(ObjectInteracted{source.id, source.interaction, source.name});
         }
     }
 }
 
 std::optional<Vec> GameSessionImpl::cainPortalPosition() const {
-    if (quest(ActOneQuest::SearchForCain).stage < uint32_t(CainStage::PortalOpened))
+    if (quest(QuestId::SearchForCain).stage < uint32_t(CainStage::PortalOpened))
         return std::nullopt;
     if (tristramRegion_ && region().definition.id == *tristramRegion_)
         return map().spawn;

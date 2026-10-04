@@ -6,16 +6,6 @@
 #include <array>
 
 namespace d2x {
-inline constexpr std::array questDisplayOrder = {
-    ActOneQuest::DenOfEvil, ActOneQuest::SistersBurialGrounds,
-    ActOneQuest::SearchForCain, ActOneQuest::ForgottenTower,
-    ActOneQuest::ToolsOfTheTrade, ActOneQuest::SistersToTheSlaughter};
-inline constexpr std::array actTwoQuestOrder = {
-    QuestId::RadamentsLair, QuestId::HoradricStaff, QuestId::TaintedSun,
-    QuestId::ArcaneSanctuary, QuestId::Summoner, QuestId::SevenTombs};
-inline QuestId displayedQuest(int act, int index) {
-    return (act == 1 ? actTwoQuestOrder : questDisplayOrder).at(size_t(index));
-}
 inline Rectangle questBounds() { return classicPanelBounds(false, 64); }
 inline Rectangle questArtRect(float x, float y, float width, float height) {
     const auto panel = questBounds();

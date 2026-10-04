@@ -22,7 +22,7 @@ bool GameSessionImpl::canHireFrom(EntityId npc) const {
     if (!seller || !content_.stashLayout.expansion) return false;
     // SUnitNpc hire eligibility; the current world implements Act I only.
     if (target->npcClass == "kashya" && state().player.character.level < 8 &&
-        quest(ActOneQuest::SistersBurialGrounds).stage != uint32_t(BurialStage::Rewarded)) return false;
+        quest(QuestId::SistersBurialGrounds).stage != uint32_t(BurialStage::Rewarded)) return false;
     return std::any_of(content_.hirelings.begin(), content_.hirelings.end(), [&](const auto &entry) {
         return entry.seller == seller->index && entry.act == 1 &&
                entry.difficulty == state().population.difficulty + 1;
