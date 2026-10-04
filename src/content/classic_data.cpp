@@ -19,6 +19,7 @@
 #include "content/skills/weapon_skill_data.hpp"
 #include "content/skills/necromancer_data.hpp"
 #include "content/skills/curse_data.hpp"
+#include "content/skills/bone_data.hpp"
 #include "content/monsters/monster_enchantment.hpp"
 #include "content/skills/aura_data.hpp"
 #include <algorithm>
@@ -329,6 +330,7 @@ ClassicData loadClassicData(Archives &archives) {
         loadWeaponSkills(data.skills, data.tables.at("skills"), data.tables.at("missiles"), sounds, archives);
         loadPaladinSkills(data.skills, data.tables.at("skills"), data.tables.at("missiles"), overlays, sounds, data.states, archives);
         loadNecromancerCurses(data.skills, data.tables.at("skills"), overlays, sounds, data.states, archives);
+        loadBoneSkills(data.skills, data.tables.at("skills"), data.tables.at("missiles"), overlays, sounds, data.states, archives);
         loadNecromancerSummons(data.skills, data.tables.at("skills"), data.tables.at("monstats"),
             data.tables.at("monstats2"), data.tables.at("monlvl"), sounds, archives);
         const DataTable levels(archives.read("data/global/excel/levels.txt"));

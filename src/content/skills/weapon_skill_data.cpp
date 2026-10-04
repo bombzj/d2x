@@ -1,3 +1,4 @@
+#include "gameplay/skills/behavior.hpp"
 #include "gameplay/skills/spec.hpp"
 #include "resources/archive.hpp"
 #include "weapon_skill_data.hpp"

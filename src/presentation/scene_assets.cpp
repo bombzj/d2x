@@ -1,3 +1,4 @@
+#include "gameplay/skills/behavior.hpp"
 #include "gameplay/skills/spec.hpp"
 #include "gameplay/monsters/implementation.hpp"
 #include "client/item_art.hpp"

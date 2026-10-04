@@ -81,19 +81,19 @@ void Simulation::advanceHydra(Enemy &pet, float dt) {
     }
     pet.rethink = 10.f / 25.f;
 }
-bool Simulation::usableCorpse(EntityId id) const {
+bool Simulation::usableCorpse(EntityId id, bool explosion) const {
     const auto *corpse = const_cast<Simulation *>(this)->findEnemy(id);
     if (!corpse || safeZone_ || !corpse->corpseAvailable() || !active(corpse->pos) ||
-        !corpseSelectable_ || !corpseSelectable_(*corpse)) return false;
+        (explosion ? !corpseExplosionLife_ || !corpseExplosionLife_(*corpse) : !corpseSelectable_ || !corpseSelectable_(*corpse))) return false;
     const auto duration = monsterDeathDuration_ ? monsterDeathDuration_(*corpse) : std::nullopt;
     return duration && corpse->deathAge >= *duration;
 }
-EntityId Simulation::corpseNear(Vec target) const {
+EntityId Simulation::corpseNear(Vec target, bool explosion) const {
     EntityId result;
     float closest = 3; // Mouse/world selection tolerance, not a skill damage/range parameter.
     for (const auto &corpse : state_.area.enemies) {
         const auto distance = (corpse.pos - target).length();
-        if (distance < closest && usableCorpse(corpse.id)) { result = corpse.id; closest = distance; }
+        if (distance < closest && usableCorpse(corpse.id, explosion)) { result = corpse.id; closest = distance; }
     }
     return result;
 }

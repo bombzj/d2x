@@ -1,7 +1,6 @@
 #pragma once
 #include "core/math.hpp"
 #include "world/identity.hpp"
-#include "gameplay/skills/behavior.hpp"
 #include "gameplay/monsters/kind.hpp"
 #include <array>
 #include <cstddef>

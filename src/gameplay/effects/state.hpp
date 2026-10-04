@@ -45,6 +45,7 @@ class CombatEffectSet {
     void shortenCurableCurses(EffectFrame now, int remainingPercent);
     std::vector<RemovedCombatEffect> removeSource(CombatEffectSource kind, EntityId source);
     std::vector<RemovedCombatEffect> clear();
+    float absorbPhysical(float damage, EffectFrame now, std::vector<RemovedCombatEffect> &removed);
     bool hasState(int stateId, EffectFrame now) const;
     CharacterModifiers modifiers(EffectFrame now) const;
     std::vector<TriggeredCombatEffect> reactions(CombatEffectEvent event, EffectFrame now) const;

@@ -1,3 +1,4 @@
+#include "gameplay/skills/behavior.hpp"
 #include "gameplay/units/actions.hpp"
 #include "gameplay/session/session_impl.hpp"
 #include "gameplay/simulation/simulation.hpp"

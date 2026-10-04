@@ -1,3 +1,4 @@
+#include "gameplay/skills/behavior.hpp"
 #include "gameplay/combat/unit.hpp"
 #include "gameplay/effects/state.hpp"
 #include "gameplay/skills/caster.hpp"

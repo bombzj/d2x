@@ -1,3 +1,4 @@
+#include "gameplay/skills/behavior.hpp"
 #include "gameplay/skills/spec.hpp"
 #include "resources/archive.hpp"
 #include "core/random.hpp"
@@ -269,19 +270,20 @@ void loadMonsterEnchantmentResources(ClassicData &data, Archives &archives) {
         const auto row = numberedRow(missiles, "Id", id);
         MonsterSpecialMissile entry;
         entry.visual = loadProjectileResource(missiles, row, archives);
-        entry.spec = elementalSpec(missiles, row, true);
-        entry.spec.sourceId = 0;
-        entry.spec.missileId = id;
-        entry.spec.missileVelocity = float(number(missiles, row, "Vel"));
+        auto spec = elementalSpec(missiles, row, true);
+        spec.sourceId = 0;
+        spec.missileId = id;
+        spec.missileVelocity = float(number(missiles, row, "Vel"));
         if (id == 194) {
             const auto frostNova = namedRow(missiles, "Missile", "frostnova");
-            entry.spec.missileVelocity = float(number(missiles, frostNova, "Vel"));
+            spec.missileVelocity = float(number(missiles, frostNova, "Vel"));
         }
-        entry.spec.missileLifetime = entry.visual.lifetime;
-        entry.spec.missileNextDelay = number(missiles, row, "NextDelay");
-        entry.spec.missileAcceleration = number(missiles, row, "Accel");
-        entry.spec.missileMaxVelocity = number(missiles, row, "MaxVel");
-        entry.spec.effect = id == 195 ? SkillBehavior::ChargedBolt : SkillBehavior::FrostNova;
+        spec.missileLifetime = entry.visual.lifetime;
+        spec.missileNextDelay = number(missiles, row, "NextDelay");
+        spec.missileAcceleration = number(missiles, row, "Accel");
+        spec.missileMaxVelocity = number(missiles, row, "MaxVel");
+        spec.effect = id == 195 ? SkillBehavior::ChargedBolt : SkillBehavior::FrostNova;
+        entry.spec = std::make_shared<const SkillSpec>(std::move(spec));
         entry.element = id == 195 ? 3 : 4;
         entry.killOnHit = number(missiles, row, "CollideKill") != 0;
         data.monsterSpecialMissiles.emplace(id, std::move(entry));

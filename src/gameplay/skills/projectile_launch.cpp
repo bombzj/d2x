@@ -1,3 +1,5 @@
+#include "gameplay/skills/behavior.hpp"
+#include "gameplay/skills/bone_spec.hpp"
 #include "gameplay/combat/geometry.hpp"
 #include "gameplay/skills/projectile_source.hpp"
 #include "gameplay/skills/missile.hpp"
@@ -13,7 +15,51 @@
 
 namespace d2x {
 void SkillRuntime::launchProjectiles(SkillCaster player, const SkillCastSpec &skill, Vec target, EntityId targetUnit) {
-    if (skill.heaven) {
+    if (skill.effect == SkillBehavior::BoneSpear || skill.effect == SkillBehavior::BoneSpirit) {
+        const int minimum = int(skill.minimumDamage * 256.f), maximum = int(skill.maximumDamage * 256.f);
+        const float amount = float(minimum + limitedRandom(player.combatRandom, unsigned(std::max(0, maximum - minimum)))) / 256.f;
+        auto &missile = launchStraight({{}, player.id, player.pos, player.look * skill.missileVelocity,
+            skill.missileLifetime, skill.effect, false, skill.missileId, amount});
+        missile.fixedElement = DamageType::Magic; missile.killOnHit = skill.effect == SkillBehavior::BoneSpirit;
+        missile.skillId = skill.sourceId; missile.skillRank = skill.rank;
+        missile.impact = skill.missileImpact;
+        missile.impactDamage.channels[size_t(DamageType::Magic)] = amount;
+        missile.bone = std::make_shared<BoneMissileState>(); missile.bone->program = skill.bone;
+        if (skill.effect == SkillBehavior::BoneSpirit) {
+            auto &state = *missile.bone;
+            state.target = targetUnit; state.coordinateTarget = !targetUnit;
+            state.offset = Vec{float(int(target.x) - int(player.pos.x)), float(int(target.y) - int(player.pos.y))};
+            if (state.coordinateTarget)
+                missile.remaining = float(std::max(1, int(float(std::max(1, missileDistance(player.pos, target))) *
+                    25.f / skill.missileVelocity))) / 25.f;
+        }
+    } else if (skill.effect == SkillBehavior::Teeth) {
+        int dx = int(target.x) - int(player.pos.x), dy = int(target.y) - int(player.pos.y);
+        if (dx == 0 && dy == 0) { dx = int(std::round(player.look.x * 4)); dy = int(std::round(player.look.y * 4)); }
+        int distance = dx * dx + dy * dy;
+        if (distance < 4) { dx *= 4; dy *= 4; distance = dx * dx + dy * dy; }
+        if (distance < 16) { dx *= 2; dy *= 2; }
+        int sideX = dy, sideY = -dx;
+        while (sideX * sideX + sideY * sideY > 3) { sideX /= 2; sideY /= 2; }
+        Vec endpoint{float(int(target.x) - skill.missileCount * sideX / 2),
+                     float(int(target.y) - skill.missileCount * sideY / 2)};
+        const Vec origin{float(int(player.pos.x)) + .5f, float(int(player.pos.y)) + .5f};
+        const int minimum = int(skill.minimumDamage * 256.f), maximum = int(skill.maximumDamage * 256.f);
+        for (int index = 0; index < skill.missileCount; ++index) {
+            Vec heading = (endpoint + Vec{.5f,.5f} - origin).unit();
+            if (heading.length() == 0) heading = player.look;
+            const float amount = float(minimum + limitedRandom(player.combatRandom,
+                unsigned(std::max(0, maximum - minimum)))) / 256.f;
+            auto &missile = launchStraight({{}, player.id, origin, heading * skill.missileVelocity,
+                skill.missileLifetime, skill.effect, false, skill.missileId, amount});
+            missile.skillId = skill.sourceId; missile.skillRank = skill.rank;
+            missile.fixedElement = DamageType::Magic;
+            missile.nextHitDelay = skill.missileNextDelay;
+            missile.impact = skill.missileImpact;
+            missile.impactDamage.channels[size_t(DamageType::Magic)] = amount;
+            endpoint = endpoint + Vec{float(sideX), float(sideY)};
+        }
+    } else if (skill.heaven) {
         const auto defender = combatUnit(targetUnit);
         if (!defender.alive() || !canAttack(player.id, targetUnit)) return;
         Missile missile{world_.allocate(), player.id, target, {}, float(skill.heaven->delayFrames) / 25.f,
@@ -81,7 +127,7 @@ void SkillRuntime::launchProjectiles(SkillCaster player, const SkillCastSpec &sk
             missile.path.assign(path.begin(), path.end());
             world_.addMissile(std::move(missile));
         }
-    } else if (skill.effect == SkillBehavior::FrostNova || skill.effect == SkillBehavior::Nova) {
+    } else if (skill.effect == SkillBehavior::FrostNova || skill.effect == SkillBehavior::Nova || skill.effect == SkillBehavior::PoisonNova) {
         constexpr int directions = 64;
         constexpr int offsets[]{30, 29, 29, 28, 27, 26, 24, 23, 21, 19, 16, 14, 11, 8, 5, 2,
             0, -2, -5, -8, -11, -14, -16, -19, -21, -23, -24, -26, -27, -28, -29, -29,
@@ -89,10 +135,15 @@ void SkillRuntime::launchProjectiles(SkillCaster player, const SkillCastSpec &sk
             0, 2, 5, 8, 11, 14, 16, 19, 21, 23, 24, 26, 27, 28, 29, 29};
         for (int index = 0; index < directions; ++index) {
             const Vec heading = Vec{float(offsets[index]), float(offsets[(index + 48) % directions])}.unit();
-            rollRandom(player.combatRandom);
-            const float fraction = float(uint32_t(player.combatRandom)) / 4294967295.f;
-            const float amount = skill.minimumDamage +
-                (skill.maximumDamage - skill.minimumDamage) * fraction;
+            float amount;
+            if (skill.effect == SkillBehavior::PoisonNova) {
+                const int minimum = int(skill.minimumDamage * 256.f), maximum = int(skill.maximumDamage * 256.f);
+                amount = float(minimum + limitedRandom(player.combatRandom, unsigned(std::max(0, maximum - minimum)))) / 256.f;
+            } else {
+                rollRandom(player.combatRandom);
+                const float fraction = float(uint32_t(player.combatRandom)) / 4294967295.f;
+                amount = skill.minimumDamage + (skill.maximumDamage - skill.minimumDamage) * fraction;
+            }
             auto &missile = world_.addMissile({world_.allocate(), player.id, player.pos,
                 heading * skill.missileVelocity, skill.missileLifetime, skill.effect,
                 false, skill.missileId, amount, 0, skill.coldDuration});
@@ -102,6 +153,13 @@ void SkillRuntime::launchProjectiles(SkillCaster player, const SkillCastSpec &sk
             missile.maxVelocity = skill.missileMaxVelocity;
             missile.hitOverlayId = skill.hitOverlayId;
             missile.hitOverlayDuration = skill.hitOverlayDuration;
+            if (skill.effect == SkillBehavior::PoisonNova) {
+                missile.fixedElement = DamageType::Poison;
+                missile.skillId = skill.sourceId; missile.skillRank = skill.rank;
+                missile.impact = skill.missileImpact;
+                missile.impactDamage.channels[size_t(DamageType::Poison)] = amount * 25.f;
+                missile.impactDamage.poisonDuration = skill.poisonDuration;
+            }
         }
     } else if (skill.effect == SkillBehavior::BlessedHammer) {
         int percent = 100;

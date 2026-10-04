@@ -127,6 +127,25 @@ bool CombatEffectSet::hasState(int stateId, EffectFrame now) const {
         return effect.spec.state.id == stateId && effect.activeAt(now);
     });
 }
+float CombatEffectSet::absorbPhysical(float damage, EffectFrame now, std::vector<RemovedCombatEffect> &removed) {
+    if (damage <= 0 || std::none_of(effects_.begin(), effects_.end(), [=](const auto &effect) {
+        return effect.activeAt(now) && effect.spec.physicalShield > 0;
+    })) return damage;
+    removed.reserve(removed.size() + effects_.size());
+    int64_t remaining = int64_t(damage * 256.f);
+    for (auto &effect : effects_) {
+        if (!effect.activeAt(now) || effect.spec.physicalShield <= 0) continue;
+        const auto absorbed = std::min(remaining, effect.spec.physicalShield);
+        remaining -= absorbed;
+        effect.spec.physicalShield -= absorbed;
+        if (effect.spec.physicalShield == 0) removed.push_back({effect, EffectRemoval::Hit});
+        if (remaining == 0) break;
+    }
+    std::erase_if(effects_, [](const auto &effect) {
+        return effect.spec.physicalShieldMaximum > 0 && effect.spec.physicalShield == 0;
+    });
+    return float(remaining) / 256.f;
+}
 CharacterModifiers CombatEffectSet::modifiers(EffectFrame now) const {
     CharacterModifiers result;
     for (const auto &effect : effects_)

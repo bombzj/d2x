@@ -1,5 +1,6 @@
 #include "gameplay/quest/acts/act_two_state.hpp"
 #include "gameplay/skills/spec.hpp"
+#include "gameplay/skills/bone_spec.hpp"
 #include "client/actor_client.hpp"
 #include "gameplay/session/session.hpp"
 #include "content/classic_data.hpp"
@@ -258,11 +259,12 @@ void SceneView::drawActors(Vec mouse) const {
     const auto *hotPlayerCorpse = canHover && !hotCainPortal && !hotTownPortal && !hotExit && !hotLabelItem
                                   ? playerCorpseAt(mouse) : nullptr;
     const auto *selectedSkill = view_.rightSkill ? session_.content().skills.find(*view_.rightSkill) : nullptr;
-    const bool corpseSkill = selectedSkill && selectedSkill->spell && selectedSkill->spell->summon;
+    const bool corpseExplosion = selectedSkill && selectedSkill->spell && selectedSkill->spell->bone && selectedSkill->spell->bone->corpse;
+    const bool corpseSkill = corpseExplosion || (selectedSkill && selectedSkill->spell && selectedSkill->spell->summon);
     EntityId hotEnemy;
     if (canHover && !hotCainPortal && !hotTownPortal && !hotExit && !hotLabelItem && !hotPlayerCorpse)
         for (const auto &monster : monsters)
-            if ((corpseSkill ? session_.usableCorpse(monster.enemy->id) :
+            if ((corpseSkill ? session_.usableCorpse(monster.enemy->id, corpseExplosion) :
                  monster.enemy->hp > 0 && session_.canAttack(sim.player.id, monster.enemy->id)) &&
                 (screen(monster.position) - Vec{0, corpseSkill ? 0.f : 25.f} - mouse).length() < 24) {
                 hotEnemy = monster.enemy->id;
@@ -347,7 +349,7 @@ void SceneView::drawActors(Vec mouse) const {
         for (const auto &[region, offset] : session_.sceneRegions())
             if (corpse.region == session_.regions()[region].definition.id &&
                 session_.roomVisible(region, corpse.position))
-                draw.push_back({sceneOrder(corpse.position + offset, 1, false, 1), 8, index,
+                draw.push_back({sceneOrder(corpse.position + offset, 1, false, 1), 12, index,
                                 screen(corpse.position + offset), region});
     }
     if ((sim.player.hireling.active() || (sim.player.hireling.corpseVisible &&
@@ -421,7 +423,7 @@ void SceneView::drawActors(Vec mouse) const {
                 if (!actor.dead) drawCombatStateOverlays(sim.player.combatEffects, p, 1, false);
                 drawUnitSpellOverlays(actor.id, actor.position, false);
                 drawPlayerShrineOverlay(p, false);
-            } else if (item.type == 8) {
+            } else if (item.type == 12) {
                 const auto &corpse = corpses[size_t(item.index)];
                 const auto *image = playerCorpseSprite(corpse);
                 if (shadowsOnly) { spriteShadow(image, item.p); continue; }
@@ -539,7 +541,7 @@ void SceneView::drawActors(Vec mouse) const {
                     if (mode == "gh" && e.knockbackRemaining > 0 && e.knockbackDuration > 0)
                         frame = int((e.knockbackDuration - e.knockbackRemaining) / e.knockbackDuration * anim->count) % anim->count;
                     const auto *image = anim->frame(
-                        direction(e.knockbackRemaining > 0 ? e.knockbackFacing : monsterLooks_.contains(e.id) ? monsterLooks_.at(e.id)
+                        direction(e.boneBarrier ? e.boneBarrier->facing : e.knockbackRemaining > 0 ? e.knockbackFacing : monsterLooks_.contains(e.id) ? monsterLooks_.at(e.id)
                                                                : e.combatTarget ? session_.combatPosition(e.combatTarget) - monster.position : Vec{1, 0},
                                   anim->directions), frame);
                     if (shadowsOnly) { spriteShadow(image, item.p); continue; }

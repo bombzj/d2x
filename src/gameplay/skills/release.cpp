@@ -1,8 +1,11 @@
+#include "gameplay/skills/behavior.hpp"
+#include "gameplay/skills/bone_spec.hpp"
 #include "gameplay/combat/unit.hpp"
 #include "gameplay/effects/state.hpp"
 #include "gameplay/skills/caster.hpp"
 #include "gameplay/skills/world_port.hpp"
 #include "gameplay/skills/runtime.hpp"
+#include "gameplay/skills/missile.hpp"
 #include "core/random.hpp"
 #include <algorithm>
 #include <cmath>
@@ -14,6 +17,20 @@ void SkillRuntime::releaseSkillCast(SkillCaster player, const SkillCastSpec &ski
         (skill.effect == SkillBehavior::Teleport && !world_.walkable(player.id, target))) return;
     if (skill.summon) {
         if (world_.summonCorpse(player.id, skill, targetUnit)) {
+            if (consumeMana) player.mana -= skill.manaCost;
+            emit(SkillActivated{skill.sourceId});
+        }
+        return;
+    }
+    if (skill.bone && skill.bone->barrier) {
+        if (releaseBoneWall(player, skill, target)) {
+            if (consumeMana) player.mana -= skill.manaCost;
+            emit(SkillActivated{skill.sourceId});
+        }
+        return;
+    }
+    if (skill.bone && skill.bone->corpse) {
+        if (releaseCorpseExplosion(player, skill, targetUnit)) {
             if (consumeMana) player.mana -= skill.manaCost;
             emit(SkillActivated{skill.sourceId});
         }
@@ -35,6 +52,8 @@ void SkillRuntime::releaseSkillCast(SkillCaster player, const SkillCastSpec &ski
     }
     if (skill.heaven && (!combatUnit(targetUnit).alive() || !canAttack(player.id, targetUnit))) return;
     if (consumeMana) player.mana -= skill.manaCost;
+    if (skill.castMissileId >= 0)
+        world_.addEffect({player.pos, 0, skill.castMissileDuration, skill.castMissileId, -1, player.id});
     if (skill.delayFrames > 0)
         player.skillDelayUntil = world_.frame() + EffectFrame(skill.delayFrames);
     if (skill.missileId >= 0 && skill.effect != SkillBehavior::Inferno && !skill.appliedEffect)

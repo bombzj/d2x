@@ -1,10 +1,12 @@
 # 通用技能执行与代码分布基线
 
-更新：2026-10-04。第四项装备／等级来源已随第五项通过 Windows Release，简单冒烟仅覆盖代表性装备路径，未重做技能来源与全职业回归；详见下方来源分工与[库存基线](INVENTORY.md#装备与技能来源第四项)。后续公共动作批次已让武器执行复用 units 的武器选择／帧时钟／取消，突进复用同步移动能力，施法起手共用攻击意图清理；技能施法／引导与专用释放继续由原 SkillRuntime 执行。该续批随活角色组合通过 Windows Release、Fire Bolt 与 Frozen Armor 代表性现场，未重做全部职业／武器／引导／光环回归，见[单位基线](UNITS.md)。当前已实现技能的执行迁移已接入源码：具体处理器不再实现 `Simulation` 成员，不包含会话、模拟器、`PlayerState` 或 `Enemy`。保留原 MPQ 定义、原技能 ID、已有能力范围及求值时点。技能行为迁移批次曾通过 Windows Release 与代表性冒烟；后续公共单位／冗余清理也已通过 Windows Release 与三职业简单冒烟，准确范围另行记录；见 [单位基线](UNITS.md)。旧运行包尚未更新。未来多玩家、装备充能／触发及未实现技能不属于本轮完成项。
+更新：2026-10-05。第四项装备／等级来源已随第五项通过 Windows Release，简单冒烟仅覆盖代表性装备路径，未重做技能来源与全职业回归；详见下方来源分工与[库存基线](INVENTORY.md#装备与技能来源第四项)。后续公共动作批次已让武器执行复用 units 的武器选择／帧时钟／取消，突进复用同步移动能力，施法起手共用攻击意图清理；技能施法／引导与专用释放继续由原 SkillRuntime 执行。该续批随活角色组合通过 Windows Release、Fire Bolt 与 Frozen Armor 代表性现场，未重做全部职业／武器／引导／光环回归，见[单位基线](UNITS.md)。当前已实现技能的执行迁移已接入源码：具体处理器不再实现 `Simulation` 成员，不包含会话、模拟器、`PlayerState` 或 `Enemy`。保留原 MPQ 定义、原技能 ID、已有能力范围及求值时点。技能行为迁移批次曾通过 Windows Release 与代表性冒烟；后续公共单位／冗余清理也已通过 Windows Release 与三职业简单冒烟，准确范围另行记录；见 [单位基线](UNITS.md)。当前运行包已包含上述迁移。未来多玩家、装备充能／触发及未实现技能不属于本轮完成项。
 
 当前技能直接复用公共 `CombatUnit`，删除重复 `SkillUnit` 与两个逐字段转换；尸体／发射值在 `world_values.hpp`，原快照抗性取值调用纯 `rawResistance`，不再经世界虚接口。旧类型别名与延迟副弹命名同步清理；事实见 [单位基线](UNITS.md)。
 
 最新诅咒批次（2026-10-04）已逐项完成十项规则修正、Windows Release链接和打包，`dist/current`已更新；后续简单冒烟覆盖属性互斥、真实反伤／治疗、AI控制与持续祭坛双向覆盖，源码与文档纳入本次提交。新增独立 `curse_data.*` 导入、`curse_resolve.*` 纯等级／免疫求值及 `curse_events.cpp` 命中事件；技能只借用公共单位和权威端口。`CurseLevel`按技能／状态／等级跨来源比较，同级只续期，低级拒绝；持续祭坛按原等级0加入同一覆盖通道，吸引保护有效状态。AI、参考冲突及未移植分支见[死灵法师基线](../gameplay/skills/NECROMANCER.md#诅咒逐项实现)，下方技能迁移运行证据均属既有批次，本次诅咒冒烟单列在上述专题基线。
+
+毒素与白骨整页十项（2026-10-05）已逐项完成 Release 构建／打包及包内联合冒烟，当前包已包含。新增 `bone_data.*` 导入及 `bone_runtime.cpp` 的尸爆、障碍与飞弹行为；详细 `BoneSkillSpec` 由不透明不可变指针携带，公共骨墙／飞弹运行扩展也用前置声明。装甲吸收复用公共效果池和伤害入口，骨墙保持中立单位并通过权威端口生成。原规则证据、近似路径／放置和实际检查范围见 [毒素与白骨](../gameplay/skills/NECROMANCER.md#毒素与白骨技能)。
 
 ## 代码分工与入口
 
@@ -37,6 +39,7 @@
 | 武器技能、突进及武器命中贡献 | `weapon_runtime.cpp`、`charge.cpp`、`weapon_contributions.*` |
 | 冰甲反击、护盾、反伤／偷取生命及状态事件 | `chilling_armor.cpp`、`reactions.cpp`、`shield.cpp`、`curse_events.cpp` |
 | 光环启停／目标筛选／周期、怪物词缀光环／诅咒／死亡弹体 | `aura.cpp`、`native_effects.cpp`、`native_projectiles.cpp` |
+| 尸爆、骨墙／骨牢与骨魂／骨矛推进 | `bone_runtime.cpp`；详细规则在 `bone_spec.hpp`，权威生成／尸体来源在世界端口 |
 | 专属飞弹推进／命中分派与小型规则 | `missile_dispatch.cpp`、`missile_rules.*` |
 
 `monsters/monster_element.cpp` 已不含玩家 Blaze／Thunder Storm，只准备 Countess 火墙与怪物元素伤害。`monster_enchantments.cpp` 保留词缀选择、事件与调度，效果进入技能处理器；原词缀光环与玩家光环存在周期／堆叠／来源差异，通过两个明确处理路径保留，不强行合并规则。`combat/attacking.cpp` 保留普通武器起手适配，武器技能与动作推进已移出。`player/movement.cpp` 只编排突进处理器，不再实现突进。原 `effects/reactions.cpp` 和 `skills/summoning.cpp` 已迁走，CMake 使用新路径。
@@ -91,6 +94,8 @@ D2S v96、编码、指纹及保存语义未改，技能动作／宠物状态不�
 代表性冒烟未穷举所有原生词缀／光环、难度／免疫、所有装备变化与反伤死亡组合；不认证完整联机、装备充能或未实现职业技能。Linux 未在本机编译／运行；玩法保持现有 C++20、无 Win32／GPU 依赖。
 
 ## 公共头的共享合理性
+
+2026-10-05 毒素与白骨逐项实现期间，已完成技能行为枚举依赖隔离。仅需存储枚举的值契约采用不透明声明，具体行为消费者在实现文件包含完整枚举；`ClassicData` 的怪物特殊飞弹改持不可变技能描述指针，`model/definitions.hpp` 删除未使用技能头。Windows Release 构建通过，同配置 Ninja 依赖快照显示 整页收尾时 `behavior.hpp` 264→34、`spec.hpp` 113→26、`cast_spec.hpp` 148→149 个编译单元；最后一项仍被运行状态按值持有。此计数是依赖闭包，不是编译耗时，也不代表全部公共状态已经稳定。
 
 引用数用于衡量修改影响，不能单独判断设计质量。稳定的 ID、坐标、属性值、抽象接口或通用参数可以被广泛引用。重点核对：消费者是否需要这些类型、具体行为改动是否要扩展公共头、公共头是否带入不必要的完整结构，以及实际演进中是否保持稳定。
 

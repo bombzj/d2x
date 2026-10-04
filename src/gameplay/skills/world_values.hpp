@@ -10,6 +10,11 @@ struct SkillCorpse {
     Vec position;
     bool available = false;
 };
+struct CorpseExplosionSource {
+    int64_t maximumLife = 0; // Native fixed-point mean unmodified life.
+    int level = 0;
+    uint64_t *random = nullptr;
+};
 struct SkillAuraSource {
     EntityId actor;
     const AuraDefinition *definition;

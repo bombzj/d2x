@@ -1,4 +1,6 @@
+#include "gameplay/skills/behavior.hpp"
 #include "gameplay/skills/spec.hpp"
+#include "gameplay/skills/bone_spec.hpp"
 #include "gameplay/skills/resolve.hpp"
 #include "character_display.hpp"
 #include "gameplay/character/attributes.hpp"
@@ -175,6 +177,16 @@ std::vector<std::string> describeSkillPicker(const SkillRecord &skill, const Ski
         const auto &value = *resolved;
         detail = "Mana " + std::string(displayNumber("%.1f", value.manaCost));
         if (value.effect == SkillBehavior::Teleport) detail += " / Teleport to clear ground";
+        else if (value.effect == SkillBehavior::Teeth)
+            detail += " / Teeth " + std::to_string(value.missileCount) + " / Magic " +
+                std::string(displayNumber("%.1f-%.1f", value.minimumDamage, value.maximumDamage));
+        else if (value.bone && value.bone->barrier)
+            detail += " / Barrier life +" + std::to_string(value.bone->lifePercent) + "% / " +
+                std::to_string(value.bone->barrierFrames / 25) + " seconds";
+        else if (value.effect == SkillBehavior::CorpseExplosion)
+            detail += " / Corpse life " + std::to_string(value.bone->minimumPercent) + "-" +
+                std::to_string(value.bone->maximumPercent) + "% / Half physical, half fire / Radius " +
+                std::string(displayNumber("%.1f yards", float(value.bone->radius) / 3.f));
         else if (value.curse) {
             const int divisor = value.curse->ai == CurseAi::None ? 1 : std::max(1, aiCurseDivisor);
             detail += " / Radius " + std::to_string(value.curse->radius) +
@@ -190,6 +202,8 @@ std::vector<std::string> describeSkillPicker(const SkillRecord &skill, const Ski
         else if (value.effect == SkillBehavior::Inferno)
             detail = "Mana/sec " + std::string(displayNumber("%.1f", value.manaCost * 12.5f)) +
                 " / Damage/sec " + std::string(displayNumber("%.1f-%.1f", value.minimumDamage * 25, value.maximumDamage * 25));
+        else if (value.effect == SkillBehavior::BoneArmor)
+            detail += " / Absorbs " + std::to_string(value.appliedEffect->physicalShieldMaximum / 256) + " physical damage";
         else if (value.appliedEffect) {
             detail += " / Defense +" + std::to_string(value.appliedEffect->modifiers.combat.defensePercent +
                 value.appliedEffect->modifiers.combat.shieldDefensePercent) + "% / " +
@@ -216,7 +230,7 @@ std::vector<std::string> describeSkillPicker(const SkillRecord &skill, const Ski
         else if (value.freezingArea)
             detail += " / Cold damage " + std::string(displayNumber("%.1f-%.1f", value.minimumDamage, value.maximumDamage)) +
                 " / Freeze " + std::string(displayNumber("%.2fs", float(value.freezingArea->freezeFrames) / 25.f));
-        else if (value.weapon && value.poisonDuration > 0)
+        else if (value.poisonDuration > 0)
             detail += " / Poison " + std::string(displayNumber("%.1f-%.1f over %.1fs",
                 value.minimumDamage * value.poisonDuration * 25.f,
                 value.maximumDamage * value.poisonDuration * 25.f, value.poisonDuration));

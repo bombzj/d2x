@@ -1,4 +1,5 @@
 #include "gameplay/units/actions.hpp"
+#include "gameplay/skills/bone_spec.hpp"
 #include "gameplay/skills/weapon_caster.hpp"
 #include "gameplay/combat/damage_request.hpp"
 #include "gameplay/skills/caster.hpp"
@@ -88,6 +89,9 @@ Relation Simulation::relation(EntityId first, EntityId second) const {
 }
 bool Simulation::canAttack(EntityId attacker, EntityId defender) const {
     const auto identity = identityOf(state_, defender);
+    const auto *target = const_cast<Simulation *>(this)->findEnemy(defender);
+    if (!safeZone_ && attacker != defender && identity && identity->attackable && target && target->boneBarrier)
+        return identityOf(state_, attacker).has_value();
     return !safeZone_ && identity && identity->attackable && relation(attacker, defender) == Relation::Hostile;
 }
 Vec Simulation::unitPosition(EntityId id) const {
@@ -152,8 +156,26 @@ void Simulation::restoreUnit(EntityId id, float life, float mana) {
 ResolvedDamage Simulation::resolveIncoming(EntityId attacker, const CombatUnit &defender, float amount, MonsterDamageType type) {
     if (!defender.stats.resolved) { state_.message = "Original combat attributes are unavailable"; return {}; }
     amount = incomingDamage(attacker, defender.id, amount);
+    auto absorbBone = [&] {
+        if (type != MonsterDamageType::Physical || !defender.effects) return;
+        std::vector<RemovedCombatEffect> removed;
+        amount = defender.effects->absorbPhysical(amount, state_.frame, removed);
+        if (!removed.empty()) combatEffectsChanged(removed);
+    };
+    // SUnitEvent registers callbacks at the list head: the most recent shield acts first.
+    bool boneFirst = true;
+    if (defender.effects) {
+        const auto effects = defender.effects->entries();
+        for (auto it = effects.rbegin(); it != effects.rend(); ++it) {
+            if (!it->activeAt(state_.frame)) continue;
+            if (it->spec.physicalShield > 0) break;
+            if (it->spec.state.id == energyShieldState_) { boneFirst = false; break; }
+        }
+    }
+    if (boneFirst) absorbBone();
     if (defender.player && defender.mana && type != MonsterDamageType::Poison && resolveUnitSkill_)
         amount = skills().absorbEnergyShield(defender.id, amount);
+    if (!boneFirst) absorbBone();
     if (!defender.stats.monsterResistanceRules) return mitigatePlayerDamage(amount, type, defender.stats.attributes);
     int resistance = rawResistance(defender.stats.attributes, type);
     if (type == MonsterDamageType::Physical && resistance > 0 && defender.stats.undead) {
@@ -325,6 +347,12 @@ std::optional<std::pair<EntityId, float>> Simulation::missileTarget(const Missil
     std::optional<std::pair<EntityId, float>> hit;
     for (auto target : combatUnits()) {
         if (!target.alive() || !canAttack(missile.owner, target.id) || missile.lastHit == target.id || !active(*target.position)) continue;
+        if (missile.bone && missile.bone->program->spirit) {
+            const auto &spirit = *missile.bone;
+            if (spirit.target && spirit.target != target.id) continue;
+            if (spirit.coordinateTarget && !spirit.searched) continue;
+            if (!spirit.coordinateTarget && !spirit.target) continue;
+        }
         const auto delayed = state_.area.novaHitUntil.find(target.id);
         if (missile.nextHitDelay && delayed != state_.area.novaHitUntil.end() && delayed->second > state_.time) continue;
         if (auto at = missileUnitIntersection(missile.pos, to, rule->second.size, *target.position, target.stats.collisionSize);

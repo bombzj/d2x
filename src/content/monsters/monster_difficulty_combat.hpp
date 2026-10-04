@@ -15,5 +15,5 @@ struct MonsterCombatProfile {
 };
 // Resolve the expansion MonStats percentages against the area's MonLvl row.
 std::optional<MonsterCombatProfile> loadMonsterCombatProfile(
-    const DataTable &stats, size_t row, const DataTable &levels, int difficulty, int areaLevel);
+    const DataTable &stats, size_t row, const DataTable &levels, int difficulty, int areaLevel, std::optional<int> forcedLevel = {});
 } // namespace d2x

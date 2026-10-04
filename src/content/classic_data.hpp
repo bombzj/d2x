@@ -1,5 +1,5 @@
-#include "gameplay/skills/spec.hpp"
 #pragma once
+#include "gameplay/combat/missile_effects.hpp"
 #include "gameplay/items/definitions.hpp"
 #include "gameplay/items/modifiers.hpp"
 #include "gameplay/items/equipment_set.hpp"
@@ -40,7 +40,7 @@ struct StashLayout {
 };
 // Version-specific MPQ adapter. Rules consume typed records, not archive handles or TXT cells.
 struct MonsterSpecialMissile {
-    SkillSpec spec;
+    std::shared_ptr<const SkillSpec> spec;
     ProjectileResource visual;
     int element = -1;
     bool killOnHit = true;

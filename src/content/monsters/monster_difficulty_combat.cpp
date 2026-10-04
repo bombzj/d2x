@@ -7,7 +7,7 @@
 
 namespace d2x {
 std::optional<MonsterCombatProfile> loadMonsterCombatProfile(
-    const DataTable &stats, size_t row, const DataTable &levels, int difficulty, int areaLevel) {
+    const DataTable &stats, size_t row, const DataTable &levels, int difficulty, int areaLevel, std::optional<int> forcedLevel) {
     if (difficulty < 0 || difficulty > 2 || areaLevel < 1) return std::nullopt;
     static constexpr std::array suffix{"", "(N)", "(H)"};
     const std::string ending = suffix[size_t(difficulty)];
@@ -15,7 +15,7 @@ std::optional<MonsterCombatProfile> loadMonsterCombatProfile(
     const bool noRatio = stats.number(row, "noRatio").value_or(0) != 0;
     if (!nativeLevel || *nativeLevel < 1) return std::nullopt;
     const bool boss = stats.number(row, "boss").value_or(0) != 0;
-    const int level = difficulty == 0 || noRatio || boss ? *nativeLevel : areaLevel;
+    const int level = forcedLevel.value_or(difficulty == 0 || noRatio || boss ? *nativeLevel : areaLevel);
     size_t levelRow = 0;
     for (; levelRow < levels.rows().size(); ++levelRow)
         if (levels.number(levelRow, "Level") == level) break;

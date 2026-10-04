@@ -1,3 +1,4 @@
+#include "gameplay/skills/behavior.hpp"
 #include "gameplay/skills/missile_rules.hpp"
 #include "gameplay/skills/missile.hpp"
 

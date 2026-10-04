@@ -1,3 +1,4 @@
+#include "gameplay/skills/behavior.hpp"
 #include "gameplay/combat/damage_request.hpp"
 #include "gameplay/skills/projectile_source.hpp"
 #include "gameplay/skills/missile.hpp"

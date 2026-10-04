@@ -51,7 +51,7 @@ void GameSessionImpl::configureSkillSources() {
     simulation_->monsterSpecialMissile_ = [this](int id, int rank) -> std::optional<NativeSkillCast> {
         auto found = content_.monsterSpecialMissiles.find(id);
         if (found == content_.monsterSpecialMissiles.end()) return std::nullopt;
-        return NativeSkillCast{resolveSkill(found->second.spec, {rank, {}}),
+        return NativeSkillCast{resolveSkill(*found->second.spec, {rank, {}}),
             MonsterDamageType(found->second.element), found->second.killOnHit};
     };
 }

@@ -60,5 +60,7 @@ struct CombatEffectSpec {
     bool restoreStaminaOnRemoval = false;
     CurseAi curseAi = CurseAi::None;
     std::vector<EffectReaction> reactions;
+    // Native fixed-point physical shield pool, separate from elemental healing absorption.
+    int64_t physicalShield = 0, physicalShieldMaximum = 0;
 };
 } // namespace d2x

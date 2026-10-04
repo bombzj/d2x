@@ -223,6 +223,8 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
                     {"group", effect.spec.state.group},
                     {"remaining", effect.expiresAt ? Json(double(*effect.expiresAt - state.frame) / 25.) : Json(nullptr)},
                     {"defensePercent", effect.spec.modifiers.combat.defensePercent + effect.spec.modifiers.combat.shieldDefensePercent},
+                    {"physicalShield", double(effect.spec.physicalShield) / 256.},
+                    {"physicalShieldMaximum", double(effect.spec.physicalShieldMaximum) / 256.},
                     {"reactions", effect.spec.reactions.size()}, {"overlayId", effect.spec.visual.overlayId}});
             result["region"] = int(state.area.region);
             result["kills"] = state.area.kills;

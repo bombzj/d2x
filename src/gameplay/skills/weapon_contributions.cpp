@@ -1,3 +1,4 @@
+#include "gameplay/skills/behavior.hpp"
 #include "gameplay/skills/weapon_contributions.hpp"
 #include "gameplay/skills/cast_spec.hpp"
 #include "gameplay/combat/weapon_values.hpp"

@@ -1,4 +1,6 @@
+#include "gameplay/skills/behavior.hpp"
 #include "gameplay/skills/spec.hpp"
+#include "gameplay/skills/bone_spec.hpp"
 #include "client/actor_client.hpp"
 #include "gameplay/session/session.hpp"
 #include "content/classic_data.hpp"
@@ -558,15 +560,17 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
         const auto *rightSkill = ui.rightSkill ? session_.content().skills.find(*ui.rightSkill) : nullptr;
         const bool channeled = rightSkill && rightSkill->spell &&
             rightSkill->spell->effect == SkillBehavior::Inferno;
-        const bool corpseSkill = rightSkill && rightSkill->spell && rightSkill->spell->summon.has_value();
+        const bool corpseExplosion = rightSkill && rightSkill->spell && rightSkill->spell->bone && rightSkill->spell->bone->corpse;
+        const bool corpseSkill = corpseExplosion || (rightSkill && rightSkill->spell && rightSkill->spell->summon.has_value());
         const bool enchant = rightSkill && rightSkill->spell && rightSkill->spell->effect == SkillBehavior::Enchant;
         const bool holyBolt = rightSkill && rightSkill->spell && rightSkill->spell->effect == SkillBehavior::HolyBolt;
+        const bool prison = rightSkill && rightSkill->spell && rightSkill->spell->bone && rightSkill->spell->bone->prison;
         const bool telekinesis = rightSkill && rightSkill->spell && rightSkill->spell->effect == SkillBehavior::Telekinesis;
         if (input.rightHeld && !inventoryRight_ && (!channeled ||
             (input.movement.length() <= .1f && !input.leftPressed && !input.leftHeld))) {
             EntityId target;
             for (const auto &enemy : session_.state().area.enemies)
-                if ((corpseSkill ? session_.usableCorpse(enemy.id) :
+                if ((corpseSkill ? session_.usableCorpse(enemy.id, corpseExplosion) :
                      input.rightPressed && enemy.hp > 0 && session_.canAttack(session_.state().player.id, enemy.id)) &&
                     session_.active(enemy.pos) &&
                     (view_.screen(enemy.pos) - Vec{0, corpseSkill ? 0.f : 25.f} - input.mouse).length() < 24) {
@@ -588,6 +592,8 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
                 rightCombatTarget_ = {};
             }
             rightTargetSkill_ = ui.rightSkill;
+            if (prison && !target)
+                if (const auto *object = view_.objectAt(input.mouse)) target = object->id;
             if (telekinesis && !target) {
                 if (const auto item = view_.lootAt(input.mouse)) target = item->id;
                 else if (const auto *object = view_.objectAt(input.mouse)) target = object->id;

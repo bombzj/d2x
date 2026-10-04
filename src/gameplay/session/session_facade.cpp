@@ -27,7 +27,7 @@ NpcQuestDialogue GameSession::npcQuestDialogue(EntityId npc) const { return impl
 std::vector<std::pair<QuestId, const NpcSpeech *>> GameSession::npcQuestTopics(EntityId npc) const { return impl_->npcQuestTopics(npc); }
 bool GameSession::npcQuestAlert(const WorldObject &npc) const { return impl_->npcQuestAlert(npc); }
 std::optional<unsigned> GameSession::denMonstersRemaining() const { return impl_->denMonstersRemaining(); }
-bool GameSession::usableCorpse(EntityId id) const { return impl_->usableCorpse(id); }
+bool GameSession::usableCorpse(EntityId id, bool explosion) const { return impl_->usableCorpse(id, explosion); }
 Vec GameSession::combatPosition(EntityId id) const { return impl_->combatPosition(id); }
 bool GameSession::canAttack(EntityId actor, EntityId target) const { return impl_->canAttack(actor, target); }
 bool GameSession::active(Vec position) const { return impl_->active(position); }

@@ -1,3 +1,4 @@
+#include "gameplay/skills/spec.hpp"
 #include "session_impl.hpp"
 #include "gameplay/simulation/simulation.hpp"
 #include <set>
@@ -24,7 +25,7 @@ void GameSessionImpl::tick(float dt, Vec keyboard, bool forceRun) {
         cancelPickup();
         cancelInteraction();
     }
-    world_.at(size_t(current_)).refreshObjectCollision(state().time);
+    if (simulation_->barriersChanged_) simulation_->barriersChanged_();
     std::set<int> summonSkills;
     for (const auto &pet : state().companions)
         if (!state().player.actions.dead && pet.hp > 0 && pet.allegiance.owner == state().player.id)
@@ -45,7 +46,7 @@ void GameSessionImpl::tick(float dt, Vec keyboard, bool forceRun) {
     updateObjectTimers();
     updateActTwoObjects();
     updateLaterQuestObjects();
-    world_.at(size_t(current_)).refreshObjectCollision(state().time);
+    if (simulation_->barriersChanged_) simulation_->barriersChanged_();
     advanceNpcPaths(dt);
     settleDeaths();
     updateDenQuest();
@@ -54,7 +55,7 @@ void GameSessionImpl::tick(float dt, Vec keyboard, bool forceRun) {
     updateQuestItems();
     updateToolsQuestItems();
     updateInteraction();
-    world_.at(size_t(current_)).refreshObjectCollision(state().time);
+    if (simulation_->barriersChanged_) simulation_->barriersChanged_();
     updatePortal();
     updateCainPortal();
     updateExit();

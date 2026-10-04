@@ -310,7 +310,7 @@ class GameSessionImpl {
     std::vector<std::pair<QuestId, const NpcSpeech *>> npcQuestTopics(EntityId npc) const;
     bool npcQuestAlert(const WorldObject &npc) const;
     std::optional<unsigned> denMonstersRemaining() const;
-    bool usableCorpse(EntityId id) const;
+    bool usableCorpse(EntityId id, bool explosion = false) const;
     Vec combatPosition(EntityId id) const;
     bool canAttack(EntityId actor, EntityId target) const;
     bool active(Vec position) const;

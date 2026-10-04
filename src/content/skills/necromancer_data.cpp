@@ -1,3 +1,4 @@
+#include "gameplay/skills/behavior.hpp"
 #include "gameplay/skills/spec.hpp"
 #include "resources/archive.hpp"
 #include "necromancer_data.hpp"

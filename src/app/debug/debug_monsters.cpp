@@ -1,4 +1,5 @@
 #include "gameplay/monsters/implementation.hpp"
+#include "gameplay/skills/bone_spec.hpp"
 #include "debug_monsters.hpp"
 #include "gameplay/session/session.hpp"
 #include "gameplay/model/state.hpp"
@@ -39,6 +40,7 @@ const char *qualityName(ItemQuality quality) {
     case ItemQuality::Normal: return "normal";
     case ItemQuality::Magic: return "magic";
     case ItemQuality::Rare: return "rare";
+    case ItemQuality::Crafted: return "crafted";
     case ItemQuality::Set: return "set";
     case ItemQuality::Unique: return "unique";
     case ItemQuality::Superior: return "superior";
@@ -88,6 +90,7 @@ void listMonsters(Json &result, const Json &request, const GameSession &session,
             {"rank", monsterRankName(enemy.identity.rank)}, {"hp", enemy.hp},
             {"maxHp", enemy.maxHp}, {"x", enemy.pos.x}, {"y", enemy.pos.y},
             {"freeze", enemy.freeze}, {"chill", enemy.chill},
+            {"poisonPerSecond", enemy.poisonPerSecond}, {"poisonRemaining", enemy.poisonRemaining},
             {"visible", onScreen(enemy, session, view)}, {"active", session.active(enemy.pos)},
             {"substitute", monsterImplementation(enemy.identity.monster).substitute},
             {"debugSpawn", enemy.identity.origin == SpawnOrigin::Debug},
@@ -116,6 +119,9 @@ void listMonsters(Json &result, const Json &request, const GameSession &session,
             {"attackMode", enemy.attackMode}, {"attackRemaining", enemy.attack},
             {"actionDuration", enemy.attackDuration}, {"attackRatePercent", enemy.attackRatePercent},
             {"impactRemaining", enemy.attackImpact}};
+        if (enemy.boneBarrier)
+            entry["barrier"] = {{"root", enemy.boneBarrier->root.value}, {"caster", enemy.boneBarrier->caster.value},
+                {"expiresAt", enemy.boneBarrier->expiresAt}};
         entry["owner"] = enemy.allegiance.owner.value;
         entry["faction"] = enemy.allegiance.faction;
         entry["stun"] = enemy.stun;

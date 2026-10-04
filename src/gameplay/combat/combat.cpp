@@ -87,6 +87,7 @@ void Simulation::finishMonsterDeath(Enemy &enemy, EntityId source) {
     enemy.knockbackRemaining = enemy.knockbackDuration = 0;
     enemy.knockbackDestination.reset();
     enemy.attackMode = 1;
+    if (enemy.boneBarrier) { enemy.deathUnselectable = true; if (barriersChanged_) barriersChanged_(); return; }
     if (enemy.allegiance.role == CombatRole::Summon) { enemy.corpseConsumed = true; return; }
     if (enemy.conversion) return;
     ++state_.area.kills;
@@ -121,7 +122,7 @@ void Simulation::meleeDamage(EntityId defender, const WeaponDamage &weapon, cons
                             (bonus + weapon.maximumDamagePercent) / 100;
     const auto range = uint32_t(std::max<int64_t>(0, maximum - minimum));
     const auto damage = std::max<int64_t>(0, minimum + (range ? uint32_t(player.combatRandom) % range : 0));
-    auto elements = rollAttackElements(weapon.item);
+    auto elements = rollAttackElements(weapon.item, nullptr, skill);
     if (fireMastery_ && elements.fire > 0) {
         const int mastery = fireMastery_(player.id);
         elements.fire = float(int64_t(elements.fire * 256.f) * (100 + mastery) / 100) / 256.f;

@@ -77,7 +77,9 @@ const MonsterDefinition &monsterDefinition(MonsterKind id) {
     static const MonsterDefinition hydra1{MonsterKind::Hydra1, "hx", 0, 0, 0, 0, 25, 0};
     static const MonsterDefinition hydra2{MonsterKind::Hydra2, "21", 0, 0, 0, 0, 25, 0};
     static const MonsterDefinition hydra3{MonsterKind::Hydra3, "hz", 0, 0, 0, 0, 25, 0};
+    static const MonsterDefinition boneWall{MonsterKind::BoneWall, "bw", 0, 0, 0, 0, 0, 0};
     switch (id) {
+    case MonsterKind::BoneWall: return boneWall;
     case MonsterKind::PrisonDoor: {
         static const MonsterDefinition door{MonsterKind::PrisonDoor, "2q", 0, 0, 0, 0, 0, 0};
         return door;

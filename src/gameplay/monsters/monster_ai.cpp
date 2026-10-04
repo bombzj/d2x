@@ -1,4 +1,5 @@
 #include "gameplay/units/actions.hpp"
+#include "gameplay/skills/bone_spec.hpp"
 #include "gameplay/units/movement.hpp"
 #include "gameplay/units/resources.hpp"
 #include "gameplay/units/impairments.hpp"
@@ -30,6 +31,15 @@ void Simulation::updateMonsters(float dt) {
         return true;
     };
     for (auto &enemy : state_.area.enemies) {
+        if (enemy.boneBarrier) {
+            if (enemy.hp <= 0) continue;
+            const auto root = combatUnit(enemy.boneBarrier->root);
+            if (!root.alive() || state_.frame > enemy.boneBarrier->expiresAt) {
+                enemy.hp = 0; finishMonsterDeath(enemy, {});
+                emit(UnitDied{enemy.id, false, enemy.pos, enemy.intrinsicCombat->collisionSize});
+            } else enemy.resurrectionRemaining = std::max(0.f, enemy.resurrectionRemaining - dt);
+            continue;
+        }
         if (enemy.kind == MonsterKind::PrisonDoor) { enemy.route.clear(); continue; }
         if (enemy.conversion && (state_.frame >= enemy.conversion->expiresAt || enemy.hp <= 0)) {
             const auto conversion = *enemy.conversion;

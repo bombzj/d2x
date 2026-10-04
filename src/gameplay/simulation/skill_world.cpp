@@ -10,6 +10,7 @@
 #include "gameplay/skills/weapon_caster.hpp"
 #include "gameplay/simulation/simulation.hpp"
 #include "gameplay/skills/runtime.hpp"
+#include "gameplay/skills/bone_spec.hpp"
 #include "gameplay/monsters/monster_wander.hpp"
 #include "core/random.hpp"
 #include <stdexcept>
@@ -104,10 +105,63 @@ class SimulationSkillWorld final : public ISkillWorld, public ISkillWeaponWorld 
     bool telekinesis(EntityId target, int range, bool activate) override {
         return simulation_.telekinesisTarget_ && simulation_.telekinesisTarget_(target, range, activate);
     }
-    bool usableCorpse(EntityId target) const override { return simulation_.usableCorpse(target); }
-    EntityId corpseNear(Vec target) const override { return simulation_.corpseNear(target); }
+    bool usableCorpse(EntityId target, bool explosion) const override { return simulation_.usableCorpse(target, explosion); }
+    CorpseExplosionSource corpseExplosionSource(EntityId target) override {
+        auto *corpse = enemy(target);
+        if (!corpse || !simulation_.usableCorpse(target, true)) return {};
+        const auto life = simulation_.corpseExplosionLife_(*corpse);
+        return {life.value_or(0), simulation_.combatUnit(target).stats.level, &corpse->combatRandom};
+    }
+    EntityId corpseNear(Vec target, bool explosion) const override { return simulation_.corpseNear(target, explosion); }
     bool summonCorpse(EntityId actor, const SkillCastSpec &skill, EntityId corpse) override {
         return simulation_.summonFromCorpse(actor, skill, corpse);
+    }
+    EntityId createBoneBarrier(EntityId actor, const BoneSkillSpec &program, Vec position, EntityId root, int skill, int rank, bool search, Vec facing) override {
+        if (simulation_.safeZone_ || !program.barrier || (root && !simulation_.combatUnit(root).alive())) return {};
+        auto stats = program.barrierStats.at(size_t(simulation_.state_.population.difficulty));
+        Vec cell{std::floor(position.x) + .5f, std::floor(position.y) + .5f};
+        auto clear = [&](Vec candidate) {
+            if (!simulation_.grid_->walkable(candidate, {0x3c01, stats.collisionSize})) return false;
+            for (auto unit : units())
+                if (unit.alive() && int(unit.position->x) == int(candidate.x) && int(unit.position->y) == int(candidate.y)) return false;
+            return true;
+        };
+        bool placed = clear(cell);
+        for (int radius = 1; search && !placed && radius <= 4; ++radius)
+            for (int y = -radius; !placed && y <= radius; ++y)
+                for (int x = -radius; !placed && x <= radius; ++x) {
+                    if (std::abs(x) != radius && std::abs(y) != radius) continue;
+                    const Vec candidate = position + Vec{float(x), float(y)};
+                    if (clear(candidate)) { cell = {std::floor(candidate.x) + .5f, std::floor(candidate.y) + .5f}; placed = true; }
+                }
+        if (!placed) return {};
+        const auto nativeLife = int64_t(stats.attributes.maxLife) * 256;
+        const auto life = nativeLife + nativeLife * program.lifePercent / 100;
+        stats.level = simulation_.combatUnit(actor).stats.level;
+        stats.attributes.maxLife = int(life / 256);
+        Enemy wall;
+        wall.id = allocate(); wall.kind = MonsterKind::BoneWall;
+        wall.identity.monster = "bonewall"; wall.identity.origin = SpawnOrigin::Summoned;
+        wall.identity.spawnKey = "barrier." + std::to_string(wall.id.value);
+        wall.pos = cell; wall.hp = wall.maxHp = float(life) / 256.f;
+        wall.intrinsicCombat = stats;
+        wall.allegiance = {0, {}, 0, CombatRole::Monster};
+        wall.noTreasure = true; wall.deathUnselectable = true;
+        wall.summonSkill = skill; wall.summonRank = rank;
+        wall.combatRandom = childSeed();
+        wall.boneBarrier = std::make_shared<BoneBarrierState>(BoneBarrierState{actor, root ? root : wall.id, frame() + uint64_t(program.barrierFrames), facing});
+        const auto rise = program.prison ? std::optional<float>(0.f) : simulation_.monsterResurrectionDuration_ ? simulation_.monsterResurrectionDuration_(wall) : std::nullopt;
+        if (!rise) return {};
+        wall.resurrectionDuration = wall.resurrectionRemaining = *rise;
+        const auto id = wall.id;
+        simulation_.state_.area.enemies.push_back(std::move(wall));
+        if (simulation_.barriersChanged_) simulation_.barriersChanged_();
+        return id;
+    }
+    std::optional<Vec> prisonTarget(EntityId target) const override {
+        const auto unit = simulation_.combatUnit(target);
+        if (unit) return *unit.position;
+        return simulation_.prisonTarget_ ? simulation_.prisonTarget_(target) : std::nullopt;
     }
     bool summonHydra(EntityId actor, const SkillCastSpec &skill, Vec target) override {
         return simulation_.summonHydra(actor, skill, target);
@@ -234,7 +288,12 @@ class SimulationSkillWorld final : public ISkillWorld, public ISkillWeaponWorld 
         const auto duration = simulation_.monsterDeathDuration_ ? simulation_.monsterDeathDuration_(*unit) : std::nullopt;
         return duration && unit->deathAge >= *duration;
     }
-    void consumeCorpse(EntityId target) override { if (auto *unit = enemy(target)) unit->corpseConsumed = true; }
+    void consumeCorpse(EntityId target, bool hide) override {
+        if (auto *unit = enemy(target)) {
+            unit->deathUnselectable = true;
+            if (hide) unit->corpseConsumed = true;
+        }
+    }
     void suppressManaRegen(EntityId target, bool suppress) override { player(target).skills.auraSuppressesManaRegen = suppress; }
     int blazeState() const override { return simulation_.blazeState_; }
     int energyShieldState() const override { return simulation_.energyShieldState_; }

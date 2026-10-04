@@ -1,4 +1,6 @@
+#include "gameplay/skills/behavior.hpp"
 #include "spec.hpp"
+#include "bone_spec.hpp"
 #include "damage_curve.hpp"
 #include "resolve.hpp"
 #include "curse_resolve.hpp"
@@ -20,7 +22,17 @@ SkillCastSpec resolveSkill(const SkillSpec &spec, const SkillEvaluationInput &in
     SkillCastSpec result;
     result.effect = spec.effect;
     result.rank = rank;
+    if (spec.bone) {
+        auto program = std::make_shared<BoneSkillSpec>(*spec.bone);
+        program->radius += (rank - 1) * program->radiusPerLevel;
+        program->lifePercent += (rank - 1) * program->lifePerLevel;
+        for (const auto &[id, percent] : program->lifeSynergies)
+            if (auto found = learned.find(id); found != learned.end()) program->lifePercent += found->second * percent;
+        result.bone = std::move(program);
+    }
     result.sourceId = spec.sourceId;
+    result.castMissileId = spec.castMissileId;
+    result.castMissileDuration = spec.castMissileDuration;
     result.requiresShield = spec.requiresShield;
     if (spec.curse) result.curse = evaluateCurse(*spec.curse, rank);
     result.concentrationState = spec.concentrationState;
@@ -131,6 +143,18 @@ SkillCastSpec resolveSkill(const SkillSpec &spec, const SkillEvaluationInput &in
         } else if (spec.effect == SkillBehavior::ShiverArmor)
             armor.reactions.push_back({CombatEffectEvent::AttackedInMelee, ColdMeleeRetaliation{}});
         else armor.reactions.push_back({CombatEffectEvent::HitByMissile, ColdMissileRetaliation{}});
+        result.appliedEffect = std::move(armor);
+    }
+    if (spec.effect == SkillBehavior::BoneArmor) {
+        int64_t synergy = 0;
+        for (int id : spec.armorSynergySkills)
+            if (auto found = learned.find(id); found != learned.end()) synergy += found->second;
+        CombatEffectSpec armor;
+        armor.state = spec.state;
+        armor.source = {CombatEffectSource::Skill, {}, spec.sourceId, rank};
+        armor.physicalShield = armor.physicalShieldMaximum =
+            (int64_t(spec.armorParameters[0]) + int64_t(rank - 1) * spec.armorParameters[1] +
+             synergy * spec.armorParameters[7]) * 256;
         result.appliedEffect = std::move(armor);
     }
     const int64_t scaledMana = std::max<int64_t>(0,

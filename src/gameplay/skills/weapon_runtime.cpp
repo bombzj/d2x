@@ -1,3 +1,4 @@
+#include "gameplay/skills/behavior.hpp"
 #include "gameplay/units/actions.hpp"
 #include "gameplay/combat/geometry.hpp"
 #include "gameplay/combat/unit.hpp"
@@ -41,7 +42,13 @@ bool SkillRuntime::beginWeaponSkill(WeaponSkillCaster p, const SkillCastSpec &sk
         p.route = weapons_.approach(p.casting.id, unitPosition(target));
         return !p.route.empty();
     }
-    if (p.casting.mana < skill.manaCost) { world_.message("Not enough mana"); return false; }
+    if (p.casting.mana < skill.manaCost) {
+        if (skill.effect == SkillBehavior::PoisonDagger) {
+            weapons_.requestWeaponAttack(p.casting.id, target, aim);
+            return true;
+        }
+        world_.message("Not enough mana"); return false;
+    }
     if (action.chargeVelocity > 0) {
         if (!weapons_.movementSegment(p.casting.id, p.casting.pos, aim)) return false;
         if ((aim - p.casting.pos).length() < .1f) return false;

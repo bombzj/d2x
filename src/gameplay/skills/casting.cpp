@@ -1,3 +1,5 @@
+#include "gameplay/skills/behavior.hpp"
+#include "gameplay/skills/bone_spec.hpp"
 #include "gameplay/skills/missile.hpp"
 #include "gameplay/combat/unit.hpp"
 #include "gameplay/effects/state.hpp"
@@ -54,9 +56,13 @@ void SkillRuntime::advanceSkillCasting(SkillCaster player, float dt, bool moving
             auto cast = *pendingCast;
             pendingCast.reset();
             if (cast.enemy) {
-                if (cast.skill.summon) {
-                    if (!world_.usableCorpse(cast.enemy)) return;
+                if (cast.skill.summon || (cast.skill.bone && cast.skill.bone->corpse)) {
+                    if (!world_.usableCorpse(cast.enemy, cast.skill.bone && cast.skill.bone->corpse)) return;
                     cast.target = unitPosition(cast.enemy);
+                } else if (cast.skill.bone && cast.skill.bone->prison) {
+                    const auto position = world_.prisonTarget(cast.enemy);
+                    if (!position) return;
+                    cast.target = *position;
                 } else if (cast.skill.effect == SkillBehavior::Telekinesis) {
                     if (!world_.telekinesis(cast.enemy, cast.skill.telekinesisRange, false)) return;
                 } else if (cast.skill.effect == SkillBehavior::Enchant || cast.skill.effect == SkillBehavior::HolyBolt) {
@@ -109,9 +115,14 @@ bool SkillRuntime::beginSkillCast(SkillCaster player, const SkillCastSpec &skill
         world_.message("Teleport needs permitted, clear ground");
         return false;
     }
-    if (skill.summon) {
-        if (!enemy) enemy = world_.corpseNear(target);
-        if (!world_.usableCorpse(enemy)) { world_.message("A usable monster corpse is required"); return false; }
+    if (skill.bone && skill.bone->prison) {
+        const auto position = world_.prisonTarget(enemy);
+        if (!position || world_.safeZone()) { world_.message("Bone Prison requires a target outside town"); return false; }
+        target = *position;
+    }
+    if (skill.summon || (skill.bone && skill.bone->corpse)) {
+        if (!enemy) enemy = world_.corpseNear(target, skill.bone && skill.bone->corpse);
+        if (!world_.usableCorpse(enemy, skill.bone && skill.bone->corpse)) { world_.message("A usable monster corpse is required"); return false; }
         target = unitPosition(enemy);
     }
     if (player.mana < std::max(skill.manaCost, skill.startMana)) {

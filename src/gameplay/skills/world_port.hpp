@@ -14,6 +14,8 @@
 namespace d2x {
 struct CombatUnit;
 struct SkillCorpse;
+struct CorpseExplosionSource;
+struct BoneSkillSpec;
 struct SkillAuraSource;
 struct SkillCastSpec;
 struct AuraDefinition;
@@ -62,9 +64,12 @@ class ISkillWorld {
     virtual void emit(SkillEvent event) = 0;
     virtual void message(std::string_view value) = 0;
     virtual bool telekinesis(EntityId target, int range, bool activate) = 0;
-    virtual bool usableCorpse(EntityId target) const = 0;
-    virtual EntityId corpseNear(Vec target) const = 0;
+    virtual bool usableCorpse(EntityId target, bool explosion = false) const = 0;
+    virtual CorpseExplosionSource corpseExplosionSource(EntityId target) = 0;
+    virtual EntityId corpseNear(Vec target, bool explosion = false) const = 0;
     virtual bool summonCorpse(EntityId actor, const SkillCastSpec &skill, EntityId corpse) = 0;
+    virtual EntityId createBoneBarrier(EntityId actor, const BoneSkillSpec &program, Vec position, EntityId root, int skill, int rank, bool search = false, Vec facing = {1,0}) = 0;
+    virtual std::optional<Vec> prisonTarget(EntityId target) const = 0;
     virtual bool summonHydra(EntityId actor, const SkillCastSpec &skill, Vec target) = 0;
     virtual void beginCast(EntityId actor) = 0;
     virtual void teleport(EntityId actor, Vec target) = 0;
@@ -82,7 +87,7 @@ class ISkillWorld {
     virtual CombatStateDefinition shatterState() const = 0;
     virtual std::vector<SkillCorpse> corpses() const = 0;
     virtual bool redeemableCorpse(EntityId target) const = 0;
-    virtual void consumeCorpse(EntityId target) = 0;
+    virtual void consumeCorpse(EntityId target, bool hide = true) = 0;
     virtual void suppressManaRegen(EntityId target, bool suppress) = 0;
     virtual int blazeState() const = 0;
     virtual int energyShieldState() const = 0;

@@ -1,3 +1,4 @@
+#include "gameplay/skills/behavior.hpp"
 #include "gameplay/skills/aura_owner.hpp"
 #include "gameplay/skills/weapon_caster.hpp"
 #include "gameplay/skills/caster.hpp"

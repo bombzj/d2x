@@ -1,4 +1,6 @@
 #include "gameplay/skills/spec.hpp"
+#include "gameplay/skills/bone_spec.hpp"
+#include "content/monsters/monster_difficulty_combat.hpp"
 #include "gameplay/monsters/implementation.hpp"
 #include "core/random.hpp"
 #include "gameplay/session/session_impl.hpp"
@@ -21,7 +23,7 @@ void GameSessionImpl::setRunning(bool running) {
     simulation_->state_.player.movement.running = running;
     ++viewRevision_;
 }
-bool GameSessionImpl::usableCorpse(EntityId id) const { return simulation_->usableCorpse(id); }
+bool GameSessionImpl::usableCorpse(EntityId id, bool explosion) const { return simulation_->usableCorpse(id, explosion); }
 Vec GameSessionImpl::combatPosition(EntityId id) const { return simulation_->unitPosition(id); }
 bool GameSessionImpl::canAttack(EntityId actor, EntityId target) const { return simulation_->canAttack(actor, target); }
 bool GameSessionImpl::active(Vec position) const { return simulation_->active(position); }
@@ -370,10 +372,35 @@ GameSessionImpl::GameSessionImpl(Archives &archives, const WorldSelection &selec
             return combat->resistances[size_t(type)];
         return std::nullopt;
     };
+    simulation_->prisonTarget_ = [this](EntityId target) -> std::optional<Vec> {
+        const auto *value = object(target);
+        return value && !value->questHidden ? std::optional<Vec>(value->pos) : std::nullopt;
+    };
+    simulation_->barriersChanged_ = [this] {
+        auto &area = world_.at(size_t(current_));
+        area.refreshObjectCollision(state().time);
+        auto obstacles = area.map.grid.obstacles;
+        for (const auto &enemy : state().area.enemies)
+            if (enemy.boneBarrier && enemy.hp > 0) {
+                const int size = enemy.intrinsicCombat->collisionSize;
+                obstacles.push_back({enemy.id, int(enemy.pos.x) - size / 2, int(enemy.pos.y) - size / 2,
+                    size, size, 0x1000, false});
+            }
+        area.map.grid.setObstacles(std::move(obstacles));
+    };
     simulation_->corpseSelectable_ = [this](const Enemy &corpse) {
         if (corpse.kind == MonsterKind::BloodRaven || corpse.identity.superUnique == "The Countess") return false;
         const auto *record = monsterContent_.find(corpse.identity.monster);
         return record && record->corpseSelectable && record->walkVelocity.value_or(0) != 0;
+    };
+    simulation_->corpseExplosionLife_ = [this](const Enemy &corpse) -> std::optional<int64_t> {
+        const auto *record = monsterContent_.find(corpse.identity.monster);
+        if (!record || !record->corpseSelectable) return {};
+        const auto profile = loadMonsterCombatProfile(content_.tables.at("monstats"), record->sourceRow,
+            content_.tables.at("monlvl"), state().population.difficulty, 1,
+            simulation_->combatUnit(corpse.id).stats.level);
+        if (!profile) return {};
+        return (int64_t(profile->damage.minLife) + profile->damage.maxLife) * 128;
     };
     simulation_->redemptionCorpseEligible_ = [this](const Enemy &corpse) {
         const auto *record = monsterContent_.find(corpse.identity.monster);
@@ -516,7 +543,7 @@ GameSessionImpl::GameSessionImpl(Archives &archives, const WorldSelection &selec
         if (!record || monsterImplementation(enemy.identity.monster).substitute) return std::nullopt;
         if (enemy.kind == MonsterKind::FallenShaman)
             return record->resurrectionMode == "nu" ? std::optional<float>(0.f) : std::nullopt;
-        if (enemy.kind != MonsterKind::Fallen && enemy.kind != MonsterKind::NecroSkeleton)
+        if (enemy.kind != MonsterKind::Fallen && enemy.kind != MonsterKind::NecroSkeleton && enemy.kind != MonsterKind::BoneWall)
             return std::nullopt;
         const auto *motion = monsterContent_.motion(enemy.kind, "s1");
         return motion ? std::optional<float>(motion->duration) : std::nullopt;
@@ -648,6 +675,7 @@ GameSessionImpl::GameSessionImpl(Archives &archives, const WorldSelection &selec
     fingerprint.add("potion-class-rules-v1-native-restoration");
     fingerprint.add("socket-rules-v1-native-children-runewords|cube-rules-v2-native-crafted-and-txt-indices");
     fingerprint.add("waypoint-rules-v1");
+    fingerprint.add("necromancer-poison-bone-rules-v1");
     fingerprint.add("map-rules-v9-native-trees-complete-groups");
     auto members = archives.used;
     for (const auto &member : members) {

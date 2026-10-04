@@ -1,5 +1,5 @@
 #pragma once
-#include "gameplay/skills/behavior.hpp"
+#include "gameplay/skills/behavior_fwd.hpp"
 #include "gameplay/skills/curse_spec.hpp"
 #include "gameplay/skills/elemental_spec.hpp"
 #include "gameplay/skills/weapon_spec.hpp"
@@ -7,6 +7,7 @@
 #include "gameplay/skills/visual.hpp"
 #include "gameplay/combat/missile_effects.hpp"
 #include <optional>
+#include <memory>
 #include <utility>
 #include <array>
 #include <map>
@@ -14,9 +15,11 @@
 #include <vector>
 
 namespace d2x {
+struct BoneSkillSpec;
 // Typed values imported from Skills.txt and Missiles.txt. No archive data enters gameplay.
 struct SkillSpec {
-    SkillBehavior effect = SkillBehavior::None;
+    SkillBehavior effect{};
+    std::shared_ptr<const BoneSkillSpec> bone;
     int mana = 0, minimumMana = 0, manaPerLevel = 0, manaShift = 8;
     int minimumDamage = 0, maximumDamage = 0, hitShift = 8;
     bool fireDamage = false;
@@ -68,6 +71,8 @@ struct SkillSpec {
     SkillOverlayVisual castOverlay, hitOverlay;
     SkillOverlayVisual stateOverlay;
     int sourceId = -1;
+    int castMissileId = -1;
+    float castMissileDuration = 0;
     CombatStateDefinition state;
     std::array<int, 8> armorParameters{};
     std::vector<int> armorSynergySkills;

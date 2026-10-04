@@ -3,12 +3,14 @@
 #include "core/math.hpp"
 #include "gameplay/combat/stat_modifiers.hpp"
 #include "gameplay/combat/missile_effects.hpp"
-#include "gameplay/skills/behavior.hpp"
+#include "gameplay/skills/behavior_fwd.hpp"
 #include "gameplay/skills/elemental_spec.hpp"
 #include <deque>
 #include <optional>
+#include <memory>
 
 namespace d2x {
+struct BoneMissileState;
 struct FrozenOrbMissileState {
     enum class Phase { Orb, Bolt, Nova };
     Phase phase = Phase::Orb;
@@ -21,7 +23,7 @@ struct Missile {
     EntityId id, owner;
     Vec pos, velocity;
     float remaining = 2;
-    SkillBehavior behavior = SkillBehavior::None;
+    SkillBehavior behavior{};
     bool physical = false;
     int missileId = -1;
     float damage = 0;
@@ -83,6 +85,7 @@ struct Missile {
     float healingMinimum = 0, healingMaximum = 0;
     std::optional<HeavenSpec> heaven = std::nullopt;
     EntityId heavenTarget{};
+    std::shared_ptr<BoneMissileState> bone{};
 };
 struct Effect {
     Vec pos;

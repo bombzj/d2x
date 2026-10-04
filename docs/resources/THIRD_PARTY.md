@@ -127,3 +127,5 @@ NPC 初次接触自动播开场白、后续出现交互菜单参考[暴雪《Dia
 第三至第五幕任务规则适配同一D2MOO `5596f5c` 的 `QUESTS/ACT3/A3Q0–6.cpp`、`ACT4/A4Q1–3.cpp`、`ACT5/A5Q1–6.cpp`及Quests、ObjMode、MonsterUnique、AiThink、SUnitNpc、D2Common Items。任务回调、永久奖励、打孔／署名、俘虏门户、古代人和王座五波分别绑定当前MPQ身份、属性、文本与素材；实现及未移植分支见[逐项基线](../gameplay/quests/ACT3_5.md)。原生任务／跨幕位依据Quests.h／Quests.cpp，空孔与署名位流及进度依据Items／PlrSave2／Clients；规则适配继续保留上述MIT归属，不提交reference、MPQ导出或原资源。
 
 方块／Crafted 补查：同一 D2MOO 的 ItemsMagic::sub_6FC53CD0、Items 的需求和品质8位流、PlrTrade 修理／充能／升级／门户、A1Q4 的牛王与本局限制；OpenDiablo2 TXT Next 跳过 Expansion 保留行，与当前 MagicPrefix 原 BIN 的669行吻合。独立 @dschu012/d2s 核对前后缀一基编号与特殊身份零基。原 patchstring／Diablerie 原字符串确认 Token 右键返还说明；D2MOO 1.10 没有 Token 分支，返还沿本项目既有正式重置入口适配。当前全部146启用配方已实机合成，详细范围见方块文档；未复制参考源码或原数据。
+
+毒素与白骨整页依据同一 D2MOO `5596f5c`：SkillAma SrvDo008／010的整数扇形与骨魂起手，SkillNec SrvDo032／055／060／062／063的毒匕首、尸爆、墙／牢与毒云，MissMode的BoneWallMaker／BoneSpirit和毒云方向，AiThink的BoneWall寿命，SUnitDmg／SUnitEvent的毒伤与吸收事件。当前原MPQ优先；官方Arreat技能页仅交叉核对。参考MonsterSpawn关键函数重建不完整、D2Client尾迹／装甲分片未找到完整证据，墙段搜索、骨魂向量轨迹与尾迹插值明确按适配处理。详见[毒素与白骨](../gameplay/skills/NECROMANCER.md#毒素与白骨技能)；未复制参考源码、表或图片。

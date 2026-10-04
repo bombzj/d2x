@@ -40,6 +40,9 @@ class SkillRuntime {
     void spawnFrozenOrbBolt(const Missile &orb, Vec target, bool nova, std::vector<Missile> &spawned);
     void resolveGlacialSpikeImpact(Missile &missile);
     const WeaponDamage *attackWeapon(WeaponSkillCaster actor, bool thrown, bool leftHand) const;
+    bool releaseBoneWall(SkillCaster actor, const SkillCastSpec &skill, Vec target);
+    bool advanceBoneMissile(Missile &missile, float dt);
+    bool releaseCorpseExplosion(SkillCaster actor, const SkillCastSpec &skill, EntityId corpse);
     void releaseCurse(SkillCaster actor, const SkillCastSpec &skill, Vec target, EntityId targetUnit);
     bool validAttractTarget(EntityId actor, EntityId target) const;
     void releaseTelekinesis(SkillCaster actor, const SkillCastSpec &skill, Vec target, EntityId targetUnit);

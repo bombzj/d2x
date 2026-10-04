@@ -1,3 +1,4 @@
+#include "gameplay/skills/behavior.hpp"
 #include "gameplay/combat/damage_request.hpp"
 #include "gameplay/skills/runtime.hpp"
 #include "gameplay/skills/world_port.hpp"
@@ -8,7 +9,8 @@
 
 namespace d2x {
 bool SkillRuntime::advanceSpecialMissile(Missile &missile, float dt, std::vector<Missile> &spawned) {
-    if (missile.heaven) advanceHeaven(missile, dt, spawned);
+    if (missile.bone) return advanceBoneMissile(missile, dt);
+    else if (missile.heaven) advanceHeaven(missile, dt, spawned);
     else if (missile.arc) advanceArc(missile, spawned);
     else if (missile.meteor) advanceMeteor(missile, spawned);
     else if (missile.firewall) advanceFirewall(missile, spawned);
