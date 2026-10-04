@@ -1,6 +1,7 @@
 #include "gameplay/skills/behavior.hpp"
 #include "spec.hpp"
 #include "bone_spec.hpp"
+#include "bow_spec.hpp"
 #include "damage_curve.hpp"
 #include "resolve.hpp"
 #include "curse_resolve.hpp"
@@ -211,6 +212,23 @@ SkillCastSpec resolveSkill(const SkillSpec &spec, const SkillEvaluationInput &in
     result.poisonDuration = float(poisonFrames) / 25.f;
     result.weapon = spec.weapon;
     if (result.weapon) {
+        if (result.weapon->bow) {
+            auto bow = std::make_shared<BowSkillSpec>(*result.weapon->bow);
+            bow->conversionPercent = std::clamp(bow->conversionPercent + (rank - 1) * bow->conversionPerLevel, 0, 100);
+            if (bow->strafe) bow->minimumShots = 2 + rank / 4;
+            if (bow->immolation) {
+                const auto found = learned.find(bow->fireSynergySkill);
+                const int percent = 100 + (found == learned.end() ? 0 : found->second) * bow->fireSynergyPercent;
+                const auto damage = [&](int base, const std::array<int, 5> &steps) {
+                    const int64_t value = (int64_t(base) + skillLevelBonus(rank, steps)) * (1 << bow->fire.hitShift) * percent / 100;
+                    return int(value + (bow->fireMastery ? value * fireMasteryPercent / 100 : 0));
+                };
+                bow->fire.minimumDamage = damage(bow->fire.minimumDamage, bow->fireMinimumPerLevel);
+                bow->fire.maximumDamage = damage(bow->fire.maximumDamage, bow->fireMaximumPerLevel);
+                bow->fire.hitShift = 0;
+            }
+            result.weapon->bow = std::move(bow);
+        }
         result.weapon->attackRating += (rank - 1) * result.weapon->attackRatingPerLevel;
         result.weapon->damagePercent += std::max(0, rank - result.weapon->damageStartLevel) * result.weapon->damagePerLevel;
         result.weapon->attacks = std::min(result.weapon->attackLimit, result.weapon->attacks + rank - 1);

@@ -62,7 +62,7 @@ target_sources(d2x_content PRIVATE src/content/character/character_attributes.cp
 target_sources(d2x_content PRIVATE src/content/character/death_data.cpp)
 target_sources(d2x_content PRIVATE src/content/string_table.cpp src/content/skills/skill_data.cpp)
 target_sources(d2x_content PRIVATE src/content/skills/sorceress_data.cpp src/content/skills/frozen_orb_data.cpp src/content/skills/blizzard_data.cpp src/content/skills/glacial_spike_data.cpp src/content/skills/weapon_skill_data.cpp src/content/skills/necromancer_data.cpp src/content/skills/necro_summon_data.cpp src/content/skills/curse_data.cpp
-    src/content/skills/bone_data.cpp)
+    src/content/skills/bone_data.cpp src/content/skills/amazon_bow_data.cpp)
 target_sources(d2x_content PRIVATE src/content/skills/skill_animation.cpp)
 target_sources(d2x_content PRIVATE src/content/items/item_projectiles.cpp src/content/skills/missile_effects.cpp)
 target_sources(d2x_content PRIVATE src/content/monsters/monster_experience.cpp)

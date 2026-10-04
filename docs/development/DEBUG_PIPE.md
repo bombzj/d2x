@@ -4,6 +4,8 @@
 
 ## 启动
 
+`status.missiles` 的只读快照包含 `skillId`／`skillRank`、`nextHitDelay`、`physicalDamagePercent` 和 `elements`（火／冰／魔法／闪电、冰时长、冻结帧、物理转换比例），用于检查实际发射参数；没有新增修改伤害或替代正式命中结算的命令。
+
 双击 Play.cmd 即可开启默认管道，无需额外参数。启动器可选项：
 
 ```powershell

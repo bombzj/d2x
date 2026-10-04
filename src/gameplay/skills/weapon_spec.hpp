@@ -2,11 +2,15 @@
 #include "gameplay/effects/definition.hpp"
 #include <array>
 #include <map>
+#include <memory>
 #include <string>
 
 namespace d2x {
+struct BowSkillSpec;
 // Weapon skills use the ordinary attack animation, equipment and ammunition pipeline.
 struct WeaponSkillSpec {
+    std::shared_ptr<const BowSkillSpec> bow;
+    bool noAmmo = false;
     std::string requiredType;
     bool thrown = false, manaOnRelease = false;
     int attackRating = 0, attackRatingPerLevel = 0, delayFrames = 0;

@@ -48,12 +48,14 @@ bool SkillRuntime::advanceBoneMissile(Missile &missile, float dt) {
         if (missile.remaining <= dt + .00001f) {
             if (state.coordinateTarget && !state.searched) {
                 state.searched = true;
-                int closest = state.program->searchRadius + 1;
                 for (auto unit : combatUnits()) {
                     if (!unit.alive() || !active(*unit.position) || !canAttack(missile.owner, unit.id) ||
                         relation(missile.owner, unit.id) != Relation::Hostile) continue;
-                    const int distance = missileDistance(missile.pos, *unit.position);
-                    if (distance < closest) { closest = distance; state.target = unit.id; }
+                    const int dx = int(unit.position->x) - int(missile.pos.x);
+                    const int dy = int(unit.position->y) - int(missile.pos.y);
+                    if (dx * dx + dy * dy <= state.program->searchRadius * state.program->searchRadius &&
+                        world_.pathClear(missile.missileId, missile.pos, *unit.position) &&
+                        (!state.target || unit.id < state.target)) state.target = unit.id;
                 }
                 missile.remaining = state.program->spiritLifetime;
                 const auto target = combatUnit(state.target);

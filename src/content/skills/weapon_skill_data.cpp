@@ -1,5 +1,6 @@
 #include "gameplay/skills/behavior.hpp"
 #include "gameplay/skills/spec.hpp"
+#include "gameplay/skills/bow_spec.hpp"
 #include "resources/archive.hpp"
 #include "weapon_skill_data.hpp"
 #include "missile_effects.hpp"
@@ -374,6 +375,13 @@ void loadWeaponSkills(SkillCatalog &catalog, const DataTable &skills, const Data
         spec.weapon->attackRating = required(skills, row, "ToHit");
         spec.weapon->attackRatingPerLevel = required(skills, row, "LevToHit");
         spec.weapon->delayFrames = skills.number(row, "delay").value_or(0);
+        if (!plague) {
+            auto bow = std::make_shared<BowSkillSpec>();
+            bow->sourceDamage = required(skills, row, "SrcDam");
+            // This native parent has no Skill link. Fire is resolved by child 656,
+            // not added to the direct arrow payload a second time.
+            spec.weapon->bow = std::move(bow);
+        }
         spec.mana = required(skills, row, "mana");
         spec.minimumMana = required(skills, row, "minmana");
         spec.manaPerLevel = required(skills, row, "lvlmana");

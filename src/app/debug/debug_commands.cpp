@@ -174,7 +174,12 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
             for (const auto &missile : state.area.missiles)
                 result["missiles"].push_back({{"id", missile.id.value}, {"missileId", missile.missileId},
                     {"x", missile.pos.x}, {"y", missile.pos.y}, {"vx", missile.velocity.x}, {"vy", missile.velocity.y},
-                    {"remaining", missile.remaining}, {"damage", missile.damage}, {"pathPoints", missile.path.size()}});
+                    {"remaining", missile.remaining}, {"damage", missile.damage}, {"skillId", missile.skillId}, {"skillRank", missile.skillRank},
+                    {"nextHitDelay", missile.nextHitDelay}, {"physicalDamagePercent", missile.physicalDamagePercent},
+                    {"elements", {{"fire", missile.attackElements.fire}, {"cold", missile.attackElements.cold},
+                        {"magic", missile.attackElements.magic}, {"lightning", missile.attackElements.lightning},
+                        {"coldDuration", missile.attackElements.coldDuration}, {"freezeFrames", missile.attackElements.freezeFrames},
+                        {"conversionPercent", missile.attackElements.conversionPercent}}}, {"pathPoints", missile.path.size()}});
             result["combat"] = {
                 {"resistances", {{"fire", session.characterStats().fireResist},
                                   {"lightning", session.characterStats().lightningResist},

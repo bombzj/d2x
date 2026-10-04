@@ -1,6 +1,7 @@
 #include "gameplay/units/actions.hpp"
 #include "gameplay/skills/caster.hpp"
 #include "gameplay/skills/runtime.hpp"
+#include "gameplay/skills/bow_spec.hpp"
 #include "gameplay/simulation/simulation.hpp"
 #include "core/random.hpp"
 #include "gameplay/monsters/monster_wander.hpp"
@@ -45,14 +46,17 @@ bool Simulation::beginWeaponAttack(Vec aim, EntityId target, const WeaponDamage 
         state_.message = "Original attack animation is unavailable for this equipment.";
         return false;
     }
-    if ((thrown || weapon.ranged) && !(skill && skill->smite) &&
+    if ((thrown || weapon.ranged) && !(skill && (skill->smite || skill->noAmmo)) &&
         (!weapon.projectile || !canSpendProjectile_ || !canSpendProjectile_(weapon.item, thrown))) {
         state_.message = thrown ? "No throwing weapon remains." : "Matching arrows or bolts are required.";
         return false;
     }
     if ((aim - p.movement.pos).length() < .001f) aim = p.movement.pos + p.movement.look;
     p.movement.look = (aim - p.movement.pos).unit();
-    p.actions.weaponAttack = WeaponAttackState{weapon.item, target, aim, *timing, thrown};
+    const auto selected = weapon;
+    if (skill && skill->bow && skill->bow->strafe &&
+        (!spendProjectile_ || !spendProjectile_(selected.item, thrown))) return false;
+    p.actions.weaponAttack = WeaponAttackState{selected.item, target, aim, *timing, thrown};
     p.actions.weaponAttack->weaponClass = state_.player.equipment.animationClass;
     p.actions.weaponAttack->appearanceDefinitions = state_.player.equipment.appearanceDefinitions;
     p.actions.meleeTime = float(timing->durationTicks()) / 25.f;

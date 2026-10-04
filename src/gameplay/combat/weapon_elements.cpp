@@ -107,7 +107,15 @@ void Simulation::resolveWeaponHit(EntityId defender, float physical, EntityId so
             (100 - std::clamp(rawResistance(target.stats.attributes, MonsterDamageType::Physical), 0, 100)) / 100.f;
         *target.life = std::max(1.f / 256.f, *target.life - crushing);
     }
-    const float dealtPhysical = mitigate(elements.deadly ? physical * 2.f : physical, MonsterDamageType::Physical);
+    if (elements.deadly) physical *= 2.f;
+    if (elements.conversionPercent > 0) {
+        const auto converted = float(int64_t(physical * 256.f) * std::min(elements.conversionPercent, 100) / 100) / 256.f;
+        physical -= converted;
+        if (elements.conversionElement == DamageType::Magic) elements.magic += converted;
+        else if (elements.conversionElement == DamageType::Fire) elements.fire += converted;
+        else if (elements.conversionElement == DamageType::Cold) elements.cold += converted;
+    }
+    const float dealtPhysical = mitigate(physical, MonsterDamageType::Physical);
     skills().healLifeTap(source, defender, dealtPhysical, originalElements.ranged);
     float total = dealtPhysical;
     const int64_t damage = int64_t(std::min(*target.life, dealtPhysical) * 256.f);
@@ -128,6 +136,7 @@ void Simulation::resolveWeaponHit(EntityId defender, float physical, EntityId so
     if (!originalElements.ranged) skills().reflectThorns(source, defender, dealtPhysical);
     if (!originalElements.ranged) skills().reflectIronMaiden(source, defender, dealtPhysical);
     DamageRequest hit{source, defender, total, MonsterDamageType::Physical, chill, true};
+    if (elements.freezeFrames > 0) { hit.chill = 0; hit.freezeFrames = elements.freezeFrames; }
     hit.hitClass = elements.hitClass;
     const float dealt = dealDamage(hit);
     if (!originalElements.ranged && dealt > 0) {

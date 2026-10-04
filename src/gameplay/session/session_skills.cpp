@@ -202,7 +202,7 @@ bool GameSessionImpl::weaponSkillReady(const SkillCastSpec &skill) const {
     const auto *weapon = simulation_->attackWeapon(action.thrown, false);
     return weapon && (action.smite ? bool(player.equipment.shield) :
         std::find(weapon->types.begin(), weapon->types.end(), action.requiredType) != weapon->types.end()) &&
-        (action.smite || !(action.thrown || weapon->ranged) ||
+        (action.smite || action.noAmmo || !(action.thrown || weapon->ranged) ||
          (simulation_->canSpendProjectile_ && simulation_->canSpendProjectile_(weapon->item, action.thrown)));
 }
 bool GameSessionImpl::skillAvailable(int id) const {

@@ -1,3 +1,4 @@
+#include "gameplay/skills/bow_spec.hpp"
 #include "gameplay/skills/behavior.hpp"
 #include "gameplay/skills/spec.hpp"
 #include "gameplay/monsters/implementation.hpp"
@@ -415,6 +416,11 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session, const I
             light->second.lightRadius = 12;
     const DataTable projectileSounds(archives.read("data/global/excel/sounds.txt"));
     std::set<int> groupedColdProjectiles;
+    for (const auto &[id, skill] : session.content().skills.skills)
+        if (skill.spell && skill.spell->weapon && skill.spell->weapon->bow && skill.spell->weapon->bow->freezingEjecta >= 0) {
+            groupedColdProjectiles.insert(skill.spell->missileId);
+            projectileFreezingEjecta.emplace(skill.spell->missileId, skill.spell->weapon->bow->freezingEjecta);
+        }
     for (const auto &[id, skill] : session.content().skills.skills)
         if (skill.spell && skill.spell->freezingArea) {
             groupedColdProjectiles.insert(skill.spell->missileId);

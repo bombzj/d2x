@@ -57,8 +57,9 @@ MissileImpactSpec loadMissileImpact(const DataTable &missiles, size_t row, Archi
     } else if (hit == 4) {
         // Exploding Arrow: visual 42 is distinct from invisible server child 656.
         const auto child = linked(missiles, row, "HitSubMissile1");
+        const bool freeze = missiles.value(child, "EType") == "frze";
         if (required(missiles, child, "pSrvHitFunc") != 1 ||
-            required(missiles, child, "MissileSkill") != 1 || missiles.value(child, "EType") != "fire" ||
+            required(missiles, child, "MissileSkill") != 1 || (!freeze && missiles.value(child, "EType") != "fire") ||
             missiles.number(child, "SrcDamage").value_or(0) != 0 ||
             missiles.number(row, "sHitPar1").value_or(0) != 0 ||
             !missiles.value(row, "HitSubMissile2").empty() ||
@@ -69,15 +70,16 @@ MissileImpactSpec loadMissileImpact(const DataTable &missiles, size_t row, Archi
         area.missileId = required(missiles, child, "Id");
         area.delayFrames = required(missiles, child, "Range");
         area.radius = float(required(missiles, child, "sHitPar1"));
-        area.element = MonsterDamageType::Fire;
+        area.element = freeze ? MonsterDamageType::Cold : MonsterDamageType::Fire;
         area.addEquipmentElement = true; // Skill.SrcDam=128; checked by the skill importer.
         if (area.delayFrames <= 0 || area.radius <= 0)
             throw std::runtime_error("Invalid secondary area missile timing or radius");
         spec.areaMissile = area;
-        const auto visual = loadProjectileResource(missiles, linked(missiles, row, "ExplosionMissile"), archives);
+        const auto visual = loadProjectileResource(missiles, linked(missiles, row, freeze ? "CltHitSubMissile1" : "ExplosionMissile"), archives);
         spec.visualId = visual.id;
         spec.visualDuration = visual.lifetime;
         resources.push_back(visual);
+        if (freeze) resources.push_back(loadProjectileResource(missiles, linked(missiles, row, "CltHitSubMissile2"), archives));
     } else if (hit == 2) {
         const auto child = linked(missiles, row, "HitSubMissile1");
         const bool skillDamage = !missiles.value(child, "Skill").empty() &&

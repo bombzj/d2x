@@ -681,6 +681,7 @@ GameSessionImpl::GameSessionImpl(Archives &archives, const WorldSelection &selec
     fingerprint.add("waypoint-rules-v1");
     fingerprint.add("necromancer-poison-bone-rules-v1");
     fingerprint.add("necromancer-summon-rules-v1-native-iron-kf");
+    fingerprint.add("amazon-bow-rules-v1-native-arrow-programs");
     fingerprint.add("map-rules-v9-native-trees-complete-groups");
     auto members = archives.used;
     for (const auto &member : members) {

@@ -12,6 +12,8 @@
 
 ## 代码分工与入口
 
+亚马逊弓与弩整页（2026-10-05）由 `amazon_bow_data.*` 原表导入、私有 `bow_spec.hpp` 详细规则、`resolve.cpp` 等级／硬点求值接入。`WeaponSkillSpec` 仅携带不透明不可变程序指针；原A1时钟、武器来源、消耗和连续回滚复用 `weapon_runtime.cpp`，引导复用 `bone_runtime.cpp` 的原共同搜索程序；伤害转换／扇形快照／子弹体沿公共战斗链，牺牲火单位沿既有火周期。详细定义不扩散到公共状态头；首批公共命中值扩展需要重编依赖，后继私有弓程序变更无需重编全部公共模块。十项逐项Release／打包、联合有限冒烟与原D2S重载通过，准确规则和限制见[亚马逊](../gameplay/skills/AMAZON.md#弓与弩技能整页)。
+
 | 层／入口 | 当前职责 |
 | --- | --- |
 | `character/learning.*`、`session_character.cpp` | 学习、选择、绑定和既有等级算术；角色学习记录不要求怪物共享 |

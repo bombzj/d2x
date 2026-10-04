@@ -6,10 +6,17 @@
 #include "gameplay/skills/weapon_port.hpp"
 #include "gameplay/skills/world_port.hpp"
 #include "gameplay/skills/runtime.hpp"
+#include "gameplay/skills/bow_spec.hpp"
 #include "core/random.hpp"
 #include <algorithm>
 
 namespace d2x {
+namespace {
+bool withinBowRadius(Vec from, Vec to, int radius) {
+    const int dx = int(to.x) - int(from.x), dy = int(to.y) - int(from.y);
+    return dx * dx + dy * dy <= radius * radius;
+}
+}
 const WeaponDamage *SkillRuntime::attackWeapon(WeaponSkillCaster actor, bool thrown, bool leftHand) const {
     return selectAttackWeapon(actor.equipment, thrown, leftHand);
 }
@@ -65,6 +72,22 @@ bool SkillRuntime::beginWeaponSkill(WeaponSkillCaster p, const SkillCastSpec &sk
         return true;
     }
     stopChannel(p.casting);
+    int strafeShots = action.attacks;
+    if (action.bow && action.bow->strafe) {
+        int count = 0; EntityId first;
+        for (auto candidate : combatUnits()) {
+            if (!candidate.alive() || !active(*candidate.position) || !canAttack(p.casting.id, candidate.id) ||
+                !withinBowRadius(p.casting.pos, *candidate.position, action.bow->targetRadius) ||
+                !world_.pathClear(skill.missileId, p.casting.pos, *candidate.position)) continue;
+            ++count;
+            if (!first || candidate.id < first) first = candidate.id;
+        }
+        const auto chosen = combatUnit(target);
+        if (!chosen.alive() || !canAttack(p.casting.id, target) ||
+            !withinBowRadius(p.casting.pos, *chosen.position, action.bow->targetRadius) ||
+            !world_.pathClear(skill.missileId, p.casting.pos, *chosen.position)) target = first;
+        strafeShots = count ? std::min(action.attacks, std::max(count, action.bow->minimumShots)) : 0;
+    }
     if (skill.effect == SkillBehavior::Zeal) {
         if (!target || !weapons_.meleeReach(p.casting.id, target, *weapon)) {
             target = {};
@@ -84,7 +107,8 @@ bool SkillRuntime::beginWeaponSkill(WeaponSkillCaster p, const SkillCastSpec &sk
         p.weaponAttack->timing.startFrame = 0;
         p.meleeTime = float(p.weaponAttack->timing.durationTicks()) / 25.f;
     }
-    p.weaponAttack->remainingAttacks = action.attacks;
+    p.weaponAttack->remainingAttacks = strafeShots;
+    if (action.bow && action.bow->strafe) p.weaponAttack->skill->weapon->noAmmo = true; // SrvSt08 consumed once.
     p.attackTarget = {};
     p.attackPosition.reset();
     p.throwAttack = p.leftHandAttack = false;
@@ -112,8 +136,24 @@ void SkillRuntime::advanceWeaponAttack(WeaponSkillCaster p) {
             p.equipment.animationClass == attack.weaponClass) {
             const auto selected = *weapon; // Consuming the last missile can refresh this cache.
             auto enemy = combatUnit(attack.target);
+            const bool strafe = attack.skill && attack.skill->weapon->bow && attack.skill->weapon->bow->strafe;
+            if (strafe && (!enemy.alive() || !canAttack(p.casting.id, enemy.id) ||
+                !withinBowRadius(p.casting.pos, *enemy.position, attack.skill->weapon->bow->targetRadius) ||
+                !world_.pathClear(attack.skill->missileId, p.casting.pos, *enemy.position))) {
+                EntityId successor, fallback;
+                for (auto candidate : combatUnits()) {
+                    if (!candidate.alive() || !active(*candidate.position) || !canAttack(p.casting.id, candidate.id) ||
+                        !withinBowRadius(p.casting.pos, *candidate.position, attack.skill->weapon->bow->targetRadius) ||
+                        !world_.pathClear(attack.skill->missileId, p.casting.pos, *candidate.position)) continue;
+                    if (!fallback || candidate.id < fallback) fallback = candidate.id;
+                    if (candidate.id > attack.target && (!successor || candidate.id < successor)) successor = candidate.id;
+                }
+                attack.target = successor ? successor : fallback;
+                enemy = combatUnit(attack.target);
+            }
             const Vec aim = enemy.alive() && canAttack(p.casting.id, enemy.id) ? *enemy.position : attack.aim;
-            if ((attack.thrown || selected.ranged) && !(attack.skill && attack.skill->weapon->smite))
+            if ((attack.thrown || selected.ranged) && !(attack.skill && attack.skill->weapon->smite) &&
+                (!strafe || (attack.remainingAttacks > 0 && enemy.alive())))
                 weapons_.fireWeaponProjectile(p.casting.id, aim, selected, attack.thrown, attack.skill ? &*attack.skill : nullptr);
             else if (enemy.alive() && canAttack(p.casting.id, enemy.id) && weapons_.meleeReach(p.casting.id, enemy.id, selected)) {
                 auto melee = selected;
@@ -153,6 +193,24 @@ void SkillRuntime::advanceWeaponAttack(WeaponSkillCaster p) {
                 }
             }
             if (!p.weaponAttack) return;
+            if (strafe && --attack.remainingAttacks > 0 && p.life > 0) {
+                EntityId successor, fallback;
+                const int radius = attack.skill->weapon->bow->targetRadius;
+                for (auto candidate : combatUnits()) {
+                    if (!candidate.alive() || !active(*candidate.position) || !canAttack(p.casting.id, candidate.id) ||
+                        !withinBowRadius(p.casting.pos, *candidate.position, radius) ||
+                        !world_.pathClear(attack.skill->missileId, p.casting.pos, *candidate.position)) continue;
+                    if (!fallback || candidate.id < fallback) fallback = candidate.id;
+                    if (candidate.id > attack.target && (!successor || candidate.id < successor)) successor = candidate.id;
+                }
+                const auto next = successor ? successor : fallback;
+                if (next) {
+                    attack.target = next; attack.aim = unitPosition(next);
+                    p.casting.look = (attack.aim - p.casting.pos).unit();
+                    attack.ticks = attack.ticks * (100 - attack.skill->weapon->rollbackPercent) / 100;
+                    attack.released = false;
+                }
+            }
             if (attack.skill && attack.skill->effect == SkillBehavior::Zeal && --attack.remainingAttacks > 0 && p.life > 0) {
                 EntityId successor, fallback;
                 for (auto candidate : combatUnits()) {

@@ -1,3 +1,4 @@
+#include "gameplay/skills/bow_spec.hpp"
 #include "gameplay/skills/behavior.hpp"
 #include "gameplay/skills/spec.hpp"
 #include "gameplay/skills/bone_spec.hpp"
@@ -64,9 +65,9 @@ CharacterActionDisplay weaponStats(const CharacterDisplayContext &context, bool 
                 elementalMaximum += int64_t(weapon.meleeBaseMaximum) * percent / 100 / 256;
             }
         const int skillDamage = skill ? skill->weapon->damagePercent : 0;
-        const int minimum = thrown ? weapon.throwMinimum : weapon.minimum +
+        int64_t minimum = thrown ? weapon.throwMinimum : weapon.minimum +
             int(int64_t(weapon.meleeBaseMinimum) * skillDamage / 100);
-        const int maximum = thrown ? weapon.throwMaximum : weapon.maximum +
+        int64_t maximum = thrown ? weapon.throwMaximum : weapon.maximum +
             int(int64_t(weapon.meleeBaseMaximum) * skillDamage / 100);
         int64_t poisonMinimum = 0, poisonMaximum = 0;
         if (skill && skill->poisonDuration > 0) {
@@ -80,10 +81,21 @@ CharacterActionDisplay weaponStats(const CharacterDisplayContext &context, bool 
         const int rating = int(std::clamp<int64_t>(int64_t(weapon.baseAttackRating) *
             std::max(0, 100 + weapon.attackRatingPercent + (skill ? skill->weapon->attackRating : 0)) / 100,
             0, std::numeric_limits<int>::max()));
-        const int64_t skillMinimum = skill && skill->poisonDuration == 0 ? int64_t(skill->minimumDamage) : 0;
-        const int64_t skillMaximum = skill && skill->poisonDuration == 0 ? int64_t(skill->maximumDamage) : 0;
+        int64_t skillMinimum = skill && skill->poisonDuration == 0 ? int64_t(skill->minimumDamage) : 0;
+        int64_t skillMaximum = skill && skill->poisonDuration == 0 ? int64_t(skill->maximumDamage) : 0;
+        if (skill && skill->weapon->bow) {
+            const auto &bow = *skill->weapon->bow;
+            const int percent = std::max(0, 100 + weapon.projectileDamagePercent + skillDamage);
+            minimum = (int64_t(weapon.projectileMinimum) * bow.sourceDamage / 128 +
+                (bow.physicalSkillDamage ? int64_t(skill->minimumDamage * 256.f) : 0)) * percent / 100;
+            maximum = (int64_t(weapon.projectileMaximum) * bow.sourceDamage / 128 +
+                (bow.physicalSkillDamage ? int64_t(skill->maximumDamage * 256.f) : 0)) * percent / 100;
+            elementalMinimum = elementalMinimum * bow.sourceDamage / 128;
+            elementalMaximum = elementalMaximum * bow.sourceDamage / 128;
+            if (bow.physicalSkillDamage) skillMinimum = skillMaximum = 0;
+        }
         return {damageText(int64_t(minimum) / 256 + elementalMinimum + poisonMinimum + skillMinimum,
-                           int64_t(maximum) / 256 + elementalMaximum + poisonMaximum + skillMaximum), std::to_string(rating)};
+                           int64_t(maximum) / 256 + elementalMaximum + poisonMaximum + skillMaximum), skill && skill->weapon->bow && skill->weapon->bow->guided ? "" : std::to_string(rating)};
     }
     return {};
 }

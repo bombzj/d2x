@@ -1,5 +1,6 @@
 #pragma once
 #include "core/id.hpp"
+#include "gameplay/combat/damage_type.hpp"
 #include <map>
 
 namespace d2x {
@@ -73,6 +74,9 @@ struct CombatModifiers {
 
 // Snapshot at attack launch so projectile damage does not change in flight.
 struct AttackElements {
+    int conversionPercent = 0;
+    int freezeFrames = 0;
+    DamageType conversionElement = DamageType::Magic;
     float fire = 0, lightning = 0, cold = 0, magic = 0;
     float poisonPerSecond = 0, poisonDuration = 0, coldDuration = 0;
     bool deadly = false;

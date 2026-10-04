@@ -1,6 +1,7 @@
 #include "gameplay/skills/behavior.hpp"
 #include "gameplay/combat/damage_request.hpp"
 #include "gameplay/skills/runtime.hpp"
+#include "gameplay/skills/bow_spec.hpp"
 #include "gameplay/simulation/simulation.hpp"
 #include "gameplay/combat/damage_resolution.hpp"
 #include "core/random.hpp"
@@ -12,12 +13,14 @@ namespace d2x {
 void Simulation::resolveMissileImpact(const Missile &missile, std::vector<Missile> &spawned, EntityId direct) {
     if (!missile.impact) return;
     auto spec = *missile.impact;
+    float coldDuration = 0;
     if (missile.skillId >= 0 && (spec.cloudBurst || spec.areaMissile)) {
         // A native child inherits the parent's rank, then resolves its damage
         // from the current owner. The parent projectile retains its launch snapshot.
         if (!resolveUnitSkill_)
             throw std::runtime_error("Missile owner has no skill resolver");
         const auto skill = resolveUnitSkill_(missile.owner, missile.skillId, missile.skillRank);
+        coldDuration = skill.coldDuration;
         if (!skill.missileImpact) throw std::runtime_error("Missing originating missile impact");
         spec = *skill.missileImpact;
     }
@@ -60,6 +63,11 @@ void Simulation::resolveMissileImpact(const Missile &missile, std::vector<Missil
             const AttackDamageRange channels[]{ {}, ranges.magic, ranges.fire, ranges.lightning, ranges.cold, {} };
             minimum += int64_t(channels[size_t(area.element)].minimum) * 256;
             maximum += int64_t(channels[size_t(area.element)].maximum) * 256;
+            if (area.element == DamageType::Cold) {
+                WeaponModifiers own;
+                if (auto found = owner.stats.attributes.combat.weapons.find(weapon); found != owner.stats.attributes.combat.weapons.end()) own = found->second;
+                coldDuration += float(owner.stats.attributes.combat.coldFrames + own.coldFrames) / 25.f;
+            }
         }
         Missile child{ids_.allocate(), missile.owner, missile.pos, {}, float(area.delayFrames) / 25.f,
             SkillBehavior::None, false, area.missileId};
@@ -71,7 +79,27 @@ void Simulation::resolveMissileImpact(const Missile &missile, std::vector<Missil
         const uint64_t span = uint64_t(std::max<int64_t>(0, maximum - minimum));
         child.impactDamage.channels[size_t(area.element)] =
             float(minimum + (span ? uint32_t(child.combatRandom) % span : 0)) / 256.f;
+        if (area.element == DamageType::Cold) {
+            child.impactDamage.coldDuration = coldDuration; child.impactDamage.freeze = true;
+        }
         spawned.push_back(std::move(child));
+    }
+    if (missile.skillId >= 0 && resolveUnitSkill_) {
+        const auto skill = resolveUnitSkill_(missile.owner, missile.skillId, missile.skillRank);
+        if (skill.weapon && skill.weapon->bow && skill.weapon->bow->immolation && !safeZone_) {
+            const auto &bow = *skill.weapon->bow;
+            const Vec center{float(int(missile.pos.x)),float(int(missile.pos.y))};
+            for (int x = -bow.fireRadius; x <= bow.fireRadius; ++x)
+                for (int y = -bow.fireRadius; y <= bow.fireRadius; ++y) {
+                    const Vec point = center + Vec{float(x),float(y)};
+                    if (x*x + y*y > bow.fireRadius * bow.fireRadius ||
+                        !grid_->segment(point, point + Vec{float(x),float(y)}, {}, {0x04,1})) continue;
+                    Missile fire{ids_.allocate(), missile.owner, point, {}, float(bow.fire.fireFrames) / 25.f,
+                        SkillBehavior::WeaponProjectile, false, bow.fire.fireId};
+                    fire.firewall = Missile::FirewallState{bow.fire, false, 0};
+                    fire.combatRandom = childRandom(unitRandom_); spawned.push_back(std::move(fire));
+                }
+        }
     }
     if (!spec.cloudBurst) return;
     // MISSMODE_CreatePoisonCloudHitSubmissiles: fixed 16-direction offsets,

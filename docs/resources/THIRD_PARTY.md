@@ -2,6 +2,8 @@
 
 ## 经典版素材
 
+亚马逊弓与弩整页继续核对本地 D2MOO 固定 `5596f5c` 的 `SkillAma.cpp::SrvDo008/SrvDo010/SrvSt08/SrvDo012`、`Skills.cpp::sub_6FD107F0/sub_6FD118C0`、`SUnit.cpp::sub_6FCBCFD0`、`MissMode.cpp` 的转换／冻结／引导／牺牲火／范围子弹体函数及 `D2Common/Units/Missile.cpp` 的 SrcDamage／毒源／吸取规则。参数、公式、伤害曲线、图形和声音仍读取当前 MPQ；沿上述 MIT 归属适配规则，不纳入参考源码或导出资源。原路径／客户端未完整移植的边界见[亚马逊](../gameplay/skills/AMAZON.md#本批验证与限制)。
+
 地图阶段改用用户提供的 `assets/mpq2` 完整版／资料片 MPQ；文件摘要见 [MPQ 资源](MPQ.md)。地形及原表均从这些档案读取，没有引入第三方 JSON 地图。当前只运行资料片；以下试玩来源仅保留历史素材出处，不再作为游戏运行入口。
 
 - [Blizzard 历史下载导航](https://classic.battle.net/diablo-universe.shtml) 曾提供 Diablo II Playable Demo。
