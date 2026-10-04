@@ -75,7 +75,7 @@ std::map<int, MapRecipe> generateAct5Barricades(Archives &archives, const WorldC
             }
             const auto source = catalog.preset(presetId, 31, variant);
             recipe.pieces.push_back({column*16,row*16,preset.width,preset.height,presetId,variant,
-                source.ds1,source.tileLibraries,source.fillBlanks,preset.populate});
+                source.ds1,source.tileLibraries,source.fillBlanks,preset.populate, -1, source.killEdge, source.animationSpeed, 0, source.pops, source.popPad});
             for (int vertical = row; vertical < row + height; ++vertical)
                 for (int horizontal = column; horizontal < column + width; ++horizontal)
                     occupied[vertical * columns + horizontal] = presetId;
@@ -187,7 +187,7 @@ std::map<int, MapRecipe> generateAct5Barricades(Archives &archives, const WorldC
                     const auto source = catalog.preset(presetId,31,variant >= 0 ? variant : random.below(std::max(1, preset.files)));
                     recipe.pieces.push_back({column*16,row*16,preset.width,preset.height,presetId,
                         variant >= 0 ? variant : source.variant,source.ds1,source.tileLibraries,
-                        source.fillBlanks,preset.populate});
+                        source.fillBlanks,preset.populate, -1, source.killEdge, source.animationSpeed, 0, source.pops, source.popPad});
                     occupied[row*columns+column] = presetId;
                 } else if (!place(presetId,column,row,variant)) continue;
                 if (++added >= attempts) break;

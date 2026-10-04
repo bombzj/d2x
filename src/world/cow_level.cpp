@@ -96,7 +96,7 @@ MapRecipe generateCowLevel(Archives &archives, const WorldCatalog &catalog, uint
         const auto &record = catalog.presets().at(preset);
         auto source = catalog.preset(preset, 2, variant);
         result.pieces.push_back({column * 8, row * 8, record.width, record.height, preset, variant,
-                                 source.ds1, source.tileLibraries, source.fillBlanks, record.populate});
+                                 source.ds1, source.tileLibraries, source.fillBlanks, record.populate, -1, source.killEdge, source.animationSpeed, 0, source.pops, source.popPad});
     };
     for (int row = 0; row < height; ++row)
         for (int column = 0; column < width; ++column) {

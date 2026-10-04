@@ -1,5 +1,6 @@
 #pragma once
 #include "resources/formats.hpp"
+#include <algorithm>
 #include <map>
 #include <memory>
 #include <string>
@@ -18,11 +19,20 @@ struct MapTerrain {
     std::vector<std::map<uint32_t, std::vector<int>>> scopedLookup;
     // Chosen once at load: collision, automap and rendering read the same DT1 variant.
     std::map<std::tuple<int, int, size_t, uint32_t>, int> tileChoices;
+    struct TileAnimation { std::vector<int> frames; int speed = 80; };
+    std::map<std::pair<size_t, uint32_t>, TileAnimation> animations;
     std::string name, path;
     int unresolved = 0;
     int tileIndex(const MapCell &cell, int x, int y) const {
         const auto found = tileChoices.find({x, y, cell.libraryScope, cell.key()});
         return found == tileChoices.end() ? -1 : found->second;
+    }
+    int renderTileIndex(const MapCell &cell, int x, int y, float seconds) const {
+        const auto animation = animations.find({cell.libraryScope, cell.key()});
+        if (animation == animations.end()) return tileIndex(cell, x, y);
+        const auto &value = animation->second;
+        const auto ticks = uint64_t(std::max(0.f, seconds) * 25.f);
+        return value.frames[(ticks * uint64_t(value.speed) / 256) % value.frames.size()];
     }
 };
 } // namespace d2x

@@ -206,13 +206,14 @@ int main(int argc, char **argv) {
                     continue;
                 d2x::MapData data;
                 try {
-                    data = d2x::decodeDs1(a.read(record.file));
+                    data = d2x::decodeDs1(a.read(record.file), record.file);
                 } catch (const std::exception &error) {
                     throw std::runtime_error(record.file + ": " + error.what());
                 }
                 std::cout << record.name << " " << record.file << " version=" << data.version
                           << " method=" << data.substitutionMethod
-                          << " groups=" << data.substitutionGroups.size() << '\n';
+                          << " groups=" << data.substitutionGroups.size()
+                          << " skipped=" << data.skippedSubstitutionGroups << '\n';
                 for (const auto &group : data.substitutionGroups) {
                     std::cout << "  group " << group.x << ',' << group.y << " size=" << group.width << 'x'
                               << group.height << " variants=" << group.variants << '\n';
@@ -488,7 +489,7 @@ int main(int argc, char **argv) {
             std::string member = d2x::normalize(argv[3]);
             if (!member.ends_with(".ds1"))
                 throw std::runtime_error("ds1-paths requires an original MPQ DS1 member");
-            auto map = d2x::decodeDs1(a.read(member));
+            auto map = d2x::decodeDs1(a.read(member), member);
             std::cout << member << " version=" << map.version << " objects=" << map.objects.size() << '\n';
             for (const auto &object : map.objects)
                 {

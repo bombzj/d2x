@@ -157,9 +157,36 @@ const WorldObject *SceneView::objectAt(Vec mouse) const {
     return nearest;
 }
 void SceneView::drawTerrain() const {
-    struct Terrain { SceneOrder order; const Sprite *image; Vec position; bool shadow; };
+    struct Terrain { SceneOrder order; const Sprite *image; Vec position; bool shadow; int region; };
     std::vector<Terrain> terrain;
-    for (const auto &[region, offset] : session_.sceneRegions()) {
+    const auto regions = session_.sceneRegions();
+    struct Owner { int region; std::tuple<bool, bool, int> priority; };
+    auto ownersAt = [&](int worldX, int worldY) {
+        Owner floorOwner{-1, {}}, shadowOwner{-1, {}};
+        for (const auto &[region, offset] : regions) {
+            const auto &source = session_.regions()[region];
+            const auto &data = source.map.terrain.data;
+            const int x = worldX - source.recipe.worldX, y = worldY - source.recipe.worldY;
+            if (x < 0 || y < 0 || x >= data.width || y >= data.height) continue;
+            bool floor = false, authored = !source.recipe.baseFloor;
+            for (const auto &layer : data.floors) {
+                const auto &cell = layer[size_t(y) * data.width + x];
+                floor |= cell.present();
+                authored |= cell.present() && cell.libraryScope != 0;
+            }
+            const bool interior = x < (source.recipe.width ? source.recipe.width : data.width - 1) &&
+                                  y < (source.recipe.height ? source.recipe.height : data.height - 1);
+            const Owner owner{region, {authored, interior, -int(source.definition.id)}};
+            auto claim = [&](Owner &current) {
+                if (current.region < 0 || current.priority < owner.priority) current = owner;
+            };
+            if (floor) claim(floorOwner);
+            if (data.shadows[size_t(y) * data.width + x].present()) claim(shadowOwner);
+        }
+        return std::pair{floorOwner.region, shadowOwner.region};
+    };
+    for (const auto &[region, offset] : regions) {
+        const auto &source = session_.regions()[region];
         const auto &map = session_.regions()[region].map;
         const auto &tiles = assets_.regionTileSprites(region);
 
@@ -172,9 +199,9 @@ void SceneView::drawTerrain() const {
                 Vec p = screen(worldPosition);
                 auto add = [&](const MapCell &cell, int layer, bool shadow = false) {
                     if (!cell.present()) return;
-                    const int index = map.tileIndex(cell, x, y);
+                    const int index = map.terrain.renderTileIndex(cell, x, y, view_.animationTime);
                     if (index >= 0 && tileVisible(tiles[index], p))
-                        terrain.push_back({sceneOrder(worldPosition, 0, false, layer), &tiles[index], p, shadow});
+                        terrain.push_back({sceneOrder(worldPosition, 0, false, layer), &tiles[index], p, shadow, region});
                 };
                 // Lower DT1 walls (16..19) belong below floor/units, never in
                 // the ordinary occluder queue (OpenDiablo2 renderTilePass1).
@@ -182,19 +209,28 @@ void SceneView::drawTerrain() const {
                     const auto &cell = layer[y * map.terrain.data.width + x];
                     if (cell.orientation >= 16 && cell.orientation <= 19) add(cell, 0);
                 }
-                for (auto &layer : map.terrain.data.floors) {
-                    auto &cell = layer[y * map.terrain.data.width + x];
-                    if (!cell.present())
-                        continue;
-                    add(cell, 1);
+                // DS1 extra rows/columns overlap neighbouring levels. An authored
+                // preset floor wins over generated grass; ties have a fixed owner.
+                // Changing the observer's current level must not replace the road.
+                const auto [floorOwner, shadowOwner] = ownersAt(source.recipe.worldX + x, source.recipe.worldY + y);
+                if (floorOwner == region) {
+                    for (auto &layer : map.terrain.data.floors) {
+                        auto &cell = layer[y * map.terrain.data.width + x];
+                        if (!cell.present()) continue;
+                        add(cell, 1);
+                    }
                 }
                 auto &c = map.terrain.data.shadows[y * map.terrain.data.width + x];
-                if (c.present()) {
+                if (c.present() && shadowOwner == region) {
                     add(c, 2, true);
                 }
             }
     }
-    std::stable_sort(terrain.begin(), terrain.end(), [](const auto &a, const auto &b) { return a.order < b.order; });
+    std::stable_sort(terrain.begin(), terrain.end(), [](const auto &a, const auto &b) {
+        if (a.order < b.order) return true;
+        if (b.order < a.order) return false;
+        return a.region < b.region;
+    });
     for (const auto &item : terrain)
         sprite(item.image, item.position, item.shadow ? Color{20, 22, 25, 100} : WHITE);
 }
@@ -266,7 +302,7 @@ void SceneView::drawActors(Vec mouse) const {
                     auto &cell = layer[y * map.terrain.data.width + x];
                     if (!cell.present() || (cell.orientation >= 16 && cell.orientation <= 19))
                         continue;
-                    int idx = map.tileIndex(cell, x, y);
+                    int idx = map.terrain.renderTileIndex(cell, x, y, view_.animationTime);
                     if (idx >= 0) {
                         const int priority = -100 + int(wallLayer) * 2;
                         auto item = Item{sceneOrder(position, 1, true, priority), 0, idx, p, region, x, y};
@@ -279,7 +315,7 @@ void SceneView::drawActors(Vec mouse) const {
                             if (cell.orientation == 3) {
                                 auto companion = cell;
                                 companion.orientation = 4;
-                                if (int corner = map.tileIndex(companion, x, y); corner >= 0 && tileVisible(tiles[corner], p))
+                                if (int corner = map.terrain.renderTileIndex(companion, x, y, view_.animationTime); corner >= 0 && tileVisible(tiles[corner], p))
                                     draw.push_back({sceneOrder(position, 1, true, priority + 1), 0, corner, p, region, x, y});
                             }
                         }

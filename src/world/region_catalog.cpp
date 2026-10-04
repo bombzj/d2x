@@ -2,6 +2,7 @@
 #include "world/maze.hpp"
 #include "cow_level.hpp"
 #include "world/outdoor/outdoor.hpp"
+#include "world/outdoor/outdoor_substitution.hpp"
 #include "world/plan.hpp"
 #include "world/generation_seed.hpp"
 #include <algorithm>
@@ -94,7 +95,7 @@ WorldPlan planWorld(Archives &archives, const WorldCatalog &catalog, WorldSelect
                 const auto &preset = catalog.presets().at(presetId);
                 auto source = catalog.preset(presetId, level.levelType, 0);
                 recipe.pieces.push_back({column, row, preset.width, preset.height, presetId, 0,
-                    source.ds1, source.tileLibraries, source.fillBlanks, preset.populate});
+                    source.ds1, source.tileLibraries, source.fillBlanks, preset.populate, -1, source.killEdge, source.animationSpeed, 0, source.pops, source.popPad});
             };
             if (id == 82) place(652, 0, 0);
             else for (const auto &piece : layout) place(piece.preset, piece.x, piece.y);
@@ -120,7 +121,7 @@ WorldPlan planWorld(Archives &archives, const WorldCatalog &catalog, WorldSelect
                 const int variant = random.below(preset.files);
                 auto source = catalog.preset(preset.id, level.levelType, variant);
                 recipe.pieces.push_back({(index % 5) * 24, (index / 5) * 24, 24, 24,
-                    preset.id, variant, source.ds1, source.tileLibraries, source.fillBlanks, preset.populate});
+                    preset.id, variant, source.ds1, source.tileLibraries, source.fillBlanks, preset.populate, -1, source.killEdge, source.animationSpeed, 0, source.pops, source.popPad});
             }
             entry.destination = RegionId(id);
             entry.status = "Original Chaos Sanctuary room layout";
@@ -144,7 +145,7 @@ WorldPlan planWorld(Archives &archives, const WorldCatalog &catalog, WorldSelect
                     throw std::runtime_error("Original siege strip dimensions do not match Levels");
                 auto source = catalog.preset(preset.id, level.levelType, 0);
                 recipe.pieces.push_back({column, 0, preset.width, preset.height, preset.id, 0,
-                    source.ds1, source.tileLibraries, source.fillBlanks, preset.populate});
+                    source.ds1, source.tileLibraries, source.fillBlanks, preset.populate, -1, source.killEdge, source.animationSpeed, 0, source.pops, source.popPad});
             }
             entry.destination = RegionId(id);
             entry.status = "Original Bloody Foothills strips";
@@ -288,10 +289,13 @@ WorldPlan planWorld(Archives &archives, const WorldCatalog &catalog, WorldSelect
         result.entries.push_back({0, name, "Original template; not a complete level", {}, regionId});
         return regionId;
     };
-    // Existing scenes remain accessible, explicitly labelled as template previews.
-    for (const auto &[id, type] : {std::pair{50, 2}, {108, 2}, {55, 3}})
-        if (selection.preset != id && catalog.missing(archives, catalog.preset(id, type)).empty())
-            preview(id, type, 0);
+    for (auto &region : result.regions) {
+        if (!region.recipe.baseFloor) continue;
+        const auto &level = catalog.level(int(region.definition.id));
+        Seed root(selection.seed);
+        Seed themes(root.next() + uint32_t(level.id));
+        applyOutdoorThemes(archives, catalog, level, region.recipe, themes);
+    }
     if (selection.preset)
         result.start = preview(selection.preset, selection.levelType, selection.variant);
     else {

@@ -17,6 +17,8 @@
 
 ## 实际使用的开源项目
 
+五幕地图复核沿下述固定本地快照：D2MOO 的 DrlgMaze、DrlgOutPlace／OutDesr／OutJung／OutSiege 核对特殊房、七墓、丛林与条带；DrlgTileSub 核对主题概率、Trials／Max、CheckAll、变体及掩码合并；DrlgPreset 核对 KillEdge、Pops／PopPad 和完整预设；DrlgDrlgAnim 与 D2CMP 标志核对 lava 帧号、Animate 和默认动画速度。OpenD2 DT1 结构和 OpenDiablo2 d2dt1／tile_cache 交叉核对材料位与 RarityFrameIndex。Trees.ds1末组EOF核对OpenD2 Engine/DS1.cpp的点名注释／边界检查，以及Diablerie Engine/IO/D2Formats/DS1.cs的ReadGroups／EndOfStreamException处理；D2MOO DrlgPreset的ReadInt32无EOF校验，D2Hell Archive分配文件长度加800字节，不能据此推造缺少的组字段。数据仍读取当前MPQ，仅使用完整13组，原尾部事实见[MPQ](MPQ.md#treesds1-原尾部兼容)。适配与未消费字段集中列于[地图](../gameplay/world/MAPS.md#数据解码与重建配方)，不提交reference或导出资源。
+
 传送点初始化／恢复核对本地 D2MOO `D2Common/src/D2Waypoints.cpp::WAYPOINTS_AllocWaypointData`／`WAYPOINTS_CopyAndValidateWaypointData` 的第零点必选位，以及 `D2Game/src/OBJECTS/ObjMode.cpp::OBJECTS_OperateFunction23_Waypoint` 的激活与打开阶段。菜单字体变换结构核对 OpenDiablo2 `d2common/d2fileformats/d2pl2/pl2.go` 的 `TextColorShifts`，边框拼接沿 `d2core/d2ui/frame.go`；原图、TBL 标题、字体、调色板和变换表均只从当前 MPQ 读取。参考代码遵循下述固定版本／许可，不提交参考仓库或导出图像；实现与验收限制见 [地图基线](../modules/MAP.md#客户端显示与操作)。
 
 | 项目 | 用途 | 固定版本/来源 | 许可 |

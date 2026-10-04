@@ -34,7 +34,7 @@ class Wilderness {
             variant = seed_.below(p.files);
         auto recipe = catalog_.preset(id, 2, variant);
         result_.pieces.push_back({x * 8, y * 8, p.width, p.height, id, variant, recipe.ds1,
-                                  recipe.tileLibraries, recipe.fillBlanks, p.populate});
+                                  recipe.tileLibraries, recipe.fillBlanks, p.populate, -1, recipe.killEdge, recipe.animationSpeed, 0, recipe.pops, recipe.popPad});
         for (int j = y; j < y + h; ++j)
             for (int i = x; i < x + w; ++i)
                 occupied_[j * width_ + i] = id;
@@ -135,7 +135,7 @@ class Wilderness {
                     });
                 }
         for (const auto &record : catalog_.substitutions()) {
-            if (record.type != 4 || record.gridSize != 1)
+            if (record.type != catalog_.level(position_.level).waypointSubstitution || record.gridSize != 1)
                 continue;
             const auto pattern = decodeDs1(archives.read(record.file));
             for (size_t index = 0; index < pattern.substitutionGroups.size(); ++index) {
@@ -386,7 +386,7 @@ class Wilderness {
         result_.baseFloor = 0x40002; // DRLGOUTPLACE_InitOutdoorRoomGrids: native Act I grass.
         result_.tileLibraries = catalog.terrainLibraries(2, 0x44103);
         result_.boundaries = position_.boundaries;
-        result_.ds1 = "outdoor-v6/" + std::to_string(position_.level) + "/" + std::to_string(seed);
+        result_.ds1 = "outdoor-v7/" + std::to_string(position_.level) + "/" + std::to_string(seed);
     }
     MapRecipe build(Archives &archives) {
         borders();
@@ -399,7 +399,7 @@ class Wilderness {
         waypoint(archives);
         placeAct1OutdoorShrines(archives, catalog_, catalog_.level(position_.level), occupied_, result_, seed_);
         if (position_.level != 17)
-            generateOutdoorPaths(result_, occupied_, seed_);
+            generateOutdoorPaths(archives, result_, occupied_, seed_);
         specialPresets();
         return std::move(result_);
     }
@@ -436,12 +436,50 @@ void alignPresetBoundary(Archives &archives, const WorldCatalog &catalog,
         throw std::runtime_error("Native preset has no reachable connection on its linked edge: " + recipe.ds1);
     boundary.start = first / 5;
     boundary.end = last / 5 + 1;
+    if (id == 1) {
+        // The original town DS1 supplies the road crossing. Only consider
+        // floors on the reachable gate, not decorative dirt elsewhere on the edge.
+        auto findPath = [&](bool includeAuthoredApproach) {
+        for (int tile = boundary.start; tile < boundary.end; ++tile) {
+            const int x = boundary.side == 1 ? 0 : boundary.side == 3 ? p.width : tile;
+            const int y = boundary.side == 2 ? 0 : boundary.side == 0 ? p.height : tile;
+            bool passage = false;
+            for (int sub = tile * 5; sub < (tile + 1) * 5; ++sub) {
+                const int column = boundary.side == 1 ? 0 : boundary.side == 3 ? p.width * 5 - 1 : sub;
+                const int row = boundary.side == 2 ? 0 : boundary.side == 0 ? p.height * 5 - 1 : sub;
+                passage |= map.grid.walkable(column, row) && reachable[size_t(row) * map.grid.width + column];
+            }
+            if (!passage) continue;
+            const bool road = std::any_of(map.terrain.data.floors.begin(), map.terrain.data.floors.end(),
+                [&](const auto &layer) {
+                    const auto &cell = layer[size_t(y) * map.terrain.data.width + x];
+                    // TownE's reachable opening is an authored bridge approach,
+                    // not a dirt tile. Preserve it and join the outdoor dirt at its edge.
+                    return isOutdoorPathFloor(cell) || (includeAuthoredApproach && cell.present() && cell.key() != 0);
+                });
+            if (!road) continue;
+            if (boundary.pathStart < 0) boundary.pathStart = tile;
+            if (tile > boundary.pathStart + 1) break;
+            boundary.pathEnd = tile + 1;
+        }
+        };
+        findPath(false);
+        if (boundary.pathStart < 0) findPath(true);
+        if (boundary.pathStart < 0)
+            throw std::runtime_error("Native town gate has no authored road approach: " + recipe.ds1 +
+                " side=" + std::to_string(boundary.side) + " span=" + std::to_string(boundary.start) +
+                ":" + std::to_string(boundary.end));
+    }
     auto &other = layout.at(boundary.destination);
     for (auto &back : other.boundaries)
         if (back.destination == id) {
             const int offset = boundary.side % 2 ? p.y - other.y : p.x - other.x;
             back.start = boundary.start + offset;
             back.end = boundary.end + offset;
+            if (boundary.pathStart >= 0) {
+                back.pathStart = boundary.pathStart + offset;
+                back.pathEnd = boundary.pathEnd + offset;
+            }
         }
 }
 } // namespace

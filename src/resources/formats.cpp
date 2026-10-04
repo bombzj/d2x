@@ -102,11 +102,12 @@ std::vector<Tile> decodeDt1(const Bytes &b) {
         r.seek(offset + size_t(i) * 96);
         r.skip(4);
         int roofHeight = r.i16();
-        r.skip(2);
+        const auto materialFlags = r.u16();
         int h = r.i32(), w = r.i32();
         r.skip(4);
         Tile t;
         t.roofHeight = roofHeight;
+        t.materialFlags = materialFlags;
         t.orientation = r.u32();
         t.main = r.u32();
         t.sub = r.u32();
@@ -196,7 +197,7 @@ std::vector<Tile> decodeDt1(const Bytes &b) {
     }
     return result;
 }
-MapData decodeDs1(const Bytes &b) {
+MapData decodeDs1(const Bytes &b, const std::string &source) {
     Reader r(b);
     MapData m;
     m.version = r.u32();
@@ -275,7 +276,18 @@ MapData decodeDs1(const Bytes &b) {
         int groups = r.u32();
         if (groups < 0 || groups > 65536)
             throw std::runtime_error("Invalid DS1 substitution group count");
+        const bool knownTreesTail = m.version == 12 && tags == 1 &&
+            normalize(source) == "data\\global\\tiles\\act1\\outdoors\\trees.ds1";
         for (int index = 0; index < groups; ++index) {
+            // OpenD2 explicitly documents this resource ending after the last
+            // group's tileX; Diablerie retains only fully read groups. Keep all
+            // original complete groups, never supply missing coordinates/sizes.
+            if (knownTreesTail && index + 1 == groups && b.size() - r.pos == sizeof(uint32_t)) {
+                if (r.u32() != 0)
+                    throw std::runtime_error("Unexpected incomplete Trees.ds1 group");
+                m.skippedSubstitutionGroups = 1;
+                break;
+            }
             SubstitutionGroup group;
             group.x = r.u32();
             group.y = r.u32();
@@ -310,35 +322,38 @@ MapData decodeDs1(const Bytes &b) {
             }
         }
     }
-    // DS1 orientation 10 markers come in paired corners. Their main index
-    // identifies the popup group and their sub index identifies the roof style.
-    // Match each wall layer separately, as in Diablerie's LevelBuilder.
+    // Native DRLGPRESET scans both exit orientations and groups main indices
+    // 8..29 across all wall layers. The first marker supplies the roof style.
+    std::array<std::pair<int, int>, 22> starts{}, ends{};
+    std::array<int, 22> styles{};
+    std::array<bool, 22> found{}, paired{};
     for (const auto &layer : m.walls) {
-        std::array<std::pair<int, int>, 7> starts{};
-        std::array<bool, 7> found{};
-        for (int y = 0; y < m.height; ++y)
-            for (int x = 0; x < m.width; ++x) {
+        for (int y = 0; y < m.height - 1; ++y)
+            for (int x = 0; x < m.width - 1; ++x) {
                 const auto &cell = layer[size_t(y) * m.width + x];
-                if (cell.orientation != 10)
+                if (cell.orientation != 10 && cell.orientation != 11)
                     continue;
                 const int main = int((cell.value >> 20) & 63);
-                const int group = main == 8 ? 0 : main == 9 ? 1 : main == 10 ? 2 :
-                                  main == 12 ? 3 : main == 13 ? 4 : main == 16 ? 5 :
-                                  main == 20 ? 6 : -1;
+                const int group = main >= 8 && main <= 29 ? main - 8 : -1;
                 if (group < 0)
                     continue;
                 if (!found[size_t(group)]) {
                     starts[size_t(group)] = {x, y};
+                    styles[size_t(group)] = int((cell.value >> 8) & 255);
                     found[size_t(group)] = true;
                 } else {
-                    auto [firstX, firstY] = starts[size_t(group)];
-                    if (x > firstX && y > firstY)
-                        m.roofPopups.push_back({firstX, firstY, x - firstX, y - firstY,
-                                                int((cell.value >> 8) & 255)});
-                    found[size_t(group)] = false;
+                    ends[size_t(group)] = {x, y};
+                    paired[size_t(group)] = true;
                 }
             }
     }
+    for (size_t group = 0; group < paired.size(); ++group)
+        if (paired[group]) {
+            const auto [x, y] = starts[group];
+            const auto [endX, endY] = ends[group];
+            m.roofPopups.push_back({std::min(x, endX), std::min(y, endY),
+                std::abs(x - endX) + 1, std::abs(y - endY) + 1, styles[group]});
+        }
     return m;
 }
 Table decodeTable(const Bytes &data) {

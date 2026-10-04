@@ -78,6 +78,8 @@ struct Cof {
 Cof decodeCof(const Bytes &data);
 struct Tile {
     int orientation = 0, main = 0, sub = 0, rarity = 0, roofHeight = 0;
+    uint16_t materialFlags = 0;
+    bool animated() const { return (materialFlags & 0x100) != 0; }
     std::array<uint8_t, 25> flags{};
     IndexedFrame image;
     uint32_t key() const { return (main << 16) | (sub << 8) | orientation; }
@@ -113,13 +115,14 @@ struct SubstitutionGroup {
 };
 struct RoofPopup {
     int x = 0, y = 0, width = 0, height = 0, roofMain = 0;
+    int pad = 0;
     bool contains(Vec player) const {
         return player.x >= x * 5 && player.y >= y * 5 &&
-               player.x < (x + width) * 5 && player.y < (y + height) * 5;
+               player.x < (x + width) * 5 + pad && player.y < (y + height) * 5 + pad;
     }
     bool covers(int tileX, int tileY, int main) const {
         return main == roofMain && tileX >= x - 1 && tileY >= y - 1 &&
-               tileX < x + width + 2 && tileY < y + height + 2;
+               tileX < x + width + 1 && tileY < y + height + 1;
     }
 };
 struct MapData {
@@ -130,10 +133,11 @@ struct MapData {
     std::vector<MapCell> shadows;
     std::vector<uint32_t> substitutions;
     std::vector<SubstitutionGroup> substitutionGroups;
+    int skippedSubstitutionGroups = 0;
     std::vector<RoofPopup> roofPopups;
     std::vector<MapObject> objects;
 };
-MapData decodeDs1(const Bytes &data);
+MapData decodeDs1(const Bytes &data, const std::string &source = {});
 using Table = std::vector<std::map<std::string, std::string>>;
 Table decodeTable(const Bytes &data);
 } // namespace d2x

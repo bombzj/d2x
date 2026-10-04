@@ -11,4 +11,6 @@ struct OutdoorCell {
 };
 void applyOutdoorBorder(const SubstitutionRecord &record, const MapData &pattern, int width, int height,
                         std::span<OutdoorCell> cells, Seed &seed);
+void applyOutdoorThemes(Archives &archives, const WorldCatalog &catalog, const LevelRecord &level,
+                        MapRecipe &recipe, Seed &seed);
 } // namespace d2x

@@ -27,7 +27,9 @@ template <class T> void insert(std::map<int, T> &records, int id, T record) {
         throw std::runtime_error("Duplicate MPQ world record: " + std::to_string(id));
 }
 } // namespace
-WorldCatalog::WorldCatalog(Archives &archives) {
+WorldCatalog::WorldCatalog(Archives &archives, int difficulty) {
+    if (difficulty < 0 || difficulty > 2)
+        throw std::runtime_error("Invalid world difficulty");
     for (const auto *name : {"levels", "lvlprest", "lvltypes", "lvlmaze", "lvlsub", "lvlwarp"}) {
         DataTable table(archives.read(std::string("data/global/excel/") + name + ".txt"));
         const std::map<std::string_view, std::vector<std::string_view>> required = {
@@ -73,8 +75,9 @@ WorldCatalog::WorldCatalog(Archives &archives) {
                 record.lightBlue = number("Blue");
                 record.generation = GenerationKind(number("DrlgType"));
                 record.name = table.value(row, "LevelName");
-                record.width = number("SizeX");
-                record.height = number("SizeY");
+                const std::string sizeSuffix = difficulty == 1 ? "(N)" : difficulty == 2 ? "(H)" : "";
+                record.width = number("SizeX" + sizeSuffix, number("SizeX"));
+                record.height = number("SizeY" + sizeSuffix, number("SizeY"));
                 record.offsetX = number("OffsetX");
                 record.offsetY = number("OffsetY");
                 record.depend = number("Depend");
@@ -82,6 +85,7 @@ WorldCatalog::WorldCatalog(Archives &archives) {
                 record.theme = number("SubTheme", -1);
                 record.waypoint = number("Waypoint", -1);
                 record.shrineSubstitution = number("SubShrine", -1);
+                record.waypointSubstitution = number("SubWaypoint", -1);
                 record.objectLevel = table.number(row, "MonLvl1");
                 auto &population = record.population;
                 population.supported = table.has("mon1") && table.has("MonDen(N)");
@@ -136,6 +140,10 @@ WorldCatalog::WorldCatalog(Archives &archives) {
                 record.killEdge = number("KillEdge") != 0;
                 record.populate = number("Populate") != 0;
                 record.automap = number("AutoMap") != 0;
+                record.animate = number("Animate") != 0;
+                record.animationSpeed = number("AnimSpeed");
+                record.pops = number("Pops");
+                record.popPad = number("PopPad");
                 record.dt1Mask = mask(table, row);
                 for (int i = 0; i < 6; ++i)
                     record.variants[i] = member(table.value(row, "File" + std::to_string(i + 1)));
@@ -167,6 +175,7 @@ WorldCatalog::WorldCatalog(Archives &archives) {
                 record.file = member(table.value(row, "File"));
                 record.gridSize = number("GridSize");
                 record.borderType = number("BordType");
+                record.checkAll = number("CheckAll") != 0;
                 record.dt1Mask = mask(table, row);
                 for (int i = 0; i < 5; ++i) {
                     auto suffix = std::to_string(i);
@@ -236,6 +245,10 @@ MapRecipe WorldCatalog::preset(int id, int levelType, int variant) const {
     recipe.levelType = levelType;
     recipe.ds1 = record.variants[variant];
     recipe.fillBlanks = record.fillBlanks;
+    recipe.killEdge = record.killEdge;
+    recipe.animationSpeed = record.animate ? record.animationSpeed : -1;
+    recipe.pops = record.pops;
+    recipe.popPad = record.popPad;
     recipe.tileLibraries = terrainLibraries(levelType, record.dt1Mask);
     return recipe;
 }

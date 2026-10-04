@@ -303,7 +303,7 @@ MapRecipe RoomMaze::build(int level, uint32_t seed, int difficulty, int entrance
         auto source = catalog_.preset(i->preset, result.levelType, variant);
         result.pieces.push_back({(i->x - minX) * maze_.width, (i->y - minY) * maze_.height, maze_.width,
                                  maze_.height, i->preset, variant, source.ds1, source.tileLibraries,
-                                 source.fillBlanks, preset.populate});
+                                 source.fillBlanks, preset.populate, -1, source.killEdge, source.animationSpeed, 0, source.pops, source.popPad});
     }
     return result;
 }

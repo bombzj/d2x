@@ -132,12 +132,13 @@ void Map::load(Archives &a, TileLibraryCache &cache, const MapRecipe &recipe, ui
     rooms.clear();
     warpArrivals.clear();
     for (const auto &piece : recipe.pieces)
-        rooms.push_back({piece.x * 5, piece.y * 5, piece.width * 5, piece.height * 5, piece.populate});
+        if (piece.substitutionGroup < 0)
+            rooms.push_back({piece.x * 5, piece.y * 5, piece.width * 5, piece.height * 5, piece.populate});
     if (recipe.baseFloor)
         for (int y = 0; y < recipe.height; y += 8)
             for (int x = 0; x < recipe.width; x += 8) {
                 bool authored = std::any_of(recipe.pieces.begin(), recipe.pieces.end(), [&](const auto &p) {
-                    return x >= p.x && y >= p.y && x < p.x + p.width && y < p.y + p.height;
+                    return p.substitutionGroup < 0 && x >= p.x && y >= p.y && x < p.x + p.width && y < p.y + p.height;
                 });
                 bool blank =
                     std::any_of(recipe.blankAreas.begin(), recipe.blankAreas.end(), [&](const auto &area) {
@@ -185,6 +186,7 @@ void Map::load(Archives &a, TileLibraryCache &cache, const MapRecipe &recipe, ui
     if (terrain.tiles.empty())
         throw std::runtime_error("No DT1 tiles for " + ds1);
     terrain.tileChoices.clear();
+    terrain.animations.clear();
     auto tileRandom = initialRandom(seed);
     auto chooseTile = [&](const MapCell &cell, int x, int y) {
         auto key = std::tuple{x, y, cell.libraryScope, cell.key()};
@@ -199,6 +201,25 @@ void Map::load(Archives &a, TileLibraryCache &cache, const MapRecipe &recipe, ui
             }
         }
         if (found == scope.end() || found->second.empty()) return;
+        if (terrain.tiles[found->second.front()]->animated()) {
+            // Lava's Rarity field is a frame index, never a random weight (DRLGANIM).
+            std::vector<int> frames = found->second;
+            std::stable_sort(frames.begin(), frames.end(), [&](int left, int right) {
+                return terrain.tiles[left]->rarity < terrain.tiles[right]->rarity;
+            });
+            frames.erase(std::unique(frames.begin(), frames.end(), [&](int left, int right) {
+                return terrain.tiles[left]->rarity == terrain.tiles[right]->rarity;
+            }), frames.end());
+            for (size_t frame = 0; frame < frames.size(); ++frame)
+                if (!terrain.tiles[frames[frame]]->animated() || terrain.tiles[frames[frame]]->rarity != int(frame))
+                    throw std::runtime_error("Incomplete animated DT1 frame sequence: " + ds1);
+            terrain.tileChoices.emplace(key, frames.front());
+            const int speed = cell.libraryScope ? recipe.pieces.at(cell.libraryScope - 1).animationSpeed : recipe.animationSpeed;
+            if (speed >= 0)
+                terrain.animations.try_emplace(std::pair{cell.libraryScope, cell.key()},
+                    MapTerrain::TileAnimation{std::move(frames), speed ? speed : 80});
+            return;
+        }
         uint64_t total = 0;
         for (int index : found->second) total += std::max(0, terrain.tiles[index]->rarity);
         if (total > std::numeric_limits<uint32_t>::max())

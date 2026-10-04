@@ -30,7 +30,7 @@ void appendJunglePiece(const WorldCatalog &catalog, MapRecipe &recipe, int prese
     const auto &preset = catalog.presets().at(presetId);
     const auto source = catalog.preset(presetId, recipe.levelType, variant);
     recipe.pieces.push_back({column, row, preset.width, preset.height, presetId, variant,
-        source.ds1, source.tileLibraries, source.fillBlanks, preset.populate});
+        source.ds1, source.tileLibraries, source.fillBlanks, preset.populate, -1, source.killEdge, source.animationSpeed, 0, source.pops, source.popPad});
 }
 }
 std::map<int, MapRecipe> generateAct3Jungles(const WorldCatalog &catalog, uint32_t seed) {
@@ -202,7 +202,7 @@ std::map<int, MapRecipe> generateAct3Jungles(const WorldCatalog &catalog, uint32
         recipe.act = 2; recipe.levelType = 21; recipe.preset = 530;
         recipe.width = width; recipe.height = height;
         recipe.worldX = region.x; recipe.worldY = region.y;
-        recipe.ds1 = "jungle-v1/" + std::to_string(76 + index) + "/" + std::to_string(seed);
+        recipe.ds1 = "jungle-v2/" + std::to_string(76 + index) + "/" + std::to_string(seed);
         int clearings = 0;
         for (int row = 0; row < blockRows; ++row)
             for (int column = 0; column < 2; ++column)
@@ -347,6 +347,25 @@ std::map<int, MapRecipe> generateAct3Jungles(const WorldCatalog &catalog, uint32
             const int end = std::min(vertical ? left.worldY + left.height : left.worldX + left.width,
                                      vertical ? right.worldY + right.height : right.worldX + right.width);
             if (start >= end) continue;
+            if (first->first >= 76 && first->first <= 78 && second->first >= 76 && second->first <= 78) {
+                // Jungle rectangles may touch without a native branch joining them.
+                // DRLG_JungleComputeConnexity / UpdateAttachPointsDirections supplies
+                // the low path bits and high clearing bits; geometry alone is not a link.
+                constexpr int edgeBits[]{4, 1, 8, 2};
+                auto edgeCell = [&](const MapRecipe &source, int edge, int lateral) {
+                    const int x = edge == 1 ? source.worldX : edge == 3 ? source.worldX + source.width - 1 : lateral;
+                    const int y = edge == 2 ? source.worldY : edge == 0 ? source.worldY + source.height - 1 : lateral;
+                    return ((y - minY) / 32 + 1) * columns + (x - minX) / 32 + 1;
+                };
+                bool joined = false;
+                for (int lateral = start; lateral < end; lateral += 32) {
+                    const int a = flags.at(size_t(edgeCell(left, side, lateral)));
+                    const int b = flags.at(size_t(edgeCell(right, (side + 2) % 4, lateral)));
+                    const int out = edgeBits[side], back = edgeBits[(side + 2) % 4];
+                    joined |= (a & (out | (out << 4))) && (b & (back | (back << 4)));
+                }
+                if (!joined) continue;
+            }
             const int leftOrigin = vertical ? left.worldY : left.worldX;
             const int rightOrigin = vertical ? right.worldY : right.worldX;
             left.boundaries.push_back({second->first, side, start - leftOrigin, end - leftOrigin,

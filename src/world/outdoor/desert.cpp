@@ -27,7 +27,7 @@ class Desert {
             variant = random_.below(record.files);
         auto source = catalog_.preset(preset, 16, variant);
         recipe_.pieces.push_back({column * 8, row * 8, record.width, record.height, preset, variant,
-                                 source.ds1, source.tileLibraries, source.fillBlanks, record.populate});
+                                 source.ds1, source.tileLibraries, source.fillBlanks, record.populate, -1, source.killEdge, source.animationSpeed, 0, source.pops, source.popPad});
         for (int vertical = row; vertical < row + rows; ++vertical)
             for (int horizontal = column; horizontal < column + columns; ++horizontal)
                 occupied_[vertical * width_ + horizontal] = preset;
@@ -99,7 +99,7 @@ class Desert {
         if (waypoint < 0 || waypoint == 255 || position_.level == 46)
             return;
         for (const auto &record : catalog_.substitutions()) {
-            if (record.type != 7)
+            if (record.type != catalog_.level(position_.level).waypointSubstitution)
                 continue;
             auto pattern = decodeDs1(archives_.read(record.file));
             for (size_t groupIndex = 0; groupIndex < pattern.substitutionGroups.size(); ++groupIndex) {
@@ -147,7 +147,7 @@ class Desert {
         int level = position_.level;
         if (level == 134) {
             if (!place(389, 4, 4))
-                throw std::runtime_error("Original Matron's Den entrance does not fit");
+                throw std::runtime_error("Original Forgotten Sands cave preset does not fit");
             borders();
             for (int preset : {401,402,406,407,403,392,393}) randomPreset(preset);
             placeAct1OutdoorShrines(archives_, catalog_, catalog_.level(level), occupied_, recipe_, random_);

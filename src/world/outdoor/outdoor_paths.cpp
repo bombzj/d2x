@@ -1,8 +1,11 @@
 #include "outdoor_paths.hpp"
 #include "world/navigation.hpp"
+#include "world/map_assembly.hpp"
 #include <algorithm>
 #include <array>
 
+// Native dirt-path mask table / floor flags adapted from D2MOO DrlgOutdoors.cpp, MIT.
+// Copyright (c) 2020-2025 The Phrozen Keep community. See docs/licenses/D2MOO.txt.
 namespace d2x {
 namespace {
 constexpr std::array<uint8_t, 256> pathTiles{
@@ -26,7 +29,12 @@ struct Endpoint {
     Vec position, approach;
 };
 } // namespace
-void generateOutdoorPaths(MapRecipe &recipe, std::span<int> occupied, Seed &seed) {
+bool isOutdoorPathFloor(const MapCell &cell) {
+    const auto sub = (cell.value >> 8) & 255;
+    return cell.present() && cell.orientation == 0 && ((cell.value >> 20) & 63) == 0 &&
+           sub != 0 && std::find(pathTiles.begin(), pathTiles.end(), sub) != pathTiles.end();
+}
+void generateOutdoorPaths(Archives &archives, MapRecipe &recipe, std::span<int> occupied, Seed &seed) {
     int width = recipe.width / 8, height = recipe.height / 8;
     if (occupied.size() != size_t(width) * height)
         throw std::runtime_error("Invalid outdoor path grid");
@@ -34,13 +42,22 @@ void generateOutdoorPaths(MapRecipe &recipe, std::span<int> occupied, Seed &seed
     for (size_t index = 0; index < occupied.size(); ++index)
         grid.blocked[index] = occupied[index] != 0;
     std::vector<Endpoint> endpoints;
+    auto inOpening = [&](int x, int y) {
+        return std::any_of(recipe.boundaries.begin(), recipe.boundaries.end(), [&](const auto &boundary) {
+            const int lateral = boundary.side % 2 ? y : x;
+            const int normal = boundary.side % 2 ? x : y;
+            const int extent = boundary.side % 2 ? recipe.width : recipe.height;
+            return lateral >= boundary.start && lateral < boundary.end &&
+                (boundary.side == 1 || boundary.side == 2 ? normal < 8 : normal >= extent - 8);
+        });
+    };
     for (const auto &boundary : recipe.boundaries) {
-        float lateral = boundary.start + 3.f;
-        Vec position{boundary.side == 1   ? 3.f
-                     : boundary.side == 3 ? recipe.width - 5.f
+        float lateral = boundary.pathStart >= 0 ? float(boundary.pathStart) : boundary.start + 3.f;
+        Vec position{boundary.side == 1   ? 0.f
+                     : boundary.side == 3 ? recipe.width - 1.f
                                           : lateral,
-                     boundary.side == 2   ? 3.f
-                     : boundary.side == 0 ? recipe.height - 5.f
+                     boundary.side == 2   ? 0.f
+                     : boundary.side == 0 ? recipe.height - 1.f
                                           : lateral};
         constexpr int inwardX[]{0, 1, 0, -1}, inwardY[]{-1, 0, 1, 0};
         endpoints.push_back(
@@ -62,14 +79,36 @@ void generateOutdoorPaths(MapRecipe &recipe, std::span<int> occupied, Seed &seed
     for (const auto &endpoint : endpoints)
         center = center + endpoint.position;
     center = grid.nearest(center * (1.f / (8 * endpoints.size()))) * 8 - Vec{1, 1};
-    Bytes path(size_t(recipe.width) * recipe.height);
+    // One-cell halo keeps the native 3x3 road mask continuous across level borders.
+    const int stride = recipe.width + 2;
+    Bytes path(size_t(stride) * (recipe.height + 2));
+    auto pathIndex = [&](int x, int y) { return size_t(y + 1) * stride + x + 1; };
+    const auto authored = assembleMap(archives, recipe);
+    for (int y = 0; y < recipe.height; ++y)
+        for (int x = 0; x < recipe.width; ++x)
+            for (const auto &layer : authored.floors)
+                if (isOutdoorPathFloor(layer[size_t(y) * authored.width + x]))
+                    path[pathIndex(x, y)] = 1;
+    for (const auto &boundary : recipe.boundaries) {
+        const int start = boundary.pathStart >= 0 ? boundary.pathStart : boundary.start + 3;
+        const int end = boundary.pathEnd >= 0 ? boundary.pathEnd : std::min(start + 2, boundary.end);
+        for (int lateral = start; lateral < end; ++lateral) {
+            const int x = boundary.side == 1 ? -1 : boundary.side == 3 ? recipe.width : lateral;
+            const int y = boundary.side == 2 ? -1 : boundary.side == 0 ? recipe.height : lateral;
+            if (x >= -1 && y >= -1 && x <= recipe.width && y <= recipe.height)
+                path[pathIndex(x, y)] = 1;
+        }
+    }
     auto mark = [&](int x, int y) {
         if (x < 0 || y < 0 || x >= recipe.width || y >= recipe.height)
             return;
         auto index = size_t(y / 8) * width + x / 8;
-        if (occupied[index] == 0 || occupied[index] == -2) {
-            occupied[index] = -2;
-            path[size_t(y) * recipe.width + x] = 1;
+        if (occupied[index] == 0 || occupied[index] == -2 ||
+            (occupied[index] == -1 && inOpening(x, y))) {
+            // Keep the reserved boundary macrocell: permitting this road strip
+            // must not allow another path to paint beside the actual opening.
+            if (occupied[index] != -1) occupied[index] = -2;
+            path[pathIndex(x, y)] = 1;
         }
     };
     auto rasterize = [&](Vec from, Vec to) {
@@ -124,8 +163,7 @@ void generateOutdoorPaths(MapRecipe &recipe, std::span<int> occupied, Seed &seed
         }
     }
     auto present = [&](int x, int y) {
-        return x >= 0 && y >= 0 && x < recipe.width && y < recipe.height &&
-               path[size_t(y) * recipe.width + x];
+        return x >= -1 && y >= -1 && x <= recipe.width && y <= recipe.height && path[pathIndex(x, y)];
     };
     for (int y = 0; y < recipe.height; ++y)
         for (int x = 0; x < recipe.width; ++x) {

@@ -4,5 +4,7 @@
 #include <span>
 
 namespace d2x {
-void generateOutdoorPaths(MapRecipe &recipe, std::span<int> occupied, Seed &seed);
+struct MapCell;
+bool isOutdoorPathFloor(const MapCell &cell);
+void generateOutdoorPaths(Archives &archives, MapRecipe &recipe, std::span<int> occupied, Seed &seed);
 } // namespace d2x

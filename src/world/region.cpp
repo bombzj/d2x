@@ -167,7 +167,9 @@ void classify(WorldObject &object, const Table &objectRows) {
             if (object.objectClass == 341) object.interaction = Interaction::None;
             if (object.interaction != Interaction::None) {
                 object.reach = float(std::stoi(record->at("OperateRange")));
-                if (object.reach <= 0)
+                // Native object contact uses SizeX/Y, not a centre-radius check.
+                // The summit altar (Objects 546) legitimately has OperateRange=0.
+                if (object.reach < 0)
                     throw std::runtime_error("Invalid MPQ object interaction range: " + token);
                 if (object.name.empty()) {
                     const auto &sourceName = record->at("Name");

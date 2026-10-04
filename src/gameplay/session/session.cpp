@@ -33,7 +33,7 @@ bool baseMonsterRank(MonsterRank rank) {
 GameSessionImpl::GameSessionImpl(Archives &archives, const WorldSelection &selection, int startRegion,
                          uint32_t sessionSeed, PopulationSettings population, std::string characterClass,
                          std::string characterName)
-        : random_(initialRandom(sessionSeed)), content_(loadClassicData(archives)), worldContent_(archives),
+        : random_(initialRandom(sessionSeed)), content_(loadClassicData(archives)), worldContent_(archives, selection.difficulty),
             archives_(archives), world_(archives),
             monsterContent_(archives, content_.tables.at("monstats")),
             simulation_(std::make_unique<Simulation>(ids_)), loot_(childRandom(random_)) {
@@ -637,6 +637,7 @@ GameSessionImpl::GameSessionImpl(Archives &archives, const WorldSelection &selec
     fingerprint.add("quest-rules-v18-later-acts");
     fingerprint.add("player-corpse-rules-v1");
     fingerprint.add("waypoint-rules-v1");
+    fingerprint.add("map-rules-v9-native-trees-complete-groups");
     auto members = archives.used;
     for (const auto &member : members) {
         fingerprint.add(member);

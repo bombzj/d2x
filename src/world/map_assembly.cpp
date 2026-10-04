@@ -2,11 +2,33 @@
 #include <algorithm>
 
 namespace d2x {
+namespace {
+void configurePops(MapData &data, int count, int pad) {
+    if (count < 0) return;
+    if (!count) data.roofPopups.clear();
+    else if (data.roofPopups.size() > size_t(count))
+        throw std::runtime_error("DS1 popup count exceeds LvlPrest.Pops");
+    for (auto &popup : data.roofPopups) popup.pad = pad;
+}
+void killEdges(MapData &data) {
+    auto clear = [&](auto &layer) {
+        if (layer.empty()) return;
+        for (int y = 0; y < data.height; ++y) layer[size_t(y + 1) * data.width - 1] = {};
+        std::fill(layer.end() - data.width, layer.end(), typename std::decay_t<decltype(layer)>::value_type{});
+    };
+    for (auto &layer : data.floors) clear(layer);
+    for (auto &layer : data.walls) clear(layer);
+    clear(data.shadows);
+    clear(data.substitutions);
+}
+}
 MapData assembleMap(Archives &archives, const MapRecipe &recipe) {
     MapData result;
     if (recipe.pieces.empty()) {
-        auto source = decodeDs1(archives.read(recipe.ds1));
+        auto source = decodeDs1(archives.read(recipe.ds1), recipe.ds1);
         if (recipe.act >= 0) source.act = recipe.act;
+        configurePops(source, recipe.pops, recipe.popPad);
+        if (recipe.killEdge) killEdges(source);
         return source;
     }
     result.width = recipe.width ? recipe.width + 1 : 0;
@@ -40,20 +62,23 @@ MapData assembleMap(Archives &archives, const MapRecipe &recipe) {
     }
     for (size_t pieceIndex = 0; pieceIndex < recipe.pieces.size(); ++pieceIndex) {
         const auto &piece = recipe.pieces[pieceIndex];
-        auto source = decodeDs1(archives.read(piece.ds1));
+        auto source = decodeDs1(archives.read(piece.ds1), piece.ds1);
+        configurePops(source, piece.pops, piece.popPad);
         if (recipe.act >= 0)
             source.act = recipe.act;
         if (piece.substitutionGroup >= 0) {
             const auto group = source.substitutionGroups.at(size_t(piece.substitutionGroup));
-            if (group.width != piece.width || group.height != piece.height || group.variants != 0)
-                throw std::runtime_error("Invalid fixed substitution piece: " + piece.ds1);
+            if (group.width != piece.width || group.height != piece.height ||
+                piece.substitutionVariant < 0 || piece.substitutionVariant > group.variants)
+                throw std::runtime_error("Invalid substitution piece: " + piece.ds1);
+            const int variantOffset = piece.substitutionVariant * (group.width + 1);
             auto crop = [&](auto &layer) {
                 using Cell = typename std::decay_t<decltype(layer)>::value_type;
                 std::vector<Cell> output(size_t(piece.width + 1) * (piece.height + 1));
                 for (int row = 0; row < group.height; ++row)
                     for (int column = 0; column < group.width; ++column)
                         output[size_t(row) * (piece.width + 1) + column] =
-                            layer.at(size_t(group.y + row) * source.width + group.x + column);
+                            layer.at(size_t(group.y + row) * source.width + group.x + variantOffset + column);
                 layer = std::move(output);
             };
             for (auto &layer : source.floors) crop(layer);
@@ -88,6 +113,9 @@ MapData assembleMap(Archives &archives, const MapRecipe &recipe) {
             }
             source.width = piece.width + 1;
             source.height = piece.height + 1;
+            for (auto &layer : source.floors)
+                for (auto &cell : layer)
+                    if (cell.occupied()) cell.value |= 0x80; // Native substituted floors are not biome base tiles.
         }
         if (source.width != piece.width + 1 || source.height != piece.height + 1)
             throw std::runtime_error("DS1 room dimensions disagree with LvlMaze: " + piece.ds1);
@@ -102,6 +130,7 @@ MapData assembleMap(Archives &archives, const MapRecipe &recipe) {
             for (auto &cell : source.floors.front())
                 if (!cell.occupied())
                     cell.value = (30u << 20) | 0x80000002u;
+        if (piece.killEdge) killEdges(source);
         auto merge = [&](const auto &from, auto &to) {
             for (int y = 0; y < source.height; ++y)
                 for (int x = 0; x < source.width; ++x) {

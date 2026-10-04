@@ -39,7 +39,7 @@ std::map<int, MapRecipe> generateAct4Outdoors(const WorldCatalog &catalog, uint3
             if (variant < 0) variant = random.below(preset.files);
             const auto source = catalog.preset(presetId, 27, variant);
             recipe.pieces.push_back({column * 8, row * 8, preset.width, preset.height, presetId, variant,
-                source.ds1, source.tileLibraries, source.fillBlanks, preset.populate});
+                source.ds1, source.tileLibraries, source.fillBlanks, preset.populate, -1, source.killEdge, source.animationSpeed, 0, source.pops, source.popPad});
             for (int vertical = row; vertical < row + height; ++vertical)
                 for (int horizontal = column; horizontal < column + width; ++horizontal)
                     occupied[vertical * columns + horizontal] = presetId;
