@@ -250,3 +250,5 @@ kill 和 drop 都不进行攻击命中／伤害计算，因此用于验证死亡
 - 最新源码／运行包差异统一见 [项目基线](../../BASELINE.md)；旧运行记录不认证之后未经构建的源码。
 
 `item-spawn` 当前可生成原 Misc（金币除外），品质接受 normal／magic／rare／set／unique／inferior／superior；劣质／优质仍经过正式品质生成。Crafted 仅通过原方块合成创建，没有调试直接生成旁路。`cube-transmute` 使用完整原配方、资格和原子库存入口；当前全部 146 条启用配方冒烟范围见 [方块](../gameplay/items/CUBE_AND_GOLD.md)。
+
+2026-10-05：monsters只读列表同时包含区域敌人和companions，不改变伤害／击杀命令的敌人资格。新增summonSkill／summonRank、summonVariant、summonExpiresAt、summonItem和summonStats，展示生成快照、元素组件、制造物品与绝对到期帧；最终状态加成另看effects／curseModifiers。数据来自正式运行态，无新增测试程序或修改宠物状态入口。

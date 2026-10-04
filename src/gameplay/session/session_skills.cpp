@@ -167,7 +167,8 @@ void GameSessionImpl::useSkill(const UseSkill &intent) {
         if (entry->spell->summon) {
             const auto &definition = *entry->spell->summon;
             resolved.summon = resolveSummon(definition, rank, effectiveSkillRank(definition.masterySkill),
-                effectiveSkillRank(definition.resistSkill), player.character.level, state().population.difficulty);
+                effectiveSkillRank(definition.resistSkill), player.character.level, state().population.difficulty,
+                player.character.skillRanks);
         }
         if (resolved.weapon) {
             if (resolved.weapon->chargeVelocity > 0) {

@@ -16,7 +16,7 @@ std::vector<RemovedCombatEffect> CombatEffectSet::erase(Predicate predicate, Eff
     return removed;
 }
 EffectApplication CombatEffectSet::apply(CombatEffectSpec spec, EffectFrame now) {
-    if (spec.state.id < 0 || spec.state.group < 0 || spec.source.definition < 0 ||
+    if (spec.state.id < -1 || (spec.state.id == -1 && (spec.duration || spec.state.group != 0 || spec.stacking != EffectStacking::ReplaceSource)) || spec.state.group < 0 || spec.source.definition < 0 ||
         spec.source.level < 0 || (spec.duration && *spec.duration == 0))
         throw std::invalid_argument("Invalid combat state, source or duration");
     if (nextHandle_ == std::numeric_limits<uint64_t>::max() ||

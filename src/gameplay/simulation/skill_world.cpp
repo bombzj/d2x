@@ -10,6 +10,7 @@
 #include "gameplay/skills/weapon_caster.hpp"
 #include "gameplay/simulation/simulation.hpp"
 #include "gameplay/skills/runtime.hpp"
+#include "gameplay/skills/necro_summon_spec.hpp"
 #include "gameplay/skills/bone_spec.hpp"
 #include "gameplay/monsters/monster_wander.hpp"
 #include "core/random.hpp"
@@ -113,8 +114,11 @@ class SimulationSkillWorld final : public ISkillWorld, public ISkillWeaponWorld 
         return {life.value_or(0), simulation_.combatUnit(target).stats.level, &corpse->combatRandom};
     }
     EntityId corpseNear(Vec target, bool explosion) const override { return simulation_.corpseNear(target, explosion); }
+    bool summonGround(EntityId actor, const SkillCastSpec &skill, Vec target) override {
+        return simulation_.summonGround_ ? simulation_.summonGround_(actor, skill, target) : simulation_.summonPet(actor, skill, target);
+    }
     bool summonCorpse(EntityId actor, const SkillCastSpec &skill, EntityId corpse) override {
-        return simulation_.summonFromCorpse(actor, skill, corpse);
+        return simulation_.summonCorpse_ ? simulation_.summonCorpse_(actor, skill, corpse) : simulation_.summonFromCorpse(actor, skill, corpse);
     }
     EntityId createBoneBarrier(EntityId actor, const BoneSkillSpec &program, Vec position, EntityId root, int skill, int rank, bool search, Vec facing) override {
         if (simulation_.safeZone_ || !program.barrier || (root && !simulation_.combatUnit(root).alive())) return {};
@@ -254,10 +258,14 @@ class SimulationSkillWorld final : public ISkillWorld, public ISkillWeaponWorld 
                         aura.skill == 118 || aura.skill == 122 || aura.skill == 123)
                         result.push_back({unit.id, &aura, &unit.nextAuraFrame});
                 }
+        if (!playerOnly) for (auto &pet : simulation_.state_.companions)
+            if (pet.living() && pet.necroPet && pet.necroPet->spec->aura)
+                result.push_back({pet.id, &*pet.necroPet->spec->aura, &pet.necroPet->nextAura});
         return result;
     }
     const AuraDefinition *ownAura(EntityId actor) const override {
         auto unit = simulation_.combatUnit(actor);
+        if (unit.monster && unit.records.monster->necroPet && unit.records.monster->necroPet->spec->aura) return &*unit.records.monster->necroPet->spec->aura;
         if (unit.player && unit.records.player->skills.aura) return &unit.records.player->skills.aura->definition;
         if (unit.monster && unit.records.monster->enchantment && unit.records.monster->enchantment->aura)
             return &*unit.records.monster->enchantment->aura;

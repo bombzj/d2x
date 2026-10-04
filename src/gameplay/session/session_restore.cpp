@@ -334,6 +334,7 @@ void GameSessionImpl::restore(CharacterSaveData data) {
     boundaryMoveTarget_.reset();
     boundaryPassage_.reset();
     storage_ = {};
+    if (data.ironGolem) restoreIronGolem(*data.ironGolem);
     ++viewRevision_;
 }
 } // namespace d2x

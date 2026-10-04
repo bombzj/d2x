@@ -82,6 +82,9 @@ class Simulation {
     std::function<std::optional<int64_t>(const Enemy &)> corpseExplosionLife_;
     bool usableCorpse(EntityId id, bool explosion = false) const;
     EntityId corpseNear(Vec target, bool explosion = false) const;
+    std::function<bool(EntityId, const SkillCastSpec &, Vec)> summonGround_;
+    std::function<bool(EntityId, const SkillCastSpec &, EntityId)> summonCorpse_;
+    bool summonPet(EntityId owner, const SkillCastSpec &skill, Vec position, EntityId corpse = {});
     bool summonFromCorpse(EntityId owner, const SkillCastSpec &skill, EntityId corpse);
     bool summonHydra(EntityId owner, const SkillCastSpec &skill, Vec target);
     void advanceHydra(Enemy &pet, float dt);

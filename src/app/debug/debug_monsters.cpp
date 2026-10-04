@@ -1,5 +1,7 @@
 #include "gameplay/monsters/implementation.hpp"
 #include "gameplay/skills/bone_spec.hpp"
+#include "gameplay/skills/necro_summon_spec.hpp"
+#include "gameplay/items/state.hpp"
 #include "debug_monsters.hpp"
 #include "gameplay/session/session.hpp"
 #include "gameplay/model/state.hpp"
@@ -82,7 +84,11 @@ void listMonsters(Json &result, const Json &request, const GameSession &session,
                 {"superUnique", spawn.identity.superUnique}, {"spawnKey", spawn.identity.spawnKey},
                 {"ownerSpawnKey", spawn.identity.ownerSpawnKey}, {"rank", monsterRankName(spawn.identity.rank)},
                 {"x", spawn.position.x}, {"y", spawn.position.y}});
-    for (const auto &enemy : session.state().area.enemies) {
+    std::vector<const Enemy *> units;
+    for (const auto &enemy : session.state().area.enemies) units.push_back(&enemy);
+    for (const auto &pet : session.state().companions) units.push_back(&pet);
+    for (const auto *unit : units) {
+        const auto &enemy = *unit;
         if (request.value("visible", true) && !onScreen(enemy, session, view)) continue;
         Json entry = {{"id", enemy.id.value}, {"group", enemy.identity.group},
             {"monster", enemy.identity.monster},
@@ -122,6 +128,23 @@ void listMonsters(Json &result, const Json &request, const GameSession &session,
         if (enemy.boneBarrier)
             entry["barrier"] = {{"root", enemy.boneBarrier->root.value}, {"caster", enemy.boneBarrier->caster.value},
                 {"expiresAt", enemy.boneBarrier->expiresAt}};
+        entry["summonSkill"] = enemy.summonSkill; entry["summonRank"] = enemy.summonRank;
+        entry["summonVariant"] = enemy.summonShield;
+        if (enemy.necroPet) {
+            const auto &pet = *enemy.necroPet;
+            entry["summonExpiresAt"] = pet.expiresAt ? Json(*pet.expiresAt) : Json(nullptr);
+            entry["summonItem"] = pet.item ? Json(pet.item->definition) : Json(nullptr);
+            if (enemy.intrinsicCombat) {
+                const auto &stats = *enemy.intrinsicCombat; const auto &a = stats.attributes;
+                entry["summonStats"] = {{"level",stats.level},{"life",a.maxLife},{"defense",a.defense},
+                    {"attackRating",a.attackRating},{"damage",{stats.minimumDamage,stats.maximumDamage}},
+                    {"resistances",{a.combat.physicalResist,a.combat.magicResist,a.fireResist,a.coldResist,a.lightningResist,a.poisonResist}},
+                    {"damagePercent",a.combat.damagePercent},{"thornsPercent",a.combat.thornsPercent},
+                    {"slowPercent",pet.spec->slowPercent},{"velocityPercent",pet.spec->velocityPercent},
+                    {"lifeLeechPercent",pet.spec->lifeLeechPercent},{"ownerSharePercent",pet.spec->ownerSharePercent},
+                    {"fireAbsorbPercent",a.combat.fireAbsorbPercent}};
+            }
+        }
         entry["owner"] = enemy.allegiance.owner.value;
         entry["faction"] = enemy.allegiance.faction;
         entry["stun"] = enemy.stun;

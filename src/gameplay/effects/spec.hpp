@@ -37,6 +37,10 @@ struct FreezeAttacker {
 // Reactions belong to the effect; removal cannot leave registered callbacks.
 struct ColdMeleeRetaliation {};
 struct ColdMissileRetaliation {};
+struct SlowOther {
+    int percent = 0;
+    CombatStateDefinition state;
+};
 struct IronMaidenRetaliation {
     int percent = 0, reducedPercent = 0, hitClass = -1;
 };
@@ -45,7 +49,7 @@ struct LifeTapHealing {
     float overlayDuration = 0;
 };
 using EffectAction = std::variant<FreezeAttacker, ColdMeleeRetaliation, ColdMissileRetaliation,
-                                 IronMaidenRetaliation, LifeTapHealing>;
+                                 IronMaidenRetaliation, LifeTapHealing, SlowOther>;
 struct EffectReaction {
     CombatEffectEvent event;
     EffectAction action;

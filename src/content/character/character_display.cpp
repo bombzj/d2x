@@ -8,6 +8,7 @@
 #include "content/skills/skill_data.hpp"
 #include "gameplay/skills/aura.hpp"
 #include "gameplay/skills/passive.hpp"
+#include "gameplay/skills/necro_summon_spec.hpp"
 #include <algorithm>
 #include <cstdio>
 #include <cstdint>
@@ -176,7 +177,18 @@ std::vector<std::string> describeSkillPicker(const SkillRecord &skill, const Ski
     if (resolved) {
         const auto &value = *resolved;
         detail = "Mana " + std::string(displayNumber("%.1f", value.manaCost));
-        if (value.effect == SkillBehavior::Teleport) detail += " / Teleport to clear ground";
+        if (value.summon) {
+            const auto &pet = *value.summon;
+            const auto &stats = pet.stats.attributes;
+            detail += " / Summons " + std::to_string(pet.limit);
+            if (pet.necro && pet.necro->kind == NecroSummonKind::Revive)
+                detail += " / Life +" + std::to_string(pet.necro->lifePercent) + "% / Physical damage +" +
+                    std::to_string(pet.necro->damagePercent) + "% / " + std::to_string(pet.necro->lifetimeFrames / 25) + " seconds";
+            else detail += " / Life " + std::to_string(stats.maxLife) + " / Attack rating " +
+                std::to_string(stats.attackRating) + " / Defense " + std::to_string(stats.defense);
+            if (pet.necro && pet.necro->slowPercent) detail += " / Slows " + std::to_string(pet.necro->slowPercent) + "%";
+        }
+        else if (value.effect == SkillBehavior::Teleport) detail += " / Teleport to clear ground";
         else if (value.effect == SkillBehavior::Teeth)
             detail += " / Teeth " + std::to_string(value.missileCount) + " / Magic " +
                 std::string(displayNumber("%.1f-%.1f", value.minimumDamage, value.maximumDamage));

@@ -368,6 +368,10 @@ class GameSessionImpl {
     std::array<int, 5> cainStoneSequence() const { return cainStoneOrder(); }
     bool waypointUnlocked(RegionId region) const { return state().waypoints.contains(region); }
     InventoryError previewInventory(const GameCommand &command) const;
+    bool summonGround(EntityId actor, const SkillCastSpec &skill, Vec target);
+    void equipIronGolem(Enemy &pet, const ItemInstance &item);
+    bool summonCorpse(EntityId actor, const SkillCastSpec &skill, EntityId corpse);
+    void restoreIronGolem(const ItemInstance &item);
     std::optional<GroundLocation> dropLocation() const;
     std::string debugSpawnError(std::string_view monster, Vec position) const;
     const Map &map() const { return world_.at(current_).map; }

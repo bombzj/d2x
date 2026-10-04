@@ -260,7 +260,7 @@ void SceneView::drawActors(Vec mouse) const {
                                   ? playerCorpseAt(mouse) : nullptr;
     const auto *selectedSkill = view_.rightSkill ? session_.content().skills.find(*view_.rightSkill) : nullptr;
     const bool corpseExplosion = selectedSkill && selectedSkill->spell && selectedSkill->spell->bone && selectedSkill->spell->bone->corpse;
-    const bool corpseSkill = corpseExplosion || (selectedSkill && selectedSkill->spell && selectedSkill->spell->summon);
+    const bool corpseSkill = corpseExplosion || (selectedSkill && selectedSkill->spell && selectedSkill->spell->summon && selectedSkill->spell->summon->corpse);
     EntityId hotEnemy;
     if (canHover && !hotCainPortal && !hotTownPortal && !hotExit && !hotLabelItem && !hotPlayerCorpse)
         for (const auto &monster : monsters)

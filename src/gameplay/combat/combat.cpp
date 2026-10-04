@@ -3,6 +3,7 @@
 #include "gameplay/skills/missile_rules.hpp"
 #include "gameplay/skills/weapon_contributions.hpp"
 #include "gameplay/skills/runtime.hpp"
+#include "gameplay/skills/necro_summon_spec.hpp"
 #include "core/random.hpp"
 #include "gameplay/simulation/simulation.hpp"
 #include "gameplay/combat/accuracy.hpp"
@@ -88,6 +89,8 @@ void Simulation::finishMonsterDeath(Enemy &enemy, EntityId source) {
     enemy.knockbackDestination.reset();
     enemy.attackMode = 1;
     if (enemy.boneBarrier) { enemy.deathUnselectable = true; if (barriersChanged_) barriersChanged_(); return; }
+    if (enemy.necroPet && enemy.necroPet->spec->kind == NecroSummonKind::Fire)
+        enemy.necroPet->explosionAt = state_.frame + 4; // Native ColdEnchantedModeChange.
     if (enemy.allegiance.role == CombatRole::Summon) { enemy.corpseConsumed = true; return; }
     if (enemy.conversion) return;
     ++state_.area.kills;

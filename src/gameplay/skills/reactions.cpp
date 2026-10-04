@@ -29,6 +29,18 @@ void SkillRuntime::triggerCombatEffects(EntityId target, CombatEffectEvent event
                     missileColdDuration(target, attacker, int(skill.coldDuration * 25.f + .5f)), false, false});
                 if (skill.hitOverlayId >= 0)
                     world_.addEffect({*attacker.position, 0, skill.hitOverlayDuration, -1, skill.hitOverlayId, other});
+            } else if constexpr (std::is_same_v<std::decay_t<decltype(action)>, SlowOther>) {
+                const int cap = attacker.player || attacker.stats.boss || attacker.stats.rank != MonsterRank::Normal ? 50 : 90;
+                const int slow = std::clamp(action.percent, 0, cap);
+                if (!slow) return;
+                CombatEffectSpec effect;
+                effect.state = action.state; effect.duration = 750; // Native EventFunc27, 30 seconds.
+                effect.source = {CombatEffectSource::Skill, target, trigger.source.definition, 1};
+                effect.modifiers.velocityPercent = -slow;
+                effect.modifiers.combat.attackRate = -slow;
+                effect.modifiers.otherAnimationRate = -slow;
+                const auto applied = attacker.effects->apply(std::move(effect), world_.frame());
+                if (attacker.player) world_.effectsChanged(applied.removed);
             } else if constexpr (std::is_same_v<std::decay_t<decltype(action)>, FreezeAttacker>) {
                 const auto &freeze = action;
                 world_.freeze(target, attacker.id, int(freeze.duration * 25.f + .5f));

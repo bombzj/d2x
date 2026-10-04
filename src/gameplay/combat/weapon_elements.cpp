@@ -129,7 +129,11 @@ void Simulation::resolveWeaponHit(EntityId defender, float physical, EntityId so
     if (!originalElements.ranged) skills().reflectIronMaiden(source, defender, dealtPhysical);
     DamageRequest hit{source, defender, total, MonsterDamageType::Physical, chill, true};
     hit.hitClass = elements.hitClass;
-    dealDamage(hit);
+    const float dealt = dealDamage(hit);
+    if (!originalElements.ranged && dealt > 0) {
+        skills().triggerCombatEffects(defender, CombatEffectEvent::DamagedInMelee, source);
+        skills().triggerCombatEffects(source, CombatEffectEvent::DealtMeleeDamage, defender);
+    }
     if (target.alive() && total > 0 && elements.openWounds) {
         int framesDamage = 40;
         const int increments[] = {9, 18, 27, 36, 45};

@@ -1,6 +1,7 @@
 #include "gameplay/character/runtime_record.hpp"
 #include "gameplay/session/session_impl.hpp"
 #include "content/items/equipment_modifiers.hpp"
+#include "gameplay/skills/necro_summon_spec.hpp"
 #include <algorithm>
 #include <stdexcept>
 #include <variant>
@@ -15,6 +16,9 @@ void requireSave(bool condition, const char *reason) {
 
 CharacterSaveData GameSessionImpl::characterSave() const {
     CharacterSaveData result;
+    for (const auto &pet : state().companions)
+        if (pet.living() && pet.allegiance.owner == state().player.id && pet.necroPet && pet.necroPet->item)
+            result.ironGolem = *pet.necroPet->item;
     result.player = captureCharacterRecord(state().player);
     result.mapSeed = state().mapSeed;
     result.difficulty = state().population.difficulty;
@@ -95,6 +99,13 @@ CharacterSaveData GameSessionImpl::prepareCharacterRestore(CharacterSaveData cha
             inventory.items.emplace(item.id, std::move(item));
         }
         character.player.id = state().player.id;
+        if (character.ironGolem) {
+            character.ironGolem->id = EntityId{next++};
+            for (size_t index = 0; index < character.ironGolem->socketedItems.size(); ++index) {
+                auto &child = character.ironGolem->socketedItems[index]; child.id = EntityId{next++};
+                child.location = SocketLocation{character.ironGolem->id, unsigned(index)};
+            }
+        }
         character.nextEntityId = next;
         character.inventory = std::move(inventory);
     }

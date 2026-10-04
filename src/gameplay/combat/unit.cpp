@@ -150,7 +150,8 @@ float Simulation::incomingDamage(EntityId attacker, EntityId defender, float amo
 void Simulation::restoreUnit(EntityId id, float life, float mana) {
     auto unit = combatUnit(id);
     if (!unit.alive()) return;
-    *unit.life = std::min(float(unit.stats.attributes.maxLife), *unit.life + life);
+    const float maximum = unit.monster ? unit.records.monster->maxHp : float(unit.stats.attributes.maxLife);
+    *unit.life = std::min(maximum, *unit.life + life);
     if (unit.mana) *unit.mana = std::min(float(unit.stats.attributes.maxMana), *unit.mana + mana);
 }
 ResolvedDamage Simulation::resolveIncoming(EntityId attacker, const CombatUnit &defender, float amount, MonsterDamageType type) {
@@ -183,7 +184,18 @@ ResolvedDamage Simulation::resolveIncoming(EntityId attacker, const CombatUnit &
         if (source && source.effects->hasState(sanctuaryState_, state_.frame)) resistance = 0;
     }
     if (type == MonsterDamageType::Cold && resistance < 100 && coldPierce_) resistance -= coldPierce_(attacker);
-    return {mitigateMonsterDamage(amount, resistance), 0};
+    const auto &modifiers = defender.stats.attributes.combat;
+    int flat = 0, percent = 0, fixed = 0;
+    if (type == DamageType::Physical) flat = modifiers.flatPhysicalReduction;
+    else if (type != DamageType::Poison) flat = modifiers.flatMagicReduction;
+    if (type == DamageType::Fire) { percent = modifiers.fireAbsorbPercent; fixed = modifiers.fireAbsorb; }
+    if (type == DamageType::Cold) { percent = modifiers.coldAbsorbPercent; fixed = modifiers.coldAbsorb; }
+    if (type == DamageType::Lightning) { percent = modifiers.lightningAbsorbPercent; fixed = modifiers.lightningAbsorb; }
+    if (type == DamageType::Magic) { percent = modifiers.magicAbsorbPercent; fixed = modifiers.magicAbsorb; }
+    const int64_t value = int64_t(mitigateMonsterDamage(std::max(0.f, amount-float(flat)), resistance)*256.f);
+    const int64_t percentage = value*std::clamp(percent,0,40)/100;
+    const int64_t absorbed = percentage + std::min<int64_t>(std::max(0,fixed)*256LL,value-percentage);
+    return {float(value-absorbed)/256.f,float(absorbed)/256.f};
 }
 void Simulation::blockUnit(EntityId defender) {
     auto target = combatUnit(defender);

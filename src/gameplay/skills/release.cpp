@@ -16,7 +16,7 @@ void SkillRuntime::releaseSkillCast(SkillCaster player, const SkillCastSpec &ski
     if (player.dead || (consumeMana && player.mana < skill.manaCost) ||
         (skill.effect == SkillBehavior::Teleport && !world_.walkable(player.id, target))) return;
     if (skill.summon) {
-        if (world_.summonCorpse(player.id, skill, targetUnit)) {
+        if ((skill.summon->corpse ? world_.summonCorpse(player.id, skill, targetUnit) : world_.summonGround(player.id, skill, target))) {
             if (consumeMana) player.mana -= skill.manaCost;
             emit(SkillActivated{skill.sourceId});
         }

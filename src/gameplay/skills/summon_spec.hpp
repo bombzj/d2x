@@ -4,9 +4,15 @@
 #include <array>
 #include <string>
 #include <vector>
+#include <memory>
+#include <map>
 
 namespace d2x {
+struct NecroSummonSpec;
+struct NecroPetSpec;
 struct SummonSkillSpec {
+    bool corpse = true, golem = false;
+    std::shared_ptr<const NecroSummonSpec> necro;
     std::string monster, iconArt;
     MonsterKind kind = MonsterKind::NecroSkeleton;
     int masterySkill = -1, resistSkill = -1;
@@ -18,6 +24,8 @@ struct SummonSkillSpec {
     std::vector<std::array<int, 3>> levelDefense, levelAttack;
 };
 struct SummonCastSpec {
+    bool corpse = true, golem = false;
+    std::shared_ptr<const NecroPetSpec> necro;
     std::string monster;
     MonsterKind kind = MonsterKind::NecroSkeleton;
     UnitCombatStats stats;

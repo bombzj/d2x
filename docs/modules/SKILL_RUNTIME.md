@@ -8,6 +8,8 @@
 
 毒素与白骨整页十项（2026-10-05）已逐项完成 Release 构建／打包及包内联合冒烟，当前包已包含。新增 `bone_data.*` 导入及 `bone_runtime.cpp` 的尸爆、障碍与飞弹行为；详细 `BoneSkillSpec` 由不透明不可变指针携带，公共骨墙／飞弹运行扩展也用前置声明。装甲吸收复用公共效果池和伤害入口，骨墙保持中立单位并通过权威端口生成。原规则证据、近似路径／放置和实际检查范围见 [毒素与白骨](../gameplay/skills/NECROMANCER.md#毒素与白骨技能)。
 
+召唤整页（2026-10-05）补齐七项：`necro_summon_data.*`原表导入、`summon_resolve.*`纯等级／硬点求值、私有 `necro_summon_spec.hpp`详细定义、`companions.cpp`单位行为和会话 `session_necro_summons.cpp`物品／尸体适配。权威端口区分地面与尸体召唤，复用施法时序与成功后扣蓝；类型化减速事件、血魔治疗、铁魔武器命中沿公共消费者。逐项Release／打包、联合有限冒烟和铁魔新进程D2S恢复通过，准确边界见[召唤技能](../gameplay/skills/NECROMANCER.md#召唤技能整页)。
+
 ## 代码分工与入口
 
 | 层／入口 | 当前职责 |

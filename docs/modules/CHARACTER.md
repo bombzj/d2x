@@ -4,7 +4,7 @@
 
 ## 已实施的边界
 
-玩家死亡／尸体已接入当前源码：`PlayerActions.deathCorpse` 只标记本次死亡画面归属，`deathCompleted` 区分死亡动画与原尸体阶段，防止宠物清理重复执行；尸体身份／容器引用归会话，物品实例仍唯一归库存。`CharacterRecord` 不增加活尸体状态；`CharacterSaveData` 另带原 D2S 可保存的一份尸体值，恢复时重映射 ID、在幕城镇重建。原死亡时序与经验罚率由 `content/character/death_data.*` 适配，不放入通用技能目录。佣兵及所有已注册本人召唤物在原 `DT` 动画结束时统一死亡，佣兵保留原复活服务；未实现的召唤技能仍未完成。本批已通过 Windows Release 构建及有限死亡／尸体冒烟，覆盖与限制见 [玩家死亡](../gameplay/characters/PLAYER_DEATH.md)。
+玩家死亡／尸体已接入当前源码：`PlayerActions.deathCorpse` 只标记本次死亡画面归属，`deathCompleted` 区分死亡动画与原尸体阶段，防止宠物清理重复执行；尸体身份／容器引用归会话，物品实例仍唯一归库存。`CharacterRecord` 不增加活尸体状态；`CharacterSaveData` 另带原 D2S 可保存的一份尸体值，恢复时重映射 ID、在幕城镇重建。原死亡时序与经验罚率由 `content/character/death_data.*` 适配，不放入通用技能目录。佣兵及所有已注册本人召唤物在原 `DT` 动画结束时统一死亡，佣兵保留原复活服务；死灵法师召唤整页已接入，其他职业按各自技能基线。本批已通过 Windows Release 构建及有限死亡／尸体冒烟，覆盖与限制见 [玩家死亡](../gameplay/characters/PLAYER_DEATH.md)。
 
 - [`CharacterRecord`](../../src/gameplay/character/record.hpp) 包含角色身份／未知原生段、成长／已分配点、技能等级／选择／绑定、金币／初见／任务、D2S 支持的资源值及 `HirelingRecord`。只依赖 ID、基础学点／选择值、任务值和标准库；不包含 `PlayerState`、模拟器、会话、技能执行或战斗效果。
 - [`CharacterSaveData`](../../src/gameplay/session/character_save.hpp) 的兼容成员 `player` 改为 `CharacterRecord`；容器／物品保存快照继续沿用原库存值类型。它不再通过完整世界状态头取得所有临时人物、怪物、弹体和技能执行类型。

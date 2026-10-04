@@ -79,6 +79,11 @@ const MonsterDefinition &monsterDefinition(MonsterKind id) {
     static const MonsterDefinition hydra3{MonsterKind::Hydra3, "hz", 0, 0, 0, 0, 25, 0};
     static const MonsterDefinition boneWall{MonsterKind::BoneWall, "bw", 0, 0, 0, 0, 0, 0};
     switch (id) {
+    case MonsterKind::ClayGolem: { static const MonsterDefinition pet{MonsterKind::ClayGolem, "g1", 0, 0, 0, 0, 24, 1.8f}; return pet; }
+    case MonsterKind::BloodGolem: { static const MonsterDefinition pet{MonsterKind::BloodGolem, "g2", 0, 0, 0, 0, 24, 1.8f}; return pet; }
+    case MonsterKind::IronGolem: { static const MonsterDefinition pet{MonsterKind::IronGolem, "g4", 0, 0, 0, 0, 24, 1.8f}; return pet; }
+    case MonsterKind::FireGolem: { static const MonsterDefinition pet{MonsterKind::FireGolem, "g3", 0, 0, 0, 0, 24, 1.8f}; return pet; }
+    case MonsterKind::NecroMage: { static const MonsterDefinition pet{MonsterKind::NecroMage, "sk", 0, 0, 0, 0, 24, 1.8f}; return pet; }
     case MonsterKind::BoneWall: return boneWall;
     case MonsterKind::PrisonDoor: {
         static const MonsterDefinition door{MonsterKind::PrisonDoor, "2q", 0, 0, 0, 0, 0, 0};

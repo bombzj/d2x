@@ -4,8 +4,11 @@
 #include "gameplay/units/impairments.hpp"
 #include "gameplay/simulation/simulation.hpp"
 #include "gameplay/skills/runtime.hpp"
+#include "gameplay/skills/behavior.hpp"
+#include "gameplay/skills/missile.hpp"
 #include "gameplay/skills/projectile_source.hpp"
 #include "core/random.hpp"
+#include "gameplay/skills/necro_summon_spec.hpp"
 #include <algorithm>
 #include <cmath>
 
@@ -113,13 +116,19 @@ void Simulation::finishCompanionDeath(Enemy &pet) {
     emit(UnitDied{pet.id, pet.deathShattered, pet.pos, collisionSize});
 }
 void Simulation::enforceSummonLimit(EntityId owner, int skill, int limit) {
+    auto sameType = [&](const Enemy &pet) {
+        const bool golem = pet.necroPet && pet.necroPet->spec->kind != NecroSummonKind::Mage && pet.necroPet->spec->kind != NecroSummonKind::Revive;
+        const auto found = std::find_if(state_.companions.begin(), state_.companions.end(), [&](const Enemy &candidate) { return candidate.summonSkill == skill && candidate.necroPet; });
+        const bool requestedGolem = found != state_.companions.end() && found->necroPet->spec->kind != NecroSummonKind::Mage && found->necroPet->spec->kind != NecroSummonKind::Revive;
+        return requestedGolem ? golem : pet.summonSkill == skill;
+    };
     int count = 0;
     for (const auto &pet : state_.companions)
-        if (pet.living() && pet.allegiance.owner == owner && pet.summonSkill == skill) ++count;
+        if (pet.living() && pet.allegiance.owner == owner && sameType(pet)) ++count;
     // Native pet lists remove the oldest summon when the per-type limit is exceeded.
     for (auto &pet : state_.companions) {
         if (count <= limit) break;
-        if (!pet.living() || pet.allegiance.owner != owner || pet.summonSkill != skill) continue;
+        if (!pet.living() || pet.allegiance.owner != owner || !sameType(pet)) continue;
         finishCompanionDeath(pet);
         --count;
     }
@@ -128,12 +137,17 @@ bool Simulation::summonFromCorpse(EntityId ownerId, const SkillCastSpec &skill, 
     const auto owner = combatUnit(ownerId);
     if (!skill.summon || !owner.alive() || !usableCorpse(corpseId)) return false;
     auto *corpse = findEnemy(corpseId);
+    return summonPet(ownerId, skill, corpse->pos, corpseId);
+}
+bool Simulation::summonPet(EntityId ownerId, const SkillCastSpec &skill, Vec position, EntityId corpseId) {
+    const auto owner = combatUnit(ownerId);
+    if (!skill.summon || !owner.alive() || !active(position)) return false;
     const auto &spec = *skill.summon;
     Enemy pet;
     pet.kind = spec.kind;
     pet.identity.monster = spec.monster;
     pet.identity.origin = SpawnOrigin::Summoned;
-    pet.pos = corpse->pos;
+    pet.pos = position;
     pet.intrinsicCombat = spec.stats;
     pet.hp = pet.maxHp = float(spec.stats.attributes.maxLife);
     pet.allegiance = {owner.identity.faction, owner.id, owner.identity.party, CombatRole::Summon};
@@ -154,8 +168,8 @@ bool Simulation::summonFromCorpse(EntityId ownerId, const SkillCastSpec &skill, 
         for (int y = -radius; y <= radius && !placed; ++y)
             for (int x = -radius; x <= radius && !placed; ++x) {
                 if (std::abs(x) != radius && std::abs(y) != radius) continue;
-                const Vec candidate = corpse->pos + Vec{float(x), float(y)};
-                if (clear(candidate) && grid_->segment(corpse->pos, candidate, {}, movementRule(pet))) { pet.pos = candidate; placed = true; }
+                const Vec candidate = position + Vec{float(x), float(y)};
+                if (clear(candidate) && grid_->segment(position, candidate, {}, movementRule(pet))) { pet.pos = candidate; placed = true; }
             }
     if (!placed) { state_.message = "No clear ground for this summon"; return false; }
     pet.id = ids_.allocate(); pet.combatRandom = childRandom(unitRandom_);
@@ -163,9 +177,23 @@ bool Simulation::summonFromCorpse(EntityId ownerId, const SkillCastSpec &skill, 
     // Monster.cpp chooses components; SkillNec fixes the base body/weapon and
     // occasionally resets SH to component 0. Remaining shields retain that draw.
     pet.summonShield = int(limitedRandom(pet.combatRandom, unsigned(std::max(1, spec.shieldVariants))));
+    if (spec.necro && spec.necro->kind == NecroSummonKind::Mage) pet.summonShield = int(limitedRandom(*owner.random, 4));
     if (spec.shieldChance > 0 && limitedRandom(*owner.random, 100) < unsigned(spec.shieldChance)) pet.summonShield = 0;
     pet.resurrectionRemaining = pet.resurrectionDuration = *rise;
-    corpse->corpseConsumed = true;
+    if (auto *corpse = findEnemy(corpseId)) corpse->corpseConsumed = true;
+    if (spec.necro) {
+        pet.necroPet = std::make_shared<NecroPetState>(); pet.necroPet->spec = spec.necro;
+        CombatEffectSpec passive;
+        passive.stacking = EffectStacking::ReplaceSource;
+        passive.source = {CombatEffectSource::Skill, pet.id, skill.sourceId, skill.rank};
+        passive.modifiers.velocityPercent = spec.necro->velocityPercent;
+        if (spec.necro->slowPercent > 0) {
+            const SlowOther slow{spec.necro->slowPercent, spec.necro->slowState};
+            passive.reactions.push_back({CombatEffectEvent::DamagedInMelee, slow});
+            passive.reactions.push_back({CombatEffectEvent::DealtMeleeDamage, slow});
+        }
+        pet.combatEffects.apply(std::move(passive), state_.frame);
+    }
     state_.companions.push_back(std::move(pet));
     enforceSummonLimit(owner.id, skill.sourceId, spec.limit);
     return true;
@@ -200,10 +228,26 @@ void Simulation::relocateCompanions(EntityId owner, Vec destination, EntityId on
 void Simulation::updateCompanions(float dt) {
     for (auto &pet : state_.companions) {
         if (pet.hydra) { advanceHydra(pet, dt); continue; }
-        if (pet.hp <= 0) { pet.deathAge += dt; continue; }
+        if (pet.hp <= 0) {
+            if (pet.necroPet && pet.necroPet->explosionAt && state_.frame >= *pet.necroPet->explosionAt) {
+                pet.necroPet->explosionAt.reset();
+                if (!safeZone_) {
+                    for (auto target : combatUnits()) {
+                        const float x = std::floor(target.position->x)-std::floor(pet.pos.x), y = std::floor(target.position->y)-std::floor(pet.pos.y);
+                        if (!target.alive() || !canAttack(pet.id,target.id) || x*x+y*y > 36) continue;
+                        DamageRequest explosion{pet.id,target.id,100,DamageType::Physical}; explosion.channels[size_t(DamageType::Fire)] = 100;
+                        dealDamage(explosion);
+                    }
+                    const auto &spec = *pet.necroPet->spec;
+                    state_.area.effects.push_back({pet.pos,0,spec.explosionDuration,spec.explosionId});
+                    emit(MissileReleased{spec.explosionId});
+                }
+            }
+            pet.deathAge += dt; continue;
+        }
         if (!pet.intrinsicCombat) continue;
         auto owner = combatUnit(pet.allegiance.owner);
-        if (!petOwnerRetained(pet.allegiance.owner)) {
+        if (!petOwnerRetained(pet.allegiance.owner) || (pet.necroPet && pet.necroPet->expiresAt && state_.frame >= *pet.necroPet->expiresAt)) {
             finishCompanionDeath(pet);
             continue;
         }
@@ -223,8 +267,23 @@ void Simulation::updateCompanions(float dt) {
         const int ownerDistance = std::max(0, missileDistance(pet.pos, *owner.position) - 2);
         if (ownerDistance > 50) { relocateCompanions(owner.id, *owner.position, pet.id); continue; }
         if (pet.attack > 0) {
-            if (advanceTimedAction({pet.attack, pet.attackDuration, pet.attackImpact}, dt, 0.f, .00001f))
-                resolveMonsterAttack(pet);
+            if (advanceTimedAction({pet.attack, pet.attackDuration, pet.attackImpact}, dt, 0.f, .00001f)) {
+                if (pet.necroPet && pet.necroPet->spec->kind == NecroSummonKind::Mage) {
+                    const auto target = combatUnit(pet.combatTarget);
+                    if (target.alive() && canAttack(pet.id, target.id)) {
+                        const auto &payload = pet.necroPet->spec->missiles.at(size_t(pet.summonShield));
+                        const float minimum = payload.minimumDamage * 256.f, maximum = payload.maximumDamage * 256.f;
+                        const float damage = (minimum + float(limitedRandom(pet.combatRandom, unsigned(std::max(0.f, maximum-minimum))))) / 256.f;
+                        Missile missile{{}, pet.id, pet.pos, (*target.position-pet.pos).unit()*payload.velocity, payload.lifetime, SkillBehavior::None, false, payload.id};
+                        missile.fixedElement = payload.element; missile.impact = payload.impact;
+                        missile.impactDamage.channels[size_t(payload.element)] = payload.element == DamageType::Poison ? damage*25.f : damage;
+                        if (payload.element == DamageType::Poison) missile.impactDamage.poisonDuration = payload.duration;
+                        if (payload.element == DamageType::Cold) missile.impactDamage.coldDuration = payload.duration;
+                        skills().launchStraight(std::move(missile)); emit(MissileReleased{payload.id});
+                    }
+                } else if (monsterProjectile_ && monsterProjectile_(pet, 1)) launchMonsterProjectile(pet);
+                else resolveMonsterAttack(pet);
+            }
             continue;
         }
         if (pet.rethink <= 0) {
@@ -235,8 +294,10 @@ void Simulation::updateCompanions(float dt) {
             }
             pet.rethink = 10.f / 25.f;
             auto target = combatUnit(pet.combatTarget);
-            if (target.alive() && meleeDistance(pet.pos, pet.intrinsicCombat->collisionSize, *target.position, target.stats.collisionSize) <= 1 &&
-                grid_->segment(pet.pos, *target.position)) {
+            const bool ranged = pet.necroPet && pet.necroPet->spec->kind == NecroSummonKind::Mage;
+            if (target.alive() && (ranged ? missileDistance(pet.pos, *target.position) < 20 :
+                meleeDistance(pet.pos, pet.intrinsicCombat->collisionSize, *target.position, target.stats.collisionSize) <= 1) &&
+                (ranged ? grid_->missileSegment(pet.pos, *target.position, {4, 1}) : grid_->segment(pet.pos, *target.position))) {
                 pet.route.clear();
                 if (limitedRandom(pet.combatRandom, 100) < 80) beginMonsterAttack(pet, 1);
                 continue;

@@ -241,8 +241,23 @@ CharacterSaveData decodeSave(std::span<const uint8_t> bytes, const ClassicData &
     }
     require(word(bytes, cursor) == 0x666A, "missing hireling section"); cursor += 2;
     if (header.mercSeed) items(true);
-    require(word(bytes, cursor) == 0x666B && cursor + 3 == bytes.size() && bytes[cursor + 2] == 0,
-            "Iron Golem or trailing data is not supported");
+    require(word(bytes, cursor) == 0x666B && cursor + 3 <= bytes.size(), "missing Iron Golem kf section");
+    const unsigned hasIron = bytes[cursor+2]; require(hasIron <= 1, "invalid Iron Golem flag"); cursor += 3;
+    if (hasIron) {
+        auto encoded = readD2sItem(bytes.subspan(cursor), content); cursor += encoded.bytesRead;
+        CharacterSaveData temporary; initializeD2sInventory(temporary, content);
+        temporary.nextEntityId = snapshot.nextEntityId; temporary.player.level = player.level;
+        encoded.item.mode = 4; encoded.item.page = 1;
+        importD2sItem(temporary, encoded.item, content, false);
+        require(temporary.inventory.items.size() == 1, "invalid Iron Golem manufacturing item");
+        snapshot.ironGolem = temporary.inventory.items.begin()->second;
+        const auto *metal = content.items.find(snapshot.ironGolem->definition);
+        require(metal && snapshot.ironGolem->identified && metal->equipment.known &&
+            (content.tables.at(metal->base.sourceTable).number(metal->base.sourceRow,"bitfield1").value_or(0)&2) != 0,
+            "invalid native Iron Golem metal item");
+        snapshot.nextEntityId = temporary.nextEntityId;
+    }
+    require(cursor == bytes.size(), "unexpected data after Iron Golem section");
     for (const auto &[id, item] : snapshot.inventory.items)
         reconcileD2sQuestItem(player, snapshot.difficulty, item.definition, item.nativeQuestDifficulty);
     verifyCharacter(snapshot, content);
@@ -357,7 +372,20 @@ Bytes encodeSave(const CharacterSaveData &source, const ClassicData &content) {
         items(false, corpse.items);
     }
     appendWord(bytes, 0x666A); if (header.mercSeed) items(true);
-    appendWord(bytes, 0x666B); bytes.push_back(0);
+    appendWord(bytes, 0x666B); bytes.push_back(snapshot.ironGolem ? 1 : 0);
+    if (snapshot.ironGolem) {
+        auto item = *snapshot.ironGolem;
+        const auto *definition = content.items.find(item.definition);
+        require(definition && item.identified && definition->equipment.known &&
+            (content.tables.at(definition->base.sourceTable).number(definition->base.sourceRow,"bitfield1").value_or(0)&2) != 0,
+            "invalid Iron Golem item");
+        const auto slot = std::find(definition->equipment.slots.begin(), definition->equipment.slots.end(), true);
+        require(slot != definition->equipment.slots.end(), "Iron Golem item has no body slot");
+        item.location = ContainerLocation{snapshot.containers.equipment, {int(slot-definition->equipment.slots.begin()),0}};
+        snapshot.inventory.items.emplace(item.id, item);
+        auto encoded = writeD2sItem(exportD2sItem(snapshot, item, content), content);
+        bytes.insert(bytes.end(), encoded.begin(), encoded.end());
+    }
     require(bytes.size() <= maxSaveBytes, "save too large");
     writeD2sHeader(bytes, header);
     return bytes;

@@ -17,6 +17,8 @@
 
 包裹面板读取当前 MPQ 的 `data/global/ui/panel/invchar6.dc6`，按右侧面板分块拼接原版石框和格子，保留上方装备区域，物品详情以悬停提示呈现。该 DC6 与物品图标保留暴雪素材权利说明。
 
+2026-10-05召唤整页沿本地D2MOO 5596f5c：SkillNec的基础／被动／抗性、SrvDo031／056／057／058、EventFunc23／27，SkillMonst的导弹149，AiThink的Fn067_NecroPet／近战分支，PlayerPets上限／旅行，MonsterSpawn／MonsterUnique的CorpseBoomDeath，Items金属判断／ItemsTbls的bitfield1导入，PlrSave2原kf段及SUnitDmg的40%吸收上限。数值／原资源仍动态读取当前MPQ；客户端映射推断、有限冒烟和限制见[死灵法师](../gameplay/skills/NECROMANCER.md#召唤技能整页)。参考源码及导出表不提交。
+
 ## 实际使用的开源项目
 
 五幕地图复核沿下述固定本地快照：D2MOO 的 DrlgMaze、DrlgOutPlace／OutDesr／OutJung／OutSiege 核对特殊房、七墓、丛林与条带；DrlgTileSub 核对主题概率、Trials／Max、CheckAll、变体及掩码合并；DrlgPreset 核对 KillEdge、Pops／PopPad 和完整预设；DrlgDrlgAnim 与 D2CMP 标志核对 lava 帧号、Animate 和默认动画速度。OpenD2 DT1 结构和 OpenDiablo2 d2dt1／tile_cache 交叉核对材料位与 RarityFrameIndex。Trees.ds1末组EOF核对OpenD2 Engine/DS1.cpp的点名注释／边界检查，以及Diablerie Engine/IO/D2Formats/DS1.cs的ReadGroups／EndOfStreamException处理；D2MOO DrlgPreset的ReadInt32无EOF校验，D2Hell Archive分配文件长度加800字节，不能据此推造缺少的组字段。数据仍读取当前MPQ，仅使用完整13组，原尾部事实见[MPQ](MPQ.md#treesds1-原尾部兼容)。适配与未消费字段集中列于[地图](../gameplay/world/MAPS.md#数据解码与重建配方)，不提交reference或导出资源。

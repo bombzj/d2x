@@ -17,6 +17,9 @@ void SceneAssets::indexMonsterArt(const GameSession &session) {
         if (implementation.substitute) continue;
         const bool base = baseActors.emplace(implementation.kind, &actor).second;
         monsterArtSources[id] = {implementation.kind, &actor, 0, base};
+        if (implementation.kind == MonsterKind::NecroMage)
+            for (size_t element = 1; element < 4; ++element)
+                monsterArtSources[id + "#sh" + std::to_string(element)] = {implementation.kind, &actor, element, false};
         if (implementation.kind == MonsterKind::NecroSkeleton)
             for (size_t shield = 1; shield < actor.shieldVariants.size(); ++shield)
                 monsterArtSources[id + "#sh" + std::to_string(shield)] =
@@ -139,6 +142,10 @@ void SceneAssets::loadMonsterActor(const GameSession &session, const MonsterArtS
     for (size_t index = 0; index < actor.specialVariants.size(); ++index)
         if (!actor.specialVariants[index].empty())
             equipment[index + 8] = actor.specialVariants[index].c_str();
+    if (kind == MonsterKind::NecroMage) {
+        constexpr const char *elements[]{"pos", "cld", "fir", "lht"};
+        equipment[11] = equipment[12] = elements[std::min<size_t>(shield, 3)];
+    }
     if (kind == MonsterKind::Skeleton || kind == MonsterKind::CorruptRogue) {
         equipment[7] = "buc";
         if (!equipment[8][0]) equipment[8] = "lit";
@@ -168,6 +175,8 @@ void SceneAssets::loadMonsterActor(const GameSession &session, const MonsterArtS
         if (std::string_view(mode) == "s2" && ((!hydra && kind != MonsterKind::Fallen) || !actor.skill2Mode)) continue;
         if (std::string_view(mode) == "s1" && kind != MonsterKind::FoulCrowNest &&
             kind != MonsterKind::Fallen && kind != MonsterKind::NecroSkeleton &&
+            kind != MonsterKind::ClayGolem && kind != MonsterKind::BloodGolem &&
+            kind != MonsterKind::IronGolem && kind != MonsterKind::FireGolem && kind != MonsterKind::NecroMage &&
             kind != MonsterKind::BloodRaven && kind != MonsterKind::BoneWall) continue;
         const auto weapon = content.modeWeapon(kind, mode);
         if (weapon.empty())

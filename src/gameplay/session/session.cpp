@@ -326,6 +326,8 @@ GameSessionImpl::GameSessionImpl(Archives &archives, const WorldSelection &selec
         return std::nullopt;
     };
     auto worldSelection = selection;
+    simulation_->summonCorpse_ = [this](EntityId actor, const SkillCastSpec &skill, EntityId corpse) { return summonCorpse(actor, skill, corpse); };
+    simulation_->summonGround_ = [this](EntityId actor, const SkillCastSpec &skill, Vec target) { return summonGround(actor, skill, target); };
     simulation_->monsterMoveSpeed_ = [this](const Enemy &enemy, int velocityPercent) -> std::optional<float> {
         const auto *record = monsterContent_.find(enemy.identity.monster);
         if (!record || !record->walkVelocity)
@@ -543,7 +545,9 @@ GameSessionImpl::GameSessionImpl(Archives &archives, const WorldSelection &selec
         if (!record || monsterImplementation(enemy.identity.monster).substitute) return std::nullopt;
         if (enemy.kind == MonsterKind::FallenShaman)
             return record->resurrectionMode == "nu" ? std::optional<float>(0.f) : std::nullopt;
-        if (enemy.kind != MonsterKind::Fallen && enemy.kind != MonsterKind::NecroSkeleton && enemy.kind != MonsterKind::BoneWall)
+        if (enemy.kind != MonsterKind::Fallen && enemy.kind != MonsterKind::NecroSkeleton && enemy.kind != MonsterKind::BoneWall &&
+            enemy.kind != MonsterKind::ClayGolem && enemy.kind != MonsterKind::BloodGolem &&
+            enemy.kind != MonsterKind::IronGolem && enemy.kind != MonsterKind::FireGolem && enemy.kind != MonsterKind::NecroMage)
             return std::nullopt;
         const auto *motion = monsterContent_.motion(enemy.kind, "s1");
         return motion ? std::optional<float>(motion->duration) : std::nullopt;
@@ -676,6 +680,7 @@ GameSessionImpl::GameSessionImpl(Archives &archives, const WorldSelection &selec
     fingerprint.add("socket-rules-v1-native-children-runewords|cube-rules-v2-native-crafted-and-txt-indices");
     fingerprint.add("waypoint-rules-v1");
     fingerprint.add("necromancer-poison-bone-rules-v1");
+    fingerprint.add("necromancer-summon-rules-v1-native-iron-kf");
     fingerprint.add("map-rules-v9-native-trees-complete-groups");
     auto members = archives.used;
     for (const auto &member : members) {

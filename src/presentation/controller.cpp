@@ -1,5 +1,6 @@
 #include "gameplay/skills/behavior.hpp"
 #include "gameplay/skills/spec.hpp"
+#include "gameplay/skills/necro_summon_spec.hpp"
 #include "gameplay/skills/bone_spec.hpp"
 #include "client/actor_client.hpp"
 #include "gameplay/session/session.hpp"
@@ -561,7 +562,7 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
         const bool channeled = rightSkill && rightSkill->spell &&
             rightSkill->spell->effect == SkillBehavior::Inferno;
         const bool corpseExplosion = rightSkill && rightSkill->spell && rightSkill->spell->bone && rightSkill->spell->bone->corpse;
-        const bool corpseSkill = corpseExplosion || (rightSkill && rightSkill->spell && rightSkill->spell->summon.has_value());
+        const bool corpseSkill = corpseExplosion || (rightSkill && rightSkill->spell && (rightSkill->spell->summon && rightSkill->spell->summon->corpse));
         const bool enchant = rightSkill && rightSkill->spell && rightSkill->spell->effect == SkillBehavior::Enchant;
         const bool holyBolt = rightSkill && rightSkill->spell && rightSkill->spell->effect == SkillBehavior::HolyBolt;
         const bool prison = rightSkill && rightSkill->spell && rightSkill->spell->bone && rightSkill->spell->bone->prison;
@@ -603,6 +604,11 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
             if (target)
                 for (const auto &enemy : session_.state().area.enemies)
                     if (enemy.id == target) { aim = enemy.pos; break; }
+            if (rightSkill && rightSkill->spell && rightSkill->spell->summon && rightSkill->spell->summon->necro &&
+                rightSkill->spell->summon->necro->kind == NecroSummonKind::Iron)
+                if (const auto item = view_.lootAt(input.mouse))
+                    if (const auto *source = session_.inventory().item(item->id))
+                        if (const auto *ground = std::get_if<GroundLocation>(&source->location)) aim = ground->position;
             if (ui.rightSkill) {
                 session_.submit(UseSkill{*ui.rightSkill, aim, target});
                 if (channeled) channelInputSkill_ = *ui.rightSkill;

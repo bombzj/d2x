@@ -2,6 +2,7 @@
 #include "gameplay/items/state.hpp"
 #include "gameplay/character/record.hpp"
 #include "gameplay/player/corpse.hpp"
+#include <optional>
 
 namespace d2x {
 struct CharacterSaveData {
@@ -14,5 +15,6 @@ struct CharacterSaveData {
     InventoryState inventory;
     PlayerContainers containers;
     std::vector<PlayerCorpse> corpses;
+    std::optional<ItemInstance> ironGolem;
 };
 } // namespace d2x

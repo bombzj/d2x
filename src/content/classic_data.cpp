@@ -18,6 +18,7 @@
 #include "content/skills/sorceress_data.hpp"
 #include "content/skills/weapon_skill_data.hpp"
 #include "content/skills/necromancer_data.hpp"
+#include "content/skills/necro_summon_data.hpp"
 #include "content/skills/curse_data.hpp"
 #include "content/skills/bone_data.hpp"
 #include "content/monsters/monster_enchantment.hpp"
@@ -333,6 +334,8 @@ ClassicData loadClassicData(Archives &archives) {
         loadBoneSkills(data.skills, data.tables.at("skills"), data.tables.at("missiles"), overlays, sounds, data.states, archives);
         loadNecromancerSummons(data.skills, data.tables.at("skills"), data.tables.at("monstats"),
             data.tables.at("monstats2"), data.tables.at("monlvl"), sounds, archives);
+        loadRemainingNecromancerSummons(data.skills, data.tables.at("skills"), data.tables.at("monstats"),
+            data.tables.at("monstats2"), data.tables.at("monlvl"), sounds, data.tables.at("missiles"), data.states, archives, data);
         const DataTable levels(archives.read("data/global/excel/levels.txt"));
         for (size_t row = 0; row < levels.rows().size(); ++row)
             if (auto id = levels.number(row, "Id"); id && *id > 0)

@@ -1,5 +1,7 @@
 #include "gameplay/skills/spec.hpp"
 #include "gameplay/skills/resolve.hpp"
+#include "gameplay/skills/summon_resolve.hpp"
+#include "gameplay/skills/necro_summon_spec.hpp"
 #include "client/local_character_client.hpp"
 #include "content/character/character_display.hpp"
 #include "content/classic_data.hpp"
@@ -82,6 +84,11 @@ const CharacterView &LocalCharacterClient::read() const {
         if (entry.spell && skill.effectiveRank > 0) {
             cast = resolveSkill(*entry.spell, {skill.effectiveRank, p.character.skillRanks, fireMastery, lightningMastery,
                                 combat.coldSkillDamagePercent});
+            if (entry.spell->summon) {
+                const auto &definition = *entry.spell->summon;
+                cast->summon = resolveSummon(definition, skill.effectiveRank, session_.effectiveSkillRank(definition.masterySkill),
+                    session_.effectiveSkillRank(definition.resistSkill), p.character.level, session_.state().population.difficulty, p.character.skillRanks);
+            }
             skill.usableNow &= p.resources.mana >= std::max(p.skills.channelSkill() == id ? 0.f : float(entry.spell->startMana), cast->manaCost);
             if (cast->delayFrames > 0) skill.usableNow &= session_.state().frame >= p.skills.skillDelayUntil;
             if (cast->requiresShield) skill.usableNow &= bool(equipment.shield);
@@ -98,6 +105,28 @@ const CharacterView &LocalCharacterClient::read() const {
         for (int required : entry.prerequisites)
             if (!p.character.skillRanks.contains(required) || p.character.skillRanks.at(required) <= 0)
                 if (const auto *prerequisite = content.skills.find(required)) skill.treeTooltip.push_back("Requires " + prerequisite->name);
+        if (cast && cast->summon) {
+            skill.treeTooltip.insert(skill.treeTooltip.end(), skill.pickerTooltip.begin(), skill.pickerTooltip.end());
+        }
+        if (entry.passive && entry.classCode == "nec") {
+            const auto &rows = content.tables.at("skills");
+            for (size_t row = 0; row < rows.rows().size(); ++row) {
+                if (rows.number(row, "Id") != id) continue;
+                auto param = [&](int index) { return rows.number(row, "Param" + std::to_string(index)).value_or(0); };
+                const int rank = std::max(1, skill.effectiveRank);
+                if (entry.sourceName == "Golem Mastery") {
+                    skill.treeTooltip.push_back("Golem life: +" + std::to_string(param(1) + (rank-1)*param(2)) + "%");
+                    skill.treeTooltip.push_back("Golem attack rating: +" + std::to_string(param(5) + (rank-1)*param(6)));
+                    skill.treeTooltip.push_back("Golem movement speed: +" + std::to_string(std::min(param(4), param(3)+(param(4)-param(3))*(110*rank/(rank+6))/100)) + "%");
+                } else if (entry.sourceName == "Skeleton Mastery") {
+                    skill.treeTooltip.push_back("Skeleton life: +" + std::to_string(rank*param(1)) + " / Damage: +" + std::to_string(rank*param(2)));
+                    skill.treeTooltip.push_back("Revive life: +" + std::to_string(rank*param(3)) + "% / Damage: +" + std::to_string(rank*param(4)) + "%");
+                } else if (entry.sourceName == "Summon Resist") {
+                    skill.treeTooltip.push_back("Summon elemental resistance: +" + std::to_string(std::min(param(2), param(1)+(param(2)-param(1))*(110*rank/(rank+6))/100)) + "%");
+                }
+                break;
+            }
+        }
         if (entry.auraImplemented) {
             if (skill.effectiveRank > 0) {
                 skill.treeTooltip.push_back("Current level " + std::to_string(skill.effectiveRank));

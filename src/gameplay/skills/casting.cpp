@@ -56,7 +56,7 @@ void SkillRuntime::advanceSkillCasting(SkillCaster player, float dt, bool moving
             auto cast = *pendingCast;
             pendingCast.reset();
             if (cast.enemy) {
-                if (cast.skill.summon || (cast.skill.bone && cast.skill.bone->corpse)) {
+                if ((cast.skill.summon && cast.skill.summon->corpse) || (cast.skill.bone && cast.skill.bone->corpse)) {
                     if (!world_.usableCorpse(cast.enemy, cast.skill.bone && cast.skill.bone->corpse)) return;
                     cast.target = unitPosition(cast.enemy);
                 } else if (cast.skill.bone && cast.skill.bone->prison) {
@@ -120,7 +120,7 @@ bool SkillRuntime::beginSkillCast(SkillCaster player, const SkillCastSpec &skill
         if (!position || world_.safeZone()) { world_.message("Bone Prison requires a target outside town"); return false; }
         target = *position;
     }
-    if (skill.summon || (skill.bone && skill.bone->corpse)) {
+    if ((skill.summon && skill.summon->corpse) || (skill.bone && skill.bone->corpse)) {
         if (!enemy) enemy = world_.corpseNear(target, skill.bone && skill.bone->corpse);
         if (!world_.usableCorpse(enemy, skill.bone && skill.bone->corpse)) { world_.message("A usable monster corpse is required"); return false; }
         target = unitPosition(enemy);
@@ -128,6 +128,10 @@ bool SkillRuntime::beginSkillCast(SkillCaster player, const SkillCastSpec &skill
     if (player.mana < std::max(skill.manaCost, skill.startMana)) {
         world_.message("Not enough mana");
         return false;
+    }
+    if (skill.summon && !skill.summon->corpse) {
+        if (!world_.walkable(player.id, target)) return false;
+        enemy = {};
     }
     const Vec aim = (target - player.pos).unit();
     if (aim.length() > 0) player.look = aim;

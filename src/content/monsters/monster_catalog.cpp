@@ -329,7 +329,7 @@ MonsterCatalog::MonsterCatalog(Archives &archives, const DataTable &stats) {
                             quickAttacks_.emplace(kind, *timing);
                     if (auto timing = loadMonsterAttackTiming(
                             animations, actor->token, 1, weapon,
-                            actor->attack1Projectile || actor->ai == "Hydra" ? 2 : 1))
+                            actor->attack1Projectile || actor->ai == "Hydra" || kind == MonsterKind::NecroMage ? 2 : 1))
                         attacks_.emplace(kind, *timing);
                 } else if (std::string_view(mode) == "a2") {
                     if (kind == MonsterKind::Brute || kind == MonsterKind::Skeleton ||

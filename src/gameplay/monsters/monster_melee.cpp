@@ -2,6 +2,8 @@
 #include "gameplay/units/actions.hpp"
 #include "gameplay/combat/damage_request.hpp"
 #include "gameplay/skills/runtime.hpp"
+#include "gameplay/skills/necro_summon_spec.hpp"
+#include "gameplay/items/state.hpp"
 #include "core/random.hpp"
 #include "gameplay/simulation/simulation.hpp"
 #include "gameplay/combat/accuracy.hpp"
@@ -19,7 +21,9 @@ int chooseAttackMode(Enemy &enemy, const MonsterAiProfile &rules) {
 } // namespace
 void Simulation::refreshMonsterAttackRate(Enemy &enemy) {
     if (enemy.attack <= 0 || enemy.attackMode >= 3 || enemy.teleportTarget) return;
-    const int auraRate = enemy.combatEffects.modifiers(state_.frame).combat.attackRate;
+    const auto combat = combatUnit(enemy.id).stats.attributes.combat;
+    const int itemSpeed = enemy.necroPet && enemy.necroPet->item && combat.fasterAttack > 0 ? 120*combat.fasterAttack/(120+combat.fasterAttack) : 0;
+    const int auraRate = combat.attackRate + itemSpeed;
     const int coldRate = enemy.chill > 0 && unitColdEffect_ ? unitColdEffect_(combatUnit(enemy.id)) : 0;
     const int rate = std::clamp(100 + auraRate + coldRate, 15, 175);
     if (rate == enemy.attackRatePercent) return;
@@ -39,7 +43,9 @@ void Simulation::beginMonsterAttack(Enemy &enemy, int forcedMode) {
         if (auto combat = monsterNormalCombat_(enemy.identity, state_.area.region, enemy.enchantmentData());
             combat && combat->attack2Damage)
             enemy.attackMode = chooseAttackMode(enemy, *ai);
-    const int auraRate = enemy.combatEffects.modifiers(state_.frame).combat.attackRate;
+    const auto combat = combatUnit(enemy.id).stats.attributes.combat;
+    const int itemSpeed = enemy.necroPet && enemy.necroPet->item && combat.fasterAttack > 0 ? 120*combat.fasterAttack/(120+combat.fasterAttack) : 0;
+    const int auraRate = combat.attackRate + itemSpeed;
     const int coldRate = enemy.chill > 0 && unitColdEffect_ ? unitColdEffect_(combatUnit(enemy.id)) : 0;
     enemy.attackRatePercent = enemy.attackMode >= 3 ? 100 : std::clamp(100 + auraRate + coldRate, 15, 175);
     const float chillScale = 100.f / float(enemy.attackRatePercent);
@@ -144,19 +150,26 @@ void Simulation::resolveMonsterAttack(Enemy &enemy, int modeOverride, bool proje
     const auto source = combatUnit(enemy.id);
     const auto accuracy = enemy.intrinsicCombat ? std::optional<MonsterAccuracy>{{source.stats.level, source.stats.attributes.attackRating}} :
         monsterAccuracy_ ? monsterAccuracy_(enemy, state_.area.region, mode) : std::nullopt;
+    const bool ironItem = enemy.necroPet && enemy.necroPet->item;
+    auto targetModifiers = source.stats.attributes.combat.target;
+    if (ironItem) {
+        const auto weapon = source.stats.attributes.combat.weapons.find(enemy.necroPet->item->id);
+        if (weapon != source.stats.attributes.combat.weapons.end()) mergeAttackTargetModifiers(targetModifiers,weapon->second.target);
+    }
+    const MonsterDefense defense{target.stats.level,target.stats.attributes.defense,target.stats.demon,target.stats.undead,target.stats.boss};
     const bool running = target.player && target.records.player->movement.runningNow && target.records.player->movement.moving;
     if (!running && accuracy) {
         const int auraRating = enemy.combatEffects.modifiers(state_.frame).combat.attackRatingPercent +
             (enemy.enchantment ? enemy.enchantment->attackRatingPercent : 0);
-        const int chance = physicalHitChance(accuracy->level,
-            int(int64_t(accuracy->attackRating) * std::max(0, 100 + auraRating) / 100),
-            target.stats.level, target.stats.attributes.defense);
+        const int chance = ironItem ? weaponHitChance(accuracy->level,accuracy->attackRating,auraRating,targetModifiers,defense,target.stats.rank) :
+            physicalHitChance(accuracy->level,int(int64_t(accuracy->attackRating) * std::max(0, 100 + auraRating) / 100),
+                target.stats.level, target.stats.attributes.defense);
         if (limitedRandom(enemy.combatRandom, 100) >= unsigned(chance)) {
             if (!projectile) skills().triggerCombatEffects(defender, CombatEffectEvent::AttackedInMelee, enemy.id);
             return;
         }
     }
-    if (target.stats.block > 0 && limitedRandom(*target.random, 100) < unsigned(target.stats.block)) {
+    if (!ironItem && target.stats.block > 0 && limitedRandom(*target.random, 100) < unsigned(target.stats.block)) {
         blockUnit(defender);
         if (!projectile) skills().triggerCombatEffects(defender, CombatEffectEvent::AttackedInMelee, enemy.id);
         return;
@@ -191,11 +204,18 @@ void Simulation::resolveMonsterAttack(Enemy &enemy, int modeOverride, bool proje
             if (uint32_t(enemy.combatRandom) % 100 < unsigned(*chance)) damage *= 2.f;
         }
     const int damagePercent = (enemy.enchantment ? enemy.enchantment->damagePercent : 0) +
-        source.stats.attributes.combat.damagePercent;
+        source.stats.attributes.combat.damagePercent + (ironItem ? targetDamageBonus(targetModifiers,defense) : 0);
     // SUnitDmg adds the signed percentage to the base and floors ED at -90.
     // Preserve its truncation toward zero for reductions such as Weaken.
     const int64_t physicalBase = int64_t(damage * 256.f);
     damage = float(std::max<int64_t>(0, physicalBase + physicalBase * std::max(-90, damagePercent) / 100)) / 256.f;
+    if (ironItem) {
+        const auto &modifiers = source.stats.attributes.combat;
+        auto elements = rollAttackElements(enemy.necroPet->item->id, &modifiers, nullptr, &enemy.combatRandom);
+        elements.attackerLevel = source.stats.level;
+        resolveWeaponHit(defender, damage, enemy.id, elements);
+        return;
+    }
     const float previousLife = *target.life;
     if (!projectile) skills().triggerCombatEffects(defender, CombatEffectEvent::AttackedInMelee, enemy.id);
     DamageRequest hit{enemy.id, defender, damage, MonsterDamageType::Physical, 0, false, false};
@@ -211,7 +231,7 @@ void Simulation::resolveMonsterAttack(Enemy &enemy, int modeOverride, bool proje
                 unsigned(std::max(0, maximum - minimum) * 256))) / 256.f;
             hit.channels[size_t(type)] = float(int64_t(amount * 256.f) * sourceDamage / 128) / 256.f;
         }
-    if (combat && !enemy.intrinsicCombat) prepareMonsterElements(enemy, *combat, mode, hit, sourceDamage);
+    if (combat && (!enemy.intrinsicCombat || (enemy.necroPet && enemy.necroPet->spec->kind == NecroSummonKind::Revive))) prepareMonsterElements(enemy, *combat, mode, hit, sourceDamage);
     prepareMonsterEnchantmentHit(enemy, hit, sourceDamage);
     const auto physicalDamage = resolveIncoming(enemy.id, target, hit.amount, MonsterDamageType::Physical);
     hit.amount = physicalDamage.dealt;
@@ -224,6 +244,25 @@ void Simulation::resolveMonsterAttack(Enemy &enemy, int modeOverride, bool proje
     }
     hit.mitigated = true;
     skills().healLifeTap(enemy.id, defender, hit.amount, projectile);
+    if (!projectile && enemy.necroPet && enemy.necroPet->spec->lifeLeechPercent > 0 &&
+        (target.player || (target.monster && target.identity.role == CombatRole::Monster))) {
+        const auto &blood = *enemy.necroPet->spec;
+        const int drain = target.player ? 100 : target.stats.drain;
+        const int64_t damage = std::min<int64_t>(int64_t(hit.amount*256.f)*drain/100, int64_t(previousLife*256.f));
+        float healing = float(damage*blood.lifeLeechPercent/100)/256.f;
+        const auto owner = combatUnit(enemy.allegiance.owner);
+        auto heal = [&](EntityId id, float amount) {
+            const auto unit = combatUnit(id); if (!unit.alive()) return 0.f;
+            const float before = *unit.life; restoreUnit(id, amount); return *unit.life-before;
+        };
+        if (owner.alive()) healing -= heal(owner.id, float(int64_t(healing*256.f)*blood.ownerSharePercent/100)/256.f);
+        healing -= heal(enemy.id, healing);
+        if (owner.alive() && healing > 0) heal(owner.id, healing);
+        if (damage > 0 && blood.healOverlay >= 0) {
+            state_.area.effects.push_back({enemy.pos,0,blood.healOverlayDuration,-1,blood.healOverlay,enemy.id});
+            if (owner.alive()) state_.area.effects.push_back({*owner.position,0,blood.healOverlayDuration,-1,blood.healOverlay,owner.id});
+        }
+    }
     applyMonsterCurse(enemy, defender);
     if (hit.chill > 0) {
         applyChill(defender, hit.chill);
@@ -234,6 +273,8 @@ void Simulation::resolveMonsterAttack(Enemy &enemy, int modeOverride, bool proje
     const float hitDealt = dealDamage(hit);
     if (!projectile && hitDealt > 0 && enemy.hp > 0)
         skills().triggerCombatEffects(defender, CombatEffectEvent::DamagedInMelee, enemy.id);
+    if (!projectile && hitDealt > 0 && enemy.hp > 0)
+        skills().triggerCombatEffects(enemy.id, CombatEffectEvent::DealtMeleeDamage, defender);
     const float total = previousLife - *target.life;
     recoverUnit(defender, enemy.id, total, total > hitDealt ||
         std::any_of(hit.channels.begin() + 1, hit.channels.end(), [](float amount) { return amount > 0; }));

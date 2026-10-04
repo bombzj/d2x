@@ -67,6 +67,7 @@ class ISkillWorld {
     virtual bool usableCorpse(EntityId target, bool explosion = false) const = 0;
     virtual CorpseExplosionSource corpseExplosionSource(EntityId target) = 0;
     virtual EntityId corpseNear(Vec target, bool explosion = false) const = 0;
+    virtual bool summonGround(EntityId actor, const SkillCastSpec &skill, Vec target) = 0;
     virtual bool summonCorpse(EntityId actor, const SkillCastSpec &skill, EntityId corpse) = 0;
     virtual EntityId createBoneBarrier(EntityId actor, const BoneSkillSpec &program, Vec position, EntityId root, int skill, int rank, bool search = false, Vec facing = {1,0}) = 0;
     virtual std::optional<Vec> prisonTarget(EntityId target) const = 0;
