@@ -129,7 +129,7 @@ class Simulation {
     std::function<bool(const RuntimeCombatUnit &, bool)> auraEligible_;
     std::function<bool(const RuntimeCombatUnit &, bool)> curseEligible_;
     int aiCurseDivisor_ = 1;
-    std::function<int(const Enemy &)> terrorVelocityBonus_;
+    std::function<std::pair<int, bool>(const Enemy &)> terrorMovement_;
     std::function<bool(const Enemy &)> redemptionCorpseEligible_;
     std::function<std::optional<MonsterAiProfile>(const Enemy &)> monsterAi_;
     std::function<bool(RegionId)> zombieForcedPursuit_;

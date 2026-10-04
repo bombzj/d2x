@@ -4,6 +4,8 @@
 
 当前技能直接复用公共 `CombatUnit`，删除重复 `SkillUnit` 与两个逐字段转换；尸体／发射值在 `world_values.hpp`，原快照抗性取值调用纯 `rawResistance`，不再经世界虚接口。旧类型别名与延迟副弹命名同步清理；事实见 [单位基线](UNITS.md)。
 
+最新诅咒批次（2026-10-04）已逐项完成十项规则修正、Windows Release链接和打包，`dist/current`已更新；后续简单冒烟覆盖属性互斥、真实反伤／治疗、AI控制与持续祭坛双向覆盖，源码与文档纳入本次提交。新增独立 `curse_data.*` 导入、`curse_resolve.*` 纯等级／免疫求值及 `curse_events.cpp` 命中事件；技能只借用公共单位和权威端口。`CurseLevel`按技能／状态／等级跨来源比较，同级只续期，低级拒绝；持续祭坛按原等级0加入同一覆盖通道，吸引保护有效状态。AI、参考冲突及未移植分支见[死灵法师基线](../NECROMANCER_SKILLS.md#诅咒逐项实现)，下方技能迁移运行证据均属既有批次，本次诅咒冒烟单列在上述专题基线。
+
 ## 代码分工与入口
 
 | 层／入口 | 当前职责 |
@@ -12,7 +14,7 @@
 | `items/skill_sources.*`、`skills/rank_sources.*` | 物品侧筛选既有合格授予并携带 handle／revision；技能侧只合成传入的学习等级、授予与加成，不查询角色／怪物／库存 |
 | `content/skills/skill_metadata.hpp`、`skill_data.*`、各 `*_data.*` | MPQ 与职业树导入；`SkillMetadata` 保存学习／显示字段，`SkillRecord` 通过只读定义指针关联执行参数，元数据头不引入完整 `SkillSpec` |
 | `skills/spec.hpp`、`cast_spec.hpp`、各行为 `*_spec.hpp`、`visual.hpp` | 原定义、已求值结果、行为参数和表现描述；世界运行态只取施法结果，场景缓存只取所需表现字段 |
-| `resolve.*`、`damage_curve.*`、`summon_resolve.*`、`aura_resolve.*`、`passive.*`、`rank_bonus.*` | 纯求值；等级、协同、专精／装备加成由调用方显式准备。Warmth／专精复用等级算术，护盾扣蓝复用纯函数 |
+| `resolve.*`、`damage_curve.*`、`summon_resolve.*`、`aura_resolve.*`、`curse_resolve.*`、`passive.*`、`rank_bonus.*` | 纯求值；等级、协同、专精／装备加成由调用方显式准备。Warmth／专精复用等级算术，护盾扣蓝复用纯函数；诅咒按目标基础抗性独立折减 |
 | `source.*`、`session_skill_sources.cpp` | 宿主映射学习身份和借用装备，准备有效等级；`UnitSkillSources` 按单位 ID 注册数值来源；本地玩家起手／延迟／反应走同一求值服务；怪物原生特殊飞弹继续显式传等级、空协同和零加成 |
 | `caster.hpp`、`aura_owner.hpp`、`weapon_caster.hpp`、`projectile_source.hpp`、公共 `combat/unit.hpp` | 当前调用内借用动作／资源、武器派生值、坐标／随机流及公共战斗能力；没有完整角色、背包、任务或怪物记录 |
 | `runtime.hpp`、`runtime.cpp` | 无持久状态的 `SkillRuntime` 入口；仅借用权威端口，声明不引入完整模拟器、角色／怪物、装备或技能总定义 |
@@ -33,7 +35,7 @@
 | 电弧、陨石、暴风雪、冰封球、冰尖柱、火墙、天堂之拳、圣光弹 | `arc.cpp`、`meteor.cpp`、`blizzard.cpp`、`frozen_orb.cpp`、`glacial_spike.cpp`、`firewall.cpp`、`heaven.cpp`、`holy_bolt.cpp` |
 | Blaze、Thunder Storm、火墙周期 | `elemental_runtime.cpp` |
 | 武器技能、突进及武器命中贡献 | `weapon_runtime.cpp`、`charge.cpp`、`weapon_contributions.*` |
-| 冰甲反击、护盾、反伤／偷取生命及状态事件 | `chilling_armor.cpp`、`reactions.cpp`、`shield.cpp`、`aura.cpp` |
+| 冰甲反击、护盾、反伤／偷取生命及状态事件 | `chilling_armor.cpp`、`reactions.cpp`、`shield.cpp`、`curse_events.cpp` |
 | 光环启停／目标筛选／周期、怪物词缀光环／诅咒／死亡弹体 | `aura.cpp`、`native_effects.cpp`、`native_projectiles.cpp` |
 | 专属飞弹推进／命中分派与小型规则 | `missile_dispatch.cpp`、`missile_rules.*` |
 

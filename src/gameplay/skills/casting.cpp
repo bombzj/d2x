@@ -97,9 +97,7 @@ bool SkillRuntime::beginSkillCast(SkillCaster player, const SkillCastSpec &skill
     if (skill.delayFrames > 0 && world_.frame() < player.skillDelayUntil) return false;
     if (skill.requiresShield && !player.shield) return false;
     if (skill.curse && skill.curse->ai == CurseAi::Attract) {
-        const auto victim = combatUnit(enemy);
-        if (!victim.alive() || !canAttack(player.id, enemy) || !victim.monster ||
-            !world_.curseEligible(victim.id, true)) return false;
+        if (!validAttractTarget(player.id, enemy)) return false;
     }
     if (skill.heaven && (!combatUnit(enemy).alive() || !canAttack(player.id, enemy))) return false;
     if (skill.blizzard && !blizzardTargetClear(player.pos, target)) return false;

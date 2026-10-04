@@ -135,16 +135,51 @@ class SimulationSkillWorld final : public ISkillWorld, public ISkillWeaponWorld 
     }
     int aiCurseDivisor() const override { return simulation_.aiCurseDivisor_; }
     int attractState() const override { return simulation_.attractState_; }
-    void attract(EntityId target, EntityId victim, EffectFrame until) override {
+    void attract(EntityId target, EntityId victim, EffectFrame until, EffectSource source) override {
         if (auto *unit = enemy(target)) {
             unit->attractedTarget = victim; unit->attractedUntil = until;
+            unit->attractionSource = source;
+            if (unit->activeCurseAi == CurseAi::Terror && unit->terrorMovement) {
+                unit->terrorMovement->threat = victim;
+                unit->terrorMovement->beganEscape = false;
+            }
             unit->combatTarget = {}; unit->route.clear(); unit->approach.reset(); unit->rethink = 0;
             cancelTimedAction({unit->attack, unit->attackDuration, unit->attackImpact});
         }
     }
     void resetCurseAi(EntityId target) override {
         if (auto *unit = enemy(target)) {
-            unit->route.clear(); unit->approach.reset(); unit->combatTarget = {};
+            for (const auto &effect : unit->combatEffects.entries())
+                if (effect.activeAt(simulation_.state_.frame) && effect.spec.curseAi == CurseAi::DimVision) {
+                    // Switching the think function does not cancel an accepted WL/RN/A1 action.
+                    unit->activeCurseAi = CurseAi::DimVision;
+                    unit->rethink = 0;
+                    return;
+                }
+            for (const auto &effect : unit->combatEffects.entries())
+                if (effect.activeAt(simulation_.state_.frame) && effect.spec.curseAi == CurseAi::Terror) {
+                    const bool repeated = unit->activeCurseAi == CurseAi::Terror && unit->terrorMovement;
+                    if (!repeated) {
+                        const auto threat = simulation_.combatUnit(unit->combatTarget);
+                        const auto [velocity, running] = simulation_.terrorMovement_
+                            ? simulation_.terrorMovement_(*unit) : std::pair{0, false};
+                        unit->terrorMovement = Enemy::TerrorMovement{
+                            threat.alive() ? threat.id : effect.spec.source.entity, velocity, running, false};
+                        unit->route.clear();
+                    }
+                    unit->terrorMovement->beganEscape = false;
+                    unit->approach.reset(); unit->combatTarget = unit->terrorMovement->threat;
+                    cancelTimedAction({unit->attack, unit->attackDuration, unit->attackImpact});
+                    unit->skill2Remaining = unit->skill2Duration = 0;
+                    unit->teleportTarget.reset(); unit->nestSpawnPosition.reset(); unit->aiCorpse = {};
+                    unit->aiPursuing = unit->aiCircling = false;
+                    unit->aiEscaping = !unit->route.empty(); unit->aiRunning = unit->terrorMovement->running;
+                    unit->activeCurseAi = CurseAi::Terror; unit->rethink = 0;
+                    return;
+                }
+            unit->terrorMovement.reset();
+            unit->route.clear();
+            unit->approach.reset(); unit->combatTarget = {};
             cancelTimedAction({unit->attack, unit->attackDuration, unit->attackImpact});
             unit->skill2Remaining = unit->skill2Duration = 0;
             unit->teleportTarget.reset(); unit->nestSpawnPosition.reset(); unit->aiCorpse = {};

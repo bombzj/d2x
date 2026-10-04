@@ -3,7 +3,7 @@
 #include "gameplay/simulation/simulation.hpp"
 
 namespace d2x {
-void Simulation::advanceMonsterAction(Enemy &enemy, float dt, CurseAi curseAi, std::vector<MonsterSpawn> &nestSpawns) {
+void Simulation::advanceMonsterAction(Enemy &enemy, float dt, CurseAi, std::vector<MonsterSpawn> &nestSpawns) {
     refreshMonsterAttackRate(enemy);
     if (advanceTimedAction({enemy.attack, enemy.attackDuration, enemy.attackImpact}, dt, .00001f, 0.f)) {
         if (enemy.teleportTarget) {
@@ -33,7 +33,8 @@ void Simulation::advanceMonsterAction(Enemy &enemy, float dt, CurseAi curseAi, s
             launchMonsterProjectile(enemy);
         else if (enemy.attackMode >= 3)
             launchMonsterSpell(enemy);
-        else if (curseAi != CurseAi::DimVision && monsterProjectile_ && monsterProjectile_(enemy, enemy.attackMode))
+        // Dim Vision restricts subsequent AI choices, not the accepted attack's native A1 missile.
+        else if (monsterProjectile_ && monsterProjectile_(enemy, enemy.attackMode))
             launchMonsterProjectile(enemy);
         else
             resolveMonsterAttack(enemy);

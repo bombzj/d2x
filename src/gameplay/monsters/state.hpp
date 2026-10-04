@@ -34,8 +34,15 @@ struct Enemy {
     CombatIdentity allegiance{2, {}, 0, CombatRole::Monster};
     EntityId combatTarget;
     CurseAi activeCurseAi = CurseAi::None;
+    struct TerrorMovement {
+        EntityId threat;
+        int velocityBonus = 0;
+        bool running = false, beganEscape = false;
+    };
+    std::optional<TerrorMovement> terrorMovement;
     EntityId attractedTarget;
     EffectFrame attractedUntil = 0;
+    EffectSource attractionSource;
     std::optional<UnitCombatStats> intrinsicCombat;
     struct ConversionState {
         CombatIdentity original;

@@ -1,6 +1,8 @@
 # 构建与运行
 
-最新第三至第五幕任务批次（2026-10-04）已完成Windows Release游戏／资源工具构建和简单冒烟，修复编译缺项、佣兵组件／牢门声音装载、第四幕对白绑定、赫拉铁力原标记和拉苏克日志文本键。覆盖普通音频启动、A3欢迎及任务分配、衣卒尔2技能点奖励、A5日志、A2欢迎回归和临时D2S同进程／独立恢复，最终实例退出0、stderr空。源码及文档纳入本次提交，运行入口`build/bin/d2x.exe`；本轮未重打包，`dist/current`仍是下方音频修复／自动地图包。准确范围、日志及限制见[任务冒烟](LATER_ACT_QUESTS.md#冒烟范围2026-10-04)。
+2026-10-04诅咒规则修正：逐项 Windows Release 构建／更新固定 `dist/current`，已按原技能顺序完成十项诅咒，每项成功链接并打包后再进入下一项，失明动作收尾后再次链接／打包。入口 `dist/current/Play.cmd`，当前包同时包含已提交的第三至第五幕任务。逐项状态见[死灵法师技能](NECROMANCER_SKILLS.md#诅咒逐项实现)；日志为 `artifacts/curse-01-*` 至 `curse-10-*`，铁处女最终成功日志为 `curse-04-ironmaiden-build-fix2-20261004.log`，恐惧／迷乱／吸引最终日志带 `final-build`，最终收尾为 `curse-final-build-20261004.log`。后续授权简单冒烟使用临时Necromancer及现有调试管道，确认属性／覆盖、反伤／治疗、AI及祭坛双向覆盖，截图已查看、stderr空；短启动与失明补查实例退出0。证据目录 `artifacts/curse-smoke-20261004/`，无新测试程序或用户存档读写，源码与文档纳入本次提交；具体限制见诅咒基线。
+
+最新第三至第五幕任务批次（2026-10-04）已完成Windows Release游戏／资源工具构建和简单冒烟，修复编译缺项、佣兵组件／牢门声音装载、第四幕对白绑定、赫拉铁力原标记和拉苏克日志文本键。覆盖普通音频启动、A3欢迎及任务分配、衣卒尔2技能点奖励、A5日志、A2欢迎回归和临时D2S同进程／独立恢复，最终实例退出0、stderr空。源码及文档纳入本次提交，运行入口`build/bin/d2x.exe`；后续诅咒批次已打包，`dist/current`包含本任务批次。准确范围、日志及限制见[任务冒烟](LATER_ACT_QUESTS.md#冒烟范围2026-10-04)。
 
 普通启动音频修复（2026-10-04）：`dist/current` 已纳入法杖原循环声音的 `Defer Inst` 重复实例处理，解决 `Unsupported original travel sound instance rule`。当前 `assets/mpq2` 可读取对应原表及 `quest/staffloop.wav`，本次无需补资源。Windows Release 构建日志 `artifacts/audio-startup-build-20261004.log`；同目录 `audio-startup-before-20261004.*.log` 和 `audio-startup-after-20261004.*.log` 记录非 hidden 女巫／区域1／seed210 两帧启动由退出1变为退出0、修复后stderr空。此前 hidden 冒烟跳过音频初始化，未覆盖此路径。未指定load/save，未读写角色档，未新增测试程序或提交Git；任务演出听感与完整流程仍待验收。
 

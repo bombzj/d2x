@@ -147,10 +147,11 @@ GameSessionImpl::GameSessionImpl(Archives &archives, const WorldSelection &selec
             record->switchAi && !unit.effects->hasState(simulation_->uninterruptableState_, state().frame));
     };
     simulation_->aiCurseDivisor_ = std::max(1, content_.tables.at("difficultylevels").number(size_t(selection.difficulty), "AiCurseDiv").value_or(1));
-    simulation_->terrorVelocityBonus_ = [this](const Enemy &enemy) {
+    simulation_->terrorMovement_ = [this](const Enemy &enemy) -> std::pair<int, bool> {
         const auto *record = monsterContent_.find(enemy.identity.monster);
-        if (!record || record->walkVelocity.value_or(0) <= 0) return 0;
-        return std::clamp(100 * record->runVelocity.value_or(0) / *record->walkVelocity - 100, 0, 120);
+        if (!record || record->walkVelocity.value_or(0) <= 0) return {0, false};
+        return {std::clamp(100 * record->runVelocity.value_or(0) / *record->walkVelocity - 100, 0, 120),
+                record->runMode};
     };
     simulation_->initializeNaturalElite_ = [this](Enemy &enemy, const Enemy *owner) {
         const auto *jadeMonster = monsterContent_.find(enemy.identity.monster);

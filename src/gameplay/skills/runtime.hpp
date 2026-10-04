@@ -41,6 +41,7 @@ class SkillRuntime {
     void resolveGlacialSpikeImpact(Missile &missile);
     const WeaponDamage *attackWeapon(WeaponSkillCaster actor, bool thrown, bool leftHand) const;
     void releaseCurse(SkillCaster actor, const SkillCastSpec &skill, Vec target, EntityId targetUnit);
+    bool validAttractTarget(EntityId actor, EntityId target) const;
     void releaseTelekinesis(SkillCaster actor, const SkillCastSpec &skill, Vec target, EntityId targetUnit);
     void releaseAppliedEffect(SkillCaster actor, const SkillCastSpec &skill, Vec target, EntityId targetUnit);
     void releaseTeleport(SkillCaster actor, const SkillCastSpec &skill, Vec target, EntityId targetUnit);
@@ -79,7 +80,7 @@ class SkillRuntime {
     void updateAuras(bool playerOnly = false);
     void reflectThorns(EntityId actor, EntityId target, float physicalDamage);
     void reflectIronMaiden(EntityId actor, EntityId target, float physicalDamage);
-    void healLifeTap(EntityId actor, EntityId target, float physicalDamage);
+    void healLifeTap(EntityId actor, EntityId target, float physicalDamage, bool missile = false);
     void triggerCombatEffects(EntityId target, CombatEffectEvent event, EntityId other);
     float absorbEnergyShield(EntityId target, float damage);
     bool beginWeaponSkill(WeaponSkillCaster actor, const SkillCastSpec &skill, Vec aim, EntityId target);

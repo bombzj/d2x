@@ -21,6 +21,7 @@ struct Missile;
 struct Effect;
 struct DamageRequest;
 struct RemovedCombatEffect;
+struct EffectSource;
 enum class Relation;
 // Authority-side execution boundary. No Session, Simulation, actor records,
 // content tables, input or GPU resources cross this interface.
@@ -71,7 +72,7 @@ class ISkillWorld {
     virtual bool auraEligible(EntityId target, bool ally) const = 0;
     virtual int aiCurseDivisor() const = 0;
     virtual int attractState() const = 0;
-    virtual void attract(EntityId target, EntityId victim, EffectFrame until) = 0;
+    virtual void attract(EntityId target, EntityId victim, EffectFrame until, EffectSource source) = 0;
     virtual void resetCurseAi(EntityId target) = 0;
     virtual void effectsChanged(std::span<const RemovedCombatEffect> removed) = 0;
     virtual std::vector<SkillAuraSource> auraSources(bool playerOnly) = 0;

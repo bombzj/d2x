@@ -18,6 +18,7 @@ struct RemovedCombatEffect {
 struct EffectApplication {
     EffectHandle handle;
     std::vector<RemovedCombatEffect> removed;
+    bool accepted = true;
 };
 struct TriggeredCombatEffect {
     EffectHandle handle;

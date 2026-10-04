@@ -12,6 +12,10 @@
 
 namespace d2x {
 namespace {
+bool naturalHostileMonster(const WorldState &state, const Enemy &monster) {
+    const auto found = state.relations.factions.find({monster.allegiance.faction, state.player.allegiance.faction});
+    return !monster.allegiance.owner && found != state.relations.factions.end() && found->second == Relation::Hostile;
+}
 std::optional<CombatIdentity> identityOf(const WorldState &state, EntityId id) {
     if (!id) return std::nullopt;
     if (id == state.player.id) return state.player.allegiance;
@@ -38,17 +42,19 @@ std::pair<EntityId, CombatIdentity> rootIdentity(const WorldState &state, Entity
 }
 }
 EntityId Simulation::controllingPlayer(EntityId id) const {
+    auto controller = [&](EntityId caster) {
+        const auto [root, identity] = rootIdentity(state_, caster);
+        return identity.role == CombatRole::Player ? root : EntityId{};
+    };
     for (const auto &enemy : state_.area.enemies)
         if (enemy.id == id) {
             if (enemy.attractedUntil > state_.frame)
                 for (const auto &target : state_.area.enemies)
-                    if (target.id == enemy.attractedTarget)
-                        for (const auto &effect : target.combatEffects.entries())
-                            if (effect.activeAt(state_.frame) && effect.spec.curseAi == CurseAi::Attract &&
-                                effect.spec.source.entity == state_.player.id) return state_.player.id;
+                    if (target.id == enemy.attractedTarget && target.hp > 0)
+                        if (const auto owner = controller(enemy.attractionSource.entity)) return owner;
             for (const auto &effect : enemy.combatEffects.entries())
-                if (effect.activeAt(state_.frame) && effect.spec.curseAi == CurseAi::Confuse &&
-                    effect.spec.source.entity == state_.player.id) return state_.player.id;
+                if (effect.activeAt(state_.frame) && effect.spec.curseAi == CurseAi::Confuse)
+                    if (const auto owner = controller(effect.spec.source.entity)) return owner;
         }
     const auto [root, identity] = rootIdentity(state_, id);
     return identity.role == CombatRole::Player ? root : EntityId{};
@@ -61,14 +67,10 @@ Relation Simulation::relation(EntityId first, EntityId second) const {
         if (enemy.id == first) firstMonster = &enemy;
         if (enemy.id == second) secondMonster = &enemy;
     }
-    const bool hostileMonsters = firstMonster && secondMonster && !firstMonster->allegiance.owner && !secondMonster->allegiance.owner &&
-        state_.relations.factions.contains({firstMonster->allegiance.faction, state_.player.allegiance.faction}) &&
-        state_.relations.factions.at({firstMonster->allegiance.faction, state_.player.allegiance.faction}) == Relation::Hostile &&
-        state_.relations.factions.contains({secondMonster->allegiance.faction, state_.player.allegiance.faction}) &&
-        state_.relations.factions.at({secondMonster->allegiance.faction, state_.player.allegiance.faction}) == Relation::Hostile;
+    const bool hostileMonsters = firstMonster && secondMonster &&
+        naturalHostileMonster(state_, *firstMonster) && naturalHostileMonster(state_, *secondMonster);
     if (hostileMonsters)
-        if (firstMonster->attractedUntil > state_.frame && firstMonster->attractedTarget == second && secondMonster->hp > 0 &&
-            secondMonster->combatEffects.hasState(attractState_, state_.frame))
+        if (firstMonster->attractedUntil > state_.frame && firstMonster->attractedTarget == second && secondMonster->hp > 0)
             return Relation::Hostile;
     if (hostileMonsters)
         for (const auto *monster : {firstMonster, secondMonster})
@@ -98,13 +100,23 @@ EntityId Simulation::chooseTarget(EntityId actor, float range) {
     if (!source.alive()) return {};
     if (source.monster && source.records.monster->attractedUntil > state_.frame) {
         const auto target = combatUnit(source.records.monster->attractedTarget);
-        if (target.alive() && target.effects->hasState(attractState_, state_.frame) &&
-            canAttack(actor, target.id) && active(*target.position)) return target.id;
+        if (target.alive() && canAttack(actor, target.id) && active(*target.position) &&
+            grid_->missileSegment(*source.position, *target.position, {0x04, 1})) return target.id;
+        // AiUtil clears a direct target command when the barrier check fails.
+        auto &monster = *source.records.monster;
+        monster.attractedTarget = {}; monster.attractedUntil = 0; monster.attractionSource = {};
+        monster.route.clear(); monster.combatTarget = {};
     }
     EntityId result;
+    const bool confused = source.monster && std::any_of(source.effects->entries().begin(), source.effects->entries().end(),
+        [this](const auto &effect) { return effect.activeAt(state_.frame) && effect.spec.curseAi == CurseAi::Confuse; });
+    // AiUtil::sub_6FCF2920 temporarily chooses EVIL or GOOD using one seed bit,
+    // finds the closest eligible target and restores the recipient's alignment.
+    const bool scanMonsters = confused && (rollRandom(*source.random) & 1);
     // Target acquisition needs identity/geometry only; do not repeatedly derive
     // every candidate's resistances and equipment for every AI thinker.
-    auto consider = [&](EntityId id, Vec position, float life) {
+    auto consider = [&](EntityId id, Vec position, float life, bool hostileMonster = false) {
+        if (confused && hostileMonster != scanMonsters) return;
         if (life <= 0 || !canAttack(actor, id) || !active(position)) return;
         const float distance = (position - *source.position).length();
         if (distance < range && grid_->missileSegment(*source.position, position, {0x04, 1})) {
@@ -113,7 +125,8 @@ EntityId Simulation::chooseTarget(EntityId actor, float range) {
     };
     consider(state_.player.id, state_.player.movement.pos, state_.player.resources.hp);
     if (state_.player.hireling.active()) consider(state_.player.hireling.id, state_.player.hireling.pos, state_.player.hireling.hp);
-    for (const auto &unit : state_.area.enemies) consider(unit.id, unit.pos, unit.hp);
+    for (const auto &unit : state_.area.enemies)
+        consider(unit.id, unit.pos, unit.hp, naturalHostileMonster(state_, unit));
     for (const auto &unit : state_.companions) consider(unit.id, unit.pos, unit.hp);
     return result;
 }

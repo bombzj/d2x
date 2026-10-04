@@ -41,6 +41,8 @@
 
 战斗关系、公共伤害与死灵法师召唤适配同一 D2MOO 固定快照的 SUnit／SUnitDmg、SkillNec、D2Skills、Monster、AiThink、PlayerPets 及 ObjEval；具体函数见 [阵营](COMBAT_FACTIONS.md) 和 [召唤](NECROMANCER_SKILLS.md)。所有技能参数、骷髅数值、组件和动画仍取当前 MPQ，不纳入参考表或资源。规则适配保留上述 D2MOO MIT 归属。
 
+十项诅咒本批继续核对 D2MOO `SkillNec.cpp::SrvDo030/059/061`、`sub_6FD0B2B0/B3D0/BDA0`、`EventFunc04/05`，以及 `Skills.cpp::sub_6FD10EC0`、`ObjMode.cpp` 持续祭坛、`AiThink.cpp::SpecialState10_17/11`、`AiUtil.cpp::sub_6FCF2920`、`AiTactics.cpp` 逃跑和 `SUnitDmg.cpp` 百分比伤害。等级与免疫求值、事件、AI适配及未移植分支见[诅咒基线](NECROMANCER_SKILLS.md#诅咒逐项实现)。[暴雪诅咒说明](https://classic.battle.net/diablo2exp/skills/necromancer-curses.shtml)补充失明的既有追击和恐惧覆盖边界，并用于核对降低抵抗等级表；D2MOO `D2Common_11033` 重建取整与该表冲突，保留当前MPQ参数的分阶段整数求值，差异明确记录。参考源码及MPQ导出均不纳入源码，MIT归属保持。
+
 角色手持武器组件选择核对本地 D2MOO 固定 `5596f5c` 的 `D2Common/src/D2Inventory.cpp::INVENTORY_GetCompositItem`；世界方向到 DCC 方向帧核对 Diablerie 固定 `9e42ef2` 的 `Engine/Iso.cs::Direction`、`Engine/IO/D2Formats/DirectionMapping.cs` 和 `Engine/Entities/Missile.cs::Create`。两者沿用上文 MIT 归属；弓的组件、女巫 COF／DCC 与 Arrow 的 32 方向仍取用户当前 MPQ，不引入参考资源。源码入口与未验收范围见 [通用攻击](COMMON_ATTACKS.md#武器组件与朝向)。
 
 场景坐标／绘制／阻挡核对的本地入口汇总见 [地图](ACT1_MAPS.md#坐标绘制与阻挡)。D2MOO 固定 `5596f5c` 的 D2Dungeon、Units、Path、D2Collision、DrlgRoomTile 提供投影、静态／动态坐标、路径形状与掩码、房间初始化和门／出口标志；MonsterSpawn 核对出生掩码与 spawnCol，沿用上述 MIT 归属。OpenD2 固定 `0578244` 的 Engine/DT1.cpp 的 indexTable 交叉核对子格倒行；DGEngine 固定 `ae6dcab` 的 DT1/DC6ImageContainer 和 DGEngine.core 固定 `dd600ab` 的 Sprite2/CompositeSprite 用于帧偏移与纹理原点核对，沿用上述许可。OpenDiablo2 固定 `7f92c57` 的 d2maprenderer/renderer.go、d2mapentity/object.go 与对象字段记录用于低墙／地板、上墙／单位、屋顶及 OrderFlag/DrawUnder 层级证据，GPL-3.0；Diablerie 固定 `9e42ef2` 的 Iso、WorldRenderer、LevelBuilder、COFRenderer、Overlay 提供独立落点排序、阴影层和 PreDraw 交叉证据，MIT。C++ 入口独立实现；原图、Objects/MonStats/Overlay 参数及 DT1 原标记仍来自当前 MPQ，参考表、仓库、导出文件不纳入源码。

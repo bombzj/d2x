@@ -22,12 +22,12 @@ struct EffectSource {
 };
 // The caller must choose a verified reapplication rule. A nonzero state group
 // is exclusive on the recipient, independent of source or stacking policy.
-enum class EffectStacking { ReplaceState, ReplaceSource, Independent, AuraLevel };
+enum class EffectStacking { ReplaceState, ReplaceSource, Independent, AuraLevel, CurseLevel };
 enum class EffectRemoval { Expired, Replaced, Death, Hit, Dispelled, SourceRemoved, Cleared };
 struct EffectVisual {
     int overlayId = -1;
 };
-enum class CombatEffectEvent { DamagedInMelee, AttackedInMelee, HitByMissile };
+enum class CombatEffectEvent { DamagedInMelee, AttackedInMelee, HitByMissile, DealtMeleeDamage };
 struct FreezeAttacker {
     float duration = 0;
     int overlayId = -1;
@@ -37,7 +37,15 @@ struct FreezeAttacker {
 // Reactions belong to the effect; removal cannot leave registered callbacks.
 struct ColdMeleeRetaliation {};
 struct ColdMissileRetaliation {};
-using EffectAction = std::variant<FreezeAttacker, ColdMeleeRetaliation, ColdMissileRetaliation>;
+struct IronMaidenRetaliation {
+    int percent = 0, reducedPercent = 0, hitClass = -1;
+};
+struct LifeTapHealing {
+    int percent = 0, overlayId = -1;
+    float overlayDuration = 0;
+};
+using EffectAction = std::variant<FreezeAttacker, ColdMeleeRetaliation, ColdMissileRetaliation,
+                                 IronMaidenRetaliation, LifeTapHealing>;
 struct EffectReaction {
     CombatEffectEvent event;
     EffectAction action;
@@ -50,10 +58,7 @@ struct CombatEffectSpec {
     CharacterModifiers modifiers;
     EffectVisual visual;
     bool restoreStaminaOnRemoval = false;
-    int lifeTapOverlay = -1;
-    float lifeTapOverlayDuration = 0;
     CurseAi curseAi = CurseAi::None;
-    Vec curseCenter;
     std::vector<EffectReaction> reactions;
 };
 } // namespace d2x

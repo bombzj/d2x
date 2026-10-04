@@ -108,7 +108,7 @@ void Simulation::resolveWeaponHit(EntityId defender, float physical, EntityId so
         *target.life = std::max(1.f / 256.f, *target.life - crushing);
     }
     const float dealtPhysical = mitigate(elements.deadly ? physical * 2.f : physical, MonsterDamageType::Physical);
-    skills().healLifeTap(source, defender, dealtPhysical);
+    skills().healLifeTap(source, defender, dealtPhysical, originalElements.ranged);
     float total = dealtPhysical;
     const int64_t damage = int64_t(std::min(*target.life, dealtPhysical) * 256.f);
     auto leeched = [&](int percent, int divisor) {

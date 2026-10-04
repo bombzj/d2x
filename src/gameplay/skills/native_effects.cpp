@@ -1,5 +1,6 @@
 #include "gameplay/combat/damage_request.hpp"
 #include "gameplay/skills/runtime.hpp"
+#include "gameplay/skills/curse_resolve.hpp"
 #include "gameplay/skills/world_port.hpp"
 #include "gameplay/combat/unit.hpp"
 #include "gameplay/effects/state.hpp"
@@ -65,20 +66,18 @@ void SkillRuntime::applyNativeCurse(EntityId actor, EntityId defender, const Aur
     const auto target = combatUnit(defender);
     if (!target || (limitedRandom(*source.random, 4)) == 0) return;
     auto curse = [&](CombatUnit victim) {
-        if (!world_.auraEligible(victim.id, false)) return;
-        const int resistance = std::max(0, victim.stats.attributes.combat.curseResistance);
+        if (!world_.auraEligible(victim.id, false) || !world_.curseEligible(victim.id, false)) return;
+        const int resistance = victim.stats.attributes.combat.curseResistance;
         if (resistance >= 100 || victim.effects->hasState(world_.attractState(), world_.frame())) return;
-        for (const auto &existing : victim.effects->entries())
-            if (existing.activeAt(world_.frame()) && existing.spec.state.id == definition.state.id &&
-                existing.spec.source.definition == definition.skill && existing.spec.source.level > definition.rank) return;
         CombatEffectSpec effect;
         effect.state = definition.state;
         effect.source = {CombatEffectSource::Monster, actor, definition.skill, definition.rank};
-        effect.stacking = EffectStacking::AuraLevel;
+        effect.stacking = EffectStacking::CurseLevel;
         effect.duration = EffectFrame(definition.periodFrames - int64_t(definition.periodFrames) * resistance / 100);
-        effect.modifiers = definition.modifiers;
-        const auto removed = victim.effects->apply(std::move(effect), world_.frame()).removed;
-        if (victim.player) world_.effectsChanged(removed);
+        effect.modifiers = evaluateCurseModifiers(definition.modifiers, victim.stats.attributes,
+            victim.effects->entries(), world_.frame(), victim.stats.monsterResistanceRules && !victim.hireling);
+        const auto applied = victim.effects->apply(std::move(effect), world_.frame());
+        if (victim.player && applied.accepted) world_.effectsChanged(applied.removed);
     };
     const float radius = std::clamp(definition.radius, 1.f, 40.f);
     for (auto victim : combatUnits())

@@ -25,7 +25,7 @@ EffectApplication CombatEffectSet::apply(CombatEffectSpec spec, EffectFrame now)
     if (spec.state.curse)
         for (const auto &effect : effects_)
             if (effect.activeAt(now) && effect.spec.curseAi == CurseAi::Attract)
-                return {effect.handle, {}};
+                return {effect.handle, {}, false};
     for (const auto &reaction : spec.reactions)
         std::visit([](const auto &action) {
             if constexpr (std::is_same_v<std::decay_t<decltype(action)>, FreezeAttacker>) {
@@ -34,6 +34,18 @@ EffectApplication CombatEffectSet::apply(CombatEffectSpec spec, EffectFrame now)
                     throw std::invalid_argument("Invalid combat effect reaction");
             }
         }, reaction.action);
+    // D2Game::sub_6FD10EC0 compares state/skill/level, irrespective of caster.
+    // Equal-level curses only renew the deadline; ownership and stats survive.
+    if (spec.stacking == EffectStacking::CurseLevel)
+        for (auto &existing : effects_)
+            if (existing.activeAt(now) && existing.spec.state.id == spec.state.id &&
+                existing.spec.source.definition == spec.source.definition) {
+                if (existing.spec.source.level > spec.source.level) return {existing.handle, {}, false};
+                if (existing.spec.source.level == spec.source.level) {
+                    if (spec.duration) existing.expiresAt = now + *spec.duration;
+                    return {existing.handle, {}};
+                }
+            }
     if (spec.stacking == EffectStacking::AuraLevel)
         for (auto &existing : effects_)
             if (existing.activeAt(now) && existing.spec.state.id == spec.state.id &&
@@ -57,6 +69,7 @@ EffectApplication CombatEffectSet::apply(CombatEffectSpec spec, EffectFrame now)
         if (existing.spec.state.id != effect.spec.state.id) return false;
         switch (effect.spec.stacking) {
         case EffectStacking::ReplaceState:
+        case EffectStacking::CurseLevel:
         case EffectStacking::AuraLevel: return true;
         case EffectStacking::ReplaceSource:
             return existing.spec.source.kind == effect.spec.source.kind &&

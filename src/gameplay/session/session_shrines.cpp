@@ -31,8 +31,15 @@ bool GameSessionImpl::applyShrine(int code, EntityId source, Vec position) {
     if (record == content_.states.end() || shrine.durationFrames <= 0) return false;
     CombatEffectSpec effect;
     effect.state = record->second.definition;
-    effect.source = {CombatEffectSource::Shrine, source, code, 0};
+    // ObjMode uses skill 0/level 0 for every timed shrine in the curse channel.
+    effect.source = {CombatEffectSource::Shrine, source, 0, 0};
+    effect.stacking = EffectStacking::CurseLevel;
     effect.duration = EffectFrame(shrine.durationFrames);
+    if (effect.state.curse) {
+        const int resistance = characterStats().combat.curseResistance;
+        if (resistance >= 100 || player.combatEffects.hasState(simulation_->attractState_, state().frame)) return false;
+        effect.duration = EffectFrame(shrine.durationFrames - int64_t(shrine.durationFrames) * resistance / 100);
+    }
     auto &modifiers = effect.modifiers;
     switch (code) {
     case 6: modifiers.combat.defensePercent = shrine.argument0; break;
@@ -71,11 +78,13 @@ bool GameSessionImpl::applyShrine(int code, EntityId source, Vec position) {
     case 15: modifiers.combat.experiencePercent = shrine.argument0; break;
     default: return false;
     }
+    const float duration = float(*effect.duration) / 25.f;
     const auto applied = player.combatEffects.apply(std::move(effect), state().frame);
+    if (!applied.accepted) return false;
     simulation_->combatEffectsChanged(applied.removed);
     shrineStatuses_.clear();
     shrineStatuses_.push_back({code, shrine.name, shrine.effect,
-        state().time + float(shrine.durationFrames) / 25.f, applied.handle});
+        state().time + duration, applied.handle});
     return true;
 }
 bool GameSessionImpl::applySpecialShrine(const ShrineDefinition &shrine, Vec position) {

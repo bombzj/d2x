@@ -1,6 +1,7 @@
 #include "spec.hpp"
 #include "damage_curve.hpp"
 #include "resolve.hpp"
+#include "curse_resolve.hpp"
 #include <algorithm>
 #include <cstdint>
 #include <limits>
@@ -21,19 +22,7 @@ SkillCastSpec resolveSkill(const SkillSpec &spec, const SkillEvaluationInput &in
     result.rank = rank;
     result.sourceId = spec.sourceId;
     result.requiresShield = spec.requiresShield;
-    result.curse = spec.curse;
-    if (result.curse) {
-        result.curse->radius += (rank - 1) * result.curse->radiusPerLevel;
-        result.curse->frames += (rank - 1) * result.curse->framesPerLevel;
-        result.curse->modifiers.combat.ironMaidenPercent = result.curse->reflectPercent + (rank - 1) * result.curse->reflectPerLevel;
-        result.curse->modifiers.combat.lifeTapPercent = result.curse->lifeTapPercent + (rank - 1) * result.curse->lifeTapPerLevel;
-        if (result.curse->resistMaximum > 0) {
-            const int amount = -std::min(result.curse->resistMaximum, result.curse->resistMinimum +
-                (result.curse->resistMaximum - result.curse->resistMinimum) * (110 * rank / (rank + 6)) / 100);
-            auto &modifiers = result.curse->modifiers;
-            modifiers.fireResist = modifiers.coldResist = modifiers.lightningResist = modifiers.poisonResist = amount;
-        }
-    }
+    if (spec.curse) result.curse = evaluateCurse(*spec.curse, rank);
     result.concentrationState = spec.concentrationState;
     result.concentrationFactor = spec.concentrationFactor;
     result.heaven = spec.heaven;

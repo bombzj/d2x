@@ -59,7 +59,7 @@ add_library(d2x_content src/content/classic_data.cpp src/content/lod_data.cpp sr
 target_sources(d2x_content PRIVATE src/content/character/character_progression.cpp)
 target_sources(d2x_content PRIVATE src/content/character/character_attributes.cpp)
 target_sources(d2x_content PRIVATE src/content/string_table.cpp src/content/skills/skill_data.cpp)
-target_sources(d2x_content PRIVATE src/content/skills/sorceress_data.cpp src/content/skills/frozen_orb_data.cpp src/content/skills/blizzard_data.cpp src/content/skills/glacial_spike_data.cpp src/content/skills/weapon_skill_data.cpp src/content/skills/necromancer_data.cpp)
+target_sources(d2x_content PRIVATE src/content/skills/sorceress_data.cpp src/content/skills/frozen_orb_data.cpp src/content/skills/blizzard_data.cpp src/content/skills/glacial_spike_data.cpp src/content/skills/weapon_skill_data.cpp src/content/skills/necromancer_data.cpp src/content/skills/curse_data.cpp)
 target_sources(d2x_content PRIVATE src/content/skills/skill_animation.cpp)
 target_sources(d2x_content PRIVATE src/content/items/item_projectiles.cpp src/content/skills/missile_effects.cpp)
 target_sources(d2x_content PRIVATE src/content/monsters/monster_experience.cpp)
@@ -103,7 +103,7 @@ add_library(d2x_gameplay
   src/gameplay/combat/damage_resolution.cpp src/gameplay/combat/player_damage.cpp
   src/gameplay/combat/weapon_elements.cpp
   src/gameplay/skills/casting.cpp src/gameplay/skills/release.cpp src/gameplay/skills/projectile_launch.cpp
-  src/gameplay/skills/curse_runtime.cpp src/gameplay/skills/utility_effects.cpp
+  src/gameplay/skills/curse_runtime.cpp src/gameplay/skills/curse_events.cpp src/gameplay/skills/curse_resolve.cpp src/gameplay/skills/utility_effects.cpp
   src/gameplay/skills/native_effects.cpp src/gameplay/skills/native_projectiles.cpp src/gameplay/skills/firewall.cpp
   src/gameplay/skills/weapon_runtime.cpp src/gameplay/skills/weapon_contributions.cpp src/gameplay/skills/charge.cpp src/gameplay/skills/applied_effects.cpp src/gameplay/skills/direct_damage.cpp src/gameplay/skills/heaven.cpp src/gameplay/skills/holy_bolt.cpp
   src/gameplay/skills/missile_rules.cpp src/gameplay/skills/missile_dispatch.cpp src/gameplay/skills/runtime.cpp src/gameplay/skills/elemental_runtime.cpp

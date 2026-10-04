@@ -16,6 +16,7 @@
 #include "content/skills/sorceress_data.hpp"
 #include "content/skills/weapon_skill_data.hpp"
 #include "content/skills/necromancer_data.hpp"
+#include "content/skills/curse_data.hpp"
 #include "content/monsters/monster_enchantment.hpp"
 #include "content/skills/aura_data.hpp"
 #include <algorithm>

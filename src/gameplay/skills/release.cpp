@@ -31,11 +31,7 @@ void SkillRuntime::releaseSkillCast(SkillCaster player, const SkillCastSpec &ski
     }
     if (skill.requiresShield && !player.shield) return;
     if (skill.curse && skill.curse->ai == CurseAi::Attract) {
-        const auto victim = combatUnit(targetUnit);
-        if (!victim.alive() || !canAttack(player.id, targetUnit) || !victim.monster ||
-            !world_.curseEligible(victim.id, true) ||
-            !world_.auraEligible(victim.id, false) || victim.stats.attributes.combat.curseResistance >= 100 ||
-            victim.effects->hasState(world_.attractState(), world_.frame())) return;
+        if (!validAttractTarget(player.id, targetUnit)) return;
     }
     if (skill.heaven && (!combatUnit(targetUnit).alive() || !canAttack(player.id, targetUnit))) return;
     if (consumeMana) player.mana -= skill.manaCost;

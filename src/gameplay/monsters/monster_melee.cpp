@@ -190,8 +190,11 @@ void Simulation::resolveMonsterAttack(Enemy &enemy, int modeOverride, bool proje
             if (uint32_t(enemy.combatRandom) % 100 < unsigned(*chance)) damage *= 2.f;
         }
     const int damagePercent = (enemy.enchantment ? enemy.enchantment->damagePercent : 0) +
-        enemy.combatEffects.modifiers(state_.frame).combat.damagePercent;
-    damage = float(int64_t(damage * 256.f) * std::max(0, 100 + damagePercent) / 100) / 256.f;
+        source.stats.attributes.combat.damagePercent;
+    // SUnitDmg adds the signed percentage to the base and floors ED at -90.
+    // Preserve its truncation toward zero for reductions such as Weaken.
+    const int64_t physicalBase = int64_t(damage * 256.f);
+    damage = float(std::max<int64_t>(0, physicalBase + physicalBase * std::max(-90, damagePercent) / 100)) / 256.f;
     const float previousLife = *target.life;
     if (!projectile) skills().triggerCombatEffects(defender, CombatEffectEvent::AttackedInMelee, enemy.id);
     DamageRequest hit{enemy.id, defender, damage, MonsterDamageType::Physical, 0, false, false};
@@ -219,7 +222,7 @@ void Simulation::resolveMonsterAttack(Enemy &enemy, int modeOverride, bool proje
         restoreUnit(defender, resolved.absorbed);
     }
     hit.mitigated = true;
-    skills().healLifeTap(enemy.id, defender, hit.amount);
+    skills().healLifeTap(enemy.id, defender, hit.amount, projectile);
     applyMonsterCurse(enemy, defender);
     if (hit.chill > 0) {
         applyChill(defender, hit.chill);
