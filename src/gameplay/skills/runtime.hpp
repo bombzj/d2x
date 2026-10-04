@@ -40,6 +40,7 @@ class SkillRuntime {
     void spawnFrozenOrbBolt(const Missile &orb, Vec target, bool nova, std::vector<Missile> &spawned);
     void resolveGlacialSpikeImpact(Missile &missile);
     const WeaponDamage *attackWeapon(WeaponSkillCaster actor, bool thrown, bool leftHand) const;
+    void releaseSpearMelee(SkillProjectileSource actor, const SkillCastSpec &skill, Vec target, EntityId targetUnit);
     bool releaseBoneWall(SkillCaster actor, const SkillCastSpec &skill, Vec target);
     bool advanceBoneMissile(Missile &missile, float dt);
     bool releaseCorpseExplosion(SkillCaster actor, const SkillCastSpec &skill, EntityId corpse);
@@ -88,6 +89,7 @@ class SkillRuntime {
     float absorbEnergyShield(EntityId target, float damage);
     bool beginWeaponSkill(WeaponSkillCaster actor, const SkillCastSpec &skill, Vec aim, EntityId target);
     void advanceWeaponAttack(WeaponSkillCaster actor);
+    void releaseSpearImpact(const Missile &missile, std::vector<Missile> &spawned);
     void advanceCharge(WeaponSkillCaster actor, float dt);
     void launchFirewall(EntityId actor, Vec center, Vec heading, const FirewallSpec &spec, SkillBehavior behavior);
     void releaseNativeBurst(SkillProjectileSource actor, int missileId, const NativeSkillCast &definition);

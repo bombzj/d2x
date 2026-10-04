@@ -96,6 +96,7 @@ class Simulation {
     void combatEffectsChanged(std::span<const RemovedCombatEffect> removed);
     int resistancePenalty_ = 0;
     std::function<void(EntityId, bool)> wearEquipment_;
+    std::function<void(EntityId, int, int)> wearImpale_;
     std::function<bool(EntityId, bool)> spendProjectile_;
     std::function<bool(EntityId, bool)> canSpendProjectile_;
     std::function<std::optional<WeaponAttackTiming>(const WeaponDamage &, bool, bool, std::string_view)> attackTiming_;

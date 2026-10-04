@@ -22,7 +22,7 @@ ActorView LocalActorClient::controlledActor() const {
     actor.poisoned = player.resources.poisonRemaining > 0;
     actor.animationMode = player.actions.dead ? "dt" : player.actions.blockAnimation ? "bl"
         : player.actions.hitTime > 0 ? "gh" : player.actions.castTime > 0 ? "sc"
-        : player.actions.weaponAttack ? player.actions.weaponAttack->timing.mode
+        : player.actions.weaponAttack ? player.actions.weaponAttack->animationMode()
         : player.movement.moving ? (player.movement.runningNow ? "rn" : "wl") : "nu";
     actor.animationRate = actor.animationMode == "rn" ? stats.runAnimationRate
         : actor.animationMode == "wl" ? stats.walkAnimationRate : 25.f;
@@ -49,7 +49,7 @@ ActorView LocalActorClient::controlledActor() const {
         const int step = std::clamp(int((player.skills.lastCastDuration - player.actions.castTime) * player.skills.lastCastRate), 0, 18);
         actor.actionFrame = sequence[step];
     }
-    if (player.actions.weaponAttack && mode == player.actions.weaponAttack->timing.mode)
+    if (player.actions.weaponAttack && mode == player.actions.weaponAttack->animationMode())
         actor.actionFrame = player.actions.weaponAttack->animationFrame();
     if (player.actions.blockAnimation && mode == "bl") actor.actionFrame = player.actions.blockAnimation->animationFrame();
     if (player.actions.charge && mode == "rn") actor.actionFrame = int(player.actions.charge->ticks % 8);

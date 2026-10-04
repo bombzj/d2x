@@ -1,3 +1,4 @@
+#include "gameplay/skills/spear_spec.hpp"
 #include "gameplay/units/actions.hpp"
 #include "gameplay/combat/damage_request.hpp"
 #include "gameplay/skills/missile_rules.hpp"
@@ -131,8 +132,11 @@ void Simulation::meleeDamage(EntityId defender, const WeaponDamage &weapon, cons
         elements.fire = float(int64_t(elements.fire * 256.f) * (100 + mastery) / 100) / 256.f;
     }
     applyWeaponSkillElements(elements, weapon, skill, player.combatRandom, player.actions.vengeanceHit);
+    const auto program = skill && skill->weapon ? skill->weapon->spear : nullptr;
     resolveWeaponHit(defender, float(damage) / 256.f, player.id, elements);
-    if (wearEquipment_ && weapon.item) wearEquipment_(weapon.item, false);
+    if (program && program->kind == SpearSkillSpec::Kind::Impale) {
+        if (wearImpale_ && weapon.item) wearImpale_(weapon.item, program->wearChance, program->wearAmount);
+    } else if (wearEquipment_ && weapon.item) wearEquipment_(weapon.item, false);
 }
 void Simulation::updateMissiles(float dt) {
     auto &area = state_.area;

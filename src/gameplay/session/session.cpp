@@ -137,6 +137,11 @@ GameSessionImpl::GameSessionImpl(Archives &archives, const WorldSelection &selec
         if (!result || !result.changes.empty())
             publishInventory(std::move(result), {});
     };
+    simulation_->wearImpale_ = [this](EntityId weapon, int chance, int amount) {
+        auto result = inventory_.wearEquipment(playerContainers_, weapon, false, simulation_->state_.player.combatRandom,
+            simulation_->state_.player.character.weaponSet, chance, amount);
+        if (!result || !result.changes.empty()) publishInventory(std::move(result), {});
+    };
     simulation_->combatEffectsChanged_ = [this] { refreshCharacter(); };
     simulation_->auraEligible_ = [this](const RuntimeCombatUnit &unit, bool checkNoAura) {
         if (!unit.monster && !unit.hireling) return true;
@@ -682,6 +687,7 @@ GameSessionImpl::GameSessionImpl(Archives &archives, const WorldSelection &selec
     fingerprint.add("necromancer-poison-bone-rules-v1");
     fingerprint.add("necromancer-summon-rules-v1-native-iron-kf");
     fingerprint.add("amazon-bow-rules-v1-native-arrow-programs");
+    fingerprint.add("amazon-spear-rules-v1-native-sequences-and-javelins");
     fingerprint.add("map-rules-v9-native-trees-complete-groups");
     auto members = archives.used;
     for (const auto &member : members) {

@@ -74,7 +74,7 @@ InventoryResult InventoryService::replenish(float dt) {
 }
 InventoryResult InventoryService::wearEquipment(const PlayerContainers &containers, EntityId weapon,
                                                 bool defending, uint64_t &randomState,
-                                                unsigned weaponSet) {
+                                                unsigned weaponSet, int chanceOverride, int amount) {
     auto roll = [&](unsigned bound) {
         rollRandom(randomState);
         return bound ? uint32_t(randomState) % bound : 0u;
@@ -115,11 +115,16 @@ InventoryResult InventoryService::wearEquipment(const PlayerContainers &containe
     if (!source)
         return {};
     const auto &definition = *catalog_.find(source->definition);
+    if (chanceOverride >= 0 && definition.maxStack > 1 && definition.maxDurability && source->quantity &&
+        !propertyValue(*source, "item_indesctructible")) {
+        if (roll(100) < unsigned(std::clamp(chanceOverride, 0, 100))) return consumeEquipped(selected, containers);
+        return {};
+    }
     if (!definition.maxDurability || !source->durability ||
         propertyValue(*source, "item_indesctructible") || definition.maxStack > 1 ||
         (!definition.equipment.isType("armo") && !definition.equipment.isType("weap")))
         return {};
-    if (roll(100) >= (definition.equipment.isType("armo") ? 10u : 4u))
+    if (roll(100) >= (chanceOverride >= 0 ? unsigned(std::clamp(chanceOverride, 0, 100)) : definition.equipment.isType("armo") ? 10u : 4u))
         return {};
     InventoryResult result;
     result.item = source->id;
@@ -130,7 +135,7 @@ InventoryResult InventoryService::wearEquipment(const PlayerContainers &containe
     result.changes.push_back({source->id, source->revision + 1, ItemChangeKind::DurabilityChanged,
                               source->location, source->location, source->quantity});
     auto &instance = state_.items.at(source->id);
-    --instance.durability;
+    instance.durability -= std::min(instance.durability, unsigned(std::max(0, amount)));
     ++instance.revision;
     return result;
 }

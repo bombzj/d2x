@@ -57,6 +57,8 @@
 
 场景坐标／绘制／阻挡核对的本地入口汇总见 [地图](../gameplay/world/MAPS.md#坐标绘制与阻挡)。D2MOO 固定 `5596f5c` 的 D2Dungeon、Units、Path、D2Collision、DrlgRoomTile 提供投影、静态／动态坐标、路径形状与掩码、房间初始化和门／出口标志；MonsterSpawn 核对出生掩码与 spawnCol，沿用上述 MIT 归属。OpenD2 固定 `0578244` 的 Engine/DT1.cpp 的 indexTable 交叉核对子格倒行；DGEngine 固定 `ae6dcab` 的 DT1/DC6ImageContainer 和 DGEngine.core 固定 `dd600ab` 的 Sprite2/CompositeSprite 用于帧偏移与纹理原点核对，沿用上述许可。OpenDiablo2 固定 `7f92c57` 的 d2maprenderer/renderer.go、d2mapentity/object.go 与对象字段记录用于低墙／地板、上墙／单位、屋顶及 OrderFlag/DrawUnder 层级证据，GPL-3.0；Diablerie 固定 `9e42ef2` 的 Iso、WorldRenderer、LevelBuilder、COFRenderer、Overlay 提供独立落点排序、阴影层和 PreDraw 交叉证据，MIT。C++ 入口独立实现；原图、Objects/MonStats/Overlay 参数及 DT1 原标记仍来自当前 MPQ，参考表、仓库、导出文件不纳入源码。
 
+亚马逊标枪与长矛页另核对同一 D2MOO 固定 `5596f5c` 的 `SkillAma.cpp::SrvSt05/06/07/09/10`、`SrvDo007/011/013/014`、`D2Common/DataTbls/SequenceTbls.cpp`、`SUnit.cpp::sub_6FCBCFD0`、`MissMode.cpp::SrvDo02/SrvHit02/SrvHit12/SrvHit20/SrvDmg12` 和 `SkillSor.cpp::SKILLS_MissileInit_ChargedBolt`。原引擎内建序列按上述MIT来源适配，技能／弹体参数及A1／A2／毒云／闪电资源仍读当前MPQ；参考中的目标X/Y笔误及近战Calc[0]行为区别明确列于[亚马逊基线](../gameplay/skills/AMAZON.md#标枪与长矛技能整页)，尚未逐条核对零售1.13c二进制。参考仓库、数据表、导出和原素材不纳入源码。
+
 ## 格式研究参考
 
 玩家死亡／尸体模块核对本地 D2MOO 的 `PlrModes` 尸体创建／回收和 `EVENTTYPE_ENDANIM` 的 `DT → DEAD` 转换、`PlayerPets` 全类型死亡／佣兵保留、`ItemMode` 装备重试及腰带收缩、`PlrMsg` 单位距离／复活、`Player` 普通单机损失和 `PlrSave2` 原 `JM` 尸体段；依照现有 MIT 参考版本与许可说明。时序／经验罚率从当前 MPQ `AnimData.d2`／`DifficultyLevels` 读取，图形使用原角色 `DD` 或 `DT` 末帧；参考仓库与资源不纳入源码。证据入口、普通单机多尸体限制和未验收边界见 [玩家死亡](../gameplay/characters/PLAYER_DEATH.md)。

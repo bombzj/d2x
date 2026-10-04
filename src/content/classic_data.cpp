@@ -18,6 +18,7 @@
 #include "content/skills/sorceress_data.hpp"
 #include "content/skills/weapon_skill_data.hpp"
 #include "content/skills/amazon_bow_data.hpp"
+#include "content/skills/amazon_spear_data.hpp"
 #include "content/skills/necromancer_data.hpp"
 #include "content/skills/necro_summon_data.hpp"
 #include "content/skills/curse_data.hpp"
@@ -331,6 +332,7 @@ ClassicData loadClassicData(Archives &archives) {
                              overlays, sounds, data.states, archives);
         loadWeaponSkills(data.skills, data.tables.at("skills"), data.tables.at("missiles"), sounds, archives);
         loadAmazonBowSkills(data.skills, data.tables.at("skills"), data.tables.at("missiles"), sounds, archives);
+        loadAmazonSpearSkills(data.skills, data.tables.at("skills"), data.tables.at("missiles"), sounds, archives);
         loadPaladinSkills(data.skills, data.tables.at("skills"), data.tables.at("missiles"), overlays, sounds, data.states, archives);
         loadNecromancerCurses(data.skills, data.tables.at("skills"), overlays, sounds, data.states, archives);
         loadBoneSkills(data.skills, data.tables.at("skills"), data.tables.at("missiles"), overlays, sounds, data.states, archives);

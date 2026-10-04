@@ -1,3 +1,4 @@
+#include "gameplay/skills/spear_spec.hpp"
 #include "gameplay/skills/behavior.hpp"
 #include "gameplay/skills/runtime.hpp"
 #include "gameplay/skills/bow_spec.hpp"
@@ -68,6 +69,18 @@ bool Simulation::firePhysicalProjectile(Vec target, const WeaponDamage &weapon, 
         elements.freezeFrames = int(elements.coldDuration * 25.f + .001f) * bow.freezePercent / 100;
         scaleSource(elements, bow.sourceDamage);
     }
+    if (skill && skill->weapon->spear && skill->weapon->spear->kind == SpearSkillSpec::Kind::Bolt) {
+        const auto &program = *skill->weapon->spear;
+        physical = float(int64_t(physical * 256.f) * program.sourceDamage / 128) / 256.f;
+        scaleSource(elements, program.sourceDamage);
+        elements.lightning += roll(int(skill->minimumDamage * 256.f), int(skill->maximumDamage * 256.f));
+        // SrvDmg12 preserves only the selected lightning channel and converted physical.
+        elements.fire = elements.cold = elements.magic = elements.poisonPerSecond = elements.poisonDuration = elements.coldDuration = 0;
+        elements.lifeLeech = elements.manaLeech = elements.freezeFrames = 0;
+        elements.conversionPercent = program.conversionPercent; elements.conversionElement = DamageType::Lightning;
+    }
+    if (skill && skill->weapon->spear && skill->weapon->spear->kind == SpearSkillSpec::Kind::Fury)
+        elements.lightning += roll(int(skill->minimumDamage * 256.f), int(skill->maximumDamage * 256.f));
     MissileImpactDamage impactDamage;
     if (potion)
         for (size_t channel = 0; channel < spec.damage.size(); ++channel)
@@ -96,6 +109,11 @@ bool Simulation::firePhysicalProjectile(Vec target, const WeaponDamage &weapon, 
     if (skill) {
         missile.skillId = skill->sourceId;
         missile.skillRank = skill->rank;
+        missile.hitOverlayId = skill->hitOverlayId; missile.hitOverlayDuration = skill->hitOverlayDuration;
+        if (skill->weapon->spear) {
+            missile.spear = std::make_shared<SpearMissileState>();
+            missile.spear->program = skill->weapon->spear;
+        }
         missile.impact = skill->missileImpact;
         if (skill->weapon->bow && skill->weapon->bow->immolation)
             missile.impactDamage.channels[size_t(DamageType::Fire)] = elements.fire;
@@ -165,6 +183,17 @@ bool Simulation::firePhysicalProjectile(Vec target, const WeaponDamage &weapon, 
     return true;
 }
 void Simulation::advancePhysicalMissile(Missile &missile, float dt, std::vector<Missile> &spawned) {
+    if (missile.spear && missile.spear->program->poisonTrail && resolveUnitSkill_) {
+        const auto skill = resolveUnitSkill_(missile.owner, missile.skillId, missile.skillRank);
+        if (skill.weapon && skill.weapon->spear && skill.weapon->spear->poisonTrail) {
+            const auto &cloud = *skill.weapon->spear->poisonTrail;
+            Missile trail{ids_.allocate(), missile.owner, missile.pos, {}, float(cloud.lifetimeFrames) / 25.f,
+                SkillBehavior::None, false, cloud.missileId};
+            trail.poisonCloud = cloud; trail.combatRandom = childRandom(unitRandom_);
+            trail.skillId = missile.skillId; trail.skillRank = missile.skillRank;
+            spawned.push_back(std::move(trail));
+        }
+    }
     Vec next = missile.pos + missile.velocity * std::min(dt, missile.remaining);
     const bool wall = clipMissilePath(missile.missileId, missile.pos, next);
     const float remaining = std::max(0.f, missile.remaining - dt);
@@ -181,11 +210,12 @@ void Simulation::advancePhysicalMissile(Missile &missile, float dt, std::vector<
     if (missile.remaining == 0 && missile.impact) resolveMissileImpact(missile, spawned, struck ? struck.id : EntityId{});
     if (!struck) return;
     missile.lastHit = struck.id;
+    if (missile.hitOverlayId >= 0) state_.area.effects.push_back({*struck.position, 0, missile.hitOverlayDuration, -1, missile.hitOverlayId, struck.id});
     if (missile.nextHitDelay > 0) state_.area.novaHitUntil[struck.id] = state_.time + missile.nextHitDelay;
     const MonsterDefense defense{struck.stats.level, struck.stats.attributes.defense,
         struck.stats.demon, struck.stats.undead, struck.stats.boss};
     if (missile.attackerLevel <= 0) return;
-    const bool automatic = missile.bone && missile.bone->program->spirit;
+    const bool automatic = (missile.bone && missile.bone->program->spirit) || (missile.spear && missile.spear->program->automaticHit);
     if (!automatic) rollRandom(missile.combatRandom);
     const int chance = missile.weaponAttack ? weaponHitChance(missile.attackerLevel,
         missile.baseAttackRating, missile.attackRatingPercent, missile.targetModifiers, defense, struck.stats.rank) :

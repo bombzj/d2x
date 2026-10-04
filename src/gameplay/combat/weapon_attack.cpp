@@ -1,4 +1,5 @@
 #include "weapon_attack.hpp"
+#include "gameplay/skills/spear_spec.hpp"
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
@@ -12,11 +13,16 @@ int WeaponAttackTiming::actionTick() const {
                       1, durationTicks());
 }
 int WeaponAttackState::animationFrame() const {
+    if (sequence) return sequence->frames[size_t(std::clamp(ticks * timing.speed / 256, 0, int(sequence->frames.size()) - 1))].frame;
     if (chargeSequence) {
         constexpr int frames[]{1, 4, 5, 6, 8, 10, 12};
         return frames[std::clamp(ticks * timing.speed / 256, 0, 6)];
     }
     return std::clamp(timing.startFrame + ticks * timing.speed / 256, 0, timing.frames - 1);
+}
+std::string_view WeaponAttackState::animationMode() const {
+    if (sequence) return sequence->frames[size_t(std::clamp(ticks * timing.speed / 256, 0, int(sequence->frames.size()) - 1))].secondAttack ? "a2" : "a1";
+    return timing.mode;
 }
 int effectiveAttackSpeed(int animationSpeed, int itemIAS, int baseWeaponSpeed, int skillRate) {
     if (itemIAS <= -120) throw std::invalid_argument("Item IAS exceeds the native supported range");

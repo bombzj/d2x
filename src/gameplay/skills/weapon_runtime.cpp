@@ -1,3 +1,4 @@
+#include "gameplay/skills/spear_spec.hpp"
 #include "gameplay/skills/behavior.hpp"
 #include "gameplay/units/actions.hpp"
 #include "gameplay/combat/geometry.hpp"
@@ -7,6 +8,7 @@
 #include "gameplay/skills/world_port.hpp"
 #include "gameplay/skills/runtime.hpp"
 #include "gameplay/skills/bow_spec.hpp"
+#include "gameplay/skills/projectile_source.hpp"
 #include "core/random.hpp"
 #include <algorithm>
 
@@ -23,6 +25,8 @@ const WeaponDamage *SkillRuntime::attackWeapon(WeaponSkillCaster actor, bool thr
 bool SkillRuntime::beginWeaponSkill(WeaponSkillCaster p, const SkillCastSpec &skill, Vec aim, EntityId target) {
     if (!skill.weapon || world_.safeZone() || p.casting.dead || p.casting.blockAnimation || p.weaponAttack || p.casting.hitTime > 0) return false;
     const auto &action = *skill.weapon;
+    if (action.spear && !action.thrown && action.spear->kind != SpearSkillSpec::Kind::Fend &&
+        (!combatUnit(target).alive() || !canAttack(p.casting.id, target))) return false;
     if (p.charge) return false;
     if (action.delayFrames > 0 && world_.frame() < p.casting.skillDelayUntil) {
         world_.message("This skill is still recovering.");
@@ -50,7 +54,7 @@ bool SkillRuntime::beginWeaponSkill(WeaponSkillCaster p, const SkillCastSpec &sk
         return !p.route.empty();
     }
     if (p.casting.mana < skill.manaCost) {
-        if (skill.effect == SkillBehavior::PoisonDagger) {
+        if (skill.effect == SkillBehavior::PoisonDagger || (action.spear && action.spear->attackWithoutMana)) {
             weapons_.requestWeaponAttack(p.casting.id, target, aim);
             return true;
         }
@@ -88,7 +92,14 @@ bool SkillRuntime::beginWeaponSkill(WeaponSkillCaster p, const SkillCastSpec &sk
             !world_.pathClear(skill.missileId, p.casting.pos, *chosen.position)) target = first;
         strafeShots = count ? std::min(action.attacks, std::max(count, action.bow->minimumShots)) : 0;
     }
-    if (skill.effect == SkillBehavior::Zeal) {
+    const bool fend = action.spear && action.spear->kind == SpearSkillSpec::Kind::Fend;
+    if (fend) {
+        int count = 0;
+        for (auto candidate : combatUnits())
+            if (weapons_.meleeReach(p.casting.id, candidate.id, *weapon)) ++count;
+        strafeShots = std::min(action.attackLimit, count);
+    }
+    if (skill.effect == SkillBehavior::Zeal || fend) {
         if (!target || !weapons_.meleeReach(p.casting.id, target, *weapon)) {
             target = {};
             for (auto candidate : combatUnits())
@@ -100,6 +111,15 @@ bool SkillRuntime::beginWeaponSkill(WeaponSkillCaster p, const SkillCastSpec &sk
     if (!weapons_.beginWeaponAttack(p.casting.id, aim, target, *weapon, action.thrown, false, &action)) return false;
     p.approachSkill.reset();
     p.weaponAttack->skill = skill;
+    if (action.spear && action.spear->oneHand) {
+        auto &attack = *p.weaponAttack;
+        attack.sequence = weapon->weaponClass == "1ht" ? action.spear->oneHand : action.spear->twoHand;
+        attack.timing.frames = int(attack.sequence->frames.size());
+        attack.timing.startFrame = 0;
+        attack.timing.speed = effectiveAttackSpeed(256, weapon->fasterAttack, weapon->baseSpeed,
+            combatUnit(p.casting.id).stats.attributes.combat.attackRate - (combatUnit(p.casting.id).chill && *combatUnit(p.casting.id).chill > 0 ? 50 : 0) - 30);
+        p.meleeTime = float(attack.timing.durationTicks()) / 25.f;
+    }
     if (skill.effect == SkillBehavior::Charge) {
         p.weaponAttack->chargeSequence = true;
         p.weaponAttack->timing.frames = 8;
@@ -136,6 +156,19 @@ void SkillRuntime::advanceWeaponAttack(WeaponSkillCaster p) {
             p.equipment.animationClass == attack.weaponClass) {
             const auto selected = *weapon; // Consuming the last missile can refresh this cache.
             auto enemy = combatUnit(attack.target);
+            const bool fend = attack.skill && attack.skill->weapon->spear &&
+                attack.skill->weapon->spear->kind == SpearSkillSpec::Kind::Fend;
+            if (fend && !weapons_.meleeReach(p.casting.id, attack.target, selected)) {
+                EntityId successor, fallback;
+                for (auto candidate : combatUnits()) {
+                    if (!weapons_.meleeReach(p.casting.id, candidate.id, selected)) continue;
+                    if (!fallback || candidate.id < fallback) fallback = candidate.id;
+                    if (candidate.id > attack.target && (!successor || candidate.id < successor)) successor = candidate.id;
+                }
+                attack.target = successor ? successor : fallback;
+                enemy = combatUnit(attack.target);
+                if (!enemy.alive()) { cancelWeaponAction(p); return; }
+            }
             const bool strafe = attack.skill && attack.skill->weapon->bow && attack.skill->weapon->bow->strafe;
             if (strafe && (!enemy.alive() || !canAttack(p.casting.id, enemy.id) ||
                 !withinBowRadius(p.casting.pos, *enemy.position, attack.skill->weapon->bow->targetRadius) ||
@@ -184,7 +217,14 @@ void SkillRuntime::advanceWeaponAttack(WeaponSkillCaster p) {
                             weapons_.stun(enemy.id, attack.skill->weapon->stunFrames);
                     }
                     if (weapons_.hasEquipmentWear()) weapons_.wearWeapon(selected.item);
-                } else weapons_.weaponMelee(p.casting.id, enemy.id, melee, attack.skill ? &*attack.skill : nullptr);
+                } else {
+                    const auto released = attack.skill;
+                    const Vec struck = *enemy.position;
+                    weapons_.weaponMelee(p.casting.id, enemy.id, melee, released ? &*released : nullptr);
+                    if (released && released->weapon->spear && p.life > 0)
+                        releaseSpearMelee({p.casting.id, p.casting.pos, p.casting.look, p.casting.combatRandom},
+                                          *released, struck, enemy.id);
+                }
                 if (!p.weaponAttack) return;
                 if (attack.skill && attack.skill->weapon->conversionFrames > 0 && enemy.alive() && enemy.monster &&
                     !enemy.stats.boss && enemy.stats.rank == MonsterRank::Normal &&
@@ -211,7 +251,7 @@ void SkillRuntime::advanceWeaponAttack(WeaponSkillCaster p) {
                     attack.released = false;
                 }
             }
-            if (attack.skill && attack.skill->effect == SkillBehavior::Zeal && --attack.remainingAttacks > 0 && p.life > 0) {
+            if (attack.skill && (attack.skill->effect == SkillBehavior::Zeal || fend) && --attack.remainingAttacks > 0 && p.life > 0) {
                 EntityId successor, fallback;
                 for (auto candidate : combatUnits()) {
                     if (!weapons_.meleeReach(p.casting.id, candidate.id, selected)) continue;

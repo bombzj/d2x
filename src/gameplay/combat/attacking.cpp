@@ -56,7 +56,9 @@ bool Simulation::beginWeaponAttack(Vec aim, EntityId target, const WeaponDamage 
     const auto selected = weapon;
     if (skill && skill->bow && skill->bow->strafe &&
         (!spendProjectile_ || !spendProjectile_(selected.item, thrown))) return false;
-    p.actions.weaponAttack = WeaponAttackState{selected.item, target, aim, *timing, thrown};
+    WeaponAttackState attack;
+    attack.weapon = selected.item; attack.target = target; attack.aim = aim; attack.timing = *timing; attack.thrown = thrown;
+    p.actions.weaponAttack = std::move(attack);
     p.actions.weaponAttack->weaponClass = state_.player.equipment.animationClass;
     p.actions.weaponAttack->appearanceDefinitions = state_.player.equipment.appearanceDefinitions;
     p.actions.meleeTime = float(timing->durationTicks()) / 25.f;

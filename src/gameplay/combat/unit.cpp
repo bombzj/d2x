@@ -1,5 +1,6 @@
 #include "gameplay/units/actions.hpp"
 #include "gameplay/skills/bone_spec.hpp"
+#include "gameplay/skills/spear_spec.hpp"
 #include "gameplay/skills/weapon_caster.hpp"
 #include "gameplay/combat/damage_request.hpp"
 #include "gameplay/skills/caster.hpp"
@@ -209,7 +210,9 @@ void Simulation::blockUnit(EntityId defender) {
     player.actions.castTime = 0;
     cancelWeaponAction(skillWeaponCaster(player.id)); player.actions.charge.reset(); player.actions.approachSkill.reset();
     player.movement.route.clear(); player.actions.attackTarget = {}; player.actions.attackPosition.reset();
-    player.actions.blockAnimation = WeaponAttackState{{}, {}, player.movement.pos, *timing, false};
+    WeaponAttackState block;
+    block.aim = player.movement.pos; block.timing = *timing;
+    player.actions.blockAnimation = std::move(block);
 }
 void Simulation::recoverUnit(EntityId defender, EntityId attacker, float damage, bool elemental, int baseHitClass, bool forced) {
     auto target = combatUnit(defender);
@@ -354,6 +357,7 @@ void Simulation::applyWeb(EntityId defender, float duration, int percent) {
     *unit.webSlow.percent = percent;
 }
 std::optional<std::pair<EntityId, float>> Simulation::missileTarget(const Missile &missile, Vec to) {
+    if (missile.spear && missile.age * 25.f + .0001f < missile.spear->program->activateFrames) return std::nullopt;
     const auto rule = missileCollisions_.find(missile.missileId);
     if (rule == missileCollisions_.end()) return std::nullopt;
     std::optional<std::pair<EntityId, float>> hit;

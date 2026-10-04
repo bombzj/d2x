@@ -7,6 +7,7 @@
 #include "gameplay/effects/state.hpp"
 #include "gameplay/skills/missile.hpp"
 #include "gameplay/skills/cast_spec.hpp"
+#include "gameplay/skills/spear_spec.hpp"
 #include "core/random.hpp"
 #include <algorithm>
 #include <cmath>
@@ -45,10 +46,11 @@ void SkillRuntime::advanceArc(Missile &missile, std::vector<Missile> &spawned) {
             for (const auto &target : combatUnits()) {
                 if (target.id == id || !target.alive() || !canAttack(missile.owner, target.id) ||
                     !active(*target.position)) continue;
+                if (arc.spec.nextDelay > 0 && world_.nextHitTime(target.id) > world_.time()) continue;
                 const int deltaX = int(target.position->x) - int(contact.x);
                 const int deltaY = int(target.position->y) - int(contact.y);
                 if (deltaX * deltaX + deltaY * deltaY > arc.spec.range * arc.spec.range ||
-                    !world_.missileSegment(contact, *target.position, {0x04, 1})) continue;
+                    (!missile.spear && !world_.missileSegment(contact, *target.position, {0x04, 1}))) continue;
                 if (!fallback || target.id < fallback) fallback = target.id;
                 if (target.id > id && (!successor || target.id < successor)) successor = target.id;
             }
@@ -63,6 +65,7 @@ void SkillRuntime::advanceArc(Missile &missile, std::vector<Missile> &spawned) {
             child.combatRandom = world_.childSeed();
             child.skillId = missile.skillId; child.skillRank = missile.skillRank;
             child.lastHit = id;
+            child.spear = missile.spear;
             child.arc = Missile::ArcState{*skill.arc, arc.remainingHits - 1,
                 int(skill.minimumDamage * 256.f), int(skill.maximumDamage * 256.f)};
             child.hitOverlayId = skill.hitOverlayId; child.hitOverlayDuration = skill.hitOverlayDuration;

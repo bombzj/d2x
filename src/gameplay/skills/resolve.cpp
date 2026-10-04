@@ -1,3 +1,4 @@
+#include "spear_spec.hpp"
 #include "gameplay/skills/behavior.hpp"
 #include "spec.hpp"
 #include "bone_spec.hpp"
@@ -177,6 +178,8 @@ SkillCastSpec resolveSkill(const SkillSpec &spec, const SkillEvaluationInput &in
     result.arc = spec.arc;
     if (result.arc && spec.effect == SkillBehavior::ChainLightning)
         result.arc->count = std::max(1, (spec.arc->count + (rank - 1) * spec.arc->countPerLevel) / 5);
+    if (result.arc && spec.weapon && spec.weapon->spear && spec.weapon->spear->kind == SpearSkillSpec::Kind::Strike)
+        result.arc->count = std::max(1, spec.arc->count + (rank - 1) * spec.arc->countPerLevel);
     result.meteor = spec.meteor;
     if (result.meteor) {
         auto &program = *result.meteor;
@@ -212,6 +215,26 @@ SkillCastSpec resolveSkill(const SkillSpec &spec, const SkillEvaluationInput &in
     result.poisonDuration = float(poisonFrames) / 25.f;
     result.weapon = spec.weapon;
     if (result.weapon) {
+        if (result.weapon->spear) {
+            auto program = std::make_shared<SpearSkillSpec>(*result.weapon->spear);
+            program->conversionPercent = std::clamp(program->conversionPercent + (rank - 1) * program->conversionPerLevel, 0, 100);
+            if (program->kind == SpearSkillSpec::Kind::Impale)
+                program->wearChance -= std::min(program->wearMaximum, program->wearMinimum +
+                    (program->wearMaximum - program->wearMinimum) * (110 * rank / (rank + 6)) / 100);
+            if (program->poisonTrail) {
+                program->poisonTrail->minimum = int(result.minimumDamage * 256.f);
+                program->poisonTrail->maximum = int(result.maximumDamage * 256.f);
+                program->poisonTrail->poisonFrames = int(poisonFrames);
+                program->poisonTrail->damageFromSkill = false;
+            }
+            if (program->kind == SpearSkillSpec::Kind::Fury) {
+                program->countBase += (rank - 1) * program->countPerLevel;
+                const int velocity = (program->childVelocity + rank * program->childVelocityPerLevel / 8) * 256;
+                program->childSpeed = float(velocity * 75 / 100) * 25.f / 4096.f;
+                program->childLifetime = float(program->childFrames + rank * program->childRangePerLevel) / 25.f;
+            }
+            result.weapon->spear = std::move(program);
+        }
         if (result.weapon->bow) {
             auto bow = std::make_shared<BowSkillSpec>(*result.weapon->bow);
             bow->conversionPercent = std::clamp(bow->conversionPercent + (rank - 1) * bow->conversionPerLevel, 0, 100);
@@ -250,6 +273,12 @@ SkillCastSpec resolveSkill(const SkillSpec &spec, const SkillEvaluationInput &in
     result.missileId = spec.missileId;
     result.missileCount = std::min(spec.missileCountLimit,
         spec.missileCount + (rank - 1) * spec.missileCountPerLevel);
+    if (result.weapon && result.weapon->spear && result.weapon->spear->kind == SpearSkillSpec::Kind::Charged) {
+        const auto &program = *result.weapon->spear;
+        result.missileCount = program.countBase + rank / program.countDivisor;
+        // SrvSt06 also evaluates Calc[0] as the melee enhanced-damage percentage.
+        result.weapon->damagePercent = result.missileCount;
+    }
     result.missileNextDelay = float(spec.missileNextDelay) / 25.f;
     result.staticPercent = float(spec.staticPercent);
     result.staticMinDamage = float(spec.staticMinDamage) / 256.f;

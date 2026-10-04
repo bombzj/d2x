@@ -2,6 +2,7 @@
 #include "gameplay/combat/damage_request.hpp"
 #include "gameplay/skills/runtime.hpp"
 #include "gameplay/skills/bow_spec.hpp"
+#include "gameplay/skills/spear_spec.hpp"
 #include "gameplay/simulation/simulation.hpp"
 #include "gameplay/combat/damage_resolution.hpp"
 #include "core/random.hpp"
@@ -12,6 +13,11 @@
 namespace d2x {
 void Simulation::resolveMissileImpact(const Missile &missile, std::vector<Missile> &spawned, EntityId direct) {
     if (!missile.impact) return;
+    if (missile.spear && missile.spear->program->kind == SpearSkillSpec::Kind::Fury) {
+        skills().releaseSpearImpact(missile, spawned);
+        emit(MissileImpact{missile.missileId, missile.pos});
+        return;
+    }
     auto spec = *missile.impact;
     float coldDuration = 0;
     if (missile.skillId >= 0 && (spec.cloudBurst || spec.areaMissile)) {

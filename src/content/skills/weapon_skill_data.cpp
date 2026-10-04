@@ -375,6 +375,7 @@ void loadWeaponSkills(SkillCatalog &catalog, const DataTable &skills, const Data
         spec.weapon->attackRating = required(skills, row, "ToHit");
         spec.weapon->attackRatingPerLevel = required(skills, row, "LevToHit");
         spec.weapon->delayFrames = skills.number(row, "delay").value_or(0);
+        spec.weapon->interruptible = skills.number(row, "interrupt").value_or(0) != 0;
         if (!plague) {
             auto bow = std::make_shared<BowSkillSpec>();
             bow->sourceDamage = required(skills, row, "SrcDam");
@@ -412,6 +413,8 @@ void loadWeaponSkills(SkillCatalog &catalog, const DataTable &skills, const Data
         spec.missileLifetime = resource.lifetime;
         spec.missileVelocityPerLevel = missiles.number(missile, "VelLev").value_or(0);
         spec.missileRangePerLevel = missiles.number(missile, "LevRange").value_or(0);
+        spec.missileNextDelay = missiles.number(missile, "NextHit").value_or(0) ?
+            missiles.number(missile, "NextDelay").value_or(0) : 0;
         std::vector<ProjectileResource> resources;
         spec.missileImpact = loadMissileImpact(missiles, missile, archives, resources);
         for (const auto &visual : resources)

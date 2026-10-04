@@ -1,3 +1,4 @@
+#include "gameplay/skills/spear_spec.hpp"
 #include "gameplay/skills/behavior.hpp"
 #include "gameplay/skills/weapon_contributions.hpp"
 #include "gameplay/skills/cast_spec.hpp"
@@ -16,6 +17,13 @@ void applyWeaponSkillElements(AttackElements &elements, const WeaponDamage &weap
         elements.cold += float(int64_t(base) * skill->weapon->elementPercent[1] / 100) / 256.f;
         elements.lightning += float(int64_t(base) * skill->weapon->elementPercent[2] / 100) / 256.f;
         elements.coldDuration += skill->coldDuration;
+    }
+    if (skill && skill->weapon->spear &&
+        (skill->weapon->spear->kind == SpearSkillSpec::Kind::Power ||
+         skill->weapon->spear->kind == SpearSkillSpec::Kind::Charged ||
+         skill->weapon->spear->kind == SpearSkillSpec::Kind::Strike)) {
+        const int minimum = int(skill->minimumDamage * 256.f), maximum = int(skill->maximumDamage * 256.f);
+        elements.lightning += float(minimum + limitedRandom(random, unsigned(std::max(0, maximum - minimum)))) / 256.f;
     }
     elements.hitClass = weapon.hitClass;
     if (skill && skill->effect == SkillBehavior::Vengeance) {

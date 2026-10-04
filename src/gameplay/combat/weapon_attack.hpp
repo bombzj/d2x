@@ -10,6 +10,7 @@
 #include <optional>
 
 namespace d2x {
+struct SpearSequence;
 // AnimData uses 8-bit fractional frames and a 25 Hz simulation clock.
 struct WeaponAttackTiming {
     std::string mode;
@@ -28,7 +29,9 @@ struct WeaponAttackState {
     std::string weaponClass = {};
     std::array<std::string, size_t(EquipmentSlot::Count)> appearanceDefinitions{};
     std::optional<SkillCastSpec> skill = {};
+    std::shared_ptr<const SpearSequence> sequence;
     int animationFrame() const;
+    std::string_view animationMode() const;
 };
 int effectiveAttackSpeed(int animationSpeed, int itemIAS, int baseWeaponSpeed, int skillRate);
 int attackStartingFrame(std::string_view character, std::string_view weapon, std::string_view mode);

@@ -1,6 +1,6 @@
 # 亚马逊已接入技能
 
-更新：2026-10-05。实现以当前 1.13c MPQ 和本地 D2MOO 固定 `5596f5c` 为准。弓与弩技能整页十项已接入，另有瘟疫标枪（25）；毒枪（Poison Javelin，15）只提供基础等级协同，尚无主动执行效果。十项弓技能逐项完成 Windows Release 构建、打包后才进入下一项；收尾修正后再次构建／打包，包内有限联合冒烟、弩复验、D2S 同进程重载通过。原技能树的等级、前置、点数、左右槽和快捷键共用已有入口；武器类型、匹配弹药、法力不足或技能延迟期间，已接入技能的图标显示不可用，魔法箭按原 noammo 例外。
+更新：2026-10-05。实现以当前 1.13c MPQ 和本地 D2MOO 固定 `5596f5c` 为准。弓与弩、标枪与长矛两页共20项已接入；每页都按逐项 Windows Release 构建、打包后再进入下一项的顺序完成，收尾有包内有限联合冒烟及原 D2S 同进程／新进程重载证据。被动与魔法页仍未完成。原技能树的等级、前置、点数、左右槽和快捷键共用已有入口；武器类型、匹配弹药、法力不足或技能延迟期间，已接入技能的图标显示不可用，魔法箭按原 noammo 例外。
 
 ## 弓与弩技能整页
 
@@ -29,6 +29,35 @@ MPQ 导入读取原 Skills／Missiles 的伤害五段成长、HitShift、三段�
 
 本页完成的是十项技能的当前执行入口。原整数 PATH、完整随机流和 D2Client 的飞行尾迹／随机火块／逐帧客户端节拍未完整移植，现用连续坐标扫掠与既有客户端中心／碎片效果适配。亚马逊被动页的 Critical Strike／Pierce 等效果及完整装备触发仍未接入，不能把显示原 Pierce 标志等同于实现穿透。未穷举装备附伤、所有等级／难度／目标和打断组合，Linux 未实际编译或运行；共用消费者限制见[通用攻击](../combat/ATTACKS.md)。
 
+## 标枪与长矛技能整页
+
+范围为原 SkillDesc 第3页的十项，包含原有瘟疫标枪的复核。近战六项接受 ItemTypes 继承 `spea` 的长矛／标枪，投掷四项要求 `jave` 且有可用堆叠。伤害成长、HitShift、法力、准确率、硬点协同、延迟、弹体速度／时限和资源取当前 MPQ；不把参考仓库的数据表代替 MPQ。
+
+| ID／技能 | 当前执行规则 |
+| --- | --- |
+| 10 Jab／戳刺 | 一轮三次独立近战命中检定；物理增伤当前为−15%起、每级加3%，准确率10%起、每级加9%。按 D2Common 原 seqnum=1 区分1HT的18步和2HT的21步，分别在3／9／15、3／10／17零基序列步出手；原A1／A2帧共用同一权威时钟，一轮只扣一次法力。 |
+| 14 Power Strike／威力一击 | 普通武器近战加技能闪电；四项闪电协同硬点每级10%。保留原武器准确率、物理和装备附伤。 |
+| 15 Poison Javelin／毒枪 | 原38号主标枪每帧在旧位置创建39号静止毒云；主弹带武器及技能毒，毒云 SrcDamage=−1只带技能毒。当前毒时长200帧起、每级加50帧，瘟疫硬点每级12%协同；毒云固定60帧。参考函数虽然写入等级循环数，当前 SrvCalc1=0不设置延长时限的创建标志，不能擅自按等级延长。 |
+| 19 Impale／刺爆 | 物理增伤300%起、每级加25%，准确率100%起、每级加25%；原 seqnum=8、1HT21步／2HT24步的慢刺动作，可被受击打断。命中后用 `par6−dm34` 的递减概率磨损，当前一级46%；长矛扣1耐久，标枪扣1枚堆叠，不毁损属性豁免，空堆叠沿库存原品质规则处理。 |
+| 20 Lightning Bolt／闪电球 | 原205；武器源伤害 SrcDam=96即75%，加技能闪电。原 SrvDmg12 保留闪电并将物理按 `dParam1+(等级−1)×dParam2` 转电，当前100%；清除其他元素、毒／冰时长及吸取。不作准确率检定，仍走盾牌格挡；四项闪电协同硬点每级3%。 |
+| 24 Charged Strike／充能一击 | 普通近战附加技能闪电，并在目标位置向远离施法者方向发出原215号充能弹，即使近战检定未命中仍生成弹体；`par1+lvl/par2` 当前为3枚加每5级1枚。弹体只带技能闪电，沿原充能弹折线路径适配并读取 Activate=3，四项闪电协同硬点每级10%。 |
+| 25 Plague Javelin／瘟疫标枪 | 复核原43→221，两圈共23团毒云；出手扣标枪／法力，共享技能延迟100帧；毒枪硬点每级10%协同。细节见下文。 |
+| 30 Fend／击退 | 原 SrvSt09 统计近战范围内敌人，按 Calc1 当前最多12次；按单位ID环序切换目标，目标失效或离开范围时重选，每次按 Param2 当前60%回滚动作时钟。物理增伤70%起、每级加10%，准确率40%起、每级加10%；一轮扣一次法力，不产生击退位移。当前 MPQ anim=A1，使用原A1事件，不把 seqnum=9误当作 SQ。 |
+| 34 Lightning Strike／闪电攻击 | 普通近战附加技能闪电，随后从被刺单位附近另选目标发出原232号连锁闪电；弹跳次数 `ln34` 当前为2起、每级加1，搜索半径20、NextDelay=4帧，后继避开重复命中延迟。原99号客户端闪电段和 lightning 覆盖层来自 MPQ；四项闪电协同硬点每级8%。 |
+| 35 Lightning Fury／闪电之怒 | 原206主标枪带武器与技能闪电，命中／撞墙／到期按 SrvHit20 从落点半径15内筛敌；最多 `ln12` 当前2枚起、每级加1的231号闪电。分裂弹 SrcDamage=−1仅带技能闪电，CollideKill为空，沿直线穿过单位；主标枪不作准确率检定。原 AuraFilter=0xA583不附加视线筛选，弹体本身仍撞墙；四项闪电协同硬点每级1%。 |
+
+Jab／Impale 序列帧来自参考中的引擎内建表，MPQ没有独立序列表；SQ沿原256分数帧速度及30点速率惩罚，读当前装备IAS／WSM和状态速率。原A2装备组件动画已接入内容与表现；玩法不读取 MPQ 或 GPU。六项近战技能读取原 `AttackNoMana=1`，缺蓝时按 `PlrMsg.cpp::sub_6FC83340` 请求普通攻击，不附加技能效果或扣技能法力；投掷四项未设置该标志，缺蓝仍拒绝。
+
+参考 SrvSt06／SrvSt10 还将 Calc[0] 作为近战物理增强百分比：当前充能一击为弹数百分比、闪电攻击为20%。这里按参考重建实现，尚未用零售1.13c二进制逐条验证。SrvDo014重建中目标X误写为Y；当前取目标真实X／Y，这是结合当前坐标模型的明确适配，不宣称复制该重建笔误。刺爆磨损在当前共用命中结算后执行，未移植原起手阶段的 AllocCombat 缓存。
+
+### 长矛页验证与限制
+
+逐项构建／打包记录位于不提交的 `artifacts/amazon-spear-20261005/01-*` 至 `10-*`，收尾语义修订再构建／打包通过。包内冒烟使用独立58级临时亚马逊、真实Smith及FoulCrowNest身份，未编写测试脚本／用例／专用程序。单手戳刺一轮三次实际伤害、双手序列、威力一击附伤、毒枪39号尾迹和持续毒伤、刺爆标枪60→59及长矛耐久29→27、205号转换比例100%与实际伤害均有现场记录；充能一击一级3枚／五级4枚215，Fend伤害三个近战目标，232号弹跳与回跳命中通过。三级闪电之怒产生4枚231、消耗一枚标枪并伤害多个目标；瘟疫23团221、恢复期间拒绝与到期清理通过。收尾缺蓝复验中六项近战分别产生普通攻击且不扣技能法力／生成技能弹体，四项投掷均以 Not enough mana 拒绝并保持堆叠；复验实例退出0。已查看原十节点技能页截图及尾迹场景，资源加载无错误。
+
+原D2S v96同进程和新进程读取保持十项ID／等级（充能一击5、闪电之怒3，其余1），标枪51枚及长矛耐久27；新进程正常退出0。动作、序列、毒云、弹跳及恢复延迟不保存。运行规则指纹加入 `amazon-spear-rules-v1-native-sequences-and-javelins`，没有新增磁盘格式或迁移旧档。
+
+当前执行入口已齐，原整数PATH、完整随机流／房间遍历顺序、D2Client逐帧客户端函数及尾迹／灯光尚未完整移植；用连续坐标扫掠、既有充能弹路径和闪电表现适配。闪电之怒子弹体的直线穿行已执行，主标枪 Pierce 标志依赖的亚马逊被动页和装备穿透消费者仍未完成。未穷举全部等级、装备、难度、抵抗／格挡／打断组合，Linux未实际构建运行；共用限制仍见[通用攻击](../combat/ATTACKS.md)。
+
 ## 瘟疫标枪
 
 `content/skills/weapon_skill_data.cpp` 导入 Skills 和 Missiles 原记录，`WeaponSkillSpec` 进入普通武器攻击执行链。只接受 ItemTypes 包含 `jave` 的可用武器；使用原 TH、IAS、WSM 和出手帧，消耗一支标枪。原 `usemanaondo=1` 在成功出手时扣蓝；`delay=100` 在出手后设置共享限时技能延迟。打断出手前动作不消耗标枪或法力，切换装备不把原攻击替换为空手。
@@ -51,9 +80,10 @@ MPQ 导入读取原 Skills／Missiles 的伤害五段成长、HitShift、三段�
 
 ## 入口和扩展边界
 
-- 原数据：`content/skills/amazon_bow_data.*` 导入九项新增弓技能，`weapon_skill_data.*` 保留爆炸箭／瘟疫标枪；共用命中结构及资源导入：`content/skills/missile_effects.*`。未知函数／公式和不同云团来源拒绝导入，不静默套用已有伤害。
+- 原数据：`content/skills/amazon_bow_data.*` 导入九项新增弓技能，`amazon_spear_data.*` 导入九项新增长矛页技能，`weapon_skill_data.*` 保留爆炸箭／瘟疫标枪；共用命中结构及资源导入：`content/skills/missile_effects.*`。未知函数／公式和不同云团来源拒绝导入，不静默套用已有伤害。
 - 技能等级解析：`gameplay/skills/resolve.cpp`；动作与消耗：`combat/attacking.cpp`、`physical_projectiles.cpp`；毒伤及云：`weapon_elements.cpp`、`missile_effects.cpp`。
 - 证据：D2MOO `Skills.cpp` 的 `sub_6FD11420`、`D2GAME_SKILLS_SetDelay_6FD11C00` 和技能开始／执行末段；`Units/Missile.cpp` 的伤害数据／毒源聚合；`MissMode.cpp` 的 `MISSMODE_CreatePoisonCloudHitSubmissiles`、`SrvHit02`、`SrvHit04`、`SrvHit01`、`MISSMODE_GetDamageValue`、`SrvDmgHitHandler`。
 - 弓技能证据：D2MOO `SkillAma.cpp::SrvDo008/SrvDo010/SrvSt08/SrvDo012`、`Skills.cpp::sub_6FD107F0/sub_6FD118C0`、`SUnit.cpp::sub_6FCBCFD0`、`MissMode.cpp::SrvDmg01/SrvDmg02/SrvDmg03/SrvDo07/SrvHit09/SrvHit10/SrvHit04/SrvHit01` 和 `D2Common/Units/Missile.cpp` 的源伤害／毒源／吸取求值。原被动、穿透、怪物格挡、完整触发及毒素时长抗性等共用缺口见 [通用攻击](../combat/ATTACKS.md)。
+- 长矛页证据：D2MOO `SkillAma.cpp::SrvSt05/06/07/09/10`、`SrvDo007/011/013/014`，`D2Common/DataTbls/SequenceTbls.cpp`、`SUnit.cpp::sub_6FCBCFD0`，`MissMode.cpp::SrvDo02/SrvHit02/SrvHit12/SrvHit20/SrvDmg12`，`SkillSor.cpp::SKILLS_MissileInit_ChargedBolt`、`PlrMsg.cpp::sub_6FC83340` 和 `D2Common/Units/Missile.cpp` 的创建标志／源伤害求值。动作由 `weapon_runtime.cpp` 共用计时，特殊近战／分裂弹由 `spear_runtime.cpp` 经单位／世界端口执行，规则载体 `spear_spec.hpp` 不进入会话和展示公共值模型。
 
 原表没有玩家技能名为“爆炸标枪”；独立弹体 explodingjavalin（429）按用户澄清暂缓，不挂接到任何虚构技能。

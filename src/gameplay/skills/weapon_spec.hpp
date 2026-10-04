@@ -7,9 +7,11 @@
 
 namespace d2x {
 struct BowSkillSpec;
+struct SpearSkillSpec;
 // Weapon skills use the ordinary attack animation, equipment and ammunition pipeline.
 struct WeaponSkillSpec {
     std::shared_ptr<const BowSkillSpec> bow;
+    std::shared_ptr<const SpearSkillSpec> spear;
     bool noAmmo = false;
     std::string requiredType;
     bool thrown = false, manaOnRelease = false;

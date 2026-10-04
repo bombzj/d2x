@@ -84,7 +84,7 @@ class InventoryService {
     InventoryResult equip(const EquipItem &command, const PlayerContainers &containers,
                           const InventoryAccess &access, const EquipmentActor &actor);
     InventoryResult wearEquipment(const PlayerContainers &containers, EntityId weapon, bool defending,
-                    uint64_t &randomState, unsigned weaponSet);
+                    uint64_t &randomState, unsigned weaponSet, int chanceOverride = -1, int amount = 1);
     std::optional<Cell> beltSpace(EntityId belt, std::string_view code, bool automaticPickup) const;
     InventoryError previewDrink(ItemHandle item, const InventoryAccess &access) const;
     InventoryResult drink(ItemHandle item, const InventoryAccess &access);

@@ -1,3 +1,4 @@
+#include "gameplay/skills/spear_spec.hpp"
 #include "gameplay/units/actions.hpp"
 #include "gameplay/skills/weapon_caster.hpp"
 #include <algorithm>
@@ -36,6 +37,13 @@ void rescaleTimedAction(TimedActionView action, float scale) {
 }
 bool advanceWeaponAction(WeaponAttackState &attack) {
     ++attack.ticks;
+    if (attack.sequence) {
+        const int previous = (attack.ticks - 1) * attack.timing.speed / 256;
+        const int current = std::min(int(attack.sequence->frames.size()) - 1, attack.ticks * attack.timing.speed / 256);
+        for (int frame = previous + 1; frame <= current; ++frame)
+            if (attack.sequence->frames[size_t(frame)].hit) { attack.released = true; return true; }
+        return false;
+    }
     if (attack.released || attack.ticks < attack.timing.actionTick()) return false;
     attack.released = true;
     return true;

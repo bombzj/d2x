@@ -11,6 +11,7 @@
 
 namespace d2x {
 struct BoneMissileState;
+struct SpearMissileState;
 struct FrozenOrbMissileState {
     enum class Phase { Orb, Bolt, Nova };
     Phase phase = Phase::Orb;
@@ -86,6 +87,7 @@ struct Missile {
     std::optional<HeavenSpec> heaven = std::nullopt;
     EntityId heavenTarget{};
     std::shared_ptr<BoneMissileState> bone{};
+    std::shared_ptr<SpearMissileState> spear{};
 };
 struct Effect {
     Vec pos;

@@ -114,6 +114,7 @@ void Simulation::resolveWeaponHit(EntityId defender, float physical, EntityId so
         if (elements.conversionElement == DamageType::Magic) elements.magic += converted;
         else if (elements.conversionElement == DamageType::Fire) elements.fire += converted;
         else if (elements.conversionElement == DamageType::Cold) elements.cold += converted;
+        else if (elements.conversionElement == DamageType::Lightning) elements.lightning += converted;
     }
     const float dealtPhysical = mitigate(physical, MonsterDamageType::Physical);
     skills().healLifeTap(source, defender, dealtPhysical, originalElements.ranged);
