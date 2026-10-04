@@ -1,4 +1,5 @@
 #include "gameplay/combat/damage_request.hpp"
+#include "gameplay/combat/avoidance.hpp"
 #include "gameplay/skills/runtime.hpp"
 #include "core/random.hpp"
 #include "gameplay/simulation/simulation.hpp"
@@ -66,7 +67,9 @@ AttackElements Simulation::rollAttackElements(EntityId weapon, const CombatModif
     }
     if (result.cold > 0) result.coldDuration = float(int64_t(m.coldFrames) + own.coldFrames) / 25.f;
     const int64_t deadly = int64_t(m.deadlyStrike) + own.deadlyStrike;
-    if (deadly > 0) result.deadly = roll(random, 100) < unsigned(std::min<int64_t>(deadly, 100));
+    if (m.criticalStrike > 0) result.deadly = roll(random, 100) < unsigned(std::min(m.criticalStrike, 100));
+    if (!result.deadly && deadly > 0)
+        result.deadly = roll(random, 100) < unsigned(std::min<int64_t>(deadly, 100));
     const int crushing = std::clamp(m.crushingBlow + own.crushingBlow, 0, 100);
     const int wounds = std::clamp(m.openWounds + own.openWounds, 0, 100);
     result.crushing = crushing && roll(random, 100) < unsigned(crushing);
@@ -83,6 +86,13 @@ void Simulation::resolveWeaponHit(EntityId defender, float physical, EntityId so
     if (!originalElements.smite && target.stats.block > 0 && limitedRandom(*target.random, 100) < unsigned(target.stats.block)) {
         blockUnit(defender);
         if (!originalElements.ranged) skills().triggerCombatEffects(defender, CombatEffectEvent::AttackedInMelee, source);
+        return;
+    }
+    if (const int avoided = avoidCombatHit(target, originalElements.ranged, [this] {
+        const auto *weapon = attackWeapon(false, false);
+        return weapon && attackTiming_ ? attackTiming_(*weapon, false, false, "s1") : std::nullopt;
+    }); avoided >= 0) {
+        if (target.player) emit(SkillCast{target.id, avoided, *target.position});
         return;
     }
     if (originalElements.selfDamagePercent > 0) {

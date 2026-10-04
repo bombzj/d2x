@@ -6,6 +6,7 @@
 #include "gameplay/skills/rank_bonus.hpp"
 #include "gameplay/skills/runtime.hpp"
 #include "gameplay/skills/summon_resolve.hpp"
+#include "gameplay/skills/amazon_summon_spec.hpp"
 #include "gameplay/simulation/simulation.hpp"
 #include "session_impl.hpp"
 #include "content/skills/aura_data.hpp"
@@ -166,7 +167,9 @@ void GameSessionImpl::useSkill(const UseSkill &intent) {
         auto resolved = skillSources_.resolve(*entry->spell, player.id, rank);
         if (entry->spell->summon) {
             const auto &definition = *entry->spell->summon;
-            resolved.summon = resolveSummon(definition, rank, effectiveSkillRank(definition.masterySkill),
+            if (definition.amazon) resolved.summon = resolveAmazonSummon(definition, rank,
+                player.character.level, state().population.difficulty, player.attributes, player.character.skillRanks);
+            else resolved.summon = resolveSummon(definition, rank, effectiveSkillRank(definition.masterySkill),
                 effectiveSkillRank(definition.resistSkill), player.character.level, state().population.difficulty,
                 player.character.skillRanks);
         }

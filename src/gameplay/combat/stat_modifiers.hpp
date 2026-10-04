@@ -58,6 +58,8 @@ struct CombatModifiers {
     int lifeTapPercent = 0;
     int lifeLeech = 0, manaLeech = 0;
     int crushingBlow = 0, openWounds = 0, deadlyStrike = 0;
+    int criticalStrike = 0, dodge = 0, avoid = 0, evade = 0, pierce = 0;
+    int slowMissiles = 0; // Remaining missile velocity percent; zero means no state.
     int magicFind = 0, goldFind = 0;
     int experiencePercent = 0;
     bool preventPoison = false, preventBurn = false;

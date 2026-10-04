@@ -1,4 +1,5 @@
 #include "gameplay/skills/spear_spec.hpp"
+#include "gameplay/skills/missile_launch_spec.hpp"
 #include "gameplay/skills/behavior.hpp"
 #include "gameplay/skills/runtime.hpp"
 #include "gameplay/skills/bow_spec.hpp"
@@ -175,10 +176,16 @@ bool Simulation::firePhysicalProjectile(Vec target, const WeaponDamage &weapon, 
             if (index < first || index >= first + central) {
                 arrow.attackElements.crushing = arrow.attackElements.openWounds = arrow.attackElements.knockback = false;
             }
+            prepareMissileLaunch(arrow, launchCombat, missileCanSlow_ && missileCanSlow_(arrow.missileId),
+                missileCanPierce_ && missileCanPierce_(arrow.missileId));
             state_.area.missiles.push_back(std::move(arrow));
             endpoint = endpoint + Vec{float(sideX),float(sideY)};
         }
-    } else state_.area.missiles.push_back(std::move(missile));
+    } else {
+        prepareMissileLaunch(missile, launchCombat, missileCanSlow_ && missileCanSlow_(missile.missileId),
+            missileCanPierce_ && missileCanPierce_(missile.missileId));
+        state_.area.missiles.push_back(std::move(missile));
+    }
     emit(MissileReleased{skill ? skill->missileId : spec.id});
     return true;
 }
@@ -198,32 +205,38 @@ void Simulation::advancePhysicalMissile(Missile &missile, float dt, std::vector<
     const bool wall = clipMissilePath(missile.missileId, missile.pos, next);
     const float remaining = std::max(0.f, missile.remaining - dt);
     const bool expired = remaining <= .00001f;
-    const auto contact = expired ? std::nullopt : missileTarget(missile, next);
-    const auto struck = contact ? combatUnit(contact->first) : CombatUnit{};
-    const float first = contact ? contact->second : 2.f;
-    missile.pos = struck ? missile.pos + (next - missile.pos) * first : next;
-    // Expiry precedes unit hits, and must set exactly zero so the update removes
-    // the missile. A small positive residue must not detonate again next tick.
-    missile.remaining = wall || struck || expired ? 0 : remaining;
-    if (struck) skills().reactToMissile(missile, struck.id, spawned);
-    // AlwaysExplode runs the native hit effect on a failed to-hit roll, terrain and expiry too.
-    if (missile.remaining == 0 && missile.impact) resolveMissileImpact(missile, spawned, struck ? struck.id : EntityId{});
-    if (!struck) return;
-    missile.lastHit = struck.id;
-    if (missile.hitOverlayId >= 0) state_.area.effects.push_back({*struck.position, 0, missile.hitOverlayDuration, -1, missile.hitOverlayId, struck.id});
-    if (missile.nextHitDelay > 0) state_.area.novaHitUntil[struck.id] = state_.time + missile.nextHitDelay;
-    const MonsterDefense defense{struck.stats.level, struck.stats.attributes.defense,
-        struck.stats.demon, struck.stats.undead, struck.stats.boss};
-    if (missile.attackerLevel <= 0) return;
-    const bool automatic = (missile.bone && missile.bone->program->spirit) || (missile.spear && missile.spear->program->automaticHit);
-    if (!automatic) rollRandom(missile.combatRandom);
-    const int chance = missile.weaponAttack ? weaponHitChance(missile.attackerLevel,
-        missile.baseAttackRating, missile.attackRatingPercent, missile.targetModifiers, defense, struck.stats.rank) :
-        physicalHitChance(missile.attackerLevel, missile.attackRating, defense.level, defense.defense);
-    if (!automatic && uint32_t(missile.combatRandom) % 100 >= unsigned(chance)) return;
-    const int64_t raw = int64_t(missile.damage * 256.f);
-    const int percent = std::max(-90, missile.physicalDamagePercent + targetDamageBonus(missile.targetModifiers, defense));
-    const float physical = float(raw + raw * percent / 100) / 256.f;
-    resolveWeaponHit(struck.id, physical, missile.owner, missile.attackElements);
+    missile.remaining = remaining;
+    while (!expired && missile.remaining > 0) {
+        const auto contact = missileTarget(missile, next);
+        if (!contact) break;
+        const auto struck = combatUnit(contact->first);
+        missile.pos = missile.pos + (next - missile.pos) * contact->second;
+        const bool continued = consumeMissilePierce(missile, struck.id);
+        skills().reactToMissile(missile, struck.id, spawned);
+        // Native impact callbacks still run at every pierced contact.
+        if (missile.impact) resolveMissileImpact(missile, spawned, struck.id);
+        missile.lastHit = struck.id;
+        if (missile.hitOverlayId >= 0) state_.area.effects.push_back({*struck.position, 0, missile.hitOverlayDuration, -1, missile.hitOverlayId, struck.id});
+        if (missile.nextHitDelay > 0) state_.area.novaHitUntil[struck.id] = state_.time + missile.nextHitDelay;
+        const MonsterDefense defense{struck.stats.level, struck.stats.attributes.defense,
+            struck.stats.demon, struck.stats.undead, struck.stats.boss};
+        if (missile.attackerLevel <= 0) { missile.remaining = 0; return; }
+        const bool automatic = (missile.bone && missile.bone->program->spirit) || (missile.spear && missile.spear->program->automaticHit);
+        if (!automatic) rollRandom(missile.combatRandom);
+        const int chance = missile.weaponAttack ? weaponHitChance(missile.attackerLevel,
+            missile.baseAttackRating, missile.attackRatingPercent, missile.targetModifiers, defense, struck.stats.rank) :
+            physicalHitChance(missile.attackerLevel, missile.attackRating, defense.level, defense.defense);
+        if (!automatic && uint32_t(missile.combatRandom) % 100 >= unsigned(chance)) { missile.remaining = 0; return; }
+        const int64_t raw = int64_t(missile.damage * 256.f);
+        const int percent = std::max(-90, missile.physicalDamagePercent + targetDamageBonus(missile.targetModifiers, defense));
+        const float physical = float(raw + raw * percent / 100) / 256.f;
+        resolveWeaponHit(struck.id, physical, missile.owner, missile.attackElements);
+        if (!continued) { missile.remaining = 0; return; }
+    }
+    missile.pos = next;
+    if (wall || expired) {
+        missile.remaining = 0;
+        if (missile.impact) resolveMissileImpact(missile, spawned);
+    }
 }
 } // namespace d2x

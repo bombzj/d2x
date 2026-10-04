@@ -20,7 +20,7 @@ ActorView LocalActorClient::controlledActor() const {
     actor.dead = player.actions.dead;
     actor.chilled = player.resources.chill > 0;
     actor.poisoned = player.resources.poisonRemaining > 0;
-    actor.animationMode = player.actions.dead ? "dt" : player.actions.blockAnimation ? "bl"
+    actor.animationMode = player.actions.dead ? "dt" : player.actions.blockAnimation ? player.actions.blockAnimation->animationMode()
         : player.actions.hitTime > 0 ? "gh" : player.actions.castTime > 0 ? "sc"
         : player.actions.weaponAttack ? player.actions.weaponAttack->animationMode()
         : player.movement.moving ? (player.movement.runningNow ? "rn" : "wl") : "nu";
@@ -51,7 +51,8 @@ ActorView LocalActorClient::controlledActor() const {
     }
     if (player.actions.weaponAttack && mode == player.actions.weaponAttack->animationMode())
         actor.actionFrame = player.actions.weaponAttack->animationFrame();
-    if (player.actions.blockAnimation && mode == "bl") actor.actionFrame = player.actions.blockAnimation->animationFrame();
+    if (player.actions.blockAnimation && mode == player.actions.blockAnimation->animationMode())
+        actor.actionFrame = player.actions.blockAnimation->animationFrame();
     if (player.actions.charge && mode == "rn") actor.actionFrame = int(player.actions.charge->ticks % 8);
     return actor;
 }

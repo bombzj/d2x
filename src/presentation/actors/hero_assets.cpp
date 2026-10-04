@@ -91,6 +91,7 @@ void SceneAssets::loadHeroEquipment(const GameSession &session) {
         const auto equipment = pointers(parts);
         for (auto mode : {"nu", "wl", "rn", "a1", "a2", "th", "s1", "s3", "s4", "sc", "bl", "gh", "dt", "dd"}) {
             if (std::string_view(mode) == "bl" && (!canBlock || !session.content().skills.attackTimings.contains(appearance + mode + weapon))) continue;
+            if (std::string_view(mode) == "a2" && (!primary || !primary->equipment.isType("spea"))) continue;
             const bool attackMode = std::string_view(mode) == "a1" || std::string_view(mode) == "a2" || std::string_view(mode) == "th" ||
                                 std::string_view(mode) == "s1" || std::string_view(mode) == "s3" || std::string_view(mode) == "s4";
             if ((std::string_view(mode) == "a1" && !normalAttack) ||

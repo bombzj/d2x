@@ -12,6 +12,7 @@
 namespace d2x {
 struct BoneBarrierState;
 struct NecroPetState;
+struct AmazonPetState;
 struct MonsterApproach {
     // Target-unit movement uses D2Common_10399 and StepNum - 1. Coordinate
     // actions (Wraith) retain the destination chosen by the AI until arrival.
@@ -23,6 +24,7 @@ struct Enemy {
     EntityId id;
     std::shared_ptr<BoneBarrierState> boneBarrier;
     std::shared_ptr<NecroPetState> necroPet;
+    std::shared_ptr<AmazonPetState> amazonPet;
     MonsterKind kind = MonsterKind::Fallen;
     MonsterIdentity identity;
     std::optional<MonsterEnchantment> enchantment;

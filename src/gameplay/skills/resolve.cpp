@@ -1,4 +1,5 @@
 #include "spear_spec.hpp"
+#include "amazon_magic_spec.hpp"
 #include "gameplay/skills/behavior.hpp"
 #include "spec.hpp"
 #include "bone_spec.hpp"
@@ -24,6 +25,14 @@ SkillCastSpec resolveSkill(const SkillSpec &spec, const SkillEvaluationInput &in
     SkillCastSpec result;
     result.effect = spec.effect;
     result.rank = rank;
+    if (spec.amazonMagic) {
+        auto program = std::make_shared<AmazonMagicSpec>(*spec.amazonMagic);
+        program->radius += (rank - 1) * program->radiusPerLevel;
+        program->frames += (rank - 1) * program->framesPerLevel;
+        program->defenseReduction += int(skillLevelBonus(rank, program->defensePerLevel));
+        program->slowPercent += (rank - 1) * program->slowPerLevel;
+        result.amazonMagic = std::move(program);
+    }
     if (spec.bone) {
         auto program = std::make_shared<BoneSkillSpec>(*spec.bone);
         program->radius += (rank - 1) * program->radiusPerLevel;

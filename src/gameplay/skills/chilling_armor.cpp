@@ -69,7 +69,7 @@ void SkillRuntime::advanceChillingArmorBolt(Missile &missile, std::vector<Missil
         const int minimum = std::min(state.minimumDamage, state.maximumDamage);
         const uint32_t span = uint32_t(std::abs(state.maximumDamage - state.minimumDamage));
         const float damage = float(minimum + limitedRandom(missile.combatRandom, span)) / 256.f;
-        dealDamage({missile.owner, target.id, damage, MonsterDamageType::Cold,
+        if (!world_.avoidMissile(target.id)) dealDamage({missile.owner, target.id, damage, MonsterDamageType::Cold,
                     missileColdDuration(missile.owner, target, state.coldFrames)});
         emit(MissileImpact{missile.missileId, missile.pos});
         missile.remaining = 0;

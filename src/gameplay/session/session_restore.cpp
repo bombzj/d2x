@@ -8,6 +8,7 @@
 #include "gameplay/session/session_impl.hpp"
 #include "content/items/equipment_modifiers.hpp"
 #include "content/skills/passive_data.hpp"
+#include "content/skills/amazon_magic_data.hpp"
 #include "content/npc/npc_dialogue.hpp"
 #include <algorithm>
 #include <cmath>
@@ -124,6 +125,7 @@ int GameSessionImpl::validateCharacterRestore(const CharacterSaveData &data) con
                                    base.blockFactor, player.weaponSet};
     auto modifiers = resolveEquipmentModifiers(content_, equipmentInventory, data.containers, baseActor);
     applySkillPassives(modifiers, content_.skills, data.player.skillRanks, CombatEffectSet{}, 0);
+    applyAmazonPassives(modifiers, content_.skills, data.player.skillRanks, int(definition.sourceRow), definition.code);
     modifiers.baseLife += questBaseLife(player.quests);
     const int resistance = questResistance(player.quests);
     modifiers.fireResist += resistance; modifiers.coldResist += resistance;
@@ -167,6 +169,7 @@ void GameSessionImpl::restore(CharacterSaveData data) {
                                    restoredPlayer.character.level, base.blockFactor, restoredPlayer.character.weaponSet};
     auto modifiers = resolveEquipmentModifiers(content_, equipmentInventory, data.containers, baseActor);
     applySkillPassives(modifiers, content_.skills, restoredPlayer.character.skillRanks, restoredPlayer.combatEffects, 0);
+    applyAmazonPassives(modifiers, content_.skills, restoredPlayer.character.skillRanks, int(definition.sourceRow), definition.code);
     modifiers.baseLife += questBaseLife(restoredPlayer.character.quests);
     const int resistance = questResistance(restoredPlayer.character.quests);
     modifiers.fireResist += resistance; modifiers.coldResist += resistance;

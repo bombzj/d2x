@@ -10,6 +10,8 @@
 #include <memory>
 
 namespace d2x {
+struct MissileLaunchSpec;
+struct MissilePierceState;
 struct BoneMissileState;
 struct SpearMissileState;
 struct FrozenOrbMissileState {
@@ -88,6 +90,8 @@ struct Missile {
     EntityId heavenTarget{};
     std::shared_ptr<BoneMissileState> bone{};
     std::shared_ptr<SpearMissileState> spear{};
+    std::shared_ptr<const MissileLaunchSpec> launch{};
+    std::shared_ptr<MissilePierceState> piercing{};
 };
 struct Effect {
     Vec pos;

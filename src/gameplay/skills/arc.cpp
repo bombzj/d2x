@@ -72,7 +72,7 @@ void SkillRuntime::advanceArc(Missile &missile, std::vector<Missile> &spawned) {
             spawned.push_back(std::move(child));
             emit(MissileReleased{missile.missileId});
         }
-        dealDamage({missile.owner, id, damage, MonsterDamageType::Lightning});
+        if (!world_.avoidMissile(id)) dealDamage({missile.owner, id, damage, MonsterDamageType::Lightning});
         if (missile.behavior == SkillBehavior::ChainLightning) { missile.remaining = 0; next = contact; break; }
     }
     missile.pos = next;

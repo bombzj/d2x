@@ -11,9 +11,11 @@
 
 namespace d2x {
 struct BoneSkillSpec;
+struct AmazonMagicSpec;
 struct SkillCastSpec {
     SkillBehavior effect{};
     std::shared_ptr<const BoneSkillSpec> bone;
+    std::shared_ptr<const AmazonMagicSpec> amazonMagic;
     int rank = 0;
     float healingMinimum = 0, healingMaximum = 0;
     float castDuration = 0, castImpact = 0, castRate = 0;

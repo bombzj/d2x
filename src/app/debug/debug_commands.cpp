@@ -1,5 +1,6 @@
 #include "gameplay/quest/catalog.hpp"
 #include "gameplay/skills/spec.hpp"
+#include "gameplay/skills/missile_launch_spec.hpp"
 #include "gameplay/loot/loot.hpp"
 #include "presentation/scene_view.hpp"
 #include "gameplay/session/session.hpp"
@@ -156,10 +157,12 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
                 {"attackRemaining", state.player.actions.meleeTime},
                 {"attackSkill", state.player.actions.weaponAttack && state.player.actions.weaponAttack->skill ? state.player.actions.weaponAttack->skill->sourceId : -1},
                 {"attackReleased", state.player.actions.weaponAttack && state.player.actions.weaponAttack->released},
+                {"moving", state.player.movement.moving},
                 {"charge", state.player.actions.charge.has_value()},
                 {"blockRemaining", state.player.actions.blockAnimation ?
                     float(state.player.actions.blockAnimation->timing.durationTicks() - state.player.actions.blockAnimation->ticks) / 25.f : 0.f},
                 {"blockDuration", state.player.actions.blockAnimation ? float(state.player.actions.blockAnimation->timing.durationTicks()) / 25.f : 0.f},
+                {"blockMode", state.player.actions.blockAnimation ? std::string(state.player.actions.blockAnimation->animationMode()) : ""},
                 {"channelSkill", state.player.skills.channelSkill()}, {"channelAge", state.player.skills.channelAge()},
                 {"strength", session.characterStats().strength},
                 {"dexterity", session.characterStats().dexterity},
@@ -179,7 +182,10 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
                     {"elements", {{"fire", missile.attackElements.fire}, {"cold", missile.attackElements.cold},
                         {"magic", missile.attackElements.magic}, {"lightning", missile.attackElements.lightning},
                         {"coldDuration", missile.attackElements.coldDuration}, {"freezeFrames", missile.attackElements.freezeFrames},
-                        {"conversionPercent", missile.attackElements.conversionPercent}}}, {"pathPoints", missile.path.size()}});
+                        {"conversionPercent", missile.attackElements.conversionPercent}, {"critical", missile.attackElements.deadly}}},
+                    {"slowVelocityPercent", missile.launch ? missile.launch->velocityPercent : 100},
+                    {"pierceChance", missile.launch ? missile.launch->pierceChance : 0},
+                    {"pierceRemaining", missile.piercing ? missile.piercing->remaining : 0}, {"pathPoints", missile.path.size()}});
             result["combat"] = {
                 {"resistances", {{"fire", session.characterStats().fireResist},
                                   {"lightning", session.characterStats().lightningResist},
@@ -198,6 +204,14 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
                 {"globalPoisonDamage", {combat.poisonMinimum, combat.poisonMaximum}},
                 {"deadlyStrike", combat.deadlyStrike}, {"magicFind", combat.magicFind}
             };
+            result["combat"]["amazonPassives"] = {{"criticalStrike", combat.criticalStrike},
+                {"dodge", combat.dodge}, {"avoid", combat.avoid}, {"evade", combat.evade},
+                {"pierce", combat.pierce}, {"attackRatingPercent", combat.attackRatingPercent}};
+            result["combat"]["avoidanceEvents"] = Json::array();
+            for (const auto &event : session.events())
+                if (const auto *skill = std::get_if<SkillCast>(&event); skill &&
+                    skill->actor == state.player.id && (skill->skillId == 13 || skill->skillId == 18 || skill->skillId == 29))
+                    result["combat"]["avoidanceEvents"].push_back(skill->skillId);
             result["combat"]["weapons"] = Json::array();
             for (int index = 0; index < session.equipmentStats().weaponCount; ++index) {
                 const auto &weapon = session.equipmentStats().weapons[index];

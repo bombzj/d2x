@@ -1,6 +1,7 @@
 #include "gameplay/skills/behavior.hpp"
 #include "gameplay/combat/damage_request.hpp"
 #include "gameplay/skills/runtime.hpp"
+#include "gameplay/skills/world_port.hpp"
 #include "gameplay/skills/bow_spec.hpp"
 #include "gameplay/skills/spear_spec.hpp"
 #include "gameplay/simulation/simulation.hpp"
@@ -36,6 +37,7 @@ void Simulation::resolveMissileImpact(const Missile &missile, std::vector<Missil
         state_.area.effects.push_back({missile.pos, 0, spec.visualDuration, spec.visualId});
     auto hit = [&](CombatUnit target) {
         if (!target.alive() || !active(*target.position) || !canAttack(missile.owner, target.id)) return;
+        if (skillWorld_->avoidMissile(target.id)) return;
         DamageRequest request{missile.owner, target.id};
         request.channels = payload.channels;
         request.channels[size_t(MonsterDamageType::Poison)] = 0;

@@ -123,6 +123,8 @@ class Simulation {
     int lifeStealDivisor_ = 1, manaStealDivisor_ = 1;
     std::function<std::optional<int>(const Enemy &, RegionId, MonsterDamageType)> monsterResistance_;
     std::function<int(EntityId)> coldPierce_;
+    std::function<bool(int)> missileCanSlow_;
+    std::function<bool(int)> missileCanPierce_;
     std::function<int(EntityId)> fireMastery_;
     std::function<std::optional<bool>(const Enemy &)> monsterFreezable_;
     int monsterFreezeDivisor_ = 1;

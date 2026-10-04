@@ -65,6 +65,7 @@ void addStat(std::string_view stat, int value, CombatModifiers &m) {
     else if (stat == "item_crushingblow") target = &m.crushingBlow;
     else if (stat == "item_openwounds") target = &m.openWounds;
     else if (stat == "item_deadlystrike") target = &m.deadlyStrike;
+    else if (stat == "item_pierce" || stat == "skill_pierce") target = &m.pierce;
     else if (stat == "item_magicbonus") target = &m.magicFind;
     else if (stat == "item_goldbonus") target = &m.goldFind;
     else if (stat == "item_addexperience") target = &m.experiencePercent;

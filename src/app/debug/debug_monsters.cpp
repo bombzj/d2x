@@ -1,6 +1,7 @@
 #include "gameplay/monsters/implementation.hpp"
 #include "gameplay/skills/bone_spec.hpp"
 #include "gameplay/skills/necro_summon_spec.hpp"
+#include "gameplay/skills/amazon_summon_spec.hpp"
 #include "gameplay/items/state.hpp"
 #include "debug_monsters.hpp"
 #include "gameplay/session/session.hpp"
@@ -130,6 +131,20 @@ void listMonsters(Json &result, const Json &request, const GameSession &session,
                 {"expiresAt", enemy.boneBarrier->expiresAt}};
         entry["summonSkill"] = enemy.summonSkill; entry["summonRank"] = enemy.summonRank;
         entry["summonVariant"] = enemy.summonShield;
+        if (enemy.amazonPet && enemy.intrinsicCombat) {
+            const auto &pet = *enemy.amazonPet; const auto &stats = *enemy.intrinsicCombat;
+            const auto &a = stats.attributes;
+            entry["summonExpiresAt"] = pet.expiresAt ? Json(*pet.expiresAt) : Json(nullptr);
+            entry["summonStats"] = {{"level", stats.level}, {"life", a.maxLife}, {"strength", a.strength}, {"dexterity", a.dexterity},
+                {"defense", a.defense}, {"attackRating", a.attackRating}, {"damage", {stats.minimumDamage, stats.maximumDamage}},
+                {"resistances", {a.fireResist,a.coldResist,a.lightningResist,a.poisonResist}},
+                {"dodge", a.combat.dodge}, {"avoid", a.combat.avoid}, {"evade", a.combat.evade}, {"criticalStrike", a.combat.criticalStrike}};
+            entry["summonEquipment"] = Json::array();
+            for (const auto &[slot, item] : pet.equipment) entry["summonEquipment"].push_back({
+                {"slot", equipmentSlotCode(slot)}, {"code", item.definition}, {"quality", qualityName(item.quality)},
+                {"level", item.level}, {"affixes", item.affixes.size()}});
+            entry["summonWarp"] = pet.spec->warp;
+        }
         if (enemy.necroPet) {
             const auto &pet = *enemy.necroPet;
             entry["summonExpiresAt"] = pet.expiresAt ? Json(*pet.expiresAt) : Json(nullptr);
@@ -157,6 +172,9 @@ void listMonsters(Json &result, const Json &request, const GameSession &session,
             {"damagePercent", modifiers.combat.damagePercent}, {"attackRate", modifiers.combat.attackRate},
             {"velocityPercent", modifiers.velocityPercent}, {"ironMaiden", modifiers.combat.ironMaidenPercent},
             {"lifeTap", modifiers.combat.lifeTapPercent}};
+        entry["curseModifiers"]["defense"] = modifiers.defense;
+        entry["curseModifiers"]["defensePercent"] = modifiers.combat.defensePercent;
+        entry["curseModifiers"]["slowMissiles"] = modifiers.combat.slowMissiles;
         entry["effects"] = Json::array();
         for (const auto &effect : enemy.combatEffects.entries())
             if (effect.activeAt(session.state().frame))

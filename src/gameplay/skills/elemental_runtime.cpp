@@ -47,7 +47,7 @@ void SkillRuntime::advanceFirewall(Missile &missile, std::vector<Missile> &spawn
                 hit.softHit = int(uint32_t(missile.combatRandom) & 127) < definition.softHitChance;
                 hit.hitRecovery = false;
             }
-            dealDamage(hit);
+            if (!world_.avoidMissile(target.id)) dealDamage(hit);
         }
 }
 void SkillRuntime::createBlazeTrail(SkillCaster player) {

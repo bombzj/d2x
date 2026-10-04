@@ -16,10 +16,12 @@
 
 namespace d2x {
 struct BoneSkillSpec;
+struct AmazonMagicSpec;
 // Typed values imported from Skills.txt and Missiles.txt. No archive data enters gameplay.
 struct SkillSpec {
     SkillBehavior effect{};
     std::shared_ptr<const BoneSkillSpec> bone;
+    std::shared_ptr<const AmazonMagicSpec> amazonMagic;
     int mana = 0, minimumMana = 0, manaPerLevel = 0, manaShift = 8;
     int minimumDamage = 0, maximumDamage = 0, hitShift = 8;
     bool fireDamage = false;

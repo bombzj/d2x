@@ -1,6 +1,6 @@
 # 亚马逊已接入技能
 
-更新：2026-10-05。实现以当前 1.13c MPQ 和本地 D2MOO 固定 `5596f5c` 为准。弓与弩、标枪与长矛两页共20项已接入；每页都按逐项 Windows Release 构建、打包后再进入下一项的顺序完成，收尾有包内有限联合冒烟及原 D2S 同进程／新进程重载证据。被动与魔法页仍未完成。原技能树的等级、前置、点数、左右槽和快捷键共用已有入口；武器类型、匹配弹药、法力不足或技能延迟期间，已接入技能的图标显示不可用，魔法箭按原 noammo 例外。
+更新：2026-10-05。实现以当前 1.13c MPQ 和本地 D2MOO 固定 `5596f5c` 为准。三页共30项均有执行／被动入口；每页都按逐项 Windows Release 构建、打包后再进入下一项的顺序完成，收尾有包内有限联合冒烟及原 D2S 同进程／新进程重载证据。被动与魔法整页已补齐，验证范围和适配边界如下。原技能树的等级、前置、点数、左右槽和快捷键共用已有入口；武器类型、匹配弹药、法力不足或技能延迟期间，已接入技能的图标显示不可用，魔法箭按原 noammo 例外。
 
 ## 弓与弩技能整页
 
@@ -27,7 +27,7 @@ MPQ 导入读取原 Skills／Missiles 的伤害五段成长、HitShift、三段�
 
 收尾弩复验：四级多重箭产生五枚214，伤害各异，仅消费一支弩矢；八级炮轰单目标射出四枚683，仅消费一支弩矢。空地引导命中附近目标，13级魔法箭在无弹药时发出27、转换比例13%且无需法力。原 D2S v96保存十项原ID／等级、弓弩和弹药，同进程及新进程读取保留等级；动作、弹体、地面火和技能延迟不保存。运行指纹增加 `amazon-bow-rules-v1-native-arrow-programs`，不新增磁盘字段或静默迁移。
 
-本页完成的是十项技能的当前执行入口。原整数 PATH、完整随机流和 D2Client 的飞行尾迹／随机火块／逐帧客户端节拍未完整移植，现用连续坐标扫掠与既有客户端中心／碎片效果适配。亚马逊被动页的 Critical Strike／Pierce 等效果及完整装备触发仍未接入，不能把显示原 Pierce 标志等同于实现穿透。未穷举装备附伤、所有等级／难度／目标和打断组合，Linux 未实际编译或运行；共用消费者限制见[通用攻击](../combat/ATTACKS.md)。
+本页完成的是十项技能的当前执行入口。原整数 PATH、完整随机流和 D2Client 的飞行尾迹／随机火块／逐帧客户端节拍未完整移植，现用连续坐标扫掠与既有客户端中心／碎片效果适配。Critical Strike／Pierce 已在后续被动页接入实际消费者；完整装备触发仍未完成，穿透随机流的适配见下文。未穷举装备附伤、所有等级／难度／目标和打断组合，Linux 未实际编译或运行；共用消费者限制见[通用攻击](../combat/ATTACKS.md)。
 
 ## 标枪与长矛技能整页
 
@@ -56,7 +56,38 @@ Jab／Impale 序列帧来自参考中的引擎内建表，MPQ没有独立序列�
 
 原D2S v96同进程和新进程读取保持十项ID／等级（充能一击5、闪电之怒3，其余1），标枪51枚及长矛耐久27；新进程正常退出0。动作、序列、毒云、弹跳及恢复延迟不保存。运行规则指纹加入 `amazon-spear-rules-v1-native-sequences-and-javelins`，没有新增磁盘格式或迁移旧档。
 
-当前执行入口已齐，原整数PATH、完整随机流／房间遍历顺序、D2Client逐帧客户端函数及尾迹／灯光尚未完整移植；用连续坐标扫掠、既有充能弹路径和闪电表现适配。闪电之怒子弹体的直线穿行已执行，主标枪 Pierce 标志依赖的亚马逊被动页和装备穿透消费者仍未完成。未穷举全部等级、装备、难度、抵抗／格挡／打断组合，Linux未实际构建运行；共用限制仍见[通用攻击](../combat/ATTACKS.md)。
+当前执行入口已齐，原整数PATH、完整随机流／房间遍历顺序、D2Client逐帧客户端函数及尾迹／灯光尚未完整移植；用连续坐标扫掠、既有充能弹路径和闪电表现适配。闪电之怒子弹体的直线穿行已执行，主标枪的被动／装备穿透消费者已在后续被动页接入，穿过每个目标都会执行原分裂命中函数。未穷举全部等级、装备、难度、抵抗／格挡／打断组合，Linux未实际构建运行；共用限制仍见[通用攻击](../combat/ATTACKS.md)。
+
+## 被动与魔法技能整页
+
+范围为原 SkillDesc 第2页的十项。当前 MPQ 的 Skills、Missiles、States、MonStats／MonStats2、MonLvl、MonEquip、PetType、Overlay、AnimData 和原装备表提供参数与资源；本地 D2MOO 核对执行顺序，不替换当前表。导入拒绝未知非空公式、函数、装备品质／多候选装备行及缺失原图，玩法不读取 MPQ。
+
+| ID／技能 | 当前执行规则 |
+| --- | --- |
+| 8 Inner Sight／内视 | 以施法者为中心半径20，原状态17；一级减40点防御，五段等级加值25／45／60／80／100。持续200帧起、每级加100帧，即8秒起每级加4秒；原过滤34179和状态叠层。 |
+| 9 Critical Strike／双倍打击 | 原 `dm12`，参数5／80；成功只使武器物理伤害乘2，再作技能物理转换。失败才检查装备 Deadly Strike，二者不乘为4倍，元素不翻倍。 |
+| 13 Dodge／闪避 | 原 `dm12`，参数10／65；静止时近战命中经准确率及盾牌格挡后检查。成功无该次伤害，取消当前攻击／施法并播放原 S1 动作和声音。 |
+| 17 Slow Missiles／慢速箭 | 半径20、原状态87、过滤50563；一级300帧、每级加150帧，即12秒起每级加6秒。目标新创建且原 Missiles.CanSlow 允许的飞弹速度乘33%，寿命不延长；已飞出的飞弹不追溯改变，首领依原过滤排除。 |
+| 18 Avoid／避免 | 原 `dm12`，参数15／75；静止时远程武器／已接入的魔法飞弹命中检查，成功进入原 S1。移动时改用回避，不同时叠掷两项。 |
+| 23 Penetrate／刺入 | 原 `ln12`，一级准确率百分比35%，每级加10%；与装备百分比共用派生入口，装备技能加值、学习和重载后立即重算。 |
+| 28 Dopplezon／诱饵 | 原身份dopplezon、状态63、上限1；等级为 `clamp(技能等级+3×人物等级/4,1,人物等级)`。生命为人物最大生命50%再增加每技能等级10%；元素抗性每级4%、上限85%。250帧起每级加125帧，固定不移动不攻击；重施替换旧诱饵，到期／人物死亡清理，跨区按原 warp=0 清理。 |
+| 29 Evade／回避 | 原 `dm12`，参数10／65；走／跑中受到近战或远程命中检查，成功保留移动且不进入站立 S1。奔跑沿公共命中规则不做防御／准确率检定。 |
+| 32 Valkyrie／女武神 | 原身份valkyrie、状态93、上限1、延迟150帧；等级公式同诱饵。当前基础生命400–480随机，技能每级（首级以后）加20%，诱饵硬点每级再加20%。力量25×等级、敏捷12×等级、防御增强10×（等级−1）、准确率加40×（等级+刺入硬点）；四抗2×（等级+诱饵硬点）且技能贡献封顶85%。继承闪避／避免／回避／双倍打击硬点；装备等级25+3×（等级−1），按原MonEquip逐部位最高合格行生成Magic／Rare原物品。17级可得到Rare War Pike，属性、外观、武器距离和动作速度沿现有装备消费者；跟随、近战、跨区 warp=1、重施替换和死亡清理接入。 |
+| 33 Pierce／穿透 | 原 `dm12`，参数10／100；技能与装备 `item_pierce`／`skill_pierce` 叠加，发射时封顶100%。仅原 Missiles.Pierce 允许的弹体预掷最多4次连续穿透，首次失败停止，即最多接触5个目标；每次接触执行原命中函数，已经命中的单位不会重复受同一弹体命中。引导箭86原标志为空，不受此加成。 |
+
+`dm12` 按两次整数截断求值：`r=floor(110×等级/(等级+6))`，再取 `min(参数2,参数1+floor((参数2−参数1)×r/100))`；不是浮点一次求整。人物被动使用有效等级，女武神的上述继承／协同使用已学硬点，装备技能加值不计硬点。内视／慢速箭复用原SC时钟与通用状态强弱覆盖、抗诅咒时长；临时状态不写入角色档。
+
+诱饵和女武神的 States.gfxtype=2／gfxclass=0要求角色外观。当前原VKNU占位图不能作为存活身体：诱饵保存施法时的人物装备外观，女武神使用自身生成装备，读取原AM组件、COF、NU／WL／RN／A1／GH和原VK死亡图。出现／常驻叠层、女武神原PetType头像取当前MPQ；诱饵原空头像不加载伪图。女武神装备独立归宠物，不进入人物库存或D2S。
+
+### 被动页验证与限制
+
+十项按顺序分别完成Windows Release构建／打包后再进入下一项；记录在不提交的 `artifacts/amazon-passive-20261005/01-*` 至 `10-*`，联合修订也重新构建／打包。有限包内冒烟使用独立58级临时亚马逊、真实Smith／FoulCrowNest／FallenShaman：内视一级减防40；慢速箭将新22号火弹速度8降至2.64且寿命不变；近战闪避、魔法飞弹避免均进入S1，奔跑回避保留移动并不播放S1。三阶双倍打击32%、闪避29%、避免36%、刺入55%、回避29%及七阶穿透63%已核对；真实剃刀之尾原33%穿透使人物变为96%。
+
+诱饵三级生命301、持续20秒、重施替换／到期清理；17级女武神生成原73级装备、Rare War Pike，继承三阶防御被动／双倍打击、近战杀死目标、六秒重施延迟、替换和城镇旅行通过。弓箭在一次飞行内伤害两个排列目标，暴击物理仅翻倍一次；闪电之怒主弹穿透后在不同接触点分别生成231，原引导箭不获得穿透。已查看原整页技能树、宠物头像及原组件场景；补齐被动技能显示不误走主动解析、诱饵空头像和最后一枚标枪消耗后空手A2占位资源的加载边界。未编写测试脚本、用例或专用程序。
+
+十项已学等级由原D2S v96保存，同进程和新进程重载保持；最终新进程确认装备叠加后的穿透96%、无临时宠物，保存退出0。被动重新派生，诱饵／女武神及其装备、S1动作、状态、飞弹和延迟不跨局保存。运行规则指纹新增 `amazon-passive-magic-rules-v1-native-effects-and-pets`，不新增磁盘字段，不静默迁移旧内部档。
+
+穿透预掷次数／概率按参考实现，随机种子目前由项目弹体ID初始化；参考使用来源的 `STAT_PIERCE_IDX` 递增种子，完整原随机流尚未移植，不能声明相同存档逐发结果等价。原整数PATH／房间遍历／精确宠物AI调度仍用既有连续坐标和公共跟随／近战适配；角色伪装、叠层及死亡图不是D2Client逐帧变换／淡出等价。装备通过现有属性生成／消费者，完整触发／充能、所有特殊词缀交互继续受物品模块限制。未穷举所有等级、难度、打断、装备、目标及全部魔法伤害类型，Linux和零售客户端未实际验收；30/30表示当前玩法入口齐全。
 
 ## 瘟疫标枪
 
@@ -80,10 +111,11 @@ Jab／Impale 序列帧来自参考中的引擎内建表，MPQ没有独立序列�
 
 ## 入口和扩展边界
 
+- 被动／魔法入口：`content/skills/amazon_magic_data.*`、`amazon_summon_data.*`准备私有不可变规则；`gameplay/skills/amazon_magic.cpp`／`amazon_summon_resolve.cpp`求值和执行，`combat/avoidance.*`执行防御被动，`missile_rules.cpp`处理发射速度／穿透预算，`session_necro_summons.cpp`共用召唤装备适配。证据为D2MOO `SkillAma::SrvDo006/015/016`、`SkillNec::SetSummonBaseStats/SetSummonPassiveStats`、`SkillAss::sub_6FCF9580`、`SUnitDmg`、`Missiles`及`MissMode`。
 - 原数据：`content/skills/amazon_bow_data.*` 导入九项新增弓技能，`amazon_spear_data.*` 导入九项新增长矛页技能，`weapon_skill_data.*` 保留爆炸箭／瘟疫标枪；共用命中结构及资源导入：`content/skills/missile_effects.*`。未知函数／公式和不同云团来源拒绝导入，不静默套用已有伤害。
 - 技能等级解析：`gameplay/skills/resolve.cpp`；动作与消耗：`combat/attacking.cpp`、`physical_projectiles.cpp`；毒伤及云：`weapon_elements.cpp`、`missile_effects.cpp`。
 - 证据：D2MOO `Skills.cpp` 的 `sub_6FD11420`、`D2GAME_SKILLS_SetDelay_6FD11C00` 和技能开始／执行末段；`Units/Missile.cpp` 的伤害数据／毒源聚合；`MissMode.cpp` 的 `MISSMODE_CreatePoisonCloudHitSubmissiles`、`SrvHit02`、`SrvHit04`、`SrvHit01`、`MISSMODE_GetDamageValue`、`SrvDmgHitHandler`。
-- 弓技能证据：D2MOO `SkillAma.cpp::SrvDo008/SrvDo010/SrvSt08/SrvDo012`、`Skills.cpp::sub_6FD107F0/sub_6FD118C0`、`SUnit.cpp::sub_6FCBCFD0`、`MissMode.cpp::SrvDmg01/SrvDmg02/SrvDmg03/SrvDo07/SrvHit09/SrvHit10/SrvHit04/SrvHit01` 和 `D2Common/Units/Missile.cpp` 的源伤害／毒源／吸取求值。原被动、穿透、怪物格挡、完整触发及毒素时长抗性等共用缺口见 [通用攻击](../combat/ATTACKS.md)。
+- 弓技能证据：D2MOO `SkillAma.cpp::SrvDo008/SrvDo010/SrvSt08/SrvDo012`、`Skills.cpp::sub_6FD107F0/sub_6FD118C0`、`SUnit.cpp::sub_6FCBCFD0`、`MissMode.cpp::SrvDmg01/SrvDmg02/SrvDmg03/SrvDo07/SrvHit09/SrvHit10/SrvHit04/SrvHit01` 和 `D2Common/Units/Missile.cpp` 的源伤害／毒源／吸取求值。其他职业被动、怪物格挡、完整触发及毒素时长抗性等共用缺口见 [通用攻击](../combat/ATTACKS.md)。
 - 长矛页证据：D2MOO `SkillAma.cpp::SrvSt05/06/07/09/10`、`SrvDo007/011/013/014`，`D2Common/DataTbls/SequenceTbls.cpp`、`SUnit.cpp::sub_6FCBCFD0`，`MissMode.cpp::SrvDo02/SrvHit02/SrvHit12/SrvHit20/SrvDmg12`，`SkillSor.cpp::SKILLS_MissileInit_ChargedBolt`、`PlrMsg.cpp::sub_6FC83340` 和 `D2Common/Units/Missile.cpp` 的创建标志／源伤害求值。动作由 `weapon_runtime.cpp` 共用计时，特殊近战／分裂弹由 `spear_runtime.cpp` 经单位／世界端口执行，规则载体 `spear_spec.hpp` 不进入会话和展示公共值模型。
 
 原表没有玩家技能名为“爆炸标枪”；独立弹体 explodingjavalin（429）按用户澄清暂缓，不挂接到任何虚构技能。

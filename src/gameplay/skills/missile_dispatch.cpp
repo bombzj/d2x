@@ -25,6 +25,7 @@ void SkillRuntime::hitMissile(Missile &missile, EntityId target, std::vector<Mis
     reactToMissile(missile, target, spawned);
     missile.lastHit = target;
     if (missile.nextHitDelay > 0) world_.nextHitTime(target) = world_.time() + missile.nextHitDelay;
+    if (!missile.impact && (!missile.monsterAttack || missile.fixedElement || !missile.physical) && world_.avoidMissile(target)) return;
     if (missile.monsterAttack && !missile.fixedElement) world_.nativeMissileHit(missile, target);
     else if (missile.impact) world_.impact(missile, spawned, target);
     else {

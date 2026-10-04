@@ -1,4 +1,6 @@
 #include "gameplay/skills/spec.hpp"
+#include "gameplay/skills/amazon_summon_spec.hpp"
+#include "gameplay/skills/amazon_passive_spec.hpp"
 #include "gameplay/skills/resolve.hpp"
 #include "gameplay/skills/summon_resolve.hpp"
 #include "gameplay/skills/necro_summon_spec.hpp"
@@ -81,12 +83,14 @@ const CharacterView &LocalCharacterClient::read() const {
                                combat.coldSkillDamagePercent, session_.effectiveSkillRank(99));
         }
         std::optional<SkillCastSpec> cast;
-        if (entry.spell && skill.effectiveRank > 0) {
+        if (entry.spell && !entry.passive && skill.effectiveRank > 0) {
             cast = resolveSkill(*entry.spell, {skill.effectiveRank, p.character.skillRanks, fireMastery, lightningMastery,
                                 combat.coldSkillDamagePercent});
             if (entry.spell->summon) {
                 const auto &definition = *entry.spell->summon;
-                cast->summon = resolveSummon(definition, skill.effectiveRank, session_.effectiveSkillRank(definition.masterySkill),
+                if (definition.amazon) cast->summon = resolveAmazonSummon(definition, skill.effectiveRank,
+                    p.character.level, session_.state().population.difficulty, p.attributes, p.character.skillRanks);
+                else cast->summon = resolveSummon(definition, skill.effectiveRank, session_.effectiveSkillRank(definition.masterySkill),
                     session_.effectiveSkillRank(definition.resistSkill), p.character.level, session_.state().population.difficulty, p.character.skillRanks);
             }
             skill.usableNow &= p.resources.mana >= std::max(p.skills.channelSkill() == id ? 0.f : float(entry.spell->startMana), cast->manaCost);
@@ -101,6 +105,12 @@ const CharacterView &LocalCharacterClient::read() const {
         if (skill.effectiveRank > skill.baseRank) title += "  Item +" + std::to_string(skill.effectiveRank - skill.baseRank);
         skill.treeTooltip.push_back(std::move(title));
         if (!entry.description.empty()) skill.treeTooltip.push_back(entry.description);
+        if (entry.passiveContribution.amazon) {
+            const auto &passive = *entry.passiveContribution.amazon;
+            const int value = amazonPassiveValue(passive, skill.effectiveRank);
+            skill.treeTooltip.push_back(passive.stat == AmazonPassiveStat::Rating ?
+                "Attack rating: +" + std::to_string(value) + "%" : "Chance: " + std::to_string(value) + "%");
+        }
         if (p.character.level < skill.nextRequiredLevel) skill.treeTooltip.push_back("Requires level " + std::to_string(skill.nextRequiredLevel));
         for (int required : entry.prerequisites)
             if (!p.character.skillRanks.contains(required) || p.character.skillRanks.at(required) <= 0)

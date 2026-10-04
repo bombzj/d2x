@@ -4,6 +4,7 @@
 #include "gameplay/items/equipment_inventory.hpp"
 #include "content/items/equipment_modifiers.hpp"
 #include "content/skills/passive_data.hpp"
+#include "content/skills/amazon_magic_data.hpp"
 #include "gameplay/quest/acts/act_three_state.hpp"
 #include "gameplay/quest/acts/act_five_state.hpp"
 #include <algorithm>
@@ -43,6 +44,8 @@ void GameSessionImpl::refreshCharacter(bool fillGains) {
     auto modifiers = resolveEquipmentModifiers(content_, inventory_, playerContainers_, baseActor);
     mergeCharacterModifiers(modifiers, effects);
     applyPassiveRating(modifiers, player.character, player.combatEffects, content_.skills, state().frame);
+    applyAmazonPassives(modifiers, content_.skills, player.character.skillRanks,
+        int(characterDefinition_.sourceRow), characterDefinition_.code);
     modifiers.baseLife += questBaseLife(player.character.quests);
     const int resistance = questResistance(player.character.quests);
     modifiers.fireResist += resistance; modifiers.coldResist += resistance;

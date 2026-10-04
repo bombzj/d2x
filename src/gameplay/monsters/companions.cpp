@@ -9,6 +9,7 @@
 #include "gameplay/skills/projectile_source.hpp"
 #include "core/random.hpp"
 #include "gameplay/skills/necro_summon_spec.hpp"
+#include "gameplay/skills/amazon_summon_spec.hpp"
 #include <algorithm>
 #include <cmath>
 
@@ -154,7 +155,7 @@ bool Simulation::summonPet(EntityId ownerId, const SkillCastSpec &skill, Vec pos
     pet.summonSkill = skill.sourceId; pet.summonRank = skill.rank;
     const auto attack = monsterAttackTiming_ ? monsterAttackTiming_(pet, 1) : std::nullopt;
     const auto rise = monsterResurrectionDuration_ ? monsterResurrectionDuration_(pet) : std::nullopt;
-    if (!attack || !rise || *rise <= 0) {
+    if (!spec.amazon && (!attack || !rise || *rise <= 0)) {
         state_.message = "Original summon animation is unavailable"; return false;
     }
     auto clear = [&](Vec position) {
@@ -179,7 +180,28 @@ bool Simulation::summonPet(EntityId ownerId, const SkillCastSpec &skill, Vec pos
     pet.summonShield = int(limitedRandom(pet.combatRandom, unsigned(std::max(1, spec.shieldVariants))));
     if (spec.necro && spec.necro->kind == NecroSummonKind::Mage) pet.summonShield = int(limitedRandom(*owner.random, 4));
     if (spec.shieldChance > 0 && limitedRandom(*owner.random, 100) < unsigned(spec.shieldChance)) pet.summonShield = 0;
-    pet.resurrectionRemaining = pet.resurrectionDuration = *rise;
+    pet.resurrectionRemaining = pet.resurrectionDuration = spec.amazon ? 0.f : *rise;
+    if (spec.amazon) {
+        pet.noTreasure = true;
+        pet.amazonPet = std::make_shared<AmazonPetState>(); pet.amazonPet->spec = spec.amazon;
+        pet.amazonPet->region = state_.area.region;
+        if (!spec.amazon->decoy) {
+            const int life = spec.amazon->lifeMinimum + int(limitedRandom(pet.combatRandom,
+                unsigned(spec.amazon->lifeMaximum - spec.amazon->lifeMinimum + 1)));
+            pet.intrinsicCombat->attributes.maxLife = life * (100 + spec.amazon->lifePercent) / 100;
+            pet.hp = pet.maxHp = float(pet.intrinsicCombat->attributes.maxLife);
+            pet.rethink = 20.f / 25.f;
+        }
+        if (spec.amazon->lifetimeFrames > 0) pet.amazonPet->expiresAt = state_.frame + EffectFrame(spec.amazon->lifetimeFrames);
+        CombatEffectSpec state; state.state = spec.amazon->state;
+        state.source = {CombatEffectSource::Skill, owner.id, skill.sourceId, skill.rank};
+        state.visual.overlayId = spec.amazon->stateOverlay;
+        state.modifiers.combat.defensePercent = pet.intrinsicCombat->attributes.combat.defensePercent;
+        pet.intrinsicCombat->attributes.combat.defensePercent = 0;
+        pet.combatEffects.apply(std::move(state), state_.frame);
+        if (spec.amazon->appearOverlay >= 0)
+            state_.area.effects.push_back({pet.pos, 0, spec.amazon->appearDuration, -1, spec.amazon->appearOverlay, pet.id});
+    }
     if (auto *corpse = findEnemy(corpseId)) corpse->corpseConsumed = true;
     if (spec.necro) {
         pet.necroPet = std::make_shared<NecroPetState>(); pet.necroPet->spec = spec.necro;
@@ -202,6 +224,7 @@ void Simulation::relocateCompanions(EntityId owner, Vec destination, EntityId on
     for (auto &pet : state_.companions) {
         if (pet.hydra) continue;
         if (pet.allegiance.owner != owner || (only && pet.id != only)) continue;
+        if (pet.amazonPet && !pet.amazonPet->spec->warp) continue;
         if (pet.hp <= 0) {
             if (!only) pet.deathAge = std::max(pet.deathAge,
                 monsterDeathDuration_ ? monsterDeathDuration_(pet).value_or(0.f) : 0.f);
@@ -260,6 +283,11 @@ void Simulation::updateCompanions(float dt) {
         if (pet.poisonRemaining <= 0 && pet.openWoundsRemaining <= 0)
             advanceLifeRegeneration(pet.hp, pet.maxHp, pet.intrinsicCombat->damageRegen,
                                     dt, LifeRegenOrder::FrameRateThenStep);
+        if (pet.amazonPet && ((pet.amazonPet->expiresAt && state_.frame >= *pet.amazonPet->expiresAt) ||
+            (!pet.amazonPet->spec->warp && pet.amazonPet->region != state_.area.region))) {
+            finishCompanionDeath(pet); continue;
+        }
+        if (pet.amazonPet && pet.amazonPet->spec->decoy) { pet.route.clear(); pet.attack = 0; continue; }
         if (pet.resurrectionRemaining > 0) { pet.resurrectionRemaining = std::max(0.f, pet.resurrectionRemaining - dt); continue; }
         if (pet.hitFlash > 0 || pet.freeze > 0 || pet.stun > 0) {
             pet.attack = pet.attackDuration = 0; pet.attackImpact = -1; pet.route.clear(); continue;
@@ -292,14 +320,14 @@ void Simulation::updateCompanions(float dt) {
                 const auto target = combatUnit(owner.records.player->actions.attackTarget);
                 if (target.alive() && missileDistance(pet.pos, *target.position) < 36) pet.combatTarget = target.id;
             }
-            pet.rethink = 10.f / 25.f;
+            pet.rethink = float(pet.amazonPet ? pet.amazonPet->spec->thinkFrames : 10) / 25.f;
             auto target = combatUnit(pet.combatTarget);
             const bool ranged = pet.necroPet && pet.necroPet->spec->kind == NecroSummonKind::Mage;
             if (target.alive() && (ranged ? missileDistance(pet.pos, *target.position) < 20 :
-                meleeDistance(pet.pos, pet.intrinsicCombat->collisionSize, *target.position, target.stats.collisionSize) <= 1) &&
+                meleeDistance(pet.pos, pet.intrinsicCombat->collisionSize, *target.position, target.stats.collisionSize) <= 1 + (pet.amazonPet ? pet.amazonPet->weapon.rangeAdder : 0)) &&
                 (ranged ? grid_->missileSegment(pet.pos, *target.position, {4, 1}) : grid_->segment(pet.pos, *target.position))) {
                 pet.route.clear();
-                if (limitedRandom(pet.combatRandom, 100) < 80) beginMonsterAttack(pet, 1);
+                if (limitedRandom(pet.combatRandom, 100) < unsigned(pet.amazonPet ? pet.amazonPet->spec->attackChance : 80)) beginMonsterAttack(pet, 1);
                 continue;
             }
             if (target.alive()) pet.route = grid_->path(pet.pos, *target.position, false, movementRule(pet));

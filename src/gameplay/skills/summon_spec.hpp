@@ -10,9 +10,12 @@
 namespace d2x {
 struct NecroSummonSpec;
 struct NecroPetSpec;
+struct AmazonSummonSpec;
+struct AmazonPetSpec;
 struct SummonSkillSpec {
     bool corpse = true, golem = false;
     std::shared_ptr<const NecroSummonSpec> necro;
+    std::shared_ptr<const AmazonSummonSpec> amazon;
     std::string monster, iconArt;
     MonsterKind kind = MonsterKind::NecroSkeleton;
     int masterySkill = -1, resistSkill = -1;
@@ -26,6 +29,7 @@ struct SummonSkillSpec {
 struct SummonCastSpec {
     bool corpse = true, golem = false;
     std::shared_ptr<const NecroPetSpec> necro;
+    std::shared_ptr<const AmazonPetSpec> amazon;
     std::string monster;
     MonsterKind kind = MonsterKind::NecroSkeleton;
     UnitCombatStats stats;

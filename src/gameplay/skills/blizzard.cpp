@@ -86,7 +86,7 @@ void SkillRuntime::advanceBlizzard(Missile &missile, std::vector<Missile> &spawn
         const float damage = float(minimum + limitedRandom(missile.combatRandom, span)) / 256.f;
         missile.lastHit = contact->first; // LastCollide, not an all-target hit set or NextDelay.
         missile.damage = damage;
-        dealDamage({missile.owner, contact->first, damage, MonsterDamageType::Cold,
+        if (!world_.avoidMissile(contact->first)) dealDamage({missile.owner, contact->first, damage, MonsterDamageType::Cold,
                     missileColdDuration(missile.owner, target, state.coldFrames)});
     } else if (!world_.pathClear(missile.missileId, missile.pos, missile.pos)) missile.remaining = 0;
 }

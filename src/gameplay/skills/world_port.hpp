@@ -45,6 +45,7 @@ class ISkillWorld {
     virtual bool nearby(Vec observer, Vec point) const = 0;
     virtual float coldDuration(EntityId actor, const CombatUnit &target, int frames) const = 0;
     virtual float damage(const DamageRequest &request) = 0;
+    virtual bool avoidMissile(EntityId target) = 0;
     virtual void restore(EntityId target, float life, float mana = 0) = 0;
     virtual void knockback(EntityId actor, EntityId target) = 0;
     virtual bool missileSegment(Vec from, Vec to, MissileCollisionRule rule) const = 0;

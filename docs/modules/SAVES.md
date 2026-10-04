@@ -4,9 +4,9 @@
 
 更新：2026-10-05。唯一磁盘角色格式是原版《毁灭之王》D2S v96。支持度扩展不改变格式版本，不保存项目指纹或私有尾段；旧 `.d2xsave` 不读取、不迁移。当前源码支持五幕城镇、27项三难度任务记录，以及空孔／署名、孔内物品、符文之语和任务奖励；Windows Release构建及临时D2S同进程／独立进程往返通过，验证衣卒尔奖励、任务分配与A2／A3欢迎原位；空孔／署名、其他奖励和三难度组合尚未实机往返验收。详见[逐项任务基线](../gameplay/quests/ACT3_5.md)。
 
-## 亚马逊武器技能保存
+## 亚马逊技能保存
 
-弓与弩、标枪与长矛两页共20项沿原 `if` 段保存 Skills.Id／等级，武器、耐久及弹药沿原 Item 位流；无新增版本、私有字段或磁盘指纹。动作、序列、弹体、毒云、冻结／地面火与延迟为临时状态，重载不恢复。运行指纹含 `amazon-bow-rules-v1-native-arrow-programs` 和 `amazon-spear-rules-v1-native-sequences-and-javelins`。两批独立临时D2S同进程／新进程重载各自保留整页十项等级；长矛页另确认标枪51枚与长矛耐久27保持。未用零售客户端往返，详见[亚马逊](../gameplay/skills/AMAZON.md)。
+亚马逊三页共30项沿原 `if` 段保存 Skills.Id／等级，武器、耐久及弹药沿原 Item 位流；无新增版本、私有字段或磁盘指纹。动作、序列、弹体、毒云、冻结／地面火与延迟为临时状态，重载不恢复。运行指纹含 `amazon-bow-rules-v1-native-arrow-programs`、`amazon-spear-rules-v1-native-sequences-and-javelins` 和 `amazon-passive-magic-rules-v1-native-effects-and-pets`。两批独立临时D2S同进程／新进程重载各自保留整页十项等级；长矛页另确认标枪51枚与长矛耐久27保持。被动与魔法页十项等级同进程／新进程保持，装备穿透随原物品重载并重新派生；诱饵／女武神及生成装备、内视／慢速箭和S1不保存，不占用铁魔kf段。未用零售客户端往返，详见[亚马逊](../gameplay/skills/AMAZON.md)。
 
 ## 召唤技能与钢铁石魔保存
 

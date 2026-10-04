@@ -1,4 +1,8 @@
 #include "gameplay/skills/spec.hpp"
+#include "content/classic_data.hpp"
+#include "gameplay/items/inventory.hpp"
+#include "gameplay/skills/amazon_summon_spec.hpp"
+#include "equipment_appearance.hpp"
 #include "gameplay/monsters/implementation.hpp"
 #include "gameplay/session/session.hpp"
 #include "gameplay/model/state.hpp"
@@ -35,6 +39,42 @@ void SceneAssets::indexMonsterArt(const GameSession &session) {
 const std::map<std::string, GpuAnimation> &SceneAssets::monsterAnimationSet(
     const GameSession &session, std::string_view monsterClass, MonsterKind kind, int summonShield,
     const MonsterIdentity *identity, const MonsterEnchantment *enchantment) const {
+    if (kind == MonsterKind::AmazonPet && identity) {
+        const auto found = std::find_if(session.state().companions.begin(), session.state().companions.end(),
+            [&](const Enemy &pet) { return pet.identity.spawnKey == identity->spawnKey && pet.amazonPet; });
+        if (found == session.state().companions.end()) throw std::runtime_error("Original Amazon summon appearance is unavailable");
+        const auto &pet = *found->amazonPet;
+        std::string cacheKey = "amazon-pet:" + pet.characterAppearance + ":" + pet.weaponClass + ":" + std::to_string(pet.weaponSet);
+        for (const auto &code : pet.appearanceDefinitions) cacheKey += ":" + code;
+        auto &result = monsterVariantAnimations[cacheKey];
+        if (!result.empty()) return result;
+        std::array<std::string, 16> parts;
+        parts.fill(session.content().armorTypes.at(0)); parts[5] = parts[6] = parts[7] = "nil";
+        if (pet.characterAppearance == "ne") parts[10] = "ne1";
+        auto equipment = [&](EquipmentSlot slot) { return session.inventory().catalog().find(pet.appearanceDefinitions[size_t(slot)]); };
+        if (const auto *head = equipment(EquipmentSlot::Head); head && !head->appearance.token.empty()) parts[0] = head->appearance.token;
+        if (const auto *body = equipment(EquipmentSlot::Torso)) {
+            constexpr size_t components[]{3,4,1,2,8,9};
+            for (size_t i = 0; i < std::size(components); ++i) parts[components[i]] = body->appearance.body[i];
+        }
+        for (const bool left : {false, true}) {
+            const auto *item = equipment(weaponHandSlot(left, pet.weaponSet));
+            if (!item || item->appearance.component == 16) continue;
+            const int component = equippedHandComponent(*item, left);
+            if (component >= 0 && component < 16) parts[size_t(component)] = item->appearance.token;
+        }
+        std::array<const char *, 16> pointers;
+        for (size_t i = 0; i < parts.size(); ++i) pointers[i] = parts[i].c_str();
+        for (const auto mode : {"nu", "wl", "rn", "a1", "gh", "dt", "dd"}) {
+            const bool death = std::string_view(mode) == "dt" || std::string_view(mode) == "dd";
+            auto animation = death ? graphics_.composite("monsters", "vk", mode, "hth") :
+                graphics_.composite("chars", pet.characterAppearance, mode, pet.weaponClass, &pointers);
+            if (animation.frames.empty() || !animation.completeComposite)
+                throw std::runtime_error("Original Amazon summon animation is incomplete: " + std::string(mode));
+            result.emplace(mode, std::move(animation));
+        }
+        return result;
+    }
     const std::string key = std::string(monsterClass) +
                             (summonShield > 0 ? "#sh" + std::to_string(summonShield) : std::string{});
     auto source = monsterArtSources.find(key);

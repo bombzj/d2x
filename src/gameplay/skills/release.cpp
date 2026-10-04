@@ -1,4 +1,5 @@
 #include "gameplay/skills/behavior.hpp"
+#include "gameplay/skills/amazon_magic_spec.hpp"
 #include "gameplay/skills/bone_spec.hpp"
 #include "gameplay/combat/unit.hpp"
 #include "gameplay/effects/state.hpp"
@@ -18,6 +19,7 @@ void SkillRuntime::releaseSkillCast(SkillCaster player, const SkillCastSpec &ski
     if (skill.summon) {
         if ((skill.summon->corpse ? world_.summonCorpse(player.id, skill, targetUnit) : world_.summonGround(player.id, skill, target))) {
             if (consumeMana) player.mana -= skill.manaCost;
+            if (skill.delayFrames > 0) player.skillDelayUntil = world_.frame() + EffectFrame(skill.delayFrames);
             emit(SkillActivated{skill.sourceId});
         }
         return;
@@ -58,7 +60,10 @@ void SkillRuntime::releaseSkillCast(SkillCaster player, const SkillCastSpec &ski
         player.skillDelayUntil = world_.frame() + EffectFrame(skill.delayFrames);
     if (skill.missileId >= 0 && skill.effect != SkillBehavior::Inferno && !skill.appliedEffect)
         emit(MissileReleased{skill.missileId});
-    if (skill.curse) {
+    if (skill.amazonMagic) {
+        releaseAmazonMagic(world_, player.id, skill);
+        emit(SkillActivated{skill.sourceId});
+    } else if (skill.curse) {
         releaseCurse(player, skill, target, targetUnit);
     } else if (skill.effect == SkillBehavior::Telekinesis) {
         releaseTelekinesis(player, skill, target, targetUnit);

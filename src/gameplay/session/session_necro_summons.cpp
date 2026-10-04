@@ -1,9 +1,11 @@
 #include "session_impl.hpp"
 #include "gameplay/simulation/simulation.hpp"
 #include "gameplay/skills/necro_summon_spec.hpp"
+#include "gameplay/skills/amazon_summon_spec.hpp"
 #include "gameplay/skills/spec.hpp"
 #include "gameplay/skills/summon_resolve.hpp"
 #include "content/items/item_properties.hpp"
+#include "content/items/item_magic_loot.hpp"
 #include "gameplay/monsters/implementation.hpp"
 #include "content/monsters/monster_difficulty_combat.hpp"
 #include "core/random.hpp"
@@ -56,6 +58,79 @@ void GameSessionImpl::equipIronGolem(Enemy &pet, const ItemInstance &source) {
     pet.necroPet->item = std::make_shared<const ItemInstance>(source);
 }
 bool GameSessionImpl::summonGround(EntityId actor, const SkillCastSpec &skill, Vec target) {
+    if (skill.summon && skill.summon->amazon) {
+        if (actor != state().player.id || !simulation_->summonPet(actor, skill, target)) return false;
+        auto &unit = simulation_->state_.companions.back();
+        auto &pet = *unit.amazonPet;
+        pet.characterAppearance = content_.characters.at(size_t(pet.spec->gfxClass)).appearance;
+        if (!pet.spec->decoy) {
+            InventoryService equipment(ids_, inventory_.catalog(), inventory_.stashDimensions_, inventory_.cubeDimensions_);
+            equipment.itemProperties_ = inventory_.itemProperties_;
+            const auto container = equipment.createContainer({unit.id, ContainerKind::Cursor, 1, 1});
+            equipment.state_.creationRandom = unit.combatRandom;
+            for (const auto &entry : pet.spec->equipment) {
+                if (entry.rank > skill.rank || pet.equipment.contains(entry.slot)) continue;
+                limitedRandom(equipment.state_.creationRandom, 1); // Native MonEquip alternative selection.
+                const auto *definition = equipment.catalog().find(entry.item);
+                if (!definition) throw std::runtime_error("Missing original Valkyrie equipment item");
+                auto generated = rollAffixItem(content_, *definition, entry.quality, pet.spec->itemLevel,
+                    equipment.state_.creationRandom, "");
+                if (!generated.deferred.empty()) throw std::runtime_error("Unsupported Valkyrie equipment: " + generated.deferred);
+                equipment.state_.creationRandom = generated.randomState;
+                const auto created = equipment.createItem(entry.item, 1, ContainerLocation{container, {}},
+                    unsigned(pet.spec->itemLevel), generated.generation);
+                if (!created) throw std::runtime_error("Original Valkyrie equipment creation failed: " + std::string(inventoryErrorText(created.error)));
+                auto item = *equipment.item(created.item); item.identified = true;
+                pet.equipment.emplace(entry.slot, std::move(item));
+                equipment.state_.items.erase(created.item);
+            }
+            unit.combatRandom = equipment.state_.creationRandom;
+            std::map<EquipmentSlot, ItemDefinition> definitions;
+            EquipmentLoadout loadout; loadout.requirementPercent = [](const ItemInstance &) { return 0; };
+            for (auto &[slot, item] : pet.equipment) {
+                auto definition = *inventory_.catalog().find(item.definition);
+                definition.equipment.requiredClass.clear();
+                definition.base.requiredStrength = definition.base.requiredDexterity = definition.base.requiredLevel = 0;
+                item.requiredLevel = item.socketRequiredLevel = 0;
+                auto &stored = definitions.emplace(slot, std::move(definition)).first->second;
+                loadout.equipped[size_t(slot)] = {&item, &stored};
+            }
+            auto &stats = *unit.intrinsicCombat; auto &attributes = stats.attributes;
+            const EquipmentActor equipmentActor{"", attributes.strength, attributes.dexterity, stats.level};
+            const EquipmentContributionSource source{{}, [this](const ItemInstance &item, int level) {
+                return resolveItemStats(content_, item, level);
+            }, {}};
+            auto modifiers = deriveEquipmentModifiers(loadout, equipmentActor, source);
+            const EquipmentActor improved{"", attributes.strength + modifiers.strength, attributes.dexterity + modifiers.dexterity, stats.level};
+            const auto gear = deriveEquipmentStats(loadout, improved, modifiers.defense, modifiers.combat);
+            attributes.strength = improved.strength; attributes.dexterity = improved.dexterity;
+            attributes.defense += gear.defense;
+            attributes.attackRating += modifiers.attackRating;
+            attributes.maxLife = std::max(1, attributes.maxLife * (100 + modifiers.combat.lifePercent) / 100 + modifiers.maxLife);
+            unit.hp = unit.maxHp = float(attributes.maxLife);
+            modifiers.combat.lifePercent = modifiers.combat.defensePercent = 0;
+            modifiers.combat.damagePercent = 0; // Already applied to the equipment damage snapshot.
+            modifiers.maxLife = modifiers.defense = modifiers.attackRating = 0;
+            pet.weapon = gear.weapons[0]; pet.weaponClass = gear.animationClass;
+            pet.appearanceDefinitions = gear.appearanceDefinitions;
+            if (!pet.weapon.item) throw std::runtime_error("Valkyrie has no original weapon");
+            stats.minimumDamage += float(pet.weapon.minimum) / 256.f;
+            stats.maximumDamage += float(pet.weapon.maximum) / 256.f;
+            if (const auto found = modifiers.combat.weapons.find(pet.weapon.item); found != modifiers.combat.weapons.end()) {
+                attributes.attackRating += found->second.attackRating;
+                modifiers.combat.attackRatingPercent += found->second.attackRatingPercent;
+            }
+            CombatEffectSpec gearEffect; gearEffect.stacking = EffectStacking::ReplaceSource;
+            gearEffect.source = {CombatEffectSource::Item, unit.id, skill.sourceId, skill.rank};
+            gearEffect.modifiers = std::move(modifiers);
+            unit.combatEffects.apply(std::move(gearEffect), state().frame);
+            return true;
+        }
+        pet.weaponClass = equipmentStats().animationClass;
+        pet.weaponSet = state().player.character.weaponSet;
+        pet.appearanceDefinitions = state().player.equipment.appearanceDefinitions;
+        return true;
+    }
     if (!skill.summon || !skill.summon->necro || skill.summon->necro->kind != NecroSummonKind::Iron)
         return simulation_->summonPet(actor, skill, target);
     if (actor != state().player.id) return false;

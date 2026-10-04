@@ -35,7 +35,7 @@ void GameSessionImpl::tick(float dt, Vec keyboard, bool forceRun) {
         const auto *record = content_.skills.find(skill);
         if (!record || !record->spell || !record->spell->summon) continue;
         const int rank = effectiveSkillRank(skill);
-        simulation_->enforceSummonLimit(state().player.id, skill, record->spell->summon->golem ? (rank > 0 ? 1 : 0) : record->spell->summon->necro && record->spell->summon->necro->kind == NecroSummonKind::Revive ? rank : rank < 4 ? rank : 2 + rank / 3);
+        simulation_->enforceSummonLimit(state().player.id, skill, (record->spell->summon->golem || record->spell->summon->amazon) ? (rank > 0 ? 1 : 0) : record->spell->summon->necro && record->spell->summon->necro->kind == NecroSummonKind::Revive ? rank : rank < 4 ? rank : 2 + rank / 3);
     }
     syncPlayerAura();
     simulation_->tick(dt, {state().player.id, transitioned ? Vec{} : keyboard, forceRun});

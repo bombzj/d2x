@@ -22,7 +22,7 @@ void SkillRuntime::advanceMeteor(Missile &missile, std::vector<Missile> &spawned
         if (!target.alive() || !canAttack(missile.owner, target.id) || !active(*target.position)) continue;
         const int deltaX = int(target.position->x) - int(missile.pos.x);
         const int deltaY = int(target.position->y) - int(missile.pos.y);
-        if (deltaX * deltaX + deltaY * deltaY <= program.radius * program.radius)
+        if (deltaX * deltaX + deltaY * deltaY <= program.radius * program.radius && !world_.avoidMissile(target.id))
             dealDamage({missile.owner, target.id, missile.damage, MonsterDamageType::Fire});
     }
     emit(MissileImpact{missile.missileId, missile.pos});

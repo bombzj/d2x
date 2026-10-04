@@ -55,6 +55,7 @@ void SkillRuntime::resolveGlacialSpikeImpact(Missile &missile) {
         if (dx * dx + dy * dy > int64_t(program.radius) * program.radius) continue;
         // Aura filter 0x8583 has no LOS bit; ApplyBlockOrDodge(1,0) has
         // no shield block. Passive avoidance belongs to the shared combat model.
+        if (world_.avoidMissile(target.id)) continue;
         DamageRequest hit{missile.owner, target.id, damage, MonsterDamageType::Cold};
         hit.freezeFrames = program.freezeFrames;
         dealDamage(hit);

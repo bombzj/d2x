@@ -5,7 +5,7 @@
 namespace d2x {
 void SceneAssets::loadSkillIcons(Archives &, const ClassicData &content) {
     for (const auto &[id, entry] : content.skills.skills)
-        if (entry.spell && entry.spell->summon) {
+        if (entry.spell && entry.spell->summon && !entry.spell->summon->iconArt.empty()) {
             auto icon = uiGraphics_.single(entry.spell->summon->iconArt);
             if (icon.frames.empty()) throw std::runtime_error("Missing original summon portrait");
             summonPortraits.emplace(id, std::move(icon));

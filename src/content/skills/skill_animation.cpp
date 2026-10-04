@@ -20,7 +20,7 @@ void loadSkillAnimations(SkillCatalog &catalog, const DataTable &weapons, Archiv
     for (const auto &tree : catalog.classes)
         for (const auto &weapon : classes)
             for (const auto &mode : modes) {
-                if (mode == "s1" && tree.classCode != "pal") continue;
+                if (mode == "s1" && tree.classCode != "pal" && tree.classCode != "ama") continue;
                 const auto key = tree.iconToken + mode + weapon;
                 auto upper = key;
                 for (auto &letter : upper) letter = char(std::toupper(static_cast<unsigned char>(letter)));
@@ -28,7 +28,7 @@ void loadSkillAnimations(SkillCatalog &catalog, const DataTable &weapons, Archiv
                 if (!anim || anim->frames <= 1 || anim->frames > 144 || anim->speed <= 0 ||
                     !archives.contains("data/global/chars/" + tree.iconToken + "/cof/" + key + ".cof")) continue;
                 // Native frame events: 1 = melee/skill, 2 = missile release.
-                if (mode == "bl") {
+                if (mode == "bl" || (mode == "s1" && tree.classCode == "ama")) {
                     catalog.attackTimings.emplace(key, SkillCatalog::CastTiming{int(anim->frames), anim->speed, 0});
                     continue;
                 }

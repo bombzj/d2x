@@ -1,8 +1,10 @@
 #include "gameplay/skills/behavior.hpp"
 #include "gameplay/units/actions.hpp"
+#include "gameplay/combat/avoidance.hpp"
 #include "gameplay/combat/damage_request.hpp"
 #include "gameplay/skills/runtime.hpp"
 #include "gameplay/skills/necro_summon_spec.hpp"
+#include "gameplay/skills/amazon_summon_spec.hpp"
 #include "gameplay/items/state.hpp"
 #include "core/random.hpp"
 #include "gameplay/simulation/simulation.hpp"
@@ -145,15 +147,17 @@ void Simulation::resolveMonsterAttack(Enemy &enemy, int modeOverride, bool proje
     if (!defender) defender = enemy.combatTarget;
     auto target = combatUnit(defender);
     if (!target.alive() || !canAttack(enemy.id, defender) || (!projectile && enemy.hp <= 0)) return;
-    if (!projectile && !monsterMeleeReach(enemy, defender, enemy.intrinsicCombat ? 0 : 3)) return;
+    if (!projectile && !monsterMeleeReach(enemy, defender, enemy.amazonPet ? enemy.amazonPet->weapon.rangeAdder : enemy.intrinsicCombat ? 0 : 3)) return;
     const int mode = modeOverride ? modeOverride : enemy.attackMode;
     const auto source = combatUnit(enemy.id);
     const auto accuracy = enemy.intrinsicCombat ? std::optional<MonsterAccuracy>{{source.stats.level, source.stats.attributes.attackRating}} :
         monsterAccuracy_ ? monsterAccuracy_(enemy, state_.area.region, mode) : std::nullopt;
-    const bool ironItem = enemy.necroPet && enemy.necroPet->item;
+    const EntityId item = enemy.amazonPet ? enemy.amazonPet->weapon.item :
+        enemy.necroPet && enemy.necroPet->item ? enemy.necroPet->item->id : EntityId{};
+    const bool ironItem = bool(item);
     auto targetModifiers = source.stats.attributes.combat.target;
     if (ironItem) {
-        const auto weapon = source.stats.attributes.combat.weapons.find(enemy.necroPet->item->id);
+        const auto weapon = source.stats.attributes.combat.weapons.find(item);
         if (weapon != source.stats.attributes.combat.weapons.end()) mergeAttackTargetModifiers(targetModifiers,weapon->second.target);
     }
     const MonsterDefense defense{target.stats.level,target.stats.attributes.defense,target.stats.demon,target.stats.undead,target.stats.boss};
@@ -172,6 +176,13 @@ void Simulation::resolveMonsterAttack(Enemy &enemy, int modeOverride, bool proje
     if (!ironItem && target.stats.block > 0 && limitedRandom(*target.random, 100) < unsigned(target.stats.block)) {
         blockUnit(defender);
         if (!projectile) skills().triggerCombatEffects(defender, CombatEffectEvent::AttackedInMelee, enemy.id);
+        return;
+    }
+    if (!ironItem) if (const int avoided = avoidCombatHit(target, projectile, [this] {
+        const auto *weapon = attackWeapon(false, false);
+        return weapon && attackTiming_ ? attackTiming_(*weapon, false, false, "s1") : std::nullopt;
+    }); avoided >= 0) {
+        if (target.player) emit(SkillCast{target.id, avoided, *target.position});
         return;
     }
     float damage = monsterDefinition(enemy.kind).damage;
@@ -197,7 +208,7 @@ void Simulation::resolveMonsterAttack(Enemy &enemy, int modeOverride, bool proje
                             uint32_t(enemy.combatRandom) %
                                 unsigned(spec->maximumDamage - spec->minimumDamage + 1));
         }
-    if (enemy.intrinsicCombat && limitedRandom(enemy.combatRandom, 100) < unsigned(source.stats.critical)) damage *= 2.f;
+    if (enemy.intrinsicCombat && !enemy.amazonPet && limitedRandom(enemy.combatRandom, 100) < unsigned(source.stats.critical)) damage *= 2.f;
     if (!enemy.intrinsicCombat && monsterCriticalChance_)
         if (auto chance = monsterCriticalChance_(enemy, state_.area.region); chance && *chance > 0) {
             rollRandom(enemy.combatRandom);
@@ -211,7 +222,8 @@ void Simulation::resolveMonsterAttack(Enemy &enemy, int modeOverride, bool proje
     damage = float(std::max<int64_t>(0, physicalBase + physicalBase * std::max(-90, damagePercent) / 100)) / 256.f;
     if (ironItem) {
         const auto &modifiers = source.stats.attributes.combat;
-        auto elements = rollAttackElements(enemy.necroPet->item->id, &modifiers, nullptr, &enemy.combatRandom);
+        auto elements = rollAttackElements(item, &modifiers, nullptr, &enemy.combatRandom);
+        if (enemy.amazonPet && !elements.deadly && limitedRandom(enemy.combatRandom, 100) < unsigned(source.stats.critical)) elements.deadly = true;
         elements.attackerLevel = source.stats.level;
         resolveWeaponHit(defender, damage, enemy.id, elements);
         return;

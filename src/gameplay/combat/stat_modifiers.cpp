@@ -52,6 +52,8 @@ void mergeCombatModifiers(CombatModifiers &a, const CombatModifiers &b) {
     D2X_ADD(fasterHitRecovery); D2X_ADD(fasterBlock);
     D2X_ADD(lifeLeech); D2X_ADD(manaLeech);
     D2X_ADD(crushingBlow); D2X_ADD(openWounds); D2X_ADD(deadlyStrike);
+    D2X_ADD(criticalStrike); D2X_ADD(dodge); D2X_ADD(avoid); D2X_ADD(evade); D2X_ADD(pierce);
+    D2X_ADD(slowMissiles);
     D2X_ADD(magicFind); D2X_ADD(goldFind); D2X_ADD(poisonLengthResist);
     D2X_ADD(curseResistance);
     D2X_ADD(reducedPrices);

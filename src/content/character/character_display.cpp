@@ -10,6 +10,8 @@
 #include "gameplay/skills/aura.hpp"
 #include "gameplay/skills/passive.hpp"
 #include "gameplay/skills/necro_summon_spec.hpp"
+#include "gameplay/skills/amazon_summon_spec.hpp"
+#include "gameplay/skills/amazon_magic_spec.hpp"
 #include <algorithm>
 #include <cstdio>
 #include <cstdint>
@@ -112,11 +114,11 @@ CharacterActionDisplay describeCharacterAction(const CharacterDisplayContext &co
                               entry->basicAction == BasicSkillAction::LeftHandSwing;
         return weaponStats(context, thrown, leftHand);
     }
-    if (entry->spell) {
+    if (entry->spell && !entry->passive) {
         if (rank < 1) return {};
         const auto cast = resolveSkill(*entry->spell, {rank, context.learned, context.fireMastery,
             context.lightningMastery, context.attributes.combat.coldSkillDamagePercent});
-        if (cast.curse) return {};
+        if (cast.curse || cast.amazonMagic || cast.summon) return {};
         if (cast.weapon) return weaponStats(context, cast.weapon->thrown, false, &cast);
         if (cast.effect == SkillBehavior::Teleport || cast.effect == SkillBehavior::StaticField ||
             cast.effect == SkillBehavior::FrozenArmor) return {};
@@ -193,12 +195,24 @@ std::vector<std::string> describeSkillPicker(const SkillRecord &skill, const Ski
             const auto &pet = *value.summon;
             const auto &stats = pet.stats.attributes;
             detail += " / Summons " + std::to_string(pet.limit);
-            if (pet.necro && pet.necro->kind == NecroSummonKind::Revive)
+            if (pet.amazon) {
+                const auto &amazon = *pet.amazon;
+                if (amazon.decoy) detail += " / Life " + std::to_string(stats.maxLife) + " / " + std::to_string(amazon.lifetimeFrames / 25) + " seconds";
+                else detail += " / Base life " + std::to_string(amazon.lifeMinimum * (100 + amazon.lifePercent) / 100) + "-" +
+                    std::to_string(amazon.lifeMaximum * (100 + amazon.lifePercent) / 100) + " / Equipment level " + std::to_string(amazon.itemLevel);
+            }
+            else if (pet.necro && pet.necro->kind == NecroSummonKind::Revive)
                 detail += " / Life +" + std::to_string(pet.necro->lifePercent) + "% / Physical damage +" +
                     std::to_string(pet.necro->damagePercent) + "% / " + std::to_string(pet.necro->lifetimeFrames / 25) + " seconds";
             else detail += " / Life " + std::to_string(stats.maxLife) + " / Attack rating " +
                 std::to_string(stats.attackRating) + " / Defense " + std::to_string(stats.defense);
             if (pet.necro && pet.necro->slowPercent) detail += " / Slows " + std::to_string(pet.necro->slowPercent) + "%";
+        }
+        else if (value.amazonMagic) {
+            const auto &program = *value.amazonMagic;
+            detail += " / Radius " + std::to_string(program.radius) + " / " + std::string(displayNumber("%.1fs", float(program.frames) / 25.f));
+            if (program.defenseReduction) detail += " / Enemy defense -" + std::to_string(program.defenseReduction);
+            if (program.slowPercent) detail += " / Missile velocity " + std::to_string(program.slowPercent) + "%";
         }
         else if (value.effect == SkillBehavior::Teleport) detail += " / Teleport to clear ground";
         else if (value.effect == SkillBehavior::Teeth)

@@ -1,5 +1,6 @@
 #include "gameplay/skills/spec.hpp"
 #include "gameplay/skills/bone_spec.hpp"
+#include "gameplay/skills/amazon_summon_spec.hpp"
 #include "content/monsters/monster_difficulty_combat.hpp"
 #include "gameplay/monsters/implementation.hpp"
 #include "core/random.hpp"
@@ -42,6 +43,25 @@ GameSessionImpl::GameSessionImpl(Archives &archives, const WorldSelection &selec
             simulation_(std::make_unique<Simulation>(ids_)), loot_(childRandom(random_)) {
     simulation_->state_.player.character.characterClass = std::move(characterClass);
     simulation_->missileCollisions_ = content_.missileCollisions;
+    std::map<int, bool> slowable;
+    std::map<int, bool> pierceable;
+    const auto &missileTable = content_.tables.at("missiles");
+    for (size_t row = 0; row < missileTable.rows().size(); ++row) {
+        const auto id = missileTable.number(row, "Id");
+        if (!id) continue;
+        const int flag = missileTable.number(row, "CanSlow").value_or(0);
+        if (flag != 0 && flag != 1) throw std::runtime_error("Unsupported original missile CanSlow flag");
+        slowable.emplace(*id, flag == 1);
+        const int pierce = missileTable.number(row, "Pierce").value_or(0);
+        if (pierce != 0 && pierce != 1) throw std::runtime_error("Unsupported original missile Pierce flag");
+        pierceable.emplace(*id, pierce == 1);
+    }
+    simulation_->missileCanSlow_ = [flags = std::move(slowable)](int id) {
+        const auto found = flags.find(id); return found != flags.end() && found->second;
+    };
+    simulation_->missileCanPierce_ = [flags = std::move(pierceable)](int id) {
+        const auto found = flags.find(id); return found != flags.end() && found->second;
+    };
     simulation_->missileReturnFire_ = content_.missileReturnFire;
     simulation_->freezeDeathState_ = content_.states.at("freeze").definition;
     simulation_->shatterDeathState_ = content_.states.at("shatter").definition;
@@ -242,6 +262,8 @@ GameSessionImpl::GameSessionImpl(Archives &archives, const WorldSelection &selec
         auto found = content_.skills.attackTimings.find(characterAppearance() + mode + equipmentStats().animationClass);
         if (found == content_.skills.attackTimings.end()) return std::nullopt;
         const auto &data = found->second;
+        if (mode == "s1" && characterCode() == "ama")
+            return WeaponAttackTiming{mode, data.frames, data.speed, 0, 0};
         if (mode == "bl") {
             const int faster = std::max(0, characterStats().combat.fasterBlock);
             const int rate = (characterStats().combat.shieldDefensePercent > 0 ? 100 : 50) + 120 * faster / (120 + faster);
@@ -559,6 +581,17 @@ GameSessionImpl::GameSessionImpl(Archives &archives, const WorldSelection &selec
     };
     simulation_->monsterAttackTiming_ = [this](const Enemy &enemy, int mode)
         -> std::optional<MonsterAttackTiming> {
+        if (enemy.amazonPet && !enemy.amazonPet->spec->decoy) {
+            const auto &pet = *enemy.amazonPet;
+            const auto found = content_.skills.attackTimings.find(pet.characterAppearance + "a1" + pet.weaponClass);
+            if (found == content_.skills.attackTimings.end()) return std::nullopt;
+            const auto &data = found->second;
+            const WeaponAttackTiming timing{"a1", data.frames,
+                effectiveAttackSpeed(data.speed, pet.weapon.fasterAttack, pet.weapon.baseSpeed, 0),
+                data.actionFrame, attackStartingFrame("ama", pet.weaponClass, "a1")};
+            return MonsterAttackTiming{float(timing.durationTicks()) / 25.f,
+                float(timing.actionTick()) / 25.f, data.frames};
+        }
         if (enemy.identity.superUnique == "The Countess" && mode == 3) mode = 1;
         const auto *timing = monsterContent_.attackTiming(enemy.kind, mode);
         return timing ? std::optional<MonsterAttackTiming>(*timing) : std::nullopt;
@@ -688,6 +721,7 @@ GameSessionImpl::GameSessionImpl(Archives &archives, const WorldSelection &selec
     fingerprint.add("necromancer-summon-rules-v1-native-iron-kf");
     fingerprint.add("amazon-bow-rules-v1-native-arrow-programs");
     fingerprint.add("amazon-spear-rules-v1-native-sequences-and-javelins");
+    fingerprint.add("amazon-passive-magic-rules-v1-native-effects-and-pets");
     fingerprint.add("map-rules-v9-native-trees-complete-groups");
     auto members = archives.used;
     for (const auto &member : members) {

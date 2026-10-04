@@ -2,7 +2,9 @@
 #include "gameplay/combat/damage_request.hpp"
 #include "gameplay/skills/world_values.hpp"
 #include "gameplay/skills/world_port.hpp"
+#include "gameplay/skills/missile_launch_spec.hpp"
 #include "gameplay/combat/unit.hpp"
+#include "gameplay/combat/avoidance.hpp"
 #include "gameplay/effects/state.hpp"
 #include "gameplay/skills/missile.hpp"
 #include "gameplay/skills/caster.hpp"
@@ -58,6 +60,15 @@ class SimulationSkillWorld final : public ISkillWorld, public ISkillWeaponWorld 
         return simulation_.missileColdDuration(actor, unit, frames);
     }
     float damage(const DamageRequest &hit) override { return simulation_.dealDamage(hit); }
+    bool avoidMissile(EntityId target) override {
+        auto unit = simulation_.combatUnit(target);
+        const int avoided = avoidCombatHit(unit, true, [this] {
+            const auto *weapon = simulation_.attackWeapon(false, false);
+            return weapon && simulation_.attackTiming_ ? simulation_.attackTiming_(*weapon, false, false, "s1") : std::nullopt;
+        });
+        if (avoided >= 0 && unit.player) simulation_.emit(SkillCast{unit.id, avoided, *unit.position});
+        return avoided >= 0;
+    }
     void restore(EntityId target, float life, float mana) override { simulation_.restoreUnit(target, life, mana); }
     void knockback(EntityId actor, EntityId target) override { simulation_.applyAuraKnockback(actor, target); }
     bool missileSegment(Vec from, Vec to, MissileCollisionRule rule) const override {
@@ -91,10 +102,16 @@ class SimulationSkillWorld final : public ISkillWorld, public ISkillWeaponWorld 
     }
     float &nextHitTime(EntityId target) override { return simulation_.state_.area.novaHitUntil[target]; }
     Missile &addMissile(Missile missile) override {
+        prepareMissileLaunch(missile, simulation_.combatUnit(missile.owner).stats.attributes.combat,
+            simulation_.missileCanSlow_ && simulation_.missileCanSlow_(missile.missileId),
+            simulation_.missileCanPierce_ && simulation_.missileCanPierce_(missile.missileId));
         simulation_.state_.area.missiles.push_back(std::move(missile));
         return simulation_.state_.area.missiles.back();
     }
     void enqueueMissile(Missile missile) override {
+        prepareMissileLaunch(missile, simulation_.combatUnit(missile.owner).stats.attributes.combat,
+            simulation_.missileCanSlow_ && simulation_.missileCanSlow_(missile.missileId),
+            simulation_.missileCanPierce_ && simulation_.missileCanPierce_(missile.missileId));
         if (simulation_.updatingMissiles_) simulation_.deferredMissiles_.push_back(std::move(missile));
         else simulation_.state_.area.missiles.push_back(std::move(missile));
     }

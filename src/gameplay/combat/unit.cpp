@@ -6,6 +6,7 @@
 #include "gameplay/skills/caster.hpp"
 #include "gameplay/skills/runtime.hpp"
 #include "gameplay/simulation/simulation.hpp"
+#include "gameplay/skills/missile_launch_spec.hpp"
 #include "damage_resolution.hpp"
 #include "core/random.hpp"
 #include "gameplay/monsters/monster_wander.hpp"
@@ -363,6 +364,7 @@ std::optional<std::pair<EntityId, float>> Simulation::missileTarget(const Missil
     std::optional<std::pair<EntityId, float>> hit;
     for (auto target : combatUnits()) {
         if (!target.alive() || !canAttack(missile.owner, target.id) || missile.lastHit == target.id || !active(*target.position)) continue;
+        if (missileAlreadyHit(missile, target.id)) continue;
         if (missile.bone && missile.bone->program->spirit) {
             const auto &spirit = *missile.bone;
             if (spirit.target && spirit.target != target.id) continue;

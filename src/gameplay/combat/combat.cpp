@@ -2,6 +2,7 @@
 #include "gameplay/units/actions.hpp"
 #include "gameplay/combat/damage_request.hpp"
 #include "gameplay/skills/missile_rules.hpp"
+#include "gameplay/skills/missile_launch_spec.hpp"
 #include "gameplay/skills/weapon_contributions.hpp"
 #include "gameplay/skills/runtime.hpp"
 #include "gameplay/skills/necro_summon_spec.hpp"
@@ -143,6 +144,8 @@ void Simulation::updateMissiles(float dt) {
     std::vector<Missile> spawned;
     updatingMissiles_ = true;
     for (auto &m : area.missiles) {
+        prepareMissileLaunch(m, combatUnit(m.owner).stats.attributes.combat,
+            missileCanSlow_ && missileCanSlow_(m.missileId), missileCanPierce_ && missileCanPierce_(m.missileId));
         if (skills().advanceSpecialMissile(m, dt, spawned)) continue;
         const int accelerationStep = int(m.age * 5.f + .00001f);
         m.age += dt;
@@ -182,10 +185,14 @@ void Simulation::updateMissiles(float dt) {
                 }
                 m.pos = next;
             } else {
-                const auto contact = missileTarget(m, next);
-                m.pos = contact ? m.pos + (next - m.pos) * contact->second : next;
-                if (contact) { hit(contact->first); m.remaining = 0; }
-                else if (wall && m.impact) resolveMissileImpact(m, spawned);
+                while (m.remaining > 0) {
+                    const auto contact = missileTarget(m, next);
+                    m.pos = contact ? m.pos + (next - m.pos) * contact->second : next;
+                    if (!contact) { if (wall && m.impact) resolveMissileImpact(m, spawned); break; }
+                    const bool continued = consumeMissilePierce(m, contact->first);
+                    hit(contact->first);
+                    if (!continued) { m.remaining = 0; break; }
+                }
             }
             if (wall) m.remaining = 0;
         };
