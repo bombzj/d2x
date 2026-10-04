@@ -57,6 +57,7 @@ void GameSessionImpl::enter(RegionId id, std::optional<Vec> arrival, std::option
     if (current_ >= 0)
         areas_.park(size_t(current_), simulation_->leaveArea());
     current_ = index;
+    pendingCorpse_ = {};
     cancelExit();
     cancelPickup();
     cancelInteraction();

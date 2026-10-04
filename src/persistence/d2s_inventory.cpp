@@ -80,7 +80,8 @@ void initializeD2sInventory(CharacterSaveData &snapshot, const ClassicData &cont
     add(snapshot.containers.hirelingEquipment, ContainerKind::Equipment, int(EquipmentSlot::Count), 1);
     add(snapshot.containers.cube, ContainerKind::Cube, content.cubeLayout.columns, content.cubeLayout.rows);
 }
-void importD2sItem(CharacterSaveData &snapshot, const D2sItem &source, const ClassicData &content, bool hireling) {
+void importD2sItem(CharacterSaveData &snapshot, const D2sItem &source, const ClassicData &content,
+                   bool hireling, EntityId corpse) {
     const auto *definition = content.items.find(source.code);
     require(definition != nullptr && source.quality > 0 && source.quality < qualities.size(), "item identity");
     ItemInstance item;
@@ -148,7 +149,20 @@ void importD2sItem(CharacterSaveData &snapshot, const D2sItem &source, const Cla
     }
     require(source.durability <= source.maxDurability, "durability exceeds saved maximum");
     ContainerLocation location;
-    if (source.mode == 1) {
+    if (corpse) {
+        require(!hireling, "corpse hireling item");
+        if (source.mode == 1) {
+            require(source.body >= 1 && source.body <= 12 &&
+                (source.body == 8 ? definition->beltRows > 0 :
+                    definition->equipment.fits(EquipmentSlot(source.body - 1))), "corpse body slot");
+            location = {corpse, {int(source.body - 1), 0}};
+        } else {
+            require(source.mode == 0 && source.page == 1, "unsupported corpse item location");
+            location = {corpse, {int(EquipmentSlot::Count), 0}};
+        }
+        for (const auto &[id, previous] : snapshot.inventory.items)
+            require(previous.location != ItemLocation{location}, "duplicate corpse item slot");
+    } else if (source.mode == 1) {
         require(source.body >= 1 && source.body <= 12, "body slot");
         location = {hireling ? snapshot.containers.hirelingEquipment : snapshot.containers.equipment,
                     {int(source.body - 1), 0}};
@@ -259,7 +273,17 @@ D2sItem exportD2sItem(const CharacterSaveData &snapshot, const ItemInstance &ite
     const auto *location = std::get_if<ContainerLocation>(&item.location);
     require(location != nullptr, "ground item in character inventory");
     const auto &containers = snapshot.containers;
-    if (location->container == containers.equipment || location->container == containers.hirelingEquipment ||
+    const auto storage = snapshot.inventory.containers.find(location->container);
+    require(storage != snapshot.inventory.containers.end(), "missing item container");
+    if (storage->second.spec.kind == ContainerKind::Corpse) {
+        require(location->cell.y == 0 && location->cell.x >= 0 &&
+                location->cell.x <= int(EquipmentSlot::Count), "corpse item slot");
+        if (location->cell.x < int(EquipmentSlot::Count)) {
+            output.mode = 1; output.body = unsigned(location->cell.x + 1); output.page = 0;
+        } else {
+            output.mode = 0; output.page = 1; output.x = output.y = 0;
+        }
+    } else if (location->container == containers.equipment || location->container == containers.hirelingEquipment ||
         location->container == containers.beltEquipment) {
         output.mode = 1;
         output.body = location->container == containers.beltEquipment ? 8 : unsigned(location->cell.x + 1);

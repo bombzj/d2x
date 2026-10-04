@@ -41,6 +41,8 @@ struct UseSkill {
 struct ToggleRun {};
 struct StopChannel {};
 struct StopMoving {};
+struct RespawnPlayer {};
+struct RecoverPlayerCorpse { EntityId corpse; };
 struct Interact {
     EntityId target;
 };
@@ -67,6 +69,6 @@ using GameCommand =
     std::variant<MoveTo, Attack, UseSkill, ToggleRun, SwitchWeaponSet, Interact, IdentifyWithCain, EndNpcConversation, TalkToNpc, ClaimAkaraRespec, ImbueItem, CompleteActOne, BuyVendorItem, SellVendorItem, DebugGrantGold, DebugDropCube, DebugSpawnItem, GoldTransaction, DebugGrantExperience, AllocateAttribute, AllocateSkill, BindSkillHotkey, SelectMouseSkill, DebugResetAttributes, DebugResetSkills, DebugUnlockWaypoints, DebugGrantShrine, Travel, RestartArea, MoveItem, SwapItems,
                  SplitStack, MergeStacks, LoadBook, IdentifyItem, PickupItem, StopMoving, EquipBelt, UseItem, UseBeltColumn,
                  CloseStorage, TransferItem, UseExit, EquipItem, DebugKill, DebugSpawnMonster,
-                 DebugDamageMonster, UseTownPortal, UseCainPortal, WaypointTravel, OpenGamble, RepairVendorItem,
+                 DebugDamageMonster, RespawnPlayer, RecoverPlayerCorpse, UseTownPortal, UseCainPortal, WaypointTravel, OpenGamble, RepairVendorItem,
                  OpenHirelingList, HireMercenary, EquipHirelingItem, DebugGrantHireling, ResurrectHireling, UseHirelingPotion, StopChannel, TransmuteCube, CompleteActTwo, SubmitQuestItem, SocketQuestItem, PersonalizeQuestItem>;
 } // namespace d2x

@@ -298,9 +298,8 @@ void SceneView::draw(Vec mouse) const {
     if (view_.pause)
         painter_.centered("PAUSED", H / 2 - 40, 32, gold);
     if (sim.player.actions.dead) {
-        DrawRectangle(0, 100, W, 320, {0, 0, 0, 130});
         painter_.centered("YOU HAVE DIED", 250, 32, {187, 46, 30, 255});
-        painter_.centered("Press Ctrl+R to restart this area", 300, 16);
+        painter_.centered("PRESS ESC TO CONTINUE", 300, 32, {187, 46, 30, 255});
     }
     if (view_.help)
         drawHelp();

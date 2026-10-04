@@ -631,6 +631,7 @@ GameSessionImpl::GameSessionImpl(Archives &archives, const WorldSelection &selec
     Fingerprint fingerprint;
     fingerprint.add(content_.profile);
     fingerprint.add("quest-rules-v18-later-acts");
+    fingerprint.add("player-corpse-rules-v1");
     auto members = archives.used;
     for (const auto &member : members) {
         fingerprint.add(member);

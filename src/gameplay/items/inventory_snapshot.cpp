@@ -7,7 +7,7 @@
 
 namespace d2x {
 void InventoryService::validateSnapshot(const InventoryState &state, const PlayerContainers &containers,
-                                        EntityId player) const {
+                                        EntityId player, std::span<const EntityId> corpses) const {
     auto require = [](bool condition, const char *reason) {
         if (!condition)
             throw std::runtime_error(std::string("Invalid save inventory: ") + reason);
@@ -29,6 +29,10 @@ void InventoryService::validateSnapshot(const InventoryState &state, const Playe
         heights.push_back(cubeDimensions_.y);
     } else
         require(!containers.cube, "cube container in classic profile");
+    for (auto id : corpses) {
+        ids.push_back(id); kinds.push_back(ContainerKind::Corpse);
+        widths.push_back(int(EquipmentSlot::Count) + 1); heights.push_back(1);
+    }
     std::set<EntityId> unique(ids.begin(), ids.end());
     require(unique.size() == ids.size() && state.containers.size() == ids.size(), "player container set");
     std::map<EntityId, std::vector<bool>> occupied;
@@ -91,6 +95,16 @@ void InventoryService::validateSnapshot(const InventoryState &state, const Playe
             "duplicate carry1 unique item");
         const auto &c = found->second.spec;
         auto cell = location->cell;
+        if (c.kind == ContainerKind::Corpse) {
+            require(cell.y == 0 && cell.x >= 0 && cell.x <= int(EquipmentSlot::Count), "corpse slot");
+            if (cell.x < int(EquipmentSlot::Count))
+                require(EquipmentSlot(cell.x) == EquipmentSlot::Belt ? def->beltRows > 0 :
+                    def->equipment.fits(EquipmentSlot(cell.x)), "corpse equipment eligibility");
+            auto &cells = occupied.at(location->container);
+            require(!cells[size_t(cell.x)], "overlapping corpse items");
+            cells[size_t(cell.x)] = true;
+            continue;
+        }
         if (c.kind == ContainerKind::Cursor) {
             auto &cells = occupied.at(location->container);
             require(cell == Cell{} && !cells[0], "cursor occupancy");

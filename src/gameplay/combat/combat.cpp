@@ -36,67 +36,68 @@ void Simulation::damageEnemy(Enemy &enemy, float amount, EntityId source, float 
 }
 void Simulation::onMonsterDamaged(Enemy &enemy, const DamageRequest &request, float dealt) {
     if (dealt <= 0) return;
-    const auto source = request.attacker;
     if (enemy.enchantment) {
         const auto &mods = *enemy.enchantment;
         if (enemy.hp == 0 && (mods.has(9) || mods.has(18)))
             enemy.deathEnchantmentFrame = state_.frame + 4;
     }
-    if (enemy.hp == 0) {
-        const auto target = combatUnit(enemy.id);
-        const auto deathKind = target.stats.boss ? EffectUnitKind::Boss : EffectUnitKind::Monster;
-        auto keepDeathState = [&](const CombatStateDefinition &state) {
-            if (!state.stayOnDeath[size_t(deathKind)]) return;
-            enemy.deathHidden |= state.hideOnDeath;
-            enemy.deathShattered |= state.shatterOnDeath;
-            enemy.deathUnselectable |= state.corpseUnselectable;
-        };
-        // Native freeze survives ordinary monster death, including a lethal
-        // freezing hit; bosses use the distinct bossstaydeath mask.
-        if (enemy.freezeActive || enemy.freeze > 0) keepDeathState(freezeDeathState_);
-        if (enemy.enchantment && enemy.enchantment->has(35))
-            keepDeathState(shatterDeathState_); // MONUMOD_ICESHATTERDEATH.
-        enemy.combatEffects.onDeath(deathKind);
-        for (const auto &effect : enemy.combatEffects.entries())
-            if (effect.activeAt(state_.frame)) keepDeathState(effect.spec.state);
-        enemy.hitFlash = 0;
-        enemy.freeze = 0;
-        enemy.freezeActive = false;
-        enemy.resurrectionRemaining = enemy.resurrectionDuration = 0;
-        enemy.deathAge = 0;
-        enemy.route.clear();
-        enemy.approach.reset();
-        enemy.aiPursuing = false;
-        enemy.aiEscaping = false;
-        enemy.aiCommanded = false;
-        enemy.aiCircling = false;
-        enemy.aiRunning = false;
-        enemy.aiRetaliate = false;
-        enemy.aiAlerted = false;
-        enemy.aiCharged = false;
-        enemy.aiAdvanceRemaining = 0;
-        enemy.aiPhase = 0;
-        if (enemy.kind != MonsterKind::FoulCrowNest) enemy.aiLoop = 0;
-        enemy.aiCorpse = {};
-        enemy.webAuraRemaining = enemy.webTrailDistance = 0;
-        cancelTimedAction({enemy.attack, enemy.attackDuration, enemy.attackImpact});
-        enemy.teleportTarget.reset();
-        enemy.nestSpawnPosition.reset();
-        enemy.knockbackRemaining = enemy.knockbackDuration = 0;
-        enemy.knockbackDestination.reset();
-        enemy.attackMode = 1;
-        if (enemy.allegiance.role == CombatRole::Summon) { enemy.corpseConsumed = true; return; }
-        if (enemy.conversion) return;
-        ++state_.area.kills;
-        const auto controller = combatUnit(controllingPlayer(source));
-        const auto attacker = combatUnit(source);
-        const auto ownerMods = controller ? controller.stats.attributes.combat : CombatModifiers{};
-        const auto mercMods = attacker && attacker.identity.role == CombatRole::Hireling ? attacker.stats.attributes.combat : CombatModifiers{};
-        emit(EnemyDied{enemy.id, controllingPlayer(source), enemy.kind, state_.area.region, enemy.pos, enemy.identity,
-                       state_.population.difficulty, source, enemy.combatRandom,
-                       ownerMods.magicFind + mercMods.magicFind, ownerMods.goldFind + mercMods.goldFind,
-                       monsterRewardModifiers(enemy.enchantment), enemy.noTreasure});
-    }
+    if (enemy.hp == 0) finishMonsterDeath(enemy, request.attacker);
+}
+void Simulation::finishMonsterDeath(Enemy &enemy, EntityId source) {
+    const auto target = combatUnit(enemy.id);
+    const auto deathKind = target.stats.boss ? EffectUnitKind::Boss : EffectUnitKind::Monster;
+    auto keepDeathState = [&](const CombatStateDefinition &state) {
+        if (!state.stayOnDeath[size_t(deathKind)]) return;
+        enemy.deathHidden |= state.hideOnDeath;
+        enemy.deathShattered |= state.shatterOnDeath;
+        enemy.deathUnselectable |= state.corpseUnselectable;
+    };
+    // Native freeze survives ordinary monster death, including a lethal
+    // freezing hit; bosses use the distinct bossstaydeath mask.
+    if (enemy.freezeActive || enemy.freeze > 0) keepDeathState(freezeDeathState_);
+    if (enemy.enchantment && enemy.enchantment->has(35))
+        keepDeathState(shatterDeathState_); // MONUMOD_ICESHATTERDEATH.
+    enemy.combatEffects.onDeath(deathKind);
+    for (const auto &effect : enemy.combatEffects.entries())
+        if (effect.activeAt(state_.frame)) keepDeathState(effect.spec.state);
+    enemy.hitFlash = 0;
+    enemy.combatTarget = {};
+    enemy.freeze = 0;
+    enemy.freezeActive = false;
+    enemy.resurrectionRemaining = enemy.resurrectionDuration = 0;
+    enemy.deathAge = 0;
+    enemy.route.clear();
+    enemy.approach.reset();
+    enemy.aiPursuing = false;
+    enemy.aiEscaping = false;
+    enemy.aiCommanded = false;
+    enemy.aiCircling = false;
+    enemy.aiRunning = false;
+    enemy.aiRetaliate = false;
+    enemy.aiAlerted = false;
+    enemy.aiCharged = false;
+    enemy.aiAdvanceRemaining = 0;
+    enemy.aiPhase = 0;
+    if (enemy.kind != MonsterKind::FoulCrowNest) enemy.aiLoop = 0;
+    enemy.aiCorpse = {};
+    enemy.webAuraRemaining = enemy.webTrailDistance = 0;
+    cancelTimedAction({enemy.attack, enemy.attackDuration, enemy.attackImpact});
+    enemy.teleportTarget.reset();
+    enemy.nestSpawnPosition.reset();
+    enemy.knockbackRemaining = enemy.knockbackDuration = 0;
+    enemy.knockbackDestination.reset();
+    enemy.attackMode = 1;
+    if (enemy.allegiance.role == CombatRole::Summon) { enemy.corpseConsumed = true; return; }
+    if (enemy.conversion) return;
+    ++state_.area.kills;
+    const auto controller = combatUnit(controllingPlayer(source));
+    const auto attacker = combatUnit(source);
+    const auto ownerMods = controller ? controller.stats.attributes.combat : CombatModifiers{};
+    const auto mercMods = attacker && attacker.identity.role == CombatRole::Hireling ? attacker.stats.attributes.combat : CombatModifiers{};
+    emit(EnemyDied{enemy.id, controllingPlayer(source), enemy.kind, state_.area.region, enemy.pos, enemy.identity,
+                   state_.population.difficulty, source, enemy.combatRandom,
+                   ownerMods.magicFind + mercMods.magicFind, ownerMods.goldFind + mercMods.goldFind,
+                   monsterRewardModifiers(enemy.enchantment), enemy.noTreasure});
 }
 void Simulation::meleeDamage(EntityId defender, const WeaponDamage &weapon, const SkillCastSpec *skill) {
     auto &player = state_.player;

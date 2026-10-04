@@ -6,6 +6,7 @@
 #include "gameplay/model/interaction.hpp"
 #include "gameplay/session/session_views.hpp"
 #include "gameplay/player/frame_input.hpp"
+#include "gameplay/player/corpse.hpp"
 #include "gameplay/simulation/fixed_step.hpp"
 #include <memory>
 #include <span>
@@ -102,6 +103,7 @@ class GameSession {
     int lightningMasteryPercent() const;
     int coldPiercePercent() const;
     const PlayerContainers &playerContainers() const;
+    std::span<const PlayerCorpse> playerCorpses() const;
     StorageAccess storage() const;
     const WorldObject *object(EntityId id) const;
     const std::vector<VendorOffer> *vendorStock(EntityId npc, bool gamble = false) const;

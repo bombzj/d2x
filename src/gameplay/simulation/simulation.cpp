@@ -72,6 +72,7 @@ void Simulation::heal() {
         merc.webSlowRemaining = 0; merc.healing.clear();
     }
     p.actions.dead = false;
+    p.actions.deathCompleted = false;
     p.actions.deathTime = 0;
 }
 void Simulation::spawnEnemies(std::span<const MonsterSpawn> spawns) {

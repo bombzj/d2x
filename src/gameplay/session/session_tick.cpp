@@ -19,6 +19,7 @@ void GameSessionImpl::tick(float dt, Vec keyboard, bool forceRun) {
     validateStorage();
     const bool transitioned = dispatchCommands();
     if (!transitioned && keyboard.length() > .1f) {
+        pendingCorpse_ = {};
         cancelExit();
         cancelPickup();
         cancelInteraction();
@@ -26,7 +27,8 @@ void GameSessionImpl::tick(float dt, Vec keyboard, bool forceRun) {
     world_.at(size_t(current_)).refreshObjectCollision(state().time);
     std::set<int> summonSkills;
     for (const auto &pet : state().companions)
-        if (pet.hp > 0 && pet.allegiance.owner == state().player.id) summonSkills.insert(pet.summonSkill);
+        if (!state().player.actions.dead && pet.hp > 0 && pet.allegiance.owner == state().player.id)
+            summonSkills.insert(pet.summonSkill);
     for (int skill : summonSkills) {
         const auto *record = content_.skills.find(skill);
         if (!record || !record->spell || !record->spell->summon) continue;
@@ -35,6 +37,8 @@ void GameSessionImpl::tick(float dt, Vec keyboard, bool forceRun) {
     }
     syncPlayerAura();
     simulation_->tick(dt, {state().player.id, transitioned ? Vec{} : keyboard, forceRun});
+    settlePlayerDeath();
+    completePlayerDeathAnimation();
     auto replenished = inventory_.replenish(dt);
     if (!replenished.changes.empty()) publishInventory(std::move(replenished), {});
     advanceHireling(dt);
@@ -46,6 +50,7 @@ void GameSessionImpl::tick(float dt, Vec keyboard, bool forceRun) {
     settleDeaths();
     updateDenQuest();
     updatePickup();
+    updateCorpseRecovery();
     updateQuestItems();
     updateToolsQuestItems();
     updateInteraction();

@@ -47,7 +47,7 @@ bool Simulation::summonHydra(EntityId ownerId, const SkillCastSpec &skill, Vec t
 void Simulation::advanceHydra(Enemy &pet, float dt) {
     auto &hydra = *pet.hydra;
     if (!hydra.active) { pet.deathAge += dt; return; }
-    if (state_.frame > hydra.expiresAt || !combatUnit(pet.allegiance.owner).alive()) {
+    if (state_.frame > hydra.expiresAt || !petOwnerRetained(pet.allegiance.owner)) {
         hydra.active = false; pet.deathAge = 0; pet.attack = 0; return;
     }
     if (hydra.region != state_.area.region || safeZone_) return;
@@ -97,18 +97,30 @@ EntityId Simulation::corpseNear(Vec target) const {
     }
     return result;
 }
+bool Simulation::petOwnerRetained(EntityId id) {
+    const auto owner = combatUnit(id);
+    // An owner in player DT remains registered until its animation-end event.
+    // This also covers the lethal simulation step before PlayerDied is emitted.
+    return owner.alive() || (owner.player && !owner.records.player->actions.deathCompleted);
+}
+void Simulation::finishCompanionDeath(Enemy &pet) {
+    if (!pet.living()) return;
+    const int collisionSize = combatUnit(pet.id).stats.collisionSize;
+    pet.hp = 0;
+    if (pet.hydra) pet.hydra->active = false;
+    pet.noTreasure = true;
+    finishMonsterDeath(pet, {});
+    emit(UnitDied{pet.id, pet.deathShattered, pet.pos, collisionSize});
+}
 void Simulation::enforceSummonLimit(EntityId owner, int skill, int limit) {
     int count = 0;
     for (const auto &pet : state_.companions)
-        if (pet.hp > 0 && pet.allegiance.owner == owner && pet.summonSkill == skill) ++count;
+        if (pet.living() && pet.allegiance.owner == owner && pet.summonSkill == skill) ++count;
     // Native pet lists remove the oldest summon when the per-type limit is exceeded.
     for (auto &pet : state_.companions) {
         if (count <= limit) break;
-        if (pet.hp <= 0 || pet.allegiance.owner != owner || pet.summonSkill != skill) continue;
-        pet.hp = 0; pet.corpseConsumed = true; pet.deathAge = 0;
-        pet.attack = 0; pet.route.clear(); pet.combatTarget = {};
-        pet.combatEffects.onDeath(EffectUnitKind::Monster);
-        emit(UnitDied{pet.id});
+        if (!pet.living() || pet.allegiance.owner != owner || pet.summonSkill != skill) continue;
+        finishCompanionDeath(pet);
         --count;
     }
 }
@@ -188,12 +200,11 @@ void Simulation::relocateCompanions(EntityId owner, Vec destination, EntityId on
 void Simulation::updateCompanions(float dt) {
     for (auto &pet : state_.companions) {
         if (pet.hydra) { advanceHydra(pet, dt); continue; }
-        if (pet.hp <= 0 || !pet.intrinsicCombat) continue;
+        if (pet.hp <= 0) { pet.deathAge += dt; continue; }
+        if (!pet.intrinsicCombat) continue;
         auto owner = combatUnit(pet.allegiance.owner);
-        if (!owner.alive()) {
-            pet.hp = 0; pet.corpseConsumed = true; pet.deathAge = 0; pet.route.clear(); pet.attack = 0;
-            pet.combatEffects.onDeath(EffectUnitKind::Monster);
-            emit(UnitDied{pet.id});
+        if (!petOwnerRetained(pet.allegiance.owner)) {
+            finishCompanionDeath(pet);
             continue;
         }
         pet.combatEffects.expire(state_.frame);

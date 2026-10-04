@@ -1,6 +1,7 @@
 #include "client/local_actor_client.hpp"
 #include "gameplay/session/session.hpp"
 #include "gameplay/model/state.hpp"
+#include "content/classic_data.hpp"
 #include <algorithm>
 
 namespace d2x {
@@ -35,7 +36,12 @@ ActorView LocalActorClient::controlledActor() const {
     // Preserve the existing client frame selection. Asset frame-count clamping
     // stays in presentation, where the actual COF/DCC animation is known.
     const auto &mode = actor.animationMode;
-    if (mode == "dt") actor.actionFrame = int(player.actions.deathTime * 20);
+    if (mode == "dt") {
+        const auto timing = session_.content().playerDeath.timings.find(session_.characterAppearance() + "dthth");
+        if (timing != session_.content().playerDeath.timings.end())
+            actor.actionFrame = std::min(timing->second.frames - 1,
+                int(player.actions.deathTime * 25 * timing->second.speed / 256));
+    }
     if (mode == "sc") actor.actionFrame = int((player.skills.lastCastDuration - player.actions.castTime) * player.skills.lastCastRate);
     if (mode == "sc" && player.skills.channel) actor.actionFrame = std::min(9, int(player.skills.channelAge() * 25));
     if (mode == "sc" && player.skills.lightningSequence) {

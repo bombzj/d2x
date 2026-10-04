@@ -231,6 +231,17 @@ void Simulation::recoverUnit(EntityId defender, EntityId attacker, float damage,
         target.records.player->actions.hitTime = .16f;
     }
 }
+void Simulation::finishHirelingDeath() {
+    auto &merc = state_.player.hireling;
+    merc.hp = 0;
+    merc.attack.reset(); merc.attackTimer = 0; merc.route.clear(); merc.moving = false;
+    merc.hitTime = 0; merc.healing.clear(); merc.chill = merc.poisonRemaining = merc.poisonPerSecond = 0;
+    merc.openWoundsRemaining = merc.openWoundsPerSecond = 0;
+    merc.poisonSource = merc.openWoundsSource = {};
+    merc.webSlowRemaining = 0; merc.webSlowPercent = 0;
+    merc.combatEffects.onDeath(EffectUnitKind::Monster);
+    merc.corpseRegion = state_.area.region; merc.corpseVisible = true; merc.deathAge = 0;
+}
 float Simulation::dealDamage(const DamageRequest &request) {
     auto target = combatUnit(request.defender);
     if (!target.alive() || !target.identity.attackable ||
@@ -261,13 +272,7 @@ float Simulation::dealDamage(const DamageRequest &request) {
     *target.life = std::max(0.f, *target.life - amount);
     if (target.monster) onMonsterDamaged(*target.records.monster, request, dealt);
     else if (target.hireling) {
-        auto &merc = *target.records.hireling;
-        if (!target.alive()) {
-            merc.attack.reset(); merc.attackTimer = 0; merc.route.clear(); merc.moving = false;
-            merc.hitTime = 0; merc.healing.clear(); merc.chill = merc.poisonRemaining = merc.poisonPerSecond = 0;
-            merc.combatEffects.onDeath(EffectUnitKind::Monster);
-            merc.corpseRegion = state_.area.region; merc.corpseVisible = true; merc.deathAge = 0;
-        }
+        if (!target.alive()) finishHirelingDeath();
     }
     const bool purePoison = channels[size_t(MonsterDamageType::Poison)] > 0 &&
         std::none_of(channels.begin(), channels.end() - 1, [](float value) { return value > 0; });

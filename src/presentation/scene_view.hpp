@@ -18,6 +18,7 @@
 
 namespace d2x {
 struct Enemy;
+struct PlayerCorpse;
 class CombatEffectSet;
 class IActorClient;
 struct SpecialItemRecord;
@@ -257,6 +258,8 @@ class SceneView {
     Vec world(Vec position) const;
     bool visible(const WorldObject &object) const;
     const WorldObject *objectAt(Vec mouse) const;
+    const PlayerCorpse *playerCorpseAt(Vec mouse) const;
+    const Sprite *playerCorpseSprite(const PlayerCorpse &corpse) const;
     const std::string &heroAppearanceError() const { return assets_.heroAppearanceError(); }
     bool leftSkillAllowed(int skill) const;
     std::vector<std::optional<int>> skillChoices(bool right) const;

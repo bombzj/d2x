@@ -62,6 +62,7 @@ int GameSession::fireMasteryPercent() const { return impl_->fireMasteryPercent()
 int GameSession::lightningMasteryPercent() const { return impl_->lightningMasteryPercent(); }
 int GameSession::coldPiercePercent() const { return impl_->coldPiercePercent(); }
 const PlayerContainers & GameSession::playerContainers() const { return impl_->playerContainers(); }
+std::span<const PlayerCorpse> GameSession::playerCorpses() const { return impl_->playerCorpses(); }
 StorageAccess GameSession::storage() const { return impl_->storage(); }
 const WorldObject * GameSession::object(EntityId id) const { return impl_->object(id); }
 const std::vector<VendorOffer> * GameSession::vendorStock(EntityId npc, bool gamble) const { return impl_->vendorStock(npc, gamble); }

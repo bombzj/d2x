@@ -46,6 +46,7 @@ class Simulation {
     void advanceUnitDamage(float dt);
     void advancePlayerStep(float dt, const PlayerFrameInput &input);
     void finishPlayerStep();
+    void finishPlayerDeathAnimation();
     void finishWorldStep(float dt);
     SkillCaster skillCaster(EntityId actor);
     WeaponSkillCaster skillWeaponCaster(EntityId actor);
@@ -64,6 +65,8 @@ class Simulation {
     float incomingDamage(EntityId attacker, EntityId defender, float amount) const;
     ResolvedDamage resolveIncoming(EntityId attacker, const CombatUnit &defender, float amount, MonsterDamageType type);
     float dealDamage(const DamageRequest &request);
+    void finishHirelingDeath();
+    void finishMonsterDeath(Enemy &enemy, EntityId source);
     void recoverUnit(EntityId defender, EntityId attacker, float damage, bool elemental = false, int hitClass = -1, bool forced = false);
     void restoreUnit(EntityId id, float life, float mana = 0);
     void applyPoison(EntityId defender, float rate, float duration, EntityId source);
@@ -72,6 +75,8 @@ class Simulation {
     void onMonsterDamaged(Enemy &enemy, const DamageRequest &request, float dealt);
     std::optional<std::pair<EntityId, float>> missileTarget(const Missile &missile, Vec to);
     void updateCompanions(float dt);
+    bool petOwnerRetained(EntityId owner);
+    void finishCompanionDeath(Enemy &pet);
     void advanceMonsterAction(Enemy &enemy, float dt, CurseAi curseAi, std::vector<MonsterSpawn> &nestSpawns);
     std::function<bool(const Enemy &)> corpseSelectable_;
     bool usableCorpse(EntityId id) const;

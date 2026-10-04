@@ -9,6 +9,7 @@
 #include "gameplay/loot/grade.hpp"
 #include "gameplay/loot/special.hpp"
 #include "gameplay/character/attributes.hpp"
+#include "content/character/death_data.hpp"
 #include "content/npc/npc_dialogue.hpp"
 #include "content/quest/quest_data.hpp"
 #include "content/npc/hireling_data.hpp"
@@ -65,6 +66,7 @@ struct ClassicData {
     std::array<int, 3> monsterColdDivisor{};
     std::array<int, 3> resistancePenalty{};
     std::array<int, 3> lifeStealDivisor{1, 1, 1}, manaStealDivisor{1, 1, 1};
+    PlayerDeathData playerDeath;
     std::array<int, 3> hirelingBossDamagePercent{};
     StashLayout stashLayout;
     StashLayout cubeLayout;

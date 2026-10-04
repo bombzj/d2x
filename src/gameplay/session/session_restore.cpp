@@ -60,7 +60,8 @@ int GameSessionImpl::validateCharacterRestore(const CharacterSaveData &data) con
                     worldContent_.levels().contains(int(id)) && worldContent_.level(int(id)).waypoint >= 0 &&
                     worldContent_.level(int(id)).waypoint != 255, "activated waypoint region");
     }
-    inventory_.validateSnapshot(data.inventory, data.containers, player.id);
+    require(data.corpses.size() <= 1, "native single-player corpse count");
+    inventory_.validateSnapshot(data.inventory, data.containers, player.id, corpseContainers(data.corpses));
     validateItemProperties(data);
     std::set<EntityId> allocated;
     auto registerId = [&](EntityId id) {
@@ -68,18 +69,26 @@ int GameSessionImpl::validateCharacterRestore(const CharacterSaveData &data) con
                 "duplicate or invalid entity ID");
     };
     registerId(player.id);
+    for (const auto &corpse : data.corpses) {
+        registerId(corpse.id);
+        require(corpse.owner == player.id && corpse.region == data.lastRegion &&
+            std::isfinite(corpse.position.x) && std::isfinite(corpse.position.y) &&
+            !corpse.recoverableExperience, "restored corpse metadata");
+    }
     for (const auto &region : world_.regions())
         for (const auto &object : region.objects) registerId(object.id);
     for (const auto &[id, container] : data.inventory.containers) registerId(id);
-    unsigned cubes = 0, cubeContents = 0;
+    unsigned cubes = 0, allCubes = 0, cubeContents = 0;
     for (const auto &[id, item] : data.inventory.items) {
         registerId(id);
         const auto *location = std::get_if<ContainerLocation>(&item.location);
         require(location != nullptr, "ground item in character data");
-        cubes += item.definition == content_.cubeCode;
+        const bool cube = item.definition == content_.cubeCode;
+        allCubes += cube;
+        cubes += cube && data.inventory.containers.at(location->container).spec.kind != ContainerKind::Corpse;
         cubeContents += location->container == data.containers.cube;
     }
-    require(cubes <= 1 && (!cubeContents || cubes == 1), "cube ownership");
+    require(cubes <= 1 && (!cubeContents || allCubes >= 1), "cube ownership");
     EntityIds validationIds;
     InventoryService equipmentInventory(validationIds, inventory_.catalog(),
                                         {content_.stashLayout.columns, content_.stashLayout.rows},
@@ -138,6 +147,7 @@ int GameSessionImpl::validateCharacterRestore(const CharacterSaveData &data) con
 }
 
 void GameSessionImpl::restore(CharacterSaveData data) {
+    const bool revive = data.player.hp <= 0;
     const auto level = worldContent_.levels().find(int(data.lastRegion));
     if (level != worldContent_.levels().end() && level->second.act >= 0 && level->second.act < 5)
         ensureRegion(RegionId(actTownLevels[size_t(level->second.act)]), true);
@@ -204,6 +214,12 @@ void GameSessionImpl::restore(CharacterSaveData data) {
     simulation_->manaStealDivisor_ = content_.manaStealDivisor.at(size_t(state().population.difficulty));
     characterDefinition_ = std::move(restoredDefinition);
     simulation_->state_.player.attributes = characterStats;
+    if (revive) {
+        auto &resources = simulation_->state_.player.resources;
+        resources.hp = float(characterStats.maxLife);
+        resources.mana = float(characterStats.maxMana);
+        resources.stamina = float(characterStats.maxStamina);
+    }
     simulation_->state_.player.equipment = equipmentStats;
     simulation_->grid_ = &world_.regions()[current].map.grid;
     simulation_->rooms_ = &world_.regions()[current].map.activation;
@@ -213,6 +229,8 @@ void GameSessionImpl::restore(CharacterSaveData data) {
     inventory_.replenishTimers_.clear();
     areas_.replace(std::move(nextAreas));
     playerContainers_ = data.containers;
+    playerCorpses_ = std::move(data.corpses);
+    pendingCorpse_ = {};
     loot_.restore({childRandom(random_), {}, {}});
     vendorStocks_.swap(nextVendorStocks);
     gambleStocks_.clear();

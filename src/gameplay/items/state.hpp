@@ -61,7 +61,7 @@ struct ItemInstance {
     ItemLocation location;
     ItemHandle handle() const { return {id, revision}; }
 };
-enum class ContainerKind { Backpack, Belt, Stash, Chest, BeltEquipment, Equipment, Cube, Cursor };
+enum class ContainerKind { Backpack, Belt, Stash, Chest, BeltEquipment, Equipment, Cube, Cursor, Corpse };
 struct ContainerSpec {
     EntityId owner;
     ContainerKind kind = ContainerKind::Backpack;

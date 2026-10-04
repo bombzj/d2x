@@ -90,15 +90,17 @@ void Simulation::updateMonsters(float dt) {
             enemy.activeCurseAi = curseAi;
         }
         const auto ai = monsterAi_ ? monsterAi_(enemy) : std::nullopt;
+        bool searchedTarget = false;
         if (curseAi != CurseAi::Terror && enemy.attack <= 0 && !enemy.approach && !enemy.aiEscaping && !enemy.aiCircling &&
             !(curseAi == CurseAi::DimVision && !enemy.route.empty())) {
             // AiUtil's Confuse coordinate search uses a 35-unit candidate range.
             const auto target = chooseTarget(enemy.id, curseAi == CurseAi::DimVision ? 4.f :
                 curseAi == CurseAi::Confuse ? 35.f : 25.f);
+            searchedTarget = true;
             if (target != enemy.combatTarget) { enemy.route.clear(); enemy.rethink = 0; enemy.aiPursuing = false; }
             enemy.combatTarget = target;
         }
-        const Vec targetPosition = monsterTargetPosition(enemy);
+        Vec targetPosition = monsterTargetPosition(enemy);
         if (enemy.hp < enemy.maxHp && enemy.poisonRemaining <= 0 &&
             enemy.openWoundsRemaining <= 0 && monsterDamageRegen_)
             if (auto rate = monsterDamageRegen_(enemy, state_.area.region))
@@ -110,6 +112,27 @@ void Simulation::updateMonsters(float dt) {
         enemy.rethink = std::max(0.f, enemy.rethink - dt);
         enemy.aiWait = std::max(0.f, enemy.aiWait - dt);
         enemy.movementVelocityPercent.reset();
+        if (state_.player.actions.dead &&
+            (!combatUnit(enemy.combatTarget).alive() || !canAttack(enemy.id, enemy.combatTarget))) {
+            if (!searchedTarget)
+                enemy.combatTarget = chooseTarget(enemy.id, curseAi == CurseAi::DimVision ? 4.f :
+                    curseAi == CurseAi::Confuse ? 35.f : 25.f);
+            monsterStopApproach(enemy); enemy.route.clear();
+            targetPosition = monsterTargetPosition(enemy);
+            if (!enemy.combatTarget) {
+                // Dead players are not targets. Resolve this before wandering,
+                // blindness, terror continuation or teleport can move the unit.
+                monsterStopApproach(enemy); enemy.route.clear(); enemy.terrorMovement.reset();
+                enemy.aiPursuing = enemy.aiEscaping = enemy.aiCommanded = enemy.aiCircling = enemy.aiRunning = false;
+                enemy.aiRetaliate = enemy.aiAlerted = enemy.aiCharged = false;
+                enemy.aiAdvanceRemaining = 0; enemy.aiPhase = 0; enemy.aiCorpse = {};
+                enemy.skill2Remaining = enemy.skill2Duration = 0;
+                enemy.resurrectionRemaining = 0;
+                cancelTimedAction({enemy.attack, enemy.attackDuration, enemy.attackImpact});
+                enemy.teleportTarget.reset(); enemy.nestSpawnPosition.reset(); enemy.attackMode = 1;
+                continue;
+            }
+        }
         if (curseAi == CurseAi::None && enemy.attack <= 0 && !enemy.approach && !enemy.aiEscaping && !enemy.aiCircling &&
             enemy.rethink <= 0 && enemy.stun <= 0 && enemy.freeze <= 0 &&
             enemy.hitFlash <= 0 && enemy.skill2Remaining <= 0 && enemy.resurrectionRemaining <= 0 &&

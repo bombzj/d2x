@@ -1,6 +1,7 @@
 #pragma once
 #include "gameplay/items/state.hpp"
 #include "gameplay/character/record.hpp"
+#include "gameplay/player/corpse.hpp"
 
 namespace d2x {
 struct CharacterSaveData {
@@ -12,5 +13,6 @@ struct CharacterSaveData {
     std::map<RegionId, float> waypoints;
     InventoryState inventory;
     PlayerContainers containers;
+    std::vector<PlayerCorpse> corpses;
 };
 } // namespace d2x

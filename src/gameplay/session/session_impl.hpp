@@ -80,6 +80,14 @@ class GameSessionImpl {
     ItemHandle pickup_{};
     bool pickupToCursor_ = false;
     PlayerContainers playerContainers_;
+    std::vector<PlayerCorpse> playerCorpses_;
+    EntityId pendingCorpse_;
+    void settlePlayerDeath();
+    bool completePlayerDeathAnimation();
+    bool respawnPlayer();
+    void beginCorpseRecovery(EntityId corpse);
+    void updateCorpseRecovery();
+    void recoverCorpse(PlayerCorpse &corpse);
     StorageAccess storage_;
     EntityId pendingInteraction_;
     bool pendingInteractionRepath_ = false;
@@ -338,6 +346,7 @@ class GameSessionImpl {
     int lightningMasteryPercent() const;
     int coldPiercePercent() const;
     const PlayerContainers &playerContainers() const { return playerContainers_; }
+    std::span<const PlayerCorpse> playerCorpses() const { return playerCorpses_; }
     StorageAccess storage() const;
     const WorldObject *object(EntityId id) const;
     const std::vector<VendorOffer> *vendorStock(EntityId npc, bool gamble = false) const;

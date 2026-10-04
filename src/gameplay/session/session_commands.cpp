@@ -9,10 +9,23 @@ bool GameSessionImpl::dispatchCommands() {
     pending_.clear();
     bool transitioned = false;
     for (const auto &command : commands) {
+        // A replacement movement/interaction cancels walking to a corpse;
+        // drinking a potion or toggling run while walking does not.
+        if (std::holds_alternative<MoveTo>(command) || std::holds_alternative<StopMoving>(command) ||
+            std::holds_alternative<Attack>(command) || std::holds_alternative<UseSkill>(command) ||
+            std::holds_alternative<PickupItem>(command) || std::holds_alternative<Interact>(command) ||
+            std::holds_alternative<Travel>(command) || std::holds_alternative<UseExit>(command) ||
+            std::holds_alternative<UseTownPortal>(command) || std::holds_alternative<UseCainPortal>(command) ||
+            std::holds_alternative<WaypointTravel>(command) || std::holds_alternative<RestartArea>(command))
+            pendingCorpse_ = {};
         std::visit(
             [&](const auto &intent) {
                 using T = std::decay_t<decltype(intent)>;
-                if constexpr (std::is_same_v<T, UseExit>) {
+                if constexpr (std::is_same_v<T, RespawnPlayer>) {
+                    transitioned |= respawnPlayer();
+                } else if constexpr (std::is_same_v<T, RecoverPlayerCorpse>) {
+                    beginCorpseRecovery(intent.corpse);
+                } else if constexpr (std::is_same_v<T, UseExit>) {
                     beginExit(intent.slot);
                 } else if constexpr (std::is_same_v<T, UseTownPortal>) {
                     beginPortal(intent.revision);
@@ -42,6 +55,7 @@ bool GameSessionImpl::dispatchCommands() {
                         simulation_->execute(command);
                     }
                 } else if constexpr (std::is_same_v<T, RestartArea>) {
+                    if (state().player.actions.dead) return;
                     cancelExit();
                     cancelPickup();
                     const auto &r = region();

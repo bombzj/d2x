@@ -25,8 +25,17 @@ CharacterSaveData GameSessionImpl::characterSave() const {
                     playerContainers_.beltEquipment, playerContainers_.equipment,
                     playerContainers_.cube, playerContainers_.hirelingEquipment, playerContainers_.cursor})
         if (id) result.inventory.containers.emplace(id, inventory_.state().containers.at(id));
+    // PLRSAVE2_WriteCorpsesSection, single player/open: oldest nonempty corpse.
+    for (const auto &corpse : playerCorpses_)
+        if (!inventory_.contents(corpse.items).empty()) {
+            auto saved = corpse; saved.recoverableExperience = 0;
+            result.corpses.push_back(saved);
+            result.inventory.containers.emplace(corpse.items, inventory_.state().containers.at(corpse.items));
+            break;
+        }
     for (const auto &[id, item] : inventory_.state().items)
-        if (std::holds_alternative<ContainerLocation>(item.location))
+        if (const auto *location = std::get_if<ContainerLocation>(&item.location);
+            location && result.inventory.containers.contains(location->container))
             result.inventory.items.emplace(id, item);
     const auto &player = result.player;
     const auto base = deriveCharacterAttributes(characterDefinition_, player.level, player.allocated);
@@ -37,7 +46,7 @@ CharacterSaveData GameSessionImpl::characterSave() const {
     result.player.hp = std::min(player.hp, float(limits.maxLife));
     result.player.mana = std::min(player.mana, float(limits.maxMana));
     result.player.stamina = std::min(player.stamina, float(limits.maxStamina));
-    inventory_.validateSnapshot(result.inventory, result.containers, player.id);
+    inventory_.validateSnapshot(result.inventory, result.containers, player.id, corpseContainers(result.corpses));
     validateItemProperties(result);
     return result;
 }
@@ -62,6 +71,11 @@ CharacterSaveData GameSessionImpl::prepareCharacterRestore(CharacterSaveData cha
         remap(character.containers.cube);
         remap(character.containers.hirelingEquipment);
         remap(character.containers.cursor);
+        for (auto &corpse : character.corpses) {
+            remap(corpse.items);
+            corpse.id = EntityId{next++}; corpse.owner = state().player.id;
+            corpse.recoverableExperience = 0;
+        }
         InventoryState inventory;
         for (const auto &[id, container] : character.inventory.containers) {
             auto copy = container;
@@ -98,6 +112,11 @@ CharacterSaveData GameSessionImpl::prepareCharacterRestore(CharacterSaveData cha
 
     character.player.hp = std::max(1.f, character.player.hp);
     character.lastRegion = town->definition.id;
+    for (auto &corpse : character.corpses) {
+        corpse.region = character.lastRegion;
+        corpse.position = town->map.spawn;
+        corpse.look = {0, 1};
+    }
     return character;
 }
 } // namespace d2x

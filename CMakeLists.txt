@@ -53,11 +53,13 @@ add_library(d2x_items
   src/gameplay/items/durability.cpp
   src/gameplay/items/definitions.cpp
   src/gameplay/items/inventory.cpp src/gameplay/items/transfers.cpp src/gameplay/items/collection.cpp
-  src/gameplay/items/preview.cpp src/gameplay/items/belt.cpp src/gameplay/items/books.cpp src/gameplay/items/inventory_snapshot.cpp)
+  src/gameplay/items/preview.cpp src/gameplay/items/belt.cpp src/gameplay/items/books.cpp src/gameplay/items/inventory_snapshot.cpp
+  src/gameplay/items/corpse_inventory.cpp)
 target_link_libraries(d2x_items PUBLIC d2x_core)
 add_library(d2x_content src/content/classic_data.cpp src/content/lod_data.cpp src/content/world/world_catalog.cpp src/content/monsters/monster_catalog.cpp)
 target_sources(d2x_content PRIVATE src/content/character/character_progression.cpp)
 target_sources(d2x_content PRIVATE src/content/character/character_attributes.cpp)
+target_sources(d2x_content PRIVATE src/content/character/death_data.cpp)
 target_sources(d2x_content PRIVATE src/content/string_table.cpp src/content/skills/skill_data.cpp)
 target_sources(d2x_content PRIVATE src/content/skills/sorceress_data.cpp src/content/skills/frozen_orb_data.cpp src/content/skills/blizzard_data.cpp src/content/skills/glacial_spike_data.cpp src/content/skills/weapon_skill_data.cpp src/content/skills/necromancer_data.cpp src/content/skills/curse_data.cpp)
 target_sources(d2x_content PRIVATE src/content/skills/skill_animation.cpp)
@@ -166,7 +168,7 @@ add_library(d2x_population src/world/population.cpp)
 target_link_libraries(d2x_population PUBLIC d2x_content d2x_gameplay)
 add_library(d2x_session src/gameplay/session/session.cpp src/gameplay/session/session_skills.cpp src/gameplay/session/session_loot.cpp src/gameplay/session/session_inventory.cpp src/gameplay/session/session_character_stats.cpp src/gameplay/session/session_consumables.cpp src/gameplay/session/session_gold.cpp src/gameplay/session/session_interaction.cpp src/gameplay/session/session_restore.cpp src/gameplay/session/session_exits.cpp src/gameplay/session/session_monster_combat.cpp)
 target_sources(d2x_session PRIVATE src/gameplay/session/session_commands.cpp
-  src/gameplay/session/session_tick.cpp)
+  src/gameplay/session/session_tick.cpp src/gameplay/session/session_player_corpses.cpp)
 target_sources(d2x_session PRIVATE src/gameplay/session/session_facade.cpp
   src/gameplay/session/session_regions.cpp)
 target_sources(d2x_session PRIVATE src/gameplay/session/session_objects.cpp src/gameplay/session/session_shrines.cpp)

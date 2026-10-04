@@ -4,6 +4,7 @@
 #include "modifiers.hpp"
 #include <functional>
 #include <set>
+#include <span>
 
 namespace d2x {
 class InventoryService {
@@ -21,7 +22,7 @@ class InventoryService {
     Cell stashDimensions_;
     Cell cubeDimensions_;
     void validateSnapshot(const InventoryState &state, const PlayerContainers &containers,
-                          EntityId player) const;
+                          EntityId player, std::span<const EntityId> corpses = {}) const;
     InventoryError checkHandle(ItemHandle handle) const;
     InventoryError checkAccess(const ItemLocation &location, const InventoryAccess &access) const;
     InventoryError checkDestinationAccess(const ItemDestination &destination,
@@ -90,6 +91,11 @@ class InventoryService {
     // Trusted gameplay creation APIs. UI commands cannot mint items or containers.
     EntityId createContainer(ContainerSpec specification);
     PlayerContainers createPlayerContainers(EntityId player);
+    InventoryResult detachDeathEquipment(const PlayerContainers &containers, EntityId corpse,
+                                         const GroundLocation &ground);
+    InventoryResult recoverCorpseItem(ItemHandle item, const PlayerContainers &containers,
+                                      const InventoryAccess &access, const EquipmentActor &actor,
+                                      std::optional<EquipmentSlot> slot);
     InventoryResult createItem(std::string_view definition, unsigned quantity,
                                const ItemDestination &destination, unsigned level = 1,
                                const ItemGeneration &generation = {},

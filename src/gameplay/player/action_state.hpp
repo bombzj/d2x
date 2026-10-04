@@ -14,6 +14,7 @@ struct PlayerActions {
     EntityId attackTarget;
     std::optional<Vec> attackPosition;
     bool attackStationary = false, throwAttack = false, leftHandAttack = false;
-    bool dead = false;
+    bool dead = false, deathCompleted = false;
+    EntityId deathCorpse;
 };
 } // namespace d2x

@@ -69,6 +69,11 @@ void SceneController::click(Vec mouse) {
         pickupClick_ = true;
         return;
     }
+    if (const auto *corpse = view_.playerCorpseAt(mouse)) {
+        session_.submit(RecoverPlayerCorpse{corpse->id});
+        pickupClick_ = true;
+        return;
+    }
     for (const auto &enemy : session_.state().area.enemies) {
         if (enemy.hp > 0 && session_.canAttack(session_.state().player.id, enemy.id) && session_.active(enemy.pos) &&
             (view_.screen(enemy.pos) - Vec{0, 25} - mouse).length() < 24) {
@@ -101,6 +106,19 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
     view_.refreshCharacterView();
     view_.refreshInteractions();
     ui.inventory.syncCursor(view_.inventoryView(), ui.orificeItem ? ui.orificeItem->id : EntityId{});
+    if (actorClient_.controlledActor().dead) {
+        movement_ = {};
+        leftCombatTarget_ = rightCombatTarget_ = {};
+        ui.inventory.cancelGesture(); ui.inventory.open = ui.inventory.cubeOpen = false;
+        ui.inventory.storage = {}; ui.skillPicker.reset();
+        ui.orificeObject = {}; ui.orificeItem.reset(); ui.inventoryQuestNpc = {};
+        ui.characterOpen = ui.skillTreeOpen = ui.questOpen = ui.hirelingOpen = false;
+        ui.npcMenu = ui.shopOpen = ui.hireListOpen = false;
+        ui.help = ui.pause = ui.travelMenu = ui.gameMenuOpen = false;
+        view_.cancelNpcDialogue();
+        if (input.focused && input.escape) session_.submit(RespawnPlayer{});
+        return true;
+    }
     if (!view_.hirelingView().active) ui.hirelingOpen = false;
     if (!input.focused || ui.blocksWorld() || actorClient_.controlledActor().dead ||
         input.escape || input.inventory || input.character || input.skillTree || input.quests ||

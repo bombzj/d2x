@@ -33,6 +33,9 @@ void putWord(std::span<uint8_t> bytes, size_t at, unsigned value) {
 void appendWord(Bytes &bytes, unsigned value) {
     bytes.push_back(uint8_t(value)); bytes.push_back(uint8_t(value >> 8));
 }
+void appendDword(Bytes &bytes, uint32_t value) {
+    appendWord(bytes, value & 0xFFFF); appendWord(bytes, value >> 16);
+}
 const CharacterDefinition &characterDefinition(const ClassicData &content, const std::string &name) {
     auto found = std::find_if(content.characters.begin(), content.characters.end(),
         [&](const auto &entry) { return entry.name == name; });
@@ -105,6 +108,17 @@ void exportMerc(D2sHeader &header, const CharacterRecord &player, const ClassicD
 void verifyCharacter(const CharacterSaveData &snapshot, const ClassicData &content) {
     const auto &player = snapshot.player;
     const auto &definition = characterDefinition(content, player.characterClass);
+    require(snapshot.corpses.size() <= 1, "single-player corpse count");
+    for (const auto &corpse : snapshot.corpses) {
+        const auto storage = snapshot.inventory.containers.find(corpse.items);
+        require(corpse.id && corpse.owner == player.id && storage != snapshot.inventory.containers.end() &&
+            storage->second.spec.kind == ContainerKind::Corpse && storage->second.spec.owner == player.id &&
+            storage->second.spec.columns == int(EquipmentSlot::Count) + 1 && storage->second.spec.rows == 1 &&
+            std::isfinite(corpse.position.x) && std::isfinite(corpse.position.y) &&
+            corpse.position.x >= 0 && corpse.position.y >= 0 &&
+            double(corpse.position.x) <= UINT32_MAX && double(corpse.position.y) <= UINT32_MAX,
+            "corpse metadata");
+    }
     require(snapshot.difficulty >= 0 && snapshot.difficulty <= 2,
         "invalid difficulty");
     require(player.weaponSet < 2 && (content.stashLayout.expansion || !player.weaponSet),
@@ -192,7 +206,7 @@ CharacterSaveData decodeSave(std::span<const uint8_t> bytes, const ClassicData &
     }
     importMerc(player, header, content);
     waypoints(snapshot, sections, content, false);
-    auto items = [&](bool hireling) {
+    auto items = [&](bool hireling, EntityId corpse = EntityId{}) {
         require(word(bytes, cursor) == 0x4D4A, "missing inventory JM section");
         const auto count = word(bytes, cursor + 2);
         cursor += 4;
@@ -200,12 +214,26 @@ CharacterSaveData decodeSave(std::span<const uint8_t> bytes, const ClassicData &
         for (unsigned index = 0; index < count; ++index) {
             auto item = readD2sItem(bytes.subspan(cursor), content);
             cursor += item.bytesRead;
-            importD2sItem(snapshot, item.item, content, hireling);
+            importD2sItem(snapshot, item.item, content, hireling, corpse);
         }
     };
     items(false);
-    require(word(bytes, cursor) == 0x4D4A && word(bytes, cursor + 2) == 0, "corpse recovery is not supported");
+    require(word(bytes, cursor) == 0x4D4A, "missing corpse JM section");
+    const auto corpseCount = word(bytes, cursor + 2);
+    require(corpseCount <= 1, "unsupported corpse count");
     cursor += 4;
+    if (corpseCount) {
+        PlayerCorpse corpse;
+        corpse.id = EntityId{snapshot.nextEntityId++}; corpse.owner = player.id;
+        corpse.items = EntityId{snapshot.nextEntityId++}; corpse.region = snapshot.lastRegion;
+        corpse.nativeUnknown = dword(bytes, cursor);
+        corpse.position = {float(dword(bytes, cursor + 4)), float(dword(bytes, cursor + 8))};
+        cursor += 12;
+        snapshot.inventory.containers.emplace(corpse.items,
+            ContainerState{corpse.items, {player.id, ContainerKind::Corpse, int(EquipmentSlot::Count) + 1, 1}});
+        snapshot.corpses.push_back(corpse);
+        items(false, corpse.items);
+    }
     require(word(bytes, cursor) == 0x666A, "missing hireling section"); cursor += 2;
     if (header.mercSeed) items(true);
     require(word(bytes, cursor) == 0x666B && cursor + 3 == bytes.size() && bytes[cursor + 2] == 0,
@@ -298,11 +326,13 @@ Bytes encodeSave(const CharacterSaveData &source, const ClassicData &content) {
     std::map<int, uint8_t> ranks;
     for (const auto &[id, rank] : player.skillRanks) ranks.emplace(id, uint8_t(rank));
     writeD2sSkills(bytes, header.characterClass, header.skillCount, ranks, content.tables.at("skills"));
-    auto items = [&](bool hireling) {
+    auto items = [&](bool hireling, EntityId corpse = EntityId{}) {
         std::vector<const ItemInstance *> entries;
         for (const auto &[id, item] : snapshot.inventory.items)
             if (const auto *location = std::get_if<ContainerLocation>(&item.location);
-                location && (location->container == snapshot.containers.hirelingEquipment) == hireling)
+                location && (corpse ? location->container == corpse :
+                    snapshot.inventory.containers.at(location->container).spec.kind != ContainerKind::Corpse &&
+                    (location->container == snapshot.containers.hirelingEquipment) == hireling))
                 entries.push_back(&item);
         require(entries.size() <= 1024, "too many character items");
         appendWord(bytes, 0x4D4A); appendWord(bytes, unsigned(entries.size()));
@@ -312,7 +342,12 @@ Bytes encodeSave(const CharacterSaveData &source, const ClassicData &content) {
         }
     };
     items(false);
-    appendWord(bytes, 0x4D4A); appendWord(bytes, 0);
+    appendWord(bytes, 0x4D4A); appendWord(bytes, unsigned(snapshot.corpses.size()));
+    for (const auto &corpse : snapshot.corpses) {
+        appendDword(bytes, corpse.nativeUnknown);
+        appendDword(bytes, uint32_t(corpse.position.x)); appendDword(bytes, uint32_t(corpse.position.y));
+        items(false, corpse.items);
+    }
     appendWord(bytes, 0x666A); if (header.mercSeed) items(true);
     appendWord(bytes, 0x666B); bytes.push_back(0);
     require(bytes.size() <= maxSaveBytes, "save too large");

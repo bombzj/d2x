@@ -22,6 +22,29 @@ bool tileVisible(const Sprite &image, Vec position) {
 Vec SceneView::objectScreen(const WorldObject &object, Vec regionOffset) const {
     return screen(object.pos + regionOffset) + object.drawOffset;
 }
+const Sprite *SceneView::playerCorpseSprite(const PlayerCorpse &corpse) const {
+    if (const auto found = assets_.hero.find("dd"); found != assets_.hero.end())
+        return found->second.frame(direction(corpse.look, found->second.directions), 0);
+    const auto &death = assets_.hero.at("dt");
+    return death.frame(direction(corpse.look, death.directions), death.count - 1);
+}
+const PlayerCorpse *SceneView::playerCorpseAt(Vec mouse) const {
+    const auto &player = session_.state().player;
+    if (player.actions.dead) return nullptr;
+    const PlayerCorpse *nearest = nullptr;
+    for (const auto &corpse : session_.playerCorpses()) {
+        if (corpse.region != session_.region().definition.id || corpse.owner != player.id ||
+            !session_.roomVisible(session_.regionIndex(), corpse.position)) continue;
+        const auto *image = playerCorpseSprite(corpse);
+        if (!image || !image->hitWidth || !image->hitHeight) continue;
+        const auto at = screen(corpse.position);
+        if (CheckCollisionPointRec(rv(mouse), {at.x + image->hitX, at.y + image->hitY,
+            float(image->hitWidth), float(image->hitHeight)}) &&
+            (!nearest || sceneOrder(nearest->position, 1, false, 1) < sceneOrder(corpse.position, 1, false, 1)))
+            nearest = &corpse;
+    }
+    return nearest;
+}
 std::vector<SceneView::VisibleMonster> SceneView::visibleMonsters() const {
     std::vector<VisibleMonster> result;
     for (const auto &[index, offset] : session_.sceneRegions())
@@ -192,10 +215,12 @@ void SceneView::drawActors(Vec mouse) const {
     const bool hotExit = canHover && !hotCainPortal && !hotTownPortal && exitAt(mouse);
     const auto hotLabelItem = canHover && !hotCainPortal && !hotTownPortal && !hotExit
                                   ? lootAt(mouse, true) : std::nullopt;
+    const auto *hotPlayerCorpse = canHover && !hotCainPortal && !hotTownPortal && !hotExit && !hotLabelItem
+                                  ? playerCorpseAt(mouse) : nullptr;
     const auto *selectedSkill = view_.rightSkill ? session_.content().skills.find(*view_.rightSkill) : nullptr;
     const bool corpseSkill = selectedSkill && selectedSkill->spell && selectedSkill->spell->summon;
     EntityId hotEnemy;
-    if (canHover && !hotCainPortal && !hotTownPortal && !hotExit && !hotLabelItem)
+    if (canHover && !hotCainPortal && !hotTownPortal && !hotExit && !hotLabelItem && !hotPlayerCorpse)
         for (const auto &monster : monsters)
             if ((corpseSkill ? session_.usableCorpse(monster.enemy->id) :
                  monster.enemy->hp > 0 && session_.canAttack(sim.player.id, monster.enemy->id)) &&
@@ -204,9 +229,9 @@ void SceneView::drawActors(Vec mouse) const {
                 break;
             }
     const auto *hotObject = canHover && !hotCainPortal && !hotTownPortal && !hotExit &&
-                                    !hotLabelItem && !hotEnemy ? objectAt(mouse) : nullptr;
+                                    !hotLabelItem && !hotEnemy && !hotPlayerCorpse ? objectAt(mouse) : nullptr;
     const auto hotGroundItem = canHover && !hotCainPortal && !hotTownPortal && !hotExit &&
-                               !hotLabelItem && !hotEnemy && !hotObject ? lootAt(mouse) : std::nullopt;
+                               !hotLabelItem && !hotEnemy && !hotObject && !hotPlayerCorpse ? lootAt(mouse) : std::nullopt;
     const EntityId hotItem = hotLabelItem ? hotLabelItem->id : hotGroundItem ? hotGroundItem->id : EntityId{};
 
     struct Item {
@@ -275,6 +300,16 @@ void SceneView::drawActors(Vec mouse) const {
         draw.push_back({sceneOrder(monsters[i].position, 1, false, e.hp > 0 ? 3 : 1), 2, i, p});
     }
     draw.push_back({sceneOrder(actor.position, 1, false, 3), 1, 0, screen(actor.position)});
+    const auto corpses = session_.playerCorpses();
+    for (int index = 0; index < int(corpses.size()); ++index) {
+        const auto &corpse = corpses[size_t(index)];
+        if (actor.dead && corpse.id == sim.player.actions.deathCorpse) continue;
+        for (const auto &[region, offset] : session_.sceneRegions())
+            if (corpse.region == session_.regions()[region].definition.id &&
+                session_.roomVisible(region, corpse.position))
+                draw.push_back({sceneOrder(corpse.position + offset, 1, false, 1), 8, index,
+                                screen(corpse.position + offset), region});
+    }
     if ((sim.player.hireling.active() || (sim.player.hireling.corpseVisible &&
          sim.player.hireling.corpseRegion == sim.area.region)) && session_.active(sim.player.hireling.pos)) {
         auto point = screen(sim.player.hireling.pos);
@@ -316,7 +351,7 @@ void SceneView::drawActors(Vec mouse) const {
     // shadow must not darken a previously painted unit or wall.
     for (const bool shadowsOnly : {true, false}) {
         for (auto item : draw) {
-            if (shadowsOnly && item.type != 1 && item.type != 2 && item.type != 3 && item.type != 6) continue;
+            if (shadowsOnly && item.type != 1 && item.type != 2 && item.type != 3 && item.type != 6 && item.type != 8) continue;
             if (item.type == 0) {
                 auto &s = assets_.regionTileSprites(item.region)[item.index];
                 sprite(&s, item.p);
@@ -325,6 +360,13 @@ void SceneView::drawActors(Vec mouse) const {
                 auto *anim = &assets_.hero.at(mode);
                 if (anim->frames.empty())
                     anim = &assets_.hero.at("nu");
+                if (actor.dead) {
+                    const auto timing = session_.content().playerDeath.timings.find(session_.characterAppearance() + "dthth");
+                    const auto corpse = assets_.hero.find("dd");
+                    if (timing != session_.content().playerDeath.timings.end() && corpse != assets_.hero.end() &&
+                        sim.player.actions.deathTime * 25 * timing->second.speed / 256 >= timing->second.frames)
+                        anim = &corpse->second;
+                }
                 int frame = int(view_.heroTime * actor.animationRate);
                 if (mode == actor.animationMode && actor.actionFrame)
                     frame = std::min(anim->count - 1, *actor.actionFrame);
@@ -334,12 +376,16 @@ void SceneView::drawActors(Vec mouse) const {
                 drawUnitSpellOverlays(actor.id, actor.position, true);
                 drawPlayerShrineOverlay(p, true);
                 if (!actor.dead) drawCombatStateOverlays(sim.player.combatEffects, p, 1, true);
-                sprite(f, p, actor.dead ? Color{185, 185, 185, 255}
-                             : actor.chilled ? Color{115, 175, 255, 255}
+                sprite(f, p, actor.chilled ? Color{115, 175, 255, 255}
                              : actor.poisoned ? Color{145, 210, 115, 255} : WHITE);
                 if (!actor.dead) drawCombatStateOverlays(sim.player.combatEffects, p, 1, false);
                 drawUnitSpellOverlays(actor.id, actor.position, false);
                 drawPlayerShrineOverlay(p, false);
+            } else if (item.type == 8) {
+                const auto &corpse = corpses[size_t(item.index)];
+                const auto *image = playerCorpseSprite(corpse);
+                if (shadowsOnly) { spriteShadow(image, item.p); continue; }
+                drawSelectableSprite(image, item.p, hotPlayerCorpse && hotPlayerCorpse->id == corpse.id);
             } else if (item.type == 6) {
                 const auto &hireling = sim.player.hireling;
                 const auto &animations = assets_.hirelingAnimations;

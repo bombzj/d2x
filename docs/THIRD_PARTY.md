@@ -49,6 +49,8 @@
 
 ## 格式研究参考
 
+玩家死亡／尸体模块核对本地 D2MOO 的 `PlrModes` 尸体创建／回收和 `EVENTTYPE_ENDANIM` 的 `DT → DEAD` 转换、`PlayerPets` 全类型死亡／佣兵保留、`ItemMode` 装备重试及腰带收缩、`PlrMsg` 单位距离／复活、`Player` 普通单机损失和 `PlrSave2` 原 `JM` 尸体段；依照现有 MIT 参考版本与许可说明。时序／经验罚率从当前 MPQ `AnimData.d2`／`DifficultyLevels` 读取，图形使用原角色 `DD` 或 `DT` 末帧；参考仓库与资源不纳入源码。证据入口、普通单机多尸体限制和未验收边界见 [玩家死亡](PLAYER_DEATH.md)。
+
 全局照明核对同一 D2MOO 固定快照的 `D2Common/src/D2Environment.cpp`、`D2Game/src/GAME/Game.cpp::GAME_UpdateEnvironment`、`D2Gfx/src/CmnSubtile.cpp`：环境初始状态、25 Hz 推进、昼夜整数／色表计算、PL2 `intensity >> 3` 行选择及高质量地板子块的四邻点整数平均独立适配为 C++ 展示代码，沿用 MIT 归属。原表布局交叉核对 OpenD2 `Engine/Palette.hpp` 和 OpenDiablo2 `d2pl2`，物件直径／室内规则交叉核对其 ObjectDetailRecord／LevelDetailsRecord；原 PL2、Levels、Objects、Missiles、MonStats2、Overlay 全部读取当前 MPQ。四个本地参考未提供完整 D2Client 点光衰减／彩光合成程序，保留的空间适配与明确暂缓内容见 [照明](LIGHTING.md)。
 
 投掷药瓶客户端特效另核对 [D2R Data Guide（Corrected）的 Missiles.txt](https://locbones.github.io/D2R_DataGuide/#missilestxt)：`CltHit03/HitOilPotion` 为主爆炸加 `CltHitSubMissile2/3` 随机二选一，`CltDo03/04` 分别说明尾迹和区域烟雾子效果。这里只借用函数／字段含义，所有 ID、图像和参数仍读取当前 1.13c MPQ，不复制第三方数据或代码。该说明没有给出旧客户端烟雾精确节拍和随机采样算法；不能据此宣称与原版逐帧一致。RandStart 与旧版 Phrozen Keep 指南的描述存在冲突，暂缓该字段；具体范围见 [通用攻击](COMMON_ATTACKS.md)。

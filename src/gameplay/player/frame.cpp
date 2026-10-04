@@ -44,6 +44,10 @@ void Simulation::finishPlayerStep() {
     auto &p = state_.player;
     if (!p.actions.dead && p.resources.hp <= 0) {
         p.actions.dead = true;
+        p.actions.deathCompleted = false;
+        p.actions.deathTime = 0; p.actions.deathCorpse = {};
+        p.resources.hp = 0;
+        p.movement.moving = false;
         combatEffectsChanged(p.combatEffects.onDeath(EffectUnitKind::Player));
         skills().stopChannel(skillCaster(p.id));
         p.skills.pendingCast.reset();
@@ -54,6 +58,7 @@ void Simulation::finishPlayerStep() {
         p.actions.attackPosition.reset();
         p.actions.meleeTime = 0;
         p.actions.castTime = 0;
+        p.actions.hitTime = 0;
         p.resources.healing.clear();
         p.resources.manaRestoration.clear();
         p.resources.chill = 0;
@@ -62,10 +67,21 @@ void Simulation::finishPlayerStep() {
         p.actions.attackTarget = {};
         p.actions.throwAttack = false;
         p.actions.leftHandAttack = false;
-        state_.message = "You have died. Press Ctrl+R to return.";
-        for (const auto &pet : state_.companions)
-            if (pet.hp > 0 && pet.allegiance.owner == p.id) enforceSummonLimit(p.id, pet.summonSkill, 0);
+        state_.message = "You have died. Press Esc to return to town.";
         emit(PlayerDied{p.id});
     }
+}
+void Simulation::finishPlayerDeathAnimation() {
+    auto &p = state_.player;
+    if (!p.actions.dead || p.actions.deathCompleted) return;
+    p.actions.deathCompleted = true;
+    // PlrModes.sub_6FC81250 handles every registered pet type at DT -> DEAD,
+    // not at the lethal hit. Hireables keep their record for paid resurrection.
+    if (p.hireling.active()) {
+        finishHirelingDeath();
+        emit(UnitDied{p.hireling.id, false, p.hireling.pos, p.hireling.collisionSize});
+    }
+    for (auto &pet : state_.companions)
+        if (pet.allegiance.owner == p.id) finishCompanionDeath(pet);
 }
 } // namespace d2x

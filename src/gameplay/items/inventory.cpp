@@ -22,7 +22,7 @@ EntityId InventoryService::itemAt(EntityId id, Cell cell) const {
         auto location = std::get_if<ContainerLocation>(&instance.location);
         if (!location || location->container != id)
             continue;
-        if (c->spec.kind == ContainerKind::Equipment) {
+        if (c->spec.kind == ContainerKind::Equipment || c->spec.kind == ContainerKind::Corpse) {
             if (location->cell == cell)
                 return key;
             continue;
@@ -57,6 +57,10 @@ EntityId InventoryService::createContainer(ContainerSpec specification) {
     if (specification.kind == ContainerKind::Belt && (specification.columns != 4 || specification.rows > 4))
         throw std::invalid_argument("Belt must have four columns and one to four rows");
     switch (specification.kind) {
+    case ContainerKind::Corpse:
+        if (specification.columns != int(EquipmentSlot::Count) + 1 || specification.rows != 1)
+            throw std::invalid_argument("Invalid corpse container dimensions");
+        break;
     case ContainerKind::Equipment:
         if (specification.columns != int(EquipmentSlot::Count) || specification.rows != 1)
             throw std::invalid_argument("Invalid equipment container dimensions");
@@ -131,7 +135,8 @@ InventoryError InventoryService::checkAccess(const ItemLocation &location,
         auto c = container(std::get<ContainerLocation>(location).container);
         if (!c)
             return InventoryError::UnknownContainer;
-        if (c->spec.kind == ContainerKind::BeltEquipment || c->spec.kind == ContainerKind::Equipment)
+        if (c->spec.kind == ContainerKind::BeltEquipment || c->spec.kind == ContainerKind::Equipment ||
+            c->spec.kind == ContainerKind::Corpse)
             return InventoryError::RestrictedItem;
         if (c->spec.kind == ContainerKind::Chest)
             return access.openContainer == c->id ? InventoryError::None : InventoryError::AccessDenied;
@@ -164,7 +169,8 @@ InventoryError InventoryService::checkCarryLimit(const ItemInstance &source,
         const auto *position = std::get_if<ContainerLocation>(&location);
         if (!position) return {};
         const auto found = state.containers.find(position->container);
-        if (found == state.containers.end() || found->second.spec.kind == ContainerKind::Chest)
+        if (found == state.containers.end() || found->second.spec.kind == ContainerKind::Chest ||
+            found->second.spec.kind == ContainerKind::Corpse)
             return {};
         return found->second.spec.owner;
     };
@@ -201,7 +207,8 @@ InventoryError InventoryService::checkPlacement(const ItemDefinition &definition
     auto c = container(position.container);
     if (!c)
         return InventoryError::UnknownContainer;
-    if (c->spec.kind == ContainerKind::BeltEquipment || c->spec.kind == ContainerKind::Equipment)
+    if (c->spec.kind == ContainerKind::BeltEquipment || c->spec.kind == ContainerKind::Equipment ||
+        c->spec.kind == ContainerKind::Corpse)
         return InventoryError::RestrictedItem;
     if (c->spec.kind == ContainerKind::Cube && definition.opensCube)
         return InventoryError::RestrictedItem;
