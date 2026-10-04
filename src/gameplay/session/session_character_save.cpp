@@ -87,6 +87,11 @@ CharacterSaveData GameSessionImpl::prepareCharacterRestore(CharacterSaveData cha
             auto &location = std::get<ContainerLocation>(item.location);
             location.container = containers.at(location.container);
             item.id = EntityId{next++};
+            for (size_t index = 0; index < item.socketedItems.size(); ++index) {
+                auto &child = item.socketedItems[index];
+                child.id = EntityId{next++};
+                child.location = SocketLocation{item.id, unsigned(index)};
+            }
             inventory.items.emplace(item.id, std::move(item));
         }
         character.player.id = state().player.id;

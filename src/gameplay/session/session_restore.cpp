@@ -81,6 +81,7 @@ int GameSessionImpl::validateCharacterRestore(const CharacterSaveData &data) con
     unsigned cubes = 0, allCubes = 0, cubeContents = 0;
     for (const auto &[id, item] : data.inventory.items) {
         registerId(id);
+        for (const auto &child : item.socketedItems) registerId(child.id);
         const auto *location = std::get_if<ContainerLocation>(&item.location);
         require(location != nullptr, "ground item in character data");
         const bool cube = item.definition == content_.cubeCode;

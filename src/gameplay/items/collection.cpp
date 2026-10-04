@@ -100,7 +100,7 @@ bool InventoryService::stackablesEqual(const ItemInstance &first, const ItemInst
         (first.quality != ItemQuality::Normal && first.quality != ItemQuality::Superior &&
          first.quality != ItemQuality::Inferior) ||
         ((first.nativeFlags ^ second.nativeFlags) & 0x00400000u) ||
-        first.grantedSkill != second.grantedSkill ||
+        first.grantedSkill != second.grantedSkill || first.sockets || second.sockets ||
         catalog_.find(first.definition)->maxStack <= 1)
         return false;
     for (auto stat : {"mindamage", "maxdamage", "secondary_mindamage", "secondary_maxdamage",

@@ -125,6 +125,8 @@ InventoryError InventoryService::checkAccess(const ItemLocation &location,
                                              const InventoryAccess &access) const {
     if (!access.actor || !access.alive)
         return InventoryError::AccessDenied;
+    if (std::holds_alternative<SocketLocation>(location))
+        return InventoryError::RestrictedItem;
     if (auto ground = std::get_if<GroundLocation>(&location)) {
         if (!std::isfinite(ground->position.x) || !std::isfinite(ground->position.y) ||
             !std::isfinite(access.position.x) || !std::isfinite(access.position.y) ||
@@ -163,23 +165,39 @@ InventoryError InventoryService::checkDestinationAccess(const ItemDestination &d
 InventoryError InventoryService::checkCarryLimit(const ItemInstance &source,
                                                  const ItemLocation &destination,
                                                  const InventoryState &state, EntityId ignore) const {
-    if (source.quality != ItemQuality::Unique || !singleCarryUniques_.contains(source.specialRow))
+    const auto *definition = catalog_.find(source.definition);
+    const bool uniqueLimit = source.quality == ItemQuality::Unique &&
+                             singleCarryUniques_.contains(source.specialRow);
+    const bool questLimit = definition && definition->questTag != 0;
+    if (!uniqueLimit && !questLimit)
         return InventoryError::None;
-    auto ownerAt = [&](const ItemLocation &location) -> EntityId {
+    auto ownerAt = [&](const ItemLocation &location, bool includeCorpse) -> EntityId {
         const auto *position = std::get_if<ContainerLocation>(&location);
         if (!position) return {};
         const auto found = state.containers.find(position->container);
+        // Native stash is page 4 and participates in carry checks. Quest pickup
+        // additionally examines corpses; non-quest carry1 does not.
         if (found == state.containers.end() || found->second.spec.kind == ContainerKind::Chest ||
-            found->second.spec.kind == ContainerKind::Corpse)
+            (!includeCorpse && found->second.spec.kind == ContainerKind::Corpse))
             return {};
         return found->second.spec.owner;
     };
-    const auto owner = ownerAt(destination);
+    const auto owner = ownerAt(destination, false);
     if (!owner) return InventoryError::None;
-    for (const auto &[id, other] : state.items)
-        if (id != source.id && id != ignore && other.quality == ItemQuality::Unique &&
-            other.specialRow == source.specialRow && ownerAt(other.location) == owner)
+    for (const auto &[id, other] : state.items) {
+        if (id == source.id || id == ignore) continue;
+        if (uniqueLimit && other.quality == ItemQuality::Unique &&
+            other.specialRow == source.specialRow && ownerAt(other.location, false) == owner)
             return InventoryError::RestrictedItem;
+        if (questLimit && ownerAt(other.location, true) == owner) {
+            const auto *otherDefinition = catalog_.find(other.definition);
+            if (otherDefinition && otherDefinition->questTag == definition->questTag &&
+                (other.definition == source.definition ||
+                 std::find(definition->questCarryConflicts.begin(), definition->questCarryConflicts.end(),
+                           other.definition) != definition->questCarryConflicts.end()))
+                return InventoryError::RestrictedItem;
+        }
+    }
     return InventoryError::None;
 }
 InventoryError InventoryService::checkPlacement(const ItemDefinition &definition,

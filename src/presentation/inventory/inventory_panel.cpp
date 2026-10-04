@@ -161,7 +161,11 @@ InventoryDrop inventoryDrop(const InventoryView &inventory, const IInventoryClie
                                  std::move(destination));
     };
     if (auto slot = ui.open ? equipmentAt(mouse, inventory.weaponSet) : std::nullopt) {
-        if (*slot == EquipmentSlot::Belt) {
+        const auto *host = inventory.item(inventory.equipped(containers, *slot));
+        if (!ui.forceSwap && definition.socketFiller && host) {
+            drop.command = SocketItem{source->handle(), host->handle()};
+            drop.description = "Insert into socket";
+        } else if (*slot == EquipmentSlot::Belt) {
             if (location->container == containers.beltEquipment) {
                 drop.bounds = equipmentBounds(*slot);
                 drop.description = "Release to cancel";
@@ -171,7 +175,7 @@ InventoryDrop inventoryDrop(const InventoryView &inventory, const IInventoryClie
         } else
             drop.command.emplace(std::in_place_type<EquipItem>, source->handle(), *slot);
         drop.bounds = equipmentBounds(*slot);
-        drop.description = "Equip item";
+        if (!std::holds_alternative<SocketItem>(*drop.command)) drop.description = "Equip item";
     } else {
         for (const auto &grid : grids) {
             auto cell = grid.cellAt(mouse);
@@ -189,7 +193,11 @@ InventoryDrop inventoryDrop(const InventoryView &inventory, const IInventoryClie
                 auto targetCell = std::get<ContainerLocation>(target->location).cell;
                 drop.bounds = grid.itemBounds(targetCell, definition);
                 const auto *targetDefinition = inventory.definition(target->definition);
-                if (!ui.forceSwap && targetDefinition->bookCapacity &&
+                if (!ui.forceSwap && definition.socketFiller) {
+                    drop.command = SocketItem{source->handle(), target->handle()};
+                    drop.description = "Insert into socket";
+                    drop.bounds = grid.itemBounds(targetCell, *targetDefinition);
+                } else if (!ui.forceSwap && targetDefinition->bookCapacity &&
                     (targetDefinition->bookScroll == source->definition || target->definition == source->definition)) {
                     drop.command = LoadBook{source->handle(), target->handle()};
                     drop.description = "Add pages to tome";

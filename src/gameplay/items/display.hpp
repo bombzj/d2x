@@ -3,7 +3,7 @@
 #include <vector>
 
 namespace d2x {
-enum class ItemTextTone { Normal, Name, Property, Error };
+enum class ItemTextTone { Normal, Name, RunewordName, SocketedName, Property, Error };
 struct ItemTextLine {
     std::string text;
     ItemTextTone tone = ItemTextTone::Normal;

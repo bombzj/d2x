@@ -31,9 +31,8 @@ void loadItemConsumables(ClassicData &data) {
             continue;
         PotionDefinition potion{};
         if (*spell == 3 && stat == "hpregen") {
-            // Barbarian's original healing potion class multiplier is an engine rule.
             potion.kind = PotionKind::Healing;
-            potion.amount = float(*amount * 2);
+            potion.amount = float(*amount);
             potion.seconds = float(frames.value_or(0)) / 25.f;
         } else if (*spell == 3 && stat == "manarecovery") {
             potion.kind = PotionKind::Mana;

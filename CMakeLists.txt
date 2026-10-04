@@ -178,6 +178,8 @@ target_sources(d2x_session PRIVATE src/gameplay/session/session_item_snapshot.cp
 target_sources(d2x_session PRIVATE src/gameplay/session/session_character_save.cpp)
 target_sources(d2x_session PRIVATE src/gameplay/session/session_debug_monsters.cpp)
 target_sources(d2x_items PRIVATE src/gameplay/items/replacement.cpp)
+target_sources(d2x_items PRIVATE src/gameplay/items/sockets.cpp)
+target_sources(d2x_content PRIVATE src/content/items/socket_data.cpp)
 target_sources(d2x_gameplay PRIVATE src/gameplay/quest/module.cpp src/gameplay/quest/region_entry.cpp
   src/gameplay/quest/death.cpp src/gameplay/rewards/death_settlement.cpp
   src/gameplay/rewards/experience.cpp src/gameplay/rewards/death_wave.cpp)

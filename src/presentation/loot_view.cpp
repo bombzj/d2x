@@ -76,7 +76,10 @@ std::vector<SceneView::LootLabel> SceneView::lootLabels(Vec mouse) const {
         }
         if (!placed)
             continue;
-        LootLabel label{item.handle(), std::move(text), box, ground, itemColor(item.quality)};
+        const bool plain = item.quality == ItemQuality::Normal || item.quality == ItemQuality::Superior || item.quality == ItemQuality::Inferior;
+        const auto color = item.identified && item.runewordRow >= 0 ? Color{199, 179, 119, 255} :
+            plain && (item.sockets || (item.nativeFlags & 0x400000u)) ? Color{128, 128, 128, 255} : itemColor(item.quality);
+        LootLabel label{item.handle(), std::move(text), box, ground, color};
         layout.push_back(label);
         if (view_.showLoot || id == session_.pickupTarget() ||
             CheckCollisionPointRec(rv(mouse), box) || CheckCollisionPointRec(rv(mouse), lootBounds(item)))

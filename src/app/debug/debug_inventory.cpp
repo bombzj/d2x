@@ -1,7 +1,10 @@
 #include "debug_inventory.hpp"
 #include "gameplay/session/session.hpp"
 #include "content/classic_data.hpp"
+#include "content/items/item_properties.hpp"
+#include "content/items/item_display.hpp"
 #include "gameplay/items/inventory.hpp"
+#include "gameplay/model/state.hpp"
 #include "presentation/scene_view.hpp"
 #include <nlohmann/json.hpp>
 #include <algorithm>
@@ -34,6 +37,28 @@ void debugItemInspect(const nlohmann::json &request, nlohmann::json &result,
                       {"rareSuffixRow", item->rareSuffixRow},
                       {"propertyRolls", item->propertyRolls}};
     auto &details = result["item"];
+    details["displayName"] = displayItemName(session.content(), session.inventory().catalog(), *item);
+    details["sockets"] = item->sockets;
+    details["socketRequiredLevel"] = item->socketRequiredLevel;
+    details["runewordRow"] = item->runewordRow;
+    details["nativeFlags"] = item->nativeFlags;
+    details["maxDurability"] = session.inventory().maximumDurability(*item);
+    details["socketedItems"] = nlohmann::json::array();
+    for (const auto &child : item->socketedItems)
+        details["socketedItems"].push_back({{"id", child.id.value}, {"code", child.definition},
+            {"quality", qualities.at(size_t(child.quality))}, {"level", child.level},
+            {"requiredLevel", child.requiredLevel}, {"nativeSeed", child.nativeSeed},
+            {"propertyRolls", child.propertyRolls}, {"savedStats", nlohmann::json::array()}});
+    for (size_t index = 0; index < item->socketedItems.size(); ++index)
+        for (const auto &stat : item->socketedItems[index].savedStats)
+            details["socketedItems"][index]["savedStats"].push_back({stat.id, stat.parameter, stat.value});
+    details["runewordStats"] = nlohmann::json::array();
+    for (const auto &stat : item->runewordStats)
+        details["runewordStats"].push_back({stat.id, stat.parameter, stat.value});
+    details["resolvedStats"] = nlohmann::json::array();
+    for (const auto &stat : resolveItemStats(session.content(), *item, session.state().player.character.level))
+        details["resolvedStats"].push_back({{"name", stat.name}, {"effect", stat.effect},
+            {"value", stat.value}, {"layer", stat.layer}, {"rawValue", stat.rawValue}});
     if (item->specialRow >= 0) {
         const auto &records = item->quality == ItemQuality::Unique ? session.content().uniqueItems
                                                                     : session.content().setItems;

@@ -2,6 +2,8 @@
 
 更新：2026-10-04。对应 [技术改造方案](../architecture/REFACTOR_PLAN.md) P1 库存 UI 切片及 P3 装备／来源基础切片；`InventoryService` 继续负责权威事务，完整 P3 尚未完成。第四项已随第五项通过 Windows Release 及代表性佣兵装备路径，完整规则回归尚未覆盖。
 
+当前物品复核新增源码修正：`ItemDefinition.questTag/questCarryConflicts` 由内容层从原 quest 身份及 D2MOO 原生互斥形式准备；`checkCarryLimit` 共用于创建／拾取／移动／转移／交换／恢复，carry1 包括私人箱，任务检查还含 Cursor 及该角色尸体。carry1 元数据直接覆盖完整 enabled 暗金原行，不依赖 lvl≤99 的生成目录；带独立孔数的堆叠禁止合并。玩家药剂按显式职业代码应用纯玩法倍率，佣兵继续非玩家倍率。运行指纹增加 `inventory-carry-rules-v2-native-quest-pairs`、`potion-class-rules-v1-native-restoration`、`socket-rules-v1-native-children-runewords`；D2S 字段仍为 v96，非法重复／互斥任务物品明确拒绝，无静默删物品或迁移。镶嵌已完成 Windows Release 与有限实机冒烟，未打包；SocketItem、有序 socketedItems、需求、符文之语独立属性及原生 D2S 共用物品边界，孔相关配方只绑定当前原表，细项见 [物品支持](../gameplay/items/SUPPORT.md)、[数据](../gameplay/items/DATA.md)、[药剂](../gameplay/items/BELT_AND_CONSUMABLES.md)。
+
 第八项将 `ItemGeneration`／`ItemAffixInstance` 移到 `items/generation.hpp`；`items/state.hpp` 继续复用同一值定义，掉落计划不再包含完整库存状态。库存仍唯一拥有实际物品与位置，未改物品生成／保存字段；该批已随收尾构建／有限冒烟，见[奖励基线](REWARDS.md)。
 
 ## 任务物品替换（第七项）
@@ -35,7 +37,7 @@
 
 ## 职责与入口
 
-当前源码新增封闭 `ContainerKind::Corpse`：12个装备位加一个死亡鼠标物品位，物品位置仍是唯一权威归属。`corpse_inventory.cpp` 独立完成死亡脱装草稿和回收，复用装备资格／组合与普通收集规则；普通 UI 移动、消费和转移拒绝访问，`InventoryView` 不投影尸体内部物品。尸体不计为当前携带物品，原存档校验显式传入允许的尸体容器集合；本批已通过 Windows Release 构建及初始法杖尸体回收冒烟，复杂库存组合仍未验收，完整规则见 [玩家死亡](../gameplay/characters/PLAYER_DEATH.md)。
+当前源码新增封闭 `ContainerKind::Corpse`：12个装备位加一个死亡鼠标物品位，物品位置仍是唯一权威归属。`corpse_inventory.cpp` 独立完成死亡脱装草稿和回收，复用装备资格／组合与普通收集规则；普通 UI 移动、消费和转移拒绝访问，`InventoryView` 不投影尸体内部物品。尸体不产生当前装备／护符贡献，也不计入非任务 carry1；任务物品重复／互斥拾取检查会计入该角色尸体。原存档校验显式传入允许的尸体容器集合；死亡批次已通过 Windows Release 构建及初始法杖尸体回收冒烟，复杂库存组合及当前限带修正未验收，完整规则见 [玩家死亡](../gameplay/characters/PLAYER_DEATH.md)。
 
 | 入口 | 职责 |
 | --- | --- |
@@ -58,7 +60,7 @@
 - 权威物品仍只有 `InventoryState` 一份；客户端投影是值副本，手势不修改它。只投影本人库存及当前储物上下文，不遍历其他玩家库存或地面物品。
 - 保留原 ID／revision、唯一位置、预览拒绝及最终提交时的版本／权限／容量复核。`InventoryApplied`／`InventoryRejected` 仍由原事件链反馈；没有另写移动、交易或配方规则。
 - 提示计算显式接收等级、力量、敏捷、最大耐久及相关任务提示值；库存 UI 不读取原属性、原存档标志、随机流或 `PlayerState`。图像键只用于现有资源缓存，不是已定稿的网络字段。
-- MPQ 布局、物品属性、Books 配对和原配方继续由现有内容层读取；D2S v96、保存语义和规则指纹不变。
+- MPQ 布局、物品属性、Books 配对和原配方继续由现有内容层读取；D2S 继续使用 v96；镶嵌语义及运行规则指纹见 [存档](SAVES.md)。
 
 ## 当前限制
 

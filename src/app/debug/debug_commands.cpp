@@ -118,7 +118,7 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
         } else if (command == "item-move") {
             debugItemMove(request, result, session, view);
         } else if (command == "book-load" || command == "identify-item" ||
-                   command == "gold-transfer" || command == "cube-open") {
+                   command == "gold-transfer" || command == "cube-open" || command == "item-socket" || command == "cube-transmute") {
             debugItemAction(command, request, result, session, view);
         } else if (command == "quest-status") {
             result["difficulty"] = session.state().population.difficulty;
@@ -442,12 +442,13 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
             const int level = request.at("level").get<int>();
             ItemQuality kind;
             if (quality == "magic") kind = ItemQuality::Magic;
+            else if (quality == "normal") kind = ItemQuality::Normal;
             else if (quality == "rare") kind = ItemQuality::Rare;
             else if (quality == "set") kind = ItemQuality::Set;
             else if (quality == "unique") kind = ItemQuality::Unique;
-            else throw std::runtime_error("quality must be magic, rare, set or unique");
+            else throw std::runtime_error("quality must be normal, magic, rare, set or unique");
             if (level < 1 || level > 99) throw std::runtime_error("level must be 1..99");
-            session.submit(DebugSpawnItem{code, kind, level});
+            session.submit(DebugSpawnItem{code, kind, level, request.value("sockets", 0u), request.value("identified", true)});
             session.tick(0);
             view.advance(0);
             for (const auto &event : session.events()) {

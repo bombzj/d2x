@@ -8,9 +8,11 @@
 
 `ItemDefinition::code` 是原版类型代码，`ItemInstance::id` 是一次会话中某件实物的 ID。多个同类型物品有不同 ID。物品、容器、角色和怪物共用同一个单调分配器，删除后的 ID 不复用。
 
-`ItemInstance::location` 是唯一归属：`GroundLocation{region, position}` 或 `ContainerLocation{container, cell}`。容器保存所有者、类型和尺寸；不保存另一份实例，也不保存独立可变的占格表。`itemAt()` 覆盖物品占据的整个矩形，`contents()` 和 `groundItems()` 查询当前位置。
+`ItemInstance::location` 是唯一归属：根物品使用 `GroundLocation{region, position}` 或 `ContainerLocation{container, cell}`；镶嵌子物品使用 `SocketLocation{host, index}`，仅存于宿主的有序 `socketedItems` 中，不同时出现在根库存。容器保存所有者、类型和尺寸；不保存另一份实例，也不保存独立可变的占格表。`itemAt()` 覆盖根物品的整个矩形，`contents()` 和 `groundItems()` 不枚举孔内物品。
 
 当前有玩家／佣兵装备、两组武器、钱包、耐久、品质／词缀、方块、光标和尸体支持。持久身份／掷值与位置属于实例，GPU 图像属于表现缓存。图标和地面动画从原表导入，具体支持范围由各专题维护。
+
+孔容量由 `ItemInstance.sockets` 独立保存，已填数量来自 `socketedItems.size()`；堆叠资格排除带孔物品。`SocketItem` 保留填充物的身份、品质、掷值与顺序，内容回调准备 gemapplytype 属性、最高等级需求和一次性符文之语加成。`runewordStats` 独立于宿主原属性，原生保存分别编码，避免重复或重掷。携带单件、任务互斥和消费者边界见 [支持清单](SUPPORT.md)。
 
 ## 容器和访问权限
 
@@ -30,16 +32,19 @@
 | `createItem` | 可信玩法创建实例，校验定义、数量、位置；UI 没有对应创建命令 |
 | `MoveItem` | 将完整实例移动到显式位置或 `AutoPlace` 自动找到的空位 |
 | `SwapItems` | 两件物品交换原点，双方都必须适配新位置，且新矩形不能互相重叠 |
+| `SocketItem` | 版本／鉴定／归属／访问／孔数复验后，将单件 sock 来源嵌入宿主；先准备子物品、属性、随机状态和事件，再提交两个根实例变化 |
 | `SplitStack` | 从源堆叠分出正数且少于源数量的新实例，保留源 ID，新实例分配新 ID |
 | `MergeStacks` | 同底材及合格品质、原行、无形／伤害与无孔条件相符的堆叠合并；等级不决定兼容，魔法品质不合并；目标 ID 保留 |
 | `consume` | 可信使用规则扣除数量，用尽后删除；该接口不负责结算药剂或卷轴效果 |
-| `collect` | 地面物品整体入包；先填兼容堆叠，再为余量找格子，全部装不下则无变化 |
+| `collect` | 地面拾取按 Books／AutoStack／腰带规则规划；成功合并后，余量无空格可留地面，并提交已成功部分，不等同整件转移 |
 | 会话命令 `PickupItem` | 接收实例 ID/版本，寻路靠近并检查地形、距离，再调用 `collect` |
 | `preview` / `GameSession::previewInventory` | 只读校验；供拖动预览和正式库存提交共同使用，不分配实例 ID |
 
 `AutoPlace` 按从上到下、从左到右的顺序寻找完整空矩形，不自动旋转、交换或合并。`MergeStacks.quantity == 0` 表示尽量填满目标，源可以有余量；显式指定数量时必须完整满足，否则失败。
 
-`collect` 是独立的拾取事务，不将多个 `merge`/`move` 逐个执行。它先规划全部目标堆叠和余量的格子，再验证版本、权限、容量并预分配事件，最后提交。失败保留所有原位置/数量；源全部合并时移除源 ID，否则保留源 ID 并将余量移入包裹。目标堆叠 ID 保持不变，每个实际改变的实例只增加一次版本。
+`collect` 在私有库存草稿上处理地面拾取，不在活库存逐步调用多个 `merge`／`move`。卷轴／书填充一本合格书后提交，剩余页留地面；AutoStack 优先装备再背包，之后尝试腰带／包裹空格。已经合并一部分而余量仅因 NoSpace 放不下时，保留余量在地面并提交成功部分；其他业务错误不移交草稿。源全部消耗时移除源 ID，否则保留源 ID；多目标合并可使同一来源在一笔请求内增加多次 revision。准确入口见 [背包自动拾取](INVENTORY_UI.md#自动拾取与合并)。
+
+`TransferItem` 才是整件转移：先规划目标堆叠及余量空格，不能完整容纳则无变化。两类事务共用定义、位置、访问和堆叠资格，但不是同一份规划函数；不应把 Shift 箱子转移的全有或全无语义写成地面自动补充的语义。
 
 `PickupItem` 的 UI 参数不能指定容器、距离或玩家权限。会话优先将适用物品放入当前玩家腰带，其他情况放入包裹，抵达 1.8 子格内且可直线穿过碰撞网格后才执行事务。路径不可达、忙于跳跃/旋风斩时给出提示，等待过程中源版本变化会取消拾取。玩家的新移动/战斗/交互意图、旅行、重置或死亡取消旧目标。
 
@@ -68,7 +73,7 @@ LootSystem／session_loot 连接怪物死亡掉落，包裹／腰带／箱子／
 
 ## 通用整件转移与临时访问
 
-`TransferItem{item, destination}` 完整规划兼容堆叠和剩余位置，失败不改变任何实例。`planTransfer` 同时供预览和执行，执行阶段不需要新实例或新 ID。`collect` 保留地面拾取约束，内部复用转移规则。
+`TransferItem{item, destination}` 完整规划兼容堆叠和剩余位置，失败不改变任何实例。`planTransfer` 同时供预览和执行，执行阶段不需要新实例或新 ID。`collect` 另在私有草稿中处理 Books／AutoStack 与余量留地面的拾取规则，末尾复用普通移动校验。
 
 `StorageAccess` 只由当前会话的世界交互授予。每次库存预览／提交都会重新检查原实体、存活、距离和通路；界面只能提交容器 ID，不能授予自己访问。箱子物品仍使用原来的唯一 ContainerLocation，不拷贝到界面或玩家包裹中。
 

@@ -1,5 +1,6 @@
 #include "item_properties.hpp"
 #include "gameplay/items/state.hpp"
+#include "socket_data.hpp"
 #include <algorithm>
 #include <stdexcept>
 #include <charconv>
@@ -68,12 +69,12 @@ bool isDirectPropertyRoll(const ClassicData &data, std::string_view code) {
     if (found == data.properties.end() || found->operations.empty()) return false;
     switch (found->operations.front().function) {
     case 1: case 2: case 3: case 4: case 5: case 6: case 7: case 8:
-    case 9: case 10: case 21: case 22: return true;
+    case 9: case 10: case 14: case 21: case 22: case 24: return true;
     default: return false;
     }
 }
 std::vector<ResolvedItemStat> resolvePropertyStats(const ClassicData &data,
-    const PropertyRange &property, int roll, int level) {
+    const PropertyRange &property, int roll, int level, int itemLevel) {
     std::vector<ResolvedItemStat> result;
     const auto found = std::find_if(data.properties.begin(), data.properties.end(),
         [&](const auto &p) { return p.code == property.code; });
@@ -125,12 +126,33 @@ std::vector<ResolvedItemStat> resolvePropertyStats(const ClassicData &data,
         case 10: append(op.stat, roll, parameter % 3 + 8 * (parameter / 3)); break;
         case 21: append(op.stat, roll, number(op.value)); break;
         case 22: append(op.stat, roll, parameter); break;
+        case 24: append(op.stat, roll, parameter); break;
+        case 14: append("item_numsockets", roll > 0 ? roll : std::max(1, parameter)); break;
+        case 11: case 19: {
+            const int sourceLevel = itemLevel > 0 ? itemLevel : level;
+            const auto *skill = data.skills.find(parameter);
+            if (!skill) throw std::runtime_error("Unknown item property skill: " + property.parameter);
+            int rank = property.maximum.value_or(0);
+            if (!rank) rank = std::clamp((sourceLevel - skill->requiredLevel) / 4 + 1, 1,
+                skill->maximumRank > 0 ? skill->maximumRank : 20);
+            else if (rank < 0) rank = std::max(1, (sourceLevel - skill->requiredLevel) /
+                std::max(1, -(std::max(1, 99 - skill->requiredLevel) / rank)));
+            int amount = property.minimum.value_or(0);
+            if (op.function == 11) append(op.stat, amount > 0 ? amount : 5, (parameter << 6) | (rank & 63));
+            else {
+                if (amount < 0) amount = rank * -amount / 8 - amount;
+                amount = amount ? std::clamp(amount, 1, 255) : 5;
+                append(op.stat, (amount << 8) | amount, (parameter << 6) | (rank & 63));
+            }
+            break;
+        }
+        case 23: break; // Physical ethereality belongs to the instance, not a stat.
         default: break; // Other handlers require their own verified item/state semantics.
         }
     }
     return result;
 }
-std::vector<ResolvedItemStat> resolveItemStats(const ClassicData &data,
+std::vector<ResolvedItemStat> resolveOwnItemStats(const ClassicData &data,
     const ItemInstance &item, int level) {
     std::vector<ResolvedItemStat> result;
     if (!item.identified) return result;
@@ -159,7 +181,7 @@ std::vector<ResolvedItemStat> resolveItemStats(const ClassicData &data,
     auto append = [&](const auto &properties, const auto &rolls) {
         if (properties.size() != rolls.size()) throw std::runtime_error("Item property roll count mismatch");
         for (size_t i = 0; i < properties.size(); ++i) {
-            auto stats = resolvePropertyStats(data, properties[i], rolls[i], level);
+            auto stats = resolvePropertyStats(data, properties[i], rolls[i], level, int(item.level));
             result.insert(result.end(), stats.begin(), stats.end());
         }
     };
@@ -176,6 +198,12 @@ std::vector<ResolvedItemStat> resolveItemStats(const ClassicData &data,
     if (item.quality == ItemQuality::Superior)
         for (const auto &r : data.superiorGrades)
             if (int32_t(r.row) == item.gradeRow) { append(r.properties, item.propertyRolls); break; }
+    return result;
+}
+std::vector<ResolvedItemStat> resolveItemStats(const ClassicData &data, const ItemInstance &item, int level) {
+    auto result = resolveOwnItemStats(data, item, level);
+    auto sockets = resolveSocketStats(data, item, level);
+    result.insert(result.end(), sockets.begin(), sockets.end());
     return result;
 }
 } // namespace d2x

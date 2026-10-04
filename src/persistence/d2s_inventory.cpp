@@ -1,5 +1,6 @@
 #include "d2s_inventory.hpp"
 #include "content/items/item_properties.hpp"
+#include "content/items/socket_data.hpp"
 #include <algorithm>
 #include <stdexcept>
 
@@ -21,27 +22,7 @@ std::vector<D2sStat> extraProperties(const ClassicData &content, const ItemInsta
             for (const auto &operation : found->operations)
                 switch (operation.function) {
                 case 1: case 2: case 3: case 4: case 5: case 6: case 7: case 8: case 9: case 10:
-                case 15: case 16: case 17: case 20: case 21: case 22: break;
-                case 11: {
-                    int skillId = -1;
-                    const auto &skills = content.tables.at("skills");
-                    for (size_t row = 0; row < skills.rows().size(); ++row)
-                        if (skills.value(row, "skill") == property.parameter ||
-                            std::to_string(skills.number(row, "Id").value_or(-1)) == property.parameter)
-                            skillId = skills.number(row, "Id").value_or(-1);
-                    const auto *skill = content.skills.find(skillId);
-                    require(skill != nullptr, "trigger skill identity");
-                    int level = property.maximum.value_or(0);
-                    if (!level) level = std::clamp((int(item.level) - skill->requiredLevel) / 4 + 1, 1, std::max(1, skill->maximumRank));
-                    else if (level < 0) level = std::max(1, (int(item.level) - skill->requiredLevel) /
-                        std::max(1, -(std::max(1, 99 - skill->requiredLevel) / level)));
-                    auto stat = std::find_if(content.itemStats.begin(), content.itemStats.end(),
-                        [&](const auto &entry) { return entry.name == operation.stat; });
-                    require(stat != content.itemStats.end() && stat->id, "trigger stat identity");
-                    int chance = property.minimum.value_or(0);
-                    result.push_back({uint16_t(*stat->id), chance > 0 ? chance : 5, (skillId << 6) | (level & 63)});
-                    break;
-                }
+                case 11: case 14: case 15: case 16: case 17: case 19: case 20: case 21: case 22: case 23: case 24: break;
                 default: throw std::runtime_error("Cannot save " + item.definition + ": unsupported property " + property.code);
                 }
         }
@@ -81,7 +62,7 @@ void initializeD2sInventory(CharacterSaveData &snapshot, const ClassicData &cont
     add(snapshot.containers.cube, ContainerKind::Cube, content.cubeLayout.columns, content.cubeLayout.rows);
 }
 void importD2sItem(CharacterSaveData &snapshot, const D2sItem &source, const ClassicData &content,
-                   bool hireling, EntityId corpse) {
+                   bool hireling, EntityId corpse, EntityId socketHost, unsigned socketIndex) {
     const auto *definition = content.items.find(source.code);
     require(definition != nullptr && source.quality > 0 && source.quality < qualities.size(), "item identity");
     ItemInstance item;
@@ -104,6 +85,10 @@ void importD2sItem(CharacterSaveData &snapshot, const D2sItem &source, const Cla
     item.nativeHasGraphic = source.hasGraphic;
     item.nativeMaxDurability = source.maxDurability;
     item.nativeQuestDifficulty = source.questDifficulty;
+    for (const auto &stat : source.runewordStats) {
+        require(stat.value >= INT32_MIN && stat.value <= INT32_MAX, "runeword stat range");
+        item.runewordStats.push_back({int(stat.id), stat.parameter, int(stat.value)});
+    }
     for (const auto &stat : source.stats) {
         require(stat.value >= INT32_MIN && stat.value <= INT32_MAX, "stat value range");
         item.savedStats.push_back({int(stat.id), stat.parameter, int(stat.value)});
@@ -148,6 +133,14 @@ void importD2sItem(CharacterSaveData &snapshot, const D2sItem &source, const Cla
         }), "unknown rare name rows");
     }
     require(source.durability <= source.maxDurability, "durability exceeds saved maximum");
+    if (socketHost) {
+        require(source.mode == 6 && definition->equipment.isType("sock") && source.socketedItems.empty() &&
+            source.x == socketIndex && source.y == 0 && item.identified && item.quantity == 1, "socket child identity/order");
+        item.location = SocketLocation{socketHost, socketIndex};
+        snapshot.inventory.items.at(socketHost).socketedItems.push_back(std::move(item));
+        return;
+    }
+    require(source.mode != 6, "orphan socket child");
     ContainerLocation location;
     if (corpse) {
         require(!hireling, "corpse hireling item");
@@ -184,7 +177,18 @@ void importD2sItem(CharacterSaveData &snapshot, const D2sItem &source, const Cla
         location = {container, {int(source.x), int(source.y)}};
     }
     item.location = location;
-    snapshot.inventory.items.emplace(item.id, std::move(item));
+    const auto hostId = item.id;
+    snapshot.inventory.items.emplace(hostId, std::move(item));
+    for (size_t index = 0; index < source.socketedItems.size(); ++index)
+        importD2sItem(snapshot, source.socketedItems[index], content, false, {}, hostId, unsigned(index));
+    auto &host = snapshot.inventory.items.at(hostId);
+    host.socketRequiredLevel = socketRequiredLevel(content, host);
+    const auto *word = matchRuneword(content, host);
+    require(bool(source.flags & 0x4000000u) == bool(word), "runeword flag/sequence mismatch");
+    if (word) {
+        require(source.runewordId == unsigned(word->stringId), "runeword original TBL identity mismatch");
+        host.runewordRow = word->row;
+    }
 }
 D2sItem exportD2sItem(const CharacterSaveData &snapshot, const ItemInstance &item, const ClassicData &content) {
     const auto *definition = content.items.find(item.definition);
@@ -193,7 +197,7 @@ D2sItem exportD2sItem(const CharacterSaveData &snapshot, const ItemInstance &ite
     output.code = item.definition;
     output.level = item.level;
     output.seed = item.nativeSeed;
-    output.flags = item.nativeProperties ? item.nativeFlags : 0x00800000;
+    output.flags = item.nativeProperties ? item.nativeFlags : (0x00800000u | (item.nativeFlags & 0x4400000u));
     output.flags = (output.flags & ~0x00080110u) | 0x00800000u | (item.identified ? 0x10u : 0u);
     if (definition->maxDurability && !item.durability) output.flags |= 0x100;
     output.format = item.nativeFormat;
@@ -201,6 +205,16 @@ D2sItem exportD2sItem(const CharacterSaveData &snapshot, const ItemInstance &ite
     output.graphic = item.nativeGraphic;
     output.questDifficulty = item.nativeQuestDifficulty;
     output.sockets = item.sockets;
+    if (item.runewordRow >= 0) {
+        const auto *word = matchRuneword(content, item);
+        require(word && word->row == item.runewordRow, "runeword sequence/row");
+        output.runewordId = unsigned(word->stringId);
+        output.flags |= 0x4000000u;
+        for (const auto &stat : item.runewordStats)
+            output.runewordStats.push_back({uint16_t(stat.id), stat.value, stat.parameter});
+    }
+    for (const auto &child : item.socketedItems)
+        output.socketedItems.push_back(exportD2sItem(snapshot, child, content));
     output.personalizedName = item.personalizedName;
     if (!item.personalizedName.empty()) output.flags |= 0x1000000u;
     if (item.sockets) output.flags |= 0x800u;
@@ -231,9 +245,10 @@ D2sItem exportD2sItem(const CharacterSaveData &snapshot, const ItemInstance &ite
         const auto extras = extraProperties(content, item);
         auto identified = item;
         identified.identified = true;
-        const auto resolved = resolveItemStats(content, identified, snapshot.player.level);
+        const auto resolved = resolveOwnItemStats(content, identified, snapshot.player.level);
         std::map<std::pair<int, int>, int64_t> stats;
         for (const auto &stat : resolved) {
+            if (stat.name == "item_numsockets") continue; // Encoded in the native socket field.
             auto found = std::find_if(content.itemStats.begin(), content.itemStats.end(),
                 [&](const auto &entry) { return entry.name == stat.name; });
             require(found != content.itemStats.end() && found->id, "stat identity");
@@ -244,7 +259,11 @@ D2sItem exportD2sItem(const CharacterSaveData &snapshot, const ItemInstance &ite
         for (const auto &[key, value] : stats) output.stats.push_back({uint16_t(key.first), value, key.second});
         int base = int(definition->maxDurability);
         if (item.quality == ItemQuality::Inferior && base) base = std::max(1, base / 3);
-        output.maxDurability = base ? unsigned(std::clamp<int64_t>(base * (100 + stats[{75, 0}]) / 100 + stats[{73, 0}], 1, 255)) : 0;
+        const auto total = resolveItemStats(content, identified, snapshot.player.level);
+        auto bonus = [&](const char *effect) {
+            int value = 0; for (const auto &stat : total) if (stat.effect == effect) value += stat.value; return value;
+        };
+        output.maxDurability = base ? unsigned(std::clamp<int64_t>(base * (100 + bonus("item_maxdurability_percent")) / 100 + bonus("maxdurability"), 1, 255)) : 0;
         if (item.quality == ItemQuality::Set)
             for (const auto &record : content.setItems) {
                 if (int(record.row) != item.specialRow) continue;
@@ -269,6 +288,13 @@ D2sItem exportD2sItem(const CharacterSaveData &snapshot, const ItemInstance &ite
                     }
                 }
             }
+    }
+    if (const auto *socket = std::get_if<SocketLocation>(&item.location)) {
+        const auto found = snapshot.inventory.items.find(socket->host);
+        require(found != snapshot.inventory.items.end() && socket->index < found->second.socketedItems.size() &&
+            found->second.socketedItems[socket->index].id == item.id, "socket parent identity/order");
+        output.mode = 6; output.page = 0; output.body = 0; output.x = socket->index; output.y = 0;
+        return output;
     }
     const auto *location = std::get_if<ContainerLocation>(&item.location);
     require(location != nullptr, "ground item in character inventory");

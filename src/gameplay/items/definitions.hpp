@@ -36,6 +36,8 @@ struct ItemDefinition {
     unsigned maxStack = 1, maxDurability = 0;
     bool beltAllowed = false, usable = false;
     bool opensCube = false;
+    int questTag = 0; // Original base table quest identity, not a gameplay QuestId.
+    std::vector<std::string> questCarryConflicts; // Native mutually exclusive quest forms.
     int targetCursor = -1; // Misc.spellicon or Books.SpellIcon; frame in cursor/spells.dc6.
     std::string icon, groundAnimation;
     std::vector<std::string> inventoryIcons;
@@ -45,6 +47,7 @@ struct ItemDefinition {
     bool personalizable = false;
     int beltRows = 0; // Zero is not an equippable belt; row zero is the ready row.
     std::string betterGem; // Misc.bettergem; empty/non means no upgrade.
+    int gemApplyType = -1; // Native weapon=0, body/helm=1, shield=2.
     std::string bookScroll;
     unsigned bookCapacity = 0, bookInitialCharges = 0, bookChargeCost = 0;
     ItemBaseStats base;

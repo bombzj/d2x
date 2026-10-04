@@ -18,6 +18,6 @@ struct GoldTransaction {
     unsigned amount = 0;
 };
 using InventoryIntent = std::variant<MoveItem, TransferItem, SwapItems, SplitStack, MergeStacks,
-    LoadBook, IdentifyItem, EquipBelt, EquipItem, EquipHirelingItem, UseItem, UseBeltColumn,
+    LoadBook, SocketItem, IdentifyItem, EquipBelt, EquipItem, EquipHirelingItem, UseItem, UseBeltColumn,
     UseHirelingPotion, SwitchWeaponSet, TransmuteCube, CloseStorage, GoldTransaction>;
 } // namespace d2x

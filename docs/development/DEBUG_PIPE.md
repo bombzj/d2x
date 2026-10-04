@@ -100,7 +100,7 @@ $spawn = .\scripts\Send-D2XCommand.ps1 -Command monster-spawn -Arguments @{monst
 
 `item` 只读查询单件实例的品质原行、词缀行、属性掷值、书的页数、位置及从 MPQ 适配的外观 token；`status` 给出钱包和私人箱金币，以及本局出现过的暗金原行数量。
 
-可用 `item-spawn` 在人物脚边生成已鉴定的原 MPQ 装备，快速检查地面文字和拾入背包后的悬停说明。`code` 为当前 MPQ 的武器或护甲代码，`quality` 只接受 `magic`（蓝）、`rare`（黄）、`set`（绿）、`unique`（暗金），`level` 为 1–99 的物品等级。须选择该品质在原表中可生成的底材与等级；缺词缀、特殊行或原图时会明确拒绝。响应返回新实例 `id`，之后可用 `ground`、`pickup`、`item` 查看。
+可用 `item-spawn` 在人物脚边生成原 MPQ 武器／护甲、sock 填充物、戒指／项链或卷轴，检查地面文字和悬停说明。`quality` 接受 normal／magic／rare／set／unique，`level` 为 1–99；默认已鉴定，`identified=false` 可保留未鉴定。可选 `sockets` 受原底材／等级／占格及品质限制，用于准备镶嵌现场。须选择原表可生成的品质和等级，缺词缀、特殊行或原图明确拒绝。响应返回新实例 `id`；这些调试参数不用于认证自然掉落概率。
 
 ```powershell
 .\scripts\Send-D2XCommand.ps1 -Command item-spawn -Arguments @{ code = 'cap'; quality = 'magic'; level = 30 }
@@ -110,6 +110,8 @@ $spawn = .\scripts\Send-D2XCommand.ps1 -Command monster-spawn -Arguments @{monst
 ```
 
 该命令复用正式词缀／特殊行掷值与库存创建，但有意绕过 TC、品质概率及同局暗金唯一限制；不能拿它证明自然掉落正确，也不会计入正式掉落结算。调试物品可进入正常角色存档，重要现场请使用独立 `--save` 路径。2026-09-26 Release 已实际调用四种品质生成、拾取及 D2S 保存／重载；无效代码拒绝且不增加物品。PowerShell 客户端白名单已包含 `item-spawn`。
+
+`item-socket` 使用根物品 `source`／`target` ID，复用正式 SocketItem 预览及提交；可选 sourceRevision／targetRevision 用于检查旧版本拒绝，不绕过鉴定、来源／宿主访问或孔数限制。`item` 增加 sockets、socketedItems、socketRequiredLevel、runewordRow／runewordStats、nativeFlags、displayName 和 resolvedStats，只读查看孔内原物品与合并效果。`cube-transmute` 提交正式合成命令，仍要求背包持有方块、空 Cursor、完整原配方材料；命令不自动添加材料。2026-10-04 镶嵌／孔配方／原生往返冒烟见 [物品支持](../gameplay/items/SUPPORT.md)，无新增测试脚本。
 
 `ui-input` 的 `key` 还支持 `skill-tree` 和 `f1`–`f8`；打开技能菜单时 F 键绑定悬停项，菜单关闭时选择已绑定项。批量请求返回的是排队回执，每个条目按一帧处理，须等待队列处理后再查询／复制截图。`ui-input` 可附带 `screenshot=true`，在该输入处理后的同一帧保存 `artifacts/d2x-capture.png`，用于准确捕获悬停提示。`showLoot=true` 模拟该帧显示地面标签。`status.ui` 的 `purchaseConfirmation`、`salePending`（待售物品 ID，0 表示无）和 `shopRepair` 只读反映当前交易界面；旧 `saleConfirmation` 为兼容查询保留固定值 0，不再有背包单击出售确认。截图前应先确认 `shop=true`。单独 `screenshot` 命令仍保存上一张已绘制帧到 `artifacts/debug-pipe.png`。
 
@@ -179,7 +181,9 @@ $offers = (.\scripts\Send-D2XCommand.ps1 -Command shop -Arguments @{ id = $vendo
 | ground | 无 | 当前区域地面物品 ID、版本、代码、数量、品质、特殊行号、物品等级、坐标 |
 | inventory | 无 | 所有角色容器内物品及钱包；包含背包、腰带、装备和私人箱，不改变箱子访问权 |
 | item | `id` | 查询单件地面或容器物品的原行、属性掷值、位置与装备外观参数，不改变状态 |
-| item-spawn | `code` 原 MPQ 武器／护甲代码、`quality` 为 magic／rare／set／unique、`level` 1–99 | 调试生成已鉴定装备在脚边；返回实例 ID，缺少原表行或资源时拒绝 |
+| item-spawn | `code` 原底材、`quality` normal／magic／rare／set／unique、`level` 1–99；可选 sockets／identified | 原装备、填充物、戒指／项链或卷轴；返回 ID，缺原表或图形拒绝 |
+| item-socket | `source`、`target`，可选 sourceRevision／targetRevision | 正式镶嵌事务；返回已填数量和符文之语原行 |
+| cube-transmute | 无 | 正式方块合成，不添加或忽略材料 |
 | objects | 无 | 当前场景对象名称、原内容键、位置、可绘制标志，以及入口／边界预设信息 |
 | exits | 无 | 当前出口名称、slot、访问坐标与启用状态 |
 | view | `x`、`y` | 只移动相机并查询附近墙格键值与隐藏标志；下一次模拟步恢复跟随，不修改玩家位置 |

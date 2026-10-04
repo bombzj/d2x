@@ -166,9 +166,9 @@ void GameSessionImpl::useHirelingPotion(ItemHandle handle) {
     auto &merc = simulation_->state_.player.hireling;
     const auto stats = hirelingStats();
     if (potion.kind == PotionKind::Healing) {
-        // Items::GetBonusLifeBasedOnClass gives monsters the same x2 multiplier
-        // as the loaded Barbarian amount. pSpell03 averages stacked recovery.
-        int amount = int(potion.amount * 256.f);
+        // The original non-player life multiplier is x2; pSpell03 averages
+        // stacked recovery. Keep it separate from the loaded base amount.
+        int amount = int(potionRestorationAmount(potion, {}) * 256.f);
         if (stats.vitality > 0) {
             const auto chance = limitedRandom(merc.combatRandom, 100);
             if (chance < limitedRandom(merc.combatRandom, unsigned(stats.vitality)) / 2) amount *= 2;

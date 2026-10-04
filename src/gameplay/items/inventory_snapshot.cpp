@@ -47,17 +47,39 @@ void InventoryService::validateSnapshot(const InventoryState &state, const Playe
         occupied.emplace(c.id, std::vector<bool>(size_t(c.spec.columns * c.spec.rows)));
     }
     int beltRows = 1, equipped = 0;
+    std::set<EntityId> itemIds;
+    for (const auto &[id, item] : state.items) {
+        require(itemIds.insert(id).second, "duplicate item identity");
+        for (size_t index = 0; index < item.socketedItems.size(); ++index) {
+            const auto &child = item.socketedItems[index];
+            const auto *base = catalog_.find(child.definition);
+            require(child.id && child.id != id && itemIds.insert(child.id).second &&
+                !state.items.contains(child.id) && !state.containers.contains(child.id) &&
+                base && base->equipment.isType("sock") && child.identified && child.quantity == 1 &&
+                !child.sockets && child.socketedItems.empty() && child.runewordRow == -1 &&
+                child.runewordStats.empty() && child.revision > 0 && child.level >= 1 && child.level <= 99 &&
+                child.location == ItemLocation{SocketLocation{id, unsigned(index)}}, "socket child identity/ownership");
+        }
+    }
     for (const auto &[id, item] : state.items) {
         require(bool(id) && id == item.id && !state.containers.contains(id), "item ID");
         auto def = catalog_.find(item.definition);
         require(def != nullptr, "unknown definition");
+        require(!std::holds_alternative<SocketLocation>(item.location) &&
+            item.sockets <= unsigned(std::max(0, def->base.sockets.value_or(0))) &&
+            item.sockets <= unsigned(def->width * def->height) && item.sockets <= 6 &&
+            item.socketedItems.size() <= item.sockets &&
+            (!item.sockets || (def->maxStack == 1 && def->gemApplyType >= 0 && def->gemApplyType <= 2)) &&
+            item.socketRequiredLevel >= 0 && item.socketRequiredLevel <= 99, "socket host parameters");
         const bool nativeNormalCharm = item.nativeProperties && item.quality == ItemQuality::Normal &&
                                        def->equipment.isType("char");
         if (def->family == ItemFamily::Armor)
             require(def->base.minDefense && def->base.maxDefense &&
-                        item.defense >= (item.quality == ItemQuality::Inferior ?
+                        item.defense >= ((item.nativeFlags & 0x400000u) ?
+                            *def->base.minDefense * 3 / 2 : item.quality == ItemQuality::Inferior ?
                             std::max(1, *def->base.minDefense * 75 / 100) : *def->base.minDefense) &&
-                        item.defense <= (item.quality == ItemQuality::Inferior ?
+                        item.defense <= ((item.nativeFlags & 0x400000u) ?
+                            (*def->base.maxDefense + 1) * 3 / 2 : item.quality == ItemQuality::Inferior ?
                             std::max(1, *def->base.maxDefense * 75 / 100) :
                             *def->base.maxDefense + (propertyValue(item, "item_armor_percent") ? 1 : 0)),
                     "rolled armor defense");
@@ -92,7 +114,7 @@ void InventoryService::validateSnapshot(const InventoryState &state, const Playe
         auto found = state.containers.find(location->container);
         require(found != state.containers.end(), "item container reference");
         require(checkCarryLimit(item, item.location, state) == InventoryError::None,
-            "duplicate carry1 unique item");
+            "duplicate restricted unique or quest item");
         const auto &c = found->second.spec;
         auto cell = location->cell;
         if (c.kind == ContainerKind::Corpse) {

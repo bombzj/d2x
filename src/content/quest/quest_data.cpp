@@ -9,6 +9,25 @@
 #include <utility>
 
 namespace d2x {
+void loadQuestItemCarryRules(std::vector<ItemDefinition> &items) {
+    // ItemMode::sub_6FC428F0 native identities. The shared quest tag alone does
+    // not exclude distinct ingredients: e.g. all four Khalim parts may coexist.
+    constexpr std::array pairs{
+        std::pair{"j34", "g34"}, std::pair{"bks", "bkd"}, std::pair{"d33", "g33"},
+        std::pair{"hst", "msf"}, std::pair{"hst", "vip"}, std::pair{"qf2", "qf1"},
+        std::pair{"qf2", "qhr"}, std::pair{"qf2", "qey"}, std::pair{"qf2", "qbr"}};
+    for (const auto &[first, second] : pairs) {
+        auto find = [&](std::string_view code) {
+            return std::find_if(items.begin(), items.end(),
+                [&](const auto &item) { return item.code == code; });
+        };
+        auto a = find(first), b = find(second);
+        if (a == items.end() || b == items.end() || !a->questTag || a->questTag != b->questTag)
+            throw std::runtime_error("Missing original quest carry pair: " + std::string(first) + "/" + second);
+        a->questCarryConflicts.emplace_back(second);
+        b->questCarryConflicts.emplace_back(first);
+    }
+}
 PrisonOfIceContent loadPrisonOfIceContent(const ItemCatalog &items, const std::map<std::string, DataTable, std::less<>> &tables) {
     PrisonOfIceContent result;
     result.potion = loadNativeQuestItem(items, tables, "ice", 32);

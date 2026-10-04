@@ -100,6 +100,22 @@ InventoryResult InventoryService::createItem(std::string_view code, unsigned qua
         if (propertyValue(instance, "item_armor_percent")) instance.defense = *maximum + 1;
     }
     instance.id = ids_.allocate();
+    const unsigned limit = unsigned(std::max(0, std::min({definition->base.sockets.value_or(0),
+        definition->base.socketsByLevel[level <= 25 ? 0 : level <= 40 ? 1 : 2],
+        definition->width * definition->height, 6})));
+    const auto propertySockets = propertyValue(instance, "item_numsockets");
+    if (definition->maxStack == 1 && limit) {
+        if (propertySockets > 0) instance.sockets = std::min(limit, unsigned(propertySockets));
+        else if (generation.rollNaturalSockets &&
+            (instance.quality == ItemQuality::Normal || instance.quality == ItemQuality::Superior)) {
+            // Items::sub_6FC4D6B0: 33/100 and normal/nightmare/hell cap 3/4/6.
+            if (limitedRandom(itemRandom, 100) < 33) {
+                const unsigned caps[]{3, 4, 6};
+                instance.sockets = instance.nativeSeed % std::min(limit, caps[std::clamp(generation.socketDifficulty, 0, 2)]) + 1;
+            }
+        }
+    }
+    if (instance.sockets) instance.nativeFlags |= 0x800u;
     auto result = prepared(instance.id, quantity);
     result.changes.push_back(
         {instance.id, instance.revision, ItemChangeKind::Created, std::nullopt, location, quantity});

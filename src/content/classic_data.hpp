@@ -3,6 +3,7 @@
 #include "gameplay/items/definitions.hpp"
 #include "gameplay/items/modifiers.hpp"
 #include "gameplay/items/equipment_set.hpp"
+#include "gameplay/items/socket_records.hpp"
 #include "gameplay/consumables/potions.hpp"
 #include "gameplay/loot/loot.hpp"
 #include "gameplay/loot/affix.hpp"
@@ -100,6 +101,10 @@ struct ClassicData {
     std::vector<RareNameRecord> rarePrefixes, rareSuffixes;
     std::vector<PropertyDefinition> properties;
     std::vector<ItemStatDefinition> itemStats;
+    std::map<std::string, GemRecord, std::less<>> socketGems;
+    std::vector<RunewordRecord> runewords;
+    UnsocketRecipe unsocketRecipe;
+    std::vector<SocketRecipe> socketRecipes;
     std::vector<QualityGradeRecord> superiorGrades, inferiorGrades;
     std::map<std::string, PotionDefinition, std::less<>> potions;
     std::set<std::string, std::less<>> portalScrolls;

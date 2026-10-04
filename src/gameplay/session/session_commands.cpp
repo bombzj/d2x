@@ -167,7 +167,7 @@ bool GameSessionImpl::dispatchCommands() {
                     useSkill(intent);
                 } else if constexpr (std::is_same_v<T, MoveItem> || std::is_same_v<T, SwapItems> ||
                                      std::is_same_v<T, SplitStack> || std::is_same_v<T, MergeStacks> ||
-                                     std::is_same_v<T, LoadBook> ||
+                                     std::is_same_v<T, LoadBook> || std::is_same_v<T, SocketItem> ||
                                      std::is_same_v<T, EquipBelt> || std::is_same_v<T, TransferItem> ||
                                      std::is_same_v<T, EquipItem>)
                     executeInventory(command);

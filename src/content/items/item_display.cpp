@@ -26,6 +26,9 @@ static std::string baseDisplayItemName(const ClassicData &content, const ItemCat
         const auto *definition = catalog.find(item.definition);
         return definition ? definition->name : item.definition;
     }
+    if (item.runewordRow >= 0)
+        for (const auto &record : content.runewords)
+            if (record.row == item.runewordRow) return record.name;
     if (auto special = specialItem(content, item))
         return localized(special->name);
     const auto *definition = catalog.find(item.definition);
@@ -70,8 +73,13 @@ ItemDisplay describeInventoryItem(const ClassicData &content, const ItemCatalog 
     const auto &definition = *catalog.find(item.definition);
     ItemDisplay display;
     display.name = displayItemName(content, catalog, item);
-    display.tooltip.push_back({display.name, ItemTextTone::Name});
+    const bool plain = item.quality == ItemQuality::Normal || item.quality == ItemQuality::Superior || item.quality == ItemQuality::Inferior;
+    display.tooltip.push_back({display.name, item.identified && item.runewordRow >= 0 ? ItemTextTone::RunewordName :
+        plain && (item.sockets || (item.nativeFlags & 0x400000u)) ? ItemTextTone::SocketedName : ItemTextTone::Name});
+    if (item.runewordRow >= 0 && item.identified) display.tooltip.push_back({definition.name, ItemTextTone::RunewordName});
     if (item.sockets) display.tooltip.push_back({content.itemStrings.at("Socketable") + " (" + std::to_string(item.sockets) + ")", ItemTextTone::Property});
+    for (const auto &child : item.socketedItems)
+        display.tooltip.push_back({displayItemName(content, catalog, child), ItemTextTone::Property});
     auto line = [&](std::string value, ItemTextTone tone = ItemTextTone::Normal) {
         if (!value.empty()) display.tooltip.push_back({std::move(value), tone});
     };
@@ -87,6 +95,7 @@ ItemDisplay describeInventoryItem(const ClassicData &content, const ItemCatalog 
         const auto &base = definition.base;
         auto damage = [&](const char *label, std::optional<int> low, std::optional<int> high, bool thrown = false) {
             if (!low || !high) return;
+            if (item.nativeFlags & 0x400000u) { low = *low * 3 / 2; high = *high * 3 / 2; }
             if (item.quality == ItemQuality::Inferior) {
                 low = std::max(thrown ? 2 : 1, *low * 75 / 100);
                 high = std::max(thrown ? 1 : 2, *high * 75 / 100);
@@ -104,7 +113,7 @@ ItemDisplay describeInventoryItem(const ClassicData &content, const ItemCatalog 
         }
         if (definition.family == ItemFamily::Armor) {
             const int percent = sum("item_armor_percent");
-            const int baseArmor = percent ? base.maxDefense.value_or(item.defense) + 1 : item.defense;
+            const int baseArmor = item.defense;
             line("Defense: " + std::to_string(baseArmor * std::max(0, 100 + percent) / 100 + sum("armorclass")));
         }
         if (definition.maxStack > 1 && !definition.equipment.isType("gold"))
@@ -134,11 +143,11 @@ ItemDisplay describeInventoryItem(const ClassicData &content, const ItemCatalog 
         };
         auto required = [&](std::optional<int> value) {
             const int baseValue = value.value_or(0);
-            return std::max(0, baseValue + baseValue * sum("item_req_percent") / 100);
+            return std::max(0, baseValue + baseValue * sum("item_req_percent") / 100 - ((item.nativeFlags & 0x400000u) ? 10 : 0));
         };
         requirement("Required Strength: ", required(base.requiredStrength), context.strength);
         requirement("Required Dexterity: ", required(base.requiredDexterity), context.dexterity);
-        requirement("Required Level: ", std::max(base.requiredLevel.value_or(0), item.requiredLevel), context.level);
+        requirement("Required Level: ", std::max({base.requiredLevel.value_or(0), item.requiredLevel, item.socketRequiredLevel}), context.level);
         if (!item.identified) line("Unidentified", ItemTextTone::Error);
         else {
             for (auto &description : describeItemStats(content, item, context.level))

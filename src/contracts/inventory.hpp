@@ -8,6 +8,7 @@
 
 namespace d2x {
 struct InventoryDefinitionView {
+    bool socketFiller = false;
     std::string code, name, bookScroll;
     int width = 0, height = 0, beltRows = 0;
     unsigned maxStack = 0, bookCapacity = 0;

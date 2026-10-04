@@ -111,6 +111,7 @@ void GameSessionImpl::useItem(ItemHandle handle) {
     bool consumed = bool(result);
     publishInventory(std::move(result), handle.id);
     if (consumed) {
+        potion.amount = potionRestorationAmount(potion, characterDefinition_.code);
         simulation_->applyPotion(potion);
         simulation_->emit(ItemUsed{handle.id, std::move(code)});
     }

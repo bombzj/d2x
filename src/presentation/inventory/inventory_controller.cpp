@@ -47,6 +47,8 @@ bool SceneController::queueInventory(InventoryIntent command, EntityId source) {
         ui.pendingMessage = "Stacks merged.";
     else if (std::holds_alternative<LoadBook>(command))
         ui.pendingMessage = "Tome pages updated.";
+    else if (std::holds_alternative<SocketItem>(command))
+        ui.pendingMessage = "Item socketed.";
     else if (std::holds_alternative<IdentifyItem>(command))
         ui.pendingMessage = "Item identified.";
     else if (std::holds_alternative<EquipBelt>(command))

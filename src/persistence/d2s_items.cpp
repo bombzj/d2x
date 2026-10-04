@@ -45,9 +45,8 @@ bool flag(const ClassicData &content, const ItemDefinition &item, const char *co
 }
 void validate(const D2sItem &item, const ItemDefinition &definition, const ClassicData &content) {
     require(item.code.size() >= 1 && item.code.size() <= 4, "base code");
-    require((item.flags & (0x2000000u | 0x10000u | 0x4000000u | 0x400000u)) == 0,
-            "ear, gamble, runeword or ethereal item");
-    require(item.mode == 0 || item.mode == 1 || item.mode == 2 || item.mode == 4, "location");
+    require((item.flags & (0x2000000u | 0x10000u)) == 0, "ear or gamble item");
+    require(item.mode == 0 || item.mode == 1 || item.mode == 2 || item.mode == 4 || item.mode == 6, "location");
     require(bool(item.flags & compact) == flag(content, definition, "compactsave"), "compact flag");
     require(item.quality >= 1 && item.quality <= 7, "quality");
     require(item.level >= 1 && item.level <= 99, "item level");
@@ -57,6 +56,11 @@ void validateAddedProperties(const D2sItem &item, const ItemDefinition &definiti
     require(bool(item.flags & 0x800u) == bool(item.sockets), "socket flag/count mismatch");
     require(item.sockets <= unsigned(std::max(0, definition.base.sockets.value_or(0))) &&
         (!item.sockets || !(item.flags & compact)), "socket count or compact sockets");
+    require(item.socketedItems.size() <= item.sockets && item.socketedItems.size() <= 6, "socket children count");
+    require(item.mode != 6 || (definition.equipment.isType("sock") && item.socketedItems.empty() &&
+        !item.sockets && (item.flags & 0x10u)), "invalid socket child");
+    require(bool(item.flags & 0x4000000u) == bool(item.runewordId) &&
+        ((item.flags & 0x4000000u) || item.runewordStats.empty()), "runeword flag/identity");
     require(bool(item.flags & 0x1000000u) == !item.personalizedName.empty(), "personalization flag/name mismatch");
     require(item.personalizedName.size() <= 15 &&
         (item.personalizedName.empty() || (definition.personalizable && !(item.flags & compact))), "personalized item type/name");
@@ -103,7 +107,7 @@ D2sItemRead readD2sItem(std::span<const uint8_t> bytes, const ClassicData &conte
     item.flags = bits.read(32);
     item.format = bits.read(10);
     item.mode = bits.read(3);
-    require(item.mode <= 2 || item.mode == 4, "ground/socket item");
+    require(item.mode <= 2 || item.mode == 4 || item.mode == 6, "ground item");
     item.body = bits.read(4);
     item.x = bits.read(4);
     item.y = bits.read(4);
@@ -114,12 +118,13 @@ D2sItemRead readD2sItem(std::span<const uint8_t> bytes, const ClassicData &conte
     const auto *definition = content.items.find(item.code);
     require(definition != nullptr, "unknown base item");
     validate(item, *definition, content);
+    unsigned children = 0;
     if (item.flags & compact) {
         require(item.code != "gld", "loose gold in character inventory");
         if (flag(content, *definition, "quest") && flag(content, *definition, "questdiffcheck"))
             item.questDifficulty = unsigned(readValue(bits, content, 356));
     } else {
-        require(bits.read(3) == 0, "socketed children");
+        children = bits.read(3);
         item.seed = bits.read(32);
         item.level = bits.read(7);
         item.quality = bits.read(4);
@@ -148,6 +153,7 @@ D2sItemRead readD2sItem(std::span<const uint8_t> bytes, const ClassicData &conte
             break;
         }
     }
+    if (item.flags & 0x4000000u) item.runewordId = bits.read(16);
     if (item.flags & 0x1000000u) {
         for (unsigned i = 0; i < 16; ++i) {
             const auto character = bits.read(7);
@@ -173,9 +179,21 @@ D2sItemRead readD2sItem(std::span<const uint8_t> bytes, const ClassicData &conte
                 readStats(bits, content, bonus);
                 item.setStats[index] = std::move(bonus.stats);
             }
+        if (item.flags & 0x4000000u) {
+            D2sItem bonus; readStats(bits, content, bonus);
+            item.runewordStats = std::move(bonus.stats);
+        }
     }
     validateAddedProperties(item, *definition);
-    return {std::move(item), bits.size()};
+    require(children <= item.sockets && children <= 6 && (!children || item.mode != 6), "socket child count");
+    size_t consumed = bits.size();
+    for (unsigned index = 0; index < children; ++index) {
+        auto child = readD2sItem(bytes.subspan(consumed), content);
+        require(child.item.mode == 6 && child.item.x == index && child.item.y == 0, "socket child mode/order");
+        consumed += child.bytesRead;
+        item.socketedItems.push_back(std::move(child.item));
+    }
+    return {std::move(item), consumed};
 }
 Bytes writeD2sItem(const D2sItem &item, const ClassicData &content) {
     const auto *definition = content.items.find(item.code);
@@ -194,7 +212,7 @@ Bytes writeD2sItem(const D2sItem &item, const ClassicData &content) {
         if (flag(content, *definition, "quest") && flag(content, *definition, "questdiffcheck"))
             writeValue(bits, content, 356, item.questDifficulty);
     } else {
-        bits.write(0, 3); bits.write(item.seed, 32); bits.write(item.level, 7); bits.write(item.quality, 4);
+        bits.write(unsigned(item.socketedItems.size()), 3); bits.write(item.seed, 32); bits.write(item.level, 7); bits.write(item.quality, 4);
         bits.write(item.hasGraphic, 1);
         if (item.hasGraphic) bits.write(item.graphic, 3);
         bits.write(0, 1);
@@ -224,6 +242,7 @@ Bytes writeD2sItem(const D2sItem &item, const ClassicData &content) {
             break;
         }
     }
+    if (item.flags & 0x4000000u) bits.write(item.runewordId, 16);
     if (item.flags & 0x1000000u) {
         require(!item.personalizedName.empty() && item.personalizedName.size() <= 15, "personalized name length");
         for (unsigned char character : item.personalizedName) { require(character > 0 && character < 128, "personalized name character"); bits.write(character, 7); }
@@ -250,7 +269,18 @@ Bytes writeD2sItem(const D2sItem &item, const ClassicData &content) {
                 bonus.stats = stats;
                 writeStats(bits, content, bonus);
             }
+        if (item.flags & 0x4000000u) {
+            D2sItem bonus; bonus.stats = item.runewordStats;
+            writeStats(bits, content, bonus);
+        }
     }
-    return bits.bytes();
+    auto bytes = bits.bytes();
+    for (size_t index = 0; index < item.socketedItems.size(); ++index) {
+        const auto &child = item.socketedItems[index];
+        require(child.mode == 6 && child.x == index && child.y == 0, "socket child mode/order");
+        auto encoded = writeD2sItem(child, content);
+        bytes.insert(bytes.end(), encoded.begin(), encoded.end());
+    }
+    return bytes;
 }
 } // namespace d2x

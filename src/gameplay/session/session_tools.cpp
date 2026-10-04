@@ -17,7 +17,8 @@ void GameSessionImpl::spawnDebugItem(const DebugSpawnItem &command) {
     const auto *base = content_.items.find(command.code);
     auto ground = dropLocation();
     if (state().player.actions.dead || !base || !base->equipment.known ||
-        (base->family != ItemFamily::Weapon && base->family != ItemFamily::Armor) ||
+        (base->family == ItemFamily::Misc && !base->equipment.isType("sock") && !base->equipment.isType("scro") &&
+            !base->equipment.isType("ring") && !base->equipment.isType("amul")) ||
         command.level < 1 || command.level > 99 || !ground) {
         reject("Original equipment or a walkable drop location is unavailable.");
         return;
@@ -44,16 +45,29 @@ void GameSessionImpl::spawnDebugItem(const DebugSpawnItem &command) {
         generation.requiredLevel = record.requiredLevel;
         generation.propertyRolls = std::move(properties.values);
         random = properties.randomState;
+    } else if (command.quality == ItemQuality::Normal) {
+        if (!base->artAvailable) { reject("Original base item art is missing."); return; }
     } else {
-        reject("Debug item quality must be magic, rare, set or unique.");
+        reject("Unsupported debug item quality.");
         return;
+    }
+    const auto maximumSockets = unsigned(std::max(0, std::min({base->base.sockets.value_or(0),
+        base->base.socketsByLevel[command.level <= 25 ? 0 : command.level <= 40 ? 1 : 2], base->width * base->height, 6})));
+    const unsigned qualityCap = command.quality == ItemQuality::Normal ? maximumSockets :
+        command.quality == ItemQuality::Magic ? std::min(maximumSockets, 2u) : std::min(maximumSockets, 1u);
+    if (command.sockets > qualityCap || (command.sockets && base->maxStack > 1)) {
+        reject("Socket count exceeds the original base/level/quality limit."); return;
     }
     const auto previousRandom = inventory_.state_.creationRandom;
     inventory_.state_.creationRandom = random;
     auto created = inventory_.createItem(command.code, 1, *ground, unsigned(command.level), generation);
     if (!created) inventory_.state_.creationRandom = previousRandom;
     if (!created) { reject(inventoryErrorText(created.error)); return; }
-    inventory_.state_.items.at(created.item).identified = true;
+    inventory_.state_.items.at(created.item).identified = command.identified;
+    if (command.sockets) {
+        auto &item = inventory_.state_.items.at(created.item);
+        item.sockets = command.sockets; item.nativeFlags |= 0x800u;
+    }
     publishInventory(std::move(created), {});
 }
 void GameSessionImpl::activateMalus(const WorldObject &source) {

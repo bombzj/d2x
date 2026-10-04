@@ -13,10 +13,11 @@ InventoryError checkEquipmentRequirements(const ItemInstance &item, const ItemDe
         definition.equipment.requiredClass != actor.characterClass)
         return InventoryError::WrongClass;
     const int percent = requirementPercent();
-    auto requirement = [&](int base) { return std::max(0, base + base * percent / 100); };
+    auto requirement = [&](int base) { return std::max(0, base + base * percent / 100 -
+        ((item.nativeFlags & 0x400000u) ? 10 : 0)); };
     if (actor.strength < requirement(definition.base.requiredStrength.value_or(0)) ||
         actor.dexterity < requirement(definition.base.requiredDexterity.value_or(0)) ||
-        actor.level < std::max(definition.base.requiredLevel.value_or(0), item.requiredLevel))
+        actor.level < std::max({definition.base.requiredLevel.value_or(0), item.requiredLevel, item.socketRequiredLevel}))
         return InventoryError::RequirementsNotMet;
     return InventoryError::None;
 }

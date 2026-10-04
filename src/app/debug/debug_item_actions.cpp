@@ -37,6 +37,12 @@ void debugItemAction(const std::string &command, const nlohmann::json &request,
         result["container"] = session.playerContainers().cube.value;
         return;
     }
+    if (command == "cube-transmute") {
+        session.submit(TransmuteCube{}); session.tick(0); view.advance(0);
+        for (const auto &event : session.events())
+            if (const auto *failed = std::get_if<InteractionFailed>(&event)) throw std::runtime_error(failed->reason);
+        result["transmuted"] = true; return;
+    }
     if (command == "gold-transfer") {
         std::string action = request.at("action").get<std::string>();
         GoldAction kind = action == "deposit" ? GoldAction::Deposit :
@@ -56,7 +62,11 @@ void debugItemAction(const std::string &command, const nlohmann::json &request,
     }
     GameCommand intent;
     EntityId source;
-    if (command == "book-load") {
+    if (command == "item-socket") {
+        const auto &filler = item("source"); const auto &target = item("target");
+        source = filler.id; intent = SocketItem{{filler.id, request.value("sourceRevision", filler.revision)},
+            {target.id, request.value("targetRevision", target.revision)}};
+    } else if (command == "book-load") {
         const auto &scroll = item("scroll");
         const auto &book = item("book");
         source = scroll.id;
@@ -85,6 +95,9 @@ void debugItemAction(const std::string &command, const nlohmann::json &request,
     if (command == "book-load") {
         const auto &book = item("book");
         result["charges"] = book.charges;
+    } else if (command == "item-socket") {
+        const auto &target = item("target");
+        result["filled"] = target.socketedItems.size(); result["runewordRow"] = target.runewordRow;
     } else {
         const auto &target = item("target");
         result["identified"] = target.identified;

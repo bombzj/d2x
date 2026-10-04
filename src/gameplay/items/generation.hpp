@@ -17,5 +17,7 @@ struct ItemGeneration {
     int32_t rarePrefixRow = -1, rareSuffixRow = -1;
     std::vector<int32_t> propertyRolls;
     std::vector<ItemAffixInstance> affixes;
+    bool rollNaturalSockets = false;
+    int socketDifficulty = 0;
 };
 } // namespace d2x

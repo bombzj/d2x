@@ -52,7 +52,7 @@ struct DebugGrantGold {
 struct DebugGrantHireling {};
 struct DebugDropCube {};
 struct SubmitQuestItem { EntityId object; ItemHandle item; };
-struct DebugSpawnItem { std::string code; ItemQuality quality; int level = 1; };
+struct DebugSpawnItem { std::string code; ItemQuality quality; int level = 1; unsigned sockets = 0; bool identified = true; };
 struct DebugGrantExperience {
     uint64_t amount = 0;
 };
@@ -67,7 +67,7 @@ struct PickupItem {
 // UI supplies intentions; only the gameplay layer changes authoritative state.
 using GameCommand =
     std::variant<MoveTo, Attack, UseSkill, ToggleRun, SwitchWeaponSet, Interact, IdentifyWithCain, EndNpcConversation, TalkToNpc, ClaimAkaraRespec, ImbueItem, CompleteActOne, BuyVendorItem, SellVendorItem, DebugGrantGold, DebugDropCube, DebugSpawnItem, GoldTransaction, DebugGrantExperience, AllocateAttribute, AllocateSkill, BindSkillHotkey, SelectMouseSkill, DebugResetAttributes, DebugResetSkills, DebugUnlockWaypoints, DebugGrantShrine, Travel, MoveItem, SwapItems,
-                 SplitStack, MergeStacks, LoadBook, IdentifyItem, PickupItem, StopMoving, EquipBelt, UseItem, UseBeltColumn,
+                 SplitStack, MergeStacks, LoadBook, SocketItem, IdentifyItem, PickupItem, StopMoving, EquipBelt, UseItem, UseBeltColumn,
                  CloseStorage, TransferItem, UseExit, EquipItem, DebugKill, DebugSpawnMonster,
                  DebugDamageMonster, RespawnPlayer, RecoverPlayerCorpse, UseTownPortal, UseCainPortal, WaypointTravel, OpenGamble, RepairVendorItem,
                  OpenHirelingList, HireMercenary, EquipHirelingItem, DebugGrantHireling, ResurrectHireling, UseHirelingPotion, StopChannel, TransmuteCube, CompleteActTwo, SubmitQuestItem, SocketQuestItem, PersonalizeQuestItem>;

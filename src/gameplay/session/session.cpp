@@ -5,6 +5,7 @@
 #include "gameplay/simulation/simulation.hpp"
 #include "content/character/character_attributes.hpp"
 #include "content/items/item_properties.hpp"
+#include "content/items/socket_data.hpp"
 #include "content/monsters/monster_enchantment.hpp"
 #include "core/fingerprint.hpp"
 #include <algorithm>
@@ -112,9 +113,16 @@ GameSessionImpl::GameSessionImpl(Archives &archives, const WorldSelection &selec
         identified.identified = true; // Physical limits exist before identification.
         return resolveItemStats(content_, identified, 1);
     };
-    for (const auto &record : content_.uniqueItems)
-        if (record.carryOne)
-            inventory_.singleCarryUniques_.insert(int32_t(record.row));
+    // Carry metadata must not depend on the currently generatable special
+    // catalog (which excludes original level-110 event-only uniques).
+    if (const auto found = content_.tables.find("uniqueitems"); found != content_.tables.end())
+        for (size_t row = 0; row < found->second.rows().size(); ++row)
+            if (found->second.number(row, "enabled").value_or(0) &&
+                found->second.number(row, "carry1").value_or(0))
+                inventory_.singleCarryUniques_.insert(int32_t(row));
+    inventory_.prepareSockets_ = [this](ItemInstance &item, uint64_t &random) {
+        prepareSocketedItem(content_, item, random);
+    };
     playerContainers_ = inventory_.createPlayerContainers(state().player.id);
     refreshCharacter();
     simulation_->heal();
@@ -636,6 +644,9 @@ GameSessionImpl::GameSessionImpl(Archives &archives, const WorldSelection &selec
     fingerprint.add(content_.profile);
     fingerprint.add("quest-rules-v18-later-acts");
     fingerprint.add("player-corpse-rules-v1");
+    fingerprint.add("inventory-carry-rules-v2-native-quest-pairs");
+    fingerprint.add("potion-class-rules-v1-native-restoration");
+    fingerprint.add("socket-rules-v1-native-children-runewords");
     fingerprint.add("waypoint-rules-v1");
     fingerprint.add("map-rules-v9-native-trees-complete-groups");
     auto members = archives.used;

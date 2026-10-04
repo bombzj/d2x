@@ -28,7 +28,7 @@ EquipmentStats deriveEquipmentStats(const EquipmentLoadout &loadout,
             if (auto found = combat.armorPercent.find(item->id); found != combat.armorPercent.end()) {
                 if (!definition.base.maxDefense)
                     throw std::runtime_error("Unverified enhanced armor defense: " + definition.code);
-                armor = (int64_t(*definition.base.maxDefense) + 1) *
+                armor = int64_t(item->defense) *
                         std::max<int64_t>(0, 100 + found->second) / 100;
             }
             if (armor > std::numeric_limits<int>::max() - int64_t(result.defense))
@@ -68,6 +68,7 @@ EquipmentStats deriveEquipmentStats(const EquipmentLoadout &loadout,
         if (auto found = combat.weapons.find(item->id); found != combat.weapons.end()) own = found->second;
         int64_t baseLow = *minimum;
         int64_t baseHigh = *maximum;
+        if (item->nativeFlags & 0x400000u) { baseLow = baseLow * 3 / 2; baseHigh = baseHigh * 3 / 2; }
         if (item->quality == ItemQuality::Inferior) {
             baseLow = std::max<int64_t>(1, baseLow * 75 / 100);
             baseHigh = std::max<int64_t>(2, baseHigh * 75 / 100);

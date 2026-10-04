@@ -13,6 +13,8 @@
 
 物品定义由 `src/content/classic_data.cpp` 与 `lod_data.cpp` 从当前 MPQ 的 `misc.txt`、`weapons.txt`、`armor.txt` 运行时导入；读取资料片命名类型和 `TreasureClassEx`，旧试玩适配已移除。原表属于游戏资源。储物箱尺寸依据 `inventory.txt` Big Bank Page 1；原掉落生成与物品效果的覆盖以 [物品完成度](../gameplay/items/SUPPORT.md) 为准。
 
+2026-10-04 物品复核先读本地参考和当前 MPQ：D2MOO 同下述固定快照的 `ITEMS/ItemMode.cpp::sub_6FC425F0/sub_6FC428F0`、`D2GAME_ITEMSOCKET_PlaceItem_6FC497E0` 核对拾取／限带与镶嵌；`D2Common/Items/Items.cpp` 核对 socket filler／孔／符文之语及两项职业药剂倍率，`ItemMods.cpp` 核对 gem／rune 三组属性；`DataTbls/HoradricCube.cpp` 与 `D2Game/PLAYER/PlrTrade.cpp` 核对配方字符串、类型／数量匹配、op 和输出。`D2Inventory` 核对孔内子物品顺序，`PlrSave`／`Items` 核对根记录计数、mode=6、符文之语 TBL 身份及独立属性位流。限带、药剂与镶嵌规则独立适配为 C++，沿用 D2MOO MIT 归属，实际 quest／carry1／物品数值仍读当前 MPQ。OpenDiablo2 固定快照的 `cubemain_record.go`、`runeword_loader.go` 只交叉核对字段结构：class 语法注释为假设，符文之语属性循环把列名当 code，不能原样复制；Diablerie 的 UniqueItemLoader／Item／Player.Use 交叉核对字段与说明，方块 Use 分支为空且部分说明用固定示例等级，不能作为完整规则依据。[暴雪 jewel 说明](https://classic.battle.net/diablo2exp/items/jewels.shtml)、[方块说明](https://classic.battle.net/diablo2exp/items/cube.shtml)只补充用途；参数覆盖／未实现边界见 [数据](../gameplay/items/DATA.md)、[支持](../gameplay/items/SUPPORT.md) 与 [方块](../gameplay/items/CUBE_AND_GOLD.md)。本批未复制参考源码、资源或导出表到源码目录；Windows Release 构建及有限镶嵌实机冒烟通过，范围见上述支持文档，未打包。
+
 包裹面板读取当前 MPQ 的 `data/global/ui/panel/invchar6.dc6`，按右侧面板分块拼接原版石框和格子，保留上方装备区域，物品详情以悬停提示呈现。该 DC6 与物品图标保留暴雪素材权利说明。
 
 ## 实际使用的开源项目
@@ -103,7 +105,7 @@ D2S 读写依据本地 D2MOO 的 `PlrSave2.h/.cpp`、`Items.cpp`、`ItemMods.cpp
 - [OpenDiablo2 MPQ Viewer](https://github.com/OpenDiablo2/MpqViewer)，其 `listfile.go` 引用 Zezula 的 Diablo II LOD 文件名表。开发时用于发现实际资源路径；运行时使用明确路径和本项目 MPQ 的内置文件名表。
 
 
-腰带阶段还使用 `ctrlpnl_popbelt.dc6`、`inv_belt.dc6`、`hlthmana.dc6`、`mediumbuttonblank.dc6`、`baskillicon.dc6` 以及 `potiondrink.wav`、`belt.wav`。腰带容量、自动入带及起始消耗品根据原 MPQ 的 `belts.txt`、`misc.txt`、`charstats.txt` 提取；技能图标帧取自 `skills.txt`。物品、自动入带标志和腰带容量已使用运行时导入；起始消耗品仍是按原表提取的配置；技能图标已改为运行时读取 Skills / SkillDesc，并非支持任意 MOD。
+腰带阶段曾使用 `ctrlpnl_popbelt.dc6`、`inv_belt.dc6`、`hlthmana.dc6`、`mediumbuttonblank.dc6`、`baskillicon.dc6` 以及 `potiondrink.wav`、`belt.wav`。当前腰带容量、自动入带及起始消耗品运行时读取原 MPQ 的 `belts.txt`、`misc.txt`、`charstats.txt`；技能图标读取当前职业的 Skills／SkillDesc，不再将野蛮人示例图当作所有职业图标。运行时导入并非支持任意 MOD，缺字段、规则或素材仍受对应消费者限制。
 
 药剂恢复量与基本行为参考 [暴雪 Arreat Summit 药剂资料](https://classic.battle.net/diablo2exp/items/potions.shtml)。该说明包含资料片年代的规则，不是经典试玩 1.04 的逐帧规范；项目使用的持续时长、混用队列和耐力增强详见 [腰带与物品使用](../gameplay/items/BELT_AND_CONSUMABLES.md)，不可据此宣称完整复刻。
 

@@ -18,7 +18,8 @@ void GameSessionImpl::spawnLoot(std::span<const LootDrop> drops, RegionId id, Ve
         if (position.x < 0 || position.y < 0 || position.x >= grid.width || position.y >= grid.height)
             position = origin;
         const bool questUnique = content_.staffRecipe.isComponent(drop.code) || content_.khalimRecipe.isWeapon(drop.code) || drop.code == content_.hellforge.hammer;
-        const auto generation = questUnique ? questItemGeneration(drop.code, inventory_.state_.creationRandom) : drop.generation;
+        auto generation = questUnique ? questItemGeneration(drop.code, inventory_.state_.creationRandom) : drop.generation;
+        generation.socketDifficulty = state().population.difficulty;
         auto result = inventory_.createItem(drop.code, drop.quantity, GroundLocation{id, position},
                             drop.level, generation, origin);
         if (result.error == InventoryError::NoSpace) {

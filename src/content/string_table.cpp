@@ -20,7 +20,7 @@ std::string field(const Bytes &bytes, size_t offset, size_t limit) {
     return {reinterpret_cast<const char *>(bytes.data() + offset), length};
 }
 void merge(const Bytes &bytes, std::map<std::string, std::string, std::less<>> &entries,
-           std::map<int, std::string> &indexed, int base) {
+           std::map<int, std::string> &indexed, std::map<std::string, int, std::less<>> &indices, int base) {
     if (bytes.size() < 21 || number(bytes, 8, 1) > 1 || number(bytes, 17, 4) != bytes.size())
         throw std::runtime_error("Invalid MPQ string table header");
     const auto nodes = number(bytes, 2, 2), buckets = number(bytes, 4, 4);
@@ -38,14 +38,17 @@ void merge(const Bytes &bytes, std::map<std::string, std::string, std::less<>> &
         auto key = field(bytes, keyOffset, bytes.size() - keyOffset);
         auto value = field(bytes, textOffset, textLength);
         indexed[base + int(number(bytes, node + 1, 2))] = value;
-        if (!key.empty()) entries[std::move(key)] = std::move(value);
+        if (!key.empty()) {
+            indices[key] = base + int(number(bytes, node + 1, 2));
+            entries[std::move(key)] = std::move(value);
+        }
     }
 }
 } // namespace
 ClassicStrings::ClassicStrings(Archives &archives) {
     for (const auto &[name, base] : {std::pair{"string", 0}, {"expansionstring", 20000}, {"patchstring", 10000}}) {
         auto path = "data/local/lng/eng/" + std::string(name) + ".tbl";
-        if (archives.contains(path)) merge(archives.read(path), entries_, indexed_, base);
+        if (archives.contains(path)) merge(archives.read(path), entries_, indexed_, indices_, base);
     }
 }
 std::string_view ClassicStrings::find(std::string_view key) const {
@@ -55,5 +58,9 @@ std::string_view ClassicStrings::find(std::string_view key) const {
 std::string_view ClassicStrings::find(int index) const {
     auto found = indexed_.find(index);
     return found == indexed_.end() ? std::string_view{} : found->second;
+}
+int ClassicStrings::index(std::string_view key) const {
+    auto found = indices_.find(key);
+    return found == indices_.end() ? -1 : found->second;
 }
 } // namespace d2x

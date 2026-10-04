@@ -1,5 +1,6 @@
 #include "gameplay/session/session_impl.hpp"
 #include "content/items/item_grades.hpp"
+#include "content/items/socket_data.hpp"
 #include <algorithm>
 #include <set>
 #include <stdexcept>
@@ -17,7 +18,23 @@ void GameSessionImpl::validateItemProperties(const CharacterSaveData &snapshot) 
                      value <= std::max(*property.minimum, *property.maximum)
                    : value == property.minimum.value_or(0);
     };
+    std::vector<const ItemInstance *> instances;
     for (const auto &[id, item] : snapshot.inventory.items) {
+        instances.push_back(&item);
+        for (const auto &child : item.socketedItems) instances.push_back(&child);
+    }
+    for (const auto *instance : instances) {
+        const auto &item = *instance;
+        requireItem(item.socketRequiredLevel == socketRequiredLevel(content_, item), "socket level requirement");
+        const auto *word = matchRuneword(content_, item);
+        requireItem(item.runewordRow == (word ? word->row : -1) &&
+            bool(item.nativeFlags & 0x4000000u) == bool(word) && (word || item.runewordStats.empty()), "runeword identity");
+        std::set<std::pair<int, int>> runeStats;
+        for (const auto &stat : item.runewordStats)
+            requireItem(stat.id >= 0 && stat.id < 511 && stat.parameter >= 0 &&
+                runeStats.emplace(stat.id, stat.parameter).second &&
+                std::any_of(content_.itemStats.begin(), content_.itemStats.end(),
+                    [&](const auto &definition) { return definition.id == stat.id; }), "runeword stat identity");
         if (item.nativeProperties) {
             requireItem(item.propertyRolls.empty(), "native property rolls");
             auto validateStats = [&](const auto &stats) {

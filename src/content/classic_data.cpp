@@ -8,6 +8,7 @@
 #include "content/items/item_appearance.hpp"
 #include "content/items/item_affixes.hpp"
 #include "content/items/item_properties.hpp"
+#include "content/items/socket_data.hpp"
 #include "content/items/item_projectiles.hpp"
 #include "content/skills/skill_animation.hpp"
 #include "content/items/item_consumables.hpp"
@@ -45,6 +46,8 @@ ClassicData loadClassicData(Archives &archives) {
                    DataTable(archives.read(std::string("data/global/excel/") + treasureName + ".txt")));
     {
         tables.emplace("cubemain", DataTable(archives.read("data/global/excel/cubemain.txt")));
+        tables.emplace("gems", DataTable(archives.read("data/global/excel/gems.txt")));
+        tables.emplace("runes", DataTable(archives.read("data/global/excel/runes.txt")));
         tables.emplace("books", DataTable(archives.read("data/global/excel/books.txt")));
         tables.emplace("shrines", DataTable(archives.read("data/global/excel/shrines.txt")));
         tables.emplace("monlvl", DataTable(archives.read("data/global/excel/monlvl.txt")));
@@ -77,6 +80,8 @@ ClassicData loadClassicData(Archives &archives) {
                                 {"weapons", ItemFamily::Weapon},
                                 {"armor", ItemFamily::Armor}}) {
         const auto &table = tables.at(name);
+        if (!table.has("quest"))
+            throw std::runtime_error("Item base table lacks original quest column: " + std::string(name));
         for (size_t row = 0; row < table.rows().size(); ++row) {
             auto number = [&](std::string_view key) { return table.number(row, key); };
             auto value = [&](std::string_view key) { return std::string(table.value(row, key)); };
@@ -88,6 +93,8 @@ ClassicData loadClassicData(Archives &archives) {
             const auto displayName = strings.find(nameKey.empty() ? item.code : nameKey);
             item.name = displayName.empty() ? value("name") : std::string(displayName);
             item.family = family;
+            item.questTag = number("quest").value_or(0);
+            item.gemApplyType = number("gemapplytype").value_or(-1);
             item.personalizable = number("nameable").value_or(0) != 0 && !number("compactsave").value_or(0);
             if (family == ItemFamily::Misc) item.betterGem = value("bettergem");
             item.width = number("invwidth").value_or(0);
@@ -201,6 +208,7 @@ ClassicData loadClassicData(Archives &archives) {
     }
     loadItemAppearances(items, tables, armorTypes);
     loadEquipmentDefinitions(items, tables.at("itemtypes"), tables);
+    loadQuestItemCarryRules(items);
     for (auto &item : items)
         if (std::any_of(item.inventoryIcons.begin(), item.inventoryIcons.end(),
                         [&](const auto &icon) { return !archives.contains(icon); }))
@@ -358,6 +366,7 @@ ClassicData loadClassicData(Archives &archives) {
     loadItemConsumables(data);
     {
         loadPropertyData(data);
+        loadSocketData(data, strings);
         loadItemGrades(data);
         loadSpecialItemData(data);
         auto resolveSpecialArt = [&](SpecialItemRecord &record) {

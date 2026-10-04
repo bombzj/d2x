@@ -43,6 +43,9 @@ struct UseItem {
 struct LoadBook {
     ItemHandle scroll, book;
 };
+struct SocketItem {
+    ItemHandle filler, host;
+};
 struct IdentifyItem {
     ItemHandle source, target;
 };

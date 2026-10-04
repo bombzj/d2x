@@ -11,7 +11,7 @@ void loadSpecialItemData(ClassicData &data) {
     auto sets = data.tables.find("setitems");
     auto setDefinitions = data.tables.find("sets");
     if (unique != data.tables.end())
-        for (auto column : {"index", "version", "enabled", "rarity", "lvl", "code"})
+        for (auto column : {"index", "version", "enabled", "rarity", "lvl", "code", "carry1"})
             if (!unique->second.has(column))
                 throw std::runtime_error("UniqueItems lacks field: " + std::string(column));
     if (sets != data.tables.end())

@@ -25,7 +25,12 @@ struct ContainerLocation {
     Cell cell;
     auto operator<=>(const ContainerLocation &) const = default;
 };
-using ItemLocation = std::variant<GroundLocation, ContainerLocation>;
+struct SocketLocation {
+    EntityId host;
+    unsigned index = 0;
+    auto operator<=>(const SocketLocation &) const = default;
+};
+using ItemLocation = std::variant<GroundLocation, ContainerLocation, SocketLocation>;
 struct AutoPlace {
     EntityId container;
 };
@@ -57,6 +62,11 @@ struct ItemInstance {
     unsigned nativeQuestDifficulty = 0;
     unsigned nativeMaxDurability = 0;
     unsigned sockets = 0;
+    // Children are owned only by the host, never also present in InventoryState.items.
+    std::vector<ItemInstance> socketedItems;
+    int socketRequiredLevel = 0;
+    int32_t runewordRow = -1;
+    std::vector<SavedStat> runewordStats;
     std::string personalizedName;
     ItemLocation location;
     ItemHandle handle() const { return {id, revision}; }

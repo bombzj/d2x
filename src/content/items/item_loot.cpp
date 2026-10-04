@@ -191,6 +191,7 @@ LootPlan planItemLoot(const ClassicData &data, const DataTable &ratios, std::str
                 }
                 quantity = std::max(1u, unsigned(*minimum) + below(unsigned(*maximum - *minimum)));
             }
+            generation.rollNaturalSockets = true;
             plan.drops.push_back({item->code, quantity, {2, 3}, unsigned(itemLevel),
                                   std::move(generation)});
             return plan.drops.size() < 6;

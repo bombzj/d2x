@@ -10,7 +10,9 @@ namespace d2x {
 class Archives;
 struct NpcDialogues;
 class ItemCatalog;
+struct ItemDefinition;
 class DataTable;
+void loadQuestItemCarryRules(std::vector<ItemDefinition> &items);
 struct PrisonOfIceContent {
     std::string potion, scroll;
     std::map<std::string, std::array<std::vector<std::string>, 3>, std::less<>> rewards;

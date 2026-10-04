@@ -13,6 +13,7 @@ class InventoryService {
     ItemCatalog catalog_;
     InventoryState state_;
     std::function<std::vector<ResolvedItemStat>(const ItemInstance &)> itemProperties_;
+    std::function<void(ItemInstance &, uint64_t &)> prepareSockets_;
     // World collision query only; item occupancy is checked against this service's state,
     // including private equipment transaction drafts.
     std::function<bool(const GroundLocation &, const GroundLocation &)> groundPlacement_;
@@ -112,6 +113,8 @@ class InventoryService {
     InventoryResult merge(const MergeStacks &command, const InventoryAccess &access);
     InventoryError preview(const LoadBook &command, const InventoryAccess &access) const;
     InventoryResult loadBook(const LoadBook &command, const InventoryAccess &access);
+    InventoryError preview(const SocketItem &command, const InventoryAccess &access) const;
+    InventoryResult socket(const SocketItem &command, const InventoryAccess &access);
     InventoryResult consumeBookCharge(ItemHandle book, const InventoryAccess &access);
     InventoryResult consume(ItemHandle item, unsigned quantity, const InventoryAccess &access);
     // Trusted combat consumption; ordinary UI consume cannot address equipment slots.

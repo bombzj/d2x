@@ -22,7 +22,7 @@ std::optional<unsigned> itemTradePrice(const ClassicData &data, const ItemInstan
             for (const auto &operation : found->operations)
                 switch (operation.function) {
                 case 1: case 2: case 3: case 4: case 5: case 6: case 7: case 8:
-                case 9: case 10: case 15: case 16: case 17: case 20: case 21: case 22: break;
+                case 9: case 10: case 14: case 15: case 16: case 17: case 20: case 21: case 22: case 23: case 24: break;
                 default: return false;
                 }
         }
@@ -48,10 +48,10 @@ std::optional<unsigned> itemTradePrice(const ClassicData &data, const ItemInstan
         ? std::clamp(int(definition->maxStack) + statValue("item_extra_stack"), 1, 511) : 1;
     const unsigned baseDurability = item.quality == ItemQuality::Inferior && definition->maxDurability
         ? std::max(1u, definition->maxDurability / 3) : definition->maxDurability;
-    const int maxDurability = baseDurability ? std::clamp(
+    const int maxDurability = item.nativeProperties ? int(item.nativeMaxDurability) : baseDurability ? std::clamp(
         int(baseDurability) * (100 + statValue("item_maxdurability_percent")) / 100 +
         statValue("maxdurability"), 1, 255) : 0;
-    if (repair && (!definition->equipment.repairable ||
+    if (repair && ((item.nativeFlags & 0x400000u) || !definition->equipment.repairable ||
         (!definition->equipment.throwable && statValue("item_indesctructible")))) return 0;
     int64_t base = *definition->base.cost;
     if (definition->family == ItemFamily::Armor && definition->base.maxDefense.value_or(0) > 0)
@@ -98,6 +98,11 @@ std::optional<unsigned> itemTradePrice(const ClassicData &data, const ItemInstan
         }
     if (item.quality == ItemQuality::Inferior) base /= 2;
     base += bonusCost / divisor + affixCost / divisor;
+    for (const auto &child : item.socketedItems) {
+        const auto *filler = data.items.find(child.definition);
+        if (!filler || !filler->base.cost || *filler->base.cost < 0) return {};
+        base += *filler->base.cost / 2;
+    }
     if (repair) {
         if (definition->equipment.throwable && definition->maxStack > 1) {
             if (item.quantity >= unsigned(stack) || statValue("item_replenish_quantity")) return 0;

@@ -20,6 +20,8 @@ void SceneView::drawItemText(std::vector<ItemTextLine> lines, ItemQuality qualit
     for (auto &line : lines) {
         text.push_back(std::move(line.text));
         colors.push_back(line.tone == ItemTextTone::Name ? itemColor(quality)
+            : line.tone == ItemTextTone::RunewordName ? Color{199, 179, 119, 255}
+            : line.tone == ItemTextTone::SocketedName ? Color{128, 128, 128, 255}
             : line.tone == ItemTextTone::Property ? Color{105, 105, 255, 255}
             : line.tone == ItemTextTone::Error ? RED : WHITE);
     }
