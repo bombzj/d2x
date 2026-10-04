@@ -16,7 +16,7 @@ bool GameSessionImpl::dispatchCommands() {
             std::holds_alternative<PickupItem>(command) || std::holds_alternative<Interact>(command) ||
             std::holds_alternative<Travel>(command) || std::holds_alternative<UseExit>(command) ||
             std::holds_alternative<UseTownPortal>(command) || std::holds_alternative<UseCainPortal>(command) ||
-            std::holds_alternative<WaypointTravel>(command) || std::holds_alternative<RestartArea>(command))
+            std::holds_alternative<WaypointTravel>(command))
             pendingCorpse_ = {};
         std::visit(
             [&](const auto &intent) {
@@ -54,16 +54,6 @@ bool GameSessionImpl::dispatchCommands() {
                         cancelExit();
                         simulation_->execute(command);
                     }
-                } else if constexpr (std::is_same_v<T, RestartArea>) {
-                    if (state().player.actions.dead) return;
-                    cancelExit();
-                    cancelPickup();
-                    const auto &r = region();
-                    auto plan = population(r);
-                    simulation_->restartArea(r.map.spawn, plan.spawns);
-                    cancelInteraction();
-                    closeStorage();
-                    transitioned = true;
                 } else if constexpr (std::is_same_v<T, PickupItem>) {
                     cancelExit();
                     cancelInteraction();

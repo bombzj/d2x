@@ -35,7 +35,6 @@ class SoundBank {
     bool enabled = false;
 
   public:
-    bool muted = false;
     explicit SoundBank(Archives &archives);
     ~SoundBank();
     SoundBank(const SoundBank &) = delete;

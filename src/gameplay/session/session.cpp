@@ -50,6 +50,10 @@ GameSessionImpl::GameSessionImpl(Archives &archives, const WorldSelection &selec
     simulation_->state_.player.character.name = std::move(characterName);
     characterDefinition_ = definitionFor(state().player.character.characterClass);
     simulation_->state_.population = population;
+    // WAYPOINTS_AllocWaypointData always activates waypoint zero; resolve its
+    // level through the current MPQ instead of naming the Act I town here.
+    for (const auto &[id, level] : worldContent_.levels())
+        if (level.waypoint == 0) simulation_->state_.waypoints.emplace(RegionId(id), -1.f);
     simulation_->hirelingBossDamagePercent_ = content_.hirelingBossDamagePercent.at(size_t(population.difficulty));
     simulation_->lifeStealDivisor_ = content_.lifeStealDivisor.at(size_t(population.difficulty));
     simulation_->manaStealDivisor_ = content_.manaStealDivisor.at(size_t(population.difficulty));
@@ -632,6 +636,7 @@ GameSessionImpl::GameSessionImpl(Archives &archives, const WorldSelection &selec
     fingerprint.add(content_.profile);
     fingerprint.add("quest-rules-v18-later-acts");
     fingerprint.add("player-corpse-rules-v1");
+    fingerprint.add("waypoint-rules-v1");
     auto members = archives.used;
     for (const auto &member : members) {
         fingerprint.add(member);

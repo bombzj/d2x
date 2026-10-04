@@ -145,7 +145,7 @@ class RenderTarget {
 int runGame(int argc, char **argv) {
     auto options = parseOptions(argc, argv);
     if (options.help) {
-        std::cout << "D2X: --mpq <folder|archive> --level <Act I ID> --variant <0-5> --maps "
+        std::cout << "D2X: --mpq <folder|archive> --level <Act I ID> --variant <0-5> "
                      "--preset <LvlPrest Def> --level-type <LvlTypes ID> "
                      "--map <complete preset DS1> --region <scene index> "
                      "--difficulty <normal|nightmare|hell> --population-seed <uint32> "
@@ -284,9 +284,8 @@ int runGame(int argc, char **argv) {
                 preferencesDirty = !saveClientPreferences(preferences);
                 preferencesRetryAt = GetTime() + 2;
             };
-            view.ui().travelMenu = options.maps;
             view.ui().inventory.open = options.inventory;
-            if (options.skills && !options.inventory && !options.stash && !options.maps)
+            if (options.skills && !options.inventory && !options.stash)
                 view.ui().skillTreeOpen = true;
             if (options.stash) {
                 bool found = false;

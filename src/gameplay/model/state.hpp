@@ -33,6 +33,7 @@ struct WorldState {
     TownPortalState portal;
     std::vector<TownPortalState> publicPortals;
     uint64_t nextPortalRevision = 0;
+    // Negative activation time denotes a waypoint already open before this game.
     std::map<RegionId, float> waypoints;
 };
 } // namespace d2x

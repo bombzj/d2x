@@ -10,6 +10,7 @@
 #include <cmath>
 #include <ctime>
 #include <iomanip>
+#include <iostream>
 #include <sstream>
 #include <stdexcept>
 
@@ -52,9 +53,13 @@ void waypoints(CharacterSaveData &snapshot, D2sFixedSections &sections, const Cl
         const auto bit = uint8_t(1u << (*waypoint % 8));
         if (writing) {
             if (snapshot.waypoints.contains(RegionId(*id))) value |= bit;
-        } else if (value & bit) {
+        } else if ((value & bit) || *waypoint == 0) {
             require(*id >= 1 && *id < 137, "unknown waypoint level");
-            snapshot.waypoints.emplace(RegionId(*id), 0.f);
+            // WAYPOINTS_CopyAndValidateWaypointData restores the mandatory
+            // first bit. Report deficient older saves; never rewrite on read.
+            if (*waypoint == 0 && !(value & bit))
+                std::cerr << "D2X: waypoint zero was inactive in the save; original mandatory activation restored.\n";
+            snapshot.waypoints.emplace(RegionId(*id), -1.f);
         }
     }
 }
@@ -272,7 +277,10 @@ Bytes encodeSave(const CharacterSaveData &source, const ClassicData &content) {
         sections.quests[4] = 6; putWord(sections.quests, 8, 298);
         sections.waypoints[0] = 'W'; sections.waypoints[1] = 'S'; sections.waypoints[2] = 1;
         putWord(sections.waypoints, 6, 80);
-        for (size_t difficulty = 0; difficulty < 3; ++difficulty) putWord(sections.waypoints, 8 + difficulty * 24, 0x102);
+        for (size_t difficulty = 0; difficulty < 3; ++difficulty) {
+            putWord(sections.waypoints, 8 + difficulty * 24, 0x102);
+            sections.waypoints[10 + difficulty * 24] |= 1;
+        }
         sections.introductions[0] = 1; sections.introductions[1] = 0x77; sections.introductions[2] = 52;
         header.hotkeys.fill(UINT32_MAX); header.appearance.fill(0xFF); header.colors.fill(0xFF);
     }

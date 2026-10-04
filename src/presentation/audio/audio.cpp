@@ -39,7 +39,7 @@ void SoundBank::play(const std::string &name, uint64_t frame) {
     if (hasEmitterSound(name)) return;
     if (const auto group = originalGroups_.find(name); group != originalGroups_.end()) {
         auto &sound = group->second;
-        if (!enabled || muted || sound.sounds.empty()) return;
+        if (!enabled || sound.sounds.empty()) return;
         if (sound.lastStart && frame >= *sound.lastStart && frame - *sound.lastStart < sound.compound) return;
         const auto &variant = sound.sounds[limitedRandom(groupRandom_, uint32_t(sound.sounds.size()))];
         if (variant.deferInstance && IsSoundPlaying(variant.sound)) return;
@@ -51,7 +51,7 @@ void SoundBank::play(const std::string &name, uint64_t frame) {
         return;
     }
     auto it = sounds.find(name);
-    if (enabled && !muted && it != sounds.end())
+    if (enabled && it != sounds.end())
         PlaySound(it->second);
 }
 void SoundBank::registerOriginal(Archives &archives, std::string key, std::string_view path, float volume) {

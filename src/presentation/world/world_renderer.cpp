@@ -68,10 +68,14 @@ const Sprite *SceneView::objectSprite(const WorldObject &object, RegionId region
         size_t mode = 0;
         float elapsed = 0;
         if (activated != session_.state().waypoints.end()) {
-            elapsed = std::max(0.f, session_.state().time - activated->second);
-            const float duration = object.animationRules[1].frames / object.waypointFps[1];
-            mode = elapsed < duration ? 1 : 2;
-            if (mode == 2) elapsed -= duration;
+            if (activated->second < 0) {
+                mode = 2; elapsed = session_.state().time;
+            } else {
+                elapsed = std::max(0.f, session_.state().time - activated->second);
+                const float duration = object.animationRules[1].frames / object.waypointFps[1];
+                mode = elapsed < duration ? 1 : 2;
+                if (mode == 2) elapsed -= duration;
+            }
         }
         const auto &animation = waypoint->second[mode];
         const auto &rule = object.animationRules[mode];

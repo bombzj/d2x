@@ -34,11 +34,4 @@ void softAdditiveSprite(const Sprite *sprite, Vec position, Color tint = WHITE);
 void spriteShadow(const Sprite *sprite, Vec position);
 void frame(Rectangle bounds, Color border = gold);
 void diamond(Vec position, float radius, Color color);
-inline constexpr int worldPageSize = 8;
-inline Rectangle travelSlot(int i) {
-    return {W / 2.f - 325, 144.f + i * 49, 650, 44};
-}
-inline Rectangle travelPageButton(bool next) {
-    return {W / 2.f + (next ? 200.f : -325.f), 546, 125, 30};
-}
 } // namespace d2x

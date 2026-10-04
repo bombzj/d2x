@@ -17,6 +17,8 @@
 
 ## 实际使用的开源项目
 
+传送点初始化／恢复核对本地 D2MOO `D2Common/src/D2Waypoints.cpp::WAYPOINTS_AllocWaypointData`／`WAYPOINTS_CopyAndValidateWaypointData` 的第零点必选位，以及 `D2Game/src/OBJECTS/ObjMode.cpp::OBJECTS_OperateFunction23_Waypoint` 的激活与打开阶段。菜单字体变换结构核对 OpenDiablo2 `d2common/d2fileformats/d2pl2/pl2.go` 的 `TextColorShifts`，边框拼接沿 `d2core/d2ui/frame.go`；原图、TBL 标题、字体、调色板和变换表均只从当前 MPQ 读取。参考代码遵循下述固定版本／许可，不提交参考仓库或导出图像；实现与验收限制见 [地图基线](baseline/MAP.md#客户端显示与操作)。
+
 | 项目 | 用途 | 固定版本/来源 | 许可 |
 | --- | --- | --- | --- |
 | [raylib](https://github.com/raysan5/raylib) | 窗口、输入、OpenGL、音效、图片导出 | 5.5 / `c1ab645ca298a2801097931d1079b10ff7eb9df8` | zlib |

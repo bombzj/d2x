@@ -87,10 +87,7 @@ const TravelMenuView &LocalMapClient::travel(EntityId source, int act) const {
     if (travel_.revision == session_.viewRevision() && travel_.source == source && travel_.act == act) return travel_;
     TravelMenuView view;
     view.revision = session_.viewRevision(); view.actor = session_.state().player.id; view.source = source; view.act = act;
-    if (!source) {
-        for (const auto &entry : session_.worldEntries())
-            view.entries.push_back({entry.level, entry.name, entry.status, entry.missing, entry.destination});
-    } else {
+    if (source && waypointSource(source)) {
         std::vector<std::pair<int, TravelEntryView>> ordered;
         const auto &levels = session_.worldContent().levels();
         for (const auto &region : session_.regions()) {
@@ -99,7 +96,7 @@ const TravelMenuView &LocalMapClient::travel(EntityId source, int act) const {
                 record->second.waypoint < 0 || record->second.waypoint == 255) continue;
             const bool unlocked = session_.waypointUnlocked(region.definition.id);
             ordered.push_back({record->second.waypoint, {int(region.definition.id), region.definition.name,
-                unlocked ? "Activated" : "Not activated", {},
+                unlocked ? "Activated" : "Not activated",
                 unlocked ? std::optional<RegionId>{region.definition.id} : std::nullopt}});
         }
         std::sort(ordered.begin(), ordered.end(), [](const auto &a, const auto &b) {

@@ -50,7 +50,6 @@ struct MapSceneView {
 struct TravelEntryView {
     int level = 0;
     std::string name, status;
-    std::vector<std::string> missing;
     std::optional<RegionId> destination;
 };
 struct TravelMenuView {

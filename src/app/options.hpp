@@ -15,7 +15,7 @@ struct AppOptions {
     std::string debugPipe;
     bool debugRun = false;
     bool directGame = false;
-    bool hidden = false, help = false, inventory = false, stash = false, maps = false, skills = false;
+    bool hidden = false, help = false, inventory = false, stash = false, skills = false;
     int frameLimit = 0, region = -1;
     std::optional<uint32_t> seed;
     bool mapSeedExplicit = false, populationSeedExplicit = false;

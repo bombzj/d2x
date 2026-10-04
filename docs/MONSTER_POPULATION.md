@@ -6,7 +6,7 @@
 
 ## 使用
 
-双击 `Play.cmd`，由营地沿野外和洞口探索；Ctrl+F2 为开发目录。也可直接指定区域、难度和刷怪种子：
+双击 `Play.cmd`，由营地沿野外和洞口探索。也可直接指定区域、难度和刷怪种子：
 
 ```powershell
 .\build\bin\d2x.exe --level 25 --difficulty normal --population-seed 210

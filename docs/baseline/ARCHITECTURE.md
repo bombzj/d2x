@@ -85,7 +85,7 @@ NPC 对白／菜单／任务提示、两幕日志与商店／佣兵显示已接 
 
 扩展入口：
 
-- Travel 为开发目录／管道自由传送；WaypointTravel 为游戏传送，GameSession 校验两端激活与源点距离。SceneView.waypointSource 区分专用菜单与 Ctrl+F2 目录，首次交互发 WaypointActivated 而非直接开菜单。WorldState.waypoints 保存激活时间，表现层按 Objects 的 NU／OP（Operating）／ON（Opened）顺序及 FrameCnt／FrameDelta／CycleAnim／Start 计算动画阶段；普通物件共用这套只读播放规则，非循环段钳在末帧。
+- Travel 只供应用调试管道自由传送；WaypointTravel 为游戏传送，GameSession 校验两端激活与源点距离。地图客户端不再公开自由旅行或区域重置，SceneView.waypointSource 只标记正式传送点菜单。默认营地和读档已激活点直接为 ON，野外首次交互发 WaypointActivated，后续点击开菜单。WorldState.waypoints 保存本局激活时间或局前已开启标记，表现层按 Objects 的 NU／OP（Operating）／ON（Opened）顺序及 FrameCnt／FrameDelta／CycleAnim／Start 计算动画阶段；普通物件共用这套只读播放规则，非循环段钳在末帧。
 - `presentation/hud/waypoint_view.cpp` 拼接 MPQ 菜单美术，依据 `WorldCatalog` 的 `Levels.Waypoint` 排列目的地，点击只提交 `WaypointTravel`。NPC 字幕和紧凑菜单分别在 `npc_dialogue_view.cpp`、`npc_menu_view.cpp`；本地适配从原 `NpcDialogueCatalog` 准备投影，自动推进对白沿原权威事件，表现层不查询目录或创建 NPC 服务状态。
 - 回城卷轴 UseItem 在 session_consumables 中规划端点、消耗库存并替换 TownPortalState；UseTownPortal 走近后切区，营地返回关闭。蓝门仅作为本局状态派生图像，不混入静态 Region.objects；表现层按 Objects 的 OP 一次段、ON 循环段和 COF 透明绘制播放，读档新局不恢复蓝门。原野外传送点固定 LvlSub 片段由 outdoor 和 map_assembly 负责。
 

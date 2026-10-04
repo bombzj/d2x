@@ -15,10 +15,9 @@ struct WaypointTravel {
 struct UseExit {
     int slot = 0;
 };
-struct RestartArea {};
 struct UseTownPortal {
     uint64_t revision;
 };
 struct UseCainPortal {};
-using MapIntent = std::variant<Travel, WaypointTravel, UseExit, RestartArea, UseTownPortal, UseCainPortal>;
+using MapIntent = std::variant<WaypointTravel, UseExit, UseTownPortal, UseCainPortal>;
 } // namespace d2x

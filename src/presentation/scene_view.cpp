@@ -173,7 +173,7 @@ void SceneView::drawLighting() const {
                 if (activated != sim.waypoints.end()) {
                     const float duration = object.waypointFps[1] > 0
                         ? object.animationRules[1].frames / object.waypointFps[1] : 0;
-                    mode = sim.time - activated->second < duration ? 1 : 2;
+                    mode = activated->second >= 0 && sim.time - activated->second < duration ? 1 : 2;
                 }
             }
             appendObject(object.objectClass, mode, object.pos + offset);
@@ -604,10 +604,11 @@ void SceneView::advance(float dt) {
                     } else if (value.interaction == Interaction::Well) {
                         notice("Restored at: " + value.name);
                     } else if (value.interaction == Interaction::Travel) {
-                        view_.waypointSource = mapClient_.waypointSource(value.object) ? value.object : EntityId{};
-                        view_.waypointAct = mapView().act;
-                        view_.travelPage = 0;
-                        view_.travelMenu = true;
+                        if (mapClient_.waypointSource(value.object)) {
+                            view_.waypointSource = value.object;
+                            view_.waypointAct = mapView().act;
+                            view_.travelMenu = true;
+                        }
                       } else if (value.interaction == Interaction::Heal ||
                                  value.interaction == Interaction::Talk) {
                           assets_.loadInventoryArt(session_);

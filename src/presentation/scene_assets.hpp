@@ -155,6 +155,8 @@ class SceneAssets {
         vendorButtons, vendorConfirm, waypointBorder, waypointPanel, waypointTabs, waypointIcons,
         storagePanel, cubePanel, orificePanel, orificeButtons, beltPanel, beltSocket, orbs,
         globeOverlap, runButton, button;
+    std::string waypointTitle;
+    std::array<ClassicFont, 3> waypointFonts; // Native PL2 white, blue and dark grey.
     std::array<GpuAnimation, size_t(QuestId::Count)> questIcons;
     std::array<Rectangle, size_t(QuestId::Count)> questFaces{};
     std::array<GpuAnimation, 7> tombSymbols;

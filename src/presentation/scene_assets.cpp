@@ -35,6 +35,27 @@ void loadFont(Graphics &graphics, Archives &archives, ClassicFont &font, std::st
     }
     font.ready = true;
 }
+void loadWaypointFonts(Graphics &graphics, Archives &archives, const ClassicFont &base,
+                       std::array<ClassicFont, 3> &fonts) {
+    // OpenDiablo2 PL2.TextColorShifts: thirteen RGB triples follow the blend
+    // transforms at 0x6B600, then thirteen 256-entry font index transforms.
+    constexpr size_t shifts = 0x6B600 + 13 * 3;
+    const auto palette = archives.read("data/global/palette/sky/pal.pl2");
+    const auto *glyphs = graphics.animation("data/local/font/latin/font16.dc6");
+    if (palette.size() < shifts + 13 * 256 || !glyphs)
+        throw std::runtime_error("Original waypoint font transforms are missing");
+    constexpr int colors[]{0, 3, 5};
+    for (size_t index = 0; index < fonts.size(); ++index) {
+        auto &font = fonts[index];
+        font = base;
+        font.glyphs.frames.clear();
+        for (auto glyph : glyphs->frames) {
+            for (auto &pixel : glyph.pixels)
+                if (pixel) pixel = palette[shifts + colors[index] * 256 + pixel];
+            font.glyphs.frames.push_back(graphics.upload(glyph));
+        }
+    }
+}
 } // namespace
 SceneAssets::SceneAssets(Archives &archives, const GameSession &session, const IMapAssetSource &source)
         : archives_(archives), graphics_(archives),
@@ -322,12 +343,17 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session, const I
          vendorConfirm.frames.empty()))
         throw std::runtime_error("Original vendor UI artwork is missing");
     waypointBorder = uiGraphics_.single("data/global/ui/panel/800borderframe.dc6");
-    waypointPanel = graphics_.single("data/global/ui/menu/waygatebackground.dc6");
-    waypointTabs = graphics_.single("data/global/ui/menu/expwaygatetabs.dc6");
-    waypointIcons = graphics_.single("data/global/ui/menu/waygateicons.dc6");
+    waypointPanel = uiGraphics_.single("data/global/ui/menu/waygatebackground.dc6");
+    waypointTabs = uiGraphics_.single("data/global/ui/menu/expwaygatetabs.dc6");
+    waypointIcons = uiGraphics_.single("data/global/ui/menu/waygateicons.dc6");
     if (waypointBorder.frames.size() < 10 || waypointPanel.frames.size() < 4 ||
-        waypointTabs.frames.size() < 8 || waypointIcons.frames.size() < 4)
+        waypointTabs.frames.size() < 10 || waypointIcons.frames.size() < 4)
         throw std::runtime_error("Original waypoint menu artwork is missing");
+    const auto title = session.content().itemStrings.find("waypointsheader");
+    if (title == session.content().itemStrings.end() || title->second.empty())
+        throw std::runtime_error("Original waypoint menu title is missing");
+    waypointTitle = title->second;
+    loadWaypointFonts(uiGraphics_, archives, font, waypointFonts);
     storagePanel = uiGraphics_.single("data/global/ui/panel/tradestash.dc6");
     if (storagePanel.frames.size() < 4)
         throw std::runtime_error("Original stash panel artwork is missing from the mounted MPQ");

@@ -168,8 +168,8 @@ void SceneView::drawHud() const {
         const std::string subtitle = "ACT I  /  ORIGINAL MPQ ASSETS";
         painter_.label(subtitle, (worldWidth - painter_.measure(subtitle, 10)) / 2, 46, 10,
                        {137, 136, 112, 255});
-        painter_.label("Ctrl+F2 Map   TAB Map", W - 204, 191, 10, {153, 144, 118, 255});
-        painter_.label("Ctrl+F1 Help  M Sound", W - 204, 207, 10, {153, 144, 118, 255});
+        painter_.label("TAB Map", W - 204, 191, 10, {153, 144, 118, 255});
+        painter_.label("Ctrl+F1 Help", W - 204, 207, 10, {153, 144, 118, 255});
     }
     if (!sim.message.empty())
         painter_.centered(sim.message, H - HUD - 35, 16, {218, 176, 95, 255});
@@ -208,15 +208,13 @@ void SceneView::drawHelp() const {
                            "R                          Toggle walk / run",
                            "Tab / V                    Automap / Switch map side",
                            "Ctrl+F3 / Ctrl+F4          Collision / Walk to stash",
-                           "P / M                      Pause / Mute",
-                           "R                          Restore life",
-                           "F11 / Ctrl + F11           Save / Restart in town",
+                           "F11 / Ctrl + F11           Save / Load",
                            "F12 / Ctrl+F12             Map names / Screenshot",
                            "Ctrl+F1                   Close this panel"};
     for (int i = 0; i < int(std::size(lines)); i++)
         painter_.label(lines[i], W / 2 - 194, 216 + i * 23, 12,
                        i < 4 ? parchment : Color{150, 148, 132, 255});
-    painter_.centered("Ctrl+Alt+G/E: gold/XP   A/T: reset points   C: next class   W: waypoints", 575, 11, gold);
+    painter_.centered("Ctrl+Alt+G/E: gold/XP   A/T: reset points   W: waypoints", 575, 11, gold);
 }
 void SceneView::draw(Vec mouse) const {
     const auto &map = session_.map();
@@ -295,8 +293,6 @@ void SceneView::draw(Vec mouse) const {
     if (view_.shopOpen) drawNpcShop(mouse);
     drawInventory(mouse);
     drawBelt(mouse);
-    if (view_.pause)
-        painter_.centered("PAUSED", H / 2 - 40, 32, gold);
     if (sim.player.actions.dead) {
         painter_.centered("YOU HAVE DIED", 250, 32, {187, 46, 30, 255});
         painter_.centered("PRESS ESC TO CONTINUE", 300, 32, {187, 46, 30, 255});
@@ -305,37 +301,6 @@ void SceneView::draw(Vec mouse) const {
         drawHelp();
     if (view_.travelMenu && view_.waypointSource)
         drawWaypointMenu(mouse);
-    else if (view_.travelMenu) {
-        DrawRectangle(0, 0, W, H, {0, 0, 0, 175});
-        frame({W / 2.f - 345, 55, 690, 545});
-        painter_.centered("ACT I MAP CATALOG", 76, 24, gold);
-        painter_.centered("Developer catalog / Outdoors, caves and Tower connect in the world", 112, 14);
-        const auto entries = travelEntries();
-        int pages = (int(entries.size()) + worldPageSize - 1) / worldPageSize;
-        for (int i = 0; i < worldPageSize && view_.travelPage * worldPageSize + i < int(entries.size());
-             i++) {
-            const auto &entry = entries[view_.travelPage * worldPageSize + i];
-            Rectangle r = travelSlot(i);
-            bool current = entry.destination && *entry.destination == session_.region().definition.id;
-            frame(r, current ? gold : Color{70, 66, 53, 255});
-            std::string title = (entry.level ? std::to_string(entry.level) + "  " : "") + entry.name;
-            painter_.label(title, int(r.x) + 12, int(r.y) + 5, 16,
-                           current             ? gold
-                           : entry.destination ? parchment
-                                               : Color{145, 139, 126, 255});
-            auto status = entry.status;
-            if (!entry.missing.empty())
-                status += " (" + std::to_string(entry.missing.size()) + " missing files)";
-            painter_.label(status, int(r.x) + 12, int(r.y) + 25, 12);
-        }
-        for (bool next : {false, true}) {
-            auto r = travelPageButton(next);
-            frame(r);
-            painter_.label(next ? "NEXT >" : "< PREVIOUS", int(r.x) + 12, int(r.y) + 8, 14);
-        }
-        painter_.centered(
-            std::to_string(view_.travelPage + 1) + " / " + std::to_string(pages) + "   PgUp / PgDn", 554, 14);
-    }
     drawSkillControls(mouse);
     if (view_.npcMenu) drawNpcMenu(mouse);
     drawHirelingList(mouse);

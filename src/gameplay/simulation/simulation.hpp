@@ -231,7 +231,6 @@ class Simulation {
     AreaState leaveArea();
     void enterArea(const Grid &grid, const RoomLayout &rooms, Vec spawn, bool safeZone, AreaState area,
                    std::span<const MonsterSpawn> monsters, std::optional<Vec> coordinateOffset = {});
-    void restartArea(Vec spawn, std::span<const MonsterSpawn> monsters);
     void heal();
     void applyPotion(const PotionDefinition &potion);
     void stopWalking();

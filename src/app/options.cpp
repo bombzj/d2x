@@ -42,8 +42,6 @@ AppOptions parseOptions(int argc, char **argv) {
             options.world.levelType = number();
         else if (arg == "--variant")
             options.world.variant = number();
-        else if (arg == "--maps")
-            options.maps = true;
         else if (arg == "--screenshot")
             options.screenshot = value();
         else if (arg == "--pack")

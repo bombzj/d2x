@@ -35,7 +35,7 @@ struct ViewState {
     Vec camera, clickAt;
     EntityId combatTarget;
     float clickAge = 10, zoom = 1;
-    bool help = false, automap = false, debug = false, pause = false, travelMenu = false;
+    bool help = false, automap = false, debug = false, travelMenu = false;
     bool miniPanelOpen = false;
     bool gameMenuOpen = false;
     int gameMenuPage = 0;
@@ -69,7 +69,6 @@ struct ViewState {
     std::optional<ItemHandle> shopSalePending;
     EntityId waypointSource;
     int waypointAct = 0;
-    int travelPage = 0;
     float animationTime = 0, heroTime = 0, stepClock = 0;
     float cainPortalAnimationStarted = -1;
     std::string heroMode = "nu", dialogue, dialogueSpeaker, dialogueStatus;
@@ -87,7 +86,8 @@ struct ViewState {
     std::string lootNotice;
     float noticeTime = 0;
     bool noticeError = false;
-    bool blocksWorld() const { return gameMenuOpen || pause || travelMenu || help || npcMenu || shopOpen || hireListOpen || !dialogue.empty(); }
+    bool blocksWorld() const { return gameMenuOpen || help || npcMenu || shopOpen || hireListOpen || !dialogue.empty(); }
+    bool blocksInput() const { return blocksWorld() || travelMenu; }
 };
 class SceneView {
     const GameSession &session_;
@@ -265,7 +265,6 @@ class SceneView {
     std::vector<std::optional<int>> skillChoices(bool right) const;
     std::optional<int> skillAt(Vec mouse) const;
     std::optional<ItemHandle> lootAt(Vec mouse, bool labelsOnly = false) const;
-    void toggleMute() { assets_.audio.muted = !assets_.audio.muted; }
     void advance(float dt);
     void advanceUi(float dt, bool worldPaused = false);
     void draw(Vec mouse) const;

@@ -237,7 +237,7 @@ kill 和 drop 都不进行攻击命中／伤害计算，因此用于验证死亡
 
 ## 当前证据与限制
 
-当前角色存档只保留持久进度，载入会返回城镇并重置怪物；格式与规则版本见[存档说明](SAVES.md)，旧档不迁移。技能树与女巫技能菜单已构建截图，快捷键已完成存读档冒烟；基础远程攻击和女巫战斗效果待逐项实机验收。v10／规则 v30 的传送现场 `artifacts/waypoint-state-v10.d2xsave` 仅是历史证据，不能按当前格式读取。status 增加 portal、waypoints 和 travelMenu；objects 中 Waypoint 返回 activated 及原 fps。新游戏包括营地全部未激活；travel 自由传送不激活，waypoint 不能绕过解锁。Ctrl+F2 是独立开发目录，不是游戏传送点菜单。原三态动画、首次交互、锁定目的地拒绝及解锁保存恢复曾在 v10 实际验证，本轮未重新运行。
+当前角色存档只保留持久进度，载入会返回城镇并重置怪物；格式与规则版本见[存档说明](SAVES.md)，旧档不迁移。技能树与女巫技能菜单已构建截图，快捷键已完成存读档冒烟；基础远程攻击和女巫战斗效果待逐项实机验收。v10／规则 v30 的传送现场 `artifacts/waypoint-state-v10.d2xsave` 仅是历史证据，不能按当前格式读取。status 增加 portal、waypoints 和 travelMenu；objects 中 Waypoint 返回 activated 及原 fps。当前新游戏默认激活营地，恢复后的已激活点直接使用 ON；应用管道 travel 自由传送不激活，waypoint 不能绕过解锁，开发地图目录已移除。原三态动画、首次交互、锁定目的地拒绝及解锁保存恢复曾在 v10 实际验证，本轮未重新运行。
 
 新增 `drop`、`item-move`、`item` 及物品命令回执已完成源码和协议文档。Windows Release 构建后，实际调用 `item` 查询初始手斧、`equip` 卸下和重新装备，以及对当前区域指定怪物 `drop`；后者生成 6 件地面物品、无暂缓原因，已结算数从 0 到 1。拾取、药水使用和头盔胸甲图层仍待定向验收。
 

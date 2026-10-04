@@ -114,13 +114,13 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
         ui.orificeObject = {}; ui.orificeItem.reset(); ui.inventoryQuestNpc = {};
         ui.characterOpen = ui.skillTreeOpen = ui.questOpen = ui.hirelingOpen = false;
         ui.npcMenu = ui.shopOpen = ui.hireListOpen = false;
-        ui.help = ui.pause = ui.travelMenu = ui.gameMenuOpen = false;
+        ui.help = ui.travelMenu = ui.gameMenuOpen = false;
         view_.cancelNpcDialogue();
         if (input.focused && input.escape) session_.submit(RespawnPlayer{});
         return true;
     }
     if (!view_.hirelingView().active) ui.hirelingOpen = false;
-    if (!input.focused || ui.blocksWorld() || actorClient_.controlledActor().dead ||
+    if (!input.focused || ui.blocksInput() || actorClient_.controlledActor().dead ||
         input.escape || input.inventory || input.character || input.skillTree || input.quests ||
         input.hireling || input.storage || input.rightPressed || input.movement.length() > .1f) {
         ui.pointButtonPressed.reset();
@@ -138,7 +138,7 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
     if (channelInputSkill_ >= 0 && (!input.focused || !input.rightHeld ||
         ((!input.insideViewport || hudSurface(input.mouse) ||
           !CheckCollisionPointRec(rv(input.mouse), view_.worldViewport())) && !rightCombatTarget_) ||
-        ui.blocksWorld() || ui.inventory.drag || ui.inventory.split || ui.inventory.goldDialog ||
+        ui.blocksInput() || ui.inventory.drag || ui.inventory.split || ui.inventory.goldDialog ||
         ui.inventory.identify || input.movement.length() > .1f || input.leftPressed || input.leftHeld ||
         (input.escape && !ui.inventory.open) ||
         ui.rightSkill != channelInputSkill_)) {
@@ -170,7 +170,7 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
         const bool questNotice = ui.questNotice && !ui.questOpen && !ui.characterOpen &&
             !ui.inventory.storage && !ui.inventory.cubeOpen &&
             CheckCollisionPointRec(rv(input.mouse), questNoticeBounds());
-        const bool onUi = ui.blocksWorld() || ui.skillPicker || ui.inventory.split ||
+        const bool onUi = ui.blocksInput() || ui.skillPicker || ui.inventory.split ||
             ui.inventory.goldDialog || ui.inventory.identify || hudSurface(input.mouse) ||
             !CheckCollisionPointRec(rv(input.mouse), view_.worldViewport()) || portrait || questNotice ||
             (ui.miniPanelOpen && view_.miniPanelAt(input.mouse).has_value());
@@ -261,7 +261,7 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
     }
     if (handleQuestPress(input)) return true;
     repeatClick_ -= elapsed;
-    if (ui.blocksWorld() || (input.escape && !ui.inventory.open) || input.weaponSwap ||
+    if (ui.blocksInput() || (input.escape && !ui.inventory.open) || input.weaponSwap ||
         input.movement.length() > .1f || actorClient_.controlledActor().dead) {
         if (leftCombatTarget_ || rightCombatTarget_) {
             session_.submit(StopMoving{});
@@ -272,7 +272,7 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
     if (input.run)
         session_.submit(ToggleRun{});
     if (input.weaponSwap && session_.content().stashLayout.expansion &&
-        !ui.npcMenu && ui.dialogue.empty() && !ui.pause && !ui.travelMenu &&
+        !ui.npcMenu && ui.dialogue.empty() && !ui.travelMenu &&
         !ui.inventory.drag && !ui.inventory.split && !ui.inventory.goldDialog &&
         !ui.shopConfirm && !ui.hireListOpen) {
         session_.submit(SwitchWeaponSet{});
@@ -280,7 +280,7 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
     }
     if (handleNpcMenu(input)) return true;
     if (handleHirelingList(input)) return true;
-    if (!ui.blocksWorld()) {
+    if (!ui.blocksInput()) {
         if (input.debugGold) {
             unsigned capacity = unsigned(session_.state().player.character.level) * 10000;
             unsigned amount = std::min(1000u, capacity - session_.state().player.character.gold);
@@ -337,19 +337,7 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
         ui.automapOffset = {};
     if (input.automapNames)
         ui.automapNames = !ui.automapNames;
-    if (input.travel) {
-        ui.waypointSource = {};
-        ui.travelPage = 0;
-        ui.skillPicker.reset();
-        session_.submit(CloseStorage{});
-        ui.inventory.storage = {};
-        ui.inventory.cubeOpen = false;
-        ui.travelMenu = !ui.travelMenu;
-        ui.inventory.cancelGesture();
-        ui.inventory.open = false;
-        ui.skillTreeOpen = false;
-    }
-    if (input.storage && !ui.blocksWorld()) {
+    if (input.storage && !ui.blocksInput()) {
         if (ui.inventory.storage)
             toggleInventory();
         else {
@@ -370,14 +358,14 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
     if (input.inventory) {
         toggleInventory();
     }
-    if (input.character && !ui.blocksWorld()) {
+    if (input.character && !ui.blocksInput()) {
         ui.characterOpen = !ui.characterOpen;
         if (ui.characterOpen) ui.questOpen = ui.hirelingOpen = false;
         return true;
     }
     if (handleHirelingToggle(input)) return true;
     if (handleQuestToggle(input)) return true;
-    if (input.skillTree && !ui.blocksWorld()) {
+    if (input.skillTree && !ui.blocksInput()) {
         if (!view_.characterView().hasSkillTree) {
             view_.notice("This MPQ profile has no skill tree layout.", true);
             return true;
@@ -389,27 +377,27 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
         ui.skillPicker.reset();
         return true;
     }
-    if (input.insideViewport && input.leftPressed && !ui.blocksWorld() &&
+    if (input.insideViewport && input.leftPressed && !ui.blocksInput() &&
         view_.characterView().unspentAttributes > 0 &&
         CheckCollisionPointRec(rv(input.mouse), hudCharacterButton())) {
         ui.pointButtonPressed = false;
         pickupClick_ = true;
         return true;
     }
-    if (input.insideViewport && input.leftPressed && !ui.blocksWorld() &&
+    if (input.insideViewport && input.leftPressed && !ui.blocksInput() &&
         view_.characterView().unspentSkills > 0 &&
         CheckCollisionPointRec(rv(input.mouse), hudSkillTreeButton())) {
         ui.pointButtonPressed = true;
         pickupClick_ = true;
         return true;
     }
-    if (input.insideViewport && input.leftPressed && !ui.blocksWorld() &&
+    if (input.insideViewport && input.leftPressed && !ui.blocksInput() &&
         CheckCollisionPointRec(rv(input.mouse), hudMenuButton())) {
         inventoryClick_ = true;
         ui.miniPanelOpen = !ui.miniPanelOpen;
         return true;
     }
-    if (ui.miniPanelOpen && !ui.blocksWorld() && input.insideViewport) {
+    if (ui.miniPanelOpen && !ui.blocksInput() && input.insideViewport) {
         if (auto button = view_.miniPanelAt(input.mouse)) {
             if (input.leftPressed) {
                 inventoryClick_ = true;
@@ -439,22 +427,6 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
     }
     if (input.collision)
         ui.debug = !ui.debug;
-    if (input.pause)
-        ui.pause = !ui.pause;
-    if (input.mute)
-        view_.toggleMute();
-    if (input.restart) {
-        ui.skillPicker.reset();
-        ui.inventory.storage = {};
-        ui.inventory.cubeOpen = false;
-        ui.help = ui.pause = ui.travelMenu = false;
-        ui.inventory.cancelGesture();
-        ui.inventory.open = false;
-        session_.submit(RestartArea{});
-        ui.characterOpen = false;
-        ui.skillTreeOpen = false;
-        ui.questOpen = false;
-    }
     if (input.escape) {
         if (ui.orificeObject) return handleInventory(input);
         if (ui.skillPicker) {
@@ -484,7 +456,7 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
         return true;
     }
     if (handleTravel(input)) return true;
-    if (ui.blocksWorld()) {
+    if (ui.blocksInput()) {
         ui.skillPicker.reset();
         ui.inventory.cancelGesture();
         return true;

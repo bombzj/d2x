@@ -44,13 +44,6 @@ void Simulation::enterArea(const Grid &grid, const RoomLayout &rooms, Vec spawn,
     relocateCompanions(state_.player.id, state_.player.movement.pos);
     emit(RegionEntered{state_.area.region, coordinateOffset});
 }
-void Simulation::restartArea(Vec spawn, std::span<const MonsterSpawn> monsters) {
-    auto id = state_.area.region;
-    heal();
-    AreaState area;
-    area.region = id;
-    enterArea(*grid_, *rooms_, spawn, safeZone_, std::move(area), monsters);
-}
 void Simulation::heal() {
     auto &p = state_.player;
     p.resources.hp = state_.player.attributes.maxLife;

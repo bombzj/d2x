@@ -231,7 +231,6 @@ void SoundBank::syncEmitters(std::span<const SoundEmitter> live, uint64_t frame)
 }
 void SoundBank::pauseEmitters(bool paused) {
     if (!emitters_ || !emitters_->stream.buffer) return;
-    SetAudioStreamVolume(emitters_->stream, muted ? 0.f : 1.f);
     if (paused == emitters_->paused) return;
     emitters_->paused = paused;
     if (paused) PauseAudioStream(emitters_->stream);
