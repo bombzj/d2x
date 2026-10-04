@@ -95,7 +95,6 @@ std::string debugCommand(const std::string &text, GameSession &session, SceneVie
                 else if (key == "left") frame.movement.x = -1;
                 else if (key == "right") frame.movement.x = 1;
                 else if (key == "run" || key == "r") frame.run = true;
-                else if (key == "restart") frame.restart = true;
                 else if (!key.empty()) throw std::runtime_error("Unsupported UI key");
                 return frame;
             };

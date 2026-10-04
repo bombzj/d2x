@@ -1,5 +1,5 @@
 // First-act DS1 object lookup facts, from OpenDiablo2 object_lookup_record_data.go.
-// See docs/THIRD_PARTY.md for source and license.
+// See docs/resources/THIRD_PARTY.md for source and license.
 #pragma once
 #include <array>
 namespace d2x {

@@ -15,6 +15,15 @@ foreach($name in @('Play.cmd','README.md','BASELINE.md','LICENSE')){
 foreach($name in @('play.ps1','Send-D2XCommand.ps1')){
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination (Join-Path $destination 'scripts') -Force
 }
-Copy-Item -Path (Join-Path $projectRoot 'docs/*') -Destination (Join-Path $destination 'docs') -Recurse -Force
+$sourceDocs=Join-Path $projectRoot 'docs'
+$packagedDocs=[IO.Path]::GetFullPath((Join-Path $destination 'docs'))
+# Remove obsolete documentation after source moves; preserve saves and artifacts.
+foreach($file in Get-ChildItem -LiteralPath $packagedDocs -File -Recurse){
+    $relative=$file.FullName.Substring($packagedDocs.Length + 1)
+    if(-not (Test-Path -LiteralPath (Join-Path $sourceDocs $relative) -PathType Leaf)){
+        Remove-Item -LiteralPath $file.FullName
+    }
+}
+Copy-Item -Path (Join-Path $sourceDocs '*') -Destination $packagedDocs -Recurse -Force
 Write-Host "Updated $destination. Original MPQs can be beside d2x.exe, in ancestor assets/mpq2, or supplied through -Mpq."
 Write-Host 'Existing saves and artifacts in the run directory are preserved.'

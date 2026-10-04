@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // DCC decoder adapted from DGEngine (dgcor), based on Worldstone by Lectem.
 // D2X modifications: indexed-frame API, bounds checks, decode all directions once.
-// See docs/THIRD_PARTY.md and LICENSE.
+// See docs/resources/THIRD_PARTY.md and LICENSE.
 #include "formats.hpp"
 #include <algorithm>
 #include <bitset>

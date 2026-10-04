@@ -48,6 +48,9 @@ void loadWaypointFonts(Graphics &graphics, Archives &archives, const ClassicFont
     for (size_t index = 0; index < fonts.size(); ++index) {
         auto &font = fonts[index];
         font = base;
+        // White uses the original glyph indices. The sky PL2 white table is
+        // all zeroes, so applying it would make every glyph transparent.
+        if (colors[index] == 0) continue;
         font.glyphs.frames.clear();
         for (auto glyph : glyphs->frames) {
             for (auto &pixel : glyph.pixels)

@@ -3,7 +3,7 @@
 #include "core/random.hpp"
 // Population rules adapted with reference to D2MOO (MIT), commit 5596f5cb6c5251a0a07c6637d26458b06099d516.
 // Copyright (c) 2020-2025 The Phrozen Keep community. See docs/licenses/D2MOO.txt.
-// Spatial placement and stream scheduling remain project adapters; see docs/MONSTER_POPULATION.md.
+// Spatial placement and stream scheduling remain project adapters; see docs/gameplay/world/POPULATION.md.
 #include <algorithm>
 #include <ostream>
 #include <optional>
