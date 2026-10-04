@@ -86,6 +86,9 @@ class GameSessionImpl {
     EntityId engagedNpc_;
     // D2MOO quest GUID reaction lists are local to the current game.
     std::set<std::string> pendingNpcQuestMessages_;
+    EntityId jadeFigurineBoss_;
+    bool jadeFigurineDropped_ = false;
+    EntityId gidbinnBoss_;
     std::map<EntityId, std::vector<VendorOffer>> vendorStocks_;
     std::map<EntityId, std::set<uint32_t>> soldVendorOffers_;
     std::map<EntityId, std::vector<VendorOffer>> gambleStocks_;
@@ -140,6 +143,7 @@ class GameSessionImpl {
     bool canReach(const WorldObject &object) const;
     NpcAccess npcAccess(EntityId npc) const;
     bool deliverQuestReward(QuestReward reward, EntityId npc);
+    bool exchangeQuestItem(EntityId npc, std::string_view input, std::string_view output);
     bool returnMalus(EntityId npc);
     std::optional<Vec> interactionApproach(const WorldObject &object) const;
     bool travelWaypoint(const WaypointTravel &command);
@@ -185,13 +189,28 @@ class GameSessionImpl {
     void completeActOne(EntityId npc);
     void completeActTwo(EntityId npc);
     void activateCainQuestObject(const WorldObject &object);
-    void updateCainQuestItems();
+    void updateQuestItems();
     void updateToolsQuestItems();
     void activateMalus(const WorldObject &object);
     void imbueWithCharsi(const ImbueItem &command);
+    void socketWithLarzuk(const SocketQuestItem &command);
+    void personalizeWithAnya(const PersonalizeQuestItem &command);
     void reconcileCainObjects();
     std::array<int, 5> cainStoneOrder() const;
     bool claimCainReward();
+    bool claimQuestRing(int level, ItemQuality quality);
+    bool assignQuestHireling(std::string_view npcClass);
+    void activateLaterQuestObject(EntityId object);
+    void updateLaterQuestObjects();
+    void updatePrisonerObjects();
+    bool activateAncientsObject(EntityId object);
+    void updateAncientsObjects();
+    void resetAncients();
+    void completeAncientsBattle();
+    void rewardAncientsExperience();
+    bool activateBaalObject(EntityId object);
+    void updateBaalObjects();
+    bool createQuestPortal(Vec position, int objectClass, RegionId destination);
     bool translateCainScroll(EntityId npc);
     bool travelCainPortal();
     bool beginCainPortal();
@@ -225,6 +244,12 @@ class GameSessionImpl {
     ItemGeneration questItemGeneration(std::string_view code, uint64_t &random) const;
     void activateActTwoObject(EntityId id, std::optional<ItemHandle> submitted = {});
     void updateActTwoObjects();
+    struct PendingQuestNpc { RegionId region; Vec position; std::string monster; EffectFrame frame; };
+    std::vector<PendingQuestNpc> pendingQuestNpcs_;
+    bool questNpcConversationAllowed(const WorldObject &npc) const;
+    void spawnQuestNpc(RegionId region, Vec position, std::string_view monster);
+    bool spawnQuestEnemy(Vec position, std::string_view monster, std::string_view superUnique = {});
+    bool openQuestPortal(EntityId npc, int objectClass, RegionId destination);
     std::optional<EffectFrame> tombOpeningFrame_;
     std::optional<EffectFrame> tombCollapseFrame_;
     std::optional<EffectFrame> sunDarkeningFrame_;
@@ -247,8 +272,9 @@ class GameSessionImpl {
 
   public:
     uint64_t viewRevision() const { return viewRevision_; }
-        bool carriesQuestItem(std::string_view code) const;
-        bool canInsertStaff(EntityId id) const;
+    bool carriesQuestItem(std::string_view code) const;
+    bool questItemOnGround(std::string_view code) const;
+    bool canInsertStaff(EntityId id) const;
     bool canHireFrom(EntityId npc) const;
     bool canResurrectHireling(EntityId npc) const;
     unsigned hirelingResurrectionCost() const;

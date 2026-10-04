@@ -29,5 +29,5 @@ const NpcSpeech *introSpeech(const NpcDialogues &dialogues, std::string_view npc
 const NpcSpeech *gossipSpeech(const NpcDialogues &dialogues, std::string_view npc, size_t turn, int act = 0);
 const NpcSpeech *questSpeech(const NpcDialogues &dialogues, std::string_view quest,
                              std::string_view state, std::string_view npc);
-const NpcSpeech *arrivalSpeech(const NpcDialogues &dialogues, std::string_view npc, int act);
+const NpcSpeech *arrivalSpeech(const NpcDialogues &dialogues, std::string_view npc, int act, std::string_view characterClass = {});
 } // namespace d2x

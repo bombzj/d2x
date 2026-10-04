@@ -563,9 +563,10 @@ void SceneView::advance(float dt) {
                     queueQuestAnimation(value.quest, value.completed);
                     view_.questUpdated = int(questIndex(value.quest));
                     view_.questNotice = !view_.questOpen;
-                    if (value.quest == QuestId::ToolsOfTheTrade &&
-                        value.stage == uint32_t(ToolsStage::Imbued)) {
-                        view_.imbueNpc = {};
+                    if ((value.quest == QuestId::ToolsOfTheTrade && value.stage == uint32_t(ToolsStage::Imbued)) ||
+                        (value.quest == QuestId::SiegeOnHarrogath && value.stage == 5) ||
+                        (value.quest == QuestId::BetrayalOfHarrogath && value.stage == 5)) {
+                        view_.inventoryQuestNpc = {};
                         view_.inventory.open = false;
                     }
                     if (value.quest == QuestId::SearchForCain &&

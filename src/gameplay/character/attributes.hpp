@@ -19,6 +19,7 @@ struct CharacterDefinition {
 struct CharacterModifiers {
     int strength = 0, dexterity = 0, vitality = 0, energy = 0;
     int maxLife = 0, maxMana = 0, maxStamina = 0;
+    int baseLife = 0; // Permanent quest life participates in maximum-life percentages.
     int attackRating = 0, defense = 0;
     int fireResist = 0, coldResist = 0, lightningResist = 0, poisonResist = 0;
     int lightRadius = 0;

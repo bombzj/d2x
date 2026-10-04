@@ -13,15 +13,20 @@ void GameSessionImpl::transmuteCube() {
     });
     if (state().player.actions.dead || !hasCube || cursorItem()) { reject(); return; }
     const auto items = inventory_.contents(playerContainers_.cube);
-    if (items.size() != 2 || quest(QuestId::HoradricStaff).stage >= 6) { reject(); return; }
-    std::array<ItemHandle, 2> inputs{};
+    const bool khalim = items.size() == 4;
+    const QuestId questId = khalim ? QuestId::KhalimsWill : QuestId::HoradricStaff;
+    const std::span<const std::string> codes = khalim ? std::span<const std::string>(content_.khalimRecipe.inputs) :
+        std::span<const std::string>(content_.staffRecipe.inputs);
+    const auto &output = khalim ? content_.khalimRecipe.output : content_.staffRecipe.output;
+    if (items.size() != codes.size() || quest(questId).stage >= questCompletionStage(questId)) { reject(); return; }
+    std::vector<ItemHandle> inputs(codes.size());
     for (auto id : items) {
         const auto *item = inventory_.item(id);
         if (item->quantity != 1 || item->nativeQuestDifficulty < unsigned(state().population.difficulty)) { reject(); return; }
         for (size_t index = 0; index < inputs.size(); ++index)
-            if (item->definition == content_.staffRecipe.inputs[index]) inputs[index] = item->handle();
+            if (item->definition == codes[index]) inputs[index] = item->handle();
     }
-    if (!inputs[0].id || !inputs[1].id) { reject(); return; }
+    if (std::any_of(inputs.begin(), inputs.end(), [](const auto &input) { return !input.id; })) { reject(); return; }
     InventoryService draft(ids_, inventory_.catalog(), {content_.stashLayout.columns, content_.stashLayout.rows},
         {content_.cubeLayout.columns, content_.cubeLayout.rows});
     draft.state_ = inventory_.state_;
@@ -33,8 +38,8 @@ void GameSessionImpl::transmuteCube() {
         if (!removed) { reject(); return; }
         transaction.changes.insert(transaction.changes.end(), removed.changes.begin(), removed.changes.end());
     }
-    const auto generation = questItemGeneration(content_.staffRecipe.output, draft.state_.creationRandom);
-    auto created = draft.createItem(content_.staffRecipe.output, 1, AutoPlace{playerContainers_.cube}, unsigned(state().player.character.level), generation);
+    const auto generation = questItemGeneration(output, draft.state_.creationRandom);
+    auto created = draft.createItem(output, 1, AutoPlace{playerContainers_.cube}, unsigned(state().player.character.level), generation);
     if (!created) { reject(); return; }
     draft.state_.items.at(created.item).nativeQuestDifficulty = unsigned(state().population.difficulty);
     draft.state_.items.at(created.item).identified = true;
@@ -42,9 +47,9 @@ void GameSessionImpl::transmuteCube() {
     transaction.changes.insert(transaction.changes.end(), created.changes.begin(), created.changes.end());
     inventory_.state_ = std::move(draft.state_);
     publishInventory(std::move(transaction), {});
-    auto &record = simulation_->state_.player.character.quests.at(size_t(state().population.difficulty)).at(questIndex(QuestId::HoradricStaff));
-    record.stage = 5;
-    simulation_->emit(QuestAdvanced{QuestId::HoradricStaff, record.stage});
+    auto &record = simulation_->state_.player.character.quests.at(size_t(state().population.difficulty)).at(questIndex(questId));
+    record.stage = khalim ? 3 : 5;
+    simulation_->emit(QuestAdvanced{questId, record.stage});
 }
 void GameSessionImpl::createStarterEquipment() {
     const auto &characters = content_.tables.at("charstats");
@@ -161,6 +166,22 @@ InventoryError GameSessionImpl::previewInventory(const GameCommand &command) con
                 return previewHirelingPotion(intent.item);
             } else if constexpr (std::is_same_v<T, UseItem>) {
                 const auto *source = inventory_.item(intent.item.id);
+                if (source && source->definition == content_.prisonOfIce.scroll) {
+                    if (auto error = inventory_.checkHandle(intent.item); error != InventoryError::None) return error;
+                    const auto *location = std::get_if<ContainerLocation>(&source->location);
+                    return location && location->container == playerContainers_.backpack && !state().player.actions.dead &&
+                        source->nativeQuestDifficulty >= unsigned(state().population.difficulty) && quest(QuestId::PrisonOfIce).stage >= 5 &&
+                        !(quest(QuestId::PrisonOfIce).flags & 2u) ? InventoryError::None : InventoryError::AccessDenied;
+                }
+                if (source && source->definition == content_.goldenBird.potion) {
+                    if (auto error = inventory_.checkHandle(intent.item); error != InventoryError::None) return error;
+                    const auto *location = std::get_if<ContainerLocation>(&source->location);
+                    return location && location->container == playerContainers_.backpack &&
+                        !state().player.actions.dead && state().player.resources.hp > 0 &&
+                        source->nativeQuestDifficulty >= unsigned(state().population.difficulty) &&
+                        quest(QuestId::GoldenBird).stage == 6 && (quest(QuestId::GoldenBird).flags & 1u)
+                        ? InventoryError::None : InventoryError::AccessDenied;
+                }
                 if (source && source->definition == "ass") {
                     if (auto error = inventory_.checkHandle(intent.item); error != InventoryError::None) return error;
                     const auto *location = std::get_if<ContainerLocation>(&source->location);

@@ -24,7 +24,7 @@ struct NpcQuestDialogue {
     std::string readKey;
     std::optional<QuestPreludeId> prelude;
     bool alert = false;
-    uint32_t staffExplanation = 0;
+    uint32_t questExplanation = 0;
 };
 struct HirelingCombatStats {
     HirelingStats base;

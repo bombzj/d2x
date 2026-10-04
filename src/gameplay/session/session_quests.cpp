@@ -43,8 +43,7 @@ void GameSessionImpl::updateDenQuest() {
 void GameSessionImpl::talkToNpc(EntityId npc) {
     const auto *target = object(npc);
     const auto access = npcAccess(npc);
-    if (!target || !access.contact() ||
-        (!access.safe && !(int(access.region) == 73 && target->npcClass == "tyrael1"))) return;
+    if (!target || !access.contact() || !questNpcConversationAllowed(*target)) return;
     const auto dialogue = npcQuestDialogue(npc);
     if (!dialogue.readKey.empty())
         pendingNpcQuestMessages_.erase(dialogue.readKey);
@@ -57,7 +56,7 @@ void GameSessionImpl::talkToNpc(EntityId npc) {
     auto &record = simulation_->state_.player.character.quests
         .at(size_t(state().population.difficulty)).at(questIndex(id));
     const auto plan = planNpcQuest(id, record, {target->npcClass,
-        quest(QuestId::DenOfEvil).stage >= uint32_t(DenStage::Rewarded), dialogue.staffExplanation});
+        quest(QuestId::DenOfEvil).stage >= uint32_t(DenStage::Rewarded), dialogue.questExplanation});
     if (!plan || !deliverQuestReward(plan->reward, npc)) return;
     record = plan->next;
     simulation_->emit(QuestAdvanced{id, record.stage});

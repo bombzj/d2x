@@ -7,34 +7,8 @@
 #include "content/items/item_quality.hpp"
 #include "core/random.hpp"
 #include <algorithm>
-#include <stdexcept>
 
 namespace d2x {
-ItemGeneration GameSessionImpl::questItemGeneration(std::string_view code, uint64_t &random) const {
-    ItemGeneration generation;
-    if (!content_.staffRecipe.isComponent(code)) return generation;
-    const auto record = std::find_if(content_.uniqueItems.begin(), content_.uniqueItems.end(),
-        [&](const auto &value) { return value.code == code; });
-    if (record == content_.uniqueItems.end() || !record->artAvailable)
-        throw std::runtime_error("Original quest unique item is unavailable: " + std::string(code));
-    auto properties = rollSpecialProperties(*record, random);
-    random = properties.randomState;
-    generation.quality = ItemQuality::Unique;
-    generation.specialRow = int32_t(record->row);
-    generation.requiredLevel = record->requiredLevel;
-    generation.propertyRolls = std::move(properties.values);
-    return generation;
-}
-bool GameSessionImpl::carriesQuestItem(std::string_view code) const {
-    for (const auto &[id, item] : inventory_.state().items) {
-        const auto *location = std::get_if<ContainerLocation>(&item.location);
-        if (!location || (location->container != playerContainers_.backpack &&
-            location->container != playerContainers_.cube && location->container != playerContainers_.equipment)) continue;
-        if (item.definition == code && (code == content_.cubeCode ||
-            item.nativeQuestDifficulty >= unsigned(state().population.difficulty))) return true;
-    }
-    return false;
-}
 void GameSessionImpl::activateActTwoObject(EntityId id, std::optional<ItemHandle> submitted) {
     auto &objects = world_.at(current_).objects;
     auto found = std::find_if(objects.begin(), objects.end(), [&](const auto &value) { return value.id == id; });

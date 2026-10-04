@@ -46,6 +46,14 @@ void GameSessionImpl::enter(RegionId id, std::optional<Vec> arrival, std::option
         return;
     int index = int(found - world_.regions().begin());
     const bool returnToTown = current_ >= 0 && !world_.regions()[current_].definition.safe && found->definition.safe;
+    if (current_ >= 0 && found->recipe.act > region().recipe.act) {
+        constexpr std::array actEndQuests{QuestId::SistersToTheSlaughter, QuestId::SevenTombs,
+            QuestId::Guardian, QuestId::TerrorsEnd};
+        const auto act = size_t(region().recipe.act);
+        if (act < actEndQuests.size() && quest(actEndQuests[act]).stage >= questCompletionStage(actEndQuests[act]))
+            simulation_->state_.player.character.completedActs[size_t(state().population.difficulty)][act] = true;
+    }
+    if (current_ >= 0 && int(region().definition.id) == 120 && int(id) != 120) resetAncients();
     if (current_ >= 0)
         areas_.park(size_t(current_), simulation_->leaveArea());
     current_ = index;
@@ -80,6 +88,7 @@ void GameSessionImpl::enter(RegionId id, std::optional<Vec> arrival, std::option
     }
     onQuestRegionEntered(id);
     updateActTwoObjects();
+    updateLaterQuestObjects();
     std::cout << "Room activation: created=" << state().area.enemies.size()
               << " deferred=" << state().area.pendingSpawns.size() << '\n';
 }

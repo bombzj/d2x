@@ -341,10 +341,10 @@ bool SceneController::handleInventory(const FrameInput &input) {
     EntityId hovered = hitGrid     ? inventory.itemAt(hitGrid->container, *cell)
                        : equipment ? inventory.equipped(containers, *equipmentSlot)
                                    : EntityId{};
-    if (view_.ui().imbueNpc) {
+    if (view_.ui().inventoryQuestNpc) {
         if (input.leftPressed) {
             if (const auto *item = inventory.item(hovered))
-                submitImbue(item->handle());
+                submitNpcItemService(item->handle());
             inventoryClick_ = true;
         }
         return true;

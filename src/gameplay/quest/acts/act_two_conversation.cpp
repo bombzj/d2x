@@ -28,11 +28,11 @@ std::optional<NpcQuestPlan> actTwoConversation(QuestId id, const QuestRecord &re
         break;
     case QuestId::HoradricStaff:
         if (facts.npcClass.starts_with("cain") && record.stage < uint32_t(StaffStage::Submitted) &&
-            facts.staffExplanation && !(facts.staffExplanation & ~staffExplanationMask)) {
+            facts.questExplanation && !(facts.questExplanation & ~staffExplanationMask)) {
             // A2Q2's item speeches also acknowledge LEAVETOWN; assembled-staff
             // speech acknowledges the cube, cap and shaft at the same time.
-            next.flags |= facts.staffExplanation | staffScrollExplained;
-            if (facts.staffExplanation & staffAssemblyExplained) next.flags |= staffExplanationMask;
+            next.flags |= facts.questExplanation | staffScrollExplained;
+            if (facts.questExplanation & staffAssemblyExplained) next.flags |= staffExplanationMask;
         }
         break;
     case QuestId::RadamentsLair:

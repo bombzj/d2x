@@ -115,6 +115,9 @@ void GameSessionImpl::completeInteraction(const WorldObject &object) {
         }
     }
     switch (object.interaction) {
+    case Interaction::QuestObject:
+        activateLaterQuestObject(object.id);
+        break;
     case Interaction::ActTwoQuest:
         activateActTwoObject(object.id);
         break;

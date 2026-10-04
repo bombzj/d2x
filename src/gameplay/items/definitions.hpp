@@ -21,6 +21,7 @@ struct ItemBaseStats {
     std::optional<int> minDamage, maxDamage, twoHandMin, twoHandMax, throwMin, throwMax;
     std::optional<int> minDefense, maxDefense, requiredStrength, requiredDexterity, requiredLevel;
     std::optional<int> level, magicLevel, cost, speed, block, sockets, rarity, spawnable, lightRadius;
+    std::array<int, 3> socketsByLevel{}; // ItemTypes.MaxSock1/25/40, clamped by the actual base.
     std::optional<int> strengthBonus, dexterityBonus;
     int rangeAdder = 0;
     int hitClass = 0;
@@ -41,6 +42,7 @@ struct ItemDefinition {
     bool artAvailable = false;
     bool autoBelt = false, autoStack = false;
     bool imbueable = false;
+    bool personalizable = false;
     int beltRows = 0; // Zero is not an equippable belt; row zero is the ready row.
     std::string betterGem; // Misc.bettergem; empty/non means no upgrade.
     std::string bookScroll;

@@ -18,8 +18,9 @@ const NpcConversationView &LocalNpcClient::read(EntityId npc) const {
     view.revision = session_.viewRevision();
     view.actor = session_.state().player.id;
     view.npc = npc;
-    auto service = [&](std::string label, NpcMenuAction action) {
+    auto service = [&](std::string label, NpcMenuAction action, std::string hint = {}) {
         view.services.push_back({std::move(label), {action, std::nullopt}});
+        if (!hint.empty()) view.serviceHints.emplace(action, std::move(hint));
     };
     const auto *object = session_.object(npc);
     if (object && !object->npcClass.empty()) {
@@ -58,6 +59,10 @@ const NpcConversationView &LocalNpcClient::read(EntityId npc) const {
             if (quest.stage == uint32_t(DenStage::Rewarded) && !(quest.flags & denRespecUsed)) service("Reset Stat/Skill Points", NpcMenuAction::Respec);
         }
         if (npcClass == "charsi" && session_.quest(QuestId::ToolsOfTheTrade).stage == uint32_t(ToolsStage::RewardReady)) service("Imbue", NpcMenuAction::Imbue);
+        if (npcClass == "larzuk" && session_.quest(QuestId::SiegeOnHarrogath).stage == 4)
+            service(content.itemStrings.at("Addsocketsui"), NpcMenuAction::Socket, content.itemStrings.at("Addsocketsui2"));
+        if (npcClass == "drehya" && session_.quest(QuestId::BetrayalOfHarrogath).stage == 4)
+            service(content.itemStrings.at("Personalizeui"), NpcMenuAction::Personalize, content.itemStrings.at("Rename Instruct"));
         if (npcClass == "warriv1" && session_.quest(QuestId::SistersToTheSlaughter).stage >= uint32_t(SlaughterStage::PassageReady)) service("Go East", NpcMenuAction::GoEast);
         if (npcClass == "meshif1" && session_.quest(QuestId::SevenTombs).stage >= 5) service("Sail East", NpcMenuAction::Sail);
         if (npcClass == "meshif2") service("Sail West", NpcMenuAction::Sail);

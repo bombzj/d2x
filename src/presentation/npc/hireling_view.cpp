@@ -34,7 +34,8 @@ void SceneView::drawHirelingPortrait() const {
     const float life = std::clamp(merc.life / std::max(1, merc.maximumLife), 0.f, 1.f);
     DrawRectangleRec(bar, {36, 20, 12, 255});
     DrawRectangleRec({bar.x, bar.y, std::floor(bar.width * life), bar.height}, {0, 128, 0, 255});
-    if (const auto *frame = assets_.hirelingPortrait.frame(0, 0)) {
+    const auto art = assets_.hirelingPortraits.find(merc.classId);
+    if (const auto *frame = art != assets_.hirelingPortraits.end() ? art->second.frame(0, 0) : nullptr) {
         const auto &t = frame->texture;
         DrawTexturePro(t, {0, 0, float(t.width), float(t.height)}, portrait, {0, 0}, 0, WHITE);
     }

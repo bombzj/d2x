@@ -33,9 +33,15 @@ NpcDialogues loadNpcDialogueFile(Archives &archives, int act) {
                 speech.quest = quest;
                 speech.state = state;
             }
-            speech.act = act; // Books without a wave still belong to their source act.
-            speech.arrival = speech.quest.empty() && name.ends_with("ActIntro");
-            result[act == 0 ? name : "act" + std::to_string(act + 1) + ":" + name].push_back(std::move(speech));
+            // Expansion a5npc also contains the authored A4Q2 ending.
+            speech.act = speech.quest.size() >= 3 && speech.quest[0] == 'A' &&
+                speech.quest[1] >= '1' && speech.quest[1] <= '5' && speech.quest[2] == 'Q'
+                ? speech.quest[1] - '1' : act;
+            const auto arrival = name.find("ActIntro");
+            speech.arrival = speech.quest.empty() && arrival != std::string::npos &&
+                (arrival + 8 == name.size() || arrival + 11 == name.size());
+            const auto group = speech.act == 0 ? name : "act" + std::to_string(speech.act + 1) + ":" + name;
+            result[group].push_back(std::move(speech));
         }
         speech = {};
     };
@@ -46,6 +52,9 @@ NpcDialogues loadNpcDialogueFile(Archives &archives, int act) {
             end = source.size();
         auto line = trim(std::string_view(source).substr(begin, end - begin));
         begin = end + 1;
+        const auto colon = line.find(':');
+        std::string tag(colon == std::string_view::npos ? std::string_view{} : line.substr(0, colon));
+        std::transform(tag.begin(), tag.end(), tag.begin(), [](unsigned char c) { return char(std::toupper(c)); });
         if (readingQuote) {
             if (!speech.text.empty())
                 speech.text += '\n';
@@ -57,32 +66,36 @@ NpcDialogues loadNpcDialogueFile(Archives &archives, int act) {
                 readingQuote = false;
                 finish();
             }
-        } else if (line.starts_with("SECTION:")) {
+        } else if (tag == "SECTION") {
             finish();
             section = trim(line.substr(8));
+            std::transform(section.begin(), section.end(), section.begin(), [](unsigned char c) { return char(std::toupper(c)); });
             quest.clear();
             state.clear();
             name.clear();
-        } else if (line.starts_with("QUEST:")) {
+        } else if (tag == "QUEST") {
             finish();
             quest = trim(line.substr(6));
             state.clear();
             name.clear();
-        } else if (line.starts_with("STATE:")) {
+        } else if (tag == "STATE") {
             finish();
             state = trim(line.substr(6));
             name.clear();
-        } else if (line.starts_with("NAME:") || line.starts_with("Name:")) {
+        } else if (tag == "NAME") {
             finish();
             name = trim(line.substr(5));
-        } else if (line.starts_with("SPEED:")) {
+        } else if (tag == "SPEED") {
             auto number = trim(line.substr(6));
             int speed = 0;
             auto [last, error] = std::from_chars(number.data(), number.data() + number.size(), speed);
             if (error == std::errc{} && last == number.data() + number.size())
                 speech.speed = speed;
-        } else if (line.starts_with("wave:")) {
+        } else if (tag == "WAVE") {
             speech.wave = trim(line.substr(5));
+        } else if (!name.empty() && line.starts_with("//") && normalize(std::string(trim(line.substr(2)))).ends_with(".wav")) {
+            // a4npc records authored sound paths as comments instead of WAVE tags.
+            speech.wave = trim(line.substr(2));
         } else if (!name.empty() && line.starts_with("\"")) {
             line.remove_prefix(1);
             const bool closed = !line.empty() && line.back() == '"';
@@ -126,8 +139,13 @@ std::string npcIntroductionKey(std::string_view npc, int act) {
 NpcDialogues loadNpcDialogues(Archives &archives, const DataTable &monsters, const DataTable &presets,
                              const std::map<std::string, std::string, std::less<>> &strings) {
     NpcDialogues result;
-    for (int act = 0; act < 5; ++act)
-        result.merge(loadNpcDialogueFile(archives, act));
+    for (int act = 0; act < 5; ++act) {
+        auto source = loadNpcDialogueFile(archives, act);
+        for (auto &[group, speeches] : source) {
+            auto &target = result[group];
+            for (auto &speech : speeches) target.push_back(std::move(speech));
+        }
+    }
     DataTable sounds(archives.read("data/global/excel/sounds.txt"));
     std::map<std::string, std::string> soundNames;
     for (size_t row = 0; row < sounds.rows().size(); ++row)
@@ -142,7 +160,7 @@ NpcDialogues loadNpcDialogues(Archives &archives, const DataTable &monsters, con
             speech.speaker = name.substr(0, actMarker == std::string::npos ? name.find('_') : actMarker);
             auto intro = name.find("_intro");
             speech.introduction = speech.quest.empty() && !speech.arrival && intro != std::string::npos;
-            if (speech.introduction && intro + 6 < name.size())
+            if ((speech.introduction || speech.arrival) && intro != std::string::npos && intro + 6 < name.size())
                 speech.introClass = name.substr(intro + 7);
             const auto gossip = name.find("_gossip_");
             speech.gossip = speech.quest.empty() && gossip != std::string::npos &&
@@ -227,13 +245,18 @@ const NpcSpeech *questSpeech(const NpcDialogues &dialogues, std::string_view que
                 return &speech;
     return nullptr;
 }
-const NpcSpeech *arrivalSpeech(const NpcDialogues &dialogues, std::string_view npc, int act) {
+const NpcSpeech *arrivalSpeech(const NpcDialogues &dialogues, std::string_view npc, int act, std::string_view characterClass) {
     const auto identity = dialogues.speakers.find(npcIntroductionKey(npc, act));
     if (identity == dialogues.speakers.end()) return nullptr;
+    std::string suffix(characterClass.substr(0, 3));
+    std::transform(suffix.begin(), suffix.end(), suffix.begin(), [](unsigned char c) { return char(std::tolower(c)); });
+    const NpcSpeech *generic = nullptr;
     for (const auto &[group, speeches] : dialogues)
         for (const auto &speech : speeches)
-            if (speech.act == act && speech.speaker == identity->second && speech.arrival)
-                return &speech;
-    return nullptr;
+            if (speech.act == act && speech.speaker == identity->second && speech.arrival) {
+                if (!suffix.empty() && speech.introClass == suffix) return &speech;
+                if (speech.introClass.empty() && !generic) generic = &speech;
+            }
+    return generic;
 }
 } // namespace d2x

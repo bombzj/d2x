@@ -1,4 +1,5 @@
 #include "gameplay/quest/acts/act_two_state.hpp"
+#include "gameplay/quest/acts/act_four_state.hpp"
 #include "gameplay/skills/caster.hpp"
 #include "gameplay/skills/runtime.hpp"
 #include "gameplay/session/session_impl.hpp"
@@ -61,6 +62,7 @@ void GameSessionImpl::resetCharacterSkillPoints() {
     for (const auto &difficulty : p.character.quests) {
         if (difficulty.at(questIndex(QuestId::DenOfEvil)).stage == uint32_t(DenStage::Rewarded)) ++rewarded;
         if (difficulty.at(questIndex(QuestId::RadamentsLair)).flags & radamentBookUsed) ++rewarded;
+        if (difficulty.at(questIndex(QuestId::FallenAngel)).stage == uint32_t(IzualStage::Rewarded)) rewarded += izualSkillReward;
     }
     resetCharacterSkills(characterSkillContext(), rewarded);
     refreshCharacter();

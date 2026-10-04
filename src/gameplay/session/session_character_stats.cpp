@@ -4,6 +4,8 @@
 #include "gameplay/items/equipment_inventory.hpp"
 #include "content/items/equipment_modifiers.hpp"
 #include "content/skills/passive_data.hpp"
+#include "gameplay/quest/acts/act_three_state.hpp"
+#include "gameplay/quest/acts/act_five_state.hpp"
 #include <algorithm>
 
 namespace d2x {
@@ -41,6 +43,10 @@ void GameSessionImpl::refreshCharacter(bool fillGains) {
     auto modifiers = resolveEquipmentModifiers(content_, inventory_, playerContainers_, baseActor);
     mergeCharacterModifiers(modifiers, effects);
     applyPassiveRating(modifiers, player.character, player.combatEffects, content_.skills, state().frame);
+    modifiers.baseLife += questBaseLife(player.character.quests);
+    const int resistance = questResistance(player.character.quests);
+    modifiers.fireResist += resistance; modifiers.coldResist += resistance;
+    modifiers.lightningResist += resistance; modifiers.poisonResist += resistance;
     auto current = deriveCharacterAttributes(characterDefinition_, player.character.level, player.character.allocated,
                                              modifiers, simulation_->resistancePenalty_);
     EquipmentActor actor{characterDefinition_.code, current.strength, current.dexterity, player.character.level,

@@ -128,6 +128,7 @@ MonsterEnchantment rollMonsterEnchantment(const ClassicData &data, const Monster
         ? std::clamp(2048 / *monster.walkVelocity - 128, 10, 100) : 0; };
     for (int id : result.ids) {
         switch (id) {
+        case 1: break; // Original random-name modifier; fixed uniques keep their MPQ name.
         case 5:
             result.damagePercent += constant(15) * championDamage / 100;
             result.attackRatingPercent += constant(13) * championDamage / 100;
@@ -145,6 +146,7 @@ MonsterEnchantment rollMonsterEnchantment(const ClassicData &data, const Monster
         case 9: addElement(2); resist(2, 75); break;
         case 17: addElement(3); resist(3, 75); break;
         case 18: addElement(4); result.coldFrames += 5 * level + 100; resist(4, 75); break;
+        case 23: addElement(5); result.poisonFrames += 2 * (5 * level + 150); resist(5, 75); break;
         case 25:
             // Preserve the legacy mana-burn fixed-point multiplier (UMod25/SUnitDmg).
             result.manaDamage = {damage * constant(difficulty + 28) / 100 * 256,
@@ -221,6 +223,7 @@ MonsterEnchantment inheritedMonsterEnchantment(const ClassicData &data, const Mo
         result.elements[4] = element;
         result.coldFrames = 5 * result.level + 100;
     }
+    if (owner.has(23)) { result.elements[5] = element; result.poisonFrames = 2 * (5 * result.level + 150); }
     if (owner.has(25)) result.manaDamage = {element.minimum * 256, element.maximum * 256};
     return result;
 }

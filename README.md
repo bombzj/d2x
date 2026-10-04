@@ -10,13 +10,13 @@
 
 当前运行包已修复法杖原循环音 `Defer Inst` 导致的启动阻断，普通开启音频启动通过；详情见[构建与运行](docs/BUILD_AND_SHARE.md)。
 
-最新源码已补第二幕欢迎／任务提示，并将第一、第二幕规则、任务目录和 D2S 任务编码分开，后续各幕通过模块登记。标题／对白／原图在内容层统一绑定 MPQ，法杖材料、产物和卷轴由原配方／物品表解析，交互与显示共用；详见[任务系统](docs/QUEST_SYSTEM.md)。该批 Windows Release 构建及简单 NPC／临时存档冒烟通过，补接杰海因原地图初始化标记；源码纳入本次提交，运行入口为 build/bin/d2x.exe，未更新 dist/current。第三至第五幕任务仍未实现。
+最新源码已按顺序接入第三至第五幕15项任务的主要流程，连同既有第一／第二幕共27项日志任务。各幕纯规则、MPQ内容解析、权威奖励事务、NPC服务和原生保存各自分工；资料与明确限制见[逐项任务基线](docs/LATER_ACT_QUESTS.md)和[任务系统](docs/QUEST_SYSTEM.md)。本批已通过Windows Release构建和简单冒烟，源码与文档纳入提交；当前入口`build/bin/d2x.exe`，未重打包，`dist/current`仍是此前版本。首领专属AI、部分原版演出与俘虏受伤／死亡分支尚未完整移植。
 
 - 五幕关卡 1–136 均有原 MPQ 地形生成入口，涵盖预设、迷宫和野外；当前区域及直接连续邻区按需解码，已访区域保留缓存。地形覆盖不等于全部任务入口／变体完成，详见[地图](docs/ACT1_MAPS.md)。
 - 七职业 COF/DCC 人物和装备外观、原表成长／四维加点，以及各 30 个技能树节点、学习门槛与 F1–F8 绑定。女巫 26 项主动及四项被动、圣骑士 30 项技能有玩法入口；死灵法师十项诅咒和骷髅召唤、部分亚马逊技能已接入。未实现技能仍拒绝执行，覆盖数量不代表完整原版等价，详见[技能](docs/SKILLS.md)。
 - 怪物按原表人口计划和房间激活生成，真实身份、活动词缀与生成指令分离；已支持家族使用原动作／AI，未实现的敌对类型使用授权沉沦魔替身并保留真实身份，中立单位不替换成敌人，详见[怪物](docs/MONSTERS.md)。
-- 原表物品、TC 掉落、拾取、背包、腰带、药剂、私人箱、方块、金币、堆叠和两组武器；装备直接属性与已支持战斗效果参与派生。方块已支持原 `cubemain` 赫拉迪克法杖配方，通用配方尚未实现；任务流程见[第二幕计划](docs/ACT2_QUESTS.md)，物品边界见[物品完成情况](docs/ITEM_COMPLETION.md)。
-- 第一幕六项和第二幕六项任务有进度／奖励及交互入口，NPC 对白、服务菜单、任务日志与原地图物件已接入；第二幕完整流程及任务首领专属 AI 仍有限制，详见[第一幕任务](docs/ACT1_QUESTS.md)和[第二幕任务](docs/ACT2_QUESTS.md)。
+- 原表物品、TC 掉落、拾取、背包、腰带、药剂、私人箱、方块、金币、堆叠和两组武器；装备直接属性与已支持战斗效果参与派生。方块已支持原 `cubemain` 赫拉迪克法杖及克林姆意志任务配方，通用配方尚未实现；任务流程见[第二幕计划](docs/ACT2_QUESTS.md)，物品边界见[物品完成情况](docs/ITEM_COMPLETION.md)。
+- 五幕27项任务有源码进度／奖励及交互入口，NPC对白、服务菜单、任务日志与原地图物件相连；新增拉苏克打空孔和安亚署名。第一／第二幕运行证据与后续源码状态分别见[第一幕任务](docs/ACT1_QUESTS.md)、[第二幕任务](docs/ACT2_QUESTS.md)和[第三至第五幕任务](docs/LATER_ACT_QUESTS.md)。
 - 使用原版 D2S v96 保存角色成长、技能／绑定、物品／容器、金币、已支持任务及传送点。读档在对应幕城镇建立新局，不保存怪物、弹体或地面掉落；自动地图探索另存同名 `.d2xmap`，搬移角色时携带该文件；不静默迁移旧内部格式，完整字段和兼容边界见[存档](docs/SAVES.md)。
 
 当前事实先查 [BASELINE.md](BASELINE.md) 和对应专题；[能力与缺口](docs/baseline/STATUS.md)中的较早分批记录不能代替最新基线。
@@ -33,7 +33,7 @@
 | 物品与装备 | `InventoryService` 唯一拥有物品状态及事务；`EquipmentLoadout` 提供短期借用，需求／属性与战斗贡献／装备派生独立；内容层解析原表，角色刷新留在宿主适配 |
 | 技能、被动与光环 | `gameplay/skills/` 承担纯求值及当前已实现技能的通用执行；`items/skill_sources.*` 筛选已有授予，`skills/rank_sources.*` 合成显式等级／加成；执行来源传入等级／协同／加成，世界操作经 `world_port.hpp`／`weapon_port.hpp`，具体适配在 `simulation/skill_world.cpp` |
 | 商店与佣兵 UI | `ShopView`、`HirelingView`／`HirelingListView` 提供显示；报价／单项提示经 `INpcClient`，装备用 `InventoryView`；交易／雇佣与装备操作提交窄意图，UI 不查询完整权威状态 |
-| 地图与区域 | `MapTerrain` 组合到活地图，`RegionStore` 管稳定槽位／资源缓存，`AreaRepository` 移交休眠战斗状态；自动地图／出口／传送点消费 `IMapClient`，图形准备经 `IMapAssetSource`，当前批未构建／测试 |
+| 地图与区域 | `MapTerrain` 组合到活地图，`RegionStore` 管稳定槽位／资源缓存，`AreaRepository` 移交休眠战斗状态；自动地图／出口／传送点消费 `IMapClient`，图形准备经 `IMapAssetSource` |
 | 后续改造 | 多玩家／并行活区、装备充能／触发来源、世界单位／物件显示与光照、跨领域事务和权威宿主；多人和网络在前置边界之后实施 |
 
 实施顺序与完成标准见[技术改造方案](docs/TECHNICAL_REFACTOR_PLAN.md)，当前边界见[库存／装备基线](docs/baseline/INVENTORY.md)、[单位基线](docs/baseline/UNITS.md)、[技能基线](docs/baseline/SKILL_RUNTIME.md)和[会话基线](docs/baseline/SESSION.md)。未来服务端保存完整角色／任务／库存，客户端只接收本人必要私有视图与其他可见单位的公开状态；单机继续通过本地权威适配复用规则。

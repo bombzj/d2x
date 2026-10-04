@@ -86,6 +86,10 @@ bool GameSessionImpl::dispatchCommands() {
                     claimAkaraRespec(intent.target);
                 } else if constexpr (std::is_same_v<T, ImbueItem>) {
                     imbueWithCharsi(intent);
+                } else if constexpr (std::is_same_v<T, SocketQuestItem>) {
+                    socketWithLarzuk(intent);
+                } else if constexpr (std::is_same_v<T, PersonalizeQuestItem>) {
+                    personalizeWithAnya(intent);
                 } else if constexpr (std::is_same_v<T, CompleteActOne>) {
                     const auto previousRegion = state().area.region;
                     completeActOne(intent.npc);

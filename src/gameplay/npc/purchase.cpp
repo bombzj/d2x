@@ -18,6 +18,7 @@ std::vector<int> GameSessionImpl::vendorQuestFactors(const VendorDefinition &ven
         case 5: return quest(QuestId::ForgottenTower).stage >= uint32_t(TowerStage::CountessSlain);
         case 6: return quest(QuestId::SistersToTheSlaughter).stage >= uint32_t(SlaughterStage::AndarielSlain);
         case 9: return quest(QuestId::RadamentsLair).stage >= uint32_t(RadamentStage::Slain);
+        case 17: return quest(QuestId::LamEsensTome).stage >= 4;
         default: return false;
         }
     };

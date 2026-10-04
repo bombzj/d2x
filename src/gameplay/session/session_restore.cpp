@@ -1,4 +1,6 @@
 #include "gameplay/quest/acts/act_two_state.hpp"
+#include "gameplay/quest/acts/act_three_state.hpp"
+#include "gameplay/quest/acts/act_five_state.hpp"
 #include "gameplay/items/equipment_inventory.hpp"
 #include "gameplay/items/equipment_stats.hpp"
 #include "gameplay/character/runtime_record.hpp"
@@ -112,6 +114,10 @@ int GameSessionImpl::validateCharacterRestore(const CharacterSaveData &data) con
                                    base.blockFactor, player.weaponSet};
     auto modifiers = resolveEquipmentModifiers(content_, equipmentInventory, data.containers, baseActor);
     applySkillPassives(modifiers, content_.skills, data.player.skillRanks, CombatEffectSet{}, 0);
+    modifiers.baseLife += questBaseLife(player.quests);
+    const int resistance = questResistance(player.quests);
+    modifiers.fireResist += resistance; modifiers.coldResist += resistance;
+    modifiers.lightningResist += resistance; modifiers.poisonResist += resistance;
     const auto stats = deriveCharacterAttributes(definition, player.level, player.allocated, modifiers);
     require(player.hp <= stats.maxLife && player.mana <= stats.maxMana &&
                 player.stamina <= stats.maxStamina, "character resource maximum");
@@ -150,6 +156,10 @@ void GameSessionImpl::restore(CharacterSaveData data) {
                                    restoredPlayer.character.level, base.blockFactor, restoredPlayer.character.weaponSet};
     auto modifiers = resolveEquipmentModifiers(content_, equipmentInventory, data.containers, baseActor);
     applySkillPassives(modifiers, content_.skills, restoredPlayer.character.skillRanks, restoredPlayer.combatEffects, 0);
+    modifiers.baseLife += questBaseLife(restoredPlayer.character.quests);
+    const int resistance = questResistance(restoredPlayer.character.quests);
+    modifiers.fireResist += resistance; modifiers.coldResist += resistance;
+    modifiers.lightningResist += resistance; modifiers.poisonResist += resistance;
     auto characterStats = deriveCharacterAttributes(definition, restoredPlayer.character.level,
         restoredPlayer.character.allocated, modifiers, content_.resistancePenalty.at(size_t(data.difficulty)));
     const EquipmentActor actor{definition.code, characterStats.strength, characterStats.dexterity,
@@ -211,8 +221,21 @@ void GameSessionImpl::restore(CharacterSaveData data) {
     shrineStatuses_.clear();
     for (auto &region : world_.regions())
         std::erase_if(region.objects, [](const auto &object) {
-            return object.questDestination.has_value() || (object.objectClass == 100 && object.contentKey.empty());
+            return object.questDestination.has_value() || object.contentKey.starts_with("quest.npc.") ||
+                object.contentKey == "quest.prisoner.portal" ||
+                (object.objectClass == 100 && object.contentKey.empty());
         });
+    for (auto &region : world_.regions())
+        for (auto &object : region.objects) {
+            object.questTimer.reset(); object.questEscape.reset(); object.questHits = 0; object.questWavePrepared = false;
+            object.animationStartedAt = -1;
+            if (object.act >= 2 && object.interaction == Interaction::QuestObject) object.animationMode = 0;
+            if (object.npcClass == "baalthrone" || object.npcClass == "nihlathak") object.questHidden = false;
+            if (object.npcClass == "act5pow" && !object.npcPath.empty()) {
+                object.pos = object.accessPoint = object.npcPath.front().position;
+                object.npcRoute.clear(); object.questHidden = false;
+            }
+        }
     for (auto &region : world_.regions())
         for (auto &object : region.objects)
             if (object.operatedAt >= 0) {
@@ -260,6 +283,10 @@ void GameSessionImpl::restore(CharacterSaveData data) {
         if (merc.hp > 0) merc.hp = float(hirelingStats().base.life);
     }
     current_ = current;
+    jadeFigurineBoss_ = {};
+    jadeFigurineDropped_ = false;
+    gidbinnBoss_ = {};
+    pendingQuestNpcs_.clear();
     auto &radament = simulation_->state_.player.character.quests.at(size_t(state().population.difficulty)).at(questIndex(QuestId::RadamentsLair));
     if (radament.stage == uint32_t(RadamentStage::Rewarded) && (radament.flags & radamentBookPending) && !carriesQuestItem("ass")) {
         radament.stage = uint32_t(RadamentStage::Unstarted);

@@ -145,6 +145,8 @@ void SceneAssets::loadMonsterActor(const GameSession &session, const MonsterArtS
         if (!equipment[9][0]) equipment[9] = "lit";
     }
     for (auto mode : {"nu", "wl", "rn", "a1", "dt", "a2", "sc", "gh", "dd", "s1", "s2"}) {
+        if (kind == MonsterKind::PrisonDoor && std::string_view(mode) != "nu" && std::string_view(mode) != "dt" &&
+            std::string_view(mode) != "dd" && std::string_view(mode) != "gh") continue;
         if (hydra && std::string_view(mode) != "nu" && std::string_view(mode) != "a1" &&
             std::string_view(mode) != "dt" && std::string_view(mode) != "dd" && std::string_view(mode) != "s2") continue;
         if (kind == MonsterKind::FoulCrowNest &&

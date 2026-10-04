@@ -27,5 +27,6 @@ struct CharacterState {
     std::array<SkillHotkey, 8> skillHotkeys{};
     std::array<int, 4> selectedSkills{-1, -1, -1, -1};
     QuestBook quests{};
+    std::array<std::array<bool, 4>, 3> completedActs{};
 };
 } // namespace d2x

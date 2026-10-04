@@ -117,6 +117,14 @@ void classify(WorldObject &object, const Table &objectRows) {
             object.operateFn = operation.empty() ? 0 : std::stoi(operation);
             if (door && object.operateFn == 8) object.interaction = Interaction::Door;
             if (object.operateFn == 27) object.interaction = Interaction::TeleportPad;
+            if (object.act == 3 && object.operateFn == 49) object.interaction = Interaction::QuestObject;
+            if (object.act == 4 && object.operateFn == 67) object.interaction = Interaction::QuestObject;
+            if (object.act == 4 && object.operateFn >= 62 && object.operateFn <= 66) object.interaction = Interaction::QuestObject;
+            if (object.act == 4 && (object.operateFn == 70 || object.operateFn == 72)) object.interaction = Interaction::QuestObject;
+            if (object.act == 3 && (object.operateFn == 52 || object.operateFn == 54 || object.operateFn == 55 || object.operateFn == 56 || object.operateFn == 73)) object.interaction = Interaction::QuestObject;
+            if (object.act == 2 && (object.operateFn == 28 || object.operateFn == 31 || object.operateFn == 45 || object.operateFn == 46 || object.operateFn == 53 ||
+                object.operateFn == 57 || object.operateFn == 58 || object.operateFn == 59)) object.interaction = Interaction::QuestObject;
+            if (object.act == 2 && (object.operateFn == 44 || object.operateFn == 54)) object.interaction = Interaction::Stair;
             if (object.operateFn == 24 || object.operateFn == 25 || object.operateFn == 34 || object.operateFn == 42 || object.operateFn == 43)
                 object.interaction = Interaction::ActTwoQuest;
             if (object.operateFn == 47 || object.operateFn == 50) object.interaction = Interaction::Stair;
@@ -156,6 +164,7 @@ void classify(WorldObject &object, const Table &objectRows) {
             } else if (object.operateFn == 22) {
                 object.interaction = Interaction::Well;
             }
+            if (object.objectClass == 341) object.interaction = Interaction::None;
             if (object.interaction != Interaction::None) {
                 object.reach = float(std::stoi(record->at("OperateRange")));
                 if (object.reach <= 0)
@@ -295,6 +304,24 @@ void loadRegion(Archives &archives, EntityIds &ids, Region &region, TileLibraryC
                     npcInitFn = std::stoi(init);
                 }
             }
+            if (region.map.terrain.data.act == 2 && chestRow != objectRows.end() &&
+                (chestRow->at("InitFn") == "49" || chestRow->at("InitFn") == "50")) {
+                townNpc = monsters.find("hratli");
+                if (!townNpc || townNpc->hostile() || !townNpc->interact)
+                    throw std::runtime_error("Original neutral Hratli is missing");
+                npcInitFn = std::stoi(chestRow->at("InitFn"));
+            }
+            if (region.map.terrain.data.act == 4 && chestRow != objectRows.end() && chestRow->at("InitFn") == "71") {
+                townNpc = monsters.find("larzuk");
+                if (!townNpc || townNpc->hostile() || !townNpc->interact) throw std::runtime_error("Original neutral Larzuk is missing");
+                npcInitFn = 71;
+            }
+            if (region.map.terrain.data.act == 4 && chestRow != objectRows.end() &&
+                (chestRow->at("InitFn") == "70" || chestRow->at("InitFn") == "68")) {
+                townNpc = monsters.find(chestRow->at("InitFn") == "70" ? "qual-kehk" : "nihlathak");
+                if (!townNpc || townNpc->hostile() || !townNpc->interact) throw std::runtime_error("Original neutral Act V NPC is missing");
+                npcInitFn = std::stoi(chestRow->at("InitFn"));
+            }
             if ((preset == std::end(presets) || region.map.terrain.data.act != 0) && !nativeChest && !townNpc) {
                 ++region.unsupportedObjects;
                 continue;
@@ -312,7 +339,7 @@ void loadRegion(Archives &archives, EntityIds &ids, Region &region, TileLibraryC
             object.npcInitFn = npcInitFn;
             if (npcInitFn) {
                 object.pos = region.map.grid.nearest(object.pos, townNpc->movementRule());
-                object.questHidden = npcInitFn == 19;
+                object.questHidden = npcInitFn == 19 || npcInitFn == 50;
             }
             object.accessPoint = region.map.grid.nearest(object.pos);
             if (source.type == 1 && monsters.supported()) {
@@ -372,6 +399,25 @@ void loadRegion(Archives &archives, EntityIds &ids, Region &region, TileLibraryC
             }
             object.facing = (source.x + source.y) % 8;
             region.objects.push_back(std::move(object));
+        }
+        if (region.map.terrain.data.act == 4) {
+            const auto *pow = monsters.find("act5pow");
+            std::vector<WorldObject> prisoners;
+            for (const auto &marker : region.objects) if (marker.objectClass == 473) {
+                if (!pow || pow->hostile() || !pow->walkVelocity) throw std::runtime_error("Original neutral captive is missing");
+                for (int i = 0; i < 5; ++i) {
+                    WorldObject npc;
+                    npc.id = ids.allocate(); npc.act = 4; npc.palette = 4;
+                    npc.pos = region.map.grid.nearest(marker.pos + Vec{float(i % 3), float(i / 3)}, pow->movementRule());
+                    npc.accessPoint = npc.pos; npc.npcClass = pow->id; npc.npcMovement = pow->movementRule();
+                    npc.appearance = {"monsters", normalize(pow->token), "nu", pow->baseWeapon, pow->components};
+                    npc.name = pow->name; npc.contentKey = marker.contentKey + ".prisoner." + std::to_string(i);
+                    npc.npcPath.push_back({npc.pos, 1});
+                    configureWorldObject(npc, objectRows); npc.interaction = Interaction::None;
+                    prisoners.push_back(std::move(npc));
+                }
+            }
+            region.objects.insert(region.objects.end(), std::make_move_iterator(prisoners.begin()), std::make_move_iterator(prisoners.end()));
         }
         populateAct1WorldObjects(region, ids, catalog, objectRows, groupRows, rollRandom(region.objectSeed));
         initializeChests(region, catalog, objectRows);

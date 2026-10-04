@@ -95,6 +95,8 @@ void importD2sItem(CharacterSaveData &snapshot, const D2sItem &source, const Cla
     item.charges = definition->bookCapacity ? source.quantity : 0;
     item.nativeProperties = true;
     item.nativeSeed = source.seed;
+    item.sockets = source.sockets;
+    item.personalizedName = source.personalizedName;
     item.nativeFlags = source.flags;
     item.nativeFormat = source.format;
     item.nativeGraphic = source.graphic;
@@ -184,6 +186,10 @@ D2sItem exportD2sItem(const CharacterSaveData &snapshot, const ItemInstance &ite
     output.hasGraphic = item.nativeHasGraphic;
     output.graphic = item.nativeGraphic;
     output.questDifficulty = item.nativeQuestDifficulty;
+    output.sockets = item.sockets;
+    output.personalizedName = item.personalizedName;
+    if (!item.personalizedName.empty()) output.flags |= 0x1000000u;
+    if (item.sockets) output.flags |= 0x800u;
     if (content.tables.at(definition->base.sourceTable).number(definition->base.sourceRow, "compactsave").value_or(0))
         output.flags |= 0x00200000;
     output.quality = unsigned(std::find(qualities.begin() + 1, qualities.end(), item.quality) - qualities.begin());

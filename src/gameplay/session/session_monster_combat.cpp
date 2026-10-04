@@ -5,18 +5,22 @@
 namespace d2x {
 std::optional<MonsterCombatProfile> GameSessionImpl::resolvedMonsterCombat(
     const MonsterIdentity &identity, RegionId region, const MonsterEnchantment *enchantment) const {
+    const auto area = worldContent_.levels().find(int(region));
+    const auto *fixed = monsterContent_.superUnique(identity.superUnique);
+    const bool nativeLaterUnique = fixed && fixed->monster == identity.monster && area != worldContent_.levels().end() && area->second.act >= 2;
     const bool actTwoBoss = identity.monster == "radament" || identity.monster == "summoner" || identity.monster == "duriel";
+    const bool laterQuestBoss = identity.monster == "mephisto" || identity.monster == "izual" ||
+        identity.monster == "diablo" || identity.monster == "baalcrab" || nativeLaterUnique;
     if (!enchantment && identity.rank != MonsterRank::Normal && identity.rank != MonsterRank::Minion &&
-        identity.monster != "bloodraven" && identity.monster != "andariel" && !actTwoBoss)
+        identity.monster != "bloodraven" && identity.monster != "andariel" && !actTwoBoss && !laterQuestBoss)
         return std::nullopt;
     const auto key = std::pair{identity.monster, region};
     if (auto cached = monsterCombatCache_.find(key); cached != monsterCombatCache_.end())
         return cached->second && enchantment
             ? enchantedMonsterCombat(*cached->second, *enchantment) : cached->second;
     const auto *monster = monsterContent_.find(identity.monster);
-    const auto area = worldContent_.levels().find(int(region));
     if (!monster || !monster->hostile() || (monster->boss && monster->id != "griswold" &&
-        monster->id != "bloodraven" && monster->id != "andariel" && !actTwoBoss) || area == worldContent_.levels().end() ||
+        monster->id != "bloodraven" && monster->id != "andariel" && !actTwoBoss && !laterQuestBoss) || area == worldContent_.levels().end() ||
         !area->second.population.supported)
         return std::nullopt;
     const int difficulty = state().population.difficulty;

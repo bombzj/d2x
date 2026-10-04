@@ -40,12 +40,13 @@ void GameSessionImpl::tick(float dt, Vec keyboard, bool forceRun) {
     advanceHireling(dt);
     updateObjectTimers();
     updateActTwoObjects();
+    updateLaterQuestObjects();
     world_.at(size_t(current_)).refreshObjectCollision(state().time);
     advanceNpcPaths(dt);
     settleDeaths();
     updateDenQuest();
     updatePickup();
-    updateCainQuestItems();
+    updateQuestItems();
     updateToolsQuestItems();
     updateInteraction();
     world_.at(size_t(current_)).refreshObjectCollision(state().time);

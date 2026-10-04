@@ -14,6 +14,8 @@ struct D2sItem {
     std::array<unsigned, 3> prefixes{}, suffixes{};
     unsigned defense = 0, maxDurability = 0, durability = 0, quantity = 1;
     unsigned questDifficulty = 0, book = 0;
+    unsigned sockets = 0;
+    std::string personalizedName;
     std::vector<D2sStat> stats;
     std::array<std::vector<D2sStat>, 5> setStats;
 };

@@ -13,6 +13,10 @@ struct QuestDeathContext {
     std::optional<RegionId> burial, towerCellar, catacombsFour;
     std::string countessMonster, countessSuperUnique;
     bool andarielAvailable = false;
+    bool jadeFigurineBoss = false, gidbinnBoss = false;
+    bool khalimFlailDrop = false, councilCubeDrop = false;
+    bool councilCleared = false;
+    bool ancientsCleared = false, ancientsRewardEligible = false;
 };
 enum class QuestDeathWaveKind { BloodRaven, Andariel, Radament };
 struct QuestDeathWave { QuestDeathWaveKind kind; };
@@ -22,7 +26,8 @@ struct QuestDeathTransition {
     QuestRecord next;
     QuestDeathNoticeEffect beforeNotice = QuestDeathNoticeEffect::None;
 };
-enum class QuestDeathWorldEffect { TowerChests, SlaughterPortal, DurielDoor };
+enum class QuestDeathWorldEffect { TowerChests, SlaughterPortal, DurielDoor, JadeFigurine, Gidbinn,
+    KhalimFlail, CouncilCube, MephistoSoulstone, IzualGhost, ForgeHammer, AncientsDefeated, AncientsExperience, BaalTyrael };
 using QuestDeathStep = std::variant<QuestDeathTransition, QuestDeathWave, QuestDeathWorldEffect>;
 struct QuestDeathPlan {
     bool andarielFirstKill = false, questFirstKill = false;

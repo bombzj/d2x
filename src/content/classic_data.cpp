@@ -87,6 +87,7 @@ ClassicData loadClassicData(Archives &archives) {
             const auto displayName = strings.find(nameKey.empty() ? item.code : nameKey);
             item.name = displayName.empty() ? value("name") : std::string(displayName);
             item.family = family;
+            item.personalizable = number("nameable").value_or(0) != 0 && !number("compactsave").value_or(0);
             if (family == ItemFamily::Misc) item.betterGem = value("bettergem");
             item.width = number("invwidth").value_or(0);
             item.height = number("invheight").value_or(0);
@@ -143,6 +144,12 @@ ClassicData loadClassicData(Archives &archives) {
             base.block = number("block");
             base.lightRadius = number("lightradius");
             base.sockets = number("gemsockets");
+            const auto &types = tables.at("itemtypes");
+            for (size_t type = 0; type < types.rows().size(); ++type)
+                if (types.value(type, "Code") == base.type)
+                    for (size_t tier = 0; tier < base.socketsByLevel.size(); ++tier)
+                        base.socketsByLevel[tier] = std::min(base.sockets.value_or(0),
+                            types.number(type, std::array{"MaxSock1", "MaxSock25", "MaxSock40"}[tier]).value_or(0));
             base.rarity = number("rarity");
             base.spawnable = number("spawnable");
             base.sourceTable = name;
@@ -273,6 +280,13 @@ ClassicData loadClassicData(Archives &archives) {
     {
         data.tables.emplace("skilldesc", DataTable(archives.read("data/global/excel/skilldesc.txt")));
         data.staffRecipe = loadStaffRecipeContent(data.items, data.tables);
+        data.goldenBird = loadGoldenBirdContent(data.items, data.tables);
+        data.gidbinnCode = loadNativeQuestItem(data.items, data.tables, "g33", 18);
+        data.lamTomeCode = loadNativeQuestItem(data.items, data.tables, "bbb", 16);
+        data.soulstoneCode = loadNativeQuestItem(data.items, data.tables, "mss", 23);
+        data.hellforge = loadHellforgeContent(data.items, data.tables);
+        data.prisonOfIce = loadPrisonOfIceContent(data.items, data.tables);
+        data.khalimRecipe = loadKhalimRecipeContent(data.items, data.tables);
         data.hirelingLayout = loadHirelingLayout(data.tables.at("inventory"));
         data.itemStrings = strings.entries();
         const DataTable hireDescriptions(archives.read("data/global/excel/hiredesc.txt"));
@@ -282,7 +296,7 @@ ClassicData loadClassicData(Archives &archives) {
             if (!code.empty()) data.hirelingDescriptions.emplace(code, label);
         }
         for (const auto &[key, value] : strings.entries())
-            if ((key.size() >= 7 && key.starts_with("qstsa") && key[5] >= '1' && key[5] <= '5' && key[6] == 'q') || key == "newquestlog" ||
+            if ((key.size() >= 7 && key.starts_with("qstsa") && key[5] >= '1' && key[5] <= '5' && key[6] == 'q') || key.starts_with("qsta5q1") || key == "newquestlog" ||
                 key == "qstsComplete" || key == "noactivequest")
                 data.questStrings.emplace(key, value);
             else if (key.starts_with("merc"))

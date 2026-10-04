@@ -41,6 +41,7 @@ class GameSession {
     // Local projection cache token; changes after a completed authority update.
     uint64_t viewRevision() const;
     bool carriesQuestItem(std::string_view code) const;
+    bool questItemOnGround(std::string_view code) const;
     bool canInsertStaff(EntityId id) const;
     bool canHireFrom(EntityId npc) const;
     bool canResurrectHireling(EntityId npc) const;

@@ -1,4 +1,6 @@
 #include "gameplay/quest/acts/act_two_state.hpp"
+#include "gameplay/quest/acts/act_three_state.hpp"
+#include "gameplay/quest/acts/act_five_state.hpp"
 #include "gameplay/simulation/simulation.hpp"
 #include "gameplay/session/session_impl.hpp"
 #include <limits>
@@ -50,6 +52,25 @@ void GameSessionImpl::useItem(ItemHandle handle) {
     }
     auto code = inventory_.item(handle.id)->definition;
     const auto *definition = inventory_.catalog().find(code);
+    if (code == content_.prisonOfIce.scroll) {
+        auto result = inventory_.consume(handle, 1, inventoryAccess());
+        if (!result) { publishInventory(std::move(result), handle.id); return; }
+        auto &record = simulation_->state_.player.character.quests.at(size_t(state().population.difficulty))[questIndex(QuestId::PrisonOfIce)];
+        record.flags |= iceScrollUsed;
+        refreshCharacter(); publishInventory(std::move(result), handle.id);
+        simulation_->emit(ItemUsed{handle.id, code}); simulation_->emit(QuestAdvanced{QuestId::PrisonOfIce, record.stage}); return;
+    }
+    if (code == content_.goldenBird.potion) {
+        auto result = inventory_.consume(handle, 1, inventoryAccess());
+        if (!result) { publishInventory(std::move(result), handle.id); return; }
+        auto &record = simulation_->state_.player.character.quests.at(size_t(state().population.difficulty)).at(questIndex(QuestId::GoldenBird));
+        record.flags &= ~goldenBirdPotionPending;
+        refreshCharacter();
+        publishInventory(std::move(result), handle.id);
+        simulation_->emit(ItemUsed{handle.id, std::move(code)});
+        simulation_->emit(QuestAdvanced{QuestId::GoldenBird, record.stage});
+        return;
+    }
     if (code == "ass") {
         auto result = inventory_.consume(handle, 1, inventoryAccess());
         if (!result) { publishInventory(std::move(result), handle.id); return; }
@@ -72,6 +93,7 @@ void GameSessionImpl::useItem(ItemHandle handle) {
                           ? inventory_.consume(handle, 1, inventoryAccess())
                           : inventory_.consumeBookCharge(handle, inventoryAccess());
         if (result) {
+            if (int(region().definition.id) == 120) resetAncients();
             cancelExit();
             cancelPickup();
             cancelInteraction();

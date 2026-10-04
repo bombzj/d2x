@@ -21,6 +21,7 @@ const HirelingView &LocalNpcClient::hireling() const {
     view.known = session_.hirelingDefinition() != nullptr; view.active = merc.active();
     view.name = translatedName(session_.content(), merc.nameKey);
     view.level = merc.level; view.life = merc.hp; view.experience = merc.experience;
+    view.classId = merc.classId;
     if (view.known) {
         const auto stats = session_.hirelingStats();
         view.maximumLife = stats.base.life; view.strength = stats.base.strength;

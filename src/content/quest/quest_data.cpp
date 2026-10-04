@@ -5,9 +5,104 @@
 #include "resources/data_table.hpp"
 #include "gameplay/items/definitions.hpp"
 #include <stdexcept>
+#include <algorithm>
 #include <utility>
 
 namespace d2x {
+PrisonOfIceContent loadPrisonOfIceContent(const ItemCatalog &items, const std::map<std::string, DataTable, std::less<>> &tables) {
+    PrisonOfIceContent result;
+    result.potion = loadNativeQuestItem(items, tables, "ice", 32);
+    result.scroll = loadNativeQuestItem(items, tables, "tr2", 32);
+    const std::map<std::string, std::vector<std::string>, std::less<>> native{
+        {"ama", {"am1", "am2", "am3", "am4", "am5"}}, {"sor", {"ob1", "ob2", "ob3", "ob4", "ob5"}},
+        {"nec", {"ne1", "ne2", "ne3", "ne4", "ne5"}}, {"pal", {"pa1", "pa2", "pa3", "pa4", "pa5"}},
+        {"bar", {"ba1", "ba2", "ba3", "ba4", "ba5"}}, {"dru", {"dr1", "dr2", "dr3", "dr4", "dr5"}},
+        {"ass", {"ktr", "wrb", "axf", "ces", "clw", "btl", "skr"}}};
+    for (const auto &[character, bases] : native)
+        for (const auto &identity : bases) {
+            const auto *base = items.find(identity);
+            if (!base) throw std::runtime_error("Missing native Anya reward base: " + identity);
+            for (size_t tier = 0; tier < 3; ++tier) {
+                const auto code = tier == 0 ? base->code : std::string(tables.at(base->base.sourceTable).value(base->base.sourceRow, tier == 1 ? "ubercode" : "ultracode"));
+                const auto *item = items.find(code);
+                if (!item || !item->artAvailable) throw std::runtime_error("Missing native Anya reward tier: " + code);
+                result.rewards[character][tier].push_back(item->code);
+            }
+        }
+    return result;
+}
+HellforgeContent loadHellforgeContent(const ItemCatalog &items, const std::map<std::string, DataTable, std::less<>> &tables) {
+    HellforgeContent result;
+    result.hammer = loadNativeQuestItem(items, tables, "hfh", 25);
+    // A4Q3_CreateReward contains native identities and uniform selection; Misc supplies each item definition.
+    constexpr std::array<std::array<const char *, 7>, 3> gems{{
+        {"gpv", "gpr", "gpb", "gpy", "gpg", "gpw", "skz"},
+        {"gzv", "glr", "glb", "gly", "glg", "glw", "skl"},
+        {"gsv", "gsr", "gsb", "gsy", "gsg", "gsw", "sku"}}};
+    for (size_t tier = 0; tier < gems.size(); ++tier)
+        for (size_t i = 0; i < gems[tier].size(); ++i) {
+            const auto *item = items.find(gems[tier][i]);
+            if (!item || !item->artAvailable) throw std::runtime_error("Missing original Hellforge gem");
+            result.gems[tier][i] = item->code;
+        }
+    constexpr std::array firstRune{1, 12, 15};
+    for (size_t difficulty = 0; difficulty < firstRune.size(); ++difficulty)
+        for (size_t i = 0; i < result.runes[difficulty].size(); ++i) {
+            const int number = firstRune[difficulty] + int(i);
+            const auto *item = items.find("r" + std::string(number < 10 ? "0" : "") + std::to_string(number));
+            if (!item || !item->artAvailable || item->base.type != "rune") throw std::runtime_error("Missing original Hellforge rune");
+            result.runes[difficulty][i] = item->code;
+        }
+    return result;
+}
+KhalimRecipeContent loadKhalimRecipeContent(const ItemCatalog &items,
+    const std::map<std::string, DataTable, std::less<>> &tables) {
+    KhalimRecipeContent result;
+    const std::array identities{"qey", "qbr", "qhr", "qf1"};
+    for (size_t i = 0; i < identities.size(); ++i) result.inputs[i] = loadNativeQuestItem(items, tables, identities[i], 17);
+    const auto &recipes = tables.at("cubemain");
+    for (size_t row = 0; row < recipes.rows().size(); ++row) {
+        if (!recipes.number(row, "enabled").value_or(0)) continue;
+        const auto *output = items.find(recipes.value(row, "output"));
+        if (!output || tables.at(output->base.sourceTable).number(output->base.sourceRow, "quest") != 17 ||
+            output->code == result.inputs[3]) continue;
+        if (recipes.number(row, "numinputs") != 4 || !result.output.empty())
+            throw std::runtime_error("Unsupported original Khalim recipe");
+        std::array<bool, 4> found{};
+        for (int column = 1; column <= 4; ++column) {
+            const auto input = recipes.value(row, "input " + std::to_string(column));
+            const auto it = std::find(result.inputs.begin(), result.inputs.end(), input);
+            if (it == result.inputs.end() || found[size_t(it - result.inputs.begin())])
+                throw std::runtime_error("Unsupported original Khalim ingredient");
+            found[size_t(it - result.inputs.begin())] = true;
+        }
+        result.output = loadNativeQuestItem(items, tables, output->code, 17);
+    }
+    if (result.output.empty()) throw std::runtime_error("Missing original Khalim recipe");
+    return result;
+}
+std::string loadNativeQuestItem(const ItemCatalog &items,
+    const std::map<std::string, DataTable, std::less<>> &tables, std::string_view identity, int tag) {
+    const auto *item = items.find(identity);
+    if (!item || !item->artAvailable || tables.at(item->base.sourceTable).number(item->base.sourceRow, "quest") != tag)
+        throw std::runtime_error("Missing original quest item: " + std::string(identity));
+    return item->code;
+}
+GoldenBirdContent loadGoldenBirdContent(const ItemCatalog &items,
+    const std::map<std::string, DataTable, std::less<>> &tables) {
+    GoldenBirdContent result;
+    const auto &misc = tables.at("misc");
+    // These are native quest item identities in A3Q4/ItemMode, not item parameters.
+    for (const auto &[identity, destination] : std::array{
+        std::pair{"j34", &result.figurine}, std::pair{"g34", &result.bird}, std::pair{"xyz", &result.potion}}) {
+        const auto *item = items.find(identity);
+        if (!item || !item->artAvailable || misc.number(item->base.sourceRow, "quest") != 19 ||
+            misc.number(item->base.sourceRow, "questdiffcheck") != 1)
+            throw std::runtime_error("Missing original Golden Bird quest item: " + std::string(identity));
+        *destination = item->code;
+    }
+    return result;
+}
 StaffRecipeContent loadStaffRecipeContent(const ItemCatalog &items,
     const std::map<std::string, DataTable, std::less<>> &tables) {
     StaffRecipeContent result;

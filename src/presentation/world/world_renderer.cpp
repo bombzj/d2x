@@ -71,7 +71,9 @@ const Sprite *SceneView::objectSprite(const WorldObject &object, RegionId region
                 : operating.fps > 0 ? operating.frames / operating.fps : 0;
             if (mode == 2) elapsed = std::max(0.f, elapsed - duration);
         }
-        mode = std::clamp(mode, 0, 2);
+        if (object.animationStartedAt >= 0)
+            elapsed = std::max(0.f, session_.state().time - object.animationStartedAt);
+        mode = std::clamp(mode, 0, 7);
         const auto &animation = modes->second[size_t(mode)];
         if (!animation.frames.empty()) {
             const auto &rule = object.animationRules[size_t(mode)];
@@ -343,7 +345,7 @@ void SceneView::drawActors(Vec mouse) const {
                 const auto &animations = assets_.hirelingAnimations;
                 const char *mode = !hireling.active() ? (hireling.deathAge < hireling.deathDuration ? "dt" : "dd") :
                     hireling.hitTime > 0 ? "gh" : hireling.attack ? "a1" : hireling.moving ? "wl" : "nu";
-                auto found = animations.find(mode);
+                auto found = animations.find(std::to_string(hireling.classId) + "/" + mode);
                 if (found != animations.end()) {
                     const auto &animation = found->second;
                     int index = int(hireling.animationTime);

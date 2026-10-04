@@ -10,6 +10,6 @@
 
 namespace d2x {
 enum class Interaction { None, Talk, Heal, Travel, Stash, Loot, Shrine, Well,
-                         QuestTree, QuestStone, QuestGibbet, QuestTome, QuestMalus, Door, TeleportPad, Stair, ActTwoQuest };
+                         QuestTree, QuestStone, QuestGibbet, QuestTome, QuestMalus, Door, TeleportPad, Stair, ActTwoQuest, QuestObject };
 
 } // namespace d2x

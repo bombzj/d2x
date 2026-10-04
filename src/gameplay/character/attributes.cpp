@@ -37,6 +37,7 @@ void mergeCharacterModifiers(CharacterModifiers &a, const CharacterModifiers &b)
     add(a.strength, b.strength); add(a.dexterity, b.dexterity);
     add(a.vitality, b.vitality); add(a.energy, b.energy);
     add(a.maxLife, b.maxLife); add(a.maxMana, b.maxMana); add(a.maxStamina, b.maxStamina);
+    add(a.baseLife, b.baseLife);
     add(a.attackRating, b.attackRating); add(a.defense, b.defense);
     add(a.fireResist, b.fireResist); add(a.coldResist, b.coldResist);
     add(a.lightningResist, b.lightningResist); add(a.poisonResist, b.poisonResist);
@@ -72,7 +73,7 @@ CharacterAttributes deriveCharacterAttributes(const CharacterDefinition &d, int 
             throw std::runtime_error("Character resource exceeds supported range");
         return int(value / 4);
     };
-    const int naturalLife = quarter(int64_t(d.lifeAdd) + d.vitality, d.lifePerLevel,
+    const int naturalLife = quarter(int64_t(d.lifeAdd) + d.vitality + m.baseLife, d.lifePerLevel,
                                     int64_t(a.vitality) + m.vitality, d.lifePerVitality, level);
     const int naturalMana = quarter(d.energy, d.manaPerLevel,
                                     int64_t(a.energy) + m.energy, d.manaPerEnergy, level);

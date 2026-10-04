@@ -5,6 +5,7 @@
 #include "content/world/world_catalog.hpp"
 #include "d2s_skills.hpp"
 #include "d2s_quests.hpp"
+#include "gameplay/quest/acts/act_three_state.hpp"
 #include <algorithm>
 #include <cmath>
 #include <ctime>
@@ -68,7 +69,7 @@ void importMerc(CharacterRecord &player, const D2sHeader &header, const ClassicD
     const HirelingDefinition *definition = nullptr;
     int level = 1;
     for (const auto &entry : content.hirelings) {
-        if (entry.id != header.mercType || entry.version != 100 || entry.act != 1) continue;
+        if (entry.id != header.mercType || entry.version != 100) continue;
         int candidate = 1;
         while (candidate < 99 && deriveHirelingStats(entry, candidate + 1).experience <= header.mercExperience) ++candidate;
         if (definition && (entry.level > candidate || definition->level > entry.level)) continue;
@@ -110,7 +111,7 @@ void verifyCharacter(const CharacterSaveData &snapshot, const ClassicData &conte
         "invalid weapon set");
     require(player.level >= 1 && player.level <= 99 && player.allocated.strength >= 0 && player.allocated.dexterity >= 0 &&
         player.allocated.energy >= 0 && player.allocated.vitality >= 0 && player.unspentAttributes >= 0 &&
-        allocatedPoints(player.allocated) + player.unspentAttributes == int64_t(player.level - 1) * definition.statPerLevel,
+        allocatedPoints(player.allocated) + player.unspentAttributes == int64_t(player.level - 1) * definition.statPerLevel + questAttributePoints(player.quests),
         "unsupported character stat allocation or quest stat rewards");
     int points = player.unspentSkills;
     for (const auto &[id, rank] : player.skillRanks) {
@@ -146,11 +147,6 @@ CharacterSaveData decodeSave(std::span<const uint8_t> bytes, const ClassicData &
     auto header = readD2sHeader(bytes);
     require(!(header.flags & (4 | 8 | 0x40)), "hardcore, dead or ladder character unsupported");
     auto sections = readD2sFixedSections(bytes);
-    for (size_t difficulty = 0; difficulty < 3; ++difficulty) {
-        for (size_t offset : {size_t(0x22), size_t(0x26), size_t(0x32), size_t(0x4A)})
-            require(!(word(sections.quests, 10 + difficulty * 96 + offset) & 0x81),
-                    "quest rewards from later acts are not implemented");
-    }
     CharacterSaveData snapshot;
     initializeD2sInventory(snapshot, content);
     auto &player = snapshot.player;
@@ -267,6 +263,14 @@ Bytes encodeSave(const CharacterSaveData &source, const ClassicData &content) {
     require(currentAct < actTownLevels.size(), "unknown saved act");
     header.towns[header.difficulty] = uint8_t(0x80 | currentAct);
     header.lastLevel = unsigned(snapshot.lastRegion); header.lastTown = unsigned(actTownLevels[currentAct]);
+    // CLIENTS_UpdateCharacterProgression: five acts per expansion difficulty.
+    // Keep any existing higher native progression rather than downgrading it.
+    unsigned progression = (header.flags >> 8) & 31u;
+    for (size_t difficulty = 0; difficulty < player.quests.size(); ++difficulty)
+        for (const auto &[id, act] : {std::pair{QuestId::SistersToTheSlaughter, 1u}, std::pair{QuestId::SevenTombs, 2u},
+             std::pair{QuestId::Guardian, 3u}, std::pair{QuestId::TerrorsEnd, 4u}, std::pair{QuestId::EveOfDestruction, 5u}})
+            if (player.quests[difficulty][questIndex(id)].stage >= questCompletionStage(id)) progression = std::max(progression, unsigned(difficulty) * 5 + act);
+    header.flags = (header.flags & ~0x1F00u) | (progression << 8);
     for (size_t index = 0; index < player.skillHotkeys.size(); ++index) {
         const auto &key = player.skillHotkeys[index];
         header.hotkeys[index] = key.skill == -2 ? UINT32_MAX
@@ -279,7 +283,9 @@ Bytes encodeSave(const CharacterSaveData &source, const ClassicData &content) {
     waypoints(snapshot, sections, content, true);
     writeD2sFixedSections(bytes, sections);
     const auto &definition = characterDefinition(content, player.characterClass);
-    const auto base = deriveCharacterAttributes(definition, player.level, player.allocated);
+    CharacterModifiers questModifiers;
+    questModifiers.baseLife = questBaseLife(player.quests);
+    const auto base = deriveCharacterAttributes(definition, player.level, player.allocated, questModifiers);
     auto fixed = [](float value) -> int64_t {
         require(std::isfinite(value) && value >= 0 && value < float(UINT32_MAX / 256), "resource value");
         return int64_t(value * 256.f);

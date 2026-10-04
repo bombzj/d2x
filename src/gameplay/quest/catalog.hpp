@@ -26,6 +26,21 @@ inline constexpr std::array<QuestDefinition, size_t(QuestId::Count)> questDefini
     {QuestId::ArcaneSanctuary, 1, 3, 12, 9, 4, 4},
     {QuestId::Summoner, 1, 4, 13, 10, 5, 3},
     {QuestId::SevenTombs, 1, 5, 14, 11, 6, 5},
+    {QuestId::GoldenBird, 2, 0, 20, 12, 4, 6},
+    {QuestId::BladeOfTheOldReligion, 2, 1, 19, 13, 3, 5},
+    {QuestId::KhalimsWill, 2, 2, 18, 14, 2, 4},
+    {QuestId::LamEsensTome, 2, 3, 17, 15, 1, 4},
+    {QuestId::BlackenedTemple, 2, 4, 21, 16, 5, 4},
+    {QuestId::Guardian, 2, 5, 22, 17, 6, 4},
+    {QuestId::FallenAngel, 3, 0, 25, 18, 1, 4},
+    {QuestId::HellsForge, 3, 1, 27, 20, 3, 5},
+    {QuestId::TerrorsEnd, 3, 2, 26, 19, 2, 4},
+    {QuestId::SiegeOnHarrogath, 4, 0, 35, 21, 1, 5},
+    {QuestId::RescueOnMountArreat, 4, 1, 36, 22, 2, 4},
+    {QuestId::PrisonOfIce, 4, 2, 37, 23, 3, 6},
+    {QuestId::BetrayalOfHarrogath, 4, 3, 38, 24, 4, 5},
+    {QuestId::RiteOfPassage, 4, 4, 39, 25, 5, 4},
+    {QuestId::EveOfDestruction, 4, 5, 40, 26, 6, 5},
 }};
 inline constexpr const QuestDefinition &questDefinition(QuestId id) {
     return questDefinitions.at(questIndex(id));
@@ -49,7 +64,7 @@ static_assert([] {
         if (i && d.act < questDefinitions[i - 1].act) return false;
         if (d.displaySlot != (i && d.act == questDefinitions[i - 1].act
                 ? questDefinitions[i - 1].displaySlot + 1 : 0)) return false;
-        if (d.nativeSlot >= 48 || d.icon >= questDefinitions.size() || !d.nativeQuest) return false;
+        if (d.nativeSlot >= 48 || d.icon >= size_t(QuestId::Count) || !d.nativeQuest) return false;
         for (size_t j = 0; j < i; ++j)
             if (d.nativeSlot == questDefinitions[j].nativeSlot || d.icon == questDefinitions[j].icon ||
                 (d.act == questDefinitions[j].act && d.nativeQuest == questDefinitions[j].nativeQuest)) return false;

@@ -6,9 +6,12 @@
 
 namespace d2x {
 bool GameSessionImpl::assignKashyaHireling() {
+    return assignQuestHireling("kashya");
+}
+bool GameSessionImpl::assignQuestHireling(std::string_view npcClass) {
     if (state().player.hireling.sourceRow >= 0) return true;
     for (const auto &npc : region().objects) {
-        if (npc.npcClass != "kashya" || !ensureHirelingOffers(npc.id)) continue;
+        if (npc.npcClass != npcClass || !ensureHirelingOffers(npc.id)) continue;
         auto &offers = hirelingOffers_.at(npc.id);
         assignHireling(offers.front());
         offers.erase(offers.begin());

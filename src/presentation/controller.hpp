@@ -53,7 +53,7 @@ class SceneController {
     bool inventoryQuestTargetValid(EntityId object) const;
     bool openInventoryQuestTarget(Vec mouse, const InventoryItemView &item);
     void submitInventoryQuest(EntityId object, ItemHandle item);
-    void submitImbue(ItemHandle item);
+    void submitNpcItemService(ItemHandle item);
     void endInventoryNpcConversation(EntityId npc);
 
   public:

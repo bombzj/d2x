@@ -1,6 +1,6 @@
 # 构建与运行
 
-最新按幕任务模块及第二幕 NPC 提示批次已完成 Windows Release 游戏／资源工具构建和简单冒烟，修复卷轴解析歧义及杰海因原地图标记未生成 NPC；普通音频启动、欢迎／任务确认、临时存档同进程及独立恢复有证据。源码纳入本次提交，运行入口 `build/bin/d2x.exe`；本轮未重打包，`dist/current` 仍是下方音频修复／自动地图包。准确范围、日志及限制见[任务系统](QUEST_SYSTEM.md#限制与证据)。
+最新第三至第五幕任务批次（2026-10-04）已完成Windows Release游戏／资源工具构建和简单冒烟，修复编译缺项、佣兵组件／牢门声音装载、第四幕对白绑定、赫拉铁力原标记和拉苏克日志文本键。覆盖普通音频启动、A3欢迎及任务分配、衣卒尔2技能点奖励、A5日志、A2欢迎回归和临时D2S同进程／独立恢复，最终实例退出0、stderr空。源码及文档纳入本次提交，运行入口`build/bin/d2x.exe`；本轮未重打包，`dist/current`仍是下方音频修复／自动地图包。准确范围、日志及限制见[任务冒烟](LATER_ACT_QUESTS.md#冒烟范围2026-10-04)。
 
 普通启动音频修复（2026-10-04）：`dist/current` 已纳入法杖原循环声音的 `Defer Inst` 重复实例处理，解决 `Unsupported original travel sound instance rule`。当前 `assets/mpq2` 可读取对应原表及 `quest/staffloop.wav`，本次无需补资源。Windows Release 构建日志 `artifacts/audio-startup-build-20261004.log`；同目录 `audio-startup-before-20261004.*.log` 和 `audio-startup-after-20261004.*.log` 记录非 hidden 女巫／区域1／seed210 两帧启动由退出1变为退出0、修复后stderr空。此前 hidden 冒烟跳过音频初始化，未覆盖此路径。未指定load/save，未读写角色档，未新增测试程序或提交Git；任务演出听感与完整流程仍待验收。
 

@@ -74,7 +74,8 @@ struct ViewState {
     std::string heroMode = "nu", dialogue, dialogueSpeaker, dialogueStatus;
     std::deque<NpcDialogueStarted> pendingNpcDialogue;
     EntityId dialogueObject;
-    EntityId imbueNpc;
+    EntityId inventoryQuestNpc;
+    NpcMenuAction inventoryNpcAction = NpcMenuAction::Imbue;
     EntityId orificeObject;
     std::optional<ItemHandle> orificeItem;
     std::vector<std::string> dialogueLines;

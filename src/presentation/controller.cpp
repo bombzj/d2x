@@ -450,7 +450,7 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
             ui.inventory.cancelGesture();
         else if (ui.inventory.open) {
             toggleInventory();
-            ui.imbueNpc = {};
+            ui.inventoryQuestNpc = {};
         }
         else if (ui.characterOpen)
             ui.characterOpen = false;
@@ -534,7 +534,7 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
     }
     if (handleInventory(input))
         return true;
-    if (ui.imbueNpc) return true;
+    if (ui.inventoryQuestNpc) return true;
     if (ui.automap) {
         ui.automapOffset = ui.automapOffset - input.movement * (120.f * elapsed);
         movement_ = {};

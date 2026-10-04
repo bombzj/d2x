@@ -27,12 +27,15 @@ bool SceneController::handleNpcMenu(const FrameInput &input) {
             npcClient_.submit(IdentifyWithCain{ui.dialogueObject});
         else if (action == NpcMenuAction::Respec)
             npcClient_.submit(ClaimAkaraRespec{ui.dialogueObject});
-        else if (action == NpcMenuAction::Imbue) {
-            ui.imbueNpc = ui.dialogueObject;
+        else if (action == NpcMenuAction::Imbue || action == NpcMenuAction::Socket || action == NpcMenuAction::Personalize) {
+            ui.inventoryQuestNpc = ui.dialogueObject;
+            ui.inventoryNpcAction = action;
             ui.npcMenu = false;
             ui.inventory.open = true;
             ui.inventory.cancelGesture();
-            view_.notice("Select a plain weapon or armor to imbue.");
+            const auto &hints = npcClient_.read(ui.dialogueObject).serviceHints;
+            if (const auto hint = hints.find(action); hint != hints.end()) view_.notice(hint->second);
+            else if (action == NpcMenuAction::Imbue) view_.notice("Select a plain weapon or armor to imbue.");
         }
         else if (action == NpcMenuAction::GoEast) {
             npcClient_.submit(CompleteActOne{ui.dialogueObject});

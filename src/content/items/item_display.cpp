@@ -16,7 +16,7 @@ const SpecialItemRecord *specialItem(const ClassicData &content, const ItemInsta
     return found == records.end() ? nullptr : &*found;
 }
 } // namespace
-std::string displayItemName(const ClassicData &content, const ItemCatalog &catalog, const ItemInstance &item) {
+static std::string baseDisplayItemName(const ClassicData &content, const ItemCatalog &catalog, const ItemInstance &item) {
     auto localized = [&](const std::string &key) {
         const auto &strings = content.itemStrings;
         auto found = strings.find(key);
@@ -61,12 +61,17 @@ std::string displayItemName(const ClassicData &content, const ItemCatalog &catal
         }
     return name;
 }
+std::string displayItemName(const ClassicData &content, const ItemCatalog &catalog, const ItemInstance &item) {
+    auto name = baseDisplayItemName(content, catalog, item);
+    return item.personalizedName.empty() ? name : item.personalizedName + "'s " + name;
+}
 ItemDisplay describeInventoryItem(const ClassicData &content, const ItemCatalog &catalog,
                                  const ItemInstance &item, const ItemDisplayContext &context) {
     const auto &definition = *catalog.find(item.definition);
     ItemDisplay display;
     display.name = displayItemName(content, catalog, item);
     display.tooltip.push_back({display.name, ItemTextTone::Name});
+    if (item.sockets) display.tooltip.push_back({content.itemStrings.at("Socketable") + " (" + std::to_string(item.sockets) + ")", ItemTextTone::Property});
     auto line = [&](std::string value, ItemTextTone tone = ItemTextTone::Normal) {
         if (!value.empty()) display.tooltip.push_back({std::move(value), tone});
     };

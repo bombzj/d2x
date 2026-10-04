@@ -13,6 +13,7 @@ struct QuestNpcFacts {
     bool introduced = false, hasIntroduction = false;
     std::array<bool, size_t(QuestPreludeId::Count)> preludes{};
     QuestItemFacts items;
+    bool lamTomeAvailable = false;
 };
 struct QuestSpeechRequest {
     QuestId quest;
@@ -22,7 +23,7 @@ struct QuestSpeechRequest {
 struct QuestDialogueRequest {
     QuestSpeechRequest speech;
     bool automatic = false, advances = false, alert = false, unread = false;
-    uint32_t staffExplanation = 0;
+    uint32_t questExplanation = 0;
 };
 struct QuestNpcQuery {
     std::vector<QuestSpeechRequest> topics;

@@ -183,13 +183,23 @@ target_sources(d2x_gameplay PRIVATE
   src/gameplay/quest/acts/act_one_npc.cpp src/gameplay/quest/acts/act_two_npc.cpp
   src/gameplay/quest/acts/act_one_conversation.cpp src/gameplay/quest/acts/act_two_conversation.cpp
   src/gameplay/quest/acts/act_one_events.cpp src/gameplay/quest/acts/act_two_events.cpp
-  src/gameplay/quest/acts/act_one_log.cpp src/gameplay/quest/acts/act_two_log.cpp)
+  src/gameplay/quest/acts/act_one_log.cpp src/gameplay/quest/acts/act_two_log.cpp
+  src/gameplay/quest/acts/act_three_npc.cpp src/gameplay/quest/acts/act_three_conversation.cpp
+  src/gameplay/quest/acts/act_three_events.cpp src/gameplay/quest/acts/act_three_log.cpp
+  src/gameplay/quest/acts/act_four_npc.cpp src/gameplay/quest/acts/act_four_conversation.cpp
+  src/gameplay/quest/acts/act_four_events.cpp src/gameplay/quest/acts/act_four_log.cpp
+  src/gameplay/quest/acts/act_five_npc.cpp src/gameplay/quest/acts/act_five_conversation.cpp
+  src/gameplay/quest/acts/act_five_events.cpp src/gameplay/quest/acts/act_five_log.cpp)
+target_sources(d2x_session PRIVATE src/gameplay/session/session_quest_items.cpp)
 target_sources(d2x_session PRIVATE src/gameplay/session/session_quests.cpp src/gameplay/session/session_quest_rewards.cpp
   src/gameplay/session/session_deaths.cpp src/gameplay/session/session_death_quests.cpp
   src/gameplay/session/session_death_experience.cpp)
 target_sources(d2x_session PRIVATE src/gameplay/session/session_act_two.cpp)
+target_sources(d2x_session PRIVATE src/gameplay/session/session_later_act_objects.cpp)
+target_sources(d2x_session PRIVATE src/gameplay/session/session_ancients.cpp src/gameplay/session/session_prisoners.cpp)
+target_sources(d2x_session PRIVATE src/gameplay/session/session_baal.cpp)
 target_sources(d2x_session PRIVATE src/gameplay/session/session_quest_dialogue.cpp)
-target_sources(d2x_session PRIVATE src/gameplay/session/session_cain_world.cpp src/gameplay/session/session_cain_items.cpp src/gameplay/session/session_tools.cpp src/gameplay/session/session_slaughter.cpp)
+target_sources(d2x_session PRIVATE src/gameplay/session/session_cain_world.cpp src/gameplay/session/session_cain_items.cpp src/gameplay/session/session_quest_inventory.cpp src/gameplay/session/session_tools.cpp src/gameplay/session/session_slaughter.cpp)
 target_sources(d2x_session PRIVATE src/gameplay/npc/hireling.cpp)
 target_sources(d2x_session PRIVATE src/gameplay/npc/hireling_actions.cpp src/gameplay/npc/hireling_control.cpp)
 target_sources(d2x_session PRIVATE src/gameplay/npc/hireling_services.cpp)

@@ -153,8 +153,16 @@ GameSessionImpl::GameSessionImpl(Archives &archives, const WorldSelection &selec
         return std::clamp(100 * record->runVelocity.value_or(0) / *record->walkVelocity - 100, 0, 120);
     };
     simulation_->initializeNaturalElite_ = [this](Enemy &enemy, const Enemy *owner) {
+        const auto *jadeMonster = monsterContent_.find(enemy.identity.monster);
+        if (!owner && !jadeFigurineBoss_ && !jadeFigurineDropped_ &&
+            !quest(QuestId::GoldenBird).stage &&
+            worldContent_.levels().at(int(state().area.region)).act == 2 &&
+            (enemy.identity.rank == MonsterRank::Unique || enemy.identity.rank == MonsterRank::SuperUnique) &&
+            enemy.identity.origin != SpawnOrigin::Summoned && jadeMonster && !jadeMonster->flying &&
+            jadeMonster->id != "fetish11") jadeFigurineBoss_ = enemy.id;
         const auto *fixed = monsterContent_.superUnique(enemy.identity.superUnique);
-        const bool supportedFixed = fixed && (fixed->id == "Bishibosh" || fixed->id == "Bonebreak" ||
+        const bool laterAct = worldContent_.levels().at(int(state().area.region)).act >= 2;
+        const bool supportedFixed = fixed && (laterAct || fixed->id == "Bishibosh" || fixed->id == "Bonebreak" ||
             fixed->id == "Coldcrow" || fixed->id == "Rakanishu" || fixed->id == "Treehead WoodFist" ||
             fixed->id == "Pitspawn Fouldog" || fixed->id == "Corpsefire" || fixed->id == "The Cow King" ||
             fixed->id == "Boneash" || fixed->id == "The Smith" || fixed->id == "Griswold" ||
@@ -164,7 +172,7 @@ GameSessionImpl::GameSessionImpl(Archives &archives, const WorldSelection &selec
             !owner->enchantment : enemy.identity.rank != MonsterRank::Champion &&
             enemy.identity.rank != MonsterRank::Unique && !supportedFixed)) return;
         const auto *record = monsterContent_.find(enemy.identity.monster);
-        if (!record || (record->boss && !supportedFixed) || monsterImplementation(record->id).substitute) return;
+        if (!record || (record->boss && !supportedFixed) || (monsterImplementation(record->id).substitute && !laterAct)) return;
         auto identity = enemy.identity;
         identity.rank = MonsterRank::Normal;
         const auto base = resolvedMonsterCombat(identity, state().area.region);
@@ -621,7 +629,7 @@ GameSessionImpl::GameSessionImpl(Archives &archives, const WorldSelection &selec
     reconcileCainObjects();
     Fingerprint fingerprint;
     fingerprint.add(content_.profile);
-    fingerprint.add("quest-rules-v3-act-modules-preludes");
+    fingerprint.add("quest-rules-v18-later-acts");
     auto members = archives.used;
     for (const auto &member : members) {
         fingerprint.add(member);

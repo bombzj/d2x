@@ -224,6 +224,7 @@ bool GameSessionImpl::openShrinePortal() {
     if (!field || !arrival) return false;
     simulation_->state_.publicPortals.push_back({true, ++simulation_->state_.nextPortalRevision,
         region().definition.id, *field, *arrival, state().time, false});
+    if (int(region().definition.id) == 120) resetAncients();
     return true;
 }
 bool GameSessionImpl::upgradeShrineMonster(Vec) {

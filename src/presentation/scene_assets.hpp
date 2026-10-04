@@ -134,9 +134,10 @@ class SceneAssets {
     // Filled on first sighting; mutable so the const draw path can populate them.
     mutable std::map<std::string, GpuAnimation> propAnimations, npcWalkAnimations, hero;
     std::map<std::string, GpuAnimation> hirelingAnimations;
+    std::map<int, GpuAnimation> hirelingPortraits;
     std::map<int, GpuAnimation> summonPortraits;
     mutable std::map<std::string, std::array<GpuAnimation, 3>> waypointAnimations;
-    mutable std::map<std::string, std::array<GpuAnimation, 3>> objectModeAnimations;
+    mutable std::map<std::string, std::array<GpuAnimation, 8>> objectModeAnimations;
     struct MonsterAudio {
         std::string attack1, attack2, skill1, skill2, hit, death, footstep, neutral;
         float footstepInterval = 0, neutralInterval = 0;
@@ -163,7 +164,7 @@ class SceneAssets {
     GpuAnimation automapOptionsTitle;
     std::array<GpuAnimation, 10> automapOptionValues;
     GpuAnimation gameMenuMarker;
-    GpuAnimation hirelingPanel, hirelingScroll, hirelingHead, hirelingArmor, hirelingWeapon, hirelingPortrait;
+    GpuAnimation hirelingPanel, hirelingScroll, hirelingHead, hirelingArmor, hirelingWeapon;
     struct OverlayArt {
         GpuAnimation animation;
         Vec offset;

@@ -150,13 +150,12 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session, const I
         throw std::runtime_error("Character animations missing; supply the classic MPQ resources.");
     indexMonsterArt(session);
     loadHirelingAnimations(archives, session);
-    hirelingPortrait = uiGraphics_.single("data/global/ui/hireables/rogueicon.dc6");
     hirelingPanel = uiGraphics_.single("data/global/ui/panel/npcinv.dc6");
     hirelingScroll = uiGraphics_.single("data/global/ui/panel/scrollbar.dc6");
     hirelingHead = uiGraphics_.single("data/global/ui/panel/inv_helm_glove.dc6");
     hirelingArmor = uiGraphics_.single("data/global/ui/panel/inv_armor.dc6");
     hirelingWeapon = uiGraphics_.single("data/global/ui/panel/inv_weapons.dc6");
-    if (hirelingPortrait.frames.empty() || hirelingPanel.frames.size() < 4 || hirelingScroll.frames.size() < 6 ||
+    if (hirelingPanel.frames.size() < 4 || hirelingScroll.frames.size() < 6 ||
         hirelingHead.frames.empty() || hirelingArmor.frames.empty() || hirelingWeapon.frames.empty())
         throw std::runtime_error("Original expansion hireling panel resources are missing");
     loadMonsterAudio(archives, session.monsterContent());
@@ -770,17 +769,18 @@ void SceneAssets::loadPropObject(const WorldObject &object) const {
         waypointAnimations.emplace(object.key, std::move(animations));
         return;
     }
-    if (object.objectClass == 153 || object.objectClass == 318 || object.interaction == Interaction::ActTwoQuest || object.interaction == Interaction::Door || object.interaction == Interaction::Stair || object.interaction == Interaction::Loot || object.interaction == Interaction::Shrine ||
+    if (object.objectClass == 153 || object.objectClass == 189 || object.objectClass == 318 || object.objectClass == 341 || object.interaction == Interaction::ActTwoQuest || object.interaction == Interaction::QuestObject || object.interaction == Interaction::Door || object.interaction == Interaction::Stair || object.interaction == Interaction::Loot || object.interaction == Interaction::Shrine ||
         object.interaction == Interaction::Well || object.interaction == Interaction::QuestTree ||
         object.interaction == Interaction::QuestStone ||
         object.interaction == Interaction::QuestGibbet ||
         object.interaction == Interaction::QuestTome ||
         object.interaction == Interaction::QuestMalus) {
-        std::array<GpuAnimation, 3> animations;
-        const char *modes[] = {"nu", "op", "on"};
+        std::array<GpuAnimation, 8> animations;
+        const char *modes[] = {"nu", "op", "on", "s1", "s2", "s3", "s4", "s5"};
         for (size_t index = 0; index < animations.size(); ++index)
-            animations[index] = graphics.composite(appearance.category, appearance.token, modes[index],
-                                                    appearance.weapon, &equipment);
+            if (index < 3 || object.animationRules[index].enabled)
+                animations[index] = graphics.composite(appearance.category, appearance.token, modes[index],
+                                                        appearance.weapon, &equipment);
         propAnimations.emplace(object.key, animations[0]);
         objectModeAnimations.emplace(object.key, std::move(animations));
         return;

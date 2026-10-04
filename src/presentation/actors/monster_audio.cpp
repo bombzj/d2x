@@ -34,8 +34,11 @@ void SceneAssets::loadMonsterAudio(Archives &archives, const MonsterCatalog &mon
     for (const auto &[id, record] : monsters.monsters()) {
         const auto implementation = monsterImplementation(id);
         if (implementation.substitute) continue;
-        if (record.sound.empty())
-            throw std::runtime_error("Implemented monster MonSound is missing from the mounted MPQ: " + id);
+        // MonStats permits silent actors such as the original Act V prison door.
+        if (record.sound.empty()) {
+            monsterAudio.emplace(id, MonsterAudio{});
+            continue;
+        }
         auto voice = voiceRows.find(record.sound);
         if (voice == voiceRows.end())
             throw std::runtime_error("Implemented monster MonSounds row is missing from the mounted MPQ: " + id);

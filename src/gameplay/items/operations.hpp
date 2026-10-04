@@ -5,7 +5,7 @@
 #include <optional>
 
 namespace d2x {
-enum class ItemChangeKind { Created, Moved, QuantityChanged, Removed, DurabilityChanged };
+enum class ItemChangeKind { Created, Moved, QuantityChanged, Removed, DurabilityChanged, PropertiesChanged };
 struct ItemChange {
     EntityId item;
     uint64_t revision;

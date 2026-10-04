@@ -16,6 +16,21 @@ enum class QuestId : uint8_t {
     ArcaneSanctuary,
     Summoner,
     SevenTombs,
+    GoldenBird,
+    BladeOfTheOldReligion,
+    KhalimsWill,
+    LamEsensTome,
+    BlackenedTemple,
+    Guardian,
+    FallenAngel,
+    HellsForge,
+    TerrorsEnd,
+    SiegeOnHarrogath,
+    RescueOnMountArreat,
+    PrisonOfIce,
+    BetrayalOfHarrogath,
+    RiteOfPassage,
+    EveOfDestruction,
     Count
 };
 inline constexpr size_t questIndex(QuestId quest) { return size_t(quest); }

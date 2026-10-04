@@ -9,6 +9,8 @@ struct EndNpcConversation { EntityId target; };
 struct TalkToNpc { EntityId target; };
 struct ClaimAkaraRespec { EntityId target; };
 struct ImbueItem { EntityId npc; ItemHandle item; };
+struct SocketQuestItem { EntityId npc; ItemHandle item; };
+struct PersonalizeQuestItem { EntityId npc; ItemHandle item; };
 struct CompleteActOne { EntityId npc; };
 struct CompleteActTwo { EntityId npc; };
 struct OpenGamble { EntityId npc; };
@@ -21,5 +23,5 @@ struct SellVendorItem { EntityId vendor; ItemHandle item; };
 using NpcIntent = std::variant<IdentifyWithCain, EndNpcConversation, TalkToNpc,
     ClaimAkaraRespec, ImbueItem, CompleteActOne, CompleteActTwo, OpenGamble,
     OpenHirelingList, HireMercenary, ResurrectHireling, RepairVendorItem,
-    BuyVendorItem, SellVendorItem>;
+    BuyVendorItem, SellVendorItem, SocketQuestItem, PersonalizeQuestItem>;
 } // namespace d2x

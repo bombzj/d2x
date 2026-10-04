@@ -78,6 +78,10 @@ const MonsterDefinition &monsterDefinition(MonsterKind id) {
     static const MonsterDefinition hydra2{MonsterKind::Hydra2, "21", 0, 0, 0, 0, 25, 0};
     static const MonsterDefinition hydra3{MonsterKind::Hydra3, "hz", 0, 0, 0, 0, 25, 0};
     switch (id) {
+    case MonsterKind::PrisonDoor: {
+        static const MonsterDefinition door{MonsterKind::PrisonDoor, "2q", 0, 0, 0, 0, 0, 0};
+        return door;
+    }
     case MonsterKind::Hydra1: return hydra1;
     case MonsterKind::Hydra2: return hydra2;
     case MonsterKind::Hydra3: return hydra3;

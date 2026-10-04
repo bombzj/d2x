@@ -30,6 +30,7 @@ void Simulation::updateMonsters(float dt) {
         return true;
     };
     for (auto &enemy : state_.area.enemies) {
+        if (enemy.kind == MonsterKind::PrisonDoor) { enemy.route.clear(); continue; }
         if (enemy.conversion && (state_.frame >= enemy.conversion->expiresAt || enemy.hp <= 0)) {
             const auto conversion = *enemy.conversion;
             if (conversion.level > conversion.convertedLevel) {

@@ -17,7 +17,7 @@ void GameSessionImpl::spawnLoot(std::span<const LootDrop> drops, RegionId id, Ve
         // item resolver checks drop collision and the field from the actual source.
         if (position.x < 0 || position.y < 0 || position.x >= grid.width || position.y >= grid.height)
             position = origin;
-        const bool questUnique = content_.staffRecipe.isComponent(drop.code);
+        const bool questUnique = content_.staffRecipe.isComponent(drop.code) || content_.khalimRecipe.isWeapon(drop.code) || drop.code == content_.hellforge.hammer;
         const auto generation = questUnique ? questItemGeneration(drop.code, inventory_.state_.creationRandom) : drop.generation;
         auto result = inventory_.createItem(drop.code, drop.quantity, GroundLocation{id, position},
                             drop.level, generation, origin);
@@ -95,6 +95,16 @@ void GameSessionImpl::updatePickup() {
     if (questItem && ((table.number(base->base.sourceRow, "questdiffcheck").value_or(0) &&
         item->nativeQuestDifficulty < unsigned(state().population.difficulty)) ||
         (item->definition == "ass" && !(quest(QuestId::RadamentsLair).flags & radamentBookPending)) ||
+        ((item->definition == content_.goldenBird.figurine || item->definition == content_.goldenBird.bird) &&
+            quest(QuestId::GoldenBird).stage >= 5) ||
+        (item->definition == content_.goldenBird.potion &&
+            (quest(QuestId::GoldenBird).stage != 6 || !(quest(QuestId::GoldenBird).flags & 1u))) ||
+        (item->definition == content_.gidbinnCode && quest(QuestId::BladeOfTheOldReligion).stage >= 4) ||
+        (item->definition == content_.lamTomeCode && quest(QuestId::LamEsensTome).stage >= 4) ||
+        (item->definition == content_.prisonOfIce.potion && quest(QuestId::PrisonOfIce).stage >= 5) ||
+        (item->definition == content_.prisonOfIce.scroll && (quest(QuestId::PrisonOfIce).flags & 2u)) ||
+        ((item->definition == content_.soulstoneCode || item->definition == content_.hellforge.hammer) && quest(QuestId::HellsForge).stage >= 4) ||
+        (table.number(base->base.sourceRow, "quest") == 17 && quest(QuestId::KhalimsWill).stage >= 4) ||
         (table.number(base->base.sourceRow, "quest") == 10 && item->definition != content_.cubeCode &&
          quest(QuestId::HoradricStaff).stage >= 6) || carriesQuestItem(item->definition))) {
         cancelPickup();

@@ -17,6 +17,7 @@ CharacterRecord captureCharacterRecord(const PlayerState &player) {
     record.bankGold = player.character.bankGold;
     record.npcIntroductions = player.character.npcIntroductions;
     record.questPreludes = player.character.questPreludes;
+    record.completedActs = player.character.completedActs;
     record.experience = player.character.experience;
     record.level = player.character.level;
     record.allocated = player.character.allocated;
@@ -59,6 +60,7 @@ PlayerState restoreCharacterRecord(CharacterRecord record, Vec position) {
     player.character.bankGold = record.bankGold;
     player.character.npcIntroductions = std::move(record.npcIntroductions);
     player.character.questPreludes = record.questPreludes;
+    player.character.completedActs = record.completedActs;
     player.character.experience = record.experience;
     player.character.level = record.level;
     player.character.allocated = record.allocated;

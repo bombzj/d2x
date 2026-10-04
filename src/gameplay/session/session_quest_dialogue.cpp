@@ -34,6 +34,22 @@ QuestNpcFacts GameSessionImpl::questNpcFacts(const WorldObject &npc) const {
     facts.items.shaft = carriesQuestItem(content_.staffRecipe.inputs[0]);
     facts.items.head = carriesQuestItem(content_.staffRecipe.inputs[1]);
     facts.items.staff = carriesQuestItem(content_.staffRecipe.output);
+    facts.items.jadeFigurine = carriesQuestItem(content_.goldenBird.figurine);
+    facts.items.goldenBird = carriesQuestItem(content_.goldenBird.bird);
+    facts.items.gidbinn = carriesQuestItem(content_.gidbinnCode);
+    facts.items.lamTome = carriesQuestItem(content_.lamTomeCode);
+    facts.items.soulstone = carriesQuestItem(content_.soulstoneCode);
+    facts.items.forgeHammer = carriesQuestItem(content_.hellforge.hammer);
+    facts.items.defrostPotion = carriesQuestItem(content_.prisonOfIce.potion);
+    facts.items.resistanceScroll = carriesQuestItem(content_.prisonOfIce.scroll);
+    facts.lamTomeAvailable = state().waypoints.contains(RegionId(79)) ||
+        std::any_of(world_.regions().begin(), world_.regions().end(), [&](const auto &area) {
+            const int level = int(area.definition.id);
+            return level >= 79 && level <= 83 && areaState(int(&area - world_.regions().data())).initialized;
+        });
+    for (size_t i = 0; i < content_.khalimRecipe.inputs.size(); ++i)
+        facts.items.khalim[i] = carriesQuestItem(content_.khalimRecipe.inputs[i]);
+    facts.items.khalim[4] = carriesQuestItem(content_.khalimRecipe.output);
     // Act I rewards require the original backpack/equipment locations.
     for (auto container : {playerContainers_.backpack, playerContainers_.equipment})
         for (auto id : inventory_.contents(container)) {
@@ -60,7 +76,7 @@ NpcQuestDialogue GameSessionImpl::npcQuestDialogue(EntityId npc) const {
     if (!target || target->npcClass.empty()) return {};
     const auto query = queryNpcQuests(state().player.character.quests.at(size_t(state().population.difficulty)), questNpcFacts(*target));
     if (query.prelude) {
-        if (const auto *speech = arrivalSpeech(content_.npcDialogues, target->name, target->act)) {
+        if (const auto *speech = arrivalSpeech(content_.npcDialogues, target->name, target->act, state().player.character.characterClass)) {
             NpcQuestDialogue result;
             result.speech = speech;
             result.automatic = result.alert = true;
@@ -79,14 +95,14 @@ NpcQuestDialogue GameSessionImpl::npcQuestDialogue(EntityId npc) const {
         result.automatic = request.automatic;
         result.readKey = std::move(key);
         result.alert = request.alert;
-        result.staffExplanation = request.staffExplanation;
+        result.questExplanation = request.questExplanation;
         return result;
     }
     return {};
 }
 bool GameSessionImpl::npcQuestAlert(const WorldObject &npc) const {
     if (npc.questHidden || npc.npcClass.empty() || engagedNpc_ == npc.id || state().player.actions.dead ||
-        (!region().definition.safe && !(int(region().definition.id) == 73 && npc.npcClass == "tyrael1"))) return false;
+        !questNpcConversationAllowed(npc)) return false;
     const auto query = queryNpcQuests(state().player.character.quests.at(size_t(state().population.difficulty)), questNpcFacts(npc));
     if (query.introductionAlert) return true;
     if (query.prelude) {

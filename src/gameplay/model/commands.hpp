@@ -68,5 +68,5 @@ using GameCommand =
                  SplitStack, MergeStacks, LoadBook, IdentifyItem, PickupItem, StopMoving, EquipBelt, UseItem, UseBeltColumn,
                  CloseStorage, TransferItem, UseExit, EquipItem, DebugKill, DebugSpawnMonster,
                  DebugDamageMonster, UseTownPortal, UseCainPortal, WaypointTravel, OpenGamble, RepairVendorItem,
-                 OpenHirelingList, HireMercenary, EquipHirelingItem, DebugGrantHireling, ResurrectHireling, UseHirelingPotion, StopChannel, TransmuteCube, CompleteActTwo, SubmitQuestItem>;
+                 OpenHirelingList, HireMercenary, EquipHirelingItem, DebugGrantHireling, ResurrectHireling, UseHirelingPotion, StopChannel, TransmuteCube, CompleteActTwo, SubmitQuestItem, SocketQuestItem, PersonalizeQuestItem>;
 } // namespace d2x

@@ -38,6 +38,23 @@ const QuestView &LocalQuestClient::read() const {
     facts.items.shaft = session_.carriesQuestItem(session_.content().staffRecipe.inputs[0]);
     facts.items.head = session_.carriesQuestItem(session_.content().staffRecipe.inputs[1]);
     facts.items.staff = session_.carriesQuestItem(session_.content().staffRecipe.output);
+    for (size_t i = 0; i < session_.content().khalimRecipe.inputs.size(); ++i)
+        facts.items.khalim[i] = session_.carriesQuestItem(session_.content().khalimRecipe.inputs[i]);
+    facts.items.khalim[4] = session_.carriesQuestItem(session_.content().khalimRecipe.output);
+    facts.items.lamTome = session_.carriesQuestItem(session_.content().lamTomeCode);
+    facts.items.forgeHammer = session_.carriesQuestItem(session_.content().hellforge.hammer);
+    for (const auto &region : session_.regions()) {
+        if (int(region.definition.id) == 108 && region.loaded) {
+            unsigned remaining = 0;
+            for (const auto &object : region.objects)
+                if (object.objectClass >= 392 && object.objectClass <= 396 && object.modeAt(session_.state().time) != 2) ++remaining;
+            facts.sealsRemaining = remaining;
+        }
+        if (int(region.definition.id) == 120)
+            for (const auto &object : region.objects)
+                if (object.operateFn >= 62 && object.operateFn <= 64 && (object.animationMode == 3 || object.animationMode == 4)) facts.ancientsBattle = true;
+    }
+    facts.gidbinnOnGround = session_.questItemOnGround(session_.content().gidbinnCode);
     facts.denRemaining = view.denRemaining;
     facts.journalRead = session_.quest(QuestId::ArcaneSanctuary).stage >= uint32_t(ArcaneStage::JournalRead);
     for (const auto &definition : questDefinitions) {
@@ -51,6 +68,9 @@ const QuestView &LocalQuestClient::read() const {
         entry.title = session_.content().questContent.at(questIndex(definition.id)).title;
         if (const auto description = strings.find(selection.descriptionKey); description != strings.end()) {
             entry.description = description->second;
+            if (selection.formatNumber)
+                if (const auto at = entry.description->find("%d"); at != std::string::npos)
+                    entry.description->replace(at, 2, std::to_string(*selection.formatNumber));
             if (selection.appendDenRemaining) *entry.description += std::to_string(view.denRemaining.value_or(0));
             if (selection.tombSymbol) entry.tombSymbol = unsigned(actTwoTombs(session_.state().mapSeed)[0] - 66);
         }

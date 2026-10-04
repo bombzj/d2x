@@ -129,6 +129,10 @@ bool GameSessionImpl::routeBoundaryMove(Vec target) {
     return adjoiningTarget;
 }
 bool GameSessionImpl::questExitAllowed(RegionId destination) const {
+    if (int(region().definition.id) == 120 && int(destination) == 128)
+        return quest(QuestId::RiteOfPassage).stage == 4 && state().player.character.level >= 20 * (int(state().population.difficulty) + 1);
+    if (int(region().definition.id) == 83 && int(destination) == 100)
+        return quest(QuestId::KhalimsWill).stage >= 4;
     if (int(region().definition.id) == 40 && int(destination) == 50)
         return quest(QuestId::ArcaneSanctuary).stage > 0;
     if (int(destination) == 73)

@@ -29,12 +29,20 @@ struct WorldObject {
     bool questHidden = false;
     int facing = 0;
     int animationMode = 0;
+    float animationStartedAt = -1;
+    void setAnimationMode(int mode, float time) {
+        if (animationMode != mode) { animationMode = mode; animationStartedAt = time; }
+    }
     int objectClass = -1, operateFn = 0, objectDamage = 0;
     std::optional<RegionId> questDestination;
     std::optional<ChestState> chest;
     std::array<int, 8> parameters{};
     float operatedAt = -1;
     std::optional<uint64_t> towerRewardStart;
+    std::optional<uint64_t> questTimer;
+    unsigned questHits = 0;
+    bool questWavePrepared = false; // BaalThrone's local clear/summon phase; never character save data.
+    std::optional<Vec> questEscape;
     bool towerRewardOpened = false;
     std::optional<uint64_t> towerRewardLastFrame;
     float lastDoorOperation = -1;

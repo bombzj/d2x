@@ -15,6 +15,7 @@ struct HirelingView {
     bool known = false, active = false;
     std::string name;
     int level = 0;
+    int classId = -1;
     float life = 0;
     int maximumLife = 1, strength = 0, dexterity = 0, defense = 0;
     int damageMinimum = 0, damageMaximum = 0;

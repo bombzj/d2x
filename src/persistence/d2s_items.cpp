@@ -45,13 +45,21 @@ bool flag(const ClassicData &content, const ItemDefinition &item, const char *co
 }
 void validate(const D2sItem &item, const ItemDefinition &definition, const ClassicData &content) {
     require(item.code.size() >= 1 && item.code.size() <= 4, "base code");
-    require((item.flags & (0x2000000u | 0x800u | 0x10000u | 0x1000000u | 0x4000000u | 0x400000u)) == 0,
-            "socketed, ear, gamble, personalized, runeword or ethereal item");
+    require((item.flags & (0x2000000u | 0x10000u | 0x4000000u | 0x400000u)) == 0,
+            "ear, gamble, runeword or ethereal item");
     require(item.mode == 0 || item.mode == 1 || item.mode == 2 || item.mode == 4, "location");
     require(bool(item.flags & compact) == flag(content, definition, "compactsave"), "compact flag");
     require(item.quality >= 1 && item.quality <= 7, "quality");
     require(item.level >= 1 && item.level <= 99, "item level");
     require(item.autoAffix == 0, "automatic affix");
+}
+void validateAddedProperties(const D2sItem &item, const ItemDefinition &definition) {
+    require(bool(item.flags & 0x800u) == bool(item.sockets), "socket flag/count mismatch");
+    require(item.sockets <= unsigned(std::max(0, definition.base.sockets.value_or(0))) &&
+        (!item.sockets || !(item.flags & compact)), "socket count or compact sockets");
+    require(bool(item.flags & 0x1000000u) == !item.personalizedName.empty(), "personalization flag/name mismatch");
+    require(item.personalizedName.size() <= 15 &&
+        (item.personalizedName.empty() || (definition.personalizable && !(item.flags & compact))), "personalized item type/name");
 }
 void readStats(D2sBitReader &bits, const ClassicData &content, D2sItem &item) {
     for (size_t count = 0; count < 512; ++count) {
@@ -140,6 +148,14 @@ D2sItemRead readD2sItem(std::span<const uint8_t> bytes, const ClassicData &conte
             break;
         }
     }
+    if (item.flags & 0x1000000u) {
+        for (unsigned i = 0; i < 16; ++i) {
+            const auto character = bits.read(7);
+            if (!character) break;
+            require(i < 15, "personalized name length"); item.personalizedName.push_back(char(character));
+        }
+        require(!item.personalizedName.empty(), "empty personalized name");
+    }
     require(bits.read(1) == 0, "realm item data");
     if (!(item.flags & compact)) {
         if (definition->family == ItemFamily::Armor) item.defense = unsigned(readValue(bits, content, 31));
@@ -148,6 +164,7 @@ D2sItemRead readD2sItem(std::span<const uint8_t> bytes, const ClassicData &conte
             if (item.maxDurability) item.durability = unsigned(readValue(bits, content, 72));
         }
         if (flag(content, *definition, "stackable")) item.quantity = bits.read(9);
+        if (item.flags & 0x800u) item.sockets = unsigned(readValue(bits, content, 194));
         const auto setMask = item.quality == 5 ? bits.read(5) : 0;
         readStats(bits, content, item);
         for (size_t index = 0; index < item.setStats.size(); ++index)
@@ -157,6 +174,7 @@ D2sItemRead readD2sItem(std::span<const uint8_t> bytes, const ClassicData &conte
                 item.setStats[index] = std::move(bonus.stats);
             }
     }
+    validateAddedProperties(item, *definition);
     return {std::move(item), bits.size()};
 }
 Bytes writeD2sItem(const D2sItem &item, const ClassicData &content) {
@@ -164,6 +182,7 @@ Bytes writeD2sItem(const D2sItem &item, const ClassicData &content) {
     require(definition != nullptr, "unknown base item");
     validate(item, *definition, content);
     D2sBitWriter bits;
+    validateAddedProperties(item, *definition);
     bits.write(0x4D4A, 16); bits.write(item.flags, 32); bits.write(item.format, 10);
     bits.write(item.mode, 3); bits.write(item.body, 4); bits.write(item.x, 4); bits.write(item.y, 4); bits.write(item.page, 3);
     uint32_t code = 0;
@@ -205,6 +224,11 @@ Bytes writeD2sItem(const D2sItem &item, const ClassicData &content) {
             break;
         }
     }
+    if (item.flags & 0x1000000u) {
+        require(!item.personalizedName.empty() && item.personalizedName.size() <= 15, "personalized name length");
+        for (unsigned char character : item.personalizedName) { require(character > 0 && character < 128, "personalized name character"); bits.write(character, 7); }
+        bits.write(0, 7);
+    }
     bits.write(0, 1);
     if (!(item.flags & compact)) {
         if (definition->family == ItemFamily::Armor) writeValue(bits, content, 31, item.defense);
@@ -213,6 +237,7 @@ Bytes writeD2sItem(const D2sItem &item, const ClassicData &content) {
             if (item.maxDurability) writeValue(bits, content, 72, item.durability);
         }
         if (flag(content, *definition, "stackable")) bits.write(item.quantity, 9);
+        if (item.flags & 0x800u) writeValue(bits, content, 194, item.sockets);
         unsigned setMask = 0;
         for (size_t index = 0; index < item.setStats.size(); ++index)
             if (!item.setStats[index].empty()) setMask |= 1u << index;

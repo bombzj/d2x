@@ -10,33 +10,6 @@ QuestRecord &cain(WorldState &world) {
 }
 } // namespace
 
-void GameSessionImpl::updateCainQuestItems() {
-    auto &staff = simulation_->state_.player.character.quests.at(size_t(state().population.difficulty)).at(questIndex(QuestId::HoradricStaff));
-    if (staff.stage < 6) {
-        uint32_t next = staff.stage;
-        for (const auto &[id, item] : inventory_.state().items) {
-            const auto *location = std::get_if<ContainerLocation>(&item.location);
-            if (!location || (location->container != playerContainers_.backpack && location->container != playerContainers_.cube &&
-                location->container != playerContainers_.equipment)) continue;
-            if (item.definition != content_.cubeCode && item.nativeQuestDifficulty < unsigned(state().population.difficulty)) continue;
-            if (item.definition == content_.staffRecipe.scroll || item.definition == content_.cubeCode ||
-                content_.staffRecipe.isComponent(item.definition)) next = std::max(next, 1u);
-            if (item.definition == content_.staffRecipe.output) next = 5;
-        }
-        if (staff.stage != next) { staff.stage = next; simulation_->emit(QuestAdvanced{QuestId::HoradricStaff, next}); }
-    }
-    bool acquiredBark = false;
-    for (const auto &event : events())
-        if (const auto *picked = std::get_if<ItemPickedUp>(&event);
-            picked && picked->definition == "bks")
-            acquiredBark = true;
-    if (acquiredBark) {
-        auto &record = cain(simulation_->state_);
-        if (cainAdvance(record, CainStage::BarkAcquired))
-            simulation_->emit(QuestAdvanced{QuestId::SearchForCain, record.stage});
-    }
-}
-
 bool GameSessionImpl::translateCainScroll(EntityId npc) {
     auto &record = cain(simulation_->state_);
     if (record.stage != uint32_t(CainStage::BarkAcquired)) return false;
@@ -67,12 +40,14 @@ bool GameSessionImpl::translateCainScroll(EntityId npc) {
 bool GameSessionImpl::claimCainReward() {
     auto &record = cain(simulation_->state_);
     if (record.stage != uint32_t(CainStage::Rescued)) return false;
+    const int difficulty = state().population.difficulty;
+    return claimQuestRing(difficulty == 0 ? 7 : difficulty == 1 ? 30 : 60,
+        difficulty == 0 ? ItemQuality::Magic : ItemQuality::Rare);
+}
+bool GameSessionImpl::claimQuestRing(int level, ItemQuality quality) {
     const auto *ring = content_.items.find("rin");
     auto cell = ring ? inventory_.findSpace(playerContainers_.backpack, ring->code) : std::nullopt;
     if (!ring || !cell) return false;
-    const int difficulty = state().population.difficulty;
-    const int level = difficulty == 0 ? 7 : difficulty == 1 ? 30 : 60;
-    const auto quality = difficulty == 0 ? ItemQuality::Magic : ItemQuality::Rare;
     auto generated = rollAffixItem(content_, *ring, quality, level,
                                    inventory_.state_.creationRandom, characterDefinition_.code);
     if (!generated.deferred.empty()) return false;

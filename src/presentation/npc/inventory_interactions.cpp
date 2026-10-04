@@ -27,8 +27,10 @@ bool SceneController::openInventoryQuestTarget(Vec mouse, const InventoryItemVie
 void SceneController::submitInventoryQuest(EntityId object, ItemHandle item) {
     session_.submit(SubmitQuestItem{object, item});
 }
-void SceneController::submitImbue(ItemHandle item) {
-    npcClient_.submit(ImbueItem{view_.ui().imbueNpc, item});
+void SceneController::submitNpcItemService(ItemHandle item) {
+    if (view_.ui().inventoryNpcAction == NpcMenuAction::Socket) npcClient_.submit(SocketQuestItem{view_.ui().inventoryQuestNpc, item});
+    else if (view_.ui().inventoryNpcAction == NpcMenuAction::Personalize) npcClient_.submit(PersonalizeQuestItem{view_.ui().inventoryQuestNpc, item});
+    else npcClient_.submit(ImbueItem{view_.ui().inventoryQuestNpc, item});
 }
 void SceneController::endInventoryNpcConversation(EntityId npc) {
     npcClient_.submit(EndNpcConversation{npc});

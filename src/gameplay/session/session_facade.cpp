@@ -10,6 +10,7 @@ GameSession::GameSession(Archives &archives, const WorldSelection &selection, in
                                              population, std::move(characterClass), std::move(characterName))) {}
 GameSession::~GameSession() = default;
 bool GameSession::carriesQuestItem(std::string_view code) const { return impl_->carriesQuestItem(code); }
+bool GameSession::questItemOnGround(std::string_view code) const { return impl_->questItemOnGround(code); }
 bool GameSession::canInsertStaff(EntityId id) const { return impl_->canInsertStaff(id); }
 bool GameSession::canHireFrom(EntityId npc) const { return impl_->canHireFrom(npc); }
 bool GameSession::canResurrectHireling(EntityId npc) const { return impl_->canResurrectHireling(npc); }

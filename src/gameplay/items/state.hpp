@@ -56,6 +56,8 @@ struct ItemInstance {
     bool nativeHasGraphic = false;
     unsigned nativeQuestDifficulty = 0;
     unsigned nativeMaxDurability = 0;
+    unsigned sockets = 0;
+    std::string personalizedName;
     ItemLocation location;
     ItemHandle handle() const { return {id, revision}; }
 };
