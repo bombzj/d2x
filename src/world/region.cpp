@@ -230,7 +230,7 @@ void loadRegion(Archives &archives, EntityIds &ids, Region &region, TileLibraryC
         for (size_t index = 0; index < region.map.terrain.data.objects.size(); ++index) {
             const auto &source = region.map.terrain.data.objects[index];
             if (source.type == 1 && monsters.supported()) {
-                auto unit = monsters.preset(region.map.terrain.data.act, source.id, region.map.terrain.data.version);
+                auto unit = monsters.preset(region.map.terrain.data.act, source.id, region.map.terrain.data.version, source.nativeIdentity);
                 auto monster = monsters.find(unit.id);
                 // Hostile presets and placement markers belong to the population system.
                 // Keep friendly NPC/critter appearances in the static object pipeline.
@@ -250,11 +250,11 @@ void loadRegion(Archives &archives, EntityIds &ids, Region &region, TileLibraryC
             }
             auto chestRow = std::find_if(objectRows.begin(), objectRows.end(), [&](const auto &row) {
                 return !row.at("Id").empty() && std::stoi(row.at("Id")) == resolvedClass &&
-                    (row.at("OperateFn") == "4" || originalClass == 580 || originalClass == 581 ||
+                    (source.nativeIdentity || row.at("OperateFn") == "4" || originalClass == 580 || originalClass == 581 ||
                      region.map.terrain.data.act != 0);
             });
             const bool nativeChest = chestRow != objectRows.end();
-            const auto unit = source.type == 1 ? monsters.preset(region.map.terrain.data.act, source.id, region.map.terrain.data.version) : MonsterPreset{};
+            const auto unit = source.type == 1 ? monsters.preset(region.map.terrain.data.act, source.id, region.map.terrain.data.version, source.nativeIdentity) : MonsterPreset{};
             const auto *townNpc = source.type == 1 ? monsters.find(unit.id) : nullptr;
             int npcInitFn = 0;
             if (region.map.terrain.data.act == 1 && chestRow != objectRows.end()) {
@@ -307,7 +307,7 @@ void loadRegion(Archives &archives, EntityIds &ids, Region &region, TileLibraryC
             }
             object.accessPoint = region.map.grid.nearest(object.pos);
             if (source.type == 1 && monsters.supported()) {
-                auto unit = monsters.preset(region.map.terrain.data.act, source.id, region.map.terrain.data.version);
+                auto unit = monsters.preset(region.map.terrain.data.act, source.id, region.map.terrain.data.version, source.nativeIdentity);
                 if (const auto *monster = monsters.find(unit.id)) {
                     object.npcClass = monster->id;
                     object.npcMovement = monster->movementRule();
@@ -385,7 +385,7 @@ void loadRegion(Archives &archives, EntityIds &ids, Region &region, TileLibraryC
         }
         populateAct1WorldObjects(region, ids, catalog, objectRows, groupRows, rollRandom(region.objectSeed));
         initializeChests(region, catalog, objectRows);
-        if (int(region.definition.id) == 2) {
+        if (int(region.definition.id) == 2 && !region.recipe.native) {
             const auto *navi = monsters.find("navi");
             for (const auto &piece : region.recipe.pieces) {
                 if (piece.preset < 4 || piece.preset > 7 || piece.variant != 3)

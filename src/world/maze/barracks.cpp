@@ -8,15 +8,28 @@ FamilyRules barracksRules() {
 void RoomMaze::placeBarracks(int direction) {
     if (direction < 0 || direction > 2)
         throw std::runtime_error("Invalid outer cloister direction");
-    int parent = int(rooms_.size()) - 1;
-    for (int index = parent - 1; index >= 0; --index) {
-        const auto &candidate = rooms_[index];
-        const auto &current = rooms_[parent];
-        if ((direction == 0 && candidate.x > current.x) || (direction == 1 && candidate.y > current.y) ||
-            (direction == 2 && candidate.x < current.x))
-            parent = index;
-    }
     constexpr int extensions[]{2, 3, 0};
+    int parent = -1;
+    for (int index = int(rooms_.size()) - 1; index >= 0; --index) {
+        const auto &candidate = rooms_[index];
+        if (parent >= 0) {
+            const auto &current = rooms_[parent];
+            if (!((direction == 0 && candidate.x > current.x) ||
+                (direction == 1 && candidate.y > current.y) ||
+                (direction == 2 && candidate.x < current.x))) continue;
+        }
+        const int extension = extensions[direction];
+        if (candidate.fixed || (candidate.mask & bits[extension])) continue;
+        // GetFreeLocation probes a temporary room and frees it. Even a failed
+        // overlap probe consumes AllocRoomEx's level draw; no links survive.
+        Chamber probe(seed_.next());
+        probe.x = candidate.x + dx[extension];
+        probe.y = candidate.y + dy[extension];
+        if (std::none_of(rooms_.begin(), rooms_.end(), [&](const auto &room) {
+            return room.x == probe.x && room.y == probe.y;
+        })) parent = index;
+    }
+    if (parent < 0) throw std::runtime_error("No native barracks court connection location");
     int entrance = add(parent, extensions[direction], false);
     if (entrance < 0)
         throw std::runtime_error("Cannot place original barracks court connection");

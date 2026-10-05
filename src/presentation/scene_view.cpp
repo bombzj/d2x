@@ -225,6 +225,7 @@ void SceneView::sessionRestored() {
     exploredAutomap_.clear();
     view_.automapOffset = {};
     roofOpacity_.clear();
+    nativePops_.clear();
     view_.waypointSource = {};
     monsterPositions_.clear();
     monsterLooks_.clear();
@@ -318,13 +319,21 @@ void SceneView::advance(float dt) {
     lighting_.advance(dt, session_.worldContent().level(int(session_.region().definition.id)));
     advanceMissileVisuals(dt);
     const auto &currentRegion = session_.region();
-    const auto &popups = currentRegion.map.terrain.data.roofPopups;
-    auto &opacity = roofOpacity_[currentRegion.definition.id];
-    if (opacity.size() != popups.size())
-        opacity.assign(popups.size(), 1.f);
-    for (size_t i = 0; i < popups.size(); ++i) {
-        const float target = popups[i].contains(actor.position) ? 0.f : 1.f;
-        opacity[i] += std::clamp(target - opacity[i], -4.f * dt, 4.f * dt);
+    if (currentRegion.map.terrain.preparedRooms) {
+        for (const auto &[slot, offset] : session_.sceneRegions()) {
+            const auto &region = session_.regions()[slot];
+            if (region.map.terrain.preparedRooms)
+                nativePops_[region.definition.id].update(region.map.terrain, actor.position - offset,
+                    region.recipe.worldX, region.recipe.worldY, GetTime());
+        }
+    } else {
+        const auto &popups = currentRegion.map.terrain.data.roofPopups;
+        auto &opacity = roofOpacity_[currentRegion.definition.id];
+        if (opacity.size() != popups.size()) opacity.assign(popups.size(), 1.f);
+        for (size_t i = 0; i < popups.size(); ++i) {
+            const float target = popups[i].contains(actor.position) ? 0.f : 1.f;
+            opacity[i] += std::clamp(target - opacity[i], -2.f * dt, 2.f * dt);
+        }
     }
     lighting_.update(session_.map().grid, session_.worldContent().level(int(session_.region().definition.id)),
                      session_.region().definition.id,

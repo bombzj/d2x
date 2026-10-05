@@ -599,6 +599,9 @@ struct RealmSession::Impl {
         std::erase_if(world.equipment,
                       [&](const auto &entry) { return !player || entry.second.owner != *player; });
         world.rooms.clear();
+        world.roomAssignmentRevisions.clear();
+        world.mapEvents.clear();
+        world.mapEventSequence = 0;
         if (!preserveInitialPosition) {
             world.playerPosition.reset();
             for (auto &[key, unit] : world.units) {
@@ -607,6 +610,7 @@ struct RealmSession::Impl {
                 unit.destination.reset();
             }
         }
+        world.mapInitialPlayerPosition = world.playerPosition;
         ++world.areaGeneration;
         ++world.revision;
     }
@@ -1092,6 +1096,30 @@ bool RealmSession::move_to(OnlinePoint target, bool run) {
         return true;
     } catch (const std::exception &) {
         p.fail(OnlineErrorKind::Transport, "Movement request could not be queued");
+        return false;
+    }
+}
+bool RealmSession::use_exit(uint32_t serverUnitId) {
+    auto &p = *impl_;
+    if (!p.require(OnlineStage::ProtocolReady)) return false;
+    const auto found = p.view.world.units.find({5, serverUnitId});
+    if (!p.view.load.serverLoadComplete || !p.view.world.playerPosition ||
+        (p.view.world.life && !*p.view.world.life) || found == p.view.world.units.end() ||
+        !found->second.position || !found->second.classId) {
+        p.error(OnlineErrorKind::Input, "The server exit unit is not available");
+        return false;
+    }
+    if (Clock::now() < p.nextMovement) return false;
+    try {
+        // D2MOO PlrMsg Rcv0x13: packet byte, uint32 unit type, uint32 GUID.
+        Writer out;
+        out.u8(0x13); out.u32(5); out.u32(serverUnitId);
+        p.sent(p.gs, out.release());
+        p.nextMovement = Clock::now() + std::chrono::milliseconds(100);
+        p.view.error.reset(); p.changed();
+        return true;
+    } catch (const std::exception &) {
+        p.fail(OnlineErrorKind::Transport, "Exit interaction could not be queued");
         return false;
     }
 }

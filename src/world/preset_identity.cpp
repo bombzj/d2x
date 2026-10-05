@@ -18,6 +18,7 @@ int actOneObjectClass(const MapObject &source, int version) {
 }
 } // namespace
 int originalObjectClass(const MapObject &source, int version, int act) {
+    if (source.nativeIdentity) return source.id;
     if (act == 0)
         return actOneObjectClass(source, version);
     if (version <= 5)

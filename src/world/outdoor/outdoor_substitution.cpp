@@ -20,12 +20,12 @@ void applyOutdoorThemes(Archives &archives, const WorldCatalog &catalog, const L
         auto data = decodeDs1(archives.read(record.file), record.file);
         if (data.substitutionMethod != 1 && data.substitutionMethod != 2)
             throw std::runtime_error("Unsupported room substitution method: " + record.file);
-        if (data.skippedSubstitutionGroups) {
+        if (data.zeroFilledSubstitutionGroups) {
             static std::set<std::string> reported;
             if (reported.insert(record.file).second)
                 std::cerr << "MPQ substitution " << record.file << ": retained "
-                          << data.substitutionGroups.size() << " complete groups; skipped "
-                          << data.skippedSubstitutionGroups << " incomplete trailing group\n";
+                          << data.substitutionGroups.size() << " declared groups; zero-filled "
+                          << data.zeroFilledSubstitutionGroups << " incomplete trailing group\n";
         }
         patterns.push_back({&record, std::move(data)});
     }
@@ -77,6 +77,8 @@ void applyOutdoorThemes(Archives &archives, const WorldCatalog &catalog, const L
                 };
                 auto stamp = [&](size_t groupIndex, int x, int y, int variant) {
                     const auto &group = pattern.substitutionGroups[groupIndex];
+                    // Position draws and fitting precede this successful no-op.
+                    if (!group.width || !group.height) return;
                     MapPiece piece;
                     piece.x = roomX + x; piece.y = roomY + y;
                     piece.width = group.width; piece.height = group.height;

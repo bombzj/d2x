@@ -13,6 +13,14 @@
 #include "world/population.hpp"
 #include "world/world_report.hpp"
 #include "world/region.hpp"
+#include "world/outdoor/native_act_layout.hpp"
+#include "world/retail/outdoor_layout.hpp"
+#include "world/retail/room_data.hpp"
+#include "world/retail/preset_room.hpp"
+#include "world/retail/tile_materialization.hpp"
+#include "world/retail/preset_scan.hpp"
+#include "world/native_map.hpp"
+#include <nlohmann/json.hpp>
 #include "core/random.hpp"
 #include "core/random_seed.hpp"
 #include <algorithm>
@@ -30,6 +38,10 @@ int main(int argc, char **argv) {
                    "  ... item <code>\n  ... drops <monster-class>\n  ... maps [level-ID] [map-seed]\n"
                    "  ... presets [name-filter]\n  ... maze <level-ID> [map-seed] [difficulty:0-2]\n"
                    "  ... outdoor <level-ID> [map-seed]\n"
+                   "  ... native-layout <act:1-5> <map-seed> [difficulty:0-2]\n"
+                   "  ... native-outdoor <level> <map-seed> [difficulty:0-2]\n"
+                   "  ... native-room <level> <map-seed> <tile-x> <tile-y> [difficulty:0-2]\n"
+                   "  ... native-map <level> <map-seed> <difficulty:0-2> [original-export.json|complete]\n"
                    "  ... substitutions <LvlSub-type>\n"
                    "  ... save-info <file.d2s>\n"
                    "  ... treasure <TC-name> [seed] [monster-level]\n"
@@ -213,7 +225,8 @@ int main(int argc, char **argv) {
                 std::cout << record.name << " " << record.file << " version=" << data.version
                           << " method=" << data.substitutionMethod
                           << " groups=" << data.substitutionGroups.size()
-                          << " skipped=" << data.skippedSubstitutionGroups << '\n';
+                          << " declared=" << data.declaredSubstitutionGroups
+                          << " zeroFilled=" << data.zeroFilledSubstitutionGroups << '\n';
                 for (const auto &group : data.substitutionGroups) {
                     std::cout << "  group " << group.x << ',' << group.y << " size=" << group.width << 'x'
                               << group.height << " variants=" << group.variants << '\n';
@@ -250,7 +263,7 @@ int main(int argc, char **argv) {
             const int level = std::stoi(argv[3]);
             d2x::MapRecipe recipe;
             if (command == "maze")
-                recipe = d2x::generateMaze(catalog, level, seed, argc == 6 ? std::stoi(argv[5]) : 0);
+                recipe = d2x::generateMaze(a, catalog, level, seed, argc == 6 ? std::stoi(argv[5]) : 0);
             else {
                 d2x::WorldSelection selection;
                 selection.level = level;
@@ -327,6 +340,288 @@ int main(int argc, char **argv) {
             map.load(a, cache, recipe, settings.seed);
             auto plan = d2x::planPopulation(monsters, &level, preset, map, settings);
             d2x::writePopulationReport(std::cout, plan, &level, preset, settings);
+        } else if (command == "native-map" && (argc == 6 || argc == 7)) {
+            using Json = nlohmann::json;
+            auto integer = [](std::string_view text, auto &value) {
+                const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), value);
+                if (error != std::errc{} || end != text.data() + text.size())
+                    throw std::runtime_error("Invalid native-map argument");
+            };
+            int level{}, difficulty{}; uint32_t seed{};
+            integer(argv[3], level); integer(argv[4], seed); integer(argv[5], difficulty);
+            d2x::WorldCatalog catalog(a, difficulty);
+            d2x::TileLibraryCache cache(a);
+            d2x::NativeMapGenerator generator(a, catalog, cache, 0, seed, difficulty);
+            const auto allocated = generator.levelRooms(level);
+            const auto &placement = generator.layout().levels.at(level);
+            Json report{{"id", level}, {"seed", seed}, {"difficulty", difficulty},
+                {"offset", {{"x", placement.x * 5}, {"y", placement.y * 5}}},
+                {"size", {{"width", placement.width * 5}, {"height", placement.height * 5}}},
+                {"rooms", Json::array()}, {"samples", Json::array()}, {"events", Json::array()}};
+            for (auto room = allocated.rbegin(); room != allocated.rend(); ++room) {
+                const auto &r = generator.tiles().rooms().at(*room).room;
+                report["rooms"].push_back({{"x", r.x}, {"y", r.y}, {"width", r.width},
+                    {"height", r.height}, {"preset", r.preset}, {"file", r.file}, {"flags", r.flags},
+                    {"initialSeed", r.seed.initial}, {"outdoorFlags", r.outdoorFlags},
+                    {"auxiliary", r.auxiliary}, {"themeMask", r.themeMask}});
+            }
+            if (argc == 7 && std::string_view(argv[6]) == "complete") {
+                const auto recipe = generator.recipe(level);
+                const auto snapshot = generator.completeLevel(level);
+                report["offset"] = {{"x", snapshot.tileX * 5}, {"y", snapshot.tileY * 5}};
+                report["size"] = {{"width", snapshot.map.grid.width}, {"height", snapshot.map.grid.height}};
+                report["collision"] = snapshot.collision;
+                report["boundaries"] = Json::array();
+                for (const auto &b : recipe.boundaries)
+                    report["boundaries"].push_back({{"destination", b.destination}, {"side", b.side},
+                        {"plane", b.plane}, {"start", b.start}, {"end", b.end}});
+                report["objects"] = Json::array();
+                for (const auto &o : snapshot.map.terrain.data.objects)
+                    report["objects"].push_back({{"type", o.type}, {"id", o.id}, {"x", o.x}, {"y", o.y},
+                        {"nativeIdentity", o.nativeIdentity}});
+                report["exits"] = Json::array();
+                for (const auto &exit : snapshot.map.terrain.exits)
+                    report["exits"].push_back({{"slot", exit.slot}, {"id", exit.selection.id},
+                        {"destination", exit.destination}, {"x", exit.position.x}, {"y", exit.position.y}});
+                std::cout << report.dump() << '\n';
+                return 0;
+            }
+            Json events = Json::array();
+            if (argc == 7) {
+                std::ifstream input(argv[6]);
+                if (!input) throw std::runtime_error("Original map export cannot be opened");
+                const auto original = Json::parse(input);
+                if (original.at("id").get<int>() != level)
+                    throw std::runtime_error("Original export belongs to another level");
+                if (original.at("seed").get<uint32_t>() != seed || original.at("difficulty").get<int>() != difficulty)
+                    throw std::runtime_error("Original export has a different seed or difficulty");
+                events = original.at("native").at("events");
+                if (!events.is_array() || events.size() > 65536)
+                    throw std::runtime_error("Invalid original activation sequence");
+            } else for (const auto &room : report["rooms"])
+                for (const auto *op : {"reveal", "sample", "hide"})
+                    events.push_back({{"op", op}, {"level", level}, {"x", room.at("x")}, {"y", room.at("y")}});
+            try {
+            for (const auto &event : events) {
+                const auto op = event.at("op").get<std::string>();
+                const int area = event.at("level").get<int>(), x = event.at("x").get<int>(), y = event.at("y").get<int>();
+                if (catalog.level(area).act != 0 || x < 0 || y < 0 || x > 13107 || y > 13107)
+                    throw std::runtime_error("Invalid original room coordinates");
+                report["events"].push_back(event);
+                if (op == "reveal") generator.reveal(area, x, y);
+                else if (op == "hide") generator.hide(area, x, y);
+                else if (op == "sample") {
+                    // Native sight propagation can activate a room without a
+                    // direct AddRoomData call. Sample that existing room only;
+                    // do not synthesize an extra reveal and change the order.
+                    const d2x::RetailRoomCollision *grid = nullptr;
+                    for (size_t index = 0; index < generator.tiles().rooms().size(); ++index) {
+                        const auto &room = generator.tiles().rooms()[index];
+                        if (room.level == area && room.room.x == x && room.room.y == y) {
+                            grid = generator.tiles().collision(index);
+                            break;
+                        }
+                    }
+                    if (!grid) throw std::runtime_error("Original activation sequence has no matching active collision");
+                    report["samples"].push_back({{"level", area}, {"x", grid->x}, {"y", grid->y},
+                        {"width", grid->width}, {"height", grid->height}, {"flags", grid->flags}});
+                    auto &sample = report["samples"].back();
+                    sample["near"] = Json::array();
+                    for (size_t index = 0; index < generator.tiles().rooms().size(); ++index) {
+                        const auto &room = generator.tiles().rooms()[index];
+                        if (room.level != area || room.room.x != x || room.room.y != y) continue;
+                        for (auto other : room.activeNear) {
+                            if (!generator.tiles().collision(other)) continue;
+                            const auto &active = generator.tiles().rooms()[other];
+                            Json data{{"level", active.level}, {"x", active.room.x}, {"y", active.room.y},
+                                {"tiles", Json::array()}, {"units", Json::array()}, {"pops", Json::array()}};
+                            for (const auto &popup : active.roofPopups)
+                                data["pops"].push_back({{"x", popup.x}, {"y", popup.y},
+                                    {"width", popup.width}, {"height", popup.height}, {"group", popup.group},
+                                    {"main", popup.roofMain}, {"pad", popup.pad}});
+                            for (const auto &unit : active.units)
+                                data["units"].push_back({{"type", unit.type}, {"id", unit.id},
+                                    {"x", unit.x}, {"y", unit.y}});
+                            for (const auto &unit : active.authoredUnits)
+                                data["units"].push_back({{"type", unit.unit.type}, {"id", unit.unit.id},
+                                    {"x", unit.unit.x}, {"y", unit.unit.y}});
+                            auto append = [&](const auto &indices, const char *array) {
+                                for (auto tileIndex : indices) {
+                                    const auto &tile = generator.tiles().tiles()[tileIndex];
+                                    const auto identity = active.libraries->identity(*tile.tile);
+                                    data["tiles"].push_back({{"array", array}, {"x", tile.x}, {"y", tile.y},
+                                        {"library", identity.first}, {"record", identity.second},
+                                        {"type", tile.type}, {"flags", tile.flags}, {"orientation", tile.tile->orientation},
+                                        {"main", tile.tile->main}, {"sub", tile.tile->sub}, {"rarity", tile.tile->rarity},
+                                        {"collision", tile.tile->flags}});
+                                }
+                            };
+                            append(active.floors, "floor"); append(active.walls, "wall"); append(active.shadows, "shadow");
+                            sample["near"].push_back(std::move(data));
+                        }
+                    }
+                } else throw std::runtime_error("Unknown original room operation");
+            }
+            } catch (const std::exception &e) {
+                report["error"] = e.what();
+                report["failedEvent"] = report["events"].size() - 1;
+                std::cout << report.dump() << '\n';
+                return 1;
+            }
+            std::cout << report.dump() << '\n';
+        } else if (((command == "native-layout" || command == "native-outdoor") && (argc == 5 || argc == 6)) ||
+                   (command == "native-room" && (argc == 7 || argc == 8))) {
+            int act{}, difficulty{};
+            uint32_t seed{};
+            auto parse = [](std::string_view text, auto &value) {
+                const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), value);
+                if (error != std::errc{} || end != text.data() + text.size())
+                    throw std::runtime_error("Invalid native-layout argument");
+            };
+            parse(argv[3], act); parse(argv[4], seed);
+            if (command == "native-room") {
+                if (argc == 8) parse(argv[7], difficulty);
+            } else if (argc == 6) parse(argv[5], difficulty);
+            if (difficulty < 0 || difficulty > 2 || (command == "native-layout" && (act < 1 || act > 5)))
+                throw std::runtime_error("Invalid native map act or difficulty");
+            d2x::WorldCatalog catalog(a, difficulty);
+            if (command == "native-outdoor" || command == "native-room") {
+                const auto layout = d2x::placeNativeAct(catalog, catalog.level(act).act, seed);
+                const auto outdoor = d2x::buildRetailOutdoorLayout(a, catalog, layout, act);
+                if (command == "native-room") {
+                    int tileX{}, tileY{};
+                    parse(argv[5], tileX); parse(argv[6], tileY);
+                    const auto found = std::find_if(outdoor.rooms.begin(), outdoor.rooms.end(),
+                        [&](const auto &room) { return room.x == tileX && room.y == tileY; });
+                    if (found == outdoor.rooms.end()) throw std::runtime_error("No native room at this tile anchor");
+                    std::map<std::string, d2x::MapData> patterns;
+                    auto reader = [&](const std::string &path) -> const d2x::MapData & {
+                        const auto key = d2x::normalize(path);
+                        auto [entry, fresh] = patterns.try_emplace(key);
+                        if (fresh) entry->second = d2x::decodeDs1(a.read(key), key);
+                        return entry->second;
+                    };
+                    d2x::MapData grids;
+                    d2x::TileLibraryCache cache(a);
+                    d2x::RetailTileMaterializer tiles(catalog);
+                    size_t roomIndex{};
+                    const auto &warpSlots = layout.connections.at(act).warps;
+                    if (found->preset) {
+                        const auto &preset = catalog.presets().at(found->preset);
+                        const auto &source = reader(preset.variants.at(size_t(found->file)));
+                        auto room = d2x::buildRetailPresetRoomData(preset, *found, source);
+                        auto libraries = std::make_shared<d2x::RetailTileSelector>(cache, catalog,
+                            catalog.level(act).levelType, found->dt1Mask);
+                        roomIndex = tiles.registerRoom(act, *found, std::move(libraries), warpSlots);
+                        const std::array<size_t, 1> near{roomIndex};
+                        d2x::RetailPresetScan scanner(a);
+                        const auto saved = outdoor.presetUnits.find({act, found->preset, found->file,
+                            found->mapX, found->mapY});
+                        const std::span<const d2x::RetailPresetUnit> preloaded =
+                            saved == outdoor.presetUnits.end() ? std::span<const d2x::RetailPresetUnit>{}
+                            : std::span<const d2x::RetailPresetUnit>{saved->second};
+                        tiles.loadPreset(roomIndex, room, near, [&](d2x::Seed &random) {
+                            return scanner.buildUnits(source, catalog.level(act).act,
+                                found->mapX, found->mapY, random);
+                        }, preloaded);
+                        grids = std::move(room.grids);
+                        std::cout << "preset=" << found->preset << " file=" << found->file
+                                  << " killEdge=" << room.killEdgeX << ',' << room.killEdgeY << '\n';
+                    } else {
+                        d2x::RetailPresetScan identities(a);
+                        auto room = d2x::buildRetailOutdoorRoomData(cache, catalog, catalog.level(act),
+                                                                  *found, outdoor.paths, reader, identities);
+                        roomIndex = tiles.registerRoom(act, room.room, room.tiles, warpSlots);
+                        const std::array<size_t, 1> near{roomIndex};
+                        tiles.loadOutdoor(roomIndex, room, near);
+                        grids.width = room.grids.width; grids.height = room.grids.height;
+                        grids.floors.push_back(std::move(room.grids.floors));
+                        grids.walls.push_back(std::move(room.grids.walls));
+                        grids.shadows = std::move(room.grids.shadows);
+                        std::cout << "themes=" << found->themeMask << " shadows=" << room.shadows.size()
+                                  << " authoredUnits=" << room.grids.units.size() << '\n';
+                        for (const auto &shadow : room.shadows)
+                            std::cout << "shadow=" << shadow.x << ',' << shadow.y << " value=" << shadow.value
+                                      << " key=" << shadow.tile->key() << " rarity=" << shadow.tile->rarity << '\n';
+                    }
+                    auto print = [&](const char *name, const std::vector<std::vector<d2x::MapCell>> &layers) {
+                        for (size_t i = 0; i < layers.size(); ++i) {
+                            std::cout << name << '=' << i << '\n';
+                            for (int y = 0; y < grids.height; ++y) {
+                                for (int x = 0; x < grids.width; ++x) {
+                                    const auto &cell = layers[i].at(size_t(y) * size_t(grids.width) + size_t(x));
+                                    std::cout << ' ' << cell.value << ':' << cell.orientation;
+                                }
+                                std::cout << '\n';
+                            }
+                        }
+                    };
+                    print("floor", grids.floors); print("wall", grids.walls);
+                    const std::array<size_t, 1> active{roomIndex};
+                    tiles.activateCollision(roomIndex, active);
+                    const auto &collision = *tiles.collision(roomIndex);
+                    const auto &materialized = tiles.rooms().at(roomIndex);
+                    std::cout << "selectedFloors=" << materialized.floors.size()
+                              << " selectedWalls=" << materialized.walls.size()
+                              << " selectedShadows=" << materialized.shadows.size()
+                              << " tileUnits=" << materialized.units.size()
+                              << " collisionSubtiles=" << collision.width << ',' << collision.height << '\n';
+                    for (const auto &tile : tiles.tiles())
+                        std::cout << "tile=" << tile.x << ',' << tile.y << " type=" << tile.type
+                                  << " flags=" << tile.flags << " key=" << tile.tile->key()
+                                  << " rarity=" << tile.tile->rarity << '\n';
+                    for (const auto &unit : materialized.units)
+                        std::cout << "tileUnit=" << unit.type << ':' << unit.id << " position="
+                                  << unit.x << ',' << unit.y << '\n';
+                    for (const auto &entry : materialized.authoredUnits)
+                        std::cout << "presetUnit=" << entry.unit.type << ':' << entry.unit.id
+                                  << " resolved=" << entry.identityResolved << " mode=" << entry.mode
+                                  << " position=" << entry.unit.x << ',' << entry.unit.y
+                                  << " pathNodes=" << entry.unit.path.size() << '\n';
+                    std::cout << "Isolated room only: no neighboring activation or established warp links; "
+                                 "server terrain/collision equivalence not certified.\n";
+                    return 0;
+                }
+                std::cout << "Layout and room allocation only; theme tiles and collision not certified. level=" << act
+                          << " origin=" << outdoor.placement.x << ',' << outdoor.placement.y
+                          << " grid=" << outdoor.grid.width() << ',' << outdoor.grid.height()
+                          << " flags=" << outdoor.flags << '\n';
+                for (int y = 0; y < outdoor.grid.height(); ++y)
+                    for (int x = 0; x < outdoor.grid.width(); ++x) {
+                        const auto &cell = outdoor.grid.cell(x, y);
+                        std::cout << "cell=" << x << ',' << y << " preset=" << cell.preset
+                                  << " file=" << ((cell.flags >> 16) & 15) << " flags=" << cell.flags
+                                  << " vis=" << cell.links << " auxiliary=" << cell.auxiliary << '\n';
+                    }
+                for (size_t i = 0; i < outdoor.paths.size(); ++i) {
+                    std::cout << "path=" << i;
+                    for (const auto &point : outdoor.paths[i]) std::cout << ' ' << point.x << ',' << point.y;
+                    std::cout << '\n';
+                }
+                for (const auto &room : outdoor.rooms)
+                    std::cout << "room=" << room.x << ',' << room.y << " size=" << room.width << ','
+                              << room.height << " preset=" << room.preset << " file=" << room.file
+                              << " initialSeed=" << room.seed.initial << " flags=" << room.flags
+                              << " dt1=" << room.dt1Mask << " themes=" << room.themeMask << '\n';
+                return 0;
+            }
+            const auto layout = d2x::placeNativeAct(catalog, act - 1, seed);
+            std::cout << "Placement only; terrain not certified. startSeed=" << layout.startSeed << '\n';
+            if (layout.staffTomb)
+                std::cout << "staffTomb=" << *layout.staffTomb << " bossTomb=" << *layout.bossTomb << '\n';
+            for (const auto &[id, p] : layout.levels) {
+                std::cout << "level=" << id << " origin=" << p.x << ',' << p.y << " size="
+                          << p.width << ',' << p.height << " direction=" << p.direction
+                          << " alignment=" << p.alignment << " outdoorFlags=" << p.outdoorFlags;
+                if (p.presetVariant) std::cout << " variant=" << *p.presetVariant;
+                std::cout << '\n';
+            }
+            for (const auto &[from, to] : layout.links)
+                std::cout << "placement-link=" << from << ',' << to << '\n';
+            for (const auto &[level, slots] : layout.connections)
+                for (size_t i = 0; i < slots.visible.size(); ++i)
+                    if (slots.visible[i]) std::cout << "vis=" << level << ':' << i << " destination="
+                                                  << slots.visible[i] << " warp=" << slots.warps[i] << '\n';
         } else if (command == "maps" && (argc == 3 || argc == 4 || argc == 5)) {
             d2x::WorldCatalog catalog(a);
             if (argc == 5) {

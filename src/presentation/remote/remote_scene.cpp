@@ -1,9 +1,11 @@
 #include "remote_scene.hpp"
+#include "presentation/world/warp_visibility.hpp"
 #include "content/character/realm_portrait.hpp"
 #include "content/monsters/monster_animation.hpp"
 #include "network/protocol/bits.hpp"
 #include "presentation/hud/hud_layout.hpp"
 #include "presentation/world/scene_geometry.hpp"
+#include "presentation/world/preset_pops.hpp"
 #include "resources/anim_data.hpp"
 #include "resources/data_table.hpp"
 #include <algorithm>
@@ -91,8 +93,11 @@ struct RemoteScene::Impl {
     bool menu{}, running{true};
     int rendered{}, unavailable{};
     bool playerDisplayed{};
-    Impl(Archives &a)
-        : archives(a), terrain(a), actors(a), units(a, "data/global/palette/units/pal.dat"),
+    PresetPops pops;
+    Impl(Archives &a, int act)
+        : archives(a), terrain(a, "data/global/palette/act" + std::to_string(act + 1) + "/pal.dat"),
+          actors(a, "data/global/palette/act" + std::to_string(act + 1) + "/pal.dat"),
+          units(a, "data/global/palette/units/pal.dat"),
           ui(a, "data/global/palette/sky/pal.dat"), portraits(a),
           animations(a.read("data/global/animdata.d2")), objects(a.read("data/global/excel/objects.txt")),
           monstats(a.read("data/global/excel/monstats.txt")),
@@ -273,6 +278,7 @@ struct RemoteScene::Impl {
             gameGeneration = v.gameGeneration;
             areaGeneration = v.world.areaGeneration;
             motion.clear();
+            pops.clear();
             menu = false;
             time = 0;
             currentMap = nullptr;
@@ -291,7 +297,25 @@ struct RemoteScene::Impl {
             return Vec{float(int(p.x) - origin.x), float(int(p.y) - origin.y)};
         };
         const Vec camera = local(*v.world.playerPosition) + Vec{.5f, .5f};
+        if (map.terrain.preparedRooms)
+            pops.update(map.terrain, local(*v.world.playerPosition), origin.x / 5, origin.y / 5, GetTime());
         auto screen = [&](Vec p) { return project(p - camera) + Vec{W * .5f, (H - HUD) * .5f}; };
+        std::optional<size_t> selectedExit;
+        if (!menu && !hudSurface(mouse)) for (size_t i = 0; i < map.terrain.exits.size(); ++i) {
+            const auto &exit = map.terrain.exits[i];
+            const bool assigned = std::any_of(v.world.units.begin(), v.world.units.end(), [&](const auto &entry) {
+                const auto &[key, unit] = entry;
+                return key.type == 5 && unit.classId == exit.selection.id && unit.position &&
+                    local(*unit.position).x == exit.position.x &&
+                    local(*unit.position).y == exit.position.y;
+            });
+            if (!assigned) continue;
+            const auto at = screen(exit.position);
+            const auto &r = exit.selection;
+            if (CheckCollisionPointRec(rv(mouse), {at.x + r.selectX, at.y + r.selectY,
+                float(r.selectWidth), float(r.selectHeight)})) { selectedExit = i; break; }
+        }
+        const auto warps = warpTileVisibility(map.terrain, selectedExit);
         struct Draw {
             SceneOrder order;
             const Sprite *image;
@@ -300,26 +324,42 @@ struct RemoteScene::Impl {
             bool shadow{};
         };
         std::vector<Draw> draw, roofs;
-        auto addTile = [&](MapCell cell, int x, int y, int pass, int layer, bool wall, Color tint = WHITE) {
-            if (!cell.present())
-                return;
-            const auto index = map.terrain.renderTileIndex(cell, x, y, time);
+        auto addSelected = [&](int index, int type, int x, int y, int pass, int layer, bool wall, Color tint) {
             if (index < 0 || size_t(index) >= tiles.size())
                 return;
             const Vec feet{x * 5.f, y * 5.f}, p = screen(feet);
             if (!visible(tiles[size_t(index)], p))
                 return;
             Draw item{sceneOrder(feet, pass, wall, layer), &tiles[size_t(index)], p, tint, false};
-            if (cell.orientation == 15) {
-                for (const auto &popup : map.terrain.data.roofPopups)
+            if (type == 15) {
+                if (!map.terrain.preparedRooms) for (const auto &popup : map.terrain.data.roofPopups)
                     if (popup.contains(camera) && popup.covers(x, y, map.terrain.tiles[size_t(index)]->main))
                         item.tint.a = 0;
                 roofs.push_back(item);
             } else
                 draw.push_back(item);
         };
+        auto addTile = [&](MapCell cell, int x, int y, int pass, int layer, bool wall, Color tint = WHITE) {
+            if (!cell.present()) return;
+            addSelected(map.terrain.renderTileIndex(cell, x, y, time), cell.orientation,
+                x, y, pass, layer, wall, tint);
+        };
         const auto &data = map.terrain.data;
-        for (int y = 0; y < data.height; ++y)
+        if (map.terrain.preparedRooms) {
+            for (size_t i = 0; i < map.terrain.instances.size(); ++i) {
+                const auto &instance = map.terrain.instances[i];
+                if (warps[i] == 1 || (warps[i] != 0 && (instance.flags & 8) && !(instance.flags & 0x200))) continue;
+                const bool floor = instance.type == 0, shadow = instance.type == 13;
+                const bool lower = instance.type >= 16 && instance.type <= 19;
+                const int layer = int((instance.flags & 0x1c000) >> 14) - 1;
+                Color tint = shadow ? Color{20, 22, 25, 100} : WHITE;
+                tint.a = uint8_t(unsigned(tint.a) * (warps[i] == 0 ? 255 : pops.alpha(i)) / 255);
+                addSelected(instance.renderTile(time), instance.type, instance.x, instance.y,
+                    floor || shadow || lower ? 0 : 1,
+                    floor ? 1 : shadow ? 2 : lower ? 0 : -100 + layer * 2,
+                    !floor && !shadow && !lower, tint);
+            }
+        } else for (int y = 0; y < data.height; ++y)
             for (int x = 0; x < data.width; ++x) {
                 const auto cell = size_t(y) * data.width + x;
                 for (const auto &floor : data.floors)
@@ -379,6 +419,24 @@ struct RemoteScene::Impl {
                 playerDisplayed = true;
             draw.push_back({sceneOrder(feet, visual->order == 1 ? 0 : 1, visual->order == 2, 2), image, p,
                             WHITE, visual->shadow});
+        }
+        for (const auto &decoration : map.terrain.clientObjects) {
+            if (decoration.type != 2) continue;
+            OnlineUnit unit;
+            unit.classId = uint16_t(decoration.id);
+            unit.mode = 0;
+            auto *visual = object(unit);
+            if (!visual || visual->animation.frames.empty()) continue;
+            const auto &animation = visual->animation;
+            const int advance = int(time * std::max(0.f, visual->fps));
+            const int frame = visual->cycle ? (visual->start + advance) % std::max(1, animation.count)
+                : std::min(visual->start + advance, animation.count - 1);
+            const auto *image = animation.frame(0, std::max(0, frame));
+            const Vec feet{float(decoration.x), float(decoration.y)};
+            const auto position = screen(feet) + visual->offset;
+            if (image && visible(*image, position))
+                draw.push_back({sceneOrder(feet, visual->order == 1 ? 0 : 1,
+                    visual->order == 2, 2), image, position, WHITE, visual->shadow});
         }
         auto paint = [&](auto &list) {
             std::stable_sort(list.begin(), list.end(),
@@ -442,7 +500,7 @@ struct RemoteScene::Impl {
         return intent;
     }
 };
-RemoteScene::RemoteScene(Archives &a) : impl_(std::make_unique<Impl>(a)) {}
+RemoteScene::RemoteScene(Archives &a, int act) : impl_(std::make_unique<Impl>(a, act)) {}
 RemoteScene::~RemoteScene() = default;
 RemoteSceneIntent RemoteScene::frame(const OnlineView &v, const Map &m, const OnlineSceneView &s, Vec mouse) {
     return impl_->draw(v, m, s, mouse);

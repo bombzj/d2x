@@ -35,6 +35,7 @@ struct PresetRecord {
     std::string name;
     uint32_t dt1Mask = 0;
     bool fillBlanks = false, killEdge = false, populate = false;
+    bool scan = false, outdoors = false;
     bool automap = false;
     bool animate = false;
     int animationSpeed = 0;
@@ -55,6 +56,8 @@ struct SubstitutionRecord {
 struct WarpRecord {
     int id = 0, selectX = 0, selectY = 0, selectWidth = 0, selectHeight = 0;
     int exitX = 0, exitY = 0, offsetX = 0, offsetY = 0;
+    bool litVersion = false;
+    int tiles = 0;
     std::string name, direction;
 };
 struct MapPiece {
@@ -70,6 +73,8 @@ struct MapPiece {
     int pops = -1, popPad = 0;
 };
 struct MapRecipe {
+    struct NativeRequest { int level{}; uint32_t seed{}; int difficulty{}; };
+    std::optional<NativeRequest> native;
     int preset = 0, variant = 0, levelType = 0;
     int act = -1;
     std::string ds1;

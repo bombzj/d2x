@@ -62,6 +62,16 @@ Json snapshot(const OnlineView &v, const OnlineSceneView &scene) {
                        {"renderedUnits", scene.renderedUnits},
                        {"unavailableUnits", scene.unavailableUnits},
                        {"playerDisplayed", scene.playerDisplayed}};
+    result["scene"]["area"] = optional(scene.area);
+    result["scene"]["layoutOrigin"] = point(scene.layoutOrigin);
+    result["scene"]["layoutMatched"] = scene.layoutMatched;
+    result["scene"]["layoutReason"] = scene.layoutReason;
+    result["scene"]["nativeMapReady"] = scene.nativeMapReady;
+    result["scene"]["nativeMapReason"] = scene.nativeMapReason;
+    result["scene"]["cachedAreas"] = scene.cachedAreas;
+    result["scene"]["mapErrors"] = Json::array();
+    for (const auto &[area, reason] : scene.mapErrors)
+        result["scene"]["mapErrors"].push_back({{"area", area}, {"reason", reason}});
     result["world"] = {{"revision", v.world.revision},
                        {"areaGeneration", v.world.areaGeneration},
                        {"playerPosition", point(v.world.playerPosition)},
@@ -69,6 +79,10 @@ Json snapshot(const OnlineView &v, const OnlineSceneView &scene) {
                        {"mana", optional(v.world.mana)},
                        {"stamina", optional(v.world.stamina)},
                        {"ignoredPackets", v.world.ignoredPackets},
+                       {"mapEventSequence", v.world.mapEventSequence},
+                       {"mapEventFirst", v.world.mapEvents.empty() ? Json(nullptr)
+                            : Json(v.world.mapEvents.front().sequence)},
+                       {"mapEventCount", v.world.mapEvents.size()},
                        {"units", Json::array()},
                        {"rooms", Json::array()},
                        {"equipment", Json::array()},
@@ -83,9 +97,13 @@ Json snapshot(const OnlineView &v, const OnlineSceneView &scene) {
                                             {"lifePercent", optional(u.lifePercent)},
                                             {"name", u.name},
                                             {"equipmentObserved", u.equipmentObserved}});
-    for (const auto &[room, anchor] : v.world.rooms)
+    for (const auto &[room, anchor] : v.world.rooms) {
+        const auto assignment = v.world.roomAssignmentRevisions.find(room);
         result["world"]["rooms"].push_back(
-            {{"area", std::get<0>(room)}, {"tileX", anchor.x}, {"tileY", anchor.y}});
+            {{"area", std::get<0>(room)}, {"tileX", anchor.x}, {"tileY", anchor.y},
+             {"assignmentRevision", assignment == v.world.roomAssignmentRevisions.end()
+                                        ? Json(nullptr) : Json(assignment->second)}});
+    }
     for (const auto &[id, item] : v.world.equipment)
         result["world"]["equipment"].push_back({{"id", id},
                                                 {"owner", item.owner},
@@ -188,6 +206,18 @@ std::string onlineDebugCommand(const std::string &input, net::RealmSession &sess
             if (!scene.movementAvailable)
                 return Json{{"ok", false}, {"error", scene.reason}}.dump();
             accepted = move({coordinate("x"), coordinate("y")}, request.value("run", true));
+            mutation = true;
+        } else if (command == "online-use-exit") {
+            const auto scene = sceneSnapshot();
+            if (!scene.nativeMapReady)
+                return Json{{"ok", false}, {"error", scene.nativeMapReason}}.dump();
+            const auto &value = request.at("unitId");
+            if (!value.is_number_unsigned() && !value.is_number_integer())
+                throw std::invalid_argument("Exit unitId must be an integer");
+            const auto id = value.get<int64_t>();
+            if (id < 0 || uint64_t(id) > UINT32_MAX)
+                throw std::invalid_argument("Exit unitId is outside the protocol range");
+            accepted = session.use_exit(uint32_t(id));
             mutation = true;
         } else if (command == "online-login" || command == "online-register") {
             const auto s = session.read().stage;

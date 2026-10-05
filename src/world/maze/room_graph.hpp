@@ -66,7 +66,7 @@ class RoomMaze {
         int added = int(rooms_.size());
         rooms_.push_back(room);
         link(parent, added, direction);
-        if (merge)
+        if (merge && !rooms_[parent].fixed)
             for (int i = added - 1; i >= 0; --i) {
                 if (i == parent || rooms_[i].fixed)
                     continue;
@@ -138,6 +138,8 @@ class RoomMaze {
                   : catalog.level(level).levelType == 3 ? caveRules(level)
                                                         : cryptRules(level)),
           base_(family_.base) {}
-    MapRecipe build(int level, uint32_t seed, int difficulty, int entranceDirection = 0);
+    using ConvertRoom = std::function<void(const MapRecipe &, const MapPiece &, Seed &)>;
+    MapRecipe build(int level, uint32_t seed, int difficulty, int entranceDirection = 0,
+        const NativeActLayout *layout = nullptr, const ConvertRoom &convert = {});
 };
 } // namespace d2x::maze

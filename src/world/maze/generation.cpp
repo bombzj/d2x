@@ -63,7 +63,8 @@ void RoomMaze::placeSewerEntrances() {
     rooms_[dock].fixed = true;
     special(seed_.next() & 3, 337);
 }
-MapRecipe RoomMaze::build(int level, uint32_t seed, int difficulty, int entranceDirection) {
+MapRecipe RoomMaze::build(int level, uint32_t seed, int difficulty, int entranceDirection,
+    const NativeActLayout *layout, const ConvertRoom &convert) {
     if (difficulty < 0 || difficulty > 2 || maze_.width != family_.roomSize ||
         maze_.height != family_.roomHeight || maze_.merge < 0 || maze_.merge > 1000)
         throw std::runtime_error("Unsupported Room maze dimensions or difficulty");
@@ -143,7 +144,7 @@ MapRecipe RoomMaze::build(int level, uint32_t seed, int difficulty, int entrance
                 if (direction == 2 && step == sideRooms - 2) {
                     link(parent, 0, direction);
                 } else {
-                    parent = add(parent, direction, catalog_.level(level).act >= 2);
+                    parent = add(parent, direction, true);
                     if (parent < 0) throw std::runtime_error("Original maze initial ring overlaps");
                 }
             }
@@ -256,14 +257,18 @@ MapRecipe RoomMaze::build(int level, uint32_t seed, int difficulty, int entrance
     // Native basic-to-theme substitution scan: shuffled 15-entry list, bounded scan.
     std::array<int, 15> offsets;
     std::iota(offsets.begin(), offsets.end(), 0);
-    int cursor = seed_.below(15);
-    for (int i = 0; i < 15; ++i) {
-        int a = seed_.below(15), b = seed_.below(15);
-        std::swap(offsets[a], offsets[b]);
+    const int type = catalog_.level(level).levelType;
+    const bool substitutes = level != 8 && (type == 3 || type == 4 || type == 7 || type == 8 ||
+        type == 10 || type == 13 || type == 17 || type == 22 || type == 24 || type == 25);
+    int cursor = 0;
+    if (substitutes) {
+        cursor = seed_.below(15);
+        for (int i = 0; i < 15; ++i) {
+            int a = seed_.below(15), b = seed_.below(15);
+            std::swap(offsets[a], offsets[b]);
+        }
     }
-    int remaining = level == 8 || level == 74 || (level >= 51 && level <= 54) || (level >= 62 && level <= 64) ||
-                        level == 84 || level == 85 || catalog_.level(level).levelType >= 28
-                        ? 0 : std::max(2, int(rooms_.size()) / 5 + 1);
+    int remaining = substitutes ? std::max(2, int(rooms_.size()) / 5 + 1) : 0;
     for (int attempt = 0; remaining && attempt < 2 * int(rooms_.size()); ++attempt) {
         for (auto i = rooms_.rbegin(); i != rooms_.rend(); ++i)
             if (!i->fixed && i->preset == base_ + offsets[cursor]) {
@@ -283,6 +288,24 @@ MapRecipe RoomMaze::build(int level, uint32_t seed, int difficulty, int entrance
     result.preset = base_ + 1; // Native population-enabled Crypt room family.
     result.levelType = catalog_.level(level).levelType;
     result.act = catalog_.level(level).act;
+    if (layout) {
+        result.worldX = layout->levels.at(level).x;
+        result.worldY = layout->levels.at(level).y;
+        if (level == 28) {
+            const auto &courtPlacement = layout->levels.at(27);
+            MapRecipe court;
+            court.worldX = courtPlacement.x; court.worldY = courtPlacement.y;
+            court.variant = entranceDirection;
+            const auto entrance = std::find_if(rooms_.begin(), rooms_.end(),
+                [](const auto &room) { return room.preset == 167; });
+            if (entrance == rooms_.end()) throw std::runtime_error("Missing barracks entrance");
+            result.pieces.push_back({(entrance->x - minX) * maze_.width,
+                (entrance->y - minY) * maze_.height, maze_.width, maze_.height, 167, entranceDirection});
+            connectBarracks(court, result, courtPlacement.width, courtPlacement.height);
+            result.pieces.clear();
+            result.boundaries.clear(); // The recipe adapter connects regions once.
+        }
+    }
     result.ds1 =
         "maze-v1/" + std::to_string(level) + "/" + std::to_string(seed) + "/" + std::to_string(difficulty);
     if (level == 28)
@@ -292,11 +315,13 @@ MapRecipe RoomMaze::build(int level, uint32_t seed, int difficulty, int entrance
         const auto &preset = catalog_.presets().at(i->preset);
         if (i->variant < 0 && preset.files < 1 && level != 74)
             throw std::runtime_error("Maze room has no selectable DS1 variants");
-        int variant = i->variant >= 0 ? i->variant : seed_.below(preset.files);
-        if (level != 74 && !(level >= 51 && level <= 54) && level != 84 && level != 85 &&
+        // AllocDrlgMap always draws, including a later forced-file override.
+        int variant = seed_.below(preset.files);
+        if (i->variant >= 0) variant = i->variant;
+        else if (level != 74 && !(level >= 51 && level <= 54) && level != 84 && level != 85 &&
             i->preset > base_ && i->preset < base_ + 16) {
-            auto [it, inserted] = variants.try_emplace(i->preset, variant);
-            (void)inserted;
+            auto [it, inserted] = variants.try_emplace(i->preset, 0);
+            if (inserted) it->second = seed_.below(preset.files);
             it->second = (it->second + 1) % preset.files;
             variant = it->second;
         }
@@ -304,6 +329,10 @@ MapRecipe RoomMaze::build(int level, uint32_t seed, int difficulty, int entrance
         result.pieces.push_back({(i->x - minX) * maze_.width, (i->y - minY) * maze_.height, maze_.width,
                                  maze_.height, i->preset, variant, source.ds1, source.tileLibraries,
                                  source.fillBlanks, preset.populate, -1, source.killEdge, source.animationSpeed, 0, source.pops, source.popPad});
+        const auto &piece = result.pieces.back();
+        result.width = std::max(result.width, piece.x + piece.width);
+        result.height = std::max(result.height, piece.y + piece.height);
+        if (convert) convert(result, piece, seed_);
     }
     return result;
 }

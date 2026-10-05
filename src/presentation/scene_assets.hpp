@@ -8,6 +8,7 @@
 #include "gameplay/monsters/kind.hpp"
 #include "client/map_asset_source.hpp"
 #include "world/object_animation.hpp"
+#include "world/object.hpp"
 #include "presentation/graphics/primitives.hpp"
 #include <set>
 #include <memory>
@@ -25,6 +26,8 @@ struct MonsterEnchantment;
 // GPU and audio handles belong to the view, never to saveable game state.
 class SceneAssets {
     Archives &archives_;
+    Table objectDefinitions_;
+    mutable std::map<std::pair<int, int>, WorldObject> decorations_;
     // Mutable so the const draw path can populate the on-demand caches below.
     mutable Graphics graphics_;
     mutable std::array<std::unique_ptr<Graphics>, 5> actGraphics_;
@@ -189,6 +192,7 @@ class SceneAssets {
     // Region terrain uploads on first draw, and prop art on first sighting.
     const std::vector<Sprite> &regionTileSprites(size_t index) const;
     void ensurePropArt(const WorldObject &object) const;
+    const WorldObject &clientDecoration(int id, int palette) const;
     // True when the region tables promise art for this key; the draw path builds it.
     bool propArtAvailable(std::string_view key) const {
         return propArtKeys.contains(key);

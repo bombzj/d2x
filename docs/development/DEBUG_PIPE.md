@@ -4,13 +4,14 @@
 
 ## 联网命令
 
-当前源码及 `dist/current` 在主菜单／登录／服务器选角／大厅／入局等待页／远端营地接收同一个调试管道；无需进入单机场景。联网始终实时 tick，单机 `pause/resume/step` 不控制网络。包内有限冒烟已覆盖双账号营地显示／移动、退局重进，准确范围和 UI 限制见 [联网模块](../modules/NETWORK.md)。
+当前源码及 `dist/current` 在主菜单／登录／服务器选角／大厅／入局等待页／第一幕远端场景接收同一个调试管道；无需进入单机场景。联网始终实时 tick，单机 `pause/resume/step` 不控制网络。包内有限冒烟已覆盖双账号营地显示／移动、退局重进，准确范围和 UI 限制见 [联网模块](../modules/NETWORK.md)。
 
 | 命令 | 参数与结果 |
 | --- | --- |
 | `online-status` | 只读 `online`：stage、error、revision、connectionGeneration、gameGeneration、Realm／角色／游戏列表、load、延迟、gameQueuePosition、gameListComplete、world／scene；联网模式的 `status` 是其别名 |
 | `online-world` | 只读同一快照：world.units／rooms／equipment／attributes、本人全局 subtile 坐标与当前生命／法力／体力；scene 含原 DS1、原点、候选／地标、碰撞／显示／移动可用性、本人是否绘制与缺外观数量 |
-| `online-move` | x、y 为服务端全局 subtile 整数（0–65535），run 默认 true；只在 ProtocolReady 且当前原营地已匹配、目标在营地内且原地形可走时提交，100ms 频率限制；服务端位置后续回包才是结果 |
+| `online-move` | x、y为服务端全局subtile整数（0–65535），run默认true；ProtocolReady、当前地图可移动、目标在活动碰撞内可走时提交，100ms限制；后续位置回包才是结果 |
+| `online-use-exit` | unitId为online-world返回的真实type5单位ID，要求原生地图可用／角色存活；发送0x13交互，不接受用LvlWarp类型编号替代单位ID |
 | `online-login` | 必填 account、password；原版文件／认证模式／端口读取 `--online-config` 私有配置，只在 Idle／Failed／Cancelled 接受；自动选择配置中的 Realm |
 | `online-register` | account、password（各2–15）；配置和允许阶段同登录，注册成功自动登录；服务端拒绝码在 error 中 |
 | `online-create-character` | name（2–15、字母起首，其余字母／连字符／下划线）、classId（0–6，默认0）、hardcore（默认false）；CharacterSelection 接受，固定资料片／非 Ladder，服务器生成初始数据后刷新列表 |
@@ -28,7 +29,9 @@
 | `online-cancel` / `online-logout` | 关闭连接；前者进入 Cancelled，后者清空会话回主菜单 |
 | `screenshot` / `quit` | 联网截图使用 path 参数；quit 立即返回 accepted，应用在 LoadingGame／ProtocolReady 先正常退局，等响应／关闭或期限后注销退出；不是保存成功回执 |
 
-修改命令立即返回 `accepted` 和当时的 `online` 快照，不等待网络完成。后续查询 `online-status`：例如登录完成后为 CharacterSelection，选角完成后为 Lobby；ProtocolReady 只代表入局协议初始化，`worldDisplayAvailable` 由原营地匹配与资源加载决定；还须查看 scene.movementAvailable／playerDisplayed，未匹配时 scene.reason 说明原因。阶段不允许时返回 ok=false；错误回复／超时可从后续状态读取。可附带 connectionGeneration／gameGeneration，代次不符则拒绝迟到命令。响应不回显请求、密码、CD key、角色票据或原始世界包。
+源码联机地图诊断另含 `scene.nativeMapReady/nativeMapReason` 及 `world.mapEventSequence/mapEventFirst/mapEventCount`。有序队列在每次 LOADACT 清空，最多保留4096条房间／玩家位置事件；消费者发现缺口后停止原生重建，需重新入局。Trees 已知缺损末组按最新要求作零尺寸兼容，保留14组抽签，诊断为 groups=14／declared=14／zeroFilled=1；原预设地标绑定成功不代表野外重建通过。当前包尚不含这些字段。
+
+修改命令立即返回 `accepted` 和当时的 `online` 快照，不等待网络完成。后续查询 `online-status`：例如登录完成后为 CharacterSelection，选角完成后为 Lobby；ProtocolReady 只代表入局协议初始化，`worldDisplayAvailable` 由活动地图重建及资源加载决定；还须查看 scene.movementAvailable／playerDisplayed，未匹配时 scene.reason 说明原因。阶段不允许时返回 ok=false；错误回复／超时可从后续状态读取。可附带 connectionGeneration／gameGeneration，代次不符则拒绝迟到命令。响应不回显请求、密码、CD key、角色票据或原始世界包。
 
 本机测试账号为 `bomb / 1qaz2wsx`、`bomb2 / 1qaz2wsx`，用户授权记入文档，仅用于测试。按以下顺序手工调用：
 
@@ -62,9 +65,20 @@ $characters = (.\scripts\Send-D2XCommand.ps1 -PipeName d2x-online -Command onlin
 .\scripts\Send-D2XCommand.ps1 -PipeName d2x-online -Command online-delete-character -Arguments @{name='NetSorceress';confirmName='NetSorceress'}
 ```
 
-入局后先用 `online-world` 查看 `online.scene.available`、`movementAvailable`、`playerDisplayed` 和 `online.world.playerPosition`。从当前已匹配地形选择目标，勿套用单机场景坐标；原点在 `online.scene.origin`，局部坐标加原点才是命令坐标。提交格式为 `-Command online-move -Arguments @{x=<全局横坐标>; y=<全局纵坐标>; run=$true}`，accepted 后再查询 playerPosition；若拒绝，检查地图／代次、目标地形和频率，不把它当传送。当前只有第一幕营地，其他幕与未匹配地图只保留等待／退出入口。
+入局后查看 `online.scene.available/movementAvailable/playerDisplayed/nativeMapReady` 和 `online.world.playerPosition`。命令坐标为服务端全局subtile；局部坐标加当前 `scene.origin`，原点可随活动房间变化。accepted后再查询位置。第一幕支持营地／野外连续移动及原出口交互；其他幕随机地图未认证。
 
-注册用 online-register 的 account／password 创建一个未占用的独立账号，不对 bomb／bomb2 重复注册；创建成功会自动进入正常登录链。
+`scene.area`表示当前玩家房间所属区域；`layoutOrigin`为生成布局原点，`layoutMatched`表示原生房间锚点已通过校验；快照 `origin/width/height`表示当前可显示／导航的活动范围。`nativeMapReason/mapErrors`说明失败，`cachedAreas`列已接入区域。世界返回 `mapEventSequence/mapEventFirst/mapEventCount`，房间 `assignmentRevision`保留首次0x07次序。第一幕事件历史失去连续性必须重新入局。
+
+既有资源工具诊断（开发输出，不是游戏导航接口）：
+
+```text
+d2x_assets <MPQ目录> native-layout <幕:1-5> <地图种子> [难度:0-2]
+d2x_assets <MPQ目录> native-outdoor <区域> <地图种子> [难度]
+d2x_assets <MPQ目录> native-room <区域> <地图种子> <tileX> <tileY> [难度]
+d2x_assets <MPQ目录> native-map <区域> <地图种子> <难度> [原版导出.json|complete]
+```
+
+native-map输入原版JSON时仅读取调用事件，输出房间／近邻、选定DT1文件和记录、单位／Pops及完整碰撞；complete使用同一核心完整准备连续组件，输出当前区域的碰撞、边界、原出口和单位。native-room仅生成孤立房间，不认证激活顺序或共享边缘；布局工具不认证其他幕完整地形。第一幕122组实际原版对照见[实施计划](../architecture/MULTIPLAYER.md#原版-dll-对照方法)。
 
 不要附带 --class／--load／--hidden／--level 等会直入单机的选项。进入既有离线角色选择期间，该旧选择器尚未轮询管道；进入单机场景后管道由原单机 command 接管，online-* 不在那里启动另一个会话。
 

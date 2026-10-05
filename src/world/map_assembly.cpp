@@ -1,4 +1,5 @@
 #include "map_assembly.hpp"
+#include "native_map.hpp"
 #include <algorithm>
 
 namespace d2x {
@@ -23,6 +24,13 @@ void killEdges(MapData &data) {
 }
 }
 MapData assembleMap(Archives &archives, const MapRecipe &recipe) {
+    if (recipe.native) {
+        const auto &request = *recipe.native;
+        WorldCatalog catalog(archives, request.difficulty);
+        TileLibraryCache cache(archives);
+        NativeMapGenerator generator(archives, catalog, cache, 0, request.seed, request.difficulty);
+        return generator.completeLevel(request.level).map.terrain.data;
+    }
     MapData result;
     if (recipe.pieces.empty()) {
         auto source = decodeDs1(archives.read(recipe.ds1), recipe.ds1);
@@ -170,6 +178,7 @@ MapData assembleMap(Archives &archives, const MapRecipe &recipe) {
         for (auto popup : source.roofPopups) {
             popup.x += piece.x;
             popup.y += piece.y;
+            popup.parentX = piece.x; popup.parentY = piece.y;
             result.roofPopups.push_back(popup);
         }
     }

@@ -22,11 +22,23 @@ OnlineUnit &unit(OnlineWorldView &w, OnlineUnitKey k) {
     u.key = k;
     return u;
 }
+void mapEvent(OnlineWorldView &w, OnlineMapEvent::Kind kind, OnlinePoint p = {}, uint8_t level = 0) {
+    w.mapEvents.push_back({++w.mapEventSequence, kind, level, p});
+    if (w.mapEvents.size() > 4096) w.mapEvents.pop_front();
+}
+void playerPosition(OnlineWorldView &w, OnlinePoint p) {
+    w.playerPosition = p;
+    mapEvent(w, OnlineMapEvent::Kind::PlayerPosition, p);
+}
+void removePlayer(OnlineWorldView &w) {
+    w.playerPosition.reset();
+    mapEvent(w, OnlineMapEvent::Kind::RemovePlayer);
+}
 void position(OnlineView &v, OnlineUnit &u, OnlinePoint p) {
     u.position = p;
     u.positionRevision = v.world.revision;
     if (u.key.type == 0 && v.load.playerUnitId == u.key.id)
-        v.world.playerPosition = p;
+        playerPosition(v.world, p);
 }
 std::string name(Reader &r) {
     auto bytes = r.take(16);
@@ -117,13 +129,25 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
         const auto area = r.u8();
         r.finish();
         const auto k = std::tuple{area, anchor.x, anchor.y};
-        if (p.id == 0x08)
+        if (p.id == 0x08) {
             w.rooms.erase(k);
-        else {
+            w.roomAssignmentRevisions.erase(k);
+        } else {
             if (!w.rooms.contains(k) && w.rooms.size() >= 4096)
                 throw ProtocolError("Remote room limit exceeded");
             w.rooms[k] = anchor;
+            w.roomAssignmentRevisions.try_emplace(k, w.revision);
         }
+        mapEvent(w, p.id == 0x07 ? OnlineMapEvent::Kind::RevealRoom : OnlineMapEvent::Kind::HideRoom,
+            anchor, area);
+        break;
+    }
+    case 0x09: {
+        // SCmd/SUnitMsg: native warp assignment, byte-sized LvlWarp identity.
+        auto &u = unit(w, key(r));
+        u.classId = r.u8();
+        position(v, u, point(r));
+        r.finish();
         break;
     }
     case 0x0A: {
@@ -133,7 +157,7 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
         if (k.type == 0) {
             std::erase_if(w.equipment, [&](const auto &e) { return e.second.owner == k.id; });
             if (v.load.playerUnitId == k.id)
-                w.playerPosition.reset();
+                removePlayer(w);
         }
         break;
     }
@@ -142,8 +166,8 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
         r.finish();
         if (k.type == 0) {
             auto &u = unit(w, k);
-            if (u.position)
-                w.playerPosition = u.position;
+            if (v.load.playerUnitId == k.id && u.position)
+                playerPosition(w, *u.position);
             else if (w.playerPosition)
                 position(v, u, *w.playerPosition);
         }
@@ -240,7 +264,7 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
         w.units.erase({0, id});
         std::erase_if(w.equipment, [&](const auto &e) { return e.second.owner == id; });
         if (v.load.playerUnitId == id)
-            w.playerPosition.reset();
+            removePlayer(w);
         break;
     }
     case 0x67:
@@ -287,9 +311,10 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
         // The last bytes are signed offsets to the first path point, not fractions.
         bits.read(8);
         bits.read(8);
-        w.playerPosition = OnlinePoint{x, y};
         if (v.load.playerUnitId)
             position(v, unit(w, {0, *v.load.playerUnitId}), {x, y});
+        else
+            playerPosition(w, {x, y});
         break;
     }
     case 0x9C:

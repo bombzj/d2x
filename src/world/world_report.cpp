@@ -84,11 +84,8 @@ void writeWorldReport(std::ostream &out, Archives &archives, const WorldCatalog 
     out << "\n"
         << ready << '/' << count << " levels have supported terrain and its DS1/DT1 files (variant 0).\n"
         << "Levels 1..37 form the implemented Act I exploration route when all resources are present.\n"
-        << "Cow terrain uses four secondary border substitutions. Main-route terrain has three secondary "
-           "border passes, river/bridge presets and native dirt floor tiles with adapted path routing.\n"
-          << "Cliff contours, cliff entrances, town transitions and Act I shrine substitutions are implemented; "
-              "general LvlSub themes, native path routing and quest portals remain incomplete. Terrain availability is "
-              "not full Act I feature parity.\n"
+        << "Act I uses the shared native room generator for layout, DT1 variants, collision and preset units.\n"
+        << "Terrain availability does not certify combat, quests or the other acts' native map parity.\n"
         << "Missing " << allMissing.size()
         << " known files. Maze/outdoor lists cover LevelType DT1s; exact DS1 demand depends on unimplemented "
            "generation.\n";

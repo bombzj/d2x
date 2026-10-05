@@ -92,6 +92,8 @@ std::optional<CharacterChoice> chooseFrontend(Archives &archives, RenderTexture2
     net::RealmSession session;
     RemoteTown town(archives);
     std::unique_ptr<RemoteScene> scene;
+    std::optional<uint8_t> renderedAct;
+    std::optional<uint16_t> renderedArea;
     std::string sceneError;
     uint64_t sceneGeneration = ~uint64_t{};
     auto sceneStatus = [&] {
@@ -130,7 +132,17 @@ std::optional<CharacterChoice> chooseFrontend(Archives &archives, RenderTexture2
             sceneError.clear();
             sceneGeneration = session.read().gameGeneration;
         }
+        if (renderedAct != session.read().load.act) {
+            scene.reset();
+            sceneError.clear();
+            renderedAct = session.read().load.act;
+        }
         town.update(session.read());
+        if (renderedArea != town.read().area) {
+            scene.reset();
+            sceneError.clear();
+            renderedArea = town.read().area;
+        }
         if (previousStage == OnlineStage::ListingCharacters &&
             session.read().stage == OnlineStage::CharacterSelection)
             page = FrontendPage::Characters;
@@ -255,7 +267,7 @@ std::optional<CharacterChoice> chooseFrontend(Archives &archives, RenderTexture2
             view.stage == OnlineStage::ProtocolReady && town.read().available && sceneError.empty();
         if (showScene && !scene) {
             try {
-                scene = std::make_unique<RemoteScene>(archives);
+                scene = std::make_unique<RemoteScene>(archives, view.load.act.value_or(0));
             } catch (const std::exception &e) {
                 sceneError = e.what();
                 showScene = false;

@@ -276,16 +276,20 @@ MapData decodeDs1(const Bytes &b, const std::string &source) {
         int groups = r.u32();
         if (groups < 0 || groups > 65536)
             throw std::runtime_error("Invalid DS1 substitution group count");
+        m.declaredSubstitutionGroups = groups;
         const bool knownTreesTail = m.version == 12 && tags == 1 &&
+            groups == 14 && m.width == 37 && m.height == 9 && b.size() == 6960 && m.objects.empty() &&
             normalize(source) == "data\\global\\tiles\\act1\\outdoors\\trees.ds1";
         for (int index = 0; index < groups; ++index) {
-            // OpenD2 explicitly documents this resource ending after the last
-            // group's tileX; Diablerie retains only fully read groups. Keep all
-            // original complete groups, never supply missing coordinates/sizes.
+            // D2MOO retains the declared group count. For this known resource,
+            // keep its final x and use a deterministic empty tail rather than
+            // emulate an uninitialized allocation read. It must still take
+            // part in group and position draws; this is not an EOF group drop.
             if (knownTreesTail && index + 1 == groups && b.size() - r.pos == sizeof(uint32_t)) {
                 if (r.u32() != 0)
                     throw std::runtime_error("Unexpected incomplete Trees.ds1 group");
-                m.skippedSubstitutionGroups = 1;
+                m.substitutionGroups.push_back({});
+                m.zeroFilledSubstitutionGroups = 1;
                 break;
             }
             SubstitutionGroup group;
@@ -295,7 +299,7 @@ MapData decodeDs1(const Bytes &b, const std::string &source) {
             group.height = r.u32();
             if (m.version >= 13)
                 group.variants = r.u32();
-            if (group.x < 0 || group.y < 0 || group.width <= 0 || group.height <= 0 || group.variants < 0 ||
+            if (group.x < 0 || group.y < 0 || group.width < 0 || group.height < 0 || group.variants < 0 ||
                 int64_t(group.x) + group.width > m.width || int64_t(group.y) + group.height > m.height)
                 throw std::runtime_error("Invalid DS1 substitution group bounds");
             m.substitutionGroups.push_back(group);
@@ -326,7 +330,8 @@ MapData decodeDs1(const Bytes &b, const std::string &source) {
     // 8..29 across all wall layers. The first marker supplies the roof style.
     std::array<std::pair<int, int>, 22> starts{}, ends{};
     std::array<int, 22> styles{};
-    std::array<bool, 22> found{}, paired{};
+    std::array<bool, 22> found{};
+    std::vector<size_t> popupOrder;
     for (const auto &layer : m.walls) {
         for (int y = 0; y < m.height - 1; ++y)
             for (int x = 0; x < m.width - 1; ++x) {
@@ -341,19 +346,21 @@ MapData decodeDs1(const Bytes &b, const std::string &source) {
                     starts[size_t(group)] = {x, y};
                     styles[size_t(group)] = int((cell.value >> 8) & 255);
                     found[size_t(group)] = true;
+                    popupOrder.push_back(size_t(group));
                 } else {
                     ends[size_t(group)] = {x, y};
-                    paired[size_t(group)] = true;
                 }
             }
     }
-    for (size_t group = 0; group < paired.size(); ++group)
-        if (paired[group]) {
-            const auto [x, y] = starts[group];
-            const auto [endX, endY] = ends[group];
-            m.roofPopups.push_back({std::min(x, endX), std::min(y, endY),
-                std::abs(x - endX) + 1, std::abs(y - endY) + 1, styles[group]});
-        }
+    for (const auto group : popupOrder) {
+        // The native endpoint arrays start at zero; retain an unpaired marker
+        // with that endpoint rather than silently dropping a processed pop.
+        const auto [x, y] = starts[group];
+        const auto [endX, endY] = ends[group];
+        m.roofPopups.push_back({std::min(x, endX), std::min(y, endY),
+            std::abs(x - endX) + 1, std::abs(y - endY) + 1, styles[group], 0,
+            int((group + 8) / 4) - 1});
+    }
     return m;
 }
 Table decodeTable(const Bytes &data) {

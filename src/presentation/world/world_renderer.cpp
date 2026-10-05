@@ -9,6 +9,7 @@
 #include "gameplay/items/inventory.hpp"
 #include "content/monsters/monster_catalog.hpp"
 #include "presentation/scene_view.hpp"
+#include "presentation/world/warp_visibility.hpp"
 #include <algorithm>
 #include <cmath>
 #include <rlgl.h>
@@ -157,7 +158,7 @@ const WorldObject *SceneView::objectAt(Vec mouse) const {
     }
     return nearest;
 }
-void SceneView::drawTerrain() const {
+void SceneView::drawTerrain(Vec mouse) const {
     struct Terrain { SceneOrder order; const Sprite *image; Vec position; bool shadow; int region; };
     std::vector<Terrain> terrain;
     const auto regions = session_.sceneRegions();
@@ -191,6 +192,26 @@ void SceneView::drawTerrain() const {
         const auto &map = session_.regions()[region].map;
         const auto &tiles = assets_.regionTileSprites(region);
 
+        if (map.terrain.preparedRooms) {
+            std::optional<size_t> selected;
+            if (region == session_.regionIndex()) if (const auto *exit = exitAt(mouse))
+                for (size_t i = 0; i < map.terrain.exits.size(); ++i)
+                    if (map.terrain.exits[i].slot == exit->slot) { selected = i; break; }
+            const auto warps = warpTileVisibility(map.terrain, selected);
+            for (size_t i = 0; i < map.terrain.instances.size(); ++i) {
+                const auto &tile = map.terrain.instances[i];
+                const bool shadow = tile.type == 13;
+                const bool lower = tile.type >= 16 && tile.type <= 19;
+                if ((warps[i] >= 0 ? bool(warps[i]) : bool(tile.flags & 8)) || (tile.wallArray && !lower)) continue;
+                const auto position = Vec{tile.x * 5.f, tile.y * 5.f} + offset;
+                const auto at = screen(position);
+                const int index = tile.renderTile(view_.animationTime);
+                if (tileVisible(tiles.at(size_t(index)), at))
+                    terrain.push_back({sceneOrder(position, 0, false, lower ? 0 : shadow ? 2 : 1),
+                        &tiles.at(size_t(index)), at, shadow, region});
+            }
+            continue;
+        }
         for (int sum = 0; sum < map.terrain.data.width + map.terrain.data.height; sum++)
             for (int y = 0; y < map.terrain.data.height; y++) {
                 int x = sum - y;
@@ -282,6 +303,8 @@ void SceneView::drawActors(Vec mouse) const {
         Vec p;
         int region = -1;
         int tileX = -1, tileY = -1;
+        uint8_t alpha = 255;
+        bool prepared = false;
     };
     std::vector<Item> draw;
     std::vector<Item> roofs;
@@ -295,6 +318,30 @@ void SceneView::drawActors(Vec mouse) const {
     for (const auto &[region, offset] : session_.sceneRegions()) {
         const auto &map = session_.regions()[region].map;
         const auto &tiles = assets_.regionTileSprites(region);
+        if (map.terrain.preparedRooms) {
+            const auto pops = nativePops_.find(session_.regions()[region].definition.id);
+            std::optional<size_t> selected;
+            if (region == session_.regionIndex()) if (const auto *exit = exitAt(mouse))
+                for (size_t i = 0; i < map.terrain.exits.size(); ++i)
+                    if (map.terrain.exits[i].slot == exit->slot) { selected = i; break; }
+            const auto warps = warpTileVisibility(map.terrain, selected);
+            for (size_t i = 0; i < map.terrain.instances.size(); ++i) {
+                const auto &tile = map.terrain.instances[i];
+                if (!tile.wallArray || (tile.type >= 16 && tile.type <= 19)) continue;
+                if (warps[i] == 1) continue;
+                const uint8_t alpha = warps[i] == 0 ? 255 : pops == nativePops_.end() ? uint8_t(tile.flags & 8 ? 0 : 255)
+                    : pops->second.alpha(i);
+                if (!alpha) continue;
+                const auto position = Vec{tile.x * 5.f, tile.y * 5.f} + offset;
+                const auto at = screen(position);
+                const int index = tile.renderTile(view_.animationTime);
+                if (!tileVisible(tiles.at(size_t(index)), at)) continue;
+                const auto item = Item{sceneOrder(position, 1, true, -100 + (int((tile.flags >> 14) & 7) - 1) * 2),
+                    0, index, at, region, tile.x, tile.y, alpha, true};
+                if (tile.type == 15) roofs.push_back(item);
+                else draw.push_back(item);
+            }
+        } else
         for (int y = 0; y < map.terrain.data.height; y++)
             for (int x = 0; x < map.terrain.data.width; x++) {
                 const Vec position = Vec{x * 5.f, y * 5.f} + offset;
@@ -324,6 +371,19 @@ void SceneView::drawActors(Vec mouse) const {
                     }
                 }
             }
+        for (size_t i = 0; i < map.terrain.clientObjects.size(); ++i) {
+            const auto &source = map.terrain.clientObjects[i];
+            if (source.type != 2) continue;
+            const auto &object = assets_.clientDecoration(source.id,
+                session_.worldContent().level(int(session_.regions()[region].definition.id)).palette);
+            if (!object.draw) continue;
+            const Vec position = Vec{float(source.x), float(source.y)} + offset;
+            const auto at = screen(position) + object.drawOffset;
+            const auto *image = objectSprite(object, session_.regions()[region].definition.id);
+            if (!image || !tileVisible(*image, at)) continue;
+            const auto order = object.orderFlags[0];
+            draw.push_back({sceneOrder(position, order == 1 ? 0 : 1, order == 2, 2), 12, int(i), at, region});
+        }
         const auto &props = session_.regions()[region].objects;
         for (int i = 0; i < int(props.size()); i++) {
             const auto &prop = props[i];
@@ -393,10 +453,18 @@ void SceneView::drawActors(Vec mouse) const {
     // shadow must not darken a previously painted unit or wall.
     for (const bool shadowsOnly : {true, false}) {
         for (auto item : draw) {
-            if (shadowsOnly && item.type != 1 && item.type != 2 && item.type != 3 && item.type != 6 && item.type != 8) continue;
+            if (shadowsOnly && item.type != 1 && item.type != 2 && item.type != 3 && item.type != 6 && item.type != 8 && item.type != 12) continue;
             if (item.type == 0) {
                 auto &s = assets_.regionTileSprites(item.region)[item.index];
-                sprite(&s, item.p);
+                sprite(&s, item.p, {255, 255, 255, item.alpha});
+            } else if (item.type == 12) {
+                const auto &region = session_.regions()[item.region];
+                const auto &source = region.map.terrain.clientObjects.at(size_t(item.index));
+                const auto &object = assets_.clientDecoration(source.id,
+                    session_.worldContent().level(int(region.definition.id)).palette);
+                const auto *image = objectSprite(object, region.definition.id);
+                if (shadowsOnly) spriteShadow(image, item.p);
+                else sprite(image, item.p);
             } else if (item.type == 1) {
                 const auto &mode = view_.heroMode;
                 auto *anim = &assets_.hero.at(mode);
@@ -657,9 +725,9 @@ void SceneView::drawActors(Vec mouse) const {
     // ordinary walls stay opaque even when the player walks behind them.
     std::stable_sort(roofs.begin(), roofs.end(), [](const auto &a, const auto &b) { return a.order < b.order; });
     for (const auto &item : roofs) {
-        float alpha = 1.f;
+        float alpha = item.alpha / 255.f;
         const auto &region = session_.regions()[item.region];
-        if (item.region == session_.regionIndex()) {
+        if (!item.prepared && item.region == session_.regionIndex()) {
             const auto &popups = region.map.terrain.data.roofPopups;
             auto found = roofOpacity_.find(region.definition.id);
             for (size_t i = 0; i < popups.size(); ++i)

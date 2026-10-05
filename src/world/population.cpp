@@ -193,7 +193,7 @@ class Planner {
             return;
         if (unique && unique->id == "The Countess")
             for (const auto &object : map_.terrain.data.objects)
-                if (object.type == 1 && catalog_.preset(map_.terrain.data.act, object.id, map_.terrain.data.version).id == unique->id)
+                if (object.type == 1 && catalog_.preset(map_.terrain.data.act, object.id, map_.terrain.data.version, object.nativeIdentity).id == unique->id)
                     for (const auto &node : object.path)
                         result_.spawns.back().skillPositions.push_back({node.x + .5f, node.y + .5f});
         ++result_.eliteGroups;
@@ -268,7 +268,7 @@ class Planner {
                 diagnostic("DS1 presets with already-spawned flag skipped.");
                 continue;
             }
-            auto unit = catalog_.preset(map_.terrain.data.act, o.id, map_.terrain.data.version);
+            auto unit = catalog_.preset(map_.terrain.data.act, o.id, map_.terrain.data.version, o.nativeIdentity);
             std::string key = "ds1." + std::to_string(i);
             Vec pos{o.x + .5f, o.y + .5f};
             ++group_;

@@ -103,6 +103,7 @@ class MonsterCatalog {
     std::map<MonsterKind, std::map<std::string, MonsterMotionTiming, std::less<>>> motions_;
     std::map<MonsterKind, std::map<std::string, std::string, std::less<>>> modeWeapons_;
     std::map<int, std::string> indices_;
+    std::map<int, MonsterPreset> nativePresets_;
     std::set<std::string, std::less<>> ambiguous_;
     std::map<std::string, SuperUniqueRecord, std::less<>> uniques_;
     std::array<std::vector<std::string>, 5> presets_;
@@ -154,6 +155,6 @@ class MonsterCatalog {
     }
     const MonsterRecord *find(std::string_view id) const;
     const SuperUniqueRecord *superUnique(std::string_view id) const;
-    MonsterPreset preset(int act, int index, int ds1Version) const;
+    MonsterPreset preset(int act, int index, int ds1Version, bool nativeIdentity = false) const;
 };
 } // namespace d2x

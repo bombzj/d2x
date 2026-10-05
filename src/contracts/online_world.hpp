@@ -2,6 +2,7 @@
 #include "core/bytes.hpp"
 #include <compare>
 #include <cstdint>
+#include <deque>
 #include <map>
 #include <optional>
 #include <string>
@@ -35,12 +36,27 @@ struct OnlineEquippedItem {
     std::optional<uint8_t> quality;
     bool autoAffix{};
 };
+struct OnlineMapEvent {
+    enum class Kind { RevealRoom, HideRoom, PlayerPosition, RemovePlayer };
+    uint64_t sequence{};
+    Kind kind{};
+    uint8_t level{}; // Only room events have a level; position never guesses one.
+    OnlinePoint point{}; // Room tiles or player subtiles, according to kind.
+};
 struct OnlineWorldView {
     uint64_t revision{}, areaGeneration{};
     std::map<OnlineUnitKey, OnlineUnit> units;
     // Room anchors are in tiles, unit coordinates in subtiles (five per tile).
     // The packet does not contain room extents.
     std::map<std::tuple<uint8_t, uint16_t, uint16_t>, OnlinePoint> rooms;
+    // First 0x07 receipt for each currently assigned room. This preserves wire
+    // ordering; it is not proof of server-side DRLG activation or generation order.
+    std::map<std::tuple<uint8_t, uint16_t, uint16_t>, uint64_t> roomAssignmentRevisions;
+    // Ordered within areaGeneration. Consumers must reject a missing prefix,
+    // rather than rebuild native RNG/activation from the final room set.
+    uint64_t mapEventSequence{};
+    std::deque<OnlineMapEvent> mapEvents;
+    std::optional<OnlinePoint> mapInitialPlayerPosition; // Preserved early LOADACT assignment.
     std::map<uint32_t, OnlineEquippedItem> equipment;
     std::map<uint8_t, uint32_t> playerAttributes;
     std::optional<OnlinePoint> playerPosition;

@@ -139,6 +139,8 @@ WorldCatalog::WorldCatalog(Archives &archives, int difficulty) {
                 record.fillBlanks = number("FillBlanks") != 0;
                 record.killEdge = number("KillEdge") != 0;
                 record.populate = number("Populate") != 0;
+                record.scan = number("Scan") != 0;
+                record.outdoors = number("Outdoors") != 0;
                 record.automap = number("AutoMap") != 0;
                 record.animate = number("Animate") != 0;
                 record.animationSpeed = number("AnimSpeed");
@@ -187,6 +189,8 @@ WorldCatalog::WorldCatalog(Archives &archives, int difficulty) {
             } else {
                 WarpRecord record;
                 record.id = number("Id");
+                record.litVersion = number("LitVersion") != 0;
+                record.tiles = number("Tiles");
                 record.name = table.value(row, "Name");
                 record.selectX = number("SelectX");
                 record.selectY = number("SelectY");
@@ -269,7 +273,7 @@ std::vector<std::string> WorldCatalog::missing(Archives &archives, const MapReci
             result.push_back(file);
     };
     for (const auto &file : recipe.tileLibraries) check(file);
-    if (recipe.pieces.empty()) check(recipe.ds1);
+    if (recipe.pieces.empty()) { if (!recipe.native) check(recipe.ds1); }
     else
         for (const auto &piece : recipe.pieces) {
             check(piece.ds1);

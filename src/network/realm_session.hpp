@@ -58,6 +58,8 @@ class RealmSession {
     // Raw original movement request. Application must first validate its current
     // MPQ scene binding; neither this method nor the replica predicts a position.
     bool move_to(OnlinePoint target, bool run = true);
+    // Uses an assigned server UNIT_TILE ID. Map warp classes/slots are not IDs.
+    bool use_exit(uint32_t serverUnitId);
     bool return_to_characters();
     void tick();
     void cancel();

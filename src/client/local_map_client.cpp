@@ -140,9 +140,7 @@ TerrainDrawBounds LocalMapClient::terrainBounds(size_t slot, int x, int y) const
     const auto &data = map.terrain.data;
     TerrainDrawBounds bounds;
     if (!region.loaded || x < 0 || y < 0 || x >= data.width || y >= data.height) return bounds;
-    auto add = [&](const MapCell &cell) {
-        if (!cell.present() || cell.orientation == 15) return;
-        const int index = map.tileIndex(cell, x, y);
+    auto addTile = [&](int index) {
         if (index < 0) return;
         const auto &image = map.terrain.tiles.at(size_t(index))->image;
         if (image.width <= 0 || image.height <= 0) return;
@@ -154,6 +152,14 @@ TerrainDrawBounds LocalMapClient::terrainBounds(size_t slot, int x, int y) const
             bounds.x = std::min(bounds.x, image.x); bounds.y = std::min(bounds.y, image.y);
             bounds.width = right - bounds.x; bounds.height = bottom - bounds.y;
         }
+    };
+    if (map.terrain.preparedRooms) {
+        for (const auto &tile : map.terrain.instances)
+            if (tile.x == x && tile.y == y && !(tile.flags & 8) && tile.type != 15) addTile(tile.tile);
+        return bounds;
+    }
+    auto add = [&](const MapCell &cell) {
+        if (cell.present() && cell.orientation != 15) addTile(map.tileIndex(cell, x, y));
     };
     const size_t cell = size_t(y) * data.width + x;
     for (const auto &layer : data.floors) add(layer.at(cell));

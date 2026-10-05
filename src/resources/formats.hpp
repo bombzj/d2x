@@ -109,6 +109,7 @@ struct MapObject {
         int x = 0, y = 0, action = 1;
     };
     std::vector<PathNode> path;
+    bool nativeIdentity{}; // Resolved DRLG class, rather than a raw DS1 preset index.
 };
 struct SubstitutionGroup {
     int x = 0, y = 0, width = 0, height = 0, variants = 0;
@@ -116,6 +117,8 @@ struct SubstitutionGroup {
 struct RoofPopup {
     int x = 0, y = 0, width = 0, height = 0, roofMain = 0;
     int pad = 0;
+    int group = 0; // Native marker style / 4 - 1; several regions share a group.
+    int parentX{}, parentY{}; // Parent preset origin; group numbers are local to it.
     bool contains(Vec player) const {
         return player.x >= x * 5 && player.y >= y * 5 &&
                player.x < (x + width) * 5 + pad && player.y < (y + height) * 5 + pad;
@@ -133,7 +136,8 @@ struct MapData {
     std::vector<MapCell> shadows;
     std::vector<uint32_t> substitutions;
     std::vector<SubstitutionGroup> substitutionGroups;
-    int skippedSubstitutionGroups = 0;
+    int declaredSubstitutionGroups = 0;
+    int zeroFilledSubstitutionGroups = 0; // Known Trees tail compatibility; declared count is retained.
     std::vector<RoofPopup> roofPopups;
     std::vector<MapObject> objects;
 };

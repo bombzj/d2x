@@ -26,10 +26,37 @@ void linkLevelExits(std::span<Region> regions, const WorldCatalog &catalog) {
                 boundary.start * 5, boundary.end * 5});
         }
     }
+    // Exit topology must survive an operable door being closed. Validate
+    // connectivity with those door obstacles omitted; live movement still
+    // uses the actual closed-door collision and requires an operation.
+    std::map<RegionId, Grid> connections;
+    for (const auto &region : regions) if (region.loaded) {
+        auto &grid = connections.emplace(region.definition.id, region.map.grid).first->second;
+        auto obstacles = grid.obstacles;
+        std::erase_if(obstacles, [&](const auto &obstacle) {
+            return std::any_of(region.objects.begin(), region.objects.end(), [&](const auto &object) {
+                return object.id == obstacle.id && object.interaction == Interaction::Door &&
+                    !object.hasCollision[2];
+            });
+        });
+        grid.setObstacles(std::move(obstacles));
+        grid.neighbours.clear();
+    }
+    for (const auto &region : regions) if (region.loaded) {
+        auto &grid = connections.at(region.definition.id);
+        for (const auto &neighbour : region.map.grid.neighbours) {
+            const auto other = std::find_if(regions.begin(), regions.end(), [&](const auto &candidate) {
+                return &candidate.map.grid == neighbour.grid;
+            });
+            auto copy = neighbour;
+            copy.grid = &connections.at(other->definition.id);
+            grid.neighbours.push_back(copy);
+        }
+    }
     std::map<RegionId, Bytes> reachable;
     for (const auto &region : regions)
         if (region.loaded && !region.recipe.boundaries.empty())
-            reachable.emplace(region.definition.id, region.map.grid.reachableFrom(region.map.spawn, playerMovement));
+            reachable.emplace(region.definition.id, connections.at(region.definition.id).reachableFrom(region.map.spawn, playerMovement));
     for (auto &region : regions) {
         int id = int(region.definition.id);
         if (!region.loaded || !catalog.levels().contains(id))
@@ -37,29 +64,35 @@ void linkLevelExits(std::span<Region> regions, const WorldCatalog &catalog) {
         const auto &level = catalog.level(id);
         const auto &data = region.map.terrain.data;
         std::set<int> seen;
-        for (const auto &layer : data.walls)
+        std::vector<MapTerrain::Exit> candidates;
+        if (region.recipe.native) candidates = region.map.terrain.exits;
+        else for (const auto &layer : data.walls)
             for (int y = 0; y < data.height; ++y)
                 for (int x = 0; x < data.width; ++x) {
                     const auto &cell = layer[y * data.width + x];
-                    if (!cell.occupied() || (cell.orientation != 10 && cell.orientation != 11))
-                        continue;
-                    int sequence = (cell.value >> 8) & 255, slot = (cell.value >> 20) & 63;
+                    if (!cell.occupied() || (cell.orientation != 10 && cell.orientation != 11)) continue;
+                    const int sequence = (cell.value >> 8) & 255, slot = (cell.value >> 20) & 63;
                     if ((sequence != 0 && sequence != 4 && !(cell.value & 0x80000000u)) || slot >= 8 ||
-                        !level.visible[slot] || level.warps[slot] < 0 || seen.contains(slot))
-                        continue;
+                        !level.visible[slot] || level.warps[slot] < 0) continue;
                     const auto &warps = catalog.warps().at(level.warps[slot]);
-                    auto record = std::find_if(warps.begin(), warps.end(), [&](const auto &w) {
+                    const auto record = std::find_if(warps.begin(), warps.end(), [&](const auto &w) {
                         return w.direction == "b" || w.direction == (cell.orientation == 11 ? "r" : "l");
                     });
-                    if (record == warps.end())
-                        throw std::runtime_error("Missing LvlWarp direction");
+                    if (record == warps.end()) throw std::runtime_error("Missing LvlWarp direction");
+                    candidates.push_back({slot, level.visible[slot], *record,
+                        {float(x * 5 + record->offsetX), float(y * 5 + record->offsetY)}});
+                }
+        for (const auto &candidate : candidates) {
+                    const int slot = candidate.slot;
+                    if (seen.contains(slot)) continue;
+                    const auto *record = &candidate.selection;
                     LevelExit exit;
                     exit.slot = slot;
                     exit.warp = record->id;
-                    exit.destination = RegionId(level.visible[slot]);
-                    exit.name = catalog.level(level.visible[slot]).name;
+                    exit.destination = RegionId(candidate.destination);
+                    exit.name = catalog.level(candidate.destination).name;
                     exit.selection = *record;
-                    exit.position = {float(x * 5 + record->offsetX), float(y * 5 + record->offsetY)};
+                    exit.position = candidate.position;
                     exit.arrival = region.map.grid.nearest(exit.position +
                                                            Vec{float(record->exitX), float(record->exitY)}, playerMovement);
                     exit.accessPoint = exit.arrival;
@@ -72,7 +105,7 @@ void linkLevelExits(std::span<Region> regions, const WorldCatalog &catalog) {
                             stair = &object;
                     if (stair) {
                         exit.stairObject = stair->id;
-                        const auto connected = region.map.grid.reachableFrom(region.map.spawn, playerMovement);
+                        const auto connected = connections.at(region.definition.id).reachableFrom(region.map.spawn, playerMovement);
                         float bestDistance = std::numeric_limits<float>::infinity();
                         std::optional<Vec> approach;
                         const int radius = std::max(stair->collisionWidth, stair->collisionHeight) / 2 + 3;
@@ -122,7 +155,7 @@ void linkLevelExits(std::span<Region> regions, const WorldCatalog &catalog) {
                         b.side == 2   ? plane + .5f
                         : b.side == 0 ? plane - .5f
                                       : t + .5f};
-                if (!region.map.grid.walkable(pos, playerMovement) ||
+                if (!connections.at(region.definition.id).walkable(pos, playerMovement) ||
                     !reachable.at(region.definition.id)[size_t(int(pos.y) * region.map.grid.width + int(pos.x))])
                     continue;
                 Vec across = pos + Vec{float((r.worldX - target->recipe.worldX) * 5),
@@ -141,7 +174,7 @@ void linkLevelExits(std::span<Region> regions, const WorldCatalog &catalog) {
                         return lateral >= back.start * 5 && lateral < back.end * 5 &&
                             std::abs(normal - plane - inside) < .01f;
                     });
-                if (!paired || !target->map.grid.walkable(across, playerMovement) ||
+                if (!paired || !connections.at(target->definition.id).walkable(across, playerMovement) ||
                     !reachable.at(target->definition.id)[size_t(int(across.y) * target->map.grid.width + int(across.x))])
                     continue;
                 exit.passages.push_back({pos, across});
@@ -149,13 +182,15 @@ void linkLevelExits(std::span<Region> regions, const WorldCatalog &catalog) {
             if (exit.passages.empty())
                 throw std::runtime_error(
                     "Original outdoor border is not passable: " + std::to_string(int(region.definition.id)) +
-                    " -> " + std::to_string(b.destination));
+                    " -> " + std::to_string(b.destination) + " side=" + std::to_string(b.side) +
+                    " plane=" + std::to_string(plane) + " span=" + std::to_string(b.start * 5) +
+                    ":" + std::to_string(b.end * 5));
             std::stable_sort(exit.passages.begin(), exit.passages.end(), [&](const auto &left, const auto &right) {
                 return (left.departure - region.map.spawn).length() < (right.departure - region.map.spawn).length();
             });
             bool selected = false;
             for (const auto &passage : exit.passages) {
-                const auto approach = region.map.grid.path(region.map.spawn, passage.departure, false, playerMovement);
+                const auto approach = connections.at(region.definition.id).path(region.map.spawn, passage.departure, false, playerMovement);
                 if (approach.empty()) continue;
                 exit.position = passage.departure;
                 exit.arrival = approach.size() > 1 ? approach[approach.size() - 2] : region.map.spawn;
@@ -195,11 +230,11 @@ void linkLevelExits(std::span<Region> regions, const WorldCatalog &catalog) {
             int(region.definition.id) == 27 || int(region.definition.id) == 32 ||
             int(region.definition.id) == 33) {
             for (const auto &exit : region.exits)
-                if (exit.enabled && region.map.grid.path(region.map.spawn, exit.arrival, false, playerMovement).empty()) {
+                if (exit.enabled && connections.at(region.definition.id).path(region.map.spawn, exit.arrival, false, playerMovement).empty()) {
                     std::cerr << "Disconnected warp position=" << exit.position.x << ',' << exit.position.y
                         << " arrival=" << exit.arrival.x << ',' << exit.arrival.y
                         << " spawn=" << region.map.spawn.x << ',' << region.map.spawn.y << '\n';
-                    const auto connected = region.map.grid.reachableFrom(region.map.spawn, playerMovement);
+                    const auto connected = connections.at(region.definition.id).reachableFrom(region.map.spawn, playerMovement);
                     for (int row = int(exit.position.y) - 8; row <= int(exit.position.y) + 12; ++row) {
                         for (int column = int(exit.position.x) - 8; column <= int(exit.position.x) + 12; ++column)
                             std::cerr << (region.map.grid.walkable(column, row, playerMovement)

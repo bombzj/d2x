@@ -1,5 +1,6 @@
 #include "map.hpp"
 #include "map_assembly.hpp"
+#include "native_map.hpp"
 #include "core/random.hpp"
 #include <limits>
 #include <algorithm>
@@ -126,6 +127,23 @@ std::shared_ptr<const std::vector<Tile>> TileLibraryCache::load(const std::strin
     return decoded;
 }
 void Map::load(Archives &a, TileLibraryCache &cache, const MapRecipe &recipe, uint32_t seed) {
+    if (recipe.native) {
+        const auto &request = *recipe.native;
+        WorldCatalog catalog(a, request.difficulty);
+        NativeMapGenerator generator(a, catalog, cache, 0, request.seed, request.difficulty);
+        auto snapshot = generator.completeLevel(request.level);
+        if (snapshot.tileX != recipe.worldX || snapshot.tileY != recipe.worldY ||
+            snapshot.map.grid.width != recipe.width * 5 || snapshot.map.grid.height != recipe.height * 5)
+            throw std::runtime_error("Native offline terrain disagrees with its planned bounds");
+        *this = std::move(snapshot.map);
+        terrain.path = terrain.name = recipe.ds1;
+        for (const auto &room : terrain.rooms)
+            rooms.push_back({room.x * 5, room.y * 5, room.width * 5, room.height * 5,
+                !room.preset || catalog.presets().at(room.preset).populate});
+        spawn = grid.inspectionArrival();
+        activation = RoomLayout(grid.width, grid.height, rooms);
+        return;
+    }
     const auto &ds1 = recipe.ds1;
     terrain.path = terrain.name = ds1;
     terrain.data = assembleMap(a, recipe);

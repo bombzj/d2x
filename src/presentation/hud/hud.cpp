@@ -222,7 +222,7 @@ void SceneView::draw(Vec mouse) const {
 
     ClearBackground({10, 13, 11, 255});
     BeginScissorMode(0, 0, W, H - HUD);
-    drawTerrain();
+    drawTerrain(mouse);
     if (view_.debug) {
         for (int y = 0; y < map.grid.height; y++)
             for (int x = 0; x < map.grid.width; x++) {

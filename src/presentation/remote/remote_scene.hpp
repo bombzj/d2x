@@ -16,7 +16,7 @@ class RemoteScene {
     std::unique_ptr<Impl> impl_;
 
   public:
-    explicit RemoteScene(Archives &);
+    explicit RemoteScene(Archives &, int act = 0);
     ~RemoteScene();
     RemoteSceneIntent frame(const OnlineView &, const Map &, const OnlineSceneView &, Vec mouse);
     int renderedUnits() const;

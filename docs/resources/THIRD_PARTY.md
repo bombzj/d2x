@@ -1,5 +1,11 @@
 # 资料、代码和素材来源
 
+纯 C++ 联网地图阶段依据既有 D2MOO `5596f5c` 的 DrlgDrlg、DrlgOutPlace、DrlgOutdoors／OutRoom、DrlgOutWild、DrlgDrlgVer／Grid／Room、DrlgPreset、DrlgTileSub、DrlgRoomTile、DrlgActivate、DrlgDrlgAnim、D2Collision 与 PathMisc，保留 MIT 归属。另查阅 [libd2](https://github.com/jaenster/libd2) 固定 `f92423bfd4df8a1ff162967dd9d894052e1da457` 的 1.14d 布局及 `tilegen.zig` 的文件内反序、40候选和即时阴影随机消耗。两个版本不能单独认证 1.13c。幕布局／道路已收拢到共同模块，第一幕现有迷宫图接共同分房；没有导入参考地图、DT1、表或原 DLL。
+
+本机 1.13c 静态证据：`D2Common.dll` MD5 `ee1238806ef6d6d9801d12a09d128fe1`（ImageBase `0x6fd50000`），`D2Client.dll` MD5 `f5860c629d309b8fc1f96174babcf633`（ImageBase `0x6fab0000`）。D2Common RVA `0x695d0` 的墙合并、`0x69722` 的真实 next 读取及 `0x68f00` 的双拐角插入确认共享链语义；`0x4ca20`／`0x1330` 确认活动碰撞改选先找拥有房间，再找活动近邻。RVA `0x7c101` 重置房间 low=initialSeed、high=666，区别于分配／延迟单位随机流。D2Client RVA `0xac440`／`0xac3d0` 的 0x07／0x08 处理调用 D2Common ordinal 10401／11099，进入／离开房间视野；ordinal 10401 wrapper RVA `0x3cca0` 调用视野引用与传播。RVA `0xba0c`–`0xbabe` 确认 DS1 替换组按声明数量直接读取四字段，没有 EOF 截断；Trees 第14组因此读取文件范围外的缺失字段，用户最新要求按 D2MOO 保留14组抽签，共同解码采用明确的零尺寸末组兼容，最终瓦片及完整碰撞已动态对照一致，详见[MPQ](MPQ.md#treesds1-原尾部兼容)。静态核对不修改原文件；原DLL另用于开发导出，未分发。D2Common RVA A6A0／A180核对Pops时间与分组，D2Client RVA62AA0／62580／61880核对自动地图已处理标志0x40000；动态Pops逐帧视觉未作原客户端认证。
+
+开发对照使用既有 [d2mapapi_mod](https://github.com/soarqin/d2mapapi_mod) `f61d05244f323409aa48b326033639326d7c285c` 的32位1.13c导出入口；补充实际房间顺序、近邻、单位、Pops、DT1文件／记录和完整16位碰撞，记录进入／采样／离开事件。DT1身份由D2CMP RVA0x15D90的活动记录关联真实父文件，不把主次编号相同的不同记录当同一瓦片。第一幕122组原版新进程结果与共同C++核心一致，具体覆盖及屏蔽标志见[原版对照](../architecture/MULTIPLAYER.md#原版-dll-对照方法)。另曾查阅 [d2bs](https://github.com/noah-/d2bs) `f4b99bbe8de6916384991dfdd198ecf234cef1c0`；客户端运行不接入原DLL地图辅助器，reference、导出文件和原DLL均不提交或分发。
+
 联网四步前端依据用户原客户端截图，主菜单布局／Logo 核对本地 OpenD2 `0578244` 的 `Menus/Main.cpp`、`Panels/Main.cpp` 与 OpenDiablo2 `7f92c57` 的 `main_menu.go`／`d2ui/button.go`；服务器选角外框与按钮位置核对 OpenD2 CharSelect。它们没有可直接采用的完整封闭 Realm 前端，当前 C++ 渲染与命令路由独立实现，所有背景／字体／按钮／建局面板来自当前 MPQ。native 1.13c 已保存预览与 flags 核对 D2MOO `5596f5c` 的 `GAME/Clients.cpp`、`D2Inventory.cpp`，同时读本机原版 D2Common.dll（外观槽类别表文件 0x9D888）及既有 AAA charinfo 的 `8D 80` 头；只保留协议兼容类别，item code／继承／武器姿态仍由 MPQ 动态重建。未复制参考源码、原 DLL、角色档或抽取资源到提交；预览组件染色暂不绘制，UI／协议互通尚未实机核对。
 
 ## 经典版素材
@@ -31,7 +37,7 @@
 
 ## 实际使用的开源项目
 
-五幕地图复核沿下述固定本地快照：D2MOO 的 DrlgMaze、DrlgOutPlace／OutDesr／OutJung／OutSiege 核对特殊房、七墓、丛林与条带；DrlgTileSub 核对主题概率、Trials／Max、CheckAll、变体及掩码合并；DrlgPreset 核对 KillEdge、Pops／PopPad 和完整预设；DrlgDrlgAnim 与 D2CMP 标志核对 lava 帧号、Animate 和默认动画速度。OpenD2 DT1 结构和 OpenDiablo2 d2dt1／tile_cache 交叉核对材料位与 RarityFrameIndex。Trees.ds1末组EOF核对OpenD2 Engine/DS1.cpp的点名注释／边界检查，以及Diablerie Engine/IO/D2Formats/DS1.cs的ReadGroups／EndOfStreamException处理；D2MOO DrlgPreset的ReadInt32无EOF校验，D2Hell Archive分配文件长度加800字节，不能据此推造缺少的组字段。数据仍读取当前MPQ，仅使用完整13组，原尾部事实见[MPQ](MPQ.md#treesds1-原尾部兼容)。适配与未消费字段集中列于[地图](../gameplay/world/MAPS.md#数据解码与重建配方)，不提交reference或导出资源。
+五幕地图复核沿下述固定本地快照：D2MOO 的 DrlgMaze、DrlgOutPlace／OutDesr／OutJung／OutSiege 核对特殊房、七墓、丛林与条带；DrlgTileSub 核对主题概率、Trials／Max、CheckAll、变体及掩码合并；DrlgPreset 核对 KillEdge、Pops／PopPad 和完整预设；DrlgDrlgAnim 与 D2CMP 标志核对 lava 帧号、Animate 和默认动画速度。OpenD2 DT1 结构和 OpenDiablo2 d2dt1／tile_cache 交叉核对材料位与 RarityFrameIndex。Trees.ds1末组EOF核对OpenD2 Engine/DS1.cpp的点名注释／边界检查，以及Diablerie Engine/IO/D2Formats/DS1.cs的ReadGroups／EndOfStreamException处理；D2MOO DrlgPreset的ReadInt32无EOF校验，D2Hell Archive分配文件长度加800字节，不能据此推造缺少的组字段。数据仍读取当前MPQ；当前源码与包保留声明14组，已知缺失末组字段作零尺寸兼容并保留位置随机消耗，不复现未初始化内存读取。原尾部事实见[MPQ](MPQ.md#treesds1-原尾部兼容)。适配与未消费字段集中列于[地图](../gameplay/world/MAPS.md#数据解码与重建配方)，不提交reference或导出资源。
 
 传送点初始化／恢复核对本地 D2MOO `D2Common/src/D2Waypoints.cpp::WAYPOINTS_AllocWaypointData`／`WAYPOINTS_CopyAndValidateWaypointData` 的第零点必选位，以及 `D2Game/src/OBJECTS/ObjMode.cpp::OBJECTS_OperateFunction23_Waypoint` 的激活与打开阶段。菜单字体变换结构核对 OpenDiablo2 `d2common/d2fileformats/d2pl2/pl2.go` 的 `TextColorShifts`，边框拼接沿 `d2core/d2ui/frame.go`；原图、TBL 标题、字体、调色板和变换表均只从当前 MPQ 读取。参考代码遵循下述固定版本／许可，不提交参考仓库或导出图像；实现与验收限制见 [地图基线](../modules/MAP.md#客户端显示与操作)。
 
@@ -103,7 +109,7 @@ D2S 读写依据本地 D2MOO 的 `PlrSave2.h/.cpp`、`Items.cpp`、`ItemMods.cpp
 
 2026-09-25 场景显示修正依据 OpenDiablo2 固定提交 `7f92c571bf04057a7fbdfb5d25a486f7d775e3c3` 的 [monster_stats_record.go](https://github.com/OpenDiablo2/OpenDiablo2/blob/7f92c571bf04057a7fbdfb5d25a486f7d775e3c3/d2core/d2records/monster_stats_record.go)（`PaletteId` 明确为 `TransLvl + 2`）、[animation.go](https://github.com/OpenDiablo2/OpenDiablo2/blob/7f92c571bf04057a7fbdfb5d25a486f7d775e3c3/d2core/d2asset/animation.go)／`composite.go`（按 COF 层标志绘制斜向半高阴影）、[gui_manager.go](https://github.com/OpenDiablo2/OpenDiablo2/blob/7f92c571bf04057a7fbdfb5d25a486f7d775e3c3/d2core/d2gui/gui_manager.go)／`resource_paths.go`（`ohand.dc6`、Units 调色板和鼠标热点偏移），GPL-3.0。另与 [Diablerie COFRenderer.cs](https://github.com/mofr/Diablerie/blob/9e42ef257228257825ebbbeb905d4b1d894b6e98/Assets/Scripts/Diablerie/Engine/Entities/COFRenderer.cs) 及 `COF.cs` 交叉核对阴影组件字段；该项目 MIT，Copyright 2019 Alexander Egorov。本项目独立实现 C++ 索引轮廓投影，不纳入参考仓库或其附带游戏表。阴影比例／颜色为参考实现适配，天气时序及完整客户端效果仍待核实。
 
-本轮世界生成代码依据 D2MOO 的 `DrlgMaze`、`DrlgOutPlace`、`DrlgOutWild`、`DrlgOutdoors`、`DrlgRoomTile` 和 `DrlgDrlgVer` 适配；附近房间策略参考 `DrlgActivate`。这是实际代码适配来源，不是完整 DRLG 或逐种子等价实现。当前入口见 [地图](../gameplay/world/MAPS.md) 与 [数据生命周期](../architecture/DATA_FLOW.md)。
+本轮世界生成代码依据 D2MOO 的 `DrlgMaze`、`DrlgOutPlace`、`DrlgOutWild`、`DrlgOutdoors`、`DrlgRoomTile` 和 `DrlgDrlgVer` 适配；附近房间策略参考 `DrlgActivate`。这是实际代码适配来源；第一幕共同核心的代表种子原版对照已完成，其他幕仍不认证完整DRLG或逐种子等价。当前入口见 [地图](../gameplay/world/MAPS.md) 与 [数据生命周期](../architecture/DATA_FLOW.md)。
 
 鼠标按住行为参考同一固定 Diablerie 快照的 `Engine/PlayerController.cs::FixedSelection/ControlPlayerUnit`、`Engine/MouseSelection.cs::Update`：按住时不重新选中光标下对象，技能请求区分单位目标与地面坐标。左右键按单位持续请求及近战追击核对同一固定 D2MOO 的 `D2Game/src/PLAYER/PlrMsg.cpp`，尤其 `Rcv0x09_LeftSkillOnUnitHold`、`Rcv0x10_RightSkillOnUnitHold` 与 `sub_6FC836D0`。Diablerie 的右键没有完整单位锁定分支，D2MOO 也不包含完整客户端输入循环；用户原版操作说明补充了左右键按住后不随光标换目标的依据。本项目独立适配到现有命令和角色状态，不引入参考代码或资源到分发包；本轮没有运行验证。
 
@@ -111,7 +117,7 @@ D2S 读写依据本地 D2MOO 的 `PlrSave2.h/.cpp`、`Items.cpp`、`ItemMods.cpp
 
 通用碰撞与障碍目标靠近依据同一固定 D2MOO 的 `D2Collision.cpp`、`DrlgRoomTile.cpp`、`Path/Step.cpp`、`Path/AStar.cpp`、`Units/Units.cpp`、`MISSILES/MissMode.cpp` 和 `OBJECTS/ObjMode.cpp`。第一幕 DS1→Objects 身份索引适配 `DrlgPreset.cpp::DRLGPRESET_GetObjectIndexFromObjPreset`，这是引擎索引映射；对象尺寸／各模式碰撞／是否阻弹及弹体模式／尺寸仍动态读取当前 MPQ，不按石头名或示例记录覆写参数。沿用 MIT 归属和 [D2MOO 许可](../licenses/D2MOO.txt)。
 
-- [D2MOO](https://github.com/ThePhrozenKeep/D2MOO/tree/5596f5cb6c5251a0a07c6637d26458b06099d516)，固定提交 `5596f5cb6c5251a0a07c6637d26458b06099d516`，MIT，Copyright 2020–2025 The Phrozen Keep community。共有 DT1、隐藏空白瓦片和变体权重解释依据 DrlgRoomTile.cpp；生成边界参考 DrlgDrlg.cpp、DrlgPreset.cpp、DrlgMaze.cpp。许可见 [D2MOO.txt](../licenses/D2MOO.txt)。没有移植完整 DRLG，也未执行参考仓库的游戏代码。
+- [D2MOO](https://github.com/ThePhrozenKeep/D2MOO/tree/5596f5cb6c5251a0a07c6637d26458b06099d516)，固定提交 `5596f5cb6c5251a0a07c6637d26458b06099d516`，MIT，Copyright 2020–2025 The Phrozen Keep community。共有 DT1、隐藏空白瓦片和变体权重解释依据 DrlgRoomTile.cpp；生成边界参考 DrlgDrlg.cpp、DrlgPreset.cpp、DrlgMaze.cpp。许可见 [D2MOO.txt](../licenses/D2MOO.txt)。没有移植全部五幕DRLG；正式游戏不调用参考仓库代码，原版DLL仅经忽略目录中既有导出工具作开发对照。
 
   通用技能状态结构还核对同一快照的 `Skills.cpp::sub_6FD11C90`（按目标原状态组互斥）、`SkillSor.cpp::SKILLS_SrvDo018_DefensiveBuff`／`SKILLS_CurseStateCallback_DefensiveBuff`（状态属性列表、事件注册及移除）和 `D2States.cpp`（死亡保留标志）。当前状态 ID、组、标志、叠层仍读取用户 MPQ 的 States.txt，玩法容器为本项目独立 C++ 实现；不纳入参考表或声称已复刻所有 Buff。
 

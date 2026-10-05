@@ -1,4 +1,5 @@
 #include "outdoor_layout.hpp"
+#include "native_act_layout.hpp"
 #include "world/generation_seed.hpp"
 #include <algorithm>
 #include <functional>
@@ -44,8 +45,7 @@ bool overlaps(const OutdoorPosition &a, const OutdoorPosition &b) {
     return a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
 }
 // Native directions: 0 south, 1 west, 2 north, 3 east.
-void connect(OutdoorPosition &a, OutdoorPosition &b) {
-    int side = b.direction;
+void connect(OutdoorPosition &a, OutdoorPosition &b, int side) {
     bool vertical = side % 2;
     int from = std::max(vertical ? a.y : a.x, vertical ? b.y : b.x);
     int to = std::min(vertical ? a.y + a.height : a.x + a.width, vertical ? b.y + b.height : b.x + b.width);
@@ -91,7 +91,7 @@ std::map<int, OutdoorPosition> layoutAct2(const WorldCatalog &catalog, uint32_t 
         throw std::runtime_error("Cannot place original Act II outdoor links");
     result.at(40).direction = result.at(41).direction;
     for (int id = 41; id <= 45; ++id)
-        connect(result.at(id - 1), result.at(id));
+        connect(result.at(id - 1), result.at(id), result.at(id).direction);
     return result;
 }
 std::map<int, OutdoorPosition> layoutAct4(const WorldCatalog &catalog, uint32_t seed) {
@@ -121,7 +121,7 @@ std::map<int, OutdoorPosition> layoutAct4(const WorldCatalog &catalog, uint32_t 
         return false;
     };
     if (!place(105)) throw std::runtime_error("Cannot place original Act IV outdoor links");
-    for (int id = 104; id <= 106; ++id) connect(result.at(id - 1), result.at(id));
+    for (int id = 104; id <= 106; ++id) connect(result.at(id - 1), result.at(id), result.at(id).direction);
     auto &townBoundary = result.at(103).boundaries.front();
     auto &mesaBoundary = result.at(104).boundaries.front();
     const int row = opposite ? 8 : 32;
@@ -132,84 +132,32 @@ std::map<int, OutdoorPosition> layoutAct4(const WorldCatalog &catalog, uint32_t 
     return result;
 }
 std::map<int, OutdoorPosition> layoutAct1(const WorldCatalog &catalog, uint32_t seed) {
-    Seed rng(seed);
+    const auto act = placeNativeAct(catalog, 0, seed);
     std::map<int, OutdoorPosition> result;
-    auto group = [&](std::vector<int> ids, std::vector<int> parents, bool wilderness) {
-        std::vector<OutdoorPosition> positions;
-        std::vector<int> offsets(ids.size());
-        for (int id : ids) {
-            const auto &r = catalog.level(id);
-            positions.push_back({id, r.offsetX, r.offsetY, r.width, r.height, 0, {}});
+    // Keep the recipe adapter's existing scope. Interior levels and the secret
+    // cow area use their own generation stages, but share this act placement.
+    for (const int id : {1, 2, 3, 4, 5, 6, 7, 17, 26}) {
+        const auto &p = act.levels.at(id);
+        result.emplace(id, OutdoorPosition{id, p.x, p.y, p.width, p.height,
+            p.direction, {}, p.outdoorFlags});
+    }
+    for (auto &[id, a] : result) {
+        const auto &slots = act.connections.at(id);
+        for (size_t slot = 0; slot < slots.visible.size(); ++slot) {
+            const int destination = slots.visible[slot];
+            if (slots.warps[slot] != -1 || id >= destination || !result.contains(destination)) continue;
+            auto &b = result.at(destination);
+            // The legacy recipe carries south/west/north/east boundaries. It
+            // does not determine the DRLG link graph or consume random draws.
+            int side;
+            if (b.x == a.x + a.width) side = 3;
+            else if (a.x == b.x + b.width) side = 1;
+            else if (b.y == a.y + a.height) side = 0;
+            else if (a.y == b.y + b.height) side = 2;
+            else throw std::runtime_error("Native Act I recipe link has no shared edge");
+            connect(a, b, side);
         }
-        int attempts = 0;
-        std::function<bool(int)> place = [&](int i) {
-            if (++attempts > 10000)
-                throw std::runtime_error("Act I outdoor layout exhausted");
-            if (i == int(ids.size()))
-                return true;
-            int id = ids[i];
-            bool paired = id == 1 || id == 2;
-            int first = rng.below(4), offset = paired ? rng.below(2) : 0;
-            if (id == 7)
-                first = 0;
-            for (int candidate = 0; candidate < (id == 7 ? 1 : paired ? 8 : 4); ++candidate) {
-                int d = (first + (paired ? (candidate + offset) / 2 : candidate)) % 4;
-                bool opposite = paired && ((candidate + offset) % 2 == 0);
-                offsets[i] = paired ? !opposite : 0;
-                auto &p = positions[i];
-                if (id == 2) {
-                    p.width = d % 2 ? 96 : 56;
-                    p.height = d % 2 ? 56 : 96;
-                }
-                attach(positions[parents[i]], p, d, id == 1 ? 2 : id == 7 ? 0 : 1, opposite);
-                bool valid = true;
-                for (int j = 0; j < i; ++j)
-                    if (j != parents[i] && overlaps(p, positions[j]))
-                        valid = false;
-                if (wilderness && id == 1) {
-                    constexpr int townAllowed[]{1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0,
-                                                0, 0, 0, 1, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 1, 1,
-                                                0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0,
-                                                0, 0, 0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 0, 0, 1, 1};
-                    int parent = parents[i];
-                    valid = valid && townAllowed[d + 4 * (offsets[i] + 2 * (positions[parent].direction +
-                                                                            4 * offsets[parent]))];
-                }
-                if (valid && place(i + 1))
-                    return true;
-            }
-            return false;
-        };
-        if (!place(1))
-            throw std::runtime_error("Cannot place original Act I outdoor links");
-        for (int i = 1; i < int(ids.size()); ++i)
-            connect(positions[parents[i]], positions[i]);
-        if (wilderness) {
-            struct RiverRule {
-                int level, excludeFirst, excludeSecond, direction, nextDirection;
-                uint32_t flags;
-            };
-            constexpr RiverRule rules[]{{0, 2, 3, 1, 0, 4},  {0, 2, 3, 2, 3, 4},   {0, 3, 17, 2, 1, 8},
-                                        {0, 3, 17, 3, 0, 8}, {0, 3, 17, 1, 1, 16}, {0, 3, 17, 3, 3, 16},
-                                        {2, 0, 0, 0, 0, 8},  {2, 0, 0, 2, 2, 8},   {2, 0, 0, 3, 0, 8},
-                                        {2, 0, 0, 3, 2, 8}, {2, 0, 0, 0, 1, 0x400},
-                                        {2, 0, 0, 1, 1, 0x400}, {2, 0, 0, 2, 1, 0x200},
-                                        {2, 0, 0, 2, 2, 0x80}, {2, 0, 0, 3, 2, 0x100}};
-            for (size_t index = 0; index < positions.size(); ++index) {
-                auto &position = positions[index];
-                int next = index + 1 < positions.size() ? positions[index + 1].direction : -1;
-                for (const auto &rule : rules)
-                    if ((!rule.level || rule.level == position.level) &&
-                        position.level != rule.excludeFirst && position.level != rule.excludeSecond &&
-                        position.direction == rule.direction && next == rule.nextDirection)
-                        position.flags |= rule.flags;
-            }
-        }
-        for (auto &p : positions)
-            result.emplace(p.level, std::move(p));
-    };
-    group({4, 3, 2, 1, 17}, {-1, 0, 1, 2, 1}, true);
-    group({26, 7, 6, 5}, {-1, 0, 1, 2}, false);
+    }
     return result;
 }
 } // namespace d2x

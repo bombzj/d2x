@@ -1,5 +1,6 @@
 #pragma once
 #include "resources/formats.hpp"
+#include "content/world/world_catalog.hpp"
 #include <algorithm>
 #include <map>
 #include <memory>
@@ -21,6 +22,36 @@ struct MapTerrain {
     std::map<std::tuple<int, int, size_t, uint32_t>, int> tileChoices;
     struct TileAnimation { std::vector<int> frames; int speed = 80; };
     std::map<std::pair<size_t, uint32_t>, TileAnimation> animations;
+    // Prepared room instances preserve overlapping shadows, explicit corner
+    // halves and each room's DT1 choice. They never re-enter DS1 tile selection.
+    struct Instance {
+        int x{}, y{}, type{}, tile{};
+        uint32_t flags{};
+        std::vector<int> frames;
+        int speed{};
+        size_t room{};
+        bool wallArray{};
+        int renderTile(float seconds) const {
+            if (frames.empty()) return tile;
+            const auto ticks = uint64_t(std::max(0.f, seconds) * 25.f);
+            return frames[(ticks * uint64_t(speed) / 256) % frames.size()];
+        }
+    };
+    bool preparedRooms{};
+    std::vector<Instance> instances;
+    struct PreparedRoom {
+        int level{}, x{}, y{}, width{}, height{}, preset{}, file{}, parentX{}, parentY{};
+        std::vector<size_t> near;
+    };
+    std::vector<PreparedRoom> rooms;
+    // Native client decorations (river graphics/sound anchors) do not become
+    // authoritative actors or acquire fabricated server unit IDs.
+    std::vector<MapObject> clientObjects;
+    struct Exit {
+        int slot{}, destination{}; WarpRecord selection; Vec position;
+        std::vector<size_t> visible, lit;
+    };
+    std::vector<Exit> exits;
     std::string name, path;
     int unresolved = 0;
     int tileIndex(const MapCell &cell, int x, int y) const {

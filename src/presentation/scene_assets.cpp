@@ -185,7 +185,8 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session, const I
         hirelingHead.frames.empty() || hirelingArmor.frames.empty() || hirelingWeapon.frames.empty())
         throw std::runtime_error("Original expansion hireling panel resources are missing");
     loadMonsterAudio(archives, session.monsterContent());
-    const auto objectRows = decodeTable(archives.read("data/global/excel/objects.txt"));
+    objectDefinitions_ = decodeTable(archives.read("data/global/excel/objects.txt"));
+    const auto &objectRows = objectDefinitions_;
     for (const auto &row : objectRows) {
         if (row.at("Id").empty()) continue;
         auto number = [&](const std::string &name) {
@@ -761,6 +762,19 @@ Graphics &SceneAssets::graphicsForAct(int act) const {
     if (!graphics)
         graphics = std::make_unique<Graphics>(archives_, "data/global/palette/act" + std::to_string(act + 1) + "/pal.dat");
     return *graphics;
+}
+const WorldObject &SceneAssets::clientDecoration(int id, int palette) const {
+    auto [entry, fresh] = decorations_.try_emplace(std::pair{palette, id});
+    if (fresh) {
+        auto &object = entry->second;
+        object.act = 0; object.palette = palette; object.objectClass = id;
+        const auto row = std::find_if(objectDefinitions_.begin(), objectDefinitions_.end(),
+            [&](const auto &record) { return record.at("Id") == std::to_string(id); });
+        if (row == objectDefinitions_.end()) throw std::runtime_error("Client decoration is absent from MPQ");
+        object.appearance = {"objects", normalize(row->at("Token")), "nu", "hth", {}};
+        configureWorldObject(object, objectDefinitions_);
+    }
+    return entry->second;
 }
 void SceneAssets::ensurePropArt(const WorldObject &object) const {
     if (propAnimations.contains(object.key)) return;

@@ -24,12 +24,21 @@ add_library(d2x_world src/world/map.cpp src/world/map_assembly.cpp src/world/maz
 target_sources(d2x_world PRIVATE src/world/object_population.cpp)
 target_sources(d2x_world PRIVATE src/world/chest.cpp)
 target_sources(d2x_world PRIVATE src/world/shrine_catalog.cpp)
+target_sources(d2x_world PRIVATE src/world/native_room_activation.cpp src/world/native_map.cpp)
+target_sources(d2x_world PRIVATE src/world/outdoor/native_act_layout.cpp src/world/retail/outdoor_grid.cpp
+  src/world/outdoor/native_connections.cpp src/world/retail/boundary.cpp
+  src/world/retail/border_presets.cpp src/world/retail/secondary_border.cpp
+  src/world/retail/wilderness.cpp src/world/retail/dirt_paths.cpp
+  src/world/retail/outdoor_layout.cpp src/world/retail/rooms.cpp
+  src/world/retail/preset_scan.cpp src/world/retail/room_grids.cpp
+  src/world/retail/room_themes.cpp src/world/retail/tile_selector.cpp
+  src/world/retail/room_data.cpp src/world/retail/preset_room.cpp
+  src/world/retail/tile_materialization.cpp)
 target_sources(d2x_world PRIVATE
   src/world/outdoor/outdoor_substitution.cpp
   src/world/outdoor/outdoor_shrines.cpp
   src/world/outdoor/outdoor_river.cpp
   src/world/outdoor/outdoor_paths.cpp
-  src/world/outdoor/outdoor_cliffs.cpp
   src/world/outdoor/desert.cpp
   src/world/outdoor/jungle.cpp
   src/world/outdoor/mesa.cpp
@@ -279,7 +288,7 @@ if(WIN32)
   target_link_libraries(d2x PRIVATE advapi32 dbghelp)
 endif()
 add_executable(d2x_assets src/asset_tool.cpp)
-target_link_libraries(d2x_assets PRIVATE d2x_content d2x_world d2x_population d2x_persistence raylib)
+target_link_libraries(d2x_assets PRIVATE d2x_content d2x_world d2x_population d2x_persistence raylib nlohmann_json::nlohmann_json)
 foreach(target IN ITEMS d2x_resources d2x_navigation d2x_world d2x_items d2x_content d2x_gameplay d2x_population d2x_session d2x_persistence d2x_presentation d2x_client d2x_local_client d2x_network d2x_d2gs_protocol d2x_remote_client d2x_remote_scene d2x d2x_assets)
   if(MSVC)
     target_compile_options(${target} PRIVATE /W4 /utf-8)

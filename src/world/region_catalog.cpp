@@ -5,6 +5,7 @@
 #include "world/outdoor/outdoor_substitution.hpp"
 #include "world/plan.hpp"
 #include "world/generation_seed.hpp"
+#include "world/native_map.hpp"
 #include <algorithm>
 
 namespace d2x {
@@ -44,9 +45,9 @@ WorldPlan planWorld(Archives &archives, const WorldCatalog &catalog, WorldSelect
                                      "--level-type for room previews");
     }
     WorldPlan result;
-    auto missingOutdoor = outdoorMissing(archives, catalog);
-    auto outdoors = missingOutdoor.empty() ? generateAct1Outdoors(archives, catalog, selection.seed)
-                                           : std::map<int, MapRecipe>{};
+    std::map<int, MapRecipe> outdoors;
+    TileLibraryCache nativeLibraries(archives);
+    NativeMapGenerator native(archives, catalog, nativeLibraries, 0, selection.seed, selection.difficulty);
     auto deserts = generateAct2Outdoors(archives, catalog, selection.seed);
     outdoors.insert(deserts.begin(), deserts.end());
     auto jungles = generateAct3Jungles(catalog, selection.seed);
@@ -63,6 +64,12 @@ WorldPlan planWorld(Archives &archives, const WorldCatalog &catalog, WorldSelect
     for (const auto &[id, level] : catalog.levels()) {
         if (level.act < 0 || level.act > 4)
             continue;
+        if (level.act == 0 && !selection.preset && selection.map.empty()) {
+            auto recipe = native.recipe(id);
+            result.regions.push_back(makeRegion(RegionId(id), level.name, std::move(recipe), level.town));
+            result.entries.push_back({id, level.name, "Shared native Act I terrain", {}, RegionId(id)});
+            continue;
+        }
         int variant = id == selection.level && !selection.preset ? selection.variant : 0;
         if (level.generation == GenerationKind::Preset && id != selection.level && !outdoors.contains(id)) {
             Seed world(selection.seed);
@@ -176,7 +183,7 @@ WorldPlan planWorld(Archives &archives, const WorldCatalog &catalog, WorldSelect
                 }
                 result.regions.push_back(makeRegion(
                     *entry.destination, level.name,
-                    generateMaze(catalog, id, selection.seed, selection.difficulty, entranceDirection)));
+                    generateMaze(archives, catalog, id, selection.seed, selection.difficulty, entranceDirection)));
             }
         } else if (available.ready()) {
             entry.destination = RegionId(id);
@@ -190,7 +197,7 @@ WorldPlan planWorld(Archives &archives, const WorldCatalog &catalog, WorldSelect
                               [](const auto &region) { return int(region.definition.id) == 27; });
     auto barracks = std::find_if(result.regions.begin(), result.regions.end(),
                                  [](const auto &region) { return int(region.definition.id) == 28; });
-    if (court != result.regions.end()) {
+    if (court != result.regions.end() && !court->recipe.native) {
         auto terrain = decodeDs1(archives.read(court->recipe.ds1));
         auto &recipe = court->recipe;
         recipe.width = terrain.width - 1;
@@ -204,7 +211,7 @@ WorldPlan planWorld(Archives &archives, const WorldCatalog &catalog, WorldSelect
         });
         auto parent = std::find_if(result.regions.begin(), result.regions.end(),
                                    [&](const auto &region) { return int(region.definition.id) == parentId; });
-        if (dependent == result.regions.end() || parent == result.regions.end())
+        if (dependent == result.regions.end() || parent == result.regions.end() || dependent->recipe.native)
             continue;
         for (auto *recipe : {&dependent->recipe, &parent->recipe})
             if (!recipe->width || !recipe->height) {
@@ -225,7 +232,7 @@ WorldPlan planWorld(Archives &archives, const WorldCatalog &catalog, WorldSelect
         child.boundaries.push_back({parentId, 0, start - child.worldX, end - child.worldX});
         base.boundaries.push_back({dependentId, 2, start - base.worldX, end - base.worldX});
     }
-    if (court != result.regions.end() && barracks != result.regions.end())
+    if (court != result.regions.end() && barracks != result.regions.end() && !court->recipe.native)
         connectBarracks(court->recipe, barracks->recipe, court->recipe.width, court->recipe.height);
     auto river = std::find_if(result.regions.begin(), result.regions.end(),
         [](const auto &region) { return int(region.definition.id) == 107; });

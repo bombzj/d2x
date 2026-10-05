@@ -1,10 +1,12 @@
 # 联网入口与底层基线
 
-更新：2026-10-05。当前源码与 `dist/current` 已包含局前主流程、服务端世界副本和第一幕营地入局链，Windows Release 构建及有限实机冒烟通过。已确认服务器角色加载、双人显示／移动、正常退局及同进程／新进程重入；出城、战斗、拾取和完整库存尚未接入，不能据此认证完整联网游玩。
+更新：2026-10-06。局前主流程、服务器角色加载与保存退局、第一幕纯 C++ 地图及移动已进入 Windows Release 包。第一幕1–39共用离线生成核心，122组原版DLL地形对照通过；包内营地→血腥荒地→邪恶洞穴→野外真实移动／出口交互通过。战斗、拾取、完整库存及其他幕随机地图尚未接入，地图通过不等于完整联网游玩。
+
+RemoteTown逐条重放原服有序房间／玩家位置事件，精确检查房间锚点，输出实际DT1与活动碰撞。第一幕事件丢失或生成失败会停止显示／移动并给出 `nativeMapReason`，要求重新入局；不回退近似预设。用户明确拒绝原DLL地图运行依赖；开发对照方法见[实施计划](../architecture/MULTIPLAYER.md#原版-dll-对照方法)。
 
 ## 流程与入口
 
-普通启动：主菜单 → Battle.net → 登录或注册 → Realm → 服务器角色 → 创建或加入游戏 → D2GS 协议加载 → 条件匹配原版营地 → 服务端世界显示。Single Player 保留离线入口。联网不读取本地 D2S，也不启动本地 GameSession。
+普通启动：主菜单 → Battle.net → 登录或注册 → Realm → 服务器角色 → 创建或加入游戏 → D2GS 协议加载 → 重建第一幕活动地图 → 服务端世界显示。Single Player 保留离线入口。联网不读取本地 D2S，也不启动本地 GameSession。
 
 | 页面／操作 | 当前源码 |
 | --- | --- |
@@ -15,7 +17,7 @@
 | Join | 真实房间列表、人数、选中说明；滚轮浏览、按名与密码加入；再次点 Join 刷新，列表等待可取消 |
 | 等待／返回 | 持续 tick，建局队列显示位置；取消列表返回大厅，其他等待取消关闭会话；大厅 Quit、正常退局重新取票返回选角 |
 
-`ProtocolReady` 仍仅表示协议初始化。达到它后，第一幕营地只有在服务器位置／房间／固定物件与当前 MPQ 预设唯一匹配、DT1 碰撞变体一致时才切入远端场景；否则保留说明及退出入口。进入场景后左键提交移动、R 切换请求跑／走，Esc 打开原图退出／返回菜单。战斗与物品操作尚未接入。新闻、广告、频道／聊天、账号设置、Ladder、转换角色和影片等非主流程入口暂缓。完整人工操作、调色与逐像素一致性待验收。
+`ProtocolReady`仅表示协议初始化，第一幕场景另须 `nativeMapReady`、`playerDisplayed` 与活动碰撞准备成功。左键提交移动、R切换跑／走、Esc打开退出菜单；楼梯底层先通过 `online-use-exit` 调用，鼠标入口留待UI阶段。新闻、广告、频道／聊天、账号设置、Ladder、转换角色和影片等非主流程入口暂缓。
 
 角色名 2–15 字符，首字符英文字母，其余英文字母、连字符或下划线；classId 为 0 Amazon、1 Sorceress、2 Necromancer、3 Paladin、4 Barbarian、5 Druid、6 Assassin。初始属性、装备和 D2S 由原服生成；客户端仅提交 MCP 0x02 的职业／状态与名字。删角用 MCP 0x0A，command 要求 confirmName 完全匹配。注册账号／密码为 2–15 可打印 ASCII 字符，更细名字限制由服务器拒绝码说明。
 
@@ -33,7 +35,8 @@
 | [app/frontend.cpp](../../src/app/frontend.cpp) | 会话所有权、配置、tick、页面路由与命令提交 |
 | [RealmFrontend](../../src/presentation/frontend/realm_frontend.hpp)、[RemoteScene](../../src/presentation/remote/remote_scene.hpp) | 原图、字体、局前／世界显示与输入，只读副本并返回意图 |
 | [remote_world.cpp](../../src/client/remote_world.cpp) | 有序回包归并，无 MPQ、GPU、存档或本地模拟 |
-| [RemoteTown](../../src/client/remote_town.hpp) | 独立 MPQ 营地绑定，复用 DS1／DT1，不生成本地单位 |
+| [RemoteTown](../../src/client/remote_town.hpp) | 独立 MPQ 原预设区域绑定与缓存，复用 DS1／DT1，不生成本地单位 |
+| [native_act_layout.hpp](../../src/world/outdoor/native_act_layout.hpp)、[native_map.hpp](../../src/world/native_map.hpp) | 共用幕布局及第一幕房间生成会话；GS 有序重放和活动地形快照已接源码，完整规则及跨区未验收 |
 | [online_commands.cpp](../../src/app/debug/online_commands.cpp) | 同一会话的菜单管道；accepted 与异步成功分开 |
 | [RealmPortraitCatalog](../../src/content/character/realm_portrait.hpp) | MPQ 原表动态重建外观编号 |
 | [RealmSession](../../src/network/realm_session.hpp) | SID／MCP／D2GS 状态机、认证、角色／房间、取票、加载、心跳与退局 |
@@ -63,16 +66,26 @@ read() 借用有效至下次修改；connectionGeneration 管登录生命周期�
 
 ## 远端营地入局边界
 
-- 单位以原 type／ID 归并：0x59 玩家、0x51 物件、0xAC NPC；0x0B 绑定本人，0x0A／0x5C 移除。0x07／0x08 只给出区域与 tile 锚点，不能声称收到房间尺寸；单位位置为 subtile，每 tile 五格。
-- 0x0D／0x0F／0x10／0x15／0x16、0x6B／0x6C／0x6D 归并已知绝对坐标；0x67／0x68 只保留目标。本人 0x18／0x95／0x96 解出状态与位置，尾字节是到路径首点的偏移，不是小数坐标。0x1D／0x1E／0x1F 保留原属性编号／值，不当作本地派生属性；单位 lifePercent 保留原回包比值字节，未换算到 0–100。
-- 原营地四种 DS1 从 LvlPrest／Levels／LvlTypes 动态读取；至少两类固定物件、所有相关可见物件和城镇 8-tile 房间锚点须一致，候选必须唯一。DS1 物件编号复用既有原版映射。玩家位置不用于猜出生点，也不沿用未认证的离线 DRLG 布局。
-- 复用 Map 只解码营地地形，未创建 Region／人口／AI／任务／离线存档。未复制零售版房间随机流；仅允许所有可选 DT1 变体碰撞一致的场景入局，图像变体选择不承诺与原客户端逐像素一致。其他幕、出城及完整种子重建暂缓。
-- 0x9C／0x9D 只解出装备外观前缀，按 ID／主人／身体槽更新；不构造库存、物品属性或交易。角色原表／原 COF 外观复用 RealmPortraitCatalog；染色、自动词缀、ethereal、未知组合暂不绘制。NPC 组件选择由 0xAC 位流与当前 MonStats／MonStats2 解出；独特／佣兵染色及缺资源暂不绘制，绝不把中立单位替换为敌人。
-- 显示使用原 DT1、DCC／DC6／COF、调色板、AnimData 与 Objects 原表；摄像机跟随服务端本人坐标。没有本地寻路推进、位置预测或 AI；当前以服务器坐标更新显示，NPC 路径和动作／帧节拍不宣称零售版一致。HUD 暂只显示服务器当前生命／法力数值，未猜最大值或填充比例；背包、技能、NPC 服务、战斗和拾取暂缓。
-- UI／online-move 共用当前地图／代次／边界／目标地形校验，向原服发 0x01 walk／0x03 run，最多每 100ms 一次。accepted 仅代表入发送队列，必须观察之后的 playerPosition 判断移动结果；动态单位碰撞与最终路径由服务器决定。只允许营地内目标，不承诺原服寻路不会绕出边界；实际位置出营地或匹配失效即撤下场景、停止新请求，允许正常退局。
-- 副本限制 8192 单位、4096 房间、2048 装备条目；未知已定长消息计 ignoredPackets，未猜字段。长度错误／位流越界交会话失败处理。online-world 返回副本与匹配诊断；scene.available、movementAvailable、playerDisplayed 和 unavailableUnits 分别说明地图、移动入口、本人图形与未绘制单位，不能仅凭 ProtocolReady 认定可玩。
+该标题保留供既有链接使用；第一幕现已扩展至全部39区的生成入口。
 
-包长度核对本机 1.13c D2Net；字段交叉参考本地 D2MOO 的 D2PacketDef／SCmd／SUnitMsg／PlrMsg／MonsterMsg／Items 序列化及 1.13 协议表；营地分房参考 DRLGPRESET_BuildArea(false)。1.10f 参考提供语义证据，不代替实际 1.13c 验收。当前 MPQ 四种营地所用瓦片候选未发现碰撞 flags 差异，运行时仍逐项检查；本次实际连服验证 towne1／towns1，北／西向未实机验收。原 800ctrlpnl7.dc6 有七帧，场景与既有 HUD 一致仅绘制前六块面板。
+- 联网仅创建只读服务器单位／房间副本及地形会话，不创建本地 Region、人口、AI、任务或角色存档。属性、装备和持久保存仍由原服决定。
+- 第一幕种子、难度和当前MPQ驱动共用 `NativeMapGenerator`；0x07／0x08及玩家换房顺序驱动活动网格，不按最终房间集补猜。历史最多4096条，不连续或生成失败需重新入局。其他幕仍保留独立的唯一预设匹配与碰撞变体检查，不能用它认证随机地图。
+- 地形快照保留当前连续组件的活动房间、选定DT1、完整碰撞及原出口链；允许营地和野外连续跨区。场景位置为服务端全局subtile，快照原点可随活动房间变化，不是固定城镇偏移。
+- UI／`online-move`复用当前地图、代次和目标可走检查，向原服发0x01 walk／0x03 run，最多每100ms一次。accepted仅表示请求入队，实际位置由后续回包确认；不把移动命令当传送。
+- `online-use-exit`要求当前原生地图可用、角色存活和真实type5出口单位ID，发送原0x13交互；目标及最终区域仍由原服校验。不能传LvlWarp类型编号冒充单位ID。
+- RemoteScene只读权威位置／模式／装备，显示原图；缺图单位明确计数，未接入攻击／技能／物品回包消费者。地形已选变体、Pops与亮面Warp显示不参与本地伤害或碰撞模拟。
+
+包长度核对本机1.13c D2Net，协议语义交叉参考本地D2MOO；完整客户端动作、颜色、自动地图及逐帧视觉仍有边界。原800ctrlpnl7.dc6有七帧，场景与既有HUD仅绘制前六块。
+
+## 第一幕地图与出口冒烟
+
+2026-10-06使用实际 `dist/current/d2x.exe`、既有command及本机参考服，独立非Ladder测试法师 `bomb2/ActMapSor`；未改动 aaa／bbb。证据集中在忽略目录 `artifacts/map-oracle-20261005/`。
+
+- Windows Release构建／打包通过，包内EXE及网络DLL与构建产物SHA256相同；正式地图不依赖原D2Common DLL。
+- 第一幕原版1.13c对照122组全部通过；共享离线路径五种子各136区域加载／出口关联通过，包内第一幕39区显示、噩梦／地狱地下墓穴代表启动及临时D2S同进程／新进程重载通过，详见[地图验证](../gameplay/world/MAPS.md#本批验证)。
+- 连续参考服检查以真实移动完成营地1→血腥荒地2，真实type5单位交互进入邪恶洞穴8并返回2；最终种子665010272，原生地图、人物显示和活动碰撞保持，无mapErrors。补齐原0x09出口分配回包，0x13使用真实服务器GUID。出口附近仍按服务器寻路／碰撞接近，command不是传送。
+- 正常退局返回CharacterSelection；原服00:25:15日志确认独立角色CHARSAVE／CHARINFO保存成功。此项不认证联网战斗、拾取或任务变化保存。
+- 先前长时间停留时参考D2GS watchdog关闭游戏；最终重新连接后连续完成往返及正常退局。服务长期稳定性问题仍未解决，断开时需检查服务日志；不将被服务端终止的检查记作通过。
 
 ## 营地入局与存档冒烟
 

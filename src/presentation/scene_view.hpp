@@ -11,6 +11,7 @@
 #include "presentation/world/palette_blend_view.hpp"
 #include "scene_assets.hpp"
 #include "presentation/world/scene_geometry.hpp"
+#include "presentation/world/preset_pops.hpp"
 #include "gameplay/model/events.hpp"
 #include <cstdint>
 #include <deque>
@@ -146,6 +147,7 @@ class SceneView {
     std::set<EntityId> movingMonsters_;
     AutomapExploration exploredAutomap_;
     std::map<RegionId, std::vector<float>> roofOpacity_;
+    std::map<RegionId, PresetPops> nativePops_;
     const Sprite *objectSprite(const WorldObject &object, RegionId region) const;
     Vec objectScreen(const WorldObject &object, Vec regionOffset = {}) const;
     struct LootLabel {
@@ -160,7 +162,7 @@ class SceneView {
     Rectangle lootBounds(const ItemInstance &item) const;
     void drawGroundItem(EntityId item, bool highlighted) const;
     void drawLootLabels(Vec mouse) const;
-    void drawTerrain() const;
+    void drawTerrain(Vec mouse) const;
     void drawActors(Vec mouse) const;
     void drawSelectableSprite(const Sprite *image, Vec position, bool highlighted,
                               Color tint = WHITE, Vector2 highlight = {2.f, 1.f}) const;

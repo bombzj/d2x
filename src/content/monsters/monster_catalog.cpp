@@ -422,6 +422,21 @@ MonsterCatalog::MonsterCatalog(Archives &archives, const DataTable &stats) {
     for (size_t row = 0; row < places.rows().size(); ++row)
         places_.emplace(places.value(row, "code"));
     DataTable presets(archives.read("data/global/excel/monpreset.txt"));
+    const int monsterCount = indices_.empty() ? 0 : indices_.rbegin()->first + 1;
+    int uniqueCount = 0;
+    for (const auto &[index, id] : indices_)
+        nativePresets_.emplace(index, MonsterPreset{MonsterPresetKind::Monster, id});
+    for (const auto &[id, unique] : uniques_) {
+        uniqueCount = std::max(uniqueCount, unique.index + 1);
+        nativePresets_.emplace(monsterCount + unique.index, MonsterPreset{MonsterPresetKind::SuperUnique, id});
+    }
+    int placeIndex = 0;
+    for (size_t row = 0; row < places.rows().size(); ++row) {
+        const auto id = places.value(row, "code");
+        if (id.empty()) continue;
+        nativePresets_.emplace(monsterCount + uniqueCount + placeIndex++,
+            MonsterPreset{MonsterPresetKind::Place, std::string(id)});
+    }
     for (size_t row = 0; row < presets.rows().size(); ++row) {
         auto act = presets.number(row, "Act");
         if (!act)
@@ -447,7 +462,11 @@ const SuperUniqueRecord *MonsterCatalog::superUnique(std::string_view id) const 
     auto it = uniques_.find(id);
     return it == uniques_.end() ? nullptr : &it->second;
 }
-MonsterPreset MonsterCatalog::preset(int act, int index, int version) const {
+MonsterPreset MonsterCatalog::preset(int act, int index, int version, bool nativeIdentity) const {
+    if (nativeIdentity) {
+        const auto found = nativePresets_.find(index);
+        return found == nativePresets_.end() ? MonsterPreset{} : found->second;
+    }
     if (version <= 4) {
         auto it = indices_.find(index);
         return it == indices_.end() ? MonsterPreset{} : MonsterPreset{MonsterPresetKind::Monster, it->second};
