@@ -51,13 +51,27 @@ RealmPortraitCatalog::RealmPortraitCatalog(Archives &a) {
         const DataTable items(a.read(std::string("data/global/excel/") + name + ".txt"));
         for (size_t row = 0; row < items.rows().size(); ++row) {
             std::string type(items.value(row, "type"));
+            Item visual;
+            auto gfx = items.value(row, "alternategfx");
+            if (gfx.empty())
+                gfx = items.value(row, "code");
+            visual.appearance = {std::string(gfx), type, std::string(items.value(row, "wclass")),
+                                 std::string(items.value(row, "2handedwclass")),
+                                 items.number(row, "2handed").value_or(0) != 0};
+            visual.component = items.number(row, "component").value_or(-1);
+            constexpr std::array columns{"rArm", "lArm", "Torso", "Legs", "rSPad", "lSPad"};
+            for (size_t part = 0; part < columns.size(); ++part) {
+                const auto armor = items.number(row, columns[part]);
+                if (armor && *armor >= 0 && size_t(*armor) < armorTypes.rows().size())
+                    visual.body[part] = armorTypes.value(size_t(*armor), "Token");
+            }
+            const auto itemCode = items.value(row, "code");
+            if (!itemCode.empty())
+                items_.emplace(std::string(itemCode), std::move(visual));
             const bool weapon = isType(type, "weap"), armor = isType(type, "armo");
             if (!weapon && !isType(type, "tors") && !isType(type, "shld") &&
                 !(isType(type, "helm") && !isType(type, "circ")))
                 continue;
-            auto gfx = items.value(row, "alternategfx");
-            if (gfx.empty())
-                gfx = items.value(row, "code");
             if (gfx.empty())
                 continue;
             if (std::any_of(codes_.begin(), codes_.end(), [&](const auto &e) { return e.code == gfx; }))
@@ -77,6 +91,52 @@ RealmPortraitCatalog::RealmPortraitCatalog(Archives &a) {
                 ++next;
         }
     }
+}
+std::optional<RealmPortraitParts> RealmPortraitCatalog::decode(const OnlineUnit &u,
+                                                               const OnlineWorldView &w) const {
+    if (u.key.type != 0 || !u.classId || *u.classId >= 7 || !u.equipmentObserved)
+        return {};
+    // Share the verified native preview component resolver with live server gear.
+    OnlineCharacter preview;
+    preview.characterClass = uint8_t(*u.classId);
+    preview.portrait.assign(33, 0xFF);
+    preview.portrait[0] = 0x8D;
+    preview.portrait[1] = 0x80;
+    auto set = [&](size_t component, const std::string &token) {
+        for (size_t id = 1; id < codes_.size(); ++id)
+            if (!token.empty() && codes_[id].code == token) {
+                preview.portrait[2 + component] = uint8_t(id);
+                return true;
+            }
+        return false;
+    };
+    for (const auto &[id, item] : w.equipment) {
+        (void)id;
+        if (item.owner != u.key.id || item.bodyLocation >= 11)
+            continue;
+        const auto found = items_.find(item.code);
+        if (found == items_.end())
+            return {};
+        const auto &visual = found->second;
+        if (visual.component == 16)
+            continue; // No visible body component.
+        // Per-layer color transforms and ethereal blending need separate consumers.
+        if (!item.quality || *item.quality < 1 || *item.quality > 3 || item.autoAffix ||
+            (item.flags & (0x400000 | 0x4000000)))
+            return {};
+        if (item.bodyLocation == 3 && visual.component == 1) {
+            constexpr std::array<size_t, 6> components{3, 4, 1, 2, 8, 9};
+            for (size_t part = 0; part < components.size(); ++part)
+                if (!set(components[part], visual.body[part]))
+                    return {};
+        } else {
+            const auto component = item.component;
+            if (component > 10 || (component != 0 && component < 5) ||
+                !set(component, visual.appearance.code))
+                return {};
+        }
+    }
+    return decode(preview);
 }
 std::optional<RealmPortraitParts> RealmPortraitCatalog::decode(const OnlineCharacter &c) const {
     if (!c.characterClass || *c.characterClass >= 7 || c.portrait.size() != 33 || c.portrait[0] != 0x8D ||

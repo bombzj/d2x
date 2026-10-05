@@ -1,5 +1,6 @@
 #pragma once
 #include "core/bytes.hpp"
+#include "contracts/online_world.hpp"
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -72,6 +73,7 @@ struct OnlineView {
     std::vector<OnlineGame> games;
     std::string selectedRealm, selectedCharacter;
     OnlineLoadInfo load;
+    OnlineWorldView world;
     uint32_t latencyMilliseconds{};
     std::optional<uint32_t> gameQueuePosition;
     bool gameListComplete{};

@@ -35,7 +35,10 @@ constexpr std::array stageNames{"Idle",
 template <class T> Json optional(const std::optional<T> &v) {
     return v ? Json(*v) : Json(nullptr);
 }
-Json snapshot(const OnlineView &v) {
+Json point(const std::optional<OnlinePoint> &p) {
+    return p ? Json{{"x", p->x}, {"y", p->y}} : Json(nullptr);
+}
+Json snapshot(const OnlineView &v, const OnlineSceneView &scene) {
     Json result{{"stage", stageNames.at(size_t(v.stage))},
                 {"revision", v.revision},
                 {"connectionGeneration", v.connectionGeneration},
@@ -45,7 +48,53 @@ Json snapshot(const OnlineView &v) {
                 {"latencyMilliseconds", v.latencyMilliseconds},
                 {"gameQueuePosition", optional(v.gameQueuePosition)},
                 {"gameListComplete", v.gameListComplete},
-                {"worldDisplayAvailable", false}};
+                {"worldDisplayAvailable", scene.available}};
+    result["scene"] = {{"available", scene.available},
+                       {"movementAvailable", scene.movementAvailable},
+                       {"reason", scene.reason},
+                       {"map", scene.map},
+                       {"origin", point(scene.origin)},
+                       {"width", scene.width},
+                       {"height", scene.height},
+                       {"candidates", scene.candidates},
+                       {"landmarks", scene.landmarks},
+                       {"collisionVerified", scene.collisionVerified},
+                       {"renderedUnits", scene.renderedUnits},
+                       {"unavailableUnits", scene.unavailableUnits},
+                       {"playerDisplayed", scene.playerDisplayed}};
+    result["world"] = {{"revision", v.world.revision},
+                       {"areaGeneration", v.world.areaGeneration},
+                       {"playerPosition", point(v.world.playerPosition)},
+                       {"life", optional(v.world.life)},
+                       {"mana", optional(v.world.mana)},
+                       {"stamina", optional(v.world.stamina)},
+                       {"ignoredPackets", v.world.ignoredPackets},
+                       {"units", Json::array()},
+                       {"rooms", Json::array()},
+                       {"equipment", Json::array()},
+                       {"attributes", Json::object()}};
+    for (const auto &[key, u] : v.world.units)
+        result["world"]["units"].push_back({{"type", key.type},
+                                            {"id", key.id},
+                                            {"classId", optional(u.classId)},
+                                            {"position", point(u.position)},
+                                            {"destination", point(u.destination)},
+                                            {"mode", optional(u.mode)},
+                                            {"lifePercent", optional(u.lifePercent)},
+                                            {"name", u.name},
+                                            {"equipmentObserved", u.equipmentObserved}});
+    for (const auto &[room, anchor] : v.world.rooms)
+        result["world"]["rooms"].push_back(
+            {{"area", std::get<0>(room)}, {"tileX", anchor.x}, {"tileY", anchor.y}});
+    for (const auto &[id, item] : v.world.equipment)
+        result["world"]["equipment"].push_back({{"id", id},
+                                                {"owner", item.owner},
+                                                {"code", item.code},
+                                                {"bodyLocation", item.bodyLocation},
+                                                {"component", item.component},
+                                                {"quality", optional(item.quality)}});
+    for (const auto &[id, value] : v.world.playerAttributes)
+        result["world"]["attributes"][std::to_string(id)] = value;
     result["realms"] = Json::array();
     for (const auto &r : v.realms)
         result["realms"].push_back({{"name", r.name}, {"description", r.description}});
@@ -94,7 +143,9 @@ struct Credentials {
 } // namespace
 std::string onlineDebugCommand(const std::string &input, net::RealmSession &session,
                                const std::function<net::LoginOptions()> &configuration, bool &quit,
-                               const std::function<void(const std::string &)> &screenshot) {
+                               const std::function<void(const std::string &)> &screenshot,
+                               const std::function<OnlineSceneView()> &sceneSnapshot,
+                               const std::function<bool(OnlinePoint, bool)> &move) {
     Json request;
     Credentials secrets{request, {}};
     try {
@@ -122,7 +173,22 @@ std::string onlineDebugCommand(const std::string &input, net::RealmSession &sess
             return uint8_t(value);
         };
         if (command == "online-status" || command == "status" || command == "online-realms" ||
-            command == "online-characters" || command == "online-games") {
+            command == "online-characters" || command == "online-games" || command == "online-world") {
+        } else if (command == "online-move") {
+            auto coordinate = [&](const char *key) {
+                const auto &value = request.at(key);
+                if (!value.is_number_integer())
+                    throw std::invalid_argument("Movement coordinate must be an integer");
+                const auto n = value.get<int64_t>();
+                if (n < 0 || n > 65535)
+                    throw std::invalid_argument("Movement coordinate is outside the protocol range");
+                return uint16_t(n);
+            };
+            const auto scene = sceneSnapshot();
+            if (!scene.movementAvailable)
+                return Json{{"ok", false}, {"error", scene.reason}}.dump();
+            accepted = move({coordinate("x"), coordinate("y")}, request.value("run", true));
+            mutation = true;
         } else if (command == "online-login" || command == "online-register") {
             const auto s = session.read().stage;
             if (s != OnlineStage::Idle && s != OnlineStage::Failed && s != OnlineStage::Cancelled)
@@ -197,14 +263,13 @@ std::string onlineDebugCommand(const std::string &input, net::RealmSession &sess
         } else if (command == "screenshot") {
             screenshot(text("path", 1024));
         } else if (command == "quit") {
-            session.logout();
             quit = true;
-            return Json{{"ok", true}}.dump();
+            return Json{{"ok", true}, {"accepted", true}}.dump();
         } else
             return Json{{"ok", false},
                         {"error", "Command is unavailable in the frontend; use online-* commands"}}
                 .dump();
-        Json response{{"ok", accepted}, {"online", snapshot(session.read())}};
+        Json response{{"ok", accepted}, {"online", snapshot(session.read(), sceneSnapshot())}};
         if (mutation)
             response["accepted"] = accepted;
         if (!accepted)

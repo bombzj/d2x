@@ -4,11 +4,13 @@
 
 ## 联网命令
 
-当前源码在主菜单／登录／服务器选角／大厅／入局交接页接收同一个调试管道；无需进入单机场景。联网始终实时 tick，单机 `pause/resume/step` 不控制网络。此前 `dist/current` 的登录／建局／入退局已有双账号有限冒烟；本轮注册、建角／删角、Realm 切换及列表取消命令仅写入源码，尚未构建。配置与 UI 限制见 [联网模块](../modules/NETWORK.md)。
+当前源码及 `dist/current` 在主菜单／登录／服务器选角／大厅／入局等待页／远端营地接收同一个调试管道；无需进入单机场景。联网始终实时 tick，单机 `pause/resume/step` 不控制网络。包内有限冒烟已覆盖双账号营地显示／移动、退局重进，准确范围和 UI 限制见 [联网模块](../modules/NETWORK.md)。
 
 | 命令 | 参数与结果 |
 | --- | --- |
-| `online-status` | 只读 `online`：stage、error、revision、connectionGeneration、gameGeneration、Realm／角色／游戏列表、load、延迟、gameQueuePosition、gameListComplete；菜单中的 `status` 是其别名 |
+| `online-status` | 只读 `online`：stage、error、revision、connectionGeneration、gameGeneration、Realm／角色／游戏列表、load、延迟、gameQueuePosition、gameListComplete、world／scene；联网模式的 `status` 是其别名 |
+| `online-world` | 只读同一快照：world.units／rooms／equipment／attributes、本人全局 subtile 坐标与当前生命／法力／体力；scene 含原 DS1、原点、候选／地标、碰撞／显示／移动可用性、本人是否绘制与缺外观数量 |
+| `online-move` | x、y 为服务端全局 subtile 整数（0–65535），run 默认 true；只在 ProtocolReady 且当前原营地已匹配、目标在营地内且原地形可走时提交，100ms 频率限制；服务端位置后续回包才是结果 |
 | `online-login` | 必填 account、password；原版文件／认证模式／端口读取 `--online-config` 私有配置，只在 Idle／Failed／Cancelled 接受；自动选择配置中的 Realm |
 | `online-register` | account、password（各2–15）；配置和允许阶段同登录，注册成功自动登录；服务端拒绝码在 error 中 |
 | `online-create-character` | name（2–15、字母起首，其余字母／连字符／下划线）、classId（0–6，默认0）、hardcore（默认false）；CharacterSelection 接受，固定资料片／非 Ladder，服务器生成初始数据后刷新列表 |
@@ -24,9 +26,9 @@
 | `online-leave-game` | LoadingGame／ProtocolReady 请求正常退局；结束后重新取 Realm 票据刷新角色，不声称保存已成功 |
 | `online-return-characters` | Lobby 返回服务器选角，重新取票 |
 | `online-cancel` / `online-logout` | 关闭连接；前者进入 Cancelled，后者清空会话回主菜单 |
-| `screenshot` / `quit` | 菜单截图仍使用 path 参数；quit 关闭联网会话并退出 |
+| `screenshot` / `quit` | 联网截图使用 path 参数；quit 立即返回 accepted，应用在 LoadingGame／ProtocolReady 先正常退局，等响应／关闭或期限后注销退出；不是保存成功回执 |
 
-修改命令立即返回 `accepted` 和当时的 `online` 快照，不等待网络完成。后续查询 `online-status`：例如登录完成后为 CharacterSelection，选角完成后为 Lobby；ProtocolReady 只代表入局协议初始化，响应始终有 `worldDisplayAvailable=false`。阶段不允许时返回 ok=false；错误回复／超时可从后续状态读取。可附带 connectionGeneration／gameGeneration，代次不符则拒绝迟到命令。响应不回显请求、密码、CD key、角色票据或原始世界包。
+修改命令立即返回 `accepted` 和当时的 `online` 快照，不等待网络完成。后续查询 `online-status`：例如登录完成后为 CharacterSelection，选角完成后为 Lobby；ProtocolReady 只代表入局协议初始化，`worldDisplayAvailable` 由原营地匹配与资源加载决定；还须查看 scene.movementAvailable／playerDisplayed，未匹配时 scene.reason 说明原因。阶段不允许时返回 ok=false；错误回复／超时可从后续状态读取。可附带 connectionGeneration／gameGeneration，代次不符则拒绝迟到命令。响应不回显请求、密码、CD key、角色票据或原始世界包。
 
 本机测试账号为 `bomb / 1qaz2wsx`、`bomb2 / 1qaz2wsx`，用户授权记入文档，仅用于测试。按以下顺序手工调用：
 
@@ -47,7 +49,7 @@ $characters = (.\scripts\Send-D2XCommand.ps1 -PipeName d2x-online -Command onlin
 .\scripts\Send-D2XCommand.ps1 -PipeName d2x-online -Command online-leave-game
 ```
 
-新增入口示例（需先构建本轮源码；每次操作后用 online-status 等待完成，不连发）：
+新增入口示例（每次操作后用 online-status 等待完成，不连发）：
 
 ```powershell
 # 已登录到 CharacterSelection 时，新建独立测试角色。
@@ -59,6 +61,8 @@ $characters = (.\scripts\Send-D2XCommand.ps1 -PipeName d2x-online -Command onlin
 # 仅在 CharacterSelection 且确实要永久删除独立测试角色时执行，勿删除 aaa／bbb。
 .\scripts\Send-D2XCommand.ps1 -PipeName d2x-online -Command online-delete-character -Arguments @{name='NetSorceress';confirmName='NetSorceress'}
 ```
+
+入局后先用 `online-world` 查看 `online.scene.available`、`movementAvailable`、`playerDisplayed` 和 `online.world.playerPosition`。从当前已匹配地形选择目标，勿套用单机场景坐标；原点在 `online.scene.origin`，局部坐标加原点才是命令坐标。提交格式为 `-Command online-move -Arguments @{x=<全局横坐标>; y=<全局纵坐标>; run=$true}`，accepted 后再查询 playerPosition；若拒绝，检查地图／代次、目标地形和频率，不把它当传送。当前只有第一幕营地，其他幕与未匹配地图只保留等待／退出入口。
 
 注册用 online-register 的 account／password 创建一个未占用的独立账号，不对 bomb／bomb2 重复注册；创建成功会自动进入正常登录链。
 

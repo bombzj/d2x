@@ -46,5 +46,5 @@ add_library(d2x_d2gs_protocol
   src/network/protocol/d2gs_stream.cpp src/network/protocol/lod113c.cpp
   src/network/protocol/huffman.cpp)
 target_link_libraries(d2x_d2gs_protocol PUBLIC d2x_core PRIVATE d2x_bncs_legacy)
-add_library(d2x_remote_client src/network/realm_session.cpp)
+add_library(d2x_remote_client src/network/realm_session.cpp src/client/remote_world.cpp)
 target_link_libraries(d2x_remote_client PUBLIC d2x_client_api d2x_network d2x_d2gs_protocol)

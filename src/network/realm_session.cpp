@@ -1,4 +1,5 @@
 #include "network/realm_session.hpp"
+#include "client/remote_world.hpp"
 #include "network/protocol/d2gs_stream.hpp"
 #include <algorithm>
 #include <array>
@@ -91,7 +92,7 @@ struct RealmSession::Impl {
     std::string pendingCharacter, gameName, gamePassword;
     std::vector<GamePacket> worldPackets;
     size_t worldBytes{};
-    Clock::time_point deadline{}, gameStarted{}, nextHeartbeat{}, lastPing{};
+    Clock::time_point deadline{}, gameStarted{}, nextHeartbeat{}, lastPing{}, nextMovement{};
     bool waitingChat{}, environmentSent{}, awaitingPong{}, registering{};
     std::string listFilter;
     ~Impl() { clear_credentials(); }
@@ -124,6 +125,8 @@ struct RealmSession::Impl {
         worldPackets.clear();
         worldBytes = 0;
         ++view.gameGeneration;
+        view.world = {};
+        nextMovement = {};
         clear_credentials();
         selected.reset();
         pendingCharacter.clear();
@@ -489,6 +492,8 @@ struct RealmSession::Impl {
             mcpPackets.reset();
             ++view.gameGeneration;
             view.load = {};
+            view.world = {};
+            nextMovement = {};
             worldPackets.clear();
             worldBytes = 0;
             environmentSent = false;
@@ -574,6 +579,8 @@ struct RealmSession::Impl {
         worldBytes = 0;
         ++view.gameGeneration;
         view.load = {};
+        view.world = {};
+        nextMovement = {};
         view.games.clear();
         view.gameListComplete = false;
         view.gameQueuePosition.reset();
@@ -582,6 +589,26 @@ struct RealmSession::Impl {
         auto realm = view.selectedRealm;
         stage(OnlineStage::RealmSelection);
         choose_realm(std::move(realm));
+    }
+    void reset_area(bool preserveInitialPosition) {
+        auto &world = view.world;
+        const auto player = view.load.playerUnitId;
+        std::erase_if(world.units, [&](const auto &entry) {
+            return entry.first.type != 0 || !player || entry.first.id != *player;
+        });
+        std::erase_if(world.equipment,
+                      [&](const auto &entry) { return !player || entry.second.owner != *player; });
+        world.rooms.clear();
+        if (!preserveInitialPosition) {
+            world.playerPosition.reset();
+            for (auto &[key, unit] : world.units) {
+                (void)key;
+                unit.position.reset();
+                unit.destination.reset();
+            }
+        }
+        ++world.areaGeneration;
+        ++world.revision;
     }
     void handle_game(Packet packet) {
         if (packet.id == 0xAF && view.stage == OnlineStage::GameHandshake) {
@@ -630,6 +657,10 @@ struct RealmSession::Impl {
             environmentSent = true;
             deadline = Clock::now() + options.timeout;
         } else if (packet.id == 0x03) {
+            // 1.13c sends the saved player, stats and equipped items before LOADACT.
+            // Area changes discard spatial entities, not the loaded character.
+            reset_area(view.world.areaGeneration == 0);
+            view.load.serverLoadComplete = false;
             view.load.act = in.u8();
             view.load.mapSeed = in.u32();
             view.load.townArea = in.u16();
@@ -640,6 +671,14 @@ struct RealmSession::Impl {
         } else if (packet.id == 0x04) {
             view.load.serverLoadComplete = true;
             changed();
+        } else if (packet.id == 0x05) {
+            reset_area(false);
+            view.load.serverLoadComplete = false;
+            view.load.act.reset();
+            view.load.mapSeed.reset();
+            view.load.townArea.reset();
+            view.load.secondarySeed.reset();
+            changed();
         } else if (packet.id == 0x0B) {
             const auto type = in.u8();
             const auto id = in.u32();
@@ -649,6 +688,7 @@ struct RealmSession::Impl {
                 changed();
             }
         }
+        apply_world_packet(view, packet);
         if (worldPackets.size() >= 4096 || packet.body.size() + 1 > 2 * 1024 * 1024 - worldBytes)
             throw ProtocolError("World packet queue limit exceeded; drain packets regularly");
         worldBytes += packet.body.size() + 1;
@@ -1026,6 +1066,32 @@ bool RealmSession::leave_game() {
         return true;
     } catch (const std::exception &) {
         p.fail(OnlineErrorKind::Transport, "Game leave request could not be queued");
+        return false;
+    }
+}
+bool RealmSession::move_to(OnlinePoint target, bool run) {
+    auto &p = *impl_;
+    if (!p.require(OnlineStage::ProtocolReady))
+        return false;
+    if (!p.view.load.serverLoadComplete || !p.view.world.playerPosition ||
+        (p.view.world.life && !*p.view.world.life)) {
+        p.error(OnlineErrorKind::Input, "The server player is not available to move");
+        return false;
+    }
+    if (Clock::now() < p.nextMovement)
+        return false;
+    try {
+        Writer out;
+        out.u8(run ? 0x03 : 0x01);
+        out.u16(target.x);
+        out.u16(target.y);
+        p.sent(p.gs, out.release());
+        p.nextMovement = Clock::now() + std::chrono::milliseconds(100);
+        p.view.error.reset();
+        p.changed();
+        return true;
+    } catch (const std::exception &) {
+        p.fail(OnlineErrorKind::Transport, "Movement request could not be queued");
         return false;
     }
 }

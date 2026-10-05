@@ -55,12 +55,16 @@ class RealmSession {
     bool create_game(CreateGameOptions options);
     bool join_game(std::string name, std::string password = {});
     bool leave_game();
+    // Raw original movement request. Application must first validate its current
+    // MPQ scene binding; neither this method nor the replica predicts a position.
+    bool move_to(OnlinePoint target, bool run = true);
     bool return_to_characters();
     void tick();
     void cancel();
     void logout();
     const OnlineView &read() const;
-    // Opaque, bounded, ordered world packets for the later remote replica.
+    // Opaque, bounded, ordered packets retained for additional world consumers.
+    // The basic replica in read().world has already consumed supported messages.
     // Taking packets does not mutate the view revision. No auth or tickets are exposed.
     std::vector<GamePacket> take_game_packets();
 

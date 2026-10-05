@@ -227,6 +227,9 @@ target_link_libraries(d2x_client_api INTERFACE d2x_core)
 include(cmake/Networking.cmake)
 add_library(d2x_client src/client/inventory_view.cpp src/client/automap_exploration.cpp)
 target_link_libraries(d2x_client PUBLIC d2x_client_api)
+add_library(d2x_remote_scene src/client/remote_town.cpp)
+target_link_libraries(d2x_remote_scene PUBLIC d2x_client_api d2x_world)
+target_sources(d2x_world PRIVATE src/world/preset_identity.cpp)
 add_library(d2x_local_client src/client/local_actor_client.cpp src/client/local_inventory_client.cpp
   src/client/local_character_client.cpp src/client/local_quest_client.cpp src/client/local_npc_client.cpp
   src/client/local_shop_view.cpp src/client/local_hireling_view.cpp src/client/local_map_client.cpp)
@@ -265,6 +268,8 @@ target_sources(d2x_presentation PRIVATE src/presentation/inventory/item_tooltip.
 add_executable(d2x src/main.cpp src/app/application.cpp src/app/options.cpp src/app/input.cpp
   src/app/character_frontend.cpp src/app/frontend.cpp src/app/crash_report.cpp)
 target_sources(d2x_presentation PRIVATE src/presentation/frontend/realm_frontend.cpp)
+target_sources(d2x_presentation PRIVATE src/presentation/remote/remote_scene.cpp)
+target_link_libraries(d2x_presentation PRIVATE d2x_remote_scene)
 target_sources(d2x PRIVATE src/app/automap_save.cpp src/app/debug/debug_pipe.cpp src/app/debug/debug_commands.cpp src/app/debug/debug_inventory.cpp
     src/app/debug/debug_item_actions.cpp src/app/debug/debug_monsters.cpp src/app/debug/debug_hireling.cpp)
 target_sources(d2x PRIVATE src/app/debug/online_commands.cpp)
@@ -275,7 +280,7 @@ if(WIN32)
 endif()
 add_executable(d2x_assets src/asset_tool.cpp)
 target_link_libraries(d2x_assets PRIVATE d2x_content d2x_world d2x_population d2x_persistence raylib)
-foreach(target IN ITEMS d2x_resources d2x_navigation d2x_world d2x_items d2x_content d2x_gameplay d2x_population d2x_session d2x_persistence d2x_presentation d2x_client d2x_local_client d2x_network d2x_d2gs_protocol d2x_remote_client d2x d2x_assets)
+foreach(target IN ITEMS d2x_resources d2x_navigation d2x_world d2x_items d2x_content d2x_gameplay d2x_population d2x_session d2x_persistence d2x_presentation d2x_client d2x_local_client d2x_network d2x_d2gs_protocol d2x_remote_client d2x_remote_scene d2x d2x_assets)
   if(MSVC)
     target_compile_options(${target} PRIVATE /W4 /utf-8)
   else()

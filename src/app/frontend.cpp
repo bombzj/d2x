@@ -1,11 +1,13 @@
 #include "frontend.hpp"
 #include "app/debug/debug_pipe.hpp"
 #include "app/debug/online_commands.hpp"
+#include "client/remote_town.hpp"
 #include "content/string_table.hpp"
 #include "input.hpp"
 #include "network/realm_session.hpp"
 #include "presentation/frontend/realm_frontend.hpp"
 #include "presentation/graphics/primitives.hpp"
+#include "presentation/remote/remote_scene.hpp"
 #include <algorithm>
 #include <array>
 #include <fstream>
@@ -88,6 +90,29 @@ std::optional<CharacterChoice> chooseFrontend(Archives &archives, RenderTexture2
         }
     }
     net::RealmSession session;
+    RemoteTown town(archives);
+    std::unique_ptr<RemoteScene> scene;
+    std::string sceneError;
+    uint64_t sceneGeneration = ~uint64_t{};
+    auto sceneStatus = [&] {
+        town.update(session.read());
+        auto status = town.read();
+        if (sceneGeneration == session.read().gameGeneration && !sceneError.empty()) {
+            status.available = status.movementAvailable = false;
+            status.reason = sceneError;
+        }
+        if (status.available && scene && sceneGeneration == session.read().gameGeneration) {
+            status.renderedUnits = scene->renderedUnits();
+            status.unavailableUnits = scene->unavailableUnits();
+            status.playerDisplayed = scene->playerDisplayed();
+        }
+        return status;
+    };
+    auto move = [&](OnlinePoint targetPoint, bool run) {
+        town.update(session.read());
+        return sceneError.empty() && town.permits(session.read(), targetPoint) &&
+               session.move_to(targetPoint, run);
+    };
     DebugPipe pipe(pipeName);
     bool quit = false, manualRealm = false;
     ClassicStrings strings(archives);
@@ -95,9 +120,17 @@ std::optional<CharacterChoice> chooseFrontend(Archives &archives, RenderTexture2
     std::string notice, gateway = "D2X-Local";
     uint64_t dismissedRevision = std::numeric_limits<uint64_t>::max();
     constexpr float scale = float(H) / 600, offsetX = (W - 800 * scale) / 2;
-    while (!WindowShouldClose()) {
+    while (true) {
+        if (WindowShouldClose())
+            quit = true;
         const auto previousStage = session.read().stage;
         session.tick();
+        if (sceneGeneration != session.read().gameGeneration) {
+            scene.reset();
+            sceneError.clear();
+            sceneGeneration = session.read().gameGeneration;
+        }
+        town.update(session.read());
         if (previousStage == OnlineStage::ListingCharacters &&
             session.read().stage == OnlineStage::CharacterSelection)
             page = FrontendPage::Characters;
@@ -122,7 +155,8 @@ std::optional<CharacterChoice> chooseFrontend(Archives &archives, RenderTexture2
                     UnloadImage(capture);
                     if (!saved)
                         throw std::runtime_error("Screenshot could not be written");
-                });
+                },
+                sceneStatus, move);
             if (session.read().revision != before) {
                 notice.clear();
                 dismissedRevision = std::numeric_limits<uint64_t>::max();
@@ -145,8 +179,15 @@ std::optional<CharacterChoice> chooseFrontend(Archives &archives, RenderTexture2
             }
             return response;
         });
-        if (quit)
-            break;
+        if (quit) {
+            if (session.read().stage == OnlineStage::ProtocolReady ||
+                session.read().stage == OnlineStage::LoadingGame)
+                session.leave_game();
+            // Keep pumping the same bounded leave exchange when the window closes
+            // or command quit is requested. Closing TCP immediately can skip saving.
+            if (session.read().stage != OnlineStage::LeavingGame)
+                break;
+        }
         const auto &view = session.read();
         if (view.stage == OnlineStage::RealmSelection) {
             const auto match = std::find_if(view.realms.begin(), view.realms.end(),
@@ -206,22 +247,48 @@ std::optional<CharacterChoice> chooseFrontend(Archives &archives, RenderTexture2
             auto original = id ? strings.find(id) : std::string_view{};
             notice = original.empty() ? view.error->message : std::string(original);
         }
-        // There is no world consumer yet. Explicitly drain opaque packets while showing
-        // the handoff boundary, rather than growing the queue or simulating a local game.
+        // RealmSession already reduced these packets into its remote-only view.
+        // Drain the retained opaque stream; unsupported messages have no local fallback.
         session.take_game_packets();
+        town.update(session.read());
+        bool showScene =
+            view.stage == OnlineStage::ProtocolReady && town.read().available && sceneError.empty();
+        if (showScene && !scene) {
+            try {
+                scene = std::make_unique<RemoteScene>(archives);
+            } catch (const std::exception &e) {
+                sceneError = e.what();
+                showScene = false;
+            }
+        }
         const auto viewport = currentViewport();
         const auto raw = GetMousePosition();
         Vector2 mouse{((raw.x - viewport.offset.x) / viewport.scale - offsetX) / scale,
                       (raw.y - viewport.offset.y) / viewport.scale / scale};
         BeginTextureMode(target);
         ClearBackground(BLACK);
-        BeginScissorMode(int(offsetX), 0, int(800 * scale), H);
-        rlPushMatrix();
-        rlTranslatef(offsetX, 0, 0);
-        rlScalef(scale, scale, 1);
-        auto action = ui.frame(page, session.read(), gateway, notice, mouse);
-        rlPopMatrix();
-        EndScissorMode();
+        FrontendIntent action;
+        RemoteSceneIntent worldAction;
+        if (showScene) {
+            const Vec worldMouse{(raw.x - viewport.offset.x) / viewport.scale,
+                                 (raw.y - viewport.offset.y) / viewport.scale};
+            try {
+                worldAction = scene->frame(view, *town.map(), town.read(), worldMouse);
+            } catch (const std::exception &e) {
+                sceneError = e.what();
+                showScene = false;
+            }
+        }
+        if (!showScene) {
+            ClearBackground(BLACK);
+            BeginScissorMode(int(offsetX), 0, int(800 * scale), H);
+            rlPushMatrix();
+            rlTranslatef(offsetX, 0, 0);
+            rlScalef(scale, scale, 1);
+            action = ui.frame(page, session.read(), gateway, notice, mouse, sceneStatus().reason);
+            rlPopMatrix();
+            EndScissorMode();
+        }
         EndTextureMode();
         BeginDrawing();
         ClearBackground(BLACK);
@@ -229,11 +296,17 @@ std::optional<CharacterChoice> chooseFrontend(Archives &archives, RenderTexture2
                        {viewport.offset.x, viewport.offset.y, W * viewport.scale, H * viewport.scale}, {0, 0},
                        0, WHITE);
         EndDrawing();
+        if (quit)
+            continue;
+        if (worldAction.leave)
+            session.leave_game();
+        else if (worldAction.move)
+            move(*worldAction.move, worldAction.run);
         switch (action.command) {
         case FrontendCommand::Exit:
-            session.logout();
+            quit = true;
             ui.clearPassword();
-            return std::nullopt;
+            break;
         case FrontendCommand::Offline:
             if (auto chosen = chooseCharacter(archives, target))
                 return chosen;

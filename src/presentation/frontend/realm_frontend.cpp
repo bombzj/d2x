@@ -705,7 +705,7 @@ struct RealmFrontend::Impl {
         }
     }
     FrontendIntent draw(FrontendPage current, const OnlineView &v, std::string_view gateway,
-                        std::string_view notice, Vector2 at) {
+                        std::string_view notice, Vector2 at, std::string_view worldNotice) {
         mouse = at;
         clicked = IsMouseButtonPressed(MOUSE_BUTTON_LEFT);
         intent = {};
@@ -746,7 +746,8 @@ struct RealmFrontend::Impl {
             logo();
             centered(v.stage == OnlineStage::ProtocolReady ? "Connected to game server" : s(5243), 315);
             if (v.stage == OnlineStage::ProtocolReady) {
-                wrap("Online world display is not available yet.", 220, 350, 360, true);
+                wrap(worldNotice.empty() ? "Waiting for server world data." : std::string(worldNotice),
+                     220, 350, 360, true);
                 if (button("medium", 330, 405, s(5101)))
                     emit(FrontendCommand::LeaveGame);
             }
@@ -792,8 +793,8 @@ struct RealmFrontend::Impl {
 RealmFrontend::RealmFrontend(Archives &a) : impl_(std::make_unique<Impl>(a)) {}
 RealmFrontend::~RealmFrontend() = default;
 FrontendIntent RealmFrontend::frame(FrontendPage p, const OnlineView &v, std::string_view gateway,
-                                    std::string_view notice, Vector2 mouse) {
-    return impl_->draw(p, v, gateway, notice, mouse);
+                                    std::string_view notice, Vector2 mouse, std::string_view worldNotice) {
+    return impl_->draw(p, v, gateway, notice, mouse, worldNotice);
 }
 void RealmFrontend::clearPassword() {
     wipe(impl_->password);

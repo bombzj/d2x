@@ -27,7 +27,8 @@
 | `client/local_*_client.*` / `local_client` | 绑定本地受控人物，映射本人及可见场景视图，转发原命令／预览 | `LocalActorClient`、`LocalInventoryClient`、`LocalCharacterClient`、`LocalQuestClient`、`LocalNpcClient` |
 | `network/tcp_stream.*` / `network` | 独立 DNS／TCP、有限队列、连接取消和期限；Asio 仅实现层使用 | [联网模块](../modules/NETWORK.md) |
 | `network/protocol/` / `d2gs_protocol` | SID／MCP framing、旧账号认证、1.13c D2GS 逻辑包／Huffman；认证依赖只读原文件及独立 BNCSutil 子集 | `wire.hpp`、`auth.hpp`、`d2gs_stream.hpp` |
-| `network/realm_session.*` / `remote_client` | 无 UI 的账号／Realm／选角／大厅／入退局会话；只输出 OnlineView 和有序包，尚未组装世界副本 | `RealmSession`、`contracts/online.hpp` |
+| `network/realm_session.*` / `remote_client` | 无 UI 的账号／Realm／选角／大厅／入退局会话；输出 OnlineView 与只读服务端副本，并保留有界有序包 | `RealmSession`、`contracts/online.hpp` |
+| `client/remote_town.*` / `remote_scene`、`presentation/remote` | 原 MPQ 营地与服务端锚点绑定，独立原图显示并发移动／退出意图；不创建本地模拟 | `RemoteTown`、`RemoteScene` |
 | `presentation/frontend/`、`app/frontend.*` | 原图主菜单／登录／服务器选角／建局：表现只返回意图，app 拥有并轮询远端会话；菜单 command 调用相同底层 | `RealmFrontend`、`FrontendIntent`、`debug/online_commands.*` |
 | `presentation/` / `presentation` | 屏幕命中与手势、面板、场景绘制、GPU／音频资源及展示状态 | `controller.*`、`scene_view.*`、`scene_assets.*`、功能子目录 |
 | `main.cpp`、`app/` / `d2x` | 参数、角色前端、窗口、设备输入、固定步主循环、保存入口、本机调试与崩溃记录 | `app/application.cpp`、`app/input.cpp`、`app/debug/` |
@@ -44,10 +45,14 @@ flowchart TD
     app["d2x / app"] --> presentation
     app --> persistence
     app --> local_client
+    app --> remote_client
     local_client --> client
     client --> client_api
     local_client -->|PRIVATE| session
     presentation --> client
+    presentation -->|PRIVATE| remote_scene
+    remote_scene --> client_api
+    remote_scene --> world
     client_api --> core
     remote_client --> client_api
     remote_client --> network
@@ -151,4 +156,4 @@ app/input.cpp 读取设备 → FrameInput
 
 ## 后续边界
 
-剩余场景投影、复杂事务、来源消费与宿主收口见 [重构方案](REFACTOR_PLAN.md)。独立网络／Realm 会话底层此前已构建并通过本机双账号有限互通冒烟，本轮新增前端流程未构建，见 [联网模块](../modules/NETWORK.md)；远端世界副本尚未实现。本地服务端多玩家所有权不属于当前 D2GS 接入路线，设计及验收条件见 [参考项目](REFERENCE_DESIGN.md) 和 [联机计划](MULTIPLAYER.md)。
+剩余场景投影、复杂事务、来源消费与宿主收口见 [重构方案](REFACTOR_PLAN.md)。独立网络／Realm 会话、局前流程、远端单位／房间／位置副本与营地绑定／显示已构建打包，通过双账号营地互见／移动及角色重入有限冒烟，见 [联网模块](../modules/NETWORK.md)；完整地图和玩法回包消费者未完成。本地服务端多玩家所有权不属于当前 D2GS 接入路线，设计及验收条件见 [参考项目](REFERENCE_DESIGN.md) 和 [联机计划](MULTIPLAYER.md)。

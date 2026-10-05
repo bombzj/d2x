@@ -19,6 +19,12 @@ class RealmPortraitCatalog {
         bool twoHanded{};
     };
     std::array<Entry, 255> codes_;
+    struct Item {
+        Entry appearance;
+        int component{-1};
+        std::array<std::string, 6> body;
+    };
+    std::map<std::string, Item, std::less<>> items_;
     std::map<std::string, std::array<std::string, 2>> types_;
     std::string light_;
     bool isType(const std::string &, std::string_view, std::set<std::string> &) const;
@@ -27,5 +33,6 @@ class RealmPortraitCatalog {
   public:
     explicit RealmPortraitCatalog(Archives &);
     std::optional<RealmPortraitParts> decode(const OnlineCharacter &) const;
+    std::optional<RealmPortraitParts> decode(const OnlineUnit &, const OnlineWorldView &) const;
 };
 } // namespace d2x
