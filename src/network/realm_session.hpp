@@ -60,6 +60,10 @@ class RealmSession {
     bool move_to(OnlinePoint target, bool run = true);
     // Uses an assigned server UNIT_TILE ID. Map warp classes/slots are not IDs.
     bool use_exit(uint32_t serverUnitId);
+    bool interact_map_unit(OnlineUnitKey target);
+    // Caller maps the destination's Levels.Waypoint index from current MPQ.
+    // Zero destination closes the server-opened menu. Never unlocks locally.
+    bool use_waypoint(uint16_t destination, uint8_t waypointNumber = 0);
     bool return_to_characters();
     void tick();
     void cancel();

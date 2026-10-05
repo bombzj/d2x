@@ -21,13 +21,13 @@
 
 IMapClient绑定本地操作者；LocalMapClient按权威版本缓存场景／传送点值，空来源不返回开发目录。MapIntent提交传送点／出口／门户，权威复验接触、资格、落点及版本；自由Travel仅用于调试管道。
 
-地图／自动地图手势位于presentation/world的map_controller、map_view、automap_view，出口与传送点UI在hud。探索由client/automap_exploration.*唯一维护；摄像机更新后采样可见原地形，规则与持久化见[自动地图](../gameplay/world/AUTOMAP.md)和[存档](SAVES.md#自动地图探索2026-10-04)。
+本地地图手势位于presentation/world，探索由client/automap_exploration.*维护。联网RemoteTown维护本局可见地形记忆和Objects／Levels交互值，RemoteScene只提交真实服务端单位、旅行和可见实例意图，不借用GameSession。原传送点面板／点击几何／字体由hud/waypoint_panel.hpp共用。规则和保存边界见[自动地图](../gameplay/world/AUTOMAP.md)、[联网](NETWORK.md#远端营地入局边界)。
 
 IMapAssetSource只借用DS1、共享DT1图像及索引事实，不返回Region／Grid／MPQ／GPU。GPU、摄像机、显示时钟和屋顶渐隐由表现层拥有；玩法不读设备或图形。当前无卸载，解码数据寿命覆盖借用；卸载前需补失效机制。
 
 地板／阴影使用稳定世界格归属，营地连接原道路，见[道路规则](../gameplay/world/MAPS.md#连续地形与道路接头)。熔岩仅切换显示帧，碰撞读frame0；KillEdge、主题与Pops／PopPad在构造阶段处理。
 
-传送点菜单按Levels.Act／Waypoint及激活记录列出，用原图、TBL和sky PL2字体变换；正式菜单不暂停世界。新局／读档强制第零点开启，局前已开启直接ON，本局首次激活NU→OP→ON。界面见[HUD](../gameplay/ui/CLASSIC_HUD.md)，保存见[存档](SAVES.md#传送点初始化与恢复)。
+传送点菜单按Levels.Act／Waypoint及激活记录列出，用原图、TBL和sky PL2字体变换；正式菜单不暂停世界。本地新局／读档强制第零点开启，局前已开启直接ON，本局首次激活NU→OP→ON。联网只读取原0x63历史，旅行／关闭发0x49，地图和落点由回包确认。界面见[HUD](../gameplay/ui/CLASSIC_HUD.md)，本地保存见[存档](SAVES.md#传送点初始化与恢复)。
 
 ## 限制与后续
 

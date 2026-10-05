@@ -1,11 +1,13 @@
 #include "online_commands.hpp"
 #include <array>
+#include <algorithm>
 #include <nlohmann/json.hpp>
 #include <stdexcept>
 
 namespace d2x {
 namespace {
 using Json = nlohmann::json;
+constexpr std::array mapInteractionNames{"exit", "door", "portal", "teleport-pad", "waypoint"};
 constexpr std::array stageNames{"Idle",
                                 "ConnectingAccount",
                                 "AuthChallenge",
@@ -63,6 +65,12 @@ Json snapshot(const OnlineView &v, const OnlineSceneView &scene) {
                        {"unavailableUnits", scene.unavailableUnits},
                        {"playerDisplayed", scene.playerDisplayed}};
     result["scene"]["area"] = optional(scene.area);
+    result["scene"]["palette"] = optional(scene.palette);
+    result["scene"]["automap"] = {{"visible", scene.automapVisible}, {"large", scene.automapLarge},
+        {"stamps", scene.automapStamps.size()}, {"towns", scene.automapTowns.size()},
+        {"revealedCells", Json::object()}};
+    for (const auto &[level, count] : scene.automapRevealedCells)
+        result["scene"]["automap"]["revealedCells"][std::to_string(level)] = count;
     result["scene"]["layoutOrigin"] = point(scene.layoutOrigin);
     result["scene"]["layoutMatched"] = scene.layoutMatched;
     result["scene"]["layoutReason"] = scene.layoutReason;
@@ -70,6 +78,17 @@ Json snapshot(const OnlineView &v, const OnlineSceneView &scene) {
     result["scene"]["nativeMapReason"] = scene.nativeMapReason;
     result["scene"]["cachedAreas"] = scene.cachedAreas;
     result["scene"]["mapErrors"] = Json::array();
+    result["scene"]["mapTargets"] = Json::array();
+    for (const auto &entry : scene.mapTargets)
+        result["scene"]["mapTargets"].push_back({{"unitType", entry.unit.type}, {"unitId", entry.unit.id},
+            {"position", {{"x", entry.position.x}, {"y", entry.position.y}}},
+            {"interaction", mapInteractionNames.at(size_t(entry.interaction))}, {"name", entry.name},
+            {"destination", optional(entry.destination)}});
+    result["scene"]["waypoints"] = Json::array();
+    for (const auto &entry : scene.waypoints)
+        result["scene"]["waypoints"].push_back({{"level", entry.level}, {"act", entry.act},
+            {"number", entry.number}, {"name", entry.name}, {"unlocked", entry.unlocked},
+            {"current", entry.current}});
     for (const auto &[area, reason] : scene.mapErrors)
         result["scene"]["mapErrors"].push_back({{"area", area}, {"reason", reason}});
     result["world"] = {{"revision", v.world.revision},
@@ -79,6 +98,8 @@ Json snapshot(const OnlineView &v, const OnlineSceneView &scene) {
                        {"mana", optional(v.world.mana)},
                        {"stamina", optional(v.world.stamina)},
                        {"ignoredPackets", v.world.ignoredPackets},
+                       {"waypointSource", optional(v.world.waypointSource)},
+                       {"waypointHistory", optional(v.world.waypointHistory)},
                        {"mapEventSequence", v.world.mapEventSequence},
                        {"mapEventFirst", v.world.mapEvents.empty() ? Json(nullptr)
                             : Json(v.world.mapEvents.front().sequence)},
@@ -94,6 +115,10 @@ Json snapshot(const OnlineView &v, const OnlineSceneView &scene) {
                                             {"position", point(u.position)},
                                             {"destination", point(u.destination)},
                                             {"mode", optional(u.mode)},
+                                            {"portalFlags", optional(u.portalFlags)},
+                                            {"portalDestination", optional(u.portalDestination)},
+                                            {"portalOwner", optional(u.portalOwner)},
+                                            {"portalOwnerName", u.portalOwnerName},
                                             {"lifePercent", optional(u.lifePercent)},
                                             {"name", u.name},
                                             {"equipmentObserved", u.equipmentObserved}});
@@ -163,7 +188,8 @@ std::string onlineDebugCommand(const std::string &input, net::RealmSession &sess
                                const std::function<net::LoginOptions()> &configuration, bool &quit,
                                const std::function<void(const std::string &)> &screenshot,
                                const std::function<OnlineSceneView()> &sceneSnapshot,
-                               const std::function<bool(OnlinePoint, bool)> &move) {
+                               const std::function<bool(OnlinePoint, bool)> &move,
+                               const std::function<void(bool, bool)> &automap) {
     Json request;
     Credentials secrets{request, {}};
     try {
@@ -192,6 +218,9 @@ std::string onlineDebugCommand(const std::string &input, net::RealmSession &sess
         };
         if (command == "online-status" || command == "status" || command == "online-realms" ||
             command == "online-characters" || command == "online-games" || command == "online-world") {
+        } else if (command == "online-automap") {
+            const auto scene = sceneSnapshot();
+            automap(request.value("visible", !scene.automapVisible), request.value("large", scene.automapLarge));
         } else if (command == "online-move") {
             auto coordinate = [&](const char *key) {
                 const auto &value = request.at(key);
@@ -207,7 +236,7 @@ std::string onlineDebugCommand(const std::string &input, net::RealmSession &sess
                 return Json{{"ok", false}, {"error", scene.reason}}.dump();
             accepted = move({coordinate("x"), coordinate("y")}, request.value("run", true));
             mutation = true;
-        } else if (command == "online-use-exit") {
+        } else if (command == "online-use-exit" || command == "online-interact") {
             const auto scene = sceneSnapshot();
             if (!scene.nativeMapReady)
                 return Json{{"ok", false}, {"error", scene.nativeMapReason}}.dump();
@@ -217,7 +246,30 @@ std::string onlineDebugCommand(const std::string &input, net::RealmSession &sess
             const auto id = value.get<int64_t>();
             if (id < 0 || uint64_t(id) > UINT32_MAX)
                 throw std::invalid_argument("Exit unitId is outside the protocol range");
-            accepted = session.use_exit(uint32_t(id));
+            const OnlineUnitKey target{command == "online-use-exit" ? uint8_t(5)
+                : number("unitType", 2, 2, 5), uint32_t(id)};
+            if (!std::any_of(scene.mapTargets.begin(), scene.mapTargets.end(),
+                    [&](const auto &entry) { return entry.unit == target; }))
+                return Json{{"ok", false}, {"error", "Map target is not assigned in the current scene"}}.dump();
+            accepted = session.interact_map_unit(target);
+            mutation = true;
+        } else if (command == "online-waypoint-travel" || command == "online-waypoint-close") {
+            const auto scene = sceneSnapshot();
+            const auto &world = session.read().world;
+            if (!scene.nativeMapReady || !world.waypointSource ||
+                !std::any_of(scene.mapTargets.begin(), scene.mapTargets.end(), [&](const auto &entry) {
+                    return entry.unit == OnlineUnitKey{2, *world.waypointSource} &&
+                        entry.interaction == OnlineMapInteraction::Waypoint;
+                })) return Json{{"ok", false}, {"error", "No current server waypoint menu is open"}}.dump();
+            if (command == "online-waypoint-close") accepted = session.use_waypoint(0);
+            else {
+                const auto level = number("level", 0, 1, 136);
+                const auto destination = std::find_if(scene.waypoints.begin(), scene.waypoints.end(),
+                    [&](const auto &entry) { return entry.level == level && entry.unlocked; });
+                if (destination == scene.waypoints.end())
+                    return Json{{"ok", false}, {"error", "Server has not unlocked that waypoint"}}.dump();
+                accepted = session.use_waypoint(level, destination->number);
+            }
             mutation = true;
         } else if (command == "online-login" || command == "online-register") {
             const auto s = session.read().stage;

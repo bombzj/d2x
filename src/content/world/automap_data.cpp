@@ -1,10 +1,18 @@
 #include "resources/archive.hpp"
 #include "automap_data.hpp"
 #include "resources/data_table.hpp"
+#include <algorithm>
 #include <stdexcept>
 #include <string_view>
 
 namespace d2x {
+bool townAutomapCellVisible(int level, int frame) {
+    if (level != 40) return true;
+    // gaLuthGoleinTownCells: verified in 1.13c D2Client, also documented by
+    // reference/libd2 render::lut_town_skip. These MPQ frames contain red Xs.
+    constexpr std::array empty{0, 10, 15, 16, 19, 20, 25, 30, 35, 36, 39};
+    return std::find(empty.begin(), empty.end(), frame) == empty.end();
+}
 namespace {
 // D2CMP tile orientations and Automap.txt TileName, as in d2moo D2CMP.h.
 constexpr std::array<std::string_view, 20> tileNames{

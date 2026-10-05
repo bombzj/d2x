@@ -8,10 +8,14 @@
 #include "presentation/world/preset_pops.hpp"
 #include "resources/anim_data.hpp"
 #include "resources/data_table.hpp"
+#include "content/world/automap_data.hpp"
+#include "content/string_table.hpp"
+#include "presentation/hud/waypoint_panel.hpp"
 #include <algorithm>
 #include <bit>
 #include <cctype>
 #include <sstream>
+#include <limits>
 
 namespace d2x {
 namespace {
@@ -74,9 +78,13 @@ struct RemoteScene::Impl {
         std::optional<OnlinePoint> last;
         Vec look;
         float movedAt{-1};
+        std::optional<uint8_t> mode;
+        float modeChangedAt{};
     };
     Archives &archives;
-    Graphics terrain, actors, units, ui;
+    RemoteMapDisplayState &mapDisplay;
+    AutomapCatalog automap;
+    Graphics terrain, actors, units, ui, automapGraphics;
     RealmPortraitCatalog portraits;
     AnimDataTable animations;
     DataTable objects, monstats, monstats2;
@@ -85,7 +93,14 @@ struct RemoteScene::Impl {
     std::map<std::string, Art> art;
     std::map<OnlineUnitKey, Motion> motion;
     std::vector<Sprite> tiles;
+    std::array<std::map<int, Sprite>, 2> automapCels;
+    std::map<std::tuple<int, int, bool>, std::vector<Sprite>> townAutomaps;
     GpuAnimation panel, cursor, exit, resume;
+    GpuAnimation waypointBorder, waypointPanel, waypointTabs, waypointIcons, waypointClose;
+    std::array<ClassicFont, 3> waypointFonts;
+    ClassicStrings strings;
+    std::optional<uint32_t> waypointSource;
+    int waypointAct{};
     ClassicFont normal;
     const Map *currentMap{};
     uint64_t gameGeneration{~uint64_t{}}, areaGeneration{~uint64_t{}};
@@ -94,14 +109,15 @@ struct RemoteScene::Impl {
     int rendered{}, unavailable{};
     bool playerDisplayed{};
     PresetPops pops;
-    Impl(Archives &a, int act)
-        : archives(a), terrain(a, "data/global/palette/act" + std::to_string(act + 1) + "/pal.dat"),
-          actors(a, "data/global/palette/act" + std::to_string(act + 1) + "/pal.dat"),
+    Impl(Archives &a, int palette, RemoteMapDisplayState &display)
+        : archives(a), mapDisplay(display), automap(a),
+          terrain(a, "data/global/palette/act" + std::to_string(palette + 1) + "/pal.dat"),
+          actors(a, "data/global/palette/act" + std::to_string(palette + 1) + "/pal.dat"),
           units(a, "data/global/palette/units/pal.dat"),
-          ui(a, "data/global/palette/sky/pal.dat"), portraits(a),
+          ui(a, "data/global/palette/sky/pal.dat"), automapGraphics(a), portraits(a),
           animations(a.read("data/global/animdata.d2")), objects(a.read("data/global/excel/objects.txt")),
           monstats(a.read("data/global/excel/monstats.txt")),
-          monstats2(a.read("data/global/excel/monstats2.txt")), normal(font(ui, a)) {
+          monstats2(a.read("data/global/excel/monstats2.txt")), strings(a), normal(font(ui, a)) {
         for (size_t row = 0; row < objects.rows().size(); ++row)
             if (auto id = objects.number(row, "Id"))
                 objectRows.emplace(*id, row);
@@ -271,6 +287,79 @@ struct RemoteScene::Impl {
                            : objects.number(row, "OrderFlag" + suffix).value_or(0);
         return &art.emplace(key, std::move(result)).first->second;
     }
+    const Sprite *automapCel(int cel, bool large) {
+        if (cel < 0) return nullptr;
+        auto &cache = automapCels[size_t(large)];
+        if (auto found = cache.find(cel); found != cache.end()) return &found->second;
+        const auto *decoded = automapGraphics.animation(large ? "data/global/ui/automap/maximap.dc6"
+            : "data/global/ui/automap/maximaps.dc6");
+        if (!decoded || size_t(cel) >= decoded->frames.size()) return nullptr;
+        auto frame = decoded->frames[size_t(cel)];
+        frame.x -= frame.width / 2;
+        frame.y -= cel == 317 ? frame.height / 2 : frame.height - frame.width / 4;
+        return &cache.emplace(cel, automapGraphics.upload(frame)).first->second;
+    }
+    void drawAutomap(const OnlineView &v, const OnlineSceneView &binding) {
+        if (!mapDisplay.visible || !v.world.playerPosition) return;
+        const bool large = mapDisplay.large;
+        const Rectangle area = large ? Rectangle{0, 0, W, H - HUD}
+            : Rectangle{mapDisplay.right ? W - 252.f : 12.f, 38, 240, 175};
+        const Vec center{area.x + area.width * .5f, area.y + area.height * .5f};
+        const Vec observer{float(v.world.playerPosition->x), float(v.world.playerPosition->y)};
+        auto onMap = [&](Vec p) {
+            const auto position = project(p - observer) * (large ? .1f : .05f) + center + mapDisplay.offset;
+            return Vec{std::round(position.x), std::round(position.y)};
+        };
+        BeginScissorMode(int(area.x), int(area.y), int(area.width), int(area.height));
+        for (const auto &town : binding.automapTowns) {
+            const auto key = std::tuple{int(town.level), town.variant, large};
+            auto found = townAutomaps.find(key);
+            if (found == townAutomaps.end()) {
+                const char *name = town.level == 40 ? "act2map" : town.level == 103 ? "act4map" : "extnmap";
+                const int columns = town.level == 40 ? 5 : town.level == 103 ? 2 : 3;
+                const int rows = town.level == 40 ? 4 : 2, count = columns * rows;
+                const int group = town.level == 40 ? town.variant - 1 : 0;
+                const auto path = std::string("data/global/ui/automap/") + name + (large ? "" : "s") + ".dc6";
+                const auto *decoded = automapGraphics.animation(path);
+                if (!decoded || group < 0 || group > (town.level == 40 ? 1 : 0) ||
+                    int(decoded->frames.size()) != count * (town.level == 40 ? 2 : 1)) {
+                    EndScissorMode();
+                    throw std::runtime_error("Original online town automap is unavailable: " + path);
+                }
+                std::vector<Sprite> frames;
+                const auto &first = decoded->frames[size_t(group * count)];
+                for (int i = 0; i < count; ++i) {
+                    if (!townAutomapCellVisible(town.level, group * count + i)) continue;
+                    auto frame = decoded->frames[size_t(group * count + i)];
+                    frame.x += (i % columns) * first.width - columns * first.width / 2;
+                    frame.y += (i / columns) * first.height - rows * first.height / 2;
+                    frames.push_back(automapGraphics.upload(frame));
+                }
+                found = townAutomaps.emplace(key, std::move(frames)).first;
+            }
+            const auto at = onMap({float(town.center.x), float(town.center.y)});
+            for (const auto &image : found->second) sprite(&image, at, {255, 255, 255, 128});
+        }
+        for (const auto &stamp : binding.automapStamps)
+            if (const auto *image = automapCel(stamp.cel, large))
+                sprite(image, onMap({stamp.tileX * 5.f + 2.5f, stamp.tileY * 5.f + 2.5f}),
+                    {255, 255, 255, 128});
+        for (const auto &[key, unit] : v.world.units) {
+            if (!unit.position || !unit.classId) continue;
+            int cel = -1;
+            if (key.type == 2) cel = automap.objectCel(*unit.classId);
+            else if (key.type == 1) {
+                const auto row = monsterRows.find(*unit.classId);
+                if (row != monsterRows.end()) cel = automap.npcCel(monstats.value(row->second, "Id"));
+            }
+            if (const auto *image = automapCel(cel, large))
+                sprite(image, onMap({float(unit.position->x), float(unit.position->y)}));
+        }
+        const auto player = onMap(observer);
+        DrawLineV(rv(player + Vec{-5, 0}), rv(player + Vec{5, 0}), WHITE);
+        DrawLineV(rv(player + Vec{0, -4}), rv(player + Vec{0, 4}), WHITE);
+        EndScissorMode();
+    }
     RemoteSceneIntent draw(const OnlineView &v, const Map &map, const OnlineSceneView &binding, Vec mouse) {
         RemoteSceneIntent intent;
         worldView = &v.world;
@@ -293,6 +382,12 @@ struct RemoteScene::Impl {
         if (!binding.origin || !v.world.playerPosition)
             return intent;
         const auto origin = *binding.origin;
+        const bool waypointOpen = v.world.waypointSource.has_value();
+        if (waypointOpen && waypointSource != v.world.waypointSource) {
+            waypointAct = v.load.act.value_or(0);
+            menu = false;
+        }
+        waypointSource = v.world.waypointSource;
         auto local = [&](OnlinePoint p) {
             return Vec{float(int(p.x) - origin.x), float(int(p.y) - origin.y)};
         };
@@ -301,7 +396,8 @@ struct RemoteScene::Impl {
             pops.update(map.terrain, local(*v.world.playerPosition), origin.x / 5, origin.y / 5, GetTime());
         auto screen = [&](Vec p) { return project(p - camera) + Vec{W * .5f, (H - HUD) * .5f}; };
         std::optional<size_t> selectedExit;
-        if (!menu && !hudSurface(mouse)) for (size_t i = 0; i < map.terrain.exits.size(); ++i) {
+        std::optional<OnlineUnitKey> selectedTarget;
+        if (!menu && !waypointOpen && !hudSurface(mouse)) for (size_t i = 0; i < map.terrain.exits.size(); ++i) {
             const auto &exit = map.terrain.exits[i];
             const bool assigned = std::any_of(v.world.units.begin(), v.world.units.end(), [&](const auto &entry) {
                 const auto &[key, unit] = entry;
@@ -313,7 +409,13 @@ struct RemoteScene::Impl {
             const auto at = screen(exit.position);
             const auto &r = exit.selection;
             if (CheckCollisionPointRec(rv(mouse), {at.x + r.selectX, at.y + r.selectY,
-                float(r.selectWidth), float(r.selectHeight)})) { selectedExit = i; break; }
+                float(r.selectWidth), float(r.selectHeight)})) {
+                selectedExit = i;
+                for (const auto &target : binding.mapTargets)
+                    if (target.unit.type == 5 && local(target.position).x == exit.position.x &&
+                        local(target.position).y == exit.position.y) { selectedTarget = target.unit; break; }
+                break;
+            }
         }
         const auto warps = warpTileVisibility(map.terrain, selectedExit);
         struct Draw {
@@ -358,6 +460,9 @@ struct RemoteScene::Impl {
                     floor || shadow || lower ? 0 : 1,
                     floor ? 1 : shadow ? 2 : lower ? 0 : -100 + layer * 2,
                     !floor && !shadow && !lower, tint);
+                if (!shadow && instance.type != 15 && !(instance.flags & 8) &&
+                    visible(tiles.at(size_t(instance.tile)), screen({instance.x * 5.f, instance.y * 5.f})))
+                    intent.visibleMapTiles.push_back(i);
             }
         } else for (int y = 0; y < data.height; ++y)
             for (int x = 0; x < data.width; ++x) {
@@ -377,6 +482,7 @@ struct RemoteScene::Impl {
             }
         rendered = unavailable = 0;
         playerDisplayed = false;
+        float targetDistance = std::numeric_limits<float>::max();
         std::erase_if(motion, [&](const auto &entry) { return !v.world.units.contains(entry.first); });
         for (const auto &[key, u] : v.world.units) {
             if (!u.position || key.type > 2)
@@ -389,6 +495,7 @@ struct RemoteScene::Impl {
                 continue;
             }
             auto &m = motion[key];
+            if (m.mode != u.mode) { m.mode = u.mode; m.modeChangedAt = time; }
             if (m.last && *m.last != *u.position) {
                 m.look = local(*u.position) - local(*m.last);
                 m.movedAt = time;
@@ -407,13 +514,21 @@ struct RemoteScene::Impl {
             if (key.type != 2)
                 feet = feet + Vec{.5f, .5f};
             const auto &animation = visual->animation;
-            const int advance = int(time * std::max(0.f, visual->fps));
+            const int advance = int((visual->cycle ? time : time - m.modeChangedAt) * std::max(0.f, visual->fps));
             const int index = visual->cycle ? (visual->start + advance) % std::max(1, animation.count)
                                             : std::min(visual->start + advance, animation.count - 1);
             const auto *image = animation.frame(direction(m.look, animation.directions), std::max(0, index));
             const auto p = screen(feet) + visual->offset;
             if (!image || !visible(*image, p))
                 continue;
+            if (!selectedExit && !menu && !waypointOpen && !hudSurface(mouse) && key.type == 2 &&
+                CheckCollisionPointRec(rv(mouse), {p.x + image->x, p.y + image->y,
+                    float(image->texture.width), float(image->texture.height)}) &&
+                std::any_of(binding.mapTargets.begin(), binding.mapTargets.end(),
+                    [&](const auto &target) { return target.unit == key; })) {
+                const float distance = (p - mouse).length();
+                if (distance < targetDistance) { targetDistance = distance; selectedTarget = key; }
+            }
             ++rendered;
             if (key.type == 0 && v.load.playerUnitId == key.id)
                 playerDisplayed = true;
@@ -451,6 +566,16 @@ struct RemoteScene::Impl {
         paint(draw);
         paint(roofs);
         EndScissorMode();
+        if (!menu && IsKeyPressed(KEY_TAB)) mapDisplay.visible = !mapDisplay.visible;
+        if (mapDisplay.visible && !menu) {
+            if (IsKeyPressed(KEY_V)) mapDisplay.right = !mapDisplay.right;
+            if (IsKeyPressed(KEY_HOME)) mapDisplay.offset = {};
+            if (IsKeyPressed(KEY_LEFT)) mapDisplay.offset.x += 20;
+            if (IsKeyPressed(KEY_RIGHT)) mapDisplay.offset.x -= 20;
+            if (IsKeyPressed(KEY_UP)) mapDisplay.offset.y += 20;
+            if (IsKeyPressed(KEY_DOWN)) mapDisplay.offset.y -= 20;
+        }
+        drawAutomap(v, binding);
         DrawRectangle(0, H - HUD, W, HUD, BLACK);
         constexpr std::array<float, 6> offsets{0, 165, 293, 421, 549, 683};
         for (size_t i = 0; i < offsets.size(); ++i) {
@@ -469,8 +594,50 @@ struct RemoteScene::Impl {
             text.label("Waiting for supported server player appearance", 10, 70, 16);
         if (IsKeyPressed(KEY_R))
             running = !running;
-        if (IsKeyPressed(KEY_ESCAPE))
-            menu = !menu;
+        if (IsKeyPressed(KEY_ESCAPE)) {
+            if (waypointOpen) intent.closeWaypoint = true;
+            else menu = !menu;
+        }
+        if (waypointOpen) {
+            if (waypointPanel.frames.empty()) {
+                waypointBorder = ui.single("data/global/ui/panel/800borderframe.dc6");
+                waypointPanel = ui.single("data/global/ui/menu/waygatebackground.dc6");
+                waypointTabs = ui.single("data/global/ui/menu/expwaygatetabs.dc6");
+                waypointIcons = ui.single("data/global/ui/menu/waygateicons.dc6");
+                waypointClose = units.single("data/global/ui/panel/buysellbtn.dc6");
+                if (waypointBorder.frames.size() < 10 || waypointPanel.frames.size() < 4 ||
+                    waypointTabs.frames.size() < 10 || waypointIcons.frames.size() < 4 ||
+                    waypointClose.frames.size() < 11 || strings.find("waypointsheader").empty())
+                    throw std::runtime_error("Original online waypoint panel is unavailable");
+                loadWaypointFonts(ui, archives, normal, waypointFonts);
+            }
+            std::array<bool, 5> availableActs{};
+            std::vector<TravelEntryView> entries;
+            std::vector<const OnlineWaypointDestination *> destinations;
+            for (const auto &destination : binding.waypoints) {
+                if (destination.unlocked || destination.current)
+                    availableActs.at(destination.act) = true;
+                if (destination.act != waypointAct) continue;
+                TravelEntryView entry;
+                entry.level = destination.level;
+                const auto name = strings.find(destination.name);
+                if (name.empty()) throw std::runtime_error("Original waypoint name is unavailable: " + destination.name);
+                entry.name = name;
+                if (destination.unlocked) entry.destination = RegionId(destination.level);
+                entries.push_back(std::move(entry));
+                destinations.push_back(&destination);
+            }
+            drawWaypointPanel({waypointBorder, waypointPanel, waypointTabs, waypointIcons,
+                waypointClose, waypointFonts, std::string(strings.find("waypointsheader"))},
+                entries, availableActs, waypointAct, binding.area.value_or(0), mouse);
+            if (IsWindowFocused() && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+                const auto hit = waypointPanelHit(mouse, entries.size());
+                if (hit.close) intent.closeWaypoint = true;
+                else if (hit.act && availableActs.at(size_t(*hit.act))) waypointAct = *hit.act;
+                else if (hit.row && destinations.at(*hit.row)->unlocked)
+                    intent.waypoint = *destinations.at(*hit.row);
+            }
+        }
         if (menu) {
             auto button = [&](const GpuAnimation &label, float y) {
                 const auto *image = label.frame(0, 0);
@@ -487,7 +654,9 @@ struct RemoteScene::Impl {
                 menu = false;
             if (button(exit, 340))
                 intent.leave = true;
-        } else if (binding.movementAvailable && IsWindowFocused() && IsMouseButtonDown(MOUSE_BUTTON_LEFT) &&
+        } else if (!waypointOpen && selectedTarget && binding.movementAvailable && IsWindowFocused()) {
+            if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) intent.interact = selectedTarget;
+        } else if (!waypointOpen && binding.movementAvailable && IsWindowFocused() && IsMouseButtonDown(MOUSE_BUTTON_LEFT) &&
                    mouse.x >= 0 && mouse.x < W && mouse.y >= 0 && mouse.y < H - HUD && !hudSurface(mouse)) {
             const auto target = unproject(mouse - Vec{W * .5f, (H - HUD) * .5f}) + camera;
             const int x = int(std::floor(target.x)) + origin.x, y = int(std::floor(target.y)) + origin.y;
@@ -500,7 +669,8 @@ struct RemoteScene::Impl {
         return intent;
     }
 };
-RemoteScene::RemoteScene(Archives &a, int act) : impl_(std::make_unique<Impl>(a, act)) {}
+RemoteScene::RemoteScene(Archives &a, int palette, RemoteMapDisplayState &display)
+    : impl_(std::make_unique<Impl>(a, palette, display)) {}
 RemoteScene::~RemoteScene() = default;
 RemoteSceneIntent RemoteScene::frame(const OnlineView &v, const Map &m, const OnlineSceneView &s, Vec mouse) {
     return impl_->draw(v, m, s, mouse);

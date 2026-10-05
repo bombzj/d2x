@@ -91,6 +91,7 @@ std::optional<CharacterChoice> chooseFrontend(Archives &archives, RenderTexture2
     }
     net::RealmSession session;
     RemoteTown town(archives);
+    RemoteMapDisplayState mapDisplay;
     std::unique_ptr<RemoteScene> scene;
     std::optional<uint8_t> renderedAct;
     std::optional<uint16_t> renderedArea;
@@ -99,6 +100,8 @@ std::optional<CharacterChoice> chooseFrontend(Archives &archives, RenderTexture2
     auto sceneStatus = [&] {
         town.update(session.read());
         auto status = town.read();
+        status.automapVisible = mapDisplay.visible;
+        status.automapLarge = mapDisplay.large;
         if (sceneGeneration == session.read().gameGeneration && !sceneError.empty()) {
             status.available = status.movementAvailable = false;
             status.reason = sceneError;
@@ -168,7 +171,9 @@ std::optional<CharacterChoice> chooseFrontend(Archives &archives, RenderTexture2
                     if (!saved)
                         throw std::runtime_error("Screenshot could not be written");
                 },
-                sceneStatus, move);
+                sceneStatus, move, [&](bool visible, bool large) {
+                    mapDisplay.visible = visible; mapDisplay.large = large;
+                });
             if (session.read().revision != before) {
                 notice.clear();
                 dismissedRevision = std::numeric_limits<uint64_t>::max();
@@ -267,7 +272,7 @@ std::optional<CharacterChoice> chooseFrontend(Archives &archives, RenderTexture2
             view.stage == OnlineStage::ProtocolReady && town.read().available && sceneError.empty();
         if (showScene && !scene) {
             try {
-                scene = std::make_unique<RemoteScene>(archives, view.load.act.value_or(0));
+                scene = std::make_unique<RemoteScene>(archives, town.read().palette.value_or(0), mapDisplay);
             } catch (const std::exception &e) {
                 sceneError = e.what();
                 showScene = false;
@@ -310,8 +315,15 @@ std::optional<CharacterChoice> chooseFrontend(Archives &archives, RenderTexture2
         EndDrawing();
         if (quit)
             continue;
+        town.revealVisibleTiles(session.read(), worldAction.visibleMapTiles);
         if (worldAction.leave)
             session.leave_game();
+        else if (worldAction.closeWaypoint)
+            session.use_waypoint(0);
+        else if (worldAction.waypoint)
+            session.use_waypoint(worldAction.waypoint->level, worldAction.waypoint->number);
+        else if (worldAction.interact && town.permitsInteraction(session.read(), *worldAction.interact))
+            session.interact_map_unit(*worldAction.interact);
         else if (worldAction.move)
             move(*worldAction.move, worldAction.run);
         switch (action.command) {

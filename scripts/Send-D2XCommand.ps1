@@ -17,7 +17,8 @@ param(
         'online-cancel', 'online-logout',
         'online-register', 'online-create-character', 'online-delete-character',
         'online-return-realms', 'online-cancel-list',
-        'online-world', 'online-move', 'online-use-exit',
+        'online-world', 'online-move', 'online-use-exit', 'online-interact',
+        'online-waypoint-travel', 'online-waypoint-close', 'online-automap',
         'ui-input', 'screenshot', 'quit')]
     [string]$Command,
     [hashtable]$Arguments = @{},

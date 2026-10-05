@@ -12,6 +12,9 @@
 | `online-world` | 只读同一快照：world.units／rooms／equipment／attributes、本人全局 subtile 坐标与当前生命／法力／体力；scene 含原 DS1、原点、候选／地标、碰撞／显示／移动可用性、本人是否绘制与缺外观数量 |
 | `online-move` | x、y为服务端全局subtile整数（0–65535），run默认true；ProtocolReady、当前地图可移动、目标在活动碰撞内可走时提交，100ms限制；后续位置回包才是结果 |
 | `online-use-exit` | unitId为online-world返回的真实type5单位ID，要求原生地图可用／角色存活；发送0x13交互，不接受用LvlWarp类型编号替代单位ID |
+| `online-interact` | unitId、unitType（默认2，仅支持2／5）；目标必须在scene.mapTargets中，用于门／门户／传送台／传送点／对象楼梯，发送原0x13；accepted不代表已操作或换区 |
+| `online-waypoint-travel` / `online-waypoint-close` | travel的level为原区域ID1–136，必须有当前服务端0x63菜单且目的地已解锁；close无参数。发送原0x49，level=0为关闭，不解锁任务或传送点 |
+| `online-automap` | 可选visible／large布尔值，visible省略时开关、large省略时保留；只改变显示。scene.automap返回大小／显示、stamps／towns数量及当前连续层revealedCells |
 | `online-login` | 必填 account、password；原版文件／认证模式／端口读取 `--online-config` 私有配置，只在 Idle／Failed／Cancelled 接受；自动选择配置中的 Realm |
 | `online-register` | account、password（各2–15）；配置和允许阶段同登录，注册成功自动登录；服务端拒绝码在 error 中 |
 | `online-create-character` | name（2–15、字母起首，其余字母／连字符／下划线）、classId（0–6，默认0）、hardcore（默认false）；CharacterSelection 接受，固定资料片／非 Ladder，服务器生成初始数据后刷新列表 |

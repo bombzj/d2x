@@ -6,9 +6,16 @@
 #include <memory>
 
 namespace d2x {
+struct RemoteMapDisplayState {
+    bool visible{}, large{true}, right{true};
+    Vec offset;
+};
 struct RemoteSceneIntent {
     std::optional<OnlinePoint> move;
-    bool run{true}, leave{};
+    std::optional<OnlineUnitKey> interact;
+    std::optional<OnlineWaypointDestination> waypoint;
+    std::vector<size_t> visibleMapTiles;
+    bool run{true}, leave{}, closeWaypoint{};
 };
 // Original-resource presentation of a server replica. Emits intents only.
 class RemoteScene {
@@ -16,7 +23,7 @@ class RemoteScene {
     std::unique_ptr<Impl> impl_;
 
   public:
-    explicit RemoteScene(Archives &, int act = 0);
+    RemoteScene(Archives &, int palette, RemoteMapDisplayState &);
     ~RemoteScene();
     RemoteSceneIntent frame(const OnlineView &, const Map &, const OnlineSceneView &, Vec mouse);
     int renderedUnits() const;

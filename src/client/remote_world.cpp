@@ -31,6 +31,7 @@ void playerPosition(OnlineWorldView &w, OnlinePoint p) {
     mapEvent(w, OnlineMapEvent::Kind::PlayerPosition, p);
 }
 void removePlayer(OnlineWorldView &w) {
+    w.waypointSource.reset();
     w.playerPosition.reset();
     mapEvent(w, OnlineMapEvent::Kind::RemovePlayer);
 }
@@ -154,6 +155,7 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
         const auto k = key(r);
         r.finish();
         w.units.erase(k);
+        if (k.type == 2 && w.waypointSource == k.id) w.waypointSource.reset();
         if (k.type == 0) {
             std::erase_if(w.equipment, [&](const auto &e) { return e.second.owner == k.id; });
             if (v.load.playerUnitId == k.id)
@@ -267,6 +269,38 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
             removePlayer(w);
         break;
     }
+    case 0x60: {
+        const auto flags = r.u8(), destination = r.u8();
+        auto &u = unit(w, {2, r.u32()});
+        u.portalFlags = flags;
+        u.portalDestination = destination;
+        r.finish();
+        break;
+    }
+    case 0x63: {
+        const auto source = r.u32();
+        std::array<uint16_t, 8> history;
+        for (auto &word : history) word = r.u16();
+        r.finish();
+        if (history[0] != 0x102) throw ProtocolError("Unsupported native waypoint history");
+        w.waypointHistory = history;
+        w.waypointSource = source;
+        break;
+    }
+    case 0x82: {
+        const auto owner = r.u32();
+        const auto ownerName = name(r);
+        // Both endpoint GUIDs belong to this owner. Do not infer which is local.
+        for (int i = 0; i < 2; ++i) {
+            const auto id = r.u32();
+            if (id == UINT32_MAX) continue;
+            auto &u = unit(w, {2, id});
+            u.portalOwner = owner;
+            u.portalOwnerName = ownerName;
+        }
+        r.finish();
+        break;
+    }
     case 0x67:
     case 0x68: {
         auto &u = unit(w, {1, r.u32()});
@@ -301,6 +335,7 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
         if (p.id != 0x96) {
             w.life = uint16_t(bits.read(15));
             w.mana = uint16_t(bits.read(15));
+            if (!*w.life) w.waypointSource.reset();
         }
         w.stamina = uint16_t(bits.read(15));
         if (p.id == 0x18) {

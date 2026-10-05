@@ -42,6 +42,7 @@ void SceneAssets::loadAutomap(const IMapAssetSource &source) {
             const int width = art->frames[size_t(group * count)].width;
             const int height = art->frames[size_t(group * count)].height;
             for (int index = 0; index < count; ++index) {
+                if (!townAutomapCellVisible(level, group * count + index)) continue;
                 auto frame = art->frames[size_t(group * count + index)];
                 if (frame.width != width || frame.height != height)
                     throw std::runtime_error("Inconsistent original town automap frame dimensions");

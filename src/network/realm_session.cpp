@@ -602,6 +602,7 @@ struct RealmSession::Impl {
         world.roomAssignmentRevisions.clear();
         world.mapEvents.clear();
         world.mapEventSequence = 0;
+        world.waypointSource.reset();
         if (!preserveInitialPosition) {
             world.playerPosition.reset();
             for (auto &[key, unit] : world.units) {
@@ -1089,8 +1090,14 @@ bool RealmSession::move_to(OnlinePoint target, bool run) {
         out.u8(run ? 0x03 : 0x01);
         out.u16(target.x);
         out.u16(target.y);
+        if (p.view.world.waypointSource) {
+            Writer close;
+            close.u8(0x49); close.u32(*p.view.world.waypointSource); close.u32(0);
+            p.sent(p.gs, close.release());
+        }
         p.sent(p.gs, out.release());
         p.nextMovement = Clock::now() + std::chrono::milliseconds(100);
+        p.view.world.waypointSource.reset();
         p.view.error.reset();
         p.changed();
         return true;
@@ -1100,26 +1107,67 @@ bool RealmSession::move_to(OnlinePoint target, bool run) {
     }
 }
 bool RealmSession::use_exit(uint32_t serverUnitId) {
+    return interact_map_unit({5, serverUnitId});
+}
+bool RealmSession::interact_map_unit(OnlineUnitKey target) {
     auto &p = *impl_;
     if (!p.require(OnlineStage::ProtocolReady)) return false;
-    const auto found = p.view.world.units.find({5, serverUnitId});
+    const auto found = p.view.world.units.find(target);
     if (!p.view.load.serverLoadComplete || !p.view.world.playerPosition ||
         (p.view.world.life && !*p.view.world.life) || found == p.view.world.units.end() ||
-        !found->second.position || !found->second.classId) {
-        p.error(OnlineErrorKind::Input, "The server exit unit is not available");
+        !found->second.position || !found->second.classId || (target.type != 2 && target.type != 5)) {
+        p.error(OnlineErrorKind::Input, "The server map unit is not available");
         return false;
     }
     if (Clock::now() < p.nextMovement) return false;
     try {
         // D2MOO PlrMsg Rcv0x13: packet byte, uint32 unit type, uint32 GUID.
         Writer out;
-        out.u8(0x13); out.u32(5); out.u32(serverUnitId);
+        out.u8(0x13); out.u32(target.type); out.u32(target.id);
+        if (p.view.world.waypointSource) {
+            Writer close;
+            close.u8(0x49); close.u32(*p.view.world.waypointSource); close.u32(0);
+            p.sent(p.gs, close.release());
+            p.view.world.waypointSource.reset();
+        }
         p.sent(p.gs, out.release());
         p.nextMovement = Clock::now() + std::chrono::milliseconds(100);
         p.view.error.reset(); p.changed();
         return true;
     } catch (const std::exception &) {
-        p.fail(OnlineErrorKind::Transport, "Exit interaction could not be queued");
+        p.fail(OnlineErrorKind::Transport, "Map interaction could not be queued");
+        return false;
+    }
+}
+bool RealmSession::use_waypoint(uint16_t destination, uint8_t waypointNumber) {
+    auto &p = *impl_;
+    if (!p.require(OnlineStage::ProtocolReady)) return false;
+    const auto &world = p.view.world;
+    if (!world.waypointSource || !world.waypointHistory || !world.playerPosition ||
+        !p.view.load.serverLoadComplete || (world.life && !*world.life)) {
+        p.error(OnlineErrorKind::Input, "No server waypoint menu is open");
+        return false;
+    }
+    const auto source = world.units.find({2, *world.waypointSource});
+    if (source == world.units.end() || !source->second.position || !source->second.classId ||
+        (destination && (waypointNumber >= 112 ||
+            !((*world.waypointHistory)[1 + waypointNumber / 16] & (1u << (waypointNumber & 15)))))) {
+        p.error(OnlineErrorKind::Input, "Waypoint source or unlocked destination is unavailable");
+        return false;
+    }
+    if (Clock::now() < p.nextMovement) return false;
+    try {
+        // D2MOO PlrMsg Rcv0x49: object GUID + level ID, both original DWORDs.
+        Writer out;
+        out.u8(0x49); out.u32(*world.waypointSource); out.u32(destination);
+        p.sent(p.gs, out.release());
+        p.nextMovement = Clock::now() + std::chrono::milliseconds(100);
+        p.view.world.waypointSource.reset();
+        ++p.view.world.revision;
+        p.view.error.reset(); p.changed();
+        return true;
+    } catch (const std::exception &) {
+        p.fail(OnlineErrorKind::Transport, "Waypoint request could not be queued");
         return false;
     }
 }

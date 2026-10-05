@@ -12,6 +12,7 @@
 #include "content/world/world_catalog.hpp"
 #include "gameplay/npc/store.hpp"
 #include "scene_assets.hpp"
+#include "presentation/hud/waypoint_panel.hpp"
 #include "gameplay/quest/catalog.hpp"
 #include <cctype>
 #include "resources/data_table.hpp"
@@ -36,30 +37,6 @@ void loadFont(Graphics &graphics, Archives &archives, ClassicFont &font, std::st
         font.indices[i] = tbl[12 + i * 14 + 8];
     }
     font.ready = true;
-}
-void loadWaypointFonts(Graphics &graphics, Archives &archives, const ClassicFont &base,
-                       std::array<ClassicFont, 3> &fonts) {
-    // OpenDiablo2 PL2.TextColorShifts: thirteen RGB triples follow the blend
-    // transforms at 0x6B600, then thirteen 256-entry font index transforms.
-    constexpr size_t shifts = 0x6B600 + 13 * 3;
-    const auto palette = archives.read("data/global/palette/sky/pal.pl2");
-    const auto *glyphs = graphics.animation("data/local/font/latin/font16.dc6");
-    if (palette.size() < shifts + 13 * 256 || !glyphs)
-        throw std::runtime_error("Original waypoint font transforms are missing");
-    constexpr int colors[]{0, 3, 5};
-    for (size_t index = 0; index < fonts.size(); ++index) {
-        auto &font = fonts[index];
-        font = base;
-        // White uses the original glyph indices. The sky PL2 white table is
-        // all zeroes, so applying it would make every glyph transparent.
-        if (colors[index] == 0) continue;
-        font.glyphs.frames.clear();
-        for (auto glyph : glyphs->frames) {
-            for (auto &pixel : glyph.pixels)
-                if (pixel) pixel = palette[shifts + colors[index] * 256 + pixel];
-            font.glyphs.frames.push_back(graphics.upload(glyph));
-        }
-    }
 }
 } // namespace
 SceneAssets::SceneAssets(Archives &archives, const GameSession &session, const IMapAssetSource &source)

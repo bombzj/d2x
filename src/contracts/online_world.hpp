@@ -1,6 +1,7 @@
 #pragma once
 #include "core/bytes.hpp"
 #include <compare>
+#include <array>
 #include <cstdint>
 #include <deque>
 #include <map>
@@ -23,6 +24,9 @@ struct OnlineUnit {
     std::optional<uint16_t> classId;
     std::optional<OnlinePoint> position, destination;
     std::optional<uint8_t> mode, lifePercent; // Life ratio byte preserved in its original wire scale.
+    std::optional<uint8_t> portalFlags, portalDestination;
+    std::optional<uint32_t> portalOwner;
+    std::string portalOwnerName;
     std::string name;
     Bytes appearanceBits; // NPC assignment tail; decoded with current MPQ component tables.
     uint64_t positionRevision{}, appearanceRevision{};
@@ -61,6 +65,8 @@ struct OnlineWorldView {
     std::map<uint8_t, uint32_t> playerAttributes;
     std::optional<OnlinePoint> playerPosition;
     std::optional<uint16_t> life, mana, stamina;
+    std::optional<std::array<uint16_t, 8>> waypointHistory; // Native 0x102 header + 112 bits.
+    std::optional<uint32_t> waypointSource; // Only 0x63 authorizes an open menu.
     uint64_t ignoredPackets{};
 };
 } // namespace d2x
