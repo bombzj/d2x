@@ -14,6 +14,7 @@
 #include "application.hpp"
 #include "app/automap_save.hpp"
 #include "character_frontend.hpp"
+#include "frontend.hpp"
 #include "input.hpp"
 #include "options.hpp"
 #include "core/random.hpp"
@@ -153,6 +154,7 @@ int runGame(int argc, char **argv) {
                      "--frames N --hidden --pack "
                      "<new.mpq> --save <file.d2s> --load <file.d2s>\n"
                      "--class <MPQ class name>: start a new character directly without the frontend or a save.\n"
+                     "--online-config <file.json>: gateway and original-client files for Realm login (PvPGN needs no CD keys).\n"
                      "Choose --class or --load, not both. New direct characters auto-save only with --save.\n"
                      "--seed <uint32>: reproducible whole-game root; default is a fresh seed per game.\n"
                      "--map-seed and --population-seed override individual plans; D2S keeps its saved map seed.\n"
@@ -200,6 +202,7 @@ int runGame(int argc, char **argv) {
     ClientPreferences preferences = loadClientPreferences();
     bool preferencesDirty = false;
     double preferencesRetryAt = 0;
+    bool returnToLocalCharacters = false;
     for (;;) {
         const bool returnToCharacters = [&]() {
             beginLoading();
@@ -212,7 +215,8 @@ int runGame(int argc, char **argv) {
                 frontendTarget.emplace();
                 archives.setLoadingPulse({});
                 ShowCursor();
-                character = chooseCharacter(archives, frontendTarget->handle);
+                character = chooseFrontend(archives, frontendTarget->handle, options.onlineConfig, options.debugPipe, returnToLocalCharacters);
+                returnToLocalCharacters = true;
                 if (!character)
                     return false;
                 HideCursor();

@@ -1,6 +1,6 @@
 # D2X — Diablo II: Lord of Destruction C++
 
-基于《毁灭之王》原始 MPQ 的单机 C++20 项目，包含地图、战斗、技能、物品容器、五幕任务与原 D2S v96 存档。不依赖原版 EXE，不使用重制版资源；资料片是唯一运行目标。
+基于《毁灭之王》原始 MPQ 的 C++20 项目，包含单机地图、战斗、技能、物品容器、五幕任务与原 D2S v96 存档。单机不依赖原版 EXE；联网认证只读原版客户端文件。不使用重制版资源，资料片是唯一运行目标。
 
 [文档目录](docs/README.md) · [当前基线](BASELINE.md) · [代码架构](docs/architecture/OVERVIEW.md) · [协作约定](AGENTS.md)
 
@@ -8,7 +8,7 @@
 
 人物、库存、角色／技能、NPC／任务、商店／佣兵及地图界面已有客户端契约和本地适配；玩法以组合、公共能力和独立领域规则组织。五幕任务已有主要流程，部分职业技能、怪物 AI、物件和装备效果仍有缺口，准确范围见各模块／玩法专题。
 
-当前仍是单机项目，多玩家与网络后端尚未实现。单机和联机复用的设计保留在 [后续方案](docs/architecture/REFACTOR_PLAN.md)，当前先完成本地解耦。2026-10-04 已更新 `dist/current` 并完成 Windows 有限运行冒烟，交付范围见 [BASELINE.md](BASELINE.md)。
+源码已补齐主菜单→登录／注册→Realm→服务器建角／选角→创建或加入房间的主流程与 command 接口；本轮新增部分未构建。`dist/current` 为此前有限双账号协议冒烟版本，联网世界显示尚未实现。配置、流程和限制见 [联网模块](docs/modules/NETWORK.md)，源码／包差异见 [BASELINE.md](BASELINE.md)。
 
 ## 构建与运行
 
@@ -21,7 +21,7 @@ Windows 在项目根目录执行：
 .\Play.cmd
 ```
 
-普通启动先显示角色列表。可直接运行 `build/bin/d2x.exe`；显式 `--class Sorceress --level 8` 创建临时角色直入场景，未指定保存路径时退出不自动保存。
+当前源码普通启动先显示主菜单：Single Player 进入已有本地角色列表，Battle.net 进入账号登录。可直接运行 `build/bin/d2x.exe`；显式 `--class Sorceress --level 8` 创建临时单机角色直入场景，未指定保存路径时退出不自动保存。
 
 `scripts/package.ps1` 更新固定 `dist/current`，只复制已构建程序、脚本和文档，不复制 MPQ。在仓库根可用 `dist/current/Play.cmd -Mpq assets/mpq2` 启动已有包；保存与截图归包目录。构建、打包、Linux 依赖及详细参数见 [开发指南](docs/development/BUILD_AND_RUN.md)。Linux 尚未实际编译或运行。
 

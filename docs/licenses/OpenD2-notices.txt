@@ -1,0 +1,17 @@
+OpenD2 protocol Huffman attribution
+
+Source: https://github.com/eezstreet/OpenD2
+Snapshot: 057824439ca145aa8411f9b024bc3fe6aa8fa450
+Source file: Engine/Network.cpp
+Upstream license: GNU General Public License, version 3.
+The complete license text is retained in the repository root LICENSE.
+
+Engine/Network.cpp is evidence for the protocol's byte-to-codeword relation.
+src/network/protocol/huffman_tables.inc contains the derived protocol codebook,
+not the three upstream lookup tables. src/network/protocol/huffman.cpp implements
+an independent bounded prefix-tree decoder. The upstream decoder, SDL, global
+output buffer and socket implementation are not retained. Attribution is
+retained for the OpenD2 contributors as the protocol evidence source.
+
+No upstream game assets, save data, SDL implementation or reference repository
+are included in the project source tree.

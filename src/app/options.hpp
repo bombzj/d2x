@@ -13,6 +13,7 @@ struct AppOptions {
     std::string save, load;
     std::string characterClass;
     std::string debugPipe;
+    std::string onlineConfig = "online.local.json";
     bool debugRun = false;
     bool directGame = false;
     bool hidden = false, help = false, inventory = false, stash = false, skills = false;

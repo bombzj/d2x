@@ -2,6 +2,68 @@
 
 直接运行 EXE 时，调试管道仅在指定 `--debug-pipe` 时启用，默认暂停模拟；加 `--debug-run` 则直接运行。Play.cmd 通过启动脚本默认开启 `d2x-debug` 并直接运行。管道允许改变当前游戏，请谨慎操作重要现场。
 
+## 联网命令
+
+当前源码在主菜单／登录／服务器选角／大厅／入局交接页接收同一个调试管道；无需进入单机场景。联网始终实时 tick，单机 `pause/resume/step` 不控制网络。此前 `dist/current` 的登录／建局／入退局已有双账号有限冒烟；本轮注册、建角／删角、Realm 切换及列表取消命令仅写入源码，尚未构建。配置与 UI 限制见 [联网模块](../modules/NETWORK.md)。
+
+| 命令 | 参数与结果 |
+| --- | --- |
+| `online-status` | 只读 `online`：stage、error、revision、connectionGeneration、gameGeneration、Realm／角色／游戏列表、load、延迟、gameQueuePosition、gameListComplete；菜单中的 `status` 是其别名 |
+| `online-login` | 必填 account、password；原版文件／认证模式／端口读取 `--online-config` 私有配置，只在 Idle／Failed／Cancelled 接受；自动选择配置中的 Realm |
+| `online-register` | account、password（各2–15）；配置和允许阶段同登录，注册成功自动登录；服务端拒绝码在 error 中 |
+| `online-create-character` | name（2–15、字母起首，其余字母／连字符／下划线）、classId（0–6，默认0）、hardcore（默认false）；CharacterSelection 接受，固定资料片／非 Ladder，服务器生成初始数据后刷新列表 |
+| `online-delete-character` | name 和完全相同的 confirmName；CharacterSelection 接受，必须来自当前列表；不可撤销，成功刷新列表 |
+| `online-return-realms` | CharacterSelection 关闭 MCP 并重新取 Realm 列表；保持 RealmSelection 等待显式选择 |
+| `online-cancel-list` | ListingGames 取消等待并返回 Lobby，不关闭 MCP，列表完成标记为 false |
+| `online-realms` / `online-characters` / `online-games` | 只读当前服务器快照，不发起刷新；未知角色字段为 null |
+| `online-select-realm` | name；只在 RealmSelection 接受；首次登录自动选择配置项；切换 Realm 或配置项不存在时等待显式选择 |
+| `online-select-character` | name；只在 CharacterSelection 接受，限定可玩的非 Ladder LoD 角色 |
+| `online-list-games` | 可选 filter（≤15）；只在 Lobby 发起真实列表请求，filter 为本地名称包含筛选，完成后返回 Lobby；无终止包时超时并清除未完成列表 |
+| `online-create-game` | name（≤15）、可选 password（≤15）／description（≤31）／maximumPlayers（1–8，默认4）／levelDifference（0–99，默认4）／difficulty（0普通／1噩梦／2地狱，默认0；按服务器角色进度解锁）；只在 Lobby 接受，成功自动取票入局 |
+| `online-join-game` | name、可选 password；只在 Lobby 接受，调用原 MCP 取票接口，UI 的 Join 调用同一接口，可按名字直接加入 |
+| `online-leave-game` | LoadingGame／ProtocolReady 请求正常退局；结束后重新取 Realm 票据刷新角色，不声称保存已成功 |
+| `online-return-characters` | Lobby 返回服务器选角，重新取票 |
+| `online-cancel` / `online-logout` | 关闭连接；前者进入 Cancelled，后者清空会话回主菜单 |
+| `screenshot` / `quit` | 菜单截图仍使用 path 参数；quit 关闭联网会话并退出 |
+
+修改命令立即返回 `accepted` 和当时的 `online` 快照，不等待网络完成。后续查询 `online-status`：例如登录完成后为 CharacterSelection，选角完成后为 Lobby；ProtocolReady 只代表入局协议初始化，响应始终有 `worldDisplayAvailable=false`。阶段不允许时返回 ok=false；错误回复／超时可从后续状态读取。可附带 connectionGeneration／gameGeneration，代次不符则拒绝迟到命令。响应不回显请求、密码、CD key、角色票据或原始世界包。
+
+本机测试账号为 `bomb / 1qaz2wsx`、`bomb2 / 1qaz2wsx`，用户授权记入文档，仅用于测试。按以下顺序手工调用：
+
+```powershell
+.\build\bin\d2x.exe --mpq assets/mpq2 --debug-pipe d2x-online --online-config online.local.json
+# 另一个终端；每一步通过 online-status 等待相应阶段，再提交下一步。
+.\scripts\Send-D2XCommand.ps1 -PipeName d2x-online -Command online-login -Arguments @{
+    account = 'bomb'
+    password = '1qaz2wsx'
+}
+.\scripts\Send-D2XCommand.ps1 -PipeName d2x-online -Command online-status
+$characters = (.\scripts\Send-D2XCommand.ps1 -PipeName d2x-online -Command online-characters).online.characters
+# name 使用服务器返回的原值；选择非 Ladder 资料片角色。
+.\scripts\Send-D2XCommand.ps1 -PipeName d2x-online -Command online-select-character -Arguments @{name=$characters[0].name}
+.\scripts\Send-D2XCommand.ps1 -PipeName d2x-online -Command online-status
+.\scripts\Send-D2XCommand.ps1 -PipeName d2x-online -Command online-create-game -Arguments @{name='d2x-room';maximumPlayers=4}
+.\scripts\Send-D2XCommand.ps1 -PipeName d2x-online -Command online-status
+.\scripts\Send-D2XCommand.ps1 -PipeName d2x-online -Command online-leave-game
+```
+
+新增入口示例（需先构建本轮源码；每次操作后用 online-status 等待完成，不连发）：
+
+```powershell
+# 已登录到 CharacterSelection 时，新建独立测试角色。
+.\scripts\Send-D2XCommand.ps1 -PipeName d2x-online -Command online-create-character -Arguments @{name='NetSorceress';classId=1;hardcore=$false}
+# 选角后到 Lobby，另一个账号建房；空列表无终止包时可取消后按名加入。
+.\scripts\Send-D2XCommand.ps1 -PipeName d2x-online -Command online-list-games
+.\scripts\Send-D2XCommand.ps1 -PipeName d2x-online -Command online-cancel-list
+.\scripts\Send-D2XCommand.ps1 -PipeName d2x-online -Command online-join-game -Arguments @{name='d2x-room'}
+# 仅在 CharacterSelection 且确实要永久删除独立测试角色时执行，勿删除 aaa／bbb。
+.\scripts\Send-D2XCommand.ps1 -PipeName d2x-online -Command online-delete-character -Arguments @{name='NetSorceress';confirmName='NetSorceress'}
+```
+
+注册用 online-register 的 account／password 创建一个未占用的独立账号，不对 bomb／bomb2 重复注册；创建成功会自动进入正常登录链。
+
+不要附带 --class／--load／--hidden／--level 等会直入单机的选项。进入既有离线角色选择期间，该旧选择器尚未轮询管道；进入单机场景后管道由原单机 command 接管，online-* 不在那里启动另一个会话。
+
 `hireling` 返回原类型、来源难度、技能基础／有效等级、原模式、当前动作／技能及天然光环；`types=$true` 另返回当前 MPQ 全部资料片类型及分段行，包括技能权重和成长。可传 `npc` 打开正式雇佣服务，继续传 `slot` 雇佣，仍要求 NPC 可访问并按原费用扣金。
 
 ## 启动

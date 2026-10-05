@@ -7,11 +7,22 @@
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
+// Windows types must be defined before SDDL declarations (also with MinGW).
+// clang-format off
 #include <windows.h>
 #include <sddl.h>
+// clang-format on
 #endif
 
 namespace d2x {
+namespace {
+void eraseRequest(std::string &value) {
+    volatile char *bytes = value.data();
+    for (size_t i = 0; i < value.size(); ++i)
+        bytes[i] = 0;
+    value.clear();
+}
+} // namespace
 struct DebugPipe::Impl {
 #ifdef _WIN32
     HANDLE pipe = INVALID_HANDLE_VALUE;
@@ -19,11 +30,15 @@ struct DebugPipe::Impl {
     std::string input, output;
     size_t sent = 0;
     std::chrono::steady_clock::time_point deadline;
-    ~Impl() { if (pipe != INVALID_HANDLE_VALUE) CloseHandle(pipe); }
+    ~Impl() {
+        eraseRequest(input);
+        if (pipe != INVALID_HANDLE_VALUE)
+            CloseHandle(pipe);
+    }
     void reset() {
         DisconnectNamedPipe(pipe);
         connected = false;
-        input.clear();
+        eraseRequest(input);
         output.clear();
         sent = 0;
     }
@@ -53,13 +68,15 @@ DebugPipe::DebugPipe(const std::string &name) {
     std::string sddl = "D:P(A;;GA;;;" + std::string(sid) + ")";
     LocalFree(sid);
     PSECURITY_DESCRIPTOR descriptor = nullptr;
-    if (!ConvertStringSecurityDescriptorToSecurityDescriptorA(sddl.c_str(), SDDL_REVISION_1, &descriptor, nullptr))
+    if (!ConvertStringSecurityDescriptorToSecurityDescriptorA(sddl.c_str(), SDDL_REVISION_1, &descriptor,
+                                                              nullptr))
         throw std::runtime_error("Cannot create debug pipe ACL");
     SECURITY_ATTRIBUTES security{sizeof(SECURITY_ATTRIBUTES), descriptor, FALSE};
     std::string path = "\\\\.\\pipe\\" + name;
-    impl_->pipe = CreateNamedPipeA(path.c_str(), PIPE_ACCESS_DUPLEX | FILE_FLAG_FIRST_PIPE_INSTANCE,
-        PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_NOWAIT | PIPE_REJECT_REMOTE_CLIENTS,
-        1, 65536, 65536, 0, &security);
+    impl_->pipe =
+        CreateNamedPipeA(path.c_str(), PIPE_ACCESS_DUPLEX | FILE_FLAG_FIRST_PIPE_INSTANCE,
+                         PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_NOWAIT | PIPE_REJECT_REMOTE_CLIENTS, 1,
+                         65536, 65536, 0, &security);
     LocalFree(descriptor);
     if (impl_->pipe == INVALID_HANDLE_VALUE)
         throw std::runtime_error("Cannot create debug pipe (name may already be in use)");
@@ -97,10 +114,21 @@ void DebugPipe::poll(const std::function<std::string(const std::string &)> &hand
             if (state.input.size() > 16384) {
                 state.output = "{\"ok\":false,\"error\":\"Request exceeds 16 KiB\"}\n";
             } else if (auto end = state.input.find('\n'); end != std::string::npos) {
-                state.output = handler(state.input.substr(0, end)) + "\n";
+                auto request = state.input.substr(0, end);
+                eraseRequest(state.input);
+                try {
+                    state.output = handler(request) + "\n";
+                } catch (...) {
+                    eraseRequest(request);
+                    throw;
+                }
+                eraseRequest(request);
                 if (state.output.size() > 4 * 1024 * 1024)
                     state.output = "{\"ok\":false,\"error\":\"Response exceeds 4 MiB\"}\n";
             }
+            volatile char *readBytes = buffer;
+            for (size_t i = 0; i < sizeof(buffer); ++i)
+                readBytes[i] = 0;
         } else if (GetLastError() != ERROR_NO_DATA) {
             state.reset();
             return;

@@ -1,6 +1,6 @@
 # 文档目录
 
-开始修改前读 [项目基线](../BASELINE.md) 和 [协作约定](../AGENTS.md)，再选择下面的领域入口。项目仍为单机；后续联机方案只表达设计，不能当作已实现功能。
+开始修改前读 [项目基线](../BASELINE.md) 和 [协作约定](../AGENTS.md)，再选择下面的领域入口。联网主流程源码已补齐，新增部分未构建；旧包已有有限双账号协议冒烟，世界副本尚未实现。源码／包差异见基线。
 
 ## 目录与职责
 
@@ -32,15 +32,16 @@ docs/
 | --- | --- |
 | [代码结构](architecture/OVERVIEW.md) | 目录／CMake 分工、依赖图、所有权及修改落点 |
 | [数据流](architecture/DATA_FLOW.md) | MPQ、区域、单位、技能、库存、投影与保存生命周期 |
-| [改造方案](architecture/REFACTOR_PLAN.md) | 各阶段状态、剩余工作的执行顺序与完成条件 |
+| [剩余解耦工作](architecture/REFACTOR_PLAN.md) | 当前代码的五类缺口、执行顺序、入口与完成条件 |
 | [参考项目设计](architecture/REFERENCE_DESIGN.md) | 组合／领域服务、主动技能、被动与光环的参考证据 |
-| [单机与联机](architecture/MULTIPLAYER.md) | 私有／公开状态、规则复用、自有服务端与 D2GS 路线；尚未实施 |
+| [D2GS 接入计划](architecture/MULTIPLAYER.md) | 现有参考服部署入口，地图／世界副本的下一步与验收条件 |
 
 ## 模块边界
 
 | 文档 | 负责内容 |
 | --- | --- |
 | [客户端](modules/CLIENT.md) | 值契约、本地适配、已迁移 UI 与剩余兼容访问 |
+| [联网模块](modules/NETWORK.md) | 登录／注册、服务器角色、创建／加入房间、配置／协议边界与准确验证范围 |
 | [会话](modules/SESSION.md) | 权威宿主、命令与固定步、生命周期与组装 |
 | [角色](modules/CHARACTER.md) | 保存值、成长／学习、活角色组合及角色投影 |
 | [公共单位](modules/UNITS.md) | 身份、能力访问、内部记录绑定与控制策略 |

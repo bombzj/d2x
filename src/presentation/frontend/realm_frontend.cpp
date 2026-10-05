@@ -1,0 +1,803 @@
+#include "realm_frontend.hpp"
+#include "content/character/realm_portrait.hpp"
+#include "content/string_table.hpp"
+#include "presentation/graphics/primitives.hpp"
+#include "resources/data_table.hpp"
+#include <algorithm>
+#include <array>
+#include <cctype>
+#include <map>
+#include <sstream>
+#include <stdexcept>
+
+namespace d2x {
+namespace {
+void wipe(std::string &s) {
+    for (size_t i = 0; i < s.size(); ++i)
+        reinterpret_cast<volatile char *>(s.data())[i] = 0;
+    s.clear();
+}
+ClassicFont font(Graphics &g, Archives &a, const std::string &name) {
+    ClassicFont f;
+    const auto base = "data/local/font/latin/" + name;
+    f.glyphs = g.single(base + ".dc6");
+    const auto table = a.read(base + ".tbl");
+    if (table.size() < 3596 || f.glyphs.frames.empty())
+        throw std::runtime_error("Missing original frontend font");
+    for (int i = 0; i < 256; ++i) {
+        f.widths[i] = table[12 + i * 14 + 3];
+        f.indices[i] = table[12 + i * 14 + 8];
+    }
+    f.ready = true;
+    return f;
+}
+bool playable(const OnlineCharacter &c) {
+    return c.characterClass && c.expansion.value_or(false) && !c.ladder.value_or(true) &&
+           !(c.hardcore.value_or(true) && c.dead.value_or(true));
+}
+bool busy(OnlineStage s) {
+    return s != OnlineStage::Idle && s != OnlineStage::Cancelled && s != OnlineStage::Failed &&
+           s != OnlineStage::RealmSelection && s != OnlineStage::CharacterSelection &&
+           s != OnlineStage::Lobby && s != OnlineStage::ProtocolReady;
+}
+} // namespace
+struct RealmFrontend::Impl {
+    Graphics sky, units, battle;
+    std::unique_ptr<Graphics> heroGraphics;
+    struct Hero {
+        GpuAnimation idle, hover, forward, chosen, back, forwardOverlay, chosenOverlay, backOverlay;
+        int pose{};
+        float elapsed{};
+    };
+    std::array<Hero, 7> heroes;
+    int hero{-1}, difficulty{}, gameOffset{}, realmSelected{};
+    bool hardcore{}, joining{}, confirmHardcore{};
+    std::string verifyPassword, characterName, deleteName;
+    uint64_t lobbyGeneration{};
+    Archives &archives;
+    RealmPortraitCatalog portraitCatalog;
+    std::unique_ptr<Graphics> characterGraphics;
+    std::map<Bytes, GpuAnimation> portraits;
+    ClassicStrings strings;
+    ClassicFont normal, buttonFont, inputFont, titleFont;
+    UiPainter text, buttonText, inputText, title;
+    std::map<std::string, GpuAnimation> art;
+    std::vector<std::string> classes;
+    std::string account, password, gameName, gamePassword, description;
+    int focus{}, selected{}, page{}, players{4}, difference{4};
+    bool restrictLevels{true};
+    uint64_t characterGeneration{};
+    std::vector<std::string> characterNames;
+    std::vector<Bytes> characterPortraits;
+    FrontendPage previous{FrontendPage::Main};
+    Vector2 mouse{};
+    bool clicked{}, enabled{};
+    FrontendIntent intent;
+    Impl(Archives &a)
+        : sky(a, "data/global/palette/sky/pal.dat"), units(a, "data/global/palette/units/pal.dat"),
+          battle(a, "data/global/palette/menu0/pal.dat"), archives(a), portraitCatalog(a), strings(a),
+          normal(font(units, a, "font16")), buttonFont(font(units, a, "fontexocet10")),
+          inputFont(font(units, a, "fontformal11")), titleFont(font(units, a, "font30")), text(normal),
+          buttonText(buttonFont), inputText(inputFont), title(titleFont) {
+        auto load = [&](Graphics &g, const char *id, const char *path) {
+            auto value = g.single(std::string("data/global/ui/") + path + ".dc6");
+            if (value.frames.empty())
+                throw std::runtime_error(std::string("Missing original frontend art: ") + path);
+            art.emplace(id, std::move(value));
+        };
+        load(sky, "main", "FrontEnd/gameselectscreenEXP");
+        load(sky, "characters", "CharSelect/characterselectscreenEXP");
+        load(sky, "highlight", "CharSelect/charselectbox");
+        load(units, "realms", "FrontEnd/realmbckg");
+        load(units, "join", "bigmenu/joingamebckg");
+        for (auto [id, path] : {std::pair{"fireL", "FrontEnd/D2LogoFireLeft"},
+                                {"fireR", "FrontEnd/D2LogoFireRight"},
+                                {"blackL", "FrontEnd/D2LogoBlackLeft"},
+                                {"blackR", "FrontEnd/D2LogoBlackRight"},
+                                {"wide", "FrontEnd/3widebuttonblank"},
+                                {"battle", "FrontEnd/WideButtonBlank02"},
+                                {"thin", "FrontEnd/NarrowButtonBlank"},
+                                {"medium", "FrontEnd/MediumButtonBlank"},
+                                {"tall", "CharSelect/TallButtonBlank"},
+                                {"textbox", "FrontEnd/textbox2"},
+                                {"realm", "CharSelect/realmselect"},
+                                {"realmButton", "CharSelect/realmselectbuttonthin"},
+                                {"lobby", "bigmenu/bnet"},
+                                {"create", "bigmenu/creategamebckg"},
+                                {"arrows", "bigmenu/numberarrows"},
+                                {"radio", "bigmenu/radiobutton"},
+                                {"check", "FrontEnd/clickbox"},
+                                {"popup", "FrontEnd/PopUpLarge"},
+                                {"cursor", "CURSOR/ohand"}})
+            load(units, id, path);
+        // Original menu0 palette is the Battle.net palette (OpenD2 PAL_MENU0).
+        for (auto [id, path] : {std::pair{"createButton", "bigmenu/creategamebutton"},
+                                {"cancel", "bigmenu/cancelbuttonblank"},
+                                {"tabs", "bigmenu/chatrighttopbuttons"},
+                                {"chatButton", "bigmenu/chatrightbuttons"},
+                                {"leftButton", "bigmenu/chatleftbuttons"}})
+            load(battle, id, path);
+        DataTable stats(a.read("data/global/excel/charstats.txt"));
+        for (size_t i = 0; i < stats.rows().size(); ++i) {
+            auto name = stats.value(i, "class");
+            if (!name.empty() && name != "Expansion")
+                classes.emplace_back(name);
+        }
+    }
+    ~Impl() {
+        wipe(password);
+        wipe(verifyPassword);
+        wipe(gamePassword);
+    }
+    std::string s(int id) const {
+        const auto value = strings.find(id);
+        if (value.empty())
+            throw std::runtime_error("Missing original frontend string: " + std::to_string(id));
+        return std::string(value);
+    }
+    void image(const char *id, int x, int y, int frame = 0, Color tint = WHITE) {
+        const auto *cel = art.at(id).frame(0, frame);
+        DrawTexture(cel->texture, x, y, tint);
+    }
+    // DC6 screen and control tiles retain their native dimensions; no stretched tiles.
+    void tiles(const char *id, int x, int y, int columns, int first = 0, int count = -1, Color tint = WHITE) {
+        const auto &a = art.at(id);
+        if (count < 0)
+            count = a.count - first;
+        int dx = x, dy = y, rowHeight = 0;
+        for (int i = 0; i < count; ++i) {
+            const auto *cel = a.frame(0, first + i);
+            image(id, dx, dy, first + i, tint);
+            dx += cel->texture.width;
+            rowHeight = std::max(rowHeight, cel->texture.height);
+            if ((i + 1) % columns == 0) {
+                dx = x;
+                dy += rowHeight;
+                rowHeight = 0;
+            }
+        }
+    }
+    void emit(FrontendCommand command) {
+        if (intent.command == FrontendCommand::None)
+            intent.command = command;
+    }
+    bool button(const char *id, int x, int y, std::string label, bool active = true, int segments = 1,
+                int base = 0) {
+        const auto &a = art.at(id);
+        int width = 0;
+        for (int i = 0; i < segments; ++i)
+            width += a.frame(0, base + i)->texture.width;
+        Rectangle r{float(x), float(y), float(width), float(a.frame(0, base)->texture.height)};
+        active = active && enabled;
+        bool down = active && CheckCollisionPointRec(mouse, r) && IsMouseButtonDown(MOUSE_BUTTON_LEFT);
+        int first = base + (down ? segments : 0);
+        const bool battleControl = std::string_view(id) == "createButton" ||
+                                   std::string_view(id) == "cancel" || std::string_view(id) == "tabs" ||
+                                   std::string_view(id) == "chatButton";
+        if (battleControl)
+            first = active && !down ? 1 : 0;
+        Color tint = active ? WHITE : GRAY;
+        if (!active && base + segments * 3 <= a.count) {
+            first = base + segments * 2;
+            tint = WHITE;
+        }
+        tiles(id, x, y, segments, first, segments, tint);
+        std::istringstream lines(label);
+        std::string line;
+        int count = 1 + int(std::count(label.begin(), label.end(), '\n')),
+            top = y + (int(r.height) - count * 16) / 2;
+        while (std::getline(lines, line)) {
+            buttonText.inBox(line, {float(x + (down ? 1 : 0)), float(top + (down ? 1 : 0)), r.width, 16}, 16,
+                             active ? Color{100, 100, 100, 255} : Color{65, 65, 65, 255});
+            top += 16;
+        }
+        return active && clicked && CheckCollisionPointRec(mouse, r);
+    }
+    void label(const std::string &v, int x, int y, Color c = parchment) { text.label(v, x, y, 16, c); }
+    void centered(const std::string &v, int y) { label(v, (800 - text.measure(v, 16)) / 2, y); }
+    void wrap(const std::string &v, int x, int y, int width, bool center = false) {
+        std::istringstream words(v);
+        std::string word, line;
+        auto draw = [&]() {
+            label(line, center ? x + (width - text.measure(line, 16)) / 2 : x, y);
+            y += 18;
+            line.clear();
+        };
+        while (words >> word) {
+            auto next = line.empty() ? word : line + " " + word;
+            if (!line.empty() && text.measure(next, 16) > width)
+                draw();
+            if (!line.empty())
+                line += ' ';
+            line += word;
+        }
+        if (!line.empty())
+            draw();
+    }
+    void field(std::string &value, Rectangle r, int index, size_t limit, bool secret = false,
+               bool drawBox = true) {
+        if (enabled && clicked && CheckCollisionPointRec(mouse, r))
+            focus = index;
+        if (drawBox)
+            image("textbox", int(r.x), int(r.y));
+        if (enabled && focus == index) {
+            for (int c = GetCharPressed(); c; c = GetCharPressed())
+                if (c >= 32 && c <= 126 && value.size() < limit)
+                    value.push_back(char(c));
+            if (IsKeyPressed(KEY_BACKSPACE) || IsKeyPressedRepeat(KEY_BACKSPACE))
+                if (!value.empty())
+                    value.pop_back();
+        }
+        auto shown = secret ? std::string(value.size(), '*') : value;
+        if (enabled && focus == index && int(GetTime() * 2) % 2 == 0)
+            shown += '|';
+        while (!shown.empty() && inputText.measure(shown, 16) > r.width - 12)
+            shown.erase(shown.begin());
+        inputText.label(shown, int(r.x + 8), int(r.y + 4), 16, WHITE);
+    }
+    void logo() {
+        for (const auto *id : {"blackL", "blackR", "fireL", "fireR"}) {
+            const auto *cel = art.at(id).frame(0, int(GetTime() * 25));
+            const Vec at{400.f, 120.f - float(cel->texture.height)};
+            if (id[0] == 'f')
+                softAdditiveSprite(cel, at);
+            else
+                sprite(cel, at);
+        }
+    }
+    void portrait(const OnlineCharacter &c, int x, int y) {
+        auto found = portraits.find(c.portrait);
+        if (found == portraits.end()) {
+            GpuAnimation animation;
+            if (const auto parts = portraitCatalog.decode(c)) {
+                std::array<const char *, 16> equipment;
+                for (size_t i = 0; i < 16; ++i)
+                    equipment[i] = parts->components[i].c_str();
+                animation =
+                    characterGraphics->composite("chars", parts->token, "tn", parts->weapon, &equipment);
+                if (!animation.completeComposite)
+                    animation = {};
+            }
+            found = portraits.emplace(c.portrait, std::move(animation)).first;
+        }
+        if (const auto *cel = found->second.frame(0, int(GetTime() * 25)))
+            sprite(cel, {float(x), float(y)});
+    }
+    void main(std::string_view gateway) {
+        tiles("main", 0, 0, 4);
+        logo();
+        if (button("wide", 265, 290, s(5106), true, 2))
+            emit(FrontendCommand::Offline);
+        if (button("battle", 265, 332, s(5107), true, 2))
+            emit(FrontendCommand::Online);
+        auto gatewayLabel = s(11049);
+        const auto placeholder = gatewayLabel.find("%s");
+        if (placeholder != std::string::npos)
+            gatewayLabel.replace(placeholder, 2, gateway);
+        button("thin", 265, 366, gatewayLabel, false, 2);
+        button("wide", 265, 400, s(5108), false, 2);
+        button("medium", 265, 495, s(5110), false);
+        button("medium", 410, 495, s(5111), false);
+        if (button("wide", 265, 535, s(5109), true, 2))
+            emit(FrontendCommand::Exit);
+        label("D2X", 30, 565, WHITE);
+    }
+    void login() {
+        tiles("main", 0, 0, 4);
+        logo();
+        wrap(s(5205), 180, 233, 440, true);
+        label(s(5224), 300, 289);
+        field(account, {300, 307, 169, 26}, 0, 15);
+        label(s(5225), 300, 345);
+        field(password, {300, 363, 169, 26}, 1, 15, true);
+        if (button("wide", 245, 452, s(5288), !account.empty() && !password.empty(), 2) ||
+            (enabled && IsKeyPressed(KEY_ENTER) && !account.empty() && !password.empty())) {
+            emit(FrontendCommand::Login);
+            intent.name = account;
+            intent.password = std::move(password);
+            wipe(password);
+        }
+        button("wide", 245, 498, s(11108), false, 2);
+        if (button("wide", 245, 542, s(5221), true, 2))
+            emit(FrontendCommand::OpenRegister);
+        if (button("medium", 12, 542, s(5101)))
+            emit(FrontendCommand::Back);
+    }
+    void registration() {
+        tiles("main", 0, 0, 4);
+        logo();
+        wrap(s(5223), 180, 218, 440, true);
+        label(s(5224), 300, 276);
+        field(account, {300, 294, 169, 26}, 0, 15);
+        label(s(5225), 300, 332);
+        field(password, {300, 350, 169, 26}, 1, 15, true);
+        label(s(5226), 300, 388);
+        field(verifyPassword, {300, 406, 169, 26}, 2, 15, true);
+        const bool valid = account.size() >= 2 && password.size() >= 2 && password == verifyPassword;
+        if (button("wide", 245, 485, s(5221), valid, 2) || (enabled && valid && IsKeyPressed(KEY_ENTER))) {
+            emit(FrontendCommand::Register);
+            intent.name = account;
+            intent.password = std::move(password);
+            wipe(password);
+            wipe(verifyPassword);
+        }
+        if (button("medium", 12, 542, s(5101)))
+            emit(FrontendCommand::Back);
+    }
+    void realms(const OnlineView &v) {
+        tiles("realms", 0, 0, 4);
+        title.inBox(s(5289), {0, 30, 800, 40}, 16, parchment);
+        wrap(s(5291), 180, 95, 440, true);
+        realmSelected = std::clamp(realmSelected, 0, std::max(0, int(v.realms.size()) - 1));
+        const int start = realmSelected / 12 * 12;
+        for (int i = start; i < int(v.realms.size()) && i < start + 12; ++i) {
+            const int y = 192 + (i - start) * 22;
+            if (enabled && clicked && CheckCollisionPointRec(mouse, {60, float(y), 330, 22}))
+                realmSelected = i;
+            label(v.realms[size_t(i)].name, 70, y, i == realmSelected ? WHITE : parchment);
+        }
+        if (v.realms.empty())
+            label(s(5290), 70, 220);
+        else
+            wrap(v.realms[size_t(realmSelected)].description, 462, 330, 287);
+        if (v.realms.size() > 12) {
+            if (button("medium", 60, 466, "<", start > 0))
+                realmSelected = start - 1;
+            if (button("medium", 230, 466, ">", start + 12 < int(v.realms.size())))
+                realmSelected = start + 12;
+        }
+        if (button("medium", 34, 538, s(5101)))
+            emit(FrontendCommand::Back);
+        if (button("medium", 628, 538, s(5102), !v.realms.empty()) ||
+            (enabled && !v.realms.empty() && IsKeyPressed(KEY_ENTER))) {
+            emit(FrontendCommand::SelectRealm);
+            intent.name = v.realms[size_t(realmSelected)].name;
+        }
+    }
+    void creation() {
+        // Same native expansion hero positions and animation timing as the offline selector.
+        constexpr std::array folders{"amazon",  "assassin",  "necromancer", "barbarian",
+                                     "paladin", "sorceress", "druid"};
+        constexpr std::array tokens{"am", "as", "ne", "ba", "pa", "so", "dz"};
+        constexpr std::array<int, 7> ids{0, 6, 2, 4, 3, 1, 5},
+            descriptions{5128, 22519, 5129, 5130, 5132, 5131, 22518};
+        constexpr std::array<Rectangle, 7> hits{{{70, 220, 55, 200},
+                                                 {175, 235, 50, 180},
+                                                 {265, 220, 55, 175},
+                                                 {364, 201, 90, 170},
+                                                 {490, 210, 65, 180},
+                                                 {580, 240, 65, 160},
+                                                 {680, 220, 70, 195}}};
+        constexpr std::array<Vector2, 7> positions{
+            {{100, 339}, {231, 365}, {300, 335}, {400, 330}, {521, 338}, {626, 352}, {720, 370}}};
+        constexpr std::array<float, 7> idleTimes{2.5f, 2.5f, 1.2f, 0, 2.5f, 2.5f, 1.5f},
+            forwardTimes{2.2f, 3.8f, 2, 2.5f, 3.4f, 2.3f, 4.8f},
+            backTimes{1.5f, 1.5f, 1.5f, 1, 1.3f, 1.2f, 1.5f};
+        if (!heroGraphics) {
+            heroGraphics = std::make_unique<Graphics>(archives, "data/global/palette/fechar/pal.dat");
+            auto load = [&](const std::string &path) {
+                auto a = heroGraphics->single("data/global/ui/FrontEnd/" + path + ".dc6");
+                if (a.frames.empty())
+                    throw std::runtime_error("Missing original hero art: " + path);
+                return a;
+            };
+            art.emplace("creation", load("charactercreationscreenEXP"));
+            art.emplace("campfire", load("fire"));
+            for (size_t i = 0; i < heroes.size(); ++i) {
+                const auto base = std::string(folders[i]) + "/" + tokens[i];
+                auto &h = heroes[i];
+                h.idle = load(base + "nu1");
+                h.hover = load(base + "nu2");
+                h.forward = load(base + "fw");
+                h.chosen = load(base + "nu3");
+                h.back = load(base + "bw");
+                if (i >= 2 && i <= 5)
+                    h.forwardOverlay = load(base + "fws");
+                if (i == 2 || i == 5) {
+                    h.chosenOverlay = load(base + "nu3s");
+                    h.backOverlay = load(base + "bws");
+                }
+            }
+        }
+        tiles("creation", 0, 0, 4);
+        title.inBox(s(5127), {0, 17, 800, 36}, 16, parchment);
+        if (hero >= 0) {
+            centered(classes[size_t(ids[size_t(hero)])], 65);
+            wrap(s(descriptions[size_t(hero)]), 255, 104, 290, true);
+        }
+        for (size_t i = 0; i < heroes.size(); ++i) {
+            auto &h = heroes[i];
+            if (enabled && clicked && CheckCollisionPointRec(mouse, hits[i]) && hero != int(i)) {
+                if (hero >= 0) {
+                    heroes[size_t(hero)].pose = 3;
+                    heroes[size_t(hero)].elapsed = 0;
+                }
+                hero = int(i);
+                h.pose = 1;
+                h.elapsed = 0;
+            }
+        }
+        auto drawHero = [&](size_t i) {
+            auto &h = heroes[i];
+            h.elapsed += std::min(GetFrameTime(), .1f);
+            if (h.pose == 1 && h.elapsed >= forwardTimes[i]) {
+                h.pose = 2;
+                h.elapsed = 0;
+            }
+            if (h.pose == 3 && h.elapsed >= backTimes[i]) {
+                h.pose = 0;
+                h.elapsed = 0;
+            }
+            const auto &animation = h.pose == 1                                         ? h.forward
+                                    : h.pose == 2                                       ? h.chosen
+                                    : h.pose == 3                                       ? h.back
+                                    : enabled && CheckCollisionPointRec(mouse, hits[i]) ? h.hover
+                                                                                        : h.idle;
+            const float duration = h.pose == 1   ? forwardTimes[i]
+                                   : h.pose == 3 ? backTimes[i]
+                                   : h.pose == 0 ? idleTimes[i]
+                                                 : 0;
+            const int progress = int(h.elapsed * (duration > 0 ? animation.count / duration : 25));
+            const int frame = (h.pose == 1 || h.pose == 3) ? std::min(progress, animation.count - 1)
+                                                           : progress % animation.count;
+            const auto *cel = animation.frame(0, frame);
+            sprite(cel, {positions[i].x, positions[i].y - cel->texture.height});
+            const auto &overlay = h.pose == 1   ? h.forwardOverlay
+                                  : h.pose == 2 ? h.chosenOverlay
+                                                : h.backOverlay;
+            if (h.pose && !overlay.frames.empty()) {
+                const auto *extra = overlay.frame(0, frame);
+                const Vec at{positions[i].x, positions[i].y - extra->texture.height};
+                if (h.pose != 1 || i == 2 || i == 5)
+                    softAdditiveSprite(extra, at);
+                else
+                    sprite(extra, at);
+            }
+        };
+        for (size_t i = 0; i < heroes.size(); ++i)
+            if (int(i) != hero)
+                drawHero(i);
+        if (hero >= 0)
+            drawHero(size_t(hero));
+        if (const auto *cel = art.at("campfire").frame(0, int(GetTime() * 25)))
+            softAdditiveSprite(cel, {380, 335});
+        label(s(5125), 321, 475);
+        field(characterName, {318, 493, 169, 26}, 0, 15);
+        image("check", 318, 526, 1);
+        label(s(22731), 339, 526, GREEN);
+        image("check", 318, 548, hardcore ? 1 : 0);
+        label(s(5126), 339, 548);
+        if (enabled && clicked && CheckCollisionPointRec(mouse, {318, 548, 20, 20})) {
+            if (hardcore)
+                hardcore = false;
+            else
+                confirmHardcore = true;
+        }
+        if (button("medium", 34, 538, s(5101)))
+            emit(FrontendCommand::Back);
+        const bool valid = hero >= 0 && characterName.size() >= 2;
+        if (button("medium", 628, 538, s(5102), valid) || (enabled && valid && IsKeyPressed(KEY_ENTER))) {
+            emit(FrontendCommand::CreateCharacter);
+            intent.name = characterName;
+            intent.characterClass = uint8_t(ids[size_t(hero)]);
+            intent.hardcore = hardcore;
+        }
+    }
+    void characters(const OnlineView &v) {
+        tiles("characters", 0, 0, 4);
+        image("realm", 608, 8);
+        buttonText.inBox(s(11058), {608, 10, 182, 22}, 16, parchment);
+        buttonText.inBox(v.selectedRealm, {608, 42, 182, 27}, 16, parchment);
+        if (button("realmButton", 608, 81, s(11057)))
+            emit(FrontendCommand::ChangeRealm);
+        std::vector<std::string> names;
+        std::vector<Bytes> previews;
+        for (const auto &c : v.characters) {
+            names.push_back(c.name);
+            previews.push_back(c.portrait);
+        }
+        if (characterGeneration != v.connectionGeneration || names != characterNames ||
+            previews != characterPortraits) {
+            characterGeneration = v.connectionGeneration;
+            characterNames = std::move(names);
+            characterPortraits = std::move(previews);
+            selected = 0;
+            page = 0;
+            portraits.clear();
+            characterGraphics = std::make_unique<Graphics>(archives);
+            for (size_t i = 0; i < v.characters.size(); ++i)
+                if (playable(v.characters[i])) {
+                    selected = int(i);
+                    page = selected / 8;
+                    break;
+                }
+        }
+        for (int i = page * 8; i < int(v.characters.size()) && i < page * 8 + 8; ++i) {
+            int slot = i - page * 8, x = 37 + (slot % 2) * 276, y = 86 + (slot / 2) * 93;
+            Rectangle r{float(x), float(y), 274, 92};
+            if (enabled && clicked && CheckCollisionPointRec(mouse, r))
+                selected = i;
+            if (selected == i)
+                tiles("highlight", x, y, 2);
+            const auto &c = v.characters[size_t(i)];
+            portrait(c, x + 40, y + 82);
+            label(c.name, x + 80, y + 16, playable(c) ? WHITE : GRAY);
+            if (c.characterClass && *c.characterClass < classes.size() && c.level) {
+                auto line = s(5017);
+                auto replace = [&](const char *token, const std::string &value) {
+                    const auto pos = line.find(token);
+                    if (pos != std::string::npos)
+                        line.replace(pos, 2, value);
+                };
+                replace("%d", std::to_string(*c.level));
+                line += " " + classes[*c.characterClass];
+                label(line, x + 80, y + 32, WHITE);
+            }
+            if (c.expansion.value_or(false))
+                label(s(22731), x + 80, y + 48, GREEN);
+            if (c.ladder.value_or(false))
+                label(s(5315), x + 80, y + 64, GRAY);
+        }
+        if (!v.characters.empty())
+            title.inBox(v.characters[size_t(selected)].name, {34, 20, 564, 47}, 16, parchment);
+        if (v.characters.size() > 8) {
+            if (button("medium", 330, 419, "<", page > 0))
+                --page;
+            if (button("medium", 470, 419, ">", (page + 1) * 8 < int(v.characters.size())))
+                ++page;
+        }
+        auto tallCaption = [&](int id) {
+            auto value = s(id);
+            const auto at = value.rfind(' ');
+            if (at != std::string::npos)
+                value[at] = '\n';
+            return value;
+        };
+        if (button("tall", 34, 467, tallCaption(22743), v.characters.size() < 18))
+            emit(FrontendCommand::OpenCreateCharacter);
+        button("tall", 234, 467, tallCaption(22742), false);
+        if (button("tall", 434, 467, tallCaption(22744), !v.characters.empty()))
+            deleteName = v.characters[size_t(selected)].name;
+        if (button("medium", 34, 538, s(5101)))
+            emit(FrontendCommand::Back);
+        bool canSelect = !v.characters.empty() && playable(v.characters[size_t(selected)]);
+        if (button("medium", 628, 538, s(5102), canSelect) ||
+            (enabled && canSelect && IsKeyPressed(KEY_ENTER))) {
+            emit(FrontendCommand::SelectCharacter);
+            intent.name = v.characters[size_t(selected)].name;
+        }
+    }
+    void spinner(int x, int y, int &value, int low, int high) {
+        label(std::to_string(value), x + 8, y + 5, WHITE);
+        image("arrows", x + 33, y, 0);
+        image("arrows", x + 33, y + 12, 2);
+        if (enabled && clicked) {
+            if (CheckCollisionPointRec(mouse, {float(x + 33), float(y), 15, 12}))
+                value = std::min(high, value + 1);
+            if (CheckCollisionPointRec(mouse, {float(x + 33), float(y + 12), 15, 12}))
+                value = std::max(low, value - 1);
+        }
+    }
+    void lobby(const OnlineView &v) {
+        tiles("lobby", 0, 0, 4);
+        if (lobbyGeneration != v.gameGeneration) {
+            lobbyGeneration = v.gameGeneration;
+            difficulty = 0;
+        }
+        tiles(joining ? "join" : "create", 418, 72, 2);
+        text.inBox(s(11123), {19, 72, 357, 20}, 16, Color{100, 100, 220, 255});
+        if (joining) {
+            title.inBox(s(5151), {418, 73, 373, 38}, 16, parchment);
+            label(s(5274), 428, 101);
+            field(gameName, {428, 121, 166, 26}, 0, 15, false, false);
+            label(s(5256), 603, 101);
+            field(gamePassword, {603, 121, 168, 26}, 1, 15, true, false);
+            label(s(5275), 428, 190);
+            const int count = int(v.games.size());
+            gameOffset = std::clamp(gameOffset - int(GetMouseWheelMove()), 0, std::max(0, count - 10));
+            for (int i = gameOffset; i < count && i < gameOffset + 10; ++i) {
+                const auto &game = v.games[size_t(i)];
+                const int y = 212 + (i - gameOffset) * 18;
+                if (enabled && clicked && CheckCollisionPointRec(mouse, {428, float(y), 166, 18}))
+                    gameName = game.name;
+                inputText.label(game.name, 432, y, 16, game.name == gameName ? WHITE : parchment);
+                inputText.label(std::to_string(game.players), 574, y, 16, WHITE);
+                if (game.name == gameName)
+                    wrap(game.description, 608, 212, 155);
+            }
+            if (!v.gameListComplete)
+                wrap("Room list is incomplete. Join by name or refresh.", 608, 300, 155);
+            if (button("cancel", 434, 404, s(5103))) {
+                joining = false;
+                wipe(gamePassword);
+            }
+            if (button("medium", 599, 404, s(5151), !gameName.empty()) ||
+                (enabled && !gameName.empty() && IsKeyPressed(KEY_ENTER))) {
+                emit(FrontendCommand::JoinGame);
+                intent.name = gameName;
+                intent.password = std::move(gamePassword);
+                wipe(gamePassword);
+            }
+        } else {
+            title.inBox(s(5150), {418, 73, 373, 38}, 16, parchment);
+            label(s(5274), 426, 114);
+            field(gameName, {429, 135, 182, 26}, 0, 15, false, false);
+            label(s(5256), 426, 169);
+            field(gamePassword, {429, 189, 182, 26}, 1, 15, true, false);
+            label(s(5257), 426, 224);
+            field(description, {429, 243, 341, 26}, 2, 31, false, false);
+            label(s(5258), 436, 290);
+            spinner(650, 283, players, 1, 8);
+            image("check", 430, 324, restrictLevels ? 1 : 0);
+            if (enabled && clicked && CheckCollisionPointRec(mouse, {430, 324, 20, 20}))
+                restrictLevels = !restrictLevels;
+            label(s(5259), 460, 325);
+            spinner(650, 319, difference, 0, 99);
+            label(s(5260), 700, 325);
+            const auto chosen = std::find_if(v.characters.begin(), v.characters.end(),
+                                             [&](const auto &c) { return c.name == v.selectedCharacter; });
+            const auto progress = chosen != v.characters.end() ? chosen->progression.value_or(0) : 0;
+            const int unlocked = progress >= 10 ? 2 : progress >= 5 ? 1 : 0;
+            difficulty = std::min(difficulty, unlocked);
+            for (int i = 0; i < 3; ++i) {
+                int x = 430 + i * 140;
+                image("radio", x, 366, i == difficulty ? 1 : 0, i <= unlocked ? WHITE : GRAY);
+                label(s(5156 - i), x + 26, 366, i <= unlocked ? parchment : GRAY);
+                if (enabled && clicked && i <= unlocked &&
+                    CheckCollisionPointRec(mouse, {float(x), 366, 130, 22}))
+                    difficulty = i;
+            }
+            if (button("cancel", 434, 404, s(5103))) {
+                gameName.clear();
+                wipe(gamePassword);
+                description.clear();
+            }
+            // The original create-game control already contains its caption.
+            if (button("createButton", 599, 404, "", !gameName.empty()) ||
+                (enabled && IsKeyPressed(KEY_ENTER) && !gameName.empty())) {
+                emit(FrontendCommand::CreateGame);
+                intent.name = gameName;
+                intent.password = std::move(gamePassword);
+                wipe(gamePassword);
+                intent.description = description;
+                intent.difficulty = uint8_t(difficulty);
+                intent.maximumPlayers = uint8_t(players);
+                intent.levelDifference = uint8_t(restrictLevels ? difference : 99);
+            }
+        }
+        if (button("tabs", 534, 449, s(5312))) {
+            joining = false;
+            focus = 0;
+        }
+        if (button("tabs", 654, 449, s(5313))) {
+            joining = true;
+            gameOffset = 0;
+            focus = 0;
+            emit(FrontendCommand::ListGames);
+        }
+        button("chatButton", 534, 469, s(5254), false);
+        button("chatButton", 614, 469, s(5315), false);
+        if (button("chatButton", 694, 469, s(5316)))
+            emit(FrontendCommand::Back);
+        tiles("leftButton", 19, 461, 3, 0, 3, GRAY);
+        buttonText.inBox(s(11126), {19, 461, 120, 20}, 16, Color{65, 65, 65, 255});
+        buttonText.inBox(s(5308), {139, 461, 120, 20}, 16, Color{65, 65, 65, 255});
+        label(v.selectedCharacter, 139, 511, WHITE);
+        auto c = std::find_if(v.characters.begin(), v.characters.end(),
+                              [&](const auto &entry) { return entry.name == v.selectedCharacter; });
+        if (c != v.characters.end() && c->characterClass && *c->characterClass < classes.size() && c->level) {
+            auto level = s(5017);
+            const auto at = level.find("%d");
+            if (at != std::string::npos)
+                level.replace(at, 2, std::to_string(*c->level));
+            label(level + " " + classes[*c->characterClass], 139, 531, WHITE);
+        }
+        if (c != v.characters.end() && characterGraphics)
+            portrait(*c, 66, 586);
+        if (c != v.characters.end() && c->progression) {
+            label(s(11124), 139, 552, WHITE);
+            const auto progress = *c->progression;
+            label(s(progress >= 15   ? 5154
+                    : progress >= 10 ? 5155
+                    : progress >= 5  ? 5156
+                                     : 3762),
+                  139, 572, WHITE);
+        }
+    }
+    FrontendIntent draw(FrontendPage current, const OnlineView &v, std::string_view gateway,
+                        std::string_view notice, Vector2 at) {
+        mouse = at;
+        clicked = IsMouseButtonPressed(MOUSE_BUTTON_LEFT);
+        intent = {};
+        if (current != previous) {
+            focus = 0;
+            deleteName.clear();
+            confirmHardcore = false;
+            if (current == FrontendPage::CreateCharacter) {
+                characterName.clear();
+                hardcore = false;
+            }
+            previous = current;
+        }
+        bool confirmation = !deleteName.empty() || confirmHardcore;
+        bool modal = !notice.empty() || busy(v.stage) || confirmation;
+        enabled = !modal;
+        if (enabled && IsKeyPressed(KEY_TAB))
+            focus = (focus + 1) %
+                    (current == FrontendPage::Register || (current == FrontendPage::Lobby && !joining) ? 3
+                     : current == FrontendPage::CreateCharacter                                        ? 1
+                                                                                                       : 2);
+        if (current == FrontendPage::Main)
+            main(gateway);
+        else if (current == FrontendPage::Login)
+            login();
+        else if (current == FrontendPage::Register)
+            registration();
+        else if (current == FrontendPage::Realms)
+            realms(v);
+        else if (current == FrontendPage::CreateCharacter)
+            creation();
+        else if (current == FrontendPage::Characters)
+            characters(v);
+        else if (current == FrontendPage::Lobby)
+            lobby(v);
+        else {
+            tiles("main", 0, 0, 4);
+            logo();
+            centered(v.stage == OnlineStage::ProtocolReady ? "Connected to game server" : s(5243), 315);
+            if (v.stage == OnlineStage::ProtocolReady) {
+                wrap("Online world display is not available yet.", 220, 350, 360, true);
+                if (button("medium", 330, 405, s(5101)))
+                    emit(FrontendCommand::LeaveGame);
+            }
+        }
+        if (modal) {
+            tiles("popup", 230, 130, 2);
+            std::string message = !notice.empty()       ? std::string(notice)
+                                  : !deleteName.empty() ? s(5163) + "\n" + deleteName
+                                  : confirmHardcore     ? s(5303)
+                                                        : s(5243);
+            if (v.gameQueuePosition && notice.empty() && !confirmation)
+                message += "\nQueue: " + std::to_string(*v.gameQueuePosition);
+            wrap(message, 254, 175, 292, true);
+            enabled = true;
+            if (confirmation && notice.empty()) {
+                if (button("medium", 280, 411, s(5102))) {
+                    if (!deleteName.empty()) {
+                        emit(FrontendCommand::DeleteCharacter);
+                        intent.name = std::move(deleteName);
+                        deleteName.clear();
+                    } else
+                        hardcore = true;
+                    confirmHardcore = false;
+                }
+                if (button("medium", 450, 411, s(5103)) || IsKeyPressed(KEY_ESCAPE)) {
+                    deleteName.clear();
+                    confirmHardcore = false;
+                }
+            } else if (button("medium", 330, 411, notice.empty() ? s(5103) : s(5102)) ||
+                       IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_ESCAPE))
+                emit(!notice.empty()                        ? FrontendCommand::Dismiss
+                     : v.stage == OnlineStage::ListingGames ? FrontendCommand::CancelList
+                                                            : FrontendCommand::Back);
+        } else if (IsKeyPressed(KEY_ESCAPE))
+            emit(current == FrontendPage::Main      ? FrontendCommand::Exit
+                 : current == FrontendPage::Loading ? FrontendCommand::LeaveGame
+                                                    : FrontendCommand::Back);
+        const auto *cursor = art.at("cursor").frame(0, 0);
+        cursorSprite(cursor, {mouse.x, mouse.y}, handCursorHotspot(cursor));
+        return std::move(intent);
+    }
+};
+RealmFrontend::RealmFrontend(Archives &a) : impl_(std::make_unique<Impl>(a)) {}
+RealmFrontend::~RealmFrontend() = default;
+FrontendIntent RealmFrontend::frame(FrontendPage p, const OnlineView &v, std::string_view gateway,
+                                    std::string_view notice, Vector2 mouse) {
+    return impl_->draw(p, v, gateway, notice, mouse);
+}
+void RealmFrontend::clearPassword() {
+    wipe(impl_->password);
+    wipe(impl_->verifyPassword);
+    wipe(impl_->gamePassword);
+}
+} // namespace d2x

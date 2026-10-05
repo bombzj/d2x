@@ -8,6 +8,7 @@
 /dist/
 /saves/
 /client-settings.json
+/online.local.json
 /client-settings.json.lock/
 *.d2xsave
 *.d2xsave.bak

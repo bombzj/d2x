@@ -1,0 +1,9 @@
+{
+  "gateway": "D2X-Local",
+  "accountHost": "127.0.0.1",
+  "accountPort": 6112,
+  "gamePort": 4000,
+  "originalClientDirectory": "D:/Games/Diablo II V1.13C",
+  "keyOwner": "D2X",
+  "authentication": "pvpgn"
+}

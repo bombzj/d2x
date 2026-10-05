@@ -11,6 +11,12 @@ param(
         'character-panel', 'quest-panel', 'skill-tree', 'skill-picker', 'skills',
         'bind-skill-hotkey', 'learn-skill', 'cast-skill', 'stop-channel', 'reset-skills', 'travel', 'waypoint',
         'kill', 'drop', 'pickup', 'move', 'step', 'pause', 'resume', 'save', 'load',
+        'online-status', 'online-login', 'online-realms', 'online-select-realm',
+        'online-characters', 'online-select-character', 'online-games', 'online-list-games',
+        'online-create-game', 'online-join-game', 'online-leave-game', 'online-return-characters',
+        'online-cancel', 'online-logout',
+        'online-register', 'online-create-character', 'online-delete-character',
+        'online-return-realms', 'online-cancel-list',
         'ui-input', 'screenshot', 'quit')]
     [string]$Command,
     [hashtable]$Arguments = @{},
@@ -28,7 +34,7 @@ try {
     $pipe.Connect($TimeoutMs)
     $bytes = [System.Text.Encoding]::UTF8.GetBytes(($request | ConvertTo-Json -Compress -Depth 10) + "`n")
     if ($bytes.Length -gt 16384) { throw 'Request exceeds 16 KiB' }
-    $pipe.WriteAsync($bytes, 0, $bytes.Length, $cancellation.Token).GetAwaiter().GetResult()
+    $pipe.WriteAsync($bytes, 0, $bytes.Length, $cancellation.Token).GetAwaiter().GetResult() | Out-Null
     $stream = [System.IO.MemoryStream]::new()
     try {
         $buffer = [byte[]]::new(4096)

@@ -1,5 +1,7 @@
 # 资料、代码和素材来源
 
+联网四步前端依据用户原客户端截图，主菜单布局／Logo 核对本地 OpenD2 `0578244` 的 `Menus/Main.cpp`、`Panels/Main.cpp` 与 OpenDiablo2 `7f92c57` 的 `main_menu.go`／`d2ui/button.go`；服务器选角外框与按钮位置核对 OpenD2 CharSelect。它们没有可直接采用的完整封闭 Realm 前端，当前 C++ 渲染与命令路由独立实现，所有背景／字体／按钮／建局面板来自当前 MPQ。native 1.13c 已保存预览与 flags 核对 D2MOO `5596f5c` 的 `GAME/Clients.cpp`、`D2Inventory.cpp`，同时读本机原版 D2Common.dll（外观槽类别表文件 0x9D888）及既有 AAA charinfo 的 `8D 80` 头；只保留协议兼容类别，item code／继承／武器姿态仍由 MPQ 动态重建。未复制参考源码、原 DLL、角色档或抽取资源到提交；预览组件染色暂不绘制，UI／协议互通尚未实机核对。
+
 ## 经典版素材
 
 第一至三幕佣兵技能核对本地 D2MOO 固定 `5596f5c` 的 `AiThink.cpp::Fn061_Hireable/sub_6FCE4610/sub_6FCE4830`、`MonsterAI.cpp::MONSTERAI_UpdateMercStatsAndSkills`、`PlrMsg.cpp` 的佣兵装备规则、`SkillSor.cpp::StartInferno/DoInferno` 和 `D2Common/Units/Units.cpp` 的怪物 SC/FCR。天然技能及光环独立适配到公共单位／技能端口；实际类型、分段成长、技能权重、箭／法术、Jab 两击序列、Inferno 期限、动画／原图均取当前 MPQ。地狱火重建计时疑点和有限验证边界见[佣兵](../gameplay/characters/HIRELINGS.md#原表技能)。沿下述 MIT 归属，不提交 reference 或导出资源。
@@ -38,12 +40,17 @@
 | [raylib](https://github.com/raysan5/raylib) | 窗口、输入、OpenGL、音效、图片导出 | 5.5 / `c1ab645ca298a2801097931d1079b10ff7eb9df8` | zlib |
 | [StormLib](https://github.com/ladislav-zezula/StormLib) | MPQ 挂载、读取、压缩打包 | v9.30 / `86f9b99ffe4d3417dad16d00541cf6f2e3d7bf79` | MIT，附带库保留各自许可 |
 | [nlohmann/json](https://github.com/nlohmann/json) | 应用层调试命令 JSON 编解码 | 3.11.3，发布归档 SHA256 固定于 CMake | MIT，见 [许可](../licenses/nlohmann-json.txt) |
+| [Asio](https://github.com/chriskohlhoff/asio) | 独立异步 DNS／TCP，仅实现层使用 | 1.30.2 / `12e0ce9e0500bf0f247dbd1ae894272656456079` | Boost-1.0，见 [许可](../licenses/Asio-Boost-1.0.txt)、[声明](../licenses/Asio-notices.txt) |
+| [BNCSutil](https://github.com/BNETDocs/bncsutil) | CheckRevision、CD-key proof、旧式账号哈希；仅构建认证子集，不引入 NLS／GMP | `6334e0bde9cb7d2df73f7f9aa1072b54210a4d21` | LGPL-2.1-or-later，Eric Naeseth，见 [许可](../licenses/BNCSutil-LGPL-2.1.txt)；可替换的独立动态库 |
+| [OpenD2](https://github.com/eezstreet/OpenD2) | D2GS Huffman 码字关系证据；保留推导的协议码字，独立实现有限前缀树解码，不复制原查表或解码函数 | `057824439ca145aa8411f9b024bc3fe6aa8fa450`，`Engine/Network.cpp` | GPL-3.0，见 [归属说明](../licenses/OpenD2-notices.txt) 与根目录 LICENSE |
 | [DGEngine](https://github.com/dgcor/DGEngine) | DCC 解码器的直接改造来源 | `ae6dcabf4f824d617dc4b15ead1f0ef206c9a106`，`src/Resources/ImageContainers/DCCImageContainer.cpp` | Diablo 格式代码使用 GPL-3.0 |
 | [Worldstone](https://github.com/Lectem/Worldstone) | DGEngine DCC 解码器的上游算法 | 由 DGEngine 说明和代码引用 | GPL-3.0 |
 | [OpenDiablo2](https://github.com/OpenDiablo2/OpenDiablo2) | 第一幕对象预设数据、经典 HUD 布局参考 | `d2core/d2records/object_lookup_record_data.go` | GPL-3.0 |
 | [D2MOO](https://github.com/ThePhrozenKeep/D2MOO) | Cave／Crypt 迷宫、矩形户外布局／边界及人口规则适配 | `5596f5cb6c5251a0a07c6637d26458b06099d516` | MIT，见 [许可](../licenses/D2MOO.txt) |
 
 `src/resources/dcc.cpp` 已标注改动：C++ 索引帧接口、一次性解码所有方向、输入范围检查。`src/resources/presets.hpp` 从 OpenDiablo2 的第一幕数据筛选生成。项目整体使用根目录 `LICENSE` 的 GPL-3.0 文本；相关许可保存在 `docs/licenses`。
+
+联网协议另核对本地 diablo2-protocol `173e55723b90a37aa8baabe913cd8e4dfb3fb9b4`（MIT，Louis Beaumont）及 PvPGN `9cd173f4e02ba3d9f8f15a67ca308b5eb78723e4`（GPL-2.0-or-later）的 SID／MCP 结构、字符 portrait 和服务响应，仅作证据，不复制其运行后端或源码。1.13c 固定包长度及入局常量结合用户原 `D2Net.dll`／`D2Client.dll` 静态读取核对，代码只保留协议常量，不纳入原 DLL、key、角色资料或 MPQ。认证文件只读路径由调用方提供。原表／玩法参数仍由当前 MPQ 决定；实际协议范围见 [联网模块](../modules/NETWORK.md)。未来分发需随包保留上述动态依赖及原始许可，当前未打包。
 
 运行时 TXT 字段查找还核对了 D2MOO `D2Common/src/DataTbls/ItemsTbls.cpp` 的小写字段绑定与当前 MPQ 的 `StrBonus`／`DexBonus` 列名，采用通用 ASCII 忽略大小写查找；伤害比例参照 `D2Game/src/UNIT/SUnitDmg.cpp::SUNITDMG_ApplyDamageBonuses`。Talk 的多任务条目参照 `QUESTS_InitScrollTextChain` 逐任务追加消息的规则，文本和标题仍来自当前 MPQ。资料片背包资源路径与 OpenDiablo2 `resource_paths.go` 核对，实际加载当前 MPQ 的 `invchar6.dc6`／`invchar6Tab.dc6`。
 

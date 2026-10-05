@@ -10,7 +10,7 @@ AppOptions parseOptions(int argc, char **argv) {
     bool explicitMpq = false;
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
-        if (arg != "--mpq" && arg != "--debug-pipe" && arg != "--debug-run")
+        if (arg != "--mpq" && arg != "--online-config" && arg != "--debug-pipe" && arg != "--debug-run")
             options.directGame = true;
         auto value = [&]() {
             if (++i >= argc)
@@ -28,7 +28,9 @@ AppOptions parseOptions(int argc, char **argv) {
         if (arg == "--mpq") {
             options.mpq = value();
             explicitMpq = true;
-        } else if (arg == "--map")
+        } else if (arg == "--online-config")
+            options.onlineConfig = value();
+        else if (arg == "--map")
             options.world.map = value();
         else if (arg == "--debug-pipe")
             options.debugPipe = value();

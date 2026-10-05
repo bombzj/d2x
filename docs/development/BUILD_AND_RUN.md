@@ -30,7 +30,7 @@ cmake --build build --parallel
 ./build/bin/d2x
 ```
 
-首次配置时，CMake 会从 GitHub 下载固定版本的 raylib 和 StormLib，所以需要网络与 Git。不要复制 Windows 的 `build` 目录给 Linux 继续编译。Linux 不需要 Wine，也不使用 Windows EXE。`--hidden` 仍会创建图形上下文，不能据此在无显示服务的服务器上运行。
+首次配置时，CMake 会从 GitHub 下载固定版本的 raylib、StormLib、Asio 和 BNCSutil，所以需要网络与 Git。不要复制 Windows 的 `build` 目录给 Linux 继续编译。Linux 图形应用不需要 Wine；联网认证会只读配置中的原版客户端文件。`--hidden` 仍会创建图形上下文，不能据此在无显示服务的服务器上运行。联网目标已有 Windows Release 构建；本轮新增流程未重新构建，Linux 未验证。
 
 游戏内由营地步行进入连续野外，点击洞口／楼梯旅行；独立区域也可用 `--level 38` 等参数查看。打开鼠标技能菜单，悬停技能图标按 `F1–F8` 绑定，之后单按该键切换对应鼠标技能；`1–4` 饮药，`B` 展开腰带。原表人口计划按附近房间创建敌人；未实现类型使用保留真实身份的沉沦魔替身。按 `I` 整理，F11 保存、Ctrl+F11 读取。营地内 `Ctrl+F4` 走近原版私人储物箱。
 
@@ -38,7 +38,9 @@ cmake --build build --parallel
 
 在项目根目录使用 `Play.cmd`，或运行 `build/bin/d2x.exe`。显式 `--mpq <目录或文件>` 优先；未指定时，依次搜索工作目录本身、EXE 所在目录本身、工作目录的 `assets/mpq2`，再搜索 EXE 所在目录及最多四级父目录中的 `assets/mpq2`。自动定位以 `d2data.mpq`／`D2Data.mpq` 为入口，找到首个目录即停止，挂载该目录全部 MPQ，不递归搜索子目录。工作目录与 EXE 所在目录可以不同。MPQ 不参与编译，但运行时必须可用。源码入口为 `CMakeLists.txt`、`cmake/` 和 `src/`；许可和素材来源见 `LICENSE`、[第三方说明](../resources/THIRD_PARTY.md) 及 `docs/licenses/`。
 
-普通图形启动及默认 `Play.cmd` 先显示资料片角色列表；可新建七职业普通角色、输入角色名、选择已有角色进入游戏，或确认删除角色。角色以原版 D2S v96 存放在运行目录的 `saves/`；按 F11 保存，正常退出自动保存。仅指定 `--mpq`、`--debug-pipe`、`--debug-run` 不再跳过角色界面；显式 `--class`、`--load`、`--hidden`、`--level`、`--region` 等场景／批处理选项仍直进游戏。启动器仅在显式传入 `-Level`／`-Region` 时附带区域参数。角色确认后重新显示原 MPQ 加载动画，覆盖读档、世界构造和场景资源上传。角色前端只支持资料片普通角色，转换和专家模式控件禁用；D2S 的明确支持范围见[存档](../modules/SAVES.md)，旧内部档不迁移。
+当前源码普通图形启动及默认 `Play.cmd` 先显示原图主菜单；Single Player 进入资料片本地角色列表，可新建、选角或确认删除，Back 返回主菜单。角色仍存放在运行目录 `saves/`，单机正常保存退出返回本地选角。Battle.net 主流程为登录／注册→Realm→服务器创建／选择角色→创建或加入非 Ladder 房间，难度依据角色进度解锁。私有配置及世界显示限制见 [联网模块](../modules/NETWORK.md)。本轮新增入口未构建／打包，dist/current 仍为此前登录／选角／command 建局入局版本。
+
+仅指定 `--mpq`、`--online-config`、`--debug-pipe`、`--debug-run` 不跳过前端；显式 `--class`、`--load`、`--hidden`、`--level`、`--region` 等场景／批处理选项仍直进单机场景。启动器仅在显式传入 `-Level`／`-Region` 时附带区域参数。单机角色确认后原 MPQ 加载动画覆盖读档、世界构造和资源上传。单机角色前端只支持资料片普通角色；D2S 范围见 [存档](../modules/SAVES.md)，旧内部档不迁移。Windows EXE 运行时需要同目录的 `d2x_bncs_legacy.dll`，打包脚本已包含该依赖；本机 PvPGN 模式的连接设置会复制到包，账号密码和 key 不会复制。默认 PvPGN 登录不要求 CD-key。
 
 直接选择职业开始测试，不经过 UI 或存档：
 

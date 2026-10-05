@@ -25,6 +25,10 @@
 | `contracts/`、`client/*_client.hpp` / `client_api` | 人物／库存／角色／任务／NPC 投影、窄领域意图及可替换客户端入口 | `ActorView`、`InventoryView`、`CharacterView`、`QuestView`、NPC 视图及五个 `I*Client` 接口 |
 | `client/inventory_view.cpp`、`automap_exploration.cpp` / `client` | 库存值查询与占格命中，不链接会话 | `InventoryView` 查询函数 |
 | `client/local_*_client.*` / `local_client` | 绑定本地受控人物，映射本人及可见场景视图，转发原命令／预览 | `LocalActorClient`、`LocalInventoryClient`、`LocalCharacterClient`、`LocalQuestClient`、`LocalNpcClient` |
+| `network/tcp_stream.*` / `network` | 独立 DNS／TCP、有限队列、连接取消和期限；Asio 仅实现层使用 | [联网模块](../modules/NETWORK.md) |
+| `network/protocol/` / `d2gs_protocol` | SID／MCP framing、旧账号认证、1.13c D2GS 逻辑包／Huffman；认证依赖只读原文件及独立 BNCSutil 子集 | `wire.hpp`、`auth.hpp`、`d2gs_stream.hpp` |
+| `network/realm_session.*` / `remote_client` | 无 UI 的账号／Realm／选角／大厅／入退局会话；只输出 OnlineView 和有序包，尚未组装世界副本 | `RealmSession`、`contracts/online.hpp` |
+| `presentation/frontend/`、`app/frontend.*` | 原图主菜单／登录／服务器选角／建局：表现只返回意图，app 拥有并轮询远端会话；菜单 command 调用相同底层 | `RealmFrontend`、`FrontendIntent`、`debug/online_commands.*` |
 | `presentation/` / `presentation` | 屏幕命中与手势、面板、场景绘制、GPU／音频资源及展示状态 | `controller.*`、`scene_view.*`、`scene_assets.*`、功能子目录 |
 | `main.cpp`、`app/` / `d2x` | 参数、角色前端、窗口、设备输入、固定步主循环、保存入口、本机调试与崩溃记录 | `app/application.cpp`、`app/input.cpp`、`app/debug/` |
 | `asset_tool.cpp` / `d2x_assets` | 独立资源查询、导出、预览、地图／掉落报告及存档摘要工具 | `asset_tool.cpp` |
@@ -45,6 +49,11 @@ flowchart TD
     local_client -->|PRIVATE| session
     presentation --> client
     client_api --> core
+    remote_client --> client_api
+    remote_client --> network
+    remote_client --> d2gs_protocol
+    network --> core
+    d2gs_protocol --> core
     presentation -->|PRIVATE| session
     session --> gameplay
     session --> world
@@ -70,7 +79,7 @@ flowchart TD
     assets --> persistence
 ```
 
-外部依赖集中在少数目标，版本／提交固定于 [Dependencies.cmake](../../cmake/Dependencies.cmake)：
+外部依赖集中在少数目标，版本／提交固定于 [Dependencies.cmake](../../cmake/Dependencies.cmake) 与 [Networking.cmake](../../cmake/Networking.cmake)：
 
 | 依赖 | 直接链接目标 | 用途 |
 | --- | --- | --- |
@@ -78,6 +87,8 @@ flowchart TD
 | raylib | `d2x_presentation`（`PUBLIC`）、`d2x_assets` | 窗口、绘图、音频和资源预览 |
 | nlohmann/json 3.11.3 | `d2x`，`PRIVATE` | 客户端设置及调试协议 |
 | Windows `advapi32`、`dbghelp` | `d2x`，`PRIVATE` | 本机管道权限与崩溃记录 |
+| Asio 1.30.2、Threads；Windows `ws2_32`／`mswsock` | `d2x_network`，`PRIVATE` | DNS、TCP 与连接计时 |
+| BNCSutil 认证子集动态库 | `d2x_d2gs_protocol`，`PRIVATE` | CheckRevision、key proof、旧式账号哈希；Windows 版本读取封装在此依赖 |
 
 内部链接大多为 `PUBLIC`，消费者会获得传递依赖；`local_client → session` 与 `presentation → session` 为实现依赖 `PRIVATE`，`client_api` 只依赖 `core`。这里是链接图，并非所有头文件包含关系；例如 `CharacterSaveData` 位于 `gameplay/session/`，存档库包含这个值类型，但不链接 `d2x_session`。
 
@@ -140,4 +151,4 @@ app/input.cpp 读取设备 → FrameInput
 
 ## 后续边界
 
-剩余场景投影、复杂事务、来源消费与宿主收口见 [重构方案](REFACTOR_PLAN.md)。多玩家所有权和网络实现尚未开始，设计证据见 [参考项目](REFERENCE_DESIGN.md) 和 [单机／联机](MULTIPLAYER.md)。
+剩余场景投影、复杂事务、来源消费与宿主收口见 [重构方案](REFACTOR_PLAN.md)。独立网络／Realm 会话底层此前已构建并通过本机双账号有限互通冒烟，本轮新增前端流程未构建，见 [联网模块](../modules/NETWORK.md)；远端世界副本尚未实现。本地服务端多玩家所有权不属于当前 D2GS 接入路线，设计及验收条件见 [参考项目](REFERENCE_DESIGN.md) 和 [联机计划](MULTIPLAYER.md)。
