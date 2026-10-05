@@ -2,6 +2,8 @@
 
 直接运行 EXE 时，调试管道仅在指定 `--debug-pipe` 时启用，默认暂停模拟；加 `--debug-run` 则直接运行。Play.cmd 通过启动脚本默认开启 `d2x-debug` 并直接运行。管道允许改变当前游戏，请谨慎操作重要现场。
 
+`hireling` 返回原类型、来源难度、技能基础／有效等级、原模式、当前动作／技能及天然光环；`types=$true` 另返回当前 MPQ 全部资料片类型及分段行，包括技能权重和成长。可传 `npc` 打开正式雇佣服务，继续传 `slot` 雇佣，仍要求 NPC 可访问并按原费用扣金。
+
 ## 启动
 
 `status.missiles` 的只读快照包含 `skillId`／`skillRank`、`nextHitDelay`、`physicalDamagePercent` 和 `elements`（火／冰／魔法／闪电、冰时长、冻结帧、物理转换比例），用于检查实际发射参数；没有新增修改伤害或替代正式命中结算的命令。
@@ -160,20 +162,22 @@ $offers = (.\scripts\Send-D2XCommand.ps1 -Command shop -Arguments @{ id = $vendo
 
 ```powershell
 .\scripts\Send-D2XCommand.ps1 -Command grant-hireling
+.\scripts\Send-D2XCommand.ps1 -Command hireling -Arguments @{types=$true} | ConvertTo-Json -Depth 8
+.\scripts\Send-D2XCommand.ps1 -Command grant-hireling -Arguments @{act=2;difficulty=2;type=10;level=45;replace=$true;open=$false}
 .\scripts\Send-D2XCommand.ps1 -Command hireling | ConvertTo-Json -Depth 6
 .\scripts\Send-D2XCommand.ps1 -Command hireling-panel -Arguments @{open=$true}
 ```
 
-`grant_hireling` 也可使用。授予不需要任务、金币或 NPC 距离，按当前难度、角色等级及资料片 MPQ 生成一名罗格，默认打开属性面板；`open=$false` 可只领取。重复执行不替换已有佣兵或装备，`created` 表示本次是否新建；死亡角色拒绝领取。响应的 `hireling` 包含名字、等级、生命、经验、伤害、四抗和装备实例，未雇佣时查询为 `null`。`hireling-equip -Arguments @{id=物品ID;slot='rarm'}` 从背包装备；原部位代码可为 `head`、`tors`、`rarm`，省略 `slot` 卸下入背包，均复用正式装备限制。`ui-input` 的 `key='o'`／`'hireling'` 模拟 O 键。
+`grant_hireling` 也可使用。授予不需要任务、金币或 NPC 距离，按当前难度、角色等级及资料片 MPQ 生成一名罗格，默认打开属性面板；`open=$false` 可只领取。重复执行不替换已有佣兵或装备，`created` 表示本次是否新建；死亡角色拒绝领取。响应的 `hireling` 包含名字、等级、生命、经验、伤害、四抗和装备实例，未雇佣时查询为 `null`。`hireling-equip -Arguments @{id=物品ID;slot='rarm'}` 从背包装备；原部位代码可为 `head`、`tors`、`rarm` 和铁狼盾槽 `larm`，省略 `slot` 卸下入背包，均复用正式装备限制。`ui-input` 的 `key='o'`／`'hireling'` 模拟 O 键。
 
-接口源码随 v89 加入；该版本曾完成构建，但这些命令尚未单独运行验收。更早的 EXE 不含这些命令。2026-10-02的hireling查询新增只读x/y、displayDamage和effects（stateId/sourceId/sourceLevel），用于精确定位和状态核对，不允许修改坐标或状态；最终包真实右键强化佣兵的原状态及战斗属性变化已观察到，详见[技能冒烟](../gameplay/skills/SORCERESS.md#本轮冒烟)。完整边界见 [资料片佣兵](../gameplay/characters/HIRELINGS.md)。
+显式选择时，`difficulty=1/2/3` 表示普通／噩梦／地狱的原来源记录，省略则按当前难度选择；指定 `type` 可自动定位其来源难度，与显式 Act／difficulty 必须相符。`level=1..99` 可绕过主人等级方便检查，省略使用所选类型的最低分段等级；按所选类型最高不超过目标等级的 MPQ 行求值。已有佣兵时显式选择需 `replace=$true`，它会移除原佣兵及其装备，`replaced` 表示替换。第四幕无类型会明确报错，第五幕只提供既有原表身份，不宣称其专属技能完成。2026-10-02的hireling查询新增只读x/y、displayDamage和effects（stateId/sourceId/sourceLevel），用于精确定位和状态核对，不允许修改坐标或状态；最终包真实右键强化佣兵的原状态及战斗属性变化已观察到，详见[技能冒烟](../gameplay/skills/SORCERESS.md#本轮冒烟)。完整边界见 [资料片佣兵](../gameplay/characters/HIRELINGS.md)。
 
 ### 命令表
 
 | command | Arguments | 行为 |
 | --- | --- | --- |
-| grant-hireling / grant_hireling | 可选 `open`，默认 true | 立即授予资料片罗格并打开 O 面板；已有则保留，不扣金币或改任务 |
-| hireling | 无 | 查询佣兵身份、派生属性及装备；不修改状态 |
+| grant-hireling / grant_hireling | 可选 `act`、`type`、`difficulty`、`level`、`replace`、`open` | 按 MPQ 原类型授予；无选择参数保留原幂等罗格行为，不扣金币或改任务 |
+| hireling | 可选 `types` 或 `npc`／`slot` | 查询当前佣兵／全部原表分段；NPC 参数提交正式雇佣服务 |
 | hireling-panel | 可选 `open`，默认 true | 开关已有佣兵的 O 面板 |
 | hireling-equip | `id`，可选 `slot` | 正式佣兵装备事务；省略 slot 卸下入背包 |
 | status | 无 | 玩家坐标、生命、蛛网减速剩余时间／百分比、钱包、区域、击杀、已结算数、掉落随机状态、调试暂停状态，以及 ui 中的商店／NPC 菜单／字幕偏移／I、II 组／左右面板伤害 |

@@ -1,5 +1,7 @@
 # NPC 交互规则
 
+第一至三幕雇佣服务分别由 Kashya、Greiz、Asheara 提供，原候选与技能成长见[佣兵](../characters/HIRELINGS.md)。原雇佣 NPC 也可复活已有死亡佣兵。
+
 本页负责原对白、身份、交互资格和路径行为。接口／投影与任务协调归 [NPC／任务模块](../../modules/NPC_QUEST.md)，任务推进归 [任务系统](../quests/SYSTEM.md)，报价与交易归 [NPC 交易](TRADE.md)，佣兵归 [佣兵](../characters/HIRELINGS.md)。
 
 ## 原文与身份绑定

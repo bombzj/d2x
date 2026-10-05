@@ -56,6 +56,7 @@ const InventoryView &LocalInventoryClient::read() const {
                 value.bookCapacity = definition.bookCapacity;
                 value.beltAllowed = definition.beltAllowed;
                 value.opensCube = definition.opensCube;
+                value.twoHanded = definition.equipment.twoHanded;
                 value.socketFiller = definition.equipment.isType("sock");
                 value.identifySource = content.isIdentifyScroll(item.definition) || content.isIdentifyScroll(definition.bookScroll);
                 for (size_t slot = 0; slot < value.slots.size(); ++slot)

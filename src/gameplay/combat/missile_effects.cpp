@@ -14,6 +14,10 @@
 namespace d2x {
 void Simulation::resolveMissileImpact(const Missile &missile, std::vector<Missile> &spawned, EntityId direct) {
     if (!missile.impact) return;
+    // Native child creation requires a surviving owner record. Hiring removes
+    // the former mercenary; their remaining missiles must not resolve skills
+    // against the replacement or a nonexistent source.
+    if (!combatUnit(missile.owner)) return;
     if (missile.spear && missile.spear->program->kind == SpearSkillSpec::Kind::Fury) {
         skills().releaseSpearImpact(missile, spawned);
         emit(MissileImpact{missile.missileId, missile.pos});

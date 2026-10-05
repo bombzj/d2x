@@ -7,7 +7,7 @@
 #include <sstream>
 
 namespace d2x {
-std::vector<HirelingDefinition> loadHirelingDefinitions(const DataTable &table) {
+std::vector<HirelingDefinition> loadHirelingDefinitions(const DataTable &table, const DataTable &skills) {
     for (auto column : {"Version", "Class", "Seller", "Act", "Difficulty", "Level", "HP", "SubType",
                         "NameFirst", "NameLast", "AR", "Dmg-Min", "Dmg-Max"})
         if (!table.has(column)) throw std::runtime_error("Original Hireling table lacks a required column");
@@ -56,6 +56,27 @@ std::vector<HirelingDefinition> loadHirelingDefinitions(const DataTable &table) 
         entry.resist = number("Resist"); entry.resistPerLevel = number("Resist/Lvl");
         entry.description = table.value(row, "HireDesc");
         entry.weaponType1 = table.value(row, "WType1"); entry.weaponType2 = table.value(row, "WType2");
+        entry.defaultChance = number("DefaultChance");
+        for (int i = 1; i <= 6; ++i) {
+            const auto suffix = std::to_string(i);
+            const auto name = table.value(row, "Skill" + suffix);
+            if (name.empty()) break;
+            size_t skill = 0;
+            while (skill < skills.rows().size() && skills.value(skill, "skill") != name) ++skill;
+            if (skill == skills.rows().size()) throw std::runtime_error("Unknown original hireling skill");
+            auto n = [&](std::string_view field) {
+                const auto value = table.number(row, field);
+                if (!value) throw std::runtime_error("Missing original hireling skill parameter: " + std::string(field));
+                return *value;
+            };
+            // Resolve state identity from the skill catalog at selection time.
+            entry.skills.push_back({skills.number(skill, "Id").value(), n("Mode" + suffix),
+                skills.number(skill, "reqlevel").value_or(0), n("Level" + suffix), n("LvlPerLvl" + suffix),
+                n("Chance" + suffix), n("ChancePerLvl" + suffix), skills.number(skill, "aitype").value_or(0),
+                name == "Inferno" ? skills.number(skill, "calc2").value() : 0});
+            if (entry.skills.back().mode < 0 || entry.skills.back().mode >= 16)
+                throw std::runtime_error("Unsupported original hireling skill mode");
+        }
     }
     if (result.empty()) throw std::runtime_error("Original expansion hireling records are missing");
     return result;

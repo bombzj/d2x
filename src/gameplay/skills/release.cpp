@@ -4,6 +4,7 @@
 #include "gameplay/combat/unit.hpp"
 #include "gameplay/effects/state.hpp"
 #include "gameplay/skills/caster.hpp"
+#include "gameplay/skills/projectile_source.hpp"
 #include "gameplay/skills/world_port.hpp"
 #include "gameplay/skills/runtime.hpp"
 #include "gameplay/skills/missile.hpp"
@@ -74,7 +75,24 @@ void SkillRuntime::releaseSkillCast(SkillCaster player, const SkillCastSpec &ski
     } else if (skill.effect == SkillBehavior::StaticField) {
         releaseStaticField(player, skill, staticFieldMinimum);
     } else {
-        launchProjectiles(player, skill, target, targetUnit);
+        launchProjectiles({player.id, player.pos, player.look, player.combatRandom}, skill, target, targetUnit);
     }
+}
+void SkillRuntime::releaseUnitSpell(SkillProjectileSource actor, const SkillCastSpec &skill, Vec target, EntityId targetUnit) {
+    auto caster = combatUnit(actor.id);
+    if (!caster.alive()) return;
+    if (skill.castMissileId >= 0)
+        world_.addEffect({actor.pos, 0, skill.castMissileDuration, skill.castMissileId, -1, actor.id});
+    if (skill.amazonMagic) releaseAmazonMagic(world_, actor.id, skill);
+    else if (skill.appliedEffect) {
+        auto effect = *skill.appliedEffect;
+        effect.source.entity = actor.id;
+        const auto applied = caster.effects->apply(std::move(effect), world_.frame());
+        world_.effectsChanged(applied.removed);
+    } else {
+        launchProjectiles(actor, skill, target, targetUnit);
+        if (skill.missileId >= 0) emit(MissileReleased{skill.missileId});
+    }
+    emit(SkillActivated{skill.sourceId});
 }
 } // namespace d2x

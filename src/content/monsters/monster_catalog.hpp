@@ -15,6 +15,7 @@
 #include <set>
 
 namespace d2x {
+struct SpearSequence;
 struct MonsterRecord {
     std::string id, base, next, name, token, ai, spawn, sound, baseWeapon, resurrectionMode;
     std::string rightHandVariant, leftHandVariant;
@@ -29,7 +30,7 @@ struct MonsterRecord {
     int localBlood = 0, bleed = 0, overlayHeight = 0;
     int lightRadius = 0;
     std::array<int, 3> lightColor{}; // MonStats2.Light and light-r/g/b, real identity.
-    int collisionSize = 0, spawnCollision = 0, hitClass = 0;
+    int collisionSize = 0, spawnCollision = 0, hitClass = 0, meleeRange = 0;
     std::optional<int> normalAttackRating;
     std::optional<int> normalAttackRating2;
     std::optional<int> normalDefense;
@@ -50,6 +51,9 @@ struct MonsterRecord {
     bool killable = false, npc = false, interact = false, critter = false, inert = false, boss = false;
     bool getHitMode = false, deadMode = false, skill2Mode = false, runMode = false;
     bool castMode = false, sequenceMode = false;
+    std::shared_ptr<const SpearSequence> hirelingSequence;
+    std::optional<MonsterAttackTiming> hirelingCastTiming;
+    int infernoLength = 0, infernoAnimation = 0;
     bool curseable = false;
     bool switchAi = false;
     bool castsShadow = false, corpseSelectable = false;

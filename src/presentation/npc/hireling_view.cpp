@@ -121,7 +121,13 @@ void SceneView::drawHireling(Vec mouse) const {
         const auto box = hirelingSlotBounds(index);
         auto id = inventory.equipped(slots, order[index]);
         bool mirrored = index == 3 && !id;
-        if (mirrored) id = inventory.equipped(slots, EquipmentSlot::RightHand);
+        if (mirrored) {
+            const auto right = inventory.equipped(slots, EquipmentSlot::RightHand);
+            const auto *item = inventory.item(right);
+            const auto *definition = item ? inventory.definition(item->definition) : nullptr;
+            mirrored = definition && definition->twoHanded;
+            if (mirrored) id = right;
+        }
         if (const auto *item = inventory.item(id)) {
             if (mirrored) DrawRectangleRec(box, {73, 0, 0, 160});
             const bool dragged = view_.inventory.drag &&

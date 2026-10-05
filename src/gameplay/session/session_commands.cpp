@@ -119,7 +119,7 @@ bool GameSessionImpl::dispatchCommands() {
                 } else if constexpr (std::is_same_v<T, EquipHirelingItem>) {
                     equipHirelingItem(intent);
                 } else if constexpr (std::is_same_v<T, DebugGrantHireling>) {
-                    grantDebugHireling();
+                    grantDebugHireling(intent);
                 } else if constexpr (std::is_same_v<T, RepairVendorItem>) {
                     repairVendorItem(intent);
                 } else if constexpr (std::is_same_v<T, EndNpcConversation>) {

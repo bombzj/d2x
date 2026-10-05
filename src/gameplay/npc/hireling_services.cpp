@@ -24,7 +24,7 @@ bool GameSessionImpl::canHireFrom(EntityId npc) const {
     if (target->npcClass == "kashya" && state().player.character.level < 8 &&
         quest(QuestId::SistersBurialGrounds).stage != uint32_t(BurialStage::Rewarded)) return false;
     return std::any_of(content_.hirelings.begin(), content_.hirelings.end(), [&](const auto &entry) {
-        return entry.seller == seller->index && (entry.act == 1 || entry.act == 3 ||
+        return entry.seller == seller->index && (entry.act == 1 || entry.act == 2 || entry.act == 3 ||
             (entry.act == 5 && quest(QuestId::RescueOnMountArreat).stage >= 4)) &&
                entry.difficulty == state().population.difficulty + 1;
     });
@@ -65,18 +65,61 @@ void GameSessionImpl::assignHireling(const HirelingOffer &offer) {
     next.pos = player.movement.pos;
     player.hireling = std::move(next);
 }
-void GameSessionImpl::grantDebugHireling() {
-    // Idempotent developer command: do not replace an existing hireling or their items.
-    if (state().player.hireling.sourceRow >= 0 || state().player.actions.dead) return;
+void GameSessionImpl::grantDebugHireling(const DebugGrantHireling &command) {
+    auto fail = [&](const char *reason) { simulation_->emit(InteractionFailed{{}, reason}); };
+    if (state().player.actions.dead) { fail("Cannot grant a hireling while dead"); return; }
+    if (state().player.hireling.sourceRow >= 0 && !command.replace) {
+        if (command.explicitSelection) fail("A hireling already exists; use replace=true to replace them and their equipment");
+        return;
+    }
+    if (command.level < 0 || command.level > 99 || command.difficulty < 0 || command.difficulty > 3 ||
+        command.type < -1 || command.act < 0 || command.act > 5) {
+        fail("Invalid original hireling act, type, difficulty (1..3), or level (1..99)"); return;
+    }
+    if (command.explicitSelection) {
+        const HirelingDefinition *selected = nullptr;
+        const int difficulty = command.difficulty ? command.difficulty : state().population.difficulty + 1;
+        for (const auto &entry : content_.hirelings) {
+            if (command.act && entry.act != command.act) continue;
+            if (command.type >= 0 ? entry.id != command.type : entry.difficulty != difficulty) continue;
+            if (command.difficulty && entry.difficulty != command.difficulty) continue;
+            if (selected && entry.id != selected->id) continue;
+            if (!selected || (command.level && entry.level <= command.level &&
+                (selected->level > command.level || entry.level > selected->level)) ||
+                ((!command.level || selected->level > command.level) && entry.level < selected->level)) selected = &entry;
+        }
+        if (!selected) { fail("No matching original expansion hireling record"); return; }
+        const int level = command.level ? command.level : selected->level;
+        auto random = inventory_.state_.creationRandom;
+        auto offers = planHirelingOffers({*selected}, selected->seller, selected->difficulty - 1, level, random);
+        if (offers.empty()) { fail("Original hireling name or candidate data is unavailable"); return; }
+        auto offer = offers.front();
+        offer.level = level;
+        offer.stats = deriveHirelingStats(*selected, level);
+        removeHirelingEquipment();
+        assignHireling(offer);
+        inventory_.state_.creationRandom = random;
+        return;
+    }
+    // Keep the original no-argument command's native Rogue offer selection.
     for (const auto &definition : content_.hirelings) {
         if (definition.act != 1 || definition.difficulty != state().population.difficulty + 1) continue;
         auto random = inventory_.state_.creationRandom;
         auto offers = planHirelingOffers(content_.hirelings, definition.seller,
             state().population.difficulty, state().player.character.level, random);
         if (offers.empty()) return;
+        removeHirelingEquipment();
         assignHireling(offers.front());
         inventory_.state_.creationRandom = random;
         return;
+    }
+}
+void GameSessionImpl::removeHirelingEquipment() {
+    for (auto id : inventory_.contents(playerContainers_.hirelingEquipment)) {
+        const auto &item = *inventory_.item(id);
+        simulation_->emit(ItemChange{id, item.revision, ItemChangeKind::Removed,
+                                   item.location, {}, item.quantity});
+        inventory_.state_.items.erase(id);
     }
 }
 void GameSessionImpl::hireMercenary(const HireMercenary &command) {
@@ -92,12 +135,7 @@ void GameSessionImpl::hireMercenary(const HireMercenary &command) {
         return;
     }
     // Original hiring replaces the previous mercenary, including their equipment.
-    for (auto id : inventory_.contents(playerContainers_.hirelingEquipment)) {
-        const auto &item = *inventory_.item(id);
-        simulation_->emit(ItemChange{id, item.revision, ItemChangeKind::Removed,
-                                   item.location, {}, item.quantity});
-        inventory_.state_.items.erase(id);
-    }
+    removeHirelingEquipment();
     const unsigned wallet = std::min(player.character.gold, offer.stats.price);
     player.character.gold -= wallet; player.character.bankGold -= offer.stats.price - wallet;
     assignHireling(offer);
@@ -113,8 +151,11 @@ unsigned GameSessionImpl::hirelingResurrectionCost() const {
 bool GameSessionImpl::canResurrectHireling(EntityId npc) const {
     const auto *target = object(npc);
     const auto &merc = state().player.hireling;
-    return target && target->npcClass == "kashya" && content_.stashLayout.expansion &&
-           merc.sourceRow >= 0 && !merc.active();
+    const auto *seller = target ? monsterContent_.find(target->npcClass) : nullptr;
+    return seller && content_.stashLayout.expansion && merc.sourceRow >= 0 && !merc.active() &&
+        std::any_of(content_.hirelings.begin(), content_.hirelings.end(), [&](const auto &d) {
+            return d.seller == seller->index;
+        });
 }
 void GameSessionImpl::resurrectHireling(EntityId npc) {
     auto &player = simulation_->state_.player;
@@ -216,6 +257,13 @@ HirelingCombatStats GameSessionImpl::hirelingStats(const HirelingState &hireling
     actor.hireling = true;
     auto modifiers = resolveEquipmentModifiers(content_, inventory, slots, actor);
     mergeCharacterModifiers(modifiers, hireling.combatEffects.modifiers(state().frame));
+    for (const auto &entry : definition->skills) {
+        if (hireling.level < entry.requiredLevel) continue;
+        const int rank = std::clamp(entry.level + (((hireling.level - definition->level) * entry.levelPerLevel) >> 5), 0, 32);
+        if (const auto *skill = content_.skills.find(entry.id))
+            applySkillPassive(modifiers, skill->passiveContribution, rank,
+                skill->passiveSuppressedByState >= 0 && hireling.combatEffects.hasState(skill->passiveSuppressedByState, state().frame));
+    }
     actor.strength += modifiers.strength; actor.dexterity += modifiers.dexterity;
     result.vitality = std::max(0, modifiers.vitality);
     result.base.strength = actor.strength; result.base.dexterity = actor.dexterity;
@@ -229,16 +277,21 @@ HirelingCombatStats GameSessionImpl::hirelingStats(const HirelingState &hireling
         result.base.attackRating + 5 * actor.dexterity + modifiers.attackRating);
     result.weapon = equipment.weapons[0];
     if (!result.weapon.item) {
-        // MISSILE_CalculateDamageData: a hireling without a weapon uses dexterity,
-        // its own secondary damage and equipment bonuses, not player fist damage.
+        // Native hireling base damage belongs to the mercenary, with dexterity
+        // for missiles and strength for melee; never borrow player fist damage.
         auto &weapon = result.weapon;
-        weapon.ranged = true;
+        weapon.ranged = definition->act == 1;
         weapon.projectileMinimum = std::max(0, combat.minimumDamage) * 256;
         weapon.projectileMaximum = std::max(combat.minimumDamage, combat.maximumDamage) * 256;
         weapon.projectileDamagePercent = std::max(-90, actor.dexterity + combat.damagePercent +
             std::max(combat.minimumDamagePercent, combat.maximumDamagePercent));
-        weapon.minimum = int(int64_t(weapon.projectileMinimum) * (100 + weapon.projectileDamagePercent) / 100);
-        weapon.maximum = int(int64_t(weapon.projectileMaximum) * (100 + weapon.projectileDamagePercent) / 100);
+        weapon.meleeBaseMinimum = weapon.projectileMinimum;
+        weapon.meleeBaseMaximum = weapon.projectileMaximum;
+        weapon.damagePercent = std::max(-90, actor.strength + combat.damagePercent +
+            std::max(combat.minimumDamagePercent, combat.maximumDamagePercent));
+        const int percent = weapon.ranged ? weapon.projectileDamagePercent : weapon.damagePercent;
+        weapon.minimum = int(int64_t(weapon.projectileMinimum) * (100 + percent) / 100);
+        weapon.maximum = int(int64_t(weapon.projectileMaximum) * (100 + percent) / 100);
         weapon.fasterAttack = combat.fasterAttack;
     }
     result.base.defense = equipment.defense;
@@ -282,8 +335,11 @@ InventoryError GameSessionImpl::previewHirelingEquipment(const EquipHirelingItem
     const auto &equipment = itemDefinition.equipment;
     if (command.slot && ((itemDefinition.maxDurability && !item->durability) ||
                          equipment.isType("ques"))) return InventoryError::RestrictedItem;
-    if (command.slot && (*command.slot != EquipmentSlot::Head && *command.slot != EquipmentSlot::Torso &&
+    const bool shield = d->act == 3 && command.slot == EquipmentSlot::LeftHand && equipment.isType("shld");
+    if (command.slot && !shield && (*command.slot != EquipmentSlot::Head && *command.slot != EquipmentSlot::Torso &&
         *command.slot != EquipmentSlot::RightHand)) return InventoryError::RestrictedItem;
+    if (command.slot == EquipmentSlot::RightHand && d->act == 3 && equipment.twoHanded)
+        return InventoryError::RestrictedItem;
     if (command.slot == EquipmentSlot::RightHand &&
         !equipment.isType(d->weaponType1) && (d->weaponType2.empty() || !equipment.isType(d->weaponType2)))
         return InventoryError::RestrictedItem;

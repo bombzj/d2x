@@ -13,6 +13,7 @@
 namespace d2x {
 // The quest reward is a character-owned hireling. Position and route are
 // session state; native D2S records identity, experience, equipment and death status.
+struct HirelingSkillState;
 struct HirelingState {
     EntityId id; // Runtime identity; D2S identifies a mercenary by its seed.
     CombatIdentity allegiance{1, {}, 0, CombatRole::Hireling};
@@ -37,6 +38,7 @@ struct HirelingState {
     bool corpseVisible = false;
     std::deque<ResourceRestoration> healing;
     CombatEffectSet combatEffects;
+    std::shared_ptr<HirelingSkillState> skills;
     uint64_t experience = 0;
     uint32_t seed = 0;
     uint64_t combatRandom = 0;

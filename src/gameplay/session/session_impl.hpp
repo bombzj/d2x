@@ -226,6 +226,9 @@ class GameSessionImpl {
     bool beginCainPortal();
     void updateCainPortal();
     void advanceHireling(float dt);
+    std::map<int, int> hirelingSkillRanks() const;
+    SkillCastSpec resolveHirelingSkill(int id, int rank = 0) const;
+    void beginHirelingAttack(const MonsterRecord &, const HirelingCombatStats &, const MonsterAttackTiming &, EntityId, Vec);
     void advanceHirelingAttack(const MonsterRecord &actor, const HirelingCombatStats &stats);
     void controlHireling(const MonsterRecord &actor, const HirelingCombatStats &stats,
                         const MonsterAttackTiming *timing, float dt);
@@ -240,7 +243,8 @@ class GameSessionImpl {
     EquipmentActor hirelingEquipmentActor(std::optional<EquipmentSlot> replacedSlot) const;
     bool ensureHirelingOffers(EntityId npc);
     void assignHireling(const HirelingOffer &offer);
-    void grantDebugHireling();
+    void grantDebugHireling(const DebugGrantHireling &command);
+    void removeHirelingEquipment();
     void grantHirelingExperience(const EnemyDied &death);
     HirelingCombatStats hirelingStats(const HirelingState &hireling, const InventoryService &inventory,
                                       const PlayerContainers &containers) const;

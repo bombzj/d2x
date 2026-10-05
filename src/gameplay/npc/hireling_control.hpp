@@ -21,6 +21,8 @@ struct HirelingControlView {
 struct HirelingOwnerView { Vec pos; bool moving = false, runningNow = false; };
 struct HirelingMovementRules {
     int walkVelocity = 0, walkAnimationRate = 0, fasterMoveVelocity = 0, velocityPercent = 0;
+    bool melee = false;
+    int meleeReach = 1;
 };
 struct HirelingControlTarget { EntityId id; Vec pos; int distance = 0; };
 // Synchronous authority capabilities; none are retained after control returns.

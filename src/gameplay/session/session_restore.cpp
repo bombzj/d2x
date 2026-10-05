@@ -115,7 +115,9 @@ int GameSessionImpl::validateCharacterRestore(const CharacterSaveData &data) con
         const auto merc = std::find_if(content_.hirelings.begin(), content_.hirelings.end(),
             [&](const auto &entry) { return entry.sourceRow == hireling.sourceRow; });
         require(merc != content_.hirelings.end() && gear.requiredClass.empty() &&
+                    !(merc->act == 3 && slot == EquipmentSlot::RightHand && gear.twoHanded) &&
                     (slot == EquipmentSlot::Head || slot == EquipmentSlot::Torso ||
+                     (merc->act == 3 && slot == EquipmentSlot::LeftHand && gear.isType("shld")) ||
                      (slot == EquipmentSlot::RightHand && (gear.isType(merc->weaponType1) ||
                       (!merc->weaponType2.empty() && gear.isType(merc->weaponType2))))),
                 "unsupported hireling equipment");

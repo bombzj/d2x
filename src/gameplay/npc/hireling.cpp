@@ -2,6 +2,9 @@
 #include "gameplay/units/impairments.hpp"
 #include "gameplay/simulation/simulation.hpp"
 #include "gameplay/session/session_impl.hpp"
+#include "hireling_skill_state.hpp"
+#include "content/skills/aura_data.hpp"
+#include "gameplay/skills/rank_sources.hpp"
 #include <algorithm>
 
 namespace d2x {
@@ -34,6 +37,13 @@ void GameSessionImpl::advanceHireling(float dt) {
         merc.baseHitDuration = motion->duration;
     if (const auto *motion = monsterContent_.hirelingMotion(merc.classId, "dt")) merc.deathDuration = motion->duration;
     const auto stats = hirelingStats();
+    if (merc.skills && merc.skills->aura) {
+        const int id = merc.skills->aura->definition.skill;
+        const auto ranks = hirelingSkillRanks();
+        const int rank = resolveSkillSourceRank({id, ranks.contains(id) ? ranks.at(id) : 0, -1, 0, false}, {}, stats.combat);
+        if (rank > 0) merc.skills->aura->definition = *resolveAura(content_, id, rank, ranks);
+        else merc.skills->aura.reset();
+    }
     merc.hp = std::min(merc.hp, float(stats.base.life));
     merc.hitTime = std::max(0.f, merc.hitTime - dt);
     advanceImpairments({&merc.chill, nullptr, nullptr, nullptr,

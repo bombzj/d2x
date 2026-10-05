@@ -2,6 +2,10 @@
 
 ## 经典版素材
 
+第一至三幕佣兵技能核对本地 D2MOO 固定 `5596f5c` 的 `AiThink.cpp::Fn061_Hireable/sub_6FCE4610/sub_6FCE4830`、`MonsterAI.cpp::MONSTERAI_UpdateMercStatsAndSkills`、`PlrMsg.cpp` 的佣兵装备规则、`SkillSor.cpp::StartInferno/DoInferno` 和 `D2Common/Units/Units.cpp` 的怪物 SC/FCR。天然技能及光环独立适配到公共单位／技能端口；实际类型、分段成长、技能权重、箭／法术、Jab 两击序列、Inferno 期限、动画／原图均取当前 MPQ。地狱火重建计时疑点和有限验证边界见[佣兵](../gameplay/characters/HIRELINGS.md#原表技能)。沿下述 MIT 归属，不提交 reference 或导出资源。
+
+本批另核对 `Units.cpp::UNITS_GetMeleeRange/UNITS_IsInMeleeRange` 的怪物原距离／门和弹体阻挡掩码、`SkillAma.cpp::SrvDo007_Jab` 的序列事件及 `Missiles.cpp` 的子弹体创建owner要求；低于Hireling基准等级的技能成长沿MonsterAI原有符号右移。GU死亡血层仅从当前MPQ唯一组件文件定位，不复制参考资源。
+
 亚马逊被动与魔法整页核对本地D2MOO固定 `5596f5c` 的 `SkillAma.cpp::SrvDo006/015/016`、`SkillNec.cpp::SetSummonBaseStats/SetSummonPassiveStats`、`SkillAss.cpp::sub_6FCF9580`、`SUnitDmg.cpp` 的暴击／格挡／三项防御被动、`Missiles.cpp` 的CanSlow／Pierce创建和 `MissMode.cpp` 的逐次碰撞／命中函数；宠物跟随参考 `AiThink.cpp::Fn067_NecroPet` 和旅行／上限入口。数值、MonEquip候选行、品质、原States角色伪装、宠物头像／组件／叠层均取当前MPQ。依上述MIT规则独立适配，不提交参考源码或资源；随机种子、路径、AI和原客户端差异见[亚马逊](../gameplay/skills/AMAZON.md#被动页验证与限制)。
 
 亚马逊弓与弩整页继续核对本地 D2MOO 固定 `5596f5c` 的 `SkillAma.cpp::SrvDo008/SrvDo010/SrvSt08/SrvDo012`、`Skills.cpp::sub_6FD107F0/sub_6FD118C0`、`SUnit.cpp::sub_6FCBCFD0`、`MissMode.cpp` 的转换／冻结／引导／牺牲火／范围子弹体函数及 `D2Common/Units/Missile.cpp` 的 SrcDamage／毒源／吸取规则。参数、公式、伤害曲线、图形和声音仍读取当前 MPQ；沿上述 MIT 归属适配规则，不纳入参考源码或导出资源。原路径／客户端未完整移植的边界见[亚马逊](../gameplay/skills/AMAZON.md#本批验证与限制)。

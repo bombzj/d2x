@@ -1,3 +1,4 @@
+#include "gameplay/skills/spear_spec.hpp"
 #include "gameplay/skills/spec.hpp"
 #include "gameplay/monsters/implementation.hpp"
 #include "resources/archive.hpp"
@@ -193,6 +194,8 @@ MonsterCatalog::MonsterCatalog(Archives &archives, const DataTable &stats) {
         auto extra = extendedRows.find(stats.value(row, "MonStatsEx"));
         if (extra == extendedRows.end())
             throw std::runtime_error("Missing MonStats2 record for " + m.id);
+        m.infernoLength = extended.number(extra->second, "InfernoLen").value_or(0);
+        m.infernoAnimation = extended.number(extra->second, "InfernoAnim").value_or(0);
         m.critter = extended.number(extra->second, "critter").value_or(0) != 0;
         m.inert = extended.number(extra->second, "inert").value_or(0) != 0;
         m.localBlood = extended.number(extra->second, "localBlood").value_or(0);
@@ -223,9 +226,9 @@ MonsterCatalog::MonsterCatalog(Archives &archives, const DataTable &stats) {
         const int meleeRange = extended.number(extra->second, "MeleeRng").value_or(0);
         if (meleeRange < 0 || meleeRange > 255)
             throw std::runtime_error("Unsupported monster MeleeRng: " + m.id);
+        m.meleeRange = meleeRange == 255 ? (m.baseWeapon == "2ht" ? 2 : 0) : meleeRange;
         for (auto &profile : m.aiProfiles)
-            if (profile)
-                profile->meleeRange = meleeRange == 255 ? (m.baseWeapon == "2ht" ? 2 : 0) : meleeRange;
+            if (profile) profile->meleeRange = m.meleeRange;
         auto firstVariant = [&](std::string_view field) {
             auto variant = std::string(extended.value(extra->second, field));
             if (variant.starts_with('"')) variant.erase(0, 1);
@@ -297,7 +300,20 @@ MonsterCatalog::MonsterCatalog(Archives &archives, const DataTable &stats) {
             actor.walkAnimationRate = scaled(walk, actor.walkVelocity, base->second.walkVelocity);
             actor.runAnimationRate = scaled(run, actor.runVelocity, base->second.runVelocity);
         }
-        for (const auto &[id, actor] : monsters_)
+        for (auto &[id, actor] : monsters_)
+            if (actor.id == "act2hire") {
+                const auto row = actor.sourceRow;
+                auto sequence = std::make_shared<SpearSequence>();
+                for (size_t frame = 0; frame < sequences.rows().size(); ++frame) {
+                    if (sequences.value(frame, "sequence") != stats.value(row, "Sk1mode")) continue;
+                    if (sequences.value(frame, "mode") != "A1") throw std::runtime_error("Unsupported original guard Jab sequence mode");
+                    sequence->frames.push_back({sequences.number(frame, "frame").value(), false,
+                        sequences.number(frame, "event").value_or(0) == 1});
+                }
+                if (sequence->frames.empty()) throw std::runtime_error("Missing original guard Jab sequence");
+                actor.hirelingSequence = std::move(sequence);
+            }
+        for (auto &[id, actor] : monsters_)
             if (actor.ai == "Hireable") {
                 auto weapon = monsterModeWeapon(archives, actor.token, "a1", actor.baseWeapon);
                 if (!weapon.empty())
@@ -305,6 +321,11 @@ MonsterCatalog::MonsterCatalog(Archives &archives, const DataTable &stats) {
                             animations, actor.token, 1, weapon,
                             actor.attack1Projectile ? 2 : 1))
                         hirelingAttacks_.emplace(actor.index, *timing);
+                if (actor.castMode) {
+                    const auto castWeapon = monsterModeWeapon(archives, actor.token, "sc", actor.baseWeapon);
+                    actor.hirelingCastTiming = loadMonsterActionTiming(animations, actor.token, "sc", castWeapon, 1);
+                    if (!actor.hirelingCastTiming) throw std::runtime_error("Missing original hireling SC event");
+                }
                 for (auto mode : {"nu", "wl", "gh", "dt", "dd"}) {
                     const auto modeWeapon = monsterModeWeapon(archives, actor.token, mode, actor.baseWeapon);
                     if (!modeWeapon.empty())

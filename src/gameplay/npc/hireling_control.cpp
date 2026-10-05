@@ -30,27 +30,20 @@ void GameSessionImpl::controlHireling(const MonsterRecord &actor, const Hireling
         [&]() {
             std::optional<HirelingControlTarget> target;
             int closest = 25;
-            if (!region().definition.safe && actor.attack1Projectile && timing)
+            if (!region().definition.safe && timing)
                 for (auto candidate : simulation_->combatUnits()) {
-                    const int distance = std::max(0, missileDistance(merc.pos, *candidate.position) - 2);
+                    const int distance = hirelingDefinition()->act == 2 ?
+                        meleeDistance(merc.pos, merc.collisionSize, *candidate.position, candidate.stats.collisionSize) :
+                        std::max(0, missileDistance(merc.pos, *candidate.position) - 2);
                     if (candidate.alive() && simulation_->canAttack(merc.id, candidate.id) && simulation_->active(*candidate.position) && distance < closest &&
-                        simulation_->missilePathClear(actor.attack1Projectile->id, merc.pos, *candidate.position)) {
+                        (actor.attack1Projectile ? simulation_->missilePathClear(actor.attack1Projectile->id, merc.pos, *candidate.position) : map().grid.missileSegment(merc.pos, *candidate.position, {0x04, 1}))) {
                         closest = distance; target = HirelingControlTarget{candidate.id, *candidate.position, distance};
                     }
                 }
             return target;
         },
         [&](EntityId target, Vec aim) {
-            const int baseRate = int(std::lround(timing->frames * 256.f / (timing->duration * 25.f)));
-            const int actionFrame = int(std::lround(timing->impact * baseRate * 25.f / 256.f));
-            const int cold = merc.chill > 0 ? actor.coldEffect.at(size_t(state().population.difficulty)) : 0;
-            const int speed = effectiveAttackSpeed(baseRate, stats.weapon.fasterAttack,
-                                                   stats.weapon.baseSpeed, cold + stats.combat.attackRate);
-            WeaponAttackState attack;
-            attack.weapon = stats.weapon.item; attack.target = target; attack.aim = aim;
-            attack.timing = {"a1", timing->frames, speed, actionFrame, 0};
-            merc.attackTimer = float(attack.timing.durationTicks()) / 25.f;
-            merc.attack = std::move(attack);
+            beginHirelingAttack(actor, stats, *timing, target, aim);
         }
     };
     advanceHirelingControl({merc.id, merc.pos, merc.look, merc.route, merc.moving, merc.thinkTimer,
@@ -58,6 +51,7 @@ void GameSessionImpl::controlHireling(const MonsterRecord &actor, const Hireling
                            merc.level, merc.webSlowRemaining, merc.webSlowPercent},
                           {player.movement.pos, player.movement.moving, player.movement.runningNow},
                           {*actor.walkVelocity, actor.walkAnimationRate.value_or(0),
-                           stats.fasterMoveVelocity, stats.velocityPercent}, dt, world);
+                           stats.fasterMoveVelocity, stats.velocityPercent, hirelingDefinition()->act == 2,
+                           1 + actor.meleeRange}, dt, world);
 }
 } // namespace d2x

@@ -14,7 +14,7 @@
 #include <cmath>
 
 namespace d2x {
-void SkillRuntime::launchProjectiles(SkillCaster player, const SkillCastSpec &skill, Vec target, EntityId targetUnit) {
+void SkillRuntime::launchProjectiles(SkillProjectileSource player, const SkillCastSpec &skill, Vec target, EntityId targetUnit) {
     if (skill.effect == SkillBehavior::BoneSpear || skill.effect == SkillBehavior::BoneSpirit) {
         const int minimum = int(skill.minimumDamage * 256.f), maximum = int(skill.maximumDamage * 256.f);
         const float amount = float(minimum + limitedRandom(player.combatRandom, unsigned(std::max(0, maximum - minimum)))) / 256.f;
@@ -119,6 +119,7 @@ void SkillRuntime::launchProjectiles(SkillCaster player, const SkillCastSpec &sk
             missile.velocity = player.look * skill.missileVelocity;
             missile.remaining = skill.missileLifetime;
             missile.behavior = skill.effect;
+            missile.skillId = skill.sourceId; missile.skillRank = skill.rank;
             missile.missileId = skill.missileId;
             missile.damage = amount;
             missile.hitOverlayId = skill.hitOverlayId;
@@ -149,6 +150,7 @@ void SkillRuntime::launchProjectiles(SkillCaster player, const SkillCastSpec &sk
                 false, skill.missileId, amount, 0, skill.coldDuration});
             missile.combatRandom = world_.childSeed();
             missile.nextHitDelay = skill.missileNextDelay;
+            missile.skillId = skill.sourceId; missile.skillRank = skill.rank;
             missile.acceleration = skill.missileAcceleration;
             missile.maxVelocity = skill.missileMaxVelocity;
             missile.hitOverlayId = skill.hitOverlayId;
@@ -163,7 +165,8 @@ void SkillRuntime::launchProjectiles(SkillCaster player, const SkillCastSpec &sk
         }
     } else if (skill.effect == SkillBehavior::BlessedHammer) {
         int percent = 100;
-        for (const auto &effect : player.combatEffects.entries())
+        const auto caster = combatUnit(player.id);
+        for (const auto &effect : caster.effects->entries())
             if (effect.activeAt(world_.frame()) && effect.spec.state.id == skill.concentrationState)
                 percent += effect.spec.modifiers.combat.damagePercent * skill.concentrationFactor / 8;
         const int minimum = int(skill.minimumDamage * 256.f) * percent / 100;
@@ -195,6 +198,7 @@ void SkillRuntime::launchProjectiles(SkillCaster player, const SkillCastSpec &sk
         auto &missile = launchStraight({{}, player.id, player.pos + player.look * .7f,
             player.look * skill.missileVelocity, skill.missileLifetime, skill.effect,
             false, skill.missileId, amount, 0, skill.coldDuration});
+        missile.skillId = skill.sourceId; missile.skillRank = skill.rank;
         missile.acceleration = skill.missileAcceleration;
         missile.maxVelocity = skill.missileMaxVelocity;
         missile.impact = skill.missileImpact;

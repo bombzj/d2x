@@ -295,7 +295,7 @@ ClassicData loadClassicData(Archives &archives) {
         data.missileReturnFire.emplace(*id, returnFire == 1);
     }
     data.characters = loadCharacterDefinitions(data.tables.at("charstats"));
-    data.hirelings = loadHirelingDefinitions(data.tables.at("hireling"));
+    data.hirelings = loadHirelingDefinitions(data.tables.at("hireling"), data.tables.at("skills"));
     {
         data.tables.emplace("skilldesc", DataTable(archives.read("data/global/excel/skilldesc.txt")));
         data.staffRecipe = loadStaffRecipeContent(data.items, data.tables);

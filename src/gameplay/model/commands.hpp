@@ -49,7 +49,10 @@ struct Interact {
 struct DebugGrantGold {
     unsigned amount = 0;
 };
-struct DebugGrantHireling {};
+struct DebugGrantHireling {
+    int act = 1, type = -1, difficulty = 0, level = 0;
+    bool replace = false, explicitSelection = false;
+};
 struct DebugDropCube {};
 struct SubmitQuestItem { EntityId object; ItemHandle item; };
 struct DebugSpawnItem { std::string code; ItemQuality quality; int level = 1; unsigned sockets = 0; bool identified = true; };

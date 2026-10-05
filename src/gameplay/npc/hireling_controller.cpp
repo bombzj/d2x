@@ -64,10 +64,13 @@ void advanceHirelingControl(HirelingControlView merc, HirelingOwnerView owner,
     merc.thinkTimer = 5.f / 25.f;
     if (hurry) return;
     if (const auto target = world.target()) {
-        const int chance = std::min(merc.attackBias + 40 + 2 * merc.level, 95);
+        const int chance = rules.melee ? 98 : std::min(merc.attackBias + 40 + 2 * merc.level, 95);
         const bool attackNow = limitedRandom(merc.combatRandom, 100) < unsigned(chance);
         merc.attackBias = attackNow ? 0 : merc.attackBias + 10;
-        if (target->distance < 4 && limitedRandom(merc.combatRandom, 100) < 50) {
+        if (rules.melee && (target->distance >= 3 || target->distance > rules.meleeReach)) {
+            merc.route = world.path(merc.pos, target->pos); return;
+        }
+        if (!rules.melee && target->distance < 4 && limitedRandom(merc.combatRandom, 100) < 50) {
             if (ownerDistance > 4)
                 if (auto position = around(owner.pos, 4, target->pos)) merc.route = world.path(merc.pos, *position);
             if (merc.route.empty())

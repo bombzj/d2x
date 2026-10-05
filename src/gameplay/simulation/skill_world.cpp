@@ -1,3 +1,4 @@
+#include "gameplay/npc/hireling_skill_state.hpp"
 #include "gameplay/units/actions.hpp"
 #include "gameplay/combat/damage_request.hpp"
 #include "gameplay/skills/world_values.hpp"
@@ -267,6 +268,10 @@ class SimulationSkillWorld final : public ISkillWorld, public ISkillWeaponWorld 
         std::vector<SkillAuraSource> result;
         auto &player = simulation_.state_.player;
         if (player.skills.aura) result.push_back({player.id, &player.skills.aura->definition, &player.skills.aura->nextFrame});
+        if (!playerOnly && player.hireling.active() && player.hireling.skills && player.hireling.skills->aura) {
+            auto &aura = *player.hireling.skills->aura;
+            result.push_back({player.hireling.id, &aura.definition, &aura.nextFrame});
+        }
         if (!playerOnly)
             for (auto &unit : simulation_.state_.area.enemies)
                 if (unit.enchantment && unit.enchantment->aura) {
@@ -283,6 +288,7 @@ class SimulationSkillWorld final : public ISkillWorld, public ISkillWeaponWorld 
     const AuraDefinition *ownAura(EntityId actor) const override {
         auto unit = simulation_.combatUnit(actor);
         if (unit.monster && unit.records.monster->necroPet && unit.records.monster->necroPet->spec->aura) return &*unit.records.monster->necroPet->spec->aura;
+        if (unit.hireling && unit.records.hireling->skills && unit.records.hireling->skills->aura) return &unit.records.hireling->skills->aura->definition;
         if (unit.player && unit.records.player->skills.aura) return &unit.records.player->skills.aura->definition;
         if (unit.monster && unit.records.monster->enchantment && unit.records.monster->enchantment->aura)
             return &*unit.records.monster->enchantment->aura;

@@ -722,6 +722,7 @@ GameSessionImpl::GameSessionImpl(Archives &archives, const WorldSelection &selec
     fingerprint.add("amazon-bow-rules-v1-native-arrow-programs");
     fingerprint.add("amazon-spear-rules-v1-native-sequences-and-javelins");
     fingerprint.add("amazon-passive-magic-rules-v1-native-effects-and-pets");
+    fingerprint.add("hireling-rules-v1-native-acts1-3-skills");
     fingerprint.add("map-rules-v9-native-trees-complete-groups");
     auto members = archives.used;
     for (const auto &member : members) {

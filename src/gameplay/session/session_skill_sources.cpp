@@ -36,6 +36,7 @@ void GameSessionImpl::configureSkillSources() {
 
     simulation_->fireMastery_ = [this](EntityId source) {
         if (source == state().player.id) return fireMasteryPercent();
+        if (source == state().player.hireling.id) return 0;
         if (simulation_->findEnemy(source)) return 0; // Existing native monster sources have no player mastery.
         throw std::runtime_error("Fire mastery source unavailable for this actor");
     };
@@ -43,6 +44,7 @@ void GameSessionImpl::configureSkillSources() {
     simulation_->resolveUnitSkill_ = [this](EntityId actor, int id, int rank) {
         const auto *entry = content_.skills.find(id);
         if (!entry || !entry->spell) throw std::runtime_error("Missing originating missile skill");
+        if (actor == state().player.hireling.id) return resolveHirelingSkill(id, rank);
         return skillSources_.resolve(*entry->spell, actor, rank);
     };
 

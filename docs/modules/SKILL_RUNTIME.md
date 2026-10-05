@@ -144,3 +144,5 @@ quest_panel.cpp → scene_view.hpp → model/events.hpp
 拆头前 `spec.hpp` 的扩散有更明确的表现边界问题：`scene_assets.hpp` 按值保存 `BlizzardSpec`、`ArcSpec`、`MeteorSpec`，并使用嵌套的 `SkillSpec::OverlayVisual`。资源显示需要相应表现描述，不需要诅咒、召唤属性和施法消耗的完整参数。应分开表现描述、行为参数和公共求值输入；仅拆成多个头再由原总头全部包含，不能完成隔离。
 
 重构优先级：先截断伤害／AI／怪物身份值的跨领域传播，再分开技能表现描述与执行参数、整理来源／求值和执行端口。保留稳定的公共值与必要共享，复杂行为留实现。每次调整后用同一统计口径比较依赖闭包；多个包含路径可能同时存在，不能从删除一条 `include` 推算具体下降数量。
+
+佣兵技能沿同一单位端口：`SkillRuntime::releaseUnitSpell(SkillProjectileSource, ...)` 仅借实体、位置、朝向和自身随机流，公共弹体发射不要求玩家完整施法状态；装甲进入来源单位效果集合。第一至三幕的原表选择、原 A1／SC／Jab 时序与临时通道由 `npc/hireling_actions.*` 持有，天然光环通过 `ISkillWorld::auraSources/ownAura` 进入公共执行器。类型、参数与范围见[佣兵](../gameplay/characters/HIRELINGS.md)，没有把 MPQ 读取或设备资源带入玩法执行器。

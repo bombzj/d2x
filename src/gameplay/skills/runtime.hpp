@@ -50,7 +50,7 @@ class SkillRuntime {
     void releaseAppliedEffect(SkillCaster actor, const SkillCastSpec &skill, Vec target, EntityId targetUnit);
     void releaseTeleport(SkillCaster actor, const SkillCastSpec &skill, Vec target, EntityId targetUnit);
     void releaseStaticField(SkillCaster actor, const SkillCastSpec &skill, int staticFieldMinimum);
-    void launchProjectiles(SkillCaster actor, const SkillCastSpec &skill, Vec target, EntityId targetUnit);
+    void launchProjectiles(SkillProjectileSource actor, const SkillCastSpec &skill, Vec target, EntityId targetUnit);
     void pulseAura(CombatUnit source, const AuraDefinition &aura, EffectFrame &nextFrame);
     void emit(SkillEvent event);
 
@@ -62,6 +62,7 @@ class SkillRuntime {
                         int staticFieldMinimum, EntityId enemy = {});
     void releaseSkillCast(SkillCaster actor, const SkillCastSpec &skill, Vec target,
                           int staticFieldMinimum, bool consumeMana = true, EntityId targetUnit = {});
+    void releaseUnitSpell(SkillProjectileSource actor, const SkillCastSpec &skill, Vec target, EntityId targetUnit = {});
     bool blizzardTargetClear(Vec origin, Vec target) const;
     void launchBlizzard(SkillProjectileSource actor, const SkillCastSpec &skill, Vec target);
     void launchFrozenOrb(SkillProjectileSource actor, const SkillCastSpec &skill, Vec target);

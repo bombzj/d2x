@@ -431,9 +431,9 @@ void SceneView::drawActors(Vec mouse) const {
             } else if (item.type == 6) {
                 const auto &hireling = sim.player.hireling;
                 const auto &animations = assets_.hirelingAnimations;
-                const char *mode = !hireling.active() ? (hireling.deathAge < hireling.deathDuration ? "dt" : "dd") :
-                    hireling.hitTime > 0 ? "gh" : hireling.attack ? "a1" : hireling.moving ? "wl" : "nu";
-                auto found = animations.find(std::to_string(hireling.classId) + "/" + mode);
+                const auto mode = !hireling.active() ? (hireling.deathAge < hireling.deathDuration ? "dt" : "dd") :
+                    hireling.hitTime > 0 ? "gh" : hireling.attack ? hireling.attack->animationMode() : hireling.moving ? "wl" : "nu";
+                auto found = animations.find(std::to_string(hireling.classId) + "/" + std::string(mode));
                 if (found != animations.end()) {
                     const auto &animation = found->second;
                     int index = int(hireling.animationTime);

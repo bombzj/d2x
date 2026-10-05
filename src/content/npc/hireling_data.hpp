@@ -6,6 +6,10 @@
 #include <cstdint>
 
 namespace d2x {
+struct HirelingSkillDefinition {
+    int id = -1, mode = 0, requiredLevel = 0, level = 0, levelPerLevel = 0;
+    int chance = 0, chancePerLevel = 0, aiType = 0, channelFrames = 0;
+};
 struct HirelingDefinition {
     int sourceRow = -1;
     int classId = -1, seller = -1, act = 0, difficulty = 0;
@@ -16,6 +20,8 @@ struct HirelingDefinition {
     int strength = 0, strengthPerLevel = 0, dexterity = 0, dexterityPerLevel = 0;
     int attackPerLevel = 0, damagePerLevel = 0, resist = 0, resistPerLevel = 0;
     std::string description, weaponType1, weaponType2;
+    int defaultChance = 0;
+    std::vector<HirelingSkillDefinition> skills;
 };
 struct HirelingStats {
     int life = 0, defense = 0, strength = 0, dexterity = 0, attackRating = 0;
@@ -34,7 +40,7 @@ struct HirelingLayout {
     // Head, torso, right arm, left arm; original Hireling row, panel-local pixels.
     std::array<std::array<int, 4>, 4> slots{};
 };
-std::vector<HirelingDefinition> loadHirelingDefinitions(const DataTable &table);
+std::vector<HirelingDefinition> loadHirelingDefinitions(const DataTable &table, const DataTable &skills);
 HirelingLayout loadHirelingLayout(const DataTable &table);
 HirelingStats deriveHirelingStats(const HirelingDefinition &definition, int level);
 std::vector<HirelingOffer> planHirelingOffers(const std::vector<HirelingDefinition> &definitions,
