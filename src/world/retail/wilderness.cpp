@@ -11,13 +11,7 @@ namespace d2x {
 namespace {
 void secondary(const WorldCatalog &catalog, int level, uint32_t flags, int type,
                RetailOutdoorGrid &grid, const RetailPatternReader &reader) {
-    bool found = false;
-    for (const auto &record : catalog.substitutions())
-        if (record.type == type) {
-            found = true;
-            replaceRetailSecondaryBorder(catalog, record, reader(record.file), level, flags, 4, grid);
-        }
-    if (!found) throw std::runtime_error("Native wilderness border substitution is missing");
+    applyRetailOutdoorSecondaryBorder(catalog, level, flags, type, 4, grid, reader);
 }
 bool riverFits(const RetailOutdoorGrid &grid, int x) {
     for (int y = 0; y < grid.height(); ++y)
@@ -115,6 +109,16 @@ void special(const WorldCatalog &catalog, int level, RetailOutdoorGrid &grid) {
     }
 }
 } // namespace
+void reserveRetailOutdoorWaypoint(const WorldCatalog &catalog, const NativeActLayout &layout, int level, RetailOutdoorGrid &grid) { waypoint(catalog, layout, level, grid); }
+void reserveRetailOutdoorShrines(const WorldCatalog &catalog, RetailOutdoorGrid &grid) { shrines(catalog, grid); }
+void applyRetailOutdoorSecondaryBorder(const WorldCatalog &catalog, int level, uint32_t flags, int type, int firstPreset, RetailOutdoorGrid &grid, const RetailPatternReader &reader) {
+    bool found = false;
+    for (const auto &record : catalog.substitutions()) if (record.type == type) {
+        found = true;
+        replaceRetailSecondaryBorder(catalog, record, reader(record.file), level, flags, firstPreset, grid);
+    }
+    if (!found) throw std::runtime_error("Native outdoor border substitution is missing");
+}
 uint32_t initializeRetailWilderness(const WorldCatalog &catalog, const NativeActLayout &layout, int level,
                                    RetailOutdoorGrid &grid, const RetailPatternReader &reader) {
     if (catalog.level(level).act != 0 || catalog.level(level).levelType != 2)

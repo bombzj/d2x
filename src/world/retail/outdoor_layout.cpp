@@ -1,5 +1,9 @@
 #include "outdoor_layout.hpp"
 #include "wilderness.hpp"
+#include "desert.hpp"
+#include "jungle.hpp"
+#include "mesa.hpp"
+#include "barricade.hpp"
 #include "preset_scan.hpp"
 #include <map>
 #include <stdexcept>
@@ -8,8 +12,8 @@ namespace d2x {
 RetailOutdoorLayout buildRetailOutdoorLayout(Archives &archives, const WorldCatalog &catalog,
                                             const NativeActLayout &act, int level) {
     const auto &record = catalog.level(level);
-    if (record.generation != GenerationKind::Outdoor || record.act != 0 || record.levelType != 2)
-        throw std::runtime_error("Retail outdoor macro generator currently supports Act I wilderness");
+    if (record.generation != GenerationKind::Outdoor || (record.levelType != 2 && record.levelType != 16 && record.levelType != 21 && record.levelType != 22 && record.levelType != 27 && record.levelType != 28 && record.levelType != 30 && record.levelType != 31))
+        throw std::runtime_error("Unsupported native outdoor macro generator");
     const auto &placement = act.levels.at(level);
     RetailOutdoorLayout result{placement,
         RetailOutdoorGrid(placement.width, placement.height, act.startSeed, level), {}, 0};
@@ -20,10 +24,15 @@ RetailOutdoorLayout buildRetailOutdoorLayout(Archives &archives, const WorldCata
         if (fresh) entry->second = decodeDs1(archives.read(key), key);
         return entry->second;
     };
+    if (record.levelType == 2) {
     result.flags = initializeRetailWilderness(catalog, act, level, result.grid, reader);
     if (level >= 2 && level <= 7)
         result.paths = buildRetailDirtPaths(act, level, result.flags, result.grid);
     finishRetailWildernessPresets(catalog, act, level, result.grid);
+    } else if (record.levelType == 16) result.flags = initializeRetailDesert(catalog, act, level, result.grid, reader);
+    else if (record.levelType == 21 || record.levelType == 22) result.flags = initializeRetailJungle(catalog, act, level, result.grid);
+    else if (record.levelType == 27 || record.levelType == 28) result.flags = initializeRetailMesa(catalog, act, level, result.grid, reader);
+    else result.flags = initializeRetailBarricade(catalog, act, level, result.grid, reader);
     // Connector overrides happen after the initial placement. Validate the
     // final selected path, including File4/File5 outside the random Files limit.
     for (int y = 0; y < result.grid.height(); ++y)

@@ -28,7 +28,7 @@ MapData assembleMap(Archives &archives, const MapRecipe &recipe) {
         const auto &request = *recipe.native;
         WorldCatalog catalog(archives, request.difficulty);
         TileLibraryCache cache(archives);
-        NativeMapGenerator generator(archives, catalog, cache, 0, request.seed, request.difficulty);
+        NativeMapGenerator generator(archives, catalog, cache, catalog.level(request.level).act, request.seed, request.difficulty);
         return generator.completeLevel(request.level).map.terrain.data;
     }
     MapData result;

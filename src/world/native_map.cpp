@@ -6,14 +6,14 @@
 namespace d2x {
 NativeMapGenerator::NativeMapGenerator(Archives &archives, const WorldCatalog &catalog,
     TileLibraryCache &cache, int act, uint32_t mapSeed, int difficulty)
-    : archives_(archives), catalog_(catalog), cache_(cache), mapSeed_(mapSeed), difficulty_(difficulty),
+    : archives_(archives), catalog_(catalog), cache_(cache), act_(act), mapSeed_(mapSeed), difficulty_(difficulty),
       layout_(placeNativeAct(catalog, act, mapSeed)),
       identities_(archives), tiles_(catalog), activation_({
           [this](size_t room) { return near(room); },
           [this](size_t room) { prepare(room); },
           [this](size_t room) { create(room); },
           [this](size_t room) { tiles_.releaseRoom(room); }}) {
-    if (act != 0) throw std::runtime_error("Native map session currently supports Act I");
+    if (act < 0 || act > 4) throw std::runtime_error("Invalid native map act");
     if (difficulty < 0 || difficulty > 2) throw std::invalid_argument("Invalid native map difficulty");
 }
 const MapData &NativeMapGenerator::pattern(const std::string &path) {
@@ -25,7 +25,11 @@ const MapData &NativeMapGenerator::pattern(const std::string &path) {
 void NativeMapGenerator::ensureLevel(int level) {
     if (levels_.contains(level)) return;
     const auto &record = catalog_.level(level);
-    if (record.act != 0 || !allocating_.insert(level).second)
+    // The retail Pandemonium Run 1 table retains its legacy Vis to Burial Grounds.
+    // Allocate that level at its table coordinates in this DRLG; no outdoor act links are added.
+    if (act_ == 4 && level == 17 && !layout_.levels.contains(level))
+        layout_.levels.emplace(level, NativeLevelPlacement{level, record.offsetX, record.offsetY, record.width, record.height});
+    if ((record.act != act_ && !(act_ == 4 && level == 17)) || !allocating_.insert(level).second)
         throw std::runtime_error("Invalid or cyclic native level allocation");
     Level result;
     const std::vector<RetailRoom> *rooms = nullptr;
@@ -43,7 +47,7 @@ void NativeMapGenerator::ensureLevel(int level) {
             direction = levels_.at(27).preset->file;
         }
         result.maze = buildNativeMazeLevel(archives_, catalog_, layout_, level, mapSeed_, difficulty_, direction);
-        if (level == 28) {
+        if (level == 28 || level == 107) {
             auto &placement = layout_.levels.at(level);
             placement.x = result.maze->recipe.worldX; placement.y = result.maze->recipe.worldY;
             placement.width = result.maze->recipe.width; placement.height = result.maze->recipe.height;
@@ -60,7 +64,8 @@ void NativeMapGenerator::ensureLevel(int level) {
     levels_.emplace(level, std::move(result));
     allocating_.erase(level);
     const auto &allocated = levels_.at(level);
-    if (allocated.preset && catalog_.presets().at(allocated.preset->preset).automap) {
+    if (allocated.preset && level != 40 && level != 103 && level != 109 &&
+        catalog_.presets().at(allocated.preset->preset).automap) {
         // The native client automap callback first allocates visible levels,
         // then initializes the complete prepend room list without sight refs.
         for (int destination : slots.visible) if (destination) ensureLevel(destination);
@@ -208,7 +213,7 @@ MapRecipe NativeMapGenerator::recipe(int level) {
         tiles_.rooms().at(index).room.dt1Mask))
         if (std::find(result.tileLibraries.begin(), result.tileLibraries.end(), path) == result.tileLibraries.end())
             result.tileLibraries.push_back(path);
-    result.ds1 = "native-act1/" + std::to_string(level) + "/" + std::to_string(mapSeed_);
+    result.ds1 = "native-act" + std::to_string(act_ + 1) + "/" + std::to_string(level) + "/" + std::to_string(mapSeed_);
     int right = 0, bottom = 0;
     result.worldX = result.worldY = std::numeric_limits<int>::max();
     for (const auto index : rooms) {
@@ -321,8 +326,8 @@ NativeMapSnapshot NativeMapGenerator::snapshot(int currentLevel, bool continuous
     result.collision.assign(result.map.grid.blocked.size(), 0xffff);
     auto &terrain = result.map.terrain;
     terrain.preparedRooms = true;
-    terrain.path = terrain.name = "native-act1/" + std::to_string(mapSeed_);
-    terrain.data.act = 0;
+    terrain.path = terrain.name = "native-act" + std::to_string(act_ + 1) + "/" + std::to_string(mapSeed_);
+    terrain.data.act = act_;
     terrain.data.width = right - x + 1; terrain.data.height = bottom - y + 1;
     const size_t cells = size_t(terrain.data.width) * size_t(terrain.data.height);
     terrain.data.shadows.resize(cells);

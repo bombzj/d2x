@@ -68,6 +68,12 @@ void blankCorners(RetailOutdoorGrid &grid) {
     }
 }
 } // namespace
+int retailPerimeterPreset(int dx, int dy, int type) {
+    return presetFor(lookup(dx + 3 * dy + 4) + 1, type);
+}
+int retailPerimeterCorner(int dx, int dy, int nx, int ny, int type) {
+    return corner(dx, dy, nx, ny, type);
+}
 void placeRetailBorderPresets(const WorldCatalog &catalog, const NativeActLayout &layout, int levelId,
                              std::span<const RetailBoundaryVertex> vertices, RetailOutdoorGrid &grid) {
     const auto &level = catalog.level(levelId);

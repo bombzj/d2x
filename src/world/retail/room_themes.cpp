@@ -133,8 +133,8 @@ class Substitution {
 void applyRetailOutdoorRoomThemes(const WorldCatalog &catalog, const LevelRecord &level,
     RetailRoom &room, RetailRoomGrids &grid, const RetailPatternReader &reader,
     const RetailShadowEmitter &shadow) {
-    if (level.act != 0 || level.levelType != 2 || room.preset || !reader)
-        throw std::runtime_error("Native room themes currently require Act I outdoor room data");
+    if (room.preset || !reader)
+        throw std::runtime_error("Native room themes require outdoor room data");
     Substitution substitution(room, grid, shadow);
     auto apply = [&](int type, int theme, uint32_t mask) {
         if (type == -1 || !mask) return;
@@ -151,6 +151,16 @@ void applyRetailOutdoorRoomThemes(const WorldCatalog &catalog, const LevelRecord
     apply(level.waypointSubstitution, 0, (room.flags >> 16) & 3);
     apply(level.shrineSubstitution, 0, (room.flags >> 12) & 15);
     apply(level.subtype, level.theme, room.themeMask);
+    uint32_t biome = 0;
+    switch (level.levelType) {
+    case 16: biome = 0x100; break;
+    case 21: biome = 0x120000; break;
+    case 22: biome = 0x100000; break;
+    case 27: biome = 0xA00000; break;
+    case 28: biome = 0x1600000; break;
+    case 31: if (level.id == 117) biome = 0x600000; break;
+    }
+    for (auto &floor : grid.floors) if (!(floor.value & 0x3F0FF80)) floor.value |= biome;
     // Native edge tagging happens after all substitutions and does not consume RNG.
     for (int y = 0; y < grid.height; ++y)
         for (int x = 0; x < grid.width; ++x)

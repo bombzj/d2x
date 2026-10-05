@@ -1,11 +1,30 @@
 // Cave/Crypt branches adapted from D2MOO DrlgMaze.cpp / D2Seed.h, MIT.
 // Copyright (c) 2020-2025 The Phrozen Keep community. See docs/licenses/D2MOO.txt.
-// Room graph rules follow the original branch; full engine RNG consumption is not reproduced.
+// Room graph and allocation draws are shared by offline and native map consumers.
 #include "room_graph.hpp"
 #include <algorithm>
 #include <numeric>
 
 namespace d2x::maze {
+void RoomMaze::fillBlank(int ignore) {
+    constexpr int horizontal[]{-1,0,1,0,-1,1,1,-1};
+    constexpr int vertical[]{0,-1,0,1,-1,-1,1,1};
+    const int count = int(rooms_.size());
+    for (int index = count - 1; index >= 0; --index) {
+        if (index == ignore) continue;
+        for (int direction = 0; direction < 8; ++direction) {
+            Chamber filler(seed_.next()); // Native allocates even failed overlapping probes.
+            filler.x = rooms_[index].x + horizontal[direction];
+            filler.y = rooms_[index].y + vertical[direction];
+            if (std::any_of(rooms_.begin(), rooms_.end(), [&](const auto &room) {
+                return room.x == filler.x && room.y == filler.y;
+            })) continue;
+            filler.preset = 836;
+            filler.fixed = true;
+            rooms_.push_back(filler);
+        }
+    }
+}
 void RoomMaze::placeArcane() {
     int variant = seed_.next() & 3;
     for (int branch = 0; branch < 4; ++branch) {
@@ -35,6 +54,12 @@ void RoomMaze::placeSewerEntrances() {
         for (int index = int(rooms_.size()) - 1; index >= 0; --index) {
             if (rooms_[index].fixed)
                 continue;
+            if (chosen >= 0 && !(direction == 1 ? rooms_[index].y < rooms_[chosen].y :
+                                                    rooms_[index].x > rooms_[chosen].x)) continue;
+            if (rooms_[index].mask & bits[direction]) continue;
+            // CheckIfMayPlaceAdjacentPresetRoom allocates and frees a probe.
+            // Even an overlap consumes a level seed; only existing orths skip it.
+            seed_.next();
             bool occupied = std::any_of(rooms_.begin(), rooms_.end(), [&](const auto &room) {
                 return room.x == rooms_[index].x + dx[direction] &&
                        room.y == rooms_[index].y + dy[direction];
@@ -48,6 +73,7 @@ void RoomMaze::placeSewerEntrances() {
         return chosen;
     };
     int vertical = (seed_.next() & 1) ? 3 : 1;
+    const int direction = seed_.next() & 3;
     int north = add(edge(1), 1, true);
     north = add(north, 1, true);
     int stair = add(north, 0, false);
@@ -61,7 +87,7 @@ void RoomMaze::placeSewerEntrances() {
     rooms_[dock].preset = 336;
     rooms_[dock].variant = 0;
     rooms_[dock].fixed = true;
-    special(seed_.next() & 3, 337);
+    special(direction, 337);
 }
 MapRecipe RoomMaze::build(int level, uint32_t seed, int difficulty, int entranceDirection,
     const NativeActLayout *layout, const ConvertRoom &convert) {
@@ -70,6 +96,7 @@ MapRecipe RoomMaze::build(int level, uint32_t seed, int difficulty, int entrance
         throw std::runtime_error("Unsupported Room maze dimensions or difficulty");
     int count = maze_.difficultyRooms[difficulty];
     int tombDirection = -1;
+    int lavaBridge = -1;
     if (catalog_.level(level).levelType == 17) {
         const auto tombs = actTwoTombs(seed);
         const int staff = tombs[0], boss = tombs[1];
@@ -86,6 +113,11 @@ MapRecipe RoomMaze::build(int level, uint32_t seed, int difficulty, int entrance
     if (count < 1 || count > 256)
         throw std::runtime_error("Invalid LvlMaze room count");
     rooms_.emplace_back(seed_.next());
+    if (level == 61 || level == 114 || level == 116 || level == 119) {
+        rooms_[0].preset = level == 61 ? 480 : level == 114 ? (seed_.below(2) ? 1038 : 1039)
+                             : level == 116 ? 1040 : 1041;
+        rooms_[0].fixed = true;
+    } else {
     if (catalog_.level(level).levelType == 35) {
         struct LavaBranch { int preset, direction, variant; };
         constexpr LavaBranch branches[]{
@@ -100,23 +132,7 @@ MapRecipe RoomMaze::build(int level, uint32_t seed, int difficulty, int entrance
             rooms_[added].variant = branch.variant;
             rooms_[added].fixed = true;
         }
-        const int originalRooms = int(rooms_.size());
-        for (int index = 0; index < originalRooms; ++index)
-            for (int vertical = -1; vertical <= 1; ++vertical)
-                for (int horizontal = -1; horizontal <= 1; ++horizontal) {
-                    if (!vertical && !horizontal) continue;
-                    const int column = rooms_[index].x + horizontal;
-                    const int row = rooms_[index].y + vertical;
-                    if (std::any_of(rooms_.begin(), rooms_.end(), [&](const auto &room) {
-                        return room.x == column && room.y == row;
-                    })) continue;
-                    Chamber filler(seed_.next());
-                    filler.x = column;
-                    filler.y = row;
-                    filler.preset = 836;
-                    filler.fixed = true;
-                    rooms_.push_back(filler);
-                }
+        fillBlank();
     }
     if (level == 74)
         placeArcane();
@@ -167,6 +183,7 @@ MapRecipe RoomMaze::build(int level, uint32_t seed, int difficulty, int entrance
             add(parent, direction, true);
     }
     if (level == 64) {
+        seed_.next(); // PlaceAct2LairStuff draws its direction even for the fixed third-floor branches.
         special(2, 507);
         special(3, 505);
         special(0, 497);
@@ -176,12 +193,21 @@ MapRecipe RoomMaze::build(int level, uint32_t seed, int difficulty, int entrance
         placeBarracks(entranceDirection);
     else if (level == 107) {
         auto extend = [&](bool north, const std::vector<int> &presets) {
-            int parent = 0;
-            for (int index = 1; index < int(rooms_.size()); ++index)
-                if (north ? rooms_[index].y < rooms_[parent].y : rooms_[index].y > rooms_[parent].y)
-                    parent = index;
+            int parent = -1;
+            const int direction = north ? 1 : 3;
+            for (int index = int(rooms_.size()) - 1; index >= 0; --index) {
+                const auto &candidate = rooms_[index];
+                if (parent >= 0 && !(north ? candidate.y < rooms_[parent].y : candidate.y > rooms_[parent].y)) continue;
+                if (candidate.fixed || (candidate.mask & bits[direction])) continue;
+                seed_.next();
+                if (std::any_of(rooms_.begin(), rooms_.end(), [&](const auto &room) {
+                    return room.x == candidate.x + dx[direction] && room.y == candidate.y + dy[direction];
+                })) continue;
+                parent = index;
+            }
+            if (parent < 0) throw std::runtime_error("Native lava bridge has no free edge");
             for (int preset : presets) {
-                const int added = add(parent, north ? 1 : 3, false);
+                const int added = add(parent, direction, false);
                 if (added < 0) throw std::runtime_error("Original lava bridge overlaps");
                 rooms_[added].preset = preset;
                 rooms_[added].fixed = true;
@@ -190,28 +216,10 @@ MapRecipe RoomMaze::build(int level, uint32_t seed, int difficulty, int entrance
             return parent;
         };
         extend(false, {852});
-        const int lastBridge = extend(true, {855, 856, 856});
+        lavaBridge = extend(true, {855, 856, 856});
         const bool east = seed_.next() & 1;
         special(east ? 1 : 3, 853, east ? 854 : 853);
-        const int originalRooms = int(rooms_.size());
-        for (int index = 0; index < originalRooms; ++index) {
-            if (index == lastBridge) continue;
-            for (int vertical = -1; vertical <= 1; ++vertical)
-                for (int horizontal = -1; horizontal <= 1; ++horizontal) {
-                    if (!vertical && !horizontal) continue;
-                    const int column = rooms_[index].x + horizontal;
-                    const int row = rooms_[index].y + vertical;
-                    if (std::any_of(rooms_.begin(), rooms_.end(), [&](const auto &room) {
-                        return room.x == column && room.y == row;
-                    })) continue;
-                    Chamber filler(seed_.next());
-                    filler.x = column;
-                    filler.y = row;
-                    filler.preset = 836;
-                    filler.fixed = true;
-                    rooms_.push_back(filler);
-                }
-        }
+        fillBlank(lavaBridge);
     }
     else if (catalog_.level(level).levelType == 32) {
         const int selected = seed_.below(3);
@@ -238,7 +246,9 @@ MapRecipe RoomMaze::build(int level, uint32_t seed, int difficulty, int entrance
         placeMapped({1078, 1080, 1079, 1081});
         if (level == 129) placeMapped({1082, 1084, 1083, 1085});
     }
-    else if (catalog_.level(level).levelType != 35) {
+    else if (catalog_.level(level).levelType != 35 && catalog_.level(level).levelType != 14 &&
+             catalog_.level(level).levelType != 15 && catalog_.level(level).levelType != 23) {
+        if (catalog_.level(level).levelType == 13) seed_.next(); // Sewer vertical branch draw also occurs outside floor one.
         int direction = tombDirection >= 0 ? (tombDirection + 2) % 4 : seed_.next() & 3;
         auto place = [&](int first) {
             special(direction, first);
@@ -254,6 +264,7 @@ MapRecipe RoomMaze::build(int level, uint32_t seed, int difficulty, int entrance
             }
         }
     }
+    } // Ordinary maze graph; Claw Viper Temple II retains its fixed chamber.
     // Native basic-to-theme substitution scan: shuffled 15-entry list, bounded scan.
     std::array<int, 15> offsets;
     std::iota(offsets.begin(), offsets.end(), 0);
@@ -291,6 +302,11 @@ MapRecipe RoomMaze::build(int level, uint32_t seed, int difficulty, int entrance
     if (layout) {
         result.worldX = layout->levels.at(level).x;
         result.worldY = layout->levels.at(level).y;
+        if (level == 107) {
+            const auto &chaos = layout->levels.at(108);
+            result.worldX = chaos.x + 2 * maze_.width - (rooms_.at(lavaBridge).x - minX) * maze_.width;
+            result.worldY = chaos.y + chaos.height - (rooms_.at(lavaBridge).y - minY) * maze_.height;
+        }
         if (level == 28) {
             const auto &courtPlacement = layout->levels.at(27);
             MapRecipe court;
@@ -318,7 +334,7 @@ MapRecipe RoomMaze::build(int level, uint32_t seed, int difficulty, int entrance
         // AllocDrlgMap always draws, including a later forced-file override.
         int variant = seed_.below(preset.files);
         if (i->variant >= 0) variant = i->variant;
-        else if (level != 74 && !(level >= 51 && level <= 54) && level != 84 && level != 85 &&
+        else if (type != 32 && level != 74 && !(level >= 51 && level <= 54) && level != 84 && level != 85 &&
             i->preset > base_ && i->preset < base_ + 16) {
             auto [it, inserted] = variants.try_emplace(i->preset, 0);
             if (inserted) it->second = seed_.below(preset.files);

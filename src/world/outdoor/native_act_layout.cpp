@@ -1,4 +1,5 @@
 #include "world/outdoor/native_act_layout.hpp"
+#include "native_jungle_layout.hpp"
 #include "world/outdoor/native_connections.hpp"
 #include "world/generation_seed.hpp"
 #include <algorithm>
@@ -207,8 +208,6 @@ void placeList(const WorldCatalog &catalog, NativeActLayout &out, std::span<cons
 } // namespace
 NativeActLayout placeNativeAct(const WorldCatalog &catalog, int act, uint32_t initialSeed) {
     if (act < 0 || act > 4) throw std::invalid_argument("Invalid native act");
-    if (act == 2)
-        throw std::runtime_error("Retail jungle placement is not implemented");
     NativeActLayout result;
     Seed random(initialSeed);
     result.startSeed = random.next();
@@ -218,6 +217,7 @@ NativeActLayout placeNativeAct(const WorldCatalog &catalog, int act, uint32_t in
         result.staffTomb = 66 + int(staff);
         result.bossTomb = 66 + int(boss);
     }
+    if (act == 2) result.jungleInterlink = (random.next() & 1) != 0;
     auto list = [&](std::initializer_list<Node> nodes, int gate) {
         placeList(catalog, result, {nodes.begin(), nodes.size()}, random, gate);
     };
@@ -237,6 +237,8 @@ NativeActLayout placeNativeAct(const WorldCatalog &catalog, int act, uint32_t in
               {43,2,Rule::Eight},{44,3,Rule::Eight},{45,4,Rule::EightAligned}}, 1);
         list({{46,-1,Rule::Fixed}}, 1);
         result.levels.at(40).presetVariant = result.levels.at(41).direction;
+    } else if (act == 2) {
+        placeNativeJungleAct(catalog, result, random);
     } else if (act == 3) {
         list({{103,-1,Rule::Fixed},{104,0,Rule::Mirror},{105,1,Rule::Four},
               {106,2,Rule::Four}}, 1);

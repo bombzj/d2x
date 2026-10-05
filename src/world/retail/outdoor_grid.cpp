@@ -69,6 +69,9 @@ bool RetailOutdoorGrid::canPlace(const WorldCatalog &catalog, int preset, int x,
 }
 void RetailOutdoorGrid::place(const WorldCatalog &catalog, int preset, int x, int y,
                              int pickedFile, bool markBorder) {
+    if (!preset && pickedFile >= 0) { cell(x, y).preset = 0; return; }
+    if (!catalog.presets().contains(preset))
+        throw std::runtime_error("Native outdoor preset is absent from MPQ: " + std::to_string(preset));
     const auto &record = catalog.presets().at(preset);
     const auto [width, height] = footprint(catalog, preset);
     if (!contains(x, y) || width > width_ - x || height > height_ - y)
@@ -98,11 +101,12 @@ void RetailOutdoorGrid::place(const WorldCatalog &catalog, int preset, int x, in
         }
     cell(x, y).preset = preset;
 }
-std::vector<std::pair<int, int>> RetailOutdoorGrid::shuffledInterior() {
+std::vector<std::pair<int, int>> RetailOutdoorGrid::shuffledCells(bool interior) {
     std::vector<std::pair<int, int>> coordinates;
-    if (width_ <= 2 || height_ <= 2) return coordinates;
-    for (int y = 1; y < height_ - 1; ++y)
-        for (int x = 1; x < width_ - 1; ++x) coordinates.emplace_back(x, y);
+    const int edge = interior ? 1 : 0;
+    if (width_ <= 2 * edge || height_ <= 2 * edge) return coordinates;
+    for (int y = edge; y < height_ - edge; ++y)
+        for (int x = edge; x < width_ - edge; ++x) coordinates.emplace_back(x, y);
     const int count = int(coordinates.size());
     // Native: count pairs of draws over the entire array, including self swaps.
     for (int i = 0; i < count; ++i) {

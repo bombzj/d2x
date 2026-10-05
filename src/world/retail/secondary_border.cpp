@@ -7,7 +7,8 @@
 namespace d2x {
 void replaceRetailSecondaryBorder(const WorldCatalog &catalog, const SubstitutionRecord &record,
                                  const MapData &pattern, int level, uint32_t outdoorFlags,
-                                 int firstPreset, RetailOutdoorGrid &grid) {
+                                 int firstPreset, RetailOutdoorGrid &grid,
+                                 const std::function<int(uint32_t)> &decoder) {
     // Only 0 and 1 terminate early in the native loop; -1 is an authored
     // all-matches mode (for example Act I waypoints), not an invalid enum.
     if (record.gridSize < 1)
@@ -49,7 +50,12 @@ void replaceRetailSecondaryBorder(const WorldCatalog &catalog, const Substitutio
                     const uint32_t wall = value(pattern.walls, group.x + x, group.y + y);
                     const uint32_t floor = value(pattern.floors, group.x + x, group.y + y);
                     const auto &cell = grid.cell(gx, gy);
-                    if (wall & 1) {
+                    if (decoder) {
+                        const int id = decoder(wall);
+                        if (id != -5 && (id != cell.preset || (cell.flags & 0x400))) {
+                            matches = false; break;
+                        }
+                    } else if (wall & 1) {
                         const int code = int((wall >> 8) & 255) - 1;
                         if ((code != 62 && code + firstPreset != cell.preset) || (cell.flags & 0x400)) {
                             matches = false; break;
@@ -67,8 +73,8 @@ void replaceRetailSecondaryBorder(const WorldCatalog &catalog, const Substitutio
                     const uint32_t floor = value(pattern.floors, group.x + offset + x, group.y + y);
                     if (wall & 1) {
                         const int code = int((wall >> 8) & 255) - 1;
-                        if (code != 62 && code + firstPreset != -5) {
-                            const int preset = code + firstPreset;
+                        if ((decoder || code != 62) && (decoder ? decoder(wall) : code + firstPreset) != -5) {
+                            const int preset = decoder ? decoder(wall) : code + firstPreset;
                             grid.place(catalog, preset, gx, gy, 0,
                                 (preset >= 4 && preset <= 15) || (preset >= 364 && preset <= 375));
                         }

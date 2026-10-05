@@ -1,6 +1,6 @@
 // Cave/Crypt branches adapted from D2MOO DrlgMaze.cpp / D2Seed.h, MIT.
 // Copyright (c) 2020-2025 The Phrozen Keep community. See docs/licenses/D2MOO.txt.
-// Room graph rules follow the original branch; full engine RNG consumption is not reproduced.
+// Room graph and allocation draws are shared by offline and native map consumers.
 #pragma once
 #include "family.hpp"
 #include "world/generation_seed.hpp"
@@ -26,6 +26,7 @@ class RoomMaze {
     void initializeCatacombs(int level);
     void placeSewerEntrances();
     void placeArcane();
+    void fillBlank(int ignore = -1);
     void pick(int i) {
         auto &room = rooms_[i];
         if (room.fixed) return;

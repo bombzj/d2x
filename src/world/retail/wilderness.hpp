@@ -12,4 +12,8 @@ uint32_t initializeRetailWilderness(const WorldCatalog &, const NativeActLayout 
                                    RetailOutdoorGrid &, const RetailPatternReader &);
 void finishRetailWildernessPresets(const WorldCatalog &, const NativeActLayout &, int level,
                                   RetailOutdoorGrid &);
+void reserveRetailOutdoorWaypoint(const WorldCatalog &, const NativeActLayout &, int level, RetailOutdoorGrid &);
+void reserveRetailOutdoorShrines(const WorldCatalog &, RetailOutdoorGrid &);
+void applyRetailOutdoorSecondaryBorder(const WorldCatalog &, int level, uint32_t flags, int type,
+                                      int firstPreset, RetailOutdoorGrid &, const RetailPatternReader &);
 } // namespace d2x

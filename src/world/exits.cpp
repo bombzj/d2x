@@ -179,6 +179,10 @@ void linkLevelExits(std::span<Region> regions, const WorldCatalog &catalog) {
                     continue;
                 exit.passages.push_back({pos, across});
             }
+            // Retail Vis includes touching jungle rectangles even when their
+            // river/clearing branches do not connect. Preserve the sealed edge.
+            if (exit.passages.empty() && region.recipe.native && catalog.level(int(region.definition.id)).levelType == 21 &&
+                catalog.level(b.destination).levelType == 21) continue;
             if (exit.passages.empty())
                 throw std::runtime_error(
                     "Original outdoor border is not passable: " + std::to_string(int(region.definition.id)) +

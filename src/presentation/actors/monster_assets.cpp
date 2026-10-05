@@ -160,9 +160,11 @@ void SceneAssets::loadMonsterActor(const GameSession &session, const MonsterArtS
     const auto palettePath = "data/global/monsters/" + std::string(definition.token) +
                              "/cof/palshift.dat";
     std::optional<std::array<uint8_t, 256>> colors;
-    if (entry.fixedPalette && entry.paletteOverride >= 2) {
+    if (entry.fixedPalette && entry.paletteOverride >= 8) {
+        // 1.13c D2Client RVA 0x53aa5: native transforms 8..37 index
+        // the 30 RandTransforms maps; 0..7 belong to the actor palshift.
         const auto data = archives_.read("data/global/monsters/randtransforms.dat");
-        const auto offset = size_t(entry.paletteOverride - 2) * 256;
+        const auto offset = size_t(entry.paletteOverride - 8) * 256;
         if (data.size() % 256 || offset + 256 > data.size())
             throw std::runtime_error("Invalid MPQ SuperUnique Utrans: " + actor.id);
         colors.emplace();

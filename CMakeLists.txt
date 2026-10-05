@@ -20,15 +20,16 @@ target_link_libraries(d2x_resources PUBLIC d2x_core PRIVATE storm)
 
 add_library(d2x_navigation src/world/navigation.cpp src/world/room_activation.cpp)
 target_link_libraries(d2x_navigation PUBLIC d2x_core)
-add_library(d2x_world src/world/map.cpp src/world/map_assembly.cpp src/world/maze.cpp src/world/outdoor/outdoor.cpp src/world/outdoor/outdoor_layout.cpp src/world/region.cpp src/world/region_catalog.cpp src/world/exits.cpp src/world/world_report.cpp)
+add_library(d2x_world src/world/map.cpp src/world/map_assembly.cpp src/world/maze.cpp src/world/outdoor/outdoor.cpp src/world/region.cpp src/world/region_catalog.cpp src/world/exits.cpp src/world/world_report.cpp)
 target_sources(d2x_world PRIVATE src/world/object_population.cpp)
 target_sources(d2x_world PRIVATE src/world/chest.cpp)
 target_sources(d2x_world PRIVATE src/world/shrine_catalog.cpp)
 target_sources(d2x_world PRIVATE src/world/native_room_activation.cpp src/world/native_map.cpp)
 target_sources(d2x_world PRIVATE src/world/outdoor/native_act_layout.cpp src/world/retail/outdoor_grid.cpp
-  src/world/outdoor/native_connections.cpp src/world/retail/boundary.cpp
+  src/world/outdoor/native_jungle_layout.cpp src/world/outdoor/native_connections.cpp src/world/retail/boundary.cpp
   src/world/retail/border_presets.cpp src/world/retail/secondary_border.cpp
-  src/world/retail/wilderness.cpp src/world/retail/dirt_paths.cpp
+  src/world/retail/wilderness.cpp src/world/retail/desert.cpp src/world/retail/jungle.cpp
+  src/world/retail/mesa.cpp src/world/retail/barricade.cpp src/world/retail/dirt_paths.cpp
   src/world/retail/outdoor_layout.cpp src/world/retail/rooms.cpp
   src/world/retail/preset_scan.cpp src/world/retail/room_grids.cpp
   src/world/retail/room_themes.cpp src/world/retail/tile_selector.cpp
@@ -39,10 +40,6 @@ target_sources(d2x_world PRIVATE
   src/world/outdoor/outdoor_shrines.cpp
   src/world/outdoor/outdoor_river.cpp
   src/world/outdoor/outdoor_paths.cpp
-  src/world/outdoor/desert.cpp
-  src/world/outdoor/jungle.cpp
-  src/world/outdoor/mesa.cpp
-  src/world/outdoor/barricade.cpp
   src/world/cow_level.cpp
   src/world/maze/generation.cpp src/world/maze/resources.cpp
   src/world/maze/cave.cpp src/world/maze/crypt.cpp src/world/maze/barracks.cpp

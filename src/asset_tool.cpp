@@ -351,7 +351,7 @@ int main(int argc, char **argv) {
             integer(argv[3], level); integer(argv[4], seed); integer(argv[5], difficulty);
             d2x::WorldCatalog catalog(a, difficulty);
             d2x::TileLibraryCache cache(a);
-            d2x::NativeMapGenerator generator(a, catalog, cache, 0, seed, difficulty);
+            d2x::NativeMapGenerator generator(a, catalog, cache, catalog.level(level).act, seed, difficulty);
             const auto allocated = generator.levelRooms(level);
             const auto &placement = generator.layout().levels.at(level);
             Json report{{"id", level}, {"seed", seed}, {"difficulty", difficulty},
@@ -405,7 +405,7 @@ int main(int argc, char **argv) {
             for (const auto &event : events) {
                 const auto op = event.at("op").get<std::string>();
                 const int area = event.at("level").get<int>(), x = event.at("x").get<int>(), y = event.at("y").get<int>();
-                if (catalog.level(area).act != 0 || x < 0 || y < 0 || x > 13107 || y > 13107)
+                if (catalog.level(area).act != catalog.level(level).act || x < 0 || y < 0 || x > 13107 || y > 13107)
                     throw std::runtime_error("Invalid original room coordinates");
                 report["events"].push_back(event);
                 if (op == "reveal") generator.reveal(area, x, y);

@@ -77,7 +77,7 @@ void classify(WorldObject &object, const Table &objectRows) {
             }
             const auto &operation = record->at("OperateFn");
             object.operateFn = operation.empty() ? 0 : std::stoi(operation);
-            if (door && object.operateFn == 8) object.interaction = Interaction::Door;
+            if ((door && (object.operateFn == 8 || object.operateFn == 29)) || object.operateFn == 61) object.interaction = Interaction::Door;
             if (object.operateFn == 27) object.interaction = Interaction::TeleportPad;
             if (object.act == 3 && object.operateFn == 49) object.interaction = Interaction::QuestObject;
             if (object.act == 4 && object.operateFn == 67) object.interaction = Interaction::QuestObject;
@@ -175,7 +175,8 @@ int WorldObject::modeAt(float time) const {
         // ChestEnd schedules ENDANIM at FrameCnt1 + 1 ticks (25 Hz).
         return operating.enabled && time - operatedAt < float(operating.frames + 1) / 25.f ? 1 : 2;
     }
-    if (operateFn == 47)
+    if (operateFn == 29 && !animationRules[2].enabled) return 1;
+    if (operateFn == 47 || operateFn == 29 || operateFn == 61)
         return std::max(0.f, time - operatedAt) < float(operating.frames + 1) / 25.f ? 1 : 2;
     const float duration = operating.fps > 0 ? operating.frames / operating.fps : 0;
     return std::max(0.f, time - operatedAt) < duration ? 1 : 2;

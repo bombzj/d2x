@@ -202,6 +202,24 @@ void GameSessionImpl::completeInteraction(const WorldObject &object) {
             state().time < found->lastDoorOperation + .5f)) break;
         const int mode = found->modeAt(state().time);
         if (mode != 0 && mode != 2) break; // Locked/special modes need their own original rules.
+        // Original slime doors only open, with the MPQ operating animation.
+        if (found->operateFn == 29) {
+            if (mode != 0) break;
+            found->animationMode = 1;
+            found->operatedAt = state().time;
+            found->lastDoorOperation = state().time;
+            world_.at(current_).refreshObjectCollision(state().time);
+            simulation_->emit(ObjectInteracted{found->id, Interaction::Door, found->name});
+            break;
+        }
+        if (found->operateFn == 61 && mode == 0) {
+            found->animationMode = 1;
+            found->operatedAt = state().time;
+            found->lastDoorOperation = state().time;
+            world_.at(current_).refreshObjectCollision(state().time);
+            simulation_->emit(ObjectInteracted{found->id, Interaction::Door, found->name});
+            break;
+        }
         if (mode == 2) {
             const int left = int(std::floor(found->pos.x)) - found->collisionWidth / 2;
             const int bottom = int(std::floor(found->pos.y)) - found->collisionHeight / 2;

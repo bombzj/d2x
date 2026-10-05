@@ -8,8 +8,8 @@ namespace d2x {
 RetailPresetLevel buildRetailPresetLevel(Archives &archives, const WorldCatalog &catalog,
     const NativeActLayout &act, int level) {
     const auto &record = catalog.level(level);
-    if (record.act != 0 || record.generation != GenerationKind::Preset)
-        throw std::runtime_error("Native preset level generation currently supports Act I");
+    if (record.generation != GenerationKind::Preset)
+        throw std::runtime_error("Native preset generation requires a preset level");
     const PresetRecord *preset = nullptr;
     for (const auto &[id, candidate] : catalog.presets()) {
         if (candidate.level != level) continue;

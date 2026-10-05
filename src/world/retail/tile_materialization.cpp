@@ -40,8 +40,6 @@ size_t RetailTileMaterializer::registerRoom(int level, const RetailRoom &room,
     std::shared_ptr<RetailTileSelector> libraries, const std::array<int, 8> &warpSlots,
     std::span<const int> linkedWarpIds) {
     if (failed_) throw std::runtime_error("Discard failed native tile session before registering rooms");
-    if (catalog_.level(level).act != 0)
-        throw std::runtime_error("Native tile materialization currently supports Act I only");
     if (!libraries || room.width <= 0 || room.height <= 0)
         throw std::runtime_error("Invalid native room tile inputs");
     RetailTileRoom state{level, room, std::move(libraries), warpSlots};
@@ -146,21 +144,38 @@ void RetailTileMaterializer::door(size_t current, std::optional<size_t> tile, in
     uint32_t packed, int x, int y) {
     auto &state = rooms_.at(current);
     if (tile && (tiles_.at(*tile).flags & 0x20)) return;
-    // Native Act-I door identity/offset dispatch, not object stats or spawn rates.
+    // Native door identity/offset dispatch, not object stats or spawn rates.
     // Actual object definitions continue to come from the MPQ/server.
-    struct Entry { int style, sequence; bool right; int id, x, y; };
+    struct Entry { int style, sequence; bool right; int id, x, y; int unitType{2}; };
     static constexpr Entry entries[]{
         {7,0,true,14,5,0}, {7,0,false,13,0,5},
         {5,0,true,16,0,0}, {5,0,false,15,0,0}, {6,0,true,27,5,-2},
         {4,0,true,24,1,2}, {4,0,false,23,0,0}, {4,3,true,25,1,0},
         {1,2,false,62,0,3}, {1,2,true,63,3,0},
-        {0,0,true,16,0,0}, {0,0,false,64,0,0}, {2,0,true,47,5,0}
+        {0,0,true,16,0,0}, {0,0,false,64,0,0}, {2,0,true,47,5,0},
+        {0,1,true,291,2,0}, {0,1,false,290,0,2},
+        {5,0,true,293,2,0}, {4,0,false,292,0,2},
+        {0,0,true,295,2,0}, {0,0,false,294,0,2},
+        {2,4,true,92,1,0}, {2,1,false,91,0,2},
+        {0,1,true,229,0,0}, {0,1,false,230,0,0},
+        {3,3,false,449,-2,4},
+        {2,1,false,435,1,2,1}, {2,1,true,435,2,1,1}, {2,6,false,435,1,1,1},
+        {2,2,false,433,0,1,1}, {2,3,true,432,1,0,1}, {26,0,false,434,0,1,1},
+        {2,4,true,524,0,0,1}, {2,4,false,525,0,0,1},
+        {29,0,true,60,2,0}, {29,0,false,60,0,2}
     };
     int first = 0, last = -1;
     if (state.level >= 28 && state.level <= 31) last = 3;
     else if (state.level == 26 || state.level == 27) { first = 4; last = 6; }
     else if (state.level == 32 || state.level == 33) { first = 5; last = 9; }
     else if (state.level >= 34 && state.level <= 37) { first = 10; last = state.level == 37 ? 12 : 11; }
+    else if (state.level == 51) { first = 13; last = 14; }
+    else if (state.level >= 52 && state.level <= 54) { first = 15; last = 18; }
+    else if ((state.level >= 55 && state.level <= 58) || state.level == 59 || state.level == 60 || state.level == 61 ||
+             (state.level >= 66 && state.level <= 72)) { first = 19; last = 20; }
+    else if (state.level >= 62 && state.level <= 64) { first = 21; last = 22; }
+    else if (state.level == 109) { first = 23; last = 24; }
+    else if (state.level == 111 || state.level == 112 || state.level == 117) { first = 24; last = 33; }
     const bool right = (tile ? tiles_.at(*tile).type : type) == 9;
     for (int i = first; i <= last; ++i) {
         const auto &entry = entries[i];
@@ -168,7 +183,8 @@ void RetailTileMaterializer::door(size_t current, std::optional<size_t> tile, in
         const int localX = (x - state.room.x) * 5 + entry.x;
         const int localY = (y - state.room.y) * 5 + entry.y;
         if (localX >= 0 && localY >= 0 && localX < state.room.width * 5 && localY < state.room.height * 5) {
-            state.units.insert(state.units.begin(), {2, entry.id,
+            if (entry.id < 91 || entry.id > 92 || state.room.seed.random.below(3))
+                state.units.insert(state.units.begin(), {entry.unitType, entry.id,
                 state.room.x * 5 + localX, state.room.y * 5 + localY});
             if (tile) tiles_.at(*tile).flags |= 0x20;
         }
@@ -268,12 +284,13 @@ void RetailTileMaterializer::update(size_t current, size_t index, int type, uint
     auto &t = tiles_.at(index);
     auto &owner = rooms_.at(t.owner);
     const auto &r = rooms_.at(current);
-    static constexpr int indices[]{-1,0,1,2,-1,3,4,5,-2,-2,-1,-1,-1,-2,-1,-1,-1,-1,-1};
+    // 1.13c RVA 0x90080 adds type 19 to the older D2MOO remap table.
+    static constexpr int indices[]{-1,0,1,2,-1,3,4,5,-2,-2,-1,-1,-1,-2,-1,-1,-1,-1,-1,-1};
     static constexpr int remap[6][7]{
         {1,3,3,4,1,3,1}, {1,2,3,4,3,2,2}, {3,3,3,4,3,3,3},
         {1,3,3,4,5,6,1}, {3,2,3,4,3,6,2}, {1,2,3,4,1,2,7}
     };
-    if (type < 0 || type >= int(std::size(indices))) throw std::runtime_error("Unknown native tile type");
+    if (type < 0 || type >= int(std::size(indices))) throw std::runtime_error("Unknown native tile type=" + std::to_string(type) + " level=" + std::to_string(r.level) + " x=" + std::to_string(x) + " y=" + std::to_string(y));
     if (t.flags & 1) {
         if (doorTile(t.type)) initializeFlags(current, index, p);
         return;
@@ -392,7 +409,9 @@ void RetailTileMaterializer::layer(size_t current, std::span<const size_t> near,
         if (exitTile(type) && style(p) >= 8) continue;
         if (type == 0 && style(p) == 30 && sequence(p) <= 1) p |= 0x80000000;
         if (p & 0x80000000) {
-            if (doorTile(type)) { door(current, {}, type, p, x, y); continue; }
+            if (doorTile(type) && rooms_.at(current).level != 111 && rooms_.at(current).level != 112 && rooms_.at(current).level != 117) {
+                door(current, {}, type, p, x, y); continue;
+            }
             if (exitTile(type)) { addWarpUnit(current, p, type, x, y); floorWarp(current, p, type, x, y); continue; }
         }
         if (p & 4) {
@@ -467,7 +486,7 @@ void RetailTileMaterializer::loadOutdoor(size_t index, const RetailOutdoorRoomDa
     r.room.flags |= linkedFlags;
     r.authoredUnits = data.units;
     r.grids.width = data.grids.width; r.grids.height = data.grids.height;
-    r.grids.act = 0;
+    r.grids.act = catalog_.level(r.level).act;
     r.grids.floors = {data.grids.floors}; r.grids.walls = {data.grids.walls};
     r.grids.shadows = data.grids.shadows;
     for (const auto &shadow : data.shadows) create(index, 13, shadow.value, shadow.x, shadow.y, nullptr, shadow.tile);

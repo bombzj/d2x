@@ -129,7 +129,7 @@ std::vector<RetailPresetUnit> RetailPresetScan::buildClientUnits(const MapData &
 }
 std::optional<RetailPresetUnit> RetailPresetScan::resolveUnit(const MapObject &source,
     int version, int act, int mapX, int mapY) const {
-    if (act != 0) throw std::runtime_error("Native preset identities currently support Act I");
+    if (act < 0 || act >= int(monsterPresets_.size())) throw std::invalid_argument("Invalid native preset act");
     RetailPresetUnit result{source};
     auto &unit = result.unit;
     if (unit.type == 1) {
@@ -139,6 +139,20 @@ std::optional<RetailPresetUnit> RetailPresetScan::resolveUnit(const MapObject &s
             throw std::runtime_error("Native DS1 monster has no MPQ MonPreset entry");
         unit.id = ids[size_t(unit.id)];
         result.mode = 1;
+        // LoadDrlgFile converts these MonPreset markers to object identities.
+        if (act == 2 && (unit.id == 297 || unit.id == 366)) {
+            unit.id = unit.id == 297 ? 382 : 404;
+            unit.type = 2;
+            result.mode = 0;
+        }
+        if (act == 4) {
+            const int marker = unit.id;
+            if (marker == 514 || (marker >= 537 && marker <= 539)) {
+                unit.id = marker == 514 ? 461 : marker == 537 ? 476 : marker == 538 ? 475 : 474;
+                unit.type = 2;
+                result.mode = 0;
+            }
+        }
     } else if (unit.type == 2) {
         if (version <= 5 && unit.id == 573) return {};
         unit.id = originalObjectClass(source, version, act);
@@ -154,7 +168,7 @@ std::optional<RetailPresetUnit> RetailPresetScan::resolveUnit(const MapObject &s
 }
 std::vector<RetailPresetUnit> RetailPresetScan::buildUnits(const MapData &data, int act,
     int mapX, int mapY, Seed &random) const {
-    if (act != 0) throw std::runtime_error("Native preset unit stream currently supports Act I");
+    act = data.act; // File-authored act selects MonPreset and object ordinal tables.
     std::vector<RetailPresetUnit> result;
     // The original DS1 loader prepends units: consume in reverse file order.
     for (auto unit = data.objects.rbegin(); unit != data.objects.rend(); ++unit) {
@@ -185,7 +199,6 @@ std::vector<uint32_t> RetailPresetScan::scan(const PresetRecord &preset, const M
     const int gw = width / 8 + 1, gh = height / 8 + 1;
     std::vector<uint32_t> result(size_t(gw) * size_t(gh), flags);
     if (!preset.scan && !preset.pops) return result;
-    if (act != 0) throw std::runtime_error("Native preset scanner currently supports Act I");
     if (data.width != width + 1 || data.height != height + 1)
         throw std::runtime_error("Native preset DS1 extent disagrees with LvlPrest");
     auto resolved = buildUnits(data, act, mapX, mapY, random);
@@ -208,7 +221,7 @@ std::vector<uint32_t> RetailPresetScan::scan(const PresetRecord &preset, const M
                 }
         for (const auto &unit : data.objects) {
             if (unit.type != 2) continue;
-            const int id = originalObjectClass(unit, data.version, act);
+            const int id = originalObjectClass(unit, data.version, data.act);
             if (id < 0 || id >= 573) continue;
             const auto found = objectSubclasses_.find(id);
             if (found == objectSubclasses_.end())

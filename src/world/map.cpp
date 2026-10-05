@@ -130,7 +130,7 @@ void Map::load(Archives &a, TileLibraryCache &cache, const MapRecipe &recipe, ui
     if (recipe.native) {
         const auto &request = *recipe.native;
         WorldCatalog catalog(a, request.difficulty);
-        NativeMapGenerator generator(a, catalog, cache, 0, request.seed, request.difficulty);
+        NativeMapGenerator generator(a, catalog, cache, catalog.level(request.level).act, request.seed, request.difficulty);
         auto snapshot = generator.completeLevel(request.level);
         if (snapshot.tileX != recipe.worldX || snapshot.tileY != recipe.worldY ||
             snapshot.map.grid.width != recipe.width * 5 || snapshot.map.grid.height != recipe.height * 5)

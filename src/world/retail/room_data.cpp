@@ -18,7 +18,7 @@ RetailOutdoorRoomData buildRetailOutdoorRoomData(TileLibraryCache &cache, const 
         });
     for (const auto &entry : result.grids.units)
         if (auto unit = identities.resolveUnit(entry.source, entry.ds1Version,
-            level.act, room.x, room.y)) result.units.push_back(std::move(*unit));
+            entry.act, room.x, room.y)) result.units.push_back(std::move(*unit));
     return result;
 }
 } // namespace d2x

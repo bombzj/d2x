@@ -1,12 +1,12 @@
 # 联网入口与底层基线
 
-更新：2026-10-06。局前主流程、服务器角色加载与保存退局、第一幕纯 C++ 地图及移动已进入 Windows Release 包。第一幕1–39共用离线生成核心，122组原版DLL地形对照通过；包内营地→血腥荒地→邪恶洞穴→野外真实移动／出口交互通过。战斗、拾取、完整库存及其他幕随机地图尚未接入，地图通过不等于完整联网游玩。
+更新：2026-10-06。局前主流程、服务器角色加载与保存退局、五幕共用纯 C++ 地图及移动已进入 Windows Release 包。五幕1–136共用离线生成核心，第一幕此前122组、第二至第五幕本批364组原版DLL地形对照通过；包内营地→血腥荒地→邪恶洞穴→野外真实移动／出口交互通过。战斗、拾取、完整库存尚未接入，地图通过不等于完整联网游玩。
 
-RemoteTown逐条重放原服有序房间／玩家位置事件，精确检查房间锚点，输出实际DT1与活动碰撞。第一幕事件丢失或生成失败会停止显示／移动并给出 `nativeMapReason`，要求重新入局；不回退近似预设。用户明确拒绝原DLL地图运行依赖；开发对照方法见[实施计划](../architecture/MULTIPLAYER.md#原版-dll-对照方法)。
+RemoteTown逐条重放原服有序房间／玩家位置事件，精确检查房间锚点，输出实际DT1与活动碰撞。五幕事件丢失或生成失败会停止显示／移动并给出 `nativeMapReason`，要求重新入局；不回退近似预设。用户明确拒绝原DLL地图运行依赖；开发对照方法见[实施计划](../architecture/MULTIPLAYER.md#原版-dll-对照方法)。
 
 ## 流程与入口
 
-普通启动：主菜单 → Battle.net → 登录或注册 → Realm → 服务器角色 → 创建或加入游戏 → D2GS 协议加载 → 重建第一幕活动地图 → 服务端世界显示。Single Player 保留离线入口。联网不读取本地 D2S，也不启动本地 GameSession。
+普通启动：主菜单 → Battle.net → 登录或注册 → Realm → 服务器角色 → 创建或加入游戏 → D2GS 协议加载 → 重建当前幕活动地图 → 服务端世界显示。Single Player 保留离线入口。联网不读取本地 D2S，也不启动本地 GameSession。
 
 | 页面／操作 | 当前源码 |
 | --- | --- |
@@ -17,7 +17,7 @@ RemoteTown逐条重放原服有序房间／玩家位置事件，精确检查房�
 | Join | 真实房间列表、人数、选中说明；滚轮浏览、按名与密码加入；再次点 Join 刷新，列表等待可取消 |
 | 等待／返回 | 持续 tick，建局队列显示位置；取消列表返回大厅，其他等待取消关闭会话；大厅 Quit、正常退局重新取票返回选角 |
 
-`ProtocolReady`仅表示协议初始化，第一幕场景另须 `nativeMapReady`、`playerDisplayed` 与活动碰撞准备成功。左键提交移动、R切换跑／走、Esc打开退出菜单；楼梯底层先通过 `online-use-exit` 调用，鼠标入口留待UI阶段。新闻、广告、频道／聊天、账号设置、Ladder、转换角色和影片等非主流程入口暂缓。
+`ProtocolReady`仅表示协议初始化，场景另须 `nativeMapReady`、`playerDisplayed` 与活动碰撞准备成功。左键提交移动、R切换跑／走、Esc打开退出菜单；楼梯底层先通过 `online-use-exit` 调用，鼠标入口留待UI阶段。新闻、广告、频道／聊天、账号设置、Ladder、转换角色和影片等非主流程入口暂缓。
 
 角色名 2–15 字符，首字符英文字母，其余英文字母、连字符或下划线；classId 为 0 Amazon、1 Sorceress、2 Necromancer、3 Paladin、4 Barbarian、5 Druid、6 Assassin。初始属性、装备和 D2S 由原服生成；客户端仅提交 MCP 0x02 的职业／状态与名字。删角用 MCP 0x0A，command 要求 confirmName 完全匹配。注册账号／密码为 2–15 可打印 ASCII 字符，更细名字限制由服务器拒绝码说明。
 
@@ -35,8 +35,8 @@ RemoteTown逐条重放原服有序房间／玩家位置事件，精确检查房�
 | [app/frontend.cpp](../../src/app/frontend.cpp) | 会话所有权、配置、tick、页面路由与命令提交 |
 | [RealmFrontend](../../src/presentation/frontend/realm_frontend.hpp)、[RemoteScene](../../src/presentation/remote/remote_scene.hpp) | 原图、字体、局前／世界显示与输入，只读副本并返回意图 |
 | [remote_world.cpp](../../src/client/remote_world.cpp) | 有序回包归并，无 MPQ、GPU、存档或本地模拟 |
-| [RemoteTown](../../src/client/remote_town.hpp) | 独立 MPQ 原预设区域绑定与缓存，复用 DS1／DT1，不生成本地单位 |
-| [native_act_layout.hpp](../../src/world/outdoor/native_act_layout.hpp)、[native_map.hpp](../../src/world/native_map.hpp) | 共用幕布局及第一幕房间生成会话；GS 有序重放和活动地形快照已接源码，完整规则及跨区未验收 |
+| [RemoteTown](../../src/client/remote_town.hpp) | 五幕有序房间事件重放、锚点校验及活动地形快照，复用 DS1／DT1，不生成本地单位 |
+| [native_act_layout.hpp](../../src/world/outdoor/native_act_layout.hpp)、[native_map.hpp](../../src/world/native_map.hpp) | 共用五幕布局及房间生成会话；GS 有序重放和活动地形快照已接源码，完整规则及跨区未验收 |
 | [online_commands.cpp](../../src/app/debug/online_commands.cpp) | 同一会话的菜单管道；accepted 与异步成功分开 |
 | [RealmPortraitCatalog](../../src/content/character/realm_portrait.hpp) | MPQ 原表动态重建外观编号 |
 | [RealmSession](../../src/network/realm_session.hpp) | SID／MCP／D2GS 状态机、认证、角色／房间、取票、加载、心跳与退局 |
@@ -66,10 +66,10 @@ read() 借用有效至下次修改；connectionGeneration 管登录生命周期�
 
 ## 远端营地入局边界
 
-该标题保留供既有链接使用；第一幕现已扩展至全部39区的生成入口。
+该标题保留供既有链接使用；五幕1–136现已接入共同生成入口。
 
 - 联网仅创建只读服务器单位／房间副本及地形会话，不创建本地 Region、人口、AI、任务或角色存档。属性、装备和持久保存仍由原服决定。
-- 第一幕种子、难度和当前MPQ驱动共用 `NativeMapGenerator`；0x07／0x08及玩家换房顺序驱动活动网格，不按最终房间集补猜。历史最多4096条，不连续或生成失败需重新入局。其他幕仍保留独立的唯一预设匹配与碰撞变体检查，不能用它认证随机地图。
+- 五幕种子、难度和当前MPQ驱动共用 `NativeMapGenerator`；0x07／0x08及玩家换房顺序驱动活动网格，不按最终房间集补猜。历史最多4096条，不连续或生成失败需重新入局。五幕使用同一严格路径，旧唯一预设匹配与碰撞变体回退已删除。
 - 地形快照保留当前连续组件的活动房间、选定DT1、完整碰撞及原出口链；允许营地和野外连续跨区。场景位置为服务端全局subtile，快照原点可随活动房间变化，不是固定城镇偏移。
 - UI／`online-move`复用当前地图、代次和目标可走检查，向原服发0x01 walk／0x03 run，最多每100ms一次。accepted仅表示请求入队，实际位置由后续回包确认；不把移动命令当传送。
 - `online-use-exit`要求当前原生地图可用、角色存活和真实type5出口单位ID，发送原0x13交互；目标及最终区域仍由原服校验。不能传LvlWarp类型编号冒充单位ID。
@@ -86,6 +86,15 @@ read() 借用有效至下次修改；connectionGeneration 管登录生命周期�
 - 连续参考服检查以真实移动完成营地1→血腥荒地2，真实type5单位交互进入邪恶洞穴8并返回2；最终种子665010272，原生地图、人物显示和活动碰撞保持，无mapErrors。补齐原0x09出口分配回包，0x13使用真实服务器GUID。出口附近仍按服务器寻路／碰撞接近，command不是传送。
 - 正常退局返回CharacterSelection；原服00:25:15日志确认独立角色CHARSAVE／CHARINFO保存成功。此项不认证联网战斗、拾取或任务变化保存。
 - 先前长时间停留时参考D2GS watchdog关闭游戏；最终重新连接后连续完成往返及正常退局。服务长期稳定性问题仍未解决，断开时需检查服务日志；不将被服务端终止的检查记作通过。
+
+## 其余幕地图冒烟
+
+2026-10-06使用本批实际 `dist/current/d2x.exe`、现有command及本机参考服。第二至第五幕364组原版开发对照、五种子各136区加载／出口关联、包内97区显示及第五幕独立D2S重载通过，详细范围见[地图验证](../gameplay/world/MAPS.md#本批验证)。证据集中于 `artifacts/maps-acts2-5-20261006/`。
+
+- 仅本轮临时角色 `bomb2/MapActsSor` 调整原D2S出生幕字节及校验和，逐幕建普通、非Ladder游戏。第一幕营地回归、40／75／103／109实际原生地图及人物显示通过，全部 `nativeMapReady/layoutMatched/playerDisplayed=true`、无mapErrors；第二至第五幕均收到真实移动后的位置变化。
+- 地图种子依次为2031870738、536379678、1078075686、235020106、851939196；截图及入局／移动快照保留。各次正常退局回到服务器选角，原服日志确认CHARINFO保存回复。本轮未以持久任务／物品变化认证CHARSAVE差异。
+- 检查后通过MCP删除本轮临时角色，原aaa／bbb／ActMapSor保留。出生幕夹具不表示原版任务门槛或正式跨幕旅行已通过；本批未实际连服走完第二至第五幕野外／室内全部区域，地形等价由独立原版事件对照认证。
+- 参考服第三次建局时两次在地图包之前握手超时；重启D2GS后第三／第五幕分别检查成功。保留失败日志，服务长期稳定性仍有问题，不将失败轮次记为通过。第三至第五幕更多NPC／怪物外观仍计入unavailableUnits，缺图不替换中立单位。
 
 ## 营地入局与存档冒烟
 

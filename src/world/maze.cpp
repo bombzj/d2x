@@ -20,8 +20,8 @@ bool supportsMaze(int level) {
 NativeMazeLevel buildNativeMazeLevel(Archives &archives, const WorldCatalog &catalog,
     const NativeActLayout &layout, int level, uint32_t seed, int difficulty, int entranceDirection) {
     const auto &record = catalog.level(level);
-    if (record.act != 0 || record.generation != GenerationKind::Maze || !supportsMaze(level))
-        throw std::runtime_error("Native maze conversion currently supports Act I");
+    if (record.generation != GenerationKind::Maze || !supportsMaze(level))
+        throw std::runtime_error("Unsupported native maze family");
     NativeMazeLevel result;
     RetailPresetScan scanner(archives);
     std::map<std::string, MapData> patterns;
@@ -57,21 +57,8 @@ MapRecipe generateMaze(Archives &archives, const WorldCatalog &catalog, int leve
                        int entranceDirection) {
     if (!supportsMaze(level))
         throw std::runtime_error("This original maze family is not implemented");
-    if (catalog.level(level).act == 0) {
-        auto layout = placeNativeAct(catalog, 0, seed);
-        if (level == 28) layout.levels.at(27) = buildRetailPresetLevel(archives, catalog, layout, 27).placement;
-        return buildNativeMazeLevel(archives, catalog, layout, level, seed, difficulty, entranceDirection).recipe;
-    }
-    if (level == 61)
-        return catalog.preset(480, catalog.level(level).levelType);
-    if (level == 114 || level == 116 || level == 119) {
-        Seed world(seed);
-        Seed random(world.next() + uint32_t(level));
-        const int preset = level == 114 ? (random.below(2) ? 1038 : 1039)
-                         : level == 116 ? 1040 : 1041;
-        return catalog.preset(preset, catalog.level(level).levelType,
-                              random.below(catalog.presets().at(preset).files));
-    }
-    return maze::RoomMaze(catalog, level, seed).build(level, seed, difficulty, entranceDirection);
+    auto layout = placeNativeAct(catalog, catalog.level(level).act, seed);
+    if (level == 28) layout.levels.at(27) = buildRetailPresetLevel(archives, catalog, layout, 27).placement;
+    return buildNativeMazeLevel(archives, catalog, layout, level, seed, difficulty, entranceDirection).recipe;
 }
 } // namespace d2x

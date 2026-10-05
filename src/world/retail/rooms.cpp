@@ -39,8 +39,14 @@ std::vector<RetailRoom> allocateRetailOutdoorRooms(const WorldCatalog &catalog,
     const RetailPresetScanner &scan) {
     const auto &record = catalog.level(level);
     const auto &placement = act.levels.at(level);
-    if (record.act != 0 || record.levelType != 2)
-        throw std::runtime_error("Native room allocation currently supports Act I wilderness");
+    uint32_t baseMask = 0;
+    switch (record.levelType) {
+    case 2: baseMask = 0x44103; break;
+    case 21: baseMask = 4; break;
+    case 16: case 22: case 27: case 28: baseMask = 1; break;
+    case 30: case 31: baseMask = 0x11; break;
+    default: throw std::runtime_error("Unsupported native outdoor level type");
+    }
     if (!scan) throw std::runtime_error("Native preset scanner is required");
     std::vector<RetailRoom> rooms;
     auto &random = grid.random();
@@ -69,7 +75,7 @@ std::vector<RetailRoom> allocateRetailOutdoorRooms(const WorldCatalog &catalog,
                 for (auto &room : children) rooms.push_back(std::move(room));
             } else if (!(cell.flags & 0x100)) {
                 RetailRoom room{wx, wy, 8, 8, 0, 0, 0, 0, cell.links | 0x80000u,
-                    cell.flags, cell.auxiliary, 0x44103u, 0, allocateRetailRoomSeed(random)};
+                    cell.flags, cell.auxiliary, baseMask, 0, allocateRetailRoomSeed(random)};
                 if (record.subtype != -1 && record.theme != -1) {
                     if (record.theme < 0 || record.theme >= 5)
                         throw std::runtime_error("Invalid native outdoor theme index");

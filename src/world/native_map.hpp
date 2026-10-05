@@ -16,6 +16,7 @@ class NativeMapGenerator {
     Archives &archives_;
     const WorldCatalog &catalog_;
     TileLibraryCache &cache_;
+    int act_;
     uint32_t mapSeed_;
     int difficulty_;
     NativeActLayout layout_;

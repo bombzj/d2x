@@ -18,6 +18,9 @@ struct NativeLevelPlacement {
 struct NativeActLayout {
     uint32_t startSeed{};
     std::optional<int> staffTomb, bossTomb;
+    bool jungleInterlink{};
+    struct Jungle { std::vector<int> presets; int clearings{}; };
+    std::map<int, Jungle> jungles;
     std::map<int, NativeLevelPlacement> levels;
     // Placement graph edges; not a reconstructed native Vis/Warp array.
     std::set<std::pair<int, int>> links;
