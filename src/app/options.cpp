@@ -9,113 +9,42 @@ AppOptions parseOptions(int argc, char **argv) {
     AppOptions options;
     bool explicitMpq = false;
     for (int i = 1; i < argc; ++i) {
-        std::string arg = argv[i];
-        if (arg != "--mpq" && arg != "--online-config" && arg != "--debug-pipe" && arg != "--debug-run")
-            options.directGame = true;
+        const std::string arg = argv[i];
         auto value = [&]() {
-            if (++i >= argc)
-                throw std::runtime_error("Missing value for " + arg);
-            return std::string(argv[i]);
+            if (++i >= argc) throw std::runtime_error("Missing value for " + arg);
+            const std::string text = argv[i];
+            if (text.empty()) throw std::runtime_error("Empty value for " + arg);
+            return text;
         };
-        auto number = [&]() {
-            auto text = value();
-            size_t end = 0;
-            int result = std::stoi(text, &end);
-            if (end != text.size())
-                throw std::runtime_error("Invalid number for " + arg);
-            return result;
-        };
-        if (arg == "--mpq") {
-            options.mpq = value();
-            explicitMpq = true;
-        } else if (arg == "--online-config")
-            options.onlineConfig = value();
-        else if (arg == "--map")
-            options.world.map = value();
-        else if (arg == "--debug-pipe")
-            options.debugPipe = value();
-        else if (arg == "--debug-run")
-            options.debugRun = true;
-        else if (arg == "--level")
-            options.world.level = number();
-        else if (arg == "--preset")
-            options.world.preset = number();
-        else if (arg == "--level-type")
-            options.world.levelType = number();
-        else if (arg == "--variant")
-            options.world.variant = number();
-        else if (arg == "--screenshot")
-            options.screenshot = value();
-        else if (arg == "--pack")
-            options.pack = value();
-        else if (arg == "--save")
-            options.save = value();
-        else if (arg == "--load")
-            options.load = value();
-        else if (arg == "--class") {
-            options.characterClass = value();
-            if (options.characterClass.empty())
-                throw std::runtime_error("--class requires an MPQ character class name");
+        if (arg == "--mpq") { options.mpq = value(); explicitMpq = true; }
+        else if (arg == "--online-config") options.onlineConfig = value();
+        else if (arg == "--debug-pipe") options.debugPipe = value();
+        else if (arg == "--online-character") options.onlineCharacter = value();
+        else if (arg == "--online-create-game") options.onlineCreateGame = value();
+        else if (arg == "--online-join-game") options.onlineJoinGame = value();
+        else if (arg == "--screenshot") options.screenshot = value();
+        else if (arg == "--pack") options.pack = value();
+        else if (arg == "--frames") {
+            const auto text = value();
+            const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), options.frameLimit);
+            if (error != std::errc{} || end != text.data() + text.size() || options.frameLimit < 0)
+                throw std::runtime_error("--frames requires a nonnegative integer");
         }
-        else if (arg == "--frames")
-            options.frameLimit = number();
-        else if (arg == "--region")
-            options.region = number();
-        else if (arg == "--difficulty") {
-            auto difficulty = value();
-            if (difficulty == "normal")
-                options.population.difficulty = 0;
-            else if (difficulty == "nightmare")
-                options.population.difficulty = 1;
-            else if (difficulty == "hell")
-                options.population.difficulty = 2;
-            else
-                throw std::runtime_error("--difficulty expects normal, nightmare or hell");
-        } else if (arg == "--map-seed") {
-            options.mapSeedExplicit = true;
-            auto seed = value();
-            auto [end, error] = std::from_chars(seed.data(), seed.data() + seed.size(), options.world.seed);
-            if (error != std::errc{} || end != seed.data() + seed.size())
-                throw std::runtime_error("--map-seed requires an unsigned 32-bit decimal integer");
-        } else if (arg == "--population-seed") {
-            options.populationSeedExplicit = true;
-            auto seed = value();
-            auto [end, error] =
-                std::from_chars(seed.data(), seed.data() + seed.size(), options.population.seed);
-            if (error != std::errc{} || end != seed.data() + seed.size())
-                throw std::runtime_error("--population-seed requires an unsigned 32-bit decimal integer");
-        } else if (arg == "--seed") {
-            auto text = value();
-            uint32_t seed = 0;
-            auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), seed);
-            if (error != std::errc{} || end != text.data() + text.size())
-                throw std::runtime_error("--seed requires an unsigned 32-bit decimal integer");
-            options.seed = seed;
-        } else if (arg == "--hidden")
-            options.hidden = true;
-        else if (arg == "--stash")
-            options.stash = true;
-        else if (arg == "--inventory")
-            options.inventory = true;
-        else if (arg == "--skills")
-            options.skills = true;
-        else if (arg == "--help")
-            options.help = true;
-        else
-            throw std::runtime_error("Unknown option: " + arg);
+        else if (arg == "--hidden") options.hidden = true;
+        else if (arg == "--help") options.help = true;
+        else if (arg == "--debug-run") { /* Legacy spelling: online always starts running. */ }
+        else if (arg == "--save" || arg == "--load" || arg == "--class" || arg == "--seed" ||
+                 arg == "--map-seed" || arg == "--population-seed" || arg == "--population" ||
+                 arg == "--map" || arg == "--region" || arg == "--level" || arg == "--preset" ||
+                 arg == "--level-type" || arg == "--variant" || arg == "--difficulty" ||
+                 arg == "--inventory" || arg == "--stash" || arg == "--skills")
+            throw std::runtime_error(arg + " is a retired local-game option; select a server character instead");
+        else throw std::runtime_error("Unknown option: " + arg);
     }
-    if (options.frameLimit < 0)
-        throw std::runtime_error("--frames must not be negative");
-    if (!options.characterClass.empty() && !options.load.empty())
-        throw std::runtime_error("Choose either --class for a new character or --load for a saved character");
-    if (options.debugRun && options.debugPipe.empty())
-        throw std::runtime_error("--debug-run requires --debug-pipe");
-    if (options.world.variant < 0 || options.world.variant > 5)
-        throw std::runtime_error("--variant must be 0..5 (original File1..File6 slots)");
-    if (options.world.preset < 0 || (options.world.preset != 0) != (options.world.levelType > 0))
-        throw std::runtime_error("--preset requires --level-type; both must be positive");
-    if (!options.world.map.empty() && options.world.preset)
-        throw std::runtime_error("Choose either --map or --preset");
+    if (!options.onlineCreateGame.empty() && !options.onlineJoinGame.empty())
+        throw std::runtime_error("Choose either --online-create-game or --online-join-game");
+    if ((!options.onlineCreateGame.empty() || !options.onlineJoinGame.empty()) && options.onlineCharacter.empty())
+        throw std::runtime_error("Quick game entry requires --online-character");
     if (!explicitMpq) {
         auto discover = [](const std::filesystem::path &path) -> std::string {
             if (std::filesystem::is_directory(path) &&

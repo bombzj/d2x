@@ -89,8 +89,8 @@ struct ViewState {
     std::string lootNotice;
     float noticeTime = 0;
     bool noticeError = false;
-    bool blocksWorld() const { return gameMenuOpen || help || npcMenu || shopOpen || hireListOpen || !dialogue.empty(); }
-    bool blocksInput() const { return blocksWorld() || travelMenu; }
+    bool capturesWorldInput() const { return gameMenuOpen || help || npcMenu || shopOpen || hireListOpen || !dialogue.empty(); }
+    bool blocksInput() const { return capturesWorldInput() || travelMenu; }
 };
 class SceneView {
     const GameSession *session_ = nullptr;
@@ -297,7 +297,8 @@ class SceneView {
     std::optional<int> skillAt(Vec mouse) const;
     std::optional<ItemHandle> lootAt(Vec mouse, bool labelsOnly = false) const;
     void advance(float dt);
-    void advanceUi(float dt, bool worldPaused = false);
+    void advanceUi(float dt);
+    void pauseDebugPresentation(bool paused) { assets_.audio.pauseEmitters(paused); }
     void draw(Vec mouse) const;
     void notice(std::string text, bool error = false);
     void openNpcDialogue(EntityId object, std::string speaker, std::string text);

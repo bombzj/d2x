@@ -1,5 +1,6 @@
 #pragma once
 #include "contracts/online_scene.hpp"
+#include "presentation/input.hpp"
 #include "network/realm_session.hpp"
 #include <functional>
 namespace d2x {
@@ -11,5 +12,6 @@ std::string onlineDebugCommand(const std::string &, net::RealmSession &,
                                const std::function<void(const std::string &)> &screenshot,
                                const std::function<OnlineSceneView()> &scene,
                                RemoteControl &, RemoteInventory &, RemoteCombat &,
-                               const std::function<void(bool, bool)> &automap);
+                               const std::function<void(bool, bool)> &automap, bool &presentationPaused,
+                               const std::function<void(std::vector<FrameInput>)> &input);
 }

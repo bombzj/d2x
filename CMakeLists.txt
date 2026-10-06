@@ -15,7 +15,7 @@ if(WIN32)
   target_compile_definitions(d2x_core INTERFACE NOMINMAX WIN32_LEAN_AND_MEAN)
 endif()
 
-add_library(d2x_resources src/resources/archive.cpp src/resources/formats.cpp src/resources/dcc.cpp src/resources/data_table.cpp src/resources/text.cpp src/resources/anim_data.cpp src/resources/monster_palshift.cpp)
+add_library(d2x_resources src/resources/atomic_file.cpp src/resources/archive.cpp src/resources/formats.cpp src/resources/dcc.cpp src/resources/data_table.cpp src/resources/text.cpp src/resources/anim_data.cpp src/resources/monster_palshift.cpp)
 target_link_libraries(d2x_resources PUBLIC d2x_core PRIVATE storm)
 
 add_library(d2x_navigation src/world/navigation.cpp src/world/room_activation.cpp)
@@ -275,14 +275,13 @@ target_sources(d2x_presentation PRIVATE src/presentation/inventory/item_tooltip.
   src/presentation/items/item_display_compat.cpp src/presentation/npc/inventory_interactions.cpp)
 
 add_executable(d2x src/main.cpp src/app/application.cpp src/app/options.cpp src/app/input.cpp
-  src/app/character_frontend.cpp src/app/frontend.cpp src/app/online_login_memory.cpp src/app/crash_report.cpp)
+  src/app/frontend.cpp src/app/online_login_memory.cpp src/app/client_preferences.cpp src/app/crash_report.cpp)
 target_sources(d2x_presentation PRIVATE src/presentation/frontend/realm_frontend.cpp)
 target_sources(d2x_presentation PRIVATE src/presentation/remote/remote_scene.cpp)
 target_link_libraries(d2x_presentation PRIVATE d2x_remote_scene)
-target_sources(d2x PRIVATE src/app/automap_save.cpp src/app/debug/debug_pipe.cpp src/app/debug/debug_commands.cpp src/app/debug/debug_inventory.cpp
-    src/app/debug/debug_item_actions.cpp src/app/debug/debug_monsters.cpp src/app/debug/debug_hireling.cpp)
+target_sources(d2x PRIVATE src/app/debug/debug_pipe.cpp src/app/debug/ui_input.cpp)
 target_sources(d2x PRIVATE src/app/debug/online_commands.cpp)
-target_link_libraries(d2x PRIVATE d2x_presentation d2x_persistence d2x_local_client d2x_remote_client)
+target_link_libraries(d2x PRIVATE d2x_presentation d2x_remote_client)
 target_link_libraries(d2x PRIVATE nlohmann_json::nlohmann_json)
 if(WIN32)
   target_link_libraries(d2x PRIVATE advapi32 dbghelp)

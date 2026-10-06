@@ -35,6 +35,7 @@ struct RemoteUiClients::Impl {
     RemoteControl &control;
     ClassicData data;
     const OnlineSceneView *scene{};
+    OnlineIntentContext context;
     uint64_t revision{}, generation{~uint64_t{}}, areaGeneration{~uint64_t{}};
     bool run{true};
     std::string notice;
@@ -51,6 +52,7 @@ struct RemoteUiClients::Impl {
     std::array<SkillHotkey, 8> hotkeys{};
     std::deque<OnlineItemCommand> transactions;
     std::optional<uint64_t> waiting;
+    std::optional<OnlineIntentContext> waitingContext;
     std::chrono::steady_clock::time_point waitingUntil;
 
     struct Actor final : IActorClient {
@@ -66,12 +68,13 @@ struct RemoteUiClients::Impl {
         void stopActions() override {
             o.control.cancelMovement();
             OnlineCombatCommand c; c.action = OnlineCombatCommand::Action::Stop;
+            c.context = o.context;
             o.combat.submit(c);
         }
         void toggleRun() override { o.run = !o.run; }
         void respawn() override {
             o.control.cancelMovement();
-            if (!o.session.resurrect()) o.notice = o.session.read().error
+            if (!o.session.resurrect(o.context)) o.notice = o.session.read().error
                 ? o.session.read().error->message : "Waiting for the server resurrection response.";
         }
     } actor{*this};
@@ -129,6 +132,7 @@ struct RemoteUiClients::Impl {
                     request.skill = uint16_t(std::max(0,v.skill));
                     request.hand = v.right ? OnlineSkillHand::Right : OnlineSkillHand::Left;
                 }
+                request.context = o.context;
                 if (!o.combat.submit(request)) o.notice = o.combat.reason();
             }, c);
         }
@@ -147,19 +151,25 @@ struct RemoteUiClients::Impl {
                 [&](const auto &v) { return v.slot == slot; });
             return it == o.shopView.offers.end() ? nullptr : &*it;
         }
-        std::optional<unsigned> quote(EntityId, ItemHandle item, bool) const override {
-            return o.inventoryView.item(item.id) ? std::optional<unsigned>{0} : std::nullopt;
+        std::optional<unsigned> quote(EntityId, ItemHandle, bool) const override {
+            return std::nullopt; // Native price calculation has not been implemented.
+        }
+        bool canRequestSale(EntityId npc, ItemHandle item) const override {
+            const auto *entry = o.inventoryView.item(item.id);
+            return entry && entry->revision == item.revision && o.context.npc == npcGuid(npc) &&
+                onlineInteractionMatches(o.context, o.session.read());
         }
         const HirelingView &hireling() const override { return o.hirelingView; }
         const HirelingListView &hirelings(EntityId) const override { return o.hirelingList; }
         void submit(NpcIntent c) override {
+            if (!onlineInteractionMatches(o.context, o.session.read())) { o.notice = "NPC interaction changed; select it again."; return; }
             std::visit([&](const auto &v) {
                 using T = std::decay_t<decltype(v)>;
                 OnlineItemCommand request;
-                request.npc = o.session.read().world.npcConversation ? o.session.read().world.npcConversation->source : 0;
-                if constexpr (std::is_same_v<T, EndNpcConversation>) { o.session.close_npc(); return; }
+                request.npc = o.context.npc.value_or(0);
+                if constexpr (std::is_same_v<T, EndNpcConversation>) { o.session.close_npc(o.context); return; }
                 else if constexpr (std::is_same_v<T, TalkToNpc>) return;
-                else if constexpr (std::is_same_v<T, CompleteActOne> || std::is_same_v<T, CompleteActTwo>) { o.session.npc_travel(); return; }
+                else if constexpr (std::is_same_v<T, CompleteActOne> || std::is_same_v<T, CompleteActTwo>) { o.session.npc_travel(o.context); return; }
                 else if constexpr (std::is_same_v<T, IdentifyWithCain>) request.action = OnlineItemAction::IdentifyAll;
                 else if constexpr (std::is_same_v<T, BuyVendorItem>) {
                     request.action = OnlineItemAction::Buy; request.item = v.slot;
@@ -187,13 +197,14 @@ struct RemoteUiClients::Impl {
         bool waypointSource(EntityId source) const override {
             return o.session.read().world.waypointSource == npcGuid(source);
         }
-        void closeTravel() override { o.session.use_waypoint(0); }
+        void closeTravel() override { if (onlineInteractionMatches(o.context, o.session.read())) o.session.use_waypoint(0, 0, o.context); }
         void submit(MapIntent intent) override {
+            if (!onlineInteractionMatches(o.context, o.session.read())) { o.notice = "Travel interaction changed; select it again."; return; }
             std::visit([&](const auto &v) {
                 using T = std::decay_t<decltype(v)>;
                 if constexpr (std::is_same_v<T, WaypointTravel>)
                     if (o.scene) for (const auto &d : o.scene->waypoints)
-                        if (d.level == uint16_t(v.destination) && d.unlocked) { o.session.use_waypoint(d.level,d.number); return; }
+                        if (d.level == uint16_t(v.destination) && d.unlocked) { o.session.use_waypoint(d.level,d.number,o.context); return; }
             }, intent);
         }
     } map{*this};
@@ -213,14 +224,25 @@ struct RemoteUiClients::Impl {
         }
         return {};
     }
+    void queue(OnlineItemCommand c) {
+        if (!c.context) c.context = context;
+        transactions.push_back(std::move(c));
+    }
     void enqueue(OnlineItemCommand c) {
         if (waiting || !transactions.empty()) { notice = "Waiting for the previous server item response."; return; }
-        transactions.push_back(c); pump();
+        queue(std::move(c)); pump();
     }
     void pump() {
-        const auto &w = session.read().world;
+        const auto &online = session.read();
+        const auto &w = online.world;
+        if ((waitingContext && !onlineInteractionMatches(*waitingContext, online)) ||
+            (!transactions.empty() && (!transactions.front().context ||
+                !onlineInteractionMatches(*transactions.front().context, online)))) {
+            notice = "Queued item operation cancelled after the game, area or interaction changed.";
+            transactions.clear(); waiting.reset(); waitingContext.reset(); return;
+        }
         if (waiting) {
-            if (!w.itemRequest || w.itemRequest->sequence != *waiting) { transactions.clear(); waiting.reset(); return; }
+            if (!w.itemRequest || w.itemRequest->sequence != *waiting) { transactions.clear(); waiting.reset(); waitingContext.reset(); return; }
             const auto status = w.itemRequest->state;
             if (status == OnlineItemRequest::State::Pending) return;
             if (status == OnlineItemRequest::State::Rejected || status == OnlineItemRequest::State::TimedOut || status == OnlineItemRequest::State::Interrupted) {
@@ -231,14 +253,16 @@ struct RemoteUiClients::Impl {
                 if (status == OnlineItemRequest::State::Updated && std::chrono::steady_clock::now() < waitingUntil) return;
                 notice = "Server did not assign the requested cursor item."; transactions.clear();
             }
-            waiting.reset();
+            waiting.reset(); waitingContext.reset();
         }
         if (transactions.empty()) return;
         if (!session.item_request_ready()) return;
         auto c = transactions.front(); transactions.pop_front();
         if (!items.submit(session,c)) { notice = items.reason(); transactions.clear(); return; }
-        if (w.itemRequest) {
-            waiting = w.itemRequest->sequence;
+        const auto &sent = session.read();
+        if (sent.world.itemRequest) {
+            waiting = sent.world.itemRequest->sequence;
+            waitingContext = onlineIntentContext(sent);
             waitingUntil = std::chrono::steady_clock::now() + session.request_timeout();
         }
     }
@@ -285,15 +309,15 @@ struct RemoteUiClients::Impl {
         if (waiting || !transactions.empty()) { notice = "Waiting for the previous server item response."; return; }
         if (items.read().cursor != next.item) {
             OnlineItemCommand take; take.action = OnlineItemAction::Take; take.item = next.item; take.itemRevision = handle.revision;
-            transactions.push_back(take);
+            queue(std::move(take));
         } else next.itemRevision = handle.revision;
-        transactions.push_back(next); pump();
+        queue(std::move(next)); pump();
     }
     void compositeTake(OnlineItemCommand next) {
         if (waiting || !transactions.empty()) { notice="Waiting for the previous server item response."; return; }
         OnlineItemCommand take; take.action=OnlineItemAction::Take; take.item=next.item; take.itemRevision=next.itemRevision;
         next.itemRevision=0;
-        transactions.push_back(take); transactions.push_back(next); pump();
+        queue(std::move(take)); queue(std::move(next)); pump();
     }
     void inventoryCommand(InventoryIntent intent) {
         std::visit([&](const auto &v) {
@@ -586,19 +610,22 @@ struct RemoteUiClients::Impl {
     }
     void update(const OnlineSceneView &binding) {
         scene=&binding;
+        context = onlineIntentContext(session.read());
         if(generation!=session.read().gameGeneration) {
-            generation=session.read().gameGeneration; transactions.clear(); waiting.reset(); hotkeys={}; run=true;
+            generation=session.read().gameGeneration; transactions.clear(); waiting.reset(); waitingContext.reset(); hotkeys={};
         }
         if (areaGeneration!=session.read().world.areaGeneration) {
-            areaGeneration=session.read().world.areaGeneration; transactions.clear(); waiting.reset();
+            areaGeneration=session.read().world.areaGeneration; transactions.clear(); waiting.reset(); waitingContext.reset();
         }
         ++revision; projectInteractions(); projectCharacter(); projectInventory(); projectInteractions();
-        if (characterView.dead) { transactions.clear(); waiting.reset(); }
+        if (characterView.dead) { transactions.clear(); waiting.reset(); waitingContext.reset(); }
         else pump();
     }
 };
-RemoteUiClients::RemoteUiClients(Archives &a,net::RealmSession &s,RemoteInventory &i,RemoteCombat &c,RemoteControl &r):impl_(std::make_unique<Impl>(a,s,i,c,r)){}
+RemoteUiClients::RemoteUiClients(Archives &a,net::RealmSession &s,RemoteInventory &i,RemoteCombat &c,RemoteControl &r,bool running):impl_(std::make_unique<Impl>(a,s,i,c,r)){impl_->run=running;}
 RemoteUiClients::~RemoteUiClients()=default;
+size_t RemoteUiClients::queuedItemCommands() const { return impl_->transactions.size(); }
+std::optional<uint64_t> RemoteUiClients::waitingItemRequest() const { return impl_->waiting; }
 void RemoteUiClients::update(const OnlineSceneView &s){impl_->update(s);}
 const ClassicData &RemoteUiClients::content()const{return impl_->data;}
 IActorClient &RemoteUiClients::actor(){return impl_->actor;}

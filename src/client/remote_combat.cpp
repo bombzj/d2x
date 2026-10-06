@@ -31,6 +31,9 @@ std::string_view RemoteCombat::classCode() const {
     return {};
 }
 bool RemoteCombat::submit(OnlineCombatCommand command) {
+    if (!command.context) command.context = onlineIntentContext(session_.read());
+    if (!onlineWorldMatches(*command.context, session_.read()))
+        return reject("Combat intent belongs to a previous game or area");
     scene_.update(session_.read());
     update();
     const auto &world = session_.read().world;

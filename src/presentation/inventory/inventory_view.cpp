@@ -155,7 +155,7 @@ bool SceneView::drawInventoryCursor(Vec mouse) const {
     if (characterView_.dead) return false;
     const auto &ui = view_.inventory;
     if (!ui.drag || view_.gameMenuOpen ||
-        (view_.blocksWorld() && !view_.shopOpen))
+        (view_.capturesWorldInput() && !view_.shopOpen))
         return false;
     const auto *item = inventoryView_.item(ui.drag->item.id);
     if (!item || item->revision != ui.drag->item.revision)

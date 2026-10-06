@@ -1,4 +1,5 @@
 #include "online_commands.hpp"
+#include "ui_input.hpp"
 #include "client/remote_control.hpp"
 #include "client/remote_inventory.hpp"
 #include "client/remote_combat.hpp"
@@ -43,6 +44,11 @@ template <class T> Json optional(const std::optional<T> &v) {
 Json point(const std::optional<OnlinePoint> &p) {
     return p ? Json{{"x", p->x}, {"y", p->y}} : Json(nullptr);
 }
+Json context(const std::optional<OnlineIntentContext> &c) {
+    return c ? Json{{"connectionGeneration", c->connectionGeneration}, {"gameGeneration", c->gameGeneration},
+        {"areaGeneration", c->areaGeneration}, {"interactionGeneration", c->interactionGeneration},
+        {"player", optional(c->player)}, {"npc", optional(c->npc)}} : Json(nullptr);
+}
 Json snapshot(const OnlineView &v, const OnlineSceneView &scene, const OnlineInventoryView &inventory) {
     Json result{{"stage", stageNames.at(size_t(v.stage))},
                 {"revision", v.revision},
@@ -50,10 +56,21 @@ Json snapshot(const OnlineView &v, const OnlineSceneView &scene, const OnlineInv
                 {"gameGeneration", v.gameGeneration},
                 {"selectedRealm", v.selectedRealm},
                 {"selectedCharacter", v.selectedCharacter},
-                {"latencyMilliseconds", v.latencyMilliseconds},
+                {"latencyMilliseconds", optional(v.latencyMilliseconds)},
                 {"gameQueuePosition", optional(v.gameQueuePosition)},
                 {"gameListComplete", v.gameListComplete},
                 {"worldDisplayAvailable", scene.available}};
+    auto protocol = [](const OnlineProtocolCounters &c) {
+        Json packets = Json::array();
+        for (size_t id = 0; id < c.received.size(); ++id)
+            if (c.received[id] || c.sent[id] || c.unconsumed[id])
+                packets.push_back({{"id", id}, {"received", c.received[id]}, {"sent", c.sent[id]},
+                    {"unconsumed", c.unconsumed[id]}});
+        return Json{{"receivedBytes", c.receivedBytes}, {"sentBytes", c.sentBytes},
+            {"lastReceived", optional(c.lastReceived)}, {"packets", std::move(packets)}};
+    };
+    result["protocol"] = {{"sid", protocol(v.sidProtocol)}, {"mcp", protocol(v.mcpProtocol)},
+        {"game", protocol(v.gameProtocol)}};
     result["scene"] = {{"available", scene.available},
                        {"movementAvailable", scene.movementAvailable},
                        {"reason", scene.reason},
@@ -115,7 +132,8 @@ Json snapshot(const OnlineView &v, const OnlineSceneView &scene, const OnlineInv
         const auto &request = *v.world.itemRequest;
         constexpr std::array states{"Pending", "Updated", "TimedOut", "Interrupted", "Rejected", "SentNoAck"};
         result["inventory"]["request"] = {{"sequence", request.sequence}, {"state", states.at(size_t(request.state))},
-            {"action", int(request.command.action)}, {"itemId", request.command.item}, {"targetId", request.command.target}};
+            {"action", int(request.command.action)}, {"itemId", request.command.item}, {"targetId", request.command.target},
+            {"context", context(request.command.context)}};
     }
     result["scene"]["palette"] = optional(scene.palette);
     result["scene"]["town"] = scene.town;
@@ -157,6 +175,9 @@ Json snapshot(const OnlineView &v, const OnlineSceneView &scene, const OnlineInv
         result["scene"]["mapErrors"].push_back({{"area", area}, {"reason", reason}});
     result["world"] = {{"revision", v.world.revision},
                        {"areaGeneration", v.world.areaGeneration},
+                       {"interactionGeneration", v.world.interactionGeneration},
+                       {"waypointRequested", optional(v.world.waypointRequested)},
+                       {"lateWaypointReplies", v.world.lateWaypointReplies},
                        {"playerPosition", point(v.world.playerPosition)},
                        {"life", optional(v.world.life)},
                        {"mana", optional(v.world.mana)},
@@ -175,6 +196,27 @@ Json snapshot(const OnlineView &v, const OnlineSceneView &scene, const OnlineInv
                        {"rooms", Json::array()},
                        {"equipment", Json::array()},
                        {"attributes", Json::object()}};
+    const auto &social = v.world.social;
+    Json roster = Json::array(), relations = Json::array(), chat = Json::array();
+    for (const auto &[id, player] : social.players)
+        roster.push_back({{"id", id}, {"listed", player.listed}, {"revision", player.revision},
+            {"name", player.name}, {"class", optional(player.characterClass)}, {"level", optional(player.level)},
+            {"partyId", optional(player.partyId)}, {"partyState", optional(player.partyState)},
+            {"partyFlags", optional(player.partyFlags)}, {"guildFlags", optional(player.guildFlags)},
+            {"rosterUnknown", optional(player.rosterUnknown)},
+            {"relationshipFlags", optional(player.relationshipFlags)}, {"partyStatus", optional(player.partyStatus)},
+            {"area", optional(player.area)}, {"lifePercentage", optional(player.lifePercentage)},
+            {"positionX", optional(player.positionX)}, {"positionY", optional(player.positionY)},
+            {"extensionBytes", player.extension}});
+    for (const auto &[players, flags] : social.relationships)
+        relations.push_back({{"from", players.first}, {"to", players.second}, {"flags", flags}});
+    for (const auto &message : social.chat)
+        chat.push_back({{"sequence", message.sequence}, {"receivedMilliseconds", message.receivedMilliseconds},
+            {"type", message.type}, {"language", message.language}, {"unitType", message.unitType},
+            {"unitId", message.unitId}, {"messageColor", message.messageColor}, {"nameColor", message.nameColor},
+            {"nameBytes", message.name}, {"textBytes", message.text}});
+    result["world"]["social"] = {{"revision", social.revision}, {"players", std::move(roster)},
+        {"relationships", std::move(relations)}, {"chatSequence", social.chatSequence}, {"chat", std::move(chat)}};
     constexpr std::array deathPhases{"Unknown", "Alive", "Dying", "Dead"};
     result["world"]["dead"] = onlinePlayerDead(v.world);
     result["world"]["deathPhase"] = deathPhases.at(size_t(v.world.deathPhase));
@@ -205,6 +247,7 @@ Json snapshot(const OnlineView &v, const OnlineSceneView &scene, const OnlineInv
                                             {"positionRevision", u.positionRevision},
                                             {"positionDiscontinuity", u.positionDiscontinuity},
                                             {"actionRevision", u.actionRevision},
+                                            {"actionReceivedMilliseconds", u.actionReceivedMilliseconds},
                                             {"nativeMode", u.nativeMode}, {"direction", optional(u.direction)},
                                             {"actionSkill", optional(u.actionSkill)}, {"actionSkillLevel", optional(u.actionSkillLevel)},
                                             {"pathType", optional(u.pathType)}, {"pathSteps", optional(u.pathSteps)},
@@ -272,6 +315,7 @@ Json snapshot(const OnlineView &v, const OnlineSceneView &scene, const OnlineInv
     result["error"] = nullptr;
     if (v.error)
         result["error"] = {{"kind", int(v.error->kind)},
+                           {"sequence", v.error->sequence},
                            {"packetId", v.error->packetId},
                            {"serverCode", v.error->serverCode},
                            {"message", v.error->message}};
@@ -292,7 +336,8 @@ std::string onlineDebugCommand(const std::string &input, net::RealmSession &sess
                                const std::function<void(const std::string &)> &screenshot,
                                const std::function<OnlineSceneView()> &sceneSnapshot,
                                RemoteControl &control, RemoteInventory &inventory, RemoteCombat &combat,
-                               const std::function<void(bool, bool)> &automap) {
+                               const std::function<void(bool, bool)> &automap, bool &presentationPaused,
+                               const std::function<void(std::vector<FrameInput>)> &inputFrames) {
     Json request;
     Credentials secrets{request, {}};
     try {
@@ -306,6 +351,12 @@ std::string onlineDebugCommand(const std::string &input, net::RealmSession &sess
         if (request.contains("gameGeneration") &&
             request.at("gameGeneration").get<uint64_t>() != session.read().gameGeneration)
             return Json{{"ok", false}, {"error", "Stale online game generation"}}.dump();
+        if (request.contains("areaGeneration") &&
+            request.at("areaGeneration").get<uint64_t>() != session.read().world.areaGeneration)
+            return Json{{"ok", false}, {"error", "Stale online area generation"}}.dump();
+        if (request.contains("interactionGeneration") &&
+            request.at("interactionGeneration").get<uint64_t>() != session.read().world.interactionGeneration)
+            return Json{{"ok", false}, {"error", "Stale online interaction generation"}}.dump();
         bool accepted = true, mutation = false;
         auto text = [&](const char *key, size_t limit, bool required = true) {
             auto value = required ? request.at(key).get<std::string>() : request.value(key, std::string{});
@@ -319,9 +370,26 @@ std::string onlineDebugCommand(const std::string &input, net::RealmSession &sess
                 throw std::invalid_argument("Online command number is outside the supported range");
             return uint8_t(value);
         };
-        if (command == "online-status" || command == "status" || command == "online-realms" ||
+        if (command == "ui-input") {
+            if (presentationPaused || session.read().stage != OnlineStage::ProtocolReady ||
+                !sceneSnapshot().playerDisplayed)
+                throw std::invalid_argument("UI input requires a displayed, running online game");
+            auto frames = parseDebugInput(request);
+            const auto count = frames.size();
+            inputFrames(std::move(frames));
+            return Json{{"ok", true}, {"queued", true}, {"frames", count}}.dump();
+        } else if (command == "pause" || command == "resume") {
+            if (command == "pause" && (session.read().stage != OnlineStage::ProtocolReady ||
+                                       !sceneSnapshot().playerDisplayed))
+                throw std::invalid_argument("Presentation pause requires a displayed online game");
+            presentationPaused = command == "pause";
+            control.cancelMovement();
+            return Json{{"ok", true}, {"presentationPaused", presentationPaused},
+                {"networkRunning", true}, {"serverPaused", false}}.dump();
+        } else if (command == "online-status" || command == "status" || command == "online-realms" ||
             command == "online-characters" || command == "online-games" || command == "online-world" ||
-            command == "online-items" || command == "online-ground" || command == "online-combat" || command == "online-skills") {
+            command == "online-items" || command == "online-ground" || command == "online-combat" || command == "online-skills" ||
+            command == "online-social" || command == "online-chat") {
         } else if (command == "online-resurrect") {
             control.cancelMovement(); accepted = session.resurrect(); mutation = true;
         } else if (command == "online-select-skill" || command == "online-cast" || command == "online-attack" ||
@@ -487,9 +555,11 @@ std::string onlineDebugCommand(const std::string &input, net::RealmSession &sess
         } else if (command == "online-waypoint-travel" || command == "online-waypoint-close") {
             const auto scene = sceneSnapshot();
             const auto &world = session.read().world;
-            if (!scene.nativeMapReady || !world.waypointSource ||
+            const auto waypoint = world.waypointSource ? world.waypointSource : world.waypointRequested;
+            if (!scene.nativeMapReady || !waypoint ||
+                (command == "online-waypoint-travel" && !world.waypointSource) ||
                 !std::any_of(scene.mapTargets.begin(), scene.mapTargets.end(), [&](const auto &entry) {
-                    return entry.unit == OnlineUnitKey{2, *world.waypointSource} &&
+                    return entry.unit == OnlineUnitKey{2, *waypoint} &&
                         entry.interaction == OnlineMapInteraction::Waypoint;
                 })) return Json{{"ok", false}, {"error", "No current server waypoint menu is open"}}.dump();
             if (command == "online-waypoint-close") accepted = session.use_waypoint(0);
@@ -584,7 +654,9 @@ std::string onlineDebugCommand(const std::string &input, net::RealmSession &sess
                 .dump();
         inventory.update(session.read());
         combat.update();
-        Json response{{"ok", accepted}, {"online", snapshot(session.read(), sceneSnapshot(), inventory.read())}};
+        Json response{{"ok", accepted}, {"presentationPaused", presentationPaused},
+            {"online", snapshot(session.read(), sceneSnapshot(), inventory.read())}};
+        response["online"]["inventory"]["reason"] = inventory.reason();
         auto &combatView = response["online"]["combat"];
         combatView = {{"skills", Json::array()}, {"states", Json::array()}, {"events", Json::array()},
             {"sequence", session.read().world.combatSequence}, {"request", nullptr}, {"reason", combat.reason()}};
@@ -603,7 +675,7 @@ std::string onlineDebugCommand(const std::string &input, net::RealmSession &sess
         }
         constexpr std::array eventKinds{"Skill", "Hit", "Action", "Overlay", "Missile"};
         for (const auto &event : session.read().world.combatEvents) combatView["events"].push_back({{"sequence", event.sequence},
-            {"packet", event.packet}, {"kind", eventKinds.at(size_t(event.kind))}, {"sourceType", event.source.type}, {"sourceId", event.source.id},
+            {"receivedMilliseconds", event.receivedMilliseconds}, {"packet", event.packet}, {"kind", eventKinds.at(size_t(event.kind))}, {"sourceType", event.source.type}, {"sourceId", event.source.id},
             {"target", event.target ? Json{{"type", event.target->type}, {"id", event.target->id}} : Json(nullptr)},
             {"point", point(event.point)}, {"skill", optional(event.skill)}, {"level", optional(event.level)},
             {"overlay", optional(event.overlay)}, {"missile", optional(event.missile)}, {"action", optional(event.action)},
@@ -618,9 +690,10 @@ std::string onlineDebugCommand(const std::string &input, net::RealmSession &sess
             const auto &value = *world.combatRequest;
             combatView["request"] = {{"sequence", value.sequence}, {"state", states.at(size_t(value.state))},
                 {"action", int(value.command.action)}, {"skill", value.command.skill}, {"hand", value.command.hand == OnlineSkillHand::Left ? "left" : "right"},
-                {"statId", value.command.attribute}, {"count", value.command.count}};
+                {"statId", value.command.attribute}, {"count", value.command.count}, {"context", context(value.command.context)}};
         }
         response["online"]["control"] = {{"reason", control.reason()}, {"approaching", nullptr}, {"navigation", nullptr}};
+        response["online"]["control"]["context"] = context(control.intentContext());
         if (const auto target = control.approaching())
             response["online"]["control"]["approaching"] = {{"unitType", target->type}, {"unitId", target->id}};
         if (const auto goal = control.movementGoal()) {

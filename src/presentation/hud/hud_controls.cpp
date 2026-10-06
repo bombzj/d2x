@@ -71,7 +71,7 @@ std::vector<std::optional<int>> SceneView::skillChoices(bool right) const {
     return characterView_.choices[unsigned(right)];
 }
 void SceneView::drawSkillControls(Vec mouse) const {
-    if (view_.blocksWorld() || view_.inventory.drag || view_.inventory.split ||
+    if (view_.capturesWorldInput() || view_.inventory.drag || view_.inventory.split ||
         view_.inventory.goldDialog || view_.inventory.identify)
         return;
     std::optional<std::optional<int>> hovered;

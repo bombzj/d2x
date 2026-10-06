@@ -2,6 +2,7 @@
 #include "core/bytes.hpp"
 #include "contracts/online_world.hpp"
 #include <cstdint>
+#include <array>
 #include <optional>
 #include <string>
 #include <vector>
@@ -41,6 +42,7 @@ struct OnlineError {
     uint8_t packetId{};
     uint32_t serverCode{};
     std::string message;
+    uint64_t sequence{}; // Stable across heartbeat/world revisions, local diagnostic identity.
 };
 struct OnlineRealm {
     std::string name, description;
@@ -64,7 +66,15 @@ struct OnlineLoadInfo {
     std::optional<uint32_t> mapSeed, secondarySeed, playerUnitId;
     bool serverLoadComplete{};
 };
+struct OnlineProtocolCounters {
+    std::array<uint64_t, 256> received{}, sent{}, unconsumed{};
+    uint64_t receivedBytes{}, sentBytes{};
+    std::optional<uint8_t> lastReceived;
+};
 struct OnlineView {
+    // Counts and IDs only: never packet payloads, credentials or native tickets.
+    OnlineProtocolCounters sidProtocol, mcpProtocol, gameProtocol;
+
     uint64_t revision{}, connectionGeneration{}, gameGeneration{};
     OnlineStage stage{OnlineStage::Idle};
     std::optional<OnlineError> error;
@@ -74,8 +84,21 @@ struct OnlineView {
     std::string selectedRealm, selectedCharacter;
     OnlineLoadInfo load;
     OnlineWorldView world;
-    uint32_t latencyMilliseconds{};
+    std::optional<uint32_t> latencyMilliseconds; // Unknown until the first native pong.
     std::optional<uint32_t> gameQueuePosition;
     bool gameListComplete{};
 };
+inline OnlineIntentContext onlineIntentContext(const OnlineView &v) {
+    return {v.connectionGeneration, v.gameGeneration, v.world.areaGeneration,
+        v.world.interactionGeneration, v.load.playerUnitId, v.world.npcRequested};
+}
+inline bool onlineWorldMatches(const OnlineIntentContext &context, const OnlineView &v) {
+    return context.connectionGeneration == v.connectionGeneration &&
+        context.gameGeneration == v.gameGeneration && context.areaGeneration == v.world.areaGeneration &&
+        context.player == v.load.playerUnitId;
+}
+inline bool onlineInteractionMatches(const OnlineIntentContext &context, const OnlineView &v) {
+    return onlineWorldMatches(context, v) && context.interactionGeneration == v.world.interactionGeneration &&
+        context.npc == v.world.npcRequested;
+}
 } // namespace d2x

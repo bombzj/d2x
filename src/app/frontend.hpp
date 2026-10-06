@@ -1,8 +1,7 @@
 #pragma once
-#include "character_frontend.hpp"
+#include "resources/archive.hpp"
+#include "options.hpp"
+#include <raylib.h>
 namespace d2x {
-std::optional<CharacterChoice> chooseFrontend(Archives &, RenderTexture2D,
-                                              const std::filesystem::path &onlineConfig,
-                                              const std::string &debugPipe,
-                                              bool returnToLocalCharacters = false);
+void runOnlineFrontend(Archives &, RenderTexture2D, const AppOptions &);
 }

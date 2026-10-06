@@ -1,30 +1,23 @@
 param(
     [string]$Mpq='',
-    [int]$Level=1,
-    [int]$Region=-1,
-    [string]$Class='',
-    [string]$Load='',
-    [string]$Save='',
+    [string]$OnlineConfig='',
+    [string]$OnlineCharacter='',
+    [string]$OnlineCreateGame='',
+    [string]$OnlineJoinGame='',
     [ValidatePattern('^[A-Za-z0-9_-]{1,80}$')][string]$PipeName='d2x-debug',
-    [switch]$NoDebugPipe,
-    [switch]$DebugPaused
+    [switch]$NoDebugPipe
 )
 $ErrorActionPreference='Stop'
-if($NoDebugPipe -and $DebugPaused){throw '-DebugPaused cannot be combined with -NoDebugPipe.'}
-if($Class -and $Load){throw 'Choose either -Class for a new character or -Load for a saved character.'}
+if($OnlineCreateGame -and $OnlineJoinGame){throw 'Choose either -OnlineCreateGame or -OnlineJoinGame.'}
+if(($OnlineCreateGame -or $OnlineJoinGame) -and -not $OnlineCharacter){throw 'Quick entry requires -OnlineCharacter.'}
 if($Mpq){$Mpq=$ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Mpq)}
-if($Load){$Load=$ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Load)}
-if($Save){$Save=$ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Save)}
+if($OnlineConfig){$OnlineConfig=$ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($OnlineConfig)}
 $projectRoot=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $exe=Join-Path $projectRoot 'd2x.exe'
 if(-not (Test-Path -LiteralPath $exe)){$exe=Join-Path $projectRoot 'build/bin/d2x.exe'}
 if(-not (Test-Path -LiteralPath $exe)){$exe=Join-Path $projectRoot 'build/bin/Release/d2x.exe'}
 if(-not (Test-Path -LiteralPath $exe)){
-    $buildScript=Join-Path $PSScriptRoot 'build.ps1'
-    if(-not (Test-Path -LiteralPath $buildScript)){throw 'D2X executable is missing. Rebuild the current package.'}
-    & $buildScript
-    $exe=Join-Path $projectRoot 'build/bin/d2x.exe'
-    if(-not (Test-Path -LiteralPath $exe)){$exe=Join-Path $projectRoot 'build/bin/Release/d2x.exe'}
+    throw 'D2X executable is missing. Build explicitly with scripts/build.ps1 before launching.'
 }
 if(-not $Mpq){
     foreach($folder in @($projectRoot,(Split-Path -Parent $exe))){
@@ -43,15 +36,13 @@ if(-not $Mpq){
 Push-Location $projectRoot
 try{
     $arguments=@()
-    if($PSBoundParameters.ContainsKey('Level')){$arguments+=@('--level',"$Level")}
-    if($PSBoundParameters.ContainsKey('Region')){$arguments+=@('--region',"$Region")}
-    if($Class){$arguments+=@('--class',$Class)}
-    if($Load){$arguments+=@('--load',$Load)}
-    if($Save){$arguments+=@('--save',$Save)}
+    if($OnlineConfig){$arguments+=@('--online-config',$OnlineConfig)}
+    if($OnlineCharacter){$arguments+=@('--online-character',$OnlineCharacter)}
+    if($OnlineCreateGame){$arguments+=@('--online-create-game',$OnlineCreateGame)}
+    if($OnlineJoinGame){$arguments+=@('--online-join-game',$OnlineJoinGame)}
     if($Mpq){$arguments+=@('--mpq',$Mpq)}
     if(-not $NoDebugPipe){
         $arguments+=@('--debug-pipe',$PipeName)
-        if(-not $DebugPaused){$arguments+='--debug-run'}
         Write-Host "Local debug pipe: $PipeName (current Windows user only)"
     }
     & $exe @arguments

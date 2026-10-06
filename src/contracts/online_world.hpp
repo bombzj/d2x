@@ -1,6 +1,7 @@
 #pragma once
 #include "core/bytes.hpp"
 #include "contracts/online_items.hpp"
+#include "contracts/online_social.hpp"
 #include <compare>
 #include <array>
 #include <cstdint>
@@ -17,6 +18,7 @@ struct OnlinePoint {
     uint16_t x{}, y{};
     bool operator==(const OnlinePoint &) const = default;
 };
+enum class OnlineObjectIntent { Operate, Stash, Waypoint };
 struct OnlineUnitKey {
     uint8_t type{};
     uint32_t id{};
@@ -37,6 +39,7 @@ struct OnlineCombatCommand {
     std::optional<OnlinePoint> point;
     std::optional<OnlineUnitKey> target;
     bool stationary{}, repeat{};
+    std::optional<OnlineIntentContext> context;
 };
 struct OnlineCombatRequest {
     enum class State { Pending, Confirmed, TimedOut, Interrupted, SentNoAck };
@@ -47,7 +50,7 @@ struct OnlineCombatRequest {
 };
 struct OnlineCombatEvent {
     enum class Kind { Skill, Hit, Action, Overlay, Missile };
-    uint64_t sequence{};
+    uint64_t sequence{}, receivedMilliseconds{}; // Client monotonic receipt time, never a wire field.
     uint8_t packet{};
     Kind kind{};
     OnlineUnitKey source;
@@ -85,6 +88,7 @@ struct OnlineUnit {
     std::optional<uint16_t> actionSkill, actionSkillLevel;
     bool nativeMode{}; // 0x0E carries an actual mode, unlike player action packets.
     uint64_t actionRevision{}, hitRevision{};
+    uint64_t actionReceivedMilliseconds{}; // Local receipt time, not server action time.
     std::optional<uint8_t> pathType, pathSteps, pathDistance;
     std::optional<int16_t> velocityPercent;
     // State stat widths belong to MPQ consumers; the transport retains ordered native messages.
@@ -137,11 +141,12 @@ struct OnlineRespawnRequest {
     bool repositioned{};
 };
 struct OnlineWorldView {
+    OnlineSocialView social;
     OnlineDeathPhase deathPhase{OnlineDeathPhase::Unknown};
     uint64_t deathRevision{};
     std::optional<OnlineRespawnRequest> respawnRequest;
     std::map<uint32_t, uint32_t> corpseOwners; // Original 0x8E corpse GUID -> player GUID.
-    uint64_t revision{}, areaGeneration{};
+    uint64_t revision{}, areaGeneration{}, interactionGeneration{};
     std::map<OnlineUnitKey, OnlineUnit> units;
     // Room anchors are in tiles, unit coordinates in subtiles (five per tile).
     // The packet does not contain room extents.
@@ -177,6 +182,8 @@ struct OnlineWorldView {
     bool townPortalPending{}; // Enqueued command, not proof that a portal exists.
     std::optional<std::array<uint16_t, 8>> waypointHistory; // Native 0x102 header + 112 bits.
     std::optional<uint32_t> waypointSource; // Only 0x63 authorizes an open menu.
+    std::optional<uint32_t> waypointRequested; // Local 0x13 intent, never an open-menu confirmation.
+    uint64_t lateWaypointReplies{};
     uint64_t ignoredPackets{};
 };
 inline bool onlinePlayerDead(const OnlineWorldView &world) {

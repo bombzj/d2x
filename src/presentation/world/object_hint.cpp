@@ -14,7 +14,7 @@ void SceneView::drawInteractionLabel(const std::string &label, Vec p, int offset
     painter_.label(label, int(p.x - width / 2), int(p.y - offset + 5), 16, WHITE);
 }
 void SceneView::drawObjectHint(Vec mouse) const {
-    if (view_.inventory.drag || view_.blocksWorld() || hudSurface(mouse) ||
+    if (view_.inventory.drag || view_.capturesWorldInput() || hudSurface(mouse) ||
         !CheckCollisionPointRec(rv(mouse), worldViewport()))
         return;
     if (const auto *corpse = playerCorpseAt(mouse)) {

@@ -12,6 +12,7 @@ class RemoteControl {
         OnlineUnitKey target;
         uint64_t game{}, area{}, requestRevision{};
         std::chrono::steady_clock::time_point deadline;
+        OnlineIntentContext context;
     };
     std::optional<Approach> approach_;
     struct Movement {
@@ -21,6 +22,7 @@ class RemoteControl {
         bool run{}, finalUnit{};
         uint64_t game{}, area{}, requestRevision{};
         std::chrono::steady_clock::time_point submitted, deadline;
+        OnlineIntentContext context;
     };
     std::optional<Movement> movement_;
     std::string reason_;
@@ -28,9 +30,9 @@ class RemoteControl {
     bool submitSegment(Movement &);
   public:
     RemoteControl(RemoteTown &scene, net::RealmSession &session) : scene_(scene), session_(session) {}
-    bool move(OnlinePoint, bool run);
-    bool moveToUnit(OnlineUnitKey, bool run);
-    bool interact(OnlineUnitKey, bool run);
+    bool move(OnlinePoint, bool run, std::optional<OnlineIntentContext> context = {});
+    bool moveToUnit(OnlineUnitKey, bool run, std::optional<OnlineIntentContext> context = {});
+    bool interact(OnlineUnitKey, bool run, std::optional<OnlineIntentContext> context = {});
     bool townPortal();
     void cancelApproach() {
         if (approach_ && movement_ && movement_->unit == approach_->target) movement_.reset();
@@ -39,6 +41,10 @@ class RemoteControl {
     void cancelMovement() { movement_.reset(); approach_.reset(); }
     void tick();
     const std::string &reason() const { return reason_; }
+    std::optional<OnlineIntentContext> intentContext() const {
+        if (approach_) return approach_->context;
+        return movement_ ? std::optional{movement_->context} : std::nullopt;
+    }
     std::optional<OnlineUnitKey> approaching() const {
         return approach_ ? std::optional{approach_->target} : std::nullopt;
     }

@@ -2,7 +2,7 @@
 
 namespace d2x {
 const ExitView *SceneView::exitAt(Vec mouse) const {
-    if (hudSurface(mouse) || view_.blocksWorld() || !CheckCollisionPointRec(rv(mouse), worldViewport()))
+    if (hudSurface(mouse) || view_.capturesWorldInput() || !CheckCollisionPointRec(rv(mouse), worldViewport()))
         return nullptr;
     for (const auto &exit : mapView().exits) {
         auto p = screen(exit.position);

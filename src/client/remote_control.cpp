@@ -25,7 +25,7 @@ bool RemoteControl::submitSegment(Movement &movement) {
     // PATH_Straight_Compute only tries AStar within an 18-subtile radius.
     constexpr int nativeDetourRadius = 18;
     if (movement.unit && dx * dx + dy * dy <= nativeDetourRadius * nativeDetourRadius) {
-        if (!session_.move_to_unit(*movement.unit, movement.run))
+        if (!session_.move_to_unit(*movement.unit, movement.run, movement.context))
             return reject(view.error ? view.error->message : "Unit movement is rate limited");
         movement.finalUnit = true;
     } else {
@@ -56,33 +56,41 @@ bool RemoteControl::submitSegment(Movement &movement) {
             }
             if (next == player) return reject("Native movement ray has no reachable route segment");
         }
-        if (!session_.move_to(next, movement.run))
+        if (!session_.move_to(next, movement.run, movement.context))
             return reject(view.error ? view.error->message : "Movement request is rate limited");
         movement.segment = next;
     }
-    movement.requestRevision = view.world.movementRequest ? view.world.movementRequest->revision : 0;
+    const auto &sent = session_.read();
+    movement.requestRevision = sent.world.movementRequest ? sent.world.movementRequest->revision : 0;
+    movement.context = onlineIntentContext(sent);
     if (approach_ && movement.unit == approach_->target)
         approach_->requestRevision = movement.requestRevision;
     movement.submitted = std::chrono::steady_clock::now();
     reason_.clear(); return true;
 }
-bool RemoteControl::move(OnlinePoint point, bool run) {
+bool RemoteControl::move(OnlinePoint point, bool run, std::optional<OnlineIntentContext> context) {
+    if (!context) context = onlineIntentContext(session_.read());
+    if (!onlineInteractionMatches(*context, session_.read())) return reject("Movement intent belongs to a previous game, area or interaction");
     scene_.update(session_.read());
     const auto player = session_.read().world.playerPosition;
     if (!player || std::abs(int(player->x) - point.x) > 50 || std::abs(int(player->y) - point.y) > 50)
         return reject("Movement exceeds the native 50-subtile request range");
     if (!scene_.permits(session_.read(), point)) return reject("Movement destination is outside active player collision");
     if (movement_ && !movement_->unit && movement_->goal == point && movement_->run == run &&
-        movement_->game == session_.read().gameGeneration && movement_->area == session_.read().world.areaGeneration)
+        movement_->game == session_.read().gameGeneration && movement_->area == session_.read().world.areaGeneration &&
+        onlineInteractionMatches(movement_->context, session_.read()))
         return true;
     const auto now = std::chrono::steady_clock::now();
     Movement movement; movement.goal = point; movement.run = run;
+    movement.context = *context;
     movement.game = session_.read().gameGeneration; movement.area = session_.read().world.areaGeneration;
     movement.deadline = now + std::chrono::seconds(15);
     if (!submitSegment(movement)) return false;
     movement_ = std::move(movement); approach_.reset(); reason_.clear(); return true;
 }
-bool RemoteControl::moveToUnit(OnlineUnitKey target, bool run) {
+bool RemoteControl::moveToUnit(OnlineUnitKey target, bool run, std::optional<OnlineIntentContext> context) {
+    if (!context) context = onlineIntentContext(session_.read());
+    if (!onlineInteractionMatches(*context, session_.read())) return reject("Unit movement intent belongs to a previous game, area or interaction");
     scene_.update(session_.read());
     if (!scene_.permitsInteraction(session_.read(), target)) return reject("Target is not assigned in the current scene");
     const auto player = *session_.read().world.playerPosition;
@@ -91,6 +99,7 @@ bool RemoteControl::moveToUnit(OnlineUnitKey target, bool run) {
         return reject("Target exceeds the native 50-subtile request range");
     const auto now = std::chrono::steady_clock::now();
     Movement movement; movement.goal = point; movement.unit = target; movement.run = run;
+    movement.context = *context;
     movement.game = session_.read().gameGeneration; movement.area = session_.read().world.areaGeneration;
     movement.deadline = now + std::chrono::seconds(15);
     if (!submitSegment(movement)) return false;
@@ -98,7 +107,9 @@ bool RemoteControl::moveToUnit(OnlineUnitKey target, bool run) {
     else movement_ = std::move(movement);
     approach_.reset(); reason_.clear(); return true;
 }
-bool RemoteControl::interact(OnlineUnitKey target, bool run) {
+bool RemoteControl::interact(OnlineUnitKey target, bool run, std::optional<OnlineIntentContext> context) {
+    if (!context) context = onlineIntentContext(session_.read());
+    if (!onlineInteractionMatches(*context, session_.read())) return reject("Interaction intent belongs to a previous game, area or interaction");
     scene_.update(session_.read());
     const auto &world = session_.read();
     if (!scene_.permitsInteraction(world, target)) return reject("Target is not assigned in the current scene");
@@ -109,22 +120,24 @@ bool RemoteControl::interact(OnlineUnitKey target, bool run) {
     if (target.type != 1 && target.type != 0) {
         const auto entry = std::find_if(scene_.read().mapTargets.begin(), scene_.read().mapTargets.end(),
             [&](const auto &value) { return value.unit == target; });
-        const bool stash = entry != scene_.read().mapTargets.end() && entry->interaction == OnlineMapInteraction::Stash;
-        if (!session_.interact_map_unit(target, stash)) return reject(world.error ? world.error->message : "Interaction is rate limited");
+        const auto intent = entry == scene_.read().mapTargets.end() ? OnlineObjectIntent::Operate
+            : entry->interaction == OnlineMapInteraction::Stash ? OnlineObjectIntent::Stash
+            : entry->interaction == OnlineMapInteraction::Waypoint ? OnlineObjectIntent::Waypoint : OnlineObjectIntent::Operate;
+        if (!session_.interact_map_unit(target, intent, context)) return reject(world.error ? world.error->message : "Interaction is rate limited");
         cancelMovement(); reason_.clear(); return true;
     }
     if ((target.type == 1 && world.world.npcRequested == target.id) || (approach_ && approach_->target == target))
         return reject("Unit interaction is already pending or open");
     if (scene_.interactionReady(world, target)) {
-        const bool sent = target.type == 0 ? session_.interact_map_unit(target) : session_.interact_npc(target.id);
+        const bool sent = target.type == 0 ? session_.interact_map_unit(target, OnlineObjectIntent::Operate, context) : session_.interact_npc(target.id, context);
         if (!sent) return reject(world.error ? world.error->message : "Unit interaction is rate limited");
         cancelMovement(); reason_.clear(); return true;
     }
     // Native 0x13 ignores distant NPCs. Native 0x02/04 keeps following their server GUID.
-    if (!moveToUnit(target, run)) return false;
+    if (!moveToUnit(target, run, context)) return false;
     approach_ = Approach{target, world.gameGeneration, world.world.areaGeneration,
         world.world.movementRequest ? world.world.movementRequest->revision : 0,
-        std::chrono::steady_clock::now() + std::chrono::seconds(15)};
+        std::chrono::steady_clock::now() + std::chrono::seconds(15), onlineIntentContext(session_.read())};
     return true;
 }
 bool RemoteControl::townPortal() {
@@ -151,6 +164,7 @@ void RemoteControl::tick() {
     if (movement_) {
         const auto &world = view.world;
         if (view.stage != OnlineStage::ProtocolReady || view.gameGeneration != movement_->game ||
+            !onlineInteractionMatches(movement_->context, view) ||
             world.areaGeneration != movement_->area || !world.playerPosition ||
             !scene_.read().movementAvailable || onlinePlayerDead(world) ||
             world.npcRequested || world.waypointSource ||
@@ -193,6 +207,7 @@ void RemoteControl::tick() {
     }
     if (!approach_) return;
     if (view.stage != OnlineStage::ProtocolReady || view.gameGeneration != approach_->game ||
+        !onlineInteractionMatches(approach_->context, view) ||
         view.world.areaGeneration != approach_->area || view.world.waypointSource ||
         view.world.npcRequested || !view.world.movementRequest ||
         view.world.movementRequest->revision != approach_->requestRevision ||
@@ -203,8 +218,8 @@ void RemoteControl::tick() {
         cancelApproach(); reason_ = "Server unit approach did not arrive before timeout"; return;
     }
     if (scene_.interactionReady(view, approach_->target)) {
-        const bool sent = approach_->target.type == 0 ? session_.interact_map_unit(approach_->target)
-                                                     : session_.interact_npc(approach_->target.id);
+        const bool sent = approach_->target.type == 0 ? session_.interact_map_unit(approach_->target, OnlineObjectIntent::Operate, approach_->context)
+                                                     : session_.interact_npc(approach_->target.id, approach_->context);
         if (sent) { cancelMovement(); reason_.clear(); }
     }
 }

@@ -14,6 +14,8 @@ class INpcClient {
     virtual const ShopView &shop(EntityId npc, bool gamble) const = 0;
     virtual const ShopOfferView *inspectShopOffer(EntityId npc, uint32_t slot, bool gamble) const = 0;
     virtual std::optional<unsigned> quote(EntityId npc, ItemHandle item, bool repair) const = 0;
+    // A server may accept a sale request while its price is still unknown.
+    virtual bool canRequestSale(EntityId npc, ItemHandle item) const { return quote(npc, item, false).has_value(); }
     virtual const HirelingView &hireling() const = 0;
     virtual const HirelingListView &hirelings(EntityId npc) const = 0;
     virtual void submit(NpcIntent intent) = 0;

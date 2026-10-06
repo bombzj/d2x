@@ -1,79 +1,68 @@
-# 剩余解耦工作
+# 联机结构改造方案
 
-更新：2026-10-05。依据当前源码（含工作区改动）及[项目基线](../../BASELINE.md)。本页只维护剩余工作、入口和完成条件；模块分工见[架构](OVERVIEW.md)，接口与验证范围见[模块基线](../README.md#模块边界)。
-
-会话 Impl、客户端基础投影、活角色组合、装备派生、公共单位能力、已实现技能的通用执行、区域缓存、任务／死亡奖励规则和 25 Hz 固定步已有入口，不再列为待迁移阶段。死灵法师与亚马逊各三页技能已有执行／被动入口；第一至第三幕佣兵也已接入技能执行，当前批次验证状态见[佣兵](../gameplay/characters/HIRELINGS.md)。
-
-当前仍是单操控人物、单活区宿主。主要耦合留在表现层的完整会话查询、会话对库存／模拟器私有状态的写入，以及内容、任务和世界操作的回调组装。
+更新：2026-10-06。产品改为仅支持既有 D2GS 联机，放弃单机兼容；完整功能范围、实施顺序和完成条件只维护在 [D2GS 全面联机开发计划](MULTIPLAYER.md)。本页维护代码边界和退场策略，替代原来继续完善本地权威宿主的五项计划。M0–M1 源码已开始实施：应用只进入联机，持续网络服务和诊断已接；剩余条目仍未完成，本批已构建、打包及有限原服冒烟；当前源码／包状态见[基线](../../BASELINE.md)。
 
 ## 下一步执行顺序
 
-| 顺序 | 工作 | 完成条件 |
-| --- | --- | --- |
-| 1 | 场景投影、世界交互和表现资源入口 | 表现层只读所需视图并提交窄意图，移除对完整会话／库存／内容目录的查询 |
-| 2 | 库存写入和跨服务事务 | NPC、任务、合成、掉落与恢复通过明确操作提交，收口 `InventoryService` 的外部私有写入 |
-| 3 | 装备充能／触发来源 | 原规则核实后接入来源资格、实例版本、起手／释放复验和消费；复用现有技能执行 |
-| 4 | 任务物件与宿主组装 | 规则接收事实并产出计划；宿主协调提交；模拟器不通过捕获整个会话的回调取得跨领域状态 |
-| 5 | 单位与区域所有权 | 查询和操作显式绑定单位／区域，静态物件定义与活状态分开，保持每份权威状态唯一拥有 |
+已从总计划 M0 开始移除普通操作暂停和本地玩法入口，M1–M3 收口协议／副本／移动基础；后续每个功能阶段同步迁移其 UI、请求、回包与显示，M12 清理最终依赖。不要先完成本地库存事务、完整 GameSession 或多活区模拟再接联机。
 
-每批迁移一条完整调用链，并删除对应旧旁路。第 3 项依赖第 2 项的来源消费事务；第 4、5 项可按已具备端口的调用链推进。未实现技能、怪物 AI 和原版演出由各玩法专题维护，不混入解耦待办。联网优先规划[既有 D2GS 接入](MULTIPLAYER.md)，场景／资源边界随联网调用链迁移；本地库存事务、完整宿主和多玩家／多活区所有权改造不作为该路线前置。
+原九项基础解耦保留已有成果；旧单机技能、任务、装备和地图代码中仍可复用的纯数据／表现部分按消费者提取。允许直接破坏 Local 适配和旧会话接口，不为保留双后端增加虚拟层、开关或兼容分支。
 
-## 1. 场景与表现边界
+## 1. 应用入口与时间推进
 
-**缺口：** `SceneController`、`SceneView` 和 `SceneAssets` 仍借用 `GameSession`。攻击／施法、地面拾取、尸体回收、任务物品提交、目标 HUD、单位／物件／弹体显示、效果叠层、屋顶和光照仍有兼容查询。资源加载仍遍历完整内容／库存目录，`GameEvent` 仍混合内部事实与表现通知；`d2x_presentation` 仍私有链接会话。
+**当前落点：** `src/app/application.cpp`、`frontend.cpp`、`options.*`、`character_frontend.*`、`debug/debug_commands.*`，`src/presentation/scene_view.*`、`controller.*`、`audio/`。
 
-**入口（相对 `src/`）：**
+- 删除产品对本地建角／选角、D2S 恢复、直接进图和本地 GameSession 的组装；所有退出、返回、换角和入局围绕 RealmSession。
+- 删除产品 debugPaused、单步和 debug 启动即暂停；按用户补充保留显式测试 pause/resume，只冻结客户端表现，不停止网络或原服；原离线 CLI 参数明确拒绝或移除，不静默转为本地运行。
+- 拆分 blocksWorld 的输入捕获、命中和布局用途；删除 UI 停止固定步、世界表现或音频时钟的能力。ESC、选项、对话和所有面板只处理输入与显示。
+- 网络推进、回包归并与资源加载的生命周期独立于是否绘制；失焦／最小化／慢加载不能暂停会话。以有界队列和快照交换处理重入，不能在世界遍历中修改当前容器。
 
-- `presentation/controller.cpp`、`scene_view.cpp`、`scene_assets.cpp`。
-- `presentation/world/{world_renderer,projectile_view,object_hint}.cpp`、`loot_view.cpp`、`actors/*_assets.cpp`、`actors/state_overlay_view.cpp`、`hud/hud.cpp`、`npc/inventory_interactions.cpp`、`items/item_display_compat.cpp`。
-- `contracts/`、`client/*_client.hpp`、`local_*_client.cpp`、`map_asset_source.hpp`、`gameplay/model/events.hpp`。
+**完成边界：** 产品没有暂停状态、本地权威入口或断线回退单机路径；旧开发工具只能独立只读分析或进行既有资源诊断，不提供备用玩法后端。
 
-先迁移目标选择／攻击施法，再处理地面物品与物件交互、场景绘制及资源加载；每条链同时迁移命中、手势、意图、反馈与绘制。沿用现有本人角色／库存／NPC／地图投影；补充可见单位、物件、弹体、效果和目标提示值。表现资源由专门目录或只读资源源提供；客户端消息只携带允许显示的字段和必要的操作者／接收者信息。
+## 2. 协议、副本、内容和表现
 
-**完成条件：** 对应链路不再包含或查询会话、模拟器、完整世界状态、库存服务或完整内容目录；保持原目标锁定、面板关闭与手势消费顺序。全部场景迁完后再移除表现目标对会话的依赖。当前地图资源借用无卸载，寿命约束见[地图基线](../modules/MAP.md)。
+**当前落点：** `src/network/`、`src/contracts/online*.hpp`、`src/client/remote_world.*`、`remote_town.*`、`remote_ui_clients.*`，`src/presentation/remote/remote_scene.*`、`scene_assets.*`、`world/`、`actors/`。
 
-## 2. 库存写入与事务
+- RealmSession 负责账号／Realm／游戏的生命周期；协议层只处理字节、版本和有序事件，不能依赖 MPQ 或窗口。
+- 远端副本独占服务器状态；连接／游戏代次、单位 type＋GUID、物品 revision、领域上下文防止串局。公开、私有、未知、已删除和临时不可见分别建模。
+- 内容层从当前 MPQ 读取只读定义；NativeMapGenerator 和活动房间缓存继续提供客户端原生地图，不能借用本地人口、任务、战斗生成来补权威单位。
+- 动画／插值／本人施放补偿／弹体等显示状态与副本分离；回包校正不能被预测覆盖，显示碰撞不能结算伤害。
+- 提取可见单位、物件、技能效果、目标提示、关系／名册、交易等必要值契约，按领域拆分；不再让 RemoteTown、frontend 或 OnlineWorld 承担所有职责。
 
-**缺口：** `InventoryService` 仍将 `GameSessionImpl` 声明为 friend。NPC 出售／修理／鉴定、雇佣、任务奖励／物件、合成、掉落、尸体清理和恢复等入口直接改 `state_`、创建随机流或容器；部分失败路径靠会话备份库存再回滚。已有 `replaceItem` 和方块草稿可复用，但没有覆盖全部跨服务操作。
+**完成边界：** UI／渲染只读快照，内容加载只输出定义，网络只驱动原服副本；跨帧不借用可失效的权威容器指针。
 
-**入口：** `gameplay/items/inventory.hpp`、`operations.hpp`、`replacement.cpp`、`cube.cpp`、`corpse_inventory.cpp`；`gameplay/npc/{purchase,service,hireling_services}.cpp`；`gameplay/session/session_{cube,consumables,loot,quest_items,quest_rewards,act_two,later_act_objects,shrines,player_corpses,restore,tools}.cpp`。
+## 3. 客户端端口与异步操作
 
-按调用链补齐原子库存操作及限定恢复入口；钱包、任务进度和世界变更由应用服务协调。保留唯一物品位置、handle／revision、访问权限、装备需求与武器组规则。失败不留下半笔扣金／消耗或额外随机／ID 消费；明确各操作的提交与通知顺序。
+**当前落点：** `src/client/*_client.hpp`、`remote_control.*`、`remote_inventory.*`、`remote_combat.*`、`remote_ui_clients.*`，`src/contracts/`，`src/presentation/{inventory,npc,hud}/`。
 
-**完成条件：** 对应宿主调用不再写库存私有字段，不自行复制库存实现事务；普通命令和恢复／调试的权限入口分开。全部旁路收口后移除 friend。已有死亡掉落的暗金占用／空位失败语义见[奖励基线](../modules/REWARDS.md)，若要改变须单独核实规则，不能随重构改动。
+- 将同步报价／即时事务成功等接口改为联机可表达的字段可用性、等待、观察到结果、拒绝、超时未知和中断；允许直接改动 IActor／IInventory／ICharacter／INpc／IQuest／IMap。
+- 请求采用真实原协议，内部 sequence 仅作本地关联；没有通用 ACK 的操作不伪造确认。组合物品操作按服务器 cursor／revision 逐步推进。
+- 组队、聊天、交易、任务服务和佣兵等新增端口只暴露操作所需数据；本人私有状态与其他玩家公开状态保持边界。
+- 关闭面板、失焦、死亡、换幕、退出和断线清理相应未发送意图；不能重发非幂等操作或本地回滚服务端结果。限制并发按原服交互上下文确定，心跳／聊天不被物品请求阻塞。
+- 旧 Local 实现无需继续兼容；迁移一条链就删除该链调用 localSession、InventoryService、Simulation 的旁路。
 
-## 3. 装备技能来源
+**完成边界：** 从真实 UI 到原请求、回包、副本和反馈完整；不能只接 command，或用“已发送”伪装成功。
 
-**缺口：** 现有装备授予与等级加成已经接入，来源携带物品 handle／revision；真实装备充能／触发及消费事务尚未实施。书本 `charges` 是卷轴数量，不能作为充能技能实现依据。佣兵天然技能／光环已有入口，装备触发和装备自带光环仍有消费者缺口。
+## 4. 单机代码与构建依赖退场
 
-**入口：** `gameplay/items/skill_sources.*`、`skills/{source,rank_sources,casting,release,reactions}.*`、`session/session_skill_sources.cpp`、`simulation/skill_world.cpp`、`npc/hireling_actions.cpp`；原表适配在 `content/items/` 与 `content/skills/`。
+**当前落点：** `CMakeLists.txt`，`src/gameplay/session/`、`simulation/`、`items/`、`npc/`、`quest/`、`rewards/`，`src/client/local_*`、`src/content/`、`src/world/` 和持久化模块。
 
-先查当前 MPQ 和本地参考，确定触发条件、来源资格、扣充能时点、失败／中断行为及保存映射。物品负责来源与消费，携带者负责施法；玩家、佣兵和其他已支持单位经显式适配接入现有 `SkillRuntime`，技能处理器不反查完整装备或角色。
+| 现有部分 | 目标处理 |
+| --- | --- |
+| MPQ 解码、原图、字体、音频、原生地图／碰撞、纯数学／几何 | 保留并去除对本地会话的依赖，数据继续来自当前 MPQ |
+| 物品／角色／技能定义、显示公式、外观类型 | 提取联机确需的只读部分；区分服务端字段与已核实的显示推导 |
+| Local 客户端、本地会话、AI／战斗／掉落／任务奖励／库存权威执行 | 从产品调用和链接中移除；没有消费者的源码删除，不继续完善单机事务或多玩家宿主 |
+| 本地 D2S 编解码与诊断 | 不连接联机恢复／保存；已有独立开发用途可保留，不接受本地档作为 Realm 角色 |
+| 偏好、凭据、探索缓存 | 保留客户端专用持久化，按服务器／Realm／角色／难度／种子隔离并版本化 |
 
-**完成条件：** 起手、释放及后续求值能按操作者／来源实例复验；换装、物品删除、死亡、恢复和切区能正确失效或清理。规则未核实的来源继续暂缓。具体技能与装备效果的支持范围分别更新[技能](../modules/SKILL_RUNTIME.md)和[物品](../gameplay/items/SUPPORT.md)。
+当前 `d2x_presentation` 私有链接 `d2x_session`，应用仍链接 `d2x_local_client`／`d2x_persistence`。最终解除这些产品依赖，避免因为共享头文件或方便拿取数据又把本地权威执行器带回来。开发工具的依赖与产品目标分别定义。
 
-## 4. 任务物件与宿主
+**完成边界：** 产品不构造 GameSession、不执行本地伤害／掉落／任务／库存结算、不读写角色 D2S；共享代码只承担真实联机消费者所需职责。旧用户文件、原 MPQ、压缩包和 mvp 不删除。
 
-**缺口：** 五幕任务规则、NPC 接触、物品替换和死亡奖励已经拆出；复杂任务物件／演出仍由 `session_act_two.cpp`、`session_later_act_objects.cpp` 等协调。`session.cpp` 仍集中组装大量捕获 `this` 的模拟器回调，`Simulation` 保留 friend 和具体状态查询。
+## 5. 文档与交付约束
 
-**入口：** `gameplay/quest/acts/`、`rewards/`；`gameplay/session/session.cpp`、`session_impl.hpp`、`session_{act_two,later_act_objects,quest_rewards,deaths,regions,tick,commands,restore}.cpp`；`gameplay/simulation/{simulation.hpp,skill_world.cpp,simulation_tick.cpp}`。
+功能支持以[联网模块](../modules/NETWORK.md)为准，其他模块记载的单机行为只代表已有源码事实，后续随对应调用链退场更新；不能把旧本地验证当联机认证。BASELINE 管全局范围与源码／包差异，总计划管理依赖和未完成项。
 
-沿现有“准备事实 → 规则计划 → 权威提交”拆出剩余任务物件链。组装依赖由宿主显式提供，纯规则不创建其他服务，不读 MPQ；将捕获整份会话的查询回调换成必要的类型化输入或窄端口。保留现有技能／武器／世界端口，按实际消费者收窄 `session.hpp`、`simulation.hpp` 和 `model/state.hpp`。
+遵守 [AGENTS.md](../../AGENTS.md)：默认只改源码／文档，不编写测试脚本、测试用例或专用测试程序，不继续构建、运行检查或打包。用户授权后的观察使用已有程序、诊断入口、原客户端与参考服。本批按用户最新授权完成 Windows Release 构建、打包及有限原服冒烟；范围见基线，D2S 格式不变。
 
-**完成条件：** 对应规则不依赖完整会话／世界，模拟器只编排所需系统；恢复、创建／关闭世界和调试仍是独立宿主入口。保持 `session_tick.cpp`／`simulation_tick.cpp` 的现有先后顺序、25 Hz、`tick(0)`、死亡奖励顺序及随机消耗。跨服务失败提交与第 2 项统一收口。
-
-## 5. 单位与区域所有权
-
-**缺口：** `WorldState` 仍聚合一个 `player` 和一个活动 `area`；佣兵挂在玩家，随从在世界集合中。`AreaRepository` 已按移动语义保存休眠区，公共 `CombatUnit` 已与内部记录绑定分开；仍需收口按“当前玩家／当前区域”查询，以及 `WorldObject` 混合定义、外观、碰撞、任务计时与 NPC 活状态的职责。
-
-**入口：** `gameplay/model/state.hpp`、`player/state.hpp`、`areas/{state,repository}.hpp`、`simulation/unit_records.*`、`monsters/`、`npc/hireling_control.cpp`；`world/{object,region,map,region_store}.*`、`gameplay/session/session_{regions,objects,exits}.cpp`。
-
-为新操作显式传入操作者、单位 ID 和区域上下文；分离只读物件定义与运行态，继续复用公共移动／动作／资源能力。导航借用保持稳定所有者；单位增删、切区或恢复后按 ID 重新获取能力视图，不跨容器修改保留指针。中立单位身份、召唤主人、转换归属和死亡收益保持原规则。
-
-**完成条件：** 每个单位、区域、物品和动态物件只有一个权威拥有者，休眠／激活／旅行有明确移交与失效边界；客户端观察范围与模拟激活分开。单机阶段保持单活区推进；多玩家注册、并行活区、共享资格和网络生命周期留待联机路线实施。
-
-## 交付边界
-
-遵守 [AGENTS.md](../../AGENTS.md)：默认只改源码／文档，不编写测试程序，不继续构建、运行检查或打包。每批更新对应已有基线，删除已完成待办；验证证据留所属模块，源码／包差异归[项目基线](../../BASELINE.md)。
-
-保留 C++20／CMake 的 Windows／Linux 路径，按实际公开依赖拆头／目标，不复制权威状态或再建聚合大头。内容参数从 MPQ 导入；持久字段保持原 D2S v96，语义变化同步规则指纹和[存档文档](../modules/SAVES.md)，不静默迁移旧档。
+继续保持 C++20／CMake 的 Windows／Linux 路径和平台适配边界。联机角色由 D2GS／D2DBS 保存；客户端缓存或保留编码的语义若改变，同步格式、相关指纹与[存档文档](../modules/SAVES.md)，旧档不静默迁移。

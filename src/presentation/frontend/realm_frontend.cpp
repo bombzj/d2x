@@ -266,8 +266,6 @@ struct RealmFrontend::Impl {
     void main(std::string_view gateway) {
         tiles("main", 0, 0, 4);
         logo();
-        if (button("wide", 265, 290, s(5106), true, 2))
-            emit(FrontendCommand::Offline);
         if (button("battle", 265, 332, s(5107), true, 2))
             emit(FrontendCommand::Online);
         auto gatewayLabel = s(11049);
@@ -787,7 +785,10 @@ struct RealmFrontend::Impl {
                        IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_ESCAPE))
                 emit(!notice.empty()                        ? FrontendCommand::Dismiss
                      : v.stage == OnlineStage::ListingGames ? FrontendCommand::CancelList
-                                                            : FrontendCommand::Back);
+                     : v.stage == OnlineStage::CreatingGame || v.stage == OnlineStage::JoiningGame ||
+                       v.stage == OnlineStage::ConnectingGame || v.stage == OnlineStage::GameHandshake ||
+                       v.stage == OnlineStage::LoadingGame || v.stage == OnlineStage::LeavingGame
+                         ? FrontendCommand::LeaveGame : FrontendCommand::Back);
         } else if (IsKeyPressed(KEY_ESCAPE))
             emit(current == FrontendPage::Main      ? FrontendCommand::Exit
                  : current == FrontendPage::Loading ? FrontendCommand::LeaveGame

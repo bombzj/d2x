@@ -22,7 +22,7 @@ size_t lod113c_packet_size(std::span<const uint8_t> bytes) {
     if (bytes.empty()) return 0;
     const uint8_t id = bytes[0];
     if (id >= std::size(serverLengths) || !serverLengths[id])
-        throw ProtocolError("Undefined LoD 1.13c server packet ID");
+        throw ProtocolError("Undefined LoD 1.13c server packet ID: " + std::to_string(id));
     if (serverLengths[id] > 0) return size_t(serverLengths[id]);
     switch (id) {
     case 0x16: return word_length(bytes, 1, 13);
@@ -48,7 +48,7 @@ size_t lod113c_packet_size(std::span<const uint8_t> bytes) {
         return 2; // In 1.11+, AF is compression info; the 1.10 raw marker is incompatible.
     // Warden is disabled in the reference deployment; no guessed crypto or length.
     case 0xAE: throw ProtocolError("Warden packets are unsupported");
-    default: throw ProtocolError("Unverified variable LoD 1.13c packet length");
+    default: throw ProtocolError("Unverified variable LoD 1.13c packet length, ID: " + std::to_string(id));
     }
 }
 } // namespace d2x::net::protocol

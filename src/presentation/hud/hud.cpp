@@ -143,7 +143,7 @@ void SceneView::drawGameMenu() const {
 }
 void SceneView::drawHud() const {
     const auto &sim = localSession().state();
-    if (view_.questNotice && !view_.questOpen && !view_.blocksWorld() &&
+    if (view_.questNotice && !view_.questOpen && !view_.capturesWorldInput() &&
         !view_.characterOpen && !view_.inventory.storage && !view_.inventory.cubeOpen) {
         const auto bounds = questNoticeBounds();
         if (const auto *button = assets_.attributeButtons.frame(0, 0))
@@ -259,7 +259,7 @@ void SceneView::draw(Vec mouse) const {
     if (view_.automap)
         drawMinimap(view_.automapLarge);
     drawHud();
-    if (!view_.blocksWorld() && !view_.inventory.drag && (view_.combatTarget ||
+    if (!view_.capturesWorldInput() && !view_.inventory.drag && (view_.combatTarget ||
         (!hudSurface(mouse) && CheckCollisionPointRec(rv(mouse), worldViewport())))) {
         for (const auto &monster : visibleMonsters()) {
             const auto &enemy = *monster.enemy;

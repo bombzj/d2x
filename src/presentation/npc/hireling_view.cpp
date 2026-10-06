@@ -5,10 +5,10 @@
 
 namespace d2x {
 bool SceneView::hirelingPortraitVisible() const {
-    return hirelingView().active && worldViewport().x == 0 && !view_.blocksWorld();
+    return hirelingView().active && worldViewport().x == 0 && !view_.capturesWorldInput();
 }
 void SceneView::drawHirelingPortrait() const {
-    if (worldViewport().x == 0 && !view_.blocksWorld()) {
+    if (worldViewport().x == 0 && !view_.capturesWorldInput()) {
         const auto &counts = hirelingView().summonCounts;
         float x = hirelingPortraitBounds().x;
         if (hirelingPortraitVisible()) x += hirelingPortraitBounds().width + 12 * classicPanelScale;

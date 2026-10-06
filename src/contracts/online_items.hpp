@@ -1,5 +1,6 @@
 #pragma once
 #include "core/bytes.hpp"
+#include "contracts/online_context.hpp"
 #include <array>
 #include <map>
 #include <optional>
@@ -34,6 +35,7 @@ struct OnlineItemCommand {
     uint8_t x{}, y{}, page{}, body{}, beltSlot{};
     uint8_t equipVariant{}; // MPQ adapter selects normal / remove opposite / double swap.
     bool toCursor{}, mercenary{};
+    std::optional<OnlineIntentContext> context;
 };
 struct OnlineItemRequest {
     enum class State { Pending, Updated, TimedOut, Interrupted, Rejected, SentNoAck };

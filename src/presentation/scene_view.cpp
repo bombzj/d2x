@@ -311,8 +311,7 @@ void SceneView::sessionRestored() {
                      localSession().region().definition.id,
                      actorClient_.controlledActor().position, actorClient_.controlledActor().lightRadius);
 }
-void SceneView::advanceUi(float dt, bool worldPaused) {
-    assets_.audio.pauseEmitters(worldPaused || view_.blocksWorld());
+void SceneView::advanceUi(float dt) {
     view_.noticeTime = std::max(0.f, view_.noticeTime - dt);
     if (view_.gameMenuOpen) view_.gameMenuTime += dt;
     advanceNpcDialogue(dt);

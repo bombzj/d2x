@@ -5,6 +5,9 @@
 #include <algorithm>
 #include <array>
 #include <limits>
+#include <mutex>
+#include <condition_variable>
+#include <thread>
 #include <optional>
 #include <random>
 #include <stdexcept>
@@ -81,6 +84,13 @@ bool pending_stage(OnlineStage stage) {
 }
 } // namespace
 struct RealmSession::Impl {
+    // Calls and background service are serialized. Nested native operations (for
+    // example Hardcore respawn -> leave) reuse this same lock.
+    std::recursive_mutex mutex;
+    std::condition_variable_any wake;
+    bool retainGamePackets{}, snapshotDirty{};
+    std::jthread worker;
+
     TcpStream sid, mcp, gs;
     PacketStream sidPackets{Framing::Sid}, mcpPackets{Framing::Mcp};
     D2gsStream gamePackets;
@@ -95,7 +105,7 @@ struct RealmSession::Impl {
     size_t worldBytes{};
     Clock::time_point deadline{}, gameStarted{}, nextHeartbeat{}, lastPing{}, nextMovement{};
     std::optional<uint32_t> initializedNpc;
-    Clock::time_point npcDeadline{};
+    Clock::time_point npcDeadline{}, waypointDeadline{};
     struct PortalRequest {
         std::optional<OnlineSkillSelection> previous;
         std::set<uint32_t> existing;
@@ -103,13 +113,35 @@ struct RealmSession::Impl {
     };
     std::optional<PortalRequest> portalRequest;
     Clock::time_point itemDeadline{}, nextItem{}, storageDeadline{};
-    uint64_t itemSequence{};
+    uint64_t itemSequence{}, errorSequence{};
     Clock::time_point combatDeadline{}, nextCombat{};
     Clock::time_point respawnDeadline{};
     uint64_t combatSequence{};
     bool waitingChat{}, environmentSent{}, awaitingPong{}, registering{};
     std::string listFilter;
-    ~Impl() { clear_credentials(); }
+    explicit Impl(bool retain) : retainGamePackets(retain) {}
+    ~Impl() {
+        worker.request_stop();
+        wake.notify_all();
+        if (worker.joinable()) worker.join();
+        clear_credentials();
+    }
+    void service() {
+        try { tick(); }
+        catch (const ProtocolError &e) { fail(OnlineErrorKind::Protocol, e.what()); }
+        catch (const std::exception &) { fail(OnlineErrorKind::Protocol, "Network processing failed"); }
+    }
+    void start() {
+        worker = std::jthread([this](std::stop_token stop) {
+            std::unique_lock lock(mutex);
+            while (!stop.stop_requested()) {
+                service();
+                // Timed waits release the lock; UI work never owns this worker.
+                wake.wait_for(lock, std::chrono::milliseconds(10), [&] { return stop.stop_requested(); });
+            }
+        });
+    }
+
     void changed() { ++view.revision; }
     void stage(OnlineStage value) {
         view.stage = value;
@@ -129,21 +161,32 @@ struct RealmSession::Impl {
         clientToken = 0;
         serverToken = 0;
     }
-    void shutdown() {
-        sid.close();
-        mcp.close();
+    void clear_game() {
         gs.close();
-        sidPackets.reset();
-        mcpPackets.reset();
         gamePackets.reset();
         worldPackets.clear();
         worldBytes = 0;
         ++view.gameGeneration;
+        view.load = {};
         view.world = {};
+        view.latencyMilliseconds.reset();
         nextMovement = {};
         nextItem = {}; itemDeadline = {};
         nextCombat = {}; combatDeadline = {};
+        storageDeadline = {}; npcDeadline = {}; respawnDeadline = {}; waypointDeadline = {};
+        gameStarted = {}; nextHeartbeat = {}; lastPing = {};
         initializedNpc.reset(); portalRequest.reset();
+        environmentSent = false;
+        awaitingPong = false;
+        ticketHash = 0;
+        ticketToken = 0;
+    }
+    void shutdown() {
+        sid.close();
+        mcp.close();
+        sidPackets.reset();
+        mcpPackets.reset();
+        clear_game();
         clear_credentials();
         selected.reset();
         pendingCharacter.clear();
@@ -157,7 +200,7 @@ struct RealmSession::Impl {
         listFilter.clear();
     }
     void error(OnlineErrorKind kind, std::string message, uint8_t id = 0, uint32_t code = 0) {
-        view.error = OnlineError{kind, id, code, std::move(message)};
+        view.error = OnlineError{kind, id, code, std::move(message), ++errorSequence};
         changed();
     }
     void fail(OnlineErrorKind kind, std::string message, uint8_t id = 0, uint32_t code = 0) {
@@ -171,12 +214,62 @@ struct RealmSession::Impl {
     bool require(OnlineStage value) {
         if (view.stage == value)
             return true;
+        if (view.stage == OnlineStage::Failed && view.error) return false;
         error(OnlineErrorKind::Input, "Operation is unavailable in the current connection stage");
         return false;
     }
+    bool current_game(const OnlineView &published) const {
+        return published.connectionGeneration == view.connectionGeneration &&
+            published.gameGeneration == view.gameGeneration &&
+            published.world.areaGeneration == view.world.areaGeneration &&
+            published.load.playerUnitId == view.load.playerUnitId;
+    }
+    bool require_game(const OnlineView &published) {
+        if (!require(OnlineStage::ProtocolReady)) return false;
+        // A background receive can change areas while the client loads resources
+        // or handles an input frame. Never send that frame to a new world/GUID.
+        if (!current_game(published)) {
+            error(OnlineErrorKind::Input, "The active game or area changed; refresh before submitting input");
+            return false;
+        }
+        return true;
+    }
+    bool require_intent(const OnlineIntentContext &context, bool interaction) {
+        if (!require(OnlineStage::ProtocolReady)) return false;
+        if (!(interaction ? onlineInteractionMatches(context, view) : onlineWorldMatches(context, view))) {
+            error(OnlineErrorKind::Input, "Queued intent belongs to a previous game, area or interaction");
+            return false;
+        }
+        return true;
+    }
+    bool require_navigation(const OnlineIntentContext &context) {
+        if (!require_intent(context, true)) return false;
+        if (portalRequest) {
+            error(OnlineErrorKind::Input, "Wait for the pending town portal before moving or changing interaction");
+            return false;
+        }
+        if (view.world.itemRequest && view.world.itemRequest->state == OnlineItemRequest::State::Pending) {
+            error(OnlineErrorKind::Input, "Wait for the pending item response before moving or changing interaction");
+            return false;
+        }
+        return true;
+    }
+    void observed(OnlineProtocolCounters &counters, const Packet &packet, size_t header) {
+        ++counters.received[packet.id];
+        counters.receivedBytes += packet.body.size() + header;
+        counters.lastReceived = packet.id;
+        changed();
+    }
     void sent(TcpStream &stream, Bytes bytes) {
+        const auto byteCount = bytes.size();
+        const size_t idOffset = &stream == &gs ? 0 : &stream == &sid ? 1 : 2;
+        const auto id = bytes.size() > idOffset ? std::optional<uint8_t>{bytes[idOffset]} : std::nullopt;
         if (!stream.send(std::move(bytes)))
             throw ProtocolError("Protocol send queue unavailable");
+        auto &counts = &stream == &sid ? view.sidProtocol : &stream == &mcp ? view.mcpProtocol : view.gameProtocol;
+        if (id) ++counts.sent[*id];
+        counts.sentBytes += byteCount;
+        changed();
     }
     void send_sid(uint8_t id, Writer out = {}) { sent(sid, frame(Framing::Sid, id, out.release())); }
     void send_mcp(uint8_t id, Writer out = {}) { sent(mcp, frame(Framing::Mcp, id, out.release())); }
@@ -228,6 +321,7 @@ struct RealmSession::Impl {
         stage(OnlineStage::AuthChallenge);
     }
     void handle_sid(Packet packet) {
+        observed(view.sidProtocol, packet, 4);
         Reader in(packet.body);
         if (packet.id == 0x25) {
             const auto ping = in.u32();
@@ -387,7 +481,8 @@ struct RealmSession::Impl {
             break;
         }
         default:
-            break; // SID has a length header; unsupported noncritical payloads stay opaque.
+            ++view.sidProtocol.unconsumed[packet.id];
+            break; // Framed but not semantically supported; expose the ID without payload.
         }
     }
     Bytes realmStartup;
@@ -400,6 +495,7 @@ struct RealmSession::Impl {
         stage(OnlineStage::JoiningGame);
     }
     void handle_mcp(Packet packet) {
+        observed(view.mcpProtocol, packet, 3);
         Reader in(packet.body);
         switch (packet.id) {
         case 0x01: {
@@ -500,6 +596,7 @@ struct RealmSession::Impl {
             }
             if (host == "0.0.0.0")
                 throw ProtocolError("Game server returned an invalid endpoint");
+            clear_game();
             ticketToken = token;
             ticketHash = hash;
             erase_secret(gamePassword);
@@ -507,15 +604,6 @@ struct RealmSession::Impl {
             // Original Realm clients terminate MCP before opening the game connection.
             mcp.close();
             mcpPackets.reset();
-            ++view.gameGeneration;
-            view.load = {};
-            view.world = {};
-            nextMovement = {};
-            worldPackets.clear();
-            worldBytes = 0;
-            environmentSent = false;
-            awaitingPong = false;
-            gamePackets.reset();
             gs.connect({host, options.gamePort}, options.timeout);
             stage(OnlineStage::ConnectingGame);
             break;
@@ -560,6 +648,7 @@ struct RealmSession::Impl {
             break;
         }
         default:
+            ++view.mcpProtocol.unconsumed[packet.id];
             break;
         }
     }
@@ -590,14 +679,11 @@ struct RealmSession::Impl {
         return true;
     }
     void return_to_realm() {
-        gs.close();
-        gamePackets.reset();
-        worldPackets.clear();
-        worldBytes = 0;
-        ++view.gameGeneration;
-        view.load = {};
-        view.world = {};
-        nextMovement = {};
+        mcp.close();
+        mcpPackets.reset();
+        erase_secret(gamePassword);
+        gameName.clear();
+        clear_game();
         view.games.clear();
         view.gameListComplete = false;
         view.gameQueuePosition.reset();
@@ -609,6 +695,7 @@ struct RealmSession::Impl {
     }
     void reset_area(bool preserveInitialPosition) {
         auto &world = view.world;
+        ++world.interactionGeneration;
         const auto player = view.load.playerUnitId;
         std::erase_if(world.units, [&](const auto &entry) {
             return entry.first.type != 0 || !player || entry.first.id != *player;
@@ -620,6 +707,7 @@ struct RealmSession::Impl {
         world.mapEvents.clear();
         world.mapEventSequence = 0;
         world.waypointSource.reset();
+        world.waypointRequested.reset(); waypointDeadline = {};
         world.storage = {}; world.shopRequested.reset(); world.shopSource.reset(); world.tradeResult.reset();
         // Keep this connection's inventory and the socket children of retained hosts.
         std::set<uint32_t> retained;
@@ -652,6 +740,7 @@ struct RealmSession::Impl {
         ++world.revision;
     }
     void handle_game(Packet packet) {
+        observed(view.gameProtocol, packet, 1);
         if (packet.id == 0xAF && view.stage == OnlineStage::GameHandshake) {
             if (!selected || !selected->characterClass)
                 throw ProtocolError("Missing game character class");
@@ -687,6 +776,8 @@ struct RealmSession::Impl {
             in.u16();
             const auto expansion = in.u8(), ladder = in.u8();
             in.finish();
+            if (*view.load.difficulty > 2 || expansion > 1 || ladder > 1)
+                throw ProtocolError("Invalid game initialization flags or difficulty");
             if (!expansion || ladder) {
                 fail(OnlineErrorKind::Unsupported, "Only non-Ladder LoD games are supported", packet.id);
                 return;
@@ -703,6 +794,7 @@ struct RealmSession::Impl {
             reset_area(view.world.areaGeneration == 0);
             view.load.serverLoadComplete = false;
             view.load.act = in.u8();
+            if (*view.load.act > 4) throw ProtocolError("Invalid LoD act index");
             view.load.mapSeed = in.u32();
             view.load.townArea = in.u16();
             // Preserve the secondary value without claiming cross-version DRLG semantics.
@@ -730,7 +822,9 @@ struct RealmSession::Impl {
             }
         }
         try {
-            apply_world_packet(view, packet);
+            if (packet.id != 0x01 && packet.id != 0x02 && packet.id != 0x03 &&
+                packet.id != 0x04 && packet.id != 0x05 && packet.id != 0xAF)
+                apply_world_packet(view, packet);
         } catch (const ProtocolError &error) {
             fail(OnlineErrorKind::Protocol, error.what(), packet.id);
             return;
@@ -772,7 +866,8 @@ struct RealmSession::Impl {
                 action == OnlineItemAction::Transmute) related = true;
             // Merchant 0x2A is the explicit result; preliminary item packets are not its ACK.
             if (merchant && packet.id != 0x2A) related = false;
-            if (related) request->state = OnlineItemRequest::State::Updated;
+            if (related && request->state == OnlineItemRequest::State::Pending)
+                request->state = OnlineItemRequest::State::Updated;
             else if (!view.world.playerPosition || onlinePlayerDead(view.world))
                 request->state = OnlineItemRequest::State::Interrupted;
         }
@@ -799,10 +894,28 @@ struct RealmSession::Impl {
                 request->state = OnlineCombatRequest::State::Interrupted;
         }
         if (!view.world.playerPosition || onlinePlayerDead(view.world)) {
+            if (view.world.storage.kind != OnlineStorageKind::None || view.world.storage.requested != OnlineStorageKind::None ||
+                view.world.shopRequested || view.world.shopSource || view.world.npcRequested ||
+                view.world.npcConversation || view.world.waypointSource || view.world.waypointRequested)
+                ++view.world.interactionGeneration;
             portalRequest.reset(); view.world.townPortalPending = false;
             view.world.storage = {}; view.world.shopRequested.reset(); view.world.shopSource.reset();
             view.world.movementRequest.reset(); view.world.npcRequested.reset(); view.world.npcConversation.reset();
-            view.world.waypointSource.reset(); initializedNpc.reset();
+            view.world.waypointSource.reset(); view.world.waypointRequested.reset(); waypointDeadline = {}; initializedNpc.reset();
+        }
+        if (packet.id == 0x63) {
+            Reader menu(packet.body);
+            const auto source = menu.u32();
+            if (view.world.waypointSource == source) waypointDeadline = {};
+            else if (!view.world.waypointSource && !view.world.waypointRequested && !view.world.npcRequested &&
+                     view.world.storage.kind == OnlineStorageKind::None &&
+                     view.world.storage.requested == OnlineStorageKind::None && view.world.playerPosition &&
+                     !onlinePlayerDead(view.world)) {
+                // A delayed native operate can open after an earlier close. Retire
+                // it only while no newer interaction owns the player's lock.
+                Writer close; close.u8(0x49); close.u32(source); close.u32(0);
+                sent(gs, close.release());
+            }
         }
         if (packet.id == 0x27 && view.world.npcConversation &&
             initializedNpc != view.world.npcConversation->source) {
@@ -819,13 +932,25 @@ struct RealmSession::Impl {
                     break;
                 }
         }
-        if (worldPackets.size() >= 4096 || packet.body.size() + 1 > 2 * 1024 * 1024 - worldBytes)
-            throw ProtocolError("World packet queue limit exceeded; drain packets regularly");
-        worldBytes += packet.body.size() + 1;
-        worldPackets.push_back({view.gameGeneration, std::move(packet)});
+        // The replica already consumed the ordered packet. Optional raw consumers
+        // must drain their bounded queue; the UI client uses only value snapshots.
+        if (retainGamePackets) {
+            if (worldPackets.size() >= 4096 || packet.body.size() + 1 > 2 * 1024 * 1024 - worldBytes)
+                throw ProtocolError("World packet queue limit exceeded; drain packets regularly");
+            worldBytes += packet.body.size() + 1;
+            worldPackets.push_back({view.gameGeneration, std::move(packet)});
+        }
         if (view.stage == OnlineStage::LoadingGame && environmentSent && view.load.serverLoadComplete &&
-            view.load.playerUnitId && view.load.mapSeed)
-            stage(OnlineStage::ProtocolReady);
+            view.load.act && view.load.difficulty && view.load.playerUnitId && view.load.mapSeed &&
+            view.world.playerPosition) {
+            const auto player = view.world.units.find({0, *view.load.playerUnitId});
+            if (player != view.world.units.end() && player->second.position && player->second.classId &&
+                !player->second.name.empty()) {
+                if (!selected || player->second.name != selected->name || player->second.classId != selected->characterClass)
+                    throw ProtocolError("Assigned game player differs from the selected Realm character");
+                stage(OnlineStage::ProtocolReady);
+            }
+        }
     }
     void pump_sid() {
         for (auto &event : sid.poll()) {
@@ -836,7 +961,12 @@ struct RealmSession::Impl {
                 sidPackets.append(event.data);
                 Packet packet;
                 while (sidPackets.next(packet)) {
-                    handle_sid(std::move(packet));
+                    const auto id = packet.id;
+                    try { handle_sid(std::move(packet)); }
+                    catch (const ProtocolError &e) {
+                        fail(OnlineErrorKind::Protocol, e.what(), id);
+                        return;
+                    }
                     if (view.stage == OnlineStage::Failed)
                         return;
                 }
@@ -860,7 +990,12 @@ struct RealmSession::Impl {
                 mcpPackets.append(event.data);
                 Packet packet;
                 while (mcpPackets.next(packet)) {
-                    handle_mcp(std::move(packet));
+                    const auto id = packet.id;
+                    try { handle_mcp(std::move(packet)); }
+                    catch (const ProtocolError &e) {
+                        fail(OnlineErrorKind::Protocol, e.what(), id);
+                        return;
+                    }
                     if (view.stage == OnlineStage::Failed || view.stage == OnlineStage::ConnectingGame)
                         return;
                 }
@@ -881,7 +1016,12 @@ struct RealmSession::Impl {
                 gamePackets.append(event.data);
                 Packet packet;
                 while (gamePackets.next(packet)) {
-                    handle_game(std::move(packet));
+                    const auto id = packet.id;
+                    try { handle_game(std::move(packet)); }
+                    catch (const ProtocolError &e) {
+                        fail(OnlineErrorKind::Protocol, e.what(), id);
+                        return;
+                    }
                     if (view.stage == OnlineStage::Failed || view.stage == OnlineStage::ConnectingRealm)
                         return;
                 }
@@ -899,6 +1039,9 @@ struct RealmSession::Impl {
     }
     void close_interaction() {
         auto &world = view.world;
+        if (world.npcRequested || world.npcConversation || world.waypointSource || world.waypointRequested || world.shopRequested ||
+            world.shopSource || world.storage.kind != OnlineStorageKind::None || world.storage.requested != OnlineStorageKind::None)
+            ++world.interactionGeneration;
         const auto storage = world.storage.kind != OnlineStorageKind::None ? world.storage.kind : world.storage.requested;
         if (storage != OnlineStorageKind::None) {
             Writer close;
@@ -914,12 +1057,14 @@ struct RealmSession::Impl {
             close.u8(0x30); close.u32(1); close.u32(*world.npcRequested);
             sent(gs, close.release());
         }
-        if (world.waypointSource) {
+        const auto waypoint = world.waypointSource ? world.waypointSource : world.waypointRequested;
+        if (waypoint) {
             Writer close;
-            close.u8(0x49); close.u32(*world.waypointSource); close.u32(0);
+            close.u8(0x49); close.u32(*waypoint); close.u32(0);
             sent(gs, close.release());
         }
         world.npcRequested.reset(); world.npcConversation.reset(); world.waypointSource.reset();
+        world.waypointRequested.reset(); waypointDeadline = {};
         initializedNpc.reset();
         npcDeadline = {};
         ++world.revision;
@@ -960,6 +1105,10 @@ struct RealmSession::Impl {
             close_interaction();
             error(OnlineErrorKind::Timeout, "No original stash or cube open confirmation arrived");
         }
+        if (view.world.waypointRequested && now >= waypointDeadline) {
+            close_interaction();
+            error(OnlineErrorKind::Timeout, "No original waypoint menu confirmation arrived");
+        }
         if (view.world.itemRequest && view.world.itemRequest->state == OnlineItemRequest::State::Pending && now >= itemDeadline) {
             view.world.itemRequest->state = OnlineItemRequest::State::TimedOut;
             error(OnlineErrorKind::Timeout, "No related server item update arrived; inspect current inventory before retrying");
@@ -982,6 +1131,19 @@ struct RealmSession::Impl {
                 view.games.clear();
                 error(OnlineErrorKind::Timeout, "Game list did not finish before timeout");
                 stage(OnlineStage::Lobby);
+            } else if (view.stage == OnlineStage::CreatingGame || view.stage == OnlineStage::JoiningGame ||
+                       view.stage == OnlineStage::ConnectingGame || view.stage == OnlineStage::GameHandshake ||
+                       view.stage == OnlineStage::LeavingGame) {
+                const bool unconfirmedLeave = view.stage == OnlineStage::LeavingGame;
+                return_to_realm();
+                error(OnlineErrorKind::Timeout, unconfirmedLeave
+                    ? "Server leave was not confirmed; save result is unknown; reopening the character list"
+                    : "Game request timed out; reopening the server character list");
+            } else if (view.stage == OnlineStage::LoadingGame) {
+                close_interaction();
+                sent(gs, {0x69});
+                stage(OnlineStage::LeavingGame);
+                error(OnlineErrorKind::Timeout, "Game loading timed out; waiting for server save and leave");
             } else
                 fail(OnlineErrorKind::Timeout, "Connection stage timed out");
             return;
@@ -996,7 +1158,7 @@ struct RealmSession::Impl {
             if (!awaitingPong) {
                 const auto elapsed =
                     std::chrono::duration_cast<std::chrono::milliseconds>(now - gameStarted).count();
-                sent(gs, game_ping(uint32_t(elapsed), view.latencyMilliseconds));
+                sent(gs, game_ping(uint32_t(elapsed), view.latencyMilliseconds.value_or(0)));
                 lastPing = now;
                 awaitingPong = true;
             }
@@ -1004,7 +1166,9 @@ struct RealmSession::Impl {
         }
     }
 };
-RealmSession::RealmSession() : impl_(std::make_unique<Impl>()) {}
+RealmSession::RealmSession(bool retainGamePackets) : impl_(std::make_unique<Impl>(retainGamePackets)) {
+    impl_->start();
+}
 RealmSession::~RealmSession() = default;
 void RealmSession::login(LoginOptions options) {
     authenticate(std::move(options), false);
@@ -1013,6 +1177,8 @@ void RealmSession::register_account(LoginOptions options) {
     authenticate(std::move(options), true);
 }
 void RealmSession::authenticate(LoginOptions options, bool createAccount) {
+    std::lock_guard lock(impl_->mutex);
+    impl_->snapshotDirty = true;
     auto &p = *impl_;
     p.shutdown();
     const auto revision = p.view.revision, generation = p.view.connectionGeneration,
@@ -1050,6 +1216,8 @@ void RealmSession::authenticate(LoginOptions options, bool createAccount) {
     }
 }
 bool RealmSession::choose_realm(std::string name) {
+    std::lock_guard lock(impl_->mutex);
+    impl_->snapshotDirty = true;
     try {
         return impl_->choose_realm(std::move(name));
     } catch (const std::exception &) {
@@ -1058,6 +1226,8 @@ bool RealmSession::choose_realm(std::string name) {
     }
 }
 bool RealmSession::return_to_realms() {
+    std::lock_guard lock(impl_->mutex);
+    impl_->snapshotDirty = true;
     auto &p = *impl_;
     if (!p.require(OnlineStage::CharacterSelection))
         return false;
@@ -1077,6 +1247,8 @@ bool RealmSession::return_to_realms() {
     }
 }
 bool RealmSession::create_character(CreateCharacterOptions options) {
+    std::lock_guard lock(impl_->mutex);
+    impl_->snapshotDirty = true;
     auto &p = *impl_;
     if (!p.require(OnlineStage::CharacterSelection))
         return false;
@@ -1101,6 +1273,8 @@ bool RealmSession::create_character(CreateCharacterOptions options) {
     }
 }
 bool RealmSession::delete_character(std::string name) {
+    std::lock_guard lock(impl_->mutex);
+    impl_->snapshotDirty = true;
     auto &p = *impl_;
     if (!p.require(OnlineStage::CharacterSelection))
         return false;
@@ -1123,6 +1297,8 @@ bool RealmSession::delete_character(std::string name) {
     }
 }
 bool RealmSession::select_character(std::string name) {
+    std::lock_guard lock(impl_->mutex);
+    impl_->snapshotDirty = true;
     auto &p = *impl_;
     if (!p.require(OnlineStage::CharacterSelection))
         return false;
@@ -1152,6 +1328,8 @@ bool RealmSession::select_character(std::string name) {
     }
 }
 bool RealmSession::list_games(std::string filter) {
+    std::lock_guard lock(impl_->mutex);
+    impl_->snapshotDirty = true;
     auto &p = *impl_;
     if (!p.require(OnlineStage::Lobby))
         return false;
@@ -1177,6 +1355,8 @@ bool RealmSession::list_games(std::string filter) {
     }
 }
 bool RealmSession::cancel_game_list() {
+    std::lock_guard lock(impl_->mutex);
+    impl_->snapshotDirty = true;
     auto &p = *impl_;
     if (!p.require(OnlineStage::ListingGames))
         return false;
@@ -1187,6 +1367,8 @@ bool RealmSession::cancel_game_list() {
     return true;
 }
 bool RealmSession::create_game(CreateGameOptions options) {
+    std::lock_guard lock(impl_->mutex);
+    impl_->snapshotDirty = true;
     auto &p = *impl_;
     if (!p.require(OnlineStage::Lobby)) {
         erase_secret(options.password);
@@ -1230,6 +1412,8 @@ bool RealmSession::create_game(CreateGameOptions options) {
     }
 }
 bool RealmSession::join_game(std::string name, std::string password) {
+    std::lock_guard lock(impl_->mutex);
+    impl_->snapshotDirty = true;
     auto &p = *impl_;
     if (!p.require(OnlineStage::Lobby)) {
         erase_secret(password);
@@ -1252,9 +1436,11 @@ bool RealmSession::join_game(std::string name, std::string password) {
         return false;
     }
 }
-bool RealmSession::resurrect() {
+bool RealmSession::resurrect(std::optional<OnlineIntentContext> context) {
+    std::lock_guard lock(impl_->mutex);
+    impl_->snapshotDirty = true;
     auto &p = *impl_;
-    if (!p.require(OnlineStage::ProtocolReady)) return false;
+    if (!p.require_intent(context.value_or(onlineIntentContext(snapshot_)), false)) return false;
     auto &world = p.view.world;
     if (!onlinePlayerDead(world)) {
         p.error(OnlineErrorKind::Input, "The server has not reported player death"); return false;
@@ -1265,6 +1451,7 @@ bool RealmSession::resurrect() {
     p.view.error.reset();
     world.movementRequest.reset(); world.npcRequested.reset(); world.npcConversation.reset();
     world.waypointSource.reset(); world.storage = {}; world.shopRequested.reset(); world.shopSource.reset();
+    world.waypointRequested.reset(); p.waypointDeadline = {};
     auto request = world.respawnRequest.value_or(OnlineRespawnRequest{});
     request.state = OnlineRespawnRequest::State::WaitingForDeath; request.revision = ++world.revision;
     world.respawnRequest = request;
@@ -1272,7 +1459,22 @@ bool RealmSession::resurrect() {
     p.changed(); return true;
 }
 bool RealmSession::leave_game() {
+    std::lock_guard lock(impl_->mutex);
+    impl_->snapshotDirty = true;
     auto &p = *impl_;
+    if (p.view.stage == OnlineStage::LeavingGame) return true;
+    if (p.view.stage == OnlineStage::CreatingGame || p.view.stage == OnlineStage::JoiningGame ||
+        p.view.stage == OnlineStage::ConnectingGame || p.view.stage == OnlineStage::GameHandshake) {
+        try {
+            // Retire MCP as well: a late create/join reply must never supply a ticket.
+            p.return_to_realm();
+            p.view.error.reset();
+            return true;
+        } catch (const std::exception &) {
+            p.fail(OnlineErrorKind::Transport, "Game cancellation could not reopen the Realm");
+            return false;
+        }
+    }
     if (p.view.stage != OnlineStage::ProtocolReady && p.view.stage != OnlineStage::LoadingGame) {
         p.error(OnlineErrorKind::Input, "No game is available to leave");
         return false;
@@ -1292,9 +1494,11 @@ bool RealmSession::leave_game() {
         return false;
     }
 }
-bool RealmSession::move_to(OnlinePoint target, bool run) {
+bool RealmSession::move_to(OnlinePoint target, bool run, std::optional<OnlineIntentContext> context) {
+    std::lock_guard lock(impl_->mutex);
+    impl_->snapshotDirty = true;
     auto &p = *impl_;
-    if (!p.require(OnlineStage::ProtocolReady))
+    if (!p.require_navigation(context.value_or(onlineIntentContext(snapshot_))))
         return false;
     if (!p.view.load.serverLoadComplete || !p.view.world.playerPosition ||
         onlinePlayerDead(p.view.world)) {
@@ -1323,9 +1527,11 @@ bool RealmSession::move_to(OnlinePoint target, bool run) {
 bool RealmSession::use_exit(uint32_t serverUnitId) {
     return interact_map_unit({5, serverUnitId});
 }
-bool RealmSession::move_to_unit(OnlineUnitKey target, bool run) {
+bool RealmSession::move_to_unit(OnlineUnitKey target, bool run, std::optional<OnlineIntentContext> context) {
+    std::lock_guard lock(impl_->mutex);
+    impl_->snapshotDirty = true;
     auto &p = *impl_;
-    if (!p.require(OnlineStage::ProtocolReady)) return false;
+    if (!p.require_navigation(context.value_or(onlineIntentContext(snapshot_)))) return false;
     const auto found = p.view.world.units.find(target);
     const bool corpse = target.type == 0 && p.view.world.corpseOwners.contains(target.id) &&
         p.view.world.corpseOwners.at(target.id) == p.view.load.playerUnitId;
@@ -1348,9 +1554,14 @@ bool RealmSession::move_to_unit(OnlineUnitKey target, bool run) {
         p.fail(OnlineErrorKind::Transport, "Unit movement request could not be queued"); return false;
     }
 }
-bool RealmSession::interact_map_unit(OnlineUnitKey target, bool stash) {
+bool RealmSession::interact_map_unit(OnlineUnitKey target, OnlineObjectIntent intent, std::optional<OnlineIntentContext> context) {
+    std::lock_guard lock(impl_->mutex);
+    impl_->snapshotDirty = true;
     auto &p = *impl_;
-    if (!p.require(OnlineStage::ProtocolReady)) return false;
+    if (!p.require_navigation(context.value_or(onlineIntentContext(snapshot_)))) return false;
+    if (intent != OnlineObjectIntent::Operate && target.type != 2) {
+        p.error(OnlineErrorKind::Input, "Stash and waypoint intents require an assigned object"); return false;
+    }
     const auto found = p.view.world.units.find(target);
     const bool corpse = target.type == 0 && p.view.world.corpseOwners.contains(target.id) &&
         p.view.world.corpseOwners.at(target.id) == p.view.load.playerUnitId;
@@ -1367,10 +1578,16 @@ bool RealmSession::interact_map_unit(OnlineUnitKey target, bool stash) {
         out.u8(0x13); out.u32(target.type); out.u32(target.id);
         p.close_interaction();
         p.sent(p.gs, out.release());
-        if (stash) {
+        if (intent == OnlineObjectIntent::Stash) {
             p.view.world.storage.requested = OnlineStorageKind::Stash;
+            ++p.view.world.interactionGeneration;
             p.view.world.storage.requestedSource = target.id;
             p.storageDeadline = Clock::now() + p.options.timeout;
+        }
+        if (intent == OnlineObjectIntent::Waypoint) {
+            p.view.world.waypointRequested = target.id;
+            ++p.view.world.interactionGeneration;
+            p.waypointDeadline = Clock::now() + p.options.timeout;
         }
         // Native 0x13 approaches objects with run-to-unit. This only records the
         // request's gait; actual movement is still confirmed by server positions.
@@ -1383,9 +1600,11 @@ bool RealmSession::interact_map_unit(OnlineUnitKey target, bool stash) {
         return false;
     }
 }
-bool RealmSession::interact_npc(uint32_t serverUnitId) {
+bool RealmSession::interact_npc(uint32_t serverUnitId, std::optional<OnlineIntentContext> context) {
+    std::lock_guard lock(impl_->mutex);
+    impl_->snapshotDirty = true;
     auto &p = *impl_;
-    if (!p.require(OnlineStage::ProtocolReady)) return false;
+    if (!p.require_navigation(context.value_or(onlineIntentContext(snapshot_)))) return false;
     const auto found = p.view.world.units.find({1, serverUnitId});
     if (!p.view.load.serverLoadComplete || !p.view.world.playerPosition ||
         onlinePlayerDead(p.view.world) || found == p.view.world.units.end() ||
@@ -1400,6 +1619,7 @@ bool RealmSession::interact_npc(uint32_t serverUnitId) {
         out.u8(0x13); out.u32(1); out.u32(serverUnitId);
         p.sent(p.gs, out.release());
         p.view.world.npcRequested = serverUnitId;
+        ++p.view.world.interactionGeneration;
         p.npcDeadline = Clock::now() + p.options.timeout;
         p.view.world.movementRequest.reset();
         p.nextMovement = Clock::now() + std::chrono::milliseconds(100);
@@ -1408,9 +1628,11 @@ bool RealmSession::interact_npc(uint32_t serverUnitId) {
         p.fail(OnlineErrorKind::Transport, "NPC interaction could not be queued"); return false;
     }
 }
-bool RealmSession::close_npc() {
+bool RealmSession::close_npc(std::optional<OnlineIntentContext> context) {
+    std::lock_guard lock(impl_->mutex);
+    impl_->snapshotDirty = true;
     auto &p = *impl_;
-    if (!p.require(OnlineStage::ProtocolReady)) return false;
+    if (!p.require_intent(context.value_or(onlineIntentContext(snapshot_)), true)) return false;
     if (!p.view.world.npcRequested) {
         p.error(OnlineErrorKind::Input, "No NPC interaction is active"); return false;
     }
@@ -1420,9 +1642,11 @@ bool RealmSession::close_npc() {
         p.fail(OnlineErrorKind::Transport, "NPC close request could not be queued"); return false;
     }
 }
-bool RealmSession::acknowledge_npc_message(uint16_t stringId) {
+bool RealmSession::acknowledge_npc_message(uint16_t stringId, std::optional<OnlineIntentContext> context) {
+    std::lock_guard lock(impl_->mutex);
+    impl_->snapshotDirty = true;
     auto &p = *impl_;
-    if (!p.require(OnlineStage::ProtocolReady)) return false;
+    if (!p.require_intent(context.value_or(onlineIntentContext(snapshot_)), true)) return false;
     auto &conversation = p.view.world.npcConversation;
     if (!conversation || !p.view.world.playerPosition || onlinePlayerDead(p.view.world) ||
         !std::any_of(conversation->messages.begin(), conversation->messages.end(),
@@ -1440,9 +1664,11 @@ bool RealmSession::acknowledge_npc_message(uint16_t stringId) {
         p.fail(OnlineErrorKind::Transport, "NPC message could not be queued"); return false;
     }
 }
-bool RealmSession::npc_travel() {
+bool RealmSession::npc_travel(std::optional<OnlineIntentContext> context) {
+    std::lock_guard lock(impl_->mutex);
+    impl_->snapshotDirty = true;
     auto &p = *impl_;
-    if (!p.require(OnlineStage::ProtocolReady)) return false;
+    if (!p.require_navigation(context.value_or(onlineIntentContext(snapshot_)))) return false;
     const auto &conversation = p.view.world.npcConversation;
     if (!conversation || !p.view.world.playerPosition || onlinePlayerDead(p.view.world)) {
         p.error(OnlineErrorKind::Input, "No server NPC conversation is active"); return false;
@@ -1456,15 +1682,18 @@ bool RealmSession::npc_travel() {
         p.fail(OnlineErrorKind::Transport, "NPC travel could not be queued"); return false;
     }
 }
-bool RealmSession::create_town_portal(uint16_t skillId) {
+bool RealmSession::create_town_portal(uint16_t skillId, std::optional<OnlineIntentContext> context) {
+    std::lock_guard lock(impl_->mutex);
+    impl_->snapshotDirty = true;
     auto &p = *impl_;
-    if (!p.require(OnlineStage::ProtocolReady)) return false;
+    if (!p.require_intent(context.value_or(onlineIntentContext(snapshot_)), true)) return false;
     const auto &world = p.view.world;
     const auto quantity = world.itemSkillQuantities.find(skillId);
     const auto skill = world.playerSkills.find(skillId);
     if (!p.view.load.serverLoadComplete || !p.view.load.playerUnitId || !world.playerPosition ||
         !world.rightSkill || onlinePlayerDead(world) ||
         p.portalRequest || (world.combatRequest && world.combatRequest->state == OnlineCombatRequest::State::Pending) ||
+        (world.itemRequest && world.itemRequest->state == OnlineItemRequest::State::Pending) ||
         (quantity != world.itemSkillQuantities.end() ? !quantity->second
             : skill == world.playerSkills.end() || !skill->second)) {
         p.error(OnlineErrorKind::Input, "A server town-portal item skill is unavailable or already pending"); return false;
@@ -1493,11 +1722,14 @@ bool RealmSession::create_town_portal(uint16_t skillId) {
     }
 }
 bool RealmSession::submit_item(OnlineItemCommand command) {
+    std::lock_guard lock(impl_->mutex);
+    impl_->snapshotDirty = true;
     auto &p = *impl_;
-    if (!p.require(OnlineStage::ProtocolReady)) return false;
+    if (!command.context) command.context = onlineIntentContext(snapshot_);
+    if (!p.require_intent(*command.context, true)) return false;
     auto &world = p.view.world;
     if (!p.view.load.serverLoadComplete || !p.view.load.playerUnitId || !world.playerPosition ||
-        onlinePlayerDead(world) || (world.combatRequest && world.combatRequest->state == OnlineCombatRequest::State::Pending) ||
+        onlinePlayerDead(world) || p.portalRequest || (world.combatRequest && world.combatRequest->state == OnlineCombatRequest::State::Pending) ||
         (world.itemRequest && world.itemRequest->state == OnlineItemRequest::State::Pending &&
             command.action != OnlineItemAction::StorageClose)) {
         p.error(OnlineErrorKind::Input, "Server item operation is unavailable or pending"); return false;
@@ -1559,6 +1791,7 @@ bool RealmSession::submit_item(OnlineItemCommand command) {
             p.close_interaction();
             out.u8(0x20); out.u32(command.item); out.u32(point.x); out.u32(point.y);
             world.storage.requested = OnlineStorageKind::Cube; world.storage.requestedSource = command.item;
+            ++world.interactionGeneration;
             p.storageDeadline = Clock::now() + p.options.timeout; break;
         case OnlineItemAction::StorageClose:
             if (world.itemRequest && world.itemRequest->state == OnlineItemRequest::State::Pending)
@@ -1601,8 +1834,11 @@ bool RealmSession::submit_item(OnlineItemCommand command) {
     }
 }
 bool RealmSession::submit_combat(OnlineCombatCommand command) {
+    std::lock_guard lock(impl_->mutex);
+    impl_->snapshotDirty = true;
     auto &p = *impl_;
-    if (!p.require(OnlineStage::ProtocolReady)) return false;
+    if (!command.context) command.context = onlineIntentContext(snapshot_);
+    if (!p.require_intent(*command.context, false)) return false;
     auto &world = p.view.world;
     using Action = OnlineCombatCommand::Action;
     if (!p.view.load.serverLoadComplete || !p.view.load.playerUnitId || !world.playerPosition ||
@@ -1674,30 +1910,36 @@ bool RealmSession::submit_combat(OnlineCombatCommand command) {
         p.fail(OnlineErrorKind::Transport, "Combat request could not be queued"); return false;
     }
 }
-bool RealmSession::use_waypoint(uint16_t destination, uint8_t waypointNumber) {
+bool RealmSession::use_waypoint(uint16_t destination, uint8_t waypointNumber, std::optional<OnlineIntentContext> context) {
+    std::lock_guard lock(impl_->mutex);
+    impl_->snapshotDirty = true;
     auto &p = *impl_;
-    if (!p.require(OnlineStage::ProtocolReady)) return false;
+    if (!p.require_navigation(context.value_or(onlineIntentContext(snapshot_)))) return false;
     const auto &world = p.view.world;
-    if (!world.waypointSource || !world.waypointHistory || !world.playerPosition ||
+    const auto waypoint = world.waypointSource ? world.waypointSource : world.waypointRequested;
+    if (!waypoint || (destination && (!world.waypointSource || !world.waypointHistory)) || !world.playerPosition ||
         !p.view.load.serverLoadComplete || onlinePlayerDead(world)) {
         p.error(OnlineErrorKind::Input, "No server waypoint menu is open");
         return false;
     }
-    const auto source = world.units.find({2, *world.waypointSource});
+    const auto source = world.units.find({2, *waypoint});
     if (source == world.units.end() || !source->second.position || !source->second.classId ||
         (destination && (waypointNumber >= 112 ||
             !((*world.waypointHistory)[1 + waypointNumber / 16] & (1u << (waypointNumber & 15)))))) {
         p.error(OnlineErrorKind::Input, "Waypoint source or unlocked destination is unavailable");
         return false;
     }
-    if (Clock::now() < p.nextMovement) return false;
+    if (destination && Clock::now() < p.nextMovement) return false;
     try {
+        // Closing must work even immediately after operate; only travel is rate limited.
         // D2MOO PlrMsg Rcv0x49: object GUID + level ID, both original DWORDs.
         Writer out;
-        out.u8(0x49); out.u32(*world.waypointSource); out.u32(destination);
+        out.u8(0x49); out.u32(*waypoint); out.u32(destination);
         p.sent(p.gs, out.release());
         p.nextMovement = Clock::now() + std::chrono::milliseconds(100);
         p.view.world.waypointSource.reset();
+        p.view.world.waypointRequested.reset(); p.waypointDeadline = {};
+        ++p.view.world.interactionGeneration;
         ++p.view.world.revision;
         p.view.error.reset(); p.changed();
         return true;
@@ -1707,6 +1949,8 @@ bool RealmSession::use_waypoint(uint16_t destination, uint8_t waypointNumber) {
     }
 }
 bool RealmSession::return_to_characters() {
+    std::lock_guard lock(impl_->mutex);
+    impl_->snapshotDirty = true;
     auto &p = *impl_;
     if (!p.require(OnlineStage::Lobby))
         return false;
@@ -1721,15 +1965,14 @@ bool RealmSession::return_to_characters() {
     }
 }
 void RealmSession::tick() {
-    try {
-        impl_->tick();
-    } catch (const ProtocolError &error) {
-        impl_->fail(OnlineErrorKind::Protocol, error.what());
-    } catch (const std::exception &) {
-        impl_->fail(OnlineErrorKind::Protocol, "Network processing failed");
-    }
+    std::lock_guard lock(impl_->mutex);
+    impl_->service();
+    if (snapshot_.revision != impl_->view.revision) snapshot_ = impl_->view;
+    impl_->snapshotDirty = false;
 }
 void RealmSession::cancel() {
+    std::lock_guard lock(impl_->mutex);
+    impl_->snapshotDirty = true;
     impl_->shutdown();
     impl_->view.load = {};
     impl_->view.error.reset();
@@ -1739,6 +1982,8 @@ void RealmSession::cancel() {
     impl_->stage(OnlineStage::Cancelled);
 }
 void RealmSession::logout() {
+    std::lock_guard lock(impl_->mutex);
+    impl_->snapshotDirty = true;
     auto &p = *impl_;
     p.shutdown();
     const auto revision = p.view.revision, generation = p.view.connectionGeneration,
@@ -1749,17 +1994,28 @@ void RealmSession::logout() {
     p.view.gameGeneration = gameGeneration;
 }
 const OnlineView &RealmSession::read() const {
-    return impl_->view;
+    std::lock_guard lock(impl_->mutex);
+    // Refresh only on the client thread. Resource loads and render iteration
+    // cannot be invalidated by a background receive.
+    if (impl_->snapshotDirty) {
+        snapshot_ = impl_->view;
+        impl_->snapshotDirty = false;
+    }
+    return snapshot_;
 }
 std::chrono::milliseconds RealmSession::request_timeout() const {
+    std::lock_guard lock(impl_->mutex);
     return impl_->options.timeout;
 }
 bool RealmSession::item_request_ready() const {
+    std::lock_guard lock(impl_->mutex);
     const auto &request = impl_->view.world.itemRequest;
-    return impl_->view.stage == OnlineStage::ProtocolReady && Clock::now() >= impl_->nextItem &&
+    return impl_->view.stage == OnlineStage::ProtocolReady && impl_->current_game(snapshot_) &&
+        Clock::now() >= impl_->nextItem &&
         (!request || request->state != OnlineItemRequest::State::Pending);
 }
 std::vector<GamePacket> RealmSession::take_game_packets() {
+    std::lock_guard lock(impl_->mutex);
     auto packets = std::move(impl_->worldPackets);
     impl_->worldPackets.clear();
     impl_->worldBytes = 0;

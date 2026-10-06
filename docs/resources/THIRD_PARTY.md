@@ -112,6 +112,8 @@
 
 D2S 读写依据本地 D2MOO 的 `PlrSave2.h/.cpp`、`Items.cpp`、`ItemMods.cpp`、`PlrIntro.cpp` 与第一幕任务代码，原位宽与属性值仍来自当前 MPQ。免费重置字节另核对 [D2CE ActsInfo](https://github.com/WalterCouto/D2CE/blob/c246509f385790462979004aeeaf7a47696ed605/source/d2ce/ActsInfo.h) 的字段布局及同目录 `.cpp`，只作格式证据，未移植实现。`@dschu012/d2s` 2.0.36 仅安装在忽略的 `reference/d2s-validation` 中作独立读写验证，不是运行依赖，不随游戏分发；其附带定义不替代运行时 MPQ。
 
+联机多人只读副本的0x26／5B／5C／75／7F／8B–8D／90字段核对同一D2MOO固定`5596f5c`的D2PacketDef／SCmd，与本机1.13c D2Net长度表交叉约束；本地diablo2-protocol的1.13目录仅交叉参考，不采用其0x7F区域32位等冲突。名册、空间指派、队伍／关系原值和原语言聊天字节分开；未接发送与原界面，未作实机认证。只使用协议事实，不移植参考实现／表或资源。
+
 本地 `reference/` 下的参考仓库均忽略提交，优先在本机核对，再按需要查其他来源：
 
 任务模块与第二幕提示本轮另核对 D2MOO 固定 `5596f5c` 的 `Quests.cpp` 回调登记，`ACT2/A2Q0.cpp`／`A2Intro.cpp` 的欢迎与初见分工、`A2Q1` 至 `A2Q6` 的 active filter／交谈回调，以及 `Quests.h`／`D2Constants.h` 原保存槽／位定义。杰海因生成位置另据 `A2Q4` 的 `InitializeJerhynStartObject`／`InitializeJerhynPalaceObject`／`InitializeJerhynMonster`，实际标记与初始化函数、位置和中立人物资源从当前 MPQ Objects／DS1／MonStats 取得；双位置记录／隐藏切换为本项目适配，守卫、GUID与移动演出未完整移植。杰海因欢迎与法杖材料确认只用这些原位，原对白和 Sounds 身份来自当前 MPQ；本项目独立实现值事实与计划分发，不纳入参考源码或资源。仍沿用 MIT 归属；未实施原全局／队伍任务系统，准确边界见[任务系统](../gameplay/quests/SYSTEM.md)。

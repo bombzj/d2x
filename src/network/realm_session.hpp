@@ -34,12 +34,14 @@ struct GamePacket {
     uint64_t gameGeneration{};
     protocol::Packet packet;
 };
-// Headless account/Realm/game coordinator. All calls, including tick(), are made
-// on the owning thread. read() is borrowed until the next mutating call.
+// Headless account/Realm/game coordinator. A private worker services transport,
+// heartbeats and the authoritative replica independently of window/loading waits.
+// Public calls stay on the owning client thread. read() borrows its snapshot until
+// tick() or a mutating command; the worker never modifies that snapshot.
 // No GameSession, local D2S, MPQ, graphics, or operating-system API is required.
 class RealmSession {
   public:
-    RealmSession();
+    explicit RealmSession(bool retainGamePackets = false);
     ~RealmSession();
     RealmSession(const RealmSession &) = delete;
     RealmSession &operator=(const RealmSession &) = delete;
@@ -54,21 +56,23 @@ class RealmSession {
     bool list_games(std::string filter = {});
     bool create_game(CreateGameOptions options);
     bool join_game(std::string name, std::string password = {});
+    // Cancel pre-entry requests by retiring MCP; after logon, wait for native save/leave.
     bool leave_game();
-    bool resurrect(); // Original 0x41, after server PLRMODE_DEAD. No local respawn.
+    bool resurrect(std::optional<OnlineIntentContext> context = {}); // Original 0x41, after server PLRMODE_DEAD.
     // Raw original movement request. Application must first validate its current
     // MPQ scene binding; neither this method nor the replica predicts a position.
-    bool move_to(OnlinePoint target, bool run = true);
-    bool move_to_unit(OnlineUnitKey target, bool run = true);
+    bool move_to(OnlinePoint target, bool run = true, std::optional<OnlineIntentContext> context = {});
+    bool move_to_unit(OnlineUnitKey target, bool run = true, std::optional<OnlineIntentContext> context = {});
     // Uses an assigned server UNIT_TILE ID. Map warp classes/slots are not IDs.
     bool use_exit(uint32_t serverUnitId);
-    bool interact_map_unit(OnlineUnitKey target, bool stash = false);
+    bool interact_map_unit(OnlineUnitKey target, OnlineObjectIntent intent = OnlineObjectIntent::Operate,
+                           std::optional<OnlineIntentContext> context = {});
     // Application validates MonStats.interact and native approach range first.
-    bool interact_npc(uint32_t serverUnitId);
-    bool close_npc();
-    bool acknowledge_npc_message(uint16_t stringId);
-    bool npc_travel(); // Original entity action 0; server validates quest eligibility.
-    bool create_town_portal(uint16_t skillId); // Caller resolves original item skill from MPQ.
+    bool interact_npc(uint32_t serverUnitId, std::optional<OnlineIntentContext> context = {});
+    bool close_npc(std::optional<OnlineIntentContext> context = {});
+    bool acknowledge_npc_message(uint16_t stringId, std::optional<OnlineIntentContext> context = {});
+    bool npc_travel(std::optional<OnlineIntentContext> context = {}); // Original entity action 0.
+    bool create_town_portal(uint16_t skillId, std::optional<OnlineIntentContext> context = {}); // MPQ-resolved item skill.
     // MPQ consumer checks the native location, ownership, shape and operation eligibility.
     // No optimistic inventory changes; the original protocol has no generic transaction ACK.
     bool submit_item(OnlineItemCommand command);
@@ -77,7 +81,7 @@ class RealmSession {
     bool submit_combat(OnlineCombatCommand command);
     // Caller maps the destination's Levels.Waypoint index from current MPQ.
     // Zero destination closes the server-opened menu. Never unlocks locally.
-    bool use_waypoint(uint16_t destination, uint8_t waypointNumber = 0);
+    bool use_waypoint(uint16_t destination, uint8_t waypointNumber = 0, std::optional<OnlineIntentContext> context = {});
     bool return_to_characters();
     void tick();
     void cancel();
@@ -85,7 +89,7 @@ class RealmSession {
     const OnlineView &read() const;
     std::chrono::milliseconds request_timeout() const;
     bool item_request_ready() const;
-    // Opaque, bounded, ordered packets retained for additional world consumers.
+    // Optional (constructor opt-in), bounded, ordered packets for additional consumers.
     // The basic replica in read().world has already consumed supported messages.
     // Taking packets does not mutate the view revision. No auth or tickets are exposed.
     std::vector<GamePacket> take_game_packets();
@@ -93,6 +97,7 @@ class RealmSession {
   private:
     void authenticate(LoginOptions options, bool createAccount);
     struct Impl;
+    mutable OnlineView snapshot_;
     std::unique_ptr<Impl> impl_;
 };
 } // namespace d2x::net

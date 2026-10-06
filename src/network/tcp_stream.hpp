@@ -24,8 +24,8 @@ struct StreamLimits {
     size_t queuedEvents{512};
     size_t handlersPerPoll{128};
 };
-// Single-thread owned. poll() progresses DNS, connect, reads, writes and timers.
-// Keep polling during menu pauses. No callbacks or native socket types cross this API.
+// Serialized owner calls. poll() progresses DNS, connect, reads, writes and timers.
+// RealmSession services this independently of the window loop. No callbacks or native socket types cross this API.
 class TcpStream {
   public:
     explicit TcpStream(StreamLimits limits = {});

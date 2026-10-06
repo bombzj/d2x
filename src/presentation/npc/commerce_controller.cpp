@@ -82,7 +82,7 @@ bool SceneController::handleNpcShop(const FrameInput &input) {
                     ui.inventory.drag->pickedUp = ui.inventory.drag->moved = true;
                     inventoryClick_ = true;
                     if (view_.npcShopDropAt(input.mouse)) {
-                        if (npcClient_.quote(ui.dialogueObject, source->handle(), false)) {
+                        if (npcClient_.canRequestSale(ui.dialogueObject, source->handle())) {
                             ui.shopSalePending = source->handle();
                             npcClient_.submit(SellVendorItem{ui.dialogueObject, source->handle()});
                         } else view_.notice("That item cannot be sold here.", true);
@@ -130,7 +130,7 @@ bool SceneController::handleNpcShop(const FrameInput &input) {
 
 bool SceneController::handleHirelingToggle(const FrameInput &input) {
     auto &ui = view_.ui();
-    if (input.hireling && !ui.blocksWorld()) {
+    if (input.hireling && !ui.capturesWorldInput()) {
         if (view_.multiplayer() && !view_.hirelingView().active) {
             view_.notice("Native hireling state is not available yet.", true); return true;
         }

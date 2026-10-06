@@ -36,7 +36,7 @@ bool onScreen(const Enemy &enemy, const GameSession &session, const SceneView &v
     auto screen = view.screen(enemy.pos);
     const float right = view.ui().inventory.open ? inventoryBounds().x : float(W);
     return session.active(enemy.pos) && screen.x >= 0 && screen.x < right && screen.y >= 0 &&
-           screen.y < H - HUD && !view.ui().blocksWorld();
+           screen.y < H - HUD && !view.ui().capturesWorldInput();
 }
 const char *qualityName(ItemQuality quality) {
     switch (quality) {

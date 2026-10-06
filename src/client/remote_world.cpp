@@ -1,10 +1,16 @@
 #include "remote_world.hpp"
+#include "remote_social.hpp"
 #include "network/protocol/bits.hpp"
 #include <algorithm>
+#include <chrono>
 
 namespace d2x::net {
 namespace {
 using namespace protocol;
+uint64_t receivedMilliseconds() {
+    return uint64_t(std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count());
+}
 OnlinePoint point(Reader &r) {
     const auto x = r.u16();
     return {x, r.u16()};
@@ -27,20 +33,21 @@ void combatEvent(OnlineWorldView &w, OnlineCombatEvent event) {
         (event.packet == 0x4C || event.packet == 0x4D || event.packet == 0x99 || event.packet == 0x9A)) {
         auto &actor = unit(w, event.source);
         actor.actionSkill = event.skill; actor.actionSkillLevel = event.level;
-        actor.actionRevision = w.revision;
+        actor.actionRevision = w.revision; actor.actionReceivedMilliseconds = receivedMilliseconds();
         actor.destination = event.point; actor.destinationUnit = event.target;
         actor.direction.reset(); actor.nativeMode = false;
         // Skill packets replace the player's action byte. Monsters resolve monanim in MPQ.
         if (actor.key.type == 0) actor.mode = 21;
         else actor.mode.reset();
     }
+    event.receivedMilliseconds = receivedMilliseconds();
     event.sequence = ++w.combatSequence;
     w.combatEvents.push_back(std::move(event));
     if (w.combatEvents.size() > 256) w.combatEvents.pop_front();
 }
 void monsterAction(OnlineWorldView &w, OnlineUnit &u, uint8_t action) {
     u.actionSkill.reset(); u.actionSkillLevel.reset(); u.direction.reset();
-    u.wireAction = action; u.actionRevision = w.revision;
+    u.wireAction = action; u.actionRevision = w.revision; u.actionReceivedMilliseconds = receivedMilliseconds();
     // MonsterMsg's native wire actions are not MONMODE indices.
     switch (action) {
     case 0: case 1: u.mode = 2; break;
@@ -81,10 +88,12 @@ void playerMode(OnlineView &v, const OnlineUnit &u) {
     const bool dying = u.nativeMode ? u.mode == 0 : u.mode == 8;
     const bool dead = u.nativeMode ? u.mode == 17 : u.mode == 9;
     if (dying || dead) {
+        if (w.npcRequested || w.npcConversation || w.waypointSource || w.waypointRequested) ++w.interactionGeneration;
         if (!onlinePlayerDead(w)) w.respawnRequest.reset();
         const auto phase = dead || w.deathPhase == OnlineDeathPhase::Dead ? OnlineDeathPhase::Dead : OnlineDeathPhase::Dying;
         if (w.deathPhase != phase) { w.deathPhase = phase; w.deathRevision = w.revision; }
         w.movementRequest.reset(); w.npcRequested.reset(); w.npcConversation.reset(); w.waypointSource.reset();
+        w.waypointRequested.reset();
     } else if (w.deathPhase == OnlineDeathPhase::Unknown) {
         w.deathPhase = OnlineDeathPhase::Alive; w.deathRevision = w.revision;
     } else if (onlinePlayerDead(w) && w.respawnRequest && w.respawnRequest->sent && u.position &&
@@ -107,11 +116,13 @@ void resurrectionUpdates(OnlineView &v) {
     // 0x15. The owning client need not receive a neutral mode packet.
     auto &u = found->second;
     u.mode = 7; u.nativeMode = false; u.actionSkill.reset(); u.actionSkillLevel.reset();
-    u.lifePercent.reset(); u.actionRevision = w.revision;
+    u.lifePercent.reset(); u.actionRevision = w.revision; u.actionReceivedMilliseconds = receivedMilliseconds();
     playerMode(v, u);
 }
 void removePlayer(OnlineWorldView &w) {
+    ++w.interactionGeneration;
     w.waypointSource.reset();
+    w.waypointRequested.reset();
     w.npcRequested.reset(); w.npcConversation.reset(); w.movementRequest.reset();
     w.townPortalPending = false;
     w.playerPosition.reset();
@@ -246,6 +257,11 @@ void itemPacket(OnlineView &v, const Packet &p) {
     v.world.items[item.id] = std::move(item);
 }
 void removeItem(OnlineWorldView &world, uint32_t id) {
+    if ((world.storage.kind == OnlineStorageKind::Cube && world.storage.source == id) ||
+        (world.storage.requested == OnlineStorageKind::Cube && world.storage.requestedSource == id)) {
+        ++world.interactionGeneration;
+        world.storage = {};
+    }
     if (const auto found = world.equipment.find(id); found != world.equipment.end())
         if (const auto owner = world.units.find({0, found->second.owner}); owner != world.units.end())
             ++owner->second.appearanceRevision;
@@ -260,6 +276,7 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
     auto &w = v.world;
     ++v.revision;
     ++w.revision;
+    if (apply_social_packet(v, p) && p.id != 0x5C) return;
     Reader r(p.body);
     switch (p.id) {
     case 0x07:
@@ -293,11 +310,22 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
         const auto k = key(r);
         r.finish();
         w.units.erase(k);
+        const bool stashRemoved = k.type == 2 &&
+            ((w.storage.kind == OnlineStorageKind::Stash && w.storage.source == k.id) ||
+             (w.storage.requested == OnlineStorageKind::Stash && w.storage.requestedSource == k.id));
+        if ((k.type == 2 && (w.waypointSource == k.id || w.waypointRequested == k.id)) || stashRemoved ||
+            (k.type == 1 && (w.npcRequested == k.id || w.shopRequested == k.id || w.shopSource == k.id ||
+                (w.npcConversation && w.npcConversation->source == k.id))))
+            ++w.interactionGeneration;
         if (k.type == 4) removeItem(w, k.id);
         if (k.type == 2 && w.waypointSource == k.id) w.waypointSource.reset();
+        if (k.type == 2 && w.waypointRequested == k.id) w.waypointRequested.reset();
+        if (stashRemoved) w.storage = {};
         if (k.type == 1) {
             if (w.npcRequested == k.id) w.npcRequested.reset();
             if (w.npcConversation && w.npcConversation->source == k.id) w.npcConversation.reset();
+            if (w.shopRequested == k.id) w.shopRequested.reset();
+            if (w.shopSource == k.id) w.shopSource.reset();
         }
         if (k.type == 0) {
             std::erase_if(w.equipment, [&](const auto &e) { return e.second.owner == k.id; });
@@ -351,7 +379,7 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
         position(v, u, point(r));
         r.u8();
         u.lifePercent = r.u8(); u.lifeCarriesRankFlag = false;
-        u.actionRevision = w.revision;
+        u.actionRevision = w.revision; u.actionReceivedMilliseconds = receivedMilliseconds();
         r.finish();
         u.destination.reset();
         u.destinationUnit.reset();
@@ -367,7 +395,7 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
             u.mode = uint8_t(mode);
         u.nativeMode = true; u.actionSkill.reset(); u.actionSkillLevel.reset();
         u.destination.reset(); u.destinationUnit.reset();
-        u.actionRevision = w.revision;
+        u.actionRevision = w.revision; u.actionReceivedMilliseconds = receivedMilliseconds();
         r.finish();
         playerMode(v, u);
         break;
@@ -380,7 +408,7 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
         u.destinationUnit.reset();
         r.u8();
         position(v, u, point(r));
-        u.actionRevision = w.revision;
+        u.actionRevision = w.revision; u.actionReceivedMilliseconds = receivedMilliseconds();
         r.finish();
         break;
     }
@@ -390,7 +418,7 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
         u.nativeMode = false; u.actionSkill.reset(); u.actionSkillLevel.reset();
         u.destinationUnit = key(r);
         position(v, u, point(r));
-        u.actionRevision = w.revision;
+        u.actionRevision = w.revision; u.actionReceivedMilliseconds = receivedMilliseconds();
         r.finish();
         u.destination.reset();
         break;
@@ -400,10 +428,11 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
         position(v, u, point(r));
         r.u8();
         ++u.positionDiscontinuity; // Native correction/teleport must not tween across geometry.
-        u.actionRevision = w.revision;
+        u.actionRevision = w.revision; u.actionReceivedMilliseconds = receivedMilliseconds();
         r.finish();
         u.destination.reset();
         u.destinationUnit.reset();
+        if (u.key.type == 0 && v.load.playerUnitId == u.key.id) w.movementRequest.reset();
         if (u.key.type == 0 && v.load.playerUnitId == u.key.id &&
             w.respawnRequest && w.respawnRequest->sent) {
             w.respawnRequest->repositioned = true;
@@ -549,6 +578,7 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
             w.storage.requested = OnlineStorageKind::None; w.storage.requestedSource.reset();
             w.storage.revision = w.revision;
         } else if (action == 17 && w.storage.kind == OnlineStorageKind::Stash) {
+            ++w.interactionGeneration;
             w.storage.kind = OnlineStorageKind::None; w.storage.source.reset(); w.storage.revision = w.revision;
         }
         break;
@@ -623,7 +653,7 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
                        onlinePlayerDead(w))) {
             u.mode = 7; // Native player assignment starts neutral.
             u.nativeMode = false; u.actionSkill.reset(); u.actionSkillLevel.reset();
-            u.actionRevision = w.revision;
+            u.actionRevision = w.revision; u.actionReceivedMilliseconds = receivedMilliseconds();
         }
         position(v, u, point(r));
         r.finish();
@@ -664,7 +694,11 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
         r.finish();
         if (history[0] != 0x102) throw ProtocolError("Unsupported native waypoint history");
         w.waypointHistory = history;
-        w.waypointSource = source;
+        if ((w.waypointRequested == source || w.waypointSource == source) &&
+            w.playerPosition && !onlinePlayerDead(w) && w.units.contains({2, source})) {
+            w.waypointSource = source;
+            w.waypointRequested.reset();
+        } else ++w.lateWaypointReplies;
         break;
     }
     case 0x82: {
@@ -735,7 +769,7 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
         position(v, u, point(r));
         u.lifePercent = r.u8(); u.lifeCarriesRankFlag = false;
         r.finish();
-        u.mode = 1; u.wireAction = 7; u.actionRevision = w.revision;
+        u.mode = 1; u.wireAction = 7; u.actionRevision = w.revision; u.actionReceivedMilliseconds = receivedMilliseconds();
         u.actionSkill.reset(); u.actionSkillLevel.reset(); u.direction.reset();
         u.destination.reset();
         u.destinationUnit.reset();
@@ -753,7 +787,9 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
                     w.deathPhase = OnlineDeathPhase::Dying; w.deathRevision = w.revision;
                     w.respawnRequest.reset();
                 }
-                w.waypointSource.reset(); w.npcRequested.reset();
+                if (w.waypointSource || w.waypointRequested || w.npcRequested || w.npcConversation)
+                    ++w.interactionGeneration;
+                w.waypointSource.reset(); w.waypointRequested.reset(); w.npcRequested.reset();
                 w.npcConversation.reset(); w.movementRequest.reset();
                 w.townPortalPending = false;
             }
@@ -834,7 +870,7 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
         const auto tail = r.take(r.remaining());
         u.appearanceBits.assign(tail.begin(), tail.end());
         u.actionSkill.reset(); u.actionSkillLevel.reset(); u.direction.reset();
-        u.actionRevision = w.revision; u.nativeMode = true;
+        u.actionRevision = w.revision; u.actionReceivedMilliseconds = receivedMilliseconds(); u.nativeMode = true;
         if (!tail.empty()) {
             BitReader bits(tail);
             u.mode = uint8_t(bits.read(4));
@@ -844,6 +880,7 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
     }
     default:
         ++w.ignoredPackets;
+        ++v.gameProtocol.unconsumed[p.id];
         return;
     }
 }

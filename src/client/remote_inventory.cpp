@@ -239,6 +239,9 @@ bool RemoteInventory::reject(std::string reason) { reason_ = std::move(reason); 
 bool RemoteInventory::submit(net::RealmSession &session, OnlineItemCommand command) {
     update(session.read());
     const auto &online = session.read();
+    if (!command.context) command.context = onlineIntentContext(online);
+    if (!onlineInteractionMatches(*command.context, online))
+        return reject("Queued item intent belongs to a previous game, area or interaction");
     const auto &world = online.world;
     if (online.stage != OnlineStage::ProtocolReady || !online.load.serverLoadComplete ||
         !online.load.playerUnitId || !world.playerPosition || onlinePlayerDead(world))
@@ -251,6 +254,7 @@ bool RemoteInventory::submit(net::RealmSession &session, OnlineItemCommand comma
     };
     auto npcIdentity = [&]() -> std::string_view {
         if (!world.npcConversation || world.npcRequested != world.npcConversation->source) return {};
+        if (command.npc && command.npc != world.npcConversation->source) return {};
         command.npc = world.npcConversation->source;
         const auto unit = world.units.find({1, command.npc});
         if (unit == world.units.end() || !unit->second.classId) return {};

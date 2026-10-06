@@ -25,6 +25,7 @@
 #include <sstream>
 #include <charconv>
 #include <limits>
+#include <chrono>
 #include <set>
 
 namespace d2x {
@@ -116,6 +117,7 @@ struct RemoteScene::Impl {
     const Map *currentMap{};
     uint64_t gameGeneration{~uint64_t{}}, areaGeneration{~uint64_t{}};
     float time{}, nextCast{};
+    std::chrono::steady_clock::time_point lastFrame{};
     bool menu{};
     enum class Gesture { None, Move, Interact, LeftCast, RightCast };
     Gesture gesture{Gesture::None};
@@ -853,7 +855,22 @@ struct RemoteScene::Impl {
             time = 0;
             currentMap = nullptr;
         }
-        time += std::clamp(GetFrameTime(), 0.f, .1f);
+        const auto now = std::chrono::steady_clock::now();
+        const float elapsed = lastFrame == std::chrono::steady_clock::time_point{} ? 0.f
+            : std::max(0.f, std::chrono::duration<float>(now - lastFrame).count());
+        lastFrame = now;
+        time += elapsed;
+        // Long window/loading waits are presentation discontinuities. Restore the
+        // latest replica and persistent states, never replay accumulated casts/audio.
+        const bool suspended = elapsed > .25f;
+        if (suspended) {
+            motion.clear();
+            shared.clearClientMissiles();
+            missileCastRevisions.clear(); overlayVisuals.clear(); localCast.reset();
+            combatSequence = v.world.combatSequence;
+            localRequestSequence = v.world.combatRequest ? v.world.combatRequest->sequence : 0;
+            gesture = Gesture::None; lockedTarget.reset(); gestureSkill.reset(); repeated = false;
+        }
         if (currentMap != &map) {
             currentMap = &map;
             tiles.clear();
@@ -873,7 +890,7 @@ struct RemoteScene::Impl {
             missileTargets.push_back({effectOwner(key), {float(unit.position->x) + .5f, float(unit.position->y) + .5f},
                 movementRule(unit).size, enemy});
         }
-        shared.advanceClientMissiles(std::clamp(GetFrameTime(), 0.f, .1f), map.grid,
+        shared.advanceClientMissiles(suspended ? 0.f : elapsed, map.grid,
             {float(origin.x), float(origin.y)}, missileTargets);
         const bool waypointOpen = v.world.waypointSource.has_value();
         auto local = [&](OnlinePoint p) {
@@ -1010,7 +1027,11 @@ struct RemoteScene::Impl {
             }
             auto &m = motion[key];
             if (m.mode != u.mode || m.animationRevision != u.actionRevision) {
-                m.mode = u.mode; m.modeChangedAt = time; m.animationRevision = u.actionRevision;
+                const auto receivedNow = uint64_t(std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::steady_clock::now().time_since_epoch()).count());
+                const float age = u.actionReceivedMilliseconds && receivedNow >= u.actionReceivedMilliseconds
+                    ? float(receivedNow - u.actionReceivedMilliseconds) / 1000.f : 0.f;
+                m.mode = u.mode; m.modeChangedAt = time - age; m.animationRevision = u.actionRevision;
             }
             if (m.route.empty() && u.destination)
                 m.look = local(*u.destination) - feet;

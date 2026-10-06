@@ -292,7 +292,12 @@ bool SceneController::handleRemoteUi(const FrameInput &input, float elapsed) {
     if (input.leftPressed || (!input.leftHeld && !input.leftReleased)) inventoryClick_ = false;
     if (!input.rightHeld && !input.rightPressed) inventoryRight_ = false;
     if (!input.leftHeld) pickupClick_ = false;
-    if (!input.focused) { ui.skillPicker.reset(); ui.inventory.cancelGesture(); releaseAfterLoad_ = true; return true; }
+    if (!input.focused) {
+        ui.skillPicker.reset(); ui.inventory.cancelGesture();
+        ui.gameMenuPressed = -1;
+        resetInput();
+        return true;
+    }
     if (ui.gameMenuOpen) return handleMenu(input);
     if (input.run) actorClient_.toggleRun();
     if (input.weaponSwap && !ui.blocksInput() && !ui.inventory.drag) inventoryClient_.submit(SwitchWeaponSet{});

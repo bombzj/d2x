@@ -23,7 +23,7 @@ bool SceneController::handleQuestToggle(const FrameInput &input) {
     auto &ui = view_.ui();
     if ((input.quests || (ui.questNotice && !ui.questOpen && !ui.characterOpen &&
          !ui.inventory.storage && !ui.inventory.cubeOpen && input.insideViewport && input.leftPressed &&
-        CheckCollisionPointRec(rv(input.mouse), questNoticeBounds()))) && !ui.blocksWorld()) {
+        CheckCollisionPointRec(rv(input.mouse), questNoticeBounds()))) && !ui.capturesWorldInput()) {
         ui.questOpen = !ui.questOpen;
         if (ui.questOpen) {
             ui.hirelingOpen = false;

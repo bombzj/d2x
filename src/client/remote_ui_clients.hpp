@@ -6,6 +6,9 @@
 #include "client/quest_client.hpp"
 #include "client/map_client.hpp"
 #include <memory>
+#include <cstddef>
+#include <cstdint>
+#include <optional>
 
 namespace d2x {
 class Archives;
@@ -21,7 +24,7 @@ class RemoteUiClients {
     struct Impl;
     std::unique_ptr<Impl> impl_;
   public:
-    RemoteUiClients(Archives &, net::RealmSession &, RemoteInventory &, RemoteCombat &, RemoteControl &);
+    RemoteUiClients(Archives &, net::RealmSession &, RemoteInventory &, RemoteCombat &, RemoteControl &, bool running = true);
     ~RemoteUiClients();
     void update(const OnlineSceneView &);
     const ClassicData &content() const;
@@ -33,6 +36,8 @@ class RemoteUiClients {
     IMapClient &map();
     bool running() const;
     bool busy() const;
+    size_t queuedItemCommands() const;
+    std::optional<uint64_t> waitingItemRequest() const;
     std::string takeNotice();
     void openShop();
 };

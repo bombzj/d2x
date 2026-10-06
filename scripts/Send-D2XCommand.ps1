@@ -3,14 +3,7 @@ param(
     [ValidatePattern('^[A-Za-z0-9_-]{1,80}$')][string]$PipeName = 'd2x-debug',
     [Parameter(Mandatory = $true)]
     [ValidateSet(
-        'status', 'quest-status', 'monsters', 'monster-spawn', 'monster-damage', 'monster-kill',
-        'grant-hireling', 'grant_hireling', 'hireling', 'hireling-panel', 'hireling-equip',
-        'ground', 'inventory', 'item', 'item-spawn', 'item-move', 'item-socket', 'cube-transmute', 'objects', 'exits', 'view',
-        'equip', 'use', 'portal', 'interact', 'talk', 'gossip', 'identify', 'identify-item', 'book-load', 'shop', 'buy',
-        'grant-gold', 'gold-transfer', 'cube-drop', 'cube-open', 'grant-experience', 'grant-shrine', 'unlock-waypoints', 'allocate-attribute', 'reset-attributes',
-        'character-panel', 'quest-panel', 'skill-tree', 'skill-picker', 'skills',
-        'bind-skill-hotkey', 'learn-skill', 'cast-skill', 'stop-channel', 'reset-skills', 'travel', 'waypoint',
-        'kill', 'drop', 'pickup', 'move', 'step', 'pause', 'resume', 'save', 'load',
+        'status', 'pause', 'resume',
         'online-status', 'online-login', 'online-realms', 'online-select-realm',
         'online-characters', 'online-select-character', 'online-games', 'online-list-games',
         'online-create-game', 'online-join-game', 'online-leave-game', 'online-return-characters',
@@ -23,6 +16,7 @@ param(
         'online-resurrect', 'online-recover-corpse',
         'online-npc-message', 'online-npc-close', 'online-npc-travel',
         'online-items', 'online-ground', 'online-item-action',
+        'online-social', 'online-chat',
         'online-combat', 'online-skills', 'online-select-skill', 'online-cast', 'online-attack',
         'online-stop-skill', 'online-learn-skill', 'online-spend-attribute',
         'ui-input', 'screenshot', 'quit')]
