@@ -6,14 +6,17 @@ namespace d2x {
 bool SceneController::handleNpcMenu(const FrameInput &input) {
     auto &ui = view_.ui();
     if (ui.npcMenu) {
-        auto selection = input.escape ? NpcMenuSelection{NpcMenuAction::Cancel, std::nullopt} :
-            input.insideViewport && input.leftPressed ? view_.clickNpcMenu(input.mouse) : NpcMenuSelection{};
+        NpcMenuSelection selection;
+        if (input.escape) selection.action = NpcMenuAction::Cancel;
+        else if (input.insideViewport && input.leftPressed) selection = view_.clickNpcMenu(input.mouse);
         if (input.insideViewport && input.leftPressed && selection.action == NpcMenuAction::None)
             selection.action = NpcMenuAction::Cancel;
         const auto action = selection.action;
         if (action == NpcMenuAction::Talk) {
             view_.startNpcTalk();
         }
+        else if (action == NpcMenuAction::Back) ui.npcTopics = false;
+        else if (action == NpcMenuAction::TextTopic && selection.textTopic) view_.startNpcTextTopic(*selection.textTopic);
         else if (action == NpcMenuAction::Introduction) view_.startNpcIntroduction();
         else if (action == NpcMenuAction::Gossip) view_.showNextNpcGossip();
         else if (action == NpcMenuAction::QuestTopic && selection.quest) view_.startNpcTopic(*selection.quest);

@@ -3,6 +3,7 @@
 #include "gameplay/skills/spec.hpp"
 #include "gameplay/monsters/implementation.hpp"
 #include "client/item_art.hpp"
+#include "contracts/inventory.hpp"
 #include "gameplay/session/session.hpp"
 #include "content/classic_data.hpp"
 #include "gameplay/model/state.hpp"
@@ -25,6 +26,59 @@
 #include <utility>
 
 namespace d2x {
+const SceneAssets::ProjectileVisual *SceneAssets::ensureProjectile(int id) {
+    if (projectileAnimations.contains(id)) return &projectileVisuals.at(id);
+    if (!unavailableProjectiles.insert(id).second) return nullptr;
+    if (!missileDefinitions_) return nullptr;
+    const auto &table = *missileDefinitions_;
+    if (const auto found = missileRows_.find(id); found != missileRows_.end()) {
+        const size_t row = found->second;
+        const DataTable sounds(archives_.read("data/global/excel/sounds.txt"));
+        for (const auto &[field, prefix] : {std::pair{"TravelSound", "missile-release:"}, std::pair{"HitSound", "missile-hit:"}}) {
+            const auto name = table.value(row, field);
+            if (name.empty()) continue;
+            for (size_t sound = 0; sound < sounds.rows().size(); ++sound)
+                if (sounds.value(sound, "Sound") == name) {
+                    const auto key = std::string(prefix) + std::to_string(id);
+                    if (std::string_view(field) == "TravelSound" && sounds.number(sound, "Loop") == 1)
+                        audio.registerTravelGroup(archives_, key, sounds, sound);
+                    else audio.registerOriginalGroup(archives_, key, sounds, sound);
+                    break;
+                }
+        }
+        const auto file = table.value(row, "CelFile");
+        const auto path = "data/global/missiles/" + std::string(file) + ".dcc";
+        if (file.empty() || file == "null" || !archives_.contains(path)) return nullptr;
+        const int trans = table.number(row, "Trans").value_or(0);
+        auto animation = unitsGraphics_.single(path, trans != 0);
+        if (animation.frames.empty()) return nullptr;
+        projectileAnimations.emplace(id, std::move(animation));
+        unavailableProjectiles.erase(id);
+        return &projectileVisuals.at(id);
+    }
+    return nullptr;
+}
+const SkillOverlayVisual *SceneAssets::ensureOverlay(int id) {
+    if (auto found = spellOverlays.find(id); found != spellOverlays.end()) return &found->second.visual;
+    if (!unavailableOverlays.insert(id).second) return nullptr;
+    const DataTable table(archives_.read("data/global/excel/overlay.txt"));
+    if (id < 0 || size_t(id) >= table.rows().size()) return nullptr;
+    const size_t row = size_t(id);
+    SkillOverlayVisual visual;
+    visual.id = id; visual.frames = table.number(row, "Frames").value_or(0);
+    visual.fps = float(table.number(row, "AnimRate").value_or(0));
+    visual.trans = table.number(row, "Trans").value_or(5);
+    visual.preDraw = table.number(row, "PreDraw").value_or(0) != 0;
+    visual.offset = {-float(table.number(row, "Xoffset").value_or(0)), float(table.number(row, "Yoffset").value_or(0))};
+    for (int h = 0; h < 4; ++h) visual.heights[h] = table.number(row, "Height" + std::to_string(h + 1)).value_or(0);
+    const auto file = table.value(row, "Filename");
+    visual.art = "data/global/overlays/" + std::string(file) + ".dcc";
+    if (file.empty() || visual.frames <= 0 || visual.fps <= 0 || !archives_.contains(visual.art)) return nullptr;
+    auto animation = unitsGraphics_.single(visual.art, visual.trans == 3);
+    if (animation.count < visual.frames) return nullptr;
+    unavailableOverlays.erase(id);
+    return &spellOverlays.emplace(id, SpellOverlay{std::move(animation), std::move(visual)}).first->second.visual;
+}
 namespace {
 void loadFont(Graphics &graphics, Archives &archives, ClassicFont &font, std::string_view name) {
     auto path = "data/local/font/latin/" + std::string(name);
@@ -153,14 +207,6 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session, const I
         throw std::runtime_error("Character animations missing; supply the classic MPQ resources.");
     indexMonsterArt(session);
     loadHirelingAnimations(archives, session);
-    hirelingPanel = uiGraphics_.single("data/global/ui/panel/npcinv.dc6");
-    hirelingScroll = uiGraphics_.single("data/global/ui/panel/scrollbar.dc6");
-    hirelingHead = uiGraphics_.single("data/global/ui/panel/inv_helm_glove.dc6");
-    hirelingArmor = uiGraphics_.single("data/global/ui/panel/inv_armor.dc6");
-    hirelingWeapon = uiGraphics_.single("data/global/ui/panel/inv_weapons.dc6");
-    if (hirelingPanel.frames.size() < 4 || hirelingScroll.frames.size() < 6 ||
-        hirelingHead.frames.empty() || hirelingArmor.frames.empty() || hirelingWeapon.frames.empty())
-        throw std::runtime_error("Original expansion hireling panel resources are missing");
     loadMonsterAudio(archives, session.monsterContent());
     objectDefinitions_ = decodeTable(archives.read("data/global/excel/objects.txt"));
     const auto &objectRows = objectDefinitions_;
@@ -221,139 +267,7 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session, const I
         if (!rule.enabled || rule.fps <= 0)
             throw std::runtime_error("Invalid original Tristram portal animation rules");
     }
-    panel = uiGraphics_.single("data/global/ui/panel/800ctrlpnl7.dc6");
-    miniPanel = uiGraphics_.single("data/global/ui/panel/minipanel_s.dc6");
-    miniPanelButtons = uiGraphics_.single("data/global/ui/panel/minipanelbtn.dc6");
-    miniPanelToggle = uiGraphics_.single("data/global/ui/panel/menubutton.dc6");
-    if (miniPanel.frames.empty() || miniPanelButtons.frames.size() < 16 || miniPanelToggle.frames.size() < 4)
-        throw std::runtime_error("Original single-player mini panel artwork is missing");
-    cursor = unitsGraphics_.single("data/global/ui/cursor/ohand.dc6");
-    if (cursor.frames.empty())
-        throw std::runtime_error("Original pointer is missing: data/global/ui/cursor/ohand.dc6");
-    targetingCursors = unitsGraphics_.single("data/global/ui/cursor/spells.dc6");
-    for (const auto &[code, item] : session.inventory().catalog().entries())
-        if (item.targetCursor >= 0 && item.targetCursor >= targetingCursors.count)
-            throw std::runtime_error("Original targeting cursor is missing for " + code);
-    constexpr std::array menuLabels{"options", "exit", "returntogame"};
-    for (size_t index = 0; index < menuLabels.size(); ++index) {
-        gameMenuLabels[index] = unitsGraphics_.single(
-            std::string("data/local/ui/eng/") + menuLabels[index] + ".dc6");
-        if (gameMenuLabels[index].frames.empty())
-            throw std::runtime_error("Original Escape menu label is missing: " + std::string(menuLabels[index]));
-    }
-    gameMenuMarker = unitsGraphics_.single("data/global/ui/cursor/pentspin.dc6");
-    constexpr std::array optionsLabels{"soundoptions", "videooptions", "automapoptions", "cfgoptions", "previous"};
-    constexpr std::array automapLabels{"automapmode", "automapfade", "automapcenter", "automapparty", "automappartynames"};
-    constexpr std::array optionValues{"full", "mini", "smalloff", "smallon", "smallno", "smallyes", "auto",
-        "no", "everything", "center"};
-    auto menuArt = [&](const char *name) {
-        auto art = unitsGraphics_.single(std::string("data/local/ui/eng/") + name + ".dc6");
-        if (art.frames.empty()) throw std::runtime_error("Original options label missing: " + std::string(name));
-        return art;
-    };
-    for (size_t index = 0; index < optionsLabels.size(); ++index) optionsMenuLabels[index] = menuArt(optionsLabels[index]);
-    for (size_t index = 0; index < automapLabels.size(); ++index) automapOptionLabels[index] = menuArt(automapLabels[index]);
-    for (size_t index = 0; index < optionValues.size(); ++index) automapOptionValues[index] = menuArt(optionValues[index]);
-    automapOptionsTitle = menuArt("automapoptions");
-    if (gameMenuMarker.frames.empty())
-        throw std::runtime_error("Original Escape menu marker is missing");
-    inventoryPanel = uiGraphics_.single("data/global/ui/panel/invchar6.dc6");
-    {
-        weaponTabs = uiGraphics_.single("data/global/ui/panel/invchar6tab.dc6");
-        if (weaponTabs.frames.size() != 2)
-            throw std::runtime_error("Original alternate weapon panel artwork is missing");
-    }
-    questBackground = uiGraphics_.single("data/global/ui/menu/questbackground.dc6");
-    orificePanel = uiGraphics_.single("data/global/ui/menu/horadricback.dc6");
-    orificeButtons = uiGraphics_.single("data/global/ui/menu/okcancelbtn.dc6");
-    if (orificePanel.frames.empty() || orificeButtons.frames.size() < 2)
-        throw std::runtime_error("Original staff insertion panel is missing");
-    const auto &objects = session.content().tables.at("objects");
-    for (size_t symbol = 0; symbol < tombSymbols.size(); ++symbol)
-        for (size_t row = 0; row < objects.rows().size(); ++row)
-            if (objects.number(row, "Id") == actTwoTombSymbols[symbol]) {
-                const auto token = normalize(std::string(objects.value(row, "Token")));
-                tombSymbols[symbol] = unitsGraphics_.single("data/global/objects/" + token + "/tr/" + token + "trlitnuhth.dcc", true);
-            }
-    if (std::any_of(tombSymbols.begin(), tombSymbols.end(), [](const auto &symbol) { return symbol.frames.empty(); }))
-        throw std::runtime_error("Original tomb symbol artwork is missing");
-    questSockets = uiGraphics_.single("data/global/ui/menu/questsockets.dc6");
-    questTabs = uiGraphics_.single("data/global/ui/menu/expquesttabs.dc6");
-    for (const auto &definition : questDefinitions) {
-        const auto quest = size_t(definition.icon);
-        const auto &path = session.content().questContent.at(questIndex(definition.id)).iconPath;
-        questIcons[quest] = uiGraphics_.single(path);
-        const auto *animation = uiGraphics_.animation(path);
-        if (!animation || animation->frames.size() < 27) continue;
-        const auto &active = animation->frames[25];
-        const auto &inactive = animation->frames[26];
-        if (active.width != inactive.width || active.height != inactive.height)
-            throw std::runtime_error("Quest status frames have different dimensions");
-        int left = active.width, top = active.height, right = -1, bottom = -1;
-        for (int row = 0; row < active.height; ++row)
-            for (int column = 0; column < active.width; ++column) {
-                const auto pixel = size_t(row) * active.width + column;
-                if (active.pixels[pixel] == inactive.pixels[pixel]) continue;
-                left = std::min(left, column);
-                top = std::min(top, row);
-                right = std::max(right, column);
-                bottom = std::max(bottom, row);
-            }
-        if (right >= left && bottom >= top)
-            questFaces[quest] = {float(left), float(top), float(right - left + 1),
-                                      float(bottom - top + 1)};
-    }
-    questClose = unitsGraphics_.single("data/global/ui/panel/buysellbtn.dc6");
-    questReplay = unitsGraphics_.single("data/global/ui/menu/questlast.dc6");
-    goldCoin = unitsGraphics_.single("data/global/ui/panel/goldcoinbtn.dc6");
-    if (questBackground.frames.size() < 4 || questSockets.frames.size() < 2 ||
-        questTabs.frames.size() < 8 || questClose.frames.size() < 12 ||
-        questReplay.frames.empty() || goldCoin.frames.size() < 2 ||
-        std::any_of(questIcons.begin(), questIcons.end(),
-                    [](const GpuAnimation &icon) { return icon.frames.size() < 27; }))
-        throw std::runtime_error("Original Act I quest panel artwork is missing");
-    attributeButtons = graphics_.single("data/global/ui/panel/level.dc6");
-    attributePoints = graphics_.single("data/global/ui/panel/skillpoints.dc6");
-    if (attributeButtons.frames.size() < 3 || attributePoints.frames.empty())
-        throw std::runtime_error("Original character attribute UI artwork is missing");
-    vendorPanel = graphics_.single("data/global/ui/panel/buysell.dc6");
-    vendorTabs = graphics_.single("data/global/ui/panel/buyselltabs.dc6");
-    vendorButtons = graphics_.single("data/global/ui/panel/buysellbtn.dc6");
-    vendorConfirm = graphics_.single("data/global/ui/menu/dialogbackground.dc6");
-    if (!session.content().vendors.empty() &&
-        (vendorPanel.frames.size() < 4 || vendorTabs.frames.size() < 8 ||
-         vendorButtons.frames.size() < 16 ||
-         vendorConfirm.frames.empty()))
-        throw std::runtime_error("Original vendor UI artwork is missing");
-    waypointBorder = uiGraphics_.single("data/global/ui/panel/800borderframe.dc6");
-    waypointPanel = uiGraphics_.single("data/global/ui/menu/waygatebackground.dc6");
-    waypointTabs = uiGraphics_.single("data/global/ui/menu/expwaygatetabs.dc6");
-    waypointIcons = uiGraphics_.single("data/global/ui/menu/waygateicons.dc6");
-    if (waypointBorder.frames.size() < 10 || waypointPanel.frames.size() < 4 ||
-        waypointTabs.frames.size() < 10 || waypointIcons.frames.size() < 4)
-        throw std::runtime_error("Original waypoint menu artwork is missing");
-    const auto title = session.content().itemStrings.find("waypointsheader");
-    if (title == session.content().itemStrings.end() || title->second.empty())
-        throw std::runtime_error("Original waypoint menu title is missing");
-    waypointTitle = title->second;
-    loadWaypointFonts(uiGraphics_, archives, font, waypointFonts);
-    storagePanel = uiGraphics_.single("data/global/ui/panel/tradestash.dc6");
-    if (storagePanel.frames.size() < 4)
-        throw std::runtime_error("Original stash panel artwork is missing from the mounted MPQ");
-    if (!session.content().cubeCode.empty()) {
-        cubePanel = graphics_.single("data/global/ui/panel/supertransmogrifier.dc6");
-        if (cubePanel.frames.size() < 4)
-            throw std::runtime_error("Original cube panel artwork is missing from the mounted MPQ");
-    }
-    beltPanel = graphics_.single("data/global/ui/panel/ctrlpnl_popbelt.dc6");
-    beltSocket = graphics_.single("data/global/ui/panel/inv_belt.dc6");
-    orbs = uiGraphics_.single("data/global/ui/panel/hlthmana.dc6");
-    globeOverlap = uiGraphics_.single("data/global/ui/panel/overlap.dc6");
-    runButton = uiGraphics_.single("data/global/ui/panel/runbutton.dc6");
-    if (panel.frames.size() < 6 || orbs.frames.size() < 2 || globeOverlap.frames.size() < 2)
-        throw std::runtime_error("Classic HUD resources are missing from the mounted MPQ.");
-    button = graphics_.single("data/global/ui/panel/mediumbuttonblank.dc6");
-    loadSkillIcons(archives, session.content());
+    loadUi(archives, session.content(), false);
     const auto &missiles = session.content().tables.at("missiles");
     for (const auto &[id, skill] : session.content().skills.skills)
         if (skill.spell && skill.spell->frozenOrb) {
@@ -371,24 +285,6 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session, const I
                 program.mediumDensity, program.smallDensity});
         }
     }
-    for (size_t row = 0; row < missiles.rows().size(); ++row)
-        if (auto id = missiles.number(row, "Id")) {
-            if (missiles.number(row, "Trans").value_or(0) != 0) translucentProjectiles.insert(*id);
-            projectileVisuals.emplace(*id, ProjectileVisual{
-                float(missiles.number(row, "animrate").value_or(1024)) * 25.f / 1024.f,
-                missiles.number(row, "LoopAnim").value_or(0) != 0,
-                missiles.number(row, "AnimLen").value_or(0),
-                missiles.number(row, "SubLoop").value_or(0) ? missiles.number(row, "SubStart").value_or(0) : 0,
-                missiles.number(row, "SubLoop").value_or(0) ? missiles.number(row, "SubStop").value_or(0) : 0,
-                float(missiles.number(row, "Range").value_or(0)) / 25.f,
-                missiles.number(row, "InitSteps").value_or(0),
-                missiles.number(row, "Trans").value_or(0),
-                missiles.number(row, "Light").value_or(0),
-                {uint8_t(missiles.number(row, "Red").value_or(0)),
-                 uint8_t(missiles.number(row, "Green").value_or(0)),
-                 uint8_t(missiles.number(row, "Blue").value_or(0)), 255},
-                missiles.number(row, "Flicker").value_or(0) != 0});
-        }
     for (const auto &[id, program] : meteorVisuals)
         if (auto light = projectileVisuals.find(program.lightId); light != projectileVisuals.end())
             light->second.lightRadius = 12;
@@ -626,12 +522,6 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session, const I
             audio.registerOriginal(archives, "skill-cast:" + std::to_string(id),
                                    skill.spell->castSoundArt, volume);
         }
-    for (const auto &tree : session.content().skills.classes) {
-        auto art = graphics_.single("data/global/ui/spells/skltree_" + tree.backgroundToken + "_back.dc6");
-        if (art.frames.size() < 16)
-            throw std::runtime_error("Original MPQ skill tree background is missing: " + tree.classCode);
-        skillTrees.emplace(tree.classCode, std::move(art));
-    }
     // Keep the runtime source tables available for the original HUD rules.
     for (auto table : {"belts", "charstats", "skills"})
         archives.read(std::string("data/global/excel/") + table + ".txt");
@@ -652,6 +542,179 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session, const I
     uiGraphics_.releaseDecoded();
     unitsGraphics_.releaseDecoded();
 }
+SceneAssets::SceneAssets(Archives &archives, const ClassicData &content)
+    : archives_(archives), graphics_(archives), uiGraphics_(archives, "data/global/palette/sky/pal.dat"),
+      unitsGraphics_(archives, "data/global/palette/units/pal.dat"), automapCatalog_(archives), audio(archives) {
+    loadFont(uiGraphics_, archives, font, "font16");
+    loadFont(uiGraphics_, archives, speechFont, "fontformal12");
+    loadUi(archives, content, true);
+}
+void SceneAssets::loadUi(Archives &archives, const ClassicData &content, bool multiplayer) {
+    loadProjectileDefinitions(content);
+    hirelingPanel = uiGraphics_.single("data/global/ui/panel/npcinv.dc6");
+    hirelingScroll = uiGraphics_.single("data/global/ui/panel/scrollbar.dc6");
+    hirelingHead = uiGraphics_.single("data/global/ui/panel/inv_helm_glove.dc6");
+    hirelingArmor = uiGraphics_.single("data/global/ui/panel/inv_armor.dc6");
+    hirelingWeapon = uiGraphics_.single("data/global/ui/panel/inv_weapons.dc6");
+    if (hirelingPanel.frames.size() < 4 || hirelingScroll.frames.size() < 6 ||
+        hirelingHead.frames.empty() || hirelingArmor.frames.empty() || hirelingWeapon.frames.empty())
+        throw std::runtime_error("Original expansion hireling panel resources are missing");
+    panel = uiGraphics_.single("data/global/ui/panel/800ctrlpnl7.dc6");
+    miniPanel = uiGraphics_.single("data/global/ui/panel/" + std::string(multiplayer ? "minipanel" : "minipanel_s") + ".dc6");
+    miniPanelButtons = uiGraphics_.single("data/global/ui/panel/minipanelbtn.dc6");
+    miniPanelToggle = uiGraphics_.single("data/global/ui/panel/menubutton.dc6");
+    if (miniPanel.frames.empty() || miniPanelButtons.frames.size() < 16 || miniPanelToggle.frames.size() < 4)
+        throw std::runtime_error("Original single-player mini panel artwork is missing");
+    cursor = unitsGraphics_.single("data/global/ui/cursor/ohand.dc6");
+    if (cursor.frames.empty())
+        throw std::runtime_error("Original pointer is missing: data/global/ui/cursor/ohand.dc6");
+    targetingCursors = unitsGraphics_.single("data/global/ui/cursor/spells.dc6");
+    for (const auto &[code, item] : content.items.entries())
+        if (item.targetCursor >= 0 && item.targetCursor >= targetingCursors.count)
+            throw std::runtime_error("Original targeting cursor is missing for " + code);
+    constexpr std::array menuLabels{"options", "exit", "returntogame"};
+    for (size_t index = 0; index < menuLabels.size(); ++index) {
+        gameMenuLabels[index] = unitsGraphics_.single(
+            std::string("data/local/ui/eng/") + menuLabels[index] + ".dc6");
+        if (gameMenuLabels[index].frames.empty())
+            throw std::runtime_error("Original Escape menu label is missing: " + std::string(menuLabels[index]));
+    }
+    gameMenuMarker = unitsGraphics_.single("data/global/ui/cursor/pentspin.dc6");
+    constexpr std::array optionsLabels{"soundoptions", "videooptions", "automapoptions", "cfgoptions", "previous"};
+    constexpr std::array automapLabels{"automapmode", "automapfade", "automapcenter", "automapparty", "automappartynames"};
+    constexpr std::array optionValues{"full", "mini", "smalloff", "smallon", "smallno", "smallyes", "auto",
+        "no", "everything", "center"};
+    auto menuArt = [&](const char *name) {
+        auto art = unitsGraphics_.single(std::string("data/local/ui/eng/") + name + ".dc6");
+        if (art.frames.empty()) throw std::runtime_error("Original options label missing: " + std::string(name));
+        return art;
+    };
+    for (size_t index = 0; index < optionsLabels.size(); ++index) optionsMenuLabels[index] = menuArt(optionsLabels[index]);
+    for (size_t index = 0; index < automapLabels.size(); ++index) automapOptionLabels[index] = menuArt(automapLabels[index]);
+    for (size_t index = 0; index < optionValues.size(); ++index) automapOptionValues[index] = menuArt(optionValues[index]);
+    automapOptionsTitle = menuArt("automapoptions");
+    if (gameMenuMarker.frames.empty())
+        throw std::runtime_error("Original Escape menu marker is missing");
+    inventoryPanel = uiGraphics_.single("data/global/ui/panel/invchar6.dc6");
+    {
+        weaponTabs = uiGraphics_.single("data/global/ui/panel/invchar6tab.dc6");
+        if (weaponTabs.frames.size() != 2)
+            throw std::runtime_error("Original alternate weapon panel artwork is missing");
+    }
+    questBackground = uiGraphics_.single("data/global/ui/menu/questbackground.dc6");
+    orificePanel = uiGraphics_.single("data/global/ui/menu/horadricback.dc6");
+    orificeButtons = uiGraphics_.single("data/global/ui/menu/okcancelbtn.dc6");
+    if (orificePanel.frames.empty() || orificeButtons.frames.size() < 2)
+        throw std::runtime_error("Original staff insertion panel is missing");
+    const DataTable objects(archives.read("data/global/excel/objects.txt"));
+    for (size_t symbol = 0; symbol < tombSymbols.size(); ++symbol)
+        for (size_t row = 0; row < objects.rows().size(); ++row)
+            if (objects.number(row, "Id") == actTwoTombSymbols[symbol]) {
+                const auto token = normalize(std::string(objects.value(row, "Token")));
+                tombSymbols[symbol] = unitsGraphics_.single("data/global/objects/" + token + "/tr/" + token + "trlitnuhth.dcc", true);
+            }
+    if (std::any_of(tombSymbols.begin(), tombSymbols.end(), [](const auto &symbol) { return symbol.frames.empty(); }))
+        throw std::runtime_error("Original tomb symbol artwork is missing");
+    questSockets = uiGraphics_.single("data/global/ui/menu/questsockets.dc6");
+    questTabs = uiGraphics_.single("data/global/ui/menu/expquesttabs.dc6");
+    for (const auto &definition : questDefinitions) {
+        const auto quest = size_t(definition.icon);
+        const auto &path = content.questContent.at(questIndex(definition.id)).iconPath;
+        questIcons[quest] = uiGraphics_.single(path);
+        const auto *animation = uiGraphics_.animation(path);
+        if (!animation || animation->frames.size() < 27) continue;
+        const auto &active = animation->frames[25];
+        const auto &inactive = animation->frames[26];
+        if (active.width != inactive.width || active.height != inactive.height)
+            throw std::runtime_error("Quest status frames have different dimensions");
+        int left = active.width, top = active.height, right = -1, bottom = -1;
+        for (int row = 0; row < active.height; ++row)
+            for (int column = 0; column < active.width; ++column) {
+                const auto pixel = size_t(row) * active.width + column;
+                if (active.pixels[pixel] == inactive.pixels[pixel]) continue;
+                left = std::min(left, column);
+                top = std::min(top, row);
+                right = std::max(right, column);
+                bottom = std::max(bottom, row);
+            }
+        if (right >= left && bottom >= top)
+            questFaces[quest] = {float(left), float(top), float(right - left + 1),
+                                      float(bottom - top + 1)};
+    }
+    questClose = unitsGraphics_.single("data/global/ui/panel/buysellbtn.dc6");
+    questReplay = unitsGraphics_.single("data/global/ui/menu/questlast.dc6");
+    goldCoin = unitsGraphics_.single("data/global/ui/panel/goldcoinbtn.dc6");
+    if (questBackground.frames.size() < 4 || questSockets.frames.size() < 2 ||
+        questTabs.frames.size() < 8 || questClose.frames.size() < 12 ||
+        questReplay.frames.empty() || goldCoin.frames.size() < 2 ||
+        std::any_of(questIcons.begin(), questIcons.end(),
+                    [](const GpuAnimation &icon) { return icon.frames.size() < 27; }))
+        throw std::runtime_error("Original Act I quest panel artwork is missing");
+    attributeButtons = graphics_.single("data/global/ui/panel/level.dc6");
+    attributePoints = graphics_.single("data/global/ui/panel/skillpoints.dc6");
+    if (attributeButtons.frames.size() < 3 || attributePoints.frames.empty())
+        throw std::runtime_error("Original character attribute UI artwork is missing");
+    vendorPanel = graphics_.single("data/global/ui/panel/buysell.dc6");
+    vendorTabs = graphics_.single("data/global/ui/panel/buyselltabs.dc6");
+    vendorButtons = graphics_.single("data/global/ui/panel/buysellbtn.dc6");
+    vendorConfirm = graphics_.single("data/global/ui/menu/dialogbackground.dc6");
+    if (!content.vendors.empty() &&
+        (vendorPanel.frames.size() < 4 || vendorTabs.frames.size() < 8 ||
+         vendorButtons.frames.size() < 16 ||
+         vendorConfirm.frames.empty()))
+        throw std::runtime_error("Original vendor UI artwork is missing");
+    waypointBorder = uiGraphics_.single("data/global/ui/panel/800borderframe.dc6");
+    waypointPanel = uiGraphics_.single("data/global/ui/menu/waygatebackground.dc6");
+    waypointTabs = uiGraphics_.single("data/global/ui/menu/expwaygatetabs.dc6");
+    waypointIcons = uiGraphics_.single("data/global/ui/menu/waygateicons.dc6");
+    if (waypointBorder.frames.size() < 10 || waypointPanel.frames.size() < 4 ||
+        waypointTabs.frames.size() < 10 || waypointIcons.frames.size() < 4)
+        throw std::runtime_error("Original waypoint menu artwork is missing");
+    const auto title = content.itemStrings.find("waypointsheader");
+    if (title == content.itemStrings.end() || title->second.empty())
+        throw std::runtime_error("Original waypoint menu title is missing");
+    waypointTitle = title->second;
+    loadWaypointFonts(uiGraphics_, archives, font, waypointFonts);
+    storagePanel = uiGraphics_.single("data/global/ui/panel/tradestash.dc6");
+    if (storagePanel.frames.size() < 4)
+        throw std::runtime_error("Original stash panel artwork is missing from the mounted MPQ");
+    if (!content.cubeCode.empty()) {
+        cubePanel = graphics_.single("data/global/ui/panel/supertransmogrifier.dc6");
+        if (cubePanel.frames.size() < 4)
+            throw std::runtime_error("Original cube panel artwork is missing from the mounted MPQ");
+    }
+    beltPanel = graphics_.single("data/global/ui/panel/ctrlpnl_popbelt.dc6");
+    beltSocket = graphics_.single("data/global/ui/panel/inv_belt.dc6");
+    orbs = uiGraphics_.single("data/global/ui/panel/hlthmana.dc6");
+    globeOverlap = uiGraphics_.single("data/global/ui/panel/overlap.dc6");
+    runButton = uiGraphics_.single("data/global/ui/panel/runbutton.dc6");
+    if (panel.frames.size() < 6 || orbs.frames.size() < 2 || globeOverlap.frames.size() < 2)
+        throw std::runtime_error("Classic HUD resources are missing from the mounted MPQ.");
+    button = graphics_.single("data/global/ui/panel/mediumbuttonblank.dc6");
+    loadSkillIcons(archives, content);
+    for (const auto &tree : content.skills.classes) {
+        auto art = graphics_.single("data/global/ui/spells/skltree_" + tree.backgroundToken + "_back.dc6");
+        if (art.frames.size() < 16)
+            throw std::runtime_error("Original MPQ skill tree background is missing: " + tree.classCode);
+        skillTrees.emplace(tree.classCode, std::move(art));
+    }
+ }
+void SceneAssets::loadInventoryArt(const InventoryView &inventory, int palette) {
+    for (const auto &[id, item] : inventory.items) {
+        if (!itemIcons.contains(item.artKey)) {
+            auto image=graphics_.single(item.artKey,true);
+            if (!image.frames.empty()) itemIcons.emplace(item.artKey,std::move(image));
+        }
+        if (!std::holds_alternative<GroundLocation>(item.location) || item.groundArt.empty()) continue;
+        const auto key=item.artKey+":"+item.groundArt;
+        if (itemGround.contains(key)) continue;
+        auto image=graphicsForAct(palette).single(item.groundArt,true);
+        if (image.frames.empty()) continue;
+        for(auto &frame:image.frames) frame.y-=frame.texture.height;
+        itemGround.emplace(key,std::move(image));
+    }
+}
+
 std::string SceneAssets::itemArtKey(const ItemInstance &item) {
     return d2x::itemArtKey(item);
 }

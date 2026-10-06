@@ -7,6 +7,7 @@
 #include "gameplay/skills/cast_spec.hpp"
 #include "gameplay/skills/world_port.hpp"
 #include "gameplay/skills/runtime.hpp"
+#include "gameplay/skills/projectile_path.hpp"
 #include "core/random.hpp"
 #include <algorithm>
 #include <cmath>
@@ -15,14 +16,6 @@
 
 namespace d2x {
 namespace {
-// Native SrvDo15/SrvHit29 direction lattice, in world coordinates.
-Vec orbDirection(int direction) {
-    constexpr int offsets[]{30, 29, 29, 28, 27, 26, 24, 23, 21, 19, 16, 14, 11, 8, 5, 2,
-        0, -2, -5, -8, -11, -14, -16, -19, -21, -23, -24, -26, -27, -28, -29, -29,
-        -30, -29, -29, -28, -27, -26, -24, -23, -21, -19, -16, -14, -11, -8, -5, -2,
-        0, 2, 5, 8, 11, 14, 16, 19, 21, 23, 24, 26, 27, 28, 29, 29};
-    return {float(offsets[direction]), float(offsets[(direction + 48) % 64])};
-}
 Vec missileOrigin(Vec position) {
     // MISSILES_CreateMissileFromParams uses the origin unit's integer subcell.
     return {std::floor(position.x) + .5f, std::floor(position.y) + .5f};
@@ -78,7 +71,7 @@ void SkillRuntime::advanceFrozenOrb(Missile &missile, std::vector<Missile> &spaw
     if (state.elapsedFrames >= lifetime || !combatUnit(missile.owner)) { missile.remaining = 0; return; }
     // SrvDo15 emits at the pre-move position, including elapsed frame zero.
     if (orb && state.elapsedFrames % program.emissionPeriod == 0) {
-        spawnFrozenOrbBolt(missile, orbDirection(state.emissionDirection), false, spawned);
+        spawnFrozenOrbBolt(missile, missileRingDirection(state.emissionDirection), false, spawned);
         state.emissionDirection = (state.emissionDirection + program.directionStep) % 64;
     }
     if (nova && state.elapsedFrames < program.novaTurnFrames &&
@@ -102,7 +95,7 @@ void SkillRuntime::advanceFrozenOrb(Missile &missile, std::vector<Missile> &spaw
         if (blocked) { missile.remaining = 0; return; }
         if (state.elapsedFrames == lifetime) {
             for (int direction = 0; direction < 64; direction += program.burstStep)
-                spawnFrozenOrbBolt(missile, orbDirection(direction), true, spawned);
+                spawnFrozenOrbBolt(missile, missileRingDirection(direction), true, spawned);
             emit(MissileImpact{missile.missileId, missile.pos});
         }
         return;

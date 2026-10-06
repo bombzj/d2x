@@ -1,10 +1,16 @@
 # 库存、装备与技能来源基线
 
-更新：2026-10-04。对应 [技术改造方案](../architecture/REFACTOR_PLAN.md) P1 库存 UI 切片及 P3 装备／来源基础切片；`InventoryService` 继续负责权威事务，完整 P3 尚未完成。第四项已随第五项通过 Windows Release 及代表性佣兵装备路径，完整规则回归尚未覆盖。
+更新：2026-10-06。对应 [技术改造方案](../architecture/REFACTOR_PLAN.md) P1 库存 UI 切片及 P3 装备／来源基础切片；离线`InventoryService`继续负责权威事务，联机权威为D2GS，完整P3尚未完成。第四项已随第五项通过Windows Release及代表性佣兵装备路径，完整规则回归尚未覆盖；联网物品与城镇服务已Release、打包及有限原服冒烟。
 
 当前物品复核新增源码修正：`ItemDefinition.questTag/questCarryConflicts` 由内容层从原 quest 身份及 D2MOO 原生互斥形式准备；`checkCarryLimit` 共用于创建／拾取／移动／转移／交换／恢复，carry1 包括私人箱，任务检查还含 Cursor 及该角色尸体。carry1 元数据直接覆盖完整 enabled 暗金原行，不依赖 lvl≤99 的生成目录；带独立孔数的堆叠禁止合并。玩家药剂按显式职业代码应用纯玩法倍率，佣兵继续非玩家倍率。运行指纹增加 `inventory-carry-rules-v2-native-quest-pairs`、`potion-class-rules-v1-native-restoration`、`socket-rules-v1-native-children-runewords`；D2S 字段仍为 v96，非法重复／互斥任务物品明确拒绝，无静默删物品或迁移。镶嵌已完成 Windows Release 与有限实机冒烟，未打包；SocketItem、有序 socketedItems、需求、符文之语独立属性及原生 D2S 共用物品边界，孔相关配方只绑定当前原表，细项见 [物品支持](../gameplay/items/SUPPORT.md)、[数据](../gameplay/items/DATA.md)、[药剂](../gameplay/items/BELT_AND_CONSUMABLES.md)。
 
 第八项将 `ItemGeneration`／`ItemAffixInstance` 移到 `items/generation.hpp`；`items/state.hpp` 继续复用同一值定义，掉落计划不再包含完整库存状态。库存仍唯一拥有实际物品与位置，未改物品生成／保存字段；该批已随收尾构建／有限冒烟，见[奖励基线](REWARDS.md)。
+
+## 联网物品消费
+
+2026-10-06源码接入[RemoteInventory](../../src/client/remote_inventory.hpp)与[原服值契约](../../src/contracts/online_items.hpp)。0x9C／0x9D及数量／耐久增量驱动物品副本，MPQ提供布局／位流元数据，command提交原拾取、背包／腰带／装备、使用／堆叠／装书／鉴定／镶嵌和武器组请求。联机权威为D2GS，未调用本节离线InventoryService，不写本地D2S或重算角色装备效果。
+
+另接服务器确认的箱子／方块格、存取／丢金币、合成、普通货架买卖、维修及凯恩鉴定，共27种command。此前通过Windows Release与城镇有限原服冒烟及新进程持久保存回归；现已入包，本轮追加原服掉落拾取／药水使用和拾取物品保存重入，其他组合未重复认证；损坏装备维修、凯恩资格与全部消费组合未实测。库存／货架复用单机面板、原图和物品提示格式；原服精确价格、孔内完整显示、赌博／多买及玩家交易／佣兵装备仍待接。原协议与结果见[联网模块](NETWORK.md#原服物品与请求)，参数见[command](../development/DEBUG_PIPE.md#联网物品操作)。
 
 ## 任务物品替换（第七项）
 
@@ -64,7 +70,7 @@
 
 ## 当前限制
 
-预览和读取是同步本地接口；远端的缓存、异步操作回执、请求编号及断线处理尚未实现。本地适配按权威更新版本缓存，场景仅在版本变化时复制投影；相同渲染帧重复读取不重新生成库存，仍未测量大库存性能。版本／寿命约束见 [角色基线](CHARACTER.md)。第五项已让商店报价／出售走 `INpcClient`，佣兵面板与手势读库存／佣兵投影，装备继续提交 `InventoryIntent`。地面拾取和任务物品世界命中仍保留兼容调用；不能把本切片称为完整库存领域／客户端服务端分离。
+本节离线预览／读取为同步本地接口；远端另由RemoteInventory和RealmSession维护版本、请求编号／回执、代次及断线清理，尚未绑定库存UI。本地适配按权威版本缓存，相同渲染帧不重新生成库存，仍未测量大库存性能。版本／寿命见[角色基线](CHARACTER.md)。第五项商店报价／出售走INpcClient，佣兵面板与手势读库存／佣兵投影，装备提交InventoryIntent。地面拾取和任务物品世界命中仍有兼容调用，不能称为完整库存领域分离。
 
 NPC 购买／出售／修理等已有命令转发 `INpcClient` 后继续沿用原库存事务；复杂货架和报价查询仍未迁移，入口及一次购买的实际覆盖见 [NPC／任务基线](NPC_QUEST.md)。下方库存批次原有验证范围保持。
 

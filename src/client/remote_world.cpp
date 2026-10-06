@@ -22,6 +22,51 @@ OnlineUnit &unit(OnlineWorldView &w, OnlineUnitKey k) {
     u.key = k;
     return u;
 }
+void combatEvent(OnlineWorldView &w, OnlineCombatEvent event) {
+    if (event.kind == OnlineCombatEvent::Kind::Skill &&
+        (event.packet == 0x4C || event.packet == 0x4D || event.packet == 0x99 || event.packet == 0x9A)) {
+        auto &actor = unit(w, event.source);
+        actor.actionSkill = event.skill; actor.actionSkillLevel = event.level;
+        actor.actionRevision = w.revision;
+        actor.destination = event.point; actor.destinationUnit = event.target;
+        actor.direction.reset(); actor.nativeMode = false;
+        // Skill packets replace the player's action byte. Monsters resolve monanim in MPQ.
+        if (actor.key.type == 0) actor.mode = 21;
+        else actor.mode.reset();
+    }
+    event.sequence = ++w.combatSequence;
+    w.combatEvents.push_back(std::move(event));
+    if (w.combatEvents.size() > 256) w.combatEvents.pop_front();
+}
+void monsterAction(OnlineWorldView &w, OnlineUnit &u, uint8_t action) {
+    u.actionSkill.reset(); u.actionSkillLevel.reset(); u.direction.reset();
+    u.wireAction = action; u.actionRevision = w.revision;
+    // MonsterMsg's native wire actions are not MONMODE indices.
+    switch (action) {
+    case 0: case 1: u.mode = 2; break;
+    case 23: case 24: u.mode = 15; break;
+    case 7: u.mode = 1; break;
+    case 8: u.mode = 0; u.lifePercent = 0; u.lifeCarriesRankFlag = false; break;
+    case 9: u.mode = 12; u.lifePercent = 0; u.lifeCarriesRankFlag = false; break;
+    case 6: u.mode = 3; break;
+    case 10: case 11: u.mode = 4; break;
+    case 16: case 17: u.mode = 5; break;
+    case 18: u.mode = 6; break;
+    case 4: case 5: u.mode = 7; break;
+    case 14: case 15: u.mode = 9; break;
+    case 26: case 27: u.mode = 10; break;
+    case 28: case 29: u.mode = 11; break;
+    case 20: u.mode = 13; break;
+    // 12/13 can be SKILL1 or SEQUENCE. Preserve the wire action without guessing.
+    default: u.mode.reset(); break;
+    }
+}
+void stateMessage(OnlineUnit &u, OnlineStateMessage message) {
+    message.sequence = ++u.stateSequence;
+    if (message.kind == OnlineStateMessage::Kind::Snapshot) u.stateMessages.clear();
+    u.stateMessages.push_back(std::move(message));
+    if (u.stateMessages.size() > 64) u.stateMessages.pop_front();
+}
 void mapEvent(OnlineWorldView &w, OnlineMapEvent::Kind kind, OnlinePoint p = {}, uint8_t level = 0) {
     w.mapEvents.push_back({++w.mapEventSequence, kind, level, p});
     if (w.mapEvents.size() > 4096) w.mapEvents.pop_front();
@@ -30,8 +75,45 @@ void playerPosition(OnlineWorldView &w, OnlinePoint p) {
     w.playerPosition = p;
     mapEvent(w, OnlineMapEvent::Kind::PlayerPosition, p);
 }
+void playerMode(OnlineView &v, const OnlineUnit &u) {
+    if (u.key.type != 0 || v.load.playerUnitId != u.key.id || !u.mode) return;
+    auto &w = v.world;
+    const bool dying = u.nativeMode ? u.mode == 0 : u.mode == 8;
+    const bool dead = u.nativeMode ? u.mode == 17 : u.mode == 9;
+    if (dying || dead) {
+        if (!onlinePlayerDead(w)) w.respawnRequest.reset();
+        const auto phase = dead || w.deathPhase == OnlineDeathPhase::Dead ? OnlineDeathPhase::Dead : OnlineDeathPhase::Dying;
+        if (w.deathPhase != phase) { w.deathPhase = phase; w.deathRevision = w.revision; }
+        w.movementRequest.reset(); w.npcRequested.reset(); w.npcConversation.reset(); w.waypointSource.reset();
+    } else if (w.deathPhase == OnlineDeathPhase::Unknown) {
+        w.deathPhase = OnlineDeathPhase::Alive; w.deathRevision = w.revision;
+    } else if (onlinePlayerDead(w) && w.respawnRequest && w.respawnRequest->sent && u.position &&
+               (u.nativeMode ? (u.mode == 1 || u.mode == 5) : u.mode == 7)) {
+        w.deathPhase = OnlineDeathPhase::Alive; w.deathRevision = w.revision;
+        w.respawnRequest->state = OnlineRespawnRequest::State::Confirmed;
+        // Discard pre-resurrection resource samples, use original stat updates until
+        // the next 0x95. Never supply locally guessed max resources.
+        w.life.reset(); w.mana.reset(); w.stamina.reset();
+    }
+}
+void resurrectionUpdates(OnlineView &v) {
+    auto &w = v.world;
+    if (!onlinePlayerDead(w) || !w.respawnRequest || !w.respawnRequest->sent ||
+        w.respawnRequest->restoredResources != 7 || !w.respawnRequest->repositioned ||
+        !v.load.playerUnitId) return;
+    const auto found = w.units.find({0, *v.load.playerUnitId});
+    if (found == w.units.end() || !found->second.position) return;
+    // Rcv0x41 restores all three absolute stats and LEVEL_WarpUnit sends
+    // 0x15. The owning client need not receive a neutral mode packet.
+    auto &u = found->second;
+    u.mode = 7; u.nativeMode = false; u.actionSkill.reset(); u.actionSkillLevel.reset();
+    u.lifePercent.reset(); u.actionRevision = w.revision;
+    playerMode(v, u);
+}
 void removePlayer(OnlineWorldView &w) {
     w.waypointSource.reset();
+    w.npcRequested.reset(); w.npcConversation.reset(); w.movementRequest.reset();
+    w.townPortalPending = false;
     w.playerPosition.reset();
     mapEvent(w, OnlineMapEvent::Kind::RemovePlayer);
 }
@@ -117,6 +199,62 @@ void equipment(OnlineView &v, const Packet &p) {
         throw ProtocolError("Remote equipment limit exceeded");
     v.world.equipment[id] = std::move(item);
 }
+void removeItem(OnlineWorldView &world, uint32_t id);
+void itemPacket(OnlineView &v, const Packet &p) {
+    Reader r(p.body);
+    OnlineItem item;
+    item.action = r.u8();
+    if (r.u8() != p.body.size() + 1) throw ProtocolError("Invalid native item packet size");
+    item.component = r.u8(); item.id = r.u32();
+    if (item.action == 12) { // Explicit removal from a vendor's shelf.
+        v.world.items.erase(item.id); ++v.world.itemRevision; return;
+    }
+    if (p.id == 0x9D) { item.ownerType = r.u8(); item.owner = r.u32(); }
+    const auto packed = r.take(r.remaining()); item.packed.assign(packed.begin(), packed.end());
+    BitReader bits(packed);
+    item.flags = bits.read(32); bits.read(10); item.mode = uint8_t(bits.read(3));
+    // Taking an item can combine removal with its new cursor mode in the same packet.
+    if ((item.action == 5 || item.action == 15) && item.mode != 4) {
+        removeItem(v.world, item.id);
+        return;
+    }
+    if (item.mode == 3 || item.mode == 5) {
+        item.groundX = uint16_t(bits.read(16)); item.groundY = uint16_t(bits.read(16));
+    } else {
+        item.body = uint8_t(bits.read(4)); item.x = uint8_t(bits.read(4));
+        item.y = uint8_t(bits.read(4)); item.page = uint8_t(bits.read(3));
+    }
+    if (item.flags & 0x10000) item.code = "ear"; // Original ear payload is decoded in the MPQ consumer.
+    else {
+        for (int i = 0; i < 4; ++i) item.code += char(bits.read(8));
+        while (!item.code.empty() && (item.code.back() == ' ' || !item.code.back())) item.code.pop_back();
+    }
+    if (p.id == 0x9C && item.mode != 3 && item.mode != 5 && item.action != 0 && item.action != 2 && item.action != 3 &&
+        item.action != 11 && item.action != 12) {
+        item.ownerType = 0; item.owner = v.load.playerUnitId;
+    }
+    // 0x9C inventory packets may precede 0x0B; their player is this connection.
+    if (!item.owner && item.ownerType == 0 && v.load.playerUnitId) item.owner = v.load.playerUnitId;
+    if (p.id == 0x9C && item.action == 11 && v.world.shopRequested &&
+        v.world.npcRequested == v.world.shopRequested) {
+        item.ownerType = 1; item.owner = v.world.shopRequested;
+        v.world.shopSource = v.world.shopRequested;
+    }
+    item.revision = ++v.world.itemRevision;
+    if (!v.world.items.contains(item.id) && v.world.items.size() >= 8192)
+        throw ProtocolError("Remote item limit exceeded");
+    v.world.items[item.id] = std::move(item);
+}
+void removeItem(OnlineWorldView &world, uint32_t id) {
+    if (const auto found = world.equipment.find(id); found != world.equipment.end())
+        if (const auto owner = world.units.find({0, found->second.owner}); owner != world.units.end())
+            ++owner->second.appearanceRevision;
+    world.items.erase(id); world.equipment.erase(id);
+    std::erase_if(world.items, [&](const auto &entry) {
+        return entry.second.ownerType == 4 && entry.second.owner == id;
+    });
+    ++world.itemRevision;
+}
 } // namespace
 void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
     auto &w = v.world;
@@ -155,7 +293,12 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
         const auto k = key(r);
         r.finish();
         w.units.erase(k);
+        if (k.type == 4) removeItem(w, k.id);
         if (k.type == 2 && w.waypointSource == k.id) w.waypointSource.reset();
+        if (k.type == 1) {
+            if (w.npcRequested == k.id) w.npcRequested.reset();
+            if (w.npcConversation && w.npcConversation->source == k.id) w.npcConversation.reset();
+        }
         if (k.type == 0) {
             std::erase_if(w.equipment, [&](const auto &e) { return e.second.owner == k.id; });
             if (v.load.playerUnitId == k.id)
@@ -168,21 +311,51 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
         r.finish();
         if (k.type == 0) {
             auto &u = unit(w, k);
+            if (v.load.playerUnitId == k.id) {
+                for (auto &[id, item] : w.items)
+                    if (item.ownerType == 0 && !item.owner) { item.owner = k.id; item.revision = ++w.itemRevision; }
+                w.playerSkills = u.skills;
+                w.playerBaseSkills = u.baseSkills; w.playerBonusSkills = u.bonusSkills;
+                w.itemSkillQuantities = u.itemSkillQuantities;
+                w.leftSkill = u.leftSkill;
+                w.rightSkill = u.rightSkill;
+            }
             if (v.load.playerUnitId == k.id && u.position)
                 playerPosition(w, *u.position);
             else if (w.playerPosition)
                 position(v, u, *w.playerPosition);
+            playerMode(v, u);
         }
+        break;
+    }
+    case 0x0C: {
+        auto &u = unit(w, key(r));
+        const auto flags = r.u8(); u.hitClass = r.u8(); u.lifePercent = r.u8(); u.lifeCarriesRankFlag = u.key.type == 1; r.finish();
+        u.hitRevision = w.revision;
+        OnlineCombatEvent event; event.packet = p.id; event.kind = OnlineCombatEvent::Kind::Hit;
+        event.source = u.key; event.hitClass = u.hitClass; event.life = u.lifePercent; event.flags = flags;
+        combatEvent(w, std::move(event));
+        break;
+    }
+    case 0x11: {
+        const auto source = key(r); const auto overlay = r.u16(); r.finish();
+        OnlineCombatEvent event; event.packet = p.id; event.kind = OnlineCombatEvent::Kind::Overlay;
+        event.source = source; event.overlay = overlay;
+        combatEvent(w, std::move(event)); // This packet is an overlay, not a kill acknowledgement.
         break;
     }
     case 0x0D: {
         auto &u = unit(w, key(r));
         u.mode = r.u8();
+        u.nativeMode = false; u.actionSkill.reset(); u.actionSkillLevel.reset();
         position(v, u, point(r));
         r.u8();
-        u.lifePercent = r.u8();
+        u.lifePercent = r.u8(); u.lifeCarriesRankFlag = false;
+        u.actionRevision = w.revision;
         r.finish();
         u.destination.reset();
+        u.destinationUnit.reset();
+        playerMode(v, u);
         break;
     }
     case 0x0E: {
@@ -192,24 +365,32 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
         const auto mode = r.u32();
         if (mode <= 255)
             u.mode = uint8_t(mode);
+        u.nativeMode = true; u.actionSkill.reset(); u.actionSkillLevel.reset();
+        u.destination.reset(); u.destinationUnit.reset();
+        u.actionRevision = w.revision;
         r.finish();
+        playerMode(v, u);
         break;
     }
     case 0x0F: {
         auto &u = unit(w, key(r));
         u.mode = r.u8();
+        u.nativeMode = false; u.actionSkill.reset(); u.actionSkillLevel.reset();
         u.destination = point(r);
+        u.destinationUnit.reset();
         r.u8();
         position(v, u, point(r));
+        u.actionRevision = w.revision;
         r.finish();
         break;
     }
     case 0x10: {
         auto &u = unit(w, key(r));
         u.mode = r.u8();
-        r.u8();
-        r.u32();
+        u.nativeMode = false; u.actionSkill.reset(); u.actionSkillLevel.reset();
+        u.destinationUnit = key(r);
         position(v, u, point(r));
+        u.actionRevision = w.revision;
         r.finish();
         u.destination.reset();
         break;
@@ -218,8 +399,16 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
         auto &u = unit(w, key(r));
         position(v, u, point(r));
         r.u8();
+        ++u.positionDiscontinuity; // Native correction/teleport must not tween across geometry.
+        u.actionRevision = w.revision;
         r.finish();
         u.destination.reset();
+        u.destinationUnit.reset();
+        if (u.key.type == 0 && v.load.playerUnitId == u.key.id &&
+            w.respawnRequest && w.respawnRequest->sent) {
+            w.respawnRequest->repositioned = true;
+            resurrectionUpdates(v);
+        }
         break;
     }
     case 0x16: {
@@ -233,12 +422,188 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
         }
         break;
     }
+    case 0x19: {
+        const auto increment = r.u8(); r.finish();
+        if (auto gold = w.playerAttributes.find(14); gold != w.playerAttributes.end()) {
+            if (increment > UINT32_MAX - gold->second) throw ProtocolError("Gold increment overflow");
+            gold->second += increment;
+        }
+        break;
+    }
+    case 0x1A:
+    case 0x1B:
+    case 0x1C: {
+        const auto value = p.id == 0x1A ? uint32_t(r.u8()) : p.id == 0x1B ? uint32_t(r.u16()) : r.u32();
+        r.finish();
+        if (p.id == 0x1C) w.playerAttributes[13] = value;
+        else if (auto experience = w.playerAttributes.find(13); experience != w.playerAttributes.end()) {
+            if (value > UINT32_MAX - experience->second) throw ProtocolError("Experience increment overflow");
+            experience->second += value;
+        }
+        break;
+    }
     case 0x1D:
     case 0x1E:
     case 0x1F: {
         const auto attribute = r.u8();
         w.playerAttributes[attribute] = p.id == 0x1D ? r.u8() : p.id == 0x1E ? r.u16() : r.u32();
         r.finish();
+        if (w.respawnRequest && w.respawnRequest->sent) {
+            if (attribute == 6 && w.playerAttributes[attribute] > 0) w.respawnRequest->restoredResources |= 1;
+            else if (attribute == 8) w.respawnRequest->restoredResources |= 2;
+            else if (attribute == 10) w.respawnRequest->restoredResources |= 4;
+            resurrectionUpdates(v);
+        }
+        break;
+    }
+    case 0x21: {
+        const auto type = r.u8(); r.u8(); const auto owner = r.u32();
+        const auto skill = r.u16(); const auto base = r.u8(), bonus = r.u8(); r.u8(); r.finish();
+        auto &entry = unit(w, {type, owner});
+        entry.baseSkills[skill] = base; entry.bonusSkills[skill] = bonus;
+        entry.skills[skill] = uint16_t(base) + bonus;
+        if (type == 0 && v.load.playerUnitId == owner) {
+            w.playerBaseSkills[skill] = base; w.playerBonusSkills[skill] = bonus;
+            w.playerSkills[skill] = entry.skills[skill];
+        }
+        break;
+    }
+    case 0x22: {
+        const auto type = r.u8(); r.u8();
+        const auto owner = r.u32();
+        const auto skill = r.u16(), level = uint16_t(r.u8());
+        r.u8(); r.u8(); r.finish();
+        if (type == 0) {
+            auto &entry = unit(w, {0, owner});
+            entry.itemSkillQuantities[skill] = uint8_t(level);
+            if (v.load.playerUnitId == owner)
+                w.itemSkillQuantities[skill] = uint8_t(level);
+        }
+        break;
+    }
+    case 0x23: {
+        const auto target = key(r);
+        const auto left = r.u8();
+        const auto skill = r.u16(); const auto owner = r.u32(); r.finish();
+        if (target.type == 0) {
+            auto &entry = unit(w, target);
+            (left ? entry.leftSkill : entry.rightSkill) = OnlineSkillSelection{skill, owner};
+            if (v.load.playerUnitId == target.id)
+                (left ? w.leftSkill : w.rightSkill) = OnlineSkillSelection{skill, owner};
+        }
+        break;
+    }
+    case 0x27: {
+        const auto target = key(r);
+        const auto count = r.u8(); r.u8();
+        if (count > 8) throw ProtocolError("Invalid native NPC message count");
+        std::vector<OnlineNpcMessage> messages;
+        for (int i = 0; i < 8; ++i) {
+            const auto menu = r.u8(); r.u8(); const auto id = r.u16();
+            if (i < count) messages.push_back({id, menu});
+        }
+        r.finish();
+        // Object scrolls and unsolicited quest notifications do not open an NPC menu.
+        if (target.type == 1 && w.npcRequested == target.id) {
+            if (!w.npcConversation || w.npcConversation->source != target.id)
+                w.npcConversation = OnlineNpcConversation{target.id};
+            auto &conversation = *w.npcConversation;
+            conversation.messages = std::move(messages);
+            conversation.acknowledged.clear();
+            conversation.revision = w.revision;
+        }
+        break;
+    }
+    case 0x28: {
+        const auto target = key(r); r.u8();
+        const auto flags = r.take(96); r.finish();
+        if (target.type == 1 && w.npcConversation && w.npcConversation->source == target.id)
+            w.npcConversation->questFlags.assign(flags.begin(), flags.end());
+        break;
+    }
+    case 0x29: {
+        const auto flags = r.take(96); r.finish();
+        if (w.npcConversation) w.npcConversation->questFlags.assign(flags.begin(), flags.end());
+        break;
+    }
+    case 0x2A: {
+        OnlineTradeResult result;
+        result.flags = r.u8(); result.result = r.u8(); r.u32();
+        result.item = r.u32(); result.gold = r.u32(); r.finish();
+        result.revision = w.revision; w.tradeResult = result;
+        // Wallet replication uses 0x19 / 0x1D-E-F. Applying this receipt as well
+        // would count a following positive gold increment twice on a sale.
+        // Sale sends REMOVEFROMCONTAINER with the old stored mode. The explicit
+        // transaction reply transfers its identity out of the player's inventory.
+        if (result.result == 1)
+            if (const auto item = w.items.find(result.item); item != w.items.end() &&
+                item->second.ownerType == 0 && item->second.owner == v.load.playerUnitId)
+                removeItem(w, result.item);
+        break;
+    }
+    case 0x77: {
+        const auto action = r.u8(); r.finish();
+        if ((action == 16 && w.storage.requested == OnlineStorageKind::Stash) ||
+            (action == 21 && w.storage.requested == OnlineStorageKind::Cube)) {
+            w.storage.kind = w.storage.requested; w.storage.source = w.storage.requestedSource;
+            w.storage.requested = OnlineStorageKind::None; w.storage.requestedSource.reset();
+            w.storage.revision = w.revision;
+        } else if (action == 17 && w.storage.kind == OnlineStorageKind::Stash) {
+            w.storage.kind = OnlineStorageKind::None; w.storage.source.reset(); w.storage.revision = w.revision;
+        }
+        break;
+    }
+    case 0x4C:
+    case 0x99: {
+        OnlineCombatEvent event; event.packet = p.id; event.kind = OnlineCombatEvent::Kind::Skill;
+        event.source = key(r); event.skill = r.u16(); event.level = r.u8(); event.target = key(r);
+        event.auxiliary = r.u16(); r.finish(); combatEvent(w, std::move(event));
+        break;
+    }
+    case 0x4D:
+    case 0x9A: {
+        OnlineCombatEvent event; event.packet = p.id; event.kind = OnlineCombatEvent::Kind::Skill;
+        event.source = key(r); event.skill = uint16_t(r.u32()); event.level = r.u8(); event.point = point(r);
+        event.auxiliary = r.u16(); r.finish(); combatEvent(w, std::move(event));
+        break;
+    }
+    case 0xA3: {
+        OnlineCombatEvent event; event.packet = p.id; event.kind = OnlineCombatEvent::Kind::Skill;
+        event.flags = r.u8(); event.skill = r.u16(); event.level = r.u16();
+        event.source = key(r); event.target = key(r);
+        const auto x = r.u32(), y = r.u32(); r.finish();
+        if (x <= UINT16_MAX && y <= UINT16_MAX) event.point = OnlinePoint{uint16_t(x), uint16_t(y)};
+        combatEvent(w, std::move(event));
+        break;
+    }
+    case 0x73: {
+        OnlineCombatEvent event; event.packet = p.id; event.kind = OnlineCombatEvent::Kind::Missile;
+        event.flags = r.u32(); event.missile = r.u16();
+        const auto x = r.u32(), y = r.u32(), firstX = r.u32(), firstY = r.u32();
+        event.auxiliary = r.u16(); event.source = key(r); event.level = r.u8(); event.pierce = r.u8(); r.finish();
+        if (x <= UINT16_MAX && y <= UINT16_MAX) event.point = OnlinePoint{uint16_t(x), uint16_t(y)};
+        // The protocol carries a missile class and owner, not an authoritative missile GUID.
+        event.missileDestination = std::array{firstX, firstY};
+        combatEvent(w, std::move(event));
+        break;
+    }
+    case 0xA7:
+    case 0xA9: {
+        auto &entry = unit(w, key(r));
+        OnlineStateMessage message; message.kind = p.id == 0xA7 ? OnlineStateMessage::Kind::Enable
+            : OnlineStateMessage::Kind::Disable;
+        message.state = r.u8(); r.finish(); stateMessage(entry, std::move(message));
+        break;
+    }
+    case 0xA8:
+    case 0xAA: {
+        auto &entry = unit(w, key(r));
+        if (r.u8() != p.body.size() + 1) throw ProtocolError("Invalid native state message length");
+        OnlineStateMessage message; message.kind = p.id == 0xAA ? OnlineStateMessage::Kind::Snapshot
+            : OnlineStateMessage::Kind::Enable;
+        if (p.id == 0xA8) message.state = r.u8();
+        const auto packed = r.take(r.remaining()); message.packed.assign(packed.begin(), packed.end());
+        stateMessage(entry, std::move(message));
         break;
     }
     case 0x51: {
@@ -254,10 +619,25 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
         auto &u = unit(w, {0, r.u32()});
         u.classId = r.u8();
         u.name = name(r);
-        if (!u.mode)
+        if (!u.mode || (v.load.playerUnitId == u.key.id && w.respawnRequest && w.respawnRequest->sent &&
+                       onlinePlayerDead(w))) {
             u.mode = 7; // Native player assignment starts neutral.
+            u.nativeMode = false; u.actionSkill.reset(); u.actionSkillLevel.reset();
+            u.actionRevision = w.revision;
+        }
         position(v, u, point(r));
         r.finish();
+        playerMode(v, u);
+        break;
+    }
+    case 0x8E: {
+        const auto assign = r.u8(); const auto owner = r.u32(), corpse = r.u32(); r.finish();
+        if (assign > 1 || owner == corpse) throw ProtocolError("Invalid native corpse assignment");
+        if (assign) {
+            if (!w.corpseOwners.contains(corpse) && w.corpseOwners.size() >= 8192)
+                throw ProtocolError("Remote corpse limit exceeded");
+            w.corpseOwners[corpse] = owner;
+        } else w.corpseOwners.erase(corpse);
         break;
     }
     case 0x5C: {
@@ -304,28 +684,61 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
     case 0x67:
     case 0x68: {
         auto &u = unit(w, {1, r.u32()});
-        r.u8();
-        u.mode.reset();
-        // These coordinates are a path target, not a verified current position.
-        u.destination = point(r);
+        monsterAction(w, u, r.u8());
+        if (p.id == 0x67) {
+            // 0x67 contains a path endpoint; 0x68 contains current position and target GUID.
+            u.destination = point(r); u.destinationUnit.reset();
+        } else {
+            position(v, u, point(r)); u.destinationUnit = key(r); u.destination.reset();
+        }
+        u.pathSteps = r.u8(); u.hitClass = r.u8(); u.pathType = r.u8();
+        u.velocityPercent = int16_t(r.u16()); u.pathDistance = r.u8(); r.finish();
+        // Walking overloads send maximum path distance here, not HP. Knockback sends HP.
+        if (u.mode == 13) { u.lifePercent = u.pathDistance; u.lifeCarriesRankFlag = false; }
+        break;
+    }
+    case 0x69:
+    case 0x6A: {
+        auto &u = unit(w, {1, r.u32()}); monsterAction(w, u, r.u8());
+        OnlineCombatEvent event; event.packet = p.id; event.kind = OnlineCombatEvent::Kind::Action;
+        event.source = u.key; event.action = u.wireAction;
+        if (p.id == 0x69) {
+            u.destination = point(r); u.destinationUnit.reset(); event.point = u.destination;
+            event.direction = r.u8(); event.hitClass = r.u8();
+        } else {
+            u.destinationUnit = key(r); u.destination.reset(); event.target = u.destinationUnit;
+            event.direction = r.u8();
+        }
+        u.direction = event.direction;
+        r.finish(); combatEvent(w, std::move(event));
         break;
     }
     case 0x6B:
     case 0x6C: {
         auto &u = unit(w, {1, r.u32()});
-        r.u8();
-        r.take(6);
+        monsterAction(w, u, r.u8());
+        OnlineCombatEvent event; event.packet = p.id; event.kind = OnlineCombatEvent::Kind::Action;
+        event.source = u.key; event.action = u.wireAction;
+        if (p.id == 0x6B) {
+            u.destination = point(r); u.destinationUnit.reset(); event.direction = r.u8(); u.hitClass = r.u8();
+            event.point = u.destination; event.hitClass = u.hitClass;
+        } else {
+            u.destinationUnit = key(r); u.destination.reset(); event.direction = r.u8(); event.target = u.destinationUnit;
+        }
         position(v, u, point(r));
-        r.finish();
+        u.direction = event.direction;
+        r.finish(); combatEvent(w, std::move(event));
         break;
     }
     case 0x6D: {
         auto &u = unit(w, {1, r.u32()});
         position(v, u, point(r));
-        u.lifePercent = r.u8();
+        u.lifePercent = r.u8(); u.lifeCarriesRankFlag = false;
         r.finish();
-        u.mode = 1;
+        u.mode = 1; u.wireAction = 7; u.actionRevision = w.revision;
+        u.actionSkill.reset(); u.actionSkillLevel.reset(); u.direction.reset();
         u.destination.reset();
+        u.destinationUnit.reset();
         break;
     }
     case 0x18:
@@ -335,7 +748,15 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
         if (p.id != 0x96) {
             w.life = uint16_t(bits.read(15));
             w.mana = uint16_t(bits.read(15));
-            if (!*w.life) w.waypointSource.reset();
+            if (!*w.life) {
+                if (w.deathPhase != OnlineDeathPhase::Dying && w.deathPhase != OnlineDeathPhase::Dead) {
+                    w.deathPhase = OnlineDeathPhase::Dying; w.deathRevision = w.revision;
+                    w.respawnRequest.reset();
+                }
+                w.waypointSource.reset(); w.npcRequested.reset();
+                w.npcConversation.reset(); w.movementRequest.reset();
+                w.townPortalPending = false;
+            }
         }
         w.stamina = uint16_t(bits.read(15));
         if (p.id == 0x18) {
@@ -352,19 +773,68 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
             playerPosition(w, {x, y});
         break;
     }
+    case 0x94: {
+        const auto count = r.u8(); const auto owner = r.u32();
+        for (int i = 0; i < count; ++i) {
+            const auto skill = r.u16(); const auto level = r.u8();
+            auto &entry = unit(w, {0, owner}); entry.baseSkills[skill] = level;
+            entry.skills[skill] = uint16_t(level) + entry.bonusSkills[skill];
+            if (v.load.playerUnitId == owner) {
+                w.playerBaseSkills[skill] = level; w.playerSkills[skill] = entry.skills[skill];
+            }
+        }
+        r.finish();
+        break;
+    }
+    case 0x3E: {
+        const auto length = r.u8();
+        if (length < 3 || length > 34 || length != p.body.size() + 1)
+            throw ProtocolError("Invalid native item stat update length");
+        const auto packed = r.take(length - 2); r.finish();
+        BitReader bits(packed);
+        auto variable = [&] { return bits.read(bits.read(1) ? (bits.read(1) ? 32 : 16) : 8); };
+        const auto id = variable();
+        const bool base = bits.read(1) != 0;
+        const auto stat = uint16_t(bits.read(9));
+        const auto value = variable();
+        const auto parameter = uint16_t(bits.read(bits.read(1) ? 16 : 8));
+        if (auto found = w.items.find(id); found != w.items.end()) {
+            found->second.statUpdates[{stat, parameter}] = {value, base};
+            found->second.revision = ++w.itemRevision;
+        }
+        break;
+    }
+    case 0x42: {
+        const auto target = key(r); r.finish();
+        // CLEARCURSOR names the owning player, not the consumed item.
+        if ((target.type == 0 && target.id == v.load.playerUnitId) || target.type == 6) {
+            std::vector<uint32_t> consumed;
+            for (const auto &[id, item] : w.items)
+                if (item.mode == 4 && item.ownerType == 0 && item.owner == v.load.playerUnitId)
+                    consumed.push_back(id);
+            for (auto id : consumed) removeItem(w, id);
+        }
+        break;
+    }
+    case 0x97:
+        r.finish(); w.weaponSet ^= 1; ++w.itemRevision;
+        break;
     case 0x9C:
     case 0x9D:
+        itemPacket(v, p);
         equipment(v, p);
         break;
     case 0xAC: {
         auto &u = unit(w, {1, r.u32()});
         u.classId = r.u16();
         position(v, u, point(r));
-        u.lifePercent = r.u8();
+        u.lifePercent = r.u8(); u.lifeCarriesRankFlag = false;
         if (r.u8() != p.body.size() + 1)
             throw ProtocolError("Invalid NPC assignment size");
         const auto tail = r.take(r.remaining());
         u.appearanceBits.assign(tail.begin(), tail.end());
+        u.actionSkill.reset(); u.actionSkillLevel.reset(); u.direction.reset();
+        u.actionRevision = w.revision; u.nativeMode = true;
         if (!tail.empty()) {
             BitReader bits(tail);
             u.mode = uint8_t(bits.read(4));

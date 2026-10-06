@@ -9,6 +9,8 @@
 /saves/
 /client-settings.json
 /online.local.json
+*.credentials.local
+*.credentials.local.tmp
 /client-settings.json.lock/
 *.d2xsave
 *.d2xsave.bak

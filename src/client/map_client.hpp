@@ -10,6 +10,7 @@ class IMapClient {
     virtual const MapSceneView &read() const = 0;
     virtual const TravelMenuView &travel(EntityId source, int act) const = 0;
     virtual bool waypointSource(EntityId object) const = 0;
+    virtual void closeTravel() {}
     virtual void submit(MapIntent intent) = 0;
 };
 } // namespace d2x

@@ -131,6 +131,9 @@ bool SceneController::handleNpcShop(const FrameInput &input) {
 bool SceneController::handleHirelingToggle(const FrameInput &input) {
     auto &ui = view_.ui();
     if (input.hireling && !ui.blocksWorld()) {
+        if (view_.multiplayer() && !view_.hirelingView().active) {
+            view_.notice("Native hireling state is not available yet.", true); return true;
+        }
         ui.hirelingOpen = !ui.hirelingOpen && view_.hirelingView().active;
         if (ui.hirelingOpen) {
             if (ui.inventory.storage || ui.inventory.cubeOpen) toggleInventory();

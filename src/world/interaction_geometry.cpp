@@ -5,6 +5,28 @@
 #include <limits>
 
 namespace d2x {
+// D2MOO Units.cpp::D2Common_10399 (MIT; docs/licenses/D2MOO.txt).
+// Shared by native object checks and server-confirmed NPC approach checks.
+int nativeUnitDistance(Vec first, int firstSize, Vec second, int secondSize) {
+    const int dx = std::abs(int(std::floor(first.x)) - int(std::floor(second.x)));
+    const int dy = std::abs(int(std::floor(first.y)) - int(std::floor(second.y)));
+    if (dx >= 8 || dy >= 8 || firstSize >= 4 || secondSize >= 4) {
+        const int size = firstSize / 2 + secondSize / 2;
+        const int x = std::max(0, dx - size), y = std::max(0, dy - size);
+        return std::min(x, y) + 2 * std::max(x, y);
+    }
+    constexpr int distances[64]{
+        -1,-1,-1,0,2,4,6,8, -1,-1,0,1,2,4,6,8,
+        -1,0,0,2,3,5,7,8, 0,1,2,2,4,5,7,8,
+        2,2,3,4,5,6,7,9, 4,4,5,5,6,7,8,9,
+        6,6,7,7,7,8,10,10, 8,8,8,8,9,9,10,11
+    };
+    int distance = distances[dx + 8 * dy];
+    if (distance < 0) return 0;
+    if (firstSize == 3 || secondSize == 3) distance = std::max(0, distance - 1);
+    if (firstSize <= 1 || secondSize <= 1) ++distance;
+    return distance;
+}
 namespace {
 bool originalObject(const InteractionTarget &object) {
     return object.nativeObject;
@@ -20,19 +42,7 @@ bool objectInRange(Vec position, const InteractionTarget &object) {
     if (dx >= 8 || dy >= 8 || width >= 4) {
         const int size = 1 + width / 2;
         if (dx <= size && dy <= size) return true;
-    } else {
-        constexpr int distances[64]{
-            -1,-1,-1,0,2,4,6,8, -1,-1,0,1,2,4,6,8,
-            -1,0,0,2,3,5,7,8, 0,1,2,2,4,5,7,8,
-            2,2,3,4,5,6,7,9, 4,4,5,5,6,7,8,9,
-            6,6,7,7,7,8,10,10, 8,8,8,8,9,9,10,11
-        };
-        int distance = distances[dx + 8 * dy];
-        if (distance < 0) return true;
-        if (width == 3) distance = std::max(0, distance - 1);
-        if (width <= 1) ++distance;
-        if (!distance) return true;
-    }
+    } else if (!nativeUnitDistance(position, 2, object.pos, width)) return true;
     const int left = ox - width / 2, top = oy - height / 2;
     if (width < 1 || height < 1)
         return x >= left - 1 && x <= left + 1 && y >= top - 1 && y <= top + 1;

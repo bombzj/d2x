@@ -12,7 +12,12 @@ class IMapClient;
 struct InventoryItemView;
 class SceneView;
 class SceneController {
-    GameSession &session_;
+    GameSession *session_ = nullptr;
+    GameSession &localSession() const;
+    bool handleRemoteUi(const FrameInput &, float);
+    bool handleDeath(const FrameInput &);
+    bool handlePanels(const FrameInput &, float);
+    bool handleMenu(const FrameInput &);
     IActorClient &actorClient_;
     IInventoryClient &inventoryClient_;
     ICharacterClient &characterClient_;
@@ -59,6 +64,8 @@ class SceneController {
   public:
     SceneController(GameSession &session, IActorClient &actorClient, IInventoryClient &inventoryClient,
                     ICharacterClient &characterClient, INpcClient &npcClient, IMapClient &mapClient, SceneView &view);
+    SceneController(IActorClient &, IInventoryClient &, ICharacterClient &, INpcClient &, IMapClient &, SceneView &);
+    bool uiConsumed() const { return inventoryClick_ || inventoryRight_ || pickupClick_ || skillGesture_ || releaseAfterLoad_; }
     bool handle(const FrameInput &input, float elapsed);
     void resetInput();
     Vec movement() const { return movement_; }

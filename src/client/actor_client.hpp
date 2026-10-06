@@ -12,5 +12,6 @@ class IActorClient {
     virtual void stopMoving() = 0;
     virtual void stopActions() = 0;
     virtual void toggleRun() = 0;
+    virtual void respawn() = 0;
 };
 } // namespace d2x

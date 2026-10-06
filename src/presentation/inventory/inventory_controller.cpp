@@ -19,6 +19,7 @@ void SceneController::toggleInventory() {
         ui.inventory.storage = {};
         ui.inventory.open = false;
     } else if (ui.inventory.cubeOpen) {
+        if (view_.multiplayer()) inventoryClient_.submit(CloseStorage{});
         ui.inventory.cubeOpen = false;
         ui.inventory.open = false;
     } else
@@ -367,6 +368,7 @@ bool SceneController::handleInventory(const FrameInput &input) {
                     inventoryClient_.submit(CloseStorage{});
                     ui.storage = {};
                 }
+                if (ui.cubeOpen && view_.multiplayer()) inventoryClient_.submit(CloseStorage{});
                 ui.cubeOpen = !ui.cubeOpen;
                 ui.open = true;
                 ui.cancelGesture();

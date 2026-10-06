@@ -14,6 +14,8 @@
 
 ## 执行结构
 
+单机／联机共用`SceneAssets`的原弹体定义、`SceneView.drawMissile`原图／PL2绘制和`advanceClientMissiles`视觉生命周期、命中碎片；整数扇形、64方向格点和充能弹路径也共用纯几何入口。单机运动／命中仍由玩法权威执行，联机显示实例不调用伤害、状态或消耗接口；生命／法力／库存及状态等待原服回包。联机已接程序与缺口见[联网模块](../../modules/NETWORK.md#联机游玩表现与输入当前源码)，最新改动仅在源码，未构建或运行认证。
+
 - `content/skills/skill_data.*` 建立原技能身份、学习门槛及 `BasicSkillAction`；`content/skills/sorceress_data.*` 、`content/skills/weapon_skill_data.*` 和 `content/skills/necromancer_data.*` 只为已核实的法术／武器技能提供 `SkillSpec`。无定义的技能不登记执行行为。
 - `UseSkill` 是按原 `Skills.Id` 提交的唯一技能命令。`GameSession::useSkill` 在 `session_skills.cpp` 统一检查技能可用性、实现状态、城镇许可、等级及原施法动作，随后生成 `SkillCastSpec`。普通武器攻击仍共用 `Attack`；没有按内部枚举直接施放的旁路。
 - `skillAvailable` 表示角色拥有技能，`SkillRecord::executable()` 表示主动效果已接入；学习、选择、绑定不等同于能够施放。未实现主动技能显示禁用色、提示效果未实现、属性面板留空，不扣蓝、不开始动作，也不转为普通攻击。

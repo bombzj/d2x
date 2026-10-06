@@ -1,12 +1,13 @@
 #include "gameplay/simulation/simulation.hpp"
 #include "gameplay/session/session_impl.hpp"
 #include <algorithm>
+#include "gameplay/items/gold_limits.hpp"
 
 namespace d2x {
 unsigned GameSessionImpl::bankGoldLimit() const {
     // D2Common UNITS_GetStashGoldLimit; this engine rule has no MPQ column.
     const unsigned level = unsigned(state().player.character.level);
-    return 50000u * (level <= 30 ? level / 10u + 1u : level / 2u + 1u);
+    return stashGoldLimit(level);
 }
 unsigned GameSessionImpl::groundGoldLimit() const {
     for (const auto &[code, item] : inventory_.catalog().entries())

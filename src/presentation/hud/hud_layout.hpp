@@ -23,6 +23,9 @@ inline Rectangle hudStamina() {
 inline Rectangle hudExperience() {
     return hudRect(256, 39, 120, 4);
 }
+inline Rectangle hudBeltSlot(int column, int row = 0) {
+    return hudRect(425 + 31 * column, 41 + 32 * row, 29, 29);
+}
 inline Rectangle hudCharacterButton() {
     return hudRect(206, 39, 30, 30);
 }
@@ -33,7 +36,7 @@ inline Rectangle hudMenuButton() {
     return hudRect(393, 39, 16, 32);
 }
 inline Rectangle hudMiniPanel(const Sprite &image) {
-    return hudRect(400 - image.texture.width / 2.f, 49 + image.texture.height,
+    return hudRect(325, 49 + image.texture.height,
                    float(image.texture.width), float(image.texture.height));
 }
 inline Rectangle hudMiniButton(const Sprite &image, int index) {

@@ -47,19 +47,20 @@ void SceneView::drawCharacter(Vec mouse) const {
     cell(player.name, 10, 9, 173, 20, 14, gold, true);
     cell(player.className, 191, 9, 120, 20, 14, gold, true);
     cell("Level", 11, 35, 45, 13, 10, parchment, true);
-    cell(std::to_string(player.level), 11, 48, 45, 20, 13, gold, true);
+    cell(player.number("level", player.level), 11, 48, 45, 20, 13, gold, true);
     cell("Experience", 61, 35, 121, 13, 10, parchment, true);
-    cell(std::to_string(player.experience), 61, 48, 121, 20, 12, gold, true);
+    cell(player.number("experience", player.experience), 61, 48, 121, 20, 12, gold, true);
     auto next = player.nextLevelExperience ? std::to_string(*player.nextLevelExperience) : "MAX";
     cell("Next Level", 191, 35, 120, 13, 10, parchment, true);
     cell(next, 191, 48, 120, 20, 12, gold, true);
 
     constexpr float attributeY[] = {83, 146, 230, 295};
     const char *names[] = {"Strength", "Dexterity", "Vitality", "Energy"};
+    constexpr const char *attributeStats[]{"strength","dexterity","vitality","energy"};
     const int values[] = {stats.attributes[0], stats.attributes[1], stats.attributes[2], stats.attributes[3]};
     for (int index = 0; index < 4; ++index) {
         cell(names[index], 18, attributeY[index], 57, 19, 11, parchment);
-        cell(std::to_string(values[index]), 75, attributeY[index], 38, 19, 12, gold, true);
+        cell(player.number(attributeStats[index], values[index]), 75, attributeY[index], 38, 19, 12, gold, true);
         if (player.unspentAttributes > 0) {
             auto button = characterAddButton(index);
             const bool hovered = CheckCollisionPointRec(rv(mouse), button);
@@ -75,25 +76,25 @@ void SceneView::drawCharacter(Vec mouse) const {
     paired("Attack Rating", leftAction.attackRating, 105);
     paired("Damage", rightAction.damage, 146);
     paired("Attack Rating", rightAction.attackRating, 168);
-    paired("Defense", std::to_string(equipment.defense), 190);
-    paired("Stamina", std::to_string(int(player.stamina)) + "/" + std::to_string(stats.maxStamina), 230);
-    paired("Life", std::to_string(int(player.hp)) + "/" + std::to_string(stats.maxLife), 252);
-    paired("Mana", std::to_string(int(player.mana)) + "/" + std::to_string(stats.maxMana), 295);
-    paired("Fire Resist", std::to_string(stats.resistances[0]) + "%", 337);
-    paired("Cold Resist", std::to_string(stats.resistances[1]) + "%", 358);
-    paired("Lightning Resist", std::to_string(stats.resistances[2]) + "%", 380);
-    paired("Poison Resist", std::to_string(stats.resistances[3]) + "%", 402);
+    paired("Defense", player.number("armorclass", equipment.defense), 190);
+    paired("Stamina", player.number("stamina", int(player.stamina)) + "/" + player.number("maxstamina", stats.maxStamina), 230);
+    paired("Life", player.number("hitpoints", int(player.hp)) + "/" + player.number("maxhp", stats.maxLife), 252);
+    paired("Mana", player.number("mana", int(player.mana)) + "/" + player.number("maxmana", stats.maxMana), 295);
+    paired("Fire Resist", player.number("fireresist", stats.resistances[0]) + "%", 337);
+    paired("Cold Resist", player.number("coldresist", stats.resistances[1]) + "%", 358);
+    paired("Lightning Resist", player.number("lightresist", stats.resistances[2]) + "%", 380);
+    paired("Poison Resist", player.number("poisonresist", stats.resistances[3]) + "%", 402);
     const auto &combat = stats;
-    cell("Block " + std::to_string(equipment.blockChance) + "%", 18, 317, 132, 12, 9, parchment);
-    cell("Physical Resist " + std::to_string(std::clamp(combat.physicalResist, -100, 50)) +
+    cell("Block " + player.number("toblock", equipment.blockChance) + "%", 18, 317, 132, 12, 9, parchment);
+    cell("Physical Resist " + player.number("damageresist", std::clamp(combat.physicalResist, -100, 50)) +
              "%", 18, 330, 132, 12, 9, parchment);
-    cell("Magic Resist " + std::to_string(std::clamp(combat.magicResist, -100, 75)) +
+    cell("Magic Resist " + player.number("magicresist", std::clamp(combat.magicResist, -100, 75)) +
              "%", 18, 343, 132, 12, 9, parchment);
-    cell("Damage -" + std::to_string(combat.flatPhysicalReduction) + " / " +
-             std::to_string(combat.flatMagicReduction), 18, 356, 132, 12, 9, parchment);
-    cell("Poison Length -" + std::to_string(std::clamp(combat.poisonLengthResist, 0, 100)) +
+    cell("Damage -" + player.number("normal_damage_reduction", combat.flatPhysicalReduction) + " / " +
+             player.number("magic_damage_reduction", combat.flatMagicReduction), 18, 356, 132, 12, 9, parchment);
+    cell("Poison Length -" + player.number("poisonlengthresist", std::clamp(combat.poisonLengthResist, 0, 100)) +
              "%", 18, 391, 132, 12, 9, parchment);
-    cell("Fire Absorb " + std::to_string(std::clamp(combat.fireAbsorbPercent, 0, 40)) +
+    cell("Fire Absorb " + player.number("fireabsorb", std::clamp(combat.fireAbsorbPercent, 0, 40)) +
              "%", 18, 404, 132, 12, 9, parchment);
     if (player.unspentAttributes > 0) {
         const auto &texture = assets_.attributePoints.frames[0].texture;

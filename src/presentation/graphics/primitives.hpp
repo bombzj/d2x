@@ -27,6 +27,12 @@ class UiPainter {
 // World-space heading to the original interleaved DCC direction index.
 int direction(Vec look, int count);
 void sprite(const Sprite *sprite, Vec position, Color tint = WHITE);
+// Use the opaque bounds of the original frame for both local and remote selection.
+inline bool spriteHit(const Sprite *image, Vec position, Vec mouse) {
+    return image && image->hitWidth > 0 && image->hitHeight > 0 &&
+        CheckCollisionPointRec(rv(mouse), {position.x + image->hitX, position.y + image->hitY,
+            float(image->hitWidth), float(image->hitHeight)});
+}
 // Cursor hotspots are texture-local, measured from the top-left pixel.
 Vec handCursorHotspot(const Sprite *sprite);
 void cursorSprite(const Sprite *sprite, Vec mouse, Vec hotspot);

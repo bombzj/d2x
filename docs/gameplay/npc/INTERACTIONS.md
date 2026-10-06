@@ -6,6 +6,8 @@
 
 ## 原文与身份绑定
 
+下文为离线宿主规则。联网使用原服NPC／0x27消息、当前TBL对白及原初始化／确认／关闭；旅行按原任务位与身份，客户端不运行离线治疗、任务或奖励。普通货架买卖、维修／凯恩鉴定另有command，资格由原服决定；已Release及Charsi／Akara交谈／买卖有限实测，NPC对白、普通货架及服务操作已接共用游戏UI并打包，本轮追加Warriv对白／关闭、NPC移动截图和回城门原服验证；任务特殊服务、赌博／雇佣协议仍暂缓，详见[联网边界](../../modules/NETWORK.md#原服物品与请求)。
+
 - 五幕原 `a1npc–a5npc` 文本读取 NAME／Name、SPEED、wave 和正文；wave 按 `Sounds.FileName / Sound` 关联 `MonStats.Id / NameStr`，TBL 提供姓名，原语音路径提供幕别。
 - 职业介绍与闲聊按实际原记录索引，不维护 Greiz／Griez、CainAct2 等姓名别名；同名跨幕 NPC 不串用话题。没有独立 Intro 的单位只提供实际存在的 Gossip。
 - 原 DS1 中立单位通过 `MonPreset → MonStats / MonStats2` 加载，姓名与服务不由外观 token 推断。未实现的中立单位不替换成敌对怪物。

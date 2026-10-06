@@ -19,6 +19,12 @@ param(
         'online-return-realms', 'online-cancel-list',
         'online-world', 'online-move', 'online-use-exit', 'online-interact',
         'online-waypoint-travel', 'online-waypoint-close', 'online-automap',
+        'online-move-to-unit', 'online-town-portal', 'online-npc-interact',
+        'online-resurrect', 'online-recover-corpse',
+        'online-npc-message', 'online-npc-close', 'online-npc-travel',
+        'online-items', 'online-ground', 'online-item-action',
+        'online-combat', 'online-skills', 'online-select-skill', 'online-cast', 'online-attack',
+        'online-stop-skill', 'online-learn-skill', 'online-spend-attribute',
         'ui-input', 'screenshot', 'quit')]
     [string]$Command,
     [hashtable]$Arguments = @{},

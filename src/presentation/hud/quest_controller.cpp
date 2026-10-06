@@ -9,7 +9,7 @@ bool SceneController::handleQuestPress(const FrameInput &input) {
         const int index = ui.questPressed;
         if (input.leftReleased) {
             ui.questPressed = -1;
-            if (input.insideViewport && view_.questView().entry(view_.questView().displayed(ui.questAct, size_t(index))).active &&
+            if (input.insideViewport && (view_.questView().entry(view_.questView().displayed(ui.questAct, size_t(index))).active || !view_.questView().entry(view_.questView().displayed(ui.questAct, size_t(index))).known) &&
                 CheckCollisionPointRec(rv(input.mouse), questIconBounds(index)))
                 ui.questSelected = index;
             return true;
@@ -33,10 +33,10 @@ bool SceneController::handleQuestToggle(const FrameInput &input) {
             else ui.questAct = view_.questView().currentAct;
             ui.questNotice = false;
             if (ui.questSelected < 0 || ui.questSelected >= int(view_.questView().quests(ui.questAct).size()) ||
-                !view_.questView().entry(view_.questView().displayed(ui.questAct, size_t(ui.questSelected))).active) {
+                (view_.questView().entry(view_.questView().displayed(ui.questAct, size_t(ui.questSelected))).known && !view_.questView().entry(view_.questView().displayed(ui.questAct, size_t(ui.questSelected))).active)) {
                 ui.questSelected = -1;
                 for (int index = 0; index < int(view_.questView().quests(ui.questAct).size()); ++index)
-                    if (view_.questView().entry(view_.questView().displayed(ui.questAct, size_t(index))).active) {
+                    if (view_.questView().entry(view_.questView().displayed(ui.questAct, size_t(index))).active || !view_.questView().entry(view_.questView().displayed(ui.questAct, size_t(index))).known) {
                         ui.questSelected = index;
                         break;
                     }
@@ -69,7 +69,7 @@ bool SceneController::handleQuestPanel(const FrameInput &input) {
                         return true;
                     }
                 for (int index = 0; index < int(view_.questView().quests(ui.questAct).size()); ++index)
-                    if (view_.questView().entry(view_.questView().displayed(ui.questAct, size_t(index))).active &&
+                    if ((view_.questView().entry(view_.questView().displayed(ui.questAct, size_t(index))).active || !view_.questView().entry(view_.questView().displayed(ui.questAct, size_t(index))).known) &&
                         CheckCollisionPointRec(rv(input.mouse), questIconBounds(index))) {
                         ui.questPressed = index;
                         pickupClick_ = true;

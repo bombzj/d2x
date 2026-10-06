@@ -5,6 +5,8 @@
 
 namespace d2x {
 struct Grid;
+// Original D2Common_10399 distance, including both units' MPQ footprints.
+int nativeUnitDistance(Vec first, int firstSize, Vec second, int secondSize);
 struct InteractionTarget {
     EntityId id;
     Vec pos, accessPoint;

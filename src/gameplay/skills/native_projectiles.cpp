@@ -40,11 +40,7 @@ void SkillRuntime::releaseNativeBurst(SkillProjectileSource actor, int missileId
         for (auto heading : directions)
             for (int index = 0; index < 2; ++index) launch(heading, index);
     } else {
-        constexpr int offsets[]{30,29,29,28,27,26,24,23,21,19,16,14,11,8,5,2,
-            0,-2,-5,-8,-11,-14,-16,-19,-21,-23,-24,-26,-27,-28,-29,-29,
-            -30,-29,-29,-28,-27,-26,-24,-23,-21,-19,-16,-14,-11,-8,-5,-2,
-            0,2,5,8,11,14,16,19,21,23,24,26,27,28,29,29};
-        for (int i = 0; i < 64; ++i) launch({float(offsets[i]), float(offsets[(i + 48) % 64])}, i);
+        for (int i = 0; i < 64; ++i) launch(missileRingDirection(i), i);
     }
     emit(MissileReleased{missileId});
 }

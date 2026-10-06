@@ -1,12 +1,20 @@
 #include "remote_town.hpp"
 #include <algorithm>
 #include <stdexcept>
+#include "world/interaction_geometry.hpp"
 
 namespace d2x {
 RemoteTown::RemoteTown(Archives &a)
-    : archives_(a), libraries_(a), objects_(a.read("data/global/excel/objects.txt")), automap_(a) {
+    : archives_(a), libraries_(a), objects_(a.read("data/global/excel/objects.txt")),
+      monsters_(a.read("data/global/excel/monstats.txt")),
+      monsterSizes_(a.read("data/global/excel/monstats2.txt")),
+      skills_(a.read("data/global/excel/skills.txt")), automap_(a), strings_(a) {
     for (size_t row = 0; row < objects_.rows().size(); ++row)
         if (auto id = objects_.number(row, "Id")) objectRows_.emplace(*id, row);
+    for (size_t row = 0; row < monsters_.rows().size(); ++row)
+        if (auto id = monsters_.number(row, "hcIdx")) monsterRows_.emplace(*id, row);
+    for (size_t row = 0; row < monsterSizes_.rows().size(); ++row)
+        monsterSizeRows_.emplace(std::string(monsterSizes_.value(row, "Id")), row);
 }
 void RemoteTown::update(const OnlineView &v) {
     if (gameGeneration_ != v.gameGeneration || areaGeneration_ != v.world.areaGeneration) {
@@ -68,6 +76,8 @@ void RemoteTown::update(const OnlineView &v) {
     view_.mapErrors.clear();
     view_.mapTargets.clear();
     view_.waypoints.clear();
+    view_.town = false; view_.townPortalSkills.clear();
+    view_.npcConversation.reset();
     view_.automapStamps.clear(); view_.automapTowns.clear(); view_.automapRevealedCells.clear();
     if (updateNative(v)) {
         updateMapTargets(v);
@@ -86,6 +96,28 @@ void RemoteTown::updateMapTargets(const OnlineView &v) {
         const int x = int(unit.position->x) - view_.origin->x;
         const int y = int(unit.position->y) - view_.origin->y;
         if (x < 0 || y < 0 || x >= view_.width || y >= view_.height) continue;
+        if (key.type == 0) {
+            const auto owner = v.world.corpseOwners.find(key.id);
+            if (owner != v.world.corpseOwners.end() && owner->second == v.load.playerUnitId) {
+                const auto label = strings_.find("corpse");
+                view_.mapTargets.push_back({key, *unit.position, OnlineMapInteraction::Corpse,
+                    unit.name + " " + std::string(label), {}, playerMovement.size, playerMovement.size});
+            }
+            continue;
+        }
+        if (key.type == 1) {
+            const auto record = monsterRows_.find(*unit.classId);
+            if (record == monsterRows_.end() || !monsters_.number(record->second, "interact").value_or(0) ||
+                unit.mode == 0 || unit.mode == 12) continue;
+            const auto size = monsterSizeRows_.find(monsters_.value(record->second, "MonStatsEx"));
+            if (size == monsterSizeRows_.end()) continue;
+            const int width = monsterSizes_.number(size->second, "SizeX").value_or(0);
+            const int height = monsterSizes_.number(size->second, "SizeY").value_or(0);
+            if (width <= 0 || height <= 0) continue;
+            view_.mapTargets.push_back({key, *unit.position, OnlineMapInteraction::Npc,
+                std::string(monsters_.value(record->second, "NameStr")), {}, width, height});
+            continue;
+        }
         if (key.type == 5) {
             for (const auto &exit : map_->terrain.exits)
                 if (exit.selection.id == *unit.classId && exit.position.x == x && exit.position.y == y) {
@@ -124,6 +156,7 @@ void RemoteTown::updateMapTargets(const OnlineView &v) {
             interaction = OnlineMapInteraction::Portal; break;
         case 27: interaction = OnlineMapInteraction::TeleportPad; break;
         case 23: interaction = OnlineMapInteraction::Waypoint; break;
+        case 32: interaction = OnlineMapInteraction::Stash; break;
         case 44: case 47: case 50: interaction = OnlineMapInteraction::Exit; break;
         default: break;
         }
@@ -133,6 +166,39 @@ void RemoteTown::updateMapTargets(const OnlineView &v) {
                     ? std::optional<uint16_t>{*unit.portalDestination} : std::nullopt});
     }
     nativeTerrain_->grid.setObstacles(std::move(obstacles));
+    if (v.world.npcConversation) {
+        const auto &conversation = *v.world.npcConversation;
+        const auto target = std::find_if(view_.mapTargets.begin(), view_.mapTargets.end(),
+            [&](const auto &entry) { return entry.unit == OnlineUnitKey{1, conversation.source}; });
+        if (target != view_.mapTargets.end()) {
+            OnlineNpcDialogView dialog{conversation.source, conversation.revision, target->position,
+                std::string(strings_.find(target->name)), {}, {}};
+            for (const auto &message : conversation.messages)
+                dialog.messages.push_back({message.stringId, message.menu,
+                    std::string(strings_.find(message.stringId)), conversation.acknowledged.contains(message.stringId)});
+            const auto &unit = v.world.units.at(target->unit);
+            const auto id = monsters_.value(monsterRows_.at(*unit.classId), "Id");
+            auto rewarded = [&](size_t slot) {
+                // D2MOO QuestRecord: native slot*16 + QFLAG_REWARDGRANTED(0).
+                return conversation.questFlags.size() > slot * 2 && (conversation.questFlags[slot * 2] & 1);
+            };
+            const char *label = nullptr;
+            if (id == "warriv1" && rewarded(6)) label = "WarrivMenu1b";
+            else if (id == "warriv2") label = "WarrivMenu1c";
+            else if (id == "meshif1" && rewarded(14)) label = "MeshifMenuEast";
+            else if (id == "meshif2") label = "MeshifMenuWest";
+            if (label) dialog.travelLabel = strings_.find(label);
+            view_.npcConversation = std::move(dialog);
+        }
+    }
+    view_.town = view_.area && catalog_->level(*view_.area).town;
+    for (size_t row = 0; row < skills_.rows().size(); ++row) {
+        // MPQ identifies the native portal item skills; their IDs are not hardcoded.
+        if (skills_.value(row, "skill") != "Scroll of Townportal" &&
+            skills_.value(row, "skill") != "Book of Townportal") continue;
+        const auto id = skills_.number(row, "Id");
+        if (id && *id >= 0 && *id <= UINT16_MAX) view_.townPortalSkills.push_back(uint16_t(*id));
+    }
     if (v.world.waypointHistory) {
         for (const auto &[id, level] : catalog_->levels()) {
             if (id < 1 || id > 136 || level.waypoint < 0 || level.waypoint >= 112 ||
@@ -219,7 +285,7 @@ bool RemoteTown::updateNative(const OnlineView &v) {
         view_.layoutReason = "Native room anchors match generated area coordinates";
         view_.map = map_->terrain.path;
         view_.collisionVerified = view_.available = view_.nativeMapReady = true;
-        view_.movementAvailable = !(world.life && !*world.life);
+        view_.movementAvailable = !onlinePlayerDead(world);
         view_.nativeMapReason = view_.reason = "Native room anchors and ordered lifecycle reconstructed";
         return true;
     } catch (const std::exception &e) {
@@ -241,14 +307,25 @@ bool RemoteTown::permits(const OnlineView &v, OnlinePoint target) const {
     };
     if (!inside(target) || !inside(*v.world.playerPosition))
         return false;
-    return map_->grid.walkable(int(target.x) - origin.x, int(target.y) - origin.y);
+    return map_->grid.walkable(int(target.x) - origin.x, int(target.y) - origin.y, playerMovement);
 }
 bool RemoteTown::permitsInteraction(const OnlineView &v, OnlineUnitKey target) const {
     return view_.nativeMapReady && view_.movementAvailable &&
+        !onlinePlayerDead(v.world) &&
         gameGeneration_ == v.gameGeneration && areaGeneration_ == v.world.areaGeneration &&
         v.stage == OnlineStage::ProtocolReady &&
         std::any_of(view_.mapTargets.begin(), view_.mapTargets.end(),
             [&](const auto &entry) { return entry.unit == target; });
+}
+bool RemoteTown::interactionReady(const OnlineView &v, OnlineUnitKey target) const {
+    if (!permitsInteraction(v, target) || !v.world.playerPosition) return false;
+    const auto found = std::find_if(view_.mapTargets.begin(), view_.mapTargets.end(),
+        [&](const auto &entry) { return entry.unit == target; });
+    const bool corpse = found->interaction == OnlineMapInteraction::Corpse;
+    if (found->interaction != OnlineMapInteraction::Npc && !corpse) return true;
+    const auto &player = *v.world.playerPosition;
+    return nativeUnitDistance({float(player.x), float(player.y)}, 2,
+        {float(found->position.x), float(found->position.y)}, found->collisionWidth) <= (corpse ? 8 : 6);
 }
 void RemoteTown::revealVisibleTiles(const OnlineView &v, std::span<const size_t> indices) {
     if (!view_.nativeMapReady || !map_ || !v.load.mapSeed || !v.load.act ||

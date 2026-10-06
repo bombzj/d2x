@@ -15,5 +15,6 @@ class LocalActorClient final : public IActorClient {
     void stopMoving() override;
     void stopActions() override;
     void toggleRun() override;
+    void respawn() override;
 };
 } // namespace d2x

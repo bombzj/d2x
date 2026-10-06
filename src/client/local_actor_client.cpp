@@ -69,4 +69,5 @@ void LocalActorClient::stopActions() {
     session_.submit(StopChannel{});
 }
 void LocalActorClient::toggleRun() { session_.submit(ToggleRun{}); }
+void LocalActorClient::respawn() { session_.submit(RespawnPlayer{}); }
 } // namespace d2x

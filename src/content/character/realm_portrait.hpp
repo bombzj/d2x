@@ -33,6 +33,6 @@ class RealmPortraitCatalog {
   public:
     explicit RealmPortraitCatalog(Archives &);
     std::optional<RealmPortraitParts> decode(const OnlineCharacter &) const;
-    std::optional<RealmPortraitParts> decode(const OnlineUnit &, const OnlineWorldView &) const;
+    std::optional<RealmPortraitParts> decode(const OnlineUnit &, const OnlineWorldView &, bool unequipped = false) const;
 };
 } // namespace d2x

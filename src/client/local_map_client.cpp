@@ -17,7 +17,10 @@ const MapSceneView &LocalMapClient::read() const {
     const auto &regions = session_.regions();
     const auto &origin = session_.region();
     const auto &levels = session_.worldContent().levels();
-    if (const auto level = levels.find(int(view.region)); level != levels.end()) view.act = level->second.act;
+    if (const auto level = levels.find(int(view.region)); level != levels.end()) {
+        view.act = level->second.act;
+        view.palette = level->second.palette;
+    } else view.palette = origin.map.terrain.data.act;
     for (size_t act = 0; act < view.waypointActs.size(); ++act)
         view.waypointActs[act] = act == 0 || session_.waypointUnlocked(RegionId(actTownLevels[act]));
     view.automapRegions = connectedRegionSlots(regions, view.region, true);

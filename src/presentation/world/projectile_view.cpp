@@ -14,7 +14,7 @@ void SceneView::createIceShatter(Vec position, int size) {
     const auto direction = directions[limitedRandom(projectileVisualRandom_, 4)];
     clientMissiles_.push_back({id, position, {}, 0, assets_.projectileVisuals.at(id).lifetime, direction});
     if ((screen(position) - Vec{W / 2.f, (H - HUD) / 2.f}).length() < W)
-        assets_.audio.play("monster-shatter", session_.state().frame);
+        assets_.audio.play("monster-shatter", localSession().state().frame);
 }
 void SceneView::createBlizzardFall(int missileId, Vec position) {
     const auto found = assets_.blizzardFalls.find(missileId);
@@ -51,8 +51,8 @@ void SceneView::createMissileImpactVisuals(int missileId, Vec position) {
         // and offset randomization remain unverified, so only one is displayed.
         constexpr Vec directions[]{{0,1},{-1,1},{-1,0},{-1,-1},{0,-1},{1,-1},{1,0},{1,1}};
         const auto direction = directions[limitedRandom(projectileVisualRandom_, 8)];
-        clientMissiles_.push_back({ejecta->second, position, {}, 0,
-            assets_.projectileVisuals.at(ejecta->second).lifetime, direction});
+        if (const auto *visual = assets_.ensureProjectile(ejecta->second))
+            clientMissiles_.push_back({ejecta->second, position, {}, 0, visual->lifetime, direction});
         return;
     }
     const auto found = assets_.projectileImpactVariants.find(missileId);
@@ -62,12 +62,13 @@ void SceneView::createMissileImpactVisuals(int missileId, Vec position) {
     rollRandom(projectileVisualRandom_);
     const int id = found->second[uint32_t(projectileVisualRandom_) % found->second.size()];
     if (id < 0) return;
-    clientMissiles_.push_back({id, position, {}, 0, assets_.projectileVisuals.at(id).lifetime, {}});
+    if (const auto *visual = assets_.ensureProjectile(id))
+        clientMissiles_.push_back({id, position, {}, 0, visual->lifetime, {}});
 }
 void SceneView::advanceMissileVisuals(float dt) {
     std::set<EntityId> activeArcs;
-    for (const auto &[region, offset] : session_.sceneRegions())
-        for (const auto &missile : session_.areaState(region).missiles) {
+    for (const auto &[region, offset] : localSession().sceneRegions())
+        for (const auto &missile : localSession().areaState(region).missiles) {
             if (!missile.arc) continue;
             activeArcs.insert(missile.id);
             const int frame = int(missile.age * 25.f + .001f);
@@ -86,33 +87,12 @@ void SceneView::advanceMissileVisuals(float dt) {
             arcVisualFrames_[missile.id] = frame;
         }
     std::erase_if(arcVisualFrames_, [&](const auto &entry) { return !activeArcs.contains(entry.first); });
-    std::vector<ClientMissile> landed;
-    for (auto &effect : clientMissiles_) {
-        effect.age += dt;
-        effect.pos = effect.pos + effect.velocity * dt;
-        if (effect.age + .00001f >= effect.duration) {
-            if (const auto melt = assets_.iceShatterMelts.find(effect.missileId);
-                melt != assets_.iceShatterMelts.end())
-                landed.push_back({melt->second, effect.pos, {},
-                    std::max(0.f, effect.age - effect.duration),
-                    assets_.projectileVisuals.at(melt->second).lifetime, effect.direction});
-            const auto found = assets_.blizzardFalls.find(effect.missileId);
-            if (found != assets_.blizzardFalls.end()) {
-                const auto &program = found->second;
-                // Keep overshoot so landing does not depend on render frequency.
-                landed.push_back({program.impactId, effect.pos, {},
-                    std::max(0.f, effect.age - effect.duration), float(program.impactFrames) / 25.f, {}});
-            }
-        }
-    }
-    std::erase_if(clientMissiles_, [](const auto &effect) { return effect.age + .00001f >= effect.duration; });
-    for (auto &effect : landed)
-        if (effect.age + .00001f < effect.duration) clientMissiles_.push_back(std::move(effect));
+    advanceClientMissiles(dt, localSession().region().map.grid, {}, {});
 }
 void SceneView::syncMissileAudio() {
     std::vector<SoundEmitter> emitters;
-    for (const auto &[id, offset] : session_.sceneRegions())
-        for (const auto &missile : session_.areaState(id).missiles) {
+    for (const auto &[id, offset] : localSession().sceneRegions())
+        for (const auto &missile : localSession().areaState(id).missiles) {
             const auto key = "missile-release:" + std::to_string(missile.missileId);
             if (!assets_.audio.hasEmitterSound(key)) continue;
             // Retain the existing scene sound admission range; exact legacy
@@ -120,11 +100,11 @@ void SceneView::syncMissileAudio() {
             if ((screen(missile.pos + offset) - Vec{W / 2.f, (H - HUD) / 2.f}).length() < W)
                 emitters.push_back({missile.id, key});
         }
-    for (const auto &object : session_.region().objects)
+    for (const auto &object : localSession().region().objects)
         if (object.operateFn == 25 && object.operatedAt >= 0 &&
-            session_.state().time - object.operatedAt < assets_.projectileVisuals.at(338).lifetime &&
+            localSession().state().time - object.operatedAt < assets_.projectileVisuals.at(338).lifetime &&
             assets_.audio.hasEmitterSound("missile-release:338"))
             emitters.push_back({object.id, "missile-release:338"});
-    assets_.audio.syncEmitters(emitters, session_.state().frame);
+    assets_.audio.syncEmitters(emitters, localSession().state().frame);
 }
 } // namespace d2x

@@ -31,6 +31,14 @@ const Sprite *SceneView::groundItemSprite(const ItemInstance &item) const {
                                               : std::min(anim.count - 1, int(age->second * 25));
     return anim.frame(0, index);
 }
+const Sprite *SceneView::groundItemSprite(const InventoryItemView &item) const {
+    const auto key=item.groundArt.empty()?item.artKey:item.artKey+":"+item.groundArt;
+    auto found=assets_.itemGround.find(key);
+    if(found==assets_.itemGround.end() || found->second.count<=0) return nullptr;
+    const auto age=landingAge_.find(item.id);
+    const int frame=age==landingAge_.end()?found->second.count-1:std::min(found->second.count-1,int(age->second*25));
+    return found->second.frame(0,frame);
+}
 Rectangle SceneView::lootBounds(const ItemInstance &item) const {
     auto p = screen(staticUnitPosition(std::get<GroundLocation>(item.location).position));
     if (auto frame = groundItemSprite(item))
@@ -39,7 +47,10 @@ Rectangle SceneView::lootBounds(const ItemInstance &item) const {
     return {};
 }
 void SceneView::drawGroundItem(EntityId id, bool highlighted) const {
-    const auto &item = *session_.inventory().item(id);
+    const auto *item = inventoryView_.item(id);
+    if (item) drawGroundItem(*item, highlighted);
+}
+void SceneView::drawGroundItem(const InventoryItemView &item, bool highlighted) const {
     auto p = screen(staticUnitPosition(std::get<GroundLocation>(item.location).position));
     if (p.x < -80 || p.x > W + 80 || p.y < -80 || p.y > H - HUD + 80)
         return;
@@ -49,13 +60,13 @@ void SceneView::drawGroundItem(EntityId id, bool highlighted) const {
 }
 std::vector<SceneView::LootLabel> SceneView::lootLabels(Vec mouse) const {
     std::vector<LootLabel> layout, visible;
-    const auto &inventory = session_.inventory();
-    for (auto id : inventory.groundItems(session_.region().definition.id)) {
-        const auto &item = *inventory.item(id);
+    for (const auto &[id,item]:inventoryView_.items) {
+        const auto *location=std::get_if<GroundLocation>(&item.location);
+        if (!location || location->region!=mapView().region) continue;
         auto ground = screen(staticUnitPosition(std::get<GroundLocation>(item.location).position));
         if (ground.x < 0 || ground.x > W || ground.y < 70 || ground.y > H - HUD - 38)
             continue;
-        std::string text = itemName(item);
+        std::string text = item.name;
         // Diablerie Item.GetTitle: only gold includes its quantity in the title.
         if (item.definition == "gld")
             text = std::to_string(item.quantity) + " " + text;
@@ -79,12 +90,13 @@ std::vector<SceneView::LootLabel> SceneView::lootLabels(Vec mouse) const {
         if (!placed)
             continue;
         const bool plain = item.quality == ItemQuality::Normal || item.quality == ItemQuality::Superior || item.quality == ItemQuality::Inferior;
-        const auto color = item.identified && item.runewordRow >= 0 ? Color{199, 179, 119, 255} :
+        const auto color = item.identified && item.runeword ? Color{199, 179, 119, 255} :
             plain && (item.sockets || (item.nativeFlags & 0x400000u)) ? Color{128, 128, 128, 255} : itemColor(item.quality);
         LootLabel label{item.handle(), std::move(text), box, ground, color};
         layout.push_back(label);
-        if (view_.showLoot || id == session_.pickupTarget() ||
-            CheckCollisionPointRec(rv(mouse), box) || CheckCollisionPointRec(rv(mouse), lootBounds(item)))
+        if (view_.showLoot || id == inventoryView_.pickupTarget ||
+            CheckCollisionPointRec(rv(mouse), box) || CheckCollisionPointRec(rv(mouse), ([&] { const auto at=screen(staticUnitPosition(location->position)); const auto *image=groundItemSprite(item);
+                return image?Rectangle{at.x+image->x-5,at.y+image->y-5,float(image->texture.width+10),float(image->texture.height+10)}:Rectangle{}; }())))
             visible.push_back(std::move(label));
     }
     return visible;
@@ -96,27 +108,25 @@ std::optional<ItemHandle> SceneView::lootAt(Vec mouse, bool labelsOnly) const {
     if (!labelsOnly) {
         std::optional<ItemHandle> closest;
         float distance = 1000;
-        const auto &inventory = session_.inventory();
-        for (auto id : inventory.groundItems(session_.region().definition.id)) {
-            const auto &item = *inventory.item(id);
-            if (!CheckCollisionPointRec(rv(mouse), lootBounds(item)))
-                continue;
-            auto p = screen(staticUnitPosition(std::get<GroundLocation>(item.location).position));
-            float candidate = (p - mouse).length();
-            if (candidate < distance) {
-                closest = item.handle();
-                distance = candidate;
-            }
+        for (const auto &[id,item]:inventoryView_.items) {
+            const auto *location=std::get_if<GroundLocation>(&item.location);
+            if(!location || location->region!=mapView().region) continue;
+            const auto *image=groundItemSprite(item); if(!image) continue;
+            const auto p=screen(staticUnitPosition(location->position));
+            if(!CheckCollisionPointRec(rv(mouse),{p.x+image->x-5,p.y+image->y-5,float(image->texture.width+10),float(image->texture.height+10)})) continue;
+            const float candidate=(p-mouse).length();
+            if(candidate<distance) { closest=item.handle(); distance=candidate; }
         }
         return closest;
     }
     return std::nullopt;
 }
 void SceneView::drawLootLabels(Vec mouse) const {
+    const auto hovered = lootAt(mouse);
     for (const auto &label : lootLabels(mouse)) {
         bool hot = CheckCollisionPointRec(rv(mouse), label.bounds) ||
-                   CheckCollisionPointRec(rv(mouse), lootBounds(*session_.inventory().item(label.item.id)));
-        bool selected = label.item.id == session_.pickupTarget();
+            (hovered && hovered->id == label.item.id);
+        bool selected = label.item.id == inventoryView_.pickupTarget;
         DrawRectangleRec(label.bounds, hot || selected ? Color{47, 47, 47, 235}
                                                          : Color{0, 0, 0, 218});
         int fontSize = 16;

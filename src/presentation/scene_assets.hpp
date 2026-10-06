@@ -21,12 +21,16 @@ struct MonsterRecord;
 struct Region;
 struct WorldObject;
 struct ClassicData;
+struct InventoryView;
 struct MonsterIdentity;
 struct MonsterEnchantment;
 // GPU and audio handles belong to the view, never to saveable game state.
 class SceneAssets {
     Archives &archives_;
     Table objectDefinitions_;
+    std::unique_ptr<DataTable> missileDefinitions_;
+    std::map<int, size_t> missileRows_;
+    void loadProjectileDefinitions(const ClassicData &);
     mutable std::map<std::pair<int, int>, WorldObject> decorations_;
     // Mutable so the const draw path can populate the on-demand caches below.
     mutable Graphics graphics_;
@@ -57,6 +61,7 @@ class SceneAssets {
     void loadMonsterActor(const GameSession &session, const MonsterArtSource &source,
                           std::map<std::string, GpuAnimation> &animations) const;
     void loadHirelingAnimations(Archives &archives, const GameSession &session);
+    void loadUi(Archives &, const ClassicData &, bool multiplayer);
     void loadSkillIcons(Archives &archives, const ClassicData &content);
     void loadAutomap(const IMapAssetSource &source);
     std::string heroKey_;
@@ -76,6 +81,7 @@ class SceneAssets {
     };
     std::map<int, SkillIcon> skillIcons;
     std::map<int, GpuAnimation> projectileAnimations;
+    std::set<int> unavailableProjectiles, unavailableOverlays;
     std::set<int> translucentProjectiles;
     std::set<int> frozenOrbProjectiles;
     std::map<int, BlizzardVisual> blizzardFalls;
@@ -105,6 +111,8 @@ class SceneAssets {
         bool lightFlicker = false;
     };
     std::map<int, ProjectileVisual> projectileVisuals;
+    std::map<int, ClientMissileProgram> clientMissilePrograms;
+    std::map<std::string, int, std::less<>> weaponMissiles;
     // Client-only impact alternatives (CltHit03); never damage-bearing missiles.
     std::map<int, std::array<int, 2>> projectileImpactVariants;
     std::map<int, int> projectileFreezingEjecta;
@@ -179,6 +187,10 @@ class SceneAssets {
         bool preDraw = false;
     } npcAlert;
     std::map<int, std::array<OverlayArt, 2>> shrineOverlays, combatStateOverlays;
+    SceneAssets(Archives &archives, const ClassicData &content);
+    const ProjectileVisual *ensureProjectile(int id);
+    const SkillOverlayVisual *ensureOverlay(int id);
+    void loadInventoryArt(const InventoryView &inventory, int palette);
     SceneAssets(Archives &archives, const GameSession &session, const IMapAssetSource &source);
     static std::string itemArtKey(const ItemInstance &item);
     // Returns the frame set for a live unit, building and caching it on first use.

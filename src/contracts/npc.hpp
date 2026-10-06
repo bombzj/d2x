@@ -10,11 +10,14 @@
 namespace d2x {
 enum class NpcMenuAction {
     None, Talk, Trade, Identify, Cancel, Gossip, Respec, Imbue, GoEast,
-    Gamble, Hire, Introduction, Resurrect, Sail, QuestTopic, Socket, Personalize
+    Gamble, Hire, Introduction, Resurrect, Sail, QuestTopic, Socket, Personalize, TextTopic, Back
 };
 struct NpcMenuSelection {
     NpcMenuAction action = NpcMenuAction::None;
     std::optional<QuestId> quest;
+    std::optional<uint32_t> textTopic;
+    NpcMenuSelection(NpcMenuAction action = NpcMenuAction::None, std::optional<QuestId> quest = {},
+                     std::optional<uint32_t> textTopic = {}) : action(action), quest(quest), textTopic(textTopic) {}
 };
 struct NpcMenuEntry {
     std::string label;
@@ -29,6 +32,7 @@ struct NpcConversationView {
     std::string speaker;
     std::optional<std::string> introduction;
     std::vector<NpcTopicView> topics;
+    std::map<uint32_t, std::string> textTopics;
     std::vector<std::string> gossip;
     std::vector<NpcMenuEntry> services, talkEntries;
     std::map<NpcMenuAction, std::string> serviceHints;

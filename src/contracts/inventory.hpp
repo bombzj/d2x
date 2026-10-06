@@ -9,6 +9,7 @@
 namespace d2x {
 struct InventoryDefinitionView {
     bool socketFiller = false, twoHanded = false;
+    int targetCursor = -1;
     std::string code, name, bookScroll;
     int width = 0, height = 0, beltRows = 0;
     unsigned maxStack = 0, bookCapacity = 0;
@@ -25,6 +26,10 @@ struct InventoryItemView {
     bool identified = true;
     unsigned quantity = 0, durability = 0, charges = 0;
     std::vector<ItemTextLine> tooltip;
+    uint32_t nativeFlags = 0;
+    unsigned sockets = 0;
+    bool runeword = false;
+    std::string groundArt;
     ItemHandle handle() const { return {id, revision}; }
 };
 struct InventoryContainerView {
@@ -36,12 +41,12 @@ struct InventoryLayoutView {
     int columns = 0, rows = 0, left = 0, top = 0, cellSize = 0;
     bool expansion = false;
 };
-// A client-owned projection of this player's inventory and the open storage.
+// A client-owned projection of inventory, authorized storage/shop and visible ground items.
 // It contains no authority references, rolled native properties or random state.
 struct InventoryView {
     uint64_t revision = 0;
     PlayerContainers containers;
-    EntityId storage;
+    EntityId storage, pickupTarget;
     unsigned weaponSet = 0, gold = 0, bankGold = 0;
     unsigned bankGoldLimit = 0, groundGoldLimit = 0, walletLimit = 0;
     bool dead = false;

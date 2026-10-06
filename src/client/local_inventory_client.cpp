@@ -6,6 +6,7 @@
 #include "gameplay/model/state.hpp"
 #include "gameplay/session/session.hpp"
 #include <utility>
+#include "world/region.hpp"
 
 namespace d2x {
 const InventoryView &LocalInventoryClient::read() const {
@@ -35,17 +36,26 @@ const InventoryView &LocalInventoryClient::read() const {
     view.staffRecipeOutput = content.staffRecipe.output;
     view.dropLocation = session_.dropLocation();
     const auto &owned = view.containers;
-    // Only this player's containers and the current authorized storage are projected.
+    // Player containers, authorized storage and active ground items share the UI snapshot.
+    std::vector<EntityId> visibleItems;
     for (auto id : {owned.backpack, owned.belt, owned.stash, owned.beltEquipment,
                    owned.equipment, owned.cube, owned.hirelingEquipment, owned.cursor, view.storage}) {
         const auto *container = inventory.container(id);
         if (!container || view.containerViews.contains(id)) continue;
         view.containerViews.emplace(id, InventoryContainerView{id, container->spec.kind, container->spec.columns, container->spec.rows});
-        for (auto itemId : inventory.contents(id)) {
+        for (auto itemId : inventory.contents(id)) visibleItems.push_back(itemId);
+    }
+    for (auto itemId : inventory.groundItems(session_.region().definition.id)) {
+        const auto &item=*inventory.item(itemId);
+        if (session_.active(std::get<GroundLocation>(item.location).position)) visibleItems.push_back(itemId);
+    }
+    view.pickupTarget=session_.pickupTarget();
+    for (auto itemId:visibleItems) {
             const auto &item = *inventory.item(itemId);
             const auto &definition = *inventory.catalog().find(item.definition);
             if (!view.definitions.contains(item.definition)) {
                 InventoryDefinitionView value;
+                value.targetCursor = definition.targetCursor;
                 value.code = definition.code;
                 value.name = definition.name;
                 value.bookScroll = definition.bookScroll;
@@ -69,8 +79,7 @@ const InventoryView &LocalInventoryClient::read() const {
             auto display = describeInventoryItem(content, inventory.catalog(), item, context);
             view.items.emplace(item.id, InventoryItemView{item.id, item.revision, item.definition,
                 itemArtKey(item), std::move(display.name), item.location, item.quality, item.identified,
-                item.quantity, item.durability, item.charges, std::move(display.tooltip)});
-        }
+                item.quantity, item.durability, item.charges, std::move(display.tooltip),item.nativeFlags,item.sockets,item.runewordRow>=0,{}});
     }
     cached_ = std::move(view);
     return cached_;

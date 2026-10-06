@@ -7,7 +7,7 @@
 namespace d2x {
 // Ground loot and remaining world interactions retain the legacy item adapter.
 std::string SceneView::itemName(const ItemInstance &item) const {
-    return displayItemName(session_.content(), session_.inventory().catalog(), item);
+    return displayItemName(localSession().content(), localSession().inventory().catalog(), item);
 }
 void SceneView::drawItemIcon(const ItemInstance &item, Rectangle bounds, Color tint) const {
     drawItemArt(SceneAssets::itemArtKey(item), item.definition, bounds, tint);
@@ -18,11 +18,11 @@ void SceneView::drawItemTooltip(const ItemInstance &item, Vec anchor, std::optio
         drawItemText({{itemName(item), ItemTextTone::Name}}, item.quality, anchor, price, priceLabel);
         return;
     }
-    const auto &stats = session_.characterStats();
-    ItemDisplayContext context{session_.state().player.character.level, stats.strength, stats.dexterity,
-        session_.inventory().maximumDurability(item), {}};
-    if (item.definition == "bkd") context.cainStones = session_.cainStoneSequence();
-    auto display = describeInventoryItem(session_.content(), session_.inventory().catalog(), item, context);
+    const auto &stats = localSession().characterStats();
+    ItemDisplayContext context{localSession().state().player.character.level, stats.strength, stats.dexterity,
+        localSession().inventory().maximumDurability(item), {}};
+    if (item.definition == "bkd") context.cainStones = localSession().cainStoneSequence();
+    auto display = describeInventoryItem(localSession().content(), localSession().inventory().catalog(), item, context);
     drawItemText(std::move(display.tooltip), item.quality, anchor, price, priceLabel);
 }
 } // namespace d2x

@@ -55,12 +55,26 @@ class RealmSession {
     bool create_game(CreateGameOptions options);
     bool join_game(std::string name, std::string password = {});
     bool leave_game();
+    bool resurrect(); // Original 0x41, after server PLRMODE_DEAD. No local respawn.
     // Raw original movement request. Application must first validate its current
     // MPQ scene binding; neither this method nor the replica predicts a position.
     bool move_to(OnlinePoint target, bool run = true);
+    bool move_to_unit(OnlineUnitKey target, bool run = true);
     // Uses an assigned server UNIT_TILE ID. Map warp classes/slots are not IDs.
     bool use_exit(uint32_t serverUnitId);
-    bool interact_map_unit(OnlineUnitKey target);
+    bool interact_map_unit(OnlineUnitKey target, bool stash = false);
+    // Application validates MonStats.interact and native approach range first.
+    bool interact_npc(uint32_t serverUnitId);
+    bool close_npc();
+    bool acknowledge_npc_message(uint16_t stringId);
+    bool npc_travel(); // Original entity action 0; server validates quest eligibility.
+    bool create_town_portal(uint16_t skillId); // Caller resolves original item skill from MPQ.
+    // MPQ consumer checks the native location, ownership, shape and operation eligibility.
+    // No optimistic inventory changes; the original protocol has no generic transaction ACK.
+    bool submit_item(OnlineItemCommand command);
+    // Caller validates current MPQ skill and target eligibility. Cast/stop have
+    // no generic native ACK; damage, resources and skills remain server-owned.
+    bool submit_combat(OnlineCombatCommand command);
     // Caller maps the destination's Levels.Waypoint index from current MPQ.
     // Zero destination closes the server-opened menu. Never unlocks locally.
     bool use_waypoint(uint16_t destination, uint8_t waypointNumber = 0);
@@ -69,6 +83,8 @@ class RealmSession {
     void cancel();
     void logout();
     const OnlineView &read() const;
+    std::chrono::milliseconds request_timeout() const;
+    bool item_request_ready() const;
     // Opaque, bounded, ordered packets retained for additional world consumers.
     // The basic replica in read().world has already consumed supported messages.
     // Taking packets does not mutate the view revision. No auth or tickets are exposed.

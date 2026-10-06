@@ -4,7 +4,7 @@
 
 namespace d2x {
 std::optional<unsigned> SceneView::inventoryVendorPrice(ItemHandle item) const {
-    return view_.shopRepair || view_.shopOpen
+    return (view_.shopRepair || view_.shopOpen) && shopView().pricesKnown
         ? npcClient_.quote(view_.dialogueObject, item, view_.shopRepair) : std::nullopt;
 }
 
@@ -250,7 +250,7 @@ void SceneView::drawNpcShop(Vec mouse) const {
     }
     if (hovered && !view_.shopConfirm && !view_.inventory.drag) {
         if (const auto *detail = npcClient_.inspectShopOffer(view_.dialogueObject, hovered->slot, view_.shopGamble))
-            drawItemText(detail->tooltip, detail->quality, {mouse.x + 170, mouse.y}, detail->price, "Cost");
+            drawItemText(detail->tooltip, detail->quality, {mouse.x + 170, mouse.y}, shopView().pricesKnown ? std::optional<unsigned>{detail->price} : std::nullopt, "Cost");
     }
     if (view_.shopConfirm) {
         auto popup = confirmBounds();
@@ -268,7 +268,7 @@ void SceneView::drawNpcShop(Vec mouse) const {
             while (fontSize > 1 && painter_.measure(name, fontSize) > popup.width - 44) --fontSize;
             painter_.inBox(name, {popup.x + 22, popup.y + 40, popup.width - 44, 32},
                            fontSize, itemColor(found->offer->quality));
-            painter_.label(std::to_string(found->offer->price) + " GOLD?",
+            painter_.label(shopView().pricesKnown ? std::to_string(found->offer->price) + " GOLD?" : "BUY FROM SERVER?",
                            int(popup.x) + 24, int(popup.y) + 88, 14, parchment);
         }
         for (bool yes : {true, false}) {

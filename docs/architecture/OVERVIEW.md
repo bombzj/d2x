@@ -28,7 +28,7 @@
 | `network/tcp_stream.*` / `network` | 独立 DNS／TCP、有限队列、连接取消和期限；Asio 仅实现层使用 | [联网模块](../modules/NETWORK.md) |
 | `network/protocol/` / `d2gs_protocol` | SID／MCP framing、旧账号认证、1.13c D2GS 逻辑包／Huffman；认证依赖只读原文件及独立 BNCSutil 子集 | `wire.hpp`、`auth.hpp`、`d2gs_stream.hpp` |
 | `network/realm_session.*` / `remote_client` | 无 UI 的账号／Realm／选角／大厅／入退局会话；输出 OnlineView 与只读服务端副本，并保留有界有序包 | `RealmSession`、`contracts/online.hpp` |
-| `client/remote_town.*` / `remote_scene`、`presentation/remote` | 原 MPQ 营地与服务端锚点绑定，独立原图显示并发移动／退出意图；不创建本地模拟 | `RemoteTown`、`RemoteScene` |
+| `client/remote_town.*` / `remote_scene`、`presentation/remote` | 共同原生地图与服务端锚点绑定、服务端单位显示及网络意图；复用SceneView的完整UI、原图命中／标签／高亮和共同FrameInput，不创建本地模拟 | `RemoteTown`、`RemoteScene`、`RemoteUiClients` |
 | `presentation/frontend/`、`app/frontend.*` | 原图主菜单／登录／服务器选角／建局：表现只返回意图，app 拥有并轮询远端会话；菜单 command 调用相同底层 | `RealmFrontend`、`FrontendIntent`、`debug/online_commands.*` |
 | `presentation/` / `presentation` | 屏幕命中与手势、面板、场景绘制、GPU／音频资源及展示状态 | `controller.*`、`scene_view.*`、`scene_assets.*`、功能子目录 |
 | `main.cpp`、`app/` / `d2x` | 参数、角色前端、窗口、设备输入、固定步主循环、保存入口、本机调试与崩溃记录 | `app/application.cpp`、`app/input.cpp`、`app/debug/` |
@@ -121,6 +121,10 @@ app/input.cpp 读取设备 → FrameInput
 ```
 
 `app/application.cpp` 以 25 Hz 累积器调用 `advance(fixedStep)`；连续方向／跑步意图由 LocalActorClient 绑定人物 ID 后交给 `setPlayerInput`。`tick(0)` 保留零时间提交／发布兼容语义；应用初始化／恢复仍通过 `setRunning` 等宿主接口。具体顺序见 [会话基线](../modules/SESSION.md)。
+
+单机与联机的区别在权威端：单机的 `Local*Client` 直接提交给本进程 `GameSession`，联机的 `Remote*Client`／`RemoteControl` 提交给 `RealmSession`，由 D2GS 执行并回传状态。单机当前没有通过 TCP 或原 D2GS 协议运行；本地参考 OpenDiablo2 的 `LocalClientConnection::Open` 虽然创建 `GameServer`，双向消息同样只是调用对端函数，不要求套接字或独立进程。
+
+两种模式已共用面板、底栏、库存／NPC UI、弹体表现、输入快照、原帧命中、高亮和姓名标签。世界控制与角色动画组装仍保留 `SceneController`／`SceneView` 的本地入口和 `RemoteScene` 的远端入口，尚未完全合并；远端位置插值、预测取消和回包校正必须保留。进一步复用应统一客户端世界视图与意图入口，再由本地／远端适配器执行，不能让联机调用本地模拟代替原服结算。
 
 地图链是 `WorldCatalog → planWorld / MapRecipe → loadRegion → Map / Grid / WorldObject`；怪物链是 `planPopulation → pendingSpawns → 附近房间实例化`。切区把当前 `AreaState` 移回会话缓存，再把目标区状态交给模拟，避免同时保留两份活状态。区域加载由会话切换入口触发，不是房间级后台流式加载。
 

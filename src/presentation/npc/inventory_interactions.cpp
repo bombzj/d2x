@@ -6,12 +6,13 @@
 
 namespace d2x {
 bool SceneController::inventoryQuestTargetValid(EntityId object) const {
-    return session_.canInsertStaff(object);
+    return session_ && localSession().canInsertStaff(object);
 }
 bool SceneController::openInventoryQuestTarget(Vec mouse, const InventoryItemView &item) {
+    if (!session_) return false;
     auto &panel = view_.ui();
-    for (const auto &object : session_.region().objects) {
-        if (!session_.canInsertStaff(object.id) || !view_.visible(object) ||
+    for (const auto &object : localSession().region().objects) {
+        if (!localSession().canInsertStaff(object.id) || !view_.visible(object) ||
             (view_.screen(object.pos) + object.drawOffset - mouse).length() >= 24) continue;
         panel.orificeObject = object.id;
         panel.inventory.open = true;
@@ -25,7 +26,7 @@ bool SceneController::openInventoryQuestTarget(Vec mouse, const InventoryItemVie
     return false;
 }
 void SceneController::submitInventoryQuest(EntityId object, ItemHandle item) {
-    session_.submit(SubmitQuestItem{object, item});
+    localSession().submit(SubmitQuestItem{object, item});
 }
 void SceneController::submitNpcItemService(ItemHandle item) {
     if (view_.ui().inventoryNpcAction == NpcMenuAction::Socket) npcClient_.submit(SocketQuestItem{view_.ui().inventoryQuestNpc, item});

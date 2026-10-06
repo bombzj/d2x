@@ -28,7 +28,7 @@ std::vector<AutomapVisibleCell> SceneView::visibleAutomapCells() const {
             for (int y = std::max(0, room.y / 5); y <= std::min(region.height - 1, (room.y + room.height) / 5); ++y)
                 for (int x = std::max(0, room.x / 5); x <= std::min(region.width - 1, (room.x + room.width) / 5); ++x) {
                     if (seen && seen->seen[size_t(y) * region.width + x]) continue;
-                    const auto image = mapAssets_.terrainBounds(size_t(slot), x, y);
+                    const auto image = mapAssets_->terrainBounds(size_t(slot), x, y);
                     if (image.width <= 0 || image.height <= 0) continue;
                     const auto at = screen(Vec{x * 5.f, y * 5.f} + offset);
                     const float left = at.x + image.x, top = at.y + image.y;

@@ -72,7 +72,7 @@ std::optional<EquipmentSlot> equipmentAt(Vec mouse, unsigned weaponSet);
 Rectangle weaponTabBounds(unsigned set, bool left);
 std::optional<unsigned> weaponTabAt(Vec mouse);
 inline Rectangle beltSlot(Cell cell) {
-    return hudRect(425 + 31 * cell.x, 41 + 32 * cell.y, 29, 29);
+    return hudBeltSlot(cell.x, cell.y);
 }
 inline Rectangle beltBounds(int rows) {
     return hudRect(424, 42 + (rows - 1) * 32, 125, rows * 32);

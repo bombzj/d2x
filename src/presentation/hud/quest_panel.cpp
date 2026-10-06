@@ -92,6 +92,7 @@ void SceneView::drawQuests(Vec) const {
                                int(animation.elapsed * art.count / questAnimationSeconds));
         const auto *icon = art.frame(0, artFrame);
         drawArt(icon, iconBounds);
+        if (!record.known) painter_.label("?", int(bounds.x+bounds.width*.5f), int(bounds.y+bounds.height*.5f), 16, gold);
         const auto face = assets_.questFaces[artIndex];
         if (icon && !completing && view_.questPressed == index && record.active && face.width > 2 && face.height > 2) {
             const auto *inactive = art.frame(0, 26);

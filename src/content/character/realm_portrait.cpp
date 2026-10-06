@@ -93,8 +93,8 @@ RealmPortraitCatalog::RealmPortraitCatalog(Archives &a) {
     }
 }
 std::optional<RealmPortraitParts> RealmPortraitCatalog::decode(const OnlineUnit &u,
-                                                               const OnlineWorldView &w) const {
-    if (u.key.type != 0 || !u.classId || *u.classId >= 7 || !u.equipmentObserved)
+                                                               const OnlineWorldView &w, bool unequipped) const {
+    if (u.key.type != 0 || !u.classId || *u.classId >= 7 || (!unequipped && !u.equipmentObserved))
         return {};
     // Share the verified native preview component resolver with live server gear.
     OnlineCharacter preview;
@@ -112,7 +112,7 @@ std::optional<RealmPortraitParts> RealmPortraitCatalog::decode(const OnlineUnit 
     };
     for (const auto &[id, item] : w.equipment) {
         (void)id;
-        if (item.owner != u.key.id || item.bodyLocation >= 11)
+        if (unequipped || item.owner != u.key.id || item.bodyLocation >= 11)
             continue;
         const auto found = items_.find(item.code);
         if (found == items_.end())

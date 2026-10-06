@@ -1,7 +1,14 @@
 #include "frontend.hpp"
+#include "app/online_login_memory.hpp"
 #include "app/debug/debug_pipe.hpp"
 #include "app/debug/online_commands.hpp"
 #include "client/remote_town.hpp"
+#include "client/remote_control.hpp"
+#include "client/remote_inventory.hpp"
+#include "client/remote_combat.hpp"
+#include "client/remote_ui_clients.hpp"
+#include "presentation/scene_view.hpp"
+#include "presentation/controller.hpp"
 #include "content/string_table.hpp"
 #include "input.hpp"
 #include "network/realm_session.hpp"
@@ -80,6 +87,10 @@ std::optional<CharacterChoice> chooseFrontend(Archives &archives, RenderTexture2
                                               const std::filesystem::path &configPath,
                                               const std::string &pipeName, bool returnToLocalCharacters) {
     RealmFrontend ui(archives);
+    OnlineLoginMemory loginMemory(configPath);
+    std::string rememberedAccount, rememberedPassword;
+    loginMemory.read(rememberedAccount, rememberedPassword);
+    ui.setLogin(std::move(rememberedAccount), std::move(rememberedPassword));
     HideCursor();
     if (returnToLocalCharacters) {
         if (auto chosen = chooseCharacter(archives, target))
@@ -91,7 +102,17 @@ std::optional<CharacterChoice> chooseFrontend(Archives &archives, RenderTexture2
     }
     net::RealmSession session;
     RemoteTown town(archives);
+    RemoteControl control(town, session);
+    RemoteInventory inventory(archives);
+    RemoteCombat combat(archives, town, session);
     RemoteMapDisplayState mapDisplay;
+    std::unique_ptr<RemoteUiClients> sharedClients;
+    std::unique_ptr<SceneView> sharedUi;
+    std::unique_ptr<SceneController> sharedController;
+    std::optional<uint32_t> displayedNpc;
+    std::optional<uint16_t> displayedSpeech{};
+    std::optional<uint32_t> displayedWaypoint{};
+    uint64_t displayedNpcRevision{};
     std::unique_ptr<RemoteScene> scene;
     std::optional<uint8_t> renderedAct;
     std::optional<uint16_t> renderedArea;
@@ -109,14 +130,14 @@ std::optional<CharacterChoice> chooseFrontend(Archives &archives, RenderTexture2
         if (status.available && scene && sceneGeneration == session.read().gameGeneration) {
             status.renderedUnits = scene->renderedUnits();
             status.unavailableUnits = scene->unavailableUnits();
+            status.effectLimitations = scene->effectLimitations();
             status.playerDisplayed = scene->playerDisplayed();
         }
         return status;
     };
     auto move = [&](OnlinePoint targetPoint, bool run) {
         town.update(session.read());
-        return sceneError.empty() && town.permits(session.read(), targetPoint) &&
-               session.move_to(targetPoint, run);
+        return sceneError.empty() && control.move(targetPoint, run);
     };
     DebugPipe pipe(pipeName);
     bool quit = false, manualRealm = false;
@@ -130,7 +151,11 @@ std::optional<CharacterChoice> chooseFrontend(Archives &archives, RenderTexture2
             quit = true;
         const auto previousStage = session.read().stage;
         session.tick();
+        inventory.update(session.read());
+        combat.update();
         if (sceneGeneration != session.read().gameGeneration) {
+            sharedController.reset(); sharedUi.reset(); sharedClients.reset();
+            displayedNpc.reset(); displayedSpeech.reset(); displayedWaypoint.reset();
             scene.reset();
             sceneError.clear();
             sceneGeneration = session.read().gameGeneration;
@@ -141,6 +166,8 @@ std::optional<CharacterChoice> chooseFrontend(Archives &archives, RenderTexture2
             renderedAct = session.read().load.act;
         }
         town.update(session.read());
+        if (IsKeyPressed(KEY_ESCAPE)) control.cancelMovement();
+        control.tick();
         if (renderedArea != town.read().area) {
             scene.reset();
             sceneError.clear();
@@ -171,8 +198,9 @@ std::optional<CharacterChoice> chooseFrontend(Archives &archives, RenderTexture2
                     if (!saved)
                         throw std::runtime_error("Screenshot could not be written");
                 },
-                sceneStatus, move, [&](bool visible, bool large) {
+                sceneStatus, control, inventory, combat, [&](bool visible, bool large) {
                     mapDisplay.visible = visible; mapDisplay.large = large;
+                    if (sharedUi) { sharedUi->ui().automap = visible; sharedUi->ui().automapLarge = large; }
                 });
             if (session.read().revision != before) {
                 notice.clear();
@@ -186,11 +214,11 @@ std::optional<CharacterChoice> chooseFrontend(Archives &archives, RenderTexture2
                                                                                 : FrontendPage::Login;
                 }
                 if (session.read().stage == OnlineStage::Cancelled) {
-                    ui.clearPassword();
+                    ui.clearTransientPasswords();
                     page = FrontendPage::Login;
                 }
                 if (session.read().stage == OnlineStage::Idle) {
-                    ui.clearPassword();
+                    ui.clearTransientPasswords();
                     page = FrontendPage::Main;
                 }
             }
@@ -286,11 +314,91 @@ std::optional<CharacterChoice> chooseFrontend(Archives &archives, RenderTexture2
         ClearBackground(BLACK);
         FrontendIntent action;
         RemoteSceneIntent worldAction;
+        const Vec worldMouse{(raw.x - viewport.offset.x) / viewport.scale,
+                             (raw.y - viewport.offset.y) / viewport.scale};
         if (showScene) {
-            const Vec worldMouse{(raw.x - viewport.offset.x) / viewport.scale,
-                                 (raw.y - viewport.offset.y) / viewport.scale};
             try {
-                worldAction = scene->frame(view, *town.map(), town.read(), worldMouse);
+                if (!sharedClients) {
+                    // Full UI resource loading can be long enough to miss native keepalives.
+                    // Pump only during construction, outside live-world rendering iterations.
+                    struct UiLoadingKeepalive {
+                        Archives &archives;
+                        UiLoadingKeepalive(Archives &a, net::RealmSession &s) : archives(a) {
+                            archives.setLoadingPulse([&s] { s.tick(); });
+                        }
+                        ~UiLoadingKeepalive() { archives.setLoadingPulse({}); }
+                    } keepalive(archives,session);
+                    sharedClients = std::make_unique<RemoteUiClients>(archives,session,inventory,combat,control);
+                    sharedClients->update(town.read());
+                    sharedUi = std::make_unique<SceneView>(archives,sharedClients->content(),sharedClients->actor(),
+                        sharedClients->inventory(),sharedClients->character(),sharedClients->quests(),sharedClients->npc(),sharedClients->map());
+                    sharedController = std::make_unique<SceneController>(sharedClients->actor(),sharedClients->inventory(),
+                        sharedClients->character(),sharedClients->npc(),sharedClients->map(),*sharedUi);
+                    sharedUi->ui().automap = mapDisplay.visible;
+                }
+                sharedClients->update(town.read());
+                sharedUi->refreshUi(std::clamp(GetFrameTime(),0.f,.1f));
+                auto &panels = sharedUi->ui();
+                const auto &native = view.world;
+                if (!sharedClients->busy()) { panels.inventory.pending = {}; panels.shopSalePending.reset(); }
+                if (native.storage.kind == OnlineStorageKind::Stash && !panels.inventory.storage) {
+                    panels.inventory.storage = sharedUi->inventoryView().containers.stash; panels.inventory.open = true;
+                    panels.characterOpen = panels.questOpen = panels.hirelingOpen = false;
+                }
+                if (native.storage.kind == OnlineStorageKind::Cube) { panels.inventory.cubeOpen = true; panels.inventory.open = true; }
+                if (native.waypointSource != displayedWaypoint) {
+                    displayedWaypoint = native.waypointSource;
+                    panels.travelMenu = displayedWaypoint.has_value();
+                    panels.waypointSource = displayedWaypoint ? EntityId{(uint64_t{1} << 32) + *displayedWaypoint + 1} : EntityId{};
+                    panels.waypointAct = view.load.act.value_or(0);
+                    if (panels.travelMenu) { panels.inventory.open = false; panels.skillTreeOpen = panels.characterOpen = panels.questOpen = false; }
+                }
+                if (town.read().npcConversation) {
+                    const auto &dialog = *town.read().npcConversation;
+                    if (displayedNpc != dialog.source) {
+                        displayedNpc = dialog.source;
+                        displayedNpcRevision = 0; displayedSpeech.reset();
+                        sharedUi->openNpcMenu(EntityId{(uint64_t{1} << 32) + dialog.source + 1},dialog.speaker,false);
+                    }
+                    if (displayedNpcRevision != dialog.revision) {
+                        displayedNpcRevision = dialog.revision;
+                        if (panels.dialogue.empty()) for (const auto &message : dialog.messages)
+                            if (!message.acknowledged && (message.menu == 0 || message.menu == 2) && !message.text.empty()) {
+                                displayedSpeech = message.stringId;
+                                sharedUi->openNpcDialogue(EntityId{(uint64_t{1} << 32) + dialog.source + 1},dialog.speaker,message.text);
+                                break;
+                            }
+                    }
+                } else if (displayedNpc && !native.npcRequested) {
+                    displayedNpc.reset(); displayedSpeech.reset(); sharedUi->cancelNpcDialogue();
+                    panels.shopOpen = panels.hireListOpen = false;
+                }
+                auto input = pollInput(viewport);
+                const bool wasShop = panels.shopOpen, wasCube = panels.inventory.cubeOpen;
+                const bool wasSpeech = !panels.dialogue.empty() && displayedSpeech.has_value();
+                // Acknowledge native automatic speech without ending its server conversation.
+                if (wasSpeech && (input.escape || input.leftPressed)) {
+                    session.acknowledge_npc_message(displayedSpeech.value_or(0)); displayedSpeech.reset();
+                    sharedUi->cancelNpcDialogue();
+                    if (town.read().npcConversation) sharedUi->openNpcMenu(panels.dialogueObject,town.read().npcConversation->speaker,false);
+                    input.escape = input.leftPressed = input.leftHeld = false;
+                }
+                const bool keepGame = sharedController->handle(input,GetFrameTime());
+                if (!keepGame) worldAction.leave = true;
+                if (!wasShop && panels.shopOpen) sharedClients->openShop();
+                if (!wasCube && panels.inventory.cubeOpen && native.storage.kind != OnlineStorageKind::Cube)
+                    for (const auto &[id,item] : native.items) if (item.code == sharedUi->inventoryView().cubeCode &&
+                        item.ownerType == 0 && item.owner == view.load.playerUnitId && item.mode == 0 && item.page == 1) {
+                        OnlineItemCommand request; request.action = OnlineItemAction::CubeOpen; request.item = id; request.itemRevision = item.revision;
+                        if (!inventory.submit(session,request)) { panels.inventory.cubeOpen = false; sharedUi->notice(inventory.reason(),true); }
+                        break;
+                    }
+                if (auto feedback = sharedClients->takeNotice(); !feedback.empty()) sharedUi->notice(std::move(feedback),true);
+                mapDisplay.visible = panels.automap; mapDisplay.large = panels.automapLarge;
+                mapDisplay.right = panels.minimapRight; mapDisplay.offset = panels.automapOffset; mapDisplay.running = sharedClients->running();
+                auto rendered = scene->frame(view,*town.map(),town.read(),*sharedUi,combat,sharedController->uiConsumed() || wasSpeech,input);
+                rendered.leave = rendered.leave || worldAction.leave;
+                worldAction = std::move(rendered);
             } catch (const std::exception &e) {
                 sceneError = e.what();
                 showScene = false;
@@ -298,13 +406,20 @@ std::optional<CharacterChoice> chooseFrontend(Archives &archives, RenderTexture2
         }
         if (!showScene) {
             ClearBackground(BLACK);
-            BeginScissorMode(int(offsetX), 0, int(800 * scale), H);
-            rlPushMatrix();
-            rlTranslatef(offsetX, 0, 0);
-            rlScalef(scale, scale, 1);
-            action = ui.frame(page, session.read(), gateway, notice, mouse, sceneStatus().reason);
-            rlPopMatrix();
-            EndScissorMode();
+            if (view.stage == OnlineStage::ProtocolReady && onlinePlayerDead(view.world) && sharedClients && sharedUi && sharedController) {
+                sharedClients->update(town.read());
+                sharedUi->refreshUi(std::clamp(GetFrameTime(), 0.f, .1f));
+                sharedController->handle(pollInput(viewport), GetFrameTime());
+                sharedUi->drawUi(worldMouse);
+            } else {
+                BeginScissorMode(int(offsetX), 0, int(800 * scale), H);
+                rlPushMatrix();
+                rlTranslatef(offsetX, 0, 0);
+                rlScalef(scale, scale, 1);
+                action = ui.frame(page, session.read(), gateway, notice, mouse, sceneStatus().reason);
+                rlPopMatrix();
+                EndScissorMode();
+            }
         }
         EndTextureMode();
         BeginDrawing();
@@ -316,16 +431,35 @@ std::optional<CharacterChoice> chooseFrontend(Archives &archives, RenderTexture2
         if (quit)
             continue;
         town.revealVisibleTiles(session.read(), worldAction.visibleMapTiles);
+        if (worldAction.stopCombat) {
+            OnlineCombatCommand stop; stop.action = OnlineCombatCommand::Action::Stop;
+            combat.submit(stop);
+        }
         if (worldAction.leave)
             session.leave_game();
-        else if (worldAction.closeWaypoint)
-            session.use_waypoint(0);
-        else if (worldAction.waypoint)
-            session.use_waypoint(worldAction.waypoint->level, worldAction.waypoint->number);
-        else if (worldAction.interact && town.permitsInteraction(session.read(), *worldAction.interact))
-            session.interact_map_unit(*worldAction.interact);
+        else if (worldAction.pickup) {
+            control.cancelMovement();
+            OnlineItemCommand request;
+            request.action = OnlineItemAction::Pickup;
+            request.item = uint32_t(worldAction.pickup->id.value - 1);
+            request.itemRevision = worldAction.pickup->revision;
+            request.toCursor = sharedUi && sharedUi->ui().inventory.open;
+            if (!inventory.submit(session, request) && sharedUi) sharedUi->notice(inventory.reason(), true);
+        }
+        else if (worldAction.combat) {
+            control.cancelMovement();
+            const bool accepted = combat.submit(*worldAction.combat);
+            if (scene) scene->combatSubmitted(accepted);
+            if (!accepted && sharedUi) sharedUi->notice(combat.reason(),true);
+        }
+        else if (worldAction.interact && town.permitsInteraction(session.read(), *worldAction.interact)) {
+            if (!control.interact(*worldAction.interact, worldAction.run) && sharedUi)
+                sharedUi->notice(control.reason(), true);
+        }
         else if (worldAction.move)
             move(*worldAction.move, worldAction.run);
+        if (action.editedAccount && !loginMemory.write(*action.editedAccount, {}))
+            notice = "Unable to remember the edited account name.";
         switch (action.command) {
         case FrontendCommand::Exit:
             quit = true;
@@ -379,6 +513,8 @@ std::optional<CharacterChoice> chooseFrontend(Archives &archives, RenderTexture2
             try {
                 auto config = configuration(configPath);
                 gateway = std::move(config.gateway);
+                const bool remembered = loginMemory.write(action.name, action.password);
+                ui.setLogin(action.name, action.password);
                 config.login.account = std::move(action.name);
                 config.login.password = std::move(action.password);
                 notice.clear();
@@ -388,6 +524,7 @@ std::optional<CharacterChoice> chooseFrontend(Archives &archives, RenderTexture2
                     session.register_account(std::move(config.login));
                 else
                     session.login(std::move(config.login));
+                if (!remembered) notice = "Login submitted, but login information could not be remembered.";
             } catch (const std::exception &e) {
                 notice = e.what();
             }
@@ -407,10 +544,14 @@ std::optional<CharacterChoice> chooseFrontend(Archives &archives, RenderTexture2
             }
             break;
         case FrontendCommand::Back:
-            ui.clearPassword();
+            ui.clearTransientPasswords();
             notice.clear();
-            if (page == FrontendPage::Register && session.read().stage == OnlineStage::Idle)
+            if (page == FrontendPage::Register && session.read().stage == OnlineStage::Idle) {
+                std::string account, password;
+                loginMemory.read(account, password);
+                ui.setLogin(std::move(account), std::move(password));
                 page = FrontendPage::Login;
+            }
             else if (page == FrontendPage::CreateCharacter &&
                      session.read().stage == OnlineStage::CharacterSelection)
                 page = FrontendPage::Characters;

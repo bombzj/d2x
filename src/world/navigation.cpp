@@ -103,6 +103,37 @@ bool Grid::segment(Vec a, Vec b, EntityId ignoredObject, MovementCollisionRule r
         return movementClear(x, y, rule, ignoredObject);
     }, rule.size <= 1);
 }
+bool Grid::nativeMovementSegment(Vec a, Vec b, MovementCollisionRule rule) const {
+    if (!walkable(a, rule) || !walkable(b, rule)) return false;
+    int x = int(std::floor(a.x)), y = int(std::floor(a.y));
+    const int endX = int(std::floor(b.x)), endY = int(std::floor(b.y));
+    const int dx = std::abs(endX - x), dy = std::abs(endY - y);
+    const int sx = endX >= x ? 1 : -1, sy = endY >= y ? 1 : -1;
+    // PATH_RayTrace: diagonals test the pattern at the diagonal cell. Other
+    // slopes test the major step first, with abs(minor)+1 initial deviation.
+    if (dx == dy) {
+        for (int i = 0; i < dx; ++i) {
+            x += sx; y += sy;
+            if (!movementClear(x, y, rule)) return false;
+        }
+        return true;
+    }
+    const bool horizontal = dx > dy;
+    const int major = (horizontal ? dx : dy) + 1;
+    const int minor = (horizontal ? dy : dx) + 1;
+    int deviation = minor;
+    for (int i = 0; i < major - 1; ++i) {
+        if (horizontal) x += sx; else y += sy;
+        if (!movementClear(x, y, rule)) return false;
+        deviation += minor;
+        if (deviation >= major) {
+            deviation -= major;
+            if (horizontal) y += sy; else x += sx;
+            if (deviation && !movementClear(x, y, rule)) return false;
+        }
+    }
+    return true;
+}
 bool Grid::missileSegment(Vec a, Vec b, MissileCollisionRule rule) const {
     // D2MOO COLLISION_CheckMaskWithSize: 0/1 point, 2 cross, 3 square.
     if (rule.size < 0 || rule.size > 3) return false;
@@ -264,12 +295,15 @@ Vec Grid::inspectionArrival() const {
         throw std::runtime_error("No walkable scene arrival");
     return result;
 }
-std::deque<Vec> Grid::path(Vec from, Vec to, bool allowPartial, MovementCollisionRule rule) const {
+std::deque<Vec> Grid::path(Vec from, Vec to, bool allowPartial, MovementCollisionRule rule, bool nativeSegments) const {
     std::deque<Vec> out;
     if (!walkable(from, rule) || !std::isfinite(to.x) || !std::isfinite(to.y) ||
         to.x < 0 || to.y < 0 || to.x >= width || to.y >= height || (!allowPartial && !walkable(to, rule)))
         return out;
-    if (segment(from, to, {}, rule)) {
+    const auto clearLine = [&](Vec a, Vec b) {
+        return segment(a, b, {}, rule) && (!nativeSegments || nativeMovementSegment(a, b, rule));
+    };
+    if (clearLine(from, to)) {
         out.push_back(to);
         return out;
     }
@@ -339,9 +373,9 @@ std::deque<Vec> Grid::path(Vec from, Vec to, bool allowPartial, MovementCollisio
     std::deque<Vec> smooth;
     Vec anchor = from;
     while (!out.empty()) {
-        if (!segment(anchor, out.front(), {}, rule)) return {};
+        if (!clearLine(anchor, out.front())) return {};
         size_t far = 0;
-        while (far + 1 < out.size() && segment(anchor, out[far + 1], {}, rule))
+        while (far + 1 < out.size() && clearLine(anchor, out[far + 1]))
             far++;
         anchor = out[far];
         smooth.push_back(anchor);

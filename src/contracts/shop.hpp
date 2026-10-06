@@ -21,6 +21,7 @@ struct ShopView {
     uint64_t revision = 0;
     EntityId actor, npc;
     bool gamble = false, available = false, repairAvailable = false;
+    bool pricesKnown = true; // Native server quotes may not be supplied to the client.
     unsigned bankGold = 0;
     std::array<std::string, 4> tabLabels;
     std::vector<ShopOfferView> offers;

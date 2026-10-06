@@ -3,13 +3,14 @@
 #include <vector>
 
 namespace d2x {
-enum class OnlineMapInteraction { Exit, Door, Portal, TeleportPad, Waypoint };
+enum class OnlineMapInteraction { Exit, Door, Portal, TeleportPad, Waypoint, Npc, Stash, Corpse };
 struct OnlineMapTarget {
     OnlineUnitKey unit;
     OnlinePoint position;
     OnlineMapInteraction interaction{};
     std::string name;
     std::optional<uint16_t> destination;
+    int collisionWidth{}, collisionHeight{};
 };
 struct OnlineWaypointDestination {
     uint16_t level{};
@@ -26,12 +27,26 @@ struct OnlineAutomapTown {
     int variant{};
     OnlinePoint center;
 };
+struct OnlineNpcText {
+    uint16_t stringId{};
+    uint8_t menu{};
+    std::string text;
+    bool acknowledged{};
+};
+struct OnlineNpcDialogView {
+    uint32_t source{};
+    uint64_t revision{};
+    OnlinePoint position;
+    std::string speaker, travelLabel;
+    std::vector<OnlineNpcText> messages;
+};
 struct OnlineSceneView {
     bool available{}, movementAvailable{}, collisionVerified{};
     std::string reason{"Waiting for server world data"}, map;
     std::optional<OnlinePoint> origin;
     int width{}, height{}, candidates{}, landmarks{};
     int renderedUnits{}, unavailableUnits{};
+    std::vector<std::string> effectLimitations;
     bool playerDisplayed{};
     std::optional<uint16_t> area;
     std::optional<uint8_t> palette;
@@ -48,5 +63,8 @@ struct OnlineSceneView {
     std::vector<OnlineAutomapTown> automapTowns;
     std::map<uint16_t, size_t> automapRevealedCells;
     bool automapVisible{}, automapLarge{true};
+    bool town{};
+    std::vector<uint16_t> townPortalSkills;
+    std::optional<OnlineNpcDialogView> npcConversation;
 };
 } // namespace d2x

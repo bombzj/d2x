@@ -17,8 +17,8 @@
 
 namespace d2x {
 void SceneView::collectMapVariants(Archives &archives) {
-    assets_.collectMapVariants(archives, session_.worldContent(), session_.monsterContent(),
-                               session_.state().mapSeed, uint32_t(session_.visualSeed()));
+    assets_.collectMapVariants(archives, localSession().worldContent(), localSession().monsterContent(),
+                               localSession().state().mapSeed, uint32_t(localSession().visualSeed()));
 }
 namespace {
 constexpr const char *highlightFragment = R"(
@@ -36,9 +36,9 @@ void main() {
 )";
 } // namespace
 SceneView::SceneView(Archives &archives, const GameSession &session, const IActorClient &actorClient, IInventoryClient &inventoryClient, ICharacterClient &characterClient, IQuestClient &questClient, INpcClient &npcClient, IMapClient &mapClient, const IMapAssetSource &mapAssets)
-    : session_(session), actorClient_(actorClient), inventoryClient_(inventoryClient), characterClient_(characterClient), questClient_(questClient), npcClient_(npcClient), mapClient_(mapClient), mapAssets_(mapAssets), assets_(archives, session, mapAssets), paletteBlend_(archives), painter_(assets_.font),
+    : session_(&session), actorClient_(actorClient), inventoryClient_(inventoryClient), characterClient_(characterClient), questClient_(questClient), npcClient_(npcClient), mapClient_(mapClient), mapAssets_(&mapAssets), assets_(archives, session, mapAssets), paletteBlend_(archives), painter_(assets_.font),
       speechPainter_(assets_.speechFont) {
-    projectileVisualRandom_ = session_.visualSeed();
+    projectileVisualRandom_ = localSession().visualSeed();
     for (int act = 1; act < int(actPaletteBlends_.size()); ++act)
         actPaletteBlends_[size_t(act)] = std::make_unique<PaletteBlendView>(archives, act);
     refreshInventory();
@@ -56,9 +56,38 @@ SceneView::SceneView(Archives &archives, const GameSession &session, const IActo
     view_.rightSkill = right < 0 ? std::nullopt : std::optional<int>{right};
     resetQuestAnimations();
     revealAutomap();
-    lighting_.update(session_.map().grid, session_.worldContent().level(int(session_.region().definition.id)),
-                     session_.region().definition.id,
+    lighting_.update(localSession().map().grid, localSession().worldContent().level(int(localSession().region().definition.id)),
+                     localSession().region().definition.id,
                      actorClient_.controlledActor().position, actorClient_.controlledActor().lightRadius);
+}
+const GameSession &SceneView::localSession() const {
+    if (!session_) throw std::logic_error("World authority is unavailable in multiplayer presentation");
+    return *session_;
+}
+SceneView::SceneView(Archives &archives, const ClassicData &content, const IActorClient &actor,
+    IInventoryClient &inventory, ICharacterClient &character, IQuestClient &quests, INpcClient &npc, IMapClient &map)
+    : actorClient_(actor), inventoryClient_(inventory), characterClient_(character), questClient_(quests),
+      npcClient_(npc), mapClient_(map), assets_(archives, content), paletteBlend_(archives),
+      painter_(assets_.font), speechPainter_(assets_.speechFont) {
+    highlightShader_=LoadShaderFromMemory(nullptr,highlightFragment);
+    highlightTransform_=GetShaderLocation(highlightShader_,"highlightTransform");
+    refreshUi(0);
+    view_.skillClass = characterView_.classCode;
+    resetQuestAnimations();
+}
+void SceneView::refreshUi(float dt) {
+    refreshInventory(); refreshCharacterView(); refreshInteractions();
+    const int palette=mapView().palette;
+    if (itemGroundPalette_!=palette) { assets_.itemGround.clear(); itemGroundPalette_=palette; }
+    assets_.loadInventoryArt(inventoryView_,palette);
+    const auto &p = characterView_;
+    view_.skillClass = p.classCode; view_.displayedWeaponSet = p.weaponSet;
+    const int left = p.selectedSkills[p.weaponSet * 2], right = p.selectedSkills[p.weaponSet * 2 + 1];
+    view_.leftSkill = left < 0 ? std::nullopt : std::optional<int>{left};
+    view_.rightSkill = right < 0 ? std::nullopt : std::optional<int>{right};
+    view_.inventory.syncCursor(inventoryView_);
+    view_.animationTime += dt;
+    advanceUi(dt);
 }
 SceneView::~SceneView() {
     if (highlightShader_.id)
@@ -95,11 +124,11 @@ Vec SceneView::world(Vec p) const {
     return unproject((p - Vec{centerX, (H - HUD) * .5f}) * (1 / view_.zoom) + view_.camera);
 }
 void SceneView::drawLighting() const {
-    const auto &region = session_.region();
-    const auto &level = session_.worldContent().level(int(region.definition.id));
+    const auto &region = localSession().region();
+    const auto &level = localSession().worldContent().level(int(region.definition.id));
     const auto actor = actorClient_.controlledActor();
     const auto player = actor.position;
-    const auto &sim = session_.state();
+    const auto &sim = localSession().state();
     std::vector<SceneLight> lights;
     auto appendMissile = [&](int id, Vec position, float age) {
         const auto found = assets_.projectileVisuals.find(id);
@@ -128,22 +157,22 @@ void SceneView::drawLighting() const {
             lights.push_back({position, float(light.radius), light.color});
     };
     auto appendMonster = [&](std::string_view identity, Vec position) {
-        const auto *monster = session_.monsterContent().find(identity);
+        const auto *monster = localSession().monsterContent().find(identity);
         if (monster && monster->lightRadius > 0)
             lights.push_back({position, float(monster->lightRadius),
                 {uint8_t(monster->lightColor[0]), uint8_t(monster->lightColor[1]),
                  uint8_t(monster->lightColor[2]), 255}});
     };
     auto appendUnit = [&](EntityId id, Vec position, const CombatEffectSet &states) {
-        for (const auto &[index, offset] : session_.sceneRegions())
-            for (const auto &effect : session_.areaState(index).effects)
+        for (const auto &[index, offset] : localSession().sceneRegions())
+            for (const auto &effect : localSession().areaState(index).effects)
                 if (effect.attached == id && assets_.spellOverlays.contains(effect.overlayId))
                     appendOverlay(effect.overlayId, position);
         for (const auto &effect : states.entries()) {
             if (!effect.activeAt(sim.frame)) continue;
             if (assets_.spellOverlays.contains(effect.spec.visual.overlayId))
                 appendOverlay(effect.spec.visual.overlayId, position);
-            for (const auto &[name, record] : session_.content().states) {
+            for (const auto &[name, record] : localSession().content().states) {
                 if (record.definition.id != effect.spec.state.id) continue;
                 for (const auto &overlay : {record.overlay, record.secondaryOverlay})
                     if (auto found = assets_.overlayIds.find(overlay); found != assets_.overlayIds.end())
@@ -152,20 +181,20 @@ void SceneView::drawLighting() const {
             }
         }
     };
-    for (const auto &[index, offset] : session_.sceneRegions()) {
-        const auto &area = session_.areaState(index);
-        const auto &sceneRegion = session_.regions()[index];
+    for (const auto &[index, offset] : localSession().sceneRegions()) {
+        const auto &area = localSession().areaState(index);
+        const auto &sceneRegion = localSession().regions()[index];
         for (const auto &missile : area.missiles)
-            if (session_.roomVisible(index, missile.pos))
+            if (localSession().roomVisible(index, missile.pos))
                 appendMissile(missile.missileId, missile.pos + offset, missile.age);
         for (const auto &effect : area.effects) {
-            if (!session_.roomVisible(index, effect.pos)) continue;
+            if (!localSession().roomVisible(index, effect.pos)) continue;
             appendMissile(effect.missileId, effect.pos + offset, effect.age);
             if (!effect.attached && assets_.spellOverlays.contains(effect.overlayId))
                 appendOverlay(effect.overlayId, effect.pos + offset);
         }
         for (const auto &object : sceneRegion.objects) {
-            if (object.questHidden || !session_.roomVisible(index, object.pos)) continue;
+            if (object.questHidden || !localSession().roomVisible(index, object.pos)) continue;
             int mode = object.modeAt(sim.time);
             if (object.interaction == Interaction::Travel) {
                 const auto activated = sim.waypoints.find(sceneRegion.definition.id);
@@ -190,12 +219,12 @@ void SceneView::drawLighting() const {
     if (!sim.player.actions.dead) appendUnit(sim.player.id, player, sim.player.combatEffects);
     if (sim.player.hireling.active())
         appendUnit(sim.player.hireling.id, sim.player.hireling.pos, sim.player.hireling.combatEffects);
-    for (const auto &portal : session_.portals(region.definition.id)) {
+    for (const auto &portal : localSession().portals(region.definition.id)) {
         const auto &opening = assets_.townPortalRules[0];
         const float duration = opening.frames / opening.fps;
         appendObject(59, sim.time - portal.openedAt < duration ? 1 : 2, staticUnitPosition(portal.position));
     }
-    if (const auto position = session_.cainPortalPosition()) {
+    if (const auto position = localSession().cainPortalPosition()) {
         const auto &opening = assets_.cainPortalRules[0];
         const float elapsed = view_.cainPortalAnimationStarted < 0 ? 999.f
             : std::max(0.f, view_.animationTime - view_.cainPortalAnimationStarted);
@@ -217,11 +246,11 @@ void SceneView::sessionRestored() {
     assets_.audio.resetEmitters();
     // Restore may load the act town for the first time. A paused frame can draw
     // immediately without advance(), so prepare its terrain and prop sources now.
-    assets_.syncRegions(mapAssets_);
+    assets_.syncRegions(*mapAssets_);
     lighting_.invalidate();
     lighting_.resetEnvironment();
     clientMissiles_.clear();
-    projectileVisualRandom_ = session_.visualSeed();
+    projectileVisualRandom_ = localSession().visualSeed();
     exploredAutomap_.clear();
     view_.automapOffset = {};
     roofOpacity_.clear();
@@ -230,8 +259,8 @@ void SceneView::sessionRestored() {
     monsterPositions_.clear();
     monsterLooks_.clear();
     movingMonsters_.clear();
-    assets_.loadInventoryArt(session_);
-    assets_.loadHeroEquipment(session_);
+    assets_.loadInventoryArt(localSession());
+    assets_.loadHeroEquipment(localSession());
     view_.inventory = {};
     view_.orificeObject = {};
     view_.orificeItem.reset();
@@ -278,8 +307,8 @@ void SceneView::sessionRestored() {
     view_.heroMode = actorClient_.controlledActor().animationMode;
     landingAge_.clear();
     revealAutomap();
-    lighting_.update(session_.map().grid, session_.worldContent().level(int(session_.region().definition.id)),
-                     session_.region().definition.id,
+    lighting_.update(localSession().map().grid, localSession().worldContent().level(int(localSession().region().definition.id)),
+                     localSession().region().definition.id,
                      actorClient_.controlledActor().position, actorClient_.controlledActor().lightRadius);
 }
 void SceneView::advanceUi(float dt, bool worldPaused) {
@@ -313,15 +342,15 @@ void SceneView::advance(float dt) {
     refreshCharacterView();
     refreshInteractions();
     const auto actor = actorClient_.controlledActor();
-    assets_.syncRegions(mapAssets_);
-    const auto sunStage = session_.quest(QuestId::TaintedSun).stage;
+    assets_.syncRegions(*mapAssets_);
+    const auto sunStage = localSession().quest(QuestId::TaintedSun).stage;
     lighting_.setEclipse(sunStage > 0 && sunStage < 3);
-    lighting_.advance(dt, session_.worldContent().level(int(session_.region().definition.id)));
+    lighting_.advance(dt, localSession().worldContent().level(int(localSession().region().definition.id)));
     advanceMissileVisuals(dt);
-    const auto &currentRegion = session_.region();
+    const auto &currentRegion = localSession().region();
     if (currentRegion.map.terrain.preparedRooms) {
-        for (const auto &[slot, offset] : session_.sceneRegions()) {
-            const auto &region = session_.regions()[slot];
+        for (const auto &[slot, offset] : localSession().sceneRegions()) {
+            const auto &region = localSession().regions()[slot];
             if (region.map.terrain.preparedRooms)
                 nativePops_[region.definition.id].update(region.map.terrain, actor.position - offset,
                     region.recipe.worldX, region.recipe.worldY, GetTime());
@@ -335,8 +364,8 @@ void SceneView::advance(float dt) {
             opacity[i] += std::clamp(target - opacity[i], -2.f * dt, 2.f * dt);
         }
     }
-    lighting_.update(session_.map().grid, session_.worldContent().level(int(session_.region().definition.id)),
-                     session_.region().definition.id,
+    lighting_.update(localSession().map().grid, localSession().worldContent().level(int(localSession().region().definition.id)),
+                     localSession().region().definition.id,
                      actorClient_.controlledActor().position, actorClient_.controlledActor().lightRadius);
     const auto &player = characterView_;
     view_.displayedWeaponSet = player.weaponSet;
@@ -361,13 +390,13 @@ void SceneView::advance(float dt) {
     };
     if (!learned(view_.leftSkill)) view_.leftSkill.reset();
     if (!learned(view_.rightSkill)) view_.rightSkill.reset();
-    assets_.loadHeroEquipment(session_);
+    assets_.loadHeroEquipment(localSession());
     if (!assets_.heroAppearanceError().empty() && view_.lootNotice != assets_.heroAppearanceError())
         notice(assets_.heroAppearanceError(), true);
     movingMonsters_.clear();
     for (const auto &monster : visibleMonsters()) {
         const auto &enemy = *monster.enemy;
-        const auto &recipe = session_.regions()[monster.region].recipe;
+        const auto &recipe = localSession().regions()[monster.region].recipe;
         const Vec worldPosition = enemy.pos + Vec{recipe.worldX * 5.f, recipe.worldY * 5.f};
         auto [previous, inserted] = monsterPositions_.try_emplace(enemy.id, worldPosition);
         auto delta = worldPosition - previous->second;
@@ -375,12 +404,12 @@ void SceneView::advance(float dt) {
             movingMonsters_.insert(enemy.id);
             monsterLooks_[enemy.id] = delta.unit();
         } else if (!monsterLooks_.contains(enemy.id) || (enemy.hp > 0 && enemy.attack > 0))
-            monsterLooks_[enemy.id] = (enemy.combatTarget ? session_.combatPosition(enemy.combatTarget) - monster.position : Vec{1, 0}).unit();
+            monsterLooks_[enemy.id] = (enemy.combatTarget ? localSession().combatPosition(enemy.combatTarget) - monster.position : Vec{1, 0}).unit();
         previous->second = worldPosition;
         if (enemy.hp > 0)
             if (auto sound = assets_.monsterAudio.find(enemy.identity.monster);
                 sound != assets_.monsterAudio.end()) {
-                const float now = session_.state().time;
+                const float now = localSession().state().time;
                 if (movingMonsters_.contains(enemy.id) && sound->second.footstepInterval > 0) {
                     auto &next = nextMonsterFootstep_[enemy.id];
                     if (now >= next) {
@@ -409,13 +438,13 @@ void SceneView::advance(float dt) {
     std::erase_if(landingAge_, [](const auto &pair) { return pair.second > 4; });
     auto soundFor = [&](EntityId id) -> const SceneAssets::MonsterAudio * {
         const Enemy *enemy = nullptr;
-        for (const auto &candidate : session_.state().area.enemies) if (candidate.id == id) enemy = &candidate;
-        if (!enemy) for (const auto &candidate : session_.state().companions) if (candidate.id == id) enemy = &candidate;
+        for (const auto &candidate : localSession().state().area.enemies) if (candidate.id == id) enemy = &candidate;
+        if (!enemy) for (const auto &candidate : localSession().state().companions) if (candidate.id == id) enemy = &candidate;
         if (!enemy) return nullptr;
         auto sound = assets_.monsterAudio.find(enemy->identity.monster);
         return sound == assets_.monsterAudio.end() ? nullptr : &sound->second;
     };
-    for (const auto &event : session_.events()) {
+    for (const auto &event : localSession().events()) {
         std::visit(
             [&](const auto &value) {
                 using T = std::decay_t<decltype(value)>;
@@ -434,7 +463,7 @@ void SceneView::advance(float dt) {
                 } else if constexpr (std::is_same_v<T, MissileImpact>) {
                     createMissileImpactVisuals(value.missileId, value.position);
                     if ((screen(value.position) - Vec{W / 2.f, (H - HUD) / 2.f}).length() < W)
-                        assets_.audio.play("missile-hit:" + std::to_string(value.missileId), session_.state().frame);
+                        assets_.audio.play("missile-hit:" + std::to_string(value.missileId), localSession().state().frame);
                 } else if constexpr (std::is_same_v<T, BlizzardShardCreated>) {
                     createBlizzardFall(value.missileId, value.position);
                 } else if constexpr (std::is_same_v<T, MissileReleased>) {
@@ -504,17 +533,17 @@ void SceneView::advance(float dt) {
                     view_.shopSalePending.reset();
                     notice(value.reason, true);
                     if (value.needsKey)
-                        assets_.audio.play("chest." + normalize(session_.state().player.character.characterClass) + "_needkey_1");
+                        assets_.audio.play("chest." + normalize(localSession().state().player.character.characterClass) + "_needkey_1");
                     if (view_.npcMenu || view_.shopOpen || !view_.dialogue.empty())
                         view_.dialogueStatus = value.reason;
                 } else if constexpr (std::is_same_v<T, LootDeferred>) {
                     notice("Loot deferred: " + value.reason, true);
                 } else if constexpr (std::is_same_v<T, ItemUsed>) {
-                    const auto *usedDefinition = session_.inventory().catalog().find(value.definition);
-                    if (!session_.content().isPortalScroll(value.definition) &&
-                        (!usedDefinition || !session_.content().isPortalScroll(usedDefinition->bookScroll)))
+                    const auto *usedDefinition = localSession().inventory().catalog().find(value.definition);
+                    if (!localSession().content().isPortalScroll(value.definition) &&
+                        (!usedDefinition || !localSession().content().isPortalScroll(usedDefinition->bookScroll)))
                         assets_.audio.play("drink");
-                    const auto *def = session_.inventory().catalog().find(value.definition);
+                    const auto *def = localSession().inventory().catalog().find(value.definition);
                     notice("Used: " + (def ? def->name : value.definition), false);
                 } else if constexpr (std::is_same_v<T, BeltEquipped>) {
                     assets_.audio.play("belt");
@@ -528,7 +557,7 @@ void SceneView::advance(float dt) {
                 } else if constexpr (std::is_same_v<T, InventoryRejected>) {
                     if (view_.inventory.pending == value.item)
                         view_.inventory.pending = {};
-                    const auto *item = session_.inventory().item(value.item);
+                    const auto *item = localSession().inventory().item(value.item);
                     bool ground = item && std::holds_alternative<GroundLocation>(item->location);
                     notice(value.error == InventoryError::NoSpace && ground
                                ? "Not enough room. Item stays on the ground."
@@ -537,8 +566,8 @@ void SceneView::advance(float dt) {
                 } else if constexpr (std::is_same_v<T, PickupFailed>) {
                     notice(value.reason, true);
                 } else if constexpr (std::is_same_v<T, ItemPickedUp>) {
-                    const auto *definition = session_.inventory().catalog().find(value.definition);
-                    const auto *picked = session_.inventory().item(value.item);
+                    const auto *definition = localSession().inventory().catalog().find(value.definition);
+                    const auto *picked = localSession().inventory().item(value.item);
                     auto name = picked ? itemName(*picked) :
                                          (definition ? definition->name : value.definition);
                     if (value.quantity > 1)
@@ -550,7 +579,7 @@ void SceneView::advance(float dt) {
                     if (value.kind == ItemChangeKind::Removed && view_.inventory.drag &&
                         view_.inventory.drag->item.id == value.item)
                         view_.inventory.drag.reset();
-                    const auto *item = session_.inventory().item(value.item);
+                    const auto *item = localSession().inventory().item(value.item);
                     if (item) {
                         const auto key = SceneAssets::itemArtKey(*item);
                         const auto icon = assets_.itemIcons.find(key);
@@ -558,12 +587,12 @@ void SceneView::advance(float dt) {
                         // Vendor stock can preload the icon without loading the ground animation.
                         if (icon == assets_.itemIcons.end() || icon->second.frames.empty() ||
                             ground == assets_.itemGround.end() || ground->second.frames.empty())
-                            assets_.loadInventoryArt(session_);
+                            assets_.loadInventoryArt(localSession());
                     }
                     landingAge_.erase(value.item);
                     if (value.after)
                         if (auto ground = std::get_if<GroundLocation>(&*value.after);
-                            ground && ground->region == session_.region().definition.id &&
+                            ground && ground->region == localSession().region().definition.id &&
                             (value.kind == ItemChangeKind::Created || value.kind == ItemChangeKind::Moved))
                             landingAge_[value.item] = 0.f;
                 } else if constexpr (std::is_same_v<T, WaypointActivated>) {
@@ -587,15 +616,15 @@ void SceneView::advance(float dt) {
                     else
                         openNpcDialogue(value.object, value.speaker, value.text);
                 } else if constexpr (std::is_same_v<T, ObjectInteracted>) {
-                    if (const auto *source = session_.object(value.object); source && source->operateFn == 25) {
-                        if (session_.quest(QuestId::HoradricStaff).stage < uint32_t(StaffStage::Submitted)) {
+                    if (const auto *source = localSession().object(value.object); source && source->operateFn == 25) {
+                        if (localSession().quest(QuestId::HoradricStaff).stage < uint32_t(StaffStage::Submitted)) {
                             view_.orificeObject = source->id;
                             view_.orificeItem.reset();
                             view_.inventory.open = true;
                             view_.inventory.cubeOpen = false;
                             view_.inventory.storage = {};
                             view_.questOpen = view_.characterOpen = view_.skillTreeOpen = false;
-                            assets_.loadInventoryArt(session_);
+                            assets_.loadInventoryArt(localSession());
                         } else {
                             view_.orificeObject = {};
                             view_.orificeItem.reset();
@@ -603,7 +632,7 @@ void SceneView::advance(float dt) {
                     }
                     if (value.unlockedChest) assets_.audio.play("chest.item_key_used");
                     if (value.interaction == Interaction::QuestTome) {
-                        if (auto speech = questSpeech(session_.content().npcDialogues,
+                        if (auto speech = questSpeech(localSession().content().npcDialogues,
                                                       "A1Q5", "Init", "QuestTome"))
                             openNpcDialogue(value.object, value.name, speech->text);
                     } else if (value.interaction == Interaction::Shrine) {
@@ -620,17 +649,17 @@ void SceneView::advance(float dt) {
                         }
                       } else if (value.interaction == Interaction::Heal ||
                                  value.interaction == Interaction::Talk) {
-                          assets_.loadInventoryArt(session_);
+                          assets_.loadInventoryArt(localSession());
                           openNpcMenu(value.object, value.name, value.firstIntroduction);
                     }
                 } else if constexpr (std::is_same_v<T, ItemsIdentified>) {
-                    assets_.loadInventoryArt(session_);
+                    assets_.loadInventoryArt(localSession());
                     view_.dialogueStatus = value.count
                         ? "Identified " + std::to_string(value.count) + " item(s) for " +
                               std::to_string(value.goldSpent) + " gold."
                         : "No unidentified items in your inventory.";
                 } else if constexpr (std::is_same_v<T, GambleStockOpened>) {
-                    assets_.loadInventoryArt(session_);
+                    assets_.loadInventoryArt(localSession());
                     if (view_.npcMenu && view_.dialogueObject == value.npc) openNpcShop(true);
                 } else if constexpr (std::is_same_v<T, HirelingListOpened>) {
                     if (view_.npcMenu && view_.dialogueObject == value.npc) {
@@ -658,21 +687,21 @@ void SceneView::advance(float dt) {
             event);
     }
     auto inBackpack = [&](EntityId id) {
-        auto *item = session_.inventory().item(id);
+        auto *item = localSession().inventory().item(id);
         auto location = item ? std::get_if<ContainerLocation>(&item->location) : nullptr;
-        return location && (location->container == session_.playerContainers().backpack ||
-                            location->container == session_.playerContainers().belt ||
-                            location->container == session_.playerContainers().beltEquipment ||
-                            location->container == session_.playerContainers().equipment ||
-                            location->container == session_.playerContainers().cube ||
+        return location && (location->container == localSession().playerContainers().backpack ||
+                            location->container == localSession().playerContainers().belt ||
+                            location->container == localSession().playerContainers().beltEquipment ||
+                            location->container == localSession().playerContainers().equipment ||
+                            location->container == localSession().playerContainers().cube ||
                             location->container == view_.inventory.storage);
     };
     if (!inBackpack(view_.inventory.selected))
         view_.inventory.selected = {};
     if (view_.inventory.cubeOpen) {
         bool carried = false;
-        for (auto id : session_.inventory().contents(session_.playerContainers().backpack))
-            if (session_.inventory().item(id)->definition == session_.content().cubeCode)
+        for (auto id : localSession().inventory().contents(localSession().playerContainers().backpack))
+            if (localSession().inventory().item(id)->definition == localSession().content().cubeCode)
                 carried = true;
         if (!carried) {
             view_.inventory.cubeOpen = false;
@@ -680,7 +709,7 @@ void SceneView::advance(float dt) {
         }
     }
     view_.animationTime += dt;
-    if (view_.orificeObject && (!view_.inventory.open || player.dead || !session_.object(view_.orificeObject))) {
+    if (view_.orificeObject && (!view_.inventory.open || player.dead || !localSession().object(view_.orificeObject))) {
         view_.orificeObject = {};
         view_.orificeItem.reset();
     }

@@ -6,6 +6,7 @@
 #include "world/native_map.hpp"
 #include "resources/data_table.hpp"
 #include "content/world/automap_data.hpp"
+#include "content/string_table.hpp"
 #include <span>
 
 namespace d2x {
@@ -14,9 +15,11 @@ namespace d2x {
 class RemoteTown {
     Archives &archives_;
     TileLibraryCache libraries_;
-    DataTable objects_;
-    std::map<int, size_t> objectRows_;
+    DataTable objects_, monsters_, monsterSizes_, skills_;
+    std::map<int, size_t> objectRows_, monsterRows_;
+    std::map<std::string, size_t, std::less<>> monsterSizeRows_;
     AutomapCatalog automap_;
+    ClassicStrings strings_;
     using Discovery = std::tuple<uint32_t, int, int, int, int>;
     std::set<Discovery> explored_;
     std::map<Discovery, std::set<int>> discoveredCels_;
@@ -44,6 +47,7 @@ class RemoteTown {
     const Map *map() const { return map_; }
     bool permits(const OnlineView &, OnlinePoint target) const;
     bool permitsInteraction(const OnlineView &, OnlineUnitKey target) const;
+    bool interactionReady(const OnlineView &, OnlineUnitKey target) const;
     void revealVisibleTiles(const OnlineView &, std::span<const size_t> instanceIndices);
 };
 } // namespace d2x

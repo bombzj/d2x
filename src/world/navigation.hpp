@@ -71,6 +71,9 @@ struct Grid {
             p.x < width && p.y < height && walkable(int(std::floor(p.x)), int(std::floor(p.y)), rule);
     }
     bool segment(Vec a, Vec b, EntityId ignoredObject = {}, MovementCollisionRule rule = {}) const;
+    // D2Common PATH_RayTrace uses integer cells and a biased major-axis walk.
+    // Use together with segment() when a route is sent to the original server.
+    bool nativeMovementSegment(Vec a, Vec b, MovementCollisionRule rule = playerMovement) const;
     bool collisionSegment(Vec a, Vec b, uint16_t mask) const;
     // Object interaction uses the native shortened integer ray and flying
     // player mask; approaching it still uses the full walking footprint.
@@ -83,6 +86,7 @@ struct Grid {
     // Real level transitions must use the original linked warp coordinates instead.
     Vec inspectionArrival() const;
     // Partial routes are for movement requests; reachability checks stay exact.
-    std::deque<Vec> path(Vec from, Vec to, bool allowPartial = false, MovementCollisionRule rule = {}) const;
+    std::deque<Vec> path(Vec from, Vec to, bool allowPartial = false, MovementCollisionRule rule = {},
+                         bool nativeSegments = false) const;
 };
 } // namespace d2x

@@ -28,11 +28,12 @@ bool SceneController::handleTravel(const FrameInput &input) {
         ui.travelMenu = false;
         return true;
     }
-    if (input.insideViewport && input.leftPressed)
+    if (input.insideViewport && input.leftPressed) {
         if (auto destination = view_.clickWaypointMenu(input.mouse)) {
             mapClient_.submit(WaypointTravel{ui.waypointSource, *destination});
             ui.travelMenu = false;
-        }
+        } else if (!ui.travelMenu) mapClient_.closeTravel();
+    }
     return true;
 }
 } // namespace d2x

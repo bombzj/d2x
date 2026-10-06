@@ -1,4 +1,5 @@
 #include "hud_layout.hpp"
+#include "classic_hud.hpp"
 #include "presentation/scene_view.hpp"
 #include <algorithm>
 #include <sstream>
@@ -12,24 +13,6 @@ void imageAt(const Sprite *image, Rectangle bounds, Color tint = WHITE) {
     DrawTexturePro(texture, {0, 0, float(texture.width), float(texture.height)}, bounds, {0, 0}, 0, tint);
 }
 } // namespace
-void SceneView::orb(bool mana, float fraction) const {
-    const auto *image = assets_.orbs.frame(0, mana ? 1 : 0);
-    if (!image)
-        return;
-    auto bounds = hudGlobe(mana);
-    const auto &texture = image->texture;
-    int filled = int(std::round(std::clamp(fraction, 0.f, 1.f) * texture.height));
-    if (filled > 0) {
-        float empty = float(texture.height - filled);
-        auto destination = bounds;
-        destination.y += empty * hudScale;
-        destination.height = filled * hudScale;
-        DrawTexturePro(texture, {0, empty, float(texture.width), float(filled)}, destination, {0, 0}, 0,
-                       WHITE);
-    }
-    // Original foreground rim/fingers, not the opaque empty-globe panel backing.
-    imageAt(assets_.globeOverlap.frame(0, mana ? 1 : 0), hudRect(mana ? 691 : 28, mana ? 96 : 93, 82, 88));
-}
 void SceneView::drawSkillIcon(std::optional<int> skill, Rectangle bounds) const {
     const auto *entry = skill ? characterView_.skill(*skill) : nullptr;
     auto icon = skill ? assets_.skillIcons.find(*skill) : assets_.skillIcons.end();
@@ -40,52 +23,32 @@ void SceneView::drawSkillIcon(std::optional<int> skill, Rectangle bounds) const 
 }
 void SceneView::drawControlPanel() const {
     const auto &player = characterView_;
-    DrawRectangle(0, H - HUD, W, HUD, BLACK);
-    // Use the original globe silhouette to mask the world above the panel.
-    // The panel then supplies the original empty bowl and glass highlights.
-    for (bool mana : {false, true})
-        imageAt(assets_.orbs.frame(0, mana ? 1 : 0), hudGlobe(mana), BLACK);
-    constexpr std::array<float, 6> offsets{0, 165, 293, 421, 549, 683};
-    for (int i = 0; i < int(offsets.size()); ++i) {
-        const auto &part = assets_.panel.frames.at(i);
-        imageAt(&part, hudRect(offsets[i], float(part.texture.height), float(part.texture.width),
-                               float(part.texture.height)));
+    ClassicHudValues values;
+    if (characterView_.maxLife > 0 && !player.unknownStats.contains("hitpoints")) values.life = player.hp / characterView_.maxLife;
+    if (characterView_.maxMana > 0 && !player.unknownStats.contains("mana")) values.mana = player.mana / characterView_.maxMana;
+    if (characterView_.maxStamina > 0 && !player.unknownStats.contains("stamina")) values.stamina = player.stamina / characterView_.maxStamina;
+    values.running = player.running; values.blueStamina = player.blueStamina;
+    values.attributePoints = player.unspentAttributes > 0; values.skillPoints = player.unspentSkills > 0;
+    values.miniPanel = view_.miniPanelOpen; values.pressedPoint = view_.pointButtonPressed;
+    if (!player.unknownStats.contains("experience") && !player.unknownStats.contains("level") &&
+        player.nextLevelExperience && *player.nextLevelExperience > player.currentLevelExperience) {
+        const auto gained = player.experience > player.currentLevelExperience
+            ? player.experience - player.currentLevelExperience : 0;
+        const auto needed = *player.nextLevelExperience - player.currentLevelExperience;
+        values.experience = float(std::clamp(double(gained) / double(needed), 0.0, 1.0));
     }
-    orb(false, player.hp / characterView_.maxLife);
-    orb(true, player.mana / characterView_.maxMana);
+    drawClassicHud({assets_.panel, assets_.orbs, assets_.globeOverlap, assets_.runButton,
+                    assets_.attributeButtons, assets_.miniPanelToggle}, values);
     drawSkillIcon(view_.leftSkill, hudSkillSlot(false));
     drawSkillIcon(view_.rightSkill, hudSkillSlot(true));
-    auto stamina = hudStamina();
-    const float staminaFraction = std::clamp(player.stamina / characterView_.maxStamina, 0.f, 1.f);
-    stamina.width *= staminaFraction;
-    const bool blueStamina = player.blueStamina;
-    // OpenDiablo2 HUD supplies ordinary/low stamina colors and alpha. Blue
-    // uses its shared UI blue; the original 1.13c bar color remains unverified.
-    const Color staminaColor = blueStamina ? Color{105, 105, 255, 200}
-        : staminaFraction < .25f ? Color{255, 0, 0, 200} : Color{175, 136, 72, 200};
-    DrawRectangleRec(stamina, staminaColor);
-    if (player.nextLevelExperience && *player.nextLevelExperience > player.currentLevelExperience) {
-        auto experience = hudExperience();
-        const auto gained = player.experience - player.currentLevelExperience;
-        const auto needed = *player.nextLevelExperience - player.currentLevelExperience;
-        experience.width *= std::clamp(double(gained) / double(needed), 0.0, 1.0);
-        experience.height = 2 * hudScale;
-        DrawRectangleRec(experience, WHITE);
-    }
-    imageAt(assets_.runButton.frame(0, player.running ? 2 : 0), hudRunButton());
-    imageAt(assets_.attributeButtons.frame(0, player.unspentAttributes > 0
-        ? (view_.pointButtonPressed == false ? 1 : 0) : 2), hudCharacterButton());
-    imageAt(assets_.attributeButtons.frame(0, player.unspentSkills > 0
-        ? (view_.pointButtonPressed == true ? 1 : 0) : 2), hudSkillTreeButton());
-    imageAt(assets_.miniPanelToggle.frame(0, view_.miniPanelOpen ? 2 : 0), hudMenuButton());
     if (view_.miniPanelOpen) {
         if (const auto *background = assets_.miniPanel.frame(0, 0))
             imageAt(background, hudMiniPanel(*background));
-        constexpr int frames[] = {0, 2, 4, 8, 10, 12, 14};
-        for (int index = 0; index < 7; ++index)
+        const std::vector<int> frames = multiplayer() ? std::vector<int>{0,2,4,6,8,10,12,14} : std::vector<int>{0,2,4,8,10,12,14};
+        for (int index = 0; index < int(frames.size()); ++index)
             if (const auto *icon = assets_.miniPanelButtons.frame(0, frames[index]))
                 imageAt(icon, hudMiniButton(*icon, index),
-                        index == 4 ? Color{120, 120, 120, 255} : WHITE);
+                        (frames[index] == 6 || frames[index] == 10) ? Color{120, 120, 120, 255} : WHITE);
     }
 }
 std::optional<int> SceneView::miniPanelAt(Vec mouse) const {
@@ -93,11 +56,11 @@ std::optional<int> SceneView::miniPanelAt(Vec mouse) const {
     const auto *background = assets_.miniPanel.frame(0, 0);
     if (!background || !CheckCollisionPointRec(rv(mouse), hudMiniPanel(*background)))
         return std::nullopt;
-    constexpr int frames[] = {0, 2, 4, 8, 10, 12, 14};
-    for (int index = 0; index < 7; ++index)
+    const std::vector<int> frames = multiplayer() ? std::vector<int>{0,2,4,6,8,10,12,14} : std::vector<int>{0,2,4,8,10,12,14};
+    for (int index = 0; index < int(frames.size()); ++index)
         if (const auto *icon = assets_.miniPanelButtons.frame(0, frames[index]);
             icon && CheckCollisionPointRec(rv(mouse), hudMiniButton(*icon, index)))
-            return index;
+            return frames[index] == 6 ? 7 : frames[index] / 2 - (frames[index] >= 8 ? 1 : 0);
     return -1;
 }
 bool SceneView::leftSkillAllowed(int skill) const {
@@ -165,8 +128,8 @@ void SceneView::drawSkillControls(Vec mouse) const {
         if (!CheckCollisionPointRec(rv(mouse), hudGlobe(mana)))
             continue;
         const auto &p = characterView_;
-        auto text = std::string(mana ? "Mana: " : "Life: ") + std::to_string(int(mana ? p.mana : p.hp)) +
-                    " / " + std::to_string(mana ? characterView_.maxMana : characterView_.maxLife);
+        auto text = std::string(mana ? "Mana: " : "Life: ") + p.number(mana ? "mana" : "hitpoints", int(mana ? p.mana : p.hp)) +
+                    " / " + p.number(mana ? "maxmana" : "maxhp", mana ? characterView_.maxMana : characterView_.maxLife);
         auto globe = hudGlobe(mana);
         painter_.label(text, int(globe.x + (globe.width - painter_.measure(text, 12)) / 2), int(globe.y - 20),
                        12, parchment);
@@ -180,11 +143,11 @@ void SceneView::drawSkillControls(Vec mouse) const {
         constexpr const char *labels[] = {"Character [C]", "Inventory [I]", "Skill Tree [S]",
                                           "Automap [TAB]", "Message unavailable", "Quest Log [Q]",
                                           "Game menu [Esc]"};
-        hint = labels[*button];
+        hint = *button == 7 ? "Party service unavailable" : labels[*button];
     }
     if (CheckCollisionPointRec(rv(mouse), hudStamina()))
-        hint = "Stamina: " + std::to_string(int(characterView_.stamina)) + " / " +
-               std::to_string(characterView_.maxStamina);
+        hint = "Stamina: " + characterView_.number("stamina", int(characterView_.stamina)) + " / " +
+               characterView_.number("maxstamina", characterView_.maxStamina);
     if (characterView_.unspentAttributes > 0 &&
         CheckCollisionPointRec(rv(mouse), hudCharacterButton())) {
         hint = "New attribute points [A]";
@@ -194,7 +157,7 @@ void SceneView::drawSkillControls(Vec mouse) const {
         hint = "New skill points [S]";
     }
     if (CheckCollisionPointRec(rv(mouse), hudExperience())) {
-        hint = "Experience: " + std::to_string(characterView_.experience) + " / " +
+        hint = "Experience: " + characterView_.number("experience", characterView_.experience) + " / " +
                (characterView_.nextLevelExperience ? std::to_string(*characterView_.nextLevelExperience) : "MAX");
     }
     if (!hint.empty())

@@ -9,6 +9,7 @@
 #include <optional>
 #include <string>
 #include <vector>
+#include <set>
 
 namespace d2x {
 struct CharacterSkillView {
@@ -41,6 +42,10 @@ struct CharacterView {
     std::array<std::vector<std::optional<int>>, 2> choices;
     CharacterActionDisplay attack;
     std::map<int, CharacterSkillView> skills;
+    std::set<std::string, std::less<>> unknownStats;
+    std::string number(std::string_view stat, int64_t value) const {
+        return unknownStats.contains(stat) ? "?" : std::to_string(value);
+    }
     const CharacterSkillView *skill(int id) const {
         const auto found = skills.find(id);
         return found == skills.end() ? nullptr : &found->second;

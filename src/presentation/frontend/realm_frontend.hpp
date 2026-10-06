@@ -2,6 +2,7 @@
 #include "contracts/online.hpp"
 #include "resources/archive.hpp"
 #include <memory>
+#include <optional>
 #include <raylib.h>
 
 namespace d2x {
@@ -34,6 +35,7 @@ struct FrontendIntent {
     uint8_t maximumPlayers{4}, levelDifference{4};
     uint8_t difficulty{}, characterClass{};
     bool hardcore{};
+    std::optional<std::string> editedAccount;
 };
 // Original MPQ art and input only. The application owns authentication and sockets.
 class RealmFrontend {
@@ -45,6 +47,8 @@ class RealmFrontend {
     FrontendIntent frame(FrontendPage, const OnlineView &, std::string_view gateway, std::string_view notice,
                          Vector2 mouse, std::string_view worldNotice = {});
     void clearPassword();
+    void clearTransientPasswords();
+    void setLogin(std::string account, std::string password);
 
   private:
     struct Impl;

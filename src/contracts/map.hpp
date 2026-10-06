@@ -37,7 +37,7 @@ struct MapSceneView {
     uint64_t revision = 0;
     EntityId actor;
     RegionId region = RegionId::Encampment;
-    int current = -1, act = 0;
+    int current = -1, act = 0, palette = 0;
     Vec observer;
     bool hasObserverRoom = false;
     std::vector<MapRegionView> regions;

@@ -31,17 +31,16 @@ const Sprite *SceneView::playerCorpseSprite(const PlayerCorpse &corpse) const {
     return death.frame(direction(corpse.look, death.directions), death.count - 1);
 }
 const PlayerCorpse *SceneView::playerCorpseAt(Vec mouse) const {
-    const auto &player = session_.state().player;
+    const auto &player = localSession().state().player;
     if (player.actions.dead) return nullptr;
     const PlayerCorpse *nearest = nullptr;
-    for (const auto &corpse : session_.playerCorpses()) {
-        if (corpse.region != session_.region().definition.id || corpse.owner != player.id ||
-            !session_.roomVisible(session_.regionIndex(), corpse.position)) continue;
+    for (const auto &corpse : localSession().playerCorpses()) {
+        if (corpse.region != localSession().region().definition.id || corpse.owner != player.id ||
+            !localSession().roomVisible(localSession().regionIndex(), corpse.position)) continue;
         const auto *image = playerCorpseSprite(corpse);
         if (!image || !image->hitWidth || !image->hitHeight) continue;
         const auto at = screen(corpse.position);
-        if (CheckCollisionPointRec(rv(mouse), {at.x + image->hitX, at.y + image->hitY,
-            float(image->hitWidth), float(image->hitHeight)}) &&
+        if (spriteHit(image, at, mouse) &&
             (!nearest || sceneOrder(nearest->position, 1, false, 1) < sceneOrder(corpse.position, 1, false, 1)))
             nearest = &corpse;
     }
@@ -49,16 +48,16 @@ const PlayerCorpse *SceneView::playerCorpseAt(Vec mouse) const {
 }
 std::vector<SceneView::VisibleMonster> SceneView::visibleMonsters() const {
     std::vector<VisibleMonster> result;
-    for (const auto &[index, offset] : session_.sceneRegions())
-        for (const auto &enemy : session_.areaState(index).enemies)
-            if (!enemy.corpseConsumed && !enemy.deathHidden && session_.roomVisible(index, enemy.pos))
+    for (const auto &[index, offset] : localSession().sceneRegions())
+        for (const auto &enemy : localSession().areaState(index).enemies)
+            if (!enemy.corpseConsumed && !enemy.deathHidden && localSession().roomVisible(index, enemy.pos))
                 result.push_back({&enemy, enemy.pos + offset, index});
-    for (const auto &pet : session_.state().companions) {
-        if (pet.hydra && pet.hydra->region != session_.region().definition.id) continue;
-        const auto *death = session_.monsterContent().motion(pet.kind, "dt");
+    for (const auto &pet : localSession().state().companions) {
+        if (pet.hydra && pet.hydra->region != localSession().region().definition.id) continue;
+        const auto *death = localSession().monsterContent().motion(pet.kind, "dt");
         if (!pet.deathHidden && (pet.living() || (death && pet.deathAge < death->duration)) &&
-            session_.roomVisible(session_.regionIndex(), pet.pos))
-            result.push_back({&pet, pet.pos, session_.regionIndex()});
+            localSession().roomVisible(localSession().regionIndex(), pet.pos))
+            result.push_back({&pet, pet.pos, localSession().regionIndex()});
     }
     return result;
 }
@@ -66,14 +65,14 @@ const Sprite *SceneView::objectSprite(const WorldObject &object, RegionId region
     assets_.ensurePropArt(object);
     if (auto waypoint = assets_.waypointAnimations.find(object.key);
         waypoint != assets_.waypointAnimations.end()) {
-        auto activated = session_.state().waypoints.find(region);
+        auto activated = localSession().state().waypoints.find(region);
         size_t mode = 0;
         float elapsed = 0;
-        if (activated != session_.state().waypoints.end()) {
+        if (activated != localSession().state().waypoints.end()) {
             if (activated->second < 0) {
-                mode = 2; elapsed = session_.state().time;
+                mode = 2; elapsed = localSession().state().time;
             } else {
-                elapsed = std::max(0.f, session_.state().time - activated->second);
+                elapsed = std::max(0.f, localSession().state().time - activated->second);
                 const float duration = object.animationRules[1].frames / object.waypointFps[1];
                 mode = elapsed < duration ? 1 : 2;
                 if (mode == 2) elapsed -= duration;
@@ -90,10 +89,10 @@ const Sprite *SceneView::objectSprite(const WorldObject &object, RegionId region
     }
     if (auto modes = assets_.objectModeAnimations.find(object.key);
         modes != assets_.objectModeAnimations.end()) {
-        int mode = object.modeAt(session_.state().time);
+        int mode = object.modeAt(localSession().state().time);
         float elapsed = view_.animationTime;
         if (object.operatedAt >= 0 && object.operateFn != 22) {
-            elapsed = std::max(0.f, session_.state().time - object.operatedAt);
+            elapsed = std::max(0.f, localSession().state().time - object.operatedAt);
             const auto &operating = object.animationRules[1];
             const float duration = object.chest || object.operateFn == 47
                 ? (object.operateFn == 47 || operating.enabled ? float(operating.frames + 1) / 25.f : 0)
@@ -101,7 +100,7 @@ const Sprite *SceneView::objectSprite(const WorldObject &object, RegionId region
             if (mode == 2) elapsed = std::max(0.f, elapsed - duration);
         }
         if (object.animationStartedAt >= 0)
-            elapsed = std::max(0.f, session_.state().time - object.animationStartedAt);
+            elapsed = std::max(0.f, localSession().state().time - object.animationStartedAt);
         mode = std::clamp(mode, 0, 7);
         const auto &animation = modes->second[size_t(mode)];
         if (!animation.frames.empty()) {
@@ -141,17 +140,15 @@ const Sprite *SceneView::objectSprite(const WorldObject &object, RegionId region
 const WorldObject *SceneView::objectAt(Vec mouse) const {
     const WorldObject *nearest = nullptr;
     SceneOrder nearestOrder;
-    for (const auto &object : session_.region().objects) {
+    for (const auto &object : localSession().region().objects) {
         if (object.interaction == Interaction::None || object.questHidden || !object.draw) continue;
-        auto sprite = objectSprite(object, session_.region().definition.id);
+        auto sprite = objectSprite(object, localSession().region().definition.id);
         if (!sprite || !sprite->hitWidth || !sprite->hitHeight) continue;
         Vec origin = objectScreen(object);
-        Rectangle bounds{origin.x + sprite->hitX, origin.y + sprite->hitY,
-                         float(sprite->hitWidth), float(sprite->hitHeight)};
-        const int mode = object.modeAt(session_.state().time);
+        const int mode = object.modeAt(localSession().state().time);
         const bool below = object.drawUnder || object.orderFlags[size_t(mode)] == 1;
         const auto order = sceneOrder(object.pos, below ? 0 : 1, object.orderFlags[size_t(mode)] == 2, 2);
-        if (CheckCollisionPointRec(rv(mouse), bounds) && (!nearest || nearestOrder < order)) {
+        if (spriteHit(sprite, origin, mouse) && (!nearest || nearestOrder < order)) {
             nearest = &object;
             nearestOrder = order;
         }
@@ -161,12 +158,12 @@ const WorldObject *SceneView::objectAt(Vec mouse) const {
 void SceneView::drawTerrain(Vec mouse) const {
     struct Terrain { SceneOrder order; const Sprite *image; Vec position; bool shadow; int region; };
     std::vector<Terrain> terrain;
-    const auto regions = session_.sceneRegions();
+    const auto regions = localSession().sceneRegions();
     struct Owner { int region; std::tuple<bool, bool, int> priority; };
     auto ownersAt = [&](int worldX, int worldY) {
         Owner floorOwner{-1, {}}, shadowOwner{-1, {}};
         for (const auto &[region, offset] : regions) {
-            const auto &source = session_.regions()[region];
+            const auto &source = localSession().regions()[region];
             const auto &data = source.map.terrain.data;
             const int x = worldX - source.recipe.worldX, y = worldY - source.recipe.worldY;
             if (x < 0 || y < 0 || x >= data.width || y >= data.height) continue;
@@ -188,13 +185,13 @@ void SceneView::drawTerrain(Vec mouse) const {
         return std::pair{floorOwner.region, shadowOwner.region};
     };
     for (const auto &[region, offset] : regions) {
-        const auto &source = session_.regions()[region];
-        const auto &map = session_.regions()[region].map;
+        const auto &source = localSession().regions()[region];
+        const auto &map = localSession().regions()[region].map;
         const auto &tiles = assets_.regionTileSprites(region);
 
         if (map.terrain.preparedRooms) {
             std::optional<size_t> selected;
-            if (region == session_.regionIndex()) if (const auto *exit = exitAt(mouse))
+            if (region == localSession().regionIndex()) if (const auto *exit = exitAt(mouse))
                 for (size_t i = 0; i < map.terrain.exits.size(); ++i)
                     if (map.terrain.exits[i].slot == exit->slot) { selected = i; break; }
             const auto warps = warpTileVisibility(map.terrain, selected);
@@ -258,15 +255,15 @@ void SceneView::drawTerrain(Vec mouse) const {
 }
 void SceneView::drawActors(Vec mouse) const {
     const auto actor = actorClient_.controlledActor();
-    const auto &sim = session_.state();
+    const auto &sim = localSession().state();
     const auto monsters = visibleMonsters();
 
     // Follow the same priority as SceneController::click so overlapping targets
     // do not all brighten at once. Only the sprite is highlighted, not its shadow.
     const bool canHover = !view_.blocksWorld() && !view_.inventory.drag &&
                           !hudSurface(mouse) && CheckCollisionPointRec(rv(mouse), worldViewport());
-    const auto cainPortal = session_.cainPortalPosition();
-    const auto portals = session_.portals(sim.area.region);
+    const auto cainPortal = localSession().cainPortalPosition();
+    const auto portals = localSession().portals(sim.area.region);
     const bool hotCainPortal = canHover && cainPortal &&
         (screen(staticUnitPosition(*cainPortal)) - Vec{0, 40} - mouse).length() < 45;
     int hotPortal = -1;
@@ -279,14 +276,14 @@ void SceneView::drawActors(Vec mouse) const {
                                   ? lootAt(mouse, true) : std::nullopt;
     const auto *hotPlayerCorpse = canHover && !hotCainPortal && !hotTownPortal && !hotExit && !hotLabelItem
                                   ? playerCorpseAt(mouse) : nullptr;
-    const auto *selectedSkill = view_.rightSkill ? session_.content().skills.find(*view_.rightSkill) : nullptr;
+    const auto *selectedSkill = view_.rightSkill ? localSession().content().skills.find(*view_.rightSkill) : nullptr;
     const bool corpseExplosion = selectedSkill && selectedSkill->spell && selectedSkill->spell->bone && selectedSkill->spell->bone->corpse;
     const bool corpseSkill = corpseExplosion || (selectedSkill && selectedSkill->spell && selectedSkill->spell->summon && selectedSkill->spell->summon->corpse);
     EntityId hotEnemy;
     if (canHover && !hotCainPortal && !hotTownPortal && !hotExit && !hotLabelItem && !hotPlayerCorpse)
         for (const auto &monster : monsters)
-            if ((corpseSkill ? session_.usableCorpse(monster.enemy->id, corpseExplosion) :
-                 monster.enemy->hp > 0 && session_.canAttack(sim.player.id, monster.enemy->id)) &&
+            if ((corpseSkill ? localSession().usableCorpse(monster.enemy->id, corpseExplosion) :
+                 monster.enemy->hp > 0 && localSession().canAttack(sim.player.id, monster.enemy->id)) &&
                 (screen(monster.position) - Vec{0, corpseSkill ? 0.f : 25.f} - mouse).length() < 24) {
                 hotEnemy = monster.enemy->id;
                 break;
@@ -308,20 +305,20 @@ void SceneView::drawActors(Vec mouse) const {
     };
     std::vector<Item> draw;
     std::vector<Item> roofs;
-    const auto groundItems = session_.inventory().groundItems(sim.area.region);
+    const auto groundItems = localSession().inventory().groundItems(sim.area.region);
     for (int i = 0; i < int(groundItems.size()); ++i) {
-        const auto &item = *session_.inventory().item(groundItems[i]);
+        const auto &item = *localSession().inventory().item(groundItems[i]);
         const Vec position = staticUnitPosition(std::get<GroundLocation>(item.location).position);
         auto p = screen(position);
         draw.push_back({sceneOrder(position, 1, false, 1), 4, i, p});
     }
-    for (const auto &[region, offset] : session_.sceneRegions()) {
-        const auto &map = session_.regions()[region].map;
+    for (const auto &[region, offset] : localSession().sceneRegions()) {
+        const auto &map = localSession().regions()[region].map;
         const auto &tiles = assets_.regionTileSprites(region);
         if (map.terrain.preparedRooms) {
-            const auto pops = nativePops_.find(session_.regions()[region].definition.id);
+            const auto pops = nativePops_.find(localSession().regions()[region].definition.id);
             std::optional<size_t> selected;
-            if (region == session_.regionIndex()) if (const auto *exit = exitAt(mouse))
+            if (region == localSession().regionIndex()) if (const auto *exit = exitAt(mouse))
                 for (size_t i = 0; i < map.terrain.exits.size(); ++i)
                     if (map.terrain.exits[i].slot == exit->slot) { selected = i; break; }
             const auto warps = warpTileVisibility(map.terrain, selected);
@@ -375,16 +372,16 @@ void SceneView::drawActors(Vec mouse) const {
             const auto &source = map.terrain.clientObjects[i];
             if (source.type != 2) continue;
             const auto &object = assets_.clientDecoration(source.id,
-                session_.worldContent().level(int(session_.regions()[region].definition.id)).palette);
+                localSession().worldContent().level(int(localSession().regions()[region].definition.id)).palette);
             if (!object.draw) continue;
             const Vec position = Vec{float(source.x), float(source.y)} + offset;
             const auto at = screen(position) + object.drawOffset;
-            const auto *image = objectSprite(object, session_.regions()[region].definition.id);
+            const auto *image = objectSprite(object, localSession().regions()[region].definition.id);
             if (!image || !tileVisible(*image, at)) continue;
             const auto order = object.orderFlags[0];
             draw.push_back({sceneOrder(position, order == 1 ? 0 : 1, order == 2, 2), 12, int(i), at, region});
         }
-        const auto &props = session_.regions()[region].objects;
+        const auto &props = localSession().regions()[region].objects;
         for (int i = 0; i < int(props.size()); i++) {
             const auto &prop = props[i];
             if (!visible(prop))
@@ -402,18 +399,18 @@ void SceneView::drawActors(Vec mouse) const {
         draw.push_back({sceneOrder(monsters[i].position, 1, false, e.hp > 0 ? 3 : 1), 2, i, p});
     }
     draw.push_back({sceneOrder(actor.position, 1, false, 3), 1, 0, screen(actor.position)});
-    const auto corpses = session_.playerCorpses();
+    const auto corpses = localSession().playerCorpses();
     for (int index = 0; index < int(corpses.size()); ++index) {
         const auto &corpse = corpses[size_t(index)];
         if (actor.dead && corpse.id == sim.player.actions.deathCorpse) continue;
-        for (const auto &[region, offset] : session_.sceneRegions())
-            if (corpse.region == session_.regions()[region].definition.id &&
-                session_.roomVisible(region, corpse.position))
+        for (const auto &[region, offset] : localSession().sceneRegions())
+            if (corpse.region == localSession().regions()[region].definition.id &&
+                localSession().roomVisible(region, corpse.position))
                 draw.push_back({sceneOrder(corpse.position + offset, 1, false, 1), 12, index,
                                 screen(corpse.position + offset), region});
     }
     if ((sim.player.hireling.active() || (sim.player.hireling.corpseVisible &&
-         sim.player.hireling.corpseRegion == sim.area.region)) && session_.active(sim.player.hireling.pos)) {
+         sim.player.hireling.corpseRegion == sim.area.region)) && localSession().active(sim.player.hireling.pos)) {
         auto point = screen(sim.player.hireling.pos);
         draw.push_back({sceneOrder(sim.player.hireling.pos, 1, false, 3), 6, 0, point});
     }
@@ -422,23 +419,23 @@ void SceneView::drawActors(Vec mouse) const {
         auto point = screen(position);
         draw.push_back({sceneOrder(position, 1, false, 2), 5, i, point});
     }
-    if (auto position = session_.cainPortalPosition()) {
+    if (auto position = localSession().cainPortalPosition()) {
         const Vec anchor = staticUnitPosition(*position);
         auto point = screen(anchor);
         draw.push_back({sceneOrder(anchor, 1, false, 2), 7, 0, point});
     }
-    for (const auto &[region, offset] : session_.sceneRegions()) {
-        const auto &area = session_.areaState(region);
+    for (const auto &[region, offset] : localSession().sceneRegions()) {
+        const auto &area = localSession().areaState(region);
         for (int i = 0; i < int(area.missiles.size()); ++i) {
             const auto &missile = area.missiles[i];
             if (missile.blizzard && !missile.blizzard->center) continue;
             const Vec position = missile.pos + offset;
-            if (missile.missileId >= 0 && session_.roomVisible(region, missile.pos))
+            if (missile.missileId >= 0 && localSession().roomVisible(region, missile.pos))
                 draw.push_back({sceneOrder(position, 1, false, 4), 8, i, screen(position), region});
         }
         for (int i = 0; i < int(area.effects.size()); ++i) {
             const auto &effect = area.effects[i];
-            if (!session_.roomVisible(region, effect.pos)) continue;
+            if (!localSession().roomVisible(region, effect.pos)) continue;
             const Vec position = effect.pos + offset;
             if (effect.missileId >= 0) draw.push_back({sceneOrder(position, 1, false, 4), 9, i, screen(position), region});
             // Attached overlays are drawn immediately before/after their unit.
@@ -458,10 +455,10 @@ void SceneView::drawActors(Vec mouse) const {
                 auto &s = assets_.regionTileSprites(item.region)[item.index];
                 sprite(&s, item.p, {255, 255, 255, item.alpha});
             } else if (item.type == 12) {
-                const auto &region = session_.regions()[item.region];
+                const auto &region = localSession().regions()[item.region];
                 const auto &source = region.map.terrain.clientObjects.at(size_t(item.index));
                 const auto &object = assets_.clientDecoration(source.id,
-                    session_.worldContent().level(int(region.definition.id)).palette);
+                    localSession().worldContent().level(int(region.definition.id)).palette);
                 const auto *image = objectSprite(object, region.definition.id);
                 if (shadowsOnly) spriteShadow(image, item.p);
                 else sprite(image, item.p);
@@ -471,9 +468,9 @@ void SceneView::drawActors(Vec mouse) const {
                 if (anim->frames.empty())
                     anim = &assets_.hero.at("nu");
                 if (actor.dead) {
-                    const auto timing = session_.content().playerDeath.timings.find(session_.characterAppearance() + "dthth");
+                    const auto timing = localSession().content().playerDeath.timings.find(localSession().characterAppearance() + "dthth");
                     const auto corpse = assets_.hero.find("dd");
-                    if (timing != session_.content().playerDeath.timings.end() && corpse != assets_.hero.end() &&
+                    if (timing != localSession().content().playerDeath.timings.end() && corpse != assets_.hero.end() &&
                         sim.player.actions.deathTime * 25 * timing->second.speed / 256 >= timing->second.frames)
                         anim = &corpse->second;
                 }
@@ -536,9 +533,9 @@ void SceneView::drawActors(Vec mouse) const {
                 const auto &monster = monsters[item.index];
                 const auto &e = *monster.enemy;
                 const auto &animations = assets_.monsterAnimationSet(
-                    session_, e.identity.monster, e.kind,
+                    localSession(), e.identity.monster, e.kind,
                     e.allegiance.role == CombatRole::Summon ? e.summonShield : 0, &e.identity, e.enchantmentData());
-                const auto *deathTiming = session_.monsterContent().motion(e.kind, "dt");
+                const auto *deathTiming = localSession().monsterContent().motion(e.kind, "dt");
                 std::string mode = !e.living() ? (animations.contains("dd") && deathTiming &&
                                                    e.deathAge >= deathTiming->duration ? "dd" : "dt")
                                   : e.freeze > 0 ? "nu"
@@ -560,12 +557,12 @@ void SceneView::drawActors(Vec mouse) const {
                 if (anim->frames.empty())
                     anim = &animations.at("nu");
                 if (!anim->frames.empty()) {
-                    const auto *motion = session_.monsterContent().motion(e.kind, mode);
+                    const auto *motion = localSession().monsterContent().motion(e.kind, mode);
                     float fps = motion ? float(motion->frames) / motion->duration
                                        : e.hp <= 0 ? 20.f : 12.f;
                     bool nativeMovementRate = false;
                     if ((mode == "wl" || mode == "rn") && e.movementVelocityPercent)
-                        if (const auto *record = session_.monsterContent().find(e.identity.monster)) {
+                        if (const auto *record = localSession().monsterContent().find(e.identity.monster)) {
                             const auto rate = mode == "rn" ? record->runAnimationRate : record->walkAnimationRate;
                             if (rate) {
                                 const int percentage = monsterMovementPercent(*record, sim.population.difficulty,
@@ -580,7 +577,7 @@ void SceneView::drawActors(Vec mouse) const {
                         fps *= float(75 + e.enchantment->velocityPercent) / 75.f;
                     int coldRate = 100;
                     if (e.chill > 0 && !nativeMovementRate && e.hp > 0)
-                        if (const auto *record = session_.monsterContent().find(e.identity.monster))
+                        if (const auto *record = localSession().monsterContent().find(e.identity.monster))
                             coldRate = std::max(1, 100 + record->coldEffect.at(size_t(sim.population.difficulty)));
                     int frame = !e.living() ? (mode == "dd" ? 0
                                             : std::min(anim->count - 1, int(e.deathAge * fps)))
@@ -593,7 +590,7 @@ void SceneView::drawActors(Vec mouse) const {
                                            0, anim->count - 1);
                     if ((e.kind == MonsterKind::BloodRaven || e.kind == MonsterKind::Andariel) &&
                         e.attackDuration > 0 && e.attackMode >= 3)
-                        if (const auto *timing = session_.monsterContent().attackTiming(e.kind, e.attackMode);
+                        if (const auto *timing = localSession().monsterContent().attackTiming(e.kind, e.attackMode);
                             timing && timing->sequenceFrames > 0)
                             frame = std::clamp(int((e.attackDuration - e.attack) / e.attackDuration * timing->sequenceFrames),
                                                0, anim->count - 1);
@@ -610,10 +607,10 @@ void SceneView::drawActors(Vec mouse) const {
                         frame = int((e.knockbackDuration - e.knockbackRemaining) / e.knockbackDuration * anim->count) % anim->count;
                     const auto *image = anim->frame(
                         direction(e.boneBarrier ? e.boneBarrier->facing : e.knockbackRemaining > 0 ? e.knockbackFacing : monsterLooks_.contains(e.id) ? monsterLooks_.at(e.id)
-                                                               : e.combatTarget ? session_.combatPosition(e.combatTarget) - monster.position : Vec{1, 0},
+                                                               : e.combatTarget ? localSession().combatPosition(e.combatTarget) - monster.position : Vec{1, 0},
                                   anim->directions), frame);
                     if (shadowsOnly) { spriteShadow(image, item.p); continue; }
-                    const auto *record = session_.monsterContent().find(e.identity.monster);
+                    const auto *record = localSession().monsterContent().find(e.identity.monster);
                     const int height = record ? record->overlayHeight - 1 : 0;
                     drawUnitSpellOverlays(e.id, monster.position, true, e.hp > 0 ? &e.combatEffects : nullptr, height);
                     if (e.hp > 0) drawCombatStateOverlays(e.combatEffects, item.p, height, true);
@@ -661,9 +658,9 @@ void SceneView::drawActors(Vec mouse) const {
             } else if (item.type == 4) {
                 drawGroundItem(groundItems[item.index], groundItems[item.index] == hotItem);
             } else if (item.type == 8) {
-                const auto &missile = session_.areaState(item.region).missiles[item.index];
-                const auto &region = session_.regions()[item.region].recipe;
-                const auto &current = session_.region().recipe;
+                const auto &missile = localSession().areaState(item.region).missiles[item.index];
+                const auto &region = localSession().regions()[item.region].recipe;
+                const auto &current = localSession().region().recipe;
                 const Vec offset{(region.worldX - current.worldX) * 5.f, (region.worldY - current.worldY) * 5.f};
                 drawMissile(missile.missileId, missile.pos + offset, missile.velocity, missile.age, missile.remaining);
                 if (missile.meteor) {
@@ -674,9 +671,9 @@ void SceneView::drawActors(Vec mouse) const {
                     drawMissile(program.fallId, elevated, {}, missile.age, missile.remaining);
                 }
             } else if (item.type == 9) {
-                const auto &effect = session_.areaState(item.region).effects[item.index];
-                const auto &region = session_.regions()[item.region].recipe;
-                const auto &current = session_.region().recipe;
+                const auto &effect = localSession().areaState(item.region).effects[item.index];
+                const auto &region = localSession().regions()[item.region].recipe;
+                const auto &current = localSession().region().recipe;
                 const Vec offset{(region.worldX - current.worldX) * 5.f, (region.worldY - current.worldY) * 5.f};
                 drawMissile(effect.missileId, effect.pos + offset, {}, effect.age, effect.duration - effect.age);
             } else if (item.type == 10) {
@@ -685,21 +682,21 @@ void SceneView::drawActors(Vec mouse) const {
                     effect.direction.length() > 0 ? effect.direction : effect.velocity,
                     effect.age, effect.duration - effect.age);
             } else if (item.type == 11) {
-                const auto &effect = session_.areaState(item.region).effects[item.index];
-                const auto &region = session_.regions()[item.region].recipe;
-                const auto &current = session_.region().recipe;
+                const auto &effect = localSession().areaState(item.region).effects[item.index];
+                const auto &region = localSession().regions()[item.region].recipe;
+                const auto &current = localSession().region().recipe;
                 const Vec offset{(region.worldX - current.worldX) * 5.f, (region.worldY - current.worldY) * 5.f};
                 drawSpellOverlay(effect.overlayId, effect.pos + offset, effect.age, false);
             } else {
-                auto &p = session_.regions()[item.region].objects[item.index];
-                const auto *image = objectSprite(p, session_.regions()[item.region].definition.id);
+                auto &p = localSession().regions()[item.region].objects[item.index];
+                const auto *image = objectSprite(p, localSession().regions()[item.region].definition.id);
                 if (shadowsOnly) { if (p.draw) spriteShadow(image, item.p); continue; }
                 const Vec anchor = item.p - p.drawOffset;
                 drawNpcAlert(p.id, anchor, true);
                 if (p.interaction == Interaction::Shrine) drawShrineOverlays(p.shrineCode, anchor, 0, true);
                 if (p.draw) drawSelectableSprite(image, item.p, &p == hotObject);
                 if (p.operateFn == 25 && p.operatedAt >= 0 &&
-                    session_.quest(QuestId::HoradricStaff).stage >= uint32_t(StaffStage::Submitted)) {
+                    localSession().quest(QuestId::HoradricStaff).stage >= uint32_t(StaffStage::Submitted)) {
                     const auto &visual = assets_.projectileVisuals.at(338);
                     const float age = std::max(0.f, sim.time - p.operatedAt);
                     if (age < visual.lifetime) {
@@ -726,8 +723,8 @@ void SceneView::drawActors(Vec mouse) const {
     std::stable_sort(roofs.begin(), roofs.end(), [](const auto &a, const auto &b) { return a.order < b.order; });
     for (const auto &item : roofs) {
         float alpha = item.alpha / 255.f;
-        const auto &region = session_.regions()[item.region];
-        if (!item.prepared && item.region == session_.regionIndex()) {
+        const auto &region = localSession().regions()[item.region];
+        if (!item.prepared && item.region == localSession().regionIndex()) {
             const auto &popups = region.map.terrain.data.roofPopups;
             auto found = roofOpacity_.find(region.definition.id);
             for (size_t i = 0; i < popups.size(); ++i)
@@ -787,9 +784,9 @@ void SceneView::drawSpellOverlay(int id, Vec position, float age, bool loop, int
     else sprite(overlay.animation.frame(0, frame), at);
 }
 void SceneView::drawUnitSpellOverlays(EntityId unit, Vec position, bool back, const CombatEffectSet *states, int height) const {
-    const auto &sim = session_.state();
-    for (const auto &[region, offset] : session_.sceneRegions())
-        for (const auto &effect : session_.areaState(region).effects)
+    const auto &sim = localSession().state();
+    for (const auto &[region, offset] : localSession().sceneRegions())
+        for (const auto &effect : localSession().areaState(region).effects)
             if (effect.attached == unit)
                 if (auto found = assets_.spellOverlays.find(effect.overlayId);
                     found != assets_.spellOverlays.end() && found->second.visual.preDraw == back)

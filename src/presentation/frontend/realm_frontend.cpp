@@ -287,15 +287,18 @@ struct RealmFrontend::Impl {
         logo();
         wrap(s(5205), 180, 233, 440, true);
         label(s(5224), 300, 289);
+        const auto oldAccount = account;
         field(account, {300, 307, 169, 26}, 0, 15);
+        if (account != oldAccount) {
+            wipe(password); wipe(verifyPassword); intent.editedAccount = account;
+        }
         label(s(5225), 300, 345);
         field(password, {300, 363, 169, 26}, 1, 15, true);
         if (button("wide", 245, 452, s(5288), !account.empty() && !password.empty(), 2) ||
             (enabled && IsKeyPressed(KEY_ENTER) && !account.empty() && !password.empty())) {
             emit(FrontendCommand::Login);
             intent.name = account;
-            intent.password = std::move(password);
-            wipe(password);
+            intent.password = password;
         }
         button("wide", 245, 498, s(11108), false, 2);
         if (button("wide", 245, 542, s(5221), true, 2))
@@ -308,7 +311,11 @@ struct RealmFrontend::Impl {
         logo();
         wrap(s(5223), 180, 218, 440, true);
         label(s(5224), 300, 276);
+        const auto oldAccount = account;
         field(account, {300, 294, 169, 26}, 0, 15);
+        if (account != oldAccount) {
+            wipe(password); wipe(verifyPassword); intent.editedAccount = account;
+        }
         label(s(5225), 300, 332);
         field(password, {300, 350, 169, 26}, 1, 15, true);
         label(s(5226), 300, 388);
@@ -798,7 +805,14 @@ FrontendIntent RealmFrontend::frame(FrontendPage p, const OnlineView &v, std::st
 }
 void RealmFrontend::clearPassword() {
     wipe(impl_->password);
+    clearTransientPasswords();
+}
+void RealmFrontend::clearTransientPasswords() {
     wipe(impl_->verifyPassword);
     wipe(impl_->gamePassword);
+}
+void RealmFrontend::setLogin(std::string account, std::string password) {
+    wipe(impl_->password); wipe(impl_->verifyPassword);
+    impl_->account = std::move(account); impl_->password = std::move(password);
 }
 } // namespace d2x

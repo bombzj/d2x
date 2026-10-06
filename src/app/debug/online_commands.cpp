@@ -1,4 +1,7 @@
 #include "online_commands.hpp"
+#include "client/remote_control.hpp"
+#include "client/remote_inventory.hpp"
+#include "client/remote_combat.hpp"
 #include <array>
 #include <algorithm>
 #include <nlohmann/json.hpp>
@@ -7,7 +10,7 @@
 namespace d2x {
 namespace {
 using Json = nlohmann::json;
-constexpr std::array mapInteractionNames{"exit", "door", "portal", "teleport-pad", "waypoint"};
+constexpr std::array mapInteractionNames{"exit", "door", "portal", "teleport-pad", "waypoint", "npc", "stash", "corpse"};
 constexpr std::array stageNames{"Idle",
                                 "ConnectingAccount",
                                 "AuthChallenge",
@@ -40,7 +43,7 @@ template <class T> Json optional(const std::optional<T> &v) {
 Json point(const std::optional<OnlinePoint> &p) {
     return p ? Json{{"x", p->x}, {"y", p->y}} : Json(nullptr);
 }
-Json snapshot(const OnlineView &v, const OnlineSceneView &scene) {
+Json snapshot(const OnlineView &v, const OnlineSceneView &scene, const OnlineInventoryView &inventory) {
     Json result{{"stage", stageNames.at(size_t(v.stage))},
                 {"revision", v.revision},
                 {"connectionGeneration", v.connectionGeneration},
@@ -63,9 +66,70 @@ Json snapshot(const OnlineView &v, const OnlineSceneView &scene) {
                        {"collisionVerified", scene.collisionVerified},
                        {"renderedUnits", scene.renderedUnits},
                        {"unavailableUnits", scene.unavailableUnits},
+                       {"effectLimitations", scene.effectLimitations},
                        {"playerDisplayed", scene.playerDisplayed}};
     result["scene"]["area"] = optional(scene.area);
+    result["inventory"] = {{"revision", inventory.revision}, {"gameGeneration", inventory.gameGeneration},
+        {"columns", inventory.columns}, {"rows", inventory.rows}, {"beltSlots", inventory.beltSlots},
+        {"stashColumns", inventory.stashColumns}, {"stashRows", inventory.stashRows},
+        {"cubeColumns", inventory.cubeColumns}, {"cubeRows", inventory.cubeRows},
+        {"cursor", optional(inventory.cursor)}, {"weaponSet", inventory.weaponSet}, {"items", Json::array()}};
+    constexpr std::array storageNames{"None", "Stash", "Cube"};
+    const auto &storage = v.world.storage;
+    result["inventory"]["storage"] = {{"kind", storageNames.at(size_t(storage.kind))},
+        {"source", optional(storage.source)}, {"requested", storageNames.at(size_t(storage.requested))},
+        {"requestedSource", optional(storage.requestedSource)}, {"revision", storage.revision}};
+    result["inventory"]["shopRequested"] = optional(v.world.shopRequested);
+    result["inventory"]["shopSource"] = optional(v.world.shopSource);
+    result["inventory"]["tradeResult"] = nullptr;
+    if (const auto &trade = v.world.tradeResult; trade)
+        result["inventory"]["tradeResult"] = {{"revision", trade->revision}, {"result", trade->result},
+            {"flags", trade->flags}, {"itemId", trade->item}, {"gold", trade->gold}};
+    auto stats = [](const std::vector<OnlineItemStat> &values) {
+        Json array = Json::array();
+        for (const auto &stat : values) array.push_back({{"id", stat.id}, {"value", stat.value}, {"parameter", stat.parameter}});
+        return array;
+    };
+    for (const auto &[id, item] : inventory.items) {
+        const auto &wire = v.world.items.at(id);
+        Json data{{"id", id}, {"revision", item.revision}, {"decoded", item.decoded}, {"reason", item.reason},
+            {"code", wire.code}, {"name", item.name}, {"artKey", item.artKey}, {"width", item.width}, {"height", item.height},
+            {"ownerType", optional(wire.ownerType)}, {"owner", optional(wire.owner)}, {"mode", wire.mode},
+            {"page", wire.page}, {"body", wire.body}, {"x", wire.x}, {"y", wire.y},
+            {"groundPosition", wire.mode == 3 || wire.mode == 5 ? Json{{"x", wire.groundX}, {"y", wire.groundY}} : Json(nullptr)},
+            {"action", wire.action}, {"flags", wire.flags}, {"format", item.format}, {"identified", item.identified},
+            {"quality", item.quality}, {"level", item.level}, {"quantity", optional(item.quantity)},
+            {"durability", optional(item.durability)}, {"maxDurability", optional(item.maxDurability)},
+            {"defense", optional(item.defense)}, {"gold", optional(item.gold)}, {"questDifficulty", optional(item.questDifficulty)},
+            {"filledSockets", item.filledSockets}, {"sockets", item.sockets}, {"runeword", item.runeword},
+            {"autoAffix", item.autoAffix}, {"fileIndex", item.fileIndex}, {"prefixes", item.prefixes}, {"suffixes", item.suffixes},
+            {"rarePrefix", item.rarePrefix}, {"rareSuffix", item.rareSuffix}, {"personalizedName", item.personalizedName},
+            {"earName", item.earName}, {"earClass", item.earClass}, {"earLevel", item.earLevel},
+            {"stats", stats(item.stats)}, {"baseStats", stats(item.baseStats)},
+            {"runewordStats", stats(item.runewordStats)}, {"setStats", Json::array()}};
+        for (const auto &list : item.setStats) data["setStats"].push_back(stats(list));
+        result["inventory"]["items"].push_back(std::move(data));
+    }
+    result["inventory"]["request"] = nullptr;
+    if (v.world.itemRequest) {
+        const auto &request = *v.world.itemRequest;
+        constexpr std::array states{"Pending", "Updated", "TimedOut", "Interrupted", "Rejected", "SentNoAck"};
+        result["inventory"]["request"] = {{"sequence", request.sequence}, {"state", states.at(size_t(request.state))},
+            {"action", int(request.command.action)}, {"itemId", request.command.item}, {"targetId", request.command.target}};
+    }
     result["scene"]["palette"] = optional(scene.palette);
+    result["scene"]["town"] = scene.town;
+    result["scene"]["townPortalSkills"] = scene.townPortalSkills;
+    result["scene"]["npcConversation"] = nullptr;
+    if (scene.npcConversation) {
+        const auto &dialog = *scene.npcConversation;
+        Json messages = Json::array();
+        for (const auto &message : dialog.messages)
+            messages.push_back({{"stringId", message.stringId}, {"menu", message.menu},
+                {"text", message.text}, {"acknowledged", message.acknowledged}});
+        result["scene"]["npcConversation"] = {{"source", dialog.source}, {"revision", dialog.revision},
+            {"speaker", dialog.speaker}, {"travelLabel", dialog.travelLabel}, {"messages", messages}};
+    }
     result["scene"]["automap"] = {{"visible", scene.automapVisible}, {"large", scene.automapLarge},
         {"stamps", scene.automapStamps.size()}, {"towns", scene.automapTowns.size()},
         {"revealedCells", Json::object()}};
@@ -100,6 +164,9 @@ Json snapshot(const OnlineView &v, const OnlineSceneView &scene) {
                        {"ignoredPackets", v.world.ignoredPackets},
                        {"waypointSource", optional(v.world.waypointSource)},
                        {"waypointHistory", optional(v.world.waypointHistory)},
+                       {"npcRequested", optional(v.world.npcRequested)},
+                       {"townPortalPending", v.world.townPortalPending},
+                       {"playerSkills", v.world.playerSkills}, {"itemSkillQuantities", v.world.itemSkillQuantities},
                        {"mapEventSequence", v.world.mapEventSequence},
                        {"mapEventFirst", v.world.mapEvents.empty() ? Json(nullptr)
                             : Json(v.world.mapEvents.front().sequence)},
@@ -108,13 +175,40 @@ Json snapshot(const OnlineView &v, const OnlineSceneView &scene) {
                        {"rooms", Json::array()},
                        {"equipment", Json::array()},
                        {"attributes", Json::object()}};
+    constexpr std::array deathPhases{"Unknown", "Alive", "Dying", "Dead"};
+    result["world"]["dead"] = onlinePlayerDead(v.world);
+    result["world"]["deathPhase"] = deathPhases.at(size_t(v.world.deathPhase));
+    result["world"]["deathRevision"] = v.world.deathRevision;
+    result["world"]["respawnRequest"] = nullptr;
+    if (v.world.respawnRequest) {
+        constexpr std::array states{"WaitingForDeath", "Sent", "Confirmed", "TimedOut"};
+        const auto &request = *v.world.respawnRequest;
+        result["world"]["respawnRequest"] = {{"state", states.at(size_t(request.state))}, {"revision", request.revision}, {"sent", request.sent},
+            {"restoredResources", request.restoredResources}, {"repositioned", request.repositioned}};
+    }
+    result["world"]["corpses"] = Json::array();
+    for (const auto &[corpse, owner] : v.world.corpseOwners) {
+        const auto unit = v.world.units.find({0, corpse});
+        result["world"]["corpses"].push_back({{"unitId", corpse}, {"owner", owner},
+            {"owned", owner == v.load.playerUnitId},
+            {"position", unit != v.world.units.end() ? point(unit->second.position) : Json(nullptr)}});
+    }
     for (const auto &[key, u] : v.world.units)
         result["world"]["units"].push_back({{"type", key.type},
                                             {"id", key.id},
                                             {"classId", optional(u.classId)},
                                             {"position", point(u.position)},
                                             {"destination", point(u.destination)},
+                                            {"destinationUnit", u.destinationUnit ? Json{{"unitType", u.destinationUnit->type},
+                                                {"unitId", u.destinationUnit->id}} : Json(nullptr)},
                                             {"mode", optional(u.mode)},
+                                            {"positionRevision", u.positionRevision},
+                                            {"positionDiscontinuity", u.positionDiscontinuity},
+                                            {"actionRevision", u.actionRevision},
+                                            {"nativeMode", u.nativeMode}, {"direction", optional(u.direction)},
+                                            {"actionSkill", optional(u.actionSkill)}, {"actionSkillLevel", optional(u.actionSkillLevel)},
+                                            {"pathType", optional(u.pathType)}, {"pathSteps", optional(u.pathSteps)},
+                                            {"pathDistance", optional(u.pathDistance)}, {"velocityPercent", optional(u.velocityPercent)},
                                             {"portalFlags", optional(u.portalFlags)},
                                             {"portalDestination", optional(u.portalDestination)},
                                             {"portalOwner", optional(u.portalOwner)},
@@ -122,6 +216,15 @@ Json snapshot(const OnlineView &v, const OnlineSceneView &scene) {
                                             {"lifePercent", optional(u.lifePercent)},
                                             {"name", u.name},
                                             {"equipmentObserved", u.equipmentObserved}});
+    result["world"]["movementRequest"] = nullptr;
+    if (v.world.movementRequest) {
+        const auto &movement = *v.world.movementRequest;
+        result["world"]["movementRequest"] = {{"run", movement.run}, {"revision", movement.revision},
+            {"destination", point(movement.destination)}, {"unit", movement.unit
+                ? Json{{"unitType", movement.unit->type}, {"unitId", movement.unit->id}} : Json(nullptr)}};
+    }
+    result["world"]["rightSkill"] = v.world.rightSkill
+        ? Json{{"skill", v.world.rightSkill->skill}, {"owner", v.world.rightSkill->owner}} : Json(nullptr);
     for (const auto &[room, anchor] : v.world.rooms) {
         const auto assignment = v.world.roomAssignmentRevisions.find(room);
         result["world"]["rooms"].push_back(
@@ -188,7 +291,7 @@ std::string onlineDebugCommand(const std::string &input, net::RealmSession &sess
                                const std::function<net::LoginOptions()> &configuration, bool &quit,
                                const std::function<void(const std::string &)> &screenshot,
                                const std::function<OnlineSceneView()> &sceneSnapshot,
-                               const std::function<bool(OnlinePoint, bool)> &move,
+                               RemoteControl &control, RemoteInventory &inventory, RemoteCombat &combat,
                                const std::function<void(bool, bool)> &automap) {
     Json request;
     Credentials secrets{request, {}};
@@ -217,7 +320,103 @@ std::string onlineDebugCommand(const std::string &input, net::RealmSession &sess
             return uint8_t(value);
         };
         if (command == "online-status" || command == "status" || command == "online-realms" ||
-            command == "online-characters" || command == "online-games" || command == "online-world") {
+            command == "online-characters" || command == "online-games" || command == "online-world" ||
+            command == "online-items" || command == "online-ground" || command == "online-combat" || command == "online-skills") {
+        } else if (command == "online-resurrect") {
+            control.cancelMovement(); accepted = session.resurrect(); mutation = true;
+        } else if (command == "online-select-skill" || command == "online-cast" || command == "online-attack" ||
+                   command == "online-stop-skill" || command == "online-learn-skill" || command == "online-spend-attribute") {
+            auto integer = [&](const char *key, uint64_t max) {
+                const auto &value = request.at(key);
+                if (!value.is_number_integer() || value.get<int64_t>() < 0 || value.get<uint64_t>() > max)
+                    throw std::invalid_argument("Combat field is outside the native integer range");
+                return value.get<uint64_t>();
+            };
+            OnlineCombatCommand action;
+            const auto hand = request.value("hand", std::string{"right"});
+            if (hand != "left" && hand != "right") throw std::invalid_argument("hand must be left or right");
+            action.hand = hand == "left" ? OnlineSkillHand::Left : OnlineSkillHand::Right;
+            action.stationary = request.value("stationary", false); action.repeat = request.value("repeat", false);
+            using Action = OnlineCombatCommand::Action;
+            if (command == "online-select-skill" || command == "online-learn-skill") {
+                action.action = command == "online-select-skill" ? Action::SelectSkill : Action::LearnSkill;
+                action.skill = uint16_t(integer("skillId", UINT16_MAX));
+            } else if (command == "online-spend-attribute") {
+                action.action = Action::SpendAttribute; action.attribute = uint8_t(integer("statId", 3));
+                action.count = request.contains("count") ? uint8_t(integer("count", 100)) : 1;
+            } else if (command == "online-stop-skill") action.action = Action::Stop;
+            else {
+                action.action = Action::Cast;
+                if (request.contains("x") || request.contains("y")) action.point = OnlinePoint{uint16_t(integer("x", UINT16_MAX)), uint16_t(integer("y", UINT16_MAX))};
+                if (request.contains("unitId")) action.target = OnlineUnitKey{request.contains("unitType") ? uint8_t(integer("unitType", 5)) : uint8_t{1}, uint32_t(integer("unitId", UINT32_MAX))};
+                if (command == "online-attack") {
+                    action.hand = OnlineSkillHand::Left;
+                    combat.update();
+                    const auto selected = session.read().world.leftSkill;
+                    const auto attack = std::find_if(combat.skills().begin(), combat.skills().end(), [](const auto &skill) { return skill.name == "Attack"; });
+                    if (!selected || attack == combat.skills().end() || selected->skill != attack->id)
+                        return Json{{"ok", false}, {"error", "Select the MPQ Attack skill on the left hand first"}}.dump();
+                }
+            }
+            accepted = combat.submit(action);
+            if (!accepted) return Json{{"ok", false}, {"accepted", false}, {"error", combat.reason()}}.dump();
+            if (action.action == Action::Cast) control.cancelMovement();
+            else control.cancelApproach();
+            mutation = true;
+        } else if (command == "online-item-action") {
+            constexpr std::array names{"pickup", "take", "place", "drop", "equip", "unequip", "swap", "use",
+                "belt-place", "belt-swap", "stack", "book", "socket", "identify", "switch-weapons",
+                "cube-open", "storage-close", "transmute", "gold-deposit", "gold-withdraw", "gold-drop",
+                "trade-open", "buy", "sell", "repair", "repair-all", "identify-all"};
+            const auto action = text("action", 32);
+            const auto selected = std::find(names.begin(), names.end(), action);
+            if (selected == names.end()) throw std::invalid_argument("Unknown online item action");
+            OnlineItemCommand intent;
+            intent.action = OnlineItemAction(selected - names.begin());
+            auto id = [&](const char *field, bool required) {
+                if (!required && !request.contains(field)) return uint32_t{};
+                const auto &value = request.at(field);
+                if (!value.is_number_integer()) throw std::invalid_argument("Item ID must be an integer");
+                const auto n = value.get<int64_t>();
+                if (n < 0 || uint64_t(n) > UINT32_MAX) throw std::invalid_argument("Item ID exceeds the native range");
+                return uint32_t(n);
+            };
+            const bool hasItem = intent.action <= OnlineItemAction::Identify || intent.action == OnlineItemAction::CubeOpen ||
+                intent.action == OnlineItemAction::Buy || intent.action == OnlineItemAction::Sell || intent.action == OnlineItemAction::Repair;
+            intent.item = id("itemId", hasItem);
+            intent.amount = id("amount", intent.action == OnlineItemAction::GoldDeposit ||
+                intent.action == OnlineItemAction::GoldWithdraw || intent.action == OnlineItemAction::GoldDrop);
+            const bool pair = intent.action == OnlineItemAction::Swap || intent.action == OnlineItemAction::BeltSwap ||
+                intent.action == OnlineItemAction::Stack || intent.action == OnlineItemAction::Book ||
+                intent.action == OnlineItemAction::Socket || intent.action == OnlineItemAction::Identify;
+            intent.target = id("targetId", pair);
+            auto revision = [&](const char *field) {
+                if (!request.contains(field)) return uint64_t{};
+                const auto &value = request.at(field);
+                if (!value.is_number_integer() || (!value.is_number_unsigned() && value.get<int64_t>() < 0))
+                    throw std::invalid_argument("Item revision must be a nonnegative integer");
+                return value.get<uint64_t>();
+            };
+            auto cell = [&](const char *field, int maximum) {
+                if (request.contains(field) && !request.at(field).is_number_integer())
+                    throw std::invalid_argument("Item location must be an integer");
+                return number(field, 0, 0, maximum);
+            };
+            intent.itemRevision = revision("itemRevision"); intent.targetRevision = revision("targetRevision");
+            intent.x = cell("x", 15); intent.y = cell("y", 15);
+            intent.page = cell("page", 4); intent.body = cell("body", 10);
+            intent.beltSlot = cell("beltSlot", 15);
+            intent.toCursor = request.value("toCursor", false); intent.mercenary = request.value("mercenary", false);
+            if (intent.action == OnlineItemAction::Pickup) {
+                const auto scene = sceneSnapshot();
+                if (!scene.nativeMapReady || !scene.movementAvailable)
+                    return Json{{"ok", false}, {"error", scene.nativeMapReason}}.dump();
+            }
+            accepted = inventory.submit(session, intent);
+            if (!accepted) return Json{{"ok", false}, {"accepted", false}, {"error", inventory.reason()}}.dump();
+            if (intent.action == OnlineItemAction::Pickup) control.cancelMovement();
+            else control.cancelApproach();
+            mutation = true;
         } else if (command == "online-automap") {
             const auto scene = sceneSnapshot();
             automap(request.value("visible", !scene.automapVisible), request.value("large", scene.automapLarge));
@@ -234,9 +433,11 @@ std::string onlineDebugCommand(const std::string &input, net::RealmSession &sess
             const auto scene = sceneSnapshot();
             if (!scene.movementAvailable)
                 return Json{{"ok", false}, {"error", scene.reason}}.dump();
-            accepted = move({coordinate("x"), coordinate("y")}, request.value("run", true));
+            accepted = control.move({coordinate("x"), coordinate("y")}, request.value("run", true));
+            if (!accepted) return Json{{"ok", false}, {"accepted", false}, {"error", control.reason()}}.dump();
             mutation = true;
-        } else if (command == "online-use-exit" || command == "online-interact") {
+        } else if (command == "online-use-exit" || command == "online-interact" ||
+                   command == "online-npc-interact" || command == "online-move-to-unit" || command == "online-recover-corpse") {
             const auto scene = sceneSnapshot();
             if (!scene.nativeMapReady)
                 return Json{{"ok", false}, {"error", scene.nativeMapReason}}.dump();
@@ -247,12 +448,42 @@ std::string onlineDebugCommand(const std::string &input, net::RealmSession &sess
             if (id < 0 || uint64_t(id) > UINT32_MAX)
                 throw std::invalid_argument("Exit unitId is outside the protocol range");
             const OnlineUnitKey target{command == "online-use-exit" ? uint8_t(5)
-                : number("unitType", 2, 2, 5), uint32_t(id)};
+                : command == "online-npc-interact" ? uint8_t(1)
+                : command == "online-recover-corpse" ? uint8_t(0) : number("unitType", 2, 0, 5), uint32_t(id)};
             if (!std::any_of(scene.mapTargets.begin(), scene.mapTargets.end(),
                     [&](const auto &entry) { return entry.unit == target; }))
                 return Json{{"ok", false}, {"error", "Map target is not assigned in the current scene"}}.dump();
-            accepted = session.interact_map_unit(target);
+            accepted = command == "online-move-to-unit" ? control.moveToUnit(target, request.value("run", true))
+                : control.interact(target, request.value("run", true));
+            if (!accepted) return Json{{"ok", false}, {"accepted", false}, {"error", control.reason()}}.dump();
             mutation = true;
+        } else if (command == "online-town-portal") {
+            accepted = control.townPortal();
+            if (!accepted) return Json{{"ok", false}, {"accepted", false}, {"error", control.reason()}}.dump();
+            mutation = true;
+        } else if (command == "online-npc-close") {
+            const bool approaching = control.approaching().has_value();
+            control.cancelApproach();
+            accepted = session.read().world.npcRequested ? session.close_npc() : approaching;
+            mutation = true;
+        } else if (command == "online-npc-message" || command == "online-npc-travel") {
+            const auto scene = sceneSnapshot();
+            if (!scene.npcConversation)
+                return Json{{"ok", false}, {"error", "No current server NPC conversation is open"}}.dump();
+            if (request.contains("npcRevision") && request.at("npcRevision").get<uint64_t>() != scene.npcConversation->revision)
+                return Json{{"ok", false}, {"error", "Stale NPC message revision"}}.dump();
+            if (command == "online-npc-travel") {
+                if (scene.npcConversation->travelLabel.empty())
+                    return Json{{"ok", false}, {"error", "No verified server NPC travel option is available"}}.dump();
+                accepted = session.npc_travel();
+            } else {
+                const auto &value = request.at("stringId");
+                if (!value.is_number_integer()) throw std::invalid_argument("NPC stringId must be an integer");
+                const auto id = value.get<int64_t>();
+                if (id < 0 || id > UINT16_MAX) throw std::invalid_argument("NPC stringId is outside the native range");
+                accepted = session.acknowledge_npc_message(uint16_t(id));
+            }
+            control.cancelMovement(); mutation = true;
         } else if (command == "online-waypoint-travel" || command == "online-waypoint-close") {
             const auto scene = sceneSnapshot();
             const auto &world = session.read().world;
@@ -351,7 +582,55 @@ std::string onlineDebugCommand(const std::string &input, net::RealmSession &sess
             return Json{{"ok", false},
                         {"error", "Command is unavailable in the frontend; use online-* commands"}}
                 .dump();
-        Json response{{"ok", accepted}, {"online", snapshot(session.read(), sceneSnapshot())}};
+        inventory.update(session.read());
+        combat.update();
+        Json response{{"ok", accepted}, {"online", snapshot(session.read(), sceneSnapshot(), inventory.read())}};
+        auto &combatView = response["online"]["combat"];
+        combatView = {{"skills", Json::array()}, {"states", Json::array()}, {"events", Json::array()},
+            {"sequence", session.read().world.combatSequence}, {"request", nullptr}, {"reason", combat.reason()}};
+        for (const auto &skill : combat.skills()) combatView["skills"].push_back({{"id", skill.id}, {"name", skill.name},
+            {"base", skill.base}, {"bonus", skill.bonus}, {"level", skill.level}, {"left", skill.left},
+            {"passive", skill.passive}, {"inTown", skill.inTown}, {"classSkill", skill.classSkill}, {"innate", skill.innate}});
+        for (const auto &[key, value] : combat.states()) {
+            Json states = Json::array();
+            for (const auto &[id, state] : value.states) {
+                Json stats = Json::array();
+                for (const auto &stat : state.stats) stats.push_back({{"id", stat.id}, {"parameter", stat.parameter}, {"value", stat.value}});
+                states.push_back({{"id", id}, {"name", state.name}, {"stats", stats}});
+            }
+            combatView["states"].push_back({{"unitType", key.type}, {"unitId", key.id}, {"sequence", value.sequence},
+                {"decoded", value.decoded}, {"reason", value.reason}, {"states", states}});
+        }
+        constexpr std::array eventKinds{"Skill", "Hit", "Action", "Overlay", "Missile"};
+        for (const auto &event : session.read().world.combatEvents) combatView["events"].push_back({{"sequence", event.sequence},
+            {"packet", event.packet}, {"kind", eventKinds.at(size_t(event.kind))}, {"sourceType", event.source.type}, {"sourceId", event.source.id},
+            {"target", event.target ? Json{{"type", event.target->type}, {"id", event.target->id}} : Json(nullptr)},
+            {"point", point(event.point)}, {"skill", optional(event.skill)}, {"level", optional(event.level)},
+            {"overlay", optional(event.overlay)}, {"missile", optional(event.missile)}, {"action", optional(event.action)},
+            {"hitClass", optional(event.hitClass)}, {"life", optional(event.life)}, {"direction", optional(event.direction)},
+            {"flags", event.flags}, {"auxiliary", event.auxiliary}, {"missileDestination", optional(event.missileDestination)}, {"pierce", optional(event.pierce)}});
+        const auto &world = session.read().world;
+        response["online"]["world"]["leftSkill"] = world.leftSkill ? Json{{"skill", world.leftSkill->skill}, {"owner", world.leftSkill->owner}} : Json(nullptr);
+        response["online"]["world"]["playerBaseSkills"] = world.playerBaseSkills;
+        response["online"]["world"]["playerBonusSkills"] = world.playerBonusSkills;
+        if (world.combatRequest) {
+            constexpr std::array states{"Pending", "Confirmed", "TimedOut", "Interrupted", "SentNoAck"};
+            const auto &value = *world.combatRequest;
+            combatView["request"] = {{"sequence", value.sequence}, {"state", states.at(size_t(value.state))},
+                {"action", int(value.command.action)}, {"skill", value.command.skill}, {"hand", value.command.hand == OnlineSkillHand::Left ? "left" : "right"},
+                {"statId", value.command.attribute}, {"count", value.command.count}};
+        }
+        response["online"]["control"] = {{"reason", control.reason()}, {"approaching", nullptr}, {"navigation", nullptr}};
+        if (const auto target = control.approaching())
+            response["online"]["control"]["approaching"] = {{"unitType", target->type}, {"unitId", target->id}};
+        if (const auto goal = control.movementGoal()) {
+            auto &navigation = response["online"]["control"]["navigation"];
+            navigation = {{"goal", {{"x", goal->x}, {"y", goal->y}}}, {"segment", nullptr}, {"target", nullptr}};
+            if (const auto point = control.movementSegment())
+                navigation["segment"] = {{"x", point->x}, {"y", point->y}};
+            if (const auto target = control.movementTarget())
+                navigation["target"] = {{"unitType", target->type}, {"unitId", target->id}};
+        }
         if (mutation)
             response["accepted"] = accepted;
         if (!accepted)

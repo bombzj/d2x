@@ -233,8 +233,8 @@ target_link_libraries(d2x_client_api INTERFACE d2x_core)
 include(cmake/Networking.cmake)
 add_library(d2x_client src/client/inventory_view.cpp src/client/automap_exploration.cpp)
 target_link_libraries(d2x_client PUBLIC d2x_client_api)
-add_library(d2x_remote_scene src/client/remote_town.cpp)
-target_link_libraries(d2x_remote_scene PUBLIC d2x_client_api d2x_world)
+add_library(d2x_remote_scene src/client/remote_town.cpp src/client/remote_control.cpp src/client/remote_inventory.cpp src/client/remote_combat.cpp src/client/remote_ui_clients.cpp)
+target_link_libraries(d2x_remote_scene PUBLIC d2x_client_api d2x_world d2x_remote_client)
 target_sources(d2x_world PRIVATE src/world/preset_identity.cpp)
 add_library(d2x_local_client src/client/local_actor_client.cpp src/client/local_inventory_client.cpp
   src/client/local_character_client.cpp src/client/local_quest_client.cpp src/client/local_npc_client.cpp
@@ -247,6 +247,7 @@ add_library(d2x_presentation
   src/presentation/graphics/graphics.cpp src/presentation/audio/audio.cpp src/presentation/graphics/primitives.cpp
   src/presentation/scene_assets.cpp src/presentation/actors/hero_assets.cpp src/presentation/scene_view.cpp
   src/presentation/hud/skill_assets.cpp src/presentation/hud/hud_controls.cpp src/presentation/hud/skill_controller.cpp
+  src/presentation/hud/classic_hud.cpp
   src/presentation/hud/skill_tree_view.cpp src/presentation/hud/quest_panel.cpp
   src/presentation/hud/quest_controller.cpp src/presentation/npc/npc_controller.cpp
   src/presentation/actors/state_overlay_view.cpp
@@ -268,11 +269,13 @@ target_sources(d2x_presentation PRIVATE src/presentation/world/lighting_view.cpp
 target_sources(d2x_presentation PRIVATE src/presentation/world/palette_blend_view.cpp)
 target_sources(d2x_presentation PRIVATE src/presentation/audio/audio_emitters.cpp)
 target_sources(d2x_presentation PRIVATE src/presentation/world/projectile_view.cpp)
+target_sources(d2x_presentation PRIVATE src/presentation/world/client_missile_assets.cpp
+  src/presentation/world/client_missile_view.cpp)
 target_sources(d2x_presentation PRIVATE src/presentation/inventory/item_tooltip.cpp
   src/presentation/items/item_display_compat.cpp src/presentation/npc/inventory_interactions.cpp)
 
 add_executable(d2x src/main.cpp src/app/application.cpp src/app/options.cpp src/app/input.cpp
-  src/app/character_frontend.cpp src/app/frontend.cpp src/app/crash_report.cpp)
+  src/app/character_frontend.cpp src/app/frontend.cpp src/app/online_login_memory.cpp src/app/crash_report.cpp)
 target_sources(d2x_presentation PRIVATE src/presentation/frontend/realm_frontend.cpp)
 target_sources(d2x_presentation PRIVATE src/presentation/remote/remote_scene.cpp)
 target_link_libraries(d2x_presentation PRIVATE d2x_remote_scene)

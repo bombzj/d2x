@@ -16,6 +16,7 @@ FrameInput pollInput(const Viewport &viewport) {
     input.leftHeld = IsMouseButtonDown(MOUSE_BUTTON_LEFT);
     input.leftReleased = IsMouseButtonReleased(MOUSE_BUTTON_LEFT);
     input.rightPressed = IsMouseButtonPressed(MOUSE_BUTTON_RIGHT);
+    input.rightHeld = IsMouseButtonDown(MOUSE_BUTTON_RIGHT);
     input.inventory = IsKeyPressed(KEY_I);
     const bool characterC = IsKeyPressed(KEY_C);
     const bool characterA = IsKeyPressed(KEY_A);
@@ -47,7 +48,6 @@ FrameInput pollInput(const Viewport &viewport) {
         input.character = false;
         input.skillTree = false;
     }
-    input.rightHeld = IsMouseButtonDown(MOUSE_BUTTON_RIGHT);
     input.movement = {float(IsKeyDown(KEY_RIGHT) - IsKeyDown(KEY_LEFT)),
                       float(IsKeyDown(KEY_DOWN) - IsKeyDown(KEY_UP))};
     if (input.control && input.showLoot)

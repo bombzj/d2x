@@ -16,6 +16,8 @@
 #include <cstdint>
 #include <deque>
 #include <map>
+#include <algorithm>
+#include <span>
 
 namespace d2x {
 struct Enemy;
@@ -91,7 +93,8 @@ struct ViewState {
     bool blocksInput() const { return blocksWorld() || travelMenu; }
 };
 class SceneView {
-    const GameSession &session_;
+    const GameSession *session_ = nullptr;
+    const GameSession &localSession() const;
     const IActorClient &actorClient_;
     IInventoryClient &inventoryClient_;
     InventoryView inventoryView_;
@@ -101,7 +104,7 @@ class SceneView {
     QuestView questView_;
     INpcClient &npcClient_;
     IMapClient &mapClient_;
-    const IMapAssetSource &mapAssets_;
+    const IMapAssetSource *mapAssets_ = nullptr;
     mutable MapSceneView mapView_;
     NpcConversationView npcView_;
     NpcSceneView npcScene_;
@@ -109,6 +112,7 @@ class SceneView {
     mutable HirelingView hirelingView_;
     mutable HirelingListView hirelingListView_;
     SceneAssets assets_;
+    int itemGroundPalette_ = -1;
     LightingView lighting_;
     PaletteBlendView paletteBlend_;
     std::array<std::unique_ptr<PaletteBlendView>, 5> actPaletteBlends_;
@@ -128,15 +132,11 @@ class SceneView {
     void queueQuestAnimation(QuestId quest, bool completed);
     void advanceQuestAnimations(float dt);
     std::map<EntityId, float> landingAge_;
-    struct ClientMissile {
-        int missileId = -1;
-        Vec pos, velocity;
-        float age = 0, duration = 0;
-        Vec direction;
-    };
+    using ClientMissile = ClientMissileVisual;
     std::vector<ClientMissile> clientMissiles_;
     std::map<EntityId, int> arcVisualFrames_;
     uint64_t projectileVisualRandom_ = 0;
+    uint64_t nextClientMissile_ = 0;
     void createMissileImpactVisuals(int missileId, Vec position);
     void createIceShatter(Vec position, int size);
     void createBlizzardFall(int missileId, Vec position);
@@ -166,8 +166,6 @@ class SceneView {
     void drawActors(Vec mouse) const;
     void drawSelectableSprite(const Sprite *image, Vec position, bool highlighted,
                               Color tint = WHITE, Vector2 highlight = {2.f, 1.f}) const;
-    void drawMissile(int id, Vec position, Vec heading, float age, float remaining) const;
-    void drawSpellOverlay(int id, Vec position, float age, bool loop, int height = 1) const;
     void drawUnitSpellOverlays(EntityId unit, Vec position, bool back, const CombatEffectSet *states = nullptr, int height = 1) const;
     void drawLighting() const;
     void drawNpcAlert(EntityId npc, Vec at, bool back) const;
@@ -226,7 +224,6 @@ class SceneView {
     void drawItemIcon(const InventoryItemView &item, Rectangle bounds, Color tint = WHITE) const;
     void drawItemArt(const std::string &key, const std::string &code, Rectangle bounds, Color tint) const;
     bool drawInventoryCursor(Vec mouse) const;
-    void orb(bool mana, float fraction) const;
 
   public:
     Rectangle worldViewport() const;
@@ -240,6 +237,37 @@ class SceneView {
     SceneView(Archives &archives, const GameSession &session, const IActorClient &actorClient,
               IInventoryClient &inventoryClient, ICharacterClient &characterClient,
               IQuestClient &questClient, INpcClient &npcClient, IMapClient &mapClient, const IMapAssetSource &mapAssets);
+    SceneView(Archives &, const ClassicData &, const IActorClient &, IInventoryClient &,
+              ICharacterClient &, IQuestClient &, INpcClient &, IMapClient &);
+    bool multiplayer() const { return !session_; }
+    void drawUi(Vec mouse) const;
+    // Shared original-resource effects; server replica supplies presentation data only.
+    const SceneAssets::ProjectileVisual *projectileVisual(int id) { return assets_.ensureProjectile(id); }
+    const SkillOverlayVisual *overlayVisual(int id) { return assets_.ensureOverlay(id); }
+    void drawMissile(int id, Vec position, Vec heading, float age, float remaining) const;
+    bool launchClientMissile(int id, Vec start, Vec target, int level, float delay = 0,
+                             std::optional<float> remaining = {}, int pathIndex = -1,
+                             EntityId owner = {}, bool hostile = false, int pierce = 0);
+    void advanceClientMissiles(float dt, const Grid &, Vec origin, std::span<const ClientMissileTarget>);
+    void clearClientMissiles() { clientMissiles_.clear(); arcVisualFrames_.clear(); assets_.audio.resetEmitters(); }
+    const auto &clientMissiles() const { return clientMissiles_; }
+    std::optional<int> weaponMissile(std::string_view code) const {
+        const auto found = assets_.weaponMissiles.find(code);
+        return found == assets_.weaponMissiles.end() ? std::nullopt : std::optional{found->second};
+    }
+    Vec clientMissilePosition(const ClientMissile &, const Grid &, Vec origin) const;
+    void cancelPendingClientMissiles(EntityId owner) {
+        std::erase_if(clientMissiles_, [&](const auto &value) { return value.flight && value.age < 0 && value.owner == owner; });
+    }
+    void drawSpellOverlay(int id, Vec position, float age, bool loop, int height = 1) const;
+    void drawGroundLabels(Vec mouse) const { drawLootLabels(mouse); }
+    void drawDeathNotice() const;
+    void drawCorpseLabel(const std::string &label, Vec screenPosition) const;
+    void drawHighlightedActor(const Sprite *image, Vec position) const { drawSelectableSprite(image, position, true); }
+    const Sprite *groundItemSprite(const InventoryItemView &) const;
+    void drawGroundItem(const InventoryItemView &, bool highlighted) const;
+    void drawEnemyBar(std::string_view title, std::optional<float> life, std::string_view description = {}, Color color = WHITE) const;
+    void refreshUi(float dt);
     ~SceneView();
     ViewState &ui() { return view_; }
     const ViewState &ui() const { return view_; }
@@ -258,6 +286,7 @@ class SceneView {
     std::vector<std::pair<RegionId, size_t>> automapLayers() const;
     Vec screen(Vec position) const;
     Vec world(Vec position) const;
+    void drawInteractionLabel(const std::string &, Vec, int offset = 70) const;
     bool visible(const WorldObject &object) const;
     const WorldObject *objectAt(Vec mouse) const;
     const PlayerCorpse *playerCorpseAt(Vec mouse) const;
@@ -277,6 +306,7 @@ class SceneView {
     bool startNpcTalk();
     bool startNpcIntroduction();
     bool startNpcTopic(QuestId quest);
+    bool startNpcTextTopic(uint32_t topic);
     bool openNpcShop(bool gamble = false);
     void closeNpcShop();
     bool npcShopDropAt(Vec mouse) const;
