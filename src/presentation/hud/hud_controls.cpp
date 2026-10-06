@@ -45,7 +45,7 @@ void SceneView::drawControlPanel() const {
     if (view_.miniPanelOpen) {
         if (const auto *background = assets_.miniPanel.frame(0, 0))
             imageAt(background, hudMiniPanel(*background));
-        const std::vector<int> frames = multiplayer() ? std::vector<int>{0,2,4,6,8,10,12,14} : std::vector<int>{0,2,4,8,10,12,14};
+        const std::vector<int> frames = std::vector<int>{0,2,4,6,8,10,12,14};
         for (int index = 0; index < int(frames.size()); ++index)
             if (const auto *icon = assets_.miniPanelButtons.frame(0, frames[index]))
                 imageAt(icon, hudMiniButton(*icon, index),
@@ -57,7 +57,7 @@ std::optional<int> SceneView::miniPanelAt(Vec mouse) const {
     const auto *background = assets_.miniPanel.frame(0, 0);
     if (!background || !CheckCollisionPointRec(rv(mouse), hudMiniPanel(*background)))
         return std::nullopt;
-    const std::vector<int> frames = multiplayer() ? std::vector<int>{0,2,4,6,8,10,12,14} : std::vector<int>{0,2,4,8,10,12,14};
+    const std::vector<int> frames = std::vector<int>{0,2,4,6,8,10,12,14};
     for (int index = 0; index < int(frames.size()); ++index)
         if (const auto *icon = assets_.miniPanelButtons.frame(0, frames[index]);
             icon && CheckCollisionPointRec(rv(mouse), hudMiniButton(*icon, index)))
@@ -186,7 +186,7 @@ void SceneView::drawSkillControls(Vec mouse) const {
     }
     if (CheckCollisionPointRec(rv(mouse), hudExperience())) {
         hint = "Experience: " + characterView_.number("experience", characterView_.experience) + " / " +
-               (characterView_.nextLevelExperience ? std::to_string(*characterView_.nextLevelExperience) : "MAX");
+               (!characterView_.nextLevelKnown ? "?" : characterView_.nextLevelExperience ? std::to_string(*characterView_.nextLevelExperience) : "MAX");
     }
     if (!hint.empty())
         painter_.centered(hint, H - HUD - 24, 12, parchment);

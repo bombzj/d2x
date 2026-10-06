@@ -2,7 +2,7 @@
 
 开发方向已改为[全面联机](../architecture/MULTIPLAYER.md)：放弃单机兼容，普通 UI 不暂停游戏；显式测试管道仅冻结客户端表现。M0–M3 已开始源码实施：联机唯一产品入口、持续网络 worker、稳定客户端快照、协议／请求上下文诊断、入局取消／超时恢复、导航上下文和记忆凭据快捷入局。本批已 Windows Release 构建并更新 `dist/current`，有限原服证据见本页“测试暂停与快捷入局”；历史证据不认证完整新调用链。完整协议、多人与全部玩法阶段仍未完成。
 
-更新：2026-10-06。局前、服务器角色加载／保存退局、五幕共用纯C++地图、地图交互／旅行及探索已有运行包。后续行走／回城门／NPC交谈和27种物品／城镇服务command已Release构建，并完成城镇有限原服冒烟及新进程保存回归；`dist/current`已含此前底层、登录记忆、连续移动显示、共用游戏UI及本批动作／效果，有限原服冒烟范围见下文。五幕1–136共用离线地图核心，122／364组原DLL地形对照及既有五幕旅行／奥术门户往返通过。普通攻击／技能请求、战斗／状态副本与成长command已Release及有限原服冒烟，属性／技能／经验保存重入通过；共用UI已接基本PvE输入、库存／货架和成长；本轮补接连续输入、原攻击／施法动作、基础直线弹体和状态叠层，以及沉沦魔／僵尸和NPC动作；已Release构建、打包并进行有限原服冒烟。复杂技能表现、精确价格、交易／赌博／雇佣、完整任务状态／资格与未验物品组合仍待完成。
+更新：2026-10-07。局前、服务器角色加载／保存退局、五幕共用纯C++地图、地图交互／旅行及探索已有运行包。后续行走／回城门／NPC交谈和27种物品／城镇服务command已Release构建，并完成城镇有限原服冒烟及新进程保存回归；`dist/current`已含此前底层、登录记忆、连续移动显示、共用游戏UI及本批动作／效果，有限原服冒烟范围见下文。五幕1–136共用离线地图核心，122／364组原DLL地形对照及既有五幕旅行／奥术门户往返通过。普通攻击／技能请求、战斗／状态副本与成长command已Release及有限原服冒烟，属性／技能／经验保存重入通过；共用UI已接基本PvE输入、库存／货架和成长；本轮补接连续输入、原攻击／施法动作、基础直线弹体和状态叠层，以及沉沦魔／僵尸和NPC动作；已Release构建、打包并进行有限原服冒烟。复杂技能表现、精确价格、交易／赌博／雇佣、完整任务状态／资格与未验物品组合仍待完成。
 
 RemoteTown逐条重放原服有序房间／玩家位置事件，精确检查房间锚点，输出实际DT1与活动碰撞。五幕事件丢失或生成失败会停止显示／移动并给出 `nativeMapReason`，要求重新入局；不回退近似预设。用户明确拒绝原DLL地图运行依赖；开发对照方法见[实施计划](../architecture/MULTIPLAYER.md#原版-dll-对照方法)。
 
@@ -72,13 +72,93 @@ RemoteTown逐条重放原服有序房间／玩家位置事件，精确检查房�
 
 ## 世界绘制收拢（2026-10-06）
 
-正常入口只调用RemoteScene的原服数据适配和SceneView::drawWorld。新增presentation/world/world_draw_view.hpp作为同步帧输入：只借用当前地图及已解析的Sprite，单位身份已转为EntityId，位置为当前地形的局部子格；不借用服务端执行器，不在跨帧缓存中保存这些指针。RemoteScene保留原服动作／显示位置、资源解码和鼠标意图的适配；本项不重做女巫技能或原服战斗结算。
+正常入口只调用RemoteScene的原服数据适配和SceneView::drawWorld。新增presentation/world/world_draw_view.hpp作为同步帧输入：只借用当前地图及已解析的Sprite，单位身份已转为EntityId，位置为当前地形的局部子格；不借用服务端执行器，不在跨帧缓存中保存这些指针。RemoteScene保留原服动作／外观／显示位置和鼠标意图的适配；资源解码已继续收拢到下节统一动画，本项不重做女巫技能或原服战斗结算。
 
 world_renderer.cpp统一原DT1地板／下层墙／阴影、墙与单位排序、Objects.OrderFlag、配对墙方向、Warp与Pops／屋顶透明、人物阴影、掉落、客户端弹体／叠层、NPC提示。NPC提示前后层位于所属单位排序位置，随后接受屋顶和世界光照；交互文字、小地图及HUD在光照后绘制。侧栏裁剪与摄像机沿SceneView.worldViewport，返回实际可见DT1实例供AutomapExploration适配层揭示。删除RemoteScene的地形Graphics／tile缓存／排序与paint循环，以及旧SceneView.draw／drawTerrain／drawActors和无消费者的区域纹理缓存，不维护两个世界绘制入口。
 
 SceneAssets统一读取原Levels、Objects.Lit0–7／RGB、MonStatsEx对应MonStats2.Light／RGB及Overlay灯光，地形上传共用graphicsForAct的原调色板。SceneView直接复用已有LightingView、室内遮光Grid及PL2明暗表，灯光从原服当前物件模式、存活单位与客户端效果位置投影；玩家使用既有基础半径13和已收到item_lightradius增量，未知装备加值不在客户端重算。新局清空瞬态环境，切区失效光照和纹理输入，同局的环境推进保留。未对齐原服昼夜时钟，日蚀任务状态尚未接入；天气、Flicker、动态Overlay半径及原客户端精确距离衰减仍沿[光照限制](../gameplay/world/LIGHTING.md)。
 
-本项只做Windows Release构建和固定dist/current打包，未启动客户端、参考服或冒烟，画面与操作由用户验收；构建日志位于忽略目录artifacts/world-render-refactor-20261006。动画资源／选帧、世界手势、怪物音效及人物／技能显示的重复实现仍待后续项；d2x_presentation因其他旧入口仍链接d2x_session，本项不宣称最终依赖清理完成。D2S、探索侧文件和地图生成规则未改。
+本项只做Windows Release构建和固定dist/current打包，未启动客户端、参考服或冒烟，画面与操作由用户验收；构建日志位于忽略目录artifacts/world-render-refactor-20261006。动画、世界手势／游戏内UI及人物／技能显示已继续收拢至下节统一入口，怪物音效已继续收拢至下节共用配置／播放模块，其他旧依赖仍待后续项；当时d2x_presentation仍链接d2x_session；该链接已在任务／面板及旧入口清理中解除，见下节。D2S、探索侧文件和地图生成规则未改。
+
+## 统一世界动画（当前源码）
+
+第二项沿已有Graphics合成器改造，统一入口为SceneView.actorAnimation／objectAnimation → SceneAssets → presentation/actors/actor_animation.*。content/character/actor_appearance.hpp只包含Token、Weapon与16个已解析组件代码，RealmPortraitParts沿用这个值类型。ActorAnimationRequest只包含外观、图形模式、原表变换和已核实的序列号，不借用OnlineUnit、GameSession、装备事务或网络容器。所有原图／GPU纹理继续由SceneAssets的graphicsForAct持有，缓存键包含幕调色板、组件、模式、武器、调色变换、阴影和末帧／序列标志；同一原图不再在RemoteScene另建Graphics。目录及帧组只读且跨帧稳定，单位动作时钟继续按既有新局／切区、单位移除及显示中断流程清理；测试暂停沿既有显式表现暂停入口。
+
+角色和怪物／NPC读取原AnimData速度与释放标志，MonSeq按当前MPQ的mode／frame／dir／event采样原帧；非零方向覆盖及嵌套序列保持不可用，不自造近似；原声消费者从同一目录读取序列的首模式，不因原图暂缺而丢失原事件映射。闪电沿既有seqnum=12的19步SC采样和第7步释放，参考本地D2MOO SequenceTbls核对后迁移，不重做女巫技能。DD缺图只允许本人／本怪物DT末帧。MonStats2空组件、原服组件位流、rank／SuperUnique身份和Utrans转换继续由原服适配投影，真实身份、冻结／隐藏尸体和已有原声事件不改。
+
+物件与地图装饰共用Objects的Mode／Draw、FrameDelta、FrameCnt、Start、CycleAnim、偏移与OrderFlag／DrawUnder。恢复原COF完整合成优先；没有COF时只读取同Token／模式的原TR DCC或DC6。FrameCnt和Start限制在原图实际帧区间，循环从有效起始帧推进，一次动画和死亡末帧显式停住，不靠GpuAnimation.frame的隐式取模。ActorAnimation.sample／sampleFacing集中方向和帧选择；ActorAnimationState集中原服动作代次、接收年龄补偿及冻结／解冻时钟。动画结束只切显示姿势，不改原服模式、生命或位置；本人施放补偿和回包取消／校正沿既有RemoteScene流程。
+
+删除RemoteScene独立Art合成、Objects动画表、AnimData／MonSeq及序列缓存；删除hero_assets.cpp、monster_assets.cpp、hireling_assets.cpp、无调用者state_overlay_view.cpp和旧物件／门户／叠层帧缓存。旧GameSession版SceneView／SceneAssets构造器及离线预热入口也移除。剩余旧表现命中辅助只把只读外观／时刻交给同一个目录采样；旧localSession引用和d2x_session链接已在后续任务／面板清理中移除，历史包事实仍以各批范围为准。局前角色预览、HUD动画属于各自界面资源，此项不重新实现其行为。
+
+2026-10-07已随人物／技能提示统一Windows Release构建并更新dist/current；未运行客户端、原服或冒烟，未编写测试脚本、用例或专用程序；入包不等于动画验收。装备逐层染色／透明、未接入玩家序列及完整原客户端加速／时序仍沿已有未认证边界，不因收拢缓存宣称补齐。地图、D2S、探索侧文件及规则指纹不变。
+
+## 统一鼠标与游戏内UI交互（当前源码）
+
+入口是SceneController::handle → RemoteScene::frame → SceneController::handleWorld。前者统一原面板／快捷键的优先级及按下至释放的捕获；绘制适配器只返回WorldInputView：归一化EntityId命中、原服全局subtile投影、显示观察点、当前左右手技能／来源和有效目标集合。控制器持有唯一的世界手势、锁定目标、技能选择及续发节流；RemoteScene删除Gesture、lockedTarget、repeat／pendingMove、请求反馈接口和FrameInput依赖。旧GameSession控制器构造／click／handle和独立地图点击分支删除，无消费者LocalActorClient也从源码和CMake移除；其他旧会话表现辅助与最终依赖退场仍属后续项。
+
+左键按下按拾取、攻击／Shift原地施放、交互、行走处理；右键按下进入施放。目标在本次按住期间锁定，失效、技能／来源改变、释放或UI接管结束本次手势，不在仍按住时重选目标；行走经过怪物不会变为攻击。保留原0.12秒续发节流、行进中固定世界目的地、拖动改目标、显示到达后按住续走和拒绝后的移动重试。新按下清上一手势的捕获，关闭面板的同次按下不会穿透；技能快捷键切换后等待已按住按钮释放。失焦取消本地续发／导航并清面板手势，恢复焦点不复用按住输入；慢资源加载丢弃缓冲按键，但保留正在按住的行走。换局／换区和死亡清理旧输入，死亡ESC继续提交原复活请求。地图暂不可绘制时仍由同一个控制器处理面板／ESC／失焦，世界输入不可用，不复用旧命中。
+
+IActorClient.move/control返回客户端请求是否接受，用于首次／Hold和移动重试；不是原服ACK。RemoteUiClients负责归一化ID／坐标到原请求的转换及当前领域上下文，RemoteControl仍负责原服移动／靠近资格，RemoteCombat仍动态读MPQ资格并负责原技能请求，拾取继续交给RemoteInventory。绘制的observer只作投影提示，原服位置、副本、移动校正和显示插值独立；未增加本地伤害、消耗或任务结算。
+
+游戏内背包／腰带／装备、角色／技能树／技能选择、任务、NPC／商店／佣兵入口、传送点、底栏和游戏菜单继续使用共用控制器。原0x31对白确认及TradeOpen从NPC控制器经TalkToNpc意图提交，自动对白和菜单话题共用dialogueTextTopic；方块右键经UseItem，由联机适配器按MPQ opensCube转成CubeOpen，面板等待原服storage回复后开启；显式CloseStorage清未发送组合及无ACK的协调等待，同次关闭箱子再开方块使用关闭后的当前交互上下文；待确认传送点的ESC经MapClient.closeTravel。前端保留原服状态到面板的同步、登录／选角／建房和设备采集，不再拥有世界手势或上述玩法UI请求转发。未实现的赌博／组队／聊天／任务服务等仍按已有不可用提示，不因合并输入宣称新增支持；未重做女巫技能。普通ESC／失焦不暂停原服或网络，既有调试pause/resume保留。
+
+依据本地Diablerie PlayerController::FlushInput／Update的释放隔离、D2MOO PlrMsg原0x05–11按下／Hold、0x12射流状态终止和0x31对白消息核对请求边界，未复制参考源码。2026-10-07已随人物／技能提示统一Release构建／打包，未运行或原服冒烟；完整鼠标／面板组合待用户验收。删除库存中无原服端口的旧单机插杖执行入口及手势调用；原服插杖UI仍未接入，保留现有能力边界。没有新增测试脚本、用例或专用程序；地图、D2S、探索格式及规则指纹不变。
+
+## 统一人物和技能提示
+
+第四项从原显示代码收拢至 client/character_projection.cpp → content/character/character_display.cpp。RemoteUiClients 仅投影原服已知属性、基础／有效技能等级、选择、绑定和难度，共用生成器读取已导入的 MPQ 定义并生成 CharacterView；角色面板、技能树、技能菜单和 HUD 共用这些提示。删除 LocalCharacterClient 和联机适配器内的简化提示生成分支，不保留单机能力。法力、当前／下一等级、前置要求、持续时间等复用原描述／纯公式；缺装备、加成、宠物或未支持描述输入时显示 `?`，原服未确认的技能等级不冒充 0。0x94 完整清单明确已知零等级，经验门槛读取原 Experience／CharStats。详情及剩余数值限制见[人物模块](CHARACTER.md#本人-ui-投影)。
+
+同时修正本人移动到普通施法的显示交接：LocalCast 起手时将当前连续显示位置保留为停止位置，清除旧显示路线和旧请求的推进资格；取消移动请求不再触发回退到最近整数坐标。迟到的已走路径采样不重拉角色，旧原服行走目标不重启行走；新移动、受击／死亡动作及明确位置校正仍沿原权威流程，0x15／原位移中断直接清理交接。依据本地 D2MOO PlrModes::PLRMODE_StartXY_AttackCastThrowKickSpecialSequence（仅改路径目标并切动作）及 PlrMsg::sub_6FC81D20（通常不通知本人），不通过延长插值掩盖回退。原协议没有样本时间戳，迟到路径识别依赖显示历史与路径方向，未认证全部延迟和路径组合。
+
+本项仅构建／打包，不运行游戏或原服、不做冒烟、不编写测试程序。提示生成不调用旧单机执行器；伤害、扣蓝、升级、任务奖励及保存由原服结算。D2S、规则指纹与 MPQ 资源不变。2026-10-07合并批次Windows Release构建成功，dist/current包含动画、鼠标／UI、提示及施法位置交接修正。构建记录为忽略目录artifacts/character-hints-refactor-20261006，最终增量日志build-release.log；前期合并接口编译失败的日志保留，已补齐声明／移除旧执行路径后成功链接。构建仍有既有聚合初始化及GCC optional／容器警告，不宣称无警告。包内EXE／网络DLL与构建产物SHA256一致；未做运行认证。
+
+## 统一音效定义和播放规则
+
+第五项采用唯一 MPQ 配置入口 content/audio/sound_catalog.*。原 Sounds、MonSounds、MonStats、Skills、CharStats 在这里解析为只读声音定义；MonStats.hcIdx 映射真实身份，空 MonSound 保持原无声单位，不使用敌对替身的声音。攻击声选择／Att1Prb、Att2Prb，武器声／Wea1Vol、Wea2Vol，各动作延迟，Skill1–4，脚步数量／概率和待机 NeuTime 均从当前 MPQ 导入。延迟及待机使用既有25Hz单位；武器音量沿参考 MonSound／AudioManager 的覆盖参数，普通声音使用 Sounds.Volume，保留已有全局增益。
+
+RemoteScene 只把原服动作、技能及0x2C升级通知转换为 PresentationSoundEvent，并提供 SoundActorView 的身份、动作版本、可听范围、移动／冻结状态和共用动画周期；不再读取或解释 MonSounds，不持有音效随机流、待播队列或脚步／待机时钟。SceneView 交给唯一消费者 presentation/audio/scene_audio.*：选择、概率、延迟、动作中断、单位移除、视口范围及周期声音在同一模块处理。技能起手与释放声使用配置和公共动画释放时间；本人已有施放补偿及原服强制同步的防重复流程保留，不重做技能。新局／换区清除待播与周期状态，长加载或显式表现暂停不补播旧事件。
+
+删除旧 actors/monster_audio.cpp、SceneAssets.MonsterAudio、旧 SceneView.advance 中独立角色／怪物声音及脚步／待机推进，以及 RemoteScene 内 MonSounds 解析、队列和概率逻辑。UI语义声、客户端弹体命中／释放、碎冰也经同一 SceneAudio 注册／播放入口，SoundBank只保留原声组和设备后端；一次性声音按原 Sounds 身份合并缓存／Compound／Stop Inst／Defer Inst状态，不因不同事件名称再次加载。循环弹体声音继续使用原PCM混音器、WAV smpl循环、原淡入／淡出及实体生命周期；不另建联机混音器。
+
+脚步沿已有“当前移动动画周期／FsCnt”节奏，加入原 FsPrb 和 FootstepLayer；不宣称已还原原客户端精确帧相位。非零 FsOff（如原 Duriel／Vile Mother）语义未被参考实现确认，保留定义并停用相应脚步、给出限制，不自造偏移；角色的地面材质／装备轻重与普通武器音效选择缺少已确认输入，不沿用旧固定 heavy_run_dirt／单个挥击 WAV。UMonSound、CvtMo／CvtSk／CvtTgt、Init／Taunt／Flee等未接原事件的规则仍未完成。原Sounds中当前后端不支持的一次性循环／Duration／淡入淡出程序继续明确报告，不用普通片段替代。NPC对白、背景音乐及其他尚未接入的声环境不在本项新增范围；不宣称全部原客户端音频程序已对齐。
+
+2026-10-07 Windows Release合并构建并更新dist/current。只读MPQ核对及构建／打包记录位于忽略目录artifacts/audio-unification-20261007；未启动游戏或参考服、未运行或冒烟，未编写测试脚本、用例或专用程序。声音和时序实际验收交用户；包内EXE及网络DLL与构建产物SHA256一致。构建保留既有GCC optional／容器和聚合缺省初始化警告，不宣称无警告。原服玩法、地图、D2S、探索侧文件及规则指纹不变。
+
+## 任务面板与旧本地入口清理
+
+2026-10-07 当前源码：任务页、NPC／商店／佣兵、库存、人物、地图和菜单均沿同一 SceneView／SceneController；删除未使用的 LocalInventory／LocalQuest／LocalNpc／LocalMap 客户端及其商店／佣兵投影、d2x_local_client 目标。原服本人状态与旗标适配为 QuestProjectionInput，client/quest_projection.cpp 唯一选择当前 MPQ 标题、说明和原图槽；缺洞窟数量显示 ?，不读地图种子、游戏共享旗标或旧任务执行器。原服始终负责进度、资格、NPC 服务、奖励与保存。
+
+共用任务 UI 允许已完成条目查看说明；首次未知→已知的条目建立动画基线，已知状态转换触发完成动画与日志通知。原 newquestlog 文本由共用资源入口读取；不重放首次收到的已有完成记录。未接入的真墓符号、后续幕特殊文字／协议及佣兵／任务物品服务继续保留限制，不由本地模拟补齐。
+
+删除 SceneView.localSession／advance／sessionRestored、旧本地事件消费者／HUD／物件与尸体命中／物品提示、旧小地图探索状态／投影／预热和 IMapAssetSource；清除无消费者的本地调试命令及存档侧文件代码。minipanel、库存关闭、弹体声音和佣兵面板不再按单机／联机切换路径；当前在线测试暂停、原服 command 及已有显示补偿仍保留。表现库改为链接共用 content／world，解除 d2x_session；人物／任务纯显示函数编入 d2x_client。
+
+任务规则参考核对 D2MOO Quests.cpp 的本人 0x28／0x52 与日志状态、OpenDiablo2 quest_log.go 的原字符串选择，文字／图片继续来自当前 MPQ。本项最初只改源码；随下节最终依赖清理统一构建、打包与有限冒烟。旧宿主曾隔离在默认不构建目标，现已删除；D2S 编码、地图与规则指纹不变。
+
+## 最终依赖清理
+
+2026-10-07：删除已被替代的 Local 入口及 GameSession、Simulation、SkillRuntime、InventoryService、本地任务／AI／战斗／奖励执行源码，移除 d2x_session 目标。共用 gameplay／items 只保留联机显示、几何、原资源报告和独立存档工具的纯函数及值类型；混放的元素伤害显示、技能等级和库存错误文案独立提取，内容加载移除依赖库存服务的装备计算入口。人物／任务投影位于 d2x_client；presentation 链接 client／content／world／remote_scene，客户端不链接 persistence。
+
+删除无原服生产者的旧法杖插入面板、状态和资源加载，缺失原服插杖流程仍明确未实现；删除旧本地调试输入、旧 CLI 别名、旧地图／动画／音效重复缓存及单机切换分支。LocalCast 名称表示本人施法显示衔接，保留原服预测／校正用途，不是本地结算。测试 pause/resume、在线 command 和独立资源／存档工具保留。
+
+CharacterSaveData 定义移到 persistence/character_save.hpp，字段与 D2S v96 编码不变，不更改格式、语义或规则指纹。原 MPQ、reference、旧压缩包、mvp 和用户文件保留；参考源码／原表／资源不纳入提交。完整依赖图见[架构](../architecture/OVERVIEW.md)。
+
+Windows Release 构建及 d2x／d2x_assets 链接成功；构建图无 d2x_session，两个可执行文件均未发现 GameSession／Simulation／SkillRuntime／InventoryService 符号。2026-10-07 已更新 dist/current，实际包内 EXE SHA256 为 `A7B767F8AFE9E0195F64EFC132BB0A3B8604CDA0CE86985A3B879520AE58B3E2`，协议 DLL 为 `E96C38DE1911BF24292EE726BB1CF862E7D1CF0D0DF816EDE565A213667B0CBD`。证据在忽略的 artifacts/dependency-cleanup-20261007，使用既有程序／调试管道／本机参考服，不编写测试脚本、用例或专用程序。
+
+有限冒烟只操作新建独立账号 Clr010757／一级女巫 CleanOctSor，未读写用户测试角色：
+
+| 观察 | 本轮证据与实际边界 |
+| --- | --- |
+| 入局与世界 | 注册、建角、非 Ladder 单人建局成功；营地本人可见，Warriv 原图可见，鼠标点击收到原服对白；城镇大地图、人物／技能树／任务／库存与 ESC 菜单截图已查看。初始营地 renderedUnits=9、unavailableUnits=2，不能认证全部城镇单位／完整自动地图选项；野外该采样 unavailableUnits=0 |
+| 原服移动 | 共用鼠标输入从 `(4393,4548)` 移动到 `(4400,4548)`，原服确认；经出口分段行走到 Blood Moor `(4528,4565)`，地图／人物正常显示。不是完整寻路验收 |
+| 施法与交接 | 重新选择 Fire Bolt 后原服 owner 确认为 0xFFFFFFFF；command 和鼠标右键均耗蓝35→32，施法与原弹体截图已查看。同次鼠标移动→施法显示位置 `(4538.186,4557.405)` 保留，650ms 后未回旧位置，原服位置为 `(4538,4557)`；未覆盖延迟／丢包、全部技能或怪物击杀 |
+| 普通菜单／测试暂停 | ESC 菜单时 presentationPaused=false，原服收包8297→8761字节；显式 pause 期间收包8761→9564，resume 成功。原服未暂停 |
+| 原服保存重入 | 通过 ESC 原菜单 Save and Exit 返回角色页；再次建局成功，一级／40血／35蓝／7件物品和已确认 Fire Bolt 选择保留。仅同进程重入，未追加新进程认证 |
+| 独立存档工具 | 首次保存前原服建角文件的无效头／校验被拒绝；原服保存后的 save-info 正常解码 D2S v96。读前／读后 SHA256 均为 `3AAD8DF3FAB4BD3F499276F922AF7BCF86F31FB36751F78D34D2DA637DA74D28`，文件未修改；CharacterSaveData 定义与搬迁前相同 |
+| 收尾 | 正常退局返回 CharacterSelection，客户端退出码0、stderr为空；本轮启动的参考服已通过已有 Stop.ps1 正常停止。没有改原资源、reference、旧包、mvp 或用户文件 |
+
+本轮观察到两项限制：`(4469,4579) → (4506,4580)` 的长距离绕墙请求停在 `(4478,4576)`，随后报原服位置无进展超时；从门口 `(4476,4565)` 分段通过桥梁可出城，前一条路径不计作通过。新角色原服初始 Fire Bolt 选择 owner=0，普通施法资格暂拒绝；重新选择后收到 owner=0xFFFFFFFF 可正常施放，重入保留该确认。没有为这些情况恢复本地执行器或猜测来源。声音设备与资源路径随普通窗口运行，无错误限制采样；未人工听音，不认证完整音效／时序、多人、Linux、任务领奖或升级。
+
+
 
 ## 联机游玩表现与输入（当前源码）
 
@@ -313,7 +393,7 @@ read() 借用客户端快照，有效至下一次 tick 或公共修改／随后 
 本节已随城镇物品批次Release构建，Charsi／Akara靠近／交谈／关闭有限实测；回城卷轴创建原门户并返回营地已在本轮实际包通过；完整旅行资格仍未实测。下方旧批次不认证新增流程，入口见[command](../development/DEBUG_PIPE.md#联网命令)。
 
 - 行走：共用`RemoteControl`校验坐标／单位目标、活动碰撞和50-subtile请求范围。按下地面捕获世界终点，按住期间只有指针移动才更新目标，相机移动不产生新目标。远处先按共同Grid路径提交短段，原服确认接近当前短段终点后推进；不再每秒因缺回包而重发，15秒未到达结束。接近NPC后改发0x02／0x04，服务端确认原距离≤6后才0x13交谈。施放／拾取、共用UI停止、Esc、死亡／退局／换幕、目标失效或请求被替换结束旧意图。取消不撤销已发给原服的当前短段。
-- 鼠标：RemoteScene接收共用FrameInput，不再单独读取设备；与单机共用原图spriteHit、原字体姓名标签和高亮着色。先解析真实mapTargets再生成交互意图，绘制后统一使用选中目标，避免把NPC点击变成地面移动。普通迟到位置样本保留当前碰撞路径上的显示进度；明确停止／0x15校正仍服从原服，失效预测不再回退到旧行走动作重播。参考Diablerie的MouseSelection／PlayerController和D2MOO PlrMsg位置更新条件；最新修正仅静态检查、构建／打包，未运行认证。
+- 鼠标：共用FrameInput由SceneController接收，RemoteScene仅返回WorldInputView命中／投影，不再持有手势；与单机共用原图spriteHit、原字体姓名标签和高亮着色。先解析真实mapTargets再生成交互意图，绘制后统一使用选中目标，避免把NPC点击变成地面移动。普通迟到位置样本保留当前碰撞路径上的显示进度；明确停止／0x15校正仍服从原服，失效预测不再回退到旧行走动作重播。参考Diablerie的MouseSelection／PlayerController和D2MOO PlrMsg位置更新条件；最新修正仅静态检查、构建／打包，未运行认证。
 
 寻路差异核对本地D2MOO：`Path.cpp::PATH_AllocDynamicPath`给玩家设STRAIGHT；`PathMisc.cpp::PATH_Straight_Compute`先用TOWARD局部路径，仅在目标距离平方≤18²时尝试A*兜底。18格是寻路策略范围，不是坐标命令长度；按迟到位置切18格命令会导致长点击中途等待、拖动时发送落在身后的短目标。RemoteControl已改为直接发送完整终点／真实GUID。本人显示使用共同Grid的原整数射线裁剪、三方向优先级Toward及73步上限，近距A*兜底仍用已有Grid求解器，节点顺序／原限额未完整等价。射线成功时保留请求终点，仅失败时裁剪；原射线最后扫描的相邻格不能当作成功终点。推进沿Step.cpp语义检查实际经过的格子，不能每帧对小数位移重新运行路径规划射线，否则会在清晰长路径的首次跨格时误停。普通对象靠近仍选共有原版交互几何的可到达位置再0x13；拾取0x16与技能自动追击由原服处理。本批Windows Release构建并入包，最新跨格修正仅确认包内入局，行走／持续拖动验收按用户要求留给用户，未计通过；先前长点击暴露显示停顿的样本保留于忽略的`artifacts/online-act1-monsters-20261006`。
 - 显示：保留服务端位置和原动作字节；原玩家走／跑字节与PLRMODE分开处理。玩家已入队移动请求与服务端0x0F／10、NPC的0x67／68目标驱动独立显示路径，沿当前活动碰撞连续走／跑；速度读取CharStats.WalkVelocity／RunVelocity、MonStats.Velocity及怪物回包的完整速度百分比。显示与镜头共用同帧位置，不修改权威世界副本；位置回包短时平滑校正，停止／取消结束旧路径，0x15传送／校正立即落到原服位置，未获响应的请求超时回归权威位置。0x67／68保留路径类型／步数／距离，末字节仅击退分支是生命比例，行走不再覆盖生命。圆周／击退／跳跃特殊路径不按普通追踪代替；完整原客户端路径算法、装备／技能移速与全部动作／效果仍未认证。此移动显示修正已入包；本轮行走／跑动、NPC行走与传送有限观察通过，范围见上方动作／效果冒烟。

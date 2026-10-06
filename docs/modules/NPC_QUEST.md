@@ -1,6 +1,6 @@
 # NPC 对白、菜单与任务日志基线
 
-更新：2026-10-06。本页主要维护离线NPC／任务、商店与佣兵切片和任务／奖励协调；第八项死亡／经验／掉落源码边界另见[奖励基线](REWARDS.md)，该批已随第九项收尾构建／有限冒烟。
+更新：2026-10-07。当前产品 NPC／任务／商店／佣兵共用 SceneView／SceneController。所有 Local 客户端、旧任务事件消费者和本地界面旁路已删除；任务文字由 QuestProjectionInput → projectQuestDisplay 生成，原服负责进度、资格与奖励。首次收到的完成记录建立动画基线，已完成任务允许查看原说明，缺状态／洞窟数量保留未知；未接入的佣兵、真墓符号及服务不调用本地执行器补齐。本轮未构建、运行、测试或打包，dist/current仍为音效统一包。当前入口见[客户端](CLIENT.md)和[联网模块](NETWORK.md#任务面板与旧本地入口清理)。下面保留历史宿主NPC／任务、商店与佣兵切片和任务／奖励协调；本地任务执行／日志规则与宿主已在最终依赖清理中删除；第八项死亡／经验／掉落源码边界另见[奖励基线](REWARDS.md)，该批已随第九项收尾构建／有限冒烟。
 
 联网真实NPC／原对白、靠近／初始化／确认／关闭及跨幕旅行接源码；另有普通货架、单件买卖、维修／全部维修和凯恩批量鉴定command。由D2GS决定资格、费用、治疗、任务、奖励和保存，不调用LocalNpcClient或GameSession。已随物品批次Release，Charsi／Akara交谈、货架、买卖及原维修回执有限实测；损坏维修、凯恩任务资格未实测，货架／任务／佣兵面板已复用单机实现并打包，未追加运行验证；完整任务／佣兵原服状态、赌博／雇佣等协议仍暂缓。接口及证据见[联网模块](NETWORK.md#原服物品与请求)，下方离线冒烟不认证联网。
 
@@ -13,9 +13,9 @@
 | 入口 | 职责与限制 |
 | --- | --- |
 | [`contracts/quest.hpp`](../../src/contracts/quest.hpp)、[`IQuestClient`](../../src/client/quest_client.hpp) | 本人当前难度的日志标题／描述、启用／完成状态、幕页、洞窟剩余数与可显示真墓图案；不传任务旗标、其他玩家任务簿、库存或地图种子 |
-| [`LocalQuestClient`](../../src/client/local_quest_client.cpp) | 按原任务阶段、当前携带材料、剩余数及日记状态准备显示；文字来自当前 MPQ 类型化内容，原字符串选择顺序保留 |
+| [`projectQuestDisplay`](../../src/client/quest_projection.cpp) | 本人原服状态、旗标和剩余数配合当前 MPQ 标题／说明生成任务显示；LocalQuestClient 已删除，不调用历史阶段执行器 |
 | [`contracts/npc.hpp`](../../src/contracts/npc.hpp)、[`INpcClient`](../../src/client/npc_client.hpp) | 请求对象的本人对白／服务菜单投影、场景任务提示及窄服务意图；不传完整人物、NPC 内容目录或可写服务对象 |
-| [`LocalNpcClient`](../../src/client/local_npc_client.cpp) | 绑定本地人物；按原职业／幕别选介绍，按原目录顺序准备闲聊和任务回顾；计算菜单资格及 MonStats2 提示高度，转发原权威命令 |
+| [`RemoteUiClients`](../../src/client/remote_ui_clients.cpp) | 本人原服对白／NPC 提示／货架适配共用界面端口，语义意图转发原服；LocalNpcClient 及本地商店／佣兵投影已删除 |
 | [`npc/intents.hpp`](../../src/gameplay/npc/intents.hpp) | 原鉴定／重置／灌注／旅行／交易／雇佣等意图的共用轻量定义；保留目标和物品版本，不带权限或客户端自报属性 |
 | [`quest/id.hpp`](../../src/gameplay/quest/id.hpp)、[`catalog.hpp`](../../src/gameplay/quest/catalog.hpp) | 稳定内部 ID、幕／日志位置、原幕内任务号／图像槽及磁盘槽；共用记录在 `state.hpp`，各幕阶段在 `acts/act_*_state.hpp` |
 
@@ -29,13 +29,13 @@
 
 日志、场景提示及单个请求对象的对白按权威版本缓存；NPC 对象 ID 变化也会刷新。场景复制独立值，读取接口不返回内容／玩法指针。任务完成事件在发出时附带对应转换的完成标志，保留同一步多个转换的先后含义；UI 不再解释完成阈值，读取保存后直接建立当前动画基线，不重放旧完成动画。
 
-NPC 提示绘制已与旧战斗／神殿叠层分文件：前者消费公开提示和原图，后者暂留 [`actors/state_overlay_view.cpp`](../../src/presentation/actors/state_overlay_view.cpp) 的兼容查询。
+NPC 提示绘制已与旧战斗／神殿叠层分文件：前者消费公开提示和原图；旧 actors/state_overlay_view.cpp 已在动画统一中删除，原服叠层走共用原图与动画入口。
 
 ## 商店与佣兵 UI（第五项）
 
 `contracts/shop.hpp` 的 `ShopView` 只含当前货架的显示尺寸、页类、名称／提示、图像键和显示价；赌博通过原隐藏物品适配生成投影，不传真实品质／升级基底、属性掷值、随机流或库存实例。`contracts/hireling.hpp` 的本人 `HirelingView`／`HirelingListView` 提供姓名、生命／属性、经验、四抗、所属召唤物计数及候选显示／slot；装备与拖拽继续使用本人 `InventoryView`。
 
-`INpcClient::shop`／`inspectShopOffer`／`quote`／`hireling`／`hirelings` 是显示查询，`local_shop_view.cpp`／`local_hireling_view.cpp` 绑定本地人物并调用原权威查询。货架按更新版本＋NPC＋赌博模式缓存，佣兵候选按版本＋NPC缓存；场景 `npc/client_views.cpp` 复制独立投影，同一版本不重复复制。属性提示仅在悬停单项查询时解析并按版本／NPC／模式／slot缓存，避免为整架货物每帧求值。返回借用仅至下一次对应读取／销毁，UI 不保存权威引用。报价仍为同步显示值，提交仍复验 NPC 会话、距离、权限、余额、物品版本及容量；显示价不作为授权价格。
+`INpcClient::shop`／`inspectShopOffer`／`quote`／`hireling`／`hirelings` 是显示查询，历史 local_shop_view.cpp／local_hireling_view.cpp 曾绑定本地人物；两者现已删除，当前原服货架适配及未知佣兵状态见 CLIENT.md。货架按更新版本＋NPC＋赌博模式缓存，佣兵候选按版本＋NPC缓存；场景 `npc/client_views.cpp` 复制独立投影，同一版本不重复复制。属性提示仅在悬停单项查询时解析并按版本／NPC／模式／slot缓存，避免为整架货物每帧求值。返回借用仅至下一次对应读取／销毁，UI 不保存权威引用。报价仍为同步显示值，提交仍复验 NPC 会话、距离、权限、余额、物品版本及容量；显示价不作为授权价格。
 
 `npc_shop_view.cpp`、`hireling_view.cpp` 和 `commerce_controller.cpp` 不再直接包含或查询会话、模拟器、完整人物／世界、库存服务及内容目录。商店购买／出售／修理、雇佣通过原 `NpcIntent`；佣兵装备／药剂及武器切换通过 `InventoryIntent`，肖像点击停止移动／引导通过受控人物接口。原面板、原图、翻页／确认、拖放与主控制器手势顺序保留；旧 NPC 绘制端 `vendorItem`／姓名／属性解释已移到本地适配。窄 NPC 意图仅包含物品 handle，物品品质拆为独立值头。
 

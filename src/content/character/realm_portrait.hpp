@@ -1,5 +1,6 @@
 #pragma once
 #include "contracts/online.hpp"
+#include "actor_appearance.hpp"
 #include "resources/archive.hpp"
 #include <array>
 #include <map>
@@ -7,10 +8,7 @@
 #include <set>
 
 namespace d2x {
-struct RealmPortraitParts {
-    std::string token, weapon;
-    std::array<std::string, 16> components;
-};
+using RealmPortraitParts = ActorAppearance;
 // Native 1.13c preview component IDs are rebuilt from the mounted item tables,
 // not OpenD2's older, static appearance-code list.
 class RealmPortraitCatalog {

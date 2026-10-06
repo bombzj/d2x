@@ -22,6 +22,17 @@ void SceneView::resetQuestAnimations() {
             questView_.entry(QuestId(index)).completed;
 }
 
+void SceneView::drawQuestNotice() const {
+    if (!view_.questNotice || view_.questOpen || view_.capturesWorldInput() ||
+        view_.characterOpen || view_.inventory.storage || view_.inventory.cubeOpen) return;
+    const auto bounds = questNoticeBounds();
+    drawArt(assets_.attributeButtons.frame(0, 0), bounds);
+    if (!assets_.questNoticeLabel.empty())
+        painter_.label(assets_.questNoticeLabel,
+            int(bounds.x + (bounds.width - painter_.measure(assets_.questNoticeLabel, 13)) / 2),
+            int(bounds.y) - 19, 13, WHITE);
+}
+
 void SceneView::queueQuestAnimation(QuestId quest, bool completed) {
     const auto index = questIndex(quest);
     if (index >= questAnimations_.size()) return;
@@ -48,7 +59,7 @@ void SceneView::advanceQuestAnimations(float dt) {
             animation.phase = QuestCompletionAnimation::Phase::Playing;
             animation.elapsed = 0;
             view_.questSelected = int(questView_.entry(QuestId(index)).displaySlot);
-            assets_.audio.play("quest_done");
+            assets_.sceneAudio.playRegistered("quest_done");
         } else if (animation.phase == QuestCompletionAnimation::Phase::Playing) {
             animation.elapsed += dt;
             const auto &art = assets_.questIcons[questView_.entry(QuestId(index)).icon];
@@ -94,7 +105,7 @@ void SceneView::drawQuests(Vec) const {
         drawArt(icon, iconBounds);
         if (!record.known) painter_.label("?", int(bounds.x+bounds.width*.5f), int(bounds.y+bounds.height*.5f), 16, gold);
         const auto face = assets_.questFaces[artIndex];
-        if (icon && !completing && view_.questPressed == index && record.active && face.width > 2 && face.height > 2) {
+        if (icon && !completing && view_.questPressed == index && record.selectable() && face.width > 2 && face.height > 2) {
             const auto *inactive = art.frame(0, 26);
             const float scaleX = iconBounds.width / icon->texture.width;
             const float scaleY = iconBounds.height / icon->texture.height;

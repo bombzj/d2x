@@ -1,6 +1,6 @@
 #pragma once
 #include "core/bytes.hpp"
-#include "gameplay/session/character_save.hpp"
+#include "persistence/character_save.hpp"
 #include "content/classic_data.hpp"
 #include <span>
 

@@ -1,5 +1,15 @@
 # 资料、代码和素材来源
 
+2026-10-07 最终依赖清理仅从项目已有代码提取纯显示／等级／错误文案函数，删除无人消费的本地宿主与执行器，没有复制参考源码或引入新引擎规则。原版规则的既有证据沿用下文记录，当前包与有限原服观察见[联网模块](../modules/NETWORK.md#最终依赖清理)。
+
+人物／技能提示收拢参考 Diablerie SkillPanelSlot 的原描述／图标消费和 D2MOO SCmd 完整技能清单／PlrMsg 等级通知，数值仍来自当前 MPQ 及既有纯显示公式；不足输入明确未知。本人移动→施法交接依据 D2MOO PlrModes 的当前位置切动作和 PlrMsg 通常省略本人技能通知，原服明确位置校正仍独立处理。
+
+音效收拢核对本地D2MOO固定5596f5c的MonsterTbls::DATATBLS_LoadMonSoundsTxt字段及Diablerie MonSound、SoundSystem、AudioManager、SoundInfo的25Hz延迟、武器音量覆盖与原声组／Compound；当前Sounds／MonSounds以挂载MPQ只读导出核对，不采用参考仓库的资源表。OpenDiablo2 monster_sound_record.go把FsOff含义标为推测，没有可采用的完整脚步相位实现，因此非零FsOff仍暂缓。独立重组既有配置、设备后端和共用事件消费者，不复制参考代码／素材；2026-10-07仅Release构建／打包，未运行或冒烟，限制见[统一音效](../modules/NETWORK.md#统一音效定义和播放规则)。
+
+鼠标／游戏内UI收拢继续参考本地Diablerie（MIT）的`Engine/PlayerController.cs::FlushInput/Update`，核对UI消耗按下后等待释放；D2MOO固定`5596f5c`（MIT）的`D2Game/src/PLAYER/PlrMsg.cpp`核对0x05–11首次／Hold、0x12仅终止Inferno状态及0x31原对白消息。独立适配为SceneController唯一手势和联机客户端语义命令；资格及TargetCorpse／opensCube等继续读取当前MPQ派生的已有表／定义，不引入参考数据。已于2026-10-07随提示改造统一Release构建／打包，未运行或冒烟；未复制参考代码／资源，边界见[联网模块](../modules/NETWORK.md#统一鼠标与游戏内ui交互当前源码)。
+
+世界动画收拢核对本地OpenDiablo2 7f92c57的d2mapentity/object.go::setMode（Objects帧数／起始／循环覆盖）和d2asset/composite.go（25Hz、速度／256、方向／帧层合成）；D2MOO 5596f5c的DataTbls/SequenceTbls.cpp::gPlayerSequenceLightning确认既有19步SC序列和第7步释放，MonSeq仍由当前MPQ读取。沿用原Graphics完整组件合成、AnimData、monsterPalshift及既有Utrans证据，独立实现表现缓存与时钟，不复制参考源码或资源。删除旧本地动画加载器和联机独立GPU缓存；已于2026-10-07随提示改造统一Release构建／打包，未运行或冒烟。入口、原COF优先及未认证范围见[统一动画](../modules/NETWORK.md#统一世界动画当前源码)。
+
 世界绘制收拢沿本地OpenDiablo2 7f92c57的d2maprenderer/renderer.go::renderTilePass1／2／3核对下层墙／地板／阴影、上墙、屋顶顺序，object_details_record.go核对Lit0–7直径与各模式遮光。继续复用本页既有D2MOO D2Environment／D2Gfx CmnSubtile的环境、四邻点平均及PL2证据和现有Pops／Warp实现；地形、灯光和原图字段来自当前MPQ，没有导入参考素材或服务端玩法代码。收拢到原world_renderer.cpp和LightingView，删除重复绘制入口，未另造一套客户端光照算法。此项仅Release构建／打包，未运行游戏；时序及完整原客户端照明限制见[场景照明](../gameplay/world/LIGHTING.md)。
 
 技能选择菜单核对本地OpenDiablo2固定`7f92c57`的`d2game/d2player/skill_select_panel.go`／`skill_row.go`：48像素原图、按ListRow压缩非空行、左右对齐与技能ID方向；同时读取当前MPQ Skills／SkillDesc及通用／女巫图集，对照用户原版截图确认菜单与底栏的城镇禁施显示不同。ListRow／ListPool／IconCel仍由当前MPQ导入，共用界面独立适配，不复制参考源码；红色精确调色板、完整物品技能选择语义未认证，见[经典底栏](../gameplay/ui/CLASSIC_HUD.md#技能与操作)。资源导出／预览仅留在忽略的artifacts目录，原MPQ未修改；源码已随2026-10-06世界绘制批次Release构建并打包，未运行验证。
@@ -64,6 +74,8 @@
 联机动作／效果批次继续查阅上述本地快照：D2MOO PlrMsg的PLRMODE通知表、0x16拾取靠近及Hold／0x12；MonsterMsg的行动／方向通知；SCmd的0xAC零组件、特殊标志与有界尾部；Monster::MONSTER_HasComponents；Path/Step的64方向坐标关系；Missiles的75%速度、Range＋等级×LevRange和0x73首路径目标。图形、动作、叠层、速度、寿命、组件及颜色仍动态读取当前MPQ，并复用现有离线资源与绘制。Diablerie的技能／弹体表仅交叉核对基础cltmissile字段，未作为运行数据；libd2明确采用近似坐标的missile.zig未用于速度实现。仅适配接口与原协议证据，不提交参考代码或导出资源；本轮已Release构建、打包及有限原服冒烟；追加核对PlrMsg::sub_6FC81D20本人技能通知省略和sub_6FC81C00动作19校正，动作／效果显示与原服权威分离，完整限制见[联网模块](../modules/NETWORK.md#联机游玩表现与输入当前源码)。
 
 ## 实际使用的开源项目
+
+2026-10-07任务／面板清理核对本地D2MOO Quests.cpp 的本人任务旗标及0x28／0x52日志状态，与OpenDiablo2 d2player/quest_log.go 的原字符串选择交叉阅读；后者不是原服资格或奖励依据。任务标题／说明／newquestlog和图标继续读取当前MPQ；移除Local任务／NPC适配，不复制参考代码，不新增本地任务结算。本轮仅源码／文档，未构建或运行。
 
 单人联机行走／任务／成长追加核对本地D2MOO 5596f5c：D2Skills::SKILLS_InitSkillList／SKILLS_CheckRequiredSkills的基础技能和reqlevel＋base rank，Quests::QUESTS_ActiveCycler的0x8A及NPCMessage／PlrMsg的0x31，PlayerStats::PLAYERSTATS_LevelUp与SUnitMsg::D2GAME_UpdateUnit的0x2C事件2。Diablerie PlayerController的按住GoTo和CharStat的cursor_level_up仅作显示交叉证据。当前MPQ的CharStats／PlayerClass含Expansion分隔行，a1npc的SPEED对应原TBL对白首行数字（Warriv原45／124），基础动作、经验／速度／高度及声音仍读当前原表。D2MOO SCmd经验发送函数的紧凑包赋值与原1.13c D2Game.dll RVA ABDA0不一致，后者0x1A写经验差值cl、0x1B写差值cx、0x1C写完整edx；以原DLL只读反汇编和实际原服增量为准。不复制参考源码，不生成本地经验、任务奖励或角色档。验证范围见[联网模块](../modules/NETWORK.md)。
 

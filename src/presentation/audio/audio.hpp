@@ -19,11 +19,11 @@ struct SoundEmitter {
 class SoundBank {
     struct EmitterAudio;
     std::shared_ptr<EmitterAudio> emitters_;
-    std::map<std::string, Sound> sounds;
     struct OriginalSoundVariant {
         Sound sound;
         bool stopInstance = false;
         bool deferInstance = false;
+        float volume = 1;
     };
     struct OriginalSoundGroup {
         std::vector<OriginalSoundVariant> sounds;
@@ -35,12 +35,11 @@ class SoundBank {
     bool enabled = false;
 
   public:
-    explicit SoundBank(Archives &archives);
+    SoundBank();
     ~SoundBank();
     SoundBank(const SoundBank &) = delete;
     SoundBank &operator=(const SoundBank &) = delete;
-    void play(const std::string &name, uint64_t frame = 0);
-    void registerOriginal(Archives &archives, std::string key, std::string_view path, float volume = .45f);
+    void play(const std::string &name, uint64_t frame = 0, float volume = -1);
     void registerTravelGroup(Archives &archives, std::string key, const DataTable &sounds, size_t row);
     void registerOriginalGroup(Archives &archives, std::string key, const DataTable &table, size_t row);
     bool hasEmitterSound(const std::string &key) const;

@@ -18,8 +18,8 @@ class RemoteInventory;
 class RemoteCombat;
 class RemoteControl;
 namespace net { class RealmSession; }
-// The existing gameplay UI consumes these same ports in both modes. This
-// adapter owns snapshots and sends native requests; it never simulates a save.
+// Shared presentation ports project server snapshots and submit native requests.
+// Acceptance means queued by the client, not confirmed by the server.
 class RemoteUiClients {
     struct Impl;
     std::unique_ptr<Impl> impl_;
@@ -39,6 +39,5 @@ class RemoteUiClients {
     size_t queuedItemCommands() const;
     std::optional<uint64_t> waitingItemRequest() const;
     std::string takeNotice();
-    void openShop();
 };
 }

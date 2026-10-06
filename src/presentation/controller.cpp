@@ -1,14 +1,5 @@
-#include "gameplay/skills/behavior.hpp"
-#include "gameplay/skills/spec.hpp"
-#include "gameplay/skills/necro_summon_spec.hpp"
-#include "gameplay/skills/bone_spec.hpp"
 #include "client/actor_client.hpp"
-#include "gameplay/session/session.hpp"
 #include "content/classic_data.hpp"
-#include "gameplay/model/state.hpp"
-#include "world/region.hpp"
-#include "gameplay/items/inventory.hpp"
-#include "content/world/world_catalog.hpp"
 #include "controller.hpp"
 #include "scene_view.hpp"
 #include "presentation/hud/character_panel.hpp"
@@ -17,22 +8,17 @@
 #include "presentation/npc/hireling_panel.hpp"
 #include <algorithm>
 #include <array>
+#include <cmath>
 
 namespace d2x {
-SceneController::SceneController(GameSession &session, IActorClient &actorClient, IInventoryClient &inventoryClient, ICharacterClient &characterClient, INpcClient &npcClient, IMapClient &mapClient, SceneView &view)
-    : session_(&session), actorClient_(actorClient), inventoryClient_(inventoryClient), characterClient_(characterClient), npcClient_(npcClient), mapClient_(mapClient), view_(view), inputRegion_(actorClient.controlledActor().region) {}
-GameSession &SceneController::localSession() const {
-    if (!session_) throw std::logic_error("Local commands are unavailable in multiplayer UI");
-    return *session_;
-}
 SceneController::SceneController(IActorClient &actor, IInventoryClient &inventory, ICharacterClient &character,
     INpcClient &npc, IMapClient &map, SceneView &view)
     : actorClient_(actor), inventoryClient_(inventory), characterClient_(character), npcClient_(npc),
-      mapClient_(map), view_(view), inputRegion_(actor.controlledActor().region) {}
+      mapClient_(map), view_(view) {}
 bool SceneController::handleMenu(const FrameInput &input) {
     auto &ui = view_.ui();
     if (ui.gameMenuOpen) {
-        leftCombatTarget_ = rightCombatTarget_ = {};
+        cancelWorldGesture();
         ui.showLoot = false;
         auto resume = [&] {
             ui.gameMenuOpen = false;
@@ -179,7 +165,6 @@ bool SceneController::handlePanels(const FrameInput &input, float elapsed) {
     if (input.collision)
         ui.debug = !ui.debug;
     if (input.escape) {
-        if (ui.orificeObject) return handleInventory(input);
         if (ui.skillPicker) {
             ui.skillPicker.reset();
             skillGesture_ = true;
@@ -264,15 +249,15 @@ bool SceneController::handlePanels(const FrameInput &input, float elapsed) {
 bool SceneController::handleDeath(const FrameInput &input) {
     if (!actorClient_.controlledActor().dead) return false;
     auto &ui = view_.ui();
-    movement_ = {}; leftCombatTarget_ = rightCombatTarget_ = {};
+    cancelWorldGesture();
     skillGesture_ = false; pickupClick_ = inventoryClick_ = inventoryRight_ = false;
-    leftTargetSkill_.reset(); rightTargetSkill_.reset(); channelInputSkill_ = -1; temporaryRun_ = false;
+    temporaryRun_ = false;
     releaseAfterLoad_ = true;
     ui.inventory.cancelGesture(); ui.inventory.open = ui.inventory.cubeOpen = false;
     ui.inventory.drag.reset(); ui.inventory.selected = {}; ui.inventory.beltExpanded = false;
     ui.inventory.forceSwap = false; ui.inventory.pendingMessage.clear();
     ui.inventory.storage = {}; ui.skillPicker.reset(); ui.inventory.pending = {};
-    ui.orificeObject = {}; ui.orificeItem.reset(); ui.inventoryQuestNpc = {};
+    ui.inventoryQuestNpc = {};
     ui.characterOpen = ui.skillTreeOpen = ui.questOpen = ui.hirelingOpen = false;
     ui.npcMenu = ui.shopOpen = ui.hireListOpen = false;
     ui.help = ui.travelMenu = ui.gameMenuOpen = false; ui.showLoot = false;
@@ -281,27 +266,43 @@ bool SceneController::handleDeath(const FrameInput &input) {
     if (input.focused && input.escape) actorClient_.respawn();
     return true;
 }
-bool SceneController::handleRemoteUi(const FrameInput &input, float elapsed) {
+bool SceneController::handle(const FrameInput &input, float elapsed) {
+    worldBlocked_ = true;
     if (handleDeath(input)) return true;
     auto &ui = view_.ui();
     ui.showLoot = input.focused && input.showLoot;
-    if (releaseAfterLoad_) {
-        if (input.leftHeld || input.rightHeld) return true;
-        releaseAfterLoad_ = false;
-    }
-    if (input.leftPressed || (!input.leftHeld && !input.leftReleased)) inventoryClick_ = false;
-    if (!input.rightHeld && !input.rightPressed) inventoryRight_ = false;
-    if (!input.leftHeld) pickupClick_ = false;
     if (!input.focused) {
+        actorClient_.stopMoving();
         ui.skillPicker.reset(); ui.inventory.cancelGesture();
         ui.gameMenuPressed = -1;
         resetInput();
         return true;
     }
+    if (releaseAfterLoad_) {
+        if (input.leftHeld || input.rightHeld) return true;
+        releaseAfterLoad_ = false;
+    }
+    if (input.leftPressed || (!input.leftHeld && !input.leftReleased)) inventoryClick_ = false;
+    if (input.rightPressed || !input.rightHeld) inventoryRight_ = false;
+    if (!input.leftHeld && !input.leftPressed) pickupClick_ = false;
+    // Capture before handlers close panels or shift the world viewport.
+    if ((input.leftPressed || input.rightPressed) &&
+        (ui.blocksInput() || ui.skillPicker || ui.inventory.drag || ui.inventory.split ||
+         ui.inventory.goldDialog || ui.inventory.identify || hudSurface(input.mouse) ||
+         !input.insideViewport || !CheckCollisionPointRec(rv(input.mouse), view_.worldViewport()) ||
+         (ui.miniPanelOpen && view_.miniPanelAt(input.mouse)))) {
+        inventoryClick_ |= input.leftPressed;
+        inventoryRight_ |= input.rightPressed;
+    }
+    temporaryRun_ = input.control && !input.showLoot;
     if (ui.gameMenuOpen) return handleMenu(input);
+    if (input.escape && mapClient_.read().travelRequested && !ui.travelMenu) {
+        mapClient_.closeTravel();
+        return true;
+    }
     if (input.run) actorClient_.toggleRun();
     if (input.weaponSwap && !ui.blocksInput() && !ui.inventory.drag) inventoryClient_.submit(SwitchWeaponSet{});
-    if (handleNpcMenu(input) || handleHirelingList(input) || handleNpcShop(input) || handleNpcDialogue(input)) {
+    if (handleNpcDialogue(input) || handleNpcMenu(input) || handleHirelingList(input) || handleNpcShop(input)) {
         inventoryClick_ = inventoryClick_ || input.leftPressed;
         inventoryRight_ = inventoryRight_ || input.rightPressed;
         return true;
@@ -323,29 +324,27 @@ bool SceneController::handleRemoteUi(const FrameInput &input, float elapsed) {
         return true;
     }
     if (ui.automap) ui.automapOffset = ui.automapOffset - input.movement * (120.f * elapsed);
+    worldBlocked_ = false;
     return true;
 }
 
 void SceneController::resetInput() {
-    repeatClick_ = 0;
+    worldBlocked_ = true;
     pickupClick_ = inventoryClick_ = inventoryRight_ = false;
-    movement_ = {};
     temporaryRun_ = false;
     skillGesture_ = false;
     view_.ui().pointButtonPressed.reset();
     view_.ui().questPressed = -1;
-    channelInputSkill_ = -1;
-    leftCombatTarget_ = rightCombatTarget_ = {};
-    leftTargetSkill_.reset();
-    rightTargetSkill_.reset();
-    inputRegion_ = actorClient_.controlledActor().region;
+    cancelWorldGesture();
     releaseAfterLoad_ = true;
 }
-EntityId SceneController::combatTarget() const {
-    if (inputRegion_ != actorClient_.controlledActor().region || actorClient_.controlledActor().dead) return {};
-    if (rightCombatTarget_)
-        return view_.ui().rightSkill == rightTargetSkill_ ? rightCombatTarget_ : EntityId{};
-    return view_.ui().leftSkill == leftTargetSkill_ ? leftCombatTarget_ : EntityId{};
+void SceneController::discardBufferedInput(bool focused) {
+    // Resource loading can block a frame during a held walk. Preserve its
+    // destination; buffered presses and casts still need a fresh mouse-up.
+    if (focused && gesture_ == Gesture::Move) {
+        pendingMove_ = true;
+        nextMove_ = inputTime_;
+    } else resetInput();
 }
 void SceneController::openGameMenu(Vec mouse) {
     auto &ui = view_.ui();
@@ -362,332 +361,82 @@ void SceneController::openGameMenu(Vec mouse) {
     ui.gameMenuTime = 0;
     ui.gameMenuMouse = mouse;
     ui.showLoot = false;
-    movement_ = {};
-    leftCombatTarget_ = rightCombatTarget_ = {};
-    channelInputSkill_ = -1;
-    actorClient_.stopActions();
+    actorClient_.stopMoving();
+    cancelWorldGesture();
 }
-void SceneController::click(Vec mouse) {
-    auto &ui = view_.ui();
-    view_.cancelNpcDialogue();
-    if (handleMapClick(mouse)) return;
-    if (auto item = view_.lootAt(mouse, true)) {
-        localSession().submit(PickupItem{*item, ui.inventory.open});
-        pickupClick_ = true;
-        return;
-    }
-    if (const auto *corpse = view_.playerCorpseAt(mouse)) {
-        localSession().submit(RecoverPlayerCorpse{corpse->id});
-        pickupClick_ = true;
-        return;
-    }
-    for (const auto &enemy : localSession().state().area.enemies) {
-        if (enemy.hp > 0 && localSession().canAttack(localSession().state().player.id, enemy.id) && localSession().active(enemy.pos) &&
-            (view_.screen(enemy.pos) - Vec{0, 25} - mouse).length() < 24) {
-            leftCombatTarget_ = enemy.id;
-            leftTargetSkill_ = ui.leftSkill;
-            if (ui.leftSkill)
-                localSession().submit(UseSkill{*ui.leftSkill, enemy.pos, enemy.id});
-            else
-                localSession().submit(Attack{enemy.id});
-            return;
-        }
-    }
-    if (const auto *object = view_.objectAt(mouse)) {
-        localSession().submit(Interact{object->id});
-        pickupClick_ = true;
-        return;
-    }
-    if (auto item = view_.lootAt(mouse)) {
-        localSession().submit(PickupItem{*item, ui.inventory.open});
-        pickupClick_ = true;
-        return;
-    }
-    ui.clickAt = view_.world(mouse);
-    ui.clickAge = 0;
-    actorClient_.move(MoveIntent{ui.clickAt});
+void SceneController::cancelWorldGesture() {
+    if ((gesture_ == Gesture::LeftCast || gesture_ == Gesture::RightCast) && repeated_)
+        actorClient_.stopActions();
+    gesture_ = Gesture::None;
+    lockedTarget_ = {};
+    gestureSkill_.reset();
+    gesturePoint_.reset();
+    repeated_ = pendingMove_ = false;
 }
-bool SceneController::handle(const FrameInput &input, float elapsed) {
-    if (!session_) return handleRemoteUi(input, elapsed);
-    auto &ui = view_.ui();
-    view_.refreshInventory();
-    view_.refreshCharacterView();
-    view_.refreshInteractions();
-    ui.inventory.syncCursor(view_.inventoryView(), ui.orificeItem ? ui.orificeItem->id : EntityId{});
-    if (handleDeath(input)) return true;
-    if (!view_.hirelingView().active) ui.hirelingOpen = false;
-    if (!input.focused || ui.blocksInput() || actorClient_.controlledActor().dead ||
-        input.escape || input.inventory || input.character || input.skillTree || input.quests ||
-        input.hireling || input.storage || input.rightPressed || input.movement.length() > .1f) {
-        ui.pointButtonPressed.reset();
-        ui.questPressed = -1;
+void SceneController::handleWorld(const FrameInput &input, const WorldInputView &world, float elapsed) {
+    inputTime_ += std::clamp(elapsed, 0.f, .25f);
+    if (gameGeneration_ != world.gameGeneration || areaGeneration_ != world.areaGeneration) {
+        gameGeneration_ = world.gameGeneration;
+        areaGeneration_ = world.areaGeneration;
+        repeated_ = false; // A previous world's cast cannot stop a new world's actor.
+        resetInput();
+        return;
     }
-    if (!ui.questOpen) ui.questPressed = -1;
-    if (inputRegion_ != actorClient_.controlledActor().region) {
-        ui.orificeObject = {};
-        ui.orificeItem.reset();
-        leftCombatTarget_ = rightCombatTarget_ = {};
-        inputRegion_ = actorClient_.controlledActor().region;
+    const bool enabled = world.available && !uiConsumed() && input.focused && input.insideViewport &&
+        !view_.ui().blocksInput() && !actorClient_.controlledActor().dead;
+    const bool casting = gesture_ == Gesture::LeftCast || gesture_ == Gesture::RightCast;
+    const size_t hand = gesture_ == Gesture::RightCast ? 1 : 0;
+    const bool held = hand ? input.rightHeld : input.leftHeld;
+    const auto &valid = world.validCombatTargets[hand];
+    const bool invalidTarget = lockedTarget_ && std::find(valid.begin(), valid.end(), lockedTarget_) == valid.end();
+    if (gesture_ != Gesture::None && (!enabled || !held ||
+        (casting && (world.skills[hand] != gestureSkill_ || invalidTarget)))) {
+        cancelWorldGesture();
+        // Target/skill changes terminate this press rather than acquiring another target.
     }
-    if (!input.focused || !input.leftHeld || input.leftPressed || input.rightPressed) leftCombatTarget_ = {};
-    if (!input.focused || !input.rightHeld || input.rightPressed || input.leftPressed) rightCombatTarget_ = {};
-    if (channelInputSkill_ >= 0 && (!input.focused || !input.rightHeld ||
-        ((!input.insideViewport || hudSurface(input.mouse) ||
-          !CheckCollisionPointRec(rv(input.mouse), view_.worldViewport())) && !rightCombatTarget_) ||
-        ui.blocksInput() || ui.inventory.drag || ui.inventory.split || ui.inventory.goldDialog ||
-        ui.inventory.identify || input.movement.length() > .1f || input.leftPressed || input.leftHeld ||
-        (input.escape && !ui.inventory.open) ||
-        ui.rightSkill != channelInputSkill_)) {
-        localSession().submit(StopChannel{});
-        channelInputSkill_ = -1;
-    }
-    temporaryRun_ = input.focused && input.control && !input.showLoot;
-    ui.showLoot = input.showLoot;
-    if (releaseAfterLoad_) {
-        movement_ = {};
-        if (input.leftHeld || input.rightHeld || input.movement.length() > .1f)
-            return true;
-        releaseAfterLoad_ = false;
-    }
-    if (input.leftPressed || (!input.leftHeld && !input.leftReleased))
-        inventoryClick_ = false;
-    if (input.rightPressed || !input.rightHeld)
-        inventoryRight_ = false;
-    if (!input.leftHeld)
-        pickupClick_ = false;
-    // Diablerie PlayerController::FlushInput / Update (MIT): a consumed
-    // gesture must wait for mouse-up before the held button can drive the
-    // world again. Capture against the UI before close actions change its
-    // visibility or shift the camera; keep inventory drag handling live.
-    if (input.focused && input.insideViewport && (input.leftPressed || input.rightPressed)) {
-        const bool portrait = view_.hirelingPortraitVisible() &&
-            (CheckCollisionPointRec(rv(input.mouse), hirelingPortraitBounds()) ||
-             CheckCollisionPointRec(rv(input.mouse), hirelingLifeBounds()));
-        const bool questNotice = ui.questNotice && !ui.questOpen && !ui.characterOpen &&
-            !ui.inventory.storage && !ui.inventory.cubeOpen &&
-            CheckCollisionPointRec(rv(input.mouse), questNoticeBounds());
-        const bool onUi = ui.blocksInput() || ui.skillPicker || ui.inventory.split ||
-            ui.inventory.goldDialog || ui.inventory.identify || hudSurface(input.mouse) ||
-            !CheckCollisionPointRec(rv(input.mouse), view_.worldViewport()) || portrait || questNotice ||
-            (ui.miniPanelOpen && view_.miniPanelAt(input.mouse).has_value());
-        if (onUi) {
-            inventoryClick_ = inventoryClick_ || input.leftPressed;
-            inventoryRight_ = inventoryRight_ || input.rightPressed;
-        }
-    }
-    movement_ = {};
-    if (!input.focused) {
-        ui.inventory.cancelGesture();
-        ui.skillPicker.reset();
-        ui.gameMenuPressed = -1;
-        return true;
-    }
-    if (ui.gameMenuOpen) return handleMenu(input);
-    if (ui.pointButtonPressed) {
-        const bool skill = *ui.pointButtonPressed;
-        const bool enabled = skill ? view_.characterView().unspentSkills > 0
-                                   : view_.characterView().unspentAttributes > 0;
-        if (input.leftReleased) {
-            ui.pointButtonPressed.reset();
-            if (enabled && input.insideViewport &&
-                CheckCollisionPointRec(rv(input.mouse), skill ? hudSkillTreeButton() : hudCharacterButton())) {
-                if (skill) { ui.skillTreeOpen = true; ui.skillPicker.reset(); }
-                else ui.characterOpen = true;
-            }
-            return true;
-        }
-        if (!enabled || !input.leftHeld) ui.pointButtonPressed.reset();
-        else return true;
-    }
-    if (handleQuestPress(input)) return true;
-    repeatClick_ -= elapsed;
-    if (ui.blocksInput() || (input.escape && !ui.inventory.open) || input.weaponSwap ||
-        input.movement.length() > .1f || actorClient_.controlledActor().dead) {
-        if (leftCombatTarget_ || rightCombatTarget_) {
-            localSession().submit(StopMoving{});
-            localSession().submit(StopChannel{});
-        }
-        leftCombatTarget_ = rightCombatTarget_ = {};
-    }
-    if (input.run)
-        localSession().submit(ToggleRun{});
-    if (input.weaponSwap && localSession().content().stashLayout.expansion &&
-        !ui.npcMenu && ui.dialogue.empty() && !ui.travelMenu &&
-        !ui.inventory.drag && !ui.inventory.split && !ui.inventory.goldDialog &&
-        !ui.shopConfirm && !ui.hireListOpen) {
-        localSession().submit(SwitchWeaponSet{});
-        return true;
-    }
-    if (handleNpcMenu(input)) return true;
-    if (handleHirelingList(input)) return true;
-    if (!ui.blocksInput()) {
-        if (input.debugGold) {
-            unsigned capacity = unsigned(localSession().state().player.character.level) * 10000;
-            unsigned amount = std::min(1000u, capacity - localSession().state().player.character.gold);
-            if (amount) localSession().submit(DebugGrantGold{amount});
-            view_.notice(amount ? "Gold +" + std::to_string(amount) : "Gold wallet is full.");
-        }
-        if (input.debugCube) {
-            localSession().submit(DebugDropCube{});
-            view_.notice("Dropping the original cube near your feet.");
-        }
-        if (input.debugExperience) {
-            const auto &player = localSession().state().player;
-            const auto &thresholds = localSession().experienceThresholds();
-            uint64_t amount = 0;
-            if (size_t(player.character.level + 1) < thresholds.size()) {
-                const auto levelExperience = thresholds[size_t(player.character.level + 1)] -
-                                             thresholds[size_t(player.character.level)];
-                amount = levelExperience / 4 + (levelExperience % 4 != 0);
-                amount = std::min(amount, localSession().maximumExperience() - player.character.experience);
-            }
-            if (actorClient_.controlledActor().dead)
-                view_.notice("Experience requires a living player.", true);
-            else {
-                if (amount) localSession().submit(DebugGrantExperience{amount});
-                view_.notice(amount ? "Experience +" + std::to_string(amount) : "Maximum level reached.");
-            }
-        }
-        if (input.debugAttributes) {
-            localSession().submit(DebugResetAttributes{});
-            view_.notice("Allocated attribute points returned.");
-        }
-        if (input.debugTalents) {
-            localSession().submit(DebugResetSkills{});
-            view_.notice("Allocated skill points returned.");
-        }
-        if (input.debugWaypoints) {
-            localSession().submit(DebugUnlockWaypoints{});
-            view_.notice("Available waypoints activated.");
-        }
-    }
-    if (handleNpcShop(input)) return true;
-    if (handleNpcDialogue(input)) return true;
-    if (input.storage && !ui.blocksInput()) {
-        if (ui.inventory.storage)
-            toggleInventory();
-        else {
-            bool found = false;
-            for (const auto &object : localSession().region().objects) {
-                if (object.interaction != Interaction::Stash)
-                    continue;
-                localSession().submit(Interact{object.id});
-                view_.notice("Walking to your private stash.", false);
-                found = true;
-                break;
-            }
-            if (!found)
-                view_.notice("No private stash in this area. Return to camp.", true);
-        }
-        return true;
-    }
-    if (leftCombatTarget_ || rightCombatTarget_) {
-        const bool right = bool(rightCombatTarget_);
-        const auto target = right ? rightCombatTarget_ : leftCombatTarget_;
-        const auto skill = right ? ui.rightSkill : ui.leftSkill;
-        const auto &enemies = localSession().state().area.enemies;
-        const auto found = std::find_if(enemies.begin(), enemies.end(),
-            [&](const Enemy &enemy) { return enemy.id == target && enemy.hp > 0; });
-        if (found != enemies.end() && localSession().active(found->pos) &&
-            skill == (right ? rightTargetSkill_ : leftTargetSkill_)) {
-            if (skill) localSession().submit(UseSkill{*skill, found->pos, target});
-            else localSession().submit(Attack{target});
+    if (!enabled) return;
+    if (input.rightPressed || input.leftPressed) {
+        cancelWorldGesture();
+        if (input.rightPressed || (!world.pickup && world.combat) || input.shift) {
+            gesture_ = input.rightPressed ? Gesture::RightCast : Gesture::LeftCast;
+            lockedTarget_ = world.combat;
+            gestureSkill_ = world.skills[input.rightPressed ? 1 : 0];
+            nextCast_ = inputTime_;
+        } else if (world.pickup) {
+            ActorControlIntent intent; intent.action = ActorControlIntent::Action::Pickup;
+            intent.item = world.pickup; intent.toCursor = view_.ui().inventory.open;
+            actorClient_.control(intent);
+            gesture_ = Gesture::Interact;
+        } else if (world.interaction) {
+            ActorControlIntent intent; intent.action = ActorControlIntent::Action::Interact;
+            intent.target = world.interaction; intent.forceRun = temporaryRun_;
+            actorClient_.control(intent);
+            gesture_ = Gesture::Interact;
         } else {
-            localSession().submit(StopMoving{});
-            localSession().submit(StopChannel{});
-            channelInputSkill_ = -1;
-        }
-        return true;
-    }
-    if (handlePanels(input, elapsed)) return true;
-    if (ui.automap) {
-        ui.automapOffset = ui.automapOffset - input.movement * (120.f * elapsed);
-        movement_ = {};
-    } else {
-        movement_ = unproject(input.movement).unit();
-    }
-    if (!input.insideViewport)
-        return true;
-    if (!hudSurface(input.mouse) && CheckCollisionPointRec(rv(input.mouse), view_.worldViewport())) {
-        if (input.leftPressed || (input.leftHeld && !pickupClick_ && repeatClick_ <= 0)) {
-            if (input.shift) {
-                EntityId target;
-                for (const auto &enemy : localSession().state().area.enemies)
-                    if (enemy.hp > 0 && localSession().canAttack(localSession().state().player.id, enemy.id) && localSession().active(enemy.pos) &&
-                        (view_.screen(enemy.pos) - Vec{0, 25} - input.mouse).length() < 24) {
-                        target = enemy.id;
-                        break;
-                    }
-                if (ui.leftSkill) localSession().submit(UseSkill{*ui.leftSkill, view_.world(input.mouse), target, true});
-                else localSession().submit(Attack{target, false, false, view_.world(input.mouse), true});
-            }
-            else if (input.leftPressed)
-                click(input.mouse);
-            else {
-                ui.clickAt = view_.world(input.mouse);
-                ui.clickAge = 0;
-                actorClient_.move(MoveIntent{ui.clickAt});
-            }
-            repeatClick_ = 1.f / 6.f;
-        }
-        const auto *rightSkill = ui.rightSkill ? localSession().content().skills.find(*ui.rightSkill) : nullptr;
-        const bool channeled = rightSkill && rightSkill->spell &&
-            rightSkill->spell->effect == SkillBehavior::Inferno;
-        const bool corpseExplosion = rightSkill && rightSkill->spell && rightSkill->spell->bone && rightSkill->spell->bone->corpse;
-        const bool corpseSkill = corpseExplosion || (rightSkill && rightSkill->spell && (rightSkill->spell->summon && rightSkill->spell->summon->corpse));
-        const bool enchant = rightSkill && rightSkill->spell && rightSkill->spell->effect == SkillBehavior::Enchant;
-        const bool holyBolt = rightSkill && rightSkill->spell && rightSkill->spell->effect == SkillBehavior::HolyBolt;
-        const bool prison = rightSkill && rightSkill->spell && rightSkill->spell->bone && rightSkill->spell->bone->prison;
-        const bool telekinesis = rightSkill && rightSkill->spell && rightSkill->spell->effect == SkillBehavior::Telekinesis;
-        if (input.rightHeld && !inventoryRight_ && (!channeled ||
-            (input.movement.length() <= .1f && !input.leftPressed && !input.leftHeld))) {
-            EntityId target;
-            for (const auto &enemy : localSession().state().area.enemies)
-                if ((corpseSkill ? localSession().usableCorpse(enemy.id, corpseExplosion) :
-                     input.rightPressed && enemy.hp > 0 && localSession().canAttack(localSession().state().player.id, enemy.id)) &&
-                    localSession().active(enemy.pos) &&
-                    (view_.screen(enemy.pos) - Vec{0, corpseSkill ? 0.f : 25.f} - input.mouse).length() < 24) {
-                    target = enemy.id;
-                    break;
-                }
-            rightCombatTarget_ = corpseSkill ? EntityId{} : target;
-            if (enchant || holyBolt) {
-                if (enchant) target = {};
-                const auto &merc = view_.hirelingView();
-                if (merc.active && (view_.screen(merc.position) - Vec{0, 25} - input.mouse).length() < 24)
-                    target = merc.id;
-                for (const auto &companion : localSession().state().companions)
-                    if (companion.hp > 0 && localSession().active(companion.pos) &&
-                        (view_.screen(companion.pos) - Vec{0, 25} - input.mouse).length() < 24) {
-                        target = companion.id;
-                        break;
-                    }
-                rightCombatTarget_ = {};
-            }
-            rightTargetSkill_ = ui.rightSkill;
-            if (prison && !target)
-                if (const auto *object = view_.objectAt(input.mouse)) target = object->id;
-            if (telekinesis && !target) {
-                if (const auto item = view_.lootAt(input.mouse)) target = item->id;
-                else if (const auto *object = view_.objectAt(input.mouse)) target = object->id;
-                rightCombatTarget_ = {};
-            }
-            Vec aim = view_.world(input.mouse);
-            if (target)
-                for (const auto &enemy : localSession().state().area.enemies)
-                    if (enemy.id == target) { aim = enemy.pos; break; }
-            if (rightSkill && rightSkill->spell && rightSkill->spell->summon && rightSkill->spell->summon->necro &&
-                rightSkill->spell->summon->necro->kind == NecroSummonKind::Iron)
-                if (const auto item = view_.lootAt(input.mouse))
-                    if (const auto *source = localSession().inventory().item(item->id))
-                        if (const auto *ground = std::get_if<GroundLocation>(&source->location)) aim = ground->position;
-            if (ui.rightSkill) {
-                localSession().submit(UseSkill{*ui.rightSkill, aim, target});
-                if (channeled) channelInputSkill_ = *ui.rightSkill;
-            } else
-                localSession().submit(Attack{target, false, false, aim});
+            gesture_ = Gesture::Move;
+            nextMove_ = inputTime_;
         }
     }
-    return true;
+    if ((gesture_ == Gesture::LeftCast || gesture_ == Gesture::RightCast) && inputTime_ >= nextCast_) {
+        nextCast_ = inputTime_ + .12f;
+        ActorControlIntent intent; intent.action = ActorControlIntent::Action::Cast;
+        intent.right = gesture_ == Gesture::RightCast;
+        intent.target = lockedTarget_; intent.point = world.point;
+        intent.stationary = input.shift; intent.repeat = repeated_;
+        if (actorClient_.control(intent)) repeated_ = true;
+    } else if (gesture_ == Gesture::Move && world.movementAvailable && inputTime_ >= nextMove_ &&
+        (pendingMove_ || input.leftPressed || (input.mouse - gestureMouse_).length() >= 1.f ||
+         (gesturePoint_ && std::abs(world.observer.x - gesturePoint_->x) <= 1.f &&
+                           std::abs(world.observer.y - gesturePoint_->y) <= 1.f))) {
+        nextMove_ = inputTime_ + .12f;
+        gestureMouse_ = input.mouse;
+        const auto point = world.point;
+        if (point.x >= world.origin.x && point.y >= world.origin.y &&
+            point.x < world.origin.x + world.size.x && point.y < world.origin.y + world.size.y) {
+            if (pendingMove_ || !gesturePoint_ || gesturePoint_->x != point.x || gesturePoint_->y != point.y)
+                pendingMove_ = !actorClient_.move({point, world.observer, temporaryRun_});
+            gesturePoint_ = point;
+        }
+    }
 }
 } // namespace d2x

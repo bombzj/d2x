@@ -1,11 +1,9 @@
 #pragma once
-#include "client/automap_exploration.hpp"
 #include "input.hpp"
 #include "client/character_client.hpp"
 #include "client/quest_client.hpp"
 #include "client/npc_client.hpp"
 #include "client/map_client.hpp"
-#include "client/map_asset_source.hpp"
 #include "presentation/inventory/inventory_panel.hpp"
 #include "presentation/world/lighting_view.hpp"
 #include "presentation/world/palette_blend_view.hpp"
@@ -13,24 +11,17 @@
 #include "presentation/world/scene_geometry.hpp"
 #include "presentation/world/preset_pops.hpp"
 #include "presentation/world/world_draw_view.hpp"
-#include "gameplay/model/events.hpp"
 #include <cstdint>
-#include <deque>
 #include <map>
 #include <algorithm>
 #include <span>
 
 namespace d2x {
-struct Enemy;
-struct PlayerCorpse;
-class CombatEffectSet;
 class IActorClient;
-struct SpecialItemRecord;
 enum class AutomapFade { No, Everything, Auto, Center };
 struct ViewState {
     InventoryUi inventory;
     std::optional<int> leftSkill, rightSkill;
-    std::array<std::optional<int>, 2> weaponLeftSkills{}, weaponRightSkills{};
     unsigned displayedWeaponSet = 0;
     std::optional<bool> skillPicker; // false: left button, true: right button
     bool skillTreeOpen = false;
@@ -62,7 +53,6 @@ struct ViewState {
     int questPressed = -1;
     bool questNotice = false;
     int questUpdated = -1;
-    std::optional<unsigned> lastDenRemaining;
     bool showLoot = false, shopOpen = false, npcMenu = false;
     bool shopGamble = false;
     bool shopRepair = false;
@@ -73,16 +63,12 @@ struct ViewState {
     std::optional<ItemHandle> shopSalePending;
     EntityId waypointSource;
     int waypointAct = 0;
-    float animationTime = 0, heroTime = 0, stepClock = 0;
-    float cainPortalAnimationStarted = -1;
-    std::string heroMode = "nu", dialogue, dialogueSpeaker, dialogueStatus;
+    float animationTime = 0;
+    std::string dialogue, dialogueSpeaker, dialogueStatus;
     std::optional<uint32_t> dialogueTextTopic;
-    std::deque<NpcDialogueStarted> pendingNpcDialogue;
     EntityId dialogueObject;
     EntityId inventoryQuestNpc;
     NpcMenuAction inventoryNpcAction = NpcMenuAction::Imbue;
-    EntityId orificeObject;
-    std::optional<ItemHandle> orificeItem;
     std::vector<std::string> dialogueLines;
     float dialogueOffset = 0;
     bool dialogueManualScroll = false;
@@ -96,8 +82,6 @@ struct ViewState {
 };
 class SceneView {
     Archives &archives_;
-    const GameSession *session_ = nullptr;
-    const GameSession &localSession() const;
     const IActorClient &actorClient_;
     IInventoryClient &inventoryClient_;
     InventoryView inventoryView_;
@@ -107,7 +91,6 @@ class SceneView {
     QuestView questView_;
     INpcClient &npcClient_;
     IMapClient &mapClient_;
-    const IMapAssetSource *mapAssets_ = nullptr;
     mutable MapSceneView mapView_;
     NpcConversationView npcView_;
     NpcSceneView npcScene_;
@@ -134,27 +117,15 @@ class SceneView {
     void resetQuestAnimations();
     void queueQuestAnimation(QuestId quest, bool completed);
     void advanceQuestAnimations(float dt);
-    std::map<EntityId, float> landingAge_;
     using ClientMissile = ClientMissileVisual;
     std::vector<ClientMissile> clientMissiles_;
-    std::map<EntityId, int> arcVisualFrames_;
     uint64_t projectileVisualRandom_ = 0;
     uint64_t nextClientMissile_ = 0;
     void createMissileImpactVisuals(int missileId, Vec position);
     void createIceShatter(Vec position, int size);
     void createBlizzardFall(int missileId, Vec position);
-    void advanceMissileVisuals(float dt);
-    void syncMissileAudio();
-    std::map<EntityId, Vec> monsterPositions_, monsterLooks_;
-    std::map<EntityId, float> nextMonsterFootstep_, nextMonsterNeutral_;
-    std::set<EntityId> movingMonsters_;
-    AutomapExploration exploredAutomap_;
-    std::map<RegionId, std::vector<float>> roofOpacity_;
-    std::map<RegionId, PresetPops> nativePops_;
     PresetPops worldPops_;
     uint64_t worldGameGeneration_ = ~uint64_t{}, worldAreaGeneration_ = ~uint64_t{};
-    const Sprite *objectSprite(const WorldObject &object, RegionId region) const;
-    Vec objectScreen(const WorldObject &object, Vec regionOffset = {}) const;
     struct LootLabel {
         ItemHandle item;
         std::string text;
@@ -163,22 +134,13 @@ class SceneView {
         Color color;
     };
     std::vector<LootLabel> lootLabels(Vec mouse) const;
-    const Sprite *groundItemSprite(const ItemInstance &item) const;
-    Rectangle lootBounds(const ItemInstance &item) const;
     void drawGroundItem(EntityId item, bool highlighted) const;
     void drawLootLabels(Vec mouse) const;
     void drawSelectableSprite(const Sprite *image, Vec position, bool highlighted,
                               Color tint = WHITE, Vector2 highlight = {2.f, 1.f}) const;
     void drawWorldLighting(const WorldDrawView &, std::span<const WorldDrawItem>);
     void drawNpcAlert(EntityId npc, Vec at, bool back) const;
-    void drawShrineOverlays(int code, Vec at, int height, bool back) const;
-    void drawPlayerShrineOverlay(Vec at, bool back) const;
-    void drawCombatStateOverlays(const CombatEffectSet &effects, Vec screenPosition, int height, bool back) const;
     void drawPanelFrame(bool right) const;
-    void drawMinimap(bool large) const;
-    void revealAutomap();
-    std::vector<AutomapVisibleCell> visibleAutomapCells() const;
-    void drawHud() const;
     void drawGameMenu() const;
     void drawNpcDialogue() const;
     void displayNpcDialogue(EntityId object, std::string speaker, std::string text);
@@ -191,9 +153,9 @@ class SceneView {
     void drawSkillIcon(std::optional<int> skill, Rectangle bounds, bool picker = false) const;
     void drawSkillTree(Vec mouse) const;
     void drawQuests(Vec mouse) const;
+    void drawQuestNotice() const;
     void drawHelp() const;
     void drawExitHint(Vec mouse) const;
-    void drawObjectHint(Vec mouse) const;
     void drawInventory(Vec mouse) const;
     void drawCharacter(Vec mouse) const;
     void drawHireling(Vec mouse) const;
@@ -201,28 +163,16 @@ class SceneView {
     void drawHirelingList(Vec mouse) const;
     void drawStorage(Vec mouse) const;
     void drawCube(Vec mouse) const;
-    void drawOrifice(Vec mouse) const;
     void drawContainerGrid(const ContainerGrid &grid, Vec mouse) const;
     void drawBelt(Vec mouse) const;
-    void drawItemTooltip(const ItemInstance &item, Vec anchor,
-                         std::optional<unsigned> price = {}, bool gamble = false,
-                         std::string_view priceLabel = "Cost") const;
     void drawItemTooltip(const InventoryItemView &item, Vec anchor,
                          std::optional<unsigned> price = {},
                          std::string_view priceLabel = "Cost") const;
     void drawItemText(std::vector<ItemTextLine> lines, ItemQuality quality, Vec anchor,
                       std::optional<unsigned> price, std::string_view priceLabel) const;
     std::optional<unsigned> inventoryVendorPrice(ItemHandle item) const;
-    std::string itemName(const ItemInstance &item) const;
     static Color itemColor(ItemQuality quality);
-    struct VisibleMonster {
-        const Enemy *enemy;
-        Vec position;
-        int region;
-    };
-    std::vector<VisibleMonster> visibleMonsters() const;
     void itemButton(Rectangle bounds, const char *label, Color color) const;
-    void drawItemIcon(const ItemInstance &item, Rectangle bounds, Color tint = WHITE) const;
     void drawItemIcon(const InventoryItemView &item, Rectangle bounds, Color tint = WHITE) const;
     void drawItemArt(const std::string &key, const std::string &code, Rectangle bounds, Color tint) const;
     bool drawInventoryCursor(Vec mouse) const;
@@ -236,15 +186,12 @@ class SceneView {
     bool hirelingPortraitVisible() const;
     std::optional<int> miniPanelAt(Vec mouse) const;
     const ExitView *exitAt(Vec mouse) const;
-    SceneView(Archives &archives, const GameSession &session, const IActorClient &actorClient,
-              IInventoryClient &inventoryClient, ICharacterClient &characterClient,
-              IQuestClient &questClient, INpcClient &npcClient, IMapClient &mapClient, const IMapAssetSource &mapAssets);
     SceneView(Archives &, const ClassicData &, const IActorClient &, IInventoryClient &,
               ICharacterClient &, IQuestClient &, INpcClient &, IMapClient &);
-    bool multiplayer() const { return !session_; }
-    bool playOriginalCombatSound(std::string_view name, uint64_t frame) {
-        return assets_.playOriginalCombatSound(name, frame);
+    void updateWorldAudio(float clock, std::span<const SoundActorView> actors, std::span<const PresentationSoundEvent> events) {
+        assets_.sceneAudio.update(clock,actors,events);
     }
+    const auto &soundLimitations() const { return assets_.sceneAudio.limitations(); }
     void drawUi(Vec mouse) const;
     // Shared original-resource effects; server replica supplies presentation data only.
     void drawNativeIceShatter(Vec position, int size) { createIceShatter(position,size); }
@@ -255,7 +202,7 @@ class SceneView {
                              std::optional<float> remaining = {}, int pathIndex = -1,
                              EntityId owner = {}, bool hostile = false, int pierce = 0);
     void advanceClientMissiles(float dt, const Grid &, Vec origin, std::span<const ClientMissileTarget>);
-    void clearClientMissiles() { clientMissiles_.clear(); arcVisualFrames_.clear(); assets_.audio.resetEmitters(); }
+    void clearClientMissiles() { clientMissiles_.clear(); assets_.sceneAudio.reset(); }
     const auto &clientMissiles() const { return clientMissiles_; }
     std::optional<int> weaponMissile(std::string_view code) const {
         const auto found = assets_.weaponMissiles.find(code);
@@ -273,6 +220,13 @@ class SceneView {
     void drawNpcQuestAlert(EntityId npc, Vec position, bool back) const { drawNpcAlert(npc, position, back); }
     void drawAutomap(const AutomapDrawView &) const;
     std::vector<size_t> drawWorld(const WorldDrawView &);
+    const ActorAnimation *actorAnimation(const ActorAnimationRequest &request, int palette) const {
+        return assets_.actorAnimation(request, palette);
+    }
+    const ActorAnimation *objectAnimation(int identity, int mode, int palette) const {
+        return assets_.objectAnimation(identity, mode, palette);
+    }
+    std::string actorSequenceMode(std::string_view name) const { return assets_.actorSequenceMode(name); }
     const Sprite *groundItemSprite(const InventoryItemView &) const;
     void drawGroundItem(const InventoryItemView &, bool highlighted) const;
     void drawEnemyBar(std::string_view title, std::optional<float> life, std::string_view description = {}, Color color = WHITE) const;
@@ -292,21 +246,14 @@ class SceneView {
     const HirelingListView &hirelingListView() const;
     void refreshInteractions();
     void refreshNpcView(EntityId npc);
-    std::vector<std::pair<RegionId, size_t>> automapLayers() const;
     Vec screen(Vec position) const;
     Vec world(Vec position) const;
     void drawInteractionLabel(const std::string &, Vec, int offset = 70) const;
-    bool visible(const WorldObject &object) const;
-    const WorldObject *objectAt(Vec mouse) const;
-    const PlayerCorpse *playerCorpseAt(Vec mouse) const;
-    const Sprite *playerCorpseSprite(const PlayerCorpse &corpse) const;
-    const std::string &heroAppearanceError() const { return assets_.heroAppearanceError(); }
     bool leftSkillAllowed(int skill) const;
     struct SkillPickerSlot { std::optional<int> skill; Rectangle bounds; };
     std::vector<SkillPickerSlot> skillPickerSlots(bool right) const;
     std::optional<int> skillAt(Vec mouse) const;
     std::optional<ItemHandle> lootAt(Vec mouse, bool labelsOnly = false) const;
-    void advance(float dt);
     void advanceUi(float dt);
     void pauseDebugPresentation(bool paused) { assets_.audio.pauseEmitters(paused); }
     void notice(std::string text, bool error = false);
@@ -327,11 +274,6 @@ class SceneView {
     std::optional<RegionId> clickWaypointMenu(Vec mouse);
     void scrollNpcShop(int pages);
     bool showNextNpcGossip();
-    void sessionRestored();
-    const AutomapLayers &automapExploration() const { return exploredAutomap_.layers(); }
-    uint64_t automapContentFingerprint() const { return assets_.automapContentFingerprint; }
-    bool restoreAutomapExploration(AutomapLayers layers);
-    void collectMapVariants(Archives &archives);
     std::vector<TravelEntryView> travelEntries() const;
 };
 } // namespace d2x

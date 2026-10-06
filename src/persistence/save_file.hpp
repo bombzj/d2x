@@ -1,5 +1,5 @@
 #pragma once
-#include "gameplay/session/character_save.hpp"
+#include "persistence/character_save.hpp"
 #include "resources/atomic_file.hpp"
 #include "content/classic_data.hpp"
 #include <filesystem>

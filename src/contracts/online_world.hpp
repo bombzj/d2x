@@ -115,6 +115,7 @@ struct OnlineUnit {
     // Keep early skill packets by server GUID until 0x0B identifies the local player.
     std::map<uint16_t, uint16_t> skills;
     std::map<uint16_t, uint8_t> baseSkills, bonusSkills, itemSkillQuantities;
+    bool baseSkillsAssigned = false; // Complete original 0x94 list, including an empty list.
     std::optional<OnlineSkillSelection> leftSkill, rightSkill;
 };
 struct OnlineMovementRequest {
@@ -194,6 +195,7 @@ struct OnlineWorldView {
     std::optional<OnlineNpcConversation> npcConversation;
     std::map<uint16_t, uint16_t> playerSkills;
     std::map<uint16_t, uint8_t> playerBaseSkills, playerBonusSkills, itemSkillQuantities;
+    bool playerBaseSkillsAssigned = false;
     std::optional<OnlineSkillSelection> leftSkill, rightSkill;
     std::array<std::optional<OnlineSkillHotkey>, 16> skillHotkeys; // Native 0x7B, unknown until received.
     OnlineQuestState quests;

@@ -1,6 +1,6 @@
 #pragma once
 #include "d2s_items.hpp"
-#include "gameplay/session/character_save.hpp"
+#include "persistence/character_save.hpp"
 
 namespace d2x {
 void initializeD2sInventory(CharacterSaveData &snapshot, const ClassicData &content);

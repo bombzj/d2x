@@ -1,12 +1,5 @@
-#include "gameplay/session/session.hpp"
-#include "content/classic_data.hpp"
-#include "gameplay/model/state.hpp"
-#include "world/region.hpp"
-#include "gameplay/items/inventory.hpp"
-#include "content/monsters/monster_catalog.hpp"
 #include "presentation/scene_view.hpp"
 #include "quest_panel.hpp"
-#include "content/monsters/monster_enchantment.hpp"
 #include <algorithm>
 #include <cmath>
 namespace d2x {
@@ -141,61 +134,12 @@ void SceneView::drawGameMenu() const {
         if (!line.empty()) painter_.centered(line, top, 14, {245, 166, 135, 255});
     }
 }
-void SceneView::drawHud() const {
-    const auto &sim = localSession().state();
-    if (view_.questNotice && !view_.questOpen && !view_.capturesWorldInput() &&
-        !view_.characterOpen && !view_.inventory.storage && !view_.inventory.cubeOpen) {
-        const auto bounds = questNoticeBounds();
-        if (const auto *button = assets_.attributeButtons.frame(0, 0))
-            DrawTexturePro(button->texture, {0, 0, float(button->texture.width), float(button->texture.height)},
-                           bounds, {0, 0}, 0, WHITE);
-        const auto label = localSession().content().questStrings.find("newquestlog");
-        if (label != localSession().content().questStrings.end())
-            painter_.label(label->second, int(bounds.x + (bounds.width - painter_.measure(label->second, 13)) / 2),
-                           int(bounds.y) - 19, 13, WHITE);
-    }
-    if (view_.debug && !view_.npcMenu && view_.dialogue.empty() && !view_.shopOpen) {
-        const int legendX = hirelingPortraitVisible() ? int(74 * classicPanelScale) : 22;
-        painter_.label("D2X", legendX, 20, 20, gold);
-        painter_.label("CLASSIC ENGINE / C++", legendX + 50, 24, 10, {154, 149, 129, 255});
-        painter_.label("LV " + std::to_string(sim.player.character.level) + "  XP " +
-                           std::to_string(sim.player.character.experience),
-                       legendX, 48, 10, {154, 149, 129, 255});
-        int worldWidth = view_.inventory.open && !view_.inventory.storage ? int(inventoryBounds().x) : W;
-        const auto &regionName = localSession().region().definition.name;
-        painter_.label(regionName, (worldWidth - painter_.measure(regionName, 20)) / 2, 20, 20, gold);
-        const std::string subtitle = "ACT I  /  ORIGINAL MPQ ASSETS";
-        painter_.label(subtitle, (worldWidth - painter_.measure(subtitle, 10)) / 2, 46, 10,
-                       {137, 136, 112, 255});
-        painter_.label("TAB Map", W - 204, 191, 10, {153, 144, 118, 255});
-        painter_.label("Ctrl+F1 Help", W - 204, 207, 10, {153, 144, 118, 255});
-    }
-    if (!sim.message.empty())
-        painter_.centered(sim.message, H - HUD - 35, 16, {218, 176, 95, 255});
-    if (view_.noticeTime > 0) {
-        int width = painter_.measure(view_.lootNotice, 14) + 32;
-        float centerX =
-            view_.inventory.open && !view_.inventory.storage ? inventoryBounds().x * .5f : W * .5f;
-        frame({centerX - width * .5f, H - HUD - 139.f, float(width), 34},
-              view_.noticeError ? Color{190, 91, 67, 255} : gold);
-        painter_.label(view_.lootNotice, int(centerX - (width - 32) * .5f), H - HUD - 129, 14,
-                       view_.noticeError ? Color{245, 166, 135, 255} : parchment);
-    }
-    int statusY = H - HUD - 28;
-    for (const auto &status : localSession().shrineStatuses()) {
-        const int seconds = std::max(0, int(std::ceil(status.until - sim.time)));
-        const std::string label = status.name + "  " + std::to_string(seconds) + "s";
-        DrawRectangle(8, statusY - 3, painter_.measure(label, 12) + 16, 21, {0, 0, 0, 205});
-        painter_.label(label, 16, statusY, 12, gold);
-        statusY -= 23;
-    }
-}
 void SceneView::drawHelp() const {
 
     DrawRectangle(0, 0, W, H, {0, 0, 0, 155});
     frame({W / 2.f - 260, 90, 520, 510});
     painter_.centered("FIELD MANUAL", 140, 25, gold);
-    painter_.centered("Diablo II classic resource simulation", 178, 12);
+    painter_.centered("Diablo II online controls", 178, 12);
     const char *lines[] = {"Left click / hold          Move / Attack / Talk / Pick up",
                            "Hold Alt                   Show ground item names",
                            "I / A / S                  Inventory / Character / Skills",
@@ -206,14 +150,13 @@ void SceneView::drawHelp() const {
                            "F1 through F8              Select bound mouse skill",
                            "R                          Toggle walk / run",
                            "Tab / V                    Automap / Switch map side",
-                           "Ctrl+F3 / Ctrl+F4          Collision / Walk to stash",
-                           "F11 / Ctrl + F11           Save / Load",
+                           "W / O                      Weapon swap / Hireling",
+                           "Q / Home                   Quest log / Center map",
                            "F12 / Ctrl+F12             Map names / Screenshot",
                            "Ctrl+F1                   Close this panel"};
     for (int i = 0; i < int(std::size(lines)); i++)
         painter_.label(lines[i], W / 2 - 194, 216 + i * 23, 12,
                        i < 4 ? parchment : Color{150, 148, 132, 255});
-    painter_.centered("Ctrl+Alt+G/E: gold/XP   A/T: reset points   W: waypoints", 575, 11, gold);
 }
 void SceneView::drawEnemyBar(std::string_view title, std::optional<float> life,
                               std::string_view description, Color color) const {
@@ -238,12 +181,12 @@ void SceneView::drawDeathNotice() const {
 }
 void SceneView::drawUi(Vec mouse) const {
     drawControlPanel();
+    drawQuestNotice();
     drawHirelingPortrait();
-    if (multiplayer() && view_.noticeTime > 0)
+    if (view_.noticeTime > 0)
         painter_.centered(view_.lootNotice, H - HUD - 35, 14, view_.noticeError ? RED : parchment);
     drawStorage(mouse);
     drawCube(mouse);
-    drawOrifice(mouse);
     drawCharacter(mouse);
     drawHireling(mouse);
     drawQuests(mouse);

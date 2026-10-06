@@ -17,10 +17,4 @@ inline constexpr uint32_t staffExplanationMask = staffScrollExplained | staffCub
     staffHeadExplained | staffShaftExplained | staffAssemblyExplained;
 inline constexpr uint32_t radamentBookPending = 1;
 inline constexpr uint32_t radamentBookUsed = 2;
-inline bool radamentAdvance(QuestRecord &record, RadamentStage stage) {
-    if (record.stage >= uint32_t(stage)) return false;
-    record.stage = uint32_t(stage);
-    if (stage == RadamentStage::Slain) record.flags |= radamentBookPending;
-    return true;
-}
 } // namespace d2x

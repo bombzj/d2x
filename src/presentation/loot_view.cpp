@@ -1,6 +1,3 @@
-#include "gameplay/session/session.hpp"
-#include "world/region.hpp"
-#include "gameplay/items/inventory.hpp"
 #include "scene_view.hpp"
 #include <algorithm>
 
@@ -21,30 +18,12 @@ Color SceneView::itemColor(ItemQuality quality) {
         return WHITE;
     }
 }
-const Sprite *SceneView::groundItemSprite(const ItemInstance &item) const {
-    const auto age = landingAge_.find(item.id);
-    auto animation = assets_.itemGround.find(SceneAssets::itemArtKey(item));
-    if (animation == assets_.itemGround.end() || animation->second.count <= 0)
-        return nullptr;
-    const auto &anim = animation->second;
-    const int index = age == landingAge_.end() ? anim.count - 1
-                                              : std::min(anim.count - 1, int(age->second * 25));
-    return anim.frame(0, index);
-}
 const Sprite *SceneView::groundItemSprite(const InventoryItemView &item) const {
     const auto key=item.groundArt.empty()?item.artKey:item.artKey+":"+item.groundArt;
     auto found=assets_.itemGround.find(key);
     if(found==assets_.itemGround.end() || found->second.count<=0) return nullptr;
-    const auto age=landingAge_.find(item.id);
-    const int frame=age==landingAge_.end()?found->second.count-1:std::min(found->second.count-1,int(age->second*25));
+    const int frame=found->second.count-1;
     return found->second.frame(0,frame);
-}
-Rectangle SceneView::lootBounds(const ItemInstance &item) const {
-    auto p = screen(staticUnitPosition(std::get<GroundLocation>(item.location).position));
-    if (auto frame = groundItemSprite(item))
-        return {p.x + frame->x - 5, p.y + frame->y - 5, float(frame->texture.width + 10),
-                float(frame->texture.height + 10)};
-    return {};
 }
 void SceneView::drawGroundItem(EntityId id, bool highlighted) const {
     const auto *item = inventoryView_.item(id);

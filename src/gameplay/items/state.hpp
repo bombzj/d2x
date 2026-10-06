@@ -90,14 +90,4 @@ struct InventoryState {
     std::map<EntityId, ItemInstance> items;
     std::map<EntityId, ContainerState> containers;
 };
-// Built by GameSession from world state; never accepted from UI commands.
-struct InventoryAccess {
-    EntityId actor;
-    bool alive = true;
-    RegionId region = RegionId::Encampment;
-    Vec position;
-    EntityId openContainer;
-    float reach = 4;
-    EntityId portableContainer;
-};
 } // namespace d2x

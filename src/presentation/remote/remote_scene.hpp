@@ -4,7 +4,7 @@
 #include "presentation/graphics/primitives.hpp"
 #include "world/map.hpp"
 #include "gameplay/items/handle.hpp"
-#include "presentation/input.hpp"
+#include "presentation/world/world_input_view.hpp"
 #include <memory>
 #include <string>
 #include <vector>
@@ -15,19 +15,13 @@ class RemoteCombat;
 struct RemoteMapDisplayState {
     bool visible{}, large{true}, right{true};
     bool running{true}; // Session preference survives terrain/act renderer replacement.
-    bool movementHeld{}; // Transient ground gesture; cleared at game/area-generation changes.
     Vec offset;
 };
-struct RemoteSceneIntent {
-    std::optional<OnlinePoint> move;
-    std::optional<Vec> moveOrigin; // Pointer projection, not a replacement for the server replica.
-    std::optional<OnlineUnitKey> interact;
-    std::optional<OnlineCombatCommand> combat;
-    std::optional<ItemHandle> pickup;
+struct RemoteSceneFrame {
+    WorldInputView input;
     std::vector<size_t> visibleMapTiles;
-    bool run{true}, leave{}, stopCombat{};
 };
-// Original-resource presentation of a server replica. Emits intents only.
+// Original-resource presentation of a server replica. Returns hit/projection results; owns no input gestures.
 class RemoteScene {
     struct Impl;
     std::unique_ptr<Impl> impl_;
@@ -35,14 +29,12 @@ class RemoteScene {
   public:
     RemoteScene(Archives &, int palette, RemoteMapDisplayState &);
     ~RemoteScene();
-    RemoteSceneIntent frame(const OnlineView &, const Map &, const OnlineSceneView &,
-                            SceneView &, const RemoteCombat &, bool uiConsumed, const FrameInput &);
+    RemoteSceneFrame frame(const OnlineView &, const Map &, const OnlineSceneView &,
+                            SceneView &, const RemoteCombat &, bool uiConsumed, Vec mouse, bool rightHand);
     int renderedUnits() const;
     int unavailableUnits() const;
     bool playerDisplayed() const;
     std::optional<Vec> playerDisplayPosition() const;
     std::vector<std::string> effectLimitations() const;
-    void combatSubmitted(bool accepted);
-    void movementSubmitted(bool accepted);
 };
 } // namespace d2x

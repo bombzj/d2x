@@ -20,7 +20,10 @@ bool SceneController::handleNpcMenu(const FrameInput &input) {
         else if (action == NpcMenuAction::Introduction) view_.startNpcIntroduction();
         else if (action == NpcMenuAction::Gossip) view_.showNextNpcGossip();
         else if (action == NpcMenuAction::QuestTopic && selection.quest) view_.startNpcTopic(*selection.quest);
-        else if (action == NpcMenuAction::Trade) view_.openNpcShop();
+        else if (action == NpcMenuAction::Trade) {
+            npcClient_.submit(TalkToNpc{ui.dialogueObject, TalkToNpc::Action::Trade});
+            view_.openNpcShop();
+        }
         else if (action == NpcMenuAction::Gamble) {
             npcClient_.submit(OpenGamble{ui.dialogueObject});
         }
@@ -59,6 +62,13 @@ bool SceneController::handleNpcMenu(const FrameInput &input) {
 bool SceneController::handleNpcDialogue(const FrameInput &input) {
     auto &ui = view_.ui();
     if (!ui.dialogue.empty()) {
+        if (ui.dialogueTextTopic && (input.escape || (input.insideViewport && input.leftPressed))) {
+            npcClient_.submit(TalkToNpc{ui.dialogueObject, TalkToNpc::Action::Acknowledge, ui.dialogueTextTopic});
+            view_.cancelNpcDialogue();
+            const auto &conversation = npcClient_.read(ui.dialogueObject);
+            if (conversation.valid) view_.openNpcMenu(ui.dialogueObject, conversation.speaker, false);
+            return true;
+        }
         if (input.escape) {
             if (!view_.closeNpcDialogue()) npcClient_.submit(EndNpcConversation{ui.dialogueObject});
         } else {

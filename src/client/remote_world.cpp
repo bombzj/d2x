@@ -348,6 +348,7 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
                     if (item.ownerType == 0 && !item.owner) { item.owner = k.id; item.revision = ++w.itemRevision; }
                 w.playerSkills = u.skills;
                 w.playerBaseSkills = u.baseSkills; w.playerBonusSkills = u.bonusSkills;
+                w.playerBaseSkillsAssigned = u.baseSkillsAssigned;
                 w.itemSkillQuantities = u.itemSkillQuantities;
                 w.leftSkill = u.leftSkill;
                 w.rightSkill = u.rightSkill;
@@ -890,6 +891,7 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
     }
     case 0x94: {
         const auto count = r.u8(); const auto owner = r.u32();
+        auto &assigned = unit(w, {0, owner});
         for (int i = 0; i < count; ++i) {
             const auto skill = r.u16(); const auto level = r.u8();
             auto &entry = unit(w, {0, owner}); entry.baseSkills[skill] = level;
@@ -899,6 +901,8 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
             }
         }
         r.finish();
+        assigned.baseSkillsAssigned = true;
+        if (v.load.playerUnitId == owner) w.playerBaseSkillsAssigned = true;
         break;
     }
     case 0x3E: {

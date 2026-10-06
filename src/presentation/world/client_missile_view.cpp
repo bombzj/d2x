@@ -104,7 +104,7 @@ void SceneView::advanceClientMissiles(float dt, const Grid &grid, Vec origin,
             child.age = std::max(0.f, overshoot); pending.push_back(std::move(child));
         }
         clientMissiles_.resize(first);
-        assets_.audio.play("missile-hit:" + std::to_string(effect.missileId), uint64_t(view_.animationTime * 25.f));
+        assets_.sceneAudio.playRegistered("missile-hit:" + std::to_string(effect.missileId), uint64_t(view_.animationTime * 25.f));
     };
     while (!pending.empty() && processed++ < 8192) {
         auto effect = std::move(pending.front()); pending.pop_front();
@@ -131,7 +131,7 @@ void SceneView::advanceClientMissiles(float dt, const Grid &grid, Vec origin,
         while (effect.frame < lastFrame && !finished) {
             const int frame = effect.frame;
             const float childAge = std::max(0.f, effect.age + effect.animationOffset - float(frame) / 25.f);
-            if (!frame) assets_.audio.play("missile-release:" + std::to_string(effect.missileId), uint64_t(view_.animationTime * 25.f));
+            if (!frame) assets_.sceneAudio.playRegistered("missile-release:" + std::to_string(effect.missileId), uint64_t(view_.animationTime * 25.f));
             if (program.function == 19 && program.parameters[0] > 0 && frame % program.parameters[0] == 0) {
                 const Vec anchor{std::floor(effect.pos.x) + .5f, std::floor(effect.pos.y) + .5f};
                 emit(program.children[0], anchor, missileRingDirection(effect.directionIndex), effect, childAge);
@@ -218,7 +218,7 @@ void SceneView::advanceClientMissiles(float dt, const Grid &grid, Vec origin,
         }
         if (!finished && clientMissiles_.size() < 2048) clientMissiles_.push_back(std::move(effect));
     }
-    if (multiplayer()) {
+    {
         std::vector<SoundEmitter> sounds;
         for (const auto &effect : clientMissiles_) {
             if (effect.age < 0 || !effect.soundEmitter) continue;

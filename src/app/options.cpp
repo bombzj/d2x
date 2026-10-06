@@ -34,13 +34,6 @@ AppOptions parseOptions(int argc, char **argv) {
         }
         else if (arg == "--hidden") options.hidden = true;
         else if (arg == "--help") options.help = true;
-        else if (arg == "--debug-run") { /* Legacy spelling: online always starts running. */ }
-        else if (arg == "--save" || arg == "--load" || arg == "--class" || arg == "--seed" ||
-                 arg == "--map-seed" || arg == "--population-seed" || arg == "--population" ||
-                 arg == "--map" || arg == "--region" || arg == "--level" || arg == "--preset" ||
-                 arg == "--level-type" || arg == "--variant" || arg == "--difficulty" ||
-                 arg == "--inventory" || arg == "--stash" || arg == "--skills")
-            throw std::runtime_error(arg + " is a retired local-game option; select a server character instead");
         else throw std::runtime_error("Unknown option: " + arg);
     }
     if (!options.onlinePlay.empty()) {

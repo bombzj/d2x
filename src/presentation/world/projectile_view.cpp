@@ -1,6 +1,3 @@
-#include "gameplay/session/session.hpp"
-#include "gameplay/model/state.hpp"
-#include "world/region.hpp"
 #include "core/random.hpp"
 #include "presentation/scene_view.hpp"
 #include <algorithm>
@@ -14,7 +11,7 @@ void SceneView::createIceShatter(Vec position, int size) {
     const auto direction = directions[limitedRandom(projectileVisualRandom_, 4)];
     clientMissiles_.push_back({id, position, {}, 0, assets_.projectileVisuals.at(id).lifetime, direction});
     if ((screen(position) - Vec{W / 2.f, (H - HUD) / 2.f}).length() < W)
-        assets_.audio.play("monster-shatter", multiplayer()?uint64_t(view_.animationTime*25.f):localSession().state().frame);
+        assets_.sceneAudio.playRegistered("monster-shatter", uint64_t(view_.animationTime*25.f));
 }
 void SceneView::createBlizzardFall(int missileId, Vec position) {
     const auto found = assets_.blizzardFalls.find(missileId);
@@ -64,47 +61,5 @@ void SceneView::createMissileImpactVisuals(int missileId, Vec position) {
     if (id < 0) return;
     if (const auto *visual = assets_.ensureProjectile(id))
         clientMissiles_.push_back({id, position, {}, 0, visual->lifetime, {}});
-}
-void SceneView::advanceMissileVisuals(float dt) {
-    std::set<EntityId> activeArcs;
-    for (const auto &[region, offset] : localSession().sceneRegions())
-        for (const auto &missile : localSession().areaState(region).missiles) {
-            if (!missile.arc) continue;
-            activeArcs.insert(missile.id);
-            const int frame = int(missile.age * 25.f + .001f);
-            const auto previous = arcVisualFrames_.find(missile.id);
-            const int first = previous == arcVisualFrames_.end() ? 0 : previous->second + 1;
-            const auto &program = missile.arc->spec;
-            for (int step = first; step <= frame; ++step)
-                for (int segment = 0; segment < std::max(1, program.subloops); ++segment) {
-                    const float behind = float(frame - step) / 25.f +
-                        float(segment) / float(std::max(1, program.subloops) * 25);
-                    const Vec position = missile.pos + offset - missile.velocity * behind;
-                    clientMissiles_.push_back({program.visualId, position, {},
-                        float(frame - step) / 25.f,
-                        assets_.projectileVisuals.at(program.visualId).lifetime, missile.velocity});
-                }
-            arcVisualFrames_[missile.id] = frame;
-        }
-    std::erase_if(arcVisualFrames_, [&](const auto &entry) { return !activeArcs.contains(entry.first); });
-    advanceClientMissiles(dt, localSession().region().map.grid, {}, {});
-}
-void SceneView::syncMissileAudio() {
-    std::vector<SoundEmitter> emitters;
-    for (const auto &[id, offset] : localSession().sceneRegions())
-        for (const auto &missile : localSession().areaState(id).missiles) {
-            const auto key = "missile-release:" + std::to_string(missile.missileId);
-            if (!assets_.audio.hasEmitterSound(key)) continue;
-            // Retain the existing scene sound admission range; exact legacy
-            // spatial falloff/panning and EAX are separate, unverified rules.
-            if ((screen(missile.pos + offset) - Vec{W / 2.f, (H - HUD) / 2.f}).length() < W)
-                emitters.push_back({missile.id, key});
-        }
-    for (const auto &object : localSession().region().objects)
-        if (object.operateFn == 25 && object.operatedAt >= 0 &&
-            localSession().state().time - object.operatedAt < assets_.projectileVisuals.at(338).lifetime &&
-            assets_.audio.hasEmitterSound("missile-release:338"))
-            emitters.push_back({object.id, "missile-release:338"});
-    assets_.audio.syncEmitters(emitters, localSession().state().frame);
 }
 } // namespace d2x

@@ -3,38 +3,13 @@
 #include <algorithm>
 #include <stdexcept>
 namespace d2x {
-SoundBank::SoundBank(Archives &a) {
-    groupRandom_ = initialRandom(0);
-    const std::pair<const char *, const char *> files[] = {
-        {"drink", "item/potiondrink.wav"},
-        {"belt", "item/belt.wav"},
-        {"quest_done", "cursor/questdone.wav"},
-        {"step", "ambient/footstep/heavydirtrun1.wav"},
-        {"swing", "combat/weapon/one hand swing small01.wav"},
-        {"impact", "skill/sorceress/largefireimpact1.wav"},
-        {"fire", "object/fire2.wav"}};
-    enabled = IsAudioDeviceReady();
-    for (auto [name, path] : files) {
-        auto b = a.read(std::string("data/global/sfx/") + path, false);
-        if (b.empty() || !enabled)
-            continue;
-        Wave wave = LoadWaveFromMemory(".wav", b.data(), int(b.size()));
-        if (wave.data) {
-            auto sound = LoadSoundFromWave(wave);
-            UnloadWave(wave);
-            SetSoundVolume(sound, std::string(name) == "step" ? .18f : .45f);
-            sounds.emplace(name, sound);
-        }
-    }
-}
+SoundBank::SoundBank() : groupRandom_(initialRandom(0)), enabled(IsAudioDeviceReady()) {}
 SoundBank::~SoundBank() {
     emitters_.reset();
-    for (auto [name, s] : sounds)
-        UnloadSound(s);
     for (const auto &[name, group] : originalGroups_)
         for (const auto &variant : group.sounds) UnloadSound(variant.sound);
 }
-void SoundBank::play(const std::string &name, uint64_t frame) {
+void SoundBank::play(const std::string &name, uint64_t frame, float volume) {
     // Looping travel sounds are owned by live missile entities, not this event.
     if (hasEmitterSound(name)) return;
     if (const auto group = originalGroups_.find(name); group != originalGroups_.end()) {
@@ -47,27 +22,10 @@ void SoundBank::play(const std::string &name, uint64_t frame) {
         // Stop Inst replaces the previous instance of the selected sound.
         // A request rejected by Compound must not interrupt that instance.
         if (variant.stopInstance) StopSound(variant.sound);
+        SetSoundVolume(variant.sound, volume >= 0 ? .45f * std::clamp(volume, 0.f, 1.f) : variant.volume);
         PlaySound(variant.sound);
         return;
     }
-    auto it = sounds.find(name);
-    if (enabled && it != sounds.end())
-        PlaySound(it->second);
-}
-void SoundBank::registerOriginal(Archives &archives, std::string key, std::string_view path, float volume) {
-    auto found = sounds.find(key);
-    if (found != sounds.end()) {
-        UnloadSound(found->second);
-        sounds.erase(found);
-    }
-    if (!enabled) return;
-    auto bytes = archives.read(std::string(path));
-    Wave wave = LoadWaveFromMemory(".wav", bytes.data(), int(bytes.size()));
-    if (!wave.data) return;
-    auto sound = LoadSoundFromWave(wave);
-    UnloadWave(wave);
-    SetSoundVolume(sound, volume);
-    sounds.emplace(std::move(key), sound);
 }
 void SoundBank::registerOriginalGroup(Archives &archives, std::string key, const DataTable &table, size_t row) {
     const int count = std::max(1, table.number(row, "Group Size").value_or(0));
@@ -103,7 +61,7 @@ void SoundBank::registerOriginalGroup(Archives &archives, std::string key, const
             UnloadWave(wave);
             if (!sound.stream.buffer) throw std::runtime_error("Original sound group could not be loaded");
             variants.push_back({sound, table.number(variant, "Stop Inst").value_or(0) != 0,
-                                      table.number(variant, "Defer Inst").value_or(0) != 0});
+                                      table.number(variant, "Defer Inst").value_or(0) != 0, .45f * *volume / 255.f});
             SetSoundVolume(sound, .45f * *volume / 255.f);
         }
         originalGroups_.emplace(std::move(key), OriginalSoundGroup{std::move(variants), unsigned(compound), {}});

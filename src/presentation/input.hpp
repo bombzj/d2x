@@ -1,6 +1,6 @@
 #pragma once
 #include "core/math.hpp"
-#include "gameplay/model/definitions.hpp"
+#include <cstddef>
 #include <array>
 #include <string>
 
@@ -25,12 +25,7 @@ struct FrameInput {
     bool automapNames = false;
     bool hireling = false;
     bool run = false, escape = false, screenshot = false;
-    bool expandBelt = false, storage = false, weaponSwap = false;
-    bool save = false, load = false;
-    bool debugGold = false, debugExperience = false;
-    bool debugCube = false;
-    bool debugAttributes = false, debugTalents = false;
-    bool debugWaypoints = false;
+    bool expandBelt = false, weaponSwap = false;
     std::array<bool, 4> belt{};
     std::array<bool, hotbarSlots> skills{};
 };

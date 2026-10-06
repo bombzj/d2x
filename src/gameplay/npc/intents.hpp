@@ -1,12 +1,17 @@
 #pragma once
 #include "gameplay/items/handle.hpp"
 #include <cstdint>
+#include <optional>
 #include <variant>
 
 namespace d2x {
 struct IdentifyWithCain { EntityId target; };
 struct EndNpcConversation { EntityId target; };
-struct TalkToNpc { EntityId target; };
+struct TalkToNpc {
+    EntityId target;
+    enum class Action { Talk, Acknowledge, Trade } action = Action::Talk;
+    std::optional<uint32_t> message;
+};
 struct ClaimAkaraRespec { EntityId target; };
 struct ImbueItem { EntityId npc; ItemHandle item; };
 struct SocketQuestItem { EntityId npc; ItemHandle item; };

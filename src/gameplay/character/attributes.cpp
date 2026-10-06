@@ -13,20 +13,6 @@ float manaRecoveryRate(int maximumMana, int denominator, int recoveryBonus) {
 int64_t allocatedPoints(const AttributeAllocation &a) {
     return int64_t(a.strength) + a.dexterity + a.vitality + a.energy;
 }
-bool allocateAttribute(AttributeAllocation &a, int &unspent, Attribute attribute) {
-    if (unspent <= 0) return false;
-    int *target = nullptr;
-    switch (attribute) {
-    case Attribute::Strength: target = &a.strength; break;
-    case Attribute::Dexterity: target = &a.dexterity; break;
-    case Attribute::Vitality: target = &a.vitality; break;
-    case Attribute::Energy: target = &a.energy; break;
-    }
-    if (!target || *target == std::numeric_limits<int>::max()) return false;
-    ++*target;
-    --unspent;
-    return true;
-}
 void mergeCharacterModifiers(CharacterModifiers &a, const CharacterModifiers &b) {
     auto add = [](int &target, int value) {
         const auto sum = int64_t(target) + value;

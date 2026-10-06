@@ -28,7 +28,6 @@ FrameInput pollInput(const Viewport &viewport) {
     input.hireling = IsKeyPressed(KEY_O);
     input.shift = IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT);
     input.control = IsKeyDown(KEY_LEFT_CONTROL) || IsKeyDown(KEY_RIGHT_CONTROL);
-    input.storage = input.control && IsKeyPressed(KEY_F4);
     input.enter = IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_KP_ENTER);
     input.backspace = IsKeyPressed(KEY_BACKSPACE) || IsKeyPressedRepeat(KEY_BACKSPACE);
     input.tab = IsKeyPressed(KEY_TAB);
@@ -42,20 +41,8 @@ FrameInput pollInput(const Viewport &viewport) {
         int(input.wheel) + int(IsKeyPressed(KEY_RIGHT)) - int(IsKeyPressed(KEY_LEFT));
     input.focused = IsWindowFocused();
     input.showLoot = IsKeyDown(KEY_LEFT_ALT) || IsKeyDown(KEY_RIGHT_ALT);
-    if (input.control && input.showLoot) {
-        input.debugGold = IsKeyPressed(KEY_G);
-        input.debugCube = IsKeyPressed(KEY_B);
-        input.debugExperience = IsKeyPressed(KEY_E);
-        input.debugAttributes = characterA;
-        input.debugTalents = skillT;
-        input.debugWaypoints = IsKeyPressed(KEY_W);
-        input.character = false;
-        input.skillTree = false;
-    }
     input.movement = {float(IsKeyDown(KEY_RIGHT) - IsKeyDown(KEY_LEFT)),
                       float(IsKeyDown(KEY_DOWN) - IsKeyDown(KEY_UP))};
-    if (input.control && input.showLoot)
-        input.movement = {};
     input.help = input.control && IsKeyPressed(KEY_F1);
     input.automap = input.tab;
     input.minimapSide = IsKeyPressed(KEY_V);
@@ -67,8 +54,6 @@ FrameInput pollInput(const Viewport &viewport) {
     input.run = !input.control && IsKeyPressed(KEY_R);
     input.escape = IsKeyPressed(KEY_ESCAPE);
     input.screenshot = input.control && IsKeyPressed(KEY_F12);
-    input.save = IsKeyPressed(KEY_F11) && !input.control;
-    input.load = IsKeyPressed(KEY_F11) && input.control;
     for (int i = 0; i < int(hotbarSlots); ++i)
         input.skills[i] = !input.control && IsKeyPressed(KEY_F1 + i);
     for (int i = 0; i < 4; ++i)

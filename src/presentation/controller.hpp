@@ -1,9 +1,9 @@
 #pragma once
 #include "input.hpp"
+#include "world/world_input_view.hpp"
 #include "gameplay/items/intents.hpp"
 
 namespace d2x {
-class GameSession;
 class IActorClient;
 class IInventoryClient;
 class ICharacterClient;
@@ -12,9 +12,6 @@ class IMapClient;
 struct InventoryItemView;
 class SceneView;
 class SceneController {
-    GameSession *session_ = nullptr;
-    GameSession &localSession() const;
-    bool handleRemoteUi(const FrameInput &, float);
     bool handleDeath(const FrameInput &);
     bool handlePanels(const FrameInput &, float);
     bool handleMenu(const FrameInput &);
@@ -24,21 +21,23 @@ class SceneController {
     INpcClient &npcClient_;
     IMapClient &mapClient_;
     SceneView &view_;
-    float repeatClick_ = 0;
     bool pickupClick_ = false;
     // UI owns a mouse press through release, even if its panel closes.
     bool inventoryClick_ = false;
     bool inventoryRight_ = false;
     bool releaseAfterLoad_ = false;
     bool skillGesture_ = false;
-    int channelInputSkill_ = -1;
-    EntityId leftCombatTarget_, rightCombatTarget_;
-    std::optional<int> leftTargetSkill_, rightTargetSkill_;
-    RegionId inputRegion_;
-    Vec movement_;
+    enum class Gesture { None, Move, Interact, LeftCast, RightCast };
+    Gesture gesture_ = Gesture::None;
+    EntityId lockedTarget_;
+    std::optional<InputSkillSelection> gestureSkill_;
+    bool repeated_ = false, pendingMove_ = false, worldBlocked_ = true;
+    float inputTime_ = 0, nextCast_ = 0, nextMove_ = 0;
+    Vec gestureMouse_;
+    std::optional<Vec> gesturePoint_;
+    uint64_t gameGeneration_ = ~uint64_t{}, areaGeneration_ = ~uint64_t{};
+    void cancelWorldGesture();
     bool temporaryRun_ = false;
-    void click(Vec mouse);
-    bool handleMapClick(Vec mouse);
     bool handleTravel(const FrameInput &input);
     void openGameMenu(Vec mouse);
     bool handleInventory(const FrameInput &input);
@@ -55,21 +54,17 @@ class SceneController {
     bool handleQuestPanel(const FrameInput &input);
     void toggleInventory();
     bool queueInventory(InventoryIntent command, EntityId source);
-    bool inventoryQuestTargetValid(EntityId object) const;
-    bool openInventoryQuestTarget(Vec mouse, const InventoryItemView &item);
-    void submitInventoryQuest(EntityId object, ItemHandle item);
     void submitNpcItemService(ItemHandle item);
     void endInventoryNpcConversation(EntityId npc);
 
   public:
-    SceneController(GameSession &session, IActorClient &actorClient, IInventoryClient &inventoryClient,
-                    ICharacterClient &characterClient, INpcClient &npcClient, IMapClient &mapClient, SceneView &view);
     SceneController(IActorClient &, IInventoryClient &, ICharacterClient &, INpcClient &, IMapClient &, SceneView &);
-    bool uiConsumed() const { return inventoryClick_ || inventoryRight_ || pickupClick_ || skillGesture_ || releaseAfterLoad_; }
+    bool uiConsumed() const { return worldBlocked_ || inventoryClick_ || inventoryRight_ || pickupClick_ || skillGesture_ || releaseAfterLoad_; }
     bool handle(const FrameInput &input, float elapsed);
+    void handleWorld(const FrameInput &, const WorldInputView &, float elapsed);
     void resetInput();
-    Vec movement() const { return movement_; }
-    EntityId combatTarget() const;
+    void discardBufferedInput(bool focused);
+    EntityId combatTarget() const { return lockedTarget_; }
     bool temporaryRun() const { return temporaryRun_; }
 };
 } // namespace d2x

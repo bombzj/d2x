@@ -9,8 +9,6 @@
 #include "network/protocol/bits.hpp"
 #include "presentation/hud/hud_layout.hpp"
 #include "presentation/world/scene_geometry.hpp"
-#include "resources/anim_data.hpp"
-#include "resources/monster_palshift.hpp"
 #include "resources/data_table.hpp"
 #include "core/random.hpp"
 #include "content/world/automap_data.hpp"
@@ -19,6 +17,7 @@
 #include "presentation/npc/npc_menu.hpp"
 #include "presentation/hud/classic_panel.hpp"
 #include <algorithm>
+#include <array>
 #include <bit>
 #include <cctype>
 #include <deque>
@@ -76,24 +75,17 @@ Vec monsterDirectionOffset(int index) {
 }
 } // namespace
 struct RemoteScene::Impl {
-    struct Art {
-        GpuAnimation animation;
-        float fps{};
-        float releaseTime{-1};
-        std::vector<float> releaseTimes;
-        int start{};
-        bool cycle{}, shadow{};
-        Vec offset;
-        int order{};
+    using Art = ActorAnimation;
+    struct CastHandoff {
+        uint64_t revision{};
+        OnlinePoint nativePosition;
+        Vec direction;
     };
     struct Motion {
         std::optional<OnlinePoint> last;
         Vec look;
         float movedAt{-1};
-        std::optional<uint8_t> mode;
-        float modeChangedAt{};
-        std::optional<float> frozenAt;
-        uint64_t animationRevision{};
+        ActorAnimationState animation;
         uint64_t positionRevision{}, discontinuity{};
         Vec position, correction, routeOrigin;
         float correctionLeft{}, updatedAt{-1}, progressAt{};
@@ -101,23 +93,18 @@ struct RemoteScene::Impl {
         std::deque<std::pair<float,Vec>> samples; // Recent displayed path; native samples have no timestamps.
         std::optional<Vec> goal;
         uint64_t requestRevision{}, invalidatedRequest{}, actionRevision{}, obstacleRevision{};
+        uint64_t castSequence{};
+        std::optional<CastHandoff> castHandoff;
         bool running{};
     };
     Archives &archives;
     RemoteMapDisplayState &mapDisplay;
-    Graphics actors;
+    int artPalette = 0;
     RealmPortraitCatalog portraits;
     ClassicStrings strings;
-    AnimDataTable animations;
-    DataTable objects, monstats, monstats2, charstats, skills, missiles, overlays, states, weapons, monSounds, monseq, difficultyLevels, superuniques;
+    DataTable monstats, monstats2, charstats, skills, missiles, overlays, states, weapons, difficultyLevels, superuniques;
     std::vector<size_t> characterRows;
-    std::map<std::string, size_t, std::less<>> monsterSoundRows;
-    struct PendingSound { std::string name; OnlineUnitKey source; float due{}; uint64_t actionRevision{}; };
-    std::deque<PendingSound> pendingSounds;
-    uint64_t soundRandom{0x1234}; // Presentation randomness only; never a combat roll.
-    std::map<const Art *, Art> lightningAnimations;
-    std::map<std::pair<const Art *, std::string>, Art> monsterSequences;
-    std::map<std::string, std::vector<size_t>, std::less<>> sequenceRows;
+    std::vector<PresentationSoundEvent> soundEvents;
     std::map<int, size_t> skillRows;
     std::map<int, size_t> missileRows, stateRows;
     std::optional<uint16_t> alignmentStat;
@@ -134,50 +121,34 @@ struct RemoteScene::Impl {
         OnlineCombatCommand command;
         uint64_t authorityRevision{};
         float requested{}, started{-1}, duration{};
+        uint64_t sequence{}, revision{};
     };
     std::optional<LocalCast> localCast;
-    std::map<int, size_t> objectRows, monsterRows;
+    std::map<int, size_t> monsterRows;
     std::map<std::string, size_t, std::less<>> monsterExtra;
     struct MonsterIdentity { bool champion{},unique{},minion{},ghostly{}; std::optional<uint16_t> superUnique; uint16_t nameSeed{}; std::vector<uint8_t> modifiers; };
     std::map<OnlineUnitKey,MonsterIdentity> monsterIdentities;
     std::map<int,size_t> superUniqueRows;
-    std::map<std::string, Art> art;
     std::map<OnlineUnitKey, Motion> motion;
     uint64_t gameGeneration{~uint64_t{}}, areaGeneration{~uint64_t{}};
-    float time{}, nextCast{};
+    float time{};
     std::chrono::steady_clock::time_point lastFrame{};
-    bool menu{};
-    enum class Gesture { None, Move, Interact, LeftCast, RightCast };
-    Gesture gesture{Gesture::None};
-    std::optional<OnlineUnitKey> lockedTarget;
-    std::optional<OnlineSkillSelection> gestureSkill;
-    bool repeated{};
-    bool pendingMove{};
-    Vec gestureMouse;
-    std::optional<OnlinePoint> gesturePoint;
-    float nextMove{};
     int rendered{}, unavailable{};
     bool playerDisplayed{};
     Impl(Archives &a, int palette, RemoteMapDisplayState &display)
         : archives(a), mapDisplay(display),
-          actors(a, "data/global/palette/act" + std::to_string(palette + 1) + "/pal.dat"),
+          artPalette(palette),
           portraits(a), strings(a),
-          animations(a.read("data/global/animdata.d2")), objects(a.read("data/global/excel/objects.txt")),
           monstats(a.read("data/global/excel/monstats.txt")),
           monstats2(a.read("data/global/excel/monstats2.txt")), charstats(a.read("data/global/excel/charstats.txt")),
           skills(a.read("data/global/excel/skills.txt")), missiles(a.read("data/global/excel/missiles.txt")),
           overlays(a.read("data/global/excel/overlay.txt")), states(a.read("data/global/excel/states.txt")),
-          weapons(a.read("data/global/excel/weapons.txt")), monSounds(a.read("data/global/excel/monsounds.txt")),
-          monseq(a.read("data/global/excel/monseq.txt")), difficultyLevels(a.read("data/global/excel/difficultylevels.txt")),
+          weapons(a.read("data/global/excel/weapons.txt")),
+          difficultyLevels(a.read("data/global/excel/difficultylevels.txt")),
           superuniques(a.read("data/global/excel/superuniques.txt")) {
         for (size_t row=0; row<superuniques.rows().size(); ++row)
             if (const auto id=superuniques.number(row,"hcIdx")) superUniqueRows.emplace(*id,row);
-        for (size_t row=0; row<monseq.rows().size(); ++row)
-            if (!monseq.value(row,"sequence").empty())
-                sequenceRows[std::string(monseq.value(row,"sequence"))].push_back(row);
         for (const auto &character:loadCharacterDefinitions(charstats)) characterRows.push_back(character.sourceRow);
-        for (size_t row = 0; row < monSounds.rows().size(); ++row)
-            monsterSoundRows.emplace(monSounds.value(row, "Id"), row);
         const DataTable itemStats(a.read("data/global/excel/itemstatcost.txt"));
         for (size_t row = 0; row < itemStats.rows().size(); ++row)
             if (itemStats.value(row, "Stat") == "alignment")
@@ -191,9 +162,6 @@ struct RemoteScene::Impl {
             overlayNames.emplace(overlays.value(row, "overlay"), row);
         for (size_t row = 0; row < states.rows().size(); ++row)
             if (auto id = states.number(row, "ID")) stateRows.emplace(*id, row);
-        for (size_t row = 0; row < objects.rows().size(); ++row)
-            if (auto id = objects.number(row, "Id"))
-                objectRows.emplace(*id, row);
         for (size_t row = 0; row < monstats.rows().size(); ++row)
             if (auto id = monstats.number(row, "hcIdx"))
                 monsterRows.emplace(*id, row);
@@ -203,62 +171,13 @@ struct RemoteScene::Impl {
                 monsterExtra.emplace(std::string(id), row);
         }
     }
-    Art *composite(const std::string &category, const RealmPortraitParts &parts, const std::string &mode,
-                   bool shadow, int palette = -1, bool finalFrame = false, bool randomPalette = false) {
-        std::string key = category + ":" + parts.token + mode + parts.weapon;
-        key += ":palette:" + std::to_string(palette);
-        if (randomPalette) key+=":rand";
-        if (finalFrame) key += ":final";
-        for (const auto &part : parts.components)
-            key += ":" + part;
-        if (auto found = art.find(key); found != art.end())
-            return &found->second;
-        auto [entry, inserted] = art.try_emplace(key);
-        (void)inserted;
-        auto &result = entry->second;
-        const auto base = "data/global/" + category + "/" + parts.token + "/";
-        std::array<const char *, 16> pointers;
-        for (size_t c = 0; c < pointers.size(); ++c)
-            pointers[c] = parts.components[c].c_str();
-        std::optional<std::array<uint8_t, 256>> colors;
-        if (palette >= 0) {
-            const auto path = base + "cof/palshift.dat";
-            if (randomPalette) {
-                if (palette<8) return &result;
-                const auto transforms=archives.read("data/global/monsters/randtransforms.dat");
-                const auto offset=size_t(palette-8)*256;
-                if (offset+256>transforms.size()) return &result;
-                colors.emplace(); std::copy_n(transforms.begin()+offset,256,colors->begin());
-                if ((*colors)[0]!=0) return &result;
-            }
-            else if (archives.contains(path)) colors = monsterPalshift(archives.read(path), palette);
-            else if (palette != 0) return &result;
-        }
-        result.animation = actors.composite(category, parts.token, mode, parts.weapon, &pointers,
-                                           colors ? &*colors : nullptr);
-        if (!result.animation.completeComposite)
-            result.animation = {};
-        result.shadow = shadow;
-        std::string animKey = parts.token + mode + parts.weapon;
-        for (auto &ch : animKey)
-            ch = char(std::toupper(static_cast<unsigned char>(ch)));
-        if (const auto *record = animations.find(animKey); record && record->speed > 0) {
-            result.fps = float(record->speed) * 25 / 256;
-            for (size_t frame = 0; frame < std::min(size_t(record->frames), record->frameFlags.size()); ++frame)
-                if (record->frameFlags[frame] == 1 || record->frameFlags[frame] == 2) {
-                    result.releaseTime = float(frame) / result.fps; break;
-                }
-        }
-        result.cycle = mode == "nu" || mode == "tn" || mode == "wl" || mode == "tw" || mode == "rn";
-        if (finalFrame) { result.start = std::max(0,result.animation.count-1); result.fps = 0; result.cycle = false; }
-        return &result;
-    }
-    Art *character(const OnlineUnit &u, bool moving, bool town) {
+    const Art *character(const OnlineUnit &u, bool moving, bool town, SceneView &shared) {
         // PlrMsg::sub_6FC81C00 uses wire 19 for correction, not PLRMODE_DEAD.
         const bool death = u.nativeMode ? (u.mode == 0 || u.mode == 17) : (u.mode == 8 || u.mode == 9);
         const auto parts = portraits.decode(u, world(), death);
         if (!parts)
             return nullptr;
+        ActorAnimationRequest request; request.category = "chars"; request.appearance = *parts; request.shadow = true;
         std::string mode;
         if (u.actionSkill) {
             const auto row = skillRows.find(*u.actionSkill);
@@ -269,21 +188,8 @@ struct RemoteScene::Impl {
                 // class, and samples the original SC frames with a release at step 7.
                 if (skills.number(row->second, "seqnum") != 12 || skills.value(row->second, "seqtrans") != "SC")
                     return nullptr;
-                auto *base = composite("chars", *parts, "sc", true);
-                if (base->animation.count < 14 || base->animation.frames.empty() || base->fps <= 0) return nullptr;
-                auto [entry, inserted] = lightningAnimations.try_emplace(base);
-                if (inserted) {
-                    constexpr std::array frames{0, 1, 3, 4, 5, 7, 8, 9, 9, 9, 9, 10, 9, 9, 9, 10, 11, 12, 13};
-                    auto &sequence = entry->second;
-                    sequence = *base; sequence.animation.frames.clear();
-                    for (int direction = 0; direction < base->animation.directions; ++direction)
-                        for (const int frame : frames)
-                            sequence.animation.frames.push_back(*base->animation.frame(direction, frame));
-                    sequence.animation.count = int(frames.size());
-                    sequence.releaseTime = 7.f / sequence.fps;
-                    sequence.cycle = false;
-                }
-                return &entry->second;
+                request.mode = "sc"; request.playerSequence = 12;
+                return shared.actorAnimation(request, artPalette);
             }
             if (mode.empty()) return nullptr;
         } else if (u.nativeMode) {
@@ -309,9 +215,8 @@ struct RemoteScene::Impl {
             mode = town ? "tn" : "nu";
         else
             return nullptr;
-        if (mode == "dd" && !archives.contains("data/global/chars/" + parts->token + "/cof/" + parts->token + "dd" + parts->weapon + ".cof"))
-            return composite("chars", *parts, "dt", true, -1, true);
-        return composite("chars", *parts, mode, true);
+        request.mode = mode;
+        return shared.actorAnimation(request, artPalette);
     }
     const OnlineWorldView *worldView{};
     std::optional<uint32_t> playerId;
@@ -338,41 +243,25 @@ struct RemoteScene::Impl {
         return unit.mode == 0 || unit.mode == 12 ||
             (unit.lifePercent && (unit.lifeCarriesRankFlag ? (*unit.lifePercent & 0x7f) : *unit.lifePercent) == 0);
     }
-    void queueSound(std::string_view name, const OnlineUnit &source, float delay, float age = 0,
-                    bool interruptible = false) {
-        if (name.empty()) return;
-        pendingSounds.push_back({std::string(name), source.key, time + delay - age,
-            interruptible ? source.actionRevision : 0});
-        while (pendingSounds.size() > 256) pendingSounds.pop_front();
+    void emitSound(PresentationSoundEvent::Kind kind, const OnlineUnit &source, float age = 0,
+                   int skill = -1, float releaseTime = -1) {
+        soundEvents.push_back({kind,effectOwner(source.key),source.actionRevision,skill,age,releaseTime});
     }
-    void monsterSound(const OnlineCombatEvent &event, const OnlineUnit &source, float age) {
-        if (!source.classId || !event.action) return;
-        const auto monster = monsterRows.find(*source.classId);
-        if (monster == monsterRows.end()) return;
-        const auto voice = monsterSoundRows.find(monstats.value(monster->second, "MonSound"));
-        if (voice == monsterSoundRows.end()) return;
-        const auto row = voice->second;
-        auto enqueue = [&](std::string_view field, std::string_view delay = {}, bool interruptible = false) {
-            queueSound(monSounds.value(row, field), source,
-                delay.empty() ? 0.f : monSounds.number(row, delay).value_or(0) / 25.f, age, interruptible);
-        };
+    void monsterSoundEvent(const OnlineCombatEvent &event, const OnlineUnit &source, float age) {
+        if (!event.action) return;
+        using Kind = PresentationSoundEvent::Kind;
         switch (*event.action) {
-        case 10: case 11: case 16: case 17: {
-            if (!event.skill && source.wireAction != event.action) break;
-            const bool second = *event.action == 16 || *event.action == 17;
-            const auto probability = monSounds.number(row, second ? "Att2Prb" : "Att1Prb").value_or(0);
-            soundRandom = soundRandom * 1664525 + 1013904223;
-            if ((soundRandom >> 16) % 100 < uint64_t(std::clamp(probability, 0, 100)))
-                enqueue(second ? "Attack2" : "Attack1", second ? "Att2Del" : "Att1Del", true);
-            enqueue(second ? "Weapon2" : "Weapon1", second ? "Wea2Del" : "Wea1Del", true);
+        case 10: case 11: case 16: case 17:
+            // The alternate-target flag alone is not a new native attack.
+            if (event.skill || source.wireAction == event.action)
+                emitSound(*event.action == 16 || *event.action == 17 ? Kind::Attack2 : Kind::Attack1,source,age);
             break;
-        }
-        case 6: enqueue("HitSound", "HitDelay"); break;
-        case 8: enqueue("DeathSound", "DeaDelay"); break;
-        case 12: case 13: enqueue("Skill1", {}, true); break;
-        case 14: case 15: enqueue("Skill2", {}, true); break;
-        case 26: case 27: enqueue("Skill3", {}, true); break;
-        case 28: case 29: enqueue("Skill4", {}, true); break;
+        case 6: emitSound(Kind::Hit,source,age); break;
+        case 8: emitSound(Kind::Death,source,age); break;
+        case 12: case 13: emitSound(Kind::Skill1,source,age); break;
+        case 14: case 15: emitSound(Kind::Skill2,source,age); break;
+        case 26: case 27: emitSound(Kind::Skill3,source,age); break;
+        case 28: case 29: emitSound(Kind::Skill4,source,age); break;
         default: break;
         }
     }
@@ -419,7 +308,7 @@ struct RemoteScene::Impl {
             if (!target) return;
             actor.actionSkill.reset(); actor.nativeMode=true;
             actor.mode=pose=="A1"?4:pose=="A2"?5:pose=="S1"?8:pose=="S2"?9:pose=="S3"?10:11;
-            const auto *animation=monster(actor,false);
+            const auto *animation=monster(actor, false, shared);
             if (!animation || animation->releaseTime<0) return;
             const auto difficulty=v.load.difficulty.value_or(0);
             if (difficulty>=difficultyLevels.rows().size()) return;
@@ -442,7 +331,7 @@ struct RemoteScene::Impl {
                 }
             }
         };
-        auto skillEffect = [&](const OnlineCombatEvent &event) {
+        auto skillEffect = [&](const OnlineCombatEvent &event, std::optional<Vec> presentationOrigin = {}) {
             const auto now=uint64_t(std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::steady_clock::now().time_since_epoch()).count());
             const float age=event.receivedMilliseconds && now>=event.receivedMilliseconds
@@ -452,7 +341,7 @@ struct RemoteScene::Impl {
             const auto source = v.world.units.find(event.source);
             if (row == skillRows.end() || source == v.world.units.end() || !source->second.position) return;
             auto actor = source->second; actor.actionSkill = event.skill;
-            const auto *castAnimation = actor.key.type == 0 ? character(actor, false, town) : monster(actor, false);
+            const auto *castAnimation = actor.key.type == 0 ? character(actor, false, town, shared) : monster(actor, false, shared);
             if (!castAnimation || castAnimation->animation.frames.empty())
                 effectLimitations.insert("Skill animation unavailable: " + std::string(skills.value(row->second, "skill")));
             if (actor.key.type == 1) {
@@ -461,9 +350,8 @@ struct RemoteScene::Impl {
                 auto action = event;
                 const auto monsterRow=monsterRows.find(actor.classId.value_or(UINT16_MAX));
                 auto pose=monsterRow==monsterRows.end()?std::string{}:monsterSkillMode(monsterRow->second,*event.skill);
-                if (const auto sequence=sequenceRows.find(pose); sequence!=sequenceRows.end() && !sequence->second.empty())
-                    pose=std::string(monseq.value(sequence->second.front(),"mode"));
-                else for (auto &ch:pose) ch=char(std::toupper(static_cast<unsigned char>(ch)));
+                if (pose.starts_with("seq_")) pose = shared.actorSequenceMode(pose);
+                for (auto &ch:pose) ch=char(std::toupper(static_cast<unsigned char>(ch)));
                 if (pose == "A1") action.action = 10;
                 else if (pose == "A2") action.action = 16;
                 else if (pose == "S1") action.action = 12;
@@ -471,15 +359,10 @@ struct RemoteScene::Impl {
                 else if (pose == "S3") action.action = 26;
                 else if (pose == "S4") action.action = 28;
                 else action.action.reset();
-                monsterSound(action, source->second, age);
+                monsterSoundEvent(action, source->second, age);
             }
-            if (castAnimation) {
-                queueSound(skills.value(row->second, "stsound"), source->second,
-                    skills.number(row->second, "stsounddelay").value_or(0) / 25.f, age, true);
-                if (castAnimation->releaseTime >= 0)
-                    queueSound(skills.value(row->second, "dosound"), source->second,
-                        castAnimation->releaseTime + skills.number(row->second, "dosounddelay").value_or(0) / 25.f, age, true);
-            }
+            emitSound(PresentationSoundEvent::Kind::Cast,source->second,age,*event.skill,
+                castAnimation ? castAnimation->releaseTime : -1.f);
             const auto castOverlay = overlayNames.find(skills.value(row->second, "castoverlay"));
             if (castOverlay != overlayNames.end()) overlay(int(castOverlay->second), event.source);
             const int function = skills.number(row->second, "cltdofunc").value_or(0);
@@ -520,7 +403,7 @@ struct RemoteScene::Impl {
             if (!animation || animation->animation.frames.empty() || animation->releaseTime < 0) return;
             shared.cancelPendingClientMissiles(effectOwner(event.source));
             missileCastRevisions[event.source] = source->second.actionRevision;
-            const Vec start{float(actor.position->x) + .5f, float(actor.position->y) + .5f};
+            const Vec start = presentationOrigin.value_or(Vec{float(actor.position->x) + .5f, float(actor.position->y) + .5f});
             const Vec end{float(target->x) + .5f, float(target->y) + .5f};
             const int level = std::max(1, int(event.level.value_or(1)));
             auto emit = [&](Vec destination, int index = -1) {
@@ -594,7 +477,7 @@ struct RemoteScene::Impl {
                 const float age = event.receivedMilliseconds && now >= event.receivedMilliseconds
                     ? float(now-event.receivedMilliseconds)/1000.f : 0.f;
                 if (source != v.world.units.end() && event.source.type==0 && event.auxiliary==2 && age<=.25f)
-                    queueSound("cursor_level_up",source->second,0,age);
+                    emitSound(PresentationSoundEvent::Kind::LevelUp,source->second,age);
                 continue;
             }
             if (event.kind == OnlineCombatEvent::Kind::Action) {
@@ -606,7 +489,7 @@ struct RemoteScene::Impl {
                     ? float(now - event.receivedMilliseconds) / 1000.f : 0.f;
                 if (age > .25f) continue; // Never replay actions accumulated during loading or debug pause.
                 if (event.source.type == 1) {
-                    monsterSound(event, source->second, age);
+                    monsterSoundEvent(event, source->second, age);
                     const auto action=*event.action;
                     const auto pose=action==10||action==11?"A1":action==16||action==17?"A2":
                         action==12||action==13?"S1":action==14||action==15?"S2":
@@ -615,9 +498,8 @@ struct RemoteScene::Impl {
                 }
                 else if (event.source.type == 0 && event.packet == 0x0D && source->second.classId &&
                          *source->second.classId < characterRows.size() && (*event.action == 6 || *event.action == 8)) {
-                    const auto name = lower(std::string(charstats.value(characterRows[*source->second.classId], "class"))) +
-                        (*event.action == 6 ? "_hit_1" : "_death_1");
-                    queueSound(name, source->second, 0, age);
+                    emitSound(*event.action == 6 ? PresentationSoundEvent::Kind::Hit :
+                        PresentationSoundEvent::Kind::Death, source->second, age);
                 }
                 continue;
             }
@@ -650,7 +532,8 @@ struct RemoteScene::Impl {
                 // PlrMsg::sub_6FC81D20 normally omits skill packets for the owner.
                 // Repeated hold requests must not restart an animation before its release frame.
                 if (!localCast || localCast->started < 0 || time >= localCast->started + localCast->duration)
-                    localCast = LocalCast{request->command, source->second.actionRevision, time};
+                    localCast = LocalCast{request->command, source->second.actionRevision, time,
+                        -1, 0, request->sequence, request->revision};
             } else if (request->command.action != OnlineCombatCommand::Action::SelectSkill &&
                        request->command.action != OnlineCombatCommand::Action::BindHotkey &&
                        request->command.action != OnlineCombatCommand::Action::Stop)
@@ -698,16 +581,18 @@ struct RemoteScene::Impl {
                 }
                 if (ready) {
                     auto actor = u; actor.actionSkill = localCast->command.skill;
-                    const auto *visual = character(actor, false, town);
+                    const auto *visual = character(actor, false, town, shared);
                     if (!visual || visual->fps <= 0) localCast.reset();
                     else {
-                        localCast->started = time; localCast->duration = visual->animation.count / visual->fps;
-                        motion[u.key].modeChangedAt = time;
+                        localCast->started = time; localCast->duration = visual->duration();
+                        motion[u.key].animation.startedAt = time;
                         OnlineCombatEvent event; event.source = u.key; event.skill = actor.actionSkill;
                         event.point = target; event.target = localCast->command.target;
                         if (const auto rank = v.world.playerSkills.find(*event.skill); rank != v.world.playerSkills.end())
                             event.level = rank->second;
-                        skillEffect(event);
+                        const auto &display = motion[u.key];
+                        skillEffect(event, display.last ?
+                            std::optional{display.position + display.correction + Vec{.5f, .5f}} : std::nullopt);
                     }
                 }
             }
@@ -716,20 +601,7 @@ struct RemoteScene::Impl {
             return time >= effect.born + effect.duration || !v.world.units.contains(effect.unit);
         });
         while (overlayVisuals.size() > 256) overlayVisuals.pop_front();
-        std::erase_if(pendingSounds, [&](const auto &sound) {
-            const auto unit = v.world.units.find(sound.source);
-            if (unit == v.world.units.end() || !unit->second.position ||
-                (sound.actionRevision && sound.actionRevision != unit->second.actionRevision)) return true;
-            if (time < sound.due) return false;
-            if (time - sound.due < .25f && v.world.playerPosition) {
-                const auto offset = project({float(unit->second.position->x) - v.world.playerPosition->x,
-                    float(unit->second.position->y) - v.world.playerPosition->y});
-                if (std::abs(offset.x) < W / 2.f && std::abs(offset.y) < (H - HUD) / 2.f &&
-                    !shared.playOriginalCombatSound(sound.name, uint64_t(time * 25)))
-                    effectLimitations.insert("Original combat sound unavailable: " + sound.name);
-            }
-            return true;
-        });
+
     }
     bool walking(const OnlineUnit &u) const {
         if (u.actionSkill) return false;
@@ -791,6 +663,13 @@ struct RemoteScene::Impl {
         }
         const auto rule = movementRule(u);
         const bool alive = !own || !onlinePlayerDead(world());
+        if (m.castHandoff && (!alive || (request && request->revision > m.castHandoff->revision) ||
+            (u.actionRevision > m.castHandoff->revision &&
+             (u.nativeMode ? (u.mode == 0 || u.mode == 4 || u.mode == 17 || u.mode == 18)
+                           : (u.mode == 6 || u.mode == 8 || u.mode == 9 || u.mode == 18)))))
+            m.castHandoff.reset();
+        const bool beginCast = own && localCast && localCast->started >= 0 &&
+            localCast->sequence > m.castSequence;
         bool activeRequest = alive && request && request->revision > m.invalidatedRequest &&
             request->revision > u.actionRevision && !world().npcConversation && !world().waypointSource;
         if (!m.last || *m.last != *u.position || (request && request->revision != m.requestRevision))
@@ -801,8 +680,19 @@ struct RemoteScene::Impl {
         } else if (m.discontinuity != u.positionDiscontinuity) {
             m.position = target; m.correction = {}; m.correctionLeft = 0;
             m.route.clear(); m.samples.clear(); m.goal.reset(); m.movedAt = -1;
+            m.castHandoff.reset();
+            if (beginCast) m.castSequence = localCast->sequence;
             if (request) m.invalidatedRequest = request->revision;
             activeRequest = false;
+        } else if (beginCast) {
+            // PlrModes changes the action at the current precise position. A
+            // canceled walk request is not a native position correction.
+            const Vec displayed = m.position + m.correction;
+            m.castHandoff = CastHandoff{localCast->revision, *u.position,
+                m.goal ? *m.goal - displayed : m.look};
+            m.castSequence = localCast->sequence;
+            m.position = displayed; m.correction = {}; m.correctionLeft = 0;
+            m.route.clear(); m.goal.reset(); m.movedAt = -1;
         } else if ((m.positionRevision != u.positionRevision && *m.last != *u.position) ||
                    (m.actionRevision != u.actionRevision && !walking(u)) ||
                    (own && m.requestRevision && !request && m.goal)) {
@@ -816,11 +706,18 @@ struct RemoteScene::Impl {
             const bool previousPath = activeRequest && request->destination && u.verifiedDestination &&
                 (std::abs(int(request->destination->x)-u.verifiedDestination->x)>1 ||
                  std::abs(int(request->destination->y)-u.verifiedDestination->y)>1);
-            const bool seenOnPath = activeRequest && std::any_of(m.samples.begin(),m.samples.end(),[&](const auto &sample) {
+            const bool seenOnPath = (activeRequest || m.castHandoff) && std::any_of(m.samples.begin(),m.samples.end(),[&](const auto &sample) {
                 return time-sample.first <= onlineMovementProgressTimeoutSeconds &&
                     std::abs(sample.second.x-target.x)<1.f && std::abs(sample.second.y-target.y)<1.f;
             });
-            const bool behind = previousPath || seenOnPath || (m.goal && (activeRequest || walking(u)) &&
+            const bool stoppedWalkSample = m.castHandoff &&
+                (*u.position == m.castHandoff->nativePosition ||
+                 (walking(u) && m.castHandoff->direction.length() > .001f &&
+                  lag.x * m.castHandoff->direction.x + lag.y * m.castHandoff->direction.y >= 0 &&
+                  std::abs(lag.x * m.castHandoff->direction.y - lag.y * m.castHandoff->direction.x) <=
+                      std::max(1.f, m.castHandoff->direction.length()) &&
+                  map.grid.segment(target - origin, displayed - origin, {}, rule)));
+            const bool behind = previousPath || seenOnPath || stoppedWalkSample || (m.goal && (activeRequest || walking(u)) &&
                 lag.x * ahead.x + lag.y * ahead.y >= 0 &&
                 std::abs(lag.x * ahead.y - lag.y * ahead.x) <= 2.f * std::max(1.f, ahead.length()) &&
                 map.grid.segment(target - origin, displayed - origin, {}, rule));
@@ -831,6 +728,9 @@ struct RemoteScene::Impl {
             // A correction must not carry a sprite through a closed door or wall.
             if (!map.grid.segment(target - origin, displayed - origin, {}, rule)) m.correction = {};
         }
+        // Keep the old native walking destination from restarting motion after
+        // the owner starts a cast (the server normally omits its skill packet).
+        if (m.castHandoff) activeRequest = false;
         const Vec before = m.position + m.correction;
         auto pointForUnit = [&](const std::optional<OnlineUnitKey> &key) -> std::optional<Vec> {
             if (!key) return {};
@@ -864,7 +764,7 @@ struct RemoteScene::Impl {
                 std::abs(float(u.verifiedDestination->y)-goal->y)<=1.f)
                 goal = Vec{float(u.verifiedDestination->x), float(u.verifiedDestination->y)};
             m.running = request->run && (!world().stamina || *world().stamina != 0);
-        } else if (alive && walking(u) && !(own && request &&
+        } else if (alive && walking(u) && !m.castHandoff && !(own && request &&
                    request->revision <= m.invalidatedRequest && u.actionRevision < request->revision)) {
             if (u.destination) goal = Vec{float(u.destination->x), float(u.destination->y)};
             else goal = pointForUnit(u.destinationUnit);
@@ -926,41 +826,7 @@ struct RemoteScene::Impl {
                 return lower(std::string(monstats.value(monster,"Sk"+std::to_string(slot)+"mode")));
         return lower(std::string(skills.value(row->second,"monanim")));
     }
-    Art *monsterSequence(const RealmPortraitParts &parts, size_t extra, int palette, std::string_view name, bool randomPalette) {
-        const auto rows=sequenceRows.find(name);
-        if (rows==sequenceRows.end() || rows->second.empty()) return nullptr;
-        std::vector<std::pair<Art *,int>> samples;
-        for (const auto row:rows->second) {
-            const auto mode=lower(std::string(monseq.value(row,"mode")));
-            auto sampleParts=parts;
-            sampleParts.weapon=monsterModeWeapon(archives,parts.token,mode,monstats2.value(extra,"BaseW"));
-            if (sampleParts.weapon.empty() || monseq.number(row,"dir").value_or(0)) return nullptr;
-            auto *base=composite("monsters",sampleParts,mode,monstats2.number(extra,"Shadow").value_or(0)!=0,palette,false,randomPalette);
-            const auto frame=monseq.number(row,"frame");
-            if (!frame || *frame<0 || *frame>=base->animation.count || base->animation.frames.empty() || base->fps<=0)
-                return nullptr;
-            samples.emplace_back(base,*frame);
-        }
-        const auto *first=samples.front().first;
-        auto [entry,inserted]=monsterSequences.try_emplace(std::pair{first,std::string(name)});
-        if (inserted) {
-            auto &result=entry->second;
-            result=*first; result.animation.frames.clear(); result.animation.count=int(samples.size());
-            result.cycle=false; result.releaseTime=-1; result.releaseTimes.clear();
-            for (int direction=0; direction<first->animation.directions; ++direction)
-                for (const auto &[base,frame]:samples) {
-                    if (base->animation.directions!=first->animation.directions) { result.animation={}; return nullptr; }
-                    result.animation.frames.push_back(*base->animation.frame(direction,frame));
-                }
-            for (size_t index=0; index<rows->second.size(); ++index) {
-                const auto event=monseq.number(rows->second[index],"event").value_or(0);
-                if (event==1 || event==2 || event==4) result.releaseTimes.push_back(float(index)/result.fps);
-            }
-            if (!result.releaseTimes.empty()) result.releaseTime=result.releaseTimes.front();
-        }
-        return &entry->second;
-    }
-    Art *monster(const OnlineUnit &u, bool moving) {
+    const Art *monster(const OnlineUnit &u, bool moving, SceneView &shared) {
         if (!u.classId)
             return nullptr;
         const auto row = monsterRows.find(*u.classId);
@@ -1040,7 +906,11 @@ struct RemoteScene::Impl {
             if (u.actionSkill) {
                 pose = monsterSkillMode(row->second,*u.actionSkill);
                 if (pose.starts_with("seq_")) {
-                    auto *sequence=monsterSequence(parts,e,palette,pose,randomPalette);
+                    ActorAnimationRequest request; request.category = "monsters"; request.mode = pose;
+                    parts.weapon = lower(std::string(monstats2.value(e, "BaseW"))); request.appearance = parts;
+                    request.paletteTransform = palette; request.randomTransform = randomPalette;
+                    request.shadow = monstats2.number(e, "Shadow").value_or(0) != 0;
+                    const auto *sequence = shared.actorAnimation(request, artPalette);
                     if (!sequence) effectLimitations.insert("Monster sequence unavailable: "+std::string(monstats.value(row->second,"Id"))+":"+pose);
                     return sequence;
                 }
@@ -1054,71 +924,37 @@ struct RemoteScene::Impl {
             }
             if (parts.weapon.empty())
                 return nullptr;
-            return composite("monsters", parts, pose, monstats2.number(e, "Shadow").value_or(0) != 0,
-                             palette, deadFrame,randomPalette);
+            ActorAnimationRequest request; request.category = "monsters"; request.mode = pose;
+            request.appearance = parts; request.shadow = monstats2.number(e, "Shadow").value_or(0) != 0;
+            request.paletteTransform = palette; request.finalFrame = deadFrame; request.randomTransform = randomPalette;
+            return shared.actorAnimation(request, artPalette);
         } catch (const net::protocol::ProtocolError &) {
             return nullptr;
         }
     }
-    Art *object(const OnlineUnit &u) {
-        if (!u.classId || !u.mode || *u.mode >= 8)
-            return nullptr;
-        const auto found = objectRows.find(*u.classId);
-        if (found == objectRows.end() || !objects.number(found->second, "Draw").value_or(0))
-            return nullptr;
-        const auto row = found->second;
-        constexpr std::array modes{"nu", "op", "on", "s1", "s2", "s3", "s4", "s5"};
-        const std::string suffix = std::to_string(*u.mode);
-        if (!objects.number(row, "Mode" + suffix).value_or(0))
-            return nullptr;
-        const auto token = lower(std::string(objects.value(row, "Token")));
-        const auto key = "object:" + std::to_string(*u.classId) + ":" + suffix;
-        if (auto cached = art.find(key); cached != art.end())
-            return &cached->second;
-        Art result;
-        const auto base = "data/global/objects/" + token + "/";
-        auto path = base + "tr/" + token + "trlit" + modes[*u.mode] + "hth";
-        if (archives.contains(path + ".dcc"))
-            result.animation = actors.single(path + ".dcc");
-        else if (archives.contains(path + ".dc6"))
-            result.animation = actors.single(path + ".dc6");
-        else {
-            RealmPortraitParts parts;
-            parts.token = token;
-            parts.weapon = "hth";
-            parts.components.fill("lit");
-            if (auto *composed = composite("objects", parts, modes[*u.mode], false))
-                result = *composed;
-        }
-        result.fps = float(objects.number(row, "FrameDelta" + suffix).value_or(0)) * 25 / 256;
-        result.start = std::max(0, objects.number(row, "Start" + suffix).value_or(0));
-        result.cycle = objects.number(row, "CycleAnim" + suffix).value_or(0) != 0;
-        result.offset = {float(objects.number(row, "Xoffset").value_or(0)),
-                         float(objects.number(row, "Yoffset").value_or(0))};
-        result.order = objects.number(row, "DrawUnder").value_or(0)
-                           ? 1
-                           : objects.number(row, "OrderFlag" + suffix).value_or(0);
-        return &art.emplace(key, std::move(result)).first->second;
+    const Art *object(const OnlineUnit &u, SceneView &shared) {
+        return u.classId && u.mode ? shared.objectAnimation(*u.classId, *u.mode, artPalette) : nullptr;
     }
-    RemoteSceneIntent draw(const OnlineView &v, const Map &map, const OnlineSceneView &binding,
-                           SceneView &shared, const RemoteCombat &combat, bool uiConsumed, const FrameInput &input) {
-        RemoteSceneIntent intent;
-        const Vec mouse = input.mouse;
+    RemoteSceneFrame draw(const OnlineView &v, const Map &map, const OnlineSceneView &binding,
+                           SceneView &shared, const RemoteCombat &combat, bool uiConsumed, Vec mouse, bool rightHand) {
+        RemoteSceneFrame intent;
+        soundEvents.clear();
+        intent.input.gameGeneration = v.gameGeneration;
+        intent.input.areaGeneration = v.world.areaGeneration;
         worldView = &v.world;
         playerId = v.load.playerUnitId;
         worldDifficulty=v.load.difficulty.value_or(0);
+        artPalette = binding.palette.value_or(0);
         if (gameGeneration != v.gameGeneration || areaGeneration != v.world.areaGeneration) {
             gameGeneration = v.gameGeneration;
             areaGeneration = v.world.areaGeneration;
             motion.clear();
             monsterIdentities.clear();
             shared.clearClientMissiles(); effectLimitations.clear(); missileCastRevisions.clear(); overlayVisuals.clear(); stateTimes.clear(); shattered.clear();
-            pendingSounds.clear();
+            soundEvents.clear();
             combatSequence = v.world.combatSequence;
             localRequestSequence = v.world.combatRequest ? v.world.combatRequest->sequence : 0;
             localCast.reset();
-            gesture = Gesture::None; lockedTarget.reset(); gestureSkill.reset(); gesturePoint.reset(); repeated = false; pendingMove = false;
-            menu = false;
             time = 0;
         }
         const auto now = std::chrono::steady_clock::now();
@@ -1135,12 +971,9 @@ struct RemoteScene::Impl {
             std::erase_if(motion,[&](const auto &entry) { return entry.first.type!=0 || entry.first.id!=playerId; });
             shared.clearClientMissiles();
             missileCastRevisions.clear(); overlayVisuals.clear(); localCast.reset();
-            pendingSounds.clear();
+            soundEvents.clear();
             combatSequence = v.world.combatSequence;
             localRequestSequence = v.world.combatRequest ? v.world.combatRequest->sequence : 0;
-            if (gesture != Gesture::Move) {
-                gesture = Gesture::None; lockedTarget.reset(); gestureSkill.reset(); gesturePoint.reset(); repeated = false;
-            }
         }
         if (!binding.origin || !v.world.playerPosition)
             return intent;
@@ -1172,7 +1005,7 @@ struct RemoteScene::Impl {
         const bool surface = shared.ui().blocksInput() || shared.ui().skillPicker || shared.ui().inventory.drag ||
             shared.ui().inventory.split || shared.ui().inventory.goldDialog || shared.ui().inventory.identify ||
             shared.characterView().dead || hudSurface(mouse) || !CheckCollisionPointRec(rv(mouse),viewport) || uiConsumed;
-        menu = shared.ui().gameMenuOpen;
+        const bool menu = shared.ui().gameMenuOpen;
         auto screen = [&](Vec p) { return shared.screen(p); };
         const auto groundTarget = surface ? std::optional<ItemHandle>{} : shared.lootAt(mouse);
         std::optional<size_t> selectedExit;
@@ -1212,6 +1045,20 @@ struct RemoteScene::Impl {
         std::erase_if(motion, [&](const auto &entry) { return !v.world.units.contains(entry.first); });
         std::erase_if(monsterIdentities, [&](const auto &entry) { return !v.world.units.contains(entry.first); });
         std::erase_if(shattered, [&](const auto &key) { return !v.world.units.contains(key); });
+        std::vector<SoundActorView> soundActors;
+        std::map<OnlineUnitKey, size_t> soundActorsByKey;
+        for (const auto &[key, unit] : v.world.units) {
+            if (key.type > 1 || !unit.position || !unit.classId) continue;
+            SoundActorView source;
+            source.id = effectOwner(key); source.identity = *unit.classId;
+            source.kind = key.type == 0 ? SoundActorKind::Player : SoundActorKind::Monster;
+            source.actionRevision = unit.actionRevision;
+            source.position = {float(unit.position->x) + .5f, float(unit.position->y) + .5f};
+            source.alive = key.type == 1 ? !corpse(unit) : (key.id != playerId || !onlinePlayerDead(v.world));
+            source.neutral = key.type == 1 && unit.mode == 1 && !unit.actionSkill;
+            source.audible = CheckCollisionPointRec(rv(screen(local(*unit.position) + Vec{.5f,.5f})),shared.worldViewport());
+            soundActorsByKey.emplace(key,soundActors.size()); soundActors.push_back(source);
+        }
         for (const auto &[key, u] : v.world.units) {
             if (!u.position || key.type > 2)
                 continue;
@@ -1254,17 +1101,18 @@ struct RemoteScene::Impl {
                     shared.drawNativeIceShatter(feet+Vec{float(origin.x)+.5f,float(origin.y)+.5f},movementRule(u).size);
                 if (hiddenCorpse) continue;
             }
-            if (u.classId && key.type == 1 && !corpse(u)) worldScene.monsters.push_back({*u.classId, feet + Vec{.5f, .5f}});
-            if (m.mode != u.mode || m.animationRevision != u.actionRevision) {
-                const auto receivedNow = uint64_t(std::chrono::duration_cast<std::chrono::milliseconds>(
-                    std::chrono::steady_clock::now().time_since_epoch()).count());
-                const float age = u.actionReceivedMilliseconds && receivedNow >= u.actionReceivedMilliseconds
-                    ? float(receivedNow - u.actionReceivedMilliseconds) / 1000.f : 0.f;
-                m.mode = u.mode; m.modeChangedAt = time - age; m.animationRevision = u.actionRevision;
-                m.frozenAt.reset();
+            if (const auto source = soundActorsByKey.find(key); source != soundActorsByKey.end()) {
+                auto &audio = soundActors[source->second];
+                audio.frozen = frozen;
+                audio.position = feet + Vec{float(origin.x) + .5f,float(origin.y) + .5f};
+                audio.audible = CheckCollisionPointRec(rv(screen(feet + Vec{.5f,.5f})),shared.worldViewport());
             }
-            if (frozen && !m.frozenAt) m.frozenAt=time;
-            if (!frozen && m.frozenAt) { m.modeChangedAt+=time-*m.frozenAt; m.frozenAt.reset(); }
+            if (u.classId && key.type == 1 && !corpse(u)) worldScene.monsters.push_back({*u.classId, feet + Vec{.5f, .5f}});
+            const auto receivedNow = uint64_t(std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now().time_since_epoch()).count());
+            const float age = u.actionReceivedMilliseconds && receivedNow >= u.actionReceivedMilliseconds
+                ? float(receivedNow - u.actionReceivedMilliseconds) / 1000.f : 0.f;
+            m.animation.observe(u.mode, u.actionRevision, time, age, frozen);
             if (m.route.empty() && u.destination)
                 m.look = local(*u.destination) - feet;
             if (m.route.empty() && u.destinationUnit) {
@@ -1282,7 +1130,7 @@ struct RemoteScene::Impl {
             if (playerId && key == OnlineUnitKey{0, *playerId} && localCast && localCast->started >= 0 &&
                 time < localCast->started + localCast->duration) {
                 displayed.actionSkill = localCast->command.skill;
-                m.modeChangedAt = localCast->started;
+                m.animation.startedAt = localCast->started;
                 auto target = localCast->command.point;
                 if (localCast->command.target) {
                     const auto found = v.world.units.find(*localCast->command.target);
@@ -1293,9 +1141,9 @@ struct RemoteScene::Impl {
             if (key.type == 0 && v.world.corpseOwners.contains(key.id)) {
                 displayed.mode = 17; displayed.nativeMode = true; displayed.actionSkill.reset();
             }
-            Art *visual = key.type == 0   ? character(displayed, moving, binding.town)
-                          : key.type == 1 ? monster(u, moving)
-                                          : object(u);
+            const Art *visual = key.type == 0   ? character(displayed, moving, binding.town, shared)
+                          : key.type == 1 ? monster(u, moving, shared)
+                                          : object(u, shared);
             if (!visual || visual->animation.frames.empty()) {
                 ++unavailable;
                 continue;
@@ -1306,20 +1154,25 @@ struct RemoteScene::Impl {
                 (u.mode == 4 || (u.mode && *u.mode >= 7 && *u.mode <= 15) || u.mode == 19) :
                 (u.mode == 6 || u.mode == 18 || u.mode == 20))) ||
                 (key.type == 1 && u.mode && *u.mode >= 3 && *u.mode <= 11);
-            const float animationTime=m.frozenAt.value_or(time);
-            if (oneShot && visual->fps > 0 && animationTime - m.modeChangedAt >= visual->animation.count / visual->fps) {
+            const bool completedAction = oneShot && visual->finished(m.animation.elapsed(time));
+            if (completedAction) {
                 auto idle = u; idle.actionSkill.reset(); idle.nativeMode = false;
                 idle.mode = key.type == 0 ? 7 : 1;
-                visual = key.type == 0 ? character(idle, moving, binding.town) : monster(idle, moving);
+                visual = key.type == 0 ? character(idle, moving, binding.town, shared) : monster(idle, moving, shared);
                 if (!visual || visual->animation.frames.empty()) { ++unavailable; continue; }
             }
             if (key.type != 2)
                 feet = feet + Vec{.5f, .5f};
-            const auto &animation = visual->animation;
-            const int advance = int((visual->cycle ? animationTime : animationTime - m.modeChangedAt) * std::max(0.f, visual->fps));
-            const int index = visual->cycle ? (visual->start + advance) % std::max(1, animation.count)
-                                            : std::min(visual->start + advance, animation.count - 1);
-            const auto *image = animation.frame(direction(m.look, animation.directions), std::max(0, index));
+            if (const auto source = soundActorsByKey.find(key); source != soundActorsByKey.end()) {
+                auto &audio = soundActors[source->second];
+                audio.position = feet + Vec{float(origin.x),float(origin.y)};
+                audio.frozen = frozen;
+                audio.moving = moving && visual->cycle && !displayed.actionSkill;
+                audio.neutral = !moving && !frozen && ((u.mode == 1 && !displayed.actionSkill) || completedAction);
+                audio.movementCycle = audio.moving ? visual->duration() : 0.f;
+                audio.audible = CheckCollisionPointRec(rv(screen(feet)),shared.worldViewport());
+            }
+            const auto *image = visual->sample(m.animation.clock(time), m.animation.elapsed(time), m.look);
             const auto p = screen(feet) + visual->offset;
             if (!image || !visible(*image, p))
                 continue;
@@ -1331,7 +1184,7 @@ struct RemoteScene::Impl {
                 if (distance < targetDistance) { targetDistance = distance; selectedTarget = key; }
             }
             if (!surface && key.type == 1 && !selectedTarget && spriteHit(image, p, mouse)) {
-                const auto selected = input.rightHeld ? v.world.rightSkill : v.world.leftSkill;
+                const auto selected = rightHand ? v.world.rightSkill : v.world.leftSkill;
                 const auto skill = selected ? skillRows.find(selected->skill) : skillRows.end();
                 const bool corpseSkill = skill != skillRows.end() && skills.number(skill->second, "TargetCorpse").value_or(0) != 0;
                 if (hostile(u, combat) && corpse(u) == corpseSkill && (!corpseSkill || combat.corpseSelectable(u))) {
@@ -1352,13 +1205,9 @@ struct RemoteScene::Impl {
             OnlineUnit unit;
             unit.classId = uint16_t(decoration.id);
             unit.mode = 0;
-            auto *visual = object(unit);
+            const auto *visual = object(unit, shared);
             if (!visual || visual->animation.frames.empty()) continue;
-            const auto &animation = visual->animation;
-            const int advance = int(time * std::max(0.f, visual->fps));
-            const int frame = visual->cycle ? (visual->start + advance) % std::max(1, animation.count)
-                : std::min(visual->start + advance, animation.count - 1);
-            const auto *image = animation.frame(0, std::max(0, frame));
+            const auto *image = visual->sampleFacing(time, time, 0);
             const Vec feet{float(decoration.x), float(decoration.y)};
             const auto position = screen(feet) + visual->offset;
             worldScene.objects.push_back({decoration.id, 0, feet});
@@ -1444,83 +1293,40 @@ struct RemoteScene::Impl {
                 if (!name.empty()) shared.drawEnemyBar(name, life,{},titleColor);
             }
         }
-        intent.run = mapDisplay.running;
-        const bool shift = input.shift;
-        const bool enabled = !surface && input.insideViewport && !waypointOpen && !v.world.npcRequested && input.focused;
-        if (enabled && gesture == Gesture::None && mapDisplay.movementHeld && input.leftHeld) {
-            gesture = Gesture::Move; gesturePoint.reset(); nextMove = time;
+        auto &hit = intent.input;
+        hit.available = !surface && !waypointOpen && !v.world.npcRequested;
+        hit.movementAvailable = binding.movementAvailable;
+        hit.origin = {float(origin.x), float(origin.y)};
+        hit.size = {float(binding.width), float(binding.height)};
+        hit.observer = observer;
+        const auto aim = shared.world(mouse);
+        hit.point = {std::floor(aim.x) + origin.x, std::floor(aim.y) + origin.y};
+        hit.interaction = selectedTarget ? effectOwner(*selectedTarget) : EntityId{};
+        hit.combat = combatTarget ? effectOwner(*combatTarget) : EntityId{};
+        hit.pickup = groundTarget;
+        const std::array selections{v.world.leftSkill, v.world.rightSkill};
+        for (size_t hand = 0; hand < selections.size(); ++hand) {
+            if (selections[hand]) hit.skills[hand] = InputSkillSelection{selections[hand]->skill,
+                selections[hand]->owner == UINT32_MAX ? EntityId{} : EntityId{uint64_t(selections[hand]->owner) + 1}};
+            const auto row = selections[hand] ? skillRows.find(selections[hand]->skill) : skillRows.end();
+            const bool corpseSkill = row != skillRows.end() && skills.number(row->second, "TargetCorpse").value_or(0) != 0;
+            for (const auto &[key, unit] : v.world.units)
+                if (key.type == 1 && hostile(unit, combat) && corpse(unit) == corpseSkill &&
+                    (!corpseSkill || combat.corpseSelectable(unit)))
+                    hit.validCombatTargets[hand].push_back(effectOwner(key));
         }
-        const bool casting = gesture == Gesture::LeftCast || gesture == Gesture::RightCast;
-        const bool held = gesture == Gesture::RightCast ? input.rightHeld : input.leftHeld;
-        const auto selection = gesture == Gesture::RightCast ? v.world.rightSkill : v.world.leftSkill;
-        bool invalidTarget = lockedTarget && !v.world.units.contains(*lockedTarget);
-        if (lockedTarget && !invalidTarget && gestureSkill) {
-            const auto &unit = v.world.units.at(*lockedTarget);
-            const auto row = skillRows.find(gestureSkill->skill);
-            invalidTarget = !hostile(unit, combat) || row == skillRows.end() ||
-                corpse(unit) != (skills.number(row->second,"TargetCorpse").value_or(0) != 0);
-        }
-        if (gesture != Gesture::None && (!enabled || !held ||
-            (casting && (selection != gestureSkill || invalidTarget)))) {
-            intent.stopCombat = casting && repeated;
-            gesture = Gesture::None; lockedTarget.reset(); gestureSkill.reset(); gesturePoint.reset(); repeated = false; pendingMove = false;
-        }
-        // The initial press owns the gesture until release. A held walk never becomes an attack
-        // merely because the cursor crosses an enemy; UI clicks cannot leak into the world.
-        if (enabled && input.rightPressed) {
-            if (gesture == Gesture::LeftCast && repeated) intent.stopCombat = true;
-            gesture = Gesture::RightCast; lockedTarget = combatTarget;
-            gestureSkill = v.world.rightSkill; repeated = false; nextCast = time;
-        } else if (enabled && input.leftPressed) {
-            if (gesture == Gesture::RightCast && repeated) intent.stopCombat = true;
-            if (groundTarget && !shift) { intent.pickup = groundTarget; gesture = Gesture::Interact; }
-            else if (combatTarget || shift) {
-                gesture = Gesture::LeftCast; lockedTarget = combatTarget;
-                gestureSkill = v.world.leftSkill; repeated = false; nextCast = time;
-            } else if (selectedTarget) { intent.interact = selectedTarget; gesture = Gesture::Interact; }
-            else { gesture = Gesture::Move; gesturePoint.reset(); nextMove = time; }
-        }
-        if (gesture != Gesture::Move) pendingMove = false;
-        if (enabled && (gesture == Gesture::LeftCast || gesture == Gesture::RightCast) && time >= nextCast) {
-            nextCast = time + .12f;
-            OnlineCombatCommand request; request.action = OnlineCombatCommand::Action::Cast;
-            request.hand = gesture == Gesture::RightCast ? OnlineSkillHand::Right : OnlineSkillHand::Left;
-            request.stationary = shift; request.repeat = repeated;
-            const auto target = shared.world(mouse);
-            const int x = int(std::floor(target.x)) + origin.x, y = int(std::floor(target.y)) + origin.y;
-            if (lockedTarget) request.target = lockedTarget;
-            else if (x >= 0 && y >= 0 && x <= UINT16_MAX && y <= UINT16_MAX)
-                request.point = OnlinePoint{uint16_t(x), uint16_t(y)};
-            if (request.target || request.point) intent.combat = request;
-        } else if (enabled && gesture == Gesture::Move && binding.movementAvailable && time >= nextMove &&
-                   (pendingMove || input.leftPressed || (mouse - gestureMouse).length() >= 1.f ||
-                    (gesturePoint && std::abs(observer.x-gesturePoint->x)<=1.f &&
-                     std::abs(observer.y-gesturePoint->y)<=1.f))) {
-            // Keep a click's world destination while travelling. A still-held
-            // button extends the pointer destination at displayed arrival.
-            // This submits a new intent, not an assertion of server arrival;
-            // waiting for a sparse native sample here stalls continuous walking.
-            nextMove = time + .12f;
-            gestureMouse = mouse;
-            const auto target = shared.world(mouse);
-            const int x = int(std::floor(target.x)) + origin.x, y = int(std::floor(target.y)) + origin.y;
-            if (x >= origin.x && y >= origin.y && x < origin.x + binding.width && y < origin.y + binding.height) {
-                const OnlinePoint point{uint16_t(x),uint16_t(y)};
-                if (pendingMove || !gesturePoint || *gesturePoint != point) { intent.move = point; intent.moveOrigin = observer; pendingMove = true; }
-                gesturePoint = point;
-            }
-        }
-        shared.drawUi(mouse);
-        mapDisplay.movementHeld = enabled && gesture == Gesture::Move && input.leftHeld;
+        shared.updateWorldAudio(time,soundActors,soundEvents);
+        const auto &audioLimitations = shared.soundLimitations();
+        effectLimitations.insert(audioLimitations.begin(),audioLimitations.end());
         return intent;
     }
 };
 RemoteScene::RemoteScene(Archives &a, int palette, RemoteMapDisplayState &display)
     : impl_(std::make_unique<Impl>(a, palette, display)) {}
 RemoteScene::~RemoteScene() = default;
-RemoteSceneIntent RemoteScene::frame(const OnlineView &v, const Map &m, const OnlineSceneView &s,
-                                     SceneView &shared, const RemoteCombat &combat, bool uiConsumed, const FrameInput &input) {
-    return impl_->draw(v, m, s, shared, combat, uiConsumed, input);
+RemoteSceneFrame RemoteScene::frame(const OnlineView &v, const Map &m, const OnlineSceneView &s,
+                                     SceneView &shared, const RemoteCombat &combat, bool uiConsumed, Vec mouse, bool rightHand) {
+    return impl_->draw(v, m, s, shared, combat, uiConsumed, mouse, rightHand);
 }
 int RemoteScene::renderedUnits() const {
     return impl_->rendered;
@@ -1539,12 +1345,5 @@ std::optional<Vec> RemoteScene::playerDisplayPosition() const {
 }
 std::vector<std::string> RemoteScene::effectLimitations() const {
     return {impl_->effectLimitations.begin(), impl_->effectLimitations.end()};
-}
-void RemoteScene::combatSubmitted(bool accepted) {
-    if (accepted && (impl_->gesture == Impl::Gesture::LeftCast || impl_->gesture == Impl::Gesture::RightCast))
-        impl_->repeated = true;
-}
-void RemoteScene::movementSubmitted(bool accepted) {
-    impl_->pendingMove = !accepted && impl_->gesture == Impl::Gesture::Move;
 }
 } // namespace d2x

@@ -1,6 +1,7 @@
 #pragma once
 #include "core/id.hpp"
 #include "core/math.hpp"
+#include "gameplay/items/handle.hpp"
 #include <optional>
 #include <string>
 
@@ -22,11 +23,16 @@ struct ActorView {
 };
 
 struct ActorControlIntent {
-    Vec direction;
-    bool forceRun = false;
+    enum class Action { Cast, Interact, Pickup } action = Action::Cast;
+    Vec point;
+    EntityId target;
+    std::optional<ItemHandle> item;
+    bool right = false, stationary = false, repeat = false, toCursor = false, forceRun = false;
 };
 
 struct MoveIntent {
     Vec destination;
+    std::optional<Vec> displayOrigin; // Projection hint; never replaces authoritative position.
+    bool forceRun = false;
 };
 } // namespace d2x

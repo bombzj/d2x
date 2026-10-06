@@ -131,7 +131,7 @@ bool SceneController::handleNpcShop(const FrameInput &input) {
 bool SceneController::handleHirelingToggle(const FrameInput &input) {
     auto &ui = view_.ui();
     if (input.hireling && !ui.capturesWorldInput()) {
-        if (view_.multiplayer() && !view_.hirelingView().active) {
+        if (!view_.hirelingView().active) {
             view_.notice("Native hireling state is not available yet.", true); return true;
         }
         ui.hirelingOpen = !ui.hirelingOpen && view_.hirelingView().active;
@@ -150,7 +150,7 @@ bool SceneController::handleHirelingPortrait(const FrameInput &input) {
     if (view_.hirelingPortraitVisible() && input.insideViewport &&
         (CheckCollisionPointRec(rv(input.mouse), hirelingPortraitBounds()) ||
          CheckCollisionPointRec(rv(input.mouse), hirelingLifeBounds()))) {
-        leftCombatTarget_ = rightCombatTarget_ = {};
+        cancelWorldGesture();
         if (ui.inventory.drag) {
             const auto drag = *ui.inventory.drag;
             const bool drop = drag.pickedUp ? input.leftPressed : input.leftReleased;
@@ -159,7 +159,6 @@ bool SceneController::handleHirelingPortrait(const FrameInput &input) {
             ui.hirelingOpen = true;
             ui.characterOpen = ui.questOpen = false;
             actorClient_.stopActions();
-            channelInputSkill_ = -1;
             pickupClick_ = true;
         }
         return true;

@@ -30,6 +30,7 @@ std::string damageText(int64_t minimum, int64_t maximum) {
 }
 CharacterActionDisplay weaponStats(const CharacterDisplayContext &context, bool thrown, bool leftHand,
                                  const SkillCastSpec *skill = nullptr) {
+    if (!context.weaponValuesKnown) return {"?", "?"};
     const auto &equipment = context.equipment;
     const auto &combat = context.attributes.combat;
     for (int index = 0; index < equipment.weaponCount; ++index) {
@@ -116,12 +117,14 @@ CharacterActionDisplay describeCharacterAction(const CharacterDisplayContext &co
     }
     if (entry->spell && !entry->passive) {
         if (rank < 1) return {};
+        if (rank > 255) return {"?", ""};
         const auto cast = resolveSkill(*entry->spell, {rank, context.learned, context.fireMastery,
             context.lightningMastery, context.attributes.combat.coldSkillDamagePercent});
         if (cast.curse || cast.amazonMagic || cast.summon) return {};
         if (cast.weapon) return weaponStats(context, cast.weapon->thrown, false, &cast);
         if (cast.effect == SkillBehavior::Teleport || cast.effect == SkillBehavior::StaticField ||
-            cast.effect == SkillBehavior::FrozenArmor) return {};
+            cast.effect == SkillBehavior::FrozenArmor || cast.effect == SkillBehavior::EnergyShield) return {};
+        if (!context.spellDamageKnown) return {"?", ""};
         if (cast.effect == SkillBehavior::Inferno)
             return {damageText(int64_t(cast.minimumDamage * 25), int64_t(cast.maximumDamage * 25)) + "/s", ""};
         return {damageText(int64_t(cast.minimumDamage), int64_t(cast.maximumDamage)), ""};
@@ -184,13 +187,22 @@ std::vector<std::string> describeAuraSkill(const SkillRecord &skill, const AuraD
 }
 
 std::vector<std::string> describeSkillPicker(const SkillRecord &skill, const SkillCastSpec *resolved,
-    const AuraDefinition *aura, int baseRank, int aiCurseDivisor) {
+    const AuraDefinition *aura, int baseRank, int aiCurseDivisor, bool valuesKnown, bool damageKnown) {
     const auto *entry = &skill;
     std::string detail;
     std::vector<std::string> detailLines;
     if (resolved) {
         const auto &value = *resolved;
+        auto damage = [&](float scale = 1.f) {
+            return damageKnown ? std::string(displayNumber("%.1f-%.1f", value.minimumDamage * scale,
+                value.maximumDamage * scale)) : std::string("?");
+        };
         detail = "Mana " + std::string(displayNumber("%.1f", value.manaCost));
+        if (!valuesKnown) {
+            if (value.effect == SkillBehavior::Inferno)
+                detail = "Mana/sec " + std::string(displayNumber("%.1f", value.manaCost * 12.5f));
+            return {detail, "Other values: ?"};
+        }
         if (value.summon) {
             const auto &pet = *value.summon;
             const auto &stats = pet.stats.attributes;
@@ -217,7 +229,7 @@ std::vector<std::string> describeSkillPicker(const SkillRecord &skill, const Ski
         else if (value.effect == SkillBehavior::Teleport) detail += " / Teleport to clear ground";
         else if (value.effect == SkillBehavior::Teeth)
             detail += " / Teeth " + std::to_string(value.missileCount) + " / Magic " +
-                std::string(displayNumber("%.1f-%.1f", value.minimumDamage, value.maximumDamage));
+                damage();
         else if (value.bone && value.bone->barrier)
             detail += " / Barrier life +" + std::to_string(value.bone->lifePercent) + "% / " +
                 std::to_string(value.bone->barrierFrames / 25) + " seconds";
@@ -235,13 +247,25 @@ std::vector<std::string> describeSkillPicker(const SkillRecord &skill, const Ski
                 detail += " / Physical healing " + std::to_string(value.curse->modifiers.combat.lifeTapPercent) + "%";
         }
         else if (value.effect == SkillBehavior::HolyBolt)
-            detail += " / Undead magic " + std::string(displayNumber("%.1f-%.1f", value.minimumDamage, value.maximumDamage)) +
+            detail += " / Undead magic " + damage() +
                 " / Ally healing " + std::string(displayNumber("%.1f-%.1f", value.healingMinimum, value.healingMaximum));
         else if (value.effect == SkillBehavior::Inferno)
             detail = "Mana/sec " + std::string(displayNumber("%.1f", value.manaCost * 12.5f)) +
-                " / Damage/sec " + std::string(displayNumber("%.1f-%.1f", value.minimumDamage * 25, value.maximumDamage * 25));
+                " / Damage/sec " + damage(25.f);
         else if (value.effect == SkillBehavior::BoneArmor)
             detail += " / Absorbs " + std::to_string(value.appliedEffect->physicalShieldMaximum / 256) + " physical damage";
+        else if (value.effect == SkillBehavior::EnergyShield)
+            detail += " / Absorbs " + std::to_string(value.shieldPercent) + "% / Mana per damage " +
+                std::string(displayNumber("%.2f", float(value.shieldManaFactor) / 16.f)) + " / " +
+                std::to_string(value.appliedEffect->duration.value() / 25) + " seconds";
+        else if (value.effect == SkillBehavior::Enchant)
+            detail += " / Fire damage " + damage() + " / Attack rating +" +
+                std::to_string(value.appliedEffect->modifiers.combat.attackRatingPercent) + "% / " +
+                std::to_string(value.appliedEffect->duration.value() / 25) + " seconds";
+        else if (value.effect == SkillBehavior::ThunderStorm)
+            detail += " / Lightning damage " + damage() + " / Interval " +
+                std::string(displayNumber("%.2fs", float(value.stormPeriod) / 25.f)) + " / " +
+                std::to_string(value.appliedEffect->duration.value() / 25) + " seconds";
         else if (value.appliedEffect) {
             detail += " / Defense +" + std::to_string(value.appliedEffect->modifiers.combat.defensePercent +
                 value.appliedEffect->modifiers.combat.shieldDefensePercent) + "% / " +
@@ -251,27 +275,26 @@ std::vector<std::string> describeSkillPicker(const SkillRecord &skill, const Ski
                     " / Smite " + std::to_string(value.appliedEffect->modifiers.combat.smiteMinimum) +
                     "-" + std::to_string(value.appliedEffect->modifiers.combat.smiteMaximum);
             if (value.effect == SkillBehavior::ShiverArmor || value.effect == SkillBehavior::ChillingArmor)
-                detail += " / Retaliate cold " + std::string(displayNumber("%.1f-%.1f", value.minimumDamage, value.maximumDamage)) +
+                detail += " / Retaliate cold " + damage() +
                     " / Chill " + std::string(displayNumber("%.1fs", value.coldDuration));
         }
         else if (value.effect == SkillBehavior::StaticField)
             detail += " / " + std::to_string(int(value.staticPercent)) + "% current life, range " +
                 std::to_string(int(value.staticRadius));
         else if (value.blizzard)
-            detail += " / Cold damage per shard " + std::string(displayNumber("%.1f-%.1f", value.minimumDamage, value.maximumDamage)) +
+            detail += " / Cold damage per shard " + damage() +
                 " / Duration " + std::string(displayNumber("%.1fs", value.missileLifetime)) +
                 " / Delay " + std::string(displayNumber("%.1fs", float(value.delayFrames) / 25.f));
         else if (value.frozenOrb)
-            detail += " / Cold damage per bolt " + std::string(displayNumber("%.1f-%.1f", value.minimumDamage, value.maximumDamage)) +
+            detail += " / Cold damage per bolt " + damage() +
                 " / Chill " + std::string(displayNumber("%.1fs", value.coldDuration)) +
                 " / Delay " + std::string(displayNumber("%.1fs", float(value.delayFrames) / 25.f));
         else if (value.freezingArea)
-            detail += " / Cold damage " + std::string(displayNumber("%.1f-%.1f", value.minimumDamage, value.maximumDamage)) +
+            detail += " / Cold damage " + damage() +
                 " / Freeze " + std::string(displayNumber("%.2fs", float(value.freezingArea->freezeFrames) / 25.f));
         else if (value.poisonDuration > 0)
-            detail += " / Poison " + std::string(displayNumber("%.1f-%.1f over %.1fs",
-                value.minimumDamage * value.poisonDuration * 25.f,
-                value.maximumDamage * value.poisonDuration * 25.f, value.poisonDuration));
+            detail += " / Poison " + damage(value.poisonDuration * 25.f) + " over " +
+                std::string(displayNumber("%.1fs", value.poisonDuration));
         else if (value.effect == SkillBehavior::Zeal)
             detail += " / Attacks " + std::to_string(value.weapon->attacks) +
                 " / Physical +" + std::to_string(value.weapon->damagePercent) + "%";
@@ -293,20 +316,20 @@ std::vector<std::string> describeSkillPicker(const SkillRecord &skill, const Ski
             detail += " / Physical +" + std::to_string(value.weapon->damagePercent) +
                 "% / Attack +" + std::to_string(value.weapon->attackRating) + "%";
         else if (value.weapon && value.missileImpact && value.missileImpact->areaMissile)
-            detail += " / Fire " + std::string(displayNumber("%.1f-%.1f", value.minimumDamage, value.maximumDamage)) +
+            detail += " / Fire " + damage() +
                 " + weapon fire damage";
-        else detail += " / Damage " + std::string(displayNumber("%.1f", value.minimumDamage)) +
-            "-" + std::string(displayNumber("%.1f", value.maximumDamage));
+        else detail += " / Damage " + damage();
     } else if (entry->auraImplemented) {
         if (aura) detailLines = describeAuraSkill(skill, *aura, baseRank);
+        else detail = "Numerical values: ?";
     } else detail = !entry ? "Normal weapon attack"
         : entry->sourceName == "Throw" || entry->sourceName == "Left Hand Throw"
             ? "Throw equipped weapon; consumes one from the stack"
         : entry->basicAction == BasicSkillAction::Attack || entry->basicAction == BasicSkillAction::LeftHandSwing
             ? "Uses the current basic melee damage"
         : entry->sourceName == "Unsummon"
-            ? "No summoned ally is available"
-            : "Effect not implemented";
+            ? "Select a summoned ally"
+            : "Numerical values: ?";
     if (detailLines.empty()) detailLines.push_back(detail);
     return detailLines;
 }

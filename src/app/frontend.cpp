@@ -132,7 +132,6 @@ void runOnlineFrontend(Archives &archives, RenderTexture2D target, const AppOpti
         preferencesRetryAt = GetTime() + 2;
     };
     std::optional<uint32_t> displayedNpc;
-    std::optional<uint16_t> displayedSpeech{};
     std::optional<uint32_t> displayedWaypoint{};
     std::unique_ptr<RemoteScene> scene;
     std::optional<uint8_t> renderedAct;
@@ -157,10 +156,6 @@ void runOnlineFrontend(Archives &archives, RenderTexture2D target, const AppOpti
             status.playerDisplayPosition = scene->playerDisplayPosition();
         }
         return status;
-    };
-    auto move = [&](OnlinePoint targetPoint, bool run, std::optional<OnlineIntentContext> context = {}) {
-        town.update(session.read());
-        return sceneError.empty() && control.move(targetPoint, run, context);
     };
     DebugPipe pipe(pipeName);
     bool quit = false, manualRealm = false, presentationPaused = false;
@@ -205,18 +200,16 @@ void runOnlineFrontend(Archives &archives, RenderTexture2D target, const AppOpti
         inventory.update(session.read());
         combat.update();
         if (sceneGeneration != session.read().gameGeneration) {
-            mapDisplay.movementHeld = false;
             syncPreferences(true);
             debugInputs.clear();
             presentationPaused = false;
             sharedController.reset(); sharedUi.reset(); sharedClients.reset();
-            displayedNpc.reset(); displayedSpeech.reset(); displayedWaypoint.reset();
+            displayedNpc.reset(); displayedWaypoint.reset();
             scene.reset();
             sceneError.clear();
             sceneGeneration = session.read().gameGeneration;
         }
         if (inputAreaGeneration != session.read().world.areaGeneration) {
-            mapDisplay.movementHeld = false;
             inputAreaGeneration = session.read().world.areaGeneration;
             debugInputs.clear();
             control.cancelMovement();
@@ -427,7 +420,8 @@ void runOnlineFrontend(Archives &archives, RenderTexture2D target, const AppOpti
         bool captureRequested = false;
         FrontendIntent action;
         if (quit) debugInputs.clear();
-        RemoteSceneIntent worldAction;
+        RemoteSceneFrame worldFrame;
+        bool leaveGame = false;
         const Vec worldMouse{(raw.x - viewport.offset.x) / viewport.scale,
                              (raw.y - viewport.offset.y) / viewport.scale};
         if (!presentationPaused) {
@@ -474,7 +468,6 @@ void runOnlineFrontend(Archives &archives, RenderTexture2D target, const AppOpti
                         const auto &dialog = *town.read().npcConversation;
                         if (displayedNpc != dialog.source) {
                             displayedNpc = dialog.source;
-                            displayedSpeech.reset();
                             sharedUi->openNpcMenu(EntityId{(uint64_t{1} << 32) + dialog.source + 1},dialog.speaker,false);
                         }
                         {
@@ -482,13 +475,13 @@ void runOnlineFrontend(Archives &archives, RenderTexture2D target, const AppOpti
                             // not necessarily the native conversation revision.
                             if (panels.dialogue.empty() && !panels.shopOpen && !panels.hireListOpen) for (const auto &message : dialog.messages)
                                 if (!message.acknowledged && (message.menu == 0 || message.menu == 2) && !message.text.empty()) {
-                                    displayedSpeech = message.stringId;
                                     sharedUi->openNpcDialogue(EntityId{(uint64_t{1} << 32) + dialog.source + 1},dialog.speaker,message.text);
+                                    panels.dialogueTextTopic = message.stringId;
                                     break;
                                 }
                         }
                     } else if (displayedNpc && !native.npcRequested) {
-                        displayedNpc.reset(); displayedSpeech.reset(); sharedUi->cancelNpcDialogue();
+                        displayedNpc.reset(); sharedUi->cancelNpcDialogue();
                         panels.shopOpen = panels.hireListOpen = false;
                     }
                     auto input = pollInput(viewport);
@@ -503,49 +496,23 @@ void runOnlineFrontend(Archives &archives, RenderTexture2D target, const AppOpti
                         quiet.focused = input.focused;
                         quiet.leftHeld = input.leftHeld; quiet.rightHeld = input.rightHeld;
                         input = std::move(quiet);
-                        sharedController->resetInput();
+                        sharedController->discardBufferedInput(input.focused);
                     }
                     if (!debugInputs.empty()) {
                         input = std::move(debugInputs.front());
                         debugInputs.pop_front();
                     }
                     captureRequested = input.screenshot;
-                    const bool wasShop = panels.shopOpen, wasCube = panels.inventory.cubeOpen;
-                    const auto speech = displayedSpeech ? std::optional<uint32_t>{*displayedSpeech} : panels.dialogueTextTopic;
-                    const bool wasSpeech = !panels.dialogue.empty() && speech.has_value();
-                    if (input.focused && input.escape && native.waypointRequested && !native.waypointSource) {
-                        session.use_waypoint(0, 0, onlineIntentContext(view));
-                    }
-                    // Acknowledge native automatic speech without ending its server conversation.
-                    if (wasSpeech && input.focused && (input.escape || input.leftPressed)) {
-                        // Native menu topics use the same original 0x31 as
-                        // automatic speech. A topic can grant a quest reward;
-                        // merely closing its local text must not lose that ACK.
-                        const auto &conversation = native.npcConversation;
-                        if (conversation && !conversation->acknowledged.contains(uint16_t(*speech)))
-                            session.acknowledge_npc_message(uint16_t(*speech), onlineIntentContext(view));
-                        displayedSpeech.reset();
-                        sharedUi->cancelNpcDialogue();
-                        if (town.read().npcConversation) sharedUi->openNpcMenu(panels.dialogueObject,town.read().npcConversation->speaker,false);
-                        input.escape = input.leftPressed = input.leftHeld = false;
-                    }
                     const bool keepGame = sharedController->handle(input,GetFrameTime());
-                    if (!keepGame) worldAction.leave = true;
-                    if (!wasShop && panels.shopOpen) sharedClients->openShop();
-                    if (!wasCube && panels.inventory.cubeOpen && native.storage.kind != OnlineStorageKind::Cube)
-                        for (const auto &[id,item] : native.items) if (item.code == sharedUi->inventoryView().cubeCode &&
-                            item.ownerType == 0 && item.owner == view.load.playerUnitId && item.mode == 0 && item.page == 1) {
-                            OnlineItemCommand request; request.action = OnlineItemAction::CubeOpen; request.item = id; request.itemRevision = item.revision;
-                            request.context = onlineIntentContext(view);
-                            if (!inventory.submit(session,request)) { panels.inventory.cubeOpen = false; sharedUi->notice(inventory.reason(),true); }
-                            break;
-                        }
+                    if (!keepGame) leaveGame = true;
                     if (auto feedback = sharedClients->takeNotice(); !feedback.empty()) sharedUi->notice(std::move(feedback),true);
                     mapDisplay.visible = panels.automap; mapDisplay.large = panels.automapLarge;
                     mapDisplay.right = panels.minimapRight; mapDisplay.offset = panels.automapOffset; mapDisplay.running = sharedClients->running();
-                    auto rendered = scene->frame(view,*town.map(),town.read(),*sharedUi,combat,sharedController->uiConsumed() || wasSpeech,input);
-                    rendered.leave = rendered.leave || worldAction.leave;
-                    worldAction = std::move(rendered);
+                    worldFrame = scene->frame(view,*town.map(),town.read(),*sharedUi,combat,
+                        sharedController->uiConsumed(),input.mouse,input.rightHeld || input.rightPressed);
+                    sharedController->handleWorld(input,worldFrame.input,GetFrameTime());
+                    if (auto feedback = sharedClients->takeNotice(); !feedback.empty()) sharedUi->notice(std::move(feedback),true);
+                    sharedUi->drawUi(input.mouse);
                 } catch (const std::exception &e) {
                     sceneError = e.what();
                     showScene = false;
@@ -557,10 +524,14 @@ void runOnlineFrontend(Archives &archives, RenderTexture2D target, const AppOpti
                 captureRequested = input.screenshot;
                 mouse = {(input.mouse.x - offsetX) / scale, input.mouse.y / scale};
                 ClearBackground(BLACK);
-                if (view.stage == OnlineStage::ProtocolReady && onlinePlayerDead(view.world) && sharedClients && sharedUi && sharedController) {
+                if (view.stage == OnlineStage::ProtocolReady && sharedClients && sharedUi && sharedController) {
                     sharedClients->update(town.read());
                     sharedUi->refreshUi(std::clamp(GetFrameTime(), 0.f, .1f));
-                    sharedController->handle(input, GetFrameTime());
+                    if (!sharedController->handle(input, GetFrameTime())) leaveGame = true;
+                    WorldInputView unavailable;
+                    unavailable.gameGeneration = view.gameGeneration;
+                    unavailable.areaGeneration = view.world.areaGeneration;
+                    sharedController->handleWorld(input, unavailable, GetFrameTime());
                     sharedUi->drawUi(worldMouse);
                 } else {
                     BeginScissorMode(int(offsetX), 0, int(800 * scale), H);
@@ -584,40 +555,8 @@ void runOnlineFrontend(Archives &archives, RenderTexture2D target, const AppOpti
         if (captureRequested) saveFrontendScreenshot(target, "artifacts/d2x-capture.png");
         if (quit || presentationPaused)
             continue;
-        const auto frameContext = onlineIntentContext(view);
-        town.revealVisibleTiles(session.read(), worldAction.visibleMapTiles);
-        if (worldAction.stopCombat) {
-            OnlineCombatCommand stop; stop.action = OnlineCombatCommand::Action::Stop;
-            stop.context = frameContext;
-            combat.submit(stop);
-        }
-        if (worldAction.leave)
-            session.leave_game();
-        else if (worldAction.pickup) {
-            control.cancelMovement();
-            OnlineItemCommand request;
-            request.action = OnlineItemAction::Pickup;
-            request.item = uint32_t(worldAction.pickup->id.value - 1);
-            request.itemRevision = worldAction.pickup->revision;
-            request.context = frameContext;
-            request.toCursor = sharedUi && sharedUi->ui().inventory.open;
-            if (!inventory.submit(session, request) && sharedUi) sharedUi->notice(inventory.reason(), true);
-        }
-        else if (worldAction.combat) {
-            worldAction.combat->context = frameContext;
-            control.cancelMovement();
-            const bool accepted = combat.submit(*worldAction.combat);
-            if (scene) scene->combatSubmitted(accepted);
-            if (!accepted && sharedUi) sharedUi->notice(combat.reason(),true);
-        }
-        else if (worldAction.interact && town.permitsInteraction(session.read(), *worldAction.interact)) {
-            if (!control.interact(*worldAction.interact, worldAction.run, frameContext) && sharedUi)
-                sharedUi->notice(control.reason(), true);
-        }
-        else if (worldAction.move) {
-            const bool accepted = control.move(*worldAction.move, worldAction.run, frameContext, worldAction.moveOrigin);
-            if (scene) scene->movementSubmitted(accepted);
-        }
+        town.revealVisibleTiles(session.read(), worldFrame.visibleMapTiles);
+        if (leaveGame) session.leave_game();
         if (action.editedAccount && !loginMemory.write(*action.editedAccount, {}))
             notice = "Unable to remember the edited account name.";
         if (action.command != FrontendCommand::None) quickCharacter = quickGame = false;

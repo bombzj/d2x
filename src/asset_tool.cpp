@@ -209,7 +209,7 @@ int main(int argc, char **argv) {
                           << (definition ? definition->maxDurability : 0)
                           << " defense=" << item.defense << '\n';
             }
-            std::cout << "Decoded character save only; full gameplay validation occurs on --load.\n";
+            std::cout << "Decoded character save only; this tool does not enter a Realm game.\n";
         } else if (command == "substitutions" && argc == 4) {
             d2x::WorldCatalog catalog(a);
             int type = std::stoi(argv[3]);

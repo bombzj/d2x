@@ -37,6 +37,8 @@ bool SceneController::handleSkills(const FrameInput &input) {
             (hotkeys[i].right ? ui.rightSkill : ui.leftSkill) =
                 skill < 0 ? std::nullopt : std::optional<int>{skill};
             characterClient_.submit(SelectMouseSkill{skill, hotkeys[i].right});
+            cancelWorldGesture();
+            releaseAfterLoad_ = input.leftHeld || input.rightHeld;
         }
     }
     if (!input.insideViewport)

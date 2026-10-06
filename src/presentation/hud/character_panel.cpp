@@ -50,7 +50,7 @@ void SceneView::drawCharacter(Vec mouse) const {
     cell(player.number("level", player.level), 11, 48, 45, 20, 13, gold, true);
     cell("Experience", 61, 35, 121, 13, 10, parchment, true);
     cell(player.number("experience", player.experience), 61, 48, 121, 20, 12, gold, true);
-    auto next = player.nextLevelExperience ? std::to_string(*player.nextLevelExperience) : "MAX";
+    auto next = !player.nextLevelKnown ? "?" : player.nextLevelExperience ? std::to_string(*player.nextLevelExperience) : "MAX";
     cell("Next Level", 191, 35, 120, 13, 10, parchment, true);
     cell(next, 191, 48, 120, 20, 12, gold, true);
 

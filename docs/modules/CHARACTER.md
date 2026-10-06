@@ -58,11 +58,13 @@
 
 ## 本人 UI 投影
 
-[`CharacterView`](../../src/contracts/character.hpp) 包含本人必要的成长、派生数值、资源、技能元数据／基础与有效等级、学习资格、选择／快捷绑定及提示行；不含任务簿、背包、完整装备、效果集合或 `SkillCastSpec`。[`ICharacterClient`](../../src/client/character_client.hpp) 读取投影并提交窄角色意图，[`LocalCharacterClient`](../../src/client/local_character_client.cpp) 负责本地映射和原命令转发。
+产品唯一投影入口为 [`projectCharacterDisplay`](../../src/client/character_projection.cpp)。[`CharacterProjectionInput`](../../src/client/character_projection.hpp) 只接收已解码的原服属性、资源、身份、基础／有效技能等级、选择／快捷绑定和难度，以及当前 MPQ 导入的 ClassicData；不借用会话、网络容器、GPU 或执行器。RemoteUiClients 只转换协议状态，删除无消费者的 LocalCharacterClient 及其重复提示组装。
 
-角色面板、技能树、技能选择／F1–F8 绑定及 HUD 数值改读投影。伤害与光环／主动技能提示计算移至 [`content/character/character_display.cpp`](../../src/content/character/character_display.cpp)，显式接收装备／属性快照、已解析技能、基础等级及难度参数，不读取会话或 GPU。原表现布局、字段解释和计算顺序保持。
+[`CharacterView`](../../src/contracts/character.hpp) 提供角色面板、技能树、技能菜单和 HUD 所需的数值、资格和提示。原服完整 0x94 技能清单（包含空清单）用于区分未学习与尚未收到；0x21 更新基础／加成等级。技能树显示原 MPQ 描述、等级、前置要求、当前和下一等级预览；选择菜单及面板动作值复用 [`character_display.cpp`](../../src/content/character/character_display.cpp) 的原描述和纯显示公式。经验门槛继续读原 Experience／CharStats，未确认等级时不显示 MAX。
 
-本地适配按权威更新版本缓存；`tick`（包含 `tick(0)`）、成功恢复及走跑设置完成后推进版本，UI 只在版本变化时复制新值。借用适配视图只到下次读取／销毁，场景保存独立值副本，不保留跨更新内部指针。相同缓存机制也用于已迁移库存。异步权威结果、联网身份认证和远端协议仍未实施。
+未知属性和等级显示 `?`。缺少完整武器／装备输入时不重算武器伤害、命中和最终格挡；缺少原服伤害加成时只将伤害标未知，已知法力、持续时间及范围仍可显示。宠物属性、未支持的原表数值描述、未确认的光环输入保留未知；不宣称已实现通用 SkillDesc 全部描述程序。下一等级预览不改变当前施放资格。提示中的消耗和学习资格只是显示，伤害、消耗、升级、任务奖励和保存仍由 D2GS 结算，UI 只提交 CharacterIntent，不调用旧单机执行器。
+
+当前改造未改变 D2S 编码或存档语义；构建／包与未运行验收范围见[联网模块](NETWORK.md#统一人物和技能提示)。
 
 ## 格式、规则与恢复限制
 

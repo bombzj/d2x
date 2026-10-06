@@ -1,6 +1,8 @@
 # 库存、装备与技能来源基线
 
-更新：2026-10-06。对应 [技术改造方案](../architecture/REFACTOR_PLAN.md) P1 库存 UI 切片及 P3 装备／来源基础切片；离线`InventoryService`继续负责权威事务，联机权威为D2GS，完整P3尚未完成。第四项已随第五项通过Windows Release及代表性佣兵装备路径，完整规则回归尚未覆盖；联网物品与城镇服务已Release、打包及有限原服冒烟。
+2026-10-07 当前源码已删除其余 Local 客户端及旧本地表现／地图资源旁路，解除表现库对 GameSession 的链接；统一端口与保留范围见[客户端](CLIENT.md)。下方本地适配与验证记录仅是历史事实。最终依赖清理与本轮构建／包／有限冒烟统一见[联网模块](NETWORK.md#最终依赖清理)。
+
+更新：2026-10-06。对应 [技术改造方案](../architecture/REFACTOR_PLAN.md) P1 库存 UI 切片及 P3 装备／来源基础切片；历史离线`InventoryService`曾负责权威事务，现已删除，联机权威为D2GS，完整P3尚未完成。第四项已随第五项通过Windows Release及代表性佣兵装备路径，完整规则回归尚未覆盖；联网物品与城镇服务已Release、打包及有限原服冒烟。
 
 当前物品复核新增源码修正：`ItemDefinition.questTag/questCarryConflicts` 由内容层从原 quest 身份及 D2MOO 原生互斥形式准备；`checkCarryLimit` 共用于创建／拾取／移动／转移／交换／恢复，carry1 包括私人箱，任务检查还含 Cursor 及该角色尸体。carry1 元数据直接覆盖完整 enabled 暗金原行，不依赖 lvl≤99 的生成目录；带独立孔数的堆叠禁止合并。玩家药剂按显式职业代码应用纯玩法倍率，佣兵继续非玩家倍率。运行指纹增加 `inventory-carry-rules-v2-native-quest-pairs`、`potion-class-rules-v1-native-restoration`、`socket-rules-v1-native-children-runewords`；D2S 字段仍为 v96，非法重复／互斥任务物品明确拒绝，无静默删物品或迁移。镶嵌已完成 Windows Release 与有限实机冒烟，未打包；SocketItem、有序 socketedItems、需求、符文之语独立属性及原生 D2S 共用物品边界，孔相关配方只绑定当前原表，细项见 [物品支持](../gameplay/items/SUPPORT.md)、[数据](../gameplay/items/DATA.md)、[药剂](../gameplay/items/BELT_AND_CONSUMABLES.md)。
 

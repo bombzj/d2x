@@ -1,5 +1,5 @@
 #include "gameplay/skills/rank_sources.hpp"
-#include "gameplay/character/learning.hpp"
+#include "gameplay/character/skill_rank.hpp"
 #include "gameplay/items/skill_sources.hpp"
 #include "gameplay/combat/stat_modifiers.hpp"
 

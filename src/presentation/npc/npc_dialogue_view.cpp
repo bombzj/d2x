@@ -37,7 +37,6 @@ void SceneView::openNpcDialogue(EntityId object, std::string speaker, std::strin
 }
 
 void SceneView::cancelNpcDialogue() {
-    view_.pendingNpcDialogue.clear();
     view_.dialogue.clear();
     view_.dialogueTextTopic.reset();
     view_.dialogueLines.clear();
@@ -116,12 +115,6 @@ void SceneView::advanceNpcDialogue(float dt) {
 }
 
 bool SceneView::closeNpcDialogue() {
-    if (!view_.pendingNpcDialogue.empty()) {
-        auto dialogue = std::move(view_.pendingNpcDialogue.front());
-        view_.pendingNpcDialogue.pop_front();
-        displayNpcDialogue(dialogue.object, std::move(dialogue.speaker), std::move(dialogue.text));
-        return true;
-    }
     cancelNpcDialogue();
     return false;
 }

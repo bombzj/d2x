@@ -17,6 +17,7 @@ struct CharacterSkillView {
     int listRow = -1, listPool = 0, iconCell = -1;
     std::string classCode, name;
     int baseRank = 0, effectiveRank = 0, maximumRank = 0, nextRequiredLevel = 0;
+    bool baseRankKnown = false, effectiveRankKnown = false;
     bool passive = false, leftAllowed = false, available = false, canAllocate = false, usableNow = false;
     bool pickerEnabled = false; // Selection icon state; independent of town casting permission.
     CharacterActionDisplay action;
@@ -31,6 +32,7 @@ struct CharacterView {
     int level = 1, unspentAttributes = 0, unspentSkills = 0;
     uint64_t experience = 0, currentLevelExperience = 0, maximumExperience = 0;
     std::optional<uint64_t> nextLevelExperience;
+    bool nextLevelKnown = false;
     std::array<int, 4> attributes{}, resistances{}; // STR/DEX/VIT/ENE; fire/cold/lightning/poison.
     float hp = 0, mana = 0, stamina = 0;
     int maxLife = 1, maxMana = 1, maxStamina = 1, defense = 0, blockChance = 0;

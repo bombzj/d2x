@@ -52,6 +52,7 @@ struct MapSceneView {
     int current = -1, act = 0, palette = 0;
     Vec observer;
     bool hasObserverRoom = false;
+    bool travelRequested = false;
     std::vector<MapRegionView> regions;
     // Slot indices identify client caches only; offsets are in observer-region coordinates.
     std::vector<std::pair<int, Vec>> automapRegions;

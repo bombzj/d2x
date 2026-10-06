@@ -1,8 +1,6 @@
 #include "content/items/equipment_modifiers.hpp"
 #include "content/classic_data.hpp"
 #include "content/items/item_properties.hpp"
-#include "gameplay/items/equipment_contributions.hpp"
-#include "gameplay/items/equipment_inventory.hpp"
 #include <map>
 #include <utility>
 
@@ -27,16 +25,5 @@ void prepareEquipmentSetData(ClassicData &content) {
         }
         sets.push_back(std::move(piece));
     }
-}
-CharacterModifiers resolveEquipmentModifiers(const ClassicData &content,
-    const InventoryService &inventory, const PlayerContainers &containers,
-    const EquipmentActor &baseActor, EntityId excludedItem) {
-    const EquipmentContributionSource source{content.equipmentSets,
-        [&content](const ItemInstance &item, int level) { return resolveItemStats(content, item, level); },
-        [&content](size_t setIndex, size_t bonusIndex, int level) {
-            const auto &property = content.setItems.at(setIndex).setBonuses.at(bonusIndex).property;
-            return resolvePropertyStats(content, property, property.minimum.value_or(0), level);
-        }};
-    return deriveEquipmentModifiers(borrowEquipmentLoadout(inventory, containers), baseActor, source, excludedItem);
 }
 } // namespace d2x

@@ -34,30 +34,4 @@ struct TreasureRoll {
 using TreasureVisitor = std::function<bool(const TreasureSelection &, uint64_t &)>;
 TreasureRoll selectTreasure(std::span<const TreasureClass> classes, std::string_view root, uint64_t seed,
                            int level = 0, const TreasureVisitor &visitor = {});
-struct LootState {
-    uint64_t randomState = 0;
-    std::set<EntityId> settled;
-    std::set<uint32_t> usedUniques;
-};
-class LootSystem {
-    uint64_t randomState_;
-    std::set<EntityId> settled_;
-    std::set<uint32_t> usedUniques_;
-
-  public:
-    explicit LootSystem(uint64_t seed) : randomState_(seed) {}
-    bool settled(EntityId source) const { return settled_.contains(source); }
-    uint64_t randomState() const { return randomState_; }
-    const std::set<uint32_t> &usedUniques() const { return usedUniques_; }
-    void recordUnique(uint32_t row) { usedUniques_.insert(row); }
-    LootState snapshot() const { return {randomState_, settled_, usedUniques_}; }
-    void restore(LootState state) noexcept {
-        randomState_ = state.randomState;
-        settled_.swap(state.settled);
-        usedUniques_.swap(state.usedUniques);
-    }
-    static constexpr std::string_view unavailableReason =
-        "Monster loot partial: unsupported item generations are deferred.";
-    std::vector<LootDrop> settle(LootRequest request, LootPlan plan);
-};
 } // namespace d2x

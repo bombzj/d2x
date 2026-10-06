@@ -1,5 +1,7 @@
 # 地图、区域与客户端地图基线
 
+2026-10-07 当前源码已删除其余 Local 客户端及旧本地表现／地图资源旁路，解除表现库对 GameSession 的链接；统一端口与保留范围见[客户端](CLIENT.md)。下方本地适配与验证记录仅是历史事实。最终依赖清理与本轮构建／包／有限冒烟统一见[联网模块](NETWORK.md#最终依赖清理)。
+
 更新：2026-10-06。本页维护接口；五幕类型、原参数、特殊地图与验证统一见[地图规则](../gameplay/world/MAPS.md)。
 
 ## 所有权与入口
@@ -21,7 +23,7 @@
 
 IMapClient绑定本地操作者；LocalMapClient按权威版本缓存场景／传送点值，空来源不返回开发目录。MapIntent提交传送点／出口／门户，权威复验接触、资格、落点及版本；自由Travel仅用于调试管道。
 
-本地地图手势位于presentation/world，探索由client/automap_exploration.*维护。联网RemoteTown维护本局可见地形记忆和Objects／Levels交互值，RemoteScene只提交真实服务端单位、旅行和可见实例意图，不借用GameSession。原传送点面板／点击几何／字体由hud/waypoint_panel.hpp共用。规则和保存边界见[自动地图](../gameplay/world/AUTOMAP.md)、[联网](NETWORK.md#远端营地入局边界)。
+地图交互手势统一位于SceneController，探索由client/automap_exploration.*维护。联网RemoteTown维护本局可见地形记忆和Objects／Levels交互值；RemoteScene只返回原服单位的命中／投影与可见地形实例，控制器通过客户端端口提交交互／旅行，不借用GameSession。原传送点面板／点击几何／字体由hud/waypoint_panel.hpp共用。规则和保存边界见[自动地图](../gameplay/world/AUTOMAP.md)、[联网](NETWORK.md#远端营地入局边界)。
 
 IMapAssetSource只借用DS1、共享DT1图像及索引事实，不返回Region／Grid／MPQ／GPU。GPU、摄像机、显示时钟和屋顶渐隐由表现层拥有；玩法不读设备或图形。当前无卸载，解码数据寿命覆盖借用；卸载前需补失效机制。
 

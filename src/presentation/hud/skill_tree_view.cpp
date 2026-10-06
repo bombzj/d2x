@@ -40,13 +40,13 @@ void SceneView::drawSkillTree(Vec mouse) const {
         if (image == assets_.skillIcons.end()) continue;
         const int value = entry.baseRank;
         const int effective = entry.effectiveRank;
-        const bool itemGranted = effective > value;
+        const bool itemGranted = entry.baseRankKnown && entry.effectiveRankKnown && effective > value;
         const bool ready = entry.canAllocate;
         const auto &texture = image->second.sprite.texture;
         DrawTexturePro(texture, {0, 0, float(texture.width), float(texture.height)}, bounds,
                        {0, 0}, 0, value || itemGranted ? WHITE : Color{92, 92, 92, 255});
-        if (value || itemGranted) {
-            auto count = std::to_string(effective);
+        if (value || itemGranted || !entry.effectiveRankKnown) {
+            auto count = entry.effectiveRankKnown ? std::to_string(effective) : "?";
             painter_.label(count, int(bounds.x + bounds.width - painter_.measure(count, 12) - 2),
                            int(bounds.y + bounds.height - 14), 12,
                            itemGranted ? Color{105, 105, 255, 255} : parchment);
@@ -74,7 +74,7 @@ void SceneView::drawSkillTree(Vec mouse) const {
                            int(bounds.y + (bounds.height - lines.size() * 15) / 2 + index * 15), size,
                            page == view_.skillPage ? gold : parchment);
     }
-    auto points = std::to_string(player.unspentSkills);
+    auto points = player.number("newskills", player.unspentSkills);
     auto pointBox = skillTreeRect(252, 54, 48, 26);
     painter_.label(points, int(pointBox.x + (pointBox.width - painter_.measure(points, 15)) / 2),
                    int(pointBox.y + 5), 15, gold);

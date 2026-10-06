@@ -1,6 +1,6 @@
 # 联机结构改造方案
 
-更新：2026-10-06。产品改为仅支持既有 D2GS 联机，放弃单机兼容；完整功能范围、实施顺序和完成条件只维护在 [D2GS 全面联机开发计划](MULTIPLAYER.md)。本页维护代码边界和退场策略，替代原来继续完善本地权威宿主的五项计划。M0–M1 源码已开始实施：应用只进入联机，持续网络服务和诊断已接；剩余条目仍未完成，本批已构建、打包及有限原服冒烟；当前源码／包状态见[基线](../../BASELINE.md)。
+更新：2026-10-07。产品改为仅支持既有 D2GS 联机，放弃单机兼容；完整功能范围、实施顺序和完成条件只维护在 [D2GS 全面联机开发计划](MULTIPLAYER.md)。本页维护代码边界和退场策略，替代原来继续完善本地权威宿主的五项计划。M0–M1 源码已开始实施：应用只进入联机，持续网络服务和诊断已接；剩余条目仍未完成，本批已构建、打包及有限原服冒烟；当前源码／包状态见[基线](../../BASELINE.md)。
 
 ## 下一步执行顺序
 
@@ -10,7 +10,7 @@
 
 ## 1. 应用入口与时间推进
 
-**当前落点：** `src/app/application.cpp`、`frontend.cpp`、`options.*`、`character_frontend.*`、`debug/debug_commands.*`，`src/presentation/scene_view.*`、`controller.*`、`audio/`。
+**当前落点：** `src/app/application.cpp`、`frontend.cpp`、`options.*`、`online_login_memory.*`、`debug/online_commands.*`，`src/presentation/scene_view.*`、`controller.*`、`audio/`。
 
 - 删除产品对本地建角／选角、D2S 恢复、直接进图和本地 GameSession 的组装；所有退出、返回、换角和入局围绕 RealmSession。
 - 删除产品 debugPaused、单步和 debug 启动即暂停；按用户补充保留显式测试 pause/resume，只冻结客户端表现，不停止网络或原服；原离线 CLI 参数明确拒绝或移除，不静默转为本地运行。
@@ -21,7 +21,7 @@
 
 ## 2. 协议、副本、内容和表现
 
-世界绘制第一项已收拢至WorldDrawView → SceneView::drawWorld：原服适配器只提供当前帧的表现位置／原图／物件模式，统一地形、排序、阴影、Pops／Warp／屋顶和灯光；旧单机世界draw入口与RemoteScene绘制循环已删除。仅保持联机产品调用链，不增加Local兼容后端。动画解码、世界手势及其他旧localSession引用仍留在后续项；本项不等于第4节最终依赖退场。Release构建／打包及待用户验收范围见[联网模块](../modules/NETWORK.md#世界绘制收拢2026-10-06)。
+世界绘制第一项已收拢至WorldDrawView → SceneView::drawWorld：原服适配器只提供当前帧的表现位置／原图／物件模式，统一地形、排序、阴影、Pops／Warp／屋顶和灯光；旧单机世界draw入口与RemoteScene绘制循环已删除。仅保持联机产品调用链，不增加Local兼容后端。动画第二项源码已继续收拢至ActorAnimationCatalog／ActorAnimationState，删除旧本地动画加载器与GameSession资源构造器，RemoteScene只投影外观／动作值；世界鼠标手势及游戏内UI第三项已统一至SceneController，RemoteScene仅返回当帧WorldInputView，补齐IActorClient.move/control并删除旧GameSession控制器及LocalActorClient。人物／技能显示第四项已统一至projectCharacterDisplay及原character_display纯公式，删除LocalCharacterClient；缺数据保留未知，仍由原服结算。音效第五项继续统一至SoundCatalog和SceneAudio，公共表现事件消费原MPQ定义并维护播放规则，删除旧MonSounds解释及待播／周期状态。任务／面板也已收拢，最终依赖清理删除无消费者的本地宿主／执行器及 d2x_session 目标。保留原资源与存档工具的纯定义和计算；交付和有限冒烟见[联网模块](../modules/NETWORK.md#最终依赖清理)。这些结构项完成不等于完整联机功能或多人验收。
 
 **当前落点：** `src/network/`、`src/contracts/online*.hpp`、`src/client/remote_world.*`、`remote_town.*`、`remote_ui_clients.*`，`src/presentation/remote/remote_scene.*`、`scene_assets.*`、`world/`、`actors/`。
 
@@ -57,13 +57,13 @@
 | 本地 D2S 编解码与诊断 | 不连接联机恢复／保存；已有独立开发用途可保留，不接受本地档作为 Realm 角色 |
 | 偏好、凭据、探索缓存 | 保留客户端专用持久化，按服务器／Realm／角色／难度／种子隔离并版本化 |
 
-当前 `d2x_presentation` 私有链接 `d2x_session`，应用仍链接 `d2x_local_client`／`d2x_persistence`。最终解除这些产品依赖，避免因为共享头文件或方便拿取数据又把本地权威执行器带回来。开发工具的依赖与产品目标分别定义。
+2026-10-07：Local 适配、GameSession／Simulation／SkillRuntime／InventoryService、任务／AI／战斗／奖励执行及 d2x_session 构建目标已删除。presentation 只链接共用客户端／内容／地图／原服表现；产品不链接 persistence。共享 gameplay／items 保留真实联机显示、地图、原资源报告和存档工具消费的纯函数及值；混放的元素伤害范围、技能等级和库存错误文案已独立提取，内容加载不再通过装备入口链接库存服务。CharacterSaveData 移到 persistence，编码与字段不变。删除无生产者的旧插杖面板和旧本地调试输入／CLI 别名。构建、包与有限冒烟范围见基线；资源、reference、旧包与 mvp 保留。
 
 **完成边界：** 产品不构造 GameSession、不执行本地伤害／掉落／任务／库存结算、不读写角色 D2S；共享代码只承担真实联机消费者所需职责。旧用户文件、原 MPQ、压缩包和 mvp 不删除。
 
 ## 5. 文档与交付约束
 
-功能支持以[联网模块](../modules/NETWORK.md)为准，其他模块记载的单机行为只代表已有源码事实，后续随对应调用链退场更新；不能把旧本地验证当联机认证。BASELINE 管全局范围与源码／包差异，总计划管理依赖和未完成项。
+功能支持以[联网模块](../modules/NETWORK.md)为准，其他模块记载的单机行为只代表已退场版本的历史事实，后续随对应调用链退场更新；不能把旧本地验证当联机认证。BASELINE 管全局范围与源码／包差异，总计划管理依赖和未完成项。
 
 遵守 [AGENTS.md](../../AGENTS.md)：默认只改源码／文档，不编写测试脚本、测试用例或专用测试程序，不继续构建、运行检查或打包。用户授权后的观察使用已有程序、诊断入口、原客户端与参考服。本批按用户最新授权完成 Windows Release 构建、打包及有限原服冒烟；范围见基线，D2S 格式不变。
 

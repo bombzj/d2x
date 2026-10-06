@@ -24,8 +24,4 @@ struct AuraDefinition {
     bool hostile = false;
     uint32_t filter = 0;
 };
-struct ActiveAura {
-    AuraDefinition definition;
-    EffectFrame nextFrame = 0;
-};
-}
+} // namespace d2x

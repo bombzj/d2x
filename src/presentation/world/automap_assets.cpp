@@ -1,55 +1,9 @@
 #include "resources/formats.hpp"
 #include "presentation/scene_assets.hpp"
-#include "core/fingerprint.hpp"
 #include <set>
 #include <stdexcept>
 
 namespace d2x {
-void SceneAssets::loadAutomap(const IMapAssetSource &source) {
-    if (!automapContentFingerprint) {
-        // An explicit stable input set, independent of start region, loading order and UI assets.
-        Fingerprint fingerprint;
-        fingerprint.add("d2x-automap-content-v1");
-        for (const auto *table : {"automap", "levels", "lvltypes", "lvlprest", "lvlmaze", "lvlsub", "objects", "monstats2"}) {
-            const auto path = std::string("data/global/excel/") + table + ".txt";
-            fingerprint.add(path); fingerprint.add(archives_.read(path));
-        }
-        automapContentFingerprint = fingerprint.value();
-    }
-    std::set<int> used{317};
-    regionTownAutomap.resize(source.size());
-    regionAutomapVariants.resize(source.size());
-    regionAutomap.resize(source.size());
-    regionAutomapLoaded.resize(source.size(), false);
-    for (size_t regionIndex = 0; regionIndex < source.size(); ++regionIndex) {
-        const auto &region = source.readAsset(regionIndex);
-        if (!region.loaded || regionAutomapLoaded[regionIndex]) continue;
-        if (!region.townAutomap) continue;
-        regionAutomapVariants[regionIndex] = region.variant;
-        for (int size = 0; size < 2; ++size)
-            regionTownAutomap[regionIndex][size] = townAutomapSprites(int(region.region), region.variant, size != 0);
-    }
-
-    for (size_t index = 0; index < source.size(); ++index) {
-        const auto &region = source.readAsset(index);
-        if (!region.loaded || regionAutomapLoaded[index]) continue;
-        regionAutomapLoaded[index] = true;
-        auto &stamps = regionAutomap[index];
-        stamps = automapCatalog_.stamps(*region.data, region.levelType);
-        for (const auto &stamp : stamps) used.insert(stamp.cel);
-        for (const auto &object : region.markers) {
-            int cel = object.npcClass.empty() ? automapCatalog_.objectCel(object.objectClass)
-                                             : automapCatalog_.npcCel(object.npcClass);
-            if (cel >= 0)
-                used.insert(cel);
-        }
-    }
-    for (int objectClass : {59, 60})
-        if (int cel = automapCatalog_.objectCel(objectClass); cel >= 0)
-            used.insert(cel);
-    for (int size = 0; size < 2; ++size)
-        for (int cel : used) automapSprite(cel, size != 0);
-}
 const Sprite *SceneAssets::automapSprite(int cel, bool large) const {
     if (cel < 0) return nullptr;
     auto &cache = automapCels[size_t(large)];
