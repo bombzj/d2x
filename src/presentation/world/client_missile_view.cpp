@@ -14,8 +14,12 @@ bool SceneView::launchClientMissile(int id, Vec start, Vec target, int level, fl
     const auto found = assets_.clientMissilePrograms.find(id);
     if (found == assets_.clientMissilePrograms.end()) return false;
     const auto &program = found->second;
-    if (program.function != 1 && program.function != 8 && program.function != 18 &&
-        program.function != 19 && program.function != 20) return false;
+    if (program.function != 1 && program.function != 5 && program.function != 6 && program.function != 9 &&
+        program.function != 8 && program.function != 18 && program.function != 19 && program.function != 20) return false;
+    if (program.function==9)
+        for (const int child:program.children) if (child>=0 && !assets_.ensureProjectile(child)) return false;
+    if (program.function==9 && program.hitFunction==18)
+        for (const int child:program.hitChildren) if (child<0 || !assets_.ensureProjectile(child)) return false;
     // Lightning's parent is deliberately invisible; its MPQ child is the art.
     if (!assets_.ensureProjectile(id) &&
         !((program.function == 8 || program.function == 18) && program.children[0] >= 0 &&
@@ -24,7 +28,7 @@ bool SceneView::launchClientMissile(int id, Vec start, Vec target, int level, fl
     const auto nativeVelocity = (int64_t(program.velocity) + int64_t(level) * program.velocityPerLevel / 8) * 256 * 75 / 100;
     if (nativeVelocity < 0 || nativeVelocity > std::numeric_limits<int>::max() ||
         (program.acceleration && program.maximumVelocity <= 0)) return false;
-    const int velocity = int(nativeVelocity);
+    const int velocity = program.function==5 || program.function==9?0:int(nativeVelocity);
     const float tableDuration = float(program.frames + level * program.framesPerLevel) / 25.f;
     const float fullDuration = tableDuration > 0 ? tableDuration : assets_.projectileVisuals.at(id).lifetime;
     const float duration = remaining.value_or(fullDuration);
@@ -33,7 +37,7 @@ bool SceneView::launchClientMissile(int id, Vec start, Vec target, int level, fl
     // Native coordinate-target creation advances both axes for a zero ray.
     if (velocity > 0 && (target - start).length() < .001f) target = start + Vec{1, 1};
     ClientMissile effect{id, start, (target - start).unit() * (float(velocity) * 25.f / 4096.f),
-        -std::max(0.f, delay), duration, target - start};
+        -delay, duration, target - start};
     effect.flight = true; effect.level = level; effect.velocityFixed = velocity;
     effect.acceleration = program.acceleration; effect.owner = owner; effect.hostile = hostile; effect.pierce = pierce;
     effect.soundEmitter = {(uint64_t{1} << 63) | ++nextClientMissile_};
@@ -90,9 +94,9 @@ void SceneView::advanceClientMissiles(float dt, const Grid &grid, Vec origin,
     };
     auto impact = [&](const ClientMissile &effect, const ClientMissileProgram &program, float overshoot) {
         // These are client contact images, not confirmation of damage or debuffs.
-        const int main = program.hitFunction == 14 || program.hitFunction == 3
+        const int main = program.hitFunction == 14 || program.hitFunction == 3 || program.hitFunction == 1 || program.hitFunction == 32
             ? program.hitChildren[0] : program.explosion;
-        emit(main, effect.pos, {}, effect, overshoot);
+        if (!assets_.meteorVisuals.contains(effect.missileId)) emit(main, effect.pos, {}, effect, overshoot);
         const auto first = clientMissiles_.size();
         createMissileImpactVisuals(effect.missileId, effect.pos);
         for (size_t index = first; index < clientMissiles_.size(); ++index) {
@@ -170,6 +174,9 @@ void SceneView::advanceClientMissiles(float dt, const Grid &grid, Vec origin,
                 fraction = low; wall = true;
             }
             const Vec start = effect.pos;
+            if (program.function==6 && !program.childServerSent &&
+                (!frame || int(start.x)!=int(next.x) || int(start.y)!=int(next.y)))
+                emit(program.children[0],{float(int(start.x))+.5f,float(int(start.y))+.5f},{},effect,childAge);
             std::vector<std::pair<float, const ClientMissileTarget *>> contacts;
             if (program.collide && program.function != 19)
                 for (const auto &target : targets) {
@@ -205,7 +212,8 @@ void SceneView::advanceClientMissiles(float dt, const Grid &grid, Vec origin,
                 for (int direction = 0; direction < 64; direction += program.hitParameters[0])
                     emit(program.hitChildren[0], anchor, missileRingDirection(direction), effect,
                         std::max(0.f, effect.age - effect.duration));
-            } else if (program.explodeOnExpiry) impact(effect, program, std::max(0.f, effect.age - effect.duration));
+            } else if (program.explodeOnExpiry || (program.function==9 && program.hitFunction==18))
+                impact(effect, program, std::max(0.f, effect.age - effect.duration));
             finished = true;
         }
         if (!finished && clientMissiles_.size() < 2048) clientMissiles_.push_back(std::move(effect));

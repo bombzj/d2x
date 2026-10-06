@@ -28,16 +28,19 @@ class RemoteCombat {
     std::map<std::string, DataTable, std::less<>> tables_;
     std::map<uint16_t, size_t> skills_, stats_, monsters_;
     std::map<uint8_t, size_t> states_;
+    std::map<std::string, std::set<uint16_t>, std::less<>> innateSkills_;
     std::vector<OnlineCombatSkillView> catalog_;
     std::map<OnlineUnitKey, OnlineCombatUnitStates> unitStates_;
     uint64_t game_{~uint64_t{}}, area_{~uint64_t{}};
     std::string reason_;
     bool reject(std::string);
     std::string_view classCode() const;
+    bool innateSkill(uint16_t) const;
   public:
     RemoteCombat(Archives &, RemoteTown &, net::RealmSession &);
     bool submit(OnlineCombatCommand);
     void update();
+    bool corpseSelectable(const OnlineUnit &) const;
     const auto &skills() const { return catalog_; }
     const auto &states() const { return unitStates_; }
     const auto &reason() const { return reason_; }

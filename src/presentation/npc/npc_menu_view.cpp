@@ -69,6 +69,7 @@ bool SceneView::startNpcTextTopic(uint32_t topic) {
     const auto found=npcView_.textTopics.find(topic);
     if (!view_.npcMenu || found==npcView_.textTopics.end()) return false;
     openNpcDialogue(view_.dialogueObject,view_.dialogueSpeaker,found->second);
+    view_.dialogueTextTopic = topic;
     return true;
 }
 NpcMenuSelection SceneView::clickNpcMenu(Vec mouse) {

@@ -14,7 +14,7 @@ void SceneView::createIceShatter(Vec position, int size) {
     const auto direction = directions[limitedRandom(projectileVisualRandom_, 4)];
     clientMissiles_.push_back({id, position, {}, 0, assets_.projectileVisuals.at(id).lifetime, direction});
     if ((screen(position) - Vec{W / 2.f, (H - HUD) / 2.f}).length() < W)
-        assets_.audio.play("monster-shatter", localSession().state().frame);
+        assets_.audio.play("monster-shatter", multiplayer()?uint64_t(view_.animationTime*25.f):localSession().state().frame);
 }
 void SceneView::createBlizzardFall(int missileId, Vec position) {
     const auto found = assets_.blizzardFalls.find(missileId);

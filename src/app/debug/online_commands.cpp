@@ -11,7 +11,7 @@
 namespace d2x {
 namespace {
 using Json = nlohmann::json;
-constexpr std::array mapInteractionNames{"exit", "door", "portal", "teleport-pad", "waypoint", "npc", "stash", "corpse"};
+constexpr std::array mapInteractionNames{"exit", "door", "portal", "teleport-pad", "waypoint", "npc", "stash", "corpse", "object"};
 constexpr std::array stageNames{"Idle",
                                 "ConnectingAccount",
                                 "AuthChallenge",
@@ -85,6 +85,8 @@ Json snapshot(const OnlineView &v, const OnlineSceneView &scene, const OnlineInv
                        {"unavailableUnits", scene.unavailableUnits},
                        {"effectLimitations", scene.effectLimitations},
                        {"playerDisplayed", scene.playerDisplayed}};
+    result["scene"]["playerDisplayPosition"] = scene.playerDisplayPosition
+        ? Json{{"x", scene.playerDisplayPosition->x}, {"y", scene.playerDisplayPosition->y}} : Json(nullptr);
     result["scene"]["area"] = optional(scene.area);
     result["inventory"] = {{"revision", inventory.revision}, {"gameGeneration", inventory.gameGeneration},
         {"columns", inventory.columns}, {"rows", inventory.rows}, {"beltSlots", inventory.beltSlots},
@@ -187,6 +189,7 @@ Json snapshot(const OnlineView &v, const OnlineSceneView &scene, const OnlineInv
                        {"waypointHistory", optional(v.world.waypointHistory)},
                        {"npcRequested", optional(v.world.npcRequested)},
                        {"townPortalPending", v.world.townPortalPending},
+                       {"itemTargetingSource", optional(v.world.itemTargetingSource)},
                        {"playerSkills", v.world.playerSkills}, {"itemSkillQuantities", v.world.itemSkillQuantities},
                        {"mapEventSequence", v.world.mapEventSequence},
                        {"mapEventFirst", v.world.mapEvents.empty() ? Json(nullptr)
@@ -197,6 +200,23 @@ Json snapshot(const OnlineView &v, const OnlineSceneView &scene, const OnlineInv
                        {"equipment", Json::array()},
                        {"attributes", Json::object()}};
     const auto &social = v.world.social;
+    result["world"]["skillHotkeys"] = Json::array();
+    for (size_t slot=0; slot<v.world.skillHotkeys.size(); ++slot) {
+        const auto &hotkey=v.world.skillHotkeys[slot];
+        result["world"]["skillHotkeys"].push_back(!hotkey ? Json(nullptr) : Json{
+            {"slot",slot}, {"hand",hotkey->hand==OnlineSkillHand::Left ? "left" : "right"},
+            {"skill",hotkey->selection ? Json(hotkey->selection->skill) : Json(nullptr)},
+            {"owner",hotkey->selection ? Json(hotkey->selection->owner) : Json(nullptr)}});
+    }
+    const auto &quests=v.world.quests;
+    result["world"]["questAlerts"] = Json::array();
+    for (const auto &key:v.world.questAlerts)
+        result["world"]["questAlerts"].push_back({{"type",key.type},{"id",key.id}});
+    Json statuses=Json::array(); for (const auto &status:quests.statuses) statuses.push_back(optional(status));
+    result["world"]["quests"]={{"revision",quests.revision}, {"playerFlags",optional(quests.playerFlags)},
+        {"gameFlags",optional(quests.gameFlags)}, {"statuses",std::move(statuses)}, {"updates",quests.updates},
+        {"denRemaining",optional(quests.denRemaining)}, {"staffTombOffset",optional(quests.staffTombOffset)},
+        {"rescuedBarbsRemaining",optional(quests.rescuedBarbsRemaining)}};
     Json roster = Json::array(), relations = Json::array(), chat = Json::array();
     for (const auto &[id, player] : social.players)
         roster.push_back({{"id", id}, {"listed", player.listed}, {"revision", player.revision},
@@ -241,6 +261,8 @@ Json snapshot(const OnlineView &v, const OnlineSceneView &scene, const OnlineInv
                                             {"classId", optional(u.classId)},
                                             {"position", point(u.position)},
                                             {"destination", point(u.destination)},
+                                            {"verifiedDestination", point(u.verifiedDestination)},
+                                            {"pathVerificationRevision", u.pathVerificationRevision},
                                             {"destinationUnit", u.destinationUnit ? Json{{"unitType", u.destinationUnit->type},
                                                 {"unitId", u.destinationUnit->id}} : Json(nullptr)},
                                             {"mode", optional(u.mode)},
@@ -253,6 +275,8 @@ Json snapshot(const OnlineView &v, const OnlineSceneView &scene, const OnlineInv
                                             {"pathType", optional(u.pathType)}, {"pathSteps", optional(u.pathSteps)},
                                             {"pathDistance", optional(u.pathDistance)}, {"velocityPercent", optional(u.velocityPercent)},
                                             {"portalFlags", optional(u.portalFlags)},
+                                            {"objectInteractType", optional(u.objectInteractType)},
+                                            {"objectTargetable", optional(u.objectTargetable)},
                                             {"portalDestination", optional(u.portalDestination)},
                                             {"portalOwner", optional(u.portalOwner)},
                                             {"portalOwnerName", u.portalOwnerName},
@@ -371,9 +395,9 @@ std::string onlineDebugCommand(const std::string &input, net::RealmSession &sess
             return uint8_t(value);
         };
         if (command == "ui-input") {
-            if (presentationPaused || session.read().stage != OnlineStage::ProtocolReady ||
-                !sceneSnapshot().playerDisplayed)
-                throw std::invalid_argument("UI input requires a displayed, running online game");
+            if (presentationPaused || (session.read().stage == OnlineStage::ProtocolReady &&
+                !sceneSnapshot().playerDisplayed && !onlinePlayerDead(session.read().world)))
+                throw std::invalid_argument("UI input requires a displayed frontend or online game");
             auto frames = parseDebugInput(request);
             const auto count = frames.size();
             inputFrames(std::move(frames));
@@ -393,7 +417,7 @@ std::string onlineDebugCommand(const std::string &input, net::RealmSession &sess
         } else if (command == "online-resurrect") {
             control.cancelMovement(); accepted = session.resurrect(); mutation = true;
         } else if (command == "online-select-skill" || command == "online-cast" || command == "online-attack" ||
-                   command == "online-stop-skill" || command == "online-learn-skill" || command == "online-spend-attribute") {
+                   command == "online-stop-skill" || command == "online-learn-skill" || command == "online-spend-attribute" || command == "online-bind-hotkey") {
             auto integer = [&](const char *key, uint64_t max) {
                 const auto &value = request.at(key);
                 if (!value.is_number_integer() || value.get<int64_t>() < 0 || value.get<uint64_t>() > max)
@@ -406,9 +430,10 @@ std::string onlineDebugCommand(const std::string &input, net::RealmSession &sess
             action.hand = hand == "left" ? OnlineSkillHand::Left : OnlineSkillHand::Right;
             action.stationary = request.value("stationary", false); action.repeat = request.value("repeat", false);
             using Action = OnlineCombatCommand::Action;
-            if (command == "online-select-skill" || command == "online-learn-skill") {
-                action.action = command == "online-select-skill" ? Action::SelectSkill : Action::LearnSkill;
+            if (command == "online-select-skill" || command == "online-learn-skill" || command == "online-bind-hotkey") {
+                action.action = command == "online-select-skill" ? Action::SelectSkill : command == "online-bind-hotkey" ? Action::BindHotkey : Action::LearnSkill;
                 action.skill = uint16_t(integer("skillId", UINT16_MAX));
+                if (action.action == Action::BindHotkey) action.hotkeySlot = uint8_t(integer("slot", 15));
             } else if (command == "online-spend-attribute") {
                 action.action = Action::SpendAttribute; action.attribute = uint8_t(integer("statId", 3));
                 action.count = request.contains("count") ? uint8_t(integer("count", 100)) : 1;
@@ -673,7 +698,7 @@ std::string onlineDebugCommand(const std::string &input, net::RealmSession &sess
             combatView["states"].push_back({{"unitType", key.type}, {"unitId", key.id}, {"sequence", value.sequence},
                 {"decoded", value.decoded}, {"reason", value.reason}, {"states", states}});
         }
-        constexpr std::array eventKinds{"Skill", "Hit", "Action", "Overlay", "Missile"};
+        constexpr std::array eventKinds{"Skill", "Hit", "Action", "Overlay", "Missile", "Sound"};
         for (const auto &event : session.read().world.combatEvents) combatView["events"].push_back({{"sequence", event.sequence},
             {"receivedMilliseconds", event.receivedMilliseconds}, {"packet", event.packet}, {"kind", eventKinds.at(size_t(event.kind))}, {"sourceType", event.source.type}, {"sourceId", event.source.id},
             {"target", event.target ? Json{{"type", event.target->type}, {"id", event.target->id}} : Json(nullptr)},
@@ -690,7 +715,7 @@ std::string onlineDebugCommand(const std::string &input, net::RealmSession &sess
             const auto &value = *world.combatRequest;
             combatView["request"] = {{"sequence", value.sequence}, {"state", states.at(size_t(value.state))},
                 {"action", int(value.command.action)}, {"skill", value.command.skill}, {"hand", value.command.hand == OnlineSkillHand::Left ? "left" : "right"},
-                {"statId", value.command.attribute}, {"count", value.command.count}, {"context", context(value.command.context)}};
+                {"statId", value.command.attribute}, {"count", value.command.count}, {"hotkeySlot", value.command.hotkeySlot}, {"context", context(value.command.context)}};
         }
         response["online"]["control"] = {{"reason", control.reason()}, {"approaching", nullptr}, {"navigation", nullptr}};
         response["online"]["control"]["context"] = context(control.intentContext());

@@ -43,14 +43,10 @@ inline Rectangle hudMiniButton(const Sprite &image, int index) {
     return hudRect(328 + index * (image.texture.width + 1), 52 + image.texture.height,
                    float(image.texture.width), float(image.texture.height));
 }
-inline Rectangle hudPickerSlot(bool right, int index, int count) {
-    constexpr float side = 45;
-    constexpr int columns = 6;
-    int rows = (count + columns - 1) / columns;
-    float left = right ? W - 20 - columns * side : 20;
-    return {left + (index % columns) * side,
-            float(H - HUD) - rows * side + (index / columns) * side,
-            side, side};
+inline Rectangle hudPickerSlot(bool right, int column, int row) {
+    constexpr float side = 48;
+    return hudRect(right ? 720 - (column + 1) * side : 90 + column * side,
+                   135 + row * side, side, side);
 }
 inline bool hudSurface(Vec mouse) {
     return mouse.y >= H - HUD || CheckCollisionPointRec(rv(mouse), hudRect(0, 104, 117, 104)) ||

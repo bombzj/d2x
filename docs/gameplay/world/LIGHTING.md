@@ -1,5 +1,7 @@
 # 场景照明
 
+2026-10-06世界绘制收拢：联机入口现由SceneView::drawWorld读取同步WorldDrawView，复用本页既有LightingView／PL2算法；Levels、Objects、MonStats2和Overlay灯光定义由SceneAssets统一读取当前MPQ，显示位置与物件模式来自原服副本及独立表现状态。NPC提示、掉落、弹体和屋顶位于世界光照前，文字／小地图／HUD位于其后。玩家基础半径13加已收到item_lightradius，缺少的装备增量不本地重算。原服昼夜时钟与日蚀状态未接入，暂沿客户端环境推进；下文历史单机来源不构成服务器时序等价。本批仅Release构建／打包，未启动游戏，等待用户验收。
+
 ## 数据入口
 
 - `WorldCatalog` 在运行时从当前 MPQ 的 `Levels.txt` 读取 `IsInside`、`LOSDraw`、`Intensity` 和 RGB。室内使用原表的环境光值，不再用 LOSDraw 选择 19%／27% 底值；户外使用环境昼夜状态，不再固定 53%。`NoPer` 是透视控制，与环境光无关。

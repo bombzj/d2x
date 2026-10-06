@@ -1,5 +1,6 @@
 #include "navigation.hpp"
 #include <algorithm>
+#include <array>
 #include <limits>
 #include <queue>
 #include <stdexcept>
@@ -105,7 +106,15 @@ bool Grid::segment(Vec a, Vec b, EntityId ignoredObject, MovementCollisionRule r
 }
 bool Grid::nativeMovementSegment(Vec a, Vec b, MovementCollisionRule rule) const {
     if (!walkable(a, rule) || !walkable(b, rule)) return false;
+    const auto target = nativeMovementTarget(a, b, rule);
+    return int(std::floor(target.x)) == int(std::floor(b.x)) &&
+        int(std::floor(target.y)) == int(std::floor(b.y));
+}
+Vec Grid::nativeMovementTarget(Vec a, Vec b, MovementCollisionRule rule) const {
+    if (!walkable(a, rule) || !std::isfinite(b.x) || !std::isfinite(b.y) ||
+        b.x < 0 || b.y < 0 || b.x >= width || b.y >= height) return a;
     int x = int(std::floor(a.x)), y = int(std::floor(a.y));
+    Vec last{float(x) + .5f, float(y) + .5f};
     const int endX = int(std::floor(b.x)), endY = int(std::floor(b.y));
     const int dx = std::abs(endX - x), dy = std::abs(endY - y);
     const int sx = endX >= x ? 1 : -1, sy = endY >= y ? 1 : -1;
@@ -114,9 +123,10 @@ bool Grid::nativeMovementSegment(Vec a, Vec b, MovementCollisionRule rule) const
     if (dx == dy) {
         for (int i = 0; i < dx; ++i) {
             x += sx; y += sy;
-            if (!movementClear(x, y, rule)) return false;
+            if (!movementClear(x, y, rule)) return last;
+            last = {float(x) + .5f, float(y) + .5f};
         }
-        return true;
+        return last;
     }
     const bool horizontal = dx > dy;
     const int major = (horizontal ? dx : dy) + 1;
@@ -124,15 +134,85 @@ bool Grid::nativeMovementSegment(Vec a, Vec b, MovementCollisionRule rule) const
     int deviation = minor;
     for (int i = 0; i < major - 1; ++i) {
         if (horizontal) x += sx; else y += sy;
-        if (!movementClear(x, y, rule)) return false;
+        if (!movementClear(x, y, rule)) return last;
         deviation += minor;
         if (deviation >= major) {
             deviation -= major;
             if (horizontal) y += sy; else x += sx;
-            if (deviation && !movementClear(x, y, rule)) return false;
+            if (deviation && !movementClear(x, y, rule)) return last;
         }
+        last = {float(x) + .5f, float(y) + .5f};
     }
-    return true;
+    // PATH_RayTrace only writes its destination on collision. Its biased
+    // raster can visit a neighbouring cell on the last major-axis step;
+    // that cell is not the path target when the whole ray succeeds.
+    return {float(endX) + .5f, float(endY) + .5f};
+}
+std::deque<Vec> Grid::nativePlayerPath(Vec from, Vec to, MovementCollisionRule rule) const {
+    if (!walkable(from, rule) || !std::isfinite(to.x) || !std::isfinite(to.y) ||
+        to.x < 0 || to.y < 0 || to.x >= width || to.y >= height) return {};
+    // D2MOO PathMisc (MIT, docs/licenses/D2MOO.txt): Straight first uses
+    // the biased collision ray, then Toward's three direction priorities.
+    // The 73-step player bound and 18-cell AStar scope are path policy,
+    // not artificial packet destinations or authoritative movement.
+    constexpr std::array<std::array<int,3>,25> directions{{
+        {5,4,6},{4,5,6},{4,3,5},{4,3,2},{3,4,2},
+        {6,5,4},{5,4,6},{4,3,5},{3,4,2},{2,3,4},
+        {6,7,5},{6,7,5},{6,7,5},{2,1,3},{2,1,3},
+        {6,7,0},{7,0,6},{0,1,7},{1,0,2},{2,1,0},
+        {7,0,6},{0,7,6},{0,1,7},{0,1,2},{1,0,2}}};
+    constexpr std::array<int,8> offsetX{1,1,0,-1,-1,-1,0,1}, offsetY{0,1,1,1,0,-1,-1,-1};
+    constexpr std::array<int,64> distances{
+        -1,-1,-1,0,2,4,6,8, -1,-1,0,1,2,4,6,8,
+        -1,0,0,2,3,5,7,8, 0,1,2,2,4,5,7,8,
+        2,2,3,4,5,6,7,9, 4,4,5,5,6,7,8,9,
+        6,6,7,7,7,8,10,10, 8,8,8,8,9,9,10,11};
+    const int gx = int(std::floor(to.x)), gy = int(std::floor(to.y));
+    const int sx = int(std::floor(from.x)), sy = int(std::floor(from.y));
+    auto distance = [&](int x, int y) {
+        const int dx = std::abs(gx-x), dy = std::abs(gy-y);
+        return dx >= 8 || dy >= 8 ? std::max(dx,dy)*2 + std::min(dx,dy)
+            : std::max(0, distances[size_t(dx+8*dy)] + 1);
+    };
+    const auto clipped = nativeMovementTarget(from, to, rule);
+    int x = int(std::floor(clipped.x)), y = int(std::floor(clipped.y));
+    std::deque<Vec> toward;
+    if (x != sx || y != sy) toward.push_back(clipped);
+    if (distance(x,y) <= 1) return toward;
+    int previous = -1;
+    bool lastTurn = false;
+    int steps = 0;
+    auto directionIndex = [&](int x, int y) {
+        int dx = gx-x, dy = gy-y;
+        const int ax = std::abs(dx), ay = std::abs(dy);
+        if (ax < 2*ay) {
+            if (ay >= 2*ax) {
+                if (dx < 0) return dy < -1 ? 5 : std::min(dy,2)+7;
+                dx &= 1;
+            }
+        } else dy = dy >= 0 ? dy & 1 : -1;
+        dx = std::clamp(dx,-2,2);
+        return dy < -1 ? 5*dx+10 : std::min(dy,2)+5*dx+12;
+    };
+    for (; steps < 73 && (x != gx || y != gy); ++steps) {
+        lastTurn = false;
+        const int index = directionIndex(x,y);
+        int selected = -1;
+        for (int d : directions[size_t(index)])
+            if (movementClear(x+offsetX[d],y+offsetY[d],rule)) { selected=d; break; }
+        if (selected < 0 || ((selected+4)&7) == previous) break;
+        lastTurn = selected != previous;
+        if (lastTurn && (x != sx || y != sy)) toward.push_back({float(x)+.5f,float(y)+.5f});
+        x += offsetX[selected]; y += offsetY[selected]; previous=selected;
+    }
+    if (steps && !lastTurn) toward.push_back({float(x)+.5f,float(y)+.5f});
+    if (!toward.empty() && distance(int(toward.back().x),int(toward.back().y)) <= 1) return toward;
+    const int dx = gx-sx, dy = gy-sy;
+    if (dx*dx + dy*dy <= 18*18) {
+        auto detour = path(from,to,true,rule,true);
+        if (!detour.empty()) return detour;
+    }
+    return toward;
 }
 bool Grid::missileSegment(Vec a, Vec b, MissileCollisionRule rule) const {
     // D2MOO COLLISION_CheckMaskWithSize: 0/1 point, 2 cross, 3 square.

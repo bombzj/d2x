@@ -1,6 +1,7 @@
 #pragma once
 #include "resources/archive.hpp"
 #include "resources/formats.hpp"
+#include "contracts/map.hpp"
 #include <array>
 #include <map>
 #include <string>
@@ -24,6 +25,9 @@ class AutomapCatalog {
   public:
     explicit AutomapCatalog(Archives &archives);
     int tileCel(int levelType, const MapCell &cell, int x, int y) const;
+    // A visible tile identity; native DT1 instances need no DS1 occupancy bits.
+    std::vector<int> cellCels(int levelType, const MapCell &, int x, int y) const;
+    std::vector<AutomapStamp> stamps(const MapData &, int levelType) const;
     int objectCel(int objectClass) const;
     int npcCel(std::string_view monsterClass) const;
 };

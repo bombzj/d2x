@@ -316,7 +316,7 @@ ClassicData loadClassicData(Archives &archives) {
         }
         for (const auto &[key, value] : strings.entries())
             if ((key.size() >= 7 && key.starts_with("qstsa") && key[5] >= '1' && key[5] <= '5' && key[6] == 'q') || key.starts_with("qsta5q1") || key == "newquestlog" ||
-                key == "qstsComplete" || key == "noactivequest")
+                key.starts_with("qsts") || key == "noactivequest")
                 data.questStrings.emplace(key, value);
             else if (key.starts_with("merc"))
                 data.hirelingStrings.emplace(key, value);

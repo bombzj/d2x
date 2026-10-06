@@ -3,6 +3,7 @@
 #include <charconv>
 #include <filesystem>
 #include <stdexcept>
+#include <random>
 
 namespace d2x {
 AppOptions parseOptions(int argc, char **argv) {
@@ -20,6 +21,7 @@ AppOptions parseOptions(int argc, char **argv) {
         else if (arg == "--online-config") options.onlineConfig = value();
         else if (arg == "--debug-pipe") options.debugPipe = value();
         else if (arg == "--online-character") options.onlineCharacter = value();
+        else if (arg == "--online-play") options.onlinePlay = value();
         else if (arg == "--online-create-game") options.onlineCreateGame = value();
         else if (arg == "--online-join-game") options.onlineJoinGame = value();
         else if (arg == "--screenshot") options.screenshot = value();
@@ -40,6 +42,12 @@ AppOptions parseOptions(int argc, char **argv) {
                  arg == "--inventory" || arg == "--stash" || arg == "--skills")
             throw std::runtime_error(arg + " is a retired local-game option; select a server character instead");
         else throw std::runtime_error("Unknown option: " + arg);
+    }
+    if (!options.onlinePlay.empty()) {
+        if (!options.onlineCharacter.empty() || !options.onlineCreateGame.empty() || !options.onlineJoinGame.empty())
+            throw std::runtime_error("--online-play cannot be combined with manual quick-entry options");
+        options.onlineCharacter = options.onlinePlay;
+        options.onlineCreateGame = "d2x" + std::to_string(std::random_device{}());
     }
     if (!options.onlineCreateGame.empty() && !options.onlineJoinGame.empty())
         throw std::runtime_error("Choose either --online-create-game or --online-join-game");

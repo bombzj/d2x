@@ -12,11 +12,14 @@
 #include "presentation/graphics/primitives.hpp"
 #include <set>
 #include <memory>
+#include <tuple>
 
 namespace d2x {
 class GameSession;
 class MonsterCatalog;
 class WorldCatalog;
+struct LevelRecord;
+struct Map;
 struct MonsterRecord;
 struct Region;
 struct WorldObject;
@@ -29,6 +32,8 @@ class SceneAssets {
     Archives &archives_;
     Table objectDefinitions_;
     std::unique_ptr<DataTable> missileDefinitions_;
+    std::unique_ptr<DataTable> combatSounds_;
+    std::map<std::string, size_t, std::less<>> combatSoundRows_;
     std::map<int, size_t> missileRows_;
     void loadProjectileDefinitions(const ClassicData &);
     mutable std::map<std::pair<int, int>, WorldObject> decorations_;
@@ -39,6 +44,11 @@ class SceneAssets {
     Graphics uiGraphics_;
     Graphics unitsGraphics_;
     AutomapCatalog automapCatalog_;
+    std::unique_ptr<WorldCatalog> worldDefinitions_;
+    mutable std::vector<const Tile *> worldTileSources_;
+    mutable std::vector<Sprite> worldTiles_;
+    mutable int worldTilePalette_ = -1;
+    void loadWorldLightDefinitions();
     // One entry per implemented monster art set. Built without touching the MPQ so
     // the first sighting of a class uploads its own frames instead of the whole act.
     struct MonsterArtSource {
@@ -62,6 +72,8 @@ class SceneAssets {
                           std::map<std::string, GpuAnimation> &animations) const;
     void loadHirelingAnimations(Archives &archives, const GameSession &session);
     void loadUi(Archives &, const ClassicData &, bool multiplayer);
+    void loadNpcAlert(const DataTable &);
+    void loadIceShatter();
     void loadSkillIcons(Archives &archives, const ClassicData &content);
     void loadAutomap(const IMapAssetSource &source);
     std::string heroKey_;
@@ -70,9 +82,7 @@ class SceneAssets {
     std::string heroFailure_;
 
   public:
-    struct AutomapStamp {
-        int x = 0, y = 0, cel = -1;
-    };
+    ~SceneAssets();
     SoundBank audio;
     ClassicFont font, speechFont;
     struct SkillIcon {
@@ -127,10 +137,7 @@ class SceneAssets {
     Sprite attackIcon;
     // Region tiles and prop art are uploaded the first time their region is drawn,
     // so a session no longer pays for every level in the act up front.
-    mutable std::vector<std::vector<Sprite>> regionTiles;
     std::vector<std::vector<const Tile *>> regionTileSources;
-    std::vector<int> regionPalettes_;
-    mutable std::vector<bool> regionTilesUploaded;
     std::vector<bool> regionAutomapLoaded;
     void syncRegions(const IMapAssetSource &source);
     std::set<std::string, std::less<>> propArtKeys;
@@ -140,8 +147,12 @@ class SceneAssets {
     std::vector<std::vector<AutomapStamp>> regionAutomap;
     uint64_t automapContentFingerprint = 0;
     // 0: original maximaps.dc6, 1: original maximap.dc6.
-    std::array<std::map<int, Sprite>, 2> automapCels;
+    mutable std::array<std::map<int, Sprite>, 2> automapCels;
+    mutable std::map<std::tuple<int, int, bool>, std::vector<Sprite>> townAutomapArt;
     std::vector<std::array<std::vector<Sprite>, 2>> regionTownAutomap;
+    std::vector<int> regionAutomapVariants;
+    struct MonsterLight { int radius = 0; Color color{0, 0, 0, 255}; };
+    std::map<int, MonsterLight> monsterLights;
     // Filled on first sighting; mutable so the const draw path can populate them.
     mutable std::map<std::string, GpuAnimation> propAnimations, npcWalkAnimations, hero;
     std::map<std::string, GpuAnimation> hirelingAnimations;
@@ -190,6 +201,7 @@ class SceneAssets {
     SceneAssets(Archives &archives, const ClassicData &content);
     const ProjectileVisual *ensureProjectile(int id);
     const SkillOverlayVisual *ensureOverlay(int id);
+    bool playOriginalCombatSound(std::string_view name, uint64_t frame);
     void loadInventoryArt(const InventoryView &inventory, int palette);
     SceneAssets(Archives &archives, const GameSession &session, const IMapAssetSource &source);
     static std::string itemArtKey(const ItemInstance &item);
@@ -202,7 +214,6 @@ class SceneAssets {
                                                                    const MonsterIdentity *identity = nullptr,
                                                                    const MonsterEnchantment *enchantment = nullptr) const;
     // Region terrain uploads on first draw, and prop art on first sighting.
-    const std::vector<Sprite> &regionTileSprites(size_t index) const;
     void ensurePropArt(const WorldObject &object) const;
     const WorldObject &clientDecoration(int id, int palette) const;
     // True when the region tables promise art for this key; the draw path builds it.
@@ -213,7 +224,12 @@ class SceneAssets {
     void loadHeroEquipment(const GameSession &session);
     const std::string &heroAppearanceError() const { return heroFailure_; }
     int automapObjectCel(int objectClass) const { return automapCatalog_.objectCel(objectClass); }
+    const Sprite *automapSprite(int cel, bool large) const;
+    const std::vector<Sprite> &townAutomapSprites(int level, int variant, bool large) const;
     int automapNpcCel(std::string_view monsterClass) const { return automapCatalog_.npcCel(monsterClass); }
+    const LevelRecord &worldLevel(int id) const;
+    const std::vector<Sprite> &worldTileSprites(const Map &, int palette) const;
+    void resetWorldTiles() { worldTileSources_.clear(); worldTiles_.clear(); worldTilePalette_ = -1; }
     void collectMapVariants(Archives &archives, const WorldCatalog &catalog, const MonsterCatalog &monsters, uint32_t mapSeed, uint32_t objectSeed);
     void loadMonsterAudio(Archives &archives, const MonsterCatalog &monsters);
 };

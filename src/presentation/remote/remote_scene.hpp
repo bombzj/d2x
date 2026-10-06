@@ -15,10 +15,12 @@ class RemoteCombat;
 struct RemoteMapDisplayState {
     bool visible{}, large{true}, right{true};
     bool running{true}; // Session preference survives terrain/act renderer replacement.
+    bool movementHeld{}; // Transient ground gesture; cleared at game/area-generation changes.
     Vec offset;
 };
 struct RemoteSceneIntent {
     std::optional<OnlinePoint> move;
+    std::optional<Vec> moveOrigin; // Pointer projection, not a replacement for the server replica.
     std::optional<OnlineUnitKey> interact;
     std::optional<OnlineCombatCommand> combat;
     std::optional<ItemHandle> pickup;
@@ -38,7 +40,9 @@ class RemoteScene {
     int renderedUnits() const;
     int unavailableUnits() const;
     bool playerDisplayed() const;
+    std::optional<Vec> playerDisplayPosition() const;
     std::vector<std::string> effectLimitations() const;
     void combatSubmitted(bool accepted);
+    void movementSubmitted(bool accepted);
 };
 } // namespace d2x

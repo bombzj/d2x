@@ -65,6 +65,7 @@ const CharacterView &LocalCharacterClient::read() const {
         if (entry.classCode != view.classCode && !entry.classCode.empty() && !session_.skillAvailable(id)) continue;
         CharacterSkillView skill;
         skill.id = id; skill.page = entry.page; skill.row = entry.row; skill.column = entry.column;
+        skill.listRow = entry.listRow; skill.listPool = entry.listPool; skill.iconCell = entry.iconCell;
         skill.classCode = entry.classCode; skill.name = entry.name;
         const auto learned = p.character.skillRanks.find(id);
         skill.baseRank = learned == p.character.skillRanks.end() ? 0 : learned->second;
@@ -74,6 +75,16 @@ const CharacterView &LocalCharacterClient::read() const {
         skill.passive = entry.passive; skill.leftAllowed = entry.leftAllowed;
         skill.available = session_.skillAvailable(id); skill.canAllocate = session_.canAllocateSkill(id);
         skill.usableNow = !p.actions.dead && entry.executable() && skill.available && (!safe || entry.allowedInTown);
+        skill.pickerEnabled = !p.actions.dead && skill.available &&
+            (entry.executable() || entry.sourceName == "Unsummon");
+        if (entry.basicAction == BasicSkillAction::Throw || entry.basicAction == BasicSkillAction::LeftHandThrow) {
+            const bool leftHand = entry.basicAction == BasicSkillAction::LeftHandThrow;
+            const auto *item = session_.usableEquipment(weaponHandSlot(leftHand, view.weaponSet));
+            if (!item && !leftHand) item = session_.usableEquipment(weaponHandSlot(true, view.weaponSet));
+            const auto *definition = item ? content.items.find(item->definition) : nullptr;
+            skill.pickerEnabled &= definition && definition->equipment.throwable && item->quantity > 0;
+            skill.usableNow &= skill.pickerEnabled;
+        }
         std::optional<AuraDefinition> aura;
         if (entry.auraImplemented && skill.effectiveRank > 0) {
             // The HUD cost previously resolved the aura without mastery/synergy arguments.

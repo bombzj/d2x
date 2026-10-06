@@ -141,6 +141,7 @@ GpuAnimation Graphics::composite(const std::string &type, const std::string &tok
             ++omitted;
             continue;
         }
+        if (type == "chars" && equipment && !(*equipment)[c][0]) return {};
         std::string gear = c == 5 ? "ssd" : c == 7 ? (token == "ba" ? "kit" : "buc") : "lit";
         if (token == "zm" && c == 10)
             gear = "bld";
@@ -150,10 +151,11 @@ GpuAnimation Graphics::composite(const std::string &type, const std::string &tok
         auto part = animation(path);
         if (!part && !archives.contains(path))
             part = animation(path.substr(0, path.size() - 4) + ".dc6");
-        if (!part && c == 7 && type != "chars")
+        const bool explicitComponent = equipment && (*equipment)[c][0];
+        if (!part && c == 7 && type != "chars" && !explicitComponent)
             part =
                 animation(base + codes[c] + "/" + token + codes[c] + "buc" + mode + cof.weapons[i] + ".dcc");
-        if (!part && c == 5 && type != "chars")
+        if (!part && c == 5 && type != "chars" && !explicitComponent)
             part =
                 animation(base + codes[c] + "/" + token + codes[c] + "axe" + mode + cof.weapons[i] + ".dcc");
         if (part)

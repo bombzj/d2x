@@ -231,63 +231,6 @@ void SceneView::drawEnemyBar(std::string_view title, std::optional<float> life,
     while (descriptionSize > 1 && painter_.measure(details, descriptionSize) > W - 40) --descriptionSize;
     if (!details.empty()) painter_.centered(details, 45, descriptionSize, color);
 }
-void SceneView::draw(Vec mouse) const {
-    const auto &map = localSession().map();
-    const auto &sim = localSession().state();
-
-    ClearBackground({10, 13, 11, 255});
-    BeginScissorMode(0, 0, W, H - HUD);
-    drawTerrain(mouse);
-    if (view_.debug) {
-        for (int y = 0; y < map.grid.height; y++)
-            for (int x = 0; x < map.grid.width; x++) {
-                auto p = screen({x + .5f, y + .5f});
-                if (p.x < 0 || p.x > W || p.y < 0 || p.y > H - HUD)
-                    continue;
-                if (!map.grid.walkable(x, y))
-                    diamond(p, 7, {213, 65, 42, 90});
-            }
-        for (auto p : sim.player.movement.route)
-            DrawCircleV(rv(screen(p)), 3, GREEN);
-    }
-    drawActors(mouse);
-    drawLighting();
-    drawLootLabels(mouse);
-    drawExitHint(mouse);
-    drawObjectHint(mouse);
-    EndScissorMode();
-    if (view_.automap)
-        drawMinimap(view_.automapLarge);
-    drawHud();
-    if (!view_.capturesWorldInput() && !view_.inventory.drag && (view_.combatTarget ||
-        (!hudSurface(mouse) && CheckCollisionPointRec(rv(mouse), worldViewport())))) {
-        for (const auto &monster : visibleMonsters()) {
-            const auto &enemy = *monster.enemy;
-            if (enemy.hp <= 0 ||
-                (view_.combatTarget ? enemy.id != view_.combatTarget :
-                    (screen(monster.position) - Vec{0, 25} - mouse).length() >= 24))
-                continue;
-            const auto &identity = enemy.identity;
-            const auto *record = localSession().monsterContent().find(identity.monster);
-            const auto *unique = localSession().monsterContent().superUnique(identity.superUnique);
-            const auto &strings = localSession().content().itemStrings; // Original merged TBL strings.
-            const auto key = unique ? unique->name : record ? record->name : std::string{};
-            const auto name = strings.find(key);
-            if (name == strings.end() || name->second.empty()) continue;
-            const auto title = unique ? name->second : monsterDisplayName(localSession().content(), identity, name->second, enemy.enchantmentData());
-            Color titleColor = WHITE;
-            if (identity.rank == MonsterRank::Champion)
-                titleColor = {105, 105, 255, 255};
-            else if (identity.rank == MonsterRank::Unique || identity.rank == MonsterRank::SuperUnique ||
-                     identity.rank == MonsterRank::Boss)
-                titleColor = {199, 179, 119, 255};
-            const auto description = monsterModifierDescription(localSession().content(), identity, enemy.enchantmentData());
-            drawEnemyBar(title, enemy.hp / std::max(1.f, enemy.maxHp), description, titleColor);
-            break;
-        }
-    }
-    drawUi(mouse);
-}
 void SceneView::drawDeathNotice() const {
     if (!characterView_.dead) return;
     painter_.centered("YOU HAVE DIED", 250, 32, {187, 46, 30, 255});

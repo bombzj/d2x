@@ -1,6 +1,6 @@
 # Windows 调试命令
 
-直接运行 EXE 时，调试管道仅在指定 `--debug-pipe` 时启用，始终启动为运行状态；Play.cmd 默认开启 `d2x-debug`。当前产品只接受联机命令和测试表现 pause/resume，不再提供本地授予／存档／单步玩法入口。本批已 Windows Release 构建并更新运行包；暂停、ESC菜单与库存 UI 输入有有限原服证据，快捷记忆登录尚未复验。
+直接运行 EXE 时，调试管道仅在指定 `--debug-pipe` 时启用，始终启动为运行状态；Play.cmd 默认开启 `d2x-debug`。当前产品只接受联机命令和测试表现 pause/resume，不再提供本地授予／存档／单步玩法入口。本批已 Windows Release 构建并更新运行包；暂停、ESC菜单、快捷记忆登录及库存UI有有限原服证据；自己游玩后续新增原服快捷键和任务诊断，范围见联网模块。
 
 ## 联网命令
 
@@ -10,7 +10,7 @@
 
 | 命令 | 参数与结果 |
 | --- | --- |
-| `ui-input` | 复用既有FrameInput诊断格式：x／y逻辑坐标、button=left／right、leftHeld／leftReleased／rightHeld、key、shift／control／focused等；frames可一次排队1–32帧，每绘制帧消费一项。只允许已显示、未测试暂停的局内UI；退局／游戏或区域代次切换／暂停清队列，普通控制器提交原服意图，不直接改权威副本 |
+| `ui-input` | 复用既有FrameInput诊断格式：x／y逻辑坐标、button=left／right、leftHeld／leftReleased／rightHeld、key、shift／control／focused等；frames可一次排队1–32帧，每绘制帧消费一项。允许局前页面及已显示、未测试暂停的局内UI；游戏或区域代次切换／暂停清队列，普通控制器提交原服意图，不直接改权威副本 |
 | `pause` / `resume` | 只在显式调试管道启用；pause要求在线ProtocolReady，冻结画面和界面输入。回执presentationPaused／networkRunning=true／serverPaused=false；不暂停原服，恢复采用最新副本，旧动作不重放 |
 | `online-status` | 顶层presentationPaused；online.protocol按SID／MCP／game返回包ID、received／sent／unconsumed、逻辑字节数和lastReceived；只读 `online`：stage、error、revision、connectionGeneration、gameGeneration、Realm／角色／游戏列表、load、延迟（首个pong前null）、gameQueuePosition、gameListComplete、world／scene；联网模式的 `status` 是其别名 |
 | `online-social` / `online-chat` | 同一完整只读快照的world.social：名册身份及字段可用性、队伍／关系原值、公开位置、聊天原语言nameBytes／textBytes；尚无发送及组队／聊天UI，不能据此认证M4 |
@@ -21,13 +21,14 @@
 | `online-item-action` | action和真实itemId，可选itemRevision／targetRevision；配对动作还需targetId。27种原物品／城镇请求及格子／部位参数见[联网物品操作](#联网物品操作)，accepted仅入队 |
 | `online-combat` / `online-skills` | 只读同一快照；combat.skills列MPQ技能名、基础／装备加成／有效等级、innate、左右键／城镇资格；combat.states列原服状态和原单位属性；combat.events为最多256条有序战斗事件，sequence递增，消费者自行检查缺口；0x73首路径点为missileDestination（旧missileOrigin名称已更正），不是飞弹出生点 |
 | `online-select-skill` | skillId（0–65535）、hand（left／right，默认right）；当前MPQ及服务端有效等级校验，原0x3C选择，等combat.request.state=Confirmed再施放。不支持带物品GUID的充能技能 |
+| `online-bind-hotkey` | slot（0–15）、skillId、hand；校验当前MPQ主动技能和原服有效等级，原0x51保存绑定，无即时ACK，request为SentNoAck；重入world.skillHotkeys读取0x7B。UI使用F1–F8，物品GUID技能暂未开放 |
 | `online-cast` | hand；坐标x／y或真实unitId／unitType（默认1）二选一。stationary默认false；单位目标false允许原服靠近，true原地请求。repeat默认false，true发原Hold包一次，调用方负责继续提交／停止，不创建客户端循环。各轴≤50、活动地图及MPQ城镇限制，当前单位目标限PvE敌对怪物／符合技能的尸体；自施技能用本人坐标 |
 | `online-attack` | 同cast目标及stationary／repeat，固定左手；先选择MPQ Attack技能并等确认。伤害、追击与命中由原服处理 |
 | `online-stop-skill` | 发原0x12停止地狱火状态；停止重复提交Hold请求由调用方负责。这不是全部技能的通用撤销包 |
 | `online-learn-skill` | skillId；检查职业、已学前置、等级、属性、MPQ最大等级和原服可用点。原0x3B，等待基础技能等级增加；原服无通用失败包，超时结果未知，不自动重试 |
 | `online-spend-attribute` | statId：0力量／1精力／2敏捷／3体力；count：1–100，默认1，需有足够原服属性点。原0x3A打包count-1于高字节，等待对应绝对属性增加 |
-| `online-move` | x、y为服务端全局subtile整数（0–65535），run默认true；ProtocolReady、角色存活、目标通过完整玩家尺寸活动碰撞且各轴距本人≤50时接受。最新源码复用共同寻路并分段发0x01／0x03，短段≤18、至少间隔100ms，依原服位置推进；accepted为首段发送成功，不表示已到达 |
-| `online-move-to-unit` | unitId、unitType（默认2，支持1／2／5）、run（默认true）；限定当前scene.mapTargets真实单位及各轴50-subtile范围。最新源码远处先分段移动，进入18-subtile范围后发原0x02／0x04跟随单位，不发交谈 |
+| `online-move` | x、y为服务端全局subtile整数（0–65535），run默认true；ProtocolReady、角色存活、目标属于已加载原地图且各轴距本人采样≤50时接受。直接发原0x01／0x03目标，至少间隔100ms，不切18格短段等待回包；可达点／障碍由原服处理。accepted表示命令已发送，不表示已到达；鼠标使用同帧显示坐标作投影范围提示，原服仍按真实位置校验50格范围 |
+| `online-move-to-unit` | unitId、unitType（默认2，支持1／2／5）、run（默认true）；限定当前scene.mapTargets真实单位及各轴50-subtile范围，直接发原0x02／0x04跟随真实GUID，不发交谈 |
 | `online-use-exit` | unitId为online-world返回的真实type5单位ID，要求原生地图可用／角色存活；发送0x13交互，不接受用LvlWarp类型编号替代单位ID |
 | `online-interact` | unitId、unitType（默认2，支持1／2／5）、run（NPC靠近默认true）；目标必须在scene.mapTargets中。地图对象发原0x13；NPC远处先按GUID移动，服务端确认到原交谈距离后才0x13；accepted不代表已操作、交谈打开或换区 |
 | `online-town-portal` | 无参数；要求存活／原生地图可移动／非城镇及原服已报告可用卷轴或书技能、右技能。选原右技能并施放，后续world.townPortalPending及实际type2门户回包给出等待／分配状态；不发放卷轴 |
@@ -56,11 +57,13 @@
 
 源码联机地图诊断另含 `scene.nativeMapReady/nativeMapReason` 及 `world.mapEventSequence/mapEventFirst/mapEventCount`。有序队列在每次 LOADACT 清空，最多保留4096条房间／玩家位置事件；消费者发现缺口后停止原生重建，需重新入局。Trees 已知缺损末组按最新要求作零尺寸兼容，保留14组抽签，诊断为 groups=14／declared=14／zeroFilled=1；原预设地标绑定成功不代表野外重建通过。当前包包含这些字段。
 
+行走诊断：`scene.playerDisplayPosition`是当前实际绘制的全局浮点坐标，与`world.playerPosition`的原服整数采样分开。本人`units.verifiedDestination/pathVerificationRevision`保存原0x18／95／96有符号偏移还原的路径目标和本地回包代次；没有原协议请求序号，代次较新不能证明属于最新鼠标意图。仅最新回包目标与当前意图一致（含相邻格）时适配显示终点，初始无有效路径的偏移不可当作可达点。预测超时按15秒无原服位置进展判断，不能用两次采样间角色显示超前直接认定服务端拒绝。位置校正、原停止／受击／死亡不屏蔽。
+
 最新源码`scene.effectLimitations`为本幕遇到的未支持技能／弹体客户端程序、发射数量公式及0x73标志说明数组，换幕清空；缺效果不妨碍原服结算。空数组不代表所有技能效果已认证。死亡诊断含`world.dead/deathPhase/deathRevision/respawnRequest/corpses`；corpse记录unitId／owner／owned／position，空间隐藏时position可空，归属等原0x8E解除。type0只开放本人尸体的交互／单位靠近，不能用于任意玩家。这些字段及共用弹体／死亡改动已入包；respawnRequest另含restoredResources位组（生命／法力／耐力）与repositioned，用于确认原服资源恢复和0x15组合。实际有限验证及最新未复验范围见联网模块。
 
 修改命令立即返回 `accepted` 和当时的 `online` 快照，不等待网络完成。后续查询 `online-status`：例如登录完成后为 CharacterSelection，选角完成后为 Lobby；ProtocolReady 只代表入局协议初始化，`worldDisplayAvailable` 由活动地图重建及资源加载决定；还须查看 scene.movementAvailable／playerDisplayed，未匹配时 scene.reason 说明原因。阶段不允许时返回 ok=false；错误回复／超时可从后续状态读取。可附带 connectionGeneration／gameGeneration／areaGeneration／interactionGeneration，代次不符则拒绝迟到命令。当前源码回执另有 uiQueue.inputFrames／itemCommands／waitingItemRequest；world.interactionGeneration、库存与战斗 request.context、control.context 可定位本地意图来源。这些代次不是原协议事务号，旧队列取消不表示撤销原服已执行操作。响应不回显请求、密码、CD key、角色票据或原始世界包。
 
-快照含`control.reason/approaching`、`world.movementRequest/npcRequested/townPortalPending/playerSkills/itemSkillQuantities/rightSkill`、单位`destinationUnit/positionRevision/positionDiscontinuity/actionRevision/pathType/pathSteps/pathDistance/velocityPercent`及`scene.town/townPortalSkills/npcConversation`。单位位置仍是权威坐标，显示层连续路径不写回快照；NPC行走pathDistance不是生命比例。新增源码`control.navigation`为null或包含goal（最终全局坐标）、segment（当前坐标短段）与target（单位目标）的只读对象，结束推进后为null；最终GUID靠近请求仍见world.movementRequest。当前包包含分段修正及诊断；最新鼠标交互修正按用户要求未运行复验。交谈投影含source／revision／speaker／travelLabel和messages的stringId／menu／text／acknowledged，文字读当前MPQ；并非离线NPC服务投影。按GUID查询mapTargets后提交命令，无需手造NPC或门户ID。
+快照含`control.reason/approaching`、`world.movementRequest/npcRequested/townPortalPending/playerSkills/itemSkillQuantities/rightSkill`、单位`destinationUnit/positionRevision/positionDiscontinuity/actionRevision/pathType/pathSteps/pathDistance/velocityPercent`及`scene.town/townPortalSkills/npcConversation`。单位位置仍是权威坐标，显示层连续路径不写回快照；NPC行走pathDistance不是生命比例。`control.navigation`为null或包含goal（最终全局坐标）、segment（保留兼容名称，当前等于完整坐标终点）与target（单位目标）的只读对象，结束推进后为null；GUID靠近请求见world.movementRequest。当前包包含完整终点发送、拖动方向和显示跨格修正；最新行走验收按用户要求留给用户。交谈投影含source／revision／speaker／travelLabel和messages的stringId／menu／text／acknowledged，文字读当前MPQ；并非离线NPC服务投影。按GUID查询mapTargets后提交命令，无需手造NPC或门户ID。
 
 本机测试账号为 `bomb / 1qaz2wsx`、`bomb2 / 1qaz2wsx`，用户授权记入文档，仅用于测试。按以下顺序手工调用：
 
@@ -189,6 +192,8 @@ accepted仅表示请求已排队。request.sequence区分连续操作；Pending�
 - Win32 管道只在 app 模块，处理非阻塞；JSON 使用 nlohmann/json 3.11.3。命令入口和呈现在客户端线程；RealmSession 的后台 worker 持锁消费原服回包并更新权威副本，界面只读取客户端快照。
 - 该脚本是通用调用入口，未加入专用测试脚本／测试程序。调试接口由用户授权新增。
 
+局前 `ui-input` 与游戏内共用帧输入契约；`entryText` 为至多255个可打印ASCII字节，`tab` 切换字段，`wheel` 为有限滚轮增量。`key=1–4`复用腰带列快捷键，`f1–f8`选择已绑定技能或绑定选择器悬停项；原 `text` 仍只用于数字输入。局前坐标同样使用逻辑视口，应用转换到800×600原图布局；回执 `frontend.page/notice` 不包含字段内容或密码。测试暂停拒绝所有 UI 输入。
+
 ## 当前证据与限制
 
-本批已 Windows Release 构建、打包及有限原服冒烟，观察测试暂停期间冻结画面与持续收包、ESC菜单、背包拖放、箱子连续转移、保存重入及加载超时恢复。online.inventory.reason 返回适配器拒绝原因；waypointRequested／waypointSource 区分请求与确认，lateWaypointReplies 计迟到回复。快捷记忆登录、迟到回复分支和完整鼠标／多人仍未认证；历史 command／截图冒烟不认证完整新调用链。完整玩法与运行包差异见[联网模块](../modules/NETWORK.md)和[项目基线](../../BASELINE.md)。跨用户 ACL 拒绝与 Linux 实际运行尚未完整验证；本机管道不能代替 D2GS 协议。
+本批已 Windows Release 构建、打包及有限原服冒烟，观察测试暂停期间冻结画面与持续收包、ESC菜单、背包拖放、箱子连续转移、保存重入及加载超时恢复。online.inventory.reason 返回适配器拒绝原因；waypointRequested／waypointSource 区分请求与确认，lateWaypointReplies 计迟到回复。本轮局前UI记忆登录和新进程OnlinePlay入局、有限鼠标走跑／NPC点击／拾取／尸体取回及保存重入通过；迟到回复分支和完整鼠标／多人仍未认证；历史 command／截图冒烟不认证完整新调用链。完整玩法与运行包差异见[联网模块](../modules/NETWORK.md)和[项目基线](../../BASELINE.md)。跨用户 ACL 拒绝与 Linux 实际运行尚未完整验证；本机管道不能代替 D2GS 协议。

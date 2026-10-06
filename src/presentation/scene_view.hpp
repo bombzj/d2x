@@ -12,6 +12,7 @@
 #include "scene_assets.hpp"
 #include "presentation/world/scene_geometry.hpp"
 #include "presentation/world/preset_pops.hpp"
+#include "presentation/world/world_draw_view.hpp"
 #include "gameplay/model/events.hpp"
 #include <cstdint>
 #include <deque>
@@ -75,6 +76,7 @@ struct ViewState {
     float animationTime = 0, heroTime = 0, stepClock = 0;
     float cainPortalAnimationStarted = -1;
     std::string heroMode = "nu", dialogue, dialogueSpeaker, dialogueStatus;
+    std::optional<uint32_t> dialogueTextTopic;
     std::deque<NpcDialogueStarted> pendingNpcDialogue;
     EntityId dialogueObject;
     EntityId inventoryQuestNpc;
@@ -93,6 +95,7 @@ struct ViewState {
     bool blocksInput() const { return capturesWorldInput() || travelMenu; }
 };
 class SceneView {
+    Archives &archives_;
     const GameSession *session_ = nullptr;
     const GameSession &localSession() const;
     const IActorClient &actorClient_;
@@ -148,6 +151,8 @@ class SceneView {
     AutomapExploration exploredAutomap_;
     std::map<RegionId, std::vector<float>> roofOpacity_;
     std::map<RegionId, PresetPops> nativePops_;
+    PresetPops worldPops_;
+    uint64_t worldGameGeneration_ = ~uint64_t{}, worldAreaGeneration_ = ~uint64_t{};
     const Sprite *objectSprite(const WorldObject &object, RegionId region) const;
     Vec objectScreen(const WorldObject &object, Vec regionOffset = {}) const;
     struct LootLabel {
@@ -162,12 +167,9 @@ class SceneView {
     Rectangle lootBounds(const ItemInstance &item) const;
     void drawGroundItem(EntityId item, bool highlighted) const;
     void drawLootLabels(Vec mouse) const;
-    void drawTerrain(Vec mouse) const;
-    void drawActors(Vec mouse) const;
     void drawSelectableSprite(const Sprite *image, Vec position, bool highlighted,
                               Color tint = WHITE, Vector2 highlight = {2.f, 1.f}) const;
-    void drawUnitSpellOverlays(EntityId unit, Vec position, bool back, const CombatEffectSet *states = nullptr, int height = 1) const;
-    void drawLighting() const;
+    void drawWorldLighting(const WorldDrawView &, std::span<const WorldDrawItem>);
     void drawNpcAlert(EntityId npc, Vec at, bool back) const;
     void drawShrineOverlays(int code, Vec at, int height, bool back) const;
     void drawPlayerShrineOverlay(Vec at, bool back) const;
@@ -186,7 +188,7 @@ class SceneView {
     void drawWaypointMenu(Vec mouse) const;
     void drawControlPanel() const;
     void drawSkillControls(Vec mouse) const;
-    void drawSkillIcon(std::optional<int> skill, Rectangle bounds) const;
+    void drawSkillIcon(std::optional<int> skill, Rectangle bounds, bool picker = false) const;
     void drawSkillTree(Vec mouse) const;
     void drawQuests(Vec mouse) const;
     void drawHelp() const;
@@ -240,11 +242,15 @@ class SceneView {
     SceneView(Archives &, const ClassicData &, const IActorClient &, IInventoryClient &,
               ICharacterClient &, IQuestClient &, INpcClient &, IMapClient &);
     bool multiplayer() const { return !session_; }
+    bool playOriginalCombatSound(std::string_view name, uint64_t frame) {
+        return assets_.playOriginalCombatSound(name, frame);
+    }
     void drawUi(Vec mouse) const;
     // Shared original-resource effects; server replica supplies presentation data only.
+    void drawNativeIceShatter(Vec position, int size) { createIceShatter(position,size); }
     const SceneAssets::ProjectileVisual *projectileVisual(int id) { return assets_.ensureProjectile(id); }
     const SkillOverlayVisual *overlayVisual(int id) { return assets_.ensureOverlay(id); }
-    void drawMissile(int id, Vec position, Vec heading, float age, float remaining) const;
+    void drawMissile(int id, Vec position, Vec heading, float age, float remaining, Vec pixelOffset = {}) const;
     bool launchClientMissile(int id, Vec start, Vec target, int level, float delay = 0,
                              std::optional<float> remaining = {}, int pathIndex = -1,
                              EntityId owner = {}, bool hostile = false, int pierce = 0);
@@ -264,6 +270,9 @@ class SceneView {
     void drawDeathNotice() const;
     void drawCorpseLabel(const std::string &label, Vec screenPosition) const;
     void drawHighlightedActor(const Sprite *image, Vec position) const { drawSelectableSprite(image, position, true); }
+    void drawNpcQuestAlert(EntityId npc, Vec position, bool back) const { drawNpcAlert(npc, position, back); }
+    void drawAutomap(const AutomapDrawView &) const;
+    std::vector<size_t> drawWorld(const WorldDrawView &);
     const Sprite *groundItemSprite(const InventoryItemView &) const;
     void drawGroundItem(const InventoryItemView &, bool highlighted) const;
     void drawEnemyBar(std::string_view title, std::optional<float> life, std::string_view description = {}, Color color = WHITE) const;
@@ -293,13 +302,13 @@ class SceneView {
     const Sprite *playerCorpseSprite(const PlayerCorpse &corpse) const;
     const std::string &heroAppearanceError() const { return assets_.heroAppearanceError(); }
     bool leftSkillAllowed(int skill) const;
-    std::vector<std::optional<int>> skillChoices(bool right) const;
+    struct SkillPickerSlot { std::optional<int> skill; Rectangle bounds; };
+    std::vector<SkillPickerSlot> skillPickerSlots(bool right) const;
     std::optional<int> skillAt(Vec mouse) const;
     std::optional<ItemHandle> lootAt(Vec mouse, bool labelsOnly = false) const;
     void advance(float dt);
     void advanceUi(float dt);
     void pauseDebugPresentation(bool paused) { assets_.audio.pauseEmitters(paused); }
-    void draw(Vec mouse) const;
     void notice(std::string text, bool error = false);
     void openNpcDialogue(EntityId object, std::string speaker, std::string text);
     void cancelNpcDialogue();

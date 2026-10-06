@@ -13,12 +13,13 @@ void imageAt(const Sprite *image, Rectangle bounds, Color tint = WHITE) {
     DrawTexturePro(texture, {0, 0, float(texture.width), float(texture.height)}, bounds, {0, 0}, 0, tint);
 }
 } // namespace
-void SceneView::drawSkillIcon(std::optional<int> skill, Rectangle bounds) const {
+void SceneView::drawSkillIcon(std::optional<int> skill, Rectangle bounds, bool picker) const {
     const auto *entry = skill ? characterView_.skill(*skill) : nullptr;
     auto icon = skill ? assets_.skillIcons.find(*skill) : assets_.skillIcons.end();
     const auto *image = !skill ? &assets_.attackIcon
                               : icon != assets_.skillIcons.end() ? &icon->second.sprite : nullptr;
-    const bool available = skill ? entry && entry->usableNow : characterView_.attackUsable;
+    const bool available = skill ? entry && (picker ? entry->pickerEnabled : entry->usableNow)
+                                : picker ? !characterView_.dead : characterView_.attackUsable;
     imageAt(image, bounds, available ? WHITE : Color{255, 64, 64, 255});
 }
 void SceneView::drawControlPanel() const {
@@ -67,28 +68,55 @@ bool SceneView::leftSkillAllowed(int skill) const {
     const auto *entry = characterView_.skill(skill);
     return entry && entry->leftAllowed;
 }
-std::vector<std::optional<int>> SceneView::skillChoices(bool right) const {
-    return characterView_.choices[unsigned(right)];
+std::vector<SceneView::SkillPickerSlot> SceneView::skillPickerSlots(bool right) const {
+    const auto &choices = characterView_.choices[unsigned(right)];
+    std::map<int, std::vector<std::optional<int>>> rows;
+    for (auto choice : choices) {
+        if (!choice) {
+            rows[0].push_back(choice);
+            continue;
+        }
+        // Ordinary attack already has the null selection; hidden actions such
+        // as Kick and Left Hand Swing have ListRow=-1 in the original table.
+        const auto *entry = characterView_.skill(*choice);
+        if (*choice == 0 || !entry || entry->listRow < 0) continue;
+        if (entry->listPool > 0 && std::ranges::any_of(choices, [&](auto other) {
+            const auto *candidate = other ? characterView_.skill(*other) : nullptr;
+            return candidate && candidate->listPool == 0 && candidate->listRow == entry->listRow &&
+                candidate->classCode == entry->classCode && candidate->iconCell == entry->iconCell;
+        })) continue;
+        rows[entry->listRow].push_back(choice);
+    }
+    std::vector<SkillPickerSlot> slots;
+    int visibleRow = 0;
+    for (auto &[row, skills] : rows) {
+        std::ranges::sort(skills, {}, [](auto skill) { return skill.value_or(0); });
+        for (size_t column = 0; column < skills.size(); ++column)
+            slots.push_back({skills[column], hudPickerSlot(right, int(column), visibleRow)});
+        ++visibleRow;
+    }
+    return slots;
 }
 void SceneView::drawSkillControls(Vec mouse) const {
     if (view_.capturesWorldInput() || view_.inventory.drag || view_.inventory.split ||
         view_.inventory.goldDialog || view_.inventory.identify)
         return;
     std::optional<std::optional<int>> hovered;
+    float tooltipAnchor = H - 55 * hudScale;
     if (view_.skillPicker) {
         bool right = *view_.skillPicker;
-        auto choices = skillChoices(right);
-        for (size_t i = 0; i < choices.size(); ++i) {
-            auto bounds = hudPickerSlot(right, int(i), int(choices.size()));
-            drawSkillIcon(choices[i], bounds);
+        for (const auto &slot : skillPickerSlots(right)) {
+            const auto bounds = slot.bounds;
+            drawSkillIcon(slot.skill, bounds, true);
             const auto &hotkeys = characterView_.skillHotkeys;
             for (size_t key = 0; key < hotkeys.size(); ++key)
-                if (hotkeys[key].right == right && hotkeys[key].skill == choices[i].value_or(-1)) {
+                if (hotkeys[key].right == right && hotkeys[key].skill == slot.skill.value_or(-1)) {
                     auto label = "F" + std::to_string(key + 1);
                     painter_.label(label, int(bounds.x + 3), int(bounds.y + bounds.height - 12), 10, gold);
                 }
             if (CheckCollisionPointRec(rv(mouse), bounds)) {
-                hovered.emplace(choices[i]);
+                hovered.emplace(slot.skill);
+                tooltipAnchor = bounds.y;
                 DrawRectangleLinesEx(bounds, 1, gold);
             }
         }
@@ -117,7 +145,7 @@ void SceneView::drawSkillControls(Vec mouse) const {
             if (!current.empty()) wrapped.push_back(current);
         }
         const int height = 30 + int(wrapped.size()) * 16;
-        const float y = std::clamp(H - (view_.skillPicker ? 108 : 55) * hudScale - height - 8,
+        const float y = std::clamp(tooltipAnchor - height - 8,
             5.f, float(std::max(5, H - height - 5)));
         DrawRectangle((W - width) / 2, int(y), width, height, {0, 0, 0, 225});
         painter_.centered(name, int(y + 7), 16, gold);

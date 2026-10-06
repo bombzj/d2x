@@ -42,6 +42,7 @@ bool busy(OnlineStage s) {
 }
 } // namespace
 struct RealmFrontend::Impl {
+    FrameInput input;
     Graphics sky, units, battle;
     std::unique_ptr<Graphics> heroGraphics;
     struct Hero {
@@ -169,7 +170,7 @@ struct RealmFrontend::Impl {
             width += a.frame(0, base + i)->texture.width;
         Rectangle r{float(x), float(y), float(width), float(a.frame(0, base)->texture.height)};
         active = active && enabled;
-        bool down = active && CheckCollisionPointRec(mouse, r) && IsMouseButtonDown(MOUSE_BUTTON_LEFT);
+        bool down = active && CheckCollisionPointRec(mouse, r) && input.leftHeld;
         int first = base + (down ? segments : 0);
         const bool battleControl = std::string_view(id) == "createButton" ||
                                    std::string_view(id) == "cancel" || std::string_view(id) == "tabs" ||
@@ -221,12 +222,15 @@ struct RealmFrontend::Impl {
         if (drawBox)
             image("textbox", int(r.x), int(r.y));
         if (enabled && focus == index) {
-            for (int c = GetCharPressed(); c; c = GetCharPressed())
+            for (unsigned char c : input.entryText)
                 if (c >= 32 && c <= 126 && value.size() < limit)
                     value.push_back(char(c));
-            if (IsKeyPressed(KEY_BACKSPACE) || IsKeyPressedRepeat(KEY_BACKSPACE))
+            input.entryText.clear();
+            if (input.backspace) {
                 if (!value.empty())
                     value.pop_back();
+                input.backspace = false;
+            }
         }
         auto shown = secret ? std::string(value.size(), '*') : value;
         if (enabled && focus == index && int(GetTime() * 2) % 2 == 0)
@@ -293,7 +297,7 @@ struct RealmFrontend::Impl {
         label(s(5225), 300, 345);
         field(password, {300, 363, 169, 26}, 1, 15, true);
         if (button("wide", 245, 452, s(5288), !account.empty() && !password.empty(), 2) ||
-            (enabled && IsKeyPressed(KEY_ENTER) && !account.empty() && !password.empty())) {
+            (enabled && input.enter && !account.empty() && !password.empty())) {
             emit(FrontendCommand::Login);
             intent.name = account;
             intent.password = password;
@@ -319,7 +323,7 @@ struct RealmFrontend::Impl {
         label(s(5226), 300, 388);
         field(verifyPassword, {300, 406, 169, 26}, 2, 15, true);
         const bool valid = account.size() >= 2 && password.size() >= 2 && password == verifyPassword;
-        if (button("wide", 245, 485, s(5221), valid, 2) || (enabled && valid && IsKeyPressed(KEY_ENTER))) {
+        if (button("wide", 245, 485, s(5221), valid, 2) || (enabled && valid && input.enter)) {
             emit(FrontendCommand::Register);
             intent.name = account;
             intent.password = std::move(password);
@@ -354,7 +358,7 @@ struct RealmFrontend::Impl {
         if (button("medium", 34, 538, s(5101)))
             emit(FrontendCommand::Back);
         if (button("medium", 628, 538, s(5102), !v.realms.empty()) ||
-            (enabled && !v.realms.empty() && IsKeyPressed(KEY_ENTER))) {
+            (enabled && !v.realms.empty() && input.enter)) {
             emit(FrontendCommand::SelectRealm);
             intent.name = v.realms[size_t(realmSelected)].name;
         }
@@ -481,7 +485,7 @@ struct RealmFrontend::Impl {
         if (button("medium", 34, 538, s(5101)))
             emit(FrontendCommand::Back);
         const bool valid = hero >= 0 && characterName.size() >= 2;
-        if (button("medium", 628, 538, s(5102), valid) || (enabled && valid && IsKeyPressed(KEY_ENTER))) {
+        if (button("medium", 628, 538, s(5102), valid) || (enabled && valid && input.enter)) {
             emit(FrontendCommand::CreateCharacter);
             intent.name = characterName;
             intent.characterClass = uint8_t(ids[size_t(hero)]);
@@ -567,7 +571,7 @@ struct RealmFrontend::Impl {
             emit(FrontendCommand::Back);
         bool canSelect = !v.characters.empty() && playable(v.characters[size_t(selected)]);
         if (button("medium", 628, 538, s(5102), canSelect) ||
-            (enabled && canSelect && IsKeyPressed(KEY_ENTER))) {
+            (enabled && canSelect && input.enter)) {
             emit(FrontendCommand::SelectCharacter);
             intent.name = v.characters[size_t(selected)].name;
         }
@@ -599,7 +603,7 @@ struct RealmFrontend::Impl {
             field(gamePassword, {603, 121, 168, 26}, 1, 15, true, false);
             label(s(5275), 428, 190);
             const int count = int(v.games.size());
-            gameOffset = std::clamp(gameOffset - int(GetMouseWheelMove()), 0, std::max(0, count - 10));
+            gameOffset = std::clamp(gameOffset - int(input.wheel), 0, std::max(0, count - 10));
             for (int i = gameOffset; i < count && i < gameOffset + 10; ++i) {
                 const auto &game = v.games[size_t(i)];
                 const int y = 212 + (i - gameOffset) * 18;
@@ -617,7 +621,7 @@ struct RealmFrontend::Impl {
                 wipe(gamePassword);
             }
             if (button("medium", 599, 404, s(5151), !gameName.empty()) ||
-                (enabled && !gameName.empty() && IsKeyPressed(KEY_ENTER))) {
+                (enabled && !gameName.empty() && input.enter)) {
                 emit(FrontendCommand::JoinGame);
                 intent.name = gameName;
                 intent.password = std::move(gamePassword);
@@ -659,7 +663,7 @@ struct RealmFrontend::Impl {
             }
             // The original create-game control already contains its caption.
             if (button("createButton", 599, 404, "", !gameName.empty()) ||
-                (enabled && IsKeyPressed(KEY_ENTER) && !gameName.empty())) {
+                (enabled && input.enter && !gameName.empty())) {
                 emit(FrontendCommand::CreateGame);
                 intent.name = gameName;
                 intent.password = std::move(gamePassword);
@@ -710,9 +714,10 @@ struct RealmFrontend::Impl {
         }
     }
     FrontendIntent draw(FrontendPage current, const OnlineView &v, std::string_view gateway,
-                        std::string_view notice, Vector2 at, std::string_view worldNotice) {
+                        std::string_view notice, Vector2 at, const FrameInput &frameInput, std::string_view worldNotice) {
+        input = frameInput.focused ? frameInput : FrameInput{};
         mouse = at;
-        clicked = IsMouseButtonPressed(MOUSE_BUTTON_LEFT);
+        clicked = input.leftPressed;
         intent = {};
         if (current != previous) {
             focus = 0;
@@ -727,7 +732,7 @@ struct RealmFrontend::Impl {
         bool confirmation = !deleteName.empty() || confirmHardcore;
         bool modal = !notice.empty() || busy(v.stage) || confirmation;
         enabled = !modal;
-        if (enabled && IsKeyPressed(KEY_TAB))
+        if (enabled && input.tab)
             focus = (focus + 1) %
                     (current == FrontendPage::Register || (current == FrontendPage::Lobby && !joining) ? 3
                      : current == FrontendPage::CreateCharacter                                        ? 1
@@ -777,19 +782,19 @@ struct RealmFrontend::Impl {
                         hardcore = true;
                     confirmHardcore = false;
                 }
-                if (button("medium", 450, 411, s(5103)) || IsKeyPressed(KEY_ESCAPE)) {
+                if (button("medium", 450, 411, s(5103)) || input.escape) {
                     deleteName.clear();
                     confirmHardcore = false;
                 }
             } else if (button("medium", 330, 411, notice.empty() ? s(5103) : s(5102)) ||
-                       IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_ESCAPE))
+                       input.enter || input.escape)
                 emit(!notice.empty()                        ? FrontendCommand::Dismiss
                      : v.stage == OnlineStage::ListingGames ? FrontendCommand::CancelList
                      : v.stage == OnlineStage::CreatingGame || v.stage == OnlineStage::JoiningGame ||
                        v.stage == OnlineStage::ConnectingGame || v.stage == OnlineStage::GameHandshake ||
                        v.stage == OnlineStage::LoadingGame || v.stage == OnlineStage::LeavingGame
                          ? FrontendCommand::LeaveGame : FrontendCommand::Back);
-        } else if (IsKeyPressed(KEY_ESCAPE))
+        } else if (input.escape)
             emit(current == FrontendPage::Main      ? FrontendCommand::Exit
                  : current == FrontendPage::Loading ? FrontendCommand::LeaveGame
                                                     : FrontendCommand::Back);
@@ -801,8 +806,8 @@ struct RealmFrontend::Impl {
 RealmFrontend::RealmFrontend(Archives &a) : impl_(std::make_unique<Impl>(a)) {}
 RealmFrontend::~RealmFrontend() = default;
 FrontendIntent RealmFrontend::frame(FrontendPage p, const OnlineView &v, std::string_view gateway,
-                                    std::string_view notice, Vector2 mouse, std::string_view worldNotice) {
-    return impl_->draw(p, v, gateway, notice, mouse, worldNotice);
+                                    std::string_view notice, Vector2 mouse, const FrameInput &input, std::string_view worldNotice) {
+    return impl_->draw(p, v, gateway, notice, mouse, input, worldNotice);
 }
 void RealmFrontend::clearPassword() {
     wipe(impl_->password);

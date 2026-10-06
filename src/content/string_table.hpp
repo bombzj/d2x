@@ -14,6 +14,7 @@ class ClassicStrings {
     explicit ClassicStrings(Archives &archives);
     std::string_view find(std::string_view key) const;
     std::string_view find(int index) const;
+    std::string_view speech(int index) const; // Native NPC TBL SPEED line is metadata, not a subtitle.
     int index(std::string_view key) const;
     const auto &entries() const { return entries_; }
 };

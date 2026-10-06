@@ -53,7 +53,32 @@ bool SceneView::restoreAutomapExploration(AutomapLayers layers) {
 }
 
 void SceneView::drawMinimap(bool large) const {
-    const auto regions = mapView().automapRegions;
+    AutomapDrawView map; map.observer = mapView().observer;
+    for (const auto &[index, offset] : mapView().automapRegions) {
+        const auto &region = mapView().regions.at(size_t(index));
+        const auto found = exploredAutomap_.layers().find(region.id);
+        if (found == exploredAutomap_.layers().end()) continue;
+        const auto &seen = found->second;
+        if (seen.width != region.width || seen.height != region.height || seen.layoutFingerprint != region.layoutFingerprint) continue;
+        if (!assets_.regionTownAutomap.at(size_t(index))[size_t(large)].empty())
+            map.towns.push_back({int(region.id), assets_.regionAutomapVariants.at(size_t(index)),
+                Vec{(region.width - 1) * 2.5f, (region.height - 1) * 2.5f} + offset});
+        for (const auto &stamp : assets_.regionAutomap.at(size_t(index)))
+            if (seen.seen.at(size_t(stamp.y) * region.width + stamp.x))
+                map.stamps.push_back({Vec{stamp.x * 5.f + 2.5f, stamp.y * 5.f + 2.5f} + offset, stamp.cel});
+        for (const auto &object : region.markers) {
+            const int x = int(std::floor(object.position.x / 5.f)), y = int(std::floor(object.position.y / 5.f));
+            if (x < 0 || y < 0 || x >= region.width || y >= region.height || !seen.seen[size_t(y) * region.width + x]) continue;
+            map.markers.push_back({object.position + offset,
+                object.npcClass.empty() ? assets_.automapObjectCel(object.objectClass) : assets_.automapNpcCel(object.npcClass),
+                object.name, !object.npcClass.empty(), object.showName});
+        }
+    }
+    drawAutomap(map);
+}
+void SceneView::drawAutomap(const AutomapDrawView &map) const {
+    if (!view_.automap) return;
+    const bool large = view_.automapLarge;
     const auto viewport = worldViewport();
     // Keep the map inside the visible world when a side panel is open.
     const float width = std::min(240.f, viewport.width - 24);
@@ -62,12 +87,11 @@ void SceneView::drawMinimap(bool large) const {
                     38, width, 175};
     const Vec center{area.x + area.width * .5f, area.y + area.height * .5f};
     const float scale = large ? .1f : .05f;
-    const Vec origin = project(mapView().observer);
+    const Vec origin = project(map.observer);
     auto onMap = [&](Vec world) {
         const auto position = (project(world) - origin) * scale + center + view_.automapOffset;
         return Vec{std::round(position.x), std::round(position.y)};
     };
-    const auto &art = assets_.automapCels[large ? 1 : 0];
     const Rectangle fadedCenter{area.x + area.width * .25f, area.y + area.height * .25f,
         area.width * .5f, area.height * .5f};
     auto mapSprite = [&](const Sprite &image, Vec position, bool npc = false) {
@@ -98,63 +122,23 @@ void SceneView::drawMinimap(bool large) const {
     };
     BeginScissorMode(int(area.x), int(area.y), int(area.width), int(area.height));
     BeginBlendMode(BLEND_ALPHA);
-    for (const auto &[index, offset] : regions) {
-        const auto &region = mapView().regions[index];
-        const auto seen = exploredAutomap_.layers().find(region.id);
-        if (seen == exploredAutomap_.layers().end() || seen->second.width != region.width ||
-            seen->second.height != region.height || seen->second.layoutFingerprint != region.layoutFingerprint) continue;
-        for (const auto &image : assets_.regionTownAutomap[size_t(index)][large ? 1 : 0])
-            mapSprite(image, onMap(Vec{(region.width - 1) * 2.5f,
-                (region.height - 1) * 2.5f} + offset));
-        for (const auto &stamp : assets_.regionAutomap[index]) {
-            if (!seen->second.seen[size_t(stamp.y) * region.width + stamp.x]) continue;
-            auto cell = art.find(stamp.cel);
-            if (cell == art.end()) continue;
-            Vec position = onMap(Vec{stamp.x * 5.f + 2.5f, stamp.y * 5.f + 2.5f} + offset);
-            const auto &image = cell->second;
-            if (position.x + image.x + image.texture.width < area.x ||
-                position.x + image.x > area.x + area.width ||
-                position.y + image.y + image.texture.height < area.y ||
-                position.y + image.y > area.y + area.height) continue;
-            mapSprite(image, position);
-        }
-    }
-    for (const auto &[index, offset] : regions) {
-        const auto &region = mapView().regions[index];
-        const auto seen = exploredAutomap_.layers().find(region.id);
-        if (seen == exploredAutomap_.layers().end() || seen->second.width != region.width ||
-            seen->second.height != region.height || seen->second.layoutFingerprint != region.layoutFingerprint) continue;
-        auto marker = [&](int cel, Vec position, bool npc = false) {
-            auto cell = art.find(cel);
-            if (cell == art.end()) return;
-            int x = int(std::floor(position.x / 5.f)), y = int(std::floor(position.y / 5.f));
-            if (x < 0 || y < 0 || x >= region.width || y >= region.height ||
-                !seen->second.seen[size_t(y) * region.width + x]) return;
-            mapSprite(cell->second, onMap(position + offset), npc);
-        };
-        for (const auto &object : region.markers)
-            marker(object.npcClass.empty() ? assets_.automapObjectCel(object.objectClass)
-                                           : assets_.automapNpcCel(object.npcClass), object.position,
-                   !object.npcClass.empty());
-    }
+    for (const auto &town : map.towns)
+        for (const auto &image : assets_.townAutomapSprites(town.level, town.variant, large))
+            mapSprite(image, onMap(town.center));
+    for (const auto &stamp : map.stamps)
+        if (const auto *image = assets_.automapSprite(stamp.cel, large))
+            mapSprite(*image, onMap(stamp.position));
+    for (const auto &marker : map.markers)
+        if (const auto *image = assets_.automapSprite(marker.cel, large))
+            mapSprite(*image, onMap(marker.position), marker.npc);
     EndBlendMode();
-    for (const auto &[index, offset] : regions) {
-        const auto &region = mapView().regions[index];
-        const auto seen = exploredAutomap_.layers().find(region.id);
-        if (!view_.automapNames || seen == exploredAutomap_.layers().end() ||
-            seen->second.width != region.width || seen->second.height != region.height ||
-            seen->second.layoutFingerprint != region.layoutFingerprint) continue;
-        for (const auto &object : region.markers) {
-            if (!object.showName) continue;
-            const int x = int(std::floor(object.position.x / 5.f)), y = int(std::floor(object.position.y / 5.f));
-            if (x < 0 || y < 0 || x >= region.width || y >= region.height ||
-                !seen->second.seen[size_t(y) * region.width + x]) continue;
-            const auto position = onMap(object.position + offset);
-            painter_.label(object.name, int(position.x - painter_.measure(object.name, 10) / 2),
-                           int(position.y - 20), 10, object.npcClass.empty() ? WHITE : gold);
-        }
+    if (view_.automapNames) for (const auto &marker : map.markers) {
+        if (!marker.showName) continue;
+        const auto position = onMap(marker.position);
+        painter_.label(marker.name, int(position.x - painter_.measure(marker.name, 10) / 2),
+            int(position.y - 20), 10, marker.npc ? gold : WHITE);
     }
-    const auto player = onMap(mapView().observer);
+    const auto player = onMap(map.observer);
     DrawCircleV(rv(player), large ? 2.f : 1.f, WHITE);
     DrawLineV(rv(player + Vec{-5, 0}), rv(player + Vec{5, 0}), WHITE);
     DrawLineV(rv(player + Vec{0, -4}), rv(player + Vec{0, 4}), WHITE);

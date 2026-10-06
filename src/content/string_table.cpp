@@ -1,6 +1,7 @@
 #include "resources/archive.hpp"
 #include "string_table.hpp"
 #include <cstdint>
+#include <charconv>
 #include <stdexcept>
 #include <utility>
 
@@ -58,6 +59,19 @@ std::string_view ClassicStrings::find(std::string_view key) const {
 std::string_view ClassicStrings::find(int index) const {
     auto found = indexed_.find(index);
     return found == indexed_.end() ? std::string_view{} : found->second;
+}
+std::string_view ClassicStrings::speech(int index) const {
+    auto text=find(index);
+    const auto newline=text.find('\n');
+    if (newline==std::string_view::npos) return text;
+    auto header=text.substr(0,newline);
+    if (header.ends_with('\r')) header.remove_suffix(1);
+    unsigned speed{};
+    const auto [end,error]=std::from_chars(header.data(),header.data()+header.size(),speed);
+    // Current a1npc.txt SPEED:45/124 matches the first line of the original
+    // Warriv TBL messages. Leave non-speech/unrecognized formats untouched.
+    if (error==std::errc{} && end==header.data()+header.size()) text.remove_prefix(newline+1);
+    return text;
 }
 int ClassicStrings::index(std::string_view key) const {
     auto found = indices_.find(key);

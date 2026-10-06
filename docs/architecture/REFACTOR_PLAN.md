@@ -21,6 +21,8 @@
 
 ## 2. 协议、副本、内容和表现
 
+世界绘制第一项已收拢至WorldDrawView → SceneView::drawWorld：原服适配器只提供当前帧的表现位置／原图／物件模式，统一地形、排序、阴影、Pops／Warp／屋顶和灯光；旧单机世界draw入口与RemoteScene绘制循环已删除。仅保持联机产品调用链，不增加Local兼容后端。动画解码、世界手势及其他旧localSession引用仍留在后续项；本项不等于第4节最终依赖退场。Release构建／打包及待用户验收范围见[联网模块](../modules/NETWORK.md#世界绘制收拢2026-10-06)。
+
 **当前落点：** `src/network/`、`src/contracts/online*.hpp`、`src/client/remote_world.*`、`remote_town.*`、`remote_ui_clients.*`，`src/presentation/remote/remote_scene.*`、`scene_assets.*`、`world/`、`actors/`。
 
 - RealmSession 负责账号／Realm／游戏的生命周期；协议层只处理字节、版本和有序事件，不能依赖 MPQ 或窗口。

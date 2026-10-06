@@ -26,10 +26,9 @@ bool SceneController::handleSkills(const FrameInput &input) {
         if (ui.skillPicker) {
             if (!input.insideViewport) continue;
             bool right = *ui.skillPicker;
-            const auto choices = view_.skillChoices(right);
-            for (size_t slot = 0; slot < choices.size(); ++slot)
-                if (CheckCollisionPointRec(rv(input.mouse), hudPickerSlot(right, int(slot), int(choices.size())))) {
-                    characterClient_.submit(BindSkillHotkey{unsigned(i), choices[slot].value_or(-1), right});
+            for (const auto &slot : view_.skillPickerSlots(right))
+                if (CheckCollisionPointRec(rv(input.mouse), slot.bounds)) {
+                    characterClient_.submit(BindSkillHotkey{unsigned(i), slot.skill.value_or(-1), right});
                     break;
                 }
         } else if (hotkeys[i].skill != -2) {
@@ -45,11 +44,10 @@ bool SceneController::handleSkills(const FrameInput &input) {
     if (ui.skillPicker) {
         bool right = *ui.skillPicker;
         if (input.leftPressed) {
-            const auto choices = view_.skillChoices(right);
-            for (size_t i = 0; i < choices.size(); ++i)
-                if (CheckCollisionPointRec(rv(input.mouse), hudPickerSlot(right, int(i), int(choices.size())))) {
-                    (right ? ui.rightSkill : ui.leftSkill) = choices[i];
-                    characterClient_.submit(SelectMouseSkill{choices[i].value_or(-1), right});
+            for (const auto &slot : view_.skillPickerSlots(right))
+                if (CheckCollisionPointRec(rv(input.mouse), slot.bounds)) {
+                    (right ? ui.rightSkill : ui.leftSkill) = slot.skill;
+                    characterClient_.submit(SelectMouseSkill{slot.skill.value_or(-1), right});
                     break;
                 }
         }

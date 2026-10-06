@@ -14,6 +14,9 @@ struct FrameInput {
     bool inventory = false, character = false, skillTree = false, quests = false, shift = false, control = false, enter = false, focused = true;
     int quantityDelta = 0, pageDelta = 0, menuDelta = 0;
     std::string text;
+    std::string entryText;
+    bool tab = false;
+    float wheel = 0;
     bool backspace = false;
     bool showLoot = false;
     bool help = false, automap = false, collision = false;

@@ -74,6 +74,10 @@ struct Grid {
     // D2Common PATH_RayTrace uses integer cells and a biased major-axis walk.
     // Use together with segment() when a route is sent to the original server.
     bool nativeMovementSegment(Vec a, Vec b, MovementCollisionRule rule = playerMovement) const;
+    Vec nativeMovementTarget(Vec a, Vec b, MovementCollisionRule rule = playerMovement) const;
+    // Presentation-only native Straight/Toward policy, with AStar fallback
+    // restricted to 18 cells. Never generates server movement commands.
+    std::deque<Vec> nativePlayerPath(Vec from, Vec to, MovementCollisionRule rule = playerMovement) const;
     bool collisionSegment(Vec a, Vec b, uint16_t mask) const;
     // Object interaction uses the native shortened integer ray and flying
     // player mask; approaching it still uses the full walking footprint.

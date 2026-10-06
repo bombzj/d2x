@@ -30,12 +30,24 @@ struct OnlineSkillSelection {
     bool operator==(const OnlineSkillSelection &) const = default;
 };
 enum class OnlineSkillHand { Left, Right };
+struct OnlineSkillHotkey {
+    std::optional<OnlineSkillSelection> selection;
+    OnlineSkillHand hand{OnlineSkillHand::Right};
+};
+struct OnlineQuestState {
+    std::optional<std::array<uint16_t, 48>> playerFlags, gameFlags;
+    std::array<std::optional<uint8_t>, 41> statuses;
+    std::map<uint8_t, std::array<uint16_t, 3>> updates; // Quest number -> flags, status, progress (0x5D).
+    std::optional<uint16_t> denRemaining, rescuedBarbsRemaining, staffTombOffset;
+    uint64_t revision{};
+};
 struct OnlineCombatCommand {
-    enum class Action { SelectSkill, Cast, Stop, LearnSkill, SpendAttribute };
+    enum class Action { SelectSkill, Cast, Stop, LearnSkill, SpendAttribute, BindHotkey };
     Action action{};
     OnlineSkillHand hand{OnlineSkillHand::Right};
     uint16_t skill{};
     uint8_t attribute{}, count{1};
+    uint8_t hotkeySlot{};
     std::optional<OnlinePoint> point;
     std::optional<OnlineUnitKey> target;
     bool stationary{}, repeat{};
@@ -49,7 +61,7 @@ struct OnlineCombatRequest {
     uint32_t before{};
 };
 struct OnlineCombatEvent {
-    enum class Kind { Skill, Hit, Action, Overlay, Missile };
+    enum class Kind { Skill, Hit, Action, Overlay, Missile, Sound };
     uint64_t sequence{}, receivedMilliseconds{}; // Client monotonic receipt time, never a wire field.
     uint8_t packet{};
     Kind kind{};
@@ -73,10 +85,16 @@ struct OnlineUnit {
     OnlineUnitKey key;
     std::optional<uint16_t> classId;
     std::optional<OnlinePoint> position, destination;
+    // 0x18/0x95/0x96: current position minus signed target offsets.
+    // This is the server path's reachable tTargetCoord, not a new movement action.
+    std::optional<OnlinePoint> verifiedDestination;
+    uint64_t pathVerificationRevision{};
     std::optional<OnlineUnitKey> destinationUnit;
     std::optional<uint8_t> mode, lifePercent; // Life ratio byte preserved in its original wire scale.
     bool lifeCarriesRankFlag{}; // Only monster hit updates reserve bit 7 for rank.
     std::optional<uint8_t> portalFlags, portalDestination;
+    std::optional<uint8_t> objectInteractType; // 0x51 ObjectData.InteractType; MPQ consumers interpret it.
+    std::optional<bool> objectTargetable; // Object 0x0E flag update; absent on initial assignment.
     std::optional<uint32_t> portalOwner;
     std::string portalOwnerName;
     std::string name;
@@ -105,6 +123,7 @@ struct OnlineMovementRequest {
     bool run{}; // Requested gait, not a simulated server position or mode.
     uint64_t revision{};
 };
+inline constexpr int onlineMovementProgressTimeoutSeconds = 15;
 struct OnlineNpcMessage {
     uint16_t stringId{};
     uint8_t menu{}; // Native TEXT: 0 automatic, 1 topic, 2 both.
@@ -113,7 +132,6 @@ struct OnlineNpcConversation {
     uint32_t source{};
     uint64_t revision{};
     std::vector<OnlineNpcMessage> messages;
-    Bytes questFlags;
     std::set<uint16_t> acknowledged; // Enqueued 0x31 requests; never quest completion.
 };
 struct OnlineEquippedItem {
@@ -163,6 +181,7 @@ struct OnlineWorldView {
     std::map<uint32_t, OnlineItem> items;
     uint64_t itemRevision{};
     std::optional<OnlineItemRequest> itemRequest;
+    std::optional<uint32_t> itemTargetingSource; // Native 0x3F preparation, not identification success.
     OnlineStorageContext storage;
     std::optional<uint32_t> shopRequested, shopSource;
     std::optional<OnlineTradeResult> tradeResult;
@@ -176,6 +195,9 @@ struct OnlineWorldView {
     std::map<uint16_t, uint16_t> playerSkills;
     std::map<uint16_t, uint8_t> playerBaseSkills, playerBonusSkills, itemSkillQuantities;
     std::optional<OnlineSkillSelection> leftSkill, rightSkill;
+    std::array<std::optional<OnlineSkillHotkey>, 16> skillHotkeys; // Native 0x7B, unknown until received.
+    OnlineQuestState quests;
+    std::set<OnlineUnitKey> questAlerts; // Original 0x8A hints, not locally inferred quest eligibility.
     uint64_t combatSequence{};
     std::deque<OnlineCombatEvent> combatEvents;
     std::optional<OnlineCombatRequest> combatRequest;

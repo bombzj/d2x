@@ -16,6 +16,7 @@ struct ClientMissileProgram {
     std::array<int, 5> parameters{};
     std::array<int, 3> hitParameters{}, children{-1,-1,-1};
     std::array<int, 4> hitChildren{-1,-1,-1,-1};
+    bool childServerSent{};
 };
 struct ClientMissileVisual {
     int missileId = -1;

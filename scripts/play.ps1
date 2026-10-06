@@ -2,12 +2,14 @@ param(
     [string]$Mpq='',
     [string]$OnlineConfig='',
     [string]$OnlineCharacter='',
+    [string]$OnlinePlay='',
     [string]$OnlineCreateGame='',
     [string]$OnlineJoinGame='',
     [ValidatePattern('^[A-Za-z0-9_-]{1,80}$')][string]$PipeName='d2x-debug',
     [switch]$NoDebugPipe
 )
 $ErrorActionPreference='Stop'
+if($OnlinePlay -and ($OnlineCharacter -or $OnlineCreateGame -or $OnlineJoinGame)){throw '-OnlinePlay cannot be combined with manual quick-entry options.'}
 if($OnlineCreateGame -and $OnlineJoinGame){throw 'Choose either -OnlineCreateGame or -OnlineJoinGame.'}
 if(($OnlineCreateGame -or $OnlineJoinGame) -and -not $OnlineCharacter){throw 'Quick entry requires -OnlineCharacter.'}
 if($Mpq){$Mpq=$ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Mpq)}
@@ -38,6 +40,7 @@ try{
     $arguments=@()
     if($OnlineConfig){$arguments+=@('--online-config',$OnlineConfig)}
     if($OnlineCharacter){$arguments+=@('--online-character',$OnlineCharacter)}
+    if($OnlinePlay){$arguments+=@('--online-play',$OnlinePlay)}
     if($OnlineCreateGame){$arguments+=@('--online-create-game',$OnlineCreateGame)}
     if($OnlineJoinGame){$arguments+=@('--online-join-game',$OnlineJoinGame)}
     if($Mpq){$arguments+=@('--mpq',$Mpq)}

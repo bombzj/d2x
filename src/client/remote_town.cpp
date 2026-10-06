@@ -1,14 +1,18 @@
 #include "remote_town.hpp"
 #include <algorithm>
+#include <cmath>
 #include <stdexcept>
 #include "world/interaction_geometry.hpp"
+#include "core/fingerprint.hpp"
 
 namespace d2x {
 RemoteTown::RemoteTown(Archives &a)
     : archives_(a), libraries_(a), objects_(a.read("data/global/excel/objects.txt")),
       monsters_(a.read("data/global/excel/monstats.txt")),
       monsterSizes_(a.read("data/global/excel/monstats2.txt")),
-      skills_(a.read("data/global/excel/skills.txt")), automap_(a), strings_(a) {
+      skills_(a.read("data/global/excel/skills.txt")), shrines_(a.read("data/global/excel/shrines.txt")), automap_(a), strings_(a) {
+    for (size_t row = 0; row < shrines_.rows().size(); ++row)
+        if (auto code = shrines_.number(row, "Code")) shrineRows_.emplace(*code, row);
     for (size_t row = 0; row < objects_.rows().size(); ++row)
         if (auto id = objects_.number(row, "Id")) objectRows_.emplace(*id, row);
     for (size_t row = 0; row < monsters_.rows().size(); ++row)
@@ -19,7 +23,7 @@ RemoteTown::RemoteTown(Archives &a)
 void RemoteTown::update(const OnlineView &v) {
     if (gameGeneration_ != v.gameGeneration || areaGeneration_ != v.world.areaGeneration) {
         if (gameGeneration_ != v.gameGeneration) {
-            explored_.clear(); discoveredCels_.clear(); discoveredTowns_.clear();
+            explored_.clear(); discoveredCels_.clear(); discoveredTowns_.clear(); preparedTownAutomaps_.clear();
         }
         gameGeneration_ = v.gameGeneration;
         areaGeneration_ = v.world.areaGeneration;
@@ -78,9 +82,15 @@ void RemoteTown::update(const OnlineView &v) {
     view_.waypoints.clear();
     view_.town = false; view_.townPortalSkills.clear();
     view_.npcConversation.reset();
-    view_.automapStamps.clear(); view_.automapTowns.clear(); view_.automapRevealedCells.clear();
+    view_.automapStamps.clear(); view_.automapTowns.clear(); view_.automapRevealedCells.clear(); view_.automap = {};
     if (updateNative(v)) {
         updateMapTargets(v);
+        try {
+            prepareTownAutomap(v);
+            explored_.reveal(automapScene(v), {});
+        } catch (const std::exception &e) {
+            view_.mapErrors[*view_.area] = "Town automap: " + std::string(e.what());
+        }
         updateAutomapView(v);
         return;
     }
@@ -147,8 +157,13 @@ void RemoteTown::updateMapTargets(const OnlineView &v) {
                     width, height, uint16_t(collision ? mask : 0), light});
             }
         }
-        std::optional<OnlineMapInteraction> interaction;
         const int operation = number("OperateFn");
+        // ObjMode::OperateFunction23 accepts both operating/opened waypoints.
+        // Their TARGETABLE refresh may be clear even though Objects.Selectable
+        // still allows the original menu; final interaction remains server-owned.
+        const bool selectable=unit.mode && *unit.mode<8 && number("Selectable"+std::to_string(*unit.mode))!=0;
+        if (!selectable || (operation!=23 && unit.objectTargetable==false)) continue;
+        std::optional<OnlineMapInteraction> interaction;
         switch (operation) {
         case 8: case 16: case 18: case 29: case 61: case 66: case 71:
             interaction = OnlineMapInteraction::Door; break;
@@ -158,12 +173,20 @@ void RemoteTown::updateMapTargets(const OnlineView &v) {
         case 23: interaction = OnlineMapInteraction::Waypoint; break;
         case 32: interaction = OnlineMapInteraction::Stash; break;
         case 44: case 47: case 50: interaction = OnlineMapInteraction::Exit; break;
-        default: break;
+        default: if (operation > 0) interaction = OnlineMapInteraction::Object; break;
         }
-        if (interaction)
+        if (interaction) {
+            const auto keyName = objects_.value(row, "Name");
+            auto label = strings_.find(keyName);
+            if (operation == 2 && unit.objectInteractType && shrineRows_.contains(*unit.objectInteractType)) {
+                const auto shrine = strings_.find("ShrId" + std::to_string(*unit.objectInteractType));
+                if (!shrine.empty()) label = shrine;
+            }
             view_.mapTargets.push_back({key, *unit.position, *interaction,
-                std::string(objects_.value(row, "Name")), unit.portalDestination
-                    ? std::optional<uint16_t>{*unit.portalDestination} : std::nullopt});
+                std::string(label.empty() ? keyName : label), unit.portalDestination
+                    ? std::optional<uint16_t>{*unit.portalDestination} : std::nullopt,
+                number("SizeX"), number("SizeY")});
+        }
     }
     nativeTerrain_->grid.setObstacles(std::move(obstacles));
     if (v.world.npcConversation) {
@@ -175,12 +198,13 @@ void RemoteTown::updateMapTargets(const OnlineView &v) {
                 std::string(strings_.find(target->name)), {}, {}};
             for (const auto &message : conversation.messages)
                 dialog.messages.push_back({message.stringId, message.menu,
-                    std::string(strings_.find(message.stringId)), conversation.acknowledged.contains(message.stringId)});
+                    std::string(strings_.speech(message.stringId)), conversation.acknowledged.contains(message.stringId)});
             const auto &unit = v.world.units.at(target->unit);
             const auto id = monsters_.value(monsterRows_.at(*unit.classId), "Id");
             auto rewarded = [&](size_t slot) {
                 // D2MOO QuestRecord: native slot*16 + QFLAG_REWARDGRANTED(0).
-                return conversation.questFlags.size() > slot * 2 && (conversation.questFlags[slot * 2] & 1);
+                return v.world.quests.playerFlags && slot < v.world.quests.playerFlags->size() &&
+                    ((*v.world.quests.playerFlags)[slot] & 1);
             };
             const char *label = nullptr;
             if (id == "warriv1" && rewarded(6)) label = "WarrivMenu1b";
@@ -223,12 +247,15 @@ bool RemoteTown::updateNative(const OnlineView &v) {
         if (!nativeSequence_ && !nativePlayerPosition_)
             nativePlayerPosition_ = world.mapInitialPlayerPosition;
         bool changed = false;
-        auto moveRoot = [&] {
+        auto locatePlayerRoom = [&] {
             if (!nativePlayerPosition_) return;
             const auto room = nativeMap_->clientRoom(nativePlayerPosition_->x, nativePlayerPosition_->y);
             if (!room) return; // Position can precede the matching room assignment.
             changed |= nativePlayerRoom_ != room;
-            nativeMap_->changeClientRoom(nativePlayerRoom_, room);
+            // D2Client 07/08 own the in-sight references. Clients::sub_6FC33020
+            // changes CLIENT_IN_ROOM references on the server; repeating that
+            // operation here lets a later 08 consume a propagated reference.
+            // Coordinates select the snapshot, without acquiring another root.
             nativePlayerRoom_ = room;
         };
         for (const auto &event : world.mapEvents) {
@@ -240,7 +267,7 @@ bool RemoteTown::updateNative(const OnlineView &v) {
             case OnlineMapEvent::Kind::RevealRoom:
                 changed = true;
                 nativeMap_->reveal(event.level, event.point.x, event.point.y);
-                moveRoot();
+                locatePlayerRoom();
                 break;
             case OnlineMapEvent::Kind::HideRoom:
                 changed = true;
@@ -248,11 +275,10 @@ bool RemoteTown::updateNative(const OnlineView &v) {
                 break;
             case OnlineMapEvent::Kind::PlayerPosition:
                 nativePlayerPosition_ = event.point;
-                moveRoot();
+                locatePlayerRoom();
                 break;
             case OnlineMapEvent::Kind::RemovePlayer:
                 changed = true;
-                nativeMap_->changeClientRoom(nativePlayerRoom_, {});
                 nativePlayerRoom_.reset();
                 nativePlayerPosition_.reset();
                 break;
@@ -307,7 +333,10 @@ bool RemoteTown::permits(const OnlineView &v, OnlinePoint target) const {
     };
     if (!inside(target) || !inside(*v.world.playerPosition))
         return false;
-    return map_->grid.walkable(int(target.x) - origin.x, int(target.y) - origin.y, playerMovement);
+    // Original coordinate movement submits the pointer even over a wall;
+    // native Path prepares/clips the reachable target. Reject absent terrain,
+    // not every blocked destination, or dragging across scenery drops input.
+    return map_->grid.movementMask(int(target.x)-origin.x,int(target.y)-origin.y) != 0xffff;
 }
 bool RemoteTown::permitsInteraction(const OnlineView &v, OnlineUnitKey target) const {
     return view_.nativeMapReady && view_.movementAvailable &&
@@ -322,10 +351,84 @@ bool RemoteTown::interactionReady(const OnlineView &v, OnlineUnitKey target) con
     const auto found = std::find_if(view_.mapTargets.begin(), view_.mapTargets.end(),
         [&](const auto &entry) { return entry.unit == target; });
     const bool corpse = found->interaction == OnlineMapInteraction::Corpse;
-    if (found->interaction != OnlineMapInteraction::Npc && !corpse) return true;
     const auto &player = *v.world.playerPosition;
+    if (target.type == 2) {
+        if (!map_ || !view_.origin) return false;
+        const Vec origin{float(view_.origin->x), float(view_.origin->y)};
+        const Vec position{float(found->position.x) - origin.x, float(found->position.y) - origin.y};
+        return interactionClear(map_->grid, {float(player.x) - origin.x, float(player.y) - origin.y},
+            {EntityId{uint64_t(target.id) + 1}, position, position, found->collisionWidth, found->collisionHeight, 0, true});
+    }
+    if (found->interaction != OnlineMapInteraction::Npc && !corpse) return true;
     return nativeUnitDistance({float(player.x), float(player.y)}, 2,
         {float(found->position.x), float(found->position.y)}, found->collisionWidth) <= (corpse ? 8 : 6);
+}
+std::optional<OnlinePoint> RemoteTown::interactionApproachPoint(const OnlineView &v, OnlineUnitKey target) const {
+    if (!permitsInteraction(v, target) || target.type != 2 || !map_ || !view_.origin || !v.world.playerPosition) return {};
+    const auto found = std::find_if(view_.mapTargets.begin(), view_.mapTargets.end(), [&](const auto &entry) { return entry.unit == target; });
+    const Vec origin{float(view_.origin->x), float(view_.origin->y)};
+    const Vec position{float(found->position.x) - origin.x, float(found->position.y) - origin.y};
+    const auto point = interactionApproach(map_->grid,
+        {float(v.world.playerPosition->x) - origin.x, float(v.world.playerPosition->y) - origin.y},
+        {EntityId{uint64_t(target.id) + 1}, position, position, found->collisionWidth, found->collisionHeight, 0, true});
+    if (!point) return {};
+    const int x = int(std::floor(point->x)) + view_.origin->x, y = int(std::floor(point->y)) + view_.origin->y;
+    if (x < 0 || y < 0 || x > UINT16_MAX || y > UINT16_MAX) return {};
+    return OnlinePoint{uint16_t(x), uint16_t(y)};
+}
+void RemoteTown::prepareTownAutomap(const OnlineView &v) {
+    if (!view_.nativeMapReady || !view_.area || !v.load.mapSeed || !v.load.act) return;
+    const auto &level = catalog_->level(*view_.area);
+    if (!level.town) return;
+    const auto seed = *v.load.mapSeed;
+    const int act = *v.load.act;
+    const auto key = std::tuple{seed, act, level.id};
+    if (preparedTownAutomaps_.contains(key)) return;
+    const auto &placement = nativeMap_->layout().levels.at(level.id);
+    if (level.id == 40 || level.id == 103 || level.id == 109) {
+        const auto recipe = nativeMap_->recipe(level.id);
+        discoveredTowns_[key] = {uint16_t(level.id), recipe.variant,
+            OnlinePoint{uint16_t(placement.x * 5 + placement.width * 5 / 2),
+                uint16_t(placement.y * 5 + placement.height * 5 / 2)}};
+    } else {
+        // DRLGPRESET_InitLevel initializes every AutoMap preset room before its
+        // callback. Read those original tiles without changing room sight refs
+        // or revealing the adjoining wilderness through the camera viewport.
+        const auto snapshot = nativeMap_->snapshot(level.id, false);
+        const auto &terrain = snapshot.map.terrain;
+        for (const auto &stamp : automap_.stamps(terrain.data, level.levelType))
+            discoveredCels_[{seed, act, level.id, snapshot.tileX + stamp.x, snapshot.tileY + stamp.y}].insert(stamp.cel);
+    }
+    preparedTownAutomaps_.insert(key);
+}
+MapSceneView RemoteTown::automapScene(const OnlineView &v) const {
+    MapSceneView scene;
+    if (!map_ || !view_.area || !v.load.mapSeed || !v.load.act || !view_.origin) return scene;
+    scene.act = *v.load.act; scene.region = RegionId(*view_.area);
+    std::set<int> levels;
+    for (const auto &room : map_->terrain.rooms) levels.insert(room.level);
+    for (int id : levels) {
+        const auto &placement = nativeMap_->layout().levels.at(id);
+        MapRegionView region;
+        region.id = RegionId(id); region.width = placement.width + 1; region.height = placement.height + 1;
+        region.safe = catalog_->level(id).town;
+        Fingerprint fingerprint;
+        fingerprint.add(std::to_string(*v.load.mapSeed)); fingerprint.add(std::to_string(*v.load.act));
+        fingerprint.add(std::to_string(id)); fingerprint.add(std::to_string(placement.x)); fingerprint.add(std::to_string(placement.y));
+        region.layoutFingerprint = fingerprint.value();
+        for (const auto &room : map_->terrain.rooms) if (room.level == id)
+            region.revealRooms.push_back({(room.x + view_.origin->x / 5 - placement.x) * 5,
+                (room.y + view_.origin->y / 5 - placement.y) * 5, room.width * 5, room.height * 5});
+        const int slot = int(scene.regions.size());
+        if (id == *view_.area) {
+            scene.current = slot; scene.hasObserverRoom = true;
+            if (v.world.playerPosition) scene.observer = {float(int(v.world.playerPosition->x) - placement.x * 5),
+                float(int(v.world.playerPosition->y) - placement.y * 5)};
+        }
+        scene.automapRegions.emplace_back(slot, Vec{});
+        scene.regions.push_back(std::move(region));
+    }
+    return scene;
 }
 void RemoteTown::revealVisibleTiles(const OnlineView &v, std::span<const size_t> indices) {
     if (!view_.nativeMapReady || !map_ || !v.load.mapSeed || !v.load.act ||
@@ -333,6 +436,8 @@ void RemoteTown::revealVisibleTiles(const OnlineView &v, std::span<const size_t>
     const auto seed = *v.load.mapSeed;
     const int act = *v.load.act;
     const auto &terrain = map_->terrain;
+    const auto scene = automapScene(v);
+    std::vector<AutomapVisibleCell> visible;
     for (const auto index : indices) {
         if (index >= terrain.instances.size()) continue;
         const auto &instance = terrain.instances[index];
@@ -342,27 +447,20 @@ void RemoteTown::revealVisibleTiles(const OnlineView &v, std::span<const size_t>
         const auto &placement = nativeMap_->layout().levels.at(room.level);
         const int x = instance.x + view_.origin->x / 5, y = instance.y + view_.origin->y / 5;
         const Discovery key{seed, act, room.level, x, y};
-        explored_.insert(key);
+        const auto region = std::find_if(scene.regions.begin(), scene.regions.end(),
+            [&](const auto &entry) { return entry.id == RegionId(room.level); });
+        if (region != scene.regions.end())
+            visible.push_back({int(region - scene.regions.begin()), x - placement.x, y - placement.y});
         const auto *tile = terrain.tiles.at(size_t(instance.tile));
         MapCell cell{uint32_t((tile->main << 20) | (tile->sub << 8)), instance.type};
-        const int cel = automap_.tileCel(level.levelType, cell, x - placement.x, y - placement.y);
-        if (cel >= 0) discoveredCels_[key].insert(cel);
+        for (int cel : automap_.cellCels(level.levelType, cell, x - placement.x, y - placement.y))
+            discoveredCels_[key].insert(cel);
     }
-    if (view_.area) {
-        const auto &level = catalog_->level(*view_.area);
-        if (level.town && (level.id == 40 || level.id == 103 || level.id == 109) &&
-            !discoveredTowns_.contains({seed, act, level.id})) {
-            const auto recipe = nativeMap_->recipe(level.id);
-            const auto &placement = nativeMap_->layout().levels.at(level.id);
-            discoveredTowns_[{seed, act, level.id}] = {uint16_t(level.id), recipe.variant,
-                OnlinePoint{uint16_t(placement.x * 5 + placement.width * 5 / 2),
-                    uint16_t(placement.y * 5 + placement.height * 5 / 2)}};
-        }
-    }
+    explored_.reveal(scene, visible);
     updateAutomapView(v);
 }
 void RemoteTown::updateAutomapView(const OnlineView &v) {
-    view_.automapStamps.clear(); view_.automapTowns.clear(); view_.automapRevealedCells.clear();
+    view_.automapStamps.clear(); view_.automapTowns.clear(); view_.automapRevealedCells.clear(); view_.automap = {};
     if (!nativeMap_ || !view_.area || !v.load.mapSeed || !v.load.act) return;
     // Remember visited walking neighbours; stairs and portals keep separate layers.
     std::set<int> component{*view_.area};
@@ -376,19 +474,54 @@ void RemoteTown::updateAutomapView(const OnlineView &v) {
                         catalog_->level(slots.visible[i]).act == *v.load.act)
                         changed |= component.insert(slots.visible[i]).second;
     }
-    for (const auto &key : explored_) {
-        const auto &[seed, act, level, x, y] = key;
-        if (seed != *v.load.mapSeed || act != *v.load.act || !component.contains(level)) continue;
-        ++view_.automapRevealedCells[uint16_t(level)];
-        const auto cels = discoveredCels_.find(key);
-        if (cels != discoveredCels_.end())
-            for (int cel : cels->second)
-                view_.automapStamps.push_back({uint16_t(level), uint16_t(x), uint16_t(y), cel});
+    for (const auto &[id, layer] : explored_.layers()) {
+        const int level = int(id);
+        if (!component.contains(level) || !nativeMap_->layout().levels.contains(level)) continue;
+        const auto &placement = nativeMap_->layout().levels.at(level);
+        for (int y = 0; y < layer.height; ++y)
+            for (int x = 0; x < layer.width; ++x) {
+                if (!layer.seen[size_t(y) * layer.width + x]) continue;
+                ++view_.automapRevealedCells[uint16_t(level)];
+                const auto cels = discoveredCels_.find({*v.load.mapSeed, *v.load.act, level, x + placement.x, y + placement.y});
+                if (cels != discoveredCels_.end()) for (int cel : cels->second)
+                    view_.automapStamps.push_back({uint16_t(level), uint16_t(x + placement.x), uint16_t(y + placement.y), cel});
+            }
     }
     for (const auto &[key, town] : discoveredTowns_) {
         const auto &[seed, act, level] = key;
         if (seed == *v.load.mapSeed && act == *v.load.act && component.contains(level))
             view_.automapTowns.push_back(town);
+    }
+    if (v.world.playerPosition) view_.automap.observer = {float(v.world.playerPosition->x), float(v.world.playerPosition->y)};
+    for (const auto &stamp : view_.automapStamps)
+        view_.automap.stamps.push_back({{stamp.tileX * 5.f + 2.5f, stamp.tileY * 5.f + 2.5f}, stamp.cel});
+    for (const auto &town : view_.automapTowns)
+        view_.automap.towns.push_back({town.level, town.variant, {float(town.center.x), float(town.center.y)}});
+    for (const auto &[key, unit] : v.world.units) {
+        if (!unit.position || !unit.classId || (key.type != 1 && key.type != 2)) continue;
+        bool seen = false;
+        for (const auto &[id, layer] : explored_.layers()) {
+            if (!component.contains(int(id)) || !nativeMap_->layout().levels.contains(int(id))) continue;
+            const auto &placement = nativeMap_->layout().levels.at(int(id));
+            const int x = int(unit.position->x) / 5 - placement.x, y = int(unit.position->y) / 5 - placement.y;
+            if (x >= 0 && y >= 0 && x < layer.width && y < layer.height && layer.seen[size_t(y) * layer.width + x]) seen = true;
+        }
+        if (!seen) continue;
+        int cel = -1; std::string name;
+        if (key.type == 2) cel = automap_.objectCel(*unit.classId);
+        else if (const auto row = monsterRows_.find(*unit.classId); row != monsterRows_.end()) {
+            cel = automap_.npcCel(monsters_.value(row->second, "Id"));
+            name = strings_.find(monsters_.value(row->second, "NameStr"));
+        }
+        const auto target = std::find_if(view_.mapTargets.begin(), view_.mapTargets.end(),
+            [&](const auto &entry) { return entry.unit == key; });
+        const bool showName = target != view_.mapTargets.end() &&
+            (target->interaction == OnlineMapInteraction::Npc || target->interaction == OnlineMapInteraction::Stash);
+        if (showName) {
+            const auto translated = strings_.find(target->name);
+            name = translated.empty() ? target->name : std::string(translated);
+        }
+        if (cel >= 0) view_.automap.markers.push_back({{float(unit.position->x), float(unit.position->y)}, cel, name, key.type == 1, showName});
     }
 }
 } // namespace d2x

@@ -4,6 +4,17 @@
 #include <cmath>
 
 namespace d2x {
+namespace {
+bool nativeProgress(std::optional<OnlinePoint> &previous, OnlinePoint player, OnlinePoint goal) {
+    auto distance = [&](OnlinePoint point) {
+        const int64_t dx=int64_t(point.x)-goal.x, dy=int64_t(point.y)-goal.y;
+        return dx*dx+dy*dy;
+    };
+    const bool closer=previous && player!=*previous && distance(player)<distance(*previous);
+    previous=player;
+    return closer;
+}
+}
 bool RemoteControl::reject(std::string reason) { reason_ = std::move(reason); return false; }
 bool RemoteControl::submitSegment(Movement &movement) {
     const auto &view = session_.read();
@@ -18,62 +29,45 @@ bool RemoteControl::submitSegment(Movement &movement) {
             return reject("Movement target is no longer assigned");
         movement.goal = *found->second.position;
     }
-    const int dx = int(movement.goal.x) - player.x, dy = int(movement.goal.y) - player.y;
+    const Vec origin = movement.requestOrigin.value_or(Vec{float(player.x),float(player.y)});
+    const float dx = float(movement.goal.x) - origin.x, dy = float(movement.goal.y) - origin.y;
     if (std::abs(dx) > 50 || std::abs(dy) > 50)
         return reject("Movement target exceeds the native 50-subtile request range");
-    // D2MOO PATH_AllocDynamicPath gives players PATHTYPE_STRAIGHT. Its
-    // PATH_Straight_Compute only tries AStar within an 18-subtile radius.
-    constexpr int nativeDetourRadius = 18;
-    if (movement.unit && dx * dx + dy * dy <= nativeDetourRadius * nativeDetourRadius) {
+    // PlrMsg 01/03 takes the actual pointer destination; 02/04 takes the
+    // actual GUID. The 18-cell limit in PATH_Straight_Compute applies to
+    // its AStar fallback, not to commands or unobstructed walking distance.
+    // Splitting from a delayed position makes dragging send a waypoint
+    // behind the moving server player and waits for samples between legs.
+    if (movement.unit) {
         if (!session_.move_to_unit(*movement.unit, movement.run, movement.context))
             return reject(view.error ? view.error->message : "Unit movement is rate limited");
         movement.finalUnit = true;
     } else {
-        OnlinePoint next = player;
-        if (player != movement.goal) {
-            const Vec origin{float(binding.origin->x), float(binding.origin->y)};
-            const Vec start{float(player.x) - origin.x + .5f, float(player.y) - origin.y + .5f};
-            const Vec goal{float(movement.goal.x) - origin.x + .5f, float(movement.goal.y) - origin.y + .5f};
-            // Reuse the common map planner. Only its shortcuts opt into the
-            // original integer movement ray; offline path policy is unchanged.
-            auto route = map->grid.path(start, goal, movement.unit.has_value(), playerMovement, true);
-            while (!route.empty() && int(std::floor(route.front().x)) == int(std::floor(start.x)) &&
-                int(std::floor(route.front().y)) == int(std::floor(start.y))) route.pop_front();
-            if (route.empty()) return reject("No reachable movement route in active native collision");
-            const auto delta = route.front() - start;
-            const float length = delta.length();
-            for (float distance = std::min(float(nativeDetourRadius), length); distance > 0; distance -= 1.f) {
-                const auto point = distance >= length ? route.front() : start + delta.unit() * distance;
-                const int x = int(std::floor(point.x)) + binding.origin->x;
-                const int y = int(std::floor(point.y)) + binding.origin->y;
-                const int sx = x - player.x, sy = y - player.y;
-                if ((!sx && !sy) || sx * sx + sy * sy > nativeDetourRadius * nativeDetourRadius ||
-                    x < 0 || y < 0 || x > UINT16_MAX || y > UINT16_MAX) continue;
-                const Vec cell{float(x) - origin.x + .5f, float(y) - origin.y + .5f};
-                if (!map->grid.segment(start, cell, {}, playerMovement) ||
-                    !map->grid.nativeMovementSegment(start, cell, playerMovement)) continue;
-                next = {uint16_t(x), uint16_t(y)}; break;
-            }
-            if (next == player) return reject("Native movement ray has no reachable route segment");
-        }
-        if (!session_.move_to(next, movement.run, movement.context))
+        if (!session_.move_to(movement.goal, movement.run, movement.context))
             return reject(view.error ? view.error->message : "Movement request is rate limited");
-        movement.segment = next;
+        movement.segment = movement.goal;
     }
     const auto &sent = session_.read();
     movement.requestRevision = sent.world.movementRequest ? sent.world.movementRequest->revision : 0;
     movement.context = onlineIntentContext(sent);
-    if (approach_ && movement.unit == approach_->target)
+    if (approach_) {
         approach_->requestRevision = movement.requestRevision;
+        approach_->context = movement.context;
+    }
     movement.submitted = std::chrono::steady_clock::now();
+    movement.deadline = movement.submitted + std::chrono::seconds(onlineMovementProgressTimeoutSeconds);
+    movement.progressPosition = player;
     reason_.clear(); return true;
 }
-bool RemoteControl::move(OnlinePoint point, bool run, std::optional<OnlineIntentContext> context) {
+bool RemoteControl::move(OnlinePoint point, bool run, std::optional<OnlineIntentContext> context, std::optional<Vec> requestOrigin) {
     if (!context) context = onlineIntentContext(session_.read());
     if (!onlineInteractionMatches(*context, session_.read())) return reject("Movement intent belongs to a previous game, area or interaction");
     scene_.update(session_.read());
     const auto player = session_.read().world.playerPosition;
-    if (!player || std::abs(int(player->x) - point.x) > 50 || std::abs(int(player->y) - point.y) > 50)
+    if (requestOrigin && (!std::isfinite(requestOrigin->x) || !std::isfinite(requestOrigin->y)))
+        return reject("Movement projection origin is invalid");
+    const Vec origin = requestOrigin.value_or(player ? Vec{float(player->x),float(player->y)} : Vec{});
+    if (!player || std::abs(origin.x - point.x) > 50 || std::abs(origin.y - point.y) > 50)
         return reject("Movement exceeds the native 50-subtile request range");
     if (!scene_.permits(session_.read(), point)) return reject("Movement destination is outside active player collision");
     if (movement_ && !movement_->unit && movement_->goal == point && movement_->run == run &&
@@ -82,9 +76,10 @@ bool RemoteControl::move(OnlinePoint point, bool run, std::optional<OnlineIntent
         return true;
     const auto now = std::chrono::steady_clock::now();
     Movement movement; movement.goal = point; movement.run = run;
+    movement.requestOrigin = requestOrigin;
     movement.context = *context;
     movement.game = session_.read().gameGeneration; movement.area = session_.read().world.areaGeneration;
-    movement.deadline = now + std::chrono::seconds(15);
+    movement.deadline = now + std::chrono::seconds(onlineMovementProgressTimeoutSeconds);
     if (!submitSegment(movement)) return false;
     movement_ = std::move(movement); approach_.reset(); reason_.clear(); return true;
 }
@@ -101,7 +96,7 @@ bool RemoteControl::moveToUnit(OnlineUnitKey target, bool run, std::optional<Onl
     Movement movement; movement.goal = point; movement.unit = target; movement.run = run;
     movement.context = *context;
     movement.game = session_.read().gameGeneration; movement.area = session_.read().world.areaGeneration;
-    movement.deadline = now + std::chrono::seconds(15);
+    movement.deadline = now + std::chrono::seconds(onlineMovementProgressTimeoutSeconds);
     if (!submitSegment(movement)) return false;
     if (movement.finalUnit) movement_.reset();
     else movement_ = std::move(movement);
@@ -117,27 +112,32 @@ bool RemoteControl::interact(OnlineUnitKey target, bool run, std::optional<Onlin
     const auto point = *world.world.units.at(target).position;
     if (std::abs(int(player.x) - point.x) > 50 || std::abs(int(player.y) - point.y) > 50)
         return reject("Target exceeds the native 50-subtile request range");
-    if (target.type != 1 && target.type != 0) {
-        const auto entry = std::find_if(scene_.read().mapTargets.begin(), scene_.read().mapTargets.end(),
-            [&](const auto &value) { return value.unit == target; });
-        const auto intent = entry == scene_.read().mapTargets.end() ? OnlineObjectIntent::Operate
-            : entry->interaction == OnlineMapInteraction::Stash ? OnlineObjectIntent::Stash
-            : entry->interaction == OnlineMapInteraction::Waypoint ? OnlineObjectIntent::Waypoint : OnlineObjectIntent::Operate;
-        if (!session_.interact_map_unit(target, intent, context)) return reject(world.error ? world.error->message : "Interaction is rate limited");
-        cancelMovement(); reason_.clear(); return true;
-    }
     if ((target.type == 1 && world.world.npcRequested == target.id) || (approach_ && approach_->target == target))
         return reject("Unit interaction is already pending or open");
     if (scene_.interactionReady(world, target)) {
-        const bool sent = target.type == 0 ? session_.interact_map_unit(target, OnlineObjectIntent::Operate, context) : session_.interact_npc(target.id, context);
-        if (!sent) return reject(world.error ? world.error->message : "Unit interaction is rate limited");
+        if (!submitInteraction(target, *context)) return false;
         cancelMovement(); reason_.clear(); return true;
     }
-    // Native 0x13 ignores distant NPCs. Native 0x02/04 keeps following their server GUID.
-    if (!moveToUnit(target, run, context)) return false;
+    if (target.type == 2) {
+        const auto point = scene_.interactionApproachPoint(world, target);
+        if (!point) return reject("No reachable interaction position in active native collision");
+        if (!move(*point, run, context)) return false;
+    } else if (!moveToUnit(target, run, context)) return false;
     approach_ = Approach{target, world.gameGeneration, world.world.areaGeneration,
         world.world.movementRequest ? world.world.movementRequest->revision : 0,
-        std::chrono::steady_clock::now() + std::chrono::seconds(15), onlineIntentContext(session_.read())};
+        std::chrono::steady_clock::now() + std::chrono::seconds(15), onlineIntentContext(session_.read()), player};
+    return true;
+}
+bool RemoteControl::submitInteraction(OnlineUnitKey target, const OnlineIntentContext &context) {
+    if (target.type == 1) {
+        if (!session_.interact_npc(target.id, context)) return reject(session_.read().error ? session_.read().error->message : "Interaction is rate limited");
+        return true;
+    }
+    const auto entry = std::find_if(scene_.read().mapTargets.begin(), scene_.read().mapTargets.end(), [&](const auto &value) { return value.unit == target; });
+    if (entry == scene_.read().mapTargets.end()) return reject("Interaction target is no longer assigned");
+    const auto intent = entry->interaction == OnlineMapInteraction::Stash ? OnlineObjectIntent::Stash
+        : entry->interaction == OnlineMapInteraction::Waypoint ? OnlineObjectIntent::Waypoint : OnlineObjectIntent::Operate;
+    if (!session_.interact_map_unit(target, intent, context)) return reject(session_.read().error ? session_.read().error->message : "Interaction is rate limited");
     return true;
 }
 bool RemoteControl::townPortal() {
@@ -174,34 +174,25 @@ void RemoteControl::tick() {
             }) ||
             !world.movementRequest || world.movementRequest->revision != movement_->requestRevision) {
             cancelMovement();
-        } else if (now >= movement_->deadline) {
-            cancelMovement(); reason_ = "Server movement did not arrive before timeout";
         } else {
             auto &movement = *movement_;
             const auto player = *world.playerPosition;
-            if (!movement.unit && player == movement.goal) {
+            const auto actor = view.load.playerUnitId ? world.units.find({0, *view.load.playerUnitId}) : world.units.end();
+            // Native Straight/AStar can finish at a neighbouring reachable
+            // cell. Accept only a newer server target already reached, not
+            // merely the sprite or a player sample near the requested goal.
+            const bool reachedNativeGoal = actor != world.units.end() &&
+                actor->second.pathVerificationRevision > movement.requestRevision &&
+                actor->second.verifiedDestination == player &&
+                std::abs(int(player.x) - movement.goal.x) <= 1 &&
+                std::abs(int(player.y) - movement.goal.y) <= 1;
+            if (nativeProgress(movement.progressPosition,player,movement.segment.value_or(movement.goal)))
+                movement.deadline=now+std::chrono::seconds(onlineMovementProgressTimeoutSeconds);
+            // The bound is on lack of native progress, not total journey time.
+            if (now >= movement.deadline) {
+                cancelMovement(); reason_ = "Server movement made no progress before timeout";
+            } else if (!movement.unit && (player == movement.goal || reachedNativeGoal)) {
                 movement_.reset(); reason_.clear();
-            } else {
-                const bool atSegment = movement.segment && (movement.unit || movement.segment != movement.goal) &&
-                    std::abs(int(player.x) - movement.segment->x) <= 1 &&
-                    std::abs(int(player.y) - movement.segment->y) <= 1;
-                // PlrMsg can defer 0x96 until position/stamina changes qualify.
-                // A missing sample after one second is not a stopped path: a
-                // walk segment itself may take longer. Reissuing it restarts
-                // native path computation and the display prediction.
-                if (atSegment && now - movement.submitted >= std::chrono::milliseconds(100)) {
-                    // Plan from the native position, never from the sprite's
-                    // predicted endpoint. Doors and moving targets may have changed.
-                    if (!submitSegment(movement)) {
-                        const bool rateLimited = !view.error &&
-                            (reason_ == "Movement request is rate limited" || reason_ == "Unit movement is rate limited");
-                        if (!rateLimited) cancelMovement();
-                    } else if (movement.finalUnit) {
-                        // The final native GUID command follows a moving target;
-                        // the NPC approach below still waits for actual proximity.
-                        movement_.reset();
-                    }
-                }
             }
         }
     }
@@ -214,12 +205,16 @@ void RemoteControl::tick() {
         !scene_.permitsInteraction(view, approach_->target)) {
         cancelApproach(); return;
     }
+    if (view.world.playerPosition) {
+        const auto &target=view.world.units.at(approach_->target);
+        if (target.position && nativeProgress(approach_->progressPosition,*view.world.playerPosition,*target.position))
+            approach_->deadline=now+std::chrono::seconds(15);
+    }
     if (now >= approach_->deadline) {
         cancelApproach(); reason_ = "Server unit approach did not arrive before timeout"; return;
     }
     if (scene_.interactionReady(view, approach_->target)) {
-        const bool sent = approach_->target.type == 0 ? session_.interact_map_unit(approach_->target, OnlineObjectIntent::Operate, approach_->context)
-                                                     : session_.interact_npc(approach_->target.id, approach_->context);
+        const bool sent = submitInteraction(approach_->target, approach_->context);
         if (sent) { cancelMovement(); reason_.clear(); }
     }
 }

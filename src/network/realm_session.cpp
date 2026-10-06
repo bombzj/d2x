@@ -723,6 +723,7 @@ struct RealmSession::Impl {
         if (world.combatRequest && world.combatRequest->state == OnlineCombatRequest::State::Pending)
             world.combatRequest->state = OnlineCombatRequest::State::Interrupted;
         world.combatEvents.clear(); world.combatSequence = 0;
+        world.questAlerts.clear();
         world.npcRequested.reset(); world.npcConversation.reset(); world.movementRequest.reset();
         world.townPortalPending = false;
         initializedNpc.reset(); portalRequest.reset();
@@ -949,6 +950,8 @@ struct RealmSession::Impl {
                 if (!selected || player->second.name != selected->name || player->second.classId != selected->characterClass)
                     throw ProtocolError("Assigned game player differs from the selected Realm character");
                 stage(OnlineStage::ProtocolReady);
+                // Rcv0x40 requests the player-private quest log/status snapshot after assignment.
+                sent(gs, {0x40});
             }
         }
     }
@@ -1785,7 +1788,13 @@ bool RealmSession::submit_item(OnlineItemCommand command) {
         case OnlineItemAction::Stack: pair(0x21); break;
         case OnlineItemAction::Book: pair(0x29); break;
         case OnlineItemAction::Socket: pair(0x28); break;
-        case OnlineItemAction::Identify: out.u8(0x27); out.u32(command.target); out.u32(command.item); break;
+        case OnlineItemAction::Identify:
+            // Original pSpell01 prepares TARGETING before applying the target. TCP preserves order.
+            if (world.itemTargetingSource != command.item) {
+                Writer prepare; prepare.u8(0x20); prepare.u32(command.item); prepare.u32(point.x); prepare.u32(point.y);
+                p.sent(p.gs, prepare.release());
+            }
+            out.u8(0x27); out.u32(command.target); out.u32(command.item); break;
         case OnlineItemAction::SwitchWeapons: out.u8(0x60); break;
         case OnlineItemAction::CubeOpen:
             p.close_interaction();
@@ -1854,6 +1863,13 @@ bool RealmSession::submit_combat(OnlineCombatCommand command) {
     request.sequence = ++p.combatSequence; request.revision = world.revision; request.command = command;
     Writer out;
     switch (command.action) {
+    case Action::BindHotkey:
+        if (command.hotkeySlot >= world.skillHotkeys.size() || command.skill > 0x0FFF) {
+            p.error(OnlineErrorKind::Input, "Invalid native skill hotkey"); return false;
+        }
+        out.u8(0x51); out.u32(uint32_t(command.hotkeySlot) << 16 | command.skill |
+            (command.hand == OnlineSkillHand::Left ? 0x8000u : 0));
+        out.u32(UINT32_MAX); request.state = OnlineCombatRequest::State::SentNoAck; break;
     case Action::SelectSkill:
         out.u8(0x3C); out.u32(uint32_t(command.skill) | (command.hand == OnlineSkillHand::Left ? 0x80000000u : 0));
         out.u32(UINT32_MAX); break;

@@ -14,9 +14,11 @@
 namespace d2x {
 struct CharacterSkillView {
     int id = -1, page = 0, row = 0, column = 0;
+    int listRow = -1, listPool = 0, iconCell = -1;
     std::string classCode, name;
     int baseRank = 0, effectiveRank = 0, maximumRank = 0, nextRequiredLevel = 0;
     bool passive = false, leftAllowed = false, available = false, canAllocate = false, usableNow = false;
+    bool pickerEnabled = false; // Selection icon state; independent of town casting permission.
     CharacterActionDisplay action;
     std::vector<std::string> treeTooltip, pickerTooltip;
 };

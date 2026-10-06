@@ -21,7 +21,7 @@ class Platform {
             throw std::runtime_error("Unable to create OpenGL window");
         SetWindowMinSize(800, 510);
         SetExitKey(KEY_NULL);
-        SetTargetFPS(hidden ? 0 : 60);
+        SetTargetFPS(60);
         if (!hidden) {
             HideCursor();
             InitAudioDevice();
@@ -65,6 +65,7 @@ int runGame(int argc, char **argv) {
                      "--debug-pipe <name>: opt-in local command interface; starts running.\n"
                      "pause/resume freeze client presentation only; the server and network keep running.\n"
                      "--online-character <name> --online-create-game <name> | --online-join-game <name>\n"
+                     "--online-play <character> logs in once and creates a uniquely named normal game.\n"
                      "Quick entry uses remembered credentials and the normal server handshake once.\n"
                      "--hidden --frames N --screenshot <png> --pack <new.mpq>\n";
         return 0;

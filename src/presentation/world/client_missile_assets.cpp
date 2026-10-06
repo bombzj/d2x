@@ -55,6 +55,14 @@ void SceneAssets::loadProjectileDefinitions(const ClassicData &content) {
         }
         for (size_t i = 0; i < program.hitChildren.size(); ++i)
             program.hitChildren[i] = linked(row, "CltHitSubMissile" + std::to_string(i + 1));
+        if (const auto child=missileRows_.find(program.children[0]); child!=missileRows_.end())
+            program.childServerSent=table.number(child->second,"ClientSend").value_or(0)!=0;
+        if (program.function==9 && program.hitFunction==18) {
+            const auto light=missileRows_.find(program.hitChildren[1]);
+            meteorVisuals.emplace(id,MeteorVisual{light==missileRows_.end()?0:table.number(light->second,"Range").value_or(0),
+                program.hitChildren[0],program.hitParameters[0],program.hitChildren[1],program.hitChildren[2],program.hitChildren[3],
+                program.hitParameters[1],program.hitParameters[2]});
+        }
         clientMissilePrograms.emplace(id, program);
         if (program.hitFunction == 3 && (program.hitChildren[1] >= 0 || program.hitChildren[2] >= 0))
             projectileImpactVariants.emplace(id, std::array{program.hitChildren[1], program.hitChildren[2]});

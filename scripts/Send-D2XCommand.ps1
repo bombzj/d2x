@@ -18,7 +18,7 @@ param(
         'online-items', 'online-ground', 'online-item-action',
         'online-social', 'online-chat',
         'online-combat', 'online-skills', 'online-select-skill', 'online-cast', 'online-attack',
-        'online-stop-skill', 'online-learn-skill', 'online-spend-attribute',
+        'online-stop-skill', 'online-learn-skill', 'online-spend-attribute', 'online-bind-hotkey',
         'ui-input', 'screenshot', 'quit')]
     [string]$Command,
     [hashtable]$Arguments = @{},

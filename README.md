@@ -21,7 +21,7 @@ Windows 在项目根目录执行：
 .\Play.cmd
 ```
 
-当前源码普通启动先显示主菜单，由 Battle.net 进入账号登录和服务器选角。本地角色／D2S／地图种子等产品参数已移除并明确拒绝。先通过 UI 登录一次后，可用 `Play.cmd -OnlineCharacter <角色名> -OnlineCreateGame <房间名>` 自动执行正常登录到建房流程；已有房间用 `-OnlineJoinGame`。快捷入局仅尝试一次，不跳过原服认证或取票。
+当前源码普通启动先显示主菜单，由 Battle.net 进入账号登录和服务器选角。本地角色／D2S／地图种子等产品参数已移除并明确拒绝。先通过 UI 登录一次后，可用 `Play.cmd -OnlinePlay <角色名>` 自动创建随机命名的普通房间，或用 `Play.cmd -OnlineCharacter <角色名> -OnlineCreateGame <房间名>` 自动执行正常登录到建房流程；已有房间用 `-OnlineJoinGame`。快捷入局仅尝试一次，不跳过原服认证或取票。
 
 `scripts/package.ps1` 更新固定 `dist/current`，只复制已构建程序、脚本和文档，不复制 MPQ。在仓库根可用 `dist/current/Play.cmd -Mpq assets/mpq2` 启动已有包；保存与截图归包目录。构建、打包、Linux 依赖及详细参数见 [开发指南](docs/development/BUILD_AND_RUN.md)。Linux 尚未实际编译或运行。
 

@@ -30,12 +30,16 @@ FrameInput pollInput(const Viewport &viewport) {
     input.control = IsKeyDown(KEY_LEFT_CONTROL) || IsKeyDown(KEY_RIGHT_CONTROL);
     input.storage = input.control && IsKeyPressed(KEY_F4);
     input.enter = IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_KP_ENTER);
-    input.backspace = IsKeyPressed(KEY_BACKSPACE);
-    for (int character = GetCharPressed(); character; character = GetCharPressed())
+    input.backspace = IsKeyPressed(KEY_BACKSPACE) || IsKeyPressedRepeat(KEY_BACKSPACE);
+    input.tab = IsKeyPressed(KEY_TAB);
+    for (int character = GetCharPressed(); character; character = GetCharPressed()) {
         if (character >= '0' && character <= '9')
             input.text.push_back(char(character));
+        if (character >= 32 && character <= 126) input.entryText.push_back(char(character));
+    }
+    input.wheel = GetMouseWheelMove();
     input.quantityDelta =
-        int(GetMouseWheelMove()) + int(IsKeyPressed(KEY_RIGHT)) - int(IsKeyPressed(KEY_LEFT));
+        int(input.wheel) + int(IsKeyPressed(KEY_RIGHT)) - int(IsKeyPressed(KEY_LEFT));
     input.focused = IsWindowFocused();
     input.showLoot = IsKeyDown(KEY_LEFT_ALT) || IsKeyDown(KEY_RIGHT_ALT);
     if (input.control && input.showLoot) {
@@ -53,7 +57,7 @@ FrameInput pollInput(const Viewport &viewport) {
     if (input.control && input.showLoot)
         input.movement = {};
     input.help = input.control && IsKeyPressed(KEY_F1);
-    input.automap = IsKeyPressed(KEY_TAB);
+    input.automap = input.tab;
     input.minimapSide = IsKeyPressed(KEY_V);
     input.automapCenter = IsKeyPressed(KEY_HOME);
     input.automapNames = !input.control && IsKeyPressed(KEY_F12);

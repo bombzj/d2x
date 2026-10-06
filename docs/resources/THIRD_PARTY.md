@@ -1,5 +1,17 @@
 # 资料、代码和素材来源
 
+世界绘制收拢沿本地OpenDiablo2 7f92c57的d2maprenderer/renderer.go::renderTilePass1／2／3核对下层墙／地板／阴影、上墙、屋顶顺序，object_details_record.go核对Lit0–7直径与各模式遮光。继续复用本页既有D2MOO D2Environment／D2Gfx CmnSubtile的环境、四邻点平均及PL2证据和现有Pops／Warp实现；地形、灯光和原图字段来自当前MPQ，没有导入参考素材或服务端玩法代码。收拢到原world_renderer.cpp和LightingView，删除重复绘制入口，未另造一套客户端光照算法。此项仅Release构建／打包，未运行游戏；时序及完整原客户端照明限制见[场景照明](../gameplay/world/LIGHTING.md)。
+
+技能选择菜单核对本地OpenDiablo2固定`7f92c57`的`d2game/d2player/skill_select_panel.go`／`skill_row.go`：48像素原图、按ListRow压缩非空行、左右对齐与技能ID方向；同时读取当前MPQ Skills／SkillDesc及通用／女巫图集，对照用户原版截图确认菜单与底栏的城镇禁施显示不同。ListRow／ListPool／IconCel仍由当前MPQ导入，共用界面独立适配，不复制参考源码；红色精确调色板、完整物品技能选择语义未认证，见[经典底栏](../gameplay/ui/CLASSIC_HUD.md#技能与操作)。资源导出／预览仅留在忽略的artifacts目录，原MPQ未修改；源码已随2026-10-06世界绘制批次Release构建并打包，未运行验证。
+
+第一幕怪物联机沿D2MOO 5596f5c核对D2Skills::SKILLS_GetSeqNumFromSkill、SequenceTbls原MonSeq采样、MonsterMode普通MissAttack／QuillRat、SkillMonst::SrvDo088／091／092／097、Missiles::MISSILES_SyncToClient及SCmd::sub_6FC3FC80。身份、动作序列、释放事件、原图、声音和各难度字段读取当前MPQ。客户端复用已有弹体／碎冰表现而不导入服务端AI或伤害结算；火墙／陨石部分视觉适配及死亡演出限制见联网模块。固定Utrans沿本页既有原1.13c RVA 0x53aa5证据。参考代码和导出表不纳入提交。
+
+联机NPC／小地图共用改造核对本地D2MOO 5596f5c的MonStats2CompositLinker、D2Common_11069／11070及SCmd 0xAC：空变体计数返回空组件代码，仍消费原服组件位宽，不拒绝整个NPC；COF／原组件资源校验复用现有Graphics合成器。当前MPQ Warriv1／Charsi的S1启用、S1v为空，身体原TRv=lit。城镇整图依据DrlgPreset的AutoMap整房初始化和三座城镇pfTownAutomap分支，读取当前原DT1／AutoMap及已有纯C++生成结果；城镇／野外揭示、原图缓存和绘制统一沿现有AutomapExploration／AutomapCatalog／SceneAssets／SceneView，网络仅适配原服数据。已随行走修正Windows Release构建并入包，有限营地／野外截图不认证完整小地图选项及NPC图层；不提交参考源码／原资源。
+
+联机单人PvE沿本地D2MOO `5596f5c`（MIT）核对MonsterMsg原动作表／有技能时改发技能通知、PlrMsg与SCmd的HP固定点右移8位及死亡／回城回包、D2Common SequenceTbls的女巫闪电seqnum=12。19步SC采样与释放点为原引擎序列规则，图形、帧速、怪物身份、声音及延迟仍从当前MPQ读取；Diablerie MonSound／SoundInfo交叉核对MonSounds延迟的25Hz与原声组，独立适配共用SoundBank。死亡直接退局重入的原版1血满蓝由用户实测补证，界面只在原服存活模式下投影1血，不修改生命副本或写服务器存档。构建／有限原服证据与复杂技能限制见联网模块；参考代码、导出表、截图和账号资料不提交。
+
+联机自己游玩后续核对本地D2MOO `5596f5c`：SUnitMsg的对象0x51 InteractType、ObjMode神坛与对象TARGETABLE更新；PlrMsg Rcv0x51、Player::sub_6FC7C450、Clients初始化及SCmd 0x7B确认快捷键无即时ACK、重入恢复；Quests::QUESTS_StatusCallback/StatusCyclerEx、MonsterAI NPC初始化、D2QuestRecord及D2PacketDef核对私有／公共任务字与0x50／52／5D编号。OpenDiablo2 quest_log.go交叉核对原TBL日志键与原图状态，不采用其离线任务结算。当前MPQ Shrines/Objects及TBL提供身份、名称和文字；参考代码、表及资源不纳入提交。
+
 联机死亡修正核对同一D2MOO固定`5596f5c`（MIT）的`PlrMsg.cpp::sub_6FC82360/sub_6FC828D0/D2GAME_PACKETCALLBACK_Rcv0x41_Resurrect_6FC87480`、`PlrModes.cpp`尸体创建／回收与DEAD转换、`SCmd.cpp`及`D2PacketDef.h`的0x0D／0x0E／0x8E。生命采样可省略归零通知；死亡状态必须消费原动作／模式，尸体取回用真实type0 GUID，距离门槛8来自原处理器。共用既有死亡字体／职业原图与当前MPQ尸体名称，不移植原服死亡惩罚、装备转移或保存逻辑。仅源码及文档修正，未构建、运行或打包；参考仓库和素材不纳入提交。
 
 共用弹体表现修正核对本地D2MOO固定`5596f5c`（MIT）的`Missiles.cpp::MISSILES_CreateMissileFromParams/MISSILES_SyncToClient`、`PathMisc.cpp::sub_6FD5CEB0`、`SkillSor.cpp::SKILLS_MissileInit_ChargedBolt`、`SkillAma.cpp::SKILLS_SrvDo008_MultipleShot_Teeth_ShockWave`及`MissMode.cpp`冰封球15／16／29；速度、寿命、客户端子弹体和命中关联仍读当前MPQ，共用已有整数格点／充能弹几何。Diablerie的Missile.cs／MissileFunctions.cs仅交叉核对显示与玩法分离；其近似碎冰数量／随机偏移不采用。未将服务端函数当作完整D2Client实现，缺证据部分见[联网模块](../modules/NETWORK.md#联机游玩表现与输入当前源码)。仅源码与文档修正，未构建、运行或打包；不纳入参考代码、表或资源。
@@ -53,7 +65,9 @@
 
 ## 实际使用的开源项目
 
-联机绕障核对上述本地D2MOO快照的`D2Common/src/Path/Path.cpp::PATH_AllocDynamicPath`、`PathMisc.cpp::PATH_Straight_Compute/PATH_Toward_6FDAA9F0/PATH_RayTrace`和PlrMsg坐标／GUID移动处理：玩家默认STRAIGHT，先走TOWARD局部路径，距离平方≤18²时才尝试A*；原碰撞射线按整数主轴和初始偏差扫描，区别于浮点格线遍历。共同Grid增加该射线约束，RemoteControl复用已有路径分段发原命令，不修改离线寻路默认策略、不引入原DLL。Diablerie `Engine/Pathing.cs::BuildPath/Collapse`仅交叉核对路径与可见转折点用途，不作为D2GS协议或精确原路径依据。沿既有MIT归属独立适配，reference不提交；最新源码未构建、运行或打包，范围见[联网模块](../modules/NETWORK.md#行走回城门与npc)。
+单人联机行走／任务／成长追加核对本地D2MOO 5596f5c：D2Skills::SKILLS_InitSkillList／SKILLS_CheckRequiredSkills的基础技能和reqlevel＋base rank，Quests::QUESTS_ActiveCycler的0x8A及NPCMessage／PlrMsg的0x31，PlayerStats::PLAYERSTATS_LevelUp与SUnitMsg::D2GAME_UpdateUnit的0x2C事件2。Diablerie PlayerController的按住GoTo和CharStat的cursor_level_up仅作显示交叉证据。当前MPQ的CharStats／PlayerClass含Expansion分隔行，a1npc的SPEED对应原TBL对白首行数字（Warriv原45／124），基础动作、经验／速度／高度及声音仍读当前原表。D2MOO SCmd经验发送函数的紧凑包赋值与原1.13c D2Game.dll RVA ABDA0不一致，后者0x1A写经验差值cl、0x1B写差值cx、0x1C写完整edx；以原DLL只读反汇编和实际原服增量为准。不复制参考源码，不生成本地经验、任务奖励或角色档。验证范围见[联网模块](../modules/NETWORK.md)。
+
+联机行走核对上述本地D2MOO快照的`D2Common/src/Path/Path.cpp::PATH_AllocDynamicPath`、`PathMisc.cpp::PATH_Straight_Compute/PATH_Toward_6FDAA9F0/PATH_RayTrace`、`Step.cpp::sub_6FDACEC0`和PlrMsg坐标／GUID移动处理：玩家默认STRAIGHT，先走TOWARD局部路径，距离平方≤18²时才尝试A*；18格不能切成命令长度。RemoteControl直接提交完整坐标／GUID；共同Grid适配原整数裁剪、三方向优先级及73步边界，近距A*沿已有求解器，未认证全部原节点顺序。原RayTrace成功保留终点、失败才改为最后无碰撞点；Step按实际位移经过的格子检查碰撞，不在每个显示帧重跑规划射线。本机同一1.13c D2Common.dll静态核对优先级表RVA `0x8c320`和方向索引函数RVA `0x3e190`，与采用的25×3优先级／索引规则一致。Diablerie `Engine/PlayerController.cs`长按指针与`Engine/Pathing.cs::BuildPath/Collapse`仅交叉核对输入／表现，不作为D2GS协议或完整原路径依据。沿既有MIT归属独立适配，不引入原DLL运行依赖或参考源码／资源。Windows Release已构建入包，最新行走验收留给用户；范围见[联网模块](../modules/NETWORK.md#行走回城门与npc)。
 
 五幕地图复核沿下述固定本地快照：D2MOO 的 DrlgMaze、DrlgOutPlace／OutDesr／OutJung／OutSiege 核对特殊房、七墓、丛林与条带；DrlgTileSub 核对主题概率、Trials／Max、CheckAll、变体及掩码合并；DrlgPreset 核对 KillEdge、Pops／PopPad 和完整预设；DrlgDrlgAnim 与 D2CMP 标志核对 lava 帧号、Animate 和默认动画速度。OpenD2 DT1 结构和 OpenDiablo2 d2dt1／tile_cache 交叉核对材料位与 RarityFrameIndex。Trees.ds1末组EOF核对OpenD2 Engine/DS1.cpp的点名注释／边界检查，以及Diablerie Engine/IO/D2Formats/DS1.cs的ReadGroups／EndOfStreamException处理；D2MOO DrlgPreset的ReadInt32无EOF校验，D2Hell Archive分配文件长度加800字节，不能据此推造缺少的组字段。数据仍读取当前MPQ；当前源码与包保留声明14组，已知缺失末组字段作零尺寸兼容并保留位置随机消耗，不复现未初始化内存读取。原尾部事实见[MPQ](MPQ.md#treesds1-原尾部兼容)。适配与未消费字段集中列于[地图](../gameplay/world/MAPS.md#数据解码与重建配方)，不提交reference或导出资源。
 

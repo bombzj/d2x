@@ -5,6 +5,7 @@
 #include "content/classic_data.hpp"
 #include "content/character/character_progression.hpp"
 #include "content/items/item_display.hpp"
+#include "gameplay/character/attributes.hpp"
 #include "contracts/online_scene.hpp"
 #include "gameplay/quest/catalog.hpp"
 #include "gameplay/items/gold_limits.hpp"
@@ -49,7 +50,7 @@ struct RemoteUiClients::Impl {
     HirelingListView hirelingList;
     MapSceneView mapView;
     mutable TravelMenuView travelView;
-    std::array<SkillHotkey, 8> hotkeys{};
+    std::array<std::optional<SkillHotkey>, 8> hotkeys{}; // Local preferences sent without a native ACK.
     std::deque<OnlineItemCommand> transactions;
     std::optional<uint64_t> waiting;
     std::optional<OnlineIntentContext> waitingContext;
@@ -60,6 +61,8 @@ struct RemoteUiClients::Impl {
         ActorView controlledActor() const override {
             ActorView v; v.id = o.characterView.actor; v.region = o.mapView.region;
             v.dead = o.characterView.dead; v.position = o.mapView.observer;
+            v.lightRadius = int(std::clamp(int64_t(CharacterAttributes{}.lightRadius) +
+                int64_t(o.stat("item_lightradius").value_or(0)), int64_t(1), int64_t(18)));
             return v;
         }
         void control(ActorControlIntent) override {}
@@ -119,7 +122,13 @@ struct RemoteUiClients::Impl {
                 using T = std::decay_t<decltype(v)>;
                 OnlineCombatCommand request;
                 if constexpr (std::is_same_v<T, BindSkillHotkey>) {
-                    if (v.index < o.hotkeys.size()) o.hotkeys[v.index] = {v.skill,v.right};
+                    if (v.index >= o.hotkeys.size() || v.skill < -1) return;
+                    request.action = OnlineCombatCommand::Action::BindHotkey;
+                    request.hotkeySlot = uint8_t(v.index); request.skill = uint16_t(std::max(0,v.skill));
+                    request.hand = v.right ? OnlineSkillHand::Right : OnlineSkillHand::Left;
+                    request.context = o.context;
+                    if (o.combat.submit(request)) o.hotkeys[v.index] = SkillHotkey{v.skill,v.right};
+                    else o.notice = o.combat.reason();
                     return;
                 } else if constexpr (std::is_same_v<T, AllocateAttribute>) {
                     request.action = OnlineCombatCommand::Action::SpendAttribute;
@@ -386,10 +395,10 @@ struct RemoteUiClients::Impl {
         std::optional<uint16_t> cls;
         if (online.load.playerUnitId) if (auto it=w.units.find({0,*online.load.playerUnitId});it!=w.units.end()) cls=it->second.classId;
         const auto &characters = data.tables.at("charstats");
-        if (cls && *cls < characters.rows().size()) {
-            v.className = std::string(characters.value(*cls,"class"));
-            if (*cls < data.characters.size()) v.classCode = data.characters[*cls].code;
-            auto xp = experienceThresholds(data.tables.at("experience"),characters.value(*cls,"class"));
+        if (cls && *cls < data.characters.size()) {
+            const auto &definition = data.characters[*cls];
+            v.className = definition.name; v.classCode = definition.code;
+            auto xp = experienceThresholds(data.tables.at("experience"),characters.value(definition.sourceRow,"class"));
             v.level = int(stat("level").value_or(1)); v.experience = uint64_t(stat("experience").value_or(0));
             if (size_t(v.level)<xp.size()) v.currentLevelExperience=xp[size_t(v.level)];
             if (size_t(v.level+1)<xp.size()) v.nextLevelExperience=xp[size_t(v.level+1)];
@@ -402,31 +411,64 @@ struct RemoteUiClients::Impl {
         v.maxLife=int(stat("maxhp").value_or(0)); v.maxMana=int(stat("maxmana").value_or(0)); v.maxStamina=int(stat("maxstamina").value_or(0));
         v.dead=onlinePlayerDead(w); v.running=run; v.weaponSet=w.weaponSet;
         if (v.dead) v.hp = 0;
+        else if (w.life && !*w.life && w.deathPhase == OnlineDeathPhase::Alive && v.maxLife > 0)
+            // SCmd sends fixed-point HP >> 8. A living death-save reentry can
+            // therefore report zero whole HP; the original UI displays 1 HP.
+            // Keep the replica/sample untouched and only project the living HUD.
+            v.hp = 1;
         v.attackUsable=!v.dead && scene && !scene->town;
         v.attack.damage="?"; v.attack.attackRating="?";
         v.defense=int(stat("armorclass").value_or(0));
         if (const auto *tree=data.skills.tree(v.classCode)) { v.hasSkillTree=true; v.pageNames=tree->pageNames; }
         v.selectedSkills[v.weaponSet*2] = w.leftSkill ? int(w.leftSkill->skill) : -1;
         v.selectedSkills[v.weaponSet*2+1] = w.rightSkill ? int(w.rightSkill->skill) : -1;
-        v.skillHotkeys=hotkeys;
+        for (size_t slot=0; slot<v.skillHotkeys.size(); ++slot) {
+            if (hotkeys[slot]) v.skillHotkeys[slot]=*hotkeys[slot];
+            else if (const auto &native=w.skillHotkeys[slot]; native && native->selection && native->selection->owner==UINT32_MAX)
+                v.skillHotkeys[slot]={native->selection->skill ? int(native->selection->skill) : -1,
+                    native->hand==OnlineSkillHand::Right};
+        }
         v.choices[0].push_back(std::nullopt); v.choices[1].push_back(std::nullopt);
+        const auto *tree=data.skills.tree(v.classCode);
+        auto throwReady = [&](bool leftHand) {
+            for (uint8_t body : {uint8_t(leftHand ? 5 : 4), uint8_t(5)}) {
+                for (const auto &[itemId,item] : w.items) {
+                    if (item.mode!=1 || item.body!=body || item.ownerType!=0 || item.owner!=online.load.playerUnitId) continue;
+                    const auto *definition=data.items.find(item.code);
+                    if (!definition || definition->family!=ItemFamily::Weapon) continue;
+                    const auto decoded=items.read().items.find(itemId);
+                    return definition->equipment.throwable && decoded!=items.read().items.end() &&
+                        decoded->second.decoded && decoded->second.quantity.value_or(0)>0;
+                }
+                if (leftHand) break;
+            }
+            return false;
+        };
         for (const auto &[id,entry]:data.skills.skills) {
             auto base=w.playerBaseSkills.find(uint16_t(id)), bonus=w.playerBonusSkills.find(uint16_t(id));
             const int rank=base==w.playerBaseSkills.end()?0:base->second;
             const int effective=rank+(bonus==w.playerBonusSkills.end()?0:bonus->second);
             if (entry.classCode != v.classCode && !entry.classCode.empty() && !effective) continue;
             CharacterSkillView skill; skill.id=id; skill.page=entry.page; skill.row=entry.row; skill.column=entry.column;
+            skill.listRow=entry.listRow; skill.listPool=entry.listPool; skill.iconCell=entry.iconCell;
             skill.classCode=entry.classCode; skill.name=entry.name; skill.baseRank=rank; skill.effectiveRank=effective;
             skill.maximumRank=entry.maximumRank; skill.nextRequiredLevel=entry.requiredLevel+rank;
             skill.passive=entry.passive; skill.leftAllowed=entry.leftAllowed;
             auto wire=w.playerSkills.find(uint16_t(id));
             if (wire!=w.playerSkills.end()) skill.effectiveRank=std::max(skill.effectiveRank,int(wire->second));
-            skill.available=skill.effectiveRank>0 || (entry.classCode.empty() && entry.basicAction!=BasicSkillAction::None);
+            const bool innate=tree && (entry.basicAction==BasicSkillAction::Attack ||
+                std::find(tree->commonSkills.begin(),tree->commonSkills.end(),id)!=tree->commonSkills.end());
+            skill.available=skill.effectiveRank>0 || innate;
             skill.canAllocate=entry.classCode==v.classCode && rank<entry.maximumRank && v.unspentSkills>0 && v.level>=skill.nextRequiredLevel;
             for(int required:entry.prerequisites) {
                 auto r=w.playerBaseSkills.find(uint16_t(required)); skill.canAllocate &= r!=w.playerBaseSkills.end() && r->second>0;
             }
             skill.usableNow=skill.available && !entry.passive && !v.dead && (!scene || !scene->town || entry.allowedInTown);
+            skill.pickerEnabled=skill.available && !entry.passive && !v.dead;
+            if (entry.basicAction==BasicSkillAction::Throw || entry.basicAction==BasicSkillAction::LeftHandThrow) {
+                skill.pickerEnabled &= throwReady(entry.basicAction==BasicSkillAction::LeftHandThrow);
+                skill.usableNow &= skill.pickerEnabled;
+            }
             skill.action.damage="?"; skill.action.attackRating="?";
             skill.treeTooltip={entry.name+" "+std::to_string(rank)+"/"+std::to_string(entry.maximumRank)};
             if (!entry.description.empty()) skill.treeTooltip.push_back(entry.description);
@@ -555,7 +597,21 @@ struct RemoteUiClients::Impl {
         if(scene && scene->origin && w.playerPosition) mapView.observer={float(int(w.playerPosition->x)-scene->origin->x),float(int(w.playerPosition->y)-scene->origin->y)};
         if(scene) for(const auto &d:scene->waypoints) if(d.unlocked) mapView.waypointActs[d.act]=true;
         npcView={}; npcView.revision=revision; npcView.actor=characterView.actor;
-        npcScene.revision=revision;
+        npcScene={}; npcScene.revision=revision;
+        const auto &mon=data.tables.at("monstats"), &extra=data.tables.at("monstats2");
+        for (const auto &key:w.questAlerts) {
+            const auto unit=w.units.find(key);
+            if (key.type!=1 || unit==w.units.end() || !unit->second.classId) continue;
+            for (size_t row=0; row<mon.rows().size(); ++row) {
+                if (mon.number(row,"hcIdx")!=*unit->second.classId || !mon.number(row,"interact").value_or(0)) continue;
+                for (size_t sub=0; sub<extra.rows().size(); ++sub)
+                    if (extra.value(sub,"Id")==mon.value(row,"MonStatsEx")) {
+                        npcScene.npcs[npcId(key.id)]={true,extra.number(sub,"OverlayHeight").value_or(0)-1};
+                        break;
+                    }
+                break;
+            }
+        }
         if(scene && scene->npcConversation) {
             const auto &d=*scene->npcConversation; npcView.npc=npcId(d.source); npcView.valid=true; npcView.speaker=d.speaker;
             if(scene->origin) npcView.position={float(int(d.position.x)-scene->origin->x),float(int(d.position.y)-scene->origin->y)};
@@ -583,9 +639,32 @@ struct RemoteUiClients::Impl {
         for(const auto &def:questDefinitions) {
             questView.acts[size_t(def.act)].push_back(def.id);
             auto &entry=questView.entries[questIndex(def.id)]; entry.act=def.act; entry.displaySlot=def.displaySlot; entry.icon=def.icon;
-            entry.title=data.questContent[questIndex(def.id)].title; entry.known=false;
-            entry.description="Native quest log state is not available yet.";
+            entry.title=data.questContent[questIndex(def.id)].title;
+            const auto &state=w.quests;
+            const auto status=state.statuses[def.nativeSlot];
+            const auto flags=state.playerFlags ? std::optional<uint16_t>{(*state.playerFlags)[def.nativeSlot]} : std::nullopt;
+            entry.known=flags.has_value() || status.has_value();
+            entry.completed=(flags && (*flags & 1)) || status==13; // Native completed log status; never shared flags.
+            entry.active=!entry.completed && ((status && *status) || (flags && (*flags & 0x001E)));
+            std::string key;
+            if (entry.completed) key="qstsComplete";
+            else if (status && *status==12) key="qstsThankYouComeAgain";
+            else if (status && *status>0 && *status<12) {
+                key=(def.id==QuestId::SiegeOnHarrogath ? "qsta" : "qstsa") +
+                    std::to_string(def.act+1)+"q"+std::to_string(def.nativeQuest)+std::to_string(*status);
+                if (def.id==QuestId::DenOfEvil && *status==4 && state.denRemaining==1) key+="0";
+            }
+            if (const auto text=data.questStrings.find(key); text!=data.questStrings.end()) {
+                entry.description=text->second;
+                if (def.id==QuestId::DenOfEvil && state.denRemaining)
+                    if (const auto at=entry.description->find("%d"); at!=std::string::npos)
+                        entry.description->replace(at,2,std::to_string(*state.denRemaining));
+            } else if (!entry.known || entry.active)
+                entry.description="Native quest description is not available yet.";
         }
+        const auto den=w.quests.statuses[questDefinition(QuestId::DenOfEvil).nativeSlot];
+        questView.showDenRemaining=den==4 && !questView.entry(QuestId::DenOfEvil).completed;
+        if (questView.showDenRemaining) questView.denRemaining=w.quests.denRemaining;
         shopView={}; shopView.revision=revision; shopView.actor=characterView.actor; shopView.npc=npcView.npc;
         shopView.bankGold=inventoryView.bankGold; shopView.pricesKnown=false;
         shopView.tabLabels={"Weapons","Armor","Armor","Misc"};

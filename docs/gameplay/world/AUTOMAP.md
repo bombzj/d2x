@@ -14,9 +14,9 @@ client/automap_exploration.*唯一维护探索。观察者邻房候选与主场�
 
 ## 联网本局探索
 
-RemoteTown按当前局／幕／种子／区域／全局地图格记忆，RemoteScene提交实际可见原DT1实例；重用AutomapCatalog，不再起地图规则副本。关闭地图仍揭示，换区／换幕后返回保留，新局清空。连续步行组件同层，楼梯／门户隔层；传送只揭示落点。联网不读写本地.d2xmap或服务器D2S，也不生成未揭示房间来补全路线。
+RemoteTown将原服本局／幕／种子／房间和坐标适配为MapSceneView，复用AutomapExploration维护区域探索层，SceneView::drawWorld返回实际可见原DT1实例，RemoteScene转交RemoteTown；可见选择不另写联机版本。原格标记及配对墙方向统一由AutomapCatalog选择，绘制值进入AutomapDrawView；SceneAssets统一加载原DC6／城镇拼图，SceneView::drawAutomap统一大小图、侧栏裁剪、平移、Fade和名称。联机专用绘制器及图形缓存已删除。关闭地图仍揭示，换区／换幕后返回保留，新局清空；连续步行组件同层，楼梯／门户隔层，传送只揭示落点。联网不读写本地.d2xmap或服务器D2S，也不生成未揭示房间来补全路线。
 
-城镇原整图、物件AutoMap及中立NPC标记沿当前MPQ。鲁高因跳过原客户端诊断帧表，单机／联机共用；本机1.13c文件偏移0xD2DB8与libd2的lut_town_skip一致，不能画MPQ中的红叉。Tab／V／方向键／Home已接入，online-automap控制大小和显示；完整选项、名称、队伍显示尚未接入，当前地形／物件alpha128、NPC／本人不淡化，原客户端精确锚点／色表仍未认证。
+城镇全揭示直接沿AutomapExploration既有safe区域规则；RemoteTown首次入城只读取原AutoMap已经初始化的房间以准备完整DT1标记，或登记原整图城镇的变体／中心，不另写揭示规则。邻接野外继续按原服房间与实际视口相交后逐格揭示。原整图、物件AutoMap及中立NPC标记仍取当前MPQ，鲁高因共用诊断帧跳过表；本机1.13c文件偏移0xD2DB8与libd2的lut_town_skip一致，不能画MPQ中的红叉。Tab／V／方向键／Home和online-automap沿既有输入；名称及Fade选项现由共用UI状态直接控制。队伍实体标记和原客户端精确锚点／色表仍未认证。本次仅改源码，未构建、打包或测试，不属于下文旧包证据。
 
 实际包五幕旅行返回保持第一幕已探索格，城镇整图与大小图截图已查看。准确连服及服务端失败范围见[联网地图冒烟](../../modules/NETWORK.md#地图交互与探索冒烟)。本批地形算法、D2S v96和本地侧文件v1均未改变。
 

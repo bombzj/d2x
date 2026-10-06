@@ -10,6 +10,18 @@
 #include <vector>
 
 namespace d2x {
+struct AutomapStamp { int x = 0, y = 0, cel = -1; };
+// Positions share the observer's world coordinate space; rendering has no
+// dependency on either local authority or server packet coordinates.
+struct AutomapDrawView {
+    struct Stamp { Vec position; int cel = -1; };
+    struct Town { int level = 0, variant = 0; Vec center; };
+    struct Marker { Vec position; int cel = -1; std::string name; bool npc = false, showName = false; };
+    Vec observer;
+    std::vector<Stamp> stamps;
+    std::vector<Town> towns;
+    std::vector<Marker> markers;
+};
 struct MapRect { int x = 0, y = 0, width = 0, height = 0; };
 struct MapMarkerView {
     Vec position;

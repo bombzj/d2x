@@ -1,6 +1,7 @@
 #pragma once
 #include "contracts/online.hpp"
 #include "resources/archive.hpp"
+#include "presentation/input.hpp"
 #include <memory>
 #include <optional>
 #include <raylib.h>
@@ -44,7 +45,7 @@ class RealmFrontend {
     RealmFrontend(const RealmFrontend &) = delete;
     RealmFrontend &operator=(const RealmFrontend &) = delete;
     FrontendIntent frame(FrontendPage, const OnlineView &, std::string_view gateway, std::string_view notice,
-                         Vector2 mouse, std::string_view worldNotice = {});
+                         Vector2 mouse, const FrameInput &, std::string_view worldNotice = {});
     void clearPassword();
     void clearTransientPasswords();
     void setLogin(std::string account, std::string password);

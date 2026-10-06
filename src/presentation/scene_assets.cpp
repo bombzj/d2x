@@ -26,6 +26,26 @@
 #include <utility>
 
 namespace d2x {
+bool SceneAssets::playOriginalCombatSound(std::string_view name, uint64_t frame) {
+    if (name.empty()) return true; // Original tables permit silent actions.
+    if (!combatSounds_) {
+        combatSounds_ = std::make_unique<DataTable>(archives_.read("data/global/excel/sounds.txt"));
+        for (size_t row = 0; row < combatSounds_->rows().size(); ++row)
+            combatSoundRows_.emplace(combatSounds_->value(row, "Sound"), row);
+    }
+    const auto row = combatSoundRows_.find(name);
+    if (row == combatSoundRows_.end()) return false;
+    const std::string key = "remote-combat:" + std::string(name);
+    try {
+        audio.registerOriginalGroup(archives_, key, *combatSounds_, row->second);
+        audio.play(key, frame);
+        return true;
+    } catch (const std::exception &) {
+        // Unsupported looping programs or missing original resources are diagnostic,
+        // never a reason to terminate an otherwise valid online session.
+        return false;
+    }
+}
 const SceneAssets::ProjectileVisual *SceneAssets::ensureProjectile(int id) {
     if (projectileAnimations.contains(id)) return &projectileVisuals.at(id);
     if (!unavailableProjectiles.insert(id).second) return nullptr;
@@ -93,23 +113,7 @@ void loadFont(Graphics &graphics, Archives &archives, ClassicFont &font, std::st
     font.ready = true;
 }
 } // namespace
-SceneAssets::SceneAssets(Archives &archives, const GameSession &session, const IMapAssetSource &source)
-        : archives_(archives), graphics_(archives),
-            uiGraphics_(archives, "data/global/palette/sky/pal.dat"),
-      unitsGraphics_(archives, "data/global/palette/units/pal.dat"),
-      automapCatalog_(archives), audio(archives) {
-    loadFont(uiGraphics_, archives, font, "font16");
-    loadFont(uiGraphics_, archives, speechFont, "fontformal12");
-    const DataTable overlays(archives.read("data/global/excel/overlay.txt"));
-    for (size_t row = 0; row < overlays.rows().size(); ++row) {
-        if (overlays.value(row, "Filename").empty()) continue;
-        overlayIds.emplace(overlays.value(row, "overlay"), int(row));
-        overlayLights.emplace(int(row), OverlayLight{
-            overlays.number(row, "InitRadius").value_or(0), overlays.number(row, "Radius").value_or(0),
-            {uint8_t(overlays.number(row, "Red").value_or(0)),
-             uint8_t(overlays.number(row, "Green").value_or(0)),
-             uint8_t(overlays.number(row, "Blue").value_or(0)), 255}});
-    }
+void SceneAssets::loadNpcAlert(const DataTable &overlays) {
     for (size_t row = 0; row < overlays.rows().size(); ++row) {
         if (overlays.value(row, "overlay") != "npcalert") continue;
         const auto file = std::string(overlays.value(row, "Filename"));
@@ -128,6 +132,17 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session, const I
     if (npcAlert.frames <= 0 || npcAlert.fps <= 0 ||
         npcAlert.animation.count < npcAlert.frames)
         throw std::runtime_error("Original NPC alert overlay is missing or invalid");
+}
+SceneAssets::SceneAssets(Archives &archives, const GameSession &session, const IMapAssetSource &source)
+        : archives_(archives), graphics_(archives),
+            uiGraphics_(archives, "data/global/palette/sky/pal.dat"),
+      unitsGraphics_(archives, "data/global/palette/units/pal.dat"),
+      automapCatalog_(archives), audio(archives) {
+    loadFont(uiGraphics_, archives, font, "font16");
+    loadFont(uiGraphics_, archives, speechFont, "fontformal12");
+    loadWorldLightDefinitions();
+    const DataTable overlays(archives.read("data/global/excel/overlay.txt"));
+    loadNpcAlert(overlays);
     // D2MOO ObjMode.cpp maps shrine codes 6–15 to states 128–137.
     // The current MPQ States.txt selects the icon and shimmer for each state.
     const auto &states = session.content().states;
@@ -193,12 +208,9 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session, const I
         combatStateOverlays.emplace(state.definition.id, std::move(art));
     }
     regionTileSources.reserve(source.size());
-    regionTiles.resize(source.size());
-    regionTilesUploaded.assign(source.size(), false);
     for (size_t slot = 0; slot < source.size(); ++slot) {
         const auto &asset = source.readAsset(slot);
         regionTileSources.push_back(asset.tiles);
-        regionPalettes_.push_back(asset.palette);
     }
     indexPropArt(source);
     loadAutomap(source);
@@ -210,19 +222,6 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session, const I
     loadMonsterAudio(archives, session.monsterContent());
     objectDefinitions_ = decodeTable(archives.read("data/global/excel/objects.txt"));
     const auto &objectRows = objectDefinitions_;
-    for (const auto &row : objectRows) {
-        if (row.at("Id").empty()) continue;
-        auto number = [&](const std::string &name) {
-            const auto &value = row.at(name);
-            return value.empty() ? 0 : std::stoi(value);
-        };
-        ObjectLight light;
-        for (size_t mode = 0; mode < light.diameter.size(); ++mode)
-            light.diameter[mode] = number("Lit" + std::to_string(mode));
-        light.color = {uint8_t(number("Red")), uint8_t(number("Green")), uint8_t(number("Blue")), 255};
-        light.flicker = number("Flicker") != 0;
-        objectLights.emplace(number("Id"), light);
-    }
     auto portalRecord = std::find_if(objectRows.begin(), objectRows.end(), [](const auto &row) {
         auto id = row.find("Id");
         return id != row.end() && id->second == "59";
@@ -359,34 +358,7 @@ SceneAssets::SceneAssets(Archives &archives, const GameSession &session, const I
     for (const auto &[id, skill] : session.content().skills.skills)
         if (skill.spell && groupedColdProjectiles.contains(skill.spell->missileId))
             loadProjectile(skill.spell->missileId, skill.spell->missileArt);
-    auto loadShatter = [&](std::string_view name) {
-        for (size_t row = 0; row < missiles.rows().size(); ++row)
-            if (missiles.value(row, "Missile") == name) {
-                const auto id = missiles.number(row, "Id");
-                const auto art = missiles.value(row, "CelFile");
-                if (!id || art.empty() || art == "null") break;
-                loadProjectile(*id, "data/global/missiles/" + std::string(art) + ".dcc");
-                return *id;
-            }
-        throw std::runtime_error("Missing original ice shatter missile: " + std::string(name));
-    };
-    iceShatterProjectiles = {loadShatter("icebreaksmall"), loadShatter("icebreakmedium"), loadShatter("icebreaklarge")};
-    const int smallMelt = loadShatter("icebreaksmallmelt"), largeMelt = loadShatter("icebreaklargemelt");
-    iceShatterMelts = {{iceShatterProjectiles[0], smallMelt},
-                      {iceShatterProjectiles[1], largeMelt}, {iceShatterProjectiles[2], largeMelt}};
-    const auto shatterSound = [&]() -> std::string_view {
-        for (size_t row = 0; row < missiles.rows().size(); ++row)
-            if (missiles.number(row, "Id") == iceShatterProjectiles[0]) return missiles.value(row, "TravelSound");
-        return {};
-    }();
-    bool shatterSoundFound = false;
-    for (size_t row = 0; row < projectileSounds.rows().size(); ++row)
-        if (!shatterSound.empty() && projectileSounds.value(row, "Sound") == shatterSound) {
-            audio.registerOriginalGroup(archives, "monster-shatter", projectileSounds, row);
-            shatterSoundFound = true;
-            break;
-        }
-    if (!shatterSoundFound) throw std::runtime_error("Missing original ice shatter sound");
+    loadIceShatter();
     for (const auto &[code, item] : session.content().items.entries())
         if (item.base.projectile && !item.base.projectile->art.empty()) {
             loadProjectile(item.base.projectile->id, item.base.projectile->art);
@@ -547,7 +519,82 @@ SceneAssets::SceneAssets(Archives &archives, const ClassicData &content)
       unitsGraphics_(archives, "data/global/palette/units/pal.dat"), automapCatalog_(archives), audio(archives) {
     loadFont(uiGraphics_, archives, font, "font16");
     loadFont(uiGraphics_, archives, speechFont, "fontformal12");
+    loadWorldLightDefinitions();
+    loadNpcAlert(DataTable(archives.read("data/global/excel/overlay.txt")));
     loadUi(archives, content, true);
+    loadIceShatter();
+}
+SceneAssets::~SceneAssets() = default;
+void SceneAssets::loadWorldLightDefinitions() {
+    worldDefinitions_ = std::make_unique<WorldCatalog>(archives_);
+    const DataTable overlays(archives_.read("data/global/excel/overlay.txt"));
+    for (size_t row = 0; row < overlays.rows().size(); ++row) {
+        if (overlays.value(row, "Filename").empty()) continue;
+        overlayIds.emplace(overlays.value(row, "overlay"), int(row));
+        overlayLights.emplace(int(row), OverlayLight{
+            overlays.number(row, "InitRadius").value_or(0), overlays.number(row, "Radius").value_or(0),
+            {uint8_t(overlays.number(row, "Red").value_or(0)),
+             uint8_t(overlays.number(row, "Green").value_or(0)),
+             uint8_t(overlays.number(row, "Blue").value_or(0)), 255}});
+    }
+    objectDefinitions_ = decodeTable(archives_.read("data/global/excel/objects.txt"));
+    for (const auto &row : objectDefinitions_) {
+        if (row.at("Id").empty()) continue;
+        auto number = [&](const std::string &name) {
+            const auto &value = row.at(name); return value.empty() ? 0 : std::stoi(value);
+        };
+        ObjectLight light;
+        for (size_t mode = 0; mode < light.diameter.size(); ++mode)
+            light.diameter[mode] = number("Lit" + std::to_string(mode));
+        light.color = {uint8_t(number("Red")), uint8_t(number("Green")), uint8_t(number("Blue")), 255};
+        light.flicker = number("Flicker") != 0;
+        objectLights.emplace(number("Id"), light);
+    }
+    const DataTable monsters(archives_.read("data/global/excel/monstats.txt"));
+    const DataTable extra(archives_.read("data/global/excel/monstats2.txt"));
+    std::map<std::string, size_t, std::less<>> rows;
+    for (size_t row = 0; row < extra.rows().size(); ++row) rows.emplace(extra.value(row, "Id"), row);
+    for (size_t row = 0; row < monsters.rows().size(); ++row) {
+        const auto id = monsters.number(row, "hcIdx");
+        const auto entry = rows.find(monsters.value(row, "MonStatsEx"));
+        if (!id || entry == rows.end()) continue;
+        const auto index = entry->second;
+        monsterLights.emplace(*id, MonsterLight{extra.number(index, "Light").value_or(0),
+            {uint8_t(extra.number(index, "light-r").value_or(0)),
+             uint8_t(extra.number(index, "light-g").value_or(0)),
+             uint8_t(extra.number(index, "light-b").value_or(0)), 255}});
+    }
+}
+const LevelRecord &SceneAssets::worldLevel(int id) const { return worldDefinitions_->level(id); }
+const std::vector<Sprite> &SceneAssets::worldTileSprites(const Map &map, int palette) const {
+    if (worldTilePalette_ != palette || worldTileSources_ != map.terrain.tiles) {
+        worldTileSources_ = map.terrain.tiles; worldTilePalette_ = palette;
+        worldTiles_.clear(); worldTiles_.reserve(worldTileSources_.size());
+        auto &graphics = graphicsForAct(palette);
+        for (const auto *tile : worldTileSources_) worldTiles_.push_back(graphics.upload(tile->image));
+    }
+    return worldTiles_;
+}
+void SceneAssets::loadIceShatter() {
+    const auto &missiles=*missileDefinitions_;
+    auto load=[&](std::string_view name) {
+        for (const auto &[id,row]:missileRows_)
+            if (missiles.value(row,"Missile")==name) {
+                if (!ensureProjectile(id)) throw std::runtime_error("Missing original ice shatter art: "+std::string(name));
+                return id;
+            }
+        throw std::runtime_error("Missing original ice shatter missile: "+std::string(name));
+    };
+    iceShatterProjectiles={load("icebreaksmall"),load("icebreakmedium"),load("icebreaklarge")};
+    const int small=load("icebreaksmallmelt"),large=load("icebreaklargemelt");
+    iceShatterMelts={{iceShatterProjectiles[0],small},{iceShatterProjectiles[1],large},{iceShatterProjectiles[2],large}};
+    const auto sound=missiles.value(missileRows_.at(iceShatterProjectiles[0]),"TravelSound");
+    const DataTable sounds(archives_.read("data/global/excel/sounds.txt"));
+    for (size_t row=0; row<sounds.rows().size(); ++row)
+        if (!sound.empty() && sounds.value(row,"Sound")==sound) {
+            audio.registerOriginalGroup(archives_,"monster-shatter",sounds,row); return;
+        }
+    throw std::runtime_error("Missing original ice shatter sound");
 }
 void SceneAssets::loadUi(Archives &archives, const ClassicData &content, bool multiplayer) {
     loadProjectileDefinitions(content);
@@ -775,23 +822,12 @@ void SceneAssets::indexPropArt(const IMapAssetSource &source) {
     for (size_t slot = 0; slot < source.size(); ++slot)
         for (const auto &key : source.readAsset(slot).propKeys) propArtKeys.insert(key);
 }
-const std::vector<Sprite> &SceneAssets::regionTileSprites(size_t index) const {
-    if (!regionTilesUploaded.at(index)) {
-        regionTiles[index].clear();
-        regionTiles[index].reserve(regionTileSources.at(index).size());
-        for (const auto *tile : regionTileSources.at(index))
-            regionTiles[index].push_back(graphicsForAct(regionPalettes_.at(index)).upload(tile->image));
-        regionTilesUploaded[index] = true;
-    }
-    return regionTiles[index];
-}
 void SceneAssets::syncRegions(const IMapAssetSource &source) {
     bool changed = false;
     for (size_t slot = 0; slot < source.size(); ++slot) {
         const auto &asset = source.readAsset(slot);
         if (!asset.loaded || !regionTileSources[slot].empty()) continue;
         regionTileSources[slot] = asset.tiles;
-        regionPalettes_[slot] = asset.palette;
         changed = true;
     }
     if (changed) { indexPropArt(source); loadAutomap(source); }

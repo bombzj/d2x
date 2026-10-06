@@ -1,9 +1,10 @@
 #pragma once
+#include "contracts/map.hpp"
 #include "contracts/online_world.hpp"
 #include <vector>
 
 namespace d2x {
-enum class OnlineMapInteraction { Exit, Door, Portal, TeleportPad, Waypoint, Npc, Stash, Corpse };
+enum class OnlineMapInteraction { Exit, Door, Portal, TeleportPad, Waypoint, Npc, Stash, Corpse, Object };
 struct OnlineMapTarget {
     OnlineUnitKey unit;
     OnlinePoint position;
@@ -48,6 +49,7 @@ struct OnlineSceneView {
     int renderedUnits{}, unavailableUnits{};
     std::vector<std::string> effectLimitations;
     bool playerDisplayed{};
+    std::optional<Vec> playerDisplayPosition; // Presentation coordinates; never used as authority.
     std::optional<uint16_t> area;
     std::optional<uint8_t> palette;
     std::optional<OnlinePoint> layoutOrigin;
@@ -60,6 +62,7 @@ struct OnlineSceneView {
     std::vector<OnlineMapTarget> mapTargets;
     std::vector<OnlineWaypointDestination> waypoints;
     std::vector<OnlineAutomapStamp> automapStamps;
+    AutomapDrawView automap;
     std::vector<OnlineAutomapTown> automapTowns;
     std::map<uint16_t, size_t> automapRevealedCells;
     bool automapVisible{}, automapLarge{true};

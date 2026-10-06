@@ -13,29 +13,33 @@ class RemoteControl {
         uint64_t game{}, area{}, requestRevision{};
         std::chrono::steady_clock::time_point deadline;
         OnlineIntentContext context;
+        std::optional<OnlinePoint> progressPosition;
     };
     std::optional<Approach> approach_;
     struct Movement {
         OnlinePoint goal{};
+        std::optional<Vec> requestOrigin; // UI projection hint, never a server position.
         std::optional<OnlineUnitKey> unit;
         std::optional<OnlinePoint> segment;
         bool run{}, finalUnit{};
         uint64_t game{}, area{}, requestRevision{};
         std::chrono::steady_clock::time_point submitted, deadline;
         OnlineIntentContext context;
+        std::optional<OnlinePoint> progressPosition;
     };
     std::optional<Movement> movement_;
     std::string reason_;
     bool reject(std::string reason);
     bool submitSegment(Movement &);
+    bool submitInteraction(OnlineUnitKey, const OnlineIntentContext &);
   public:
     RemoteControl(RemoteTown &scene, net::RealmSession &session) : scene_(scene), session_(session) {}
-    bool move(OnlinePoint, bool run, std::optional<OnlineIntentContext> context = {});
+    bool move(OnlinePoint, bool run, std::optional<OnlineIntentContext> context = {}, std::optional<Vec> requestOrigin = {});
     bool moveToUnit(OnlineUnitKey, bool run, std::optional<OnlineIntentContext> context = {});
     bool interact(OnlineUnitKey, bool run, std::optional<OnlineIntentContext> context = {});
     bool townPortal();
     void cancelApproach() {
-        if (approach_ && movement_ && movement_->unit == approach_->target) movement_.reset();
+        if (approach_) movement_.reset();
         approach_.reset();
     }
     void cancelMovement() { movement_.reset(); approach_.reset(); }

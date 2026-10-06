@@ -79,6 +79,8 @@ SkillCatalog loadSkillCatalog(const DataTable &skills, const DataTable &descript
         entry.row = required(descriptions, source, "SkillRow");
         entry.column = required(descriptions, source, "SkillColumn");
         entry.iconCell = required(descriptions, source, "IconCel");
+        entry.listRow = required(descriptions, source, "ListRow");
+        entry.listPool = descriptions.number(source, "ListPool").value_or(0);
         entry.requiredLevel = required(skills, row, "reqlevel");
         entry.maximumRank = required(skills, row, "maxlvl");
         entry.leftAllowed = skills.number(row, "leftskill").value_or(0) != 0;
@@ -119,6 +121,8 @@ SkillCatalog loadSkillCatalog(const DataTable &skills, const DataTable &descript
         auto display = strings.find(descriptions.value(description->second, "str name"));
         if (!display.empty()) entry.name = display;
         entry.iconCell = descriptions.number(description->second, "IconCel").value_or(-1);
+        entry.listRow = descriptions.number(description->second, "ListRow").value_or(-1);
+        entry.listPool = descriptions.number(description->second, "ListPool").value_or(0);
         entry.requiredLevel = 1;
         entry.maximumRank = 1;
         entry.leftAllowed = skills.number(row, "leftskill").value_or(0) != 0;

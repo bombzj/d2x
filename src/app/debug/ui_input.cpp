@@ -29,15 +29,24 @@ std::vector<FrameInput> parseDebugInput(const nlohmann::json &request) {
         frame.control = request.value("control", false);
         frame.backspace = request.value("backspace", false);
         frame.text = request.value("text", std::string{});
+        frame.entryText = request.value("entryText", std::string{});
+        if (frame.entryText.size() > 255 || !std::ranges::all_of(frame.entryText, [](unsigned char c) { return c >= 32 && c < 127; }))
+            throw std::invalid_argument("UI entry text must contain at most 255 printable ASCII bytes");
+        frame.wheel = request.value("wheel", 0.f);
+        if (!std::isfinite(frame.wheel) || std::abs(frame.wheel) > 32)
+            throw std::invalid_argument("UI wheel delta is outside the supported range");
+        frame.quantityDelta = int(frame.wheel);
         if (frame.text.size() > 10 || !std::ranges::all_of(frame.text, [](char c) { return c >= '0' && c <= '9'; }))
             throw std::invalid_argument("UI text must contain at most 10 decimal digits");
         const auto key = request.value("key", std::string{});
         if (key == "escape") frame.escape = true;
         else if (key == "enter") frame.enter = true;
+        else if (key == "tab") frame.tab = frame.automap = true;
         else if (key == "inventory") frame.inventory = true;
         else if (key == "character") frame.character = true;
         else if (key == "quests") frame.quests = true;
         else if (key == "skill-tree") frame.skillTree = true;
+        else if (key.size() == 1 && key[0] >= '1' && key[0] <= '4') frame.belt[size_t(key[0] - '1')] = true;
         else if (key.size() == 2 && key[0] == 'f' && key[1] >= '1' && key[1] <= '8')
             frame.skills[size_t(key[1] - '1')] = true;
         else if (key == "hireling" || key == "o") frame.hireling = true;

@@ -36,7 +36,7 @@ void main() {
 )";
 } // namespace
 SceneView::SceneView(Archives &archives, const GameSession &session, const IActorClient &actorClient, IInventoryClient &inventoryClient, ICharacterClient &characterClient, IQuestClient &questClient, INpcClient &npcClient, IMapClient &mapClient, const IMapAssetSource &mapAssets)
-    : session_(&session), actorClient_(actorClient), inventoryClient_(inventoryClient), characterClient_(characterClient), questClient_(questClient), npcClient_(npcClient), mapClient_(mapClient), mapAssets_(&mapAssets), assets_(archives, session, mapAssets), paletteBlend_(archives), painter_(assets_.font),
+    : archives_(archives), session_(&session), actorClient_(actorClient), inventoryClient_(inventoryClient), characterClient_(characterClient), questClient_(questClient), npcClient_(npcClient), mapClient_(mapClient), mapAssets_(&mapAssets), assets_(archives, session, mapAssets), paletteBlend_(archives), painter_(assets_.font),
       speechPainter_(assets_.speechFont) {
     projectileVisualRandom_ = localSession().visualSeed();
     for (int act = 1; act < int(actPaletteBlends_.size()); ++act)
@@ -66,7 +66,7 @@ const GameSession &SceneView::localSession() const {
 }
 SceneView::SceneView(Archives &archives, const ClassicData &content, const IActorClient &actor,
     IInventoryClient &inventory, ICharacterClient &character, IQuestClient &quests, INpcClient &npc, IMapClient &map)
-    : actorClient_(actor), inventoryClient_(inventory), characterClient_(character), questClient_(quests),
+    : archives_(archives), actorClient_(actor), inventoryClient_(inventory), characterClient_(character), questClient_(quests),
       npcClient_(npc), mapClient_(map), assets_(archives, content), paletteBlend_(archives),
       painter_(assets_.font), speechPainter_(assets_.speechFont) {
     highlightShader_=LoadShaderFromMemory(nullptr,highlightFragment);
@@ -122,116 +122,6 @@ Vec SceneView::world(Vec p) const {
     const auto viewport = worldViewport();
     const float centerX = viewport.x + viewport.width * .5f;
     return unproject((p - Vec{centerX, (H - HUD) * .5f}) * (1 / view_.zoom) + view_.camera);
-}
-void SceneView::drawLighting() const {
-    const auto &region = localSession().region();
-    const auto &level = localSession().worldContent().level(int(region.definition.id));
-    const auto actor = actorClient_.controlledActor();
-    const auto player = actor.position;
-    const auto &sim = localSession().state();
-    std::vector<SceneLight> lights;
-    auto appendMissile = [&](int id, Vec position, float age) {
-        const auto found = assets_.projectileVisuals.find(id);
-        if (found == assets_.projectileVisuals.end()) return;
-        const auto &visual = found->second;
-        // All missiles use their table light. Flicker keeps the unmodulated
-        // base value until its D2Client program is recovered.
-        if (visual.lightRadius > 0 && age * 25.f + .00001f >= visual.initSteps)
-            lights.push_back({position, float(visual.lightRadius), visual.lightColor});
-    };
-    auto appendObject = [&](int objectClass, int mode, Vec position) {
-        const auto found = assets_.objectLights.find(objectClass);
-        if (found == assets_.objectLights.end()) return;
-        const auto &light = found->second;
-        // OpenDiablo2 ObjectDetailRecord.LightDiameter: Lit0..7 is a diameter.
-        const float radius = light.diameter[size_t(std::clamp(mode, 0, 7))] * .5f;
-        if (radius > 0) lights.push_back({position, radius, light.color});
-    };
-    auto appendOverlay = [&](int id, Vec position) {
-        const auto found = assets_.overlayLights.find(id);
-        if (found == assets_.overlayLights.end()) return;
-        const auto &light = found->second;
-        // Constant radii need no invented client timing. Growing/shrinking
-        // overlays remain deferred rather than guessing interpolation.
-        if (light.radius > 0 && light.initialRadius == light.radius)
-            lights.push_back({position, float(light.radius), light.color});
-    };
-    auto appendMonster = [&](std::string_view identity, Vec position) {
-        const auto *monster = localSession().monsterContent().find(identity);
-        if (monster && monster->lightRadius > 0)
-            lights.push_back({position, float(monster->lightRadius),
-                {uint8_t(monster->lightColor[0]), uint8_t(monster->lightColor[1]),
-                 uint8_t(monster->lightColor[2]), 255}});
-    };
-    auto appendUnit = [&](EntityId id, Vec position, const CombatEffectSet &states) {
-        for (const auto &[index, offset] : localSession().sceneRegions())
-            for (const auto &effect : localSession().areaState(index).effects)
-                if (effect.attached == id && assets_.spellOverlays.contains(effect.overlayId))
-                    appendOverlay(effect.overlayId, position);
-        for (const auto &effect : states.entries()) {
-            if (!effect.activeAt(sim.frame)) continue;
-            if (assets_.spellOverlays.contains(effect.spec.visual.overlayId))
-                appendOverlay(effect.spec.visual.overlayId, position);
-            for (const auto &[name, record] : localSession().content().states) {
-                if (record.definition.id != effect.spec.state.id) continue;
-                for (const auto &overlay : {record.overlay, record.secondaryOverlay})
-                    if (auto found = assets_.overlayIds.find(overlay); found != assets_.overlayIds.end())
-                        appendOverlay(found->second, position);
-                break;
-            }
-        }
-    };
-    for (const auto &[index, offset] : localSession().sceneRegions()) {
-        const auto &area = localSession().areaState(index);
-        const auto &sceneRegion = localSession().regions()[index];
-        for (const auto &missile : area.missiles)
-            if (localSession().roomVisible(index, missile.pos))
-                appendMissile(missile.missileId, missile.pos + offset, missile.age);
-        for (const auto &effect : area.effects) {
-            if (!localSession().roomVisible(index, effect.pos)) continue;
-            appendMissile(effect.missileId, effect.pos + offset, effect.age);
-            if (!effect.attached && assets_.spellOverlays.contains(effect.overlayId))
-                appendOverlay(effect.overlayId, effect.pos + offset);
-        }
-        for (const auto &object : sceneRegion.objects) {
-            if (object.questHidden || !localSession().roomVisible(index, object.pos)) continue;
-            int mode = object.modeAt(sim.time);
-            if (object.interaction == Interaction::Travel) {
-                const auto activated = sim.waypoints.find(sceneRegion.definition.id);
-                mode = 0;
-                if (activated != sim.waypoints.end()) {
-                    const float duration = object.waypointFps[1] > 0
-                        ? object.animationRules[1].frames / object.waypointFps[1] : 0;
-                    mode = activated->second >= 0 && sim.time - activated->second < duration ? 1 : 2;
-                }
-            }
-            appendObject(object.objectClass, mode, object.pos + offset);
-            if (!object.npcClass.empty()) appendMonster(object.npcClass, object.pos + offset);
-        }
-    }
-    for (const auto &effect : clientMissiles_)
-        appendMissile(effect.missileId, effect.pos, effect.age);
-    for (const auto &monster : visibleMonsters()) {
-        if (monster.enemy->hp <= 0) continue;
-        appendMonster(monster.enemy->identity.monster, monster.position);
-        appendUnit(monster.enemy->id, monster.position, monster.enemy->combatEffects);
-    }
-    if (!sim.player.actions.dead) appendUnit(sim.player.id, player, sim.player.combatEffects);
-    if (sim.player.hireling.active())
-        appendUnit(sim.player.hireling.id, sim.player.hireling.pos, sim.player.hireling.combatEffects);
-    for (const auto &portal : localSession().portals(region.definition.id)) {
-        const auto &opening = assets_.townPortalRules[0];
-        const float duration = opening.frames / opening.fps;
-        appendObject(59, sim.time - portal.openedAt < duration ? 1 : 2, staticUnitPosition(portal.position));
-    }
-    if (const auto position = localSession().cainPortalPosition()) {
-        const auto &opening = assets_.cainPortalRules[0];
-        const float elapsed = view_.cainPortalAnimationStarted < 0 ? 999.f
-            : std::max(0.f, view_.animationTime - view_.cainPortalAnimationStarted);
-        appendObject(60, elapsed < opening.frames / opening.fps ? 1 : 2, staticUnitPosition(*position));
-    }
-    lighting_.draw(level.palette == 0 ? paletteBlend_ : *actPaletteBlends_.at(size_t(level.palette)), level, player, screen(player), view_.zoom,
-                   actor.lightRadius, lights);
 }
 bool SceneView::visible(const WorldObject &object) const {
     if (object.questHidden) return false;
@@ -323,7 +213,11 @@ void SceneView::refreshNpcView(EntityId npc) {
 }
 void SceneView::refreshInteractions() {
     const auto &quests = questClient_.read();
-    if (quests.revision != questView_.revision) questView_ = quests;
+    if (quests.revision != questView_.revision) {
+        questView_ = quests;
+        for (size_t index=0; index<questAnimations_.size(); ++index)
+            queueQuestAnimation(QuestId(index),questView_.entry(QuestId(index)).completed);
+    }
     const auto &scene = npcClient_.scene();
     if (scene.revision != npcScene_.revision) npcScene_ = scene;
     refreshNpcView(view_.dialogueObject);

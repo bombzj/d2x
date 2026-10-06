@@ -39,6 +39,7 @@ void SceneView::openNpcDialogue(EntityId object, std::string speaker, std::strin
 void SceneView::cancelNpcDialogue() {
     view_.pendingNpcDialogue.clear();
     view_.dialogue.clear();
+    view_.dialogueTextTopic.reset();
     view_.dialogueLines.clear();
     view_.dialogueStatus.clear();
     view_.dialogueOffset = initialOffset;

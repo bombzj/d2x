@@ -60,11 +60,13 @@ void monsterAction(OnlineWorldView &w, OnlineUnit &u, uint8_t action) {
     case 16: case 17: u.mode = 5; break;
     case 18: u.mode = 6; break;
     case 4: case 5: u.mode = 7; break;
+    case 12: case 13: u.mode = 8; break;
     case 14: case 15: u.mode = 9; break;
     case 26: case 27: u.mode = 10; break;
     case 28: case 29: u.mode = 11; break;
     case 20: u.mode = 13; break;
-    // 12/13 can be SKILL1 or SEQUENCE. Preserve the wire action without guessing.
+    // MonsterMsg returns before this action table for every SEQUENCE, sending
+    // a skill packet when it has a used skill. Thus raw 12/13 uniquely mean S1.
     default: u.mode.reset(); break;
     }
 }
@@ -257,6 +259,7 @@ void itemPacket(OnlineView &v, const Packet &p) {
     v.world.items[item.id] = std::move(item);
 }
 void removeItem(OnlineWorldView &world, uint32_t id) {
+    if (world.itemTargetingSource == id) world.itemTargetingSource.reset();
     if ((world.storage.kind == OnlineStorageKind::Cube && world.storage.source == id) ||
         (world.storage.requested == OnlineStorageKind::Cube && world.storage.requestedSource == id)) {
         ++world.interactionGeneration;
@@ -310,6 +313,7 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
         const auto k = key(r);
         r.finish();
         w.units.erase(k);
+        w.questAlerts.erase(k);
         const bool stashRemoved = k.type == 2 &&
             ((w.storage.kind == OnlineStorageKind::Stash && w.storage.source == k.id) ||
              (w.storage.requested == OnlineStorageKind::Stash && w.storage.requestedSource == k.id));
@@ -384,12 +388,17 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
         u.destination.reset();
         u.destinationUnit.reset();
         playerMode(v, u);
+        if (u.key.type == 0) {
+            OnlineCombatEvent event; event.packet = p.id; event.kind = OnlineCombatEvent::Kind::Action;
+            event.source = u.key; event.action = u.mode;
+            combatEvent(w, std::move(event));
+        }
         break;
     }
     case 0x0E: {
         auto &u = unit(w, key(r));
-        r.u8();
-        r.u8();
+        const auto changes = r.u8(), flags = r.u8();
+        if (u.key.type == 2 && changes == 3) u.objectTargetable = (flags & 2) != 0;
         const auto mode = r.u32();
         if (mode <= 255)
             u.mode = uint8_t(mode);
@@ -453,10 +462,9 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
     }
     case 0x19: {
         const auto increment = r.u8(); r.finish();
-        if (auto gold = w.playerAttributes.find(14); gold != w.playerAttributes.end()) {
-            if (increment > UINT32_MAX - gold->second) throw ProtocolError("Gold increment overflow");
-            gold->second += increment;
-        }
+        auto &gold = w.playerAttributes[14];
+        if (increment > UINT32_MAX - gold) throw ProtocolError("Gold increment overflow");
+        gold += increment;
         break;
     }
     case 0x1A:
@@ -465,9 +473,14 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
         const auto value = p.id == 0x1A ? uint32_t(r.u8()) : p.id == 0x1B ? uint32_t(r.u16()) : r.u32();
         r.finish();
         if (p.id == 0x1C) w.playerAttributes[13] = value;
-        else if (auto experience = w.playerAttributes.find(13); experience != w.playerAttributes.end()) {
-            if (value > UINT32_MAX - experience->second) throw ProtocolError("Experience increment overflow");
-            experience->second += value;
+        else {
+            // PlrMsg starts this client's experience baseline at zero. Its
+            // first update may already be a compact delta, not an absolute
+            // stat. Original 1.13c SCmd RVA ABDA0 writes the difference for
+            // 1A/1B and the full value for 1C (D2MOO's assignments differ).
+            auto &experience = w.playerAttributes[13];
+            if (value > UINT32_MAX - experience) throw ProtocolError("Experience increment overflow");
+            experience += value;
         }
         break;
     }
@@ -477,6 +490,12 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
         const auto attribute = r.u8();
         w.playerAttributes[attribute] = p.id == 0x1D ? r.u8() : p.id == 0x1E ? r.u16() : r.u32();
         r.finish();
+        // A later absolute resource stat supersedes an older compact sample.
+        // UI applies MPQ ValShift to the stat; transport must not truncate it
+        // into the compact packet's different whole-point representation.
+        if (attribute == 6) w.life.reset();
+        else if (attribute == 8) w.mana.reset();
+        else if (attribute == 10) w.stamina.reset();
         if (w.respawnRequest && w.respawnRequest->sent) {
             if (attribute == 6 && w.playerAttributes[attribute] > 0) w.respawnRequest->restoredResources |= 1;
             else if (attribute == 8) w.respawnRequest->restoredResources |= 2;
@@ -510,6 +529,55 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
         }
         break;
     }
+    case 0x3F: {
+        const auto cursor = r.u8(); const auto source = r.u32(); r.u16(); r.finish();
+        if (cursor == 255) w.itemTargetingSource.reset();
+        else w.itemTargetingSource = source;
+        break;
+    }
+    case 0x28: case 0x29: {
+        uint8_t kind = 6;
+        if (p.id == 0x28) { kind = r.u8(); r.u32(); r.u8(); }
+        std::array<uint16_t, 48> flags;
+        for (auto &value : flags) value = r.u16();
+        r.finish();
+        if (p.id == 0x29) w.quests.gameFlags = flags;
+        else if (kind == 6 || kind == 1) w.quests.playerFlags = flags; // Initialization or NPC's player-private record.
+        w.quests.revision = w.revision;
+        break;
+    }
+    case 0x52:
+        for (auto &status : w.quests.statuses) status = r.u8();
+        r.finish(); w.quests.revision = w.revision; break;
+    case 0x5D: {
+        const auto id = r.u8(), flags = r.u8(), status = r.u8(); const auto progress = r.u16(); r.finish();
+        w.quests.updates[id] = {flags, status, progress};
+        // Quest numbers in 0x5D differ from the record/filter indices used by 0x52.
+        const int slot = id <= 6 ? id : id >= 7 && id <= 13 ? id+1 : id >= 14 && id <= 20 ? id+2 :
+            id >= 21 && id <= 24 ? id+3 : id >= 31 && id <= 36 ? id+4 : -1;
+        if (slot >= 0) w.quests.statuses[size_t(slot)] = status;
+        if (id == 1) w.quests.denRemaining = progress;
+        if (id == 32) w.quests.rescuedBarbsRemaining = progress;
+        w.quests.revision = w.revision; break;
+    }
+    case 0x50: {
+        const auto id = r.u16();
+        std::array<uint16_t, 6> payload; for (auto &value : payload) value = r.u16(); r.finish();
+        if (id == 1) {
+            w.quests.denRemaining = payload[0]; w.quests.staffTombOffset = payload[1];
+            w.quests.rescuedBarbsRemaining = payload[2]; w.quests.revision = w.revision;
+        }
+        break;
+    }
+    case 0x7B: {
+        const auto slot = r.u8(); const auto packed = r.u16(); const auto owner = r.u32(); r.finish();
+        if (slot >= w.skillHotkeys.size()) throw ProtocolError("Invalid native hotkey slot");
+        OnlineSkillHotkey hotkey;
+        hotkey.hand = packed & 0x8000 ? OnlineSkillHand::Left : OnlineSkillHand::Right;
+        if ((packed & 0x0FFF) != 0x0FFF) hotkey.selection = OnlineSkillSelection{uint16_t(packed & 0x0FFF), owner};
+        w.skillHotkeys[slot] = hotkey;
+        break;
+    }
     case 0x23: {
         const auto target = key(r);
         const auto left = r.u8();
@@ -534,6 +602,7 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
         r.finish();
         // Object scrolls and unsolicited quest notifications do not open an NPC menu.
         if (target.type == 1 && w.npcRequested == target.id) {
+            w.questAlerts.erase(target);
             if (!w.npcConversation || w.npcConversation->source != target.id)
                 w.npcConversation = OnlineNpcConversation{target.id};
             auto &conversation = *w.npcConversation;
@@ -543,16 +612,15 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
         }
         break;
     }
-    case 0x28: {
-        const auto target = key(r); r.u8();
-        const auto flags = r.take(96); r.finish();
-        if (target.type == 1 && w.npcConversation && w.npcConversation->source == target.id)
-            w.npcConversation->questFlags.assign(flags.begin(), flags.end());
+    case 0x8A: {
+        const auto target = key(r); r.finish();
+        if (target.type == 1 && w.questAlerts.size() < 4096) w.questAlerts.insert(target);
         break;
     }
-    case 0x29: {
-        const auto flags = r.take(96); r.finish();
-        if (w.npcConversation) w.npcConversation->questFlags.assign(flags.begin(), flags.end());
+    case 0x2C: {
+        OnlineCombatEvent event; event.packet = p.id; event.kind = OnlineCombatEvent::Kind::Sound;
+        event.source = key(r); event.auxiliary = r.u16(); r.finish();
+        combatEvent(w, std::move(event));
         break;
     }
     case 0x2A: {
@@ -641,7 +709,8 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
         u.classId = r.u16();
         position(v, u, point(r));
         u.mode = r.u8();
-        r.u8();
+        u.objectInteractType = r.u8();
+        u.objectTargetable.reset();
         r.finish();
         break;
     }
@@ -780,9 +849,13 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
     case 0x96: {
         BitReader bits(p.body);
         if (p.id != 0x96) {
+            const auto previousLife = w.life;
             w.life = uint16_t(bits.read(15));
             w.mana = uint16_t(bits.read(15));
-            if (!*w.life) {
+            // A death save may enter a new game with zero HP and a living NU
+            // action. Only an actual positive-to-zero transition supplements
+            // the authoritative death modes; initial zero is not a death event.
+            if (!*w.life && previousLife && *previousLife > 0) {
                 if (w.deathPhase != OnlineDeathPhase::Dying && w.deathPhase != OnlineDeathPhase::Dead) {
                     w.deathPhase = OnlineDeathPhase::Dying; w.deathRevision = w.revision;
                     w.respawnRequest.reset();
@@ -800,12 +873,18 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
             bits.read(7);
         }
         const auto x = uint16_t(bits.read(16)), y = uint16_t(bits.read(16));
-        // The last bytes are signed offsets to the first path point, not fractions.
-        bits.read(8);
-        bits.read(8);
-        if (v.load.playerUnitId)
-            position(v, unit(w, {0, *v.load.playerUnitId}), {x, y});
-        else
+        // PlrMsg subtracts PATH_GetFirstPoint (tTargetCoord) from the current
+        // coordinates. A detour can shorten this target before sending it.
+        const auto signedOffset = [&] { const int value = int(bits.read(8)); return value < 128 ? value : value - 256; };
+        const int targetX = int(x) - signedOffset(), targetY = int(y) - signedOffset();
+        if (v.load.playerUnitId) {
+            auto &player = unit(w, {0, *v.load.playerUnitId});
+            position(v, player, {x, y});
+            player.verifiedDestination.reset();
+            if (targetX >= 0 && targetY >= 0 && targetX <= UINT16_MAX && targetY <= UINT16_MAX)
+                player.verifiedDestination = OnlinePoint{uint16_t(targetX), uint16_t(targetY)};
+            player.pathVerificationRevision = w.revision;
+        } else
             playerPosition(w, {x, y});
         break;
     }

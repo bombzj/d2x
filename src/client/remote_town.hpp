@@ -7,6 +7,7 @@
 #include "resources/data_table.hpp"
 #include "content/world/automap_data.hpp"
 #include "content/string_table.hpp"
+#include "client/automap_exploration.hpp"
 #include <span>
 
 namespace d2x {
@@ -15,15 +16,17 @@ namespace d2x {
 class RemoteTown {
     Archives &archives_;
     TileLibraryCache libraries_;
-    DataTable objects_, monsters_, monsterSizes_, skills_;
+    DataTable objects_, monsters_, monsterSizes_, skills_, shrines_;
+    std::map<int, size_t> shrineRows_;
     std::map<int, size_t> objectRows_, monsterRows_;
     std::map<std::string, size_t, std::less<>> monsterSizeRows_;
     AutomapCatalog automap_;
     ClassicStrings strings_;
     using Discovery = std::tuple<uint32_t, int, int, int, int>;
-    std::set<Discovery> explored_;
+    AutomapExploration explored_;
     std::map<Discovery, std::set<int>> discoveredCels_;
     std::map<std::tuple<uint32_t, int, int>, OnlineAutomapTown> discoveredTowns_;
+    std::set<std::tuple<uint32_t, int, int>> preparedTownAutomaps_;
     std::unique_ptr<WorldCatalog> catalog_;
     const Map *map_{};
     std::optional<NativeActLayout> layout_;
@@ -38,6 +41,8 @@ class RemoteTown {
     uint64_t gameGeneration_{~uint64_t{}}, areaGeneration_{~uint64_t{}}, revision_{~uint64_t{}};
     bool updateNative(const OnlineView &);
     void updateMapTargets(const OnlineView &);
+    void prepareTownAutomap(const OnlineView &);
+    MapSceneView automapScene(const OnlineView &) const;
     void updateAutomapView(const OnlineView &);
 
   public:
@@ -48,6 +53,7 @@ class RemoteTown {
     bool permits(const OnlineView &, OnlinePoint target) const;
     bool permitsInteraction(const OnlineView &, OnlineUnitKey target) const;
     bool interactionReady(const OnlineView &, OnlineUnitKey target) const;
+    std::optional<OnlinePoint> interactionApproachPoint(const OnlineView &, OnlineUnitKey target) const;
     void revealVisibleTiles(const OnlineView &, std::span<const size_t> instanceIndices);
 };
 } // namespace d2x

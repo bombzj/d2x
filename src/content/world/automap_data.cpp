@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <stdexcept>
 #include <string_view>
+#include <set>
 
 namespace d2x {
 bool townAutomapCellVisible(int level, int frame) {
@@ -98,6 +99,34 @@ int AutomapCatalog::tileCel(int levelType, const MapCell &cell, int x, int y) co
     return -1;
 }
 
+std::vector<int> AutomapCatalog::cellCels(int levelType, const MapCell &cell, int x, int y) const {
+    std::vector<int> result;
+    if (const int cel = tileCel(levelType, cell, x, y); cel >= 0) result.push_back(cel);
+    if (cell.orientation == 3) {
+        auto companion = cell; companion.orientation = 4;
+        if (const int cel = tileCel(levelType, companion, x, y);
+            cel >= 0 && std::find(result.begin(), result.end(), cel) == result.end()) result.push_back(cel);
+    }
+    return result;
+}
+std::vector<AutomapStamp> AutomapCatalog::stamps(const MapData &data, int levelType) const {
+    std::vector<AutomapStamp> result;
+    for (int y = 0; y < data.height; ++y)
+        for (int x = 0; x < data.width; ++x) {
+            const auto index = size_t(y) * data.width + x;
+            std::set<int> cels;
+            auto collect = [&](const auto &layers) {
+                for (const auto &layer : layers) {
+                    const auto &cell = layer.at(index);
+                    if (!cell.present()) continue;
+                    for (int cel : cellCels(levelType, cell, x, y))
+                        if (cels.insert(cel).second) result.push_back({x, y, cel});
+                }
+            };
+            collect(data.floors); collect(data.walls);
+        }
+    return result;
+}
 int AutomapCatalog::objectCel(int objectClass) const {
     auto found = objectCels_.find(objectClass);
     return found == objectCels_.end() ? -1 : found->second;
