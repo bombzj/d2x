@@ -13,6 +13,9 @@ struct OnlineItemStat { uint16_t id{}; int64_t value{}; uint32_t parameter{}; };
 struct OnlineItem {
     uint32_t id{}, flags{};
     uint64_t revision{};
+    // A native drop action survives later property/ONGROUND updates so the
+    // common renderer can finish its one-shot flippy without restarting it.
+    uint64_t groundAnimationRevision{}, groundAnimationReceivedMilliseconds{};
     uint8_t action{}, component{}, mode{}, body{}, page{}, x{}, y{};
     uint16_t groundX{}, groundY{};
     std::optional<uint8_t> ownerType;

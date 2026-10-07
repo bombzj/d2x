@@ -348,6 +348,10 @@ const ActorAnimation *SceneAssets::objectAnimation(int identity, int mode, int p
     if (!actorAnimations_) actorAnimations_ = std::make_unique<ActorAnimationCatalog>(archives_);
     return actorAnimations_->object(graphicsForAct(palette), palette, identity, mode);
 }
+int SceneAssets::objectPresentationMode(int identity, int serverMode, float elapsed) const {
+    if (!actorAnimations_) actorAnimations_ = std::make_unique<ActorAnimationCatalog>(archives_);
+    return actorAnimations_->objectPresentationMode(identity, serverMode, elapsed);
+}
 std::string SceneAssets::actorSequenceMode(std::string_view name) const {
     if (!actorAnimations_) actorAnimations_ = std::make_unique<ActorAnimationCatalog>(archives_);
     return actorAnimations_->sequenceMode(name);

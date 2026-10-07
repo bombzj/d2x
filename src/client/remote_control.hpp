@@ -14,6 +14,7 @@ class RemoteControl {
         std::chrono::steady_clock::time_point deadline;
         OnlineIntentContext context;
         std::optional<OnlinePoint> progressPosition;
+        bool requirePositionUpdate = false;
     };
     std::optional<Approach> approach_;
     struct Movement {
@@ -36,7 +37,8 @@ class RemoteControl {
     RemoteControl(RemoteTown &scene, net::RealmSession &session) : scene_(scene), session_(session) {}
     bool move(OnlinePoint, bool run, std::optional<OnlineIntentContext> context = {}, std::optional<Vec> requestOrigin = {});
     bool moveToUnit(OnlineUnitKey, bool run, std::optional<OnlineIntentContext> context = {});
-    bool interact(OnlineUnitKey, bool run, std::optional<OnlineIntentContext> context = {});
+    bool interact(OnlineUnitKey, bool run, std::optional<OnlineIntentContext> context = {},
+                  std::optional<Vec> displayOrigin = {});
     bool townPortal();
     void cancelApproach() {
         if (approach_) movement_.reset();

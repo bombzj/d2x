@@ -26,6 +26,7 @@ struct ActorControlIntent {
     enum class Action { Cast, Interact, Pickup } action = Action::Cast;
     Vec point;
     EntityId target;
+    std::optional<Vec> displayOrigin; // Interaction projection hint, never a native position.
     std::optional<ItemHandle> item;
     bool right = false, stationary = false, repeat = false, toCursor = false, forceRun = false;
 };

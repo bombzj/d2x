@@ -107,7 +107,6 @@ struct RemoteScene::Impl {
     std::vector<PresentationSoundEvent> soundEvents;
     std::map<int, size_t> skillRows;
     std::map<int, size_t> missileRows, stateRows;
-    std::optional<uint16_t> alignmentStat;
     std::map<std::string, size_t, std::less<>> missileNames, overlayNames;
     struct OverlayVisual { int id{}; OnlineUnitKey unit; float born{}, duration{}; };
     std::set<std::string> effectLimitations;
@@ -149,10 +148,6 @@ struct RemoteScene::Impl {
         for (size_t row=0; row<superuniques.rows().size(); ++row)
             if (const auto id=superuniques.number(row,"hcIdx")) superUniqueRows.emplace(*id,row);
         for (const auto &character:loadCharacterDefinitions(charstats)) characterRows.push_back(character.sourceRow);
-        const DataTable itemStats(a.read("data/global/excel/itemstatcost.txt"));
-        for (size_t row = 0; row < itemStats.rows().size(); ++row)
-            if (itemStats.value(row, "Stat") == "alignment")
-                if (const auto id = itemStats.number(row, "ID")) alignmentStat = uint16_t(*id);
         for (size_t row = 0; row < skills.rows().size(); ++row)
             if (auto id = skills.number(row, "Id")) skillRows.emplace(*id, row);
         for (size_t row = 0; row < missiles.rows().size(); ++row) if (auto id = missiles.number(row, "Id")) {
@@ -175,8 +170,12 @@ struct RemoteScene::Impl {
         // PlrMsg::sub_6FC81C00 uses wire 19 for correction, not PLRMODE_DEAD.
         const bool death = u.nativeMode ? (u.mode == 0 || u.mode == 17) : (u.mode == 8 || u.mode == 9);
         const auto parts = portraits.decode(u, world(), death);
-        if (!parts)
+        if (!parts) {
+            effectLimitations.insert("Original character equipment components unavailable for unit " + std::to_string(u.key.id));
             return nullptr;
+        }
+        if (!parts->equipmentEffectsKnown)
+            effectLimitations.insert("Per-component equipment coloring and ethereal transparency are not implemented; original body components remain visible");
         ActorAnimationRequest request; request.category = "chars"; request.appearance = *parts; request.shadow = true;
         std::string mode;
         if (u.actionSkill) {
@@ -223,26 +222,6 @@ struct RemoteScene::Impl {
     uint8_t worldDifficulty{};
     const OnlineWorldView &world() const { return *worldView; }
     static EntityId effectOwner(OnlineUnitKey key) { return {(uint64_t(key.type) << 32) + key.id + 1}; }
-    bool hostile(const OnlineUnit &unit, const RemoteCombat &combat) const {
-        if (unit.key.type != 1 || !unit.classId) return false;
-        const auto row = monsterRows.find(*unit.classId);
-        if (row == monsterRows.end() || monstats.number(row->second, "Align").value_or(0) ||
-            monstats.number(row->second, "npc").value_or(0) || monstats.number(row->second, "interact").value_or(0) ||
-            !monstats.number(row->second, "killable").value_or(0)) return false;
-        if (const auto snapshot = combat.states().find(unit.key); snapshot != combat.states().end()) {
-            if (!snapshot->second.decoded) return false;
-            for (const auto &[id, state] : snapshot->second.states) {
-                (void)id;
-                for (const auto &stat : state.stats)
-                    if (alignmentStat && stat.id == *alignmentStat && stat.value != 0) return false;
-            }
-        }
-        return true;
-    }
-    static bool corpse(const OnlineUnit &unit) {
-        return unit.mode == 0 || unit.mode == 12 ||
-            (unit.lifePercent && (unit.lifeCarriesRankFlag ? (*unit.lifePercent & 0x7f) : *unit.lifePercent) == 0);
-    }
     void emitSound(PresentationSoundEvent::Kind kind, const OnlineUnit &source, float age = 0,
                    int skill = -1, float releaseTime = -1) {
         soundEvents.push_back({kind,effectOwner(source.key),source.actionRevision,skill,age,releaseTime});
@@ -275,7 +254,7 @@ struct RemoteScene::Impl {
                     localCast && localCast->started >= 0 && time < localCast->started + localCast->duration &&
                     unit.actionSkill == localCast->command.skill;
                 interrupted = !ownerConfirmation && (walking(unit) || unit.actionSkill.has_value() ||
-                    (unit.key.type == 1 ? (unit.mode == 0 || unit.mode == 3 || unit.mode == 12)
+                    (unit.key.type == 1 ? (onlineMonsterCorpse(unit) || unit.mode == 3)
                         : unit.nativeMode ? (unit.mode == 0 || unit.mode == 4 || unit.mode == 17 || unit.mode == 18)
                                           : (unit.mode == 6 || unit.mode == 8 || unit.mode == 9 || unit.mode == 18)));
             }
@@ -291,7 +270,7 @@ struct RemoteScene::Impl {
             const auto id = missiles.number(row, "Id");
             const auto actor = v.world.units.find(owner);
             if (id && !shared.launchClientMissile(*id, start, target, level, delay, remaining, pathIndex,
-                    effectOwner(owner), actor != v.world.units.end() && hostile(actor->second, combat), pierce))
+                    effectOwner(owner), actor != v.world.units.end() && combat.hostile(actor->second), pierce))
                 effectLimitations.insert("Missile client program unavailable: " + std::string(missiles.value(row, "Missile")));
         };
         auto monsterAttack = [&](const OnlineCombatEvent &event, OnlineUnit actor, std::string_view pose, float age) {
@@ -693,6 +672,15 @@ struct RemoteScene::Impl {
             m.castSequence = localCast->sequence;
             m.position = displayed; m.correction = {}; m.correctionLeft = 0;
             m.route.clear(); m.goal.reset(); m.movedAt = -1;
+        } else if (u.key.type == 1 && onlineMonsterCorpse(u) && m.actionRevision != u.actionRevision &&
+                   m.positionRevision == u.positionRevision) {
+            // DEATH's target-only action stops the path without supplying a
+            // current position. Retain continuous feet until DEAD (0x69/9) or
+            // another native position sample arrives, rather than rolling back
+            // to the last walking sample. Fresh corpse coordinates still use
+            // the normal position correction below.
+            m.position = m.position + m.correction;
+            m.correction = {}; m.correctionLeft = 0; m.movedAt = -1;
         } else if ((m.positionRevision != u.positionRevision && *m.last != *u.position) ||
                    (m.actionRevision != u.actionRevision && !walking(u)) ||
                    (own && m.requestRevision && !request && m.goal)) {
@@ -982,8 +970,8 @@ struct RemoteScene::Impl {
         std::vector<ClientMissileTarget> missileTargets;
         for (const auto &[key, unit] : v.world.units) {
             if (!unit.position || (key.type != 0 && key.type != 1) ||
-                (key.type == 1 && (unit.mode == 0 || unit.mode == 12 || (unit.lifePercent && !*unit.lifePercent)))) continue;
-            const bool enemy = hostile(unit, combat);
+                onlineMonsterCorpse(unit)) continue;
+            const bool enemy = combat.hostile(unit);
             if (!enemy && (key.type != 0 || key.id != playerId || onlinePlayerDead(v.world))) continue;
             missileTargets.push_back({effectOwner(key), {float(unit.position->x) + .5f, float(unit.position->y) + .5f},
                 movementRule(unit).size, enemy});
@@ -1054,7 +1042,7 @@ struct RemoteScene::Impl {
             source.kind = key.type == 0 ? SoundActorKind::Player : SoundActorKind::Monster;
             source.actionRevision = unit.actionRevision;
             source.position = {float(unit.position->x) + .5f, float(unit.position->y) + .5f};
-            source.alive = key.type == 1 ? !corpse(unit) : (key.id != playerId || !onlinePlayerDead(v.world));
+            source.alive = key.type == 1 ? !onlineMonsterCorpse(unit) : (key.id != playerId || !onlinePlayerDead(v.world));
             source.neutral = key.type == 1 && unit.mode == 1 && !unit.actionSkill;
             source.audible = CheckCollisionPointRec(rv(screen(local(*unit.position) + Vec{.5f,.5f})),shared.worldViewport());
             soundActorsByKey.emplace(key,soundActors.size()); soundActors.push_back(source);
@@ -1072,7 +1060,6 @@ struct RemoteScene::Impl {
                 : displayPosition(u, map, origin) - Vec{float(origin.x), float(origin.y)};
             if (feet.x < 0 || feet.y < 0 || feet.x >= binding.width || feet.y >= binding.height)
                 continue;
-            if (u.classId && key.type == 2) worldScene.objects.push_back({*u.classId, u.mode.value_or(0), feet});
             if (!u.classId) {
                 ++unavailable;
                 continue;
@@ -1080,7 +1067,7 @@ struct RemoteScene::Impl {
             auto &m = motion[key];
             bool frozen=false, hiddenCorpse=false, shatter=false;
             if (key.type==1) {
-                const bool dead=corpse(u);
+                const bool dead=onlineMonsterCorpse(u);
                 if (!dead) shattered.erase(key);
                 if (const auto snapshot=combat.states().find(key); snapshot!=combat.states().end() && snapshot->second.decoded)
                     for (const auto &[id,state]:snapshot->second.states) {
@@ -1107,7 +1094,7 @@ struct RemoteScene::Impl {
                 audio.position = feet + Vec{float(origin.x) + .5f,float(origin.y) + .5f};
                 audio.audible = CheckCollisionPointRec(rv(screen(feet + Vec{.5f,.5f})),shared.worldViewport());
             }
-            if (u.classId && key.type == 1 && !corpse(u)) worldScene.monsters.push_back({*u.classId, feet + Vec{.5f, .5f}});
+            if (u.classId && key.type == 1 && !onlineMonsterCorpse(u)) worldScene.monsters.push_back({*u.classId, feet + Vec{.5f, .5f}});
             const auto receivedNow = uint64_t(std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::steady_clock::now().time_since_epoch()).count());
             const float age = u.actionReceivedMilliseconds && receivedNow >= u.actionReceivedMilliseconds
@@ -1127,6 +1114,11 @@ struct RemoteScene::Impl {
                 m.look = {-std::sin(angle), std::cos(angle)};
             }
             auto displayed = u;
+            if (key.type == 2) {
+                if (u.mode)
+                    displayed.mode = uint8_t(shared.objectPresentationMode(*u.classId, *u.mode, m.animation.elapsed(time)));
+                worldScene.objects.push_back({*u.classId, displayed.mode.value_or(0), feet});
+            }
             if (playerId && key == OnlineUnitKey{0, *playerId} && localCast && localCast->started >= 0 &&
                 time < localCast->started + localCast->duration) {
                 displayed.actionSkill = localCast->command.skill;
@@ -1143,7 +1135,7 @@ struct RemoteScene::Impl {
             }
             const Art *visual = key.type == 0   ? character(displayed, moving, binding.town, shared)
                           : key.type == 1 ? monster(u, moving, shared)
-                                          : object(u, shared);
+                                          : object(displayed, shared);
             if (!visual || visual->animation.frames.empty()) {
                 ++unavailable;
                 continue;
@@ -1187,7 +1179,7 @@ struct RemoteScene::Impl {
                 const auto selected = rightHand ? v.world.rightSkill : v.world.leftSkill;
                 const auto skill = selected ? skillRows.find(selected->skill) : skillRows.end();
                 const bool corpseSkill = skill != skillRows.end() && skills.number(skill->second, "TargetCorpse").value_or(0) != 0;
-                if (hostile(u, combat) && corpse(u) == corpseSkill && (!corpseSkill || combat.corpseSelectable(u))) {
+                if (combat.monsterTargetEligible(u, corpseSkill)) {
                     const float distance=(p-mouse).length();
                     if (distance<combatDistance) { combatDistance=distance; combatTarget=key; }
                 }
@@ -1311,8 +1303,7 @@ struct RemoteScene::Impl {
             const auto row = selections[hand] ? skillRows.find(selections[hand]->skill) : skillRows.end();
             const bool corpseSkill = row != skillRows.end() && skills.number(row->second, "TargetCorpse").value_or(0) != 0;
             for (const auto &[key, unit] : v.world.units)
-                if (key.type == 1 && hostile(unit, combat) && corpse(unit) == corpseSkill &&
-                    (!corpseSkill || combat.corpseSelectable(unit)))
+                if (combat.monsterTargetEligible(unit, corpseSkill))
                     hit.validCombatTargets[hand].push_back(effectOwner(key));
         }
         shared.updateWorldAudio(time,soundActors,soundEvents);

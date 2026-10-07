@@ -7,5 +7,8 @@ namespace d2x {
 struct ActorAppearance {
     std::string token, weapon;
     std::array<std::string, 16> components;
+    // Geometry can be fully known while per-item coloring/transparency is not.
+    // Missing decorative effects must not invalidate the resolved body layers.
+    bool equipmentEffectsKnown = true;
 };
 } // namespace d2x

@@ -30,6 +30,10 @@ struct InventoryItemView {
     unsigned sockets = 0;
     bool runeword = false;
     std::string groundArt;
+    uint64_t groundAnimationRevision = 0;
+    float groundAnimationAge = 0;
+    bool groundPickupAllowed = true;
+    int specialRow = -1; // Only supplied when the native special-item index is known.
     ItemHandle handle() const { return {id, revision}; }
 };
 struct InventoryContainerView {
@@ -45,11 +49,13 @@ struct InventoryLayoutView {
 // It contains no authority references, rolled native properties or random state.
 struct InventoryView {
     uint64_t revision = 0;
+    uint64_t gameGeneration = 0, areaGeneration = 0;
     PlayerContainers containers;
     EntityId storage, pickupTarget;
     unsigned weaponSet = 0, gold = 0, bankGold = 0;
     unsigned bankGoldLimit = 0, groundGoldLimit = 0, walletLimit = 0;
     bool dead = false;
+    bool goldKnown = false;
     InventoryLayoutView stashLayout, cubeLayout;
     std::array<std::array<int, 4>, 4> hirelingSlots{};
     std::string cubeCode, staffRecipeOutput;

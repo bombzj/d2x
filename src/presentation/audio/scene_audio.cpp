@@ -7,7 +7,8 @@ SceneAudio::SceneAudio(Archives &archives, const SoundCatalog &catalog, SoundBan
     : archives_(archives), catalog_(catalog), bank_(bank) {
     // Stable UI semantics select original Sounds identities, never loose WAVs.
     for (const auto &[key, sound] : {std::pair{"drink","item_potion_drink"},
-        std::pair{"belt","item_belt"}, std::pair{"quest_done","cursor_questdone"}})
+        std::pair{"belt","item_belt"}, std::pair{"quest_done","cursor_questdone"},
+        std::pair{"item_flip","item_flippy"}})
         registerSound(sound,key);
 }
 bool SceneAudio::registerSound(std::string_view name, std::string key, bool travel) {
@@ -44,6 +45,27 @@ void SceneAudio::enqueue(const SoundRule &rule, const SoundActorView &source, fl
     if (rule.probability < 100 && limitedRandom(random_,100) >= unsigned(rule.probability)) return;
     pending_.push_back({rule,source.id,rule.interruptible ? source.actionRevision : 0,clock_ + rule.delay + extraDelay - age});
     while (pending_.size() > 256) pending_.pop_front();
+}
+bool SceneAudio::itemDrop(const ItemDropSoundEvent &event) {
+    if (event.kind == ItemDropSoundEvent::Kind::Flip) {
+        if (event.audible && event.age <= .25f) playRegistered("item_flip");
+        return true;
+    }
+    const auto definition = catalog_.item(event.code,event.quality,event.specialRow);
+    if (!definition) {
+        limitations_.insert("Original item sound definition unavailable: " + event.code);
+        return true;
+    }
+    if (definition->drop.empty()) return true; // Intentional silent item.
+    if (definition->dropFrame < 0) {
+        limitations_.insert("Original item drop sound frame unavailable: " + event.code);
+        return true;
+    }
+    const float due = definition->dropFrame / 25.f;
+    if (event.age < due) return false;
+    if (event.audible && event.age - due <= .25f)
+        play(definition->drop,uint64_t(std::max(0.f,clock_) * 25.f));
+    return true;
 }
 void SceneAudio::reset() {
     pending_.clear(); cadence_.clear(); clock_ = -1;

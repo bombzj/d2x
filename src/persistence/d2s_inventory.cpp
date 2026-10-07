@@ -1,4 +1,5 @@
 #include "d2s_inventory.hpp"
+#include "gameplay/items/quality.hpp"
 #include "content/items/item_properties.hpp"
 #include "content/items/socket_data.hpp"
 #include "content/items/cube_data.hpp"
@@ -10,9 +11,7 @@ namespace {
 void require(bool condition, const std::string &reason) {
     if (!condition) throw std::runtime_error("D2S item mapping: " + reason);
 }
-constexpr std::array<ItemQuality, 9> qualities{ItemQuality::Normal, ItemQuality::Inferior,
-    ItemQuality::Normal, ItemQuality::Superior, ItemQuality::Magic, ItemQuality::Set,
-    ItemQuality::Rare, ItemQuality::Unique, ItemQuality::Crafted};
+constexpr auto &qualities = nativeItemQualities;
 std::vector<D2sStat> extraProperties(const ClassicData &content, const ItemInstance &item) {
     std::vector<D2sStat> result;
     auto check = [&](const auto &properties) {

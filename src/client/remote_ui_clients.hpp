@@ -9,6 +9,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <string>
 
 namespace d2x {
 class Archives;
@@ -18,6 +19,7 @@ class RemoteInventory;
 class RemoteCombat;
 class RemoteControl;
 namespace net { class RealmSession; }
+struct RemoteUiNotice { std::string text; bool error = false; };
 // Shared presentation ports project server snapshots and submit native requests.
 // Acceptance means queued by the client, not confirmed by the server.
 class RemoteUiClients {
@@ -38,6 +40,6 @@ class RemoteUiClients {
     bool busy() const;
     size_t queuedItemCommands() const;
     std::optional<uint64_t> waitingItemRequest() const;
-    std::string takeNotice();
+    RemoteUiNotice takeNotice();
 };
 }

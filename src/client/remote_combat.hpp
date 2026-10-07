@@ -2,6 +2,7 @@
 #include "client/remote_town.hpp"
 #include "network/realm_session.hpp"
 #include "resources/data_table.hpp"
+#include "content/skills/skill_metadata.hpp"
 #include <map>
 
 namespace d2x {
@@ -27,6 +28,7 @@ class RemoteCombat {
     net::RealmSession &session_;
     std::map<std::string, DataTable, std::less<>> tables_;
     std::map<uint16_t, size_t> skills_, stats_, monsters_;
+    std::map<uint16_t, SkillMetadata> skillMetadata_;
     std::map<uint8_t, size_t> states_;
     std::map<std::string, std::set<uint16_t>, std::less<>> innateSkills_;
     std::vector<OnlineCombatSkillView> catalog_;
@@ -40,7 +42,9 @@ class RemoteCombat {
     RemoteCombat(Archives &, RemoteTown &, net::RealmSession &);
     bool submit(OnlineCombatCommand);
     void update();
+    bool hostile(const OnlineUnit &) const;
     bool corpseSelectable(const OnlineUnit &) const;
+    bool monsterTargetEligible(const OnlineUnit &, bool targetCorpse) const;
     const auto &skills() const { return catalog_; }
     const auto &states() const { return unitStates_; }
     const auto &reason() const { return reason_; }

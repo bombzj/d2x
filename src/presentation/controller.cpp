@@ -410,6 +410,7 @@ void SceneController::handleWorld(const FrameInput &input, const WorldInputView 
         } else if (world.interaction) {
             ActorControlIntent intent; intent.action = ActorControlIntent::Action::Interact;
             intent.target = world.interaction; intent.forceRun = temporaryRun_;
+            intent.displayOrigin = world.observer;
             actorClient_.control(intent);
             gesture_ = Gesture::Interact;
         } else {

@@ -2,6 +2,7 @@
 #include "content/character/character_attributes.hpp"
 #include <algorithm>
 #include <cctype>
+#include <utility>
 
 namespace d2x {
 namespace {
@@ -65,6 +66,23 @@ SoundCatalog::SoundCatalog(Archives &archives) : sounds_(archives.read("data/glo
         if (const auto id = skills.number(row,"Id"))
             skills_.emplace(*id, SkillSoundDefinition{rule(skills,row,"stsound","stsounddelay",{},{},true),
                 rule(skills,row,"dosound","dosounddelay",{},{},true)});
+    auto itemSound = [](const DataTable &table, size_t row) {
+        const auto code = table.value(row,"code");
+        return ItemSoundDefinition{std::string(code.empty() ? table.value(row,"item") : code),
+            std::string(table.value(row,"dropsound")), table.number(row,"dropsfxframe").value_or(-1)};
+    };
+    for (const auto *name : {"weapons", "armor", "misc"}) {
+        const DataTable table(archives.read(std::string("data/global/excel/") + name + ".txt"));
+        for (size_t row = 0; row < table.rows().size(); ++row) {
+            auto definition = itemSound(table,row);
+            if (!definition.code.empty()) items_.emplace(definition.code,definition);
+        }
+    }
+    for (const auto &[name, target] : {std::pair{"uniqueitems", &uniqueItems_}, std::pair{"setitems", &setItems_}}) {
+        const DataTable table(archives.read(std::string("data/global/excel/") + name + ".txt"));
+        for (size_t row = 0; row < table.rows().size(); ++row)
+            target->emplace(int(row),itemSound(table,row));
+    }
 }
 std::optional<size_t> SoundCatalog::soundRow(std::string_view id) const {
     const auto found = soundRows_.find(id);
@@ -78,5 +96,19 @@ const PlayerSoundDefinition *SoundCatalog::player(int id) const {
 }
 const SkillSoundDefinition *SoundCatalog::skill(int id) const {
     const auto found = skills_.find(id); return found == skills_.end() ? nullptr : &found->second;
+}
+std::optional<ItemSoundDefinition> SoundCatalog::item(std::string_view code, ItemQuality quality, int specialRow) const {
+    const auto base = items_.find(code);
+    if (base == items_.end()) return {};
+    auto result = base->second;
+    if (specialRow >= 0 && (quality == ItemQuality::Unique || quality == ItemQuality::Set)) {
+        const auto &table = quality == ItemQuality::Unique ? uniqueItems_ : setItems_;
+        const auto special = table.find(specialRow);
+        if (special != table.end() && special->second.code == code) {
+            if (!special->second.drop.empty()) result.drop = special->second.drop;
+            if (special->second.dropFrame >= 0) result.dropFrame = special->second.dropFrame;
+        }
+    }
+    return result;
 }
 } // namespace d2x

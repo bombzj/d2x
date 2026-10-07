@@ -38,12 +38,21 @@ bool playable(const OnlineCharacter &c) {
 bool busy(OnlineStage s) {
     return s != OnlineStage::Idle && s != OnlineStage::Cancelled && s != OnlineStage::Failed &&
            s != OnlineStage::RealmSelection && s != OnlineStage::CharacterSelection &&
-           s != OnlineStage::Lobby && s != OnlineStage::ProtocolReady;
+           s != OnlineStage::Lobby && s != OnlineStage::ListingGames && s != OnlineStage::ProtocolReady;
 }
+struct PortraitKeyLess {
+    bool operator()(const Bytes &left, const Bytes &right) const {
+        const auto common = std::min(left.size(), right.size());
+        for (size_t i = 0; i < common; ++i) {
+            if (left[i] != right[i]) return left[i] < right[i];
+        }
+        return left.size() < right.size();
+    }
+};
 } // namespace
 struct RealmFrontend::Impl {
     FrameInput input;
-    Graphics sky, units, battle;
+    Graphics sky, units;
     std::unique_ptr<Graphics> heroGraphics;
     struct Hero {
         GpuAnimation idle, hover, forward, chosen, back, forwardOverlay, chosenOverlay, backOverlay;
@@ -52,20 +61,24 @@ struct RealmFrontend::Impl {
     };
     std::array<Hero, 7> heroes;
     int hero{-1}, difficulty{}, gameOffset{}, realmSelected{};
-    bool hardcore{}, joining{}, confirmHardcore{};
+    enum class LobbyPanel { Notice, Create, Join };
+    LobbyPanel lobbyPanel{LobbyPanel::Notice};
+    bool hardcore{}, confirmHardcore{};
     std::string verifyPassword, characterName, deleteName;
     uint64_t lobbyGeneration{};
     Archives &archives;
     RealmPortraitCatalog portraitCatalog;
     std::unique_ptr<Graphics> characterGraphics;
-    std::map<Bytes, GpuAnimation> portraits;
+    std::map<Bytes, GpuAnimation, PortraitKeyLess> portraits;
     ClassicStrings strings;
-    ClassicFont normal, buttonFont, inputFont, titleFont;
-    UiPainter text, buttonText, inputText, title;
+    ClassicFont normal, buttonFont, inputFont, titleFont, lobbyFont;
+    UiPainter text, buttonText, inputText, title, lobbyText;
     std::map<std::string, GpuAnimation> art;
     std::vector<std::string> classes;
     std::string account, password, gameName, gamePassword, description;
     int focus{}, selected{}, page{}, players{4}, difference{4};
+    int lastClickedCharacter{-1};
+    double lastCharacterClick{};
     bool restrictLevels{true};
     uint64_t characterGeneration{};
     std::vector<std::string> characterNames;
@@ -76,10 +89,11 @@ struct RealmFrontend::Impl {
     FrontendIntent intent;
     Impl(Archives &a)
         : sky(a, "data/global/palette/sky/pal.dat"), units(a, "data/global/palette/units/pal.dat"),
-          battle(a, "data/global/palette/menu0/pal.dat"), archives(a), portraitCatalog(a), strings(a),
+          archives(a), portraitCatalog(a), strings(a),
           normal(font(units, a, "font16")), buttonFont(font(units, a, "fontexocet10")),
-          inputFont(font(units, a, "fontformal11")), titleFont(font(units, a, "font30")), text(normal),
-          buttonText(buttonFont), inputText(inputFont), title(titleFont) {
+          inputFont(font(units, a, "fontformal11")), titleFont(font(units, a, "font30")),
+          lobbyFont(font(units, a, "fontridiculous")), text(normal),
+          buttonText(buttonFont), inputText(inputFont), title(titleFont), lobbyText(lobbyFont) {
         auto load = [&](Graphics &g, const char *id, const char *path) {
             auto value = g.single(std::string("data/global/ui/") + path + ".dc6");
             if (value.frames.empty())
@@ -111,13 +125,14 @@ struct RealmFrontend::Impl {
                                 {"popup", "FrontEnd/PopUpLarge"},
                                 {"cursor", "CURSOR/ohand"}})
             load(units, id, path);
-        // Original menu0 palette is the Battle.net palette (OpenD2 PAL_MENU0).
+        // These DC6 controls use the same Units palette as the lobby background.
         for (auto [id, path] : {std::pair{"createButton", "bigmenu/creategamebutton"},
+                                {"gameButton", "bigmenu/gamebuttonblank"},
                                 {"cancel", "bigmenu/cancelbuttonblank"},
                                 {"tabs", "bigmenu/chatrighttopbuttons"},
                                 {"chatButton", "bigmenu/chatrightbuttons"},
                                 {"leftButton", "bigmenu/chatleftbuttons"}})
-            load(battle, id, path);
+            load(units, id, path);
         DataTable stats(a.read("data/global/excel/charstats.txt"));
         for (size_t i = 0; i < stats.rows().size(); ++i) {
             auto name = stats.value(i, "class");
@@ -163,7 +178,8 @@ struct RealmFrontend::Impl {
             intent.command = command;
     }
     bool button(const char *id, int x, int y, std::string label, bool active = true, int segments = 1,
-                int base = 0) {
+                int base = 0, const UiPainter *caption = nullptr,
+                Color captionColor = Color{100, 100, 100, 255}) {
         const auto &a = art.at(id);
         int width = 0;
         for (int i = 0; i < segments; ++i)
@@ -172,11 +188,6 @@ struct RealmFrontend::Impl {
         active = active && enabled;
         bool down = active && CheckCollisionPointRec(mouse, r) && input.leftHeld;
         int first = base + (down ? segments : 0);
-        const bool battleControl = std::string_view(id) == "createButton" ||
-                                   std::string_view(id) == "cancel" || std::string_view(id) == "tabs" ||
-                                   std::string_view(id) == "chatButton";
-        if (battleControl)
-            first = active && !down ? 1 : 0;
         Color tint = active ? WHITE : GRAY;
         if (!active && base + segments * 3 <= a.count) {
             first = base + segments * 2;
@@ -188,8 +199,9 @@ struct RealmFrontend::Impl {
         int count = 1 + int(std::count(label.begin(), label.end(), '\n')),
             top = y + (int(r.height) - count * 16) / 2;
         while (std::getline(lines, line)) {
-            buttonText.inBox(line, {float(x + (down ? 1 : 0)), float(top + (down ? 1 : 0)), r.width, 16}, 16,
-                             active ? Color{100, 100, 100, 255} : Color{65, 65, 65, 255});
+            (caption ? *caption : buttonText).inBox(
+                line, {float(x + (down ? 1 : 0)), float(top + (down ? 1 : 0)), r.width, 16}, 16,
+                active ? captionColor : Color{65, 65, 65, 255});
             top += 16;
         }
         return active && clicked && CheckCollisionPointRec(mouse, r);
@@ -495,9 +507,9 @@ struct RealmFrontend::Impl {
     void characters(const OnlineView &v) {
         tiles("characters", 0, 0, 4);
         image("realm", 608, 8);
-        buttonText.inBox(s(11058), {608, 10, 182, 22}, 16, parchment);
-        buttonText.inBox(v.selectedRealm, {608, 42, 182, 27}, 16, parchment);
-        if (button("realmButton", 608, 81, s(11057)))
+        text.inBox(s(11058), {608, 10, 182, 22}, 16, parchment);
+        text.inBox(v.selectedRealm, {608, 42, 182, 27}, 16, parchment);
+        if (button("realmButton", 608, 81, s(11057), true, 1, 0, &text))
             emit(FrontendCommand::ChangeRealm);
         std::vector<std::string> names;
         std::vector<Bytes> previews;
@@ -512,6 +524,7 @@ struct RealmFrontend::Impl {
             characterPortraits = std::move(previews);
             selected = 0;
             page = 0;
+            lastClickedCharacter = -1;
             portraits.clear();
             characterGraphics = std::make_unique<Graphics>(archives);
             for (size_t i = 0; i < v.characters.size(); ++i)
@@ -521,16 +534,47 @@ struct RealmFrontend::Impl {
                     break;
                 }
         }
+        auto changePage = [&](int direction) {
+            const int next = std::clamp(page + direction, 0, std::max(0, (int(v.characters.size()) - 1) / 8));
+            if (next != page) { page = next; lastClickedCharacter = -1; }
+        };
+        if (enabled)
+            changePage(input.pageDelta + (input.wheel < 0 ? 1 : input.wheel > 0 ? -1 : 0));
+        else lastClickedCharacter = -1;
+        const auto &box = art.at("highlight");
+        const int width = box.frame(0, 0)->texture.width + box.frame(0, 1)->texture.width;
+        const int height = std::max(box.frame(0, 0)->texture.height, box.frame(0, 1)->texture.height);
+        if (v.characters.size() > 8) {
+            // Keep paging controls in the gutter, outside the fourth character row.
+            const int x = 37 + width * 2 + 8;
+            int y = 419;
+            for (int direction : {-1, 1}) {
+                const int first = direction < 0 ? 0 : 2;
+                const auto *cel = art.at("arrows").frame(0, first);
+                const Rectangle bounds{float(x), float(y), float(cel->texture.width), float(cel->texture.height)};
+                const bool active = enabled && (direction < 0 ? page > 0 : (page + 1) * 8 < int(v.characters.size()));
+                const bool down = active && input.leftHeld && CheckCollisionPointRec(mouse, bounds);
+                image("arrows", x, y, first + int(down), active ? WHITE : GRAY);
+                if (active && clicked && CheckCollisionPointRec(mouse, bounds)) changePage(direction);
+                y += cel->texture.height;
+            }
+        }
+        bool doubleClick = false, clickedCharacter = false;
         for (int i = page * 8; i < int(v.characters.size()) && i < page * 8 + 8; ++i) {
-            int slot = i - page * 8, x = 37 + (slot % 2) * 276, y = 86 + (slot / 2) * 93;
-            Rectangle r{float(x), float(y), 274, 92};
-            if (enabled && clicked && CheckCollisionPointRec(mouse, r))
+            int slot = i - page * 8, x = 37 + (slot % 2) * width, y = 86 + (slot / 2) * height;
+            Rectangle r{float(x), float(y), float(width), float(height)};
+            if (enabled && clicked && CheckCollisionPointRec(mouse, r)) {
+                const double now = GetTime();
+                // Same timing as the former picker and OpenDiablo2's original UI adaptation.
+                doubleClick = lastClickedCharacter == i && now - lastCharacterClick < 1.25;
                 selected = i;
+                lastClickedCharacter = i; lastCharacterClick = now; clickedCharacter = true;
+            }
             if (selected == i)
                 tiles("highlight", x, y, 2);
             const auto &c = v.characters[size_t(i)];
-            portrait(c, x + 40, y + 82);
-            label(c.name, x + 80, y + 16, playable(c) ? WHITE : GRAY);
+            portrait(c, x + 36, y + 82);
+            label(c.name, x + 76, y + 14, playable(c) ? WHITE : GRAY);
             if (c.characterClass && *c.characterClass < classes.size() && c.level) {
                 auto line = s(5017);
                 auto replace = [&](const char *token, const std::string &value) {
@@ -540,20 +584,19 @@ struct RealmFrontend::Impl {
                 };
                 replace("%d", std::to_string(*c.level));
                 line += " " + classes[*c.characterClass];
-                label(line, x + 80, y + 32, WHITE);
+                label(line, x + 76, y + 28, WHITE);
             }
             if (c.expansion.value_or(false))
-                label(s(22731), x + 80, y + 48, GREEN);
+                label(s(22731), x + 76, y + 42, GREEN);
             if (c.ladder.value_or(false))
-                label(s(5315), x + 80, y + 64, GRAY);
+                label(s(5315), x + 76, y + 56, GRAY);
         }
+        if (enabled && clicked && !clickedCharacter) lastClickedCharacter = -1;
         if (!v.characters.empty())
             title.inBox(v.characters[size_t(selected)].name, {34, 20, 564, 47}, 16, parchment);
         if (v.characters.size() > 8) {
-            if (button("medium", 330, 419, "<", page > 0))
-                --page;
-            if (button("medium", 470, 419, ">", (page + 1) * 8 < int(v.characters.size())))
-                ++page;
+            const auto indicator = std::to_string(page + 1) + "/" + std::to_string((v.characters.size() + 7) / 8);
+            label(indicator, 37 + width * 2 + (27 - text.measure(indicator, 16)) / 2, 447, WHITE);
         }
         auto tallCaption = [&](int id) {
             auto value = s(id);
@@ -571,7 +614,7 @@ struct RealmFrontend::Impl {
             emit(FrontendCommand::Back);
         bool canSelect = !v.characters.empty() && playable(v.characters[size_t(selected)]);
         if (button("medium", 628, 538, s(5102), canSelect) ||
-            (enabled && canSelect && input.enter)) {
+            (enabled && canSelect && (input.enter || doubleClick))) {
             emit(FrontendCommand::SelectCharacter);
             intent.name = v.characters[size_t(selected)].name;
         }
@@ -593,9 +636,12 @@ struct RealmFrontend::Impl {
             lobbyGeneration = v.gameGeneration;
             difficulty = 0;
         }
-        tiles(joining ? "join" : "create", 418, 72, 2);
+        if (lobbyPanel != LobbyPanel::Notice)
+            tiles(lobbyPanel == LobbyPanel::Join ? "join" : "create", 418, 72, 2);
         text.inBox(s(11123), {19, 72, 357, 20}, 16, Color{100, 100, 220, 255});
-        if (joining) {
+        const bool listing = v.stage == OnlineStage::ListingGames;
+        const bool canSubmit = v.stage == OnlineStage::Lobby && !gameName.empty();
+        if (lobbyPanel == LobbyPanel::Join) {
             title.inBox(s(5151), {418, 73, 373, 38}, 16, parchment);
             label(s(5274), 428, 101);
             field(gameName, {428, 121, 166, 26}, 0, 15, false, false);
@@ -603,31 +649,40 @@ struct RealmFrontend::Impl {
             field(gamePassword, {603, 121, 168, 26}, 1, 15, true, false);
             label(s(5275), 428, 190);
             const int count = int(v.games.size());
-            gameOffset = std::clamp(gameOffset - int(input.wheel), 0, std::max(0, count - 10));
+            if (enabled && CheckCollisionPointRec(mouse, {428, 208, 166, 186}))
+                gameOffset -= int(input.wheel);
+            gameOffset = std::clamp(gameOffset, 0, std::max(0, count - 10));
             for (int i = gameOffset; i < count && i < gameOffset + 10; ++i) {
                 const auto &game = v.games[size_t(i)];
                 const int y = 212 + (i - gameOffset) * 18;
                 if (enabled && clicked && CheckCollisionPointRec(mouse, {428, float(y), 166, 18}))
                     gameName = game.name;
-                inputText.label(game.name, 432, y, 16, game.name == gameName ? WHITE : parchment);
+                auto name = game.name;
+                while (!name.empty() && inputText.measure(name, 16) > 130)
+                    name.pop_back();
+                inputText.label(name, 432, y, 16, game.name == gameName ? WHITE : parchment);
                 inputText.label(std::to_string(game.players), 574, y, 16, WHITE);
-                if (game.name == gameName)
-                    wrap(game.description, 608, 212, 155);
             }
+            const auto chosenGame = std::find_if(v.games.begin(), v.games.end(),
+                [&](const auto &game) { return game.name == gameName; });
+            if (chosenGame != v.games.end())
+                wrap(chosenGame->description, 608, 212, 155);
             if (!v.gameListComplete)
-                wrap("Room list is incomplete. Join by name or refresh.", 608, 300, 155);
-            if (button("cancel", 434, 404, s(5103))) {
-                joining = false;
+                wrap(listing ? "Retrieving room list..." : "Room list is incomplete. Join by name or refresh.",
+                     608, 300, 155);
+            if (button("cancel", 434, 404, s(5103), true, 1, 0, &lobbyText, BLACK)) {
+                lobbyPanel = LobbyPanel::Notice;
+                if (listing) emit(FrontendCommand::CancelList);
                 wipe(gamePassword);
             }
-            if (button("medium", 599, 404, s(5151), !gameName.empty()) ||
+            if (button("gameButton", 599, 404, s(5151), !gameName.empty(), 1, 0, &lobbyText, BLACK) ||
                 (enabled && !gameName.empty() && input.enter)) {
                 emit(FrontendCommand::JoinGame);
                 intent.name = gameName;
                 intent.password = std::move(gamePassword);
                 wipe(gamePassword);
             }
-        } else {
+        } else if (lobbyPanel == LobbyPanel::Create) {
             title.inBox(s(5150), {418, 73, 373, 38}, 16, parchment);
             label(s(5274), 426, 114);
             field(gameName, {429, 135, 182, 26}, 0, 15, false, false);
@@ -656,14 +711,15 @@ struct RealmFrontend::Impl {
                     CheckCollisionPointRec(mouse, {float(x), 366, 130, 22}))
                     difficulty = i;
             }
-            if (button("cancel", 434, 404, s(5103))) {
+            if (button("cancel", 434, 404, s(5103), true, 1, 0, &lobbyText, BLACK)) {
+                lobbyPanel = LobbyPanel::Notice;
                 gameName.clear();
                 wipe(gamePassword);
                 description.clear();
             }
             // The original create-game control already contains its caption.
-            if (button("createButton", 599, 404, "", !gameName.empty()) ||
-                (enabled && input.enter && !gameName.empty())) {
+            if (button("createButton", 599, 404, "", canSubmit) ||
+                (enabled && input.enter && canSubmit)) {
                 emit(FrontendCommand::CreateGame);
                 intent.name = gameName;
                 intent.password = std::move(gamePassword);
@@ -673,24 +729,49 @@ struct RealmFrontend::Impl {
                 intent.maximumPlayers = uint8_t(players);
                 intent.levelDifference = uint8_t(restrictLevels ? difference : 99);
             }
+        } else {
+            // Only server announcements populate the initial lobby panel.
+            int y = 145;
+            for (const auto &announcement : v.lobbyNotices) {
+                std::istringstream words(announcement.text);
+                std::string word, line;
+                auto drawLine = [&]() {
+                    inputText.inBox(line, {428, float(y), 343, 18}, 16,
+                                    announcement.error ? RED : parchment);
+                    y += 18;
+                    line.clear();
+                };
+                while (words >> word) {
+                    while (!word.empty() && inputText.measure(word, 16) > 343)
+                        word.pop_back();
+                    const auto next = line.empty() ? word : line + ' ' + word;
+                    if (!line.empty() && inputText.measure(next, 16) > 343)
+                        drawLine();
+                    if (y > 380) break;
+                    line = line.empty() ? word : line + ' ' + word;
+                }
+                if (y > 380) break;
+                if (!line.empty()) drawLine();
+            }
         }
-        if (button("tabs", 534, 449, s(5312))) {
-            joining = false;
+        if (button("tabs", 534, 449, s(5312), true, 1, 0, &lobbyText, BLACK)) {
+            lobbyPanel = LobbyPanel::Create;
+            if (listing) emit(FrontendCommand::CancelList);
             focus = 0;
         }
-        if (button("tabs", 654, 449, s(5313))) {
-            joining = true;
+        if (button("tabs", 654, 449, s(5313), true, 1, 0, &lobbyText, BLACK)) {
+            lobbyPanel = LobbyPanel::Join;
             gameOffset = 0;
             focus = 0;
-            emit(FrontendCommand::ListGames);
+            if (!listing) emit(FrontendCommand::ListGames);
         }
-        button("chatButton", 534, 469, s(5254), false);
-        button("chatButton", 614, 469, s(5315), false);
-        if (button("chatButton", 694, 469, s(5316)))
+        button("chatButton", 534, 469, s(5254), false, 1, 0, &lobbyText, BLACK);
+        button("chatButton", 614, 469, s(5315), false, 1, 0, &lobbyText, BLACK);
+        if (button("chatButton", 694, 469, s(5316), true, 1, 0, &lobbyText, BLACK))
             emit(FrontendCommand::Back);
         tiles("leftButton", 19, 461, 3, 0, 3, GRAY);
-        buttonText.inBox(s(11126), {19, 461, 120, 20}, 16, Color{65, 65, 65, 255});
-        buttonText.inBox(s(5308), {139, 461, 120, 20}, 16, Color{65, 65, 65, 255});
+        lobbyText.inBox(s(11126), {19, 461, 120, 20}, 16, Color{65, 65, 65, 255});
+        lobbyText.inBox(s(5308), {139, 461, 120, 20}, 16, Color{65, 65, 65, 255});
         label(v.selectedCharacter, 139, 511, WHITE);
         auto c = std::find_if(v.characters.begin(), v.characters.end(),
                               [&](const auto &entry) { return entry.name == v.selectedCharacter; });
@@ -723,9 +804,17 @@ struct RealmFrontend::Impl {
             focus = 0;
             deleteName.clear();
             confirmHardcore = false;
+            lastClickedCharacter = -1;
             if (current == FrontendPage::CreateCharacter) {
                 characterName.clear();
                 hardcore = false;
+            }
+            if (current == FrontendPage::Lobby) {
+                lobbyPanel = LobbyPanel::Notice;
+                gameOffset = 0;
+                gameName.clear();
+                wipe(gamePassword);
+                description.clear();
             }
             previous = current;
         }
@@ -734,9 +823,9 @@ struct RealmFrontend::Impl {
         enabled = !modal;
         if (enabled && input.tab)
             focus = (focus + 1) %
-                    (current == FrontendPage::Register || (current == FrontendPage::Lobby && !joining) ? 3
-                     : current == FrontendPage::CreateCharacter                                        ? 1
-                                                                                                       : 2);
+                    (current == FrontendPage::Register ||
+                     (current == FrontendPage::Lobby && lobbyPanel == LobbyPanel::Create) ? 3
+                     : current == FrontendPage::CreateCharacter                          ? 1 : 2);
         if (current == FrontendPage::Main)
             main(gateway);
         else if (current == FrontendPage::Login)
@@ -794,6 +883,10 @@ struct RealmFrontend::Impl {
                        v.stage == OnlineStage::ConnectingGame || v.stage == OnlineStage::GameHandshake ||
                        v.stage == OnlineStage::LoadingGame || v.stage == OnlineStage::LeavingGame
                          ? FrontendCommand::LeaveGame : FrontendCommand::Back);
+        } else if (input.escape && current == FrontendPage::Lobby && lobbyPanel != LobbyPanel::Notice) {
+            lobbyPanel = LobbyPanel::Notice;
+            wipe(gamePassword);
+            if (v.stage == OnlineStage::ListingGames) emit(FrontendCommand::CancelList);
         } else if (input.escape)
             emit(current == FrontendPage::Main      ? FrontendCommand::Exit
                  : current == FrontendPage::Loading ? FrontendCommand::LeaveGame

@@ -18,11 +18,50 @@ Color SceneView::itemColor(ItemQuality quality) {
         return WHITE;
     }
 }
+void SceneView::advanceGroundAnimations(float dt) {
+    if (groundGameGeneration_ != inventoryView_.gameGeneration || groundAreaGeneration_ != inventoryView_.areaGeneration) {
+        groundGameGeneration_ = inventoryView_.gameGeneration; groundAreaGeneration_ = inventoryView_.areaGeneration;
+        groundAnimations_.clear();
+    }
+    std::erase_if(groundAnimations_, [&](const auto &entry) {
+        const auto *item = inventoryView_.item(entry.first);
+        const auto *location = item ? std::get_if<GroundLocation>(&item->location) : nullptr;
+        return !location || location->region != mapView().region || !item->groundAnimationRevision;
+    });
+    for (auto &[id, animation] : groundAnimations_) {
+        (void)id;
+        animation.age = std::min(4.f, animation.age + std::max(0.f, dt));
+    }
+    for (const auto &[id, item] : inventoryView_.items) {
+        const auto *location = std::get_if<GroundLocation>(&item.location);
+        if (!location || location->region != mapView().region || !item.groundAnimationRevision) continue;
+        auto &animation = groundAnimations_[id];
+        if (animation.revision != item.groundAnimationRevision)
+            animation = {item.groundAnimationRevision, std::max(0.f, item.groundAnimationAge)};
+        if (!animation.flipSoundConsumed || !animation.landSoundConsumed) {
+            const auto art = assets_.itemGround.find(item.artKey + ":" + item.groundArt);
+            if (art == assets_.itemGround.end() || art->second.count <= 0) continue;
+            const auto at = screen(staticUnitPosition(location->position));
+            const auto viewport = worldViewport();
+            const bool audible = CheckCollisionPointRec(rv(at),viewport);
+            if (!animation.flipSoundConsumed)
+                animation.flipSoundConsumed = assets_.sceneAudio.itemDrop(
+                    {item.definition,item.quality,item.specialRow,animation.age,audible,ItemDropSoundEvent::Kind::Flip});
+            if (!animation.landSoundConsumed)
+                animation.landSoundConsumed = assets_.sceneAudio.itemDrop(
+                    {item.definition,item.quality,item.specialRow,animation.age,audible});
+        }
+    }
+}
 const Sprite *SceneView::groundItemSprite(const InventoryItemView &item) const {
     const auto key=item.groundArt.empty()?item.artKey:item.artKey+":"+item.groundArt;
     auto found=assets_.itemGround.find(key);
     if(found==assets_.itemGround.end() || found->second.count<=0) return nullptr;
-    const int frame=found->second.count-1;
+    const auto animation = groundAnimations_.find(item.id);
+    // Preserve the old single-player 25 Hz flippy and final-frame hold. Only
+    // its trigger now comes from the server item event rather than ItemChange.
+    const int frame=animation==groundAnimations_.end() || animation->second.age>=4.f?found->second.count-1:
+        std::min(found->second.count-1,int(animation->second.age*25));
     return found->second.frame(0,frame);
 }
 void SceneView::drawGroundItem(EntityId id, bool highlighted) const {
@@ -83,13 +122,14 @@ std::vector<SceneView::LootLabel> SceneView::lootLabels(Vec mouse) const {
 std::optional<ItemHandle> SceneView::lootAt(Vec mouse, bool labelsOnly) const {
     for (const auto &label : lootLabels(mouse))
         if (CheckCollisionPointRec(rv(mouse), label.bounds))
-            return label.item;
+            if (const auto *item = inventoryView_.item(label.item.id); item && item->groundPickupAllowed)
+                return label.item;
     if (!labelsOnly) {
         std::optional<ItemHandle> closest;
         float distance = 1000;
         for (const auto &[id,item]:inventoryView_.items) {
             const auto *location=std::get_if<GroundLocation>(&item.location);
-            if(!location || location->region!=mapView().region) continue;
+            if(!location || location->region!=mapView().region || !item.groundPickupAllowed) continue;
             const auto *image=groundItemSprite(item); if(!image) continue;
             const auto p=screen(staticUnitPosition(location->position));
             if(!CheckCollisionPointRec(rv(mouse),{p.x+image->x-5,p.y+image->y-5,float(image->texture.width+10),float(image->texture.height+10)})) continue;

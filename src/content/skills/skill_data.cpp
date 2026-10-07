@@ -1,4 +1,5 @@
 #include "skill_data.hpp"
+#include "skill_eligibility.hpp"
 #include <algorithm>
 #include <cctype>
 #include <iterator>
@@ -67,9 +68,7 @@ SkillCatalog loadSkillCatalog(const DataTable &skills, const DataTable &descript
             return *value;
         };
         SkillRecord entry;
-        entry.id = *id;
-        entry.classCode = classCode;
-        entry.sourceName = name;
+        static_cast<SkillMetadata &>(entry) = loadSkillEligibilityMetadata(skills, row);
         entry.name = name;
         auto display = strings.find(descriptions.value(source, "str name"));
         if (!display.empty()) entry.name = display;
@@ -83,9 +82,6 @@ SkillCatalog loadSkillCatalog(const DataTable &skills, const DataTable &descript
         entry.listPool = descriptions.number(source, "ListPool").value_or(0);
         entry.requiredLevel = required(skills, row, "reqlevel");
         entry.maximumRank = required(skills, row, "maxlvl");
-        entry.leftAllowed = skills.number(row, "leftskill").value_or(0) != 0;
-        entry.passive = skills.number(row, "passive").value_or(0) != 0;
-        entry.allowedInTown = skills.number(row, "InTown").value_or(0) != 0;
         if (entry.page < 1 || entry.page > 3 || entry.row < 1 || entry.row > 6 ||
             entry.column < 1 || entry.column > 3 || entry.iconCell < 0 ||
             entry.requiredLevel < 1 || entry.maximumRank < 1)
@@ -110,12 +106,7 @@ SkillCatalog loadSkillCatalog(const DataTable &skills, const DataTable &descript
         auto description = descriptionsByKey.find(skills.value(row, "skilldesc"));
         if (!id || *id < 0 || name.empty() || description == descriptionsByKey.end()) continue;
         SkillRecord entry;
-        entry.id = *id;
-        entry.sourceName = name;
-        if (name == "Attack") entry.basicAction = BasicSkillAction::Attack;
-        else if (name == "Throw") entry.basicAction = BasicSkillAction::Throw;
-        else if (name == "Left Hand Swing") entry.basicAction = BasicSkillAction::LeftHandSwing;
-        else if (name == "Left Hand Throw") entry.basicAction = BasicSkillAction::LeftHandThrow;
+        static_cast<SkillMetadata &>(entry) = loadSkillEligibilityMetadata(skills, row);
         entry.animationMode = normalized(skills.value(row, "anim"));
         entry.name = name;
         auto display = strings.find(descriptions.value(description->second, "str name"));
@@ -125,8 +116,6 @@ SkillCatalog loadSkillCatalog(const DataTable &skills, const DataTable &descript
         entry.listPool = descriptions.number(description->second, "ListPool").value_or(0);
         entry.requiredLevel = 1;
         entry.maximumRank = 1;
-        entry.leftAllowed = skills.number(row, "leftskill").value_or(0) != 0;
-        entry.allowedInTown = skills.number(row, "InTown").value_or(0) != 0;
         if (entry.iconCell < 0 || !catalog.skills.emplace(entry.id, std::move(entry)).second ||
             !commonByName.emplace(normalized(name), *id).second)
             throw std::runtime_error("Invalid original common skill");
@@ -134,14 +123,9 @@ SkillCatalog loadSkillCatalog(const DataTable &skills, const DataTable &descript
     for (size_t index = 0; index < characters.size(); ++index) {
         auto &tree = catalog.classes[index];
         const auto row = characters[index].sourceRow;
-        for (int slot = 1; slot <= 10; ++slot) {
-            auto name = characterStats.value(row, "Skill " + std::to_string(slot));
-            if (name.empty()) continue;
-            auto found = commonByName.find(normalized(name));
-            if (found == commonByName.end())
-                throw std::runtime_error("Unknown original common skill: " + std::string(name));
-            tree.commonSkills.push_back(found->second);
-        }
+        tree.commonSkills = loadInnateSkillIds(skills, characterStats, row);
+        for (const int id : tree.commonSkills)
+            if (!catalog.find(id)) throw std::runtime_error("Missing original common skill display");
         auto initial = characterStats.value(row, "StartSkill");
         if (!initial.empty()) {
             auto found = std::find_if(catalog.skills.begin(), catalog.skills.end(),
@@ -157,14 +141,9 @@ SkillCatalog loadSkillCatalog(const DataTable &skills, const DataTable &descript
         if (!id || !catalog.find(*id)) continue;
         auto &entry = catalog.skills.at(*id);
         if (entry.classCode.empty()) continue;
-        for (auto field : {"reqskill1", "reqskill2", "reqskill3"}) {
-            auto key = skills.value(row, field);
-            if (key.empty()) continue;
-            auto required = idsByName.find(key);
-            if (required == idsByName.end() || catalog.skills.at(required->second).classCode != entry.classCode)
-                throw std::runtime_error("Invalid original skill prerequisite: " + std::string(key));
-            entry.prerequisites.push_back(required->second);
-        }
+        for (const int required : entry.prerequisites)
+            if (!catalog.find(required) || catalog.skills.at(required).classCode != entry.classCode)
+                throw std::runtime_error("Invalid original skill prerequisite for " + entry.sourceName);
     }
     for (const auto &tree : catalog.classes) {
         int count = 0;

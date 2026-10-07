@@ -17,26 +17,20 @@
 
 ## 共用显示入口
 
+技能资格的 MPQ 导入、固有技能清单和学习／主动技能判断共用 skill_eligibility；怪物目标选择、按住锁定和发送前校验共用 RemoteCombat.monsterTargetEligible，表现中的死亡判断共用 onlineMonsterCorpse。协议适配仍核对场景代次、单位分配、选中 owner、范围和地图绑定。
+
 人物与任务投影编入 d2x_client，使用显式只读事实和当前 ClassicData／MPQ，不依赖 RealmSession、GameSession、设备、GPU 或本地执行器。RemoteUiClients 负责解码状态适配及协议命令，不再内嵌任务文字选择规则。未收到状态或缺必要输入保留未知；不把游戏共享旗标当成本人完成记录。
 
 任务完成记录可点击查看原说明；首次收到的每项状态建立完成动画基线，后续已知状态转换才排队动画／日志提示。洞窟剩余数缺失显示 ?，不代入零；真墓符号、全部后续幕特殊说明及缺失协议仍按未确认边界处理，不从地图种子或旧任务执行器推算。任务资格、NPC 服务和奖励全部由 D2GS 决定。
 
-世界沿 WorldDrawView → SceneView.drawWorld，动画沿 ActorAnimationCatalog／ActorAnimationState；自动地图沿共同 AutomapCatalog／AutomapExploration → drawAutomap。删除无人使用的旧小地图状态／投影、IMapAssetSource 和旧资源预热，原服地图适配保留必要坐标／资源事实。声音沿 SoundCatalog → PresentationSoundEvent／SoundActorView → SceneAudio → SoundBank，不在两端解释 MonSounds。
+世界沿 WorldDrawView → SceneView.drawWorld，动画沿 ActorAnimationCatalog／ActorAnimationState；自动地图沿共同 AutomapCatalog／AutomapExploration → drawAutomap。删除无人使用的旧小地图状态／投影、IMapAssetSource 和旧资源预热，原服地图适配保留必要坐标／资源事实。声音沿 SoundCatalog → PresentationSoundEvent／SoundActorView／ItemDropSoundEvent → SceneAudio → SoundBank，不在两端解释 MonSounds；物品原表落地声音及25Hz触发帧同样只在公共配置入口读取。
 
 底栏只加载原联机 minipanel，显示／命中共用一组按钮；NPC、库存、人物、任务、地图、选项等面板没有 Local 备用实现。未接入的佣兵、赌博、任务物品服务或原服状态继续明确不可用，不调用本地服务补齐。帮助页移除旧本地 Save／Load、授予金币／经验等提示；原服调试暂停及在线 command 入口保留。
 
 ## 保留范围与限制
 
+局前选角的产品入口是RealmFrontend。游戏内客户端共用接口不承接本地D2S角色列表；联机选角数据及命令均来自MCP。最新选角显示／交互修正及未入包边界见[联网模块](NETWORK.md)。
+
 GameSession、Simulation、SkillRuntime、InventoryService、本地任务／AI／奖励执行源码及 d2x_session 目标已删除。gameplay／items 保留联机显示、地图、原资源报告与独立 D2S 工具所需纯函数和值；CharacterSaveData 移到 persistence，字段与编码不变。产品不链接 persistence。旧法杖插入面板没有原服生产者，其空状态／资源／绘制入口已删除，原服插杖流程仍未实现。原 MPQ、reference、旧包、mvp 和用户文件保留。
 
-完整细节与原服协议限制见[联网模块](NETWORK.md)、[NPC／任务](NPC_QUEST.md)、[人物](CHARACTER.md)、[库存](INVENTORY.md)及[地图](MAP.md)。下面仅保留此前本地迁移的运行证据，不能认证当前源码。
-
-## 历史本地迁移验证（2026-10-03）
-
-2026-10-03 Windows Release 构建成功，游戏完成链接。使用已有调试管道与 UI 输入入口，未新增测试脚本、用例或专用程序。
-
-- 普通女巫／区域 1／整局 seed 210：真实左键地面输入经新适配器提交，25 固定步后位置由 `(153.5,68.5)` 到 `(153.9375,66.9375)`，路径结束；生命 40、法力 35，无人物外观错误。
-- 旅行区域 2 后使用初始装备提供的 Fire Bolt，5 步后施法剩余约 0.32 秒；截图已查看，人物施法动作与原场景正常。该观察不认证完整伤害／弹道或全部动作分支。
-- 临时 D2S 独立加载后回到第一幕城镇；跨到区域 40 再保存／恢复后，人物在 `(153.5,203.5)`，生命 40、法力 35，外观错误为空。两次实例均退出 0、stderr 空；施法与鲁高因截图已查看。
-
-证据：`artifacts/refactor-p1-build.log`、`artifacts/refactor-p1-20261003/` 内状态 JSON、日志与截图，均不纳入源码。仅读写该目录的临时角色档，原 MPQ 与用户存档保留。完整战斗、多人和 Linux 运行尚未验证。
+完整细节与原服协议限制见[联网模块](NETWORK.md)、[NPC／任务](NPC_QUEST.md)、[人物](CHARACTER.md)、[库存](INVENTORY.md)及[地图](MAP.md)。运行证据与源码／包差异统一见基线和联网模块。

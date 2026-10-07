@@ -132,7 +132,8 @@ void runOnlineFrontend(Archives &archives, RenderTexture2D target, const AppOpti
         preferencesRetryAt = GetTime() + 2;
     };
     std::optional<uint32_t> displayedNpc;
-    std::optional<uint32_t> displayedWaypoint{};
+    uint32_t displayedWaypoint{};
+    bool displayedWaypointKnown{};
     std::unique_ptr<RemoteScene> scene;
     std::optional<uint8_t> renderedAct;
     std::optional<uint16_t> renderedArea;
@@ -166,6 +167,8 @@ void runOnlineFrontend(Archives &archives, RenderTexture2D target, const AppOpti
     FrontendPage page = FrontendPage::Main;
     std::string notice, gateway = "D2X-Local";
     uint64_t dismissedErrorSequence = std::numeric_limits<uint64_t>::max();
+    std::optional<uint64_t> worldNoticeSequence;
+    uint64_t worldNoticeGeneration{};
     constexpr float scale = float(H) / 600, offsetX = (W - 800 * scale) / 2;
     // Quick entry executes the real login/Realm/character/game protocol once.
     // No credentials in argv and no retry of non-idempotent room creation.
@@ -204,7 +207,7 @@ void runOnlineFrontend(Archives &archives, RenderTexture2D target, const AppOpti
             debugInputs.clear();
             presentationPaused = false;
             sharedController.reset(); sharedUi.reset(); sharedClients.reset();
-            displayedNpc.reset(); displayedWaypoint.reset();
+            displayedNpc.reset(); displayedWaypoint = 0; displayedWaypointKnown = false;
             scene.reset();
             sceneError.clear();
             sceneGeneration = session.read().gameGeneration;
@@ -318,6 +321,12 @@ void runOnlineFrontend(Archives &archives, RenderTexture2D target, const AppOpti
             continue;
         }
         const auto view = session.read();
+        if (worldNoticeSequence && (view.stage != OnlineStage::ProtocolReady ||
+                                   view.gameGeneration != worldNoticeGeneration)) {
+            notice.clear();
+            dismissedErrorSequence = *worldNoticeSequence;
+            worldNoticeSequence.reset();
+        }
         if (view.stage == OnlineStage::RealmSelection) {
             const auto match = std::find_if(view.realms.begin(), view.realms.end(),
                                             [&](const auto &r) { return r.name == gateway; });
@@ -359,6 +368,10 @@ void runOnlineFrontend(Archives &archives, RenderTexture2D target, const AppOpti
             page = FrontendPage::Lobby;
         if (gameStage(view.stage))
             page = FrontendPage::Loading;
+        const bool listTimeout = view.error && view.error->kind == OnlineErrorKind::Timeout &&
+            view.error->packetId == 0x05 && view.stage == OnlineStage::Lobby && !view.gameListComplete;
+        if (listTimeout)
+            dismissedErrorSequence = view.error->sequence; // Join page displays the incomplete-list state inline.
         if (view.error && dismissedErrorSequence != view.error->sequence && notice.empty()) {
             int id = 0;
             if (view.error->packetId == 0x3D) {
@@ -398,6 +411,10 @@ void runOnlineFrontend(Archives &archives, RenderTexture2D target, const AppOpti
             auto original = id ? strings.find(id) : std::string_view{};
             notice = original.empty() || view.error->kind == OnlineErrorKind::Timeout
                 ? view.error->message : std::string(original);
+            if (view.stage == OnlineStage::ProtocolReady) {
+                worldNoticeSequence = view.error->sequence;
+                worldNoticeGeneration = view.gameGeneration;
+            }
         }
         // RealmSession already reduced these packets into its remote-only view.
         // No opaque queue is retained by this value-only client.
@@ -457,10 +474,13 @@ void runOnlineFrontend(Archives &archives, RenderTexture2D target, const AppOpti
                         panels.characterOpen = panels.questOpen = panels.hirelingOpen = false;
                     }
                     if (native.storage.kind == OnlineStorageKind::Cube) { panels.inventory.cubeOpen = true; panels.inventory.open = true; }
-                    if (native.waypointSource != displayedWaypoint) {
-                        displayedWaypoint = native.waypointSource;
-                        panels.travelMenu = displayedWaypoint.has_value();
-                        panels.waypointSource = displayedWaypoint ? EntityId{(uint64_t{1} << 32) + *displayedWaypoint + 1} : EntityId{};
+                    if (native.waypointSource.has_value() != displayedWaypointKnown ||
+                        (native.waypointSource && displayedWaypointKnown &&
+                         *native.waypointSource != displayedWaypoint)) {
+                        displayedWaypointKnown = native.waypointSource.has_value();
+                        displayedWaypoint = native.waypointSource.value_or(0);
+                        panels.travelMenu = displayedWaypointKnown;
+                        panels.waypointSource = displayedWaypointKnown ? EntityId{(uint64_t{1} << 32) + displayedWaypoint + 1} : EntityId{};
                         panels.waypointAct = view.load.act.value_or(0);
                         if (panels.travelMenu) { panels.inventory.open = false; panels.skillTreeOpen = panels.characterOpen = panels.questOpen = false; }
                     }
@@ -505,13 +525,13 @@ void runOnlineFrontend(Archives &archives, RenderTexture2D target, const AppOpti
                     captureRequested = input.screenshot;
                     const bool keepGame = sharedController->handle(input,GetFrameTime());
                     if (!keepGame) leaveGame = true;
-                    if (auto feedback = sharedClients->takeNotice(); !feedback.empty()) sharedUi->notice(std::move(feedback),true);
+                    if (auto feedback = sharedClients->takeNotice(); !feedback.text.empty()) sharedUi->notice(std::move(feedback.text),feedback.error);
                     mapDisplay.visible = panels.automap; mapDisplay.large = panels.automapLarge;
                     mapDisplay.right = panels.minimapRight; mapDisplay.offset = panels.automapOffset; mapDisplay.running = sharedClients->running();
                     worldFrame = scene->frame(view,*town.map(),town.read(),*sharedUi,combat,
                         sharedController->uiConsumed(),input.mouse,input.rightHeld || input.rightPressed);
                     sharedController->handleWorld(input,worldFrame.input,GetFrameTime());
-                    if (auto feedback = sharedClients->takeNotice(); !feedback.empty()) sharedUi->notice(std::move(feedback),true);
+                    if (auto feedback = sharedClients->takeNotice(); !feedback.text.empty()) sharedUi->notice(std::move(feedback.text),feedback.error);
                     sharedUi->drawUi(input.mouse);
                 } catch (const std::exception &e) {
                     sceneError = e.what();
@@ -598,6 +618,8 @@ void runOnlineFrontend(Archives &archives, RenderTexture2D target, const AppOpti
             session.cancel_game_list();
             break;
         case FrontendCommand::JoinGame:
+            if (session.read().stage == OnlineStage::ListingGames)
+                session.cancel_game_list();
             session.join_game(std::move(action.name), std::move(action.password));
             break;
         case FrontendCommand::Register:
@@ -647,6 +669,10 @@ void runOnlineFrontend(Archives &archives, RenderTexture2D target, const AppOpti
             else if (page == FrontendPage::CreateCharacter &&
                      session.read().stage == OnlineStage::CharacterSelection)
                 page = FrontendPage::Characters;
+            else if (page == FrontendPage::Lobby && session.read().stage == OnlineStage::ListingGames) {
+                session.cancel_game_list();
+                session.return_to_characters();
+            }
             else if (session.read().stage == OnlineStage::Lobby)
                 session.return_to_characters();
             else {

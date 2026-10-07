@@ -118,7 +118,7 @@ void RemoteTown::updateMapTargets(const OnlineView &v) {
         if (key.type == 1) {
             const auto record = monsterRows_.find(*unit.classId);
             if (record == monsterRows_.end() || !monsters_.number(record->second, "interact").value_or(0) ||
-                unit.mode == 0 || unit.mode == 12) continue;
+                onlineMonsterCorpse(unit)) continue;
             const auto size = monsterSizeRows_.find(monsters_.value(record->second, "MonStatsEx"));
             if (size == monsterSizeRows_.end()) continue;
             const int width = monsterSizes_.number(size->second, "SizeX").value_or(0);
@@ -159,9 +159,11 @@ void RemoteTown::updateMapTargets(const OnlineView &v) {
         }
         const int operation = number("OperateFn");
         // ObjMode::OperateFunction23 accepts both operating/opened waypoints.
-        // Their TARGETABLE refresh may be clear even though Objects.Selectable
-        // still allows the original menu; final interaction remains server-owned.
-        const bool selectable=unit.mode && *unit.mode<8 && number("Selectable"+std::to_string(*unit.mode))!=0;
+        // Selectable1 is clear in MPQ, but the native handler still opens the
+        // menu in mode 1 or 2. Targetability does not override that exception.
+        const bool selectable=unit.mode && *unit.mode<8 &&
+            (number("Selectable"+std::to_string(*unit.mode))!=0 ||
+             (operation==23 && (*unit.mode==1 || *unit.mode==2)));
         if (!selectable || (operation!=23 && unit.objectTargetable==false)) continue;
         std::optional<OnlineMapInteraction> interaction;
         switch (operation) {
@@ -346,7 +348,7 @@ bool RemoteTown::permitsInteraction(const OnlineView &v, OnlineUnitKey target) c
         std::any_of(view_.mapTargets.begin(), view_.mapTargets.end(),
             [&](const auto &entry) { return entry.unit == target; });
 }
-bool RemoteTown::interactionReady(const OnlineView &v, OnlineUnitKey target) const {
+bool RemoteTown::interactionReady(const OnlineView &v, OnlineUnitKey target, std::optional<Vec> displayOrigin) const {
     if (!permitsInteraction(v, target) || !v.world.playerPosition) return false;
     const auto found = std::find_if(view_.mapTargets.begin(), view_.mapTargets.end(),
         [&](const auto &entry) { return entry.unit == target; });
@@ -360,7 +362,9 @@ bool RemoteTown::interactionReady(const OnlineView &v, OnlineUnitKey target) con
             {EntityId{uint64_t(target.id) + 1}, position, position, found->collisionWidth, found->collisionHeight, 0, true});
     }
     if (found->interaction != OnlineMapInteraction::Npc && !corpse) return true;
-    return nativeUnitDistance({float(player.x), float(player.y)}, 2,
+    const Vec position = found->interaction == OnlineMapInteraction::Npc && displayOrigin
+        ? *displayOrigin : Vec{float(player.x), float(player.y)};
+    return nativeUnitDistance(position, 2,
         {float(found->position.x), float(found->position.y)}, found->collisionWidth) <= (corpse ? 8 : 6);
 }
 std::optional<OnlinePoint> RemoteTown::interactionApproachPoint(const OnlineView &v, OnlineUnitKey target) const {

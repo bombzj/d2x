@@ -117,6 +117,10 @@ class SceneView {
     void resetQuestAnimations();
     void queueQuestAnimation(QuestId quest, bool completed);
     void advanceQuestAnimations(float dt);
+    struct GroundAnimation { uint64_t revision = 0; float age = 0; bool flipSoundConsumed = false, landSoundConsumed = false; };
+    std::map<EntityId, GroundAnimation> groundAnimations_;
+    uint64_t groundGameGeneration_ = ~uint64_t{}, groundAreaGeneration_ = ~uint64_t{};
+    void advanceGroundAnimations(float dt);
     using ClientMissile = ClientMissileVisual;
     std::vector<ClientMissile> clientMissiles_;
     uint64_t projectileVisualRandom_ = 0;
@@ -225,6 +229,9 @@ class SceneView {
     }
     const ActorAnimation *objectAnimation(int identity, int mode, int palette) const {
         return assets_.objectAnimation(identity, mode, palette);
+    }
+    int objectPresentationMode(int identity, int serverMode, float elapsed) const {
+        return assets_.objectPresentationMode(identity, serverMode, elapsed);
     }
     std::string actorSequenceMode(std::string_view name) const { return assets_.actorSequenceMode(name); }
     const Sprite *groundItemSprite(const InventoryItemView &) const;

@@ -19,6 +19,9 @@ struct ClientMissileProgram {
     bool childServerSent{};
 };
 struct ClientMissileVisual {
+    ClientMissileVisual() = default;
+    ClientMissileVisual(int missileId, Vec pos, Vec velocity, float age, float duration, Vec direction)
+        : missileId(missileId), pos(pos), velocity(velocity), age(age), duration(duration), direction(direction) {}
     int missileId = -1;
     Vec pos, velocity;
     float age = 0, duration = 0;

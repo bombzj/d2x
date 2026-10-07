@@ -170,6 +170,17 @@ std::string ActorAnimationCatalog::sequenceMode(std::string_view name) const {
     return rows == sequenceRows_.end() || rows->second.empty() ? std::string{}
         : lower(std::string(sequences_.value(rows->second.front(), "mode")));
 }
+int ActorAnimationCatalog::objectPresentationMode(int identity, int serverMode, float elapsed) const {
+    const auto row = objectRows_.find(identity);
+    if (serverMode != 1 || row == objectRows_.end() ||
+        objects_.number(row->second, "OperateFn").value_or(0) != 23 ||
+        !objects_.number(row->second, "Mode2").value_or(0)) return serverMode;
+    const auto frames = objects_.number(row->second, "FrameCnt1");
+    // ObjMode schedules waypoint ENDANIM after FrameCnt1 + 1 server ticks,
+    // then assigns mode 2 without a separate mode notification. Only project
+    // that visual transition; replica mode, collision and unlocks stay native.
+    return frames && *frames > 0 && elapsed >= (float(*frames) + 1.f) / 25.f ? 2 : serverMode;
+}
 const ActorAnimation *ActorAnimationCatalog::object(Graphics &graphics, int palette, int identity, int mode) {
     constexpr std::array modes{"nu","op","on","s1","s2","s3","s4","s5"};
     if (mode < 0 || size_t(mode) >= modes.size()) return nullptr;

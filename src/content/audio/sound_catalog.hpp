@@ -1,6 +1,7 @@
 #pragma once
 #include "resources/archive.hpp"
 #include "resources/data_table.hpp"
+#include "gameplay/items/quality.hpp"
 #include <array>
 #include <map>
 #include <optional>
@@ -22,7 +23,8 @@ struct MonsterSoundDefinition {
 };
 struct PlayerSoundDefinition { SoundRule hit, death; };
 struct SkillSoundDefinition { SoundRule start, active; };
-// The only MPQ configuration loader for actor sound choices and timing.
+struct ItemSoundDefinition { std::string code, drop; int dropFrame = -1; };
+// The only MPQ configuration loader for sound choices and timing.
 // Values have no authority, device, audio handle or network dependency.
 class SoundCatalog {
     DataTable sounds_;
@@ -30,6 +32,8 @@ class SoundCatalog {
     std::map<int, MonsterSoundDefinition> monsters_;
     std::map<int, PlayerSoundDefinition> players_;
     std::map<int, SkillSoundDefinition> skills_;
+    std::map<std::string, ItemSoundDefinition, std::less<>> items_;
+    std::map<int, ItemSoundDefinition> uniqueItems_, setItems_;
   public:
     explicit SoundCatalog(Archives &);
     const DataTable &sounds() const { return sounds_; }
@@ -37,5 +41,6 @@ class SoundCatalog {
     const MonsterSoundDefinition *monster(int identity) const;
     const PlayerSoundDefinition *player(int identity) const;
     const SkillSoundDefinition *skill(int identity) const;
+    std::optional<ItemSoundDefinition> item(std::string_view code, ItemQuality, int specialRow = -1) const;
 };
 } // namespace d2x

@@ -88,4 +88,4 @@ flowchart TD
 | 面板与输入 | presentation／SceneController，语义命令交原服端口 |
 | 独立 D2S 诊断 | persistence/character_save.hpp、d2s_*、asset_tool |
 
-保留原 MPQ、reference、旧压缩包、mvp 和用户文件。历史单机模块文档只作为已退场实现的规则与验证记录；不能用于认证当前联机功能。多 agent 协作仍应按领域文件归属分工，公共接口、CMake 和存档编码由集成方收尾。
+保留原 MPQ、reference、旧压缩包、mvp 和用户文件。原版规则／格式证据与当前支持范围分开维护；历史离线运行结果不认证联机功能。多 agent 协作仍应按领域文件归属分工，公共接口、CMake 和存档编码由集成方收尾。

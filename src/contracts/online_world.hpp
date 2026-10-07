@@ -209,7 +209,72 @@ struct OnlineWorldView {
     std::optional<uint32_t> waypointRequested; // Local 0x13 intent, never an open-menu confirmation.
     uint64_t lateWaypointReplies{};
     uint64_t ignoredPackets{};
+
+    void clear() {
+        social.revision = social.chatSequence = 0;
+        social.players.clear();
+        social.relationships.clear();
+        social.chat.clear();
+        deathPhase = OnlineDeathPhase::Unknown;
+        deathRevision = 0;
+        respawnRequest.reset();
+        corpseOwners.clear();
+        revision = areaGeneration = interactionGeneration = 0;
+        units.clear();
+        rooms.clear();
+        roomAssignmentRevisions.clear();
+        mapEventSequence = 0;
+        mapEvents.clear();
+        mapInitialPlayerPosition.reset();
+        equipment.clear();
+        items.clear();
+        itemRevision = 0;
+        itemRequest.reset();
+        itemTargetingSource.reset();
+        storage = {};
+        shopRequested.reset();
+        shopSource.reset();
+        tradeResult.reset();
+        weaponSet = 0;
+        playerAttributes.clear();
+        playerPosition.reset();
+        life.reset();
+        mana.reset();
+        stamina.reset();
+        movementRequest.reset();
+        npcRequested.reset();
+        npcConversation.reset();
+        playerSkills.clear();
+        playerBaseSkills.clear();
+        playerBonusSkills.clear();
+        itemSkillQuantities.clear();
+        playerBaseSkillsAssigned = false;
+        leftSkill.reset();
+        rightSkill.reset();
+        skillHotkeys = {};
+        quests.playerFlags.reset();
+        quests.gameFlags.reset();
+        for (auto &status : quests.statuses) status.reset();
+        quests.updates.clear();
+        quests.denRemaining.reset();
+        quests.rescuedBarbsRemaining.reset();
+        quests.staffTombOffset.reset();
+        quests.revision = 0;
+        questAlerts.clear();
+        combatSequence = 0;
+        combatEvents.clear();
+        combatRequest.reset();
+        townPortalPending = false;
+        waypointHistory.reset();
+        waypointSource.reset();
+        waypointRequested.reset();
+        lateWaypointReplies = ignoredPackets = 0;
+    }
 };
+inline bool onlineMonsterCorpse(const OnlineUnit &unit) {
+    return unit.key.type == 1 && (unit.mode == 0 || unit.mode == 12 ||
+        (unit.lifePercent && (unit.lifeCarriesRankFlag ? (*unit.lifePercent & 0x7f) : *unit.lifePercent) == 0));
+}
 inline bool onlinePlayerDead(const OnlineWorldView &world) {
     if (world.deathPhase != OnlineDeathPhase::Unknown)
         return world.deathPhase == OnlineDeathPhase::Dying || world.deathPhase == OnlineDeathPhase::Dead;

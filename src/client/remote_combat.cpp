@@ -1,4 +1,5 @@
 #include "remote_combat.hpp"
+#include "content/skills/skill_eligibility.hpp"
 #include "network/protocol/bits.hpp"
 #include <algorithm>
 #include <cstdlib>
@@ -16,24 +17,22 @@ RemoteCombat::RemoteCombat(Archives &archives, RemoteTown &scene, net::RealmSess
             if (auto id = table.number(row, column); id && *id >= 0 && *id <= UINT16_MAX) rows.emplace(uint16_t(*id), row);
     }
     const auto &states = tables_.at("states");
+    for (const auto &[id, row] : skills_)
+        skillMetadata_.emplace(id, loadSkillEligibilityMetadata(tables_.at("skills"), row));
     for (size_t row = 0; row < states.rows().size(); ++row)
         if (auto id = states.number(row, "Id"); id && *id >= 0 && *id < 255) states_.emplace(uint8_t(*id), row);
     const auto &monsters = tables_.at("monstats");
     for (size_t row = 0; row < monsters.rows().size(); ++row)
         if (auto id = monsters.number(row, "hcIdx"); id && *id >= 0 && *id <= UINT16_MAX) monsters_.emplace(uint16_t(*id), row);
-    const auto &classes=tables_.at("playerclass"), &characters=tables_.at("charstats"), &skills=tables_.at("skills");
+    const auto &classes=tables_.at("playerclass"), &characters=tables_.at("charstats");
     for (size_t row=0; row<classes.rows().size(); ++row) {
         const auto code=classes.value(row,"Code");
         if (code.empty()) continue;
         auto &innate=innateSkills_[std::string(code)];
         for (size_t character=0; character<characters.rows().size(); ++character) {
             if (characters.value(character,"class")!=classes.value(row,"Player Class")) continue;
-            for (const auto &[id,skill]:skills_) {
-                const auto name=skills.value(skill,"skill");
-                if (name=="Attack") innate.insert(id);
-                for (int slot=1; slot<=10; ++slot)
-                    if (characters.value(character,"Skill "+std::to_string(slot))==name) innate.insert(id);
-            }
+            for (const int id : loadInnateSkillIds(tables_.at("skills"), characters, character))
+                if (id <= UINT16_MAX) innate.insert(uint16_t(id));
         }
     }
 }
@@ -55,6 +54,31 @@ std::string_view RemoteCombat::classCode() const {
 bool RemoteCombat::innateSkill(uint16_t id) const {
     const auto found=innateSkills_.find(classCode());
     return found!=innateSkills_.end() && found->second.contains(id);
+}
+bool RemoteCombat::hostile(const OnlineUnit &unit) const {
+    if (unit.key.type != 1 || !unit.classId) return false;
+    const auto monster = monsters_.find(*unit.classId);
+    if (monster == monsters_.end()) return false;
+    const auto &table = tables_.at("monstats");
+    if (table.number(monster->second, "npc").value_or(0) ||
+        table.number(monster->second, "interact").value_or(0) ||
+        table.number(monster->second, "Align").value_or(0) ||
+        !table.number(monster->second, "killable").value_or(0)) return false;
+    if (const auto snapshot = unitStates_.find(unit.key); snapshot != unitStates_.end()) {
+        if (!snapshot->second.decoded) return false;
+        for (const auto &[id, state] : snapshot->second.states) {
+            (void)id;
+            for (const auto &stat : state.stats)
+                if (const auto row = stats_.find(stat.id); row != stats_.end() &&
+                    tables_.at("itemstatcost").value(row->second, "Stat") == "alignment" && stat.value != 0)
+                    return false;
+        }
+    }
+    return true;
+}
+bool RemoteCombat::monsterTargetEligible(const OnlineUnit &unit, bool targetCorpse) const {
+    return hostile(unit) && onlineMonsterCorpse(unit) == targetCorpse &&
+        (!targetCorpse || corpseSelectable(unit));
 }
 bool RemoteCombat::corpseSelectable(const OnlineUnit &unit) const {
     const auto monster=monsters_.find(unit.classId.value_or(UINT16_MAX));
@@ -100,35 +124,40 @@ bool RemoteCombat::submit(OnlineCombatCommand command) {
         const auto row = skills_.find(command.skill);
         if (row == skills_.end()) return reject("Skill is absent from current MPQ");
         const auto n = [&](std::string_view key) { return table.number(row->second, key).value_or(0); };
-        const auto level = world.playerSkills.find(command.skill);
+        const auto &metadata = skillMetadata_.at(command.skill);
+        SkillEligibilityInput facts;
+        facts.classCode = classCode(); facts.innate = innateSkill(command.skill);
+        facts.dead = onlinePlayerDead(world); facts.town = scene_.read().town;
+        const auto knownAttribute = [&](uint8_t id) -> std::optional<int> {
+            const auto value = world.playerAttributes.find(id);
+            return value == world.playerAttributes.end() ? std::nullopt : std::optional{int(value->second)};
+        };
+        facts.level = knownAttribute(12); facts.skillPoints = knownAttribute(5);
+        constexpr std::array<uint8_t, 4> attributeIds{0, 2, 3, 1};
+        for (size_t i = 0; i < attributeIds.size(); ++i) facts.attributes[i] = knownAttribute(attributeIds[i]);
+        if (const auto rank = world.playerBaseSkills.find(command.skill); rank != world.playerBaseSkills.end())
+            facts.baseRank = rank->second;
+        else if (world.playerBaseSkillsAssigned) facts.baseRank = 0;
+        if (const auto rank = world.playerSkills.find(command.skill); rank != world.playerSkills.end())
+            facts.effectiveRank = rank->second;
+        for (const int required : metadata.prerequisites) {
+            if (required > UINT16_MAX) continue;
+            if (const auto rank = world.playerBaseSkills.find(uint16_t(required)); rank != world.playerBaseSkills.end())
+                facts.prerequisiteRanks.emplace(required, rank->second);
+        }
+        const auto eligibility = evaluateSkillEligibility(metadata, facts);
         if (command.action == Action::LearnSkill) {
-            const auto code = classCode();
-            if (code.empty() || table.value(row->second, "charclass") != code || !attribute(5))
-                return reject("Skill class or available server skill points do not permit learning");
-            const auto base = world.playerBaseSkills.find(command.skill);
-            const unsigned rank = base == world.playerBaseSkills.end() ? 0 : base->second;
-            if (n("maxlvl") <= 0 || rank >= unsigned(n("maxlvl")) || attribute(12) < unsigned(std::max(0,n("reqlevel"))) + rank)
-                return reject("Server level or MPQ maximum skill level does not permit learning");
-            for (const auto &[field, id] : {std::pair{"reqstr", 0}, {"reqint", 1}, {"reqdex", 2}, {"reqvit", 3}})
-                if (attribute(uint8_t(id)) < unsigned(n(field))) return reject("MPQ skill attribute requirement is not met");
-            for (const char *field : {"reqskill1", "reqskill2", "reqskill3"}) {
-                const auto required = table.value(row->second, field);
-                if (required.empty()) continue;
-                const auto prerequisite = std::find_if(skills_.begin(), skills_.end(), [&](const auto &entry) { return table.value(entry.second, "skill") == required; });
-                if (prerequisite == skills_.end() || !world.playerBaseSkills.contains(prerequisite->first) || !world.playerBaseSkills.at(prerequisite->first))
-                    return reject("Required learned skill is absent");
-            }
+            if (!eligibility.canAllocate)
+                return reject("Known server ranks, points and attributes or MPQ skill requirements do not permit learning");
         } else {
             // SKILLS_InitSkillList adds Attack and current CharStats.Skill 1..10;
             // native 0x94 need not list these innate skills. Equipment and item
             // quantities still belong to the server, not an invented skill rank.
-            const bool innate = innateSkill(command.skill);
-            if (n("passive") || (command.hand == OnlineSkillHand::Left && !n("leftskill")) ||
-                (!innate && (level == world.playerSkills.end() || !level->second)))
+            if (!eligibility.canSelect(command.hand == OnlineSkillHand::Left, metadata))
                 return reject("Server has not reported an available active skill for this hand");
             if (command.action == Action::Cast) {
                 const auto &binding = scene_.read();
-                if (!binding.nativeMapReady || !binding.movementAvailable || !world.playerPosition || (binding.town && !n("InTown")))
+                if (!binding.nativeMapReady || !binding.movementAvailable || !world.playerPosition || !eligibility.usableNow)
                     return reject("Skill cannot be cast in the current loaded area");
                 if (command.point.has_value() == command.target.has_value()) return reject("Specify exactly one point or unit target");
                 auto point = command.point;
@@ -136,29 +165,8 @@ bool RemoteCombat::submit(OnlineCombatCommand command) {
                     const auto target = world.units.find(*command.target);
                     if (target == world.units.end() || !target->second.position || command.target->type != 1 || !target->second.classId)
                         return reject("Only assigned PvE monster targets are supported in this batch");
-                    const auto &monsters = tables_.at("monstats");
-                    const auto identity = monsters_.find(*target->second.classId);
-                    if (identity == monsters_.end()) return reject("Monster identity is absent from current MPQ");
-                    const size_t monster = identity->second;
-                    if (monsters.number(monster, "npc").value_or(0) ||
-                        monsters.number(monster, "interact").value_or(0) || monsters.number(monster, "Align").value_or(0) ||
-                        !monsters.number(monster, "killable").value_or(0))
-                        return reject("Neutral, friendly and noncombat units cannot be attacked");
-                    if (const auto states = unitStates_.find(*command.target); states != unitStates_.end()) {
-                        if (!states->second.decoded) return reject("Target native states are unavailable");
-                        for (const auto &[id, state] : states->second.states) {
-                            (void)id;
-                            for (const auto &stat : state.stats)
-                                if (const auto row = stats_.find(stat.id); row != stats_.end() &&
-                                    tables_.at("itemstatcost").value(row->second, "Stat") == "alignment" && stat.value != 0)
-                                    return reject("Server alignment identifies a neutral or friendly target");
-                        }
-                    }
-                    const auto &unit = target->second;
-                    const bool corpse = unit.mode == 0 || unit.mode == 12 || (unit.lifePercent &&
-                        (unit.lifeCarriesRankFlag ? (*unit.lifePercent & 0x7f) : *unit.lifePercent) == 0);
-                    if (corpse != bool(n("TargetCorpse"))) return reject("Target life state does not match the skill");
-                    if (corpse && !corpseSelectable(unit)) return reject("Server corpse state or original monster definition forbids selection");
+                    if (!monsterTargetEligible(target->second, n("TargetCorpse") != 0))
+                        return reject("MPQ monster identity, native alignment or corpse state does not permit this target");
                     point = target->second.position;
                 }
                 const auto player = *world.playerPosition;
@@ -182,7 +190,8 @@ void RemoteCombat::update() {
     catalog_.clear();
     const auto &skills = tables_.at("skills");
     for (const auto &[id, row] : skills_) {
-        const bool classSkill = !classCode().empty() && skills.value(row, "charclass") == classCode();
+        const auto &metadata = skillMetadata_.at(id);
+        const bool classSkill = !classCode().empty() && metadata.classCode == classCode();
         const bool innate = innateSkill(id);
         const auto level = world.playerSkills.find(id);
         if (!classSkill && !innate && (level == world.playerSkills.end() || !level->second)) continue;
@@ -191,9 +200,9 @@ void RemoteCombat::update() {
         if (const auto it = world.playerBonusSkills.find(id); it != world.playerBonusSkills.end()) entry.bonus = it->second;
         if (level != world.playerSkills.end()) entry.level = level->second;
         entry.innate = innate;
-        entry.left = skills.number(row, "leftskill").value_or(0) != 0;
-        entry.passive = skills.number(row, "passive").value_or(0) != 0;
-        entry.inTown = skills.number(row, "InTown").value_or(0) != 0; entry.classSkill = classSkill;
+        entry.left = metadata.leftAllowed;
+        entry.passive = metadata.passive;
+        entry.inTown = metadata.allowedInTown; entry.classSkill = classSkill;
         catalog_.push_back(std::move(entry));
     }
     std::erase_if(unitStates_, [&](const auto &entry) { return !world.units.contains(entry.first); });

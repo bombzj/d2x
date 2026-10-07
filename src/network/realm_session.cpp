@@ -168,7 +168,7 @@ struct RealmSession::Impl {
         worldBytes = 0;
         ++view.gameGeneration;
         view.load = {};
-        view.world = {};
+        view.world.clear();
         view.latencyMilliseconds.reset();
         nextMovement = {};
         nextItem = {}; itemDeadline = {};
@@ -248,11 +248,22 @@ struct RealmSession::Impl {
             error(OnlineErrorKind::Input, "Wait for the pending town portal before moving or changing interaction");
             return false;
         }
-        if (view.world.itemRequest && view.world.itemRequest->state == OnlineItemRequest::State::Pending) {
+        if (view.world.itemRequest && view.world.itemRequest->state == OnlineItemRequest::State::Pending &&
+            view.world.itemRequest->command.action != OnlineItemAction::Pickup) {
             error(OnlineErrorKind::Input, "Wait for the pending item response before moving or changing interaction");
             return false;
         }
         return true;
+    }
+    void finish_pickup(OnlineItemRequest::State state) {
+        auto &world = view.world;
+        auto &request = world.itemRequest;
+        if (!request || request->state != OnlineItemRequest::State::Pending ||
+            request->command.action != OnlineItemAction::Pickup) return;
+        request->state = state;
+        if (world.movementRequest && world.movementRequest->unit == OnlineUnitKey{4, request->command.item})
+            world.movementRequest.reset();
+        ++world.revision;
     }
     void observed(OnlineProtocolCounters &counters, const Packet &packet, size_t header) {
         ++counters.received[packet.id];
@@ -474,10 +485,33 @@ struct RealmSession::Impl {
             in.string(32);
             in.finish();
             waitingChat = false;
+            // PvPGN delivers its welcome/MOTD when entering the initial channel.
+            Writer channel;
+            channel.u32(1); // CLIENT_JOINCHANNEL_GENERIC
+            channel.string("", 32);
+            send_sid(0x0C, std::move(channel));
             Writer out;
             out.string(pendingCharacter, 15);
             send_mcp(0x07, std::move(out));
             deadline = Clock::now() + options.timeout;
+            break;
+        }
+        case 0x0F: {
+            const auto type = in.u32();
+            if (type != 0x12 && type != 0x13) {
+                ++view.sidProtocol.unconsumed[packet.id];
+                break;
+            }
+            in.take(20); // Flags, latency, IP, account and authority fields.
+            in.string(64);
+            auto message = in.string(512);
+            in.finish();
+            if (!message.empty()) {
+                if (view.lobbyNotices.size() == 32)
+                    view.lobbyNotices.erase(view.lobbyNotices.begin());
+                view.lobbyNotices.push_back({std::move(message), type == 0x13});
+                changed();
+            }
             break;
         }
         default:
@@ -867,8 +901,10 @@ struct RealmSession::Impl {
                 action == OnlineItemAction::Transmute) related = true;
             // Merchant 0x2A is the explicit result; preliminary item packets are not its ACK.
             if (merchant && packet.id != 0x2A) related = false;
-            if (related && request->state == OnlineItemRequest::State::Pending)
-                request->state = OnlineItemRequest::State::Updated;
+            if (related && request->state == OnlineItemRequest::State::Pending) {
+                if (action == OnlineItemAction::Pickup) finish_pickup(OnlineItemRequest::State::Updated);
+                else request->state = OnlineItemRequest::State::Updated;
+            }
             else if (!view.world.playerPosition || onlinePlayerDead(view.world))
                 request->state = OnlineItemRequest::State::Interrupted;
         }
@@ -1041,6 +1077,9 @@ struct RealmSession::Impl {
         }
     }
     void close_interaction() {
+        // A new navigation/interaction intent replaces the native pickup approach.
+        // Retire only its wait/presentation target; late inventory packets still apply.
+        finish_pickup(OnlineItemRequest::State::Interrupted);
         auto &world = view.world;
         if (world.npcRequested || world.npcConversation || world.waypointSource || world.waypointRequested || world.shopRequested ||
             world.shopSource || world.storage.kind != OnlineStorageKind::None || world.storage.requested != OnlineStorageKind::None)
@@ -1113,6 +1152,7 @@ struct RealmSession::Impl {
             error(OnlineErrorKind::Timeout, "No original waypoint menu confirmation arrived");
         }
         if (view.world.itemRequest && view.world.itemRequest->state == OnlineItemRequest::State::Pending && now >= itemDeadline) {
+            finish_pickup(OnlineItemRequest::State::TimedOut);
             view.world.itemRequest->state = OnlineItemRequest::State::TimedOut;
             error(OnlineErrorKind::Timeout, "No related server item update arrived; inspect current inventory before retrying");
         }
@@ -1131,8 +1171,9 @@ struct RealmSession::Impl {
         }
         if (pending_stage(view.stage) && now >= deadline) {
             if (view.stage == OnlineStage::ListingGames) {
-                view.games.clear();
-                error(OnlineErrorKind::Timeout, "Game list did not finish before timeout");
+                // PvPGN can send no terminator for an empty list. Keep partial rows;
+                // absence of the terminator never establishes a complete empty list.
+                error(OnlineErrorKind::Timeout, "Game list did not finish before timeout", 0x05);
                 stage(OnlineStage::Lobby);
             } else if (view.stage == OnlineStage::CreatingGame || view.stage == OnlineStage::JoiningGame ||
                        view.stage == OnlineStage::ConnectingGame || view.stage == OnlineStage::GameHandshake ||
@@ -1186,7 +1227,7 @@ void RealmSession::authenticate(LoginOptions options, bool createAccount) {
     p.shutdown();
     const auto revision = p.view.revision, generation = p.view.connectionGeneration,
                gameGeneration = p.view.gameGeneration;
-    p.view = {};
+    p.view.clear();
     p.view.revision = revision;
     p.view.connectionGeneration = generation + 1;
     p.view.gameGeneration = gameGeneration;
@@ -1852,7 +1893,8 @@ bool RealmSession::submit_combat(OnlineCombatCommand command) {
     using Action = OnlineCombatCommand::Action;
     if (!p.view.load.serverLoadComplete || !p.view.load.playerUnitId || !world.playerPosition ||
         onlinePlayerDead(world) || (command.action != Action::Stop && (p.portalRequest ||
-        (world.itemRequest && world.itemRequest->state == OnlineItemRequest::State::Pending) ||
+        (world.itemRequest && world.itemRequest->state == OnlineItemRequest::State::Pending &&
+            (world.itemRequest->command.action != OnlineItemAction::Pickup || command.action != Action::Cast)) ||
         (world.combatRequest && world.combatRequest->state == OnlineCombatRequest::State::Pending)))) {
         p.error(OnlineErrorKind::Input, "Combat operation is unavailable or another operation is pending"); return false;
     }
@@ -1914,6 +1956,7 @@ bool RealmSession::submit_combat(OnlineCombatCommand command) {
     }
     try {
         p.sent(p.gs, out.release());
+        if (command.action == Action::Cast) p.finish_pickup(OnlineItemRequest::State::Interrupted);
         // Releasing a channel must not erase an outstanding learn/select/spend acknowledgement.
         if (command.action != Action::Stop || !world.combatRequest ||
             world.combatRequest->state != OnlineCombatRequest::State::Pending) {
@@ -1952,6 +1995,7 @@ bool RealmSession::use_waypoint(uint16_t destination, uint8_t waypointNumber, st
         Writer out;
         out.u8(0x49); out.u32(*waypoint); out.u32(destination);
         p.sent(p.gs, out.release());
+        p.finish_pickup(OnlineItemRequest::State::Interrupted);
         p.nextMovement = Clock::now() + std::chrono::milliseconds(100);
         p.view.world.waypointSource.reset();
         p.view.world.waypointRequested.reset(); p.waypointDeadline = {};
@@ -2004,7 +2048,7 @@ void RealmSession::logout() {
     p.shutdown();
     const auto revision = p.view.revision, generation = p.view.connectionGeneration,
                gameGeneration = p.view.gameGeneration;
-    p.view = {};
+    p.view.clear();
     p.view.revision = revision + 1;
     p.view.connectionGeneration = generation + 1;
     p.view.gameGeneration = gameGeneration;

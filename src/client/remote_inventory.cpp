@@ -1,4 +1,5 @@
 #include "remote_inventory.hpp"
+#include "gameplay/items/quality.hpp"
 #include "network/protocol/bits.hpp"
 #include "world/interaction_geometry.hpp"
 #include <algorithm>
@@ -102,7 +103,7 @@ OnlineDecodedItem RemoteInventory::decode(const OnlineItem &wire) const {
             } else if (!item.gamble) {
                 item.filledSockets = uint8_t(bits.read(3)); item.level = uint8_t(bits.read(7));
                 item.quality = uint8_t(bits.read(4));
-                if (item.quality < 1 || item.quality > 9) throw std::runtime_error("Unknown native item quality");
+                if (!itemQualityFromNative(item.quality)) throw std::runtime_error("Unsupported native item quality");
                 item.hasGraphic = bits.read(1) != 0;
                 if (item.hasGraphic) item.graphic = uint8_t(bits.read(3));
                 if (bits.read(1)) item.autoAffix = uint16_t(bits.read(11));

@@ -1,7 +1,9 @@
 #pragma once
 #include "core/id.hpp"
 #include "core/math.hpp"
+#include "gameplay/items/quality.hpp"
 #include <cstdint>
+#include <string>
 
 namespace d2x {
 enum class SoundActorKind { Player, Monster };
@@ -21,5 +23,14 @@ struct PresentationSoundEvent {
     uint64_t actionRevision = 0;
     int skill = -1;
     float age = 0, releaseTime = -1;
+};
+struct ItemDropSoundEvent {
+    enum class Kind { Flip, Land };
+    std::string code;
+    ItemQuality quality = ItemQuality::Normal;
+    int specialRow = -1;
+    float age = 0;
+    bool audible = false;
+    Kind kind = Kind::Land;
 };
 } // namespace d2x

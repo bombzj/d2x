@@ -254,6 +254,19 @@ void itemPacket(OnlineView &v, const Packet &p) {
         v.world.shopSource = v.world.shopRequested;
     }
     item.revision = ++v.world.itemRevision;
+    if (item.mode == 3 || item.mode == 5) {
+        const auto previous = v.world.items.find(item.id);
+        const bool alreadyDropping = previous != v.world.items.end() && previous->second.mode == 5;
+        // ITEMACTION_DROPTOGROUND is a flip event even though the native
+        // server item mode is ONGROUND. ADDTOGROUND/ONGROUND alone are snapshots.
+        if (item.action == 2 || (item.mode == 5 && !alreadyDropping)) {
+            item.groundAnimationRevision = item.revision;
+            item.groundAnimationReceivedMilliseconds = receivedMilliseconds();
+        } else if (previous != v.world.items.end() && (previous->second.mode == 3 || previous->second.mode == 5)) {
+            item.groundAnimationRevision = previous->second.groundAnimationRevision;
+            item.groundAnimationReceivedMilliseconds = previous->second.groundAnimationReceivedMilliseconds;
+        }
+    }
     if (!v.world.items.contains(item.id) && v.world.items.size() >= 8192)
         throw ProtocolError("Remote item limit exceeded");
     v.world.items[item.id] = std::move(item);
@@ -605,7 +618,7 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
         if (target.type == 1 && w.npcRequested == target.id) {
             w.questAlerts.erase(target);
             if (!w.npcConversation || w.npcConversation->source != target.id)
-                w.npcConversation = OnlineNpcConversation{target.id};
+                w.npcConversation = OnlineNpcConversation{target.id, 0, {}, {}};
             auto &conversation = *w.npcConversation;
             conversation.messages = std::move(messages);
             conversation.acknowledged.clear();
@@ -712,6 +725,7 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
         u.mode = r.u8();
         u.objectInteractType = r.u8();
         u.objectTargetable.reset();
+        u.actionRevision = w.revision; u.actionReceivedMilliseconds = receivedMilliseconds();
         r.finish();
         break;
     }
@@ -807,7 +821,13 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
         OnlineCombatEvent event; event.packet = p.id; event.kind = OnlineCombatEvent::Kind::Action;
         event.source = u.key; event.action = u.wireAction;
         if (p.id == 0x69) {
-            u.destination = point(r); u.destinationUnit.reset(); event.point = u.destination;
+            const auto coordinates = point(r); event.point = coordinates;
+            u.destinationUnit.reset();
+            if (u.wireAction == 9) {
+                // MonsterMsg DEAD carries the current position, not a path
+                // target. Keep the corpse there and discard the old walk goal.
+                position(v, u, coordinates); u.destination.reset();
+            } else u.destination = coordinates;
             event.direction = r.u8(); event.hitClass = r.u8();
         } else {
             u.destinationUnit = key(r); u.destination.reset(); event.target = u.destinationUnit;

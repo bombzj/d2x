@@ -1,82 +1,17 @@
-# 物品与容器模型
+# 原服物品与容器模型
 
-本页负责实例、位置、容器和事务规则。`src/gameplay/items` 构建为不依赖图形或 MPQ 的 `d2x_items`；内容层从资料片原表准备定义。代码分工与装备来源见 [库存模块](../../modules/INVENTORY.md)，效果支持见 [清单](SUPPORT.md)。
+所有物品、容器位置、数量、耐久、金币与最终装备属于D2GS。RemoteInventory解码原位流；InventoryView是客户端只读值，不是第二份可提交库存。接口及生命周期见[库存模块](../../modules/INVENTORY.md)。
 
-## 状态所有权
+## 身份、位置与版本
 
-`GameSession` 拥有 `InventoryService`，后者私有保存不可变的 `ItemCatalog` 与运行时 `InventoryState`。已迁移 UI 读取 InventoryView 并经 IInventoryClient 提交意图；会话 const 查询仅为兼容入口。
+原GUID＋游戏代次确定物品身份，revision防止旧手势操作变更后的物品。mode区分存储0、装备1、腰带2、地面3、Cursor4、掉落过渡5、孔内6；所有者类型区分玩家、NPC及宿主物品。
 
-`ItemDefinition::code` 是原版类型代码，`ItemInstance::id` 是一次会话中某件实物的 ID。多个同类型物品有不同 ID。物品、容器、角色和怪物共用同一个单调分配器，删除后的 ID 不复用。
+快照page为原InvPage＋1：背包1、方块4、箱子5；原place请求使用0／3／4。Cursor只容纳一件，不按背包宽高占格。孔内子项保留宿主GUID与顺序，不重复算根库存记录。
 
-`ItemInstance::location` 是唯一归属：根物品使用 `GroundLocation{region, position}` 或 `ContainerLocation{container, cell}`；镶嵌子物品使用 `SocketLocation{host, index}`，仅存于宿主的有序 `socketedItems` 中，不同时出现在根库存。容器保存所有者、类型和尺寸；不保存另一份实例，也不保存独立可变的占格表。`itemAt()` 覆盖根物品的整个矩形，`contents()` 和 `groundItems()` 不枚举孔内物品。
+## 操作与权限
 
-当前有玩家／佣兵装备、两组武器、钱包、耐久、品质／词缀、方块、光标和尸体支持。持久身份／掷值与位置属于实例，GPU 图像属于表现缓存。图标和地面动画从原表导入，具体支持范围由各专题维护。
+面板按当前MPQ Inventory／BodyLocs／Belts提供格子与部位预览。本人所有权、Cursor、已确认存储／货架、目标版本及交互代次在发送端复验；关闭／死亡／换区清理未发部分，不能撤销原服结果。
 
-孔容量由 `ItemInstance.sockets` 独立保存，已填数量来自 `socketedItems.size()`；堆叠资格排除带孔物品。`SocketItem` 保留填充物的身份、品质、掷值与顺序，内容回调准备 gemapplytype 属性、最高等级需求和一次性符文之语加成。`runewordStats` 独立于宿主原属性，原生保存分别编码，避免重复或重掷。携带单件、任务互斥和消费者边界见 [支持清单](SUPPORT.md)。
+组合操作逐步等光标与相关回包，不用本地原子事务伪造全部成功。无ACK操作明确SentNoAck；TimedOut为未知，不自动重发非幂等请求。完整参数见[原物品命令](../../development/DEBUG_PIPE.md#联网物品操作)。
 
-## 容器和访问权限
-
-`ContainerSpec` 指定所有者、类型和尺寸；支持 Backpack、Belt、Stash、Chest、BeltEquipment、Equipment、Cube、Cursor、Corpse。玩家容器由可信创建入口建立；光标保存一件真实实例，尸体容器只经死亡／回收事务操作，不作为任意可拖入的普通箱子。
-
-包裹为 10×4、基础腰带为 4×1；资料片私人箱 6×8、方块 3×4 由运行时 Inventory 原表确定。包裹／腰带要求所有者匹配，腰带要求原 belt 标记与 1×1 占格；私人箱需要当前交互访问授权。通用 Chest 类型不等于世界可掉落宝箱的独立物品库存，世界宝箱走 [物件掉落](../world/OBJECTS.md)。
-
-`InventoryAccess` 由会话根据真实玩家状态生成，不能作为 UI 命令参数。地面访问检查当前区域、存活状态和距离。地面放置的可行走性由 `GameSession` 检查，底层服务只检查坐标有效性、归属和格子规则。创建入口属于可信玩法调用，调用方要先确定有效区域/地形。
-
-当前私人储物箱授权由近距离 `Interact` 获取；死亡、旅行、重置或离开交互距离会撤销。玩家容器内容不会因这些动作而被重新创建。储物箱面板已接入，关闭或离开范围会撤销访问但保留物品。
-
-## 操作语义
-
-| 入口 | 行为 |
-| --- | --- |
-| `createContainer` / `createPlayerContainers` | 可信玩法创建容器，非法尺寸/所有者拒绝初始化 |
-| `createItem` | 可信玩法创建实例，校验定义、数量、位置；UI 没有对应创建命令 |
-| `MoveItem` | 将完整实例移动到显式位置或 `AutoPlace` 自动找到的空位 |
-| `SwapItems` | 两件物品交换原点，双方都必须适配新位置，且新矩形不能互相重叠 |
-| `SocketItem` | 版本／鉴定／归属／访问／孔数复验后，将单件 sock 来源嵌入宿主；先准备子物品、属性、随机状态和事件，再提交两个根实例变化 |
-| `SplitStack` | 从源堆叠分出正数且少于源数量的新实例，保留源 ID，新实例分配新 ID |
-| `MergeStacks` | 同底材及合格品质、原行、无形／伤害与无孔条件相符的堆叠合并；等级不决定兼容，魔法品质不合并；目标 ID 保留 |
-| `consume` | 可信使用规则扣除数量，用尽后删除；该接口不负责结算药剂或卷轴效果 |
-| `collect` | 地面拾取按 Books／AutoStack／腰带规则规划；成功合并后，余量无空格可留地面，并提交已成功部分，不等同整件转移 |
-| 会话命令 `PickupItem` | 接收实例 ID/版本，寻路靠近并检查地形、距离，再调用 `collect` |
-| `preview` / `GameSession::previewInventory` | 只读校验；供拖动预览和正式库存提交共同使用，不分配实例 ID |
-
-`AutoPlace` 按从上到下、从左到右的顺序寻找完整空矩形，不自动旋转、交换或合并。`MergeStacks.quantity == 0` 表示尽量填满目标，源可以有余量；显式指定数量时必须完整满足，否则失败。
-
-`collect` 在私有库存草稿上处理地面拾取，不在活库存逐步调用多个 `merge`／`move`。卷轴／书填充一本合格书后提交，剩余页留地面；AutoStack 优先装备再背包，之后尝试腰带／包裹空格。已经合并一部分而余量仅因 NoSpace 放不下时，保留余量在地面并提交成功部分；其他业务错误不移交草稿。源全部消耗时移除源 ID，否则保留源 ID；多目标合并可使同一来源在一笔请求内增加多次 revision。准确入口见 [背包自动拾取](INVENTORY_UI.md#自动拾取与合并)。
-
-`TransferItem` 才是整件转移：先规划目标堆叠及余量空格，不能完整容纳则无变化。两类事务共用定义、位置、访问和堆叠资格，但不是同一份规划函数；不应把 Shift 箱子转移的全有或全无语义写成地面自动补充的语义。
-
-`PickupItem` 的 UI 参数不能指定容器、距离或玩家权限。会话优先将适用物品放入当前玩家腰带，其他情况放入包裹，抵达 1.8 子格内且可直线穿过碰撞网格后才执行事务。路径不可达、忙于跳跃/旋风斩时给出提示，等待过程中源版本变化会取消拾取。玩家的新移动/战斗/交互意图、旅行、重置或死亡取消旧目标。
-
-所有修改请求携带 `ItemHandle{id, revision}`。实例每次实际变化增加版本号；旧版本请求返回 `SourceChanged`。同位置移动是无变化操作，不增加版本、不发事件。删除后的旧 ID 返回 `UnknownItem`。UI 不应长期保存实例指针，尤其合并/消耗后，应该按 ID 重新查询。
-
-## 原子性与事件
-
-移动、交换和堆叠操作先完成全部定义、版本、访问、数量、尺寸、重叠校验，再提交改变。返回业务错误时不会先移出来源或减少源数量。拆分先成功插入新实例，再扣源数量；交换还单独检查双方的新占格是否相互冲突。操作结果的变化列表在提交前分配，避免先改变库存再构造返回结果。
-
-`InventoryResult` 返回错误、主要物品 ID、转移数量和 `ItemChange` 列表。`GameSession` 将成功变化加入同一固定步的事件队列，将拒绝转换为 `InventoryRejected`。拾取成功另外发出带定义代码/总数量的 `ItemPickedUp`，即使源因合并消失，界面仍能显示完整拾取提示；寻路失败通过 `PickupFailed` 反馈。后续物品界面可以读取状态或消费成功变化，不应自己维护另一份库存。
-
-底层物品事件区分创建、移动、数量变化和删除，并携带前后位置、最终数量和版本。事件与其他游戏事件一样，在下一固定步开始时清空，不能跨步保存引用。
-
-## 宿主与保存
-
-LootSystem／session_loot 连接怪物死亡掉落，包裹／腰带／箱子／方块复用相同事务。InventoryApplied 为成功请求（包括无变化）提供回执，失败为 InventoryRejected；预览与提交均由当前宿主重新构造权限，不相信 UI 状态。
-
-原 D2S 保存受支持的物品原字段和位置；运行实体 ID、版本、临时访问及事件不作为私有磁盘字段持久化。读档重建引用、校验所有权和容器尺寸；准确支持见 [存档](../../modules/SAVES.md)。
-
-## 腰带规则
-
-玩家新增 2×1 的 `BeltEquipment` 容器，只允许 `EquipBelt` 事务进行穿脱。它保存真实腰带实例；`Belt` 容器保存药水／卷轴，固定四列一到四行。装备变更、缩容和溢出入包在私有快照上完整规划，失败不修改原库存，也不分配新 ID。
-
-`ItemDefinition.autoBelt` 区分拾取时能否使用空列，`beltRows` 表示可穿戴腰带的容量。`beltSpace` 查找同类列或空列；`previewDrink` 验证来源为玩家包裹／腰带、版本和补位版本，`drink` 消耗一件并压紧所在列。药效可用性由会话验证，未实现的物品效果不会进入消耗阶段。物品消耗、换带和移动均发布原有 `ItemChange`；额外的 `ItemUsed`／`BeltEquipped` 用于表现反馈。
-
-
-## 通用整件转移与临时访问
-
-`TransferItem{item, destination}` 完整规划兼容堆叠和剩余位置，失败不改变任何实例。`planTransfer` 同时供预览和执行，执行阶段不需要新实例或新 ID。`collect` 另在私有草稿中处理 Books／AutoStack 与余量留地面的拾取规则，末尾复用普通移动校验。
-
-`StorageAccess` 只由当前会话的世界交互授予。每次库存预览／提交都会重新检查原实体、存活、距离和通路；界面只能提交容器 ID，不能授予自己访问。箱子物品仍使用原来的唯一 ContainerLocation，不拷贝到界面或玩家包裹中。
-
-存档通过独立的库存校验入口检查所有者、定义、数量、占格、版本号及腰带容量；全部会话校验通过后才替换状态。见 [存档说明](../../modules/SAVES.md)。
-
-方块事务与 Crafted：typed 原配方匹配完整材料，输出和随机状态在库存草稿成功后一次提交；useitem 保留宿主身份，usetype／新物品另分配身份。Crafted 固定属性和词缀只掷一次并保存原生统计值；运行指纹为 `cube-rules-v2-native-crafted-and-txt-indices`，磁盘仍原 v96，规则与有限验证见 [方块](CUBE_AND_GOLD.md)。
+gameplay/items只保留定义、位置／错误值及纯显示规则；InventoryService、replacement事务、访问令牌和Local缓存已删除。独立D2S保存快照归persistence，不参与联机库存。

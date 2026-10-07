@@ -56,6 +56,7 @@ class ActorAnimationCatalog {
     explicit ActorAnimationCatalog(Archives &);
     const ActorAnimation *resolve(Graphics &, int palette, const ActorAnimationRequest &);
     const ActorAnimation *object(Graphics &, int palette, int identity, int mode);
+    int objectPresentationMode(int identity, int serverMode, float elapsed) const;
     std::string sequenceMode(std::string_view name) const;
 };
 } // namespace d2x

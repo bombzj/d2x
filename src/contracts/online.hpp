@@ -60,6 +60,10 @@ struct OnlineGame {
     uint32_t index{}, flags{};
     uint8_t players{};
 };
+struct OnlineLobbyNotice {
+    std::string text;
+    bool error{};
+};
 struct OnlineLoadInfo {
     std::optional<uint8_t> act, difficulty;
     std::optional<uint16_t> townArea; // LOADACT metadata, not the player's current region.
@@ -81,12 +85,33 @@ struct OnlineView {
     std::vector<OnlineRealm> realms;
     std::vector<OnlineCharacter> characters;
     std::vector<OnlineGame> games;
+    std::vector<OnlineLobbyNotice> lobbyNotices; // Bounded native SID info/error announcements, not chat.
     std::string selectedRealm, selectedCharacter;
     OnlineLoadInfo load;
     OnlineWorldView world;
     std::optional<uint32_t> latencyMilliseconds; // Unknown until the first native pong.
     std::optional<uint32_t> gameQueuePosition;
     bool gameListComplete{};
+
+    void clear() {
+        sidProtocol = {};
+        mcpProtocol = {};
+        gameProtocol = {};
+        revision = connectionGeneration = gameGeneration = 0;
+        stage = OnlineStage::Idle;
+        error.reset();
+        realms.clear();
+        characters.clear();
+        games.clear();
+        lobbyNotices.clear();
+        selectedRealm.clear();
+        selectedCharacter.clear();
+        load = {};
+        world.clear();
+        latencyMilliseconds.reset();
+        gameQueuePosition.reset();
+        gameListComplete = false;
+    }
 };
 inline OnlineIntentContext onlineIntentContext(const OnlineView &v) {
     return {v.connectionGeneration, v.gameGeneration, v.world.areaGeneration,

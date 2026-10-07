@@ -102,7 +102,8 @@ bool RemoteControl::moveToUnit(OnlineUnitKey target, bool run, std::optional<Onl
     else movement_ = std::move(movement);
     approach_.reset(); reason_.clear(); return true;
 }
-bool RemoteControl::interact(OnlineUnitKey target, bool run, std::optional<OnlineIntentContext> context) {
+bool RemoteControl::interact(OnlineUnitKey target, bool run, std::optional<OnlineIntentContext> context,
+                             std::optional<Vec> displayOrigin) {
     if (!context) context = onlineIntentContext(session_.read());
     if (!onlineInteractionMatches(*context, session_.read())) return reject("Interaction intent belongs to a previous game, area or interaction");
     scene_.update(session_.read());
@@ -110,11 +111,27 @@ bool RemoteControl::interact(OnlineUnitKey target, bool run, std::optional<Onlin
     if (!scene_.permitsInteraction(world, target)) return reject("Target is not assigned in the current scene");
     const auto player = *world.world.playerPosition;
     const auto point = *world.world.units.at(target).position;
+    if (displayOrigin && (!std::isfinite(displayOrigin->x) || !std::isfinite(displayOrigin->y) ||
+        displayOrigin->x < 0 || displayOrigin->y < 0 || displayOrigin->x > UINT16_MAX || displayOrigin->y > UINT16_MAX))
+        return reject("Interaction projection origin is invalid");
     if (std::abs(int(player.x) - point.x) > 50 || std::abs(int(player.y) - point.y) > 50)
         return reject("Target exceeds the native 50-subtile request range");
     if ((target.type == 1 && world.world.npcRequested == target.id) || (approach_ && approach_->target == target))
         return reject("Unit interaction is already pending or open");
-    if (scene_.interactionReady(world, target)) {
+    const bool nativeReady = scene_.interactionReady(world, target);
+    const auto actor = world.load.playerUnitId ? world.world.units.find({0, *world.load.playerUnitId}) : world.world.units.end();
+    const auto &movement = world.world.movementRequest;
+    const bool leavingTarget = movement && (movement->unit ? movement->unit != target :
+        (movement->destination && !scene_.interactionReady(world, target,
+            Vec{float(movement->destination->x), float(movement->destination->y)})));
+    const bool pendingMovement = movement && leavingTarget &&
+        (actor == world.world.units.end() || actor->second.positionRevision <= movement->revision);
+    // PlrMsg ignores NPC interaction outside distance 8. A previous native
+    // sample may still be near while the player has already walked away.
+    // Display can veto immediate interaction, but can never authorize it.
+    const bool requirePositionUpdate = target.type == 1 && nativeReady &&
+        (!scene_.interactionReady(world, target, displayOrigin) || pendingMovement);
+    if (nativeReady && !requirePositionUpdate) {
         if (!submitInteraction(target, *context)) return false;
         cancelMovement(); reason_.clear(); return true;
     }
@@ -125,7 +142,8 @@ bool RemoteControl::interact(OnlineUnitKey target, bool run, std::optional<Onlin
     } else if (!moveToUnit(target, run, context)) return false;
     approach_ = Approach{target, world.gameGeneration, world.world.areaGeneration,
         world.world.movementRequest ? world.world.movementRequest->revision : 0,
-        std::chrono::steady_clock::now() + std::chrono::seconds(15), onlineIntentContext(session_.read()), player};
+        std::chrono::steady_clock::now() + std::chrono::seconds(15), onlineIntentContext(session_.read()), player,
+        requirePositionUpdate};
     return true;
 }
 bool RemoteControl::submitInteraction(OnlineUnitKey target, const OnlineIntentContext &context) {
@@ -213,7 +231,10 @@ void RemoteControl::tick() {
     if (now >= approach_->deadline) {
         cancelApproach(); reason_ = "Server unit approach did not arrive before timeout"; return;
     }
-    if (scene_.interactionReady(view, approach_->target)) {
+    const auto actor = view.load.playerUnitId ? view.world.units.find({0, *view.load.playerUnitId}) : view.world.units.end();
+    const bool positionUpdated = !approach_->requirePositionUpdate ||
+        (actor != view.world.units.end() && actor->second.positionRevision > approach_->requestRevision);
+    if (positionUpdated && scene_.interactionReady(view, approach_->target)) {
         const bool sent = submitInteraction(approach_->target, approach_->context);
         if (sent) { cancelMovement(); reason_.clear(); }
     }

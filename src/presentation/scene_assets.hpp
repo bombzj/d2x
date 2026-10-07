@@ -141,6 +141,7 @@ class SceneAssets {
     void loadInventoryArt(const InventoryView &inventory, int palette);
     const ActorAnimation *actorAnimation(const ActorAnimationRequest &, int palette) const;
     const ActorAnimation *objectAnimation(int identity, int mode, int palette) const;
+    int objectPresentationMode(int identity, int serverMode, float elapsed) const;
     std::string actorSequenceMode(std::string_view name) const;
     int automapObjectCel(int objectClass) const { return automapCatalog_.objectCel(objectClass); }
     const Sprite *automapSprite(int cel, bool large) const;

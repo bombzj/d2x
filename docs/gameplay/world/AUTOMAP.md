@@ -1,45 +1,29 @@
 # 自动地图
 
-更新：2026-10-06。地形／连接规则见[地图](MAPS.md)，所有权见[地图模块](../../modules/MAP.md)。本页区分本地持久探索与联网本局记忆，不混用旧整房揭示记录。
+自动地图只有一套揭示、原标记、原图缓存和绘制入口。RemoteTown适配原服房间／位置及活动地形，AutomapExploration拥有本局区域记忆，AutomapCatalog选格标记，SceneAssets载原DC6／城镇拼图，SceneView::drawAutomap绘制；没有联机专用绘制器或Local探索侧文件入口。
 
-## 当前揭示与保存边界（2026-10-04）
+## 揭示与生命周期
 
-client/automap_exploration.*唯一维护探索。观察者邻房候选与主场景可见地形相交后才记忆：IMapAssetSource提供原DT1地板／墙像素包围范围，SceneView用世界投影、邻区偏移、更新后的摄像机和可用视口判断相交，部分瓦片露出也纳入。屋顶、阴影、透明像素、遮挡与照明不参与判定，联合矩形在边角可能略宽。
+城镇进入后准备原AutoMap已初始化房间或原整图变体／中心，全揭示沿safe区域规则。附近野外仍按活动房间与主场景实际可见DT1相交后逐格记忆；部分瓦片露出也纳入，屋顶／阴影／照明不参与揭示，联合矩形边角可能略宽。
 
-关闭地图照样累积；大小图、地图平移和Fade不改变探索范围。城镇进入后保留完整原城镇图，附近野外仍按可见范围累积。连续区域共享世界坐标候选，楼梯／洞口／门户隔层；传送仅采样落点，不补中途路线。邻房参考D2MOO DrlgDrlgRoom::sub_6FD77BB0的每轴间隔小于六地图格，以及D2Game 0x07发送链和OpenD2 MAPREVEAL定义。逐格视口选择按用户原版观察适配，本地reference无完整D2Client实现，不声称揭示节拍逐帧一致。
+关闭地图继续累积；大小／平移／Fade不改变探索范围。连续步行区域同层，楼梯／门户隔层；传送只采样落点，不补路线。同局换区／换幕后返回保留，新局清空，不补生成未揭示房间。
 
-读取角色后恢复同名.d2xmap，核对角色、难度、地图种子及固定八张地图／标记表的内容指纹，首次加载每区再核对实际地形／房间指纹。不匹配明确清除对应旧层；未知版本、坏文件和角色不符拒绝覆盖。地图生成修订会改变地形指纹，不把旧探索静默套进新布局。
-
-侧文件仍v1，规则标识d2x-visible-terrain-v2。已知旧d2x-near-rooms-v1提示停用，不转换整房记忆；下次保存重积累结果并备份旧文件为.bak。原D2S仍v96，不写私有尾段，不冒充原.map／.ma*。双文件保存失败边界见[存档](../../modules/SAVES.md#自动地图探索2026-10-04)。
-
-## 联网本局探索
-
-RemoteTown将原服本局／幕／种子／房间和坐标适配为MapSceneView，复用AutomapExploration维护区域探索层，SceneView::drawWorld返回实际可见原DT1实例，RemoteScene转交RemoteTown；可见选择不另写联机版本。原格标记及配对墙方向统一由AutomapCatalog选择，绘制值进入AutomapDrawView；SceneAssets统一加载原DC6／城镇拼图，SceneView::drawAutomap统一大小图、侧栏裁剪、平移、Fade和名称。联机专用绘制器及图形缓存已删除。关闭地图仍揭示，换区／换幕后返回保留，新局清空；连续步行组件同层，楼梯／门户隔层，传送只揭示落点。联网不读写本地.d2xmap或服务器D2S，也不生成未揭示房间来补全路线。
-
-城镇全揭示直接沿AutomapExploration既有safe区域规则；RemoteTown首次入城只读取原AutoMap已经初始化的房间以准备完整DT1标记，或登记原整图城镇的变体／中心，不另写揭示规则。邻接野外继续按原服房间与实际视口相交后逐格揭示。原整图、物件AutoMap及中立NPC标记仍取当前MPQ，鲁高因共用诊断帧跳过表；本机1.13c文件偏移0xD2DB8与libd2的lut_town_skip一致，不能画MPQ中的红叉。Tab／V／方向键／Home和online-automap沿既有输入；名称及Fade选项现由共用UI状态直接控制。队伍实体标记和原客户端精确锚点／色表仍未认证。本次仅改源码，未构建、打包或测试，不属于下文旧包证据。
-
-实际包五幕旅行返回保持第一幕已探索格，城镇整图与大小图截图已查看。准确连服及服务端失败范围见[联网地图冒烟](../../modules/NETWORK.md#地图交互与探索冒烟)。本批地形算法、D2S v96和本地侧文件v1均未改变。
+产品不读写.d2xmap、原.map／.ma*或服务器D2S；旧侧文件保存／迁移说明已退场，原用户文件保留。偏好client-settings.json与探索掩码分开。
 
 ## 原图与标记
 
-运行时读取LvlTypes、Automap、Objects及原maximap.dc6／maximaps.dc6，按LevelType、DS1方向／style／sequence匹配cel，不要求先找到DT1图形。裁剪取cel真实纹理范围，普通怪物不显示红点，物件只绘制原AutoMap标记。
+LvlTypes／Automap／Objects、maximap(s).dc6及当前DT1／DS1方向、style、sequence提供cel；普通怪物不画红点，物件只画原AutoMap标记。LvlPrest.AutoMap选择act2map(s)、act4map(s)、extnmap(s)；鲁高因按LutW／N分组拼接并跳原诊断帧，原1.13c偏移0xD2DB8与libd2跳帧表交叉核对。
 
-专用城镇图沿LvlPrest.AutoMap选择act2map(s)、act4map(s)、extnmap(s)；鲁高因按LutW／LutN选两组，每组5×4行优先拼接，精确中心锚点／缩放未认证。第五幕冰洞Automap类型名称已映射原LevelType名称。
-
-NPC通过MonStats.MonStatsEx查MonStats2.automapCel。当前城镇交互中立NPC无非零cel时采用原蓝十字317适配；人物保留既有十字。原红221／蓝317帧已核实，但身份到帧的完整客户端映射、人物标记及动态门户仍暂缓。NPC与Stash名称受名称开关控制，原Portal59／60的Objects.AutoMap为0，不造替代标记。
+NPC由MonStatsEx→MonStats2.automapCel；城镇交互中立NPC无非零cel时原蓝十字317为已有适配。原221／317帧已核对，但完整身份→帧、人物标记／精确锚点／动态门户规则未认证。原Portal59／60 AutoMap=0，不造标记。
 
 ## 输入与选项
 
-默认关闭，Tab开关，V切换小图左右，方向键平移内容，Home居中，F12名称；项目截图键Ctrl+F12。尺寸由Esc→Options→Automap Options的Full Screen／Mini Map选择。Center When Cleared为Yes时关闭再打开居中，为No保留内容偏移；方向键不移动地图显示区域。
+默认关闭；Tab开关、V小图左右、方向键平移、Home居中、F12名称、Ctrl+F12项目截图。ESC→Options→Automap Options选Full Screen／Mini Map；Center When Cleared控制重开是否居中，Show Party保留偏好，队伍实体显示仍未完成。
 
-Show Party保存队伍显示偏好，单玩家没有其他玩家实体，不把佣兵／召唤物当队员。侧栏占用后的视口是当前布局适配。选项保存在client-settings.json，不写角色D2S；未实现的Sound／Video／Configure Controls页面仍拒绝进入。
+Fade是用户授权的既有显示适配：小图No／Everything／Auto，大图另有Center；No alpha255，Everything／Auto地形／物件alpha128，单位／名称不淡化，Auto目前等同Everything。Center中央半宽／半高矩形alpha128、外部255，跨边图块按像素裁分，平移不移动淡化区域；Center切小图回退Everything，非法／缺省配置回退Auto。强度、范围与循环不认证原D2Client算法。
 
-Fade按用户2026-10-02实测及明确近似授权：小图No→Everything→Auto，大图另有Center。No alpha255；Everything／Auto alpha128淡化地图地形／物件，玩家／NPC及名称不淡化。Auto暂与Everything一致，不随移动变化。Center在显示区域中央半宽／半高矩形内alpha128，区外255，跨边图块按像素分割；方向键不移动此区域。Center切小图回退Everything，缺省／非法配置回退Auto。强度、中央范围及循环顺序是适配，不认证原D2Client算法。
+## 证据与限制
 
-原选项DC6来自当前MPQ；OpenDiablo2 escape_menu提供菜单层级、循环及返回行为，game_event给出不淡化单位与重新打开居中的依据，其Fade消费者未实现。D2MOO本地无D2Client；D2Gfx TRANS枚举不能证明原Auto／Center混色算法，不据此继续猜测。
+原城镇全图依据D2MOO DrlgPreset整房AutoMap及pfTownAutomap；邻房／视野事件、原图布局与选项参考固定本地仓库和当前MPQ。四个参考没有完整D2Client揭示节拍／Fade程序，不能用D2Gfx TRANS枚举推导这些规则。
 
-## 验证与限制
-
-可见格揭示此前Windows Release隔离角色复验：区域3移动探索136→152→168，同进程保存／读档及新进程返回保留原168格，丢失0；不同返回落点新增至298，区域8原墙线截图已查看。产物在artifacts/automap-visible-smoke-20261004/fixed/，无用户角色档读写或新增测试程序。该证据验证揭示／保存，不能认证本批生成地图的所有视口与边界。
-
-本批地图构建及运行范围统一见[地图验证](MAPS.md#本批验证)。精确原客户端锚点、Fade、NPC宽十字、全地图／缩放／侧栏／光照组合及Linux仍未认证。
+营地原大地图／NPC及五幕旅行返回探索有有限截图观察；最新包证据见[联网记录](../../modules/NETWORK.md)。旧离线168格保存重载不认证当前产品持久化。精确锚点、NPC宽十字、全部缩放／侧栏／光照组合、队伍标记和Linux仍未认证。地形规则见[地图](MAPS.md)，所有权见[地图模块](../../modules/MAP.md)。

@@ -11,10 +11,12 @@
 #include "contracts/online_scene.hpp"
 #include "gameplay/quest/catalog.hpp"
 #include "gameplay/items/gold_limits.hpp"
+#include "gameplay/items/quality.hpp"
 #include "network/realm_session.hpp"
 #include <algorithm>
 #include <deque>
 #include <cmath>
+#include <chrono>
 #include <utility>
 
 namespace d2x {
@@ -42,6 +44,18 @@ struct RemoteUiClients::Impl {
     uint64_t revision{}, generation{~uint64_t{}}, areaGeneration{~uint64_t{}};
     bool run{true};
     std::string notice;
+    std::deque<std::string> itemNotices;
+    struct TransferFeedback {
+        OnlineItemAction action{};
+        uint64_t sequence{};
+        InventoryItemView source;
+        std::map<EntityId, unsigned> quantities;
+        unsigned gold{}, reported{};
+        bool goldKnown{}, isGold{};
+        std::chrono::steady_clock::time_point expires = std::chrono::steady_clock::time_point::max();
+    };
+    std::optional<TransferFeedback> transferFeedback;
+    uint64_t feedbackSequence{};
     InventoryView inventoryView;
     CharacterView characterView;
     QuestView questView;
@@ -72,7 +86,7 @@ struct RemoteUiClients::Impl {
                 if (!intent.target) return false;
                 const auto raw = intent.target.value - 1;
                 const OnlineUnitKey key{uint8_t(raw >> 32), uint32_t(raw)};
-                const bool accepted = o.control.interact(key, o.run || intent.forceRun, o.context);
+                const bool accepted = o.control.interact(key, o.run || intent.forceRun, o.context, intent.displayOrigin);
                 if (!accepted) o.notice = o.control.reason();
                 return accepted;
             }
@@ -512,12 +526,14 @@ struct RemoteUiClients::Impl {
         const auto *definition=data.items.find(native.code);
             ItemInstance item; item.id=itemId(native.id); item.revision=native.revision; item.definition=native.code; item.location=location;
             item.quantity=di.gold.value_or(di.quantity.value_or(1)); item.charges=definition->bookCapacity?item.quantity:0; item.durability=di.durability.value_or(0);
-            item.quality=ItemQuality(di.quality); item.identified=di.identified; item.level=di.level; item.defense=int(di.defense.value_or(0));
+            item.quality=itemQualityFromNative(di.quality).value(); item.identified=di.identified; item.level=di.level; item.defense=int(di.defense.value_or(0));
             item.nativeProperties=true; item.nativeFlags=native.flags; item.nativeMaxDurability=di.maxDurability.value_or(0);
             item.nativeFormat=di.format; item.nativeGraphic=di.graphic; item.nativeHasGraphic=di.hasGraphic; item.personalizedName=di.personalizedName;
             item.sockets=di.sockets; item.runewordRow=-1;
             for (const auto &word:data.runewords) if (word.stringId==di.runeword) item.runewordRow=word.row;
-            if(di.quality==5 || di.quality==7) item.specialRow=di.fileIndex;
+            // Unidentified native special items omit their file index. Zero is
+            // not evidence for the first UniqueItems/SetItems row.
+            if(di.identified && (item.quality==ItemQuality::Set || item.quality==ItemQuality::Unique)) item.specialRow=di.fileIndex;
             if(item.quality==ItemQuality::Superior || item.quality==ItemQuality::Inferior) item.gradeRow=di.fileIndex;
             if (item.specialRow>=0) {
                 const auto &records=item.quality==ItemQuality::Unique?data.uniqueItems:data.setItems;
@@ -539,16 +555,129 @@ struct RemoteUiClients::Impl {
             for(const auto &s:di.runewordStats) item.runewordStats.push_back({s.id,int(s.parameter),int(s.value)});
             for(size_t index=0;index<di.setStats.size();++index) for(const auto &s:di.setStats[index]) item.savedSetStats[index].push_back({s.id,int(s.parameter),int(s.value)});
             auto display=describeInventoryItem(data,data.items,item,{characterView.level,characterView.attributes[0],characterView.attributes[1],item.nativeMaxDurability,{}});
-            std::string groundArt=definition->groundAnimation;
+            std::string groundArt=definition->groundAnimation, inventoryArt=di.artKey;
             if(item.specialRow>=0) {
                 const auto &records=item.quality==ItemQuality::Unique?data.uniqueItems:data.setItems;
-                for(const auto &record:records) if(int32_t(record.row)==item.specialRow && !record.groundAnimation.empty()) groundArt=record.groundAnimation;
+                for(const auto &record:records) if(int32_t(record.row)==item.specialRow) {
+                    if(!record.groundAnimation.empty()) groundArt=record.groundAnimation;
+                    if(item.identified && !record.icon.empty()) inventoryArt=record.icon;
+                }
             }
-            return InventoryItemView{item.id,item.revision,item.definition,di.artKey,std::move(display.name),location,item.quality,item.identified,item.quantity,item.durability,item.charges,std::move(display.tooltip),native.flags,item.sockets,item.runewordRow>=0,std::move(groundArt)};
+            InventoryItemView projection{item.id,item.revision,item.definition,std::move(inventoryArt),std::move(display.name),location,item.quality,item.identified,item.quantity,item.durability,item.charges,std::move(display.tooltip),native.flags,item.sockets,item.runewordRow>=0,std::move(groundArt)};
+            projection.specialRow = item.specialRow;
+            return projection;
+    }
+    void itemNotice(const InventoryItemView &item, unsigned quantity, std::string prefix, bool gold = false) {
+        if (!quantity) return;
+        std::string name = item.name;
+        const auto *definition = data.items.find(item.definition);
+        if (gold) name = std::to_string(quantity) + " " + name;
+        else if (quantity > 1)
+            name += definition && definition->bookCapacity ? " (" + std::to_string(quantity) + " pages)" :
+                " x" + std::to_string(quantity);
+        itemNotices.push_back(std::move(prefix) + name);
+        while (itemNotices.size() > 32) itemNotices.pop_front();
+    }
+    void projectItemFeedback(const InventoryView &current) {
+        const auto &w = session.read().world;
+        if (inventoryView.gameGeneration != current.gameGeneration || inventoryView.areaGeneration != current.areaGeneration) {
+            transferFeedback.reset(); feedbackSequence = 0; itemNotices.clear();
+            return; // Initial snapshots are not transfers.
+        }
+        const auto now = std::chrono::steady_clock::now();
+        const auto &request = w.itemRequest;
+        if (request && request->sequence != feedbackSequence) {
+            feedbackSequence = request->sequence; transferFeedback.reset();
+            const auto action = request->command.action;
+            const auto *source = inventoryView.item(itemId(request->command.item));
+            const bool pickup = action == OnlineItemAction::Pickup;
+            const auto *container = source ? std::get_if<ContainerLocation>(&source->location) : nullptr;
+            if (source && source->revision == request->command.itemRevision && source->quantity &&
+                ((pickup && std::holds_alternative<GroundLocation>(source->location)) ||
+                 ((action == OnlineItemAction::Stack || action == OnlineItemAction::Book) &&
+                  container && (container->container == inventoryView.containers.cursor ||
+                                container->container == inventoryView.containers.backpack)))) {
+                TransferFeedback feedback;
+                feedback.action = action; feedback.sequence = request->sequence; feedback.source = *source;
+                feedback.gold = inventoryView.gold; feedback.goldKnown = inventoryView.goldKnown;
+                const auto *definition = data.items.find(source->definition);
+                feedback.isGold = definition && definition->equipment.isType("gold");
+                for (const auto &[id, item] : inventoryView.items) {
+                    if (id == source->id || !std::holds_alternative<ContainerLocation>(item.location)) continue;
+                    if (!pickup && id != itemId(request->command.target)) continue;
+                    if (!pickup && item.revision != request->command.targetRevision) continue;
+                    const auto *destination = data.items.find(item.definition);
+                    if (destination && (item.definition == source->definition || destination->bookScroll == source->definition))
+                        feedback.quantities.emplace(id,item.quantity);
+                }
+                transferFeedback = std::move(feedback);
+            }
+        }
+        if (transferFeedback && request && request->state == OnlineItemRequest::State::Updated &&
+            transferFeedback->expires == std::chrono::steady_clock::time_point::max())
+            transferFeedback->expires = now + std::chrono::seconds(5); // Allow ordered follow-up packets after a related update.
+        if (transferFeedback && (!request || request->sequence != transferFeedback->sequence ||
+            request->state == OnlineItemRequest::State::Rejected || request->state == OnlineItemRequest::State::Interrupted ||
+            request->state == OnlineItemRequest::State::TimedOut || current.dead || now >= transferFeedback->expires))
+            transferFeedback.reset();
+        EntityId tracked;
+        if (transferFeedback) {
+            auto &feedback = *transferFeedback;
+            tracked = feedback.source.id;
+            const auto *source = current.item(tracked);
+            const bool removed = !w.items.contains(guid(tracked)); // A decode failure is not removal.
+            const bool assigned = source && std::holds_alternative<ContainerLocation>(source->location);
+            uint64_t received = 0;
+            bool book = false;
+            for (const auto &[id, before] : feedback.quantities) {
+                const auto *destination = current.item(id);
+                if (!destination || !std::holds_alternative<ContainerLocation>(destination->location) || destination->quantity <= before) continue;
+                received += destination->quantity - before;
+                if (const auto *definition = data.items.find(destination->definition)) book |= definition->bookCapacity != 0;
+            }
+            bool complete = false, confirmed = false;
+            if (feedback.isGold) {
+                // Gold pickup removes the pile (partial pickup creates a new pile).
+                // Neither an unrelated gold stat nor disappearance alone is success.
+                if (removed && feedback.goldKnown && current.goldKnown && current.gold > feedback.gold) {
+                    received = current.gold - feedback.gold;
+                    complete = received <= feedback.source.quantity;
+                    confirmed = complete;
+                } else received = 0;
+            } else if (feedback.action == OnlineItemAction::Pickup && assigned) {
+                received += source->quantity; // Include the remainder of an automatic stack pickup.
+                complete = received == feedback.source.quantity;
+                confirmed = complete;
+            } else if (removed) {
+                complete = received == feedback.source.quantity;
+                confirmed = complete;
+            } else if (source && source->quantity <= feedback.source.quantity &&
+                       received == feedback.source.quantity - source->quantity) {
+                // Partial manual/ground stacking requires both sides of the transfer.
+                complete = source->quantity == 0;
+                confirmed = true;
+            } else received = 0;
+            if (received > feedback.reported && received <= feedback.source.quantity &&
+                confirmed) {
+                const auto &display = source && assigned ? *source : feedback.source;
+                const auto prefix = feedback.action == OnlineItemAction::Pickup ? "Picked up: " :
+                    book ? "Added to tome: " : "Stacked: ";
+                itemNotice(display,unsigned(received - feedback.reported),prefix,feedback.isGold);
+                feedback.reported = unsigned(received);
+            }
+            if (complete) transferFeedback.reset();
+        }
+        // Preserve unsolicited, explicit ground-to-owned assignment feedback.
+        for (const auto &[id, item] : current.items) {
+            if (id == tracked || !std::holds_alternative<ContainerLocation>(item.location)) continue;
+            const auto *previous = inventoryView.item(id);
+            if (previous && std::holds_alternative<GroundLocation>(previous->location))
+                itemNotice(item,item.quantity,"Picked up: ");
+        }
     }
     void projectInventory() {
         const auto &online=session.read(); const auto &w=online.world; const auto &decoded=items.read();
-        InventoryView v; v.revision=revision;
+        InventoryView v; v.revision=revision; v.gameGeneration=online.gameGeneration; v.areaGeneration=w.areaGeneration;
         v.containers={containerId(1),containerId(2),containerId(3),containerId(4),containerId(5),containerId(6),containerId(7),containerId(8)};
         const auto &owned=v.containers;
         for (const auto &[id,kind,columns,rows]:std::vector<std::tuple<EntityId,ContainerKind,int,int>>{
@@ -561,6 +690,7 @@ struct RemoteUiClients::Impl {
         v.stashLayout=layout(data.stashLayout); v.cubeLayout=layout(data.cubeLayout); v.hirelingSlots=data.hirelingLayout.slots;
         v.cubeCode=data.cubeCode; v.staffRecipeOutput=data.staffRecipe.output;
         v.weaponSet=w.weaponSet; v.gold=unsigned(stat("gold").value_or(0)); v.bankGold=unsigned(stat("goldbank").value_or(0));
+        v.goldKnown = stat("gold").has_value();
         v.walletLimit=unsigned(characterView.level)*10000; v.groundGoldLimit=v.walletLimit;
         v.bankGoldLimit=stashGoldLimit(unsigned(characterView.level));
         for (const auto &[code,def]:data.items.entries()) if(def.equipment.isType("gold")) { v.groundGoldLimit=def.maxStack; break; }
@@ -568,7 +698,7 @@ struct RemoteUiClients::Impl {
         if(w.storage.kind==OnlineStorageKind::Stash) v.storage=owned.stash;
         if(w.playerPosition) v.dropLocation=GroundLocation{mapView.region,mapView.observer};
         for(const auto &[id,native]:w.items) {
-            const bool ground=native.mode==3;
+            const bool ground=native.mode==3 || native.mode==5;
             if(!ground && (native.ownerType!=0 || native.owner!=online.load.playerUnitId)) continue;
             const auto d=decoded.items.find(id); const auto *definition=data.items.find(native.code);
             if(d==decoded.items.end() || !d->second.decoded || !definition) continue;
@@ -591,10 +721,20 @@ struct RemoteUiClients::Impl {
             def.socketFiller=definition->equipment.isType("sock"); def.identifySource=data.isIdentifyScroll(native.code)||data.isIdentifyScroll(def.bookScroll);
             for(size_t slot=0;slot<def.slots.size();++slot) def.slots[slot]=definition->equipment.fits(EquipmentSlot(slot));
             v.definitions.emplace(native.code,std::move(def));
-            v.items.emplace(itemId(id), projectItem(native,di,location));
+            auto projection=projectItem(native,di,location);
+            if (ground) {
+                projection.groundPickupAllowed = native.mode == 3;
+                projection.groundAnimationRevision = native.groundAnimationRevision;
+                const auto now = uint64_t(std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::steady_clock::now().time_since_epoch()).count());
+                if (native.groundAnimationRevision && now >= native.groundAnimationReceivedMilliseconds)
+                    projection.groundAnimationAge = std::min(4.f, float(now-native.groundAnimationReceivedMilliseconds)/1000.f);
+            }
+            v.items.emplace(itemId(id), std::move(projection));
         }
         if(w.itemRequest && w.itemRequest->command.action==OnlineItemAction::Pickup && w.itemRequest->state==OnlineItemRequest::State::Pending)
             v.pickupTarget=itemId(w.itemRequest->command.item);
+        projectItemFeedback(v);
         inventoryView=std::move(v);
     }
     std::string npcIdentity() const {
@@ -674,7 +814,7 @@ struct RemoteUiClients::Impl {
             const auto &item=d->second;
             ShopOfferView offer; offer.slot=id; offer.width=item.width; offer.height=item.height; offer.definition=native.code;
             auto projection=projectItem(native,item,SocketLocation{{},0});
-            offer.name=projection.name; offer.artKey=item.artKey; offer.quality=ItemQuality(item.quality);
+            offer.name=projection.name; offer.artKey=projection.artKey; offer.quality=projection.quality;
             offer.storePage=def->family==ItemFamily::Weapon?0:def->family==ItemFamily::Armor?1:3;
             offer.tooltip=projection.tooltip;
             offer.tooltip.push_back({"Price is determined by the server",ItemTextTone::Normal});
@@ -714,5 +854,10 @@ bool RemoteUiClients::busy()const{
     const auto &request=impl_->session.read().world.itemRequest;
     return impl_->waiting.has_value()||!impl_->transactions.empty()||(request&&request->state==OnlineItemRequest::State::Pending);
 }
-std::string RemoteUiClients::takeNotice(){return std::exchange(impl_->notice,{});}
+RemoteUiNotice RemoteUiClients::takeNotice(){
+    if (!impl_->notice.empty()) return {std::exchange(impl_->notice,{}),true};
+    if (impl_->itemNotices.empty()) return {};
+    auto notice = std::move(impl_->itemNotices.front()); impl_->itemNotices.pop_front();
+    return {std::move(notice),false};
+}
 }

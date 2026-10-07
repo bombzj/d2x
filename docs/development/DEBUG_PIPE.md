@@ -1,12 +1,23 @@
-# Windows 调试命令
+# Windows调试管道
 
-直接运行 EXE 时，调试管道仅在指定 `--debug-pipe` 时启用，始终启动为运行状态；Play.cmd 默认开启 `d2x-debug`。当前产品只接受联机命令和测试表现 pause/resume，不再提供本地授予／存档／单步玩法入口。本批已 Windows Release 构建并更新运行包；暂停、ESC菜单、快捷记忆登录及库存UI有有限原服证据；自己游玩后续新增原服快捷键和任务诊断，范围见联网模块。
+直接运行EXE只在显式--debug-pipe时启用，Play.cmd默认d2x-debug。产品仅接受在线命令、原UI帧输入与测试表现pause/resume；step／save／load／travel／item-spawn／grant-*本地命令已删除。构建／包状态见[基线](../../BASELINE.md)，本页只维护当前参数。
+
+## 启动与调用
+
+```powershell
+.\Play.cmd -PipeName d2x-debug
+# UI登录记忆后正常认证、选角及一次随机普通建房：
+.\Play.cmd -PipeName d2x-debug -OnlinePlay <角色名>
+.\scripts\Send-D2XCommand.ps1 -Command online-status
+.\scripts\Send-D2XCommand.ps1 -Command pause
+.\scripts\Send-D2XCommand.ps1 -Command screenshot -Arguments @{path='artifacts/capture.png'}
+.\scripts\Send-D2XCommand.ps1 -Command resume
+.\scripts\Send-D2XCommand.ps1 -Command online-leave-game
+```
+
+自定义管道用-PipeName，超时-TimeoutMs范围100–60000、默认10000。脚本遇ok=false／连接失败／超时抛异常。登录／建房用UI、快捷参数或下面原命令，每一步查询阶段再继续；不能连发非幂等请求。测试服账号／端口只维护在[本机部署](../architecture/MULTIPLAYER.md#本机部署与验证入口)。
 
 ## 联网命令
-
-后续按单位移动、回城门创建、NPC交谈及27种物品／城镇服务命令已Release构建，城镇物品有限原服冒烟通过；战斗／技能／成长command及服务器状态副本已Release并有限原服验证、保存重入通过；现已打包至`dist/current`，含共用UI及本批动作／基础效果。实际范围及未验项见联网模块。
-
-当前源码 在主菜单／登录／服务器选角／大厅／入局等待页／五幕远端场景接收同一个调试管道；无需进入单机场景。网络始终持续收包／心跳；`pause/resume` 仅冻结／恢复客户端表现，`step` 不支持。包内有限冒烟已覆盖双账号营地显示／移动、退局重进，准确范围和 UI 限制见 [联网模块](../modules/NETWORK.md)。
 
 | 命令 | 参数与结果 |
 | --- | --- |
@@ -55,70 +66,19 @@
 | `online-cancel` / `online-logout` | 关闭连接；前者进入 Cancelled，后者清空会话回主菜单 |
 | `screenshot` / `quit` | 联网截图使用 path 参数；quit 立即返回 accepted，应用在 LoadingGame／ProtocolReady 先正常退局，等响应／关闭或期限后注销退出；不是保存成功回执 |
 
-源码联机地图诊断另含 `scene.nativeMapReady/nativeMapReason` 及 `world.mapEventSequence/mapEventFirst/mapEventCount`。有序队列在每次 LOADACT 清空，最多保留4096条房间／玩家位置事件；消费者发现缺口后停止原生重建，需重新入局。Trees 已知缺损末组按最新要求作零尺寸兼容，保留14组抽签，诊断为 groups=14／declared=14／zeroFilled=1；原预设地标绑定成功不代表野外重建通过。当前包包含这些字段。
+## 诊断与异步含义
 
-行走诊断：`scene.playerDisplayPosition`是当前实际绘制的全局浮点坐标，与`world.playerPosition`的原服整数采样分开。本人`units.verifiedDestination/pathVerificationRevision`保存原0x18／95／96有符号偏移还原的路径目标和本地回包代次；没有原协议请求序号，代次较新不能证明属于最新鼠标意图。仅最新回包目标与当前意图一致（含相邻格）时适配显示终点，初始无有效路径的偏移不可当作可达点。预测超时按15秒无原服位置进展判断，不能用两次采样间角色显示超前直接认定服务端拒绝。位置校正、原停止／受击／死亡不屏蔽。
+accepted仅入队或发送，不等待原服。online-status的ProtocolReady只表示协议初始化；另查scene.nativeMapReady／movementAvailable／playerDisplayed、原服坐标、请求状态与reason，不能以界面或命令成功代替实际结果。
 
-最新源码`scene.effectLimitations`为本幕遇到的未支持技能／弹体客户端程序、发射数量公式及0x73标志说明数组，换幕清空；缺效果不妨碍原服结算。空数组不代表所有技能效果已认证。死亡诊断含`world.dead/deathPhase/deathRevision/respawnRequest/corpses`；corpse记录unitId／owner／owned／position，空间隐藏时position可空，归属等原0x8E解除。type0只开放本人尸体的交互／单位靠近，不能用于任意玩家。这些字段及共用弹体／死亡改动已入包；respawnRequest另含restoredResources位组（生命／法力／耐力）与repositioned，用于确认原服资源恢复和0x15组合。实际有限验证及最新未复验范围见联网模块。
+连接／游戏／区域／交互代次用于本地迟到意图防护，不是原事务号／ACK；物品GUID／revision从当前快照取得。所有权、NPC、Cursor和目标上下文失效时终止未发部分，不撤销原服结果。超时未知，不自动重试。
 
-修改命令立即返回 `accepted` 和当时的 `online` 快照，不等待网络完成。后续查询 `online-status`：例如登录完成后为 CharacterSelection，选角完成后为 Lobby；ProtocolReady 只代表入局协议初始化，`worldDisplayAvailable` 由活动地图重建及资源加载决定；还须查看 scene.movementAvailable／playerDisplayed，未匹配时 scene.reason 说明原因。阶段不允许时返回 ok=false；错误回复／超时可从后续状态读取。可附带 connectionGeneration／gameGeneration／areaGeneration／interactionGeneration，代次不符则拒绝迟到命令。当前源码回执另有 uiQueue.inputFrames／itemCommands／waitingItemRequest；world.interactionGeneration、库存与战斗 request.context、control.context 可定位本地意图来源。这些代次不是原协议事务号，旧队列取消不表示撤销原服已执行操作。响应不回显请求、密码、CD key、角色票据或原始世界包。
+world.mapEventSequence／First／Count与scene.nativeMapReason定位地图缺口；房间序列最多4096条，失去连续性须重入。playerDisplayPosition为绘制浮点坐标，world.playerPosition为原服整数样本；verifiedDestination／pathVerificationRevision不表示最新鼠标请求已确认。15秒无原位置进展才超时，0x15明确校正及受击／死亡仍服从原服。
 
-快照含`control.reason/approaching`、`world.movementRequest/npcRequested/townPortalPending/playerSkills/itemSkillQuantities/rightSkill`、单位`destinationUnit/positionRevision/positionDiscontinuity/actionRevision/pathType/pathSteps/pathDistance/velocityPercent`及`scene.town/townPortalSkills/npcConversation`。单位位置仍是权威坐标，显示层连续路径不写回快照；NPC行走pathDistance不是生命比例。`control.navigation`为null或包含goal（最终全局坐标）、segment（保留兼容名称，当前等于完整坐标终点）与target（单位目标）的只读对象，结束推进后为null；GUID靠近请求见world.movementRequest。当前包包含完整终点发送、拖动方向和显示跨格修正；最新行走验收按用户要求留给用户。交谈投影含source／revision／speaker／travelLabel和messages的stringId／menu／text／acknowledged，文字读当前MPQ；并非离线NPC服务投影。按GUID查询mapTargets后提交命令，无需手造NPC或门户ID。
+world.dead／deathPhase／respawnRequest／corpses描述死亡、回城请求及尸体归属；resources／repositioned组合用于回城确认。scene.effectLimitations只列遇到的未支持客户端程序，空数组不表示全技能认证。network包计数／unconsumed按SID／MCP／game诊断，不回显密码／key／票据或原认证包。
 
-本机测试账号为 `bomb / 1qaz2wsx`、`bomb2 / 1qaz2wsx`，用户授权记入文档，仅用于测试。按以下顺序手工调用：
+## 联网物品操作
 
-```powershell
-.\build\bin\d2x.exe --mpq assets/mpq2 --debug-pipe d2x-online --online-config online.local.json
-# 另一个终端；每一步通过 online-status 等待相应阶段，再提交下一步。
-.\scripts\Send-D2XCommand.ps1 -PipeName d2x-online -Command online-login -Arguments @{
-    account = 'bomb'
-    password = '1qaz2wsx'
-}
-.\scripts\Send-D2XCommand.ps1 -PipeName d2x-online -Command online-status
-$characters = (.\scripts\Send-D2XCommand.ps1 -PipeName d2x-online -Command online-characters).online.characters
-# name 使用服务器返回的原值；选择非 Ladder 资料片角色。
-.\scripts\Send-D2XCommand.ps1 -PipeName d2x-online -Command online-select-character -Arguments @{name=$characters[0].name}
-.\scripts\Send-D2XCommand.ps1 -PipeName d2x-online -Command online-status
-.\scripts\Send-D2XCommand.ps1 -PipeName d2x-online -Command online-create-game -Arguments @{name='d2x-room';maximumPlayers=4}
-.\scripts\Send-D2XCommand.ps1 -PipeName d2x-online -Command online-status
-.\scripts\Send-D2XCommand.ps1 -PipeName d2x-online -Command online-leave-game
-```
-
-新增入口示例（每次操作后用 online-status 等待完成，不连发）：
-
-```powershell
-# 已登录到 CharacterSelection 时，新建独立测试角色。
-.\scripts\Send-D2XCommand.ps1 -PipeName d2x-online -Command online-create-character -Arguments @{name='NetSorceress';classId=1;hardcore=$false}
-# 选角后到 Lobby，另一个账号建房；空列表无终止包时可取消后按名加入。
-.\scripts\Send-D2XCommand.ps1 -PipeName d2x-online -Command online-list-games
-.\scripts\Send-D2XCommand.ps1 -PipeName d2x-online -Command online-cancel-list
-.\scripts\Send-D2XCommand.ps1 -PipeName d2x-online -Command online-join-game -Arguments @{name='d2x-room'}
-# 仅在 CharacterSelection 且确实要永久删除独立测试角色时执行，勿删除 aaa／bbb。
-.\scripts\Send-D2XCommand.ps1 -PipeName d2x-online -Command online-delete-character -Arguments @{name='NetSorceress';confirmName='NetSorceress'}
-```
-
-入局后查看 `online.scene.available/movementAvailable/playerDisplayed/nativeMapReady` 和 `online.world.playerPosition`。命令坐标为服务端全局subtile；局部坐标加当前 `scene.origin`，原点可随活动房间变化。accepted后再查询位置。五幕共用原生地图入口和原出口交互；实际连服冒烟范围见联网模块。
-
-`scene.area`表示当前玩家房间所属区域；`layoutOrigin`为生成布局原点，`layoutMatched`表示原生房间锚点已通过校验；快照 `origin/width/height`表示当前可显示／导航的活动范围。`nativeMapReason/mapErrors`说明失败，`cachedAreas`列已接入区域。世界返回 `mapEventSequence/mapEventFirst/mapEventCount`，房间 `assignmentRevision`保留首次0x07次序。五幕事件历史失去连续性必须重新入局。
-
-既有资源工具诊断（开发输出，不是游戏导航接口）：
-
-```text
-d2x_assets <MPQ目录> native-layout <幕:1-5> <地图种子> [难度:0-2]
-d2x_assets <MPQ目录> native-outdoor <区域> <地图种子> [难度]
-d2x_assets <MPQ目录> native-room <区域> <地图种子> <tileX> <tileY> [难度]
-d2x_assets <MPQ目录> native-map <区域> <地图种子> <难度> [原版导出.json|complete]
-```
-
-native-map输入原版JSON时仅读取调用事件，输出房间／近邻、选定DT1文件和记录、单位／Pops及完整碰撞；complete使用同一核心完整准备连续组件，输出当前区域的碰撞、边界、原出口和单位。native-room仅生成孤立房间，不认证激活顺序或共享边缘；布局工具本身不认证完整地形。第一幕此前122组、第二至第五幕本批364组实际原版对照见[实施计划](../architecture/MULTIPLAYER.md#原版-dll-对照方法)。
-
-不要附带 --class／--load／--hidden／--level 等会直入单机的选项。进入既有离线角色选择期间，该旧选择器尚未轮询管道；进入单机场景后管道由原单机 command 接管，online-* 不在那里启动另一个会话。
-
-`hireling` 返回原类型、来源难度、技能基础／有效等级、原模式、当前动作／技能及天然光环；`types=$true` 另返回当前 MPQ 全部资料片类型及分段行，包括技能权重和成长。可传 `npc` 打开正式雇佣服务，继续传 `slot` 雇佣，仍要求 NPC 可访问并按原费用扣金。
-
-### 联网物品操作
-
-当前源码已通过Windows Release、打包与有限原服冒烟；实际范围见[联网模块](../modules/NETWORK.md#城镇物品批次冒烟2026-10-06)。先用online-items查询实际GUID、revision与decoded；mode为0存储、1装备、2腰带、3地面、4Cursor、5掉落过渡、6孔内。page是原InvPage+1：1背包、4方块、5箱子。本人所有权为ownerType=0且owner等于load.playerUnitId；孔内子项ownerType=4、owner为宿主物品GUID；货架ownerType=1且owner为当前NPC。online-ground也返回完整快照，请按mode=3筛选。
+先用online-items查询实际GUID、revision与decoded；mode为0存储、1装备、2腰带、3地面、4Cursor、5掉落过渡、6孔内。page是原InvPage+1：1背包、4方块、5箱子。本人所有权为ownerType=0且owner等于load.playerUnitId；孔内子项ownerType=4、owner为宿主物品GUID；货架ownerType=1且owner为当前NPC。online-ground也返回完整快照，请按mode=3筛选。
 
 所有修改用`online-item-action`；itemId来自本局服务器，不沿用单机ID。itemRevision／targetRevision可选，省略或0采用提交时版本；建议传查询版本避免操作旧物品。connectionGeneration／gameGeneration／areaGeneration沿用联网通用代次校验。
 
@@ -153,7 +113,7 @@ native-map输入原版JSON时仅读取调用事件，输出房间／近邻、选
 
 `online.inventory`含revision、gameGeneration、columns／rows、stashColumns／stashRows、cubeColumns／cubeRows、beltSlots、cursor、weaponSet、items和request。storage列kind／requested／source／requestedSource／revision；shopRequested／shopSource绑定货架；tradeResult列原result／flags／itemId／gold／revision。物品含基础name／artKey、品质／词缀、位置／所有者、数量／耐久、防御／金币、孔数及统计列表；0x3E baseStats保留服务器单位。未知／截断数据decoded=false并给出reason，不允许操作。
 
-accepted仅表示请求已排队。request.sequence区分连续操作；Pending等待相关回包，Updated需再查位置／数量／余额；TimedOut结果未知，Interrupted为死亡／换幕／退局，Rejected为NPC明确失败（原码在tradeResult／online.error），SentNoAck为存储关闭已发送。买卖／维修／批量鉴定等待0x2A；初步物品变化不提前结束请求。待请求结束后再提交下一项，不自动重发；storage-close例外允许取消。拾取／合成应同时核对所有权、原材料、产物及world.attributes，不能把地面消失或Updated直接当成功。箱子先从scene.mapTargets查询interaction=stash的真实单位，再用online-interact；商店先用online-npc-interact并等npcConversation。完整背包／货架UI、玩家交易、赌博／多买、佣兵装备仍待接。
+accepted仅表示请求已排队。request.sequence区分连续操作；Pending等待相关回包，Updated需再查位置／数量／余额；TimedOut结果未知，Interrupted为死亡／换幕／退局，Rejected为NPC明确失败（原码在tradeResult／online.error），SentNoAck为存储关闭已发送。买卖／维修／批量鉴定等待0x2A；初步物品变化不提前结束请求。待请求结束后再提交下一项，不自动重发；storage-close例外允许取消。拾取／合成应同时核对所有权、原材料、产物及world.attributes，不能把地面消失或Updated直接当成功。箱子先从scene.mapTargets查询interaction=stash的真实单位，再用online-interact；商店先用online-npc-interact并等npcConversation。公共背包／货架UI已接；玩家交易、赌博／多买、佣兵装备仍未完成。
 
 ```powershell
 # 查看原服物品；返回全部物品，按 mode／owner 筛选
@@ -165,24 +125,20 @@ accepted仅表示请求已排队。request.sequence区分连续操作；Pending�
 .\scripts\Send-D2XCommand.ps1 online-item-action -Arguments @{action='switch-weapons'}
 ```
 
-## 启动与调用
 
-```powershell
-.\Play.cmd -PipeName d2x-debug
-# 登录一次并记忆账号后，可自动完成正常认证、选角和一次建房／加入：
-.\Play.cmd -PipeName d2x-debug -OnlineCharacter <角色名> -OnlineCreateGame <房间名>
-.\Play.cmd -PipeName d2x-debug -OnlineCharacter <角色名> -OnlineJoinGame <房间名>
-.\scripts\Send-D2XCommand.ps1 -Command online-status
-.\scripts\Send-D2XCommand.ps1 -Command pause
-.\scripts\Send-D2XCommand.ps1 -Command screenshot -Arguments @{ path='artifacts/online-capture.png' }
-.\scripts\Send-D2XCommand.ps1 -Command resume
-.\scripts\Send-D2XCommand.ps1 -Command online-leave-game
-.\scripts\Send-D2XCommand.ps1 -Command quit
+## 资源工具
+
+既有d2x_assets只读地图诊断，不是游戏旅行／导航接口：
+
+```text
+d2x_assets <MPQ目录> native-layout <幕:1-5> <地图种子> [难度:0-2]
+d2x_assets <MPQ目录> native-outdoor <区域> <地图种子> [难度]
+d2x_assets <MPQ目录> native-room <区域> <地图种子> <tileX> <tileY> [难度]
+d2x_assets <MPQ目录> native-map <区域> <地图种子> <难度> [原版导出.json|complete]
+d2x_assets <MPQ目录> save-info <file.d2s>
 ```
 
-自定义管道用 `-PipeName`；`ok=false`、连接失败或超时会抛异常。默认10000毫秒，`-TimeoutMs`支持100–60000。accepted只表示原请求被接受／入队，须读取原服状态确认。暂停时online-status继续看到当前副本，截图保留冻结画面；角色仍可能在原服移动、受伤或死亡。
-
-本地 `step/save/load/travel/item-spawn/grant-*` 等命令实现保留在历史源码中，但不进入当前产品目标，也不能作为联机验收。旧本地启动参数明确拒绝；用户D2S、MPQ、旧包和mvp保留。已有资源工具的只读开发能力见地图／资源模块。
+原版JSON只重放调用事件，不读取参照地形作输入；complete生成连续组件报告，孤立房间不认证激活顺序／共享边界。save-info不修改角色文件，不恢复联机角色。全部现有资源命令见src/asset_tool.cpp的usage，样本见[地图对照](../architecture/MULTIPLAYER.md#原版-dll-对照方法)。
 
 ## 协议和安全
 
@@ -194,6 +150,6 @@ accepted仅表示请求已排队。request.sequence区分连续操作；Pending�
 
 局前 `ui-input` 与游戏内共用帧输入契约；`entryText` 为至多255个可打印ASCII字节，`tab` 切换字段，`wheel` 为有限滚轮增量。`key=1–4`复用腰带列快捷键，`f1–f8`选择已绑定技能或绑定选择器悬停项；原 `text` 仍只用于数字输入。局前坐标同样使用逻辑视口，应用转换到800×600原图布局；回执 `frontend.page/notice` 不包含字段内容或密码。测试暂停拒绝所有 UI 输入。
 
-## 当前证据与限制
+## 验证边界
 
-本批已 Windows Release 构建、打包及有限原服冒烟，观察测试暂停期间冻结画面与持续收包、ESC菜单、背包拖放、箱子连续转移、保存重入及加载超时恢复。online.inventory.reason 返回适配器拒绝原因；waypointRequested／waypointSource 区分请求与确认，lateWaypointReplies 计迟到回复。本轮局前UI记忆登录和新进程OnlinePlay入局、有限鼠标走跑／NPC点击／拾取／尸体取回及保存重入通过；迟到回复分支和完整鼠标／多人仍未认证；历史 command／截图冒烟不认证完整新调用链。完整玩法与运行包差异见[联网模块](../modules/NETWORK.md)和[项目基线](../../BASELINE.md)。跨用户 ACL 拒绝与 Linux 实际运行尚未完整验证；本机管道不能代替 D2GS 协议。
+只使用已有程序／命令／参考服；不新增测试脚本、用例或专用程序。实际观察统一见[联网记录](../modules/NETWORK.md)，最新未入包源码不能引用旧冒烟作认证。Windows管道不能替代原服协议；跨用户ACL拒绝与Linux实际运行未完整验证。

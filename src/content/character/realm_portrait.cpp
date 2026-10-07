@@ -110,6 +110,7 @@ std::optional<RealmPortraitParts> RealmPortraitCatalog::decode(const OnlineUnit 
             }
         return false;
     };
+    bool equipmentEffectsKnown = true;
     for (const auto &[id, item] : w.equipment) {
         (void)id;
         if (unequipped || item.owner != u.key.id || item.bodyLocation >= 11)
@@ -120,10 +121,12 @@ std::optional<RealmPortraitParts> RealmPortraitCatalog::decode(const OnlineUnit 
         const auto &visual = found->second;
         if (visual.component == 16)
             continue; // No visible body component.
-        // Per-layer color transforms and ethereal blending need separate consumers.
+        // Live equipment identity and the MPQ body components are authoritative
+        // regardless of quality. Preview restrictions on decorative effects
+        // must not hide a world character (including magic/ethereal armor).
         if (!item.quality || *item.quality < 1 || *item.quality > 3 || item.autoAffix ||
             (item.flags & (0x400000 | 0x4000000)))
-            return {};
+            equipmentEffectsKnown = false;
         if (item.bodyLocation == 3 && visual.component == 1) {
             constexpr std::array<size_t, 6> components{3, 4, 1, 2, 8, 9};
             for (size_t part = 0; part < components.size(); ++part)
@@ -136,7 +139,9 @@ std::optional<RealmPortraitParts> RealmPortraitCatalog::decode(const OnlineUnit 
                 return {};
         }
     }
-    return decode(preview);
+    auto parts = decode(preview);
+    if (parts) parts->equipmentEffectsKnown = equipmentEffectsKnown;
+    return parts;
 }
 std::optional<RealmPortraitParts> RealmPortraitCatalog::decode(const OnlineCharacter &c) const {
     if (!c.characterClass || *c.characterClass >= 7 || c.portrait.size() != 33 || c.portrait[0] != 0x8D ||

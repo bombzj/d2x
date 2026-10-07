@@ -3,6 +3,7 @@
 #include "content/character/character_display.hpp"
 #include "content/character/character_progression.hpp"
 #include "content/skills/aura_data.hpp"
+#include "content/skills/skill_eligibility.hpp"
 #include "gameplay/character/attributes.hpp"
 #include "gameplay/combat/weapon_values.hpp"
 #include "gameplay/skills/amazon_passive_spec.hpp"
@@ -137,21 +138,31 @@ CharacterView projectCharacterDisplay(const ClassicData &data, const CharacterPr
         skill.nextRequiredLevel = entry.requiredLevel + skill.baseRank;
         skill.passive = entry.passive; skill.leftAllowed = entry.leftAllowed;
         if (!skill.passive) skill.action = {"?", ""};
-        const bool innate = tree && (entry.basicAction == BasicSkillAction::Attack ||
-            std::find(tree->commonSkills.begin(), tree->commonSkills.end(), id) != tree->commonSkills.end());
-        skill.available = (skill.effectiveRankKnown && effective > 0) || innate;
-        skill.canAllocate = entry.classCode == view.classCode && skill.baseRankKnown &&
-            skill.baseRank < entry.maximumRank && view.unspentSkills > 0 && view.level >= skill.nextRequiredLevel;
-        for (int required : entry.prerequisites) {
-            const auto rank = input.baseRanks.find(required);
-            skill.canAllocate &= rank != input.baseRanks.end() && rank->second > 0;
+        const bool innate = tree && std::find(tree->commonSkills.begin(), tree->commonSkills.end(), id) != tree->commonSkills.end();
+        SkillEligibilityInput eligibilityInput;
+        eligibilityInput.classCode = view.classCode;
+        if (skill.baseRankKnown) eligibilityInput.baseRank = skill.baseRank;
+        if (skill.effectiveRankKnown) eligibilityInput.effectiveRank = effective;
+        if (stat(input, "level")) eligibilityInput.level = view.level;
+        if (stat(input, "newskills")) eligibilityInput.skillPoints = view.unspentSkills;
+        for (size_t i = 0; i < attributeNames.size(); ++i)
+            if (stat(input, attributeNames[i])) eligibilityInput.attributes[i] = view.attributes[i];
+        for (const int required : entry.prerequisites)
+            if (const auto rank = input.baseRanks.find(required); rank != input.baseRanks.end())
+                eligibilityInput.prerequisiteRanks.emplace(required, rank->second);
+        eligibilityInput.innate = innate; eligibilityInput.dead = view.dead; eligibilityInput.town = input.town;
+        if (entry.basicAction == BasicSkillAction::Throw || entry.basicAction == BasicSkillAction::LeftHandThrow)
+            eligibilityInput.equipmentReady = input.throwReady[entry.basicAction == BasicSkillAction::LeftHandThrow ? 1 : 0];
+        if (stat(input, "mana") || input.mana) eligibilityInput.mana = view.mana;
+        std::optional<SkillCastSpec> currentCast;
+        if (!entry.passive && entry.spell && effective > 0 && effective <= 255) {
+            currentCast = resolveSkill(*entry.spell, {effective, input.baseRanks, display.fireMastery,
+                display.lightningMastery, attributes.combat.coldSkillDamagePercent});
+            eligibilityInput.requiredMana = std::max(float(entry.spell->startMana), currentCast->manaCost);
         }
-        skill.usableNow = skill.available && !entry.passive && !view.dead && (!input.town || entry.allowedInTown);
-        skill.pickerEnabled = skill.available && !entry.passive && !view.dead;
-        if (entry.basicAction == BasicSkillAction::Throw || entry.basicAction == BasicSkillAction::LeftHandThrow) {
-            skill.pickerEnabled &= input.throwReady[entry.basicAction == BasicSkillAction::LeftHandThrow ? 1 : 0];
-            skill.usableNow &= skill.pickerEnabled;
-        }
+        const auto eligibility = evaluateSkillEligibility(entry, eligibilityInput);
+        skill.available = eligibility.available; skill.canAllocate = eligibility.canAllocate;
+        skill.usableNow = eligibility.usableNow; skill.pickerEnabled = eligibility.pickerEnabled;
         auto hints = [&](int rank, const std::map<int, int> &baseRanks) {
             std::vector<std::string> lines;
             if (entry.passive) { passiveDetails(lines, data, entry, rank); return lines; }
@@ -165,10 +176,9 @@ CharacterView projectCharacterDisplay(const ClassicData &data, const CharacterPr
                     (!spec.lightningDamage || input.lightningMastery.has_value()) &&
                     (!spec.coldDamage || input.coldDamagePercent.has_value());
                 known &= !spec.summon; // Pet attributes need a separate complete input.
-                cast = resolveSkill(spec, {rank, baseRanks, display.fireMastery, display.lightningMastery,
-                    attributes.combat.coldSkillDamagePercent});
-                if (rank == effective && (stat(input, "mana") || input.mana))
-                    skill.usableNow &= view.mana >= std::max(float(spec.startMana), cast->manaCost);
+                cast = rank == effective ? currentCast : std::optional{resolveSkill(spec,
+                    {rank, baseRanks, display.fireMastery, display.lightningMastery,
+                     attributes.combat.coldSkillDamagePercent})};
             }
             // Aura damage can include mastery/equipment and Prayer. Keep its
             // numbers unknown until those inputs exist rather than defaulting them.

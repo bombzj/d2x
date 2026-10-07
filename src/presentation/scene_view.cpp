@@ -35,6 +35,7 @@ void SceneView::refreshUi(float dt) {
     const int palette=mapView().palette;
     if (itemGroundPalette_!=palette) { assets_.itemGround.clear(); itemGroundPalette_=palette; }
     assets_.loadInventoryArt(inventoryView_,palette);
+    advanceGroundAnimations(dt);
     const auto &p = characterView_;
     view_.skillClass = p.classCode; view_.displayedWeaponSet = p.weaponSet;
     const int left = p.selectedSkills[p.weaponSet * 2], right = p.selectedSkills[p.weaponSet * 2 + 1];

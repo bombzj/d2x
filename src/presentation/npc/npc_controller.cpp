@@ -6,12 +6,13 @@ namespace d2x {
 bool SceneController::handleNpcMenu(const FrameInput &input) {
     auto &ui = view_.ui();
     if (ui.npcMenu) {
-        NpcMenuSelection selection;
+        NpcMenuSelection selection{};
         if (input.escape) selection.action = NpcMenuAction::Cancel;
         else if (input.insideViewport && input.leftPressed) selection = view_.clickNpcMenu(input.mouse);
         if (input.insideViewport && input.leftPressed && selection.action == NpcMenuAction::None)
             selection.action = NpcMenuAction::Cancel;
         const auto action = selection.action;
+        const auto quest = selection.quest;
         if (action == NpcMenuAction::Talk) {
             view_.startNpcTalk();
         }
@@ -19,9 +20,9 @@ bool SceneController::handleNpcMenu(const FrameInput &input) {
         else if (action == NpcMenuAction::TextTopic && selection.textTopic) view_.startNpcTextTopic(*selection.textTopic);
         else if (action == NpcMenuAction::Introduction) view_.startNpcIntroduction();
         else if (action == NpcMenuAction::Gossip) view_.showNextNpcGossip();
-        else if (action == NpcMenuAction::QuestTopic && selection.quest) view_.startNpcTopic(*selection.quest);
+        else if (action == NpcMenuAction::QuestTopic && quest.has_value()) view_.startNpcTopic(quest.value());
         else if (action == NpcMenuAction::Trade) {
-            npcClient_.submit(TalkToNpc{ui.dialogueObject, TalkToNpc::Action::Trade});
+            npcClient_.submit(TalkToNpc{ui.dialogueObject, TalkToNpc::Action::Trade, {}});
             view_.openNpcShop();
         }
         else if (action == NpcMenuAction::Gamble) {

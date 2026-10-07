@@ -7,7 +7,7 @@
 #include <span>
 
 namespace d2x {
-// Sole actor event consumer. It owns presentation-only randomness and clocks.
+// Sole presentation sound consumer. It owns presentation-only randomness and clocks.
 class SceneAudio {
     Archives &archives_;
     const SoundCatalog &catalog_;
@@ -26,6 +26,7 @@ class SceneAudio {
     SceneAudio(Archives &, const SoundCatalog &, SoundBank &);
     bool registerSound(std::string_view sound, std::string key, bool travel = false);
     bool play(std::string_view sound, uint64_t frame, float volume = -1);
+    bool itemDrop(const ItemDropSoundEvent &); // True once consumed, including stale/inaudible events.
     void playRegistered(const std::string &key, uint64_t frame = UINT64_MAX);
     void update(float clock, std::span<const SoundActorView>, std::span<const PresentationSoundEvent>);
     void reset();
