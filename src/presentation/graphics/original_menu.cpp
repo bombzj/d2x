@@ -28,51 +28,51 @@ OriginalMenu::OriginalMenu(Archives &archives, const ClassicFont &font)
         ready_ = true;
     } catch (const std::exception &error) { reason_ = error.what(); }
 }
-float OriginalMenu::measure(std::string_view text, float scale) const {
+float OriginalMenu::measure(std::string_view text) const {
     float width{};
-    for (unsigned char c : text) width += font_.widths[menuCharacter(c)]*scale;
+    for (unsigned char c : text) width += font_.widths[menuCharacter(c)];
     return width;
 }
-Vec OriginalMenu::size(std::string_view title, std::span<const std::string> options, float scale) const {
-    float width = measure(title, scale);
-    for (const auto &option : options) width = std::max(width, measure(option, scale));
-    return {width+24*scale, (14+20*float(options.size()+!title.empty()))*scale};
+Vec OriginalMenu::size(std::string_view title, std::span<const std::string> options) const {
+    float width = measure(title);
+    for (const auto &option : options) width = std::max(width, measure(option));
+    return {width+24, 14+20*float(options.size()+!title.empty())};
 }
 Rectangle OriginalMenu::bounds(Vec topCentre, Rectangle viewport, std::string_view title,
-    std::span<const std::string> options, float scale) const {
-    const auto extent = size(title, options, scale);
+    std::span<const std::string> options) const {
+    const auto extent = size(title, options);
     const float width = std::min(extent.x, viewport.width), height = std::min(extent.y, viewport.height);
     return {std::clamp(topCentre.x-width/2, viewport.x, viewport.x+viewport.width-width),
         std::clamp(topCentre.y, viewport.y, viewport.y+viewport.height-height), width, height};
 }
-Rectangle OriginalMenu::row(Rectangle box, bool title, size_t index, float scale) const {
-    return {box.x+5*scale, box.y+(6+20*float(index+title))*scale, box.width-10*scale, 20*scale};
+Rectangle OriginalMenu::row(Rectangle box, bool title, size_t index) const {
+    return {box.x+5, box.y+6+20*float(index+title), box.width-10, 20};
 }
-int OriginalMenu::hit(Rectangle box, bool title, size_t count, float scale, Vec mouse) const {
+int OriginalMenu::hit(Rectangle box, bool title, size_t count, Vec mouse) const {
     for (size_t index = 0; index < count; ++index)
-        if (CheckCollisionPointRec(rv(mouse), row(box, title, index, scale))) return int(index);
+        if (CheckCollisionPointRec(rv(mouse), row(box, title, index))) return int(index);
     return -1;
 }
-void OriginalMenu::label(std::string_view text, Rectangle box, float scale, int color) const {
+void OriginalMenu::label(std::string_view text, Rectangle box, int color) const {
     if (!ready_) return;
     const auto &glyphs = color == 3 ? selectedFont_ : color == 4 ? titleFont_ : font_.glyphs;
-    float x = box.x+(box.width-measure(text, scale))/2;
+    float x = box.x+(box.width-measure(text))/2;
     for (unsigned char character : text) {
         const auto c = menuCharacter(character);
         const auto *glyph = glyphs.frame(0,font_.indices[c]);
         if (glyph && c != ' ') DrawTexturePro(glyph->texture,
             {0,0,float(glyph->texture.width),float(glyph->texture.height)},
-            {x,box.y,glyph->texture.width*scale,glyph->texture.height*scale},{0,0},0,WHITE);
-        x += font_.widths[c]*scale;
+            {x,box.y,float(glyph->texture.width),float(glyph->texture.height)},{0,0},0,WHITE);
+        x += font_.widths[c];
     }
 }
 void OriginalMenu::draw(Rectangle box, std::string_view title, std::span<const std::string> options,
-    float scale, int selected, std::string_view status) const {
+    int selected, std::string_view status) const {
     if (!ready_) return;
-    DrawRectangleRec(box,{0,0,0,150}); originalBox(border_,box,scale);
-    if (!title.empty()) label(title,{box.x,box.y+6*scale,box.width,20*scale},scale,4);
+    DrawRectangleRec(box,{0,0,0,150}); originalBox(border_,box,1.f);
+    if (!title.empty()) label(title,{box.x,box.y+6,box.width,20},4);
     for (size_t index = 0; index < options.size(); ++index)
-        label(options[index],row(box,!title.empty(),index,scale),scale,selected == int(index) ? 3 : 0);
-    if (!status.empty()) label(status,{box.x,box.y+box.height+5*scale,box.width,20*scale},scale,4);
+        label(options[index],row(box,!title.empty(),index),selected == int(index) ? 3 : 0);
+    if (!status.empty()) label(status,{box.x,box.y+box.height+5,box.width,20},4);
 }
 }

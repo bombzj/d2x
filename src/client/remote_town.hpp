@@ -39,6 +39,7 @@ class RemoteTown {
     std::map<int, std::string> nativeErrors_;
     OnlineSceneView view_;
     uint64_t gameGeneration_{~uint64_t{}}, areaGeneration_{~uint64_t{}}, revision_{~uint64_t{}};
+    std::optional<uint64_t> nextObjectTransition_;
     bool updateNative(const OnlineView &);
     void updateMapTargets(const OnlineView &);
     void prepareTownAutomap(const OnlineView &);

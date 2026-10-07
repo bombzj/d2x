@@ -1,5 +1,6 @@
 #pragma once
 #include "content/character/actor_appearance.hpp"
+#include "content/world/object_mode.hpp"
 #include "core/math.hpp"
 #include "presentation/graphics/graphics.hpp"
 #include "resources/anim_data.hpp"
@@ -56,7 +57,7 @@ class ActorAnimationCatalog {
     explicit ActorAnimationCatalog(Archives &);
     const ActorAnimation *resolve(Graphics &, int palette, const ActorAnimationRequest &);
     const ActorAnimation *object(Graphics &, int palette, int identity, int mode);
-    int objectPresentationMode(int identity, int serverMode, float elapsed) const;
+    ObjectPresentation objectPresentation(int identity, int serverMode, float elapsed) const;
     std::string sequenceMode(std::string_view name) const;
 };
 } // namespace d2x

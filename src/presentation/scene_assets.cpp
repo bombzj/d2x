@@ -412,9 +412,9 @@ std::array<int, 2> SceneAssets::objectShrineOverlays(int identity, int code) con
             return found->second;
     return {-1, -1};
 }
-int SceneAssets::objectPresentationMode(int identity, int serverMode, float elapsed) const {
+ObjectPresentation SceneAssets::objectPresentation(int identity, int serverMode, float elapsed) const {
     if (!actorAnimations_) actorAnimations_ = std::make_unique<ActorAnimationCatalog>(archives_);
-    return actorAnimations_->objectPresentationMode(identity, serverMode, elapsed);
+    return actorAnimations_->objectPresentation(identity, serverMode, elapsed);
 }
 std::string SceneAssets::actorSequenceMode(std::string_view name) const {
     if (!actorAnimations_) actorAnimations_ = std::make_unique<ActorAnimationCatalog>(archives_);

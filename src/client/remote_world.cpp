@@ -446,11 +446,16 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
         const auto changes = r.u8(), flags = r.u8();
         if (u.key.type == 2 && changes == 3) u.objectTargetable = (flags & 2) != 0;
         const auto mode = r.u32();
+        const bool restart = u.key.type != 2 || !u.mode || *u.mode != mode;
         if (mode <= 255)
             u.mode = uint8_t(mode);
         u.nativeMode = true; u.actionSkill.reset(); u.actionSkillLevel.reset();
         u.destination.reset(); u.destinationUnit.reset();
-        u.actionRevision = w.revision; u.actionReceivedMilliseconds = receivedMilliseconds();
+        // Object flags can be refreshed in the same mode. Preserve its original
+        // animation epoch so targetability updates cannot restart OP/ENDANIM.
+        if (restart) {
+            u.actionRevision = w.revision; u.actionReceivedMilliseconds = receivedMilliseconds();
+        }
         r.finish();
         playerMode(v, u);
         break;
@@ -817,6 +822,9 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
         u.mode = r.u8();
         u.objectInteractType = r.u8();
         u.objectTargetable.reset();
+        u.nativeMode = true; u.actionSkill.reset(); u.actionSkillLevel.reset();
+        u.destination.reset(); u.destinationUnit.reset();
+        u.assignmentRevision = w.revision;
         u.actionRevision = w.revision; u.actionReceivedMilliseconds = receivedMilliseconds();
         r.finish();
         break;

@@ -35,6 +35,7 @@ struct ClientMissileVisual {
     int pierce{};
     float animationOffset{};
     EntityId soundEmitter;
+    uint64_t random = 0; // Presentation stream; the server's unit seed is not transmitted.
     std::deque<Vec> path{};
     std::vector<EntityId> contacts{};
 };

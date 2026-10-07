@@ -88,7 +88,11 @@ void SceneAudio::update(float clock, std::span<const SoundActorView> actors, std
             enqueue(rule,stamped,event.age,delay);
         };
         using Kind = PresentationSoundEvent::Kind;
-        if (event.kind == Kind::Cast) {
+        if (event.kind == Kind::Original) submit(SoundRule{event.sound});
+        else if (event.kind == Kind::ObjectMode) {
+            if (const auto *sound = catalog_.object(source->identity,event.mode)) submit(*sound);
+        }
+        else if (event.kind == Kind::Cast) {
             if (const auto *skill = catalog_.skill(event.skill)) {
                 submit(skill->start);
                 if (event.releaseTime >= 0) submit(skill->active,event.releaseTime);
@@ -98,6 +102,7 @@ void SceneAudio::update(float clock, std::span<const SoundActorView> actors, std
             if (const auto *profile = catalog_.player(source->identity)) {
                 if (event.kind == Kind::Hit) submit(profile->hit);
                 else if (event.kind == Kind::Death) submit(profile->death);
+                else if (event.kind == Kind::NeedKey) submit(profile->needKey);
             }
         } else if (const auto *profile = catalog_.monster(source->identity)) {
             if (event.kind == Kind::Attack1 || event.kind == Kind::Attack2) {

@@ -21,7 +21,7 @@ struct MonsterSoundDefinition {
     int footstepCount = 0, footstepOffset = 0;
     float neutralInterval = 0;
 };
-struct PlayerSoundDefinition { SoundRule hit, death; };
+struct PlayerSoundDefinition { SoundRule hit, death, needKey; };
 struct SkillSoundDefinition { SoundRule start, active; };
 struct ItemSoundDefinition { std::string code, drop; int dropFrame = -1; };
 // The only MPQ configuration loader for sound choices and timing.
@@ -32,6 +32,7 @@ class SoundCatalog {
     std::map<int, MonsterSoundDefinition> monsters_;
     std::map<int, PlayerSoundDefinition> players_;
     std::map<int, SkillSoundDefinition> skills_;
+    std::map<std::pair<int, int>, SoundRule> objects_;
     std::map<std::string, ItemSoundDefinition, std::less<>> items_;
     std::map<int, ItemSoundDefinition> uniqueItems_, setItems_;
   public:
@@ -41,6 +42,7 @@ class SoundCatalog {
     const MonsterSoundDefinition *monster(int identity) const;
     const PlayerSoundDefinition *player(int identity) const;
     const SkillSoundDefinition *skill(int identity) const;
+    const SoundRule *object(int identity, int mode) const;
     std::optional<ItemSoundDefinition> item(std::string_view code, ItemQuality, int specialRow = -1) const;
 };
 } // namespace d2x

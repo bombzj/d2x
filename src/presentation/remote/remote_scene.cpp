@@ -97,6 +97,7 @@ struct RemoteScene::Impl {
         uint64_t castSequence{};
         std::optional<CastHandoff> castHandoff;
         bool running{};
+        std::optional<int> objectSoundMode;
     };
     Archives &archives;
     RemoteMapDisplayState &mapDisplay;
@@ -230,8 +231,8 @@ struct RemoteScene::Impl {
     const OnlineWorldView &world() const { return *worldView; }
     static EntityId effectOwner(OnlineUnitKey key) { return {(uint64_t(key.type) << 32) + key.id + 1}; }
     void emitSound(PresentationSoundEvent::Kind kind, const OnlineUnit &source, float age = 0,
-                   int skill = -1, float releaseTime = -1) {
-        soundEvents.push_back({kind,effectOwner(source.key),source.actionRevision,skill,age,releaseTime});
+                   int skill = -1, float releaseTime = -1, std::string sound = {}, int mode = -1) {
+        soundEvents.push_back({kind,effectOwner(source.key),source.actionRevision,skill,age,releaseTime,std::move(sound),mode});
     }
     void monsterSoundEvent(const OnlineCombatEvent &event, const OnlineUnit &source, float age) {
         if (!event.action) return;
@@ -277,7 +278,7 @@ struct RemoteScene::Impl {
             const auto id = missiles.number(row, "Id");
             const auto actor = v.world.units.find(owner);
             if (id && !shared.launchClientMissile(*id, start, target, level, delay, remaining, pathIndex,
-                    effectOwner(owner), actor != v.world.units.end() && combat.hostile(actor->second), pierce))
+                    effectOwner(owner), actor != v.world.units.end() && combat.hostileSource(actor->second), pierce))
                 effectLimitations.insert("Missile client program unavailable: " + std::string(missiles.value(row, "Missile")));
         };
         auto monsterAttack = [&](const OnlineCombatEvent &event, OnlineUnit actor, std::string_view pose, float age) {
@@ -384,6 +385,7 @@ struct RemoteScene::Impl {
                 const auto unit = v.world.units.find(*event.target);
                 if (unit != v.world.units.end()) target = unit->second.position;
             }
+            if (!target && function == 25) target = actor.position; // Nova has no required target.
             if (!target) return;
             const auto *animation = castAnimation;
             if (!animation || animation->animation.frames.empty() || animation->releaseTime < 0) return;
@@ -397,6 +399,28 @@ struct RemoteScene::Impl {
             };
             if (!function || function == 1 || function == 2 ||
                 (function == 29 && missiles.number(missile->second, "pCltDoFunc") == 19)) emit(end);
+            else if (function == 25) {
+                // Retail CltDo25 / RVA 73CB0 -> A0DB0 emits all 64 integer
+                // ring directions. Trap Nova shares this with Nova/Frost Nova.
+                for (int direction = 0; direction < 64; ++direction)
+                    emit(start + missileRingDirection(direction));
+            } else if (function == 51 && actor.key.type == 1) {
+                // Retail GargoyleTrap / RVA 585C0 and ObjMode's real GT actor:
+                // choose the closer cardinal axis, four subtiles, then use its
+                // original muzzle offset. Sequence release flags supply timing.
+                int dx = int(target->x) - int(actor.position->x);
+                int dy = int(target->y) - int(actor.position->y);
+                if (std::abs(dx) < std::abs(dy)) { dx = std::clamp(dx, -4, 4); dy = 0; }
+                else { dy = std::clamp(dy, -4, 4); dx = 0; }
+                const Vec muzzle{float(int(actor.position->x) + dx / 6 - 1) + .5f,
+                                 float(int(actor.position->y) + dy / 6 - 1) + .5f};
+                auto fire = [&](float release) {
+                    launch(missile->second, muzzle, muzzle + Vec{float(dx), float(dy)}, level,
+                           release - age, {}, event.source);
+                };
+                if (animation->releaseTimes.empty()) fire(animation->releaseTime);
+                else for (const float release : animation->releaseTimes) fire(release);
+            }
             else if (function==48 && skills.number(row->second,"srvdofunc")==88 && animation->releaseTimes.size()==9) {
                 constexpr std::array anchor{29,28,27,26,25,24,31,30};
                 constexpr std::array directions{
@@ -464,6 +488,17 @@ struct RemoteScene::Impl {
                     ? float(now-event.receivedMilliseconds)/1000.f : 0.f;
                 if (source != v.world.units.end() && event.source.type==0 && event.auxiliary==2 && age<=.25f)
                     emitSound(PresentationSoundEvent::Kind::LevelUp,source->second,age);
+                if (source != v.world.units.end() && age <= .25f) {
+                    using Kind = PresentationSoundEvent::Kind;
+                    // Original 1.13c attached sound event dispatch, not Sounds.Index.
+                    if (event.source.type == 0 && event.auxiliary == 22)
+                        emitSound(Kind::NeedKey,source->second,age);
+                    else if (event.source.type == 0 && event.auxiliary == 11)
+                        emitSound(Kind::Original,source->second,age,-1,-1,"item_key_used");
+                    else if (event.source.type == 2 && (event.auxiliary == 13 || event.auxiliary == 14))
+                        emitSound(Kind::Original,source->second,age,-1,-1,
+                            event.auxiliary == 13 ? "object_trap_trigger" : "object_trap_release");
+                }
                 continue;
             }
             if (event.kind == OnlineCombatEvent::Kind::Action) {
@@ -1073,13 +1108,14 @@ struct RemoteScene::Impl {
         std::vector<SoundActorView> soundActors;
         std::map<OnlineUnitKey, size_t> soundActorsByKey;
         for (const auto &[key, unit] : v.world.units) {
-            if (key.type > 1 || !unit.position || !unit.classId) continue;
+            if (key.type > 2 || !unit.position || !unit.classId) continue;
             SoundActorView source;
             source.id = effectOwner(key); source.identity = *unit.classId;
-            source.kind = key.type == 0 ? SoundActorKind::Player : SoundActorKind::Monster;
+            source.kind = key.type == 0 ? SoundActorKind::Player :
+                key.type == 1 ? SoundActorKind::Monster : SoundActorKind::Object;
             source.actionRevision = unit.actionRevision;
             source.position = {float(unit.position->x) + .5f, float(unit.position->y) + .5f};
-            source.alive = key.type == 1 ? !onlineMonsterCorpse(unit) : !playerDead(unit);
+            source.alive = key.type == 2 || (key.type == 1 ? !onlineMonsterCorpse(unit) : !playerDead(unit));
             source.neutral = key.type == 1 && unit.mode == 1 && !unit.actionSkill;
             source.audible = CheckCollisionPointRec(rv(screen(local(*unit.position) + Vec{.5f,.5f})),shared.worldViewport());
             soundActorsByKey.emplace(key,soundActors.size()); soundActors.push_back(source);
@@ -1109,6 +1145,9 @@ struct RemoteScene::Impl {
                 continue;
             }
             auto &m = motion[key];
+            if (key.type == 2 && m.assignmentRevision != u.assignmentRevision) {
+                m = {}; m.assignmentRevision = u.assignmentRevision;
+            }
             bool frozen=false, hiddenCorpse=false, shatter=false;
             if (key.type<=1) {
                 const bool dead = key.type == 0 ? playerDead(u) : onlineMonsterCorpse(u);
@@ -1159,10 +1198,19 @@ struct RemoteScene::Impl {
                 m.look = {-std::sin(angle), std::cos(angle)};
             }
             auto displayed = u;
+            float objectElapsed = m.animation.elapsed(time);
             if (key.type == 2) {
-                if (u.mode)
-                    displayed.mode = uint8_t(shared.objectPresentationMode(*u.classId, *u.mode, m.animation.elapsed(time)));
+                const auto presentation = shared.objectPresentation(*u.classId, u.mode.value_or(0), objectElapsed);
+                displayed.mode = uint8_t(presentation.mode);
+                objectElapsed = presentation.elapsed;
+                if (m.objectSoundMode != presentation.mode && objectElapsed <= .25f &&
+                    u.actionRevision != u.assignmentRevision)
+                    emitSound(PresentationSoundEvent::Kind::ObjectMode,u,objectElapsed,-1,-1,{},presentation.mode);
+                m.objectSoundMode = presentation.mode;
                 worldScene.objects.push_back({*u.classId, displayed.mode.value_or(0), feet});
+                // Invisible trap controllers are intentional MPQ Draw=0 units,
+                // not failed resources and not substitutes for visible actors.
+                if (!presentation.draw) continue;
             }
             if (playerId && key == OnlineUnitKey{0, *playerId} && localCast && localCast->started >= 0 &&
                 time < localCast->started + localCast->duration) {
@@ -1213,7 +1261,8 @@ struct RemoteScene::Impl {
                 audio.movementCycle = audio.moving ? visual->duration() : 0.f;
                 audio.audible = CheckCollisionPointRec(rv(screen(feet)),shared.worldViewport());
             }
-            const auto *image = visual->sample(m.animation.clock(time), m.animation.elapsed(time), m.look);
+            const auto *image = key.type == 2 ? visual->sample(objectElapsed, objectElapsed, m.look)
+                : visual->sample(m.animation.clock(time), m.animation.elapsed(time), m.look);
             const auto p = screen(feet) + visual->offset;
             if (player) player->reason = "Outside viewport";
             if (!image || !visible(*image, p))

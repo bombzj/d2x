@@ -59,10 +59,10 @@ std::array<std::string, 2> TradeInviteView::options() const {
     return {trade_.phase == OnlinePlayerTrade::Phase::Outgoing ? waiting_ : accept_, cancel_};
 }
 Rectangle TradeInviteView::bounds(Rectangle viewport) const {
-    return menu_.bounds({viewport.x+viewport.width/2,36*hudScale},viewport,{},options(),hudScale);
+    return menu_.bounds({viewport.x+viewport.width/2,36},viewport,{},options());
 }
 int TradeInviteView::hit(Vec mouse, Rectangle viewport) const {
-    return menu_.hit(bounds(viewport),false,2,hudScale,mouse);
+    return menu_.hit(bounds(viewport),false,2,mouse);
 }
 bool TradeInviteView::enabled(int row) const {
     using Response = OnlinePlayerTrade::Response;
@@ -97,7 +97,7 @@ PlayerTradeIntent TradeInviteView::handle(const FrameInput &input, Rectangle vie
 void TradeInviteView::draw(Rectangle viewport) const {
     if (!ready_ || !trade_.active() || trade_.phase == OnlinePlayerTrade::Phase::Open) return;
     const int highlighted = keyboardSelection_ ? selected_ : hovered_;
-    menu_.draw(bounds(viewport),{},options(),hudScale,enabled(highlighted) ? highlighted : -1);
+    menu_.draw(bounds(viewport),{},options(),enabled(highlighted) ? highlighted : -1);
 }
 namespace {
 Rectangle tradeRect(float x, float y, float width, float height) {

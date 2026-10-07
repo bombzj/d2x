@@ -56,14 +56,18 @@ bool RemoteCombat::innateSkill(uint16_t id) const {
     return found!=innateSkills_.end() && found->second.contains(id);
 }
 bool RemoteCombat::hostile(const OnlineUnit &unit) const {
+    if (!hostileSource(unit)) return false;
+    const auto monster = monsters_.find(*unit.classId);
+    return tables_.at("monstats").number(monster->second, "killable").value_or(0) != 0;
+}
+bool RemoteCombat::hostileSource(const OnlineUnit &unit) const {
     if (unit.key.type != 1 || !unit.classId) return false;
     const auto monster = monsters_.find(*unit.classId);
     if (monster == monsters_.end()) return false;
     const auto &table = tables_.at("monstats");
     if (table.number(monster->second, "npc").value_or(0) ||
         table.number(monster->second, "interact").value_or(0) ||
-        table.number(monster->second, "Align").value_or(0) ||
-        !table.number(monster->second, "killable").value_or(0)) return false;
+        table.number(monster->second, "Align").value_or(0)) return false;
     if (const auto snapshot = unitStates_.find(unit.key); snapshot != unitStates_.end()) {
         if (!snapshot->second.decoded) return false;
         for (const auto &[id, state] : snapshot->second.states) {

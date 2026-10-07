@@ -2,6 +2,7 @@
 #include "gameplay/skills/projectile_path.hpp"
 #include "gameplay/combat/geometry.hpp"
 #include "world/navigation.hpp"
+#include "core/random.hpp"
 #include <algorithm>
 #include <cmath>
 #include <deque>
@@ -14,10 +15,13 @@ bool SceneView::launchClientMissile(int id, Vec start, Vec target, int level, fl
     const auto found = assets_.clientMissilePrograms.find(id);
     if (found == assets_.clientMissilePrograms.end()) return false;
     const auto &program = found->second;
-    if (program.function != 1 && program.function != 5 && program.function != 6 && program.function != 9 &&
+    if (program.function != 1 && program.function != 4 && program.function != 5 && program.function != 6 && program.function != 9 &&
         program.function != 8 && program.function != 18 && program.function != 19 && program.function != 20) return false;
     if (program.function==9)
         for (const int child:program.children) if (child>=0 && !assets_.ensureProjectile(child)) return false;
+    if (program.function == 4 && (program.children[0] < 0 || program.parameters[0] < 0 ||
+        program.parameters[1] < 0 || program.parameters[1] > 256 || program.parameters[2] < 0 ||
+        program.parameters[2] > 32767 || !assets_.ensureProjectile(program.children[0]))) return false;
     if (program.function==9 && program.hitFunction==18)
         for (const int child:program.hitChildren) if (child<0 || !assets_.ensureProjectile(child)) return false;
     // Lightning's parent is deliberately invisible; its MPQ child is the art.
@@ -41,6 +45,7 @@ bool SceneView::launchClientMissile(int id, Vec start, Vec target, int level, fl
     effect.flight = true; effect.level = level; effect.velocityFixed = velocity;
     effect.acceleration = program.acceleration; effect.owner = owner; effect.hostile = hostile; effect.pierce = pierce;
     effect.soundEmitter = {(uint64_t{1} << 63) | ++nextClientMissile_};
+    effect.random = initialRandom(uint32_t(nextClientMissile_));
     effect.animationOffset = remaining ? std::max(0.f, fullDuration - duration) : 0;
     effect.frame = int(effect.animationOffset * 25.f + .00001f);
     effect.turnTarget = target - start;
@@ -128,10 +133,27 @@ void SceneView::advanceClientMissiles(float dt, const Grid &grid, Vec origin,
         const auto &program = assets_.clientMissilePrograms.at(effect.missileId);
         const int lastFrame = int(std::min(effect.age, effect.duration) * 25.f + effect.animationOffset * 25.f + .00001f);
         bool finished = false;
+        auto poisonSmoke = [&](float age) {
+            const int radius = program.parameters[2];
+            auto offset = [&] {
+                const int value = int(limitedRandom(effect.random, uint32_t(2 * radius))) - radius;
+                return value + (value < 0 ? -radius : radius);
+            };
+            const Vec anchor{std::floor(effect.pos.x) + .5f, std::floor(effect.pos.y) + .5f};
+            for (int i = 0; i < program.parameters[1]; ++i)
+                emit(program.children[0], anchor, {float(offset()), float(offset())}, effect, age);
+        };
         while (effect.frame < lastFrame && !finished) {
             const int frame = effect.frame;
             const float childAge = std::max(0.f, effect.age + effect.animationOffset - float(frame) / 25.f);
             if (!frame) assets_.sceneAudio.playRegistered("missile-release:" + std::to_string(effect.missileId), uint64_t(view_.animationTime * 25.f));
+            if (program.function == 4 && !program.childServerSent &&
+                (!program.parameters[0] || limitedRandom(effect.random, uint32_t(program.parameters[0])) == 0)) {
+                // Retail CltDo04 / RVA BBE00 -> B9470: chance per native tick,
+                // MPQ count and radius; smoke starts at the parent and drifts
+                // toward an integer offset. No poison or damage is applied here.
+                poisonSmoke(childAge);
+            }
             if (program.function == 19 && program.parameters[0] > 0 && frame % program.parameters[0] == 0) {
                 const Vec anchor{std::floor(effect.pos.x) + .5f, std::floor(effect.pos.y) + .5f};
                 emit(program.children[0], anchor, missileRingDirection(effect.directionIndex), effect, childAge);
@@ -207,6 +229,9 @@ void SceneView::advanceClientMissiles(float dt, const Grid &grid, Vec origin,
             }
         }
         if (!finished && effect.age + .00001f >= effect.duration) {
+            // CltDo04 bypasses its chance gate when native CurrentFrame is zero.
+            if (program.function == 4 && !program.childServerSent)
+                poisonSmoke(std::max(0.f, effect.age - effect.duration));
             if (program.function == 19 && program.hitParameters[0] > 0) {
                 const Vec anchor{std::floor(effect.pos.x) + .5f, std::floor(effect.pos.y) + .5f};
                 for (int direction = 0; direction < 64; direction += program.hitParameters[0])

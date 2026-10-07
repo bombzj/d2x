@@ -2,13 +2,12 @@
 #include <algorithm>
 #include <cctype>
 #include "npc_menu.hpp"
-#include "presentation/hud/hud_layout.hpp"
 
 namespace d2x {
 Rectangle npcMenuBounds(const OriginalMenu &menu, Vec point, Rectangle viewport,
     std::string_view speaker, std::span<const std::string> options) {
-    return menu.bounds({point.x, point.y-menu.size(speaker,options,hudScale).y-43*hudScale},
-        viewport,speaker,options,hudScale);
+    return menu.bounds({point.x, point.y-menu.size(speaker,options).y-43},
+        viewport,speaker,options);
 }
 namespace {
 std::vector<std::string> labels(const std::vector<NpcMenuEntry> &options) {
@@ -78,12 +77,12 @@ void SceneView::drawNpcMenu(Vec mouse) const {
 }
 std::optional<size_t> npcMenuHit(const OriginalMenu &menu, Vec point, Rectangle viewport,
     std::string_view speaker, std::span<const std::string> options, Vec mouse) {
-    const auto row = menu.hit(npcMenuBounds(menu,point,viewport,speaker,options),!speaker.empty(),options.size(),hudScale,mouse);
+    const auto row = menu.hit(npcMenuBounds(menu,point,viewport,speaker,options),!speaker.empty(),options.size(),mouse);
     return row < 0 ? std::nullopt : std::optional<size_t>{size_t(row)};
 }
 void drawNpcMenu(const OriginalMenu &menu, Vec point, Rectangle viewport, std::string_view name,
     std::span<const std::string> options, Vec mouse, std::string_view status) {
     const auto box = npcMenuBounds(menu,point,viewport,name,options);
-    menu.draw(box,name,options,hudScale,menu.hit(box,!name.empty(),options.size(),hudScale,mouse),status);
+    menu.draw(box,name,options,menu.hit(box,!name.empty(),options.size(),mouse),status);
 }
 } // namespace d2x

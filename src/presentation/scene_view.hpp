@@ -250,8 +250,8 @@ class SceneView {
     std::array<int, 2> objectShrineOverlays(int identity, int code) const {
         return assets_.objectShrineOverlays(identity, code);
     }
-    int objectPresentationMode(int identity, int serverMode, float elapsed) const {
-        return assets_.objectPresentationMode(identity, serverMode, elapsed);
+    ObjectPresentation objectPresentation(int identity, int serverMode, float elapsed) const {
+        return assets_.objectPresentation(identity, serverMode, elapsed);
     }
     std::string actorSequenceMode(std::string_view name) const { return assets_.actorSequenceMode(name); }
     const Sprite *groundItemSprite(const InventoryItemView &) const;

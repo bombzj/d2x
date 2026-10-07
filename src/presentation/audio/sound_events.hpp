@@ -6,7 +6,7 @@
 #include <string>
 
 namespace d2x {
-enum class SoundActorKind { Player, Monster };
+enum class SoundActorKind { Player, Monster, Object };
 struct SoundActorView {
     EntityId id;
     SoundActorKind kind = SoundActorKind::Monster;
@@ -17,12 +17,14 @@ struct SoundActorView {
     float movementCycle = 0;
 };
 struct PresentationSoundEvent {
-    enum class Kind { Attack1, Attack2, Skill1, Skill2, Skill3, Skill4, Hit, Death, Cast, LevelUp };
+    enum class Kind { Attack1, Attack2, Skill1, Skill2, Skill3, Skill4, Hit, Death, Cast, LevelUp, NeedKey, Original, ObjectMode };
     Kind kind = Kind::Cast;
     EntityId source;
     uint64_t actionRevision = 0;
     int skill = -1;
     float age = 0, releaseTime = -1;
+    std::string sound;
+    int mode = -1;
 };
 struct ItemDropSoundEvent {
     enum class Kind { Flip, Land };

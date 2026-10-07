@@ -1,9 +1,11 @@
 #include "remote_town.hpp"
 #include <algorithm>
 #include <cmath>
+#include <chrono>
 #include <stdexcept>
 #include "world/interaction_geometry.hpp"
 #include "core/fingerprint.hpp"
+#include "content/world/object_mode.hpp"
 
 namespace d2x {
 RemoteTown::RemoteTown(Archives &a)
@@ -34,6 +36,7 @@ void RemoteTown::update(const OnlineView &v) {
         nativePlayerRoom_.reset();
         nativePlayerPosition_.reset();
         nativeSequence_ = 0;
+        nextObjectTransition_.reset();
         nativeErrors_.clear();
         nativeReason_.clear();
         catalog_.reset();
@@ -67,7 +70,9 @@ void RemoteTown::update(const OnlineView &v) {
         } else
             view_.reason = "Waiting for the server act and town assignment";
     }
-    if (revision_ == v.revision)
+    const auto now = uint64_t(std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count());
+    if (revision_ == v.revision && (!nextObjectTransition_ || now < *nextObjectTransition_))
         return;
     revision_ = v.revision;
     view_.available = view_.movementAvailable = false;
@@ -100,6 +105,9 @@ void RemoteTown::update(const OnlineView &v) {
     for (const auto &[level, reason] : nativeErrors_) view_.mapErrors[level] = reason;
 }
 void RemoteTown::updateMapTargets(const OnlineView &v) {
+    nextObjectTransition_.reset();
+    const auto now = uint64_t(std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count());
     view_.town = view_.area && catalog_->level(*view_.area).town;
     std::vector<Grid::Obstacle> obstacles;
     for (const auto &[key, unit] : v.world.units) {
@@ -148,8 +156,16 @@ void RemoteTown::updateMapTargets(const OnlineView &v) {
         if (record == objectRows_.end()) continue;
         const size_t row = record->second;
         auto number = [&](std::string_view field) { return objects_.number(row, field).value_or(0); };
+        const float age = unit.actionReceivedMilliseconds && now >= unit.actionReceivedMilliseconds
+            ? float(now - unit.actionReceivedMilliseconds) / 1000.f : 0.f;
+        const int mode = objectDisplayMode(objects_, row, unit.mode.value_or(0), age);
+        if (const auto end = objectEndAnimation(objects_, row, unit.mode.value_or(0));
+            end && age < *end && unit.actionReceivedMilliseconds) {
+            const uint64_t deadline = unit.actionReceivedMilliseconds + uint64_t(std::ceil(*end * 1000.f));
+            if (!nextObjectTransition_ || deadline < *nextObjectTransition_) nextObjectTransition_ = deadline;
+        }
         if (unit.mode && *unit.mode < 8) {
-            const auto suffix = std::to_string(*unit.mode);
+            const auto suffix = std::to_string(mode);
             const bool collision = number("HasCollision" + suffix) != 0;
             const bool light = number("BlocksLight" + suffix) != 0;
             const int width = number("SizeX"), height = number("SizeY");
@@ -157,7 +173,8 @@ void RemoteTown::updateMapTargets(const OnlineView &v) {
                 const bool door = number("IsDoor") != 0, missile = number("BlockMissile") != 0;
                 const uint16_t mask = door ? (number("BlocksVis") ? 0x0806 : missile ? 0x0804 : 0x0400)
                     : (number("SubClass") & 4) ? 0x8000 : missile ? 0x0404 : 0x0400;
-                // Server mode selects the MPQ collision. Never run local object animations/rules.
+                // Include the silent native ENDANIM transition. MPQ supplies the
+                // opened collision; server mode and all operation results stay unchanged.
                 obstacles.push_back({EntityId{uint64_t(key.id) + 1}, x - width / 2, y - height / 2,
                     width, height, uint16_t(collision ? mask : 0), light});
             }
@@ -167,8 +184,8 @@ void RemoteTown::updateMapTargets(const OnlineView &v) {
         // Selectable1 is clear in MPQ, but the native handler still opens the
         // menu in mode 1 or 2. Targetability does not override that exception.
         const bool selectable=unit.mode && *unit.mode<8 &&
-            (number("Selectable"+std::to_string(*unit.mode))!=0 ||
-             (operation==23 && (*unit.mode==1 || *unit.mode==2)));
+            (number("Selectable"+std::to_string(mode))!=0 ||
+             (operation==23 && (mode==1 || mode==2)));
         if (!selectable || (operation!=23 && unit.objectTargetable==false)) continue;
         std::optional<OnlineMapInteraction> interaction;
         switch (operation) {
@@ -185,6 +202,10 @@ void RemoteTown::updateMapTargets(const OnlineView &v) {
         if (interaction) {
             const auto keyName = objects_.value(row, "Name");
             auto label = strings_.find(keyName);
+            if (operation == 4 && (unit.objectInteractType.value_or(0) & 0x80)) {
+                const auto locked = strings_.find("lockedchest");
+                if (!locked.empty()) label = locked;
+            }
             if (operation == 2 && unit.objectInteractType && shrineRows_.contains(*unit.objectInteractType)) {
                 const auto shrine = strings_.find("ShrId" + std::to_string(*unit.objectInteractType));
                 if (!shrine.empty()) label = shrine;

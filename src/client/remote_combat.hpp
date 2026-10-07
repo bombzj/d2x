@@ -43,6 +43,7 @@ class RemoteCombat {
     bool submit(OnlineCombatCommand);
     void update();
     bool hostile(const OnlineUnit &) const;
+    bool hostileSource(const OnlineUnit &) const;
     bool corpseSelectable(const OnlineUnit &) const;
     bool monsterTargetEligible(const OnlineUnit &, bool targetCorpse) const;
     const auto &skills() const { return catalog_; }

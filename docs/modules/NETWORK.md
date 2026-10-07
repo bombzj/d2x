@@ -199,7 +199,13 @@ TradeInviteView／SceneView只读状态并提交意图；交易关闭旧交互�
 
 ## 当前批交付
 
-当前界面／祭坛修正批（2026-10-07）：用户授权打包、简单冒烟并提交源码。Windows Release首次51步及后续修正增量构建均成功，无编译warning或error；dist/current已更新。最终EXE SHA256为`D1CDCC65190491878E39AFCB498D2F9B1131CE90E4BF80ECFD953F6163EEB82C`，与build/bin一致；协议DLL仍为`E96C38DE1911BF24292EE726BB1CF862E7D1CF0D0DF816EDE565A213667B0CBD`。包括角色面板、HUD字体、交易持物、双击Join／详情、技能提示及树、祭坛图层／模式修正。页签改当前MPQ StrSklTree分片、font16白字及原分行，补Skill Choices Remaining；数字整体右移4原生像素；关闭恢复原圆圈斜杠，按SkillDesc末行空列动态选择预留格，MPQ没有独立关闭像素坐标字段，锚点仍取原UI布局。未新增测试程序、改D2S／规则指纹或复制MPQ，参考仓库、凭据、截图、保存和包不进入源码提交。
+当前野外物件批（2026-10-07）：用户授权全部源码完成后打包，后续明确实际操作验证交由用户。Windows Release首次58步及后续8步增量构建成功；dist/current已更新，EXE SHA256为`8445EBDB3A745F166F7A03F91CA766FBC57D3BECE16C08228E21F7F939DE467C`，与build/bin一致；协议DLL仍为`E96C38DE1911BF24292EE726BB1CF862E7D1CF0D0DF816EDE565A213667B0CBD`。对象族清单、静默ENDANIM共享模式投影、原模式声与钥匙／陷阱声、新星／雕像／毒云表现及未核实缺口见[物件](../gameplay/world/OBJECTS.md)。没有新增测试脚本、用例或专用程序，不改MPQ、原服掉落／概率、存档编码或规则指纹；本批按用户授权提交源码及文档，运行包与冒烟材料不纳入提交。
+
+有限冒烟使用包内EXE及既有管道：bomb／SkillTestSor创建ObjectSmoke，bomb2／NetCombatSor加入，关闭等级差限制（99）后两端ProtocolReady、nativeMapReady=true。SkillTestSor经原传送点进入Cold Plains，NetCombatSor在营地打开传送点菜单；最终采样均unavailableUnits=0、effectLimitations为空。这些采样未操作实际箱子、木桶或陷阱，不能记作物件效果通过。用户接手后正常请求quit，两客户端进程已结束，原服记录保存／角色解锁，一个stderr为空，另一个仅有既有选角肖像sohdbrstnhth.dcc缺组件报告，实际场景采样无不可用单位；本批没有可靠退出码记录。构建、只读MPQ审阅及有限运行材料在忽略目录artifacts/object-audit-20261007；后续手动观察步骤见物件文档。
+
+以下界面／祭坛及更早批为历史交付记录，旧哈希不代表当前包。
+
+此前界面／祭坛修正批（2026-10-07）：用户授权打包、简单冒烟并提交源码。Windows Release首次51步及后续修正增量构建均成功，无编译warning或error；dist/current已更新。最终EXE SHA256为`D1CDCC65190491878E39AFCB498D2F9B1131CE90E4BF80ECFD953F6163EEB82C`，与build/bin一致；协议DLL仍为`E96C38DE1911BF24292EE726BB1CF862E7D1CF0D0DF816EDE565A213667B0CBD`。包括角色面板、HUD字体、交易持物、双击Join／详情、技能提示及树、祭坛图层／模式修正。页签改当前MPQ StrSklTree分片、font16白字及原分行，补Skill Choices Remaining；数字整体右移4原生像素；关闭恢复原圆圈斜杠，按SkillDesc末行空列动态选择预留格，MPQ没有独立关闭像素坐标字段，锚点仍取原UI布局。未新增测试程序、改D2S／规则指纹或复制MPQ，参考仓库、凭据、截图、保存和包不进入源码提交。
 
 使用包内EXE及既有管道／正常UI：UiShrineRetry中bomb／SkillTestSor与bomb2／bbb完成房间详情Ready（经过时间、1–99等级、姓名／职业）及UI同一列表项双击加入，两端ProtocolReady、原地图就绪、对方visible=true；聊天服务器回显及三条入局消息已查看。角色面板白色姓名／数值、千位分隔及常驻灰底已查看。最终哈希包另入UiFinalReady，女巫三页分行、字号、白字、数字小格及两处预留关闭按钮已截图查看，实际点击圆圈斜杠关闭成功；两端再次ProtocolReady，同房两方向ASCII聊天实际收到0x26。原有效技能仍为1级，本轮未为检查双位数而消费技能点；加成／双位数全部状态仍待实机覆盖。最终两端正常quit、退出码均0，原服确认两角色CHARINFO保存及解锁；一个stderr为空，另一个仅有既有选角肖像sohdbrstnhth.dcc缺组件报告，实际场景没有不可用单位。
 
