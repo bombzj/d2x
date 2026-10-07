@@ -29,6 +29,9 @@ struct Grid {
     Bytes blocked;
     Bytes lightBlocked;
     Bytes terrainCollision;
+    // Optional full native flags for prepared authority maps. Older coarse
+    // grids retain the byte flags; consumers share the same navigation rules.
+    std::vector<uint16_t> fullTerrainCollision;
     struct Obstacle {
         EntityId id;
         int x, y, width, height;

@@ -1,91 +1,73 @@
 # 代码结构与依赖
 
-更新：2026-10-07。以当前 [CMakeLists.txt](../../CMakeLists.txt) 和源码为准。产品只运行 D2GS 联机；Local 客户端、GameSession、Simulation、SkillRuntime 和 InventoryService 已删除，d2x_session 构建目标也已移除。完整功能与未实现项见[联机计划](MULTIPLAYER.md)和[联网模块](../modules/NETWORK.md)，交付证据见[项目基线](../../BASELINE.md)。
+更新：2026-10-08。源码入口以CMake为准；Windows Release已构建打包，有限冒烟及历史证据见[基线](../../BASELINE.md)，功能顺序见[总计划](MULTIPLAYER.md)。
 
 ## 模块分工
 
-路径相对 src/，库目标省略 d2x_ 前缀。
+路径相对src/；客户端与自研服务端在同一产品进程组装，库与状态边界分别成立。
 
-| 目录／目标 | 当前职责 |
+| 模块 | 职责 |
 | --- | --- |
-| core／core | ID、坐标、字节、随机数与指纹，头文件值工具 |
-| resources／resources | MPQ、TXT、DS1／DT1／DCC／DC6／COF 解码 |
-| content／content | 当前 MPQ 只读定义、原文案、人物／技能／物品显示公式、统一声音配置 |
-| world/navigation、room_activation／navigation | 碰撞、寻路与房间空间索引 |
-| world／world | 地图配方、原预设／迷宫／野外生成、静态物件和出口 |
-| world/population／population | 独立资源工具的人口计划报告；不向联机副本生成怪物 |
-| gameplay／gameplay | 显示、几何、技能等级和资源工具所需的纯计算；保留存档与原表所需值类型，无本地宿主或执行器 |
-| gameplay/items／items | 定义、装备类别／显示计算及错误文案，无库存事务执行器 |
-| persistence／persistence | 独立 D2S v96 编解码与原子文件写入；CharacterSaveData 定义在 persistence/character_save.hpp |
-| contracts、client/*_client.hpp／client_api | UI 只读值和语义命令 |
-| client／client | 库存值、探索状态、人物及任务纯显示投影 |
-| network／network、d2gs_protocol | Realm 生命周期、独立网络推进、原协议编解码与快照 |
-| client/remote_*／remote_client、remote_scene | 原服单位／物品副本、地图适配及移动／战斗／库存请求 |
-| presentation／presentation | 唯一世界绘制、动画、UI 手势、面板、声音、资源和显示插值 |
-| app、main／d2x | 联机局前与窗口、设备输入、凭据／偏好、现有调试管道 |
-| asset_tool／d2x_assets | 独立原资源、地图／掉落报告和只读存档摘要 |
+| core、resources、content | 跨平台值工具，MPQ／原图／表读取，准备只读定义 |
+| world/native_map、generated_area | 同一原生地图生成与房间reveal；宿主保留发包顺序，客户端按原包重放 |
+| network/byte_transport、tcp_stream、memory_transport | IByteTransport字节流；TCP与有锁有界内存FIFO；连接代次隔离旧字节 |
+| network/realm_session、protocol | 唯一MCP／D2GS编码、解码、握手、worker、客户端稳定快照；原服另有账号认证 |
+| client/remote_* | 两种服务端共用的世界／库存副本、地图、请求、预测与I*Client投影 |
+| presentation | 唯一RealmFrontend、SceneController、SceneView、RemoteScene及原资源／面板／动画／声音 |
+| server/game_messages | 仅宿主与内核使用的内部身份、命令和投影；不是网络协议或客户端契约 |
+| server/game_instance、area_store、player_store、movement | 组合根、区域／玩家唯一所有权、入场值组装与移动执行；无MPQ／GPU／文件／socket |
+| server/runtime | 类型化命令、穷尽分派、系统组合／窄依赖、固定步顺序、只读规则和有界事件出口 |
+| server/systems/* | 26个独立领域State／Ports／操作骨架；全部显式未实现，详见[内核子系统](../modules/SERVER_SYSTEMS.md) |
+| hosting/game_host | 多实例槽位、代次、绑定、25Hz固定步、暂停与内部快照 |
+| hosting/game_content、character_creation、character_rules | MPQ输入准备、初始角色／物品、入局规则指纹；不负责客户端绘制 |
+| hosting/embedded_realm | 内存端点、selector、分帧与断开／调度组装，不实现具体玩法 |
+| hosting/detail | 与传输无关的单人服务组合、MCP角色／游戏、D2GS生命周期和管理接口 |
+| hosting/protocol | C2S／S2C目录、阶段／长度检查、按领域具名分派与显式stub；扩展约定见[服务端协议](../modules/SERVER_PROTOCOL.md) |
+| hosting/native_game_wire、native_item_wire | 原入局／状态／移动／物品包编码；JM磁盘位流不作网络包 |
+| hosting/administration、app/debug/server_commands | 类型化宿主管理与外围JSON适配；不增加私有游戏消息 |
+| hosting/character_store、character_directory | 服务端目录名册、稳定选择、角色租约、替换检测、原子保存与删除；目录值不暴露给UI |
+| gameplay/character/persistent_character | 纯角色持久值；不带路径、表现、网络或整局运行态 |
+| persistence | 沿用master支持范围的D2S v96编码／校验；CharacterSaveData为上述值的别名 |
+| app/frontend | 连接选择、Single Player自动建房、窗口／输入／宿主调度与开发管理；不读写D2S，不另设世界循环 |
+| asset_tool | 独立MPQ／地图／存档只读诊断 |
 
-目录不是库边界。gameplay 的剩余纯函数不读取 MPQ、设备或 GPU，联机显示由 content 用当前 MPQ 准备输入；资源报告中的随机选择不会给游戏生成掉落或奖励。任务身份、原保存槽和阶段值保留给显示与 D2S 编码，本地任务转换／奖励入口已删除。
-
-## 实际依赖方向
-
-箭头表示直接链接；PRIVATE 依赖不进入公开接口。
+## 依赖方向
 
 ```mermaid
 flowchart TD
     app[d2x] --> presentation
     app --> remote_client
+    app --> character_host
+    presentation --> remote_scene
     presentation --> client
-    presentation -->|PRIVATE| content
-    presentation -->|PRIVATE| world
-    presentation -->|PRIVATE| remote_scene
-    client --> client_api
-    client -->|PRIVATE| content
-    remote_scene --> client
-    remote_scene --> world
     remote_scene --> remote_client
-    client_api --> core
-    remote_client --> client_api
+    remote_scene --> world
     remote_client --> network
     remote_client --> d2gs_protocol
-    network --> core
-    d2gs_protocol --> core
-    assets[d2x_assets] --> content
-    assets --> world
-    assets --> population
-    assets --> persistence
-    population --> content
-    population --> gameplay
+    character_host --> host
+    character_host --> game_content
+    character_host --> network
+    character_host --> d2gs_protocol
+    character_host --> persistence
+    host --> server
+    server --> gameplay
+    server --> navigation
+    game_content --> world
+    game_content --> server
+    game_content --> persistence
     persistence --> content
-    persistence --> gameplay
-    persistence --> items
     world --> content
-    world --> navigation
     content --> resources
-    content --> items
-    content --> gameplay
-    gameplay --> navigation
-    navigation --> core
-    items --> core
-    resources --> core
 ```
 
-客户端不链接 persistence；presentation 不链接会话或本地执行器。Win32 凭据、调试传输、崩溃记录和文件替换留在外围，纯数据与编码保留 Windows／Linux C++20 路径。
+客户端和表现库不链接host、server或persistence；产品可执行文件经嵌入宿主链接存储库。server／host不链接content、resources、raylib或network。C++20／CMake保持Windows／Linux；平台凭据、调试管道与原子替换留外围。当前还没有独立服务器程序或仅服务器的CMake配置。
 
-## 运行链与修改入口
+## 生命周期
 
-设备／已有调试输入 → FrameInput → SceneController → I*Client → RemoteUiClients → RemoteControl／RemoteCombat／RemoteInventory → RealmSession → D2GS。回包形成只读快照；RemoteScene 投影当前帧世界及动画、位置和公共声音事件，SceneView／SceneAssets／SceneAudio 消费同一显示规则。普通 ESC／面板／失焦不暂停原服；显式测试 pause/resume 只冻结客户端表现。
+原服与自研均由FrameInput → SceneController → RemoteUiClients／RemoteControl／Combat／Inventory → RealmSession发送原包。回包进入同一RemoteWorld／RemoteTown／RemoteScene，再由公共UI、动画和声音消费。单机仅在组装入口建立内存字节连接；移除了LocalGame／GameClients／GameScene及其CMake目标。
 
-地图继续沿 WorldCatalog／MapRecipe → loadRegion → Map／Grid／WorldObject，原服房间引用决定活动地图。权威单位、战斗、消耗、升级、任务奖励和存档由原服执行，客户端显示碰撞、预测和提示不结算这些结果。
+嵌入宿主在应用帧中泵入字节并调用GameHost.advance；内核命令有界FIFO、绑定玩家、校验实例／区域代次和内部序号。每实例独立时钟／区域／玩家表／随机／ID；代次在槽位复用时递增。未来并发调度由宿主承担，不向GameInstance加入窗口或网络工作。
 
-| 修改内容 | 当前入口 |
-| --- | --- |
-| 原表或资源格式 | resources → content |
-| 地图／出口 | content/world → world → remote_town |
-| 原服单位／技能／物品行为 | d2gs_protocol／remote_world → remote_control／combat／inventory → remote_ui_clients |
-| 世界、动画、声音 | SceneView、ActorAnimationCatalog／State、SoundCatalog／SceneAudio |
-| 人物／技能／任务提示 | client/character_projection、quest_projection → content 显示公式 |
-| 面板与输入 | presentation／SceneController，语义命令交原服端口 |
-| 独立 D2S 诊断 | persistence/character_save.hpp、d2s_*、asset_tool |
+角色在原MCP选中时取得整局租约，创建游戏前完成内容和网络入局数据准备；失败不覆盖原档。退局收到原0x69后先保存，再销毁实例并发原0xB0。保存失败保留实例和锁，终止失败的连接并显示原因，应用关闭或重新连接时可重试保存。F11是宿主检查点；Ctrl+F11先完整准备存档，再让同一原协议客户端重新入局。细节与范围见[存档](../modules/SAVES.md)。
 
-保留原 MPQ、reference、旧压缩包、mvp 和用户文件。原版规则／格式证据与当前支持范围分开维护；历史离线运行结果不认证联机功能。多 agent 协作仍应按领域文件归属分工，公共接口、CMake 和存档编码由集成方收尾。
+地图、规则、存储和原包适配不得继续聚集到GameInstance。后续在既有server/systems骨架内逐领域实现，runtime/simulation只维护顺序，不承载玩法；旧GameSession及其全能执行器不恢复。参考仓库、MPQ、mvp、旧包和用户存档保留。

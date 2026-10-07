@@ -15,6 +15,9 @@ class EntityIds {
     uint64_t next_ = 1;
 
   public:
+    explicit EntityIds(uint64_t next = 1) : next_(next) {
+        if (!next_) throw std::invalid_argument("Entity ID cursor cannot be zero");
+    }
     uint64_t cursor() const { return next_; }
     EntityId allocate() {
         if (next_ == std::numeric_limits<uint64_t>::max())

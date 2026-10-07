@@ -1,5 +1,5 @@
 #pragma once
-#include "core/bytes.hpp"
+#include "network/byte_transport.hpp"
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -8,16 +8,6 @@
 #include <vector>
 
 namespace d2x::net {
-struct Endpoint {
-    std::string host;
-    uint16_t port{};
-};
-enum class StreamEventKind { Connected, Data, Closed, Error };
-struct StreamEvent {
-    StreamEventKind kind{};
-    Bytes data;
-    std::string error;
-};
 struct StreamLimits {
     size_t queuedSendBytes{1024 * 1024};
     size_t queuedReceiveBytes{2 * 1024 * 1024};
@@ -26,7 +16,7 @@ struct StreamLimits {
 };
 // Serialized owner calls. poll() progresses DNS, connect, reads, writes and timers.
 // RealmSession services this independently of the window loop. No callbacks or native socket types cross this API.
-class TcpStream {
+class TcpStream final : public IByteTransport {
   public:
     explicit TcpStream(StreamLimits limits = {});
     ~TcpStream();

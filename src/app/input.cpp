@@ -28,6 +28,8 @@ FrameInput pollInput(const Viewport &viewport) {
     input.hireling = IsKeyPressed(KEY_O);
     input.shift = IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT);
     input.control = IsKeyDown(KEY_LEFT_CONTROL) || IsKeyDown(KEY_RIGHT_CONTROL);
+    input.save = !input.control && IsKeyPressed(KEY_F11);
+    input.load = input.control && IsKeyPressed(KEY_F11);
     input.enter = IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_KP_ENTER);
     input.backspace = IsKeyPressed(KEY_BACKSPACE) || IsKeyPressedRepeat(KEY_BACKSPACE);
     input.messageLog = !input.control && IsKeyPressed(KEY_M);

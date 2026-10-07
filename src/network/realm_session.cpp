@@ -1,4 +1,5 @@
 #include "network/realm_session.hpp"
+#include "network/tcp_stream.hpp"
 #include "client/remote_world.hpp"
 #include "network/protocol/d2gs_stream.hpp"
 #include "network/protocol/bits.hpp"
@@ -17,15 +18,21 @@ namespace d2x::net {
 namespace {
 using namespace protocol;
 using Clock = std::chrono::steady_clock;
+Bytes preauthenticatedRealmStartup() {
+    Writer out;
+    out.append(Bytes(64, 0)); // Cookie, status, native 8-byte and 48-byte chunks.
+    out.string("SinglePlayer", 64);
+    return out.release();
+}
 bool text_valid(std::string_view value, size_t maximum, bool allowEmpty = false) {
     return (allowEmpty || !value.empty()) && value.size() <= maximum &&
            std::all_of(value.begin(), value.end(), [](unsigned char c) { return c >= 32 && c < 127; });
 }
 bool character_name_valid(std::string_view name) {
     const auto letter = [](unsigned char c) { return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z'); };
-    return name.size() >= 2 && name.size() <= 15 && letter(name.front()) &&
+    return !name.empty() && name.size() <= 15 &&
            std::all_of(name.begin(), name.end(),
-                       [&](unsigned char c) { return letter(c) || c == '-' || c == '_'; });
+                       [&](unsigned char c) { return letter(c) || (c >= '0' && c <= '9') || c == '-' || c == '_'; });
 }
 std::string ip_address(Reader &in) {
     std::string host;
@@ -91,7 +98,8 @@ struct RealmSession::Impl {
     bool retainGamePackets{}, snapshotDirty{};
     std::jthread worker;
 
-    TcpStream sid, mcp, gs;
+    ByteStream sid, mcp, gs;
+    std::optional<Endpoint> directRealm;
     PacketStream sidPackets{Framing::Sid}, mcpPackets{Framing::Mcp};
     D2gsStream gamePackets;
     OnlineView view;
@@ -282,7 +290,7 @@ struct RealmSession::Impl {
         counters.lastReceived = packet.id;
         changed();
     }
-    void sent(TcpStream &stream, Bytes bytes) {
+    void sent(ByteStream &stream, Bytes bytes) {
         const auto byteCount = bytes.size();
         const size_t idOffset = &stream == &gs ? 0 : &stream == &sid ? 1 : 2;
         const auto id = bytes.size() > idOffset ? std::optional<uint8_t>{bytes[idOffset]} : std::nullopt;
@@ -324,7 +332,7 @@ struct RealmSession::Impl {
     }
     void request_characters() {
         Writer out;
-        out.u32(18);
+        out.u32(1024);
         send_mcp(0x19, std::move(out));
         stage(OnlineStage::ListingCharacters);
     }
@@ -562,7 +570,7 @@ struct RealmSession::Impl {
             const auto requested = in.u16();
             in.u32();
             const auto count = in.u16();
-            if (count > 18 || count > requested)
+            if (count > requested)
                 throw ProtocolError("Character list limit exceeded");
             std::vector<OnlineCharacter> characters;
             for (uint16_t i = 0; i < count; ++i)
@@ -765,9 +773,15 @@ struct RealmSession::Impl {
         view.gameQueuePosition.reset();
         view.selectedCharacter.clear();
         selected.reset();
-        auto realm = view.selectedRealm;
-        stage(OnlineStage::RealmSelection);
-        choose_realm(std::move(realm));
+        if (directRealm) {
+            realmStartup = preauthenticatedRealmStartup();
+            mcp.connect(*directRealm, options.timeout);
+            stage(OnlineStage::ConnectingRealm);
+        } else {
+            auto realm = view.selectedRealm;
+            stage(OnlineStage::RealmSelection);
+            choose_realm(std::move(realm));
+        }
     }
     void reset_area(bool preserveInitialPosition) {
         auto &world = view.world;
@@ -1269,6 +1283,22 @@ struct RealmSession::Impl {
 RealmSession::RealmSession(bool retainGamePackets) : impl_(std::make_unique<Impl>(retainGamePackets)) {
     impl_->start();
 }
+void RealmSession::connect_realm(std::unique_ptr<IByteTransport> realmTransport,
+    std::unique_ptr<IByteTransport> gameTransport, Endpoint endpoint, std::string name) {
+    std::lock_guard lock(impl_->mutex);
+    auto &p = *impl_;
+    const auto connection = p.view.connectionGeneration + 1, game = p.view.gameGeneration + 1, revision = p.view.revision;
+    p.shutdown(); p.view.clear(); p.view.connectionGeneration = connection; p.view.gameGeneration = game;
+    p.view.revision = revision; p.requestCounter = 0; p.lastListRequest = 0;
+    p.options = LoginOptions{};
+    p.directRealm = endpoint;
+    p.mcp.use(std::move(realmTransport)); p.gs.use(std::move(gameTransport));
+    p.view.selectedRealm = std::move(name);
+    p.realmStartup = preauthenticatedRealmStartup();
+    p.mcp.connect(std::move(endpoint), p.options.timeout);
+    p.stage(OnlineStage::ConnectingRealm);
+    p.snapshotDirty = true;
+}
 RealmSession::~RealmSession() = default;
 void RealmSession::login(LoginOptions options) {
     authenticate(std::move(options), false);
@@ -1281,6 +1311,8 @@ void RealmSession::authenticate(LoginOptions options, bool createAccount) {
     impl_->snapshotDirty = true;
     auto &p = *impl_;
     p.shutdown();
+    p.directRealm.reset();
+    p.mcp.use(std::make_unique<TcpStream>()); p.gs.use(std::make_unique<TcpStream>());
     const auto revision = p.view.revision, generation = p.view.connectionGeneration,
                gameGeneration = p.view.gameGeneration;
     p.view.clear();
@@ -1352,9 +1384,9 @@ bool RealmSession::create_character(CreateCharacterOptions options) {
     auto &p = *impl_;
     if (!p.require(OnlineStage::CharacterSelection))
         return false;
-    if (!character_name_valid(options.name) || options.characterClass > 6 || p.view.characters.size() >= 18) {
+    if (!character_name_valid(options.name) || options.characterClass > 6) {
         p.error(OnlineErrorKind::Input,
-                "Use a 2-15 letter character name (hyphen/underscore allowed), and a LoD class");
+                "Use 1-15 ASCII letters, digits, hyphen or underscore; the server validates its naming rules");
         return false;
     }
     try {
@@ -1418,8 +1450,15 @@ bool RealmSession::select_character(std::string name) {
         out.string(p.pendingCharacter, 15);
         // PvPGN PLAYERINFOREQ for LoD expects Realmname,charname, not a bare Realm.
         out.string(p.view.selectedRealm + ',' + p.pendingCharacter, 80);
-        p.send_sid(0x0A, std::move(out));
-        p.waitingChat = true;
+        if (p.directRealm) {
+            Writer selected;
+            selected.string(p.pendingCharacter, 15);
+            p.send_mcp(0x07, std::move(selected));
+            p.waitingChat = false;
+        } else {
+            p.send_sid(0x0A, std::move(out));
+            p.waitingChat = true;
+        }
         p.stage(OnlineStage::SelectingCharacter);
         return true;
     } catch (const std::exception &) {

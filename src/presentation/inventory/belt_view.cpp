@@ -5,6 +5,7 @@ void SceneView::drawBelt(Vec mouse) const {
     const auto &ui = view_.inventory;
     const auto &inventory = inventoryView_;
     auto belt = inventory.container(inventoryView_.containers.belt);
+    if (!belt) return;
     int rows = ui.open || ui.beltExpanded ? belt->rows : 1;
     auto bounds = beltBounds(rows);
     const auto drop = inventoryDrop(inventoryView_, inventoryClient_, ui, mouse, view_.hirelingOpen);

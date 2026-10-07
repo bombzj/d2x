@@ -22,26 +22,26 @@ struct RetailTileRoom {
     RetailRoom room;
     std::shared_ptr<RetailTileSelector> libraries;
     std::array<int, 8> warpSlots{};
-    std::vector<size_t> floors, walls, shadows;
-    std::array<std::optional<size_t>, 2> mapLinks; // non-floor, floor
+    std::vector<size_t> floors{}, walls{}, shadows{};
+    std::array<std::optional<size_t>, 2> mapLinks{}; // non-floor, floor
     struct Warp {
         int id{};
         const WarpRecord *definition{};
         std::optional<size_t> visible, lit;
-        std::optional<size_t> destination;
+        std::optional<size_t> destination{};
     };
-    std::vector<Warp> warps;
-    std::vector<size_t> near;
+    std::vector<Warp> warps{};
+    std::vector<size_t> near{};
     // Active-room adjacency is reordered on allocation and swap-erased on
     // release; it can differ from the immutable logical near-room order.
-    std::vector<size_t> activeNear;
+    std::vector<size_t> activeNear{};
     struct Unit { int type{}, id{}, x{}, y{}; }; // global subtile coordinates
-    std::vector<Unit> units;
-    std::vector<RetailPresetUnit> authoredUnits;
-    std::vector<RoofPopup> roofPopups;
+    std::vector<Unit> units{};
+    std::vector<RetailPresetUnit> authoredUnits{};
+    std::vector<RoofPopup> roofPopups{};
     struct Animation { std::vector<size_t> frames; int speed{}; };
-    std::vector<Animation> animations;
-    MapData grids; // Logical layers for offline arrivals/automap/exit consumers.
+    std::vector<Animation> animations{};
+    MapData grids{}; // Logical layers for offline arrivals/automap/exit consumers.
     bool loaded{};
 };
 struct RetailRoomCollision {

@@ -26,6 +26,9 @@ AppOptions parseOptions(int argc, char **argv) {
         else if (arg == "--online-join-game") options.onlineJoinGame = value();
         else if (arg == "--screenshot") options.screenshot = value();
         else if (arg == "--pack") options.pack = value();
+        else if (arg == "--load") options.load = value();
+        else if (arg == "--save") options.save = value();
+        else if (arg == "--class") options.characterClass = value();
         else if (arg == "--frames") {
             const auto text = value();
             const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), options.frameLimit);
@@ -36,6 +39,11 @@ AppOptions parseOptions(int argc, char **argv) {
         else if (arg == "--help") options.help = true;
         else throw std::runtime_error("Unknown option: " + arg);
     }
+    if (!options.load.empty() && !options.characterClass.empty())
+        throw std::runtime_error("Choose either --load or --class");
+    if ((!options.load.empty() || !options.save.empty() || !options.characterClass.empty()) &&
+        (!options.onlinePlay.empty() || !options.onlineCharacter.empty() || !options.onlineCreateGame.empty() || !options.onlineJoinGame.empty()))
+        throw std::runtime_error("Choose either local save startup or original-server quick entry");
     if (!options.onlinePlay.empty()) {
         if (!options.onlineCharacter.empty() || !options.onlineCreateGame.empty() || !options.onlineJoinGame.empty())
             throw std::runtime_error("--online-play cannot be combined with manual quick-entry options");

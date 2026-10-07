@@ -61,7 +61,10 @@ class RenderTarget {
 int runGame(int argc, char **argv) {
     const auto options = parseOptions(argc, argv);
     if (options.help) {
-        std::cout << "D2X online client: --mpq <folder|archive> --online-config <file.json>\n"
+        std::cout << "D2X: Single Player characters / original-server client\n"
+                     "Single Player lists local D2S characters; F11 saves, Ctrl+F11 reloads in town.\n"
+                     "--mpq <folder|archive> --online-config <file.json>\n"
+                     "--load <character.d2s> | --class <MPQ class>; --save <new character.d2s>\n"
                      "--debug-pipe <name>: opt-in local command interface; starts running.\n"
                      "pause/resume freeze client presentation only; the server and network keep running.\n"
                      "--online-character <name> --online-create-game <name> | --online-join-game <name>\n"
@@ -76,7 +79,7 @@ int runGame(int argc, char **argv) {
         throw std::runtime_error("No MPQs found. Supply --mpq <Lord-of-Destruction-folder|archive>.");
     Platform platform(options.hidden);
     RenderTarget target;
-    runOnlineFrontend(archives, target.handle, options);
+    runFrontend(archives, target.handle, options);
     if (!options.screenshot.empty()) target.save(options.screenshot);
     std::filesystem::create_directories("artifacts");
     std::ofstream manifest("artifacts/mvp-manifest.txt");

@@ -11,7 +11,7 @@ RetailRoomGrids initializeRetailOutdoorRoomGrids(const RetailRoom &room, const R
     if (room.preset || room.width != 8 || room.height != 8)
         throw std::runtime_error("Native outdoor logical grids require an eight-tile non-preset room");
     RetailRoomGrids result{9, 9, std::vector<MapCell>(81), std::vector<MapCell>(81),
-                           std::vector<MapCell>(81)};
+                           std::vector<MapCell>(81), {}};
     for (int y = 0; y < 8; ++y)
         for (int x = 0; x < 8; ++x) result.floors[size_t(y * 9 + x)].value = 0x40002;
     constexpr int stride = 11; // Native dirt path grid is room extent + three.

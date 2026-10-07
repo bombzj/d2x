@@ -6,6 +6,7 @@
 #include <utility>
 
 namespace d2x::net {
+ByteStream::ByteStream() : transport_(std::make_unique<TcpStream>()) {}
 struct TcpStream::Impl {
     struct Connection {
         explicit Connection(asio::io_context &io) : resolver(io), socket(io), timer(io) {}

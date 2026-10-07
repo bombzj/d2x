@@ -27,6 +27,7 @@ struct FrameInput {
     bool automapNames = false;
     bool hireling = false;
     bool run = false, escape = false, screenshot = false;
+    bool save = false, load = false;
     bool expandBelt = false, weaponSwap = false;
     std::array<bool, 4> belt{};
     std::array<bool, hotbarSlots> skills{};

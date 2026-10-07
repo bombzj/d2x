@@ -11,7 +11,7 @@ struct RetailOutdoorRoomData {
     std::vector<Shadow> shadows;
     // Retains all pointers emitted while substitution consumes the room stream.
     std::shared_ptr<RetailTileSelector> tiles;
-    std::vector<RetailPresetUnit> units;
+    std::vector<RetailPresetUnit> units{};
 };
 // Non-preset rooms only. Supply the result to RetailTileMaterializer;
 // preset-room layers have their own builder. Do not supply these to Map::load.

@@ -7,6 +7,7 @@ struct AppOptions {
     std::string onlineConfig = "online.local.json";
     std::string onlineCharacter, onlineCreateGame, onlineJoinGame;
     std::string onlinePlay;
+    std::string load, save, characterClass;
     bool hidden = false, help = false;
     int frameLimit = 0;
 };

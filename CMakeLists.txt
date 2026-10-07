@@ -25,6 +25,7 @@ target_sources(d2x_world PRIVATE src/world/object_population.cpp)
 target_sources(d2x_world PRIVATE src/world/chest.cpp)
 target_sources(d2x_world PRIVATE src/world/shrine_catalog.cpp)
 target_sources(d2x_world PRIVATE src/world/native_room_activation.cpp src/world/native_map.cpp)
+target_sources(d2x_world PRIVATE src/world/generated_area.cpp)
 target_sources(d2x_world PRIVATE src/world/outdoor/native_act_layout.cpp src/world/retail/outdoor_grid.cpp
   src/world/outdoor/native_jungle_layout.cpp src/world/outdoor/native_connections.cpp src/world/retail/boundary.cpp
   src/world/retail/border_presets.cpp src/world/retail/secondary_border.cpp
@@ -123,6 +124,58 @@ target_link_libraries(d2x_persistence PUBLIC d2x_gameplay d2x_items d2x_content)
 
 add_library(d2x_client_api INTERFACE)
 target_link_libraries(d2x_client_api INTERFACE d2x_core)
+# Authority and scheduling remain headless: no archive, graphics or sockets.
+add_library(d2x_server src/server/game_instance.cpp src/server/movement.cpp src/server/player_projection.cpp src/server/character_admission.cpp)
+target_sources(d2x_server PRIVATE
+  src/server/player_store.cpp
+  src/server/runtime/system_catalog.cpp
+  src/server/runtime/game_systems.cpp
+  src/server/runtime/command_dispatch.cpp
+  src/server/runtime/simulation.cpp
+  src/server/runtime/events.cpp
+  src/server/systems/world/system.cpp
+  src/server/systems/spatial/system.cpp
+  src/server/systems/items/system.cpp
+  src/server/systems/inventory/system.cpp
+  src/server/systems/attributes/system.cpp
+  src/server/systems/crafting/system.cpp
+  src/server/systems/loot/system.cpp
+  src/server/systems/population/system.cpp
+  src/server/systems/monsters/system.cpp
+  src/server/systems/ai/system.cpp
+  src/server/systems/skills/system.cpp
+  src/server/systems/missiles/system.cpp
+  src/server/systems/effects/system.cpp
+  src/server/systems/combat/system.cpp
+  src/server/systems/death/system.cpp
+  src/server/systems/companions/system.cpp
+  src/server/systems/objects/system.cpp
+  src/server/systems/npc/system.cpp
+  src/server/systems/merchant/system.cpp
+  src/server/systems/quests/system.cpp
+  src/server/systems/progression/system.cpp
+  src/server/systems/travel/system.cpp
+  src/server/systems/social/system.cpp
+  src/server/systems/trade/system.cpp
+  src/server/systems/transactions/system.cpp
+  src/server/systems/replication/system.cpp
+)
+target_link_libraries(d2x_server PUBLIC d2x_gameplay d2x_navigation)
+add_library(d2x_host src/hosting/game_host.cpp src/hosting/administration.cpp)
+target_link_libraries(d2x_host PUBLIC d2x_server)
+# MPQ preparation is outside both the authority and scheduler libraries.
+add_library(d2x_game_content src/hosting/game_content.cpp src/hosting/character_creation.cpp src/hosting/character_rules.cpp)
+target_link_libraries(d2x_game_content PUBLIC d2x_world d2x_server PRIVATE d2x_persistence)
+add_library(d2x_character_host src/hosting/character_store.cpp src/hosting/embedded_realm.cpp
+  src/hosting/native_game_wire.cpp src/hosting/native_item_wire.cpp
+  src/hosting/detail/native_realm_service.cpp src/hosting/detail/realm_protocol.cpp
+  src/hosting/detail/realm_characters.cpp src/hosting/detail/realm_games.cpp
+  src/hosting/detail/game_protocol.cpp src/hosting/detail/host_administration.cpp
+  src/hosting/protocol/message_catalog.cpp src/hosting/protocol/gameplay_dispatch.cpp
+  src/hosting/protocol/handlers_movement.cpp src/hosting/protocol/handlers_combat.cpp
+  src/hosting/protocol/handlers_inventory.cpp src/hosting/protocol/handlers_interaction.cpp
+  src/hosting/protocol/handlers_progression.cpp src/hosting/protocol/handlers_social.cpp)
+target_link_libraries(d2x_character_host PUBLIC d2x_host d2x_game_content d2x_network PRIVATE d2x_persistence d2x_d2gs_protocol)
 include(cmake/Networking.cmake)
 add_library(d2x_client src/client/inventory_view.cpp src/client/automap_exploration.cpp
   src/client/character_projection.cpp src/client/quest_projection.cpp)
@@ -171,15 +224,15 @@ target_sources(d2x_presentation PRIVATE src/presentation/frontend/realm_frontend
 target_sources(d2x_presentation PRIVATE src/presentation/remote/remote_scene.cpp)
 target_link_libraries(d2x_presentation PRIVATE d2x_remote_scene)
 target_sources(d2x PRIVATE src/app/debug/debug_pipe.cpp src/app/debug/ui_input.cpp)
-target_sources(d2x PRIVATE src/app/debug/online_commands.cpp)
-target_link_libraries(d2x PRIVATE d2x_presentation d2x_remote_client)
+target_sources(d2x PRIVATE src/app/debug/online_commands.cpp src/app/debug/server_commands.cpp)
+target_link_libraries(d2x PRIVATE d2x_presentation d2x_remote_client d2x_character_host)
 target_link_libraries(d2x PRIVATE nlohmann_json::nlohmann_json)
 if(WIN32)
   target_link_libraries(d2x PRIVATE advapi32 dbghelp)
 endif()
 add_executable(d2x_assets src/asset_tool.cpp)
 target_link_libraries(d2x_assets PRIVATE d2x_content d2x_world d2x_population d2x_persistence raylib nlohmann_json::nlohmann_json)
-foreach(target IN ITEMS d2x_resources d2x_navigation d2x_world d2x_items d2x_content d2x_gameplay d2x_population d2x_persistence d2x_presentation d2x_client d2x_network d2x_d2gs_protocol d2x_remote_client d2x_remote_scene d2x d2x_assets)
+foreach(target IN ITEMS d2x_resources d2x_navigation d2x_world d2x_items d2x_content d2x_gameplay d2x_population d2x_persistence d2x_presentation d2x_client d2x_network d2x_d2gs_protocol d2x_remote_client d2x_remote_scene d2x_server d2x_host d2x_game_content d2x_character_host d2x d2x_assets)
   if(MSVC)
     target_compile_options(${target} PRIVATE /W4 /utf-8)
   else()

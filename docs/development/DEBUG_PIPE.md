@@ -1,7 +1,8 @@
 # Windows调试管道
 
-直接运行EXE只在显式--debug-pipe时启用，Play.cmd默认d2x-debug。产品仅接受在线命令、原UI帧输入与测试表现pause/resume；step／save／load／travel／item-spawn／grant-*本地命令已删除。构建／包状态见[基线](../../BASELINE.md)，本页只维护当前参数。
+直接运行EXE只在显式--debug-pipe时启用，Play.cmd默认d2x-debug。原服和Single Player均使用同一RealmSession，因此共用online-*、UI输入、截图、状态、quit及表现pause/resume命令。命令名称保留online不表示只允许TCP。另有显式嵌入宿主管理能力，执行端位于服务端，管道不直接读写D2S或客户端副本；原服连接拒绝这些管理命令。自研暂未实现的操作不会产生成功结算。构建／包状态见[基线](../../BASELINE.md)。
 
+Single Player的online-status仍只读原协议OnlineView；server-status单独返回宿主诊断身份和tick，不能作为客户端世界同步旁路。ui-input沿现有32帧队列和SceneController，F11／Ctrl+F11与pipe save／load共用AdminRequest管理入口。单机ESC／失焦暂停权威；应用将显式调试暂停一并用于单机宿主，原服pause/resume仍只影响表现。入局／退局清旧UI帧。
 ## 启动与调用
 
 ```powershell
@@ -17,12 +18,46 @@
 
 自定义管道用-PipeName，超时-TimeoutMs范围100–60000、默认10000。脚本遇ok=false／连接失败／超时抛异常。登录／建房用UI、快捷参数或下面原命令，每一步查询阶段再继续；不能连发非幂等请求。测试服账号／端口只维护在[本机部署](../architecture/MULTIPLAYER.md#本机部署与验证入口)。
 
+## 嵌入宿主管理命令
+
+当前Windows包已通过现有脚本有限检查目录、save／load／step和grant-gold的未实现返回，完整命令行为未验收。JSON只在app/debug解析一次；宿主收到类型化操作与GameHandle／PlayerId绑定。管理调用在当前宿主调度线程执行，网络worker仍只经字节队列访问服务端。失败返回ok=false和明确status，不以HTTP式私有ACK修改原MCP／D2GS。
+
+| 命令 | 参数和当前结果 |
+| --- | --- |
+| `server-status` | 只读phase、tick、paused、hostSlot／hostGeneration／hostPlayer、实际command序号／结果、最近分派和失败、characterIssues；command是最新诊断，不能作为可靠事务回执 |
+| `server-protocol` | 返回全部C2S／S2C／MCP和4F／38子命令目录；实现状态、领域、收发计数、queued／stub／rejected／malformed。入场编码标admission-only，不代表完整玩法 |
+| `server-commands` | 当前管理命令及implemented标志 |
+| `server-systems` | 28个内核目录项的name／phase／scope／lastStep；新增26个系统为scaffold。lastStep=null表示未调度或没有固定步入口，不表示实现；详见[内核子系统](../modules/SERVER_SYSTEMS.md) |
+| `save` | 无参数；从服务端导出当前角色，校验租约版本并原子保存／备份。applied表示保存已完成，失败保留实例和租约 |
+| `load` | 无参数；准备暂停候选实例，成功后经原69／MCP／D2GS离局重入；applied仅表示准备成功且原离局已排队。最后是否入局仍查online-status，候选复用且保留当前难度 |
+| `cancel-load` | 原离局尚未接受时释放候选；已经离局后须关闭宿主或完成重新入局 |
+| `step` | frames默认1，范围1–250；只允许已入局且权威paused的实例，以1/25秒固定步推进，返回更新后的tick。暂停会清路径和待执行移动，step不恢复被清除的路径，也不推进原服 |
+| `grant-gold`、`grant-experience` | amount有符号整数；类型化stub，返回not-implemented |
+| `item-spawn`、`monster-spawn`、`grant-shrine`、`grant-hireling` | code，level可选；类型化stub |
+| `monster-damage`、`monster-kill` | id，amount可选；类型化stub |
+| `travel` | level；类型化stub |
+| `unlock-waypoints`、`reset-attributes`、`reset-skills` | 无参数；类型化stub |
+
+修改命令可附hostSlot／hostGeneration／hostPlayer，取server-status；不匹配返回invalid-target。未提供时由应用绑定当前宿主角色。这些不是online.gameGeneration，不能互换。save／load不接受path覆盖，固定使用服务器持有租约的角色文件；其他角色加载使用局前入口。stub只验证参数形状，尚未承诺对应资源或玩法资格。
+
+```powershell
+.\scripts\Send-D2XCommand.ps1 -Command server-protocol
+.\scripts\Send-D2XCommand.ps1 -Command server-systems
+.\scripts\Send-D2XCommand.ps1 -Command save
+.\scripts\Send-D2XCommand.ps1 -Command pause
+# 查询server-status确认paused=true后再单步：
+.\scripts\Send-D2XCommand.ps1 -Command step -Arguments @{frames=1}
+.\scripts\Send-D2XCommand.ps1 -Command resume
+```
+
+旧普通玩法调试入口继续使用下面的online-move／online-item-action／online-cast等原协议命令，不额外恢复一套能直接改客户端状态的move／pickup／equip。旧命令的宽松拼写别名没有恢复。协议与扩展约定见[服务端协议](../modules/SERVER_PROTOCOL.md)。
+
 ## 联网命令
 
 | 命令 | 参数与结果 |
 | --- | --- |
 | `ui-input` | 复用既有FrameInput诊断格式：x／y逻辑坐标、button=left／right、leftHeld／leftReleased／rightHeld、key、shift／control／focused等；frames可一次排队1–32帧，每绘制帧消费一项。聊天用key=enter／escape／message-log（或m）、entryText可打印ASCII、backspace、delete／left／right／home／end编辑；日志支持up／down／page-up／page-down及wheel。允许局前页面及已显示、未测试暂停的局内UI；游戏或区域代次切换／暂停清队列，普通控制器提交原服意图，不直接改权威副本 |
-| `pause` / `resume` | 只在显式调试管道启用；pause要求在线ProtocolReady，冻结画面和界面输入。回执presentationPaused／networkRunning=true／serverPaused=false；不暂停原服，恢复采用最新副本，旧动作不重放 |
+| `pause` / `resume` | 只在显式调试管道启用；pause要求在线ProtocolReady，冻结画面和界面输入。回执presentationPaused／networkRunning=true；不暂停原服。Single Player在下一宿主调度帧应用权威暂停，以server-status.paused为准；恢复采用最新副本，旧动作不重放 |
 | `online-status` | 顶层presentationPaused；online.protocol按SID／MCP／game返回包ID、received／sent／unconsumed、逻辑字节数和lastReceived；只读 `online`：stage、error、revision、connectionGeneration、gameGeneration、Realm／角色／游戏列表、load、延迟（首个pong前null）、gameQueuePosition、gameListComplete、world／scene；联网模式的 `status` 是其别名 |
 | `online-social` / `online-chat` | 同一完整只读快照的world.social：名册身份及字段可用性、队伍／关系原值、公开位置、聊天原语言nameBytes／textBytes；只读、不刷新。共享界面就绪后额外chatUi返回ready／inputOpen／logOpen／draft／scroll／rows／unavailableMessages／reason，只有表现和草稿，不是发送回执。聊天新UI尚未运行认证，组队未接，不能据此认证M4 |
 | `online-send-chat` | message为1–255字节可打印ASCII且不全为空格；ProtocolReady及当前游戏身份有效时发送局内普通广播0x15。accepted只代表入队，双方消息取实际0x26及chatSequence，不插本地回显／自动重试；不支持私聊、表情、中文编码或BNCS频道命令。已入当前运行包，双账号原服普通广播及M日志有限观察见联网交付记录 |
@@ -55,7 +90,7 @@
 | `online-automap` | 可选visible／large布尔值，visible省略时开关、large省略时保留；只改变显示。scene.automap返回大小／显示、stamps／towns数量及当前连续层revealedCells |
 | `online-login` | 必填 account、password；原版文件／认证模式／端口读取 `--online-config` 私有配置，只在 Idle／Failed／Cancelled 接受；自动选择配置中的 Realm |
 | `online-register` | account、password（各2–15）；配置和允许阶段同登录，注册成功自动登录；服务端拒绝码在 error 中 |
-| `online-create-character` | name（2–15、字母起首，其余字母／连字符／下划线）、classId（0–6，默认0）、hardcore（默认false）；CharacterSelection 接受，固定资料片／非 Ladder，服务器生成初始数据后刷新列表 |
+| `online-create-character` | name（1–15个ASCII字母／数字／连字符／下划线；最终资格由服务端判断，自研暂不接受下划线）、classId（0–6，默认0）、hardcore（默认false）；CharacterSelection 接受，固定资料片／非 Ladder，服务器生成初始数据后刷新列表 |
 | `online-delete-character` | name 和完全相同的 confirmName；CharacterSelection 接受，必须来自当前列表；不可撤销，成功刷新列表 |
 | `online-return-realms` | CharacterSelection 关闭 MCP 并重新取 Realm 列表；保持 RealmSelection 等待显式选择 |
 | `online-cancel-list` | ListingGames 取消等待并返回 Lobby，不关闭 MCP，列表完成标记为 false |

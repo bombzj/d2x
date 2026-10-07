@@ -1,8 +1,10 @@
 #include "frontend.hpp"
+#include "hosting/embedded_realm.hpp"
 #include "app/online_login_memory.hpp"
 #include "app/client_preferences.hpp"
 #include "app/debug/debug_pipe.hpp"
 #include "app/debug/online_commands.hpp"
+#include "app/debug/server_commands.hpp"
 #include "client/remote_town.hpp"
 #include "client/remote_control.hpp"
 #include "client/remote_inventory.hpp"
@@ -22,6 +24,7 @@
 #include <deque>
 #include <chrono>
 #include <limits>
+#include <utility>
 #include <nlohmann/json.hpp>
 #include <rlgl.h>
 
@@ -95,7 +98,7 @@ bool gameStage(OnlineStage s) {
            s == OnlineStage::LoadingGame || s == OnlineStage::ProtocolReady || s == OnlineStage::LeavingGame;
 }
 } // namespace
-void runOnlineFrontend(Archives &archives, RenderTexture2D target, const AppOptions &options) {
+void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &options) {
     const auto configPath = std::filesystem::path(options.onlineConfig);
     const auto &pipeName = options.debugPipe;
     if (options.hidden && !pipeName.empty()) SetTargetFPS(60);
@@ -106,6 +109,30 @@ void runOnlineFrontend(Archives &archives, RenderTexture2D target, const AppOpti
     ui.setLogin(std::move(rememberedAccount), std::move(rememberedPassword));
     HideCursor();
     net::RealmSession session;
+    EmbeddedRealm embedded(archives, "saves");
+    bool localConnection = false, enterLocalGame = false;
+    std::string reloadCharacter;
+    uint8_t localDifficulty{};
+    auto administerLocal = [&](const hosting::AdminRequest &request) -> hosting::AdminResult {
+        using namespace hosting;
+        if (!localConnection) return {AdminStatus::Unavailable, "No embedded host connection"};
+        if (request.operation == AdminOperation::Reload &&
+            (session.read().stage != OnlineStage::ProtocolReady || !session.read().load.difficulty || session.read().selectedCharacter.empty()))
+            return {AdminStatus::Unavailable, "Reload requires an entered native client connection"};
+        auto result = embedded.administer(request);
+        if (result.applied() && request.operation == AdminOperation::Reload) {
+            const auto &current = session.read();
+            const auto name = current.selectedCharacter;
+            const auto difficulty = *current.load.difficulty;
+            if (!session.leave_game()) {
+                embedded.administer({AdminOperation::CancelReload, request.target, {}});
+                return {AdminStatus::Failed, "Native leave could not be queued; prepared reload cancelled"};
+            }
+            reloadCharacter = name; localDifficulty = difficulty;
+        }
+        return result;
+    };
+    auto hostFrame = std::chrono::steady_clock::now();
     RemoteTown town(archives);
     RemoteControl control(town, session);
     RemoteInventory inventory(archives);
@@ -229,10 +256,26 @@ void runOnlineFrontend(Archives &archives, RenderTexture2D target, const AppOpti
             page = FrontendPage::Login;
         }
     }
+    if (!options.load.empty() || !options.save.empty() || !options.characterClass.empty()) {
+        try {
+            reloadCharacter = embedded.prepareStartup(options.load, options.save, options.characterClass);
+            auto streams = embedded.connect();
+            session.connect_realm(std::move(streams.realm), std::move(streams.game), {"127.0.0.1", 6113}, "Single Player");
+            localConnection = true; page = FrontendPage::Characters;
+        } catch (const std::exception &e) { reloadCharacter.clear(); notice = e.what(); }
+    }
     while (true) {
         if (options.frameLimit > 0 && ++frames > options.frameLimit) quit = true;
         if (WindowShouldClose())
             quit = true;
+        const auto hostNow = std::chrono::steady_clock::now();
+        const bool hostFocused = debugInputs.empty() ? IsWindowFocused() : debugInputs.front().focused;
+        embedded.pump(std::chrono::duration<double>(hostNow - hostFrame).count(),
+            !hostFocused || presentationPaused || (sharedUi && sharedUi->ui().gameMenuOpen));
+        hostFrame = hostNow;
+        if (auto error = embedded.takeError(); !error.empty()) {
+            notice = std::move(error); quit = false; frames = 0; enterLocalGame = false; reloadCharacter.clear();
+        }
         const auto previousStage = session.read().stage;
         session.tick();
         if (session.read().world.playerTrade.active()) control.cancelMovement();
@@ -300,6 +343,8 @@ void runOnlineFrontend(Archives &archives, RenderTexture2D target, const AppOpti
                     if (!sharedClients) return {};
                     inventory.update(session.read());
                     return sharedClients->itemQuote(item, action);
+                }, [&](const nlohmann::json &command) {
+                    return serverDebugCommand(command, localConnection ? &embedded : nullptr, administerLocal);
                 });
             if (presentationPaused != wasPaused) {
                 debugInputs.clear();
@@ -318,6 +363,7 @@ void runOnlineFrontend(Archives &archives, RenderTexture2D target, const AppOpti
                     session.read().stage == OnlineStage::ListingRealms)
                     manualRealm = true;
                 if (session.read().stage == OnlineStage::ConnectingAccount) {
+                    localConnection = enterLocalGame = false; reloadCharacter.clear();
                     manualRealm = false;
                     page = request.find("online-register") != std::string::npos ? FrontendPage::Register
                                                                                 : FrontendPage::Login;
@@ -354,8 +400,10 @@ void runOnlineFrontend(Archives &archives, RenderTexture2D target, const AppOpti
                 session.leave_game();
             // Keep pumping the same bounded leave exchange when the window closes
             // or command quit is requested. Closing TCP immediately can skip saving.
-            if (session.read().stage != OnlineStage::LeavingGame)
-                break;
+            if (session.read().stage != OnlineStage::LeavingGame) {
+                try { embedded.close(); break; }
+                catch (const std::exception &e) { notice = e.what(); quit = false; frames = 0; }
+            }
             debugInputs.clear();
             // Keep the final scene/screenshot while the independent service completes
             // the bounded save/leave exchange; no further world input is accepted.
@@ -366,9 +414,16 @@ void runOnlineFrontend(Archives &archives, RenderTexture2D target, const AppOpti
                 {closingViewport.offset.x, closingViewport.offset.y,
                  W * closingViewport.scale, H * closingViewport.scale}, {0, 0}, 0, WHITE);
             EndDrawing();
-            continue;
+            if (quit) continue;
         }
         const auto view = session.read();
+        if (localConnection && !reloadCharacter.empty() && view.stage == OnlineStage::CharacterSelection) {
+            enterLocalGame = session.select_character(std::exchange(reloadCharacter, {}));
+        }
+        if (localConnection && enterLocalGame && view.stage == OnlineStage::Lobby) {
+            enterLocalGame = false;
+            session.create_game({"SinglePlayer", {}, {}, localDifficulty, 1, 99});
+        }
         if (worldNoticeSequence && (view.stage != OnlineStage::ProtocolReady ||
                                    view.gameGeneration != worldNoticeGeneration)) {
             notice.clear();
@@ -573,6 +628,16 @@ void runOnlineFrontend(Archives &archives, RenderTexture2D target, const AppOpti
                         debugInputs.pop_front();
                     }
                     captureRequested = input.screenshot;
+                    if (localConnection && input.focused && !panels.gameMenuOpen && (input.save || input.load)) {
+                        try {
+                            const auto state = embedded.diagnostics();
+                            if (!state.player) throw std::runtime_error("No active host character");
+                            const auto result = administerLocal({input.load ? hosting::AdminOperation::Reload : hosting::AdminOperation::Save,
+                                *state.player, {}});
+                            sharedUi->notice(result.message, !result.applied());
+                        } catch (const std::exception &e) { sharedUi->notice(e.what(), true); }
+                        input.save = input.load = false;
+                    }
                     chatInput(input);
                     const bool keepGame = sharedController->handle(input,GetFrameTime());
                     if (!keepGame) leaveGame = true;
@@ -632,11 +697,23 @@ void runOnlineFrontend(Archives &archives, RenderTexture2D target, const AppOpti
             notice = "Unable to remember the edited account name.";
         if (action.command != FrontendCommand::None) quickCharacter = quickGame = false;
         switch (action.command) {
+        case FrontendCommand::SinglePlayer:
+            try {
+                session.logout();
+                auto streams = embedded.connect(true);
+                session.connect_realm(std::move(streams.realm), std::move(streams.game), {"127.0.0.1", 6113}, "Single Player");
+                localConnection = true; enterLocalGame = false; localDifficulty = 0;
+                debugInputs.clear(); notice.clear(); page = FrontendPage::Characters;
+            } catch (const std::exception &e) { notice = e.what(); }
+            break;
         case FrontendCommand::Exit:
             quit = true;
             ui.clearPassword();
             break;
         case FrontendCommand::Online:
+            try { embedded.close(); }
+            catch (const std::exception &e) { notice = e.what(); break; }
+            localConnection = enterLocalGame = false;
             page = FrontendPage::Login;
             break;
         case FrontendCommand::OpenRegister:
@@ -647,6 +724,9 @@ void runOnlineFrontend(Archives &archives, RenderTexture2D target, const AppOpti
             page = FrontendPage::CreateCharacter;
             break;
         case FrontendCommand::ChangeRealm:
+            if (localConnection) {
+                session.logout(); localConnection = false; page = FrontendPage::Main; break;
+            }
             manualRealm = true;
             session.return_to_realms();
             break;
@@ -696,11 +776,11 @@ void runOnlineFrontend(Archives &archives, RenderTexture2D target, const AppOpti
             }
             break;
         case FrontendCommand::SelectCharacter:
-            session.select_character(std::move(action.name));
+            enterLocalGame = session.select_character(std::move(action.name)) && localConnection;
             break;
         case FrontendCommand::CreateGame:
             session.create_game({std::move(action.name), std::move(action.password),
-                                 std::move(action.description), action.difficulty, action.maximumPlayers,
+                                 std::move(action.description), action.difficulty, localConnection ? uint8_t(1) : action.maximumPlayers,
                                  action.levelDifference});
             break;
         case FrontendCommand::LeaveGame:
@@ -729,7 +809,7 @@ void runOnlineFrontend(Archives &archives, RenderTexture2D target, const AppOpti
                 session.return_to_characters();
             else {
                 session.logout();
-                page = page == FrontendPage::Login ? FrontendPage::Main : FrontendPage::Login;
+                page = localConnection || page == FrontendPage::Login ? FrontendPage::Main : FrontendPage::Login;
             }
             break;
         case FrontendCommand::Dismiss:
@@ -739,7 +819,7 @@ void runOnlineFrontend(Archives &archives, RenderTexture2D target, const AppOpti
             if (session.read().stage == OnlineStage::Failed) {
                 session.logout();
                 if (page != FrontendPage::Register)
-                    page = FrontendPage::Login;
+                    page = localConnection ? FrontendPage::Main : FrontendPage::Login;
             }
             break;
         case FrontendCommand::None:

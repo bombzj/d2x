@@ -1,10 +1,17 @@
-# 客户端契约与原服适配基线
+# 客户端契约与原协议基线
 
-更新：2026-10-07。产品只保留联机调用链。当前源码已移除所有 Local 客户端、旧 SceneView.advance／sessionRestored／localSession、旧本地物件／尸体命中、物品提示、任务事件消费者及探索侧文件入口；d2x_presentation 不再链接 d2x_session。最终依赖清理及交付证据统一见[基线](../../BASELINE.md)和[联网模块](NETWORK.md#最终依赖清理)。
+更新：2026-10-08。原服与自研宿主共用完整客户端，只有连接选择不同。Windows Release已构建打包；单机有限冒烟、当前及旧包身份见[基线](../../BASELINE.md)。
+
+## 唯一客户端链
+
+RealmFrontend与所有游戏页面都读取RealmSession的原协议副本。输入统一为SceneController → RemoteUiClients／RemoteControl／RemoteCombat／RemoteInventory → 原MCP／D2GS；回包统一为RemoteWorld／RemoteInventory／RemoteTown → RemoteUiClients／RemoteScene → SceneView。GameClients、IGameConnection、EmbeddedConnection、LocalGame、GameScene及单独的角色服务DTO已删除。
+
+IByteTransport提供原字节流，TcpStream与MemoryTransport实现相同connect／send／poll／close。内存队列有锁、有界，支持网络worker与宿主调度线程分离；重连清旧消息。客户端不引用GameHost、PersistentCharacter或存档路径，也不直接接收权威快照。自研宿主通过原1.13c包提供已实现行为，不新增客户端协议分支。
+InventoryView允许缺失尚未接入的容器；共用腰带绘制／输入／格区必须先查询存在性，缺失时不绘制或提供交互格，缺背包时明确拒绝打开库存面板。客户端不能为满足UI假设而伪造容器或库存状态。
 
 ## 视图与命令
 
-| 端口 | 唯一产品适配与共用消费者 |
+| 端口 | 两种服务端共用的原协议适配与消费者 |
 | --- | --- |
 | IActorClient | RemoteUiClients 适配 RemoteControl／RemoteCombat／RemoteInventory；SceneController 统一移动、施放、交互、拾取、按住／松开／失焦手势 |
 | IInventoryClient | 原服物品解码形成 InventoryView，复用物品显示公式、面板、拖放与预览；提交原库存协议，客户端占格预览不结算物品 |
@@ -29,8 +36,8 @@
 
 ## 保留范围与限制
 
-局前选角的产品入口是RealmFrontend。游戏内客户端共用接口不承接本地D2S角色列表；联机选角数据及命令均来自MCP。最新选角显示／交互修正及未入包边界见[联网模块](NETWORK.md)。
+局前使用同一RealmFrontend原图与MCP角色列表、分页、双击、建删选角。Single Player按钮仍用原3WideButtonBlank／TBL5106，组装层连接嵌入Realm并自动建单人房；客户端不读取D2S。自研尚未实现的玩法请求保留原协议，不通过本地执行器补齐。
 
-GameSession、Simulation、SkillRuntime、InventoryService、本地任务／AI／奖励执行源码及 d2x_session 目标已删除。gameplay／items 保留联机显示、地图、原资源报告与独立 D2S 工具所需纯函数和值；CharacterSaveData 移到 persistence，字段与编码不变。产品不链接 persistence。旧法杖插入面板没有原服生产者，其空状态／资源／绘制入口已删除，原服插杖流程仍未实现。原 MPQ、reference、旧包、mvp 和用户文件保留。
+GameSession、Simulation、SkillRuntime、InventoryService、本地任务／AI／奖励执行源码及 d2x_session 目标已删除。gameplay／items 保留联机显示、地图、原资源报告与独立 D2S 工具所需纯函数和值；PersistentCharacter是纯领域保存值，CharacterSaveData为其别名；客户端库不链接persistence，产品经嵌入宿主链接。旧法杖插入面板没有原服生产者，其空状态／资源／绘制入口已删除，原服插杖流程仍未实现。原 MPQ、reference、旧包、mvp 和用户文件保留。
 
 完整细节与原服协议限制见[联网模块](NETWORK.md)、[NPC／任务](NPC_QUEST.md)、[人物](CHARACTER.md)、[库存](INVENTORY.md)及[地图](MAP.md)。运行证据与源码／包差异统一见基线和联网模块。

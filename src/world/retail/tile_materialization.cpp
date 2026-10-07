@@ -335,7 +335,7 @@ const WarpRecord *RetailTileMaterializer::warpDefinition(size_t current, uint32_
     return lookupWarp(catalog_, r.warpSlots[slot], type == 11 ? 'r' : 'l');
 }
 
-RetailTileRoom::Warp *RetailTileMaterializer::warpLink(size_t current, uint32_t p, int type) {
+RetailTileRoom::Warp *RetailTileMaterializer::warpLink(size_t current, uint32_t p, int) {
     auto &r = rooms_.at(current);
     const int slot = style(p);
     if (slot >= 8) return nullptr;

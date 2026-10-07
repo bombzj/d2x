@@ -4,6 +4,11 @@ param(
     [Parameter(Mandatory = $true)]
     [ValidateSet(
         'status', 'pause', 'resume',
+        'server-status', 'server-protocol', 'server-commands', 'server-systems',
+        'save', 'load', 'cancel-load', 'step',
+        'grant-gold', 'grant-experience', 'item-spawn', 'monster-spawn',
+        'monster-damage', 'monster-kill', 'travel', 'unlock-waypoints',
+        'grant-shrine', 'grant-hireling', 'reset-attributes', 'reset-skills',
         'online-status', 'online-login', 'online-realms', 'online-select-realm',
         'online-characters', 'online-select-character', 'online-games', 'online-list-games',
         'online-create-game', 'online-join-game', 'online-game-info', 'online-leave-game', 'online-return-characters',

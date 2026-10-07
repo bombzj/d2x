@@ -326,6 +326,8 @@ struct RealmFrontend::Impl {
     void main(std::string_view gateway) {
         tiles("main", 0, 0, 4);
         logo();
+        if (button("wide", 265, 290, s(5106), true, 2))
+            emit(FrontendCommand::SinglePlayer);
         if (button("battle", 265, 332, s(5107), true, 2))
             emit(FrontendCommand::Online);
         auto gatewayLabel = s(11049);
@@ -540,7 +542,7 @@ struct RealmFrontend::Impl {
         }
         if (button("medium", 34, 538, s(5101)))
             emit(FrontendCommand::Back);
-        const bool valid = hero >= 0 && characterName.size() >= 2;
+        const bool valid = hero >= 0 && !characterName.empty();
         if (button("medium", 628, 538, s(5102), valid) || (enabled && valid && input.enter)) {
             emit(FrontendCommand::CreateCharacter);
             intent.name = characterName;
@@ -649,7 +651,7 @@ struct RealmFrontend::Impl {
                 value[at] = '\n';
             return value;
         };
-        if (button("tall", 34, 467, tallCaption(22743), v.characters.size() < 18))
+        if (button("tall", 34, 467, tallCaption(22743)))
             emit(FrontendCommand::OpenCreateCharacter);
         button("tall", 234, 467, tallCaption(22742), false);
         if (button("tall", 434, 467, tallCaption(22744), !v.characters.empty()))

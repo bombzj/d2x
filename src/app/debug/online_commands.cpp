@@ -389,7 +389,8 @@ std::string onlineDebugCommand(const std::string &input, net::RealmSession &sess
                                RemoteControl &control, RemoteInventory &inventory, RemoteCombat &combat,
                                const std::function<void(bool, bool)> &automap, bool &presentationPaused,
                                const std::function<void(std::vector<FrameInput>)> &inputFrames,
-                               const std::function<std::optional<unsigned>(uint32_t, OnlineItemAction)> &quote) {
+                               const std::function<std::optional<unsigned>(uint32_t, OnlineItemAction)> &quote,
+                               const std::function<std::optional<std::string>(const Json &)> &hostCommand) {
     Json request;
     Credentials secrets{request, {}};
     try {
@@ -409,6 +410,7 @@ std::string onlineDebugCommand(const std::string &input, net::RealmSession &sess
         if (request.contains("interactionGeneration") &&
             request.at("interactionGeneration").get<uint64_t>() != session.read().world.interactionGeneration)
             return Json{{"ok", false}, {"error", "Stale online interaction generation"}}.dump();
+        if (auto response = hostCommand(request)) return *response;
         bool accepted = true, mutation = false;
         auto text = [&](const char *key, size_t limit, bool required = true) {
             auto value = required ? request.at(key).get<std::string>() : request.value(key, std::string{});
@@ -437,7 +439,7 @@ std::string onlineDebugCommand(const std::string &input, net::RealmSession &sess
             presentationPaused = command == "pause";
             control.cancelMovement();
             return Json{{"ok", true}, {"presentationPaused", presentationPaused},
-                {"networkRunning", true}, {"serverPaused", false}}.dump();
+                {"networkRunning", true}}.dump();
         } else if (command == "online-status" || command == "status" || command == "online-realms" ||
             command == "online-characters" || command == "online-games" || command == "online-world" ||
             command == "online-items" || command == "online-ground" || command == "online-combat" || command == "online-skills" ||

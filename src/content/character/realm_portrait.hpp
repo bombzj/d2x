@@ -30,6 +30,7 @@ class RealmPortraitCatalog {
 
   public:
     explicit RealmPortraitCatalog(Archives &);
+    Bytes encode(const ActorAppearance &, unsigned characterClass, unsigned level, uint16_t status) const;
     std::optional<RealmPortraitParts> decode(const OnlineCharacter &) const;
     std::optional<RealmPortraitParts> decode(const OnlineUnit &, const OnlineWorldView &, bool unequipped = false) const;
 };

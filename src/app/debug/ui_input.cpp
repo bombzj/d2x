@@ -53,6 +53,7 @@ std::vector<FrameInput> parseDebugInput(const nlohmann::json &request) {
         else if (key == "character") frame.character = true;
         else if (key == "quests") frame.quests = true;
         else if (key == "skill-tree") frame.skillTree = true;
+        else if (key == "f11") { frame.load = frame.control; frame.save = !frame.control; }
         else if (key.size() == 1 && key[0] >= '1' && key[0] <= '4') frame.belt[size_t(key[0] - '1')] = true;
         else if (key.size() == 2 && key[0] == 'f' && key[1] >= '1' && key[1] <= '8')
             frame.skills[size_t(key[1] - '1')] = true;

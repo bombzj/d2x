@@ -9,7 +9,7 @@ namespace d2x {
 // Placement is only the first DRLG phase: bounds do not prove terrain equivalence.
 struct NativeLevelPlacement {
     int level{}, x{}, y{}, width{}, height{}, direction{-1}, alignment{-1};
-    std::optional<int> presetVariant;
+    std::optional<int> presetVariant{};
     uint32_t outdoorFlags{};
     bool containsSubtile(int px, int py) const {
         return px >= x * 5 && py >= y * 5 && px < (x + width) * 5 && py < (y + height) * 5;

@@ -27,7 +27,7 @@ struct MapTerrain {
     struct Instance {
         int x{}, y{}, type{}, tile{};
         uint32_t flags{};
-        std::vector<int> frames;
+        std::vector<int> frames{};
         int speed{};
         size_t room{};
         bool wallArray{};
@@ -49,7 +49,7 @@ struct MapTerrain {
     std::vector<MapObject> clientObjects;
     struct Exit {
         int slot{}, destination{}; WarpRecord selection; Vec position;
-        std::vector<size_t> visible, lit;
+        std::vector<size_t> visible{}, lit{};
     };
     std::vector<Exit> exits;
     std::string name, path;

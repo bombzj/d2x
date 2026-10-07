@@ -2,7 +2,7 @@
 #include "contracts/online.hpp"
 #include "network/protocol/auth.hpp"
 #include "network/protocol/wire.hpp"
-#include "network/tcp_stream.hpp"
+#include "network/byte_transport.hpp"
 #include <chrono>
 #include <memory>
 #include <string>
@@ -42,6 +42,10 @@ struct GamePacket {
 class RealmSession {
   public:
     explicit RealmSession(bool retainGamePackets = false);
+    // Preauthenticated Realm admission (embedded host today). Native MCP/D2GS
+    // codecs, state reducer and all public gameplay commands remain unchanged.
+    void connect_realm(std::unique_ptr<IByteTransport> mcp, std::unique_ptr<IByteTransport> game,
+                       Endpoint realm, std::string name);
     ~RealmSession();
     RealmSession(const RealmSession &) = delete;
     RealmSession &operator=(const RealmSession &) = delete;

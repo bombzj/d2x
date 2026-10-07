@@ -16,7 +16,7 @@ RetailOutdoorLayout buildRetailOutdoorLayout(Archives &archives, const WorldCata
         throw std::runtime_error("Unsupported native outdoor macro generator");
     const auto &placement = act.levels.at(level);
     RetailOutdoorLayout result{placement,
-        RetailOutdoorGrid(placement.width, placement.height, act.startSeed, level), {}, 0};
+        RetailOutdoorGrid(placement.width, placement.height, act.startSeed, level), {}, 0, {}, {}};
     std::map<std::string, MapData> patterns;
     auto reader = [&](const std::string &path) -> const MapData & {
         const auto key = normalize(path);

@@ -4,6 +4,20 @@
 #include <stdexcept>
 
 namespace d2x {
+Bytes RealmPortraitCatalog::encode(const ActorAppearance &parts, unsigned characterClass, unsigned level, uint16_t status) const {
+    if (characterClass >= 7 || level < 1 || level > 99) throw std::runtime_error("Invalid realm portrait character");
+    Bytes bytes(33, 0xFF);
+    bytes[0] = 0x8D; bytes[1] = 0x80;
+    for (size_t part = 0; part < 11; ++part) {
+        const auto &token = parts.components[part];
+        if (token == "nil" || (part == 10 && token == "ne1")) continue;
+        for (size_t code = 1; code < codes_.size(); ++code)
+            if (!token.empty() && codes_[code].code == token) { bytes[2 + part] = uint8_t(code); break; }
+    }
+    bytes[13] = uint8_t(characterClass + 1); bytes[25] = uint8_t(level);
+    bytes[26] = uint8_t(0x80 | (status & 0x7F)); bytes[27] = uint8_t(0x80 | ((status >> 7) & 0x7F));
+    return bytes;
+}
 bool RealmPortraitCatalog::isType(const std::string &code, std::string_view target,
                                   std::set<std::string> &seen) const {
     if (code == target)

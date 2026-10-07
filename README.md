@@ -1,12 +1,12 @@
 # D2X — Diablo II: Lord of Destruction C++
 
-基于当前1.13c资料片MPQ的C++20联机客户端，连接既有PvPGN／D2CS／D2GS。正常链路为账号、Realm、服务器角色、房间与原服世界；角色保存由D2GS／D2DBS负责。产品没有单机入口，普通ESC／面板／失焦不暂停网络或原服。
+基于当前1.13c资料片MPQ的C++20客户端和自研权威内核。Single Player与既有PvPGN／D2CS／D2GS共用完整客户端及原MCP／D2GS协议，仅内存消息队列与TCP连接不同。单机角色／D2S由嵌入宿主保存，当前玩法为城镇行走；原服保持既有功能。当前Windows Release已构建打包，原协议单机选角／行走／存档有有限冒烟，范围见基线。
 
 [文档目录](docs/README.md) · [当前基线](BASELINE.md) · [代码架构](docs/architecture/OVERVIEW.md) · [协作约定](AGENTS.md)
 
 ## 当前范围
 
-局前、五幕原生地图、部分行走／打怪／库存／成长／任务与原图UI已接；世界、动画、输入、提示、自动地图和声音使用公共入口。完整职业效果、任务／服务、多人与Ladder仍未完成。最新源码与已交付包有差异，准确范围和未入包修正见[基线](BASELINE.md)，原服协议与有限证据见[联网模块](docs/modules/NETWORK.md)。
+局前、五幕原生地图、部分行走／打怪／库存／成长／任务与原图UI已接；世界、动画、输入、提示、自动地图和声音使用公共入口。完整职业效果、任务／服务、多人与Ladder仍未完成。当前包身份及有限覆盖见[基线](BASELINE.md)，原服协议与有限证据见[联网模块](docs/modules/NETWORK.md)。
 
 ## 构建与运行
 
@@ -18,9 +18,9 @@
 .\Play.cmd
 ```
 
-主菜单点击Battle.net登录／注册，选择服务器角色并建房／加入。先通过UI记忆登录后，`Play.cmd -OnlinePlay <角色名>`可正常认证、选角并一次创建随机普通房间；指定房间用-OnlineCharacter配-OnlineCreateGame或-OnlineJoinGame。失败或人工操作停止自动步骤，不绕过认证／取票或反复建房。
+主菜单Single Player进入同一原图角色列表，服务端管理本地D2S。Battle.net登录／注册，选择服务器角色并建房／加入。先通过UI记忆登录后，`Play.cmd -OnlinePlay <角色名>`可正常认证、选角并一次创建随机普通房间；指定房间用-OnlineCharacter配-OnlineCreateGame或-OnlineJoinGame。失败或人工操作停止自动步骤，不绕过认证／取票或反复建房。
 
-scripts/package.ps1更新固定dist/current，只复制已构建程序、脚本、文档与许可，不复制MPQ。已有包可在仓库根用 `dist/current/Play.cmd -Mpq assets/mpq2` 启动；偏好和截图归包目录，角色保存归原服。Windows有有限运行证据，Linux尚未实际编译／运行；构建与打包方法见[开发指南](docs/development/BUILD_AND_RUN.md)。
+scripts/package.ps1更新固定dist/current，只复制已构建程序、脚本、文档与许可，不复制MPQ。已有包可在仓库根用 `dist/current/Play.cmd -Mpq assets/mpq2` 启动；偏好和截图归包目录，Single Player角色由包目录saves保存，原服角色由原服保存。Windows有有限运行证据，Linux尚未实际编译／运行；构建与打包方法见[开发指南](docs/development/BUILD_AND_RUN.md)。
 
 ## 操作
 

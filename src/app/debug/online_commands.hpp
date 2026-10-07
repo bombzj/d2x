@@ -4,6 +4,7 @@
 #include "network/realm_session.hpp"
 #include <functional>
 #include <optional>
+#include <nlohmann/json_fwd.hpp>
 namespace d2x {
 class RemoteControl;
 class RemoteInventory;
@@ -15,5 +16,6 @@ std::string onlineDebugCommand(const std::string &, net::RealmSession &,
                                RemoteControl &, RemoteInventory &, RemoteCombat &,
                                const std::function<void(bool, bool)> &automap, bool &presentationPaused,
                                const std::function<void(std::vector<FrameInput>)> &input,
-                               const std::function<std::optional<unsigned>(uint32_t, OnlineItemAction)> &quote);
+                               const std::function<std::optional<unsigned>(uint32_t, OnlineItemAction)> &quote,
+                               const std::function<std::optional<std::string>(const nlohmann::json &)> &hostCommand);
 }

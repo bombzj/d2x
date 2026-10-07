@@ -38,9 +38,9 @@ cmake --build build --parallel
 
 构建已有EXE后，在项目根目录使用 `Play.cmd`，或运行 `build/bin/d2x.exe`。显式 `--mpq <目录或文件>` 优先；未指定时，依次搜索工作目录本身、EXE 所在目录本身、工作目录的 `assets/mpq2`，再搜索 EXE 所在目录及最多四级父目录中的 `assets/mpq2`。自动定位以 `d2data.mpq`／`D2Data.mpq` 为入口，找到首个目录即停止，挂载该目录全部 MPQ，不递归搜索子目录。工作目录与 EXE 所在目录可以不同。MPQ 不参与编译，但运行时必须可用。源码入口为 `CMakeLists.txt`、`cmake/` 和 `src/`；许可和素材来源见 `LICENSE`、[第三方说明](../resources/THIRD_PARTY.md) 及 `docs/licenses/`。
 
-当前源码普通启动及 `Play.cmd` 进入原图主菜单，由 Battle.net 登录／注册→Realm→服务器角色→创建或加入房间。Single Player、本地选角／D2S 与直进场景产品入口已移除；原用户文件继续保留。当前运行包及有限原服证据见项目基线。
+当前源码普通启动进入原图主菜单：Battle.net沿既有账号／Realm／角色／房间链；Single Player连接预认证嵌入Realm，复用原MCP选角及D2GS入局、城镇走跑和保存退局。F11保存、Ctrl+F11校验后重载；ESC／失焦暂停单机。角色、初始装备和D2S由服务端管理，战斗／库存操作等执行暂缓。Windows Release已构建打包，dist/current已更新；有限单机冒烟及未覆盖范围见[基线](../../BASELINE.md)。
 
-Windows EXE 需要同目录 `d2x_bncs_legacy.dll`。`--online-config <路径>` 指定配置，原版客户端文件只读参与认证；PvPGN 模式无需 CD-key。网络 worker 独立于菜单、资源加载和绘制持续推进，`--hidden` 也不会进入本地玩法。`--class/--load/--save/--seed/--map-seed/--population-seed/--level/--region/--difficulty` 等旧参数明确报错。
+Windows EXE 需要同目录 `d2x_bncs_legacy.dll`。`--online-config <路径>` 指定配置，原版客户端文件只读参与认证；PvPGN 模式无需 CD-key。网络 worker 独立于菜单、资源加载和绘制持续推进，`--hidden` 也不会进入本地玩法。`--load <file.d2s>`或`--class <MPQ职业名>`可启动嵌入宿主并通过原协议快捷入局，`--save <新file.d2s>`指定新目标；已存在目标拒绝覆盖，继续用--load。--seed／--map-seed／--population-seed／--level／--region／--difficulty等旧世界参数仍不可用。存储约束见[存档](../modules/SAVES.md)。
 
 先通过 UI 记忆一次账号，可简化重复入局：
 
@@ -55,7 +55,7 @@ Windows EXE 需要同目录 `d2x_bncs_legacy.dll`。`--online-config <路径>` �
 
 ESC 优先关闭面板，无面板时打开游戏菜单；Save and Exit 请求原服退局保存，成功离局返回服务器选角。关闭窗口／quit 仍持续服务退局交换至响应或期限后退出。测试 `pause/resume` 仅在显式调试管道启用，冻结客户端画面／界面输入，服务器与网络持续运行；不提供原服单步，恢复使用最新副本。详见[调试入口](DEBUG_PIPE.md)。
 
-聊天源码入口：局内Enter打开输入框，再次Enter发送普通ASCII消息，Esc取消；顶部每条独立显示10秒、最多15条，新消息在下，左侧面板打开时随边界右移。M或底栏Message Log打开消息历史，M／Esc／Close关闭，滚轮和滚动条翻阅；顶部过期不删除历史。聊天期间玩法输入被界面占用，原服和网络持续运行；实际回显来自服务器。当前聊天批未构建、运行或打包，已有dist/current不含这些入口；中文原编码、私聊／频道尚未接。
+聊天源码入口：局内Enter打开输入框，再次Enter发送普通ASCII消息，Esc取消；顶部每条独立显示10秒、最多15条，新消息在下，左侧面板打开时随边界右移。M或底栏Message Log打开消息历史，M／Esc／Close关闭，滚轮和滚动条翻阅；顶部过期不删除历史。聊天期间玩法输入被界面占用，原服和网络持续运行；实际回显来自服务器。聊天入口已入包，原服聊天的历史观察见联网模块交付记录；本次单机冒烟未复验聊天，中文原编码、私聊／频道尚未接。
 
 启动脚本不隐式构建：缺EXE时要求显式执行scripts/build.ps1。
 

@@ -57,12 +57,15 @@ Rectangle inventoryItemBounds(Cell cell, const ItemDefinition &definition) {
 }
 std::vector<ContainerGrid> inventoryGrids(const InventoryView &inventory, const InventoryUi &ui) {
     const auto &c = inventory.containers;
-    int rows = ui.open || ui.beltExpanded ? inventory.container(c.belt)->rows : 1;
-    auto belt = beltSlot({0, 0});
-    std::vector<ContainerGrid> grids{
-        {c.belt, {belt.x, belt.y}, {31 * hudScale, -32 * hudScale}, 4, rows, 29 * hudScale}};
+    std::vector<ContainerGrid> grids;
+    if (const auto *container = inventory.container(c.belt)) {
+        const int rows = ui.open || ui.beltExpanded ? container->rows : 1;
+        const auto belt = beltSlot({0, 0});
+        grids.push_back({c.belt, {belt.x, belt.y}, {31 * hudScale, -32 * hudScale},
+                         container->columns, rows, 29 * hudScale});
+    }
     if (ui.playerTradeOpen) grids.clear();
-    if (ui.open) {
+    if (ui.open && inventory.container(c.backpack)) {
         auto p = inventoryGrid();
         grids.push_back(
             {c.backpack, {p.x, p.y}, {inventoryCellSize, inventoryCellSize}, 10, 4, inventoryCellSize});

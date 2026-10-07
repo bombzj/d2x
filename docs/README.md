@@ -1,15 +1,17 @@
 # 文档目录
 
-修改前阅读[项目基线](../BASELINE.md)与[协作约定](../AGENTS.md)，再读对应模块。当前产品只运行D2GS联机；本地宿主与执行器已删除，原资源／纯显示函数／独立工具保留。文档不把历史离线行为或旧冒烟列作当前功能认证。
+修改前阅读[项目基线](../BASELINE.md)与[协作约定](../AGENTS.md)，再读对应模块。当前源码以原MCP／D2GS字节协议统一自研Single Player和原服客户端，并接服务端角色／D2S；Windows Release已构建打包，有限单机冒烟与覆盖限制见基线。历史离线行为或旧冒烟不作为新内核认证。
 
 ## 负责页面
 
 | 问题 | 唯一负责页面 |
 | --- | --- |
 | 当前范围、已交付包与未入包源码 | [BASELINE](../BASELINE.md) |
-| 功能顺序、未完成门槛、地图开发对照与本机参考服 | [联机计划](architecture/MULTIPLAYER.md) |
+| 自研内核三阶段、历史迁移资产、完成门槛、地图对照与本机参考服 | [内核与服务端总计划](architecture/MULTIPLAYER.md) |
 | 代码分工、实际链接与修改入口 | [架构](architecture/OVERVIEW.md)、[数据流](architecture/DATA_FLOW.md) |
 | 原协议、副本、适配与实际有限原服证据 | [联网模块](modules/NETWORK.md) |
+| 自研消息目录、领域处理器、stub状态与宿主管理边界 | [服务端协议](modules/SERVER_PROTOCOL.md) |
+| 内核子系统、状态所有权、命令／固定步／事务／可靠事件与空实现入口 | [内核子系统](modules/SERVER_SYSTEMS.md) |
 | 原版来源、固定版本与许可 | [资料来源](resources/THIRD_PARTY.md)、[MPQ](resources/MPQ.md)、[原许可](licenses) |
 | 启动、构建、打包与已有诊断 | [开发指南](development/BUILD_AND_RUN.md)、[调试管道](development/DEBUG_PIPE.md)、[崩溃记录](development/CRASH_REPORTS.md) |
 
@@ -19,7 +21,7 @@
 
 | 模块 | 内容 |
 | --- | --- |
-| [客户端](modules/CLIENT.md) | I*Client值契约、公共消费者与原服适配 |
+| [客户端](modules/CLIENT.md) | I*Client值契约、消息连接、公共消费者与两类后端适配 |
 | [人物](modules/CHARACTER.md) | 原属性／技能、纯提示投影、请求／保存值边界 |
 | [库存](modules/INVENTORY.md) | 原物品、面板／预览、异步组合与服务限制 |
 | [地图](modules/MAP.md) | 原房间／地形、碰撞、地图UI与本局探索 |

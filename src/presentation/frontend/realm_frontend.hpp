@@ -11,6 +11,7 @@ enum class FrontendPage { Main, Login, Register, Realms, Characters, CreateChara
 enum class FrontendCommand {
     None,
     Exit,
+    SinglePlayer,
     Online,
     Login,
     OpenRegister,

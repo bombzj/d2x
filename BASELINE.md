@@ -1,15 +1,28 @@
 # 项目基线
 
-更新：2026-10-07。以当前源码及 CMake 为准；开始修改前同时阅读 [AGENTS.md](AGENTS.md) 和[对应模块](docs/README.md)。
+更新：2026-10-08。开始修改前阅读[AGENTS.md](AGENTS.md)及[对应模块](docs/README.md)，实现状态以源码和CMake为准。
 
 ## 产品与代码边界
 
-D2X 是基于当前 1.13c 资料片 MPQ 的 D2GS 联机客户端。正常链路为 PvPGN 账号 → D2CS Realm／角色／房间 → D2GS 世界；角色与保存由 D2GS／D2DBS 管理。产品没有单机入口，不读取本地 D2S 恢复游戏，不在断线时回退本地玩法。
+D2X提供Single Player嵌入宿主与既有原服入口。**客户端从选角到入局后的所有逻辑只有一套**：RealmFrontend → RealmSession／RemoteWorld → RemoteTown／RemoteUiClients／RemoteScene → SceneController／SceneView。自研宿主收发原1.13c MCP／D2GS包，仅将TCP换成跨线程有锁、有界的MemoryTransport字节队列；已撤回GameClients、IGameConnection、LocalGame与GameScene分支。原服账号仍走PvPGN认证，单机连接预认证Realm；断线不切换权威。
 
-世界绘制、动画、鼠标／UI、人物／技能／任务提示、自动地图和声音均使用公共表现入口。Local 客户端、GameSession、Simulation、SkillRuntime、InventoryService 及本地 AI／伤害／掉落／任务奖励执行器已删除，d2x_session 目标已移除；presentation 不链接会话，产品不链接 persistence。保留供联机显示、地图、原资源报告和独立 D2S 工具使用的纯函数与值类型。依赖及文件归属见[架构](docs/architecture/OVERVIEW.md)。
+服务端拆分为hosting协议／存储／内容准备／实例调度和server领域内核。GameInstance组装AreaStore、PlayerStore、GameSystems、类型化命令FIFO、固定步与事件输出；领域通过窄Ports协作，不向会话类堆放规则。新增26个子系统骨架，覆盖物品／库存／工艺、怪物／人口／AI、战斗／技能／效果、掉落／成长、任务／NPC／交易／旅行等；当前仅原有玩家入场与移动执行，其余显式NotImplemented。25Hz内核不读取MPQ、设备、GPU、socket或文件。内部投影及可靠事件仅供宿主编码原包；地图两端仍共用NativeMapGenerator及reveal顺序。所有权和扩展入口见[内核子系统](docs/modules/SERVER_SYSTEMS.md)。
 
-UI 只读副本并提交原协议意图。移动预测、弹体接触和提示计算只影响画面；伤害、消耗、升级、任务、库存与保存由原服结算。未知字段显示 `?` 或明确不可用。ESC、面板、失焦及加载不暂停网络或原服；显式调试 `pause/resume` 仅冻结客户端表现。
+Single Player现经同一MCP原图角色界面列出、创建、删除和选择服务端saves目录的D2S角色，然后自动建普通单人房、进入保存所在幕的城镇走跑。master已有支持范围的D2S编解码保留，PersistentCharacter与存档路径均属服务端；初始角色和物品读取MPQ。整局持有角色锁，保存校验后原子替换并保留.bak，失败保留实例和锁，不发送退局成功。F11保存、Ctrl+F11校验后原协议退局重入，以及--load／--save／--class宿主启动入口已接；具体约束见[存档](docs/modules/SAVES.md)。
 
+当前自研玩法仍为行走切片。库存、技能／任务／佣兵／尸体／铁魔等数据可保留在存档，尚未恢复对应执行系统；人物总值与移动先采用职业基础属性，装备／被动结算待恢复，不再用存档当前资源伪造资源上限。单机ESC／失焦暂停该实例；原服照常推进。后续顺序见[总计划](docs/architecture/MULTIPLAYER.md)。
+
+自研消息基础已覆盖现有客户端60种C2S、90种S2C及MCP目录，分传输、生命周期、六个领域具名入口；未实现请求记录stub，入场投影与完整实现分开，未注册包拒绝。named pipe已接服务端save／load／step及只读server-status／server-protocol；其余管理修改有类型化stub，原服连接不可调用。角色名不截断／替换，无法表示的文件名进入诊断；候选重载复用准备结果，静止重复发包和地图多余复制已移除。接口与限制见[服务端协议](docs/modules/SERVER_PROTOCOL.md)。
+
+## 当前运行包与有限冒烟
+
+2026-10-08按用户授权完成Windows Release构建和dist/current打包，包含原协议统一、服务端角色／D2S及26个新子系统骨架。首次编译发现资源与协议Reader同名冲突，已显式限定协议类型；补齐地图空容器初始化及现有调试脚本的宿主管理命令白名单后重新构建通过，最后增量构建无warning或error。构建目录与包内EXE／DLL的SHA256一致：EXE `B2CF206B48EC211BC238171F4138E7C0466543A2B9C79914D7809CA8F2283090`；DLL `E96C38DE1911BF24292EE726BB1CF862E7D1CF0D0DF816EDE565A213667B0CBD`。
+
+冒烟直接运行包内d2x.exe，通过现有named pipe与正常UI输入，角色和偏好隔离到`artifacts/kernel-smoke-20261008`。已查看首页Single Player、共用选角、营地人物／HUD及Battle.net登录页；原MCP创建／列出／选择／删除临时角色、自动建房／入局、走跑、暂停／恢复、暂停后25帧权威步进、save生成D2S及.bak、load经原退局重入、正常退出保存／释放角色锁和再次入局均有观察。独立进程--load生成的D2S后地图／人物／碰撞再次就绪，正常退出码0，两个进程stderr为空。
+
+原包计数记录60项C2S、90项S2C和9项MCP请求；实际走跑分别收到原01／03请求，SelectSkill与RequestQuests记录stub，grant-gold明确返回未实现。server-systems列出28项；movement固定步完成，接入固定步的新领域返回not-implemented，仅命令／提交入口的lastStep保持空。样本宿主failures和已收请求malformed均为0。有限冒烟不认证26个骨架的玩法、全部消息处理、所有职业／幕／存档、文件冲突恢复、多实例并发、原服登录与游戏回归或Linux。未新增测试脚本，资源、存档和运行产物不纳入源码提交。
+
+旧临时行走包证据保留在`artifacts/single-player-smoke-20261007/fixed`；下文既有原服交付记录只代表各自当时的运行包。既有NPC菜单、HUD和库存容器防护修改保留。
 ## 已接入范围与限制
 
 | 领域 | 当前范围 | 主要缺口 |
@@ -21,9 +34,11 @@ UI 只读副本并提交原协议意图。移动预测、弹体接触和提示�
 | 任务／死亡 | 本人 27 项任务投影、NPC 原对白／提示、死亡 ESC 请求回城、本人尸体取回与原服保存重入 | 完整五幕剧情／领奖／资格、真墓符号、专家／多尸体／部分回收 |
 | 多人／表现 | 双账号同房互见、真实装备／裸装、走跑／施法、姓名悬停及退局清理；名册／关系只读副本，公共原图入口；普通ASCII局内聊天／M日志、原图玩家交易面板及原服物品／金币请求 | 队伍／频道／私聊UI、完整交易验收／协作／PvP；七职业全部动作、聊天原编码及实机验收、精确光照／染色／空间音频与跨机器 |
 
-表中“已接入”不等于全部原版行为验收。协议与有限运行证据只维护在[联网模块](docs/modules/NETWORK.md)，功能顺序只维护在[联机计划](docs/architecture/MULTIPLAYER.md)。当前按用户要求优先Join及双账号多玩家场景；女巫原表与提示沿用已有实现。
+表中范围为既有原服路径，“已接入”不等于全部原版行为验收。协议与有限运行证据只维护在[联网模块](docs/modules/NETWORK.md)，新内核功能顺序只维护在[总计划](docs/architecture/MULTIPLAYER.md)。当前优先自研内核架构及最小行走，女巫原表与提示沿用已有实现。
 
-## 源码与运行包
+## 既有原服源码与历史交付
+
+NPC服务／Talk及交易邀请共用菜单源码已取消额外W/800文字／布局放大，OriginalMenu按MPQ原像素绘制，测宽、行距、边框及点击区域共用原尺寸。依据用户Kashya截图修正；现随2026-10-08构建入包，具体原服菜单未在本次冒烟复验。入口及范围见[NPC模块](docs/modules/NPC_QUEST.md)。
 
 2026-10-07当前源码已按用户授权完成Windows Release构建、更新dist/current和有限原服冒烟，包含下列角色／HUD／Join／技能树／祭坛及野外物件修正。当前包身份、失败样本及覆盖限制以[联网交付记录](docs/modules/NETWORK.md#当前批交付)为准；旧段落中的未构建及未提交表述仅描述历史阶段。源码提交排除原资源、参考仓库及运行产物。
 
@@ -78,7 +93,7 @@ UI 只读副本并提交原协议意图。移动预测、弹体接触和提示�
 
 ## 资源、工具与维护入口
 
-原 MPQ 位于 `assets/mpq2`，资源摘要及已知 Trees.ds1 尾部兼容见 [MPQ](docs/resources/MPQ.md)；原版规则先查本地 reference，固定版本／许可见[资料来源](docs/resources/THIRD_PARTY.md)。独立 `d2x_assets` 保留原资源、地图／掉落报告与 `save-info`，D2S v96 值定义在 persistence，不参与联机保存。
+原 MPQ 位于 `assets/mpq2`，资源摘要及已知 Trees.ds1 尾部兼容见 [MPQ](docs/resources/MPQ.md)；原版规则先查本地 reference，固定版本／许可见[资料来源](docs/resources/THIRD_PARTY.md)。独立 `d2x_assets` 保留原资源、地图／掉落报告与 `save-info`，D2S v96编解码由persistence提供，PersistentCharacter位于gameplay；用于嵌入宿主保存，原服仍由D2GS／D2DBS保存。
 
 原资源、reference、旧包、mvp 与用户文件保留，不纳入源码提交。本机参考服及启动入口在 `artifacts/d2gs-local`；旧材料位于 `artifacts/archive/history-source`，另保留 `history-20261005.zip`、校验索引及 `preserved-files`。历史诊断、截图、资源导出和临时构建目录已移至 `artifacts/trash/<原目录名>`，移动清单见 `artifacts/trash/cleanup-20261007.json`；当前大厅修正及两批最新运行证据仍保留在 artifacts 顶层。文档中的旧 artifacts 路径按归档或 trash 相对路径查找。
 

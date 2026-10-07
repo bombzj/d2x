@@ -8,6 +8,10 @@ void SceneController::toggleInventory() {
     auto &ui = view_.ui();
     ui.skillPicker.reset();
     ui.skillTreeOpen = false;
+    if (!ui.inventory.open && !view_.inventoryView().container(view_.inventoryView().containers.backpack)) {
+        view_.notice("Inventory is not available in this game.", true);
+        return;
+    }
     if (!ui.inventory.open && view_.inventoryView().dead) {
         view_.notice("Recover before opening your inventory.", true);
         return;
@@ -269,7 +273,8 @@ bool SceneController::handleInventory(const FrameInput &input) {
         return true;
     }
     const auto &containers = view_.inventoryView().containers;
-    int rows = ui.open || ui.beltExpanded ? inventory.container(containers.belt)->rows : 1;
+    const auto *belt = inventory.container(containers.belt);
+    int rows = belt && (ui.open || ui.beltExpanded) ? belt->rows : 1;
     auto grids = inventoryGrids(inventory, ui);
     const ContainerGrid *hitGrid = nullptr;
     std::optional<Cell> cell;
@@ -283,7 +288,7 @@ bool SceneController::handleInventory(const FrameInput &input) {
     auto equipmentSlot = ui.open && !ui.playerTradeOpen ? equipmentAt(input.mouse, inventory.weaponSet)
                                  : std::nullopt;
     bool equipment = equipmentSlot.has_value();
-    bool inBelt = CheckCollisionPointRec(rv(input.mouse), beltBounds(rows));
+    bool inBelt = belt && CheckCollisionPointRec(rv(input.mouse), beltBounds(rows));
     if (!input.insideViewport || (!inBelt && !inventorySurface(ui, input.mouse)))
         return inventoryClick_;
     if (input.rightHeld)

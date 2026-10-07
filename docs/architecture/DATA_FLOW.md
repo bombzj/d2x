@@ -1,21 +1,28 @@
 # 数据流与生命周期
 
-当前产品只运行联机。模块所有权见[架构](OVERVIEW.md)，字段／协议见[联网模块](../modules/NETWORK.md)。
+更新：2026-10-08。本轮统一原协议客户端与服务端D2S入口，Windows Release构建打包及有限单机冒烟完成，覆盖限制见[基线](../../BASELINE.md#当前运行包与有限冒烟)。范围见[总计划](MULTIPLAYER.md)，库边界见[架构](OVERVIEW.md)。
 
-| 数据 | 当前流向 | 生命周期与权威边界 |
+| 数据 | 流向 | 所有权与限制 |
 | --- | --- | --- |
-| 内容 | Archives → resources 解码 → content 只读定义 | 当前 MPQ 是图形、表和文字来源；不加载参考仓库附带数据 |
-| 会话 | 局前 UI／command → RealmSession worker → SID／MCP／D2GS | worker 串行推进网络；tick 发布客户端稳定快照，连接／游戏代次隔离旧事件 |
-| 地图 | 原种子／幕／有序房间事件 → RemoteTown → NativeMapGenerator → 活动 Map／Grid | 0x07／08维护视野引用；位置选择当前区域。历史缺口或锚点失败停止显示／移动，要求重入 |
-| 单位 | 原回包 → RemoteWorld → RemoteScene 帧投影 | type＋GUID 与代次确定身份；模式、坐标、生命属于副本，显示插值独立 |
-| 输入 | FrameInput → SceneController → I*Client → RemoteUiClients／RemoteControl／Combat／Inventory → 原请求 | 按住／释放／失焦在控制器统一；提交成功与原服执行成功分开 |
-| 技能／成长 | 原属性／技能／状态 + MPQ → projectCharacterDisplay → 面板／HUD；意图反向提交 | 纯显示公式不执行技能、扣蓝、升级或奖励；不足输入保留未知 |
-| 库存 | 原物品位流／增量 → RemoteInventory → InventoryView → 公共面板 | 原 GUID／revision 和交互上下文逐步确认；不以本地预览提交事务 |
-| 任务／NPC | 本人任务字／日志状态／原对白 → quest_projection／RemoteUiClients → 公共界面 | 公共任务字独立；不从地图种子或旧任务执行器推断本人资格 |
-| 声音／动画 | 原服事件／本人显示衔接 → 公共表现事件 → ActorAnimation／SceneAudio | MPQ 声音选择与播放规则统一；显示时钟和 GPU／声音实例不进入副本 |
-| 探索 | 活动地形／可见 DT1 → AutomapExploration → AutomapDrawView | 城镇全揭示，野外记忆实际可见格；同局换区保留，新局清空；产品不读写 .d2xmap |
-| 保存 | 原退局请求 → D2GS／D2DBS → 退局结果 | 客户端不读写服务器 D2S；无确认时保存未知，不本地补写 |
-| 独立工具 | MPQ + D2S → persistence 解码 → d2x_assets save-info | 仅诊断值，无角色恢复入口；格式与拒绝边界见[存档](../modules/SAVES.md) |
-| 客户端偏好 | UI → app/client_preferences → client-settings.json | 原子文件替换；与角色 D2S、服务器保存和探索记忆分离 |
+| 连接 | app → RealmSession → TcpStream或MemoryTransport | 内存跨线程只传原字节；账号认证或预认证Realm在连接入口选择 |
+| 角色列表／建删选角 | RealmFrontend ↔ RealmSession原MCP ↔ 原Realm或EmbeddedRealm → CharacterStore | UI只有OnlineCharacter；服务端映射名称到目录身份及版本，客户端不能传路径 |
+| 初始角色 | MPQ CharStats／Items → character_creation → D2S | 真实职业属性、初始物品与原来源技能，不自造参数 |
+| 入局 | 原MCP建房／票据 → 原GS握手 → nativeGameAdmission | 准备碰撞和完整可编码状态后才接受；旧连接及不匹配票据拒绝 |
+| 地图 | LOADACT／0x07 → RemoteTown → NativeMapGenerator | 与宿主generateArea使用同一生成器和房间顺序；两侧不共享可变Map |
+| 移动 | SceneController → RemoteControl → 原01／03 → 原协议适配 → GameHost → GameInstance FIFO | 服务端25Hz寻路／碰撞；内部序号和绑定由宿主产生 |
+| 内核命令 | 原包具名处理器 → GameCommand → command_dispatch → 领域System／Ports | 来源区域及代次在入队和执行时核对；新增领域Scaffold返回NotImplemented |
+| 子系统固定步 | GameInstance → runtime/simulation → 各领域step | 同一25Hz，记录明确的未实现状态；现仅移动有执行，具体顺序见[内核子系统](../modules/SERVER_SYSTEMS.md) |
+| 领域输出 | 事务／投影 → EventOutbox → GameHost.pendingEvents → hosting原包编码 | 查询不消费、成功接入可靠发送后确认；通用领域投影尚未实现，不直接发送C++事件 |
+| 状态 | 内核内部投影 → 原0D／0F等 → RemoteWorld → RemoteScene／SceneView | 客户端预测和显示不回写权威；无自研快照旁路 |
+| 物品 | PersistentCharacter → 原9D位流 → RemoteInventory → InventoryView | 网络位流与D2S JM记录不同；客户端解码、面板和手势共用原服链 |
+| 技能／任务 | 原属性／技能／任务字 + MPQ → 公共人物／任务投影 | 保存值保留；自研技能、奖励和库存事务执行仍待领域迁移 |
+| 存档 | 服务端租约 → 导出PersistentCharacter → persistence校验 → 原子替换／.bak | 全部写入由宿主发起；存档不含整局AI、路径、弹体等运行态 |
+| 退局 | 客户端原69 → 宿主保存成功 → 原B0 → MCP重新列角 | 失败保留实例及租约，客户端不会得到成功确认；可修复后重试 |
+| 单机暂停 | app窗口／菜单策略 → GameHost.pause | 清路径和未执行移动，恢复不补暂停时间；不暂停原服 |
+| 开发保存／重载 | F11／Ctrl+F11或pipe save／load → AdminRequest → 宿主 → 原协议重新入局 | 同一类型化管理接口；重载准备并保留候选实例，校验重新选角的版本后复用 |
+| 开发单步／诊断 | pipe step／server-status／server-protocol／server-systems → 宿主管理 | step仅推进已暂停的权威实例；系统诊断显示目录／阶段／stub，不用于客户端世界同步，不给原包追加字段 |
+| 探索／偏好 | 公共AutomapExploration与client-settings.json | 探索当前为本局，偏好独立保存；不把客户端偏好当D2S |
 
-跨帧缓存不保存当前副本容器的可失效指针；同步绘制输入只在当帧借用。死亡、换区、退局及交互变化清理相应未发送意图；取消本地队列不能撤销已执行的原服结果。普通 UI 不暂停网络／原服，显式测试暂停仅冻结表现。
+内存队列有锁和容量限制；MCP／D2GS消费不能假定一次send就是一个完整包。重连清旧字节、递增代次；内核玩家绑定从服务端票据取得。GameHost内部快照只供协议适配读取，可靠服务响应不能由覆盖式邮箱取代。
+
+嵌入宿主当前由窗口帧调度，固定步单次最多补8步；未来共享房间需独立于窗口的宿主线程。客户端始终使用同一个网络worker、地图副本、输入控制、动画、声音和绘制循环。

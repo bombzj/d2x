@@ -78,14 +78,17 @@ uint16_t Grid::movementMask(int x, int y, EntityId ignored) const {
         const auto &other = *neighbour.grid;
         if (nx >= 0 && ny >= 0 && nx < other.width && ny < other.height) {
             const size_t index = size_t(ny) * other.width + nx;
-            return other.terrainCollision[index] | other.objectMask(nx, ny, ignored) |
+            const uint16_t terrain = other.fullTerrainCollision.empty()
+                ? other.terrainCollision[index] : other.fullTerrainCollision[index];
+            return terrain | other.objectMask(nx, ny, ignored) |
                 (other.blocked[index] && !(other.terrainCollision[index] & 0x09) ? 0x01 : 0);
         }
     }
     if (x < 0 || y < 0 || x >= width || y >= height) return 0xffff;
     const size_t index = size_t(y) * width + x;
     // Coarse outdoor planning grids have blocked cells without DT1 flags.
-    return terrainCollision[index] | objectMask(x, y, ignored) |
+    const uint16_t terrain = fullTerrainCollision.empty() ? terrainCollision[index] : fullTerrainCollision[index];
+    return terrain | objectMask(x, y, ignored) |
         (blocked[index] && !(terrainCollision[index] & 0x09) ? 0x01 : 0);
 }
 bool Grid::movementClear(int x, int y, MovementCollisionRule rule, EntityId ignored) const {

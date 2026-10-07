@@ -316,7 +316,7 @@ MapRecipe RoomMaze::build(int level, uint32_t seed, int difficulty, int entrance
                 [](const auto &room) { return room.preset == 167; });
             if (entrance == rooms_.end()) throw std::runtime_error("Missing barracks entrance");
             result.pieces.push_back({(entrance->x - minX) * maze_.width,
-                (entrance->y - minY) * maze_.height, maze_.width, maze_.height, 167, entranceDirection});
+                (entrance->y - minY) * maze_.height, maze_.width, maze_.height, 167, entranceDirection, {}, {}});
             connectBarracks(court, result, courtPlacement.width, courtPlacement.height);
             result.pieces.clear();
             result.boundaries.clear(); // The recipe adapter connects regions once.

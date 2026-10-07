@@ -3,5 +3,5 @@
 #include "options.hpp"
 #include <raylib.h>
 namespace d2x {
-void runOnlineFrontend(Archives &, RenderTexture2D, const AppOptions &);
+void runFrontend(Archives &, RenderTexture2D, const AppOptions &);
 }
