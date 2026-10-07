@@ -2,6 +2,7 @@
 #include "remote_social.hpp"
 #include "network/protocol/bits.hpp"
 #include <algorithm>
+#include <bit>
 #include <chrono>
 
 namespace d2x::net {
@@ -31,6 +32,11 @@ OnlineUnit &unit(OnlineWorldView &w, OnlineUnitKey k) {
 void combatEvent(OnlineWorldView &w, OnlineCombatEvent event) {
     if (event.kind == OnlineCombatEvent::Kind::Skill &&
         (event.packet == 0x4C || event.packet == 0x4D || event.packet == 0x99 || event.packet == 0x9A)) {
+        // ObjMode also sends 0x4D for shrine operation: the apparent skill
+        // is the activating player's GUID and level is the shrine type.
+        // Only players and monsters carry skill actions. Objects retain
+        // their authoritative 0x0E mode and must not emit a spell effect.
+        if (event.source.type > 1) return;
         auto &actor = unit(w, event.source);
         actor.actionSkill = event.skill; actor.actionSkillLevel = event.level;
         actor.actionRevision = w.revision; actor.actionReceivedMilliseconds = receivedMilliseconds();
@@ -90,6 +96,7 @@ void playerMode(OnlineView &v, const OnlineUnit &u) {
     const bool dying = u.nativeMode ? u.mode == 0 : u.mode == 8;
     const bool dead = u.nativeMode ? u.mode == 17 : u.mode == 9;
     if (dying || dead) {
+        if (w.playerTrade.active()) { ++w.interactionGeneration; w.playerTrade = {}; }
         if (w.npcRequested || w.npcConversation || w.waypointSource || w.waypointRequested) ++w.interactionGeneration;
         if (!onlinePlayerDead(w)) w.respawnRequest.reset();
         const auto phase = dead || w.deathPhase == OnlineDeathPhase::Dead ? OnlineDeathPhase::Dead : OnlineDeathPhase::Dying;
@@ -123,6 +130,7 @@ void resurrectionUpdates(OnlineView &v) {
 }
 void removePlayer(OnlineWorldView &w) {
     ++w.interactionGeneration;
+    w.playerTrade = {};
     w.waypointSource.reset();
     w.waypointRequested.reset();
     w.npcRequested.reset(); w.npcConversation.reset(); w.movementRequest.reset();
@@ -214,6 +222,8 @@ void equipment(OnlineView &v, const Packet &p) {
 }
 void removeItem(OnlineWorldView &world, uint32_t id);
 void itemPacket(OnlineView &v, const Packet &p) {
+    if (v.world.playerTrade.phase == OnlinePlayerTrade::Phase::Open)
+        v.world.playerTrade.revision = v.world.revision;
     Reader r(p.body);
     OnlineItem item;
     item.action = r.u8();
@@ -236,6 +246,12 @@ void itemPacket(OnlineView &v, const Packet &p) {
     } else {
         item.body = uint8_t(bits.read(4)); item.x = uint8_t(bits.read(4));
         item.y = uint8_t(bits.read(4)); item.page = uint8_t(bits.read(3));
+    }
+    // PlrTrade sub_6FC931D0 / ItemMode sub_6FC446B0 remove the peer's
+    // INVPAGE_EQUIP clone with ONCURSOR mode, but never assign its cursor.
+    if (item.action == 5 && item.mode == 4 && item.page == 2) {
+        removeItem(v.world,item.id);
+        return;
     }
     if (item.flags & 0x10000) item.code = "ear"; // Original ear payload is decoded in the MPQ consumer.
     else {
@@ -293,9 +309,17 @@ void removeItem(OnlineWorldView &world, uint32_t id) {
     });
     ++world.itemRevision;
 }
+void removeRemotePlayerItems(OnlineWorldView &world, uint32_t owner) {
+    std::vector<uint32_t> items;
+    for (const auto &[id, item] : world.items)
+        if (item.ownerType == 0 && item.owner == owner) items.push_back(id);
+    for (const auto id : items) removeItem(world, id);
+    std::erase_if(world.equipment, [&](const auto &entry) { return entry.second.owner == owner; });
+}
 } // namespace
 void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
     auto &w = v.world;
+    const auto previousItems = w.itemRevision;
     ++v.revision;
     ++w.revision;
     if (apply_social_packet(v, p) && p.id != 0x5C) return;
@@ -351,9 +375,11 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
             if (w.shopSource == k.id) w.shopSource.reset();
         }
         if (k.type == 0) {
+            if (w.playerTrade.peer == k.id) { ++w.interactionGeneration; w.playerTrade = {}; }
             std::erase_if(w.equipment, [&](const auto &e) { return e.second.owner == k.id; });
             if (v.load.playerUnitId == k.id)
                 removePlayer(w);
+            else removeRemotePlayerItems(w, k.id);
         }
         break;
     }
@@ -374,7 +400,7 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
             }
             if (v.load.playerUnitId == k.id && u.position)
                 playerPosition(w, *u.position);
-            else if (w.playerPosition)
+            else if (v.load.playerUnitId == k.id && w.playerPosition)
                 position(v, u, *w.playerPosition);
             playerMode(v, u);
         }
@@ -401,7 +427,7 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
         u.mode = r.u8();
         u.nativeMode = false; u.actionSkill.reset(); u.actionSkillLevel.reset();
         position(v, u, point(r));
-        r.u8();
+        u.hitClass = r.u8();
         u.lifePercent = r.u8(); u.lifeCarriesRankFlag = false;
         u.actionRevision = w.revision; u.actionReceivedMilliseconds = receivedMilliseconds();
         r.finish();
@@ -522,6 +548,15 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
             else if (attribute == 10) w.respawnRequest->restoredResources |= 4;
             resurrectionUpdates(v);
         }
+        break;
+    }
+    case 0x20: {
+        auto &entry = unit(w, {0, r.u32()});
+        // The current 1.13c length table has a byte stat ID. D2MOO's
+        // extended PacketStatId is a word and must not be used on this wire.
+        const auto attribute = r.u8();
+        entry.attributes[attribute] = std::bit_cast<int32_t>(r.u32());
+        r.finish();
         break;
     }
     case 0x21: {
@@ -660,6 +695,34 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
     }
     case 0x77: {
         const auto action = r.u8(); r.finish();
+        auto &trade = w.playerTrade;
+        if (action == 0 || action == 1) {
+            trade = {};
+            trade.phase = action == 0 ? OnlinePlayerTrade::Phase::Outgoing : OnlinePlayerTrade::Phase::Incoming;
+            trade.revision = w.revision; trade.lastAction = action;
+            ++w.interactionGeneration;
+            w.movementRequest.reset();
+            w.npcRequested.reset(); w.npcConversation.reset();
+            w.waypointRequested.reset(); w.waypointSource.reset();
+            w.storage = {}; w.shopRequested.reset(); w.shopSource.reset(); w.shopGamble = false;
+            if (w.itemRequest && w.itemRequest->state == OnlineItemRequest::State::Pending)
+                w.itemRequest->state = OnlineItemRequest::State::Interrupted;
+        } else if (action == 6 && trade.active()) {
+            if (trade.phase != OnlinePlayerTrade::Phase::Open) ++w.interactionGeneration;
+            trade.phase = OnlinePlayerTrade::Phase::Open;
+            if (trade.response != OnlinePlayerTrade::Response::GoldSent)
+                trade.response = OnlinePlayerTrade::Response::None;
+            trade.ownAgreed = trade.peerAgreed = false;
+            trade.revision = w.revision; trade.lastAction = action;
+        } else if (action == 12 || action == 13) {
+            if (trade.active()) ++w.interactionGeneration;
+            trade = {}; trade.revision = w.revision; trade.lastAction = action;
+        } else if (trade.active() && (action == 5 || action == 9 || action == 10 || action == 14 || action == 15)) {
+            if (action == 5) trade.peerAgreed = true;
+            if (action == 14 || action == 15) trade.agreementLocked = action == 14;
+            if (action == 9 || action == 10) trade.ownAgreed = trade.peerAgreed = false;
+            trade.revision = w.revision; trade.lastAction = action;
+        }
         if ((action == 16 && w.storage.requested == OnlineStorageKind::Stash) ||
             (action == 21 && w.storage.requested == OnlineStorageKind::Cube)) {
             w.storage.kind = w.storage.requested; w.storage.source = w.storage.requestedSource;
@@ -669,6 +732,29 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
             ++w.interactionGeneration;
             w.storage.kind = OnlineStorageKind::None; w.storage.source.reset(); w.storage.revision = w.revision;
         }
+        break;
+    }
+    case 0x78: {
+        const auto peerName = name(r);
+        const auto peer = r.u32(); r.finish();
+        if (peer == UINT32_MAX || peer == v.load.playerUnitId || peerName.empty() ||
+            !std::all_of(peerName.begin(), peerName.end(), [](unsigned char c) { return c >= 32 && c < 127; }))
+            throw ProtocolError("Invalid trade player identity");
+        if (w.playerTrade.phase == OnlinePlayerTrade::Phase::Open) {
+            w.playerTrade.peer = peer; w.playerTrade.peerName = peerName;
+            w.playerTrade.revision = w.revision;
+        } else ++w.ignoredPackets;
+        break;
+    }
+    case 0x79: {
+        const auto side = r.u8(); const auto amount = r.u32(); r.finish();
+        if (side > 1) throw ProtocolError("Invalid player trade gold side");
+        auto &trade = w.playerTrade;
+        if (trade.phase != OnlinePlayerTrade::Phase::Open) { ++w.ignoredPackets; break; }
+        (side ? trade.ownGold : trade.peerGold) = amount;
+        if (side && trade.response == OnlinePlayerTrade::Response::GoldSent)
+            trade.response = OnlinePlayerTrade::Response::None;
+        trade.revision = w.revision;
         break;
     }
     case 0x4C:
@@ -738,7 +824,13 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
     case 0x59: {
         auto &u = unit(w, {0, r.u32()});
         u.classId = r.u8();
+        if (*u.classId >= 7) throw ProtocolError("Invalid assigned player class");
         u.name = name(r);
+        u.assignmentRevision = w.revision;
+        // SUNITMSG_FirstFn assigns an empty player inventory before sending
+        // its equipped items. An empty equipment stream is a valid naked
+        // character, not a missing appearance. Do not erase preceding gear.
+        u.equipmentObserved = true;
         if (!u.mode || (v.load.playerUnitId == u.key.id && w.respawnRequest && w.respawnRequest->sent &&
                        onlinePlayerDead(w))) {
             u.mode = 7; // Native player assignment starts neutral.
@@ -750,6 +842,7 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
         playerMode(v, u);
         break;
     }
+    case 0x74:
     case 0x8E: {
         const auto assign = r.u8(); const auto owner = r.u32(), corpse = r.u32(); r.finish();
         if (assign > 1 || owner == corpse) throw ProtocolError("Invalid native corpse assignment");
@@ -763,10 +856,12 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
     case 0x5C: {
         const auto id = r.u32();
         r.finish();
+        if (w.playerTrade.peer == id) { ++w.interactionGeneration; w.playerTrade = {}; }
         w.units.erase({0, id});
         std::erase_if(w.equipment, [&](const auto &e) { return e.second.owner == id; });
         if (v.load.playerUnitId == id)
             removePlayer(w);
+        else removeRemotePlayerItems(w, id);
         break;
     }
     case 0x60: {
@@ -992,5 +1087,7 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
         ++v.gameProtocol.unconsumed[p.id];
         return;
     }
+    if (w.itemRevision != previousItems && w.playerTrade.phase == OnlinePlayerTrade::Phase::Open)
+        w.playerTrade.revision = w.revision;
 }
 } // namespace d2x::net

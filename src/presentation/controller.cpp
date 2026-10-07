@@ -138,7 +138,12 @@ bool SceneController::handlePanels(const FrameInput &input, float elapsed) {
         if (auto button = view_.miniPanelAt(input.mouse)) {
             if (input.leftPressed) {
                 inventoryClick_ = true;
-                if (*button == 4 || *button == 7) {
+                if (*button == 7) {
+                    ui.messageLogOpen = true;
+                    ui.miniPanelOpen = false;
+                    return true;
+                }
+                if (*button == 4) {
                     view_.notice("This panel action is not available yet.", true);
                     return true;
                 }
@@ -220,7 +225,7 @@ bool SceneController::handlePanels(const FrameInput &input, float elapsed) {
     if (ui.skillTreeOpen && input.insideViewport &&
         CheckCollisionPointRec(rv(input.mouse), classicSideBounds(true))) {
         if (input.leftPressed) {
-            if (CheckCollisionPointRec(rv(input.mouse), skillTreeClose()))
+            if (CheckCollisionPointRec(rv(input.mouse), skillTreeClose(view_.characterView(), ui.skillPage)))
                 ui.skillTreeOpen = false;
             else {
                 bool switched = false;
@@ -232,7 +237,8 @@ bool SceneController::handlePanels(const FrameInput &input, float elapsed) {
                     }
                 if (!switched)
                     if (auto skill = view_.skillAt(input.mouse))
-                        characterClient_.submit(AllocateSkill{*skill});
+                        if (const auto *entry = view_.characterView().skill(*skill); entry && entry->canAllocate)
+                            characterClient_.submit(AllocateSkill{*skill});
             }
         }
         return true;
@@ -295,6 +301,11 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
         inventoryRight_ |= input.rightPressed;
     }
     temporaryRun_ = input.control && !input.showLoot;
+    if (ui.inventory.playerTradeOpen) {
+        if (ui.playerTradeEditable) handleInventory(input);
+        else ui.inventory.cancelGesture();
+        return true;
+    }
     if (ui.gameMenuOpen) return handleMenu(input);
     if (input.escape && mapClient_.read().travelRequested && !ui.travelMenu) {
         mapClient_.closeTravel();

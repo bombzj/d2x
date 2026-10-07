@@ -16,9 +16,10 @@ struct ClassicFont {
 };
 class UiPainter {
     const ClassicFont &font;
+    int glyphGap;
 
   public:
-    explicit UiPainter(const ClassicFont &f) : font(f) {}
+    explicit UiPainter(const ClassicFont &f, int gap = 1) : font(f), glyphGap(gap) {}
     int measure(const std::string &text, int size) const;
     void label(const std::string &text, int x, int y, int size, Color color = parchment) const;
     void centered(const std::string &text, int y, int size, Color color = parchment) const;
@@ -39,5 +40,7 @@ void cursorSprite(const Sprite *sprite, Vec mouse, Vec hotspot);
 void softAdditiveSprite(const Sprite *sprite, Vec position, Color tint = WHITE);
 void spriteShadow(const Sprite *sprite, Vec position);
 void frame(Rectangle bounds, Color border = gold);
+// Current MPQ boxpieces frame layout; original pixels, scaled without a drawn substitute.
+void originalBox(const GpuAnimation &pieces, Rectangle bounds, float scale);
 void diamond(Vec position, float radius, Color color);
 } // namespace d2x

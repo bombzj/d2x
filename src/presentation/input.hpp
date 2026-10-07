@@ -18,6 +18,8 @@ struct FrameInput {
     bool tab = false;
     float wheel = 0;
     bool backspace = false;
+    bool messageLog = false, entryHome = false, entryEnd = false, entryDelete = false, entryUnsupported = false;
+    int entryStep = 0;
     bool showLoot = false;
     bool help = false, automap = false, collision = false;
     bool minimapSide = false;

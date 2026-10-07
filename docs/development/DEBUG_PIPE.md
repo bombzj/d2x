@@ -21,10 +21,13 @@
 
 | 命令 | 参数与结果 |
 | --- | --- |
-| `ui-input` | 复用既有FrameInput诊断格式：x／y逻辑坐标、button=left／right、leftHeld／leftReleased／rightHeld、key、shift／control／focused等；frames可一次排队1–32帧，每绘制帧消费一项。允许局前页面及已显示、未测试暂停的局内UI；游戏或区域代次切换／暂停清队列，普通控制器提交原服意图，不直接改权威副本 |
+| `ui-input` | 复用既有FrameInput诊断格式：x／y逻辑坐标、button=left／right、leftHeld／leftReleased／rightHeld、key、shift／control／focused等；frames可一次排队1–32帧，每绘制帧消费一项。聊天用key=enter／escape／message-log（或m）、entryText可打印ASCII、backspace、delete／left／right／home／end编辑；日志支持up／down／page-up／page-down及wheel。允许局前页面及已显示、未测试暂停的局内UI；游戏或区域代次切换／暂停清队列，普通控制器提交原服意图，不直接改权威副本 |
 | `pause` / `resume` | 只在显式调试管道启用；pause要求在线ProtocolReady，冻结画面和界面输入。回执presentationPaused／networkRunning=true／serverPaused=false；不暂停原服，恢复采用最新副本，旧动作不重放 |
 | `online-status` | 顶层presentationPaused；online.protocol按SID／MCP／game返回包ID、received／sent／unconsumed、逻辑字节数和lastReceived；只读 `online`：stage、error、revision、connectionGeneration、gameGeneration、Realm／角色／游戏列表、load、延迟（首个pong前null）、gameQueuePosition、gameListComplete、world／scene；联网模式的 `status` 是其别名 |
-| `online-social` / `online-chat` | 同一完整只读快照的world.social：名册身份及字段可用性、队伍／关系原值、公开位置、聊天原语言nameBytes／textBytes；尚无发送及组队／聊天UI，不能据此认证M4 |
+| `online-social` / `online-chat` | 同一完整只读快照的world.social：名册身份及字段可用性、队伍／关系原值、公开位置、聊天原语言nameBytes／textBytes；只读、不刷新。共享界面就绪后额外chatUi返回ready／inputOpen／logOpen／draft／scroll／rows／unavailableMessages／reason，只有表现和草稿，不是发送回执。聊天新UI尚未运行认证，组队未接，不能据此认证M4 |
+| `online-send-chat` | message为1–255字节可打印ASCII且不全为空格；ProtocolReady及当前游戏身份有效时发送局内普通广播0x15。accepted只代表入队，双方消息取实际0x26及chatSequence，不插本地回显／自动重试；不支持私聊、表情、中文编码或BNCS频道命令。已入当前运行包，双账号原服普通广播及M日志有限观察见联网交付记录 |
+| `online-trade-respond` | accept布尔值、revision为当前world.playerTrade.revision；true接受邀请（button3），false拒绝／取消（button2）。accepted仅表示发送；真实身份等0x78，完成等0x77/13。 |
+| `online-trade-offer` | action为agree／revoke／gold，revision绑定当前交易，gold另需amount 0–INT32_MAX；原button4／7／8。world.playerTrade返回ownGold／peerGold、ownAgreed（请求已发）／peerAgreed、agreementLocked及response；最终交换只由原服确认。 |
 | `online-world` | 只读同一快照：world.units／rooms／equipment／attributes、本人全局 subtile 坐标与当前生命／法力／体力；scene 含原 DS1、原点、候选／地标、碰撞／显示／移动可用性、本人是否绘制与缺外观数量；当前源码units增加nativeMode、direction、actionSkill／actionSkillLevel，区分实际模式、原路径面对方向及当前技能动作 |
 | `online-resurrect` | 无参数；要求原服报告死亡。等待DEAD后发送原0x41，重复请求去重；world.respawnRequest记录WaitingForDeath／Sent／Confirmed／TimedOut及sent，确认前不恢复本地资源。Hardcore执行退局 |
 | `online-recover-corpse` | unitId为world.corpses及scene.mapTargets中本人的真实可见尸体GUID，自动type0；先按共同路径靠近，再原0x13请求取回。以服务端库存／装备与尸体回包确认，accepted不表示回收完成 |
@@ -59,9 +62,10 @@
 | `online-realms` / `online-characters` / `online-games` | 只读当前服务器快照，不发起刷新；未知角色字段为 null |
 | `online-select-realm` | name；只在 RealmSelection 接受；首次登录自动选择配置项；切换 Realm 或配置项不存在时等待显式选择 |
 | `online-select-character` | name；只在 CharacterSelection 接受，限定可玩的非 Ladder LoD 角色 |
-| `online-list-games` | 可选 filter（≤15）；只在 Lobby 发起真实列表请求，filter 为本地名称包含筛选，完成后返回 Lobby；无终止包时超时并清除未完成列表 |
+| `online-list-games` | 可选 filter（≤15）；Lobby／ListingGames 发起或替换真实列表请求，filter 为本地名称包含筛选，完成后返回 Lobby；无终止包时超时保留已收到列表，并标记不完整 |
 | `online-create-game` | name（≤15）、可选 password（≤15）／description（≤31）／maximumPlayers（1–8，默认4）／levelDifference（0–99，默认4）／difficulty（0普通／1噩梦／2地狱，默认0；按服务器角色进度解锁）；只在 Lobby 接受，成功自动取票入局 |
-| `online-join-game` | name、可选 password；只在 Lobby 接受，调用原 MCP 取票接口，UI 的 Join 调用同一接口，可按名字直接加入 |
+| `online-game-info` | name；Lobby／ListingGames 发原 MCP 0x06，online.gameInfo 返回 Pending／Ready／TimedOut、真实难度标志、人数上限、等级限制、说明与角色。独立请求编号／超时，迟到回复不替换新选择；无回复不推断房间已删除 |
+| `online-join-game` | name、可选 password；Lobby／ListingGames 接受，复验输入后退役未完成列表并调用原 MCP 取票接口；UI 同一入口，可按名字直接加入 |
 | `online-leave-game` | 创建／加入／连接游戏／握手阶段取消并重新取服务器角色列表；LoadingGame／ProtocolReady 请求原0x69保存退局；LeavingGame重复请求不重发，退局超时标记保存结果未知 |
 | `online-return-characters` | Lobby 返回服务器选角，重新取票 |
 | `online-cancel` / `online-logout` | 关闭连接；前者进入 Cancelled，后者清空会话回主菜单 |
@@ -77,6 +81,8 @@ world.mapEventSequence／First／Count与scene.nativeMapReason定位地图缺口
 
 world.dead／deathPhase／respawnRequest／corpses描述死亡、回城请求及尸体归属；resources／repositioned组合用于回城确认。scene.effectLimitations只列遇到的未支持客户端程序，空数组不表示全技能认证。network包计数／unconsumed按SID／MCP／game诊断，不回显密码／key／票据或原认证包。
 
+scene.players 按实际已指派玩家返回 id／name／classId、local、visible、moving、dead、显示 position 及不可见 reason。visible 只表示本帧原图进入视口，名册存在不表示可见；位置不写回副本或授权操作。world.units.attributes 保留原 1.13c 0x20 的玩家公开属性，不能当作本人的私有属性／库存。
+
 ## 联网物品操作
 
 先用online-items查询实际GUID、revision与decoded；mode为0存储、1装备、2腰带、3地面、4Cursor、5掉落过渡、6孔内。page是原InvPage+1：1背包、4方块、5箱子。本人所有权为ownerType=0且owner等于load.playerUnitId；孔内子项ownerType=4、owner为宿主物品GUID；货架ownerType=1且owner为当前NPC。online-ground也返回完整快照，请按mode=3筛选。
@@ -86,8 +92,8 @@ world.dead／deathPhase／respawnRequest／corpses描述死亡、回城请求及
 | action | 参数与范围 |
 | --- | --- |
 | pickup | itemId；toCursor默认false，true拾到Cursor；地面物品、空Cursor及原50单位距离，服务端自行接近 |
-| take | itemId；从本人背包、腰带、当前装备或已确认打开的箱子／方块拿到空Cursor |
-| place | Cursor itemId、x／y从0计；page为native编号0背包／3方块／4箱子，默认0；后两者需服务器确认打开，按当前MPQ尺寸与空格校验 |
+| take | itemId；从本人背包、腰带、当前装备或已确认打开的箱子／方块拿到空Cursor；玩家交易打开时仅允许本人背包／报价（位流page3），对方page2副本只读 |
+| place | Cursor itemId、x／y从0计；page为native编号0背包／2玩家报价／3方块／4箱子，默认0；报价需原服Open且本人未同意，其余存储需服务器确认打开，按当前MPQ尺寸与空格校验 |
 | drop | Cursor itemId；最终地面坐标由原服决定 |
 | equip | Cursor itemId、body=1–10；原head／neck／tors／rarm／larm／rrin／lrin／belt／feet／glov；自动按当前槽和两手武器选原交换包 |
 | unequip | 当前装备itemId；空Cursor，body取服务器该物品部位 |
@@ -114,7 +120,7 @@ world.dead／deathPhase／respawnRequest／corpses描述死亡、回城请求及
 
 `online.inventory`含revision、gameGeneration、columns／rows、stashColumns／stashRows、cubeColumns／cubeRows、beltSlots、cursor、weaponSet、items和request。storage列kind／requested／source／requestedSource／revision；shopRequested／shopSource绑定货架；tradeResult列原result／flags／itemId／gold／revision。物品含基础name／artKey、品质／词缀、位置／所有者、数量／耐久、防御／金币、孔数及统计列表；0x3E baseStats保留服务器单位。未知／截断数据decoded=false并给出reason，不允许操作。
 
-accepted仅表示请求已排队。request.sequence区分连续操作；Pending等待相关回包，Updated需再查位置／数量／余额；TimedOut结果未知，Interrupted为死亡／换幕／退局，Rejected为NPC明确失败（原码在tradeResult／online.error），SentNoAck为存储关闭已发送。买卖／维修／批量鉴定等待0x2A；初步物品变化不提前结束请求。待请求结束后再提交下一项，不自动重发；storage-close例外允许取消。拾取／合成应同时核对所有权、原材料、产物及world.attributes，不能把地面消失或Updated直接当成功。箱子先从scene.mapTargets查询interaction=stash的真实单位，再用online-interact；商店先用online-npc-interact并等npcConversation。公共背包／货架UI已接；玩家交易、赌博／多买、佣兵装备仍未完成。
+accepted仅表示请求已排队。request.sequence区分连续操作；Pending等待相关回包，Updated需再查位置／数量／余额；TimedOut结果未知，Interrupted为死亡／换幕／退局，Rejected为NPC明确失败（原码在tradeResult／online.error），SentNoAck为存储关闭已发送。买卖／维修／批量鉴定等待0x2A；初步物品变化不提前结束请求。待请求结束后再提交下一项，不自动重发；storage-close例外允许取消。拾取／合成应同时核对所有权、原材料、产物及world.attributes，不能把地面消失或Updated直接当成功。箱子先从scene.mapTargets查询interaction=stash的真实单位，再用online-interact；商店先用online-npc-interact并等npcConversation。公共背包／货架及玩家交易UI已接，原服药水／金币交易有限运行证据见联网交付；全部物品交易、赌博／多买、佣兵装备仍未完整认证。
 
 ```powershell
 # 查看原服物品；返回全部物品，按 mode／owner 筛选

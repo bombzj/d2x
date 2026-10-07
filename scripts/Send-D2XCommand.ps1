@@ -6,7 +6,7 @@ param(
         'status', 'pause', 'resume',
         'online-status', 'online-login', 'online-realms', 'online-select-realm',
         'online-characters', 'online-select-character', 'online-games', 'online-list-games',
-        'online-create-game', 'online-join-game', 'online-leave-game', 'online-return-characters',
+        'online-create-game', 'online-join-game', 'online-game-info', 'online-leave-game', 'online-return-characters',
         'online-cancel', 'online-logout',
         'online-register', 'online-create-character', 'online-delete-character',
         'online-return-realms', 'online-cancel-list',
@@ -16,7 +16,7 @@ param(
         'online-resurrect', 'online-recover-corpse',
         'online-npc-message', 'online-npc-close', 'online-npc-travel',
         'online-items', 'online-ground', 'online-item-action', 'online-item-quote',
-        'online-social', 'online-chat',
+        'online-social', 'online-chat', 'online-send-chat', 'online-trade-respond', 'online-trade-offer',
         'online-combat', 'online-skills', 'online-select-skill', 'online-cast', 'online-attack',
         'online-stop-skill', 'online-learn-skill', 'online-spend-attribute', 'online-bind-hotkey',
         'ui-input', 'screenshot', 'quit')]

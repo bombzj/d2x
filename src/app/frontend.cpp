@@ -155,6 +155,7 @@ void runOnlineFrontend(Archives &archives, RenderTexture2D target, const AppOpti
             status.effectLimitations = scene->effectLimitations();
             status.playerDisplayed = scene->playerDisplayed();
             status.playerDisplayPosition = scene->playerDisplayPosition();
+            status.players = scene->players();
         }
         return status;
     };
@@ -163,6 +164,40 @@ void runOnlineFrontend(Archives &archives, RenderTexture2D target, const AppOpti
     int frames = 0;
     std::deque<FrameInput> debugInputs;
     auto lastInputTime = std::chrono::steady_clock::now();
+    auto chatInput = [&](FrameInput &input) {
+        sharedUi->updateChat(session.read().world.social);
+        sharedUi->updatePlayerTrade(session.read().world.playerTrade);
+        auto trade = sharedUi->handlePlayerTrade(input);
+        bool consumed = trade.consumed;
+        if (!trade.error.empty()) sharedUi->notice(std::move(trade.error), true);
+        if (trade.accept) {
+            const bool accepted = session.respond_player_trade(*trade.accept, trade.revision);
+            if (!accepted && session.read().error) sharedUi->notice(session.read().error->message, true);
+        }
+        if (trade.action) {
+            const bool accepted = !sharedClients->busy() && session.update_player_trade(*trade.action,trade.revision,trade.amount);
+            if (!accepted) sharedUi->notice(sharedClients->busy() ? "Wait for the queued item operation." :
+                session.read().error ? session.read().error->message : "Trade offer could not be submitted.",true);
+        }
+        if (!consumed && !session.read().world.playerTrade.active()) {
+            auto intent = sharedUi->handleChat(input);
+            if (!intent.error.empty()) sharedUi->notice(std::move(intent.error), true);
+            if (intent.message) {
+                const bool accepted = session.send_chat(std::move(*intent.message));
+                sharedUi->chatSent(accepted);
+                if (!accepted && session.read().error) sharedUi->notice(session.read().error->message, true);
+            }
+            consumed = intent.consumed;
+        }
+        if (!consumed) return;
+        // The server trade modal or chat owns the whole opening/closing frame.
+        // Retain held buttons so reopening gameplay requires a physical release.
+        sharedController->resetInput();
+        FrameInput quiet;
+        quiet.mouse = input.mouse; quiet.insideViewport = input.insideViewport;
+        quiet.focused = input.focused; quiet.leftHeld = input.leftHeld; quiet.rightHeld = input.rightHeld;
+        input = std::move(quiet);
+    };
     ClassicStrings strings(archives);
     FrontendPage page = FrontendPage::Main;
     std::string notice, gateway = "D2X-Local";
@@ -200,6 +235,7 @@ void runOnlineFrontend(Archives &archives, RenderTexture2D target, const AppOpti
             quit = true;
         const auto previousStage = session.read().stage;
         session.tick();
+        if (session.read().world.playerTrade.active()) control.cancelMovement();
         inventory.update(session.read());
         combat.update();
         if (sceneGeneration != session.read().gameGeneration) {
@@ -302,6 +338,14 @@ void runOnlineFrontend(Archives &archives, RenderTexture2D target, const AppOpti
                 {"waitingItemRequest", waiting ? nlohmann::json(*waiting) : nlohmann::json(nullptr)}};
             constexpr std::array pageNames{"Main", "Login", "Register", "Realms", "Characters", "CreateCharacter", "Lobby", "Loading"};
             reply["frontend"] = {{"page", pageNames.at(size_t(page))}, {"notice", notice}};
+            if (sharedUi) {
+                const auto &chat = sharedUi->chat();
+                reply["chatUi"] = {{"ready", chat.ready()}, {"inputOpen", chat.inputOpen()}, {"logOpen", chat.logOpen()},
+                    {"draft", chat.draft()}, {"scroll", chat.scroll()}, {"rows", chat.rows()},
+                    {"unavailableMessages", chat.unavailable()}, {"reason", chat.reason()}};
+                const auto &trade = sharedUi->tradeInvite();
+                reply["tradeInviteUi"] = {{"ready", trade.ready()}, {"active", trade.active()}, {"reason", trade.reason()}};
+            }
             return reply.dump();
         });
         if (quit) {
@@ -495,10 +539,12 @@ void runOnlineFrontend(Archives &archives, RenderTexture2D target, const AppOpti
                             sharedUi->openNpcMenu(EntityId{(uint64_t{1} << 32) + dialog.source + 1},dialog.speaker,false);
                         }
                         {
+                            // 1.13c selects type 0 for automatic speech; type 2 is a
+                            // selectable topic and must leave the service menu open.
                             // Acknowledging a message changes the acknowledged set,
                             // not necessarily the native conversation revision.
                             if (panels.dialogue.empty() && !panels.shopOpen && !panels.hireListOpen) for (const auto &message : dialog.messages)
-                                if (!message.acknowledged && (message.menu == 0 || message.menu == 2) && !message.text.empty()) {
+                                if (!message.acknowledged && message.menu == 0 && !message.text.empty()) {
                                     sharedUi->openNpcDialogue(EntityId{(uint64_t{1} << 32) + dialog.source + 1},dialog.speaker,message.text);
                                     panels.dialogueTextTopic = message.stringId;
                                     break;
@@ -527,6 +573,7 @@ void runOnlineFrontend(Archives &archives, RenderTexture2D target, const AppOpti
                         debugInputs.pop_front();
                     }
                     captureRequested = input.screenshot;
+                    chatInput(input);
                     const bool keepGame = sharedController->handle(input,GetFrameTime());
                     if (!keepGame) leaveGame = true;
                     if (auto feedback = sharedClients->takeNotice(); !feedback.text.empty()) sharedUi->notice(std::move(feedback.text),feedback.error);
@@ -551,6 +598,7 @@ void runOnlineFrontend(Archives &archives, RenderTexture2D target, const AppOpti
                 if (view.stage == OnlineStage::ProtocolReady && sharedClients && sharedUi && sharedController) {
                     sharedClients->update(town.read());
                     sharedUi->refreshUi(std::clamp(GetFrameTime(), 0.f, .1f));
+                    chatInput(input);
                     if (!sharedController->handle(input, GetFrameTime())) leaveGame = true;
                     WorldInputView unavailable;
                     unavailable.gameGeneration = view.gameGeneration;
@@ -620,9 +668,10 @@ void runOnlineFrontend(Archives &archives, RenderTexture2D target, const AppOpti
         case FrontendCommand::CancelList:
             session.cancel_game_list();
             break;
+        case FrontendCommand::QueryGame:
+            session.query_game(std::move(action.name));
+            break;
         case FrontendCommand::JoinGame:
-            if (session.read().stage == OnlineStage::ListingGames)
-                session.cancel_game_list();
             session.join_game(std::move(action.name), std::move(action.password));
             break;
         case FrontendCommand::Register:

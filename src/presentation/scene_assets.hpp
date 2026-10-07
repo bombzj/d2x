@@ -39,6 +39,8 @@ class SceneAssets {
     mutable int worldTilePalette_ = -1;
     void loadWorldLightDefinitions();
     mutable std::unique_ptr<ActorAnimationCatalog> actorAnimations_;
+    std::set<int> shrineObjects_;
+    std::map<int, std::array<int, 2>> shrineOverlayIds_;
     void loadUi(Archives &, const ClassicData &);
     void loadNpcAlert(const DataTable &);
     void loadIceShatter();
@@ -48,10 +50,15 @@ class SceneAssets {
     ~SceneAssets();
     SoundBank audio;
     SceneAudio sceneAudio;
-    ClassicFont font, speechFont;
+    ClassicFont font, speechFont, skillGreenFont, characterLabelFont, characterPointFont,
+        characterCompactFont, characterRedFont, skillLevelBlueFont, skillLevelCompactFont,
+        skillLevelCompactBlueFont, skillLevelCompactRedFont;
+    std::map<std::string, std::string, std::less<>> characterLabels;
+    std::array<std::string, 2> globeTextFormats;
     struct SkillIcon {
         Sprite sprite;
         bool leftAllowed = false;
+        Sprite treeDisabled, treeHovered;
     };
     std::map<int, SkillIcon> skillIcons;
     std::map<int, GpuAnimation> projectileAnimations;
@@ -109,7 +116,7 @@ class SceneAssets {
     std::map<std::string, GpuAnimation> itemGround, itemIcons;
     GpuAnimation panel, miniPanel, miniPanelButtons, miniPanelToggle,
         cursor, targetingCursors, inventoryPanel, attributeButtons,
-        attributePoints, weaponTabs, vendorPanel, vendorTabs,
+        attributePoints, attributeSocket, weaponTabs, vendorPanel, vendorTabs,
         questBackground, questSockets, questTabs, questClose, questReplay, goldCoin,
         vendorButtons, vendorConfirm, waypointBorder, waypointPanel, waypointTabs, waypointIcons,
         storagePanel, cubePanel, beltPanel, beltSocket, orbs,
@@ -141,6 +148,7 @@ class SceneAssets {
     void loadInventoryArt(const InventoryView &inventory, int palette);
     const ActorAnimation *actorAnimation(const ActorAnimationRequest &, int palette) const;
     const ActorAnimation *objectAnimation(int identity, int mode, int palette) const;
+    std::array<int, 2> objectShrineOverlays(int identity, int code) const;
     int objectPresentationMode(int identity, int serverMode, float elapsed) const;
     std::string actorSequenceMode(std::string_view name) const;
     int automapObjectCel(int objectClass) const { return automapCatalog_.objectCel(objectClass); }

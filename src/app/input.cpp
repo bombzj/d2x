@@ -30,11 +30,18 @@ FrameInput pollInput(const Viewport &viewport) {
     input.control = IsKeyDown(KEY_LEFT_CONTROL) || IsKeyDown(KEY_RIGHT_CONTROL);
     input.enter = IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_KP_ENTER);
     input.backspace = IsKeyPressed(KEY_BACKSPACE) || IsKeyPressedRepeat(KEY_BACKSPACE);
+    input.messageLog = !input.control && IsKeyPressed(KEY_M);
+    input.entryHome = IsKeyPressed(KEY_HOME);
+    input.entryEnd = IsKeyPressed(KEY_END);
+    input.entryDelete = IsKeyPressed(KEY_DELETE) || IsKeyPressedRepeat(KEY_DELETE);
+    input.entryStep = int(IsKeyPressed(KEY_RIGHT) || IsKeyPressedRepeat(KEY_RIGHT)) -
+        int(IsKeyPressed(KEY_LEFT) || IsKeyPressedRepeat(KEY_LEFT));
     input.tab = IsKeyPressed(KEY_TAB);
     for (int character = GetCharPressed(); character; character = GetCharPressed()) {
         if (character >= '0' && character <= '9')
             input.text.push_back(char(character));
         if (character >= 32 && character <= 126) input.entryText.push_back(char(character));
+        else if (character >= 127) input.entryUnsupported = true;
     }
     input.wheel = GetMouseWheelMove();
     input.quantityDelta =

@@ -99,13 +99,15 @@ struct RealmSession::Impl {
     Digest accountHash{}, loginHash{};
     uint32_t clientToken{}, serverToken{}, ticketHash{};
     uint16_t requestCounter{}, pendingRequest{}, lastListRequest{}, ticketToken{};
+    uint16_t gameInfoRequest{};
+    Clock::time_point gameInfoDeadline{};
     std::optional<OnlineCharacter> selected;
     std::string pendingCharacter, gameName, gamePassword;
     std::vector<GamePacket> worldPackets;
     size_t worldBytes{};
     Clock::time_point deadline{}, gameStarted{}, nextHeartbeat{}, lastPing{}, nextMovement{};
     std::optional<uint32_t> initializedNpc;
-    Clock::time_point npcDeadline{}, waypointDeadline{};
+    Clock::time_point npcDeadline{}, waypointDeadline{}, playerTradeDeadline{};
     struct PortalRequest {
         std::optional<OnlineSkillSelection> previous;
         std::set<uint32_t> existing;
@@ -145,6 +147,10 @@ struct RealmSession::Impl {
     void changed() { ++view.revision; }
     void stage(OnlineStage value) {
         view.stage = value;
+        if (value != OnlineStage::Lobby && value != OnlineStage::ListingGames) {
+            gameInfoRequest = 0;
+            view.gameInfo.reset();
+        }
         deadline = Clock::now() + options.timeout;
         changed();
     }
@@ -174,6 +180,7 @@ struct RealmSession::Impl {
         nextItem = {}; itemDeadline = {};
         nextCombat = {}; combatDeadline = {};
         storageDeadline = {}; npcDeadline = {}; respawnDeadline = {}; waypointDeadline = {};
+        playerTradeDeadline = {};
         gameStarted = {}; nextHeartbeat = {}; lastPing = {};
         initializedNpc.reset(); portalRequest.reset();
         environmentSent = false;
@@ -244,6 +251,10 @@ struct RealmSession::Impl {
     }
     bool require_navigation(const OnlineIntentContext &context) {
         if (!require_intent(context, true)) return false;
+        if (view.world.playerTrade.active()) {
+            error(OnlineErrorKind::Input, "Close the server player trade before moving or changing interaction");
+            return false;
+        }
         if (portalRequest) {
             error(OnlineErrorKind::Input, "Wait for the pending town portal before moving or changing interaction");
             return false;
@@ -284,11 +295,14 @@ struct RealmSession::Impl {
     }
     void send_sid(uint8_t id, Writer out = {}) { sent(sid, frame(Framing::Sid, id, out.release())); }
     void send_mcp(uint8_t id, Writer out = {}) { sent(mcp, frame(Framing::Mcp, id, out.release())); }
-    uint16_t request_id() {
+    uint16_t next_request_id() {
         // IDs are real MCP wire IDs; no automatic wrap/reuse within one login.
         if (requestCounter == std::numeric_limits<uint16_t>::max())
             throw ProtocolError("MCP request IDs exhausted; reconnect required");
-        pendingRequest = ++requestCounter;
+        return ++requestCounter;
+    }
+    uint16_t request_id() {
+        pendingRequest = next_request_id();
         return pendingRequest;
     }
     void expect(OnlineStage value) const {
@@ -672,6 +686,34 @@ struct RealmSession::Impl {
             changed();
             break;
         }
+        case 0x06: {
+            const auto request = in.u16();
+            if (!gameInfoRequest || request != gameInfoRequest || !view.gameInfo ||
+                (view.stage != OnlineStage::Lobby && view.stage != OnlineStage::ListingGames)) return;
+            auto info = *view.gameInfo;
+            info.flags = in.u32(); info.uptimeSeconds = in.u32();
+            info.creatorLevel = in.u8(); info.levelDifference = in.u8();
+            info.maximumPlayers = in.u8();
+            const auto count = in.u8();
+            // PvPGN d2cs_protocol.h reserves 16 class and 16 level bytes,
+            // regardless of current occupancy; the game still allows 1..8.
+            const auto classes = in.take(16), levels = in.take(16);
+            if (!info.maximumPlayers || info.maximumPlayers > 8 || count > 8 ||
+                count > info.maximumPlayers || ((info.flags >> 12) & 7) > 2)
+                throw ProtocolError("Invalid MCP game information");
+            info.description = in.string(256);
+            info.players.clear();
+            for (size_t i = 0; i < count; ++i) {
+                if (classes[i] >= 7) throw ProtocolError("Invalid MCP game player class");
+                info.players.push_back({in.string(15), classes[i], levels[i]});
+            }
+            finish_zero_padding(in);
+            info.state = OnlineGameInfo::State::Ready;
+            view.gameInfo = std::move(info);
+            gameInfoRequest = 0;
+            changed();
+            break;
+        }
         case 0x14: {
             if (view.stage != OnlineStage::CreatingGame)
                 throw ProtocolError("Unexpected game creation queue");
@@ -730,6 +772,7 @@ struct RealmSession::Impl {
     void reset_area(bool preserveInitialPosition) {
         auto &world = view.world;
         ++world.interactionGeneration;
+        world.playerTrade = {}; playerTradeDeadline = {};
         const auto player = view.load.playerUnitId;
         std::erase_if(world.units, [&](const auto &entry) {
             return entry.first.type != 0 || !player || entry.first.id != *player;
@@ -1132,6 +1175,11 @@ struct RealmSession::Impl {
         if (view.stage == OnlineStage::Failed)
             return;
         const auto now = Clock::now();
+        if (gameInfoRequest && now >= gameInfoDeadline) {
+            gameInfoRequest = 0;
+            if (view.gameInfo) view.gameInfo->state = OnlineGameInfo::State::TimedOut;
+            changed(); // Missing/deleted games send no reply; joining by name remains available.
+        }
         if (auto &request = view.world.respawnRequest; request &&
             (request->state == OnlineRespawnRequest::State::WaitingForDeath || request->state == OnlineRespawnRequest::State::Sent)) {
             if (now >= respawnDeadline) {
@@ -1146,6 +1194,14 @@ struct RealmSession::Impl {
         if (view.world.storage.requested != OnlineStorageKind::None && now >= storageDeadline) {
             close_interaction();
             error(OnlineErrorKind::Timeout, "No original stash or cube open confirmation arrived");
+        }
+        auto &playerTrade = view.world.playerTrade;
+        if (playerTrade.active() && (playerTrade.response == OnlinePlayerTrade::Response::GoldSent ||
+            playerTrade.response == OnlinePlayerTrade::Response::ResetSent ||
+            playerTrade.response == OnlinePlayerTrade::Response::AcceptSent ||
+            playerTrade.response == OnlinePlayerTrade::Response::CancelSent) && now >= playerTradeDeadline) {
+            playerTrade.response = OnlinePlayerTrade::Response::TimedOut;
+            error(OnlineErrorKind::Timeout, "No server player trade confirmation arrived; state is retained, without retrying acceptance");
         }
         if (view.world.waypointRequested && now >= waypointDeadline) {
             close_interaction();
@@ -1375,8 +1431,8 @@ bool RealmSession::list_games(std::string filter) {
     std::lock_guard lock(impl_->mutex);
     impl_->snapshotDirty = true;
     auto &p = *impl_;
-    if (!p.require(OnlineStage::Lobby))
-        return false;
+    if (p.view.stage != OnlineStage::Lobby && p.view.stage != OnlineStage::ListingGames)
+        return p.require(OnlineStage::Lobby);
     if (!text_valid(filter, 15, true)) {
         p.error(OnlineErrorKind::Input, "Invalid game list filter");
         return false;
@@ -1389,6 +1445,7 @@ bool RealmSession::list_games(std::string filter) {
         p.lastListRequest = p.pendingRequest;
         p.send_mcp(0x05, std::move(out));
         p.view.games.clear();
+        p.view.gameInfo.reset(); p.gameInfoRequest = 0;
         p.view.gameListComplete = false;
         p.view.error.reset();
         p.stage(OnlineStage::ListingGames);
@@ -1396,6 +1453,28 @@ bool RealmSession::list_games(std::string filter) {
     } catch (const std::exception &) {
         p.fail(OnlineErrorKind::Protocol, "Game list request could not be encoded");
         return false;
+    }
+}
+bool RealmSession::query_game(std::string name) {
+    std::lock_guard lock(impl_->mutex);
+    impl_->snapshotDirty = true;
+    auto &p = *impl_;
+    if (p.view.stage != OnlineStage::Lobby && p.view.stage != OnlineStage::ListingGames)
+        return p.require(OnlineStage::Lobby);
+    if (!text_valid(name, 15)) {
+        p.error(OnlineErrorKind::Input, "Invalid game information name"); return false;
+    }
+    try {
+        Writer out;
+        p.gameInfoRequest = p.next_request_id();
+        out.u16(p.gameInfoRequest); out.string(name, 15);
+        p.send_mcp(0x06, std::move(out));
+        p.view.gameInfo.emplace(); p.view.gameInfo->name = std::move(name);
+        p.gameInfoDeadline = Clock::now() + p.options.timeout;
+        p.changed();
+        return true;
+    } catch (const std::exception &) {
+        p.fail(OnlineErrorKind::Protocol, "Game information request could not be encoded"); return false;
     }
 }
 bool RealmSession::cancel_game_list() {
@@ -1459,7 +1538,8 @@ bool RealmSession::join_game(std::string name, std::string password) {
     std::lock_guard lock(impl_->mutex);
     impl_->snapshotDirty = true;
     auto &p = *impl_;
-    if (!p.require(OnlineStage::Lobby)) {
+    if (p.view.stage != OnlineStage::Lobby && p.view.stage != OnlineStage::ListingGames) {
+        p.require(OnlineStage::Lobby);
         erase_secret(password);
         return false;
     }
@@ -1478,6 +1558,108 @@ bool RealmSession::join_game(std::string name, std::string password) {
         erase_secret(password);
         p.fail(OnlineErrorKind::Protocol, "Game join request could not be encoded");
         return false;
+    }
+}
+bool RealmSession::send_chat(std::string text) {
+    std::lock_guard lock(impl_->mutex);
+    impl_->snapshotDirty = true;
+    auto &p = *impl_;
+    if (!p.require(OnlineStage::ProtocolReady)) return false;
+    // A queued UI command must not cross login/game replacement. Area changes
+    // and death do not change the destination room or authorize local gameplay.
+    if (snapshot_.connectionGeneration != p.view.connectionGeneration ||
+        snapshot_.gameGeneration != p.view.gameGeneration ||
+        snapshot_.load.playerUnitId != p.view.load.playerUnitId) {
+        p.error(OnlineErrorKind::Input, "The active game changed; refresh before sending chat");
+        return false;
+    }
+    if (!text_valid(text, 255) ||
+        std::all_of(text.begin(), text.end(), [](unsigned char c) { return c == ' '; })) {
+        p.error(OnlineErrorKind::Input, "Chat requires 1-255 printable ASCII bytes and a non-space character");
+        return false;
+    }
+    try {
+        p.sent(p.gs, game_chat(text));
+        // No generic native ACK and no client echo; the original 0x26 is the
+        // only source of messages, including the sender's own room broadcast.
+        p.view.error.reset();
+        p.changed();
+        return true;
+    } catch (const std::exception &) {
+        p.fail(OnlineErrorKind::Transport, "Chat message could not be queued");
+        return false;
+    }
+}
+bool RealmSession::respond_player_trade(bool accept, uint64_t revision, std::optional<OnlineIntentContext> context) {
+    std::lock_guard lock(impl_->mutex);
+    impl_->snapshotDirty = true;
+    auto &p = *impl_;
+    if (!p.require_intent(context.value_or(onlineIntentContext(snapshot_)), true)) return false;
+    auto &trade = p.view.world.playerTrade;
+    using Phase = OnlinePlayerTrade::Phase;
+    using Response = OnlinePlayerTrade::Response;
+    if (!p.view.load.serverLoadComplete || !p.view.load.playerUnitId || !trade.active() || trade.revision != revision ||
+        (accept && (trade.phase != Phase::Incoming || trade.response != Response::None || onlinePlayerDead(p.view.world))) ||
+        (!accept && trade.response == Response::CancelSent)) {
+        p.error(OnlineErrorKind::Input, "The server trade invitation changed or already has a pending response"); return false;
+    }
+    try {
+        // PlrMsg Rcv0x4F / PlrTrade sub_6FC91250: button 3 begins the trade;
+        // button 2 cancels. Button 4 would accept offered items and is not sent.
+        Writer out; out.u8(0x4F); out.u16(accept ? 3 : 2); out.u16(0); out.u16(0);
+        p.sent(p.gs, out.release());
+        trade.response = accept ? Response::AcceptSent : Response::CancelSent;
+        p.playerTradeDeadline = Clock::now() + p.options.timeout;
+        p.view.error.reset(); p.changed(); return true;
+    } catch (const std::exception &) {
+        p.fail(OnlineErrorKind::Transport, "Player trade response could not be queued"); return false;
+    }
+}
+bool RealmSession::update_player_trade(OnlinePlayerTradeAction action, uint64_t revision, uint32_t amount,
+                                      std::optional<OnlineIntentContext> context) {
+    std::lock_guard lock(impl_->mutex);
+    impl_->snapshotDirty = true;
+    auto &p = *impl_;
+    if (!p.require_intent(context.value_or(onlineIntentContext(snapshot_)), true)) return false;
+    auto &world = p.view.world; auto &trade = world.playerTrade;
+    if (!p.view.load.serverLoadComplete || !p.view.load.playerUnitId || onlinePlayerDead(world) ||
+        trade.phase != OnlinePlayerTrade::Phase::Open || !trade.peer || trade.revision != revision ||
+        trade.response != OnlinePlayerTrade::Response::None ||
+        (world.itemRequest && world.itemRequest->state == OnlineItemRequest::State::Pending) ||
+        std::any_of(world.items.begin(), world.items.end(), [&](const auto &entry) {
+            return entry.second.ownerType == 0 && entry.second.owner == p.view.load.playerUnitId && entry.second.mode == 4;
+        })) {
+        p.error(OnlineErrorKind::Input, "Trade offer changed, has a cursor item, or is waiting for the server"); return false;
+    }
+    if ((action == OnlinePlayerTradeAction::Agree && (trade.ownAgreed || trade.agreementLocked)) ||
+        (action == OnlinePlayerTradeAction::Gold && trade.ownAgreed) ||
+        (action == OnlinePlayerTradeAction::Revoke && !trade.ownAgreed && !trade.peerAgreed)) {
+        p.error(OnlineErrorKind::Input, "Reset the current agreement before changing this trade offer"); return false;
+    }
+    if (action == OnlinePlayerTradeAction::Gold) {
+        const auto gold = world.playerAttributes.find(14);
+        if (gold == world.playerAttributes.end() || amount > gold->second || amount > INT32_MAX) {
+            p.error(OnlineErrorKind::Input, "Trade gold exceeds the known server wallet"); return false;
+        }
+    }
+    try {
+        // D2MOO PlrTrade: 4 accepts offers, 7 resets both checks, 8 quotes gold.
+        if (action == OnlinePlayerTradeAction::Gold && trade.peerAgreed) {
+            Writer reset; reset.u8(0x4F); reset.u16(7); reset.u16(0); reset.u16(0);
+            p.sent(p.gs,reset.release());
+        }
+        Writer out; out.u8(0x4F);
+        out.u16(action == OnlinePlayerTradeAction::Agree ? 4 : action == OnlinePlayerTradeAction::Revoke ? 7 : 8);
+        out.u16(uint16_t(amount >> 16)); out.u16(uint16_t(amount));
+        p.sent(p.gs, out.release());
+        if (action == OnlinePlayerTradeAction::Agree) trade.ownAgreed = true; // Sent; only 0x77/13 confirms completion.
+        else {
+            trade.response = action == OnlinePlayerTradeAction::Gold ? OnlinePlayerTrade::Response::GoldSent : OnlinePlayerTrade::Response::ResetSent;
+            p.playerTradeDeadline = Clock::now() + p.options.timeout;
+        }
+        p.view.error.reset(); p.changed(); return true;
+    } catch (const std::exception &) {
+        p.fail(OnlineErrorKind::Transport, "Player trade offer command could not be queued"); return false;
     }
 }
 bool RealmSession::resurrect(std::optional<OnlineIntentContext> context) {
@@ -1579,10 +1761,13 @@ bool RealmSession::move_to_unit(OnlineUnitKey target, bool run, std::optional<On
     const auto found = p.view.world.units.find(target);
     const bool corpse = target.type == 0 && p.view.world.corpseOwners.contains(target.id) &&
         p.view.world.corpseOwners.at(target.id) == p.view.load.playerUnitId;
+    const bool tradePeer = target.type == 0 && target.id != p.view.load.playerUnitId &&
+        !p.view.world.corpseOwners.contains(target.id) && found != p.view.world.units.end() &&
+        found->second.mode != 0 && found->second.mode != 17;
     if (!p.view.load.serverLoadComplete || !p.view.world.playerPosition ||
         onlinePlayerDead(p.view.world) || found == p.view.world.units.end() ||
         !found->second.position || !found->second.classId ||
-        (target.type != 1 && target.type != 2 && target.type != 5 && !corpse)) {
+        (target.type != 1 && target.type != 2 && target.type != 5 && !corpse && !tradePeer)) {
         p.error(OnlineErrorKind::Input, "The server movement target is unavailable"); return false;
     }
     if (Clock::now() < p.nextMovement) return false;
@@ -1609,9 +1794,12 @@ bool RealmSession::interact_map_unit(OnlineUnitKey target, OnlineObjectIntent in
     const auto found = p.view.world.units.find(target);
     const bool corpse = target.type == 0 && p.view.world.corpseOwners.contains(target.id) &&
         p.view.world.corpseOwners.at(target.id) == p.view.load.playerUnitId;
+    const bool tradePeer = target.type == 0 && target.id != p.view.load.playerUnitId &&
+        !p.view.world.corpseOwners.contains(target.id) && found != p.view.world.units.end() &&
+        found->second.mode != 0 && found->second.mode != 17;
     if (!p.view.load.serverLoadComplete || !p.view.world.playerPosition ||
         onlinePlayerDead(p.view.world) || found == p.view.world.units.end() ||
-        !found->second.position || !found->second.classId || (target.type != 2 && target.type != 5 && !corpse)) {
+        !found->second.position || !found->second.classId || (target.type != 2 && target.type != 5 && !corpse && !tradePeer)) {
         p.error(OnlineErrorKind::Input, "The server map unit is not available");
         return false;
     }
@@ -1770,6 +1958,23 @@ bool RealmSession::submit_item(OnlineItemCommand command) {
     if (!command.context) command.context = onlineIntentContext(snapshot_);
     if (!p.require_intent(*command.context, true)) return false;
     auto &world = p.view.world;
+    if (world.playerTrade.active()) {
+        const auto &trade = world.playerTrade;
+        const auto source = world.items.find(command.item);
+        const auto target = world.items.find(command.target);
+        auto accessible = [&](const OnlineItem &i) {
+            return i.ownerType == 0 && i.owner == p.view.load.playerUnitId &&
+                ((i.mode == 0 && (i.page == 1 || i.page == 3)) || i.mode == 4);
+        };
+        const bool move = command.action == OnlineItemAction::Take || command.action == OnlineItemAction::Place || command.action == OnlineItemAction::Swap;
+        if (trade.phase != OnlinePlayerTrade::Phase::Open || trade.ownAgreed ||
+            trade.response != OnlinePlayerTrade::Response::None || !move ||
+            source == world.items.end() || !accessible(source->second) ||
+            (command.action == OnlineItemAction::Place && command.page != 0 && command.page != 2) ||
+            (command.action == OnlineItemAction::Swap && (target == world.items.end() || !accessible(target->second)))) {
+            p.error(OnlineErrorKind::Input, "Trade permits moving only your backpack, cursor and own offer; reset your agreement first"); return false;
+        }
+    }
     if (!p.view.load.serverLoadComplete || !p.view.load.playerUnitId || !world.playerPosition ||
         onlinePlayerDead(world) || p.portalRequest || (world.combatRequest && world.combatRequest->state == OnlineCombatRequest::State::Pending) ||
         (world.itemRequest && world.itemRequest->state == OnlineItemRequest::State::Pending &&
@@ -1894,6 +2099,9 @@ bool RealmSession::submit_combat(OnlineCombatCommand command) {
     if (!p.require_intent(*command.context, false)) return false;
     auto &world = p.view.world;
     using Action = OnlineCombatCommand::Action;
+    if (world.playerTrade.active() && command.action != Action::Stop) {
+        p.error(OnlineErrorKind::Input, "Close the server player trade before submitting combat input"); return false;
+    }
     if (!p.view.load.serverLoadComplete || !p.view.load.playerUnitId || !world.playerPosition ||
         onlinePlayerDead(world) || (command.action != Action::Stop && (p.portalRequest ||
         (world.itemRequest && world.itemRequest->state == OnlineItemRequest::State::Pending &&

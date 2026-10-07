@@ -187,6 +187,7 @@ void SceneView::drawUi(Vec mouse) const {
         painter_.centered(view_.lootNotice, H - HUD - 35, 14, view_.noticeError ? RED : parchment);
     drawStorage(mouse);
     drawCube(mouse);
+    drawPlayerTrade(mouse);
     drawCharacter(mouse);
     drawHireling(mouse);
     drawQuests(mouse);
@@ -203,8 +204,11 @@ void SceneView::drawUi(Vec mouse) const {
     if (view_.npcMenu) drawNpcMenu(mouse);
     drawHirelingList(mouse);
     if (!view_.dialogue.empty()) drawNpcDialogue();
+    if (!view_.playerTradeBlocking) chat_.draw(worldViewport());
     const bool itemCursor = drawInventoryCursor(mouse);
     drawGameMenu();
+    tradeInvite_.draw(worldViewport());
+    tradeInvite_.drawGoldDialog();
     if (!itemCursor) {
         const Sprite *pointer = assets_.cursor.frame(0, 0);
         Vec hotspot = handCursorHotspot(pointer);

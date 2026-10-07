@@ -59,7 +59,7 @@ BNCSutil仅构建认证子集，作为可替换动态库；包内保留原许可
 | 声音 | MonsterTbls::LoadMonSoundsTxt；Diablerie MonSound／SoundSystem／SoundInfo／AudioManager核对25Hz延迟、原声组、Compound与武器音量；SoundSystem.OnLootFlipped及Item.dropSoundDelay核对起始item_flippy与指定帧落地音，Item的暗金／套装覆盖只作线索。实际字段与声音组读取当前MPQ Sounds／MonSounds／Weapons／Armor／Misc／UniqueItems／SetItems。OpenDiablo2 FsOff解释为推测，非零脚步相位仍暂缓 |
 | 光照／混色 | D2Environment、GAME_UpdateEnvironment、D2Gfx CmnSubtile；OpenD2 Palette／Renderer_GL及OpenDiablo2 d2pl2核对PL2。高质量四邻点平均与标量行选择有证据，完整点光衰减／彩光／天气仍未核实，见[照明](../gameplay/world/LIGHTING.md) |
 | HUD／手势 | OpenDiablo2 hud／globeWidget／mini_panel／skill_select_panel／quest_log／escape_menu；Diablerie PlayerController::FlushInput／Update、MouseSelection、EnemyBar／Loot。原UI消费按下直到松开，原图读取当前MPQ，参考不是完整D2Client窗口时序 |
-| 任务／对白 | Quests／D2QuestRecord、各幕Q0／Q1–6回调、PlrIntro／NpcMessage／SUnitNpc；私有／公共字和欢迎／初见／本局GUID反应分开。原TBL首行a1npc SPEED去除仅用于对白，日志布局参考不作资格／奖励依据 |
+| 任务／对白 | Quests／D2QuestRecord、各幕Q0／Q1–6回调、PlrIntro／NpcMessage／SUnitNpc；私有／公共字和欢迎／初见／本局GUID反应分开。1.13c D2Common RVA 0x3D120（ordinal10778）只筛menu=0，D2Client RVA 0x4BA39用它选自动对白；menu=2由D2Common RVA 0x3D160（ordinal10109）筛选、D2Client RVA 0x49EC6生成话题。不能沿用D2MOO 1.10f的0-or-2筛选解释。本地A1Intro的初见为0、PlrIntro保存已介绍旗标，A1Q1的重复任务评论为2。原TBL首行a1npc SPEED去除仅用于对白，日志布局参考不作资格／奖励依据 |
 | 物品／城镇 | Items::SerializeItemCompact／Complete、D2Items原品质编号、SCmd9C／9D／3E／42／97／2A、PlrMsg16–29／60、ItemMode／SUnitMsg的DROPTOGROUND与普通地面同步、Units原DROPPING动画、PlrTrade／SUnitNpc；当前MPQ提供位宽／类型／布局。客户端只提交请求，不移植原定价／配方／库存事务 |
 | 属性／镶嵌／掉落资料 | Items／ItemMods／ItemsMagic／HoradricCube／SUnitDmg核对Properties、carry1、孔内顺序、符文之语、TXT编号与原配方；MonsterRegion／Choose／Spawn／Unique与AiThink只供保留原资源报告及规则线索，不计联机AI／掉落完成 |
 | 死亡／佣兵 | PlrModes／PlayerPets／ItemMode／PlrMsg／Player／PlrSave2，MonsterAI／AiThink::Fn061_Hireable／SUnitNpc；原死亡惩罚、复活／佣兵费用与技能仍由原服。死亡重入1血满蓝另有用户原版实测证据 |
@@ -74,6 +74,8 @@ BNCSutil仅构建认证子集，作为可替换动态库；包内保留原许可
 开发对照使用既有 [d2mapapi_mod](https://github.com/soarqin/d2mapapi_mod) `f61d05244f323409aa48b326033639326d7c285c` 的32位1.13c导出入口；补充实际房间顺序、近邻、单位、Pops、DT1文件／记录和完整16位碰撞，记录进入／采样／离开事件。DT1身份由D2CMP RVA0x15D90的活动记录关联真实父文件，不把主次编号相同的不同记录当同一瓦片。第一幕此前122组、第二至第五幕364组原版新进程结果与共同C++核心一致，具体覆盖及屏蔽标志见[原版对照](../architecture/MULTIPLAYER.md#原版-dll-对照方法)。另曾查阅 [d2bs](https://github.com/noah-/d2bs) `f4b99bbe8de6916384991dfdd198ecf234cef1c0`；客户端运行不接入原DLL地图辅助器，reference、导出文件和原DLL均不提交或分发。
 
 原DLL仅只读核对或由忽略目录的既有导出工具作开发对照，不随运行包分发。样本、原点／DT1／16位碰撞、屏蔽标志及限制统一维护在[原版对照](../architecture/MULTIPLAYER.md#原版-dll-对照方法)。
+
+持物占格高亮另核对同快照D2Client RVA 0x8C600逐格调用DrawBox mode=0、0x8C6B0初始化绿色RGB(0,128,0)／禁止红色(128,0,0)。D2gfx 1.13c ordinal10014才是DrawBox入口（RVA 0xBA30），不能套用D2MOO 1.10f的ordinal10055；D2DDraw RVA 0x6A25选择trans[2]，0x6850按背景索引×256＋颜色索引读取。D2Win ordinal10190经D2CMP ordinal10049（RVA 0x9D30）以RGB平方距离取首个最近项。当前MPQ Act PL2偏移0x23500提供实际混色结果；Diablerie InventoryGrid／InventorySlot只补充底色在物品下方、无描边的布局证据，其简化RGBA不作为原混色值。本批仅只读静态核对，未构建或运行。
 
 ## 补充资料的边界
 

@@ -19,11 +19,50 @@ void main() {
 }
 )";
 } // namespace
+void SceneView::updatePlayerTrade(const OnlinePlayerTrade &trade) {
+    tradeInvite_.update(trade);
+    view_.playerTradeBlocking = trade.active();
+    view_.playerTradeEditable = !trade.ownAgreed && trade.response == OnlinePlayerTrade::Response::None;
+    const bool open = trade.phase == OnlinePlayerTrade::Phase::Open;
+    if (open && !view_.inventory.playerTradeOpen) {
+        view_.inventory.cancelGesture(); view_.inventory.storage = {}; view_.inventory.cubeOpen = false;
+        view_.inventory.open = true; view_.miniPanelOpen = false;
+        view_.characterOpen = view_.hirelingOpen = view_.questOpen = view_.skillTreeOpen = false;
+        view_.travelMenu = view_.shopOpen = view_.npcMenu = view_.hireListOpen = false;
+        view_.help = view_.gameMenuOpen = false; view_.skillPicker.reset();
+        cancelNpcDialogue();
+    } else if (!open && view_.inventory.playerTradeOpen) {
+        view_.inventory.open = false; view_.inventory.cancelGesture();
+        view_.inventory.selected = {};
+    }
+    view_.inventory.playerTradeOpen = open;
+}
+PlayerTradeIntent SceneView::handlePlayerTrade(const FrameInput &input) {
+    auto intent = tradeInvite_.handle(input,worldViewport());
+    if (intent.consumed || !view_.inventory.playerTradeOpen) return intent;
+    const bool busy = bool(view_.inventory.pending) || inventoryView_.cursorItem();
+    return tradeInvite_.handleOpen(input,inventoryView_.gold,inventoryView_.goldKnown,busy);
+}
+void SceneView::drawPlayerTrade(Vec mouse) const {
+    if (!view_.inventory.playerTradeOpen) return;
+    drawPanelFrame(false); tradeInvite_.drawOpen(characterView_.name);
+    if (!tradeInvite_.ready()) return;
+    for (bool own : {false,true}) {
+        const auto grid = playerTradeGrid(inventoryView_,own);
+        if (!grid.container) continue;
+        drawContainerGrid(grid,mouse);
+        if (!view_.inventory.drag)
+            if (auto cell = grid.cellAt(mouse))
+                if (const auto *item = inventoryView_.item(inventoryView_.itemAt(grid.container,*cell)))
+                    drawItemTooltip(*item,{mouse.x+170,mouse.y});
+    }
+}
 SceneView::SceneView(Archives &archives, const ClassicData &content, const IActorClient &actor,
     IInventoryClient &inventory, ICharacterClient &character, IQuestClient &quests, INpcClient &npc, IMapClient &map)
     : archives_(archives), actorClient_(actor), inventoryClient_(inventory), characterClient_(character), questClient_(quests),
       npcClient_(npc), mapClient_(map), assets_(archives, content), paletteBlend_(archives),
-      painter_(assets_.font), speechPainter_(assets_.speechFont) {
+      painter_(assets_.font), speechPainter_(assets_.speechFont), chat_(archives),
+      originalMenu_(archives, assets_.font), tradeInvite_(archives, assets_.font, originalMenu_) {
     highlightShader_=LoadShaderFromMemory(nullptr,highlightFragment);
     highlightTransform_=GetShaderLocation(highlightShader_,"highlightTransform");
     refreshUi(0);
@@ -49,6 +88,19 @@ SceneView::~SceneView() {
     if (highlightShader_.id)
         UnloadShader(highlightShader_);
 }
+ChatIntent SceneView::handleChat(const FrameInput &input) {
+    chat_.setLogOpen(view_.messageLogOpen);
+    const bool canOpen = !view_.playerTradeBlocking && !view_.gameMenuOpen && !view_.help && !view_.npcMenu && !view_.shopOpen &&
+        !view_.hireListOpen && view_.dialogue.empty() && !view_.travelMenu && !view_.inventory.drag &&
+        !view_.inventory.split && !view_.inventory.goldDialog && !view_.inventory.identify;
+    auto intent = chat_.handle(input, canOpen);
+    view_.chatInputOpen = chat_.inputOpen(); view_.messageLogOpen = chat_.logOpen();
+    return intent;
+}
+void SceneView::chatSent(bool accepted) {
+    chat_.sent(accepted);
+    view_.chatInputOpen = chat_.inputOpen();
+}
 void SceneView::drawSelectableSprite(const Sprite *image, Vec position, bool highlighted, Color tint,
                                      Vector2 highlight) const {
     if (!image || !image->texture.id)
@@ -63,7 +115,7 @@ void SceneView::drawSelectableSprite(const Sprite *image, Vec position, bool hig
 }
 Rectangle SceneView::worldViewport() const {
     const bool left = view_.questOpen || view_.characterOpen || view_.hirelingOpen || view_.travelMenu || view_.shopOpen ||
-                      view_.inventory.storage || view_.inventory.cubeOpen;
+                      view_.inventory.storage || view_.inventory.cubeOpen || view_.inventory.playerTradeOpen;
     const bool right = view_.inventory.open || view_.skillTreeOpen;
     const float begin = left ? classicSideBounds(false).width : 0;
     const float end = right ? classicSideBounds(true).x : W;

@@ -30,6 +30,7 @@ std::vector<FrameInput> parseDebugInput(const nlohmann::json &request) {
         frame.backspace = request.value("backspace", false);
         frame.text = request.value("text", std::string{});
         frame.entryText = request.value("entryText", std::string{});
+        frame.entryUnsupported = request.value("entryUnsupported", false);
         if (frame.entryText.size() > 255 || !std::ranges::all_of(frame.entryText, [](unsigned char c) { return c >= 32 && c < 127; }))
             throw std::invalid_argument("UI entry text must contain at most 255 printable ASCII bytes");
         frame.wheel = request.value("wheel", 0.f);
@@ -41,6 +42,12 @@ std::vector<FrameInput> parseDebugInput(const nlohmann::json &request) {
         const auto key = request.value("key", std::string{});
         if (key == "escape") frame.escape = true;
         else if (key == "enter") frame.enter = true;
+        else if (key == "message-log" || key == "m") frame.messageLog = true;
+        else if (key == "home") frame.entryHome = frame.automapCenter = true;
+        else if (key == "end") frame.entryEnd = true;
+        else if (key == "delete") frame.entryDelete = true;
+        else if (key == "page-up") frame.pageDelta = -1;
+        else if (key == "page-down") frame.pageDelta = 1;
         else if (key == "tab") frame.tab = frame.automap = true;
         else if (key == "inventory") frame.inventory = true;
         else if (key == "character") frame.character = true;
@@ -55,10 +62,10 @@ std::vector<FrameInput> parseDebugInput(const nlohmann::json &request) {
         else if (key == "automap-side") frame.minimapSide = true;
         else if (key == "automap-center") frame.automapCenter = true;
         else if (key == "automap-names") frame.automapNames = true;
-        else if (key == "up") frame.movement.y = -1;
-        else if (key == "down") frame.movement.y = 1;
-        else if (key == "left") frame.movement.x = -1;
-        else if (key == "right") frame.movement.x = 1;
+        else if (key == "up") { frame.movement.y = -1; frame.menuDelta = -1; }
+        else if (key == "down") { frame.movement.y = 1; frame.menuDelta = 1; }
+        else if (key == "left") { frame.movement.x = -1; frame.entryStep = -1; }
+        else if (key == "right") { frame.movement.x = 1; frame.entryStep = 1; }
         else if (key == "run" || key == "r") frame.run = true;
         else if (!key.empty()) throw std::invalid_argument("Unsupported UI key");
         return frame;

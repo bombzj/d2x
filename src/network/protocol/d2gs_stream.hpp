@@ -22,4 +22,8 @@ size_t lod113c_packet_size(std::span<const uint8_t> bytes);
 Bytes game_logon(uint32_t hash, uint16_t token, uint8_t characterClass,
     uint8_t locale, std::string_view characterName);
 Bytes game_ping(uint32_t elapsedMilliseconds, uint32_t latency);
+// Normal in-game broadcast, printable ASCII / native language 0 only until
+// localized chat encoding is verified. Receiver is empty; D2Net requires an
+// additional zero extension-length byte after the two terminated strings.
+Bytes game_chat(std::string_view text);
 } // namespace d2x::net::protocol

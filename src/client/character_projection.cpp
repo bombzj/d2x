@@ -197,27 +197,41 @@ CharacterView projectCharacterDisplay(const ClassicData &data, const CharacterPr
             skill.action = describeCharacterAction(display, &entry, effective, true);
             skill.pickerTooltip = describeSkillPicker(entry, nullptr, nullptr, skill.baseRank, 1);
         }
-        else skill.pickerTooltip = {skill.effectiveRankKnown ? "Current level: 0" : "Current level: ?"};
-        std::string title = entry.name + "  " + (skill.baseRankKnown ? std::to_string(skill.baseRank) : "?") + "/" + std::to_string(entry.maximumRank);
-        if (skill.baseRankKnown && skill.effectiveRankKnown && effective > skill.baseRank)
-            title += "  Bonus +" + std::to_string(effective - skill.baseRank);
-        skill.treeTooltip.push_back(std::move(title));
+        else skill.pickerTooltip.clear();
+        const auto currentDetails = skill.pickerTooltip;
+        skill.treeTooltip.push_back(entry.name);
         if (!entry.description.empty()) skill.treeTooltip.push_back(entry.description);
         if (skill.baseRankKnown && stat(input, "level") && view.level < skill.nextRequiredLevel)
             skill.treeTooltip.push_back("Requires level " + std::to_string(skill.nextRequiredLevel));
         for (int required : entry.prerequisites)
             if (baseKnown(required) && (!input.baseRanks.contains(required) || input.baseRanks.at(required) <= 0))
                 if (const auto *prerequisite = data.skills.find(required)) skill.treeTooltip.push_back("Requires " + prerequisite->name);
-        if (skill.effectiveRankKnown) {
-            skill.treeTooltip.push_back("Current level " + std::to_string(effective));
-            if (effective > 0) skill.treeTooltip.insert(skill.treeTooltip.end(), skill.pickerTooltip.begin(), skill.pickerTooltip.end());
-        } else skill.treeTooltip.push_back("Current level: ?");
+        if (skill.effectiveRankKnown && effective > 0) {
+            skill.treeTooltip.push_back("");
+            skill.treeTooltip.push_back(data.skills.currentLevelLabel + std::to_string(effective));
+            if (effective > 0) skill.treeTooltip.insert(skill.treeTooltip.end(), currentDetails.begin(), currentDetails.end());
+        } else if (!skill.effectiveRankKnown) {
+            skill.treeTooltip.push_back("");
+            skill.treeTooltip.push_back(data.skills.currentLevelLabel + "?");
+        }
         if (skill.baseRankKnown && skill.effectiveRankKnown && skill.baseRank < skill.maximumRank && effective < 255) {
             auto nextRanks = input.baseRanks; ++nextRanks[id];
-            skill.treeTooltip.push_back("Next level " + std::to_string(effective + 1));
+            skill.treeTooltip.push_back("");
+            skill.treeTooltip.push_back(effective == 0 ? data.skills.firstLevelLabel :
+                data.skills.nextLevelLabel);
             const auto next = hints(effective + 1, nextRanks);
             skill.treeTooltip.insert(skill.treeTooltip.end(), next.begin(), next.end());
         }
+        skill.treeBonusHeading = entry.bonusHeading;
+        skill.treeBonusTooltip = entry.bonusDescriptions;
+        skill.pickerTooltip.clear();
+        if (!entry.shortDescription.empty()) skill.pickerTooltip.push_back(entry.shortDescription);
+        if (!entry.classCode.empty()) {
+            skill.pickerTooltip.push_back("");
+            skill.pickerTooltip.push_back(data.skills.currentLevelLabel +
+                (skill.effectiveRankKnown ? std::to_string(effective) : "?"));
+        }
+        skill.pickerTooltip.insert(skill.pickerTooltip.end(), currentDetails.begin(), currentDetails.end());
         if (skill.available && !skill.passive && id != 0) {
             view.choices[1].push_back(id); if (skill.leftAllowed) view.choices[0].push_back(id);
         }

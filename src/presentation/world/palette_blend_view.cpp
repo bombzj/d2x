@@ -79,6 +79,14 @@ void main() {
     finalColor = texelFetch(lightTable, ivec2(index, row), 0);
 }
 )";
+constexpr const char *rectangleFragment = R"(
+uniform sampler2D rectangleTable;
+uniform int rectangleColor;
+void main() {
+    int backgroundIndex = paletteIndex(texelFetch(destination, ivec2(gl_FragCoord.xy), 0).rgb);
+    finalColor = texelFetch(rectangleTable, ivec2(rectangleColor, backgroundIndex), 0);
+}
+)";
 Texture2D upload(const Color *pixels, int width, int height) {
     Image image{const_cast<Color *>(pixels), width, height, 1, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8};
     auto texture = LoadTextureFromImage(image);
@@ -96,11 +104,17 @@ PaletteBlendView::PaletteBlendView(Archives &archives, int act) {
     std::array<Color, 256> colors{};
     for (size_t i = 0; i < colors.size(); ++i)
         colors[i] = {bytes[i * 4], bytes[i * 4 + 1], bytes[i * 4 + 2], 255};
+    colors_ = colors;
     std::vector<Color> blend(256 * 256);
     for (size_t i = 0; i < blend.size(); ++i)
         blend[i] = colors[bytes[screenOffset + i]];
     palette_ = upload(colors.data(), 256, 1);
     screenTable_ = upload(blend.data(), 256, 256);
+    // D2DDraw 1.13c RVA 0x6A25 selects trans[2] for DrawBox mode 0;
+    // RVA 0x6850 indexes destination * 256 + the solid color index.
+    for (size_t i = 0; i < blend.size(); ++i)
+        blend[i] = colors[bytes[0x23500 + i]];
+    rectangleTable_ = upload(blend.data(), 256, 256);
     std::vector<Color> light(32 * 256);
     for (size_t i = 0; i < light.size(); ++i)
         light[i] = colors[bytes[0x400 + i]];
@@ -117,33 +131,73 @@ PaletteBlendView::PaletteBlendView(Archives &archives, int act) {
     SetTextureFilter(destination_.texture, TEXTURE_FILTER_POINT);
     const auto blendSource = std::string(paletteLookup) + fragment;
     const auto lightSource = std::string(paletteLookup) + lightingFragment;
+    const auto rectangleSource = std::string(paletteLookup) + rectangleFragment;
     shader_ = LoadShaderFromMemory(nullptr, blendSource.c_str());
     lightingShader_ = LoadShaderFromMemory(nullptr, lightSource.c_str());
+    rectangleShader_ = LoadShaderFromMemory(nullptr, rectangleSource.c_str());
     destinationLocation_ = GetShaderLocation(shader_, "destination");
     paletteLocation_ = GetShaderLocation(shader_, "palette");
     tableLocation_ = GetShaderLocation(shader_, "screenTable");
     indicesLocation_ = GetShaderLocation(shader_, "paletteIndices");
-    if (!palette_.id || !screenTable_.id || !lightTable_.id || !paletteIndices_.id || !destination_.id ||
+    if (!palette_.id || !screenTable_.id || !rectangleTable_.id || !lightTable_.id || !paletteIndices_.id || !destination_.id ||
         destinationLocation_ < 0 || paletteLocation_ < 0 || tableLocation_ < 0 || indicesLocation_ < 0 ||
-        GetShaderLocation(lightingShader_, "lightTable") < 0) {
+        GetShaderLocation(lightingShader_, "lightTable") < 0 ||
+        GetShaderLocation(rectangleShader_, "rectangleTable") < 0 ||
+        GetShaderLocation(rectangleShader_, "rectangleColor") < 0) {
+        UnloadShader(rectangleShader_);
         UnloadShader(lightingShader_);
         UnloadShader(shader_);
         UnloadRenderTexture(destination_);
         UnloadTexture(paletteIndices_);
         UnloadTexture(screenTable_);
+        UnloadTexture(rectangleTable_);
         UnloadTexture(lightTable_);
         UnloadTexture(palette_);
         throw std::runtime_error("Original PL2 blend resources or shader are unavailable");
     }
 }
 PaletteBlendView::~PaletteBlendView() {
+    UnloadShader(rectangleShader_);
     UnloadShader(lightingShader_);
     UnloadShader(shader_);
     UnloadRenderTexture(destination_);
     UnloadTexture(screenTable_);
+    UnloadTexture(rectangleTable_);
     UnloadTexture(lightTable_);
     UnloadTexture(paletteIndices_);
     UnloadTexture(palette_);
+}
+void PaletteBlendView::drawRectangle(Rectangle bounds, Color color) const {
+    const int left = std::max(0, int(bounds.x)), top = std::max(0, int(bounds.y));
+    const int right = std::min(W, int(bounds.x + bounds.width));
+    const int bottom = std::min(H, int(bounds.y + bounds.height));
+    if (left >= right || top >= bottom) return;
+    // D2CMP 1.13c RVA 0x9D30: squared RGB distance, first index on a tie.
+    int index = 0, nearest = 3 * 255 * 255 + 1;
+    for (int i = 0; i < 256; ++i) {
+        const auto c = colors_[size_t(i)];
+        const int r = int(c.r) - color.r, g = int(c.g) - color.g, b = int(c.b) - color.b;
+        const int distance = r * r + g * g + b * b;
+        if (distance < nearest) { nearest = distance; index = i; }
+    }
+    rlDrawRenderBatchActive();
+    const auto target = rlGetActiveFramebuffer();
+    rlBindFramebuffer(RL_READ_FRAMEBUFFER, target);
+    rlBindFramebuffer(RL_DRAW_FRAMEBUFFER, destination_.id);
+    rlBlitFramebuffer(left, H - bottom, right, H - top,
+                      left, H - bottom, right, H - top, 0x00004000);
+    rlEnableFramebuffer(target);
+    BeginShaderMode(rectangleShader_);
+    auto texture = [&](const char *name, Texture2D value) {
+        SetShaderValueTexture(rectangleShader_, GetShaderLocation(rectangleShader_, name), value);
+    };
+    texture("destination", destination_.texture);
+    texture("palette", palette_);
+    texture("paletteIndices", paletteIndices_);
+    texture("rectangleTable", rectangleTable_);
+    SetShaderValue(rectangleShader_, GetShaderLocation(rectangleShader_, "rectangleColor"), &index, SHADER_UNIFORM_INT);
+    DrawRectangle(left, top, right - left, bottom - top, WHITE);
+    EndShaderMode();
 }
 void PaletteBlendView::drawLighting(Texture2D lightMap, Vec player, Vec playerScreen, Vec origin, float zoom,
                                     Color ambient) const {

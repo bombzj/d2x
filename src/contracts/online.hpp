@@ -60,6 +60,15 @@ struct OnlineGame {
     uint32_t index{}, flags{};
     uint8_t players{};
 };
+struct OnlineGameInfo {
+    enum class State { Pending, Ready, TimedOut };
+    State state{State::Pending};
+    std::string name, description;
+    uint32_t flags{}, uptimeSeconds{};
+    uint8_t creatorLevel{}, levelDifference{}, maximumPlayers{};
+    struct Player { std::string name; uint8_t characterClass{}, level{}; };
+    std::vector<Player> players;
+};
 struct OnlineLobbyNotice {
     std::string text;
     bool error{};
@@ -85,6 +94,7 @@ struct OnlineView {
     std::vector<OnlineRealm> realms;
     std::vector<OnlineCharacter> characters;
     std::vector<OnlineGame> games;
+    std::optional<OnlineGameInfo> gameInfo;
     std::vector<OnlineLobbyNotice> lobbyNotices; // Bounded native SID info/error announcements, not chat.
     std::string selectedRealm, selectedCharacter;
     OnlineLoadInfo load;
@@ -103,6 +113,7 @@ struct OnlineView {
         realms.clear();
         characters.clear();
         games.clear();
+        gameInfo.reset();
         lobbyNotices.clear();
         selectedRealm.clear();
         selectedCharacter.clear();

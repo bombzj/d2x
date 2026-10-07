@@ -54,10 +54,20 @@ class RealmSession {
     bool return_to_realms();
     bool cancel_game_list();
     bool list_games(std::string filter = {});
+    bool query_game(std::string name);
     bool create_game(CreateGameOptions options);
     bool join_game(std::string name, std::string password = {});
     // Cancel pre-entry requests by retiring MCP; after logon, wait for native save/leave.
     bool leave_game();
+    // Normal D2GS room broadcast. Never inserts a local echo; read().world.social
+    // receives only original server messages. No scene/life/interaction gate:
+    // chat also remains available while dead, in a panel, or changing areas.
+    bool send_chat(std::string text);
+    // Respond only to the current server invitation. Accept is TRADEBTN_PERFORM
+    // (3), not the final item-exchange acceptance (4). No local trade execution.
+    bool respond_player_trade(bool accept, uint64_t revision, std::optional<OnlineIntentContext> context = {});
+    bool update_player_trade(OnlinePlayerTradeAction, uint64_t revision, uint32_t amount = 0,
+                             std::optional<OnlineIntentContext> context = {});
     bool resurrect(std::optional<OnlineIntentContext> context = {}); // Original 0x41, after server PLRMODE_DEAD.
     // Raw original movement request. Application must first validate its current
     // MPQ scene binding; neither this method nor the replica predicts a position.

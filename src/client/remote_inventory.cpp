@@ -31,6 +31,9 @@ RemoteInventory::RemoteInventory(Archives &archives) : strings_(archives) {
         } else if (name == "Transmogrify Box2") {
             view_.cubeColumns = inventory.number(row, "gridX").value_or(0);
             view_.cubeRows = inventory.number(row, "gridY").value_or(0);
+        } else if (name == "Trade Page 2-2") {
+            view_.tradeColumns = inventory.number(row, "gridX").value_or(0);
+            view_.tradeRows = inventory.number(row, "gridY").value_or(0);
         }
     }
 }
@@ -355,6 +358,7 @@ bool RemoteInventory::submit(net::RealmSession &session, OnlineItemCommand comma
     auto backpack = [&](const OnlineItem &item) { return owned(item) && item.mode == 0 && item.page == 1; };
     auto accessible = [&](const OnlineItem &item) {
         return owned(item) && item.mode == 0 && (item.page == 1 ||
+            (item.page == 3 && world.playerTrade.phase == OnlinePlayerTrade::Phase::Open) ||
             (item.page == 4 && world.storage.kind == OnlineStorageKind::Cube) ||
             (item.page == 5 && world.storage.kind == OnlineStorageKind::Stash));
     };
@@ -379,9 +383,10 @@ bool RemoteInventory::submit(net::RealmSession &session, OnlineItemCommand comma
         command.targetRevision = target->revision;
     }
     auto placement = [&](uint32_t replaced = UINT32_MAX) {
-        const int columns = command.page == 0 ? view_.columns : command.page == 3 ? view_.cubeColumns : view_.stashColumns;
-        const int rows = command.page == 0 ? view_.rows : command.page == 3 ? view_.cubeRows : view_.stashRows;
-        if ((command.page != 0 && command.page != 3 && command.page != 4) ||
+        const int columns = command.page == 0 ? view_.columns : command.page == 2 ? view_.tradeColumns : command.page == 3 ? view_.cubeColumns : view_.stashColumns;
+        const int rows = command.page == 0 ? view_.rows : command.page == 2 ? view_.tradeRows : command.page == 3 ? view_.cubeRows : view_.stashRows;
+        if ((command.page != 0 && command.page != 2 && command.page != 3 && command.page != 4) ||
+            (command.page == 2 && world.playerTrade.phase != OnlinePlayerTrade::Phase::Open) ||
             (command.page == 3 && world.storage.kind != OnlineStorageKind::Cube) ||
             (command.page == 4 && world.storage.kind != OnlineStorageKind::Stash) ||
             (world.storage.kind == OnlineStorageKind::Cube && world.storage.source == command.item) ||

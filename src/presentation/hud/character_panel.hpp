@@ -5,16 +5,16 @@
 #include <optional>
 
 namespace d2x {
-inline Rectangle characterBounds() { return classicPanelBounds(false); }
+inline Rectangle characterBounds() { return classicPanelBounds(false, 64); }
 inline Rectangle characterArtRect(float x, float y, float width, float height) {
     auto panel = characterBounds();
-        return {panel.x + x * classicPanelScale, panel.y + y * classicPanelScale,
+    return {panel.x + x * classicPanelScale, panel.y + y * classicPanelScale,
             width * classicPanelScale, height * classicPanelScale};
 }
-inline Rectangle characterClose() { return characterArtRect(128, 389, 32, 34); }
+inline Rectangle characterClose() { return characterArtRect(128, 388, 32, 32); }
 inline Rectangle characterAddButton(int index) {
-    constexpr float y[] = {76, 140, 223, 288};
-    return characterArtRect(122, y[index], 28, 28);
+    constexpr float y[] = {76, 138, 224, 286};
+    return characterArtRect(125, y[index], 30, 30);
 }
 inline std::optional<Attribute> characterAttributeAt(Vec mouse) {
     for (int index = 0; index < 4; ++index)

@@ -188,6 +188,48 @@ std::vector<std::string> describeAuraSkill(const SkillRecord &skill, const AuraD
 
 std::vector<std::string> describeSkillPicker(const SkillRecord &skill, const SkillCastSpec *resolved,
     const AuraDefinition *aura, int baseRank, int aiCurseDivisor, bool valuesKnown, bool damageKnown) {
+    if ((skill.sourceName == "Frozen Armor" || skill.sourceName == "Blaze") && !skill.descriptionLines.empty()) {
+        std::vector<std::string> lines;
+        auto number = [](float value) {
+            auto text = displayNumber("%.1f", value);
+            if (text.ends_with(".0")) text.resize(text.size() - 2);
+            return text;
+        };
+        // SkillDesc stores these lines from the bottom (mana) upwards.
+        for (auto it = skill.descriptionLines.rbegin(); it != skill.descriptionLines.rend(); ++it) {
+            const auto &line = *it;
+            if (line.value == SkillDescriptionValue::AverageFireDamage) {
+                // DescDam 9 describes the three overlapping fire cells at 25 Hz.
+                const auto damage = resolved && damageKnown
+                    ? std::to_string(int(resolved->minimumDamage * 75.f)) + "-" +
+                      std::to_string(int(resolved->maximumDamage * 75.f)) : "?";
+                lines.push_back(line.prefix + damage + line.suffix);
+                continue;
+            }
+            std::optional<float> value;
+            if (resolved) {
+                const auto &cast = *resolved;
+                if (line.value == SkillDescriptionValue::Mana) value = cast.manaCost;
+                else if (line.value == SkillDescriptionValue::FireDuration) value = cast.missileLifetime;
+                else if (cast.appliedEffect) {
+                    const auto &armor = *cast.appliedEffect;
+                    if (line.value == SkillDescriptionValue::DefensePercent)
+                        value = float(armor.modifiers.combat.defensePercent);
+                    else if (valuesKnown && line.value == SkillDescriptionValue::Duration && armor.duration)
+                        value = float(*armor.duration) / 25.f;
+                    else if (valuesKnown && line.value == SkillDescriptionValue::FreezeDuration)
+                        for (const auto &reaction : armor.reactions)
+                            if (const auto *freeze = std::get_if<FreezeAttacker>(&reaction.action)) value = freeze->duration;
+                }
+            }
+            auto text = line.prefix + (value ? number(*value) : "?");
+            if (line.function == 12 || line.function == 23)
+                text += value && *value == 1.f ? skill.secondLabel : skill.secondsLabel;
+            else text += line.suffix;
+            lines.push_back(std::move(text));
+        }
+        return lines;
+    }
     const auto *entry = &skill;
     std::string detail;
     std::vector<std::string> detailLines;

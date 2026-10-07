@@ -5,6 +5,9 @@ namespace d2x {
 // One coordinate system for drawing and hit testing the original 800-pixel panel.
 // Native DC6 panel frames are bottom-aligned; the globes rise above the 55px strip.
 inline constexpr float hudScale = W / 800.f;
+// UI glyphs keep their MPQ pixel size. The outer viewport already scales the
+// whole canvas; widening the HUD must not enlarge text a second time.
+inline constexpr float hudTextScale = 1.f;
 inline Rectangle hudRect(float x, float fromBottom, float width, float height) {
     return {x * hudScale, H - fromBottom * hudScale, width * hudScale, height * hudScale};
 }

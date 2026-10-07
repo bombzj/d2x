@@ -40,6 +40,7 @@ struct InventoryContainerView {
     EntityId id;
     ContainerKind kind = ContainerKind::Backpack;
     int columns = 0, rows = 0;
+    bool readOnly = false;
 };
 struct InventoryLayoutView {
     int columns = 0, rows = 0, left = 0, top = 0, cellSize = 0;
@@ -57,6 +58,8 @@ struct InventoryView {
     bool dead = false;
     bool goldKnown = false;
     InventoryLayoutView stashLayout, cubeLayout;
+    InventoryLayoutView ownTradeLayout, peerTradeLayout;
+    EntityId ownTrade, peerTrade;
     std::array<std::array<int, 4>, 4> hirelingSlots{};
     std::string cubeCode, staffRecipeOutput;
     std::optional<GroundLocation> dropLocation;

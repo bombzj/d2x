@@ -4,7 +4,7 @@
 #include <vector>
 
 namespace d2x {
-enum class OnlineMapInteraction { Exit, Door, Portal, TeleportPad, Waypoint, Npc, Stash, Corpse, Object };
+enum class OnlineMapInteraction { Exit, Door, Portal, TeleportPad, Waypoint, Npc, Stash, Corpse, Object, PlayerTrade };
 struct OnlineMapTarget {
     OnlineUnitKey unit;
     OnlinePoint position;
@@ -41,6 +41,13 @@ struct OnlineNpcDialogView {
     std::string speaker, travelLabel;
     std::vector<OnlineNpcText> messages;
 };
+struct OnlinePlayerDisplay {
+    uint32_t id{};
+    std::string name, reason;
+    uint16_t classId{};
+    Vec position; // Displayed global subtiles; never authority or an interaction target.
+    bool local{}, visible{}, moving{}, dead{};
+};
 struct OnlineSceneView {
     bool available{}, movementAvailable{}, collisionVerified{};
     std::string reason{"Waiting for server world data"}, map;
@@ -50,6 +57,7 @@ struct OnlineSceneView {
     std::vector<std::string> effectLimitations;
     bool playerDisplayed{};
     std::optional<Vec> playerDisplayPosition; // Presentation coordinates; never used as authority.
+    std::vector<OnlinePlayerDisplay> players;
     std::optional<uint16_t> area;
     std::optional<uint8_t> palette;
     std::optional<OnlinePoint> layoutOrigin;

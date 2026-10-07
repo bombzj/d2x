@@ -21,6 +21,7 @@ enum class FrontendCommand {
     CreateCharacter,
     DeleteCharacter,
     ListGames,
+    QueryGame,
     CancelList,
     JoinGame,
     Back,

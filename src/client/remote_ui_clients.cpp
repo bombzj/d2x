@@ -148,6 +148,40 @@ struct RemoteUiClients::Impl {
             if (o.inventoryView.dead) return InventoryError::AccessDenied;
             return std::visit([&](const auto &c) {
                 using T = std::decay_t<decltype(c)>;
+                if (o.inventoryView.ownTrade) {
+                    const auto &trade = o.session.read().world.playerTrade;
+                    if (trade.ownAgreed || trade.response != OnlinePlayerTrade::Response::None)
+                        return InventoryError::AccessDenied;
+                    if constexpr (!std::is_same_v<T, MoveItem> && !std::is_same_v<T, TransferItem> && !std::is_same_v<T, SwapItems>)
+                        return InventoryError::AccessDenied;
+                    if constexpr (requires { c.item; }) {
+                        const auto *item = o.inventoryView.item(c.item.id);
+                        const auto *where = item ? std::get_if<ContainerLocation>(&item->location) : nullptr;
+                        if (!where || (where->container != o.inventoryView.containers.backpack &&
+                            where->container != o.inventoryView.ownTrade && where->container != o.inventoryView.containers.cursor))
+                            return InventoryError::AccessDenied;
+                    }
+                    auto writable = [&](EntityId container) {
+                        return container == o.inventoryView.ownTrade || container == o.inventoryView.containers.backpack ||
+                            container == o.inventoryView.containers.cursor;
+                    };
+                    if constexpr (std::is_same_v<T, MoveItem>) {
+                        const bool allowed = std::visit([&](const auto &destination) {
+                            if constexpr (requires { destination.container; }) return writable(destination.container);
+                            else return false;
+                        }, c.destination);
+                        if (!allowed) return InventoryError::AccessDenied;
+                    } else if constexpr (std::is_same_v<T, TransferItem>) {
+                        if (!writable(c.destination)) return InventoryError::AccessDenied;
+                    } else if constexpr (std::is_same_v<T, SwapItems>) {
+                        for (const auto handle : {c.first,c.second}) {
+                            const auto *item = o.inventoryView.item(handle.id);
+                            const auto *loc = item ? std::get_if<ContainerLocation>(&item->location) : nullptr;
+                            if (!loc || !writable(loc->container)) return InventoryError::AccessDenied;
+                            if (item->revision != handle.revision) return InventoryError::SourceChanged;
+                        }
+                    }
+                }
                 if constexpr (std::is_same_v<T, SplitStack> || std::is_same_v<T, EquipHirelingItem>)
                     return InventoryError::InvalidRequest;
                 else if constexpr (requires { c.item; }) {
@@ -410,7 +444,10 @@ struct RemoteUiClients::Impl {
                 next.action = OnlineItemAction::Equip; next.body = target.container == owned.beltEquipment ? 8 : nativeBody(EquipmentSlot(target.cell.x));
             } else {
                 next.action = OnlineItemAction::Place;
-                next.page = target.container == owned.cube ? 3 : target.container == owned.stash ? 4 : 0;
+                if (target.container == inventoryView.peerTrade && inventoryView.peerTrade) {
+                    notice = "The other player's offer is read-only."; return;
+                }
+                next.page = target.container == inventoryView.ownTrade && inventoryView.ownTrade ? 2 : target.container == owned.cube ? 3 : target.container == owned.stash ? 4 : 0;
             }
         }
         if (waiting || !transactions.empty()) { notice = "Waiting for the previous server item response."; return; }
@@ -486,7 +523,16 @@ struct RemoteUiClients::Impl {
                 const auto *loc = target ? std::get_if<ContainerLocation>(&target->location) : nullptr;
                 c.action = loc && loc->container == owned.belt ? OnlineItemAction::BeltSwap : OnlineItemAction::Swap;
                 if (loc) c.beltSlot = uint8_t(loc->cell.y*4+loc->cell.x);
-                if (loc) { c.x=uint8_t(loc->cell.x); c.y=uint8_t(loc->cell.y); }
+                if (v.destination && (!loc || v.destination->container != loc->container)) {
+                    notice = "Swap destination must belong to the covered item's container."; return;
+                }
+                if (loc) {
+                    const auto cell = v.destination ? v.destination->cell : loc->cell;
+                    if (cell.x < 0 || cell.y < 0 || cell.x > UINT8_MAX || cell.y > UINT8_MAX) {
+                        notice = "Swap destination is outside the native grid coordinate range."; return;
+                    }
+                    c.x = uint8_t(cell.x); c.y = uint8_t(cell.y);
+                }
                 if (items.read().cursor != c.item) { compositeTake(c); return; }
             } else if constexpr (std::is_same_v<T, MergeStacks> || std::is_same_v<T, LoadBook> || std::is_same_v<T, SocketItem> || std::is_same_v<T, IdentifyItem>) {
                 if constexpr (std::is_same_v<T, MergeStacks>) { c.action=OnlineItemAction::Stack; c.item=guid(v.source.id); c.itemRevision=v.source.revision; c.target=guid(v.target.id); c.targetRevision=v.target.revision; }
@@ -940,6 +986,32 @@ struct RemoteUiClients::Impl {
             v.containerViews.emplace(id,InventoryContainerView{id,kind,columns,rows});
         auto layout=[](const auto &x){return InventoryLayoutView{x.columns,x.rows,x.left,x.top,x.cellSize,x.expansion};};
         v.stashLayout=layout(data.stashLayout); v.cubeLayout=layout(data.cubeLayout); v.hirelingSlots=data.hirelingLayout.slots;
+        if (w.playerTrade.phase == OnlinePlayerTrade::Phase::Open) {
+            const auto &table = data.tables.at("inventory");
+            size_t peerRow = table.rows().size(), ownRow = peerRow;
+            for (size_t row = 0; row < table.rows().size(); ++row) {
+                if (table.value(row,"class") == "Trade Page 1-2") peerRow = row;
+                if (table.value(row,"class") == "Trade Page 2-2") ownRow = row;
+            }
+            auto tradeLayout = [&](size_t row) {
+                InventoryLayoutView l;
+                if (row >= table.rows().size() || peerRow >= table.rows().size()) return l;
+                l.columns = table.number(row,"gridX").value_or(0); l.rows = table.number(row,"gridY").value_or(0);
+                l.left = table.number(row,"gridLeft").value_or(0) - table.number(peerRow,"invLeft").value_or(0);
+                l.top = table.number(row,"gridTop").value_or(0) - table.number(peerRow,"invTop").value_or(0);
+                l.cellSize = table.number(row,"gridBoxWidth").value_or(0);
+                if (l.columns < 1 || l.rows < 1 || l.cellSize < 1 || l.left < 0 || l.top < 0 ||
+                    l.cellSize != table.number(row,"gridBoxHeight").value_or(0) ||
+                    l.left + l.columns*l.cellSize > 320 || l.top + l.rows*l.cellSize > 432) return InventoryLayoutView{};
+                return l;
+            };
+            v.ownTradeLayout = tradeLayout(ownRow); v.peerTradeLayout = tradeLayout(peerRow);
+            if (v.ownTradeLayout.cellSize && v.peerTradeLayout.cellSize) {
+                v.ownTrade = containerId(9); v.peerTrade = containerId(10);
+                v.containerViews.emplace(v.ownTrade, InventoryContainerView{v.ownTrade,ContainerKind::Backpack,v.ownTradeLayout.columns,v.ownTradeLayout.rows});
+                v.containerViews.emplace(v.peerTrade, InventoryContainerView{v.peerTrade,ContainerKind::Backpack,v.peerTradeLayout.columns,v.peerTradeLayout.rows,true});
+            }
+        }
         v.cubeCode=data.cubeCode; v.staffRecipeOutput=data.staffRecipe.output;
         v.weaponSet=w.weaponSet; v.gold=unsigned(stat("gold").value_or(0)); v.bankGold=unsigned(stat("goldbank").value_or(0));
         v.goldKnown = stat("gold").has_value();
@@ -966,6 +1038,8 @@ struct RemoteUiClients::Impl {
                 location = native.body==8 ? ItemLocation{ContainerLocation{owned.beltEquipment,{}}} : ItemLocation{ContainerLocation{owned.equipment,{slot,0}}};
             } else if(native.mode==0 && (native.page==1 || native.page==4 || native.page==5))
                 location=ContainerLocation{native.page==1?owned.backpack:native.page==4?owned.cube:owned.stash,{native.x,native.y}};
+            else if(native.mode==0 && ((native.page==3 && v.ownTrade) || (native.page==2 && v.peerTrade)))
+                location=ContainerLocation{native.page==3?v.ownTrade:v.peerTrade,{native.x,native.y}};
             else continue;
             InventoryDefinitionView def; def.targetCursor=definition->targetCursor; def.code=native.code; def.name=definition->name; def.bookScroll=definition->bookScroll;
             def.width=di.width; def.height=di.height; def.beltRows=definition->beltRows; def.maxStack=definition->maxStack; def.bookCapacity=definition->bookCapacity;

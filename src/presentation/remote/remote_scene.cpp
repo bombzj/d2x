@@ -87,7 +87,7 @@ struct RemoteScene::Impl {
         Vec look;
         float movedAt{-1};
         ActorAnimationState animation;
-        uint64_t positionRevision{}, discontinuity{};
+        uint64_t positionRevision{}, discontinuity{}, assignmentRevision{};
         Vec position, correction, routeOrigin;
         float correctionLeft{}, updatedAt{-1}, progressAt{};
         std::deque<Vec> route;
@@ -136,6 +136,11 @@ struct RemoteScene::Impl {
     std::chrono::steady_clock::time_point lastFrame{};
     int rendered{}, unavailable{};
     bool playerDisplayed{};
+    std::vector<OnlinePlayerDisplay> players;
+    bool playerDead(const OnlineUnit &u) const {
+        return world().corpseOwners.contains(u.key.id) ||
+            (u.nativeMode ? (u.mode == 0 || u.mode == 17) : (u.mode == 8 || u.mode == 9));
+    }
     Impl(Archives &a, int palette, RemoteMapDisplayState &display)
         : archives(a), mapDisplay(display),
           artPalette(palette),
@@ -170,7 +175,7 @@ struct RemoteScene::Impl {
     }
     const Art *character(const OnlineUnit &u, bool moving, bool town, SceneView &shared) {
         // PlrMsg::sub_6FC81C00 uses wire 19 for correction, not PLRMODE_DEAD.
-        const bool death = u.nativeMode ? (u.mode == 0 || u.mode == 17) : (u.mode == 8 || u.mode == 9);
+        const bool death = playerDead(u);
         const auto parts = portraits.decode(u, world(), death);
         if (!parts) {
             effectLimitations.insert("Original character equipment components unavailable for unit " + std::to_string(u.key.id));
@@ -627,6 +632,10 @@ struct RemoteScene::Impl {
     }
     Vec displayPosition(const OnlineUnit &u, const Map &map, OnlinePoint mapOrigin) {
         auto &m = motion[u.key];
+        if (m.assignmentRevision != u.assignmentRevision) {
+            m = {};
+            m.assignmentRevision = u.assignmentRevision;
+        }
         const Vec target{float(u.position->x), float(u.position->y)};
         const Vec origin{float(mapOrigin.x), float(mapOrigin.y)};
         // Camera and actor rendering consult this method in the same frame.
@@ -643,7 +652,7 @@ struct RemoteScene::Impl {
                     world().combatRequest->revision + 1};
         }
         const auto rule = movementRule(u);
-        const bool alive = !own || !onlinePlayerDead(world());
+        const bool alive = u.key.type == 0 ? !playerDead(u) : !onlineMonsterCorpse(u);
         if (m.castHandoff && (!alive || (request && request->revision > m.castHandoff->revision) ||
             (u.actionRevision > m.castHandoff->revision &&
              (u.nativeMode ? (u.mode == 0 || u.mode == 4 || u.mode == 17 || u.mode == 18)
@@ -949,6 +958,9 @@ struct RemoteScene::Impl {
     RemoteSceneFrame draw(const OnlineView &v, const Map &map, const OnlineSceneView &binding,
                            SceneView &shared, const RemoteCombat &combat, bool uiConsumed, Vec mouse, bool rightHand) {
         RemoteSceneFrame intent;
+        players.clear();
+        rendered = unavailable = 0;
+        playerDisplayed = false;
         soundEvents.clear();
         intent.input.gameGeneration = v.gameGeneration;
         intent.input.areaGeneration = v.world.areaGeneration;
@@ -1021,7 +1033,8 @@ struct RemoteScene::Impl {
         auto screen = [&](Vec p) { return shared.screen(p); };
         const auto groundTarget = surface ? std::optional<ItemHandle>{} : shared.lootAt(mouse);
         std::optional<size_t> selectedExit;
-        std::optional<OnlineUnitKey> selectedTarget, combatTarget;
+        std::optional<OnlineUnitKey> selectedTarget, combatTarget, hoveredPlayer;
+        float playerDistance = std::numeric_limits<float>::max();
         if (!menu && !waypointOpen && !hudSurface(mouse)) for (size_t i = 0; i < map.terrain.exits.size(); ++i) {
             const auto &exit = map.terrain.exits[i];
             const bool assigned = std::any_of(v.world.units.begin(), v.world.units.end(), [&](const auto &entry) {
@@ -1066,7 +1079,7 @@ struct RemoteScene::Impl {
             source.kind = key.type == 0 ? SoundActorKind::Player : SoundActorKind::Monster;
             source.actionRevision = unit.actionRevision;
             source.position = {float(unit.position->x) + .5f, float(unit.position->y) + .5f};
-            source.alive = key.type == 1 ? !onlineMonsterCorpse(unit) : (key.id != playerId || !onlinePlayerDead(v.world));
+            source.alive = key.type == 1 ? !onlineMonsterCorpse(unit) : !playerDead(unit);
             source.neutral = key.type == 1 && unit.mode == 1 && !unit.actionSkill;
             source.audible = CheckCollisionPointRec(rv(screen(local(*unit.position) + Vec{.5f,.5f})),shared.worldViewport());
             soundActorsByKey.emplace(key,soundActors.size()); soundActors.push_back(source);
@@ -1074,6 +1087,12 @@ struct RemoteScene::Impl {
         for (const auto &[key, u] : v.world.units) {
             if (!u.position || key.type > 2)
                 continue;
+            OnlinePlayerDisplay *player = nullptr;
+            if (key.type == 0 && u.classId) {
+                players.push_back({key.id, u.name, "Outside current map", *u.classId,
+                    {float(u.position->x), float(u.position->y)}, key.id == playerId, false, false, playerDead(u)});
+                player = &players.back();
+            }
             if (key.type == 0 && onlinePlayerDead(v.world)) {
                 const auto corpse = v.world.corpseOwners.find(key.id);
                 const auto owner = playerId ? v.world.units.find({0, *playerId}) : v.world.units.end();
@@ -1082,6 +1101,7 @@ struct RemoteScene::Impl {
             }
             Vec feet = key.type == 2 ? local(*u.position)
                 : displayPosition(u, map, origin) - Vec{float(origin.x), float(origin.y)};
+            if (player) player->position = feet + Vec{float(origin.x), float(origin.y)};
             if (feet.x < 0 || feet.y < 0 || feet.x >= binding.width || feet.y >= binding.height)
                 continue;
             if (!u.classId) {
@@ -1090,16 +1110,16 @@ struct RemoteScene::Impl {
             }
             auto &m = motion[key];
             bool frozen=false, hiddenCorpse=false, shatter=false;
-            if (key.type==1) {
-                const bool dead=onlineMonsterCorpse(u);
+            if (key.type<=1) {
+                const bool dead = key.type == 0 ? playerDead(u) : onlineMonsterCorpse(u);
                 if (!dead) shattered.erase(key);
                 if (const auto snapshot=combat.states().find(key); snapshot!=combat.states().end() && snapshot->second.decoded)
                     for (const auto &[id,state]:snapshot->second.states) {
                         const auto row=stateRows.find(id);
                         if (row==stateRows.end()) continue;
                         frozen |= !dead && state.name=="freeze";
-                        hiddenCorpse |= dead && states.number(row->second,"hide").value_or(0);
-                        shatter |= dead && states.number(row->second,"shatter").value_or(0);
+                        hiddenCorpse |= key.type == 1 && dead && states.number(row->second,"hide").value_or(0);
+                        shatter |= key.type == 1 && dead && states.number(row->second,"shatter").value_or(0);
                     }
                 if (frozen) {
                     // Freeze stops prediction as well as animation. The world snapshot
@@ -1132,6 +1152,7 @@ struct RemoteScene::Impl {
                     m.look = local(*target->second.position) - feet;
             }
             const bool moving = !frozen && m.movedAt >= 0 && time - m.movedAt < .2f;
+            if (player) { player->moving = moving; player->position = feet + Vec{float(origin.x), float(origin.y)}; }
             if (u.direction && !walking(u)) {
                 // Path/Step.cpp measures clockwise from +Y, with its eight-bin offset.
                 const float angle = (float(*u.direction & 63) - 7.5f) * 2.f * pi / 64.f;
@@ -1161,6 +1182,7 @@ struct RemoteScene::Impl {
                           : key.type == 1 ? monster(u, moving, shared)
                                           : object(displayed, shared);
             if (!visual || visual->animation.frames.empty()) {
+                if (player) player->reason = "Original character components or animation unavailable";
                 ++unavailable;
                 continue;
             }
@@ -1175,7 +1197,10 @@ struct RemoteScene::Impl {
                 auto idle = u; idle.actionSkill.reset(); idle.nativeMode = false;
                 idle.mode = key.type == 0 ? 7 : 1;
                 visual = key.type == 0 ? character(idle, moving, binding.town, shared) : monster(idle, moving, shared);
-                if (!visual || visual->animation.frames.empty()) { ++unavailable; continue; }
+                if (!visual || visual->animation.frames.empty()) {
+                    if (player) player->reason = "Original neutral animation unavailable";
+                    ++unavailable; continue;
+                }
             }
             if (key.type != 2)
                 feet = feet + Vec{.5f, .5f};
@@ -1190,8 +1215,15 @@ struct RemoteScene::Impl {
             }
             const auto *image = visual->sample(m.animation.clock(time), m.animation.elapsed(time), m.look);
             const auto p = screen(feet) + visual->offset;
+            if (player) player->reason = "Outside viewport";
             if (!image || !visible(*image, p))
                 continue;
+            if (player) { player->visible = true; player->reason.clear(); }
+            if (player && !player->local && !player->dead && !surface && !waypointOpen &&
+                !binding.npcConversation && spriteHit(image, p, mouse)) {
+                const float distance = (p - mouse).length();
+                if (distance < playerDistance) { playerDistance = distance; hoveredPlayer = key; }
+            }
             if (!selectedExit && !surface && !waypointOpen && !binding.npcConversation &&
                 (key.type == 0 || key.type == 1 || key.type == 2) && spriteHit(image, p, mouse) &&
                 std::any_of(binding.mapTargets.begin(), binding.mapTargets.end(),
@@ -1236,9 +1268,16 @@ struct RemoteScene::Impl {
             const auto actor = v.world.units.find(key);
             const auto *visual = shared.overlayVisual(id);
             if (!visual || actor == v.world.units.end() || !actor->second.position) return;
-            const Vec feet = displayPosition(actor->second, map, origin) - Vec{float(origin.x), float(origin.y)} + Vec{.5f, .5f};
+            const bool objectUnit = key.type == 2;
+            const Vec feet = objectUnit ? local(*actor->second.position) :
+                displayPosition(actor->second, map, origin) - Vec{float(origin.x), float(origin.y)} + Vec{.5f, .5f};
             WorldDrawItem entry; entry.position = feet;
             entry.overlay = id; entry.age = age; entry.loop = loop;
+            entry.height = objectUnit ? 0 : 1;
+            if (objectUnit)
+                if (const auto owner = std::find_if(draw.begin(), draw.end(),
+                        [&](const auto &item) { return item.image && item.unit == effectOwner(key); }); owner != draw.end())
+                    entry.orderFlag = owner->orderFlag;
             if (key.type == 1 && actor->second.classId) {
                 const auto row = monsterRows.find(*actor->second.classId);
                 const auto extra = row == monsterRows.end() ? monsterExtra.end() : monsterExtra.find(monstats.value(row->second,"MonStatsEx"));
@@ -1247,6 +1286,13 @@ struct RemoteScene::Impl {
             draw.push_back(entry);
         };
         for (const auto &effect : overlayVisuals) addOverlay(effect.id, effect.unit, time - effect.born, false);
+        for (const auto &[key, unit] : v.world.units) {
+            // A neutral shrine owns its icon/shimmer. Once the server starts
+            // operating it, only the recipient's actual state owns those layers.
+            if (key.type != 2 || !unit.classId || unit.mode != 0 || !unit.objectInteractType) continue;
+            for (const int id : shared.objectShrineOverlays(*unit.classId, *unit.objectInteractType))
+                if (id >= 0) addOverlay(id, key, time, true);
+        }
         std::set<std::pair<OnlineUnitKey, uint8_t>> activeStates;
         for (const auto &[key, snapshot] : combat.states()) {
             if (!snapshot.decoded || !v.world.units.contains(key)) continue;
@@ -1255,7 +1301,7 @@ struct RemoteScene::Impl {
                 if (row == stateRows.end()) continue;
                 const auto identity = std::pair{key,id}; activeStates.insert(identity);
                 const float born = stateTimes.try_emplace(identity,time).first->second;
-                for (const auto field : {"overlay1","overlay2"}) {
+                for (const auto field : {"overlay2","overlay1"}) {
                     const auto overlay = overlayNames.find(states.value(row->second,field));
                     if (overlay != overlayNames.end()) addOverlay(int(overlay->second),key,time-born,true);
                 }
@@ -1269,6 +1315,7 @@ struct RemoteScene::Impl {
         for (auto &item : draw)
             item.highlighted = !surface && !groundTarget && item.unit &&
                 ((selectedTarget && item.unit == effectOwner(*selectedTarget)) ||
+                 (hoveredPlayer && item.unit == effectOwner(*hoveredPlayer)) ||
                  (combatTarget && item.unit == effectOwner(*combatTarget)));
         for (const auto &key : v.world.questAlerts) {
             const auto found = motion.find(key);
@@ -1280,11 +1327,18 @@ struct RemoteScene::Impl {
             for (const auto &target : binding.mapTargets) if (target.unit == *selectedTarget) {
                 const auto drawn = std::find_if(draw.begin(), draw.end(), [&](const auto &entry) { return entry.unit == effectOwner(*selectedTarget); });
                 const auto at = drawn == draw.end() ? screen(local(target.position)) : screen(drawn->position) + drawn->pixelOffset;
-                if (selectedTarget->type == 0) shared.drawCorpseLabel(target.name, at);
+                if (selectedTarget->type == 0 && target.interaction == OnlineMapInteraction::Corpse) shared.drawCorpseLabel(target.name, at);
                 else shared.drawInteractionLabel(target.name, at);
                 break;
             }
         shared.drawGroundLabels(mouse);
+        if (hoveredPlayer && !selectedTarget && !combatTarget && !groundTarget) {
+            const auto actor = std::find_if(draw.begin(), draw.end(), [&](const auto &entry) {
+                return entry.unit == effectOwner(*hoveredPlayer);
+            });
+            if (actor != draw.end()) shared.drawInteractionLabel(v.world.units.at(*hoveredPlayer).name,
+                screen(actor->position) + actor->pixelOffset);
+        }
         shared.drawAutomap(binding.automap);
         if (combatTarget && !groundTarget && !shared.characterView().dead) {
             const auto &unit = v.world.units.at(*combatTarget);
@@ -1358,6 +1412,7 @@ std::optional<Vec> RemoteScene::playerDisplayPosition() const {
     if (found == impl_->motion.end()) return {};
     return found->second.position + found->second.correction;
 }
+const std::vector<OnlinePlayerDisplay> &RemoteScene::players() const { return impl_->players; }
 std::vector<std::string> RemoteScene::effectLimitations() const {
     return {impl_->effectLimitations.begin(), impl_->effectLimitations.end()};
 }

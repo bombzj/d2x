@@ -8,6 +8,8 @@
 #include "presentation/world/lighting_view.hpp"
 #include "presentation/world/palette_blend_view.hpp"
 #include "scene_assets.hpp"
+#include "presentation/hud/chat_view.hpp"
+#include "presentation/hud/trade_invite_view.hpp"
 #include "presentation/world/scene_geometry.hpp"
 #include "presentation/world/preset_pops.hpp"
 #include "presentation/world/world_draw_view.hpp"
@@ -33,6 +35,9 @@ struct ViewState {
     bool help = false, automap = false, debug = false, travelMenu = false;
     bool miniPanelOpen = false;
     bool gameMenuOpen = false;
+    bool chatInputOpen = false, messageLogOpen = false;
+    bool playerTradeBlocking = false;
+    bool playerTradeEditable = false;
     int gameMenuPage = 0;
     int gameMenuSelected = 2, gameMenuPressed = -1;
     float gameMenuTime = 0;
@@ -77,7 +82,7 @@ struct ViewState {
     std::string lootNotice;
     float noticeTime = 0;
     bool noticeError = false;
-    bool capturesWorldInput() const { return gameMenuOpen || help || npcMenu || shopOpen || hireListOpen || !dialogue.empty(); }
+    bool capturesWorldInput(bool includePlayerTrade = true) const { return (includePlayerTrade && playerTradeBlocking) || chatInputOpen || messageLogOpen || gameMenuOpen || help || npcMenu || shopOpen || hireListOpen || !dialogue.empty(); }
     bool blocksInput() const { return capturesWorldInput() || travelMenu; }
 };
 class SceneView {
@@ -107,6 +112,9 @@ class SceneView {
     UiPainter painter_;
     UiPainter speechPainter_;
     ViewState view_;
+    ChatView chat_;
+    OriginalMenu originalMenu_;
+    TradeInviteView tradeInvite_;
     struct QuestCompletionAnimation {
         enum class Phase { Idle, Pending, Playing };
         Phase phase = Phase::Idle;
@@ -167,7 +175,9 @@ class SceneView {
     void drawHirelingList(Vec mouse) const;
     void drawStorage(Vec mouse) const;
     void drawCube(Vec mouse) const;
+    void drawPlayerTrade(Vec mouse) const;
     void drawContainerGrid(const ContainerGrid &grid, Vec mouse) const;
+    void drawInventoryDrop(const InventoryDrop &drop, Rectangle surface) const;
     void drawBelt(Vec mouse) const;
     void drawItemTooltip(const InventoryItemView &item, Vec anchor,
                          std::optional<unsigned> price = {},
@@ -197,6 +207,13 @@ class SceneView {
     }
     const auto &soundLimitations() const { return assets_.sceneAudio.limitations(); }
     void drawUi(Vec mouse) const;
+    void updateChat(const OnlineSocialView &social) { chat_.update(social); }
+    ChatIntent handleChat(const FrameInput &input);
+    void chatSent(bool accepted);
+    const ChatView &chat() const { return chat_; }
+    void updatePlayerTrade(const OnlinePlayerTrade &trade);
+    PlayerTradeIntent handlePlayerTrade(const FrameInput &input);
+    const TradeInviteView &tradeInvite() const { return tradeInvite_; }
     // Shared original-resource effects; server replica supplies presentation data only.
     void drawNativeIceShatter(Vec position, int size) { createIceShatter(position,size); }
     const SceneAssets::ProjectileVisual *projectileVisual(int id) { return assets_.ensureProjectile(id); }
@@ -229,6 +246,9 @@ class SceneView {
     }
     const ActorAnimation *objectAnimation(int identity, int mode, int palette) const {
         return assets_.objectAnimation(identity, mode, palette);
+    }
+    std::array<int, 2> objectShrineOverlays(int identity, int code) const {
+        return assets_.objectShrineOverlays(identity, code);
     }
     int objectPresentationMode(int identity, int serverMode, float elapsed) const {
         return assets_.objectPresentationMode(identity, serverMode, elapsed);

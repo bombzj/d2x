@@ -6,6 +6,10 @@
 
 通用选择、学习、快捷键、坐标／单位施放与Hold见[公共技能](COMMON.md)。原服技能动作与本人已发送请求转换为共同动画／声音／弹体；已知提示使用原属性、基础等级、MPQ公式，不足输入保留 `?`。
 
+Frozen Armor提示补齐原简述、有效技能等级、防御加成、持续时间、冻结攻击者时间及法力消耗；顺序／文案读取当前MPQ SkillDesc／TBL，数值取既有纯解析结果，未另写技能规则。当前MPQ一级、无协同的输入对应30 percent、120 seconds、1.2 seconds与Mana Cost 7，和用户原版参考图一致；等级、装备加成及基础等级协同变化仍动态计算。
+
+Blaze提示从通用装甲说明分支移出，原descline按Fire Duration、Average Fire Damage每秒范围、Mana Cost顺序分行。一级无协同／支配的当前MPQ输入对应4.6 seconds、18–37 per second、11 mana：时间来自blaze弹体Range 90 + LevRange 25 ×有效等级，伤害描述使用DescDam 9倍率；不更改原服状态时间或实际伤害。协同区读取Sksyn、Warmth／Fire Wall原名称、Firedplev及Param8／7，当前表为+4%／+1%每基础等级；未学习节点显示First Level。技能树与选择器共用原font16与图标锚点，树标题／协同标题绿色，选择器及正文白色，详见[HUD](../ui/CLASSIC_HUD.md)。本项未构建、运行、测试或打包，其它技能的完整描述程序仍有限。
+
 | 家族 | 当前表现与明确边界 |
 | --- | --- |
 | 火弹／火球、冰弹／冰风暴／冰尖柱 | 原释放／主弹体、爆炸或冰碎及声音共用；精确附加爆炸密度、碎冰数量／偏移未核实 |

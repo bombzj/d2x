@@ -55,7 +55,11 @@ Windows EXE 需要同目录 `d2x_bncs_legacy.dll`。`--online-config <路径>` �
 
 ESC 优先关闭面板，无面板时打开游戏菜单；Save and Exit 请求原服退局保存，成功离局返回服务器选角。关闭窗口／quit 仍持续服务退局交换至响应或期限后退出。测试 `pause/resume` 仅在显式调试管道启用，冻结客户端画面／界面输入，服务器与网络持续运行；不提供原服单步，恢复使用最新副本。详见[调试入口](DEBUG_PIPE.md)。
 
+聊天源码入口：局内Enter打开输入框，再次Enter发送普通ASCII消息，Esc取消；顶部每条独立显示10秒、最多15条，新消息在下，左侧面板打开时随边界右移。M或底栏Message Log打开消息历史，M／Esc／Close关闭，滚轮和滚动条翻阅；顶部过期不删除历史。聊天期间玩法输入被界面占用，原服和网络持续运行；实际回显来自服务器。当前聊天批未构建、运行或打包，已有dist/current不含这些入口；中文原编码、私聊／频道尚未接。
+
 启动脚本不隐式构建：缺EXE时要求显式执行scripts/build.ps1。
+
+双客户端从两个终端分别运行 `dist/current/Play.cmd -PipeName d2x-player-one` 和 `dist/current/Play.cmd -PipeName d2x-player-two`，在各自窗口登录不同账号并选择不同角色。第一位创建房间，第二位点击 Join、选择真实列表项查看详情后加入，或输入名称／密码直接加入。参考服可能不在列表展示密码房间或资格不符房间；原服决定加入结果。调试管道名必须不同，账号记忆仍按配置路径共享；第二个窗口修改记忆不会替换第一个窗口已登录的会话。
 
 如果编译机器不能访问 GitHub，CMake 可使用 `external/raylib` 和 `external/stormlib` 的固定版本源码；系统编译器、CMake 和开发库仍需安装。当前源码存档格式见[存档说明](../modules/SAVES.md)，旧档不迁移。原资源只维护项目 `assets/mpq2` 一份，EXE 通过 `--mpq` 读取，不为本地打包抽取或复制 MPQ，也不生成精简资源包。原 MPQ 文件清单见 [MPQ 资源](../resources/MPQ.md)。
 

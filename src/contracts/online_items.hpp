@@ -82,7 +82,7 @@ struct OnlineInventoryView {
     uint64_t revision{}, gameGeneration{};
     std::map<uint32_t, OnlineDecodedItem> items;
     std::optional<uint32_t> cursor;
-    int columns{}, rows{}, beltSlots{4}, stashColumns{}, stashRows{}, cubeColumns{}, cubeRows{};
+    int columns{}, rows{}, beltSlots{4}, stashColumns{}, stashRows{}, cubeColumns{}, cubeRows{}, tradeColumns{}, tradeRows{};
     unsigned weaponSet{};
 };
 } // namespace d2x

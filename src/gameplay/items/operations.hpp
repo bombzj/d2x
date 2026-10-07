@@ -55,6 +55,8 @@ struct UseBeltColumn {
 };
 struct SwapItems {
     ItemHandle first, second;
+    // Cursor placement may overlap only part of the target; keep its actual origin.
+    std::optional<ContainerLocation> destination = std::nullopt;
 };
 struct SplitStack {
     ItemHandle source;

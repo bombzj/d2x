@@ -72,7 +72,7 @@ bool SceneController::handleInventory(const FrameInput &input) {
     ui.forceSwap = input.control;
     const auto &inventory = view_.inventoryView();
     EntityId backpack = view_.inventoryView().containers.backpack;
-    if (ui.open && input.insideViewport && input.leftPressed &&
+    if (ui.open && !ui.playerTradeOpen && input.insideViewport && input.leftPressed &&
         CheckCollisionPointRec(rv(input.mouse), inventoryClose())) {
         inventoryClick_ = true;
         toggleInventory();
@@ -84,7 +84,7 @@ bool SceneController::handleInventory(const FrameInput &input) {
         toggleInventory();
         return true;
     }
-    if (ui.open && !ui.drag && !ui.split && !ui.goldDialog && input.insideViewport &&
+    if (ui.open && !ui.playerTradeOpen && !ui.drag && !ui.split && !ui.goldDialog && input.insideViewport &&
         input.leftPressed && inventory.stashLayout.expansion)
         if (auto set = weaponTabAt(input.mouse)) {
             inventoryClick_ = true;
@@ -170,7 +170,7 @@ bool SceneController::handleInventory(const FrameInput &input) {
     }
     bool bankField = ui.storage && CheckCollisionPointRec(
             rv(input.mouse), storageGold(inventory.stashLayout.expansion));
-    if (ui.open && input.insideViewport && input.leftPressed && !ui.pending &&
+    if (ui.open && !ui.playerTradeOpen && input.insideViewport && input.leftPressed && !ui.pending &&
         !ui.drag && (CheckCollisionPointRec(rv(input.mouse), inventoryGold()) || bankField)) {
         GoldAction action = bankField ? GoldAction::Withdraw :
                             ui.storage ? GoldAction::Deposit : GoldAction::Drop;
@@ -280,7 +280,7 @@ bool SceneController::handleInventory(const FrameInput &input) {
             break;
         }
     }
-    auto equipmentSlot = ui.open ? equipmentAt(input.mouse, inventory.weaponSet)
+    auto equipmentSlot = ui.open && !ui.playerTradeOpen ? equipmentAt(input.mouse, inventory.weaponSet)
                                  : std::nullopt;
     bool equipment = equipmentSlot.has_value();
     bool inBelt = CheckCollisionPointRec(rv(input.mouse), beltBounds(rows));
@@ -361,6 +361,7 @@ bool SceneController::handleInventory(const FrameInput &input) {
         return queueInventory(UseItem{item.handle()}, item.id);
     };
     if (input.rightPressed && !ui.pending) {
+        if (ui.playerTradeOpen) return true;
         if (auto item = inventory.item(hovered)) {
             if (hitGrid && (hitGrid->container == ui.storage ||
                             hitGrid->container == view_.inventoryView().containers.cube))
@@ -382,7 +383,10 @@ bool SceneController::handleInventory(const FrameInput &input) {
         ui.selected = hovered;
         if (const auto *item = inventory.item(hovered)) {
             auto def = inventory.definition(item->definition);
-            if (input.control && input.shift && item->quality == ItemQuality::Normal &&
+            if (ui.playerTradeOpen && input.shift && hitGrid) {
+                const auto target = hitGrid->container == inventory.ownTrade ? backpack : inventory.ownTrade;
+                if (target) queueInventory(TransferItem{item->handle(),target},item->id);
+            } else if (input.control && input.shift && item->quality == ItemQuality::Normal &&
                 item->quantity > 1 && !equipment) {
                 ui.split = SplitDialog{item->handle(), std::max(1u, item->quantity / 2),
                                        std::get<ContainerLocation>(item->location).container};

@@ -1,9 +1,48 @@
 #include "presentation/scene_view.hpp"
 #include "skill_tree.hpp"
+#include "skill_tooltip.hpp"
 #include <algorithm>
 #include <sstream>
 
 namespace d2x {
+namespace {
+void drawTreeLabel(const ClassicFont &font, const std::string &text, Rectangle bounds) {
+    std::vector<std::string> lines;
+    std::istringstream input(text);
+    for (std::string line; std::getline(input, line);) lines.push_back(std::move(line));
+    for (size_t index = 0; index < lines.size(); ++index) {
+        float width = 0;
+        for (unsigned char c : lines[index]) width += font.widths[c] * classicPanelScale;
+        float x = bounds.x + (bounds.width - width) / 2;
+        const float baseline = bounds.y + bounds.height / 2 +
+            (float(index) * 16 - float(lines.size() - 1) * 8 + 6) * classicPanelScale;
+        for (unsigned char c : lines[index]) {
+            const auto *glyph = font.glyphs.frame(0, font.indices[c]);
+            if (glyph && c != ' ')
+                DrawTexturePro(glyph->texture, {0, 0, float(glyph->texture.width), float(glyph->texture.height)},
+                    {x + glyph->x * classicPanelScale,
+                     baseline + (glyph->y - glyph->texture.height) * classicPanelScale,
+                     glyph->texture.width * classicPanelScale, glyph->texture.height * classicPanelScale}, {}, 0, WHITE);
+            x += font.widths[c] * classicPanelScale;
+        }
+    }
+}
+void drawSkillRank(const ClassicFont &font, const std::string &text, Rectangle icon, bool compact) {
+    // Center the rank in the MPQ background's cell outside the icon. Keep
+    // the original four-pixel adjustment for the compact two-digit font.
+    float x = icon.x + icon.width + (compact ? 0 : 4) * classicPanelScale;
+    const float baseline = icon.y + icon.height + 12 * classicPanelScale;
+    for (unsigned char character : text) {
+        const auto *glyph = font.glyphs.frame(0, font.indices[character]);
+        if (glyph && character != ' ')
+            DrawTexturePro(glyph->texture, {0, 0, float(glyph->texture.width), float(glyph->texture.height)},
+                {x + glyph->x * classicPanelScale,
+                 baseline + (glyph->y - glyph->texture.height) * classicPanelScale,
+                 glyph->texture.width * classicPanelScale, glyph->texture.height * classicPanelScale}, {}, 0, WHITE);
+        x += font.widths[character] * classicPanelScale;
+    }
+}
+}
 std::optional<int> SceneView::skillAt(Vec mouse) const {
     if (!view_.skillTreeOpen || !CheckCollisionPointRec(rv(mouse), skillTreeBounds()))
         return std::nullopt;
@@ -40,80 +79,58 @@ void SceneView::drawSkillTree(Vec mouse) const {
         if (image == assets_.skillIcons.end()) continue;
         const int value = entry.baseRank;
         const int effective = entry.effectiveRank;
-        const bool itemGranted = entry.baseRankKnown && entry.effectiveRankKnown && effective > value;
-        const bool ready = entry.canAllocate;
-        const auto &texture = image->second.sprite.texture;
+        const bool ranksKnown = entry.baseRankKnown && entry.effectiveRankKnown;
+        const bool itemGranted = ranksKnown && effective > value;
+        const bool reduced = ranksKnown && effective < value;
+        const bool noPoints = !player.unknownStats.contains("newskills") && player.unspentSkills == 0;
+        const bool bright = entry.canAllocate || (noPoints && entry.effectiveRankKnown && effective > 0);
+        const bool hovered = CheckCollisionPointRec(rv(mouse), bounds);
+        const auto &texture = (hovered ? image->second.treeHovered :
+            bright ? image->second.sprite : image->second.treeDisabled).texture;
         DrawTexturePro(texture, {0, 0, float(texture.width), float(texture.height)}, bounds,
-                       {0, 0}, 0, value || itemGranted ? WHITE : Color{92, 92, 92, 255});
-        if (value || itemGranted || !entry.effectiveRankKnown) {
+                       {0, 0}, 0, WHITE);
+        if (effective > 0 || !entry.effectiveRankKnown) {
             auto count = entry.effectiveRankKnown ? std::to_string(effective) : "?";
-            painter_.label(count, int(bounds.x + bounds.width - painter_.measure(count, 12) - 2),
-                           int(bounds.y + bounds.height - 14), 12,
-                           itemGranted ? Color{105, 105, 255, 255} : parchment);
+            const bool compact = entry.effectiveRankKnown && effective > 9;
+            const auto &font = compact
+                ? (itemGranted ? assets_.skillLevelCompactBlueFont :
+                   reduced ? assets_.skillLevelCompactRedFont : assets_.skillLevelCompactFont)
+                : (itemGranted ? assets_.skillLevelBlueFont : reduced ? assets_.characterRedFont : assets_.font);
+            drawSkillRank(font, count, bounds, compact);
         }
-        if (CheckCollisionPointRec(rv(mouse), bounds))
-            DrawRectangleLinesEx(bounds, 1, ready ? gold : Color{115, 106, 91, 255});
     }
     for (int page = 1; page <= 3; ++page) {
         auto bounds = skillTreeTab(page);
         const auto &name = characterView_.pageNames[page - 1];
-        std::vector<std::string> lines;
-        std::istringstream words(name);
-        std::string word, line;
-        constexpr int size = 13;
-        while (words >> word) {
-            auto candidate = line.empty() ? word : line + " " + word;
-            if (!line.empty() && painter_.measure(candidate, size) > bounds.width - 8) {
-                lines.push_back(line);
-                line = word;
-            } else line = std::move(candidate);
-        }
-        if (!line.empty()) lines.push_back(line);
-        for (size_t index = 0; index < lines.size(); ++index)
-            painter_.label(lines[index], int(bounds.x + (bounds.width - painter_.measure(lines[index], size)) / 2),
-                           int(bounds.y + (bounds.height - lines.size() * 15) / 2 + index * 15), size,
-                           page == view_.skillPage ? gold : parchment);
+        drawTreeLabel(assets_.font, name, bounds);
     }
+    drawTreeLabel(assets_.font, assets_.characterLabels.at("StrSklTree1") + '\n' +
+        assets_.characterLabels.at("StrSklTree2") + '\n' + assets_.characterLabels.at("StrSklTree3"),
+        skillTreeRect(231, 7, 85, 48));
     auto points = player.number("newskills", player.unspentSkills);
     auto pointBox = skillTreeRect(252, 54, 48, 26);
-    painter_.label(points, int(pointBox.x + (pointBox.width - painter_.measure(points, 15)) / 2),
-                   int(pointBox.y + 5), 15, gold);
-    const auto close = skillTreeClose();
-    const Color cross = CheckCollisionPointRec(rv(mouse), close)
-        ? Color{232, 216, 179, 255} : Color{153, 150, 140, 255};
-    const float inset = close.width * .27f;
-    DrawLineEx({close.x + inset, close.y + inset},
-               {close.x + close.width - inset, close.y + close.height - inset}, 3, cross);
-    DrawLineEx({close.x + close.width - inset, close.y + inset},
-               {close.x + inset, close.y + close.height - inset}, 3, cross);
+    drawTreeLabel(assets_.font, points, pointBox);
+    const auto close = skillTreeClose(characterView_, view_.skillPage);
+    if (const auto *button = assets_.questClose.frame(0, 10))
+        DrawTexturePro(button->texture, {0, 0, float(button->texture.width), float(button->texture.height)},
+                       close, {}, 0, WHITE);
     EndScissorMode();
     if (auto hovered = skillAt(mouse)) {
-        const auto &lines = characterView_.skill(*hovered)->treeTooltip;
-        const int width = std::min(360, W - 20);
-        std::vector<std::string> wrapped;
-        for (const auto &text : lines) {
-            std::istringstream words(text);
-            std::string word, current;
-            while (words >> word) {
-                const auto candidate = current.empty() ? word : current + " " + word;
-                if (!current.empty() && painter_.measure(candidate, 12) > width - 20) {
-                    wrapped.push_back(current);
-                    current = word;
-                } else current = candidate;
+        const auto &skill = *characterView_.skill(*hovered);
+        auto lines = skill.treeTooltip;
+        size_t bonusHeading = std::numeric_limits<size_t>::max();
+        if (!skill.treeBonusHeading.empty() || !skill.treeBonusTooltip.empty()) {
+            lines.push_back("");
+            if (!skill.treeBonusHeading.empty()) {
+                bonusHeading = lines.size();
+                lines.push_back(skill.treeBonusHeading);
             }
-            if (!current.empty()) wrapped.push_back(current);
+            lines.insert(lines.end(), skill.treeBonusTooltip.begin(), skill.treeBonusTooltip.end());
         }
-        const int lineHeight = std::max(8, std::min(16, (H - 26) / std::max(1, int(wrapped.size()))));
-        const int textSize = std::min(12, lineHeight - 1);
-        const int height = lineHeight * int(wrapped.size()) + 16;
-        const float left = std::clamp(panel.x - width - 8, 5.f, float(W - width - 5));
-        const float top = std::clamp(mouse.y - 14, 5.f, float(std::max(5, H - height - 5)));
-        auto box = Rectangle{left, top, float(width), float(height)};
-        DrawRectangleRec(box, {0, 0, 0, 230});
-        DrawRectangleLinesEx(box, 1, gold);
-        for (size_t index = 0; index < wrapped.size(); ++index)
-            painter_.label(wrapped[index], int(box.x + 10), int(box.y + 8 + index * lineHeight), textSize,
-                index == 0 ? gold : parchment);
+        const auto bounds = skillTreeNode(skill.row, skill.column);
+        const UiPainter green(assets_.skillGreenFont, 0);
+        drawSkillTooltip(UiPainter(assets_.font, 0), lines, {bounds.x + bounds.width / 2, bounds.y + bounds.height},
+                         &green, bonusHeading, true, bounds.height);
     }
 }
 } // namespace d2x

@@ -61,6 +61,7 @@ std::vector<ContainerGrid> inventoryGrids(const InventoryView &inventory, const 
     auto belt = beltSlot({0, 0});
     std::vector<ContainerGrid> grids{
         {c.belt, {belt.x, belt.y}, {31 * hudScale, -32 * hudScale}, 4, rows, 29 * hudScale}};
+    if (ui.playerTradeOpen) grids.clear();
     if (ui.open) {
         auto p = inventoryGrid();
         grids.push_back(
@@ -85,7 +86,15 @@ std::vector<ContainerGrid> inventoryGrids(const InventoryView &inventory, const 
                          {layout.cellSize * inventoryScale, layout.cellSize * inventoryScale},
                          layout.columns, layout.rows, layout.cellSize * inventoryScale});
     }
+    if (ui.playerTradeOpen && inventory.ownTrade) grids.push_back(playerTradeGrid(inventory,true));
     return grids;
+}
+ContainerGrid playerTradeGrid(const InventoryView &inventory, bool own) {
+    const auto p = classicPanelBounds(false);
+    const auto &l = own ? inventory.ownTradeLayout : inventory.peerTradeLayout;
+    const float cell = l.cellSize*inventoryScale;
+    return {own ? inventory.ownTrade : inventory.peerTrade,
+        {p.x+l.left*inventoryScale,p.y+l.top*inventoryScale},{cell,cell},l.columns,l.rows,cell};
 }
 void InventoryUi::syncCursor(const InventoryView &inventory, EntityId reserved) {
     if (const auto *item = inventory.cursorItem()) {
@@ -104,7 +113,7 @@ void InventoryUi::syncCursor(const InventoryView &inventory, EntityId reserved) 
 }
 bool inventorySurface(const InventoryUi &ui, Vec mouse) {
     return (ui.open && CheckCollisionPointRec(rv(mouse), classicSideBounds(true))) ||
-           ((ui.storage || ui.cubeOpen) && CheckCollisionPointRec(rv(mouse), classicSideBounds(false)));
+           ((ui.storage || ui.cubeOpen || ui.playerTradeOpen) && CheckCollisionPointRec(rv(mouse), classicSideBounds(false)));
 }
 InventoryDrop inventoryDrop(const InventoryView &inventory, const IInventoryClient &client, const InventoryUi &ui, Vec mouse, bool hirelingOpen) {
     InventoryDrop drop;
@@ -160,7 +169,7 @@ InventoryDrop inventoryDrop(const InventoryView &inventory, const IInventoryClie
             drop.command.emplace(std::in_place_type<EquipItem>, source->handle(), std::nullopt,
                                  std::move(destination));
     };
-    if (auto slot = ui.open ? equipmentAt(mouse, inventory.weaponSet) : std::nullopt) {
+    if (auto slot = ui.open && !ui.playerTradeOpen ? equipmentAt(mouse, inventory.weaponSet) : std::nullopt) {
         const auto *host = inventory.item(inventory.equipped(containers, *slot));
         if (!ui.forceSwap && definition.socketFiller && host) {
             drop.command = SocketItem{source->handle(), host->handle()};
@@ -183,33 +192,49 @@ InventoryDrop inventoryDrop(const InventoryView &inventory, const IInventoryClie
                 continue;
             Cell origin{cell->x - ui.drag->grab.x, cell->y - ui.drag->grab.y};
             drop.bounds = grid.itemBounds(origin, definition);
-            if (equipped) {
-                removeTo(ContainerLocation{grid.container, origin});
-                drop.description = "Unequip item";
-                break;
+            if (origin.x < 0 || origin.y < 0 || origin.x + definition.width > grid.columns ||
+                origin.y + definition.height > grid.rows) {
+                drop.error = InventoryError::OutOfBounds;
+                drop.description = inventoryErrorText(drop.error);
+                return drop;
             }
-            auto target = inventory.item(inventory.itemAt(grid.container, *cell));
-            if (target && target->id != source->id) {
+            // Count distinct items over the entire held footprint, not only the
+            // cell beneath the pointer. Multiple cells of one item count once.
+            EntityId targetId;
+            for (int y = origin.y; y < origin.y + definition.height; ++y)
+                for (int x = origin.x; x < origin.x + definition.width; ++x) {
+                    const auto id = inventory.itemAt(grid.container, {x, y});
+                    if (!id || id == source->id) continue;
+                    if (targetId && targetId != id) {
+                        drop.error = InventoryError::Occupied;
+                        drop.description = inventoryErrorText(drop.error);
+                        return drop;
+                    }
+                    targetId = id;
+                }
+            auto target = inventory.item(targetId);
+            if (target) {
                 auto targetCell = std::get<ContainerLocation>(target->location).cell;
-                drop.bounds = grid.itemBounds(targetCell, definition);
                 const auto *targetDefinition = inventory.definition(target->definition);
-                if (!ui.forceSwap && definition.socketFiller) {
+                drop.bounds = grid.itemBounds(targetCell, *targetDefinition);
+                if (!ui.playerTradeOpen && !ui.forceSwap && definition.socketFiller) {
                     drop.command = SocketItem{source->handle(), target->handle()};
                     drop.description = "Insert into socket";
-                    drop.bounds = grid.itemBounds(targetCell, *targetDefinition);
-                } else if (!ui.forceSwap && targetDefinition->bookCapacity &&
+                } else if (!ui.playerTradeOpen && !ui.forceSwap && targetDefinition->bookCapacity &&
                     (targetDefinition->bookScroll == source->definition || target->definition == source->definition)) {
                     drop.command = LoadBook{source->handle(), target->handle()};
                     drop.description = "Add pages to tome";
-                } else if (!ui.forceSwap && definition.maxStack > 1 && target->definition == source->definition) {
+                } else if (!ui.playerTradeOpen && !ui.forceSwap && definition.maxStack > 1 && target->definition == source->definition) {
                     drop.command = MergeStacks{source->handle(), target->handle()};
                     drop.description = "Merge into this stack";
                 } else {
-                    drop.command = SwapItems{source->handle(), target->handle()};
-                    drop.description = "Swap both items";
-                    if (sourceGrid != grids.end()) drop.otherBounds =
-                        sourceGrid->itemBounds(location->cell, *inventory.definition(target->definition));
+                    drop.command = SwapItems{source->handle(), target->handle(),
+                                             ContainerLocation{grid.container, origin}};
+                    drop.description = "Place held item and pick up covered item";
                 }
+            } else if (equipped) {
+                removeTo(ContainerLocation{grid.container, origin});
+                drop.description = "Unequip item";
             } else {
                 drop.command = MoveItem{source->handle(), ContainerLocation{grid.container, origin}};
                 drop.description = "Move item";

@@ -25,6 +25,9 @@ struct OnlineRosterPlayer {
 struct OnlineChatMessage {
     uint64_t sequence{}, receivedMilliseconds{};
     uint8_t type{}, language{}, unitType{}, messageColor{}, nameColor{};
+    // Native byte 0x09 is called nNameColor in D2PacketDef, but PlrMsg sets it
+    // to the sender's level for a player broadcast. Do not treat it as a palette
+    // index or use unitId (normally 0, unitType=2) as the sender's player GUID.
     uint32_t unitId{};
     Bytes name, text; // Native language bytes; UI must decode before display.
 };

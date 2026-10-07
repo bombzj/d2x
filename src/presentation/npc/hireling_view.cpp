@@ -117,6 +117,7 @@ void SceneView::drawHireling(Vec mouse) const {
     constexpr EquipmentSlot order[] = {EquipmentSlot::Head, EquipmentSlot::Torso,
                                        EquipmentSlot::RightHand, EquipmentSlot::LeftHand};
     EntityId hovered;
+    const auto drop = inventoryDrop(inventoryView_, inventoryClient_, view_.inventory, mouse, true);
     for (size_t index = 0; index < 4; ++index) {
         const auto box = hirelingSlotBounds(index);
         auto id = inventory.equipped(slots, order[index]);
@@ -130,6 +131,7 @@ void SceneView::drawHireling(Vec mouse) const {
         }
         if (const auto *item = inventory.item(id)) {
             if (mirrored) DrawRectangleRec(box, {73, 0, 0, 160});
+            drawInventoryDrop(drop, box);
             const bool dragged = view_.inventory.drag &&
                                  view_.inventory.drag->item.id == id;
             if (!dragged)
@@ -142,6 +144,7 @@ void SceneView::drawHireling(Vec mouse) const {
                 const auto &t = frame->texture;
                 DrawTexturePro(t, {0, 0, float(t.width), float(t.height)}, box, {0, 0}, 0, WHITE);
             }
+            drawInventoryDrop(drop, box);
         }
     }
     auto cell = [&](const std::string &text, float x, float y, float width, float height, bool right = false) {
@@ -182,13 +185,7 @@ void SceneView::drawHireling(Vec mouse) const {
         const auto &t = button->texture;
         DrawTexturePro(t, {0, 0, float(t.width), float(t.height)}, close, {0, 0}, 0, WHITE);
     }
-    if (view_.inventory.drag && view_.inventory.drag->moved &&
-        CheckCollisionPointRec(rv(mouse), classicSideBounds(false))) {
-        const auto drop = inventoryDrop(inventoryView_, inventoryClient_, view_.inventory, mouse, true);
-        if (drop.bounds.width > 0)
-            DrawRectangleLinesEx(drop.bounds, 2,
-                drop.error == InventoryError::None ? Color{99, 202, 118, 255} : Color{240, 91, 68, 255});
-    } else if (!view_.inventory.drag)
+    if (!view_.inventory.drag)
         if (const auto *item = inventory.item(hovered)) drawItemTooltip(*item, mouse);
 }
 } // namespace d2x

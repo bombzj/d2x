@@ -20,7 +20,7 @@ void SceneView::drawCube(Vec mouse) const {
             if (!ui.drag && !ui.split && !ui.goldDialog)
                 if (auto cell = grid.cellAt(mouse))
                     if (auto item = inventoryView_.item(inventoryView_.itemAt(grid.container, *cell)))
-                        drawItemTooltip(*item, {inventoryBounds().x - 12, mouse.y});
+                        drawItemTooltip(*item, {mouse.x + 170, mouse.y});
         }
 }
 } // namespace d2x

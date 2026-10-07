@@ -2,6 +2,21 @@
 #include <algorithm>
 
 namespace d2x {
+void SceneView::drawInventoryDrop(const InventoryDrop &drop, Rectangle surface) const {
+    const auto &ui = view_.inventory;
+    if (characterView_.dead || !ui.drag || !ui.drag->moved || ui.split || ui.goldDialog || view_.gameMenuOpen ||
+        (view_.capturesWorldInput(!ui.playerTradeOpen) && !view_.shopOpen) || drop.bounds.width <= 0)
+        return;
+    auto bounds = GetCollisionRec(drop.bounds, surface);
+    if (bounds.width <= 0 || bounds.height <= 0) return;
+    const int act = mapView().palette;
+    const auto *blend = act == 0 ? &paletteBlend_ : actPaletteBlends_.at(size_t(act)).get();
+    if (!blend) return;
+    // D2Client 1.13c RVA 0x8C6B0: green (0,128,0), forbidden red (128,0,0).
+    // The actual palette index and resulting cell pixels come from the current Act PL2.
+    blend->drawRectangle(bounds, drop.error == InventoryError::None ? Color{0, 128, 0, 255}
+                                                                   : Color{128, 0, 0, 255});
+}
 void SceneView::drawItemArt(const std::string &key, const std::string &code, Rectangle bounds, Color tint) const {
     auto found = assets_.itemIcons.find(key);
     auto icon = found == assets_.itemIcons.end() ? nullptr : found->second.frame(0, 0);
@@ -46,6 +61,9 @@ void SceneView::drawInventory(Vec mouse) const {
     auto hoverCell = inventoryCell(mouse);
     EntityId hovered = hoverCell ? inventory.itemAt(backpack, *hoverCell) : EntityId{};
     const auto weaponSet = inventoryView_.weaponSet;
+    const bool overShop = view_.shopOpen && CheckCollisionPointRec(rv(mouse), classicSideBounds(false));
+    const auto drop = overShop ? InventoryDrop{} :
+        inventoryDrop(inventoryView_, inventoryClient_, ui, mouse, view_.hirelingOpen);
     if (inventoryView_.stashLayout.expansion && weaponSet == 1)
         for (int hand = 0; hand < 2; ++hand) {
             const auto &tile = assets_.weaponTabs.frames[size_t(hand)].texture;
@@ -59,6 +77,7 @@ void SceneView::drawInventory(Vec mouse) const {
         if (slot == EquipmentSlot::RightHand) slot = weaponHandSlot(false, weaponSet);
         if (slot == EquipmentSlot::LeftHand) slot = weaponHandSlot(true, weaponSet);
         auto bounds = equipmentBounds(slot);
+        drawInventoryDrop(drop, bounds);
         auto equipped = inventory.item(inventory.equipped(inventoryView_.containers, slot));
         if (equipped && !(ui.drag && ui.drag->item.id == equipped->id)) {
             drawItemIcon(*equipped, bounds);
@@ -69,27 +88,17 @@ void SceneView::drawInventory(Vec mouse) const {
             }
         }
         if (CheckCollisionPointRec(rv(mouse), bounds)) {
-            DrawRectangleLinesEx(bounds, 1, parchment);
+            if (!ui.drag) DrawRectangleLinesEx(bounds, 1, parchment);
             if (equipped)
                 hovered = equipped->id;
         }
     }
-    const bool overShop = view_.shopOpen && CheckCollisionPointRec(rv(mouse), classicSideBounds(false));
-    auto drop = overShop ? InventoryDrop{} : inventoryDrop(inventoryView_, inventoryClient_, ui, mouse, view_.hirelingOpen);
     std::string hint = ui.pending                  ? "Moving item..."
                        : ui.drag && ui.drag->moved ? drop.description
                                                    : "Select an item or drag it to another slot.";
     for (const auto &grid : inventoryGrids(inventoryView_, ui))
         if (grid.container == backpack)
             drawContainerGrid(grid, mouse);
-    if (ui.drag && ui.drag->moved && drop.bounds.width > 0) {
-        Color color = drop.error == InventoryError::None ? Color{99, 202, 118, 255} : Color{240, 91, 68, 255};
-
-        DrawRectangleRec(drop.bounds, Fade(color, .2f));
-        DrawRectangleLinesEx(drop.bounds, 2, color);
-        if (drop.otherBounds)
-            DrawRectangleLinesEx(*drop.otherBounds, 2, color);
-    }
     const auto goldField = inventoryGold();
     if (const auto *coin = assets_.goldCoin.frame(0, 0))
         DrawTexturePro(coin->texture, {0, 0, float(coin->texture.width), float(coin->texture.height)},
@@ -107,7 +116,7 @@ void SceneView::drawInventory(Vec mouse) const {
                        int(panel.y + 364 * inventoryScale), 12, gold);
     if (!ui.split && !ui.drag) {
         if (auto item = inventory.item(hovered))
-            drawItemTooltip(*item, {panel.x - 12, mouse.y},
+            drawItemTooltip(*item, {mouse.x + 170, mouse.y},
                 inventoryVendorPrice(item->handle()), view_.shopOpen ? (view_.shopRepair ? "COST" : "SELL VALUE") : "");
     } else if (ui.drag && ui.drag->moved && !overShop && !hint.empty()) {
         int width = painter_.measure(hint, 12) + 24;
@@ -156,7 +165,7 @@ bool SceneView::drawInventoryCursor(Vec mouse) const {
     if (characterView_.dead) return false;
     const auto &ui = view_.inventory;
     if (!ui.drag || view_.gameMenuOpen ||
-        (view_.capturesWorldInput() && !view_.shopOpen))
+        (view_.capturesWorldInput(!ui.playerTradeOpen) && !view_.shopOpen))
         return false;
     const auto *item = inventoryView_.item(ui.drag->item.id);
     if (!item || item->revision != ui.drag->item.revision)

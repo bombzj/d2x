@@ -6,17 +6,27 @@ void SceneView::drawContainerGrid(const ContainerGrid &grid, Vec mouse) const {
     const auto &ui = view_.inventory;
     auto hover = grid.cellAt(mouse);
     EntityId hovered = hover ? inventory.itemAt(grid.container, *hover) : EntityId{};
-    for (auto id : inventory.contents(grid.container)) {
+    const auto contents = inventory.contents(grid.container);
+    // Paint cell backgrounds and the drop footprint before any item pixels.
+    for (auto id : contents) {
         const auto &item = *inventory.item(id);
         auto box = grid.itemBounds(std::get<ContainerLocation>(item.location).cell,
                                    *inventory.definition(item.definition));
         bool dragged = ui.drag && ui.drag->item.id == id;
         if (dragged) continue;
         DrawRectangleRec({box.x + 1, box.y + 1, box.width - 2, box.height - 2},
-                         id == hovered || id == ui.selected ? Color{83, 71, 37, 130}
-                                                            : Color{30, 36, 26, 110});
+                         !ui.drag && (id == hovered || id == ui.selected) ? Color{83, 71, 37, 130}
+                                                                         : Color{30, 36, 26, 110});
+    }
+    const auto drop = inventoryDrop(inventoryView_, inventoryClient_, ui, mouse, view_.hirelingOpen);
+    drawInventoryDrop(drop, grid.cellBounds({}, grid.columns, grid.rows));
+    for (auto id : contents) {
+        if (ui.drag && ui.drag->item.id == id) continue;
+        const auto &item = *inventory.item(id);
+        auto box = grid.itemBounds(std::get<ContainerLocation>(item.location).cell,
+                                   *inventory.definition(item.definition));
         drawItemIcon(item, box);
-        if (id == hovered || id == ui.selected)
+        if (!ui.drag && (id == hovered || id == ui.selected))
             DrawRectangleLinesEx(box, 1, id == hovered ? parchment : gold);
         const auto *definition = inventory.definition(item.definition);
         if (definition->maxStack > 1 || definition->bookCapacity) {

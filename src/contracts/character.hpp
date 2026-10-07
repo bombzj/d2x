@@ -22,6 +22,8 @@ struct CharacterSkillView {
     bool pickerEnabled = false; // Selection icon state; independent of town casting permission.
     CharacterActionDisplay action;
     std::vector<std::string> treeTooltip, pickerTooltip;
+    std::string treeBonusHeading;
+    std::vector<std::string> treeBonusTooltip;
 };
 // Only the bound player's necessary UI data. No character record, equipment,
 // execution spec, task book, inventory or authority pointer is sent to the UI.

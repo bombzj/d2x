@@ -1,6 +1,8 @@
 #include "contracts/inventory.hpp"
 #include "gameplay/quest/catalog.hpp"
 #include "content/classic_data.hpp"
+#include "content/string_table.hpp"
+#include "content/skills/state_data.hpp"
 #include "world/region.hpp"
 #include "world/maze.hpp"
 #include "content/world/world_catalog.hpp"
@@ -58,9 +60,23 @@ const SkillOverlayVisual *SceneAssets::ensureOverlay(int id) {
     return &spellOverlays.emplace(id, SpellOverlay{std::move(animation), std::move(visual)}).first->second.visual;
 }
 namespace {
-void loadFont(Graphics &graphics, Archives &archives, ClassicFont &font, std::string_view name) {
+void loadFont(Graphics &graphics, Archives &archives, ClassicFont &font, std::string_view name, int color = 0) {
     auto path = "data/local/font/latin/" + std::string(name);
-    font.glyphs = graphics.single(path + ".dc6");
+    if (!color) font.glyphs = graphics.single(path + ".dc6");
+    else {
+        constexpr size_t fontShifts = 0x6B600 + 13 * 3;
+        const auto palette = archives.read("data/global/palette/sky/pal.pl2");
+        const auto *original = graphics.animation(path + ".dc6");
+        if (!original || color < 0 || color >= 13 || palette.size() < fontShifts + 13 * 256)
+            throw std::runtime_error("Original UI font color transform is missing: " + path);
+        font.glyphs.directions = original->directions;
+        font.glyphs.count = original->framesPerDirection;
+        for (auto glyph : original->frames) {
+            for (auto &pixel : glyph.pixels)
+                if (pixel) pixel = palette[fontShifts + size_t(color) * 256 + pixel];
+            font.glyphs.frames.push_back(graphics.upload(glyph));
+        }
+    }
     auto tbl = archives.read(path + ".tbl", false);
     if (tbl.size() < 3596 || font.glyphs.frames.empty())
         throw std::runtime_error("Original UI font is missing: " + path);
@@ -95,8 +111,45 @@ SceneAssets::SceneAssets(Archives &archives, const ClassicData &content)
     : archives_(archives), soundCatalog_(archives), graphics_(archives), uiGraphics_(archives, "data/global/palette/sky/pal.dat"),
       unitsGraphics_(archives, "data/global/palette/units/pal.dat"), automapCatalog_(archives), audio(), sceneAudio(archives, soundCatalog_, audio) {
     loadFont(uiGraphics_, archives, font, "font16");
+    loadFont(uiGraphics_, archives, skillGreenFont, "font16", 2);
+    loadFont(uiGraphics_, archives, characterLabelFont, "font6");
+    loadFont(uiGraphics_, archives, characterPointFont, "font6", 1);
+    loadFont(uiGraphics_, archives, characterCompactFont, "font8");
+    loadFont(uiGraphics_, archives, characterRedFont, "font16", 1);
+    loadFont(uiGraphics_, archives, skillLevelBlueFont, "font16", 3);
+    loadFont(uiGraphics_, archives, skillLevelCompactFont, "fontformal10");
+    loadFont(uiGraphics_, archives, skillLevelCompactBlueFont, "fontformal10", 3);
+    loadFont(uiGraphics_, archives, skillLevelCompactRedFont, "fontformal10", 1);
+    const ClassicStrings characterStrings(archives);
+    for (const auto *key : {"strchrlvl", "strchrexp", "strchrnxtlvl", "strchrstr", "strchrdex",
+            "strchrvit", "strchreng", "strchrskm", "strchrrat", "strchrdef", "strchrstm",
+            "strchrlif", "strchrman", "strchrfir", "strchrcol", "strchrlit", "strchrpos",
+            "strchrstat", "strchrrema", "StrSklTree1", "StrSklTree2", "StrSklTree3"}) {
+        const auto value = characterStrings.find(key);
+        if (value.empty()) throw std::runtime_error(std::string("Original character label is missing: ") + key);
+        characterLabels.emplace(key, value);
+    }
     loadFont(uiGraphics_, archives, speechFont, "fontformal12");
+    globeTextFormats = {content.itemStrings.at("panelhealth"), content.itemStrings.at("panelmana")};
+    for (const auto &format : globeTextFormats) {
+        const auto first = format.find("%d");
+        const auto second = first == std::string::npos ? first : format.find("%d", first + 2);
+        if (second == std::string::npos)
+            throw std::runtime_error("Original globe value format is unavailable");
+    }
     loadWorldLightDefinitions();
+    // Retain the original shrine/state mapping; the caller supplies only the
+    // server's shrine code. Artwork and layer identities come from this MPQ.
+    for (int code = 6; code <= 15; ++code) {
+        const auto state = content.states.find(shrineStateName(code));
+        if (state == content.states.end()) continue;
+        std::array<int, 2> ids{-1, -1};
+        const std::array names{state->second.secondaryOverlay, state->second.overlay};
+        for (size_t layer = 0; layer < names.size(); ++layer)
+            if (const auto found = overlayIds.find(names[layer]); found != overlayIds.end())
+                ids[layer] = found->second;
+        shrineOverlayIds_.emplace(code, ids);
+    }
     loadNpcAlert(DataTable(archives.read("data/global/excel/overlay.txt")));
     loadUi(archives, content);
     loadIceShatter();
@@ -117,6 +170,8 @@ void SceneAssets::loadWorldLightDefinitions() {
     objectDefinitions_ = decodeTable(archives_.read("data/global/excel/objects.txt"));
     for (const auto &row : objectDefinitions_) {
         if (row.at("Id").empty()) continue;
+        if (row.at("OperateFn") == "2" && !row.at("SubClass").empty() &&
+            (std::stoi(row.at("SubClass")) & 1)) shrineObjects_.insert(std::stoi(row.at("Id")));
         auto number = [&](const std::string &name) {
             const auto &value = row.at(name); return value.empty() ? 0 : std::stoi(value);
         };
@@ -218,6 +273,8 @@ void SceneAssets::loadUi(Archives &archives, const ClassicData &content) {
     if (gameMenuMarker.frames.empty())
         throw std::runtime_error("Original Escape menu marker is missing");
     inventoryPanel = uiGraphics_.single("data/global/ui/panel/invchar6.dc6");
+    if (inventoryPanel.frames.size() < 8)
+        throw std::runtime_error("Original character/inventory panel artwork is missing");
     {
         weaponTabs = uiGraphics_.single("data/global/ui/panel/invchar6tab.dc6");
         if (weaponTabs.frames.size() != 2)
@@ -268,9 +325,10 @@ void SceneAssets::loadUi(Archives &archives, const ClassicData &content) {
         std::any_of(questIcons.begin(), questIcons.end(),
                     [](const GpuAnimation &icon) { return icon.frames.size() < 27; }))
         throw std::runtime_error("Original Act I quest panel artwork is missing");
-    attributeButtons = graphics_.single("data/global/ui/panel/level.dc6");
-    attributePoints = graphics_.single("data/global/ui/panel/skillpoints.dc6");
-    if (attributeButtons.frames.size() < 3 || attributePoints.frames.empty())
+    attributeButtons = uiGraphics_.single("data/global/ui/panel/level.dc6");
+    attributePoints = uiGraphics_.single("data/global/ui/panel/skillpoints.dc6");
+    attributeSocket = uiGraphics_.single("data/global/ui/panel/levelsocket.dc6");
+    if (attributeButtons.frames.size() < 3 || attributePoints.frames.empty() || attributeSocket.frames.empty())
         throw std::runtime_error("Original character attribute UI artwork is missing");
     vendorPanel = graphics_.single("data/global/ui/panel/buysell.dc6");
     vendorTabs = graphics_.single("data/global/ui/panel/buyselltabs.dc6");
@@ -347,6 +405,12 @@ const ActorAnimation *SceneAssets::actorAnimation(const ActorAnimationRequest &r
 const ActorAnimation *SceneAssets::objectAnimation(int identity, int mode, int palette) const {
     if (!actorAnimations_) actorAnimations_ = std::make_unique<ActorAnimationCatalog>(archives_);
     return actorAnimations_->object(graphicsForAct(palette), palette, identity, mode);
+}
+std::array<int, 2> SceneAssets::objectShrineOverlays(int identity, int code) const {
+    if (shrineObjects_.contains(identity))
+        if (const auto found = shrineOverlayIds_.find(code); found != shrineOverlayIds_.end())
+            return found->second;
+    return {-1, -1};
 }
 int SceneAssets::objectPresentationMode(int identity, int serverMode, float elapsed) const {
     if (!actorAnimations_) actorAnimations_ = std::make_unique<ActorAnimationCatalog>(archives_);

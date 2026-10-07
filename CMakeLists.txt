@@ -135,9 +135,12 @@ target_sources(d2x_content PRIVATE src/content/character/realm_portrait.cpp)
 
 add_library(d2x_presentation
   src/presentation/graphics/graphics.cpp src/presentation/audio/audio.cpp src/presentation/graphics/primitives.cpp
+  src/presentation/graphics/original_menu.cpp
   src/presentation/scene_assets.cpp src/presentation/actors/actor_animation.cpp src/presentation/scene_view.cpp
   src/presentation/hud/skill_assets.cpp src/presentation/hud/hud_controls.cpp src/presentation/hud/skill_controller.cpp
   src/presentation/hud/classic_hud.cpp
+  src/presentation/hud/chat_view.cpp
+  src/presentation/hud/trade_invite_view.cpp
   src/presentation/hud/skill_tree_view.cpp src/presentation/hud/quest_panel.cpp
   src/presentation/hud/quest_controller.cpp src/presentation/npc/npc_controller.cpp
   src/presentation/npc/npc_alert_view.cpp src/presentation/hud/panel_frame.cpp

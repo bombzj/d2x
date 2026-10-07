@@ -11,7 +11,7 @@
 namespace d2x {
 namespace {
 using Json = nlohmann::json;
-constexpr std::array mapInteractionNames{"exit", "door", "portal", "teleport-pad", "waypoint", "npc", "stash", "corpse", "object"};
+constexpr std::array mapInteractionNames{"exit", "door", "portal", "teleport-pad", "waypoint", "npc", "stash", "corpse", "object", "player-trade"};
 constexpr std::array stageNames{"Idle",
                                 "ConnectingAccount",
                                 "AuthChallenge",
@@ -87,6 +87,12 @@ Json snapshot(const OnlineView &v, const OnlineSceneView &scene, const OnlineInv
                        {"playerDisplayed", scene.playerDisplayed}};
     result["scene"]["playerDisplayPosition"] = scene.playerDisplayPosition
         ? Json{{"x", scene.playerDisplayPosition->x}, {"y", scene.playerDisplayPosition->y}} : Json(nullptr);
+    result["scene"]["players"] = Json::array();
+    for (const auto &player : scene.players)
+        result["scene"]["players"].push_back({{"id", player.id}, {"name", player.name},
+            {"classId", player.classId}, {"local", player.local}, {"visible", player.visible},
+            {"moving", player.moving}, {"dead", player.dead}, {"reason", player.reason},
+            {"position", {{"x", player.position.x}, {"y", player.position.y}}}});
     result["scene"]["area"] = optional(scene.area);
     result["inventory"] = {{"revision", inventory.revision}, {"gameGeneration", inventory.gameGeneration},
         {"columns", inventory.columns}, {"rows", inventory.rows}, {"beltSlots", inventory.beltSlots},
@@ -237,6 +243,14 @@ Json snapshot(const OnlineView &v, const OnlineSceneView &scene, const OnlineInv
             {"nameBytes", message.name}, {"textBytes", message.text}});
     result["world"]["social"] = {{"revision", social.revision}, {"players", std::move(roster)},
         {"relationships", std::move(relations)}, {"chatSequence", social.chatSequence}, {"chat", std::move(chat)}};
+    constexpr std::array tradePhases{"None", "Outgoing", "Incoming", "Open"};
+    constexpr std::array tradeResponses{"None", "AcceptSent", "CancelSent", "TimedOut", "GoldSent", "ResetSent"};
+    const auto &playerTrade = v.world.playerTrade;
+    result["world"]["playerTrade"] = {{"phase", tradePhases.at(size_t(playerTrade.phase))},
+        {"response", tradeResponses.at(size_t(playerTrade.response))}, {"revision", playerTrade.revision},
+        {"lastAction", optional(playerTrade.lastAction)}, {"peer", optional(playerTrade.peer)}, {"peerName", playerTrade.peerName},
+        {"ownGold",playerTrade.ownGold},{"peerGold",playerTrade.peerGold},{"ownAgreed",playerTrade.ownAgreed},
+        {"peerAgreed",playerTrade.peerAgreed},{"agreementLocked",playerTrade.agreementLocked}};
     constexpr std::array deathPhases{"Unknown", "Alive", "Dying", "Dead"};
     result["world"]["dead"] = onlinePlayerDead(v.world);
     result["world"]["deathPhase"] = deathPhases.at(size_t(v.world.deathPhase));
@@ -268,6 +282,7 @@ Json snapshot(const OnlineView &v, const OnlineSceneView &scene, const OnlineInv
                                             {"mode", optional(u.mode)},
                                             {"positionRevision", u.positionRevision},
                                             {"positionDiscontinuity", u.positionDiscontinuity},
+                                            {"assignmentRevision", u.assignmentRevision}, {"attributes", u.attributes},
                                             {"actionRevision", u.actionRevision},
                                             {"actionReceivedMilliseconds", u.actionReceivedMilliseconds},
                                             {"nativeMode", u.nativeMode}, {"direction", optional(u.direction)},
@@ -329,6 +344,18 @@ Json snapshot(const OnlineView &v, const OnlineSceneView &scene, const OnlineInv
                                    {"index", g.index},
                                    {"flags", g.flags},
                                    {"players", g.players}});
+    result["gameInfo"] = nullptr;
+    if (v.gameInfo) {
+        const auto &info = *v.gameInfo;
+        constexpr std::array states{"Pending", "Ready", "TimedOut"};
+        Json players = Json::array();
+        for (const auto &player : info.players)
+            players.push_back({{"name", player.name}, {"classId", player.characterClass}, {"level", player.level}});
+        result["gameInfo"] = {{"state", states.at(size_t(info.state))}, {"name", info.name},
+            {"description", info.description}, {"flags", info.flags}, {"uptimeSeconds", info.uptimeSeconds},
+            {"creatorLevel", info.creatorLevel}, {"levelDifference", info.levelDifference},
+            {"maximumPlayers", info.maximumPlayers}, {"players", std::move(players)}};
+    }
     result["load"] = {{"act", optional(v.load.act)},
                       {"difficulty", optional(v.load.difficulty)},
                       {"townArea", optional(v.load.townArea)},
@@ -415,6 +442,28 @@ std::string onlineDebugCommand(const std::string &input, net::RealmSession &sess
             command == "online-characters" || command == "online-games" || command == "online-world" ||
             command == "online-items" || command == "online-ground" || command == "online-combat" || command == "online-skills" ||
             command == "online-social" || command == "online-chat") {
+        } else if (command == "online-send-chat") {
+            accepted = session.send_chat(text("message", 255)); mutation = true;
+        } else if (command == "online-trade-respond") {
+            if (!request.at("accept").is_boolean() || !request.at("revision").is_number_unsigned())
+                throw std::invalid_argument("Trade response needs a boolean accept and current unsigned revision");
+            accepted = session.respond_player_trade(request.at("accept").get<bool>(), request.at("revision").get<uint64_t>());
+            mutation = true;
+        } else if (command == "online-trade-offer") {
+            if (!request.at("revision").is_number_unsigned()) throw std::invalid_argument("Trade offer needs the current unsigned revision");
+            const auto action = request.at("action").get<std::string>();
+            if (action != "agree" && action != "revoke" && action != "gold") throw std::invalid_argument("Trade offer action must be agree, revoke or gold");
+            uint32_t amount{};
+            if (action == "gold") {
+                const auto &value = request.at("amount");
+                if (!value.is_number_integer() || value.get<int64_t>() < 0 || value.get<uint64_t>() > INT32_MAX)
+                    throw std::invalid_argument("Trade gold exceeds the native signed DWORD");
+                amount = value.get<uint32_t>();
+            }
+            accepted = session.update_player_trade(action == "agree" ? OnlinePlayerTradeAction::Agree :
+                action == "revoke" ? OnlinePlayerTradeAction::Revoke : OnlinePlayerTradeAction::Gold,
+                request.at("revision").get<uint64_t>(),amount);
+            mutation = true;
         } else if (command == "online-resurrect") {
             control.cancelMovement(); accepted = session.resurrect(); mutation = true;
         } else if (command == "online-select-skill" || command == "online-cast" || command == "online-attack" ||
@@ -680,6 +729,9 @@ std::string onlineDebugCommand(const std::string &input, net::RealmSession &sess
             secrets.password = text("password", 15, false);
             options.password = std::move(secrets.password);
             accepted = session.create_game(std::move(options));
+            mutation = true;
+        } else if (command == "online-game-info") {
+            accepted = session.query_game(text("name", 15));
             mutation = true;
         } else if (command == "online-join-game") {
             auto name = text("name", 15);

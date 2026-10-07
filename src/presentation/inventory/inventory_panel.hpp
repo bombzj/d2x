@@ -25,7 +25,7 @@ struct GoldDialog {
     unsigned maximum = 0;
 };
 struct InventoryUi {
-    bool open = false, cubeOpen = false, forceSwap = false, beltExpanded = false;
+    bool open = false, cubeOpen = false, forceSwap = false, beltExpanded = false, playerTradeOpen = false;
     EntityId selected, pending, storage;
     std::string pendingMessage;
     std::optional<InventoryDrag> drag;
@@ -138,6 +138,7 @@ struct InventoryDrop {
     std::optional<Rectangle> otherBounds;
 };
 std::vector<ContainerGrid> inventoryGrids(const InventoryView &inventory, const InventoryUi &ui);
+ContainerGrid playerTradeGrid(const InventoryView &, bool own);
 bool inventorySurface(const InventoryUi &ui, Vec mouse);
 InventoryDrop inventoryDrop(const InventoryView &inventory, const IInventoryClient &client, const InventoryUi &ui, Vec mouse,
                             bool hirelingOpen = false);

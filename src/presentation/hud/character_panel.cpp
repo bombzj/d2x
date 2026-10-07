@@ -1,108 +1,153 @@
 #include "presentation/scene_view.hpp"
 #include "character_panel.hpp"
 #include <algorithm>
+#include <sstream>
 
 namespace d2x {
+namespace {
+// Small labels use the original font6, not a reduced font16.
+// Original D2Client label/value records use inclusive horizontal bounds and
+// bottom-origin text baselines. Keep those coordinates and the DC6 offsets.
+void characterText(const ClassicFont &font, const std::string &value, float left, float baseline, float right) {
+    if (value.empty()) return;
+    // Original two-line labels use baselines four pixels either side of the row.
+    constexpr float lineStep = 8;
+    const float scale = classicPanelScale;
+    std::vector<std::string> lines;
+    std::istringstream input(value);
+    std::string line;
+    while (std::getline(input, line)) lines.push_back(line);
+    const auto box = characterArtRect(left, baseline - 20, right - left + 1, 40);
+    BeginScissorMode(int(box.x), int(box.y), int(box.width), int(box.height));
+    for (size_t row = 0; row < lines.size(); ++row) {
+        float width = 0;
+        for (unsigned char character : lines[row]) width += font.widths[character];
+        const auto origin = characterArtRect(left + int(std::max(0.f, (right - left + 1 - width) * .5f)),
+            baseline + (float(row) - (float(lines.size()) - 1) * .5f) * lineStep, 0, 0);
+        float x = origin.x;
+        for (unsigned char character : lines[row]) {
+            const auto *glyph = font.glyphs.frame(0, font.indices[character]);
+            if (glyph && character != ' ')
+                DrawTexturePro(glyph->texture, {0, 0, float(glyph->texture.width), float(glyph->texture.height)},
+                    {x + glyph->x * scale, origin.y + (glyph->y - glyph->texture.height) * scale,
+                        glyph->texture.width * scale, glyph->texture.height * scale},
+                    {}, 0, WHITE);
+            x += font.widths[character] * scale;
+        }
+    }
+    EndScissorMode();
+}
+std::string groupedExperience(std::string value) {
+    if (value.find_first_not_of("0123456789") != std::string::npos) return value;
+    for (int at = int(value.size()) - 3; at > 0; at -= 3) value.insert(size_t(at), 1, ',');
+    return value;
+}
+}
 void SceneView::drawCharacter(Vec mouse) const {
     if (!view_.characterOpen) return;
     const auto panel = characterBounds();
     drawPanelFrame(false);
-    if (assets_.inventoryPanel.frames.size() >= 4)
-        for (int index = 0; index < 4; ++index) {
-            const auto &tile = assets_.inventoryPanel.frames[index].texture;
-            DrawTexturePro(tile, {0, 0, float(tile.width), float(tile.height)},
-                           {panel.x + (index % 2) * 256 * inventoryScale,
-                            panel.y + (index / 2) * 256 * inventoryScale,
-                            tile.width * inventoryScale, tile.height * inventoryScale},
-                           {0, 0}, 0, WHITE);
-        }
-    const auto close = characterClose();
-    const Color cross = CheckCollisionPointRec(rv(mouse), close)
-        ? Color{232, 216, 179, 255} : Color{153, 150, 140, 255};
-    const float inset = close.width * .27f;
-    DrawLineEx({close.x + inset, close.y + inset},
-               {close.x + close.width - inset, close.y + close.height - inset}, 3, cross);
-    DrawLineEx({close.x + close.width - inset, close.y + inset},
-               {close.x + inset, close.y + close.height - inset}, 3, cross);
-
-    // invchar.dc6 supplies the boxes; inventory.txt only describes the other half's item slots.
-    // Coordinates are in the original 320 x 432 character art, before inventoryScale.
-    auto cell = [&](const std::string &value, float x, float y, float width, float height,
-                    int size, Color color, bool centered = false) {
-        const auto box = characterArtRect(x, y, width, height);
-        while (size > 8 && painter_.measure(value, size) > box.width - 5)
-            --size;
-        const int textWidth = painter_.measure(value, size);
-        const int textX = int(box.x + (centered ? (box.width - textWidth) / 2 : 4));
-        painter_.label(value, textX, int(box.y + (box.height - size) / 2), size, color);
-    };
-    auto paired = [&](const std::string &label, const std::string &value, float y) {
-        cell(label, 160, y, 95, 19, 11, parchment);
-        cell(value, 255, y, 57, 19, 11, gold, true);
-    };
-
-    const auto &player = characterView_;
-    const auto &stats = characterView_;
-    const auto &equipment = characterView_;
-    cell(player.name, 10, 9, 173, 20, 14, gold, true);
-    cell(player.className, 191, 9, 120, 20, 14, gold, true);
-    cell("Level", 11, 35, 45, 13, 10, parchment, true);
-    cell(player.number("level", player.level), 11, 48, 45, 20, 13, gold, true);
-    cell("Experience", 61, 35, 121, 13, 10, parchment, true);
-    cell(player.number("experience", player.experience), 61, 48, 121, 20, 12, gold, true);
-    auto next = !player.nextLevelKnown ? "?" : player.nextLevelExperience ? std::to_string(*player.nextLevelExperience) : "MAX";
-    cell("Next Level", 191, 35, 120, 13, 10, parchment, true);
-    cell(next, 191, 48, 120, 20, 12, gold, true);
-
-    constexpr float attributeY[] = {83, 146, 230, 295};
-    const char *names[] = {"Strength", "Dexterity", "Vitality", "Energy"};
-    constexpr const char *attributeStats[]{"strength","dexterity","vitality","energy"};
-    const int values[] = {stats.attributes[0], stats.attributes[1], stats.attributes[2], stats.attributes[3]};
+    // The original tiles already contain the permanent gray stone value cells.
     for (int index = 0; index < 4; ++index) {
-        cell(names[index], 18, attributeY[index], 57, 19, 11, parchment);
-        cell(player.number(attributeStats[index], values[index]), 75, attributeY[index], 38, 19, 12, gold, true);
-        if (player.unspentAttributes > 0) {
-            auto button = characterAddButton(index);
-            const bool hovered = CheckCollisionPointRec(rv(mouse), button);
-            const auto &texture = assets_.attributeButtons.frames[hovered ? 1 : 0].texture;
-            DrawTexturePro(texture, {0, 0, float(texture.width), float(texture.height)},
-                           button, {0, 0}, 0, WHITE);
+        const auto &tile = assets_.inventoryPanel.frames.at(size_t(index)).texture;
+        DrawTexturePro(tile, {0, 0, float(tile.width), float(tile.height)},
+            {panel.x + (index % 2) * 256 * classicPanelScale,
+             panel.y + (index / 2) * 256 * classicPanelScale,
+             tile.width * classicPanelScale, tile.height * classicPanelScale}, {}, 0, WHITE);
+    }
+    const auto art = [](const Sprite &sprite, Rectangle box) {
+        DrawTexturePro(sprite.texture, {0, 0, float(sprite.texture.width), float(sprite.texture.height)},
+            box, {}, 0, WHITE);
+    };
+    art(*assets_.questClose.frame(0, 10), characterClose());
+    const auto label = [&](const char *key) -> const std::string & { return assets_.characterLabels.at(key); };
+    const auto cell = [&](const std::string &value, float left, float baseline, float right,
+                          bool small = false) {
+        characterText(small ? assets_.characterLabelFont : assets_.font, value, left, baseline, right);
+    };
+    const auto &player = characterView_;
+    // Original 1.13c D2Client RVA BD613: long names use font8/font6.
+    const auto &nameFont = player.name.size() >= 13 ? assets_.characterLabelFont :
+        player.name.size() >= 11 ? assets_.characterCompactFont : assets_.font;
+    characterText(nameFont, player.name, 13, 25, 161);
+    cell(player.className, 193, 25, 310);
+    cell(label("strchrlvl"), 11, 44, 52, true);
+    cell(player.number("level", player.level), 13, 59, 53);
+    cell(label("strchrexp"), 65, 44, 180, true);
+    cell(groupedExperience(player.number("experience", player.experience)), 67, 59, 180);
+    const auto next = !player.nextLevelKnown ? "?" : player.nextLevelExperience
+        ? groupedExperience(std::to_string(*player.nextLevelExperience)) : "MAX";
+    cell(label("strchrnxtlvl"), 193, 44, 308, true);
+    cell(next, 195, 59, 308);
+
+    // Original 1.13c D2Client RVA DD5E0/DD6F0: label and value baselines.
+    constexpr float attributeLabelY[]{97, 160, 245, 307};
+    constexpr float attributeValueY[]{99, 161, 247, 308};
+    constexpr const char *attributeLabels[]{"strchrstr", "strchrdex", "strchrvit", "strchreng"};
+    constexpr const char *attributeStats[]{"strength", "dexterity", "vitality", "energy"};
+    for (int index = 0; index < 4; ++index) {
+        cell(label(attributeLabels[index]), 10, attributeLabelY[index], 73, true);
+        cell(player.number(attributeStats[index], player.attributes[size_t(index)]), 77, attributeValueY[index], 112);
+        if (player.unspentAttributes > 0 && !player.unknownStats.contains("statpts")) {
+            const auto button = characterAddButton(index);
+            const auto *socket = assets_.attributeSocket.frame(0, 0);
+            art(*socket, {button.x - 3 * classicPanelScale, button.y - 2 * classicPanelScale,
+                socket->texture.width * classicPanelScale, socket->texture.height * classicPanelScale});
+            art(*assets_.attributeButtons.frame(0, 0), button);
         }
     }
 
-    const auto leftAction = characterView_.actionDisplay(view_.leftSkill);
-    const auto rightAction = characterView_.actionDisplay(view_.rightSkill);
-    paired("Damage", leftAction.damage, 83);
-    paired("Attack Rating", leftAction.attackRating, 105);
-    paired("Damage", rightAction.damage, 146);
-    paired("Attack Rating", rightAction.attackRating, 168);
-    paired("Defense", player.number("armorclass", equipment.defense), 190);
-    paired("Stamina", player.number("stamina", int(player.stamina)) + "/" + player.number("maxstamina", stats.maxStamina), 230);
-    paired("Life", player.number("hitpoints", int(player.hp)) + "/" + player.number("maxhp", stats.maxLife), 252);
-    paired("Mana", player.number("mana", int(player.mana)) + "/" + player.number("maxmana", stats.maxMana), 295);
-    paired("Fire Resist", player.number("fireresist", stats.resistances[0]) + "%", 337);
-    paired("Cold Resist", player.number("coldresist", stats.resistances[1]) + "%", 358);
-    paired("Lightning Resist", player.number("lightresist", stats.resistances[2]) + "%", 380);
-    paired("Poison Resist", player.number("poisonresist", stats.resistances[3]) + "%", 402);
-    const auto &combat = stats;
-    cell("Block " + player.number("toblock", equipment.blockChance) + "%", 18, 317, 132, 12, 9, parchment);
-    cell("Physical Resist " + player.number("damageresist", std::clamp(combat.physicalResist, -100, 50)) +
-             "%", 18, 330, 132, 12, 9, parchment);
-    cell("Magic Resist " + player.number("magicresist", std::clamp(combat.magicResist, -100, 75)) +
-             "%", 18, 343, 132, 12, 9, parchment);
-    cell("Damage -" + player.number("normal_damage_reduction", combat.flatPhysicalReduction) + " / " +
-             player.number("magic_damage_reduction", combat.flatMagicReduction), 18, 356, 132, 12, 9, parchment);
-    cell("Poison Length -" + player.number("poisonlengthresist", std::clamp(combat.poisonLengthResist, 0, 100)) +
-             "%", 18, 391, 132, 12, 9, parchment);
-    cell("Fire Absorb " + player.number("fireabsorb", std::clamp(combat.fireAbsorbPercent, 0, 40)) +
-             "%", 18, 404, 132, 12, 9, parchment);
-    if (player.unspentAttributes > 0) {
-        const auto &texture = assets_.attributePoints.frames[0].texture;
-        const auto box = characterArtRect(3, 365, float(texture.width), float(texture.height));
-        DrawTexturePro(texture, {0, 0, float(texture.width), float(texture.height)},
-                       box, {0, 0}, 0, WHITE);
-        cell("Stat Points", 8, 369, 72, 19, 10, parchment);
-        cell(std::to_string(player.unspentAttributes), 80, 369, 38, 19, 11, gold, true);
+    const auto actionRows = [&](std::optional<int> id, float damageY, float ratingY) {
+        const auto *skill = player.skill(id.value_or(0));
+        const std::string name = skill ? skill->name : "?";
+        const auto action = player.actionDisplay(id);
+        cell(action.damage.empty() ? name : name + '\n' + label("strchrskm"), 160, damageY, 259, true);
+        cell(action.damage, 261, damageY + 2, 309);
+        if (!action.attackRating.empty()) {
+            auto caption = label("strchrrat");
+            const auto placeholder = caption.find("%s");
+            if (placeholder != std::string::npos) caption.replace(placeholder, 2, name);
+            cell(caption, 160, ratingY, 269, true);
+            cell(action.attackRating, 273, ratingY + 2, 308);
+        }
+    };
+    actionRows(view_.leftSkill, 97, 159);
+    actionRows(view_.rightSkill, 119, 181);
+    const auto numberCell = [&](const char *stat, int value, float left, float baseline, float right) {
+        const auto text = player.number(stat, value);
+        const bool compact = text != "?" &&
+            (value >= 1000 || UiPainter(assets_.font, 0).measure(text, 16) >= right - left);
+        characterText(compact ? assets_.characterCompactFont : assets_.font, text, left, baseline, right);
+    };
+    cell(label("strchrdef"), 174, 207, 268, true);
+    numberCell("armorclass", player.defense, 273, 209, 307);
+    const auto resourceRow = [&](const char *caption, const char *maximumStat, int maximum,
+                                 const char *currentStat, int current, float labelY, float valueY) {
+        cell(label(caption), 174, labelY, 228, true);
+        // Two native cells: maximum on the left, current on the right.
+        numberCell(maximumStat, maximum, 232, valueY, 267);
+        numberCell(currentStat, current, 273, valueY, 308);
+    };
+    resourceRow("strchrstm", "maxstamina", player.maxStamina, "stamina", int(player.stamina), 245, 246);
+    resourceRow("strchrlif", "maxhp", player.maxLife, "hitpoints", int(player.hp), 269, 270);
+    resourceRow("strchrman", "maxmana", player.maxMana, "mana", int(player.mana), 307, 308);
+    constexpr const char *resistLabels[]{"strchrfir", "strchrcol", "strchrlit", "strchrpos"};
+    constexpr const char *resistStats[]{"fireresist", "coldresist", "lightresist", "poisonresist"};
+    constexpr float resistanceLabelY[]{346, 370, 395, 419};
+    constexpr float resistanceValueY[]{348, 372, 396, 420};
+    for (size_t index = 0; index < 4; ++index) {
+        cell(label(resistLabels[index]), 190, resistanceLabelY[index], 268, true);
+        const auto &valueFont = !player.unknownStats.contains(resistStats[index]) && player.resistances[index] < 0
+            ? assets_.characterRedFont : assets_.font;
+        characterText(valueFont, player.number(resistStats[index], player.resistances[index]),
+            273, resistanceValueY[index], 307);
     }
+    if (player.unspentAttributes > 0 && !player.unknownStats.contains("statpts")) {
+        const auto *points = assets_.attributePoints.frame(0, 0);
+        art(*points, characterArtRect(3, 341, float(points->texture.width), float(points->texture.height)));
+        characterText(assets_.characterPointFont, label("strchrstat") + '\n' + label("strchrrema"), 11, 359, 89);
+        cell(player.number("statpts", player.unspentAttributes), 92, 360, 129);
+    }
+    (void)mouse;
 }
 } // namespace d2x

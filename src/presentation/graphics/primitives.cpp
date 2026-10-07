@@ -2,11 +2,41 @@
 #include <algorithm>
 #include <rlgl.h>
 namespace d2x {
+void originalBox(const GpuAnimation &pieces, Rectangle bounds, float scale) {
+    if (pieces.count < 22 || bounds.width <= 0 || bounds.height <= 0) return;
+    const auto *corner = pieces.frame(0, 0);
+    const float w = corner->texture.width * scale, h = corner->texture.height * scale;
+    auto piece = [&](int index, float x, float y) {
+        const auto *image = pieces.frame(0, index);
+        DrawTexturePro(image->texture, {0, 0, float(image->texture.width), float(image->texture.height)},
+            {x, y, image->texture.width * scale, image->texture.height * scale}, {0, 0}, 0, WHITE);
+    };
+    // Side ink is at x=5..7; corner ink is x=1..3 / x=10..12.
+    // Bottom edge frames have top-edge ink, so offset them by nine pixels to
+    // join the bottom corners. Derived from the current 14x15 MPQ frames.
+    const float verticalStep = h - 5 * scale;
+    BeginScissorMode(int(bounds.x), int(bounds.y+4*scale), int(bounds.width), int(bounds.height-9*scale));
+    for (int index = 0; index * verticalStep < bounds.height; ++index) {
+        piece(10 + index % 3, bounds.x - 4 * scale, bounds.y + index * verticalStep);
+        piece(13 + index % 3, bounds.x + bounds.width - w + 5 * scale, bounds.y + index * verticalStep);
+    }
+    EndScissorMode();
+    BeginScissorMode(int(bounds.x), int(bounds.y), int(bounds.width), int(bounds.height));
+    const float horizontalStep = (corner->texture.width - 2) * scale;
+    for (int index = 0; index * horizontalStep < bounds.width; ++index) {
+        piece(2 + index % 6, bounds.x + index * horizontalStep, bounds.y);
+        piece(16 + index % 6, bounds.x + index * horizontalStep, bounds.y + bounds.height - h + 9 * scale);
+    }
+    piece(0, bounds.x, bounds.y); piece(1, bounds.x + bounds.width - w, bounds.y);
+    piece(8, bounds.x, bounds.y + bounds.height - h);
+    piece(9, bounds.x + bounds.width - w, bounds.y + bounds.height - h);
+    EndScissorMode();
+}
 int UiPainter::measure(const std::string &text, int size) const {
     if (font.ready) {
         float width = 0;
         for (unsigned char c : text)
-            width += font.widths[c] + 1;
+            width += font.widths[c] + glyphGap;
         return int(width * size / 16.f);
     }
     return MeasureText(text.c_str(), size);
@@ -78,7 +108,7 @@ void UiPainter::label(const std::string &text, int x, int y, int size, Color c) 
                 DrawTexturePro(s->texture, {0, 0, float(s->texture.width), float(s->texture.height)},
                                {cursor, float(y), s->texture.width * scale, s->texture.height * scale},
                                {0, 0}, 0, c);
-            cursor += (font.widths[ch] + 1) * scale;
+            cursor += (font.widths[ch] + glyphGap) * scale;
         }
         return;
     }

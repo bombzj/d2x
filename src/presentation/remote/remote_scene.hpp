@@ -35,6 +35,7 @@ class RemoteScene {
     int unavailableUnits() const;
     bool playerDisplayed() const;
     std::optional<Vec> playerDisplayPosition() const;
+    const std::vector<OnlinePlayerDisplay> &players() const;
     std::vector<std::string> effectLimitations() const;
 };
 } // namespace d2x

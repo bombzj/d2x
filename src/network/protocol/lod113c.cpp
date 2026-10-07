@@ -28,10 +28,21 @@ size_t lod113c_packet_size(std::span<const uint8_t> bytes) {
     case 0x16: return word_length(bytes, 1, 13);
     case 0x26: {
         if (bytes.size() < 10) return 0;
-        auto first = std::find(bytes.begin() + 10, bytes.end(), uint8_t{});
-        if (first == bytes.end()) return 0;
-        auto second = std::find(first + 1, bytes.end(), uint8_t{});
-        if (second == bytes.end()) return 0;
+        // D2PacketDef/SCmd: at most 15 sender bytes and 255 message bytes.
+        // Bound each search even when multiple logical packets share a buffer.
+        const auto nameEnd = bytes.begin() + std::min(bytes.size(), size_t{26});
+        const auto first = std::find(bytes.begin() + 10, nameEnd, uint8_t{});
+        if (first == nameEnd) {
+            if (bytes.size() >= 26) throw ProtocolError("Unterminated D2GS chat sender");
+            return 0;
+        }
+        const auto messageOffset = size_t(first + 1 - bytes.begin());
+        const auto messageEnd = bytes.begin() + std::min(bytes.size(), messageOffset + 256);
+        const auto second = std::find(first + 1, messageEnd, uint8_t{});
+        if (second == messageEnd) {
+            if (bytes.size() >= messageOffset + 256) throw ProtocolError("Unterminated D2GS chat message");
+            return 0;
+        }
         return size_t(second - bytes.begin()) + 1;
     }
     case 0x3E: return byte_length(bytes, 1, 2);

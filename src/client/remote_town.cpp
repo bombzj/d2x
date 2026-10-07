@@ -100,6 +100,7 @@ void RemoteTown::update(const OnlineView &v) {
     for (const auto &[level, reason] : nativeErrors_) view_.mapErrors[level] = reason;
 }
 void RemoteTown::updateMapTargets(const OnlineView &v) {
+    view_.town = view_.area && catalog_->level(*view_.area).town;
     std::vector<Grid::Obstacle> obstacles;
     for (const auto &[key, unit] : v.world.units) {
         if (!unit.position || !unit.classId || !view_.origin) continue;
@@ -112,6 +113,10 @@ void RemoteTown::updateMapTargets(const OnlineView &v) {
                 const auto label = strings_.find("corpse");
                 view_.mapTargets.push_back({key, *unit.position, OnlineMapInteraction::Corpse,
                     unit.name + " " + std::string(label), {}, playerMovement.size, playerMovement.size});
+            } else if (view_.town && key.id != v.load.playerUnitId && owner == v.world.corpseOwners.end() &&
+                       unit.mode != 0 && unit.mode != 17) {
+                view_.mapTargets.push_back({key, *unit.position, OnlineMapInteraction::PlayerTrade,
+                    unit.name, {}, playerMovement.size, playerMovement.size});
             }
             continue;
         }
@@ -217,7 +222,6 @@ void RemoteTown::updateMapTargets(const OnlineView &v) {
             view_.npcConversation = std::move(dialog);
         }
     }
-    view_.town = view_.area && catalog_->level(*view_.area).town;
     for (size_t row = 0; row < skills_.rows().size(); ++row) {
         // MPQ identifies the native portal item skills; their IDs are not hardcoded.
         if (skills_.value(row, "skill") != "Scroll of Townportal" &&
@@ -353,6 +357,7 @@ bool RemoteTown::interactionReady(const OnlineView &v, OnlineUnitKey target, std
     const auto found = std::find_if(view_.mapTargets.begin(), view_.mapTargets.end(),
         [&](const auto &entry) { return entry.unit == target; });
     const bool corpse = found->interaction == OnlineMapInteraction::Corpse;
+    const bool tradePeer = found->interaction == OnlineMapInteraction::PlayerTrade;
     const auto &player = *v.world.playerPosition;
     if (target.type == 2) {
         if (!map_ || !view_.origin) return false;
@@ -362,11 +367,11 @@ bool RemoteTown::interactionReady(const OnlineView &v, OnlineUnitKey target, std
             {EntityId{uint64_t(target.id) + 1}, position, position, found->collisionWidth, found->collisionHeight, 0, true});
     }
     if (target.type == 5) return nativeUnitDistance({float(player.x), float(player.y)}, 2, {float(found->position.x), float(found->position.y)}, found->collisionWidth) <= 4;
-    if (found->interaction != OnlineMapInteraction::Npc && !corpse) return true;
+    if (found->interaction != OnlineMapInteraction::Npc && !corpse && !tradePeer) return true;
     const Vec position = found->interaction == OnlineMapInteraction::Npc && displayOrigin
         ? *displayOrigin : Vec{float(player.x), float(player.y)};
     return nativeUnitDistance(position, 2,
-        {float(found->position.x), float(found->position.y)}, found->collisionWidth) <= (corpse ? 8 : 6);
+        {float(found->position.x), float(found->position.y)}, found->collisionWidth) <= (corpse || tradePeer ? 8 : 6);
 }
 std::optional<OnlinePoint> RemoteTown::interactionApproachPoint(const OnlineView &v, OnlineUnitKey target) const {
     if (!permitsInteraction(v, target) || target.type != 2 || !map_ || !view_.origin || !v.world.playerPosition) return {};

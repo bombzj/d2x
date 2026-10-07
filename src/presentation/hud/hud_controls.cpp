@@ -1,5 +1,6 @@
 #include "hud_layout.hpp"
 #include "classic_hud.hpp"
+#include "skill_tooltip.hpp"
 #include "presentation/scene_view.hpp"
 #include <algorithm>
 #include <sstream>
@@ -102,7 +103,7 @@ void SceneView::drawSkillControls(Vec mouse) const {
         view_.inventory.goldDialog || view_.inventory.identify)
         return;
     std::optional<std::optional<int>> hovered;
-    float tooltipAnchor = H - 55 * hudScale;
+    Vec tooltipAnchor{W / 2.f, H - 55 * hudScale};
     if (view_.skillPicker) {
         bool right = *view_.skillPicker;
         for (const auto &slot : skillPickerSlots(right)) {
@@ -116,51 +117,56 @@ void SceneView::drawSkillControls(Vec mouse) const {
                 }
             if (CheckCollisionPointRec(rv(mouse), bounds)) {
                 hovered.emplace(slot.skill);
-                tooltipAnchor = bounds.y;
+                tooltipAnchor = {bounds.x + bounds.width / 2, bounds.y};
                 DrawRectangleLinesEx(bounds, 1, gold);
             }
         }
     } else {
-        for (bool right : {false, true})
-            if (CheckCollisionPointRec(rv(mouse), hudSkillSlot(right)))
+        for (bool right : {false, true}) {
+            const auto bounds = hudSkillSlot(right);
+            if (CheckCollisionPointRec(rv(mouse), bounds)) {
                 hovered.emplace(right ? view_.rightSkill : view_.leftSkill);
+                tooltipAnchor = {bounds.x + bounds.width / 2, bounds.y};
+            }
+        }
     }
     if (hovered) {
         auto choice = *hovered;
         const auto *entry = choice ? characterView_.skill(*choice) : nullptr;
         auto name = entry ? entry->name : "Attack";
-        const auto detailLines = entry ? entry->pickerTooltip : std::vector<std::string>{"Normal weapon attack"};
-        const int width = std::min(520, W - 20);
-        std::vector<std::string> wrapped;
-        for (const auto &line : detailLines) {
-            std::istringstream words(line);
-            std::string word, current;
-            while (words >> word) {
-                const auto candidate = current.empty() ? word : current + " " + word;
-                if (!current.empty() && painter_.measure(candidate, 12) > width - 20) {
-                    wrapped.push_back(current);
-                    current = word;
-                } else current = candidate;
-            }
-            if (!current.empty()) wrapped.push_back(current);
-        }
-        const int height = 30 + int(wrapped.size()) * 16;
-        const float y = std::clamp(tooltipAnchor - height - 8,
-            5.f, float(std::max(5, H - height - 5)));
-        DrawRectangle((W - width) / 2, int(y), width, height, {0, 0, 0, 225});
-        painter_.centered(name, int(y + 7), 16, gold);
-        for (size_t index = 0; index < wrapped.size(); ++index)
-            painter_.centered(wrapped[index], int(y + 29 + index * 16), 12);
+        auto lines = std::vector<std::string>{name};
+        const auto details = entry ? entry->pickerTooltip : std::vector<std::string>{"Normal weapon attack"};
+        lines.insert(lines.end(), details.begin(), details.end());
+        drawSkillTooltip(UiPainter(assets_.font, 0), lines, tooltipAnchor);
     }
     for (bool mana : {false, true}) {
         if (!CheckCollisionPointRec(rv(mouse), hudGlobe(mana)))
             continue;
         const auto &p = characterView_;
-        auto text = std::string(mana ? "Mana: " : "Life: ") + p.number(mana ? "mana" : "hitpoints", int(mana ? p.mana : p.hp)) +
-                    " / " + p.number(mana ? "maxmana" : "maxhp", mana ? characterView_.maxMana : characterView_.maxLife);
-        auto globe = hudGlobe(mana);
-        painter_.label(text, int(globe.x + (globe.width - painter_.measure(text, 12)) / 2), int(globe.y - 20),
-                       12, parchment);
+        auto text = assets_.globeTextFormats[mana ? 1 : 0];
+        size_t next = 0;
+        for (const auto &value : {
+                 p.number(mana ? "mana" : "hitpoints", int(mana ? p.mana : p.hp)),
+                 p.number(mana ? "maxmana" : "maxhp", mana ? p.maxMana : p.maxLife)}) {
+            next = text.find("%d", next);
+            text.replace(next, 2, value);
+            next += value.size();
+        }
+        // D2Client 1.13c RVA 0x276EE/0x277AC: white color 0, baseline H-95,
+        // centers 65 (Life) and W-80 (Mana). Anchors follow the HUD artwork;
+        // glyphs keep their original size rather than the widened HUD scale.
+        const UiPainter nativeFont(assets_.font, 0);
+        const float center = mana ? W - 80 * hudScale : 65 * hudScale;
+        const float baseline = H - 95 * hudScale;
+        float x = center - nativeFont.measure(text, 16) * hudTextScale / 2;
+        for (unsigned char character : text) {
+            const auto *glyph = assets_.font.glyphs.frame(0, assets_.font.indices[character]);
+            if (glyph && character != ' ')
+                DrawTexturePro(glyph->texture, {0, 0, float(glyph->texture.width), float(glyph->texture.height)},
+                    {x + glyph->x * hudTextScale, baseline + (glyph->y - glyph->texture.height) * hudTextScale,
+                     glyph->texture.width * hudTextScale, glyph->texture.height * hudTextScale}, {}, 0, WHITE);
+            x += assets_.font.widths[character] * hudTextScale;
+        }
     }
     std::string hint;
     if (CheckCollisionPointRec(rv(mouse), hudRunButton()))

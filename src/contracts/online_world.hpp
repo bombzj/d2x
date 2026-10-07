@@ -100,7 +100,9 @@ struct OnlineUnit {
     std::string name;
     Bytes appearanceBits; // NPC assignment tail; decoded with current MPQ component tables.
     uint64_t positionRevision{}, appearanceRevision{}, positionDiscontinuity{};
+    uint64_t assignmentRevision{}; // A new spatial assignment invalidates presentation cached before removal.
     bool equipmentObserved{};
+    std::map<uint8_t, int32_t> attributes; // 1.13c 0x20: public player stats, separate from this client's private stats.
     std::optional<uint8_t> wireAction, hitClass;
     std::optional<uint8_t> direction; // Native 0..63 path facing.
     std::optional<uint16_t> actionSkill, actionSkillLevel;
@@ -128,7 +130,7 @@ struct OnlineMovementRequest {
 inline constexpr int onlineMovementProgressTimeoutSeconds = 15;
 struct OnlineNpcMessage {
     uint16_t stringId{};
-    uint8_t menu{}; // Native TEXT: 0 automatic, 1 topic, 2 both.
+    uint8_t menu{}; // Native TEXT discriminator: 1.13c type 0 automatic, type 2 selectable topic.
 };
 struct OnlineNpcConversation {
     uint32_t source{};
@@ -152,6 +154,22 @@ struct OnlineMapEvent {
     OnlinePoint point{}; // Room tiles or player subtiles, according to kind.
 };
 enum class OnlineDeathPhase { Unknown, Alive, Dying, Dead };
+// Native 0x77 authorizes the invitation/open state. The other player's identity
+// is unknown until 0x78 arrives after acceptance; never guess it from proximity.
+enum class OnlinePlayerTradeAction { Agree, Revoke, Gold };
+struct OnlinePlayerTrade {
+    enum class Phase { None, Outgoing, Incoming, Open };
+    enum class Response { None, AcceptSent, CancelSent, TimedOut, GoldSent, ResetSent };
+    Phase phase{Phase::None};
+    Response response{Response::None};
+    uint64_t revision{};
+    std::optional<uint8_t> lastAction;
+    std::optional<uint32_t> peer;
+    std::string peerName;
+    uint32_t ownGold{}, peerGold{};
+    bool ownAgreed{}, peerAgreed{}, agreementLocked{};
+    bool active() const { return phase != Phase::None; }
+};
 struct OnlineRespawnRequest {
     enum class State { WaitingForDeath, Sent, Confirmed, TimedOut };
     State state{State::WaitingForDeath};
@@ -162,6 +180,7 @@ struct OnlineRespawnRequest {
 };
 struct OnlineWorldView {
     OnlineSocialView social;
+    OnlinePlayerTrade playerTrade;
     OnlineDeathPhase deathPhase{OnlineDeathPhase::Unknown};
     uint64_t deathRevision{};
     std::optional<OnlineRespawnRequest> respawnRequest;
@@ -213,6 +232,7 @@ struct OnlineWorldView {
     uint64_t ignoredPackets{};
 
     void clear() {
+        playerTrade = {};
         social.revision = social.chatSequence = 0;
         social.players.clear();
         social.relationships.clear();
