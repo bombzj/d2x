@@ -103,7 +103,7 @@ OnlineDecodedItem RemoteInventory::decode(const OnlineItem &wire) const {
             } else if (!item.gamble) {
                 item.filledSockets = uint8_t(bits.read(3)); item.level = uint8_t(bits.read(7));
                 item.quality = uint8_t(bits.read(4));
-                if (!itemQualityFromNative(item.quality)) throw std::runtime_error("Unsupported native item quality");
+                if (!itemQualityFromNative(item.quality, true)) throw std::runtime_error("Unsupported native item quality");
                 item.hasGraphic = bits.read(1) != 0;
                 if (item.hasGraphic) item.graphic = uint8_t(bits.read(3));
                 if (bits.read(1)) item.autoAffix = uint16_t(bits.read(11));
@@ -154,7 +154,7 @@ OnlineDecodedItem RemoteInventory::decode(const OnlineItem &wire) const {
                             for (unsigned n = 0; n <= extra; ++n) {
                                 const auto row = statRows_.find(id + n);
                                 if (row == statRows_.end()) throw std::runtime_error("Unknown native item property");
-                                const auto width = cost.number(row->second, "Save Param Bits").value_or(0);
+                                const auto width = extra ? 0 : cost.number(row->second, "Save Param Bits").value_or(0);
                                 if (width < 0 || width > 32) throw std::runtime_error("Invalid native item parameter width");
                                 const auto parameter = bits.read(unsigned(width));
                                 out.push_back({uint16_t(id + n), statValue(id + n), parameter});
@@ -177,6 +177,24 @@ OnlineDecodedItem RemoteInventory::decode(const OnlineItem &wire) const {
         }
         for (const auto &[key, update] : wire.statUpdates) {
             const auto [id, parameter] = key;
+            const auto definition = statRows_.find(id);
+            if (definition != statRows_.end() && cost.value(definition->second, "Stat") == "item_charged_skill") {
+                if (update.value > 65535 || (update.value & 0xff) > (update.value >> 8))
+                    throw std::runtime_error("Invalid incremental charged skill counts");
+                unsigned matches = 0;
+                auto replace = [&](auto &stats) {
+                    for (auto &stat : stats) {
+                        if (stat.id != id || stat.parameter != parameter) continue;
+                        stat.value = update.value;
+                        ++matches;
+                    }
+                };
+                replace(item.stats);
+                replace(item.runewordStats);
+                for (auto &stats : item.setStats) replace(stats);
+                if (matches != 1) throw std::runtime_error("Charged skill update has no unambiguous assigned property");
+                continue;
+            }
             if (update.base) {
                 item.baseStats.push_back({id, int64_t(update.value), parameter});
                 if (parameter) continue;
@@ -191,8 +209,19 @@ OnlineDecodedItem RemoteInventory::decode(const OnlineItem &wire) const {
             if (row == statRows_.end()) throw std::runtime_error("Unknown incremental item property");
             const int shift = cost.number(row->second, "ValShift").value_or(0);
             if (shift < 0 || shift >= 32) throw std::runtime_error("Invalid native item property scale");
-            std::erase_if(item.stats, [&](const auto &stat) { return stat.id == id && stat.parameter == parameter; });
-            item.stats.push_back({id, int64_t(int32_t(update.value)) >> unsigned(shift), parameter});
+            unsigned matches = 0;
+            auto replace = [&](auto &stats) {
+                for (auto &stat : stats) {
+                    if (stat.id != id || stat.parameter != parameter) continue;
+                    stat.value = int64_t(int32_t(update.value)) >> unsigned(shift);
+                    ++matches;
+                }
+            };
+            replace(item.stats);
+            replace(item.runewordStats);
+            for (auto &stats : item.setStats) replace(stats);
+            if (matches > 1) throw std::runtime_error("Item property update has ambiguous list ownership");
+            if (!matches) item.stats.push_back({id, int64_t(int32_t(update.value)) >> unsigned(shift), parameter});
         }
         item.decoded = true;
     } catch (const std::exception &error) { item.reason = error.what(); }
@@ -266,7 +295,8 @@ bool RemoteInventory::submit(net::RealmSession &session, OnlineItemCommand comma
     };
     if (command.action >= OnlineItemAction::TradeOpen) {
         const auto identity = npcIdentity();
-        if (identity.empty() || view_.cursor) return reject("NPC service requires an active server conversation and empty cursor");
+        const bool sellingCursor = command.action == OnlineItemAction::Sell && view_.cursor == command.item;
+        if (identity.empty() || (view_.cursor && !sellingCursor)) return reject("NPC service requires an active server conversation and a compatible cursor");
         bool vendor = false;
         const auto &npcs = tables_.at("npc");
         for (size_t row = 0; row < npcs.rows().size(); ++row) vendor |= npcs.value(row, "npc") == identity;
@@ -275,8 +305,12 @@ bool RemoteInventory::submit(net::RealmSession &session, OnlineItemCommand comma
                 return reject("The original identify-all service requires a town Cain");
             return send();
         }
-        if (!vendor || identity == "nihlathak") return reject("Current MPQ and original rules do not identify a normal trader");
+        if (command.gamble) {
+            if (identity != "gheed" && identity != "elzix" && identity != "alkor" && identity != "jamella" && identity != "drehya" && identity != "nihlathak")
+                return reject("This original NPC does not offer gambling");
+        } else if (!vendor || identity == "nihlathak") return reject("Current MPQ and original rules do not identify a normal trader");
         if (command.action == OnlineItemAction::TradeOpen) return send();
+        if (command.action == OnlineItemAction::Buy && command.gamble != world.shopGamble) return reject("Purchase belongs to a different vendor service");
         if (world.shopSource != command.npc) return reject("Wait for the current NPC's server shelf before trading");
         if (command.action == OnlineItemAction::Repair || command.action == OnlineItemAction::RepairAll) {
             if (identity != "charsi" && identity != "fara" && identity != "hratli" && identity != "halbu" && identity != "larzuk")
@@ -314,7 +348,7 @@ bool RemoteInventory::submit(net::RealmSession &session, OnlineItemCommand comma
     if (found == world.items.end()) return reject("Item is not assigned in the current game");
     const auto &wire = found->second;
     const auto &decoded = view_.items.at(command.item);
-    if (!decoded.decoded || decoded.gamble) return reject("Item data cannot be operated: " + decoded.reason);
+    if (!decoded.decoded || (decoded.gamble && (command.action != OnlineItemAction::Buy || !command.gamble))) return reject("Item data cannot be operated: " + decoded.reason);
     if (command.itemRevision && command.itemRevision != wire.revision) return reject("Stale item revision");
     command.itemRevision = wire.revision;
     auto owned = [&](const OnlineItem &item) { return item.ownerType == 0 && item.owner == online.load.playerUnitId; };
@@ -463,14 +497,32 @@ bool RemoteInventory::submit(net::RealmSession &session, OnlineItemCommand comma
     case OnlineItemAction::Buy:
         if (wire.action != 11 || wire.ownerType != 1 || wire.owner != command.npc || wire.mode != 0)
             return reject("Purchase requires an assigned item on the active server vendor shelf");
+        if (decoded.gamble != command.gamble) return reject("Item identity belongs to a different vendor service");
         break;
     case OnlineItemAction::Sell:
-        if (!backpack(wire) || baseNumber(wire, "quest")) return reject("Sell requires an owned non-quest backpack item");
+        if (!owned(wire) || !(backpack(wire) || wire.mode == 1 || wire.mode == 4) || baseNumber(wire, "quest") || (wire.flags & 0x1000u))
+            return reject("Sell requires an owned non-quest backpack, equipped or cursor item");
         break;
-    case OnlineItemAction::Repair:
-        if (!owned(wire) || !(accessible(wire) || wire.mode == 1) || (wire.flags & 0x400000) ||
-            bases_.at(wire.code).table == "misc") return reject("Repair requires this player's non-ethereal equipment");
+    case OnlineItemAction::Repair: {
+        const auto charged = std::find_if(statRows_.begin(), statRows_.end(), [&](const auto &entry) {
+            return tables_.at("itemstatcost").value(entry.second, "Stat") == "item_charged_skill";
+        });
+        bool missingCharges = false;
+        auto charges = [&](const auto &stats) {
+            for (const auto &stat : stats) {
+                if (charged == statRows_.end() || stat.id != charged->first) continue;
+                if (stat.value < 0 || stat.value > 65535) return false;
+                const unsigned current = unsigned(stat.value) & 0xff, maximum = unsigned(stat.value) >> 8;
+                if (current > maximum) return false;
+                missingCharges |= current < maximum;
+            }
+            return true;
+        };
+        if (!charges(decoded.stats) || !charges(decoded.runewordStats)) return reject("Charged skill counts are invalid");
+        if (!owned(wire) || !(backpack(wire) || wire.mode == 1) || !decoded.identified || (wire.flags & 0x400000) ||
+            (bases_.at(wire.code).table == "misc" && !missingCharges)) return reject("Repair requires owned non-ethereal equipment or depleted charged skills");
         break;
+    }
     case OnlineItemAction::StorageClose: case OnlineItemAction::Transmute:
     case OnlineItemAction::GoldDeposit: case OnlineItemAction::GoldWithdraw: case OnlineItemAction::GoldDrop:
     case OnlineItemAction::TradeOpen: case OnlineItemAction::RepairAll: case OnlineItemAction::IdentifyAll:

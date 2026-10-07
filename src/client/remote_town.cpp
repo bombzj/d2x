@@ -361,6 +361,7 @@ bool RemoteTown::interactionReady(const OnlineView &v, OnlineUnitKey target, std
         return interactionClear(map_->grid, {float(player.x) - origin.x, float(player.y) - origin.y},
             {EntityId{uint64_t(target.id) + 1}, position, position, found->collisionWidth, found->collisionHeight, 0, true});
     }
+    if (target.type == 5) return nativeUnitDistance({float(player.x), float(player.y)}, 2, {float(found->position.x), float(found->position.y)}, found->collisionWidth) <= 4;
     if (found->interaction != OnlineMapInteraction::Npc && !corpse) return true;
     const Vec position = found->interaction == OnlineMapInteraction::Npc && displayOrigin
         ? *displayOrigin : Vec{float(player.x), float(player.y)};

@@ -30,6 +30,7 @@
 | `online-recover-corpse` | unitId为world.corpses及scene.mapTargets中本人的真实可见尸体GUID，自动type0；先按共同路径靠近，再原0x13请求取回。以服务端库存／装备与尸体回包确认，accepted不表示回收完成 |
 | `online-items` / `online-ground` | 只读同一完整快照；online.inventory.items含地面和各所有者物品，依mode／owner筛选，不请求服务器刷新；尺寸、数量、耐久、词缀、孔内所有者、decoded／reason及revision见下文 |
 | `online-item-action` | action和真实itemId，可选itemRevision／targetRevision；配对动作还需targetId。27种原物品／城镇请求及格子／部位参数见[联网物品操作](#联网物品操作)，accepted仅入队 |
+| `online-item-quote` | action=buy／sell／repair／repair-all；前三者需本局itemId，可选itemRevision。返回known及price，缺数据为null；复用UI报价，不发送询价包或推进待发库存操作。赌博购买报价取当前真实货架模式 |
 | `online-combat` / `online-skills` | 只读同一快照；combat.skills列MPQ技能名、基础／装备加成／有效等级、innate、左右键／城镇资格；combat.states列原服状态和原单位属性；combat.events为最多256条有序战斗事件，sequence递增，消费者自行检查缺口；0x73首路径点为missileDestination（旧missileOrigin名称已更正），不是飞弹出生点 |
 | `online-select-skill` | skillId（0–65535）、hand（left／right，默认right）；当前MPQ及服务端有效等级校验，原0x3C选择，等combat.request.state=Confirmed再施放。不支持带物品GUID的充能技能 |
 | `online-bind-hotkey` | slot（0–15）、skillId、hand；校验当前MPQ主动技能和原服有效等级，原0x51保存绑定，无即时ACK，request为SentNoAck；重入world.skillHotkeys读取0x7B。UI使用F1–F8，物品GUID技能暂未开放 |
@@ -104,9 +105,9 @@ world.dead／deathPhase／respawnRequest／corpses描述死亡、回城请求及
 | transmute | 无itemId；已确认方块、空Cursor且有材料；配方与产物由原服决定 |
 | gold-deposit / gold-withdraw | amount为正整数；已确认箱子、空Cursor；复验已知钱包／箱子余额，最终上限和金额由原服决定 |
 | gold-drop | amount为正整数；空Cursor，服务器决定金币落点 |
-| trade-open | 无itemId；当前NPC交谈且空Cursor，生成普通货架 |
-| buy | 当前货架itemId；普通单件购买，原服计算价格／安置；不开放多买或赌博 |
-| sell | 本人背包itemId；当前货架／交谈及空Cursor，非任务物品，原服定价 |
+| trade-open | 无itemId；当前NPC交谈且空Cursor，gamble默认false；true要求原赌博NPC，发送0x38 action=2，库存由原服生成 |
+| buy | 当前货架itemId；gamble与当前货架及原物品标志一致；普通／赌博单件购买，发送前共用报价并绑定itemRevision，原服决定价格／安置；多买尚未接入 |
+| sell | 本人背包、装备或Cursor itemId；当前货架／交谈，Cursor只允许待售原件，非任务物品；发送前共用报价并绑定itemRevision，原服定价 |
 | repair | 本人可访问物品或装备itemId；当前原铁匠货架／交谈，最终资格由原服决定 |
 | repair-all | 无itemId；当前原铁匠货架／交谈及空Cursor |
 | identify-all | 无itemId；当前五幕凯恩交谈及空Cursor；任务资格／费用／效果由原服决定 |

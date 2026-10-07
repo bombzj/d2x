@@ -4,7 +4,7 @@
 
 namespace d2x {
 std::optional<unsigned> SceneView::inventoryVendorPrice(ItemHandle item) const {
-    return (view_.shopRepair || view_.shopOpen) && shopView().pricesKnown
+    return (view_.shopRepair || view_.shopOpen)
         ? npcClient_.quote(view_.dialogueObject, item, view_.shopRepair) : std::nullopt;
 }
 
@@ -124,6 +124,11 @@ void SceneView::closeNpcShop() {
 bool SceneView::npcShopDropAt(Vec mouse) const {
     return view_.shopOpen && CheckCollisionPointRec(rv(mouse), shopGrid());
 }
+bool SceneView::npcShopRepairAllAt(Vec mouse) const {
+    return view_.shopOpen && !view_.shopGamble && !view_.shopConfirm && shopView().repairAvailable &&
+        assets_.vendorButtons.count > 18 &&
+        CheckCollisionPointRec(rv(mouse), shopButton(1));
+}
 void SceneView::scrollNpcShop(int pages) {
     auto items = placements(shopView(), view_.shopCategory);
     view_.shopPage = std::clamp(view_.shopPage + pages, 0, maximumPage(items));
@@ -217,7 +222,9 @@ void SceneView::drawNpcShop(Vec mouse) const {
     const ShopOfferView *hovered = nullptr;
     for (const auto &entry : items) {
         if (entry.page != view_.shopPage) continue;
-        drawItemArt(entry.offer->artKey, entry.offer->definition, entry.bounds, WHITE);
+        const auto *item = inventoryView_.item(EntityId{uint64_t(entry.offer->slot) + 1});
+        if (item) drawItemIcon(*item, entry.bounds);
+        else drawItemArt(entry.offer->artKey, entry.offer->definition, entry.bounds, WHITE);
         if (CheckCollisionPointRec(rv(mouse), entry.bounds)) {
             DrawRectangleLinesEx(entry.bounds, 1, gold);
             hovered = entry.offer;
@@ -227,19 +234,22 @@ void SceneView::drawNpcShop(Vec mouse) const {
     painter_.label("STASH", int(panel.x + 20 * scale), int(panel.y + 362 * scale), 13, WHITE);
     painter_.label(stashGold, int(panel.x + 199 * scale) - painter_.measure(stashGold, 13),
                    int(panel.y + 362 * scale), 13, WHITE);
-    const int buttonFrames[] = {2, 4, 6, 10};
+    const int buttonFrames[] = {2, 18, 6, 10};
     const bool repairAvailable = shop.repairAvailable;
     for (int index = 0; index < 4; ++index) {
-        if (index == 2 && !repairAvailable) continue;
+        if ((index == 1 || index == 2) && !repairAvailable) continue;
+        if (index == 1 && assets_.vendorButtons.count <= 18) continue;
         auto sprite = assets_.vendorButtons.frame(0, buttonFrames[index]);
         if (!sprite) continue;
         const auto &texture = sprite->texture;
         DrawTexturePro(texture, {0, 0, float(texture.width), float(texture.height)},
                        shopButton(index), {0, 0}, 0,
-                       index == 1 ? Color{125, 125, 125, 255} : WHITE);
+                       WHITE);
         if (index == 2 && view_.shopRepair) DrawRectangleLinesEx(shopButton(index), 1, gold);
         if (index == 2 && CheckCollisionPointRec(rv(mouse), shopButton(index)))
             painter_.label("Repair", int(shopButton(index).x), int(shopButton(index).y - 20), 12, WHITE);
+        if (index == 1 && CheckCollisionPointRec(rv(mouse), shopButton(index)))
+            drawItemText({{"Repair All",ItemTextTone::Normal}}, ItemQuality::Normal, {panel.x + panel.width, panel.y + 384 * scale}, shop.repairAllPrice, "COST");
     }
     if (maximumPage(items) > (view_.shopCategory == 1 || view_.shopCategory == 2 ? 1 : 0)) {
         painter_.label("<", int(pageButton(false).x + 14), int(pageButton(false).y + 8), 15, gold);
@@ -250,7 +260,7 @@ void SceneView::drawNpcShop(Vec mouse) const {
     }
     if (hovered && !view_.shopConfirm && !view_.inventory.drag) {
         if (const auto *detail = npcClient_.inspectShopOffer(view_.dialogueObject, hovered->slot, view_.shopGamble))
-            drawItemText(detail->tooltip, detail->quality, {mouse.x + 170, mouse.y}, shopView().pricesKnown ? std::optional<unsigned>{detail->price} : std::nullopt, "Cost");
+            drawItemText(detail->tooltip, detail->quality, {mouse.x + 170, mouse.y}, detail->priceKnown ? std::optional<unsigned>{detail->price} : std::nullopt, "COST");
     }
     if (view_.shopConfirm) {
         auto popup = confirmBounds();
@@ -268,7 +278,7 @@ void SceneView::drawNpcShop(Vec mouse) const {
             while (fontSize > 1 && painter_.measure(name, fontSize) > popup.width - 44) --fontSize;
             painter_.inBox(name, {popup.x + 22, popup.y + 40, popup.width - 44, 32},
                            fontSize, itemColor(found->offer->quality));
-            painter_.label(shopView().pricesKnown ? std::to_string(found->offer->price) + " GOLD?" : "BUY FROM SERVER?",
+            painter_.label(found->offer->priceKnown ? std::to_string(found->offer->price) + " GOLD?" : "BUY FROM SERVER?",
                            int(popup.x) + 24, int(popup.y) + 88, 14, parchment);
         }
         for (bool yes : {true, false}) {

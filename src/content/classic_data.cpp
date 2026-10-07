@@ -68,7 +68,7 @@ ClassicData loadClassicData(Archives &archives) {
         if (archives.contains("data/global/excel/itemratio.txt"))
             tables.emplace("itemratio", DataTable(archives.read("data/global/excel/itemratio.txt")));
         for (auto name : {"uniqueitems", "setitems", "sets", "magicprefix", "magicsuffix",
-                          "rareprefix", "raresuffix",
+                          "rareprefix", "raresuffix", "automagic",
                           "properties", "itemstatcost", "qualityitems", "lowqualityitems"})
             if (archives.contains(std::string("data/global/excel/") + name + ".txt"))
                 tables.emplace(name, DataTable(archives.read(std::string("data/global/excel/") + name + ".txt")));

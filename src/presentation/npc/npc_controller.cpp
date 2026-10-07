@@ -27,6 +27,7 @@ bool SceneController::handleNpcMenu(const FrameInput &input) {
         }
         else if (action == NpcMenuAction::Gamble) {
             npcClient_.submit(OpenGamble{ui.dialogueObject});
+            view_.openNpcShop(true);
         }
         else if (action == NpcMenuAction::Hire) npcClient_.submit(OpenHirelingList{ui.dialogueObject});
         else if (action == NpcMenuAction::Resurrect) npcClient_.submit(ResurrectHireling{ui.dialogueObject});

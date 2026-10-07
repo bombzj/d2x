@@ -5,6 +5,7 @@
 #include "client/npc_client.hpp"
 #include "client/quest_client.hpp"
 #include "client/map_client.hpp"
+#include "contracts/online_items.hpp"
 #include <memory>
 #include <cstddef>
 #include <cstdint>
@@ -41,5 +42,6 @@ class RemoteUiClients {
     size_t queuedItemCommands() const;
     std::optional<uint64_t> waitingItemRequest() const;
     RemoteUiNotice takeNotice();
+    std::optional<unsigned> itemQuote(uint32_t item, OnlineItemAction action) const;
 };
 }

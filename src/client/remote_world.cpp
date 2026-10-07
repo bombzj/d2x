@@ -169,7 +169,7 @@ void equipment(OnlineView &v, const Packet &p) {
     auto &u = unit(v.world, {0, *owner});
     u.equipmentObserved = true;
     ++u.appearanceRevision;
-    if (action != 6 && action != 7 && action != 9 && action != 21 && action != 23)
+    if (action == 5 || action == 8 || action == 12 || action == 15 || action == 17)
         return;
     BitReader bits(r.take(r.remaining()));
     OnlineEquippedItem item;
@@ -254,6 +254,12 @@ void itemPacket(OnlineView &v, const Packet &p) {
         v.world.shopSource = v.world.shopRequested;
     }
     item.revision = ++v.world.itemRevision;
+    if (item.mode == 6 && item.ownerType == 4) {
+        const auto previous = v.world.items.find(item.id);
+        item.socketAssignmentRevision = previous != v.world.items.end() && previous->second.mode == 6 &&
+            previous->second.ownerType == 4 && previous->second.owner == item.owner && previous->second.socketAssignmentRevision
+            ? previous->second.socketAssignmentRevision : item.revision;
+    }
     if (item.mode == 3 || item.mode == 5) {
         const auto previous = v.world.items.find(item.id);
         const bool alreadyDropping = previous != v.world.items.end() && previous->second.mode == 5;

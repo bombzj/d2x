@@ -89,7 +89,7 @@ void loadSpecialItemData(ClassicData &data) {
                 record.set = table.value(row, "set");
                 record.setAddFunction = table.number(row, "add func").value_or(0);
                 record.cowOnly = !cowSet.empty() && record.set == cowSet;
-                for (int tier = 1; tier <= 4; ++tier)
+                for (int tier = 1; tier <= 5; ++tier)
                     for (auto half : {"a", "b"}) {
                         auto suffix = std::to_string(tier) + half;
                         auto property = table.value(row, "aprop" + suffix);

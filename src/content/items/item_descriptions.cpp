@@ -57,6 +57,36 @@ std::vector<std::string> describeItemStats(const ClassicData &data, const ItemIn
         const auto &stat = *found;
         auto description = text(number < 0 ? stat.negative : stat.positive);
         const int function = stat.descriptionFunction;
+        if (function == 15 || function == 24) {
+            const auto &costs = data.tables.at("itemstatcost");
+            int shift = costs.number(0, "stuff").value_or(6);
+            if (shift <= 0 || shift > 8) shift = 6;
+            const unsigned parameter = unsigned(key.second);
+            const auto skill = data.skills.skills.find(int(parameter >> shift));
+            if (skill == data.skills.skills.end() || description.empty()) continue;
+            const unsigned rank = parameter & ((1u << shift) - 1);
+            auto substitute = [&](const std::string &value) {
+                const auto marker = description.find("%d");
+                if (marker != std::string::npos) description.replace(marker, 2, value);
+            };
+            if (function == 15) {
+                substitute(std::to_string(number));
+                substitute(std::to_string(rank));
+                const auto marker = description.find("%s");
+                if (marker != std::string::npos) description.replace(marker, 2, skill->second.name);
+                for (auto marker = description.find("%%"); marker != std::string::npos; marker = description.find("%%")) description.replace(marker, 2, "%");
+            } else {
+                const unsigned current = unsigned(number) & 0xff, maximum = unsigned(number) >> 8;
+                if (number < 0 || number > 65535 || current > maximum) continue;
+                substitute(std::to_string(current));
+                substitute(std::to_string(maximum));
+                const auto prefix = text("ModStre10b");
+                if (prefix.empty()) continue;
+                description = prefix + " " + std::to_string(rank) + " " + skill->second.name + " " + description;
+            }
+            descriptions.emplace_back(stat.descriptionPriority, std::move(description));
+            continue;
+        }
         int shown = number;
         if (function == 5) shown = number * 100 / 128;
         if (function == 11) shown = std::max(1, 100 / std::max(1, number));

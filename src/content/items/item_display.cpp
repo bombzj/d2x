@@ -42,7 +42,7 @@ static std::string baseDisplayItemName(const ClassicData &content, const ItemCat
         if (found != content.inferiorGrades.end())
             return localized(found->name) + " " + name;
     }
-    if ((item.quality == ItemQuality::Rare || item.quality == ItemQuality::Crafted)) {
+    if ((item.quality == ItemQuality::Rare || item.quality == ItemQuality::Crafted || item.quality == ItemQuality::Tempered)) {
         auto rareName = [&](const auto &records, int32_t row) -> std::string {
             auto found = std::find_if(records.begin(), records.end(),
                                       [&](const auto &record) { return int32_t(record.row) == row; });
@@ -89,7 +89,7 @@ ItemDisplay describeInventoryItem(const ClassicData &content, const ItemCatalog 
                 line(text->second.substr(0, separator));
     {
         if ((item.quality == ItemQuality::Unique || item.quality == ItemQuality::Set ||
-             (item.quality == ItemQuality::Rare || item.quality == ItemQuality::Crafted)) && item.identified) line(definition.name, ItemTextTone::Name);
+             (item.quality == ItemQuality::Rare || item.quality == ItemQuality::Crafted || item.quality == ItemQuality::Tempered)) && item.identified) line(definition.name, ItemTextTone::Name);
         const auto stats = resolveItemStats(content, item, context.level);
         auto sum = [&](const char *name) {
             int result = 0;

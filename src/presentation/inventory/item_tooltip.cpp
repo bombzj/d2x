@@ -14,7 +14,7 @@ void SceneView::itemButton(Rectangle bounds, const char *label, Color color) con
 }
 void SceneView::drawItemText(std::vector<ItemTextLine> lines, ItemQuality quality, Vec anchor,
                               std::optional<unsigned> price, std::string_view priceLabel) const {
-    if (price) lines.insert(lines.begin() + 1, {std::string(priceLabel) + ": " + std::to_string(*price), ItemTextTone::Normal});
+    if (!priceLabel.empty()) lines.insert(lines.begin(), {std::string(priceLabel) + ": " + (price ? std::to_string(*price) : "?"), ItemTextTone::Normal});
     std::vector<std::string> text;
     std::vector<Color> colors;
     for (auto &line : lines) {

@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <stdexcept>
 #include <charconv>
+#include <limits>
 
 namespace d2x {
 void loadPropertyData(ClassicData &data) {
@@ -205,5 +206,19 @@ std::vector<ResolvedItemStat> resolveItemStats(const ClassicData &data, const It
     auto sockets = resolveSocketStats(data, item, level);
     result.insert(result.end(), sockets.begin(), sockets.end());
     return result;
+}
+unsigned itemMaximumDurability(const ClassicData &data, const ItemInstance &item, std::span<const ResolvedItemStat> stats) {
+    const auto *definition = data.items.find(item.definition);
+    if (!definition) return 0;
+    const int64_t base = item.nativeProperties ? item.nativeMaxDurability :
+        item.quality == ItemQuality::Inferior && definition->maxDurability ? std::max(1u, definition->maxDurability / 3) : definition->maxDurability;
+    if (!base) return 0;
+    int64_t fixed = 0, percent = 0;
+    for (const auto &stat : stats) {
+        if (stat.layer) continue;
+        if (stat.name == "maxdurability") fixed += stat.rawValue;
+        else if (stat.name == "item_maxdurability_percent") percent += stat.rawValue;
+    }
+    return unsigned(std::clamp(base + fixed + base * percent / 100, int64_t(0), int64_t(std::numeric_limits<int>::max())));
 }
 } // namespace d2x

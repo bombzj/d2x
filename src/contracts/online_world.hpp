@@ -123,6 +123,7 @@ struct OnlineMovementRequest {
     std::optional<OnlineUnitKey> unit;
     bool run{}; // Requested gait, not a simulated server position or mode.
     uint64_t revision{};
+    bool interaction{};
 };
 inline constexpr int onlineMovementProgressTimeoutSeconds = 15;
 struct OnlineNpcMessage {
@@ -185,6 +186,7 @@ struct OnlineWorldView {
     std::optional<uint32_t> itemTargetingSource; // Native 0x3F preparation, not identification success.
     OnlineStorageContext storage;
     std::optional<uint32_t> shopRequested, shopSource;
+    bool shopGamble{};
     std::optional<OnlineTradeResult> tradeResult;
     unsigned weaponSet{}; // Original 0x97 toggles the client weapon inventory.
     std::map<uint8_t, uint32_t> playerAttributes;
@@ -234,6 +236,7 @@ struct OnlineWorldView {
         storage = {};
         shopRequested.reset();
         shopSource.reset();
+        shopGamble = false;
         tradeResult.reset();
         weaponSet = 0;
         playerAttributes.clear();

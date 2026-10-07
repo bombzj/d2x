@@ -113,6 +113,10 @@ bool SceneController::handleNpcShop(const FrameInput &input) {
                         npcClient_.submit(RepairVendorItem{ui.dialogueObject, item->handle()});
                 } else return handleInventory(input);
             } else if (input.insideViewport && input.leftPressed) {
+                if (view_.npcShopRepairAllAt(input.mouse)) {
+                    npcClient_.submit(RepairVendorItem{ui.dialogueObject, {}});
+                    return true;
+                }
                 if (auto slot = view_.clickNpcShop(input.mouse))
                     npcClient_.submit(BuyVendorItem{ui.dialogueObject, *slot, ui.shopGamble});
                 if (!ui.shopOpen)

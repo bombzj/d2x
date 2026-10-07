@@ -76,10 +76,10 @@ struct RealmFrontend::Impl {
     std::map<std::string, GpuAnimation> art;
     std::vector<std::string> classes;
     std::string account, password, gameName, gamePassword, description;
-    int focus{}, selected{}, page{}, players{4}, difference{4};
+    int focus{}, selected{}, page{}, players{8}, difference{4};
     int lastClickedCharacter{-1};
     double lastCharacterClick{};
-    bool restrictLevels{true};
+    bool restrictLevels{false};
     uint64_t characterGeneration{};
     std::vector<std::string> characterNames;
     std::vector<Bytes> characterPortraits;
@@ -179,7 +179,7 @@ struct RealmFrontend::Impl {
     }
     bool button(const char *id, int x, int y, std::string label, bool active = true, int segments = 1,
                 int base = 0, const UiPainter *caption = nullptr,
-                Color captionColor = Color{100, 100, 100, 255}) {
+                Color captionColor = WHITE) {
         const auto &a = art.at(id);
         int width = 0;
         for (int i = 0; i < segments; ++i)
@@ -201,7 +201,7 @@ struct RealmFrontend::Impl {
         while (std::getline(lines, line)) {
             (caption ? *caption : buttonText).inBox(
                 line, {float(x + (down ? 1 : 0)), float(top + (down ? 1 : 0)), r.width, 16}, 16,
-                active ? captionColor : Color{65, 65, 65, 255});
+                active ? captionColor : GRAY);
             top += 16;
         }
         return active && clicked && CheckCollisionPointRec(mouse, r);
@@ -670,12 +670,12 @@ struct RealmFrontend::Impl {
             if (!v.gameListComplete)
                 wrap(listing ? "Retrieving room list..." : "Room list is incomplete. Join by name or refresh.",
                      608, 300, 155);
-            if (button("cancel", 434, 404, s(5103), true, 1, 0, &lobbyText, BLACK)) {
+            if (button("cancel", 434, 404, s(5103), true, 1, 0, &lobbyText)) {
                 lobbyPanel = LobbyPanel::Notice;
                 if (listing) emit(FrontendCommand::CancelList);
                 wipe(gamePassword);
             }
-            if (button("gameButton", 599, 404, s(5151), !gameName.empty(), 1, 0, &lobbyText, BLACK) ||
+            if (button("gameButton", 599, 404, s(5151), !gameName.empty(), 1, 0, &lobbyText) ||
                 (enabled && !gameName.empty() && input.enter)) {
                 emit(FrontendCommand::JoinGame);
                 intent.name = gameName;
@@ -711,7 +711,7 @@ struct RealmFrontend::Impl {
                     CheckCollisionPointRec(mouse, {float(x), 366, 130, 22}))
                     difficulty = i;
             }
-            if (button("cancel", 434, 404, s(5103), true, 1, 0, &lobbyText, BLACK)) {
+            if (button("cancel", 434, 404, s(5103), true, 1, 0, &lobbyText)) {
                 lobbyPanel = LobbyPanel::Notice;
                 gameName.clear();
                 wipe(gamePassword);
@@ -754,24 +754,24 @@ struct RealmFrontend::Impl {
                 if (!line.empty()) drawLine();
             }
         }
-        if (button("tabs", 534, 449, s(5312), true, 1, 0, &lobbyText, BLACK)) {
+        if (button("tabs", 534, 449, s(5312), true, 1, 0, &lobbyText)) {
             lobbyPanel = LobbyPanel::Create;
             if (listing) emit(FrontendCommand::CancelList);
             focus = 0;
         }
-        if (button("tabs", 654, 449, s(5313), true, 1, 0, &lobbyText, BLACK)) {
+        if (button("tabs", 654, 449, s(5313), true, 1, 0, &lobbyText)) {
             lobbyPanel = LobbyPanel::Join;
             gameOffset = 0;
             focus = 0;
             if (!listing) emit(FrontendCommand::ListGames);
         }
-        button("chatButton", 534, 469, s(5254), false, 1, 0, &lobbyText, BLACK);
-        button("chatButton", 614, 469, s(5315), false, 1, 0, &lobbyText, BLACK);
-        if (button("chatButton", 694, 469, s(5316), true, 1, 0, &lobbyText, BLACK))
+        button("chatButton", 534, 469, s(5254), false, 1, 0, &lobbyText);
+        button("chatButton", 614, 469, s(5315), false, 1, 0, &lobbyText);
+        if (button("chatButton", 694, 469, s(5316), true, 1, 0, &lobbyText))
             emit(FrontendCommand::Back);
         tiles("leftButton", 19, 461, 3, 0, 3, GRAY);
-        lobbyText.inBox(s(11126), {19, 461, 120, 20}, 16, Color{65, 65, 65, 255});
-        lobbyText.inBox(s(5308), {139, 461, 120, 20}, 16, Color{65, 65, 65, 255});
+        lobbyText.inBox(s(11126), {19, 461, 120, 20}, 16, GRAY);
+        lobbyText.inBox(s(5308), {139, 461, 120, 20}, 16, GRAY);
         label(v.selectedCharacter, 139, 511, WHITE);
         auto c = std::find_if(v.characters.begin(), v.characters.end(),
                               [&](const auto &entry) { return entry.name == v.selectedCharacter; });

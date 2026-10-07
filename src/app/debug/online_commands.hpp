@@ -3,6 +3,7 @@
 #include "presentation/input.hpp"
 #include "network/realm_session.hpp"
 #include <functional>
+#include <optional>
 namespace d2x {
 class RemoteControl;
 class RemoteInventory;
@@ -13,5 +14,6 @@ std::string onlineDebugCommand(const std::string &, net::RealmSession &,
                                const std::function<OnlineSceneView()> &scene,
                                RemoteControl &, RemoteInventory &, RemoteCombat &,
                                const std::function<void(bool, bool)> &automap, bool &presentationPaused,
-                               const std::function<void(std::vector<FrameInput>)> &input);
+                               const std::function<void(std::vector<FrameInput>)> &input,
+                               const std::function<std::optional<unsigned>(uint32_t, OnlineItemAction)> &quote);
 }

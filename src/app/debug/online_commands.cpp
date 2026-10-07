@@ -361,7 +361,8 @@ std::string onlineDebugCommand(const std::string &input, net::RealmSession &sess
                                const std::function<OnlineSceneView()> &sceneSnapshot,
                                RemoteControl &control, RemoteInventory &inventory, RemoteCombat &combat,
                                const std::function<void(bool, bool)> &automap, bool &presentationPaused,
-                               const std::function<void(std::vector<FrameInput>)> &inputFrames) {
+                               const std::function<void(std::vector<FrameInput>)> &inputFrames,
+                               const std::function<std::optional<unsigned>(uint32_t, OnlineItemAction)> &quote) {
     Json request;
     Credentials secrets{request, {}};
     try {
@@ -456,6 +457,25 @@ std::string onlineDebugCommand(const std::string &input, net::RealmSession &sess
             if (action.action == Action::Cast) control.cancelMovement();
             else control.cancelApproach();
             mutation = true;
+        } else if (command == "online-item-quote") {
+            const auto action = text("action", 32);
+            const auto type = action == "buy" ? OnlineItemAction::Buy : action == "sell" ? OnlineItemAction::Sell :
+                action == "repair" ? OnlineItemAction::Repair : OnlineItemAction::RepairAll;
+            if (action != "buy" && action != "sell" && action != "repair" && action != "repair-all") throw std::invalid_argument("Unknown quote action");
+            uint32_t item = 0;
+            if (type != OnlineItemAction::RepairAll) {
+                const auto &value = request.at("itemId");
+                if (!value.is_number_integer()) throw std::invalid_argument("Item ID must be an integer");
+                const auto id = value.get<int64_t>();
+                if (id < 0 || uint64_t(id) > UINT32_MAX) throw std::invalid_argument("Item ID exceeds the native range");
+                item = uint32_t(id);
+                const auto found = session.read().world.items.find(item);
+                if (found == session.read().world.items.end()) throw std::invalid_argument("Item is no longer assigned");
+                if (request.contains("itemRevision") && request.at("itemRevision").get<uint64_t>() != found->second.revision)
+                    throw std::invalid_argument("Stale item revision");
+            }
+            const auto price = quote(item, type);
+            return Json{{"ok", true}, {"known", price.has_value()}, {"price", optional(price)}, {"action", action}}.dump();
         } else if (command == "online-item-action") {
             constexpr std::array names{"pickup", "take", "place", "drop", "equip", "unequip", "swap", "use",
                 "belt-place", "belt-swap", "stack", "book", "socket", "identify", "switch-weapons",
@@ -500,6 +520,16 @@ std::string onlineDebugCommand(const std::string &input, net::RealmSession &sess
             intent.page = cell("page", 4); intent.body = cell("body", 10);
             intent.beltSlot = cell("beltSlot", 15);
             intent.toCursor = request.value("toCursor", false); intent.mercenary = request.value("mercenary", false);
+            intent.gamble = request.value("gamble", false);
+            if (intent.action == OnlineItemAction::Buy || intent.action == OnlineItemAction::Sell) {
+                const auto found = session.read().world.items.find(intent.item);
+                if (found == session.read().world.items.end() || (intent.itemRevision && intent.itemRevision != found->second.revision))
+                    throw std::invalid_argument("Stale quoted item revision");
+                intent.itemRevision = found->second.revision;
+                const auto price = quote(intent.item, intent.action);
+                if (!price) return Json{{"ok", false}, {"error", "The current item has no complete transaction quote"}}.dump();
+                intent.amount = *price;
+            }
             if (intent.action == OnlineItemAction::Pickup) {
                 const auto scene = sceneSnapshot();
                 if (!scene.nativeMapReady || !scene.movementAvailable)

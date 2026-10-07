@@ -7,6 +7,8 @@
 #include "content/classic_data.hpp"
 #include "content/character/character_progression.hpp"
 #include "content/items/item_display.hpp"
+#include "content/items/item_pricing.hpp"
+#include "content/items/item_properties.hpp"
 #include "gameplay/character/attributes.hpp"
 #include "contracts/online_scene.hpp"
 #include "gameplay/quest/catalog.hpp"
@@ -17,6 +19,7 @@
 #include <deque>
 #include <cmath>
 #include <chrono>
+#include <set>
 #include <utility>
 
 namespace d2x {
@@ -212,18 +215,29 @@ struct RemoteUiClients::Impl {
         const NpcConversationView &read(EntityId) const override { return o.npcView; }
         const NpcSceneView &scene() const override { return o.npcScene; }
         const ShopView &shop(EntityId, bool) const override { return o.shopView; }
-        const ShopOfferView *inspectShopOffer(EntityId, uint32_t slot, bool) const override {
+        const ShopOfferView *inspectShopOffer(EntityId npc, uint32_t slot, bool gamble) const override {
+            if (npc != o.shopView.npc || gamble != o.shopView.gamble || !onlineInteractionMatches(o.context, o.session.read())) return nullptr;
             const auto it = std::find_if(o.shopView.offers.begin(), o.shopView.offers.end(),
                 [&](const auto &v) { return v.slot == slot; });
             return it == o.shopView.offers.end() ? nullptr : &*it;
         }
-        std::optional<unsigned> quote(EntityId, ItemHandle, bool) const override {
-            return std::nullopt; // Native price calculation has not been implemented.
+        std::optional<unsigned> quote(EntityId npc, ItemHandle item, bool repair) const override {
+            if (!npc || o.context.npc != npcGuid(npc) || !onlineInteractionMatches(o.context, o.session.read())) return {};
+            if (repair && !item.id) return o.repairAllQuote();
+            const auto *entry = o.inventoryView.item(item.id);
+            if (!entry || entry->revision != item.revision || o.context.npc != npcGuid(npc)) return {};
+            return o.itemQuote(guid(item.id), repair ? OnlineItemAction::Repair : OnlineItemAction::Sell);
         }
         bool canRequestSale(EntityId npc, ItemHandle item) const override {
             const auto *entry = o.inventoryView.item(item.id);
-            return entry && entry->revision == item.revision && o.context.npc == npcGuid(npc) &&
-                onlineInteractionMatches(o.context, o.session.read());
+            const auto &online = o.session.read();
+            if (!npc || !entry || entry->revision != item.revision || o.context.npc != npcGuid(npc) ||
+                !onlineInteractionMatches(o.context, online)) return false;
+            const auto wire = online.world.items.find(guid(item.id));
+            const auto *definition = o.data.items.find(entry->definition);
+            return wire != online.world.items.end() && definition && !definition->questTag &&
+                !(wire->second.flags & 0x1000u) && wire->second.ownerType == 0 && wire->second.owner == online.load.playerUnitId &&
+                ((wire->second.mode == 0 && wire->second.page == 1) || wire->second.mode == 1 || wire->second.mode == 4);
         }
         const HirelingView &hireling() const override { return o.hirelingView; }
         const HirelingListView &hirelings(EntityId) const override { return o.hirelingList; }
@@ -248,7 +262,9 @@ struct RemoteUiClients::Impl {
                 else if constexpr (std::is_same_v<T, IdentifyWithCain>) request.action = OnlineItemAction::IdentifyAll;
                 else if constexpr (std::is_same_v<T, BuyVendorItem>) {
                     request.action = OnlineItemAction::Buy; request.item = v.slot;
-                    if (v.gamble) { o.notice = "Native gambling service is unavailable."; return; }
+                    request.gamble = v.gamble;
+                } else if constexpr (std::is_same_v<T, OpenGamble>) {
+                    request.action = OnlineItemAction::TradeOpen; request.gamble = true;
                 } else if constexpr (std::is_same_v<T, SellVendorItem>) {
                     request.action = OnlineItemAction::Sell; request.item = guid(v.item.id); request.itemRevision = v.item.revision;
                 } else if constexpr (std::is_same_v<T, RepairVendorItem>) {
@@ -333,8 +349,24 @@ struct RemoteUiClients::Impl {
         if (transactions.empty()) return;
         if (!session.item_request_ready()) return;
         auto c = transactions.front(); transactions.pop_front();
+        if (c.action == OnlineItemAction::Buy || c.action == OnlineItemAction::Sell) {
+            const auto found = session.read().world.items.find(c.item);
+            if (found == session.read().world.items.end() || (c.itemRevision && c.itemRevision != found->second.revision)) {
+                notice = "The quoted item changed before submission."; transactions.clear(); return;
+            }
+            c.itemRevision = found->second.revision;
+            const auto price = itemQuote(c.item, c.action);
+            if (!price) { notice = "The current server item has no complete transaction quote."; transactions.clear(); return; }
+            c.amount = *price;
+        }
         if (!items.submit(session,c)) { notice = items.reason(); transactions.clear(); return; }
         const auto &sent = session.read();
+        if (c.action == OnlineItemAction::TradeOpen) {
+            shopView.gamble = sent.world.shopGamble;
+            shopView.offers.clear();
+            shopView.pricesKnown = false;
+            ++shopView.revision;
+        }
         if (sent.world.itemRequest) {
             waiting = sent.world.itemRequest->sequence;
             waitingContext = onlineIntentContext(sent);
@@ -522,11 +554,11 @@ struct RemoteUiClients::Impl {
         }
         characterView = projectCharacterDisplay(data, input);
     }
-    InventoryItemView projectItem(const OnlineItem &native, const OnlineDecodedItem &di, ItemLocation location) const {
+    ItemInstance itemInstance(const OnlineItem &native, const OnlineDecodedItem &di, ItemLocation location) const {
         const auto *definition=data.items.find(native.code);
             ItemInstance item; item.id=itemId(native.id); item.revision=native.revision; item.definition=native.code; item.location=location;
             item.quantity=di.gold.value_or(di.quantity.value_or(1)); item.charges=definition->bookCapacity?item.quantity:0; item.durability=di.durability.value_or(0);
-            item.quality=itemQualityFromNative(di.quality).value(); item.identified=di.identified; item.level=di.level; item.defense=int(di.defense.value_or(0));
+            item.quality=itemQualityFromNative(di.quality, true).value(); item.identified=di.identified; item.level=di.level; item.defense=int(di.defense.value_or(0));
             item.nativeProperties=true; item.nativeFlags=native.flags; item.nativeMaxDurability=di.maxDurability.value_or(0);
             item.nativeFormat=di.format; item.nativeGraphic=di.graphic; item.nativeHasGraphic=di.hasGraphic; item.personalizedName=di.personalizedName;
             item.sockets=di.sockets; item.runewordRow=-1;
@@ -547,14 +579,192 @@ struct RemoteUiClients::Impl {
                     item.requiredLevel=std::max(item.requiredLevel,record.requiredLevel);
                 }
             }
-            if(item.quality==ItemQuality::Rare || item.quality==ItemQuality::Crafted) {
+            if(item.quality==ItemQuality::Rare || item.quality==ItemQuality::Crafted || item.quality==ItemQuality::Tempered) {
                 item.rarePrefixRow=int(di.rarePrefix)-int(data.tables.at("raresuffix").rows().size())-1;
                 item.rareSuffixRow=int(di.rareSuffix)-1;
             }
             for(const auto &s:di.stats) item.savedStats.push_back({s.id,int(s.parameter),int(s.value)});
             for(const auto &s:di.runewordStats) item.runewordStats.push_back({s.id,int(s.parameter),int(s.value)});
             for(size_t index=0;index<di.setStats.size();++index) for(const auto &s:di.setStats[index]) item.savedSetStats[index].push_back({s.id,int(s.parameter),int(s.value)});
-            auto display=describeInventoryItem(data,data.items,item,{characterView.level,characterView.attributes[0],characterView.attributes[1],item.nativeMaxDurability,{}});
+            return item;
+    }
+    std::optional<ItemInstance> completeItem(const OnlineItem &native, const OnlineDecodedItem &detail, ItemLocation location) const {
+        auto item = itemInstance(native, detail, location);
+        const auto &world = session.read().world;
+        std::vector<const OnlineItem *> children;
+        for (const auto &[id, child] : world.items) {
+            if (child.ownerType != 4 || child.owner != native.id) continue;
+            children.push_back(&child);
+        }
+        std::sort(children.begin(), children.end(), [](const auto *first, const auto *second) { return first->socketAssignmentRevision < second->socketAssignmentRevision; });
+        for (const auto *entry : children) {
+            const auto &child = *entry;
+            const auto id = child.id;
+            const auto decoded = items.read().items.find(id);
+            if (!child.socketAssignmentRevision || child.mode != 6 || decoded == items.read().items.end() || !decoded->second.decoded ||
+                decoded->second.revision != child.revision || !data.items.find(child.code)) return {};
+            item.socketedItems.push_back(itemInstance(child, decoded->second, SocketLocation{item.id, unsigned(item.socketedItems.size())}));
+        }
+        if (item.socketedItems.size() != detail.filledSockets) return {};
+        const auto *host = data.items.find(native.code);
+        for (const auto &child : item.socketedItems) {
+            const auto gem = data.socketGems.find(child.definition);
+            if (gem == data.socketGems.end() || !child.savedStats.empty()) continue;
+            if (!host || host->gemApplyType < 0 || host->gemApplyType > 2) return {};
+            for (const auto &property : gem->second.properties[size_t(host->gemApplyType)])
+                if (property.directRoll && property.minimum != property.maximum) return {};
+        }
+        return item;
+    }
+    std::optional<unsigned> itemQuote(uint32_t id, OnlineItemAction action) const {
+        const auto &online = session.read();
+        const auto &world = online.world;
+        const bool repair = action == OnlineItemAction::Repair;
+        const bool sale = action == OnlineItemAction::Sell;
+        if ((!repair && !sale && action != OnlineItemAction::Buy) ||
+            !onlineInteractionMatches(context, online) || !world.npcConversation ||
+            world.npcRequested != world.npcConversation->source || !online.load.difficulty) return {};
+        const auto vendor = data.vendors.find(npcIdentity());
+        const auto wire = world.items.find(id);
+        const auto decoded = items.read().items.find(id);
+        if (wire == world.items.end() || decoded == items.read().items.end() ||
+            !decoded->second.decoded || decoded->second.revision != wire->second.revision) return {};
+        const auto &native = wire->second;
+        const auto &detail = decoded->second;
+        if (!detail.gamble && vendor == data.vendors.end()) return {};
+        const auto *definition = data.items.find(native.code);
+        if (!definition || (detail.gamble && (sale || repair || !world.shopGamble))) return {};
+        if (sale || repair) {
+            if (native.ownerType != 0 || native.owner != online.load.playerUnitId ||
+                !((native.mode == 0 && native.page == 1) || native.mode == 1 || (sale && native.mode == 4))) return {};
+            if (sale && (definition->questTag || (native.flags & 0x1000u))) return {};
+            if (repair && !shopView.repairAvailable) return {};
+        } else if (world.shopSource != world.npcRequested || native.ownerType != 1 ||
+            native.owner != world.shopSource || native.action != 11 || native.mode != 0) return {};
+        if (!repair && (native.flags & 0x20000u)) return 1;
+        if (detail.gamble && !detail.format) return itemGamblePrice(data, native.code, 0, detail.format, 0);
+        std::optional<int64_t> bodyCost;
+        if (native.flags & 0x10000u) {
+            if (!definition->base.cost) return {};
+            bodyCost = int64_t(*definition->base.cost) * detail.earLevel;
+        } else if (definition->equipment.isType("body")) {
+            const auto &monsters = data.tables.at("monstats");
+            if (!definition->base.cost || detail.fileIndex >= monsters.rows().size()) return {};
+            const auto column = *online.load.difficulty == 0 ? "Level" : *online.load.difficulty == 1 ? "Level(N)" : "Level(H)";
+            const auto level = monsters.number(detail.fileIndex, column);
+            if (!level) return {};
+            bodyCost = *definition->base.cost + int64_t(8) * *level;
+        }
+        std::vector<int> factors;
+        std::vector<int> repairFactors;
+        if (!detail.gamble) for (const auto &price : vendor->second.questPrices) {
+            if (price.flag < 0 || !world.quests.playerFlags ||
+                size_t(price.flag) >= world.quests.playerFlags->size()) return {};
+            if ((*world.quests.playerFlags)[size_t(price.flag)] & 3u) {
+                factors.push_back(repair ? price.repair : sale ? price.buy : price.sell);
+                repairFactors.push_back(price.repair);
+            }
+        }
+        int reduce = 0;
+        if (!sale) {
+            if (const auto value = stat("item_reducedprices")) reduce = int(*value);
+            else {
+                if (!online.load.playerUnitId) return {};
+                const auto actor = world.units.find({0, *online.load.playerUnitId});
+                if (actor == world.units.end() || !actor->second.equipmentObserved) return {};
+                const auto statRow = std::find_if(data.itemStats.begin(), data.itemStats.end(),
+                    [](const auto &entry) { return entry.name == "item_reducedprices"; });
+                if (statRow == data.itemStats.end() || !statRow->id) return {};
+                std::map<std::string, std::set<int32_t>, std::less<>> equippedSets;
+                std::vector<ItemInstance> setPieces;
+                for (const auto &[equippedId, equipped] : world.items) {
+                    if (equipped.ownerType != 0 || equipped.owner != online.load.playerUnitId) continue;
+                    if (equipped.flags & 0x4100u) continue;
+                    const auto *base = data.items.find(equipped.code);
+                    const bool active = (equipped.mode == 1 && equipped.body <= 10) || (equipped.mode == 0 && equipped.page == 1 && base && base->equipment.isType("char"));
+                    if (!active) continue;
+                    const auto equipment = items.read().items.find(equippedId);
+                    if (equipment == items.read().items.end() || !equipment->second.decoded || equipment->second.revision != equipped.revision) return {};
+                    const auto instance = completeItem(equipped, equipment->second, SocketLocation{{}, 0});
+                    if (!instance) return {};
+                    for (const auto &bonus : resolveItemStats(data, *instance, characterView.level))
+                        if (bonus.name == "item_reducedprices") reduce += bonus.value;
+                    if (equipped.mode == 1 && instance->identified && instance->quality == ItemQuality::Set) {
+                        const auto record = std::find_if(data.setItems.begin(), data.setItems.end(),
+                            [&](const auto &entry) { return int32_t(entry.row) == instance->specialRow; });
+                        if (record == data.setItems.end()) return {};
+                        equippedSets[record->set].insert(instance->specialRow);
+                        setPieces.push_back(*instance);
+                    }
+                }
+                auto hasReduction = [&](const PropertyRange &property) {
+                    const auto definition = std::find_if(data.properties.begin(), data.properties.end(),
+                        [&](const auto &entry) { return entry.code == property.code; });
+                    return definition != data.properties.end() && std::any_of(definition->operations.begin(), definition->operations.end(),
+                        [](const auto &operation) { return operation.stat == "item_reducedprices"; });
+                };
+                std::set<std::string, std::less<>> countedSets;
+                for (const auto &piece : setPieces) {
+                    const auto record = std::find_if(data.setItems.begin(), data.setItems.end(),
+                        [&](const auto &entry) { return int32_t(entry.row) == piece.specialRow; });
+                    const auto &worn = equippedSets.at(record->set);
+                    const unsigned count = unsigned(worn.size());
+                    std::array<bool, 5> activeLayers{};
+                    if (record->setAddFunction == 2) {
+                        for (unsigned layer = 0; layer < activeLayers.size(); ++layer) activeLayers[layer] = count > layer + 1;
+                    } else if (record->setAddFunction == 1) {
+                        unsigned layer = 0;
+                        for (const auto &other : data.setItems) {
+                            if (other.set != record->set || other.row == record->row) continue;
+                            if (layer >= activeLayers.size()) return {};
+                            activeLayers[layer++] = worn.contains(int32_t(other.row));
+                        }
+                    } else if (record->setAddFunction) return {};
+                    for (unsigned layer = 0; layer < activeLayers.size(); ++layer) {
+                        if (!activeLayers[layer]) continue;
+                        bool assigned = false;
+                        for (const auto &bonus : piece.savedSetStats[layer]) {
+                            if (bonus.id != *statRow->id || bonus.parameter) continue;
+                            reduce += bonus.value;
+                            assigned = true;
+                        }
+                        if (!assigned && std::any_of(record->setBonuses.begin(), record->setBonuses.end(), [&](const auto &bonus) {
+                            return bonus.perItem && bonus.pieces == int(layer + 2) && hasReduction(bonus.property);
+                        })) return {};
+                    }
+                    if (!countedSets.insert(record->set).second) continue;
+                    const unsigned fullCount = unsigned(std::count_if(data.setItems.begin(), data.setItems.end(),
+                        [&](const auto &entry) { return entry.set == record->set; }));
+                    for (const auto &bonus : record->setBonuses) {
+                        if (bonus.perItem || (bonus.pieces ? count < unsigned(bonus.pieces) : count != fullCount) || !hasReduction(bonus.property)) continue;
+                        const auto &property = bonus.property;
+                        if (property.directRoll && property.minimum != property.maximum) return {};
+                        for (const auto &value : resolvePropertyStats(data, property, property.minimum.value_or(0), characterView.level, int(piece.level)))
+                            if (value.name == "item_reducedprices") reduce += value.value;
+                    }
+                }
+            }
+        }
+        if (detail.gamble) {
+            const auto level = stat("level");
+            return itemGamblePrice(data, native.code, int(level.value_or(0)), detail.format, reduce);
+        }
+        if ((definition->maxStack > 1 || definition->bookCapacity) && !detail.quantity) return {};
+        if (definition->family == ItemFamily::Armor && !detail.defense) return {};
+        if (definition->family != ItemFamily::Misc && (!detail.maxDurability || (*detail.maxDurability && !detail.durability))) return {};
+        const auto item = completeItem(native, detail, SocketLocation{{}, 0});
+        if (!item) return {};
+        return itemTradePrice(data, *item, vendor->second, repair, factors, reduce, sale, *online.load.difficulty, detail.autoAffix, bodyCost, repairFactors,
+            definition->bookCapacity ? std::optional<unsigned>(detail.book) : std::nullopt);
+    }
+    InventoryItemView projectItem(const OnlineItem &native, const OnlineDecodedItem &di, ItemLocation location) const {
+            const auto *definition=data.items.find(native.code);
+            const auto complete = completeItem(native, di, location);
+            auto item = complete.value_or(itemInstance(native, di, location));
+            const auto stats = resolveItemStats(data, item, characterView.level);
+            const auto maximum = itemMaximumDurability(data, item, stats);
+            auto display=describeInventoryItem(data,data.items,item,{characterView.level,characterView.attributes[0],characterView.attributes[1],maximum,{}});
+            if (!complete) display.tooltip.push_back({"Socket properties are not fully assigned by the server",ItemTextTone::Error});
             std::string groundArt=definition->groundAnimation, inventoryArt=di.artKey;
             if(item.specialRow>=0) {
                 const auto &records=item.quality==ItemQuality::Unique?data.uniqueItems:data.setItems;
@@ -566,6 +776,48 @@ struct RemoteUiClients::Impl {
             InventoryItemView projection{item.id,item.revision,item.definition,std::move(inventoryArt),std::move(display.name),location,item.quality,item.identified,item.quantity,item.durability,item.charges,std::move(display.tooltip),native.flags,item.sockets,item.runewordRow>=0,std::move(groundArt)};
             projection.specialRow = item.specialRow;
             return projection;
+    }
+    std::optional<unsigned> repairAllQuote() const {
+        const auto &online = session.read();
+        if (!shopView.repairAvailable || !online.load.playerUnitId || !onlineInteractionMatches(context, online)) return {};
+        const auto actor = online.world.units.find({0, *online.load.playerUnitId});
+        if (actor == online.world.units.end() || !actor->second.equipmentObserved) return {};
+        uint64_t total = 0;
+        for (const auto &[id, item] : online.world.items) {
+            if (item.ownerType != 0 || item.owner != online.load.playerUnitId || item.mode != 1 || !item.body || item.body > 12) continue;
+            if (!item.flags || !(item.flags & 0x10u) || (item.flags & 0x400000u)) continue;
+            const auto decoded = items.read().items.find(id);
+            const auto *definition = data.items.find(item.code);
+            if (decoded == items.read().items.end() || !decoded->second.decoded || decoded->second.revision != item.revision || !definition) return {};
+            const auto instance = completeItem(item, decoded->second, SocketLocation{{}, 0});
+            if (!instance) return {};
+            const auto stats = resolveItemStats(data, *instance, characterView.level);
+            auto value = [&](std::string_view name) {
+                int64_t totalValue = 0;
+                for (const auto &stat : stats) if (stat.name == name) totalValue += stat.rawValue;
+                return totalValue;
+            };
+            const auto maximumDurability = itemMaximumDurability(data, *instance, stats);
+            const auto &source = data.tables.at(definition->base.sourceTable);
+            bool needed = definition->equipment.repairable && definition->maxDurability && maximumDurability &&
+                !source.number(definition->base.sourceRow, "nodurability").value_or(0) &&
+                !value("item_indesctructible") && decoded->second.durability.value_or(0) != maximumDurability;
+            if (definition->equipment.repairable && definition->equipment.throwable && definition->maxStack > 1) {
+                const auto maximum = std::clamp(int64_t(definition->maxStack) + value("item_extra_stack"), int64_t(1), int64_t(511));
+                if (!decoded->second.quantity) return {};
+                needed |= *decoded->second.quantity < maximum;
+            }
+            for (const auto &stat : stats) {
+                if (stat.name != "item_charged_skill") continue;
+                if (stat.rawValue < 0 || stat.rawValue > 65535 || (unsigned(stat.rawValue) & 0xff) > (unsigned(stat.rawValue) >> 8)) return {};
+                needed |= (unsigned(stat.rawValue) & 0xff) < (unsigned(stat.rawValue) >> 8);
+            }
+            if (!needed) continue;
+            const auto price = itemQuote(id, OnlineItemAction::Repair);
+            if (!price || total + *price > UINT32_MAX) return {};
+            total += *price;
+        }
+        return unsigned(total);
     }
     void itemNotice(const InventoryItemView &item, unsigned quantity, std::string prefix, bool gold = false) {
         if (!quantity) return;
@@ -788,6 +1040,7 @@ struct RemoteUiClients::Impl {
             }
             const auto identity=npcIdentity();
             if(data.vendors.contains(identity) && identity!="nihlathak") add("Trade",NpcMenuAction::Trade);
+            if(identity=="gheed" || identity=="elzix" || identity=="alkor" || identity=="jamella" || identity=="drehya" || identity=="nihlathak") add("Gamble",NpcMenuAction::Gamble);
             if(identity.starts_with("cain")) add("Identify Items",NpcMenuAction::Identify);
             if(!d.travelLabel.empty()) add(d.travelLabel,NpcMenuAction::GoEast);
             add("Cancel",NpcMenuAction::Cancel);
@@ -805,8 +1058,9 @@ struct RemoteUiClients::Impl {
         shopView.bankGold=inventoryView.bankGold; shopView.pricesKnown=false;
         shopView.tabLabels={"Weapons","Armor","Armor","Misc"};
         const auto identity=npcIdentity();
-        shopView.available=npcView.valid && data.vendors.contains(identity) && identity!="nihlathak";
-        shopView.repairAvailable=identity=="charsi" || identity=="fara" || identity=="hratli" || identity=="halbu" || identity=="larzuk";
+        shopView.gamble=w.shopGamble;
+        shopView.available=npcView.valid && (identity=="nihlathak" || data.vendors.contains(identity));
+        shopView.repairAvailable=!w.shopGamble && (identity=="charsi" || identity=="fara" || identity=="hratli" || identity=="halbu" || identity=="larzuk");
         if(w.shopSource) for(const auto &[id,native]:w.items) {
             if(native.ownerType!=1 || native.owner!=w.shopSource || native.action!=11) continue;
             auto d=items.read().items.find(id); const auto *def=data.items.find(native.code);
@@ -815,13 +1069,17 @@ struct RemoteUiClients::Impl {
             ShopOfferView offer; offer.slot=id; offer.width=item.width; offer.height=item.height; offer.definition=native.code;
             auto projection=projectItem(native,item,SocketLocation{{},0});
             offer.name=projection.name; offer.artKey=projection.artKey; offer.quality=projection.quality;
+            const auto price = itemQuote(id, OnlineItemAction::Buy);
+            offer.priceKnown = price.has_value(); offer.price = price.value_or(0);
             offer.storePage=def->family==ItemFamily::Weapon?0:def->family==ItemFamily::Armor?1:3;
             offer.tooltip=projection.tooltip;
-            offer.tooltip.push_back({"Price is determined by the server",ItemTextTone::Normal});
+            if (item.gamble) offer.tooltip={{projection.name,ItemTextTone::Name}};
             shopView.offers.push_back(std::move(offer));
             // Include read-only shelf art in the shared inventory art cache, not owned inventory occupancy.
             inventoryView.items.emplace(projection.id,std::move(projection));
         }
+        shopView.pricesKnown = !shopView.offers.empty() && std::all_of(shopView.offers.begin(), shopView.offers.end(), [](const auto &offer) { return offer.priceKnown; });
+        shopView.repairAllPrice = repairAllQuote();
     }
     void update(const OnlineSceneView &binding) {
         scene=&binding;
@@ -841,6 +1099,9 @@ RemoteUiClients::RemoteUiClients(Archives &a,net::RealmSession &s,RemoteInventor
 RemoteUiClients::~RemoteUiClients()=default;
 size_t RemoteUiClients::queuedItemCommands() const { return impl_->transactions.size(); }
 std::optional<uint64_t> RemoteUiClients::waitingItemRequest() const { return impl_->waiting; }
+std::optional<unsigned> RemoteUiClients::itemQuote(uint32_t item, OnlineItemAction action) const {
+    return action == OnlineItemAction::RepairAll ? impl_->repairAllQuote() : impl_->itemQuote(item, action);
+}
 void RemoteUiClients::update(const OnlineSceneView &s){impl_->update(s);}
 const ClassicData &RemoteUiClients::content()const{return impl_->data;}
 IActorClient &RemoteUiClients::actor(){return impl_->actor;}

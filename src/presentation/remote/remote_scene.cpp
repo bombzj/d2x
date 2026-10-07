@@ -6,6 +6,7 @@
 #include "content/monsters/monster_animation.hpp"
 #include "gameplay/combat/geometry.hpp"
 #include "gameplay/skills/projectile_path.hpp"
+#include "world/interaction_geometry.hpp"
 #include "network/protocol/bits.hpp"
 #include "presentation/hud/hud_layout.hpp"
 #include "presentation/world/scene_geometry.hpp"
@@ -99,6 +100,7 @@ struct RemoteScene::Impl {
     };
     Archives &archives;
     RemoteMapDisplayState &mapDisplay;
+    const OnlineSceneView *sceneBinding{};
     int artPalette = 0;
     RealmPortraitCatalog portraits;
     ClassicStrings strings;
@@ -758,6 +760,27 @@ struct RemoteScene::Impl {
             else goal = pointForUnit(u.destinationUnit);
             m.running = u.key.type == 0 ? (u.nativeMode ? u.mode == 3 : (u.mode == 23 || u.mode == 24)) : u.mode == 15;
         }
+        if (own && request && request->interaction && request->unit && goal) {
+            const auto key = *request->unit;
+            const Vec position = m.position + m.correction;
+            bool reached = false;
+            if (key.type == 4) {
+                const auto point = pointForUnit(request->unit);
+                reached = point && nativeUnitDistance(position, 2, *point, 1) <= 4 && map.grid.interactionSegment(position - origin, *point - origin, 1, {});
+            } else if (sceneBinding) {
+                const auto found = std::find_if(sceneBinding->mapTargets.begin(), sceneBinding->mapTargets.end(),
+                    [&](const auto &entry) { return entry.unit == key; });
+                if (found != sceneBinding->mapTargets.end()) {
+                    const Vec point{float(found->position.x), float(found->position.y)};
+                    if (key.type == 2)
+                        reached = interactionClear(map.grid, position - origin,
+                            {EntityId{uint64_t(key.id) + 1}, point - origin, point - origin,
+                                found->collisionWidth, found->collisionHeight, 0, true});
+                    else reached = nativeUnitDistance(position, 2, point, found->collisionWidth) <= (key.type == 0 ? 8 : key.type == 1 ? 6 : 4);
+                }
+            }
+            if (reached) goal.reset();
+        }
         // Circle/knockback/leap paths need their own native client solver; never substitute a straight chase.
         if (u.key.type == 1 && u.pathType && (*u.pathType == 5 || *u.pathType == 6 ||
             *u.pathType == 8 || *u.pathType == 9 || *u.pathType == 11)) goal.reset();
@@ -930,6 +953,7 @@ struct RemoteScene::Impl {
         intent.input.gameGeneration = v.gameGeneration;
         intent.input.areaGeneration = v.world.areaGeneration;
         worldView = &v.world;
+        sceneBinding = &binding;
         playerId = v.load.playerUnitId;
         worldDifficulty=v.load.difficulty.value_or(0);
         artPalette = binding.palette.value_or(0);

@@ -171,7 +171,7 @@ class SceneView {
     void drawBelt(Vec mouse) const;
     void drawItemTooltip(const InventoryItemView &item, Vec anchor,
                          std::optional<unsigned> price = {},
-                         std::string_view priceLabel = "Cost") const;
+                         std::string_view priceLabel = {}) const;
     void drawItemText(std::vector<ItemTextLine> lines, ItemQuality quality, Vec anchor,
                       std::optional<unsigned> price, std::string_view priceLabel) const;
     std::optional<unsigned> inventoryVendorPrice(ItemHandle item) const;
@@ -272,6 +272,7 @@ class SceneView {
     bool startNpcTopic(QuestId quest);
     bool startNpcTextTopic(uint32_t topic);
     bool openNpcShop(bool gamble = false);
+    bool npcShopRepairAllAt(Vec mouse) const;
     void closeNpcShop();
     bool npcShopDropAt(Vec mouse) const;
     NpcMenuSelection clickNpcMenu(Vec mouse);

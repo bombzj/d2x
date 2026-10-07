@@ -742,7 +742,7 @@ struct RealmSession::Impl {
         world.mapEventSequence = 0;
         world.waypointSource.reset();
         world.waypointRequested.reset(); waypointDeadline = {};
-        world.storage = {}; world.shopRequested.reset(); world.shopSource.reset(); world.tradeResult.reset();
+        world.storage = {}; world.shopRequested.reset(); world.shopSource.reset(); world.shopGamble = false; world.tradeResult.reset();
         // Keep this connection's inventory and the socket children of retained hosts.
         std::set<uint32_t> retained;
         for (const auto &[id, item] : world.items)
@@ -936,7 +936,7 @@ struct RealmSession::Impl {
                 view.world.npcConversation || view.world.waypointSource || view.world.waypointRequested)
                 ++view.world.interactionGeneration;
             portalRequest.reset(); view.world.townPortalPending = false;
-            view.world.storage = {}; view.world.shopRequested.reset(); view.world.shopSource.reset();
+            view.world.storage = {}; view.world.shopRequested.reset(); view.world.shopSource.reset(); view.world.shopGamble = false;
             view.world.movementRequest.reset(); view.world.npcRequested.reset(); view.world.npcConversation.reset();
             view.world.waypointSource.reset(); view.world.waypointRequested.reset(); waypointDeadline = {}; initializedNpc.reset();
         }
@@ -1091,7 +1091,7 @@ struct RealmSession::Impl {
             sent(gs, close.release());
         }
         world.storage = {}; storageDeadline = {};
-        world.shopRequested.reset(); world.shopSource.reset();
+        world.shopRequested.reset(); world.shopSource.reset(); world.shopGamble = false;
         std::erase_if(world.items, [](const auto &entry) { return entry.second.action == 11; });
         ++world.itemRevision;
         if (world.npcRequested) {
@@ -1494,7 +1494,7 @@ bool RealmSession::resurrect(std::optional<OnlineIntentContext> context) {
                                 world.respawnRequest->state == OnlineRespawnRequest::State::Sent)) return true;
     p.view.error.reset();
     world.movementRequest.reset(); world.npcRequested.reset(); world.npcConversation.reset();
-    world.waypointSource.reset(); world.storage = {}; world.shopRequested.reset(); world.shopSource.reset();
+    world.waypointSource.reset(); world.storage = {}; world.shopRequested.reset(); world.shopSource.reset(); world.shopGamble = false;
     world.waypointRequested.reset(); p.waypointDeadline = {};
     auto request = world.respawnRequest.value_or(OnlineRespawnRequest{});
     request.state = OnlineRespawnRequest::State::WaitingForDeath; request.revision = ++world.revision;
@@ -1633,9 +1633,7 @@ bool RealmSession::interact_map_unit(OnlineUnitKey target, OnlineObjectIntent in
             ++p.view.world.interactionGeneration;
             p.waypointDeadline = Clock::now() + p.options.timeout;
         }
-        // Native 0x13 approaches objects with run-to-unit. This only records the
-        // request's gait; actual movement is still confirmed by server positions.
-        p.view.world.movementRequest = OnlineMovementRequest{{}, target, true, ++p.view.world.revision};
+        p.view.world.movementRequest = OnlineMovementRequest{{}, target, true, ++p.view.world.revision, true};
         p.nextMovement = Clock::now() + std::chrono::milliseconds(100);
         p.view.error.reset(); p.changed();
         return true;
@@ -1795,6 +1793,12 @@ bool RealmSession::submit_item(OnlineItemCommand command) {
         (item->second.ownerType != 0 || item->second.owner != p.view.load.playerUnitId)) {
         p.error(OnlineErrorKind::Input, "Item is not owned by this server player"); return false;
     }
+    if (command.action == OnlineItemAction::Buy &&
+        (world.npcRequested != command.npc || world.shopSource != command.npc || world.shopGamble != command.gamble ||
+         item->second.ownerType != 1 || item->second.owner != command.npc || item->second.action != 11 ||
+         bool(item->second.flags & 0x2000000u) != command.gamble)) {
+        p.error(OnlineErrorKind::Input, "Purchase shelf or vendor service changed before submission"); return false;
+    }
     if (Clock::now() < p.nextItem) {
         p.error(OnlineErrorKind::Input, "Item request is rate limited"); return false;
     }
@@ -1858,12 +1862,13 @@ bool RealmSession::submit_item(OnlineItemCommand command) {
             out.u8(0x50); out.u32(*p.view.load.playerUnitId); out.u32(command.amount); break;
         case OnlineItemAction::TradeOpen:
             world.shopRequested = command.npc; world.shopSource.reset();
+            world.shopGamble = command.gamble;
             std::erase_if(world.items, [](const auto &entry) { return entry.second.action == 11; }); ++world.itemRevision;
-            out.u8(0x38); out.u32(1); out.u32(command.npc); out.u32(0); break;
+            out.u8(0x38); out.u32(command.gamble ? 2 : 1); out.u32(command.npc); out.u32(0); break;
         case OnlineItemAction::Buy:
-            out.u8(0x32); out.u32(command.npc); out.u32(command.item); out.u16(0); out.u16(mode); out.u32(0); break;
+            out.u8(0x32); out.u32(command.npc); out.u32(command.item); out.u16(command.gamble ? 2 : 0); out.u16(mode); out.u32(command.amount); break;
         case OnlineItemAction::Sell:
-            out.u8(0x33); out.u32(command.npc); out.u32(command.item); out.u16(mode); out.u16(0); out.u32(0); break;
+            out.u8(0x33); out.u32(command.npc); out.u32(command.item); out.u16(mode); out.u16(0); out.u32(command.amount); break;
         case OnlineItemAction::Repair: case OnlineItemAction::RepairAll:
             out.u8(0x35); out.u32(command.npc); out.u32(command.action == OnlineItemAction::RepairAll ? UINT32_MAX : command.item);
             out.u16(0); out.u16(0); out.u32(command.action == OnlineItemAction::RepairAll ? UINT32_MAX : 0); break;
@@ -1872,9 +1877,7 @@ bool RealmSession::submit_item(OnlineItemCommand command) {
         p.sent(p.gs, out.release());
         world.itemRequest = OnlineItemRequest{++p.itemSequence, command, OnlineItemRequest::State::Pending};
         if (command.action == OnlineItemAction::Pickup) {
-            // PlrMsg 0x16 follows a distant ground GUID and picks it up within four subtiles.
-            // Record only the enqueued native intent so presentation can start continuously.
-            world.movementRequest = OnlineMovementRequest{{}, OnlineUnitKey{4, command.item}, true, world.revision + 1};
+            world.movementRequest = OnlineMovementRequest{{}, OnlineUnitKey{4, command.item}, true, world.revision + 1, true};
         }
         p.itemDeadline = Clock::now() + p.options.timeout;
         p.nextItem = Clock::now() + std::chrono::milliseconds(100);

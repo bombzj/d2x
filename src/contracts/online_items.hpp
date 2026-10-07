@@ -13,6 +13,7 @@ struct OnlineItemStat { uint16_t id{}; int64_t value{}; uint32_t parameter{}; };
 struct OnlineItem {
     uint32_t id{}, flags{};
     uint64_t revision{};
+    uint64_t socketAssignmentRevision{};
     // A native drop action survives later property/ONGROUND updates so the
     // common renderer can finish its one-shot flippy without restarting it.
     uint64_t groundAnimationRevision{}, groundAnimationReceivedMilliseconds{};
@@ -38,6 +39,7 @@ struct OnlineItemCommand {
     uint8_t x{}, y{}, page{}, body{}, beltSlot{};
     uint8_t equipVariant{}; // MPQ adapter selects normal / remove opposite / double swap.
     bool toCursor{}, mercenary{};
+    bool gamble{};
     std::optional<OnlineIntentContext> context;
 };
 struct OnlineItemRequest {

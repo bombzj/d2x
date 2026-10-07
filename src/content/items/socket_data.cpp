@@ -54,8 +54,6 @@ void loadSocketData(ClassicData &content, const ClassicStrings &strings) {
                 for (auto suffix : {"Code", "Param", "Min", "Max"})
                     if (!gems.has(prefix + suffix)) throw std::runtime_error("Gems lacks " + prefix + suffix);
                 auto value = property(content, gems, row, prefix + "Code", prefix + "Param", prefix + "Min", prefix + "Max");
-                if (value.directRoll && value.minimum != value.maximum)
-                    throw std::runtime_error("Variable gem roll has no compact D2S field: " + std::string(code));
                 if (!value.code.empty()) record.properties[size_t(group)].push_back(std::move(value));
             }
         if (!content.socketGems.emplace(std::string(code), std::move(record)).second)
@@ -159,9 +157,17 @@ std::vector<ResolvedItemStat> resolveSocketStats(const ClassicData &content, con
         const auto gem = content.socketGems.find(child.definition);
         if (gem != content.socketGems.end()) {
             if (!host || host->gemApplyType < 0 || host->gemApplyType > 2) throw std::runtime_error("Invalid socket host apply type");
+            if (item.nativeProperties && !child.savedStats.empty()) {
+                stats = resolveOwnItemStats(content, child, level);
+                result.insert(result.end(), stats.begin(), stats.end());
+                continue;
+            }
             auto random = initialRandom(child.nativeSeed);
             for (const auto &property : gem->second.properties[size_t(host->gemApplyType)]) {
-                auto resolved = resolvePropertyStats(content, property, roll(property, random), level);
+                if (item.nativeProperties && property.directRoll && property.minimum != property.maximum)
+                    throw std::runtime_error("Server socket modifier value is not assigned");
+                const int value = item.nativeProperties ? property.minimum.value_or(0) : roll(property, random);
+                auto resolved = resolvePropertyStats(content, property, value, level);
                 stats.insert(stats.end(), resolved.begin(), resolved.end());
             }
         } else stats = resolveOwnItemStats(content, child, level);

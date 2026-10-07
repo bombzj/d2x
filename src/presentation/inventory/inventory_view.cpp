@@ -19,6 +19,7 @@ void SceneView::drawItemArt(const std::string &key, const std::string &code, Rec
     }
 }
 void SceneView::drawItemIcon(const InventoryItemView &item, Rectangle bounds, Color tint) const {
+    if (item.nativeFlags & 0x00400000u) tint.a = uint8_t((unsigned(tint.a) + 1) / 2);
     drawItemArt(item.artKey, item.definition, bounds, tint);
 }
 void SceneView::drawItemTooltip(const InventoryItemView &item, Vec anchor,
@@ -107,7 +108,7 @@ void SceneView::drawInventory(Vec mouse) const {
     if (!ui.split && !ui.drag) {
         if (auto item = inventory.item(hovered))
             drawItemTooltip(*item, {panel.x - 12, mouse.y},
-                inventoryVendorPrice(item->handle()), view_.shopRepair ? "Repair" : view_.shopOpen ? "Sell" : "Cost");
+                inventoryVendorPrice(item->handle()), view_.shopOpen ? (view_.shopRepair ? "COST" : "SELL VALUE") : "");
     } else if (ui.drag && ui.drag->moved && !overShop && !hint.empty()) {
         int width = painter_.measure(hint, 12) + 24;
         frame({panel.x - width - 12, 450, float(width), 30});

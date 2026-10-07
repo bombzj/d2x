@@ -32,7 +32,7 @@ enum class FrontendCommand {
 struct FrontendIntent {
     FrontendCommand command{};
     std::string name, password, description;
-    uint8_t maximumPlayers{4}, levelDifference{4};
+    uint8_t maximumPlayers{8}, levelDifference{99};
     uint8_t difficulty{}, characterClass{};
     bool hardcore{};
     std::optional<std::string> editedAccount;

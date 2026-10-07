@@ -15,7 +15,7 @@ param(
         'online-move-to-unit', 'online-town-portal', 'online-npc-interact',
         'online-resurrect', 'online-recover-corpse',
         'online-npc-message', 'online-npc-close', 'online-npc-travel',
-        'online-items', 'online-ground', 'online-item-action',
+        'online-items', 'online-ground', 'online-item-action', 'online-item-quote',
         'online-social', 'online-chat',
         'online-combat', 'online-skills', 'online-select-skill', 'online-cast', 'online-attack',
         'online-stop-skill', 'online-learn-skill', 'online-spend-attribute', 'online-bind-hotkey',

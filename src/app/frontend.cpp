@@ -169,7 +169,7 @@ void runOnlineFrontend(Archives &archives, RenderTexture2D target, const AppOpti
     uint64_t dismissedErrorSequence = std::numeric_limits<uint64_t>::max();
     std::optional<uint64_t> worldNoticeSequence;
     uint64_t worldNoticeGeneration{};
-    constexpr float scale = float(H) / 600, offsetX = (W - 800 * scale) / 2;
+    constexpr float offsetX = (W - 800) / 2, offsetY = (H - 600) / 2;
     // Quick entry executes the real login/Realm/character/game protocol once.
     // No credentials in argv and no retry of non-idempotent room creation.
     bool quickCharacter = !options.onlineCharacter.empty();
@@ -260,6 +260,10 @@ void runOnlineFrontend(Archives &archives, RenderTexture2D target, const AppOpti
                     if (debugInputs.size() + queued.size() > 32)
                         throw std::invalid_argument("The UI input queue exceeds 32 frames");
                     for (auto &frame : queued) debugInputs.push_back(std::move(frame));
+                }, [&](uint32_t item, OnlineItemAction action) -> std::optional<unsigned> {
+                    if (!sharedClients) return {};
+                    inventory.update(session.read());
+                    return sharedClients->itemQuote(item, action);
                 });
             if (presentationPaused != wasPaused) {
                 debugInputs.clear();
@@ -432,8 +436,8 @@ void runOnlineFrontend(Archives &archives, RenderTexture2D target, const AppOpti
         }
         const auto viewport = currentViewport();
         const auto raw = GetMousePosition();
-        Vector2 mouse{((raw.x - viewport.offset.x) / viewport.scale - offsetX) / scale,
-                      (raw.y - viewport.offset.y) / viewport.scale / scale};
+        Vector2 mouse{(raw.x - viewport.offset.x) / viewport.scale - offsetX,
+                  (raw.y - viewport.offset.y) / viewport.scale - offsetY};
         bool captureRequested = false;
         FrontendIntent action;
         if (quit) debugInputs.clear();
@@ -542,7 +546,7 @@ void runOnlineFrontend(Archives &archives, RenderTexture2D target, const AppOpti
                 auto input = pollInput(viewport);
                 if (!debugInputs.empty()) { input = std::move(debugInputs.front()); debugInputs.pop_front(); }
                 captureRequested = input.screenshot;
-                mouse = {(input.mouse.x - offsetX) / scale, input.mouse.y / scale};
+                mouse = {input.mouse.x - offsetX, input.mouse.y - offsetY};
                 ClearBackground(BLACK);
                 if (view.stage == OnlineStage::ProtocolReady && sharedClients && sharedUi && sharedController) {
                     sharedClients->update(town.read());
@@ -554,10 +558,9 @@ void runOnlineFrontend(Archives &archives, RenderTexture2D target, const AppOpti
                     sharedController->handleWorld(input, unavailable, GetFrameTime());
                     sharedUi->drawUi(worldMouse);
                 } else {
-                    BeginScissorMode(int(offsetX), 0, int(800 * scale), H);
+                    BeginScissorMode(int(offsetX), int(offsetY), 800, 600);
                     rlPushMatrix();
-                    rlTranslatef(offsetX, 0, 0);
-                    rlScalef(scale, scale, 1);
+                    rlTranslatef(offsetX, offsetY, 0);
                     action = ui.frame(page, session.read(), gateway, notice, mouse, input, sceneStatus().reason);
                     rlPopMatrix();
                     EndScissorMode();
