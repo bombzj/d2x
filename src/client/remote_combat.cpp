@@ -8,7 +8,7 @@
 namespace d2x {
 RemoteCombat::RemoteCombat(Archives &archives, RemoteTown &scene, net::RealmSession &session)
     : scene_(scene), session_(session) {
-    for (const char *name : {"skills", "playerclass", "charstats", "monstats", "monstats2", "states", "itemstatcost"})
+    for (const char *name : {"skills", "playerclass", "charstats", "monstats", "monstats2", "pettype", "states", "itemstatcost"})
         tables_.emplace(name, DataTable(archives.read("data/global/excel/" + std::string(name) + ".txt")));
     for (const auto &[name, column] : {std::pair{"skills", "Id"}, {"itemstatcost", "ID"}}) {
         const auto &table = tables_.at(name);
@@ -89,6 +89,16 @@ bool RemoteCombat::skillTargetEligible(const OnlineUnit &unit,uint16_t skill) co
     const auto row=skills_.find(skill);if(row==skills_.end() || !unit.position) return false;
     const auto &table=tables_.at("skills");
     const auto n=[&](std::string_view column) {return table.number(row->second,column).value_or(0);};
+    if(n("srvstfunc")==3 && n("srvdofunc")==4) {
+        if(unit.key.type!=1 || onlineMonsterCorpse(unit)) return false;
+        const auto &world=session_.read().world;
+        const auto pet=world.pets.find(unit.key.id);
+        if(pet==world.pets.end() || pet->second.owner!=session_.read().load.playerUnitId) return false;
+        const auto &types=tables_.at("pettype");
+        for(size_t row=0;row<types.rows().size();++row)
+            if(types.number(row,"idx")==pet->second.type) return types.number(row,"unsummon").value_or(0)!=0;
+        return false;
+    }
     if(n("TargetAlly") && n("TargetPet")) {
         if(unit.key.type==0) return !session_.read().world.corpseOwners.contains(unit.key.id) &&
             (unit.nativeMode ? unit.mode!=0 && unit.mode!=17 : unit.mode!=8 && unit.mode!=9);

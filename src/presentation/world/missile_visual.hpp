@@ -20,7 +20,7 @@ struct ClientMissileProgram {
     std::array<int, 3> hitParameters{}, children{-1,-1,-1};
     std::array<int, 4> hitChildren{-1,-1,-1,-1};
     bool childServerSent{}, returnFire{};
-    bool canSlow{};
+    bool canSlow{}, groundThrow{};
     int guidedRadius{};
     std::array<int,2> poisonVelocity{};
     int loopFrames{}, immolationRadius{};

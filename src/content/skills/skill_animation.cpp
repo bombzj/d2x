@@ -18,7 +18,7 @@ void loadSkillAnimations(SkillCatalog &catalog, const DataTable &skills, const D
             for (auto &letter : value) letter = char(std::tolower(static_cast<unsigned char>(letter)));
             if (!value.empty()) classes.insert(value);
         }
-    std::set<std::string> modes{"sc", "s1", "bl", "a2"};
+    std::set<std::string> modes{"sc", "s1", "bl", "a2", "kk"};
     for (const auto &[id, skill] : catalog.skills)
         if (skill.basicAction != BasicSkillAction::None) modes.insert(skill.animationMode);
     for (const auto &tree : catalog.classes)

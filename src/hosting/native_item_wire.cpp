@@ -159,7 +159,7 @@ std::vector<Bytes> nativeCorpseEquipment(const ClassicData &data, PersistentChar
     }
     return result;
 }
-Bytes nativeGroundItem(const ClassicData &data, const ItemInstance &item, Vec origin) {
+Bytes nativeGroundItem(const ClassicData &data, const ItemInstance &item, Vec origin, GroundItemAction action) {
     auto copy = item; PersistentCharacter projection; projection.player.level = 1;
     projection.containers.cursor = EntityId{1};
     projection.inventory.containers.emplace(EntityId{1}, ContainerState{EntityId{1}, {EntityId{1}, ContainerKind::Cursor, 1, 1}});
@@ -170,7 +170,9 @@ Bytes nativeGroundItem(const ClassicData &data, const ItemInstance &item, Vec or
     saved.mode = 3; saved.x = unsigned(position.x); saved.y = unsigned(position.y);
     const auto body = packed(data, saved);
     if (body.size() + 8 > 255 || item.id.value > UINT32_MAX) throw std::runtime_error("Ground item exceeds native limits");
-    net::protocol::Writer out; out.u8(0x9C); out.u8(0); out.u8(uint8_t(body.size() + 8)); out.u8(uint8_t(data.items.find(item.definition)->appearance.component));
+    // SCmd distinguishes ADDTOGROUND snapshots from DROPTOGROUND flip events,
+    // while both serialize the authoritative item in ONGROUND mode.
+    net::protocol::Writer out; out.u8(0x9C); out.u8(uint8_t(action)); out.u8(uint8_t(body.size() + 8)); out.u8(uint8_t(data.items.find(item.definition)->appearance.component));
     out.u32(uint32_t(item.id.value)); out.append(body); return out.release();
 }
 std::vector<Bytes> nativeInventoryPackets(const ClassicData &data, const PersistentCharacter &state) {

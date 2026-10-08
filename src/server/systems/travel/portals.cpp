@@ -20,10 +20,10 @@ DomainResult<> System::createPortal(const ActorContext &actor,std::optional<Item
     if(!town) { ports_.world.requestTown(actor); return {DomainStatus::Unavailable,{}}; }
     if(!town->definition.portalArrival || !town->definition.collision.walkable(*town->definition.portalArrival,playerMovement)) return {DomainStatus::Unavailable,{}};
     inventory::detail::Draft draft(*p,*p->rules.items,*p->rules.equipment,*p->rules.character);
-    const ItemInstance *item=nullptr; const PortalItemRule *rule=nullptr;
+    const ItemInstance *item=nullptr; const ItemSkillRule *rule=nullptr;
     for(const auto &[id,value]:p->persistent.inventory.items) {
         if(requested && (requested->id!=id || requested->revision!=value.revision)) continue;
-        const auto found=p->rules.character->portalItems.find(value.definition); if(found==p->rules.character->portalItems.end() || (skill && *skill!=found->second.skill)) continue;
+        const auto found=p->rules.character->itemSkills.find(value.definition); if(found==p->rules.character->itemSkills.end() || found->second.action!=ItemSkillAction::Portal || (skill && *skill!=found->second.skill)) continue;
         const auto *at=std::get_if<ContainerLocation>(&value.location); if(!at || at->container!=p->persistent.containers.backpack || !(found->second.book?value.charges:value.quantity)) continue;
         item=&value; rule=&found->second; break;
     }

@@ -53,7 +53,7 @@ app/debug/server_commands的参与者选择是宿主管理入口；network新增
 
 ## 保留范围与限制
 
-局前使用同一RealmFrontend原图与MCP角色列表、分页、双击、建删选角。Single Player按钮仍用原3WideButtonBlank／TBL5106，组装层连接嵌入Realm并自动建单人房；客户端不读取D2S。首页TCP/IP Game使用原背景／Host、Join按钮／IP弹窗，Join默认127.0.0.1；RealmFrontend只发连接意图和显示应用提供的本机地址，Host／Join随后回到同一选角和大厅。设备接口枚举和监听属于network／hosting，应用负责传输选择及返回菜单。自研尚未实现的玩法请求保留原协议，不通过本地执行器补齐。
+局前使用同一RealmFrontend原图与MCP角色列表、分页、双击、建删选角。Single Player按钮仍用原3WideButtonBlank／TBL5106，组装层连接嵌入Realm并自动建单人房；客户端不读取D2S。首页TCP/IP Game使用原背景／Host、Join按钮／IP弹窗，Join默认127.0.0.1；RealmFrontend只发连接意图和显示应用提供的本机地址，Host／Join随后回到同一选角；Host自动建房跳过大厅，Join沿同一大厅加入。设备接口枚举和监听属于network／hosting，应用负责传输选择及返回菜单。自研尚未实现的玩法请求保留原协议，不通过本地执行器补齐。
 
 GameSession、Simulation、SkillRuntime、InventoryService、本地任务／AI／奖励执行源码及 d2x_session 目标已删除。gameplay／items 保留联机显示、地图、原资源报告与独立 D2S 工具所需纯函数和值；PersistentCharacter是纯领域保存值，CharacterSaveData为其别名；客户端库不链接persistence，产品经嵌入宿主链接。旧法杖插入面板没有原服生产者，其空状态／资源／绘制入口已删除，原服插杖流程仍未实现。原 MPQ、reference、旧包、mvp 和用户文件保留。
 
@@ -73,4 +73,8 @@ GameSession、Simulation、SkillRuntime、InventoryService、本地任务／AI�
 
 RemoteScene补CltDo18–22、ClientMissile补原尾迹／毒烟／引导及Hit12／14／25。RemoteWorld消费原13字节7A宠物归属，归属名册与可见monster生命周期分离；9D保留ownerType，孔内／公开装备按实际主人清理。States的gfxtype=2人物伪装使用原动作映射及既有COF合成器，未添加自研宿主显示分支。头像HUD尚未接，不能将世界图形支持解释为完整宠物界面。
 
-全部30项及最终Windows Release已构建打包，本轮未启动客户端、运行测试或原服回归。女巫历史原服V2证据不能认证这些新增客户端路径。
+亚马逊30项已构建打包，列出的自研及原服代表路径完成有限运行；证据及未认证边界见亚马逊专题，其他技能的历史证据不能认证其新增路径。
+
+## 通用十项原版修复
+
+原CltDo2补药瓶及左手的物品弹体映射，地面寿命计算与服务端共用纯函数；原3F准备鉴定光标，事件revision区分重复来源／入局代次并等待真实来源投影；Unsummon按原7A及PetType的本人归属／许可筛选。原服和自研仍消费同一原消息，不推算服务器扣费或伤害。普通木桶按原OperateFn5和已发送0x13预测本人隐藏KK，复用原动作渲染；破坏／掉落仍等服务端。依据与未认证边界见[通用技能](../gameplay/skills/GENERAL.md)。

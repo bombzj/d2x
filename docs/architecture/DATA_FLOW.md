@@ -11,11 +11,11 @@
 | 地图 | LOADACT／0x07 → RemoteTown → NativeMapGenerator | 与宿主generateArea使用同一生成器和房间顺序；两侧不共享可变Map |
 | 移动 | SceneController → RemoteControl → 原01／03 → 原协议适配 → GameHost → GameInstance FIFO | 服务端25Hz寻路／碰撞；内部序号和绑定由宿主产生 |
 | 内核命令 | 原包具名处理器 → GameCommand → command_dispatch → 领域System／Ports | 来源区域及代次在入队和执行时核对；新增领域Scaffold返回NotImplemented |
-| 子系统固定步 | GameInstance → runtime/simulation → 各领域step | 同一25Hz，记录明确的未实现状态；现仅移动有执行，具体顺序见[内核子系统](../modules/SERVER_SYSTEMS.md) |
-| 领域输出 | 事务／投影 → EventOutbox → GameHost.pendingEvents → hosting原包编码 | 查询不消费、成功接入可靠发送后确认；通用领域投影尚未实现，不直接发送C++事件 |
+| 子系统固定步 | GameInstance → runtime/simulation → 各领域step | 同一25Hz，记录明确的未实现状态；已有移动、技能／战斗、物品／成长、效果／死亡、物件／任务／旅行等执行，具体顺序见[内核子系统](../modules/SERVER_SYSTEMS.md) |
+| 领域输出 | 事务／投影 → EventOutbox → GameHost.pendingEvents → hosting原包编码 | 查询不消费、成功接入可靠发送后确认；只编码已支持领域的原包，未接领域仍为stub；不直接发送C++事件 |
 | 状态 | 内核内部投影 → 原0D／0F等 → RemoteWorld → RemoteScene／SceneView | 客户端预测和显示不回写权威；无自研快照旁路 |
 | 物品 | PersistentCharacter → 原9D位流 → RemoteInventory → InventoryView | 网络位流与D2S JM记录不同；客户端解码、面板和手势共用原服链 |
-| 技能／任务 | 原属性／技能／任务字 + MPQ → 公共人物／任务投影 | 保存值保留；自研技能、奖励和库存事务执行仍待领域迁移 |
+| 技能／任务 | 原属性／技能／任务字 + MPQ → 公共人物／任务投影 | 保存值保留；已支持技能、洞穴奖励和库存事务由独立领域执行，其余范围见对应专题 |
 | 存档 | 服务端租约 → 导出PersistentCharacter → persistence校验 → 原子替换／.bak | 全部写入由宿主发起；存档不含整局AI、路径、弹体等运行态 |
 | 退局 | 客户端原69 → 宿主保存成功 → 原B0 → MCP重新列角 | 失败保留实例及租约，客户端不会得到成功确认；可修复后重试 |
 | 单机暂停 | app窗口／菜单策略 → GameHost.pause | 清路径和未执行移动，恢复不补暂停时间；不暂停原服 |

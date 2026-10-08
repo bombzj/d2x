@@ -13,6 +13,7 @@
 #include "gameplay/skills/weapon_volley.hpp"
 #include "gameplay/skills/projectile_path.hpp"
 #include "gameplay/combat/geometry.hpp"
+#include "gameplay/skills/common_actions.hpp"
 #include <algorithm>
 namespace d2x::server::skills {
 namespace {
@@ -42,16 +43,22 @@ DomainResult<> System::weaponCast(const ActorContext &actor,const Request &reque
     const auto &rules=*p.rules.skills;
     if(area.definition.town || !request.target) return {DomainStatus::Unavailable,{}};
     if(busy(actor.actor,actor.tick)) return {DomainStatus::Conflict,{}};
-    const auto rank=p.totals.skillRanks.find(id);if(rank==p.totals.skillRanks.end() || rank->second<=0 || rank->second>255) return {DomainStatus::Unavailable,{}};
-    auto skill=evaluate(p,id,rank->second);const auto &program=*skill.weapon;
+    const auto rank=p.totals.skillRanks.find(id);
+    const int effectiveRank=p.rules.character->innateSkills.contains(id)?1:(rank==p.totals.skillRanks.end()?0:rank->second);
+    if(effectiveRank<=0 || effectiveRank>255) return {DomainStatus::Unavailable,{}};
+    auto skill=evaluate(p,id,effectiveRank);const auto &program=*skill.weapon;
     if(p.persistent.player.mana<skill.manaCost && program.spear && program.spear->attackWithoutMana) return attack(actor,request,0);
-    const auto *weapon=std::find_if(p.totals.equipment.weapons.begin(),p.totals.equipment.weapons.begin()+p.totals.equipment.weaponCount,
+    const auto *weapon=program.commonAttack?commonAttackWeapon(p.totals.equipment,program.thrown,program.leftHand):std::find_if(p.totals.equipment.weapons.begin(),p.totals.equipment.weapons.begin()+p.totals.equipment.weaponCount,
         [&](const auto &w){return !w.leftHand && std::find(w.types.begin(),w.types.end(),program.requiredType)!=w.types.end();});
-    if(weapon==p.totals.equipment.weapons.begin()+p.totals.equipment.weaponCount || weapon->fasterAttack<=-120 ||
+    if(!weapon || weapon==p.totals.equipment.weapons.begin()+p.totals.equipment.weaponCount || weapon->fasterAttack<=-120 ||
         (program.thrown && !weapon->throwable) || p.persistent.player.mana<skill.manaCost) return {DomainStatus::Unavailable,{}};
+    if(program.commonAttack && (weapon->ranged || program.thrown)) {
+        if(!weapon->projectile) return {DomainStatus::Unavailable,{}};
+        skill=commonProjectileSkill(skill,*weapon->projectile);
+    }
     const auto &mods=p.totals.character.combat;
-    if(unsupportedWeaponEffects(mods)) return {DomainStatus::NotImplemented,{}};
-    if(const auto own=mods.weapons.find(weapon->item);own!=mods.weapons.end() && unsupportedWeaponEffects(own->second)) return {DomainStatus::NotImplemented,{}};
+    if(!weapon->potion && unsupportedWeaponEffects(mods)) return {DomainStatus::NotImplemented,{}};
+    if(const auto own=mods.weapons.find(weapon->item);own!=mods.weapons.end() && !weapon->potion && unsupportedWeaponEffects(own->second)) return {DomainStatus::NotImplemented,{}};
     const bool fend=program.spear && program.spear->kind==SpearSkillSpec::Kind::Fend;
     Vec destination;EntityId target;
     if(const auto *unit=std::get_if<UnitTarget>(&*request.target)) {
@@ -65,14 +72,14 @@ DomainResult<> System::weaponCast(const ActorContext &actor,const Request &reque
             ports_.movement.execute(actor,{MovementAction::Move,destination,false});return {DomainStatus::Conflict,{}};
         }
     } else {
-        if(!weapon->ranged && !program.thrown && !fend) return {DomainStatus::InvalidRequest,{}};
+        if(!weapon->ranged && !program.thrown && !fend && !program.commonAttack) return {DomainStatus::InvalidRequest,{}};
         const auto &point=std::get<PointTarget>(*request.target);
         if(point.area!=actor.area || point.generation!=actor.areaGeneration) return {DomainStatus::Stale,{}};
         destination=point.position;
     }
     if(!std::isfinite(destination.x) || !std::isfinite(destination.y) || std::abs(destination.x-p.position.x)>50 || std::abs(destination.y-p.position.y)>50 ||
         destination.x<0 || destination.y<0 || destination.x>=area.definition.collision.width || destination.y>=area.definition.collision.height) return {DomainStatus::InvalidRequest,{}};
-    const auto mode=program.thrown?"th":"a1";
+    const auto mode=program.mode.empty()?(program.thrown?"th":"a1"):program.mode.c_str();
     const auto animation=rules.weaponAnimations.find(std::string(mode)+p.totals.equipment.animationClass);
     if(animation==rules.weaponAnimations.end()) return {DomainStatus::Unavailable,{}};
     const auto &a=animation->second;
@@ -101,7 +108,7 @@ DomainResult<> System::weaponCast(const ActorContext &actor,const Request &reque
     auto prior=state_.casts.find(actor.actor);
     if(prior!=state_.casts.end() && skill.delayFrames>0 && prior->second.cooldownUntil>actor.tick) return {DomainStatus::Conflict,{}};
     auto cost=ports_.inventory.weaponCost(actor,*weapon,skill,!program.manaOnRelease,strafe);if(!cost) return {cost.status,{}};
-    const auto fact=AttackFact{actor.actor,target,0,1,actor.area,p.position,destination,actor.sequence,uint16_t(id),uint8_t(rank->second)};
+    const auto fact=AttackFact{actor.actor,target,0,1,actor.area,p.position,destination,actor.sequence,uint16_t(id),uint8_t(effectiveRank)};
     if(auto *edit=std::get_if<transactions::CharacterEdit>(&cost.value->change)) edit->publicFacts.emplace_back(fact);
     else std::get<transactions::InventoryEdit>(cost.value->change).publicFacts.emplace_back(fact);
     Release release{actor,skill,{}, {actor.area,actor.areaGeneration,destination},target,actor.tick+uint64_t(hits.front())};
@@ -119,8 +126,9 @@ DomainResult<> System::weaponCast(const ActorContext &actor,const Request &reque
 DomainStatus System::weaponRelease(Release &pending,const ActorContext &actor,Vec destination) {
     const auto &p=*ports_.players.find(actor.player);
     const auto found=std::find_if(p.totals.equipment.weapons.begin(),p.totals.equipment.weapons.begin()+p.totals.equipment.weaponCount,
-        [&](const auto &w){return w.item==pending.weapon->item && w.weaponClass==pending.weapon->weaponClass;});
+        [&](const auto &w){return w.item==pending.weapon->item && w.weaponClass==pending.weapon->weaponClass && w.leftHand==pending.weapon->leftHand;});
     if(found==p.totals.equipment.weapons.begin()+p.totals.equipment.weaponCount) return DomainStatus::Stale;
+    if(pending.skill.weapon->commonAttack && commonAttackWeapon(p.totals.equipment,pending.skill.weapon->thrown,pending.skill.weapon->leftHand)!=&*found) return DomainStatus::Stale;
     const bool strafe=pending.skill.weapon->bow && pending.skill.weapon->bow->strafe;
     const bool fend=pending.skill.weapon->spear && pending.skill.weapon->spear->kind==SpearSkillSpec::Kind::Fend;
     EntityId selectedTarget=pending.unit;
@@ -147,6 +155,7 @@ DomainStatus System::weaponRelease(Release &pending,const ActorContext &actor,Ve
         if(result==DomainStatus::Applied) pending.unit=selectedTarget;
         return result;
     }
+    if(pending.skill.weapon->commonAttack && !selectedTarget) return cost?ports_.transactions.commit(std::move(*cost)).status:DomainStatus::Applied;
     const auto *target=ports_.monsters.find(selectedTarget);
     const auto &area=ports_.areas.at(actor.area);
     if(!target || target->owner || target->life<=0 || target->area!=actor.area ||

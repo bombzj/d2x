@@ -31,6 +31,7 @@ struct InventoryUi {
     std::optional<InventoryDrag> drag;
     std::optional<SplitDialog> split;
     std::optional<ItemHandle> identify;
+    uint64_t targetingRevision{}, targetingGeneration{};
     std::optional<GoldDialog> goldDialog;
     void syncCursor(const InventoryView &inventory, EntityId reserved = {});
     void cancelGesture() {

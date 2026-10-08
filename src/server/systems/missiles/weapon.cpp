@@ -15,7 +15,7 @@ void System::weaponImpact(Advance &plan,Vec at) const {
     auto &m=plan.next;
     if(!m.skill.missileImpact) return;
     const auto &owner=*ports_.players.find(m.player);
-    auto skill=skills::evaluate(owner,m.skill.sourceId,m.skill.rank);
+    auto skill=m.skill.weapon && m.skill.weapon->commonAttack?m.skill:skills::evaluate(owner,m.skill.sourceId,m.skill.rank);
     Spawn request{{m.player,m.owner,m.area,m.generation,0,m.created},skill,{},at,true};
     if(skill.weapon->spear && skill.weapon->spear->kind==SpearSkillSpec::Kind::Fury) {
         const auto &fury=*skill.weapon->spear;const auto &area=ports_.areas.at(m.area);
@@ -46,6 +46,15 @@ void System::weaponImpact(Advance &plan,Vec at) const {
         hit.occurrence=(uint64_t(m.ageFrames)<<32)|(uint64_t{1}<<31)|m.weaponContacts.size();
         plan.impacts.push_back(std::move(hit));
     }
+    if(m.program==Program::GroundThrow && m.weapon && skill.missileImpact->radius>0) {
+        std::vector<EntityId> targets;
+        for(const auto &[id,target]:ports_.monsters.read().actors) {
+            const Vec d{std::floor(target.position.x)-std::floor(at.x),std::floor(target.position.y)-std::floor(at.y)};
+            if(!target.owner && target.life>0 && target.area==m.area && d.x*d.x+d.y*d.y<=skill.missileImpact->radius*skill.missileImpact->radius) targets.push_back(id);
+        }
+        auto hit=impact(m,std::move(targets),0);hit.type=DamageType::Physical;hit.weapon=m.weapon;
+        hit.occurrence=uint64_t(m.ageFrames);plan.impacts.push_back(std::move(hit));
+    }
     if(skill.missileImpact->cloudBurst) {
         const auto &burst=*skill.missileImpact->cloudBurst;const auto &cloud=burst.cloud;
         request.skill.minimumDamage=float(cloud.minimum)/256.f;request.skill.maximumDamage=float(cloud.maximum)/256.f;
@@ -68,6 +77,15 @@ void System::weaponImpact(Advance &plan,Vec at) const {
         }
     }
     plan.children.push_back(std::move(child));
+}
+System::Advance System::advanceGroundThrow(const Missile &original) const {
+    Advance plan{original,{},{},false};auto &m=plan.next;
+    const auto &area=ports_.areas.at(m.area);Vec next=m.position+m.velocity*TickContext::seconds;
+    const auto wall=missileTerrainContact(area.definition.collision,m.position,next,m.collision);
+    if(wall) next=m.position+(next-m.position)* *wall;
+    m.position=next;++m.ageFrames;++m.revision;
+    if(wall || m.ageFrames>=m.lifetimeFrames) {weaponImpact(plan,m.position);plan.finished=true;}
+    return plan;
 }
 System::Advance System::advanceWeapon(const Missile &original) const {
     Advance plan{original,{},{},false};auto &m=plan.next;const auto &area=ports_.areas.at(m.area);

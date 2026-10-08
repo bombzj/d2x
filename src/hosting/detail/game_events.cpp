@@ -72,6 +72,12 @@ void NativeRealmService::receiveEvent(const server::EventBatch &batch) {
             delta = nativeInventoryDelta(*content, *inventory);
             for (const auto &change : inventory->changes) if (change.kind == ItemChangeKind::Created) peer.groundItems.erase(change.item);
         }
+        else if (const auto *drop = std::get_if<server::GroundDropFact>(&fact)) {
+            const auto &at = std::get<GroundLocation>(drop->item.location);
+            delta.push_back(nativeGroundItem(*content, drop->item,
+                shared.terrain.at(binding->game).at(at.region).origin, GroundItemAction::Drop));
+            peer.groundItems.insert_or_assign(drop->item.id, drop->item.revision);
+        }
         else if(const auto *sound=std::get_if<server::SoundFact>(&fact)) {
             if(!visibleActor(sound->actor,sound->type)) continue;
             delta.push_back(encodeServerPacket(ServerMessage::UnitSound,[&](auto &out){out.u8(sound->type);out.u32(uint32_t(sound->actor.value));out.u16(sound->sound);}));
@@ -131,6 +137,8 @@ void NativeRealmService::receiveEvent(const server::EventBatch &batch) {
                 const auto index=levels.number(row,"Waypoint").value_or(255); if(index>=0 && index<112) history[size_t(1+index/16)]|=uint16_t(1u<<(index%16));
             }
             delta.push_back(encodeServerPacket(ServerMessage::Waypoints,[&](auto &out){out.u32(uint32_t(waypoint->source.value));for(const auto word:history)out.u16(word);}));
+        } else if (const auto *targeting=std::get_if<server::ItemTargetingFact>(&fact)) {
+            delta.push_back(encodeServerPacket(ServerMessage::ItemTargeting,[&](auto &out){out.u8(uint8_t(targeting->cursor));out.u32(uint32_t(targeting->source.value));out.u16(uint16_t(targeting->skill));}));
         } else if (const auto *ui = std::get_if<server::UiFact>(&fact)) {
             delta.push_back(encodeServerPacket(ServerMessage::UiAction,[&](auto &out){out.u8(ui->action);}));
         } else throw std::logic_error("Native event encoder is not implemented for this fact");

@@ -21,6 +21,16 @@ std::array<int64_t,6> targetWeaponChannels(const WeaponSkillDamage &attack,bool 
     const auto converted=channels[0]*attack.conversionPercent/100;
     channels[0]-=converted;channels[size_t(attack.conversionElement)]+=converted;return channels;
 }
+WeaponSkillDamage rollPotionDamage(const WeaponDamage &weapon,int level,uint64_t &random) {
+    WeaponSkillDamage value;value.weapon=weapon;value.level=level;value.automatic=true;value.projectile=true;
+    // SrcDamage=0: potion table damage excludes weapon ED, critical and equipment elements.
+    value.weapon.target={};value.weapon.blunt=false;
+    const auto &ranges=weapon.projectile->damage;
+    value.physicalMinimum=ranges[0].minimum;value.physicalMaximum=ranges[0].maximum;value.physicalRoll=rollRandom(random);
+    for(size_t channel=1;channel<ranges.size();++channel)
+        value.channels[channel]=ranges[channel].minimum+limitedRandom(random,uint32_t(std::max(0,ranges[channel].maximum-ranges[channel].minimum)));
+    value.channels[0]=targetWeaponChannels(value,false,false)[0];return value;
+}
 WeaponSkillDamage rollWeaponSkillDamage(const WeaponDamage &weapon,const CombatModifiers &mods,
     const SkillCastSpec &skill,int level,bool projectile,uint64_t &random) {
     WeaponSkillDamage value; value.weapon=weapon;value.level=level;

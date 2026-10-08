@@ -46,10 +46,11 @@ struct LearningRule {
     std::optional<std::pair<int, int>> manaRecoveryPerRank;
     bool selectable{}, leftAllowed{};
 };
-struct PortalItemRule { int skill{}; bool book{}; };
+enum class ItemSkillAction { Identify, Portal };
+struct ItemSkillRule { int skill{}; bool book{}; ItemSkillAction action{}; int cursor{-1}; };
 struct CharacterRules {
-    std::map<std::string,PortalItemRule,std::less<>> portalItems;
-    std::map<std::string, bool, std::less<>> identificationItems; // true: tome charges, false: scroll quantity
+    std::set<int> innateSkills;
+    std::map<std::string,ItemSkillRule,std::less<>> itemSkills;
     std::vector<uint64_t> experience;
     std::map<int, LearningRule> learning;
     int resistancePenalty{};

@@ -1134,6 +1134,16 @@ struct RemoteUiClients::Impl {
         if(w.itemRequest && w.itemRequest->command.action==OnlineItemAction::Pickup && w.itemRequest->state==OnlineItemRequest::State::Pending)
             v.pickupTarget=itemId(w.itemRequest->command.item);
         projectItemFeedback(v);
+        v.targetingRevision=w.itemTargetingRevision;
+        v.targetingReady=!w.itemTargetingSource;
+        if(w.itemTargetingSource) {
+            const auto source=v.items.find(itemId(*w.itemTargetingSource));
+            if(source!=v.items.end()) {
+                v.targetingReady=true;
+                const auto definition=v.definitions.find(source->second.definition);
+                if(definition!=v.definitions.end() && definition->second.identifySource) v.targetingSource=source->second.handle();
+            }
+        }
         inventoryView=std::move(v);
     }
     std::string npcIdentity() const {

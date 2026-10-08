@@ -13,6 +13,7 @@ DomainResult<> System::dropGold(const ActorContext &actor, unsigned amount) {
     const ItemDefinition *definition = nullptr;
     for (const auto &[code, item] : ports_.definitions->entries()) { (void)code; if (item.equipment.isType("gold")) { definition = &item; break; } }
     if (!definition || !definition->maxStack) return {DomainStatus::Unavailable, {}};
+    std::vector<DomainFact> drops;
     unsigned remaining = amount;
     while (remaining) {
         if (world.world.items.size() >= 4096 || world.revision == UINT64_MAX) return {DomainStatus::Capacity, {}};
@@ -22,11 +23,13 @@ DomainResult<> System::dropGold(const ActorContext &actor, unsigned amount) {
         item.quantity = std::min(remaining, definition->maxStack); item.location = GroundLocation{actor.area, *position};
         item.nativeSeed = uint32_t(item.id.value);
         EquipmentValues values; values.levels.resize(player.rules.character->experience.size());
+        drops.emplace_back(GroundDropFact{item});
         remaining -= item.quantity; world.equipment.items.emplace(item.id, std::move(values)); world.world.items.emplace(item.id, std::move(item));
     }
     auto record = player.persistent.player; record.gold -= amount;
     transactions::InventoryEdit edit{actor, player.inventoryRevision, player.characterRevision, player.persistent.inventory, {}, record.weaponSet};
     edit.character = std::move(record); edit.world = transactions::WorldEdit{world.revision, std::move(world)};
+    edit.publicFacts = std::move(drops);
     auto plan = ports_.transactions.prepare(std::move(edit));
     return plan ? ports_.transactions.commit(std::move(*plan.value)) : DomainResult<>{plan.status, {}};
 }
@@ -146,6 +149,7 @@ DomainResult<> System::ground(const ActorContext &actor, const GroundTransfer &r
     transactions::InventoryEdit edit{actor, player->inventoryRevision, player->characterRevision,
         std::move(draft.edit.inventory), std::move(draft.edit.changes), record.weaponSet};
     edit.equipment = std::move(equipment); edit.character = std::move(record);
+    if (request.drop) edit.publicFacts.emplace_back(GroundDropFact{world.world.items.at(source.id)});
     edit.world = transactions::WorldEdit{world.revision, std::move(world)};
     auto plan = ports_.transactions.prepare(std::move(edit));
     return plan ? ports_.transactions.commit(std::move(*plan.value)) : DomainResult<>{plan.status, {}};

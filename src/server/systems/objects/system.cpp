@@ -8,6 +8,7 @@
 #include "server/systems/transactions/system.hpp"
 #include "server/systems/inventory/system.hpp"
 #include "server/systems/travel/system.hpp"
+#include "server/systems/skills/system.hpp"
 #include "world/interaction_geometry.hpp"
 #include <algorithm>
 #include <cmath>
@@ -75,9 +76,17 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
         }
         if (!key.id) return {DomainStatus::Conflict, {}};
     }
+    if(rule.operation==5 && !ports_.events.hasCapacity(1)) return {DomainStatus::Capacity,{}};
     LootRequest source; source.source = object.id; source.region = object.area; source.difficulty = ports_.settings.difficulty;
     const auto result = ports_.loot.queue({object.revision, source, actor.player, object.position, loot::ObjectSource{object.definition, rule.operation, rule.chest, key}});
-    if (result) object.pending = true;
+    if (result) {
+        object.pending = true;
+        if(rule.operation==5) {
+            // Native ObjMode::OperateFunction05 starts KK independently of loot.
+            // Original PlrModes can decline the action; this does not undo operation.
+            ports_.skills.objectKick(actor,{object.id,object.revision,2});
+        }
+    }
     return result;
 }
 StepStatus System::step(TickContext tick, FrameFacts &) {

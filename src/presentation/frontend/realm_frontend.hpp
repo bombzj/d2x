@@ -51,7 +51,7 @@ class RealmFrontend {
     RealmFrontend(const RealmFrontend &) = delete;
     RealmFrontend &operator=(const RealmFrontend &) = delete;
     FrontendIntent frame(FrontendPage, const OnlineView &, std::string_view gateway, std::string_view notice,
-                         Vector2 mouse, const FrameInput &, std::string_view worldNotice = {});
+                         Vector2 mouse, const FrameInput &, bool allowRealmSelection, std::string_view worldNotice = {});
     void clearPassword();
     void clearTransientPasswords();
     void setLogin(std::string account, std::string password);

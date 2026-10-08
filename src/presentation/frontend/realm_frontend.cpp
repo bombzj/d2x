@@ -632,13 +632,15 @@ struct RealmFrontend::Impl {
             intent.hardcore = hardcore;
         }
     }
-    void characters(const OnlineView &v) {
+    void characters(const OnlineView &v, bool allowRealmSelection) {
         tiles("characters", 0, 0, 4);
-        image("realm", 608, 8);
-        text.inBox(s(11058), {608, 10, 182, 22}, 16, parchment);
-        text.inBox(v.selectedRealm, {608, 42, 182, 27}, 16, parchment);
-        if (button("realmButton", 608, 81, s(11057), true, 1, 0, &text))
-            emit(FrontendCommand::ChangeRealm);
+        if (allowRealmSelection) {
+            image("realm", 608, 8);
+            text.inBox(s(11058), {608, 10, 182, 22}, 16, parchment);
+            text.inBox(v.selectedRealm, {608, 42, 182, 27}, 16, parchment);
+            if (button("realmButton", 608, 81, s(11057), true, 1, 0, &text))
+                emit(FrontendCommand::ChangeRealm);
+        }
         std::vector<std::string> names;
         std::vector<Bytes> previews;
         for (const auto &c : v.characters) {
@@ -987,7 +989,8 @@ struct RealmFrontend::Impl {
         }
     }
     FrontendIntent draw(FrontendPage current, const OnlineView &v, std::string_view gateway,
-                        std::string_view notice, Vector2 at, const FrameInput &frameInput, std::string_view worldNotice) {
+                        std::string_view notice, Vector2 at, const FrameInput &frameInput,
+                        bool allowRealmSelection, std::string_view worldNotice) {
         input = frameInput.focused ? frameInput : FrameInput{};
         if (!frameInput.focused) lastClickedGame.clear();
         mouse = at;
@@ -1036,7 +1039,7 @@ struct RealmFrontend::Impl {
         else if (current == FrontendPage::CreateCharacter)
             creation();
         else if (current == FrontendPage::Characters)
-            characters(v);
+            characters(v, allowRealmSelection);
         else if (current == FrontendPage::Lobby)
             lobby(v);
         else {
@@ -1099,8 +1102,9 @@ struct RealmFrontend::Impl {
 RealmFrontend::RealmFrontend(Archives &a) : impl_(std::make_unique<Impl>(a)) {}
 RealmFrontend::~RealmFrontend() = default;
 FrontendIntent RealmFrontend::frame(FrontendPage p, const OnlineView &v, std::string_view gateway,
-                                    std::string_view notice, Vector2 mouse, const FrameInput &input, std::string_view worldNotice) {
-    return impl_->draw(p, v, gateway, notice, mouse, input, worldNotice);
+                                    std::string_view notice, Vector2 mouse, const FrameInput &input,
+                                    bool allowRealmSelection, std::string_view worldNotice) {
+    return impl_->draw(p, v, gateway, notice, mouse, input, allowRealmSelection, worldNotice);
 }
 void RealmFrontend::clearPassword() {
     wipe(impl_->password);

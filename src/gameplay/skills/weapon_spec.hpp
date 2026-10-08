@@ -13,6 +13,7 @@ struct WeaponSkillSpec {
     std::shared_ptr<const BowSkillSpec> bow;
     std::shared_ptr<const SpearSkillSpec> spear;
     bool noAmmo = false;
+    bool commonAttack = false, leftHand = false;
     std::string requiredType;
     bool thrown = false, manaOnRelease = false;
     int attackRating = 0, attackRatingPerLevel = 0, delayFrames = 0;

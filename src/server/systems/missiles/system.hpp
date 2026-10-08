@@ -18,7 +18,7 @@ struct Spawn { ActorContext actor; SkillCastSpec skill; MissileCollisionRule col
     std::optional<transactions::Plan> cost{};
     EntityId guidedTarget{};
 };
-enum class Program { Projectile, Ring, Charged, Orb, OrbBolt, OrbNova, Blizzard, Shard, Arc, FirewallMaker, Fire, Meteor, PoisonCloud, AreaImpact, FuryBolt };
+enum class Program { Projectile, Ring, Charged, Orb, OrbBolt, OrbNova, Blizzard, Shard, Arc, FirewallMaker, Fire, Meteor, PoisonCloud, AreaImpact, FuryBolt, GroundThrow };
 struct Missile {
     EntityId id, owner;
     PlayerId player;
@@ -58,6 +58,7 @@ class System {
     std::vector<Missile> launch(const Spawn &, uint64_t &) const;
     Advance advance(const Missile &) const;
     Advance advanceWeapon(const Missile &) const;
+    Advance advanceGroundThrow(const Missile &) const;
     void weaponImpact(Advance &, Vec) const;
     combat::SpellImpact impact(Missile &, std::vector<EntityId>, std::optional<int64_t> damage = {}) const;
     std::vector<DomainFact> visuals(const std::vector<Missile> &) const;

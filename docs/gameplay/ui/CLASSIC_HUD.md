@@ -42,7 +42,7 @@ Skills.skilldesc关联SkillDesc的IconCel／ListRow／ListPool及当前职业图
 
 ## 传送点与菜单
 
-原800borderframe、waygatebackground／icons、expwaygatetabs及Levels.Waypoint提供边框、九槽、标题／页签／原颜色。只有原0x63确认菜单及历史解锁位可旅行；请求未确认、关闭／迟到回复分别处理，不自行解锁。最新启动期间点击／ON动画修正未入包，见[基线](../../../BASELINE.md)。
+原800borderframe、waygatebackground／icons、expwaygatetabs及Levels.Waypoint提供边框、九槽、标题／页签／原颜色。只有原0x63确认菜单及历史解锁位可旅行；请求未确认、关闭／迟到回复分别处理，不自行解锁。启动期间点击／ON动画修正已构建入包，其具体时序未重新运行认证，见[基线](../../../BASELINE.md)。
 
 ESC先关闭面板／对白，无面板时开原退出菜单；Options只接已有Automap Options，其他设置页未实现。Save and Exit提交原保存退局，确认后返服务器选角，超时保存未知；不会本地写D2S或暂停世界。
 

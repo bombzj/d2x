@@ -294,7 +294,7 @@ void itemPacket(OnlineView &v, const Packet &p) {
     v.world.items[item.id] = std::move(item);
 }
 void removeItem(OnlineWorldView &world, uint32_t id) {
-    if (world.itemTargetingSource == id) world.itemTargetingSource.reset();
+    if (world.itemTargetingSource == id) {world.itemTargetingSource.reset();++world.itemTargetingRevision;}
     if ((world.storage.kind == OnlineStorageKind::Cube && world.storage.source == id) ||
         (world.storage.requested == OnlineStorageKind::Cube && world.storage.requestedSource == id)) {
         ++world.interactionGeneration;
@@ -593,6 +593,7 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
     }
     case 0x3F: {
         const auto cursor = r.u8(); const auto source = r.u32(); r.u16(); r.finish();
+        ++w.itemTargetingRevision;
         if (cursor == 255) w.itemTargetingSource.reset();
         else w.itemTargetingSource = source;
         break;

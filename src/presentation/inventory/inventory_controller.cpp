@@ -75,6 +75,16 @@ bool SceneController::handleInventory(const FrameInput &input) {
     auto &ui = view_.ui().inventory;
     ui.forceSwap = input.control;
     const auto &inventory = view_.inventoryView();
+    // Native 0x3F is preparation, never identification success. Repeated
+    // preparation of the same source is an event even after Escape cancelled UI.
+    if(ui.targetingGeneration!=inventory.gameGeneration) {
+        ui.targetingGeneration=inventory.gameGeneration;ui.targetingRevision=0;ui.identify.reset();
+    }
+    if(inventory.targetingReady && ui.targetingRevision!=inventory.targetingRevision) {
+        ui.targetingRevision=inventory.targetingRevision;
+        ui.identify=inventory.targetingSource;
+        if(ui.identify) {ui.open=true;ui.drag.reset();ui.split.reset();ui.goldDialog.reset();}
+    }
     EntityId backpack = view_.inventoryView().containers.backpack;
     if (ui.open && !ui.playerTradeOpen && input.insideViewport && input.leftPressed &&
         CheckCollisionPointRec(rv(input.mouse), inventoryClose())) {

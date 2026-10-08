@@ -30,4 +30,4 @@ NPC服务／Talk菜单与发起／接收交易邀请共用[OriginalMenu](../../s
 
 精确商店报价、赌博、雇佣／复活／装备、重置／灌注／打孔／署名／插杖等特殊服务尚未形成完整原协议闭环；没有生产者的旧插杖面板已删除。真墓符号、部分后续幕说明、五幕剧情／奖励／旅行资格及多人共享规则未认证。
 
-当前NPC陈旧位置靠近修正未构建／入包，具体截图超时未复现，见[联网模块](NETWORK.md#尚未入包的源码修正)。原任务身份与核对入口见[任务系统](../gameplay/quests/SYSTEM.md)，NPC操作见[交互](../gameplay/npc/INTERACTIONS.md)，服务范围见[交易](../gameplay/npc/TRADE.md)。
+当前NPC陈旧位置靠近修正未构建／入包，具体截图超时未复现，见[联网模块](NETWORK.md#本批源码修正)。原任务身份与核对入口见[任务系统](../gameplay/quests/SYSTEM.md)，NPC操作见[交互](../gameplay/npc/INTERACTIONS.md)，服务范围见[交易](../gameplay/npc/TRADE.md)。

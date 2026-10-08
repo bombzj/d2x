@@ -54,6 +54,8 @@ class System {
     size_t pendingReleases() const { return releases_.size(); }
     bool busy(EntityId id, uint64_t tick) const { auto it = state_.casts.find(id); return releases_.contains(id) || (it != state_.casts.end() && it->second.until > tick); }
     DomainResult<> requestCast(const CastRequest &);
+    // Native OperateFn05 invokes the hidden Kick without changing either hand.
+    DomainResult<> objectKick(const ActorContext &, UnitTarget);
     DomainResult<> avoidance(const ActorContext &, WeaponAvoidance, EntityId attacker);
     DomainResult<> execute(const ActorContext &, const Request &);
     StepStatus step(TickContext, FrameFacts &);

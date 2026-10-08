@@ -17,11 +17,11 @@
 | server/game_messages | 仅宿主与内核使用的内部身份、命令和投影；不是网络协议或客户端契约 |
 | server/game_instance、area_store、player_store、movement | 组合根、区域／玩家唯一所有权、入场值组装与移动执行；无MPQ／GPU／文件／socket |
 | server/runtime | 类型化命令、穷尽分派、系统组合／窄依赖、固定步顺序、只读规则和有界事件出口 |
-| server/systems/* | 26个独立领域State／Ports／操作骨架；全部显式未实现，详见[内核子系统](../modules/SERVER_SYSTEMS.md) |
+| server/systems/* | 独立领域State／Ports／操作；已执行范围与保留Scaffold分开，详见[内核子系统](../modules/SERVER_SYSTEMS.md) |
 | hosting/game_host | 多实例槽位、代次、绑定、25Hz固定步、暂停与内部快照 |
 | hosting/game_content、character_creation、character_rules | MPQ输入准备、初始角色／物品、入局规则指纹；不负责客户端绘制 |
 | hosting/embedded_realm | 内存端点、selector、分帧与断开／调度组装，不实现具体玩法 |
-| hosting/detail | 与传输无关的单人服务组合、MCP角色／游戏、D2GS生命周期和管理接口 |
+| hosting/detail | 与传输无关的多连接服务组合、MCP角色／游戏、D2GS生命周期和管理接口 |
 | hosting/protocol | C2S／S2C目录、阶段／长度检查、按领域具名分派与显式stub；扩展约定见[服务端协议](../modules/SERVER_PROTOCOL.md) |
 | hosting/native_game_wire、native_item_wire | 原入局／状态／移动／物品包编码；JM磁盘位流不作网络包 |
 | hosting/administration、app/debug/server_commands | 类型化宿主管理与外围JSON适配；不增加私有游戏消息 |

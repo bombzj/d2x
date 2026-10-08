@@ -4,6 +4,7 @@
 #include "gameplay/skills/behavior.hpp"
 #include "gameplay/combat/attack_timing.hpp"
 #include "gameplay/skills/amazon_summon_spec.hpp"
+#include <cctype>
 namespace d2x {
 void prepareSkillRules(server::PreparedRules &rules, const ClassicData &data, const CharacterDefinition &character) {
     auto prepared = std::make_shared<server::SkillRules>();
@@ -44,6 +45,41 @@ void prepareSkillRules(server::PreparedRules &rules, const ClassicData &data, co
             if (collision != data.missileCollisions.end()) definition.collision = collision->second;
         }
         prepared->definitions.emplace(id, std::move(definition));
+    }
+    // General skills are prepared for every class; availability still comes
+    // from that class's CharStats, not from point-backed skill ranks.
+    const auto &skillTable=data.tables.at("skills");
+    for(size_t row=0;row<skillTable.rows().size();++row) {
+        const bool itemSkill=skillTable.number(row,"srvdofunc")==113 && skillTable.number(row,"scroll").value_or(0);
+        if(!skillTable.number(row,"general").value_or(0) && !itemSkill) continue;
+        const int id=skillTable.number(row,"Id").value();
+        const int start=skillTable.number(row,"srvstfunc").value_or(0);
+        const int action=skillTable.number(row,"srvdofunc").value_or(0);
+        SkillRuleSpec spec;spec.sourceId=id;
+        if(itemSkill) spec.effect=SkillBehavior::ItemSkill;
+        else if((start==1 && action==1) || (start==65 && (action==3 || action==5))) {
+            spec.effect=SkillBehavior::WeaponProjectile;spec.weapon=WeaponSkillSpec{};
+            spec.weapon->commonAttack=true;
+            spec.weapon->leftHand=skillTable.value(row,"skill")=="Left Hand Swing" || action==5;
+            spec.weapon->thrown=start==65;
+            spec.weapon->requiredType=std::string(skillTable.value(row,"itypea1"));
+            spec.weapon->mode=std::string(skillTable.value(row,"anim"));
+            for(auto &letter:spec.weapon->mode) letter=char(std::tolower(static_cast<unsigned char>(letter)));
+        } else if(start==2 && action==2) {
+            spec.effect=SkillBehavior::Kick;
+            // Native TXT DWORD compilation leaves an empty MinDam at zero.
+            spec.minimumDamage=spec.maximumDamage=skillTable.number(row,"MinDam").value_or(0);
+            spec.hitShift=skillTable.number(row,"HitShift").value();spec.hitClass=skillTable.number(row,"HitClass").value_or(1);
+        } else if(start==3 && action==4) spec.effect=SkillBehavior::Unsummon;
+        else throw std::runtime_error("Unsupported original general skill program");
+        prepared->definitions.emplace(id,server::SkillDefinition{std::move(spec),skillTable.number(row,"InTown").value_or(0)!=0,{}});
+    }
+    const auto &petTypes=data.tables.at("pettype");
+    for(size_t row=0;row<skillTable.rows().size();++row) {
+        const auto type=skillTable.value(row,"pettype");if(type.empty()) continue;
+        for(size_t pet=0;pet<petTypes.rows().size();++pet)
+            if(petTypes.value(pet,"pet type")==type && petTypes.number(pet,"unsummon").value_or(0))
+                prepared->dismissibleSummons.insert(skillTable.number(row,"Id").value());
     }
     prepared->hydra = data.skills.hydra;
     prepared->collisions = data.missileCollisions;

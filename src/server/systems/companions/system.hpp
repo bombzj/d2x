@@ -38,6 +38,8 @@ class System {
     DomainResult<> amazon(const ActorContext &, const SkillCastSpec &, Vec);
     DomainResult<> hydra(const ActorContext &, const SkillCastSpec &, Vec);
     DomainResult<> execute(const ActorContext &, const Request &);
+    bool canDismiss(const ActorContext &, EntityId) const;
+    DomainResult<> dismiss(const ActorContext &, EntityId);
     StepStatus step(TickContext, FrameFacts &);
 };
 }

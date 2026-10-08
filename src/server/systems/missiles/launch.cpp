@@ -9,6 +9,7 @@
 #include "gameplay/skills/bow_spec.hpp"
 #include "gameplay/skills/amazon_missile.hpp"
 #include "gameplay/skills/spear_spec.hpp"
+#include "gameplay/skills/common_actions.hpp"
 #include "core/random.hpp"
 #include <algorithm>
 #include <cmath>
@@ -32,7 +33,8 @@ Missile System::make(const Spawn &r, Vec origin, Vec direction, int id, int fram
         }
     }
     m.acceleration = r.skill.missileAcceleration; m.maximumVelocity = r.skill.missileMaxVelocity;
-    if(r.weapon) m.weapon=rollWeaponSkillDamage(r.weapon->weapon,ports_.players.find(r.actor.player)->totals.character.combat,r.skill,r.weapon->level,true,m.random);
+    if(r.weapon && r.weapon->weapon.potion) m.weapon=rollPotionDamage(r.weapon->weapon,r.weapon->level,m.random);
+    else if(r.weapon) m.weapon=rollWeaponSkillDamage(r.weapon->weapon,ports_.players.find(r.actor.player)->totals.character.combat,r.skill,r.weapon->level,true,m.random);
     if(m.weapon && rules.pierceableMissiles.contains(id)) m.pierces=missilePierceCount(m.weapon->pierceChance,0);
     m.guidance=r.guidedTarget;
     m.radius = r.skill.missileImpact ? r.skill.missileImpact->radius : 0;
@@ -51,6 +53,12 @@ std::vector<Missile> System::launch(const Spawn &r, uint64_t &random) const {
     };
     switch (s.effect) {
     case SkillBehavior::WeaponProjectile:
+        if(r.weapon && r.weapon->weapon.potion) {
+            const auto &projectile=*r.weapon->weapon.projectile;
+            const int lifetime=groundThrowFrames(origin,r.target,projectile.velocityUnits);
+            if(lifetime<=0) break;
+            add(cell(origin),direction,s.missileId,lifetime,s.missileVelocity,Program::GroundThrow);break;
+        }
         if(s.weapon->spear && s.weapon->spear->kind==SpearSkillSpec::Kind::Charged && !r.weapon) {
             for(int i=0;i<s.missileCount;++i) {
                 auto &m=add(cell(origin),direction,s.missileId,std::min(frames,77),s.missileVelocity,Program::Charged);

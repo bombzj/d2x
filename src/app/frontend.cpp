@@ -276,7 +276,8 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
         try {
             reloadCharacter = embedded.prepareStartup(options.load, options.save, options.characterClass);
             auto streams = embedded.connect();
-            session.connect_realm(std::move(streams.realm), std::move(streams.game), {"127.0.0.1", 6113}, "Single Player");
+            session.connect_realm(std::move(streams.realm), std::move(streams.game),
+                {"127.0.0.1", options.realmPort}, "Single Player", options.gamePort);
             localConnection = true; page = FrontendPage::Characters;
         } catch (const std::exception &e) { reloadCharacter.clear(); notice = e.what(); }
     }
@@ -432,13 +433,17 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
             EndDrawing();
             if (quit) continue;
         }
-        const auto view = session.read();
+        auto view = session.read();
         if (localConnection && !reloadCharacter.empty() && view.stage == OnlineStage::CharacterSelection) {
             enterLocalGame = session.select_character(std::exchange(reloadCharacter, {}));
         }
         if (localConnection && enterLocalGame && view.stage == OnlineStage::Lobby) {
             enterLocalGame = false;
-            session.create_game({"SinglePlayer", {}, {}, localDifficulty, 1, 99});
+            session.create_game({lanConnection ? view.selectedCharacter : "SinglePlayer", {}, {}, localDifficulty,
+                                 lanConnection ? uint8_t(8) : uint8_t(1), 99});
+        } else if (localConnection && !enterLocalGame && view.stage == OnlineStage::Lobby) {
+            // Rejected automatic admission returns to characters, never to a lobby.
+            session.return_to_characters();
         }
         if (worldNoticeSequence && (view.stage != OnlineStage::ProtocolReady ||
                                    view.gameGeneration != worldNoticeGeneration)) {
@@ -474,6 +479,10 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
                 : session.join_game(options.onlineJoinGame);
             if (!accepted) notice = "Quick-entry game request was rejected; use the lobby to inspect or retry.";
         }
+        // Automatic commands above can change the stage in this same frame.
+        view = session.read();
+        if (enterLocalGame && view.error && view.stage == OnlineStage::CharacterSelection)
+            enterLocalGame = false;
         if (view.stage != OnlineStage::ProtocolReady && presentationPaused) {
             presentationPaused = false;
             if (sharedUi) sharedUi->pauseDebugPresentation(false);
@@ -484,7 +493,9 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
             page = FrontendPage::CreateCharacter;
         if (view.stage == OnlineStage::Lobby || view.stage == OnlineStage::ListingGames ||
             view.stage == OnlineStage::CreatingGame || view.stage == OnlineStage::JoiningGame)
-            page = FrontendPage::Lobby;
+            page = localConnection ? FrontendPage::Loading : FrontendPage::Lobby;
+        if (localConnection && view.stage == OnlineStage::SelectingCharacter)
+            page = FrontendPage::Loading;
         if (gameStage(view.stage))
             page = FrontendPage::Loading;
         const bool listTimeout = view.error && view.error->kind == OnlineErrorKind::Timeout &&
@@ -530,6 +541,8 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
             auto original = id ? strings.find(id) : std::string_view{};
             notice = original.empty() || view.error->kind == OnlineErrorKind::Timeout
                 ? view.error->message : std::string(original);
+            if (!original.empty() && view.error->kind == OnlineErrorKind::Transport)
+                notice += "\n" + view.error->message;
             if (view.stage == OnlineStage::ProtocolReady) {
                 worldNoticeSequence = view.error->sequence;
                 worldNoticeGeneration = view.gameGeneration;
@@ -692,7 +705,8 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
                     BeginScissorMode(int(offsetX), int(offsetY), 800, 600);
                     rlPushMatrix();
                     rlTranslatef(offsetX, offsetY, 0);
-                    action = ui.frame(page, session.read(), gateway, notice, mouse, input, sceneStatus().reason);
+                    action = ui.frame(page, session.read(), gateway, notice, mouse, input,
+                                      !localConnection && !lanConnection, sceneStatus().reason);
                     rlPopMatrix();
                     EndScissorMode();
                 }
@@ -838,7 +852,7 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
             }
             break;
         case FrontendCommand::SelectCharacter:
-            enterLocalGame = session.select_character(std::move(action.name)) && localConnection && !lanConnection;
+            enterLocalGame = session.select_character(std::move(action.name)) && localConnection;
             break;
         case FrontendCommand::CreateGame:
             session.create_game({std::move(action.name), std::move(action.password),

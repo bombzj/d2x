@@ -77,10 +77,10 @@ Single Player的online-status仍只读原协议OnlineView；server-status单独�
 | `online-items` / `online-ground` | 只读同一完整快照；online.inventory.items含地面和各所有者物品，依mode／owner筛选，不请求服务器刷新；尺寸、数量、耐久、词缀、孔内所有者、decoded／reason及revision见下文 |
 | `online-item-action` | action和真实itemId，可选itemRevision／targetRevision；配对动作还需targetId。27种原物品／城镇请求及格子／部位参数见[联网物品操作](#联网物品操作)，accepted仅入队 |
 | `online-item-quote` | action=buy／sell／repair／repair-all；前三者需本局itemId，可选itemRevision。返回known及price，缺数据为null；复用UI报价，不发送询价包或推进待发库存操作。赌博购买报价取当前真实货架模式 |
-| `online-combat` / `online-skills` | 只读同一快照；combat.skills列MPQ技能名、基础／装备加成／有效等级、innate、左右键／城镇资格；combat.states列原服状态和原单位属性；combat.events为最多256条有序战斗事件，sequence递增，消费者自行检查缺口；0x73首路径点为missileDestination（旧missileOrigin名称已更正），不是飞弹出生点 |
+| `online-combat` / `online-skills` | 只读同一快照；combat.skills列MPQ技能名、基础／装备加成／有效等级、innate、左右键／城镇资格；combat.states列原服状态和原单位属性；world.itemTargetingSource为原3F来源（null表示无准备，不表示鉴定成功），itemSkillQuantities为原物品技能数量；combat.events为最多256条有序战斗事件，sequence递增，消费者自行检查缺口；0x73首路径点为missileDestination（旧missileOrigin名称已更正），不是飞弹出生点 |
 | `online-select-skill` | skillId（0–65535）、hand（left／right，默认right）；当前MPQ及服务端有效等级校验，原0x3C选择，等combat.request.state=Confirmed再施放。不支持带物品GUID的充能技能 |
 | `online-bind-hotkey` | slot（0–15）、skillId、hand；校验当前MPQ主动技能和原服有效等级，原0x51保存绑定，无即时ACK，request为SentNoAck；重入world.skillHotkeys读取0x7B。UI使用F1–F8，物品GUID技能暂未开放 |
-| `online-cast` | hand；坐标x／y或真实unitId／unitType（默认1）二选一。stationary默认false；单位目标false允许原服靠近，true原地请求。repeat默认false，true发原Hold包一次，调用方负责继续提交／停止，不创建客户端循环。各轴≤50、活动地图及MPQ城镇限制，单位目标按MPQ资格区分PvE敌怪／尸体、Enchant友方及Telekinesis物件／物品；自施技能用本人坐标 |
+| `online-cast` | hand；坐标x／y或真实unitId／unitType（默认1）二选一。stationary默认false；单位目标false允许原服靠近，true原地请求。repeat默认false，true发原Hold包一次，调用方负责继续提交／停止，不创建客户端循环。各轴≤50、活动地图及MPQ城镇限制，单位目标按MPQ资格区分PvE敌怪／尸体、Enchant友方、Unsummon本人7A／PetType许可的召唤物及Telekinesis物件／物品；自施技能用本人坐标 |
 | `online-attack` | 同cast目标及stationary／repeat，固定左手；先选择MPQ Attack技能并等确认。伤害、追击与命中由原服处理 |
 | `online-stop-skill` | 发原0x12停止地狱火状态；停止重复提交Hold请求由调用方负责。这不是全部技能的通用撤销包 |
 | `online-learn-skill` | skillId；检查职业、已学前置、等级、属性、MPQ最大等级和原服可用点。原0x3B，等待基础技能等级增加；原服无通用失败包，超时结果未知，不自动重试 |

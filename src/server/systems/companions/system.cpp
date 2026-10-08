@@ -10,6 +10,21 @@
 namespace d2x::server::companions {
 DomainResult<EntityId> System::summon(const Summon &) {return {};}
 DomainResult<> System::execute(const ActorContext &, const Request &) {return {};}
+bool System::canDismiss(const ActorContext &actor,EntityId id) const {
+    const auto *p=ports_.players.find(actor.player);const auto pet=state_.companions.find(id);const auto *body=ports_.monsters.find(id);
+    return p && p->entered && p->actor==actor.actor && p->area==actor.area && p->persistent.player.hp>0 &&
+        p->rules.skills && ports_.areas.at(actor.area).generation==actor.areaGeneration && body && body->life>0 && body->area==actor.area &&
+        body->owner==actor.player && pet!=state_.companions.end() && pet->second.owner==actor.player && !pet->second.removeAt &&
+        pet->second.sourceSkill && p->rules.skills->dismissibleSummons.contains(*pet->second.sourceSkill);
+}
+DomainResult<> System::dismiss(const ActorContext &actor,EntityId id) {
+    if(!canDismiss(actor,id)) return {DomainStatus::InvalidRequest,{}};
+    auto &pet=state_.companions.at(id);const auto *body=ports_.monsters.find(id);
+    // Ownership retirement never enters enemy experience or loot accounting.
+    pet.removeAt=actor.tick+uint64_t(body->rule.deathTicks);pet.release=0;
+    ports_.monsters.retire(id,actor.tick);return {DomainStatus::Applied,std::monostate{}};
+}
+
 DomainResult<> System::hydra(const ActorContext &actor,const SkillCastSpec &skill,Vec target) {
     const auto *p=ports_.players.find(actor.player);if(!p || !p->rules.skills || !p->rules.skills->hydra || skill.hydraLimit<=0 || skill.hydraFrames<=0) return {DomainStatus::Unavailable,{}};
     auto actors=ports_.monsters.prepareHydra(actor,*p->rules.skills->hydra,target);if(!actors) return {actors.status,{}};

@@ -97,7 +97,7 @@ struct RemoteScene::Impl {
         std::deque<std::pair<float,Vec>> samples; // Recent displayed path; native samples have no timestamps.
         std::optional<Vec> goal;
         uint64_t requestRevision{}, invalidatedRequest{}, actionRevision{}, obstacleRevision{};
-        uint64_t castSequence{};
+        uint64_t castRevision{};
         std::optional<CastHandoff> castHandoff;
         bool running{};
         std::optional<int> objectSoundMode;
@@ -109,7 +109,7 @@ struct RemoteScene::Impl {
     int artPalette = 0;
     RealmPortraitCatalog portraits;
     ClassicStrings strings;
-    DataTable monstats, monstats2, charstats, skills, missiles, overlays, states, weapons, difficultyLevels, superuniques;
+    DataTable monstats, monstats2, charstats, skills, missiles, overlays, states, weapons, difficultyLevels, superuniques, objects;
     std::vector<size_t> characterRows;
     std::vector<PresentationSoundEvent> soundEvents;
     std::map<int, size_t> skillRows;
@@ -125,11 +125,12 @@ struct RemoteScene::Impl {
     std::set<OnlineUnitKey> shattered;
     uint64_t combatSequence{};
     uint64_t localRequestSequence{};
+    uint64_t localObjectKickRevision{};
     struct LocalCast {
         OnlineCombatCommand command;
         uint64_t authorityRevision{};
         float requested{}, started{-1}, duration{};
-        uint64_t sequence{}, revision{};
+        uint64_t revision{};
     };
     std::optional<LocalCast> localCast;
     struct Channel {size_t skillRow{},missileRow{};int level{};float next{},started{};uint64_t revision{};OnlinePoint destination;std::optional<OnlineUnitKey> target;uint64_t random{};};
@@ -162,7 +163,8 @@ struct RemoteScene::Impl {
           overlays(a.read("data/global/excel/overlay.txt")), states(a.read("data/global/excel/states.txt")),
           weapons(a.read("data/global/excel/weapons.txt")),
           difficultyLevels(a.read("data/global/excel/difficultylevels.txt")),
-          superuniques(a.read("data/global/excel/superuniques.txt")) {
+          superuniques(a.read("data/global/excel/superuniques.txt")),
+          objects(a.read("data/global/excel/objects.txt")) {
         const DataTable statCosts(a.read("data/global/excel/itemstatcost.txt"));
         for(size_t row=0;row<statCosts.rows().size();++row) if(statCosts.value(row,"Stat")=="skill_handofathena") slowMissileStat=statCosts.number(row,"ID").value_or(-1);
         for (size_t row=0; row<superuniques.rows().size(); ++row)
@@ -432,6 +434,12 @@ struct RemoteScene::Impl {
             const int function = skills.number(row->second, "cltdofunc").value_or(0);
             auto missile = missileNames.find(skills.value(row->second, function ? "cltmissilea" : "cltmissile"));
             if (function == 1 || function == 2 || function == 17 || function==18 || function==20) {
+                const bool secondary=skills.value(row->second,"skill")=="Left Hand Throw" || skills.value(row->second,"skill")=="Left Hand Swing";
+                int primaryBody=5;
+                for(const auto &[key,item]:v.world.items) {
+                    (void)key;if(item.ownerType!=source->second.key.type || item.owner!=source->second.key.id || item.mode!=1 || item.body!=4) continue;
+                    for(size_t weapon=0;weapon<weapons.rows().size();++weapon) if(weapons.value(weapon,"code")==item.code) primaryBody=4;
+                }
                 for (const auto &[id, item] : v.world.items) {
                     (void)id;
                     if (item.ownerType != source->second.key.type || item.owner != source->second.key.id ||
@@ -439,10 +447,11 @@ struct RemoteScene::Impl {
                     for (size_t weapon = 0; weapon < weapons.rows().size(); ++weapon) {
                         if (weapons.value(weapon, "code") != item.code) continue;
                         const auto kind = weapons.value(weapon, "wclass");
+                        if((function==1 || function==2) && item.body!=(secondary?5:primaryBody)) continue;
                         if ((function == 17 || function==18 || function==20) && kind == "xbw" && !skills.value(row->second, "cltmissileb").empty())
                             missile = missileNames.find(skills.value(row->second, "cltmissileb"));
                         if ((function == 1 && (kind == "bow" || kind == "xbw")) ||
-                            (function == 2 && weapons.value(weapon, "type") != "tpot"))
+                            function == 2)
                             if (const auto id = shared.weaponMissile(item.code); id && missileRows.contains(*id))
                                 missile = missileNames.find(missiles.value(missileRows.at(*id), "Missile"));
                     }
@@ -686,6 +695,24 @@ struct RemoteScene::Impl {
             }
         }
         const auto source = playerId ? v.world.units.find({0, *playerId}) : v.world.units.end();
+        const auto &interaction=v.world.movementRequest;
+        if(interaction && interaction->interaction && interaction->unit && interaction->unit->type==2 &&
+            interaction->revision>localObjectKickRevision) {
+            localObjectKickRevision=interaction->revision;
+            const auto target=v.world.units.find(*interaction->unit);
+            if(source!=v.world.units.end() && !onlinePlayerDead(v.world) && target!=v.world.units.end() && target->second.classId && target->second.mode==0 &&
+                (!localCast || (localCast->started>=0 && time>=localCast->started+localCast->duration))) {
+                for(size_t row=0;row<objects.rows().size();++row)
+                    if(objects.number(row,"Id")==target->second.classId && objects.number(row,"OperateFn")==5)
+                        for(const auto &[id,skillRow]:skillRows)
+                            if(skills.number(skillRow,"srvstfunc")==2 && skills.number(skillRow,"srvdofunc")==2) {
+                                // Native barrel operation invokes hidden KK; PlrMsg omits the owner's 4C.
+                                OnlineCombatCommand command;command.action=OnlineCombatCommand::Action::Cast;
+                                command.skill=id;command.target=*interaction->unit;command.stationary=true;
+                                localCast=LocalCast{command,source->second.actionRevision,time,-1,0,interaction->revision};
+                            }
+            }
+        }
         if (const auto &request = v.world.combatRequest; request && request->sequence > localRequestSequence) {
             localRequestSequence = request->sequence;
             if (request->command.action == OnlineCombatCommand::Action::Cast &&
@@ -694,7 +721,7 @@ struct RemoteScene::Impl {
                 // Repeated hold requests must not restart an animation before its release frame.
                 if (!localCast || localCast->started < 0 || time >= localCast->started + localCast->duration)
                     localCast = LocalCast{request->command, source->second.actionRevision, time,
-                        -1, 0, request->sequence, request->revision};
+                        -1, 0, request->revision};
             } else if(request->command.action==OnlineCombatCommand::Action::Stop) {
                 if(playerId) {channels.erase({0,*playerId});shared.cancelPendingClientMissiles(effectOwner({0,*playerId}));}
                 localCast.reset();
@@ -709,8 +736,7 @@ struct RemoteScene::Impl {
                 (u.actionSkill || (u.nativeMode ? (u.mode == 0 || u.mode == 4 || u.mode == 17 || u.mode == 18)
                     : (u.mode == 6 || u.mode == 8 || u.mode == 9 || u.mode == 18)));
             if (!u.position || onlinePlayerDead(v.world) || interrupted ||
-                 (v.world.movementRequest && v.world.combatRequest &&
-                 v.world.movementRequest->revision > v.world.combatRequest->revision) ||
+                 (v.world.movementRequest && v.world.movementRequest->revision > localCast->revision) ||
                 (localCast->started < 0 && time - localCast->requested > 15.f)) {
                 if (playerId) shared.cancelPendingClientMissiles(effectOwner({0, *playerId}));
                 localCast.reset();
@@ -872,7 +898,7 @@ struct RemoteScene::Impl {
                            : (u.mode == 6 || u.mode == 8 || u.mode == 9 || u.mode == 18)))))
             m.castHandoff.reset();
         const bool beginCast = own && localCast && localCast->started >= 0 &&
-            localCast->sequence > m.castSequence;
+            localCast->revision > m.castRevision;
         bool activeRequest = alive && request && request->revision > m.invalidatedRequest &&
             request->revision > u.actionRevision && !world().npcConversation && !world().waypointSource;
         if (!m.last || *m.last != *u.position || (request && request->revision != m.requestRevision))
@@ -884,7 +910,7 @@ struct RemoteScene::Impl {
             m.position = target; m.correction = {}; m.correctionLeft = 0;
             m.route.clear(); m.samples.clear(); m.goal.reset(); m.movedAt = -1;
             m.castHandoff.reset();
-            if (beginCast) m.castSequence = localCast->sequence;
+            if (beginCast) m.castRevision = localCast->revision;
             if (request) m.invalidatedRequest = request->revision;
             activeRequest = false;
         } else if (beginCast) {
@@ -893,7 +919,7 @@ struct RemoteScene::Impl {
             const Vec displayed = m.position + m.correction;
             m.castHandoff = CastHandoff{localCast->revision, *u.position,
                 m.goal ? *m.goal - displayed : m.look};
-            m.castSequence = localCast->sequence;
+            m.castRevision = localCast->revision;
             m.position = displayed; m.correction = {}; m.correctionLeft = 0;
             m.route.clear(); m.goal.reset(); m.movedAt = -1;
         } else if (u.key.type == 1 && onlineMonsterCorpse(u) && m.actionRevision != u.actionRevision &&
@@ -1220,6 +1246,7 @@ struct RemoteScene::Impl {
             localRequestSequence = v.world.combatRequest ? v.world.combatRequest->sequence : 0;
             localCast.reset();
             time = 0;
+            localObjectKickRevision = 0;
         }
         const auto now = std::chrono::steady_clock::now();
         const float elapsed = lastFrame == std::chrono::steady_clock::time_point{} ? 0.f

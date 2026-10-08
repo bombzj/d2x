@@ -7,14 +7,14 @@
 2026-10-08已构建打包，经验升级、属性点／技能点分配及保存重入有有限冒烟；范围与限制见[基线](../../BASELINE.md#当前运行包与有限冒烟)。
 
 - hosting/character_content准备MPQ经验阈值、Skills学习门槛／前置、CharStats职业定义、难度抗性惩罚和入场物品在全部支持等级的属性值。server不持有Archives／ClassicData或MPQ求值回调。
-- attributes/calculation共用纯装备loadout／requirements／contributions／stats，汇总活动装备、背包护符、不同套装原件的条件／固定全套属性、黄金鸟已饮药生命与安亚已用卷轴抗性；生成四属性、资源上限、抗性、防御、移动速度、有效技能等级及装备战斗快照。基础被动包含既有圣骑士基础等级命中／抗性上限、亚马逊六类被动和Warmth；临时状态、全部职业被动及施法尚未恢复。
+- attributes/calculation共用纯装备loadout／requirements／contributions／stats，汇总活动装备、背包护符、不同套装原件的条件／固定全套属性、黄金鸟已饮药生命与安亚已用卷轴抗性；生成四属性、资源上限、抗性、防御、移动速度、有效技能等级及装备战斗快照。基础被动包含既有圣骑士基础等级命中／抗性上限、亚马逊六类被动和Warmth；女巫／亚马逊被动、已实现技能状态及临时效果已接；其他职业完整被动与主动执行仍未迁入。
 - PlayerStore唯一持有持久CharacterRecord及当前Totals；admit／transactions在公开状态之前同步总值，不设dirty队列或下一帧修补。attributes.evaluate只读快照，step无额外改写。
 - progression.execute接原3A属性打包数量（1–100点）及3B单点学技，核对活人、余点、职业、原所需等级＋基础等级、最大基础等级、四属性门槛及基础前置技能。物品授予／加成技能不充当前置；学点不等于施放能力已恢复。
-- progression.award为可信服务端结算入口，输入已决定的经验量和局内按玩家递增发生标识。累计值以原最高等级阈值封顶，支持跨多个等级；每级属性点取CharStats，技能点按原规则每级一。发生标识仅在成功事务后提交，拒绝过期／重复，不保留无界集合。怪物／队伍经验分配和奖励来源留给后续loot／quests，不接受客户端授予。
+- progression.award为可信服务端结算入口，输入已决定的经验量和局内按玩家递增发生标识。累计值以原最高等级阈值封顶，支持跨多个等级；每级属性点取CharStats，技能点按原规则每级一。发生标识仅在成功事务后提交，拒绝过期／重复，不保留无界集合。普通怪物击杀经验及邪恶洞穴奖励已有权威来源；队伍经验分配和其他任务奖励待补，不接受客户端授予。
 - transactions.CharacterEdit与InventoryEdit共同复验人物／库存revision，重算派生值并发布不可变CharacterFact／InventoryFact。升级补满存活人物生命／法力／耐力；体力／精力加点按CharStats四分之一单位增量增加对应资源，再限制到新上限；换装仅限制，不当作治疗。入场按真实总值限制资源，死亡语义沿已有入场规则。
 - hosting/native_character_wire共用入场／增量编码：ItemStatCost提供身份、ValShift和Signed，原1F发绝对属性，94发基础清单，21更新基础／额外技能等级（含装备来源撤销后的零等级）。增量仅发改变值，无私有成功ACK或模式分支。人物投影独立细节修复已获用户确认：按当前MPQ的item_poisonlengthresist（ID 110）／item_absorbfire_percent（ID 142）读取毒持续时间抗性／百分比火焰吸收。RemoteUiClients仍按原表Stat／ID／ValShift读取实际收到的属性；旧名在当前表中不存在，修正同时适用于原服，不是自研协议适配。
 
-grant-experience已接GameHost → progression → transactions → 原包输出，暂停实例也可使用；原服拒绝宿主管理。D2S保存基础分配、经验／等级、余点、基础技能与当前资源；总值、有效等级、缓存及奖励发生标识不写盘。v96不变，宿主指纹为admission-v5；未分配随机套装值／条件套装需求明确不可用，不重掷或静默忽略。尚未认证全部装备组合、成长及存档往返，攻击显示与完整战斗不在本批完成范围。
+grant-experience已接GameHost → progression → transactions → 原包输出，暂停实例也可使用；原服拒绝宿主管理。D2S保存基础分配、经验／等级、余点、基础技能与当前资源；总值、有效等级、缓存及奖励发生标识不写盘。v96不变，当前宿主指纹见[存档](SAVES.md)；未分配随机套装值／条件套装需求明确不可用，不重掷或静默忽略。尚未认证全部装备组合、成长及存档往返，攻击显示与完整战斗不在本批完成范围。
 
 ## 入口与所有权
 

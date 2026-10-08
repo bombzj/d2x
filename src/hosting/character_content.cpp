@@ -1,5 +1,6 @@
 #include "character_content.hpp"
 #include "skill_content.hpp"
+#include "content/skills/skill_eligibility.hpp"
 #include "content/classic_data.hpp"
 #include "content/items/item_properties.hpp"
 #include <stdexcept>
@@ -64,26 +65,32 @@ void prepareCharacterRules(server::PreparedRules &rules, const ClassicData &data
     auto equipment = prepareEquipmentRules(data, saved);
     const auto definition = std::find_if(data.characters.begin(), data.characters.end(), [&](const auto &entry) { return entry.name == saved.player.characterClass; });
     if (definition == data.characters.end()) throw std::runtime_error("Missing player death class");
+    for (auto id : loadInnateSkillIds(data.tables.at("skills"), data.tables.at("charstats"), definition->sourceRow)) character->innateSkills.insert(id);
     const auto &death = data.playerDeath.timings.at(definition->appearance + "dthth");
     character->deathExperiencePenalty = data.playerDeath.experiencePenalty.at(size_t(saved.difficulty));
     character->deathTicks = std::max(1, (death.frames * 256 + death.speed - 1) / death.speed);
     prepareSkillRules(rules, data, *definition);
     rules.equipment = std::move(equipment);
-    const auto &skills=data.tables.at("skills");
-    for(size_t row=0;row<skills.rows().size();++row) {
-        const auto name=skills.value(row,"skill"); const bool book=name=="Book of Townportal";
-        if(!book && name!="Scroll of Townportal") continue;
-        const auto id=skills.number(row,"Id"); if(!id) continue;
-        const auto &misc=data.tables.at("misc");
-        for(size_t itemRow=0;itemRow<misc.rows().size();++itemRow) {
-            const std::string code(misc.value(itemRow,"code")); const auto *def=data.items.find(code);
-            if(def && (book?data.isPortalScroll(def->bookScroll):data.isPortalScroll(code))) character->portalItems.emplace(code,server::PortalItemRule{*id,book});
+    const auto &skills=data.tables.at("skills"), &books=data.tables.at("books");
+    for(size_t row=0;row<books.rows().size();++row) {
+        if(!books.number(row,"Completed").value_or(0)) continue;
+        const int spell=books.number(row,"pSpell").value_or(0);
+        if(spell!=1 && spell!=2) continue; // Other book spells need their own original program.
+        for(bool book : {false,true}) {
+            const auto code=books.value(row,book?"BookSpellCode":"ScrollSpellCode");
+            const auto name=books.value(row,book?"BookSkill":"ScrollSkill");
+            if(!data.items.find(code)) throw std::runtime_error("Missing original book/scroll item");
+            bool found=false;
+            for(size_t skill=0;skill<skills.rows().size();++skill) if(skills.value(skill,"skill")==name) {
+                if(skills.number(skill,"srvdofunc")!=113 || !skills.number(skill,"scroll").value_or(0)) throw std::runtime_error("Unsupported original book skill");
+                character->itemSkills.emplace(std::string(code),server::ItemSkillRule{skills.number(skill,"Id").value(),book,
+                    spell==1?server::ItemSkillAction::Identify:server::ItemSkillAction::Portal,books.number(row,"SpellIcon").value_or(-1)});
+                found=true;break;
+            }
+            if(!found) throw std::runtime_error("Missing original book skill identity");
         }
     }
-    for (const auto &[code, item] : data.items.entries()) {
-        if (data.isIdentifyScroll(code)) character->identificationItems.emplace(code, false);
-        else if (data.isIdentifyScroll(item.bookScroll)) character->identificationItems.emplace(code, true);
-    }
+
     rules.character = std::move(character);
 }
 }

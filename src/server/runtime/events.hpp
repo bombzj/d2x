@@ -21,6 +21,7 @@ struct RepositionFact { EntityId actor; RegionId area; Vec position; };
 struct StateFact { EntityId actor; uint8_t type{}; RegionId area; int state{}; bool enabled{}; std::vector<std::pair<int,int64_t>> stats{}; };
 struct SkillPulseFact { EntityId owner, target; uint8_t ownerType{}, targetType{1}; RegionId area; int skill{}, rank{}; Vec position; };
 struct MissileFact { EntityId owner; uint8_t ownerType{}; RegionId area; int definition{}, rank{}, frame{}; Vec position, destination; uint8_t pierce{}; };
+struct ItemTargetingFact { EntityId source; int cursor{-1}; int skill{-1}; };
 struct ItemFact { TransactionId transaction; ItemChange change; };
 // Sparse immutable projection captured at commit. Encoding never consults a
 // later live inventory: several commands can commit before output is drained.
@@ -45,7 +46,9 @@ struct NpcMessagesFact { EntityId npc; std::vector<NpcMessage> messages; };
 struct MerchantFact { EntityId npc, item; uint8_t operation{}, result{}; uint32_t gold{}; bool refreshShop{}; };
 struct WaypointFact { EntityId source; std::vector<RegionId> unlocked; };
 struct UiFact { uint8_t action{}; };
-using DomainFact = std::variant<ManaFact, RepositionFact, LifeFact, AttackFact, HitFact, DeathFact, ItemFact, InventoryFact, CharacterFact, QuestFact, AttributeFact, TravelFact, ObjectFact, ChatFact, CommandFact, NpcMessagesFact, MerchantFact, UiFact, WaypointFact, StateFact, MissileFact, SkillPulseFact, SoundFact, OverlayFact>;
+// Captured at the drop transaction; later visibility snapshots are not drops.
+struct GroundDropFact { ItemInstance item; };
+using DomainFact = std::variant<ManaFact, RepositionFact, LifeFact, AttackFact, HitFact, DeathFact, ItemFact, InventoryFact, CharacterFact, QuestFact, AttributeFact, TravelFact, ObjectFact, ChatFact, CommandFact, NpcMessagesFact, MerchantFact, UiFact, WaypointFact, StateFact, MissileFact, SkillPulseFact, SoundFact, OverlayFact, ItemTargetingFact, GroundDropFact>;
 // Compact bounded observation, independent of reliable delivery and acknowledgement.
 struct DiagnosticEvent {
     uint64_t sequence{}, batch{}, tick{}, transaction{};

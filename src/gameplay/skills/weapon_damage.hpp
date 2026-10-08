@@ -16,6 +16,7 @@ struct WeaponSkillDamage {
     int wearChance{},wearAmount{};
     SkillCastSpec wearSkill{};
 };
+WeaponSkillDamage rollPotionDamage(const WeaponDamage &, int level, uint64_t &random);
 std::array<int64_t,6> targetWeaponChannels(const WeaponSkillDamage &,bool demon,bool undead);
 WeaponSkillDamage rollWeaponSkillDamage(const WeaponDamage &, const CombatModifiers &,
     const SkillCastSpec &, int level, bool projectile, uint64_t &random);

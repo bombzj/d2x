@@ -31,6 +31,7 @@ DomainResult<> System::direct(const Spawn &request, std::vector<EntityId> target
         hit.staticPercent=int(request.skill.staticPercent);hit.staticFloors=p->rules.skills->staticMinimum;
         hit.minimumStaticDamage=int64_t(request.skill.staticMinDamage*256.f);
     }
+    if(request.skill.effect==SkillBehavior::Kick) {hit.type=DamageType::Physical;hit.knockback=true;}
     if(request.skill.effect==SkillBehavior::Telekinesis) hit.knockback=int(limitedRandom(random,100))<request.skill.telekinesisKnockbackChance;
     if(request.skill.effect==SkillBehavior::FrozenArmor) {hit.type=DamageType::Cold;hit.freeze=true;}
     auto prepared=ports_.combat.prepareSpells({std::move(hit)});if(!prepared) return {prepared.status,{}};

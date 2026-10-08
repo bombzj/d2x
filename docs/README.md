@@ -36,7 +36,7 @@
 | --- | --- |
 | 角色 | [属性／成长](gameplay/characters/ATTRIBUTES.md)、[佣兵](gameplay/characters/HIRELINGS.md)、[死亡／尸体](gameplay/characters/PLAYER_DEATH.md) |
 | 战斗 | [阵营](gameplay/combat/FACTIONS.md)、[数值显示](gameplay/combat/NUMBERS.md)、[攻击／弹体](gameplay/combat/ATTACKS.md)、[随机机制](gameplay/combat/RANDOMNESS.md) |
-| 技能 | [公共入口](gameplay/skills/COMMON.md)、[女巫](gameplay/skills/SORCERESS.md)、[亚马逊](gameplay/skills/AMAZON.md)、[死灵法师](gameplay/skills/NECROMANCER.md)、[圣骑士](gameplay/skills/PALADIN.md) |
+| 技能 | [公共入口／规范](gameplay/skills/COMMON.md)、[通用攻击／卷轴／书本](gameplay/skills/GENERAL.md)、[女巫](gameplay/skills/SORCERESS.md)、[亚马逊](gameplay/skills/AMAZON.md)、[死灵法师](gameplay/skills/NECROMANCER.md)、[圣骑士](gameplay/skills/PALADIN.md) |
 | 物品 | [数据](gameplay/items/DATA.md)、[模型](gameplay/items/MODEL.md)、[支持／缺口](gameplay/items/SUPPORT.md)、[包裹](gameplay/items/INVENTORY_UI.md)、[腰带／使用](gameplay/items/BELT_AND_CONSUMABLES.md)、[箱子](gameplay/items/STORAGE.md)、[方块／金币](gameplay/items/CUBE_AND_GOLD.md) |
 | NPC | [交互／对白](gameplay/npc/INTERACTIONS.md)、[交易／服务](gameplay/npc/TRADE.md) |
 | 任务 | [系统](gameplay/quests/SYSTEM.md)、[第一幕](gameplay/quests/ACT1.md)、[第二幕](gameplay/quests/ACT2.md)、[第三至第五幕](gameplay/quests/ACT3_5.md) |

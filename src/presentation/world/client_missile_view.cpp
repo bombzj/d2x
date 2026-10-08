@@ -2,6 +2,7 @@
 #include "gameplay/skills/projectile_path.hpp"
 #include "gameplay/skills/amazon_missile.hpp"
 #include "gameplay/skills/rank_bonus.hpp"
+#include "gameplay/skills/common_actions.hpp"
 #include "gameplay/combat/geometry.hpp"
 #include "world/navigation.hpp"
 #include "core/random.hpp"
@@ -46,7 +47,7 @@ bool SceneView::launchClientMissile(int id, Vec start, Vec target, int level, fl
     const int velocity = program.function==5 || program.function==9 || program.function==13?0:*nativeVelocity;
     const float tableDuration = float(program.frames + level * program.framesPerLevel) / 25.f;
     const float fullDuration = tableDuration > 0 ? tableDuration : assets_.projectileVisuals.at(id).lifetime;
-    const float duration = remaining.value_or(fullDuration);
+    const float duration = remaining.value_or(program.groundThrow?float(groundThrowFrames(start,target,velocity))/25.f:fullDuration);
     if (duration <= 0 || !std::isfinite(duration) || !std::isfinite(delay) ||
         !std::isfinite(start.x) || !std::isfinite(start.y) || !std::isfinite(target.x) || !std::isfinite(target.y)) return false;
     // Stationary 73 sends FirstX/FirstY = 0; these are not an aimed ray.

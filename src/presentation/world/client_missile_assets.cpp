@@ -63,6 +63,8 @@ void SceneAssets::loadProjectileDefinitions(const ClassicData &content) {
             program.collision = collision->second;
         program.collide = number("ClientCol") != 0;program.returnFire=number("ReturnFire")!=0;
         program.canSlow=number("CanSlow")!=0;
+        // CltDo2 creates throwing potions with the original distance-limited flag.
+        program.groundThrow=number("CollideType")==6 && (program.hitFunction==2 || program.hitFunction==3);
         program.killOnContact = number("CollideKill") != 0;
         program.explodeOnExpiry = number("AlwaysExplode") != 0;
         program.explosion = linked(row, "ExplosionMissile");

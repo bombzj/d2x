@@ -13,6 +13,7 @@
 #include "server/systems/objects/system.hpp"
 #include "server/systems/inventory/system.hpp"
 #include "gameplay/skills/behavior.hpp"
+#include "gameplay/combat/geometry.hpp"
 #include <algorithm>
 #include <cmath>
 namespace d2x::server::skills {
@@ -25,8 +26,11 @@ std::optional<Vec> System::unitPosition(const ActorContext &actor,UnitTarget uni
         for(const auto &[id,p]:ports_.players.all()) {(void)id;if(p.actor==unit.id && p.entered && p.area==actor.area && p.persistent.player.hp>0) return p.position;}
     } else if(unit.type==1) {
         const auto *m=ports_.monsters.find(unit.id);
-        if(m && m->area==actor.area && m->life>0 && (skill==SkillBehavior::Enchant ? bool(m->owner) : !m->owner)) return m->position;
+        if(m && m->area==actor.area && m->life>0 && (skill==SkillBehavior::Enchant ? bool(m->owner) : skill==SkillBehavior::Unsummon ? m->owner==actor.player : !m->owner)) return m->position;
         if(skill==SkillBehavior::Enchant) for(const auto &npc:ports_.areas.at(actor.area).definition.npcs) if(npc.id==unit.id) return npc.position;
+    } else if(skill==SkillBehavior::Kick && unit.type==2) {
+        const auto found=ports_.objects.read().objects.find(unit.id);
+        if(found!=ports_.objects.read().objects.end() && found->second.area==actor.area && found->second.rule.operation==5) return found->second.position;
     } else if(skill==SkillBehavior::Telekinesis) {
         if(unit.type==2) {const auto found=ports_.objects.read().objects.find(unit.id);if(found!=ports_.objects.read().objects.end() && found->second.area==actor.area) return found->second.position;return ports_.travel.portalPosition(actor,unit.id);}
         if(unit.type==4) return ports_.inventory.groundPosition(unit.id,actor.area);
@@ -40,10 +44,13 @@ DomainResult<> System::cast(const ActorContext &actor,const Request &request,int
     const auto &definition=found->second;
     if(definition.spec.weapon) return weaponCast(actor,request,selected);
     if(!request.target) return {DomainStatus::InvalidRequest,{}};
+    const bool itemSkill=definition.spec.effect==SkillBehavior::ItemSkill;
     PointTarget target{actor.area,actor.areaGeneration,{}};EntityId unit;uint8_t type=1;
     if(const auto *point=std::get_if<PointTarget>(&*request.target)) {
         if(point->area!=actor.area || point->generation!=actor.areaGeneration) return {DomainStatus::Stale,{}};
         target=*point;
+    } else if(itemSkill) {
+        target.position=p.position; // SrvDo113 searches inventory; no monster target is required.
     } else {
         const auto &key=std::get<UnitTarget>(*request.target);unit=key.id;type=key.type;
         const auto position=unitPosition(actor,key,definition.spec.effect);if(!position) return {DomainStatus::InvalidRequest,{}};target.position=*position;
@@ -64,10 +71,14 @@ DomainResult<> System::cast(const ActorContext &actor,const Request &request,int
     if(definition.spec.delayFrames>0) {
         const auto cast=state_.casts.find(actor.actor);if(cast!=state_.casts.end() && cast->second.cooldownUntil>actor.tick) return {DomainStatus::Conflict,{}};
     }
-    const auto rank=p.totals.skillRanks.find(selected);if(rank==p.totals.skillRanks.end() || rank->second<=0 || rank->second>255) return {DomainStatus::InvalidRequest,{}};
-    if(area.definition.town && !definition.allowedInTown) return {DomainStatus::Unavailable,{}};
-    const auto animation=rules.animations.find(p.totals.equipment.animationClass);if(animation==rules.animations.end()) return {DomainStatus::Unavailable,{}};
-    auto skill=evaluate(p,selected,rank->second);
+    const auto rank=p.totals.skillRanks.find(selected);
+    const int effectiveRank=p.rules.character->innateSkills.contains(selected)?1:(rank==p.totals.skillRanks.end()?0:rank->second);
+    if(effectiveRank<=0 || effectiveRank>255) return {DomainStatus::InvalidRequest,{}};
+    // ObjMode calls PLAYERMODE_Change directly, including barrels in town;
+    // it does not apply player-selected spell town eligibility to hidden KK.
+    const bool objectKick=definition.spec.effect==SkillBehavior::Kick && type==2;
+    if(area.definition.town && !definition.allowedInTown && !objectKick) return {DomainStatus::Unavailable,{}};
+    auto skill=evaluate(p,selected,effectiveRank);
     if(!std::isfinite(skill.manaCost) || skill.manaCost<0 || !std::isfinite(skill.startMana) || skill.startMana<0 ||
         p.persistent.player.mana<std::max(skill.manaCost,skill.startMana)) return {DomainStatus::Unavailable,{}};
     if(skill.effect==SkillBehavior::Teleport && (!area.definition.teleportAllowed || !area.definition.collision.walkable(target.position,playerMovement))) return {DomainStatus::Unavailable,{}};
@@ -75,7 +86,27 @@ DomainResult<> System::cast(const ActorContext &actor,const Request &request,int
     if((skill.effect==SkillBehavior::Blizzard || skill.effect==SkillBehavior::Hydra || skill.effect==SkillBehavior::FireWall || skill.effect==SkillBehavior::Meteor) &&
         !area.definition.collision.missileSegment(target.position,target.position,{5,1})) return {DomainStatus::Unavailable,{}};
     const bool inferno=skill.effect==SkillBehavior::Inferno;
-    const auto timing=sorceressCastTiming(animation->second,p.totals.character.combat.fasterCast,bool(skill.arc),inferno);
+    CastTiming timing;
+    if(skill.effect!=SkillBehavior::Kick) {
+        const auto animation=rules.animations.find(p.totals.equipment.animationClass);
+        if(animation==rules.animations.end()) return {DomainStatus::Unavailable,{}};
+        timing=sorceressCastTiming(animation->second,p.totals.character.combat.fasterCast,bool(skill.arc),inferno);
+    }
+    if(skill.effect==SkillBehavior::Kick) {
+        const auto *victim=ports_.monsters.find(unit);
+        if(!unit || (type!=2 && (type!=1 || !victim))) return {DomainStatus::InvalidRequest,{}};
+        // Object operation has already checked the original interaction geometry.
+        if(type!=2 && (meleeDistance(p.position,2,target.position,victim->rule.size)>1 || !area.definition.collision.segment(p.position,target.position))) {
+            if(request.stationary) return {DomainStatus::Unavailable,{}};
+            ports_.movement.execute(actor,{MovementAction::Move,target.position,false});return {DomainStatus::Conflict,{}};
+        }
+        const auto kick=rules.weaponAnimations.find("kk"+p.totals.equipment.animationClass);
+        if(kick==rules.weaponAnimations.end()) return {DomainStatus::Unavailable,{}};
+        const auto &a=kick->second;
+        WeaponAttackTiming clock{"kk",a.frames,effectiveAttackSpeed(a.speed,0,0,p.totals.character.combat.attackRate),a.actionFrame,0};
+        timing={clock.durationTicks(),clock.actionTick(),clock.speed};
+    }
+    if(skill.effect==SkillBehavior::Unsummon && (!unit || !ports_.companions.canDismiss(actor,unit))) return {DomainStatus::InvalidRequest,{}};
     if(!ports_.events.hasCapacity(inferno?2:1,inferno?2:1)) return {DomainStatus::Capacity,{}};
     Release release{actor,std::move(skill),definition.collision,target,unit,actor.tick+uint64_t(timing.impact),type};
     const auto previous=state_.casts.find(actor.actor);const auto saved=previous==state_.casts.end()?std::optional<Cast>{}:previous->second;
@@ -89,7 +120,7 @@ DomainResult<> System::cast(const ActorContext &actor,const Request &request,int
             if(!debit) {rollback();return debit;}releases_.at(actor.actor).manaPaid=true;
         }
         const auto output=ports_.events.publish({0,actor.tick,{}, {AudienceKind::Area,{},actor.area},
-            {AttackFact{actor.actor,unit,0,type,actor.area,p.position,target.position,actor.sequence,uint16_t(selected),uint8_t(rank->second)}}});
+            {AttackFact{actor.actor,unit,0,type,actor.area,p.position,target.position,actor.sequence,uint16_t(selected),uint8_t(effectiveRank)}}});
         if(!output) {rollback();return {output.status,{}};}
     } catch(...) {rollback();throw;}
     ports_.movement.execute(actor,{MovementAction::Stop,{},false});return {DomainStatus::Applied,std::monostate{}};
@@ -97,6 +128,15 @@ DomainResult<> System::cast(const ActorContext &actor,const Request &request,int
 DomainStatus System::activate(Release &pending,const ActorContext &actor,Vec target) {
     const auto &p=*ports_.players.find(actor.player);const auto &skill=pending.skill;
     if(pending.weapon) return weaponRelease(pending,actor,target);
+    if(skill.effect==SkillBehavior::ItemSkill) return ports_.inventory.useSkill(actor,skill.sourceId).status;
+    if(skill.effect==SkillBehavior::Unsummon) return ports_.companions.dismiss(actor,pending.unit).status;
+    if(skill.effect==SkillBehavior::Kick) {
+        if(pending.unitType==2) return DomainStatus::Applied; // Barrel operation owns destruction/loot, not skill damage.
+        const auto *victim=ports_.monsters.find(pending.unit);const auto &area=ports_.areas.at(actor.area);
+        if(!victim || victim->owner || victim->life<=0 || victim->area!=actor.area ||
+            meleeDistance(p.position,2,victim->position,victim->rule.size)>1 || !area.definition.collision.segment(p.position,victim->position)) return DomainStatus::Unavailable;
+        return ports_.missiles.direct({actor,skill,{},target},{pending.unit}).status;
+    }
     if(skill.summon && skill.summon->amazon) return ports_.companions.amazon(actor,skill,target).status;
     if(skill.amazonMagic) return ports_.effects.amazonMagic(actor,skill).status;
     if(skill.effect==SkillBehavior::Teleport) return ports_.travel.teleport(actor,{actor.area,actor.areaGeneration,target},skill.manaCost).status;
@@ -167,5 +207,18 @@ StepStatus System::release(TickContext tick) {
         it=releases_.erase(it);
     }
     return blocked?StepStatus::Blocked:StepStatus::Complete;
+}
+DomainResult<> System::objectKick(const ActorContext &actor, UnitTarget target) {
+    const auto *player=ports_.players.find(actor.player);
+    if(!player || !player->rules.skills || target.type!=2) return {DomainStatus::InvalidActor,{}};
+    // PlrModes may refuse a mode change while another action is in progress;
+    // ObjMode still operates the barrel in that case.
+    if(busy(actor.actor,actor.tick)) return {DomainStatus::Applied,std::monostate{}};
+    for(const auto &[id,definition]:player->rules.skills->definitions)
+        if(definition.spec.effect==SkillBehavior::Kick) {
+            Request request{};request.action=Action::Cast;request.target=target;request.stationary=true;
+            return cast(actor,request,id);
+        }
+    return {DomainStatus::Unavailable,{}};
 }
 }

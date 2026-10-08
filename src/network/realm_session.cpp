@@ -128,6 +128,7 @@ struct RealmSession::Impl {
     Clock::time_point respawnDeadline{};
     uint64_t combatSequence{};
     bool waitingChat{}, environmentSent{}, awaitingPong{}, registering{};
+    std::optional<Endpoint> gameEndpoint;
     std::string listFilter;
     explicit Impl(bool retain) : retainGamePackets(retain) {}
     ~Impl() {
@@ -177,6 +178,7 @@ struct RealmSession::Impl {
     }
     void clear_game() {
         gs.close();
+        gameEndpoint.reset();
         gamePackets.reset();
         worldPackets.clear();
         worldBytes = 0;
@@ -660,7 +662,8 @@ struct RealmSession::Impl {
             // Original Realm clients terminate MCP before opening the game connection.
             mcp.close();
             mcpPackets.reset();
-            gs.connect({host, options.gamePort}, options.timeout);
+            gameEndpoint = Endpoint{host, options.gamePort};
+            gs.connect(*gameEndpoint, options.timeout);
             stage(OnlineStage::ConnectingGame);
             break;
         }
@@ -1128,7 +1131,11 @@ struct RealmSession::Impl {
             } else {
                 if (!gamePackets.empty())
                     throw ProtocolError("Game stream ended inside a packet or compression envelope");
-                fail(OnlineErrorKind::Transport, "Game connection closed or failed");
+                std::string message = "Game connection closed or failed";
+                if (gameEndpoint)
+                    message += " (" + gameEndpoint->host + ":" + std::to_string(gameEndpoint->port) + ")";
+                if (!event.error.empty()) message += ": " + event.error;
+                fail(OnlineErrorKind::Transport, std::move(message));
                 return;
             }
         }

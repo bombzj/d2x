@@ -206,6 +206,7 @@ struct OnlineWorldView {
     std::map<uint32_t, OnlineItem> items;
     uint64_t itemRevision{};
     std::optional<OnlineItemRequest> itemRequest;
+    uint64_t itemTargetingRevision{};
     std::optional<uint32_t> itemTargetingSource; // Native 0x3F preparation, not identification success.
     OnlineStorageContext storage;
     std::optional<uint32_t> shopRequested, shopSource;
@@ -257,7 +258,7 @@ struct OnlineWorldView {
         items.clear();
         itemRevision = 0;
         itemRequest.reset();
-        itemTargetingSource.reset();
+        itemTargetingSource.reset();itemTargetingRevision=0;
         storage = {};
         shopRequested.reset();
         shopSource.reset();

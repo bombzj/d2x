@@ -43,6 +43,7 @@ combat::SpellImpact System::impact(Missile &m, std::vector<EntityId> targets, st
     return result;
 }
 System::Advance System::advance(const Missile &original) const {
+    if(original.program==Program::GroundThrow) return advanceGroundThrow(original);
     if(original.weapon) return advanceWeapon(original);
     Advance plan{original,{},{},false}; auto &m=plan.next;
     const auto &owner=*ports_.players.find(m.player); const auto &area=ports_.areas.at(m.area);

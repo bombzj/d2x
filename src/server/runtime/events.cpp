@@ -68,6 +68,7 @@ void EventOutbox::observe(const EventBatch &batch) noexcept {
             } else if constexpr (std::is_same_v<T, LifeFact>) { event.actor = value.actor; event.value = int64_t(value.life * 256.f); }
             else if constexpr (std::is_same_v<T, ManaFact>) { event.actor = value.actor; event.value = int64_t(value.mana * 256.f); }
             else if constexpr (std::is_same_v<T, SoundFact>) {event.actor=value.actor;event.value=value.sound;}
+            else if constexpr (std::is_same_v<T, ItemTargetingFact>) {event.actor=value.source;event.value=value.cursor;event.secondary=value.skill;}
             else if constexpr (std::is_same_v<T, OverlayFact>) {event.actor=value.actor;event.value=value.overlay;}
             else if constexpr (std::is_same_v<T, StateFact>) { event.actor = value.actor; event.value = value.state; event.secondary = value.enabled; }
             else if constexpr (std::is_same_v<T, SkillPulseFact>) { event.actor=value.owner; event.target=value.target; event.value=value.skill; event.secondary=value.rank; event.position=value.position; }
@@ -76,6 +77,11 @@ void EventOutbox::observe(const EventBatch &batch) noexcept {
             else if constexpr (std::is_same_v<T, CharacterFact>) {
                 event.actor = value.after.id; event.value = int64_t(value.after.experience); event.secondary = value.after.level;
             } else if constexpr (std::is_same_v<T, InventoryFact>) { event.actor = value.projection.player.id; event.value = int64_t(value.changes.size()); }
+            else if constexpr (std::is_same_v<T, GroundDropFact>) {
+                event.target = value.item.id; event.value = value.item.quantity;
+                const auto &at = std::get<GroundLocation>(value.item.location);
+                event.area = at.region; event.position = at.position;
+            }
             else if constexpr (std::is_same_v<T, TravelFact>) { event.actor = value.actor; event.value = int(value.from); event.secondary = int(value.to); event.position = value.position; }
         }, fact);
         history_[(event.sequence - 1) % history_.size()] = event;
