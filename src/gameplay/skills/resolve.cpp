@@ -1,19 +1,28 @@
 #include "spear_spec.hpp"
 #include "amazon_magic_spec.hpp"
 #include "gameplay/skills/behavior.hpp"
-#include "spec.hpp"
+#include "rule_spec.hpp"
 #include "bone_spec.hpp"
 #include "bow_spec.hpp"
 #include "damage_curve.hpp"
+#include "rank_bonus.hpp"
 #include "resolve.hpp"
 #include "curse_resolve.hpp"
+#include "projectile_path.hpp"
 #include <algorithm>
 #include <cstdint>
 #include <limits>
 #include <stdexcept>
 
 namespace d2x {
-SkillCastSpec resolveSkill(const SkillSpec &spec, const SkillEvaluationInput &input) {
+namespace {
+float missileSpeed(int base, int perLevel, int rank) {
+    const auto velocity=missileVelocityFixed(base,perLevel,rank);
+    if (!velocity) throw std::runtime_error("Unsupported original missile velocity");
+    return float(*velocity)*25.f/4096.f;
+}
+}
+SkillCastSpec resolveSkill(const SkillRuleSpec &spec, const SkillEvaluationInput &input) {
     const int rank = input.rank;
     const auto &learned = input.synergyRanks;
     const int fireMasteryPercent = input.fireMasteryPercent;
@@ -41,7 +50,7 @@ SkillCastSpec resolveSkill(const SkillSpec &spec, const SkillEvaluationInput &in
             if (auto found = learned.find(id); found != learned.end()) program->lifePercent += found->second * percent;
         result.bone = std::move(program);
     }
-    result.sourceId = spec.sourceId;
+    result.sourceId = spec.sourceId;result.hitClass=spec.hitClass;
     result.castMissileId = spec.castMissileId;
     result.castMissileDuration = spec.castMissileDuration;
     result.requiresShield = spec.requiresShield;
@@ -85,13 +94,12 @@ SkillCastSpec resolveSkill(const SkillSpec &spec, const SkillEvaluationInput &in
     result.telekinesisRange = spec.telekinesisRange;
     result.telekinesisKnockbackChance = spec.telekinesisKnockbackChance;
     if (spec.hydraDuration) {
-        result.hydraFrames = spec.hydraDuration->first + (rank - 1) * spec.hydraDuration->second;
+        result.hydraFrames = skillRankBonus(*spec.hydraDuration,rank);
         result.hydraLimit = spec.hydraLimit;
     }
     if (spec.effect == SkillBehavior::ThunderStorm) {
         const auto &parameters = spec.stormParameters;
-        const int diminished = std::min(parameters[3], parameters[2] +
-            (parameters[3] - parameters[2]) * 110 * rank / (rank + 6) / 100);
+        const int diminished = skillDiminishingBonus({parameters[2],parameters[3]},rank);
         result.stormPeriod = std::max(5, (100 - diminished) * parameters[1] / 100 + parameters[0]);
         result.stormRadius = parameters[4];
     }
@@ -101,7 +109,7 @@ SkillCastSpec resolveSkill(const SkillSpec &spec, const SkillEvaluationInput &in
         effect.state = spec.state;
         effect.source = {CombatEffectSource::Skill, {}, spec.sourceId, rank};
         effect.duration = EffectFrame(base + int64_t(rank - 1) * perLevel);
-        effect.visual.overlayId = spec.stateOverlay.id;
+        effect.visual.overlayId = spec.stateCue.id;
         result.appliedEffect = std::move(effect);
     }
     if (spec.shieldMaximum > 0) {
@@ -114,7 +122,7 @@ SkillCastSpec resolveSkill(const SkillSpec &spec, const SkillEvaluationInput &in
         CombatEffectSpec effect;
         effect.state = spec.state;
         effect.source = {CombatEffectSource::Skill, {}, spec.sourceId, rank};
-        effect.duration = EffectFrame(std::min(maximum, minimum + (maximum - minimum) * 110 * rank / (rank + 6) / 100));
+        effect.duration = EffectFrame(skillDiminishingBonus({minimum,maximum},rank));
         result.appliedEffect = std::move(effect);
     }
     if (spec.freezingArea) {
@@ -145,12 +153,12 @@ SkillCastSpec resolveSkill(const SkillSpec &spec, const SkillEvaluationInput &in
         if (frames <= 0) throw std::runtime_error("Invalid skill state duration");
         armor.duration = EffectFrame(frames);
         armor.modifiers.combat.defensePercent = parameters[0] + (rank - 1) * parameters[1];
-        armor.visual.overlayId = spec.stateOverlay.id;
+        armor.visual.overlayId = spec.stateCue.id;
         if (spec.effect == SkillBehavior::FrozenArmor) {
             const float freeze = float((parameters[4] + (rank - 1) * parameters[5]) *
                 (100 + synergyRanks * parameters[7]) / 100) / 25.f;
             armor.reactions.push_back({CombatEffectEvent::DamagedInMelee,
-                FreezeAttacker{freeze, spec.hitOverlay.id, float(spec.hitOverlay.frames) / spec.hitOverlay.fps}});
+                FreezeAttacker{freeze, spec.hitCue.id, float(spec.hitCue.frames) / spec.hitCue.fps}});
         } else if (spec.effect == SkillBehavior::ShiverArmor)
             armor.reactions.push_back({CombatEffectEvent::AttackedInMelee, ColdMeleeRetaliation{}});
         else armor.reactions.push_back({CombatEffectEvent::HitByMissile, ColdMissileRetaliation{}});
@@ -168,8 +176,7 @@ SkillCastSpec resolveSkill(const SkillSpec &spec, const SkillEvaluationInput &in
              synergy * spec.armorParameters[7]) * 256;
         result.appliedEffect = std::move(armor);
     }
-    const int64_t scaledMana = std::max<int64_t>(0,
-        int64_t(spec.mana) + int64_t(rank - 1) * spec.manaPerLevel) << spec.manaShift;
+    const int64_t scaledMana = std::max<int64_t>(0,skillManaCostFixed(spec.mana,spec.manaPerLevel,spec.manaShift,rank));
     const int64_t fixedMana = std::max<int64_t>(int64_t(spec.minimumMana) * 256, scaledMana);
     result.manaCost = float(fixedMana) / 256.f;
     result.startMana = float(spec.startMana);
@@ -182,7 +189,10 @@ SkillCastSpec resolveSkill(const SkillSpec &spec, const SkillEvaluationInput &in
     const int64_t bonus = std::max<int64_t>(0, 100 + synergy * spec.synergyPercent + weightedBonus);
     const int damageMastery = spec.fireDamage ? fireMasteryPercent :
         spec.lightningDamage ? lightningMasteryPercent : spec.coldDamage ? coldDamagePercent : 0;
-    result.minimumDamage = evaluateSkillDamage({spec.minimumDamage, spec.minimumPerLevel}, rank, spec.hitShift, bonus, damageMastery);
+    // D2Common separates elemental minimum/maximum evaluation; physical curves retain their own rule.
+    const auto minimum = spec.fireDamage || spec.lightningDamage || spec.coldDamage || spec.poisonDamage
+        ? evaluateSkillMinimumDamage : evaluateSkillDamage;
+    result.minimumDamage = minimum({spec.minimumDamage, spec.minimumPerLevel}, rank, spec.hitShift, bonus, damageMastery);
     result.maximumDamage = evaluateSkillDamage({spec.maximumDamage, spec.maximumPerLevel}, rank, spec.hitShift, bonus, damageMastery);
     result.arc = spec.arc;
     if (result.arc && spec.effect == SkillBehavior::ChainLightning)
@@ -197,8 +207,7 @@ SkillCastSpec resolveSkill(const SkillSpec &spec, const SkillEvaluationInput &in
         const auto synergy = learned.find(program.fireSynergySkill);
         const int percent = 100 + (synergy == learned.end() ? 0 : synergy->second) * program.fireSynergyPercent;
         auto fireDamage = [&](int base, const std::array<int, 5> &steps) {
-            const int64_t fixed = ((int64_t(base) + skillLevelBonus(rank, steps)) << program.fire.hitShift) * percent / 100;
-            return int(fixed + fixed * fireMasteryPercent / 100);
+            return evaluateMissileDamageFixed({base,steps},rank,program.fire.hitShift,percent,fireMasteryPercent);
         };
         program.fire.minimumDamage = fireDamage(spec.meteor->fire.minimumDamage, program.fireMinimumPerLevel);
         program.fire.maximumDamage = fireDamage(spec.meteor->fire.maximumDamage, program.fireMaximumPerLevel);
@@ -210,17 +219,11 @@ SkillCastSpec resolveSkill(const SkillSpec &spec, const SkillEvaluationInput &in
         modifiers.fireMaximum = int(result.maximumDamage);
         modifiers.attackRatingPercent = spec.enchantAttackRating + (rank - 1) * spec.enchantAttackRatingPerLevel;
     }
-    int64_t coldFrames = int64_t(spec.coldFrames) +
-        int64_t(std::min(rank - 1, 7)) * spec.coldFramesPerLevel[0] +
-        int64_t(std::clamp(rank - 8, 0, 8)) * spec.coldFramesPerLevel[1] +
-        int64_t(std::max(rank - 16, 0)) * spec.coldFramesPerLevel[2];
-    if (auto found = learned.find(spec.coldSynergySkill); found != learned.end())
-        coldFrames += coldFrames * found->second * spec.coldSynergyPercent / 100;
+    const auto coldSynergy=learned.find(spec.coldSynergySkill);
+    const int64_t coldFrames=skillElementalLength(spec.coldFrames,spec.coldFramesPerLevel,rank,
+        coldSynergy==learned.end()?0:int64_t(coldSynergy->second)*spec.coldSynergyPercent);
     result.coldDuration = float(coldFrames) / 25.f;
-    const int64_t poisonFrames = int64_t(spec.poisonFrames) +
-        int64_t(std::min(rank - 1, 7)) * spec.poisonFramesPerLevel[0] +
-        int64_t(std::clamp(rank - 8, 0, 8)) * spec.poisonFramesPerLevel[1] +
-        int64_t(std::max(rank - 16, 0)) * spec.poisonFramesPerLevel[2];
+    const int64_t poisonFrames = skillElementalLength(spec.poisonFrames,spec.poisonFramesPerLevel,rank);
     result.poisonDuration = float(poisonFrames) / 25.f;
     result.weapon = spec.weapon;
     if (result.weapon) {
@@ -238,8 +241,7 @@ SkillCastSpec resolveSkill(const SkillSpec &spec, const SkillEvaluationInput &in
             }
             if (program->kind == SpearSkillSpec::Kind::Fury) {
                 program->countBase += (rank - 1) * program->countPerLevel;
-                const int velocity = (program->childVelocity + rank * program->childVelocityPerLevel / 8) * 256;
-                program->childSpeed = float(velocity * 75 / 100) * 25.f / 4096.f;
+                program->childSpeed = missileSpeed(program->childVelocity,program->childVelocityPerLevel,rank);
                 program->childLifetime = float(program->childFrames + rank * program->childRangePerLevel) / 25.f;
             }
             result.weapon->spear = std::move(program);
@@ -280,8 +282,7 @@ SkillCastSpec resolveSkill(const SkillSpec &spec, const SkillEvaluationInput &in
                 result.weapon->damagePercent += found->second * percent;
     }
     result.missileId = spec.missileId;
-    result.missileCount = std::min(spec.missileCountLimit,
-        spec.missileCount + (rank - 1) * spec.missileCountPerLevel);
+    result.missileCount = std::min(spec.missileCountLimit,skillRankBonus({spec.missileCount,spec.missileCountPerLevel},rank));
     if (result.weapon && result.weapon->spear && result.weapon->spear->kind == SpearSkillSpec::Kind::Charged) {
         const auto &program = *result.weapon->spear;
         result.missileCount = program.countBase + rank / program.countDivisor;
@@ -292,14 +293,13 @@ SkillCastSpec resolveSkill(const SkillSpec &spec, const SkillEvaluationInput &in
     result.staticPercent = float(spec.staticPercent);
     result.staticMinDamage = float(spec.staticMinDamage) / 256.f;
     result.staticRadius = float(spec.staticRange + (rank - 1) * spec.staticRangePerLevel);
-    result.castOverlayId = spec.castOverlay.id;
-    result.hitOverlayId = spec.hitOverlay.id;
-    if (spec.castOverlay.fps > 0)
-        result.visualDuration = float(spec.castOverlay.frames) / spec.castOverlay.fps;
-    if (spec.hitOverlay.fps > 0)
-        result.hitOverlayDuration = float(spec.hitOverlay.frames) / spec.hitOverlay.fps;
-    const int velocity = (int(spec.missileVelocity) + rank * spec.missileVelocityPerLevel / 8) * 256;
-    result.missileVelocity = float(velocity * 75 / 100) * 25.f / 4096.f;
+    result.castOverlayId = spec.castCue.id;
+    result.hitOverlayId = spec.hitCue.id;
+    if (spec.castCue.fps > 0)
+        result.visualDuration = float(spec.castCue.frames) / spec.castCue.fps;
+    if (spec.hitCue.fps > 0)
+        result.hitOverlayDuration = float(spec.hitCue.frames) / spec.hitCue.fps;
+    result.missileVelocity = missileSpeed(int(spec.missileVelocity),spec.missileVelocityPerLevel,rank);
     result.missileAcceleration = float(spec.missileAcceleration) * 25.f / 4096.f;
     result.missileMaxVelocity = float(spec.missileMaxVelocity * 256) * 25.f / 4096.f;
     result.missileLifetime = spec.missileLifetime + float(rank * spec.missileRangePerLevel) / 25.f;
@@ -316,10 +316,9 @@ SkillCastSpec resolveSkill(const SkillSpec &spec, const SkillEvaluationInput &in
         const auto &orb = *spec.frozenOrb;
         FrozenOrbCastSpec cast;
         auto child = [rank](const FrozenOrbSpec::Child &source) {
-            const int velocity = (source.velocity + rank * source.velocityPerLevel / 8) * 256;
             return FrozenOrbCastSpec::Child{source.missileId,
                 source.lifetimeFrames + rank * source.rangePerLevel,
-                float(velocity * 75 / 100) * 25.f / 4096.f};
+                missileSpeed(source.velocity,source.velocityPerLevel,rank)};
         };
         cast.bolt = child(orb.bolt); cast.nova = child(orb.nova);
         cast.lifetimeFrames = int(result.missileLifetime * 25.f + .5f);

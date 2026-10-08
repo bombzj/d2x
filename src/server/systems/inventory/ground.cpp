@@ -4,6 +4,7 @@
 #include "server/systems/items/system.hpp"
 #include "server/systems/transactions/system.hpp"
 #include <algorithm>
+#include "gameplay/skills/behavior.hpp"
 namespace d2x::server::inventory {
 DomainResult<> System::dropGold(const ActorContext &actor, unsigned amount) {
     const auto &player = *ports_.players.find(actor.player);
@@ -29,7 +30,7 @@ DomainResult<> System::dropGold(const ActorContext &actor, unsigned amount) {
     auto plan = ports_.transactions.prepare(std::move(edit));
     return plan ? ports_.transactions.commit(std::move(*plan.value)) : DomainResult<>{plan.status, {}};
 }
-DomainResult<> System::ground(const ActorContext &actor, const GroundTransfer &request) {
+DomainResult<> System::ground(const ActorContext &actor, const GroundTransfer &request, std::optional<SkillCastSpec> telekinesis) {
     const auto *player = ports_.players.find(actor.player);
     if (!player || !player->entered || player->persistent.player.hp <= 0) return {DomainStatus::InvalidActor, {}};
     const auto resolved = ports_.items.resolve({request.drop ? std::optional<PlayerId>{actor.player} : std::nullopt, request.item});
@@ -41,6 +42,20 @@ DomainResult<> System::ground(const ActorContext &actor, const GroundTransfer &r
     auto world = ports_.items.read();
     auto equipment = std::make_shared<EquipmentRules>(*player->rules.equipment);
     auto record = player->persistent.player;
+    if(telekinesis) {
+        if(request.drop || request.cursor || telekinesis->effect!=SkillBehavior::Telekinesis || record.mana<telekinesis->manaCost) return {DomainStatus::InvalidRequest,{}};
+        const auto &type=definition->equipment;
+        if(!type.isType("scro") && !type.isType("gold") && !type.isType("tpot") && !type.isType("misl") && !type.isType("poti") && !type.isType("key")) {
+            const auto *position=std::get_if<GroundLocation>(&source.location);
+            if(!position || position->region!=actor.area) return {DomainStatus::InvalidRequest,{}};
+            const int x=int(position->position.x)-int(player->position.x),y=int(position->position.y)-int(player->position.y);
+            if(x*x+y*y>telekinesis->telekinesisRange*telekinesis->telekinesisRange) return {DomainStatus::InvalidRequest,{}};
+            transactions::CharacterEdit edit{actor,player->inventoryRevision,player->characterRevision,record};
+            edit.player.mana-=telekinesis->manaCost;edit.publicFacts.emplace_back(SoundFact{actor.actor,0,actor.area,0x13});
+            auto plan=ports_.transactions.prepare(std::move(edit));return plan?ports_.transactions.commit(std::move(*plan.value)):DomainResult<>{plan.status,{}};
+        }
+        record.mana-=telekinesis->manaCost;
+    }
     const auto cursor = ContainerLocation{player->persistent.containers.cursor, {}};
     detail::Draft draft(*player, *ports_.definitions, *equipment, *player->rules.character);
     if (request.drop) {
@@ -60,13 +75,15 @@ DomainResult<> System::ground(const ActorContext &actor, const GroundTransfer &r
         const auto *position = std::get_if<GroundLocation>(&source.location);
         if (!position || position->region != player->area || (position->position - player->position).length() > 50.f || draft.at(cursor))
             return {DomainStatus::InvalidRequest, {}};
-        if ((position->position - player->position).length() > 1.8f) {
+        const int dx=int(position->position.x)-int(player->position.x),dy=int(position->position.y)-int(player->position.y);
+        if(telekinesis && dx*dx+dy*dy>telekinesis->telekinesisRange*telekinesis->telekinesisRange) return {DomainStatus::InvalidRequest,{}};
+        if (!telekinesis && (position->position - player->position).length() > 1.8f) {
             const auto status = ports_.movement.execute(actor, {MovementAction::Move, position->position, player->running});
             if (status != CommandStatus::Applied) return {DomainStatus::Conflict, {}};
             state_.pickups.insert_or_assign(actor.player, Pickup{actor, request, player->locomotionSequence});
             return {DomainStatus::Applied, std::monostate{}};
         }
-        if (!ports_.items.reachable(*position, player->position)) return {DomainStatus::InvalidRequest, {}};
+        if (!telekinesis && !ports_.items.reachable(*position, player->position)) return {DomainStatus::InvalidRequest, {}};
         if (definition->equipment.isType("gold")) {
             const auto capacity = unsigned(record.level) * 10000;
             const auto amount = std::min(source.quantity, capacity > record.gold ? capacity - record.gold : 0);
@@ -154,5 +171,16 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         }
     }
     return StepStatus::Complete;
+}
+}
+
+namespace d2x::server::inventory {
+DomainResult<> System::telekinesis(const ActorContext &actor, EntityId id, const SkillCastSpec &skill) {
+    const auto found=ports_.items.read().world.items.find(id);if(found==ports_.items.read().world.items.end()) return {DomainStatus::Stale,{}};
+    return ground(actor,{found->second.handle(),false,false},skill);
+}
+std::optional<Vec> System::groundPosition(EntityId id, RegionId area) const {
+    const auto found=ports_.items.read().world.items.find(id);if(found==ports_.items.read().world.items.end()) return {};
+    const auto *at=std::get_if<GroundLocation>(&found->second.location);if(!at || at->region!=area) return {};return at->position;
 }
 }

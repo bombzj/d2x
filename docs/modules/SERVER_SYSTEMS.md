@@ -90,7 +90,9 @@ FrameFacts是有界的本步临时事实，只允许后续阶段消费；每步�
 
 ## 内容、事务与输出
 
-PreparedRules持有不可变纯值；全局ItemCatalog共享同一宿主只读内容，每位PlayerState持有自己的EquipmentRules／CharacterRules／MeleeRules／SkillRules。hosting/game_content与character_content从MPQ准备碰撞、职业、各等级物品属性、经验、学习、基础被动及难度抗性；内核不持有ClassicData／Archives或MPQ回调。普通攻击动画和区域人口由hosting/combat_content准备；hosting/skill_content准备女巫三个案例的技能、SC动画和支配曲线；其余技能施放／状态／宝物类契约仍未准备；空规则明确Unavailable，新增或跨人转移物品须显式准备新身份对应属性，不能套用旧缓存。
+SkillRules只持有公共SkillRuleSpec数值和程序参数，不持有动画／声音资源路径。hosting从当前MPQ的SkillSpec准备rules()纯值；resolveSkill、伤害／耗蓝／持续时间、序列时序和有依据的弹体纯计算供两端调用。服务端skills／missiles／effects负责世界状态与调度，combat负责权威命中／伤害，客户端仅从原包及本人已知属性生成表现。原版公共职责和每项技能分派见[女巫技能](../gameplay/skills/SORCERESS.md#30项公共职责核对)，不能把D2Game整套执行器解释为客户端共享接口。
+
+PreparedRules持有不可变纯值；全局ItemCatalog共享同一宿主只读内容，每位PlayerState持有自己的EquipmentRules／CharacterRules／MeleeRules／SkillRules。hosting/game_content与character_content从MPQ准备碰撞、职业、各等级物品属性、经验、学习、基础被动及难度抗性；内核不持有ClassicData／Archives或MPQ回调。普通攻击动画和区域人口由hosting/combat_content准备；hosting/skill_content准备女巫全部主动技能、SC／序列动画、三类支配及原Hydra规则；其他职业与宝物类契约仍未准备；空规则明确Unavailable，新增或跨人转移物品须显式准备新身份对应属性，不能套用旧缓存。
 
 区域交接由GameHost.pendingAreas／installArea／failArea提供，结果带GameHandle及PrepareArea身份。World合并同目的请求，最多16项在途；来源须为原生邻接，失败地区明确Unavailable，不重复生成或替换地图。宿主prepareWorldArea调用同一NativeMapGenerator准备原房间／碰撞／出口／边界及objects.txt中立碰撞，按调度线程交纯值。按玩家及直接自然邻区派生Active／Sleeping；当前不驱逐已准备区域，地图随实例释放，导航借用保持有效。客户端按原03／07／08及位置包调用同一生成器，不接收地图对象。
 
@@ -128,22 +130,21 @@ hosting/native_combat_wire只负责原AC指派、67移动、69死亡模式、6C�
 
 monsters拥有路线及其目标／到达距离／速度／走跑标记。移动速度沿旧单机`session.cpp::monsterMoveSpeed_`：`(Velocity * 256 * percentage / 100) * 25 / 4096`，固定点先截断；普通基础百分比75，跑动加成来自家族决策。原67回包携带真实百分比，走路action=1、跑动action=23，客户端原消费者无需改动。此修正也覆盖此前四种怪物，避免服务端以裸Velocity推进却让客户端按固定100%播放。
 
-当前仍仅普通物理近战、已有命中／伤害和经验闭环；没有怪物远程、元素／毒、特殊技能、受击恢复、精英／首领、房间活动完整调度、动态拥挤或跨区追击。Act 1旧实现的其他行为继续按族恢复，不能把本节视为全部Act 1怪物完成。公共提取方式和原版分层证据集中见[参考设计](../architecture/REFERENCE_DESIGN.md#6-d2moo的公共层究竟共用什么)。本轮没有客户端源码改动；当前切片已入运行包，有限冒烟范围见基线。
+当前仍仅普通物理近战、已有命中／伤害和经验闭环；没有怪物远程、元素／毒、特殊技能、受击恢复、精英／首领、房间活动完整调度、动态拥挤或跨区追击。Act 1旧实现的其他行为继续按族恢复，不能把本节视为全部Act 1怪物完成。公共提取方式和原版分层证据集中见[参考设计](../architecture/REFERENCE_DESIGN.md#6-d2moo的公共层究竟共用什么)。该近战怪物批次未修改客户端；当前切片已入运行包，有限冒烟范围见基线。
 
-## 女巫主动技能案例
+## 女巫全技能执行
 
-当前支持火弹（Fire Bolt）、火球（Fire Ball）、传送（Teleport）。技能身份从当前MPQ导入，不把Skills编号或伤害／耗蓝写死；角色技能加成和Fire Mastery用有效等级，协同只用保存中的基础等级。`hosting/skill_content`为每名角色准备不可变SkillRules；既有`gameplay/skills/resolve`继续计算，普通SC时序提取到`cast_timing`，读取原动画和FCR。
+当前内核已接女巫26项主动及4项被动，逐项范围、原版证据和未认证边界见[女巫技能](../gameplay/skills/SORCERESS.md)。技能、法力、伤害、碰撞、动画、冷时长／难度下限、召唤身份及期限由hosting准备当前MPQ纯值，协同取基础等级，支配取有效等级；不把旧GameSession带回内核。
 
-- `skills/casting`管理开始、动作帧释放、间隔和延迟。施放时验证角色／区域代次、选择、等级、目标、城镇许可与法力；动作帧复验存活、目标与法力。移动、旅行、离开和死亡取消未释放动作，已经释放的弹体不随下一次移动撤销。输出容量不足保留释放意图，既不扣蓝也不消耗ID／随机数。
-- `missiles`拥有直线弹体、25Hz寿命／速度、原碰撞尺寸／掩码及墙面裁剪；Fire Bolt命中一个怪物，Fire Ball在碰撞点按旧单机整子格半径捕获目标，直接目标不会再额外伤害一次。随机伤害在释放成功时确定；范围目标在碰撞时固定，重试不重掷、不重新扩大目标集。
-- `combat/spell_damage`按当前难度怪物火抗减伤，逐目标保留提交游标；生命／死亡仍由monsters提交，击杀经验复用death／progression。没有技能中的独立生命、经验或掉落执行器。
-- `travel::teleport`使用同区域的传送资格和玩家碰撞判定；`transactions/resources`同时提交位置与扣蓝事实，再变更PlayerStore。弹体创建也经此扣蓝边界，失败不留下半次施法。传送不借用换区加载，也不穿越区域代次。
+- `skills/casting`拥有SC／seq12／seq6时序、延迟、待释放及Inferno通道。开始和释放复验活人、区域代次、选择、目标、城镇许可与资源；Inferno转向仅广播目标，不重扣启动蓝或重启节拍。
+- `missiles/launch`／`programs`按行为族管理直线、带电、环射、冰封球、连锁、地面火、陨石与暴风雪；子弹节点、视觉事实和伤害请求一起准备。`combat/spell_damage`逐目标执行抗性、ColdMastery、冷时长、Static下限、NextDelay与击退，保留结果和游标，不在背压时重掷。
+- `effects`持有状态／恢复、周期和有界反击队列；护盾在伤害减免前计算，装甲事件按命中／尝试／ReturnFire分离。Enchant跨玩家采用最多两份CharacterEdit成组提交；友方单位状态单独由effects持有，晚入局状态可查询。
+- `companions`管理原三头Hydra生命周期和AI；monsters仍拥有单位／生命／路线，controlled入口准备受控单位，死亡不发敌怪经验或掉落。Hydra不跟随跨区。
+- 远程心灵传动依旧走inventory／objects／travel的真实资格、距离和事务；Teleport同区位置与扣蓝一起提交。已释放弹体在施法者死亡后可继续，换区／断线清理；未释放动作取消。
 
-三个已实现案例的规则来源是master的`session_skills`、`skills/casting`／`release`／`projectile_launch`／`utility_effects`以及`combat`／`missile_effects`；未为这三个案例重新研究reference或恢复旧GameSession；另为后续公共计算边界查阅了D2MOO冰封球回调，见总计划。新执行器只使用准备后的纯值。
+hosting仅对原ClientSend弹体编码73；该标志不等同常规创建广播，Blaze／FireWall／Meteor／Blizzard的创建及子火段由原动作／状态重建，不重复发送73。普通本人4C／4D按原PlrMsg省略，其他可见客户端仍接收；当前未接晚入视野弹体重同步。4C／4D派生普通投射、连锁、Inferno及Hydra，A3呈现ThunderStorm，A7／A9呈现单位状态，67/action20呈现原击退，11／2C呈现叠层／附加音效。私有资源仍用1F，同区传送15，命中0C。原服与自研客户端只有传输来源差异，所有新增表现写入同一RemoteScene／ClientMissile程序。
 
-客户端保持原有一套代码。获用户单独授权后，client_missile_view把确定性的环形散射／爆发、整数转向和墙面裁剪改为公共纯函数调用；传参、帧相位与处理顺序保留。墙面裁剪已同时由当前服务端直线弹体调用，环形函数为后续冰封球恢复提供入口。hosting把实际技能ID／等级写入4C／4D，扣蓝用本人1F，传送用公开15，命中／死亡使用既有0C／69。普通火弹／火球的客户端视觉已由施法动作派生，服务端不再额外发送会重复造弹体的73。晚入局仍只恢复单位基线，不重播正在飞行的弹体或已开始的施法。
-
-范围只包含女巫的上述技能与已准入怪物；没有PvP、跨区弹体、充能／触发、伤害状态、同行者传送及完整受击打断。施法者死亡后已释放弹体可继续存在，但离开连接／区域则清理。带击杀回生命／法力的攻击技能暂拒绝，不能忽略尚未实现的属性；其他技能仍NotImplemented。运行态施法／弹体／影响目标集不写存档。当前切片已入运行包，有限冒烟范围见基线。
+运行态施法、弹体、状态、反击和召唤不写D2S。击杀回生命／法力由death捕获并在奖励重试中只提交一次；其余尚未实现的武器触发继续拒绝。晚入局恢复单位和状态，不重播历史施法／弹体。PvP、充能／触发、跨区弹体、完整怪物远程AI及其他职业尚未实现，不能据此宣称完整战斗系统。
 
 ## 扩展与诊断
 
@@ -151,7 +152,7 @@ monsters拥有路线及其目标／到达距离／速度／走跑标记。移动
 
 named pipe的server-systems只读返回28项目录、phase、scope和lastStep。lastStep=null表示尚未执行或该系统没有固定步入口，不表示完成；未接领域正常显示not-implemented，已接切片以scope为准。server-status.command表示最近实际命令结果，替代原来仅描述移动的字段；server-protocol仍负责原包覆盖与计数。这些诊断只在宿主管理端，不参与客户端世界同步。
 
-PersistentCharacter与D2S v96格式保持既有模型，库存位置／Cursor／固定武器组通过既有编码保存；宿主规则语义升至admission-v16，具体见[存档](SAVES.md)。事务身份／revision／Outbox运行态不写D2S；以后扩展尸体／铁魔／佣兵／任务时仍须复用持久模型并显式定义恢复边界，不能静默迁移或把空运行态覆盖回完整存档。
+PersistentCharacter与D2S v96格式保持既有模型，库存位置／Cursor／固定武器组通过既有编码保存；宿主规则语义升至admission-v17，具体见[存档](SAVES.md)。事务身份／revision／Outbox运行态不写D2S；以后扩展尸体／铁魔／佣兵／任务时仍须复用持久模型并显式定义恢复边界，不能静默迁移或把空运行态覆盖回完整存档。
 
 ## 管理诊断与收尾边界
 
@@ -183,7 +184,7 @@ EventOutbox保存1024条已成功发布事实的紧凑环形历史；GameInstanc
 
 服务端 death 分为死亡结算、复活和拾回规划；transactions 原子提交人物、库存、尸体元数据及地面物品。沿用 master 的装备／Cursor 转尸体、腰带收缩、金币惩罚和掉落、难度经验损失及同局 75% 经验返还规则。生命归零后等待当前 MPQ 死亡动画，原 41 请求回本幕城镇并恢复资源；原 13 拾回只授权本人尸体，装备依需求反复尝试，余物进入腰带／背包，容量不足保留尸体。对象身份不复用。
 
-原 59／8E／0D 与 9D 公开尸体和外观，客户端未修改。普通库存命令不能访问尸体容器。D2S v96 沿用旧单机及本地 D2MOO PlrSave2 的第一具非空尸体写档规则：局内最多 16 具，不覆盖旧尸体；存档投影只保留最早的非空尸体，清除仅同局有效的可返还经验，重入移至城镇。规则指纹 admission-v16。多尸体保存并非完整多尸体快照，PvP／硬核死亡尚未扩展。
+原 59／8E／0D 与 9D 公开尸体和外观，客户端未修改。普通库存命令不能访问尸体容器。D2S v96 沿用旧单机及本地 D2MOO PlrSave2 的第一具非空尸体写档规则：局内最多 16 具，不覆盖旧尸体；存档投影只保留最早的非空尸体，清除仅同局有效的可返还经验，重入移至城镇。规则指纹 admission-v17。多尸体保存并非完整多尸体快照，PvP／硬核死亡尚未扩展。
 
 ## 世界物件基础
 

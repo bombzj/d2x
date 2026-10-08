@@ -30,6 +30,7 @@ class GameHost {
     std::vector<PlayerId> participants(GameHandle) const;
     std::vector<PlayerId> visiblePlayers(PlayerBinding) const;
     std::vector<MonsterSnapshot> visibleMonsters(PlayerBinding) const;
+    std::set<int> unitStates(GameHandle,EntityId) const;
     std::vector<server::merchant::Preparation> pendingMerchant(GameHandle) const;
     server::DomainResult<> installMerchant(GameHandle, server::merchant::Prepared);
     std::optional<PersistentCharacter> shop(PlayerBinding) const;
@@ -64,6 +65,7 @@ class GameHost {
     server::DomainResult<> restoreResources(PlayerBinding);
     server::DomainResult<> grantGold(PlayerBinding,uint32_t);
     server::DomainResult<> damagePlayer(PlayerBinding,uint32_t);
+    server::DomainResult<> missileHit(PlayerBinding,EntityId,uint32_t,DamageType,bool returnFire);
     server::DomainResult<> damageMonster(PlayerBinding,EntityId,std::optional<uint32_t> amount);
     server::DomainResult<EntityId> spawnMonster(PlayerBinding, const server::PreparedMonster &);
     std::optional<server::DiagnosticSnapshot> diagnostics(PlayerBinding, size_t limit, uint64_t since, uint64_t commandSince,

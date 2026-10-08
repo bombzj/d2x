@@ -2185,13 +2185,17 @@ bool RealmSession::submit_combat(OnlineCombatCommand command) {
             return entry.second.mode == 4 && entry.second.ownerType == 0 && entry.second.owner == p.view.load.playerUnitId;
         });
         if (!selected || selected->skill != command.skill || selected->owner != UINT32_MAX || cursor ||
-            world.npcRequested || world.waypointSource || world.storage.kind != OnlineStorageKind::None) {
+            world.npcRequested || world.waypointSource || world.waypointRequested ||
+            world.storage.kind != OnlineStorageKind::None || world.storage.requested != OnlineStorageKind::None) {
             p.error(OnlineErrorKind::Input, "Cast requires the confirmed skill and an idle player"); return false;
         }
         const bool left = command.hand == OnlineSkillHand::Left;
         if (command.target) {
             const auto found = world.units.find(*command.target);
-            if (found == world.units.end() || !found->second.position) {
+            const auto item = world.items.find(command.target->id);
+            const bool assigned = command.target->type == 4 ? item != world.items.end() && item->second.mode == 3 :
+                found != world.units.end() && found->second.position.has_value();
+            if (!assigned) {
                 p.error(OnlineErrorKind::Input, "Cast target is no longer assigned"); return false;
             }
             out.u8(left ? (command.repeat ? (command.stationary ? 0x0A : 0x09) : (command.stationary ? 0x07 : 0x06))
@@ -2208,7 +2212,21 @@ bool RealmSession::submit_combat(OnlineCombatCommand command) {
     }
     try {
         p.sent(p.gs, out.release());
-        if (command.action == Action::Cast) p.finish_pickup(OnlineItemRequest::State::Interrupted);
+        if (command.action == Action::Cast) {
+            p.finish_pickup(OnlineItemRequest::State::Interrupted);
+            if (command.target && command.target->type == 2 && command.interaction) {
+                if (*command.interaction == OnlineObjectIntent::Stash) {
+                    world.storage.requested = OnlineStorageKind::Stash;
+                    world.storage.requestedSource = command.target->id;
+                    p.storageDeadline = Clock::now() + p.options.timeout;
+                    ++world.interactionGeneration;
+                } else if (*command.interaction == OnlineObjectIntent::Waypoint) {
+                    world.waypointRequested = command.target->id;
+                    p.waypointDeadline = Clock::now() + p.options.timeout;
+                    ++world.interactionGeneration;
+                }
+            }
+        }
         // Releasing a channel must not erase an outstanding learn/select/spend acknowledgement.
         if (command.action != Action::Stop || !world.combatRequest ||
             world.combatRequest->state != OnlineCombatRequest::State::Pending) {

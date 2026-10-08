@@ -31,6 +31,8 @@ struct DiagnosticMonster {
     uint64_t revision{}, busyUntil{};
     bool moving{}, running{}, rewardComplete{};
     std::optional<ai::Controller> controller;
+    uint64_t chilledUntil{},frozenUntil{},knockedUntil{},nextHitTick{};
+    std::optional<PlayerId> owner{};
 };
 struct DiagnosticEffect { int state{}; uint64_t expires{}; };
 struct DiagnosticSnapshot {

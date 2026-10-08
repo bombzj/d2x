@@ -92,7 +92,7 @@ D2Common包含单位、属性、技能公式、物品计算、路径／碰撞和
 | --- | --- | --- | --- |
 | 普通近战、连击、武器技能 | 攻速／动作帧、武器范围、命中与伤害公式、连击时序 | 攻击合法性、真实目标、命中随机、耐久、伤害和中断 | 已知动作时长与表现路径，不判定命中；近战纯计算与服务端skill 0已有 |
 | 火弹／火球、冰弹、骨矛等直线弹体 | 速度／寿命、分段推进、墙面和单位交点、范围几何 | 弹体身份、敌我、穿透次数、真实碰撞、伤害和资源 | 同参数下的飞行／接触图像；火弹／火球权威切片及共用墙面裁剪已有 |
-| 冰封球／多重散射／nova | 频率判定、64方向、每次数量、方向推进、结束爆发、整数转向 | 可伤害子弹体的创建、死亡／断线处理、碰撞结算 | 对应Clt参数生成视觉子弹体；环形函数已提取，冰封球服务端尚未接 |
+| 冰封球／多重散射／nova | 频率判定、64方向、每次数量、方向推进、结束爆发、整数转向 | 可伤害子弹体的创建、死亡／断线处理、碰撞结算 | 对应Clt参数生成视觉子弹体；环形／remaining调度已两端共用，冰封球服务端已接 |
 | 充能弹、引导／追踪弹体 | 确定性路径、转弯／步进、已知种子下的局部序列 | 跟踪目标选择与失效、服务器随机、实际重定向 | 原包足够描述的路径；已有chargedBoltPath，不声称两端目标已同步 |
 | 暴风雪、陨石、火墙、毒云 | 持续时间、周期、落点／分布规则、地面覆盖几何 | 真实区域、周期伤害／NextHit去重、隐藏随机、跨区清理 | 特效时间线与可见落点；需要确认Srv／Clt周期和随机起点 |
 | 闪电／连锁、射线 | 射线／链段几何、伤害曲线、跳跃上限 | 链的真实候选、排序、再次命中限制 | 原消息给出的端点及链段；不在客户端扫描可见怪物重建权威链 |
@@ -101,7 +101,7 @@ D2Common包含单位、属性、技能公式、物品计算、路径／碰撞和
 | 骷髅／石魔／伙伴召唤 | 等级曲线、数量上限、出生候选几何、继承属性 | 尸体／物品消耗、所有者与名额、实体准入、AI／同行与存档 | 原指派和动作；客户端不能自行补出生实体 |
 | 传送／冲锋／击退 | 位移路径、到达阈值、碰撞与速度公式 | 目的地许可、资源、实际位置、伙伴与区域生命周期 | 原动作和位置校正；同区Teleport已接，同行者／跨区仍待实现 |
 
-冰封球必须显式传入相位：服务端参考按剩余帧判定，当前客户端按已有正向帧循环；公共函数不替调用方决定时钟。末次爆发与碰墙销毁也应分事件。共用函数不等于可以把两端Clt／Srv执行顺序互换。
+冰封球两端必须显式传remaining；已按原版修正公共调度，Clt／Srv参数仍独立。末次爆发与碰墙销毁也应分事件。共用函数不等于可以把两端Clt／Srv执行顺序互换。
 
 ## 9. NPC、怪物、任务与物品怎样拆
 
@@ -125,6 +125,29 @@ D2Common包含单位、属性、技能公式、物品计算、路径／碰撞和
 4. 服务端接运行状态、固定步、失败重试和提交点，再用原包编码结果。多个观察者只复制一次事实，不重复施法、死亡或奖励；输出容量不足不能消耗第二次随机或扣第二次资源。
 5. 两端都需要的计算再替换客户端调用；仅服务端需要的规则保持服务端调用。共享函数不能引入自研／原服分支，不能要求旧原服提供额外字段。
 6. 用户已授权弹体散射／环形／轨迹公共纯函数提取；涉及行为差异仍逐项确认。此授权不扩大为NPC、任务或其他客户端任意改写许可；这些领域需要改客户端时仍单独说明并确认。
-7. 更新本页的提取边界、SERVER_SYSTEMS的实际执行范围及MULTIPLAYER的迁移顺序。存档语义改变同步规则指纹与SAVES，不静默迁移旧档。当前按用户要求只改源码／文档，不编写测试、不运行静态检查／构建／测试／打包；不能把源码接线当作运行认证。
+7. 更新本页的提取边界、SERVER_SYSTEMS的实际执行范围及MULTIPLAYER的迁移顺序。存档语义改变同步规则指纹与SAVES，不静默迁移旧档。不编写测试脚本／用例／专用程序；构建／打包／运行验证按当轮有效授权，不能把源码接线当作运行认证。
 
-当前已落地：resolve／projectile_path／combat geometry等公共计算；原表准备与独立server领域；火弹／火球／同区传送；三种新普通近战怪物的纯决策与固定点走跑。后续恢复按行为族推进：怪物远程／萨满复活、周期／散射弹体、状态与效果、NPC报价事务、任务事件／奖励。该顺序是结构依赖建议，不表示这些功能已经完成。
+当前已落地：resolve／projectile_path／combat geometry等公共计算；原表准备与独立server领域；女巫26主动／4被动、周期／环射／连锁／射流、反击吸收与Hydra；三种新普通近战怪物的纯决策与固定点走跑。后续恢复按行为族推进：怪物远程／萨满复活、周期／散射弹体、状态与效果、NPC报价事务、任务事件／奖励。该顺序是结构依赖建议，不表示这些功能已经完成。
+
+### 女巫公共计算落点
+
+当前projectile_path共用missileVelocityFixed、missileWallDirection（双方采用整数施法／目标射线的垂线）、chargedBoltPath、missileRingDirection、冰弹转向、missileChainSuccessor和blizzardOffset；cast_timing的playerCastSequence由两端共用seq12／seq6步序及释放步，普通SC／FCR时钟已供服务端及已知本人属性的客户端调用；rank_bonus共用四项被动线性值，geometry共用裁墙／交点及三格knockbackDestination。随机流由调用端持有，输出纯值，不共享实体或计时器。暴风雪客户端和服务端随机偏移符号有原版差异：D2Client 1.13c RVA BBC10／B8DF0证实客户端按remaining帧及globalX重种，半径−1反向偏移；D2MOO服务端保留正向偏移，函数参数显式区分。Inferno客户端24经74D50／74930选择原两种火图。火墙CltDo26经74770在目标点生成两侧maker及中心火，CltDo28经73DF0／A1540／AFF10在目标点生成中心弹体，均无ClientSend创建门槛；原服回归未见常规73，故自研同步删除其重复创建广播，普通本人4C／4D按PlrMsg省略。73保留可重建表现的有界不同来源配对，晚入视野的服务端重同步仍未接。执行／事件／MPQ规则所有权及尚未共享的调度／推进见[女巫技能](../gameplay/skills/SORCERESS.md#公共层及原版证据)，这些纯函数不承担资源或伤害权限。
+
+### 女巫公共层的原版核对
+
+2026-10-08直接核对本地固定D2MOO 5596f5c与原1.13c DLL。参考源码为1.10f重建，不能沿用其ordinal认定1.13c入口；以下1.13c编号均重新从本机PE导出／导入和调用指令核对。DLL摘要及基址见[资料来源](../resources/THIRD_PARTY.md#原版113c静态与开发对照证据)，只读分析输出在忽略目录artifacts/sorceress-d2gs-20261008，不加入源码。
+
+“公共”需区分模块能被谁调用和具体计算是否只实现一次。原1.13c D2Client确实静态导入D2Game的13个ordinal入口（10038／10047／10037／10040／10017／10039／10049／10053／10006／10024／10019／10008／10043）；不能说客户端程序完全不使用D2Game。单机／TCP Host也在产品进程内运行本地服务端，复用D2Game的权威内核。远端联机客户端的表现程序则不因此成为第二个权威世界；下列冰封球两套散射与暴风雪两套创建流程仍分别位于D2Client和D2Game。DLL导入关系本身不能证明某技能整体已抽成共用函数。对应本项目，嵌入／LAN／未来独立宿主共用server内核；两端真正相同的计算再共用gameplay纯函数。
+
+| 案例 | D2MOO边界 | 原1.13c可直接确认的证据 | 本项目提取结论 |
+| --- | --- | --- | --- |
+| Lightning／Inferno序列 | [SequenceTbls.cpp](../../reference/d2moo/source/D2Common/src/DataTbls/SequenceTbls.cpp:501)保存Lightning 19步及Inferno 15步；[Units.cpp](../../reference/d2moo/source/D2Common/src/Units/Units.cpp:1020)初始化／推进，ComputeSequenceAnimation输出mode／图像frame／dir／event | 原D2Common中两个完整6字节步序表分别位于RVA9C008／9B888；序列映射RVA2E6E0、ordinal10292，由D2Client RVA4D5EC经导入调用。推进RVA32460、ordinal10853，同时被D2Client及D2Game导入并调用；D2Game还调用初始化ordinal10099（RVA32820） | 步序／事件／固定点时钟可共用；客户端把frame映射COF／DCC，服务端在event上释放。现已共用步序及SC／seq12整数时钟；本人FCR已接，图像映射／状态推进仍由适配器执行 |
+| Frozen Orb | [MissMode.cpp](../../reference/d2moo/source/D2Game/src/MISSILES/MissMode.cpp:1232)的SrvDo15自行判remaining周期并查64方向，SrvDo16自行转向；SrvHit29自行生成结束环射。这些主体不在D2Common | CltDo表索引19指向D2Client RVAB8840；它在本模块内判周期、查64方向并创建视觉子弹体。环表在本模块RVA D3F10；D2Game也有自己的环表。周期访问经D2Common ordinal10985（RVA6A240），函数为total-current的remaining；CltDo20亦使用该访问器 | 原版没有把整个散射程序抽成公共函数；可比原版进一步共享频率／方向／转向／动作描述，保留Clt／Srv参数。两端已按此证据修正remaining相位及子弹转向窗口；73已过帧前缀不得重复扣除 |
+| Blizzard | [MissMode.cpp](../../reference/d2moo/source/D2Game/src/MISSILES/MissMode.cpp:1020)的SrvDo10调用D2Common技能公式，再调用D2Game自己的CreateMissileWithCollisionCheck（:955）做周期、重种、落点、碰撞与准入 | D2Client RVABBC10经stub C316调用D2Common ordinal10786／RVA51BF0技能公式；随后调用本地RVAB8DF0做remaining周期、globalX重种、反向偏移及视觉碰撞。变体图选择也在D2Client | 公式和基础数据共用；调度／实体创建分别执行。相同整数落点可抽纯函数，但必须保留随机消耗次序、客户端反向符号／图像变体及服务端真实命中 |
+
+因此原版实际是“公共基础＋两端技能／弹体程序”，并非“公共完整技能＋客户端只加渲染”。本项目可以比原版去重更多：公共函数接收明确的小状态、规则值、时钟与随机，输出下一状态及Spawn／Turn／Expire等纯动作；客户端创建视觉对象，服务端创建权威弹体并结算伤害。不要把服务器世界查询、事务或AI装进公共执行器，也不要为追求完全一样而取消已证实的Clt／Srv差异。
+
+
+全部30项的分派／公共函数／两端执行台账维护在[女巫技能](../gameplay/skills/SORCERESS.md#30项公共职责核对)，不重复记一份实现清单。D2Common的SKILLS_GetManaCosts只返回原定点曲线；D2Game Skills.cpp的法力消费再钳MinMana。技能伤害与独立弹体伤害的取整顺序必须分开：SKILLS_GetMinElemDamage在HitShift后计算协同，且fixed<=256且首级增量为0时跳过；MISSILE_GetMin/MaxElemDamage在HitShift前计算协同。原1.13c D2Common RVA50460的EMin／ELevMin读取与cmp0x100分支、RVA6B330的Missiles EMin／ELevMin读取及先协同后shift进一步确认；当前公共damage_curve分别定义并执行，Meteor地面火不套用技能伤害顺序。
+
+FCR依据Units.cpp的UNITS_UpdateCastAnimRateAndVelocity：120*FCR/(120+FCR)，总速率上限175，再乘AnimData基础速率。OtherAnimationRate属于另一个mode分支，不叠加CAST；当前公共cast_timing已修正。PathMisc::sub_6FD5CEB0的每五tick加速／限速逻辑提取为advanceMissileVelocity，数值表示仍由两端适配。公共规则是SkillRuleSpec；原图／声音／绘制参数只留SkillSpec内容定义，通过rules()投影，不发布到server。

@@ -33,10 +33,16 @@ void SoundBank::registerOriginalGroup(Archives &archives, std::string key, const
     if (compound < 0) throw std::runtime_error("Unsupported original one-shot Compound rule");
     if (row + size_t(count) > table.rows().size()) throw std::runtime_error("Invalid original sound group");
     for (size_t variant = row; variant < row + size_t(count); ++variant)
-        for (const auto field : {"Loop", "Duration", "Fade In", "Fade Out"})
+        for (const auto field : {"Loop", "Duration", "Fade In"})
             if (table.number(variant, field).value_or(0) != 0)
                 throw std::runtime_error("Unsupported original one-shot sound group: " + std::string(field));
     for (size_t variant = row; variant < row + size_t(count); ++variant) {
+        // This path plays a finite WAV to its natural end. Fade Out only
+        // needs an interrupt envelope when Stop Inst can replace that voice;
+        // reject that combination until an interrupt mixer is available.
+        const int fadeOut=table.number(variant,"Fade Out").value_or(0);
+        if(fadeOut<0 || (fadeOut && table.number(variant,"Stop Inst").value_or(0)))
+            throw std::runtime_error("Unsupported original one-shot interrupt fade");
         for (const auto field : {"Stop Inst", "Defer Inst"}) {
             const int flag = table.number(variant, field).value_or(0);
             if (flag != 0 && flag != 1)

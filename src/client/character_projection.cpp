@@ -9,6 +9,7 @@
 #include "gameplay/skills/amazon_passive_spec.hpp"
 #include "gameplay/skills/behavior.hpp"
 #include "gameplay/skills/resolve.hpp"
+#include "gameplay/skills/rank_bonus.hpp"
 #include "gameplay/skills/spec.hpp"
 #include <algorithm>
 #include <limits>
@@ -26,17 +27,13 @@ int integer(const CharacterProjectionInput &input, std::string_view name) {
 void passiveDetails(std::vector<std::string> &lines, const ClassicData &data, const SkillRecord &entry, int rank) {
     if (rank <= 0) return;
     if (entry.manaRecoveryPerRank)
-        lines.push_back("Mana regeneration: +" + std::to_string(entry.manaRecoveryPerRank->first +
-            (rank - 1) * entry.manaRecoveryPerRank->second) + "%");
+        lines.push_back("Mana regeneration: +" + std::to_string(skillRankBonus(*entry.manaRecoveryPerRank,rank)) + "%");
     if (entry.fireMasteryPerRank)
-        lines.push_back("Fire skill damage: +" + std::to_string(entry.fireMasteryPerRank->first +
-            (rank - 1) * entry.fireMasteryPerRank->second) + "%");
+        lines.push_back("Fire skill damage: +" + std::to_string(skillRankBonus(*entry.fireMasteryPerRank,rank)) + "%");
     if (entry.lightningMasteryPerRank)
-        lines.push_back("Lightning skill damage: +" + std::to_string(entry.lightningMasteryPerRank->first +
-            (rank - 1) * entry.lightningMasteryPerRank->second) + "%");
+        lines.push_back("Lightning skill damage: +" + std::to_string(skillRankBonus(*entry.lightningMasteryPerRank,rank)) + "%");
     if (entry.coldPiercePerRank)
-        lines.push_back("Enemy cold resistance: -" + std::to_string(entry.coldPiercePerRank->first +
-            (rank - 1) * entry.coldPiercePerRank->second) + "%");
+        lines.push_back("Enemy cold resistance: -" + std::to_string(skillRankBonus(*entry.coldPiercePerRank,rank)) + "%");
     if (entry.passiveContribution.amazon) {
         const auto &passive = *entry.passiveContribution.amazon;
         const int value = amazonPassiveValue(passive, rank);
@@ -100,6 +97,7 @@ CharacterView projectCharacterDisplay(const ClassicData &data, const CharacterPr
     view.physicalResist = integer(input, "damageresist"); view.magicResist = integer(input, "magicresist");
     view.flatPhysicalReduction = integer(input, "normal_damage_reduction"); view.flatMagicReduction = integer(input, "magic_damage_reduction");
     view.poisonLengthResist = integer(input, "item_poisonlengthresist"); view.fireAbsorbPercent = integer(input, "item_absorbfire_percent");
+    if (stat(input,"item_fastercastrate")) view.fasterCast=integer(input,"item_fastercastrate");
     for (std::string name : {"strength", "dexterity", "vitality", "energy", "level", "experience", "statpts", "newskills",
         "hitpoints", "maxhp", "mana", "maxmana", "stamina", "maxstamina", "armorclass", "toblock",
         "fireresist", "coldresist", "lightresist", "poisonresist", "damageresist", "magicresist",
@@ -156,7 +154,7 @@ CharacterView projectCharacterDisplay(const ClassicData &data, const CharacterPr
         if (stat(input, "mana") || input.mana) eligibilityInput.mana = view.mana;
         std::optional<SkillCastSpec> currentCast;
         if (!entry.passive && entry.spell && effective > 0 && effective <= 255) {
-            currentCast = resolveSkill(*entry.spell, {effective, input.baseRanks, display.fireMastery,
+            currentCast = resolveSkill(entry.spell->rules(), {effective, input.baseRanks, display.fireMastery,
                 display.lightningMastery, attributes.combat.coldSkillDamagePercent});
             eligibilityInput.requiredMana = std::max(float(entry.spell->startMana), currentCast->manaCost);
         }
@@ -176,7 +174,7 @@ CharacterView projectCharacterDisplay(const ClassicData &data, const CharacterPr
                     (!spec.lightningDamage || input.lightningMastery.has_value()) &&
                     (!spec.coldDamage || input.coldDamagePercent.has_value());
                 known &= !spec.summon; // Pet attributes need a separate complete input.
-                cast = rank == effective ? currentCast : std::optional{resolveSkill(spec,
+                cast = rank == effective ? currentCast : std::optional{resolveSkill(spec.rules(),
                     {rank, baseRanks, display.fireMastery, display.lightningMastery,
                      attributes.combat.coldSkillDamagePercent})};
             }

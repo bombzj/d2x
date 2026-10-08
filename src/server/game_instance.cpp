@@ -171,7 +171,8 @@ std::optional<PlayerSnapshot> GameInstance::snapshot(PlayerId id) const {
     result.rulesFingerprint = rulesFingerprint_;
     result.areaGeneration = areas_.at(player->area).generation;
     const auto cast = systems_.skills.read().casts.find(player->actor);
-    result.attacking = cast != systems_.skills.read().casts.end() && !cast->second.interrupted && cast->second.until > tick_;
+    result.attacking = cast != systems_.skills.read().casts.end() && !cast->second.interrupted &&
+        systems_.skills.busy(player->actor, tick_);
     const auto death = systems_.death.read().transitions.find(player->actor);
     result.deadSettled = death != systems_.death.read().transitions.end() && death->second.finalized && death->second.ready <= tick_;
     return result;

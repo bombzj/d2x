@@ -24,7 +24,7 @@ struct ActorContext {
     RegionId area;
     uint64_t areaGeneration{}, sequence{}, tick{};
 };
-struct UnitTarget { EntityId id; uint64_t revision{}; };
+struct UnitTarget { EntityId id; uint64_t revision{}; uint8_t type{1}; };
 struct PointTarget { RegionId area; uint64_t generation{}; Vec position; };
 using ActionTarget = std::variant<UnitTarget, PointTarget>;
 struct TransactionId {

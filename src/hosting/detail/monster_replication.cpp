@@ -10,6 +10,10 @@ void NativeRealmService::publishMonsters() {
         const auto origin = shared.terrain.at(binding->game).at(monster.area).origin;
         auto [entry, fresh] = peer.monsters.try_emplace(monster.id);
         if (fresh) packets.push_back(nativeMonsterAssignment(monster, origin));
+        const auto statePacket = [&](int state, bool enabled) { return encodeServerPacket(enabled ? ServerMessage::EnableState : ServerMessage::DisableState, [&](auto &out) { out.u8(1); out.u32(uint32_t(monster.id.value)); out.u8(uint8_t(state)); }); };
+        for (const int state : entry->second.states) if (!monster.states.contains(state)) packets.push_back(statePacket(state, false));
+        for (const int state : monster.states) if (!entry->second.states.contains(state)) packets.push_back(statePacket(state, true));
+        entry->second.states = monster.states;
         auto motion = nativeMonsterMotion(monster, origin);
         if (motion.empty()) entry->second.motion.clear();
         else if (fresh || motion != entry->second.motion) { packets.push_back(motion); entry->second.motion = std::move(motion); }

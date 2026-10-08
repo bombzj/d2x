@@ -12,6 +12,7 @@ std::span<const AdminDescriptor> adminCommands() {
         {AdminOperation::Resume, "server-resume", AdminArgumentKind::None, true},
         {AdminOperation::AutoPause, "server-auto-pause", AdminArgumentKind::None, true},
         {AdminOperation::RestoreResources, "refill-resources", AdminArgumentKind::None, true},
+        {AdminOperation::MissileHit, "missile-hit", AdminArgumentKind::Missile, true},
         {AdminOperation::DamagePlayer, "player-damage", AdminArgumentKind::Amount, true},
         {AdminOperation::GrantGold, "grant-gold", AdminArgumentKind::Amount, true},
         {AdminOperation::GrantExperience, "grant-experience", AdminArgumentKind::Amount, true},

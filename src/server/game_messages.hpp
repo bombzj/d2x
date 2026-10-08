@@ -55,6 +55,7 @@ struct PlayerSnapshot {
     std::map<int, int> skillRanks;
     std::map<int,int> itemSkills;
     std::set<int> states;
+    Vec knockbackSource;
     CommandResult command;
     uint64_t movementSequence{}, inventoryRevision{}, characterRevision{};
     std::string name, characterClass;
@@ -74,5 +75,7 @@ struct MonsterSnapshot {
     bool moving{}, attacking{};
     int velocityPercent{75};
     bool running{};
+    std::set<int> states{};
+    Vec knockbackSource{};
 };
 } // namespace d2x

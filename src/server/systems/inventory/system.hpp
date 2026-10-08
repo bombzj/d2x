@@ -4,6 +4,7 @@
 #include "server/runtime/prepared_rules.hpp"
 #include "server/runtime/events.hpp"
 #include "gameplay/items/intents.hpp"
+#include "gameplay/skills/cast_spec.hpp"
 #include <map>
 #include <set>
 #include <string>
@@ -33,7 +34,7 @@ struct InputState {
     unsigned weaponSet{};
     std::map<EntityId, InputItem> items;
 };
-struct Access { EntityId source; ContainerKind kind; uint64_t revision{}; RegionId area{}; };
+struct Access { EntityId source; ContainerKind kind; uint64_t revision{}; RegionId area{}; std::optional<int> remoteRange{}; };
 struct Pickup { ActorContext actor; GroundTransfer request; uint64_t locomotion{}; };
 struct State { std::map<PlayerId, Access> storage; std::map<PlayerId, Pickup> pickups; };
 struct Ports { const PlayerStore &players; items::System &items; transactions::System &transactions; const ItemCatalog *definitions; MovementSystem &movement; effects::System &effects; const AreaStore &areas; EventOutbox &events; travel::System &travel; };
@@ -47,11 +48,13 @@ class System {
     std::optional<InputState> input(PlayerId) const;
     StepStatus step(TickContext, FrameFacts &);
     DomainResult<> close(PlayerId);
-    DomainResult<> openStash(const ActorContext &, EntityId);
+    DomainResult<> openStash(const ActorContext &, EntityId, std::optional<int> remoteRange = {});
     bool storageAccess(PlayerId) const;
     DomainResult<> storage(const ActorContext &, const Request &);
     DomainResult<> consume(const ActorContext &, const UseItem &, Source);
-    DomainResult<> ground(const ActorContext &, const GroundTransfer &);
+    DomainResult<> ground(const ActorContext &, const GroundTransfer &, std::optional<SkillCastSpec> telekinesis = {});
+    DomainResult<> telekinesis(const ActorContext &, EntityId, const SkillCastSpec &);
+    std::optional<Vec> groundPosition(EntityId, RegionId) const;
     DomainResult<> identify(const ActorContext &, const IdentifyItem &);
     DomainResult<> dropGold(const ActorContext &, unsigned amount);
 };

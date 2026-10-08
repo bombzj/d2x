@@ -99,8 +99,13 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         restoreResource(next.healing, record.hp, float(a.maxLife), TickContext::seconds);
         restoreResource(next.mana, record.mana, float(a.maxMana), TickContext::seconds);
         const auto result = ports_.transactions.resources(actor, player.characterRevision, record.hp, record.mana, record.stamina);
-        if (result) std::swap(entry->second, next); else blocked = true;
+        if (result) {
+            if (advanceSkills(actor, next) == StepStatus::Blocked) blocked = true;
+            std::swap(entry->second, next);
+        } else blocked = true;
     }
+    if (advanceReactions(tick.tick) == StepStatus::Blocked) blocked = true;
+    if (advanceUnits(tick.tick) == StepStatus::Blocked) blocked = true;
     return blocked ? StepStatus::Blocked : StepStatus::Complete;
 }
 }

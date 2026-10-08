@@ -25,7 +25,7 @@ class System {
     explicit System(Ports ports) : ports_(ports) {}
     const State &read() const { return state_; }
     DomainResult<EntityId> admit(const Admission &);
-    DomainResult<> execute(const ActorContext &, const Request &);
+    DomainResult<> execute(const ActorContext &, const Request &, std::optional<int> remoteRange = {});
     StepStatus step(TickContext, FrameFacts &);
 };
 }

@@ -16,12 +16,14 @@ struct ActorAnimationRequest {
     int paletteTransform = -1;
     bool randomTransform = false, finalFrame = false, shadow = false;
     int playerSequence = -1;
+    std::optional<int> fasterCast;
 };
 struct ActorAnimation {
     GpuAnimation animation;
     float fps = 0, releaseTime = -1;
     std::vector<float> releaseTimes;
-    int start = 0, frameCount = 0;
+    int start = 0, frameCount = 0, holdFrame = -1;
+    std::optional<int> durationFrames;
     bool cycle = false, shadow = false;
     Vec offset;
     int order = 0;

@@ -118,7 +118,7 @@ CharacterActionDisplay describeCharacterAction(const CharacterDisplayContext &co
     if (entry->spell && !entry->passive) {
         if (rank < 1) return {};
         if (rank > 255) return {"?", ""};
-        const auto cast = resolveSkill(*entry->spell, {rank, context.learned, context.fireMastery,
+        const auto cast = resolveSkill(entry->spell->rules(), {rank, context.learned, context.fireMastery,
             context.lightningMastery, context.attributes.combat.coldSkillDamagePercent});
         if (cast.curse || cast.amazonMagic || cast.summon) return {};
         if (cast.weapon) return weaponStats(context, cast.weapon->thrown, false, &cast);

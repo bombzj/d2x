@@ -13,16 +13,17 @@ namespace d2x::hosting {
 // A host control port. Never encoded as private MCP/D2GS extensions and never
 // available on a remote game connection. Execute on the host scheduler thread.
 enum class AdminOperation {
-    Save, Reload, CancelReload, Step, Pause, Resume, AutoPause, RestoreResources, DamagePlayer, GrantGold, GrantExperience, SpawnItem, SpawnMonster,
+    Save, Reload, CancelReload, Step, Pause, Resume, AutoPause, RestoreResources, DamagePlayer, MissileHit, GrantGold, GrantExperience, SpawnItem, SpawnMonster,
     DamageMonster, KillMonster, Travel, UnlockWaypoints, GrantShrine,
     GrantHireling, ResetAttributes, ResetSkills
 };
 struct AdminAmount { int64_t value{}; };
 struct AdminStep { uint32_t frames = 1; };
 struct AdminSpawn { std::string code; int level = 1; std::optional<Vec> position; std::string quality = "normal"; std::optional<unsigned> durability = {}; };
+struct AdminMissile {uint64_t source{};uint32_t amount{};int missile{};};
 struct AdminUnit { uint64_t id{}; int64_t amount{}; };
 struct AdminTravel { int level{}; };
-using AdminArguments = std::variant<std::monostate, AdminAmount, AdminStep, AdminSpawn, AdminUnit, AdminTravel>;
+using AdminArguments = std::variant<std::monostate, AdminAmount, AdminStep, AdminSpawn, AdminUnit, AdminTravel, AdminMissile>;
 struct AdminRequest {
     AdminOperation operation;
     PlayerBinding target;
@@ -35,7 +36,7 @@ struct AdminResult {
     std::optional<EntityId> entity = {};
     bool applied() const { return status == AdminStatus::Applied; }
 };
-enum class AdminArgumentKind { None, Amount, Step, Spawn, Unit, Travel };
+enum class AdminArgumentKind { None, Amount, Step, Spawn, Unit, Travel, Missile };
 struct AdminDescriptor {
     AdminOperation operation;
     std::string_view command;

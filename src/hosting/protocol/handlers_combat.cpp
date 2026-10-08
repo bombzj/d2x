@@ -6,8 +6,8 @@ RequestResult cast(GameplayContext &context, net::protocol::Reader &in, bool rig
     request.right = right; request.repeat = repeat; request.stationary = stationary;
     if (unit) {
         const auto type = in.u32(), id = in.u32(); in.finish();
-        if (type != 1 || !id) return {RequestStatus::Rejected, CommandStatus::InvalidRequest};
-        request.target = server::UnitTarget{EntityId{id}, 0};
+        if ((type != 0 && type != 1 && type != 2 && type != 4) || !id) return {RequestStatus::Rejected, CommandStatus::InvalidRequest};
+        request.target = server::UnitTarget{EntityId{id}, 0, uint8_t(type)};
     } else {
         const auto x = in.u16(), y = in.u16(); in.finish();
         const auto view = context.host.read(context.player);

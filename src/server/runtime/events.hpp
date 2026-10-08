@@ -12,10 +12,15 @@
 namespace d2x::server {
 struct DeathFact { uint64_t occurrence{}; EntityId victim, killer; RegionId area; };
 struct AttackFact { EntityId actor, target; uint8_t actorType{}, targetType{}; RegionId area; Vec position, destination; uint64_t action{}; uint16_t skill{}; uint8_t rank{1}; };
-struct HitFact { EntityId target; uint8_t type{}; RegionId area; uint8_t life{}; bool killed{}; Vec position; };
+struct HitFact { EntityId target; uint8_t type{}; RegionId area; uint8_t life{}; bool killed{}; Vec position; uint8_t hitClass{}; };
+struct SoundFact { EntityId actor; uint8_t type{}; RegionId area; uint8_t sound{}; };
+struct OverlayFact { EntityId actor; uint8_t type{}; RegionId area; int overlay{}; };
 struct LifeFact { EntityId actor; float life{}; };
 struct ManaFact { EntityId actor; float mana{}; };
 struct RepositionFact { EntityId actor; RegionId area; Vec position; };
+struct StateFact { EntityId actor; uint8_t type{}; RegionId area; int state{}; bool enabled{}; };
+struct SkillPulseFact { EntityId owner, target; uint8_t ownerType{}, targetType{1}; RegionId area; int skill{}, rank{}; Vec position; };
+struct MissileFact { EntityId owner; uint8_t ownerType{}; RegionId area; int definition{}, rank{}, frame{}; Vec position, destination; };
 struct ItemFact { TransactionId transaction; ItemChange change; };
 // Sparse immutable projection captured at commit. Encoding never consults a
 // later live inventory: several commands can commit before output is drained.
@@ -29,6 +34,7 @@ struct AttributeFact { EntityId unit; uint64_t revision{}; };
 struct CharacterFact {
     CharacterRecord before, after;
     attributes::Totals previous, current;
+    std::optional<bool> selectedHand{}; // Explicit selection also confirms an unchanged value.
 };
 struct TravelFact { PlayerId player; EntityId actor; RegionId from, to; uint64_t areaGeneration{}; Vec position; bool walking{}, revived{}; };
 struct ObjectFact { EntityId object, actor; RegionId area; uint64_t revision{}; };
@@ -39,7 +45,7 @@ struct NpcMessagesFact { EntityId npc; std::vector<NpcMessage> messages; };
 struct MerchantFact { EntityId npc, item; uint8_t operation{}, result{}; uint32_t gold{}; bool refreshShop{}; };
 struct WaypointFact { EntityId source; std::vector<RegionId> unlocked; };
 struct UiFact { uint8_t action{}; };
-using DomainFact = std::variant<ManaFact, RepositionFact, LifeFact, AttackFact, HitFact, DeathFact, ItemFact, InventoryFact, CharacterFact, QuestFact, AttributeFact, TravelFact, ObjectFact, ChatFact, CommandFact, NpcMessagesFact, MerchantFact, UiFact, WaypointFact>;
+using DomainFact = std::variant<ManaFact, RepositionFact, LifeFact, AttackFact, HitFact, DeathFact, ItemFact, InventoryFact, CharacterFact, QuestFact, AttributeFact, TravelFact, ObjectFact, ChatFact, CommandFact, NpcMessagesFact, MerchantFact, UiFact, WaypointFact, StateFact, MissileFact, SkillPulseFact, SoundFact, OverlayFact>;
 // Compact bounded observation, independent of reliable delivery and acknowledgement.
 struct DiagnosticEvent {
     uint64_t sequence{}, batch{}, tick{}, transaction{};

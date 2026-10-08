@@ -18,8 +18,8 @@ void SceneView::createBlizzardFall(int missileId, Vec position) {
     if (found == assets_.blizzardFalls.end()) return;
     const auto &program = found->second;
     // MPQ fall distance/rate are client fields, not the server Range=9.
-    // Use the damage-bearing shard's original art while CltDo13's variant
-    // selection and exact legacy initialization remain unverified.
+    // Variant and placement are performed by the native center program.
+    // This helper handles an already selected original falling-shard image.
     const int frames = (program.fallDistance + program.fallRate - 1) / program.fallRate;
     clientMissiles_.push_back({missileId, position, {}, 0, float(frames) / 25.f, {}});
 }

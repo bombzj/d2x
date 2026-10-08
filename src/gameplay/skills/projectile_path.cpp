@@ -3,8 +3,39 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <limits>
 
 namespace d2x {
+bool missileChangedCell(Vec previous, Vec next) {
+    return int(previous.x)!=int(next.x) || int(previous.y)!=int(next.y);
+}
+std::optional<int> missileVelocityFixed(int base, int perLevel, int rank) {
+    if (rank < 1) return {};
+    const auto velocity=int64_t(base)+int64_t(rank)*perLevel/8;
+    // 256 * 75 / 100 is exactly 192; check before multiplying.
+    if (velocity<0 || velocity>std::numeric_limits<int>::max()/192) return {};
+    return int(velocity*192);
+}
+Vec missileWallDirection(Vec caster, Vec target) {
+    return {std::floor(target.y)-std::floor(caster.y),std::floor(caster.x)-std::floor(target.x)};
+}
+uint64_t missileChainSuccessor(uint64_t hit, std::span<const uint64_t> eligible) {
+    uint64_t next=0,first=0;
+    for(const auto id:eligible) {
+        if(!id || id==hit) continue;
+        if(!first || id<first) first=id;
+        if(id>hit && (!next || id<next)) next=id;
+    }
+    return next?next:first;
+}
+Vec blizzardOffset(uint32_t globalX, int remaining, int radius, bool client) {
+    if(radius<=1) return {};
+    auto random=initialRandom(globalX+uint32_t(remaining));
+    const int range=radius-1;
+    Vec offset{float(int(limitedRandom(random,uint32_t(2*range)))-range),
+               float(int(limitedRandom(random,uint32_t(2*range)))-range)};
+    return client?offset*-1.f:offset;
+}
 Vec missileRingDirection(int index) {
     constexpr int offsets[]{30,29,29,28,27,26,24,23,21,19,16,14,11,8,5,2,
         0,-2,-5,-8,-11,-14,-16,-19,-21,-23,-24,-26,-27,-28,-29,-29,
@@ -13,9 +44,16 @@ Vec missileRingDirection(int index) {
     const unsigned direction = unsigned(index) & 63;
     return {float(offsets[direction]), float(offsets[(direction + 48) & 63])};
 }
-std::optional<MissileRingEmission> missileRingEmission(int phaseFrame, int period, int index, int step) {
-    if (period <= 0 || phaseFrame % period != 0) return {};
+bool missileEmissionDue(int remaining, int period) {
+    return remaining > 0 && period > 0 && remaining % period == 0;
+}
+std::optional<MissileRingEmission> missileRingEmission(int remaining, int period, int index, int step) {
+    if (!missileEmissionDue(remaining, period)) return {};
     return MissileRingEmission{missileRingDirection(index), (index + step) & 63};
+}
+std::optional<Vec> missileOrbTurn(Vec target, int remaining, int window, int period) {
+    if (remaining >= window || !missileEmissionDue(remaining, period)) return {};
+    return missileDiagonalTurn(target);
 }
 std::vector<Vec> missileRingBurst(int step) {
     std::vector<Vec> result;

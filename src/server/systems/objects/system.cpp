@@ -24,17 +24,18 @@ void System::collision(RegionId area) {
     }
     ports_.world.objectCollision(area, std::move(values));
 }
-DomainResult<> System::execute(const ActorContext &actor, const Request &request) {
+DomainResult<> System::execute(const ActorContext &actor, const Request &request, std::optional<int> remoteRange) {
     const auto *player = ports_.players.find(actor.player); const auto *area = ports_.areas.find(actor.area);
     if (!player || !player->entered || player->actor != actor.actor || player->area != actor.area || player->persistent.player.hp <= 0) return {DomainStatus::InvalidActor, {}};
     const auto found = state_.objects.find(request.target.id);
     if (!area || area->generation != actor.areaGeneration || found == state_.objects.end() || found->second.area != actor.area) return {DomainStatus::Stale, {}};
     auto &object = found->second; const auto &rule = object.rule;
     const InteractionTarget target{object.id, object.position, object.position, rule.width, rule.height, float(rule.range), true};
-    if (!interactionClear(area->definition.collision, player->position, target)) return {DomainStatus::InvalidRequest, {}};
+    if (!remoteRange && !interactionClear(area->definition.collision, player->position, target)) return {DomainStatus::InvalidRequest, {}};
+    if (remoteRange) {const int dx=int(object.position.x)-int(player->position.x),dy=int(object.position.y)-int(player->position.y);if(dx*dx+dy*dy>*remoteRange * *remoteRange) return {DomainStatus::InvalidRequest,{}};}
     if (object.pending || object.revision == UINT64_MAX) return {DomainStatus::Conflict, {}};
-    if(rule.operation==23) { auto result=ports_.travel.openWaypoint(actor,object.id); if(result && object.mode!=2) {object.mode=2;++object.revision;collision(actor.area);} return result; }
-    if (rule.stash) return ports_.inventory.openStash(actor,object.id);
+    if(rule.operation==23) { auto result=ports_.travel.openWaypoint(actor,object.id,remoteRange); if(result && object.mode!=2) {object.mode=2;++object.revision;collision(actor.area);} return result; }
+    if (rule.stash) return ports_.inventory.openStash(actor,object.id,remoteRange);
     if (rule.door) {
         if (object.until > actor.tick) return {DomainStatus::Conflict, {}};
         if (object.mode) {

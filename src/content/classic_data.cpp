@@ -322,7 +322,7 @@ ClassicData loadClassicData(Archives &archives) {
                 data.hirelingStrings.emplace(key, value);
         data.skills = loadSkillCatalog(data.tables.at("skills"), data.tables.at("skilldesc"),
                                        data.tables.at("charstats"), data.characters, strings);
-        loadSkillAnimations(data.skills, data.tables.at("weapons"), archives);
+        loadSkillAnimations(data.skills, data.tables.at("skills"), data.tables.at("weapons"), archives);
         data.playerDeath = loadPlayerDeathData(archives, data.characters, data.tables.at("difficultylevels"));
         data.shrines = loadShrines(data.tables.at("shrines"));
         data.states = loadCombatStates(DataTable(archives.read("data/global/excel/states.txt")));

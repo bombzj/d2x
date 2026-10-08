@@ -84,6 +84,24 @@ bool RemoteCombat::monsterTargetEligible(const OnlineUnit &unit, bool targetCorp
     return hostile(unit) && onlineMonsterCorpse(unit) == targetCorpse &&
         (!targetCorpse || corpseSelectable(unit));
 }
+bool RemoteCombat::skillTargetEligible(const OnlineUnit &unit,uint16_t skill) const {
+    const auto row=skills_.find(skill);if(row==skills_.end() || !unit.position) return false;
+    const auto &table=tables_.at("skills");
+    const auto n=[&](std::string_view column) {return table.number(row->second,column).value_or(0);};
+    if(n("TargetAlly") && n("TargetPet")) {
+        if(unit.key.type==0) return !session_.read().world.corpseOwners.contains(unit.key.id) &&
+            (unit.nativeMode ? unit.mode!=0 && unit.mode!=17 : unit.mode!=8 && unit.mode!=9);
+        return unit.key.type==1 && unit.classId && !hostileSource(unit) && !onlineMonsterCorpse(unit);
+    }
+    if(n("srvstfunc")==12 && n("srvdofunc")==21 && (unit.key.type==2 || unit.key.type==4)) return true;
+    return monsterTargetEligible(unit,n("TargetCorpse")!=0);
+}
+bool RemoteCombat::skillTargetEligible(const OnlineItem &item, uint16_t skill) const {
+    const auto row = skills_.find(skill);
+    return item.mode == 3 && row != skills_.end() &&
+        tables_.at("skills").number(row->second, "srvstfunc") == 12 &&
+        tables_.at("skills").number(row->second, "srvdofunc") == 21;
+}
 bool RemoteCombat::corpseSelectable(const OnlineUnit &unit) const {
     const auto monster=monsters_.find(unit.classId.value_or(UINT16_MAX));
     if (unit.key.type!=1 || monster==monsters_.end()) return false;
@@ -105,13 +123,13 @@ bool RemoteCombat::corpseSelectable(const OnlineUnit &unit) const {
     return true;
 }
 bool RemoteCombat::submit(OnlineCombatCommand command) {
+    command.interaction.reset();
     if (!command.context) command.context = onlineIntentContext(session_.read());
     if (!onlineWorldMatches(*command.context, session_.read()))
         return reject("Combat intent belongs to a previous game or area");
     scene_.update(session_.read());
     update();
     const auto &world = session_.read().world;
-    const auto &table = tables_.at("skills");
     using Action = OnlineCombatCommand::Action;
     if (command.action == Action::BindHotkey && command.hotkeySlot >= world.skillHotkeys.size())
         return reject("Hotkey slot is outside the native range");
@@ -127,7 +145,6 @@ bool RemoteCombat::submit(OnlineCombatCommand command) {
         }
         const auto row = skills_.find(command.skill);
         if (row == skills_.end()) return reject("Skill is absent from current MPQ");
-        const auto n = [&](std::string_view key) { return table.number(row->second, key).value_or(0); };
         const auto &metadata = skillMetadata_.at(command.skill);
         SkillEligibilityInput facts;
         facts.classCode = classCode(); facts.innate = innateSkill(command.skill);
@@ -165,13 +182,27 @@ bool RemoteCombat::submit(OnlineCombatCommand command) {
                     return reject("Skill cannot be cast in the current loaded area");
                 if (command.point.has_value() == command.target.has_value()) return reject("Specify exactly one point or unit target");
                 auto point = command.point;
-                if (command.target) {
+                if (command.target && command.target->type == 4) {
+                    const auto item = world.items.find(command.target->id);
+                    if (item == world.items.end() || !skillTargetEligible(item->second, command.skill))
+                        return reject("Skill cannot target this assigned ground item");
+                    point = OnlinePoint{item->second.groundX, item->second.groundY};
+                } else if (command.target) {
                     const auto target = world.units.find(*command.target);
-                    if (target == world.units.end() || !target->second.position || command.target->type != 1 || !target->second.classId)
-                        return reject("Only assigned PvE monster targets are supported in this batch");
-                    if (!monsterTargetEligible(target->second, n("TargetCorpse") != 0))
-                        return reject("MPQ monster identity, native alignment or corpse state does not permit this target");
+                    if (target == world.units.end() || !target->second.position)
+                        return reject("Target has no assigned native position");
+                    if(!skillTargetEligible(target->second,command.skill))
+                        return reject("MPQ target categories, native alignment or corpse state do not permit this target");
                     point = target->second.position;
+                    if (target->first.type == 2 && tables_.at("skills").number(row->second, "srvstfunc") == 12 &&
+                        tables_.at("skills").number(row->second, "srvdofunc") == 21) {
+                        const auto object = std::find_if(binding.mapTargets.begin(), binding.mapTargets.end(),
+                            [&](const auto &entry) { return entry.unit == target->first; });
+                        if (object != binding.mapTargets.end()) {
+                            if (object->interaction == OnlineMapInteraction::Stash) command.interaction = OnlineObjectIntent::Stash;
+                            else if (object->interaction == OnlineMapInteraction::Waypoint) command.interaction = OnlineObjectIntent::Waypoint;
+                        }
+                    }
                 }
                 const auto player = *world.playerPosition;
                 if (std::abs(int(player.x) - point->x) > 50 || std::abs(int(player.y) - point->y) > 50)

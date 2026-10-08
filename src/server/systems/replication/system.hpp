@@ -12,7 +12,7 @@ namespace d2x::server::replication {
 // Recipient interest and ordered domain projection; native serialization stays in hosting.
 struct Interest { RegionId area; uint64_t generation{}; std::set<EntityId> visible; };
 struct State { std::map<PlayerId, Interest> recipients; };
-struct Ports { const PlayerStore &players; const AreaStore &areas; const spatial::System &spatial; const monsters::System &monsters; EventOutbox &events; };
+struct Ports { const PlayerStore &players; const AreaStore &areas; const spatial::System &spatial; const monsters::System &monsters; EventOutbox &events; const effects::System &effects; };
 class System {
     State state_;
     const Ports ports_;

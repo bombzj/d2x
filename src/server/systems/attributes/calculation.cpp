@@ -3,6 +3,7 @@
 #include "gameplay/items/equipment_stats.hpp"
 #include "gameplay/items/skill_sources.hpp"
 #include "gameplay/skills/rank_sources.hpp"
+#include "gameplay/skills/rank_bonus.hpp"
 #include "gameplay/skills/amazon_passive_spec.hpp"
 #include "gameplay/quest/acts/act_three_state.hpp"
 #include "gameplay/quest/acts/act_five_state.hpp"
@@ -88,7 +89,7 @@ Totals calculate(const CharacterDefinition &definition, const PersistentCharacte
             }
         }
         if (rank > 0 && rule.manaRecoveryPerRank)
-            passives.combat.manaRecovery += rule.manaRecoveryPerRank->first + (rank - 1) * rule.manaRecoveryPerRank->second;
+            passives.combat.manaRecovery += skillRankBonus(*rule.manaRecoveryPerRank,rank);
     }
     mergeCharacterModifiers(modifiers, passives);
     mergeCharacterModifiers(modifiers, temporary);

@@ -1,4 +1,5 @@
 #include "system.hpp"
+#include "gameplay/skills/behavior.hpp"
 #include "server/player_store.hpp"
 #include "server/movement.hpp"
 #include "server/systems/monsters/system.hpp"
@@ -13,7 +14,7 @@ namespace d2x::server::skills {
 namespace {
 DomainResult<> applied() { return {DomainStatus::Applied, std::monostate{}}; }
 template<class Modifiers> bool needsAttackEffects(const Modifiers &value) {
-    return value.fireMinimum || value.fireMaximum || value.lightningMinimum || value.lightningMaximum ||
+    return value.lightningMinimum || value.lightningMaximum ||
         value.coldMinimum || value.coldMaximum || value.magicMinimum || value.magicMaximum ||
         value.poisonMinimum || value.poisonMaximum || value.lifeLeech || value.manaLeech ||
         value.crushingBlow || value.openWounds;
@@ -29,7 +30,7 @@ DomainResult<> System::requestCast(const CastRequest &request) {
     if (request.skill != 0) return {};
     const auto *monster = ports_.monsters.find(request.actor);
     const auto *target = std::get_if<UnitTarget>(&request.target);
-    if (!monster || monster->life <= 0 || !target || request.tick < monster->busyUntil) return {DomainStatus::InvalidActor, {}};
+    if (!monster || monster->life <= 0 || !target || request.tick < monster->busyUntil || monster->frozenUntil > request.tick || monster->owner) return {DomainStatus::InvalidActor, {}};
     const PlayerState *player = nullptr;
     for (const auto &[id, candidate] : ports_.players.all()) {
         (void)id; if (candidate.actor == target->id) { player = &candidate; break; }
@@ -40,14 +41,16 @@ DomainResult<> System::requestCast(const CastRequest &request) {
         !area.definition.collision.segment(monster->position, player->position)) return {DomainStatus::Unavailable, {}};
     if (!ports_.events.hasCapacity(1)) return {DomainStatus::Capacity, {}};
     const auto &rule = monster->rule;
+    const int speed = monster->chilledUntil > request.tick ? std::max(15, 100 + rule.coldEffect) : 100;
+    const auto scaled = [&](int frames) { return uint64_t((int64_t(frames) * 100 + speed - 1) / speed); };
     DamageType type = DamageType::Physical;
     auto queued = ports_.combat.enqueue({monster->id, player->actor, type, int64_t(rule.minimumDamage) * 256,
-        int64_t(rule.maximumDamage) * 256, request.tick + 1, monster->area, request.tick + uint64_t(rule.impactTick), rule.attackRating, rule.level, rule.meleeRange, rule.size, {}, 0, 0});
+        int64_t(rule.maximumDamage) * 256, request.tick + 1, monster->area, request.tick + scaled(rule.impactTick), rule.attackRating, rule.level, rule.meleeRange, rule.size, {}, 0, 0});
     if (!queued) return queued;
     auto event = ports_.events.publish({0, request.tick, {}, {AudienceKind::Area, {}, monster->area},
         {AttackFact{monster->id, player->actor, 1, 0, monster->area, monster->position, player->position, request.tick + 1}}});
     if (!event) { ports_.combat.cancel(monster->id); return {event.status, {}}; }
-    return ports_.monsters.beginAttack(monster->id, request.tick + uint64_t(rule.attackTicks));
+    return ports_.monsters.beginAttack(monster->id, request.tick + scaled(rule.attackTicks));
 }
 DomainResult<> System::attack(const ActorContext &actor, const Request &request) {
     const auto *player = ports_.players.find(actor.player);
@@ -67,8 +70,7 @@ DomainResult<> System::attack(const ActorContext &actor, const Request &request)
     if (busy(player->actor, actor.tick)) return {DomainStatus::Conflict, {}};
     const auto &weapon = player->totals.equipment.weapons[0];
     const auto &modifiers = player->totals.character.combat;
-    if (weapon.ranged || weapon.potion || player->totals.equipment.weaponCount > 1 || needsAttackEffects(modifiers) ||
-        modifiers.lifeOnKill || modifiers.manaOnKill) return {};
+    if (weapon.ranged || weapon.potion || player->totals.equipment.weaponCount > 1 || needsAttackEffects(modifiers)) return {};
     if (auto own = modifiers.weapons.find(weapon.item); own != modifiers.weapons.end() && needsAttackEffects(own->second)) return {};
     // Effects/dual-wield are separate slices; never silently drop item damage.
     const auto timing = player->rules.melee->animations.find(player->totals.equipment.animationClass);
@@ -115,7 +117,9 @@ DomainResult<> System::attack(const ActorContext &actor, const Request &request)
         {AttackFact{player->actor, target, 0, 1, actor.area, player->position, destination, actor.sequence}}});
     if (!event) { ports_.combat.cancel(player->actor); return {event.status, {}}; }
     ports_.movement.execute(actor, {MovementAction::Stop, {}, false});
+    const auto previous=state_.casts.find(player->actor);const uint64_t cooldown=previous==state_.casts.end()?0:previous->second.cooldownUntil;
     state_.casts[player->actor] = {player->actor, 0, actor.tick, actor.sequence, actor.tick + uint64_t(duration), actor.area, target};
+    state_.casts.at(player->actor).cooldownUntil=cooldown;
     return applied();
 }
 DomainResult<> System::execute(const ActorContext &actor, const Request &request) {
@@ -123,6 +127,8 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
     if (!player || !player->entered || player->actor != actor.actor || player->area != actor.area || player->persistent.player.hp <= 0)
         return {DomainStatus::InvalidActor, {}};
     if (request.action == Action::Stop) {
+        const auto channel=releases_.find(actor.actor);
+        if(channel!=releases_.end() && channel->second.skill.effect==SkillBehavior::Inferno) {releases_.erase(channel);if(auto cast=state_.casts.find(actor.actor);cast!=state_.casts.end()) {cast->second.interrupted=true;cast->second.until=actor.tick;}}
         if (pending_.erase(actor.player)) ports_.movement.execute(actor, {MovementAction::Stop, {}, false});
         return applied();
     }
@@ -141,10 +147,16 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
             if (!request.hotkey || *request.hotkey >= record.skillHotkeys.size()) return {DomainStatus::InvalidRequest, {}};
             record.skillHotkeys.at(*request.hotkey) = {request.skill == 0 ? -1 : int(request.skill), request.right};
         } else record.selectedSkills.at(record.weaponSet * 2 + (request.right ? 1 : 0)) = request.skill;
-        auto plan = ports_.transactions.prepare(transactions::CharacterEdit{actor, player->inventoryRevision, player->characterRevision, std::move(record)});
+        transactions::CharacterEdit selection{actor,player->inventoryRevision,player->characterRevision,std::move(record)};
+        if(request.action==Action::Select) selection.selectedHand=request.right;
+        auto plan = ports_.transactions.prepare(std::move(selection));
         if (!plan) return {plan.status, {}};
         auto result = ports_.transactions.commit(std::move(*plan.value));
-        if (result && request.action == Action::Select && pending_.erase(actor.player)) ports_.movement.execute(actor, {MovementAction::Stop, {}, false});
+        if (result && request.action == Action::Select) {
+            const auto channel=releases_.find(actor.actor);
+            if(channel!=releases_.end() && channel->second.skill.effect==SkillBehavior::Inferno && channel->second.skill.sourceId!=request.skill) cancel(actor.player,actor.actor);
+            if(pending_.erase(actor.player)) ports_.movement.execute(actor, {MovementAction::Stop, {}, false});
+        }
         return result;
     }
     if (request.action != Action::Cast) return {};

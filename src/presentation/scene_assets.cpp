@@ -15,7 +15,7 @@
 
 namespace d2x {
 const SceneAssets::ProjectileVisual *SceneAssets::ensureProjectile(int id) {
-    if (projectileAnimations.contains(id)) return &projectileVisuals.at(id);
+    if (projectileAnimations.contains(id) || imageLessProjectiles.contains(id)) return &projectileVisuals.at(id);
     if (!unavailableProjectiles.insert(id).second) return nullptr;
     if (!missileDefinitions_) return nullptr;
     const auto &table = *missileDefinitions_;
@@ -28,6 +28,12 @@ const SceneAssets::ProjectileVisual *SceneAssets::ensureProjectile(int id) {
         }
         const auto file = table.value(row, "CelFile");
         const auto path = "data/global/missiles/" + std::string(file) + ".dcc";
+        // Retail light-only missiles explicitly have CelFile=null. Their
+        // lifetime and lighting are real content, without a fabricated image.
+        if(file=="null" && projectileVisuals.at(id).lightRadius>0) {
+            imageLessProjectiles.insert(id);unavailableProjectiles.erase(id);
+            return &projectileVisuals.at(id);
+        }
         if (file.empty() || file == "null" || !archives_.contains(path)) return nullptr;
         const int trans = table.number(row, "Trans").value_or(0);
         auto animation = unitsGraphics_.single(path, trans != 0);

@@ -67,6 +67,11 @@ void EventOutbox::observe(const EventBatch &batch) noexcept {
                 event.target = value.target; event.value = value.life; event.secondary = value.killed; event.position = value.position;
             } else if constexpr (std::is_same_v<T, LifeFact>) { event.actor = value.actor; event.value = int64_t(value.life * 256.f); }
             else if constexpr (std::is_same_v<T, ManaFact>) { event.actor = value.actor; event.value = int64_t(value.mana * 256.f); }
+            else if constexpr (std::is_same_v<T, SoundFact>) {event.actor=value.actor;event.value=value.sound;}
+            else if constexpr (std::is_same_v<T, OverlayFact>) {event.actor=value.actor;event.value=value.overlay;}
+            else if constexpr (std::is_same_v<T, StateFact>) { event.actor = value.actor; event.value = value.state; event.secondary = value.enabled; }
+            else if constexpr (std::is_same_v<T, SkillPulseFact>) { event.actor=value.owner; event.target=value.target; event.value=value.skill; event.secondary=value.rank; event.position=value.position; }
+            else if constexpr (std::is_same_v<T, MissileFact>) { event.actor = value.owner; event.value = value.definition; event.secondary = value.rank; event.position = value.position; }
             else if constexpr (std::is_same_v<T, RepositionFact>) { event.actor = value.actor; event.position = value.position; }
             else if constexpr (std::is_same_v<T, CharacterFact>) {
                 event.actor = value.after.id; event.value = int64_t(value.after.experience); event.secondary = value.after.level;

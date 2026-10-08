@@ -48,6 +48,7 @@ struct SkillCastSpec {
     float staticPercent = 0, staticRadius = 0, staticMinDamage = 0;
     int castOverlayId = -1, hitOverlayId = -1;
     float visualDuration = 0, hitOverlayDuration = 0;
+    int hitClass = 0;
     int sourceId = -1;
     int castMissileId = -1;
     float castMissileDuration = 0;

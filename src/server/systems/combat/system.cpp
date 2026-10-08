@@ -3,6 +3,8 @@
 #include "server/player_store.hpp"
 #include "server/systems/monsters/system.hpp"
 #include "server/systems/transactions/system.hpp"
+#include "server/systems/effects/system.hpp"
+#include "server/systems/skills/evaluation.hpp"
 #include "gameplay/combat/geometry.hpp"
 #include "gameplay/combat/accuracy.hpp"
 #include "gameplay/combat/damage_resolution.hpp"
@@ -30,8 +32,7 @@ void System::cancel(EntityId source) { std::erase_if(state_.pending, [&](const a
 StepStatus System::step(TickContext tick, FrameFacts &) {
     bool blocked = false;
     for (auto it = state_.pending.begin(); it != state_.pending.end();) {
-        const auto &damage = *it;
-        if (damage.impact > tick.tick) { ++it; continue; }
+        auto &damage = *it;
         const auto *sourcePlayer = playerActor(ports_.players, damage.source), *targetPlayer = playerActor(ports_.players, damage.target);
         const auto *sourceMonster = ports_.monsters.find(damage.source), *targetMonster = ports_.monsters.find(damage.target);
         const bool playerAttack = sourcePlayer && targetMonster;
@@ -40,15 +41,21 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         bool valid = area && !area->definition.town && ((playerAttack && damage.weapon.has_value()) || monsterAttack);
         if (sourcePlayer) valid = valid && sourcePlayer->entered && sourcePlayer->area == damage.area && sourcePlayer->persistent.player.hp > 0;
         if (targetPlayer) valid = valid && targetPlayer->entered && targetPlayer->area == damage.area && targetPlayer->persistent.player.hp > 0;
-        if (sourceMonster) valid = valid && sourceMonster->area == damage.area && sourceMonster->life > 0;
-        if (targetMonster) valid = valid && targetMonster->area == damage.area && targetMonster->life > 0;
+        if (sourceMonster) valid = valid && sourceMonster->area == damage.area && sourceMonster->life > 0 && sourceMonster->frozenUntil <= tick.tick && sourceMonster->knockedUntil<=tick.tick && !sourceMonster->owner;
+        if (targetMonster) valid = valid && targetMonster->area == damage.area && targetMonster->life > 0 && !targetMonster->owner;
         if (!valid) { it = state_.pending.erase(it); continue; }
+        if(targetPlayer && !damage.reactionsStarted) {
+            if(!ports_.effects.reactionCapacity()) {blocked=true;++it;continue;}
+            ports_.effects.react({targetPlayer->player,targetPlayer->actor,targetPlayer->area,area->generation,0,tick.tick},
+                damage.source,CombatEffectEvent::AttackedInMelee);damage.reactionsStarted=true;
+        }
+        if(damage.impact>tick.tick) {++it;continue;}
         const Vec from = sourcePlayer ? sourcePlayer->position : sourceMonster->position;
         const Vec to = targetPlayer ? targetPlayer->position : targetMonster->position;
         if (meleeDistance(from, damage.sourceSize, to, targetPlayer ? 2 : targetMonster->rule.size) > damage.range ||
             !area->definition.collision.segment(from, to)) { it = state_.pending.erase(it); continue; }
         // Reserve both private resource and public hit outputs before consuming RNG.
-        if (!ports_.events.hasCapacity(2, targetPlayer ? 2 : 1)) { blocked = true; ++it; continue; }
+        if (!ports_.events.hasCapacity(4, targetPlayer ? 2 : 1) || !ports_.effects.reactionCapacity()) { blocked = true; ++it; continue; }
         auto random = ports_.random;
         const bool running = targetPlayer && targetPlayer->moving && targetPlayer->runningNow;
         const auto chance = [&] {
@@ -57,7 +64,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
                 return weaponHitChance(damage.level, weapon.baseAttackRating, weapon.attackRatingPercent, weapon.target,
                     {targetMonster->rule.level, targetMonster->rule.defense, targetMonster->rule.demon, targetMonster->rule.undead, false}, targetMonster->identity.rank);
             }
-            return physicalHitChance(damage.level, damage.rating, targetPlayer->persistent.player.level, targetPlayer->totals.equipment.defense);
+            return physicalHitChance(damage.level, damage.rating, targetPlayer->persistent.player.level, targetPlayer->totals.character.defense);
         };
         bool hit = running || int(limitedRandom(random, 100)) < chance();
         if (hit && targetPlayer && targetPlayer->totals.equipment.shield) {
@@ -83,14 +90,23 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
                 amount = damage.minimum + limitedRandom(random, uint32_t(damage.maximum - damage.minimum + 1));
                 if (sourceMonster && int(limitedRandom(random, 100)) < sourceMonster->rule.criticalChance) amount *= 2;
             }
-            if (targetPlayer) amount = int64_t(mitigatePlayerDamage(float(amount) / 256.f, DamageType::Physical, targetPlayer->totals.character).dealt * 256.f);
-            else amount = int64_t(mitigateMonsterDamage(float(amount) / 256.f, targetMonster->rule.resistances[0]) * 256.f);
+            if (targetMonster) {
+                amount = int64_t(mitigateMonsterDamage(float(amount) / 256.f, targetMonster->rule.resistances[0]) * 256.f);
+                const auto &mods=sourcePlayer->totals.character.combat;
+                int low=mods.fireMinimum,high=mods.fireMaximum;
+                if(auto own=mods.weapons.find(damage.weapon->item);own!=mods.weapons.end()) {low+=own->second.fireMinimum;high+=own->second.fireMaximum;}
+                const auto mastery=sourcePlayer->rules.skills?skills::mastery(*sourcePlayer,sourcePlayer->rules.skills->fireMasteries):0;
+                const int64_t fire=(int64_t(std::max(0,low))*256+limitedRandom(random,uint32_t(std::max(0,high-low))*256))*(100+mastery)/100;
+                amount+=int64_t(mitigateMonsterDamage(float(fire)/256.f,targetMonster->rule.resistances[size_t(DamageType::Fire)])*256.f);
+            }
         }
         DomainResult<> committed{DomainStatus::Applied, std::monostate{}};
         if (targetMonster) committed = ports_.monsters.damage(damage.target, damage.source, amount, tick.tick);
         else {
             ActorContext actor{targetPlayer->player, targetPlayer->actor, targetPlayer->area, area->generation, 0, tick.tick};
-            committed = ports_.transactions.damage(actor, targetPlayer->characterRevision, amount);
+            const auto received=ports_.effects.receive(actor, amount, DamageType::Physical);
+            committed={received.status,received?std::optional{std::monostate{}}:std::nullopt};
+            if(received && hit && *received.value>0) ports_.effects.react(actor,damage.source,CombatEffectEvent::DamagedInMelee);
         }
         if (committed) { ports_.random = random; it = state_.pending.erase(it); }
         else if (committed.status == DomainStatus::Capacity) { blocked = true; ++it; }

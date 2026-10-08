@@ -21,6 +21,7 @@
 #include <chrono>
 #include <set>
 #include <utility>
+#include <tuple>
 
 namespace d2x {
 namespace {
@@ -74,6 +75,9 @@ struct RemoteUiClients::Impl {
     std::optional<uint64_t> waiting;
     std::optional<OnlineIntentContext> waitingContext;
     std::chrono::steady_clock::time_point waitingUntil;
+    using EquipmentStatKey=std::tuple<uint64_t,uint64_t,uint64_t,uint64_t,int,unsigned,bool>;
+    struct CachedEquipmentStat { EquipmentStatKey key; std::optional<int> value; };
+    mutable std::map<std::string,CachedEquipmentStat,std::less<>> equipmentStats;
 
     struct Actor final : IActorClient {
         Impl &o; explicit Actor(Impl &owner) : o(owner) {}
@@ -548,6 +552,125 @@ struct RemoteUiClients::Impl {
             enqueue(c);
         }, intent);
     }
+    // Original private item packets carry the local equipment stat lists. Native NOEQUIP/BROKEN
+    // flags and active body slots decide contributions; no server flavor or hidden remote stats.
+    std::optional<int> knownEquipmentStat(std::string_view name, int level) const {
+        const auto &online=session.read(); const auto &world=online.world;
+        if (!online.load.playerUnitId) return {};
+        const auto actor=world.units.find({0,*online.load.playerUnitId});
+        if (actor==world.units.end()) return {};
+        const EquipmentStatKey key{online.gameGeneration,world.itemRevision,items.read().revision,
+            actor->second.appearanceRevision,level,world.weaponSet,actor->second.equipmentObserved};
+        if (const auto cached=equipmentStats.find(name);cached!=equipmentStats.end() && cached->second.key==key)
+            return cached->second.value;
+        const auto value=calculateKnownEquipmentStat(name,level);
+        equipmentStats.insert_or_assign(std::string(name),CachedEquipmentStat{key,value});
+        return value;
+    }
+    std::optional<int> calculateKnownEquipmentStat(std::string_view name, int level) const {
+        const auto &online=session.read(); const auto &world=online.world;
+        int64_t total=0;
+        if (!online.load.playerUnitId) return {};
+        const auto actor = world.units.find({0, *online.load.playerUnitId});
+        if (actor == world.units.end() || !actor->second.equipmentObserved) return {};
+        const auto statRow = std::find_if(data.itemStats.begin(), data.itemStats.end(),
+            [&](const auto &entry) { return entry.name == name; });
+        if (statRow == data.itemStats.end() || !statRow->id) return {};
+        std::map<std::string, std::set<int32_t>, std::less<>> equippedSets;
+        std::vector<ItemInstance> setPieces;
+        for (const auto &[equippedId, equipped] : world.items) {
+            if (equipped.ownerType != 0 || equipped.owner != online.load.playerUnitId) continue;
+            if (equipped.flags & 0x4100u) continue;
+            const auto *base = data.items.find(equipped.code);
+            const bool active = (equipped.mode == 1 && equipped.body <= 10) || (equipped.mode == 0 && equipped.page == 1 && base && base->equipment.isType("char"));
+            if (!active) continue;
+            const auto equipment = items.read().items.find(equippedId);
+            if (equipment == items.read().items.end() || !equipment->second.decoded || equipment->second.revision != equipped.revision) return {};
+            const auto instance = completeItem(equipped, equipment->second, SocketLocation{{}, 0});
+            if (!instance) return {};
+            for (const auto &bonus : resolveItemStats(data, *instance, level))
+                if (bonus.name == name) total += bonus.value;
+            if (equipped.mode == 1 && instance->identified && instance->quality == ItemQuality::Set) {
+                const auto record = std::find_if(data.setItems.begin(), data.setItems.end(),
+                    [&](const auto &entry) { return int32_t(entry.row) == instance->specialRow; });
+                if (record == data.setItems.end()) return {};
+                equippedSets[record->set].insert(instance->specialRow);
+                setPieces.push_back(*instance);
+            }
+        }
+        auto hasStat = [&](const PropertyRange &property) {
+            const auto definition = std::find_if(data.properties.begin(), data.properties.end(),
+                [&](const auto &entry) { return entry.code == property.code; });
+            return definition != data.properties.end() && std::any_of(definition->operations.begin(), definition->operations.end(),
+                [&](const auto &operation) { return operation.stat == name; });
+        };
+        std::set<std::string, std::less<>> countedSets;
+        for (const auto &piece : setPieces) {
+            const auto record = std::find_if(data.setItems.begin(), data.setItems.end(),
+                [&](const auto &entry) { return int32_t(entry.row) == piece.specialRow; });
+            const auto &worn = equippedSets.at(record->set);
+            const unsigned count = unsigned(worn.size());
+            std::array<bool, 5> activeLayers{};
+            if (record->setAddFunction == 2) {
+                for (unsigned layer = 0; layer < activeLayers.size(); ++layer) activeLayers[layer] = count > layer + 1;
+            } else if (record->setAddFunction == 1) {
+                unsigned layer = 0;
+                for (const auto &other : data.setItems) {
+                    if (other.set != record->set || other.row == record->row) continue;
+                    if (layer >= activeLayers.size()) return {};
+                    activeLayers[layer++] = worn.contains(int32_t(other.row));
+                }
+            } else if (record->setAddFunction) return {};
+            for (unsigned layer = 0; layer < activeLayers.size(); ++layer) {
+                if (!activeLayers[layer]) continue;
+                bool assigned = false;
+                for (const auto &bonus : piece.savedSetStats[layer]) {
+                    if (bonus.id != *statRow->id || bonus.parameter) continue;
+                    total += bonus.value;
+                    assigned = true;
+                }
+                if (!assigned && std::any_of(record->setBonuses.begin(), record->setBonuses.end(), [&](const auto &bonus) {
+                    return bonus.perItem && bonus.pieces == int(layer + 2) && hasStat(bonus.property);
+                })) return {};
+            }
+            if (!countedSets.insert(record->set).second) continue;
+            const unsigned fullCount = unsigned(std::count_if(data.setItems.begin(), data.setItems.end(),
+                [&](const auto &entry) { return entry.set == record->set; }));
+            for (const auto &bonus : record->setBonuses) {
+                if (bonus.perItem || (bonus.pieces ? count < unsigned(bonus.pieces) : count != fullCount) || !hasStat(bonus.property)) continue;
+                const auto &property = bonus.property;
+                if (property.directRoll && property.minimum != property.maximum) return {};
+                for (const auto &value : resolvePropertyStats(data, property, property.minimum.value_or(0), level, int(piece.level)))
+                    if (value.name == name) total += value.value;
+            }
+        }
+        if (total<INT32_MIN || total>INT32_MAX) return {};
+        return int(total);
+    }
+    std::optional<int> knownSelfFasterCast(int level) const {
+        if (const auto native=stat("item_fastercastrate")) return int(*native);
+        auto total=knownEquipmentStat("item_fastercastrate",level);
+        const auto &online=session.read();
+        if (!total || !online.load.playerUnitId) return {};
+        const OnlineUnitKey key{0,*online.load.playerUnitId};
+        const auto unit=online.world.units.find(key);
+        if (unit==online.world.units.end() || !unit->second.stateSequence) return {};
+        const auto states=combat.states().find(key);
+        if (states==combat.states().end() || !states->second.decoded || states->second.sequence!=unit->second.stateSequence) return {};
+        const auto &costs=data.tables.at("itemstatcost");
+        for (size_t row=0;row<costs.rows().size();++row) {
+            if (costs.value(row,"Stat")!="item_fastercastrate") continue;
+            const auto id=costs.number(row,"ID"); if (!id) return {};
+            int64_t value=*total;
+            for (const auto &[state,list]:states->second.states) {
+                (void)state;
+                for (const auto &entry:list.stats) if (entry.id==*id && !entry.parameter) value+=entry.value;
+            }
+            if (value<INT32_MIN || value>INT32_MAX) return {};
+            return int(value);
+        }
+        return {};
+    }
     void projectCharacter() {
         const auto &online = session.read(); const auto &w = online.world;
         CharacterProjectionInput input;
@@ -598,6 +721,8 @@ struct RemoteUiClients::Impl {
                 if (found || leftHand) break;
             }
         }
+        if (const auto level=stat("level"))
+            if (const auto faster=knownSelfFasterCast(int(*level))) input.stats.insert_or_assign("item_fastercastrate",*faster);
         characterView = projectCharacterDisplay(data, input);
     }
     ItemInstance itemInstance(const OnlineItem &native, const OnlineDecodedItem &di, ItemLocation location) const {
@@ -715,80 +840,9 @@ struct RemoteUiClients::Impl {
         if (!sale) {
             if (const auto value = stat("item_reducedprices")) reduce = int(*value);
             else {
-                if (!online.load.playerUnitId) return {};
-                const auto actor = world.units.find({0, *online.load.playerUnitId});
-                if (actor == world.units.end() || !actor->second.equipmentObserved) return {};
-                const auto statRow = std::find_if(data.itemStats.begin(), data.itemStats.end(),
-                    [](const auto &entry) { return entry.name == "item_reducedprices"; });
-                if (statRow == data.itemStats.end() || !statRow->id) return {};
-                std::map<std::string, std::set<int32_t>, std::less<>> equippedSets;
-                std::vector<ItemInstance> setPieces;
-                for (const auto &[equippedId, equipped] : world.items) {
-                    if (equipped.ownerType != 0 || equipped.owner != online.load.playerUnitId) continue;
-                    if (equipped.flags & 0x4100u) continue;
-                    const auto *base = data.items.find(equipped.code);
-                    const bool active = (equipped.mode == 1 && equipped.body <= 10) || (equipped.mode == 0 && equipped.page == 1 && base && base->equipment.isType("char"));
-                    if (!active) continue;
-                    const auto equipment = items.read().items.find(equippedId);
-                    if (equipment == items.read().items.end() || !equipment->second.decoded || equipment->second.revision != equipped.revision) return {};
-                    const auto instance = completeItem(equipped, equipment->second, SocketLocation{{}, 0});
-                    if (!instance) return {};
-                    for (const auto &bonus : resolveItemStats(data, *instance, characterView.level))
-                        if (bonus.name == "item_reducedprices") reduce += bonus.value;
-                    if (equipped.mode == 1 && instance->identified && instance->quality == ItemQuality::Set) {
-                        const auto record = std::find_if(data.setItems.begin(), data.setItems.end(),
-                            [&](const auto &entry) { return int32_t(entry.row) == instance->specialRow; });
-                        if (record == data.setItems.end()) return {};
-                        equippedSets[record->set].insert(instance->specialRow);
-                        setPieces.push_back(*instance);
-                    }
-                }
-                auto hasReduction = [&](const PropertyRange &property) {
-                    const auto definition = std::find_if(data.properties.begin(), data.properties.end(),
-                        [&](const auto &entry) { return entry.code == property.code; });
-                    return definition != data.properties.end() && std::any_of(definition->operations.begin(), definition->operations.end(),
-                        [](const auto &operation) { return operation.stat == "item_reducedprices"; });
-                };
-                std::set<std::string, std::less<>> countedSets;
-                for (const auto &piece : setPieces) {
-                    const auto record = std::find_if(data.setItems.begin(), data.setItems.end(),
-                        [&](const auto &entry) { return int32_t(entry.row) == piece.specialRow; });
-                    const auto &worn = equippedSets.at(record->set);
-                    const unsigned count = unsigned(worn.size());
-                    std::array<bool, 5> activeLayers{};
-                    if (record->setAddFunction == 2) {
-                        for (unsigned layer = 0; layer < activeLayers.size(); ++layer) activeLayers[layer] = count > layer + 1;
-                    } else if (record->setAddFunction == 1) {
-                        unsigned layer = 0;
-                        for (const auto &other : data.setItems) {
-                            if (other.set != record->set || other.row == record->row) continue;
-                            if (layer >= activeLayers.size()) return {};
-                            activeLayers[layer++] = worn.contains(int32_t(other.row));
-                        }
-                    } else if (record->setAddFunction) return {};
-                    for (unsigned layer = 0; layer < activeLayers.size(); ++layer) {
-                        if (!activeLayers[layer]) continue;
-                        bool assigned = false;
-                        for (const auto &bonus : piece.savedSetStats[layer]) {
-                            if (bonus.id != *statRow->id || bonus.parameter) continue;
-                            reduce += bonus.value;
-                            assigned = true;
-                        }
-                        if (!assigned && std::any_of(record->setBonuses.begin(), record->setBonuses.end(), [&](const auto &bonus) {
-                            return bonus.perItem && bonus.pieces == int(layer + 2) && hasReduction(bonus.property);
-                        })) return {};
-                    }
-                    if (!countedSets.insert(record->set).second) continue;
-                    const unsigned fullCount = unsigned(std::count_if(data.setItems.begin(), data.setItems.end(),
-                        [&](const auto &entry) { return entry.set == record->set; }));
-                    for (const auto &bonus : record->setBonuses) {
-                        if (bonus.perItem || (bonus.pieces ? count < unsigned(bonus.pieces) : count != fullCount) || !hasReduction(bonus.property)) continue;
-                        const auto &property = bonus.property;
-                        if (property.directRoll && property.minimum != property.maximum) return {};
-                        for (const auto &value : resolvePropertyStats(data, property, property.minimum.value_or(0), characterView.level, int(piece.level)))
-                            if (value.name == "item_reducedprices") reduce += value.value;
-                    }
-                }
+                const auto known=knownEquipmentStat("item_reducedprices",characterView.level);
+                if (!known) return {};
+                reduce=*known;
             }
         }
         if (detail.gamble) {

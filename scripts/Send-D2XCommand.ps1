@@ -7,7 +7,7 @@ param(
         'server-status', 'server-protocol', 'server-commands', 'server-systems', 'server-snapshot', 'server-events',
         'server-pause', 'server-resume', 'server-auto-pause', 'refill-resources',
         'save', 'load', 'cancel-load', 'step',
-        'grant-gold', 'player-damage', 'grant-experience', 'item-spawn', 'monster-spawn',
+        'grant-gold', 'player-damage', 'missile-hit', 'grant-experience', 'item-spawn', 'monster-spawn',
         'monster-damage', 'monster-kill', 'travel', 'unlock-waypoints',
         'grant-shrine', 'grant-hireling', 'reset-attributes', 'reset-skills',
         'online-status', 'online-login', 'online-realms', 'online-select-realm',

@@ -1,5 +1,7 @@
+#include "gameplay/skills/spec.hpp"
 #include "presentation/scene_assets.hpp"
 #include "content/classic_data.hpp"
+#include "gameplay/skills/behavior.hpp"
 #include <algorithm>
 
 namespace d2x {
@@ -33,6 +35,12 @@ void SceneAssets::loadProjectileDefinitions(const ClassicData &content) {
         projectileVisuals.emplace(id, visual);
         ClientMissileProgram program;
         program.function = number("pCltDoFunc");
+        for(const auto &[skillId,record]:content.skills.skills) {
+            (void)skillId;
+            if(!record.spell || record.spell->missileId!=id) continue;
+            if(record.spell->blizzard) program.blizzard=record.spell->blizzard;
+            if(record.spell->effect==SkillBehavior::ChainLightning) program.chain=record.spell->arc;
+        }
         // The retail table contains annotated values such as "*16". Keep
         // these hit programs unresolved instead of treating the annotation as
         // a verified function index or aborting all scene resource loading.
@@ -43,7 +51,7 @@ void SceneAssets::loadProjectileDefinitions(const ClassicData &content) {
         program.frames = number("Range"); program.framesPerLevel = number("LevRange");
         if (const auto collision = content.missileCollisions.find(id); collision != content.missileCollisions.end())
             program.collision = collision->second;
-        program.collide = number("ClientCol") != 0;
+        program.collide = number("ClientCol") != 0;program.returnFire=number("ReturnFire")!=0;
         program.killOnContact = number("CollideKill") != 0;
         program.explodeOnExpiry = number("AlwaysExplode") != 0;
         program.explosion = linked(row, "ExplosionMissile");
@@ -68,6 +76,9 @@ void SceneAssets::loadProjectileDefinitions(const ClassicData &content) {
             projectileImpactVariants.emplace(id, std::array{program.hitChildren[1], program.hitChildren[2]});
         if (program.hitFunction == 14 && program.hitChildren[1] >= 0)
             projectileFreezingEjecta.emplace(id, program.hitChildren[1]);
+        if(program.function==1 && program.hitFunction==19 && program.parameters[0]>0 && program.parameters[1]>0)
+            blizzardFalls.emplace(id,BlizzardVisual{program.parameters[0],program.parameters[1],program.hitChildren[0],
+                program.hitChildren[0]>=0?table.number(missileRows_.at(program.hitChildren[0]),"Range").value_or(0):0});
     }
 }
 } // namespace d2x

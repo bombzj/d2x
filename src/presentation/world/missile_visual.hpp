@@ -2,9 +2,11 @@
 #include "core/math.hpp"
 #include "core/id.hpp"
 #include "world/collision.hpp"
+#include "gameplay/skills/elemental_spec.hpp"
 #include <array>
 #include <deque>
 #include <vector>
+#include <optional>
 
 namespace d2x {
 // MPQ client programs only. No damage, chance-to-hit or status application.
@@ -16,7 +18,9 @@ struct ClientMissileProgram {
     std::array<int, 5> parameters{};
     std::array<int, 3> hitParameters{}, children{-1,-1,-1};
     std::array<int, 4> hitChildren{-1,-1,-1,-1};
-    bool childServerSent{};
+    bool childServerSent{}, returnFire{};
+    std::optional<BlizzardSpec> blizzard;
+    std::optional<ArcSpec> chain;
 };
 struct ClientMissileVisual {
     ClientMissileVisual() = default;
@@ -33,17 +37,23 @@ struct ClientMissileVisual {
     EntityId owner;
     bool hostile{};
     int pierce{};
+    int remainingHits{};
     float animationOffset{};
+    // Pair reconstruction and 73 once without merging independent creations.
+    uint8_t creationSources{};
+    Vec creationPosition, creationDirection;
     EntityId soundEmitter;
     uint64_t random = 0; // Presentation stream; the server's unit seed is not transmitted.
     std::deque<Vec> path{};
     std::vector<EntityId> contacts{};
 };
+enum class ClientMissileSource : uint8_t { Program = 0, Cast = 1, Synchronization = 2 };
 struct ClientMissileTarget {
     EntityId id;
     Vec position;
     int size{};
     bool hostile{};
+    int retaliation{-1},retaliationRank{1};
 };
 // Prepared from imported skill data by SceneAssets; no damage or cast rules.
 struct BlizzardVisual {

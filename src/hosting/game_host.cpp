@@ -178,6 +178,9 @@ server::DomainResult<> GameHost::grantExperience(PlayerBinding binding, uint64_t
     return result;
 }
 
+std::set<int> GameHost::unitStates(GameHandle game,EntityId id) const {
+    const auto *slot=find(game);return slot?slot->game->unitStates(id):std::set<int>{};
+}
 std::vector<MonsterSnapshot> GameHost::visibleMonsters(PlayerBinding binding) const {
     const auto *slot = find(binding.game);
     return slot ? slot->game->visibleMonsters(binding.player) : std::vector<MonsterSnapshot>{};
@@ -241,6 +244,10 @@ std::optional<PersistentCharacter> GameHost::shop(PlayerBinding binding) const {
 
 namespace d2x {
 server::DomainResult<> GameHost::grantGold(PlayerBinding binding,uint32_t amount) { auto *slot=find(binding.game); if(!slot) return {server::DomainStatus::InvalidActor,{}}; auto result=slot->game->grantGold(binding.player,amount); if(result) publish(size_t(binding.game.slot)); return result; }
+server::DomainResult<> GameHost::missileHit(PlayerBinding binding,EntityId source,uint32_t amount,DamageType type,bool returnFire) {
+    auto *slot=find(binding.game);if(!slot) return {server::DomainStatus::InvalidActor,{}};
+    auto result=slot->game->missileHit(binding.player,source,amount,type,returnFire);if(result) publish(size_t(binding.game.slot));return result;
+}
 server::DomainResult<> GameHost::damagePlayer(PlayerBinding binding,uint32_t amount) { auto *slot=find(binding.game); if(!slot) return {server::DomainStatus::InvalidActor,{}}; auto result=slot->game->damagePlayer(binding.player,amount); if(result) publish(size_t(binding.game.slot)); return result; }
 }
 

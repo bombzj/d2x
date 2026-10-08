@@ -4,6 +4,13 @@
 #include <cmath>
 
 namespace d2x {
+Vec knockbackDestination(Vec target, Vec source, int distance) {
+    const int x=int(std::floor(target.x))-int(std::floor(source.x));
+    const int y=int(std::floor(target.y))-int(std::floor(source.y));
+    const int divisor=std::max(std::abs(x),std::abs(y));
+    if(!divisor || distance<=0) return target;
+    return {std::floor(target.x)+float(x*distance/divisor)+.5f,std::floor(target.y)+float(y*distance/divisor)+.5f};
+}
 std::optional<float> missileTerrainContact(const Grid &grid, Vec from, Vec to, MissileCollisionRule rule, Vec origin) {
     if (grid.missileSegment(from - origin, to - origin, rule)) return {};
     float clear = 0, blocked = 1;

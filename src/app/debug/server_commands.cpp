@@ -50,6 +50,7 @@ std::string_view argumentName(AdminArgumentKind kind) {
     case AdminArgumentKind::Spawn: return "spawn";
     case AdminArgumentKind::Unit: return "unit";
     case AdminArgumentKind::Travel: return "level";
+    case AdminArgumentKind::Missile: return "source/amount/missile";
     }
     throw std::logic_error("Unknown administration argument kind");
 }
@@ -167,6 +168,8 @@ std::optional<std::string> serverDebugCommand(const Json &request, EmbeddedRealm
             if (request.contains("durability")) spawn.durability = unsigned(unsignedValue(request.at("durability"), 255));
             args = std::move(spawn); break;
         }
+        case AdminArgumentKind::Missile:
+            args=AdminMissile{unsignedValue(request.at("source"),UINT32_MAX),uint32_t(unsignedValue(request.at("amount"),INT32_MAX/256)),int(unsignedValue(request.at("missile"),UINT16_MAX))};break;
         case AdminArgumentKind::Unit:
             args = AdminUnit{unsignedValue(request.at("id")), request.contains("amount") ? signedValue(request.at("amount")) : 0}; break;
         case AdminArgumentKind::Travel: args = AdminTravel{int(unsignedValue(request.at("level"), INT32_MAX))}; break;

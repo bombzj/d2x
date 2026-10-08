@@ -20,6 +20,8 @@ struct MonsterRule {
     int nativeVelocity{}, difficulty{};
     MovementCollisionRule collision;
     bool demon{}, undead{};
+    int coldEffect{}, coldState{-1}, frozenState{-1};
+    int knockbackTicks{};
     std::vector<uint64_t> experience;
     MonsterAiProfile ai{};
 };

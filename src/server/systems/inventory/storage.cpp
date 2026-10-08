@@ -11,18 +11,19 @@ bool System::storageAccess(PlayerId id) const {
     if (access==state_.storage.end() || !p || !p->entered || p->persistent.player.hp<=0 || p->area!=access->second.area) return false;
     const auto *area=ports_.areas.find(p->area); if (!area || area->generation!=access->second.revision) return false;
     for (const auto &object : area->definition.objects) if (object.id==access->second.source && object.rule.stash) {
-        const auto &r=object.rule; return interactionClear(area->definition.collision,p->position,{object.id,object.position,object.position,r.width,r.height,float(r.range),true});
+        const auto &r=object.rule; if(access->second.remoteRange) {const int x=int(object.position.x)-int(p->position.x),y=int(object.position.y)-int(p->position.y);return x*x+y*y<=*access->second.remoteRange * *access->second.remoteRange;} return interactionClear(area->definition.collision,p->position,{object.id,object.position,object.position,r.width,r.height,float(r.range),true});
     }
     return false;
 }
-DomainResult<> System::openStash(const ActorContext &actor,EntityId source) {
+DomainResult<> System::openStash(const ActorContext &actor,EntityId source,std::optional<int> remoteRange) {
     const auto *p=ports_.players.find(actor.player); const auto *area=ports_.areas.find(actor.area);
     if (!p || !p->entered || p->actor!=actor.actor || p->area!=actor.area || p->persistent.player.hp<=0 || !area || area->generation!=actor.areaGeneration) return {DomainStatus::InvalidActor,{}};
     const auto object=std::find_if(area->definition.objects.begin(),area->definition.objects.end(),[&](const auto &value){return value.id==source && value.rule.stash;});
     if(object==area->definition.objects.end()) return {DomainStatus::InvalidRequest,{}};
     const auto &r=object->rule;
-    if(!interactionClear(area->definition.collision,p->position,{source,object->position,object->position,r.width,r.height,float(r.range),true})) return {DomainStatus::InvalidRequest,{}};
-    auto access=state_.storage; access[actor.player]={source,ContainerKind::Stash,area->generation,actor.area};
+    const int x=int(object->position.x)-int(p->position.x),y=int(object->position.y)-int(p->position.y);
+    if(remoteRange ? x*x+y*y>*remoteRange * *remoteRange : !interactionClear(area->definition.collision,p->position,{source,object->position,object->position,r.width,r.height,float(r.range),true})) return {DomainStatus::InvalidRequest,{}};
+    auto access=state_.storage; access[actor.player]={source,ContainerKind::Stash,area->generation,actor.area,remoteRange};
     auto sent=ports_.events.publish({0,actor.tick,{}, {AudienceKind::Player,actor.player,actor.area},{UiFact{16}}}); if(!sent) return {sent.status,{}};
     state_.storage.swap(access); return {DomainStatus::Applied,std::monostate{}};
 }

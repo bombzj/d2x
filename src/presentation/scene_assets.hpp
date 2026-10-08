@@ -62,7 +62,7 @@ class SceneAssets {
     };
     std::map<int, SkillIcon> skillIcons;
     std::map<int, GpuAnimation> projectileAnimations;
-    std::set<int> unavailableProjectiles, unavailableOverlays;
+    std::set<int> unavailableProjectiles, unavailableOverlays, imageLessProjectiles;
     std::set<int> translucentProjectiles;
     std::set<int> frozenOrbProjectiles;
     std::map<int, BlizzardVisual> blizzardFalls;

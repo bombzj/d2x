@@ -6,27 +6,27 @@
 
 D2X提供Single Player、局域网自研宿主与既有原服入口。**客户端从选角到入局后的所有逻辑只有一套**：RealmFrontend → RealmSession／RemoteWorld → RemoteTown／RemoteUiClients／RemoteScene → SceneController／SceneView。自研宿主收发原1.13c MCP／D2GS包，内存字节队列和TCP接受连接共用协议会话；GameHost与角色存档不跨传输。原服账号仍走PvPGN认证，单机／LAN连接预认证Realm；断线不切换权威。
 
-服务端拆分为hosting协议／存储／内容准备／实例调度和server领域内核。GameInstance组装AreaStore、PlayerStore、GameSystems、类型化命令FIFO、固定步与事件输出；领域通过窄Ports协作，不向会话类堆放规则。26个领域覆盖物品／库存／工艺、怪物／人口／AI、战斗／技能／效果、掉落／成长、任务／NPC／交易／旅行等；当前执行玩家入场、移动／换区、库存／装备、人物成长、普通近战及女巫三个主动技能切片；新增掉落、药水效果、死亡尸体、世界物件、城镇服务、邪恶洞穴与旅行基础；具体范围见下文，其他意图显式NotImplemented。25Hz内核不读取MPQ、设备、GPU、socket或文件。内部投影及可靠事件仅供宿主编码原包；地图两端仍共用NativeMapGenerator及reveal顺序。所有权和扩展入口见[内核子系统](docs/modules/SERVER_SYSTEMS.md)。
+服务端拆分为hosting协议／存储／内容准备／实例调度和server领域内核。GameInstance组装AreaStore、PlayerStore、GameSystems、类型化命令FIFO、固定步与事件输出；领域通过窄Ports协作，不向会话类堆放规则。26个领域覆盖物品／库存／工艺、怪物／人口／AI、战斗／技能／效果、掉落／成长、任务／NPC／交易／旅行等；当前执行玩家入场、移动／换区、库存／装备、人物成长、普通近战及女巫26项主动与4项被动；新增掉落、药水效果、死亡尸体、世界物件、城镇服务、邪恶洞穴与旅行基础；具体范围见下文，其他意图显式NotImplemented。25Hz内核不读取MPQ、设备、GPU、socket或文件。内部投影及可靠事件仅供宿主编码原包；地图两端仍共用NativeMapGenerator及reveal顺序。所有权和扩展入口见[内核子系统](docs/modules/SERVER_SYSTEMS.md)。
 
 Single Player现经同一MCP原图角色界面列出、创建、删除和选择服务端saves目录的D2S角色，然后自动建普通单人房、进入保存所在幕的城镇走跑。master已有支持范围的D2S编解码保留，PersistentCharacter与存档路径均属服务端；初始角色和物品读取MPQ。整局持有角色锁，保存校验后原子替换并保留.bak，失败保留实例和锁，不发送退局成功。F11保存、Ctrl+F11校验后原协议退局重入，以及--load／--save／--class宿主启动入口已接；具体约束见[存档](docs/modules/SAVES.md)。
 
-当前源码执行世界走跑／换区、库存／装备及人物成长基础：背包／Cursor／腰带、普通交换、装备及双手冲突、切组、合堆与卷轴／书本转装由inventory规划；attributes按当前等级汇总装备／护符、支持的套装、永久任务奖励及基础被动；progression处理经验封顶／升级、属性点及技能点。transactions同时复验库存和人物revision，一次发布不可变物品／人物事实，再提交持久值、资源与总值；hosting共用入场／增量原包编码，客户端仍只有一套RealmSession／Remote*。经验管理grant-experience已接领域入口。属性规则、需求、经验阈值和容量来自MPQ；缺条件套装需求／未分配随机套装值明确拒绝。本轮已恢复普通掉落与拾取、资源恢复／药水／定时效果、尸体与复活、普通物件、NPC商店／鉴定／修理／仓库、邪恶洞穴及传送点／本人回城门；方块、佣兵、完整主动技能及其他任务仍待恢复。D2S v96不变，宿主规则指纹升至admission-v16；派生总值不写盘。私有一人实例ESC／失焦暂停，共享房间和原服照常推进。本批已构建入包，有限冒烟及限制见下节；后续顺序见[总计划](docs/architecture/MULTIPLAYER.md)。
+当前源码执行世界走跑／换区、库存／装备及人物成长基础：背包／Cursor／腰带、普通交换、装备及双手冲突、切组、合堆与卷轴／书本转装由inventory规划；attributes按当前等级汇总装备／护符、支持的套装、永久任务奖励及基础被动；progression处理经验封顶／升级、属性点及技能点。transactions同时复验库存和人物revision，一次发布不可变物品／人物事实，再提交持久值、资源与总值；hosting共用入场／增量原包编码，客户端仍只有一套RealmSession／Remote*。经验管理grant-experience已接领域入口。属性规则、需求、经验阈值和容量来自MPQ；缺条件套装需求／未分配随机套装值明确拒绝。本轮已恢复普通掉落与拾取、资源恢复／药水／定时效果、尸体与复活、普通物件、NPC商店／鉴定／修理／仓库、邪恶洞穴及传送点／本人回城门；方块、佣兵、其他职业主动技能及其他任务仍待恢复。D2S v96不变，宿主规则指纹升至admission-v17；派生总值不写盘。私有一人实例ESC／失焦暂停，共享房间和原服照常推进。本批已构建入包，有限冒烟及限制见下节；后续顺序见[总计划](docs/architecture/MULTIPLAYER.md)。
 
 世界／多人源码已接：World拥有准备请求、原生出口／边界、碰撞及驻留；Travel沿原邻接边界行走或按原UNIT_TILE换区，提交不可变TravelFact后改变区域／位置。NativeRealmHost共享只读MPQ内容，集中推进多个GameHandle实例；连接独立持有MCP／GS状态、角色名册版本和文件租约，同局1–8人、角色ID按实例统一递增。加入者采用房间种子／难度，离开只保存并移除本人；最后一人才释放实例。原5B／59／0D／0F／9D／0A／5C同步名册、可见玩家、移动和穿戴外观；私有库存／人物事实按连接路由，原15／26已接同局聊天。首页TCP/IP Game进入原MPQ的Host Game／Join Game页，显示本机IPv4；Host开启MCP 6113／GS 4000并进入共用选角／大厅，Join原弹窗默认选中127.0.0.1，可直接输入替换。界面宿主监听全部IPv4接口，原MCP加入回包按每个连接实际到达的接口返回GS地址，兼容同机回环与局域网。`--host-lan <本机IPv4>`／`--lan <宿主IPv4>`命令行仍保留，可指定两端端口和宿主角色目录。Single Player仍自动建单人房；返回TCP/IP菜单不停止其他玩家的房间。当前宿主仍由应用进程运行，账号与独立无图形服务端仍待阶段三；本轮已观察同机TCP双客户端；嵌入宿主同时持有两个实例仅用于确认基础隔离，不作独立服务端验收，尚未认证跨机器；具体证据见下节。
 
-普通近战源码已接原MPQ人口准备 → 普通怪物准入／追击／反击 → 玩家普通近战及动作帧命中 → 生命／死亡 → 击杀经验／升级。命中、攻速与物理减免复用旧单机纯计算，动作、怪物数值和经验从当前MPQ准备；population、monsters、ai、skills、combat、death和progression各自持有状态，原AC／67／69／6C／6D、4C／4D、0C及私有1F经hosting输出。普通近战不依赖客户端改动；整个未提交范围中的客户端改动及逐项确认边界见[客户端边界](docs/modules/CLIENT.md#本批客户端边界)。当前支持Fallen／Zombie／Skeleton／Brute及CorruptRogue／Goatman／CorruptLancer的普通物理近战，完整AI、精英／首领、双持、武器元素／持续伤害、吸取／触发、其余主动技能／弹体仍待接；不支持的攻击不降级为普通攻击。本轮 death 已接死亡惩罚、装备／Cursor 尸体转移、原41复活与本人拾回；本轮已有限验证普通难度的死亡、城镇复活和完整拾回；部分拾回／多尸体等边界尚未运行，写档限制见存档模块。
+普通近战源码已接原MPQ人口准备 → 普通怪物准入／追击／反击 → 玩家普通近战及动作帧命中 → 生命／死亡 → 击杀经验／升级。命中、攻速与物理减免复用旧单机纯计算，动作、怪物数值和经验从当前MPQ准备；population、monsters、ai、skills、combat、death和progression各自持有状态，原AC／67／69／6C／6D、4C／4D、0C及私有1F经hosting输出。普通近战不依赖客户端改动；既有基础批次中的客户端改动及逐项确认边界见[客户端边界](docs/modules/CLIENT.md#既有基础批次客户端边界)。当前支持Fallen／Zombie／Skeleton／Brute及CorruptRogue／Goatman／CorruptLancer的普通物理近战，完整AI、精英／首领、双持、武器元素／持续伤害、吸取／触发、其余主动技能／弹体仍待接；不支持的攻击不降级为普通攻击。本轮 death 已接死亡惩罚、装备／Cursor 尸体转移、原41复活与本人拾回；本轮已有限验证普通难度的死亡、城镇复活和完整拾回；部分拾回／多尸体等边界尚未运行，写档限制见存档模块。
 
 Act 1近战怪物案例新增CorruptRogue、Goatman、CorruptLancer，迁用master各家族AI及接近／速度逻辑：走跑选择、概率停顿、持续接近和持枪罗格的远距冲锋标记分开建模。纯决策位于gameplay/monsters/melee_decision，server/ai提供目标／时钟／随机并提交命令，monsters推进已接受的路线；动作期间不逐帧重掷选择。修正怪物速度为原固定点Velocity换算并输出真实速度百分比及走／跑动作，客户端消费者未改。常规区域仅准入原物理A1、所需原动画齐备的普通怪物；邪恶洞穴对未实现敌对类型使用已授权的沉沦魔替身并保留真实身份，不能据此宣称精英或原类型战斗规则完成；远程、元素、精英／首领及完整Act 1 AI仍待迁移。[参考设计](docs/architecture/REFERENCE_DESIGN.md)已补全技能、怪物、NPC、任务与物品的公共计算／服务端执行分工、D2MOO证据及具体提取步骤。已构建入包，当前怪物及技能切片的有限冒烟见下节。
 
-女巫火弹、火球、传送已接服务端案例：沿用旧单机纯技能解析、SC动作时序、直线弹体和范围命中规则；技能定义、协同／支配、耗蓝、速度／寿命／范围及区域传送资格继续读当前MPQ。skills负责动作帧释放，missiles负责飞行／碰撞，combat负责火抗减伤／命中，transactions原子提交扣蓝与传送位置，死亡／经验沿既有领域执行。原4C／4D、1F及15承载动作／资源／位置。用户另行授权提取公共纯计算：客户端弹体调用共用墙面裁剪、环形散射／爆发和转向函数，保留原参数／帧相位，不改消息与输入。仅同区域、对已准入怪物生效；跨区弹体、PvP、充能／触发、同行者传送及其余技能仍未实现，细节见[技能案例](docs/modules/SERVER_SYSTEMS.md#女巫主动技能案例)。已构建入包并完成下节声明的有限冒烟。
+女巫全部30项源码已接服务端与公共客户端：26主动覆盖直线／环射／带电／冰封球／连锁／Inferno、地面火／陨石／暴风雪、装甲反击／强化／护盾／雷云、Hydra与远程心灵传动／传送；4被动由原表纯计算执行。优先迁用master，原包与客户端缺口核对本地D2MOO及原1.13c DLL。skills、missiles、combat、effects、companions分别持有动作、弹体、命中、状态和召唤；transactions原子提交资源／跨玩家强化，不恢复全能GameSession。客户端只有同一套原4C／4D、73、A3、A7／A9、67、11／2C消费者。具体技能、公共纯函数及未认证边界见[女巫技能](docs/gameplay/skills/SORCERESS.md)。本轮Windows Release构建、打包及有限冒烟已完成，证据与未验证边界见当前运行包一节。
 
 本轮源码审查修复：未进入／断线角色的迟到命令及区域激活、暂停取消换区、离开视野清理公开装备、MCP入局失败回滚、攻击取消保留攻速间隔、同区域活人／目标／距离复验，以及扣血与私有生命／公开受击事实成组提交。经验奖励在输出背压时保留首次捕获金额，成功后才标记结算。详见[内核子系统](docs/modules/SERVER_SYSTEMS.md#普通近战切片)。本批已构建及打包，有限冒烟范围见下节。
 
 自研消息基础已覆盖现有客户端60种C2S、90种S2C及MCP目录，分传输、生命周期、六个领域具名入口；未实现请求记录stub，入场投影与完整实现分开，未注册包拒绝。named pipe已接服务端save／load／step／grant-experience、调试时钟覆盖、资源恢复、金币／人物伤害、MPQ物品／普通怪物生成及怪物伤害／击杀；server-snapshot／server-events提供有界权威快照与历史，server-status／server-protocol保留；其余管理修改有类型化stub，原服连接不可调用。角色名不截断／替换，无法表示的文件名进入诊断；候选重载复用准备结果，静止重复发包和地图多余复制已移除。接口与限制见[服务端协议](docs/modules/SERVER_PROTOCOL.md)。
 
-## 本轮六项服务端实现与交付边界
+## 历史8623446的六项服务端实现与交付边界
 
-按掉落与拾取、资源与消耗品、死亡与尸体、世界物件、NPC与城镇服务、第一幕任务与旅行依次实现并逐项构建打包。迁用 master 已有纯计算／内容准备，原包缺口再查本地 D2MOO；本轮没有修改 RealmSession、RemoteWorld、客户端玩法或表现代码。当前源码为 Windows Release，最终包更新到 dist/current；已按本轮授权收敛六项并完成有限冒烟，没有提交 Git；证据与限制见下节，旧包的运行证据不覆盖本轮新增功能。
+按掉落与拾取、资源与消耗品、死亡与尸体、世界物件、NPC与城镇服务、第一幕任务与旅行依次实现并逐项构建打包。迁用 master 已有纯计算／内容准备，原包缺口再查本地 D2MOO；本轮没有修改 RealmSession、RemoteWorld、客户端玩法或表现代码。当前源码为 Windows Release，最终包更新到 dist/current；已按本轮授权收敛六项并完成有限冒烟，已提交8623446；证据与限制见下节，旧包的运行证据不覆盖本轮新增功能。
 
 - 掉落及拾取由 loot／items／inventory 与 transactions 共同提交；支持普通掉落、金币丢弃／余额封顶后的部分拾取、物品容量与合堆，内容读当前 MPQ。鉴定卷轴／书本消耗与目标属性在同一库存事务提交；F1–F8绑定写原人物字段并经原7B更新。
 - effects 持有恢复队列与定时状态；药水消耗、腰带整理、资源及属性通过事务提交。death 分离死亡结算、城镇复活与本人尸体拾回。
@@ -37,7 +37,39 @@ Act 1近战怪物案例新增CorruptRogue、Goatman、CorruptLancer，迁用mast
 
 ## 当前运行包与有限冒烟
 
-2026-10-08已按授权完成Windows Release构建、更新dist/current，并使用包内EXE及现有named pipe逐项冒烟；没有新增测试脚本、用例或专用程序，没有提交Git。最终增量构建无编译warning／error，build/bin与dist/current的SHA256一致：EXE `1D8A7F429FF619C9CAD858203263B0351B07ED5488E6904397076A9D70BF02BA`；DLL `9F7B1FAF7AF453E3DC481F05207C76460AECC38FF33A50E92823032228B2969F`。证据在忽略目录`artifacts/p1-smoke-20261008`，为当前未提交工作区，不归属873ac34。
+2026-10-08女巫30项改造对应本批源码。全部技能源码写完后开始Windows Release构建及冒烟，发现缺口后修复、重新构建和打包；没有新增测试脚本、用例或专用程序。最终增量构建无编译warning／error，build/bin与dist/current的SHA256一致：EXE `C19749017A53A1F226205F4E2E519369F38E487554F3FE643B77A5CA8FF86A37`；DLL `9F7B1FAF7AF453E3DC481F05207C76460AECC38FF33A50E92823032228B2969F`。D2S仍为v96，规则指纹admission-v17/native-wire113c/d2s96/sorceress30。产物、JSON、日志、截图及临时存档保留在忽略目录`artifacts/sorceress-smoke-20261008`及`artifacts/sorceress-d2gs-20261008`。
+
+主要角色为普通难度41级女巫Hero、种子1961888707，30项基础等级均为1，初始法杖使FireBolt有效等级2。原3B逐项学习、原3C选择、原4C／4D动作、73／A3／A7／A9等公开结果均由同一客户端消费。管理管道仅准备真实MPQ怪物／资源、施加指定伤害和推进固定步；伤害仍进入combat／effects／death。运行覆盖不等于原版逐帧或全参数验收。
+
+| 技能范围 | 实际观察与证据 |
+| --- | --- |
+| 直线、环射与范围 | FireBolt、ChargedBolt、IceBolt、FrostNova、IceBlast、FireBall、Nova、Lightning、ChainLightning、GlacialSpike、Meteor、Blizzard、FrozenOrb均观察释放、扣蓝及普通怪物生命变化；`skill-<ID>-release/hit/client.json`。冰弹减速、冰风暴冻结普通Brute5有独立快照。新星／陨石表现缺口修复后用`final-skill-44/48/56/59.json`复查，effectLimitations为空、ignoredPackets=0 |
+| 持续、周期与召唤 | Inferno开始／转向不重置started，停止后待释放和弹体清零；同机TCP另一端查看持续火焰、转向及停止，`tcp-inferno-fixed-*`及截图。Blaze移动产生六段真实火；FireWall段伤及到期、ThunderStorm目标原A3、Hydra三头原身份／337攻击／受强化／期限清理已观察，见对应blaze／firewall／thunder／hydra证据 |
+| 装甲、强化与护盾 | 三种装甲状态互斥；FrozenArmor冻结近战攻击者、ShiverArmor反击造成冷伤；ChillingArmor通过真实敌怪来源及原ReturnFire弹体93的管理命中入口观察权威264反击。EnergyShield承受20物理伤害，生命扣16且同时扣蓝。Enchant自身、Hydra及同机TCP玩家Buddy的状态16与施法者扣蓝已观察，见shield-hit、chilling-reaction及tcp-enchant-* |
+| 直接技能与远程交互 | StaticField按生命比例减血、Telekinesis伤害／原击退、Teleport位置校正与扣蓝已观察。TK对真实仓库／传送点由原77／63确认开窗；药水远程移入背包，手斧仍在地面并收到原2C音效0x13。`tk-*-final/fixed.json`与最终`delivery-tk-stash-*`截图确认开关界面 |
+| 被动与保存 | 全30项基础技能原包及保存往返；Warmth恢复已观察，三支配参与服务端纯计算。F3右手FrozenOrb绑定经原51／7B跨进程恢复。最终`delivery-reload.json`／`delivery-native.json`保留等级41、体力110、精力135、30项基础等级和热键，短时状态／施法／弹体／Hydra不恢复；拾尸后法杖仍在本人装备容器 |
+
+冒烟发现并修复：Hydra A1事件使用原flag2、HydraMissile337从原表独立取得；原表CelFile=null且有Light的弹体不要求DCC；有限WAV在StopInst=0时允许自然FadeOut；重复选择当前技能仍发送原23确认；持续Inferno快照不能按每帧until误发站立包；TK仓库／传送点需要客户端交互等待，地面物品从原物品副本选目标；存储关闭后公共面板清理。修复各归内容准备、领域、hosting或公共客户端，没有自研协议／玩法分支。
+
+原服代表技能回归见下节；有限冒烟未覆盖全30项原服验收、跨机器LAN、Linux、长期稳定性、PvP／充能／触发、全部装备／协同等级／三难度及免疫边界、极限召唤／输出背压和断线压力。ChillingArmor只验证服务端指定命中反击入口，未认证完整怪物远程AI与客户端实际远程碰撞反击；音频原表及程序已接，没有全技能人工听音或逐帧像素比对。晚入局不重播历史施法／弹体。当前为V2有限运行，不能标为原版完整认证。
+
+最终交付进程failures=0、lastFailure为空、stderr为空，正常退出后角色锁释放。此前技能和TCP冒烟使用修复过程中的包；对应过程包已验证30项存档／热键恢复及TK仓库开关。最终包补做下述原服及自研发包收敛复验。公共层收尾又移除了弹体速度、seq6／seq12定义与被动线性值重复，完整共享范围及原版模块证据见[女巫技能](docs/gameplay/skills/SORCERESS.md#公共层及原版证据)和[参考设计](docs/architecture/REFERENCE_DESIGN.md#女巫公共层的原版核对)。全部30项已按D2MOO核对公共职责及原函数分派，冰封球remaining、本人FCR、施法不叠加OtherAnimationRate、固定最小雷伤及Meteor地面火取整已按确认的原版依据修正；SkillRuleSpec与资源表现定义分离。完整路径量化和原版两端独立的地面程序仍各自适配，不能声称完整技能执行器已共用。本批纳入git提交。
+
+### 原服代表技能与发包收敛
+
+使用本机既有1.13c D2GS／PvPGN栈及测试角色SkillTestSor（普通难度99级、30项基础等级1）。原服角色来自D2DBS；没有将自研存档上传或使用自研管理命令修改原服。宿主是本地适配的RElesgoe构建，不能据此认证所有纯原版规则。证据在忽略目录`artifacts/sorceress-d2gs-20261008`。
+
+- 原服实际观察：心灵传动真实仓库／传送点的77／63开窗；传送位置校正及扣蓝；暴风雪可见并造成怪物死亡；连锁闪电目标从128生命比例变为0；Hydra三头原351／352／353身份及4C技能337；冰封球散射；陨石标记、落地火区；火墙两侧展开；烈焰之径移动留火。Inferno只确认开始、转向和停止的客户端显示，未认证原服连续伤害／扣蓝节奏。关键截图及对应完整JSON按技能命名。
+- 原服常规施法没有回送本人4C／4D，也没有发送上述地面程序的73创建包。依据D2MOO的PlrMsg::sub_6FC81D20、SUnitMsg::FirstFn／MISSILES_SyncToClient及原D2Client的CltDo26／28，修复公共客户端在目标点重建火墙／陨石／暴风雪、火墙跨格生成火段与状态移动火段；ClientSend不再解释成必须等待73。73仍可消费视野同步；无GUID的可重建弹体仅在有界释放时窗配对不同生成来源，不合并两次独立施法。
+- 自研服务端同时修正：上述四类技能及其子火段不再重复广播常规73，本人普通动作不回送4C／4D，其他可见客户端仍发送动作。最终包在`server-final`复验火墙／暴风雪／陨石／烈焰之径显示，原包计数中没有对应重复73或本人4C／4D；心灵传动药水由地面mode3移入mode0背包；Inferno转向、停止后casts／pendingReleases／missileCount均清零，failures=0。地面物品预测也复用原物品位置，不依赖本人动作回包。
+
+公共层核对后的最终包在`common-final`再次运行：自研连接逐项释放Lightning／ChainLightning／FrozenOrb／Meteor／Blizzard／Inferno，观察扣蓝及对应权威弹体；停止Inferno后casts／pendingReleases／missileCount均为0，failures=0，客户端effectLimitations为空。同一客户端连接D2GS，在真实鲜血荒地复验雷系、冰封球散射、陨石标记及暴风雪显示，effectLimitations为空、协议仍为ProtocolReady；此轮地狱火点施法未捕获持续火焰，不能据此增加其原服认证范围。未另行认证非零FCR装备、所有协同／等级或精确数值／时序。JSON与截图记录实际观察，不代替原版逐帧比对。
+
+原服既有未消费包仍保留诊断（早一轮连接ignoredPackets=16，公共层最终连接为40），不能声称全协议无缺口。一次原服游戏握手超时，经单独正常重启本次启动的D2GS后恢复；原有账号／Realm／D2DBS服务未重启。最终客户端正常退出、角色锁释放、stderr为空；本次启动的D2GS已正常关闭。未复验所有女巫参数、多人观察时序、晚入视野弹体同步或原服启动稳定性。
+
+### 历史8623446包的有限冒烟
+
+2026-10-08已按授权完成Windows Release构建、更新dist/current，并使用包内EXE及现有named pipe逐项冒烟；没有新增测试脚本、用例或专用程序；该批已提交8623446。最终增量构建无编译warning／error，build/bin与dist/current的SHA256一致：EXE `1D8A7F429FF619C9CAD858203263B0351B07ED5488E6904397076A9D70BF02BA`；DLL `9F7B1FAF7AF453E3DC481F05207C76460AECC38FF33A50E92823032228B2969F`。证据在忽略目录`artifacts/p1-smoke-20261008`，对应8623446，不归属873ac34。
 
 普通玩法通过既有online-*提交原包；管理命令仅用于准备资源／物品、施加伤害及推进固定步，仍进入服务端领域。主要角色为普通难度15级野蛮人Hero，初始种子3970532698。真实邪恶洞穴人口53只均经monsters.damage及正常死亡／掉落／任务链结算；这项验证不代表用普通攻击逐一清完洞穴，也不代表完整怪物AI。
 

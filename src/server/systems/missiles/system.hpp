@@ -6,9 +6,14 @@
 #include "gameplay/skills/cast_spec.hpp"
 #include "world/collision.hpp"
 #include <map>
+#include <memory>
+#include <deque>
 namespace d2x::server::missiles {
 // This request is produced by the skills release frame, never a client missile packet.
-struct Spawn { ActorContext actor; SkillCastSpec skill; MissileCollisionRule collision; Vec target; };
+struct Spawn { ActorContext actor; SkillCastSpec skill; MissileCollisionRule collision; Vec target;
+    bool free{}; EntityId emitter{}; uint8_t emitterType{}; std::optional<Vec> origin{};
+};
+enum class Program { Projectile, Ring, Charged, Orb, OrbBolt, OrbNova, Blizzard, Shard, Arc, FirewallMaker, Fire, Meteor };
 struct Missile {
     EntityId id, owner;
     PlayerId player;
@@ -20,19 +25,36 @@ struct Missile {
     MissileCollisionRule collision;
     int64_t damage{};
     std::optional<combat::SpellImpact> impact;
+    SkillCastSpec skill;
+    Program program{Program::Projectile};
+    uint64_t random{};
+    int ageFrames{}, lifetimeFrames{}, directionIndex{}, remainingHits{};
+    EntityId lastHit, emitter; uint8_t emitterType{};
+    Vec turnTarget;
+    std::deque<Vec> path;
+
 };
 struct State { std::map<EntityId, Missile> missiles; };
 struct Ports {
     const AreaStore &areas; const PlayerStore &players; const monsters::System &monsters;
-    combat::System &combat; transactions::System &transactions; EntityIds &ids; uint64_t &random;
+    combat::System &combat; transactions::System &transactions; EntityIds &ids; uint64_t &random; EventOutbox &events;
 };
 class System {
     State state_;
     const Ports ports_;
+    struct Advance { Missile next; std::vector<Missile> children; std::vector<combat::SpellImpact> impacts; bool finished{}; };
+    std::map<EntityId, Advance> pending_;
+    Missile make(const Spawn &, Vec origin, Vec direction, int definition, int frames, float speed, Program, uint64_t &) const;
+    std::vector<Missile> launch(const Spawn &, uint64_t &) const;
+    Advance advance(const Missile &) const;
+    combat::SpellImpact impact(Missile &, std::vector<EntityId>, std::optional<int64_t> damage = {}) const;
+    std::vector<DomainFact> visuals(const std::vector<Missile> &) const;
+
   public:
     explicit System(Ports ports) : ports_(ports) {}
     const State &read() const { return state_; }
     DomainResult<EntityId> spawn(const Spawn &);
+    DomainResult<> direct(const Spawn &, std::vector<EntityId> targets);
     StepStatus step(TickContext, FrameFacts &);
 };
 }

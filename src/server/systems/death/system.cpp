@@ -98,11 +98,20 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
 
             // Capture once: backpressure must not reroll rewards using a later
             // level, equipment set, or player that reused an old identifier.
-            reward = state_.rewards.emplace(id, Reward{killer->player, killer->actor, amount}).first;
+            reward = state_.rewards.emplace(id, Reward{killer->player, killer->actor, amount,false,killer->totals.character.combat.lifeOnKill,killer->totals.character.combat.manaOnKill,false}).first;
         }
         const auto *killer = ports_.players.find(reward->second.player);
         if (!killer || !killer->entered || killer->actor != reward->second.actor || killer->persistent.player.hp <= 0 || killer->lastExperienceAward == UINT64_MAX) {
             ports_.monsters.rewardComplete(id); state_.rewards.erase(reward); continue;
+        }
+        if(!reward->second.restored) {
+            const ActorContext actor{killer->player,killer->actor,killer->area,ports_.areas.at(killer->area).generation,0,tick.tick};
+            const auto result=ports_.transactions.resources(actor,killer->characterRevision,
+                std::clamp(killer->persistent.player.hp+float(reward->second.life),0.f,float(killer->totals.character.maxLife)),
+                std::clamp(killer->persistent.player.mana+float(reward->second.mana),0.f,float(killer->totals.character.maxMana)),killer->persistent.player.stamina);
+            if(result.status==DomainStatus::Capacity) {blocked=true;continue;}
+            if(!result) {ports_.monsters.rewardComplete(id);state_.rewards.erase(reward);continue;}
+            reward->second.restored=true;
         }
         if (!reward->second.lootQueued) {
             LootRequest source; source.source = id; source.identity = monster.identity; source.region = monster.area; source.difficulty = monster.rule.difficulty; source.sourceSeed = true;

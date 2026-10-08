@@ -46,6 +46,8 @@ class RemoteCombat {
     bool hostileSource(const OnlineUnit &) const;
     bool corpseSelectable(const OnlineUnit &) const;
     bool monsterTargetEligible(const OnlineUnit &, bool targetCorpse) const;
+    bool skillTargetEligible(const OnlineUnit &, uint16_t skill) const;
+    bool skillTargetEligible(const OnlineItem &, uint16_t skill) const;
     const auto &skills() const { return catalog_; }
     const auto &states() const { return unitStates_; }
     const auto &reason() const { return reason_; }

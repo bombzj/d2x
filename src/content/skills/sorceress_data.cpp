@@ -123,6 +123,7 @@ void loadSorceressEffects(SkillCatalog &catalog, const DataTable &skills,
         spec.manaPerLevel = required(skills, row, "lvlmana");
         spec.manaShift = required(skills, row, "manashift");
         spec.hitShift = required(skills, row, "HitShift");
+        spec.hitClass=skills.number(row,"HitClass").value_or(0);
         if (!skills.value(row, "delay").empty()) {
             spec.delayFrames = required(skills, row, "delay");
             if (spec.delayFrames < 0) throw std::runtime_error("Unsupported original skill delay");

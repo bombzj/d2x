@@ -9,9 +9,9 @@ RealmFrontend与所有游戏页面都读取RealmSession的原协议副本。输�
 IByteTransport提供原字节流，TcpStream与MemoryTransport实现相同connect／send／poll／close。内存队列有锁、有界，支持网络worker与宿主调度线程分离；重连清旧消息。客户端不引用GameHost、PersistentCharacter或存档路径，也不直接接收权威快照。自研宿主通过原1.13c包提供已实现行为，不新增客户端协议分支。
 InventoryView允许缺失尚未接入的容器；共用腰带绘制／输入／格区必须先查询存在性，缺失时不绘制或提供交互格，缺背包时明确拒绝打开库存面板。客户端不能为满足UI假设而伪造容器或库存状态。
 
-## 本批客户端边界
+## 既有基础批次客户端边界
 
-以`df6f6c9`为提交基线，库存／装备、人物成长、世界／多人和普通近战需求均由自研服务端输出原包完成，不以修改原服客户端消费者为前提。RemoteWorld／RemoteUiClients／RemoteCombat／RemoteInventory、D2GS解码、SceneController与原消息／输入链保持该基线；SceneView弹体纯计算提取是下表中用户另行授权的例外。此为源码差异范围，未执行原服运行回归，不能当作运行认证。
+以`df6f6c9`为提交基线，库存／装备、人物成长、世界／多人和普通近战需求均由自研服务端输出原包完成，不以修改原服客户端消费者为前提。RemoteWorld／RemoteUiClients／RemoteCombat／RemoteInventory、D2GS解码、SceneController与原消息／输入链保持该基线；SceneView弹体纯计算提取是下表中用户另行授权的例外。本节为该基础批次差异范围；后续女巫授权改造见文末。未执行原服运行回归，不能当作运行认证。
 
 已逐项列出的客户端改动与确认边界：
 
@@ -56,3 +56,11 @@ app/debug/server_commands的参与者选择是宿主管理入口；network新增
 GameSession、Simulation、SkillRuntime、InventoryService、本地任务／AI／奖励执行源码及 d2x_session 目标已删除。gameplay／items 保留联机显示、地图、原资源报告与独立 D2S 工具所需纯函数和值；PersistentCharacter是纯领域保存值，CharacterSaveData为其别名；客户端库不链接persistence，产品经嵌入宿主链接。旧法杖插入面板没有原服生产者，其空状态／资源／绘制入口已删除，原服插杖流程仍未实现。原 MPQ、reference、旧包、mvp 和用户文件保留。
 
 完整细节与原服协议限制见[联网模块](NETWORK.md)、[NPC／任务](NPC_QUEST.md)、[人物](CHARACTER.md)、[库存](INVENTORY.md)及[地图](MAP.md)。运行证据与源码／包差异统一见基线和联网模块。
+
+## 女巫公共客户端补齐
+
+当前修改边界：有本地参考依据、用于匹配原版的修复已获用户授权；禁止为兼容自研宿主单独改变客户端。两种连接只在底层字节来源不同，不按宿主种类选择技能、动画或属性算法。公共提取与30项证据见[女巫技能](../gameplay/skills/SORCERESS.md#30项公共职责核对)。
+
+本人已知FCR进入公共施法时序；原服未发送累计属性时，从已完整解码的本人装备／套装／状态列表计算，未知值保持未知，其他玩家不推算隐藏属性。普通SC、seq6／seq12共用原事件与序列定义；冰封球按remaining散射／转向，保留Clt参数。资源路径留在SkillSpec，公共数值以SkillRuleSpec输入resolveSkill，服务端调用相同计算。完整路径量化及原版各自的地面生成程序仍由两端适配，尚未统一成完整技能执行器。
+
+本轮经用户授权完成女巫30项服务端与客户端改造。RemoteCombat按原表统一敌我／物件／物品目标资格，地面物品从原9C／9D物品副本读取而非伪造普通单位；心灵传动登记原仓库／传送点开窗等待，仍由77／63回包确认。应用面板随原存储状态清理；RemoteScene统一处理seq6循环姿态、持续Inferno及转向、A3目标落雷；RemoteScene按原CltDo26／28在目标点重建火墙及中心弹体，Blaze按原状态与显示移动跨格留火；ClientSend不阻止这些原本本地生成的程序，原73同步与预测按不同来源有界配对。地面物品位置亦用于本人预测，不能等待原服通常不回送的本人4C／4D。ClientMissile补暴风雪13／19和连锁16，以及ReturnFire合格碰撞的ChillingArmor本地图像。Hydra依旧是原monster单位和技能337。原服与自研都使用这些代码，不读取自研服务端状态或私有协议。显示接触不能扣血／扣蓝或修改存档，完整像素／声音认证范围见[女巫技能](../gameplay/skills/SORCERESS.md)。

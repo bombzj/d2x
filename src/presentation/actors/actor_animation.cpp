@@ -1,6 +1,7 @@
 #include "actor_animation.hpp"
 #include "content/monsters/monster_animation.hpp"
 #include "content/world/object_mode.hpp"
+#include "gameplay/skills/cast_timing.hpp"
 #include "presentation/graphics/primitives.hpp"
 #include "resources/monster_palshift.hpp"
 #include <algorithm>
@@ -19,7 +20,7 @@ std::string keyFor(int palette, const ActorAnimationRequest &request) {
         request.appearance.token + ":" + request.mode + ":" + request.appearance.weapon + ":" +
         std::to_string(request.paletteTransform) + ":" + std::to_string(request.randomTransform) + ":" +
         std::to_string(request.finalFrame) + ":" + std::to_string(request.shadow) + ":" +
-        std::to_string(request.playerSequence);
+        std::to_string(request.playerSequence) + ":" + (request.fasterCast ? std::to_string(*request.fasterCast) : "unknown");
     for (const auto &part : request.appearance.components) key += ":" + part;
     return key;
 }
@@ -29,9 +30,9 @@ bool ActorAnimation::ready() const {
         start <= animation.count && frameCount <= animation.count - start &&
         animation.frames.size() >= size_t(animation.directions) * size_t(animation.count);
 }
-float ActorAnimation::duration() const { return fps > 0 ? frameCount / fps : 0; }
+float ActorAnimation::duration() const { return durationFrames ? float(*durationFrames)/25.f : fps > 0 ? frameCount / fps : 0; }
 bool ActorAnimation::finished(float elapsed) const {
-    return !cycle && fps > 0 && elapsed >= duration();
+    return !cycle && holdFrame < 0 && fps > 0 && elapsed >= duration();
 }
 const Sprite *ActorAnimation::sample(float clock, float elapsed, Vec look) const {
     return sampleFacing(clock, elapsed, direction(look, animation.directions));
@@ -40,7 +41,7 @@ const Sprite *ActorAnimation::sampleFacing(float clock, float elapsed, int facin
     if (!ready()) return nullptr;
     // Avoid GPU frame()'s implicit wrapping for one-shot and static death poses.
     const double advance = std::max(0.0, double(cycle ? clock : elapsed)) * std::max(0.f, fps);
-    const int index = cycle ? int(std::fmod(advance, double(frameCount)))
+    const int index = holdFrame >= 0 ? int(std::min(advance, double(holdFrame))) : cycle ? int(std::fmod(advance, double(frameCount)))
         : int(std::min(advance, double(frameCount - 1)));
     return animation.frame(facing, start + index);
 }
@@ -101,6 +102,14 @@ ActorAnimation ActorAnimationCatalog::composite(Graphics &graphics, const ActorA
             if (record->frameFlags[frame] == 1 || record->frameFlags[frame] == 2) {
                 result.releaseTime = float(frame) / result.fps; break;
             }
+        if (request.category=="chars" && mode=="sc" && request.fasterCast) {
+            const auto animation=prepareCastAnimationTiming(int(record->frames),record->speed,record->frameFlags);
+            if (!animation) return {};
+            const auto timing=normalCastTiming(*animation,*request.fasterCast);
+            result.fps=float(timing.speed)*25.f/256.f;
+            result.releaseTime=float(timing.impact)/25.f;
+            result.durationFrames=timing.duration;
+        }
     }
     result.frameCount = result.animation.count;
     result.cycle = mode == "nu" || mode == "tn" || mode == "wl" || mode == "tw" || mode == "rn";
@@ -113,17 +122,27 @@ ActorAnimation ActorAnimationCatalog::composite(Graphics &graphics, const ActorA
 ActorAnimation ActorAnimationCatalog::sequence(Graphics &graphics, int palette, const ActorAnimationRequest &request) {
     ActorAnimation result;
     auto baseRequest = request; baseRequest.playerSequence = -1;
-    if (request.playerSequence == 12 && request.category == "chars") {
-        // Existing D2MOO SequenceTbls::gPlayerSequenceLightning, release at step 7.
-        constexpr std::array frames{0,1,3,4,5,7,8,9,9,9,9,10,9,9,9,10,11,12,13};
+    if (const auto sequence=playerCastSequence(request.playerSequence); sequence && request.category == "chars") {
         baseRequest.mode = "sc";
         const auto *base = resolve(graphics, palette, baseRequest);
-        if (!base || base->animation.count < 14 || base->fps <= 0) return result;
-        result = *base; result.animation.frames.clear(); result.animation.count = int(frames.size());
+        if (!base || base->animation.count <= *std::max_element(sequence->frames.begin(),sequence->frames.end()) ||
+            (!sequence->fixedSpeed && base->fps <= 0)) return result;
+        result = *base; result.animation.frames.clear(); result.animation.count = int(sequence->frames.size());
         for (int facing = 0; facing < base->animation.directions; ++facing)
-            for (const int frame : frames) result.animation.frames.push_back(*base->animation.frame(facing, frame));
+            for (const int frame : sequence->frames) result.animation.frames.push_back(*base->animation.frame(facing, frame));
         result.frameCount = result.animation.count; result.cycle = false;
-        result.releaseTime = 7.f / result.fps; result.releaseTimes = {result.releaseTime};
+        if (sequence->fixedSpeed) result.fps=float(sequence->fixedSpeed)*25.f/256.f;
+        result.holdFrame=sequence->holdFrame;
+        result.releaseTime = float(sequence->releaseFrame) / result.fps; result.releaseTimes = {result.releaseTime};
+        result.durationFrames.reset();
+        if (request.fasterCast || sequence->fixedSpeed) {
+            // Base SC has already evaluated FCR. Sequence lengths/release steps are common.
+            const int speed=sequence->fixedSpeed ? sequence->fixedSpeed : int(std::lround(result.fps*256.f/25.f));
+            const auto timing=playerCastSequenceTiming(*sequence,speed);
+            result.durationFrames=timing.duration;
+            result.releaseTime=float(timing.impact)/25.f;
+            result.releaseTimes={result.releaseTime};
+        }
         return result;
     }
     if (request.playerSequence >= 0 || request.category != "monsters") return result;

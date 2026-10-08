@@ -3,6 +3,7 @@
 #include "content/skills/skill_metadata.hpp"
 #include <memory>
 #include "gameplay/skills/passive.hpp"
+#include "gameplay/skills/hydra_spec.hpp"
 #include "resources/data_table.hpp"
 #include "content/string_table.hpp"
 #include <array>
@@ -49,6 +50,7 @@ struct SkillRecord : SkillMetadata {
     std::optional<std::pair<int, int>> coldPiercePerRank;
 };
 struct SkillCatalog {
+    std::optional<HydraSpec> hydra;
     std::string currentLevelLabel, nextLevelLabel, firstLevelLabel;
     struct CastTiming { int frames = 0, speed = 0, actionFrame = 0; };
     std::map<std::string, CastTiming> castTimings;

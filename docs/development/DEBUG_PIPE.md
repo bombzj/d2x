@@ -80,7 +80,7 @@ Single Player的online-status仍只读原协议OnlineView；server-status单独�
 | `online-combat` / `online-skills` | 只读同一快照；combat.skills列MPQ技能名、基础／装备加成／有效等级、innate、左右键／城镇资格；combat.states列原服状态和原单位属性；combat.events为最多256条有序战斗事件，sequence递增，消费者自行检查缺口；0x73首路径点为missileDestination（旧missileOrigin名称已更正），不是飞弹出生点 |
 | `online-select-skill` | skillId（0–65535）、hand（left／right，默认right）；当前MPQ及服务端有效等级校验，原0x3C选择，等combat.request.state=Confirmed再施放。不支持带物品GUID的充能技能 |
 | `online-bind-hotkey` | slot（0–15）、skillId、hand；校验当前MPQ主动技能和原服有效等级，原0x51保存绑定，无即时ACK，request为SentNoAck；重入world.skillHotkeys读取0x7B。UI使用F1–F8，物品GUID技能暂未开放 |
-| `online-cast` | hand；坐标x／y或真实unitId／unitType（默认1）二选一。stationary默认false；单位目标false允许原服靠近，true原地请求。repeat默认false，true发原Hold包一次，调用方负责继续提交／停止，不创建客户端循环。各轴≤50、活动地图及MPQ城镇限制，当前单位目标限PvE敌对怪物／符合技能的尸体；自施技能用本人坐标 |
+| `online-cast` | hand；坐标x／y或真实unitId／unitType（默认1）二选一。stationary默认false；单位目标false允许原服靠近，true原地请求。repeat默认false，true发原Hold包一次，调用方负责继续提交／停止，不创建客户端循环。各轴≤50、活动地图及MPQ城镇限制，单位目标按MPQ资格区分PvE敌怪／尸体、Enchant友方及Telekinesis物件／物品；自施技能用本人坐标 |
 | `online-attack` | 同cast目标及stationary／repeat，固定左手；先选择MPQ Attack技能并等确认。伤害、追击与命中由原服处理 |
 | `online-stop-skill` | 发原0x12停止地狱火状态；停止重复提交Hold请求由调用方负责。这不是全部技能的通用撤销包 |
 | `online-learn-skill` | skillId；检查职业、已学前置、等级、属性、MPQ最大等级和原服可用点。原0x3B，等待基础技能等级增加；原服无通用失败包，超时结果未知，不自动重试 |
@@ -209,3 +209,7 @@ LAN宿主的server-status新增rooms／participants摘要：实例slot／generat
 区域快照的objectDeferred列出尚未实现的原物件预设回调身份（574–582）；这些不是已生成的物件，不参与碰撞或掉落。普通缺失表项仍使内容准备失败。
 
 本轮增加 player-damage／grant-gold／item-spawn，以及快照中的尸体、物件、NPC、商店暂缓原因、邪恶洞穴剩余／阶段、传送点与回城门。仅用于宿主管理，原服连接不能调用；本轮已使用这些管理入口准备六项冒烟，再以既有online-*发送原包完成普通玩法。最终证据统一见[基线](../../BASELINE.md#当前运行包与有限冒烟)，管理击杀不代表逐只普通攻击或完整AI验收。
+
+### 女巫战斗诊断
+
+管理命令`missile-hit`接收`source`（当前区域真实活敌怪GUID）、`amount`（正伤害生命单位）、`missile`（当前MPQ原弹体ID）。它调用effects伤害／护盾及ReturnFire反击入口，用于现有近战怪物尚无远程AI时观察ChillingArmor；不生成怪物AI、不增加客户端私有消息。`player-damage`也走物理伤害／护盾入口。server-snapshot怪物增加chilledUntil／frozenUntil／knockedUntil／nextHitTick／owner，弹体增加skill／rank／program／age／lifetime／remainingHits。诊断操作不能替代通过原技能包进行冒烟。

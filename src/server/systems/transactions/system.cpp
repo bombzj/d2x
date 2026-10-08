@@ -140,12 +140,14 @@ DomainResult<> System::commit(Plan plan) {
         for (const auto &[id, item] : projection.inventory.items) { (void)id; children(children, item); }
         batch.facts.emplace_back(std::move(fact));
     }
-    batch.facts.emplace_back(CharacterFact{player.persistent.player, next.persistent.player, player.totals, next.totals});
-    // No authority writes until the complete immutable batch is accepted.
     const auto *characterChange = std::get_if<CharacterEdit>(&plan.change);
+    batch.facts.emplace_back(CharacterFact{player.persistent.player, next.persistent.player, player.totals, next.totals,
+        characterChange ? characterChange->selectedHand : std::nullopt});
+    // No authority writes until the complete immutable batch is accepted.
     const auto &extra = edit ? edit->facts : characterChange->facts;
     batch.facts.insert(batch.facts.end(), extra.begin(), extra.end());
     std::vector<EventBatch> batches; batches.push_back(std::move(batch));
+    if (characterChange && !characterChange->publicFacts.empty()) batches.push_back({0, request->actor.tick, plan.id, {AudienceKind::Area, {}, player.area}, characterChange->publicFacts});
     if (characterChange && characterChange->revival) {
         const auto &at = *characterChange->revival;
         batches.push_back({0, request->actor.tick, plan.id, {AudienceKind::Player, player.player, at.area},

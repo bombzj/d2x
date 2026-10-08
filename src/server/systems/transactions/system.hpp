@@ -38,6 +38,8 @@ struct CharacterEdit {
     std::optional<TransientAttributes> transient{};
     std::optional<PointTarget> revival{};
     std::optional<std::map<RegionId,float>> waypoints{};
+    std::optional<bool> selectedHand{};
+    std::vector<DomainFact> publicFacts{};
     std::vector<DomainFact> facts{};
 };
 using Change = std::variant<ItemTransfer, Reward, Exchange, InventoryEdit, CharacterEdit>;
@@ -59,6 +61,9 @@ class System {
     const State &read() const { return state_; }
     DomainResult<Plan> prepare(Change);
     DomainResult<> commit(Plan);
+    // Same-area skill buffs may debit a caster and update a different player.
+    // This restricted character-only group publishes all projections before swaps.
+    DomainResult<> commitCharacters(std::vector<Plan>);
     // Atomic mana debit and optional same-area relocation at the release frame.
     DomainResult<> release(const ActorContext &, uint64_t expectedCharacterRevision, float manaCost,
                            std::optional<PointTarget> relocation = {});

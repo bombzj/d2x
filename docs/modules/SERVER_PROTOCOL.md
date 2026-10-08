@@ -46,7 +46,7 @@ NativeRealmService是单个连接的生命周期编排，不是玩法容器。�
 
 移动提交的Queued只表示进入权威FIFO；Applied／NoRoute等实际结果来自后续固定步，server-status.command给出最近实际结果。内部movementSequence单独触发原移动回复，不把其他领域的命令完成当成移动。即时拒绝移动会回当前权威位置；相同静止姿态不随每个tick重复广播。Scaffold领域在入队前返回NotImplemented。按包统计、最后一次分派结果、失败信息均有界保存，计数按当前宿主生命周期累计，诊断不输出握手票据或认证包。
 
-普通攻击和技能释放入口共用一个字段解码器，仍保留每个原包的左右手、目标类型、持续与原地标志。目标只允许当前切片中的怪物，技能取服务端当前武器组的选择；3C仅开放已准备的技能来源及回城物品技能，未经实现来源明确拒绝，不能信任客户端GUID替代操作者。具体支持范围见[普通近战](SERVER_SYSTEMS.md#普通近战切片)及[女巫技能](SERVER_SYSTEMS.md#女巫主动技能案例)。目录implemented表示具名入口已执行已支持的意图，不表示全部技能已实现。玩家41复活由death规划，不能由客户端本地恢复生命。
+普通攻击和技能释放入口共用一个字段解码器，仍保留每个原包的左右手、目标类型、持续与原地标志。目标按技能原表及领域资格校验，可含敌怪、友方玩家／单位、原物件或物品，技能取服务端当前武器组的选择；3C仅开放已准备的技能来源及回城物品技能，未经实现来源明确拒绝，不能信任客户端GUID替代操作者。具体支持范围见[普通近战](SERVER_SYSTEMS.md#普通近战切片)及[女巫技能](SERVER_SYSTEMS.md#女巫主动技能案例)。目录implemented表示具名入口已执行已支持的意图，不表示全部技能已实现。玩家41复活由death规划，不能由客户端本地恢复生命。
 
 LifeFact／AttackFact／HitFact是内部值，不跨传输；EventOutbox.publishGroup原子预留批数及事实容量，扣血后不会漏掉本人生命或公开受击输出。怪物身份、移动、生命和死亡基线留在独立monster_replication，战斗不增加客户端分支或私有包。
 
@@ -80,3 +80,7 @@ save、load、cancel-load、step、grant-experience／grant-gold、player-damage
 
 
 原27为target GUID后source GUID，由inventory在固定步同时识别目标与消耗卷轴／书本；原50为本人GUID和金币数，由inventory／transactions成组扣钱包并安装地面金堆。原51解包技能／左右手／slot及owner，当前仅接受已有F1–F8与owner=UINT32_MAX；成功写CharacterRecord并发7B，D2S沿既有字段保存。其他槽／物品所有者技能仍未开放，不能用普通Attack回退。原13的门户GUID显式进入travel，普通物件缺身份不猜测特殊旅行。
+
+## 女巫原包扩展
+
+原4C／4D统一主动技能动作、Inferno转向和Hydra技能337；73只允许MPQ ClientSend弹体，静止弹体FirstX／Y为0；ClientSend是视野同步资格，并非强制创建广播。原服已核对的Blaze／FireWall／Meteor／Blizzard及其子火段常规创建由动作／状态重建，不重复发送73；本人普通动作省略4C／4D，其他可见客户端仍发送（原强制本人标志尚无执行入口）；A3编码ThunderStorm目标瞬时事件；A7／A9编码怪物／友方单位状态，11与2C编码原叠层／u16音效。67/action20使用原击退来源点、三格距离及pathType11。不存在自研专用客户端技能消息。具体执行和表现范围见[女巫技能](../gameplay/skills/SORCERESS.md)。

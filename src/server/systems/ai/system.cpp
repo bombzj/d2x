@@ -14,7 +14,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         const auto *actor = ports_.monsters.find(entry.first); return !actor || actor->life <= 0;
     });
     for (const auto &[id, monster] : ports_.monsters.read().actors) {
-        if (monster.life <= 0 || monster.busyUntil > tick.tick) continue;
+        if (monster.life <= 0 || monster.busyUntil > tick.tick || monster.frozenUntil > tick.tick || monster.owner) continue;
         auto [entry, fresh] = state_.controllers.try_emplace(id);
         auto &controller = entry->second;
         if (fresh) controller.random = childRandom(ports_.random);

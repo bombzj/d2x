@@ -61,27 +61,69 @@ DomainResult<> System::beginAttack(EntityId id, uint64_t until) {
     actor.busyUntil = until; actor.route.clear(); actor.moving = false; actor.running = false; actor.movementTarget = {}; ++actor.revision;
     return {DomainStatus::Applied, std::monostate{}};
 }
-DomainResult<> System::damage(EntityId id, EntityId source, int64_t amount, uint64_t tick) {
+DomainResult<> System::damage(EntityId id, EntityId source, int64_t amount, uint64_t tick, uint64_t coldFrames, bool freeze, uint8_t hitClass) {
     auto it = state_.actors.find(id);
-    if (it == state_.actors.end() || it->second.life <= 0 || amount < 0) return {DomainStatus::InvalidActor, {}};
+    if (it == state_.actors.end() || it->second.life <= 0 || it->second.owner || amount < 0) return {DomainStatus::InvalidActor, {}};
     auto &actor = it->second;
     const auto life = std::max(int64_t(0), actor.life - amount);
     const uint8_t percent = uint8_t(life ? std::clamp<int64_t>(life * 128 / actor.maximumLife, 1, 127) : 0);
-    auto event = ports_.events.publish({0, tick, {}, {AudienceKind::Area, {}, actor.area},
-        {HitFact{id, 1, actor.area, percent, !life, actor.position}}});
+    auto chilled = actor.chilledUntil, frozen = actor.frozenUntil;
+    if (life && coldFrames && actor.rule.coldEffect < 0) {
+        coldFrames = std::min(coldFrames, UINT64_MAX - tick);
+        if (freeze && actor.identity.rank == MonsterRank::Normal) frozen = std::max(frozen, tick + coldFrames);
+        else chilled = std::max(chilled, tick + coldFrames);
+    }
+    if (!life) chilled = frozen = 0;
+    std::vector<DomainFact> facts{HitFact{id, 1, actor.area, percent, !life, actor.position,hitClass}};
+    if (bool(chilled) != bool(actor.chilledUntil)) facts.emplace_back(StateFact{id, 1, actor.area, actor.rule.coldState, bool(chilled)});
+    if (bool(frozen) != bool(actor.frozenUntil)) facts.emplace_back(StateFact{id, 1, actor.area, actor.rule.frozenState, bool(frozen)});
+    auto event = ports_.events.publish({0, tick, {}, {AudienceKind::Area, {}, actor.area}, std::move(facts)});
     if (!event) return {event.status, {}};
     actor.life = life; ++actor.revision;
+    actor.chilledUntil = chilled; actor.frozenUntil = frozen;
     if (!life) {
         actor.deathTick = tick; actor.deathOccurrence = *event.value; actor.killer = source;
         actor.route.clear(); actor.moving = false; actor.running = false; actor.movementTarget = {}; actor.busyUntil = tick + uint64_t(actor.rule.deathTicks);
     }
     return {DomainStatus::Applied, std::monostate{}};
 }
+void System::hitDelay(EntityId id, uint64_t until) { if (auto it = state_.actors.find(id); it != state_.actors.end()) it->second.nextHitTick = std::max(it->second.nextHitTick, until); }
+void System::knockback(EntityId id, Vec source, uint64_t tick) {
+    auto it=state_.actors.find(id);if(it==state_.actors.end() || it->second.life<=0 || it->second.owner || it->second.rule.knockbackTicks<=0) return;
+    auto &m=it->second;stop(id);m.knockbackSource=source;m.knockbackGoal=knockbackDestination(m.position,source,3);
+    m.knockedUntil=tick+uint64_t(m.rule.knockbackTicks);m.busyUntil=m.knockedUntil;++m.revision;
+}
 void System::rewardComplete(EntityId id) { if (auto it = state_.actors.find(id); it != state_.actors.end()) it->second.rewardComplete = true; }
-DomainResult<> System::remove(EntityId) { return {}; } // Ownership/quest removal is a separate future operation.
+DomainResult<> System::remove(EntityId id) {
+    auto it=state_.actors.find(id);if(it==state_.actors.end() || !it->second.owner) return {DomainStatus::InvalidActor,{}};
+    state_.actors.erase(it);return {DomainStatus::Applied,std::monostate{}};
+}
 StepStatus System::step(TickContext tick, FrameFacts &) {
+    bool blocked = false;
     for (auto &[id, actor] : state_.actors) {
         (void)id; actor.moving = false;
+        if(actor.knockbackGoal && actor.life>0) {
+            const auto &grid=ports_.areas.at(actor.area).definition.collision;
+            const Vec delta=*actor.knockbackGoal-actor.position;
+            const Vec next=actor.position+delta.unit()*std::min(delta.length(),25.f*TickContext::seconds);
+            if(grid.segment(actor.position,next,{},actor.rule.collision)) actor.position=next;
+            else actor.knockbackGoal=actor.position;
+            ++actor.revision;
+            if(tick.tick<actor.knockedUntil) continue;
+            actor.knockbackGoal.reset();actor.knockedUntil=0;
+        }
+        std::vector<DomainFact> expired;
+        const bool thaw = actor.frozenUntil && actor.frozenUntil <= tick.tick;
+        const bool warm = actor.chilledUntil && actor.chilledUntil <= tick.tick;
+        if (thaw) expired.emplace_back(StateFact{id, 1, actor.area, actor.rule.frozenState, false});
+        if (warm) expired.emplace_back(StateFact{id, 1, actor.area, actor.rule.coldState, false});
+        if (!expired.empty()) {
+            if (!ports_.events.publish({0, tick.tick, {}, {AudienceKind::Area, {}, actor.area}, std::move(expired)})) { blocked = true; continue; }
+            if (thaw) actor.frozenUntil = 0;
+            if (warm) actor.chilledUntil = 0;
+            ++actor.revision;
+        }
+        if (actor.frozenUntil > tick.tick) continue;
         if (actor.life <= 0 || tick.tick < actor.busyUntil) continue;
         if (actor.route.empty()) continue;
         const PlayerState *target = nullptr;
@@ -95,7 +137,8 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
                 grid.segment(position, target->position);
         };
         if (arrived(actor.position)) { stop(id); continue; }
-        float remaining = monsterMovementSpeed(actor.rule.nativeVelocity, actor.velocityPercent) * TickContext::seconds;
+        const int speed = actor.chilledUntil > tick.tick ? std::max(25, actor.velocityPercent + actor.rule.coldEffect) : actor.velocityPercent;
+        float remaining = monsterMovementSpeed(actor.rule.nativeVelocity, speed) * TickContext::seconds;
         while (!actor.route.empty() && remaining > 0) {
             const Vec delta = actor.route.front() - actor.position;
             const float distance = delta.length();
@@ -107,6 +150,6 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
             if ((actor.route.front() - next).length() < .001f) actor.route.pop_front();
         }
     }
-    return StepStatus::Complete;
+    return blocked ? StepStatus::Blocked : StepStatus::Complete;
 }
 }

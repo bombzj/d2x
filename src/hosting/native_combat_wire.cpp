@@ -36,6 +36,11 @@ Bytes nativeMonsterMotion(const MonsterSnapshot &monster, Vec origin) {
             out.u32(uint32_t(monster.id.value)); out.u8(monster.mode == 12 ? 9 : 8);
             point(out, monster.position + origin); out.u8(0); out.u8(0);
         });
+    if(monster.mode==13)
+        return encodeServerPacket(ServerMessage::NpcMovePoint,[&](auto &out) {
+            out.u32(uint32_t(monster.id.value));out.u8(20);point(out,monster.knockbackSource+origin);
+            out.u8(3);out.u8(109);out.u8(11);out.u16(0);out.u8(monster.life);
+        });
     if (monster.attacking) return {};
     if (monster.moving)
         return encodeServerPacket(ServerMessage::NpcMovePoint, [&](auto &out) {
@@ -47,17 +52,17 @@ Bytes nativeMonsterMotion(const MonsterSnapshot &monster, Vec origin) {
     });
 }
 std::vector<Bytes> nativeAttack(const server::AttackFact &fact, Vec origin) {
-    if (fact.actorType == 1)
+    if (fact.actorType == 1 && !fact.skill)
         return {encodeServerPacket(ServerMessage::NpcAction, [&](auto &out) {
             out.u32(uint32_t(fact.actor.value)); out.u8(10); key(out, fact.targetType, fact.target);
             out.u8(direction(fact.position, fact.destination)); point(out, fact.position + origin);
         })};
     if (fact.target)
         return {encodeServerPacket(ServerMessage::CastUnit, [&](auto &out) {
-            key(out, 0, fact.actor); out.u16(fact.skill); out.u8(fact.rank); key(out, fact.targetType, fact.target); out.u16(0);
+            key(out, fact.actorType, fact.actor); out.u16(fact.skill); out.u8(fact.rank); key(out, fact.targetType, fact.target); out.u16(0);
         })};
     return {encodeServerPacket(ServerMessage::CastPoint, [&](auto &out) {
-        key(out, 0, fact.actor); out.u32(fact.skill); out.u8(fact.rank); point(out, fact.destination + origin); out.u16(0);
+        key(out, fact.actorType, fact.actor); out.u32(fact.skill); out.u8(fact.rank); point(out, fact.destination + origin); out.u16(0);
     })};
 }
 Bytes nativeReposition(const server::RepositionFact &fact, Vec origin) {
@@ -67,7 +72,7 @@ Bytes nativeReposition(const server::RepositionFact &fact, Vec origin) {
 }
 std::vector<Bytes> nativeHit(const server::HitFact &fact, Vec origin) {
     std::vector<Bytes> result{encodeServerPacket(ServerMessage::Hit, [&](auto &out) {
-        key(out, fact.type, fact.target); out.u8(0); out.u8(0); out.u8(fact.life);
+        key(out, fact.type, fact.target); out.u8(0); out.u8(fact.hitClass); out.u8(fact.life);
     })};
     if (fact.killed) {
         if (fact.type == 1) result.push_back(encodeServerPacket(ServerMessage::NpcModePoint, [&](auto &out) {

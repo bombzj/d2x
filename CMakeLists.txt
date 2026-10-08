@@ -151,10 +151,17 @@ target_sources(d2x_server PRIVATE
   src/server/systems/loot/system.cpp
   src/server/systems/population/system.cpp
   src/server/systems/monsters/system.cpp
+    src/server/systems/monsters/controlled.cpp
   src/server/systems/ai/system.cpp src/server/systems/ai/melee_families.cpp
   src/server/systems/skills/system.cpp src/server/systems/skills/casting.cpp
   src/server/systems/missiles/system.cpp
+    src/server/systems/missiles/launch.cpp
+    src/server/systems/missiles/direct.cpp
+    src/server/systems/missiles/programs.cpp
   src/server/systems/effects/system.cpp
+    src/server/systems/effects/skills.cpp
+    src/server/systems/effects/units.cpp
+    src/server/systems/effects/periodic.cpp
   src/server/systems/combat/system.cpp src/server/systems/combat/spell_damage.cpp
   src/server/systems/death/system.cpp
   src/server/systems/companions/system.cpp
@@ -166,7 +173,8 @@ target_sources(d2x_server PRIVATE
   src/server/systems/travel/system.cpp src/server/systems/travel/waypoints.cpp src/server/systems/travel/portals.cpp
   src/server/systems/social/system.cpp
   src/server/systems/trade/system.cpp
-  src/server/systems/transactions/system.cpp src/server/systems/transactions/resources.cpp
+  src/server/systems/transactions/system.cpp
+    src/server/systems/transactions/character_group.cpp src/server/systems/transactions/resources.cpp
   src/server/systems/replication/system.cpp
 )
 target_link_libraries(d2x_server PUBLIC d2x_gameplay d2x_items d2x_navigation)

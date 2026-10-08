@@ -83,6 +83,7 @@ std::optional<DiagnosticSnapshot> GameInstance::diagnostics(PlayerId id, size_t 
         DiagnosticMonster value{key, monster.identity.monster, monster.area, monster.position, monster.life, monster.maximumLife,
             monster.revision, monster.busyUntil, monster.moving, monster.running, monster.rewardComplete, {}};
         if (const auto found = systems_.ai.read().controllers.find(key); found != systems_.ai.read().controllers.end()) value.controller = found->second;
+        value.chilledUntil=monster.chilledUntil;value.frozenUntil=monster.frozenUntil;value.knockedUntil=monster.knockedUntil;value.nextHitTick=monster.nextHitTick;value.owner=monster.owner;
         result.monsters.push_back(std::move(value));
     }
     for (const auto &[key, cast] : systems_.skills.read().casts) {
@@ -120,9 +121,19 @@ DomainResult<> GameInstance::grantGold(PlayerId id,uint32_t amount) {
     if(!plan) return {plan.status,{}};
     return systems_.transactions.commit(std::move(*plan.value));
 }
+DomainResult<> GameInstance::missileHit(PlayerId id,EntityId source,uint32_t amount,DamageType type,bool returnFire) {
+    const auto *p=players_.find(id);const auto *m=systems_.monsters.find(source);
+    if(!p || !p->entered || !m || m->owner || m->life<=0 || m->area!=p->area || !amount || type==DamageType::Poison || amount>INT32_MAX/256) return {DomainStatus::InvalidActor,{}};
+    if(!systems_.effects.reactionCapacity()) return {DomainStatus::Capacity,{}};
+    const ActorContext actor{id,p->actor,p->area,areas_.at(p->area).generation,0,tick_};
+    const auto result=systems_.effects.receive(actor,int64_t(amount)*256,type);
+    if(result) systems_.effects.react(actor,source,CombatEffectEvent::HitByMissile,returnFire);
+    return {result.status,result?std::optional{std::monostate{}}:std::nullopt};
+}
 DomainResult<> GameInstance::damagePlayer(PlayerId id,uint32_t amount) {
     const auto *p=players_.find(id); if(!p || !amount) return {DomainStatus::InvalidActor,{}};
-    return systems_.transactions.damage({id,p->actor,p->area,areas_.at(p->area).generation,0,tick_},p->characterRevision,int64_t(amount)*256);
+    const auto received=systems_.effects.receive({id,p->actor,p->area,areas_.at(p->area).generation,0,tick_},int64_t(amount)*256,DamageType::Physical);
+    return {received.status,received?std::optional{std::monostate{}}:std::nullopt};
 }
 }
 

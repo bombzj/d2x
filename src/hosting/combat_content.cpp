@@ -61,6 +61,17 @@ std::optional<server::PreparedMonster> combatMonster(Archives &archives, const C
     rule.deathTicks = std::max(1, int(std::ceil(death->duration * 25))); rule.decisionTicks = *delay;
     rule.nativeVelocity = *record->walkVelocity; rule.difficulty = request.difficulty; rule.collision = record->movementRule();
     rule.demon = record->demon; rule.undead = record->undead;
+    rule.coldEffect = record->coldEffect.at(size_t(request.difficulty));
+    rule.coldState = data.states.at("cold").definition.id;
+    rule.frozenState = data.states.at("freeze").definition.id;
+    const auto &extra=data.tables.at("monstats2");
+    for(size_t row=0;row<extra.rows().size();++row) if(extra.value(row,"Id")==data.tables.at("monstats").value(record->sourceRow,"MonStatsEx")) {
+        if(extra.number(row,"mKB").value_or(0) && extra.number(row,"mWL").value_or(0) && record->walkAnimationRate.value_or(0)>0) {
+            const auto hit=loadMonsterMotionTiming(animations,record->token,"gh",monsterModeWeapon(archives,record->token,"gh",record->baseWeapon));
+            if(hit) rule.knockbackTicks=std::max(1,int(std::ceil(float(hit->frames)*256.f/float(*record->walkAnimationRate))));
+        }
+        break;
+    }
     rule.ai = *record->aiProfiles.at(size_t(request.difficulty));
     rule.experience.resize(100);
     bool complete = true;

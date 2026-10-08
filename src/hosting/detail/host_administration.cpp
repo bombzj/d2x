@@ -36,6 +36,7 @@ AdminResult NativeRealmService::administer(const AdminRequest &request) {
         case AdminArgumentKind::Spawn: return std::holds_alternative<AdminSpawn>(request.arguments);
         case AdminArgumentKind::Unit: return std::holds_alternative<AdminUnit>(request.arguments);
         case AdminArgumentKind::Travel: return std::holds_alternative<AdminTravel>(request.arguments);
+        case AdminArgumentKind::Missile: return std::holds_alternative<AdminMissile>(request.arguments);
         }
         return false;
     }();
@@ -75,6 +76,19 @@ AdminResult NativeRealmService::administer(const AdminRequest &request) {
             if (!result) return {AdminStatus::Unavailable, "Resource restoration requires a living entered player and available transaction capacity"};
             publishEvents();
             return {AdminStatus::Applied, "Life, mana and stamina restored through the character transaction"};
+        }
+        case AdminOperation::MissileHit: {
+            const auto &hit=std::get<AdminMissile>(request.arguments);const auto &table=content->tables.at("missiles");
+            std::optional<size_t> row;for(size_t i=0;i<table.rows().size();++i) if(table.number(i,"Id")==hit.missile) {row=i;break;}
+            if(!row || !hit.source || !hit.amount) return {AdminStatus::InvalidArguments,"Supply a current monster source, positive amount and MPQ missile Id"};
+            const auto element=table.value(*row,"EType");DamageType type;
+            if(element.empty()) type=DamageType::Physical;else if(element=="fire") type=DamageType::Fire;
+            else if(element=="ltng") type=DamageType::Lightning;else if(element=="cold") type=DamageType::Cold;
+            else if(element=="mag") type=DamageType::Magic;else return {AdminStatus::InvalidArguments,"This missile's damage channel is not supported by the diagnostic impact"};
+            const auto result=host.missileHit(*binding,EntityId{hit.source},hit.amount,type,table.number(*row,"ReturnFire").value_or(0)!=0);
+            if(!result) return {AdminStatus::Unavailable,"Authority rejected this missile impact"};
+            publishEvents();
+            return {AdminStatus::Applied,"MPQ missile impact applied through shield, mitigation and reaction hooks"};
         }
         case AdminOperation::GrantGold:
         case AdminOperation::DamagePlayer: {

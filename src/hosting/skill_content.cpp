@@ -12,20 +12,26 @@ void prepareSkillRules(server::PreparedRules &rules, const ClassicData &data, co
     for (const auto &[id, skill] : data.skills.skills) {
         if (skill.classCode != character.code || character.code != "sor") continue;
         if (skill.fireMasteryPerRank) prepared->fireMasteries.emplace(id, *skill.fireMasteryPerRank);
+        if (skill.lightningMasteryPerRank) prepared->lightningMasteries.emplace(id, *skill.lightningMasteryPerRank);
+        if (skill.coldPiercePerRank) prepared->coldMasteries.emplace(id, *skill.coldPiercePerRank);
         if (!skill.spell) continue;
         const auto &spec = *skill.spell;
-        if (spec.effect != SkillBehavior::FireBolt && spec.effect != SkillBehavior::Fireball && spec.effect != SkillBehavior::Teleport) continue;
-        server::SkillDefinition definition{spec, skill.allowedInTown, {}};
-        if (spec.effect != SkillBehavior::Teleport) {
+        server::SkillDefinition definition{spec.rules(), skill.allowedInTown, {}};
+        if (spec.missileId >= 0) {
             const auto collision = data.missileCollisions.find(spec.missileId);
-            if (collision == data.missileCollisions.end()) continue;
-            // These examples use the old straight/area-impact executor. Other
-            // child programs require their own domain operation, not a fallback.
-            if (spec.missileImpact && (spec.missileImpact->cloudBurst || spec.missileImpact->areaMissile)) continue;
-            definition.collision = collision->second;
+            if (collision != data.missileCollisions.end()) definition.collision = collision->second;
         }
         prepared->definitions.emplace(id, std::move(definition));
     }
+    prepared->hydra = data.skills.hydra;
+    prepared->collisions = data.missileCollisions;
+    prepared->returnFire = data.missileReturnFire;
+    prepared->staticMinimum = data.staticFieldMinimum;
+    prepared->coldDivisor = data.monsterColdDivisor;
+    prepared->freezeDivisor = data.monsterFreezeDivisor;
+    const auto &missiles = data.tables.at("missiles");
+    for (size_t row = 0; row < missiles.rows().size(); ++row)
+        if (const auto id = missiles.number(row, "Id")) prepared->clientSend.emplace(*id, missiles.number(row, "ClientSend").value_or(0) != 0);
     rules.skills = std::move(prepared);
 }
 }

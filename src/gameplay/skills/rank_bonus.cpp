@@ -7,6 +7,12 @@ namespace d2x {
 int skillRankBonus(std::pair<int, int> curve, int rank) {
     return rank > 0 ? curve.first + (rank - 1) * curve.second : 0;
 }
+int skillDiminishingBonus(std::pair<int, int> bounds, int rank) {
+    if (rank <= 0) return 0;
+    const auto [minimum, maximum] = bounds;
+    return int(std::min<int64_t>(maximum, int64_t(minimum) +
+        (int64_t(maximum) - minimum) * 110 * rank / (rank + 6) / 100));
+}
 ShieldAbsorption absorbSkillShield(float damage, float manaValue, int percent, int manaFactor) {
     if (manaFactor <= 0) throw std::invalid_argument("Invalid skill shield mana factor");
     int64_t mana = int64_t(manaValue * 256.f);

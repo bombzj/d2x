@@ -40,6 +40,7 @@ struct CharacterView {
     int maxLife = 1, maxMana = 1, maxStamina = 1, defense = 0, blockChance = 0;
     int physicalResist = 0, magicResist = 0, flatPhysicalReduction = 0, flatMagicReduction = 0;
     int poisonLengthResist = 0, fireAbsorbPercent = 0;
+    std::optional<int> fasterCast; // Known native self stat; never inferred for other players.
     bool dead = false, running = false, blueStamina = false, attackUsable = false, hasSkillTree = false;
     unsigned weaponSet = 0;
     std::array<int, 4> selectedSkills{-1, -1, -1, -1};

@@ -52,6 +52,7 @@ class GameInstance {
     std::vector<RegionId> visibleAreas(PlayerId) const;
     std::vector<PlayerId> visiblePlayers(PlayerId) const;
     std::vector<MonsterSnapshot> visibleMonsters(PlayerId) const;
+    std::set<int> unitStates(EntityId id) const {return systems_.effects.unitStates(id,tick_); }
     std::optional<PlayerSnapshot> snapshot(PlayerId) const;
     std::optional<PersistentCharacter> exportCharacter(PlayerId) const;
     std::optional<PersistentCharacter> publicEquipment(PlayerId) const;
@@ -77,6 +78,7 @@ class GameInstance {
     DomainResult<> restoreResources(PlayerId);
     DomainResult<> grantGold(PlayerId,uint32_t);
     DomainResult<> damagePlayer(PlayerId,uint32_t);
+    DomainResult<> missileHit(PlayerId,EntityId,uint32_t,DamageType,bool returnFire);
     DomainResult<> damageMonster(PlayerId,EntityId,std::optional<uint32_t> amount);
     DomainResult<EntityId> spawnMonster(PlayerId, const PreparedMonster &);
     std::optional<DiagnosticSnapshot> diagnostics(PlayerId, size_t limit, uint64_t since, uint64_t commandSince,

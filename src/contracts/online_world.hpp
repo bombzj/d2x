@@ -51,6 +51,8 @@ struct OnlineCombatCommand {
     std::optional<OnlinePoint> point;
     std::optional<OnlineUnitKey> target;
     bool stationary{}, repeat{};
+    // MPQ-derived UI expectation for a remote skill interaction; never a wire field.
+    std::optional<OnlineObjectIntent> interaction;
     std::optional<OnlineIntentContext> context;
 };
 struct OnlineCombatRequest {

@@ -116,7 +116,8 @@ std::vector<Bytes> nativeCharacterDelta(const ClassicData &data, const server::C
     }
     for (unsigned side = 0; side < 2; ++side) {
         const auto index = fact.after.weaponSet * 2 + side;
-        if (fact.before.weaponSet != fact.after.weaponSet || fact.before.selectedSkills[index] == fact.after.selectedSkills[index]) continue;
+        const bool confirm=fact.selectedHand && unsigned(*fact.selectedHand)==side;
+        if(!confirm && (fact.before.weaponSet!=fact.after.weaponSet || fact.before.selectedSkills[index]==fact.after.selectedSkills[index])) continue;
         result.push_back(hosting::encodeServerPacket(hosting::ServerMessage::SelectedSkill, [&](auto &out) {
             out.u8(0); out.u32(uint32_t(fact.after.id.value)); out.u8(side == 0);
             out.u16(uint16_t(std::max(0, fact.after.selectedSkills[index]))); out.u32(UINT32_MAX);

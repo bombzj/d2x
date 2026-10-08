@@ -588,6 +588,8 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
                     auto &panels = sharedUi->ui();
                     const auto &native = view.world;
                     if (!sharedClients->busy()) { panels.inventory.pending = {}; panels.shopSalePending.reset(); }
+                    if (native.storage.kind != OnlineStorageKind::Stash) panels.inventory.storage = {};
+                    if (native.storage.kind != OnlineStorageKind::Cube) panels.inventory.cubeOpen = false;
                     if (native.storage.kind == OnlineStorageKind::Stash && !panels.inventory.storage) {
                         panels.inventory.storage = sharedUi->inventoryView().containers.stash; panels.inventory.open = true;
                         panels.characterOpen = panels.questOpen = panels.hirelingOpen = false;
