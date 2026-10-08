@@ -52,6 +52,7 @@ class GameInstance {
     std::vector<RegionId> visibleAreas(PlayerId) const;
     std::vector<PlayerId> visiblePlayers(PlayerId) const;
     std::vector<MonsterSnapshot> visibleMonsters(PlayerId) const;
+    std::vector<PetOwnershipSnapshot> pets(PlayerId id) const {return systems_.replication.pets(id);}
     std::set<int> unitStates(EntityId id) const {return systems_.effects.unitStates(id,tick_); }
     std::optional<PlayerSnapshot> snapshot(PlayerId) const;
     std::optional<PersistentCharacter> exportCharacter(PlayerId) const;
@@ -63,6 +64,8 @@ class GameInstance {
     std::vector<objects::Object> visibleObjects(PlayerId) const;
     std::vector<travel::Portal> visiblePortals(PlayerId) const;
     DomainResult<> spawnItems(PlayerId, items::PreparedBatch, std::optional<Vec>);
+    auto pendingSummons() const {return systems_.companions.pending();}
+    DomainResult<> installSummon(companions::Prepared prepared) {return systems_.companions.install(std::move(prepared));}
     auto pendingMerchant() const { return systems_.merchant.pending(); }
     DomainResult<> installMerchant(merchant::Prepared prepared) { return systems_.merchant.install(std::move(prepared)); }
     auto shop(PlayerId id) const { return systems_.merchant.shop(id); }

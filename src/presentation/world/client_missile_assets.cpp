@@ -2,6 +2,8 @@
 #include "presentation/scene_assets.hpp"
 #include "content/classic_data.hpp"
 #include "gameplay/skills/behavior.hpp"
+#include "gameplay/skills/bow_spec.hpp"
+#include "gameplay/skills/spear_spec.hpp"
 #include <algorithm>
 
 namespace d2x {
@@ -35,11 +37,19 @@ void SceneAssets::loadProjectileDefinitions(const ClassicData &content) {
         projectileVisuals.emplace(id, visual);
         ClientMissileProgram program;
         program.function = number("pCltDoFunc");
+        program.poisonVelocity={number("Param1"),number("Param2")};
+        if(number("SubLoop")) program.loopFrames=number("SubStop")-number("SubStart");
+        if(program.function==7) program.guidedRadius=number("Param2");
         for(const auto &[skillId,record]:content.skills.skills) {
             (void)skillId;
             if(!record.spell || record.spell->missileId!=id) continue;
+            if(record.spell->weapon && record.spell->weapon->bow && record.spell->weapon->bow->immolation) program.immolationRadius=record.spell->weapon->bow->fireRadius;
+            if(record.spell->weapon && record.spell->weapon->spear && record.spell->weapon->spear->kind==SpearSkillSpec::Kind::Fury) {
+                const auto &f=*record.spell->weapon->spear;program.targetBurst=MissileTargetBurst{f.countBase,f.countPerLevel,f.targetRadius};
+            }
             if(record.spell->blizzard) program.blizzard=record.spell->blizzard;
-            if(record.spell->effect==SkillBehavior::ChainLightning) program.chain=record.spell->arc;
+            if(record.spell->effect==SkillBehavior::ChainLightning) {program.chain=record.spell->arc;program.chainCountDivisor=5;}
+            if(record.spell->weapon && record.spell->weapon->spear && record.spell->weapon->spear->kind==SpearSkillSpec::Kind::Strike) program.chain=record.spell->arc;
         }
         // The retail table contains annotated values such as "*16". Keep
         // these hit programs unresolved instead of treating the annotation as
@@ -52,6 +62,7 @@ void SceneAssets::loadProjectileDefinitions(const ClassicData &content) {
         if (const auto collision = content.missileCollisions.find(id); collision != content.missileCollisions.end())
             program.collision = collision->second;
         program.collide = number("ClientCol") != 0;program.returnFire=number("ReturnFire")!=0;
+        program.canSlow=number("CanSlow")!=0;
         program.killOnContact = number("CollideKill") != 0;
         program.explodeOnExpiry = number("AlwaysExplode") != 0;
         program.explosion = linked(row, "ExplosionMissile");

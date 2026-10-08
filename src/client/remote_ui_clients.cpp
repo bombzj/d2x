@@ -1,3 +1,4 @@
+#include "gameplay/skills/amazon_passive_spec.hpp"
 #include "remote_ui_clients.hpp"
 #include "client/character_projection.hpp"
 #include "client/quest_projection.hpp"
@@ -647,9 +648,9 @@ struct RemoteUiClients::Impl {
         if (total<INT32_MIN || total>INT32_MAX) return {};
         return int(total);
     }
-    std::optional<int> knownSelfFasterCast(int level) const {
-        if (const auto native=stat("item_fastercastrate")) return int(*native);
-        auto total=knownEquipmentStat("item_fastercastrate",level);
+    std::optional<int> knownSelfEquipmentStat(std::string_view name,int level) const {
+        if(name=="item_fastercastrate") if (const auto native=stat(name)) return int(*native);
+        auto total=knownEquipmentStat(name,level);
         const auto &online=session.read();
         if (!total || !online.load.playerUnitId) return {};
         const OnlineUnitKey key{0,*online.load.playerUnitId};
@@ -659,7 +660,7 @@ struct RemoteUiClients::Impl {
         if (states==combat.states().end() || !states->second.decoded || states->second.sequence!=unit->second.stateSequence) return {};
         const auto &costs=data.tables.at("itemstatcost");
         for (size_t row=0;row<costs.rows().size();++row) {
-            if (costs.value(row,"Stat")!="item_fastercastrate") continue;
+            if (costs.value(row,"Stat")!=name) continue;
             const auto id=costs.number(row,"ID"); if (!id) return {};
             int64_t value=*total;
             for (const auto &[state,list]:states->second.states) {
@@ -701,6 +702,24 @@ struct RemoteUiClients::Impl {
         input.effectiveRanks.insert(w.playerSkills.begin(), w.playerSkills.end());
         input.baseRanksAssigned = w.playerBaseSkillsAssigned;
         input.difficulty = online.load.difficulty;
+        if(const auto level=stat("level")) {
+            if(const auto itemPierce=knownSelfEquipmentStat("item_pierce",int(*level));itemPierce && w.playerBaseSkillsAssigned) {
+                int chance=*itemPierce;
+                for(const auto &[skillId,record]:data.skills.skills) if(record.passiveContribution.amazon && record.passiveContribution.amazon->stat==AmazonPassiveStat::Pierce) {
+                    const auto rank=w.playerSkills.find(uint16_t(skillId));if(rank!=w.playerSkills.end()) chance+=amazonPassiveValue(*record.passiveContribution.amazon,rank->second);
+                }
+                input.missilePierceChance=chance;
+            }
+            const auto ias=knownSelfEquipmentStat("item_fasterattackrate",int(*level));
+            const auto rate=knownSelfEquipmentStat("attackrate",int(*level));
+            if(ias && rate && *ias>-120) for(const auto &[id,item]:w.items) {
+                (void)id;
+                if(item.ownerType!=0 || item.owner!=online.load.playerUnitId || item.mode!=1 || item.body!=4 || (item.flags&0x4100u)) continue;
+                const auto *base=data.items.find(item.code);
+                if(base && base->base.speed) input.attackTiming=KnownAttackTiming{*ias,*base->base.speed,*rate};
+                break;
+            }
+        }
         if (const auto value = stat("passive_fire_mastery")) input.fireMastery = int(*value);
         if (const auto value = stat("passive_ltng_mastery")) input.lightningMastery = int(*value);
         if (const auto value = stat("passive_cold_mastery")) input.coldDamagePercent = int(*value);
@@ -722,7 +741,7 @@ struct RemoteUiClients::Impl {
             }
         }
         if (const auto level=stat("level"))
-            if (const auto faster=knownSelfFasterCast(int(*level))) input.stats.insert_or_assign("item_fastercastrate",*faster);
+            if (const auto faster=knownSelfEquipmentStat("item_fastercastrate",int(*level))) input.stats.insert_or_assign("item_fastercastrate",*faster);
         characterView = projectCharacterDisplay(data, input);
     }
     ItemInstance itemInstance(const OnlineItem &native, const OnlineDecodedItem &di, ItemLocation location) const {

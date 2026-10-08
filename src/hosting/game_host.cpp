@@ -185,6 +185,10 @@ std::vector<MonsterSnapshot> GameHost::visibleMonsters(PlayerBinding binding) co
     const auto *slot = find(binding.game);
     return slot ? slot->game->visibleMonsters(binding.player) : std::vector<MonsterSnapshot>{};
 }
+std::vector<PetOwnershipSnapshot> GameHost::pets(PlayerBinding binding) const {
+    const auto *slot=find(binding.game);
+    return slot ? slot->game->pets(binding.player) : std::vector<PetOwnershipSnapshot>{};
+}
 
 bool GameHost::debugPause(GameHandle handle, std::optional<bool> paused) {
     auto *slot = find(handle);
@@ -263,4 +267,9 @@ server::DomainResult<> GameHost::damageMonster(PlayerBinding binding, EntityId t
     if (result) publish(size_t(binding.game.slot));
     return result;
 }
+}
+
+namespace d2x {
+std::vector<server::companions::Preparation> GameHost::pendingSummons(GameHandle game) const {const auto *slot=find(game);return slot?slot->game->pendingSummons():std::vector<server::companions::Preparation>{};}
+server::DomainResult<> GameHost::installSummon(GameHandle game,server::companions::Prepared prepared) {auto *slot=find(game);return slot?slot->game->installSummon(std::move(prepared)):server::DomainResult<>{server::DomainStatus::Stale,{}};}
 }

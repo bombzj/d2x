@@ -6,6 +6,8 @@
 #include "content/monsters/monster_animation.hpp"
 #include "gameplay/combat/geometry.hpp"
 #include "gameplay/skills/projectile_path.hpp"
+#include "gameplay/skills/amazon_missile.hpp"
+#include "gameplay/skills/weapon_volley.hpp"
 #include "gameplay/skills/rank_bonus.hpp"
 #include "world/interaction_geometry.hpp"
 #include "network/protocol/bits.hpp"
@@ -103,6 +105,7 @@ struct RemoteScene::Impl {
     Archives &archives;
     RemoteMapDisplayState &mapDisplay;
     const OnlineSceneView *sceneBinding{};
+    const RemoteCombat *combatBinding{};
     int artPalette = 0;
     RealmPortraitCatalog portraits;
     ClassicStrings strings;
@@ -112,6 +115,7 @@ struct RemoteScene::Impl {
     std::map<int, size_t> skillRows;
     std::map<int, size_t> missileRows, stateRows;
     std::map<uint8_t,int> movementFireMissiles;
+    int slowMissileStat{-1};
     std::map<std::string, size_t, std::less<>> missileNames, overlayNames;
     struct OverlayVisual { int id{}; OnlineUnitKey unit; float born{}, duration{}; };
     std::set<std::string> effectLimitations;
@@ -159,6 +163,8 @@ struct RemoteScene::Impl {
           weapons(a.read("data/global/excel/weapons.txt")),
           difficultyLevels(a.read("data/global/excel/difficultylevels.txt")),
           superuniques(a.read("data/global/excel/superuniques.txt")) {
+        const DataTable statCosts(a.read("data/global/excel/itemstatcost.txt"));
+        for(size_t row=0;row<statCosts.rows().size();++row) if(statCosts.value(row,"Stat")=="skill_handofathena") slowMissileStat=statCosts.number(row,"ID").value_or(-1);
         for (size_t row=0; row<superuniques.rows().size(); ++row)
             if (const auto id=superuniques.number(row,"hcIdx")) superUniqueRows.emplace(*id,row);
         for (const auto &character:loadCharacterDefinitions(charstats)) characterRows.push_back(character.sourceRow);
@@ -207,6 +213,7 @@ struct RemoteScene::Impl {
             effectLimitations.insert("Per-component equipment coloring and ethereal transparency are not implemented; original body components remain visible");
         ActorAnimationRequest request; request.category = "chars"; request.appearance = *parts; request.shadow = true;
         if (u.key.type==0 && u.key.id==playerId) request.fasterCast=shared.characterView().fasterCast;
+        if (u.key.type==0 && u.key.id==playerId) request.attackTiming=shared.characterView().attackTiming;
         std::string mode;
         if (u.actionSkill) {
             const auto row = skillRows.find(*u.actionSkill);
@@ -217,9 +224,34 @@ struct RemoteScene::Impl {
                 // class, and samples the original SC frames with a release at step 7.
                 const auto sequence=skills.number(row->second,"seqnum").value_or(-1);
                 if((sequence==12 && skills.value(row->second,"seqtrans")!="SC") ||
-                   (sequence==6 && skills.value(row->second,"seqtrans")!="SQ") || (sequence!=12 && sequence!=6)) return nullptr;
+                   (sequence==6 && skills.value(row->second,"seqtrans")!="SQ") || (sequence!=12 && sequence!=6 && sequence!=1 && sequence!=8)) return nullptr;
                 request.mode = "sc"; request.playerSequence = sequence;
                 return shared.actorAnimation(request, artPalette);
+            }
+            if(skills.number(row->second,"cltdofunc")==20) {
+                int count=0;
+                const int radius=skills.number(row->second,"Param5").value_or(0);
+                for(const auto &[key,target]:world().units) if(key.type==1 && target.position && combatBinding && combatBinding->hostileSource(target) && target.mode!=0 && target.mode!=12 && missileDistance({float(u.position->x),float(u.position->y)},{float(target.position->x),float(target.position->y)})<=radius) ++count;
+                const auto *known=shared.characterView().skill(*u.actionSkill);
+                const int rank=u.actionSkillLevel.value_or(u.key.type==0 && u.key.id==playerId && known && known->effectiveRankKnown?known->effectiveRank:1);
+                request.repeatCount=std::max(1,strafeShotCount(count,std::min(skills.number(row->second,"Param4").value_or(0),skills.number(row->second,"Param3").value_or(0)+rank-1),2+rank/4));
+                request.rollbackPercent=skills.number(row->second,"Param6").value_or(0);
+            }
+            if(skills.number(row->second,"cltdofunc")==21 && u.position) {
+                std::optional<int> reach;
+                for(const auto &[id,item]:world().equipment) {
+                    (void)id;if(item.ownerType!=u.key.type || item.owner!=u.key.id || item.bodyLocation!=4) continue;
+                    for(size_t weapon=0;weapon<weapons.rows().size();++weapon) if(weapons.value(weapon,"code")==item.code) reach=weapons.number(weapon,"rangeadder").value_or(0)+1;
+                }
+                if(!reach) return nullptr;
+                int count=0;
+                for(const auto &[key,target]:world().units) if(key.type==1 && target.position && combatBinding && combatBinding->hostileSource(target) && target.mode!=0 && target.mode!=12) {
+                    const auto monster=monsterRows.find(target.classId.value_or(UINT16_MAX));if(monster==monsterRows.end()) continue;
+                    const auto extra=monsterExtra.find(monstats.value(monster->second,"MonStatsEx"));if(extra==monsterExtra.end()) continue;
+                    if(meleeDistance({float(u.position->x),float(u.position->y)},2,{float(target.position->x),float(target.position->y)},monstats2.number(extra->second,"SizeX").value_or(0))<=*reach) ++count;
+                }
+                request.repeatCount=std::max(1,std::min(count,skills.number(row->second,"calc1").value_or(0)));
+                request.rollbackPercent=skills.number(row->second,"Param2").value_or(0);
             }
             if (mode.empty()) return nullptr;
         } else if (u.nativeMode) {
@@ -285,7 +317,7 @@ struct RemoteScene::Impl {
         default: break;
         }
     }
-    void observeEffects(const OnlineView &v, SceneView &shared, const RemoteCombat &combat, bool town) {
+    void observeEffects(const OnlineView &v, SceneView &shared, const RemoteCombat &combat, bool town,const Grid &collision,Vec worldOrigin) {
         std::erase_if(missileCastRevisions, [&](const auto &cast) {
             const auto source = v.world.units.find(cast.first);
             bool interrupted = source == v.world.units.end();
@@ -308,11 +340,16 @@ struct RemoteScene::Impl {
         };
         auto launch = [&](size_t row, Vec start, Vec target, int level, float delay, std::optional<float> remaining,
                           OnlineUnitKey owner, int pathIndex = -1, int pierce = 0,
-                          ClientMissileSource origin = ClientMissileSource::Program) {
+                          ClientMissileSource origin = ClientMissileSource::Program,EntityId guidedTarget = {}) {
             const auto id = missiles.number(row, "Id");
             const auto actor = v.world.units.find(owner);
+            if(origin!=ClientMissileSource::Synchronization && missiles.number(row,"Pierce").value_or(0) && owner.type==0 && owner.id==v.load.playerUnitId)
+                if(const auto chance=shared.characterView().missilePierceChance) pierce=missilePierceCount(*chance,0);
+            int slow=0;
+            if(const auto snapshot=combat.states().find(owner);snapshot!=combat.states().end() && snapshot->second.decoded)
+                for(const auto &[state,definition]:snapshot->second.states) { (void)state;for(const auto &stat:definition.stats) if(stat.id==slowMissileStat) slow=int(stat.value); }
             if (id && !shared.launchClientMissile(*id, start, target, level, delay, remaining, pathIndex,
-                    effectOwner(owner), actor != v.world.units.end() && combat.hostileSource(actor->second), pierce, origin))
+                    effectOwner(owner), actor != v.world.units.end() && combat.hostileSource(actor->second), pierce, origin,slow,guidedTarget))
                 effectLimitations.insert("Missile client program unavailable: " + std::string(missiles.value(row, "Missile")));
         };
         auto monsterAttack = [&](const OnlineCombatEvent &event, OnlineUnit actor, std::string_view pose, float age) {
@@ -367,7 +404,7 @@ struct RemoteScene::Impl {
                 if(target) {channel->second.destination=*target;channel->second.target=event.target;channel->second.revision=source->second.actionRevision;}
                 return;
             }
-            auto actor = source->second; actor.actionSkill = event.skill;
+            auto actor = source->second; actor.actionSkill = event.skill;actor.actionSkillLevel=event.level;
             const auto *castAnimation = actor.key.type == 0 ? character(actor, false, town, shared) : monster(actor, false, shared);
             if (!castAnimation || castAnimation->animation.frames.empty())
                 effectLimitations.insert("Skill animation unavailable: " + std::string(skills.value(row->second, "skill")));
@@ -394,7 +431,7 @@ struct RemoteScene::Impl {
             if (castOverlay != overlayNames.end()) overlay(int(castOverlay->second), event.source);
             const int function = skills.number(row->second, "cltdofunc").value_or(0);
             auto missile = missileNames.find(skills.value(row->second, function ? "cltmissilea" : "cltmissile"));
-            if (function == 1 || function == 2 || function == 17) {
+            if (function == 1 || function == 2 || function == 17 || function==18 || function==20) {
                 for (const auto &[id, item] : v.world.items) {
                     (void)id;
                     if (item.ownerType != source->second.key.type || item.owner != source->second.key.id ||
@@ -402,7 +439,7 @@ struct RemoteScene::Impl {
                     for (size_t weapon = 0; weapon < weapons.rows().size(); ++weapon) {
                         if (weapons.value(weapon, "code") != item.code) continue;
                         const auto kind = weapons.value(weapon, "wclass");
-                        if (function == 17 && kind == "xbw" && !skills.value(row->second, "cltmissileb").empty())
+                        if ((function == 17 || function==18 || function==20) && kind == "xbw" && !skills.value(row->second, "cltmissileb").empty())
                             missile = missileNames.find(skills.value(row->second, "cltmissileb"));
                         if ((function == 1 && (kind == "bow" || kind == "xbw")) ||
                             (function == 2 && weapons.value(weapon, "type") != "tpot"))
@@ -455,6 +492,41 @@ struct RemoteScene::Impl {
             else if (function == 28)
                 launch(missile->second, end, end, level, animation->releaseTime-age, {}, event.source,
                     -1, 0, ClientMissileSource::Cast);
+            else if(function==18) launch(missile->second,start,end,level,animation->releaseTime-age,{},event.source,-1,0,ClientMissileSource::Cast,event.target?effectOwner(*event.target):EntityId{});
+            else if(function==22 && event.target) {
+                // Retail CltDo22 RVA15660: origin is the struck unit; Calc1
+                // searches a GUID successor, Calc2 carries the full hop count.
+                const auto radius=skills.number(row->second,"calc1").value_or(0);
+                std::vector<uint64_t> eligible;
+                for(const auto &[key,u]:v.world.units) if(key.type==1 && key!=*event.target && u.position && combat.hostileSource(u) && !onlineMonsterCorpse(u)) {
+                    const Vec at{float(u.position->x)+.5f,float(u.position->y)+.5f};
+                    const Vec d{std::floor(at.x)-std::floor(end.x),std::floor(at.y)-std::floor(end.y)};
+                    if(d.x*d.x+d.y*d.y<=float(radius*radius) && collision.missileSegment(end-worldOrigin,at-worldOrigin,{4,1})) eligible.push_back(key.id);
+                }
+                const auto id=missileChainSuccessor(event.target->id,eligible);
+                if(const auto u=v.world.units.find({1,uint32_t(id)});id && u!=v.world.units.end() && u->second.position)
+                    launch(missile->second,end,{float(u->second.position->x)+.5f,float(u->second.position->y)+.5f},level,animation->releaseTime-age,{},event.source);
+            }
+            else if(function==20) {
+                std::vector<uint64_t> targets;
+                const auto radius=skills.number(row->second,"Param5").value_or(0);
+                for(const auto &[key,u]:v.world.units) if(key.type==1 && u.position && combat.hostileSource(u) && u.mode!=0 && u.mode!=12 && missileDistance(start,{float(u.position->x),float(u.position->y)})<=radius) targets.push_back(key.id);
+                uint64_t previous=event.target?event.target->id:0;
+                bool first=true;
+                for(float release:animation->releaseTimes) {
+                    const auto id=first && std::find(targets.begin(),targets.end(),previous)!=targets.end()?previous:missileChainSuccessor(previous,targets);
+                    first=false;
+                    const auto u=v.world.units.find({1,uint32_t(id)});
+                    if(!id || u==v.world.units.end() || !u->second.position) break;
+                    launch(missile->second,start,{float(u->second.position->x)+.5f,float(u->second.position->y)+.5f},level,release-age,{},event.source);
+                    previous=id;
+                }
+            }
+            else if(function==19 && skills.value(row->second,"calc1")=="par1+lvl/par2") {
+                const auto count=skills.number(row->second,"Param1").value_or(0)+level/std::max(1,skills.number(row->second,"Param2").value_or(0));
+                // Retail CltDo19 RVA15AB0: origin=target, aim=2*target-owner.
+                for(int index=0;index<count && index<256;++index) launch(missile->second,end,end*2.f-start,level,animation->releaseTime-age,{},event.source,index);
+            }
             else if (!function || function == 1 || function == 2 || function==27 ||
                 (function == 29 && missiles.number(missile->second, "pCltDoFunc") == 19)) emit(end);
             else if (function == 25) {
@@ -996,6 +1068,24 @@ struct RemoteScene::Impl {
         return lower(std::string(skills.value(row->second,"monanim")));
     }
     const Art *monster(const OnlineUnit &u, bool moving, SceneView &shared) {
+        // D2Common SKILLS_GetGfxType/GetGfxClass: States.gfxtype=2 uses
+        // player components on a monster unit (Decoy and Valkyrie included).
+        if(combatBinding) if(const auto snapshot=combatBinding->states().find(u.key);snapshot!=combatBinding->states().end() && snapshot->second.decoded)
+            for(const auto &[state,entry]:snapshot->second.states) {
+                (void)entry;const auto row=stateRows.find(state);
+                if(row==stateRows.end() || states.number(row->second,"gfxtype")!=2) continue;
+                const auto cls=states.number(row->second,"gfxclass");if(!cls || *cls<0 || *cls>6) return nullptr;
+                const auto parts=portraits.decode(u,world(),false,uint8_t(*cls));if(!parts) return nullptr;
+                constexpr std::array modes{"dt","nu","wl","gh","a1","a2","bl","sc","s2","s3","s4","sq","dd","kk","kb","rn"};
+                const auto mode=u.mode.value_or(1);if(mode>=modes.size()) return nullptr;
+                ActorAnimationRequest request;request.category="chars";request.appearance=*parts;request.shadow=true;
+                request.mode=moving && mode==1?"wl":modes[mode];request.finalFrame=mode==12;
+                if(mode==12) request.mode="dt";
+                // D2Common COMPOSIT_GetWeaponClassCode: player death uses HTH,
+                // including monsters converted to player graphics by States.
+                if(mode==0 || mode==12) request.appearance.weapon="hth";
+                return shared.actorAnimation(request,artPalette);
+            }
         if (!u.classId)
             return nullptr;
         const auto row = monsterRows.find(*u.classId);
@@ -1115,6 +1205,7 @@ struct RemoteScene::Impl {
         intent.input.areaGeneration = v.world.areaGeneration;
         worldView = &v.world;
         sceneBinding = &binding;
+        combatBinding = &combat;
         playerId = v.load.playerUnitId;
         worldDifficulty=v.load.difficulty.value_or(0);
         artPalette = binding.palette.value_or(0);
@@ -1150,7 +1241,7 @@ struct RemoteScene::Impl {
         }
         if (!binding.origin || !v.world.playerPosition)
             return intent;
-        observeEffects(v, shared, combat, binding.town);
+        observeEffects(v, shared, combat, binding.town,map.grid,{float(binding.origin->x),float(binding.origin->y)});
         std::erase_if(blazeTrails,[&](const auto &entry) { return !v.world.units.contains(entry.first); });
         const auto origin = *binding.origin;
         std::vector<ClientMissileTarget> missileTargets;

@@ -30,7 +30,10 @@ class GameHost {
     std::vector<PlayerId> participants(GameHandle) const;
     std::vector<PlayerId> visiblePlayers(PlayerBinding) const;
     std::vector<MonsterSnapshot> visibleMonsters(PlayerBinding) const;
+    std::vector<PetOwnershipSnapshot> pets(PlayerBinding) const;
     std::set<int> unitStates(GameHandle,EntityId) const;
+    std::vector<server::companions::Preparation> pendingSummons(GameHandle) const;
+    server::DomainResult<> installSummon(GameHandle,server::companions::Prepared);
     std::vector<server::merchant::Preparation> pendingMerchant(GameHandle) const;
     server::DomainResult<> installMerchant(GameHandle, server::merchant::Prepared);
     std::optional<PersistentCharacter> shop(PlayerBinding) const;

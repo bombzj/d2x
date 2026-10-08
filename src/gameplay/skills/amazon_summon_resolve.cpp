@@ -48,7 +48,7 @@ SummonCastSpec resolveAmazonSummon(const SummonSkillSpec &spec, int rank, int ow
     attributes.lightningResist += resistance; attributes.poisonResist += resistance;
     pet->decoy = program.decoy; pet->warp = program.warp;
     pet->state = program.state; pet->appearOverlay = program.appearOverlay; pet->appearDuration = program.appearDuration;
-    pet->gfxClass = program.gfxClass;
+    pet->gfxClass = program.gfxClass; pet->petType = program.petType;
     pet->stateOverlay = program.stateOverlay;
     result.amazon = std::move(pet);
     return result;

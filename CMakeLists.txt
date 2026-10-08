@@ -102,7 +102,7 @@ add_library(d2x_gameplay
   src/gameplay/skills/summon_resolve.cpp src/gameplay/skills/amazon_summon_resolve.cpp
   src/gameplay/skills/projectile_path.cpp src/gameplay/skills/damage_curve.cpp
   src/gameplay/skills/rank_sources.cpp src/gameplay/skills/rank_bonus.cpp src/gameplay/skills/aura_resolve.cpp
-  src/gameplay/skills/passive.cpp
+  src/gameplay/skills/passive.cpp src/gameplay/skills/weapon_damage.cpp src/gameplay/skills/amazon_magic.cpp
   src/gameplay/monsters/melee_decision.cpp src/gameplay/monsters/implementation.cpp src/gameplay/monsters/rank.cpp
   src/gameplay/loot/treasure.cpp src/gameplay/loot/quality.cpp
   src/gameplay/loot/special.cpp src/gameplay/loot/affix.cpp
@@ -154,17 +154,22 @@ target_sources(d2x_server PRIVATE
     src/server/systems/monsters/controlled.cpp
   src/server/systems/ai/system.cpp src/server/systems/ai/melee_families.cpp
   src/server/systems/skills/system.cpp src/server/systems/skills/casting.cpp
+    src/server/systems/skills/weapon.cpp src/server/systems/inventory/weapon_cost.cpp
   src/server/systems/missiles/system.cpp
     src/server/systems/missiles/launch.cpp
     src/server/systems/missiles/direct.cpp
     src/server/systems/missiles/programs.cpp
+    src/server/systems/missiles/weapon.cpp
   src/server/systems/effects/system.cpp
     src/server/systems/effects/skills.cpp
+    src/server/systems/effects/amazon.cpp
     src/server/systems/effects/units.cpp
     src/server/systems/effects/periodic.cpp
   src/server/systems/combat/system.cpp src/server/systems/combat/spell_damage.cpp
   src/server/systems/death/system.cpp
   src/server/systems/companions/system.cpp
+  src/server/systems/companions/amazon.cpp
+  src/server/systems/companions/amazon_ai.cpp
   src/server/systems/objects/system.cpp
   src/server/systems/npc/system.cpp
   src/server/systems/merchant/system.cpp
@@ -269,7 +274,7 @@ endif()
 target_sources(d2x_content PRIVATE src/content/items/cube_data.cpp)
 
 target_sources(d2x_server PRIVATE src/server/systems/inventory/ground.cpp)
-target_sources(d2x_game_content PRIVATE src/hosting/item_content.cpp src/hosting/object_content.cpp src/hosting/npc_content.cpp src/hosting/merchant_content.cpp)
+target_sources(d2x_game_content PRIVATE src/hosting/item_content.cpp src/hosting/object_content.cpp src/hosting/npc_content.cpp src/hosting/merchant_content.cpp src/hosting/companion_content.cpp)
 target_sources(d2x_character_host PRIVATE src/hosting/loot_content.cpp)
 
 target_sources(d2x_gameplay PRIVATE src/gameplay/effects/state.cpp src/gameplay/units/restoration.cpp src/gameplay/units/resources.cpp src/gameplay/consumables/potions.cpp)

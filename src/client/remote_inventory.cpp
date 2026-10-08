@@ -539,7 +539,14 @@ bool RemoteInventory::submit(net::RealmSession &session, OnlineItemCommand comma
     if (command.action == OnlineItemAction::Equip && (command.body == 4 || command.body == 5)) {
         const auto opposite = bodyItem(command.body == 4 ? 5 : 4);
         const bool twoHanded = baseNumber(wire, "2handed") && !baseNumber(wire, "1or2handed");
-        if (opposite && (twoHanded || (baseNumber(*opposite, "2handed") && !baseNumber(*opposite, "1or2handed")))) {
+        // D2MOO ItemMode::sub_6FC43280: matching bow/quiver hands are
+        // compatible even though the bow itself occupies both weapon hands.
+        const bool ammunitionPair = opposite &&
+            ((isType(wire, "bow") && isType(*opposite, "bowq")) ||
+             (isType(wire, "bowq") && isType(*opposite, "bow")) ||
+             (isType(wire, "xbow") && isType(*opposite, "xboq")) ||
+             (isType(wire, "xboq") && isType(*opposite, "xbow")));
+        if (opposite && !ammunitionPair && (twoHanded || (baseNumber(*opposite, "2handed") && !baseNumber(*opposite, "1or2handed")))) {
             command.equipVariant = bodyItem(command.body) && twoHanded ? 2 : 1;
             if (!command.targetRevision) { command.target = opposite->id; command.targetRevision = opposite->revision; }
         }

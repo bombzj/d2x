@@ -23,6 +23,8 @@ struct CharacterProjectionInput {
     std::array<bool, 2> throwReady{};
     std::optional<int> fireMastery, lightningMastery, coldDamagePercent;
     std::optional<unsigned> difficulty;
+    std::optional<KnownAttackTiming> attackTiming;
+    std::optional<int> missilePierceChance;
 };
 CharacterView projectCharacterDisplay(const ClassicData &, const CharacterProjectionInput &);
 } // namespace d2x

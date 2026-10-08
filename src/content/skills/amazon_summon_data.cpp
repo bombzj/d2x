@@ -63,6 +63,7 @@ void loadAmazonSummons(ClassicData &data, const DataTable &overlays, const DataT
     expect(states, disguise, "gfxtype", "2"); program->gfxClass = number(states, disguise, "gfxclass");
     if (program->gfxClass < 0 || size_t(program->gfxClass) >= data.characters.size()) throw std::runtime_error("Unsupported summon disguise class");
     const auto pet = rowOf(pettypes, "pet type", skills.value(row, "pettype"));
+    program->petType = number(pettypes, pet, "idx");
     program->warp = number(pettypes, pet, "warp") != 0;
     const auto icon = pettypes.value(pet, "baseicon");
     if (!icon.empty()) {

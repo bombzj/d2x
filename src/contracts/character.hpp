@@ -12,6 +12,7 @@
 #include <set>
 
 namespace d2x {
+struct KnownAttackTiming { int itemIAS{},weaponSpeed{},skillRate{}; };
 struct CharacterSkillView {
     int id = -1, page = 0, row = 0, column = 0;
     int listRow = -1, listPool = 0, iconCell = -1;
@@ -41,6 +42,8 @@ struct CharacterView {
     int physicalResist = 0, magicResist = 0, flatPhysicalReduction = 0, flatMagicReduction = 0;
     int poisonLengthResist = 0, fireAbsorbPercent = 0;
     std::optional<int> fasterCast; // Known native self stat; never inferred for other players.
+    std::optional<KnownAttackTiming> attackTiming;
+    std::optional<int> missilePierceChance;
     bool dead = false, running = false, blueStamina = false, attackUsable = false, hasSkillTree = false;
     unsigned weaponSet = 0;
     std::array<int, 4> selectedSkills{-1, -1, -1, -1};

@@ -2,9 +2,13 @@
 #include "server/systems/transactions/system.hpp"
 #include "server/player_store.hpp"
 #include "server/area_store.hpp"
+#include "server/systems/effects/system.hpp"
 #include "server/systems/skills/evaluation.hpp"
 #include "gameplay/skills/behavior.hpp"
 #include "gameplay/skills/projectile_path.hpp"
+#include "gameplay/skills/bow_spec.hpp"
+#include "gameplay/skills/amazon_missile.hpp"
+#include "gameplay/skills/spear_spec.hpp"
 #include "core/random.hpp"
 #include <algorithm>
 #include <cmath>
@@ -18,7 +22,19 @@ Missile System::make(const Spawn &r, Vec origin, Vec direction, int id, int fram
     m.position = origin; m.velocity = direction.unit() * speed; m.turnTarget = direction;
     m.collision = rules.collisions.at(id); m.skill = r.skill; m.program = program; m.lifetimeFrames = frames;
     m.random = childRandom(random); m.emitter = r.emitter ? r.emitter : r.actor.actor; m.emitterType = r.emitterType;
+    if(rules.slowableMissiles.contains(id) && speed>0) {
+        const int slow=m.emitterType==1?ports_.effects.unitModifiers(m.emitter,r.actor.tick).combat.slowMissiles:ports_.players.find(r.actor.player)->totals.character.combat.slowMissiles;
+        if(slow) {
+            const auto &motion=rules.missileVelocities.at(id);
+            const auto fixed=missileVelocityFixed(motion.first,motion.second,r.skill.rank,slow);
+            if(!fixed) throw std::runtime_error("Invalid prepared slowed missile velocity");
+            m.velocity=m.velocity.unit()*(float(*fixed)*25.f/4096.f);
+        }
+    }
     m.acceleration = r.skill.missileAcceleration; m.maximumVelocity = r.skill.missileMaxVelocity;
+    if(r.weapon) m.weapon=rollWeaponSkillDamage(r.weapon->weapon,ports_.players.find(r.actor.player)->totals.character.combat,r.skill,r.weapon->level,true,m.random);
+    if(m.weapon && rules.pierceableMissiles.contains(id)) m.pierces=missilePierceCount(m.weapon->pierceChance,0);
+    m.guidance=r.guidedTarget;
     m.radius = r.skill.missileImpact ? r.skill.missileImpact->radius : 0;
     const float fraction = float(rollRandom(m.random)) / 4294967295.f;
     m.damage = int64_t((r.skill.minimumDamage + (r.skill.maximumDamage - r.skill.minimumDamage) * fraction) * 256.f);
@@ -34,6 +50,23 @@ std::vector<Missile> System::launch(const Spawn &r, uint64_t &random) const {
         result.push_back(make(r, at, heading, id, life, speed, program, random)); return result.back();
     };
     switch (s.effect) {
+    case SkillBehavior::WeaponProjectile:
+        if(s.weapon->spear && s.weapon->spear->kind==SpearSkillSpec::Kind::Charged && !r.weapon) {
+            for(int i=0;i<s.missileCount;++i) {
+                auto &m=add(cell(origin),direction,s.missileId,std::min(frames,77),s.missileVelocity,Program::Charged);
+                const auto path=chargedBoltPath(origin,r.target,i,m.lifetimeFrames);m.path.assign(path.begin(),path.end());
+            }
+            break;
+        }
+        if(s.weapon->bow && s.weapon->bow->multiple) {
+            const auto targets=missileFanTargets(origin,r.target,s.missileCount,direction);
+            const int id=p.totals.equipment.animationClass=="xbw"?s.weapon->bow->boltId:s.missileId;
+            for(const auto target:targets) add(cell(origin),target-origin,id,frames,s.missileVelocity,Program::Projectile);
+        } else {
+            const int id=s.weapon->bow && (s.weapon->bow->guided || s.weapon->bow->strafe) && p.totals.equipment.animationClass=="xbw"?s.weapon->bow->boltId:s.missileId;
+            add(cell(origin),direction,id,frames,s.missileVelocity,Program::Projectile);
+        }
+        break;
     case SkillBehavior::FireBolt: case SkillBehavior::Fireball: case SkillBehavior::IceBolt: case SkillBehavior::IceBlast:
     case SkillBehavior::Inferno: case SkillBehavior::ChillingArmor: case SkillBehavior::Hydra:
         add(origin + direction.unit() * .7f, direction, s.missileId, frames, s.missileVelocity, Program::Projectile); break;
@@ -71,6 +104,7 @@ std::vector<Missile> System::launch(const Spawn &r, uint64_t &random) const {
 std::vector<DomainFact> System::visuals(const std::vector<Missile> &missiles) const {
     std::vector<DomainFact> facts;
     for (const auto &m : missiles) {
+        if(m.program==Program::PoisonCloud || (m.program==Program::Fire && m.skill.weapon && m.skill.weapon->bow && m.skill.weapon->bow->immolation)) continue;
         // These native programs reconstruct regular creation from cast/state
         // notifications. ClientSend permits 73 on visibility admission, not
         // a second spawn broadcast (SUnitMsg::FirstFn / MISSILES_SyncToClient).
@@ -80,7 +114,7 @@ std::vector<DomainFact> System::visuals(const std::vector<Missile> &missiles) co
         const auto sent = rules.clientSend.find(m.definition);
         if (sent != rules.clientSend.end() && sent->second)
             facts.emplace_back(MissileFact{m.emitter, m.emitterType, m.area, m.definition, m.skill.rank, m.lifetimeFrames, m.position,
-                m.velocity.length() ? m.position + m.turnTarget : Vec{} });
+                m.velocity.length() ? m.position + m.turnTarget : Vec{},uint8_t(m.pierces) });
     }
     return facts;
 }
@@ -102,7 +136,7 @@ DomainResult<EntityId> System::spawn(const Spawn &r) {
     std::map<EntityId,Missile> prepared; auto cursor = ports_.ids.cursor();
     for (auto &m : launched) { m.id=EntityId{cursor++}; prepared.emplace(m.id,std::move(m)); }
     const auto id=prepared.begin()->first;
-    const auto released = r.free ? DomainResult<>{DomainStatus::Applied,std::monostate{}} : ports_.transactions.release(r.actor,p->characterRevision,r.skill.manaCost);
+    const auto released = r.cost ? ports_.transactions.commit(*r.cost) : r.free ? DomainResult<>{DomainStatus::Applied,std::monostate{}} : ports_.transactions.release(r.actor,p->characterRevision,r.skill.manaCost);
     if (!released) return {released.status,{}};
     if (!facts.empty()) ports_.events.publish({0,r.actor.tick,{}, {AudienceKind::Area,{},r.actor.area},std::move(facts)});
     for (size_t i=0;i<prepared.size();++i) ports_.ids.allocate();

@@ -16,7 +16,7 @@ struct Ports { monsters::System &monsters; const PlayerStore &players; const Are
 class System {
     State state_;
     const Ports ports_;
-    StepStatus meleeFamily(EntityId, PlayerId, TickContext, Controller &);
+    StepStatus meleeFamily(EntityId, UnitTarget, Vec, int, TickContext, Controller &);
   public:
     explicit System(Ports ports) : ports_(ports) {}
     const State &read() const { return state_; }

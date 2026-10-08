@@ -1,10 +1,10 @@
 # 自研游戏内核与子系统
 
-更新：2026-10-08。本文维护内核入口、所有权和扩展约定；功能顺序见[总计划](../architecture/MULTIPLAYER.md)，原包入口见[服务端协议](SERVER_PROTOCOL.md)。此前行走及骨架包有有限冒烟，见[基线](../../BASELINE.md#当前运行包与有限冒烟)；本批已完成Windows Release构建、打包及有限冒烟，具体范围与限制见基线。
+更新：2026-10-08。本文维护内核入口、所有权和扩展约定；功能顺序见[总计划](../architecture/MULTIPLAYER.md)，原包入口见[服务端协议](SERVER_PROTOCOL.md)。此前行走及骨架包有有限冒烟，见[基线](../../BASELINE.md#当前运行包与有限冒烟)；女巫／六项基础有历史有限冒烟；当前亚马逊30项已构建打包，列出的冒烟与原服代表技能路径有有限运行证据，具体范围与限制见基线。
 
 ## 当前范围
 
-玩家入场、行走、库存／装备、人物成长、世界换区、多人投影、普通近战及女巫主动技能切片、掉落／消耗、玩家死亡、普通物件／NPC、邪恶洞穴奖励与旅行基础由权威内核执行。26个领域加玩家／移动形成28项目录；各自具有独立State、read、类型化请求及显式Ports，由GameSystems持有。inventory规划物品，attributes计算总值，progression规划成长，transactions提交人物事务；World管理区域准备／驻留，Travel提交位置／区域过渡，replication派生可见参与者，social只实现同局聊天。其他规则保持NotImplemented；总体未完成，当前范围以本页、[库存](INVENTORY.md)和[人物](CHARACTER.md)为准。
+玩家入场、行走、库存／装备、人物成长、世界换区、多人投影、普通近战、女巫及亚马逊技能、掉落／消耗、玩家死亡、普通物件／NPC、邪恶洞穴奖励与旅行基础由权威内核执行。26个领域加玩家／移动形成28项目录；各自具有独立State、read、类型化请求及显式Ports，由GameSystems持有。inventory规划物品，attributes计算总值，progression规划成长，transactions提交人物事务；World管理区域准备／驻留，Travel提交位置／区域过渡，replication派生可见参与者，social只实现同局聊天。其他规则保持NotImplemented；总体未完成，当前范围以本页、[库存](INVENTORY.md)和[人物](CHARACTER.md)为准。
 
 命令目录中的Scaffold在入队前被拒绝，不因有函数入口就宣称Queued。3A／3B成长、13的UNIT_TILE及15同局聊天已执行领域入口；传送点、本人门户、普通物件／NPC与城镇服务已接；NPC旅行、队伍、敌意和交易仍为stub。普通攻击／选技／热键／停止已接skills；人口仅准入已准备的普通近战怪物。世界物品生成与普通掉落已接items／loot，不能据此宣称全部来源规则完成。
 
@@ -72,7 +72,7 @@ PersistentCharacter在PlayerStore中唯一持有，包含库存、人物记录�
 | transactions | 跨域计划、版本前置条件、提交身份 | prepare／commit已接单人物InventoryEdit／CharacterEdit原子提交；已接地面转移／尸体／任务奖励；双人交换仍为stub |
 | replication | 每个收件人的兴趣与可见玩家集合 | visible／step；按本人区域及准备好的直接自然邻区过滤，普通怪物使用本区RoomLayout邻室及直接邻区距离过滤；完整房间兴趣仍待实现；编码留hosting |
 
-目录在runtime/subsystems.inc维护身份、阶段和范围。players／movement为walking-slice，inventory为inventory-slice，attributes／progression／transactions为character-slice，World／Travel为world，replication／social为multiplayer；范围表示已接切片，不代表该领域全部规则完成。population／monsters／ai／skills／missiles／combat／death为combat-slice。items／loot／merchant为inventory，effects为character，objects／npc／quests为world；spatial／crafting／companions／trade仍为scaffold，命令按具名意图检查。
+目录在runtime/subsystems.inc维护身份、阶段和范围。players／movement为walking-slice，inventory为inventory-slice，attributes／progression／transactions为character-slice，World／Travel为world，replication／social为multiplayer；范围表示已接切片，不代表该领域全部规则完成。population／monsters／ai／skills／missiles／combat／death为combat-slice。items／loot／merchant为inventory，effects为character，objects／npc／quests为world；companions已接Hydra及诱饵／女武神，通用请求仍明确拒绝；spatial／crafting／trade仍为scaffold，命令按具名意图检查。
 
 ## 命令与固定步
 
@@ -90,9 +90,9 @@ FrameFacts是有界的本步临时事实，只允许后续阶段消费；每步�
 
 ## 内容、事务与输出
 
-SkillRules只持有公共SkillRuleSpec数值和程序参数，不持有动画／声音资源路径。hosting从当前MPQ的SkillSpec准备rules()纯值；resolveSkill、伤害／耗蓝／持续时间、序列时序和有依据的弹体纯计算供两端调用。服务端skills／missiles／effects负责世界状态与调度，combat负责权威命中／伤害，客户端仅从原包及本人已知属性生成表现。原版公共职责和每项技能分派见[女巫技能](../gameplay/skills/SORCERESS.md#30项公共职责核对)，不能把D2Game整套执行器解释为客户端共享接口。
+SkillRules只持有公共SkillRuleSpec数值和程序参数，不持有动画／声音资源路径。hosting从当前MPQ的SkillSpec准备rules()纯值；resolveSkill、伤害／耗蓝／持续时间、序列时序和有依据的弹体纯计算供两端调用。服务端skills／missiles／effects负责世界状态与调度，combat负责权威命中／伤害，客户端仅从原包及本人已知属性生成表现。原版公共职责和每项技能分派见[女巫技能](../gameplay/skills/SORCERESS.md#30项公共职责核对)及[亚马逊技能](../gameplay/skills/AMAZON.md#30项职责核对)，不能把D2Game整套执行器解释为客户端共享接口。
 
-PreparedRules持有不可变纯值；全局ItemCatalog共享同一宿主只读内容，每位PlayerState持有自己的EquipmentRules／CharacterRules／MeleeRules／SkillRules。hosting/game_content与character_content从MPQ准备碰撞、职业、各等级物品属性、经验、学习、基础被动及难度抗性；内核不持有ClassicData／Archives或MPQ回调。普通攻击动画和区域人口由hosting/combat_content准备；hosting/skill_content准备女巫全部主动技能、SC／序列动画、三类支配及原Hydra规则；其他职业与宝物类契约仍未准备；空规则明确Unavailable，新增或跨人转移物品须显式准备新身份对应属性，不能套用旧缓存。
+PreparedRules持有不可变纯值；全局ItemCatalog共享同一宿主只读内容，每位PlayerState持有自己的EquipmentRules／CharacterRules／MeleeRules／SkillRules。hosting/game_content与character_content从MPQ准备碰撞、职业、各等级物品属性、经验、学习、基础被动及难度抗性；内核不持有ClassicData／Archives或MPQ回调。普通攻击动画和区域人口由hosting/combat_content准备；hosting/skill_content准备女巫全部主动技能、SC／序列动画、三类支配及Hydra，以及亚马逊武器／状态／序列／宠物规则；hosting/companion_content准备女武神原MonEquip装备；其他职业与宝物类契约仍未准备；空规则明确Unavailable，新增或跨人转移物品须显式准备新身份对应属性，不能套用旧缓存。
 
 区域交接由GameHost.pendingAreas／installArea／failArea提供，结果带GameHandle及PrepareArea身份。World合并同目的请求，最多16项在途；来源须为原生邻接，失败地区明确Unavailable，不重复生成或替换地图。宿主prepareWorldArea调用同一NativeMapGenerator准备原房间／碰撞／出口／边界及objects.txt中立碰撞，按调度线程交纯值。按玩家及直接自然邻区派生Active／Sleeping；当前不驱逐已准备区域，地图随实例释放，导航借用保持有效。客户端按原03／07／08及位置包调用同一生成器，不接收地图对象。
 
@@ -144,7 +144,15 @@ monsters拥有路线及其目标／到达距离／速度／走跑标记。移动
 
 hosting仅对原ClientSend弹体编码73；该标志不等同常规创建广播，Blaze／FireWall／Meteor／Blizzard的创建及子火段由原动作／状态重建，不重复发送73。普通本人4C／4D按原PlrMsg省略，其他可见客户端仍接收；当前未接晚入视野弹体重同步。4C／4D派生普通投射、连锁、Inferno及Hydra，A3呈现ThunderStorm，A7／A9呈现单位状态，67/action20呈现原击退，11／2C呈现叠层／附加音效。私有资源仍用1F，同区传送15，命中0C。原服与自研客户端只有传输来源差异，所有新增表现写入同一RemoteScene／ClientMissile程序。
 
-运行态施法、弹体、状态、反击和召唤不写D2S。击杀回生命／法力由death捕获并在奖励重试中只提交一次；其余尚未实现的武器触发继续拒绝。晚入局恢复单位和状态，不重播历史施法／弹体。PvP、充能／触发、跨区弹体、完整怪物远程AI及其他职业尚未实现，不能据此宣称完整战斗系统。
+运行态施法、弹体、状态、反击和召唤不写D2S。击杀回生命／法力由death捕获并在奖励重试中只提交一次；其余尚未实现的武器触发继续拒绝。晚入局恢复单位和状态，不重播历史施法／弹体。PvP、充能／触发、跨区弹体、完整怪物远程AI及女巫／亚马逊之外的职业尚未实现，不能据此宣称完整战斗系统。
+
+## 亚马逊武器、被动与伙伴
+
+24项主动／6项被动均已接；本轮已构建打包，列出的路径完成有限冒烟和原服回归。完整逐项原回调、共享算法和边界见[亚马逊技能](../gameplay/skills/AMAZON.md)。`skills/weapon`持有武器资格、接近、原Jab／Impale序列和Strafe／Fend回滚释放；`inventory/weapon_cost`及transactions原子提交弹药、数量／耐久、法力和公开事实；`missiles/weapon`管理武器弹体、引导／穿透／毒云／地面火，`combat`使用原六通道快照、命中和目标修正，`effects/amazon`管理内视与慢速箭。接触命中结果只掷一次传给combat；范围回调与箭本体使用不同发生标识，背压不重复扣费／掷伤。
+
+女武神使用类型化 `companions::Preparation／Prepared` 内容队列；hosting读取当前MPQ并沿现有物品生成准备纯值，结果绑定请求及预留种子。装备revision、等级、基础技能及来源区域变化拒绝迟到结果，自然资源恢复不会取消准备。companions控制诱饵期限／替换、女武神AI／同行／换区／主人退出，monsters唯一拥有实体／生命／路线／装备；统一分配实例ID，不使用玩家物品原ID，不发敌怪经验／掉落。
+
+replication的宠物归属投影独立于房间兴趣；hosting按原13字节7A同步名册，死亡／退役删除归属，晚入局重建。原9D传怪物装备，A7／A8／A9传伪装及单位状态属性；客户端仍从原表和同一原包消费者绘制。宠物头像、完整装备附加触发、PvP与怪物远程受击尚未完成；运行态伙伴／装备及内容准备不写角色D2S。
 
 ## 扩展与诊断
 
@@ -152,7 +160,7 @@ hosting仅对原ClientSend弹体编码73；该标志不等同常规创建广播�
 
 named pipe的server-systems只读返回28项目录、phase、scope和lastStep。lastStep=null表示尚未执行或该系统没有固定步入口，不表示完成；未接领域正常显示not-implemented，已接切片以scope为准。server-status.command表示最近实际命令结果，替代原来仅描述移动的字段；server-protocol仍负责原包覆盖与计数。这些诊断只在宿主管理端，不参与客户端世界同步。
 
-PersistentCharacter与D2S v96格式保持既有模型，库存位置／Cursor／固定武器组通过既有编码保存；宿主规则语义升至admission-v17，具体见[存档](SAVES.md)。事务身份／revision／Outbox运行态不写D2S；以后扩展尸体／铁魔／佣兵／任务时仍须复用持久模型并显式定义恢复边界，不能静默迁移或把空运行态覆盖回完整存档。
+PersistentCharacter与D2S v96格式保持既有模型，库存位置／Cursor／固定武器组通过既有编码保存；宿主规则语义升至admission-v18/native-wire113c/d2s96/amazon30，具体见[存档](SAVES.md)。事务身份／revision／Outbox运行态不写D2S；以后扩展尸体／铁魔／佣兵／任务时仍须复用持久模型并显式定义恢复边界，不能静默迁移或把空运行态覆盖回完整存档。
 
 ## 管理诊断与收尾边界
 
@@ -178,13 +186,13 @@ EventOutbox保存1024条已成功发布事实的紧凑环形历史；GameInstanc
 
 背包原20、腰带原26使用请求验证所有权与revision。`inventory/consumption`准备数量变化、腰带同列下移和效果计划；人物／物品事务成功后才交换预先分配的效果状态。生命／法力药水沿旧单机顺序队列恢复，到满值清空余量；回复药水即时按上限百分比恢复，耐力／解毒／解冻药水按MPQ状态、持续时间、清除状态和属性执行。同状态药水延长剩余时间；死亡及到期移除复用原纯状态集合。效果不写D2S，属性变化及资源上限限制仍由transactions提交。
 
-宿主原1F同步资源／派生属性，原A7／A9同步本人及可见玩家状态，晚入视野重建；内核不持有客户端状态。通用效果入口对尚未接执行器的反击、物理护盾和诅咒AI明确拒绝，不能仅显示状态却遗漏效果；反应计算及完整持续伤害仍待后续切片。调试快照增加effects、restoration、loot待处理数／暂缓原因。当前包已有限运行生命药水恢复与神殿状态到期；其他恢复／药水边界仍待运行，证据见基线。
+宿主原1F同步资源／派生属性，原A7／A8／A9同步本人及可见玩家／单位状态，晚入视野重建；内核不持有客户端状态。通用效果入口对尚未接执行器的反击、物理护盾和诅咒AI明确拒绝，不能仅显示状态却遗漏效果；反应计算及完整持续伤害仍待后续切片。调试快照增加effects、restoration、loot待处理数／暂缓原因。当前包已有限运行生命药水恢复与神殿状态到期；其他恢复／药水边界仍待运行，证据见基线。
 
 ## 死亡与尸体
 
 服务端 death 分为死亡结算、复活和拾回规划；transactions 原子提交人物、库存、尸体元数据及地面物品。沿用 master 的装备／Cursor 转尸体、腰带收缩、金币惩罚和掉落、难度经验损失及同局 75% 经验返还规则。生命归零后等待当前 MPQ 死亡动画，原 41 请求回本幕城镇并恢复资源；原 13 拾回只授权本人尸体，装备依需求反复尝试，余物进入腰带／背包，容量不足保留尸体。对象身份不复用。
 
-原 59／8E／0D 与 9D 公开尸体和外观，客户端未修改。普通库存命令不能访问尸体容器。D2S v96 沿用旧单机及本地 D2MOO PlrSave2 的第一具非空尸体写档规则：局内最多 16 具，不覆盖旧尸体；存档投影只保留最早的非空尸体，清除仅同局有效的可返还经验，重入移至城镇。规则指纹 admission-v17。多尸体保存并非完整多尸体快照，PvP／硬核死亡尚未扩展。
+原 59／8E／0D 与 9D 公开尸体和外观，客户端未修改。普通库存命令不能访问尸体容器。D2S v96 沿用旧单机及本地 D2MOO PlrSave2 的第一具非空尸体写档规则：局内最多 16 具，不覆盖旧尸体；存档投影只保留最早的非空尸体，清除仅同局有效的可返还经验，重入移至城镇。规则指纹 admission-v18/native-wire113c/d2s96/amazon30。多尸体保存并非完整多尸体快照，PvP／硬核死亡尚未扩展。
 
 ## 世界物件基础
 

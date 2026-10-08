@@ -28,6 +28,7 @@ struct InventoryEdit {
     std::optional<std::vector<PlayerCorpse>> corpses{};
     ResourceRefresh resources = ResourceRefresh::Clamp;
     std::vector<DomainFact> facts{};
+    std::vector<DomainFact> publicFacts{};
 };
 struct CharacterEdit {
     ActorContext actor;

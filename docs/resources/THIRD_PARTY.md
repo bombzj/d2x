@@ -21,7 +21,7 @@
 | [DGEngine](https://github.com/dgcor/DGEngine) | DCC 解码器的直接改造来源 | `ae6dcabf4f824d617dc4b15ead1f0ef206c9a106`，`src/Resources/ImageContainers/DCCImageContainer.cpp` | Diablo 格式代码使用 GPL-3.0 |
 | [Worldstone](https://github.com/Lectem/Worldstone) | DGEngine DCC 解码器的上游算法 | 由 DGEngine 说明和代码引用 | GPL-3.0 |
 | [OpenDiablo2](https://github.com/OpenDiablo2/OpenDiablo2) | 第一幕对象预设数据、经典 HUD 布局参考 | `d2core/d2records/object_lookup_record_data.go` | GPL-3.0 |
-| [D2MOO](https://github.com/ThePhrozenKeep/D2MOO) | Cave／Crypt 迷宫、矩形户外布局／边界及人口规则适配；女巫30项公共计算、服务端执行与原包分工证据 | `5596f5cb6c5251a0a07c6637d26458b06099d516` | MIT，见 [许可](../licenses/D2MOO.txt) |
+| [D2MOO](https://github.com/ThePhrozenKeep/D2MOO) | Cave／Crypt 迷宫、矩形户外布局／边界及人口规则适配；女巫与亚马逊各30项公共计算、服务端执行与原包分工证据 | `5596f5cb6c5251a0a07c6637d26458b06099d516` | MIT，见 [许可](../licenses/D2MOO.txt) |
 
 `src/resources/dcc.cpp` 已标注改动：C++ 索引帧接口、一次性解码所有方向、输入范围检查。`src/resources/presets.hpp` 从 OpenDiablo2 的第一幕数据筛选生成。项目整体使用根目录 `LICENSE` 的 GPL-3.0 文本；相关许可保存在 `docs/licenses`。
 
@@ -51,11 +51,11 @@ BNCSutil仅构建认证子集，作为可替换动态库；包内保留原许可
 | 路径／交互 | Path／PathMisc的Straight／Toward／RayTrace、Step与Units原距离；18格是局部A*门槛，不是命令分段长度。PlrMsg::sub_6FC828D0距离≤6非busy交谈、7／8靠近、≥9不回复；显示只否决过早交谈，不授予服务权限 |
 | 拾取等待／导航 | PlrMsg::Rcv0x16与sub_6FC828D0的UNIT_ITEM分支核对0x16参数、50距离限制、4以内拾取及远处靠近；ItemMode::PickupItem_6FC43340的Cursor／busy／安置失败分支没有通用拾取ACK。PlrMsg::Rcv0x01／03及PlrModes原动作入口接受新的导航目标。客户端仅结束等待／显示跟踪，不伪造原服物品或确认取消成功 |
 | 地图／碰撞 | DrlgDrlg／OutPlace／OutWild／OutDesr／OutJung／OutMesa／OutSiege／Maze／Preset／TileSub／RoomTile／Activate、D2Collision；原房间／随机消耗保留。libd2 `f92423bfd4df8a1ff162967dd9d894052e1da457`（1.14d）tilegen／lut_town_skip仅交叉证据，不能单独认证1.13c |
-| 世界／动画 | OpenDiablo2 renderer／object::setMode／composite与Diablerie WorldRenderer／COFRenderer／Iso／DirectionMapping；D2MOO SequenceTbls的19步女巫Lightning序列。原COF／DCC／AnimData／MonSeq仍取当前MPQ，缺序列证据不猜 |
+| 世界／动画 | OpenDiablo2 renderer／object::setMode／composite与Diablerie WorldRenderer／COFRenderer／Iso／DirectionMapping；D2MOO SequenceTbls的女巫Lightning及亚马逊Jab／Impale序列、SUnit动作回滚。原COF／DCC／AnimData／MonSeq仍取当前MPQ，缺序列证据不猜 |
 | NPC空组件／城镇地图 | MonStats2CompositLinker、D2Common_11069／11070与SCmd0xAC：启用但变体空、索引0按空组件省略，非零非法索引拒绝。DrlgPreset AutoMap及pfTownAutomap核对城镇全揭示，共用AutomapExploration规则 |
 | 传送点／尸体最新修正 | ObjMode::OBJECTS_OperateFunction23_Waypoint接受mode1／2；ENDANIM::sub_6FC74AC0与ObjectsTbls固定点帧数核对ON衔接。MonsterMsg::sub_6FC65C70的DEAD动作9无目标分支发当前位置。这些2026-10-07修正未构建／入包，不能当运行认证 |
 | 怪物／原弹体 | MonsterMsg／MonsterMode、SkillMonst SrvDo088／091／092／097、Missiles::SyncToClient与SCmd；真实身份／动作／ClientSend消费，不导入AI或伤害。固定Utrans依据下方原1.13cRVA |
-| 人物／技能提示 | D2Skills／SkillDesc字段、Diablerie SkillPanelSlot；纯公式用原服已知值，缺装备／支配／基础等级保留未知。女巫SkillSor／MissMode、亚马逊SkillAma／SequenceTbls、死灵SkillNec／SUnitEvent、圣骑士SkillPal只作规则线索，不复制执行器 |
+| 人物／技能提示 | D2Skills／SkillDesc字段、Diablerie SkillPanelSlot；纯公式用原服已知值，缺装备／支配／基础等级保留未知。女巫SkillSor／MissMode、亚马逊SkillAma／SequenceTbls／MissMode／PlayerPets／SCmd、死灵SkillNec／SUnitEvent、圣骑士SkillPal只作规则线索，不复制执行器 |
 | 声音 | MonsterTbls::LoadMonSoundsTxt；Diablerie MonSound／SoundSystem／SoundInfo／AudioManager核对25Hz延迟、原声组、Compound与武器音量；SoundSystem.OnLootFlipped及Item.dropSoundDelay核对起始item_flippy与指定帧落地音，Item的暗金／套装覆盖只作线索。实际字段与声音组读取当前MPQ Sounds／MonSounds／Weapons／Armor／Misc／UniqueItems／SetItems。OpenDiablo2 FsOff解释为推测，非零脚步相位仍暂缓 |
 | 光照／混色 | D2Environment、GAME_UpdateEnvironment、D2Gfx CmnSubtile；OpenD2 Palette／Renderer_GL及OpenDiablo2 d2pl2核对PL2。高质量四邻点平均与标量行选择有证据，完整点光衰减／彩光／天气仍未核实，见[照明](../gameplay/world/LIGHTING.md) |
 | HUD／手势 | OpenDiablo2 hud／globeWidget／mini_panel／skill_select_panel／quest_log／escape_menu；Diablerie PlayerController::FlushInput／Update、MouseSelection、EnemyBar／Loot。原UI消费按下直到松开，原图读取当前MPQ，参考不是完整D2Client窗口时序 |

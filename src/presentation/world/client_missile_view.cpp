@@ -1,5 +1,7 @@
 #include "presentation/scene_view.hpp"
 #include "gameplay/skills/projectile_path.hpp"
+#include "gameplay/skills/amazon_missile.hpp"
+#include "gameplay/skills/rank_bonus.hpp"
 #include "gameplay/combat/geometry.hpp"
 #include "world/navigation.hpp"
 #include "core/random.hpp"
@@ -20,12 +22,12 @@ bool matchesCreation(const ClientMissileVisual &effect, int id, EntityId owner, 
 }
 bool SceneView::launchClientMissile(int id, Vec start, Vec target, int level, float delay,
                                   std::optional<float> remaining, int pathIndex,
-                                  EntityId owner, bool hostile, int pierce, ClientMissileSource source) {
+                                  EntityId owner, bool hostile, int pierce, ClientMissileSource source,int slowPercent,EntityId guidedTarget) {
     const auto found = assets_.clientMissilePrograms.find(id);
     if (found == assets_.clientMissilePrograms.end()) return false;
     const auto &program = found->second;
-    if (program.function != 1 && program.function != 4 && program.function != 5 && program.function != 6 && program.function != 9 &&
-        program.function != 13 && program.function != 8 && program.function != 18 && program.function != 19 && program.function != 20) return false;
+    if (program.function != 1 && program.function != 3 && program.function != 4 && program.function != 5 && program.function != 6 && program.function != 9 &&
+        program.function != 7 && program.function != 13 && program.function != 8 && program.function != 18 && program.function != 19 && program.function != 20) return false;
     if (program.function==9)
         for (const int child:program.children) if (child>=0 && !assets_.ensureProjectile(child)) return false;
     if (program.function == 4 && (program.children[0] < 0 || program.parameters[0] < 0 ||
@@ -38,7 +40,7 @@ bool SceneView::launchClientMissile(int id, Vec start, Vec target, int level, fl
         !((program.function == 8 || program.function == 18 || program.function==13) && program.children[0] >= 0 &&
           assets_.ensureProjectile(program.children[0]))) return false;
     level = std::max(1, level);
-    const auto nativeVelocity = missileVelocityFixed(program.velocity,program.velocityPerLevel,level);
+    const auto nativeVelocity = missileVelocityFixed(program.velocity,program.velocityPerLevel,level,program.canSlow?slowPercent:0);
     if (!nativeVelocity ||
         (program.acceleration && program.maximumVelocity <= 0)) return false;
     const int velocity = program.function==5 || program.function==9 || program.function==13?0:*nativeVelocity;
@@ -71,9 +73,10 @@ bool SceneView::launchClientMissile(int id, Vec start, Vec target, int level, fl
     ClientMissile effect{id, start, (target - start).unit() * (float(velocity) * 25.f / 4096.f),
         -delay, duration, target - start};
     effect.flight = true; effect.level = level;
+    effect.slowPercent=slowPercent;effect.guidance=guidedTarget;
     effect.creationSources = reconstructed ? sources : 0;
     effect.creationPosition = start; effect.creationDirection = (target - start).unit();
-    if(program.chain) effect.remainingHits=std::max(1,(program.chain->count+(level-1)*program.chain->countPerLevel)/5);
+    if(program.chain) effect.remainingHits=std::max(1,skillRankBonus({program.chain->count,program.chain->countPerLevel},level)/program.chainCountDivisor);
     effect.velocityFixed = velocity;
     effect.acceleration = program.acceleration; effect.owner = owner; effect.hostile = hostile; effect.pierce = pierce;
     effect.soundEmitter = {(uint64_t{1} << 63) | ++nextClientMissile_};
@@ -125,7 +128,7 @@ void SceneView::advanceClientMissiles(float dt, const Grid &grid, Vec origin,
     clientMissiles_.clear();
     for (auto &effect : pending) effect.age += dt;
     size_t processed = 0;
-    auto emit = [&](int id, Vec position, Vec direction, const ClientMissile &parent, float age) {
+    auto emit = [&](int id, Vec position, Vec direction, const ClientMissile &parent, float age,int poisonVelocity=-1,int loops=0,int frames=-1) {
         const auto source = parent.creationSources ? ClientMissileSource::Cast : ClientMissileSource::Program;
         if (source != ClientMissileSource::Program)
             for (auto &effect : pending)
@@ -134,13 +137,39 @@ void SceneView::advanceClientMissiles(float dt, const Grid &grid, Vec origin,
                 }
         const size_t before = clientMissiles_.size();
         if (id < 0 || !launchClientMissile(id, position, position + direction, parent.level,
-                0, {}, -1, parent.owner, parent.hostile, 0, source)) return;
+                0, {}, -1, parent.owner, parent.hostile, 0, source,parent.slowPercent)) return;
         // A synchronized counterpart may have consumed this creation already.
         if (clientMissiles_.size() == before) return;
         auto child = std::move(clientMissiles_.back()); clientMissiles_.resize(before);
+        if(poisonVelocity>=0) {child.velocityFixed=poisonCloudVelocity(poisonVelocity);child.velocity=direction.unit()*(float(child.velocityFixed)*25.f/4096.f);child.duration+=float(loops*assets_.clientMissilePrograms.at(id).loopFrames)/25.f;}
+        if(frames>0) child.duration=float(frames)/25.f;
         child.age = std::max(0.f, age); pending.push_back(std::move(child));
     };
-    auto impact = [&](const ClientMissile &effect, const ClientMissileProgram &program, float overshoot) {
+    auto impact = [&](ClientMissile &effect, const ClientMissileProgram &program, float overshoot) {
+        if(program.hitFunction==2 && program.hitChildren[0]>=0) {
+            const auto &cloud=assets_.clientMissilePrograms.at(program.hitChildren[0]);
+            for(const auto &heading:poisonCloudDirections(program.hitParameters[1],program.hitParameters[0]))
+                emit(program.hitChildren[0],effect.pos,heading.direction,effect,overshoot,cloud.poisonVelocity[heading.secondary?1:0],program.hitParameters[2]);
+        }
+        if(program.hitFunction==12 && program.hitChildren[0]>=0) {
+            const int radius=program.hitParameters[0]>0?program.hitParameters[0]:std::max(1,program.immolationRadius);
+            const Vec center{std::floor(effect.pos.x)+.5f,std::floor(effect.pos.y)+.5f};
+            // Retail BB070/B9740: Clt duration uses Range + (rank-1)*LevRange;
+            // cHitPar2 is the creation chance, not the server's SHitCalc1 duration.
+            for(const auto offset:missileDiskOffsets(radius)) if(grid.missileSegment(center+offset-origin,center+offset*2.f-origin,{4,1}) &&
+                int(limitedRandom(effect.random,100))<program.hitParameters[1])
+                emit(program.hitChildren[0],center+offset,{},effect,overshoot,-1,0,program.frames+(effect.level-1)*program.framesPerLevel);
+        }
+        if(program.hitFunction==25 && program.targetBurst && program.hitChildren[0]>=0) {
+            const auto &burst=*program.targetBurst;
+            std::vector<MissileBurstTarget> candidates;
+            for(const auto &target:targets) if(target.id!=effect.owner && target.hostile!=effect.hostile &&
+                grid.missileSegment(effect.pos-origin,target.position-origin,{4,1})) candidates.push_back({target.id,target.position});
+            const int radius=program.hitParameters[0]>0?program.hitParameters[0]:std::max(1,burst.radius);
+            const int count=program.hitParameters[1]>0?program.hitParameters[1]:std::max(1,skillRankBonus({burst.count,burst.countPerLevel},effect.level));
+            for(const auto &target:missileBurstTargets(effect.pos,radius,count,candidates))
+                emit(program.hitChildren[0],effect.pos,target.position-effect.pos,effect,overshoot);
+        }
         // These are client contact images, not confirmation of damage or debuffs.
         const int main = program.hitFunction == 14 || program.hitFunction == 3 || program.hitFunction == 1 || program.hitFunction == 32
             ? program.hitChildren[0] : program.explosion;
@@ -199,6 +228,9 @@ void SceneView::advanceClientMissiles(float dt, const Grid &grid, Vec origin,
                 // toward an integer offset. No poison or damage is applied here.
                 poisonSmoke(childAge);
             }
+            // Retail CltDo03 RVA BBE60 creates CltSubMissile1 at the parent
+            // each native tick (Poison Javelin's verified CltCalc1 is zero).
+            if(program.function==3 && program.children[0]>=0) emit(program.children[0],effect.pos,{},effect,childAge);
             if(program.function==13 && program.blizzard) {
                 const auto &b=*program.blizzard;
                 // Retail RVA BBC10 / B8DF0: variant is chosen before the
@@ -222,6 +254,10 @@ void SceneView::advanceClientMissiles(float dt, const Grid &grid, Vec origin,
                     effect.turnTarget = *turn;
                     effect.velocity = effect.turnTarget.unit() * (float(effect.velocityFixed) * 25.f / 4096.f);
                 }
+            }
+            if(program.function==7 && effect.guidance) {
+                const auto target=std::find_if(targets.begin(),targets.end(),[&](const auto &t){return t.id==effect.guidance;});
+                if(target!=targets.end()) if(const auto heading=missileGuidedDirection(effect.pos,target->position,remainingFrames,std::max(1,program.parameters[0]))) effect.velocity=*heading*effect.velocity.length();
             }
             // PathMisc::sub_6FD5CEB0 adjusts native fixed velocity every five ticks.
             if (const auto step=advanceMissileVelocity(effect.velocityFixed,effect.acceleration,program.maximumVelocity,frame+1)) {
@@ -251,7 +287,7 @@ void SceneView::advanceClientMissiles(float dt, const Grid &grid, Vec origin,
             std::vector<std::pair<float, const ClientMissileTarget *>> contacts;
             if (program.collide && program.function != 19)
                 for (const auto &target : targets) {
-                    if (target.id == effect.owner || target.hostile == effect.hostile ||
+                    if ((program.function==7 && ((!effect.guidance && !effect.guidanceSearched) || (effect.guidance && target.id!=effect.guidance))) || target.id == effect.owner || target.hostile == effect.hostile ||
                         std::find(effect.contacts.begin(), effect.contacts.end(), target.id) != effect.contacts.end()) continue;
                     if (const auto at = missileUnitIntersection(start, next, program.collision.size, target.position, target.size);
                         at && *at <= fraction) contacts.emplace_back(*at, &target);
@@ -301,6 +337,15 @@ void SceneView::advanceClientMissiles(float dt, const Grid &grid, Vec origin,
                 finished = true;
             }
         }
+        if(!finished && program.function==7 && !effect.guidance && !effect.guidanceSearched && effect.age+.00001f>=effect.duration) {
+            effect.guidanceSearched=true;
+            for(const auto &target:targets) if(target.id!=effect.owner && target.hostile!=effect.hostile &&
+                missileDistance(effect.pos,target.position)<=program.guidedRadius && grid.missileSegment(effect.pos-origin,target.position-origin,{4,1}) && (!effect.guidance || target.id<effect.guidance)) effect.guidance=target.id;
+            const auto target=std::find_if(targets.begin(),targets.end(),[&](const auto &t){return t.id==effect.guidance;});
+            effect.velocity=(target!=targets.end()?target->position-effect.pos:effect.turnTarget).unit()*effect.velocity.length();
+            effect.age=0;effect.frame=0;effect.animationOffset=0;
+            effect.duration=float(program.frames+(effect.level-1)*program.framesPerLevel)/25.f;
+        }
         if (!finished && effect.age + .00001f >= effect.duration) {
             // CltDo04 bypasses its chance gate when native CurrentFrame is zero.
             if (program.function == 4 && !program.childServerSent)
@@ -310,7 +355,7 @@ void SceneView::advanceClientMissiles(float dt, const Grid &grid, Vec origin,
                 for (const auto direction : missileRingBurst(program.hitParameters[0]))
                     emit(program.hitChildren[0], anchor, direction, effect,
                         std::max(0.f, effect.age - effect.duration));
-            } else if (program.explodeOnExpiry || (program.function==9 && program.hitFunction==18))
+            } else if (program.explodeOnExpiry || program.hitFunction==25 || (program.function==9 && program.hitFunction==18))
                 impact(effect, program, std::max(0.f, effect.age - effect.duration));
             finished = true;
         }

@@ -163,18 +163,18 @@ void equipment(OnlineView &v, const Packet &p) {
         ownerType = r.u8();
         owner = r.u32();
     }
-    if (ownerType != 0 || !owner)
+    if (ownerType > 1 || !owner || (ownerType==1 && action==11))
         return;
     // Only the visual prefix is decoded. This is not an inventory/item-stat consumer.
     // Any unequip/removal/action replaces the old appearance by item identity.
     if (auto old = v.world.equipment.find(id); old != v.world.equipment.end()) {
-        if (auto oldOwner = v.world.units.find({0, old->second.owner}); oldOwner != v.world.units.end())
+        if (auto oldOwner = v.world.units.find({old->second.ownerType, old->second.owner}); oldOwner != v.world.units.end())
             ++oldOwner->second.appearanceRevision;
         v.world.equipment.erase(old);
     }
     if (p.id == 0x9C && action <= 3)
         return; // Ground items have no player owner.
-    auto &u = unit(v.world, {0, *owner});
+    auto &u = unit(v.world, {ownerType, *owner});
     u.equipmentObserved = true;
     ++u.appearanceRevision;
     if (action == 5 || action == 8 || action == 12 || action == 15 || action == 17)
@@ -182,7 +182,7 @@ void equipment(OnlineView &v, const Packet &p) {
     BitReader bits(r.take(r.remaining()));
     OnlineEquippedItem item;
     item.id = id;
-    item.owner = *owner;
+    item.owner = *owner;item.ownerType=ownerType;
     item.component = component;
     item.flags = bits.read(32);
     bits.read(10); // Native client item format.
@@ -214,7 +214,7 @@ void equipment(OnlineView &v, const Packet &p) {
     }
     // One server body slot has one item; replace it atomically on equip/swap.
     std::erase_if(v.world.equipment, [&](const auto &e) {
-        return e.second.owner == item.owner && e.second.bodyLocation == item.bodyLocation;
+        return e.second.ownerType==item.ownerType && e.second.owner == item.owner && e.second.bodyLocation == item.bodyLocation;
     });
     if (v.world.equipment.size() >= 2048)
         throw ProtocolError("Remote equipment limit exceeded");
@@ -301,7 +301,7 @@ void removeItem(OnlineWorldView &world, uint32_t id) {
         world.storage = {};
     }
     if (const auto found = world.equipment.find(id); found != world.equipment.end())
-        if (const auto owner = world.units.find({0, found->second.owner}); owner != world.units.end())
+        if (const auto owner = world.units.find({found->second.ownerType, found->second.owner}); owner != world.units.end())
             ++owner->second.appearanceRevision;
     world.items.erase(id); world.equipment.erase(id);
     std::erase_if(world.items, [&](const auto &entry) {
@@ -309,12 +309,12 @@ void removeItem(OnlineWorldView &world, uint32_t id) {
     });
     ++world.itemRevision;
 }
-void removeRemotePlayerItems(OnlineWorldView &world, uint32_t owner) {
+void removeRemotePlayerItems(OnlineWorldView &world, uint32_t owner,uint8_t ownerType=0) {
     std::vector<uint32_t> items;
     for (const auto &[id, item] : world.items)
-        if (item.ownerType == 0 && item.owner == owner) items.push_back(id);
+        if (item.ownerType == ownerType && item.owner == owner) items.push_back(id);
     for (const auto id : items) removeItem(world, id);
-    std::erase_if(world.equipment, [&](const auto &entry) { return entry.second.owner == owner; });
+    std::erase_if(world.equipment, [&](const auto &entry) { return entry.second.ownerType==ownerType && entry.second.owner == owner; });
 }
 } // namespace
 void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
@@ -374,9 +374,10 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
             if (w.shopRequested == k.id) w.shopRequested.reset();
             if (w.shopSource == k.id) w.shopSource.reset();
         }
+        if(k.type==1) removeRemotePlayerItems(w,k.id,1);
         if (k.type == 0) {
             if (w.playerTrade.peer == k.id) { ++w.interactionGeneration; w.playerTrade = {}; }
-            std::erase_if(w.equipment, [&](const auto &e) { return e.second.owner == k.id; });
+            std::erase_if(w.equipment, [&](const auto &e) { return e.second.ownerType==0 && e.second.owner == k.id; });
             if (v.load.playerUnitId == k.id)
                 removePlayer(w);
             else removeRemotePlayerItems(w, k.id);
@@ -386,6 +387,7 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
     case 0x0B: {
         const auto k = key(r);
         r.finish();
+        if(k.type==1) removeRemotePlayerItems(w,k.id,1);
         if (k.type == 0) {
             auto &u = unit(w, k);
             if (v.load.playerUnitId == k.id) {
@@ -629,6 +631,12 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
         }
         break;
     }
+    case 0x7A: {
+        const auto assign=r.u8(),type=r.u8();const auto monsterClass=r.u16();const auto owner=r.u32(),id=r.u32();r.finish();
+        if(assign) {if(!w.pets.contains(id) && w.pets.size()>=8192) throw ProtocolError("Remote pet limit exceeded");w.pets.insert_or_assign(id,OnlinePet{type,monsterClass,owner});}
+        else w.pets.erase(id);
+        break;
+    }
     case 0x7B: {
         const auto slot = r.u8(); const auto packed = r.u16(); const auto owner = r.u32(); r.finish();
         if (slot >= w.skillHotkeys.size()) throw ProtocolError("Invalid native hotkey slot");
@@ -818,6 +826,7 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
     case 0x51: {
         auto &u = unit(w, key(r));
         u.classId = r.u16();
+        u.equipmentObserved=true;
         position(v, u, point(r));
         u.mode = r.u8();
         u.objectInteractType = r.u8();
@@ -1075,6 +1084,7 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
     case 0xAC: {
         auto &u = unit(w, {1, r.u32()});
         u.classId = r.u16();
+        u.equipmentObserved=true;
         position(v, u, point(r));
         u.lifePercent = r.u8(); u.lifeCarriesRankFlag = false;
         if (r.u8() != p.body.size() + 1)

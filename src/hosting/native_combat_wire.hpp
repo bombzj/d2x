@@ -2,6 +2,8 @@
 #include "server/runtime/events.hpp"
 #include "network/protocol/wire.hpp"
 namespace d2x {
+struct ClassicData;
+Bytes nativeState(const ClassicData &,const server::StateFact &);
 Bytes nativeMonsterAssignment(const MonsterSnapshot &, Vec origin);
 Bytes nativeMonsterMotion(const MonsterSnapshot &, Vec origin);
 std::vector<Bytes> nativeAttack(const server::AttackFact &, Vec origin);

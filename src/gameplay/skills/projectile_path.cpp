@@ -1,20 +1,28 @@
 #include "projectile_path.hpp"
 #include "core/random.hpp"
+#include "gameplay/combat/geometry.hpp"
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <limits>
 
 namespace d2x {
+std::optional<Vec> missileGuidedDirection(Vec position,Vec target,int remaining,int period) {
+    if(!missileEmissionDue(remaining,period)) return {};
+    const int distance=missileDistance(position,target);
+    if(distance<=3 || distance>=25) return {};
+    return (target-position).unit();
+}
 bool missileChangedCell(Vec previous, Vec next) {
     return int(previous.x)!=int(next.x) || int(previous.y)!=int(next.y);
 }
-std::optional<int> missileVelocityFixed(int base, int perLevel, int rank) {
+std::optional<int> missileVelocityFixed(int base, int perLevel, int rank,int slowPercent) {
     if (rank < 1) return {};
     const auto velocity=int64_t(base)+int64_t(rank)*perLevel/8;
     // 256 * 75 / 100 is exactly 192; check before multiplying.
     if (velocity<0 || velocity>std::numeric_limits<int>::max()/192) return {};
-    return int(velocity*192);
+    const int64_t fixed=velocity*256;
+    return int((slowPercent?fixed*std::clamp(slowPercent,0,100)/100:fixed)*75/100);
 }
 Vec missileWallDirection(Vec caster, Vec target) {
     return {std::floor(target.y)-std::floor(caster.y),std::floor(caster.x)-std::floor(target.x)};

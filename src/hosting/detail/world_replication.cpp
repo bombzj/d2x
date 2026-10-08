@@ -17,7 +17,7 @@ void NativeRealmService::publishAreas(RegionId region) {
             out.u8(uint8_t(destination.request.act)); out.u32(destination.request.seed);
             out.u16(uint16_t(actTownLevels.at(size_t(destination.request.act)))); out.u32(0);
         }));
-        peer.areas.clear(); peer.visible.clear(); peer.monsters.clear(); peer.groundItems.clear(); peer.corpses.clear(); peer.corpseEquipment.clear(); peer.objects.clear(); peer.portals.clear(); peer.npcs.clear();peer.npcStates.clear(); peer.shopItems.clear(); peer.shopOwner = {}; peer.states.clear();
+        peer.areas.clear(); peer.visible.clear(); peer.monsters.clear(); peer.pets.clear(); peer.groundItems.clear(); peer.corpses.clear(); peer.corpseEquipment.clear(); peer.objects.clear(); peer.portals.clear(); peer.npcs.clear();peer.npcStates.clear(); peer.shopItems.clear(); peer.shopOwner = {}; peer.states.clear();
     }
     std::set<RegionId> desired{region};
     const auto definition = host.area(binding->game, region);

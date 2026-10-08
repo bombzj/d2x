@@ -46,11 +46,32 @@ std::vector<MonsterSnapshot> System::visibleMonsters(PlayerId id, uint64_t tick)
             monster.route.empty() ? monster.position : monster.route.front(),
             uint8_t(monster.life > 0 ? std::clamp<int64_t>(monster.life * 128 / monster.maximumLife, 1, 128) : 0),
             mode, monster.revision, monster.moving, !dead && tick < monster.busyUntil, monster.chilledUntil > tick ? std::max(25, monster.velocityPercent + monster.rule.coldEffect) : monster.velocityPercent, monster.running, ports_.effects.unitStates(key,tick),monster.knockbackSource});
+        result.back().equipment=monster.equipment;
+        if(monster.amazonPet) {
+            result.back().states.insert(monster.amazonPet->state.id);result.back().appearOverlay=monster.amazonPet->appearOverlay;
+            if(monster.owner) if(const auto *owner=ports_.players.find(*monster.owner)) result.back().storedOwner=owner->actor;
+            if(monster.amazonPet->decoy) result.back().modifiers.push_back(21); // SkillAma::SrvDo015 expiration UMod.
+        }
         auto &states = result.back().states;
+        result.back().stateStats=ports_.effects.unitStateStats(key,tick);
+        if(monster.poison) states.insert(monster.poison->damage.state);
         if (monster.chilledUntil > tick && monster.rule.coldState >= 0) states.insert(monster.rule.coldState);
         if (monster.frozenUntil > tick && monster.rule.frozenState >= 0) states.insert(monster.rule.frozenState);
     }
     return result;
 }
 
+std::vector<PetOwnershipSnapshot> System::pets(PlayerId id) const {
+    std::vector<PetOwnershipSnapshot> result;
+    const auto *recipient=ports_.players.find(id);
+    if(!recipient || !recipient->entered) return result;
+    // PlayerPets broadcasts ownership to the game independently of room interest.
+    for(const auto &[key,body]:ports_.monsters.read().actors) {
+        if(!body.amazonPet || !body.owner || body.life<=0) continue;
+        const auto *owner=ports_.players.find(*body.owner);
+        if(owner && owner->entered)
+            result.push_back({key,owner->actor,uint8_t(body.amazonPet->petType),uint16_t(body.rule.nativeClass)});
+    }
+    return result;
+}
 }

@@ -6,6 +6,9 @@
 #include "gameplay/monsters/kind.hpp"
 #include "server/runtime/combat_rules.hpp"
 #include "gameplay/skills/hydra_spec.hpp"
+#include "gameplay/combat/poison.hpp"
+#include "gameplay/skills/amazon_summon_spec.hpp"
+#include "gameplay/character/persistent_character.hpp"
 #include <deque>
 #include <map>
 #include <set>
@@ -23,6 +26,10 @@ struct Actor {
     EntityId id; MonsterIdentity identity; std::optional<MonsterKind> implementation;
     RegionId area; Vec position; uint64_t revision{}; std::optional<PlayerId> owner;
     MonsterRule rule;
+    std::shared_ptr<const AmazonPetSpec> amazonPet;
+    UnitCombatStats petStats;
+    std::optional<WeaponDamage> petWeapon;
+    std::shared_ptr<const PersistentCharacter> equipment;
     int64_t life{}, maximumLife{};
     std::deque<Vec> route;
     uint64_t busyUntil{}, deathTick{}, deathOccurrence{};
@@ -35,6 +42,7 @@ struct Actor {
     uint64_t knockedUntil{};
     Vec knockbackSource;
     std::optional<Vec> knockbackGoal;
+    std::optional<PoisonStatus> poison;
 };
 struct State { std::map<EntityId, Actor> actors; };
 struct Ports { const AreaStore &areas; const PlayerStore &players; EntityIds &ids; uint64_t &random; EventOutbox &events; };
@@ -46,7 +54,7 @@ class System {
     const State &read() const { return state_; }
     const Actor *find(EntityId id) const { auto it = state_.actors.find(id); return it == state_.actors.end() ? nullptr : &it->second; }
     DomainResult<> beginAttack(EntityId, uint64_t until);
-    DomainResult<> damage(EntityId, EntityId source, int64_t amount, uint64_t tick, uint64_t coldFrames = 0, bool freeze = false, uint8_t hitClass = 0);
+    DomainResult<> damage(EntityId, EntityId source, int64_t amount, uint64_t tick, uint64_t coldFrames = 0, bool freeze = false, uint8_t hitClass = 0, std::optional<PoisonApplication> poison = {});
     void rewardComplete(EntityId);
     DomainResult<EntityId> admit(const Admission &);
     DomainResult<> requestMove(const MoveRequest &);
@@ -55,8 +63,12 @@ class System {
     void knockback(EntityId, Vec source, uint64_t tick);
     DomainResult<> remove(EntityId);
     DomainResult<std::map<EntityId,Actor>> prepareHydra(const ActorContext &, const HydraSpec &, Vec) const;
+    DomainResult<std::map<EntityId,Actor>> prepareAmazon(const ActorContext &,const MonsterRule &,Vec,const SummonCastSpec &,std::shared_ptr<PersistentCharacter>,size_t,std::optional<WeaponDamage> = {}) const;
+    void commitAmazon(std::map<EntityId,Actor> &&,size_t) noexcept;
     void commitHydra(std::map<EntityId,Actor> &&) noexcept;
     void retire(EntityId, uint64_t tick);
+    DomainResult<> warpPet(EntityId,const ActorContext &,Vec);
+    std::optional<std::pair<Vec,int>> targetPosition(EntityId,RegionId) const;
     StepStatus step(TickContext, FrameFacts &);
 };
 }

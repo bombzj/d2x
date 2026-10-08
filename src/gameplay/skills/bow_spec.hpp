@@ -12,6 +12,7 @@ struct BowSkillSpec {
     bool physicalSkillDamage = false;
     int freezePercent = 0;
     bool multiple = false;
+    int activateFrames = 0;
     bool guided = false;
     bool strafe = false;
     int targetRadius = 0, minimumShots = 0;

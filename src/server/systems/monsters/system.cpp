@@ -27,6 +27,14 @@ DomainResult<EntityId> System::admit(const Admission &request) {
     state_.actors.emplace(id, std::move(actor));
     return {DomainStatus::Applied, id};
 }
+std::optional<std::pair<Vec,int>> System::targetPosition(EntityId id,RegionId area) const {
+    for(const auto &[key,p]:ports_.players.all()) {
+        (void)key;if(p.actor==id && p.entered && p.area==area && p.persistent.player.hp>0) return std::pair{p.position,2};
+    }
+    const auto *m=find(id);
+    if(m && m->area==area && m->life>0 && (!m->owner || m->amazonPet)) return std::pair{m->position,m->rule.size};
+    return {};
+}
 DomainResult<> System::requestMove(const MoveRequest &request) {
     const auto it = state_.actors.find(request.actor);
     if (it == state_.actors.end() || it->second.life <= 0) return {DomainStatus::InvalidActor, {}};
@@ -34,13 +42,8 @@ DomainResult<> System::requestMove(const MoveRequest &request) {
     const auto &area = ports_.areas.at(actor.area);
     if (request.destination.area != actor.area || request.destination.generation != area.generation)
         return {DomainStatus::Stale, {}};
-    const PlayerState *target = nullptr;
-    for (const auto &[id, player] : ports_.players.all()) {
-        (void)id; if (player.actor == request.target) { target = &player; break; }
-    }
-    if (!target || !target->entered || target->area != actor.area || target->persistent.player.hp <= 0 ||
-        request.stopDistance < 0 || request.stopDistance > 255 || request.velocityPercent < 25 || request.velocityPercent > INT16_MAX)
-        return {DomainStatus::InvalidRequest, {}};
+    if (!targetPosition(request.target,actor.area) || request.stopDistance<0 || request.stopDistance>255 ||
+        request.velocityPercent<25 || request.velocityPercent>INT16_MAX) return {DomainStatus::InvalidRequest,{}};
     auto route = area.definition.collision.path(actor.position, request.destination.position, true, actor.rule.collision);
     if (route.empty()) return {DomainStatus::Unavailable, {}};
     actor.route = std::move(route); actor.movementTarget = request.target;
@@ -61,9 +64,9 @@ DomainResult<> System::beginAttack(EntityId id, uint64_t until) {
     actor.busyUntil = until; actor.route.clear(); actor.moving = false; actor.running = false; actor.movementTarget = {}; ++actor.revision;
     return {DomainStatus::Applied, std::monostate{}};
 }
-DomainResult<> System::damage(EntityId id, EntityId source, int64_t amount, uint64_t tick, uint64_t coldFrames, bool freeze, uint8_t hitClass) {
+DomainResult<> System::damage(EntityId id, EntityId source, int64_t amount, uint64_t tick, uint64_t coldFrames, bool freeze, uint8_t hitClass,std::optional<PoisonApplication> poison) {
     auto it = state_.actors.find(id);
-    if (it == state_.actors.end() || it->second.life <= 0 || it->second.owner || amount < 0) return {DomainStatus::InvalidActor, {}};
+    if (it == state_.actors.end() || it->second.life <= 0 || (it->second.owner && !it->second.amazonPet) || amount < 0) return {DomainStatus::InvalidActor, {}};
     auto &actor = it->second;
     const auto life = std::max(int64_t(0), actor.life - amount);
     const uint8_t percent = uint8_t(life ? std::clamp<int64_t>(life * 128 / actor.maximumLife, 1, 127) : 0);
@@ -74,13 +77,19 @@ DomainResult<> System::damage(EntityId id, EntityId source, int64_t amount, uint
         else chilled = std::max(chilled, tick + coldFrames);
     }
     if (!life) chilled = frozen = 0;
+    auto poisoned=actor.poison;
+    if(life && poison && poison->frames && poison->state>=0 && replacesPoison(poisoned?poisoned->damage.rate:0,poison->rate))
+        poisoned=PoisonStatus{*poison,source,tick+std::min(poison->frames,UINT64_MAX-tick),tick+1};
+    if(!life) poisoned.reset();
     std::vector<DomainFact> facts{HitFact{id, 1, actor.area, percent, !life, actor.position,hitClass}};
     if (bool(chilled) != bool(actor.chilledUntil)) facts.emplace_back(StateFact{id, 1, actor.area, actor.rule.coldState, bool(chilled)});
     if (bool(frozen) != bool(actor.frozenUntil)) facts.emplace_back(StateFact{id, 1, actor.area, actor.rule.frozenState, bool(frozen)});
+    if(bool(poisoned)!=bool(actor.poison)) facts.emplace_back(StateFact{id,1,actor.area,poisoned?poisoned->damage.state:actor.poison->damage.state,bool(poisoned)});
     auto event = ports_.events.publish({0, tick, {}, {AudienceKind::Area, {}, actor.area}, std::move(facts)});
     if (!event) return {event.status, {}};
     actor.life = life; ++actor.revision;
     actor.chilledUntil = chilled; actor.frozenUntil = frozen;
+    actor.poison=poisoned;
     if (!life) {
         actor.deathTick = tick; actor.deathOccurrence = *event.value; actor.killer = source;
         actor.route.clear(); actor.moving = false; actor.running = false; actor.movementTarget = {}; actor.busyUntil = tick + uint64_t(actor.rule.deathTicks);
@@ -102,6 +111,19 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
     bool blocked = false;
     for (auto &[id, actor] : state_.actors) {
         (void)id; actor.moving = false;
+        if(actor.amazonPet && actor.life>0 && actor.petStats.damageRegen>0 && actor.life<actor.maximumLife) {
+            actor.life=std::min(actor.maximumLife,actor.life+actor.maximumLife*actor.petStats.damageRegen/4096);++actor.revision;
+        }
+        if(actor.poison && actor.life>0) {
+            if(tick.tick>=actor.poison->until) {
+                if(!ports_.events.publish({0,tick.tick,{}, {AudienceKind::Area,{},actor.area},{StateFact{id,1,actor.area,actor.poison->damage.state,false}}})) {blocked=true;continue;}
+                actor.poison.reset();++actor.revision;
+            } else if(tick.tick>=actor.poison->next) {
+                const auto result=damage(id,actor.poison->source,actor.poison->damage.rate,tick.tick);
+                if(result.status==DomainStatus::Capacity) {blocked=true;continue;}
+                if(actor.poison) actor.poison->next=tick.tick+1;
+            }
+        }
         if(actor.knockbackGoal && actor.life>0) {
             const auto &grid=ports_.areas.at(actor.area).definition.collision;
             const Vec delta=*actor.knockbackGoal-actor.position;
@@ -126,15 +148,11 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         if (actor.frozenUntil > tick.tick) continue;
         if (actor.life <= 0 || tick.tick < actor.busyUntil) continue;
         if (actor.route.empty()) continue;
-        const PlayerState *target = nullptr;
-        for (const auto &[playerId, player] : ports_.players.all()) {
-            (void)playerId; if (player.actor == actor.movementTarget) { target = &player; break; }
-        }
-        if (!target || !target->entered || target->area != actor.area || target->persistent.player.hp <= 0) { stop(id); continue; }
-        const auto &grid = ports_.areas.at(actor.area).definition.collision;
-        auto arrived = [&](Vec position) {
-            return meleeDistance(position, actor.rule.size, target->position, 2) <= actor.stopDistance &&
-                grid.segment(position, target->position);
+        const auto target=targetPosition(actor.movementTarget,actor.area);
+        if(!target) {stop(id);continue;}
+        const auto &grid=ports_.areas.at(actor.area).definition.collision;
+        auto arrived=[&](Vec position) {
+            return meleeDistance(position,actor.rule.size,target->first,target->second)<=actor.stopDistance && grid.segment(position,target->first);
         };
         if (arrived(actor.position)) { stop(id); continue; }
         const int speed = actor.chilledUntil > tick.tick ? std::max(25, actor.velocityPercent + actor.rule.coldEffect) : actor.velocityPercent;

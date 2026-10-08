@@ -3,15 +3,22 @@
 #include "gameplay/skills/hydra_spec.hpp"
 #include "gameplay/skills/cast_timing.hpp"
 #include "world/collision.hpp"
+#include "combat_rules.hpp"
 #include <array>
 #include <map>
 #include <string>
+#include <set>
 namespace d2x::server {
 struct SkillDefinition { SkillRuleSpec spec; bool allowedInTown{}; MissileCollisionRule collision; };
 struct SkillRules {
+    int poisonState{-1};
+    std::map<int,MonsterRule> amazonPetRules;
+    std::set<int> slowableMissiles, pierceableMissiles, alwaysExplodingMissiles;
+    std::map<int,std::pair<int,int>> missileVelocities;
     std::optional<HydraSpec> hydra;
     std::map<int, SkillDefinition> definitions;
     std::map<std::string, CastAnimationTiming, std::less<>> animations;
+    std::map<std::string, AttackAnimation, std::less<>> weaponAnimations;
     std::map<int, std::pair<int, int>> fireMasteries;
     std::map<int, std::pair<int, int>> lightningMasteries, coldMasteries;
     std::map<int, MissileCollisionRule> collisions;

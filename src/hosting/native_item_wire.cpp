@@ -190,6 +190,16 @@ std::vector<Bytes> nativeInventoryPackets(const ClassicData &data, const Persist
     }
     return result;
 }
+std::vector<Bytes> nativeMonsterEquipment(const ClassicData &data,PersistentCharacter projection,EntityId owner) {
+    std::vector<Bytes> result;
+    for(auto &[id,item]:projection.inventory.items) {
+        (void)id;
+        const auto conceal=[&](auto &&self,ItemInstance &value)->void {value.identified=false;value.nativeFlags&=~uint32_t(0x10);for(auto &child:value.socketedItems) self(self,child);};
+        conceal(conceal,item);
+        emitItem(result,data,projection,item,ItemAction::Equip,true,1,uint32_t(owner.value));
+    }
+    return result;
+}
 std::vector<Bytes> nativePublicEquipment(const ClassicData &data, PersistentCharacter projection) {
     for (auto &[id, item] : projection.inventory.items) {
         (void)id;

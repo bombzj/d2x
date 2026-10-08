@@ -1,9 +1,27 @@
 #include "native_combat_wire.hpp"
 #include "protocol/message_catalog.hpp"
+#include "content/classic_data.hpp"
+#include "network/protocol/bits.hpp"
 #include <cmath>
 #include <numbers>
 #include <stdexcept>
 namespace d2x {
+Bytes nativeState(const ClassicData &data,const server::StateFact &fact) {
+    using hosting::ServerMessage;using hosting::encodeServerPacket;
+    if(fact.state<0 || fact.state>=255) throw std::runtime_error("Native state id exceeds packet capacity");
+    if(!fact.enabled || fact.stats.empty()) return encodeServerPacket(fact.enabled?ServerMessage::EnableState:ServerMessage::DisableState,[&](auto &out){out.u8(fact.type);out.u32(uint32_t(fact.actor.value));out.u8(uint8_t(fact.state));});
+    const auto &table=data.tables.at("itemstatcost");net::protocol::BitWriter bits;
+    for(const auto &[id,value]:fact.stats) {
+        size_t row=0;while(row<table.rows().size() && table.number(row,"ID")!=id) ++row;
+        if(row==table.rows().size() || id<0 || id>=511) throw std::runtime_error("Unknown native state stat");
+        const int width=table.number(row,"Send Bits").value_or(0),param=table.number(row,"Send Param Bits").value_or(0);
+        const bool signedValue=table.number(row,"Signed").value_or(0)!=0;
+        if(width<1 || width>32 || param<0 || param>32 || value<(signedValue?-(int64_t(1)<<(width-1)):0) || value>=(int64_t(1)<<(width-(signedValue?1:0)))) throw std::runtime_error("Native state stat exceeds Send Bits");
+        bits.write(uint32_t(id),9);bits.write(0,unsigned(param));bits.write(uint32_t(uint64_t(value)&((uint64_t(1)<<width)-1)),unsigned(width));
+    }
+    bits.write(511,9);auto packed=bits.release();if(packed.size()>247) throw std::runtime_error("Native state stat packet exceeds byte length");
+    return encodeServerPacket(ServerMessage::EnableStateStats,[&](auto &out){out.u8(fact.type);out.u32(uint32_t(fact.actor.value));out.u8(uint8_t(packed.size()+8));out.u8(uint8_t(fact.state));out.append(packed);});
+}
 namespace {
 using net::protocol::Writer;
 using hosting::ServerMessage;
@@ -25,9 +43,25 @@ uint8_t direction(Vec from, Vec to) {
 Bytes nativeMonsterAssignment(const MonsterSnapshot &monster, Vec origin) {
     return encodeServerPacket(ServerMessage::AssignNpc, [&](auto &out) {
         out.u32(uint32_t(monster.id.value)); out.u16(uint16_t(monster.nativeClass)); point(out, monster.position + origin);
-        out.u8(monster.life); out.u8(14);
-        // MONMODE:4, optional component variations:0, optional rank flags:0.
-        out.u8(monster.mode);
+        out.u8(monster.life);
+        net::protocol::BitWriter bits;
+        // SCmd::sub_6FC3FC80 retains skill/death modes; motion is sent separately.
+        bits.write(monster.mode==0 || monster.mode==8 || monster.mode==9 || monster.mode==12?monster.mode:1,4);
+        bits.write(0,1); // No prepared component variations.
+        bits.write(!monster.modifiers.empty(),1);
+        if(!monster.modifiers.empty()) {
+            if(monster.modifiers.size()>9) throw std::runtime_error("Native NPC modifier capacity exceeded");
+            bits.write(0,5); // Summons are neither champion nor unique ranks.
+            for(auto modifier:monster.modifiers) {if(!modifier) throw std::runtime_error("Invalid native NPC modifier");bits.write(modifier,8);}
+            bits.write(0,8);bits.write(0,16);bits.write(0,1); // Terminator, name seed, hireling owner.
+        }
+        bits.write(monster.storedOwner.has_value(),1);
+        if(monster.storedOwner) {
+            if(!*monster.storedOwner || monster.storedOwner->value>0x7fffffff) throw std::runtime_error("Native stored owner exceeds 31 bits");
+            bits.write(uint32_t(monster.storedOwner->value),31);
+        }
+        bits.write(0,1); // No assignment stat list; state packets follow.
+        auto tail=bits.release();out.u8(uint8_t(13+tail.size()));out.append(tail);
     });
 }
 Bytes nativeMonsterMotion(const MonsterSnapshot &monster, Vec origin) {

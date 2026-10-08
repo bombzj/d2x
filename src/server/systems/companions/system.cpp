@@ -20,11 +20,11 @@ DomainResult<> System::hydra(const ActorContext &actor,const SkillCastSpec &skil
         entry.rank=skill.rank;entry.attackSkill=head.attackSkill;entry.expires=actor.tick+uint64_t(skill.hydraFrames);
         entry.nextDecision=monster.riseUntil;entry.random=childRandom(random);next.companions.emplace(id,std::move(entry));
     }
-    size_t count=0;for(const auto &[id,pet]:next.companions) {(void)id;if(pet.owner==actor.player && !pet.removeAt) ++count;}
+    size_t count=0;for(const auto &[id,pet]:next.companions) {(void)id;if(pet.owner==actor.player && pet.sourceSkill==uint16_t(skill.sourceId) && !pet.removeAt) ++count;}
     std::vector<EntityId> retire;
     for(auto &[id,pet]:next.companions) {
         if(count<=size_t(skill.hydraLimit)) break;
-        if(pet.owner!=actor.player || pet.removeAt) continue;
+        if(pet.owner!=actor.player || pet.sourceSkill!=uint16_t(skill.sourceId) || pet.removeAt) continue;
         const auto *monster=ports_.monsters.find(id);if(!monster) continue;
         pet.removeAt=actor.tick+uint64_t(monster->rule.deathTicks);pet.release=0;retire.push_back(id);--count;
     }
@@ -35,17 +35,25 @@ DomainResult<> System::hydra(const ActorContext &actor,const SkillCastSpec &skil
 }
 StepStatus System::step(TickContext tick,FrameFacts &) {
     bool blocked=false;
+    std::vector<EntityId> stale;
+    for(const auto &[id,source]:pending_) {
+        const auto *p=ports_.players.find(source.actor.player);
+        if(!p || !p->entered || p->persistent.player.hp<=0 || p->area!=source.actor.area || p->actor!=source.actor.actor || p->persistent.player.level!=source.ownerLevel || p->persistent.player.skillRanks!=source.hardRanks || p->inventoryRevision!=source.inventoryRevision) stale.push_back(id);
+    }
+    for(auto id:stale) cancel(id);
     for(auto it=state_.companions.begin();it!=state_.companions.end();) {
         auto &pet=it->second;const auto *p=ports_.players.find(pet.owner);const auto *body=ports_.monsters.find(pet.actor);
         if(!body) {it=state_.companions.erase(it);continue;}
         if(p && p->persistent.player.hp<=0 && !pet.ownerDeath) pet.ownerDeath=tick.tick;
-        if(!pet.removeAt && (!p || !p->entered || (pet.ownerDeath && tick.tick>=pet.ownerDeath+uint64_t(p->rules.character->deathTicks)) || tick.tick>pet.expires)) {
+        if(!pet.removeAt && (body->life<=0 || (body->amazonPet && body->amazonPet->decoy && p && p->area!=body->area) || !p || !p->entered || (pet.ownerDeath && tick.tick>=pet.ownerDeath+uint64_t(p->rules.character->deathTicks)) || tick.tick>pet.expires)) {
             pet.removeAt=tick.tick+uint64_t(body->rule.deathTicks);pet.release=0;ports_.monsters.retire(pet.actor,tick.tick);
         }
         if(pet.removeAt) {
             if(tick.tick>=pet.removeAt) {ports_.monsters.remove(pet.actor);it=state_.companions.erase(it);} else ++it;continue;
         }
+        if(body->amazonPet && p && p->persistent.player.hp>0) {if(amazonStep(pet,tick)==StepStatus::Blocked) blocked=true;++it;continue;}
         if(!p || p->area!=body->area || p->persistent.player.hp<=0) {++it;continue;}
+        if(body->amazonPet) {++it;continue;}
         const auto &area=ports_.areas.at(body->area);
         ActorContext actor{p->player,p->actor,p->area,area.generation,0,tick.tick};
         if(pet.release && tick.tick>=pet.release) {

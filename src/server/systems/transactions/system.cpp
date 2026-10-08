@@ -147,7 +147,8 @@ DomainResult<> System::commit(Plan plan) {
     const auto &extra = edit ? edit->facts : characterChange->facts;
     batch.facts.insert(batch.facts.end(), extra.begin(), extra.end());
     std::vector<EventBatch> batches; batches.push_back(std::move(batch));
-    if (characterChange && !characterChange->publicFacts.empty()) batches.push_back({0, request->actor.tick, plan.id, {AudienceKind::Area, {}, player.area}, characterChange->publicFacts});
+    const auto &publicFacts=edit?edit->publicFacts:characterChange->publicFacts;
+    if(!publicFacts.empty()) batches.push_back({0,request->actor.tick,plan.id,{AudienceKind::Area,{},player.area},publicFacts});
     if (characterChange && characterChange->revival) {
         const auto &at = *characterChange->revival;
         batches.push_back({0, request->actor.tick, plan.id, {AudienceKind::Player, player.player, at.area},

@@ -43,13 +43,14 @@ void SceneView::createMissileImpactVisuals(int missileId, Vec position) {
     }
     if (const auto ejecta = assets_.projectileFreezingEjecta.find(missileId);
         ejecta != assets_.projectileFreezingEjecta.end()) {
-        // CltHit14's original directional ejecta already carries pixel motion
-        // in its DCC offsets; the table velocity is zero. Legacy multiplicity
-        // and offset randomization remain unverified, so only one is displayed.
-        constexpr Vec directions[]{{0,1},{-1,1},{-1,0},{-1,-1},{0,-1},{1,-1},{1,0},{1,1}};
-        const auto direction = directions[limitedRandom(projectileVisualRandom_, 8)];
-        if (const auto *visual = assets_.ensureProjectile(ejecta->second))
-            clientMissiles_.push_back({ejecta->second, position, {}, 0, visual->lifetime, direction});
+        // Retail CltHit14 B0870 / table D3CB0: choose one of three
+        // original direction groups, rotate it by a uniformly chosen octant.
+        constexpr std::array<std::array<int,5>,3> groups{{{4,0,1,4,5},{4,0,2,4,6},{3,0,3,5,0}}};
+        constexpr Vec directions[]{{1,0},{1,1},{0,1},{-1,1},{-1,0},{-1,-1},{0,-1},{1,-1}};
+        const auto &group=groups[limitedRandom(projectileVisualRandom_,3)];
+        const int rotation=int(limitedRandom(projectileVisualRandom_,8));
+        if(const auto *visual=assets_.ensureProjectile(ejecta->second))
+            for(int i=0;i<group[0];++i) clientMissiles_.push_back({ejecta->second,position,{},0,visual->lifetime,directions[(group[i+1]+rotation)&7]});
         return;
     }
     const auto found = assets_.projectileImpactVariants.find(missileId);

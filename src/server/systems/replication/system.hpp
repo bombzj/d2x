@@ -23,5 +23,6 @@ class System {
     DomainResult<> admit(PlayerId);
     std::vector<PlayerId> visible(PlayerId) const;
     std::vector<MonsterSnapshot> visibleMonsters(PlayerId, uint64_t tick) const;
+    std::vector<PetOwnershipSnapshot> pets(PlayerId) const;
 };
 }

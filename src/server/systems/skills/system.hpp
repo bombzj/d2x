@@ -4,6 +4,8 @@
 #include "server/runtime/prepared_rules.hpp"
 #include "server/runtime/events.hpp"
 #include "gameplay/skills/cast_spec.hpp"
+#include "gameplay/combat/attack_timing.hpp"
+#include "gameplay/combat/avoidance.hpp"
 #include <algorithm>
 #include <map>
 #include <set>
@@ -32,13 +34,19 @@ class System {
         EntityId unit;
         uint64_t tick{};
         uint8_t unitType{1}; uint64_t pulses{}; bool manaPaid{};
+        std::optional<WeaponDamage> weapon{};
+        std::vector<int> weaponHits{};
+        size_t nextWeaponHit{};
+        int weaponSpeed{}, weaponFrames{}, weaponRollback{};
     };
     std::map<EntityId, Release> releases_;
     DomainResult<> cast(const ActorContext &, const Request &, int skill);
+    DomainResult<> weaponCast(const ActorContext &, const Request &, int);
+    DomainStatus weaponRelease(Release &, const ActorContext &, Vec);
     StepStatus release(TickContext);
     DomainStatus activate(Release &, const ActorContext &, Vec);
     std::optional<Vec> unitPosition(const ActorContext &, UnitTarget, SkillBehavior) const;
-    DomainResult<> attack(const ActorContext &, const Request &);
+    DomainResult<> attack(const ActorContext &, const Request &, int selectedOverride = -1);
   public:
     explicit System(Ports ports) : ports_(ports) {}
     const State &read() const { return state_; }
@@ -46,6 +54,7 @@ class System {
     size_t pendingReleases() const { return releases_.size(); }
     bool busy(EntityId id, uint64_t tick) const { auto it = state_.casts.find(id); return releases_.contains(id) || (it != state_.casts.end() && it->second.until > tick); }
     DomainResult<> requestCast(const CastRequest &);
+    DomainResult<> avoidance(const ActorContext &, WeaponAvoidance, EntityId attacker);
     DomainResult<> execute(const ActorContext &, const Request &);
     StepStatus step(TickContext, FrameFacts &);
 };

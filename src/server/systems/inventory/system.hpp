@@ -5,6 +5,7 @@
 #include "server/runtime/events.hpp"
 #include "gameplay/items/intents.hpp"
 #include "gameplay/skills/cast_spec.hpp"
+#include "server/systems/transactions/system.hpp"
 #include <map>
 #include <set>
 #include <string>
@@ -52,6 +53,8 @@ class System {
     bool storageAccess(PlayerId) const;
     DomainResult<> storage(const ActorContext &, const Request &);
     DomainResult<> consume(const ActorContext &, const UseItem &, Source);
+    DomainResult<transactions::Plan> weaponCost(const ActorContext &, const WeaponDamage &,
+        const SkillCastSpec &, bool payMana, bool payAmmo, unsigned wear = 0) const;
     DomainResult<> ground(const ActorContext &, const GroundTransfer &, std::optional<SkillCastSpec> telekinesis = {});
     DomainResult<> telekinesis(const ActorContext &, EntityId, const SkillCastSpec &);
     std::optional<Vec> groundPosition(EntityId, RegionId) const;

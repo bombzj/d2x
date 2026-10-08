@@ -1,4 +1,6 @@
 #include "system.hpp"
+#include "gameplay/skills/bow_spec.hpp"
+#include "gameplay/skills/spear_spec.hpp"
 #include "server/systems/transactions/system.hpp"
 #include "evaluation.hpp"
 #include "server/player_store.hpp"
@@ -36,6 +38,7 @@ DomainResult<> System::cast(const ActorContext &actor,const Request &request,int
     if(!p.rules.skills) return {DomainStatus::Unavailable,{}};
     const auto &rules=*p.rules.skills;const auto found=rules.definitions.find(selected);if(found==rules.definitions.end()) return {};
     const auto &definition=found->second;
+    if(definition.spec.weapon) return weaponCast(actor,request,selected);
     if(!request.target) return {DomainStatus::InvalidRequest,{}};
     PointTarget target{actor.area,actor.areaGeneration,{}};EntityId unit;uint8_t type=1;
     if(const auto *point=std::get_if<PointTarget>(&*request.target)) {
@@ -93,6 +96,9 @@ DomainResult<> System::cast(const ActorContext &actor,const Request &request,int
 }
 DomainStatus System::activate(Release &pending,const ActorContext &actor,Vec target) {
     const auto &p=*ports_.players.find(actor.player);const auto &skill=pending.skill;
+    if(pending.weapon) return weaponRelease(pending,actor,target);
+    if(skill.summon && skill.summon->amazon) return ports_.companions.amazon(actor,skill,target).status;
+    if(skill.amazonMagic) return ports_.effects.amazonMagic(actor,skill).status;
     if(skill.effect==SkillBehavior::Teleport) return ports_.travel.teleport(actor,{actor.area,actor.areaGeneration,target},skill.manaCost).status;
     if(skill.effect==SkillBehavior::Hydra) return ports_.companions.hydra(actor,skill,target).status;
     if(skill.appliedEffect) {
@@ -132,11 +138,11 @@ StepStatus System::release(TickContext tick) {
         auto actor=pending.actor;actor.tick=tick.tick;const auto *p=ports_.players.find(actor.player);const auto *area=ports_.areas.find(actor.area);
         bool valid=p && p->entered && p->actor==actor.actor && p->area==actor.area && p->persistent.player.hp>0 && area && area->generation==actor.areaGeneration;
         Vec target=pending.target.position;
-        if(valid && pending.unit) {
+        if(valid && pending.unit && !(pending.skill.weapon && ((pending.skill.weapon->bow && pending.skill.weapon->bow->strafe) || (pending.skill.weapon->spear && pending.skill.weapon->spear->kind==SpearSkillSpec::Kind::Fend)))) {
             const auto position=unitPosition(actor,{pending.unit,0,pending.unitType},pending.skill.effect);valid=position.has_value();if(valid) target=*position;
         }
         const bool channel=pending.skill.effect==SkillBehavior::Inferno;
-        if(!valid) {it=releases_.erase(it);continue;}
+        if(!valid) {ports_.companions.cancel(actor.actor);it=releases_.erase(it);continue;}
         DomainStatus status;
         if(channel) {
             auto skill=evaluate(*p,pending.skill.sourceId,pending.skill.rank);
@@ -149,7 +155,15 @@ StepStatus System::release(TickContext tick) {
             auto &cast=state_.casts.at(actor.actor);
             if(pending.skill.delayFrames>0) cast.cooldownUntil=tick.tick+uint64_t(pending.skill.delayFrames);
             if(channel) {++pending.pulses;pending.tick=tick.tick+1;cast.until=tick.tick+1;++it;continue;}
+            if(pending.weapon) {
+                pending.manaPaid=true;
+                if(++pending.nextWeaponHit<pending.weaponHits.size()) {
+                    pending.tick=tick.tick+uint64_t(std::max(1,pending.weaponHits[pending.nextWeaponHit]-pending.weaponHits[pending.nextWeaponHit-1]));
+                    ++it;continue;
+                }
+            }
         }
+        ports_.companions.cancel(actor.actor);
         it=releases_.erase(it);
     }
     return blocked?StepStatus::Blocked:StepStatus::Complete;

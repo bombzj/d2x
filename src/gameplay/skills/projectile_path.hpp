@@ -9,7 +9,7 @@
 
 namespace d2x {
 // Native velocity in 1/4096-cell units per frame, including integer level scaling.
-std::optional<int> missileVelocityFixed(int base, int perLevel, int rank);
+std::optional<int> missileVelocityFixed(int base, int perLevel, int rank,int slowPercent = 0);
 // PathMisc::sub_6FD5CEB0. completedTick is counted after the current native tick.
 // Adapters retain their fixed-point or cells/second representation.
 template<class Number> struct MissileVelocityStep { Number speed, acceleration; };
@@ -29,6 +29,8 @@ Vec missileRingDirection(int index);
 struct MissileRingEmission { Vec direction; int nextIndex{}; };
 // SrvDo15 / CltDo19 use remaining frames, with separate table parameters.
 bool missileEmissionDue(int remaining, int period);
+// SrvDo07 / retail CltDo07: periodic repath only inside (3,25).
+std::optional<Vec> missileGuidedDirection(Vec position,Vec target,int remaining,int period);
 std::optional<MissileRingEmission> missileRingEmission(int remaining, int period, int index, int step);
 // SrvDo16 / CltDo20 only rotate inside the remaining-frame window.
 std::optional<Vec> missileOrbTurn(Vec target, int remaining, int window, int period);

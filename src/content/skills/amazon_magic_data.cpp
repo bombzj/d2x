@@ -85,6 +85,8 @@ void loadAmazonMagicSkills(SkillCatalog &catalog, const DataTable &skills, const
     auto program = std::make_shared<AmazonMagicSpec>();
     const auto &state = states.at(std::string(skills.value(row, "auratargetstate")));
     program->state = state.definition; program->filter = number(skills, row, "aurafilter");
+    const DataTable statCosts(archives.read("data/global/excel/itemstatcost.txt"));
+    program->stat=number(statCosts,rowOf(statCosts,"Stat",skills.value(row,"aurastat1")),"ID");
     program->frames = number(skills, row, "Param3"); program->framesPerLevel = number(skills, row, "Param4");
     program->radius = number(skills, row, "Param5"); program->radiusPerLevel = number(skills, row, "Param6");
     if (inner) {

@@ -3,6 +3,7 @@
 #include "server/runtime/ports.hpp"
 #include "server/runtime/events.hpp"
 #include "gameplay/combat/damage_type.hpp"
+#include "gameplay/skills/weapon_damage.hpp"
 #include <deque>
 #include <list>
 #include <map>
@@ -17,7 +18,8 @@ struct Damage {
     RegionId area; uint64_t impact{}; int rating{}, level{}, range{}, sourceSize{2};
     std::optional<WeaponDamage> weapon;
     int criticalChance{}, deadlyChance{};
-    bool reactionsStarted{};
+    bool reactionsStarted{}, cancelled{};
+    std::optional<CombatModifiers> attackModifiers{};
 };
 // Targets are captured at missile impact, not looked up again by radius on retry.
 struct SpellImpact {
@@ -36,10 +38,13 @@ struct SpellImpact {
     int64_t minimumStaticDamage{};
     std::vector<int64_t> targetDamage{};
     uint8_t hitClass{};
+    std::optional<WeaponSkillDamage> weapon{};
+    uint64_t poisonFrames{};
+    std::optional<bool> weaponHit{};
 };
 struct SpellPlan { std::list<SpellImpact> spells; size_t targets{}; };
 struct State { std::vector<Damage> pending; std::list<SpellImpact> spells; size_t spellTargets{}; };
-struct Ports { const PlayerStore &players; monsters::System &monsters; const AreaStore &areas; transactions::System &transactions; uint64_t &random; EventOutbox &events; effects::System &effects; };
+struct Ports { const PlayerStore &players; monsters::System &monsters; const AreaStore &areas; transactions::System &transactions; uint64_t &random; EventOutbox &events; effects::System &effects; inventory::System &inventory; };
 class System {
     State state_;
     const Ports ports_;
@@ -48,6 +53,7 @@ class System {
     explicit System(Ports ports) : ports_(ports) {}
     const State &read() const { return state_; }
     DomainResult<> enqueue(const Damage &);
+    bool weaponContact(const WeaponSkillDamage &,EntityId,uint64_t,uint64_t &) const;
     DomainResult<> enqueue(SpellImpact);
     DomainResult<SpellPlan> prepareSpells(std::vector<SpellImpact>) const;
     void commitSpells(SpellPlan &&) noexcept;

@@ -100,6 +100,7 @@ void loadAmazonBowSkills(SkillCatalog &catalog, const DataTable &skills, const D
         bow->conversionPerLevel = ice ? 0 : number(missiles, missile, "dParam2");
         bow->freezePercent = ice ? number(missiles, missile, "dParam1") : 0;
         bow->multiple = multiple;
+        if(multiple) bow->activateFrames=number(skills,row,"Param3");
         bow->guided = guided;
         bow->strafe = strafe;
         bow->immolation = immolation;
@@ -150,7 +151,7 @@ void loadAmazonBowSkills(SkillCatalog &catalog, const DataTable &skills, const D
             bow->retargetPeriod = std::max(1, number(missiles, missile, "Param1"));
             bow->searchRadius = number(missiles, missile, "Param2");
         }
-        if (multiple || strafe) {
+        if (multiple || strafe || guided) {
             if (multiple && (formula(skills, row, "calc1") != "min(24,ln12)" || formula(skills, row, "calc2") != "par3" ||
                 formula(skills, row, "calc3") != "2" || number(skills, row, "srvdofunc") != 8))
                 throw std::runtime_error("Unsupported Multiple Shot formula");

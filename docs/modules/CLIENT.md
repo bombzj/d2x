@@ -2,6 +2,8 @@
 
 更新：2026-10-08。原服与自研宿主共用完整客户端，只有连接选择不同。Windows Release已构建打包；单机有限冒烟、当前及旧包身份见[基线](../../BASELINE.md)。
 
+本轮亚马逊冒烟中的原版修复：匹配弓弩的箭袋不触发双手冲突移除，直接发原0x1A；人物伪装的死亡模式按 D2Common 使用 HTH。依据及有限原服／自研证据见[亚马逊](../gameplay/skills/AMAZON.md#有限运行证据)。
+
 ## 唯一客户端链
 
 RealmFrontend与所有游戏页面都读取RealmSession的原协议副本。输入统一为SceneController → RemoteUiClients／RemoteControl／RemoteCombat／RemoteInventory → 原MCP／D2GS；回包统一为RemoteWorld／RemoteInventory／RemoteTown → RemoteUiClients／RemoteScene → SceneView。GameClients、IGameConnection、EmbeddedConnection、LocalGame、GameScene及单独的角色服务DTO已删除。
@@ -11,7 +13,7 @@ InventoryView允许缺失尚未接入的容器；共用腰带绘制／输入／�
 
 ## 既有基础批次客户端边界
 
-以`df6f6c9`为提交基线，库存／装备、人物成长、世界／多人和普通近战需求均由自研服务端输出原包完成，不以修改原服客户端消费者为前提。RemoteWorld／RemoteUiClients／RemoteCombat／RemoteInventory、D2GS解码、SceneController与原消息／输入链保持该基线；SceneView弹体纯计算提取是下表中用户另行授权的例外。本节为该基础批次差异范围；后续女巫授权改造见文末。未执行原服运行回归，不能当作运行认证。
+以`df6f6c9`为提交基线，库存／装备、人物成长、世界／多人和普通近战需求均由自研服务端输出原包完成，不以修改原服客户端消费者为前提。RemoteWorld／RemoteUiClients／RemoteCombat／RemoteInventory、D2GS解码、SceneController与原消息／输入链保持该基线；SceneView弹体纯计算提取是下表中用户另行授权的例外。本节为该基础批次差异范围；后续职业技能按原版证据授权的公共改造见文末。未执行原服运行回归，不能当作运行认证。
 
 已逐项列出的客户端改动与确认边界：
 
@@ -64,3 +66,11 @@ GameSession、Simulation、SkillRuntime、InventoryService、本地任务／AI�
 本人已知FCR进入公共施法时序；原服未发送累计属性时，从已完整解码的本人装备／套装／状态列表计算，未知值保持未知，其他玩家不推算隐藏属性。普通SC、seq6／seq12共用原事件与序列定义；冰封球按remaining散射／转向，保留Clt参数。资源路径留在SkillSpec，公共数值以SkillRuleSpec输入resolveSkill，服务端调用相同计算。完整路径量化及原版各自的地面生成程序仍由两端适配，尚未统一成完整技能执行器。
 
 本轮经用户授权完成女巫30项服务端与客户端改造。RemoteCombat按原表统一敌我／物件／物品目标资格，地面物品从原9C／9D物品副本读取而非伪造普通单位；心灵传动登记原仓库／传送点开窗等待，仍由77／63回包确认。应用面板随原存储状态清理；RemoteScene统一处理seq6循环姿态、持续Inferno及转向、A3目标落雷；RemoteScene按原CltDo26／28在目标点重建火墙及中心弹体，Blaze按原状态与显示移动跨格留火；ClientSend不阻止这些原本本地生成的程序，原73同步与预测按不同来源有界配对。地面物品位置亦用于本人预测，不能等待原服通常不回送的本人4C／4D。ClientMissile补暴风雪13／19和连锁16，以及ReturnFire合格碰撞的ChillingArmor本地图像。Hydra依旧是原monster单位和技能337。原服与自研都使用这些代码，不读取自研服务端状态或私有协议。显示接触不能扣血／扣蓝或修改存档，完整像素／声音认证范围见[女巫技能](../gameplay/skills/SORCERESS.md)。
+
+## 亚马逊公共客户端补齐
+
+本轮遵循同一授权边界，具体原Clt函数／DLL RVA、30项范围和公共计算见[亚马逊](../gameplay/skills/AMAZON.md)。Shared sequence／weaponVolley、引导、分裂候选、整数圆盘／环形和GUID继任用于原客户端程序，不读取服务端领域状态。本人IAS／武器速度／Pierce仅用已知属性及已解码装备；远端隐藏值不推算。Srv与Clt的牺牲火期限、目标候选及转向参数分别取原表。
+
+RemoteScene补CltDo18–22、ClientMissile补原尾迹／毒烟／引导及Hit12／14／25。RemoteWorld消费原13字节7A宠物归属，归属名册与可见monster生命周期分离；9D保留ownerType，孔内／公开装备按实际主人清理。States的gfxtype=2人物伪装使用原动作映射及既有COF合成器，未添加自研宿主显示分支。头像HUD尚未接，不能将世界图形支持解释为完整宠物界面。
+
+全部30项及最终Windows Release已构建打包，本轮未启动客户端、运行测试或原服回归。女巫历史原服V2证据不能认证这些新增客户端路径。

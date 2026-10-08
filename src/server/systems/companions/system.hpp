@@ -4,6 +4,7 @@
 #include "server/runtime/events.hpp"
 #include "server/systems/monsters/system.hpp"
 #include "gameplay/skills/cast_spec.hpp"
+#include "preparation.hpp"
 
 #include <map>
 #include <set>
@@ -24,10 +25,17 @@ struct Ports { const PlayerStore &players; monsters::System &monsters; skills::S
 class System {
     State state_;
     const Ports ports_;
+    std::map<EntityId,Preparation> pending_;
+    std::map<EntityId,Prepared> prepared_;
+    StepStatus amazonStep(Companion &,TickContext);
   public:
     explicit System(Ports ports) : ports_(ports) {}
     const State &read() const { return state_; }
     DomainResult<EntityId> summon(const Summon &);
+    std::vector<Preparation> pending() const;
+    DomainResult<> install(Prepared);
+    void cancel(EntityId);
+    DomainResult<> amazon(const ActorContext &, const SkillCastSpec &, Vec);
     DomainResult<> hydra(const ActorContext &, const SkillCastSpec &, Vec);
     DomainResult<> execute(const ActorContext &, const Request &);
     StepStatus step(TickContext, FrameFacts &);

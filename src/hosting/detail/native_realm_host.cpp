@@ -3,6 +3,7 @@
 #include "hosting/character_rules.hpp"
 #include "hosting/loot_content.hpp"
 #include "hosting/merchant_content.hpp"
+#include "hosting/companion_content.hpp"
 #include "content/world/world_catalog.hpp"
 #include <algorithm>
 namespace d2x::hosting {
@@ -33,6 +34,10 @@ void NativeRealmHost::advance(double seconds) {
     for (auto &[game, areas] : terrain) {
         preparePendingLoot(host, game, archives, *content, lootContent);
         prepareMerchant(host, game, *content);
+        for(const auto &issue:preparePendingSummons(host,game,archives,*content))
+            for(auto *peer:peers) if(peer->binding && peer->binding->game==game) {
+                peer->counters.lastFailure=issue;++peer->counters.failures;
+            }
         const auto pending = host.pendingAreas(game);
         if (!pending) continue;
         for (const auto &request : *pending) {

@@ -1,5 +1,6 @@
 #pragma once
 #include "content/character/actor_appearance.hpp"
+#include "contracts/character.hpp"
 #include "content/world/object_mode.hpp"
 #include "core/math.hpp"
 #include "presentation/graphics/graphics.hpp"
@@ -17,6 +18,8 @@ struct ActorAnimationRequest {
     bool randomTransform = false, finalFrame = false, shadow = false;
     int playerSequence = -1;
     std::optional<int> fasterCast;
+    std::optional<KnownAttackTiming> attackTiming;
+    int repeatCount{1},rollbackPercent{};
 };
 struct ActorAnimation {
     GpuAnimation animation;

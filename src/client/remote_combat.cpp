@@ -62,6 +62,7 @@ bool RemoteCombat::hostile(const OnlineUnit &unit) const {
 }
 bool RemoteCombat::hostileSource(const OnlineUnit &unit) const {
     if (unit.key.type != 1 || !unit.classId) return false;
+    if(session_.read().world.pets.contains(unit.key.id)) return false;
     const auto monster = monsters_.find(*unit.classId);
     if (monster == monsters_.end()) return false;
     const auto &table = tables_.at("monstats");

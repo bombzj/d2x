@@ -148,6 +148,14 @@ D2Common包含单位、属性、技能公式、物品计算、路径／碰撞和
 因此原版实际是“公共基础＋两端技能／弹体程序”，并非“公共完整技能＋客户端只加渲染”。本项目可以比原版去重更多：公共函数接收明确的小状态、规则值、时钟与随机，输出下一状态及Spawn／Turn／Expire等纯动作；客户端创建视觉对象，服务端创建权威弹体并结算伤害。不要把服务器世界查询、事务或AI装进公共执行器，也不要为追求完全一样而取消已证实的Clt／Srv差异。
 
 
-全部30项的分派／公共函数／两端执行台账维护在[女巫技能](../gameplay/skills/SORCERESS.md#30项公共职责核对)，不重复记一份实现清单。D2Common的SKILLS_GetManaCosts只返回原定点曲线；D2Game Skills.cpp的法力消费再钳MinMana。技能伤害与独立弹体伤害的取整顺序必须分开：SKILLS_GetMinElemDamage在HitShift后计算协同，且fixed<=256且首级增量为0时跳过；MISSILE_GetMin/MaxElemDamage在HitShift前计算协同。原1.13c D2Common RVA50460的EMin／ELevMin读取与cmp0x100分支、RVA6B330的Missiles EMin／ELevMin读取及先协同后shift进一步确认；当前公共damage_curve分别定义并执行，Meteor地面火不套用技能伤害顺序。
+女巫与亚马逊各30项的分派／公共函数／两端执行台账维护在[女巫技能](../gameplay/skills/SORCERESS.md#30项公共职责核对)和[亚马逊技能](../gameplay/skills/AMAZON.md#30项职责核对)，不重复记一份实现清单。职业迁入流程统一在[公共技能规范](../gameplay/skills/COMMON.md#技能迁入规范)。D2Common的SKILLS_GetManaCosts只返回原定点曲线；D2Game Skills.cpp的法力消费再钳MinMana。技能伤害与独立弹体伤害的取整顺序必须分开：SKILLS_GetMinElemDamage在HitShift后计算协同，且fixed<=256且首级增量为0时跳过；MISSILE_GetMin/MaxElemDamage在HitShift前计算协同。原1.13c D2Common RVA50460的EMin／ELevMin读取与cmp0x100分支、RVA6B330的Missiles EMin／ELevMin读取及先协同后shift进一步确认；当前公共damage_curve分别定义并执行，Meteor地面火不套用技能伤害顺序。
 
 FCR依据Units.cpp的UNITS_UpdateCastAnimRateAndVelocity：120*FCR/(120+FCR)，总速率上限175，再乘AnimData基础速率。OtherAnimationRate属于另一个mode分支，不叠加CAST；当前公共cast_timing已修正。PathMisc::sub_6FD5CEB0的每五tick加速／限速逻辑提取为advanceMissileVelocity，数值表示仍由两端适配。公共规则是SkillRuleSpec；原图／声音／绘制参数只留SkillSpec内容定义，通过rules()投影，不发布到server。
+
+## 亚马逊公共层的原版核对
+
+SequenceTbls与SUnit动作回滚提供Jab／Impale序列及Strafe／Fend时钟证据；本项目提取为amazonWeaponSequence／weaponSequenceTick／weaponVolley，两端映射各自动作与释放事件。原D2Client CltDo18–22及MissileCltHit12／14／25的静态入口补足D2MOO没有客户端源码的部分，具体RVA见职业文档。
+
+原SkillAma／MissMode的主体仍属于D2Game。相同扇形、环形／整数圆盘、剩余帧转向、GUID继任及分裂候选可以提成纯函数，但Clt／Srv候选、期限与触发条件必须保留。武器六通道快照／转换和目标加成也是纯计算；当前权威掷值由服务端执行，不能让客户端重掷或据视觉接触结算。普通公式、近战范围修正后掷值、投射先掷值后目标ED的顺序分别表达。
+
+PlayerPets的0x7A归属广播和晚入局名册独立于房间可见性，因此replication提供单独的宠物归属投影，hosting只编码原包。召唤纯求值、MPQ／装备内容准备、companions生命周期／AI、monsters实体真值及客户端人物伪装分别归各层；不以共享为由恢复万能会话。本批已构建打包并补做有限运行，静态依据和代表技能观察不等于全职业原服认证。

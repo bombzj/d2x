@@ -3,6 +3,7 @@
 #include "gameplay/skills/spec.hpp"
 #include "gameplay/skills/behavior.hpp"
 #include "gameplay/skills/spear_spec.hpp"
+#include "gameplay/skills/amazon_sequence.hpp"
 #include "resources/archive.hpp"
 #include <stdexcept>
 #include <regex>
@@ -113,14 +114,8 @@ void loadAmazonSpearSkills(SkillCatalog &catalog, const DataTable &skills, const
     weapon.damagePercent = number(skills, row, "Param3"); weapon.damagePerLevel = number(skills, row, "Param4");
     weapon.attackRating = number(skills, row, "ToHit"); weapon.attackRatingPerLevel = number(skills, row, "LevToHit");
     auto program = std::make_shared<SpearSkillSpec>();
-    // D2Common SequenceTbls: player seqnum=1, weapon class 1HT / 2HT.
-    auto one = std::make_shared<SpearSequence>();
-    const int oneFrames[]{5,6,8,9,10,11,13,6,8,9,10,11,13,6,8,9,10,13};
-    for (int i = 0; i < 18; ++i) one->frames.push_back({oneFrames[i], (i >= 7 && i <= 9) || i >= 13, i == 3 || i == 9 || i == 15});
-    auto two = std::make_shared<SpearSequence>();
-    const int twoFrames[]{2,7,9,10,12,13,15,4,6,9,10,12,13,15,4,6,9,10,11,13,15};
-    for (int i = 0; i < 21; ++i) two->frames.push_back({twoFrames[i], (i >= 7 && i <= 10) || i >= 14, i == 3 || i == 10 || i == 17});
-    program->oneHand = std::move(one); program->twoHand = std::move(two);
+    program->oneHand = std::make_shared<SpearSequence>(amazonWeaponSequence(1,"1ht"));
+    program->twoHand = std::make_shared<SpearSequence>(amazonWeaponSequence(1,"2ht"));
     install(catalog, std::move(spec), std::move(program), skills, row);
     const auto power = named(skills, "skill", "Power Strike");
     if (number(skills, power, "srvstfunc") != 6 || number(skills, power, "srvdofunc") != 2 ||
@@ -160,12 +155,8 @@ void loadAmazonSpearSkills(SkillCatalog &catalog, const DataTable &skills, const
     impaleProgram->wearChance = number(skills, impale, "Param6");
     impaleProgram->wearMinimum = number(skills, impale, "Param3"); impaleProgram->wearMaximum = number(skills, impale, "Param4");
     impaleProgram->wearAmount = number(skills, impale, "Param5");
-    auto impaleOne = std::make_shared<SpearSequence>(), impaleTwo = std::make_shared<SpearSequence>();
-    const int oneThrust[]{0,1,1,1,2,2,2,3,3,4,4,5,6,7,8,9,10,11,12,13,14};
-    const int twoThrust[]{0,1,1,1,2,2,2,3,3,4,4,5,6,7,8,9,10,11,12,13,14,15,16,17};
-    for (int i = 0; i < 21; ++i) impaleOne->frames.push_back({oneThrust[i], false, i == 13});
-    for (int i = 0; i < 24; ++i) impaleTwo->frames.push_back({twoThrust[i], false, i == 15});
-    impaleProgram->oneHand = std::move(impaleOne); impaleProgram->twoHand = std::move(impaleTwo);
+    impaleProgram->oneHand = std::make_shared<SpearSequence>(amazonWeaponSequence(8,"1ht"));
+    impaleProgram->twoHand = std::make_shared<SpearSequence>(amazonWeaponSequence(8,"2ht"));
     install(catalog, std::move(thrust), std::move(impaleProgram), skills, impale);
 
     const auto bolt = named(skills, "skill", "Lightning Bolt");

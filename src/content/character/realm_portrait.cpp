@@ -107,12 +107,13 @@ RealmPortraitCatalog::RealmPortraitCatalog(Archives &a) {
     }
 }
 std::optional<RealmPortraitParts> RealmPortraitCatalog::decode(const OnlineUnit &u,
-                                                               const OnlineWorldView &w, bool unequipped) const {
-    if (u.key.type != 0 || !u.classId || *u.classId >= 7 || (!unequipped && !u.equipmentObserved))
+                                                               const OnlineWorldView &w, bool unequipped,std::optional<uint8_t> disguise) const {
+    const auto characterClass=disguise?std::optional<uint16_t>(*disguise):u.classId;
+    if ((!disguise && u.key.type != 0) || !characterClass || *characterClass >= 7 || (!unequipped && !u.equipmentObserved))
         return {};
     // Share the verified native preview component resolver with live server gear.
     OnlineCharacter preview;
-    preview.characterClass = uint8_t(*u.classId);
+    preview.characterClass = uint8_t(*characterClass);
     preview.portrait.assign(33, 0xFF);
     preview.portrait[0] = 0x8D;
     preview.portrait[1] = 0x80;
@@ -127,7 +128,7 @@ std::optional<RealmPortraitParts> RealmPortraitCatalog::decode(const OnlineUnit 
     bool equipmentEffectsKnown = true;
     for (const auto &[id, item] : w.equipment) {
         (void)id;
-        if (unequipped || item.owner != u.key.id || item.bodyLocation >= 11)
+        if (unequipped || item.ownerType!=u.key.type || item.owner != u.key.id || item.bodyLocation >= 11)
             continue;
         const auto found = items_.find(item.code);
         if (found == items_.end())

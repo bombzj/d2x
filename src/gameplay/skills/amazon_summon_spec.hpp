@@ -14,7 +14,7 @@ struct AmazonSummonSpec {
     bool decoy = true, warp = false;
     std::array<int, 8> parameters{};
     CombatStateDefinition state;
-    int gfxClass = -1;
+    int gfxClass = -1, petType = 0;
     int appearOverlay = -1;
     float appearDuration = 0;
     int stateOverlay = -1, decoySkill = -1, penetrateSkill = -1;
@@ -26,22 +26,12 @@ struct AmazonPetSpec {
     bool decoy = true, warp = false;
     int lifetimeFrames = 0;
     CombatStateDefinition state;
-    int gfxClass = -1;
+    int gfxClass = -1, petType = 0;
     int appearOverlay = -1;
     float appearDuration = 0;
     int stateOverlay = -1, lifeMinimum = 0, lifeMaximum = 0, lifePercent = 0;
     int itemLevel = 1, attackChance = 80, thinkFrames = 10;
     std::vector<AmazonPetEquipment> equipment;
-};
-struct AmazonPetState {
-    std::shared_ptr<const AmazonPetSpec> spec;
-    std::optional<EffectFrame> expiresAt;
-    RegionId region = RegionId::Encampment;
-    std::string characterAppearance, weaponClass;
-    unsigned weaponSet = 0;
-    std::array<std::string, size_t(EquipmentSlot::Count)> appearanceDefinitions{};
-    std::map<EquipmentSlot, ItemInstance> equipment;
-    WeaponDamage weapon;
 };
 SummonCastSpec resolveAmazonSummon(const SummonSkillSpec &, int rank, int ownerLevel,
     int difficulty, const CharacterAttributes &owner, const std::map<int, int> &hardRanks);

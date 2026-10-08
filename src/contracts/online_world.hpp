@@ -143,7 +143,7 @@ struct OnlineNpcConversation {
 struct OnlineEquippedItem {
     uint32_t id{}, owner{};
     uint32_t flags{};
-    uint8_t bodyLocation{}, component{};
+    uint8_t bodyLocation{}, component{}, ownerType{};
     std::string code;
     std::optional<uint8_t> quality;
     bool autoAffix{};
@@ -180,12 +180,14 @@ struct OnlineRespawnRequest {
     uint8_t restoredResources{};
     bool repositioned{};
 };
+struct OnlinePet { uint8_t type{}; uint16_t monsterClass{}; uint32_t owner{}; };
 struct OnlineWorldView {
     OnlineSocialView social;
     OnlinePlayerTrade playerTrade;
     OnlineDeathPhase deathPhase{OnlineDeathPhase::Unknown};
     uint64_t deathRevision{};
     std::optional<OnlineRespawnRequest> respawnRequest;
+    std::map<uint32_t, OnlinePet> pets; // Original 0x7A ownership, independent of unit visibility.
     std::map<uint32_t, uint32_t> corpseOwners; // Original 0x8E corpse GUID -> player GUID.
     uint64_t revision{}, areaGeneration{}, interactionGeneration{};
     std::map<OnlineUnitKey, OnlineUnit> units;
@@ -243,6 +245,7 @@ struct OnlineWorldView {
         deathRevision = 0;
         respawnRequest.reset();
         corpseOwners.clear();
+        pets.clear();
         revision = areaGeneration = interactionGeneration = 0;
         units.clear();
         rooms.clear();

@@ -4,6 +4,7 @@
 #include "server/systems/monsters/system.hpp"
 #include "server/systems/skills/evaluation.hpp"
 #include "gameplay/skills/behavior.hpp"
+#include "gameplay/skills/spear_spec.hpp"
 #include "gameplay/skills/projectile_path.hpp"
 #include "gameplay/combat/geometry.hpp"
 #include "core/random.hpp"
@@ -27,14 +28,22 @@ combat::SpellImpact System::impact(Missile &m, std::vector<EntityId> targets, st
     const auto &owner=*ports_.players.find(m.player); const auto &rules=*owner.rules.skills;
     combat::SpellImpact result{m.id,m.owner,m.area,element(m.skill.effect),damage.value_or(m.damage),std::move(targets)};
     result.occurrence=uint64_t(m.ageFrames);
+    if(m.skill.weapon && m.skill.weapon->spear && (m.skill.weapon->spear->kind==SpearSkillSpec::Kind::Charged ||
+        m.skill.weapon->spear->kind==SpearSkillSpec::Kind::Strike || m.skill.weapon->spear->kind==SpearSkillSpec::Kind::Fury)) result.type=DamageType::Lightning;
+    if(m.program==Program::AreaImpact && m.skill.missileImpact && m.skill.missileImpact->areaMissile) {
+        result.type=m.skill.missileImpact->areaMissile->element;
+        result.freeze=result.type==DamageType::Cold;
+    }
+    if(m.program==Program::PoisonCloud) {result.type=DamageType::Poison;result.poisonFrames=uint64_t(std::max(0,int(std::lround(m.skill.poisonDuration*25.f))));}
     result.coldFrames=uint64_t(std::max(0,int(std::lround(m.skill.coldDuration*25.f))));
-    result.freeze=m.skill.effect==SkillBehavior::IceBlast || m.skill.effect==SkillBehavior::GlacialSpike;
+    result.freeze=result.freeze || m.skill.effect==SkillBehavior::IceBlast || m.skill.effect==SkillBehavior::GlacialSpike;
     if (m.skill.freezingArea) result.coldFrames=uint64_t(m.skill.freezingArea->freezeFrames);
     result.coldPierce=skills::coldPierce(owner); result.coldDivisor=rules.coldDivisor; result.freezeDivisor=rules.freezeDivisor;
     result.nextDelay=uint64_t(m.skill.arc ? m.skill.arc->nextDelay : std::max(0,int(std::lround(m.skill.missileNextDelay*25.f))));
     return result;
 }
 System::Advance System::advance(const Missile &original) const {
+    if(original.weapon) return advanceWeapon(original);
     Advance plan{original,{},{},false}; auto &m=plan.next;
     const auto &owner=*ports_.players.find(m.player); const auto &area=ports_.areas.at(m.area);
     Spawn source{{m.player,m.owner,m.area,m.generation,0,m.created},m.skill,m.collision,{},true,m.emitter,m.emitterType,{}};
@@ -73,6 +82,10 @@ System::Advance System::advance(const Missile &original) const {
     }
     ++m.ageFrames;
     const bool expires=m.ageFrames>=m.lifetimeFrames;
+    if(m.program==Program::AreaImpact) {
+        if(expires) {areaHit(m.position,int(m.skill.missileImpact->areaMissile->radius),m.damage);plan.finished=true;}
+        return plan;
+    }
     if(m.program==Program::Meteor) {
         if(!expires) return plan;
         const auto &p=*m.skill.meteor; areaHit(m.position,p.radius,m.damage);
@@ -84,22 +97,25 @@ System::Advance System::advance(const Missile &original) const {
         }
         plan.finished=true; return plan;
     }
-    if(m.program==Program::Fire || m.program==Program::Shard) {
+    if(m.program==Program::Fire || m.program==Program::Shard || m.program==Program::PoisonCloud) {
         if(expires) { plan.finished=true; return plan; }
         const int size=m.program==Program::Fire ? m.skill.firewall->size : m.collision.size;
+        Vec next=m.position+m.velocity*TickContext::seconds;
+        const auto wall=missileTerrainContact(area.definition.collision,m.position,next,m.collision);
+        if(wall) next=m.position+(next-m.position)* *wall;
         std::vector<EntityId> targets;std::vector<int64_t> amounts;
         for(const auto &[id,t]:ports_.monsters.read().actors) if(enemy(t) &&
-            (m.program!=Program::Shard || id!=m.lastHit) && missileUnitIntersection(m.position,m.position,size,t.position,t.rule.size)) {
+            ((m.program!=Program::Shard && m.program!=Program::PoisonCloud) || id!=m.lastHit) && missileUnitIntersection(m.position,next,size,t.position,t.rule.size)) {
             int64_t amount;
             if(m.program==Program::Fire) {
                 const auto &p=*m.skill.firewall;
                 amount=(int64_t(p.minimumDamage)+limitedRandom(m.random,uint32_t(p.maximumDamage-p.minimumDamage+1)))<<p.hitShift;
             } else amount=int64_t(m.skill.minimumDamage*256.f)+limitedRandom(m.random,uint32_t((m.skill.maximumDamage-m.skill.minimumDamage)*256.f));
             targets.push_back(id);amounts.push_back(amount);
-            if(m.program==Program::Shard) { m.lastHit=id;break; }
+            if(m.program==Program::Shard || m.program==Program::PoisonCloud) { m.lastHit=id;break; }
         }
         auto hit=impact(m,std::move(targets));hit.targetDamage=std::move(amounts);plan.impacts.push_back(std::move(hit));
-        return plan;
+        m.position=next;if(wall) plan.finished=true;return plan;
     }
     if(const auto step=advanceMissileVelocity(m.velocity.length(),m.acceleration,m.maximumVelocity,m.ageFrames)) {
         m.acceleration=step->acceleration;
@@ -137,11 +153,12 @@ System::Advance System::advance(const Missile &original) const {
     if(expires) {plan.finished=true;m.position=next;return plan;}
     std::vector<std::pair<float,EntityId>> contacts;
     for(const auto &[id,t]:ports_.monsters.read().actors) {
+        if(m.skill.weapon && m.skill.weapon->spear && m.ageFrames<m.skill.weapon->spear->activateFrames) continue;
         if(!enemy(t) || id==m.lastHit || (m.skill.arc && m.skill.arc->nextDelay && t.nextHitTick>m.created+uint64_t(m.ageFrames))) continue;
         if(const auto contact=missileUnitIntersection(m.position,next,m.collision.size,t.position,t.rule.size)) contacts.emplace_back(*contact,id);
     }
     std::sort(contacts.begin(),contacts.end());
-    const bool piercing=m.program==Program::Arc || m.program==Program::Ring || m.skill.effect==SkillBehavior::Inferno;
+    const bool piercing=m.program==Program::FuryBolt || m.program==Program::Arc || m.program==Program::Ring || m.skill.effect==SkillBehavior::Inferno;
     if(!contacts.empty()) {
         if(m.skill.effect==SkillBehavior::GlacialSpike && m.skill.freezingArea) {
             m.skill.freezingArea=skills::evaluate(owner,m.skill.sourceId,m.skill.rank).freezingArea;
@@ -153,7 +170,7 @@ System::Advance System::advance(const Missile &original) const {
             std::vector<EntityId> targets;
             for(const auto &[fraction,id]:contacts) {
                 targets.push_back(id);m.lastHit=id;
-                if(m.program==Program::Arc && m.skill.effect==SkillBehavior::ChainLightning) {
+                if(m.program==Program::Arc && (m.skill.effect==SkillBehavior::ChainLightning || (m.skill.weapon && m.skill.weapon->spear && m.skill.weapon->spear->kind==SpearSkillSpec::Kind::Strike))) {
                     const Vec at=m.position+(next-m.position)*fraction;std::vector<uint64_t> eligible;
                     if(m.remainingHits>1) for(const auto &[candidate,t]:ports_.monsters.read().actors) {
                         if(!enemy(t) || candidate==id || t.nextHitTick>m.created+uint64_t(m.ageFrames) ||

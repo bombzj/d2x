@@ -1,0 +1,37 @@
+#include "system.hpp"
+#include "server/systems/skills/system.hpp"
+#include "server/player_store.hpp"
+#include "server/area_store.hpp"
+#include "server/systems/monsters/system.hpp"
+#include "server/systems/transactions/system.hpp"
+#include "gameplay/skills/amazon_magic_spec.hpp"
+namespace d2x::server::effects {
+DomainResult<> System::avoidance(const ActorContext &actor,WeaponAvoidance result,EntityId attacker) {return ports_.skills.avoidance(actor,result,attacker);}
+CharacterModifiers System::unitModifiers(EntityId id,uint64_t tick) const {
+    const auto it=units_.find(id);return it==units_.end()?CharacterModifiers{}:it->second.states.modifiers(tick);
+}
+std::map<int,std::vector<std::pair<int,int64_t>>> System::unitStateStats(EntityId id,uint64_t tick) const {
+    const auto it=units_.find(id);if(it==units_.end()) return {};
+    auto values=it->second.nativeStats;std::erase_if(values,[&](const auto &value){return !it->second.states.hasState(value.first,tick);});return values;
+}
+DomainResult<> System::amazonMagic(const ActorContext &actor,const SkillCastSpec &skill) {
+    const auto *p=ports_.players.find(actor.player);const auto *area=ports_.areas.find(actor.area);
+    if(!p || !p->entered || p->actor!=actor.actor || p->area!=actor.area || p->persistent.player.hp<=0 ||
+        !area || area->generation!=actor.areaGeneration || !skill.amazonMagic || p->persistent.player.mana<skill.manaCost) return {DomainStatus::InvalidActor,{}};
+    const auto &program=*skill.amazonMagic;auto next=units_;
+    transactions::CharacterEdit debit{actor,p->inventoryRevision,p->characterRevision,p->persistent.player};debit.player.mana-=skill.manaCost;
+    for(const auto &[id,m]:ports_.monsters.read().actors) {
+        if(m.owner || m.life<=0 || m.area!=actor.area || !(program.filter&2) || !area->definition.activation.nearby(p->position,m.position)) continue;
+        const auto delta=m.position-p->position;if(delta.x*delta.x+delta.y*delta.y>float(program.radius*program.radius)) continue;
+        if((program.filter&0x200) && !area->definition.collision.missileSegment(p->position,m.position,{4,1})) continue;
+        auto effect=amazonMagicEffect(program,actor.actor,skill.sourceId,skill.rank,unitModifiers(id,actor.tick).combat.curseResistance);
+        if(!effect) continue;
+        auto &target=next[id];target.area=actor.area;if(target.states.size()>=128) return {DomainStatus::Capacity,{}};
+        if(!target.states.apply(std::move(*effect),actor.tick).accepted) continue;
+        target.nativeStats[program.state.id]={{program.stat,program.defenseReduction?-int64_t(program.defenseReduction):program.slowPercent}};
+        debit.publicFacts.emplace_back(StateFact{id,1,actor.area,program.state.id,true,target.nativeStats.at(program.state.id)});
+    }
+    auto plan=ports_.transactions.prepare(std::move(debit));if(!plan) return {plan.status,{}};
+    const auto result=ports_.transactions.commit(std::move(*plan.value));if(result) units_.swap(next);return result;
+}
+}

@@ -3,6 +3,7 @@
 #include "core/id.hpp"
 #include "world/collision.hpp"
 #include "gameplay/skills/elemental_spec.hpp"
+#include "gameplay/skills/amazon_missile.hpp"
 #include <array>
 #include <deque>
 #include <vector>
@@ -19,8 +20,14 @@ struct ClientMissileProgram {
     std::array<int, 3> hitParameters{}, children{-1,-1,-1};
     std::array<int, 4> hitChildren{-1,-1,-1,-1};
     bool childServerSent{}, returnFire{};
+    bool canSlow{};
+    int guidedRadius{};
+    std::array<int,2> poisonVelocity{};
+    int loopFrames{}, immolationRadius{};
     std::optional<BlizzardSpec> blizzard;
     std::optional<ArcSpec> chain;
+    int chainCountDivisor{1};
+    std::optional<MissileTargetBurst> targetBurst;
 };
 struct ClientMissileVisual {
     ClientMissileVisual() = default;
@@ -38,6 +45,8 @@ struct ClientMissileVisual {
     bool hostile{};
     int pierce{};
     int remainingHits{};
+    int slowPercent{};
+    EntityId guidance{};bool guidanceSearched{};
     float animationOffset{};
     // Pair reconstruction and 73 once without merging independent creations.
     uint8_t creationSources{};

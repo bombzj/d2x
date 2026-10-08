@@ -57,7 +57,7 @@ void NativeRealmService::receiveEvent(const server::EventBatch &batch) {
             // PlrMsg::sub_6FC81D20 omits ordinary owner skill actions. Its client
             // predicts the submitted cast; other visible clients receive 4C/4D.
             // No implemented server cast requests the native forced-owner flag.
-            if (attack->actorType != 0 || attack->actor != host.read(*binding)->actor.id)
+            if (attack->forced || attack->actorType != 0 || attack->actor != host.read(*binding)->actor.id)
                 delta = nativeAttack(*attack, shared.terrain.at(binding->game).at(attack->area).origin);
             peer.lastMotion.clear();
             for (auto &[id, player] : peer.visible) { (void)id; if (player.actor == attack->actor) player.motion.clear(); }
@@ -95,7 +95,7 @@ void NativeRealmService::receiveEvent(const server::EventBatch &batch) {
                 out.u32(uint32_t(std::floor(missile->position.x + origin.x))); out.u32(uint32_t(std::floor(missile->position.y + origin.y)));
                 const bool stationary=missile->destination.x==0 && missile->destination.y==0;
                 out.u32(stationary?0:uint32_t(std::floor(missile->destination.x + origin.x))); out.u32(stationary?0:uint32_t(std::floor(missile->destination.y + origin.y)));
-                out.u16(uint16_t(missile->frame)); out.u8(missile->ownerType); out.u32(uint32_t(missile->owner.value)); out.u8(uint8_t(missile->rank)); out.u8(0);
+                out.u16(uint16_t(missile->frame)); out.u8(missile->ownerType); out.u32(uint32_t(missile->owner.value)); out.u8(uint8_t(missile->rank)); out.u8(missile->pierce);
             }));
         }
         else if (const auto *state = std::get_if<server::StateFact>(&fact)) {
@@ -107,8 +107,7 @@ void NativeRealmService::receiveEvent(const server::EventBatch &batch) {
                 if(entry!=peer.monsters.end()) {if (state->enabled) entry->second.states.insert(state->state);else entry->second.states.erase(state->state);}
             }
             if(state->type==0 && state->actor!=host.read(*binding)->actor.id && std::none_of(peer.visible.begin(),peer.visible.end(),[&](const auto &entry){return entry.second.actor==state->actor;})) continue;
-            delta.push_back(encodeServerPacket(state->enabled ? ServerMessage::EnableState : ServerMessage::DisableState,
-                [&](auto &out) { out.u8(state->type); out.u32(uint32_t(state->actor.value)); out.u8(uint8_t(state->state)); }));
+            delta.push_back(nativeState(*content,*state));
         }
         else if (const auto *quest = std::get_if<server::QuestFact>(&fact)) delta=nativeQuestUpdate(*content,*quest);
         else if (const auto *character = std::get_if<server::CharacterFact>(&fact)) delta = nativeCharacterDelta(*content, *character);

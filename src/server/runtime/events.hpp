@@ -11,16 +11,16 @@
 
 namespace d2x::server {
 struct DeathFact { uint64_t occurrence{}; EntityId victim, killer; RegionId area; };
-struct AttackFact { EntityId actor, target; uint8_t actorType{}, targetType{}; RegionId area; Vec position, destination; uint64_t action{}; uint16_t skill{}; uint8_t rank{1}; };
+struct AttackFact { EntityId actor, target; uint8_t actorType{}, targetType{}; RegionId area; Vec position, destination; uint64_t action{}; uint16_t skill{}; uint8_t rank{1}; bool forced{}; };
 struct HitFact { EntityId target; uint8_t type{}; RegionId area; uint8_t life{}; bool killed{}; Vec position; uint8_t hitClass{}; };
 struct SoundFact { EntityId actor; uint8_t type{}; RegionId area; uint8_t sound{}; };
 struct OverlayFact { EntityId actor; uint8_t type{}; RegionId area; int overlay{}; };
 struct LifeFact { EntityId actor; float life{}; };
 struct ManaFact { EntityId actor; float mana{}; };
 struct RepositionFact { EntityId actor; RegionId area; Vec position; };
-struct StateFact { EntityId actor; uint8_t type{}; RegionId area; int state{}; bool enabled{}; };
+struct StateFact { EntityId actor; uint8_t type{}; RegionId area; int state{}; bool enabled{}; std::vector<std::pair<int,int64_t>> stats{}; };
 struct SkillPulseFact { EntityId owner, target; uint8_t ownerType{}, targetType{1}; RegionId area; int skill{}, rank{}; Vec position; };
-struct MissileFact { EntityId owner; uint8_t ownerType{}; RegionId area; int definition{}, rank{}, frame{}; Vec position, destination; };
+struct MissileFact { EntityId owner; uint8_t ownerType{}; RegionId area; int definition{}, rank{}, frame{}; Vec position, destination; uint8_t pierce{}; };
 struct ItemFact { TransactionId transaction; ItemChange change; };
 // Sparse immutable projection captured at commit. Encoding never consults a
 // later live inventory: several commands can commit before output is drained.

@@ -3,14 +3,28 @@
 #include "server/area_store.hpp"
 #include "server/systems/monsters/system.hpp"
 #include "gameplay/combat/damage_resolution.hpp"
+#include "gameplay/combat/accuracy.hpp"
+#include "gameplay/combat/avoidance.hpp"
+#include "core/random.hpp"
 #include "server/systems/effects/system.hpp"
+#include "server/systems/inventory/system.hpp"
 #include <algorithm>
 namespace d2x::server::combat {
+// Read-only contact planning lets native missile callbacks depend on accuracy
+// without committing damage or advancing the live RNG before outbox admission.
+bool System::weaponContact(const WeaponSkillDamage &attack,EntityId id,uint64_t tick,uint64_t &random) const {
+    const auto *target=ports_.monsters.find(id);
+    if(!target || target->life<=0 || target->owner) return false;
+    if(attack.automatic) return true;
+    const auto &weapon=attack.weapon;
+    return limitedRandom(random,100)<unsigned(weaponHitChance(attack.level,weapon.baseAttackRating,
+        weapon.attackRatingPercent,weapon.target,{target->rule.level,std::max(0,target->rule.defense+ports_.effects.unitModifiers(id,tick).defense),target->rule.demon,target->rule.undead,false},target->identity.rank));
+}
 DomainResult<SpellPlan> System::prepareSpells(std::vector<SpellImpact> impacts) const {
     SpellPlan plan;
     for (auto &impact : impacts) {
         if (!impact.projectile || !impact.source || impact.next || impact.damage < 0 || impact.damage > INT32_MAX ||
-            impact.type == DamageType::Poison || impact.targets.size() > 65536 || std::any_of(impact.coldDivisor.begin(), impact.coldDivisor.end(), [](int n) { return n <= 0; }) ||
+            impact.targets.size() > 65536 || std::any_of(impact.coldDivisor.begin(), impact.coldDivisor.end(), [](int n) { return n <= 0; }) ||
             std::any_of(impact.freezeDivisor.begin(), impact.freezeDivisor.end(), [](int n) { return n <= 0; }))
             return {DomainStatus::InvalidRequest, {}};
         if(!impact.targetDamage.empty() && (impact.targetDamage.size()!=impact.targets.size() ||
@@ -52,9 +66,17 @@ StepStatus System::resolveSpells(TickContext tick) {
                 if(!player || !player->entered || player->area!=impact.area || player->persistent.player.hp<=0) {++impact.next;continue;}
                 if(!ports_.effects.reactionCapacity()) {blocked=true;break;}
                 const ActorContext actor{player->player,player->actor,player->area,area->generation,0,tick.tick};
+                if(!ports_.events.hasCapacity(4,2)) {blocked=true;break;}
+                auto random=ports_.random;
+                const auto avoided=rollWeaponAvoidance(player->totals.character.combat,player->moving,true,random);
+                if(avoided!=WeaponAvoidance::None) {
+                    const auto result=ports_.effects.avoidance(actor,avoided,impact.source);
+                    if(result.status==DomainStatus::Capacity) {blocked=true;break;}
+                    ports_.random=random;++impact.next;continue;
+                }
                 const auto result=ports_.effects.receive(actor,impact.targetDamage.empty()?impact.damage:impact.targetDamage[impact.next],impact.type);
                 if(result.status==DomainStatus::Capacity) {blocked=true;break;}
-                if(result) ports_.effects.react(actor,impact.source,CombatEffectEvent::HitByMissile,impact.returnFire);
+                if(result) {ports_.random=random;ports_.effects.react(actor,impact.source,CombatEffectEvent::HitByMissile,impact.returnFire);}
                 ++impact.next;continue;
             }
             const auto *target = ports_.monsters.find(impact.targets[impact.next]);
@@ -63,18 +85,45 @@ StepStatus System::resolveSpells(TickContext tick) {
             const int raw = target->rule.resistances[size_t(impact.type)];
             const int resistance = impact.type == DamageType::Cold && raw < 100 ? std::max(-100, raw - impact.coldPierce) : raw;
             int64_t amount = impact.targetDamage.empty()?impact.damage:impact.targetDamage[impact.next];
+            auto random=ports_.random;
+            if(impact.weapon) {
+                const auto &attack=*impact.weapon;
+                if(!ports_.events.hasCapacity(8,4)) {blocked=true;break;}
+                if(!(impact.weaponHit.has_value()?*impact.weaponHit:weaponContact(attack,target->id,tick.tick,random))) {
+                    ports_.random=random;++impact.next;continue;
+                }
+                const auto channels=targetWeaponChannels(attack,target->rule.demon,target->rule.undead);
+                amount=0;
+                for(size_t channel=0;channel<5;++channel) amount+=int64_t(mitigateMonsterDamage(float(channels[channel])/256.f,target->rule.resistances[channel])*256.f);
+            }
             if (impact.staticPercent) {
                 const auto floor = std::max<int64_t>(256, target->maximumLife * impact.staticFloors.at(size_t(target->rule.difficulty)) / 100);
                 amount = std::max(impact.minimumStaticDamage, target->life * impact.staticPercent / 100);
                 amount = std::min(std::max<int64_t>(0, target->life - floor), amount * std::clamp(100 - raw, 0, 100) / 100);
-            } else amount = int64_t(mitigateMonsterDamage(float(amount) / 256.f, resistance) * 256.f);
+            } else if(!impact.weapon) amount = int64_t(mitigateMonsterDamage(float(amount) / 256.f, resistance) * 256.f);
             uint64_t cold = 0;
-            if (impact.coldFrames && raw < 100) {
+            const int coldResistance=impact.weapon?target->rule.resistances[size_t(DamageType::Cold)]:raw;
+            if (impact.coldFrames && coldResistance < 100) {
                 const int divisor = (impact.freeze ? impact.freezeDivisor : impact.coldDivisor).at(size_t(target->rule.difficulty));
-                cold = impact.coldFrames * uint64_t(std::clamp(100 - raw, 0, 200)) / (100u * unsigned(divisor));
+                cold = impact.coldFrames * uint64_t(std::clamp(100 - coldResistance, 0, 200)) / (100u * unsigned(divisor));
             }
-            const auto result = ports_.monsters.damage(target->id, impact.source, amount, tick.tick, cold, impact.freeze,impact.hitClass);
+            std::optional<PoisonApplication> poison;
+            const auto rate=impact.weapon?impact.weapon->channels[5]:impact.type==DamageType::Poison?(impact.targetDamage.empty()?impact.damage:impact.targetDamage[impact.next]):0;
+            const auto frames=impact.weapon?uint64_t(std::max(0,impact.weapon->poisonFrames)):impact.poisonFrames;
+            if(rate>0 && frames) poison=PoisonApplication{int64_t(mitigateMonsterDamage(float(rate)/256.f,target->rule.resistances[5])*256.f),frames,owner->rules.skills->poisonState};
+            if(impact.type==DamageType::Poison) amount=0;
+            if(impact.weapon && impact.weapon->wearChance>0 &&
+                limitedRandom(random,100)<unsigned(impact.weapon->wearChance)) {
+                const auto &attack=*impact.weapon;
+                const ActorContext actor{owner->player,owner->actor,owner->area,area->generation,0,tick.tick};
+                auto wear=ports_.inventory.weaponCost(actor,attack.weapon,attack.wearSkill,false,false,unsigned(std::max(0,attack.wearAmount)));
+                if(!wear) {if(wear.status==DomainStatus::Capacity) {blocked=true;break;} ++impact.next;continue;}
+                const auto result=ports_.transactions.commit(std::move(*wear.value));
+                if(!result) {if(result.status==DomainStatus::Capacity) {blocked=true;break;} ++impact.next;continue;}
+            }
+            const auto result = ports_.monsters.damage(target->id, impact.source, amount, tick.tick, cold, impact.freeze,impact.hitClass,poison);
             if (result.status == DomainStatus::Capacity) { blocked = true; break; }
+            if(result && impact.weapon) ports_.random=random;
             if (result && impact.nextDelay) ports_.monsters.hitDelay(target->id, tick.tick + impact.nextDelay);
             if(result && impact.knockback && target->life>0) {ports_.monsters.knockback(target->id,owner->position,tick.tick);cancel(target->id);}
             ++impact.next;

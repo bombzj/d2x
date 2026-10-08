@@ -222,7 +222,7 @@ class SceneView {
     bool launchClientMissile(int id, Vec start, Vec target, int level, float delay = 0,
                              std::optional<float> remaining = {}, int pathIndex = -1,
                              EntityId owner = {}, bool hostile = false, int pierce = 0,
-                             ClientMissileSource source = ClientMissileSource::Program);
+                               ClientMissileSource source = ClientMissileSource::Program,int slowPercent = 0,EntityId guidedTarget = {});
     void advanceClientMissiles(float dt, const Grid &, Vec origin, std::span<const ClientMissileTarget>);
     void clearClientMissiles() { clientMissiles_.clear(); assets_.sceneAudio.reset(); }
     const auto &clientMissiles() const { return clientMissiles_; }

@@ -20,29 +20,33 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         if (fresh) controller.random = childRandom(ports_.random);
         if (controller.nextDecision > tick.tick) continue;
         controller.actor = id; controller.nextDecision = tick.tick + uint64_t(monster.rule.decisionTicks);
-        const PlayerState *target = nullptr;
+        std::optional<UnitTarget> target;Vec targetPosition;int targetSize=2;
         float distance = 25.f; // Original ordinary-monster target search radius.
         for (const auto &[playerId, player] : ports_.players.all()) {
             (void)playerId;
             if (!player.entered || player.area != monster.area || player.persistent.player.hp <= 0) continue;
             const float candidate = (player.position - monster.position).length();
-            if (candidate < distance) { distance = candidate; target = &player; }
+            if (candidate < distance) { distance = candidate; target=UnitTarget{player.actor,0,0};targetPosition=player.position;targetSize=2; }
         }
-        if (controller.target != (target ? std::optional(target->actor) : std::nullopt)) {
+        for(const auto &[petId,pet]:ports_.monsters.read().actors) if(pet.amazonPet && pet.life>0 && pet.area==monster.area) {
+            const float candidate=(pet.position-monster.position).length();
+            if(candidate<distance) {distance=candidate;target=UnitTarget{petId,0,1};targetPosition=pet.position;targetSize=pet.rule.size;}
+        }
+        if (controller.target != (target ? std::optional(target->id) : std::nullopt)) {
             controller.pursuing = false; controller.charged = false; ports_.monsters.stop(id);
         }
-        controller.target = target ? std::optional(target->actor) : std::nullopt;
+        controller.target = target ? std::optional(target->id) : std::nullopt;
         if (!target) { controller.pursuing = false; ports_.monsters.stop(id); continue; }
         const auto &area = ports_.areas.at(monster.area);
         if (area.definition.town) continue;
         const auto &rules = monster.rule.ai;
         if (hasMeleeDecision(rules.kind)) {
-            if (meleeFamily(id, target->player, tick, controller) == StepStatus::Blocked) blocked = true;
+            if (meleeFamily(id,*target,targetPosition,targetSize,tick,controller) == StepStatus::Blocked) blocked = true;
             continue;
         }
         auto chance = [&](int value) { return int(limitedRandom(controller.random, 100)) < value; };
-        const bool contact = meleeDistance(monster.position, monster.rule.size, target->position, 2) <= monster.rule.meleeRange &&
-            area.definition.collision.segment(monster.position, target->position);
+        const bool contact = meleeDistance(monster.position, monster.rule.size, targetPosition, targetSize) <= monster.rule.meleeRange &&
+            area.definition.collision.segment(monster.position, targetPosition);
         bool act = false;
         if (contact) {
             controller.pursuing = false; ports_.monsters.stop(id);
@@ -51,7 +55,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
             case MonsterAiKind::Fallen: case MonsterAiKind::Skeleton: case MonsterAiKind::Brute: act = chance(rules.params[2]); break;
             default: break;
             }
-            if (act) ports_.skills.requestCast({id, 0, UnitTarget{target->actor, 0}, tick.tick});
+            if (act) ports_.skills.requestCast({id, 0, *target, tick.tick});
             else if (rules.kind == MonsterAiKind::Skeleton) controller.nextDecision = tick.tick + uint64_t(rules.params[1]);
         } else {
             switch (rules.kind) {
@@ -63,7 +67,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
             }
             if (act) {
                 controller.pursuing = true;
-                ports_.monsters.requestMove({id, {monster.area, area.generation, target->position}, target->actor, monster.rule.meleeRange, 75, false});
+                ports_.monsters.requestMove({id, {monster.area, area.generation, targetPosition}, target->id, monster.rule.meleeRange, 75, false});
             } else if (rules.kind == MonsterAiKind::Skeleton) controller.nextDecision = tick.tick + uint64_t(rules.params[1]);
         }
     }

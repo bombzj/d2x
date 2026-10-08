@@ -196,9 +196,9 @@ SkillCastSpec resolveSkill(const SkillRuleSpec &spec, const SkillEvaluationInput
     result.maximumDamage = evaluateSkillDamage({spec.maximumDamage, spec.maximumPerLevel}, rank, spec.hitShift, bonus, damageMastery);
     result.arc = spec.arc;
     if (result.arc && spec.effect == SkillBehavior::ChainLightning)
-        result.arc->count = std::max(1, (spec.arc->count + (rank - 1) * spec.arc->countPerLevel) / 5);
+        result.arc->count = std::max(1, skillRankBonus({spec.arc->count,spec.arc->countPerLevel},rank) / 5);
     if (result.arc && spec.weapon && spec.weapon->spear && spec.weapon->spear->kind == SpearSkillSpec::Kind::Strike)
-        result.arc->count = std::max(1, spec.arc->count + (rank - 1) * spec.arc->countPerLevel);
+        result.arc->count = std::max(1, skillRankBonus({spec.arc->count,spec.arc->countPerLevel},rank));
     result.meteor = spec.meteor;
     if (result.meteor) {
         auto &program = *result.meteor;
@@ -227,12 +227,12 @@ SkillCastSpec resolveSkill(const SkillRuleSpec &spec, const SkillEvaluationInput
     result.poisonDuration = float(poisonFrames) / 25.f;
     result.weapon = spec.weapon;
     if (result.weapon) {
+        result.delayFrames=std::max(result.delayFrames,result.weapon->delayFrames);
         if (result.weapon->spear) {
             auto program = std::make_shared<SpearSkillSpec>(*result.weapon->spear);
             program->conversionPercent = std::clamp(program->conversionPercent + (rank - 1) * program->conversionPerLevel, 0, 100);
             if (program->kind == SpearSkillSpec::Kind::Impale)
-                program->wearChance -= std::min(program->wearMaximum, program->wearMinimum +
-                    (program->wearMaximum - program->wearMinimum) * (110 * rank / (rank + 6)) / 100);
+                program->wearChance -= skillDiminishingBonus({program->wearMinimum,program->wearMaximum},rank);
             if (program->poisonTrail) {
                 program->poisonTrail->minimum = int(result.minimumDamage * 256.f);
                 program->poisonTrail->maximum = int(result.maximumDamage * 256.f);
@@ -240,7 +240,7 @@ SkillCastSpec resolveSkill(const SkillRuleSpec &spec, const SkillEvaluationInput
                 program->poisonTrail->damageFromSkill = false;
             }
             if (program->kind == SpearSkillSpec::Kind::Fury) {
-                program->countBase += (rank - 1) * program->countPerLevel;
+                program->countBase = skillRankBonus({program->countBase,program->countPerLevel},rank);
                 program->childSpeed = missileSpeed(program->childVelocity,program->childVelocityPerLevel,rank);
                 program->childLifetime = float(program->childFrames + rank * program->childRangePerLevel) / 25.f;
             }
@@ -254,8 +254,8 @@ SkillCastSpec resolveSkill(const SkillRuleSpec &spec, const SkillEvaluationInput
                 const auto found = learned.find(bow->fireSynergySkill);
                 const int percent = 100 + (found == learned.end() ? 0 : found->second) * bow->fireSynergyPercent;
                 const auto damage = [&](int base, const std::array<int, 5> &steps) {
-                    const int64_t value = (int64_t(base) + skillLevelBonus(rank, steps)) * (1 << bow->fire.hitShift) * percent / 100;
-                    return int(value + (bow->fireMastery ? value * fireMasteryPercent / 100 : 0));
+                    return evaluateMissileDamageFixed({base,steps},rank,bow->fire.hitShift,percent,
+                        bow->fireMastery?fireMasteryPercent:0);
                 };
                 bow->fire.minimumDamage = damage(bow->fire.minimumDamage, bow->fireMinimumPerLevel);
                 bow->fire.maximumDamage = damage(bow->fire.maximumDamage, bow->fireMaximumPerLevel);

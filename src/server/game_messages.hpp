@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <map>
 #include <set>
+#include <memory>
 
 namespace d2x {
 // Internal authority/host values. These are not client messages or wire structs.
@@ -65,6 +66,12 @@ struct PlayerSnapshot {
     float life{};
     bool attacking{}, deadSettled{};
 };
+struct PersistentCharacter;
+struct PetOwnershipSnapshot {
+    EntityId id, owner;
+    uint8_t type{};
+    uint16_t nativeClass{};
+};
 struct MonsterSnapshot {
     EntityId id;
     RegionId area;
@@ -77,5 +84,10 @@ struct MonsterSnapshot {
     bool running{};
     std::set<int> states{};
     Vec knockbackSource{};
+    std::map<int,std::vector<std::pair<int,int64_t>>> stateStats{};
+    std::shared_ptr<const PersistentCharacter> equipment{};
+    int appearOverlay{-1};
+    std::optional<EntityId> storedOwner{};
+    std::vector<uint8_t> modifiers{};
 };
 } // namespace d2x
