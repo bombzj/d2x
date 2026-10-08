@@ -76,9 +76,7 @@ DomainResult<> System::settle(const ActorContext &actor) {
         record.experience -= loss; corpse.recoverableExperience = loss * 75 / 100;
     }
     if (corpse.id) corpses.push_back(corpse);
-    for (const auto &piece : equipment->sets)
-        if (std::none_of(world.equipment.sets.begin(), world.equipment.sets.end(), [&](const auto &v) { return v.row == piece.row; })) world.equipment.sets.push_back(piece);
-    world.equipment.setBonuses.insert(equipment->setBonuses.begin(), equipment->setBonuses.end());
+    world.equipment.includeSets(*equipment);
     transactions::InventoryEdit edit{actor, player->inventoryRevision, player->characterRevision,
         std::move(draft.edit.inventory), std::move(draft.edit.changes), record.weaponSet};
     edit.character = std::move(record); edit.corpses = std::move(corpses); edit.equipment = std::move(equipment);

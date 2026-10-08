@@ -36,6 +36,7 @@ struct EquipmentRules {
     std::vector<EquipmentSetPiece> sets;
     std::map<std::pair<size_t, size_t>, std::vector<std::vector<ResolvedItemStat>>> setBonuses;
     const ItemLevelValues &at(EntityId, int level) const;
+    void includeSets(const EquipmentRules &);
 };
 struct LearningRule {
     std::string classCode;

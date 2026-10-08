@@ -52,11 +52,11 @@ std::span<const SubmessageDescriptor> submessages() {
         {ClientMessage::UiAction, 18, "CloseStash", MessageDomain::Inventory, MessageSupport::Implemented},
         {ClientMessage::UiAction, 19, "WithdrawGold", MessageDomain::Inventory, MessageSupport::Implemented},
         {ClientMessage::UiAction, 20, "DepositGold", MessageDomain::Inventory, MessageSupport::Implemented},
-        {ClientMessage::UiAction, 23, "CloseCube", MessageDomain::Inventory, MessageSupport::Stub},
-        {ClientMessage::UiAction, 24, "Transmute", MessageDomain::Inventory, MessageSupport::Stub},
+        {ClientMessage::UiAction, 23, "CloseCube", MessageDomain::Inventory, MessageSupport::Implemented},
+        {ClientMessage::UiAction, 24, "Transmute", MessageDomain::Inventory, MessageSupport::Implemented},
         {ClientMessage::NpcService, 0, "NpcTravel", MessageDomain::Interaction, MessageSupport::Stub},
         {ClientMessage::NpcService, 1, "OpenShop", MessageDomain::Interaction, MessageSupport::Implemented},
-        {ClientMessage::NpcService, 2, "OpenGambleShop", MessageDomain::Interaction, MessageSupport::Stub},
+        {ClientMessage::NpcService, 2, "OpenGambleShop", MessageDomain::Interaction, MessageSupport::Implemented},
     };
     return entries;
 }

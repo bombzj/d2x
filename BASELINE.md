@@ -16,11 +16,11 @@ D2X提供Single Player、TCP/IP局域网宿主与既有原服入口。选角至�
 | --- | --- | --- |
 | 局前／传输 | 原服认证、MCP角色／房间；服务端D2S角色列表／建删选；内存与LAN TCP | 独立账号及无图形宿主、Ladder、完整错误恢复未完成 |
 | 世界／旅行 | 原五幕1–136生成器；区域准备、碰撞、走跑／边界及UNIT_TILE；传送点、本人双向回城门 | 长绕墙／动态拥挤、完整房间活动／兴趣、NPC跨幕与特殊资格、队友门未完成 |
-| 库存／成长 | 背包／Cursor／腰带／装备／切组／合堆／书本转装；装备总值、经验升级、加点学技／热键、永久奖励与已支持被动 | 全品质／套装、复杂容量／争用、全部职业属性／奖励、重置与工艺未完成 |
+| 库存／成长 | 背包／Cursor／腰带／装备／切组／合堆／书本转装、镶嵌／普通方块／全品质生成；装备总值、经验升级、加点学技／热键、永久奖励与已支持被动 | 复杂容量／争用、全部职业属性／奖励、任务加工与重置未完成 |
 | 战斗／技能 | 普通空手／近战／弓弩、投掷／左手动作、六通道；药瓶、隐藏Kick、Unsummon及四项卷轴／书本；女巫26主动／4被动、亚马逊24主动／6被动 | 其他职业主动、完整双持组合、吸血／吸魔／压碎／撕裂与触发、受击恢复／格挡／耐久完整规则、PvP未完成 |
 | 怪物／伙伴 | 第一幕63可击杀战斗类型／25类AI，含57普通池身份、十三固定超级暗金、冠军／暗金／仆从、五首领策略及石像鬼陷阱；精英数值／光环／诅咒／死亡事件、原rank投影；Hydra、诱饵／女武神归属、期限／AI／换区及装备准备 | 其他幕怪物、佣兵及其他召唤未迁入；首领／精英代表路径有限V2；全部随机分支、精英染色／专用死亡演出及首杀／任务掉落未认证；完整Vision／房间调度／拥挤及原版随机流顺序未复刻；女武神重甲死亡组件待原版核实 |
-| 掉落／资源／死亡 | 普通掉落拾取、金币丢弃／部分拾取；自然恢复、药水／定时效果；死亡惩罚、城镇复活、本人尸体回收 | NoDrop人数／任务掉落、全部负面状态清除、硬核／部分拾回／多尸体及异常退出边界未完整认证 |
-| 物件／NPC／任务 | 普通门箱桶、部分神殿／水井；静态NPC、普通买卖、鉴定／修理／仓库；邪恶洞穴击杀、个人资格、Akara奖励／存档 | 陷阱／爆炸桶／特殊机关、完整城镇AI、赌博／批量／充能修理、其余任务及组队共享未实现 |
+| 掉落／资源／死亡 | 普通掉落拾取、金币丢弃／部分拾取；自然恢复、药水／定时效果；死亡惩罚、城镇复活、本人尸体回收 | 近队友NoDrop／任务掉落、全部负面状态清除、硬核／部分拾回／多尸体及异常退出边界未完整认证 |
+| 物件／NPC／任务 | 普通门箱桶、部分神殿／水井；静态NPC、普通买卖／回购、个人赌博／批量、鉴定／充能修理／仓库；邪恶洞穴击杀、个人资格、Akara奖励／存档 | 陷阱／爆炸桶／特殊机关、完整城镇AI、任务加工、其余任务及组队共享未实现 |
 | 多人 | 1–8人同局名册、走跑／装备外观／聊天；GameHandle多实例、独立连接／租约及定向私有事实 | 队伍、交易权威、PvP、跨机器／长期稳定性未验收；嵌入宿主双房观察不能替代独立EXE多房验收 |
 
 所有暂缓意图显式拒绝／NotImplemented，不用普通攻击替代技能、不漏条件发奖。邪恶洞穴缺少敌对怪物规则时，仅用已授权沉沦魔替身并保留真实身份；中立不可替换。缺规则／无法放置的人口保留未完成数；清场资格仅给当时在洞内的人物。不因此宣称缺失类型完成；第一幕本轮新增范围及限制见怪物模块。
@@ -33,13 +33,34 @@ Kick（ID1）是原表隐藏通用程序，SkillDesc.ListRow=-1；各职业破�
 
 Single Player使用原MCP角色界面，选角后自动建普通单人房、跳过大厅；首页TCP/IP Game使用原MPQ Host／Join页面，本机IPv4由应用提供，Join默认选中127.0.0.1。Host选角后自动建角色名普通8人房，跳过大厅；Single Player／LAN选角不显示Realm控件。界面Host监听全部IPv4，默认MCP6113／GS4001；LAN Join同用4001，原服默认GS4000。自定义端口及`--host-lan`／`--lan`仍保留，加入回包使用连接实际到达的接口地址。返回菜单不停止其他玩家房间。连接失败显示实际IP／端口及底层原因，玩法不分连接类型。见[联网](docs/modules/NETWORK.md)。
 
-自研存档属hosting／persistence，D2S v96不变，当前规则指纹为`d2x-character-admission-v19/native-wire113c/d2s96/common10`。整局角色锁、校验后原子替换／.bak、失败保留实例与租约；旧规则不静默迁移。F11保存、Ctrl+F11校验后原协议退局重入及`--load`／`--save`入口保留。技能选择／热键、扣费后的资源、弹药／书页沿原字段保存；派生总值、动作、弹体、召唤、门户及短时效果不写盘。限制见[存档](docs/modules/SAVES.md)。
+自研存档属hosting／persistence，D2S v96不变，当前规则指纹为`d2x-character-admission-v20/native-wire113c/d2s96/items`。整局角色锁、校验后原子替换／.bak、失败保留实例与租约；旧规则不静默迁移。F11保存、Ctrl+F11校验后原协议退局重入及`--load`／`--save`入口保留。技能选择／热键、扣费后的资源、弹药／书页沿原字段保存；派生总值、动作、弹体、召唤、门户及短时效果不写盘。限制见[存档](docs/modules/SAVES.md)。
 
 私有一人实例支持ESC／失焦自动暂停，共享房间／原服继续推进。现有named pipe提供权威快照／有界历史、时钟覆盖、保存／重载、资源／经验／金币、MPQ物品／怪物准备等管理入口；正常玩法仍发送原online-*包。消息目录及stub不代表全部实现。接口见[调试管道](docs/development/DEBUG_PIPE.md)和[服务端协议](docs/modules/SERVER_PROTOCOL.md)。
 
 <a id="当前运行包与有限冒烟"></a>
 
 ## 当前运行包与有限冒烟
+
+2026-10-09物品与掉落收尾：普通TC／人数NoDrop与唯一记录、全品质／AutoMagic／StaffMods、普通方块／Crafted、镶嵌／符文之语、共享货架／个人赌博／回购／批量、充能维修、耐久与自补充数量已接权威事务。公共规则迁用master，并以当前MPQ、本地D2MOO及原1.13c函数核对；客户端仅补原multibuy及AutoMagic索引／书本报价消费。任务加工／特殊来源、装备触发／充能施法、佣兵／交易、世界过期与完整货架周期仍未接，不能宣称全部物品功能或P5完成。执行边界只维护在[库存模块](docs/modules/INVENTORY.md)。
+
+Windows Release最后增量构建成功且无编译warning／error，`dist/current`与build/bin一致。EXE SHA256为`2EE5581E69E29E8F7EFE69D01FAF78F95427BFE076E9139BDAC744ACBC6BFA9B`，网络DLL为`9F7B1FAF7AF453E3DC481F05207C76460AECC38FF33A50E92823032228B2969F`。早期缺头文件、Ports引用和缩进诊断均修复，日志保留，不把整个批次概括为无warning。构建、原包状态及临时存档证据在忽略目录`artifacts/items-closeout-20261009`；没有新增测试脚本、用例或专用程序。规则指纹v20，原磁盘v96不变。
+
+普通难度临时22级女巫，经验／金币由管理入口准备；正常物品操作仍发原C2S。下列为有限V2，其余分支V1：
+
+| 实际路径 | 有限证据 |
+| --- | --- |
+| 方块升级与Crafted | 三个gcr消耗为gfr；原fhl魔法头盔、珠宝、r06及gpb消耗为Crafted，产物已鉴定且可解码。cube-before／after、crafted-before／after |
+| 镶嵌与回购 | qui依序Tal／Eth组成Stealth（20638）；出售／买回产生新根及子GUID，原序列和属性保存。socket-after、buyback-before／after |
+| 品质与AutoMagic | Set／Unique生成和Paladin盾自动词缀25；保存重入未重掷。generated-qualities、delivery-items |
+| 赌博／商店 | 14件隐藏赌博货品，购得已鉴定魔法戒指；先赌博再出售、首次普通货架可见并买回，正常货架不被回购覆盖。gamble-before／after、gamble-sell-normal |
+| 批量、书本与维修 | Shift药水填两行腰带；新书1页、批量卷轴补至20页；腰带1/14修至14/14。bulk-after、book-fixed-first／after、repair-after |
+| 自补充数量 | Titan’s Revenge原rate=30；推进90权威帧后1→2，原客户端数量正确更新。replenish-before／after |
+| 自然掉落／拾取 | 原地图正常走跑营地→鲜血荒地；管理伤害击杀自然人口走正常死亡TC。金币9C action=2正确解码，5枚拾取后地面移除、钱包+5；不把管理击杀算普通攻击验证。natural-drop-final、natural-client-final、natural-pickup |
+| 最终包新进程准入 | delivery-items／snapshot／status：ProtocolReady，20页书、Stealth两个子项、Crafted、AutoMagic、修复耐久与自补充数量保留；全部物品decoded=true |
+
+冒烟发现并修复先赌博再出售丢回购库存，以及书本缺Books索引导致报价拒绝／新生成书页误用根数量；失败样本仍留原目录。最后审查补提交前出站容量检查，背压保留方块／商店／掉落请求及种子，未做本批背压压力验证。最终宿主failures=0、characterIssues为空，原包unconsumed=0，unavailableUnits=0、mapErrors／effectLimitations及stderr为空。本批未重跑原D2GS、噩梦／地狱、多人争用、全部146配方／随机掉落或Linux；数据导入和有限冒烟不替代这些验收。
+
+### 历史第一幕全部怪物证据
 
 2026-10-09第一幕全部可击杀怪物收尾：63战斗类型／25类AI、十三SuperUniques、精英阶级／继承、首领技能与独立效果时钟。旧master提供迁入起点，当前MPQ、本地D2MOO及原1.13c客户端静态依据用于核对。修复A1技能释放事件、原生命触发位／GH生命槽及受击重复同步；补电／冰强化原客户端回调，两种服务端共用同一客户端。数据、共享函数、协议与未完成边界仅维护在[怪物模块](docs/modules/MONSTERS.md)。D2S v19及规则指纹未变。
 
@@ -76,9 +97,9 @@ Windows Release最终构建成功，运行包为`dist/current`。EXE SHA256为`9
 
 ## 客户端表现与维护入口
 
-原地图、真实GUID和原图UI共用现有客户端。人物面板、技能提示／树、库存、NPC菜单、交易、HUD、聊天、祭坛／野外物件、声音和照明的规则／限制分别维护在[人物](docs/modules/CHARACTER.md)、[HUD](docs/gameplay/ui/CLASSIC_HUD.md)、[库存](docs/modules/INVENTORY.md)、[NPC／任务](docs/modules/NPC_QUEST.md)、[物件](docs/gameplay/world/OBJECTS.md)及[联网](docs/modules/NETWORK.md)。已有定义和协议请求不等于价格／赌博、佣兵、全部任务／物件或七职业视觉完成；晚入视野不重播历史施法／弹体，宠物头像HUD未接。
+原地图、真实GUID和原图UI共用现有客户端。人物面板、技能提示／树、库存、NPC菜单、交易、HUD、聊天、祭坛／野外物件、声音和照明的规则／限制分别维护在[人物](docs/modules/CHARACTER.md)、[HUD](docs/gameplay/ui/CLASSIC_HUD.md)、[库存](docs/modules/INVENTORY.md)、[NPC／任务](docs/modules/NPC_QUEST.md)、[物件](docs/gameplay/world/OBJECTS.md)及[联网](docs/modules/NETWORK.md)。已有定义和协议请求不等于全部报价／赌博组合、佣兵、全部任务／物件或七职业视觉完成；晚入视野不重播历史施法／弹体，宠物头像HUD未接。
 
-自研宿主手动丢弃物品／金币采用事务发布掉落事实，再编码原0x9C action=2，触发现有客户端的MPQ翻转动画及掉落音效；静态地面同步仍用action=0。该修正已随当前完整Release构建入包，未在怪物批次专项运行；怪物／箱桶新生掉落动画尚未接此事件。细节见[库存](docs/modules/INVENTORY.md)。
+自研宿主手动丢弃物品／金币采用事务发布掉落事实，再编码原0x9C action=2，触发现有客户端的MPQ翻转动画及掉落音效；静态地面同步仍用action=0。该修正已随当前完整Release构建入包，未在怪物批次专项运行；怪物／箱桶新生掉落也已接同一事件。细节见[库存](docs/modules/INVENTORY.md)。
 
 原MPQ位于`assets/mpq2`；先查本地reference和当前资源，来源／固定版本／许可见[资料来源](docs/resources/THIRD_PARTY.md)、[MPQ](docs/resources/MPQ.md)。保留原资源、reference、旧压缩包和mvp；资源、缓存、截图、存档、运行包及参考仓库不入源码提交。独立d2x_assets保留原资源／地图报告及save-info工具。
 

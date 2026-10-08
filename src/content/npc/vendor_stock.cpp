@@ -71,6 +71,11 @@ std::vector<VendorOffer> planVendorStock(const ClassicData &data, const VendorDe
         }
         unsigned quantity = (item->equipment.throwable && item->equipment.repairable) ||
                             (rule.permanent && !item->equipment.quiver.empty()) ? item->maxStack : 1;
+        if(item->bookCapacity) {
+            const unsigned minimum=unsigned(std::max(1,source.number(sourceRow,"minstack").value_or(0)));
+            const unsigned maximum=unsigned(std::max(int(minimum),source.number(sourceRow,"spawnstack").value_or(0)));
+            quantity=minimum+below(seed,maximum-minimum);
+        }
         int defense = 0;
         if (item->family == ItemFamily::Armor) {
             auto minimum = item->base.minDefense, maximum = item->base.maxDefense;
@@ -126,11 +131,11 @@ ItemInstance vendorItem(const VendorOffer &offer, const ClassicData &data, bool 
     ItemInstance item;
     item.definition = hidden && !offer.displayCode.empty() ? offer.displayCode : offer.code;
     const auto &definition = *data.items.find(item.definition);
-    item.quantity = offer.quantity;
+    item.quantity = definition.bookCapacity?1:offer.quantity;
     item.level = offer.level;
     item.defense = offer.defense;
     item.durability = definition.maxDurability;
-    item.charges = definition.bookInitialCharges;
+    item.charges = definition.bookCapacity?offer.quantity:0;
     if (!hidden) {
         const auto &g = offer.generation;
         item.quality = g.quality;

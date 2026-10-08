@@ -52,6 +52,7 @@ struct DiagnosticSnapshot {
     std::vector<PlayerCorpse> corpses;
     std::vector<objects::Object> objects;
     std::string merchantDeferred;
+    size_t craftingPending{}; std::string craftingDeferred;
     unsigned denRemaining{}; bool denCleared{};
     std::vector<travel::Portal> portals;
     std::map<RegionId,float> waypoints;

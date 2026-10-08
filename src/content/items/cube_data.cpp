@@ -172,14 +172,14 @@ void loadCubeData(ClassicData &data) {
         data.cubeRecipes.push_back(std::move(recipe));
     }
 }
-void freezeCubeItem(const ClassicData &data, ItemInstance &item) {
+void freezeCubeItem(const ClassicData &data, ItemInstance &item, uint64_t *generationRandom) {
     if (item.nativeProperties) return;
     const auto stats = resolveOwnItemStats(data, item, int(item.level));
-    auto sum = [&](const char *name) { int total = 0; for (const auto &s : stats) if (s.effect == name) total += s.value; return total; };
     auto base = data.items.find(item.definition)->maxDurability;
     if (item.quality == ItemQuality::Inferior && base) base = std::max(1u, base / 3);
-    item.nativeMaxDurability = base ? unsigned(std::clamp<int64_t>(int64_t(base) *
-        (100 + sum("item_maxdurability_percent")) / 100 + sum("maxdurability"), 1, 255)) : 0;
+    const bool indestructible=std::any_of(stats.begin(),stats.end(),[](const auto &s){return s.name=="item_indesctructible" && s.value;});
+    if(base && !indestructible && (item.nativeFlags&0x400000u)) base=base/2+1;
+    item.nativeMaxDurability=base; // Original STAT_MAXDURABILITY base, before property modifiers.
     item.savedStats = encode(data, stats);
     if (item.grantedSkill >= 0) {
         auto existing = std::find_if(item.savedStats.begin(), item.savedStats.end(), [&](const auto &stat) {
@@ -194,12 +194,16 @@ void freezeCubeItem(const ClassicData &data, ItemInstance &item) {
             if (int(record.row) != item.specialRow) continue;
             for (const auto &bonus : record.setBonuses) {
                 if (!bonus.perItem || record.setAddFunction != 2) continue;
-                if (bonus.pieces < 2 || bonus.pieces > 6 ||
-                    (bonus.property.directRoll && bonus.property.minimum != bonus.property.maximum))
-                    throw std::runtime_error("Original variable set bonus has no preserved cube roll");
+                if (bonus.pieces < 2 || bonus.pieces > 6) throw std::runtime_error("Invalid original set bonus tier");
+                int value=bonus.property.minimum.value_or(0);
+                if(bonus.property.directRoll && bonus.property.minimum!=bonus.property.maximum) {
+                    if(!generationRandom || !bonus.property.minimum || !bonus.property.maximum) throw std::runtime_error("Original variable set bonus has no preserved roll");
+                    const int low=std::min(*bonus.property.minimum,*bonus.property.maximum),high=std::max(*bonus.property.minimum,*bonus.property.maximum);
+                    value=low+int(limitedRandom(*generationRandom,unsigned(high-low+1)));
+                }
                 auto &list = item.savedSetStats[size_t(bonus.pieces - 2)];
                 for (const auto &stat : encode(data, resolvePropertyStats(data, bonus.property,
-                    bonus.property.minimum.value_or(0), int(item.level), int(item.level)))) {
+                    value, int(item.level), int(item.level)))) {
                     auto existing = std::find_if(list.begin(), list.end(), [&](const auto &entry) {
                         return entry.id == stat.id && entry.parameter == stat.parameter;
                     });
@@ -218,6 +222,8 @@ void updateCubeRequiredLevel(const ClassicData &data, ItemInstance &item) {
     for (const auto &affix : item.affixes)
         for (const auto &record : affix.prefix ? data.magicPrefixes : data.magicSuffixes)
             if (int(record.row) == affix.row) level = std::max(level, record.requiredLevel);
+    if(item.nativeAutoAffix) for(const auto &record:data.autoMagic)
+        if(record.row+1==item.nativeAutoAffix) level=std::max(level,record.requiredLevel);
     if (item.specialRow >= 0)
         for (const auto &record : item.quality == ItemQuality::Unique ? data.uniqueItems : data.setItems)
             if (int(record.row) == item.specialRow) level = std::max(level, record.requiredLevel);

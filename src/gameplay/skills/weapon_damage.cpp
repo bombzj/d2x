@@ -34,6 +34,7 @@ WeaponSkillDamage rollPotionDamage(const WeaponDamage &weapon,int level,uint64_t
 WeaponSkillDamage rollWeaponSkillDamage(const WeaponDamage &weapon,const CombatModifiers &mods,
     const SkillCastSpec &skill,int level,bool projectile,uint64_t &random) {
     WeaponSkillDamage value; value.weapon=weapon;value.level=level;
+    if(!projectile && weapon.item) {value.wearChance=4;value.wearAmount=1;value.wearSkill=skill;}
     value.weapon.attackRatingPercent+=skill.weapon->attackRating;
     value.physicalPercent=(projectile?weapon.projectileDamagePercent:weapon.damagePercent)+skill.weapon->damagePercent;
     const auto roll=[&](int64_t low,int64_t high) {

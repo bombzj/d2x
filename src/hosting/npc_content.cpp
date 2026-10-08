@@ -23,6 +23,7 @@ void prepareNpcs(Archives &archives, const ClassicData &data, PreparedWorldArea 
         server::NpcRule rule; rule.code = record->id; rule.nativeClass = record->index; rule.size = record->collisionSize;
         rule.vendor = data.vendors.contains(rule.code); rule.repair = npcCanRepair(rule.code);
         rule.identify = npcCanIdentify(rule.code); rule.heal = npcCanHeal(rule.code);
+        rule.gamble = npcCanGamble(rule.code);
         rule.introduction = npcIntroductionKey(rule.code, area.act);
         if(rule.code=="akara") for(const int index:{64,65,71,76}) if(!strings.speech(index).empty()) rule.denMessages.insert(uint16_t(index));
         for (const auto &character : data.characters) if (const auto text = message(introSpeech(data.npcDialogues, rule.code, character.name, area.act))) rule.introductions.emplace(character.name, *text);

@@ -18,6 +18,8 @@ struct ItemGeneration {
     std::vector<int32_t> propertyRolls;
     std::vector<ItemAffixInstance> affixes;
     bool rollNaturalSockets = false;
+    bool rollNaturalEthereal = false;
+    unsigned durabilityMultiplier = 1;
     int socketDifficulty = 0;
 };
 } // namespace d2x

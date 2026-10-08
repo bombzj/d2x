@@ -7,7 +7,7 @@ namespace d2x {
 void loadMagicAffixData(ClassicData &data) {
     if (data.profile != "lod-named-txt-v1")
         return;
-    for (auto name : {"magicprefix", "magicsuffix"}) {
+    for (auto name : {"magicprefix", "magicsuffix", "automagic"}) {
         auto found = data.tables.find(name);
         if (found == data.tables.end())
             continue;
@@ -16,7 +16,7 @@ void loadMagicAffixData(ClassicData &data) {
                             "frequency", "group", "itype1", "etype1", "mod1code"})
             if (!table.has(column))
                 throw std::runtime_error(std::string(name) + " lacks field: " + column);
-        auto &records = std::string_view(name) == "magicprefix" ? data.magicPrefixes : data.magicSuffixes;
+        auto &records = std::string_view(name) == "magicprefix" ? data.magicPrefixes : std::string_view(name)=="magicsuffix"?data.magicSuffixes:data.autoMagic;
         for (size_t row = 0; row < table.rows().size(); ++row) {
             auto label = table.value(row, "Name");
             if (label.empty())

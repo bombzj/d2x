@@ -11,11 +11,13 @@ RequestResult WithdrawGold(GameplayContext &context, uint32_t amount) {
 RequestResult DepositGold(GameplayContext &context, uint32_t amount) {
     return submitGameplay(context,server::inventory::Request{GoldTransaction{GoldAction::Deposit,amount}});
 }
-RequestResult CloseCube(GameplayContext &, uint32_t) {
-    return {RequestStatus::NotImplemented, CommandStatus::Stale, "CloseCube"};
+RequestResult CloseCube(GameplayContext &context, uint32_t amount) {
+    if(amount) return {RequestStatus::Rejected};
+    return submitGameplay(context,server::inventory::Request{server::inventory::CloseCube{}});
 }
-RequestResult Transmute(GameplayContext &, uint32_t) {
-    return {RequestStatus::NotImplemented, CommandStatus::Stale, "Transmute"};
+RequestResult Transmute(GameplayContext &context, uint32_t amount) {
+    if(amount) return {RequestStatus::Rejected};
+    return submitGameplay(context, server::crafting::Request{TransmuteCube{}});
 }
 RequestResult PickUpItem(GameplayContext &context, net::protocol::Reader &reader) {
     const auto type = reader.u32(); const EntityId id{reader.u32()}; const auto cursor = reader.u32();
@@ -48,9 +50,11 @@ RequestResult IdentifyItem(GameplayContext &context, net::protocol::Reader &in) 
     if (!inventory || !inventory->items.contains(source) || !inventory->items.contains(target)) return {RequestStatus::Rejected};
     return submitGameplay(context, server::inventory::Request{d2x::IdentifyItem{inventory->items.at(source).handle, inventory->items.at(target).handle}});
 }
-RequestResult SocketItem(GameplayContext &, net::protocol::Reader &) {
-    // TODO: Inventory authority validation, transaction and native replication.
-    return {RequestStatus::NotImplemented};
+RequestResult SocketItem(GameplayContext &context, net::protocol::Reader &in) {
+    const EntityId filler{in.u32()}, host{in.u32()}; in.finish();
+    const auto input=context.host.inventoryInput(context.player);
+    if(!input || !input->items.contains(filler) || !input->items.contains(host)) return {RequestStatus::Rejected};
+    return submitGameplay(context,server::crafting::Request{d2x::SocketItem{input->items.at(filler).handle,input->items.at(host).handle}});
 }
 
 RequestResult DropGold(GameplayContext &context, net::protocol::Reader &in) {

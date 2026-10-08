@@ -15,6 +15,14 @@ enum class ItemAction : uint8_t {
     Put = 4, Take = 5, Equip = 6, IndirectEquip = 7, Unequip = 8, SwapEquipment = 9, Quantity = 10, Shop = 11, Properties = 21,
     SwapStored = 13, PutBelt = 14, TakeBelt = 15, SwapBelt = 16, Cursor = 18, Socket = 19, WeaponSwitch = 23
 };
+Bytes itemStat(EntityId id,unsigned stat,uint32_t number) {
+    if(id.value>UINT32_MAX || stat>=511) throw std::runtime_error("Native item stat identity overflow");
+    BitWriter bits;
+    const auto variable=[&](uint32_t v) {bits.write(v>=256,1);if(v>=256) bits.write(v>=65536,1);bits.write(v,v>=65536?32:v>=256?16:8);};
+    variable(uint32_t(id.value));bits.write(1,1);bits.write(stat,9);variable(number);bits.write(0,1);bits.write(0,8);
+    auto payload=bits.release();
+    return hosting::encodeServerPacket(hosting::ServerMessage::ItemStats,[&](auto &out){out.u8(uint8_t(payload.size()+2));out.append(payload);});
+}
 struct StatFormat { unsigned bits, params; int add; };
 StatFormat format(const ClassicData &data, unsigned id) {
     const auto &table = data.tables.at("itemstatcost");
@@ -66,7 +74,7 @@ Bytes packed(const ClassicData &data, const D2sItem &item) {
     uint32_t code = 0;
     for (unsigned i = 0; i < 4; ++i) code |= uint32_t(i < item.code.size() ? uint8_t(item.code[i]) : uint8_t(' ')) << (i * 8);
     bits.write(code, 32);
-    if (item.flags & 0x200000) {
+    if (item.flags & (0x200000 | 0x2000000)) {
         if (flag("quest") && flag("questdiffcheck")) value(bits, data, 356, item.questDifficulty);
         if (def->equipment.isType("gold")) { bits.write(item.quantity > 4095, 1); bits.write(item.quantity, item.quantity > 4095 ? 32 : 12); }
         return bits.release();
@@ -115,6 +123,7 @@ void emitItem(std::vector<Bytes> &result, const ClassicData &data, const Persist
     if (item.id.value > UINT32_MAX) throw std::runtime_error("Item ID exceeds native protocol capacity");
     auto saved = exportD2sItem(state, item, data);
     saved.flags = (saved.flags & ~0x4000u) | (item.nativeFlags & 0x4000u);
+    if(item.nativeFlags&0x2000000u) saved.flags|=0x2000000u;
     // D2S stores fixed weapon sets; GS body 4/5 always mean active hands.
     // The common client maps these through the original 0x97 weapon-set state.
     if (saved.mode == 1 && state.player.weaponSet) {
@@ -224,7 +233,8 @@ std::vector<Bytes> nativeInventoryDelta(const ClassicData &data, const server::I
                 [&](auto &out) { out.u8(4); out.u32(uint32_t(change.item.value)); }));
             continue;
         }
-        if (change.kind == ItemChangeKind::QuantityChanged || change.kind == ItemChangeKind::PropertiesChanged) {
+        if (change.kind == ItemChangeKind::QuantityChanged || change.kind == ItemChangeKind::PropertiesChanged || change.kind==ItemChangeKind::DurabilityChanged) {
+            if(change.kind==ItemChangeKind::DurabilityChanged) result.push_back(itemStat(change.item,72,state.inventory.items.at(change.item).durability));
             const auto action = change.kind == ItemChangeKind::QuantityChanged ? ItemAction::Quantity : ItemAction::Properties;
             emitItem(result, data, state, state.inventory.items.at(change.item), action,
                 action == ItemAction::Properties, 0, uint32_t(state.player.id.value));
@@ -247,7 +257,7 @@ std::vector<Bytes> nativeInventoryDelta(const ClassicData &data, const server::I
         }) != fact.changes.end();
         if (to == ContainerKind::Cursor) {
             action = equipment(from) ? ItemAction::Unequip : from == ContainerKind::Belt ? ItemAction::TakeBelt : ItemAction::Take;
-            owned = equipment(from) || from == ContainerKind::Backpack || from == ContainerKind::Stash;
+            owned = equipment(from) || from == ContainerKind::Backpack || from == ContainerKind::Stash || from == ContainerKind::Cube;
         }
         else if (equipment(to)) {
             const bool indirect = !replaced && std::any_of(fact.changes.begin(), fact.changes.end(), [&](const auto &other) {
@@ -257,7 +267,7 @@ std::vector<Bytes> nativeInventoryDelta(const ClassicData &data, const server::I
             owned = true;
         }
         else if (to == ContainerKind::Belt) { action = replaced ? ItemAction::SwapBelt : ItemAction::PutBelt; owned = false; }
-        else if (to == ContainerKind::Backpack || to == ContainerKind::Stash) { action = replaced ? ItemAction::SwapStored : ItemAction::Put; owned = false; }
+        else if (to == ContainerKind::Backpack || to == ContainerKind::Stash || to == ContainerKind::Cube) { action = replaced ? ItemAction::SwapStored : ItemAction::Put; owned = false; }
         else throw std::logic_error("Unsupported inventory destination");
         emitItem(result, data, state, state.inventory.items.at(change.item), action, owned, 0, uint32_t(state.player.id.value));
     }

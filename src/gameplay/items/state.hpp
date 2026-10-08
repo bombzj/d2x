@@ -59,6 +59,7 @@ struct ItemInstance {
     std::array<std::vector<SavedStat>, 5> savedSetStats;
     uint32_t nativeSeed = 0, nativeFlags = 0, nativeGraphic = 0, nativeFormat = 101;
     bool nativeHasGraphic = false;
+    unsigned nativeAutoAffix = 0; // Serialized AutoMagic row + 1; values live in savedStats.
     unsigned nativeQuestDifficulty = 0;
     unsigned nativeMaxDurability = 0;
     unsigned sockets = 0;

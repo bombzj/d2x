@@ -11,11 +11,26 @@
 #include <vector>
 
 namespace d2x::server::crafting {
-// Cube, socket, imbue and personalization transaction plans.
 using Intent = std::variant<TransmuteCube, SocketItem, ImbueItem, SocketQuestItem, PersonalizeQuestItem>;
 struct Request { Intent intent; };
-struct State { std::map<PlayerId, TransactionId> pending; };
-struct Ports { const PlayerStore &players; const items::System &items; transactions::System &transactions; const ItemCatalog *definitions; };
+struct Pending { ActorContext actor; Request request; uint64_t token{}, seed{}, inventoryRevision{}, characterRevision{}; };
+// Immutable content-worker input. Authority revalidates revisions and access
+// before placing every output and consuming every input in one transaction.
+struct Preparation {
+    Pending pending; PersistentCharacter character; std::string classCode;
+    uint64_t inventoryRevision{}, characterRevision{}; int difficulty{}; bool storage{}, cube{};
+};
+struct Output { ItemInstance item; std::optional<ItemHandle> replacement; EntityId container; };
+struct Prepared {
+    Preparation source; std::vector<ItemHandle> consumed; std::vector<Output> outputs;
+    std::shared_ptr<const EquipmentRules> equipment; std::string deferred;
+};
+struct State { std::map<PlayerId, Pending> pending; uint64_t next = 1; std::string deferred; };
+struct Ports {
+    const PlayerStore &players; const AreaStore &areas; items::System &items; transactions::System &transactions;
+    const ItemCatalog *definitions; const inventory::System &inventory;
+    const GameSettings &settings; uint64_t &random;
+};
 class System {
     State state_;
     const Ports ports_;
@@ -23,5 +38,7 @@ class System {
     explicit System(Ports ports) : ports_(ports) {}
     const State &read() const { return state_; }
     DomainResult<> execute(const ActorContext &, const Request &);
+    std::vector<Preparation> pending() const;
+    DomainResult<> install(Prepared);
 };
 }

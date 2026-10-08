@@ -503,6 +503,7 @@ bool RemoteInventory::submit(net::RealmSession &session, OnlineItemCommand comma
         if (wire.action != 11 || wire.ownerType != 1 || wire.owner != command.npc || wire.mode != 0)
             return reject("Purchase requires an assigned item on the active server vendor shelf");
         if (decoded.gamble != command.gamble) return reject("Item identity belongs to a different vendor service");
+        if(command.multibuy && command.gamble) return reject("Native gambling does not support multibuy");
         break;
     case OnlineItemAction::Sell:
         if (!owned(wire) || !(backpack(wire) || wire.mode == 1 || wire.mode == 4) || baseNumber(wire, "quest") || (wire.flags & 0x1000u))

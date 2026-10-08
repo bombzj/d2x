@@ -19,6 +19,7 @@ DomainResult<> System::dropGold(const ActorContext &actor, unsigned amount) {
         if (world.world.items.size() >= 4096 || world.revision == UINT64_MAX) return {DomainStatus::Capacity, {}};
         const auto position = ports_.items.placement({actor.area, player.position}, world.world);
         if (!position) return {DomainStatus::Conflict, {}};
+        if(!ports_.items.identityCapacity(1)) return {DomainStatus::Capacity,{}};
         ItemInstance item; item.id = ports_.items.reserveIdentity(); item.definition = definition->code;
         item.quantity = std::min(remaining, definition->maxStack); item.location = GroundLocation{actor.area, *position};
         item.nativeSeed = uint32_t(item.id.value);
@@ -41,7 +42,7 @@ DomainResult<> System::ground(const ActorContext &actor, const GroundTransfer &r
     const auto &source = *resolved.value;
     if (source.revision == UINT64_MAX) return {DomainStatus::Capacity, {}};
     const auto *definition = ports_.definitions->find(source.definition);
-    if (!definition || definition->questTag) return {DomainStatus::Unavailable, {}};
+    if (!definition || (definition->questTag && !definition->opensCube)) return {DomainStatus::Unavailable, {}};
     auto world = ports_.items.read();
     auto equipment = std::make_shared<EquipmentRules>(*player->rules.equipment);
     auto record = player->persistent.player;
@@ -68,9 +69,7 @@ DomainResult<> System::ground(const ActorContext &actor, const GroundTransfer &r
         auto dropped = source; ++dropped.revision; dropped.location = GroundLocation{player->area, *position};
         world.world.items.emplace(source.id, std::move(dropped));
         world.equipment.items.insert_or_assign(source.id, equipment->items.at(source.id));
-        for (const auto &piece : equipment->sets)
-            if (std::none_of(world.equipment.sets.begin(), world.equipment.sets.end(), [&](const auto &v) { return v.row == piece.row; })) world.equipment.sets.push_back(piece);
-        world.equipment.setBonuses.insert(equipment->setBonuses.begin(), equipment->setBonuses.end());
+        world.equipment.includeSets(*equipment);
         equipment->items.erase(source.id);
         draft.edit.inventory.items.erase(source.id);
         draft.edit.changes.push_back({source.id, source.revision + 1, ItemChangeKind::Removed, source.location, {}, 0});
@@ -94,11 +93,16 @@ DomainResult<> System::ground(const ActorContext &actor, const GroundTransfer &r
             record.gold += amount;
             world.world.items.erase(source.id);
             if (amount != source.quantity) {
+                if(!ports_.items.identityCapacity(1)) return {DomainStatus::Capacity,{}};
                 auto left = source; left.id = ports_.items.reserveIdentity(); left.quantity -= amount; left.revision = 1;
                 world.equipment.items.emplace(left.id, world.equipment.items.at(source.id));
                 world.world.items.emplace(left.id, std::move(left));
             }
         } else {
+            if(definition->opensCube) for(const auto &[id,owned]:player->persistent.inventory.items) {
+                (void)id;const auto *at=std::get_if<ContainerLocation>(&owned.location);
+                if(owned.definition==source.definition && at && player->persistent.inventory.containers.at(at->container).spec.kind!=ContainerKind::Corpse) return {DomainStatus::Conflict,{}};
+            }
             if (world.equipment.items.at(source.id).singleCarry)
                 for (const auto &[id, existing] : player->persistent.inventory.items) {
                     (void)id;
@@ -107,9 +111,7 @@ DomainResult<> System::ground(const ActorContext &actor, const GroundTransfer &r
                         existing.quality == ItemQuality::Unique && existing.specialRow == source.specialRow) return {DomainStatus::Conflict, {}};
                 }
             equipment->items.insert_or_assign(source.id, world.equipment.items.at(source.id));
-            for (const auto &piece : world.equipment.sets)
-                if (std::none_of(equipment->sets.begin(), equipment->sets.end(), [&](const auto &v) { return v.row == piece.row; })) equipment->sets.push_back(piece);
-            equipment->setBonuses.insert(world.equipment.setBonuses.begin(), world.equipment.setBonuses.end());
+            equipment->includeSets(world.equipment);
             auto copy = source; copy.location = cursor;
             draft.edit.inventory.items.emplace(copy.id, copy);
             if (!request.cursor && definition->autoStack) {
@@ -158,7 +160,7 @@ DomainResult<> System::ground(const ActorContext &actor, const GroundTransfer &r
 
 namespace d2x::server::inventory {
 StepStatus System::step(TickContext tick, FrameFacts &) {
-    std::erase_if(state_.storage,[&](const auto &entry){return !storageAccess(entry.first);});
+    std::erase_if(state_.storage,[&](const auto &entry){return !storageAccess(entry.first) && !cubeAccess(entry.first);});
     for (auto it = state_.pickups.begin(); it != state_.pickups.end();) {
         auto pending = it->second;
         const auto *player = ports_.players.find(it->first);
@@ -174,7 +176,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
             if (result) ports_.movement.execute(pending.actor, {MovementAction::Stop, {}, false});
         }
     }
-    return StepStatus::Complete;
+    return replenish(tick);
 }
 }
 

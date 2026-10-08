@@ -59,4 +59,4 @@ Weapons／ItemTypes／Missiles的原映射分别提供标枪、飞斧／飞刀�
 
 最终宿主failures=0、characterIssues为空，客户端ignoredPackets=0；截图final-field.png核对库存及门户。入场冒烟暴露并修复Kick空MinDam及无关怪物行scroll空白解析异常。最终Windows Release包见[基线](../../../BASELINE.md#当前运行包与有限冒烟)。普通桶KK（包括城镇自动动作）、左手两项、弩及其他投掷武器、全部药瓶等级、空书／取消／背压／多人、原服回归和Linux没有本批运行认证；不要把代表路径推广为全部十项V3。
 
-D2S仍为v96；原选择／热键、弹药、卷轴数量和书本页数使用已有字段，固有资格及物品技能数量由表和库存重新推导。动作、弹体、毒云、宠物、门户及目标光标不保存。规则指纹为`d2x-character-admission-v19/native-wire113c/d2s96/common10`，不静默迁移旧规则租约。格式与限制见[存档](../../modules/SAVES.md)，职责见[公共技能](COMMON.md)。
+D2S仍为v96；原选择／热键、弹药、卷轴数量和书本页数使用已有字段，固有资格及物品技能数量由表和库存重新推导。动作、弹体、毒云、宠物、门户及目标光标不保存。当前规则指纹以[存档](../../modules/SAVES.md)为准，不静默迁移旧规则租约。格式与限制见[存档](../../modules/SAVES.md)，职责见[公共技能](COMMON.md)。

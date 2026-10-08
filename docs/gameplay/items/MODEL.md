@@ -1,6 +1,6 @@
 # 原服物品与容器模型
 
-所有物品、容器位置、数量、耐久、金币与最终装备属于D2GS。RemoteInventory解码原位流；InventoryView是客户端只读值，不是第二份可提交库存。接口及生命周期见[库存模块](../../modules/INVENTORY.md)。
+所有物品、容器位置、数量、耐久、金币与最终装备属于连接的权威服务端（原D2GS或自研宿主）。RemoteInventory解码同一原位流；InventoryView是客户端只读值，不是第二份可提交库存。接口及生命周期见[库存模块](../../modules/INVENTORY.md)。
 
 ## 身份、位置与版本
 
@@ -14,4 +14,4 @@
 
 组合操作逐步等光标与相关回包，不用本地原子事务伪造全部成功。无ACK操作明确SentNoAck；TimedOut为未知，不自动重发非幂等请求。完整参数见[原物品命令](../../development/DEBUG_PIPE.md#联网物品操作)。
 
-gameplay/items只保留定义、位置／错误值及纯显示规则；InventoryService、replacement事务、访问令牌和Local缓存已删除。独立D2S保存快照归persistence，不参与联机库存。
+gameplay/items保存定义、位置／错误值及公共纯规则，不保存可写库存；旧InventoryService和Local客户端已删除。自研PlayerStore拥有持久库存，inventory／crafting／merchant规划，transactions提交；D2S快照由hosting／persistence持有，客户端不访问。基础耐久、AutoMagic身份、真实属性掷值和孔内子项沿原字段保留。

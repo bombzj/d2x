@@ -572,6 +572,8 @@ std::string onlineDebugCommand(const std::string &input, net::RealmSession &sess
             intent.beltSlot = cell("beltSlot", 15);
             intent.toCursor = request.value("toCursor", false); intent.mercenary = request.value("mercenary", false);
             intent.gamble = request.value("gamble", false);
+            intent.multibuy=request.value("multibuy",false);
+            if(intent.multibuy && intent.action!=OnlineItemAction::Buy) throw std::invalid_argument("multibuy is a native buy flag");
             if (intent.action == OnlineItemAction::Buy || intent.action == OnlineItemAction::Sell) {
                 const auto found = session.read().world.items.find(intent.item);
                 if (found == session.read().world.items.end() || (intent.itemRevision && intent.itemRevision != found->second.revision))

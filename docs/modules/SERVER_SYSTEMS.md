@@ -50,7 +50,7 @@ PersistentCharacter在PlayerStore中唯一持有，包含库存、人物记录�
 | items | 世界物品，沿用ItemInstance／InventoryState | create／resolve；生成不等于提交或放入背包 |
 | inventory | 容器访问、摆放／装备／数量规划 | execute已接移动／交换／装备／切组／合堆／入书；新增地面拾取／丢弃、金币丢弃、卷轴／书本鉴定、药水和仓库授权／关闭，库存仍归PlayerStore |
 | attributes | 纯派生计算与当前Totals只读查询 | calculate／evaluate；提交前同步求值，无dirty队列；已接支持的临时状态，完整被动仍待恢复 |
-| crafting | 方块、镶嵌、注入、打孔、个性化事务意图 | execute；复用既有纯意图类型 |
+| crafting | 普通方块与镶嵌事务；任务加工暂缓 | execute／pending／install；hosting准备不可变输出 |
 | loot | 掉落选择与来源结算记录 | plan／step；沿用LootRequest／LootPlan，不写死概率 |
 | population | 区域人口、已准入spawn key | admit／step；保留MonsterIdentity及显式实现类型 |
 | monsters | 活动非玩家实体、身份、位置和版本 | admit／requestMove／remove／step；与人口生成、AI决策分离 |
@@ -72,7 +72,7 @@ PersistentCharacter在PlayerStore中唯一持有，包含库存、人物记录�
 | transactions | 跨域计划、版本前置条件、提交身份 | prepare／commit已接单人物InventoryEdit／CharacterEdit原子提交；已接地面转移／尸体／任务奖励；双人交换仍为stub |
 | replication | 每个收件人的兴趣与可见玩家集合 | visible／step；按本人区域及准备好的直接自然邻区过滤，普通怪物使用本区RoomLayout邻室及直接邻区距离过滤；完整房间兴趣仍待实现；编码留hosting |
 
-目录在runtime/subsystems.inc维护身份、阶段和范围。players／movement为walking-slice，inventory为inventory-slice，attributes／progression／transactions为character-slice，World／Travel为world，replication／social为multiplayer；范围表示已接切片，不代表该领域全部规则完成。population／monsters／ai／skills／missiles／combat／death为combat-slice。items／loot／merchant为inventory，effects为character，objects／npc／quests为world；companions已接Hydra及诱饵／女武神，通用请求仍明确拒绝；spatial／crafting／trade仍为scaffold，命令按具名意图检查。
+目录在runtime/subsystems.inc维护身份、阶段和范围。players／movement为walking-slice，inventory为inventory-slice，attributes／progression／transactions为character-slice，World／Travel为world，replication／social为multiplayer；范围表示已接切片，不代表该领域全部规则完成。population／monsters／ai／skills／missiles／combat／death为combat-slice。items／loot／merchant为inventory，effects为character，objects／npc／quests为world；companions已接Hydra及诱饵／女武神，通用请求仍明确拒绝；spatial／trade仍为scaffold；crafting已接普通方块／镶嵌，命令按具名意图检查。
 
 ## 命令与固定步
 
@@ -146,7 +146,7 @@ replication的宠物归属投影独立于房间兴趣；hosting按原13字节7A�
 
 named pipe的server-systems只读返回28项目录、phase、scope和lastStep。lastStep=null表示尚未执行或该系统没有固定步入口，不表示完成；未接领域正常显示not-implemented，已接切片以scope为准。server-status.command表示最近实际命令结果，替代原来仅描述移动的字段；server-protocol仍负责原包覆盖与计数。这些诊断只在宿主管理端，不参与客户端世界同步。
 
-PersistentCharacter与D2S v96格式保持既有模型，库存位置／Cursor／固定武器组通过既有编码保存；宿主规则语义升至admission-v19/native-wire113c/d2s96/common10，具体见[存档](SAVES.md)。事务身份／revision／Outbox运行态不写D2S；以后扩展尸体／铁魔／佣兵／任务时仍须复用持久模型并显式定义恢复边界，不能静默迁移或把空运行态覆盖回完整存档。
+PersistentCharacter与D2S v96格式保持既有模型，库存位置／Cursor／固定武器组通过既有编码保存；宿主规则语义升至admission-v20/native-wire113c/d2s96/items，具体见[存档](SAVES.md)。事务身份／revision／Outbox运行态不写D2S；以后扩展尸体／铁魔／佣兵／任务时仍须复用持久模型并显式定义恢复边界，不能静默迁移或把空运行态覆盖回完整存档。
 
 ## 管理诊断与收尾边界
 
@@ -164,7 +164,7 @@ EventOutbox保存1024条已成功发布事实的紧凑环形历史；GameInstanc
 
 `inventory/ground`规划角色库存、金币和地面余量；`transactions`同时校验角色及世界revision，发布不可变事实后一次交换全部草稿。拾取校验同区、1.8格距离、原0x0801视线及空Cursor，支持Cursor、自动腰带、背包和既有合堆规则；空间不足保留地面剩余量。任务物品暂缓，不绕过任务携带资格。物品属性的各级准备值随所有权转移，新装备可沿现有属性汇总及装备资格检查工作。
 
-宿主以原9C地面位流和0A清除同步可见集合，晚入局和换区重建基线；个人入包沿既有9C／9D。客户端未新增自研分支。`item-spawn`采用相同准备和地面安装入口。独立服务端多实例、原NoDrop人数修正、任务专属掉落及全部精英／首领来源规则尚未完整实现。当前怪物批次的有限运行证据见基线；构建结果及历史六项证据不能替代所有新组合的运行验证。
+怪物／物件新生掉落发布GroundDropFact并编码原9C action=2；宿主以原9C地面位流和0A清除同步可见集合，晚入局和换区重建基线；个人入包沿既有9C／9D。客户端未新增自研分支。`item-spawn`采用相同准备和地面安装入口。独立服务端多实例、近队友NoDrop贡献、任务专属掉落及全部精英／首领来源规则尚未完整实现。当前怪物批次的有限运行证据见基线；构建结果及历史六项证据不能替代所有新组合的运行验证。
 
 ## 资源、药水与效果
 
@@ -178,7 +178,7 @@ EventOutbox保存1024条已成功发布事实的紧凑环形历史；GameInstanc
 
 服务端 death 分为死亡结算、复活和拾回规划；transactions 原子提交人物、库存、尸体元数据及地面物品。沿用 master 的装备／Cursor 转尸体、腰带收缩、金币惩罚和掉落、难度经验损失及同局 75% 经验返还规则。生命归零后等待当前 MPQ 死亡动画，原 41 请求回本幕城镇并恢复资源；原 13 拾回只授权本人尸体，装备依需求反复尝试，余物进入腰带／背包，容量不足保留尸体。对象身份不复用。
 
-原 59／8E／0D 与 9D 公开尸体和外观，客户端未修改。普通库存命令不能访问尸体容器。D2S v96 沿用旧单机及本地 D2MOO PlrSave2 的第一具非空尸体写档规则：局内最多 16 具，不覆盖旧尸体；存档投影只保留最早的非空尸体，清除仅同局有效的可返还经验，重入移至城镇。规则指纹 admission-v19/native-wire113c/d2s96/common10。多尸体保存并非完整多尸体快照，PvP／硬核死亡尚未扩展。
+原 59／8E／0D 与 9D 公开尸体和外观，客户端未修改。普通库存命令不能访问尸体容器。D2S v96 沿用旧单机及本地 D2MOO PlrSave2 的第一具非空尸体写档规则：局内最多 16 具，不覆盖旧尸体；存档投影只保留最早的非空尸体，清除仅同局有效的可返还经验，重入移至城镇。规则指纹 admission-v20/native-wire113c/d2s96/items。多尸体保存并非完整多尸体快照，PvP／硬核死亡尚未扩展。
 
 ## 世界物件基础
 
@@ -190,11 +190,11 @@ hosting/object_content 沿用旧单机 configureWorldObject、Act 1 人口生成
 
 `hosting/npc_content` 从原生地图预置与 MonStats 准备中立 NPC，保留原身份；不生成敌对替身。NPC 子系统管理同区域、活人、城镇与距离资格、首次介绍确认；介绍键沿现有 D2S 字段保存。对白编号从当前 TBL 反查，缺少对应文本则不编造。NPC 暂时静止，任务对白仅接邪恶洞穴 Akara；旧单机闲逛 AI 与佣兵服务未迁移。
 
-`content/npc/vendor_stock` 迁用 master 的 `planVendorStock` 和 `vendorItem`。内容工作位于宿主，商店库存由 merchant 持有，个人库存仍只有 PlayerStore 一份。请求先进入有界准备队列；宿主捕获当前库存／人物 revision、任务折扣与降价属性后准备报价，领域提交前再次复验。客户端报价不作为扣款依据。买入、售出、普通耐久／投掷堆叠修理、Cain 鉴定与金币变动经 transactions 原子提交，再发送原 9C／9D、属性包及 2A 回执；有限库存移除对所有看店者同步，永久货物保留。库存按实例内 NPC 首次打开等级生成，尚无离城刷新和回购；赌博、Shift 批量购买、充能技能补充明确暂缓。
+`content/npc/vendor_stock` 迁用 master 的 `planVendorStock` 和 `vendorItem`。内容工作位于宿主，商店库存由 merchant 持有，个人库存仍只有 PlayerStore 一份。请求先进入有界准备队列；宿主捕获当前库存／人物 revision、任务折扣与降价属性后准备报价，领域提交前再次复验。客户端报价不作为扣款依据。买入、售出、普通耐久／投掷堆叠修理、Cain 鉴定与金币变动经 transactions 原子提交，再发送原 9C／9D、属性包及 2A 回执；有限库存移除对所有看店者同步，永久货物保留。库存按实例内NPC首次打开等级生成，支持全部人离城刷新、回购、个人赌博、原multibuy批量及充能修理。内容／原包／限制统一见[库存](INVENTORY.md)。
 
 NPC 对话使用原 AC／27／2F／31；商店回执布局及成功码核对本地 D2MOO `SCmd.cpp`、`SUnitNpc.cpp`，买入 result=0、卖出=1、修理=2。客户端代码不变。
 
-个人仓库授权归 inventory，打开真实 stash 物件后才允许原 page=4 的存取、交换、合堆与金币存取；关闭、死亡、离开区域或交互距离撤销授权。所有容量来自既有容器／MPQ，金币上限复用原 `stashGoldLimit`。未授权页面不能绕过领域校验。方块、玩家交易保持原有未实现边界。
+个人仓库授权归 inventory，打开真实 stash 物件后才允许原 page=4 的存取、交换、合堆与金币存取；关闭、死亡、离开区域或交互距离撤销授权。所有容量来自既有容器／MPQ，金币上限复用原 `stashGoldLimit`。未授权页面不能绕过领域校验。方块持有独立授权并接普通配方；玩家交易权威仍未实现。
 
 ## 邪恶洞穴与旅行基础
 

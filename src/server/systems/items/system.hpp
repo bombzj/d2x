@@ -26,6 +26,7 @@ class System {
   public:
     explicit System(Ports ports) : ports_(ports) {}
     const State &read() const { return state_; }
+    bool identityCapacity(size_t count) const { return ports_.ids.cursor()<=UINT32_MAX && count<=uint64_t(UINT32_MAX)-ports_.ids.cursor()+1; }
     EntityId reserveIdentity() { if (ports_.ids.cursor() > UINT32_MAX) throw std::overflow_error("Native item identity exhausted"); return ports_.ids.allocate(); }
     DomainResult<State> prepare(PreparedBatch, GroundLocation);
     DomainResult<> install(PreparedBatch, GroundLocation);

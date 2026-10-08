@@ -39,9 +39,7 @@ DomainResult<State> System::prepare(PreparedBatch batch, GroundLocation origin) 
         next.equipment.items.emplace(item.id, std::move(properties));
         next.world.items.emplace(item.id, std::move(item));
     }
-    for (const auto &piece : batch.equipment->sets)
-        if (std::none_of(next.equipment.sets.begin(), next.equipment.sets.end(), [&](const auto &v) { return v.row == piece.row; })) next.equipment.sets.push_back(piece);
-    next.equipment.setBonuses.insert(batch.equipment->setBonuses.begin(), batch.equipment->setBonuses.end());
+    next.equipment.includeSets(*batch.equipment);
     ++next.revision; return {DomainStatus::Applied, std::move(next)};
 }
 DomainResult<> System::install(PreparedBatch batch, GroundLocation origin) {

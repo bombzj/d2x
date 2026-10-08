@@ -31,8 +31,8 @@ RequestResult NpcMessage(GameplayContext &context, net::protocol::Reader &in) {
 }
 RequestResult BuyItem(GameplayContext &context, net::protocol::Reader &in) {
     const auto npc=in.u32(), item=in.u32(); const auto gamble=in.u16(), mode=in.u16(); const auto quote=in.u32(); in.finish(); (void)quote;
-    if(gamble || mode) return {RequestStatus::NotImplemented};
-    return submitGameplay(context,server::merchant::Request{server::merchant::Action::Buy,{EntityId{npc},0},ItemHandle{EntityId{item},0}});
+    if((gamble!=0 && gamble!=2) || (mode&0x7fffu) || (gamble && (mode&0x8000u))) return {RequestStatus::Rejected};
+    return submitGameplay(context,server::merchant::Request{server::merchant::Action::Buy,{EntityId{npc},0},ItemHandle{EntityId{item},0},0,gamble==2,bool(mode&0x8000u)});
 }
 RequestResult SellItem(GameplayContext &context, net::protocol::Reader &in) {
     const auto npc=in.u32(), item=in.u32(); const auto mode=in.u16(), reserved=in.u16(); const auto quote=in.u32(); in.finish(); (void)quote;
@@ -89,7 +89,7 @@ RequestResult NpcTravel(GameplayContext &, uint32_t) {
 RequestResult OpenShop(GameplayContext &context, uint32_t npc) {
     return submitGameplay(context,server::merchant::Request{server::merchant::Action::Open,{EntityId{npc},0},{}});
 }
-RequestResult OpenGambleShop(GameplayContext &, uint32_t) {
-    return {RequestStatus::NotImplemented, CommandStatus::Stale, "OpenGambleShop"};
+RequestResult OpenGambleShop(GameplayContext &context, uint32_t npc) {
+    return submitGameplay(context,server::merchant::Request{server::merchant::Action::Gamble,{EntityId{npc},0},{},0,true});
 }
 }

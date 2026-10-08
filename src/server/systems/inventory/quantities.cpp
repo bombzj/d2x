@@ -21,6 +21,15 @@ bool equal(const ItemInstance &a, const ItemInstance &b, const EquipmentRules &r
     return !property(rules, a.id, level, "item_numsockets") && !property(rules, b.id, level, "item_numsockets");
 }
 }
+unsigned Draft::stackSpace(const ItemInstance &a,const ItemInstance &b) const {
+    const auto *from=std::get_if<ContainerLocation>(&a.location),*to=std::get_if<ContainerLocation>(&b.location);
+    const auto permitted=[&](EntityId id){return (storage && id==containers().stash) || id==containers().backpack || id==containers().cursor || id==containers().equipment;};
+    const auto *base=catalog.find(b.definition);
+    if(a.id==b.id || !from || !to || !owned(*from) || !owned(*to) || !permitted(from->container) || !permitted(to->container) ||
+        !base || base->maxStack<=1 || base->bookCapacity || !equal(a,b,rules,player.persistent.player.level)) return 0;
+    const int64_t maximum=int64_t(base->maxStack)+property(rules,b.id,player.persistent.player.level,"item_extra_stack");
+    return maximum>1 && maximum<=511 && b.quantity<unsigned(maximum)?unsigned(maximum)-b.quantity:0;
+}
 DomainStatus Draft::merge(const MergeStacks &command) {
     const auto *a = resolve(command.source), *b = resolve(command.target);
     if (!a || !b) return DomainStatus::Stale;
@@ -37,7 +46,7 @@ DomainStatus Draft::merge(const MergeStacks &command) {
     const int64_t maximum = int64_t(definition->maxStack) + property(rules, b->id, player.persistent.player.level, "item_extra_stack");
     if (maximum <= 1 || maximum > 511) return DomainStatus::Unavailable;
     if (!a->quantity || b->quantity > maximum) return DomainStatus::InvalidRequest;
-    const unsigned available = unsigned(maximum) - b->quantity;
+    const unsigned available = stackSpace(*a,*b);
     const unsigned amount = command.quantity ? command.quantity : std::min(a->quantity, available);
     if (!amount || amount > a->quantity || amount > available) return DomainStatus::Conflict;
     if (a->revision == UINT64_MAX || b->revision == UINT64_MAX) return DomainStatus::Capacity;

@@ -43,7 +43,8 @@ Json debugServerSnapshot(const server::DiagnosticSnapshot &s, uint64_t since, ui
         {"selectedSkills", r.selectedSkills}, {"baseSkills", r.skillRanks}, {"effectiveSkills", p.skillRanks},
         {"inventoryRevision", p.inventoryRevision}, {"characterRevision", p.characterRevision}};
     result["containers"] = {{"backpack", s.containers.backpack.value}, {"equipment", s.containers.equipment.value},
-        {"belt", s.containers.belt.value}, {"beltEquipment", s.containers.beltEquipment.value}, {"cursor", s.containers.cursor.value}};
+        {"belt", s.containers.belt.value}, {"beltEquipment", s.containers.beltEquipment.value}, {"cursor", s.containers.cursor.value},
+        {"cube",s.containers.cube.value},{"stash",s.containers.stash.value}};
     for (const auto &value : s.areas) result["areas"].push_back(area(value));
     for (const auto &item : s.items) {
         Json value{{"id", item.id.value}, {"revision", item.revision}, {"code", item.code}, {"quantity", item.quantity}, {"durability", item.durability}};
@@ -99,6 +100,7 @@ Json debugServerSnapshot(const server::DiagnosticSnapshot &s, uint64_t since, ui
     result["npcs"]=Json::array();
     for(const auto &npc:s.area.definition.npcs) result["npcs"].push_back({{"id",npc.id.value},{"code",npc.rule.code},{"position",point(npc.position+origin)}});
     result["merchantDeferred"]=s.merchantDeferred;
+    result["crafting"]={{"pending",s.craftingPending},{"deferred",s.craftingDeferred}};
     result["den"]={{"remaining",s.denRemaining},{"cleared",s.denCleared},{"stages",Json::array()}};
     for(const auto &book:s.record.quests) result["den"]["stages"].push_back(book.at(questIndex(QuestId::DenOfEvil)).stage);
     result["waypoints"]=Json::array(); for(const auto &[region,time]:s.waypoints) { (void)time; result["waypoints"].push_back(int(region)); }

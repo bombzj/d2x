@@ -4,6 +4,9 @@
 #include "server/systems/transactions/system.hpp"
 #include "server/systems/inventory/planning.hpp"
 namespace d2x::server::loot {
+std::set<size_t> System::prepareUniques(const std::set<size_t> &additions) const {
+    auto next=state_.uniques; next.insert(additions.begin(),additions.end()); return next;
+}
 DomainResult<> System::queue(const Request &request) {
     if (state_.pending.contains(request.source.source)) return {DomainStatus::Applied, std::monostate{}};
     if (state_.pending.size() >= 256) return {DomainStatus::Capacity, {}};
@@ -12,6 +15,9 @@ DomainResult<> System::queue(const Request &request) {
     Preparation pending{request, player->persistent, player->definition.code, 0,
         player->totals.character.combat.magicFind, player->totals.character.combat.goldFind, state_.uniques};
     auto random = ports_.random; pending.seed = initialRandom(rollRandom(random));
+    const unsigned count=unsigned(std::count_if(ports_.players.all().begin(),ports_.players.all().end(),[](const auto &entry){return entry.second.entered;}));
+    // No party authority exists yet: only the killer is a qualifying party member.
+    pending.effectivePlayers=std::min(std::clamp((count+1)/2,1u,8u),request.source.monsterPlayerCount);
     pending.character.inventory.items.clear();
     state_.pending.emplace(request.source.source, std::move(pending)); ports_.random = random;
     return {DomainStatus::Applied, std::monostate{}};
@@ -22,20 +28,21 @@ DomainResult<> System::install(EntityId source, items::PreparedBatch batch, std:
     std::set<size_t> uniques = state_.uniques;
     uniques.insert(batch.limitedUniques.begin(), batch.limitedUniques.end());
     const auto &request = found->second.request;
-    if (request.object && !deferred.empty()) {
-        state_.completed.insert_or_assign(source, false); state_.deferred = std::move(deferred); state_.pending.erase(found);
+    if (!deferred.empty()) {
+        if(request.object) state_.completed.insert_or_assign(source, false);
+        state_.deferred = std::move(deferred); state_.pending.erase(found);
         return {DomainStatus::Applied, std::monostate{}};
     }
+    if (!ports_.events.hasCapacity(batch.items.size() + (request.object ? 2 : 0), request.object ? 2 : 1))
+        return {DomainStatus::Capacity, {}};
     // Allocate follow-up bookkeeping before any authority is committed.
     auto completions = state_.completed;
     if (request.object) completions.insert_or_assign(source, true);
-    std::map<EntityId, std::set<size_t>> pendingUniques;
-    for (const auto &[id, pending] : state_.pending) {
-        (void)pending;
-        if (id != source) pendingUniques.emplace(id, uniques);
-    }
     auto next = ports_.items.prepare(std::move(batch), {request.source.region, request.position});
     if (!next) return {next.status, {}};
+    std::vector<DomainFact> drops;
+    for(const auto &[id,item]:next.value->world.items)
+        if(!ports_.items.read().world.items.contains(id)) drops.emplace_back(GroundDropFact{item});
     if (request.object) {
         const auto *player = ports_.players.find(request.beneficiary);
         const auto fail = [&]() { state_.completed.insert_or_assign(source, false); state_.pending.erase(found); return DomainResult<>{DomainStatus::Applied, std::monostate{}}; };
@@ -53,16 +60,20 @@ DomainResult<> System::install(EntityId source, items::PreparedBatch batch, std:
         const ActorContext actor{player->player, player->actor, player->area, 0, 0, 0};
         transactions::InventoryEdit edit{actor, player->inventoryRevision, player->characterRevision, std::move(draft.edit.inventory), std::move(draft.edit.changes), player->persistent.player.weaponSet};
         edit.world = transactions::WorldEdit{ports_.items.read().revision, std::move(*next.value)};
+        edit.publicFacts=std::move(drops);
         auto plan = ports_.transactions.prepare(std::move(edit)); if (!plan) return {plan.status, {}};
         const auto committed = ports_.transactions.commit(std::move(*plan.value)); if (!committed) return committed;
         state_.completed.swap(completions);
     } else {
+        if(!drops.empty()) {
+            auto sent=ports_.events.publish({0,0,{}, {AudienceKind::Area,{},request.source.region},std::move(drops)});
+            if(!sent) return {sent.status,{}};
+        }
         // The prepared state already contains final identities and placement.
         ports_.items.commit(std::move(*next.value));
     }
     state_.uniques.swap(uniques); state_.deferred = std::move(deferred); state_.pending.erase(found);
-    // Later requests must see uniques committed earlier in the same host cycle.
-    for (auto &[id, pending] : state_.pending) pending.uniques.swap(pendingUniques.at(id));
+    // GameInstance snapshots current unique availability at each preparation.
     return {DomainStatus::Applied, std::monostate{}};
 }
 StepStatus System::step(TickContext, FrameFacts &) { return StepStatus::Complete; }

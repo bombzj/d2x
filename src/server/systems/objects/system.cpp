@@ -80,7 +80,7 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
         --object.uses; object.mode = 2 - object.uses / rule.parameters[2]; if (!object.reset && rule.parameters[0] > 0) object.reset = actor.tick + uint64_t(rule.parameters[0]);
         ++object.revision; collision(actor.area); return result;
     }
-    if (rule.operation != 1 && rule.operation != 3 && rule.operation != 4 && rule.operation != 5 && rule.operation != 14) return {};
+    if (rule.operation != 1 && rule.operation != 3 && rule.operation != 4 && rule.operation != 5 && rule.operation != 14 && rule.operation!=19 && rule.operation!=20) return {};
     // Trap execution is a separate combat slice: never silently turn it off.
     if (rule.chest && rule.chest->trap) return {DomainStatus::NotImplemented, {}};
     ItemHandle key;

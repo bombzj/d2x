@@ -1,5 +1,6 @@
 #include "core/random.hpp"
 #include "object_loot.hpp"
+#include "item_quality.hpp"
 #include <algorithm>
 #include <cstdlib>
 
@@ -45,13 +46,13 @@ ObjectTreasureEntry resolveObjectTreasure(const ClassicData &data, const WorldCa
     result.itemLevel = level;
     return result;
 }
-LootPlan planAct1RackLoot(const ClassicData &data, const WorldCatalog &world, RegionId region,
-                         int difficulty, bool weapon, uint64_t seed) {
+LootPlan planRackLoot(const ClassicData &data, const WorldCatalog &world, RegionId region,
+    int difficulty,bool weapon,uint64_t seed,const std::set<size_t> &used,std::string_view characterClass) {
     LootPlan plan;
     plan.randomState = seed;
     auto area = world.levels().find(int(region));
-    if (area == world.levels().end() || area->second.act != 0 || difficulty < 0 || difficulty > 2) {
-        plan.deferred = "Rack requires an MPQ Act I area level";
+    if (area == world.levels().end() || difficulty < 0 || difficulty > 2) {
+        plan.deferred = "Rack requires an MPQ area level";
         return plan;
     }
     int level = std::max(1, area->second.population.level[size_t(difficulty)] - 1);
@@ -76,7 +77,7 @@ LootPlan planAct1RackLoot(const ClassicData &data, const WorldCatalog &world, Re
         const auto &source = data.tables.at(chosen->base.sourceTable);
         if (weapon && !(source.number(chosen->base.sourceRow, "bitfield1").value_or(0) & 2))
             continue;
-        plan.drops.push_back({chosen->code, 1, {2, 3}, unsigned(level), {}});
+        plan=planSelectedItem(data,chosen->code,level,plan.randomState,used,characterClass,{},true);
         break;
     }
     return plan;

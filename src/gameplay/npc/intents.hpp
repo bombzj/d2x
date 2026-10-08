@@ -23,7 +23,7 @@ struct OpenHirelingList { EntityId npc; };
 struct HireMercenary { EntityId npc; uint32_t slot = 0; };
 struct ResurrectHireling { EntityId npc; };
 struct RepairVendorItem { EntityId npc; ItemHandle item; };
-struct BuyVendorItem { EntityId vendor; uint32_t slot = 0; bool gamble = false; };
+struct BuyVendorItem { EntityId vendor; uint32_t slot = 0; bool gamble = false, multibuy = false; };
 struct SellVendorItem { EntityId vendor; ItemHandle item; };
 using NpcIntent = std::variant<IdentifyWithCain, EndNpcConversation, TalkToNpc,
     ClaimAkaraRespec, ImbueItem, CompleteActOne, CompleteActTwo, OpenGamble,

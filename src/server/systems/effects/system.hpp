@@ -55,7 +55,7 @@ class System {
     std::set<int> unitStates(EntityId, uint64_t tick) const;
     std::map<int,std::vector<std::pair<int,int64_t>>> unitStateStats(EntityId, uint64_t tick) const;
     DomainResult<float> receive(const ActorContext &, int64_t rawDamage, DamageType);
-    DomainResult<float> receiveMonster(const ActorContext &, EntityId source, const MonsterHit &, const MonsterHitStates &);
+    DomainResult<float> receiveMonster(const ActorContext &, EntityId source, const MonsterHit &, const MonsterHitStates &,std::optional<ItemHandle> wear = {});
     bool missileHitAllowed(EntityId,uint64_t tick) const;
     void missileHitDelay(EntityId,uint64_t until);
     void triggerMonsterCurse(EntityId,uint64_t tick);

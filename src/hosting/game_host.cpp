@@ -4,6 +4,7 @@
 #include <utility>
 
 namespace d2x {
+std::set<size_t> GameHost::usedUniques(GameHandle handle) const {const auto *slot=find(handle);return slot?slot->game->usedUniques():std::set<size_t>{};}
 std::optional<server::inventory::InputState> GameHost::inventoryInput(PlayerBinding binding) const {
     const auto *slot = find(binding.game);
     return slot ? slot->game->inventoryInput(binding.player) : std::nullopt;
@@ -242,6 +243,8 @@ server::DomainResult<> GameHost::installLoot(GameHandle game, EntityId source, s
 
 namespace d2x {
 std::vector<server::merchant::Preparation> GameHost::pendingMerchant(GameHandle game) const { const auto *slot=find(game); return slot ? slot->game->pendingMerchant() : std::vector<server::merchant::Preparation>{}; }
+std::vector<server::crafting::Preparation> GameHost::pendingCrafting(GameHandle game) const { const auto *slot=find(game); return slot ? slot->game->pendingCrafting() : std::vector<server::crafting::Preparation>{}; }
+server::DomainResult<> GameHost::installCrafting(GameHandle game, server::crafting::Prepared prepared) { auto *slot=find(game); if(!slot) return {server::DomainStatus::Stale,{}}; auto result=slot->game->installCrafting(std::move(prepared)); if(result) publish(game.slot); return result; }
 server::DomainResult<> GameHost::installMerchant(GameHandle game,server::merchant::Prepared prepared) { auto *slot=find(game); if(!slot) return {server::DomainStatus::Stale,{}}; auto result=slot->game->installMerchant(std::move(prepared)); if(result) publish(size_t(game.slot)); return result; }
 std::optional<PersistentCharacter> GameHost::shop(PlayerBinding binding) const { const auto *slot=find(binding.game); return slot ? slot->game->shop(binding.player) : std::nullopt; }
 }

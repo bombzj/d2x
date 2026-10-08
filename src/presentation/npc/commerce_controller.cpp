@@ -118,13 +118,13 @@ bool SceneController::handleNpcShop(const FrameInput &input) {
                     return true;
                 }
                 if (auto slot = view_.clickNpcShop(input.mouse))
-                    npcClient_.submit(BuyVendorItem{ui.dialogueObject, *slot, ui.shopGamble});
+                    npcClient_.submit(BuyVendorItem{ui.dialogueObject, *slot, ui.shopGamble,input.shift && !ui.shopGamble});
                 if (!ui.shopOpen)
                     npcClient_.submit(EndNpcConversation{ui.dialogueObject});
             } else if (input.insideViewport && input.rightPressed) {
                 inventoryRight_ = true;
                 if (auto slot = view_.clickNpcShop(input.mouse, true))
-                    npcClient_.submit(BuyVendorItem{ui.dialogueObject, *slot, ui.shopGamble});
+                    npcClient_.submit(BuyVendorItem{ui.dialogueObject, *slot, ui.shopGamble,input.shift && !ui.shopGamble});
             }
         }
         return true;

@@ -21,20 +21,24 @@ static void prepareOneLoot(GameHost &host, GameHandle game, Archives &archives, 
     if (request.request.object) {
         const auto &object = *request.request.object;
         auto seed = request.seed;
+        if(object.operation==19 || object.operation==20) {
+            plan=planRackLoot(data,*world,request.request.source.region,request.request.source.difficulty,object.operation==20,seed,request.uniques,request.classCode);
+        } else {
         const auto entry = resolveObjectTreasure(data, *world, request.request.source.region, request.request.source.difficulty);
         if (!entry.deferred.empty()) plan.deferred = entry.deferred;
         else if (object.chest)
-            plan = planChestLoot(data, entry, *object.chest, object.definition, seed, request.uniques, request.classCode, request.magicFind, request.goldFind, request.request.source.difficulty);
+            plan = planChestLoot(data, entry, *object.chest, object.definition, seed, request.uniques, request.classCode, request.magicFind, request.goldFind, request.request.source.difficulty, request.effectivePlayers);
         else {
             const bool drops = object.operation == 1 || object.operation == 14 ||
                 ((object.operation == 3 || object.operation == 5) && limitedRandom(seed,100) <= 20);
-            if (drops) plan = planItemLoot(data, data.tables.at("itemratio"), entry.treasureClass, entry.itemLevel, 0, seed, request.uniques, request.classCode, request.magicFind, request.goldFind);
+            if (drops) plan = planItemLoot(data, data.tables.at("itemratio"), entry.treasureClass, entry.itemLevel, 0, seed, request.uniques, request.classCode, request.magicFind, request.goldFind,{},request.effectivePlayers);
+        }
         }
     } else {
         const auto entry = resolveMonsterLoot(data, *cache.monsters, *world, request.request.source);
         if (entry.status == LootEntryStatus::Ready)
             plan = planItemLoot(data, data.tables.at("itemratio"), entry.treasureClass, entry.itemLevel,
-                entry.upgradeLevel, request.seed, request.uniques, request.classCode, request.magicFind, request.goldFind);
+                entry.upgradeLevel, request.seed, request.uniques, request.classCode, request.magicFind, request.goldFind,{},request.effectivePlayers);
         else if (entry.status == LootEntryStatus::Deferred) plan.deferred = entry.reason;
     }
     auto character = request.character;

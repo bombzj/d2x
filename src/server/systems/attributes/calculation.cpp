@@ -10,6 +10,11 @@
 #include <algorithm>
 #include <stdexcept>
 namespace d2x::server {
+void EquipmentRules::includeSets(const EquipmentRules &source) {
+    for (const auto &piece : source.sets)
+        if (std::none_of(sets.begin(),sets.end(),[&](const auto &v){return v.row==piece.row;})) sets.push_back(piece);
+    setBonuses.insert(source.setBonuses.begin(),source.setBonuses.end());
+}
 const ItemLevelValues &EquipmentRules::at(EntityId id, int level) const {
     if (level < 1) throw std::runtime_error("Invalid prepared property level");
     return items.at(id).levels.at(size_t(level));

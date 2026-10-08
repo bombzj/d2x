@@ -9,7 +9,7 @@ struct Edit {
     std::vector<ItemChange> changes;
     unsigned weaponSet{};
 };
-DomainResult<Edit> plan(const PlayerState &, const Request &, const ItemCatalog &, const EquipmentRules &, const CharacterRules &, bool storage = false);
+DomainResult<Edit> plan(const PlayerState &, const Request &, const ItemCatalog &, const EquipmentRules &, const CharacterRules &, bool storage = false, bool cube = false);
 namespace detail {
 struct Draft {
     const PlayerState &player;
@@ -33,6 +33,7 @@ struct Draft {
     DomainStatus equipment(const EquipItem &, EquipmentMode);
     DomainStatus qualified(EntityId) const;
     DomainStatus merge(const MergeStacks &);
+    unsigned stackSpace(const ItemInstance &,const ItemInstance &) const;
     DomainStatus loadBook(const LoadBook &);
 };
 }

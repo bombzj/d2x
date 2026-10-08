@@ -2119,7 +2119,7 @@ bool RealmSession::submit_item(OnlineItemCommand command) {
             std::erase_if(world.items, [](const auto &entry) { return entry.second.action == 11; }); ++world.itemRevision;
             out.u8(0x38); out.u32(command.gamble ? 2 : 1); out.u32(command.npc); out.u32(0); break;
         case OnlineItemAction::Buy:
-            out.u8(0x32); out.u32(command.npc); out.u32(command.item); out.u16(command.gamble ? 2 : 0); out.u16(mode); out.u32(command.amount); break;
+            out.u8(0x32); out.u32(command.npc); out.u32(command.item); out.u16(command.gamble ? 2 : 0); out.u16(uint16_t(mode | (command.multibuy ? 0x8000u : 0))); out.u32(command.amount); break;
         case OnlineItemAction::Sell:
             out.u8(0x33); out.u32(command.npc); out.u32(command.item); out.u16(mode); out.u16(0); out.u32(command.amount); break;
         case OnlineItemAction::Repair: case OnlineItemAction::RepairAll:

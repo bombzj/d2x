@@ -35,6 +35,8 @@ class GameHost {
     std::vector<server::companions::Preparation> pendingSummons(GameHandle) const;
     server::DomainResult<> installSummon(GameHandle,server::companions::Prepared);
     std::vector<server::merchant::Preparation> pendingMerchant(GameHandle) const;
+    std::vector<server::crafting::Preparation> pendingCrafting(GameHandle) const;
+    server::DomainResult<> installCrafting(GameHandle, server::crafting::Prepared);
     server::DomainResult<> installMerchant(GameHandle, server::merchant::Prepared);
     std::optional<PersistentCharacter> shop(PlayerBinding) const;
     std::vector<ItemInstance> groundItems(PlayerBinding) const;
@@ -43,6 +45,7 @@ class GameHost {
     std::vector<server::travel::Portal> visiblePortals(PlayerBinding) const;
     server::DomainResult<> spawnItems(PlayerBinding, server::items::PreparedBatch, std::optional<Vec>);
     std::map<EntityId, server::loot::Preparation> pendingLoot(GameHandle) const;
+    std::set<size_t> usedUniques(GameHandle) const;
     server::DomainResult<> installLoot(GameHandle, EntityId, server::items::PreparedBatch, std::string);
     std::vector<RegionId> visibleAreas(PlayerBinding) const;
     std::optional<server::AreaView> area(GameHandle, RegionId) const;

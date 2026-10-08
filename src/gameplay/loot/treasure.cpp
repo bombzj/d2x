@@ -7,8 +7,16 @@
 #include <stdexcept>
 
 namespace d2x {
+int adjustedNoDrop(int noDrop, int itemWeight, unsigned effectivePlayers) {
+    if(noDrop<=0 || itemWeight<=0 || effectivePlayers<=1) return std::max(0,noDrop);
+    // D2Game ITEMS_DropItemByMonster: repeated multiplication, integer truncation.
+    const double base=double(noDrop)/(double(itemWeight)+noDrop); double ratio=base;
+    for(unsigned i=1;i<std::min(effectivePlayers,8u);++i) ratio*=base;
+    const double inverse=1.0-ratio;
+    return inverse==0.0?0:int(double(itemWeight)/inverse*(1.0-inverse));
+}
 TreasureRoll selectTreasure(std::span<const TreasureClass> classes, std::string_view root, uint64_t seed,
-                           int level, const TreasureVisitor &visitor) {
+                           int level, const TreasureVisitor &visitor, unsigned effectivePlayers) {
     std::map<std::string_view, const TreasureClass *, std::less<>> lookup;
     for (const auto &record : classes)
         if (!lookup.emplace(record.name, &record).second)
@@ -43,7 +51,9 @@ TreasureRoll selectTreasure(std::span<const TreasureClass> classes, std::string_
                 throw std::runtime_error("Negative treasure weight: " + record.name);
             total += weight;
         }
-        const int64_t bound = total + record.noDrop.value_or(0);
+        if(total>std::numeric_limits<int>::max()) throw std::runtime_error("Treasure weight overflow: "+record.name);
+        const int noDrop=adjustedNoDrop(record.noDrop.value_or(0),int(total),effectivePlayers);
+        const int64_t bound = total + noDrop;
         if (bound > std::numeric_limits<int>::max())
             throw std::runtime_error("Treasure weight overflow: " + record.name);
         if (!total || *record.picks == 0)
@@ -62,7 +72,7 @@ TreasureRoll selectTreasure(std::span<const TreasureClass> classes, std::string_
             } else {
                 rollRandom(result.randomState);
                 selected = uint32_t(result.randomState) % uint32_t(bound);
-                selected -= record.noDrop.value_or(0);
+                selected -= noDrop;
                 if (selected < 0) {
                     ++result.noDrops;
                     continue;

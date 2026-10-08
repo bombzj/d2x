@@ -160,8 +160,8 @@ std::optional<std::string> serverDebugCommand(const Json &request, EmbeddedRealm
             if (request.contains("x") || request.contains("y")) position = Vec{float(unsignedValue(request.at("x"), 65535)), float(unsignedValue(request.at("y"), 65535))};
             if (entry->operation == AdminOperation::SpawnMonster && request.contains("level"))
                 throw std::invalid_argument("Monster level comes from the current MPQ area and difficulty; omit level");
-            if (entry->operation != AdminOperation::SpawnItem && (request.contains("quality") || request.contains("durability")))
-                throw std::invalid_argument("quality/durability apply only to item-spawn");
+            if (entry->operation != AdminOperation::SpawnItem && (request.contains("quality") || request.contains("durability") || request.contains("sockets")))
+                throw std::invalid_argument("quality/durability/sockets apply only to item-spawn");
             AdminSpawn spawn{std::move(code), int(level), position};
             if(request.contains("rank") || request.contains("superUnique")) {
                 if(entry->operation!=AdminOperation::SpawnMonster) throw std::invalid_argument("rank/superUnique apply only to monster-spawn");
@@ -176,8 +176,9 @@ std::optional<std::string> serverDebugCommand(const Json &request, EmbeddedRealm
                 if(spawn.superUnique.size()>64 || (spawn.rank==MonsterRank::SuperUnique)!=!spawn.superUnique.empty()) throw std::invalid_argument("superunique requires an exact SuperUniques Name; other ranks must omit it");
             }
             if (request.contains("quality")) spawn.quality = request.at("quality").get<std::string>();
-            if (spawn.quality != "normal" && spawn.quality != "magic") throw std::invalid_argument("quality must be normal or magic");
+            if (spawn.quality != "normal" && spawn.quality != "magic" && spawn.quality!="rare" && spawn.quality!="unique" && spawn.quality!="set" && spawn.quality!="superior" && spawn.quality!="inferior") throw std::invalid_argument("Unknown original generated quality");
             if (request.contains("durability")) spawn.durability = unsigned(unsignedValue(request.at("durability"), 255));
+            if(request.contains("sockets")) spawn.sockets=unsigned(unsignedValue(request.at("sockets"),6));
             args = std::move(spawn); break;
         }
         case AdminArgumentKind::Missile:

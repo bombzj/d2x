@@ -4,6 +4,7 @@
 #include "server/systems/monsters/system.hpp"
 #include "server/systems/transactions/system.hpp"
 #include "server/systems/effects/system.hpp"
+#include "server/systems/inventory/system.hpp"
 #include "server/systems/skills/evaluation.hpp"
 #include "gameplay/combat/geometry.hpp"
 #include "gameplay/combat/accuracy.hpp"
@@ -116,7 +117,8 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
             DomainResult<> result;
             if (targetPlayer) {
                 const ActorContext actor{targetPlayer->player,targetPlayer->actor,targetPlayer->area,area->generation,0,tick.tick};
-                const auto received = ports_.effects.receiveMonster(actor,damage.source,rolled,sourceMonster->rule.hitStates);
+                const auto wear=hit?ports_.inventory.defensiveWear(actor.player,random):std::nullopt;
+                const auto received = ports_.effects.receiveMonster(actor,damage.source,rolled,sourceMonster->rule.hitStates,wear);
                 result = {received.status,received ? std::optional{std::monostate{}} : std::nullopt};
                 if (received && hit) {ports_.effects.triggerMonsterCurse(damage.source,tick.tick);if(*received.value>0) ports_.effects.react(actor,damage.source,CombatEffectEvent::DamagedInMelee);}
             } else {

@@ -67,9 +67,12 @@ class GameInstance {
     auto pendingSummons() const {return systems_.companions.pending();}
     DomainResult<> installSummon(companions::Prepared prepared) {return systems_.companions.install(std::move(prepared));}
     auto pendingMerchant() const { return systems_.merchant.pending(); }
+    auto pendingCrafting() const { return systems_.crafting.pending(); }
+    DomainResult<> installCrafting(crafting::Prepared prepared) { return systems_.crafting.install(std::move(prepared)); }
     DomainResult<> installMerchant(merchant::Prepared prepared) { return systems_.merchant.install(std::move(prepared)); }
     auto shop(PlayerId id) const { return systems_.merchant.shop(id); }
-    const auto &pendingLoot() const { return systems_.loot.read().pending; }
+    auto pendingLoot() const { auto pending=systems_.loot.read().pending; for(auto &[id,value]:pending) { (void)id; value.uniques=systems_.loot.read().uniques; } return pending; }
+    const auto &usedUniques() const {return systems_.loot.read().uniques;}
     DomainResult<> installLoot(EntityId source, items::PreparedBatch batch, std::string deferred) { return systems_.loot.install(source, std::move(batch), std::move(deferred)); }
     const SystemSteps &systemSteps() const { return simulation_.lastSteps(); }
     const std::deque<EventBatch> &pendingEvents() const { return events_.pending(); }

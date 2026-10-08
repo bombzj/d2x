@@ -29,6 +29,7 @@ struct InventoryEdit {
     ResourceRefresh resources = ResourceRefresh::Clamp;
     std::vector<DomainFact> facts{};
     std::vector<DomainFact> publicFacts{};
+    std::optional<PointTarget> knockback{};
 };
 struct CharacterEdit {
     ActorContext actor;
@@ -61,6 +62,7 @@ class System {
   public:
     explicit System(Ports ports) : ports_(ports) {}
     const State &read() const { return state_; }
+    bool hasOutputCapacity(size_t extraFacts = 0) const { return ports_.events.hasCapacity(2 + extraFacts); }
     DomainResult<Plan> prepare(Change);
     DomainResult<> commit(Plan);
     // Same-area skill buffs may debit a caster and update a different player.

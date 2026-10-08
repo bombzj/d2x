@@ -50,7 +50,12 @@ void validate(const D2sItem &item, const ItemDefinition &definition, const Class
     require(bool(item.flags & compact) == flag(content, definition, "compactsave"), "compact flag");
     require(item.quality >= 1 && item.quality <= 8, "quality");
     require(item.level >= 1 && item.level <= 99, "item level");
-    require(item.autoAffix == 0, "automatic affix");
+    if(item.autoAffix) {
+        const auto &automatic=content.tables.at("automagic");
+        require(item.autoAffix<=automatic.rows().size() && item.autoAffix<2048,"automatic affix row");
+        const auto &source=content.tables.at(definition.base.sourceTable);
+        require(automatic.number(item.autoAffix-1,"group")==source.number(definition.base.sourceRow,"auto prefix"),"automatic affix/base group");
+    }
 }
 void validateAddedProperties(const D2sItem &item, const ItemDefinition &definition) {
     require(bool(item.flags & 0x800u) == bool(item.sockets), "socket flag/count mismatch");
@@ -215,7 +220,7 @@ Bytes writeD2sItem(const D2sItem &item, const ClassicData &content) {
         bits.write(unsigned(item.socketedItems.size()), 3); bits.write(item.seed, 32); bits.write(item.level, 7); bits.write(item.quality, 4);
         bits.write(item.hasGraphic, 1);
         if (item.hasGraphic) bits.write(item.graphic, 3);
-        bits.write(0, 1);
+        bits.write(item.autoAffix != 0, 1); if(item.autoAffix) bits.write(item.autoAffix,11);
         switch (item.quality) {
         case 1: case 3: bits.write(item.fileIndex, 3); break;
         case 2:

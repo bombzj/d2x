@@ -1,18 +1,24 @@
 #include "planning.hpp"
 #include <type_traits>
+#include <algorithm>
 
 namespace d2x::server::inventory {
 bool supports(const Request &request) {
+    if(std::holds_alternative<CloseCube>(request.intent)) return true;
     return std::holds_alternative<IdentifyItem>(request.intent) || std::holds_alternative<CloseStorage>(request.intent) || std::holds_alternative<GoldTransaction>(request.intent) || std::holds_alternative<UseItem>(request.intent) || std::holds_alternative<GroundTransfer>(request.intent) || std::holds_alternative<MoveItem>(request.intent) || std::holds_alternative<EquipItem>(request.intent) ||
         std::holds_alternative<MergeStacks>(request.intent) || std::holds_alternative<LoadBook>(request.intent) ||
         std::holds_alternative<SwapItems>(request.intent) || std::holds_alternative<SwitchWeaponSet>(request.intent);
 }
-DomainResult<Edit> plan(const PlayerState &player, const Request &request, const ItemCatalog &catalog, const EquipmentRules &rules, const CharacterRules &characterRules, bool storage) {
+DomainResult<Edit> plan(const PlayerState &player, const Request &request, const ItemCatalog &catalog, const EquipmentRules &rules, const CharacterRules &characterRules, bool storage, bool cube) {
     if (!supports(request)) return {};
     if (player.persistent.player.hp <= 0) return {DomainStatus::InvalidActor, {}};
     if (request.weaponSet && *request.weaponSet != player.persistent.player.weaponSet) return {DomainStatus::Stale, {}};
     detail::Draft draft(player, catalog, rules, characterRules); draft.storage=storage;
-    const auto stored = [&](EntityId id) { return id==player.persistent.containers.backpack || (storage && id==player.persistent.containers.stash); };
+    const auto cubeCarried=std::any_of(player.persistent.inventory.items.begin(),player.persistent.inventory.items.end(),[&](const auto &entry) {
+        const auto *at=std::get_if<ContainerLocation>(&entry.second.location); const auto *def=catalog.find(entry.second.definition);
+        return at && at->container==player.persistent.containers.backpack && def && def->opensCube;
+    });
+    const auto stored = [&](EntityId id) { return id==player.persistent.containers.backpack || (cube && cubeCarried && id==player.persistent.containers.cube) || (storage && id==player.persistent.containers.stash); };
     for (const auto guard : request.equipmentGuards)
         if (!draft.resolve(guard)) return {DomainStatus::Stale, {}};
     const auto &containers = draft.containers();

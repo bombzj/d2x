@@ -61,8 +61,9 @@ DomainResult<Plan> System::prepare(Change change) {
         if (player->persistent.player.hp > 0 || !destination || destination->generation != revival.generation || !destination->definition.town ||
             !destination->definition.collision.walkable(revival.position, playerMovement)) return {DomainStatus::InvalidRequest, {}};
     }
-    if(characterEdit && characterEdit->knockback) {
-        const auto &point=*characterEdit->knockback;const auto *area=ports_.areas.find(point.area);
+    const auto &knockback=inventoryEdit?inventoryEdit->knockback:characterEdit->knockback;
+    if(knockback) {
+        const auto &point=*knockback;const auto *area=ports_.areas.find(point.area);
         if(!area || point.area!=player->area || area->generation!=point.generation || player->persistent.player.hp<=0 || !area->definition.collision.nativeMovementSegment(player->position,point.position,playerMovement)) return {DomainStatus::InvalidRequest,{}};
     }
     const auto equipment = inventoryEdit && inventoryEdit->equipment ? inventoryEdit->equipment : player->rules.equipment;
@@ -173,8 +174,9 @@ DomainResult<> System::commit(Plan plan) {
     if (characterChange && characterChange->revival) {
         player.area = characterChange->revival->area; player.position = characterChange->revival->position; player.route.clear(); player.moving = false;
     }
-    if(characterChange && characterChange->knockback && player.persistent.player.hp>0) {
-        player.position=characterChange->knockback->position;player.route.clear();player.moving=false;player.runningNow=false;++player.locomotionSequence;
+    const auto &knockback=edit?edit->knockback:characterChange->knockback;
+    if(knockback && player.persistent.player.hp>0) {
+        player.position=knockback->position;player.route.clear();player.moving=false;player.runningNow=false;++player.locomotionSequence;
     }
     if (next.inventoryChanged) ++player.inventoryRevision;
     ++player.characterRevision;

@@ -84,6 +84,10 @@ std::optional<unsigned> itemTradePrice(const ClassicData &data, const ItemInstan
     int chargePrice = int(definition->bookChargeCost);
     if (definition->bookCapacity && item.nativeProperties) {
         const auto &books = data.tables.at("books");
+        if(!bookRow) for(size_t row=0;row<books.rows().size();++row) if(books.value(row,"BookSpellCode")==definition->code) {
+            if(bookRow) return {}; // Ambiguous MPQ identity cannot authorize a price.
+            bookRow=unsigned(row);
+        }
         if (!bookRow || *bookRow >= books.rows().size() || books.value(*bookRow, "BookSpellCode") != definition->code) return {};
         const auto price = books.number(*bookRow, "CostPerCharge");
         if (!price || *price < 0) return {};
@@ -149,20 +153,13 @@ std::optional<unsigned> itemTradePrice(const ClassicData &data, const ItemInstan
             priceMultiplier(buyBase, table.number(row, multiply).value_or(0), 1024, buyBase > 65535);
     };
     if (item.identified) {
+        if (!autoAffix) autoAffix = item.nativeAutoAffix;
         if (autoAffix) {
-            size_t row = autoAffix - 1;
-            bool found = false;
-            for (const auto *name : {"magicsuffix", "magicprefix", "automagic"}) {
-                const auto table = data.tables.find(name);
-                if (table == data.tables.end()) return {};
-                if (row < table->second.rows().size()) {
-                    addRow(table->second, row, "add", "multiply");
-                    found = true;
-                    break;
-                }
-                row -= table->second.rows().size();
-            }
-            if (!found) return {};
+            // ITEMS_SerializeItem removes the combined affix table offset.
+            // Both native packets and D2S contain a local AutoMagic index.
+            const auto table = data.tables.find("automagic");
+            if (table == data.tables.end() || autoAffix > table->second.rows().size()) return {};
+            addRow(table->second, autoAffix - 1, "add", "multiply");
         }
         for (const auto &affix : item.affixes) {
             if (affix.row < 0 || size_t(affix.row) >= data.tables.at(affix.prefix ? "magicprefix" : "magicsuffix").rows().size()) return {};

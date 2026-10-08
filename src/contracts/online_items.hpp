@@ -39,7 +39,7 @@ struct OnlineItemCommand {
     uint8_t x{}, y{}, page{}, body{}, beltSlot{};
     uint8_t equipVariant{}; // MPQ adapter selects normal / remove opposite / double swap.
     bool toCursor{}, mercenary{};
-    bool gamble{};
+    bool gamble{}, multibuy{};
     std::optional<OnlineIntentContext> context;
 };
 struct OnlineItemRequest {

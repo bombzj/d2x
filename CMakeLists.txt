@@ -159,7 +159,7 @@ target_sources(d2x_server PRIVATE
   src/server/systems/ai/system.cpp src/server/systems/ai/family_actions.cpp
     src/server/systems/ai/nest_family.cpp
   src/server/systems/skills/system.cpp src/server/systems/skills/monster_actions.cpp src/server/systems/skills/casting.cpp
-    src/server/systems/skills/weapon.cpp src/server/systems/inventory/weapon_cost.cpp
+    src/server/systems/skills/weapon.cpp src/server/systems/inventory/weapon_cost.cpp src/server/systems/inventory/replenishment.cpp
   src/server/systems/missiles/system.cpp
     src/server/systems/missiles/launch.cpp src/server/systems/missiles/monster.cpp
     src/server/systems/missiles/direct.cpp
@@ -278,6 +278,10 @@ if(MINGW)
 endif()
 
 target_sources(d2x_content PRIVATE src/content/items/cube_data.cpp)
+target_sources(d2x_gameplay PRIVATE src/gameplay/items/cube.cpp)
+target_sources(d2x_gameplay PRIVATE src/gameplay/items/staffmods.cpp)
+target_sources(d2x_game_content PRIVATE src/hosting/crafting_content.cpp)
+target_sources(d2x_content PRIVATE src/content/npc/gamble_stock.cpp)
 
 target_sources(d2x_server PRIVATE src/server/systems/inventory/ground.cpp)
 target_sources(d2x_game_content PRIVATE src/hosting/item_content.cpp src/hosting/object_content.cpp src/hosting/npc_content.cpp src/hosting/merchant_content.cpp src/hosting/companion_content.cpp)

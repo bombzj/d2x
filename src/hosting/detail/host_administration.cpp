@@ -3,6 +3,8 @@
 #include "hosting/item_content.hpp"
 #include "hosting/character_content.hpp"
 #include "content/items/item_magic_loot.hpp"
+#include "content/items/item_quality.hpp"
+#include "content/items/item_grades.hpp"
 #include "core/random.hpp"
 
 namespace d2x::hosting {
@@ -114,20 +116,39 @@ AdminResult NativeRealmService::administer(const AdminRequest &request) {
             auto character = *saved; character.inventory.items.clear();
             auto random = initialRandom(uint32_t(host.nextEntity(binding->game)));
             ItemGeneration generation;
-            if (spawn.quality == "magic") {
-                auto rolled = rollAffixItem(*content, *content->items.find(spawn.code), ItemQuality::Magic, spawn.level, random, {});
-                if (!rolled.deferred.empty() || rolled.generation.quality != ItemQuality::Magic)
-                    return {AdminStatus::Unavailable, "MPQ cannot prepare this magic item: " + rolled.deferred};
+            if (spawn.quality == "magic" || spawn.quality=="rare") {
+                const auto quality=spawn.quality=="magic"?ItemQuality::Magic:ItemQuality::Rare;
+                auto rolled = rollAffixItem(*content, *content->items.find(spawn.code), quality, spawn.level, random, {});
+                if (!rolled.deferred.empty() || rolled.generation.quality != quality)
+                    return {AdminStatus::Unavailable, "MPQ cannot prepare this affix item: " + rolled.deferred};
                 generation = std::move(rolled.generation); random = rolled.randomState;
-            } else if (spawn.quality != "normal") return {AdminStatus::InvalidArguments, "Item quality must be normal or magic"};
+            } else if(spawn.quality=="superior" || spawn.quality=="inferior") {
+                auto roll=rollItemGrade(*content,*content->items.find(spawn.code),spawn.quality=="superior"?ItemQuality::Superior:ItemQuality::Inferior,random);
+                if(!roll.deferred.empty()) return {AdminStatus::Unavailable,roll.deferred};
+                generation=std::move(roll.generation);random=roll.randomState;
+            } else if(spawn.quality=="unique" || spawn.quality=="set") {
+                const bool unique=spawn.quality=="unique";
+                const auto plan=planSelectedItem(*content,spawn.code,spawn.level,random,host.usedUniques(binding->game),{},unique?DropQuality::Unique:DropQuality::Set);
+                if(!plan.deferred.empty() || plan.drops.size()!=1 || plan.drops.front().generation.quality!=(unique?ItemQuality::Unique:ItemQuality::Set)) return {AdminStatus::Unavailable,"No eligible original special item: "+plan.deferred};
+                generation=plan.drops.front().generation;random=plan.randomState;
+            } else if (spawn.quality != "normal") return {AdminStatus::InvalidArguments, "Unknown generated quality"};
             auto item = prepareItem(*content, {spawn.code, 1, {}, unsigned(spawn.level), std::move(generation)}, random, character.difficulty);
             if (spawn.durability) {
                 if (!item.durability || *spawn.durability > item.durability) return {AdminStatus::InvalidArguments, "Durability requires a durable item and cannot exceed its prepared MPQ maximum"};
                 item.durability = *spawn.durability;
             }
+            if(spawn.sockets) {
+                const auto &base=*content->items.find(spawn.code);
+                unsigned cap=unsigned(std::max(0,std::min({base.base.sockets.value_or(0),base.base.socketsByLevel[item.level<=25?0:item.level<=40?1:2],base.width*base.height,6})));
+                if(item.quality==ItemQuality::Magic) cap=std::min(cap,3u);
+                else if(item.quality==ItemQuality::Rare || item.quality==ItemQuality::Unique || item.quality==ItemQuality::Set || item.quality==ItemQuality::Crafted) cap=std::min(cap,1u);
+                if(*spawn.sockets>cap || item.sockets) return {AdminStatus::InvalidArguments,"Sockets exceed the original base/level/quality limit or item already has sockets"};
+                item.sockets=*spawn.sockets;if(item.sockets) item.nativeFlags|=0x800u;
+            }
             item.id = EntityId{1}; item.location = ContainerLocation{character.containers.backpack, {}};
             character.inventory.items.emplace(item.id, item);
             server::items::PreparedBatch batch{{item}, prepareEquipmentRules(*content, character), {}};
+            if(item.quality==ItemQuality::Unique && item.specialRow>=0 && !content->tables.at("uniqueitems").number(size_t(item.specialRow),"nolimit").value_or(0)) batch.limitedUniques.insert(size_t(item.specialRow));
             const auto view = host.read(*binding);
             const auto origin = shared.terrain.at(binding->game).at(view->actor.region).origin;
             const auto result = host.spawnItems(*binding, std::move(batch), spawn.position ? std::optional<Vec>{*spawn.position - origin} : std::nullopt);

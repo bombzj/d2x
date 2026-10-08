@@ -98,7 +98,7 @@ struct ClassicData {
     std::vector<std::string> armorTypes;
     std::vector<SpecialItemRecord> uniqueItems, setItems;
     std::vector<EquipmentSetPiece> equipmentSets; // Prepared once from setItems at load.
-    std::vector<MagicAffixRecord> magicPrefixes, magicSuffixes;
+    std::vector<MagicAffixRecord> magicPrefixes, magicSuffixes, autoMagic;
     std::vector<RareNameRecord> rarePrefixes, rareSuffixes;
     std::vector<PropertyDefinition> properties;
     std::vector<ItemStatDefinition> itemStats;

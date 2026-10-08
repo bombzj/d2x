@@ -50,7 +50,7 @@ DomainResult<float> System::receive(const ActorContext &actor, int64_t raw, Dama
     MonsterHit hit; hit.channels[size_t(type)] = raw;
     return receiveMonster(actor, {}, hit, {});
 }
-DomainResult<float> System::receiveMonster(const ActorContext &actor, EntityId source, const MonsterHit &hit, const MonsterHitStates &definitions) {
+DomainResult<float> System::receiveMonster(const ActorContext &actor, EntityId source, const MonsterHit &hit, const MonsterHitStates &definitions,std::optional<ItemHandle> wear) {
     const auto *p = ports_.players.find(actor.player);
     if (!p || !p->entered || p->actor != actor.actor || p->area != actor.area || p->persistent.player.hp <= 0 ||
         hit.mana < 0 || hit.stamina < 0 || std::any_of(hit.channels.begin(), hit.channels.end(), [](int64_t n) { return n < 0; }))
@@ -125,7 +125,18 @@ DomainResult<float> System::receiveMonster(const ActorContext &actor, EntityId s
             for(auto &fact:edit.publicFacts) if(auto *damage=std::get_if<HitFact>(&fact)) damage->knockback=destination;
         }
     }
-    auto plan = ports_.transactions.prepare(std::move(edit)); if (!plan) return {plan.status,{}};
+    transactions::Change change=std::move(edit);
+    if(wear) {
+        const auto &resource=std::get<transactions::CharacterEdit>(change);
+        transactions::InventoryEdit inventory{actor,p->inventoryRevision,p->characterRevision,p->persistent.inventory,{},p->persistent.player.weaponSet};
+        const auto found=inventory.inventory.items.find(wear->id);
+        if(found==inventory.inventory.items.end() || found->second.revision!=wear->revision || found->second.revision==UINT64_MAX || !found->second.durability) return {DomainStatus::Stale,{}};
+        auto &item=found->second;--item.durability;++item.revision;
+        inventory.changes.push_back({item.id,item.revision,ItemChangeKind::DurabilityChanged,item.location,item.location,item.quantity});
+        inventory.character=resource.player;inventory.transient=resource.transient;inventory.publicFacts=resource.publicFacts;inventory.knockback=resource.knockback;
+        change=std::move(inventory);
+    }
+    auto plan = ports_.transactions.prepare(std::move(change)); if (!plan) return {plan.status,{}};
     auto result = ports_.transactions.commit(std::move(*plan.value)); if (result) {
         state_.players.swap(next.players);
         if(hit.knockback && dealt>0) ports_.skills.cancel(actor.player,actor.actor);

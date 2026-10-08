@@ -1,6 +1,6 @@
 # 腰带与消耗品
 
-容量、布局、类型、书页和原图来自当前MPQ Belts／Inventory／Misc／Books／CharStats。原服拥有自动入带、补位、消耗、回复、状态与持续时间；旧本地药剂队列／资源执行器已删除。
+容量、布局、类型、书页和原图来自当前MPQ Belts／Inventory／Misc／Books／CharStats。连接的服务端拥有自动入带、补位、消耗、回复、状态与持续时间；自研inventory／effects沿同一原协议执行，旧客户端本地执行器已删除。Shift商店购买按原multibuy位提交，服务器决定腰带／书本补满和费用。
 
 ## 操作
 

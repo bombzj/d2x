@@ -21,6 +21,7 @@ DomainResult<EntityId> System::admit(const Admission &request) {
     for (const auto &[id, actor] : state_.actors)
         if (actor.area == request.area && actor.identity.spawnKey == request.identity.spawnKey) return {DomainStatus::Applied, id};
     Actor actor;
+    actor.admittedPlayerCount=unsigned(std::clamp(std::count_if(ports_.players.all().begin(),ports_.players.all().end(),[](const auto &v){return v.second.entered;}),std::ptrdiff_t(1),std::ptrdiff_t(8)));
     actor.id = ports_.ids.allocate(); actor.identity = request.identity; actor.implementation = request.implementation;
     actor.area = request.area; actor.position = actor.home = request.position; actor.skillPositions=request.skillPositions; actor.revision = 1; actor.rule = rule;
     actor.life = actor.maximumLife = (int64_t(rule.minimumLife) + limitedRandom(ports_.random, uint32_t(rule.maximumLife - rule.minimumLife + 1))) * 256;

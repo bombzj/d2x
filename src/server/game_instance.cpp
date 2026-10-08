@@ -210,7 +210,10 @@ std::vector<ItemInstance> GameInstance::groundItems(PlayerId id) const {
 DomainResult<> GameInstance::spawnItems(PlayerId id, items::PreparedBatch batch, std::optional<Vec> position) {
     const auto *player = players_.find(id);
     if (!player || !player->entered || player->persistent.player.hp <= 0) return {DomainStatus::InvalidActor, {}};
-    return systems_.items.install(std::move(batch), {player->area, position.value_or(player->position)});
+    auto uniques=systems_.loot.prepareUniques(batch.limitedUniques);
+    const auto result=systems_.items.install(std::move(batch), {player->area, position.value_or(player->position)});
+    if(result) systems_.loot.commitUniques(std::move(uniques));
+    return result;
 }
 std::vector<CorpseView> GameInstance::visibleCorpses(PlayerId id) const {
     std::vector<CorpseView> result; const auto visible = visibleAreas(id);

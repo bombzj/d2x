@@ -301,7 +301,7 @@ struct RemoteUiClients::Impl {
                 else if constexpr (std::is_same_v<T, IdentifyWithCain>) request.action = OnlineItemAction::IdentifyAll;
                 else if constexpr (std::is_same_v<T, BuyVendorItem>) {
                     request.action = OnlineItemAction::Buy; request.item = v.slot;
-                    request.gamble = v.gamble;
+                    request.gamble = v.gamble;request.multibuy=v.multibuy;
                 } else if constexpr (std::is_same_v<T, OpenGamble>) {
                     request.action = OnlineItemAction::TradeOpen; request.gamble = true;
                 } else if constexpr (std::is_same_v<T, SellVendorItem>) {
@@ -751,6 +751,9 @@ struct RemoteUiClients::Impl {
             item.quality=itemQualityFromNative(di.quality, true).value(); item.identified=di.identified; item.level=di.level; item.defense=int(di.defense.value_or(0));
             item.nativeProperties=true; item.nativeFlags=native.flags; item.nativeMaxDurability=di.maxDurability.value_or(0);
             item.nativeFormat=di.format; item.nativeGraphic=di.graphic; item.nativeHasGraphic=di.hasGraphic; item.personalizedName=di.personalizedName;
+            item.nativeAutoAffix=di.autoAffix;
+            if(di.autoAffix) for(const auto &record:data.autoMagic) if(record.row==unsigned(di.autoAffix-1))
+                item.requiredLevel=std::max(item.requiredLevel,record.requiredLevel);
             item.sockets=di.sockets; item.runewordRow=-1;
             for (const auto &word:data.runewords) if (word.stringId==di.runeword) item.runewordRow=word.row;
             // Unidentified native special items omit their file index. Zero is

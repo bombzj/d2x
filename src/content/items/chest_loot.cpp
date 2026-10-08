@@ -16,7 +16,7 @@ bool magical(ItemQuality quality) {
 LootPlan planChestLoot(const ClassicData &data, const ObjectTreasureEntry &entry,
                       const ChestState &chest, int objectClass, uint64_t &objectSeed,
                       const std::set<size_t> &usedUniques, std::string_view characterClass,
-                      int magicFind, int goldFind, int difficulty) {
+                      int magicFind, int goldFind, int difficulty, unsigned effectivePlayers) {
     LootPlan plan;
     plan.randomState = chest.lootSeed;
     plan.deferred = entry.deferred;
@@ -31,7 +31,7 @@ LootPlan planChestLoot(const ClassicData &data, const ObjectTreasureEntry &entry
     // independent calls. Never cap their combined output at six or duplicate one roll.
     auto drop = [&](std::optional<DropQuality> quality = std::nullopt) {
         auto batch = planItemLoot(data, ratios->second, entry.treasureClass, entry.itemLevel,
-                                 0, plan.randomState, uniques, characterClass, magicFind, goldFind, quality);
+                                 0, plan.randomState, uniques, characterClass, magicFind, goldFind, quality, effectivePlayers);
         plan.randomState = batch.randomState;
         plan.noDrops += batch.noDrops;
         if (!batch.deferred.empty()) plan.deferred = batch.deferred;

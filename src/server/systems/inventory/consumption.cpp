@@ -14,6 +14,7 @@ DomainResult<> System::consume(const ActorContext &actor, const UseItem &request
     const auto *location = std::get_if<ContainerLocation>(&item->location);
     const auto container = source == Source::Belt ? draft.containers().belt : draft.containers().backpack;
     if (!location || location->container != container || !draft.owned(*location)) return {DomainStatus::InvalidRequest, {}};
+    if(const auto *definition=ports_.definitions->find(item->definition);definition && definition->opensCube) return openCube(actor,request.item);
     if(const auto rule=player->rules.character->itemSkills.find(item->definition);rule!=player->rules.character->itemSkills.end())
         return rule->second.action==ItemSkillAction::Identify?beginIdentify(actor,request.item):ports_.travel.createPortal(actor,request.item);
     const auto definition = player->rules.potions->find(item->definition);

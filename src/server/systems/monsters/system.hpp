@@ -33,6 +33,7 @@ struct Actor {
     std::optional<WeaponDamage> petWeapon;
     std::shared_ptr<const PersistentCharacter> equipment;
     int64_t life{}, maximumLife{};
+    unsigned admittedPlayerCount = 1;
     std::deque<Vec> route;
     uint64_t busyUntil{}, deathTick{}, deathOccurrence{};
     EntityId killer, movementTarget;

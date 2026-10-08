@@ -46,12 +46,12 @@ RequestResult TakeBeltItem(GameplayContext &context, Reader &in) { return take(c
 RequestResult PlaceItem(GameplayContext &context, Reader &in) {
     const auto id = in.u32(), x = in.u32(), y = in.u32(), page = in.u32(); in.finish();
     // Authorization is revalidated in the inventory domain.
-    if (page != 0 && page != 4) return {RequestStatus::NotImplemented};
+    if (page != 0 && page != 3 && page != 4) return {RequestStatus::Rejected};
     if (x > 15 || y > 15) return reject();
     const auto state = context.host.inventoryInput(context.player);
     const auto *value = state ? item(*state, id) : nullptr;
     if (!value) return reject();
-    return submitGameplay(context, Request{MoveItem{value->handle, ContainerLocation{page == 4 ? state->containers.stash : state->containers.backpack, {int(x), int(y)}}}});
+    return submitGameplay(context, Request{MoveItem{value->handle, ContainerLocation{page == 4 ? state->containers.stash : page == 3 ? state->containers.cube : state->containers.backpack, {int(x), int(y)}}}});
 }
 RequestResult EquipItem(GameplayContext &context, Reader &in) { return equip(context, in, EquipmentMode::Insert); }
 RequestResult EquipItemIndirect(GameplayContext &context, Reader &in) { return equip(context, in, EquipmentMode::Indirect); }
@@ -72,7 +72,7 @@ RequestResult SwapItem(GameplayContext &context, Reader &in) {
     const auto state = context.host.inventoryInput(context.player);
     const auto *a = state ? item(*state, first) : nullptr, *b = state ? item(*state, second) : nullptr;
     if (!a || !b) return reject();
-    if (b->location.container != state->containers.backpack && b->location.container != state->containers.stash) return {RequestStatus::NotImplemented};
+    if (b->location.container != state->containers.backpack && b->location.container != state->containers.stash && b->location.container != state->containers.cube) return {RequestStatus::Rejected};
     return submitGameplay(context, Request{SwapItems{a->handle, b->handle,
         ContainerLocation{b->location.container, {int(x), int(y)}}}});
 }

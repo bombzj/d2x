@@ -83,6 +83,7 @@ void importD2sItem(CharacterSaveData &snapshot, const D2sItem &source, const Cla
     item.nativeFormat = source.format;
     item.nativeGraphic = source.graphic;
     item.nativeHasGraphic = source.hasGraphic;
+    item.nativeAutoAffix = source.autoAffix;
     item.nativeMaxDurability = source.maxDurability;
     item.nativeQuestDifficulty = source.questDifficulty;
     for (const auto &stat : source.runewordStats) {
@@ -135,8 +136,9 @@ void importD2sItem(CharacterSaveData &snapshot, const D2sItem &source, const Cla
         }), "unknown rare name rows");
     }
     updateCubeRequiredLevel(content, item);
-    require(source.durability <= source.maxDurability, "durability exceeds saved maximum");
+    auto known=item;known.identified=true;
     if (socketHost) {
+        require(source.durability <= itemMaximumDurability(content,known,resolveOwnItemStats(content,known,snapshot.player.level)), "socket durability exceeds total maximum");
         require(source.mode == 6 && definition->equipment.isType("sock") && source.socketedItems.empty() &&
             source.x == socketIndex && source.y == 0 && item.identified && item.quantity == 1, "socket child identity/order");
         item.location = SocketLocation{socketHost, socketIndex};
@@ -192,6 +194,8 @@ void importD2sItem(CharacterSaveData &snapshot, const D2sItem &source, const Cla
         require(source.runewordId == unsigned(word->stringId), "runeword original TBL identity mismatch");
         host.runewordRow = word->row;
     }
+    known=host;known.identified=true;
+    require(source.durability <= itemMaximumDurability(content,known,resolveItemStats(content,known,snapshot.player.level)), "durability exceeds total maximum");
 }
 D2sItem exportD2sItem(const CharacterSaveData &snapshot, const ItemInstance &item, const ClassicData &content) {
     const auto *definition = content.items.find(item.definition);
@@ -206,6 +210,7 @@ D2sItem exportD2sItem(const CharacterSaveData &snapshot, const ItemInstance &ite
     output.format = item.nativeFormat;
     output.hasGraphic = item.nativeHasGraphic;
     output.graphic = item.nativeGraphic;
+    output.autoAffix = item.nativeAutoAffix;
     output.questDifficulty = item.nativeQuestDifficulty;
     output.sockets = item.sockets;
     if (item.runewordRow >= 0) {
@@ -262,11 +267,10 @@ D2sItem exportD2sItem(const CharacterSaveData &snapshot, const ItemInstance &ite
         for (const auto &[key, value] : stats) output.stats.push_back({uint16_t(key.first), value, key.second});
         int base = int(definition->maxDurability);
         if (item.quality == ItemQuality::Inferior && base) base = std::max(1, base / 3);
-        const auto total = resolveItemStats(content, identified, snapshot.player.level);
-        auto bonus = [&](const char *effect) {
-            int value = 0; for (const auto &stat : total) if (stat.effect == effect) value += stat.value; return value;
-        };
-        output.maxDurability = base ? unsigned(std::clamp<int64_t>(base * (100 + bonus("item_maxdurability_percent")) / 100 + bonus("maxdurability"), 1, 255)) : 0;
+        const bool indestructible = std::any_of(resolved.begin(), resolved.end(), [](const auto &stat) {
+            return stat.name == "item_indesctructible" && stat.value;
+        });
+        output.maxDurability = unsigned(base && !indestructible && (item.nativeFlags&0x400000u)?base/2+1:base);
         if (item.quality == ItemQuality::Set)
             for (const auto &record : content.setItems) {
                 if (int(record.row) != item.specialRow) continue;

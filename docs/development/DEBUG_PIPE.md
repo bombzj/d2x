@@ -39,7 +39,7 @@ Single Player的online-status仍只读原协议OnlineView；server-status单独�
 | `grant-experience` | amount为正的有符号整数；宿主progression授予、封顶／升级／余点事务，原包更新同一客户端；暂停时可用，原服拒绝 |
 | `grant-gold` | amount有符号整数；通过人物事务授予金币，复验钱包上限 |
 | `monster-spawn` | code为当前MPQ monstats身份，x／y为当前区域全局subtile。复用自然人口的怪物准入／数值／动作准备，再交population／monsters；返回entityId。rank默认normal，可选champion／unique／boss／superunique；superunique须提供当前SuperUniques精确身份superUnique，且code必须匹配原Class。仆从只由自然领队人口生成，不提供无领队调试替身。不接受level覆盖，等级随区域／难度，不支持身份、城镇、碰撞和容量明确拒绝 |
-| `item-spawn` | code、level可选及世界x/y；quality默认normal，可选magic按当前MPQ滚词缀；durability可显式指定0..原物品最大耐久。仅item-spawn接受这两项，缺生成规则明确拒绝；走统一地面安装入口 |
+| `item-spawn` | code、level可选及世界x/y；quality默认normal，可选magic／rare／unique／set／superior／inferior按当前MPQ生成，sockets可选0..6并校验原上限；durability可显式指定0..实际最大耐久。仅item-spawn接受这些项，缺生成规则明确拒绝；走统一地面安装入口 |
 | `player-damage` | amount为非负整数生命点，转换为原固定点后走人物伤害事务及正常死亡结算 |
 | `grant-shrine`、`grant-hireling` | code，level可选；类型化stub |
 | `monster-damage`、`monster-kill` | id为当前区域存活怪物；damage另需amount正整数生命点，kill扣除其剩余生命。走monsters正常伤害事实，后续固定步执行死亡、经验、掉落及任务统计，不直接改任务或客户端 |
@@ -155,7 +155,7 @@ scene.players 按实际已指派玩家返回 id／name／classId、local、visib
 | gold-deposit / gold-withdraw | amount为正整数；已确认箱子、空Cursor；复验已知钱包／箱子余额，最终上限和金额由原服决定 |
 | gold-drop | amount为正整数；空Cursor，服务器决定金币落点 |
 | trade-open | 无itemId；当前NPC交谈且空Cursor，gamble默认false；true要求原赌博NPC，发送0x38 action=2，库存由原服生成 |
-| buy | 当前货架itemId；gamble与当前货架及原物品标志一致；普通／赌博单件购买，发送前共用报价并绑定itemRevision，原服决定价格／安置；多买尚未接入 |
+| buy | 当前货架itemId；gamble与当前货架及原物品标志一致；普通／赌博购买，multibuy默认false；true发送原mode高位，赌博禁用；发送前共用报价并绑定itemRevision，服务器决定价格／安置 |
 | sell | 本人背包、装备或Cursor itemId；当前货架／交谈，Cursor只允许待售原件，非任务物品；发送前共用报价并绑定itemRevision，原服定价 |
 | repair | 本人可访问物品或装备itemId；当前原铁匠货架／交谈，最终资格由原服决定 |
 | repair-all | 无itemId；当前原铁匠货架／交谈及空Cursor |
