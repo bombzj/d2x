@@ -59,8 +59,8 @@ void monsterAction(OnlineWorldView &w, OnlineUnit &u, uint8_t action) {
     case 0: case 1: u.mode = 2; break;
     case 23: case 24: u.mode = 15; break;
     case 7: u.mode = 1; break;
-    case 8: u.mode = 0; u.lifePercent = 0; u.lifeCarriesRankFlag = false; break;
-    case 9: u.mode = 12; u.lifePercent = 0; u.lifeCarriesRankFlag = false; break;
+    case 8: u.mode = 0; u.lifePercent = 0; u.lifeCarriesTriggerFlag = false; break;
+    case 9: u.mode = 12; u.lifePercent = 0; u.lifeCarriesTriggerFlag = false; break;
     case 6: u.mode = 3; break;
     case 10: case 11: u.mode = 4; break;
     case 16: case 17: u.mode = 5; break;
@@ -410,7 +410,7 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
     }
     case 0x0C: {
         auto &u = unit(w, key(r));
-        const auto flags = r.u8(); u.hitClass = r.u8(); u.lifePercent = r.u8(); u.lifeCarriesRankFlag = u.key.type == 1; r.finish();
+        const auto flags = r.u8(); u.hitClass = r.u8(); u.lifePercent = r.u8(); u.lifeCarriesTriggerFlag = u.key.type == 1; r.finish();
         u.hitRevision = w.revision;
         OnlineCombatEvent event; event.packet = p.id; event.kind = OnlineCombatEvent::Kind::Hit;
         event.source = u.key; event.hitClass = u.hitClass; event.life = u.lifePercent; event.flags = flags;
@@ -430,7 +430,7 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
         u.nativeMode = false; u.actionSkill.reset(); u.actionSkillLevel.reset();
         position(v, u, point(r));
         u.hitClass = r.u8();
-        u.lifePercent = r.u8(); u.lifeCarriesRankFlag = false;
+        u.lifePercent = r.u8(); u.lifeCarriesTriggerFlag = false;
         u.actionRevision = w.revision; u.actionReceivedMilliseconds = receivedMilliseconds();
         r.finish();
         u.destination.reset();
@@ -931,7 +931,7 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
         u.pathSteps = r.u8(); u.hitClass = r.u8(); u.pathType = r.u8();
         u.velocityPercent = int16_t(r.u16()); u.pathDistance = r.u8(); r.finish();
         // Walking overloads send maximum path distance here, not HP. Knockback sends HP.
-        if (u.mode == 13) { u.lifePercent = u.pathDistance; u.lifeCarriesRankFlag = false; }
+        if (u.mode == 13) { u.lifePercent = u.pathDistance; u.lifeCarriesTriggerFlag = false; }
         break;
     }
     case 0x69:
@@ -948,6 +948,13 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
                 position(v, u, coordinates); u.destination.reset();
             } else u.destination = coordinates;
             event.direction = r.u8(); event.hitClass = r.u8();
+            if(u.wireAction==6) {
+                // Retail D2Client RVA 4E095: GH's byte is HP plus the
+                // lightning-ready flag, not a facing direction.
+                u.lifePercent=*event.direction;u.lifeCarriesTriggerFlag=true;
+                event.life=u.lifePercent;event.direction.reset();
+                position(v,u,coordinates);u.destination.reset();
+            }
         } else {
             u.destinationUnit = key(r); u.destination.reset(); event.target = u.destinationUnit;
             event.direction = r.u8();
@@ -976,7 +983,7 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
     case 0x6D: {
         auto &u = unit(w, {1, r.u32()});
         position(v, u, point(r));
-        u.lifePercent = r.u8(); u.lifeCarriesRankFlag = false;
+        u.lifePercent = r.u8(); u.lifeCarriesTriggerFlag = false;
         r.finish();
         u.mode = 1; u.wireAction = 7; u.actionRevision = w.revision; u.actionReceivedMilliseconds = receivedMilliseconds();
         u.actionSkill.reset(); u.actionSkillLevel.reset(); u.direction.reset();
@@ -1087,7 +1094,7 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
         u.classId = r.u16();
         u.equipmentObserved=true;
         position(v, u, point(r));
-        u.lifePercent = r.u8(); u.lifeCarriesRankFlag = false;
+        u.lifePercent = r.u8(); u.lifeCarriesTriggerFlag = false;
         if (r.u8() != p.body.size() + 1)
             throw ProtocolError("Invalid NPC assignment size");
         const auto tail = r.take(r.remaining());

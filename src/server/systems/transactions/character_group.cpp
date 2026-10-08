@@ -9,7 +9,7 @@ DomainResult<> System::commitCharacters(std::vector<Plan> plans) {
     uint64_t last=state_.lastCommitted;
     for(const auto &plan:plans) {
         const auto *e=std::get_if<CharacterEdit>(&plan.change);
-        if(!e || !plan.player || plan.player->inventoryChanged || e->revival || e->waypoints || e->experienceAward || !actors.insert(e->actor.player).second)
+        if(!e || !plan.player || plan.player->inventoryChanged || e->revival || e->knockback || e->waypoints || e->experienceAward || !actors.insert(e->actor.player).second)
             return {DomainStatus::InvalidRequest,{}};
         const auto *p=ports_.players.find(e->actor.player);
         if(!p || !p->entered || p->persistent.player.hp<=0 || p->actor!=e->actor.actor || p->area!=e->actor.area) return {DomainStatus::InvalidActor,{}};

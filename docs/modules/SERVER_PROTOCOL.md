@@ -90,3 +90,7 @@ save、load、cancel-load、step、grant-experience／grant-gold、player-damage
 ## 女巫原包扩展
 
 原4C／4D统一主动技能动作、Inferno转向和Hydra技能337；73只允许MPQ ClientSend弹体，静止弹体FirstX／Y为0；ClientSend是视野同步资格，并非强制创建广播。原服已核对的Blaze／FireWall／Meteor／Blizzard及其子火段常规创建由动作／状态重建，不重复发送73；本人普通动作省略4C／4D，其他可见客户端仍发送（原强制本人标志尚无执行入口）；A3编码ThunderStorm目标瞬时事件；A7／A9编码怪物／友方单位状态，11与2C编码原叠层／u16音效。67/action20使用原击退来源点、三格距离及pathType11。不存在自研专用客户端技能消息。具体执行和表现范围见[女巫技能](../gameplay/skills/SORCERESS.md)。
+
+当前怪物投影沿原AC的五位champion／unique／superunique／minion／ghostly、固定hcIdx、词缀终止和nameSeed；没有新增自研阶级包。人物MonProp击退使用原0F/action20（KB），命中／生命仍为0D/action19，隐藏Kick由原技能动作呈现。状态值经原ItemStatCost ID及A7／A9投影，敌对弹体仍尊重ClientSend／NoMultiShot／NoUniqueMod／NextHit。具体实现及未认证边界见[怪物模块](MONSTERS.md)。
+
+怪物0C／19与69/action6生命最高位为电强化发射资格；69 GH方向槽为生命字节，阶级只由AC传输。ClientSend为空的194／195不强发73，公开触发位由effects／monsters投影，视觉由共用原包回调驱动。依据与分层见[怪物模块](MONSTERS.md)。

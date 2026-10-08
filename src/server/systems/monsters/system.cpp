@@ -22,7 +22,7 @@ DomainResult<EntityId> System::admit(const Admission &request) {
         if (actor.area == request.area && actor.identity.spawnKey == request.identity.spawnKey) return {DomainStatus::Applied, id};
     Actor actor;
     actor.id = ports_.ids.allocate(); actor.identity = request.identity; actor.implementation = request.implementation;
-    actor.area = request.area; actor.position = request.position; actor.revision = 1; actor.rule = rule;
+    actor.area = request.area; actor.position = actor.home = request.position; actor.skillPositions=request.skillPositions; actor.revision = 1; actor.rule = rule;
     actor.life = actor.maximumLife = (int64_t(rule.minimumLife) + limitedRandom(ports_.random, uint32_t(rule.maximumLife - rule.minimumLife + 1))) * 256;
     actor.combatRandom = childRandom(ports_.random);
     // MONSTERREGION::sub_6FC67FA0 lazily adds out-of-pool identities when
@@ -96,13 +96,13 @@ DomainResult<> System::damage(EntityId id, EntityId source, int64_t amount, uint
     if(!life) poisoned.reset();
     auto random=actor.combatRandom;
     const bool recovery=life && monsterHitRecovery(amount,actor.maximumLife,hitClass,frozen>tick,poisonOnly,actor.rule.hitRecoveryTicks>0,random);
-    std::vector<DomainFact> facts{HitFact{id, 1, actor.area, percent, !life, actor.position,hitClass,uint8_t(recovery?3:0)}};
+    std::vector<DomainFact> facts{HitFact{id, 1, actor.area, percent, !life, actor.position,hitClass,uint8_t(recovery?3:0),{},actor.lightningReady}};
     if (bool(chilled) != bool(actor.chilledUntil)) facts.emplace_back(StateFact{id, 1, actor.area, actor.rule.coldState, bool(chilled)});
     if (bool(frozen) != bool(actor.frozenUntil)) facts.emplace_back(StateFact{id, 1, actor.area, actor.rule.frozenState, bool(frozen)});
     if(bool(poisoned)!=bool(actor.poison)) facts.emplace_back(StateFact{id,1,actor.area,poisoned?poisoned->damage.state:actor.poison->damage.state,bool(poisoned)});
     auto event = ports_.events.publish({0, tick, {}, {AudienceKind::Area, {}, actor.area}, std::move(facts)});
     if (!event) return {event.status, {}};
-    actor.life = life; ++actor.revision;
+    actor.life = life; ++actor.revision; if(amount>0 && !poisonOnly) ++actor.damageOccurrence;
     actor.combatRandom=random;
     if (recovery) ++actor.hitOccurrence;
     actor.chilledUntil = chilled; actor.frozenUntil = frozen;
@@ -115,6 +115,13 @@ DomainResult<> System::damage(EntityId id, EntityId source, int64_t amount, uint
         actor.corpseUnavailable=corpseUnavailable;
         actor.deathTick = tick; actor.deathOccurrence = *event.value; actor.killer = source;
         actor.route.clear(); actor.moving = false; actor.running = false; actor.movementTarget = {}; actor.busyUntil = tick + uint64_t(actor.rule.deathTicks);
+        if(actor.rule.deathSweep) {
+            const auto &sweep=*actor.rule.deathSweep;auto random=actor.combatRandom;
+            const auto &activation=ports_.areas.at(actor.area).definition.activation;
+            for(const auto &[key,other]:state_.actors) if(key!=id && !other.owner && other.area==actor.area && other.life>0 && (!sweep.undeadOnly || other.rule.undead) && (other.position-actor.position).length()<=sweep.radius && activation.nearby(actor.position,other.position))
+                state_.deathCascades.try_emplace(key,State::DeathCascade{id,tick+uint64_t(sweep.minimumDelay)+limitedRandom(random,unsigned(sweep.maximumDelay-sweep.minimumDelay))});
+            actor.combatRandom=random;
+        }
     }
     return {DomainStatus::Applied, std::monostate{}};
 }
@@ -142,6 +149,15 @@ DomainResult<> System::remove(EntityId id) {
 }
 StepStatus System::step(TickContext tick, FrameFacts &) {
     bool blocked = false;
+    for(auto it=state_.deathCascades.begin();it!=state_.deathCascades.end();) {
+        if(it->second.due>tick.tick) {++it;continue;}
+        const auto *target=find(it->first);
+        if(target && target->life>0) {
+            const auto result=damage(it->first,{},target->life,tick.tick);
+            if(result.status==DomainStatus::Capacity) {blocked=true;++it;continue;}
+        }
+        it=state_.deathCascades.erase(it);
+    }
     for (auto &[id, actor] : state_.actors) {
         (void)id; actor.moving = false;
         if (!actor.owner && actor.life > 0 && !actor.poison && actor.rule.damageRegen > 0 && actor.life < actor.maximumLife) {
@@ -200,7 +216,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
             return meleeDistance(position,actor.rule.size,target->first,target->second)<=actor.stopDistance && grid.segment(position,target->first);
         };
         if (arrived(actor.position)) { stop(id); continue; }
-        const int speed = std::max(25,actor.velocityPercent+(actor.chilledUntil>tick.tick?actor.rule.coldEffect:0)+(actor.slowed?actor.slowed->percent:0));
+        const int speed = std::max(25,actor.velocityPercent+actor.effectVelocity+(actor.rule.enchantment?actor.rule.enchantment->velocityPercent:0)+(actor.chilledUntil>tick.tick?actor.rule.coldEffect:0)+(actor.slowed?actor.slowed->percent:0));
         float remaining = monsterMovementSpeed(actor.rule.nativeVelocity, speed) * TickContext::seconds;
         while (!actor.route.empty() && remaining > 0) {
             const Vec delta = actor.route.front() - actor.position;

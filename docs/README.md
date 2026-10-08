@@ -26,7 +26,7 @@
 | [人物](modules/CHARACTER.md) | 原属性／技能、纯提示投影、请求／保存值边界 |
 | [库存](modules/INVENTORY.md) | 原物品、面板／预览、异步组合与服务限制 |
 | [地图](modules/MAP.md) | 原房间／地形、碰撞、地图UI与本局探索 |
-| [怪物](modules/MONSTERS.md) | 真实身份、原动作／状态、公共动画／声音和工具人口资料 |
+| [怪物](modules/MONSTERS.md) | 第一幕权威AI／精英／首领、原协议表现、公共函数与人口准备 |
 | [NPC／任务](modules/NPC_QUEST.md) | 本人任务／对白投影、服务和UI生命周期 |
 | [存档／偏好](modules/SAVES.md) | 独立D2S v96编码／拒绝、原服保存、客户端偏好／凭据 |
 

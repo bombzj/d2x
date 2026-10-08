@@ -2,16 +2,34 @@
 #include "server/area_store.hpp"
 #include "server/player_store.hpp"
 #include "gameplay/monsters/movement_math.hpp"
+#include "gameplay/combat/geometry.hpp"
+#include "gameplay/combat/life.hpp"
 #include "core/random.hpp"
 #include <algorithm>
 namespace d2x::server::monsters {
+DomainResult<> System::lightningEmission(EntityId id,bool emitted,uint64_t tick) {
+    auto it=state_.actors.find(id);if(it==state_.actors.end()) return {DomainStatus::InvalidActor,{}};
+    auto &actor=it->second;
+    // MonsterMsg carries nLastAnimMode bit 0 in the high life bit. It is
+    // refreshed even when HP is unchanged; no private missile notification.
+    auto result=ports_.events.publish({0,tick,{}, {AudienceKind::Area,{},actor.area},
+        {HitFact{id,1,actor.area,monsterLifeRatio(actor.life,actor.maximumLife),false,actor.position,0,0,{},emitted}}});
+    if(!result) return {result.status,{}};
+    actor.lightningReady=emitted;
+    return {DomainStatus::Applied,std::monostate{}};
+}
+DomainResult<> System::introduction(EntityId id,uint64_t tick) {
+    const auto *actor=find(id);if(!actor || actor->life<=0) return {DomainStatus::InvalidActor,{}};
+    if(!ports_.events.publish({0,tick,{}, {AudienceKind::Area,{},actor->area},{SoundFact{id,1,actor->area,16}}})) return {DomainStatus::Capacity,{}};
+    stop(id);return beginAttack(id,tick+20);
+}
 bool System::resurrectionTarget(EntityId source,EntityId corpse,uint64_t tick) const {
     const auto *caster=find(source),*dead=find(corpse);
     if(!caster || !dead || source==corpse || caster->life<=0 || dead->life>0 || dead->owner || !dead->rule.corpseSelectable ||
         dead->corpseUnavailable || tick<dead->busyUntil || !dead->rewardComplete || dead->identity.rank!=MonsterRank::Normal || dead->area!=caster->area) return false;
     // Ordinary Fn013 uses its party callback. The broader family callback is
     // reserved for unique shamans and is deliberately not used here.
-    if(dead->identity.ownerSpawnKey!=caster->identity.spawnKey || dead->rule.ai.kind!=MonsterAiKind::Fallen) return false;
+    if(((!caster->rule.enchantment || caster->identity.rank==MonsterRank::Minion) && dead->identity.ownerSpawnKey!=caster->identity.spawnKey) || dead->rule.ai.kind!=MonsterAiKind::Fallen) return false;
     const int radius=caster->rule.ai.params[3];
     // Fn013 deliberately passes a squared threshold to callback 9, whose
     // actual metric is FullUnitSize. Preserve that native quirk and room scope.
@@ -33,20 +51,24 @@ DomainResult<> System::resurrect(EntityId source,EntityId corpse,uint64_t tick) 
     return {DomainStatus::Applied,std::monostate{}};
 }
 DomainResult<EntityId> System::spawnNestChild(EntityId id,uint64_t tick) {
+    const auto *source=find(id);if(!source) return {DomainStatus::InvalidActor,{}};
+    return spawnNestChild(id,tick,source->position+source->rule.spawnOffset);
+}
+DomainResult<EntityId> System::spawnNestChild(EntityId id,uint64_t tick,Vec origin) {
     auto it=state_.actors.find(id);if(it==state_.actors.end() || it->second.life<=0 || !it->second.rule.nestChild) return {DomainStatus::InvalidActor,{}};
     auto &nest=it->second;const auto &child=*nest.rule.nestChild;
-    if(nest.nestSpawned>=nest.rule.ai.params[2]) return {DomainStatus::Unavailable,{}};
+    if(nest.nestSpawned>=(nest.rule.ai.kind==MonsterAiKind::BloodRaven?8+2*nest.rule.difficulty:nest.rule.ai.params[2])) return {DomainStatus::Unavailable,{}};
     const auto &grid=ports_.areas.at(nest.area).definition.collision;
     auto random=nest.combatRandom;
-    const Vec origin=nest.position+nest.rule.spawnOffset;
+    const int radius=nest.rule.ai.kind==MonsterAiKind::BloodRaven?1:3;
     // master nestSpawn's perimeter walk; MPQ spawnx/spawny supply the origin.
     int x=0,y=0;
-    if(rollRandom(random)&1) {y=3;x=int(limitedRandom(random,3));}else {x=3;y=int(limitedRandom(random,3));}
+    if(rollRandom(random)&1) {y=radius;x=int(limitedRandom(random,unsigned(radius)));}else {x=radius;y=int(limitedRandom(random,unsigned(radius)));}
     if(rollRandom(random)&1) x=-x;
     if(rollRandom(random)&1) y=-y;
-    for(int attempt=0;attempt<24;++attempt) {
+    for(int attempt=0;attempt<8*radius;++attempt) {
         const Vec point=origin+Vec{float(x),float(y)};
-        if(x==-3 && y<3) ++y;else if(y==3 && x<3) ++x;else if(x==3 && y>-3) --y;else --x;
+        if(x==-radius && y<radius) ++y;else if(y==radius && x<radius) ++x;else if(x==radius && y>-radius) --y;else --x;
         if(!grid.walkable(point,child.rule.spawnCollision)) continue;
         bool occupied=false;
         for(const auto &[key,actor]:state_.actors) { (void)key;if(actor.area==nest.area && actor.life>0 && (point-actor.position).length()<1.f) {occupied=true;break;} }
@@ -77,4 +99,15 @@ DomainResult<> System::slow(EntityId id,int state,int percent,uint64_t frames,ui
     actor.slowed=Actor::Slow{state,percent,tick+std::min(frames,UINT64_MAX-tick)};++actor.revision;
     return {DomainStatus::Applied,std::monostate{}};
 }
+DomainResult<> System::teleport(EntityId id,Vec point,uint64_t tick,int heal) {
+    auto it=state_.actors.find(id);if(it==state_.actors.end() || it->second.life<=0) return {DomainStatus::InvalidActor,{}};
+    auto &m=it->second;const auto &grid=ports_.areas.at(m.area).definition.collision;
+    if(!grid.walkable(point,{0x3c01,m.rule.size}) || !grid.segment(m.position,point,{}, {0x0c01,1})) return {DomainStatus::Unavailable,{}};
+    for(const auto &[key,other]:state_.actors) if(key!=id && other.area==m.area && other.life>0 && meleeDistance(point,m.rule.size,other.position,other.rule.size)<=0) return {DomainStatus::Unavailable,{}};
+    for(const auto &[key,p]:ports_.players.all()) {(void)key;if(p.entered && p.area==m.area && p.persistent.player.hp>0 && meleeDistance(point,m.rule.size,p.position,2)<=0) return {DomainStatus::Unavailable,{}};}
+    // Native monster relocation is projected by 0x6D snapshot correction.
+    (void)tick;stop(id);m.position=point;m.life=std::min(m.maximumLife,m.life+int64_t(std::max(0,heal))*256);++m.revision;
+    return {DomainStatus::Applied,std::monostate{}};
+}
+
 }

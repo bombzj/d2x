@@ -253,7 +253,7 @@ target_sources(d2x_presentation PRIVATE src/presentation/inventory/item_tooltip.
 add_executable(d2x src/main.cpp src/app/application.cpp src/app/options.cpp src/app/input.cpp
   src/app/frontend.cpp src/app/online_login_memory.cpp src/app/client_preferences.cpp src/app/crash_report.cpp)
 target_sources(d2x_presentation PRIVATE src/presentation/frontend/realm_frontend.cpp)
-target_sources(d2x_presentation PRIVATE src/presentation/remote/remote_scene.cpp)
+target_sources(d2x_presentation PRIVATE src/presentation/remote/remote_scene.cpp src/presentation/remote/monster_effects.cpp)
 target_link_libraries(d2x_presentation PRIVATE d2x_remote_scene)
 target_sources(d2x PRIVATE src/app/debug/debug_pipe.cpp src/app/debug/ui_input.cpp)
 target_sources(d2x PRIVATE src/app/debug/online_commands.cpp src/app/debug/server_commands.cpp src/app/debug/server_snapshot.cpp)
@@ -290,3 +290,7 @@ target_sources(d2x_server PRIVATE src/server/systems/inventory/consumption.cpp s
 target_sources(d2x_server PRIVATE src/server/systems/death/settlement.cpp src/server/systems/death/recovery.cpp)
 
 target_sources(d2x_gameplay PRIVATE src/gameplay/quest/den_of_evil.cpp)
+target_sources(d2x_gameplay PRIVATE src/gameplay/monsters/boss_decision.cpp)
+target_sources(d2x_gameplay PRIVATE src/gameplay/monsters/enchantment_damage.cpp)
+target_sources(d2x_server PRIVATE src/server/systems/effects/monster_enchantments.cpp)
+target_sources(d2x_server PRIVATE src/server/systems/ai/unique_actions.cpp)

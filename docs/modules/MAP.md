@@ -23,10 +23,10 @@ SceneController 统一世界手势；RemoteScene 返回当帧命中／绘制输�
 
 自动地图只有 AutomapExploration／AutomapCatalog／SceneAssets／SceneView 一套揭示、标记、缓存和绘制；RemoteTown 适配原服活动区域。同局返回记忆保留，新局清空；不读写 .d2xmap。细节见[自动地图](../gameplay/world/AUTOMAP.md)。
 
-自研首步只允许营地边界内行走，静态物件读Objects初始模式，不创建NPC／怪物，不执行物件InitFn或交互，不把中立单位替换为敌人。GameScene只把快照和地形转换为公共WorldDrawView／WorldInputView，不另写地图绘制器。完整区域加载不等于原服按需活区，跨区、动态阻挡生命周期和本地自动地图等待后续接入。
+自研宿主已接自然边界／UNIT_TILE换区、本人门户／传送点、普通物件交互、中立NPC与第一幕敌对人口，具体资格由travel／objects／npcs／population领域持有；客户端仍消费同一套原协议。人口身份与准入见[怪物模块](MONSTERS.md)，中立单位不可替换为敌人。完整区域加载不等于原服按需活区，完整房间时序及动态占位仍有缺口。
 
 generateArea把原生完整16位地形碰撞保留在Grid.fullTerrainCollision，权威移动经共同movementMask消费；既有未提供该字段的粗网格／原服显示仍沿原字节路径。区域边界拒绝外部Grid指针，内容准备后才复制给实例，避免生成器销毁后悬空或跨实例借用。
 
 ## 限制与后续
 
-原地形／碰撞对照样本及生成边界见[五幕地图](../gameplay/world/MAPS.md)与[原版对照](../architecture/MULTIPLAYER.md#原版-dll-对照方法)。长距离绕障、动态阻挡、完整房间时序、特殊旅行资格、全种子、精确客户端照明及 Linux 未全面认证。最新传送点点击／动画修正未入包，见[基线](../../BASELINE.md)。
+原地形／碰撞对照样本及生成边界见[五幕地图](../gameplay/world/MAPS.md)与[原版对照](../architecture/MULTIPLAYER.md#原版-dll-对照方法)。长距离绕障、动态阻挡、完整房间时序、特殊旅行资格、全种子、精确客户端照明及 Linux 未全面认证。传送点点击／动画修正已随当前Release入包，第二幕样本未专项复验，见[基线](../../BASELINE.md)。

@@ -163,6 +163,18 @@ std::optional<std::string> serverDebugCommand(const Json &request, EmbeddedRealm
             if (entry->operation != AdminOperation::SpawnItem && (request.contains("quality") || request.contains("durability")))
                 throw std::invalid_argument("quality/durability apply only to item-spawn");
             AdminSpawn spawn{std::move(code), int(level), position};
+            if(request.contains("rank") || request.contains("superUnique")) {
+                if(entry->operation!=AdminOperation::SpawnMonster) throw std::invalid_argument("rank/superUnique apply only to monster-spawn");
+                const auto rank=request.value("rank",std::string("normal"));
+                if(rank=="normal") spawn.rank=MonsterRank::Normal;
+                else if(rank=="champion") spawn.rank=MonsterRank::Champion;
+                else if(rank=="unique") spawn.rank=MonsterRank::Unique;
+                else if(rank=="boss") spawn.rank=MonsterRank::Boss;
+                else if(rank=="superunique") spawn.rank=MonsterRank::SuperUnique;
+                else throw std::invalid_argument("Expected normal/champion/unique/boss/superunique rank");
+                spawn.superUnique=request.value("superUnique",std::string{});
+                if(spawn.superUnique.size()>64 || (spawn.rank==MonsterRank::SuperUnique)!=!spawn.superUnique.empty()) throw std::invalid_argument("superunique requires an exact SuperUniques Name; other ranks must omit it");
+            }
             if (request.contains("quality")) spawn.quality = request.at("quality").get<std::string>();
             if (spawn.quality != "normal" && spawn.quality != "magic") throw std::invalid_argument("quality must be normal or magic");
             if (request.contains("durability")) spawn.durability = unsigned(unsignedValue(request.at("durability"), 255));

@@ -21,7 +21,7 @@
 | [DGEngine](https://github.com/dgcor/DGEngine) | DCC 解码器的直接改造来源 | `ae6dcabf4f824d617dc4b15ead1f0ef206c9a106`，`src/Resources/ImageContainers/DCCImageContainer.cpp` | Diablo 格式代码使用 GPL-3.0 |
 | [Worldstone](https://github.com/Lectem/Worldstone) | DGEngine DCC 解码器的上游算法 | 由 DGEngine 说明和代码引用 | GPL-3.0 |
 | [OpenDiablo2](https://github.com/OpenDiablo2/OpenDiablo2) | 第一幕对象预设数据、经典 HUD 布局参考 | `d2core/d2records/object_lookup_record_data.go` | GPL-3.0 |
-| [D2MOO](https://github.com/ThePhrozenKeep/D2MOO) | Cave／Crypt 迷宫、矩形户外布局／边界及人口规则适配；女巫与亚马逊各30项公共计算、服务端执行与原包分工证据 | `5596f5cb6c5251a0a07c6637d26458b06099d516` | MIT，见 [许可](../licenses/D2MOO.txt) |
+| [D2MOO](https://github.com/ThePhrozenKeep/D2MOO) | Cave／Crypt 迷宫、矩形户外布局／边界及人口规则适配；女巫／亚马逊与通用技能公共计算，第一幕AI／精英／首领、服务端执行与原包分工证据 | `5596f5cb6c5251a0a07c6637d26458b06099d516` | MIT，见 [许可](../licenses/D2MOO.txt) |
 
 `src/resources/dcc.cpp` 已标注改动：C++ 索引帧接口、一次性解码所有方向、输入范围检查。`src/resources/presets.hpp` 从 OpenDiablo2 的第一幕数据筛选生成。项目整体使用根目录 `LICENSE` 的 GPL-3.0 文本；相关许可保存在 `docs/licenses`。
 
@@ -76,6 +76,8 @@ BNCSutil仅构建认证子集，作为可替换动态库；包内保留原许可
 原DLL仅只读核对或由忽略目录的既有导出工具作开发对照，不随运行包分发。样本、原点／DT1／16位碰撞、屏蔽标志及限制统一维护在[原版对照](../architecture/MULTIPLAYER.md#原版-dll-对照方法)。
 
 持物占格高亮另核对同快照D2Client RVA 0x8C600逐格调用DrawBox mode=0、0x8C6B0初始化绿色RGB(0,128,0)／禁止红色(128,0,0)。D2gfx 1.13c ordinal10014才是DrawBox入口（RVA 0xBA30），不能套用D2MOO 1.10f的ordinal10055；D2DDraw RVA 0x6A25选择trans[2]，0x6850按背景索引×256＋颜色索引读取。D2Win ordinal10190经D2CMP ordinal10049（RVA 0x9D30）以RGB平方距离取首个最近项。当前MPQ Act PL2偏移0x23500提供实际混色结果；Diablerie InventoryGrid／InventorySlot只补充底色在物品下方、无描边的布局证据，其简化RGBA不作为原混色值。本批仅只读静态核对，未构建或运行。
+
+第一幕精英另只读核对同一D2Client：RVA20340／20BF0／20BC0为电强化路径及GH／生命回调，20C40／A1020／A0DB0为冰强化死亡新星，4E095／4E14D／1FCA0为GH和生命高位发射资格。原版两端时钟、共享范围见[参考设计](../architecture/REFERENCE_DESIGN.md#第一幕怪物公共计算依据)，DLL与反汇编输出只留忽略目录。
 
 ## 补充资料的边界
 

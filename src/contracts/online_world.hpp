@@ -93,7 +93,7 @@ struct OnlineUnit {
     uint64_t pathVerificationRevision{};
     std::optional<OnlineUnitKey> destinationUnit;
     std::optional<uint8_t> mode, lifePercent; // Life ratio byte preserved in its original wire scale.
-    bool lifeCarriesRankFlag{}; // Only monster hit updates reserve bit 7 for rank.
+    bool lifeCarriesTriggerFlag{}; // Monster hit/GH updates reserve bit 7 for the UMod emission flag.
     std::optional<uint8_t> portalFlags, portalDestination;
     std::optional<uint8_t> objectInteractType; // 0x51 ObjectData.InteractType; MPQ consumers interpret it.
     std::optional<bool> objectTargetable; // Object 0x0E flag update; absent on initial assignment.
@@ -302,7 +302,7 @@ struct OnlineWorldView {
 };
 inline bool onlineMonsterCorpse(const OnlineUnit &unit) {
     return unit.key.type == 1 && (unit.mode == 0 || unit.mode == 12 ||
-        (unit.lifePercent && (unit.lifeCarriesRankFlag ? (*unit.lifePercent & 0x7f) : *unit.lifePercent) == 0));
+        (unit.lifePercent && (unit.lifeCarriesTriggerFlag ? (*unit.lifePercent & 0x7f) : *unit.lifePercent) == 0));
 }
 inline bool onlinePlayerDead(const OnlineWorldView &world) {
     if (world.deathPhase != OnlineDeathPhase::Unknown)

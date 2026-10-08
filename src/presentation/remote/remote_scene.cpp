@@ -1,4 +1,5 @@
 #include "remote_scene.hpp"
+#include "monster_effects.hpp"
 #include "presentation/scene_view.hpp"
 #include "client/remote_combat.hpp"
 #include "content/character/realm_portrait.hpp"
@@ -61,11 +62,6 @@ std::vector<std::string> variants(std::string_view value) {
 bool visible(const Sprite &s, Vec p) {
     return p.x + s.x < W && p.y + s.y < H - HUD && p.x + s.x + s.texture.width > 0 &&
            p.y + s.y + s.texture.height > 0;
-}
-// PATH_GetDirectionVector's integer tangent sectors, then the original
-// MONSTER_GetDirOffset lookup used by SkillMonst::SrvDo088_AndrialSpray.
-int nativeFacing(OnlinePoint from,OnlinePoint to) {
-    return monsterFacing8({float(from.x),float(from.y)},{float(to.x),float(to.y)});
 }
 } // namespace
 struct RemoteScene::Impl {
@@ -131,6 +127,7 @@ struct RemoteScene::Impl {
     std::map<std::string, size_t, std::less<>> monsterExtra;
     struct MonsterIdentity { bool champion{},unique{},minion{},ghostly{}; std::optional<uint16_t> superUnique; uint16_t nameSeed{}; std::vector<uint8_t> modifiers; };
     std::map<OnlineUnitKey,MonsterIdentity> monsterIdentities;
+    RemoteMonsterEffects monsterEffects;
     std::map<int,size_t> superUniqueRows;
     std::map<OnlineUnitKey, Motion> motion;
     uint64_t gameGeneration{~uint64_t{}}, areaGeneration{~uint64_t{}};
@@ -248,15 +245,16 @@ struct RemoteScene::Impl {
             if (mode.empty()) return nullptr;
         } else if (u.nativeMode) {
             constexpr std::array modes{"dt", "nu", "wl", "rn", "gh", "tn", "tw", "a1", "a2",
-                                       "bl", "sc", "th", "s1", "s2", "s3", "s4", "sq", "dd", "kb", "kk"};
-            if (!u.mode || *u.mode >= modes.size() || *u.mode == 16) return nullptr;
+                                       "bl", "sc", "th", "kk", "s1", "s2", "s3", "s4", "dd", "sq", "kb"};
+            if (!u.mode || *u.mode >= modes.size() || *u.mode == 18) return nullptr;
             mode = modes[*u.mode];
         } else if (u.mode == 8)
             mode = "dt";
         else if (u.mode == 9) mode = "dd";
         else if (u.mode == 6) mode = "gh";
         else if (u.mode == 0x12) mode = "bl";
-        else if (u.mode == 20) mode = "kk";
+        // PlrMsg's PLRMODE_KNOCKBACK maps to wire 0x14, not KK.
+        else if (u.mode == 20) mode = "kb";
         else if (moving) {
             // Player wire action bytes differ from PLRMODE. PlrMsg's native table:
             // 0F: 01 walk / 17 run; 10: 00 walk / 18 run. A presentation path
@@ -533,31 +531,19 @@ struct RemoteScene::Impl {
                 // Retail GargoyleTrap / RVA 585C0 and ObjMode's real GT actor:
                 // choose the closer cardinal axis, four subtiles, then use its
                 // original muzzle offset. Sequence release flags supply timing.
-                int dx = int(target->x) - int(actor.position->x);
-                int dy = int(target->y) - int(actor.position->y);
-                if (std::abs(dx) < std::abs(dy)) { dx = std::clamp(dx, -4, 4); dy = 0; }
-                else { dy = std::clamp(dy, -4, 4); dx = 0; }
-                const Vec muzzle{float(int(actor.position->x) + dx / 6 - 1) + .5f,
-                                 float(int(actor.position->y) + dy / 6 - 1) + .5f};
+                const auto ray=gargoyleTrapRay(start,end,GargoyleRaySide::Client);
                 auto fire = [&](float release) {
-                    launch(missile->second, muzzle, muzzle + Vec{float(dx), float(dy)}, level,
-                           release - age, {}, event.source);
+                    launch(missile->second,ray.first+Vec{.5f,.5f},ray.second+Vec{.5f,.5f},level,
+                           release-age,{},event.source);
                 };
                 if (animation->releaseTimes.empty()) fire(animation->releaseTime);
                 else for (const float release : animation->releaseTimes) fire(release);
             }
             else if (function==48 && skills.number(row->second,"srvdofunc")==88 && animation->releaseTimes.size()==9) {
-                constexpr std::array anchor{29,28,27,26,25,24,31,30};
-                constexpr std::array directions{
-                    27,14,15,3,99,7,21,22,31, 26,12,13,2,99,6,19,20,30,
-                    25,10,11,1,99,5,17,18,29, 24,8,9,0,99,4,15,16,28,
-                    31,22,23,7,99,3,13,14,27, 30,20,7,6,99,2,1,12,26,
-                    29,18,19,5,99,1,9,10,25, 28,16,17,4,99,0,23,8,24};
-                const int facing=nativeFacing(*actor.position,*target);
-                const Vec centre=start+monsterDirectionOffset(anchor[size_t(facing)]);
                 for (size_t index=0;index<animation->releaseTimes.size();++index) {
-                    const int direction=directions[size_t(facing)*9+index];
-                    launch(missile->second,start,centre+(direction==99?Vec{}:monsterDirectionOffset(direction)),
+                    const auto ray=andarielSprayRay(start,end,4+int(index));
+                    // Keep the renderer's subtile centre; native packets carry cells.
+                    launch(missile->second,start,ray.second+Vec{.5f,.5f},
                         level,animation->releaseTimes[index]-age,{},event.source);
                 }
             } else if (function == 25 && skills.number(row->second, "srvdofunc") == 22 &&
@@ -603,6 +589,23 @@ struct RemoteScene::Impl {
         for (const auto &event : v.world.combatEvents) {
             if (event.sequence <= combatSequence) continue;
             combatSequence = event.sequence;
+            if(event.source.type==1 && (event.kind==OnlineCombatEvent::Kind::Action || event.kind==OnlineCombatEvent::Kind::Hit)) {
+                const auto unit=v.world.units.find(event.source);
+                if(unit!=v.world.units.end() && unit->second.position) {
+                    auto actor=unit->second;
+                    if(event.action==6) {actor.mode=3;actor.actionSkill.reset();}
+                    else if(event.action==8) {actor.mode=0;actor.actionSkill.reset();}
+                    const auto *animation=monster(actor,false,shared);
+                    const auto identity=monsterIdentities.find(event.source);
+                    const auto now=uint64_t(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count());
+                    const float age=event.receivedMilliseconds && now>=event.receivedMilliseconds?float(now-event.receivedMilliseconds)/1000.f:0;
+                    if(identity!=monsterIdentities.end() && age<=.25f) {
+                        const auto &id=identity->second;
+                        const auto has=[&](int modifier){return std::find(id.modifiers.begin(),id.modifiers.end(),modifier)!=id.modifiers.end();};
+                        monsterEffects.observe(unit->second,{id.unique,has(17),has(18)},event,time,age,animation?animation->fps:0);
+                    }
+                }
+            }
             if (event.kind == OnlineCombatEvent::Kind::Sound) {
                 // PlayerStats_LevelUp attaches event 2 to the levelling player;
                 // SUnitMsg sends original 0x2C. Never infer a level/reward locally.
@@ -680,6 +683,19 @@ struct RemoteScene::Impl {
                 if (own) localCast.reset();
             }
         }
+        for(const auto &release:monsterEffects.advance(v.world,time)) {
+            const auto source=v.world.units.find(release.owner);const auto row=missileRows.find(release.missile);
+            if(source==v.world.units.end() || !source->second.position || row==missileRows.end()) continue;
+            // These MPQ visuals have no rank-dependent velocity or lifetime.
+            // Do not infer a hidden monster level if a different table needs it.
+            if(missiles.number(row->second,"VelLev").value_or(0) || missiles.number(row->second,"LevRange").value_or(0)) {
+                effectLimitations.insert("Monster enchantment requires an unavailable unit level: "+std::to_string(release.missile));continue;
+            }
+            const Vec start{float(source->second.position->x)+.5f,float(source->second.position->y)+.5f};
+            if(release.missile==195)
+                for(const auto &ray:monsterLightningRays()) launch(row->second,start,start+ray.offset,1,0,{},release.owner,ray.pathIndex);
+            else for(const Vec direction:missileRingBurst(1)) launch(row->second,start,start+direction,1,0,{},release.owner);
+        }
         const auto source = playerId ? v.world.units.find({0, *playerId}) : v.world.units.end();
         const auto &interaction=v.world.movementRequest;
         if(interaction && interaction->interaction && interaction->unit && interaction->unit->type==2 &&
@@ -719,8 +735,8 @@ struct RemoteScene::Impl {
         if (localCast) {
             const auto &u = source != v.world.units.end() ? source->second : OnlineUnit{};
             const bool interrupted = u.actionRevision != localCast->authorityRevision &&
-                (u.actionSkill || (u.nativeMode ? (u.mode == 0 || u.mode == 4 || u.mode == 17 || u.mode == 18)
-                    : (u.mode == 6 || u.mode == 8 || u.mode == 9 || u.mode == 18)));
+                (u.actionSkill || (u.nativeMode ? (u.mode == 0 || u.mode == 4 || u.mode == 17 || u.mode == 19)
+                    : (u.mode == 6 || u.mode == 8 || u.mode == 9 || u.mode == 18 || u.mode == 20)));
             if (!u.position || onlinePlayerDead(v.world) || interrupted ||
                  (v.world.movementRequest && v.world.movementRequest->revision > localCast->revision) ||
                 (localCast->started < 0 && time - localCast->requested > 15.f)) {
@@ -1225,6 +1241,7 @@ struct RemoteScene::Impl {
             areaGeneration = v.world.areaGeneration;
             motion.clear();
             monsterIdentities.clear();
+            monsterEffects.clear();
             shared.clearClientMissiles(); channels.clear(); blazeTrails.clear(); effectLimitations.clear(); missileCastRevisions.clear(); overlayVisuals.clear(); stateTimes.clear(); shattered.clear();
             soundEvents.clear();
             combatSequence = v.world.combatSequence;
@@ -1246,6 +1263,7 @@ struct RemoteScene::Impl {
             // It is not a server teleport or a release of a held movement gesture.
             std::erase_if(motion,[&](const auto &entry) { return entry.first.type!=0 || entry.first.id!=playerId; });
             shared.clearClientMissiles();
+            monsterEffects.clear();
             missileCastRevisions.clear(); channels.clear(); blazeTrails.clear(); overlayVisuals.clear(); localCast.reset();
             soundEvents.clear();
             combatSequence = v.world.combatSequence;
@@ -1656,7 +1674,7 @@ struct RemoteScene::Impl {
                     // MonsterMode's native ratio is 0..128. Only hit updates carry bit 7
                     // as the unique-monster flag; assignment uses 128 for full life.
                     const unsigned raw = *unit.lifePercent;
-                    life = float(unit.lifeCarriesRankFlag ? raw & 0x7f : raw) / 128.f;
+                    life = float(unit.lifeCarriesTriggerFlag ? raw & 0x7f : raw) / 128.f;
                 }
                 if (!name.empty()) shared.drawEnemyBar(name, life,{},titleColor);
             }

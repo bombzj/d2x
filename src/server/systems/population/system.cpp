@@ -10,7 +10,7 @@ StepStatus System::step(TickContext, FrameFacts &) {
         bool complete = true;
         for (const auto &spawn : area.definition.population) {
             if (population.admittedSpawnKeys.contains(spawn.identity.spawnKey)) continue;
-            auto result = admit({spawn.identity, spawn.implementation, region, spawn.position, true, spawn.rule});
+            auto result = admit({spawn.identity, spawn.implementation, region, spawn.position, true, spawn.rule,spawn.skillPositions});
             if (!result) { complete = false; blocked = true; break; }
             population.admittedSpawnKeys.insert(spawn.identity.spawnKey);
         }

@@ -24,4 +24,10 @@ struct AuraDefinition {
     bool hostile = false;
     uint32_t filter = 0;
 };
+inline CharacterModifiers auraOwnerModifiers(const AuraDefinition &a) {
+    auto result=a.ownerModifiers;
+    if(!a.hostile) mergeCharacterModifiers(result,a.modifiers);
+    result.combat.damagePercent+=a.ownerDamageBonus;
+    return result;
+}
 } // namespace d2x

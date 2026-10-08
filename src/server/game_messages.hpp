@@ -91,5 +91,8 @@ struct MonsterSnapshot {
     std::optional<EntityId> storedOwner{};
     std::vector<uint8_t> modifiers{};
     std::array<uint8_t,16> components{}, componentCounts{};
+    uint8_t rankFlags{};
+    uint16_t nameSeed{}, superUniqueIndex{};
+    bool lightningReady{};
 };
 } // namespace d2x

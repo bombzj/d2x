@@ -38,6 +38,10 @@ void NativeRealmService::publishMonsters() {
             packets.insert(packets.end(),std::make_move_iterator(gear.begin()),std::make_move_iterator(gear.end()));
         }
         if(fresh && monster.appearOverlay>=0) packets.push_back(encodeServerPacket(ServerMessage::Overlay,[&](auto &out){out.u8(1);out.u32(uint32_t(monster.id.value));out.u16(uint16_t(monster.appearOverlay));}));
+        // Reliable hit facts already begin GH/BL. A snapshot must not restart
+        // their animations, including when only the UMod life flag changes.
+        // A newly interested observer still needs the current reaction mode.
+        if(!fresh && (monster.mode==3 || monster.mode==6)) continue;
         auto motion = nativeMonsterMotion(monster, origin);
         if (motion.empty()) entry->second.motion.clear();
         else if (fresh || motion != entry->second.motion) { packets.push_back(motion); entry->second.motion = std::move(motion); }

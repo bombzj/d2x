@@ -127,7 +127,7 @@ D2Common包含单位、属性、技能公式、物品计算、路径／碰撞和
 6. 用户已授权有参考依据、匹配原版的公共纯函数提取及客户端修复；记录每处MPQ／原包／原函数证据。禁止为兼容自研宿主单独改客户端；证据不足或改变原版规则的方案仍须单独确认，不能扩大为任意改写许可。
 7. 更新本页的提取边界、SERVER_SYSTEMS的实际执行范围及MULTIPLAYER的迁移顺序。存档语义改变同步规则指纹与SAVES，不静默迁移旧档。不编写测试脚本／用例／专用程序；构建／打包／运行验证按当轮有效授权，不能把源码接线当作运行认证。
 
-当前已落地：resolve／projectile_path／combat geometry等公共计算；原表准备与独立server领域；女巫26主动／4被动及亚马逊24主动／6被动、通用十项；周期／环射／连锁／射流、反击吸收与伙伴；第一幕普通家族、独立远程／复活／巢／蛛网、固定点走跑与原碰撞。后续恢复按行为族推进：剩余职业、精英／首领及其他幕怪物、未支持的周期／散射和状态效果、NPC特殊服务及其余任务事件／奖励。该顺序是结构依赖建议，不表示这些功能已经完成。
+当前已落地：resolve／projectile_path／combat geometry等公共计算；原表准备与独立server领域；女巫26主动／4被动及亚马逊24主动／6被动、通用十项；周期／环射／连锁／射流、反击吸收与伙伴；第一幕普通／精英／首领家族、独立远程／复活／巢／蛛网／精英效果、固定点走跑与原碰撞。后续恢复按行为族推进：剩余职业、其他幕怪物、未支持的周期／散射和状态效果、NPC特殊服务及其余任务事件／奖励。该顺序是结构依赖建议，不表示这些功能已经完成。
 
 ### 女巫公共计算落点
 
@@ -160,7 +160,7 @@ SequenceTbls与SUnit动作回滚提供Jab／Impale序列及Strafe／Fend时钟�
 
 PlayerPets的0x7A归属广播和晚入局名册独立于房间可见性，因此replication提供单独的宠物归属投影，hosting只编码原包。召唤纯求值、MPQ／装备内容准备、companions生命周期／AI、monsters实体真值及客户端人物伪装分别归各层；不以共享为由恢复万能会话。本批已构建打包并补做有限运行，静态依据和代表技能观察不等于全职业原服认证。
 
-### 第一幕普通怪物公共计算依据
+### 第一幕怪物公共计算依据
 
 先迁master各族*_ai、wander／melee／projectile／nest及session_monster_combat，再核对D2MOO。AiThink的Fn002／003／004／005／006／007／009／010／012／013／014／019／026／028／030／035／036／037／043／064约束参数用途；AiUtil的sub_6FCF2110、callback5／9和sub_6FCF27B0提供视距、低Threat目标和族群尸体距离依据，完整Vision／房间调度不作已实现宣称。
 
@@ -175,3 +175,11 @@ AiUtil::sub_6FCF2110的初次察觉与已察觉标记、DUNGEON／DRLGROOM_Check
 PlrMsg::sub_6FC81C00发送本人生命／命中修正0D动作19，UNITS_GetCurrentLifePercentage为整数生命的0..100比例。MonsterMode::sub_6FC62F50为整数生命的0..128；MonsterMsg::sub_6FC659E0发送0C旗标19且大于1时减一。两种比例公共纯函数位于combat/life.hpp，hosting编码不把人物更新当成怪物0C或虚构GH。本次原服两个普通样本暴露了该差异，只修自研投影，客户端不增加分支。
 
 SkillMonst::SrvDo085／091／097、SKILLS_CreateSpiderLayMissile、SkillSor::SrvDo023和MissMode::SrvHit01／15／16／31分别约束类链火弹、巢生NOXP／NOTC、复活、蛛网、火球范围与FireHead恢复。MonsterMsg原表用于修正自研A2=16、GH=6、BL=18；客户端无自研特例。PlrModes::EVENTS_HpRegen将玩家毒伤下限设为一生命；effects／transactions拥有毒及解毒，不写运行态到D2S。逐身份／MPQ覆盖集中见[怪物模块](../modules/MONSTERS.md)。
+
+第一幕精英／首领先查master的monster_special_ai／monster_enchantments／monster_element，再用D2MOO核对：AiThink的Smith、Griswold、Fn034 Andariel、Fn059 BloodRaven、Countess特殊状态13及sub_6FCF0E40；MonsterUnique的MonUMod数值、ApplyElementalDamage持久stat、范围Amplify Damage、Lightning／Cold／Fire事件和多发；QuestsFX的首领死亡范围／延时。首领策略仅是服务端纯决策，客户端不调用；可共享的方向／固定点／stat计算与表现、权威执行分开。
+
+SkillMonst SrvDo088及原CltDo048的Andariel九射方向表合并到andarielSprayRay，两端明确保留cell与subtile中心。GargoyleTrap旧单机缺少权威AI，由Fn063、SrvDo093及既有零售CltDo051依据补齐；gargoyleTrapRay显式保留Clt基数射线与Srv保留主轴的差异，不能为画面一致抹掉原差异。MonSeq的event1／event2／event4、帧数和释放次数从当前表准备。
+
+SCmd::sub_6FC3FC80给出AC的五rank位、固定hcIdx、九词缀＋终止及nameSeed；PlrMsg::sub_6FC81F60将Player.h的PLRMODE_KNOCKBACK19映射为0F/action20，客户端原生Player模式和wire模式按各自表解释，不能把action20当隐藏Kick。原表MonProp血鸟地狱knock在hosting准备。客户端只作有原版依据的修正／公共提取，不为自研服务端增加消息或玩法分支。
+
+原1.13c D2Client RVA20340／20BF0／20BC0确认电强化四个基数方向各两条ChargedBolt路径、GH帧2及非GH生命回调；20C40／A1020／A0DB0确认冰强化死亡帧4及环射。4E095／4E14D／1FCA0确认GH方向槽和生命高位的发射资格。monsterLightningRays／chargedBoltPath两端共用，环射保留Clt步长1／Srv步长2。RemoteMonsterEffects只持副本显示时钟，server/effects持MONUMOD延时／冷却／伤害。当前194／195视觉速度与寿命无等级增量，客户端不猜隐藏等级。运行及完整随机流等限制统一见怪物模块。

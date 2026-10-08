@@ -48,7 +48,15 @@ std::vector<MonsterSnapshot> System::visibleMonsters(PlayerId id, uint64_t tick)
             monsterLifeRatio(monster.life,monster.maximumLife),
             mode, monster.revision, monster.moving, !dead && tick < monster.busyUntil, monster.chilledUntil > tick ? std::max(25, monster.velocityPercent + monster.rule.coldEffect) : monster.velocityPercent, monster.running, ports_.effects.unitStates(key,tick),monster.knockbackSource});
         result.back().equipment=monster.equipment;
+        result.back().lightningReady=monster.lightningReady;
         result.back().components=monster.components;result.back().componentCounts=monster.rule.componentCounts;
+        if(monster.rule.enchantment) {
+            const auto &mods=*monster.rule.enchantment;
+            for(int id:mods.ids) result.back().modifiers.push_back(uint8_t(id));
+            const auto rank=monster.identity.rank;
+            result.back().rankFlags=uint8_t((rank==MonsterRank::Champion?1:0)|((rank==MonsterRank::Unique || rank==MonsterRank::SuperUnique)?2:0)|(rank==MonsterRank::SuperUnique?4:0)|(rank==MonsterRank::Minion?8:0)|(mods.has(36)?16:0));
+            result.back().nameSeed=mods.nameSeed;result.back().superUniqueIndex=uint16_t(std::max(0,monster.rule.superUniqueIndex));
+        }
         if(monster.amazonPet) {
             result.back().states.insert(monster.amazonPet->state.id);result.back().appearOverlay=monster.amazonPet->appearOverlay;
             if(monster.owner) if(const auto *owner=ports_.players.find(*monster.owner)) result.back().storedOwner=owner->actor;

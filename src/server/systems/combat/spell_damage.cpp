@@ -18,7 +18,7 @@ bool System::weaponContact(const WeaponSkillDamage &attack,EntityId id,uint64_t 
     if(attack.automatic) return true;
     const auto &weapon=attack.weapon;
     return limitedRandom(random,100)<unsigned(weaponHitChance(attack.level,weapon.baseAttackRating,
-        weapon.attackRatingPercent,weapon.target,{target->rule.level,std::max(0,target->rule.defense+ports_.effects.unitModifiers(id,tick).defense),target->rule.demon,target->rule.undead,false},target->identity.rank));
+        weapon.attackRatingPercent,weapon.target,{target->rule.level,ports_.effects.unitDefense(id,tick),target->rule.demon,target->rule.undead,false},target->identity.rank));
 }
 DomainResult<SpellPlan> System::prepareSpells(std::vector<SpellImpact> impacts) const {
     SpellPlan plan;
@@ -71,6 +71,7 @@ StepStatus System::resolveSpells(TickContext tick) {
                 if(pet && (!pet->amazonPet || pet->area!=impact.area || pet->life<=0)) pet=nullptr;
                 if ((!player || !player->entered || player->area!=impact.area || player->persistent.player.hp<=0) &&
                     (!pet || !pet->amazonPet || pet->area!=impact.area || pet->life<=0)) {++impact.next;continue;}
+                if(impact.nextDelay && ((player && !ports_.effects.missileHitAllowed(player->actor,tick.tick)) || (pet && pet->nextHitTick>tick.tick))) {++impact.next;continue;}
                 if(!ports_.effects.reactionCapacity()) {blocked=true;break;}
                 if(!ports_.events.hasCapacity(4,2)) {blocked=true;break;}
                 auto random=impact.contactRandom.value_or(ports_.random);
@@ -81,12 +82,12 @@ StepStatus System::resolveSpells(TickContext tick) {
                 if(impact.monsterToHit) {
                     const bool running=player && player->moving && player->runningNow;
                     hit=running || int(limitedRandom(random,100))<physicalHitChance(impact.monsterLevel,impact.monsterRating,
-                        player?player->persistent.player.level:pet->rule.level,player?player->totals.character.defense:pet->rule.defense);
+                        player?player->persistent.player.level:pet->rule.level,player?player->totals.character.defense:ports_.effects.unitDefense(pet->id,tick.tick));
                 }
-                if(hit && !stateOnly && player && player->totals.equipment.shield) hit=int(limitedRandom(random,100))>=player->totals.equipment.blockChance/(player->moving && player->runningNow?3:1);
-                if(hit && !stateOnly && pet && pet->petStats.block>0) hit=int(limitedRandom(random,100))>=pet->petStats.block;
+                if(hit && !stateOnly && !impact.unblockable && player && player->totals.equipment.shield) hit=int(limitedRandom(random,100))>=player->totals.equipment.blockChance/(player->moving && player->runningNow?3:1);
+                if(hit && !stateOnly && !impact.unblockable && pet && pet->petStats.block>0) hit=int(limitedRandom(random,100))>=pet->petStats.block;
                 if(!hit) {commitRandom();++impact.next;continue;}
-                const auto avoided=stateOnly?WeaponAvoidance::None:rollWeaponAvoidance(player?player->totals.character.combat:pet->petStats.attributes.combat,player?player->moving:pet->moving,true,random);
+                const auto avoided=(stateOnly || impact.unblockable)?WeaponAvoidance::None:rollWeaponAvoidance(player?player->totals.character.combat:pet->petStats.attributes.combat,player?player->moving:pet->moving,true,random);
                 if(avoided!=WeaponAvoidance::None) {
                     if(player) {
                         const auto result=ports_.effects.avoidance({player->player,player->actor,player->area,area->generation,0,tick.tick},avoided,impact.source);
@@ -103,7 +104,7 @@ StepStatus System::resolveSpells(TickContext tick) {
                     const ActorContext actor{player->player,player->actor,player->area,area->generation,0,tick.tick};
                     const auto received=ports_.effects.receiveMonster(actor,impact.source,rolled,impact.monsterStates);
                     result={received.status,received?std::optional{std::monostate{}}:std::nullopt};
-                    if(received && !stateOnly) ports_.effects.react(actor,impact.source,CombatEffectEvent::HitByMissile,impact.returnFire);
+                    if(received && !stateOnly) {if(!impact.reaction) ports_.effects.triggerMonsterCurse(impact.source,tick.tick);ports_.effects.react(actor,impact.source,CombatEffectEvent::HitByMissile,impact.returnFire);}
                 } else {
                     if(rolled.slowFrames) {
                         result=ports_.monsters.slow(pet->id,impact.monsterStates.slow.id,rolled.slowPercent,rolled.slowFrames,tick.tick);
@@ -112,20 +113,22 @@ StepStatus System::resolveSpells(TickContext tick) {
                         ++impact.next;continue;
                     }
                     int64_t amount=0;
-                    for(size_t channel=0;channel<5;++channel) amount+=int64_t(mitigateMonsterDamage(float(rolled.channels[channel])/256.f,pet->rule.resistances[channel])*256.f);
-                    const auto cold=rolled.coldFrames*unsigned(std::clamp(100-pet->rule.resistances[4],0,200))/(100u*unsigned(pet->rule.coldDivisor));
+                    for(size_t channel=0;channel<5;++channel) amount+=int64_t(mitigateMonsterDamage(float(rolled.channels[channel])/256.f,ports_.effects.unitResistance(pet->id,DamageType(channel),tick.tick))*256.f);
+                    const auto cold=rolled.coldFrames*unsigned(std::clamp(100-ports_.effects.unitResistance(pet->id,DamageType::Cold,tick.tick),0,200))/(100u*unsigned(pet->rule.coldDivisor));
                     std::optional<PoisonApplication> poison;
-                    if(rolled.poisonFrames && rolled.channels[5]>0) poison=PoisonApplication{int64_t(mitigateMonsterDamage(float(rolled.channels[5])/256.f,pet->rule.resistances[5])*256.f),rolled.poisonFrames,impact.monsterStates.poison.id};
+                    if(rolled.poisonFrames && rolled.channels[5]>0) poison=PoisonApplication{int64_t(mitigateMonsterDamage(float(rolled.channels[5])/256.f,ports_.effects.unitResistance(pet->id,DamageType::Poison,tick.tick))*256.f),rolled.poisonFrames,impact.monsterStates.poison.id};
                     result=ports_.monsters.damage(pet->id,impact.source,amount,tick.tick,cold,false,rolled.hitClass,poison);
+                    if(result && rolled.knockback) ports_.monsters.knockback(pet->id,monsterSource->position,tick.tick);
                 }
                 if(result.status==DomainStatus::Capacity) {blocked=true;break;}
-                if(result) {state_.hitClassCursor=hitClassCursor;commitRandom();if(impact.sourceHeal>0) ports_.monsters.heal(impact.source,impact.sourceHeal);}
+                if(result) {if(impact.nextDelay) {if(player) ports_.effects.missileHitDelay(player->actor,tick.tick+impact.nextDelay);else ports_.monsters.hitDelay(pet->id,tick.tick+impact.nextDelay);}
+                    state_.hitClassCursor=hitClassCursor;commitRandom();if(impact.sourceHeal>0) ports_.monsters.heal(impact.source,impact.sourceHeal);}
                 ++impact.next;continue;
             }
             const auto *target = ports_.monsters.find(impact.targets[impact.next]);
             if (!target || target->owner || target->life <= 0 || target->area != impact.area ||
                 (impact.nextDelay && target->nextHitTick > tick.tick)) { ++impact.next; continue; }
-            const int raw = target->rule.resistances[size_t(impact.type)];
+            const int raw = ports_.effects.unitResistance(target->id,impact.type,tick.tick);
             const int resistance = impact.type == DamageType::Cold && raw < 100 ? std::max(-100, raw - impact.coldPierce) : raw;
             int64_t amount = impact.targetDamage.empty()?impact.damage:impact.targetDamage[impact.next];
             auto random=ports_.random;
@@ -142,7 +145,7 @@ StepStatus System::resolveSpells(TickContext tick) {
                 }
                 const auto channels=targetWeaponChannels(attack,target->rule.demon,target->rule.undead);
                 amount=0;
-                for(size_t channel=0;channel<5;++channel) amount+=int64_t(mitigateMonsterDamage(float(channels[channel])/256.f,target->rule.resistances[channel])*256.f);
+                for(size_t channel=0;channel<5;++channel) amount+=int64_t(mitigateMonsterDamage(float(channels[channel])/256.f,ports_.effects.unitResistance(target->id,DamageType(channel),tick.tick))*256.f);
             }
             if (impact.staticPercent) {
                 const auto floor = std::max<int64_t>(256, target->maximumLife * impact.staticFloors.at(size_t(target->rule.difficulty)) / 100);
@@ -150,7 +153,7 @@ StepStatus System::resolveSpells(TickContext tick) {
                 amount = std::min(std::max<int64_t>(0, target->life - floor), amount * std::clamp(100 - raw, 0, 100) / 100);
             } else if(!impact.weapon) amount = int64_t(mitigateMonsterDamage(float(amount) / 256.f, resistance) * 256.f);
             uint64_t cold = 0;
-            const int coldResistance=impact.weapon?target->rule.resistances[size_t(DamageType::Cold)]:raw;
+            const int coldResistance=impact.weapon?ports_.effects.unitResistance(target->id,DamageType::Cold,tick.tick):raw;
             if (impact.coldFrames && coldResistance < 100) {
                 const int divisor = (impact.freeze ? impact.freezeDivisor : impact.coldDivisor).at(size_t(target->rule.difficulty));
                 cold = impact.coldFrames * uint64_t(std::clamp(100 - coldResistance, 0, 200)) / (100u * unsigned(divisor));
@@ -158,7 +161,7 @@ StepStatus System::resolveSpells(TickContext tick) {
             std::optional<PoisonApplication> poison;
             const auto rate=impact.weapon?impact.weapon->channels[5]:impact.type==DamageType::Poison?(impact.targetDamage.empty()?impact.damage:impact.targetDamage[impact.next]):0;
             const auto frames=impact.weapon?uint64_t(std::max(0,impact.weapon->poisonFrames)):impact.poisonFrames;
-            if(rate>0 && frames) poison=PoisonApplication{int64_t(mitigateMonsterDamage(float(rate)/256.f,target->rule.resistances[5])*256.f),frames,owner->rules.skills->poisonState};
+            if(rate>0 && frames) poison=PoisonApplication{int64_t(mitigateMonsterDamage(float(rate)/256.f,ports_.effects.unitResistance(target->id,DamageType::Poison,tick.tick))*256.f),frames,owner->rules.skills->poisonState};
             if(impact.type==DamageType::Poison) amount=0;
             if(impact.weapon && impact.weapon->wearChance>0 &&
                 limitedRandom(random,100)<unsigned(impact.weapon->wearChance)) {

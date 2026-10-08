@@ -2,7 +2,7 @@
 #include "core/random.hpp"
 #include <algorithm>
 namespace d2x {
-bool hasSpecialDecision(MonsterAiKind kind) {return kind==MonsterAiKind::Arach || kind==MonsterAiKind::Vampire;}
+bool hasSpecialDecision(MonsterAiKind kind) {return kind==MonsterAiKind::Arach || kind==MonsterAiKind::Vampire || kind==MonsterAiKind::GargoyleTrap;}
 std::optional<MonsterDecision> decideSpecialMonster(const MonsterAiProfile &profile,MonsterDecisionInput in) {
     if(!hasSpecialDecision(profile.kind)) return {};
     const auto &p=profile.params;MonsterDecision out;out.random=in.random;out.phase=in.phase;out.loop=in.loop;out.alerted=in.alerted;
@@ -11,6 +11,13 @@ std::optional<MonsterDecision> decideSpecialMonster(const MonsterAiProfile &prof
     auto retreat=[&](int distance,int speed=75){out.action=MonsterDecisionAction::Retreat;out.stopDistance=distance;out.velocityPercent=speed;};
     auto approach=[&]{out.action=MonsterDecisionAction::Approach;out.stopDistance=profile.meleeRange;};
     auto spell=[&]{out.action=MonsterDecisionAction::Special;out.skillSlot=chance(50)?0:3;};
+    if(profile.kind==MonsterAiKind::GargoyleTrap) {
+        // AITHINK_Fn063: separate recovery invocation, then the MPQ stall.
+        if(out.phase) {out.phase=0;out.waitFrames=p[2];return out;}
+        if(in.trapAxisAligned && in.distance<p[0] && chance(p[1])) {out.action=MonsterDecisionAction::Special;out.skillSlot=0;out.phase=1;}
+        else out.waitFrames=p[3];
+        return out;
+    }
     if(profile.kind==MonsterAiKind::Arach) {
         // master arachThink, AITHINK_Fn026. SpiderLay is a moving aura,
         // not a substitute A2 damage attack.

@@ -24,7 +24,7 @@ DomainResult<> GameInstance::restoreResources(PlayerId id) {
 DomainResult<EntityId> GameInstance::spawnMonster(PlayerId id, const PreparedMonster &monster) {
     const auto *player = players_.find(id);
     if (!player || !player->entered || player->persistent.player.hp <= 0) return {DomainStatus::InvalidActor, {}};
-    return systems_.population.admit({monster.identity, monster.implementation, player->area, monster.position, true, monster.rule});
+    return systems_.population.admit({monster.identity, monster.implementation, player->area, monster.position, true, monster.rule,monster.skillPositions});
 }
 std::optional<DiagnosticSnapshot> GameInstance::diagnostics(PlayerId id, size_t limit, uint64_t since,
     uint64_t commandSince, std::optional<Vec> destination) const {
@@ -89,6 +89,7 @@ std::optional<DiagnosticSnapshot> GameInstance::diagnostics(PlayerId id, size_t 
         value.blockChance=monster.rule.blockChance;value.shield=monster.shield;value.nestSpawned=monster.nestSpawned;value.webUntil=monster.webUntil;
         value.interruption=monster.interruption;value.corpseUnavailable=monster.corpseUnavailable;
         value.components=monster.components;value.componentCounts=monster.rule.componentCounts;
+        value.identity=monster.identity;value.enchantment=monster.rule.enchantment;value.home=monster.home;value.skillPositions=monster.skillPositions;
         if(const auto region=systems_.monsters.read().componentPalettes.find(monster.area);region!=systems_.monsters.read().componentPalettes.end())
             if(const auto palette=region->second.find(monster.rule.nativeClass);palette!=region->second.end()) value.componentVariants=palette->second.size();
         for(const auto &[mode,rule]:monster.rule.attacks) {(void)rule;value.attacks.push_back(mode);}

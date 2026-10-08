@@ -51,6 +51,7 @@ struct SpellImpact {
     bool monsterToHit{};
     int64_t sourceHeal{};
     std::optional<uint64_t> contactRandom{};
+    bool unblockable{};
 };
 struct SpellPlan { std::list<SpellImpact> spells; size_t targets{}; };
 struct State { std::vector<Damage> pending; std::list<SpellImpact> spells; size_t spellTargets{}; uint32_t hitClassCursor{}; };

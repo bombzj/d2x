@@ -5,10 +5,23 @@
 #include "server/systems/monsters/system.hpp"
 #include "server/systems/transactions/system.hpp"
 #include "gameplay/skills/amazon_magic_spec.hpp"
+#include <algorithm>
 namespace d2x::server::effects {
 DomainResult<> System::avoidance(const ActorContext &actor,WeaponAvoidance result,EntityId attacker) {return ports_.skills.avoidance(actor,result,attacker);}
 CharacterModifiers System::unitModifiers(EntityId id,uint64_t tick) const {
     const auto it=units_.find(id);return it==units_.end()?CharacterModifiers{}:it->second.states.modifiers(tick);
+}
+int System::unitDefense(EntityId id,uint64_t tick) const {
+    const auto *m=ports_.monsters.find(id);if(!m) return 0;
+    const auto mods=unitModifiers(id,tick);
+    return int(std::clamp<int64_t>((int64_t(m->rule.defense)+mods.defense)*std::max(0,100+mods.combat.defensePercent)/100,0,INT32_MAX));
+}
+int System::unitResistance(EntityId id,DamageType type,uint64_t tick) const {
+    const auto *m=ports_.monsters.find(id);if(!m) return 0;
+    const auto mods=unitModifiers(id,tick);
+    const std::array additions{mods.combat.physicalResist,mods.combat.magicResist,mods.fireResist,mods.lightningResist,mods.coldResist,mods.poisonResist};
+    const auto channel=size_t(type);const int base=m->rule.resistances[channel];
+    return std::max(-100,base+(base>=100 && additions[channel]<0?additions[channel]/5:additions[channel]));
 }
 std::map<int,std::vector<std::pair<int,int64_t>>> System::unitStateStats(EntityId id,uint64_t tick) const {
     const auto it=units_.find(id);if(it==units_.end()) return {};
@@ -24,6 +37,7 @@ DomainResult<> System::amazonMagic(const ActorContext &actor,const SkillCastSpec
         if(m.owner || m.life<=0 || m.area!=actor.area || !(program.filter&2) || !area->definition.activation.nearby(p->position,m.position)) continue;
         const auto delta=m.position-p->position;if(delta.x*delta.x+delta.y*delta.y>float(program.radius*program.radius)) continue;
         if((program.filter&0x200) && !area->definition.collision.missileSegment(p->position,m.position,{4,1})) continue;
+        if(program.state.curse && m.rule.enchantment && m.rule.enchantment->has(38)) continue;
         auto effect=amazonMagicEffect(program,actor.actor,skill.sourceId,skill.rank,unitModifiers(id,actor.tick).combat.curseResistance);
         if(!effect) continue;
         auto &target=next[id];target.area=actor.area;if(target.states.size()>=128) return {DomainStatus::Capacity,{}};

@@ -21,3 +21,5 @@ Skills、Missiles、AnimData、COF／DCC、ItemTypes和当前装备外观提供�
 骨魂、药瓶抛物线高度和其余客户端程序仍有缺口；RandStart指南存在冲突，暂缓。全效果密度／随机分布、空间音频、精确定点路径及像素一致性没有完整认证，不画自造替代效果。
 
 原规则入口：本地D2MOO PlrMsg／PlrModes、Missiles／MissMode、PathMisc、D2Skills；Diablerie Missile／MissileFunctions只交叉核对显示结构。当前MPQ始终决定原图与参数，参考服务端函数不代表完整D2Client视觉实现。
+
+怪物共用collision_spec／movement_math／projectile_math／damage／components的纯计算，AI、动态碰撞、生命周期和伤害分别归server领域。安达利尔／GargoyleTrap射线保留原Clt／Srv差异，电强化八条充能路径共用，冰强化采用各自环射步长。0C／69 GH生命高位是电强化触发位；GH方向槽为生命字节。完整MPQ契约、依据和验证仅维护在[怪物模块](../../modules/MONSTERS.md)及[参考设计](../../architecture/REFERENCE_DESIGN.md#第一幕怪物公共计算依据)。

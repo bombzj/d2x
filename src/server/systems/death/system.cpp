@@ -114,7 +114,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
             reward->second.restored=true;
         }
         if (!reward->second.lootQueued) {
-            LootRequest source; source.source = id; source.identity = monster.identity; source.region = monster.area; source.difficulty = monster.rule.difficulty; source.sourceSeed = true;
+            LootRequest source; source.source = id; source.identity = monster.identity; source.region = monster.area; source.difficulty = monster.rule.difficulty; source.sourceSeed = true; source.rewardModifiers=monsterRewardModifiers(monster.rule.enchantment);
             const auto queued = ports_.loot.queue({monster.deathOccurrence, source, killer->player, monster.position});
             if (!queued) { blocked = true; continue; }
             reward->second.lootQueued = true;

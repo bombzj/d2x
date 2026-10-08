@@ -1,6 +1,6 @@
 # 联网模块
 
-更新：2026-10-08。本页维护原协议、客户端副本及既有原服证据；[基线](../../BASELINE.md)区分源码与包，[总计划](../architecture/MULTIPLAYER.md)维护功能顺序。当前原服与自研宿主共用RealmSession／Remote*完整客户端，传输为TCP或内存字节队列。历史2fcc439女巫30项已构建打包，另用原服验证心灵传动、传送、暴风雪、连锁、Hydra、冰封球、陨石、火墙及烈焰之径的列出路径。原服常规施法不回送本人4C／4D，也不以73重复创建这些地面程序；自研服务端已同步修正。原服既有未消费包和引擎启动限制仍有诊断，不作全协议或全技能认证。最终包、证据及限制统一见[女巫技能](../gameplay/skills/SORCERESS.md)；当前亚马逊30项及原Clt程序／7A／9D怪物装备已构建打包，列出的自研、保存往返及多重箭／导引箭／诱饵／女武神／闪电之怒原服代表路径为有限V2，其余仍V1；逐项源码和边界见[亚马逊](../gameplay/skills/AMAZON.md)。下文历史交付记录不认证当前包的新增路径。
+更新：2026-10-09。本页维护原协议、客户端副本及既有原服证据；[基线](../../BASELINE.md)区分源码与包，[总计划](../architecture/MULTIPLAYER.md)维护功能顺序。当前原服与自研宿主共用RealmSession／Remote*完整客户端，传输为TCP或内存字节队列。历史2fcc439女巫30项已构建打包，另用原服验证心灵传动、传送、暴风雪、连锁、Hydra、冰封球、陨石、火墙及烈焰之径的列出路径。原服常规施法不回送本人4C／4D，也不以73重复创建这些地面程序；自研服务端已同步修正。原服既有未消费包和引擎启动限制仍有诊断，不作全协议或全技能认证。最终包、证据及限制统一见[女巫技能](../gameplay/skills/SORCERESS.md)；当前亚马逊30项及原Clt程序／7A／9D怪物装备已构建打包，列出的自研、保存往返及多重箭／导引箭／诱饵／女武神／闪电之怒原服代表路径为有限V2，其余仍V1；逐项源码和边界见[亚马逊](../gameplay/skills/AMAZON.md)。下文历史交付记录不认证当前包的新增路径。
 
 ## 局域网自研宿主入口
 
@@ -13,7 +13,7 @@
 - 其他客户端：`d2x.exe --lan 192.168.1.10`，直接使用相同角色页／大厅，不读取原服账号配置。每位参与者选择不同的宿主角色；房间列表／详情、密码／难度／等级差／容量使用原MCP消息。
 - D2X LAN默认MCP 6113、游戏4001；Host与Join共用默认值，两端均可用`--realm-port`／`--game-port`指定端口。原服连接仍读取online配置，游戏端口默认4000。若同机同时运行原服MCP与LAN宿主，LAN两端须以`--realm-port 6115`等空闲端口避开6113；本次默认端口源码未构建、运行、测试或打包，未配置系统防火墙。宿主可用`--debug-pipe <名称>`查看rooms／participants和管理明确目标，不向远程客户端开放管理命令。
 
-共享房间持续按25Hz推进，某客户端失焦、ESC或退出不暂停其他人；私有一人内存实例保留单机暂停。正常退出应用保存所有参与者并结束监听；仅退本机角色不销毁其他人所在实例。当前同步玩家／穿戴／移动／自然边界及UNIT_TILE换区和同局聊天；已接普通怪物及有限战斗切片；精细房间兴趣、传送点／门户／任务旅行、全部非玩家实体／战斗、队伍和交易仍待实现。独立无图形服务端及其多实例验收留到后续，本次两个房间的观察只说明嵌入宿主的基础隔离。
+共享房间持续按25Hz推进，某客户端失焦、ESC或退出不暂停其他人；私有一人内存实例保留单机暂停。正常退出应用保存所有参与者并结束监听；仅退本机角色不销毁其他人所在实例。当前同步玩家／穿戴／移动／自然边界及UNIT_TILE换区和同局聊天；已接第一幕普通／精英／首领，传送点、主人门户及邪恶洞穴切片；精细房间兴趣、其余实体／战斗、组队旅行／任务、队伍与交易仍有缺口，范围见对应模块。独立无图形服务端及其多实例验收留到后续，本次两个房间的观察只说明嵌入宿主的基础隔离。
 
 局前界面资源为当前MPQ的`TCPIPscreen.dc6`、`3WideButtonBlank.dc6`、`PopUpOkCancel2.dc6`、`CancelButtonBlank.dc6`和`textbox2.dc6`，文案读取TBL 5116–5124；布局参考用户截图及本地OpenD2／OpenDiablo2，面板和按钮使用原生像素。原说明中的本地角色不表示新增上传能力：此实现角色仍全部保存在宿主。本次已实际查看首页TCP/IP、Host／Join页面与Join默认127.0.0.1。
 
@@ -128,7 +128,7 @@ read() 借用客户端快照，有效至下一次 tick 或公共修改／随后 
 
 未知原服属性和攻击面板计算标为`?`，不按单机规则补造。商店价格暂交原服决定并明确提示，quote 返回未知，canRequestSale 单独表达能否提交出售请求；UI不显示伪造的零金币价格。任务日志投影原生私有记录／日志状态，细分文字和完整资格仍有缺口。佣兵资料／服务、交易／赌博、任务物品特殊服务和分堆协议未接，入口禁用或反馈限制；原界面实现仍共用，后续只补适配器。F1–F8原生绑定及重入恢复见本页流程入口。完整技能效果、球体状态变色和物品染色仍待接。
 
-地面金币取原数量，落地图读取当前Levels.Pal；敌人名字读MonStats.NameStr／TBL，生命按原0–128刻度并区分0x0C的暗金标志。物品Take组合等待真实光标回包及既有请求间隔，缺回包按会话超时结束、不自动重试。回城卷轴／书右键通过RemoteControl创建门户。联机Esc菜单不暂停服务端，Save and Exit提交退局；死亡回城与尸体取回接口已接，确认与验证边界见本页死亡章节。
+地面金币取原数量，落地图读取当前Levels.Pal；敌人名字读MonStats.NameStr／TBL，生命按原0–128刻度并区分0x0C／69 GH的电强化触发位。物品Take组合等待真实光标回包及既有请求间隔，缺回包按会话超时结束、不自动重试。回城卷轴／书右键通过RemoteControl创建门户。联机Esc菜单不暂停服务端，Save and Exit提交退局；死亡回城与尸体取回接口已接，确认与验证边界见本页死亡章节。
 
 ## 战斗与成长底层
 
@@ -212,7 +212,7 @@ TradeInviteView／SceneView只读状态并提交意图；交易关闭旧交互�
 - ClientSend只消费0x73原坐标、首路径目标、剩余帧、等级与穿透；无弹体GUID。已有程序1／5／6／8／9／18／19／20、原25Hz运动、充能弹／扇形／新星、部分拖尾与冰封球显示；接触只控制画面，未收到穿透次数不掷装备概率。
 - 原任务／NPC事件、技能、角色受伤／死亡和怪物动作转换成公共声音事件；SoundCatalog解释当前MPQ的Sounds／MonSounds／技能声音，SceneAudio消费选择、概率、延迟、脚步和待机间隔。SoundBank处理原声组、Compound及Stop／Defer；换区／打断／暂停恢复清过期事件。不维护两套MonSounds解释。
 
-限制：引导箭／骨魂追踪、连锁跳转、炮轰序列、持续射流、部分毒云／药瓶客户端程序、完整速度状态、精英染色／特殊死亡演出仍未完成。完整光照、空间衰减、循环音和非零FsOff缺少足够原客户端证据。scene.effectLimitations只记录遇到的限制，空数组不认证全部表现。职业及原版证据见[公共技能](../gameplay/skills/COMMON.md)、[怪物](../gameplay/world/MONSTERS.md)与[资料来源](../resources/THIRD_PARTY.md)。
+限制：骨魂追踪、其余未接程序、完整速度状态、随机精英染色／首领专用死亡演出仍有缺口。技能与精英回调范围分别见职业文档及怪物模块。完整光照、空间衰减、循环音和非零FsOff缺少足够原客户端证据。scene.effectLimitations只记录遇到的限制，空数组不认证全部表现。职业及原版证据见[公共技能](../gameplay/skills/COMMON.md)、[怪物](../gameplay/world/MONSTERS.md)与[资料来源](../resources/THIRD_PARTY.md)。
 
 ## 当前批交付
 
@@ -269,17 +269,17 @@ TradeInviteView／SceneView只读状态并提交意图；交易关闭旧交互�
 
 NPC点击／靠近源码修正：原`interactionReady`只读最近原服坐标，角色已经离开但采样仍在NPC身边时会直接发0x13。D2MOO PlrMsg `sub_6FC828D0`只在距离≤6且玩家非busy时交谈，距离7／8执行靠近，距离≥9不会靠近或回复对白。SceneController现将当前世界显示观察点随交互意图传给RemoteControl；原服距离合格但显示距离不合格，或尚未采样的移动目标指向别处时，改为原0x02／04向真实GUID靠近。这类靠近必须取得请求之后的原服玩家坐标并满足原距离才发送0x13，不能靠原来的近距离采样立即重复判定到达；接收代次只排除未更新样本，不当作原协议ACK。已在有效范围且没有上述陈旧移动的NPC仍可直接交谈；显示坐标只作否决提示，不替代权威坐标或生成对白。0x27→0x2F准备及公共对白UI仍沿原链路。本批未构建、运行或打包，具体NPC超时未复现，尚不能认证截图问题全部排除。
 
-传送点／怪物尸体源码修正（2026-10-07，未构建、运行或打包）：当前MPQ Objects的OperateFn=23条目均为Selectable1=0，但D2MOO `OBJECTS_OperateFunction23_Waypoint`接受mode=1／2开菜单。RemoteTown对这两个模式保留点击资格，普通物件继续核对Selectable及TARGETABLE；解锁历史、菜单和旅行仍等待原服。0x51物件分配记录动作接收时间；公共ActorAnimationCatalog按原FrameCnt1＋1个25Hz服务帧投影启动结束后的mode=2，复用原ON循环动画，并将同一显示模式交给公共光照。仅限Waypoint的表现衔接，不修改副本模式、碰撞或解锁位；缺少必要MPQ定义不推导完成状态。
+传送点／怪物尸体消费：当前MPQ Objects的OperateFn=23条目均为Selectable1=0，但D2MOO `OBJECTS_OperateFunction23_Waypoint`接受mode=1／2开菜单。RemoteTown对这两个模式保留点击资格，普通物件继续核对Selectable及TARGETABLE；解锁历史、菜单和旅行仍等待原服。0x51物件分配记录动作接收时间；公共ActorAnimationCatalog按原FrameCnt1＋1个25Hz服务帧投影启动结束后的mode=2，复用原ON循环动画，并将同一显示模式交给公共光照。仅限Waypoint的表现衔接，不修改副本模式、碰撞或解锁位；缺少必要MPQ定义不推导完成状态。
 
-MonsterMsg的0x69动作9使用当前坐标，RemoteWorld将它写入position／positionRevision并清除旧destination，事件仍保留原坐标与方向；其它动作的目标坐标语义保持原样。RemoteScene在死亡动作尚无新当前位置时停止路径并保留当前连续显示位置，收到尸体当前位置后由原位置校正收敛，不再先回退到旧行走采样。D2S与规则指纹不变；当前包不包含本轮修正，第二幕传送点的鼠标／发光及怪物死亡位置仍待运行验收。
+MonsterMsg的0x69动作9使用当前坐标，RemoteWorld将它写入position／positionRevision并清除旧destination，事件仍保留原坐标与方向；其它动作的目标坐标语义保持原样。RemoteScene在死亡动作尚无新当前位置时停止路径并保留当前连续显示位置，收到尸体当前位置后由原位置校正收敛，不再先回退到旧行走采样。D2S与规则指纹不变；修正已入当前包；怪物有限验证见怪物模块，第二幕传送点鼠标／发光仍未专项认证。
 
-技能／怪物只读资格收拢（2026-10-07，未构建、运行或打包）：人物投影和 RemoteCombat 共用 skill_eligibility 的当前 MPQ 条件导入、Attack／CharStats 固有清单及学习／选择资格。未收到基础等级不按零授权学习，界面补齐原 reqstr／reqdex／reqvit／reqint 门槛；当前法力／装备提示仍使用已有只读输入，下一等级预览不写当前资格。RemoteCombat 集中 MonStats 敌我、原状态 alignment 及 corpseSel／hide／udead 目标校验，RemoteScene 的命中与锁定复用 monsterTargetEligible；声音、弹体、光照与 NPC 读取同一 onlineMonsterCorpse，不再各自判断死亡模式或漏剥离生命 rank 位。场景、owner、范围及地图绑定保留原协议校验，伤害、消耗和学习结果仍由 D2GS 决定。
+技能／怪物只读资格：人物投影和 RemoteCombat 共用 skill_eligibility 的当前 MPQ 条件导入、Attack／CharStats 固有清单及学习／选择资格。未收到基础等级不按零授权学习，界面补齐原 reqstr／reqdex／reqvit／reqint 门槛；当前法力／装备提示仍使用已有只读输入，下一等级预览不写当前资格。RemoteCombat 集中 MonStats 敌我、原状态 alignment 及 corpseSel／hide／udead 目标校验，RemoteScene 的命中与锁定复用 monsterTargetEligible；声音、弹体、光照与 NPC 读取同一 onlineMonsterCorpse，不再各自判断死亡模式或漏剥离生命触发位。场景、owner、范围及地图绑定保留原协议校验，伤害、消耗和学习结果仍由 D2GS 决定。
 
 掉落显示迁移补齐（2026-10-07，未构建、运行或打包）：对照旧单机loot_view／SceneAssets／ItemChange消费者及独立D2S映射，发现原品质数字被直接转换为内部枚举，导致普通物品误标稀有、魔法误标暗金等颜色／名称／图形错误。原编号表提取到共用quality.hpp，地面、面板和商店消费同一转换结果，独立D2S映射和编码不变。已鉴定暗金／套装沿用原invfile／flippyfile覆盖；未鉴定原位流缺少fileIndex，保留基础原图，不假定第0行。DROPTOGROUND或新DROPPING记录表现事件版本／接收时间，公共SceneView恢复旧25Hz flippy与同帧命中／高亮；mode=5纳入地面显示但仍禁拾取，普通同步／属性增量不重播，切区／退局／离地清理。ALT标签、品质色、带孔／无形灰色、符文之语标题、避让布局、底边锚点继续复用既有代码。普通拾取提示等待同一地面GUID进入本人容器／Cursor，原掉落／消耗／拾取结果仍由D2GS裁决。
 
 所有物品的掉落声音与数量反馈均走公共表现入口（2026-10-07，未构建、运行或打包）：对照 Diablerie SoundSystem.OnLootFlipped／Item.dropSoundDelay 和当前 MPQ，起始 item_flippy 与物品指定帧落地声分别消费一次；SoundCatalog 读取 Weapons／Armor／Misc 及已知暗金／套装覆盖，SceneAudio 使用已有 Sounds 声组规则，普通快照／属性更新不重播。D2MOO ItemMode 的 PickupGold、sub_6FC437F0、sub_6FC43BF0、sub_6FC49AE0 分别核对金币堆移除／钱包增加、自动合堆及书／卷轴转移。RemoteUiClients 用请求前 GUID／revision、已知钱包及堆叠数量基线核对原服结果，含普通拾取、金币、自动／手动合堆、卷轴入书和部分合入；数量分包未对齐、单独移除或 Updated 均不授权成功。通知有界排队，跟踪不写库存或请求结果；缺基线、过期、中断或多人分金仍保留未知。音效与数量反馈的其余边界见[物品支持](../gameplay/items/SUPPORT.md)，当前包不含本轮修正。
 
-世界角色装备显示修正（2026-10-07，未构建、运行或打包）：只读 bomb 的 SkillTestSor 99级女巫原服保存，当前躯干为 qui 绗缝甲，原品质4（魔法）、flags=0x00c00010（含无形0x00400000）。原 RealmPortraitCatalog 世界装备入口对品质>3或无形直接返回空，RemoteScene 因而放弃整个人物。对照 D2MOO D2Inventory 的 INVENTORY_GetCompositItem、旧 hero_assets 身体组件组装与当前 MPQ：qui 的四个主体组件为 ArmType 0、肩部为1，女巫对应原 DCC及城镇 COF存在。现在真实装备组件继续进入已有公共合成器，未知的组件染色／无形透明只作诊断，不再因品质或效果标志隐去人物；真实组件／动画缺失仍保持明确不可用，不替换裸装。选角肖像染色限制未改变，不改装备、存档、原服状态或 D2S 编码；该具体角色尚未运行复现或验收，当前包不含修正。
+世界角色装备显示修正（2026-10-07，已随当前Release入包）：只读 bomb 的 SkillTestSor 99级女巫原服保存，当前躯干为 qui 绗缝甲，原品质4（魔法）、flags=0x00c00010（含无形0x00400000）。原 RealmPortraitCatalog 世界装备入口对品质>3或无形直接返回空，RemoteScene 因而放弃整个人物。对照 D2MOO D2Inventory 的 INVENTORY_GetCompositItem、旧 hero_assets 身体组件组装与当前 MPQ：qui 的四个主体组件为 ArmType 0、肩部为1，女巫对应原 DCC及城镇 COF存在。现在真实装备组件继续进入已有公共合成器，未知的组件染色／无形透明只作诊断，不再因品质或效果标志隐去人物；真实组件／动画缺失仍保持明确不可用，不替换裸装。选角肖像染色限制未改变，不改装备、存档、原服状态或 D2S 编码；该具体角色尚未运行复现或验收；构建入包不替代该样本认证。
 
 ## 最终依赖清理
 

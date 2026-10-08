@@ -17,7 +17,7 @@ namespace d2x::server::skills {
 enum class Action { Select, Cast, Stop, Bind };
 struct Request { Action action; uint16_t skill{}; bool right{}, repeat{}, stationary{}; std::optional<ActionTarget> target; std::optional<unsigned> hotkey; };
 // Internal AI/companion action, not a player identity supplied over the wire.
-struct CastRequest { EntityId actor; uint16_t skill{}; ActionTarget target; uint64_t tick{}; uint8_t monsterMode{4}; };
+struct CastRequest { EntityId actor; uint16_t skill{}; ActionTarget target; uint64_t tick{}; uint8_t monsterMode{4}; std::optional<Vec> position{}; int teleportHeal{}; };
 struct Cast { EntityId actor; uint16_t skill{}; uint64_t started{}, revision{}, until{}; RegionId area; EntityId target; bool interrupted{}; uint64_t cooldownUntil{}; };
 struct State { std::map<EntityId, Cast> casts; };
 struct Ports { const PlayerStore &players; const AreaStore &areas; monsters::System &monsters; MovementSystem &movement; combat::System &combat; transactions::System &transactions; missiles::System &missiles; travel::System &travel; EventOutbox &events; effects::System &effects; companions::System &companions; objects::System &objects; inventory::System &inventory; };
@@ -47,6 +47,9 @@ class System {
         uint64_t generation{}, due{}, random{};
         uint64_t interruption{};
         std::optional<std::pair<Vec,Vec>> launch;
+        std::vector<int> releaseFrames{};
+        size_t nextRelease{};
+        uint64_t started{};
     };
     std::map<EntityId,MonsterRelease> monsterReleases_;
     StepStatus releaseMonsters(TickContext);

@@ -53,12 +53,13 @@ Bytes nativeMonsterAssignment(const MonsterSnapshot &monster, Vec origin) {
         bits.write(components,1);
         if(components) for(size_t c=0;c<monster.components.size();++c)
             bits.write(monster.components[c],monster.componentCounts[c]>=3?std::bit_width(unsigned(monster.componentCounts[c]-1)):1);
-        bits.write(!monster.modifiers.empty(),1);
-        if(!monster.modifiers.empty()) {
+        bits.write((!monster.modifiers.empty() || monster.rankFlags),1);
+        if((!monster.modifiers.empty() || monster.rankFlags)) {
             if(monster.modifiers.size()>9) throw std::runtime_error("Native NPC modifier capacity exceeded");
-            bits.write(0,5); // Summons are neither champion nor unique ranks.
+            bits.write(monster.rankFlags,5);
+            if(monster.rankFlags&4) bits.write(monster.superUniqueIndex,16);
             for(auto modifier:monster.modifiers) {if(!modifier) throw std::runtime_error("Invalid native NPC modifier");bits.write(modifier,8);}
-            bits.write(0,8);bits.write(0,16);bits.write(0,1); // Terminator, name seed, hireling owner.
+            bits.write(0,8);bits.write(monster.nameSeed,16);bits.write(0,1); // Terminator, name seed, hireling owner.
         }
         bits.write(monster.storedOwner.has_value(),1);
         if(monster.storedOwner) {
@@ -71,7 +72,7 @@ Bytes nativeMonsterAssignment(const MonsterSnapshot &monster, Vec origin) {
 }
 Bytes nativeMonsterMotion(const MonsterSnapshot &monster, Vec origin) {
     if(monster.mode==3 || monster.mode==6)
-        return encodeServerPacket(ServerMessage::NpcModePoint,[&](auto &out){out.u32(uint32_t(monster.id.value));out.u8(monster.mode==3?6:18);point(out,monster.position+origin);out.u8(0);out.u8(0);});
+        return encodeServerPacket(ServerMessage::NpcModePoint,[&](auto &out){out.u32(uint32_t(monster.id.value));out.u8(monster.mode==3?6:18);point(out,monster.position+origin);out.u8(monster.mode==3?uint8_t(monster.life>1?monster.life-1:monster.life)|(monster.lightningReady?0x80:0):0);out.u8(0);});
     if(monster.mode==8 || monster.mode==9)
         return encodeServerPacket(ServerMessage::NpcModePoint,[&](auto &out){out.u32(uint32_t(monster.id.value));out.u8(monster.mode==8?12:14);point(out,monster.position+origin);out.u8(0);out.u8(0);});
     if (monster.mode == 0 || monster.mode == 12)
@@ -124,11 +125,18 @@ std::vector<Bytes> nativeHit(const server::HitFact &fact, Vec origin) {
     } else {
         // MonsterMsg::sub_6FC659E0 uses flag 19 for life/last hit class.
         result.push_back(encodeServerPacket(ServerMessage::Hit,[&](auto &out) {
-            key(out,fact.type,fact.target);out.u8(19);out.u8(fact.hitClass);out.u8(fact.life>1?fact.life-1:fact.life);
+            key(out,fact.type,fact.target);out.u8(19);out.u8(fact.hitClass);out.u8(uint8_t(fact.life>1?fact.life-1:fact.life)|(fact.lightningReady?0x80:0));
         }));
     }
+    if(fact.type==0 && !fact.killed && fact.knockback) result.push_back(encodeServerPacket(ServerMessage::MovePoint,[&](auto &out) {
+        key(out,0,fact.target);out.u8(20);point(out,*fact.knockback+origin);out.u8(fact.hitClass);point(out,fact.position+origin);
+    }));
     if(fact.type==1 && !fact.killed && fact.monsterMode)
-        result.push_back(encodeServerPacket(ServerMessage::NpcModePoint,[&](auto &out){out.u32(uint32_t(fact.target.value));out.u8(fact.monsterMode==3?6:18);point(out,fact.position+origin);out.u8(0);out.u8(0);}));
+        result.push_back(encodeServerPacket(ServerMessage::NpcModePoint,[&](auto &out){
+            out.u32(uint32_t(fact.target.value));out.u8(fact.monsterMode==3?6:18);point(out,fact.position+origin);
+            // GH overloads the direction byte with HP and the UMod trigger.
+            out.u8(fact.monsterMode==3?uint8_t(fact.life>1?fact.life-1:fact.life)|(fact.lightningReady?0x80:0):0);out.u8(fact.hitClass);
+        }));
     if (fact.killed) {
         if (fact.type == 1) result.push_back(encodeServerPacket(ServerMessage::NpcModePoint, [&](auto &out) {
             out.u32(uint32_t(fact.target.value)); out.u8(8); point(out, fact.position + origin); out.u8(0); out.u8(0);

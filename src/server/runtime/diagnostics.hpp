@@ -41,6 +41,10 @@ struct DiagnosticMonster {
     std::array<uint8_t,16> components{}, componentCounts{};
     size_t componentVariants{};
     std::vector<int> attacks{}, skills{};
+    MonsterIdentity identity{};
+    std::optional<MonsterEnchantment> enchantment{};
+    Vec home{};
+    std::vector<Vec> skillPositions{};
 };
 struct DiagnosticEffect { int state{}; uint64_t expires{}; };
 struct DiagnosticSnapshot {

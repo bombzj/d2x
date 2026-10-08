@@ -8,6 +8,7 @@
 #include "gameplay/monsters/melee_decision.hpp"
 #include "gameplay/monsters/ranged_decision.hpp"
 #include "gameplay/monsters/special_decision.hpp"
+#include "gameplay/monsters/boss_decision.hpp"
 #include "gameplay/monsters/movement_math.hpp"
 #include "core/random.hpp"
 #include <algorithm>
@@ -65,12 +66,13 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         if(monster.rule.opensDoors && ports_.objects.openMonsterDoor(id,targetPosition,tick.tick)) {
             ports_.monsters.stop(id);controller.pursuing=false;controller.nextDecision=tick.tick+5;continue;
         }
+        if(const auto unique=uniqueAction(id,*target,targetPosition,tick,controller)) {blocked|=*unique==StepStatus::Blocked;continue;}
         const auto &rules = monster.rule.ai;
         if(rules.kind==MonsterAiKind::FoulCrowNest) {
             if(nestFamily(id,*target,distance,tick,controller)==StepStatus::Blocked) blocked=true;
             continue;
         }
-        if (hasMeleeDecision(rules.kind) || hasRangedDecision(rules.kind) || hasSpecialDecision(rules.kind) || rules.kind==MonsterAiKind::FallenShaman) {
+        if (hasMeleeDecision(rules.kind) || hasRangedDecision(rules.kind) || hasSpecialDecision(rules.kind) || rules.kind==MonsterAiKind::FallenShaman || hasBossDecision(rules.kind)) {
             if (familyAction(id,*target,targetPosition,targetSize,tick,controller) == StepStatus::Blocked) blocked = true;
             continue;
         }

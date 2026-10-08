@@ -48,9 +48,11 @@ std::optional<server::MonsterMissileRule> prepareMonsterMissile(const ClassicDat
     rule.returnFire=data.missileReturnFire.at(definition);
     rule.hitClass=table.number(row,"HitClass").value_or(0);
     rule.nextDelay=table.number(row,"NextHit").value_or(0)?table.number(row,"NextDelay").value_or(0):0;
-    // None of the Act1 ordinary rows use NextHit. The player-side enemy
-    // cooldown window is not yet supported; do not silently omit it.
-    if(rule.nextDelay) return {};
+    // Native NextHit windows are applied to both players and monsters.
+
+    rule.unspreadMultiShot=data.unspreadMultiShotMissiles.contains(definition);
+    rule.noMultiShot=table.number(row,"NoMultiShot").value_or(0)!=0;rule.noUniqueMod=table.number(row,"NoUniqueMod").value_or(0)!=0;
+    rule.acceleration=float(table.number(row,"Accel").value_or(0))*25.f/4096.f;rule.maximumVelocity=float(table.number(row,"MaxVel").value_or(0))*25.f/4096.f;
     rule.baseVelocity=table.number(row,"Vel").value_or(0);rule.levelVelocity=table.number(row,"VelLev").value_or(0);rule.rank=rank;
     rule.canSlow=table.number(row,"CanSlow").value_or(0)!=0;rule.activate=table.number(row,"Activate").value_or(0);
     rule.alwaysExplode=table.number(row,"AlwaysExplode").value_or(0)!=0;
@@ -64,6 +66,15 @@ std::optional<server::MonsterMissileRule> prepareMonsterMissile(const ClassicDat
     case 31:rule.behavior=server::MonsterMissileRule::Behavior::FireHead;break;
     case 0:break;
     default:return {};
+    }
+    if(table.number(row,"pSrvDoFunc")==6) rule.behavior=server::MonsterMissileRule::Behavior::FirewallMaker;
+    else if(table.number(row,"pSrvDoFunc")==5) rule.behavior=server::MonsterMissileRule::Behavior::Fire;
+    else if(table.value(row,"Missile")=="lightunique") rule.behavior=server::MonsterMissileRule::Behavior::Charged;
+    else if(table.value(row,"Missile")=="coldunique") {
+        rule.behavior=server::MonsterMissileRule::Behavior::ColdNova;
+        for(size_t r=0;r<table.rows().size();++r) if(table.value(r,"Missile")=="frostnova") {
+            rule.baseVelocity=table.number(r,"Vel").value_or(0);rule.speed=float(*missileVelocityFixed(rule.baseVelocity,0,rank))*25.f/4096.f;break;
+        }
     }
     return rule;
 }
@@ -102,7 +113,8 @@ bool prepareMonsterSpecialActions(Archives &archives,const ClassicData &data,con
         // an AI cast. CorruptRogue's Countess slot belongs to its boss AI.
         const bool required=(record.ai=="FallenShaman" && slot<2) ||
             (record.ai=="FoulCrowNest" && slot==0) || (record.ai=="Arach" && slot==0) ||
-            (record.ai=="Vampire" && (slot==0 || slot==3));
+            (record.ai=="Vampire" && (slot==0 || slot==3)) ||
+            (record.ai=="Andariel" && slot<2) || (record.ai=="BloodRaven" && slot<2) || (record.ai=="GargoyleTrap" && slot==0) || (rule.ai.kind==MonsterAiKind::Countess && slot==0);
         if(!required) continue;
         const auto field=std::to_string(slot+1);const auto skillName=stats.value(record.sourceRow,"Skill"+field);
         size_t row=0;while(row<skills.rows().size() && skills.value(row,"skill")!=skillName) ++row;
@@ -112,7 +124,10 @@ bool prepareMonsterSpecialActions(Archives &archives,const ClassicData &data,con
         if(!skillId || *skillId<1 || *skillId>UINT16_MAX || rank<1 || rank>255) return false;
         server::MonsterAttackRule action;action.rank=uint8_t(rank);
         auto sourceMode=std::string(stats.value(record.sourceRow,"Sk"+field+"mode"));std::string mode=sourceMode;
-        const int event=record.ai=="FoulCrowNest"?4:2;
+        // Monster A1 invokes its used skill at the melee event when MissA1 is
+        // absent (AndyPoisonBolt and CountessFirewall). Bow A1 uses event 2.
+        const int event=(record.ai=="FoulCrowNest" || record.ai=="GargoyleTrap" || (record.ai=="BloodRaven" && slot==0))?4:
+            sourceMode=="A1" && !record.attack1Projectile?1:2;
         if(sourceMode.starts_with("seq_")) {
             mode.clear();
             for(size_t index=0;index<sequences.rows().size();++index) if(sequences.value(index,"sequence")==sourceMode && sequences.number(index,"event")==event) {mode=sequences.value(index,"mode");break;}
@@ -125,7 +140,16 @@ bool prepareMonsterSpecialActions(Archives &archives,const ClassicData &data,con
         action.release=std::clamp(int(std::ceil(timing->impact*25)),1,action.duration);
         action.nativeMode=lower=="a2"?5:lower=="s1"?8:lower=="sc"?7:4;
         if(record.ai=="FallenShaman" && slot==0) action.action=server::MonsterAttackRule::Action::Resurrect;
-        else if(record.ai=="FoulCrowNest") action.action=server::MonsterAttackRule::Action::Nest;
+        else if(record.ai=="FoulCrowNest" || (record.ai=="BloodRaven" && slot==0)) action.action=server::MonsterAttackRule::Action::Nest;
+        else if(rule.ai.kind==MonsterAiKind::Countess) {
+            if(!rule.firewall) return false;
+            action.action=server::MonsterAttackRule::Action::Firewall;
+            action.missile=prepareMonsterMissile(data,rule.firewall->makerId,rank);
+            action.groundFire=prepareMonsterMissile(data,rule.firewall->fireId,rank);
+            if(!action.missile || !action.groundFire) return false;
+            const auto &fire=*rule.firewall;
+            action.missile->frames=fire.makerFrames;action.groundFire->frames=fire.fireFrames;
+        }
         else if(record.ai=="Arach") {
             if(!record.web) return false;
             action.action=server::MonsterAttackRule::Action::Web;
@@ -155,6 +179,17 @@ bool prepareMonsterSpecialActions(Archives &archives,const ClassicData &data,con
                 definition+=offset;
             }
             action.missile=prepareMonsterMissile(data,definition,rank);if(!action.missile) return false;
+            if(record.ai=="GargoyleTrap") action.action=server::MonsterAttackRule::Action::Trap;
+            if(record.ai=="Andariel" && slot==0) {
+                action.action=server::MonsterAttackRule::Action::Spray;
+                for(float eventTime:timing->eventTimes) action.releaseFrames.push_back(std::max(1,int(std::ceil(eventTime*25))));
+                if(action.releaseFrames.empty()) return false;
+                action.release=action.releaseFrames.front();
+            }
+            if(record.ai=="BloodRaven") {
+                const auto attack=rule.attacks.find(4);if(attack==rule.attacks.end()) return false;
+                action.minimum=attack->second.minimum;action.maximum=attack->second.maximum;action.rating=attack->second.rating;action.elements=attack->second.elements;
+            }
         }
         rule.skillIds[slot]=uint16_t(*skillId);rule.skillActions.emplace(uint16_t(*skillId),std::move(action));
     }

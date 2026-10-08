@@ -12,7 +12,7 @@
 #include "gameplay/combat/poison.hpp"
 namespace d2x::server::effects {
 struct Cycle { uint64_t next{}; EntityId last; };
-struct Recovery { std::deque<ResourceRestoration> healing, mana; CombatEffectSet states; std::map<EffectHandle,Cycle> cycles; std::optional<Vec> previous; std::optional<PoisonStatus> poison; };
+struct Recovery { std::deque<ResourceRestoration> healing, mana; CombatEffectSet states; std::map<EffectHandle,Cycle> cycles; std::optional<Vec> previous; std::optional<PoisonStatus> poison; uint64_t nextMissileHit{}; };
 struct Reaction { ActorContext actor; EntityId attacker; TriggeredCombatEffect effect; };
 struct State { std::map<EntityId, Recovery> players; };
 struct UnitEffect { RegionId area; CombatEffectSet states; std::map<int,std::vector<std::pair<int,int64_t>>> nativeStats; };
@@ -30,6 +30,11 @@ class System {
     std::map<EntityId,UnitEffect> units_;
     struct WebTrail {Vec previous,origin,target;RegionId area;uint64_t until{},random{};bool pending{};};
     std::map<EntityId,WebTrail> webTrails_;
+    struct UniqueCycle {uint64_t damage{},lightning{},nextLightning{},death{},deathOccurrence{},nextAura{},auraOccurrence{},random{};int deathPhase{};bool cursePending{},auraPending{};size_t auraTarget{},curseTarget{};std::vector<EntityId> targets,curseTargets;};
+    std::map<EntityId,UniqueCycle> uniqueCycles_;
+    StepStatus advanceMonsterEnchantments(uint64_t);
+    DomainResult<> monsterAura(EntityId,const AuraDefinition &,EntityId,uint64_t,uint64_t duration,bool owner=false);
+
     StepStatus advanceSkills(const ActorContext &, Recovery &);
     StepStatus advanceReactions(uint64_t);
     StepStatus advanceUnits(uint64_t);
@@ -44,11 +49,16 @@ class System {
     DomainResult<> skillUnit(const ActorContext &, const SkillCastSpec &, EntityId);
     DomainResult<> amazonMagic(const ActorContext &, const SkillCastSpec &);
     CharacterModifiers unitModifiers(EntityId, uint64_t tick) const;
+    int unitDefense(EntityId,uint64_t tick) const;
+    int unitResistance(EntityId,DamageType,uint64_t tick) const;
     DomainResult<> avoidance(const ActorContext &, WeaponAvoidance, EntityId attacker);
     std::set<int> unitStates(EntityId, uint64_t tick) const;
     std::map<int,std::vector<std::pair<int,int64_t>>> unitStateStats(EntityId, uint64_t tick) const;
     DomainResult<float> receive(const ActorContext &, int64_t rawDamage, DamageType);
     DomainResult<float> receiveMonster(const ActorContext &, EntityId source, const MonsterHit &, const MonsterHitStates &);
+    bool missileHitAllowed(EntityId,uint64_t tick) const;
+    void missileHitDelay(EntityId,uint64_t until);
+    void triggerMonsterCurse(EntityId,uint64_t tick);
     bool reactionCapacity() const { return reactions_.size() <= 4096-128; }
     void react(const ActorContext &, EntityId attacker, CombatEffectEvent, bool returnFire = true);
     StepStatus step(TickContext, FrameFacts &);

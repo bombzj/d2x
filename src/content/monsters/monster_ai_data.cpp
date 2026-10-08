@@ -30,6 +30,7 @@ std::optional<MonsterAiProfile> loadMonsterAiProfile(const DataTable &stats, siz
     else if (ai == "Griswold") profile.kind = MonsterAiKind::Griswold;
     else if (ai == "BloodRaven") profile.kind = MonsterAiKind::BloodRaven;
     else if (ai == "Andariel") profile.kind = MonsterAiKind::Andariel;
+    else if (ai == "GargoyleTrap") profile.kind = MonsterAiKind::GargoyleTrap;
     else return std::nullopt;
     if (profile.kind == MonsterAiKind::Vampire) {
         const int velocity = stats.number(row, "Velocity").value_or(0);
@@ -46,6 +47,7 @@ std::optional<MonsterAiProfile> loadMonsterAiProfile(const DataTable &stats, siz
         profile.params[index] = value.value_or(0);
     }
     auto percentage = [&](int index) { return profile.params[index] <= 100; };
+    if(profile.kind==MonsterAiKind::GargoyleTrap && !percentage(1)) return std::nullopt;
     if (profile.kind == MonsterAiKind::Andariel &&
         (!percentage(0) || !percentage(1) || !percentage(2) || !percentage(3))) return std::nullopt;
     if (profile.kind == MonsterAiKind::Skeleton &&

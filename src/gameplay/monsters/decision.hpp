@@ -12,6 +12,7 @@ struct MonsterDecisionInput {
     int phase{}, loop{}, targetLifePercent{100};
     bool webActive{}, clear{};
     bool retreatBlocked{};
+    bool trapAxisAligned{};
 };
 struct MonsterDecision {
     MonsterDecisionAction action{MonsterDecisionAction::Idle};

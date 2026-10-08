@@ -42,6 +42,7 @@ struct CharacterEdit {
     std::optional<bool> selectedHand{};
     std::vector<DomainFact> publicFacts{};
     std::vector<DomainFact> facts{};
+    std::optional<PointTarget> knockback{};
 };
 using Change = std::variant<ItemTransfer, Reward, Exchange, InventoryEdit, CharacterEdit>;
 struct PreparedPlayer {

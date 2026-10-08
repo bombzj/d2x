@@ -38,7 +38,7 @@ Single Player的online-status仍只读原协议OnlineView；server-status单独�
 | `step` | frames默认1，范围1–250；只允许已入局且权威paused的实例，以1/25秒固定步推进，返回更新后的tick。普通pause会清路径和待执行移动，step不恢复被清除的路径；server-pause保留行动，也不推进原服 |
 | `grant-experience` | amount为正的有符号整数；宿主progression授予、封顶／升级／余点事务，原包更新同一客户端；暂停时可用，原服拒绝 |
 | `grant-gold` | amount有符号整数；通过人物事务授予金币，复验钱包上限 |
-| `monster-spawn` | code为当前MPQ monstats身份，x／y为当前区域全局subtile。复用自然人口的第一幕普通怪物准入／数值／动作准备，再交population／monsters；返回entityId。不接受level覆盖，等级随区域／难度，不支持身份、城镇、碰撞和容量明确拒绝 |
+| `monster-spawn` | code为当前MPQ monstats身份，x／y为当前区域全局subtile。复用自然人口的怪物准入／数值／动作准备，再交population／monsters；返回entityId。rank默认normal，可选champion／unique／boss／superunique；superunique须提供当前SuperUniques精确身份superUnique，且code必须匹配原Class。仆从只由自然领队人口生成，不提供无领队调试替身。不接受level覆盖，等级随区域／难度，不支持身份、城镇、碰撞和容量明确拒绝 |
 | `item-spawn` | code、level可选及世界x/y；quality默认normal，可选magic按当前MPQ滚词缀；durability可显式指定0..原物品最大耐久。仅item-spawn接受这两项，缺生成规则明确拒绝；走统一地面安装入口 |
 | `player-damage` | amount为非负整数生命点，转换为原固定点后走人物伤害事务及正常死亡结算 |
 | `grant-shrine`、`grant-hireling` | code，level可选；类型化stub |
@@ -208,7 +208,9 @@ LAN宿主的server-status新增rooms／participants摘要：实例slot／generat
 
 区域快照的objectDeferred列出尚未实现的原物件预设回调身份（574–582）；这些不是已生成的物件，不参与碰撞或掉落。普通缺失表项仍使内容准备失败。
 
-本轮增加 player-damage／grant-gold／item-spawn，以及快照中的尸体、物件、NPC、商店暂缓原因、邪恶洞穴剩余／阶段、传送点与回城门。仅用于宿主管理，原服连接不能调用；本轮已使用这些管理入口准备六项冒烟，再以既有online-*发送原包完成普通玩法。最终证据统一见[基线](../../BASELINE.md#当前运行包与有限冒烟)，管理击杀不代表逐只普通攻击或完整AI验收。
+冒烟使用已有宿主管理准备与online-*原包，不新增客户端状态旁路。怪物准入／规则快照用于观察，不能代替逐只普通攻击或完整AI认证；本批证据与边界见[基线](../../BASELINE.md#当前运行包与有限冒烟)。
+
+server-snapshot的怪物identity包含rank／superUnique／spawnKey／ownerSpawnKey；enchantment包含词缀、nameSeed、等级、增伤／命中／速度／抗性及光环参数；home／skillPositions保留原出生点和DS1技能节点。这些为宿主管理观察，不是新增游戏消息；实际验证范围见怪物模块。
 
 ### 女巫战斗诊断
 

@@ -68,6 +68,14 @@ Json debugServerSnapshot(const server::DiagnosticSnapshot &s, uint64_t since, ui
         value["interruption"]=monster.interruption;value["corpseUnavailable"]=monster.corpseUnavailable;
         value["components"]=monster.components;value["rules"]["componentCounts"]=monster.componentCounts;
         value["rules"]["componentVariants"]=monster.componentVariants;
+        value["identity"]={{"rank",monsterRankName(monster.identity.rank)},{"superUnique",monster.identity.superUnique},{"spawnKey",monster.identity.spawnKey},{"ownerSpawnKey",monster.identity.ownerSpawnKey}};
+        value["home"]=point(monster.home+origin);value["skillPositions"]=Json::array();
+        for(const auto p:monster.skillPositions) value["skillPositions"].push_back(point(p+origin));
+        if(monster.enchantment) {
+            const auto &e=*monster.enchantment;
+            value["enchantment"]={{"ids",e.ids},{"nameSeed",e.nameSeed},{"level",e.level},{"damagePercent",e.damagePercent},{"attackRatingPercent",e.attackRatingPercent},{"velocityPercent",e.velocityPercent},{"resistances",e.resistances}};
+            if(e.aura) value["enchantment"]["aura"]={{"skill",e.aura->skill},{"rank",e.aura->rank},{"radius",e.aura->radius},{"periodFrames",e.aura->periodFrames}};
+        }
         result["monsters"].push_back(std::move(value));
     }
     for (const auto &cast : s.casts) result["casts"].push_back({{"actor", cast.actor.value}, {"skill", cast.skill},

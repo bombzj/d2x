@@ -2,6 +2,9 @@
 #include "gameplay/combat/life.hpp"
 #include "server/player_store.hpp"
 #include "server/area_store.hpp"
+#include "server/systems/monsters/system.hpp"
+#include "server/systems/skills/system.hpp"
+#include "gameplay/combat/geometry.hpp"
 #include "server/systems/transactions/system.hpp"
 #include "server/systems/skills/evaluation.hpp"
 #include "gameplay/skills/behavior.hpp"
@@ -115,8 +118,18 @@ DomainResult<float> System::receiveMonster(const ActorContext &actor, EntityId s
     edit.transient = projection(states,actor.tick);
     const auto percent = playerLifePercentage(int64_t(edit.player.hp*256),int64_t(p->totals.character.maxLife)*256);
     if(dealt>0 || hit.mana>0 || hit.stamina>0) edit.publicFacts.emplace_back(HitFact{actor.actor,0,actor.area,percent,edit.player.hp<=0,p->position,hit.hitClass});
+    if(hit.knockback && dealt>0 && edit.player.hp>0) if(const auto *attacker=ports_.monsters.find(source)) {
+        const auto &area=ports_.areas.at(actor.area);const Vec destination=knockbackDestination(p->position,attacker->position,3);
+        if(area.definition.collision.nativeMovementSegment(p->position,destination,playerMovement)) {
+            edit.knockback=PointTarget{actor.area,area.generation,destination};
+            for(auto &fact:edit.publicFacts) if(auto *damage=std::get_if<HitFact>(&fact)) damage->knockback=destination;
+        }
+    }
     auto plan = ports_.transactions.prepare(std::move(edit)); if (!plan) return {plan.status,{}};
-    auto result = ports_.transactions.commit(std::move(*plan.value)); if (result) state_.players.swap(next.players);
+    auto result = ports_.transactions.commit(std::move(*plan.value)); if (result) {
+        state_.players.swap(next.players);
+        if(hit.knockback && dealt>0) ports_.skills.cancel(actor.player,actor.actor);
+    }
     return {result.status,result?std::optional{dealt}:std::nullopt};
 }
 void System::react(const ActorContext &actor, EntityId attacker, CombatEffectEvent event, bool returnFire) {
@@ -124,4 +137,7 @@ void System::react(const ActorContext &actor, EntityId attacker, CombatEffectEve
     if(event==CombatEffectEvent::HitByMissile && !returnFire) return;
     for(auto reaction:entry->second.states.reactions(event,actor.tick)) reactions_.push_back({actor,attacker,std::move(reaction)});
 }
+bool System::missileHitAllowed(EntityId id,uint64_t tick) const {const auto it=state_.players.find(id);return it==state_.players.end() || it->second.nextMissileHit<=tick;}
+void System::missileHitDelay(EntityId id,uint64_t until) {state_.players[id].nextMissileHit=until;}
+
 }

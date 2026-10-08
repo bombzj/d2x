@@ -47,6 +47,7 @@ StepStatus System::advanceUnits(uint64_t tick) {
             if(!result) {blocked=true;++it;continue;}
         }
         std::swap(it->second.states,next);
+        if(m) ports_.monsters.velocityModifier(it->first,it->second.states.modifiers(tick).velocityPercent);
         if(!it->second.states.size()) it=units_.erase(it);else ++it;
     }
     return blocked?StepStatus::Blocked:StepStatus::Complete;

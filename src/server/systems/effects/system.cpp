@@ -117,6 +117,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
     if (advanceReactions(tick.tick) == StepStatus::Blocked) blocked = true;
     if (advanceUnits(tick.tick) == StepStatus::Blocked) blocked = true;
     if (advanceMonsterSkills(tick.tick) == StepStatus::Blocked) blocked = true;
+    if (advanceMonsterEnchantments(tick.tick) == StepStatus::Blocked) blocked = true;
     return blocked ? StepStatus::Blocked : StepStatus::Complete;
 }
 }

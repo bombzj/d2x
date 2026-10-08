@@ -9,6 +9,7 @@
 #include "gameplay/monsters/ranged_decision.hpp"
 #include "gameplay/monsters/special_decision.hpp"
 #include "gameplay/monsters/shaman_decision.hpp"
+#include "gameplay/monsters/boss_decision.hpp"
 #include <algorithm>
 namespace d2x::server::ai {
 StepStatus System::familyAction(EntityId id, UnitTarget target, Vec position, int size, TickContext tick, Controller &controller) {
@@ -56,6 +57,7 @@ StepStatus System::familyAction(EntityId id, UnitTarget target, Vec position, in
          monster.hitOccurrence != controller.observedHit, int(monster.area) == 17,
          int(monster.life * 100 / monster.maximumLife), controller.commanded, controller.alerted,
          monster.identity.ownerSpawnKey == monster.identity.spawnKey, controller.phase, controller.loop, targetLife, monster.webUntil>tick.tick, clear};
+    input.trapAxisAligned=std::abs(int(std::floor(position.x))-int(std::floor(monster.position.x)))<6 || std::abs(int(std::floor(position.y))-int(std::floor(monster.position.y)))<6;
     if(monster.rule.ai.kind==MonsterAiKind::CorruptArcher || monster.rule.ai.kind==MonsterAiKind::Vampire) {
         const int radius=monster.rule.ai.kind==MonsterAiKind::CorruptArcher?12:8;
         input.retreatBlocked=area.definition.collision.path(monster.position,monsterRetreatPoint(monster.position,position,radius),true,monster.rule.collision).empty();
@@ -64,7 +66,15 @@ StepStatus System::familyAction(EntityId id, UnitTarget target, Vec position, in
     if(monster.rule.ai.kind==MonsterAiKind::FallenShaman) for(const auto &[key,other]:ports_.monsters.read().actors) {
         (void)other;if(ports_.monsters.resurrectionTarget(id,key,tick.tick)) corpse=UnitTarget{key,0,1};
     }
-    const auto decision = monster.rule.ai.kind==MonsterAiKind::FallenShaman?std::optional{decideFallenShaman(monster.rule.ai,input,bool(corpse))}:
+    std::optional<MonsterBossDecision> boss;
+    int firewallPhase=controller.phase;
+    if(monster.rule.ai.kind==MonsterAiKind::Countess && firewallPhase>=int(monster.skillPositions.size()) && tick.tick-controller.firewallCycle>700) firewallPhase=0;
+    if(hasBossDecision(monster.rule.ai.kind)) {
+        const auto *homeRoom=area.definition.activation.room(monster.home);
+        const auto *targetRoom=area.definition.activation.room(position);
+        boss=decideBossMonster(monster.rule.ai,{input,monsterAiDistance(monster.home,monster.rule.size,monster.position),monsterAiDistance(monster.home,0,position),controller.summonChance,homeRoom==targetRoom,firewallPhase<int(monster.skillPositions.size())});
+    }
+    const auto decision = boss?std::optional{boss->action}:monster.rule.ai.kind==MonsterAiKind::FallenShaman?std::optional{decideFallenShaman(monster.rule.ai,input,bool(corpse))}:
         hasRangedDecision(monster.rule.ai.kind)?decideRangedMonster(monster.rule.ai,input):hasSpecialDecision(monster.rule.ai.kind)?decideSpecialMonster(monster.rule.ai,input):decideMeleeMonster(monster.rule.ai,input);
     if (!decision) return StepStatus::NotImplemented;
     if (decision->action == MonsterDecisionAction::Shout) {
@@ -74,12 +84,16 @@ StepStatus System::familyAction(EntityId id, UnitTarget target, Vec position, in
     } else if (decision->action == MonsterDecisionAction::Attack || decision->action == MonsterDecisionAction::Special) {
         const auto skill=decision->action==MonsterDecisionAction::Special?monster.rule.skillIds.at(size_t(decision->skillSlot)):uint16_t(0);
         const auto actualTarget=monster.rule.ai.kind==MonsterAiKind::FallenShaman && decision->skillSlot==0?*corpse:target;
-        const auto result = ports_.skills.requestCast({id,skill,actualTarget,tick.tick,decision->attackMode});
+                std::optional<Vec> point;
+        if(boss && monster.rule.ai.kind==MonsterAiKind::Countess && decision->skillSlot==0) point=monster.skillPositions.at(size_t(firewallPhase));
+        if(boss && monster.rule.ai.kind==MonsterAiKind::BloodRaven && decision->skillSlot==0) point=Vec{std::floor(position.x)+.5f,std::floor(position.y)+.5f}+boss->summonOffset;
+        const auto result = ports_.skills.requestCast({id,skill,actualTarget,tick.tick,decision->attackMode,point});
         if (result.status == DomainStatus::Capacity) {
             controller.nextDecision = tick.tick + 1;
             return StepStatus::Blocked; // Preserve the chosen roll and charge through output pressure.
         }
         if (!result) { controller.random=decision->random;controller.nextDecision = tick.tick + 1; return StepStatus::Complete; }
+        if(boss && monster.rule.ai.kind==MonsterAiKind::Countess && decision->skillSlot==0) {firewallPhase++;controller.firewallCycle=tick.tick;}
     } else if (decision->action == MonsterDecisionAction::Circle || decision->action == MonsterDecisionAction::Retreat || decision->action == MonsterDecisionAction::Wander) {
         auto random = decision->random;
         auto freeMove = [&](Vec goal) { return ports_.monsters.requestMove({id, {monster.area, area.generation, goal}, {}, 0, decision->velocityPercent, decision->running}); };
@@ -100,6 +114,7 @@ StepStatus System::familyAction(EntityId id, UnitTarget target, Vec position, in
         if(!controller.pursuing && decision->failedMoveWanderRadius) controller.pursuing=bool(freeMove(monsterWanderPoint(monster.position,decision->failedMoveWanderRadius,random)));
         controller.random=random;controller.observedHit=monster.hitOccurrence;
         controller.charged=decision->charged;controller.alerted=decision->alerted;
+        if(boss) controller.summonChance=boss->summonChance;
         controller.phase=decision->phase;controller.loop=decision->loop;
         if(decision->commandParty) commandParty(monster);
         controller.nextDecision = tick.tick + uint64_t(controller.pursuing ? 1 : std::max(1, decision->waitFrames));
@@ -109,7 +124,8 @@ StepStatus System::familyAction(EntityId id, UnitTarget target, Vec position, in
             if (decision->approachRadius) {
                 const Vec goal = monsterRadiusApproachPoint(monster.position, monster.rule.size, position, decision->approachRadius,decision->targetDistance);
                 controller.pursuing = bool(ports_.monsters.requestMove({id, {monster.area, area.generation, goal}, {}, 0, decision->velocityPercent, decision->running}));
-            } else controller.pursuing = bool(move(decision->stopDistance, decision->velocityPercent, decision->running));
+            } else if(boss && boss->returnHome) controller.pursuing=bool(ports_.monsters.requestMove({id,{monster.area,area.generation,monster.home},{},0,decision->velocityPercent,decision->running}));
+            else controller.pursuing = bool(move(decision->stopDistance, decision->velocityPercent, decision->running));
             if(!controller.pursuing && monster.rule.ai.kind==MonsterAiKind::Fallen) controller.commanded=false;
             controller.nextPath = tick.tick + 18;
         }
@@ -117,7 +133,8 @@ StepStatus System::familyAction(EntityId id, UnitTarget target, Vec position, in
     controller.random = decision->random; controller.charged = decision->charged;
     controller.observedHit = monster.hitOccurrence;
     controller.alerted = decision->alerted;
-    controller.phase = decision->phase; controller.loop = decision->loop;
+    controller.phase = monster.rule.ai.kind==MonsterAiKind::Countess?firewallPhase:decision->phase; controller.loop = decision->loop;
+    if(boss) controller.summonChance=boss->summonChance;
     if(decision->commandParty) commandParty(monster);
     controller.nextDecision = tick.tick + uint64_t(std::max(1, decision->waitFrames));
     return StepStatus::Complete;

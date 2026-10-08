@@ -12,6 +12,7 @@ struct MonsterHit {
     int slowPercent{};
     uint8_t hitClass{};
     bool critical{};
+    bool knockback{};
 };
 struct MonsterHitStates { CombatStateDefinition cold, poison, slow; };
 void monsterCritical(MonsterHit &,int chance,uint64_t &random);

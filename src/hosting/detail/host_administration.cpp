@@ -141,7 +141,7 @@ AdminResult NativeRealmService::administer(const AdminRequest &request) {
             const auto view = host.read(*binding);
             const auto &source = shared.terrain.at(binding->game).at(view->actor.region);
             MonsterIdentity identity;
-            identity.monster = spawn.code; identity.origin = SpawnOrigin::Debug;
+            identity.monster = spawn.code; identity.origin = SpawnOrigin::Debug;identity.rank=spawn.rank;identity.superUnique=spawn.superUnique;
             identity.spawnKey = "debug/" + std::to_string(host.nextEntity(binding->game));
             auto monster = prepareCombatMonster(archives, *content, source.request, std::move(identity), *spawn.position - source.origin);
             if (!monster) return {AdminStatus::Unavailable, "Monster code has no supported MPQ combat profile"};

@@ -19,6 +19,9 @@ struct Controller {
     bool pursuing{}, charged{}, commanded{}, alerted{};
     uint64_t lastSpawn{};
     bool acquiredTarget{};
+    int summonChance{};
+    uint64_t firewallCycle{};
+    bool introduced{};
 };
 struct State { std::map<EntityId, Controller> controllers; };
 struct Ports { monsters::System &monsters; const PlayerStore &players; const AreaStore &areas; skills::System &skills; objects::System &objects; uint64_t &random; };
@@ -27,6 +30,7 @@ class System {
     const Ports ports_;
     StepStatus familyAction(EntityId, UnitTarget, Vec, int, TickContext, Controller &);
     StepStatus nestFamily(EntityId,UnitTarget,int,TickContext,Controller &);
+    std::optional<StepStatus> uniqueAction(EntityId,UnitTarget,Vec,TickContext,Controller &);
     void commandParty(const monsters::Actor &);
   public:
     explicit System(Ports ports) : ports_(ports) {}

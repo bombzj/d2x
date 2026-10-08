@@ -10,6 +10,7 @@
 #include "gameplay/combat/damage_resolution.hpp"
 #include "core/random.hpp"
 #include "gameplay/combat/avoidance.hpp"
+#include "gameplay/monsters/enchantment_damage.hpp"
 #include <algorithm>
 #include <cmath>
 namespace d2x::server::combat {
@@ -69,9 +70,9 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
             if (targetMonster && damage.weapon) {
                 const auto &weapon = *damage.weapon;
                 return weaponHitChance(damage.level, weapon.baseAttackRating, weapon.attackRatingPercent, weapon.target,
-                    {targetMonster->rule.level, std::max(0,targetMonster->rule.defense+ports_.effects.unitModifiers(targetMonster->id,tick.tick).defense), targetMonster->rule.demon, targetMonster->rule.undead, false}, targetMonster->identity.rank);
+                    {targetMonster->rule.level, ports_.effects.unitDefense(targetMonster->id,tick.tick), targetMonster->rule.demon, targetMonster->rule.undead, false}, targetMonster->identity.rank);
             }
-            return physicalHitChance(damage.level,damage.rating,targetPlayer?targetPlayer->persistent.player.level:targetMonster->rule.level,targetPlayer?targetPlayer->totals.character.defense:targetMonster->rule.defense);
+            return physicalHitChance(damage.level,sourceMonster?int(int64_t(damage.rating)*std::max(0,100+ports_.effects.unitModifiers(sourceMonster->id,tick.tick).combat.attackRatingPercent+(sourceMonster->rule.enchantment?sourceMonster->rule.enchantment->attackRatingPercent:0))/100):damage.rating,targetPlayer?targetPlayer->persistent.player.level:targetMonster->rule.level,targetPlayer?targetPlayer->totals.character.defense:targetMonster->rule.defense);
         };
         bool hit = running || int(limitedRandom(random, 100)) < chance();
         if (hit && targetPlayer && targetPlayer->totals.equipment.shield) {
@@ -100,24 +101,33 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
             const auto attack = sourceMonster->rule.attacks.find(damage.monsterMode);
             if (attack == sourceMonster->rule.attacks.end()) { it = state_.pending.erase(it); continue; }
             const auto &slot = attack->second;
-            MonsterHit rolled = hit ? rollMonsterHit(slot.minimum, slot.maximum, sourceMonster->rule.criticalChance, slot.elements, 128, random) : MonsterHit{};
+            auto enchantmentDamage=sourceMonster->enchantmentDamage;
+            MonsterHit rolled = hit ? rollMonsterHit(slot.minimum, slot.maximum, 0, slot.elements, 128, random) : MonsterHit{};
+            if(hit) {
+                const auto buffs=ports_.effects.unitModifiers(sourceMonster->id,tick.tick);
+                const int percent=buffs.combat.damagePercent+(sourceMonster->rule.enchantment?sourceMonster->rule.enchantment->damagePercent:0);
+                rolled.channels[0]=rolled.channels[0]*std::max(0,100+percent)/100;
+                if(sourceMonster->rule.enchantment) addMonsterEnchantmentDamage(rolled,*sourceMonster->rule.enchantment,128,random,enchantmentDamage);
+                monsterCritical(rolled,sourceMonster->rule.criticalChance,random);
+            }
             auto hitClassCursor=state_.hitClassCursor;
             if(hit) rolled.hitClass=monsterDamageHitClass(rolled,sourceMonster->rule.hitClass,hitClassCursor);
+            rolled.knockback=hit && sourceMonster->rule.knockbackOnHit;
             DomainResult<> result;
             if (targetPlayer) {
                 const ActorContext actor{targetPlayer->player,targetPlayer->actor,targetPlayer->area,area->generation,0,tick.tick};
                 const auto received = ports_.effects.receiveMonster(actor,damage.source,rolled,sourceMonster->rule.hitStates);
                 result = {received.status,received ? std::optional{std::monostate{}} : std::nullopt};
-                if (received && hit && *received.value > 0) ports_.effects.react(actor,damage.source,CombatEffectEvent::DamagedInMelee);
+                if (received && hit) {ports_.effects.triggerMonsterCurse(damage.source,tick.tick);if(*received.value>0) ports_.effects.react(actor,damage.source,CombatEffectEvent::DamagedInMelee);}
             } else {
                 int64_t amount = 0;
-                for (size_t i = 0; i < 5; ++i) amount += int64_t(mitigateMonsterDamage(float(rolled.channels[i])/256.f,targetMonster->rule.resistances[i])*256.f);
-                const auto cold = rolled.coldFrames * unsigned(std::clamp(100-targetMonster->rule.resistances[4],0,200))/(100u*unsigned(targetMonster->rule.coldDivisor));
+                for (size_t i = 0; i < 5; ++i) amount += int64_t(mitigateMonsterDamage(float(rolled.channels[i])/256.f,ports_.effects.unitResistance(targetMonster->id,DamageType(i),tick.tick))*256.f);
+                const auto cold = rolled.coldFrames * unsigned(std::clamp(100-ports_.effects.unitResistance(targetMonster->id,DamageType::Cold,tick.tick),0,200))/(100u*unsigned(targetMonster->rule.coldDivisor));
                 std::optional<PoisonApplication> poison;
-                if (rolled.poisonFrames && rolled.channels[5]) poison = PoisonApplication{int64_t(mitigateMonsterDamage(float(rolled.channels[5])/256.f,targetMonster->rule.resistances[5])*256.f),rolled.poisonFrames,sourceMonster->rule.hitStates.poison.id};
+                if (rolled.poisonFrames && rolled.channels[5]) poison = PoisonApplication{int64_t(mitigateMonsterDamage(float(rolled.channels[5])/256.f,ports_.effects.unitResistance(targetMonster->id,DamageType::Poison,tick.tick))*256.f),rolled.poisonFrames,sourceMonster->rule.hitStates.poison.id};
                 result = ports_.monsters.damage(damage.target,damage.source,amount,tick.tick,cold,false,rolled.hitClass,poison);
             }
-            if (result) { state_.hitClassCursor=hitClassCursor;commitRandom(); it = state_.pending.erase(it); }
+            if (result) { ports_.monsters.commitEnchantmentDamage(sourceMonster->id,std::move(enchantmentDamage));state_.hitClassCursor=hitClassCursor;commitRandom(); it = state_.pending.erase(it); }
             else if (result.status == DomainStatus::Capacity) { blocked = true; ++it; }
             else it = state_.pending.erase(it);
             continue;
@@ -131,9 +141,9 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
                 const auto rolled=rollWeaponSkillDamage(*damage.weapon,damage.attackModifiers.value_or(sourceMonster->petStats.attributes.combat),ordinary,damage.level,false,random);
                 auto channels=targetWeaponChannels(rolled,targetMonster->rule.demon,targetMonster->rule.undead);
                 if(sourceMonster->rule.criticalChance>0 && int(limitedRandom(random,100))<sourceMonster->rule.criticalChance) channels[0]*=2;
-                for(size_t element=0;element<5;++element) amount+=int64_t(mitigateMonsterDamage(float(channels[element])/256.f,targetMonster->rule.resistances[element])*256.f);
-                if(rolled.coldFrames>0 && targetMonster->rule.resistances[4]<100) cold=uint64_t(rolled.coldFrames)*unsigned(std::clamp(100-targetMonster->rule.resistances[4],0,200))/(100u*unsigned(owner->rules.skills->coldDivisor[size_t(targetMonster->rule.difficulty)]));
-                if(channels[5]>0 && rolled.poisonFrames>0) poison=PoisonApplication{int64_t(mitigateMonsterDamage(float(channels[5])/256.f,targetMonster->rule.resistances[5])*256.f),uint64_t(rolled.poisonFrames),owner->rules.skills->poisonState};
+                for(size_t element=0;element<5;++element) amount+=int64_t(mitigateMonsterDamage(float(channels[element])/256.f,ports_.effects.unitResistance(targetMonster->id,DamageType(element),tick.tick))*256.f);
+                if(rolled.coldFrames>0 && ports_.effects.unitResistance(targetMonster->id,DamageType::Cold,tick.tick)<100) cold=uint64_t(rolled.coldFrames)*unsigned(std::clamp(100-ports_.effects.unitResistance(targetMonster->id,DamageType::Cold,tick.tick),0,200))/(100u*unsigned(owner->rules.skills->coldDivisor[size_t(targetMonster->rule.difficulty)]));
+                if(channels[5]>0 && rolled.poisonFrames>0) poison=PoisonApplication{int64_t(mitigateMonsterDamage(float(channels[5])/256.f,ports_.effects.unitResistance(targetMonster->id,DamageType::Poison,tick.tick))*256.f),uint64_t(rolled.poisonFrames),owner->rules.skills->poisonState};
             }
             const auto committed=ports_.monsters.damage(damage.target,owner->actor,amount,tick.tick,cold,false,uint8_t(damage.weapon->hitClass),poison);
             if(committed.status==DomainStatus::Capacity) {blocked=true;++it;continue;}
@@ -160,7 +170,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
                 if (sourceMonster && int(limitedRandom(random, 100)) < sourceMonster->rule.criticalChance) amount *= 2;
             }
             if (targetMonster) {
-                amount = int64_t(mitigateMonsterDamage(float(amount) / 256.f, targetMonster->rule.resistances[0]) * 256.f);
+                amount = int64_t(mitigateMonsterDamage(float(amount) / 256.f, ports_.effects.unitResistance(targetMonster->id,DamageType::Physical,tick.tick)) * 256.f);
                 if(sourcePlayer) {
                 const auto &mods=sourcePlayer->totals.character.combat;
                 int low=mods.fireMinimum,high=mods.fireMaximum;
