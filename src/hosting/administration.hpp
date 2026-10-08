@@ -13,13 +13,13 @@ namespace d2x::hosting {
 // A host control port. Never encoded as private MCP/D2GS extensions and never
 // available on a remote game connection. Execute on the host scheduler thread.
 enum class AdminOperation {
-    Save, Reload, CancelReload, Step, Pause, Resume, AutoPause, RestoreResources, GrantGold, GrantExperience, SpawnItem, SpawnMonster,
+    Save, Reload, CancelReload, Step, Pause, Resume, AutoPause, RestoreResources, DamagePlayer, GrantGold, GrantExperience, SpawnItem, SpawnMonster,
     DamageMonster, KillMonster, Travel, UnlockWaypoints, GrantShrine,
     GrantHireling, ResetAttributes, ResetSkills
 };
 struct AdminAmount { int64_t value{}; };
 struct AdminStep { uint32_t frames = 1; };
-struct AdminSpawn { std::string code; int level = 1; std::optional<Vec> position; };
+struct AdminSpawn { std::string code; int level = 1; std::optional<Vec> position; std::string quality = "normal"; std::optional<unsigned> durability = {}; };
 struct AdminUnit { uint64_t id{}; int64_t amount{}; };
 struct AdminTravel { int level{}; };
 using AdminArguments = std::variant<std::monostate, AdminAmount, AdminStep, AdminSpawn, AdminUnit, AdminTravel>;

@@ -15,11 +15,17 @@ std::optional<InputState> System::input(PlayerId id) const {
 }
 DomainResult<> System::execute(const ActorContext &actor, const Request &request) {
     if (!supports(request)) return {};
+    state_.pickups.erase(actor.player);
     const auto *player = ports_.players.find(actor.player);
     if (!player || !player->entered || player->actor != actor.actor || player->area != actor.area) return {DomainStatus::InvalidActor, {}};
     if (!ports_.definitions || !player->rules.equipment || !player->rules.character) return {DomainStatus::Unavailable, {}};
+    if (const auto *gold = std::get_if<GoldTransaction>(&request.intent); gold && gold->action == GoldAction::Drop) return dropGold(actor, gold->amount);
+    if (std::holds_alternative<GoldTransaction>(request.intent) || std::holds_alternative<CloseStorage>(request.intent)) return storage(actor, request);
+    if (const auto *identification = std::get_if<IdentifyItem>(&request.intent)) return identify(actor, *identification);
+    if (const auto *transfer = std::get_if<GroundTransfer>(&request.intent)) return ground(actor, *transfer);
+    if (const auto *use = std::get_if<UseItem>(&request.intent)) return consume(actor, *use, request.source);
     DomainResult<Edit> planned;
-    try { planned = plan(*player, request, *ports_.definitions, *player->rules.equipment, *player->rules.character); }
+    try { planned = plan(*player, request, *ports_.definitions, *player->rules.equipment, *player->rules.character, storageAccess(actor.player)); }
     catch (const std::runtime_error &) { return {DomainStatus::Unavailable, {}}; }
     catch (const std::out_of_range &) { return {DomainStatus::Unavailable, {}}; }
     if (!planned) return {planned.status, {}};
@@ -29,7 +35,8 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
     if (!transaction) return {transaction.status, {}};
     return ports_.transactions.commit(std::move(*transaction.value));
 }
-DomainResult<> System::close(PlayerId) {
-    return {};
+DomainResult<> System::close(PlayerId player) {
+    state_.storage.erase(player);
+    return {DomainStatus::Applied,std::monostate{}};
 }
 }

@@ -3,25 +3,27 @@
 #include "server/runtime/ports.hpp"
 #include "server/runtime/prepared_rules.hpp"
 #include "server/runtime/events.hpp"
-
-#include <map>
-#include <set>
-#include <string>
-#include <vector>
-
+#include "gameplay/effects/state.hpp"
+#include "gameplay/units/restoration.hpp"
 namespace d2x::server::effects {
-// Timed states, auras and curses; derived stats are invalidated, never duplicated.
-struct Apply { EntityId source, target; int state{}; uint64_t durationFrames{}; unsigned level{}; };
-struct Effect { EntityId id, source, target; int state{}; uint64_t expires{}, revision{}; };
-struct State { std::map<EntityId, Effect> effects; };
-struct Ports { const PlayerStore &players; const monsters::System &monsters; const spatial::System &spatial; transactions::System &transactions; EntityIds &ids; const EffectRules *definitions; };
+struct Recovery { std::deque<ResourceRestoration> healing, mana; CombatEffectSet states; };
+struct State { std::map<EntityId, Recovery> players; };
+// Prepared before inventory consumption, installed without allocation only after
+// the character transaction succeeds. No callback can observe half a drink.
+struct PotionPlan { State next; CharacterRecord character; TransientAttributes transient; };
+struct Ports {
+    const PlayerStore &players; const AreaStore &areas; const skills::System &skills;
+    transactions::System &transactions;
+};
 class System {
     State state_;
     const Ports ports_;
   public:
     explicit System(Ports ports) : ports_(ports) {}
     const State &read() const { return state_; }
-    DomainResult<EntityId> apply(const Apply &);
+    DomainResult<PotionPlan> potion(const ActorContext &, const PotionDefinition &) const;
+    void commit(PotionPlan &&plan) noexcept { state_.players.swap(plan.next.players); }
+    DomainResult<> apply(const ActorContext &, CombatEffectSpec, bool restoreStamina = false);
     StepStatus step(TickContext, FrameFacts &);
 };
 }

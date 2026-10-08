@@ -1,0 +1,158 @@
+#include "planning.hpp"
+#include "server/player_store.hpp"
+#include "server/movement.hpp"
+#include "server/systems/items/system.hpp"
+#include "server/systems/transactions/system.hpp"
+#include <algorithm>
+namespace d2x::server::inventory {
+DomainResult<> System::dropGold(const ActorContext &actor, unsigned amount) {
+    const auto &player = *ports_.players.find(actor.player);
+    if (player.persistent.player.hp <= 0 || !amount || amount > player.persistent.player.gold) return {DomainStatus::InvalidRequest, {}};
+    auto world = ports_.items.read();
+    const ItemDefinition *definition = nullptr;
+    for (const auto &[code, item] : ports_.definitions->entries()) { (void)code; if (item.equipment.isType("gold")) { definition = &item; break; } }
+    if (!definition || !definition->maxStack) return {DomainStatus::Unavailable, {}};
+    unsigned remaining = amount;
+    while (remaining) {
+        if (world.world.items.size() >= 4096 || world.revision == UINT64_MAX) return {DomainStatus::Capacity, {}};
+        const auto position = ports_.items.placement({actor.area, player.position}, world.world);
+        if (!position) return {DomainStatus::Conflict, {}};
+        ItemInstance item; item.id = ports_.items.reserveIdentity(); item.definition = definition->code;
+        item.quantity = std::min(remaining, definition->maxStack); item.location = GroundLocation{actor.area, *position};
+        item.nativeSeed = uint32_t(item.id.value);
+        EquipmentValues values; values.levels.resize(player.rules.character->experience.size());
+        remaining -= item.quantity; world.equipment.items.emplace(item.id, std::move(values)); world.world.items.emplace(item.id, std::move(item));
+    }
+    auto record = player.persistent.player; record.gold -= amount;
+    transactions::InventoryEdit edit{actor, player.inventoryRevision, player.characterRevision, player.persistent.inventory, {}, record.weaponSet};
+    edit.character = std::move(record); edit.world = transactions::WorldEdit{world.revision, std::move(world)};
+    auto plan = ports_.transactions.prepare(std::move(edit));
+    return plan ? ports_.transactions.commit(std::move(*plan.value)) : DomainResult<>{plan.status, {}};
+}
+DomainResult<> System::ground(const ActorContext &actor, const GroundTransfer &request) {
+    const auto *player = ports_.players.find(actor.player);
+    if (!player || !player->entered || player->persistent.player.hp <= 0) return {DomainStatus::InvalidActor, {}};
+    const auto resolved = ports_.items.resolve({request.drop ? std::optional<PlayerId>{actor.player} : std::nullopt, request.item});
+    if (!resolved) return {resolved.status, {}};
+    const auto &source = *resolved.value;
+    if (source.revision == UINT64_MAX) return {DomainStatus::Capacity, {}};
+    const auto *definition = ports_.definitions->find(source.definition);
+    if (!definition || definition->questTag) return {DomainStatus::Unavailable, {}};
+    auto world = ports_.items.read();
+    auto equipment = std::make_shared<EquipmentRules>(*player->rules.equipment);
+    auto record = player->persistent.player;
+    const auto cursor = ContainerLocation{player->persistent.containers.cursor, {}};
+    detail::Draft draft(*player, *ports_.definitions, *equipment, *player->rules.character);
+    if (request.drop) {
+        if (source.location != ItemLocation{cursor}) return {DomainStatus::InvalidRequest, {}};
+        const auto position = ports_.items.placement({player->area, player->position}, world.world);
+        if (!position) return {DomainStatus::Conflict, {}};
+        auto dropped = source; ++dropped.revision; dropped.location = GroundLocation{player->area, *position};
+        world.world.items.emplace(source.id, std::move(dropped));
+        world.equipment.items.insert_or_assign(source.id, equipment->items.at(source.id));
+        for (const auto &piece : equipment->sets)
+            if (std::none_of(world.equipment.sets.begin(), world.equipment.sets.end(), [&](const auto &v) { return v.row == piece.row; })) world.equipment.sets.push_back(piece);
+        world.equipment.setBonuses.insert(equipment->setBonuses.begin(), equipment->setBonuses.end());
+        equipment->items.erase(source.id);
+        draft.edit.inventory.items.erase(source.id);
+        draft.edit.changes.push_back({source.id, source.revision + 1, ItemChangeKind::Removed, source.location, {}, 0});
+    } else {
+        const auto *position = std::get_if<GroundLocation>(&source.location);
+        if (!position || position->region != player->area || (position->position - player->position).length() > 50.f || draft.at(cursor))
+            return {DomainStatus::InvalidRequest, {}};
+        if ((position->position - player->position).length() > 1.8f) {
+            const auto status = ports_.movement.execute(actor, {MovementAction::Move, position->position, player->running});
+            if (status != CommandStatus::Applied) return {DomainStatus::Conflict, {}};
+            state_.pickups.insert_or_assign(actor.player, Pickup{actor, request, player->locomotionSequence});
+            return {DomainStatus::Applied, std::monostate{}};
+        }
+        if (!ports_.items.reachable(*position, player->position)) return {DomainStatus::InvalidRequest, {}};
+        if (definition->equipment.isType("gold")) {
+            const auto capacity = unsigned(record.level) * 10000;
+            const auto amount = std::min(source.quantity, capacity > record.gold ? capacity - record.gold : 0);
+            if (!amount) return {DomainStatus::Conflict, {}};
+            record.gold += amount;
+            world.world.items.erase(source.id);
+            if (amount != source.quantity) {
+                auto left = source; left.id = ports_.items.reserveIdentity(); left.quantity -= amount; left.revision = 1;
+                world.equipment.items.emplace(left.id, world.equipment.items.at(source.id));
+                world.world.items.emplace(left.id, std::move(left));
+            }
+        } else {
+            if (world.equipment.items.at(source.id).singleCarry)
+                for (const auto &[id, existing] : player->persistent.inventory.items) {
+                    (void)id;
+                    const auto *at = std::get_if<ContainerLocation>(&existing.location);
+                    if (at && player->persistent.inventory.containers.at(at->container).spec.kind != ContainerKind::Corpse &&
+                        existing.quality == ItemQuality::Unique && existing.specialRow == source.specialRow) return {DomainStatus::Conflict, {}};
+                }
+            equipment->items.insert_or_assign(source.id, world.equipment.items.at(source.id));
+            for (const auto &piece : world.equipment.sets)
+                if (std::none_of(equipment->sets.begin(), equipment->sets.end(), [&](const auto &v) { return v.row == piece.row; })) equipment->sets.push_back(piece);
+            equipment->setBonuses.insert(world.equipment.setBonuses.begin(), world.equipment.setBonuses.end());
+            auto copy = source; copy.location = cursor;
+            draft.edit.inventory.items.emplace(copy.id, copy);
+            if (!request.cursor && definition->autoStack) {
+                std::vector<EntityId> candidates;
+                for (const auto &[id, item] : draft.edit.inventory.items) if (id != source.id && item.definition == source.definition) candidates.push_back(id);
+                for (const auto id : candidates) {
+                    const auto current = draft.edit.inventory.items.find(source.id);
+                    if (current == draft.edit.inventory.items.end()) break;
+                    const auto &target = draft.edit.inventory.items.at(id);
+                    draft.merge({current->second.handle(), target.handle(), 0});
+                }
+            }
+            std::erase_if(draft.edit.changes, [&](const auto &change) { return change.item == source.id; });
+            auto current = draft.edit.inventory.items.find(source.id);
+            if (current == draft.edit.inventory.items.end()) world.world.items.erase(source.id);
+            else {
+                std::optional<ContainerLocation> destination;
+                if (request.cursor) destination = cursor;
+                else {
+                    if (definition->autoBelt) destination = draft.space(source.id, player->persistent.containers.belt);
+                    if (!destination) destination = draft.space(source.id, player->persistent.containers.backpack);
+                }
+                auto &item = current->second;
+                if (destination) {
+                    item.location = *destination; ++item.revision;
+                    draft.edit.changes.push_back({item.id, item.revision, ItemChangeKind::Created, {}, item.location, item.quantity});
+                    world.world.items.erase(source.id);
+                } else {
+                    if (item.quantity == source.quantity) return {DomainStatus::Conflict, {}};
+                    auto &left = world.world.items.at(source.id); left.quantity = item.quantity; ++left.revision;
+                    draft.edit.inventory.items.erase(current);
+                }
+            }
+        }
+        if (!world.world.items.contains(source.id)) world.equipment.items.erase(source.id);
+    }
+    transactions::InventoryEdit edit{actor, player->inventoryRevision, player->characterRevision,
+        std::move(draft.edit.inventory), std::move(draft.edit.changes), record.weaponSet};
+    edit.equipment = std::move(equipment); edit.character = std::move(record);
+    edit.world = transactions::WorldEdit{world.revision, std::move(world)};
+    auto plan = ports_.transactions.prepare(std::move(edit));
+    return plan ? ports_.transactions.commit(std::move(*plan.value)) : DomainResult<>{plan.status, {}};
+}
+}
+
+namespace d2x::server::inventory {
+StepStatus System::step(TickContext tick, FrameFacts &) {
+    std::erase_if(state_.storage,[&](const auto &entry){return !storageAccess(entry.first);});
+    for (auto it = state_.pickups.begin(); it != state_.pickups.end();) {
+        auto pending = it->second;
+        const auto *player = ports_.players.find(it->first);
+        const auto item = ports_.items.resolve({{}, pending.request.item});
+        if (!player || !player->entered || player->actor != pending.actor.actor || player->area != pending.actor.area ||
+            player->persistent.player.hp <= 0 || player->locomotionSequence != pending.locomotion || !item) { it = state_.pickups.erase(it); continue; }
+        const auto &at = std::get<GroundLocation>(item.value->location);
+        if ((at.position - player->position).length() > 1.8f && !player->route.empty()) { ++it; continue; }
+        it = state_.pickups.erase(it);
+        if ((at.position - player->position).length() <= 1.8f) {
+            pending.actor.tick = tick.tick;
+            const auto result = ground(pending.actor, pending.request);
+            if (result) ports_.movement.execute(pending.actor, {MovementAction::Stop, {}, false});
+        }
+    }
+    return StepStatus::Complete;
+}
+}

@@ -28,7 +28,7 @@ DomainStatus Draft::qualified(EntityId candidate) const {
     auto state = player.persistent;
     state.inventory = edit.inventory;
     state.player.weaponSet = edit.weaponSet;
-    const auto totals = attributes::calculate(player.definition, state, catalog, rules, characterRules, candidate);
+    const auto totals = attributes::calculate(player.definition, state, catalog, rules, characterRules, candidate, player.transient.modifiers);
     const auto view = attributes::loadout(state, catalog, rules);
     const auto &item = state.inventory.items.at(candidate);
     const auto *definition = catalog.find(item.definition);

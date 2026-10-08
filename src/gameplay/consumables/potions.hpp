@@ -14,4 +14,5 @@ struct PotionDefinition {
     EffectFrame durationFrames = 0;
     bool curesPoison = false, curesCold = false;
 };
+float potionRestorationAmount(const PotionDefinition &, std::string_view playerClass);
 } // namespace d2x

@@ -17,6 +17,7 @@ struct GameDefinition {
     uint64_t rulesFingerprint{};
     PreparedRules rules;
 };
+struct CorpseView { PlayerCorpse corpse; PersistentCharacter equipment; uint64_t revision{}; };
 // Composition and ordering only; domain implementations live beside this class.
 class GameInstance {
     const GameSettings settings_;
@@ -56,6 +57,16 @@ class GameInstance {
     std::optional<PersistentCharacter> publicEquipment(PlayerId) const;
     std::optional<inventory::InputState> inventoryInput(PlayerId id) const { return systems_.inventory.input(id); }
     std::vector<PlayerId> participants() const;
+    std::vector<ItemInstance> groundItems(PlayerId) const;
+    std::vector<CorpseView> visibleCorpses(PlayerId) const;
+    std::vector<objects::Object> visibleObjects(PlayerId) const;
+    std::vector<travel::Portal> visiblePortals(PlayerId) const;
+    DomainResult<> spawnItems(PlayerId, items::PreparedBatch, std::optional<Vec>);
+    auto pendingMerchant() const { return systems_.merchant.pending(); }
+    DomainResult<> installMerchant(merchant::Prepared prepared) { return systems_.merchant.install(std::move(prepared)); }
+    auto shop(PlayerId id) const { return systems_.merchant.shop(id); }
+    const auto &pendingLoot() const { return systems_.loot.read().pending; }
+    DomainResult<> installLoot(EntityId source, items::PreparedBatch batch, std::string deferred) { return systems_.loot.install(source, std::move(batch), std::move(deferred)); }
     const SystemSteps &systemSteps() const { return simulation_.lastSteps(); }
     const std::deque<EventBatch> &pendingEvents() const { return events_.pending(); }
     bool acknowledgeEvents(uint64_t sequence) { return events_.acknowledge(sequence); }
@@ -64,6 +75,9 @@ class GameInstance {
     void failArea(uint64_t request) { systems_.world.fail(request); }
     DomainResult<> grantExperience(PlayerId, uint64_t amount);
     DomainResult<> restoreResources(PlayerId);
+    DomainResult<> grantGold(PlayerId,uint32_t);
+    DomainResult<> damagePlayer(PlayerId,uint32_t);
+    DomainResult<> damageMonster(PlayerId,EntityId,std::optional<uint32_t> amount);
     DomainResult<EntityId> spawnMonster(PlayerId, const PreparedMonster &);
     std::optional<DiagnosticSnapshot> diagnostics(PlayerId, size_t limit, uint64_t since, uint64_t commandSince,
                                                 std::optional<Vec> destination = {}) const;

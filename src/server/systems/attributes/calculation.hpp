@@ -15,5 +15,5 @@ struct Totals {
 };
 EquipmentLoadout loadout(const PersistentCharacter &, const ItemCatalog &, const EquipmentRules &);
 Totals calculate(const CharacterDefinition &, const PersistentCharacter &, const ItemCatalog &,
-    const EquipmentRules &, const CharacterRules &, EntityId excluded = {});
+    const EquipmentRules &, const CharacterRules &, EntityId excluded = {}, const CharacterModifiers &temporary = {});
 }

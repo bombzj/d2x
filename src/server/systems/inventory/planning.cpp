@@ -3,15 +3,16 @@
 
 namespace d2x::server::inventory {
 bool supports(const Request &request) {
-    return std::holds_alternative<MoveItem>(request.intent) || std::holds_alternative<EquipItem>(request.intent) ||
+    return std::holds_alternative<IdentifyItem>(request.intent) || std::holds_alternative<CloseStorage>(request.intent) || std::holds_alternative<GoldTransaction>(request.intent) || std::holds_alternative<UseItem>(request.intent) || std::holds_alternative<GroundTransfer>(request.intent) || std::holds_alternative<MoveItem>(request.intent) || std::holds_alternative<EquipItem>(request.intent) ||
         std::holds_alternative<MergeStacks>(request.intent) || std::holds_alternative<LoadBook>(request.intent) ||
         std::holds_alternative<SwapItems>(request.intent) || std::holds_alternative<SwitchWeaponSet>(request.intent);
 }
-DomainResult<Edit> plan(const PlayerState &player, const Request &request, const ItemCatalog &catalog, const EquipmentRules &rules, const CharacterRules &characterRules) {
+DomainResult<Edit> plan(const PlayerState &player, const Request &request, const ItemCatalog &catalog, const EquipmentRules &rules, const CharacterRules &characterRules, bool storage) {
     if (!supports(request)) return {};
     if (player.persistent.player.hp <= 0) return {DomainStatus::InvalidActor, {}};
     if (request.weaponSet && *request.weaponSet != player.persistent.player.weaponSet) return {DomainStatus::Stale, {}};
-    detail::Draft draft(player, catalog, rules, characterRules);
+    detail::Draft draft(player, catalog, rules, characterRules); draft.storage=storage;
+    const auto stored = [&](EntityId id) { return id==player.persistent.containers.backpack || (storage && id==player.persistent.containers.stash); };
     for (const auto guard : request.equipmentGuards)
         if (!draft.resolve(guard)) return {DomainStatus::Stale, {}};
     const auto &containers = draft.containers();
@@ -25,9 +26,9 @@ DomainResult<Edit> plan(const PlayerState &player, const Request &request, const
             if (!origin || !target || !draft.owned(*origin)) return DomainStatus::InvalidRequest;
             const bool taking = request.source == Source::Stored || request.source == Source::Belt;
             if (taking) {
-                if (*target != cursor || origin->container != (request.source == Source::Belt ? containers.belt : containers.backpack))
+                if (*target != cursor || (request.source == Source::Belt ? origin->container!=containers.belt : !stored(origin->container)))
                     return DomainStatus::InvalidRequest;
-            } else if (*origin != cursor || (target->container != containers.backpack && target->container != containers.belt))
+            } else if (*origin != cursor || (!stored(target->container) && target->container != containers.belt))
                 return DomainStatus::InvalidRequest;
             if (!draft.fits(item->id, *target)) return DomainStatus::Conflict;
             return draft.move(item->id, *target);
@@ -36,7 +37,7 @@ DomainResult<Edit> plan(const PlayerState &player, const Request &request, const
             if (!first || !second) return DomainStatus::Stale;
             const auto *origin = std::get_if<ContainerLocation>(&second->location);
             if (first->id == second->id || first->location != ItemLocation{cursor} || !origin || !draft.owned(*origin) ||
-                origin->container != (request.source == Source::Belt ? containers.belt : containers.backpack)) return DomainStatus::InvalidRequest;
+                (request.source == Source::Belt ? origin->container!=containers.belt : !stored(origin->container))) return DomainStatus::InvalidRequest;
             const auto target = operation.destination.value_or(*origin);
             if (target.container != origin->container || !draft.fits(first->id, target, second->id) ||
                 !draft.fits(second->id, cursor, first->id)) return DomainStatus::Conflict;

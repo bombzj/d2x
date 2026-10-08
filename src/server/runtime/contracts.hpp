@@ -6,7 +6,7 @@
 
 namespace d2x::server {
 // Room-owned configuration. A future participant's save cannot change it.
-struct GameSettings { uint32_t mapSeed{}; int difficulty{}; };
+struct GameSettings { uint32_t mapSeed{}; int difficulty{}; bool singlePlayer = true; };
 // Kernel results are not wire replies. A scaffold never manufactures a value.
 enum class DomainStatus { Applied, NotImplemented, InvalidActor, Stale, InvalidRequest, Unavailable, Conflict, Capacity };
 template<class T = std::monostate> struct DomainResult {

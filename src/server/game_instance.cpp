@@ -55,9 +55,26 @@ std::vector<PlayerId> GameInstance::visiblePlayers(PlayerId id) const {
 std::optional<PersistentCharacter> GameInstance::exportCharacter(PlayerId id) const {
     const auto *player = players_.find(id);
     if (!player) return {};
+    if (player->persistent.player.hp <= 0) {
+        const auto death = systems_.death.read().transitions.find(player->actor);
+        if (death == systems_.death.read().transitions.end() || !death->second.finalized) return {};
+    }
     auto result = player->persistent;
     result.nextEntityId = entities_.cursor();
     result.lastRegion = player->area;
+    EntityId retained;
+    for (const auto &corpse : result.corpses) {
+        if (std::any_of(result.inventory.items.begin(), result.inventory.items.end(), [&](const auto &entry) {
+            const auto *at = std::get_if<ContainerLocation>(&entry.second.location); return at && at->container == corpse.items;
+        })) { retained = corpse.items; break; }
+    }
+    // D2S v96 persists the first nonempty corpse. Never prune live authority.
+    for (const auto &corpse : result.corpses) if (corpse.items != retained) {
+        std::erase_if(result.inventory.items, [&](const auto &entry) { const auto *at = std::get_if<ContainerLocation>(&entry.second.location); return at && at->container == corpse.items; });
+        result.inventory.containers.erase(corpse.items);
+    }
+    std::erase_if(result.corpses, [&](const auto &corpse) { return corpse.items != retained; });
+    for (auto &corpse : result.corpses) corpse.recoverableExperience = 0;
     return result;
 }
 std::optional<PersistentCharacter> GameInstance::publicEquipment(PlayerId id) const {
@@ -120,7 +137,7 @@ void GameInstance::step() {
                 if (const auto *skill = std::get_if<skills::Request>(&command.payload); skill && skill->action == skills::Action::Cast) {
                     systems_.travel.cancel(player.player); player.locomotionSequence = command.sequence;
                 }
-                if (domain == SystemId::Inventory && systems_.skills.busy(player.actor, tick_)) result = CommandStatus::Conflict;
+                if (domain == SystemId::Inventory && !std::holds_alternative<UseItem>(std::get<inventory::Request>(command.payload).intent) && systems_.skills.busy(player.actor, tick_)) result = CommandStatus::Conflict;
                 else result = dispatchCommand(actor, command.payload, systems_);
             }
         }
@@ -156,7 +173,7 @@ std::optional<PlayerSnapshot> GameInstance::snapshot(PlayerId id) const {
     const auto cast = systems_.skills.read().casts.find(player->actor);
     result.attacking = cast != systems_.skills.read().casts.end() && !cast->second.interrupted && cast->second.until > tick_;
     const auto death = systems_.death.read().transitions.find(player->actor);
-    result.deadSettled = death != systems_.death.read().transitions.end() && death->second.ready <= tick_;
+    result.deadSettled = death != systems_.death.read().transitions.end() && death->second.finalized && death->second.ready <= tick_;
     return result;
 }
 std::vector<PlayerId> GameInstance::participants() const {
@@ -179,3 +196,55 @@ DomainResult<> GameInstance::grantExperience(PlayerId id, uint64_t amount) {
 }
 
 } // namespace d2x::server
+
+namespace d2x::server {
+std::vector<ItemInstance> GameInstance::groundItems(PlayerId id) const {
+    std::vector<ItemInstance> result; const auto areas = visibleAreas(id);
+    for (const auto &[key, item] : systems_.items.read().world.items) {
+        (void)key; const auto &at = std::get<GroundLocation>(item.location);
+        if (std::find(areas.begin(), areas.end(), at.region) != areas.end()) result.push_back(item);
+    }
+    return result;
+}
+DomainResult<> GameInstance::spawnItems(PlayerId id, items::PreparedBatch batch, std::optional<Vec> position) {
+    const auto *player = players_.find(id);
+    if (!player || !player->entered || player->persistent.player.hp <= 0) return {DomainStatus::InvalidActor, {}};
+    return systems_.items.install(std::move(batch), {player->area, position.value_or(player->position)});
+}
+std::vector<CorpseView> GameInstance::visibleCorpses(PlayerId id) const {
+    std::vector<CorpseView> result; const auto visible = visibleAreas(id);
+    for (const auto &[key, player] : players_.all()) {
+        (void)key;
+        for (const auto &corpse : player.persistent.corpses) {
+            if (std::find(visible.begin(), visible.end(), corpse.region) == visible.end()) continue;
+            CorpseView view{corpse, {}, player.inventoryRevision};
+            view.equipment.player = player.persistent.player; view.equipment.player.id = corpse.id;
+            view.equipment.inventory.containers.emplace(corpse.items, player.persistent.inventory.containers.at(corpse.items));
+            for (const auto &[itemId, item] : player.persistent.inventory.items) {
+                const auto *at = std::get_if<ContainerLocation>(&item.location);
+                if (at && at->container == corpse.items) view.equipment.inventory.items.emplace(itemId, item);
+            }
+            result.push_back(std::move(view));
+        }
+    }
+    return result;
+}
+}
+
+namespace d2x::server {
+std::vector<objects::Object> GameInstance::visibleObjects(PlayerId id) const {
+    std::vector<objects::Object> result; const auto areas = visibleAreas(id);
+    for (const auto &[key, object] : systems_.objects.read().objects) {
+        (void)key; if (std::find(areas.begin(), areas.end(), object.area) != areas.end()) result.push_back(object);
+    }
+    return result;
+}
+}
+
+namespace d2x::server {
+std::vector<travel::Portal> GameInstance::visiblePortals(PlayerId player) const {
+    const auto areas=visibleAreas(player); std::vector<travel::Portal> result;
+    for(const auto &[owner,portal]:systems_.travel.read().portals) { (void)owner; if(std::find(areas.begin(),areas.end(),portal.field)!=areas.end() || std::find(areas.begin(),areas.end(),portal.town)!=areas.end()) result.push_back(portal); }
+    return result;
+}
+}

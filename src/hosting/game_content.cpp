@@ -1,6 +1,8 @@
 #include "game_content.hpp"
 #include "character_content.hpp"
 #include "combat_content.hpp"
+#include "object_content.hpp"
+#include "npc_content.hpp"
 #include "server/character_admission.hpp"
 #include "content/classic_data.hpp"
 #include "content/world/world_catalog.hpp"
@@ -17,46 +19,14 @@ PreparedWorldArea prepareWorldArea(Archives &archives, const ClassicData &conten
     const auto &level = world.level(request.level);
     result.terrain = generateArea(archives, request);
     auto &area = result.authority;
-    area.id = RegionId(request.level);
+    area.id = RegionId(request.level); area.waypointIndex=level.waypoint;
+    area.townRegion = RegionId(actTownLevels.at(size_t(request.act)));
     area.act = request.act; area.town = level.town; area.origin = result.terrain.origin;
     area.collision = result.terrain.map->grid;
     area.activation = result.terrain.map->activation;
     if (auto allowed = content.teleportByLevel.find(request.level); allowed != content.teleportByLevel.end()) area.teleportAllowed = allowed->second != 0;
-    // This slice has only immutable preset objects in their neutral mode.
-    // Combat population is prepared separately; decorations do not imply AI or object operations.
-    DataTable objects(archives.read("data/global/excel/objects.txt"));
-    std::map<int, size_t> rows;
-    for (size_t row = 0; row < objects.rows().size(); ++row)
-        if (auto id = objects.number(row, "Id")) rows.emplace(*id, row);
-    std::vector<Grid::Obstacle> obstacles;
-    uint64_t identity = uint64_t{1} << 32;
-    for (const auto &object : result.terrain.map->terrain.data.objects) {
-        if (object.type != 2 || !object.nativeIdentity) continue;
-        const auto found = rows.find(object.id);
-        if (found == rows.end()) {
-            // OBJECTS_SpawnPresetObject dispatches 574..582 to callbacks, not
-            // Objects.txt rows. Shrine/chest/quest materialization belongs to
-            // the object subsystem; keep these explicit pending identities.
-            if (object.id >= 574 && object.id <= 582) {
-                if (std::find(area.objectDeferred.begin(), area.objectDeferred.end(), object.id) == area.objectDeferred.end())
-                    area.objectDeferred.push_back(object.id);
-                continue;
-            }
-            throw std::runtime_error("Missing preset object definition: " + std::to_string(object.id));
-        }
-        area.objects.push_back({{}, object.id, {float(object.x), float(object.y)}});
-        const auto row = found->second;
-        auto number = [&](const char *field) { return objects.number(row, field).value_or(0); };
-        const bool collision = number("HasCollision0") != 0, light = number("BlocksLight0") != 0;
-        const int width = number("SizeX"), height = number("SizeY");
-        if ((!collision && !light) || width <= 0 || height <= 0) continue;
-        const bool door = number("IsDoor") != 0, missile = number("BlockMissile") != 0;
-        const uint16_t mask = door ? (number("BlocksVis") ? 0x0806 : missile ? 0x0804 : 0x0400)
-            : (number("SubClass") & 4) ? 0x8000 : missile ? 0x0404 : 0x0400;
-        obstacles.push_back({EntityId{identity++}, object.x - width / 2, object.y - height / 2,
-            width, height, uint16_t(collision ? mask : 0), light});
-    }
-    area.collision.setObstacles(std::move(obstacles));
+    prepareObjects(archives, content, result);
+    prepareNpcs(archives, content, result);
     if (level.town) {
         const Vec marker = result.terrain.map->actSpawn();
         area.spawn = area.collision.nearest(marker, playerMovement);

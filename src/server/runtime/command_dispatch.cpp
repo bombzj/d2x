@@ -85,8 +85,8 @@ SystemId commandSystem(const CommandPayload &payload) {
 }
 bool acceptsCommand(const CommandPayload &payload) {
     if (const auto *request = std::get_if<inventory::Request>(&payload)) return inventory::supports(*request);
-    if (const auto *request = std::get_if<skills::Request>(&payload)) return request->action != skills::Action::Bind;
-    if (std::holds_alternative<death::Request>(payload)) return false;
+    if (std::holds_alternative<skills::Request>(payload)) return true;
+    if (std::holds_alternative<death::Request>(payload)) return true;
     const auto id = commandSystem(payload);
     for (const auto &entry : systemCatalog())
         if (entry.id == id) return entry.scope != SystemScope::Scaffold;

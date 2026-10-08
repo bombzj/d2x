@@ -9,7 +9,7 @@ struct Edit {
     std::vector<ItemChange> changes;
     unsigned weaponSet{};
 };
-DomainResult<Edit> plan(const PlayerState &, const Request &, const ItemCatalog &, const EquipmentRules &, const CharacterRules &);
+DomainResult<Edit> plan(const PlayerState &, const Request &, const ItemCatalog &, const EquipmentRules &, const CharacterRules &, bool storage = false);
 namespace detail {
 struct Draft {
     const PlayerState &player;
@@ -17,6 +17,7 @@ struct Draft {
     const EquipmentRules &rules;
     const CharacterRules &characterRules;
     Edit edit;
+    bool storage = false;
     explicit Draft(const PlayerState &p, const ItemCatalog &c, const EquipmentRules &r, const CharacterRules &cr)
         : player(p), catalog(c), rules(r), characterRules(cr), edit{p.persistent.inventory, {}, p.persistent.player.weaponSet} {}
     const PlayerContainers &containers() const { return player.persistent.containers; }

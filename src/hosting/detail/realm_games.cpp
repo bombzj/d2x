@@ -38,14 +38,14 @@ void NativeRealmService::createGame(net::protocol::Reader &in) {
         HostedGame room; room.name = name; room.password = password; room.description = description;
         room.flags = flags; room.capacity = players; room.levelDifference = levelDifference;
         room.creatorLevel = uint8_t(selected->player.level); room.hardcore = bool(find(selectedName).nativeStatus & 4);
-        room.settings = {selected->mapSeed, int(gameDifficulty)};
+        room.settings = {selected->mapSeed, int(gameDifficulty), !multiplayerEndpoint && players == 1};
         eligible(find(selectedName), room);
         PreparedGame prepared;
         if (reload) {
             if (players != 1 || reload->name != selectedName || reload->difficulty != gameDifficulty || reload->expectedFile != lease->expected)
                 throw std::runtime_error("Prepared reload no longer matches this admission");
             prepared = std::move(reload->game); reload.reset();
-        } else { auto saved = *selected; saved.difficulty = int(gameDifficulty); prepared = prepareGame(std::move(saved)); }
+        } else { auto saved = *selected; saved.difficulty = int(gameDifficulty); prepared = prepareGame(std::move(saved), room.settings.singlePlayer); }
         stagedBinding = prepared.binding;
         room.handle = prepared.binding.game; room.town = RegionId(prepared.terrain.request.level); room.index = shared.nextGameIndex;
         try { shared.games.emplace(key, room); }

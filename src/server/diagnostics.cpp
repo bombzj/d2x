@@ -34,6 +34,9 @@ std::optional<DiagnosticSnapshot> GameInstance::diagnostics(PlayerId id, size_t 
     DiagnosticSnapshot result;
     result.tick = tick_; result.player = *snapshot(id); result.record = player->persistent.player;
     result.containers = player->persistent.containers;
+    result.waypoints=player->persistent.waypoints; result.denRemaining=systems_.quests.read().denRemaining; result.denCleared=systems_.quests.read().denCleared; result.portals=visiblePortals(id);
+    result.corpses=player->persistent.corpses; result.merchantDeferred=systems_.merchant.read().deferred;
+    for(const auto &[key,object]:systems_.objects.read().objects) { (void)key; if(object.area==player->area && result.objects.size()<limit) result.objects.push_back(object); }
     const auto &area = areas_.at(player->area);
     result.area = {area.definition, area.generation};
     for (const auto &[key, value] : areas_.all()) {
@@ -47,10 +50,21 @@ std::optional<DiagnosticSnapshot> GameInstance::diagnostics(PlayerId id, size_t 
     if (commandSince != UINT64_MAX) for (auto sequence = std::max(result.commandFirst, commandSince + 1);
         sequence < commandHistoryNext_ && result.commands.size() < limit; ++sequence)
         result.commands.push_back(commandHistory_[(sequence - 1) % commandHistory_.size()]);
+    result.lootPending = systems_.loot.read().pending.size(); result.lootDeferred = systems_.loot.read().deferred;
+    if (const auto found = systems_.effects.read().players.find(player->actor); found != systems_.effects.read().players.end()) {
+        result.healingQueued = found->second.healing.size(); result.manaQueued = found->second.mana.size();
+        for (const auto &effect : found->second.states.entries()) result.effects.push_back({effect.spec.state.id, effect.expiresAt.value_or(0)});
+    }
     result.itemCount = player->persistent.inventory.items.size();
     for (const auto &[key, item] : player->persistent.inventory.items) {
         if (result.items.size() >= limit) break;
         result.items.push_back({key, item.revision, item.definition, item.location, item.quantity, item.durability});
+    }
+    for (const auto &[key, item] : systems_.items.read().world.items) {
+        const auto &at = std::get<GroundLocation>(item.location);
+        if (at.region != player->area) continue;
+        ++result.itemCount;
+        if (result.items.size() < limit) result.items.push_back({key, item.revision, item.definition, item.location, item.quantity, item.durability});
     }
     std::vector<const monsters::Actor *> nearby;
     for (const auto &[key, monster] : systems_.monsters.read().actors) {
@@ -92,5 +106,33 @@ std::optional<DiagnosticSnapshot> GameInstance::diagnostics(PlayerId id, size_t 
         }
     }
     return result;
+}
+}
+
+namespace d2x::server {
+DomainResult<> GameInstance::grantGold(PlayerId id,uint32_t amount) {
+    const auto *p=players_.find(id); if(!p || !p->entered || p->persistent.player.hp<=0 || !amount) return {DomainStatus::InvalidActor,{}};
+    auto record=p->persistent.player; const auto cap=unsigned(record.level)*10000;
+    if(record.gold>cap || amount>cap-record.gold) return {DomainStatus::Capacity,{}};
+    record.gold+=amount;
+    const ActorContext actor{id,p->actor,p->area,areas_.at(p->area).generation,0,tick_};
+    auto plan=systems_.transactions.prepare(transactions::CharacterEdit{actor,p->inventoryRevision,p->characterRevision,std::move(record)});
+    if(!plan) return {plan.status,{}};
+    return systems_.transactions.commit(std::move(*plan.value));
+}
+DomainResult<> GameInstance::damagePlayer(PlayerId id,uint32_t amount) {
+    const auto *p=players_.find(id); if(!p || !amount) return {DomainStatus::InvalidActor,{}};
+    return systems_.transactions.damage({id,p->actor,p->area,areas_.at(p->area).generation,0,tick_},p->characterRevision,int64_t(amount)*256);
+}
+}
+
+namespace d2x::server {
+DomainResult<> GameInstance::damageMonster(PlayerId id, EntityId target, std::optional<uint32_t> amount) {
+    const auto *player = players_.find(id);
+    const auto *monster = systems_.monsters.find(target);
+    if (!player || !player->entered || player->persistent.player.hp <= 0 || !monster ||
+        monster->area != player->area || monster->life <= 0 || (amount && !*amount))
+        return {DomainStatus::InvalidActor, {}};
+    return systems_.monsters.damage(target, player->actor, amount ? int64_t(*amount) * 256 : monster->life, tick_);
 }
 }

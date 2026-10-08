@@ -1,5 +1,6 @@
 #pragma once
 #include "hosting/game_host.hpp"
+#include "hosting/loot_content.hpp"
 #include "hosting/game_content.hpp"
 #include "content/classic_data.hpp"
 #include "content/character/realm_portrait.hpp"
@@ -27,6 +28,7 @@ struct NativeRealmHost {
     std::shared_ptr<const ItemCatalog> items;
     std::unique_ptr<RealmPortraitCatalog> portraits;
     GameHost host;
+    LootContent lootContent;
     uint64_t rules{};
     uint32_t nextGameIndex = 1;
     std::map<std::string, HostedGame> games;

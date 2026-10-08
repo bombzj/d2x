@@ -60,25 +60,31 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
     if (status != DomainStatus::Applied) return {status, {}};
     return commit(ports_.transactions, *player, actor, std::move(record), refresh);
 }
+DomainResult<CharacterRecord> addExperience(CharacterRecord record, const CharacterDefinition &definition, const CharacterRules &rules, uint64_t amount) {
+    const auto &thresholds = rules.experience;
+    if (record.level < 1 || size_t(record.level) >= thresholds.size()) return {DomainStatus::InvalidRequest, {}};
+    const auto maximum = thresholds.back();
+    if (record.experience >= maximum) return {DomainStatus::Conflict, {}};
+    record.experience += std::min(amount, maximum - record.experience);
+    const int previous = record.level;
+    while (size_t(record.level + 1) < thresholds.size() && record.experience >= thresholds[size_t(record.level + 1)]) ++record.level;
+    const int gained = record.level - previous;
+    const int64_t points = int64_t(gained) * definition.statPerLevel;
+    if (points < 0 || points > INT32_MAX - int64_t(record.unspentAttributes) ||
+        gained > INT32_MAX - int64_t(record.unspentSkills)) return {DomainStatus::Capacity, {}};
+    record.unspentAttributes += int(points); record.unspentSkills += gained;
+    return {DomainStatus::Applied, std::move(record)};
+}
 DomainResult<> System::award(const Award &award) {
     const auto *player = ports_.players.find(award.player);
     if (!player || player->persistent.player.hp <= 0) return {DomainStatus::InvalidActor, {}};
     if (!player->rules.character || player->rules.character->experience.size() < 3) return {DomainStatus::Unavailable, {}};
     if (!award.sourceOccurrence || !award.experience) return {DomainStatus::InvalidRequest, {}};
     if (award.sourceOccurrence <= player->lastExperienceAward) return {DomainStatus::Stale, {}};
-    auto record = player->persistent.player;
-    const auto &thresholds = player->rules.character->experience;
-    if (record.level < 1 || size_t(record.level) >= thresholds.size()) return {DomainStatus::InvalidRequest, {}};
-    const auto maximum = thresholds.back();
-    if (record.experience >= maximum) return {DomainStatus::Conflict, {}};
-    record.experience += std::min(award.experience, maximum - record.experience);
-    const int previous = record.level;
-    while (size_t(record.level + 1) < thresholds.size() && record.experience >= thresholds[size_t(record.level + 1)]) ++record.level;
-    const int gained = record.level - previous;
-    const int64_t points = int64_t(gained) * player->definition.statPerLevel;
-    if (points < 0 || points > INT32_MAX - int64_t(record.unspentAttributes) ||
-        gained > INT32_MAX - int64_t(record.unspentSkills)) return {DomainStatus::Capacity, {}};
-    record.unspentAttributes += int(points); record.unspentSkills += gained;
+    auto planned = addExperience(player->persistent.player, player->definition, *player->rules.character, award.experience);
+    if (!planned) return {planned.status, {}};
+    auto record = std::move(*planned.value);
+    const int gained = record.level - player->persistent.player.level;
     const ActorContext actor{player->player, player->actor, player->area, 0, 0, award.tick};
     return commit(ports_.transactions, *player, actor, std::move(record), gained ? transactions::ResourceRefresh::LevelUp
         : transactions::ResourceRefresh::Clamp, award.sourceOccurrence);

@@ -24,17 +24,22 @@ struct InventoryFact {
     std::vector<ItemChange> changes;
     bool switchedWeapons{};
 };
-struct QuestFact { PlayerId player; QuestId quest; uint64_t revision{}; };
+struct QuestFact { PlayerId player; CharacterRecord record; int difficulty{}; unsigned remaining{}; };
 struct AttributeFact { EntityId unit; uint64_t revision{}; };
 struct CharacterFact {
     CharacterRecord before, after;
     attributes::Totals previous, current;
 };
-struct TravelFact { PlayerId player; EntityId actor; RegionId from, to; uint64_t areaGeneration{}; Vec position; bool walking{}; };
+struct TravelFact { PlayerId player; EntityId actor; RegionId from, to; uint64_t areaGeneration{}; Vec position; bool walking{}, revived{}; };
 struct ObjectFact { EntityId object, actor; RegionId area; uint64_t revision{}; };
 struct ChatFact { EntityId actor; std::string name, text; std::vector<PlayerId> recipients; };
 struct CommandFact { PlayerId player; uint64_t sequence{}; CommandStatus result; };
-using DomainFact = std::variant<ManaFact, RepositionFact, LifeFact, AttackFact, HitFact, DeathFact, ItemFact, InventoryFact, CharacterFact, QuestFact, AttributeFact, TravelFact, ObjectFact, ChatFact, CommandFact>;
+struct NpcMessage { uint8_t menu{}; uint16_t text{}; };
+struct NpcMessagesFact { EntityId npc; std::vector<NpcMessage> messages; };
+struct MerchantFact { EntityId npc, item; uint8_t operation{}, result{}; uint32_t gold{}; bool refreshShop{}; };
+struct WaypointFact { EntityId source; std::vector<RegionId> unlocked; };
+struct UiFact { uint8_t action{}; };
+using DomainFact = std::variant<ManaFact, RepositionFact, LifeFact, AttackFact, HitFact, DeathFact, ItemFact, InventoryFact, CharacterFact, QuestFact, AttributeFact, TravelFact, ObjectFact, ChatFact, CommandFact, NpcMessagesFact, MerchantFact, UiFact, WaypointFact>;
 // Compact bounded observation, independent of reliable delivery and acknowledgement.
 struct DiagnosticEvent {
     uint64_t sequence{}, batch{}, tick{}, transaction{};

@@ -12,4 +12,4 @@
 
 本地D2MOO固定版本：AiThink::Fn061_Hireable、MonsterAI::MONSTERAI_UpdateMercStatsAndSkills、SUnitNpc雇佣／复活／治疗、PlayerPets同行与死亡，以及PlrMsg原0x61装备处理。它们用于核对原请求与字段，不作为客户端执行器；许可见[资料来源](../../resources/THIRD_PARTY.md)。
 
-剩余工作见[联机计划M8阶段](../../architecture/MULTIPLAYER.md#实施状态)，保存工具边界见[存档](../../modules/SAVES.md)。全部类型、分段及装备／技能表现尚未原服验收。
+剩余工作见[完整实施计划](../../architecture/MULTIPLAYER.md)中的P3／P6–P8阶段，保存工具边界见[存档](../../modules/SAVES.md)。全部类型、分段及装备／技能表现尚未原服验收。

@@ -30,6 +30,16 @@ class GameHost {
     std::vector<PlayerId> participants(GameHandle) const;
     std::vector<PlayerId> visiblePlayers(PlayerBinding) const;
     std::vector<MonsterSnapshot> visibleMonsters(PlayerBinding) const;
+    std::vector<server::merchant::Preparation> pendingMerchant(GameHandle) const;
+    server::DomainResult<> installMerchant(GameHandle, server::merchant::Prepared);
+    std::optional<PersistentCharacter> shop(PlayerBinding) const;
+    std::vector<ItemInstance> groundItems(PlayerBinding) const;
+    std::vector<server::CorpseView> visibleCorpses(PlayerBinding) const;
+    std::vector<server::objects::Object> visibleObjects(PlayerBinding) const;
+    std::vector<server::travel::Portal> visiblePortals(PlayerBinding) const;
+    server::DomainResult<> spawnItems(PlayerBinding, server::items::PreparedBatch, std::optional<Vec>);
+    std::map<EntityId, server::loot::Preparation> pendingLoot(GameHandle) const;
+    server::DomainResult<> installLoot(GameHandle, EntityId, server::items::PreparedBatch, std::string);
     std::vector<RegionId> visibleAreas(PlayerBinding) const;
     std::optional<server::AreaView> area(GameHandle, RegionId) const;
     std::optional<server::GameSettings> settings(GameHandle) const;
@@ -52,6 +62,9 @@ class GameHost {
     bool acknowledgeEvents(GameHandle, uint64_t sequence);
     server::DomainResult<> grantExperience(PlayerBinding, uint64_t amount);
     server::DomainResult<> restoreResources(PlayerBinding);
+    server::DomainResult<> grantGold(PlayerBinding,uint32_t);
+    server::DomainResult<> damagePlayer(PlayerBinding,uint32_t);
+    server::DomainResult<> damageMonster(PlayerBinding,EntityId,std::optional<uint32_t> amount);
     server::DomainResult<EntityId> spawnMonster(PlayerBinding, const server::PreparedMonster &);
     std::optional<server::DiagnosticSnapshot> diagnostics(PlayerBinding, size_t limit, uint64_t since, uint64_t commandSince,
                                                          std::optional<Vec> destination = {}) const;

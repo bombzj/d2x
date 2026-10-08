@@ -70,7 +70,7 @@ bool isDirectPropertyRoll(const ClassicData &data, std::string_view code) {
     if (found == data.properties.end() || found->operations.empty()) return false;
     switch (found->operations.front().function) {
     case 1: case 2: case 3: case 4: case 5: case 6: case 7: case 8:
-    case 9: case 10: case 14: case 21: case 22: case 24: return true;
+    case 9: case 10: case 13: case 14: case 21: case 22: case 24: return true;
     default: return false;
     }
 }
@@ -112,7 +112,9 @@ std::vector<ResolvedItemStat> resolvePropertyStats(const ClassicData &data,
     };
     for (const auto &op : found->operations) {
         switch (op.function) {
-        case 1: case 2: case 3: case 4: case 8:
+        case 1: case 2: case 3: case 4: case 8: case 13:
+            // Func13 stores the rolled durability percent; item creation/repair
+            // separately initializes current durability from the resulting max.
             append(op.stat, roll); break;
         case 9: append(op.stat, roll, parameter); break;
         case 5: append("mindamage", roll); break;

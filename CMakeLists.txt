@@ -86,7 +86,7 @@ target_sources(d2x_content PRIVATE src/content/npc/npc_dialogue.cpp)
 target_sources(d2x_content PRIVATE src/content/quest/quest_data.cpp)
 target_sources(d2x_content PRIVATE src/content/npc/hireling_data.cpp)
 target_sources(d2x_content PRIVATE src/content/world/automap_data.cpp)
-target_sources(d2x_content PRIVATE src/content/npc/vendor_data.cpp)
+target_sources(d2x_content PRIVATE src/content/npc/vendor_data.cpp src/content/npc/vendor_stock.cpp)
 target_link_libraries(d2x_content PUBLIC d2x_resources d2x_items)
 
 # Rules and state compile without raylib, StormLib, a window or an archive.
@@ -111,7 +111,7 @@ target_link_libraries(d2x_gameplay PUBLIC d2x_navigation d2x_items)
 target_sources(d2x_content PRIVATE src/content/skills/state_data.cpp src/content/world/shrine_data.cpp
   src/content/skills/aura_data.cpp)
 target_link_libraries(d2x_content PUBLIC d2x_gameplay)
-target_sources(d2x_world PRIVATE src/world/interaction_geometry.cpp)
+target_sources(d2x_navigation PRIVATE src/world/interaction_geometry.cpp)
 
 add_library(d2x_population src/world/population.cpp)
 target_link_libraries(d2x_population PUBLIC d2x_content d2x_gameplay)
@@ -163,7 +163,7 @@ target_sources(d2x_server PRIVATE
   src/server/systems/merchant/system.cpp
   src/server/systems/quests/system.cpp
   src/server/systems/progression/system.cpp
-  src/server/systems/travel/system.cpp
+  src/server/systems/travel/system.cpp src/server/systems/travel/waypoints.cpp src/server/systems/travel/portals.cpp
   src/server/systems/social/system.cpp
   src/server/systems/trade/system.cpp
   src/server/systems/transactions/system.cpp src/server/systems/transactions/resources.cpp
@@ -176,7 +176,7 @@ target_link_libraries(d2x_host PUBLIC d2x_server)
 add_library(d2x_game_content src/hosting/skill_content.cpp src/hosting/combat_content.cpp src/hosting/game_content.cpp src/hosting/character_content.cpp src/hosting/character_creation.cpp src/hosting/character_rules.cpp)
 target_link_libraries(d2x_game_content PUBLIC d2x_world d2x_server PRIVATE d2x_persistence d2x_population)
 add_library(d2x_character_host src/hosting/character_store.cpp src/hosting/embedded_realm.cpp
-  src/hosting/native_game_wire.cpp src/hosting/native_combat_wire.cpp src/hosting/detail/monster_replication.cpp src/hosting/native_item_wire.cpp src/hosting/native_character_wire.cpp
+  src/hosting/native_game_wire.cpp src/hosting/native_combat_wire.cpp src/hosting/detail/monster_replication.cpp src/hosting/native_item_wire.cpp src/hosting/native_character_wire.cpp src/hosting/native_quest_wire.cpp
   src/hosting/detail/native_realm_service.cpp src/hosting/detail/realm_protocol.cpp
   src/hosting/detail/realm_characters.cpp src/hosting/detail/realm_games.cpp
   src/hosting/detail/game_protocol.cpp src/hosting/detail/host_administration.cpp
@@ -259,3 +259,15 @@ if(MINGW)
 endif()
 
 target_sources(d2x_content PRIVATE src/content/items/cube_data.cpp)
+
+target_sources(d2x_server PRIVATE src/server/systems/inventory/ground.cpp)
+target_sources(d2x_game_content PRIVATE src/hosting/item_content.cpp src/hosting/object_content.cpp src/hosting/npc_content.cpp src/hosting/merchant_content.cpp)
+target_sources(d2x_character_host PRIVATE src/hosting/loot_content.cpp)
+
+target_sources(d2x_gameplay PRIVATE src/gameplay/effects/state.cpp src/gameplay/units/restoration.cpp src/gameplay/units/resources.cpp src/gameplay/consumables/potions.cpp)
+
+target_sources(d2x_server PRIVATE src/server/systems/inventory/consumption.cpp src/server/systems/inventory/identification.cpp src/server/systems/inventory/storage.cpp)
+
+target_sources(d2x_server PRIVATE src/server/systems/death/settlement.cpp src/server/systems/death/recovery.cpp)
+
+target_sources(d2x_gameplay PRIVATE src/gameplay/quest/den_of_evil.cpp)

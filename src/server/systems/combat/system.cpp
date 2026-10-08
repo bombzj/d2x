@@ -50,7 +50,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         // Reserve both private resource and public hit outputs before consuming RNG.
         if (!ports_.events.hasCapacity(2, targetPlayer ? 2 : 1)) { blocked = true; ++it; continue; }
         auto random = ports_.random;
-        const bool running = targetPlayer && targetPlayer->moving && targetPlayer->routeRunning;
+        const bool running = targetPlayer && targetPlayer->moving && targetPlayer->runningNow;
         const auto chance = [&] {
             if (targetMonster && damage.weapon) {
                 const auto &weapon = *damage.weapon;

@@ -9,6 +9,8 @@
 #include <cmath>
 #include <cctype>
 #include <set>
+#include <map>
+#include <tuple>
 
 namespace d2x {
 std::shared_ptr<const server::MeleeRules> prepareMeleeRules(const ClassicData &data, const CharacterDefinition &character) {
@@ -91,23 +93,32 @@ void prepareCombatPopulation(Archives &archives, const ClassicData &data, Prepar
     // Generated maps use each room's MPQ Populate flag in planPopulation.
     auto plan = planPopulation(catalog, &level, preset, *prepared.terrain.map, {request.seed, request.difficulty});
     std::set<std::string> deferred(plan.diagnostics.begin(), plan.diagnostics.end());
-    std::map<std::string, server::MonsterRule> rules;
+    // Rules depend on native identity/rank and this area's difficulty/level,
+    // not the spawn position. Cache unsupported profiles as well.
+    using RuleKey = std::tuple<std::string, MonsterRank, std::string>;
+    std::map<RuleKey, std::optional<server::PreparedMonster>> rules;
+    auto prepare = [&](const MonsterIdentity &identity, Vec position) {
+        const RuleKey key{identity.monster, identity.rank, identity.superUnique};
+        auto [entry, inserted] = rules.try_emplace(key);
+        if (inserted) entry->second = combatMonster(archives, data, request, identity, {}, world, catalog, animations);
+        auto result = entry->second;
+        if (result) { result->identity = identity; result->position = position; }
+        return result;
+    };
     for (const auto &spawn : plan.spawns) {
         const auto *record = catalog.find(spawn.identity.monster);
         if (!record || !record->hostile()) continue;
-        auto pending = [&] { deferred.insert("Combat pending: " + spawn.identity.monster + " (rank, ranged/elemental attack, AI or original timing)"); };
-        if (spawn.identity.rank != MonsterRank::Normal || record->boss || record->ranged ||
-            (record->ai != "Fallen" && record->ai != "Zombie" && record->ai != "Skeleton" && record->ai != "Brute" &&
-             record->ai != "CorruptRogue" && record->ai != "Goatman" && record->ai != "CorruptLancer")) { pending(); continue; }
-        auto found = rules.find(record->id);
-        if (found == rules.end()) {
-            auto preparedMonster = combatMonster(archives, data, request, spawn.identity, spawn.position, world, catalog, animations);
-            if (!preparedMonster) { pending(); continue; }
-            auto rule = std::move(preparedMonster->rule);
-            found = rules.emplace(record->id, std::move(rule)).first;
+        auto preparedMonster=prepare(spawn.identity, spawn.position);
+        // The authorized enemy substitute retains real identity for quest/loot.
+        // Start with Den of Evil: otherwise skipped families would falsely clear it.
+        if (!preparedMonster && request.level==8) {
+            auto substitute=spawn.identity; substitute.monster="fallen1"; substitute.rank=MonsterRank::Normal; substitute.superUnique.clear();
+            preparedMonster=prepare(substitute, spawn.position);
+            if(preparedMonster) { preparedMonster->identity=spawn.identity; deferred.insert("Enemy substitute: "+spawn.identity.monster+" -> fallen1"); }
         }
-        if (!area.collision.walkable(spawn.position, found->second.collision)) continue;
-        area.population.push_back({spawn.identity, spawn.kind, spawn.position, found->second});
+        if (!preparedMonster) { ++area.populationMissing; deferred.insert("Combat pending: "+spawn.identity.monster); continue; }
+        if (!area.collision.walkable(spawn.position,preparedMonster->rule.collision)) { ++area.populationMissing; deferred.insert("Spawn collision: "+spawn.identity.spawnKey); continue; }
+        area.population.push_back(std::move(*preparedMonster));
     }
     area.populationDeferred.assign(deferred.begin(), deferred.end());
 }

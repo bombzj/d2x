@@ -61,6 +61,22 @@ void NativeRealmService::publishPlayers() {
         if (motion.empty()) sent.motion.clear();
         else if (fresh || motion != sent.motion) { packets.push_back(motion); sent.motion = std::move(motion); }
     }
+    auto statePlayers = visible; statePlayers.push_back(binding->player);
+    std::set<EntityId> stateActors;
+    for (const auto id : statePlayers) {
+        const auto view = host.read({binding->game, id});
+        if (!view || !view->entered) continue;
+        const auto actor = view->actor.id; stateActors.insert(actor);
+        auto &previous = peer.states[actor];
+        const auto emit = [&](int state, bool enabled) {
+            packets.push_back(encodeServerPacket(enabled ? ServerMessage::EnableState : ServerMessage::DisableState,
+                [&](auto &out) { out.u8(0); out.u32(uint32_t(actor.value)); out.u8(uint8_t(state)); }));
+        };
+        for (const auto state : previous) if (!view->states.contains(state)) emit(state, false);
+        for (const auto state : view->states) if (!previous.contains(state)) emit(state, true);
+        previous = view->states;
+    }
+    std::erase_if(peer.states, [&](const auto &entry) { return !stateActors.contains(entry.first); });
     if (!packets.empty()) sendGameBatch(std::move(packets));
 }
 }

@@ -43,10 +43,10 @@ EquipmentLoadout loadout(const PersistentCharacter &state, const ItemCatalog &ca
     return result;
 }
 Totals calculate(const CharacterDefinition &definition, const PersistentCharacter &state, const ItemCatalog &catalog,
-                 const EquipmentRules &equipment, const CharacterRules &rules, EntityId excluded) {
+                 const EquipmentRules &equipment, const CharacterRules &rules, EntityId excluded, const CharacterModifiers &temporary) {
     const auto &record = state.player;
     auto view = loadout(state, catalog, equipment);
-    const auto base = deriveCharacterAttributes(definition, record.level, record.allocated);
+    const auto base = deriveCharacterAttributes(definition, record.level, record.allocated, temporary);
     EquipmentActor actor{definition.code, base.strength, base.dexterity, record.level, base.blockFactor, record.weaponSet};
     EquipmentContributionSource source{equipment.sets,
         [&](const ItemInstance &item, int level) { return equipment.at(item.id, level).stats; },
@@ -91,6 +91,7 @@ Totals calculate(const CharacterDefinition &definition, const PersistentCharacte
             passives.combat.manaRecovery += rule.manaRecoveryPerRank->first + (rank - 1) * rule.manaRecoveryPerRank->second;
     }
     mergeCharacterModifiers(modifiers, passives);
+    mergeCharacterModifiers(modifiers, temporary);
     modifiers.baseLife += questBaseLife(record.quests);
     const int resistance = questResistance(record.quests);
     modifiers.fireResist += resistance; modifiers.coldResist += resistance;

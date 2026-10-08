@@ -4,9 +4,10 @@
 
 namespace d2x::server {
 class PlayerStore;
+namespace travel { class System; }
 struct ActorContext;
 struct TickContext;
-struct MovementPorts { PlayerStore &players; const AreaStore &areas; };
+struct MovementPorts { PlayerStore &players; const AreaStore &areas; const travel::System &travel; };
 class MovementSystem {
     const MovementPorts ports_;
   public:

@@ -86,6 +86,7 @@ void LanRealm::poll() {
                             if (!network_.send(target->gameSocket, std::move(bytes))) throw std::runtime_error("LAN D2GS output queue closed or full");
                         });
                     peer->connection->service.gameAddress = ipv4(event.localAddress);
+                    peer->connection->service.multiplayerEndpoint = true;
                     peer->connection->openRealm(); realms_[id] = target; peers_.push_back(std::move(peer));
                 } else {
                     if (games_.size() >= 64) { network_.close(id); continue; }

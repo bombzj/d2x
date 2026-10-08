@@ -159,7 +159,13 @@ std::optional<std::string> serverDebugCommand(const Json &request, EmbeddedRealm
             if (request.contains("x") || request.contains("y")) position = Vec{float(unsignedValue(request.at("x"), 65535)), float(unsignedValue(request.at("y"), 65535))};
             if (entry->operation == AdminOperation::SpawnMonster && request.contains("level"))
                 throw std::invalid_argument("Monster level comes from the current MPQ area and difficulty; omit level");
-            args = AdminSpawn{std::move(code), int(level), position}; break;
+            if (entry->operation != AdminOperation::SpawnItem && (request.contains("quality") || request.contains("durability")))
+                throw std::invalid_argument("quality/durability apply only to item-spawn");
+            AdminSpawn spawn{std::move(code), int(level), position};
+            if (request.contains("quality")) spawn.quality = request.at("quality").get<std::string>();
+            if (spawn.quality != "normal" && spawn.quality != "magic") throw std::invalid_argument("quality must be normal or magic");
+            if (request.contains("durability")) spawn.durability = unsigned(unsignedValue(request.at("durability"), 255));
+            args = std::move(spawn); break;
         }
         case AdminArgumentKind::Unit:
             args = AdminUnit{unsignedValue(request.at("id")), request.contains("amount") ? signedValue(request.at("amount")) : 0}; break;

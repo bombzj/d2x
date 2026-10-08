@@ -1,14 +1,15 @@
 #include "gameplay_dispatch.hpp"
 
 namespace d2x::hosting::handlers {
-RequestResult CloseStash(GameplayContext &, uint32_t) {
-    return {RequestStatus::NotImplemented, CommandStatus::Stale, "CloseStash"};
+RequestResult CloseStash(GameplayContext &context, uint32_t amount) {
+    if(amount) return {RequestStatus::Rejected};
+    return submitGameplay(context,server::inventory::Request{CloseStorage{}});
 }
-RequestResult WithdrawGold(GameplayContext &, uint32_t) {
-    return {RequestStatus::NotImplemented, CommandStatus::Stale, "WithdrawGold"};
+RequestResult WithdrawGold(GameplayContext &context, uint32_t amount) {
+    return submitGameplay(context,server::inventory::Request{GoldTransaction{GoldAction::Withdraw,amount}});
 }
-RequestResult DepositGold(GameplayContext &, uint32_t) {
-    return {RequestStatus::NotImplemented, CommandStatus::Stale, "DepositGold"};
+RequestResult DepositGold(GameplayContext &context, uint32_t amount) {
+    return submitGameplay(context,server::inventory::Request{GoldTransaction{GoldAction::Deposit,amount}});
 }
 RequestResult CloseCube(GameplayContext &, uint32_t) {
     return {RequestStatus::NotImplemented, CommandStatus::Stale, "CloseCube"};
@@ -16,34 +17,46 @@ RequestResult CloseCube(GameplayContext &, uint32_t) {
 RequestResult Transmute(GameplayContext &, uint32_t) {
     return {RequestStatus::NotImplemented, CommandStatus::Stale, "Transmute"};
 }
-RequestResult PickUpItem(GameplayContext &, net::protocol::Reader &) {
-    // TODO: Inventory authority validation, transaction and native replication.
-    return {RequestStatus::NotImplemented};
+RequestResult PickUpItem(GameplayContext &context, net::protocol::Reader &reader) {
+    const auto type = reader.u32(); const EntityId id{reader.u32()}; const auto cursor = reader.u32();
+    if (type != 4 || cursor > 1) return {RequestStatus::Rejected};
+    for (const auto &item : context.host.groundItems(context.player))
+        if (item.id == id) return submitGameplay(context, server::inventory::Request{server::inventory::GroundTransfer{item.handle(), false, cursor != 0}});
+    return {RequestStatus::Rejected};
 }
-RequestResult DropItem(GameplayContext &, net::protocol::Reader &) {
-    // TODO: Inventory authority validation, transaction and native replication.
-    return {RequestStatus::NotImplemented};
+RequestResult DropItem(GameplayContext &context, net::protocol::Reader &reader) {
+    const EntityId id{reader.u32()}; const auto input = context.host.inventoryInput(context.player);
+    if (!input || !input->items.contains(id)) return {RequestStatus::Rejected};
+    return submitGameplay(context, server::inventory::Request{server::inventory::GroundTransfer{input->items.at(id).handle, true, false}});
 }
-RequestResult UseItem(GameplayContext &, net::protocol::Reader &) {
-    // TODO: Inventory authority validation, transaction and native replication.
-    return {RequestStatus::NotImplemented};
+namespace {
+RequestResult consume(GameplayContext &context, net::protocol::Reader &reader, bool belt) {
+    const EntityId id{reader.u32()}; const auto first = reader.u32(), second = reader.u32();
+    if (belt && (first || second)) return {RequestStatus::NotImplemented};
+    if (!belt && (first > UINT16_MAX || second > UINT16_MAX)) return {RequestStatus::Rejected};
+    const auto input = context.host.inventoryInput(context.player);
+    if (!input || !input->items.contains(id)) return {RequestStatus::Rejected};
+    return submitGameplay(context, server::inventory::Request{d2x::UseItem{input->items.at(id).handle},
+        belt ? server::inventory::Source::Belt : server::inventory::Source::Stored});
 }
-
-RequestResult UseBeltItem(GameplayContext &, net::protocol::Reader &) {
-    // TODO: Inventory authority validation, transaction and native replication.
-    return {RequestStatus::NotImplemented};
 }
-RequestResult IdentifyItem(GameplayContext &, net::protocol::Reader &) {
-    // TODO: Inventory authority validation, transaction and native replication.
-    return {RequestStatus::NotImplemented};
+RequestResult UseItem(GameplayContext &context, net::protocol::Reader &reader) { return consume(context, reader, false); }
+RequestResult UseBeltItem(GameplayContext &context, net::protocol::Reader &reader) { return consume(context, reader, true); }
+RequestResult IdentifyItem(GameplayContext &context, net::protocol::Reader &in) {
+    const EntityId target{in.u32()}, source{in.u32()}; in.finish();
+    const auto inventory = context.host.inventoryInput(context.player);
+    if (!inventory || !inventory->items.contains(source) || !inventory->items.contains(target)) return {RequestStatus::Rejected};
+    return submitGameplay(context, server::inventory::Request{d2x::IdentifyItem{inventory->items.at(source).handle, inventory->items.at(target).handle}});
 }
 RequestResult SocketItem(GameplayContext &, net::protocol::Reader &) {
     // TODO: Inventory authority validation, transaction and native replication.
     return {RequestStatus::NotImplemented};
 }
 
-RequestResult DropGold(GameplayContext &, net::protocol::Reader &) {
-    // TODO: Inventory authority validation, transaction and native replication.
-    return {RequestStatus::NotImplemented};
+RequestResult DropGold(GameplayContext &context, net::protocol::Reader &in) {
+    const EntityId owner{in.u32()}; const auto amount = in.u32(); in.finish();
+    const auto player = context.host.read(context.player);
+    if (!player || player->actor.id != owner || !amount || amount > INT32_MAX) return {RequestStatus::Rejected};
+    return submitGameplay(context, server::inventory::Request{GoldTransaction{GoldAction::Drop, amount}});
 }
 }

@@ -28,9 +28,12 @@ class System {
   public:
     explicit System(Ports ports) : ports_(ports) {}
     const State &read() const { return state_; }
+    DomainResult<uint64_t> requestWaypoint(const ActorContext &,RegionId);
+    DomainResult<uint64_t> requestTown(const ActorContext &);
     DomainResult<uint64_t> requestArea(const ActorContext &, RegionId);
     DomainResult<> install(PreparedArea);
     void initialize();
+    void objectCollision(RegionId, std::vector<Grid::Obstacle>);
     void fail(uint64_t request);
     std::vector<RegionId> visible(PlayerId) const;
     StepStatus step(TickContext, FrameFacts &);

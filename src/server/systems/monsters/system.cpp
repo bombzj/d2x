@@ -101,7 +101,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
             const float distance = delta.length();
             if (distance < .001f) { actor.route.pop_front(); continue; }
             const Vec next = actor.position + delta.unit() * std::min(distance, remaining);
-            if (!grid.segment(actor.position, next, {}, actor.rule.collision)) { actor.route.clear(); break; }
+            if (!grid.nativeMovementSegment(actor.position, next, actor.rule.collision)) { actor.route.clear(); break; }
             actor.position = next; remaining -= std::min(distance, remaining); actor.moving = true; ++actor.revision;
             if (arrived(next)) { actor.route.clear(); break; }
             if ((actor.route.front() - next).length() < .001f) actor.route.pop_front();

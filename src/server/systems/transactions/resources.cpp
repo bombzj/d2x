@@ -26,3 +26,22 @@ DomainResult<> System::release(const ActorContext &actor, uint64_t expected, flo
     return {DomainStatus::Applied, std::monostate{}};
 }
 }
+
+namespace d2x::server::transactions {
+DomainResult<> System::resources(const ActorContext &actor, uint64_t expected, float life, float mana, float stamina) {
+    const auto found = ports_.players.players_.find(actor.player);
+    if (found == ports_.players.players_.end()) return {DomainStatus::InvalidActor, {}};
+    auto &player = found->second; const auto &totals = player.totals.character;
+    if (!player.entered || player.actor != actor.actor || player.area != actor.area || player.persistent.player.hp <= 0) return {DomainStatus::InvalidActor, {}};
+    if (player.characterRevision != expected || expected == UINT64_MAX) return {DomainStatus::Stale, {}};
+    if (!std::isfinite(life) || !std::isfinite(mana) || !std::isfinite(stamina) || life <= 0 || life > totals.maxLife || mana < 0 || mana > totals.maxMana || stamina < 0 || stamina > totals.maxStamina) return {DomainStatus::InvalidRequest, {}};
+    auto record = player.persistent.player; record.hp = life; record.mana = mana; record.stamina = stamina;
+    if (record.hp == player.persistent.player.hp && record.mana == player.persistent.player.mana && record.stamina == player.persistent.player.stamina) return {DomainStatus::Applied, std::monostate{}};
+    const auto result = ports_.events.publish({0, actor.tick, {}, {AudienceKind::Player, player.player, player.area},
+        {CharacterFact{player.persistent.player, record, player.totals, player.totals}}});
+    if (!result) return {result.status, {}};
+    player.persistent.player.hp = life; player.persistent.player.mana = mana; player.persistent.player.stamina = stamina;
+    ++player.characterRevision; player.totals.sourceRevision = player.characterRevision;
+    return {DomainStatus::Applied, std::monostate{}};
+}
+}

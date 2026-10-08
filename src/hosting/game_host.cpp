@@ -217,3 +217,43 @@ std::optional<server::DiagnosticSnapshot> GameHost::diagnostics(PlayerBinding bi
 }
 
 } // namespace d2x
+
+namespace d2x {
+std::vector<ItemInstance> GameHost::groundItems(PlayerBinding binding) const { const auto *slot = find(binding.game); return slot ? slot->game->groundItems(binding.player) : std::vector<ItemInstance>{}; }
+std::vector<server::CorpseView> GameHost::visibleCorpses(PlayerBinding binding) const { const auto *slot = find(binding.game); return slot ? slot->game->visibleCorpses(binding.player) : std::vector<server::CorpseView>{}; }
+std::vector<server::objects::Object> GameHost::visibleObjects(PlayerBinding binding) const { const auto *slot = find(binding.game); return slot ? slot->game->visibleObjects(binding.player) : std::vector<server::objects::Object>{}; }
+server::DomainResult<> GameHost::spawnItems(PlayerBinding binding, server::items::PreparedBatch batch, std::optional<Vec> position) {
+    auto *slot = find(binding.game); if (!slot) return {server::DomainStatus::InvalidActor, {}};
+    auto result = slot->game->spawnItems(binding.player, std::move(batch), position); if (result) publish(size_t(binding.game.slot)); return result;
+}
+std::map<EntityId, server::loot::Preparation> GameHost::pendingLoot(GameHandle game) const { const auto *slot = find(game); return slot ? slot->game->pendingLoot() : std::map<EntityId, server::loot::Preparation>{}; }
+server::DomainResult<> GameHost::installLoot(GameHandle game, EntityId source, server::items::PreparedBatch batch, std::string deferred) {
+    auto *slot = find(game); if (!slot) return {server::DomainStatus::InvalidActor, {}};
+    auto result = slot->game->installLoot(source, std::move(batch), std::move(deferred)); if (result) publish(size_t(game.slot)); return result;
+}
+}
+
+namespace d2x {
+std::vector<server::merchant::Preparation> GameHost::pendingMerchant(GameHandle game) const { const auto *slot=find(game); return slot ? slot->game->pendingMerchant() : std::vector<server::merchant::Preparation>{}; }
+server::DomainResult<> GameHost::installMerchant(GameHandle game,server::merchant::Prepared prepared) { auto *slot=find(game); if(!slot) return {server::DomainStatus::Stale,{}}; auto result=slot->game->installMerchant(std::move(prepared)); if(result) publish(size_t(game.slot)); return result; }
+std::optional<PersistentCharacter> GameHost::shop(PlayerBinding binding) const { const auto *slot=find(binding.game); return slot ? slot->game->shop(binding.player) : std::nullopt; }
+}
+
+namespace d2x {
+server::DomainResult<> GameHost::grantGold(PlayerBinding binding,uint32_t amount) { auto *slot=find(binding.game); if(!slot) return {server::DomainStatus::InvalidActor,{}}; auto result=slot->game->grantGold(binding.player,amount); if(result) publish(size_t(binding.game.slot)); return result; }
+server::DomainResult<> GameHost::damagePlayer(PlayerBinding binding,uint32_t amount) { auto *slot=find(binding.game); if(!slot) return {server::DomainStatus::InvalidActor,{}}; auto result=slot->game->damagePlayer(binding.player,amount); if(result) publish(size_t(binding.game.slot)); return result; }
+}
+
+namespace d2x {
+std::vector<server::travel::Portal> GameHost::visiblePortals(PlayerBinding binding) const { const auto *slot=find(binding.game); return slot?slot->game->visiblePortals(binding.player):std::vector<server::travel::Portal>{}; }
+}
+
+namespace d2x {
+server::DomainResult<> GameHost::damageMonster(PlayerBinding binding, EntityId target, std::optional<uint32_t> amount) {
+    auto *slot = find(binding.game);
+    if (!slot) return {server::DomainStatus::InvalidActor, {}};
+    auto result = slot->game->damageMonster(binding.player, target, amount);
+    if (result) publish(size_t(binding.game.slot));
+    return result;
+}
+}

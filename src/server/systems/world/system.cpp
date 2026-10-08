@@ -4,7 +4,11 @@
 namespace d2x::server::world {
 void System::assign(AreaDefinition &area) {
     for (auto &exit : area.exits) exit.id = ports_.ids.allocate();
-    for (auto &object : area.objects) object.id = ports_.ids.allocate();
+    for (auto &npc : area.npcs) npc.id = ports_.ids.allocate();
+    for (auto &object : area.objects) {
+        const auto previous = object.id; object.id = ports_.ids.allocate();
+        for (auto &obstacle : area.collision.obstacles) if (obstacle.id == previous) obstacle.id = object.id;
+    }
     if (ports_.ids.cursor() > UINT32_MAX) throw std::runtime_error("Native world identity capacity exhausted");
 }
 void System::initialize() {
@@ -81,5 +85,23 @@ StepStatus System::step(TickContext, FrameFacts &) {
     }
     for (auto &[id, lease] : state_.residency) lease.residency = resident.contains(id) ? Residency::Active : Residency::Sleeping;
     return state_.preparation.empty() ? StepStatus::Complete : StepStatus::Blocked;
+}
+}
+
+namespace d2x::server::world {
+DomainResult<uint64_t> System::requestTown(const ActorContext &actor) {
+    const auto *player = ports_.players.find(actor.player); const auto *area = ports_.areas.find(actor.area);
+    if (!player || !area || player->actor != actor.actor || player->area != actor.area) return {DomainStatus::InvalidActor, {}};
+    return request(area->definition.townRegion);
+}
+}
+
+namespace d2x::server::world { void System::objectCollision(RegionId id, std::vector<Grid::Obstacle> values) { ports_.areas.areas_.at(id).definition.collision.setObstacles(std::move(values)); } }
+
+namespace d2x::server::world {
+DomainResult<uint64_t> System::requestWaypoint(const ActorContext &actor,RegionId destination) {
+    const auto *p=ports_.players.find(actor.player); const auto *area=ports_.areas.find(actor.area);
+    if(!p || !p->entered || p->actor!=actor.actor || p->area!=actor.area || !area || area->generation!=actor.areaGeneration || !p->persistent.waypoints.contains(destination)) return {DomainStatus::InvalidActor,{}};
+    return request(destination);
 }
 }

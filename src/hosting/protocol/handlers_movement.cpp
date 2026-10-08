@@ -9,6 +9,9 @@ RequestResult move(GameplayContext &context, net::protocol::Reader &in, bool run
 }
 RequestResult approach(GameplayContext &context, net::protocol::Reader &in, bool run) {
     const auto type = in.u32(), id = in.u32(); in.finish();
+    if (type == 0) return submitGameplay(context, MovementCommand{MovementAction::ApproachCorpse, {}, run, EntityId{id}});
+    if (type == 1) return submitGameplay(context, MovementCommand{MovementAction::ApproachNpc, {}, run, EntityId{id}});
+    if (type == 2) return submitGameplay(context, MovementCommand{MovementAction::ApproachObject, {}, run, EntityId{id}});
     if (type != 5) return {RequestStatus::NotImplemented};
     return submitGameplay(context, MovementCommand{MovementAction::ApproachExit, {}, run, EntityId{id}});
 }

@@ -1,5 +1,6 @@
 #include "system.hpp"
 #include "server/player_store.hpp"
+#include "server/area_store.hpp"
 #include "server/systems/inventory/eligibility.hpp"
 #include <algorithm>
 #include <limits>
@@ -16,7 +17,7 @@ struct Input {
 };
 std::optional<Input> input(const Change &change) {
     if (const auto *edit = std::get_if<InventoryEdit>(&change))
-        return Input{edit->actor, edit->expectedRevision, edit->expectedCharacterRevision};
+        return Input{edit->actor, edit->expectedRevision, edit->expectedCharacterRevision, edit->resources};
     if (const auto *edit = std::get_if<CharacterEdit>(&change))
         return Input{edit->actor, edit->expectedInventoryRevision, edit->expectedCharacterRevision, edit->resources, edit->experienceAward};
     return {};
@@ -49,21 +50,36 @@ DomainResult<Plan> System::prepare(Change change) {
     if (!player->rules.items || !player->rules.equipment || !player->rules.character) return {DomainStatus::Unavailable, {}};
     if (state_.next == UINT64_MAX || player->inventoryRevision == UINT64_MAX || player->characterRevision == UINT64_MAX ||
         !ports_.events.hasCapacity(2)) return {DomainStatus::Capacity, {}};
+    const auto *inventoryEdit = std::get_if<InventoryEdit>(&change);
+    if (inventoryEdit && inventoryEdit->world && inventoryEdit->world->expected != ports_.items.state_.revision) return {DomainStatus::Stale, {}};
+    const auto *characterEdit = std::get_if<CharacterEdit>(&change);
+    const auto &transient = inventoryEdit && inventoryEdit->transient ? *inventoryEdit->transient :
+        characterEdit && characterEdit->transient ? *characterEdit->transient : player->transient;
+    if (characterEdit && characterEdit->revival) {
+        const auto &revival = *characterEdit->revival; const auto *destination = ports_.areas.find(revival.area);
+        if (player->persistent.player.hp > 0 || !destination || destination->generation != revival.generation || !destination->definition.town ||
+            !destination->definition.collision.walkable(revival.position, playerMovement)) return {DomainStatus::InvalidRequest, {}};
+    }
+    const auto equipment = inventoryEdit && inventoryEdit->equipment ? inventoryEdit->equipment : player->rules.equipment;
     PreparedPlayer next{player->persistent, {}, {}, false, false};
     if (auto *edit = std::get_if<InventoryEdit>(&change)) {
-        if (edit->weaponSet > 1 || (edit->changes.empty() && edit->weaponSet == player->persistent.player.weaponSet))
+        if (edit->weaponSet > 1 || (edit->changes.empty() && !edit->world && !edit->character && !edit->corpses && edit->weaponSet == player->persistent.player.weaponSet))
             return {DomainStatus::InvalidRequest, {}};
+        if (edit->character) next.persistent.player = *edit->character;
+        if (edit->corpses) next.persistent.corpses = *edit->corpses;
         next.persistent.inventory = std::move(edit->inventory);
         next.changes = std::move(edit->changes);
         next.inventoryChanged = true;
         next.switchedWeapons = edit->weaponSet != player->persistent.player.weaponSet;
         next.persistent.player.weaponSet = edit->weaponSet;
-    } else next.persistent.player = std::get<CharacterEdit>(change).player;
+    } else { next.persistent.player = std::get<CharacterEdit>(change).player;
+        if(characterEdit->waypoints) next.persistent.waypoints=*characterEdit->waypoints;
+    }
     if (next.persistent.player.id != player->actor) return {DomainStatus::InvalidActor, {}};
     try {
         next.totals = attributes::calculate(player->definition, next.persistent, *player->rules.items,
-            *player->rules.equipment, *player->rules.character);
-        inventory::synchronizeEquipment(next.persistent, next.totals, *player->rules.equipment, next.changes);
+            *equipment, *player->rules.character, {}, transient.modifiers);
+        inventory::synchronizeEquipment(next.persistent, next.totals, *equipment, next.changes);
         next.inventoryChanged = next.inventoryChanged || !next.changes.empty();
     } catch (const std::runtime_error &) { return {DomainStatus::Unavailable, {}}; }
       catch (const std::out_of_range &) { return {DomainStatus::Unavailable, {}}; }
@@ -87,6 +103,8 @@ DomainResult<> System::commit(Plan plan) {
         plan.expected[1].entity != player.actor || plan.expected[1].expected != request->character ||
         (request->award && request->award <= player.lastExperienceAward)) return {DomainStatus::Stale, {}};
     if (player.inventoryRevision == UINT64_MAX || player.characterRevision == UINT64_MAX) return {DomainStatus::Capacity, {}};
+    auto *edit = std::get_if<InventoryEdit>(&plan.change);
+    if (edit && edit->world && (edit->world->expected != ports_.items.state_.revision || edit->world->expected == UINT64_MAX)) return {DomainStatus::Stale, {}};
     auto &next = *plan.player;
     EventBatch batch{0, request->actor.tick, plan.id, {AudienceKind::Player, player.player, player.area}, {}};
     if (next.inventoryChanged) {
@@ -95,6 +113,8 @@ DomainResult<> System::commit(Plan plan) {
         projection.player = next.persistent.player;
         projection.containers = next.persistent.containers;
         projection.inventory.containers = next.persistent.inventory.containers;
+        // Removed containers remain available only in this immutable encoding projection.
+        projection.inventory.containers.insert(player.persistent.inventory.containers.begin(), player.persistent.inventory.containers.end());
         fact.switchedWeapons = next.switchedWeapons;
         fact.changes = next.changes;
         for (const auto &change : fact.changes) {
@@ -122,10 +142,29 @@ DomainResult<> System::commit(Plan plan) {
     }
     batch.facts.emplace_back(CharacterFact{player.persistent.player, next.persistent.player, player.totals, next.totals});
     // No authority writes until the complete immutable batch is accepted.
-    const auto published = ports_.events.publish(std::move(batch));
+    const auto *characterChange = std::get_if<CharacterEdit>(&plan.change);
+    const auto &extra = edit ? edit->facts : characterChange->facts;
+    batch.facts.insert(batch.facts.end(), extra.begin(), extra.end());
+    std::vector<EventBatch> batches; batches.push_back(std::move(batch));
+    if (characterChange && characterChange->revival) {
+        const auto &at = *characterChange->revival;
+        batches.push_back({0, request->actor.tick, plan.id, {AudienceKind::Player, player.player, at.area},
+            {TravelFact{player.player, player.actor, player.area, at.area, at.generation, at.position, false, true}}});
+    }
+    const auto published = ports_.events.publishGroup(std::move(batches));
     if (!published) return {published.status, {}};
+    if (edit && edit->world) {
+        edit->world->next.revision = edit->world->expected + 1;
+        std::swap(ports_.items.state_, edit->world->next);
+    }
+    if (edit && edit->equipment) player.rules.equipment = std::move(edit->equipment);
+    if (edit && edit->transient) std::swap(player.transient, *edit->transient);
+    if (auto *characterEdit = std::get_if<CharacterEdit>(&plan.change); characterEdit && characterEdit->transient) std::swap(player.transient, *characterEdit->transient);
     std::swap(player.persistent, next.persistent);
     std::swap(player.totals, next.totals);
+    if (characterChange && characterChange->revival) {
+        player.area = characterChange->revival->area; player.position = characterChange->revival->position; player.route.clear(); player.moving = false;
+    }
     if (next.inventoryChanged) ++player.inventoryRevision;
     ++player.characterRevision;
     if (request->award) player.lastExperienceAward = request->award;

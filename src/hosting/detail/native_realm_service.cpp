@@ -112,8 +112,9 @@ void NativeRealmService::prepareReload() {
     candidate.game = prepareGame(std::move(saved));
     reload = std::move(candidate);
 }
-NativeRealmService::PreparedGame NativeRealmService::prepareGame(PersistentCharacter saved) {
+NativeRealmService::PreparedGame NativeRealmService::prepareGame(PersistentCharacter saved, bool singlePlayer) {
     auto prepared = prepareWalkingGame(archives, *content, std::move(saved), rules, shared.items);
+    prepared.authority.settings.singlePlayer = singlePlayer;
     const auto staged = host.create(std::move(prepared.authority));
     try {
         auto packets = nativeGameAdmission(*content, *host.exportCharacter(staged), prepared.terrain, *host.read(staged), host.area(staged.game, RegionId(prepared.terrain.request.level))->definition);

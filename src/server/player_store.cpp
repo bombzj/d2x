@@ -16,6 +16,7 @@ void PlayerStore::admit(PlayerId id, CharacterDefinition definition,
     player.area = persistent.lastRegion;
     player.position = areas.at(player.area).definition.spawn;
     player.persistent = std::move(persistent);
+    for (auto &corpse : player.persistent.corpses) { corpse.region = player.area; corpse.position = player.position; corpse.recoverableExperience = 0; }
     player.definition = std::move(definition);
     player.rules = rules;
     if (player.definition.walkVelocity <= 0 || player.definition.runVelocity <= 0)

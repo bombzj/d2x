@@ -4,6 +4,8 @@
 #include "server/movement.hpp"
 #include "server/systems/world/system.hpp"
 #include "server/systems/transactions/system.hpp"
+#include "server/systems/inventory/system.hpp"
+#include "server/systems/npc/system.hpp"
 #include <algorithm>
 #include <cmath>
 namespace d2x::server::travel {
@@ -58,7 +60,7 @@ std::optional<CommandStatus> System::walk(const ActorContext &actor, const Movem
     return {};
 }
 DomainResult<> System::execute(const ActorContext &actor, const Request &request) {
-    if (request.kind != Kind::Exit) return {};
+    if (request.kind != Kind::Exit) return useSpecial(actor,request);
     const auto *player = ports_.players.find(actor.player);
     const auto *area = ports_.areas.find(actor.area);
     if (!player || !player->entered || player->actor != actor.actor || player->area != actor.area || player->persistent.player.hp <= 0 ||
@@ -84,6 +86,9 @@ DomainResult<> System::teleport(const ActorContext &actor, PointTarget target, f
     return result;
 }
 StepStatus System::step(TickContext tick, FrameFacts &) {
+    std::erase_if(state_.portals,[&](const auto &entry){const auto *p=ports_.players.find(entry.first);return !p || !p->entered;});
+    std::erase_if(state_.waypoints,[&](const auto &entry){const auto *p=ports_.players.find(entry.first);return !p || !p->entered || p->area!=entry.second.area || p->persistent.player.hp<=0;});
+    for(auto &[owner,portal]:state_.portals) { (void)owner; if(!portal.opened && tick.tick>=portal.ready) {portal.opened=true;++portal.revision;} }
     for (auto pending = state_.transitions.begin(); pending != state_.transitions.end();) {
         const auto found = ports_.players.players_.find(pending->first);
         auto &transition = pending->second;
@@ -95,7 +100,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         auto &player = found->second;
         if (!destination) {
             const ActorContext actor{player.player, player.actor, player.area, source->generation, transition.sequence, tick.tick};
-            if (!ports_.world.requestArea(actor, transition.to)) { pending = state_.transitions.erase(pending); continue; }
+            if (!(transition.kind==Kind::Waypoint?ports_.world.requestWaypoint(actor,transition.to):ports_.world.requestArea(actor, transition.to))) { pending = state_.transitions.erase(pending); continue; }
             ++pending; continue;
         }
         if (!player.route.empty()) { ++pending; continue; }
@@ -107,7 +112,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
             const Vec offset = source->definition.origin - destination->definition.origin;
             const Vec across = transition.arrival - offset;
             const Vec delta = across - player.position;
-            const auto speed = player.routeRunning ? player.totals.character.runSpeed : player.totals.character.walkSpeed;
+            const auto speed = player.runningNow ? player.totals.character.runSpeed : player.totals.character.walkSpeed;
             const Vec next = player.position + delta.unit() * std::min(delta.length(), speed * TickContext::seconds);
             if (!seamClear(source->definition.collision, player.position, next, transition.side)) {
                 player.moving = false; pending = state_.transitions.erase(pending); continue;
@@ -117,7 +122,17 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
             if (!crossed) { player.position = next; player.look = delta.unit(); player.moving = true; ++pending; continue; }
             arrival = next + offset;
         }
-        if (!transition.walking) {
+        if (transition.kind==Kind::Portal) {
+            const auto portal=state_.portals.find(player.player);
+            if(portal==state_.portals.end() || (portal->second.fieldId!=transition.source && portal->second.townId!=transition.source)) { pending=state_.transitions.erase(pending); continue; }
+        }
+        if(transition.kind==Kind::Waypoint) {
+            const auto waypoint=std::find_if(destination->definition.objects.begin(),destination->definition.objects.end(),[](const auto &object){return object.rule.operation==23;});
+            if(waypoint==destination->definition.objects.end()) { pending=state_.transitions.erase(pending); continue; }
+            arrival=destination->definition.collision.nearest(waypoint->position,playerMovement);
+            if((arrival-waypoint->position).length()>8) { pending=state_.transitions.erase(pending); continue; }
+        }
+        if (!transition.walking && transition.kind==Kind::Exit) {
             const AreaExit *back = nullptr;
             for (const auto &exit : destination->definition.exits) if (exit.destination == transition.from) {
                 if (back) { back = nullptr; break; } back = &exit;
@@ -131,6 +146,8 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         EventBatch event{0, tick.tick, {}, {AudienceKind::Player, player.player, transition.to},
             {TravelFact{player.player, player.actor, transition.from, transition.to, destination->generation, arrival, transition.walking}}};
         if (!ports_.events.publish(std::move(event))) { ++pending; continue; }
+        ports_.npc.close(player.player); ports_.inventory.close(player.player); state_.waypoints.erase(player.player);
+        if(transition.kind==Kind::Portal) { const auto portal=state_.portals.find(player.player); if(portal!=state_.portals.end() && portal->second.town==transition.from) state_.portals.erase(portal); }
         player.area = transition.to; player.position = arrival; player.route = std::move(route);
         player.routeRunning = player.running || transition.run; player.moving = transition.walking;
         pending = state_.transitions.erase(pending);

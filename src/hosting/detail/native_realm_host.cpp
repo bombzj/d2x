@@ -1,6 +1,8 @@
 #include "native_realm_host.hpp"
 #include "native_realm_service.hpp"
 #include "hosting/character_rules.hpp"
+#include "hosting/loot_content.hpp"
+#include "hosting/merchant_content.hpp"
 #include "content/world/world_catalog.hpp"
 #include <algorithm>
 namespace d2x::hosting {
@@ -29,6 +31,8 @@ void NativeRealmHost::advance(double seconds) {
     // Exactly one advance per scheduler call, regardless of connected clients.
     host.advance(seconds);
     for (auto &[game, areas] : terrain) {
+        preparePendingLoot(host, game, archives, *content, lootContent);
+        prepareMerchant(host, game, *content);
         const auto pending = host.pendingAreas(game);
         if (!pending) continue;
         for (const auto &request : *pending) {
@@ -53,7 +57,7 @@ void NativeRealmHost::advance(double seconds) {
     for (auto *peer : peers) if (peer->binding && peer->peer.phase == GamePhase::Entered) {
         try {
             const auto view = host.read(*peer->binding);
-            peer->publishAreas(view->actor.region); peer->publishPlayers(); peer->publishMonsters(); peer->publishMotion();
+            peer->publishAreas(view->actor.region); peer->publishPlayers(); peer->publishMonsters(); peer->publishGroundItems(); peer->publishCorpses(); peer->publishObjects(); peer->publishNpcs(); peer->publishShop(); peer->publishPortals(); peer->publishItemSkills(); peer->publishMotion();
         } catch (const std::exception &error) {
             peer->failure = error.what(); peer->counters.lastFailure = error.what(); ++peer->counters.failures; peer->failGame();
         }

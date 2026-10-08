@@ -27,6 +27,7 @@ struct NativeRealmService {
     GameHost &host;
     uint64_t &rules;
     bool authenticated{}, ticket{};
+    bool multiplayerEndpoint{};
     uint32_t hash{};
     uint16_t token{};
     // TCP peers receive the interface reached by their MCP connection; memory
@@ -50,6 +51,12 @@ struct NativeRealmService {
         std::map<PlayerId, VisiblePlayer> visible;
         struct VisibleMonster { Bytes motion; };
         std::map<EntityId, VisibleMonster> monsters;
+        std::map<EntityId, uint64_t> groundItems, corpses, objects, portals;
+        std::map<EntityId, std::set<EntityId>> corpseEquipment;
+        std::map<int,int> itemSkills;
+        std::set<EntityId> npcs, shopItems;
+        EntityId shopOwner;
+        std::map<EntityId, std::set<int>> states;
     } peer;
     struct PreparedGame {
         PlayerBinding binding;
@@ -70,6 +77,13 @@ struct NativeRealmService {
     void receiveEvent(const server::EventBatch &);
     void publishPlayers();
     void publishMonsters();
+    void publishGroundItems();
+    void publishCorpses();
+    void publishObjects();
+    void publishNpcs();
+    void publishShop();
+    void publishPortals();
+    void publishItemSkills();
     void publishAreas(RegionId area);
     void changeArea(const server::TravelFact &);
     void initialize();
@@ -80,7 +94,7 @@ struct NativeRealmService {
     const CharacterRosterEntry &find(std::string_view) const;
     void checkpoint();
     void prepareReload();
-    PreparedGame prepareGame(PersistentCharacter);
+    PreparedGame prepareGame(PersistentCharacter, bool singlePlayer = true);
     void discardReload();
     void close(bool save = true, bool keepReload = false);
     void resetRealm();

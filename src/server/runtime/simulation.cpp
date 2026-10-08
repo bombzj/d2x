@@ -16,12 +16,14 @@ void Simulation::step(TickContext tick, GameSystems &systems) {
     steps_[size_t(SystemId::Skills)] = systems.skills.step(tick, facts_);
     systems.movement.step(tick);
     steps_[size_t(SystemId::Movement)] = StepStatus::Complete;
+    steps_[size_t(SystemId::Inventory)] = systems.inventory.step(tick, facts_);
     steps_[size_t(SystemId::Monsters)] = systems.monsters.step(tick, facts_);
     steps_[size_t(SystemId::Spatial)] = systems.spatial.step(tick, facts_);
     steps_[size_t(SystemId::Missiles)] = systems.missiles.step(tick, facts_);
     steps_[size_t(SystemId::Effects)] = systems.effects.step(tick, facts_);
     steps_[size_t(SystemId::Combat)] = systems.combat.step(tick, facts_);
     steps_[size_t(SystemId::Death)] = systems.death.step(tick, facts_);
+    steps_[size_t(SystemId::Npc)] = systems.npc.step(tick, facts_);
     steps_[size_t(SystemId::Objects)] = systems.objects.step(tick, facts_);
     steps_[size_t(SystemId::Quests)] = systems.quests.step(tick, facts_);
     steps_[size_t(SystemId::Loot)] = systems.loot.step(tick, facts_);

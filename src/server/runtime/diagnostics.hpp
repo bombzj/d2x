@@ -6,6 +6,7 @@
 #include "server/systems/travel/system.hpp"
 #include "server/systems/skills/system.hpp"
 #include <array>
+#include "server/systems/objects/system.hpp"
 
 namespace d2x::server {
 // Scheduler-thread diagnostic values. Never used as client replication or saved.
@@ -31,7 +32,17 @@ struct DiagnosticMonster {
     bool moving{}, running{}, rewardComplete{};
     std::optional<ai::Controller> controller;
 };
+struct DiagnosticEffect { int state{}; uint64_t expires{}; };
 struct DiagnosticSnapshot {
+    std::vector<DiagnosticEffect> effects;
+    std::vector<PlayerCorpse> corpses;
+    std::vector<objects::Object> objects;
+    std::string merchantDeferred;
+    unsigned denRemaining{}; bool denCleared{};
+    std::vector<travel::Portal> portals;
+    std::map<RegionId,float> waypoints;
+    size_t healingQueued{}, manaQueued{}, lootPending{};
+    std::string lootDeferred;
     uint64_t tick{}, eventFirst{}, eventLast{}, commandFirst{}, commandLast{};
     size_t commandsQueued{}, eventsQueued{}, monsterCount{}, missileCount{}, itemCount{};
     PlayerSnapshot player;

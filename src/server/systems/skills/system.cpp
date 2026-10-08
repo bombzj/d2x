@@ -4,6 +4,8 @@
 #include "server/systems/monsters/system.hpp"
 #include "server/systems/combat/system.hpp"
 #include "server/systems/transactions/system.hpp"
+#include "server/systems/travel/system.hpp"
+#include "server/systems/inventory/item_skills.hpp"
 #include "gameplay/combat/geometry.hpp"
 #include "gameplay/combat/attack_timing.hpp"
 #include <algorithm>
@@ -54,6 +56,11 @@ DomainResult<> System::attack(const ActorContext &actor, const Request &request)
     const auto &area = ports_.areas.at(player->area);
     if (area.generation != actor.areaGeneration) return {DomainStatus::Unavailable, {}};
     const auto selected = player->persistent.player.selectedSkills.at(player->persistent.player.weaponSet * 2 + (request.right ? 1 : 0));
+    const auto itemSkills=inventory::itemSkills(*player);
+    if(request.right && itemSkills.contains(selected)) {
+        if(busy(player->actor,actor.tick)) return {DomainStatus::Conflict,{}};
+        return ports_.travel.createPortal(actor,{},selected);
+    }
     if (selected != 0) return cast(actor, request, selected);
     if (area.definition.town) return {DomainStatus::Unavailable, {}};
     if (!player->rules.melee) return {DomainStatus::Unavailable, {}};
@@ -119,21 +126,25 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
         if (pending_.erase(actor.player)) ports_.movement.execute(actor, {MovementAction::Stop, {}, false});
         return applied();
     }
-    if (request.action == Action::Select) {
+    if (request.action == Action::Select || request.action == Action::Bind) {
         if (!player->rules.character) return {DomainStatus::Unavailable, {}};
+        const auto quantities=inventory::itemSkills(*player); const bool itemSkill=request.right && quantities.contains(request.skill) && quantities.at(request.skill)>0;
         const auto rule = player->rules.character->learning.find(request.skill);
-        if (rule == player->rules.character->learning.end() || !rule->second.selectable || (!request.right && !rule->second.leftAllowed))
+        if (!itemSkill && (rule == player->rules.character->learning.end() || !rule->second.selectable || (!request.right && !rule->second.leftAllowed)))
             return {DomainStatus::InvalidRequest, {}};
-        if (request.skill != 0) {
+        if (request.skill != 0 && !itemSkill) {
             const auto learned = player->totals.skillRanks.find(request.skill);
             if (learned == player->totals.skillRanks.end() || learned->second <= 0) return {DomainStatus::InvalidRequest, {}};
         }
         auto record = player->persistent.player;
-        record.selectedSkills.at(record.weaponSet * 2 + (request.right ? 1 : 0)) = request.skill;
+        if (request.action == Action::Bind) {
+            if (!request.hotkey || *request.hotkey >= record.skillHotkeys.size()) return {DomainStatus::InvalidRequest, {}};
+            record.skillHotkeys.at(*request.hotkey) = {request.skill == 0 ? -1 : int(request.skill), request.right};
+        } else record.selectedSkills.at(record.weaponSet * 2 + (request.right ? 1 : 0)) = request.skill;
         auto plan = ports_.transactions.prepare(transactions::CharacterEdit{actor, player->inventoryRevision, player->characterRevision, std::move(record)});
         if (!plan) return {plan.status, {}};
         auto result = ports_.transactions.commit(std::move(*plan.value));
-        if (result && pending_.erase(actor.player)) ports_.movement.execute(actor, {MovementAction::Stop, {}, false});
+        if (result && request.action == Action::Select && pending_.erase(actor.player)) ports_.movement.execute(actor, {MovementAction::Stop, {}, false});
         return result;
     }
     if (request.action != Action::Cast) return {};

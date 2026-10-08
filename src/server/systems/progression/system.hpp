@@ -15,6 +15,7 @@ struct Request { Intent intent; unsigned count = 1; };
 struct Award { PlayerId player; uint64_t sourceOccurrence{}, experience{}, tick{}; };
 // Award occurrences must increase per player within this game. PlayerStore
 // records the last committed identity atomically; no ever-growing replay set.
+DomainResult<CharacterRecord> addExperience(CharacterRecord, const CharacterDefinition &, const CharacterRules &, uint64_t);
 struct State {};
 struct Ports { const PlayerStore &players; transactions::System &transactions; };
 class System {

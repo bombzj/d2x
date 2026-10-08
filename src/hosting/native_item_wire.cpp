@@ -12,7 +12,7 @@ namespace {
 using net::protocol::BitWriter;
 // D2MOO D2Constants / SCmd original item action identities, not C2S opcodes.
 enum class ItemAction : uint8_t {
-    Put = 4, Take = 5, Equip = 6, IndirectEquip = 7, Unequip = 8, SwapEquipment = 9, Quantity = 10, Properties = 21,
+    Put = 4, Take = 5, Equip = 6, IndirectEquip = 7, Unequip = 8, SwapEquipment = 9, Quantity = 10, Shop = 11, Properties = 21,
     SwapStored = 13, PutBelt = 14, TakeBelt = 15, SwapBelt = 16, Cursor = 18, Socket = 19, WeaponSwitch = 23
 };
 struct StatFormat { unsigned bits, params; int add; };
@@ -61,12 +61,14 @@ Bytes packed(const ClassicData &data, const D2sItem &item) {
     const bool identified = (item.flags & 0x10) != 0;
     BitWriter bits;
     bits.write(item.flags, 32); bits.write(item.format, 10); bits.write(item.mode, 3);
-    bits.write(item.body, 4); bits.write(item.x, 4); bits.write(item.y, 4); bits.write(item.page, 3);
+    if (item.mode == 3 || item.mode == 5) { bits.write(item.x, 16); bits.write(item.y, 16); }
+    else { bits.write(item.body, 4); bits.write(item.x, 4); bits.write(item.y, 4); bits.write(item.page, 3); }
     uint32_t code = 0;
     for (unsigned i = 0; i < 4; ++i) code |= uint32_t(i < item.code.size() ? uint8_t(item.code[i]) : uint8_t(' ')) << (i * 8);
     bits.write(code, 32);
     if (item.flags & 0x200000) {
         if (flag("quest") && flag("questdiffcheck")) value(bits, data, 356, item.questDifficulty);
+        if (def->equipment.isType("gold")) { bits.write(item.quantity > 4095, 1); bits.write(item.quantity, item.quantity > 4095 ? 32 : 12); }
         return bits.release();
     }
     bits.write(unsigned(item.socketedItems.size()), 3); bits.write(item.level, 7); bits.write(item.quality, 4);
@@ -146,6 +148,31 @@ ContainerKind kind(const PersistentCharacter &state, const std::optional<ItemLoc
     return state.inventory.containers.at(position->container).spec.kind;
 }
 }
+std::vector<Bytes> nativeCorpseEquipment(const ClassicData &data, PersistentCharacter projection) {
+    std::vector<Bytes> result;
+    for (auto &[id, item] : projection.inventory.items) {
+        (void)id; const auto &at = std::get<ContainerLocation>(item.location);
+        if (at.cell.x >= int(EquipmentSlot::Count)) continue;
+        const auto conceal = [&](auto &&self, ItemInstance &value) -> void { value.identified = false; value.nativeFlags &= ~uint32_t(0x10); for (auto &child : value.socketedItems) self(self, child); };
+        conceal(conceal, item);
+        emitItem(result, data, projection, item, ItemAction::Equip, true, 0, uint32_t(projection.player.id.value));
+    }
+    return result;
+}
+Bytes nativeGroundItem(const ClassicData &data, const ItemInstance &item, Vec origin) {
+    auto copy = item; PersistentCharacter projection; projection.player.level = 1;
+    projection.containers.cursor = EntityId{1};
+    projection.inventory.containers.emplace(EntityId{1}, ContainerState{EntityId{1}, {EntityId{1}, ContainerKind::Cursor, 1, 1}});
+    copy.location = ContainerLocation{EntityId{1}, {}};
+    auto saved = exportD2sItem(projection, copy, data);
+    const auto position = std::get<GroundLocation>(item.location).position + origin;
+    if (position.x < 0 || position.y < 0 || position.x > 65535 || position.y > 65535) throw std::runtime_error("Ground item outside native coordinates");
+    saved.mode = 3; saved.x = unsigned(position.x); saved.y = unsigned(position.y);
+    const auto body = packed(data, saved);
+    if (body.size() + 8 > 255 || item.id.value > UINT32_MAX) throw std::runtime_error("Ground item exceeds native limits");
+    net::protocol::Writer out; out.u8(0x9C); out.u8(0); out.u8(uint8_t(body.size() + 8)); out.u8(uint8_t(data.items.find(item.definition)->appearance.component));
+    out.u32(uint32_t(item.id.value)); out.append(body); return out.release();
+}
 std::vector<Bytes> nativeInventoryPackets(const ClassicData &data, const PersistentCharacter &state) {
     std::vector<Bytes> result;
     for (const auto &[id, item] : state.inventory.items) {
@@ -191,8 +218,16 @@ std::vector<Bytes> nativeInventoryDelta(const ClassicData &data, const server::I
                 action == ItemAction::Properties, 0, uint32_t(state.player.id.value));
             continue;
         }
+        if (change.kind == ItemChangeKind::Created) {
+            const auto destination = kind(state, change.after);
+            const auto action = destination == ContainerKind::Cursor ? ItemAction::Cursor : destination == ContainerKind::Belt ? ItemAction::PutBelt : ItemAction::Put;
+            emitItem(result, data, state, state.inventory.items.at(change.item), action, false, 0, 0); continue;
+        }
         if (change.kind != ItemChangeKind::Moved) throw std::logic_error("Unsupported inventory delta");
         const auto from = kind(state, change.before), to = kind(state, change.after);
+        if (to == ContainerKind::Corpse) {
+            result.push_back(hosting::encodeServerPacket(hosting::ServerMessage::RemoveUnit, [&](auto &out) { out.u8(4); out.u32(uint32_t(change.item.value)); })); continue;
+        }
         ItemAction action;
         bool owned;
         const auto replaced = std::find_if(fact.changes.begin(), fact.changes.end(), [&](const auto &other) {
@@ -200,7 +235,7 @@ std::vector<Bytes> nativeInventoryDelta(const ClassicData &data, const server::I
         }) != fact.changes.end();
         if (to == ContainerKind::Cursor) {
             action = equipment(from) ? ItemAction::Unequip : from == ContainerKind::Belt ? ItemAction::TakeBelt : ItemAction::Take;
-            owned = equipment(from) || from == ContainerKind::Backpack;
+            owned = equipment(from) || from == ContainerKind::Backpack || from == ContainerKind::Stash;
         }
         else if (equipment(to)) {
             const bool indirect = !replaced && std::any_of(fact.changes.begin(), fact.changes.end(), [&](const auto &other) {
@@ -210,7 +245,7 @@ std::vector<Bytes> nativeInventoryDelta(const ClassicData &data, const server::I
             owned = true;
         }
         else if (to == ContainerKind::Belt) { action = replaced ? ItemAction::SwapBelt : ItemAction::PutBelt; owned = false; }
-        else if (to == ContainerKind::Backpack) { action = replaced ? ItemAction::SwapStored : ItemAction::Put; owned = false; }
+        else if (to == ContainerKind::Backpack || to == ContainerKind::Stash) { action = replaced ? ItemAction::SwapStored : ItemAction::Put; owned = false; }
         else throw std::logic_error("Unsupported inventory destination");
         emitItem(result, data, state, state.inventory.items.at(change.item), action, owned, 0, uint32_t(state.player.id.value));
     }
@@ -231,6 +266,14 @@ std::vector<Bytes> nativeInventoryDelta(const ClassicData &data, const server::I
                 out.u16(uint16_t(std::max(0, state.player.selectedSkills[state.player.weaponSet * 2 + side]))); out.u32(UINT32_MAX);
             }));
     }
+    return result;
+}
+}
+
+namespace d2x {
+std::vector<Bytes> nativeShopItems(const ClassicData &data,const PersistentCharacter &state) {
+    std::vector<Bytes> result;
+    for (const auto &[id,item] : state.inventory.items) { (void)id; emitItem(result,data,state,item,ItemAction::Shop,false,1,uint32_t(state.player.id.value)); }
     return result;
 }
 }

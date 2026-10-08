@@ -29,9 +29,13 @@ Json debugServerSnapshot(const server::DiagnosticSnapshot &s, uint64_t since, ui
         {"items", Json::array()}, {"casts", Json::array()}, {"missiles", Json::array()}, {"damage", Json::array()},
         {"pendingReleases", s.pendingReleases}, {"spellImpacts", s.spellImpacts}, {"spellTargets", s.spellTargets},
         {"path", Json::array()}};
+    result["effects"] = Json::array();
+    for (const auto &effect : s.effects) result["effects"].push_back({{"state", effect.state}, {"expires", effect.expires}});
+    result["restoration"] = {{"healingQueued", s.healingQueued}, {"manaQueued", s.manaQueued}};
+    result["loot"] = {{"pending", s.lootPending}, {"deferred", s.lootDeferred}};
     result["player"] = {{"id", p.actor.id.value}, {"name", p.name}, {"entered", p.entered},
         {"position", point(p.actor.position + origin)}, {"localPosition", point(p.actor.position)},
-        {"moving", p.actor.moving}, {"attacking", p.attacking}, {"level", r.level}, {"experience", r.experience},
+        {"moving", p.actor.moving}, {"attacking", p.attacking}, {"level", r.level}, {"experience", r.experience}, {"gold", r.gold}, {"bankGold", r.bankGold}, {"states", p.states},
         {"life", r.hp}, {"maxLife", a.maxLife}, {"mana", r.mana}, {"maxMana", a.maxMana},
         {"stamina", r.stamina}, {"maxStamina", a.maxStamina}, {"statPoints", r.unspentAttributes}, {"skillPoints", r.unspentSkills},
         {"strength", a.strength}, {"dexterity", a.dexterity}, {"vitality", a.vitality}, {"energy", a.energy},
@@ -46,7 +50,7 @@ Json debugServerSnapshot(const server::DiagnosticSnapshot &s, uint64_t since, ui
         if (const auto *location = std::get_if<ContainerLocation>(&item.location))
             value["location"] = {{"container", location->container.value}, {"x", location->cell.x}, {"y", location->cell.y}};
         else if (const auto *socket = std::get_if<SocketLocation>(&item.location)) value["location"] = {{"host", socket->host.value}, {"socket", socket->index}};
-        else value["location"] = {{"area", int(std::get<GroundLocation>(item.location).region)}};
+        else { const auto &at = std::get<GroundLocation>(item.location); value["location"] = {{"area", int(at.region)}, {"position", point(at.position + origin)}}; }
         result["items"].push_back(std::move(value));
     }
     for (const auto &monster : s.monsters) {
@@ -70,8 +74,19 @@ Json debugServerSnapshot(const server::DiagnosticSnapshot &s, uint64_t since, ui
         {"gap", since < s.eventFirst - 1}, {"records", Json::array()}};
     // Variant names are maintained beside the domain fact catalog.
     constexpr std::array names{"mana", "reposition", "life", "attack", "hit", "death", "item", "inventory", "character",
-        "quest", "attribute", "travel", "object", "chat", "command"};
+        "quest", "attribute", "travel", "object", "chat", "command", "npc-messages", "merchant", "ui", "waypoint"};
     static_assert(names.size() == std::variant_size_v<server::DomainFact>);
+    result["corpses"]=Json::array();
+    for(const auto &corpse:s.corpses) result["corpses"].push_back({{"id",corpse.id.value},{"owner",corpse.owner.value},{"area",int(corpse.region)},{"localPosition",point(corpse.position)},{"container",corpse.items.value},{"recoverableExperience",corpse.recoverableExperience}});
+    result["objects"]=Json::array();
+    for(const auto &object:s.objects) result["objects"].push_back({{"id",object.id.value},{"definition",object.definition},{"position",point(object.position+origin)},{"mode",object.mode},{"operation",object.rule.operation},{"pending",object.pending},{"uses",object.uses}});
+    result["npcs"]=Json::array();
+    for(const auto &npc:s.area.definition.npcs) result["npcs"].push_back({{"id",npc.id.value},{"code",npc.rule.code},{"position",point(npc.position+origin)}});
+    result["merchantDeferred"]=s.merchantDeferred;
+    result["den"]={{"remaining",s.denRemaining},{"cleared",s.denCleared},{"stages",Json::array()}};
+    for(const auto &book:s.record.quests) result["den"]["stages"].push_back(book.at(questIndex(QuestId::DenOfEvil)).stage);
+    result["waypoints"]=Json::array(); for(const auto &[region,time]:s.waypoints) { (void)time; result["waypoints"].push_back(int(region)); }
+    result["portals"]=Json::array(); for(const auto &portal:s.portals) result["portals"].push_back({{"owner",portal.owner.value},{"fieldId",portal.fieldId.value},{"townId",portal.townId.value},{"field",int(portal.field)},{"town",int(portal.town)},{"opened",portal.opened},{"fieldPosition",point(portal.fieldPosition)},{"townPosition",point(portal.townPosition)}});
     for (const auto &event : s.events) result["eventHistory"]["records"].push_back({{"sequence", event.sequence}, {"batch", event.batch},
         {"tick", event.tick}, {"transaction", event.transaction}, {"type", names.at(event.type)}, {"actor", event.actor.value},
         {"target", event.target.value}, {"area", int(event.area)}, {"value", event.value}, {"secondary", event.secondary},

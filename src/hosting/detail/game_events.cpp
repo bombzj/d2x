@@ -1,6 +1,7 @@
 #include "native_realm_service.hpp"
 #include "hosting/native_item_wire.hpp"
 #include "hosting/native_character_wire.hpp"
+#include "hosting/native_quest_wire.hpp"
 #include "hosting/native_combat_wire.hpp"
 #include <limits>
 
@@ -57,7 +58,11 @@ void NativeRealmService::receiveEvent(const server::EventBatch &batch) {
                 std::none_of(peer.visible.begin(), peer.visible.end(), [&](const auto &entry) { return entry.second.actor == hit->target; })) continue;
             delta = nativeHit(*hit, shared.terrain.at(binding->game).at(hit->area).origin);
             if (auto found = peer.monsters.find(hit->target); found != peer.monsters.end() && hit->killed) found->second.motion.clear();
-        } else if (const auto *inventory = std::get_if<server::InventoryFact>(&fact)) delta = nativeInventoryDelta(*content, *inventory);
+        } else if (const auto *inventory = std::get_if<server::InventoryFact>(&fact)) {
+            delta = nativeInventoryDelta(*content, *inventory);
+            for (const auto &change : inventory->changes) if (change.kind == ItemChangeKind::Created) peer.groundItems.erase(change.item);
+        }
+        else if (const auto *quest = std::get_if<server::QuestFact>(&fact)) delta=nativeQuestUpdate(*content,*quest);
         else if (const auto *character = std::get_if<server::CharacterFact>(&fact)) delta = nativeCharacterDelta(*content, *character);
         else if (const auto *chat = std::get_if<server::ChatFact>(&fact)) {
             if (std::find(chat->recipients.begin(), chat->recipients.end(), binding->player) == chat->recipients.end()) continue;
@@ -65,6 +70,22 @@ void NativeRealmService::receiveEvent(const server::EventBatch &batch) {
                 out.u8(1); out.u8(0); out.u8(0); out.u32(uint32_t(chat->actor.value)); out.u8(0); out.u8(0);
                 out.string(chat->name); out.string(chat->text);
             }));
+        } else if (const auto *npc = std::get_if<server::NpcMessagesFact>(&fact)) {
+            delta.push_back(encodeServerPacket(ServerMessage::NpcMessages,[&](auto &out) {
+                out.u8(1); out.u32(uint32_t(npc->npc.value)); out.u8(uint8_t(npc->messages.size())); out.u8(0);
+                for (size_t i=0;i<8;++i) { const auto message=i<npc->messages.size()?npc->messages[i]:server::NpcMessage{}; out.u8(message.menu); out.u8(0); out.u16(message.text); }
+            }));
+        } else if (const auto *merchant = std::get_if<server::MerchantFact>(&fact)) {
+            if (merchant->refreshShop) peer.shopItems.clear();
+            delta.push_back(encodeServerPacket(ServerMessage::MerchantResult,[&](auto &out) {out.u8(merchant->operation);out.u8(merchant->result);out.u32(0);out.u32(uint32_t(merchant->item.value));out.u32(merchant->gold);}));
+        } else if (const auto *waypoint=std::get_if<server::WaypointFact>(&fact)) {
+            std::array<uint16_t,8> history{}; history[0]=0x102; const auto &levels=content->tables.at("levels");
+            for(const auto region:waypoint->unlocked) for(size_t row=0;row<levels.rows().size();++row) if(levels.number(row,"Id")==int(region)) {
+                const auto index=levels.number(row,"Waypoint").value_or(255); if(index>=0 && index<112) history[size_t(1+index/16)]|=uint16_t(1u<<(index%16));
+            }
+            delta.push_back(encodeServerPacket(ServerMessage::Waypoints,[&](auto &out){out.u32(uint32_t(waypoint->source.value));for(const auto word:history)out.u16(word);}));
+        } else if (const auto *ui = std::get_if<server::UiFact>(&fact)) {
+            delta.push_back(encodeServerPacket(ServerMessage::UiAction,[&](auto &out){out.u8(ui->action);}));
         } else throw std::logic_error("Native event encoder is not implemented for this fact");
         for (auto &packet : delta) packets.push_back(std::move(packet));
     }

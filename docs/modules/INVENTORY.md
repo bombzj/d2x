@@ -4,11 +4,11 @@
 
 ## 自研服务端库存切片
 
-2026-10-08源码接入背包↔Cursor、实际落点普通交换、腰带放取／交换、装备／卸装／互换、双手冲突、两组武器切换、合堆及卷轴／同类书转装。已构建入dist/current，背包／Cursor／装备、腰带和切组有有限冒烟；双手冲突、合堆／书本及全部品质尚未认证，范围见[基线](../../BASELINE.md#当前运行包与有限冒烟)。
+2026-10-08源码接入背包↔Cursor、实际落点普通交换、腰带放取／交换、装备／卸装／互换、双手冲突、两组武器切换、合堆及卷轴／同类书转装。已构建入dist/current，背包／Cursor／装备、腰带和切组有有限冒烟；本次另有限验证书本转装、鉴定、金币部分拾取、普通买卖／修理／仓库；双手冲突、普通堆叠及全部品质尚未认证，范围见[基线](../../BASELINE.md#当前运行包与有限冒烟)。
 
-入口为hosting/protocol/inventory_requests.cpp的原18／19／1A–1F／21／23–25／29／60解码。GameHost.inventoryInput仅提供宿主内部只读句柄／位置／武器组；原包不附加revision。接收时绑定句柄，固定步再次校验来源、所有权、位置、武器组及替换目标。客户端仍为RealmSession／RemoteInventory／RemoteUiClients。
+入口为hosting/protocol/inventory_requests.cpp及handlers_inventory.cpp的原16–21／23–27／29／50／60解码；4F仓库金币子命令沿同一领域提交。GameHost.inventoryInput仅提供宿主内部只读句柄／位置／武器组；原包不附加revision。接收时绑定句柄，固定步再次校验来源、所有权、位置、武器组及替换目标。客户端仍为RealmSession／RemoteInventory／RemoteUiClients。
 
-server/systems/inventory的planning、placement、equipment、quantities分别负责意图分派、占格／腰带缩容、装备／手部组合、合堆／书本数量；eligibility仅同步草稿装备的原失效标志。临时InventoryState由transactions接管，PlayerStore唯一持有库存。装备资格与人物总值共用attributes/calculation及gameplay/items纯loadout／contributions／requirements／stats，不另维护力量／敏捷算法；排除被卸装备及候选自己的贡献，从职业基础／护符逐步激活合格装备，避免循环满足需求。
+server/systems/inventory的planning、placement、equipment、quantities分别负责意图分派、占格／腰带缩容、装备／手部组合、合堆／书本数量；ground、consumption、identification、storage分别负责地面／金币、药水、鉴定消耗和仓库授权；eligibility仅同步草稿装备的原失效标志。临时InventoryState由transactions接管，PlayerStore唯一持有库存。装备资格与人物总值共用attributes/calculation及gameplay/items纯loadout／contributions／requirements／stats，不另维护力量／敏捷算法；排除被卸装备及候选自己的贡献，从职业基础／护符逐步激活合格装备，避免循环满足需求。
 
 hosting/character_content按当前MPQ支持的每个人物等级准备入场物品属性、孔内贡献、实际耐久、套装条件列表和固定全套属性；升级选相应等级值，不重掷或调用MPQ。未鉴定、损坏、非活动武器不贡献；护符只在背包生效，套装按不同原件身份计数。未分配随机全套属性及条件套装需求尚未支持，激活时明确Unavailable，不当作零值。
 
@@ -18,7 +18,9 @@ hosting/character_content按当前MPQ支持的每个人物等级准备入场物�
 
 transactions同时复验库存和人物revision，计算新总值、装备失效标志及资源限制，先发布完整InventoryFact／CharacterFact，再以不抛异常的值交换提交。hosting/native_item_wire共用入场位流：位置原9C／9D，数量action=10，属性／资格action=21，耗尽原0A(type=4)；切组仅四个手部发action=23，再发97及23选技。人物属性／有效技能随同一事件发原1F／21，负抗性保留原符号语义；整笔字节队列接收后才确认Outbox。失败终止连接并保留实例／存档租约。
 
-边界：尚无仓库／方块／交易授权、地面拾取／丢弃、消耗、分堆、金币、佣兵装备、鉴定／镶嵌。临时状态与全部技能被动未恢复，武器攻击显示／战斗执行未完整接入；服务端已有纯装备战斗数值快照，不能视为战斗完成。新物品生成或改属性须扩展不可变规则准备契约，不能复用别的物品缓存。D2S保留位置、数量／charges、耐久、Cursor及固定武器组；事务ID／revision／派生总值／事件不写盘。
+鉴定源须本人背包内有效卷轴／书本，目标须本人背包／装备或有效仓库授权且Cursor为空；识别标志、属性重算及消耗一次提交。丢金币同时规划钱包与原MPQ金堆，碰撞／容量失败不扣款；余额封顶的部分拾取以新GUID保留余堆。仓库授权在距离／换区／死亡／离线后复验或清除。
+
+边界：尚无方块／交易授权、分堆、佣兵装备、镶嵌及完整耐久消耗。临时状态与全部技能被动未恢复，武器攻击显示／战斗执行未完整接入；服务端已有纯装备战斗数值快照，不能视为战斗完成。新物品生成或改属性须扩展不可变规则准备契约，不能复用别的物品缓存。D2S保留位置、数量／charges、耐久、Cursor及固定武器组；事务ID／revision／派生总值／事件不写盘。
 
 ## 入口与所有权
 

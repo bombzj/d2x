@@ -1,6 +1,7 @@
 #pragma once
 #include "combat_rules.hpp"
 #include "skill_rules.hpp"
+#include "gameplay/consumables/potions.hpp"
 #include "core/id.hpp"
 #include "gameplay/items/definitions.hpp"
 #include "gameplay/items/modifiers.hpp"
@@ -15,6 +16,7 @@
 #include "gameplay/skills/spec.hpp"
 #include "gameplay/effects/definition.hpp"
 #include <map>
+#include <set>
 #include <memory>
 #include <vector>
 
@@ -28,7 +30,7 @@ struct ItemLevelValues {
     std::array<std::vector<ResolvedItemStat>, 5> setStats;
     unsigned maximumDurability{};
 };
-struct EquipmentValues { std::vector<ItemLevelValues> levels; };
+struct EquipmentValues { std::vector<ItemLevelValues> levels; bool singleCarry{}; };
 struct EquipmentRules {
     std::map<EntityId, EquipmentValues> items;
     std::vector<EquipmentSetPiece> sets;
@@ -44,16 +46,22 @@ struct LearningRule {
     std::optional<std::pair<int, int>> manaRecoveryPerRank;
     bool selectable{}, leftAllowed{};
 };
+struct PortalItemRule { int skill{}; bool book{}; };
 struct CharacterRules {
+    std::map<std::string,PortalItemRule,std::less<>> portalItems;
+    std::map<std::string, bool, std::less<>> identificationItems; // true: tome charges, false: scroll quantity
     std::vector<uint64_t> experience;
     std::map<int, LearningRule> learning;
     int resistancePenalty{};
-    int deathTicks{};
+    int deathTicks{}, deathExperiencePenalty{};
 };
 // Immutable value definitions prepared by hosting/content, with instance-long
 // ownership. Null means not prepared, never "use invented default rules".
 // Additional native tables belong in their domain's typed value contract.
+using PotionRules = std::map<std::string, PotionDefinition, std::less<>>;
+struct TransientAttributes { CharacterModifiers modifiers; std::set<int> states; };
 struct PreparedRules {
+    std::shared_ptr<const PotionRules> potions;
     std::shared_ptr<const MeleeRules> melee;
     std::shared_ptr<const ItemCatalog> items;
     std::shared_ptr<const EquipmentRules> equipment;

@@ -7,6 +7,7 @@
 #include <compare>
 #include <cstdint>
 #include <map>
+#include <set>
 
 namespace d2x {
 // Internal authority/host values. These are not client messages or wire structs.
@@ -24,7 +25,7 @@ struct PlayerBinding {
     GameHandle game;
     PlayerId player;
 };
-enum class MovementAction { Move, Stop, ToggleRunning, ApproachExit };
+enum class MovementAction { Move, Stop, ToggleRunning, ApproachExit, ApproachCorpse, ApproachObject, ApproachNpc };
 struct MovementCommand {
     MovementAction action = MovementAction::Move;
     Vec destination;
@@ -52,6 +53,8 @@ struct PlayerSnapshot {
     CharacterAttributes attributes;
     EquipmentStats equipment;
     std::map<int, int> skillRanks;
+    std::map<int,int> itemSkills;
+    std::set<int> states;
     CommandResult command;
     uint64_t movementSequence{}, inventoryRevision{}, characterRevision{};
     std::string name, characterClass;

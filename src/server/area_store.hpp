@@ -1,5 +1,7 @@
 #pragma once
 #include "server/runtime/combat_rules.hpp"
+#include "server/runtime/object_rules.hpp"
+#include "server/runtime/npc_rules.hpp"
 #include "world/navigation.hpp"
 #include "world/identity.hpp"
 #include <map>
@@ -11,15 +13,21 @@ namespace world { class System; }
 // Prepared collision values only. No Map, DT1, Archives or renderer handles.
 struct AreaExit { EntityId id; RegionId destination; int warp{}, slot{}; Vec position, arrival; bool requiresQuest{}; Vec exitWalk; };
 struct AreaBoundary { RegionId destination; int side{}, plane{}, start{}, end{}; };
-struct AreaObject { EntityId id; int type{}; Vec position; };
+struct AreaObject { EntityId id; int type{}; Vec position; ObjectRule rule; };
+struct PortalRule { int definition{},range{},openingTicks{}; };
 struct AreaMetadata {
+    int waypointIndex = -1;
+    std::optional<Vec> portalArrival;
+    std::optional<PortalRule> portalRule;
     RegionId id = RegionId::Encampment;
     Vec spawn, origin;
+    RegionId townRegion{};
     int act{};
     bool town{}, teleportAllowed{};
     std::vector<AreaExit> exits;
     std::vector<AreaBoundary> boundaries;
     std::vector<AreaObject> objects;
+    std::vector<AreaNpc> npcs;
     std::vector<int> objectDeferred; // Native preset callbacks awaiting object/quest authority.
 };
 struct AreaDefinition : AreaMetadata {
@@ -27,6 +35,7 @@ struct AreaDefinition : AreaMetadata {
     RoomLayout activation;
     std::vector<PreparedMonster> population;
     std::vector<std::string> populationDeferred;
+    size_t populationMissing{};
 };
 struct AreaView { AreaMetadata definition; uint64_t generation{}; };
 struct AreaState {

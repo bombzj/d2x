@@ -107,6 +107,13 @@ std::vector<Bytes> nativeCharacterDelta(const ClassicData &data, const server::C
         if (base != rank(fact.before.skillRanks, id) || effective != rank(fact.previous.skillRanks, id))
             skillPacket(result, fact.after.id, id, base, effective);
     }
+    for (size_t slot = 0; slot < fact.after.skillHotkeys.size(); ++slot) {
+        const auto &before = fact.before.skillHotkeys[slot], &after = fact.after.skillHotkeys[slot];
+        if (before.skill == after.skill && before.right == after.right) continue;
+        result.push_back(hosting::encodeServerPacket(hosting::ServerMessage::Hotkey, [&](auto &out) {
+            out.u8(uint8_t(slot)); out.u16(uint16_t((after.right ? 0 : 0x8000) | (after.skill < -1 ? 0xFFF : std::max(0, after.skill)))); out.u32(UINT32_MAX);
+        }));
+    }
     for (unsigned side = 0; side < 2; ++side) {
         const auto index = fact.after.weaponSet * 2 + side;
         if (fact.before.weaponSet != fact.after.weaponSet || fact.before.selectedSkills[index] == fact.after.selectedSkills[index]) continue;

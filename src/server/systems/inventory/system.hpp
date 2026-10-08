@@ -9,9 +9,11 @@
 #include <string>
 #include <vector>
 
+namespace d2x::server { class MovementSystem; }
 namespace d2x::server::inventory {
 // Inventory access and placement plans; no second occupancy or item copy.
-using Intent = std::variant<MoveItem, TransferItem, SwapItems, SplitStack, MergeStacks,
+struct GroundTransfer { ItemHandle item; bool drop{}, cursor{}; };
+using Intent = std::variant<GroundTransfer, MoveItem, TransferItem, SwapItems, SplitStack, MergeStacks,
     LoadBook, IdentifyItem, EquipBelt, EquipItem, EquipHirelingItem, UseItem,
     UseBeltColumn, UseHirelingPotion, SwitchWeaponSet, CloseStorage, GoldTransaction>;
 enum class Source { Stored, Cursor, Belt };
@@ -31,9 +33,10 @@ struct InputState {
     unsigned weaponSet{};
     std::map<EntityId, InputItem> items;
 };
-struct Access { EntityId source; ContainerKind kind; uint64_t revision{}; };
-struct State { std::map<PlayerId, Access> storage; };
-struct Ports { const PlayerStore &players; const items::System &items; transactions::System &transactions; const ItemCatalog *definitions; };
+struct Access { EntityId source; ContainerKind kind; uint64_t revision{}; RegionId area{}; };
+struct Pickup { ActorContext actor; GroundTransfer request; uint64_t locomotion{}; };
+struct State { std::map<PlayerId, Access> storage; std::map<PlayerId, Pickup> pickups; };
+struct Ports { const PlayerStore &players; items::System &items; transactions::System &transactions; const ItemCatalog *definitions; MovementSystem &movement; effects::System &effects; const AreaStore &areas; EventOutbox &events; travel::System &travel; };
 class System {
     State state_;
     const Ports ports_;
@@ -42,6 +45,14 @@ class System {
     const State &read() const { return state_; }
     DomainResult<> execute(const ActorContext &, const Request &);
     std::optional<InputState> input(PlayerId) const;
+    StepStatus step(TickContext, FrameFacts &);
     DomainResult<> close(PlayerId);
+    DomainResult<> openStash(const ActorContext &, EntityId);
+    bool storageAccess(PlayerId) const;
+    DomainResult<> storage(const ActorContext &, const Request &);
+    DomainResult<> consume(const ActorContext &, const UseItem &, Source);
+    DomainResult<> ground(const ActorContext &, const GroundTransfer &);
+    DomainResult<> identify(const ActorContext &, const IdentifyItem &);
+    DomainResult<> dropGold(const ActorContext &, unsigned amount);
 };
 }
