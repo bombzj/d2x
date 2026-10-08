@@ -8,6 +8,7 @@
 | --- | --- |
 | 当前范围、已交付包与未入包源码 | [BASELINE](../BASELINE.md) |
 | 自研内核三阶段、历史迁移资产、完成门槛、地图对照与本机参考服 | [内核与服务端总计划](architecture/MULTIPLAYER.md) |
+| 公共函数提取、技能／怪物／NPC／任务复用边界与D2MOO依据 | [参考设计](architecture/REFERENCE_DESIGN.md) |
 | 代码分工、实际链接与修改入口 | [架构](architecture/OVERVIEW.md)、[数据流](architecture/DATA_FLOW.md) |
 | 原协议、副本、适配与实际有限原服证据 | [联网模块](modules/NETWORK.md) |
 | 自研消息目录、领域处理器、stub状态与宿主管理边界 | [服务端协议](modules/SERVER_PROTOCOL.md) |

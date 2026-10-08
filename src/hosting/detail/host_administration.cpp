@@ -1,4 +1,5 @@
 #include "native_realm_service.hpp"
+#include "hosting/combat_content.hpp"
 
 namespace d2x::hosting {
 HostDiagnostics NativeRealmService::diagnostics() const {
@@ -50,16 +51,54 @@ AdminResult NativeRealmService::administer(const AdminRequest &request) {
             if (!frames || frames > 250) return {AdminStatus::InvalidArguments, "Step requires 1-250 frames"};
             if (peer.phase != GamePhase::Entered || !host.step(binding->game, frames))
                 return {AdminStatus::Unavailable, "Pause the entered host game before stepping"};
-            publishMotion();
+            publishEvents(); publishPlayers(); publishMonsters(); publishMotion();
             return {AdminStatus::Applied, "Authority advanced by " + std::to_string(frames) + " fixed frames"};
         }
         // Each privileged mutation has an explicit slot. Implement inside the
         // corresponding server domain, then project native packets; never edit
         // a client snapshot or encode an invented success acknowledgement.
+        case AdminOperation::Pause:
+        case AdminOperation::Resume:
+        case AdminOperation::AutoPause: {
+            if (peer.phase != GamePhase::Entered) return {AdminStatus::Unavailable, "Enter the host game before controlling its clock"};
+            const auto pause = request.operation == AdminOperation::AutoPause ? std::optional<bool>{} :
+                std::optional<bool>{request.operation == AdminOperation::Pause};
+            if (!host.debugPause(binding->game, pause)) return {AdminStatus::InvalidTarget, "Game instance expired"};
+            return {AdminStatus::Applied, "Instance debug clock policy updated; all participants share this clock"};
+        }
+        case AdminOperation::RestoreResources: {
+            const auto result = host.restoreResources(*binding);
+            if (!result) return {AdminStatus::Unavailable, "Resource restoration requires a living entered player and available transaction capacity"};
+            publishEvents();
+            return {AdminStatus::Applied, "Life, mana and stamina restored through the character transaction"};
+        }
         case AdminOperation::GrantGold: return {AdminStatus::NotImplemented, "Inventory gold administration is not implemented"};
-        case AdminOperation::GrantExperience: return {AdminStatus::NotImplemented, "Progression administration is not implemented"};
+        case AdminOperation::GrantExperience: {
+            if (peer.phase != GamePhase::Entered) return {AdminStatus::Unavailable, "Enter the host game before granting experience"};
+            const auto amount = std::get<AdminAmount>(request.arguments).value;
+            if (amount <= 0) return {AdminStatus::InvalidArguments, "Experience amount must be positive"};
+            const auto result = host.grantExperience(*binding, uint64_t(amount));
+            if (!result) return {AdminStatus::Unavailable, "Progression rejected the experience grant (dead player, level cap or unavailable capacity/rules)"};
+            publishEvents(); publishPlayers(); publishMonsters(); publishMotion();
+            return {AdminStatus::Applied, "Experience granted by the authority"};
+        }
         case AdminOperation::SpawnItem: return {AdminStatus::NotImplemented, "Item creation administration is not implemented"};
-        case AdminOperation::SpawnMonster: return {AdminStatus::NotImplemented, "Population administration is not implemented"};
+        case AdminOperation::SpawnMonster: {
+            if (peer.phase != GamePhase::Entered) return {AdminStatus::Unavailable, "Enter the host game before spawning a monster"};
+            const auto &spawn = std::get<AdminSpawn>(request.arguments);
+            if (!spawn.position) return {AdminStatus::InvalidArguments, "Monster spawn requires global x and y; level is selected from the current MPQ area"};
+            const auto view = host.read(*binding);
+            const auto &source = shared.terrain.at(binding->game).at(view->actor.region);
+            MonsterIdentity identity;
+            identity.monster = spawn.code; identity.origin = SpawnOrigin::Debug;
+            identity.spawnKey = "debug/" + std::to_string(host.nextEntity(binding->game));
+            auto monster = prepareCombatMonster(archives, *content, source.request, std::move(identity), *spawn.position - source.origin);
+            if (!monster) return {AdminStatus::Unavailable, "Monster code has no supported MPQ combat profile"};
+            const auto result = host.spawnMonster(*binding, *monster);
+            if (!result) return {AdminStatus::Unavailable, "Monster spawn rejected by area collision, lifecycle or capacity"};
+            publishMonsters();
+            return {AdminStatus::Applied, "Monster admitted through population", *result.value};
+        }
         case AdminOperation::DamageMonster: return {AdminStatus::NotImplemented, "Combat administration is not implemented"};
         case AdminOperation::KillMonster: return {AdminStatus::NotImplemented, "Death administration is not implemented"};
         case AdminOperation::Travel: return {AdminStatus::NotImplemented, "Travel administration is not implemented"};

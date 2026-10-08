@@ -10,12 +10,13 @@
 
 namespace d2x::server::ai {
 // Decision state only; actions go through skill/movement requests, not direct damage.
-struct Controller { EntityId actor; std::optional<EntityId> target; uint64_t nextDecision{}; int behavior{}; };
+struct Controller { EntityId actor; std::optional<EntityId> target; uint64_t nextDecision{}; int behavior{}; uint64_t random{}; bool pursuing{}, charged{}; uint64_t nextPath{}; };
 struct State { std::map<EntityId, Controller> controllers; };
-struct Ports { monsters::System &monsters; const spatial::System &spatial; const social::System &relations; skills::System &skills; };
+struct Ports { monsters::System &monsters; const PlayerStore &players; const AreaStore &areas; skills::System &skills; uint64_t &random; };
 class System {
     State state_;
     const Ports ports_;
+    StepStatus meleeFamily(EntityId, PlayerId, TickContext, Controller &);
   public:
     explicit System(Ports ports) : ports_(ports) {}
     const State &read() const { return state_; }

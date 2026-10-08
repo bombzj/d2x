@@ -7,7 +7,7 @@
 
 namespace d2x::server {
 enum class SystemPhase { Commands, World, Attributes, Decisions, Actions, Actors, Spatial, Missiles, Effects, Combat, Death, Objects, Quests, Rewards, Travel, Commit, Projection };
-enum class SystemScope { Scaffold, Walking, Implemented };
+enum class SystemScope { Scaffold, Walking, Inventory, Character, World, Multiplayer, Combat, Implemented };
 enum class SystemId {
     Players, Movement,
 #define D2X_SYSTEM(id, member, phase, scope) id,

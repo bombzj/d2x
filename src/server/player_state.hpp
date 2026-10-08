@@ -1,6 +1,6 @@
 #pragma once
 #include "server/game_messages.hpp"
-#include "gameplay/character/attributes.hpp"
+#include "server/systems/attributes/calculation.hpp"
 #include "gameplay/character/persistent_character.hpp"
 #include <deque>
 
@@ -10,12 +10,16 @@ struct PlayerState {
     EntityId actor;
     RegionId area = RegionId::Encampment;
     CharacterDefinition definition;
-    CharacterAttributes attributes;
+    attributes::Totals totals;
     PersistentCharacter persistent;
+    PreparedRules rules; // Per-character properties and class growth; immutable after admission.
+    bool entered{};
     Vec position, look{0, 1};
     std::deque<Vec> route;
     bool running{}, routeRunning{}, moving{};
-    uint64_t acceptedSequence{}, movementSequence{};
+    uint64_t acceptedSequence{}, movementSequence{}, locomotionSequence{};
+    uint64_t inventoryRevision = 1, characterRevision = 1;
+    uint64_t lastExperienceAward{};
     CommandResult result;
 };
 } // namespace d2x::server

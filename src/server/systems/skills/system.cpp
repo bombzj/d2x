@@ -1,15 +1,159 @@
 #include "system.hpp"
-
+#include "server/player_store.hpp"
+#include "server/movement.hpp"
+#include "server/systems/monsters/system.hpp"
+#include "server/systems/combat/system.hpp"
+#include "server/systems/transactions/system.hpp"
+#include "gameplay/combat/geometry.hpp"
+#include "gameplay/combat/attack_timing.hpp"
+#include <algorithm>
 namespace d2x::server::skills {
-DomainResult<> System::requestCast(const CastRequest &) {
-    return {};
+namespace {
+DomainResult<> applied() { return {DomainStatus::Applied, std::monostate{}}; }
+template<class Modifiers> bool needsAttackEffects(const Modifiers &value) {
+    return value.fireMinimum || value.fireMaximum || value.lightningMinimum || value.lightningMaximum ||
+        value.coldMinimum || value.coldMaximum || value.magicMinimum || value.magicMaximum ||
+        value.poisonMinimum || value.poisonMaximum || value.lifeLeech || value.manaLeech ||
+        value.crushingBlow || value.openWounds;
 }
-// Scaffold only. No rule defaults, random consumption, partial writes or success
-// events are allowed here until this domain and its prepared rules are implemented.
-DomainResult<> System::execute(const ActorContext &, const Request &) {
-    return {};
 }
-StepStatus System::step(TickContext, FrameFacts &) {
-    return StepStatus::NotImplemented;
+void System::cancel(PlayerId player, EntityId actor) {
+    pending_.erase(player);
+    releases_.erase(actor);
+    if (auto it = state_.casts.find(actor); it != state_.casts.end()) it->second.interrupted = true;
+    ports_.combat.cancel(actor);
+}
+DomainResult<> System::requestCast(const CastRequest &request) {
+    if (request.skill != 0) return {};
+    const auto *monster = ports_.monsters.find(request.actor);
+    const auto *target = std::get_if<UnitTarget>(&request.target);
+    if (!monster || monster->life <= 0 || !target || request.tick < monster->busyUntil) return {DomainStatus::InvalidActor, {}};
+    const PlayerState *player = nullptr;
+    for (const auto &[id, candidate] : ports_.players.all()) {
+        (void)id; if (candidate.actor == target->id) { player = &candidate; break; }
+    }
+    if (!player || !player->entered || player->persistent.player.hp <= 0 || player->area != monster->area) return {DomainStatus::InvalidActor, {}};
+    const auto &area = ports_.areas.at(monster->area);
+    if (area.definition.town || meleeDistance(monster->position, monster->rule.size, player->position, 2) > monster->rule.meleeRange ||
+        !area.definition.collision.segment(monster->position, player->position)) return {DomainStatus::Unavailable, {}};
+    if (!ports_.events.hasCapacity(1)) return {DomainStatus::Capacity, {}};
+    const auto &rule = monster->rule;
+    DamageType type = DamageType::Physical;
+    auto queued = ports_.combat.enqueue({monster->id, player->actor, type, int64_t(rule.minimumDamage) * 256,
+        int64_t(rule.maximumDamage) * 256, request.tick + 1, monster->area, request.tick + uint64_t(rule.impactTick), rule.attackRating, rule.level, rule.meleeRange, rule.size, {}, 0, 0});
+    if (!queued) return queued;
+    auto event = ports_.events.publish({0, request.tick, {}, {AudienceKind::Area, {}, monster->area},
+        {AttackFact{monster->id, player->actor, 1, 0, monster->area, monster->position, player->position, request.tick + 1}}});
+    if (!event) { ports_.combat.cancel(monster->id); return {event.status, {}}; }
+    return ports_.monsters.beginAttack(monster->id, request.tick + uint64_t(rule.attackTicks));
+}
+DomainResult<> System::attack(const ActorContext &actor, const Request &request) {
+    const auto *player = ports_.players.find(actor.player);
+    if (!player || !player->entered || player->actor != actor.actor || player->area != actor.area || player->persistent.player.hp <= 0)
+        return {DomainStatus::InvalidActor, {}};
+    const auto &area = ports_.areas.at(player->area);
+    if (area.generation != actor.areaGeneration) return {DomainStatus::Unavailable, {}};
+    const auto selected = player->persistent.player.selectedSkills.at(player->persistent.player.weaponSet * 2 + (request.right ? 1 : 0));
+    if (selected != 0) return cast(actor, request, selected);
+    if (area.definition.town) return {DomainStatus::Unavailable, {}};
+    if (!player->rules.melee) return {DomainStatus::Unavailable, {}};
+    if (busy(player->actor, actor.tick)) return {DomainStatus::Conflict, {}};
+    const auto &weapon = player->totals.equipment.weapons[0];
+    const auto &modifiers = player->totals.character.combat;
+    if (weapon.ranged || weapon.potion || player->totals.equipment.weaponCount > 1 || needsAttackEffects(modifiers) ||
+        modifiers.lifeOnKill || modifiers.manaOnKill) return {};
+    if (auto own = modifiers.weapons.find(weapon.item); own != modifiers.weapons.end() && needsAttackEffects(own->second)) return {};
+    // Effects/dual-wield are separate slices; never silently drop item damage.
+    const auto timing = player->rules.melee->animations.find(player->totals.equipment.animationClass);
+    if (timing == player->rules.melee->animations.end()) return {DomainStatus::Unavailable, {}};
+    Vec destination;
+    EntityId target;
+    if (!request.target) return {DomainStatus::InvalidRequest, {}};
+    if (const auto *unit = std::get_if<UnitTarget>(&*request.target)) {
+        const auto *monster = ports_.monsters.find(unit->id);
+        if (!monster || monster->area != player->area || monster->life <= 0) return {DomainStatus::InvalidRequest, {}};
+        destination = monster->position; target = monster->id;
+        if ((destination - player->position).length() > 50) return {DomainStatus::InvalidRequest, {}};
+        if (meleeDistance(player->position, 2, destination, monster->rule.size) > weapon.rangeAdder + 1 ||
+            !area.definition.collision.segment(player->position, destination)) {
+            if (request.stationary) return {DomainStatus::Unavailable, {}};
+            auto status = ports_.movement.execute(actor, {MovementAction::Move, destination, false});
+            return {status == CommandStatus::Applied ? DomainStatus::Conflict : DomainStatus::Unavailable, {}};
+        }
+    } else {
+        const auto &point = std::get<PointTarget>(*request.target);
+        if (point.area != actor.area || point.generation != area.generation || !std::isfinite(point.position.x) || !std::isfinite(point.position.y))
+            return {DomainStatus::InvalidRequest, {}};
+        destination = point.position;
+    }
+    const auto &animation = timing->second;
+    if (weapon.fasterAttack <= -120) return {DomainStatus::Unavailable, {}};
+    const WeaponAttackTiming attackTiming{"a1", animation.frames,
+        effectiveAttackSpeed(animation.speed, weapon.fasterAttack, weapon.baseSpeed, player->totals.character.combat.attackRate),
+        animation.actionFrame, animation.startFrame};
+    const int duration = attackTiming.durationTicks(), impact = attackTiming.actionTick();
+    if (!ports_.events.hasCapacity(1)) return {DomainStatus::Capacity, {}};
+    if (target) {
+        combat::Damage damage{player->actor, target, DamageType::Physical, weapon.minimum, weapon.maximum,
+            actor.sequence, actor.area, actor.tick + uint64_t(impact), weapon.attackRating, player->persistent.player.level, weapon.rangeAdder + 1, 2, {}, 0, 0};
+        damage.weapon = weapon;
+        damage.criticalChance = player->totals.character.combat.criticalStrike;
+        damage.deadlyChance = player->totals.character.combat.deadlyStrike;
+        if (auto own = player->totals.character.combat.weapons.find(weapon.item); own != player->totals.character.combat.weapons.end())
+            damage.deadlyChance += own->second.deadlyStrike;
+        auto queued = ports_.combat.enqueue(damage);
+        if (!queued) return queued;
+    }
+    auto event = ports_.events.publish({0, actor.tick, {}, {AudienceKind::Area, {}, actor.area},
+        {AttackFact{player->actor, target, 0, 1, actor.area, player->position, destination, actor.sequence}}});
+    if (!event) { ports_.combat.cancel(player->actor); return {event.status, {}}; }
+    ports_.movement.execute(actor, {MovementAction::Stop, {}, false});
+    state_.casts[player->actor] = {player->actor, 0, actor.tick, actor.sequence, actor.tick + uint64_t(duration), actor.area, target};
+    return applied();
+}
+DomainResult<> System::execute(const ActorContext &actor, const Request &request) {
+    const auto *player = ports_.players.find(actor.player);
+    if (!player || !player->entered || player->actor != actor.actor || player->area != actor.area || player->persistent.player.hp <= 0)
+        return {DomainStatus::InvalidActor, {}};
+    if (request.action == Action::Stop) {
+        if (pending_.erase(actor.player)) ports_.movement.execute(actor, {MovementAction::Stop, {}, false});
+        return applied();
+    }
+    if (request.action == Action::Select) {
+        if (!player->rules.character) return {DomainStatus::Unavailable, {}};
+        const auto rule = player->rules.character->learning.find(request.skill);
+        if (rule == player->rules.character->learning.end() || !rule->second.selectable || (!request.right && !rule->second.leftAllowed))
+            return {DomainStatus::InvalidRequest, {}};
+        if (request.skill != 0) {
+            const auto learned = player->totals.skillRanks.find(request.skill);
+            if (learned == player->totals.skillRanks.end() || learned->second <= 0) return {DomainStatus::InvalidRequest, {}};
+        }
+        auto record = player->persistent.player;
+        record.selectedSkills.at(record.weaponSet * 2 + (request.right ? 1 : 0)) = request.skill;
+        auto plan = ports_.transactions.prepare(transactions::CharacterEdit{actor, player->inventoryRevision, player->characterRevision, std::move(record)});
+        if (!plan) return {plan.status, {}};
+        auto result = ports_.transactions.commit(std::move(*plan.value));
+        if (result && pending_.erase(actor.player)) ports_.movement.execute(actor, {MovementAction::Stop, {}, false});
+        return result;
+    }
+    if (request.action != Action::Cast) return {};
+    const auto result = attack(actor, request);
+    if (result.status == DomainStatus::Conflict) { pending_[actor.player] = {actor, request}; return applied(); }
+    if (pending_.erase(actor.player) && !result) ports_.movement.execute(actor, {MovementAction::Stop, {}, false});
+    return result;
+}
+StepStatus System::step(TickContext tick, FrameFacts &) {
+    const auto status = release(tick);
+    std::erase_if(state_.casts, [&](const auto &entry) { return !releases_.contains(entry.first) && std::max(entry.second.until, entry.second.cooldownUntil) <= tick.tick; });
+    for (auto it = pending_.begin(); it != pending_.end();) {
+        auto actor = it->second.actor; actor.tick = tick.tick;
+        const auto result = attack(actor, it->second.request);
+        if (result.status == DomainStatus::Conflict || result.status == DomainStatus::Capacity) ++it;
+        else {
+            if (!result) ports_.movement.execute(actor, {MovementAction::Stop, {}, false});
+            it = pending_.erase(it);
+        }
+    }
+    return status;
 }
 }

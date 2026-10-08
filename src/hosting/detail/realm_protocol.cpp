@@ -10,10 +10,6 @@ void NativeRealmService::startup(net::protocol::Reader &in) {
         throw ProtocolError("Invalid preauthenticated MCP startup");
     initialize(); authenticated = true; result(1, 0);
 }
-void NativeRealmService::gameInfo(net::protocol::Reader &in) {
-    in.u16(); in.string(15); in.finish();
-    // TODO: game directory query service. Do not invent a successful empty room.
-}
 void NativeRealmService::realm(const Packet &packet) {
     auto &stats = counters.realmRequests[packet.id];
     ++stats.received;

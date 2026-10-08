@@ -1,5 +1,7 @@
 #include "frontend.hpp"
 #include "hosting/embedded_realm.hpp"
+#include "network/tcp_stream.hpp"
+#include "network/local_addresses.hpp"
 #include "app/online_login_memory.hpp"
 #include "app/client_preferences.hpp"
 #include "app/debug/debug_pipe.hpp"
@@ -109,16 +111,20 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
     ui.setLogin(std::move(rememberedAccount), std::move(rememberedPassword));
     HideCursor();
     net::RealmSession session;
-    EmbeddedRealm embedded(archives, "saves");
+    EmbeddedRealm embedded(archives, options.hostSaves);
     bool localConnection = false, enterLocalGame = false;
+    bool lanConnection = false, lanListening = false;
     std::string reloadCharacter;
     uint8_t localDifficulty{};
     auto administerLocal = [&](const hosting::AdminRequest &request) -> hosting::AdminResult {
         using namespace hosting;
-        if (!localConnection) return {AdminStatus::Unavailable, "No embedded host connection"};
-        if (request.operation == AdminOperation::Reload &&
-            (session.read().stage != OnlineStage::ProtocolReady || !session.read().load.difficulty || session.read().selectedCharacter.empty()))
-            return {AdminStatus::Unavailable, "Reload requires an entered native client connection"};
+        if (!localConnection && !lanListening) return {AdminStatus::Unavailable, "No embedded host connection"};
+        if (request.operation == AdminOperation::Reload) {
+            const auto primary = embedded.diagnostics().player;
+            if (!localConnection || !primary || primary->game != request.target.game || primary->player != request.target.player ||
+                session.read().stage != OnlineStage::ProtocolReady || !session.read().load.difficulty || session.read().selectedCharacter.empty())
+                return {AdminStatus::Unavailable, "Reload requires the primary entered memory client"};
+        }
         auto result = embedded.administer(request);
         if (result.applied() && request.operation == AdminOperation::Reload) {
             const auto &current = session.read();
@@ -236,7 +242,17 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
     // No credentials in argv and no retry of non-idempotent room creation.
     bool quickCharacter = !options.onlineCharacter.empty();
     bool quickGame = quickCharacter && (!options.onlineCreateGame.empty() || !options.onlineJoinGame.empty());
-    if (quickCharacter) {
+    if (!options.hostLan.empty()) {
+        try { embedded.listen(options.hostLan, options.realmPort, options.gamePort); lanListening = true; }
+        catch (const std::exception &error) { throw std::runtime_error(std::string("LAN host could not start: ") + error.what()); }
+    }
+    if (!options.lan.empty()) {
+        session.connect_realm(std::make_unique<net::TcpStream>(), std::make_unique<net::TcpStream>(),
+            {options.lan, options.realmPort}, "LAN", options.gamePort);
+        lanConnection = true;
+        page = FrontendPage::Characters;
+    }
+    if (quickCharacter && options.lan.empty()) {
         try {
             auto config = configuration(configPath);
             std::string account, password;
@@ -344,7 +360,7 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
                     inventory.update(session.read());
                     return sharedClients->itemQuote(item, action);
                 }, [&](const nlohmann::json &command) {
-                    return serverDebugCommand(command, localConnection ? &embedded : nullptr, administerLocal);
+                    return serverDebugCommand(command, localConnection || lanListening ? &embedded : nullptr, administerLocal);
                 });
             if (presentationPaused != wasPaused) {
                 debugInputs.clear();
@@ -363,14 +379,14 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
                     session.read().stage == OnlineStage::ListingRealms)
                     manualRealm = true;
                 if (session.read().stage == OnlineStage::ConnectingAccount) {
-                    localConnection = enterLocalGame = false; reloadCharacter.clear();
+                    localConnection = enterLocalGame = lanConnection = false; reloadCharacter.clear();
                     manualRealm = false;
                     page = request.find("online-register") != std::string::npos ? FrontendPage::Register
                                                                                 : FrontendPage::Login;
                 }
                 if (session.read().stage == OnlineStage::Cancelled) {
                     ui.clearTransientPasswords();
-                    page = FrontendPage::Login;
+                    page = lanConnection ? FrontendPage::TcpIp : localConnection ? FrontendPage::Main : FrontendPage::Login;
                 }
                 if (session.read().stage == OnlineStage::Idle) {
                     ui.clearTransientPasswords();
@@ -382,7 +398,7 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
             reply["uiQueue"] = {{"inputFrames", debugInputs.size()},
                 {"itemCommands", sharedClients ? sharedClients->queuedItemCommands() : 0},
                 {"waitingItemRequest", waiting ? nlohmann::json(*waiting) : nlohmann::json(nullptr)}};
-            constexpr std::array pageNames{"Main", "Login", "Register", "Realms", "Characters", "CreateCharacter", "Lobby", "Loading"};
+            constexpr std::array pageNames{"Main", "Login", "Register", "Realms", "Characters", "CreateCharacter", "Lobby", "Loading", "TcpIp", "JoinHost"};
             reply["frontend"] = {{"page", pageNames.at(size_t(page))}, {"notice", notice}};
             if (sharedUi) {
                 const auto &chat = sharedUi->chat();
@@ -401,7 +417,7 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
             // Keep pumping the same bounded leave exchange when the window closes
             // or command quit is requested. Closing TCP immediately can skip saving.
             if (session.read().stage != OnlineStage::LeavingGame) {
-                try { embedded.close(); break; }
+                try { embedded.shutdown(); break; }
                 catch (const std::exception &e) { notice = e.what(); quit = false; frames = 0; }
             }
             debugInputs.clear();
@@ -697,13 +713,52 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
             notice = "Unable to remember the edited account name.";
         if (action.command != FrontendCommand::None) quickCharacter = quickGame = false;
         switch (action.command) {
-        case FrontendCommand::SinglePlayer:
+        case FrontendCommand::TcpIp:
             try {
+                embedded.close();
+                session.logout();
+                localConnection = enterLocalGame = lanConnection = false;
+                notice.clear(); page = FrontendPage::TcpIp;
+                ui.setLanAddresses({});
+                std::string addresses;
+                if (lanListening && !options.hostLan.empty() && options.hostLan != "0.0.0.0") addresses = options.hostLan;
+                else for (const auto &address : net::localIpv4Addresses()) {
+                    if (!addresses.empty()) addresses += ", ";
+                    addresses += address;
+                }
+                ui.setLanAddresses(std::move(addresses));
+            } catch (const std::exception &e) { notice = e.what(); }
+            break;
+        case FrontendCommand::OpenJoinHost:
+            notice.clear(); page = FrontendPage::JoinHost;
+            break;
+        case FrontendCommand::SinglePlayer:
+        case FrontendCommand::HostLan:
+            try {
+                const bool hosting = action.command == FrontendCommand::HostLan;
+                if (hosting && !lanListening) {
+                    embedded.listen("0.0.0.0", options.realmPort, options.gamePort);
+                    lanListening = true;
+                }
                 session.logout();
                 auto streams = embedded.connect(true);
-                session.connect_realm(std::move(streams.realm), std::move(streams.game), {"127.0.0.1", 6113}, "Single Player");
+                session.connect_realm(std::move(streams.realm), std::move(streams.game),
+                    {"127.0.0.1", options.realmPort}, hosting ? "TCP/IP Game" : "Single Player", options.gamePort);
                 localConnection = true; enterLocalGame = false; localDifficulty = 0;
+                lanConnection = hosting;
+                reloadCharacter.clear();
                 debugInputs.clear(); notice.clear(); page = FrontendPage::Characters;
+            } catch (const std::exception &e) { notice = e.what(); }
+            break;
+        case FrontendCommand::JoinLan:
+            try {
+                embedded.close();
+                session.logout();
+                localConnection = enterLocalGame = false; lanConnection = true;
+                reloadCharacter.clear(); debugInputs.clear(); notice.clear();
+                session.connect_realm(std::make_unique<net::TcpStream>(), std::make_unique<net::TcpStream>(),
+                    {std::move(action.name), options.realmPort}, "TCP/IP Game", options.gamePort);
+                page = FrontendPage::Characters;
             } catch (const std::exception &e) { notice = e.what(); }
             break;
         case FrontendCommand::Exit:
@@ -713,7 +768,7 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
         case FrontendCommand::Online:
             try { embedded.close(); }
             catch (const std::exception &e) { notice = e.what(); break; }
-            localConnection = enterLocalGame = false;
+            localConnection = enterLocalGame = lanConnection = false;
             page = FrontendPage::Login;
             break;
         case FrontendCommand::OpenRegister:
@@ -724,8 +779,13 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
             page = FrontendPage::CreateCharacter;
             break;
         case FrontendCommand::ChangeRealm:
-            if (localConnection) {
-                session.logout(); localConnection = false; page = FrontendPage::Main; break;
+            if (localConnection || lanConnection) {
+                try { if (localConnection) embedded.close(); }
+                catch (const std::exception &e) { notice = e.what(); break; }
+                session.logout();
+                page = lanConnection ? FrontendPage::TcpIp : FrontendPage::Main;
+                localConnection = enterLocalGame = lanConnection = false;
+                break;
             }
             manualRealm = true;
             session.return_to_realms();
@@ -776,23 +836,29 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
             }
             break;
         case FrontendCommand::SelectCharacter:
-            enterLocalGame = session.select_character(std::move(action.name)) && localConnection;
+            enterLocalGame = session.select_character(std::move(action.name)) && localConnection && !lanConnection;
             break;
         case FrontendCommand::CreateGame:
             session.create_game({std::move(action.name), std::move(action.password),
-                                 std::move(action.description), action.difficulty, localConnection ? uint8_t(1) : action.maximumPlayers,
+                                 std::move(action.description), action.difficulty, localConnection && !lanConnection ? uint8_t(1) : action.maximumPlayers,
                                  action.levelDifference});
             break;
         case FrontendCommand::LeaveGame:
             if (!session.leave_game()) {
                 session.cancel();
-                page = FrontendPage::Login;
+                page = lanConnection ? FrontendPage::TcpIp : localConnection ? FrontendPage::Main : FrontendPage::Login;
             }
             break;
         case FrontendCommand::Back:
             ui.clearTransientPasswords();
             notice.clear();
-            if (page == FrontendPage::Register && session.read().stage == OnlineStage::Idle) {
+            if (page == FrontendPage::JoinHost) {
+                page = FrontendPage::TcpIp;
+            }
+            else if (page == FrontendPage::TcpIp) {
+                page = FrontendPage::Main;
+            }
+            else if (page == FrontendPage::Register && session.read().stage == OnlineStage::Idle) {
                 std::string account, password;
                 loginMemory.read(account, password);
                 ui.setLogin(std::move(account), std::move(password));
@@ -808,8 +874,12 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
             else if (session.read().stage == OnlineStage::Lobby)
                 session.return_to_characters();
             else {
+                try { if (localConnection) embedded.close(); }
+                catch (const std::exception &e) { notice = e.what(); break; }
                 session.logout();
-                page = localConnection || page == FrontendPage::Login ? FrontendPage::Main : FrontendPage::Login;
+                page = lanConnection ? FrontendPage::TcpIp :
+                    localConnection || page == FrontendPage::Login ? FrontendPage::Main : FrontendPage::Login;
+                localConnection = enterLocalGame = lanConnection = false;
             }
             break;
         case FrontendCommand::Dismiss:
@@ -819,7 +889,8 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
             if (session.read().stage == OnlineStage::Failed) {
                 session.logout();
                 if (page != FrontendPage::Register)
-                    page = localConnection ? FrontendPage::Main : FrontendPage::Login;
+                    page = lanConnection ? (localConnection ? FrontendPage::TcpIp : FrontendPage::JoinHost) :
+                        localConnection ? FrontendPage::Main : FrontendPage::Login;
             }
             break;
         case FrontendCommand::None:

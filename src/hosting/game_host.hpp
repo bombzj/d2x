@@ -12,6 +12,7 @@ class GameHost {
         std::unique_ptr<server::GameInstance> game;
         double accumulator{};
         bool paused{};
+        std::optional<bool> debugPaused;
         bool resumed{};
         std::map<PlayerId, std::shared_ptr<const PlayerSnapshot>> snapshots;
     };
@@ -23,7 +24,18 @@ class GameHost {
   public:
     PlayerBinding create(server::GameDefinition);
     bool destroy(GameHandle);
+    PlayerBinding admit(GameHandle, server::GameDefinition);
+    bool remove(PlayerBinding);
+    bool enter(PlayerBinding, bool active = true);
+    std::vector<PlayerId> participants(GameHandle) const;
+    std::vector<PlayerId> visiblePlayers(PlayerBinding) const;
+    std::vector<MonsterSnapshot> visibleMonsters(PlayerBinding) const;
+    std::vector<RegionId> visibleAreas(PlayerBinding) const;
+    std::optional<server::AreaView> area(GameHandle, RegionId) const;
+    std::optional<server::GameSettings> settings(GameHandle) const;
+    uint64_t nextEntity(GameHandle) const;
     bool pause(GameHandle, bool);
+    bool debugPause(GameHandle, std::optional<bool>);
     void advance(double seconds);
     // Explicit authority stepping while paused; no accumulated wall-clock debt.
     bool step(GameHandle, uint32_t frames);
@@ -31,14 +43,22 @@ class GameHost {
     std::shared_ptr<const PlayerSnapshot> read(PlayerBinding) const;
     // Host storage boundary only; never exposed on a client transport.
     std::optional<PersistentCharacter> exportCharacter(PlayerBinding) const;
+    std::optional<PersistentCharacter> publicEquipment(PlayerBinding) const;
+    std::optional<server::inventory::InputState> inventoryInput(PlayerBinding) const;
     std::optional<server::SystemSteps> systemSteps(GameHandle) const;
     // Reliable game facts stay on the host side; native encoding must complete
     // before acknowledging. A failed encoder cannot silently discard output.
     std::optional<std::vector<server::EventBatch>> pendingEvents(GameHandle) const;
     bool acknowledgeEvents(GameHandle, uint64_t sequence);
+    server::DomainResult<> grantExperience(PlayerBinding, uint64_t amount);
+    server::DomainResult<> restoreResources(PlayerBinding);
+    server::DomainResult<EntityId> spawnMonster(PlayerBinding, const server::PreparedMonster &);
+    std::optional<server::DiagnosticSnapshot> diagnostics(PlayerBinding, size_t limit, uint64_t since, uint64_t commandSince,
+                                                         std::optional<Vec> destination = {}) const;
     // Content worker results are installed on the scheduler thread. The worker
     // may prepare values but must not retain a mutable game/area reference.
     std::optional<std::vector<server::world::PrepareArea>> pendingAreas(GameHandle) const;
     server::DomainResult<> installArea(GameHandle, server::world::PreparedArea);
+    void failArea(GameHandle, uint64_t request);
 };
 } // namespace d2x

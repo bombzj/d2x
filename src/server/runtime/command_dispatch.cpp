@@ -36,6 +36,7 @@ struct Dispatch {
     const ActorContext &actor;
     GameSystems &systems;
     CommandStatus operator()(const MovementCommand &request) const {
+        if (const auto crossing = systems.travel.walk(actor, request)) return *crossing;
         return systems.movement.execute(actor, request);
     }
     CommandStatus operator()(const inventory::Request &request) const {
@@ -83,6 +84,9 @@ SystemId commandSystem(const CommandPayload &payload) {
     return std::visit([]<class T>(const T &) { return Target<T>::id; }, payload);
 }
 bool acceptsCommand(const CommandPayload &payload) {
+    if (const auto *request = std::get_if<inventory::Request>(&payload)) return inventory::supports(*request);
+    if (const auto *request = std::get_if<skills::Request>(&payload)) return request->action != skills::Action::Bind;
+    if (std::holds_alternative<death::Request>(payload)) return false;
     const auto id = commandSystem(payload);
     for (const auto &entry : systemCatalog())
         if (entry.id == id) return entry.scope != SystemScope::Scaffold;

@@ -26,6 +26,11 @@ std::string_view scopeName(SystemScope scope) {
     switch (scope) {
     case SystemScope::Scaffold: return "scaffold";
     case SystemScope::Walking: return "walking-slice";
+    case SystemScope::Inventory: return "inventory-slice";
+    case SystemScope::Character: return "character-slice";
+    case SystemScope::World: return "world";
+    case SystemScope::Multiplayer: return "multiplayer";
+    case SystemScope::Combat: return "combat-slice";
     case SystemScope::Implemented: return "implemented";
     }
     throw std::logic_error("Unknown system scope");

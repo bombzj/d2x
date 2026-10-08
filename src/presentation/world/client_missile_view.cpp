@@ -154,15 +154,16 @@ void SceneView::advanceClientMissiles(float dt, const Grid &grid, Vec origin,
                 // toward an integer offset. No poison or damage is applied here.
                 poisonSmoke(childAge);
             }
-            if (program.function == 19 && program.parameters[0] > 0 && frame % program.parameters[0] == 0) {
-                const Vec anchor{std::floor(effect.pos.x) + .5f, std::floor(effect.pos.y) + .5f};
-                emit(program.children[0], anchor, missileRingDirection(effect.directionIndex), effect, childAge);
-                effect.directionIndex = (effect.directionIndex + program.parameters[1]) & 63;
+            if (program.function == 19) {
+                if (const auto emission = missileRingEmission(frame, program.parameters[0], effect.directionIndex, program.parameters[1])) {
+                    const Vec anchor{std::floor(effect.pos.x) + .5f, std::floor(effect.pos.y) + .5f};
+                    emit(program.children[0], anchor, emission->direction, effect, childAge);
+                    effect.directionIndex = emission->nextIndex;
+                }
             }
             if (program.function == 20 && frame < program.parameters[0] && program.parameters[1] > 0 &&
                 frame % program.parameters[1] == 0) {
-                const int x = int(effect.turnTarget.x), y = int(effect.turnTarget.y);
-                effect.turnTarget = {float((x - y) / 2), float((x + y) / 2)};
+                effect.turnTarget = missileDiagonalTurn(effect.turnTarget);
                 effect.velocity = effect.turnTarget.unit() * (float(effect.velocityFixed) * 25.f / 4096.f);
             }
             // PathMisc::sub_6FD5CEB0 adjusts native fixed velocity every five ticks.
@@ -185,15 +186,10 @@ void SceneView::advanceClientMissiles(float dt, const Grid &grid, Vec origin,
             } else next = next + effect.velocity * (1.f / 25.f);
             float fraction = 1.f;
             bool wall = false;
-            if ((program.collision.mask & 0x0005) && !grid.missileSegment(effect.pos - origin, next - origin, program.collision)) {
-                // Find the visible contact using the common terrain/object ray.
-                float low = 0, high = 1;
-                for (int i = 0; i < 12; ++i) {
-                    const float middle = (low + high) * .5f;
-                    if (grid.missileSegment(effect.pos - origin, effect.pos + (next - effect.pos) * middle - origin, program.collision)) low = middle;
-                    else high = middle;
+            if (program.collision.mask & 0x0005) {
+                if (const auto contact = missileTerrainContact(grid, effect.pos, next, program.collision, origin)) {
+                    fraction = *contact; wall = true;
                 }
-                fraction = low; wall = true;
             }
             const Vec start = effect.pos;
             if (program.function==6 && !program.childServerSent &&
@@ -234,8 +230,8 @@ void SceneView::advanceClientMissiles(float dt, const Grid &grid, Vec origin,
                 poisonSmoke(std::max(0.f, effect.age - effect.duration));
             if (program.function == 19 && program.hitParameters[0] > 0) {
                 const Vec anchor{std::floor(effect.pos.x) + .5f, std::floor(effect.pos.y) + .5f};
-                for (int direction = 0; direction < 64; direction += program.hitParameters[0])
-                    emit(program.hitChildren[0], anchor, missileRingDirection(direction), effect,
+                for (const auto direction : missileRingBurst(program.hitParameters[0]))
+                    emit(program.hitChildren[0], anchor, direction, effect,
                         std::max(0.f, effect.age - effect.duration));
             } else if (program.explodeOnExpiry || (program.function==9 && program.hitFunction==18))
                 impact(effect, program, std::max(0.f, effect.age - effect.duration));

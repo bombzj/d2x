@@ -99,11 +99,11 @@ CharacterView projectCharacterDisplay(const ClassicData &data, const CharacterPr
     view.defense = integer(input, "armorclass");
     view.physicalResist = integer(input, "damageresist"); view.magicResist = integer(input, "magicresist");
     view.flatPhysicalReduction = integer(input, "normal_damage_reduction"); view.flatMagicReduction = integer(input, "magic_damage_reduction");
-    view.poisonLengthResist = integer(input, "poisonlengthresist"); view.fireAbsorbPercent = integer(input, "fireabsorb");
+    view.poisonLengthResist = integer(input, "item_poisonlengthresist"); view.fireAbsorbPercent = integer(input, "item_absorbfire_percent");
     for (std::string name : {"strength", "dexterity", "vitality", "energy", "level", "experience", "statpts", "newskills",
         "hitpoints", "maxhp", "mana", "maxmana", "stamina", "maxstamina", "armorclass", "toblock",
         "fireresist", "coldresist", "lightresist", "poisonresist", "damageresist", "magicresist",
-        "normal_damage_reduction", "magic_damage_reduction", "poisonlengthresist", "fireabsorb"})
+        "normal_damage_reduction", "magic_damage_reduction", "item_poisonlengthresist", "item_absorbfire_percent"})
         if (!stat(input, name) && !(name == "hitpoints" && (input.life || view.dead)) &&
             !(name == "mana" && input.mana) && !(name == "stamina" && input.stamina)) view.unknownStats.insert(std::move(name));
     view.unknownStats.insert("toblock"); // Final block needs shield/dexterity/level, not just native toblock.

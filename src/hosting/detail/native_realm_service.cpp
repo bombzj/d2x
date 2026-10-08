@@ -9,17 +9,15 @@
 
 namespace d2x::hosting {
 using namespace net::protocol;
-NativeRealmService::NativeRealmService(Archives &a, std::filesystem::path path, RealmOutput realm, GameOutput game)
-    : archives(a), root(std::move(path)), realmOutput(std::move(realm)), gameOutput(std::move(game)) {}
+NativeRealmService::NativeRealmService(NativeRealmHost &owner, RealmOutput realm, GameOutput game)
+    : shared(owner), archives(owner.archives), root(owner.root), realmOutput(std::move(realm)), gameOutput(std::move(game)),
+      content(owner.content), portraits(owner.portraits), host(owner.host), rules(owner.rules) {
+    shared.peers.insert(this);
+}
+NativeRealmService::~NativeRealmService() { shared.peers.erase(this); }
 void NativeRealmService::initialize() {
-    if (!content) {
-        auto data = std::make_unique<ClassicData>(loadClassicData(archives));
-        auto previews = std::make_unique<RealmPortraitCatalog>(archives);
-        const auto fingerprint = characterRulesFingerprint(*data);
-        auto directory = std::make_unique<CharacterStore>(root, *data);
-        content = std::move(data); portraits = std::move(previews);
-        store = std::move(directory); rules = fingerprint;
-    }
+    shared.initialize();
+    if (!store) store = std::make_unique<CharacterStore>(root, *content);
 }
 void NativeRealmService::sendRealm(uint8_t id, Writer out) {
     const auto entries = realmResponses();
@@ -54,12 +52,12 @@ void NativeRealmService::checkpoint() {
     store->save(*lease, *saved);
 }
 void NativeRealmService::discardReload() {
-    if (reload) host.destroy(reload->game.binding.game);
+    if (reload) { shared.terrain.erase(reload->game.binding.game); host.destroy(reload->game.binding.game); }
     reload.reset();
 }
 void NativeRealmService::close(bool save, bool keepReload) {
     if (save) checkpoint(); // Keep the live instance and lease on save failure.
-    if (binding) host.destroy(binding->game);
+    if (binding) shared.retire(*binding);
     binding.reset(); lease.reset(); selected.reset();
     peer = {}; ticket = false;
     admission.clear(); terrain = {};
@@ -70,25 +68,22 @@ void NativeRealmService::resetRealm() {
     if (binding) close();
     authenticated = false;
 }
-void NativeRealmService::connectGame() {
+void NativeRealmService::connectGame(bool announce) {
     // Tickets authorize exactly one connection. Never silently replace a live peer.
     if (!ticket || !binding || peer.phase != GamePhase::Closed)
         throw ProtocolError("Game connection has no unused admission ticket");
     peer = {}; peer.phase = GamePhase::Connected;
-    sendGame({0xAF, 0});
+    if (announce) sendGame({0xAF, 0});
 }
 void NativeRealmService::failGame() {
     peer.phase = GamePhase::Closed;
     ticket = false;
-    if (binding) host.pause(binding->game, true);
+    if (binding) host.enter(*binding, false);
 }
 void NativeRealmService::setPaused(bool paused) {
-    if (binding) host.pause(binding->game, paused || peer.phase != GamePhase::Entered);
-}
-void NativeRealmService::advance(double seconds, bool paused) {
-    setPaused(paused);
-    host.advance(seconds);
-    publishMotion();
+    if (!binding) return;
+    const auto *room = shared.find(binding->game);
+    host.pause(binding->game, room && room->capacity == 1 && (paused || peer.phase != GamePhase::Entered));
 }
 void NativeRealmService::publishMotion(bool force) {
     if (!binding || peer.phase != GamePhase::Entered) return;
@@ -96,6 +91,7 @@ void NativeRealmService::publishMotion(bool force) {
     if (!view) throw std::logic_error("Active game binding expired");
     if (!force && view->revision == peer.sentRevision) return;
     auto packet = nativePlayerMotion(*view, terrain.origin);
+    if (packet.empty()) { peer.lastMotion.clear(); return; }
     // Tick revisions alone must not broadcast identical idle poses at 25 Hz.
     // A processed/rejected move still needs its authoritative correction.
     if (force || packet != peer.lastMotion || view->movementSequence != peer.sentMovement) {
@@ -107,6 +103,8 @@ void NativeRealmService::prepareReload() {
     if (!binding || !lease || peer.phase != GamePhase::Entered)
         throw std::runtime_error("No loaded character to reload");
     if (reload) throw std::runtime_error("A character reload is already pending");
+    if (const auto *room = shared.find(binding->game); room && room->capacity != 1)
+        throw std::runtime_error("Reload is available only in a private one-player instance");
     auto saved = store->load(*lease);
     saved.difficulty = int(gameDifficulty);
     // Allocate the version/name metadata before acquiring a staged host slot.
@@ -115,17 +113,20 @@ void NativeRealmService::prepareReload() {
     reload = std::move(candidate);
 }
 NativeRealmService::PreparedGame NativeRealmService::prepareGame(PersistentCharacter saved) {
-    auto prepared = prepareWalkingGame(archives, *content, std::move(saved), rules);
+    auto prepared = prepareWalkingGame(archives, *content, std::move(saved), rules, shared.items);
     const auto staged = host.create(std::move(prepared.authority));
     try {
-        auto packets = nativeGameAdmission(*content, *host.exportCharacter(staged), prepared.terrain, *host.read(staged));
+        auto packets = nativeGameAdmission(*content, *host.exportCharacter(staged), prepared.terrain, *host.read(staged), host.area(staged.game, RegionId(prepared.terrain.request.level))->definition);
         for (const auto &packet : packets) validateServerPacket(packet);
         host.pause(staged.game, true);
+        shared.terrain[staged.game].emplace(RegionId(prepared.terrain.request.level), prepared.terrain);
         return {staged, std::move(prepared.terrain), std::move(packets)};
-    } catch (...) { host.destroy(staged.game); throw; }
+    } catch (...) { shared.terrain.erase(staged.game); host.destroy(staged.game); throw; }
 }
 std::string NativeRealmService::prepareStartup(const std::string &load, const std::string &save, const std::string &characterClass) {
-    auto &o = *this; o.close(); o.initialize();
+    auto &o = *this;
+    if (!shared.games.empty() || shared.peers.size() > 1) throw std::runtime_error("Cannot change the save repository while other host sessions exist");
+    o.close(); o.initialize();
     const auto destination = std::filesystem::absolute(!save.empty() ? save : !load.empty() ? load : "saves/quick.d2s").lexically_normal();
     o.root = destination.parent_path(); o.store = std::make_unique<CharacterStore>(o.root, *o.content);
     PersistentCharacter character;

@@ -21,7 +21,7 @@ constexpr MessageDescriptor realm[]{
     {0x03, "CreateGame", MessageDomain::Lifecycle, MessageSupport::Implemented},
     {0x04, "JoinGame", MessageDomain::Lifecycle, MessageSupport::Implemented},
     {0x05, "ListGames", MessageDomain::Lifecycle, MessageSupport::Implemented},
-    {0x06, "GameInfo", MessageDomain::Lifecycle, MessageSupport::Stub},
+    {0x06, "GameInfo", MessageDomain::Lifecycle, MessageSupport::Implemented},
     {0x07, "SelectCharacter", MessageDomain::Character, MessageSupport::Implemented},
     {0x0A, "DeleteCharacter", MessageDomain::Character, MessageSupport::Implemented},
     {0x19, "ListCharacters", MessageDomain::Character, MessageSupport::Implemented},

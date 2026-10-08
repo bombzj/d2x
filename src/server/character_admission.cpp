@@ -3,8 +3,8 @@
 #include <stdexcept>
 
 namespace d2x::server {
-PersistentCharacter admitCharacter(PersistentCharacter state) {
-    EntityIds ids;
+PersistentCharacter admitCharacter(PersistentCharacter state, uint64_t nextEntity) {
+    EntityIds ids(nextEntity);
     std::map<EntityId, EntityId> mapping;
     auto allocate = [&](EntityId old) {
         if (!old || !mapping.emplace(old, ids.allocate()).second) throw std::runtime_error("Duplicate character entity identity");
@@ -40,6 +40,7 @@ PersistentCharacter admitCharacter(PersistentCharacter state) {
     state.inventory.items = std::move(items);
     if (state.ironGolem) remapItem(*state.ironGolem, true);
     for (auto &corpse : state.corpses) { remap(corpse.id); remap(corpse.owner); remap(corpse.items); corpse.recoverableExperience = 0; }
+    if (ids.cursor() > UINT32_MAX) throw std::runtime_error("Native entity ID capacity exhausted");
     state.nextEntityId = ids.cursor();
     return state;
 }

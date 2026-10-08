@@ -14,7 +14,7 @@ enum class Action { Chat, Invite, Accept, LeaveParty, Hostility };
 struct Request { Action action; std::optional<PlayerId> target; std::string text; };
 struct Relation { bool hostile{}; uint64_t revision{}; };
 struct State { std::map<PlayerId, uint64_t> parties; std::map<std::pair<PlayerId, PlayerId>, Relation> relations; };
-struct Ports { const PlayerStore &players; };
+struct Ports { const PlayerStore &players; EventOutbox &events; };
 class System {
     State state_;
     const Ports ports_;

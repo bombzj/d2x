@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <charconv>
 #include <iomanip>
 #include <map>
 #include <sstream>
@@ -58,6 +59,19 @@ bool busy(OnlineStage s) {
            s != OnlineStage::RealmSelection && s != OnlineStage::CharacterSelection &&
            s != OnlineStage::Lobby && s != OnlineStage::ListingGames && s != OnlineStage::ProtocolReady;
 }
+bool validHostAddress(std::string_view address) {
+    for (unsigned part = 0; part < 4; ++part) {
+        const auto dot = address.find('.');
+        const auto digits = address.substr(0, dot);
+        unsigned value{};
+        const auto [end, error] = std::from_chars(digits.data(), digits.data() + digits.size(), value);
+        if (digits.empty() || digits.size() > 3 || (digits.size() > 1 && digits.front() == '0') ||
+            error != std::errc{} || end != digits.data() + digits.size() || value > 255 ||
+            (part == 0 && (value == 0 || value >= 224)) || (part < 3) != (dot != address.npos)) return false;
+        if (dot != address.npos) address.remove_prefix(dot + 1);
+    }
+    return true;
+}
 struct PortraitKeyLess {
     bool operator()(const Bytes &left, const Bytes &right) const {
         const auto common = std::min(left.size(), right.size());
@@ -89,11 +103,13 @@ struct RealmFrontend::Impl {
     std::unique_ptr<Graphics> characterGraphics;
     std::map<Bytes, GpuAnimation, PortraitKeyLess> portraits;
     ClassicStrings strings;
-    ClassicFont normal, buttonFont, inputFont, titleFont, lobbyFont, roomGoldFont, roomGrayFont;
-    UiPainter text, buttonText, inputText, title, lobbyText, roomGoldText, roomGrayText;
+    ClassicFont normal, buttonFont, inputFont, titleFont, lobbyFont, roomGoldFont, roomGrayFont, lanTitleFont, lanTipFont;
+    UiPainter text, buttonText, inputText, title, lobbyText, roomGoldText, roomGrayText, lanTitle, lanTip;
     std::map<std::string, GpuAnimation> art;
     std::vector<std::string> classes;
     std::string account, password, gameName, gamePassword, description;
+    std::string lanAddresses, hostAddress = "127.0.0.1";
+    bool replaceHostAddress{}, lanArtReady{};
     int focus{}, selected{}, page{}, players{8}, difference{4};
     int lastClickedCharacter{-1};
     double lastCharacterClick{};
@@ -118,9 +134,10 @@ struct RealmFrontend::Impl {
           normal(font(units, a, "font16")), buttonFont(font(units, a, "fontexocet10")),
           inputFont(font(units, a, "fontformal11")), titleFont(font(units, a, "font30")),
           lobbyFont(font(units, a, "fontridiculous")),
-          roomGoldFont(font(units, a, "font8", 4)), roomGrayFont(font(units, a, "font8", 5)), text(normal),
+          roomGoldFont(font(units, a, "font8", 4)), roomGrayFont(font(units, a, "font8", 5)),
+          text(normal),
           buttonText(buttonFont), inputText(inputFont), title(titleFont), lobbyText(lobbyFont),
-          roomGoldText(roomGoldFont, 0), roomGrayText(roomGrayFont, 0) {
+          roomGoldText(roomGoldFont, 0), roomGrayText(roomGrayFont, 0), lanTitle(lanTitleFont), lanTip(lanTipFont) {
         auto load = [&](Graphics &g, const char *id, const char *path) {
             auto value = g.single(std::string("data/global/ui/") + path + ".dc6");
             if (value.frames.empty())
@@ -249,20 +266,21 @@ struct RealmFrontend::Impl {
     void label(const std::string &v, int x, int y, Color c = parchment) { text.label(v, x, y, 16, c); }
     void centered(const std::string &v, int y) { label(v, (800 - text.measure(v, 16)) / 2, y); }
     void wrap(const std::string &v, int x, int y, int width, bool center = false,
-              int bottom = std::numeric_limits<int>::max()) {
+              int bottom = std::numeric_limits<int>::max(), const UiPainter *font = nullptr) {
+        const auto &painter = font ? *font : text;
         std::istringstream words(v);
         std::string word, line;
         auto draw = [&]() {
             if (y + 18 > bottom) { line.clear(); return; }
-            label(line, center ? x + (width - text.measure(line, 16)) / 2 : x, y);
+            painter.label(line, center ? x + (width - painter.measure(line, 16)) / 2 : x, y, 16);
             y += 18;
             line.clear();
         };
         while (words >> word) {
             if (y + 18 > bottom) break;
-            while (!word.empty() && text.measure(word, 16) > width) word.pop_back();
+            while (!word.empty() && painter.measure(word, 16) > width) word.pop_back();
             auto next = line.empty() ? word : line + " " + word;
-            if (!line.empty() && text.measure(next, 16) > width)
+            if (!line.empty() && painter.measure(next, 16) > width)
                 draw();
             if (!line.empty())
                 line += ' ';
@@ -335,12 +353,76 @@ struct RealmFrontend::Impl {
         if (placeholder != std::string::npos)
             gatewayLabel.replace(placeholder, 2, gateway);
         button("thin", 265, 366, gatewayLabel, false, 2);
-        button("wide", 265, 400, s(5108), false, 2);
+        if (button("wide", 265, 400, s(5116), true, 2))
+            emit(FrontendCommand::TcpIp);
         button("medium", 265, 495, s(5110), false);
         button("medium", 410, 495, s(5111), false);
         if (button("wide", 265, 535, s(5109), true, 2))
             emit(FrontendCommand::Exit);
         label("D2X", 30, 565, WHITE);
+    }
+    void prepareLanArt() {
+        if (lanArtReady) return;
+        // LAN-only assets must not become prerequisites for the original-server UI.
+        lanTitleFont = font(units, archives, "font42");
+        lanTipFont = font(units, archives, "fontformal12");
+        auto load = [&](Graphics &graphics, const char *id, const char *path) {
+            auto value = graphics.single(std::string("data/global/ui/") + path + ".dc6");
+            if (value.frames.empty())
+                throw std::runtime_error(std::string("Missing original TCP/IP art: ") + path);
+            art.insert_or_assign(id, std::move(value));
+        };
+        load(units, "tcpip", "FrontEnd/TCPIPscreen");
+        load(units, "joinHostPopup", "FrontEnd/PopUpOkCancel2");
+        load(lobbyControls, "joinHostButton", "FrontEnd/CancelButtonBlank");
+        lanArtReady = true;
+    }
+    void tcpIp(bool joining) {
+        prepareLanArt();
+        tiles("tcpip", 0, 0, 4);
+        lanTitle.inBox(s(5117), {0, 35, 800, 50}, 16, parchment);
+        centered(s(5121), 110);
+        wrap(lanAddresses.empty() ? s(5124) : lanAddresses, 180, 130, 440, true, 168);
+        const bool available = enabled;
+        if (joining) enabled = false;
+        if (button("wide", 265, 170, s(5118), true, 2)) emit(FrontendCommand::HostLan);
+        if (button("wide", 265, 230, s(5119), true, 2)) emit(FrontendCommand::OpenJoinHost);
+        if (button("medium", 40, 535, s(5103))) emit(FrontendCommand::Back);
+        if (!joining) {
+            const int width = art.at("wide").frame(0, 0)->texture.width + art.at("wide").frame(0, 1)->texture.width;
+            const int height = art.at("wide").frame(0, 0)->texture.height;
+            const bool overJoin = CheckCollisionPointRec(mouse, {265, 230, float(width), float(height)});
+            wrap(s(overJoin ? 5123 : 5122), 265, 310, width, true, 510, &lanTip);
+            return;
+        }
+        // Original 264 x 176 panel and 96 x 32 buttons. The textbox extends
+        // its original middle pixels; borders and glyphs retain native size.
+        tiles("joinHostPopup", 268, 160, 2);
+        wrap(s(5120), 303, 182, 194, true, 224);
+        const auto &box = art.at("textbox").frame(0, 0)->texture;
+        constexpr int x = 291, y = 230, width = 218, edge = 8;
+        DrawTextureRec(box, {0, 0, edge, float(box.height)}, {x, y}, WHITE);
+        for (int offset = edge; offset < width - edge;) {
+            const int count = std::min(box.width - 2 * edge, width - edge - offset);
+            DrawTextureRec(box, {edge, 0, float(count), float(box.height)}, {float(x + offset), y}, WHITE);
+            offset += count;
+        }
+        DrawTextureRec(box, {float(box.width - edge), 0, edge, float(box.height)}, {x + width - edge, y}, WHITE);
+        enabled = available;
+        if (enabled && replaceHostAddress && (!input.entryText.empty() || input.backspace || input.entryDelete)) {
+            hostAddress.clear(); replaceHostAddress = false;
+        }
+        if (enabled && clicked && CheckCollisionPointRec(mouse, {x, y, width, 26})) replaceHostAddress = true;
+        if (replaceHostAddress)
+            DrawRectangle(x + 7, y + 3, inputText.measure(hostAddress, 16) + 2, 20, {35, 44, 75, 220});
+        std::erase_if(input.entryText, [](unsigned char c) { return c != '.' && (c < '0' || c > '9'); });
+        field(hostAddress, {x, y, width, 26}, 0, 15, false, false);
+        const bool valid = validHostAddress(hostAddress);
+        if (button("joinHostButton", 284, 290, s(5103))) emit(FrontendCommand::Back);
+        if (button("joinHostButton", 420, 290, s(5102), valid) || (enabled && input.enter && valid)) {
+            emit(FrontendCommand::JoinLan);
+            intent.name = hostAddress;
+        }
     }
     void login() {
         tiles("main", 0, 0, 4);
@@ -921,6 +1003,9 @@ struct RealmFrontend::Impl {
                 characterName.clear();
                 hardcore = false;
             }
+            if (current == FrontendPage::JoinHost) {
+                replaceHostAddress = true;
+            }
             if (current == FrontendPage::Lobby) {
                 lobbyPanel = LobbyPanel::Notice;
                 gameOffset = 0;
@@ -937,9 +1022,11 @@ struct RealmFrontend::Impl {
             focus = (focus + 1) %
                     (current == FrontendPage::Register ||
                      (current == FrontendPage::Lobby && lobbyPanel == LobbyPanel::Create) ? 3
-                     : current == FrontendPage::CreateCharacter                          ? 1 : 2);
+                     : current == FrontendPage::CreateCharacter || current == FrontendPage::JoinHost ? 1 : 2);
         if (current == FrontendPage::Main)
             main(gateway);
+        else if (current == FrontendPage::TcpIp || current == FrontendPage::JoinHost)
+            tcpIp(current == FrontendPage::JoinHost);
         else if (current == FrontendPage::Login)
             login();
         else if (current == FrontendPage::Register)
@@ -1026,5 +1113,8 @@ void RealmFrontend::clearTransientPasswords() {
 void RealmFrontend::setLogin(std::string account, std::string password) {
     wipe(impl_->password); wipe(impl_->verifyPassword);
     impl_->account = std::move(account); impl_->password = std::move(password);
+}
+void RealmFrontend::setLanAddresses(std::string addresses) {
+    impl_->lanAddresses = std::move(addresses);
 }
 } // namespace d2x

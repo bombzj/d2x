@@ -1,31 +1,37 @@
 #pragma once
 #include "hosting/character_store.hpp"
+#include "native_realm_host.hpp"
 #include "hosting/game_host.hpp"
 #include "hosting/game_content.hpp"
 #include "hosting/administration.hpp"
 #include "hosting/protocol/message_catalog.hpp"
 #include "content/classic_data.hpp"
 #include "content/character/realm_portrait.hpp"
+#include <array>
 #include <functional>
 
 namespace d2x::hosting {
-// Single-participant hosting composition, independent of byte transport and UI.
+// One peer protocol/session binding, independent of byte transport and UI.
 // Protocol handlers orchestrate storage/admission; gameplay goes to domain handlers.
 struct NativeRealmService {
     using RealmOutput = std::function<void(uint8_t, Bytes)>;
     using GameOutput = std::function<void(Bytes)>;
+    NativeRealmHost &shared;
     Archives &archives;
-    std::filesystem::path root;
+    std::filesystem::path &root;
     RealmOutput realmOutput;
     GameOutput gameOutput;
-    std::unique_ptr<ClassicData> content;
-    std::unique_ptr<RealmPortraitCatalog> portraits;
+    std::shared_ptr<const ClassicData> &content;
+    std::unique_ptr<RealmPortraitCatalog> &portraits;
     std::unique_ptr<CharacterStore> store;
-    GameHost host;
-    uint64_t rules{};
+    GameHost &host;
+    uint64_t &rules;
     bool authenticated{}, ticket{};
     uint32_t hash{};
     uint16_t token{};
+    // TCP peers receive the interface reached by their MCP connection; memory
+    // peers keep loopback. No host-wide address leaks between transports.
+    std::array<uint8_t, 4> gameAddress{127, 0, 0, 1};
     unsigned gameDifficulty{};
     std::string gameName, gamePassword, selectedName, failure, startupFile;
     CharacterRosterView roster;
@@ -38,6 +44,12 @@ struct NativeRealmService {
         GamePhase phase = GamePhase::Closed;
         uint64_t sequence{}, sentRevision{}, sentMovement{};
         Bytes lastMotion;
+        std::set<RegionId> areas;
+        std::map<EntityId, std::pair<uint64_t, std::string>> roster;
+        struct VisiblePlayer { EntityId actor; uint64_t inventoryRevision{}; Bytes motion; std::set<EntityId> equipment; };
+        std::map<PlayerId, VisiblePlayer> visible;
+        struct VisibleMonster { Bytes motion; };
+        std::map<EntityId, VisibleMonster> monsters;
     } peer;
     struct PreparedGame {
         PlayerBinding binding;
@@ -53,10 +65,17 @@ struct NativeRealmService {
     std::optional<ReloadCandidate> reload;
     HostDiagnostics counters;
 
-    NativeRealmService(Archives &, std::filesystem::path, RealmOutput, GameOutput);
+    NativeRealmService(NativeRealmHost &, RealmOutput, GameOutput);
+    ~NativeRealmService();
+    void receiveEvent(const server::EventBatch &);
+    void publishPlayers();
+    void publishMonsters();
+    void publishAreas(RegionId area);
+    void changeArea(const server::TravelFact &);
     void initialize();
     void sendRealm(uint8_t, net::protocol::Writer);
     void sendGame(Bytes);
+    void sendGameBatch(std::vector<Bytes>);
     void result(uint8_t, uint32_t);
     const CharacterRosterEntry &find(std::string_view) const;
     void checkpoint();
@@ -65,11 +84,11 @@ struct NativeRealmService {
     void discardReload();
     void close(bool save = true, bool keepReload = false);
     void resetRealm();
-    void connectGame();
+    void connectGame(bool announce = true);
     void failGame();
-    void advance(double seconds, bool paused);
     void setPaused(bool);
     void publishMotion(bool force = false);
+    void publishEvents();
     HostDiagnostics diagnostics() const;
     AdminResult administer(const AdminRequest &);
     std::string prepareStartup(const std::string &, const std::string &, const std::string &);

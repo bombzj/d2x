@@ -39,8 +39,11 @@ if(WIN32)
   target_link_libraries(d2x_bncs_legacy PRIVATE version)
 endif()
 
-add_library(d2x_network src/network/tcp_stream.cpp src/network/memory_transport.cpp)
+add_library(d2x_network src/network/tcp_stream.cpp src/network/tcp_listener.cpp src/network/local_addresses.cpp src/network/memory_transport.cpp)
 target_link_libraries(d2x_network PUBLIC d2x_core PRIVATE d2x_asio)
+if(WIN32)
+  target_link_libraries(d2x_network PRIVATE iphlpapi)
+endif()
 add_library(d2x_d2gs_protocol
   src/network/protocol/wire.cpp src/network/protocol/auth.cpp
   src/network/protocol/d2gs_stream.cpp src/network/protocol/lod113c.cpp

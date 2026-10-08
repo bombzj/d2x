@@ -11,6 +11,7 @@ CommandStatus MovementSystem::execute(const ActorContext &actor, const MovementC
     if (found == ports.players.players_.end()) return CommandStatus::InvalidBinding;
     auto &player = found->second;
     const auto &area = ports.areas.at(player.area);
+    if (!player.entered || player.persistent.player.hp <= 0) return CommandStatus::Unavailable;
     if (player.actor != actor.actor || player.area != actor.area || area.generation != actor.areaGeneration)
         return CommandStatus::Stale;
     return applyMovement(player, area, command);
@@ -38,11 +39,19 @@ CommandStatus applyMovement(PlayerState &player, const AreaState &area, const Mo
         player.running = !player.running;
         player.routeRunning = player.running;
         return CommandStatus::Applied;
-    case MovementAction::Move: break;
+    case MovementAction::Move:
+    case MovementAction::ApproachExit: break;
     default: return CommandStatus::Stale;
     }
     const auto &grid = area.definition.collision;
-    const Vec target = command.destination;
+    Vec target = command.destination;
+    if (command.action == MovementAction::ApproachExit) {
+        const auto &exits = area.definition.exits;
+        const auto found = std::find_if(exits.begin(), exits.end(), [&](const auto &exit) { return exit.id == command.exit; });
+        if (found == exits.end() || std::abs(found->position.x - player.position.x) > 50 ||
+            std::abs(found->position.y - player.position.y) > 50) return CommandStatus::InvalidRequest;
+        target = found->arrival;
+    }
     if (!std::isfinite(target.x) || !std::isfinite(target.y) || target.x < 0 || target.y < 0 ||
         target.x >= grid.width || target.y >= grid.height) return CommandStatus::InvalidDestination;
     // Existing area navigation may stop at the closest reachable point.
@@ -58,7 +67,8 @@ CommandStatus applyMovement(PlayerState &player, const AreaState &area, const Mo
 }
 void advanceMovement(PlayerState &player, const AreaState &area, float seconds) {
     player.moving = false;
-    float remaining = (player.routeRunning ? player.attributes.runSpeed : player.attributes.walkSpeed) * seconds;
+    if (!player.entered || player.persistent.player.hp <= 0) { player.route.clear(); return; }
+    float remaining = (player.routeRunning ? player.totals.character.runSpeed : player.totals.character.walkSpeed) * seconds;
     while (remaining > 0 && !player.route.empty()) {
         const Vec delta = player.route.front() - player.position;
         const float distance = delta.length();

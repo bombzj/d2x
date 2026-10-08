@@ -13,6 +13,20 @@ Vec missileRingDirection(int index) {
     const unsigned direction = unsigned(index) & 63;
     return {float(offsets[direction]), float(offsets[(direction + 48) & 63])};
 }
+std::optional<MissileRingEmission> missileRingEmission(int phaseFrame, int period, int index, int step) {
+    if (period <= 0 || phaseFrame % period != 0) return {};
+    return MissileRingEmission{missileRingDirection(index), (index + step) & 63};
+}
+std::vector<Vec> missileRingBurst(int step) {
+    std::vector<Vec> result;
+    if (step <= 0) return result;
+    for (int direction = 0; direction < 64; direction += step) result.push_back(missileRingDirection(direction));
+    return result;
+}
+Vec missileDiagonalTurn(Vec target) {
+    const int x = int(target.x), y = int(target.y);
+    return {float((x - y) / 2), float((x + y) / 2)};
+}
 std::vector<Vec> missileFanTargets(Vec origin, Vec target, int count, Vec facing) {
     // SKILLS_SrvDo008: integer perpendicular normalization, not angular interpolation.
     int dx = int(target.x) - int(origin.x), dy = int(target.y) - int(origin.y);

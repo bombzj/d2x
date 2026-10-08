@@ -1,12 +1,12 @@
 #include "system.hpp"
-
+#include "server/player_store.hpp"
 namespace d2x::server::attributes {
-// Scaffold only. No rule defaults, random consumption, partial writes or success
-// events are allowed here until this domain and its prepared rules are implemented.
-DomainResult<Totals> System::evaluate(EntityId) const {
-    return {};
+DomainResult<Totals> System::evaluate(EntityId actor) const {
+    for (const auto &[id, player] : ports_.players.all()) {
+        (void)id;
+        if (player.actor == actor) return {DomainStatus::Applied, player.totals};
+    }
+    return {DomainStatus::InvalidActor, {}};
 }
-StepStatus System::step(TickContext, FrameFacts &) {
-    return StepStatus::NotImplemented;
-}
+StepStatus System::step(TickContext, FrameFacts &) { return StepStatus::Complete; }
 }

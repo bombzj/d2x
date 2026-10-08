@@ -1,9 +1,12 @@
 #pragma once
 #include "core/id.hpp"
+#include "gameplay/character/attributes.hpp"
+#include "gameplay/combat/weapon_values.hpp"
 #include "core/math.hpp"
 #include "world/identity.hpp"
 #include <compare>
 #include <cstdint>
+#include <map>
 
 namespace d2x {
 // Internal authority/host values. These are not client messages or wire structs.
@@ -21,11 +24,12 @@ struct PlayerBinding {
     GameHandle game;
     PlayerId player;
 };
-enum class MovementAction { Move, Stop, ToggleRunning };
+enum class MovementAction { Move, Stop, ToggleRunning, ApproachExit };
 struct MovementCommand {
     MovementAction action = MovementAction::Move;
     Vec destination;
     bool forceRun{};
+    EntityId exit{};
 };
 enum class CommandStatus { Queued, Applied, NotImplemented, InvalidBinding, Stale, Paused, QueueFull, InvalidDestination, NoRoute, InvalidRequest, Unavailable, Conflict };
 struct CommandResult {
@@ -45,8 +49,27 @@ struct PlayerSnapshot {
         float movementSpeed{};
     } actor;
     // Coalesced diagnostic result, not a reliable transaction acknowledgement.
+    CharacterAttributes attributes;
+    EquipmentStats equipment;
+    std::map<int, int> skillRanks;
     CommandResult command;
-    uint64_t movementSequence{};
+    uint64_t movementSequence{}, inventoryRevision{}, characterRevision{};
+    std::string name, characterClass;
+    int level{};
+    bool entered{};
     bool paused{};
+    float life{};
+    bool attacking{}, deadSettled{};
+};
+struct MonsterSnapshot {
+    EntityId id;
+    RegionId area;
+    int nativeClass{};
+    Vec position, destination;
+    uint8_t life{}, mode{1};
+    uint64_t revision{};
+    bool moving{}, attacking{};
+    int velocityPercent{75};
+    bool running{};
 };
 } // namespace d2x

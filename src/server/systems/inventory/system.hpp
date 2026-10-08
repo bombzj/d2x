@@ -14,7 +14,23 @@ namespace d2x::server::inventory {
 using Intent = std::variant<MoveItem, TransferItem, SwapItems, SplitStack, MergeStacks,
     LoadBook, IdentifyItem, EquipBelt, EquipItem, EquipHirelingItem, UseItem,
     UseBeltColumn, UseHirelingPotion, SwitchWeaponSet, CloseStorage, GoldTransaction>;
-struct Request { Intent intent; };
+enum class Source { Stored, Cursor, Belt };
+enum class EquipmentMode { Insert, Indirect, Swap, TwoHanded };
+struct Request {
+    Intent intent;
+    Source source = Source::Cursor;
+    EquipmentMode equipmentMode = EquipmentMode::Insert;
+    std::optional<unsigned> weaponSet{};
+    std::vector<ItemHandle> equipmentGuards{};
+};
+bool supports(const Request &);
+// Host-only decoder input; includes no property data or mutable domain references.
+struct InputItem { ItemHandle handle; ContainerLocation location; };
+struct InputState {
+    PlayerContainers containers;
+    unsigned weaponSet{};
+    std::map<EntityId, InputItem> items;
+};
 struct Access { EntityId source; ContainerKind kind; uint64_t revision{}; };
 struct State { std::map<PlayerId, Access> storage; };
 struct Ports { const PlayerStore &players; const items::System &items; transactions::System &transactions; const ItemCatalog *definitions; };
@@ -25,6 +41,7 @@ class System {
     explicit System(Ports ports) : ports_(ports) {}
     const State &read() const { return state_; }
     DomainResult<> execute(const ActorContext &, const Request &);
+    std::optional<InputState> input(PlayerId) const;
     DomainResult<> close(PlayerId);
 };
 }

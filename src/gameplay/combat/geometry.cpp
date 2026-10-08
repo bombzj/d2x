@@ -1,8 +1,19 @@
 #include "gameplay/combat/geometry.hpp"
+#include "world/navigation.hpp"
 #include <algorithm>
 #include <cmath>
 
 namespace d2x {
+std::optional<float> missileTerrainContact(const Grid &grid, Vec from, Vec to, MissileCollisionRule rule, Vec origin) {
+    if (grid.missileSegment(from - origin, to - origin, rule)) return {};
+    float clear = 0, blocked = 1;
+    for (int step = 0; step < 12; ++step) {
+        const float middle = (clear + blocked) * .5f;
+        if (grid.missileSegment(from - origin, from + (to - from) * middle - origin, rule)) clear = middle;
+        else blocked = middle;
+    }
+    return clear;
+}
 int meleeDistance(Vec from, int fromSize, Vec to, int toSize) {
     // D2Common_10399; coordinates are native subtiles, not screen pixels.
     constexpr int distance[64]{

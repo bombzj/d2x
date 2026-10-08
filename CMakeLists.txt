@@ -92,19 +92,22 @@ target_link_libraries(d2x_content PUBLIC d2x_resources d2x_items)
 # Rules and state compile without raylib, StormLib, a window or an archive.
 # Pure display, geometry and resource-tool calculations. No simulation/executor.
 add_library(d2x_gameplay
+  src/gameplay/items/equipment_loadout.cpp src/gameplay/items/equipment_requirements.cpp
+  src/gameplay/items/equipment_contributions.cpp src/gameplay/items/equipment_stats.cpp
   src/gameplay/character/attributes.cpp src/gameplay/character/skill_rank.cpp
   src/gameplay/combat/stat_modifiers.cpp src/gameplay/combat/geometry.cpp
   src/gameplay/combat/attack_element_ranges.cpp
-  src/gameplay/skills/resolve.cpp src/gameplay/skills/curse_resolve.cpp
+  src/gameplay/combat/accuracy.cpp src/gameplay/combat/damage_resolution.cpp src/gameplay/combat/attack_timing.cpp
+  src/gameplay/skills/cast_timing.cpp src/gameplay/skills/resolve.cpp src/gameplay/skills/curse_resolve.cpp
   src/gameplay/skills/summon_resolve.cpp src/gameplay/skills/amazon_summon_resolve.cpp
   src/gameplay/skills/projectile_path.cpp src/gameplay/skills/damage_curve.cpp
   src/gameplay/skills/rank_sources.cpp src/gameplay/skills/rank_bonus.cpp src/gameplay/skills/aura_resolve.cpp
   src/gameplay/skills/passive.cpp
-  src/gameplay/monsters/implementation.cpp src/gameplay/monsters/rank.cpp
+  src/gameplay/monsters/melee_decision.cpp src/gameplay/monsters/implementation.cpp src/gameplay/monsters/rank.cpp
   src/gameplay/loot/treasure.cpp src/gameplay/loot/quality.cpp
   src/gameplay/loot/special.cpp src/gameplay/loot/affix.cpp
   src/gameplay/rewards/experience.cpp)
-target_link_libraries(d2x_gameplay PUBLIC d2x_navigation)
+target_link_libraries(d2x_gameplay PUBLIC d2x_navigation d2x_items)
 target_sources(d2x_content PRIVATE src/content/skills/state_data.cpp src/content/world/shrine_data.cpp
   src/content/skills/aura_data.cpp)
 target_link_libraries(d2x_content PUBLIC d2x_gameplay)
@@ -125,7 +128,7 @@ target_link_libraries(d2x_persistence PUBLIC d2x_gameplay d2x_items d2x_content)
 add_library(d2x_client_api INTERFACE)
 target_link_libraries(d2x_client_api INTERFACE d2x_core)
 # Authority and scheduling remain headless: no archive, graphics or sockets.
-add_library(d2x_server src/server/game_instance.cpp src/server/movement.cpp src/server/player_projection.cpp src/server/character_admission.cpp)
+add_library(d2x_server src/server/diagnostics.cpp src/server/game_instance.cpp src/server/movement.cpp src/server/player_projection.cpp src/server/character_admission.cpp)
 target_sources(d2x_server PRIVATE
   src/server/player_store.cpp
   src/server/runtime/system_catalog.cpp
@@ -137,16 +140,22 @@ target_sources(d2x_server PRIVATE
   src/server/systems/spatial/system.cpp
   src/server/systems/items/system.cpp
   src/server/systems/inventory/system.cpp
+  src/server/systems/inventory/planning.cpp
+  src/server/systems/inventory/placement.cpp
+  src/server/systems/inventory/equipment.cpp
+  src/server/systems/inventory/quantities.cpp
+  src/server/systems/inventory/eligibility.cpp
   src/server/systems/attributes/system.cpp
+  src/server/systems/attributes/calculation.cpp
   src/server/systems/crafting/system.cpp
   src/server/systems/loot/system.cpp
   src/server/systems/population/system.cpp
   src/server/systems/monsters/system.cpp
-  src/server/systems/ai/system.cpp
-  src/server/systems/skills/system.cpp
+  src/server/systems/ai/system.cpp src/server/systems/ai/melee_families.cpp
+  src/server/systems/skills/system.cpp src/server/systems/skills/casting.cpp
   src/server/systems/missiles/system.cpp
   src/server/systems/effects/system.cpp
-  src/server/systems/combat/system.cpp
+  src/server/systems/combat/system.cpp src/server/systems/combat/spell_damage.cpp
   src/server/systems/death/system.cpp
   src/server/systems/companions/system.cpp
   src/server/systems/objects/system.cpp
@@ -157,23 +166,27 @@ target_sources(d2x_server PRIVATE
   src/server/systems/travel/system.cpp
   src/server/systems/social/system.cpp
   src/server/systems/trade/system.cpp
-  src/server/systems/transactions/system.cpp
+  src/server/systems/transactions/system.cpp src/server/systems/transactions/resources.cpp
   src/server/systems/replication/system.cpp
 )
-target_link_libraries(d2x_server PUBLIC d2x_gameplay d2x_navigation)
+target_link_libraries(d2x_server PUBLIC d2x_gameplay d2x_items d2x_navigation)
 add_library(d2x_host src/hosting/game_host.cpp src/hosting/administration.cpp)
 target_link_libraries(d2x_host PUBLIC d2x_server)
 # MPQ preparation is outside both the authority and scheduler libraries.
-add_library(d2x_game_content src/hosting/game_content.cpp src/hosting/character_creation.cpp src/hosting/character_rules.cpp)
-target_link_libraries(d2x_game_content PUBLIC d2x_world d2x_server PRIVATE d2x_persistence)
+add_library(d2x_game_content src/hosting/skill_content.cpp src/hosting/combat_content.cpp src/hosting/game_content.cpp src/hosting/character_content.cpp src/hosting/character_creation.cpp src/hosting/character_rules.cpp)
+target_link_libraries(d2x_game_content PUBLIC d2x_world d2x_server PRIVATE d2x_persistence d2x_population)
 add_library(d2x_character_host src/hosting/character_store.cpp src/hosting/embedded_realm.cpp
-  src/hosting/native_game_wire.cpp src/hosting/native_item_wire.cpp
+  src/hosting/native_game_wire.cpp src/hosting/native_combat_wire.cpp src/hosting/detail/monster_replication.cpp src/hosting/native_item_wire.cpp src/hosting/native_character_wire.cpp
   src/hosting/detail/native_realm_service.cpp src/hosting/detail/realm_protocol.cpp
   src/hosting/detail/realm_characters.cpp src/hosting/detail/realm_games.cpp
   src/hosting/detail/game_protocol.cpp src/hosting/detail/host_administration.cpp
+  src/hosting/detail/game_events.cpp src/hosting/detail/native_realm_host.cpp
+  src/hosting/detail/realm_connection.cpp src/hosting/detail/lan_realm.cpp
+  src/hosting/detail/world_replication.cpp src/hosting/detail/player_replication.cpp
   src/hosting/protocol/message_catalog.cpp src/hosting/protocol/gameplay_dispatch.cpp
   src/hosting/protocol/handlers_movement.cpp src/hosting/protocol/handlers_combat.cpp
   src/hosting/protocol/handlers_inventory.cpp src/hosting/protocol/handlers_interaction.cpp
+  src/hosting/protocol/inventory_requests.cpp
   src/hosting/protocol/handlers_progression.cpp src/hosting/protocol/handlers_social.cpp)
 target_link_libraries(d2x_character_host PUBLIC d2x_host d2x_game_content d2x_network PRIVATE d2x_persistence d2x_d2gs_protocol)
 include(cmake/Networking.cmake)
@@ -224,7 +237,7 @@ target_sources(d2x_presentation PRIVATE src/presentation/frontend/realm_frontend
 target_sources(d2x_presentation PRIVATE src/presentation/remote/remote_scene.cpp)
 target_link_libraries(d2x_presentation PRIVATE d2x_remote_scene)
 target_sources(d2x PRIVATE src/app/debug/debug_pipe.cpp src/app/debug/ui_input.cpp)
-target_sources(d2x PRIVATE src/app/debug/online_commands.cpp src/app/debug/server_commands.cpp)
+target_sources(d2x PRIVATE src/app/debug/online_commands.cpp src/app/debug/server_commands.cpp src/app/debug/server_snapshot.cpp)
 target_link_libraries(d2x PRIVATE d2x_presentation d2x_remote_client d2x_character_host)
 target_link_libraries(d2x PRIVATE nlohmann_json::nlohmann_json)
 if(WIN32)

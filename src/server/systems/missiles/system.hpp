@@ -2,18 +2,30 @@
 #include "server/runtime/contracts.hpp"
 #include "server/runtime/ports.hpp"
 #include "server/runtime/events.hpp"
-
+#include "server/systems/combat/system.hpp"
+#include "gameplay/skills/cast_spec.hpp"
+#include "world/collision.hpp"
 #include <map>
-#include <set>
-#include <string>
-#include <vector>
-
 namespace d2x::server::missiles {
-// Server missile instances and collision; client visual missiles are not authority.
-struct Spawn { EntityId owner; int definition{}; PointTarget origin; ActionTarget target; unsigned skillLevel{}; };
-struct Missile { EntityId id, owner; int definition{}; RegionId area; Vec position; uint64_t revision{}, expires{}; };
+// This request is produced by the skills release frame, never a client missile packet.
+struct Spawn { ActorContext actor; SkillCastSpec skill; MissileCollisionRule collision; Vec target; };
+struct Missile {
+    EntityId id, owner;
+    PlayerId player;
+    int definition{};
+    RegionId area;
+    uint64_t generation{}, created{}, expires{}, revision{};
+    Vec position, velocity;
+    float acceleration{}, maximumVelocity{}, radius{};
+    MissileCollisionRule collision;
+    int64_t damage{};
+    std::optional<combat::SpellImpact> impact;
+};
 struct State { std::map<EntityId, Missile> missiles; };
-struct Ports { const AreaStore &areas; const spatial::System &spatial; combat::System &combat; EntityIds &ids; };
+struct Ports {
+    const AreaStore &areas; const PlayerStore &players; const monsters::System &monsters;
+    combat::System &combat; transactions::System &transactions; EntityIds &ids; uint64_t &random;
+};
 class System {
     State state_;
     const Ports ports_;

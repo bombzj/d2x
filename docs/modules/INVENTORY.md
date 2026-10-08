@@ -1,6 +1,24 @@
 # 库存与装备显示
 
-D2GS 唯一拥有物品、容器、金币、装备效果和库存事务。客户端解码已知字段、预览格子并发原请求；InventoryService 和 LocalInventoryClient 已删除。
+连接的权威服务端唯一拥有物品、容器、金币、装备效果和库存事务。原服与嵌入宿主均使用同一原包客户端：解码已知字段、预览格子并发原请求；旧InventoryService和LocalInventoryClient不恢复。
+
+## 自研服务端库存切片
+
+2026-10-08源码接入背包↔Cursor、实际落点普通交换、腰带放取／交换、装备／卸装／互换、双手冲突、两组武器切换、合堆及卷轴／同类书转装。已构建入dist/current，背包／Cursor／装备、腰带和切组有有限冒烟；双手冲突、合堆／书本及全部品质尚未认证，范围见[基线](../../BASELINE.md#当前运行包与有限冒烟)。
+
+入口为hosting/protocol/inventory_requests.cpp的原18／19／1A–1F／21／23–25／29／60解码。GameHost.inventoryInput仅提供宿主内部只读句柄／位置／武器组；原包不附加revision。接收时绑定句柄，固定步再次校验来源、所有权、位置、武器组及替换目标。客户端仍为RealmSession／RemoteInventory／RemoteUiClients。
+
+server/systems/inventory的planning、placement、equipment、quantities分别负责意图分派、占格／腰带缩容、装备／手部组合、合堆／书本数量；eligibility仅同步草稿装备的原失效标志。临时InventoryState由transactions接管，PlayerStore唯一持有库存。装备资格与人物总值共用attributes/calculation及gameplay/items纯loadout／contributions／requirements／stats，不另维护力量／敏捷算法；排除被卸装备及候选自己的贡献，从职业基础／护符逐步激活合格装备，避免循环满足需求。
+
+hosting/character_content按当前MPQ支持的每个人物等级准备入场物品属性、孔内贡献、实际耐久、套装条件列表和固定全套属性；升级选相应等级值，不重掷或调用MPQ。未鉴定、损坏、非活动武器不贡献；护符只在背包生效，套装按不同原件身份计数。未分配随机全套属性及条件套装需求尚未支持，激活时明确Unavailable，不当作零值。
+
+1B将冲突的另一手物品交给Cursor；1E将目标旧装备交给Cursor、另一手旧装备自动放背包。空间不足、占格冲突、需求不符或过期句柄拒绝整笔规划。小腰带容不下的药水自动放背包，不能全部放下则保持原库存。
+
+合堆核对原基底、品质／file index、无形状态、八项物理伤害属性及无孔条件，魔法品质不合并；容量取ItemCatalog.maxStack加item_extra_stack，超出当前9位原包容量明确暂缓。支持背包／Cursor及已装备堆叠物，数量零移除根项，完整合入投掷物保持较低耐久。书本用Books配对／容量与charges，数量字段仍为一个物品；只允许背包／Cursor，卷轴或同类书转移到剩余容量，源耗尽移除。
+
+transactions同时复验库存和人物revision，计算新总值、装备失效标志及资源限制，先发布完整InventoryFact／CharacterFact，再以不抛异常的值交换提交。hosting/native_item_wire共用入场位流：位置原9C／9D，数量action=10，属性／资格action=21，耗尽原0A(type=4)；切组仅四个手部发action=23，再发97及23选技。人物属性／有效技能随同一事件发原1F／21，负抗性保留原符号语义；整笔字节队列接收后才确认Outbox。失败终止连接并保留实例／存档租约。
+
+边界：尚无仓库／方块／交易授权、地面拾取／丢弃、消耗、分堆、金币、佣兵装备、鉴定／镶嵌。临时状态与全部技能被动未恢复，武器攻击显示／战斗执行未完整接入；服务端已有纯装备战斗数值快照，不能视为战斗完成。新物品生成或改属性须扩展不可变规则准备契约，不能复用别的物品缓存。D2S保留位置、数量／charges、耐久、Cursor及固定武器组；事务ID／revision／派生总值／事件不写盘。
 
 ## 入口与所有权
 

@@ -1,6 +1,6 @@
 # 自研服务端协议与管理入口
 
-更新：2026-10-08。本文维护源码接口与扩展约定；功能实施顺序仍以[总计划](../architecture/MULTIPLAYER.md)为准。Windows Release已构建打包，原MCP选角／入局、D2GS走跑与代表性stub有有限冒烟；证据及覆盖限制见[基线](../../BASELINE.md#当前运行包与有限冒烟)，消息目录不代表全部处理已实现。
+更新：2026-10-08。本文维护源码接口与扩展约定；功能顺序见[总计划](../architecture/MULTIPLAYER.md)。此前行走包有有限冒烟，见[基线](../../BASELINE.md#当前运行包与有限冒烟)；本批已完成Windows Release构建、打包及有限冒烟，具体范围与限制见基线，消息目录不代表全部玩法已实现。
 
 ## 所有权
 
@@ -8,19 +8,23 @@
 
 | 源码入口（相对src/hosting） | 职责 |
 | --- | --- |
-| embedded_realm | 组装内存端点，处理selector、拆包、连接代次、断开和调度；不执行具体玩法 |
-| detail/native_realm_service | 单参与者角色租约、入场准备及服务组合；不依赖MemoryChannel或客户端视图，可由后续TCP监听驱动 |
+| embedded_realm | 组装多个内存端点与LAN监听，集中泵送共享宿主；close只退主连接，shutdown保存全部参与者后停服 |
+| detail/native_realm_service | 每个参与者独立协议阶段、票据、角色名册版本／文件租约及入场准备，不拥有共享实例调度器 |
+| detail/native_realm_host | 共享只读MPQ、GameHost、房间／地图目录；集中内容准备、事件路由和一次固定步推进 |
+| detail/realm_connection、lan_realm | selector／拆包状态、TCP连接与原68票据的绑定、断线保存和超时；TCP实现留network/tcp_listener |
+| detail/world_replication、player_replication、monster_replication | 原房间／物件／瓦片出口增删、跨区位置及多人名册／位置／穿戴外观；私有数据不广播 |
 | detail/realm_protocol、realm_characters、realm_games | MCP分派与具名处理器；账号／角色、游戏票据与领域执行分开 |
 | detail/game_protocol | Connected → LoggedOn → Entered → Closed；验证票据、版本、阶段，处理原握手／心跳／保存退出 |
 | protocol/message_catalog、client_messages.inc、server_messages.inc | 原包身份、长度、所属领域、阶段、实现状态；目录供拆包、分派、输出和诊断共同使用 |
 | protocol/client_stream | 有界增量分帧；块可拆开或合并消息；已消费偏移在追加时整理，避免逐包搬移整个缓冲 |
 | protocol/gameplay_dispatch、handlers_* | 移动、战斗、库存、交互、成长、社交具名入口；只得到宿主、已认证玩家绑定、坐标原点和序号 |
-| native_game_wire、native_item_wire | 权威值投影成原S2C字节；JM磁盘物品不直接作网络物品 |
+| protocol/inventory_requests、detail/game_events | 库存原包／句柄绑定及本人不可变库存／人物／旅行事实编码；聊天依据提交时的收件人 |
+| native_game_wire、native_item_wire、native_character_wire、native_combat_wire | 权威值投影成原S2C字节；JM磁盘物品不直接作网络物品 |
 | administration、detail/host_administration | 类型化宿主管理命令及结果，校验实例代次和参与者；JSON／Win32管道均留在app/debug |
 
-NativeRealmService是单玩家宿主的生命周期编排，不是玩法容器。新增战斗／库存／任务逻辑放入server对应领域；包处理器只解码、提交领域命令和处理提交结果。不能把MPQ读取、存档编码、UI状态或每种技能实现放进GameInstance或这个编排对象。
+NativeRealmService是单个连接的生命周期编排，不是玩法容器。新增战斗／库存／任务逻辑放入server对应领域；包处理器只解码、提交领域命令和处理提交结果。不能把MPQ读取、存档编码、UI状态或每种技能实现放进GameInstance或这个编排对象。
 
-内核现在提供GameCommand、command_dispatch及26个新领域State／Ports骨架，详见[内核子系统](SERVER_SYSTEMS.md)。submitGameplay统一将连接身份和当前来源区域／代次绑定到内部命令；01／03移动使用此入口，3A／3B／41作为成长／复活接线例子，领域未实现时仍返回stub，不新增原包或客户端分支。
+内核现在提供GameCommand、command_dispatch及26个新领域State／Ports骨架，详见[内核子系统](SERVER_SYSTEMS.md)。submitGameplay统一将连接身份和当前来源区域／代次绑定到内部命令；01／03走跑及02／04出口靠近使用此入口，3A／3B已接人物成长事务，41复活仍返回stub，不新增原包或客户端分支。
 
 ## 消息覆盖与状态
 
@@ -28,17 +32,33 @@ NativeRealmService是单玩家宿主的生命周期编排，不是玩法容器�
 
 | 方向 | 当前基础 |
 | --- | --- |
-| D2GS C2S | 60种消息均登记长度、阶段和具名处理入口。01／03坐标走跑及68／69／6B／6D生命周期已接；其余为显式stub |
+| D2GS C2S | 60种均登记具名入口。01／03走跑、02／04/type=5靠近出口、68／69／6B／6D生命周期，以及18／19／1A–1F／21／23–25／29／60库存切片及3A／3B成长、13/type=5旅行和15同局聊天、05–0A／0C–12普通攻击及3C选技已接；其余为stub。18仅背包page=0，仓库／方块／交易访问尚未实现 |
 | D2GS S2C | 90种客户端已消费消息具有ServerMessage身份和输出目录。encodeServerPacket提供统一具名编码入口；已有编码接入，其余禁止生成空包假装实现 |
-| MCP C2S | 9种请求均有入口；01／02／03／04／05／07／0A／19已接单人范围，06 GameInfo为stub |
-| MCP S2C | 上述9种响应及14建房排队已登记；06、14尚无编码实现。05只返回私有单人宿主的空公共房间列表 |
+| MCP C2S | 9种具名请求已接；游戏目录05／06、创建03与加入04支持多个房间及同局1–8人，资格按难度／专家状态／等级差／密码／容量复验 |
+| MCP S2C | 9种请求对应响应已接；14排队仍为stub。05逐房间发送并终止，06按原16职业／等级槽及实际姓名编码；不存在的详情没有已核实错误包，保持超时 |
 | 子命令 | 4F的10种交易／仓库／金币／方块动作，38的3种旅行／商店／赌博服务，分别解码并进入具名stub；不把整个4F算成一个未来杂项系统 |
 
-状态严格区分`implemented`、`admission-only`和`stub`。例如原9D物品、1F属性、28／29任务初始化已有编码，不表示库存事务、人物总属性或任务奖励已执行。S2C长度统一调用客户端现有lod113c_packet_size；不维护第二份回包长度表。3A属性分配按现有客户端的原1字节ID＋2字节打包参数拆帧。
+状态区分`implemented`、`admission-only`和`stub`。9C／9D已有库存位置增量，97／23已有切组／选技回复；这些状态不表示已实现地面物品或全部施法。1F属性及21有效技能已有实时人物增量，0A覆盖耗尽物品、可见玩家／装备／怪物移除；28／29任务仍仅初始化，不表示任务执行已恢复。S2C长度统一调用现有lod113c_packet_size；不维护第二份回包长度表。3A属性分配按当前客户端的原1字节ID＋2字节打包参数拆帧。
+
+库存GUID在宿主端通过inventoryInput绑定服务端ItemHandle；原包不增加revision或请求ID。请求在固定步复验来源、位置、活动武器组和交换目标，成功经InventoryFact生成原9C／9D／0A，切组另发97及23；同笔CharacterFact发原1F／21人物增量；可靠通知与可覆盖的PlayerSnapshot.command分开。一次队列写入包含整笔原字节包，接收成功才确认Outbox；失败终止连接并保留实例／存档租约。无通用成功ACK或错误fallback；详细规则／暂缓范围见[库存](INVENTORY.md#自研服务端库存切片)。
 
 具名stub返回NotImplemented，由宿主按包号统计，不修改角色或世界，不发伪造成功包。普通客户端继续原协议超时／无确认语义；开发者通过server-protocol查询明确状态，不把私有错误塞进原包。stub目前只保证注册、帧边界、连接阶段和分派，尚不承诺完整字段或玩法资格校验。未知包长拒绝连接；已识别但未知的4F／38子操作拒绝执行。
 
 移动提交的Queued只表示进入权威FIFO；Applied／NoRoute等实际结果来自后续固定步，server-status.command给出最近实际结果。内部movementSequence单独触发原移动回复，不把其他领域的命令完成当成移动。即时拒绝移动会回当前权威位置；相同静止姿态不随每个tick重复广播。Scaffold领域在入队前返回NotImplemented。按包统计、最后一次分派结果、失败信息均有界保存，计数按当前宿主生命周期累计，诊断不输出握手票据或认证包。
+
+普通攻击和技能释放入口共用一个字段解码器，仍保留每个原包的左右手、目标类型、持续与原地标志。目标只允许当前切片中的怪物，技能取服务端当前武器组的选择；3C拒绝未经实现的物品来源技能，不能信任客户端GUID替代操作者。具体支持范围见[普通近战](SERVER_SYSTEMS.md#普通近战切片)及[女巫技能](SERVER_SYSTEMS.md#女巫主动技能案例)。目录implemented表示具名入口已执行已支持的意图，不表示全部技能已实现。玩家41复活仍为stub。
+
+LifeFact／AttackFact／HitFact是内部值，不跨传输；EventOutbox.publishGroup原子预留批数及事实容量，扣血后不会漏掉本人生命或公开受击输出。怪物身份、移动、生命和死亡基线留在独立monster_replication，战斗不增加客户端分支或私有包。
+
+## 世界与多人连接
+
+内存`connect`对应主客户端，`attach`可附加独立客户端。`listen`接受LAN MCP／D2GS，全部连接共用NativeRealmHost而各自保有RealmConnection；模拟只在共享调度入口推进，人数不影响时间速度。客户端仍通过RealmSession和TcpStream／MemoryTransport收发相同原包，只有连接组装不同。
+
+GS接受TCP后发原AF00；收到68才凭hash／token寻找对应MCP入局会话，验证职业／姓名／签名／版本并一次消费票据。MCP按原客户端惯例关闭后，待入局会话保留15秒；握手和队列有界，输入错误或输出背压退役该连接。正常69保存成功才发送B0，TCP先排空确认再关闭。断线仅保存／移除本人；失败存档保留实例和租约供宿主管理恢复，不暂停同局其他玩家。
+
+13/type=5已接原UNIT_TILE旅行，原07／08／09／0A同步区域与出口，15位置包用于瓦片换区；自然边界沿移动连续过渡。5B／59／0D／0F／9D／0A／5C同步名册和区域可见玩家。公开9D只包含穿戴外观并隐藏属性列表；背包／Cursor／私人箱／人物成长增量仅发本人。15聊天请求及26同局广播已接；队伍、敌意、交易、任务入口、传送点／传送门、NPC旅行仍未实现；普通近战怪物使用AC／67／69／6C／6D及0C投影，67沿原走路action=1／跑动action=23携带当前速度百分比，玩家攻击及技能使用带真实技能ID／等级的4C／4D，生命／法力属性1F只发本人，同区域传送用公开15。火弹／火球已由客户端施法动作派生视觉，不再重复发送73。
+
+玩家兴趣粒度为本人区域及已准备的直接自然邻区；怪物进一步以本区RoomLayout邻室／邻区距离过滤，尚非完整原版房间兴趣。当前没有BNCS账号与独立无图形宿主发行；LAN使用宿主共享角色目录，详见[联网入口](NETWORK.md#局域网自研宿主入口)。本批没有跨进程／跨机器运行证据。
 
 ## 新增一个玩法的顺序
 
@@ -54,6 +74,6 @@ NativeRealmService是单玩家宿主的生命周期编排，不是玩法容器�
 
 named pipe → app/debug/server_commands → AdminRequest → 宿主调度线程。管理入口是应用显式持有的能力，不来自客户端游戏连接；连接原服时拒绝所有宿主管理命令。当前宿主与pipe回调同线程，因此直接执行类型化请求，不制造一个立即同步等待的假队列；将来迁移宿主线程时在此端口增加有界请求／结果队列，不能让管道线程直接访问GameHost。
 
-save、load、cancel-load、step已接；金币／经验／物品／怪物／旅行／祭坛／佣兵／重置等保留类型化参数和明确NotImplemented入口。F11与pipe save调用同一保存接口；Ctrl+F11与load调用同一候选入场准备，再走原69退局、MCP选角、原D2GS重新入局。候选游戏保持暂停，重新取得的文件字节、角色名、难度必须匹配；不重新生成地图，也不悄悄换成别的角色。
+save、load、cancel-load、step、grant-experience已接；金币／物品／怪物／旅行／祭坛／佣兵／重置等保留类型化参数和明确NotImplemented入口。grant-experience校验正数／绑定／入场，GameHost委托progression产生经验与升级事务，立即共用原事件输出；暂停仍可授予，重复来源及封顶拒绝。F11与pipe save调用同一保存接口；Ctrl+F11与load调用同一候选入场准备，再走原69退局、MCP选角、原D2GS重新入局。候选游戏保持暂停，重新取得的文件字节、角色名、难度必须匹配；不重新生成地图，也不悄悄换成别的角色。
 
 保存失败保留当前实例和租约；重载准备失败保留旧实例；退出或取消释放候选实例。正常连接关闭保留已排队的B0，丢弃旧客户端输入；错误关闭丢弃部分入场输出。命令名、参数、返回状态和示例见[调试管道](../development/DEBUG_PIPE.md#嵌入宿主管理命令)。

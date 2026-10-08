@@ -20,25 +20,31 @@ Single Player的online-status仍只读原协议OnlineView；server-status单独�
 
 ## 嵌入宿主管理命令
 
-当前Windows包已通过现有脚本有限检查目录、save／load／step和grant-gold的未实现返回，完整命令行为未验收。JSON只在app/debug解析一次；宿主收到类型化操作与GameHandle／PlayerId绑定。管理调用在当前宿主调度线程执行，网络worker仍只经字节队列访问服务端。失败返回ok=false和明确status，不以HTTP式私有ACK修改原MCP／D2GS。
+当前Windows包已通过现有脚本有限检查目录、save／load／step／grant-experience和grant-gold的未实现返回，完整命令行为未验收。JSON只在app/debug解析一次；宿主收到类型化操作与GameHandle／PlayerId绑定。管理调用在当前宿主调度线程执行，网络worker仍只经字节队列访问服务端。失败返回ok=false和明确status，不以HTTP式私有ACK修改原MCP／D2GS。
 
 | 命令 | 参数和当前结果 |
 | --- | --- |
+| `server-snapshot` | 同一调度tick的权威人物、资源／成长／库存revision、物品位置、当前区域怪物及AI、技能动作、待释放数量、弹体、伤害队列、换区和已准备区域／出口。limit默认128、范围1–256；Count是过滤前总数，列表达到limit时不能视为完整。可给全局x／y，只读计算当前区域路径（最多1024点），不移动角色 |
+| `server-events` | 返回已提交领域事实及命令入队／执行记录；since／commandSince是各自观察序号，默认0，limit同上。事件环1024条、命令环512条，first／last／gap表示覆盖缺口。记录不被网络发送／ACK清除，不代表客户端已收到；原回包另查online-*。事件value按type解释：life／mana为256固定点，attack为技能ID，hit为128比例生命，character为经验且secondary为等级，travel为源／目标区域 |
+| `server-pause`／`server-resume`／`server-auto-pause` | 对选中玩家所在整个实例设置调试时钟覆盖：pause保留当前行动并停止推进；原协议命令仍可入队，在step执行。resume连续推进；这两者显式覆盖失焦／ESC自动暂停，不冻结客户端表现。auto-pause解除覆盖，恢复应用自动暂停策略；若恢复到暂停会沿原规则取消行动。所有参与者共用时钟，仅本机宿主管理可调用 |
+| `refill-resources` | 经人物事务恢复当前玩家生命／法力／体力至派生最大值，并发送原人物增量；只允许存活、已入局角色，不承担复活 |
 | `server-status` | 只读phase、tick、paused、hostSlot／hostGeneration／hostPlayer、实际command序号／结果、最近分派和失败、characterIssues；command是最新诊断，不能作为可靠事务回执 |
 | `server-protocol` | 返回全部C2S／S2C／MCP和4F／38子命令目录；实现状态、领域、收发计数、queued／stub／rejected／malformed。入场编码标admission-only，不代表完整玩法 |
-| `server-commands` | 当前管理命令及implemented标志 |
-| `server-systems` | 28个内核目录项的name／phase／scope／lastStep；新增26个系统为scaffold。lastStep=null表示未调度或没有固定步入口，不表示实现；详见[内核子系统](../modules/SERVER_SYSTEMS.md) |
+| `server-commands` | 当前管理命令、参数类别及implemented标志 |
+| `server-systems` | 28个内核目录项的name／phase／scope／lastStep；执行范围以各项scope和内核子系统文档为准。lastStep=null表示未调度或没有固定步入口，不表示实现；详见[内核子系统](../modules/SERVER_SYSTEMS.md) |
 | `save` | 无参数；从服务端导出当前角色，校验租约版本并原子保存／备份。applied表示保存已完成，失败保留实例和租约 |
 | `load` | 无参数；准备暂停候选实例，成功后经原69／MCP／D2GS离局重入；applied仅表示准备成功且原离局已排队。最后是否入局仍查online-status，候选复用且保留当前难度 |
 | `cancel-load` | 原离局尚未接受时释放候选；已经离局后须关闭宿主或完成重新入局 |
-| `step` | frames默认1，范围1–250；只允许已入局且权威paused的实例，以1/25秒固定步推进，返回更新后的tick。暂停会清路径和待执行移动，step不恢复被清除的路径，也不推进原服 |
-| `grant-gold`、`grant-experience` | amount有符号整数；类型化stub，返回not-implemented |
-| `item-spawn`、`monster-spawn`、`grant-shrine`、`grant-hireling` | code，level可选；类型化stub |
+| `step` | frames默认1，范围1–250；只允许已入局且权威paused的实例，以1/25秒固定步推进，返回更新后的tick。普通pause会清路径和待执行移动，step不恢复被清除的路径；server-pause保留行动，也不推进原服 |
+| `grant-experience` | amount为正的有符号整数；宿主progression授予、封顶／升级／余点事务，原包更新同一客户端；暂停时可用，原服拒绝 |
+| `grant-gold` | amount有符号整数；类型化stub，返回not-implemented |
+| `monster-spawn` | code为当前MPQ monstats身份，x／y为当前区域全局subtile。复用自然人口的普通近战准入／数值／动作准备，再交population／monsters；返回entityId。不接受level覆盖，等级随区域／难度，不支持身份、城镇、碰撞和容量明确拒绝 |
+| `item-spawn`、`grant-shrine`、`grant-hireling` | code，level可选；类型化stub |
 | `monster-damage`、`monster-kill` | id，amount可选；类型化stub |
 | `travel` | level；类型化stub |
 | `unlock-waypoints`、`reset-attributes`、`reset-skills` | 无参数；类型化stub |
 
-修改命令可附hostSlot／hostGeneration／hostPlayer，取server-status；不匹配返回invalid-target。未提供时由应用绑定当前宿主角色。这些不是online.gameGeneration，不能互换。save／load不接受path覆盖，固定使用服务器持有租约的角色文件；其他角色加载使用局前入口。stub只验证参数形状，尚未承诺对应资源或玩法资格。
+查询及修改命令可附hostSlot／hostGeneration／hostPlayer，取server-status；三个字段须同时指定；不匹配返回invalid-target。未提供时由应用绑定当前宿主角色。这些不是online.gameGeneration，不能互换。save／load不接受path覆盖，固定使用服务器持有租约的角色文件；其他角色加载使用局前入口。stub只验证参数形状，尚未承诺对应资源或玩法资格。
 
 ```powershell
 .\scripts\Send-D2XCommand.ps1 -Command server-protocol
@@ -192,6 +198,10 @@ d2x_assets <MPQ目录> save-info <file.d2s>
 
 局前 `ui-input` 与游戏内共用帧输入契约；`entryText` 为至多255个可打印ASCII字节，`tab` 切换字段，`wheel` 为有限滚轮增量。`key=1–4`复用腰带列快捷键，`f1–f8`选择已绑定技能或绑定选择器悬停项；原 `text` 仍只用于数字输入。局前坐标同样使用逻辑视口，应用转换到800×600原图布局；回执 `frontend.page/notice` 不包含字段内容或密码。测试暂停拒绝所有 UI 输入。
 
+LAN宿主的server-status新增rooms／participants摘要：实例slot／generation、容量、玩家、区域、阶段及失败信息。宿主未连接本机角色时也可查询；管理远端角色须同时指定hostSlot、hostGeneration、hostPlayer，不能按名字猜绑定。save／grant-experience沿原管理入口处理对应服务端角色；断线保存失败保留实例和租约，显式save成功后才继续回收。load需要主内存客户端重建入局，不能用另一人的请求操纵本机客户端；共享房间禁止重载。调试管道仍只在本机用户授权范围内，LAN不开放它。
+
 ## 验证边界
 
 只使用已有程序／命令／参考服；不新增测试脚本、用例或专用程序。实际观察统一见[联网记录](../modules/NETWORK.md)，最新未入包源码不能引用旧冒烟作认证。Windows管道不能替代原服协议；跨用户ACL拒绝与Linux实际运行未完整验证。
+
+区域快照的objectDeferred列出尚未实现的原物件预设回调身份（574–582）；这些不是已生成的物件，不参与碰撞或掉落。普通缺失表项仍使内容准备失败。

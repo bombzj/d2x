@@ -3,5 +3,5 @@
 namespace d2x::server {
 // Allocate a fresh instance namespace, including nested socket items, corpses
 // and the saved golem item. No old runtime handle survives admission.
-PersistentCharacter admitCharacter(PersistentCharacter);
+PersistentCharacter admitCharacter(PersistentCharacter, uint64_t nextEntity = 1);
 }

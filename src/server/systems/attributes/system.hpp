@@ -1,18 +1,12 @@
 #pragma once
-#include "server/runtime/contracts.hpp"
+#include "calculation.hpp"
 #include "server/runtime/ports.hpp"
 #include "server/runtime/events.hpp"
-#include "gameplay/character/attributes.hpp"
-#include <map>
-#include <set>
-#include <string>
-#include <vector>
-
 namespace d2x::server::attributes {
-// Derived equipment, passive and resource totals; invalidation owns no base stats.
-struct State { std::set<EntityId> dirty; };
-struct Totals { CharacterAttributes character; uint64_t sourceRevision{}; };
-struct Ports { const PlayerStore &players; const items::System &items; const effects::System &effects; const companions::System &companions; };
+// Totals are evaluated eagerly before admission/transaction publication.
+// No dirty queue and no second tick can observe stale equipment or level values.
+struct State {};
+struct Ports { const PlayerStore &players; };
 class System {
     State state_;
     const Ports ports_;

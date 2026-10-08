@@ -1,9 +1,10 @@
 #include "gameplay_dispatch.hpp"
 
 namespace d2x::hosting::handlers {
-RequestResult InteractUnit(GameplayContext &, net::protocol::Reader &) {
-    // TODO: Interaction authority validation, transaction and native replication.
-    return {RequestStatus::NotImplemented};
+RequestResult InteractUnit(GameplayContext &context, net::protocol::Reader &in) {
+    const auto type = in.u32(), id = in.u32(); in.finish();
+    if (type != 5) return {RequestStatus::NotImplemented};
+    return submitGameplay(context, server::travel::Request{server::travel::Kind::Exit, {EntityId{id}, 0}, {}});
 }
 RequestResult InitializeNpc(GameplayContext &, net::protocol::Reader &) {
     // TODO: Interaction authority validation, transaction and native replication.

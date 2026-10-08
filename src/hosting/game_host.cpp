@@ -4,9 +4,17 @@
 #include <utility>
 
 namespace d2x {
+std::optional<server::inventory::InputState> GameHost::inventoryInput(PlayerBinding binding) const {
+    const auto *slot = find(binding.game);
+    return slot ? slot->game->inventoryInput(binding.player) : std::nullopt;
+}
 std::optional<PersistentCharacter> GameHost::exportCharacter(PlayerBinding binding) const {
     const auto *slot = find(binding.game);
     return slot ? slot->game->exportCharacter(binding.player) : std::nullopt;
+}
+std::optional<PersistentCharacter> GameHost::publicEquipment(PlayerBinding binding) const {
+    const auto *slot = find(binding.game);
+    return slot ? slot->game->publicEquipment(binding.player) : std::nullopt;
 }
 const GameHost::Slot *GameHost::find(GameHandle handle) const {
     if (handle.slot >= slots_.size()) return nullptr;
@@ -22,13 +30,54 @@ PlayerBinding GameHost::create(server::GameDefinition definition) {
     auto game = std::make_unique<server::GameInstance>(std::move(definition));
     size_t index = 0;
     while (index < slots_.size() && slots_[index].game) ++index;
-    if (index == slots_.size()) slots_.emplace_back();
+    if (index == slots_.size()) {
+        if (slots_.size() >= 256) throw std::runtime_error("Host game capacity exhausted");
+        slots_.emplace_back();
+    }
     auto &slot = slots_[index];
-    slot.game = std::move(game); slot.accumulator = 0; slot.paused = slot.resumed = false;
+    slot.game = std::move(game); slot.accumulator = 0; slot.paused = slot.resumed = false; slot.debugPaused.reset();
     slot.generation = nextGeneration_++;
     try { publish(index); }
     catch (...) { slot.game.reset(); slot.snapshots.clear(); throw; }
     return {{uint64_t(index), slot.generation}, {1}};
+}
+PlayerBinding GameHost::admit(GameHandle handle, server::GameDefinition definition) {
+    auto *slot = find(handle);
+    if (!slot) throw std::runtime_error("Game instance expired");
+    const auto id = slot->game->admit(std::move(definition));
+    try { publish(size_t(handle.slot)); }
+    catch (...) { slot->game->remove(id); throw; }
+    return {handle, id};
+}
+bool GameHost::remove(PlayerBinding binding) {
+    auto *slot = find(binding.game);
+    if (!slot || !slot->game->remove(binding.player)) return false;
+    publish(size_t(binding.game.slot)); return true;
+}
+bool GameHost::enter(PlayerBinding binding, bool active) {
+    auto *slot = find(binding.game);
+    if (!slot || !slot->game->enter(binding.player, active)) return false;
+    publish(size_t(binding.game.slot)); return true;
+}
+std::vector<PlayerId> GameHost::participants(GameHandle handle) const {
+    const auto *slot = find(handle); return slot ? slot->game->participants() : std::vector<PlayerId>{};
+}
+std::vector<PlayerId> GameHost::visiblePlayers(PlayerBinding binding) const {
+    const auto *slot = find(binding.game); return slot ? slot->game->visiblePlayers(binding.player) : std::vector<PlayerId>{};
+}
+std::vector<RegionId> GameHost::visibleAreas(PlayerBinding binding) const {
+    const auto *slot = find(binding.game); return slot ? slot->game->visibleAreas(binding.player) : std::vector<RegionId>{};
+}
+std::optional<server::AreaView> GameHost::area(GameHandle handle, RegionId id) const {
+    const auto *slot = find(handle); const auto *area = slot ? slot->game->area(id) : nullptr;
+    if (!area) return {};
+    return server::AreaView{area->definition, area->generation};
+}
+std::optional<server::GameSettings> GameHost::settings(GameHandle handle) const {
+    const auto *slot = find(handle); return slot ? std::optional{slot->game->settings()} : std::nullopt;
+}
+uint64_t GameHost::nextEntity(GameHandle handle) const {
+    const auto *slot = find(handle); if (!slot) throw std::runtime_error("Game instance expired"); return slot->game->nextEntity();
 }
 bool GameHost::destroy(GameHandle handle) {
     auto *slot = find(handle);
@@ -42,7 +91,7 @@ bool GameHost::pause(GameHandle handle, bool paused) {
     if (slot->paused != paused) {
         slot->paused = paused; slot->accumulator = 0;
         slot->resumed = !paused;
-        if (paused) slot->game->suspend();
+        if (paused && !slot->debugPaused) slot->game->suspend();
         publish(size_t(handle.slot));
     }
     return true;
@@ -51,7 +100,7 @@ void GameHost::advance(double seconds) {
     if (!std::isfinite(seconds) || seconds < 0) return;
     for (size_t index = 0; index < slots_.size(); ++index) {
         auto &slot = slots_[index];
-        if (!slot.game || slot.paused) continue;
+        if (!slot.game || slot.debugPaused.value_or(slot.paused)) continue;
         if (!slot.resumed) slot.accumulator += seconds;
         slot.resumed = false;
         // Bound work per scheduler call, retaining debt instead of variable steps.
@@ -66,12 +115,12 @@ void GameHost::advance(double seconds) {
 CommandStatus GameHost::submit(PlayerBinding binding, server::GameCommand command) {
     auto *slot = find(binding.game);
     if (!slot) return CommandStatus::InvalidBinding;
-    if (slot->paused) return CommandStatus::Paused;
+    if (slot->paused && !slot->debugPaused) return CommandStatus::Paused;
     return slot->game->enqueue(binding.player, std::move(command));
 }
 bool GameHost::step(GameHandle handle, uint32_t frames) {
     auto *slot = find(handle);
-    if (!slot || !slot->paused || !frames || frames > 250) return false;
+    if (!slot || !slot->debugPaused.value_or(slot->paused) || !frames || frames > 250) return false;
     for (uint32_t i = 0; i < frames; ++i) slot->game->step();
     slot->accumulator = 0;
     publish(size_t(handle.slot));
@@ -83,7 +132,7 @@ void GameHost::publish(size_t index) {
     for (const auto player : slot.game->participants()) {
         auto snapshot = slot.game->snapshot(player);
         if (!snapshot) throw std::logic_error("Participant snapshot is missing");
-        snapshot->game = {uint64_t(index), slot.generation}; snapshot->paused = slot.paused;
+        snapshot->game = {uint64_t(index), slot.generation}; snapshot->paused = slot.debugPaused.value_or(slot.paused);
         snapshots.emplace(player, std::make_shared<const PlayerSnapshot>(std::move(*snapshot)));
     }
     slot.snapshots = std::move(snapshots);
@@ -118,4 +167,53 @@ server::DomainResult<> GameHost::installArea(GameHandle handle, server::world::P
     if (!slot) return {server::DomainStatus::Stale, std::nullopt};
     return slot->game->installArea(std::move(area));
 }
+void GameHost::failArea(GameHandle handle, uint64_t request) {
+    if (auto *slot = find(handle)) slot->game->failArea(request);
+}
+server::DomainResult<> GameHost::grantExperience(PlayerBinding binding, uint64_t amount) {
+    auto *slot = find(binding.game);
+    if (!slot) return {server::DomainStatus::InvalidActor, {}};
+    auto result = slot->game->grantExperience(binding.player, amount);
+    if (result) publish(size_t(binding.game.slot));
+    return result;
+}
+
+std::vector<MonsterSnapshot> GameHost::visibleMonsters(PlayerBinding binding) const {
+    const auto *slot = find(binding.game);
+    return slot ? slot->game->visibleMonsters(binding.player) : std::vector<MonsterSnapshot>{};
+}
+
+bool GameHost::debugPause(GameHandle handle, std::optional<bool> paused) {
+    auto *slot = find(handle);
+    if (!slot) return false;
+    const bool wasPaused = slot->debugPaused.value_or(slot->paused);
+    slot->debugPaused = paused; slot->accumulator = 0;
+    slot->resumed = !slot->debugPaused.value_or(slot->paused);
+    if (wasPaused != slot->debugPaused.value_or(slot->paused) && !paused && slot->paused) slot->game->suspend();
+    publish(size_t(handle.slot));
+    return true;
+}
+server::DomainResult<> GameHost::restoreResources(PlayerBinding binding) {
+    auto *slot = find(binding.game);
+    if (!slot) return {server::DomainStatus::InvalidActor, {}};
+    auto result = slot->game->restoreResources(binding.player);
+    if (result) publish(size_t(binding.game.slot));
+    return result;
+}
+server::DomainResult<EntityId> GameHost::spawnMonster(PlayerBinding binding, const server::PreparedMonster &monster) {
+    auto *slot = find(binding.game);
+    if (!slot) return {server::DomainStatus::InvalidActor, {}};
+    auto result = slot->game->spawnMonster(binding.player, monster);
+    if (result) publish(size_t(binding.game.slot));
+    return result;
+}
+std::optional<server::DiagnosticSnapshot> GameHost::diagnostics(PlayerBinding binding, size_t limit, uint64_t since,
+    uint64_t commandSince, std::optional<Vec> destination) const {
+    const auto *slot = find(binding.game);
+    if (!slot) return {};
+    auto result = slot->game->diagnostics(binding.player, limit, since, commandSince, destination);
+    if (result) { result->player.game = binding.game; result->player.paused = slot->debugPaused.value_or(slot->paused); }
+    return result;
+}
+
 } // namespace d2x

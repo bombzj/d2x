@@ -12,9 +12,10 @@ namespace d2x::server::death {
 // Death occurrences, resurrection and corpse recovery; no duplicated persistent corpse items.
 enum class Action { Resurrect, RecoverCorpse };
 struct Request { Action action; std::optional<UnitTarget> corpse; };
-struct Transition { uint64_t occurrence{}; EntityId victim, killer; bool finalized{}; };
-struct State { std::map<EntityId, Transition> transitions; };
-struct Ports { const PlayerStore &players; const monsters::System &monsters; transactions::System &transactions; trade::System &trade; };
+struct Transition { uint64_t occurrence{}; EntityId victim, killer; bool finalized{}; uint64_t ready{}; };
+struct Reward { PlayerId player; EntityId actor; uint64_t amount{}; };
+struct State { std::map<EntityId, Transition> transitions; std::map<EntityId, Reward> rewards; };
+struct Ports { const PlayerStore &players; monsters::System &monsters; progression::System &progression; skills::System &skills; };
 class System {
     State state_;
     const Ports ports_;

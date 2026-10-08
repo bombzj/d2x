@@ -2,12 +2,19 @@
 #include "persistence/d2s_inventory.hpp"
 #include "network/protocol/wire.hpp"
 #include "network/protocol/bits.hpp"
-#include <functional>
+#include "server/runtime/events.hpp"
+#include "protocol/message_catalog.hpp"
+#include <algorithm>
 #include <map>
 
 namespace d2x {
 namespace {
 using net::protocol::BitWriter;
+// D2MOO D2Constants / SCmd original item action identities, not C2S opcodes.
+enum class ItemAction : uint8_t {
+    Put = 4, Take = 5, Equip = 6, IndirectEquip = 7, Unequip = 8, SwapEquipment = 9, Quantity = 10, Properties = 21,
+    SwapStored = 13, PutBelt = 14, TakeBelt = 15, SwapBelt = 16, Cursor = 18, Socket = 19, WeaponSwitch = 23
+};
 struct StatFormat { unsigned bits, params; int add; };
 StatFormat format(const ClassicData &data, unsigned id) {
     const auto &table = data.tables.at("itemstatcost");
@@ -101,30 +108,46 @@ Bytes packed(const ClassicData &data, const D2sItem &item) {
     }
     return bits.release();
 }
+void emitItem(std::vector<Bytes> &result, const ClassicData &data, const PersistentCharacter &state,
+              const ItemInstance &item, ItemAction action, bool ownedPacket, unsigned ownerType, uint32_t owner) {
+    if (item.id.value > UINT32_MAX) throw std::runtime_error("Item ID exceeds native protocol capacity");
+    auto saved = exportD2sItem(state, item, data);
+    saved.flags = (saved.flags & ~0x4000u) | (item.nativeFlags & 0x4000u);
+    // D2S stores fixed weapon sets; GS body 4/5 always mean active hands.
+    // The common client maps these through the original 0x97 weapon-set state.
+    if (saved.mode == 1 && state.player.weaponSet) {
+        if (saved.body == 4 || saved.body == 5) saved.body += 7;
+        else if (saved.body == 11 || saved.body == 12) saved.body -= 7;
+    }
+    if (action == ItemAction::WeaponSwitch) {
+        // Native transient SWITCHIN/OUT flags; never write these to D2S.
+        saved.flags &= ~uint32_t(0xC0);
+        saved.flags |= (saved.body == 4 || saved.body == 5) ? 0x40 : 0x80;
+    }
+    const auto body = packed(data, saved);
+    const size_t prefix = ownedPacket ? 13 : 8;
+    if (body.size() + prefix > 255) throw std::runtime_error("Item exceeds native packet capacity");
+    const auto *def = data.items.find(item.definition);
+    unsigned component = unsigned(def->appearance.component);
+    if (saved.mode == 1 && (saved.body == 4 || saved.body == 11)) component = 5;
+    if (saved.mode == 1 && (saved.body == 5 || saved.body == 12)) component = def->equipment.isType("shld") ? 7 : 6;
+    net::protocol::Writer out;
+    out.u8(ownedPacket ? 0x9D : 0x9C); out.u8(uint8_t(action));
+    out.u8(uint8_t(body.size() + prefix)); out.u8(uint8_t(component)); out.u32(uint32_t(item.id.value));
+    if (ownedPacket) { out.u8(uint8_t(ownerType)); out.u32(owner); }
+    out.append(body); result.push_back(out.release());
+    for (const auto &child : item.socketedItems)
+        emitItem(result, data, state, child, ItemAction::Socket, true, 4, uint32_t(item.id.value));
+}
+bool equipment(ContainerKind kind) { return kind == ContainerKind::Equipment || kind == ContainerKind::BeltEquipment; }
+ContainerKind kind(const PersistentCharacter &state, const std::optional<ItemLocation> &location) {
+    const auto *position = location ? std::get_if<ContainerLocation>(&*location) : nullptr;
+    if (!position) throw std::logic_error("Inventory slice contains a non-container change");
+    return state.inventory.containers.at(position->container).spec.kind;
+}
 }
 std::vector<Bytes> nativeInventoryPackets(const ClassicData &data, const PersistentCharacter &state) {
     std::vector<Bytes> result;
-    std::function<void(const ItemInstance &, unsigned, uint32_t)> emit = [&](const ItemInstance &item, unsigned ownerType, uint32_t owner) {
-        if (item.id.value > UINT32_MAX) throw std::runtime_error("Item ID exceeds native protocol capacity");
-        auto saved = exportD2sItem(state, item, data);
-        // D2S stores fixed weapon sets; GS body 4/5 always mean active hands.
-        // The common client maps these through the original 0x97 weapon-set state.
-        if (saved.mode == 1 && state.player.weaponSet) {
-            if (saved.body == 4 || saved.body == 5) saved.body += 7;
-            else if (saved.body == 11 || saved.body == 12) saved.body -= 7;
-        }
-        const auto body = packed(data, saved);
-        if (body.size() + 13 > 255) throw std::runtime_error("Item exceeds native packet capacity");
-        const auto *def = data.items.find(item.definition);
-        unsigned component = unsigned(def->appearance.component);
-        if (saved.mode == 1 && (saved.body == 4 || saved.body == 11)) component = 5;
-        if (saved.mode == 1 && (saved.body == 5 || saved.body == 12)) component = def->equipment.isType("shld") ? 7 : 6;
-        net::protocol::Writer out;
-        out.u8(0x9D); out.u8(saved.mode == 1 ? 6 : saved.mode == 2 ? 14 : saved.mode == 6 ? 19 : saved.mode == 4 ? 18 : 4);
-        out.u8(uint8_t(body.size() + 13)); out.u8(uint8_t(component)); out.u32(uint32_t(item.id.value));
-        out.u8(uint8_t(ownerType)); out.u32(owner); out.append(body); result.push_back(out.release());
-        for (const auto &child : item.socketedItems) emit(child, 4, uint32_t(item.id.value));
-    };
     for (const auto &[id, item] : state.inventory.items) {
         (void)id;
         // Corpse/hireling items remain in the server save; they are not player inventory.
@@ -133,7 +156,80 @@ std::vector<Bytes> nativeInventoryPackets(const ClassicData &data, const Persist
         const auto container = state.inventory.containers.find(location->container);
         if (container == state.inventory.containers.end() || container->second.spec.owner != state.player.id ||
             container->second.spec.kind == ContainerKind::Corpse) continue;
-        emit(item, 0, uint32_t(state.player.id.value));
+        const auto kind = container->second.spec.kind;
+        emitItem(result, data, state, item, equipment(kind) ? ItemAction::Equip : kind == ContainerKind::Belt ? ItemAction::PutBelt :
+            kind == ContainerKind::Cursor ? ItemAction::Cursor : ItemAction::Put,
+            true, 0, uint32_t(state.player.id.value));
+    }
+    return result;
+}
+std::vector<Bytes> nativePublicEquipment(const ClassicData &data, PersistentCharacter projection) {
+    for (auto &[id, item] : projection.inventory.items) {
+        (void)id;
+        const auto conceal = [&](auto &&self, ItemInstance &value) -> void {
+            value.identified = false; value.nativeFlags &= ~uint32_t(0x10);
+            for (auto &child : value.socketedItems) self(self, child);
+        };
+        conceal(conceal, item);
+    }
+    return nativeInventoryPackets(data, projection);
+}
+std::vector<Bytes> nativeInventoryDelta(const ClassicData &data, const server::InventoryFact &fact) {
+    const auto &state = fact.projection;
+    if (state.player.id.value > UINT32_MAX) throw std::runtime_error("Inventory owner exceeds native GUID capacity");
+    std::vector<Bytes> result;
+    for (const auto &change : fact.changes) {
+        if (change.item.value > UINT32_MAX) throw std::runtime_error("Inventory delta GUID overflow");
+        if (change.kind == ItemChangeKind::Removed) {
+            result.push_back(hosting::encodeServerPacket(hosting::ServerMessage::RemoveUnit,
+                [&](auto &out) { out.u8(4); out.u32(uint32_t(change.item.value)); }));
+            continue;
+        }
+        if (change.kind == ItemChangeKind::QuantityChanged || change.kind == ItemChangeKind::PropertiesChanged) {
+            const auto action = change.kind == ItemChangeKind::QuantityChanged ? ItemAction::Quantity : ItemAction::Properties;
+            emitItem(result, data, state, state.inventory.items.at(change.item), action,
+                action == ItemAction::Properties, 0, uint32_t(state.player.id.value));
+            continue;
+        }
+        if (change.kind != ItemChangeKind::Moved) throw std::logic_error("Unsupported inventory delta");
+        const auto from = kind(state, change.before), to = kind(state, change.after);
+        ItemAction action;
+        bool owned;
+        const auto replaced = std::find_if(fact.changes.begin(), fact.changes.end(), [&](const auto &other) {
+            return other.item != change.item && other.before == change.after;
+        }) != fact.changes.end();
+        if (to == ContainerKind::Cursor) {
+            action = equipment(from) ? ItemAction::Unequip : from == ContainerKind::Belt ? ItemAction::TakeBelt : ItemAction::Take;
+            owned = equipment(from) || from == ContainerKind::Backpack;
+        }
+        else if (equipment(to)) {
+            const bool indirect = !replaced && std::any_of(fact.changes.begin(), fact.changes.end(), [&](const auto &other) {
+                return other.kind == ItemChangeKind::Moved && other.item != change.item && equipment(kind(state, other.before)) && kind(state, other.after) == ContainerKind::Cursor;
+            });
+            action = replaced ? ItemAction::SwapEquipment : indirect ? ItemAction::IndirectEquip : ItemAction::Equip;
+            owned = true;
+        }
+        else if (to == ContainerKind::Belt) { action = replaced ? ItemAction::SwapBelt : ItemAction::PutBelt; owned = false; }
+        else if (to == ContainerKind::Backpack) { action = replaced ? ItemAction::SwapStored : ItemAction::Put; owned = false; }
+        else throw std::logic_error("Unsupported inventory destination");
+        emitItem(result, data, state, state.inventory.items.at(change.item), action, owned, 0, uint32_t(state.player.id.value));
+    }
+    if (fact.switchedWeapons) {
+        for (const auto &[id, item] : state.inventory.items) {
+            (void)id;
+            const auto *at = std::get_if<ContainerLocation>(&item.location);
+            if (!at || at->container != state.containers.equipment) continue;
+            const auto slot = EquipmentSlot(at->cell.x);
+            if (slot == EquipmentSlot::RightHand || slot == EquipmentSlot::LeftHand ||
+                slot == EquipmentSlot::AlternateRightHand || slot == EquipmentSlot::AlternateLeftHand)
+                emitItem(result, data, state, item, ItemAction::WeaponSwitch, true, 0, uint32_t(state.player.id.value));
+        }
+        result.push_back(hosting::encodeServerPacket(hosting::ServerMessage::WeaponSet, [](auto &) {}));
+        for (size_t side = 0; side < 2; ++side)
+            result.push_back(hosting::encodeServerPacket(hosting::ServerMessage::SelectedSkill, [&](auto &out) {
+                out.u8(0); out.u32(uint32_t(state.player.id.value)); out.u8(side == 0);
+                out.u16(uint16_t(std::max(0, state.player.selectedSkills[state.player.weaponSet * 2 + side]))); out.u32(UINT32_MAX);
+            }));
     }
     return result;
 }

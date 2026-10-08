@@ -1,5 +1,6 @@
 #include "native_game_wire.hpp"
 #include "native_item_wire.hpp"
+#include "native_character_wire.hpp"
 #include "protocol/message_catalog.hpp"
 #include "content/classic_data.hpp"
 #include "content/character/character_attributes.hpp"
@@ -25,25 +26,57 @@ void key(Writer &out, const PlayerSnapshot &view) {
 }
 }
 Bytes nativePlayerMotion(const PlayerSnapshot &view, Vec origin) {
+    if (view.attacking && view.life > 0) return {};
     Writer out;
     // The next path corner is authority-owned, never a route from the client.
     out.u8(view.actor.moving ? 0x0F : 0x0D); key(out, view);
-    out.u8(view.actor.moving ? (view.actor.running ? 23 : 1) : 7);
+    out.u8(view.life <= 0 ? (view.deadSettled ? 9 : 8) : view.actor.moving ? (view.actor.running ? 23 : 1) : 7);
     const auto position = view.actor.position + origin;
     if (view.actor.moving) { point(out, view.actor.nextPosition + origin); out.u8(0); point(out, position); }
-    else { point(out, position); out.u8(0); out.u8(128); }
+    else { point(out, position); out.u8(0); out.u8(uint8_t(std::clamp(int(view.life * 128 / view.attributes.maxLife), view.life > 0 ? 1 : 0, 128))); }
     return out.release();
 }
+std::vector<Bytes> nativeAreaUnits(const GeneratedArea &area, const server::AreaMetadata &definition) {
+    std::vector<Bytes> result;
+    for (const auto &object : definition.objects)
+        result.push_back(encodeServerPacket(ServerMessage::AssignObject, [&](auto &out) {
+            out.u8(2); out.u32(uint32_t(object.id.value)); out.u16(uint16_t(object.type));
+            point(out, object.position + area.origin); out.u8(0); out.u8(0);
+        }));
+    for (const auto &exit : definition.exits)
+        result.push_back(encodeServerPacket(ServerMessage::AssignWarp, [&](auto &out) {
+            if (exit.warp < 0 || exit.warp > 255 || !exit.id) throw std::runtime_error("Invalid prepared native warp");
+            out.u8(5); out.u32(uint32_t(exit.id.value)); out.u8(uint8_t(exit.warp)); point(out, exit.position + area.origin);
+        }));
+    return result;
+}
+Bytes nativePlayerAssignment(const ClassicData &data, const PersistentCharacter &state, const PlayerSnapshot &view, Vec origin) {
+    const auto found = std::find_if(data.characters.begin(), data.characters.end(), [&](const auto &c) { return c.name == state.player.characterClass; });
+    if (found == data.characters.end()) throw std::runtime_error("Missing player class");
+    return encodeServerPacket(ServerMessage::AssignPlayer, [&](auto &out) {
+        out.u32(uint32_t(view.actor.id.value)); out.u8(uint8_t(found - data.characters.begin()));
+        for (size_t i = 0; i < 16; ++i) out.u8(i < state.player.name.size() ? uint8_t(state.player.name[i]) : 0);
+        point(out, view.actor.position + origin);
+    });
+}
+Bytes nativePlayerRoster(const ClassicData &data, const CharacterRecord &player) {
+    const auto found = std::find_if(data.characters.begin(), data.characters.end(), [&](const auto &c) { return c.name == player.characterClass; });
+    if (found == data.characters.end()) throw std::runtime_error("Missing roster class");
+    return encodeServerPacket(ServerMessage::PlayerRoster, [&](auto &out) {
+        out.u16(36); out.u32(uint32_t(player.id.value)); out.u8(uint8_t(found - data.characters.begin()));
+        for (size_t i = 0; i < 16; ++i) out.u8(i < player.name.size() ? uint8_t(player.name[i]) : 0);
+        out.u16(uint16_t(player.level)); out.u16(UINT16_MAX); out.u16(0); out.u16(0); out.u16(0); out.u16(0);
+    });
+}
 std::vector<Bytes> nativeGameAdmission(const ClassicData &data, const PersistentCharacter &state,
-    const GeneratedArea &area, const PlayerSnapshot &view) {
+    const GeneratedArea &area, const PlayerSnapshot &view, const server::AreaMetadata &definition) {
     std::vector<Bytes> result;
     const auto &player = state.player;
     const auto found = std::find_if(data.characters.begin(), data.characters.end(), [&](const auto &c) { return c.name == player.characterClass; });
     if (found == data.characters.end()) throw std::runtime_error("Missing character rules");
     const auto classId = uint8_t(found - data.characters.begin());
-    const auto base = deriveCharacterAttributes(*found, player.level, player.allocated);
     auto emit = [&](ServerMessage id, auto fill) { result.push_back(encodeServerPacket(id, fill)); };
-    emit(ServerMessage::LoadAct, [&](auto &out) { out.u8(uint8_t(area.request.act)); out.u32(area.request.seed); out.u16(uint16_t(area.request.level)); out.u32(0); });
+    emit(ServerMessage::LoadAct, [&](auto &out) { out.u8(uint8_t(area.request.act)); out.u32(area.request.seed); out.u16(uint16_t(actTownLevels.at(size_t(area.request.act)))); out.u32(0); });
     emit(ServerMessage::AssignPlayerIdentity, [&](auto &out) { key(out, view); });
     for (const auto &[x, y] : area.rooms)
         emit(ServerMessage::RevealRoom, [&](auto &out) { out.u16(uint16_t(x)); out.u16(uint16_t(y)); out.u8(uint8_t(area.request.level)); });
@@ -52,27 +85,10 @@ std::vector<Bytes> nativeGameAdmission(const ClassicData &data, const Persistent
         for (size_t i = 0; i < 16; ++i) out.u8(i < player.name.size() ? uint8_t(player.name[i]) : 0);
         point(out, view.actor.position + area.origin);
     });
-    auto stat = [&](uint8_t id, double value) {
-        const auto &table = data.tables.at("itemstatcost");
-        int shift = 0;
-        for (size_t row = 0; row < table.rows().size(); ++row) if (table.number(row, "ID") == id) { shift = table.number(row, "ValShift").value_or(0); break; }
-        const double raw = std::ldexp(value, shift);
-        if (raw < 0 || raw > UINT32_MAX) throw std::runtime_error("Character stat exceeds native protocol capacity");
-        emit(ServerMessage::AttributeDword, [&](auto &out) { out.u8(id); out.u32(uint32_t(raw)); });
-    };
-    stat(0, base.strength); stat(1, base.energy); stat(2, base.dexterity); stat(3, base.vitality);
-    stat(4, player.unspentAttributes); stat(5, player.unspentSkills);
-    // Equipment/passive totals are not implemented. Do not manufacture a
-    // maximum from the current resource saved in D2S; it is a different stat.
-    stat(6, player.hp); stat(7, base.maxLife);
-    stat(8, player.mana); stat(9, base.maxMana);
-    stat(10, player.stamina); stat(11, base.maxStamina);
-    stat(12, player.level); stat(13, double(player.experience)); stat(14, player.gold); stat(15, player.bankGold);
-    if (player.skillRanks.size() > 255) throw std::runtime_error("Skill list exceeds native capacity");
-    emit(ServerMessage::BaseSkills, [&](auto &out) {
-        out.u8(uint8_t(player.skillRanks.size())); out.u32(uint32_t(player.id.value));
-        for (const auto &[skill, rank] : player.skillRanks) { out.u16(uint16_t(skill)); out.u8(uint8_t(rank)); }
-    });
+    server::attributes::Totals totals;
+    totals.character = view.attributes; totals.equipment = view.equipment; totals.skillRanks = view.skillRanks;
+    auto character = nativeCharacterPackets(data, state.player, totals);
+    for (auto &packet : character) result.push_back(std::move(packet));
     auto items = nativeInventoryPackets(data, state);
     for (auto &packet : items) result.push_back(std::move(packet));
     if (player.weaponSet) emit(ServerMessage::WeaponSet, [](auto &) {});
@@ -91,11 +107,7 @@ std::vector<Bytes> nativeGameAdmission(const ClassicData &data, const Persistent
     const auto flags = std::span<const uint8_t>(sections.quests).subspan(10 + size_t(state.difficulty) * 96, 96);
     emit(ServerMessage::GameQuests, [&](auto &out) { out.append(flags); });
     emit(ServerMessage::PlayerQuests, [&](auto &out) { out.u8(6); out.u32(uint32_t(player.id.value)); out.u8(0); out.append(flags); });
-    uint32_t objectId = 0x10000000;
-    for (const auto &object : area.map->terrain.data.objects) {
-        if (object.type != 2 || !object.nativeIdentity) continue;
-        emit(ServerMessage::AssignObject, [&](auto &out) { out.u8(2); out.u32(objectId++); out.u16(uint16_t(object.id)); point(out, Vec{float(object.x), float(object.y)} + area.origin); out.u8(0); out.u8(0); });
-    }
+    for (auto &packet : nativeAreaUnits(area, definition)) result.push_back(std::move(packet));
     emit(ServerMessage::LoadComplete, [](auto &) {});
     return result;
 }

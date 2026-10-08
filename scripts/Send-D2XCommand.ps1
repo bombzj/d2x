@@ -4,7 +4,8 @@ param(
     [Parameter(Mandatory = $true)]
     [ValidateSet(
         'status', 'pause', 'resume',
-        'server-status', 'server-protocol', 'server-commands', 'server-systems',
+        'server-status', 'server-protocol', 'server-commands', 'server-systems', 'server-snapshot', 'server-events',
+        'server-pause', 'server-resume', 'server-auto-pause', 'refill-resources',
         'save', 'load', 'cancel-load', 'step',
         'grant-gold', 'grant-experience', 'item-spawn', 'monster-spawn',
         'monster-damage', 'monster-kill', 'travel', 'unlock-waypoints',

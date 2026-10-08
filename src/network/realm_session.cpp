@@ -1284,13 +1284,15 @@ RealmSession::RealmSession(bool retainGamePackets) : impl_(std::make_unique<Impl
     impl_->start();
 }
 void RealmSession::connect_realm(std::unique_ptr<IByteTransport> realmTransport,
-    std::unique_ptr<IByteTransport> gameTransport, Endpoint endpoint, std::string name) {
+    std::unique_ptr<IByteTransport> gameTransport, Endpoint endpoint, std::string name, uint16_t gamePort) {
     std::lock_guard lock(impl_->mutex);
     auto &p = *impl_;
     const auto connection = p.view.connectionGeneration + 1, game = p.view.gameGeneration + 1, revision = p.view.revision;
     p.shutdown(); p.view.clear(); p.view.connectionGeneration = connection; p.view.gameGeneration = game;
     p.view.revision = revision; p.requestCounter = 0; p.lastListRequest = 0;
     p.options = LoginOptions{};
+    if (!gamePort) throw ProtocolError("Zero native game port");
+    p.options.gamePort = gamePort;
     p.directRealm = endpoint;
     p.mcp.use(std::move(realmTransport)); p.gs.use(std::move(gameTransport));
     p.view.selectedRealm = std::move(name);

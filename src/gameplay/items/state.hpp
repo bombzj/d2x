@@ -86,7 +86,7 @@ struct PlayerContainers {
 };
 // Location is authoritative. Occupancy is derived, never a second mutable copy.
 struct InventoryState {
-    uint64_t creationRandom = 0; // Initialized by the owning session, not serialized in D2S.
+    uint64_t creationRandom = 0; // Initialized by the authority, not serialized in D2S.
     std::map<EntityId, ItemInstance> items;
     std::map<EntityId, ContainerState> containers;
 };

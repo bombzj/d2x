@@ -1,6 +1,8 @@
 # NPC 与任务投影
 
-NPC、任务进度、资格、服务和奖励由原服拥有；客户端只投影本人已知状态及原对白。LocalNpcClient／LocalQuestClient 和本地任务协调／奖励执行器已删除。
+NPC、任务进度、资格、服务和奖励由所连接的服务端拥有；客户端只投影本人已知状态及原对白。LocalNpcClient／LocalQuestClient 和本地任务协调／奖励执行器已删除。
+
+自研宿主的NPC服务与任务执行仍为骨架；公共资格／报价／旗标解释与服务端交互／奖励事务的提取方案见[参考设计](../architecture/REFERENCE_DESIGN.md#9-npc怪物任务与物品怎样拆)。没有因共享公式而恢复客户端任务执行器。
 
 ## 入口与所有权
 

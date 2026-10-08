@@ -24,58 +24,11 @@ RequestResult DropItem(GameplayContext &, net::protocol::Reader &) {
     // TODO: Inventory authority validation, transaction and native replication.
     return {RequestStatus::NotImplemented};
 }
-RequestResult PlaceItem(GameplayContext &, net::protocol::Reader &) {
-    // TODO: Inventory authority validation, transaction and native replication.
-    return {RequestStatus::NotImplemented};
-}
-RequestResult TakeItem(GameplayContext &, net::protocol::Reader &) {
-    // TODO: Inventory authority validation, transaction and native replication.
-    return {RequestStatus::NotImplemented};
-}
-RequestResult EquipItem(GameplayContext &, net::protocol::Reader &) {
-    // TODO: Inventory authority validation, transaction and native replication.
-    return {RequestStatus::NotImplemented};
-}
-RequestResult EquipItemIndirect(GameplayContext &, net::protocol::Reader &) {
-    // TODO: Inventory authority validation, transaction and native replication.
-    return {RequestStatus::NotImplemented};
-}
-RequestResult UnequipItem(GameplayContext &, net::protocol::Reader &) {
-    // TODO: Inventory authority validation, transaction and native replication.
-    return {RequestStatus::NotImplemented};
-}
-RequestResult SwapEquipment(GameplayContext &, net::protocol::Reader &) {
-    // TODO: Inventory authority validation, transaction and native replication.
-    return {RequestStatus::NotImplemented};
-}
-RequestResult EquipTwoHanded(GameplayContext &, net::protocol::Reader &) {
-    // TODO: Inventory authority validation, transaction and native replication.
-    return {RequestStatus::NotImplemented};
-}
-RequestResult SwapItem(GameplayContext &, net::protocol::Reader &) {
-    // TODO: Inventory authority validation, transaction and native replication.
-    return {RequestStatus::NotImplemented};
-}
 RequestResult UseItem(GameplayContext &, net::protocol::Reader &) {
     // TODO: Inventory authority validation, transaction and native replication.
     return {RequestStatus::NotImplemented};
 }
-RequestResult StackItem(GameplayContext &, net::protocol::Reader &) {
-    // TODO: Inventory authority validation, transaction and native replication.
-    return {RequestStatus::NotImplemented};
-}
-RequestResult PlaceBeltItem(GameplayContext &, net::protocol::Reader &) {
-    // TODO: Inventory authority validation, transaction and native replication.
-    return {RequestStatus::NotImplemented};
-}
-RequestResult TakeBeltItem(GameplayContext &, net::protocol::Reader &) {
-    // TODO: Inventory authority validation, transaction and native replication.
-    return {RequestStatus::NotImplemented};
-}
-RequestResult SwapBeltItem(GameplayContext &, net::protocol::Reader &) {
-    // TODO: Inventory authority validation, transaction and native replication.
-    return {RequestStatus::NotImplemented};
-}
+
 RequestResult UseBeltItem(GameplayContext &, net::protocol::Reader &) {
     // TODO: Inventory authority validation, transaction and native replication.
     return {RequestStatus::NotImplemented};
@@ -88,15 +41,8 @@ RequestResult SocketItem(GameplayContext &, net::protocol::Reader &) {
     // TODO: Inventory authority validation, transaction and native replication.
     return {RequestStatus::NotImplemented};
 }
-RequestResult LoadBook(GameplayContext &, net::protocol::Reader &) {
-    // TODO: Inventory authority validation, transaction and native replication.
-    return {RequestStatus::NotImplemented};
-}
+
 RequestResult DropGold(GameplayContext &, net::protocol::Reader &) {
-    // TODO: Inventory authority validation, transaction and native replication.
-    return {RequestStatus::NotImplemented};
-}
-RequestResult SwitchWeapons(GameplayContext &, net::protocol::Reader &) {
     // TODO: Inventory authority validation, transaction and native replication.
     return {RequestStatus::NotImplemented};
 }

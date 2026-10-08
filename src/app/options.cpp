@@ -19,6 +19,16 @@ AppOptions parseOptions(int argc, char **argv) {
         };
         if (arg == "--mpq") { options.mpq = value(); explicitMpq = true; }
         else if (arg == "--online-config") options.onlineConfig = value();
+        else if (arg == "--host-lan") options.hostLan = value();
+        else if (arg == "--lan") options.lan = value();
+        else if (arg == "--host-saves") options.hostSaves = value();
+        else if (arg == "--realm-port" || arg == "--game-port") {
+            const auto text = value(); unsigned port{};
+            const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), port);
+            if (error != std::errc{} || end != text.data() + text.size() || !port || port > UINT16_MAX)
+                throw std::runtime_error(arg + " requires a port from 1 to 65535");
+            (arg == "--realm-port" ? options.realmPort : options.gamePort) = uint16_t(port);
+        }
         else if (arg == "--debug-pipe") options.debugPipe = value();
         else if (arg == "--online-character") options.onlineCharacter = value();
         else if (arg == "--online-play") options.onlinePlay = value();
@@ -39,6 +49,11 @@ AppOptions parseOptions(int argc, char **argv) {
         else if (arg == "--help") options.help = true;
         else throw std::runtime_error("Unknown option: " + arg);
     }
+    if (!options.hostLan.empty() && !options.lan.empty()) throw std::runtime_error("Choose either --host-lan or --lan");
+    if ((!options.lan.empty() || !options.hostLan.empty()) && (!options.load.empty() || !options.save.empty() || !options.characterClass.empty()))
+        throw std::runtime_error("LAN sessions use the host character repository; do not combine with save startup");
+    if ((!options.lan.empty() || !options.hostLan.empty()) && !options.onlinePlay.empty())
+        throw std::runtime_error("Choose either LAN or original-server quick entry");
     if (!options.load.empty() && !options.characterClass.empty())
         throw std::runtime_error("Choose either --load or --class");
     if ((!options.load.empty() || !options.save.empty() || !options.characterClass.empty()) &&

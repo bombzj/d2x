@@ -24,6 +24,9 @@ void NativeRealmService::enterEnvironment(net::protocol::Reader &in) {
     peer.phase = GamePhase::Entered;
     peer.sequence = peer.sentRevision = peer.sentMovement = 0;
     peer.lastMotion.clear();
+    peer.areas.insert(RegionId(terrain.request.level));
+    if (!host.enter(*binding)) throw ProtocolError("Game admission expired");
+    setPaused(false);
 }
 void NativeRealmService::saveAndLeave(net::protocol::Reader &in) {
     in.finish();

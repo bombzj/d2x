@@ -7,11 +7,15 @@
 #include <raylib.h>
 
 namespace d2x {
-enum class FrontendPage { Main, Login, Register, Realms, Characters, CreateCharacter, Lobby, Loading };
+enum class FrontendPage { Main, Login, Register, Realms, Characters, CreateCharacter, Lobby, Loading, TcpIp, JoinHost };
 enum class FrontendCommand {
     None,
     Exit,
     SinglePlayer,
+    TcpIp,
+    OpenJoinHost,
+    HostLan,
+    JoinLan,
     Online,
     Login,
     OpenRegister,
@@ -51,6 +55,7 @@ class RealmFrontend {
     void clearPassword();
     void clearTransientPasswords();
     void setLogin(std::string account, std::string password);
+    void setLanAddresses(std::string addresses);
 
   private:
     struct Impl;

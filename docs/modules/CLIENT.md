@@ -9,6 +9,21 @@ RealmFrontend与所有游戏页面都读取RealmSession的原协议副本。输�
 IByteTransport提供原字节流，TcpStream与MemoryTransport实现相同connect／send／poll／close。内存队列有锁、有界，支持网络worker与宿主调度线程分离；重连清旧消息。客户端不引用GameHost、PersistentCharacter或存档路径，也不直接接收权威快照。自研宿主通过原1.13c包提供已实现行为，不新增客户端协议分支。
 InventoryView允许缺失尚未接入的容器；共用腰带绘制／输入／格区必须先查询存在性，缺失时不绘制或提供交互格，缺背包时明确拒绝打开库存面板。客户端不能为满足UI假设而伪造容器或库存状态。
 
+## 本批客户端边界
+
+以`df6f6c9`为提交基线，库存／装备、人物成长、世界／多人和普通近战需求均由自研服务端输出原包完成，不以修改原服客户端消费者为前提。RemoteWorld／RemoteUiClients／RemoteCombat／RemoteInventory、D2GS解码、SceneController与原消息／输入链保持该基线；SceneView弹体纯计算提取是下表中用户另行授权的例外。此为源码差异范围，未执行原服运行回归，不能当作运行认证。
+
+已逐项列出的客户端改动与确认边界：
+
+| 改动 | 作用与边界 |
+| --- | --- |
+| RealmFrontend与app/frontend的TCP/IP入口 | 用户已确认保留：首页按钮、Host／Join原图页面、默认127.0.0.1及连接／返回菜单；选角、大厅和入局后仍走既有原协议链；LAN专用字体／图片只在打开该页时加载，不增加原服启动资源依赖 |
+| RealmSession.connect_realm的gamePort参数 | 用户已确认保留：只为自定义LAN游戏端口服务；原服LoginOptions已有的端口配置和原包消费不变 |
+| client/character_projection的两个属性名 | 用户已确认保留独立修复：当前MPQ的ItemStatCost为item_poisonlengthresist（ID 110）及item_absorbfire_percent（ID 142），没有旧名poisonlengthresist／fireabsorb；按原表名称读取已收到属性，不增加自研分支或补算未收到值 |
+| presentation/world/client_missile_view的公共计算提取 | 用户已授权：环形散射条件／方向、结束环形子弹体、整数转向与墙面裁剪移入gameplay纯函数；客户端仍传自身Clt参数和正向帧，相同墙面掩码／浮点运算顺序保留，未改原包、输入、命中权限或增加自研分支；行为差异仍须另行确认 |
+
+app/debug/server_commands的参与者选择是宿主管理入口；network新增TCP监听用于服务端，地址枚举用于LAN入口；world/generated_area新增recipe仅由宿主内容准备消费。新增纯装备／近战计算没有替换客户端原有输入、结算来源或显示路径。服务端尚未实现的规则不能通过减少原服客户端支持来适配。
+
 ## 视图与命令
 
 | 端口 | 两种服务端共用的原协议适配与消费者 |
@@ -36,7 +51,7 @@ InventoryView允许缺失尚未接入的容器；共用腰带绘制／输入／�
 
 ## 保留范围与限制
 
-局前使用同一RealmFrontend原图与MCP角色列表、分页、双击、建删选角。Single Player按钮仍用原3WideButtonBlank／TBL5106，组装层连接嵌入Realm并自动建单人房；客户端不读取D2S。自研尚未实现的玩法请求保留原协议，不通过本地执行器补齐。
+局前使用同一RealmFrontend原图与MCP角色列表、分页、双击、建删选角。Single Player按钮仍用原3WideButtonBlank／TBL5106，组装层连接嵌入Realm并自动建单人房；客户端不读取D2S。首页TCP/IP Game使用原背景／Host、Join按钮／IP弹窗，Join默认127.0.0.1；RealmFrontend只发连接意图和显示应用提供的本机地址，Host／Join随后回到同一选角和大厅。设备接口枚举和监听属于network／hosting，应用负责传输选择及返回菜单。自研尚未实现的玩法请求保留原协议，不通过本地执行器补齐。
 
 GameSession、Simulation、SkillRuntime、InventoryService、本地任务／AI／奖励执行源码及 d2x_session 目标已删除。gameplay／items 保留联机显示、地图、原资源报告与独立 D2S 工具所需纯函数和值；PersistentCharacter是纯领域保存值，CharacterSaveData为其别名；客户端库不链接persistence，产品经嵌入宿主链接。旧法杖插入面板没有原服生产者，其空状态／资源／绘制入口已删除，原服插杖流程仍未实现。原 MPQ、reference、旧包、mvp 和用户文件保留。
 
