@@ -40,7 +40,7 @@ StepStatus System::step(TickContext tick,FrameFacts &) {
     const auto *area=ports_.areas.find(RegionId(8));
     if(area) {
         size_t alive=area->definition.populationMissing, killed=0, admitted=0;
-        for(const auto &[id,m]:ports_.monsters.read().actors) { (void)id; if(m.area!=RegionId(8) || m.identity.origin==SpawnOrigin::Debug) continue; ++admitted; if(m.life>0) ++alive; else ++killed; }
+        for(const auto &[id,m]:ports_.monsters.read().actors) { (void)id; if(m.area!=RegionId(8) || m.owner || m.identity.origin==SpawnOrigin::Debug) continue; ++admitted; if(m.life>0) ++alive; else ++killed; }
         alive+=area->definition.population.size()>admitted?area->definition.population.size()-admitted:0;
         state_.denRemaining=unsigned(std::min<size_t>(alive,UINT16_MAX));
         const auto population=ports_.population.read().areas.find(RegionId(8));

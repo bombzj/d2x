@@ -24,7 +24,7 @@ Single Player的online-status仍只读原协议OnlineView；server-status单独�
 
 | 命令 | 参数和当前结果 |
 | --- | --- |
-| `server-snapshot` | 同一调度tick的权威人物、资源／成长／库存revision、物品位置、当前区域怪物及AI、技能动作、待释放数量、弹体、伤害队列、换区和已准备区域／出口。limit默认128、范围1–256；Count是过滤前总数，列表达到limit时不能视为完整。可给全局x／y，只读计算当前区域路径（最多1024点），不移动角色 |
+| `server-snapshot` | 同一调度tick的权威人物、资源／成长／库存revision、物品位置、当前区域怪物及AI、技能动作、待释放数量、弹体、伤害队列、换区和已准备区域／出口。limit默认128、范围1–256；Count是过滤前总数，列表达到limit时不能视为完整。可给全局x／y，只读计算当前区域路径（最多1024点），不移动角色。monsters.rules列AI家族／searchDistance／aip、再生／Threat／速度／碰撞／格挡及动作／技能；运行列含盾牌、巢生计数、蛛网和中断 |
 | `server-events` | 返回已提交领域事实及命令入队／执行记录；since／commandSince是各自观察序号，默认0，limit同上。事件环1024条、命令环512条，first／last／gap表示覆盖缺口。记录不被网络发送／ACK清除，不代表客户端已收到；原回包另查online-*。事件value按type解释：life／mana为256固定点，attack为技能ID，hit为128比例生命，character为经验且secondary为等级，travel为源／目标区域 |
 | `server-pause`／`server-resume`／`server-auto-pause` | 对选中玩家所在整个实例设置调试时钟覆盖：pause保留当前行动并停止推进；原协议命令仍可入队，在step执行。resume连续推进；这两者显式覆盖失焦／ESC自动暂停，不冻结客户端表现。auto-pause解除覆盖，恢复应用自动暂停策略；若恢复到暂停会沿原规则取消行动。所有参与者共用时钟，仅本机宿主管理可调用 |
 | `refill-resources` | 经人物事务恢复当前玩家生命／法力／体力至派生最大值，并发送原人物增量；只允许存活、已入局角色，不承担复活 |
@@ -38,7 +38,7 @@ Single Player的online-status仍只读原协议OnlineView；server-status单独�
 | `step` | frames默认1，范围1–250；只允许已入局且权威paused的实例，以1/25秒固定步推进，返回更新后的tick。普通pause会清路径和待执行移动，step不恢复被清除的路径；server-pause保留行动，也不推进原服 |
 | `grant-experience` | amount为正的有符号整数；宿主progression授予、封顶／升级／余点事务，原包更新同一客户端；暂停时可用，原服拒绝 |
 | `grant-gold` | amount有符号整数；通过人物事务授予金币，复验钱包上限 |
-| `monster-spawn` | code为当前MPQ monstats身份，x／y为当前区域全局subtile。复用自然人口的普通近战准入／数值／动作准备，再交population／monsters；返回entityId。不接受level覆盖，等级随区域／难度，不支持身份、城镇、碰撞和容量明确拒绝 |
+| `monster-spawn` | code为当前MPQ monstats身份，x／y为当前区域全局subtile。复用自然人口的第一幕普通怪物准入／数值／动作准备，再交population／monsters；返回entityId。不接受level覆盖，等级随区域／难度，不支持身份、城镇、碰撞和容量明确拒绝 |
 | `item-spawn` | code、level可选及世界x/y；quality默认normal，可选magic按当前MPQ滚词缀；durability可显式指定0..原物品最大耐久。仅item-spawn接受这两项，缺生成规则明确拒绝；走统一地面安装入口 |
 | `player-damage` | amount为非负整数生命点，转换为原固定点后走人物伤害事务及正常死亡结算 |
 | `grant-shrine`、`grant-hireling` | code，level可选；类型化stub |
@@ -212,4 +212,4 @@ LAN宿主的server-status新增rooms／participants摘要：实例slot／generat
 
 ### 女巫战斗诊断
 
-管理命令`missile-hit`接收`source`（当前区域真实活敌怪GUID）、`amount`（正伤害生命单位）、`missile`（当前MPQ原弹体ID）。它调用effects伤害／护盾及ReturnFire反击入口，用于现有近战怪物尚无远程AI时观察ChillingArmor；不生成怪物AI、不增加客户端私有消息。`player-damage`也走物理伤害／护盾入口。server-snapshot怪物增加chilledUntil／frozenUntil／knockedUntil／nextHitTick／owner，弹体增加skill／rank／program／age／lifetime／remainingHits。诊断操作不能替代通过原技能包进行冒烟。
+管理命令`missile-hit`接收`source`（当前区域真实活敌怪GUID）、`amount`（正伤害生命单位）、`missile`（当前MPQ原弹体ID）。它调用effects伤害／护盾及ReturnFire反击入口，用于隔离观察ChillingArmor反击链；不生成怪物AI、不增加客户端私有消息。`player-damage`也走物理伤害／护盾入口。server-snapshot怪物增加chilledUntil／frozenUntil／knockedUntil／nextHitTick／owner，弹体增加skill／rank／program／age／lifetime／remainingHits。诊断操作不能替代通过原技能包进行冒烟。

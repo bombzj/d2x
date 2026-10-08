@@ -107,7 +107,7 @@ D2Common包含单位、属性、技能公式、物品计算、路径／碰撞和
 
 | 领域 | 公共或可提取部分 | 必须保持服务端拥有 | 当前入口／下一步 |
 | --- | --- | --- | --- |
-| 怪物 | 原身份、尺寸、动作、固定点速度、距离；家族决策可在服务端内部复用 | 人口、目标、仇恨、随机流、AI等待／冲锋／逃跑、攻击、复活、死亡奖励 | 旧master各家族`*_ai`优先；当前`melee_decision`迁入三个普通近战家族，适配在server/ai/melee_families |
+| 怪物 | 原身份、尺寸、动作、固定点速度、距离；家族决策可在服务端内部复用 | 人口、目标、仇恨、随机流、AI等待／冲锋／逃跑、攻击、复活、死亡奖励 | 旧master各家族`*_ai`优先；当前decision与家族纯决策覆盖第一幕19类普通AI，适配在server/ai/family_actions及nest_family |
 | NPC移动／交谈 | 原类型、服务定义、已知距离／资格条件、对白编号解释 | 交互租约、NPC占用、距离复验、介绍记录、特殊服务完成 | content准备服务纯值，server/npc协调；客户端仍消费原27／2F等，不运行商人AI |
 | 商店／维修／赌博 | 价格和减价公式、维修量、容量／装配条件 | 真实货架、物品掷值、刷新种子、金币扣除、买卖／维修事务 | 现有content/items/item_pricing仍依赖ClassicData；接server/merchant前先拆“表准备＋纯报价”，不能直接给内核传ClassicData |
 | 任务记录／面板 | 原编号／日志／D2S槽映射、旗标含义、已知记录的纯显示条件 | 按人按难度进度、本局公共状态、成员资格、世界条件 | 现有quest/catalog与client/quest_projection继续复用；UI中的TBL／绘制部分留客户端适配层 |
@@ -127,7 +127,7 @@ D2Common包含单位、属性、技能公式、物品计算、路径／碰撞和
 6. 用户已授权有参考依据、匹配原版的公共纯函数提取及客户端修复；记录每处MPQ／原包／原函数证据。禁止为兼容自研宿主单独改客户端；证据不足或改变原版规则的方案仍须单独确认，不能扩大为任意改写许可。
 7. 更新本页的提取边界、SERVER_SYSTEMS的实际执行范围及MULTIPLAYER的迁移顺序。存档语义改变同步规则指纹与SAVES，不静默迁移旧档。不编写测试脚本／用例／专用程序；构建／打包／运行验证按当轮有效授权，不能把源码接线当作运行认证。
 
-当前已落地：resolve／projectile_path／combat geometry等公共计算；原表准备与独立server领域；女巫26主动／4被动及亚马逊24主动／6被动、通用十项；周期／环射／连锁／射流、反击吸收与伙伴；三种新普通近战怪物的纯决策与固定点走跑。后续恢复按行为族推进：剩余职业、怪物远程／萨满复活、未支持的周期／散射和状态效果、NPC特殊服务及其余任务事件／奖励。该顺序是结构依赖建议，不表示这些功能已经完成。
+当前已落地：resolve／projectile_path／combat geometry等公共计算；原表准备与独立server领域；女巫26主动／4被动及亚马逊24主动／6被动、通用十项；周期／环射／连锁／射流、反击吸收与伙伴；第一幕普通家族、独立远程／复活／巢／蛛网、固定点走跑与原碰撞。后续恢复按行为族推进：剩余职业、精英／首领及其他幕怪物、未支持的周期／散射和状态效果、NPC特殊服务及其余任务事件／奖励。该顺序是结构依赖建议，不表示这些功能已经完成。
 
 ### 女巫公共计算落点
 
@@ -159,3 +159,13 @@ SequenceTbls与SUnit动作回滚提供Jab／Impale序列及Strafe／Fend时钟�
 原SkillAma／MissMode的主体仍属于D2Game。相同扇形、环形／整数圆盘、剩余帧转向、GUID继任及分裂候选可以提成纯函数，但Clt／Srv候选、期限与触发条件必须保留。武器六通道快照／转换和目标加成也是纯计算；当前权威掷值由服务端执行，不能让客户端重掷或据视觉接触结算。普通公式、近战范围修正后掷值、投射先掷值后目标ED的顺序分别表达。
 
 PlayerPets的0x7A归属广播和晚入局名册独立于房间可见性，因此replication提供单独的宠物归属投影，hosting只编码原包。召唤纯求值、MPQ／装备内容准备、companions生命周期／AI、monsters实体真值及客户端人物伪装分别归各层；不以共享为由恢复万能会话。本批已构建打包并补做有限运行，静态依据和代表技能观察不等于全职业原服认证。
+
+### 第一幕普通怪物公共计算依据
+
+先迁master各族*_ai、wander／melee／projectile／nest及session_monster_combat，再核对D2MOO。AiThink的Fn002／003／004／005／006／007／009／010／012／013／014／019／026／028／030／035／036／037／043／064约束参数用途；AiUtil的sub_6FCF2110、callback5／9和sub_6FCF27B0提供视距、低Threat目标和族群尸体距离依据，完整Vision／房间调度不作已实现宣称。
+
+D2Common的PATH_AllocDynamicPath、PATH_GetDirectionVector和MONSTER_GetDirOffset是collision_spec／projectile_math的原掩码、整数方向与偏移依据；客户端原方向／偏移代码改调用公共函数。MonsterMode的SEIS额外针刺与固定点Velocity两端共用；AI目标、随机、动态碰撞写入及真实伤害不迁到客户端。
+
+MonsterMode::sub_6FC62470／MONSTER_ApplyCriticalDamage与SUnitDmg::sub_6FCC1870约束元素、六通道暴击和GH阈值；damage只返回纯值。UNITS_GetBlockRate要求原ToBlock／NoShldBlock及实际SH组件；MONSTER_SetComponents单体选择与SCmd::sub_6FC3FC80原AC位宽分别归server实体／hosting编码；区域MonsterChoose变体池未接。
+
+SkillMonst::SrvDo085／091／097、SKILLS_CreateSpiderLayMissile、SkillSor::SrvDo023和MissMode::SrvHit01／15／16／31分别约束类链火弹、巢生NOXP／NOTC、复活、蛛网、火球范围与FireHead恢复。MonsterMsg原表用于修正自研A2=16、GH=6、BL=18；客户端无自研特例。PlrModes::EVENTS_HpRegen将玩家毒伤下限设为一生命；effects／transactions拥有毒及解毒，不写运行态到D2S。逐身份／MPQ覆盖集中见[怪物模块](../modules/MONSTERS.md)。

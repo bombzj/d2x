@@ -84,6 +84,12 @@ std::optional<DiagnosticSnapshot> GameInstance::diagnostics(PlayerId id, size_t 
             monster.revision, monster.busyUntil, monster.moving, monster.running, monster.rewardComplete, {}};
         if (const auto found = systems_.ai.read().controllers.find(key); found != systems_.ai.read().controllers.end()) value.controller = found->second;
         value.chilledUntil=monster.chilledUntil;value.frozenUntil=monster.frozenUntil;value.knockedUntil=monster.knockedUntil;value.nextHitTick=monster.nextHitTick;value.owner=monster.owner;
+        value.rules=monster.rule.ai;value.damageRegen=monster.rule.damageRegen;value.threat=monster.rule.threat;
+        value.nativeVelocity=monster.rule.nativeVelocity;value.movementMask=monster.rule.collision.mask;value.spawnMask=monster.rule.spawnCollision.mask;
+        value.blockChance=monster.rule.blockChance;value.shield=monster.shield;value.nestSpawned=monster.nestSpawned;value.webUntil=monster.webUntil;
+        value.interruption=monster.interruption;value.corpseUnavailable=monster.corpseUnavailable;
+        for(const auto &[mode,rule]:monster.rule.attacks) {(void)rule;value.attacks.push_back(mode);}
+        for(const auto &[skill,rule]:monster.rule.skillActions) {(void)rule;value.skills.push_back(skill);}
         result.monsters.push_back(std::move(value));
     }
     for (const auto &[key, cast] : systems_.skills.read().casts) {

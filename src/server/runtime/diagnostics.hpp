@@ -33,6 +33,12 @@ struct DiagnosticMonster {
     std::optional<ai::Controller> controller;
     uint64_t chilledUntil{},frozenUntil{},knockedUntil{},nextHitTick{};
     std::optional<PlayerId> owner{};
+    MonsterAiProfile rules{};
+    int damageRegen{}, threat{}, nativeVelocity{}, movementMask{}, spawnMask{}, blockChance{};
+    int nestSpawned{};
+    uint64_t webUntil{}, interruption{};
+    bool corpseUnavailable{}, shield{};
+    std::vector<int> attacks{}, skills{};
 };
 struct DiagnosticEffect { int state{}; uint64_t expires{}; };
 struct DiagnosticSnapshot {

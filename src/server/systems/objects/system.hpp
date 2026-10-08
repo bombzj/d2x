@@ -26,6 +26,7 @@ class System {
     const State &read() const { return state_; }
     DomainResult<EntityId> admit(const Admission &);
     DomainResult<> execute(const ActorContext &, const Request &, std::optional<int> remoteRange = {});
+    DomainResult<> openMonsterDoor(EntityId,Vec destination,uint64_t tick);
     StepStatus step(TickContext, FrameFacts &);
 };
 }

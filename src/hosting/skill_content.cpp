@@ -33,6 +33,7 @@ void prepareSkillRules(server::PreparedRules &rules, const ClassicData &data, co
                 pet.nativeVelocity=monsters.number(row,"Velocity").value_or(0);
                 pet.coldState=data.states.at("cold").definition.id;pet.frozenState=data.states.at("freeze").definition.id;
                 pet.coldEffect=monsters.number(row,"ColdEffect").value_or(0);
+                pet.threat=monsters.number(row,"threat").value_or(0);
                 for(size_t extra=0;extra<extras.rows().size();++extra) if(extras.value(extra,"Id")==monsters.value(row,"MonStatsEx")) {
                     pet.size=extras.number(extra,"SizeX").value_or(0);
                     pet.collision={uint16_t(extras.number(extra,"flying").value_or(0)?0x1804:0x3c01),pet.size==1 || pet.size==2?2:pet.size};

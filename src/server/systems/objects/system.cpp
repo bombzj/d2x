@@ -25,6 +25,21 @@ void System::collision(RegionId area) {
     }
     ports_.world.objectCollision(area, std::move(values));
 }
+DomainResult<> System::openMonsterDoor(EntityId id,Vec destination,uint64_t tick) {
+    const auto *monster=ports_.monsters.find(id);
+    if(!monster || monster->life<=0 || monster->owner || !monster->rule.opensDoors) return {DomainStatus::InvalidActor,{}};
+    const auto &grid=ports_.areas.at(monster->area).definition.collision;
+    if(grid.collisionSegment(monster->position,destination,0x0800)) return {DomainStatus::Unavailable,{}};
+    Object *nearest=nullptr;float distance=9;
+    for(auto &[key,door]:state_.objects) {
+        (void)key;if(door.area!=monster->area || !door.rule.door || !door.rule.monsterUsable || door.mode || door.pending || door.until>tick) continue;
+        const auto delta=door.position-monster->position;const float candidate=delta.x*delta.x+delta.y*delta.y;
+        if(candidate<distance) {distance=candidate;nearest=&door;}
+    }
+    if(!nearest || nearest->revision==UINT64_MAX) return {DomainStatus::Unavailable,{}};
+    nearest->mode=2;nearest->until=tick+std::max(uint64_t{1},nearest->rule.openingTicks);++nearest->revision;collision(monster->area);
+    return {DomainStatus::Applied,std::monostate{}};
+}
 DomainResult<> System::execute(const ActorContext &actor, const Request &request, std::optional<int> remoteRange) {
     const auto *player = ports_.players.find(actor.player); const auto *area = ports_.areas.find(actor.area);
     if (!player || !player->entered || player->actor != actor.actor || player->area != actor.area || player->persistent.player.hp <= 0) return {DomainStatus::InvalidActor, {}};

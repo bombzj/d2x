@@ -103,7 +103,10 @@ add_library(d2x_gameplay
   src/gameplay/skills/projectile_path.cpp src/gameplay/skills/damage_curve.cpp
   src/gameplay/skills/rank_sources.cpp src/gameplay/skills/rank_bonus.cpp src/gameplay/skills/aura_resolve.cpp
   src/gameplay/skills/passive.cpp src/gameplay/skills/weapon_damage.cpp src/gameplay/skills/amazon_magic.cpp
-  src/gameplay/monsters/melee_decision.cpp src/gameplay/monsters/implementation.cpp src/gameplay/monsters/rank.cpp
+  src/gameplay/monsters/melee_decision.cpp src/gameplay/monsters/skirmish_decision.cpp
+    src/gameplay/monsters/ranged_decision.cpp
+    src/gameplay/monsters/special_decision.cpp
+    src/gameplay/monsters/shaman_decision.cpp src/gameplay/monsters/movement_math.cpp src/gameplay/monsters/projectile_math.cpp src/gameplay/monsters/damage.cpp src/gameplay/monsters/implementation.cpp src/gameplay/monsters/rank.cpp
   src/gameplay/loot/treasure.cpp src/gameplay/loot/quality.cpp
   src/gameplay/loot/special.cpp src/gameplay/loot/affix.cpp
   src/gameplay/rewards/experience.cpp)
@@ -151,12 +154,14 @@ target_sources(d2x_server PRIVATE
   src/server/systems/loot/system.cpp
   src/server/systems/population/system.cpp
   src/server/systems/monsters/system.cpp
+    src/server/systems/monsters/special_actions.cpp
     src/server/systems/monsters/controlled.cpp
-  src/server/systems/ai/system.cpp src/server/systems/ai/melee_families.cpp
-  src/server/systems/skills/system.cpp src/server/systems/skills/casting.cpp
+  src/server/systems/ai/system.cpp src/server/systems/ai/family_actions.cpp
+    src/server/systems/ai/nest_family.cpp
+  src/server/systems/skills/system.cpp src/server/systems/skills/monster_actions.cpp src/server/systems/skills/casting.cpp
     src/server/systems/skills/weapon.cpp src/server/systems/inventory/weapon_cost.cpp
   src/server/systems/missiles/system.cpp
-    src/server/systems/missiles/launch.cpp
+    src/server/systems/missiles/launch.cpp src/server/systems/missiles/monster.cpp
     src/server/systems/missiles/direct.cpp
     src/server/systems/missiles/programs.cpp
     src/server/systems/missiles/weapon.cpp
@@ -165,6 +170,7 @@ target_sources(d2x_server PRIVATE
     src/server/systems/effects/amazon.cpp
     src/server/systems/effects/units.cpp
     src/server/systems/effects/periodic.cpp
+    src/server/systems/effects/monster_periodic.cpp
   src/server/systems/combat/system.cpp src/server/systems/combat/spell_damage.cpp
   src/server/systems/death/system.cpp
   src/server/systems/companions/system.cpp
@@ -186,7 +192,7 @@ target_link_libraries(d2x_server PUBLIC d2x_gameplay d2x_items d2x_navigation)
 add_library(d2x_host src/hosting/game_host.cpp src/hosting/administration.cpp)
 target_link_libraries(d2x_host PUBLIC d2x_server)
 # MPQ preparation is outside both the authority and scheduler libraries.
-add_library(d2x_game_content src/hosting/skill_content.cpp src/hosting/combat_content.cpp src/hosting/game_content.cpp src/hosting/character_content.cpp src/hosting/character_creation.cpp src/hosting/character_rules.cpp)
+add_library(d2x_game_content src/hosting/skill_content.cpp src/hosting/combat_content.cpp src/hosting/monster_actions_content.cpp src/hosting/game_content.cpp src/hosting/character_content.cpp src/hosting/character_creation.cpp src/hosting/character_rules.cpp)
 target_link_libraries(d2x_game_content PUBLIC d2x_world d2x_server PRIVATE d2x_persistence d2x_population)
 add_library(d2x_character_host src/hosting/character_store.cpp src/hosting/embedded_realm.cpp
   src/hosting/native_game_wire.cpp src/hosting/native_combat_wire.cpp src/hosting/detail/monster_replication.cpp src/hosting/native_item_wire.cpp src/hosting/native_character_wire.cpp src/hosting/native_quest_wire.cpp

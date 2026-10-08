@@ -1,4 +1,5 @@
 #include "combat_content.hpp"
+#include "monster_actions_content.hpp"
 #include "content/classic_data.hpp"
 #include "content/monsters/monster_difficulty_combat.hpp"
 #include "content/monsters/monster_experience.hpp"
@@ -32,18 +33,20 @@ std::optional<server::PreparedMonster> combatMonster(Archives &archives, const C
     const MonsterCatalog &catalog, const AnimDataTable &animations) {
     const auto &level = world.level(request.level);
     const auto *record = catalog.find(identity.monster);
-    if (!record || !record->hostile() || identity.rank != MonsterRank::Normal || record->boss || record->ranged ||
+    if (!record || !record->hostile() || identity.rank != MonsterRank::Normal || record->boss ||
         (record->ai != "Fallen" && record->ai != "Zombie" && record->ai != "Skeleton" && record->ai != "Brute" &&
-         record->ai != "CorruptRogue" && record->ai != "Goatman" && record->ai != "CorruptLancer")) return {};
+         record->ai != "CorruptRogue" && record->ai != "Goatman" && record->ai != "CorruptLancer" && record->ai != "Wraith" &&
+         record->ai != "BloodHawk" && record->ai != "Fetish" && record->ai != "QuillRat" &&
+         record->ai != "CorruptArcher" && record->ai != "SkeletonBow" && record->ai != "SkeletonMage" && record->ai != "Bighead" &&
+         record->ai != "FallenShaman" && record->ai != "Vampire" && record->ai != "Arach" && record->ai != "FoulCrowNest")) return {};
     auto profile = loadMonsterCombatProfile(data.tables.at("monstats"), record->sourceRow, data.tables.at("monlvl"),
         request.difficulty, level.population.level.at(size_t(request.difficulty)));
     const auto weapon = monsterModeWeapon(archives, record->token, "a1", record->baseWeapon);
-    auto attack = loadMonsterAttackTiming(animations, record->token, 1, weapon);
+    auto attack = loadMonsterAttackTiming(animations, record->token, 1, weapon, record->attack1Projectile ? 2 : 1);
     auto death = loadMonsterMotionTiming(animations, record->token, "dt", monsterModeWeapon(archives, record->token, "dt", record->baseWeapon));
     const auto delay = data.tables.at("monstats").number(record->sourceRow, request.difficulty == 0 ? "aidel" : request.difficulty == 1 ? "aidel(N)" : "aidel(H)");
-    if (!profile || !profile->damage.attack1Damage || !profile->attack1Rating || !profile->defense ||
-        !attack || !death || !record->aiProfiles.at(size_t(request.difficulty)) || !record->walkVelocity || *record->walkVelocity <= 0 || !delay || *delay <= 0 ||
-        std::any_of(profile->damage.elements.begin(), profile->damage.elements.end(), [](const auto &element) { return bool(element); })) return {};
+    if (!profile || !profile->defense || !death || !record->aiProfiles.at(size_t(request.difficulty)) ||
+        !record->walkVelocity || *record->walkVelocity < 0 || (*record->walkVelocity==0 && record->ai!="FoulCrowNest")) return {};
     const auto ai = *record->aiProfiles.at(size_t(request.difficulty));
     if ((ai.kind == MonsterAiKind::CorruptRogue || ai.kind == MonsterAiKind::CorruptLancer) &&
         !loadMonsterMotionTiming(animations, record->token, "rn", monsterModeWeapon(archives, record->token, "rn", record->baseWeapon))) {
@@ -52,27 +55,52 @@ std::optional<server::PreparedMonster> combatMonster(Archives &archives, const C
     server::MonsterRule rule;
     rule.nativeClass = record->index; rule.level = profile->level;
     rule.minimumLife = profile->damage.minLife; rule.maximumLife = profile->damage.maxLife;
-    rule.minimumDamage = profile->damage.attack1Damage->first; rule.maximumDamage = profile->damage.attack1Damage->second;
-    rule.defense = *profile->defense; rule.attackRating = *profile->attack1Rating;
+    if(profile->damage.attack1Damage) {rule.minimumDamage=profile->damage.attack1Damage->first;rule.maximumDamage=profile->damage.attack1Damage->second;}
+    rule.defense = *profile->defense; rule.attackRating = profile->attack1Rating.value_or(0);
     rule.resistances = profile->resistances; rule.criticalChance = profile->criticalChance;
     rule.size = record->collisionSize; rule.meleeRange = record->meleeRange;
-    rule.attackTicks = std::max(1, int(std::ceil(attack->duration * 25)));
-    rule.impactTick = std::clamp(int(std::ceil(attack->impact * 25)), 1, rule.attackTicks);
-    rule.deathTicks = std::max(1, int(std::ceil(death->duration * 25))); rule.decisionTicks = *delay;
+    if(attack) {rule.attackTicks=std::max(1,int(std::ceil(attack->duration*25)));rule.impactTick=std::clamp(int(std::ceil(attack->impact*25)),1,rule.attackTicks);}
+    rule.deathTicks = std::max(1, int(std::ceil(death->duration * 25))); rule.decisionTicks = delay.value_or(0)>0?*delay:15;
     rule.nativeVelocity = *record->walkVelocity; rule.difficulty = request.difficulty; rule.collision = record->movementRule();
+    rule.spawnCollision=record->spawnRule();rule.corpseSelectable=record->corpseSelectable;
+    rule.opensDoors=data.tables.at("monstats").number(record->sourceRow,"opendoors").value_or(0)!=0;
+    rule.threat=data.tables.at("monstats").number(record->sourceRow,"threat").value_or(0);
+    rule.coldDivisor=data.monsterColdDivisor.at(size_t(request.difficulty));
+    const auto suffix=request.difficulty==0?"":request.difficulty==1?"(N)":"(H)";
+    rule.blockChance=std::clamp(data.tables.at("monstats").number(record->sourceRow,std::string("ToBlock")+suffix).value_or(0),0,75);
+    rule.blockWithoutShield=data.tables.at("monstats").number(record->sourceRow,"NoShldBlock").value_or(0)!=0;
+    // MonStats2's xx sentinel is not an animation. MONSTERSPAWN_GetResurrectMode
+    // uses NU for modes outside the native 0..15 range.
+    if(record->resurrectionMode!="nu" && record->resurrectionMode!="xx" && !record->resurrectionMode.empty()) {
+        const auto clock=loadMonsterMotionTiming(animations,record->token,record->resurrectionMode,monsterModeWeapon(archives,record->token,record->resurrectionMode,record->baseWeapon));
+        if(!clock) return {};
+        rule.resurrectionTicks=std::max(1,int(std::ceil(clock->duration*25)));
+    }
     rule.demon = record->demon; rule.undead = record->undead;
     rule.coldEffect = record->coldEffect.at(size_t(request.difficulty));
     rule.coldState = data.states.at("cold").definition.id;
     rule.frozenState = data.states.at("freeze").definition.id;
-    const auto &extra=data.tables.at("monstats2");
-    for(size_t row=0;row<extra.rows().size();++row) if(extra.value(row,"Id")==data.tables.at("monstats").value(record->sourceRow,"MonStatsEx")) {
-        if(extra.number(row,"mKB").value_or(0) && extra.number(row,"mWL").value_or(0) && record->walkAnimationRate.value_or(0)>0) {
-            const auto hit=loadMonsterMotionTiming(animations,record->token,"gh",monsterModeWeapon(archives,record->token,"gh",record->baseWeapon));
-            if(hit) rule.knockbackTicks=std::max(1,int(std::ceil(float(hit->frames)*256.f/float(*record->walkAnimationRate))));
-        }
-        break;
-    }
+    if(!prepareMonsterLifecycle(archives,data,animations,*record,rule)) return {};
     rule.ai = *record->aiProfiles.at(size_t(request.difficulty));
+    rule.hitStates = {data.states.at("cold").definition, data.states.at("poison").definition,{}};
+    rule.damageRegen = profile->damageRegen;
+    if (record->ai == "Fallen") {
+        const auto shout = loadMonsterMotionTiming(animations, record->token, "s2", monsterModeWeapon(archives, record->token, "s2", record->baseWeapon));
+        if (!shout) return {};
+        rule.attacks.emplace(9, server::MonsterAttackRule{0, 0, 0, std::max(1, int(std::ceil(shout->duration * 25))), 1, {}});
+    }
+    auto attacks = prepareMonsterAttacks(archives, data, animations, *record, *profile,request.difficulty);
+    rule.attacks.merge(attacks);
+    if (record->ai!="FoulCrowNest" && (!rule.attacks.contains(4) || (profile->damage.attack2Damage && !rule.attacks.contains(5)))) return {};
+    if(!prepareMonsterSpecialActions(archives,data,animations,*record,rule)) return {};
+    if(record->ai=="FoulCrowNest") {
+        if(!record->nest) return {};
+        auto childIdentity=identity;childIdentity.monster=record->nest->child;childIdentity.origin=SpawnOrigin::Summoned;
+        auto child=combatMonster(archives,data,request,std::move(childIdentity),{},world,catalog,animations);
+        if(!child) return {};
+        rule.nestChild=std::make_shared<const server::PreparedMonster>(std::move(*child));
+        rule.spawnOffset={float(record->nest->spawnX),float(record->nest->spawnY)};
+    }
     rule.experience.resize(100);
     bool complete = true;
     for (int playerLevel = 1; playerLevel < 100; ++playerLevel) {
@@ -128,7 +156,7 @@ void prepareCombatPopulation(Archives &archives, const ClassicData &data, Prepar
             if(preparedMonster) { preparedMonster->identity=spawn.identity; deferred.insert("Enemy substitute: "+spawn.identity.monster+" -> fallen1"); }
         }
         if (!preparedMonster) { ++area.populationMissing; deferred.insert("Combat pending: "+spawn.identity.monster); continue; }
-        if (!area.collision.walkable(spawn.position,preparedMonster->rule.collision)) { ++area.populationMissing; deferred.insert("Spawn collision: "+spawn.identity.spawnKey); continue; }
+        if (!area.collision.walkable(spawn.position,preparedMonster->rule.spawnCollision)) { ++area.populationMissing; deferred.insert("Spawn collision: "+spawn.identity.spawnKey); continue; }
         area.population.push_back(std::move(*preparedMonster));
     }
     area.populationDeferred.assign(deferred.begin(), deferred.end());

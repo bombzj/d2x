@@ -1,6 +1,6 @@
 # 项目基线
 
-更新：2026-10-08。开始修改前阅读[AGENTS](AGENTS.md)与[对应模块](docs/README.md)，实现状态以当前源码为准。历史过程由Git追溯，技能原规则／运行证据由专题维护，后续顺序见[总计划](docs/architecture/MULTIPLAYER.md)。
+更新：2026-10-09。开始修改前阅读[AGENTS](AGENTS.md)与[对应模块](docs/README.md)，实现状态以当前源码为准。历史过程由Git追溯，技能原规则／运行证据由专题维护，后续顺序见[总计划](docs/architecture/MULTIPLAYER.md)。
 
 ## 产品与代码边界
 
@@ -18,7 +18,7 @@ D2X提供Single Player、TCP/IP局域网宿主与既有原服入口。选角至�
 | 世界／旅行 | 原五幕1–136生成器；区域准备、碰撞、走跑／边界及UNIT_TILE；传送点、本人双向回城门 | 长绕墙／动态拥挤、完整房间活动／兴趣、NPC跨幕与特殊资格、队友门未完成 |
 | 库存／成长 | 背包／Cursor／腰带／装备／切组／合堆／书本转装；装备总值、经验升级、加点学技／热键、永久奖励与已支持被动 | 全品质／套装、复杂容量／争用、全部职业属性／奖励、重置与工艺未完成 |
 | 战斗／技能 | 普通空手／近战／弓弩、投掷／左手动作、六通道；药瓶、隐藏Kick、Unsummon及四项卷轴／书本；女巫26主动／4被动、亚马逊24主动／6被动 | 其他职业主动、完整双持组合、吸血／吸魔／压碎／撕裂与触发、受击恢复／格挡／耐久完整规则、PvP未完成 |
-| 怪物／伙伴 | Fallen／Zombie／Skeleton／Brute、CorruptRogue／Goatman／CorruptLancer普通物理近战；Hydra、诱饵／女武神归属、期限／AI／换区及装备准备 | 完整Act1家族、远程／复活／精英／首领、佣兵及其他召唤未迁入；女武神重甲死亡组件待原版核实 |
+| 怪物／伙伴 | 第一幕57普通身份／19类AI、A1／A2／远程与元素冷毒、萨满复活、巢出生、蛛网、GH／BL与实际盾牌；Hydra、诱饵／女武神归属、期限／AI／换区及装备准备 | 精英／首领、其他幕怪物、佣兵及其他召唤未迁入；完整房间调度／拥挤及区域组件池未实现；女武神重甲死亡组件待原版核实 |
 | 掉落／资源／死亡 | 普通掉落拾取、金币丢弃／部分拾取；自然恢复、药水／定时效果；死亡惩罚、城镇复活、本人尸体回收 | NoDrop人数／任务掉落、全部负面状态清除、硬核／部分拾回／多尸体及异常退出边界未完整认证 |
 | 物件／NPC／任务 | 普通门箱桶、部分神殿／水井；静态NPC、普通买卖、鉴定／修理／仓库；邪恶洞穴击杀、个人资格、Akara奖励／存档 | 陷阱／爆炸桶／特殊机关、完整城镇AI、赌博／批量／充能修理、其余任务及组队共享未实现 |
 | 多人 | 1–8人同局名册、走跑／装备外观／聊天；GameHandle多实例、独立连接／租约及定向私有事实 | 队伍、交易权威、PvP、跨机器／长期稳定性未验收；嵌入宿主双房观察不能替代独立EXE多房验收 |
@@ -38,6 +38,14 @@ Single Player使用原MCP角色界面，选角后自动建普通单人房、跳�
 私有一人实例支持ESC／失焦自动暂停，共享房间／原服继续推进。现有named pipe提供权威快照／有界历史、时钟覆盖、保存／重载、资源／经验／金币、MPQ物品／怪物准备等管理入口；正常玩法仍发送原online-*包。消息目录及stub不代表全部实现。接口见[调试管道](docs/development/DEBUG_PIPE.md)和[服务端协议](docs/modules/SERVER_PROTOCOL.md)。
 
 ## 当前运行包与有限冒烟
+
+2026-10-09第一幕普通怪物收尾后，Windows Release完整构建及最终增量构建成功，更新`dist/current`。EXE SHA256：`17E62C55198074333D4351B5E969B285E7B6FA72B94B4A4D740D924BA12D73B5`；网络DLL：`9F7B1FAF7AF453E3DC481F05207C76460AECC38FF33A50E92823032228B2969F`。最终增量构建无warning／error；早期编译诊断与修复日志保留，不能把整个批次概括为无warning。证据在忽略目录`artifacts/act1-monsters-20261008`，没有新增测试脚本、用例或程序。
+
+普通难度临时92级女巫存档，原走跑完成营地→鲜血荒地，原UNIT_TILE进入洞穴。57个普通身份全部通过同一MPQ准备／准入，19类AI均观察到动作事实；代表路径覆盖近战扣血、远程弹体、女巫霜之新星命中／冷却减速／受击中断、自然萨满本人族群复活及再次死亡、鸟巢表中6／8次出生、蛛网143→146接触后的slowed状态，以及吸血鬼169火球／333 FireHead。修复准入时把ResurrectMode=xx误当动画的错误；复活不清除rewardComplete，洞穴剩余数随存活人数变化。保存后新EXE进程入局，92级、已学技能及生命恢复，运行态蛛网不写入存档。准确观察与未覆盖范围仅维护在[怪物模块](docs/modules/MONSTERS.md#有限运行证据)。
+
+最终宿主failures=0、characterIssues为空；客户端ignoredPackets=0、unavailableUnits=0、mapErrors／effectLimitations为空，stderr为空。普通难度的这些原表行没有启用毒伤；噩梦／地狱毒伤、盾牌随机格挡、全部随机分支／取消／背压／多人、原服回归和Linux未运行认证。上述是代表路径有限V2，不能把全部怪物或战斗整体标V3。
+
+### 历史通用十项有限冒烟
 
 2026-10-08通用十项收尾后，Windows Release最终构建成功并更新`dist/current`，包括此前未提交的局前／端口／连接错误详情。EXE SHA256：`122CE3973A21D2C258CADE81B737A106DD864710198144DA7F1E0E4E73C92866`；网络DLL：`9F7B1FAF7AF453E3DC481F05207C76460AECC38FF33A50E92823032228B2969F`。最终增量构建无warning／error；早期构建的诊断及修复不删，不能把整个批次概括为无warning。构建及运行证据保留在忽略目录`artifacts/common-skills-smoke-20261008`；没有新增测试脚本、用例或程序。
 
@@ -64,7 +72,7 @@ Single Player使用原MCP角色界面，选角后自动建普通单人房、跳�
 
 原地图、真实GUID和原图UI共用现有客户端。人物面板、技能提示／树、库存、NPC菜单、交易、HUD、聊天、祭坛／野外物件、声音和照明的规则／限制分别维护在[人物](docs/modules/CHARACTER.md)、[HUD](docs/gameplay/ui/CLASSIC_HUD.md)、[库存](docs/modules/INVENTORY.md)、[NPC／任务](docs/modules/NPC_QUEST.md)、[物件](docs/gameplay/world/OBJECTS.md)及[联网](docs/modules/NETWORK.md)。已有定义和协议请求不等于价格／赌博、佣兵、全部任务／物件或七职业视觉完成；晚入视野不重播历史施法／弹体，宠物头像HUD未接。
 
-自研宿主手动丢弃物品／金币源码已改为事务发布掉落事实，再编码原0x9C action=2，触发现有客户端的MPQ翻转动画及掉落音效；静态地面同步仍用action=0。该修正未构建、运行、测试或入包，怪物／箱桶新生掉落动画尚未接此事件；细节见[库存](docs/modules/INVENTORY.md)。
+自研宿主手动丢弃物品／金币采用事务发布掉落事实，再编码原0x9C action=2，触发现有客户端的MPQ翻转动画及掉落音效；静态地面同步仍用action=0。该修正已随当前完整Release构建入包，未在怪物批次专项运行；怪物／箱桶新生掉落动画尚未接此事件。细节见[库存](docs/modules/INVENTORY.md)。
 
 原MPQ位于`assets/mpq2`；先查本地reference和当前资源，来源／固定版本／许可见[资料来源](docs/resources/THIRD_PARTY.md)、[MPQ](docs/resources/MPQ.md)。保留原资源、reference、旧压缩包和mvp；资源、缓存、截图、存档、运行包及参考仓库不入源码提交。独立d2x_assets保留原资源／地图报告及save-info工具。
 

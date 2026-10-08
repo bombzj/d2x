@@ -5,6 +5,9 @@
 #include "content/character/character_attributes.hpp"
 #include "content/monsters/monster_animation.hpp"
 #include "gameplay/combat/geometry.hpp"
+#include "gameplay/monsters/collision_spec.hpp"
+#include "gameplay/monsters/melee_decision.hpp"
+#include "gameplay/monsters/projectile_math.hpp"
 #include "gameplay/skills/projectile_path.hpp"
 #include "gameplay/skills/amazon_missile.hpp"
 #include "gameplay/skills/weapon_volley.hpp"
@@ -61,21 +64,8 @@ bool visible(const Sprite &s, Vec p) {
 }
 // PATH_GetDirectionVector's integer tangent sectors, then the original
 // MONSTER_GetDirOffset lookup used by SkillMonst::SrvDo088_AndrialSpray.
-int nativeFacing(OnlinePoint from, OnlinePoint to) {
-    const int dx=to.x-from.x, dy=to.y-from.y;
-    const int x=std::abs(dx), y=std::abs(dy);
-    constexpr std::array thresholds{13,26,39,53,68,85,105};
-    const int tangent=std::max(x,y)?127*std::min(x,y)/std::max(x,y):0;
-    int angle=int(std::upper_bound(thresholds.begin(),thresholds.end(),tangent)-thresholds.begin());
-    if (x>y) angle=(-1-angle)&15;
-    if (dy<0) angle=(-1-angle)&31;
-    if (dx>=0) angle=(-1-angle)&63;
-    return ((((angle+8)&63)+4)>>3)&7;
-}
-Vec monsterDirectionOffset(int index) {
-    constexpr std::array x{0,-1,-1,-1,0,1,1,1,0,-1,-2,-2,-2,-2,-2,-1,0,1,2,2,2,2,2,1,0,-3,-3,-3,0,3,3,3};
-    constexpr std::array y{-1,-1,0,1,1,1,0,-1,-2,-2,-2,-1,0,1,2,2,2,2,2,1,0,-1,-2,-2,-3,-3,0,3,3,3,0,-3};
-    return {float(x.at(size_t(index))),float(y.at(size_t(index)))};
+int nativeFacing(OnlinePoint from,OnlinePoint to) {
+    return monsterFacing8({float(from.x),float(from.y)},{float(to.x),float(to.y)});
 }
 } // namespace
 struct RemoteScene::Impl {
@@ -381,14 +371,10 @@ struct RemoteScene::Impl {
             if (monstats.value(identity->second,"AI")=="QuillRat") {
                 // MonsterMode's extra quills use a fresh SEIS seed and +/-5 offsets.
                 auto seed=initialRandom(0x53454953);
-                int x=5,y=5;
                 const auto suffix=difficulty==1?"(N)":difficulty==2?"(H)":"";
                 const int count=monstats.number(identity->second,"aip3"+std::string(suffix)).value_or(0);
-                for (int i=0; i<count; ++i) {
-                    if (rollRandom(seed)&1) x=-x;
-                    if (rollRandom(seed)&1) y=-y;
-                    launch(missile->second,start,end+Vec{float(x),float(y)},1,animation->releaseTime-age,{},actor.key);
-                }
+                for (const Vec aim : monsterQuillTargets(end,count,seed))
+                    launch(missile->second,start,aim,1,animation->releaseTime-age,{},actor.key);
             }
         };
         auto skillEffect = [&](const OnlineCombatEvent &event, std::optional<Vec> presentationOrigin = {}) {
@@ -842,8 +828,7 @@ struct RemoteScene::Impl {
         const auto row = monsterRows.find(*u.classId);
         if (u.key.type != 1 || row == monsterRows.end() || !u.velocityPercent) return 0;
         // Native path velocity is MonStats.Velocity << 8, modified by the full wire percentage.
-        return float(monstats.number(row->second, "Velocity").value_or(0)) * 25.f / 16.f *
-            float(std::max(25, int(*u.velocityPercent))) / 100.f;
+        return monsterMovementSpeed(monstats.number(row->second, "Velocity").value_or(0), int(*u.velocityPercent));
     }
     MovementCollisionRule movementRule(const OnlineUnit &u) const {
         if (u.key.type == 0) return playerMovement;
@@ -851,9 +836,9 @@ struct RemoteScene::Impl {
         if (row == monsterRows.end()) return {};
         const auto extra = monsterExtra.find(monstats.value(row->second, "MonStatsEx"));
         const int size = extra == monsterExtra.end() ? 0 : monstats2.number(extra->second, "SizeX").value_or(0);
-        uint16_t mask = monstats.number(row->second, "flying").value_or(0) ? 0x1804 :
-            monstats.number(row->second, "opendoors").value_or(0) ? 0x3401 : 0x3c01;
-        return {mask, size};
+        return monsterMovementCollision(monstats.value(row->second, "BaseId") == "wraith1",
+            monstats.number(row->second, "flying").value_or(0),
+            monstats.number(row->second, "opendoors").value_or(0), size);
     }
     void plan(Motion &m, Vec goal, const Map &map, Vec origin, MovementCollisionRule rule, float speed,
               bool nativeSegments) {

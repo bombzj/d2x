@@ -6,6 +6,7 @@
 #include "world/identity.hpp"
 #include <compare>
 #include <cstdint>
+#include <array>
 #include <map>
 #include <set>
 #include <memory>
@@ -89,5 +90,6 @@ struct MonsterSnapshot {
     int appearOverlay{-1};
     std::optional<EntityId> storedOwner{};
     std::vector<uint8_t> modifiers{};
+    std::array<uint8_t,16> components{}, componentCounts{};
 };
 } // namespace d2x

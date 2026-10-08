@@ -9,6 +9,7 @@
 #include "gameplay/skills/firewall_spec.hpp"
 #include "gameplay/loot/tower_reward.hpp"
 #include "world/navigation.hpp"
+#include "gameplay/monsters/collision_spec.hpp"
 #include <array>
 #include <map>
 #include <optional>
@@ -63,14 +64,12 @@ struct MonsterRecord {
     MovementCollisionRule movementRule() const {
         // PATH_AllocDynamicPath: Wraith's small pattern ignores walls, flying
         // uses barriers. Door opening still requires a separate object action.
-        return {uint16_t(base == "wraith1" ? 0x0804 : flying ? 0x1804 : 0x3c01),
-            base == "wraith1" ? 2 : collisionSize == 1 || collisionSize == 2 ? 2 : collisionSize};
+        return monsterMovementCollision(base == "wraith1", flying, false, collisionSize);
     }
     MovementCollisionRule spawnRule() const {
         // MonsterSpawn uses MonStats2.spawnCol and CheckMaskWithSize, not
         // PATH's flying/Wraith masks or small-unit path pattern.
-        return {uint16_t(spawnCollision == 1 ? 0x01c0 : spawnCollision == 2 ? 0x3f11 :
-            spawnCollision == 3 ? 0 : 0x3c01), collisionSize};
+        return monsterSpawnCollision(spawnCollision, collisionSize);
     }
     bool hostile() const {
         return enabled && killable && !npc && !critter &&

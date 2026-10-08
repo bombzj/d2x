@@ -47,7 +47,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         bool valid = area && !area->definition.town && ((playerAttack && damage.weapon.has_value()) || monsterAttack || (petAttack && damage.weapon));
         if (sourcePlayer) valid = valid && sourcePlayer->entered && sourcePlayer->area == damage.area && sourcePlayer->persistent.player.hp > 0;
         if (targetPlayer) valid = valid && targetPlayer->entered && targetPlayer->area == damage.area && targetPlayer->persistent.player.hp > 0;
-        if (sourceMonster) valid = valid && sourceMonster->area == damage.area && sourceMonster->life > 0 && sourceMonster->frozenUntil <= tick.tick && sourceMonster->knockedUntil<=tick.tick && (!sourceMonster->owner || petAttack);
+        if (sourceMonster) valid = valid && sourceMonster->area == damage.area && sourceMonster->life > 0 && sourceMonster->interruption==damage.sourceInterruption && sourceMonster->frozenUntil <= tick.tick && sourceMonster->knockedUntil<=tick.tick && (!sourceMonster->owner || petAttack);
         if (targetMonster) valid = valid && targetMonster->area == damage.area && targetMonster->life > 0 && (!targetMonster->owner || (monsterAttack && targetMonster->amazonPet));
         if (!valid) { it = state_.pending.erase(it); continue; }
         if(targetPlayer && !damage.reactionsStarted) {
@@ -62,7 +62,8 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
             !area->definition.collision.segment(from, to)) { it = state_.pending.erase(it); continue; }
         // Reserve both private resource and public hit outputs before consuming RNG.
         if (!ports_.events.hasCapacity(4, targetPlayer ? 2 : 1) || !ports_.effects.reactionCapacity()) { blocked = true; ++it; continue; }
-        auto random = ports_.random;
+        auto random = damage.actionRandom.value_or(ports_.random);
+        const auto commitRandom=[&]{if(!damage.actionRandom) ports_.random=random;};
         const bool running = targetPlayer && targetPlayer->moving && targetPlayer->runningNow;
         const auto chance = [&] {
             if (targetMonster && damage.weapon) {
@@ -77,17 +78,47 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
             const int block = targetPlayer->totals.equipment.blockChance / (running ? 3 : 1);
             hit = int(limitedRandom(random, 100)) >= block;
         }
+        if(hit && targetMonster && !targetMonster->owner && (targetMonster->shield || targetMonster->rule.blockWithoutShield) &&
+            int(limitedRandom(random,100))<targetMonster->rule.blockChance) {
+            const auto result=ports_.monsters.block(targetMonster->id,tick.tick);
+            if(result.status==DomainStatus::Capacity) {blocked=true;++it;continue;}
+            commitRandom();it=state_.pending.erase(it);continue;
+        }
         if(hit && targetPlayer) {
             const auto avoided=rollWeaponAvoidance(targetPlayer->totals.character.combat,targetPlayer->moving,false,random);
             if(avoided!=WeaponAvoidance::None) {
                 const auto result=ports_.effects.avoidance({targetPlayer->player,targetPlayer->actor,targetPlayer->area,area->generation,0,tick.tick},avoided,damage.source);
                 if(result.status==DomainStatus::Capacity) {blocked=true;++it;continue;}
-                ports_.random=random;it=state_.pending.erase(it);continue;
+                commitRandom();it=state_.pending.erase(it);continue;
             }
         }
         if(hit && targetMonster && targetMonster->amazonPet) {
             if(targetMonster->petStats.block>0 && int(limitedRandom(random,100))<targetMonster->petStats.block) hit=false;
             if(hit && rollWeaponAvoidance(targetMonster->petStats.attributes.combat,targetMonster->moving,false,random)!=WeaponAvoidance::None) hit=false;
+        }
+        if (monsterAttack && !sourceMonster->owner) {
+            const auto attack = sourceMonster->rule.attacks.find(damage.monsterMode);
+            if (attack == sourceMonster->rule.attacks.end()) { it = state_.pending.erase(it); continue; }
+            const auto &slot = attack->second;
+            const MonsterHit rolled = hit ? rollMonsterHit(slot.minimum, slot.maximum, sourceMonster->rule.criticalChance, slot.elements, 128, random) : MonsterHit{};
+            DomainResult<> result;
+            if (targetPlayer) {
+                const ActorContext actor{targetPlayer->player,targetPlayer->actor,targetPlayer->area,area->generation,0,tick.tick};
+                const auto received = ports_.effects.receiveMonster(actor,damage.source,rolled,sourceMonster->rule.hitStates);
+                result = {received.status,received ? std::optional{std::monostate{}} : std::nullopt};
+                if (received && hit && *received.value > 0) ports_.effects.react(actor,damage.source,CombatEffectEvent::DamagedInMelee);
+            } else {
+                int64_t amount = 0;
+                for (size_t i = 0; i < 5; ++i) amount += int64_t(mitigateMonsterDamage(float(rolled.channels[i])/256.f,targetMonster->rule.resistances[i])*256.f);
+                const auto cold = rolled.coldFrames * unsigned(std::clamp(100-targetMonster->rule.resistances[4],0,200))/(100u*unsigned(targetMonster->rule.coldDivisor));
+                std::optional<PoisonApplication> poison;
+                if (rolled.poisonFrames && rolled.channels[5]) poison = PoisonApplication{int64_t(mitigateMonsterDamage(float(rolled.channels[5])/256.f,targetMonster->rule.resistances[5])*256.f),rolled.poisonFrames,sourceMonster->rule.hitStates.poison.id};
+                result = ports_.monsters.damage(damage.target,damage.source,amount,tick.tick,cold,false,0,poison);
+            }
+            if (result) { commitRandom(); it = state_.pending.erase(it); }
+            else if (result.status == DomainStatus::Capacity) { blocked = true; ++it; }
+            else it = state_.pending.erase(it);
+            continue;
         }
         if(petAttack) {
             const auto *owner=ports_.players.find(*sourceMonster->owner);
@@ -104,7 +135,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
             }
             const auto committed=ports_.monsters.damage(damage.target,owner->actor,amount,tick.tick,cold,false,uint8_t(damage.weapon->hitClass),poison);
             if(committed.status==DomainStatus::Capacity) {blocked=true;++it;continue;}
-            if(committed) ports_.random=random;
+            if(committed) commitRandom();
             it=state_.pending.erase(it);continue;
         }
         int64_t amount = 0;
@@ -139,14 +170,14 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
             }
         }
         DomainResult<> committed{DomainStatus::Applied, std::monostate{}};
-        if (targetMonster) committed = ports_.monsters.damage(damage.target, damage.source, amount, tick.tick);
+        if (targetMonster) committed = ports_.monsters.damage(damage.target, damage.source, amount, tick.tick,0,false,uint8_t(damage.weapon?damage.weapon->hitClass:0));
         else {
             ActorContext actor{targetPlayer->player, targetPlayer->actor, targetPlayer->area, area->generation, 0, tick.tick};
             const auto received=ports_.effects.receive(actor, amount, DamageType::Physical);
             committed={received.status,received?std::optional{std::monostate{}}:std::nullopt};
             if(received && hit && *received.value>0) ports_.effects.react(actor,damage.source,CombatEffectEvent::DamagedInMelee);
         }
-        if (committed) { ports_.random = random; it = state_.pending.erase(it); }
+        if (committed) { commitRandom(); it = state_.pending.erase(it); }
         else if (committed.status == DomainStatus::Capacity) { blocked = true; ++it; }
         else it = state_.pending.erase(it);
     }

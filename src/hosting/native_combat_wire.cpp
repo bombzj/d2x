@@ -5,6 +5,8 @@
 #include <cmath>
 #include <numbers>
 #include <stdexcept>
+#include <bit>
+#include <algorithm>
 namespace d2x {
 Bytes nativeState(const ClassicData &data,const server::StateFact &fact) {
     using hosting::ServerMessage;using hosting::encodeServerPacket;
@@ -47,7 +49,10 @@ Bytes nativeMonsterAssignment(const MonsterSnapshot &monster, Vec origin) {
         net::protocol::BitWriter bits;
         // SCmd::sub_6FC3FC80 retains skill/death modes; motion is sent separately.
         bits.write(monster.mode==0 || monster.mode==8 || monster.mode==9 || monster.mode==12?monster.mode:1,4);
-        bits.write(0,1); // No prepared component variations.
+        const bool components=std::any_of(monster.components.begin(),monster.components.end(),[](auto n){return n!=0;});
+        bits.write(components,1);
+        if(components) for(size_t c=0;c<monster.components.size();++c)
+            bits.write(monster.components[c],monster.componentCounts[c]>=3?std::bit_width(unsigned(monster.componentCounts[c]-1)):1);
         bits.write(!monster.modifiers.empty(),1);
         if(!monster.modifiers.empty()) {
             if(monster.modifiers.size()>9) throw std::runtime_error("Native NPC modifier capacity exceeded");
@@ -65,6 +70,10 @@ Bytes nativeMonsterAssignment(const MonsterSnapshot &monster, Vec origin) {
     });
 }
 Bytes nativeMonsterMotion(const MonsterSnapshot &monster, Vec origin) {
+    if(monster.mode==3 || monster.mode==6)
+        return encodeServerPacket(ServerMessage::NpcModePoint,[&](auto &out){out.u32(uint32_t(monster.id.value));out.u8(monster.mode==3?6:18);point(out,monster.position+origin);out.u8(0);out.u8(0);});
+    if(monster.mode==8 || monster.mode==9)
+        return encodeServerPacket(ServerMessage::NpcModePoint,[&](auto &out){out.u32(uint32_t(monster.id.value));out.u8(monster.mode==8?12:14);point(out,monster.position+origin);out.u8(0);out.u8(0);});
     if (monster.mode == 0 || monster.mode == 12)
         return encodeServerPacket(ServerMessage::NpcModePoint, [&](auto &out) {
             out.u32(uint32_t(monster.id.value)); out.u8(monster.mode == 12 ? 9 : 8);
@@ -88,7 +97,7 @@ Bytes nativeMonsterMotion(const MonsterSnapshot &monster, Vec origin) {
 std::vector<Bytes> nativeAttack(const server::AttackFact &fact, Vec origin) {
     if (fact.actorType == 1 && !fact.skill)
         return {encodeServerPacket(ServerMessage::NpcAction, [&](auto &out) {
-            out.u32(uint32_t(fact.actor.value)); out.u8(10); key(out, fact.targetType, fact.target);
+            out.u32(uint32_t(fact.actor.value)); out.u8(fact.monsterMode == 9 ? 15 : fact.monsterMode == 8 ? 13 : fact.monsterMode == 5 ? 16 : 10); key(out, fact.targetType, fact.target);
             out.u8(direction(fact.position, fact.destination)); point(out, fact.position + origin);
         })};
     if (fact.target)
@@ -108,6 +117,8 @@ std::vector<Bytes> nativeHit(const server::HitFact &fact, Vec origin) {
     std::vector<Bytes> result{encodeServerPacket(ServerMessage::Hit, [&](auto &out) {
         key(out, fact.type, fact.target); out.u8(0); out.u8(fact.hitClass); out.u8(fact.life);
     })};
+    if(fact.type==1 && !fact.killed && fact.monsterMode)
+        result.push_back(encodeServerPacket(ServerMessage::NpcModePoint,[&](auto &out){out.u32(uint32_t(fact.target.value));out.u8(fact.monsterMode==3?6:18);point(out,fact.position+origin);out.u8(0);out.u8(0);}));
     if (fact.killed) {
         if (fact.type == 1) result.push_back(encodeServerPacket(ServerMessage::NpcModePoint, [&](auto &out) {
             out.u32(uint32_t(fact.target.value)); out.u8(8); point(out, fact.position + origin); out.u8(0); out.u8(0);

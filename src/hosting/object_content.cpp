@@ -25,6 +25,7 @@ void prepareObjects(Archives &archives, const ClassicData &content, PreparedWorl
     auto &area = prepared.authority; const auto request = prepared.terrain.request;
     WorldCatalog catalog(archives, request.difficulty);
     const auto rows = decodeTable(archives.read("data/global/excel/objects.txt"));
+    const DataTable objectTable(archives.read("data/global/excel/objects.txt"));
     const auto groups = decodeTable(archives.read("data/global/excel/objgroup.txt"));
     const auto shrines = decodeTable(archives.read("data/global/excel/shrines.txt"));
     bool portalResources=true;
@@ -71,6 +72,7 @@ void prepareObjects(Archives &archives, const ClassicData &content, PreparedWorl
         rule.operation = object.operateFn; rule.width = object.collisionWidth; rule.height = object.collisionHeight; rule.range = int(object.reach);
         rule.collisionMask = object.collisionMask; rule.collision = object.hasCollision; rule.light = object.blocksLight; rule.parameters = object.parameters;
         rule.door = object.interaction == Interaction::Door; rule.stash = object.interaction == Interaction::Stash; rule.chest = object.chest;
+        for(size_t row=0;row<objectTable.rows().size();++row) if(objectTable.number(row,"Id")==object.objectClass) {rule.monsterUsable=objectTable.number(row,"MonsterOK").value_or(0)!=0;break;}
         const auto &animation = object.animationRules[1];
         rule.openingTicks = object.chest ? uint64_t(animation.frames + 1) : animation.fps > 0 ? uint64_t(std::ceil(animation.frames * 25.f / animation.fps)) : 0;
         if (object.shrineCode) {

@@ -11,5 +11,6 @@ struct MonsterAiProfile {
     std::array<int, 8> params{};
     int meleeRange = 0; // Resolved MonStats2.MeleeRng, including the 255 weapon-class sentinel.
     int retreatVelocityBonus = 0;
+    int searchDistance = 35; // AiUtil::sub_6FCF2110: zero AiDist uses 35.
 };
 } // namespace d2x

@@ -29,6 +29,9 @@ DomainResult<SpellPlan> System::prepareSpells(std::vector<SpellImpact> impacts) 
             return {DomainStatus::InvalidRequest, {}};
         if(!impact.targetDamage.empty() && (impact.targetDamage.size()!=impact.targets.size() ||
             std::any_of(impact.targetDamage.begin(),impact.targetDamage.end(),[](int64_t n){return n<0 || n>INT32_MAX;}))) return {DomainStatus::InvalidRequest,{}};
+        if(impact.sourceHeal<0 || impact.sourceHeal>INT32_MAX || (impact.monsterHit &&
+            (impact.monsterHit->mana<0 || impact.monsterHit->stamina<0 ||
+             std::any_of(impact.monsterHit->channels.begin(),impact.monsterHit->channels.end(),[](auto n){return n<0 || n>INT32_MAX;})))) return {DomainStatus::InvalidRequest,{}};
         if (impact.targets.empty()) continue;
         const auto same = [&](const auto &previous) { return previous.projectile == impact.projectile && previous.occurrence == impact.occurrence; };
         if (std::any_of(state_.spells.begin(), state_.spells.end(), same) || std::any_of(plan.spells.begin(), plan.spells.end(), same))
@@ -63,20 +66,58 @@ StepStatus System::resolveSpells(TickContext tick) {
             if(!owner && monsterSource) {
                 const PlayerState *player=nullptr;
                 for(const auto &[id,p]:ports_.players.all()) {(void)id;if(p.actor==impact.targets[impact.next]) {player=&p;break;}}
-                if(!player || !player->entered || player->area!=impact.area || player->persistent.player.hp<=0) {++impact.next;continue;}
+                const auto *pet=ports_.monsters.find(impact.targets[impact.next]);
+                if(player && (!player->entered || player->area!=impact.area || player->persistent.player.hp<=0)) player=nullptr;
+                if(pet && (!pet->amazonPet || pet->area!=impact.area || pet->life<=0)) pet=nullptr;
+                if ((!player || !player->entered || player->area!=impact.area || player->persistent.player.hp<=0) &&
+                    (!pet || !pet->amazonPet || pet->area!=impact.area || pet->life<=0)) {++impact.next;continue;}
                 if(!ports_.effects.reactionCapacity()) {blocked=true;break;}
-                const ActorContext actor{player->player,player->actor,player->area,area->generation,0,tick.tick};
                 if(!ports_.events.hasCapacity(4,2)) {blocked=true;break;}
-                auto random=ports_.random;
-                const auto avoided=rollWeaponAvoidance(player->totals.character.combat,player->moving,true,random);
-                if(avoided!=WeaponAvoidance::None) {
-                    const auto result=ports_.effects.avoidance(actor,avoided,impact.source);
-                    if(result.status==DomainStatus::Capacity) {blocked=true;break;}
-                    ports_.random=random;++impact.next;continue;
+                auto random=impact.contactRandom.value_or(ports_.random);
+                const auto commitRandom=[&]{if(impact.contactRandom) impact.contactRandom=random;else ports_.random=random;};
+                const bool stateOnly=impact.monsterHit && impact.monsterHit->slowFrames &&
+                    std::all_of(impact.monsterHit->channels.begin(),impact.monsterHit->channels.end(),[](auto n){return n==0;});
+                bool hit=true;
+                if(impact.monsterToHit) {
+                    const bool running=player && player->moving && player->runningNow;
+                    hit=running || int(limitedRandom(random,100))<physicalHitChance(impact.monsterLevel,impact.monsterRating,
+                        player?player->persistent.player.level:pet->rule.level,player?player->totals.character.defense:pet->rule.defense);
                 }
-                const auto result=ports_.effects.receive(actor,impact.targetDamage.empty()?impact.damage:impact.targetDamage[impact.next],impact.type);
+                if(hit && !stateOnly && player && player->totals.equipment.shield) hit=int(limitedRandom(random,100))>=player->totals.equipment.blockChance/(player->moving && player->runningNow?3:1);
+                if(hit && !stateOnly && pet && pet->petStats.block>0) hit=int(limitedRandom(random,100))>=pet->petStats.block;
+                if(!hit) {commitRandom();++impact.next;continue;}
+                const auto avoided=stateOnly?WeaponAvoidance::None:rollWeaponAvoidance(player?player->totals.character.combat:pet->petStats.attributes.combat,player?player->moving:pet->moving,true,random);
+                if(avoided!=WeaponAvoidance::None) {
+                    if(player) {
+                        const auto result=ports_.effects.avoidance({player->player,player->actor,player->area,area->generation,0,tick.tick},avoided,impact.source);
+                        if(result.status==DomainStatus::Capacity) {blocked=true;break;}
+                    }
+                    commitRandom();++impact.next;continue;
+                }
+                MonsterHit rolled=impact.monsterHit.value_or(MonsterHit{});
+                if(!impact.monsterHit) rolled.channels[size_t(impact.type)]=impact.targetDamage.empty()?impact.damage:impact.targetDamage[impact.next];
+                DomainResult<> result;
+                if(player) {
+                    const ActorContext actor{player->player,player->actor,player->area,area->generation,0,tick.tick};
+                    const auto received=ports_.effects.receiveMonster(actor,impact.source,rolled,impact.monsterStates);
+                    result={received.status,received?std::optional{std::monostate{}}:std::nullopt};
+                    if(received && !stateOnly) ports_.effects.react(actor,impact.source,CombatEffectEvent::HitByMissile,impact.returnFire);
+                } else {
+                    if(rolled.slowFrames) {
+                        result=ports_.monsters.slow(pet->id,impact.monsterStates.slow.id,rolled.slowPercent,rolled.slowFrames,tick.tick);
+                        if(result.status==DomainStatus::Capacity) {blocked=true;break;}
+                        if(result) commitRandom();
+                        ++impact.next;continue;
+                    }
+                    int64_t amount=0;
+                    for(size_t channel=0;channel<5;++channel) amount+=int64_t(mitigateMonsterDamage(float(rolled.channels[channel])/256.f,pet->rule.resistances[channel])*256.f);
+                    const auto cold=rolled.coldFrames*unsigned(std::clamp(100-pet->rule.resistances[4],0,200))/(100u*unsigned(pet->rule.coldDivisor));
+                    std::optional<PoisonApplication> poison;
+                    if(rolled.poisonFrames && rolled.channels[5]>0) poison=PoisonApplication{int64_t(mitigateMonsterDamage(float(rolled.channels[5])/256.f,pet->rule.resistances[5])*256.f),rolled.poisonFrames,impact.monsterStates.poison.id};
+                    result=ports_.monsters.damage(pet->id,impact.source,amount,tick.tick,cold,false,impact.hitClass,poison);
+                }
                 if(result.status==DomainStatus::Capacity) {blocked=true;break;}
-                if(result) {ports_.random=random;ports_.effects.react(actor,impact.source,CombatEffectEvent::HitByMissile,impact.returnFire);}
+                if(result) {commitRandom();if(impact.sourceHeal>0) ports_.monsters.heal(impact.source,impact.sourceHeal);}
                 ++impact.next;continue;
             }
             const auto *target = ports_.monsters.find(impact.targets[impact.next]);
@@ -90,6 +131,11 @@ StepStatus System::resolveSpells(TickContext tick) {
                 const auto &attack=*impact.weapon;
                 if(!ports_.events.hasCapacity(8,4)) {blocked=true;break;}
                 if(!(impact.weaponHit.has_value()?*impact.weaponHit:weaponContact(attack,target->id,tick.tick,random))) {
+                    ports_.random=random;++impact.next;continue;
+                }
+                if((target->shield || target->rule.blockWithoutShield) && int(limitedRandom(random,100))<target->rule.blockChance) {
+                    const auto result=ports_.monsters.block(target->id,tick.tick);
+                    if(result.status==DomainStatus::Capacity) {blocked=true;break;}
                     ports_.random=random;++impact.next;continue;
                 }
                 const auto channels=targetWeaponChannels(attack,target->rule.demon,target->rule.undead);
@@ -121,7 +167,7 @@ StepStatus System::resolveSpells(TickContext tick) {
                 const auto result=ports_.transactions.commit(std::move(*wear.value));
                 if(!result) {if(result.status==DomainStatus::Capacity) {blocked=true;break;} ++impact.next;continue;}
             }
-            const auto result = ports_.monsters.damage(target->id, impact.source, amount, tick.tick, cold, impact.freeze,impact.hitClass,poison);
+            const auto result = ports_.monsters.damage(target->id, impact.source, amount, tick.tick, cold, impact.freeze,uint8_t(impact.weapon?impact.weapon->weapon.hitClass:impact.hitClass),poison,impact.type==DamageType::Poison && !impact.weapon);
             if (result.status == DomainStatus::Capacity) { blocked = true; break; }
             if(result && impact.weapon) ports_.random=random;
             if (result && impact.nextDelay) ports_.monsters.hitDelay(target->id, tick.tick + impact.nextDelay);

@@ -41,12 +41,13 @@ std::vector<MonsterSnapshot> System::visibleMonsters(PlayerId id, uint64_t tick)
             if (!area.activation.nearby(observer, monster.position)) continue;
         } else if ((observer - monster.position).length() > 35) continue;
         const bool dead = monster.life <= 0;
-        const uint8_t mode = dead ? (tick >= monster.busyUntil ? 12 : 0) : monster.knockedUntil>tick ? 13 : monster.riseUntil > tick ? 9 : 1;
+        const uint8_t mode = dead ? (tick >= monster.busyUntil ? 12 : 0) : monster.knockedUntil>tick ? 13 : monster.riseUntil > tick ? monster.riseMode : monster.reactionUntil>tick?monster.reactionMode:1;
         result.push_back({key, monster.area, monster.rule.nativeClass, monster.position,
             monster.route.empty() ? monster.position : monster.route.front(),
             uint8_t(monster.life > 0 ? std::clamp<int64_t>(monster.life * 128 / monster.maximumLife, 1, 128) : 0),
             mode, monster.revision, monster.moving, !dead && tick < monster.busyUntil, monster.chilledUntil > tick ? std::max(25, monster.velocityPercent + monster.rule.coldEffect) : monster.velocityPercent, monster.running, ports_.effects.unitStates(key,tick),monster.knockbackSource});
         result.back().equipment=monster.equipment;
+        result.back().components=monster.components;result.back().componentCounts=monster.rule.componentCounts;
         if(monster.amazonPet) {
             result.back().states.insert(monster.amazonPet->state.id);result.back().appearOverlay=monster.amazonPet->appearOverlay;
             if(monster.owner) if(const auto *owner=ports_.players.find(*monster.owner)) result.back().storedOwner=owner->actor;
@@ -55,6 +56,8 @@ std::vector<MonsterSnapshot> System::visibleMonsters(PlayerId id, uint64_t tick)
         auto &states = result.back().states;
         result.back().stateStats=ports_.effects.unitStateStats(key,tick);
         if(monster.poison) states.insert(monster.poison->damage.state);
+        if(monster.webUntil>tick && monster.rule.web) states.insert(monster.rule.web->aura.id);
+        if(monster.slowed && monster.slowed->until>tick) states.insert(monster.slowed->state);
         if (monster.chilledUntil > tick && monster.rule.coldState >= 0) states.insert(monster.rule.coldState);
         if (monster.frozenUntil > tick && monster.rule.frozenState >= 0) states.insert(monster.rule.frozenState);
     }

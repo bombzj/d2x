@@ -1,5 +1,6 @@
 #include "system.hpp"
 #include <stdexcept>
+#include "server/systems/monsters/system.hpp"
 #include "server/player_store.hpp"
 #include "server/area_store.hpp"
 namespace d2x::server::missiles {
@@ -10,7 +11,9 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
     for(auto it=state_.missiles.begin();it!=state_.missiles.end() && it->first.value<end;) {
         const auto &m=it->second;
         const auto *p=ports_.players.find(m.player);const auto *a=ports_.areas.find(m.area);
-        if(!p || !p->entered || p->actor!=m.owner || p->area!=m.area || !a || a->generation!=m.generation || a->definition.town) {
+        const auto *enemy=m.enemy?ports_.monsters.find(m.owner):nullptr;
+        const bool validOwner=m.enemy?enemy && !enemy->owner && enemy->area==m.area:p && p->entered && p->actor==m.owner && p->area==m.area;
+        if(!validOwner || !a || a->generation!=m.generation || a->definition.town) {
             pending_.erase(it->first);it=state_.missiles.erase(it);continue;
         }
         if(tick.tick<=m.created) {++it;continue;}

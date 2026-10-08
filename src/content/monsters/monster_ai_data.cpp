@@ -37,6 +37,9 @@ std::optional<MonsterAiProfile> loadMonsterAiProfile(const DataTable &stats, siz
         if (velocity > 0) profile.retreatVelocityBonus = std::clamp(100 * run / velocity - 100, 0, 120);
     }
     const std::string suffix = difficulty == 0 ? "" : difficulty == 1 ? "(N)" : "(H)";
+    const int sight = stats.number(row, "aidist" + suffix).value_or(0);
+    if (sight < 0 || sight > 255) return std::nullopt;
+    profile.searchDistance = sight ? sight : 35;
     for (int index = 0; index < 8; ++index) {
         auto value = stats.number(row, "aip" + std::to_string(index + 1) + suffix);
         if (value && (*value < 0 || *value > 65535)) return std::nullopt;

@@ -23,37 +23,6 @@ void System::cancel(PlayerId player, EntityId actor) {
     if (auto it = state_.casts.find(actor); it != state_.casts.end()) it->second.interrupted = true;
     ports_.combat.cancel(actor);
 }
-DomainResult<> System::requestCast(const CastRequest &request) {
-    if (request.skill != 0) return {};
-    const auto *monster = ports_.monsters.find(request.actor);
-    const auto *target = std::get_if<UnitTarget>(&request.target);
-    if (!monster || monster->life <= 0 || !target || request.tick < monster->busyUntil || monster->frozenUntil > request.tick || (monster->owner && (!monster->amazonPet || monster->amazonPet->decoy))) return {DomainStatus::InvalidActor, {}};
-    const auto destination=ports_.monsters.targetPosition(target->id,monster->area);
-    const auto *victim=ports_.monsters.find(target->id);
-    const bool petAttack=monster->amazonPet && !monster->amazonPet->decoy;
-    if(!destination || (petAttack?target->type!=1 || !victim || victim->owner:(target->type==1 && (!victim || !victim->amazonPet))) || target->type>1) return {DomainStatus::InvalidActor,{}};
-    const auto &area=ports_.areas.at(monster->area);
-    if(area.definition.town || meleeDistance(monster->position,monster->rule.size,destination->first,destination->second)>monster->rule.meleeRange ||
-        !area.definition.collision.segment(monster->position,destination->first)) return {DomainStatus::Unavailable,{}};
-    if (!ports_.events.hasCapacity(1)) return {DomainStatus::Capacity, {}};
-    const auto &rule = monster->rule;
-    const int speed = monster->chilledUntil > request.tick ? std::max(15, 100 + rule.coldEffect) : 100;
-    const auto scaled = [&](int frames) { return uint64_t((int64_t(frames) * 100 + speed - 1) / speed); };
-    DamageType type = DamageType::Physical;
-    combat::Damage damage{monster->id, target->id, type, int64_t(rule.minimumDamage) * 256,
-        int64_t(rule.maximumDamage) * 256, request.tick + 1, monster->area, request.tick + scaled(rule.impactTick), rule.attackRating, rule.level, rule.meleeRange, rule.size, petAttack?monster->petWeapon:std::optional<WeaponDamage>{}, 0, 0};
-    if(petAttack && damage.weapon) {
-        const auto buffs=ports_.effects.unitModifiers(monster->id,request.tick).combat;
-        damage.attackModifiers=monster->petStats.attributes.combat;mergeCombatModifiers(*damage.attackModifiers,buffs);
-        damage.weapon->attackRatingPercent+=buffs.attackRatingPercent;damage.weapon->damagePercent+=buffs.damagePercent;
-    }
-    auto queued=ports_.combat.enqueue(damage);
-    if (!queued) return queued;
-    auto event = ports_.events.publish({0, request.tick, {}, {AudienceKind::Area, {}, monster->area},
-        {AttackFact{monster->id, target->id, 1, target->type, monster->area, monster->position, destination->first, request.tick + 1}}});
-    if (!event) { ports_.combat.cancel(monster->id); return {event.status, {}}; }
-    return ports_.monsters.beginAttack(monster->id, request.tick + scaled(rule.attackTicks));
-}
 DomainResult<> System::attack(const ActorContext &actor, const Request &request,int selectedOverride) {
     const auto *player = ports_.players.find(actor.player);
     if (!player || !player->entered || player->actor != actor.actor || player->area != actor.area || player->persistent.player.hp <= 0)
@@ -115,7 +84,9 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
     return result;
 }
 StepStatus System::step(TickContext tick, FrameFacts &) {
-    const auto status = release(tick);
+    const auto playerStatus = release(tick);
+    const auto monsterStatus = releaseMonsters(tick);
+    const auto status = playerStatus == StepStatus::Blocked || monsterStatus == StepStatus::Blocked ? StepStatus::Blocked : StepStatus::Complete;
     std::erase_if(state_.casts, [&](const auto &entry) { return !releases_.contains(entry.first) && std::max(entry.second.until, entry.second.cooldownUntil) <= tick.tick; });
     for (auto it = pending_.begin(); it != pending_.end();) {
         auto actor = it->second.actor; actor.tick = tick.tick;

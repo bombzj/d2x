@@ -49,6 +49,7 @@ DomainResult<PotionPlan> System::potion(const ActorContext &actor, const PotionD
         recovery.states.apply(std::move(spec), actor.tick);
     }
     plan.transient = projection(recovery.states, actor.tick);
+    if(recovery.poison && !recovery.states.hasState(recovery.poison->damage.state,actor.tick)) recovery.poison.reset();
     return {DomainStatus::Applied, std::move(plan)};
 }
 DomainResult<> System::apply(const ActorContext &actor, CombatEffectSpec spec, bool restoreStamina) {
@@ -82,22 +83,31 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         auto next = entry->second;
         const bool dead = player.persistent.player.hp <= 0;
         const auto removed = dead ? next.states.onDeath(EffectUnitKind::Player) : next.states.expire(tick.tick);
-        if (dead) { next.healing.clear(); next.mana.clear(); }
+        if (dead) { next.healing.clear(); next.mana.clear(); next.poison.reset(); }
         if (!removed.empty()) {
             transactions::CharacterEdit edit{actor, player.inventoryRevision, player.characterRevision, player.persistent.player};
             restoreStaminaOnEffectRemoval(edit.player.stamina, float(player.totals.character.maxStamina), removed);
             edit.transient = projection(next.states, tick.tick);
             auto plan = ports_.transactions.prepare(std::move(edit));
             if (!plan || !ports_.transactions.commit(std::move(*plan.value))) { blocked = true; continue; }
+            entry->second=next; // Expiry has already committed even if resource output waits.
         }
         if (dead) { std::swap(entry->second, next); continue; }
+        if (next.poison && !next.states.hasState(next.poison->damage.state,tick.tick)) next.poison.reset();
         auto record = player.persistent.player;
+        if (next.poison && tick.tick >= next.poison->next && tick.tick < next.poison->until) {
+            record.hp -= float(next.poison->damage.rate)/256.f;
+            next.poison->next = tick.tick+1;
+        }
         const auto &a = player.totals.character;
-        advanceResourceRecovery(record.hp, record.mana, {a.maxLife, a.maxMana, a.manaRegen, a.combat.replenishLife, false}, TickContext::seconds);
+        advanceResourceRecovery(record.hp, record.mana, {a.maxLife, a.maxMana, a.manaRegen, a.combat.replenishLife, bool(next.poison)}, TickContext::seconds);
         advanceStamina(record.stamina, {a.maxStamina, a.staminaDrain, a.staminaRecoveryBonus},
             {player.moving, player.runningNow, !player.moving && !ports_.skills.busy(player.actor, tick.tick), area.definition.town}, TickContext::seconds);
         restoreResource(next.healing, record.hp, float(a.maxLife), TickContext::seconds);
         restoreResource(next.mana, record.mana, float(a.maxMana), TickContext::seconds);
+        // PlrModes::EVENTS_HpRegen clamps the combined poison/restoration tick
+        // at one life; poison alone cannot kill a player.
+        if(next.poison) record.hp=std::max(1.f,record.hp);
         const auto result = ports_.transactions.resources(actor, player.characterRevision, record.hp, record.mana, record.stamina);
         if (result) {
             if (advanceSkills(actor, next) == StepStatus::Blocked) blocked = true;
@@ -106,6 +116,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
     }
     if (advanceReactions(tick.tick) == StepStatus::Blocked) blocked = true;
     if (advanceUnits(tick.tick) == StepStatus::Blocked) blocked = true;
+    if (advanceMonsterSkills(tick.tick) == StepStatus::Blocked) blocked = true;
     return blocked ? StepStatus::Blocked : StepStatus::Complete;
 }
 }

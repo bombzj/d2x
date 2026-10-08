@@ -18,6 +18,17 @@ struct Spawn { ActorContext actor; SkillCastSpec skill; MissileCollisionRule col
     std::optional<transactions::Plan> cost{};
     EntityId guidedTarget{};
 };
+struct MonsterSpawn {
+    EntityId source; RegionId area; uint64_t generation{}, tick{};
+    Vec position, target;
+    MonsterAttackRule attack;
+    MonsterHitStates states;
+    int level{}, critical{}, extraQuills{};
+    uint64_t random{};
+    std::optional<MonsterWebRule> web{};
+};
+struct MonsterLaunch { EntityId first; uint64_t random{}; };
+struct EnemyProjectile { MonsterMissileRule rule; MonsterHit hit; MonsterHitStates states; int level{}, rating{};std::optional<MonsterWebRule> web{}; };
 enum class Program { Projectile, Ring, Charged, Orb, OrbBolt, OrbNova, Blizzard, Shard, Arc, FirewallMaker, Fire, Meteor, PoisonCloud, AreaImpact, FuryBolt, GroundThrow };
 struct Missile {
     EntityId id, owner;
@@ -42,6 +53,7 @@ struct Missile {
     int pierces{};
     std::set<EntityId> weaponContacts{};
     bool guidanceSearched{};
+    std::optional<EnemyProjectile> enemy;
 
 };
 struct State { std::map<EntityId, Missile> missiles; };
@@ -57,6 +69,7 @@ class System {
     Missile make(const Spawn &, Vec origin, Vec direction, int definition, int frames, float speed, Program, uint64_t &) const;
     std::vector<Missile> launch(const Spawn &, uint64_t &) const;
     Advance advance(const Missile &) const;
+    Advance advanceMonster(const Missile &) const;
     Advance advanceWeapon(const Missile &) const;
     Advance advanceGroundThrow(const Missile &) const;
     void weaponImpact(Advance &, Vec) const;
@@ -67,6 +80,7 @@ class System {
     explicit System(Ports ports) : ports_(ports) {}
     const State &read() const { return state_; }
     DomainResult<EntityId> spawn(const Spawn &);
+    DomainResult<MonsterLaunch> spawnMonster(const MonsterSpawn &);
     DomainResult<> direct(const Spawn &, std::vector<EntityId> targets);
     StepStatus step(TickContext, FrameFacts &);
 };

@@ -34,10 +34,26 @@ struct Actor {
     std::deque<Vec> route;
     uint64_t busyUntil{}, deathTick{}, deathOccurrence{};
     EntityId killer, movementTarget;
+    Vec movementGoal;
+    uint64_t hitOccurrence{};
+    uint64_t combatRandom{};
+    uint64_t interruption{};
+    uint8_t reactionMode{};
+    uint64_t reactionUntil{};
+    std::array<uint8_t,16> components{};
+    bool shield{};
     int stopDistance{}, velocityPercent{75};
     bool running{};
     bool rewardComplete{}, moving{};
     uint64_t riseUntil{};
+    uint8_t riseMode{9};
+    bool corpseUnavailable{};
+    uint64_t webUntil{};
+    int nestSpawned{};
+    struct Slow {int state{-1},percent{};uint64_t until{};};
+    std::optional<Slow> slowed;
+    Vec webOrigin;
+    uint64_t webRandom{};
     uint64_t chilledUntil{}, frozenUntil{}, nextHitTick{};
     uint64_t knockedUntil{};
     Vec knockbackSource;
@@ -54,8 +70,16 @@ class System {
     const State &read() const { return state_; }
     const Actor *find(EntityId id) const { auto it = state_.actors.find(id); return it == state_.actors.end() ? nullptr : &it->second; }
     DomainResult<> beginAttack(EntityId, uint64_t until);
-    DomainResult<> damage(EntityId, EntityId source, int64_t amount, uint64_t tick, uint64_t coldFrames = 0, bool freeze = false, uint8_t hitClass = 0, std::optional<PoisonApplication> poison = {});
+    bool resurrectionTarget(EntityId source,EntityId corpse,uint64_t tick) const;
+    DomainResult<> resurrect(EntityId source,EntityId corpse,uint64_t tick);
+    DomainResult<EntityId> spawnNestChild(EntityId,uint64_t tick);
+    DomainResult<> activateWeb(EntityId,uint64_t tick);
+    DomainResult<> heal(EntityId,int64_t amount);
+    DomainResult<> slow(EntityId,int state,int percent,uint64_t frames,uint64_t tick);
+    DomainResult<> damage(EntityId, EntityId source, int64_t amount, uint64_t tick, uint64_t coldFrames = 0, bool freeze = false, uint8_t hitClass = 0, std::optional<PoisonApplication> poison = {},bool poisonOnly=false);
+    DomainResult<> block(EntityId,uint64_t tick);
     void rewardComplete(EntityId);
+    void commitCombatRandom(EntityId id, uint64_t value) { if (auto it=state_.actors.find(id); it!=state_.actors.end()) it->second.combatRandom=value; }
     DomainResult<EntityId> admit(const Admission &);
     DomainResult<> requestMove(const MoveRequest &);
     void stop(EntityId);

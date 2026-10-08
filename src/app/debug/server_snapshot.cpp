@@ -60,6 +60,12 @@ Json debugServerSnapshot(const server::DiagnosticSnapshot &s, uint64_t since, ui
         if (monster.controller) value["ai"] = {{"nextDecision", monster.controller->nextDecision},
             {"target", monster.controller->target ? Json(monster.controller->target->value) : Json(nullptr)},
             {"pursuing", monster.controller->pursuing}, {"charged", monster.controller->charged}};
+        value["rules"]={{"family",int(monster.rules.kind)},{"searchDistance",monster.rules.searchDistance},{"params",monster.rules.params},
+            {"damageRegen",monster.damageRegen},{"threat",monster.threat},{"nativeVelocity",monster.nativeVelocity},
+            {"movementMask",monster.movementMask},{"spawnMask",monster.spawnMask},{"blockChance",monster.blockChance},
+            {"attacks",monster.attacks},{"skills",monster.skills}};
+        value["shield"]=monster.shield;value["nestSpawned"]=monster.nestSpawned;value["webUntil"]=monster.webUntil;
+        value["interruption"]=monster.interruption;value["corpseUnavailable"]=monster.corpseUnavailable;
         result["monsters"].push_back(std::move(value));
     }
     for (const auto &cast : s.casts) result["casts"].push_back({{"actor", cast.actor.value}, {"skill", cast.skill},

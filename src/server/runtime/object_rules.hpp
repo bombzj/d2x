@@ -12,6 +12,7 @@ struct ObjectRule {
     uint64_t openingTicks{};
     std::array<int, 8> parameters{};
     bool door{}, stash{};
+    bool monsterUsable{};
     std::optional<ChestState> chest;
     std::optional<ShrineRule> shrine;
 };

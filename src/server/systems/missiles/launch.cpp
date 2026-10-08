@@ -112,6 +112,10 @@ std::vector<Missile> System::launch(const Spawn &r, uint64_t &random) const {
 std::vector<DomainFact> System::visuals(const std::vector<Missile> &missiles) const {
     std::vector<DomainFact> facts;
     for (const auto &m : missiles) {
+        if (m.enemy) {
+            if (m.enemy->rule.clientSend) facts.emplace_back(MissileFact{m.owner,1,m.area,m.definition,m.enemy->rule.rank,m.lifetimeFrames,m.position,m.position+m.turnTarget});
+            continue;
+        }
         if(m.program==Program::PoisonCloud || (m.program==Program::Fire && m.skill.weapon && m.skill.weapon->bow && m.skill.weapon->bow->immolation)) continue;
         // These native programs reconstruct regular creation from cast/state
         // notifications. ClientSend permits 73 on visibility admission, not

@@ -37,6 +37,8 @@ DomainResult<std::map<EntityId,Actor>> System::prepareAmazon(const ActorContext 
     uint64_t cursor=ports_.ids.cursor();Actor actor;actor.id=EntityId{cursor++};actor.area=owner.area;actor.position=position;actor.revision=1;actor.owner=owner.player;
     actor.identity.monster=summon.monster;actor.identity.spawnKey="pet."+std::to_string(actor.id.value);actor.identity.origin=SpawnOrigin::Summoned;
     actor.implementation=MonsterKind::AmazonPet;actor.rule=rule;actor.amazonPet=summon.amazon;actor.petStats=summon.stats;
+    actor.rule.difficulty=p->persistent.difficulty;
+    actor.rule.coldDivisor=p->rules.skills->coldDivisor.at(size_t(actor.rule.difficulty));
     actor.rule.level=summon.stats.level;actor.rule.defense=summon.stats.attributes.defense;actor.rule.attackRating=summon.stats.attributes.attackRating;if(summon.amazon->decoy) actor.rule.deathTicks=p->rules.character->deathTicks;
     const auto &a=summon.stats.attributes;
     actor.rule.resistances={a.combat.physicalResist,a.combat.magicResist,a.fireResist,a.lightningResist,a.coldResist,a.poisonResist};

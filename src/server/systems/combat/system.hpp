@@ -3,6 +3,7 @@
 #include "server/runtime/ports.hpp"
 #include "server/runtime/events.hpp"
 #include "gameplay/combat/damage_type.hpp"
+#include "server/runtime/combat_rules.hpp"
 #include "gameplay/skills/weapon_damage.hpp"
 #include <deque>
 #include <list>
@@ -20,6 +21,9 @@ struct Damage {
     int criticalChance{}, deadlyChance{};
     bool reactionsStarted{}, cancelled{};
     std::optional<CombatModifiers> attackModifiers{};
+    uint8_t monsterMode{4};
+    uint64_t sourceInterruption{};
+    std::optional<uint64_t> actionRandom{};
 };
 // Targets are captured at missile impact, not looked up again by radius on retry.
 struct SpellImpact {
@@ -41,6 +45,12 @@ struct SpellImpact {
     std::optional<WeaponSkillDamage> weapon{};
     uint64_t poisonFrames{};
     std::optional<bool> weaponHit{};
+    std::optional<MonsterHit> monsterHit{};
+    MonsterHitStates monsterStates{};
+    int monsterRating{}, monsterLevel{};
+    bool monsterToHit{};
+    int64_t sourceHeal{};
+    std::optional<uint64_t> contactRandom{};
 };
 struct SpellPlan { std::list<SpellImpact> spells; size_t targets{}; };
 struct State { std::vector<Damage> pending; std::list<SpellImpact> spells; size_t spellTargets{}; };
