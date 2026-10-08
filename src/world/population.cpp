@@ -17,6 +17,7 @@ class Random {
   public:
     explicit Random(uint32_t seed) : state_(initialRandom(seed)) {}
     uint32_t below(uint32_t bound) { return limitedRandom(state_, bound); }
+    uint64_t state() const { return state_; }
     int between(int first, int last) {
         if (first < 0 || last < first || last > 1024)
             throw std::runtime_error("Invalid MPQ monster group range");
@@ -386,6 +387,7 @@ class Planner {
         if (level_ && level_->id == 1)
             return result_; // Town is never a hostile population.
         selectRoster();
+        result_.componentRandom = random_.state();
         fixed();
         density();
         if (!level_)

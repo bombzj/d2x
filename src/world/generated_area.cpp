@@ -25,7 +25,8 @@ GeneratedArea generateArea(Archives &archives, AreaGenerationRequest request) {
     // subcell footprints and MPQ Populate flags for interest and population.
     for (const auto &room : snapshot.map.terrain.rooms)
         snapshot.map.rooms.push_back({room.x * 5, room.y * 5, room.width * 5, room.height * 5,
-            !room.preset || catalog.presets().at(room.preset).populate});
+            !room.preset || catalog.presets().at(room.preset).populate,
+            level.generation==GenerationKind::Maze || (room.preset && (room.flags&0x00080000)!=0)});
     if (snapshot.map.rooms.empty()) throw std::runtime_error("Prepared native map lacks authored room footprints");
     snapshot.map.activation = RoomLayout(snapshot.map.grid.width, snapshot.map.grid.height, snapshot.map.rooms);
     GeneratedArea result;

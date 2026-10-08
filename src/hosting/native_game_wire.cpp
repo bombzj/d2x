@@ -1,4 +1,5 @@
 #include "native_game_wire.hpp"
+#include "gameplay/combat/life.hpp"
 #include "native_item_wire.hpp"
 #include "native_character_wire.hpp"
 #include "protocol/message_catalog.hpp"
@@ -33,7 +34,7 @@ Bytes nativePlayerMotion(const PlayerSnapshot &view, Vec origin) {
     out.u8(view.life <= 0 ? (view.deadSettled ? 9 : 8) : view.actor.moving ? (view.actor.running ? 23 : 1) : 7);
     const auto position = view.actor.position + origin;
     if (view.actor.moving) { point(out, view.actor.nextPosition + origin); out.u8(0); point(out, position); }
-    else { point(out, position); out.u8(0); out.u8(uint8_t(std::clamp(int(view.life * 128 / view.attributes.maxLife), view.life > 0 ? 1 : 0, 128))); }
+    else { point(out, position); out.u8(0); out.u8(playerLifePercentage(int64_t(view.life*256),int64_t(view.attributes.maxLife)*256)); }
     return out.release();
 }
 std::vector<Bytes> nativeAreaUnits(const GeneratedArea &area, const server::AreaMetadata &definition) {

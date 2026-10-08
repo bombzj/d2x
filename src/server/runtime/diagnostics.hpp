@@ -38,6 +38,8 @@ struct DiagnosticMonster {
     int nestSpawned{};
     uint64_t webUntil{}, interruption{};
     bool corpseUnavailable{}, shield{};
+    std::array<uint8_t,16> components{}, componentCounts{};
+    size_t componentVariants{};
     std::vector<int> attacks{}, skills{};
 };
 struct DiagnosticEffect { int state{}; uint64_t expires{}; };

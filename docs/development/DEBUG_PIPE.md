@@ -24,8 +24,8 @@ Single Player的online-status仍只读原协议OnlineView；server-status单独�
 
 | 命令 | 参数和当前结果 |
 | --- | --- |
-| `server-snapshot` | 同一调度tick的权威人物、资源／成长／库存revision、物品位置、当前区域怪物及AI、技能动作、待释放数量、弹体、伤害队列、换区和已准备区域／出口。limit默认128、范围1–256；Count是过滤前总数，列表达到limit时不能视为完整。可给全局x／y，只读计算当前区域路径（最多1024点），不移动角色。monsters.rules列AI家族／searchDistance／aip、再生／Threat／速度／碰撞／格挡及动作／技能；运行列含盾牌、巢生计数、蛛网和中断 |
-| `server-events` | 返回已提交领域事实及命令入队／执行记录；since／commandSince是各自观察序号，默认0，limit同上。事件环1024条、命令环512条，first／last／gap表示覆盖缺口。记录不被网络发送／ACK清除，不代表客户端已收到；原回包另查online-*。事件value按type解释：life／mana为256固定点，attack为技能ID，hit为128比例生命，character为经验且secondary为等级，travel为源／目标区域 |
+| `server-snapshot` | 同一调度tick的权威人物、资源／成长／库存revision、物品位置、当前区域怪物及AI、技能动作、待释放数量、弹体、伤害队列、换区和已准备区域／出口。limit默认128、范围1–256；Count是过滤前总数，列表达到limit时不能视为完整。可给全局x／y，只读计算当前区域路径（最多1024点），不移动角色。monsters.rules列AI家族／searchDistance／aip、再生／Threat／速度／碰撞／格挡及动作／技能；componentCounts为MPQ十六槽选择数，componentVariants为当前区域该类型池的组合数（0表示原单体路径）；运行列components为实际十六槽选择，另含盾牌、巢生计数、蛛网和中断 |
+| `server-events` | 返回已提交领域事实及命令入队／执行记录；since／commandSince是各自观察序号，默认0，limit同上。事件环1024条、命令环512条，first／last／gap表示覆盖缺口。记录不被网络发送／ACK清除，不代表客户端已收到；原回包另查online-*。事件value按type解释：life／mana为256固定点，attack为技能ID，hit为原比例生命（人物100、怪物128；怪物0C编码另减一），character为经验且secondary为等级，travel为源／目标区域 |
 | `server-pause`／`server-resume`／`server-auto-pause` | 对选中玩家所在整个实例设置调试时钟覆盖：pause保留当前行动并停止推进；原协议命令仍可入队，在step执行。resume连续推进；这两者显式覆盖失焦／ESC自动暂停，不冻结客户端表现。auto-pause解除覆盖，恢复应用自动暂停策略；若恢复到暂停会沿原规则取消行动。所有参与者共用时钟，仅本机宿主管理可调用 |
 | `refill-resources` | 经人物事务恢复当前玩家生命／法力／体力至派生最大值，并发送原人物增量；只允许存活、已入局角色，不承担复活 |
 | `server-status` | 只读phase、tick、paused、hostSlot／hostGeneration／hostPlayer、实际command序号／结果、最近分派和失败、characterIssues；command是最新诊断，不能作为可靠事务回执 |

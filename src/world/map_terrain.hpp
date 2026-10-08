@@ -42,6 +42,7 @@ struct MapTerrain {
     struct PreparedRoom {
         int level{}, x{}, y{}, width{}, height{}, preset{}, file{}, parentX{}, parentY{};
         std::vector<size_t> near;
+        uint32_t flags{};
     };
     std::vector<PreparedRoom> rooms;
     // Native client decorations (river graphics/sound anchors) do not become

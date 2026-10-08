@@ -100,7 +100,9 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
             const auto attack = sourceMonster->rule.attacks.find(damage.monsterMode);
             if (attack == sourceMonster->rule.attacks.end()) { it = state_.pending.erase(it); continue; }
             const auto &slot = attack->second;
-            const MonsterHit rolled = hit ? rollMonsterHit(slot.minimum, slot.maximum, sourceMonster->rule.criticalChance, slot.elements, 128, random) : MonsterHit{};
+            MonsterHit rolled = hit ? rollMonsterHit(slot.minimum, slot.maximum, sourceMonster->rule.criticalChance, slot.elements, 128, random) : MonsterHit{};
+            auto hitClassCursor=state_.hitClassCursor;
+            if(hit) rolled.hitClass=monsterDamageHitClass(rolled,sourceMonster->rule.hitClass,hitClassCursor);
             DomainResult<> result;
             if (targetPlayer) {
                 const ActorContext actor{targetPlayer->player,targetPlayer->actor,targetPlayer->area,area->generation,0,tick.tick};
@@ -113,9 +115,9 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
                 const auto cold = rolled.coldFrames * unsigned(std::clamp(100-targetMonster->rule.resistances[4],0,200))/(100u*unsigned(targetMonster->rule.coldDivisor));
                 std::optional<PoisonApplication> poison;
                 if (rolled.poisonFrames && rolled.channels[5]) poison = PoisonApplication{int64_t(mitigateMonsterDamage(float(rolled.channels[5])/256.f,targetMonster->rule.resistances[5])*256.f),rolled.poisonFrames,sourceMonster->rule.hitStates.poison.id};
-                result = ports_.monsters.damage(damage.target,damage.source,amount,tick.tick,cold,false,0,poison);
+                result = ports_.monsters.damage(damage.target,damage.source,amount,tick.tick,cold,false,rolled.hitClass,poison);
             }
-            if (result) { commitRandom(); it = state_.pending.erase(it); }
+            if (result) { state_.hitClassCursor=hitClassCursor;commitRandom(); it = state_.pending.erase(it); }
             else if (result.status == DomainStatus::Capacity) { blocked = true; ++it; }
             else it = state_.pending.erase(it);
             continue;

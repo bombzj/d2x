@@ -160,9 +160,15 @@ bool prepareMonsterSpecialActions(Archives &archives,const ClassicData &data,con
     }
     return true;
 }
-bool prepareMonsterLifecycle(Archives &archives,const ClassicData &data,const AnimDataTable &animations,const MonsterRecord &record,server::MonsterRule &rule) {
+bool prepareMonsterComponents(const ClassicData &data,const MonsterRecord &record,server::MonsterRule &rule) {
     const auto &extra=data.tables.at("monstats2");
     for(size_t row=0;row<extra.rows().size();++row) if(extra.value(row,"Id")==data.tables.at("monstats").value(record.sourceRow,"MonStatsEx")) {
+        const auto pieces=extra.number(row,"TotalPieces").value_or(0);
+        if(pieces<0 || pieces>255) return false;
+        rule.totalPieces=uint8_t(pieces);
+        const auto hitClass=extra.number(row,"HitClass").value_or(0);
+        if(hitClass<0 || hitClass>15) return false;
+        rule.hitClass=uint8_t(hitClass);
         constexpr std::array componentCodes{"HD","TR","LG","RA","LA","RH","LH","SH","S1","S2","S3","S4","S5","S6","S7","S8"};
         for(size_t c=0;c<componentCodes.size();++c) {
             auto text=std::string(extra.value(row,std::string(componentCodes[c])+"v"));std::erase(text,'"');
@@ -175,6 +181,14 @@ bool prepareMonsterLifecycle(Archives &archives,const ClassicData &data,const An
                 start=end+1;
             }
         }
+        return true;
+    }
+    return false;
+}
+bool prepareMonsterLifecycle(Archives &archives,const ClassicData &data,const AnimDataTable &animations,const MonsterRecord &record,server::MonsterRule &rule) {
+    if(!prepareMonsterComponents(data,record,rule)) return false;
+    const auto &extra=data.tables.at("monstats2");
+    for(size_t row=0;row<extra.rows().size();++row) if(extra.value(row,"Id")==data.tables.at("monstats").value(record.sourceRow,"MonStatsEx")) {
         for(const auto &[field,mode,ticks]:std::array{std::tuple{"mGH","gh",&rule.hitRecoveryTicks},std::tuple{"mBL","bl",&rule.blockTicks}}) {
             if(extra.number(row,field).value_or(0)) {
                 const auto clock=loadMonsterMotionTiming(animations,record.token,mode,monsterModeWeapon(archives,record.token,mode,record.baseWeapon));

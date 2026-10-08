@@ -4,6 +4,7 @@
 #include "server/runtime/events.hpp"
 #include "gameplay/monsters/identity.hpp"
 #include "gameplay/monsters/kind.hpp"
+#include "gameplay/monsters/components.hpp"
 #include "server/runtime/combat_rules.hpp"
 #include "gameplay/skills/hydra_spec.hpp"
 #include "gameplay/combat/poison.hpp"
@@ -60,7 +61,11 @@ struct Actor {
     std::optional<Vec> knockbackGoal;
     std::optional<PoisonStatus> poison;
 };
-struct State { std::map<EntityId, Actor> actors; };
+struct State {
+    std::map<EntityId, Actor> actors;
+    // Scoped to the actual instance/area/class, including dynamically born units.
+    std::map<RegionId, std::map<int, MonsterComponentPalette>> componentPalettes;
+};
 struct Ports { const AreaStore &areas; const PlayerStore &players; EntityIds &ids; uint64_t &random; EventOutbox &events; };
 class System {
     State state_;

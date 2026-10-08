@@ -340,7 +340,7 @@ NativeMapSnapshot NativeMapGenerator::snapshot(int currentLevel, bool continuous
         const auto &room = tiles_.rooms().at(index);
         const auto &r = room.room;
         terrain.rooms.push_back({room.level, r.x - x, r.y - y, r.width, r.height,
-            r.preset, r.file, r.mapX - x, r.mapY - y, {}});
+            r.preset, r.file, r.mapX - x, r.mapY - y, {}, r.flags});
     }
     for (const auto index : rooms) {
         auto &output = terrain.rooms.at(roomIndices.at(index));

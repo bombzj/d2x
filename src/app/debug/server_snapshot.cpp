@@ -66,6 +66,8 @@ Json debugServerSnapshot(const server::DiagnosticSnapshot &s, uint64_t since, ui
             {"attacks",monster.attacks},{"skills",monster.skills}};
         value["shield"]=monster.shield;value["nestSpawned"]=monster.nestSpawned;value["webUntil"]=monster.webUntil;
         value["interruption"]=monster.interruption;value["corpseUnavailable"]=monster.corpseUnavailable;
+        value["components"]=monster.components;value["rules"]["componentCounts"]=monster.componentCounts;
+        value["rules"]["componentVariants"]=monster.componentVariants;
         result["monsters"].push_back(std::move(value));
     }
     for (const auto &cast : s.casts) result["casts"].push_back({{"actor", cast.actor.value}, {"skill", cast.skill},

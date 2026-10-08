@@ -3,13 +3,28 @@
 #include <algorithm>
 namespace d2x {
 void monsterCritical(MonsterHit &hit,int chance,uint64_t &random) {
-    if(chance && limitedRandom(random,100)<unsigned(chance)) for(auto &channel:hit.channels) channel*=2;
+    if(chance && limitedRandom(random,100)<unsigned(chance)) {hit.critical=true;for(auto &channel:hit.channels) channel*=2;}
+}
+uint8_t monsterDamageHitClass(const MonsterHit &hit,uint8_t base,uint32_t &cursor) {
+    if(base&0xf0) return base;
+    // MONSTER_ApplyCriticalDamage sets the critical high nibble before
+    // ExecuteMissileDamage; an existing high nibble skips elemental rotation.
+    if(hit.critical) return uint8_t(base|0x10);
+    constexpr std::array<size_t,4> channels{4,2,3,5};
+    constexpr std::array<uint8_t,4> tags{0x30,0x20,0x40,0x50};
+    const auto start=cursor++%4;
+    uint8_t tag=0;
+    for(unsigned offset=0;offset<4;++offset) {
+        const auto index=(start+offset)%4;
+        if(hit.channels[channels[index]]>0) {tag=tags[index];break;}
+    }
+    return uint8_t((base?base:0x0d)|tag);
 }
 bool monsterHitRecovery(int64_t damage,int64_t maximumLife,uint8_t hitClass,
     bool frozen,bool poisonOnly,bool hasMode,uint64_t &random) {
     if(frozen || poisonOnly || damage<256) return false;
     int divisor=16;
-    switch(hitClass) {
+    switch(hitClass&0x0f) {
     case 2:case 6:case 10:case 11:divisor=8;break;
     case 5:divisor=64;break;
     case 4:case 8:divisor=32;break;

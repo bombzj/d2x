@@ -96,6 +96,8 @@ StepStatus System::resolveSpells(TickContext tick) {
                 }
                 MonsterHit rolled=impact.monsterHit.value_or(MonsterHit{});
                 if(!impact.monsterHit) rolled.channels[size_t(impact.type)]=impact.targetDamage.empty()?impact.damage:impact.targetDamage[impact.next];
+                auto hitClassCursor=state_.hitClassCursor;
+                if(!stateOnly) rolled.hitClass=monsterDamageHitClass(rolled,impact.hitClass,hitClassCursor);
                 DomainResult<> result;
                 if(player) {
                     const ActorContext actor{player->player,player->actor,player->area,area->generation,0,tick.tick};
@@ -114,10 +116,10 @@ StepStatus System::resolveSpells(TickContext tick) {
                     const auto cold=rolled.coldFrames*unsigned(std::clamp(100-pet->rule.resistances[4],0,200))/(100u*unsigned(pet->rule.coldDivisor));
                     std::optional<PoisonApplication> poison;
                     if(rolled.poisonFrames && rolled.channels[5]>0) poison=PoisonApplication{int64_t(mitigateMonsterDamage(float(rolled.channels[5])/256.f,pet->rule.resistances[5])*256.f),rolled.poisonFrames,impact.monsterStates.poison.id};
-                    result=ports_.monsters.damage(pet->id,impact.source,amount,tick.tick,cold,false,impact.hitClass,poison);
+                    result=ports_.monsters.damage(pet->id,impact.source,amount,tick.tick,cold,false,rolled.hitClass,poison);
                 }
                 if(result.status==DomainStatus::Capacity) {blocked=true;break;}
-                if(result) {commitRandom();if(impact.sourceHeal>0) ports_.monsters.heal(impact.source,impact.sourceHeal);}
+                if(result) {state_.hitClassCursor=hitClassCursor;commitRandom();if(impact.sourceHeal>0) ports_.monsters.heal(impact.source,impact.sourceHeal);}
                 ++impact.next;continue;
             }
             const auto *target = ports_.monsters.find(impact.targets[impact.next]);

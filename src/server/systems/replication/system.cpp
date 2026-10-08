@@ -1,4 +1,5 @@
 #include "system.hpp"
+#include "gameplay/combat/life.hpp"
 #include "server/player_store.hpp"
 #include "server/area_store.hpp"
 #include "server/systems/monsters/system.hpp"
@@ -44,7 +45,7 @@ std::vector<MonsterSnapshot> System::visibleMonsters(PlayerId id, uint64_t tick)
         const uint8_t mode = dead ? (tick >= monster.busyUntil ? 12 : 0) : monster.knockedUntil>tick ? 13 : monster.riseUntil > tick ? monster.riseMode : monster.reactionUntil>tick?monster.reactionMode:1;
         result.push_back({key, monster.area, monster.rule.nativeClass, monster.position,
             monster.route.empty() ? monster.position : monster.route.front(),
-            uint8_t(monster.life > 0 ? std::clamp<int64_t>(monster.life * 128 / monster.maximumLife, 1, 128) : 0),
+            monsterLifeRatio(monster.life,monster.maximumLife),
             mode, monster.revision, monster.moving, !dead && tick < monster.busyUntil, monster.chilledUntil > tick ? std::max(25, monster.velocityPercent + monster.rule.coldEffect) : monster.velocityPercent, monster.running, ports_.effects.unitStates(key,tick),monster.knockbackSource});
         result.back().equipment=monster.equipment;
         result.back().components=monster.components;result.back().componentCounts=monster.rule.componentCounts;

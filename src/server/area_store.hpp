@@ -4,6 +4,7 @@
 #include "server/runtime/npc_rules.hpp"
 #include "world/navigation.hpp"
 #include "world/identity.hpp"
+#include "gameplay/monsters/components.hpp"
 #include <map>
 #include <stdexcept>
 #include <utility>
@@ -34,6 +35,7 @@ struct AreaDefinition : AreaMetadata {
     Grid collision;
     RoomLayout activation;
     std::vector<PreparedMonster> population;
+    std::map<int, MonsterComponentPalette> componentPalettes;
     std::vector<std::string> populationDeferred;
     size_t populationMissing{};
 };

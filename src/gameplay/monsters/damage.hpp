@@ -10,9 +10,13 @@ struct MonsterHit {
     uint64_t coldFrames{}, poisonFrames{}, stunFrames{};
     uint64_t slowFrames{};
     int slowPercent{};
+    uint8_t hitClass{};
+    bool critical{};
 };
 struct MonsterHitStates { CombatStateDefinition cold, poison, slow; };
 void monsterCritical(MonsterHit &,int chance,uint64_t &random);
+// SUNITDMG_GetHitClass: base weapon class plus rotating elemental/critical tag.
+uint8_t monsterDamageHitClass(const MonsterHit &,uint8_t base,uint32_t &cursor);
 // MonsterMode::sub_6FC62470 and SUNITDMG_FillDamageValues; no unit mutation.
 MonsterHit rollMonsterHit(int minimum, int maximum, int critical,
     std::span<const MonsterElementAttack> elements, int sourceDamage, uint64_t &random);

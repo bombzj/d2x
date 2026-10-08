@@ -53,7 +53,7 @@ struct SpellImpact {
     std::optional<uint64_t> contactRandom{};
 };
 struct SpellPlan { std::list<SpellImpact> spells; size_t targets{}; };
-struct State { std::vector<Damage> pending; std::list<SpellImpact> spells; size_t spellTargets{}; };
+struct State { std::vector<Damage> pending; std::list<SpellImpact> spells; size_t spellTargets{}; uint32_t hitClassCursor{}; };
 struct Ports { const PlayerStore &players; monsters::System &monsters; const AreaStore &areas; transactions::System &transactions; uint64_t &random; EventOutbox &events; effects::System &effects; inventory::System &inventory; };
 class System {
     State state_;

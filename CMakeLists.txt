@@ -106,7 +106,7 @@ add_library(d2x_gameplay
   src/gameplay/monsters/melee_decision.cpp src/gameplay/monsters/skirmish_decision.cpp
     src/gameplay/monsters/ranged_decision.cpp
     src/gameplay/monsters/special_decision.cpp
-    src/gameplay/monsters/shaman_decision.cpp src/gameplay/monsters/movement_math.cpp src/gameplay/monsters/projectile_math.cpp src/gameplay/monsters/damage.cpp src/gameplay/monsters/implementation.cpp src/gameplay/monsters/rank.cpp
+    src/gameplay/monsters/shaman_decision.cpp src/gameplay/monsters/movement_math.cpp src/gameplay/monsters/projectile_math.cpp src/gameplay/monsters/damage.cpp src/gameplay/monsters/components.cpp src/gameplay/monsters/implementation.cpp src/gameplay/monsters/rank.cpp
   src/gameplay/loot/treasure.cpp src/gameplay/loot/quality.cpp
   src/gameplay/loot/special.cpp src/gameplay/loot/affix.cpp
   src/gameplay/rewards/experience.cpp)

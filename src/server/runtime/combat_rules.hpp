@@ -72,6 +72,8 @@ struct MonsterRule {
     int hitRecoveryTicks{}, blockTicks{}, blockChance{}, coldDivisor{1};
     bool blockWithoutShield{};
     std::array<uint8_t,16> componentCounts{};
+    uint8_t totalPieces{};
+    uint8_t hitClass{};
     std::vector<bool> shieldChoices;
 };
 struct PreparedMonster {

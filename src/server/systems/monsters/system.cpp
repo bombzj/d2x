@@ -3,6 +3,7 @@
 #include "server/player_store.hpp"
 #include "core/random.hpp"
 #include "gameplay/combat/geometry.hpp"
+#include "gameplay/combat/life.hpp"
 #include "gameplay/monsters/melee_decision.hpp"
 #include <algorithm>
 
@@ -24,9 +25,14 @@ DomainResult<EntityId> System::admit(const Admission &request) {
     actor.area = request.area; actor.position = request.position; actor.revision = 1; actor.rule = rule;
     actor.life = actor.maximumLife = (int64_t(rule.minimumLife) + limitedRandom(ports_.random, uint32_t(rule.maximumLife - rule.minimumLife + 1))) * 256;
     actor.combatRandom = childRandom(ports_.random);
-    // MONSTER_SetComponents without a region variation palette: the original
-    // per-unit choice path assigns the first twelve component slots.
-    for(size_t c=0;c<12;++c) actor.components[c]=uint8_t(limitedRandom(actor.combatRandom,rule.componentCounts[c]));
+    // MONSTERREGION::sub_6FC67FA0 lazily adds out-of-pool identities when
+    // TotalPieces > 2, up to thirteen class entries. Never borrow another area.
+    auto &palettes=state_.componentPalettes.try_emplace(request.area,area->definition.componentPalettes).first->second;
+    auto palette=palettes.find(rule.nativeClass);
+    if(palette==palettes.end() && rule.totalPieces>2 && palettes.size()<13)
+        palette=palettes.emplace(rule.nativeClass,monsterComponentPalette(rule.componentCounts,actor.combatRandom)).first;
+    actor.components=chooseMonsterComponents(rule.componentCounts,
+        palette==palettes.end()?MonsterComponentPalette{}:palette->second,actor.combatRandom);
     actor.shield=actor.components[7]<rule.shieldChoices.size() && rule.shieldChoices[actor.components[7]];
     const auto id = actor.id;
     state_.actors.emplace(id, std::move(actor));
@@ -76,7 +82,7 @@ DomainResult<> System::damage(EntityId id, EntityId source, int64_t amount, uint
     auto &actor = it->second;
     const auto life = std::max(int64_t(0), actor.life - amount);
     const bool corpseUnavailable=actor.frozenUntil>tick;
-    const uint8_t percent = uint8_t(life ? std::clamp<int64_t>(life * 128 / actor.maximumLife, 1, 127) : 0);
+    const uint8_t percent = monsterLifeRatio(life,actor.maximumLife);
     auto chilled = actor.chilledUntil, frozen = actor.frozenUntil;
     if (life && coldFrames && actor.rule.coldEffect < 0) {
         coldFrames = std::min(coldFrames, UINT64_MAX - tick);
@@ -116,7 +122,7 @@ DomainResult<> System::block(EntityId id,uint64_t tick) {
     auto it=state_.actors.find(id);if(it==state_.actors.end() || it->second.life<=0) return {DomainStatus::InvalidActor,{}};
     auto &actor=it->second;
     if(actor.rule.blockTicks>0) {
-        const uint8_t percent=uint8_t(std::clamp<int64_t>(actor.life*128/actor.maximumLife,1,128));
+        const uint8_t percent=monsterLifeRatio(actor.life,actor.maximumLife);
         auto result=ports_.events.publish({0,tick,{}, {AudienceKind::Area,{},actor.area},{HitFact{id,1,actor.area,percent,false,actor.position,0,6}}});
         if(!result) return {result.status,{}};
         stop(id);++actor.interruption;actor.reactionMode=6;actor.reactionUntil=tick+uint64_t(actor.rule.blockTicks);actor.busyUntil=actor.reactionUntil;++actor.revision;

@@ -114,9 +114,19 @@ Bytes nativeReposition(const server::RepositionFact &fact, Vec origin) {
     });
 }
 std::vector<Bytes> nativeHit(const server::HitFact &fact, Vec origin) {
-    std::vector<Bytes> result{encodeServerPacket(ServerMessage::Hit, [&](auto &out) {
-        key(out, fact.type, fact.target); out.u8(0); out.u8(fact.hitClass); out.u8(fact.life);
-    })};
+    std::vector<Bytes> result;
+    if(fact.type==0) {
+        // PlrMsg::sub_6FC81C00: correction/life update is wire action 19,
+        // not the monster-only 0C update or an invented player GH action.
+        result.push_back(encodeServerPacket(ServerMessage::UnitIdle,[&](auto &out) {
+            key(out,0,fact.target);out.u8(19);point(out,fact.position+origin);out.u8(fact.hitClass);out.u8(fact.life);
+        }));
+    } else {
+        // MonsterMsg::sub_6FC659E0 uses flag 19 for life/last hit class.
+        result.push_back(encodeServerPacket(ServerMessage::Hit,[&](auto &out) {
+            key(out,fact.type,fact.target);out.u8(19);out.u8(fact.hitClass);out.u8(fact.life>1?fact.life-1:fact.life);
+        }));
+    }
     if(fact.type==1 && !fact.killed && fact.monsterMode)
         result.push_back(encodeServerPacket(ServerMessage::NpcModePoint,[&](auto &out){out.u32(uint32_t(fact.target.value));out.u8(fact.monsterMode==3?6:18);point(out,fact.position+origin);out.u8(0);out.u8(0);}));
     if (fact.killed) {

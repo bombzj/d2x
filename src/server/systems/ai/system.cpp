@@ -28,18 +28,25 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         bool active=false;
         for(const auto &[key,player]:ports_.players.all()) { (void)key;if(player.entered && player.area==monster.area && area.definition.activation.nearby(player.position,monster.position)) {active=true;break;} }
         if(!active || area.definition.town) {controller.pursuing=false;ports_.monsters.stop(id);continue;}
+        // AiUtil::sub_6FCF2110 and DRLGROOM_CheckLOSDraw: initial acquisition
+        // in rooms without LOSDraw requires a clear missile-barrier ray.
+        // Native flag 8 keeps pursuit enabled once a target was acquired.
+        const auto *room=area.definition.activation.room(monster.position);
+        const bool requireSight=room && !room->checkLosDraw && !controller.acquiredTarget;
+        auto visible=[&](Vec point) {return !requireSight || area.definition.collision.missileSegment(monster.position,point,{4,1});};
         std::optional<UnitTarget> target;Vec targetPosition;int targetSize=2;
         int distance = std::min(55, monster.rule.ai.searchDistance);
         for (const auto &[playerId, player] : ports_.players.all()) {
             (void)playerId;
             if (!player.entered || player.area != monster.area || player.persistent.player.hp <= 0 || !area.definition.activation.nearby(player.position,monster.position)) continue;
             const int candidate = monsterAiDistance(player.position, 0, monster.position);
-            if (candidate < distance) { distance = candidate; target=UnitTarget{player.actor,0,0};targetPosition=player.position;targetSize=2; }
+            if (candidate < distance && visible(player.position)) { distance = candidate; target=UnitTarget{player.actor,0,0};targetPosition=player.position;targetSize=2; }
         }
         std::optional<UnitTarget> alternative;Vec alternativePosition;int alternativeSize=0;
         int alternativeDistance=monster.rule.ai.searchDistance;
         for(const auto &[petId,pet]:ports_.monsters.read().actors) if(pet.amazonPet && pet.life>0 && pet.area==monster.area && area.definition.activation.nearby(pet.position,monster.position)) {
-            const int candidate=monsterAiDistance(pet.position,pet.rule.size,monster.position);
+            if(!visible(pet.position)) continue;
+            const int candidate=monsterAiDistance(pet.position,0,monster.position);
             if(pet.rule.threat>1) {
                 if(candidate<distance) {distance=candidate;target=UnitTarget{petId,0,1};targetPosition=pet.position;targetSize=pet.rule.size;}
             } else if(candidate<alternativeDistance) {alternativeDistance=candidate;alternative=UnitTarget{petId,0,1};alternativePosition=pet.position;alternativeSize=pet.rule.size;}
@@ -54,6 +61,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         }
         controller.target = target ? std::optional(target->id) : std::nullopt;
         if (!target) { controller.pursuing = false; ports_.monsters.stop(id); continue; }
+        controller.acquiredTarget=true;
         if(monster.rule.opensDoors && ports_.objects.openMonsterDoor(id,targetPosition,tick.tick)) {
             ports_.monsters.stop(id);controller.pursuing=false;controller.nextDecision=tick.tick+5;continue;
         }

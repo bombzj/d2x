@@ -1,4 +1,5 @@
 #include "system.hpp"
+#include "gameplay/combat/life.hpp"
 #include "server/player_store.hpp"
 #include "server/area_store.hpp"
 #include "server/systems/transactions/system.hpp"
@@ -112,8 +113,8 @@ DomainResult<float> System::receiveMonster(const ActorContext &actor, EntityId s
         for (const auto handle : depleted) states.remove(handle);
     }
     edit.transient = projection(states,actor.tick);
-    const auto percent = uint8_t(std::clamp(int(edit.player.hp*128/p->totals.character.maxLife),edit.player.hp>0?1:0,128));
-    if(dealt>0 || hit.mana>0 || hit.stamina>0) edit.publicFacts.emplace_back(HitFact{actor.actor,0,actor.area,percent,edit.player.hp<=0,p->position});
+    const auto percent = playerLifePercentage(int64_t(edit.player.hp*256),int64_t(p->totals.character.maxLife)*256);
+    if(dealt>0 || hit.mana>0 || hit.stamina>0) edit.publicFacts.emplace_back(HitFact{actor.actor,0,actor.area,percent,edit.player.hp<=0,p->position,hit.hitClass});
     auto plan = ports_.transactions.prepare(std::move(edit)); if (!plan) return {plan.status,{}};
     auto result = ports_.transactions.commit(std::move(*plan.value)); if (result) state_.players.swap(next.players);
     return {result.status,result?std::optional{dealt}:std::nullopt};

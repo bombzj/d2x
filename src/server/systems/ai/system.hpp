@@ -18,6 +18,7 @@ struct Controller {
     int phase{}, loop{};
     bool pursuing{}, charged{}, commanded{}, alerted{};
     uint64_t lastSpawn{};
+    bool acquiredTarget{};
 };
 struct State { std::map<EntityId, Controller> controllers; };
 struct Ports { monsters::System &monsters; const PlayerStore &players; const AreaStore &areas; skills::System &skills; objects::System &objects; uint64_t &random; };

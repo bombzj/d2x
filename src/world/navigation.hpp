@@ -8,6 +8,7 @@ namespace d2x {
 struct RoomBounds {
     int x, y, width, height;
     bool populate;
+    bool checkLosDraw{true};
 };
 // Immutable spatial room index. Activity is derived from the observer's room and
 // touching neighbours, following DRLG's InRoom / InSight / OutOfSight model.

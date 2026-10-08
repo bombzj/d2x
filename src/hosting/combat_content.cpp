@@ -131,6 +131,15 @@ void prepareCombatPopulation(Archives &archives, const ClassicData &data, Prepar
     if (prepared.terrain.recipe.preset) preset = world.presets().at(prepared.terrain.recipe.preset);
     // Generated maps use each room's MPQ Populate flag in planPopulation.
     auto plan = planPopulation(catalog, &level, preset, *prepared.terrain.map, {request.seed, request.difficulty});
+    // MONSTERREGION_InitializeAll prepares every selected class before units
+    // choose a variant. The planner's region seed remains a project adapter.
+    auto componentRandom=plan.componentRandom;
+    for(const auto &code:plan.roster) {
+        const auto *record=catalog.find(code);
+        server::MonsterRule components;
+        if(record && prepareMonsterComponents(data,*record,components))
+            area.componentPalettes.emplace(record->index,monsterComponentPalette(components.componentCounts,componentRandom));
+    }
     std::set<std::string> deferred(plan.diagnostics.begin(), plan.diagnostics.end());
     // Rules depend on native identity/rank and this area's difficulty/level,
     // not the spawn position. Cache unsupported profiles as well.

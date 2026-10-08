@@ -51,21 +51,21 @@ hosting准备不可变纯值，server不读表、资源或客户端副本。自�
 | 数据 | 已准备／使用 |
 | --- | --- |
 | 人口 | Levels三难度池／区域等级；MonStats稀疏、概率、群组、族群与真实spawn key沿既有人口计划 |
-| AI | AI、aidist／aidel及八项aip的三难度值；aidist=0按原35，玩家候选另受原55约束；邻室激活及主／低Threat候选分开 |
+| AI | AI、aidist／aidel及八项aip的三难度值；aidist=0按原35，玩家候选另受原55约束；原房间LOSDraw／NO_LOS_DRAW与初次察觉射线、察觉后追击标记；邻室激活及主／低Threat候选分开 |
 | 数值 | Level／noRatio／MonLvl，生命／AC、独立A1／A2TH和伤害、三槽ElMode／Type／Pct／MinD／MaxD／Dur、六抗性、Crit、DamageRegen、ToBlock／NoShldBlock、经验及既有掉落 |
 | 路径／动作 | Velocity／Run、家族百分比、MeleeRng、BaseId／flying／opendoors、SizeX／spawnCol、mGH／mBL／mKB／mWL、resurrectMode／corpseSel；AnimData释放、GH／BL／死亡／复活时长 |
 | 技能／弹体 | MissA1／A2；Skill1–4／SkMode／SkLvl的实际执行槽、MonSeq事件、DifficultyLevels.MonsterSkillBonus／MonsterColdDiv；Missiles五段伤害／HitShift、SrcDamage／EType／长度、Range／LevRange、Vel／VelLev、Activate、CollideType／CollideKill／AlwaysExplode、ClientSend／CanSlow／ReturnFire／HitClass、原命中回调／子弹型号 |
-| 组件／表现 | MonStats2十六组件选择数；按原MONSTER_SetComponents单体路径分配前十二槽，以原AC位宽发送，实际SH盾牌影响格挡。MonSounds／Light／调色／COF／DCC仍由原客户端解释 |
+| 组件／表现 | MonStats2十六组件选择数、TotalPieces及HitClass；区域选中类型先准备最多三个十六槽组合，新增类型在TotalPieces>2且区域类型数未满13时补入；无区域池使用原单体前十二槽路径。原AC位宽发送，实际SH盾牌影响格挡；近战用MonStats2.HitClass，弹体用Missiles.HitClass，元素／暴击标记在接触成功时计算。MonSounds／Light／调色／COF／DCC仍由原客户端解释 |
 
-缺省35／15、SEIS种子、路径掩码、方向表及GH阈值是已核实原程序常量，参数不写成演示数值。ResurrectMode=xx不是动画，按MONSTERSPAWN_GetResurrectMode的越界模式规则使用NU，不因此拒绝骷髅／法师／小矮人。当前普通弹体没有启用NextHit；非零NextDelay的怪物玩家目标窗口尚未接。组件使用原单体选择路径，MonsterChoose区域组合／变体池仍待实现。
+缺省35／15、SEIS种子、路径掩码、方向表及GH阈值是已核实原程序常量，参数不写成演示数值。ResurrectMode=xx不是动画，按MONSTERSPAWN_GetResurrectMode的越界模式规则使用NU，不因此拒绝骷髅／法师／小矮人。当前普通弹体没有启用NextHit；非零NextDelay的怪物玩家目标窗口尚未接。区域组合以人口计划选型后的区域随机流准备；完整原版全区域初始化／房间随机调度尚未复刻，不能宣称同种子外观和出生位置逐单位一致。Vision缓存、特殊AI强制察觉旗标及动态拥挤仍待完整接入。
 
 ## 所有权与公共函数
 
 gameplay/monsters/decision提供动作纯值，melee／skirmish／ranged／shaman／special按族求值；server/ai/family_actions持目标、等待、标记和决策随机，只提交窄请求。monsters拥有实体、路线、状态、复活和巢出生；skills拥有动作／释放队列；missiles拥有EnemyProjectile快照和接触计划；combat／effects执行六通道、冷毒／资源及地面状态；death／loot／quests独立结算。复活和巢生单位不再次给XP／TC，巢子保留真实身份。
 
-两端共享方向／原偏移表、SEIS尖刺目标、固定点速度和原路径掩码。距离／绕行／家族决策、伤害／暴击／GH纯计算供服务端不同来源复用；客户端没有权威输入就不调用。分层证据见[参考设计](../architecture/REFERENCE_DESIGN.md)。
+两端共享方向／原偏移表、SEIS尖刺目标、固定点速度和原路径掩码。距离／绕行／家族决策、伤害／暴击／GH、组件组合及生命比例纯计算供不同来源复用；客户端没有权威输入就不调用。组合状态按实例／区域／原类型由monsters拥有，hosting只准备初始纯值，不用全局静态缓存。分层证据见[参考设计](../architecture/REFERENCE_DESIGN.md)。
 
-客户端改动仅为纯函数提取及原版修正：Wraith路径0x0804／小型图案、Velocity先固定点截断；不改输入、原包解码或增加自研分支。hosting按MonsterMsg编码A1=10、A2=16、S1=13、S2=15、GH=6、BL=18；技能走原4C／4D，ClientSend控制73。
+客户端改动仅为此前纯函数提取及原版修正：Wraith路径0x0804／小型图案、Velocity先固定点截断；本次收尾没有改客户端。hosting按MonsterMsg编码A1=10、A2=16、S1=13、S2=15、GH=6、BL=18；技能走原4C／4D，ClientSend控制73。人物命中／生命更新用PlrMsg的0D／19及0..100比例，怪物0C使用旗标19、原0..128比例减一和命中类型；两者均先截断整数生命。死亡仍走原死亡模式；0D／19不是GH动作，不宣称玩家恢复时钟已经完成。
 
 GH、冻结、击退和死亡使未释放动作失效。可靠队列重试保留动作随机与首次释放位置／目标，接触计划只生成一次；已释放弹体可在来源死亡后继续，同区规则不跨区追踪。server-snapshot的rules列出准备参数、动作／技能，运行列另含盾牌、巢生计数、蛛网和中断。构建／运行事实见基线，逐字段接线不代表所有组合已认证。
 
@@ -79,7 +79,7 @@ GH、冻结、击退和死亡使未释放动作失效。可靠队列重试保留
 
 ## 有限运行证据
 
-2026-10-09当前Windows包，普通难度临时Hero女巫92级（基础生命931），使用现有调试管道准备单位／观察权威，正常移动、霜之新星、传送与UNIT_TILE仍发送原C2S。日志、JSON、截图和存档只留忽略目录`artifacts/act1-monsters-20261008`。
+2026-10-09首次普通怪物批次（c6db530），普通难度临时Hero女巫92级（基础生命931），使用现有调试管道准备单位／观察权威，正常移动、霜之新星、传送与UNIT_TILE仍发送原C2S。日志、JSON、截图和存档只留忽略目录`artifacts/act1-monsters-20261008`。
 
 - `admission-final.json`：57个身份全部成功。首轮9个骷髅／法师／小矮人因xx复活动作被错误拒绝，按原MonsterSpawn规则修复后重新构建／打包，再运行本轮。
 - `all-admitted.json`、`families-250.json`、`special-*`及事件分页：19类AI均有动作事实；初轮250帧生命927.08→739.29。两种鸟巢出生计数达到表中6／8，第一种达到上限后死亡；自然生成与巢子保留真实类型。未单独覆盖第二种耗尽死亡的最后动作。
@@ -89,4 +89,14 @@ GH、冻结、击退和死亡使未释放动作失效。可靠队列重试保留
 - `vampire-events-*`、`vampire-final.json`：吸血鬼实际发送169火球与333 FireHead并扣血；先前受伤后的生命恢复同时包含DamageRegen，未把它当作独立FireHead吸血数值认证。
 - `reload-final.json`：保存后新进程恢复92级、四项已学技能与生命910.21，短时状态为空。最终宿主failures=0／characterIssues空；客户端ignoredPackets=0／unavailableUnits=0／mapErrors及effectLimitations空，stderr空。
 
-本轮普通难度原表未开启毒伤，不制造毒参数；噩梦／地狱六种毒行、实际盾牌BL、全部分支／状态组合／取消与背压／多人、Linux和原服回归尚未运行认证。当前代表路径为有限V2，逐身份准入不等于全部规则达到V3。
+后续收尾证据在`artifacts/act1-monsters-closeout-20261009`，继续使用现有管道，无新增测试脚本或程序：
+
+- `palette-field-final.json`：营地原走跑到鲜血荒地；同区48沉沦魔使用三个组合、32硬毛老鼠一个、28僵尸三个。`shield-admission.json`中的骷髅1／3有真实盾牌，骷髅2本次选中无盾；新增类型各有三个区域组合。
+- `shield-final-online.json`及权威快照：普通原Attack实际触发骷髅3编号517的BL，收到0x69动作18；盾牌为true，生命21、interruption=1。近战人物命中类型3已观测；本例先于最终人物包修正，不能将旧0C人物Hit记录称作最终包的线格式。
+- `release-admission-all.json`／`release-all-authority.json`／`release-all-online.json`：最终包再次准入57个身份，同区13个类型有区域池（十二类三组合、一类单组合），另外44类走原前十二槽单体路径，实际覆盖13类型容量后的路径。50帧后人物生命600.91796875，原人物百分比64，客户端ignoredPackets=0／unavailableUnits=0／场景错误为空；该批调试单位共用可行走位置，不认证自然人口动态占位。
+- `release-online.json`／`release-authority.json`：新EXE从存档恢复92级／生命812.52734375，短时状态为空；原走跑后生命802.67578125、客户端百分比86，观察三次本人0D／19更新。最终怪物0C旗标19及死亡生命0另留`final-observation.json`，人物命中不再发0C。
+- `nest-web-active.json`：第二种鸟巢crownest2出生计数8后死亡，补齐前批未覆盖的最后动作。`web-active-final.json`：arach1原低生命阶段触发蛛网，Player状态24、地面146寿命200帧；击杀来源再推进250帧，`web-expired-final.json`仍在区域2、地面146数量0且Player状态为空。最后保存成功，`closeout-reload-final.json`的新进程恢复92级／生命837.4453125、短时状态为空；宿主failures=0／characterIssues空，stderr为空。
+- `native-melee-ranged.json`：本机D2GS 1.13c普通新女巫MonNativeOct，在原鲜血荒地遭遇fallen1（hcIdx19）与quillrat1（63）。完整事件含沉沦魔A1九次／A2三十三次／S2一次、硬毛老鼠A2三次，均为0x6C目标动作。原表ClientSend决定是否另发73，不能把未看到73当成远程未执行。本例1级人物最终死亡，不能当作成功击杀或完整战斗验收；不比较两服随机分支次数。
+- 原服样本的本人生命更新为0D／19；据PlrMsg和MonsterMsg修复自研人物误发0C、怪物0C旗标、两种生命比例及整数截断。样本末尾原服ignoredPackets=43（入局11），含既有0x47／48／53等未消费包；unavailableUnits=0、mapErrors／effectLimitations为空。不能将本次原服样本宣称为无未知包，也未因未消费包增加自研私有兼容。
+
+普通难度原表未开启毒伤，不制造毒参数；噩梦／地狱六种毒行、完整Vision／随机流调度、全部分支／状态组合／取消与背压／多人和Linux尚未运行认证。当前代表路径及两个原服普通样本为有限V2，逐身份准入不等于全部规则达到V3。

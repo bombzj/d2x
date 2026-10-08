@@ -1,4 +1,5 @@
 #include "system.hpp"
+#include "gameplay/combat/life.hpp"
 #include "server/player_store.hpp"
 #include "server/area_store.hpp"
 #include "server/systems/inventory/eligibility.hpp"
@@ -183,7 +184,7 @@ DomainResult<> System::damage(const ActorContext &actor, uint64_t expected, int6
     if (expected != player.characterRevision) return {DomainStatus::Stale, {}};
     if (expected == UINT64_MAX) return {DomainStatus::Capacity, {}};
     const float life = std::max(0.f, player.persistent.player.hp - float(amount) / 256.f);
-    const uint8_t percent = uint8_t(std::clamp(int(life * 128 / player.totals.character.maxLife), life > 0 ? 1 : 0, 128));
+    const uint8_t percent = playerLifePercentage(int64_t(life*256),int64_t(player.totals.character.maxLife)*256);
     auto published = ports_.events.publishGroup({
         {0, actor.tick, {}, {AudienceKind::Player, player.player, player.area}, {LifeFact{player.actor, life}}},
         {0, actor.tick, {}, {AudienceKind::Area, {}, player.area}, {HitFact{player.actor, 0, player.area, percent, life <= 0, player.position}}}
