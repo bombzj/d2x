@@ -15,6 +15,7 @@ struct Reward { PlayerId player; uint64_t sourceOccurrence{}, experience{}; unsi
 struct Exchange { PlayerId first, second; std::vector<ItemTransfer> items; unsigned firstGold{}, secondGold{}; };
 enum class ResourceRefresh { Clamp, AttributeGain, LevelUp };
 struct WorldEdit { uint64_t expected{}; items::State next; };
+struct DirectedFacts { PlayerId player; std::vector<DomainFact> facts; };
 struct InventoryEdit {
     ActorContext actor;
     uint64_t expectedRevision{}, expectedCharacterRevision{};
@@ -31,6 +32,8 @@ struct InventoryEdit {
     std::vector<DomainFact> publicFacts{};
     std::optional<PointTarget> knockback{};
     std::optional<SkillCharge> charge{};
+    std::vector<DirectedFacts> directed{};
+    bool playerTrade{};
 };
 struct CharacterEdit {
     ActorContext actor;
@@ -71,6 +74,8 @@ class System {
     // Same-area skill buffs may debit a caster and update a different player.
     // This restricted character-only group publishes all projections before swaps.
     DomainResult<> commitCharacters(std::vector<Plan>);
+    // Two inventory owners, one output reservation and no intermediate writes.
+    DomainResult<> commitInventories(std::vector<Plan>);
     // Atomic mana debit and optional same-area relocation at the release frame.
     DomainResult<> release(const ActorContext &, uint64_t expectedCharacterRevision, float manaCost,
                            std::optional<PointTarget> relocation = {}, std::optional<SkillCharge> charge = {});

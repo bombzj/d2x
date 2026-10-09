@@ -62,6 +62,7 @@ struct NativeRealmService {
         std::map<EntityId,uint16_t> npcQuestAlerts;
         EntityId shopOwner;
         std::map<EntityId, std::set<int>> states;
+        std::map<EntityId,uint64_t> hover;
     } peer;
     struct PreparedGame {
         PlayerBinding binding;

@@ -146,8 +146,33 @@ void NativeRealmService::receiveEvent(const server::EventBatch &batch) {
         else if (const auto *chat = std::get_if<server::ChatFact>(&fact)) {
             if (std::find(chat->recipients.begin(), chat->recipients.end(), binding->player) == chat->recipients.end()) continue;
             delta.push_back(encodeServerPacket(ServerMessage::Chat, [&](auto &out) {
-                out.u8(1); out.u8(0); out.u8(0); out.u32(uint32_t(chat->actor.value)); out.u8(0); out.u8(0);
+                out.u8(chat->type); out.u8(chat->language); out.u8(chat->unitType); out.u32(uint32_t(chat->actor.value)); out.u8(0); out.u8(chat->nameColor);
                 out.string(chat->name); out.string(chat->text);
+            }));
+        } else if (const auto *relation=std::get_if<server::ChatRelationFact>(&fact)) {
+            const auto local=host.read(*binding)->actor.id;
+            delta.push_back(encodeServerPacket(ServerMessage::PlayerRelationFlags,[&](auto &out){out.u32(uint32_t(relation->from.value));out.u32(uint32_t(relation->to.value));out.u16(relation->flags);}));
+            if(local==relation->from || local==relation->to)
+                delta.push_back(encodeServerPacket(ServerMessage::PartyMember,[&](auto &out){
+                    out.u32(uint32_t((local==relation->from?relation->to:relation->from).value));out.u16(UINT16_MAX);
+                    out.u16(local==relation->from?relation->toLevel:relation->fromLevel);out.u16(local==relation->from?relation->flags:relation->reverse);out.u16(0);
+                }));
+        } else if (const auto *trade = std::get_if<server::TradeFact>(&fact)) {
+            delta.push_back(encodeServerPacket(ServerMessage::UiAction,[&](auto &out){out.u8(trade->action);}));
+            if(trade->partner) delta.push_back(encodeServerPacket(ServerMessage::TradePeer,[&](auto &out) {
+                std::array<uint8_t,16> name{};
+                if(trade->name.empty() || trade->name.size()>15) throw std::logic_error("Invalid trade peer name");
+                std::copy(trade->name.begin(),trade->name.end(),name.begin());out.append(name);out.u32(uint32_t(trade->partner.value));
+            }));
+            if(trade->gold) for(const auto side : {uint8_t(1),uint8_t(0)})
+                delta.push_back(encodeServerPacket(ServerMessage::TradeGold,[&](auto &out){out.u8(side);out.u32(side?trade->gold->first:trade->gold->second);}));
+        } else if(const auto *items=std::get_if<server::TradeItemsFact>(&fact)) {
+            delta=nativeTradeItems(*content,*items,host.read(*binding)->actor.id);
+        } else if(const auto *message=std::get_if<server::PlayerMessageFact>(&fact)) {
+            delta.push_back(encodeServerPacket(ServerMessage::Reserved5A,[&](auto &out){
+                out.u8(message->type);out.u8(0);out.u32(0);out.u8(0); std::array<uint8_t,32> names{};
+                if(message->name.size()>15) throw std::logic_error("Invalid player message name");
+                std::copy(message->name.begin(),message->name.end(),names.begin());out.append(names);
             }));
         } else if (const auto *npc = std::get_if<server::NpcMessagesFact>(&fact)) {
             delta.push_back(encodeServerPacket(ServerMessage::NpcMessages,[&](auto &out) {

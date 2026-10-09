@@ -14,6 +14,6 @@ RemoteCombat与RemoteScene目标选择统一核对原服alignment、真实单位
 
 ## 关系副本与证据
 
-remote_social保存原名册／队伍／关系值，公开信息与本人私有状态分开；离开视野不等于退出名册。原服交易UI／发送及有限成交已接；组队、敌意及自研交易权威未完成，不能把原flags当已解释的服务权限。
+remote_social保存原名册／队伍／关系值，公开信息与本人私有状态分开；离开视野不等于退出名册。原服交易UI／发送及自研[交易权威](../items/PLAYER_TRADE.md)已接；聊天ignore／squelch执行原方向关系。组队与敌意仍未实现，聊天关系不能充当战斗服务权限。
 
 原规则核对本地D2MOO SUnit::SUNIT_AreUnitsAligned、SUnitDmg伤害／经验分配与原包定义。关系及倍率仍由原服执行；MPQ数值不写死。协议边界见[联网模块](../../modules/NETWORK.md#多人只读副本)。

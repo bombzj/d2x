@@ -1,4 +1,5 @@
 #include "planning.hpp"
+#include "eligibility.hpp"
 #include "server/player_store.hpp"
 #include "server/area_store.hpp"
 #include "server/movement.hpp"
@@ -13,8 +14,7 @@
 #include "gameplay/quest/acts/act_five_state.hpp"
 #include "gameplay/quest/catalog.hpp"
 namespace d2x::server::inventory {
-namespace {
-DomainStatus questPickup(const PlayerState &player, const ItemDefinition &base,
+DomainStatus canReceiveQuestItem(const PlayerState &player, const ItemDefinition &base,
     const ItemCatalog &catalog, unsigned difficulty) {
     if (!base.questTag) return DomainStatus::Applied;
     // ItemMode::sub_6FC425F0: the native quest tag is not a blanket pickup ban.
@@ -56,7 +56,6 @@ DomainStatus questPickup(const PlayerState &player, const ItemDefinition &base,
     }
     return DomainStatus::Applied;
 }
-}
 DomainResult<> System::dropGold(const ActorContext &actor, unsigned amount) {
     const auto &player = *ports_.players.find(actor.player);
     if (player.persistent.player.hp <= 0 || !amount || amount > player.persistent.player.gold) return {DomainStatus::InvalidRequest, {}};
@@ -96,7 +95,7 @@ DomainResult<> System::ground(const ActorContext &actor, const GroundTransfer &r
     const auto *definition = ports_.definitions->find(source.definition);
     if (!definition) return {DomainStatus::Unavailable, {}};
     if (!request.drop) {
-        const auto status = questPickup(*player, *definition, *ports_.definitions, unsigned(player->persistent.difficulty));
+        const auto status = canReceiveQuestItem(*player, *definition, *ports_.definitions, unsigned(player->persistent.difficulty));
         if (status != DomainStatus::Applied) return {status, {}};
     }
     auto world = ports_.items.read();

@@ -3,6 +3,7 @@
 #include "server/area_store.hpp"
 #include "server/systems/transactions/system.hpp"
 #include "server/systems/items/system.hpp"
+#include "server/systems/trade/system.hpp"
 #include <stdexcept>
 
 namespace d2x::server::inventory {
@@ -10,6 +11,7 @@ std::optional<InputState> System::input(PlayerId id) const {
     const auto *player = ports_.players.find(id);
     if (!player) return {};
     InputState result{player->persistent.containers, player->persistent.player.weaponSet, {}};
+    result.trade=ports_.trade.container(id);
     for (const auto &[key, item] : player->persistent.inventory.items)
         if (const auto *location = std::get_if<ContainerLocation>(&item.location))
             result.items.emplace(key, InputItem{item.handle(), *location});
@@ -22,6 +24,25 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
     const auto *area = ports_.areas.find(actor.area);
     if (!player || !player->entered || player->actor != actor.actor || player->area != actor.area || !area || area->generation != actor.areaGeneration) return {DomainStatus::InvalidActor, {}};
     if (!ports_.definitions || !player->rules.equipment || !player->rules.character) return {DomainStatus::Unavailable, {}};
+    const auto trade=ports_.trade.container(actor.player);
+    if (ports_.trade.find(actor.player)) {
+        if (!trade || !ports_.trade.canEdit(actor.player) ||
+            (!std::holds_alternative<MoveItem>(request.intent) && !std::holds_alternative<SwapItems>(request.intent)))
+            return {DomainStatus::Conflict,{}};
+        const auto allowed=[&](const ContainerLocation &at) { return at.container==trade || at.container==player->persistent.containers.backpack || at.container==player->persistent.containers.cursor; };
+        const auto origin=[&](ItemHandle handle) {
+            const auto item=player->persistent.inventory.items.find(handle.id);
+            const auto *at=item==player->persistent.inventory.items.end()?nullptr:std::get_if<ContainerLocation>(&item->second.location);
+            return at && allowed(*at);
+        };
+        if (const auto *move=std::get_if<MoveItem>(&request.intent)) {
+            const auto *at=std::get_if<ContainerLocation>(&move->destination);
+            if(!at || !allowed(*at) || !origin(move->item)) return {DomainStatus::InvalidRequest,{}};
+        } else {
+            const auto &swap=std::get<SwapItems>(request.intent);
+            if(!origin(swap.first) || !origin(swap.second) || (swap.destination && !allowed(*swap.destination))) return {DomainStatus::InvalidRequest,{}};
+        }
+    }
     if(std::holds_alternative<CloseCube>(request.intent)) {
         const auto access=state_.storage.find(actor.player);
         if(access!=state_.storage.end() && access->second.kind==ContainerKind::Cube) state_.storage.erase(access);
@@ -40,7 +61,7 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
     }
     if (const auto *use = std::get_if<UseItem>(&request.intent)) return consume(actor, *use, request.source);
     DomainResult<Edit> planned;
-    try { planned = plan(*player, request, *ports_.definitions, *player->rules.equipment, *player->rules.character, storageAccess(actor.player),cubeAccess(actor.player)); }
+    try { planned = plan(*player, request, *ports_.definitions, *player->rules.equipment, *player->rules.character, storageAccess(actor.player),cubeAccess(actor.player),trade); }
     catch (const std::runtime_error &) { return {DomainStatus::Unavailable, {}}; }
     catch (const std::out_of_range &) { return {DomainStatus::Unavailable, {}}; }
     if (!planned) return {planned.status, {}};
@@ -54,9 +75,20 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
         for (const auto &item : edit.spilled) change.publicFacts.emplace_back(GroundDropFact{world.value->next.world.items.at(item.id)});
         change.world = std::move(*world.value); change.equipment = std::move(rules);
     }
+    bool offerChanged=false;
+    if(trade) {
+        change.playerTrade=true;
+        for(const auto &delta:change.changes) for(const auto *location:{&delta.before,&delta.after}) {
+            const auto *at=*location?std::get_if<ContainerLocation>(&**location):nullptr;
+            offerChanged=offerChanged || (at && at->container==trade);
+        }
+        if(offerChanged) {const auto decorated=ports_.trade.decorate(actor.player,change);if(!decorated) return decorated;}
+    }
     auto transaction = ports_.transactions.prepare(std::move(change));
     if (!transaction) return {transaction.status, {}};
-    return ports_.transactions.commit(std::move(*transaction.value));
+    const auto result=ports_.transactions.commit(std::move(*transaction.value));
+    if(result && offerChanged) ports_.trade.edited(actor.player,actor.tick);
+    return result;
 }
 DomainResult<> System::close(PlayerId player) {
     state_.storage.erase(player);

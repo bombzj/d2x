@@ -23,7 +23,7 @@ size_t lod113c_client_packet_size(std::span<const uint8_t> bytes) {
     const auto *entry = findClientWireMessage(bytes[0]);
     if (!entry) throw ProtocolError("Undefined LoD 1.13c client packet ID: " + std::to_string(bytes[0]));
     if (entry->fixedSize) return bytes.size() >= entry->fixedSize ? entry->fixedSize : 0;
-    if (entry->message != ClientMessage::Chat) throw ProtocolError("Missing native client packet framer");
+    if (entry->message != ClientMessage::Chat && entry->message != ClientMessage::OverheadChat) throw ProtocolError("Missing native client packet framer");
     if (bytes.size() < 3) return 0;
     size_t offset = 3;
     for (const size_t maximum : {size_t{255}, size_t{15}}) {

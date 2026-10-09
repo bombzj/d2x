@@ -337,6 +337,8 @@ Bytes encodeSave(const CharacterSaveData &source, const ClassicData &content) {
             if (player.quests[difficulty][questIndex(id)].stage >= questCompletionStage(id)) progression = std::max(progression, unsigned(difficulty) * 5 + act);
     header.flags = (header.flags & ~0x1F00u) | (progression << 8);
     std::vector<const ItemInstance *> characterRoots;
+    require(std::none_of(snapshot.inventory.containers.begin(),snapshot.inventory.containers.end(),
+        [](const auto &entry){return entry.second.spec.kind==ContainerKind::Trade;}),"unsettled player trade inventory");
     std::map<uint32_t,unsigned> sourceSlots;
     for(const auto &[id,item]:snapshot.inventory.items) if(const auto *at=std::get_if<ContainerLocation>(&item.location);
         at && at->container!=snapshot.containers.hirelingEquipment && snapshot.inventory.containers.at(at->container).spec.kind!=ContainerKind::Corpse) {

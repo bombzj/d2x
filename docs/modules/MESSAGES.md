@@ -1,6 +1,6 @@
 # 原协议消息速查
 
-更新：2026-10-09。本文唯一维护消息编码、参数、分帧与预留目录；连接与副本见[NETWORK](NETWORK.md)，服务端分派与扩展见[SERVER_PROTOCOL](SERVER_PROTOCOL.md)，运行包见[基线](../../BASELINE.md)。这是源码契约，不是逐包运行认证。
+更新：2026-10-10。本文唯一维护消息编码、参数、分帧与预留目录；连接与副本见[NETWORK](NETWORK.md)，服务端分派与扩展见[SERVER_PROTOCOL](SERVER_PROTOCOL.md)，运行包见[基线](../../BASELINE.md)。这是源码契约，不是逐包运行认证。
 
 ## 编码约定
 
@@ -16,7 +16,7 @@
 | 入口 | 维护内容 |
 | --- | --- |
 | [message_schema.hpp](../../src/network/protocol/message_schema.hpp) | 两方向身份、分帧种类、长度偏移／最低包长、编译期完整性约束 |
-| [C2S目录](../../src/network/protocol/client_messages.inc) | 72个已核对身份和长度，双方共同分帧／发送校验 |
+| [C2S目录](../../src/network/protocol/client_messages.inc) | 73个已核对身份和长度，双方共同分帧／发送校验 |
 | [S2C目录](../../src/network/protocol/server_messages.inc) | 142个身份，含仅保留ID的Reserved项 |
 | [原长度表](../../src/network/protocol/lod113c_lengths.inc) | 唯一1.13c S2C长度表，0未定义、-1变长 |
 | [分帧实现](../../src/network/protocol/lod113c.cpp) | 两方向有界拆帧，不知道长度则拒绝，不尝试扫描下一个ID |
@@ -65,7 +65,7 @@
 | 0D／0E／10／11 | 右手单位／原地／持续／持续原地 | 9 | u32 type,guid |
 | 12 | StopSkill | 1 | 无；不是通用取消ACK |
 | 13 | InteractUnit | 9 | u32 type,guid |
-| 15 | Chat | 变长 | u8 type,language; zstr(255) text; zstr(15) receiver; u8 extraLength; bytes[extraLength] |
+| 14／15 | OverheadChat／Chat | 变长 | u8 type,language; zstr(255) text; zstr(15) receiver; u8 extraLength; bytes[extraLength] |
 | 16 | PickUpItem | 13 | u32 type,item,cursor |
 | 17／19／24 | DropItem／TakeItem／TakeBeltItem | 5 | u32 item |
 | 18 | PlaceItem | 17 | u32 item,x,y,page；page0背包／3方块／4仓库 |
@@ -111,7 +111,7 @@
 | 6B | EnterEnvironment | 1 | 无 |
 | 6D | Ping | 13 | u32 elapsed,latency,wardenResponse |
 
-68 version=13，签名DWORD依次ED5DCC50／91A519B6；认证票据和登录原始载荷不进入日志。15普通聊天type1、language0、receiver空、extraLength0，最大261字节；分帧仍识别完整双字符串／扩展，其他语义显式拒绝而非误判尾部损坏。
+68 version=13，签名DWORD依次ED5DCC50／91A519B6；认证票据和登录原始载荷不进入日志。14头顶／15广播和私聊使用type1、language0、extraLength0；广播receiver空，最大261字节，具名私聊最大276字节。分帧识别双字符串／扩展，暂不授权其他文本编码或非零扩展；私聊接收2／发送6及找不到／屏蔽5A结果，头顶5与76清除，见[NETWORK](NETWORK.md)。
 
 4F子命令：2取消交易、3接受、4同意、7重置、8报价金币均stub；18关闭仓库、19取金币、20存金币、23关闭方块、24合成已接。38子命令：0旅行／奖励加工、1商店、2赌博已接；未知子操作拒绝，不从父包推断全部NPC服务支持。
 

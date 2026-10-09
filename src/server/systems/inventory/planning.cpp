@@ -9,7 +9,7 @@ bool supports(const Request &request) {
         std::holds_alternative<MergeStacks>(request.intent) || std::holds_alternative<LoadBook>(request.intent) ||
         std::holds_alternative<SwapItems>(request.intent) || std::holds_alternative<SwitchWeaponSet>(request.intent);
 }
-DomainResult<Edit> plan(const PlayerState &player, const Request &request, const ItemCatalog &catalog, const EquipmentRules &rules, const CharacterRules &characterRules, bool storage, bool cube) {
+DomainResult<Edit> plan(const PlayerState &player, const Request &request, const ItemCatalog &catalog, const EquipmentRules &rules, const CharacterRules &characterRules, bool storage, bool cube, EntityId trade) {
     if (!supports(request)) return {};
     if (player.persistent.player.hp <= 0) return {DomainStatus::InvalidActor, {}};
     if (request.weaponSet && *request.weaponSet != player.persistent.player.weaponSet) return {DomainStatus::Stale, {}};
@@ -18,7 +18,7 @@ DomainResult<Edit> plan(const PlayerState &player, const Request &request, const
         const auto *at=std::get_if<ContainerLocation>(&entry.second.location); const auto *def=catalog.find(entry.second.definition);
         return at && at->container==player.persistent.containers.backpack && def && def->opensCube;
     });
-    const auto stored = [&](EntityId id) { return id==player.persistent.containers.backpack || (cube && cubeCarried && id==player.persistent.containers.cube) || (storage && id==player.persistent.containers.stash); };
+    const auto stored = [&](EntityId id) { return id==player.persistent.containers.backpack || (trade && id==trade) || (cube && cubeCarried && id==player.persistent.containers.cube) || (storage && id==player.persistent.containers.stash); };
     for (const auto guard : request.equipmentGuards)
         if (!draft.resolve(guard)) return {DomainStatus::Stale, {}};
     const auto &containers = draft.containers();

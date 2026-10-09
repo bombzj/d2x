@@ -52,6 +52,7 @@ enum class ItemSkillAction { Identify, Portal };
 struct ItemSkillRule { int skill{}; bool book{}; ItemSkillAction action{}; int cursor{-1}; };
 enum class QuestConsumable { SkillBook, LifePotion, ResistanceScroll, RespecToken };
 struct CharacterRules {
+    int tradeColumns{}, tradeRows{}; // Original Inventory.Trade Page 2-2.
     struct ActTwoItems {
         std::string cube, scroll, shaft, amulet, staff, book;
         bool artifact(std::string_view code) const { return code==scroll || code==shaft || code==amulet || code==staff; }

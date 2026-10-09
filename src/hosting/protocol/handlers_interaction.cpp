@@ -21,7 +21,14 @@ RequestResult ResurrectMercenary(GameplayContext &context, net::protocol::Reader
 RequestResult InteractUnit(GameplayContext &context, net::protocol::Reader &in) {
     const auto type = in.u32(), id = in.u32(); in.finish();
     if (type == 1) return submitGameplay(context, server::npc::Request{TalkToNpc{EntityId{id},TalkToNpc::Action::Talk,{}}});
-    if (type == 0) return submitGameplay(context, server::death::Request{server::death::Action::RecoverCorpse, server::UnitTarget{EntityId{id}, 0}});
+    if (type == 0) {
+        for (const auto player : context.host.participants(context.player.game)) {
+            const auto view=context.host.read({context.player.game,player});
+            if(view && view->actor.id==EntityId{id} && player!=context.player.player)
+                return submitGameplay(context,server::trade::Request{server::trade::Action::Invite,player});
+        }
+        return submitGameplay(context, server::death::Request{server::death::Action::RecoverCorpse, server::UnitTarget{EntityId{id}, 0}});
+    }
     if (type == 2) {
         for (const auto &portal : context.host.visiblePortals(context.player))
             if (portal.fieldId == EntityId{id} || portal.townId == EntityId{id})

@@ -296,7 +296,7 @@ bool RemoteInventory::submit(net::RealmSession &session, OnlineItemCommand comma
             if (monsters.number(row, "hcIdx") == *unit->second.classId) return monsters.value(row, "Id");
         return {};
     };
-    if (command.action >= OnlineItemAction::TradeOpen) {
+    if (command.action >= OnlineItemAction::TradeOpen && command.action <= OnlineItemAction::QuestService) {
         const auto identity = npcIdentity();
         const bool sellingCursor = (command.action == OnlineItemAction::Sell || command.action==OnlineItemAction::QuestService) && view_.cursor == command.item;
         if(command.action==OnlineItemAction::QuestService) {

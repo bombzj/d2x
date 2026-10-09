@@ -53,6 +53,7 @@ RequestResult RightUnitRepeatStill(GameplayContext &, net::protocol::Reader &);
 RequestResult StopSkill(GameplayContext &, net::protocol::Reader &);
 RequestResult InteractUnit(GameplayContext &, net::protocol::Reader &);
 RequestResult Chat(GameplayContext &, net::protocol::Reader &);
+RequestResult OverheadChat(GameplayContext &, net::protocol::Reader &);
 RequestResult PickUpItem(GameplayContext &, net::protocol::Reader &);
 RequestResult DropItem(GameplayContext &, net::protocol::Reader &);
 RequestResult PlaceItem(GameplayContext &, net::protocol::Reader &);

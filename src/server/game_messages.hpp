@@ -41,6 +41,8 @@ struct CommandResult {
     CommandStatus status = CommandStatus::Stale;
 };
 struct PlayerSnapshot {
+    struct Hover { std::string text; uint64_t revision{}; std::set<PlayerId> recipients; };
+    std::optional<Hover> hover;
     GameHandle game;
     PlayerId recipient;
     uint64_t tick{}, revision{}, areaGeneration{};

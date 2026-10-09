@@ -10,7 +10,7 @@ struct Edit {
     unsigned weaponSet{};
     std::vector<ItemInstance> spilled{};
 };
-DomainResult<Edit> plan(const PlayerState &, const Request &, const ItemCatalog &, const EquipmentRules &, const CharacterRules &, bool storage = false, bool cube = false);
+DomainResult<Edit> plan(const PlayerState &, const Request &, const ItemCatalog &, const EquipmentRules &, const CharacterRules &, bool storage = false, bool cube = false, EntityId trade = {});
 namespace detail {
 struct Draft {
     const PlayerState &player;

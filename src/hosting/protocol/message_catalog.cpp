@@ -82,11 +82,14 @@ std::span<const MessageDescriptor> realmRequests() { return realm; }
 std::span<const MessageDescriptor> realmResponses() { return responses; }
 std::span<const SubmessageDescriptor> submessages() {
     static constexpr SubmessageDescriptor entries[]{
-        {ClientMessage::UiAction, 2, "CancelTrade", MessageDomain::Social, MessageSupport::Stub},
-        {ClientMessage::UiAction, 3, "AcceptTrade", MessageDomain::Social, MessageSupport::Stub},
-        {ClientMessage::UiAction, 4, "AgreeTrade", MessageDomain::Social, MessageSupport::Stub},
-        {ClientMessage::UiAction, 7, "ResetTrade", MessageDomain::Social, MessageSupport::Stub},
-        {ClientMessage::UiAction, 8, "OfferTradeGold", MessageDomain::Social, MessageSupport::Stub},
+        {ClientMessage::UiAction, 2, "CancelTrade", MessageDomain::Social, MessageSupport::Implemented},
+        {ClientMessage::UiAction, 3, "AcceptTrade", MessageDomain::Social, MessageSupport::Implemented},
+        {ClientMessage::UiAction, 4, "AgreeTrade", MessageDomain::Social, MessageSupport::Implemented},
+        {ClientMessage::UiAction, 7, "ResetTrade", MessageDomain::Social, MessageSupport::Implemented},
+        {ClientMessage::UiAction, 8, "OfferTradeGold", MessageDomain::Social, MessageSupport::Implemented},
+        {ClientMessage::PlayerRelation, 2, "IgnoreChat", MessageDomain::Social, MessageSupport::Implemented},
+        {ClientMessage::PlayerRelation, 3, "SquelchChat", MessageDomain::Social, MessageSupport::Implemented},
+        {ClientMessage::PlayerRelation, 4, "Hostility", MessageDomain::Social, MessageSupport::Stub},
         {ClientMessage::UiAction, 18, "CloseStash", MessageDomain::Inventory, MessageSupport::Implemented},
         {ClientMessage::UiAction, 19, "WithdrawGold", MessageDomain::Inventory, MessageSupport::Implemented},
         {ClientMessage::UiAction, 20, "DepositGold", MessageDomain::Inventory, MessageSupport::Implemented},

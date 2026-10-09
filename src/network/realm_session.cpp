@@ -1641,7 +1641,15 @@ bool RealmSession::join_game(std::string name, std::string password) {
         return false;
     }
 }
-bool RealmSession::send_chat(std::string text) {
+bool RealmSession::chat_relation(uint32_t player,bool squelch,bool enabled) {
+    std::lock_guard lock(impl_->mutex);impl_->snapshotDirty=true;auto &p=*impl_;
+    if(!p.require(OnlineStage::ProtocolReady) || snapshot_.connectionGeneration!=p.view.connectionGeneration ||
+        snapshot_.gameGeneration!=p.view.gameGeneration || player==p.view.load.playerUnitId ||
+        !p.view.world.social.players.contains(player)) return false;
+    Writer out;out.u8(0x5D);out.u8(squelch?3:2);out.u8(enabled?1:0);out.u32(player);
+    p.sent(p.gs,out.release());p.changed();return true;
+}
+bool RealmSession::send_chat(std::string text,std::string receiver,bool overhead) {
     std::lock_guard lock(impl_->mutex);
     impl_->snapshotDirty = true;
     auto &p = *impl_;
@@ -1654,13 +1662,13 @@ bool RealmSession::send_chat(std::string text) {
         p.error(OnlineErrorKind::Input, "The active game changed; refresh before sending chat");
         return false;
     }
-    if (!text_valid(text, 255) ||
+    if ((!receiver.empty() && !text_valid(receiver,15)) || (overhead && !receiver.empty()) || !text_valid(text, 255) ||
         std::all_of(text.begin(), text.end(), [](unsigned char c) { return c == ' '; })) {
         p.error(OnlineErrorKind::Input, "Chat requires 1-255 printable ASCII bytes and a non-space character");
         return false;
     }
     try {
-        p.sent(p.gs, game_chat(text));
+        p.sent(p.gs, game_chat(text,receiver,overhead));
         // No generic native ACK and no client echo; the original 0x26 is the
         // only source of messages, including the sender's own room broadcast.
         p.view.error.reset();

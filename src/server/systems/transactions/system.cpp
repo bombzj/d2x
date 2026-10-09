@@ -52,6 +52,8 @@ DomainResult<Plan> System::prepare(Change change) {
     if (state_.next == UINT64_MAX || player->inventoryRevision == UINT64_MAX || player->characterRevision == UINT64_MAX ||
         !ports_.events.hasCapacity(2)) return {DomainStatus::Capacity, {}};
     const auto *inventoryEdit = std::get_if<InventoryEdit>(&change);
+    if(inventoryEdit && !inventoryEdit->playerTrade && std::any_of(player->persistent.inventory.containers.begin(),player->persistent.inventory.containers.end(),
+        [](const auto &entry){return entry.second.spec.kind==ContainerKind::Trade;})) return {DomainStatus::Conflict,{}};
     if (inventoryEdit && inventoryEdit->world && inventoryEdit->world->expected != ports_.items.state_.revision) return {DomainStatus::Stale, {}};
     const auto *characterEdit = std::get_if<CharacterEdit>(&change);
     const auto &transient = inventoryEdit && inventoryEdit->transient ? *inventoryEdit->transient :
@@ -192,6 +194,8 @@ DomainResult<> System::commit(Plan plan) {
     std::vector<EventBatch> batches; batches.push_back(std::move(batch));
     const auto &publicFacts=edit?edit->publicFacts:characterChange->publicFacts;
     if(!publicFacts.empty()) batches.push_back({0,request->actor.tick,plan.id,{AudienceKind::Area,{},player.area},publicFacts});
+    if (edit) for (const auto &directed : edit->directed)
+        batches.push_back({0,request->actor.tick,plan.id,{AudienceKind::Player,directed.player,player.area},directed.facts});
     if (characterChange && characterChange->revival) {
         const auto &at = *characterChange->revival;
         batches.push_back({0, request->actor.tick, plan.id, {AudienceKind::Player, player.player, at.area},
@@ -221,6 +225,59 @@ DomainResult<> System::commit(Plan plan) {
     if (request->award) player.lastExperienceAward = request->award;
     state_.lastCommitted = plan.id.value;
     return {DomainStatus::Applied, std::monostate{}};
+}
+DomainResult<> System::commitInventories(std::vector<Plan> plans) {
+    if (plans.size() != 2) return {DomainStatus::InvalidRequest,{}};
+    std::vector<EventBatch> batches;
+    std::set<PlayerId> owners;
+    uint64_t last = state_.lastCommitted;
+    for (auto &plan : plans) {
+        const auto *edit = std::get_if<InventoryEdit>(&plan.change);
+        if (!edit || !plan.player || edit->world || edit->transient || edit->corpses || edit->charge || edit->knockback ||
+            !owners.insert(edit->actor.player).second || !plan.id.value || plan.id.value <= last || plan.id.value >= state_.next)
+            return {DomainStatus::InvalidRequest,{}};
+        const auto *player = ports_.players.find(edit->actor.player);
+        const auto *area = ports_.areas.find(edit->actor.area);
+        if (!player || !area || player->actor != edit->actor.actor || player->area != edit->actor.area ||
+            area->generation != edit->actor.areaGeneration) return {DomainStatus::InvalidActor,{}};
+        if (player->inventoryRevision != edit->expectedRevision || player->characterRevision != edit->expectedCharacterRevision ||
+            plan.expected.size() != 2 || plan.expected[0].entity != player->actor || plan.expected[1].entity != player->actor ||
+            plan.expected[0].expected != player->inventoryRevision || plan.expected[1].expected != player->characterRevision)
+            return {DomainStatus::Stale,{}};
+        if (player->inventoryRevision == UINT64_MAX || player->characterRevision == UINT64_MAX) return {DomainStatus::Capacity,{}};
+        auto &next = *plan.player;
+        // Complete immutable projection, including removed containers and socket children.
+        InventoryFact inventory{next.persistent,next.changes,next.switchedWeapons};
+        inventory.projection.inventory.containers.insert(player->persistent.inventory.containers.begin(),player->persistent.inventory.containers.end());
+        const auto children = [&](auto &&self,const ItemInstance &item)->void {
+            for (const auto &child : item.socketedItems) {
+                const auto [it,inserted] = inventory.projection.inventory.items.emplace(child.id,child);
+                if (inserted) self(self,it->second);
+            }
+        };
+        for (const auto &[id,item] : next.persistent.inventory.items) { (void)id; children(children,item); }
+        EventBatch batch{0,edit->actor.tick,plan.id,{AudienceKind::Player,player->player,player->area},
+            {std::move(inventory),CharacterFact{player->persistent.player,next.persistent.player,player->totals,next.totals,{}}}};
+        batch.facts.insert(batch.facts.end(),edit->facts.begin(),edit->facts.end());
+        batches.push_back(std::move(batch));
+        if (!edit->publicFacts.empty()) batches.push_back({0,edit->actor.tick,plan.id,{AudienceKind::Area,{},player->area},edit->publicFacts});
+        for (const auto &directed : edit->directed)
+            batches.push_back({0,edit->actor.tick,plan.id,{AudienceKind::Player,directed.player,player->area},directed.facts});
+        last = plan.id.value;
+    }
+    const auto published = ports_.events.publishGroup(std::move(batches));
+    if (!published) return {published.status,{}};
+    // Everything below is a no-throw swap; neither owner can be committed alone.
+    for (auto &plan : plans) {
+        auto &edit = std::get<InventoryEdit>(plan.change);
+        auto &player = ports_.players.players_.at(edit.actor.player);
+        if (edit.equipment) player.rules.equipment = std::move(edit.equipment);
+        std::swap(player.persistent,plan.player->persistent);
+        std::swap(player.totals,plan.player->totals);
+        ++player.inventoryRevision; ++player.characterRevision;
+    }
+    state_.lastCommitted = last;
+    return {DomainStatus::Applied,std::monostate{}};
 }
 DomainResult<> System::damage(const ActorContext &actor, uint64_t expected, int64_t amount) {
     const auto it = ports_.players.players_.find(actor.player);

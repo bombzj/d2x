@@ -108,7 +108,7 @@ void ChatView::update(const OnlineSocialView &social) {
     messages_.clear(); rows_.clear(); unavailable_ = 0;
     for (auto it = social.chat.rbegin(); it != social.chat.rend(); ++it) {
         const auto &message = *it;
-        if (message.language != 0 || (message.type != 1 && message.type != 3 && message.type != 4) ||
+        if (message.language != 0 || (message.type != 1 && message.type != 2 && message.type != 3 && message.type != 4 && message.type != 6) ||
             message.messageColor >= 13 ||
             !std::all_of(message.name.begin(), message.name.end(), [](auto c) { return c >= 32 && c < 127; })) {
             ++unavailable_; continue;
@@ -116,7 +116,7 @@ void ChatView::update(const OnlineSocialView &social) {
         Line glyphs;
         // PlrMsg writes the player's LEVEL in nameColor. The supplied original
         // screenshot establishes dark-gold names, independently of that byte.
-        if (message.type == 1 && !message.name.empty()) {
+        if ((message.type == 1 || message.type == 2 || message.type == 6) && !message.name.empty()) {
             const std::string name(message.name.begin(), message.name.end());
             glyphs = plain(name + ": ", 4);
         }

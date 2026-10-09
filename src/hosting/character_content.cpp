@@ -55,6 +55,15 @@ std::shared_ptr<const server::EquipmentRules> prepareEquipmentRules(const Classi
 void prepareCharacterRules(server::PreparedRules &rules, const ClassicData &data, const PersistentCharacter &saved) {
     rules.potions = std::make_shared<const server::PotionRules>(data.potions);
     auto character = std::make_shared<server::CharacterRules>();
+    const auto &inventory = data.tables.at("inventory");
+    for (size_t row = 0; row < inventory.rows().size(); ++row)
+        if (inventory.value(row, "class") == "Trade Page 2-2") {
+            character->tradeColumns = inventory.number(row, "gridX").value_or(0);
+            character->tradeRows = inventory.number(row, "gridY").value_or(0);
+        }
+    if (character->tradeColumns < 1 || character->tradeColumns > 16 ||
+        character->tradeRows < 1 || character->tradeRows > 16)
+        throw std::runtime_error("Missing or unsupported MPQ player trade grid");
     const auto &waypointTable=data.tables.at("levels");
     std::set<int> waypointNumbers;
     for(size_t row=0;row<waypointTable.rows().size();++row) {

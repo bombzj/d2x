@@ -230,7 +230,8 @@ Json snapshot(const OnlineView &v, const OnlineSceneView &scene, const OnlineInv
         {"rescuedBarbsRemaining",optional(quests.rescuedBarbsRemaining)}, {"cainStones",optional(quests.cainStones)}};
     result["world"]["eclipse"]=optional(v.world.eclipse);
     result["world"]["staffInteraction"]={{"source",optional(v.world.staffSource)},{"revision",v.world.staffRevision},{"result",v.world.staffResult}};
-    Json roster = Json::array(), relations = Json::array(), chat = Json::array();
+    Json roster = Json::array(), relations = Json::array(), chat = Json::array(), notices=Json::array();
+    for(const auto &notice:social.notices) notices.push_back({{"type",notice.type},{"color",notice.color},{"parameter",notice.parameter},{"value",notice.value},{"nameBytes",notice.names}});
     for (const auto &[id, player] : social.players)
         roster.push_back({{"id", id}, {"listed", player.listed}, {"revision", player.revision},
             {"name", player.name}, {"class", optional(player.characterClass)}, {"level", optional(player.level)},
@@ -249,7 +250,9 @@ Json snapshot(const OnlineView &v, const OnlineSceneView &scene, const OnlineInv
             {"unitId", message.unitId}, {"messageColor", message.messageColor}, {"nameColor", message.nameColor},
             {"nameBytes", message.name}, {"textBytes", message.text}});
     result["world"]["social"] = {{"revision", social.revision}, {"players", std::move(roster)},
-        {"relationships", std::move(relations)}, {"chatSequence", social.chatSequence}, {"chat", std::move(chat)}};
+        {"relationships", std::move(relations)}, {"chatSequence", social.chatSequence}, {"chat", std::move(chat)}, {"notices",std::move(notices)}};
+    result["world"]["social"]["hover"]=Json::array();
+    for(const auto &[id,message]:social.hover) result["world"]["social"]["hover"].push_back({{"unitId",id},{"textBytes",message.text},{"sequence",message.sequence}});
     constexpr std::array tradePhases{"None", "Outgoing", "Incoming", "Open"};
     constexpr std::array tradeResponses{"None", "AcceptSent", "CancelSent", "TimedOut", "GoldSent", "ResetSent"};
     const auto &playerTrade = v.world.playerTrade;
@@ -452,7 +455,14 @@ std::string onlineDebugCommand(const std::string &input, net::RealmSession &sess
             command == "online-items" || command == "online-ground" || command == "online-combat" || command == "online-skills" ||
             command == "online-social" || command == "online-chat") {
         } else if (command == "online-send-chat") {
-            accepted = session.send_chat(text("message", 255)); mutation = true;
+            const auto receiver=request.contains("receiver")?text("receiver",15):std::string{};
+            accepted = session.send_chat(text("message", 255),receiver,request.value("overhead",false)); mutation = true;
+        } else if (command == "online-chat-relation") {
+            const auto action=text("action",16);
+            if((action!="ignore" && action!="squelch") || !request.at("enabled").is_boolean()) throw std::invalid_argument("Chat relation requires ignore/squelch and boolean enabled");
+            const auto &id=request.at("unitId");
+            if(!id.is_number_integer() || id.get<int64_t>()<0 || id.get<uint64_t>()>UINT32_MAX) throw std::invalid_argument("Chat target is outside the native GUID range");
+            accepted=session.chat_relation(id.get<uint32_t>(),action=="squelch",request.at("enabled").get<bool>());mutation=true;
         } else if (command == "online-trade-respond") {
             if (!request.at("accept").is_boolean() || !request.at("revision").is_number_unsigned())
                 throw std::invalid_argument("Trade response needs a boolean accept and current unsigned revision");

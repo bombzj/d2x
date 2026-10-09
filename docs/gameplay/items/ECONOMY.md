@@ -1,6 +1,6 @@
 # 商店、赌博、维修与价格
 
-更新：2026-10-09。本页负责物品经济的权威货架、报价、成交与周期；客户端商店交互见[NPC交易](../npc/TRADE.md)，加工奖励资格见[QUEST_ITEMS](QUEST_ITEMS.md)，维修恢复规则见[DURABILITY](DURABILITY.md)。
+更新：2026-10-10。本页负责物品经济的权威货架、报价、成交与周期；客户端商店交互见[NPC交易](../npc/TRADE.md)，加工奖励资格见[QUEST_ITEMS](QUEST_ITEMS.md)，维修恢复规则见[DURABILITY](DURABILITY.md)。
 
 ## 货架与成交
 
@@ -18,6 +18,6 @@ itemTradePrice／itemGamblePrice两端共用，只对完整已知值报价。自
 
 ## 玩家交易与其他缺口
 
-原服玩家交易UI／请求和有限成交已有消费者，但自研server/trade仍是scaffold，没有正式物品／金币交换、确认／锁定／取消及断线事务；见[联网](../../modules/NETWORK.md#多人只读副本)。不以NPC商店事务代替玩家交易。
+玩家交易由独立server/trade执行双方物品／金币交换、确认锁、取消及断线恢复，客户端共用原包及面板。规则、当前MPQ尺寸、事务／保存边界和有限冒烟见[PLAYER_TRADE](PLAYER_TRADE.md)。
 
 完整佣兵雇佣／装备／喂药／复活费用服务尚未完成；全部商人／难度／折扣／品质／属性／容量组合与原服逐整数报价未认证。代表货架刷新、赌博、回购和维修见[EVIDENCE](EVIDENCE.md)，不能把一次成交推广为全部经济循环验收。

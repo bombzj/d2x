@@ -128,9 +128,16 @@ Bytes packed(const ClassicData &data, const D2sItem &item) {
     return bits.release();
 }
 void emitItem(std::vector<Bytes> &result, const ClassicData &data, const PersistentCharacter &state,
-              const ItemInstance &item, ItemAction action, bool ownedPacket, unsigned ownerType, uint32_t owner) {
+              const ItemInstance &item, ItemAction action, bool ownedPacket, unsigned ownerType, uint32_t owner, std::optional<unsigned> page = {}) {
     if (item.id.value > UINT32_MAX) throw std::runtime_error("Item ID exceeds native protocol capacity");
-    auto saved = exportD2sItem(state, item, data);
+    auto wireItem=item;
+    if (const auto *at=std::get_if<ContainerLocation>(&item.location); at &&
+        state.inventory.containers.at(at->container).spec.kind==ContainerKind::Trade) {
+        wireItem.location=ContainerLocation{state.containers.backpack,at->cell};
+        if(!page) page=3;
+    }
+    auto saved = exportD2sItem(state, wireItem, data);
+    if(page) saved.page=*page;
     saved.flags = (saved.flags & ~0x4000u) | (item.nativeFlags & 0x4000u);
     if(item.nativeFlags&0x2000000u) saved.flags|=0x2000000u;
     // D2S stores fixed weapon sets; GS body 4/5 always mean active hands.
@@ -174,6 +181,15 @@ std::vector<Bytes> nativeCorpseEquipment(const ClassicData &data, PersistentChar
         const auto conceal = [&](auto &&self, ItemInstance &value) -> void { value.identified = false; value.nativeFlags &= ~uint32_t(0x10); for (auto &child : value.socketedItems) self(self, child); };
         conceal(conceal, item);
         emitItem(result, data, projection, item, ItemAction::Equip, true, 0, uint32_t(projection.player.id.value));
+    }
+    return result;
+}
+std::vector<Bytes> nativeTradeItems(const ClassicData &data,const server::TradeItemsFact &fact,EntityId receiver) {
+    std::vector<Bytes> result;
+    for (const auto id : fact.removed)
+        result.push_back(hosting::encodeServerPacket(hosting::ServerMessage::RemoveUnit,[&](auto &out){out.u8(4);out.u32(uint32_t(id.value));}));
+    for (const auto &[id,item] : fact.projection.inventory.items) {
+        (void)id; emitItem(result,data,fact.projection,item,ItemAction::Put,true,0,uint32_t(receiver.value),2);
     }
     return result;
 }
@@ -280,7 +296,7 @@ std::vector<Bytes> nativeInventoryDelta(const ClassicData &data, const server::I
         }) != fact.changes.end();
         if (to == ContainerKind::Cursor) {
             action = equipment(from) ? ItemAction::Unequip : from == ContainerKind::Belt ? ItemAction::TakeBelt : ItemAction::Take;
-            owned = equipment(from) || from == ContainerKind::Backpack || from == ContainerKind::Stash || from == ContainerKind::Cube;
+            owned = equipment(from) || from == ContainerKind::Backpack || from == ContainerKind::Stash || from == ContainerKind::Cube || from == ContainerKind::Trade;
         }
         else if (equipment(to)) {
             const bool indirect = !replaced && std::any_of(fact.changes.begin(), fact.changes.end(), [&](const auto &other) {
@@ -290,7 +306,7 @@ std::vector<Bytes> nativeInventoryDelta(const ClassicData &data, const server::I
             owned = true;
         }
         else if (to == ContainerKind::Belt) { action = replaced ? ItemAction::SwapBelt : ItemAction::PutBelt; owned = false; }
-        else if (to == ContainerKind::Backpack || to == ContainerKind::Stash || to == ContainerKind::Cube) { action = replaced ? ItemAction::SwapStored : ItemAction::Put; owned = false; }
+        else if (to == ContainerKind::Backpack || to == ContainerKind::Stash || to == ContainerKind::Cube || to == ContainerKind::Trade) { action = replaced ? ItemAction::SwapStored : ItemAction::Put; owned = false; }
         else throw std::logic_error("Unsupported inventory destination");
         emitItem(result, data, state, state.inventory.items.at(change.item), action, owned, 0, uint32_t(state.player.id.value));
     }

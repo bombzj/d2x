@@ -28,7 +28,7 @@ LAN角色由宿主`--host-saves`目录持有，不读取或上传客户端D2S；
 
 ## 文件与值边界
 
-当前准入规则为`d2x-character-admission-v29/native-wire113c/d2s96/act1-hireling/pvpgn-newbie89`，磁盘仍为v96。PvPGN适配入口仅额外接受130字节、v89、INIT／资料片标记的新角色登记，复验姓名／职业及charinfo的一级、零经验和模式后，复用当前MPQ创角逻辑；原始登记先保留在recovery，首次保存才经DBS写入完整v96。已有旧版角色不迁移，正常v96 codec不放宽。
+当前准入规则为`d2x-character-admission-v30/native-wire113c/d2s96/act1-hireling/pvpgn-newbie89/player-trade-chat`，磁盘仍为v96。PvPGN适配入口仅额外接受130字节、v89、INIT／资料片标记的新角色登记，复验姓名／职业及charinfo的一级、零经验和模式后，复用当前MPQ创角逻辑；原始登记先保留在recovery，首次保存才经DBS写入完整v96。已有旧版角色不迁移，正常v96 codec不放宽。玩家交易运行态不写盘：导出接受时的原库存，保留当前人物记录，未归一化Trade容器由编码器拒绝。取消／成交后的投影仅含真实所属物品；交易确认、镜像、冷却和头顶聊天均不保存。见[玩家交易](../gameplay/items/PLAYER_TRADE.md)。
 
 第一幕佣兵雇佣替换／装备／经验和死亡位沿原字段，临时药水、AI、候选与当前生命不保存。人物死亡导出除尸体结算外还等待权威DT结束及伙伴死亡事务完成，不能在佣兵仍存活时退出绕过主人死亡；原租约／失败保留策略不变。旧规则不静默迁移，佣兵执行边界见[佣兵](../gameplay/characters/HIRELINGS.md)。
 
@@ -60,7 +60,7 @@ v23物品批次增加原身份支持，磁盘仍为v96：ISEAR紧凑布局不写
 
 ## 任务槽与奖励语义
 
-编码入口为`persistence/d2s_quests.cpp`，个人阶段由PlayerStore导出。磁盘仍为D2S v96；当前准入指纹为`d2x-character-admission-v27/native-wire113c/d2s96/act3-5-quests`。任务执行／恢复例外见[任务系统](../gameplay/quests/SYSTEM.md)及各幕专题，本节只维护原字段与奖励语义。
+编码入口为`persistence/d2s_quests.cpp`，个人阶段由PlayerStore导出。磁盘仍为D2S v96；该任务批历史准入指纹为`d2x-character-admission-v27/native-wire113c/d2s96/act3-5-quests`，当前指纹见上文。任务执行／恢复例外见[任务系统](../gameplay/quests/SYSTEM.md)及各幕专题，本节只维护原字段与奖励语义。
 
 | 原字段／任务 | 保存边界 |
 | --- | --- |

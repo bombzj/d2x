@@ -81,6 +81,10 @@ void EventOutbox::observe(const EventBatch &batch) noexcept {
             else if constexpr (std::is_same_v<T, CharacterFact>) {
                 event.actor = value.after.id; event.value = int64_t(value.after.experience); event.secondary = value.after.level;
             } else if constexpr (std::is_same_v<T, InventoryFact>) { event.actor = value.projection.player.id; event.value = int64_t(value.changes.size()); }
+            else if constexpr (std::is_same_v<T, TradeFact>) {event.target=value.partner;event.value=value.action;}
+            else if constexpr (std::is_same_v<T, TradeItemsFact>) {event.actor=value.projection.player.id;event.value=int64_t(value.projection.inventory.items.size());event.secondary=int64_t(value.removed.size());}
+            else if constexpr (std::is_same_v<T, ChatRelationFact>) {event.actor=value.from;event.target=value.to;event.value=value.flags;}
+            else if constexpr (std::is_same_v<T, PlayerMessageFact>) {event.value=value.type;}
             else if constexpr (std::is_same_v<T, GroundDropFact>) {
                 event.target = value.item.id; event.value = value.item.quantity;
                 const auto &at = std::get<GroundLocation>(value.item.location);

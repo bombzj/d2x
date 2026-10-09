@@ -42,7 +42,7 @@ struct CharacterFact {
 };
 struct TravelFact { PlayerId player; EntityId actor; RegionId from, to; uint64_t areaGeneration{}; Vec position; bool walking{}, revived{}; };
 struct ObjectFact { EntityId object, actor; RegionId area; uint64_t revision{}; };
-struct ChatFact { EntityId actor; std::string name, text; std::vector<PlayerId> recipients; };
+struct ChatFact { EntityId actor; std::string name, text; std::vector<PlayerId> recipients; uint8_t type{1}, language{}, unitType{2}, nameColor{}; };
 struct CommandFact { PlayerId player; uint64_t sequence{}; CommandStatus result; };
 struct NpcMessage { uint8_t menu{}; uint16_t text{}; };
 struct NpcMessagesFact { EntityId npc; std::vector<NpcMessage> messages; uint8_t type=1; };
@@ -55,7 +55,17 @@ struct GroundDropFact { ItemInstance item; };
 struct GroundRemoveFact { EntityId item; };
 struct GroundRestoredFact {EntityId item;uint64_t revision{};};
 struct HirelingListFact { EntityId npc; std::vector<std::pair<uint16_t,uint32_t>> offers; };
-using DomainFact = std::variant<ManaFact, RepositionFact, LifeFact, AttackFact, HitFact, DeathFact, ItemFact, InventoryFact, CharacterFact, QuestFact, AttributeFact, TravelFact, ObjectFact, ChatFact, CommandFact, NpcMessagesFact, MerchantFact, UiFact, WaypointFact, StateFact, MissileFact, SkillPulseFact, SoundFact, OverlayFact, ItemTargetingFact, GroundDropFact, NpcServiceFact, GroundRemoveFact, ItemSkillFact, GroundRestoredFact, HirelingListFact>;
+// Private native trade UI and offer projection; mirror items never own inventory.
+struct TradeFact {
+    uint8_t action{};
+    EntityId partner{};
+    std::string name{};
+    std::optional<std::pair<unsigned,unsigned>> gold{}; // own, peer
+};
+struct TradeItemsFact { PersistentCharacter projection; std::vector<EntityId> removed; };
+struct PlayerMessageFact { uint8_t type{}; std::string name; };
+struct ChatRelationFact { EntityId from,to; uint16_t flags{}, reverse{}, fromLevel{}, toLevel{}; };
+using DomainFact = std::variant<ManaFact, RepositionFact, LifeFact, AttackFact, HitFact, DeathFact, ItemFact, InventoryFact, CharacterFact, QuestFact, AttributeFact, TravelFact, ObjectFact, ChatFact, CommandFact, NpcMessagesFact, MerchantFact, UiFact, WaypointFact, StateFact, MissileFact, SkillPulseFact, SoundFact, OverlayFact, ItemTargetingFact, GroundDropFact, NpcServiceFact, GroundRemoveFact, ItemSkillFact, GroundRestoredFact, HirelingListFact, TradeFact, TradeItemsFact, PlayerMessageFact, ChatRelationFact>;
 // Compact bounded observation, independent of reliable delivery and acknowledgement.
 struct DiagnosticEvent {
     uint64_t sequence{}, batch{}, tick{}, transaction{};

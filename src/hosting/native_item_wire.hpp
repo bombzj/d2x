@@ -5,7 +5,7 @@
 namespace d2x {
 struct ClassicData;
 std::vector<Bytes> nativeShopItems(const ClassicData &, const PersistentCharacter &);
-namespace server { struct InventoryFact; }
+namespace server { struct InventoryFact; struct TradeItemsFact; }
 // Original inventory admission/delta packets; never exposes D2S bytes to UI.
 std::vector<Bytes> nativeCorpseEquipment(const ClassicData &, PersistentCharacter);
 enum class GroundItemAction : uint8_t { Add = 0, Drop = 2 };
@@ -15,4 +15,5 @@ std::vector<Bytes> nativeMonsterEquipment(const ClassicData &, PersistentCharact
 std::vector<Bytes> nativePublicEquipment(const ClassicData &, PersistentCharacter);
 std::vector<Bytes> nativeInventoryPackets(const ClassicData &, const PersistentCharacter &);
 std::vector<Bytes> nativeInventoryDelta(const ClassicData &, const server::InventoryFact &);
+std::vector<Bytes> nativeTradeItems(const ClassicData &, const server::TradeItemsFact &, EntityId receiver);
 }

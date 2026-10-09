@@ -7,6 +7,8 @@ void Simulation::step(TickContext tick, GameSystems &systems) {
     // Each consumer must run after its producers; deferred work belongs to the
     // owning system's state, never to this per-step scratch buffer.
     facts_ = {};
+    systems.social.step(tick);
+    steps_[size_t(SystemId::Social)] = StepStatus::Complete;
     steps_[size_t(SystemId::World)] = systems.world.step(tick, facts_);
     steps_[size_t(SystemId::Population)] = systems.population.step(tick, facts_);
     steps_[size_t(SystemId::Attributes)] = systems.attributes.step(tick, facts_);
@@ -23,6 +25,8 @@ void Simulation::step(TickContext tick, GameSystems &systems) {
     steps_[size_t(SystemId::Missiles)] = systems.missiles.step(tick, facts_);
     steps_[size_t(SystemId::Effects)] = systems.effects.step(tick, facts_);
     steps_[size_t(SystemId::Combat)] = systems.combat.step(tick, facts_);
+    steps_[size_t(SystemId::Trade)] = systems.trade.step(tick);
+    if (steps_[size_t(SystemId::Trade)]==StepStatus::Blocked) return;
     steps_[size_t(SystemId::Death)] = systems.death.step(tick, facts_);
     steps_[size_t(SystemId::Npc)] = systems.npc.step(tick, facts_);
     steps_[size_t(SystemId::Merchant)] = systems.merchant.step(tick, facts_);

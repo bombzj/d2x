@@ -290,6 +290,9 @@ foreach(target IN ITEMS d2x_resources d2x_navigation d2x_world d2x_items d2x_con
   endif()
 endforeach()
 if(MINGW)
+  # Debug template instantiations for the domain fact variant exceed COFF's
+  # 32767-section object limit. Keep this format option off other toolchains.
+  target_compile_options(d2x_server PRIVATE -Wa,-mbig-obj)
   foreach(app IN ITEMS d2x d2x_assets d2x_pvpgn)
     target_link_options(${app} PRIVATE -static -static-libgcc -static-libstdc++)
   endforeach()

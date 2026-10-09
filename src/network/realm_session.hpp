@@ -63,10 +63,11 @@ class RealmSession {
     bool join_game(std::string name, std::string password = {});
     // Cancel pre-entry requests by retiring MCP; after logon, wait for native save/leave.
     bool leave_game();
-    // Normal D2GS room broadcast. Never inserts a local echo; read().world.social
+    // D2GS broadcast, named whisper or overhead message. No local echo; world.social
     // receives only original server messages. No scene/life/interaction gate:
     // chat also remains available while dead, in a panel, or changing areas.
-    bool send_chat(std::string text);
+    bool send_chat(std::string text, std::string receiver = {}, bool overhead = false);
+    bool chat_relation(uint32_t player, bool squelch, bool enabled);
     // Respond only to the current server invitation. Accept is TRADEBTN_PERFORM
     // (3), not the final item-exchange acceptance (4). No local trade execution.
     bool respond_player_trade(bool accept, uint64_t revision, std::optional<OnlineIntentContext> context = {});

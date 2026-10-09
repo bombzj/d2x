@@ -30,6 +30,7 @@ PlayerId GameInstance::admit(GameDefinition definition) {
 bool GameInstance::enter(PlayerId id, bool active) {
     auto found = players_.players_.find(id);
     if (found == players_.players_.end()) return false;
+    if (!active && !systems_.trade.cancelFor(id,tick_)) return false;
     found->second.entered = active;
     if (!active) {
         std::erase_if(commands_, [&](const auto &pending) { return pending.player == id; });
@@ -41,6 +42,7 @@ bool GameInstance::enter(PlayerId id, bool active) {
 }
 bool GameInstance::remove(PlayerId id) {
     if (!players_.find(id)) return false;
+    if (!systems_.trade.cancelFor(id,tick_)) return false;
     std::erase_if(commands_, [&](const auto &pending) { return pending.player == id; });
     systems_.travel.cancel(id); systems_.skills.cancel(id, players_.find(id)->actor);
     players_.players_.erase(id); ++revision_;
@@ -60,6 +62,7 @@ std::optional<PersistentCharacter> GameInstance::exportCharacter(PlayerId id) co
         if (death == systems_.death.read().transitions.end() || !death->second.finalized || !death->second.companionsSettled) return {};
     }
     auto result = player->persistent;
+    systems_.trade.normalize(id,result);
     result.nextEntityId = entities_.cursor();
     result.lastRegion = player->area;
     EntityId retained;
@@ -119,6 +122,7 @@ CommandStatus GameInstance::enqueue(PlayerId id, GameCommand command) {
     return result;
 }
 void GameInstance::step() {
+    if (systems_.trade.step({tick_})==StepStatus::Blocked) return;
     for (const auto &pending : commands_) {
         auto &player = players_.players_.at(pending.player);
         const auto &command = pending.command;
@@ -137,8 +141,19 @@ void GameInstance::step() {
                 if (const auto *skill = std::get_if<skills::Request>(&command.payload); skill && skill->action == skills::Action::Cast) {
                     systems_.travel.cancel(player.player); player.locomotionSequence = command.sequence;
                 }
-                if (domain == SystemId::Inventory && !std::holds_alternative<UseItem>(std::get<inventory::Request>(command.payload).intent) && systems_.skills.busy(player.actor, tick_)) result = CommandStatus::Conflict;
+                const bool trading=systems_.trade.find(player.player)!=nullptr;
+                const bool endsTrade=domain==SystemId::Movement || domain==SystemId::Travel || domain==SystemId::Death;
+                if (trading && endsTrade && !systems_.trade.cancelFor(player.player,tick_)) result=CommandStatus::QueueFull;
+                else if (trading && !endsTrade && domain!=SystemId::Inventory && domain!=SystemId::Trade && domain!=SystemId::Social) result=CommandStatus::Conflict;
+                else if (domain == SystemId::Inventory && !std::holds_alternative<UseItem>(std::get<inventory::Request>(command.payload).intent) && systems_.skills.busy(player.actor, tick_)) result = CommandStatus::Conflict;
                 else result = dispatchCommand(actor, command.payload, systems_);
+                if(result==CommandStatus::Applied && domain==SystemId::Trade)
+                    if(const auto *exchange=systems_.trade.find(player.player))
+                        for(const auto id:{exchange->first.player,exchange->second.player}) {
+                            auto &participant=players_.players_.at(id);
+                            participant.route.clear();participant.moving=false;participant.runningNow=false;
+                            systems_.travel.cancel(id);systems_.skills.cancel(id,participant.actor);
+                        }
             }
         }
         player.result = {command.sequence, result};
@@ -167,6 +182,7 @@ std::optional<PlayerSnapshot> GameInstance::snapshot(PlayerId id) const {
     const auto *player = players_.find(id);
     if (!player) return {};
     auto result = projectPlayer(*player);
+    result.hover=systems_.social.overhead(id,tick_);
     result.tick = tick_; result.revision = revision_;
     result.rulesFingerprint = rulesFingerprint_;
     result.areaGeneration = areas_.at(player->area).generation;

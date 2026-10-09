@@ -2,11 +2,13 @@
 #include "server/player_store.hpp"
 #include "server/area_store.hpp"
 #include "server/systems/items/system.hpp"
+#include "server/systems/trade/system.hpp"
 #include "gameplay/items/replenishment.hpp"
 namespace d2x::server::inventory {
 StepStatus System::replenish(TickContext tick) {
     bool blocked=false;
     for(const auto &[playerId,p]:ports_.players.all()) {
+        if(ports_.trade.find(playerId)) continue;
         const auto *area=ports_.areas.find(p.area);
         if(!p.entered || !area || !p.rules.equipment || !p.rules.character || !ports_.definitions) continue;
         transactions::InventoryEdit edit{{playerId,p.actor,p.area,area->generation,0,tick.tick},p.inventoryRevision,p.characterRevision,p.persistent.inventory,{},p.persistent.player.weaponSet};

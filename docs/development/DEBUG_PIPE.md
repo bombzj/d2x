@@ -72,9 +72,10 @@ Single Player的online-status仍只读原协议OnlineView；server-status单独�
 | `pause` / `resume` | 只在显式调试管道启用；pause要求在线ProtocolReady，冻结画面和界面输入。回执presentationPaused／networkRunning=true；不暂停原服。Single Player在下一宿主调度帧应用权威暂停，以server-status.paused为准；恢复采用最新副本，旧动作不重放 |
 | `online-status` | 顶层presentationPaused；online.protocol按SID／MCP／game返回包ID、received／sent／unconsumed、逻辑字节数和lastReceived；只读 `online`：stage、error、revision、connectionGeneration、gameGeneration、Realm／角色／游戏列表、load、延迟（首个pong前null）、gameQueuePosition、gameListComplete、world／scene；联网模式的 `status` 是其别名 |
 | `online-social` / `online-chat` | 同一完整只读快照的world.social：名册身份及字段可用性、队伍／关系原值、公开位置、聊天原语言nameBytes／textBytes；只读、不刷新。共享界面就绪后额外chatUi返回ready／inputOpen／logOpen／draft／scroll／rows／unavailableMessages／reason，只有表现和草稿，不是发送回执。聊天新UI尚未运行认证，组队未接，不能据此认证M4 |
-| `online-send-chat` | message为1–255字节可打印ASCII且不全为空格；ProtocolReady及当前游戏身份有效时发送局内普通广播0x15。accepted只代表入队，双方消息取实际0x26及chatSequence，不插本地回显／自动重试；不支持私聊、表情、中文编码或BNCS频道命令。已入当前运行包，双账号原服普通广播及M日志有限观察见联网交付记录 |
+| `online-send-chat` | message为1–255字节可打印ASCII且不全为空格；可选receiver为15字节内角色名，发送原0x15私聊；可选overhead=true发送原0x14且receiver须为空。accepted只代表入队，消息取真实0x26及chatSequence，不插本地回显／自动重试。普通广播、私聊、头顶原包与屏蔽由共享服务端social执行；中文编码、表情与BNCS频道暂缓。头顶消息值为world.social.hover，图形气泡未新增 |
+| `online-chat-relation` | unitId为当前名册另一玩家GUID，action为ignore或squelch，enabled布尔值；原5D/action2或3。真实关系等75／8C；忽略者阻止自己的话到达目标，squelch者屏蔽目标发来的消息，沿原PlrMsg方向条件；不实现敌意或队伍 |
 | `online-trade-respond` | accept布尔值、revision为当前world.playerTrade.revision；true接受邀请（button3），false拒绝／取消（button2）。accepted仅表示发送；真实身份等0x78，完成等0x77/13。 |
-| `online-trade-offer` | action为agree／revoke／gold，revision绑定当前交易，gold另需amount 0–INT32_MAX；原button4／7／8。world.playerTrade返回ownGold／peerGold、ownAgreed（请求已发）／peerAgreed、agreementLocked及response；最终交换只由原服确认。 |
+| `online-trade-offer` | action为agree／revoke／gold，revision绑定当前交易，gold另需amount 0–INT32_MAX；原button4／7／8。world.playerTrade返回ownGold／peerGold、ownAgreed（请求已发）／peerAgreed、agreementLocked及response；最终交换只由服务端确认，自研权威边界见[玩家交易](../gameplay/items/PLAYER_TRADE.md)。 |
 | `online-world` | 只读同一快照：world.units／rooms／equipment／attributes、本人全局 subtile 坐标与当前生命／法力／体力；scene 含原 DS1、原点、候选／地标、碰撞／显示／移动可用性、本人是否绘制与缺外观数量；当前源码units增加nativeMode、direction、actionSkill／actionSkillLevel，区分实际模式、原路径面对方向及当前技能动作 |
 | `online-resurrect` | 无参数；要求原服报告死亡。等待DEAD后发送原0x41，重复请求去重；world.respawnRequest记录WaitingForDeath／Sent／Confirmed／TimedOut及sent，确认前不恢复本地资源。Hardcore执行退局 |
 | `online-recover-corpse` | unitId为world.corpses及scene.mapTargets中本人的真实可见尸体GUID，自动type0；先按共同路径靠近，再原0x13请求取回。以服务端库存／装备与尸体回包确认，accepted不表示回收完成 |

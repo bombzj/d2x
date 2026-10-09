@@ -25,7 +25,7 @@ std::string fixedName(Reader &r) {
 }
 bool apply_social_packet(OnlineView &v, const protocol::Packet &packet) {
     switch (packet.id) {
-    case 0x26: case 0x5B: case 0x5C: case 0x75: case 0x7F: case 0x8B: case 0x8C: case 0x8D: case 0x90:
+    case 0x26: case 0x5A: case 0x5B: case 0x5C: case 0x75: case 0x76: case 0x7F: case 0x8B: case 0x8C: case 0x8D: case 0x90:
         break;
     default: return false;
     }
@@ -33,6 +33,14 @@ bool apply_social_packet(OnlineView &v, const protocol::Packet &packet) {
     ++social.revision;
     Reader r(packet.body);
     switch (packet.id) {
+    case 0x76: {
+        const auto type=r.u8();const auto id=r.u32();r.finish();if(type==0) social.hover.erase(id);break;
+    }
+    case 0x5A: {
+        OnlineSocialView::Notice notice; notice.type=r.u8();notice.color=r.u8();notice.value=r.u32();notice.parameter=r.u8();
+        const auto names=r.take(32);notice.names.assign(names.begin(),names.end());r.finish();
+        social.notices.push_back(std::move(notice));if(social.notices.size()>256) social.notices.pop_front();break;
+    }
     case 0x26: {
         OnlineChatMessage message;
         message.type = r.u8(); message.language = r.u8(); message.unitType = r.u8();
@@ -43,6 +51,7 @@ bool apply_social_packet(OnlineView &v, const protocol::Packet &packet) {
         message.sequence = ++social.chatSequence;
         message.receivedMilliseconds = uint64_t(std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now().time_since_epoch()).count());
+        if(message.type==5 && message.unitType==0) social.hover.insert_or_assign(message.unitId,message);
         social.chat.push_back(std::move(message));
         if (social.chat.size() > 256) social.chat.pop_front();
         break;
@@ -63,6 +72,7 @@ bool apply_social_packet(OnlineView &v, const protocol::Packet &packet) {
     case 0x5C: {
         const auto id = r.u32(); r.finish();
         social.players.erase(id);
+        social.hover.erase(id);
         std::erase_if(social.relationships, [&](const auto &entry) { return entry.first.first == id || entry.first.second == id; });
         // Spatial removal is consumed by remote_world; it retains corpse ownership.
         break;

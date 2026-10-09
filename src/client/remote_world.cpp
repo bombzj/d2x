@@ -383,6 +383,7 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
         }
         if(k.type==1) removeRemotePlayerItems(w,k.id,1);
         if (k.type == 0) {
+            w.social.hover.erase(k.id);
             if (w.playerTrade.peer == k.id) { ++w.interactionGeneration; w.playerTrade = {}; }
             std::erase_if(w.equipment, [&](const auto &e) { return e.second.ownerType==0 && e.second.owner == k.id; });
             if (v.load.playerUnitId == k.id)

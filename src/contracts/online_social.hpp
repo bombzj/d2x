@@ -32,10 +32,13 @@ struct OnlineChatMessage {
     Bytes name, text; // Native language bytes; UI must decode before display.
 };
 struct OnlineSocialView {
+    struct Notice { uint8_t type{},color{},parameter{}; uint32_t value{}; Bytes names; };
+    std::deque<Notice> notices;
     uint64_t revision{}, chatSequence{};
     std::map<uint32_t, OnlineRosterPlayer> players;
     // Directed native relation flags; absence does not mean friendly or hostile.
     std::map<std::pair<uint32_t, uint32_t>, uint16_t> relationships;
     std::deque<OnlineChatMessage> chat;
+    std::map<uint32_t,OnlineChatMessage> hover;
 };
 }

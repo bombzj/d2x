@@ -67,6 +67,18 @@ void NativeRealmService::publishPlayers() {
         const auto view = host.read({binding->game, id});
         if (!view || !view->entered) continue;
         const auto actor = view->actor.id; stateActors.insert(actor);
+        const auto hover=peer.hover.find(actor);
+        if(view->hover && view->hover->recipients.contains(binding->player)) {
+            if(hover==peer.hover.end() || hover->second!=view->hover->revision) {
+                packets.push_back(encodeServerPacket(ServerMessage::Chat,[&](auto &out){
+                    out.u8(5);out.u8(0);out.u8(0);out.u32(uint32_t(actor.value));out.u8(0);out.u8(0);out.string({});out.string(view->hover->text);
+                }));
+                peer.hover[actor]=view->hover->revision;
+            }
+        } else if(hover!=peer.hover.end()) {
+            packets.push_back(encodeServerPacket(ServerMessage::Reserved76,[&](auto &out){out.u8(0);out.u32(uint32_t(actor.value));}));
+            peer.hover.erase(hover);
+        }
         auto &previous = peer.states[actor];
         const auto emit = [&](int state, bool enabled) {
             packets.push_back(encodeServerPacket(enabled ? ServerMessage::EnableState : ServerMessage::DisableState,
@@ -77,6 +89,7 @@ void NativeRealmService::publishPlayers() {
         previous = view->states;
     }
     std::erase_if(peer.states, [&](const auto &entry) { return !stateActors.contains(entry.first); });
+    std::erase_if(peer.hover, [&](const auto &entry) { return !stateActors.contains(entry.first); });
     if (!packets.empty()) sendGameBatch(std::move(packets));
 }
 }
