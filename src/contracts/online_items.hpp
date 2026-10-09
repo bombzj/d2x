@@ -30,7 +30,7 @@ enum class OnlineItemAction {
     Pickup, Take, Place, Drop, Equip, Unequip, Swap, Use, BeltPlace, BeltSwap,
     Stack, Book, Socket, Identify, SwitchWeapons,
     CubeOpen, StorageClose, Transmute, GoldDeposit, GoldWithdraw, GoldDrop,
-    TradeOpen, Buy, Sell, Repair, RepairAll, IdentifyAll
+    TradeOpen, Buy, Sell, Repair, RepairAll, IdentifyAll, QuestService
 };
 struct OnlineItemCommand {
     OnlineItemAction action{};

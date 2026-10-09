@@ -1,6 +1,7 @@
 #include "system.hpp"
 #include "gameplay/skills/behavior.hpp"
 #include "server/player_store.hpp"
+#include "server/area_store.hpp"
 #include "server/movement.hpp"
 #include "server/systems/monsters/system.hpp"
 #include "server/systems/effects/system.hpp"
@@ -40,7 +41,8 @@ DomainResult<> System::attack(const ActorContext &actor, const Request &request,
 }
 DomainResult<> System::execute(const ActorContext &actor, const Request &request) {
     const auto *player = ports_.players.find(actor.player);
-    if (!player || !player->entered || player->actor != actor.actor || player->area != actor.area || player->persistent.player.hp <= 0)
+    const auto *area = ports_.areas.find(actor.area);
+    if (!player || !player->entered || player->actor != actor.actor || player->area != actor.area || !area || area->generation != actor.areaGeneration || player->persistent.player.hp <= 0)
         return {DomainStatus::InvalidActor, {}};
     if (request.action == Action::Stop) {
         const auto channel=releases_.find(actor.actor);
@@ -50,21 +52,25 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
     }
     if (request.action == Action::Select || request.action == Action::Bind) {
         if (!player->rules.character) return {DomainStatus::Unavailable, {}};
+        const bool clear = request.action == Action::Bind && (request.skill == 0x7FFF || request.skill == 0x0FFF);
+        const auto charged=std::find_if(player->totals.chargedSkills.begin(),player->totals.chargedSkills.end(),[&](const auto &c){return c.item.id.value==request.owner && c.skill==request.skill && c.charges>0;});
+        const bool charge=request.owner!=UINT32_MAX && charged!=player->totals.chargedSkills.end();
+        if(request.owner!=UINT32_MAX && !charge) return {DomainStatus::InvalidRequest,{}};
         const auto quantities=inventory::itemSkills(*player);
         if(quantities.contains(request.skill) && (!request.right || !quantities.at(request.skill))) return {DomainStatus::Unavailable,{}};
         const bool itemSkill=request.right && quantities.contains(request.skill) && quantities.at(request.skill)>0;
         const auto rule = player->rules.character->learning.find(request.skill);
-        if (!itemSkill && (rule == player->rules.character->learning.end() || !rule->second.selectable || (!request.right && !rule->second.leftAllowed)))
+        if (!clear && !itemSkill && (rule == player->rules.character->learning.end() || !rule->second.selectable || (!request.right && !rule->second.leftAllowed)))
             return {DomainStatus::InvalidRequest, {}};
-        if (!player->rules.character->innateSkills.contains(request.skill) && !itemSkill) {
+        if (!clear && !player->rules.character->innateSkills.contains(request.skill) && !itemSkill && !charge) {
             const auto learned = player->totals.skillRanks.find(request.skill);
             if (learned == player->totals.skillRanks.end() || learned->second <= 0) return {DomainStatus::InvalidRequest, {}};
         }
         auto record = player->persistent.player;
         if (request.action == Action::Bind) {
             if (!request.hotkey || *request.hotkey >= record.skillHotkeys.size()) return {DomainStatus::InvalidRequest, {}};
-            record.skillHotkeys.at(*request.hotkey) = {request.skill == 0 ? -1 : int(request.skill), request.right};
-        } else record.selectedSkills.at(record.weaponSet * 2 + (request.right ? 1 : 0)) = request.skill;
+            record.skillHotkeys.at(*request.hotkey) = {clear ? -2 : request.skill == 0 ? -1 : int(request.skill), request.right, clear?UINT32_MAX:request.owner};
+        } else {const auto slot=record.weaponSet * 2 + (request.right ? 1 : 0);record.selectedSkills.at(slot)=request.skill;record.selectedSkillOwners.at(slot)=request.owner;}
         transactions::CharacterEdit selection{actor,player->inventoryRevision,player->characterRevision,std::move(record)};
         if(request.action==Action::Select) selection.selectedHand=request.right;
         auto plan = ports_.transactions.prepare(std::move(selection));

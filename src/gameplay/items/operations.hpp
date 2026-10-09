@@ -5,13 +5,14 @@
 #include <optional>
 
 namespace d2x {
-enum class ItemChangeKind { Created, Moved, QuantityChanged, Removed, DurabilityChanged, PropertiesChanged };
+enum class ItemChangeKind { Created, Moved, QuantityChanged, Removed, DurabilityChanged, PropertiesChanged, ChargeChanged };
 struct ItemChange {
     EntityId item;
     uint64_t revision;
     ItemChangeKind kind;
     std::optional<ItemLocation> before, after;
     unsigned quantity;
+    unsigned statParameter{};
 };
 struct InventoryResult {
     InventoryError error = InventoryError::None;

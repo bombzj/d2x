@@ -89,4 +89,30 @@ DomainStatus Draft::loadBook(const LoadBook &command) {
     if (!left) edit.inventory.items.erase(source.id);
     return DomainStatus::Applied;
 }
+DomainStatus Draft::mergeCarried(EntityId id) {
+    // Ground pickup uses a private cursor bridge; manual authorization remains
+    // unchanged. Corpse recovery has its own original equip/belt/pack ordering.
+    const auto *definition = catalog.find(edit.inventory.items.at(id).definition);
+    if (!definition) return DomainStatus::Unavailable;
+    if (!definition->autoStack && !definition->bookCapacity && !definition->equipment.isType("scro")) return DomainStatus::Applied;
+    std::vector<EntityId> targets;
+    for (const auto &[other, item] : edit.inventory.items) {
+        const auto *at = std::get_if<ContainerLocation>(&item.location);
+        if (other != id && at && (at->container == containers().backpack || at->container == containers().equipment))
+            targets.push_back(other);
+    }
+    for (const auto target : targets) {
+        const auto current = edit.inventory.items.find(id);
+        if (current == edit.inventory.items.end()) break;
+        const auto &other = edit.inventory.items.at(target);
+        const auto *book = catalog.find(other.definition);
+        DomainStatus result = DomainStatus::InvalidRequest;
+        if (book && book->bookCapacity && (current->second.definition == book->bookScroll || current->second.definition == other.definition))
+            result = loadBook({current->second.handle(), other.handle()});
+        else if (stackSpace(current->second, other))
+            result = merge({current->second.handle(), other.handle(), 0});
+        if (result == DomainStatus::Capacity || result == DomainStatus::Unavailable) return result;
+    }
+    return DomainStatus::Applied;
+}
 }

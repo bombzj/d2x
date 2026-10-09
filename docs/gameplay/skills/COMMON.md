@@ -21,6 +21,8 @@ projectCharacterDisplay使用原服基础／加成等级与已知属性；既有
 
 0x3C选择等待原0x23；0x3B学习等基础等级变化；0x51绑定无即时ACK，重入0x7B恢复16槽，UI使用前8槽。初始职业技能来源于原服装备／选择，不能无条件送技能等级；新角owner=0选择限制见[基线](../../../BASELINE.md)。
 
+P5充能来源保留原item_charged_skill的skill／rank层、次数与owner GUID，普通技能和同ID物品技能不混用。公共显示从本人原物品解码，技能栏、热键及面板使用对应来源等级；服务端用相同纯数值函数，释放时原子扣一次充能，源失效取消而非回退普通等级。装备六类触发经effects的ItemEventPlan复用已实现程序，按原ItemEffect／目标字段处理并输出99／9A；专用程序及客户端ItemCltEffect未完整支持，准确边界见[库存](../../modules/INVENTORY.md)，不把全职业触发列为完成。
+
 ## 输入与状态
 
 SceneController统一首次／Hold、目标锁定、释放、失焦及UI消费；RemoteCombat发送原坐标／单位技能请求。普通施法在当前连续位置切换动作，原服省略本人通知时补本人显示；明确位置校正单独处理。

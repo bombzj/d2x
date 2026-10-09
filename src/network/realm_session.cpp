@@ -941,6 +941,10 @@ struct RealmSession::Impl {
                 if (request->state == OnlineItemRequest::State::Rejected)
                     error(OnlineErrorKind::Server, "Original NPC transaction was rejected", 0x2A, view.world.tradeResult->result);
             }
+            if(packet.id==0x58 && action==OnlineItemAction::QuestService) {
+                Reader service(packet.body);const auto npc=service.u32();const auto result=service.u8();service.u8();service.finish();
+                if(npc==request->command.npc) request->state=result==6?OnlineItemRequest::State::Updated:OnlineItemRequest::State::Rejected;
+            }
             Reader itemPacket(packet.body);
             std::optional<uint32_t> id;
             if (packet.id == 0x9C || packet.id == 0x9D) {
@@ -955,7 +959,7 @@ struct RealmSession::Impl {
                 itemPacket.u8(); BitReader bits(itemPacket.take(itemPacket.remaining()));
                 id = bits.read(bits.read(1) ? (bits.read(1) ? 32 : 16) : 8);
             }
-            related |= id && ((request->command.itemRevision && *id == request->command.item) ||
+            related |= action!=OnlineItemAction::QuestService && id && ((request->command.itemRevision && *id == request->command.item) ||
                 (request->command.targetRevision && *id == request->command.target));
             if ((packet.id == 0x9C || packet.id == 0x9D || packet.id == 0x0A || packet.id == 0x42 || packet.id == 0x3E) &&
                 action == OnlineItemAction::Transmute) related = true;
@@ -977,7 +981,7 @@ struct RealmSession::Impl {
                 const auto type = ack.u8(); const auto owner = ack.u32(); const auto left = ack.u8();
                 confirmed = type == 0 && owner == view.load.playerUnitId &&
                     bool(left) == (command.hand == OnlineSkillHand::Left) &&
-                    selectedSkill && *selectedSkill == OnlineSkillSelection{command.skill, UINT32_MAX};
+                    selectedSkill && *selectedSkill == OnlineSkillSelection{command.skill, command.owner};
             } else if (command.action == OnlineCombatCommand::Action::LearnSkill && packet.id == 0x21) {
                 const auto skill = view.world.playerBaseSkills.find(command.skill);
                 confirmed = skill != view.world.playerBaseSkills.end() && skill->second > request->before;
@@ -2030,7 +2034,7 @@ bool RealmSession::submit_item(OnlineItemCommand command) {
         p.error(OnlineErrorKind::Input, "Server item operation is unavailable or pending"); return false;
     }
     const bool hasItem = command.action <= OnlineItemAction::Identify || command.action == OnlineItemAction::CubeOpen ||
-        command.action == OnlineItemAction::Buy || command.action == OnlineItemAction::Sell || command.action == OnlineItemAction::Repair;
+        command.action == OnlineItemAction::Buy || command.action == OnlineItemAction::Sell || command.action == OnlineItemAction::Repair || command.action==OnlineItemAction::QuestService;
     const auto item = world.items.find(command.item);
     if (hasItem && (item == world.items.end() ||
         command.itemRevision != item->second.revision)) {
@@ -2051,6 +2055,9 @@ bool RealmSession::submit_item(OnlineItemCommand command) {
          item->second.ownerType != 1 || item->second.owner != command.npc || item->second.action != 11 ||
          bool(item->second.flags & 0x2000000u) != command.gamble)) {
         p.error(OnlineErrorKind::Input, "Purchase shelf or vendor service changed before submission"); return false;
+    }
+    if(command.action==OnlineItemAction::QuestService && (world.npcRequested!=command.npc || !world.npcConversation || world.npcConversation->source!=command.npc || item->second.mode!=4)) {
+        p.error(OnlineErrorKind::Input,"Quest service requires the current NPC conversation and cursor item");return false;
     }
     if (Clock::now() < p.nextItem) {
         p.error(OnlineErrorKind::Input, "Item request is rate limited"); return false;
@@ -2126,6 +2133,7 @@ bool RealmSession::submit_item(OnlineItemCommand command) {
             out.u8(0x35); out.u32(command.npc); out.u32(command.action == OnlineItemAction::RepairAll ? UINT32_MAX : command.item);
             out.u16(0); out.u16(0); out.u32(command.action == OnlineItemAction::RepairAll ? UINT32_MAX : 0); break;
         case OnlineItemAction::IdentifyAll: out.u8(0x34); out.u32(command.npc); break;
+        case OnlineItemAction::QuestService: out.u8(0x38);out.u32(0);out.u32(command.npc);out.u32(command.item);break;
         }
         p.sent(p.gs, out.release());
         world.itemRequest = OnlineItemRequest{++p.itemSequence, command, OnlineItemRequest::State::Pending};
@@ -2170,10 +2178,10 @@ bool RealmSession::submit_combat(OnlineCombatCommand command) {
         }
         out.u8(0x51); out.u32(uint32_t(command.hotkeySlot) << 16 | command.skill |
             (command.hand == OnlineSkillHand::Left ? 0x8000u : 0));
-        out.u32(UINT32_MAX); request.state = OnlineCombatRequest::State::SentNoAck; break;
+        out.u32(command.owner); request.state = OnlineCombatRequest::State::SentNoAck; break;
     case Action::SelectSkill:
         out.u8(0x3C); out.u32(uint32_t(command.skill) | (command.hand == OnlineSkillHand::Left ? 0x80000000u : 0));
-        out.u32(UINT32_MAX); break;
+        out.u32(command.owner); break;
     case Action::LearnSkill:
         request.before = world.playerBaseSkills.contains(command.skill) ? world.playerBaseSkills.at(command.skill) : 0;
         out.u8(0x3B); out.u16(command.skill); break;
@@ -2191,7 +2199,7 @@ bool RealmSession::submit_combat(OnlineCombatCommand command) {
         const bool cursor = std::any_of(world.items.begin(), world.items.end(), [&](const auto &entry) {
             return entry.second.mode == 4 && entry.second.ownerType == 0 && entry.second.owner == p.view.load.playerUnitId;
         });
-        if (!selected || selected->skill != command.skill || selected->owner != UINT32_MAX || cursor ||
+        if (!selected || selected->skill != command.skill || selected->owner != command.owner || cursor ||
             world.npcRequested || world.waypointSource || world.waypointRequested ||
             world.storage.kind != OnlineStorageKind::None || world.storage.requested != OnlineStorageKind::None) {
             p.error(OnlineErrorKind::Input, "Cast requires the confirmed skill and an idle player"); return false;

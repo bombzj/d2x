@@ -86,6 +86,23 @@ void NativeRealmService::receiveEvent(const server::EventBatch &batch) {
             if(!visibleActor(overlay->actor,overlay->type)) continue;
             delta.push_back(encodeServerPacket(ServerMessage::Overlay,[&](auto &out){out.u8(overlay->type);out.u32(uint32_t(overlay->actor.value));out.u16(uint16_t(overlay->overlay));}));
         }
+        else if(const auto *restored=std::get_if<server::GroundRestoredFact>(&fact)) {
+            // ItemMode only sends 3E to an owner. An unowned ground item
+            // silently restores; its next admission/pickup contains the value.
+            if(auto old=peer.groundItems.find(restored->item);old!=peer.groundItems.end()) old->second=restored->revision;
+        }
+        else if(const auto *trigger=std::get_if<server::ItemSkillFact>(&fact)) {
+            if(!visibleActor(trigger->owner,0)) continue;
+            const auto origin=shared.terrain.at(binding->game).at(trigger->area).origin;
+            if(trigger->target) delta.push_back(encodeServerPacket(ServerMessage::CastUnitAlternate,[&](auto &out){
+                out.u8(0);out.u32(uint32_t(trigger->owner.value));out.u16(uint16_t(trigger->skill));out.u8(uint8_t(trigger->rank));
+                out.u8(trigger->targetType);out.u32(uint32_t(trigger->target.value));out.u16(trigger->flags);
+            }));
+            else delta.push_back(encodeServerPacket(ServerMessage::CastPointAlternate,[&](auto &out){
+                out.u8(0);out.u32(uint32_t(trigger->owner.value));out.u32(uint32_t(trigger->skill));out.u8(uint8_t(trigger->rank));
+                out.u16(uint16_t(std::floor(trigger->position.x+origin.x)));out.u16(uint16_t(std::floor(trigger->position.y+origin.y)));out.u16(trigger->flags);
+            }));
+        }
         else if (const auto *pulse = std::get_if<server::SkillPulseFact>(&fact)) {
             if(!visibleActor(pulse->owner,pulse->ownerType) || !visibleActor(pulse->target,pulse->targetType)) continue;
             delta.push_back(encodeServerPacket(ServerMessage::SkillEvent, [&](auto &out) {
@@ -116,6 +133,9 @@ void NativeRealmService::receiveEvent(const server::EventBatch &batch) {
             delta.push_back(nativeState(*content,*state));
         }
         else if (const auto *quest = std::get_if<server::QuestFact>(&fact)) delta=nativeQuestUpdate(*content,*quest);
+        else if (const auto *removed=std::get_if<server::GroundRemoveFact>(&fact)) {
+            if(peer.groundItems.erase(removed->item)) delta.push_back(encodeServerPacket(ServerMessage::RemoveUnit,[&](auto &out){out.u8(4);out.u32(uint32_t(removed->item.value));}));
+        }
         else if (const auto *character = std::get_if<server::CharacterFact>(&fact)) delta = nativeCharacterDelta(*content, *character);
         else if (const auto *chat = std::get_if<server::ChatFact>(&fact)) {
             if (std::find(chat->recipients.begin(), chat->recipients.end(), binding->player) == chat->recipients.end()) continue;
@@ -139,6 +159,8 @@ void NativeRealmService::receiveEvent(const server::EventBatch &batch) {
             delta.push_back(encodeServerPacket(ServerMessage::Waypoints,[&](auto &out){out.u32(uint32_t(waypoint->source.value));for(const auto word:history)out.u16(word);}));
         } else if (const auto *targeting=std::get_if<server::ItemTargetingFact>(&fact)) {
             delta.push_back(encodeServerPacket(ServerMessage::ItemTargeting,[&](auto &out){out.u8(uint8_t(targeting->cursor));out.u32(uint32_t(targeting->source.value));out.u16(uint16_t(targeting->skill));}));
+        } else if (const auto *service = std::get_if<server::NpcServiceFact>(&fact)) {
+            delta.push_back(encodeServerPacket(ServerMessage::NpcServiceResult,[&](auto &out){out.u32(uint32_t(service->npc.value));out.u8(service->result);out.u8(0);}));
         } else if (const auto *ui = std::get_if<server::UiFact>(&fact)) {
             delta.push_back(encodeServerPacket(ServerMessage::UiAction,[&](auto &out){out.u8(ui->action);}));
         } else throw std::logic_error("Native event encoder is not implemented for this fact");

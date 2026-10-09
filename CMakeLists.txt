@@ -171,6 +171,7 @@ target_sources(d2x_server PRIVATE
     src/server/systems/effects/units.cpp
     src/server/systems/effects/periodic.cpp
     src/server/systems/effects/monster_periodic.cpp
+    src/server/systems/effects/item_triggers.cpp
   src/server/systems/combat/system.cpp src/server/systems/combat/spell_damage.cpp
   src/server/systems/death/system.cpp
   src/server/systems/companions/system.cpp

@@ -22,6 +22,7 @@ struct ManaFact { EntityId actor; float mana{}; };
 struct RepositionFact { EntityId actor; RegionId area; Vec position; };
 struct StateFact { EntityId actor; uint8_t type{}; RegionId area; int state{}; bool enabled{}; std::vector<std::pair<int,int64_t>> stats{}; };
 struct SkillPulseFact { EntityId owner, target; uint8_t ownerType{}, targetType{1}; RegionId area; int skill{}, rank{}; Vec position; };
+struct ItemSkillFact { EntityId owner,target; uint8_t targetType{1}; RegionId area; int skill{},rank{}; Vec position; uint16_t flags{}; };
 struct MissileFact { EntityId owner; uint8_t ownerType{}; RegionId area; int definition{}, rank{}, frame{}; Vec position, destination; uint8_t pierce{}; };
 struct ItemTargetingFact { EntityId source; int cursor{-1}; int skill{-1}; };
 struct ItemFact { TransactionId transaction; ItemChange change; };
@@ -48,9 +49,12 @@ struct NpcMessagesFact { EntityId npc; std::vector<NpcMessage> messages; };
 struct MerchantFact { EntityId npc, item; uint8_t operation{}, result{}; uint32_t gold{}; bool refreshShop{}; };
 struct WaypointFact { EntityId source; std::vector<RegionId> unlocked; };
 struct UiFact { uint8_t action{}; };
+struct NpcServiceFact { EntityId npc; uint8_t result{}; };
 // Captured at the drop transaction; later visibility snapshots are not drops.
 struct GroundDropFact { ItemInstance item; };
-using DomainFact = std::variant<ManaFact, RepositionFact, LifeFact, AttackFact, HitFact, DeathFact, ItemFact, InventoryFact, CharacterFact, QuestFact, AttributeFact, TravelFact, ObjectFact, ChatFact, CommandFact, NpcMessagesFact, MerchantFact, UiFact, WaypointFact, StateFact, MissileFact, SkillPulseFact, SoundFact, OverlayFact, ItemTargetingFact, GroundDropFact>;
+struct GroundRemoveFact { EntityId item; };
+struct GroundRestoredFact {EntityId item;uint64_t revision{};};
+using DomainFact = std::variant<ManaFact, RepositionFact, LifeFact, AttackFact, HitFact, DeathFact, ItemFact, InventoryFact, CharacterFact, QuestFact, AttributeFact, TravelFact, ObjectFact, ChatFact, CommandFact, NpcMessagesFact, MerchantFact, UiFact, WaypointFact, StateFact, MissileFact, SkillPulseFact, SoundFact, OverlayFact, ItemTargetingFact, GroundDropFact, NpcServiceFact, GroundRemoveFact, ItemSkillFact, GroundRestoredFact>;
 // Compact bounded observation, independent of reliable delivery and acknowledgement.
 struct DiagnosticEvent {
     uint64_t sequence{}, batch{}, tick{}, transaction{};

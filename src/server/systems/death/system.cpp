@@ -14,51 +14,62 @@
 namespace d2x::server::death {
 DomainResult<> System::execute(const ActorContext &actor, const Request &request) {
     const auto *player = ports_.players.find(actor.player);
-    if (!player || !player->entered || player->actor != actor.actor || player->area != actor.area) return {DomainStatus::InvalidActor, {}};
+    const auto *area = ports_.areas.find(actor.area);
+    if (!player || !player->entered || player->actor != actor.actor || player->area != actor.area || !area || area->generation != actor.areaGeneration) return {DomainStatus::InvalidActor, {}};
     if (request.action == Action::RecoverCorpse) {
         if (!request.corpse || player->persistent.player.hp <= 0) return {DomainStatus::InvalidActor, {}};
         const auto &corpses = player->persistent.corpses;
         const auto found = std::find_if(corpses.begin(), corpses.end(), [&](const auto &corpse) { return corpse.id == request.corpse->id && corpse.owner == actor.actor && corpse.region == actor.area; });
         if (found == corpses.end() || meleeDistance(player->position, 2, found->position, 2) > 50) return {DomainStatus::InvalidRequest, {}};
         ports_.skills.cancel(actor.player, actor.actor);
-        if (meleeDistance(player->position, 2, found->position, 2) <= 8) return recover(actor, found->id);
+        if (meleeDistance(player->position, 2, found->position, 2) <= 8) {
+            const auto result = recover(actor, found->id);
+            if (result.status != DomainStatus::Capacity || ports_.transactions.hasOutputCapacity()) return result;
+            state_.recoveries.insert_or_assign(actor.player, Recovery{actor, found->id, player->locomotionSequence});
+            return {DomainStatus::Applied, std::monostate{}};
+        }
         if (ports_.movement.execute(actor, {MovementAction::Move, found->position, player->running}) != CommandStatus::Applied) return {DomainStatus::Conflict, {}};
         state_.recoveries.insert_or_assign(actor.player, Recovery{actor, found->id, player->locomotionSequence});
         return {DomainStatus::Applied, std::monostate{}};
     }
     const auto death = state_.transitions.find(actor.actor);
     if (player->persistent.player.hp > 0 || death == state_.transitions.end() || !death->second.finalized || actor.tick < death->second.ready) return {DomainStatus::Conflict, {}};
-    const auto townId = ports_.areas.at(actor.area).definition.townRegion;
+    death->second.reviving = true;
+    const auto townId = area->definition.townRegion;
     const auto *town = ports_.areas.find(townId);
     if (!town) {
         const auto prepared = ports_.world.requestTown(actor);
-        if (!prepared) return {prepared.status, {}};
-        death->second.reviving = true;
+        if (!prepared) { if (prepared.status != DomainStatus::Capacity) death->second.reviving = false; return {prepared.status, {}}; }
         return {DomainStatus::Applied, std::monostate{}};
     }
     auto record = player->persistent.player; record.hp = 1;
     transactions::CharacterEdit edit{actor, player->inventoryRevision, player->characterRevision, std::move(record), transactions::ResourceRefresh::LevelUp};
     edit.revival = PointTarget{townId, town->generation, town->definition.spawn};
     auto plan = ports_.transactions.prepare(std::move(edit));
-    if (!plan) return {plan.status, {}};
+    if (!plan) { if (plan.status == DomainStatus::Capacity) return {DomainStatus::Applied, std::monostate{}}; death->second.reviving = false; return {plan.status, {}}; }
     const auto result = ports_.transactions.commit(std::move(*plan.value));
     if (result) { state_.transitions.erase(death); state_.recoveries.erase(actor.player); }
+    else if (result.status == DomainStatus::Capacity) return {DomainStatus::Applied, std::monostate{}};
+    else death->second.reviving = false;
     return result;
 }
 void System::advanceRecovery(TickContext tick) {
     for (auto pending = state_.recoveries.begin(); pending != state_.recoveries.end();) {
         const auto request = pending->second;
         const auto *player = ports_.players.find(pending->first);
-        if (!player || !player->entered || player->persistent.player.hp <= 0 || player->area != request.actor.area || player->locomotionSequence != request.locomotion) { pending = state_.recoveries.erase(pending); continue; }
+        const auto *area = ports_.areas.find(request.actor.area);
+        if (!player || !player->entered || player->actor != request.actor.actor || player->persistent.player.hp <= 0 || player->area != request.actor.area || !area || area->generation != request.actor.areaGeneration || player->locomotionSequence != request.locomotion) { pending = state_.recoveries.erase(pending); continue; }
         const auto found = std::find_if(player->persistent.corpses.begin(), player->persistent.corpses.end(), [&](const auto &corpse) { return corpse.id == request.corpse; });
         if (found == player->persistent.corpses.end()) { pending = state_.recoveries.erase(pending); continue; }
         const bool reached = meleeDistance(player->position, 2, found->position, 2) <= 8;
         if (!reached && !player->route.empty()) { ++pending; continue; }
-        pending = state_.recoveries.erase(pending);
         if (reached) {
             auto actor = request.actor; actor.tick = tick.tick;
-            if (recover(actor, request.corpse)) ports_.movement.execute(actor, {MovementAction::Stop, {}, false});
+            const auto result = recover(actor, request.corpse);
+            if (result.status == DomainStatus::Capacity && !ports_.transactions.hasOutputCapacity()) { ++pending; continue; }
+            if (result) ports_.movement.execute(actor, {MovementAction::Stop, {}, false});
         }
+        pending = state_.recoveries.erase(pending);
     }
 }
 StepStatus System::step(TickContext tick, FrameFacts &) {
@@ -98,7 +109,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
 
             // Capture once: backpressure must not reroll rewards using a later
             // level, equipment set, or player that reused an old identifier.
-            reward = state_.rewards.emplace(id, Reward{killer->player, killer->actor, amount,false,killer->totals.character.combat.lifeOnKill,killer->totals.character.combat.manaOnKill,false}).first;
+            reward = state_.rewards.emplace(id, Reward{killer->player, killer->actor, amount,false,killer->totals.character.combat.lifeOnKill,killer->totals.character.combat.manaOnKill,false,killer->persistent.player}).first;
         }
         const auto *killer = ports_.players.find(reward->second.player);
         if (!killer || !killer->entered || killer->actor != reward->second.actor || killer->persistent.player.hp <= 0 || killer->lastExperienceAward == UINT64_MAX) {
@@ -116,7 +127,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         if (!reward->second.lootQueued) {
             LootRequest source; source.source = id; source.identity = monster.identity; source.region = monster.area; source.difficulty = monster.rule.difficulty; source.sourceSeed = true; source.rewardModifiers=monsterRewardModifiers(monster.rule.enchantment);
             source.monsterPlayerCount=monster.admittedPlayerCount;
-            const auto queued = ports_.loot.queue({monster.deathOccurrence, source, killer->player, monster.position});
+            const auto queued = ports_.loot.queue({monster.deathOccurrence, source, killer->player, monster.position,{},reward->second.lootClaimant});
             if (!queued) { blocked = true; continue; }
             reward->second.lootQueued = true;
         }

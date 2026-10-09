@@ -14,6 +14,7 @@ DomainResult<> System::queue(const Request &request) {
     if (!player) return {DomainStatus::InvalidActor, {}};
     Preparation pending{request, player->persistent, player->definition.code, 0,
         player->totals.character.combat.magicFind, player->totals.character.combat.goldFind, state_.uniques};
+    if(request.questClaimant) pending.character.player=*request.questClaimant;
     auto random = ports_.random; pending.seed = initialRandom(rollRandom(random));
     const unsigned count=unsigned(std::count_if(ports_.players.all().begin(),ports_.players.all().end(),[](const auto &entry){return entry.second.entered;}));
     // No party authority exists yet: only the killer is a qualifying party member.

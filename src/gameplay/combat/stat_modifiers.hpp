@@ -1,5 +1,6 @@
 #pragma once
 #include "core/id.hpp"
+#include "gameplay/items/skill_sources.hpp"
 #include "gameplay/combat/damage_type.hpp"
 #include <map>
 
@@ -69,6 +70,7 @@ struct CombatModifiers {
     int replenishLife = 0, manaRecovery = 0, lifeOnKill = 0, manaOnKill = 0;
     int allSkills = 0;
     std::map<int, int> classSkills, singleSkills, nonClassSkills, tabSkills;
+    std::map<std::pair<ItemSkillEvent,int>,int> itemTriggers;
     bool cannotBeFrozen = false, halfFreezeDuration = false;
     std::map<EntityId, WeaponModifiers> weapons;
     std::map<EntityId, int> armorPercent;

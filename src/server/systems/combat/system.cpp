@@ -183,6 +183,11 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
                 }
             }
         }
+        std::optional<effects::ItemEventPlan> itemEvents;
+        if(sourcePlayer && hit) {
+            auto prepared=ports_.effects.prepareItemEvents({sourcePlayer->player,sourcePlayer->actor,sourcePlayer->area,area->generation,0,tick.tick},{ItemSkillEvent::Hit,ItemSkillEvent::Kill},damage.target,targetMonster->position);
+            if(!prepared) {blocked=true;++it;continue;}itemEvents=std::move(*prepared.value);
+        }
         DomainResult<> committed{DomainStatus::Applied, std::monostate{}};
         if (targetMonster) committed = ports_.monsters.damage(damage.target, damage.source, amount, tick.tick,0,false,uint8_t(damage.weapon?damage.weapon->hitClass:0));
         else {
@@ -191,7 +196,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
             committed={received.status,received?std::optional{std::monostate{}}:std::nullopt};
             if(received && hit && *received.value>0) ports_.effects.react(actor,damage.source,CombatEffectEvent::DamagedInMelee);
         }
-        if (committed) { commitRandom(); it = state_.pending.erase(it); }
+        if (committed) { commitRandom();if(itemEvents) ports_.effects.commitItemEvents(std::move(*itemEvents),targetMonster->life<=0); it = state_.pending.erase(it); }
         else if (committed.status == DomainStatus::Capacity) { blocked = true; ++it; }
         else it = state_.pending.erase(it);
     }

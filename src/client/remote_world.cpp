@@ -632,6 +632,7 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
         }
         break;
     }
+    case 0x58: {r.u32();r.u8();r.u8();r.finish();break;}
     case 0x7A: {
         const auto assign=r.u8(),type=r.u8();const auto monsterClass=r.u16();const auto owner=r.u32(),id=r.u32();r.finish();
         if(assign) {if(!w.pets.contains(id) && w.pets.size()>=8192) throw ProtocolError("Remote pet limit exceeded");w.pets.insert_or_assign(id,OnlinePet{type,monsterClass,owner});}

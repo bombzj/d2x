@@ -52,8 +52,13 @@ RequestResult RepairItems(GameplayContext &context, net::protocol::Reader &in) {
     return submitGameplay(context,server::merchant::Request{server::merchant::Action::Repair,{EntityId{npc},0},input->items.at(EntityId{item}).handle});
 }
 RequestResult NpcService(GameplayContext &context, net::protocol::Reader &in) {
-    const auto action = in.u32(), npc = in.u32(), reserved = in.u32(); in.finish();
-    if (reserved) return {RequestStatus::Rejected};
+    const auto action = in.u32(), npc = in.u32(), item = in.u32(); in.finish();
+    if(item) {
+        if(action!=0) return {RequestStatus::Rejected};
+        const auto input=context.host.inventoryInput(context.player);
+        if(!input || !input->items.contains(EntityId{item})) return {RequestStatus::Rejected};
+        return submitGameplay(context,server::crafting::Request{server::crafting::RewardItem{EntityId{npc},input->items.at(EntityId{item}).handle}});
+    }
     switch (action) {
     case 0: return NpcTravel(context, npc);
     case 1: return OpenShop(context, npc);

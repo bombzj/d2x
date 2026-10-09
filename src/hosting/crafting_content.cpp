@@ -6,6 +6,11 @@
 #include "content/items/item_magic_loot.hpp"
 #include "content/items/item_properties.hpp"
 #include "core/random.hpp"
+#include "gameplay/quest/tools_of_trade.hpp"
+#include "gameplay/quest/acts/act_two_state.hpp"
+#include "gameplay/quest/acts/act_three_state.hpp"
+#include "gameplay/quest/acts/act_five_state.hpp"
+#include "gameplay/items/charges.hpp"
 #include <algorithm>
 #include <functional>
 #include <stdexcept>
@@ -75,16 +80,29 @@ void cube(const ClassicData &data, Prepared &result) {
     }
     require(matched, "No original CubeMain recipe matches these inputs");
     const auto &original = *ordered.front(); auto random = s.pending.seed;
-    for (const auto *input : ordered) result.consumed.push_back(input->handle());
+    const auto retainedOutputs=std::count_if(matched->outputs.begin(),matched->outputs.end(),[](const auto &out){return out.kind==CubeOutputKind::UseItem && !out.copy;});
+    require(retainedOutputs<=1,"Multiple CubeMain outputs cannot retain the same item identity");
+    const bool keepsOriginal=retainedOutputs!=0;
+    for (const auto *input : ordered) if(!keepsOriginal || input!=&original) result.consumed.push_back(input->handle());
     // Travel and quest rewards belong to their domains. Do not consume materials
     // until those domains can validate the corresponding native quest/portal.
-    require(matched->operation==0, "Quest assembly requires the quest reward transaction");
+    if(matched->operation==28) {
+        const auto &code=matched->outputs.front().code;
+        const auto quest=code==data.staffRecipe.output?QuestId::HoradricStaff:code==data.khalimRecipe.output?QuestId::KhalimsWill:QuestId::Count;
+        require(quest!=QuestId::Count,"Unknown original quest assembly");
+        auto record=s.character.player;auto &progress=record.quests.at(size_t(s.difficulty)).at(questIndex(quest));
+        require(progress.stage<questCompletionStage(quest),"Quest assembly already submitted");
+        progress.stage=quest==QuestId::HoradricStaff?uint32_t(StaffStage::Assembled):uint32_t(KhalimStage::Assembled);
+        result.character=std::move(record);
+    }
     uint64_t temporary=1;
     for(const auto &[id,item] : s.character.inventory.items) { (void)item; temporary=std::max(temporary,id.value+1); }
     for (const auto &output : matched->outputs) {
         const bool preserve=output.kind==CubeOutputKind::UseItem || output.copy;
-        require(output.kind!=CubeOutputKind::CowPortal && output.kind!=CubeOutputKind::UberPortal && output.kind!=CubeOutputKind::UberFinale,
-            "Special portal recipe requires the world and quest qualification transaction");
+        if(output.kind==CubeOutputKind::CowPortal || output.kind==CubeOutputKind::UberPortal || output.kind==CubeOutputKind::UberFinale) {
+            require(matched->outputs.size()==1,"Mixed portal outputs are not an original supported recipe");
+            result.portal=output.kind==CubeOutputKind::CowPortal?server::travel::SpecialPortalKind::Cow:output.kind==CubeOutputKind::UberPortal?server::travel::SpecialPortalKind::Pandemonium:server::travel::SpecialPortalKind::Finale;continue;
+        }
         std::string code = output.kind==CubeOutputKind::UseType || output.kind==CubeOutputKind::UseItem ? original.definition : output.code;
         if (output.tier) { const auto &tiers=data.cubeBases.at(original.definition); code=output.tier==2?tiers.exceptional:tiers.elite; }
         const int level = std::clamp(output.level ? output.level : output.playerPercent*s.character.player.level/100+output.itemPercent*int(original.level)/100,1,99);
@@ -130,18 +148,74 @@ void cube(const ClassicData &data, Prepared &result) {
         }
         if(preserve && output.quantity) (base->bookCapacity?item.charges:item.quantity)=std::min(base->maxStack,output.quantity);
         if(output.repair) { auto stats=resolveItemStats(data,item,s.character.player.level); item.durability=itemMaximumDurability(data,item,stats); item.nativeFlags&=~0x100u; }
-        if(output.recharge) for(auto *list:{&item.savedStats,&item.runewordStats}) for(auto &stat:*list)
-            if(stat.id==204) stat.value=(stat.value&~255)|((unsigned(stat.value)>>8)&255);
+        if(output.recharge) rechargeItemSkills(item);
         if(output.ethereal && !(item.nativeFlags&0x400000u)) { item.nativeFlags|=0x400000u; if(base->family==ItemFamily::Armor) item.defense=item.defense*3/2; }
         prepareSocketedItem(data,item,random); updateCubeRequiredLevel(data,item);
-        item.id=EntityId{temporary++};item.location=ContainerLocation{c.cube,{}};
-        result.outputs.push_back({std::move(item),{},c.cube});
+        const bool replacement=output.kind==CubeOutputKind::UseItem && !output.copy;
+        item.id=replacement?original.id:EntityId{temporary++};item.location=ContainerLocation{c.cube,{}};
+        result.outputs.push_back({std::move(item),replacement?std::optional{original.handle()}:std::nullopt,c.cube});
     }
+}
+void questService(const ClassicData &data,Prepared &result) {
+    const auto &s=result.source;
+    const auto handle=std::visit([](const auto &r)->ItemHandle {if constexpr(requires {r.item;}) return r.item;else return {};},s.pending.request.intent);
+    auto item=resolve(s,handle);const auto *base=data.items.find(item.definition);
+    require(base && item.location==ItemLocation{ContainerLocation{s.character.containers.cursor,{}}},"Quest service requires the owned cursor item");
+    auto record=s.character.player;auto &book=record.quests.at(size_t(s.difficulty));auto random=s.pending.seed;
+    if(std::holds_alternative<ImbueItem>(s.pending.request.intent)) {
+        auto &q=book.at(questIndex(QuestId::ToolsOfTheTrade));
+        require(s.npc=="charsi" && q.stage==uint32_t(ToolsStage::RewardReady) && record.level>=8,"Imbue reward is unavailable");
+        require(base->imbueable && item.quantity==1 && item.sockets==0 && item.socketedItems.empty() && !(item.nativeFlags&0x1000u) &&
+            (item.quality==ItemQuality::Inferior || item.quality==ItemQuality::Normal || item.quality==ItemQuality::Superior),"Item cannot be imbued");
+        const auto name=item.personalizedName;const bool ethereal=item.nativeFlags&0x400000u;
+        const int level=std::min(99,record.level>5?record.level+4:record.level);
+        auto roll=rollAffixItem(data,*base,ItemQuality::Rare,level,random,s.classCode);
+        require(roll.deferred.empty(),roll.deferred.c_str());random=roll.randomState;
+        auto fresh=prepareItem(data,{item.definition,1,{},unsigned(level),std::move(roll.generation)},random,s.difficulty,level);
+        fresh.personalizedName=name;
+        if(!name.empty()) fresh.nativeFlags|=0x1000000u;
+        if(ethereal && !(fresh.nativeFlags&0x400000u)) {fresh.nativeFlags|=0x400000u;if(base->family==ItemFamily::Armor) fresh.defense=fresh.defense*3/2;if(fresh.nativeMaxDurability) fresh.nativeMaxDurability=fresh.nativeMaxDurability/2+1;}
+        item=std::move(fresh);q.stage=uint32_t(ToolsStage::Imbued);
+    } else if(std::holds_alternative<SocketQuestItem>(s.pending.request.intent)) {
+        auto &q=book.at(questIndex(QuestId::SiegeOnHarrogath));
+        require(s.npc=="larzuk" && (q.stage==uint32_t(SiegeStage::Slain) || q.stage==uint32_t(SiegeStage::SocketReady)),"Socket reward is unavailable");
+        require(item.quantity==1 && !item.sockets && item.socketedItems.empty() && !(item.nativeFlags&0x1900u) && (!base->questTag || item.definition=="leg"),"Item cannot receive quest sockets");
+        int count=std::min({base->base.sockets.value_or(0),base->base.socketsByLevel[item.level>40?2:item.level>25?1:0],base->width*base->height,6});require(count>0,"Original item has no socket capacity");
+        if(item.quality==ItemQuality::Magic) count=1+int(limitedRandom(random,unsigned(std::min(2,count))));
+        else if(item.quality==ItemQuality::Rare || item.quality==ItemQuality::Crafted || item.quality==ItemQuality::Set || item.quality==ItemQuality::Unique) count=1;
+        item.sockets=unsigned(count);item.nativeFlags|=0x800u;q.stage=uint32_t(SiegeStage::Rewarded);
+    } else {
+        auto &q=book.at(questIndex(QuestId::BetrayalOfHarrogath));
+        require(s.npc=="drehya" && (q.stage==uint32_t(BetrayalStage::Slain) || q.stage==uint32_t(BetrayalStage::PersonalizeReady)),"Personalize reward is unavailable");
+        require(base->personalizable && item.personalizedName.empty() && !(item.nativeFlags&0x1100u) && !base->equipment.isType("gold") && !base->equipment.isType("quiv"),"Item cannot be personalized");
+        item.personalizedName=record.name;item.nativeFlags|=0x1000000u;q.stage=uint32_t(BetrayalStage::Rewarded);
+    }
+    // SUnitNpc repairs before ItemMode::sub_6FC4BBB0 identifies the result.
+    // Ethereal and previously unidentified inputs must not receive a free repair.
+    if(item.identified && !(item.nativeFlags&0x400000u)) {
+        const auto stats=resolveItemStats(data,item,record.level);
+        const bool indestructible=std::any_of(stats.begin(),stats.end(),[](const auto &stat){return stat.effect=="item_indesctructible" && stat.value;});
+        const bool refill=base->equipment.throwable && base->maxStack>1;
+        if(itemHasMissingSkillCharges(item) || (base->equipment.repairable && ((item.nativeMaxDurability && !indestructible) || refill))) {
+            rechargeItemSkills(item);
+            item.durability=itemMaximumDurability(data,item,stats);item.nativeFlags&=~0x100u;
+            if(refill) {
+                int64_t maximum=base->maxStack;
+                for(const auto &stat:stats) if(stat.effect=="item_extra_stack") maximum+=stat.value;
+                require(maximum>0 && maximum<=511,"Quest repair stack exceeds native width");
+                item.quantity=unsigned(maximum);
+            }
+        }
+    }
+    item.identified=true;
+    item.id=handle.id;item.location=ContainerLocation{s.character.containers.backpack,{}};
+    result.consumed.push_back(handle);result.outputs.push_back({std::move(item),{},s.character.containers.backpack});result.character=std::move(record);
 }
 Prepared prepare(const ClassicData &data, Preparation source) {
     Prepared result; result.source=std::move(source);
     if (const auto *socket=std::get_if<SocketItem>(&result.source.pending.request.intent)) sockets(data,result,*socket);
-    else cube(data,result);
+    else if(std::holds_alternative<TransmuteCube>(result.source.pending.request.intent)) cube(data,result);
+    else questService(data,result);
     auto projection=result.source.character; projection.inventory.items.clear();
     for(const auto &out:result.outputs) projection.inventory.items.emplace(out.item.id,out.item);
     result.equipment=prepareEquipmentRules(data,projection); return result;

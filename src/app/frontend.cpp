@@ -142,7 +142,7 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
     RemoteTown town(archives);
     RemoteControl control(town, session);
     RemoteInventory inventory(archives);
-    RemoteCombat combat(archives, town, session);
+    RemoteCombat combat(archives, town, session, inventory);
     ClientPreferences preferences = loadClientPreferences();
     bool preferencesDirty = false;
     double preferencesRetryAt = 0;

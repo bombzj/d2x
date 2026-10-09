@@ -6,6 +6,7 @@
 #include <map>
 
 namespace d2x {
+class RemoteInventory;
 struct OnlineCombatSkillView {
     uint16_t id{}, base{}, bonus{}, level{};
     std::string name;
@@ -25,6 +26,7 @@ struct OnlineCombatUnitStates {
 // MPQ eligibility and read-only projection of native states. No local combat authority.
 class RemoteCombat {
     RemoteTown &scene_;
+    RemoteInventory &inventory_;
     net::RealmSession &session_;
     std::map<std::string, DataTable, std::less<>> tables_;
     std::map<uint16_t, size_t> skills_, stats_, monsters_;
@@ -39,7 +41,7 @@ class RemoteCombat {
     std::string_view classCode() const;
     bool innateSkill(uint16_t) const;
   public:
-    RemoteCombat(Archives &, RemoteTown &, net::RealmSession &);
+    RemoteCombat(Archives &, RemoteTown &, net::RealmSession &, RemoteInventory &);
     bool submit(OnlineCombatCommand);
     void update();
     bool hostile(const OnlineUnit &) const;

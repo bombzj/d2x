@@ -37,9 +37,8 @@ struct InputState {
     std::map<EntityId, InputItem> items;
 };
 struct Access { EntityId source; ContainerKind kind; uint64_t revision{}; RegionId area{}; std::optional<int> remoteRange{}; };
-struct Pickup { ActorContext actor; GroundTransfer request; uint64_t locomotion{}; };
-struct Replenishment { uint64_t due{}; int rate{}; };
-struct State { std::map<PlayerId, Access> storage; std::map<PlayerId, Pickup> pickups; std::map<std::pair<EntityId,bool>,Replenishment> replenishment; };
+struct Pickup { ActorContext actor; GroundTransfer request; uint64_t locomotion{}, groundGeneration{}; };
+struct State { std::map<PlayerId, Access> storage; std::map<PlayerId, Pickup> pickups; };
 struct Ports { const PlayerStore &players; items::System &items; transactions::System &transactions; const ItemCatalog *definitions; MovementSystem &movement; effects::System &effects; const AreaStore &areas; EventOutbox &events; travel::System &travel; };
 class System {
     State state_;

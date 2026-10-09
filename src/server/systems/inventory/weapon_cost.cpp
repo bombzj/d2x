@@ -71,8 +71,11 @@ DomainResult<transactions::Plan> System::weaponCost(const ActorContext &actor,co
             edit.changes.push_back({item.id,item.revision,ItemChangeKind::DurabilityChanged,item.location,item.location,item.quantity});
         }
     }
-    if(edit.changes.empty()) return ports_.transactions.prepare(transactions::CharacterEdit{
-        actor,p->inventoryRevision,p->characterRevision,*edit.character});
+    if(payMana) edit.charge=skill.charge;
+    if(edit.changes.empty()) {
+        transactions::CharacterEdit character{actor,p->inventoryRevision,p->characterRevision,*edit.character};
+        character.charge=edit.charge;return ports_.transactions.prepare(std::move(character));
+    }
     return ports_.transactions.prepare(std::move(edit));
 }
 std::optional<ItemHandle> System::defensiveWear(PlayerId id,uint64_t &random) const {

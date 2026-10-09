@@ -13,7 +13,7 @@
 namespace d2x::server::missiles {
 DomainResult<> System::direct(const Spawn &request, std::vector<EntityId> targets) {
     const auto *p=ports_.players.find(request.actor.player);const auto *a=ports_.areas.find(request.actor.area);
-    if(!p || !p->entered || p->actor!=request.actor.actor || p->area!=request.actor.area || p->persistent.player.hp<=0 ||
+    if(!p || !p->entered || p->actor!=request.actor.actor || p->area!=request.actor.area || (p->persistent.player.hp<=0 && !request.deathTrigger) ||
         !a || a->generation!=request.actor.areaGeneration || a->definition.town) return {DomainStatus::InvalidActor,{}};
     if(ports_.ids.cursor()>=UINT32_MAX) return {DomainStatus::Capacity,{}};
     auto random=ports_.random;
@@ -70,7 +70,7 @@ DomainResult<> System::direct(const Spawn &request, std::vector<EntityId> target
     if(request.cost) {
         const auto debit=ports_.transactions.commit(*request.cost);if(!debit) return debit;
     } else if(!request.free) {
-        const auto debit=ports_.transactions.release(request.actor,p->characterRevision,request.skill.manaCost);if(!debit) return debit;
+        const auto debit=ports_.transactions.release(request.actor,p->characterRevision,request.skill.manaCost,{},request.skill.charge);if(!debit) return debit;
     }
     if(!facts.empty()) ports_.events.publish({0,request.actor.tick,{}, {AudienceKind::Area,{},p->area},std::move(facts)});
     ports_.combat.commitSpells(std::move(*prepared.value));

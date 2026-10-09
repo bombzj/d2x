@@ -66,7 +66,13 @@ DomainResult<Plan> System::prepare(Change change) {
         const auto &point=*knockback;const auto *area=ports_.areas.find(point.area);
         if(!area || point.area!=player->area || area->generation!=point.generation || player->persistent.player.hp<=0 || !area->definition.collision.nativeMovementSegment(player->position,point.position,playerMovement)) return {DomainStatus::InvalidRequest,{}};
     }
-    const auto equipment = inventoryEdit && inventoryEdit->equipment ? inventoryEdit->equipment : player->rules.equipment;
+    auto equipment = inventoryEdit && inventoryEdit->equipment ? inventoryEdit->equipment : characterEdit && characterEdit->equipment ? characterEdit->equipment : player->rules.equipment;
+    if (inventoryEdit && std::any_of(equipment->items.begin(),equipment->items.end(),
+        [&](const auto &entry){return !inventoryEdit->inventory.items.contains(entry.first);})) {
+        auto retained = std::make_shared<EquipmentRules>(*equipment);
+        std::erase_if(retained->items,[&](const auto &entry){return !inventoryEdit->inventory.items.contains(entry.first);});
+        equipment = std::move(retained); std::get<InventoryEdit>(change).equipment = equipment;
+    }
     PreparedPlayer next{player->persistent, {}, {}, false, false};
     if (auto *edit = std::get_if<InventoryEdit>(&change)) {
         if (edit->weaponSet > 1 || (edit->changes.empty() && !edit->world && !edit->character && !edit->corpses && edit->weaponSet == player->persistent.player.weaponSet))
@@ -82,6 +88,27 @@ DomainResult<Plan> System::prepare(Change change) {
         if(characterEdit->waypoints) next.persistent.waypoints=*characterEdit->waypoints;
     }
     if (next.persistent.player.id != player->actor) return {DomainStatus::InvalidActor, {}};
+    const auto charge=inventoryEdit?inventoryEdit->charge:characterEdit->charge;
+    if(charge) {
+        const auto original=player->persistent.inventory.items.find(charge->item.id);
+        if(original==player->persistent.inventory.items.end() || original->second.revision!=charge->item.revision || std::none_of(player->totals.chargedSkills.begin(),player->totals.chargedSkills.end(),[&](const auto &c){return c.item.id==charge->item.id && c.item.revision==charge->item.revision && c.layer==charge->layer && c.charges>0;})) return {DomainStatus::Stale,{}};
+        const auto found=next.persistent.inventory.items.find(charge->item.id);
+        if(found==next.persistent.inventory.items.end() || found->second.revision==UINT64_MAX) return {DomainStatus::Stale,{}};
+        auto &item=found->second;ItemInstance::SavedStat *value=nullptr;
+        const auto locate=[&](auto &list) {for(auto &stat:list) if(stat.id==204 && stat.parameter==charge->layer) {if(value) return false;value=&stat;}return true;};
+        bool valid=locate(item.savedStats) && locate(item.runewordStats);
+        for(auto &list:item.savedSetStats) valid=valid && locate(list);
+        if(!valid || !value || value->value<0 || value->value>65535 || !(value->value&255) || (value->value&255)>((value->value>>8)&255)) return {DomainStatus::Unavailable,{}};
+        --value->value;++item.revision;
+        auto updated=std::make_shared<EquipmentRules>(*equipment);
+        for(auto &level:updated->items.at(item.id).levels) {
+            const auto debit=[&](auto &list){for(auto &stat:list) if(stat.effect=="item_charged_skill" && stat.layer==charge->layer) {--stat.rawValue;--stat.value;}};
+            debit(level.stats);for(auto &list:level.setStats) debit(list);
+        }
+        equipment=std::move(updated);
+        // Both edits keep their original facts and character lifecycle fields.
+        next.changes.push_back({item.id,item.revision,ItemChangeKind::ChargeChanged,item.location,item.location,item.quantity,unsigned(charge->layer)});next.inventoryChanged=true;
+    }
     try {
         next.totals = attributes::calculate(player->definition, next.persistent, *player->rules.items,
             *equipment, *player->rules.character, {}, transient.modifiers);
@@ -89,8 +116,18 @@ DomainResult<Plan> System::prepare(Change change) {
         next.inventoryChanged = next.inventoryChanged || !next.changes.empty();
     } catch (const std::runtime_error &) { return {DomainStatus::Unavailable, {}}; }
       catch (const std::out_of_range &) { return {DomainStatus::Unavailable, {}}; }
+    for(size_t slot=0;slot<next.persistent.player.selectedSkills.size();++slot) {
+        auto &owner=next.persistent.player.selectedSkillOwners[slot];
+        if(slot/2!=next.persistent.player.weaponSet) {
+            if(owner!=UINT32_MAX && !next.persistent.inventory.items.contains(EntityId{owner})) {owner=UINT32_MAX;next.persistent.player.selectedSkills[slot]=-1;}
+            continue;
+        }
+        if(owner!=UINT32_MAX && std::none_of(next.totals.chargedSkills.begin(),next.totals.chargedSkills.end(),[&](const auto &c){return c.item.id.value==owner && c.skill==next.persistent.player.selectedSkills[slot];})) {owner=UINT32_MAX;next.persistent.player.selectedSkills[slot]=-1;}
+    }
+    for(auto &key:next.persistent.player.skillHotkeys) if(key.owner!=UINT32_MAX && !next.persistent.inventory.items.contains(EntityId{key.owner})) key={};
     next.totals.sourceRevision = player->characterRevision + 1;
     refresh(next.persistent.player, player->persistent.player, player->definition, next.totals.character, request->resources);
+    if(charge) {if(auto *edit=std::get_if<InventoryEdit>(&change)) edit->equipment=equipment;else std::get<CharacterEdit>(change).equipment=equipment;}
     Plan result{{state_.next++}, {{player->actor, player->inventoryRevision}, {player->actor, player->characterRevision}},
         std::move(change), std::move(next)};
     return {DomainStatus::Applied, std::move(result)};
@@ -164,9 +201,10 @@ DomainResult<> System::commit(Plan plan) {
     if (!published) return {published.status, {}};
     if (edit && edit->world) {
         edit->world->next.revision = edit->world->expected + 1;
-        std::swap(ports_.items.state_, edit->world->next);
+        ports_.items.commit(std::move(edit->world->next));
     }
     if (edit && edit->equipment) player.rules.equipment = std::move(edit->equipment);
+    if(characterChange && characterChange->equipment) player.rules.equipment=characterChange->equipment;
     if (edit && edit->transient) std::swap(player.transient, *edit->transient);
     if (auto *characterEdit = std::get_if<CharacterEdit>(&plan.change); characterEdit && characterEdit->transient) std::swap(player.transient, *characterEdit->transient);
     std::swap(player.persistent, next.persistent);

@@ -49,6 +49,7 @@ struct LearningRule {
 };
 enum class ItemSkillAction { Identify, Portal };
 struct ItemSkillRule { int skill{}; bool book{}; ItemSkillAction action{}; int cursor{-1}; };
+enum class QuestConsumable { SkillBook, LifePotion, ResistanceScroll, RespecToken };
 struct CharacterRules {
     std::set<int> innateSkills;
     std::map<std::string,ItemSkillRule,std::less<>> itemSkills;
@@ -56,6 +57,9 @@ struct CharacterRules {
     std::map<int, LearningRule> learning;
     int resistancePenalty{};
     int deathTicks{}, deathExperiencePenalty{};
+    std::set<int> healerCureStates;
+    int noManaRegenState = -1;
+    std::map<std::string,QuestConsumable,std::less<>> questConsumables;
 };
 // Immutable value definitions prepared by hosting/content, with instance-long
 // ownership. Null means not prepared, never "use invented default rules".

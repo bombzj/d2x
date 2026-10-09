@@ -200,17 +200,19 @@ CharacterSaveData decodeSave(std::span<const uint8_t> bytes, const ClassicData &
     for (size_t index = 0; index < player.skillHotkeys.size(); ++index) {
         const auto key = header.hotkeys[index];
         if ((key & 0xFFFF) == 0xFFFF) continue;
-        require((key >> 16) == 0 || (key >> 16) == 0xFFFF, "item-bound hotkey");
-        player.skillHotkeys[index] = {int(key & 0x7FFF) == 0 ? -1 : int(key & 0x7FFF), (key & 0x8000) == 0};
+        const auto skill = int(key & 0x0FFF);
+        player.skillHotkeys[index] = {skill == 0 ? -1 : skill, (key & 0x8000) == 0, key>>16};
     }
     importD2sQuests(player, sections, content.npcDialogues);
     for (size_t index = 0; index < player.selectedSkills.size(); ++index) {
         const auto selected = header.selectedSkills[index];
-        require((selected >> 16) == 0 || selected == UINT32_MAX, "item-bound mouse skill");
-        player.selectedSkills[index] = selected == 0 || selected == UINT32_MAX ? -1 : int(selected);
+        const auto skill=selected&0xFFFF;
+        player.selectedSkills[index] = skill == 0 || skill == 0xFFFF ? -1 : int(skill);
+        player.selectedSkillOwners[index]=selected>>16;
     }
     importMerc(player, header, content);
     waypoints(snapshot, sections, content, false);
+    std::vector<EntityId> itemSources;
     auto items = [&](bool hireling, EntityId corpse = EntityId{}) {
         require(word(bytes, cursor) == 0x4D4A, "missing inventory JM section");
         const auto count = word(bytes, cursor + 2);
@@ -219,10 +221,20 @@ CharacterSaveData decodeSave(std::span<const uint8_t> bytes, const ClassicData &
         for (unsigned index = 0; index < count; ++index) {
             auto item = readD2sItem(bytes.subspan(cursor), content);
             cursor += item.bytesRead;
+            if(!hireling && !corpse) itemSources.push_back(EntityId{snapshot.nextEntityId});
             importD2sItem(snapshot, item.item, content, hireling, corpse);
         }
     };
     items(false);
+    // PlrSave2 stores one-based indices of the main inventory roots, never
+    // runtime GUIDs. Nested socket entries do not advance this source list.
+    const auto sourceGuid=[&](uint32_t slot)->uint32_t {
+        if(!slot || slot==0xFFFF || slot==UINT32_MAX) return UINT32_MAX;
+        require(slot<=itemSources.size(),"skill source item index exceeds inventory");
+        return uint32_t(itemSources.at(slot-1).value);
+    };
+    for(auto &key:player.skillHotkeys) key.owner=sourceGuid(key.owner);
+    for(auto &owner:player.selectedSkillOwners) owner=sourceGuid(owner);
     require(word(bytes, cursor) == 0x4D4A, "missing corpse JM section");
     const auto corpseCount = word(bytes, cursor + 2);
     require(corpseCount <= 1, "unsupported corpse count");
@@ -322,14 +334,22 @@ Bytes encodeSave(const CharacterSaveData &source, const ClassicData &content) {
              std::pair{QuestId::Guardian, 3u}, std::pair{QuestId::TerrorsEnd, 4u}, std::pair{QuestId::EveOfDestruction, 5u}})
             if (player.quests[difficulty][questIndex(id)].stage >= questCompletionStage(id)) progression = std::max(progression, unsigned(difficulty) * 5 + act);
     header.flags = (header.flags & ~0x1F00u) | (progression << 8);
+    std::vector<const ItemInstance *> characterRoots;
+    std::map<uint32_t,unsigned> sourceSlots;
+    for(const auto &[id,item]:snapshot.inventory.items) if(const auto *at=std::get_if<ContainerLocation>(&item.location);
+        at && at->container!=snapshot.containers.hirelingEquipment && snapshot.inventory.containers.at(at->container).spec.kind!=ContainerKind::Corpse) {
+        characterRoots.push_back(&item);sourceSlots.emplace(uint32_t(id.value),unsigned(characterRoots.size()));
+    }
+    require(characterRoots.size()<=1024,"too many character items");
+    const auto sourceSlot=[&](uint32_t guid)->uint32_t {const auto found=sourceSlots.find(guid);return found==sourceSlots.end()?0:found->second;};
     for (size_t index = 0; index < player.skillHotkeys.size(); ++index) {
         const auto &key = player.skillHotkeys[index];
         header.hotkeys[index] = key.skill == -2 ? UINT32_MAX
-            : uint32_t(std::max(0, key.skill)) | (key.right ? 0 : 0x8000);
+            : uint32_t(std::max(0, key.skill)) | (key.right ? 0 : 0x8000) | (sourceSlot(key.owner)<<16);
     }
     exportMerc(header, player, content);
     for (size_t index = 0; index < player.selectedSkills.size(); ++index)
-        header.selectedSkills[index] = uint32_t(std::max(0, player.selectedSkills[index]));
+        header.selectedSkills[index] = uint32_t(std::max(0, player.selectedSkills[index])) | (sourceSlot(player.selectedSkillOwners[index])<<16);
     exportD2sQuests(player, sections, content.npcDialogues);
     waypoints(snapshot, sections, content, true);
     writeD2sFixedSections(bytes, sections);
@@ -351,7 +371,8 @@ Bytes encodeSave(const CharacterSaveData &source, const ClassicData &content) {
     writeD2sSkills(bytes, header.characterClass, header.skillCount, ranks, content.tables.at("skills"));
     auto items = [&](bool hireling, EntityId corpse = EntityId{}) {
         std::vector<const ItemInstance *> entries;
-        for (const auto &[id, item] : snapshot.inventory.items)
+        if(!hireling && !corpse) entries=characterRoots;
+        else for (const auto &[id, item] : snapshot.inventory.items)
             if (const auto *location = std::get_if<ContainerLocation>(&item.location);
                 location && (corpse ? location->container == corpse :
                     snapshot.inventory.containers.at(location->container).spec.kind != ContainerKind::Corpse &&

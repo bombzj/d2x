@@ -50,7 +50,7 @@ PersistentCharacter在PlayerStore中唯一持有，包含库存、人物记录�
 | items | 世界物品，沿用ItemInstance／InventoryState | create／resolve；生成不等于提交或放入背包 |
 | inventory | 容器访问、摆放／装备／数量规划 | execute已接移动／交换／装备／切组／合堆／入书；新增地面拾取／丢弃、金币丢弃、卷轴／书本鉴定、药水和仓库授权／关闭，库存仍归PlayerStore |
 | attributes | 纯派生计算与当前Totals只读查询 | calculate／evaluate；提交前同步求值，无dirty队列；已接支持的临时状态，完整被动仍待恢复 |
-| crafting | 普通方块与镶嵌事务；任务加工暂缓 | execute／pending／install；hosting准备不可变输出 |
+| crafting | 方块／镶嵌与原38任务加工事务 | execute／pending／install；hosting准备不可变输出，前置任务资格由quests负责 |
 | loot | 掉落选择与来源结算记录 | plan／step；沿用LootRequest／LootPlan，不写死概率 |
 | population | 区域人口、已准入spawn key | admit／step；保留MonsterIdentity及显式实现类型 |
 | monsters | 活动非玩家实体、身份、位置和版本 | admit／requestMove／remove／step；与人口生成、AI决策分离 |
@@ -72,7 +72,7 @@ PersistentCharacter在PlayerStore中唯一持有，包含库存、人物记录�
 | transactions | 跨域计划、版本前置条件、提交身份 | prepare／commit已接单人物InventoryEdit／CharacterEdit原子提交；已接地面转移／尸体／任务奖励；双人交换仍为stub |
 | replication | 每个收件人的兴趣与可见玩家集合 | visible／step；按本人区域及准备好的直接自然邻区过滤，普通怪物使用本区RoomLayout邻室及直接邻区距离过滤；完整房间兴趣仍待实现；编码留hosting |
 
-目录在runtime/subsystems.inc维护身份、阶段和范围。players／movement为walking-slice，inventory为inventory-slice，attributes／progression／transactions为character-slice，World／Travel为world，replication／social为multiplayer；范围表示已接切片，不代表该领域全部规则完成。population／monsters／ai／skills／missiles／combat／death为combat-slice。items／loot／merchant为inventory，effects为character，objects／npc／quests为world；companions已接Hydra及诱饵／女武神，通用请求仍明确拒绝；spatial／trade仍为scaffold；crafting已接普通方块／镶嵌，命令按具名意图检查。
+目录在runtime/subsystems.inc维护身份、阶段和范围。players／movement为walking-slice，inventory为inventory-slice，attributes／progression／transactions为character-slice，World／Travel为world，replication／social为multiplayer；范围表示已接切片，不代表该领域全部规则完成。population／monsters／ai／skills／missiles／combat／death为combat-slice。items／loot／merchant为inventory，effects为character，objects／npc／quests为world；companions已接Hydra及诱饵／女武神，通用请求仍明确拒绝；spatial／trade仍为scaffold；crafting已接方块／镶嵌及原38任务加工，命令按具名意图检查。
 
 ## 命令与固定步
 
@@ -82,9 +82,9 @@ runtime/command_dispatch为每个负载显式映射SystemId与领域入口，没
 
 Travel独立于人物事务：自然边界按原room连接和统一坐标确认接触面，沿既有速度逐步走过接缝；瓦片出口按原13/type=5绑定World分配的UNIT_TILE，接近后进入唯一反向出口，保留LvlWarp的ExitWalk偏移。区域、来源generation、移动意图序号在提交前复验，库存／成长命令不会取消路线；新移动／旅行、退役和离开取消旧过渡。完整TravelFact进入Outbox后才提交区域／位置／新路线，失败不半换区。多重反向出口、原任务锁入口及未核实资格明确暂缓。
 
-runtime/simulation固定顺序为：区域／人口 → 属性 → 初次空间索引 → 伙伴／AI → 技能 → 玩家移动／怪物 → 更新空间索引 → 弹体／效果／战斗 → 死亡 → 物件／任务 → 掉落／成长 → 旅行 → 投影。此处是执行位置的骨架，不宣称已核实原版全部结算细节；真实规则接入时须按依赖明确调整顺序。没有用毫秒或渲染delta执行新玩法，所有步沿用25Hz。
+runtime/simulation固定顺序为：区域／人口 → 属性 → 初次空间索引 → 伙伴／AI → 技能 → 玩家移动 → 库存恢复／地面恢复与过期 → 怪物／空间索引 → 弹体／效果／战斗 → 死亡 → NPC／商店／加工 → 物件／任务 → 掉落／成长 → 旅行 → 投影。P5补merchant／crafting／items.step调度，不依赖界面操作推进维护。此处不宣称已核实原版全部结算细节；规则接入按生产者／消费者依赖调整。所有步沿用25Hz，不用渲染delta执行玩法。
 
-只有声明step的领域被调度，inventory／transactions／social在命令边界按需规划／提交。World在准备需求存在时返回Blocked，Travel等待准备或接近路线时返回Blocked，replication更新派生兴趣后Complete；其余stub不产生状态变化。Blocked只描述相应领域，其他阶段／实例继续运行。
+只有具有运行维护工作的领域被调度，transactions／social在命令边界按需规划／提交。World在准备需求存在时返回Blocked，Travel等待准备或接近路线时返回Blocked，replication更新派生兴趣后Complete；其余stub不产生状态变化。Blocked只描述相应领域，其他阶段／实例继续运行。
 
 FrameFacts是有界的本步临时事实，只允许后续阶段消费；每步开始清空。需要在下一步继续处理的请求必须留在所属系统pending状态，不能靠临时事实延后。可靠通知进入EventOutbox，不能依赖FrameFacts或覆盖式快照。
 
@@ -130,7 +130,7 @@ hosting按原SCmd编码AC阶级／superunique／词缀／nameSeed，原MonsterMs
 
 hosting仅对原ClientSend弹体编码73；该标志不等同常规创建广播，Blaze／FireWall／Meteor／Blizzard的创建及子火段由原动作／状态重建，不重复发送73。普通本人4C／4D按原PlrMsg省略，其他可见客户端仍接收；当前未接晚入视野弹体重同步。4C／4D派生普通投射、连锁、Inferno及Hydra，A3呈现ThunderStorm，A7／A9呈现单位状态，67/action20呈现原击退，11／2C呈现叠层／附加音效。私有资源仍用1F，同区传送15，命中0C。原服与自研客户端只有传输来源差异，所有新增表现写入同一RemoteScene／ClientMissile程序。
 
-运行态施法、弹体、状态、反击和召唤不写D2S。击杀回生命／法力由death捕获并在奖励重试中只提交一次；其余尚未实现的武器触发继续拒绝。晚入局恢复单位和状态，不重播历史施法／弹体。PvP、充能／触发、跨区弹体、其他幕怪物及女巫／亚马逊之外的职业尚未实现，不能据此宣称完整战斗系统。
+运行态施法、弹体、状态、反击和召唤不写D2S。击杀回生命／法力由death捕获并在奖励重试中只提交一次。充能及装备触发接独立来源、事务与effects队列，准确范围和专用程序暂缓只见[库存](INVENTORY.md)。晚入局恢复单位和状态，不重播历史施法／弹体。PvP、跨区弹体、其他幕怪物及女巫／亚马逊之外的职业未完整实现，不能据此宣称完整战斗系统。
 
 ## 亚马逊武器、被动与伙伴
 
@@ -146,7 +146,7 @@ replication的宠物归属投影独立于房间兴趣；hosting按原13字节7A�
 
 named pipe的server-systems只读返回28项目录、phase、scope和lastStep。lastStep=null表示尚未执行或该系统没有固定步入口，不表示完成；未接领域正常显示not-implemented，已接切片以scope为准。server-status.command表示最近实际命令结果，替代原来仅描述移动的字段；server-protocol仍负责原包覆盖与计数。这些诊断只在宿主管理端，不参与客户端世界同步。
 
-PersistentCharacter与D2S v96格式保持既有模型，库存位置／Cursor／固定武器组通过既有编码保存；宿主规则语义升至admission-v20/native-wire113c/d2s96/items，具体见[存档](SAVES.md)。事务身份／revision／Outbox运行态不写D2S；以后扩展尸体／铁魔／佣兵／任务时仍须复用持久模型并显式定义恢复边界，不能静默迁移或把空运行态覆盖回完整存档。
+PersistentCharacter与D2S v96格式保持既有模型，库存位置／Cursor／固定武器组通过既有编码保存；宿主规则语义升至admission-v23/native-wire113c/d2s96/item-identities，具体见[存档](SAVES.md)。事务身份／revision／Outbox运行态不写D2S；以后扩展尸体／铁魔／佣兵／任务时仍须复用持久模型并显式定义恢复边界，不能静默迁移或把空运行态覆盖回完整存档。
 
 ## 管理诊断与收尾边界
 
@@ -162,23 +162,27 @@ EventOutbox保存1024条已成功发布事实的紧凑环形历史；GameInstanc
 
 `loot`在死亡奖励结算时捕获原怪物身份、受益角色、MF/GF和独立种子；零经验死亡也会提交掉落准备。宿主内容适配复用旧单机`resolveMonsterLoot`／`planItemLoot`与原物品生成步骤，读取当前MPQ，不在内核持有Archive或回调。准备队列有界，同一来源只接受一次，失败不重新取种子；成功结果进入`items`统一持有的地面库存。地面不写角色D2S，拾取后的物品沿既有D2S v96编码保存。
 
-`inventory/ground`规划角色库存、金币和地面余量；`transactions`同时校验角色及世界revision，发布不可变事实后一次交换全部草稿。拾取校验同区、1.8格距离、原0x0801视线及空Cursor，支持Cursor、自动腰带、背包和既有合堆规则；空间不足保留地面剩余量。任务物品暂缓，不绕过任务携带资格。物品属性的各级准备值随所有权转移，新装备可沿现有属性汇总及装备资格检查工作。
+`inventory/ground`规划角色库存、金币和地面余量；`transactions`同时校验角色及世界revision，发布不可变事实后一次交换全部草稿。拾取校验同区、1.8格距离、原0x0801视线及空Cursor，支持Cursor、自动腰带、背包和既有合堆规则；空间不足保留地面剩余量。任务物品不绕过当前携带资格与互斥规则，未接任务来源仍明确暂缓。物品属性的各级准备值随所有权转移，新装备可沿现有属性汇总及装备资格检查工作。
+
+`items`独立持有地面生命周期代次、寿命与按GUID延续的自恢复时钟；`inventory`的接近拾取绑定落地代次，而非会被自恢复改变的属性revision。到达后复验人物、区域、走跑意图及同一次落地，再取最新句柄规划事务；移除／拾走后重丢／移位使旧请求失效。生命周期和时钟不进入协议或D2S，规则、原帧常数及有限运行证据见[库存](INVENTORY.md)和基线。
 
 怪物／物件新生掉落发布GroundDropFact并编码原9C action=2；宿主以原9C地面位流和0A清除同步可见集合，晚入局和换区重建基线；个人入包沿既有9C／9D。客户端未新增自研分支。`item-spawn`采用相同准备和地面安装入口。独立服务端多实例、近队友NoDrop贡献、任务专属掉落及全部精英／首领来源规则尚未完整实现。当前怪物批次的有限运行证据见基线；构建结果及历史六项证据不能替代所有新组合的运行验证。
 
 ## 资源、药水与效果
 
-迁回master的`gameplay/units/resources`／`restoration`、`CombatEffectSet`和药水职业倍率纯函数。`effects`按25Hz持有每个玩家的生命／法力恢复队列及持续状态；资源上限、被动回蓝、装备生命恢复和耐力规则继续使用人物总值。跑动耗尽耐力后采用步行速度，命中／防御判断同步使用实际走跑状态。
+迁回master的`gameplay/units/resources`／`restoration`、`CombatEffectSet`和药水职业倍率纯函数。`effects`按25Hz持有按原药水state分开的8.8恢复时钟及持续状态；资源上限、被动回蓝、装备生命恢复和耐力规则继续使用人物总值。跑动耗尽耐力后采用步行速度，命中／防御判断同步使用实际走跑状态。
 
-背包原20、腰带原26使用请求验证所有权与revision。`inventory/consumption`准备数量变化、腰带同列下移和效果计划；人物／物品事务成功后才交换预先分配的效果状态。生命／法力药水沿旧单机顺序队列恢复，到满值清空余量；回复药水即时按上限百分比恢复，耐力／解毒／解冻药水按MPQ状态、持续时间、清除状态和属性执行。同状态药水延长剩余时间；死亡及到期移除复用原纯状态集合。效果不写D2S，属性变化及资源上限限制仍由transactions提交。
+背包原20、腰带原26使用请求验证所有权与revision。`inventory/consumption`准备数量变化、腰带同列下移和效果计划；人物／物品事务成功后才交换预先分配的效果状态。生命／法力药水按D2MOO SkillItem::pSpell03修正旧顺序队列：公共combineRestoration合并剩余帧／值后整数除法取每帧率，rollPotionRestoration按职业及体力／精力判定双倍，消费成功才推进实例随机；不宣称复刻原单位随机流顺序。Misc导入healthpot／manapot状态及len；恢复、到期移除与资源一次提交，背压保留未结算帧。PlrModes规定生命溢出移除Healthpot，法力恢复前已满移除Manapot；毒伤与补血合并后限制至少一生命，不抑制回蓝，原nomanaregen才抑制自然回蓝。回复药水按原8.8上限百分比取整，耐力／解毒／解冻药水读取MPQ状态、长度、清除状态及属性；同状态延长剩余时间。死亡清理不复活死人；效果不写D2S，资源上限仍由transactions提交。
+
+NPC治疗通过effects.heal准备人物／状态，原子提交补满、清毒／冻结与MPQ curable状态，仅实际治疗时发送原Sound10。不清除原规则以外的增益；宠物／佣兵治疗仍属后续阶段。P1随P5统一构建打包，旧生命药水／神殿状态冒烟不能认证新恢复规则。
 
 宿主原1F同步资源／派生属性，原A7／A8／A9同步本人及可见玩家／单位状态，晚入视野重建；内核不持有客户端状态。通用效果入口对尚未接执行器的反击、物理护盾和诅咒AI明确拒绝，不能仅显示状态却遗漏效果；反应计算及完整持续伤害仍待后续切片。调试快照增加effects、restoration、loot待处理数／暂缓原因。当前包已有限运行生命药水恢复与神殿状态到期；其他恢复／药水边界仍待运行，证据见基线。
 
 ## 死亡与尸体
 
-服务端 death 分为死亡结算、复活和拾回规划；transactions 原子提交人物、库存、尸体元数据及地面物品。沿用 master 的装备／Cursor 转尸体、腰带收缩、金币惩罚和掉落、难度经验损失及同局 75% 经验返还规则。生命归零后等待当前 MPQ 死亡动画，原 41 请求回本幕城镇并恢复资源；原 13 拾回只授权本人尸体，装备依需求反复尝试，余物进入腰带／背包，容量不足保留尸体。对象身份不复用。
+服务端 death 分为死亡结算、复活和拾回规划；transactions 原子提交人物、库存、尸体元数据及地面物品。沿用 master 的装备／Cursor 转尸体、腰带收缩、金币惩罚和掉落、难度经验损失及同局 75% 经验返还规则。生命归零后等待当前 MPQ 死亡动画，原 41 请求回本幕城镇并恢复资源；原 13 只授权本人尸体，依需求反复装备，再尝试空装备位／腰带／背包，余物保留原尸体。carry1与重复方块不能绕过；尸体回收不套地面合书／合堆。经验在尝试物品前只结算一次，与原sub_6FC80440一致。复活／接近拾尸／拾取在背压时保留意图，复验人物、区域代次与走跑意图；死亡落地发布GroundDropFact，身份和世界版本容量有前置检查。对象身份不复用。
 
-原 59／8E／0D 与 9D 公开尸体和外观，客户端未修改。普通库存命令不能访问尸体容器。D2S v96 沿用旧单机及本地 D2MOO PlrSave2 的第一具非空尸体写档规则：局内最多 16 具，不覆盖旧尸体；存档投影只保留最早的非空尸体，清除仅同局有效的可返还经验，重入移至城镇。规则指纹 admission-v20/native-wire113c/d2s96/items。多尸体保存并非完整多尸体快照，PvP／硬核死亡尚未扩展。
+原 59／8E／0D 与 9D 公开尸体和外观，客户端未修改。普通库存命令不能访问尸体容器。D2S v96 沿用旧单机及本地 D2MOO PlrSave2 的第一具非空尸体写档规则：局内最多 16 具，不覆盖旧尸体；存档投影只保留最早的非空尸体，清除仅同局有效的可返还经验，重入移至城镇。规则指纹 admission-v23/native-wire113c/d2s96/item-identities。多尸体保存并非完整多尸体快照，PvP／硬核死亡尚未扩展。
 
 ## 世界物件基础
 
@@ -210,7 +214,7 @@ travel 另持传送点授权与回城门对，不把旅行规则放回 GameInsta
 
 单件鉴定由 inventory 接收原 0x27，内容准备按 MPQ 的鉴定卷轴／Books 配对提供消耗规则。目标识别属性与卷轴数量／书本次数在同一库存事务提交，随后重算属性并沿原物品包更新。重复鉴定、无次数、非本人可访问目标及非空 Cursor 拒绝。
 
-原 0x50 丢金币同时规划钱包扣款与地面金堆；金堆类型和最大堆数从 ItemCatalog 准备，碰撞／地面容量失败不扣款。原 0x51 绑定已有 F1–F8 热键，复验技能／左右手资格，写人物记录并发送原 0x7B；入场及 D2S 恢复沿同一编码。绑定不取消当前施法，未实现的技能执行仍显式拒绝。
+原 0x50 丢金币同时规划钱包扣款与地面金堆；金堆类型和最大堆数从 ItemCatalog 准备，碰撞／地面容量失败不扣款。原 0x51 绑定已有 F1–F8 热键，复验技能／左右手资格，也接原无技能编码清除；内部-1为普通攻击、-2为未绑定，Attack ID0不代表清除。写人物记录并发送原 0x7B；入场及 D2S 恢复沿同一编码。绑定不取消当前施法，未实现的技能执行仍显式拒绝。
 
 普通商店出售覆盖背包、装备及 Cursor 原件，修订号封顶拒绝；凯恩鉴定同步原 identified 标志。merchant固定步清理已关闭／死亡／换区／离线交谈的货架与待准备状态，切换NPC时发送旧货架移除；尸体公开装备缓存清理跳过已恢复到本人或可见人物装备的GUID。掉落安装预先分配唯一物品记账与物件完成状态，提交权威后仅交换已准备值，避免已扣钥匙／落地后才分配记账。
 

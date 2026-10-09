@@ -34,9 +34,10 @@ RequestResult StopSkill(GameplayContext &context, net::protocol::Reader &in) {
 }
 RequestResult SelectSkill(GameplayContext &context, net::protocol::Reader &in) {
     const auto selected = in.u32(), owner = in.u32(); in.finish();
-    if ((selected & 0x7FFF0000u) || owner != UINT32_MAX) return {RequestStatus::Rejected, CommandStatus::InvalidRequest};
+    if ((selected & 0x7FFF0000u)) return {RequestStatus::Rejected, CommandStatus::InvalidRequest};
     server::skills::Request request{server::skills::Action::Select, 0, false, false, false, {}, {}};
     request.skill = uint16_t(selected); request.right = !(selected & 0x80000000u);
+    request.owner=owner;
     return submitGameplay(context, request);
 }
 }

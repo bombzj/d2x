@@ -25,7 +25,7 @@ DomainResult<> System::skillUnit(const ActorContext &actor,const SkillCastSpec &
     auto spec=*skill.appliedEffect;spec.source={CombatEffectSource::Skill,caster->actor,skill.sourceId,skill.rank};
     if(!target.states.apply(std::move(spec),actor.tick).accepted) return {DomainStatus::Conflict,{}};
     transactions::CharacterEdit debit{actor,caster->inventoryRevision,caster->characterRevision,caster->persistent.player};
-    debit.player.mana-=skill.manaCost;
+    debit.player.mana-=skill.manaCost;debit.charge=skill.charge;
     const auto before=unitStates(id,actor.tick);
     for(const auto &effect:target.states.entries()) if(effect.activeAt(actor.tick) && !before.contains(effect.spec.state.id))
         debit.publicFacts.emplace_back(StateFact{id,1,actor.area,effect.spec.state.id,true});

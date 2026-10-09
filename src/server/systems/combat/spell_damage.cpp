@@ -172,9 +172,12 @@ StepStatus System::resolveSpells(TickContext tick) {
                 const auto result=ports_.transactions.commit(std::move(*wear.value));
                 if(!result) {if(result.status==DomainStatus::Capacity) {blocked=true;break;} ++impact.next;continue;}
             }
+            const ActorContext itemActor{owner->player,owner->actor,owner->area,area->generation,0,tick.tick};
+            auto itemEvents=impact.weapon?ports_.effects.prepareItemEvents(itemActor,{ItemSkillEvent::Hit,ItemSkillEvent::Kill},target->id,target->position):ports_.effects.prepareItemEvents(itemActor,{ItemSkillEvent::Kill},target->id,target->position);
+            if(!itemEvents) {blocked=true;break;}
             const auto result = ports_.monsters.damage(target->id, impact.source, amount, tick.tick, cold, impact.freeze,uint8_t(impact.weapon?impact.weapon->weapon.hitClass:impact.hitClass),poison,impact.type==DamageType::Poison && !impact.weapon);
             if (result.status == DomainStatus::Capacity) { blocked = true; break; }
-            if(result && impact.weapon) ports_.random=random;
+            if(result) {if(impact.weapon) ports_.random=random;ports_.effects.commitItemEvents(std::move(*itemEvents.value),target->life<=0);}
             if (result && impact.nextDelay) ports_.monsters.hitDelay(target->id, tick.tick + impact.nextDelay);
             if(result && impact.knockback && target->life>0) {ports_.monsters.knockback(target->id,owner->position,tick.tick);cancel(target->id);}
             ++impact.next;

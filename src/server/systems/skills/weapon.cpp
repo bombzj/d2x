@@ -6,6 +6,7 @@
 #include "server/systems/inventory/system.hpp"
 #include "server/systems/missiles/system.hpp"
 #include "server/systems/monsters/system.hpp"
+#include "server/systems/effects/system.hpp"
 #include "gameplay/skills/bow_spec.hpp"
 #include "gameplay/skills/spear_spec.hpp"
 #include "gameplay/skills/weapon_damage.hpp"
@@ -44,9 +45,14 @@ DomainResult<> System::weaponCast(const ActorContext &actor,const Request &reque
     if(area.definition.town || !request.target) return {DomainStatus::Unavailable,{}};
     if(busy(actor.actor,actor.tick)) return {DomainStatus::Conflict,{}};
     const auto rank=p.totals.skillRanks.find(id);
-    const int effectiveRank=p.rules.character->innateSkills.contains(id)?1:(rank==p.totals.skillRanks.end()?0:rank->second);
+    const auto charge=chargedSource(p,id,request.right);
+    const auto owner=p.persistent.player.selectedSkillOwners.at(p.persistent.player.weaponSet*2+(request.right?1:0));
+    if(owner!=UINT32_MAX && !charge) return {DomainStatus::Unavailable,{}};
+    const int effectiveRank=charge?charge->rank:p.rules.character->innateSkills.contains(id)?1:(rank==p.totals.skillRanks.end()?0:rank->second);
     if(effectiveRank<=0 || effectiveRank>255) return {DomainStatus::Unavailable,{}};
-    auto skill=evaluate(p,id,effectiveRank);const auto &program=*skill.weapon;
+    auto skill=evaluate(p,id,effectiveRank);
+    if(charge) {skill.charge=SkillCharge{charge->item,charge->layer};skill.manaCost=skill.startMana=0;}
+    const auto &program=*skill.weapon;
     if(p.persistent.player.mana<skill.manaCost && program.spear && program.spear->attackWithoutMana) return attack(actor,request,0);
     const auto *weapon=program.commonAttack?commonAttackWeapon(p.totals.equipment,program.thrown,program.leftHand):std::find_if(p.totals.equipment.weapons.begin(),p.totals.equipment.weapons.begin()+p.totals.equipment.weaponCount,
         [&](const auto &w){return !w.leftHand && std::find(w.types.begin(),w.types.end(),program.requiredType)!=w.types.end();});
@@ -141,6 +147,12 @@ DomainStatus System::weaponRelease(Release &pending,const ActorContext &actor,Ve
         selectedTarget=target;destination=ports_.monsters.find(target)->position;
     }
     const bool projectile=found->ranged || pending.skill.weapon->thrown;
+    auto event=ports_.effects.prepareItemEvents(actor,{ItemSkillEvent::Attack},selectedTarget,destination);if(!event) return event.status;
+    if(pending.skill.charge) {
+        const auto source=p.persistent.inventory.items.find(pending.skill.charge->item.id);
+        if(source==p.persistent.inventory.items.end() || !p.totals.activeEquipment.contains(source->first)) return DomainStatus::Stale;
+        pending.skill.charge->item=source->second.handle();
+    }
     std::optional<transactions::Plan> cost;
     if(!pending.manaPaid || (projectile && !strafe && !pending.skill.weapon->noAmmo)) {
         auto prepared=ports_.inventory.weaponCost(actor,*found,pending.skill,!pending.manaPaid,projectile && !strafe);
@@ -152,10 +164,14 @@ DomainStatus System::weaponRelease(Release &pending,const ActorContext &actor,Ve
         missiles::Spawn request{actor,pending.skill,{},destination,true};request.weapon=snapshot;request.cost=std::move(cost);
         request.guidedTarget=selectedTarget;
         const auto result=ports_.missiles.spawn(request).status;
-        if(result==DomainStatus::Applied) pending.unit=selectedTarget;
+        if(result==DomainStatus::Applied) {pending.unit=selectedTarget;ports_.effects.commitItemEvents(std::move(*event.value));}
         return result;
     }
-    if(pending.skill.weapon->commonAttack && !selectedTarget) return cost?ports_.transactions.commit(std::move(*cost)).status:DomainStatus::Applied;
+    if(pending.skill.weapon->commonAttack && !selectedTarget) {
+        const auto result=cost?ports_.transactions.commit(std::move(*cost)).status:DomainStatus::Applied;
+        if(result==DomainStatus::Applied) ports_.effects.commitItemEvents(std::move(*event.value));
+        return result;
+    }
     const auto *target=ports_.monsters.find(selectedTarget);
     const auto &area=ports_.areas.at(actor.area);
     if(!target || target->owner || target->life<=0 || target->area!=actor.area ||
@@ -163,7 +179,7 @@ DomainStatus System::weaponRelease(Release &pending,const ActorContext &actor,Ve
     WeaponSkillDamage snapshot;snapshot.weapon=*found;snapshot.level=p.persistent.player.level;
     missiles::Spawn request{actor,pending.skill,{},destination,true};request.weapon=snapshot;request.cost=std::move(cost);
     const auto result=ports_.missiles.direct(request,{selectedTarget}).status;
-    if(result==DomainStatus::Applied) pending.unit=selectedTarget;
+    if(result==DomainStatus::Applied) {pending.unit=selectedTarget;ports_.effects.commitItemEvents(std::move(*event.value));}
     return result;
 }
 }

@@ -25,8 +25,8 @@ RequestResult Resurrect(GameplayContext &context, net::protocol::Reader &in) {
 }
 RequestResult BindHotkey(GameplayContext &context, net::protocol::Reader &in) {
     const auto packed = in.u32(), owner = in.u32(); in.finish();
-    if (owner != UINT32_MAX || (packed >> 16) >= 8) return {RequestStatus::Rejected};
+    if ((packed >> 16) >= 8) return {RequestStatus::Rejected};
     return submitGameplay(context, server::skills::Request{server::skills::Action::Bind, uint16_t(packed & 0x7FFF),
-        !(packed & 0x8000), false, false, {}, unsigned(packed >> 16)});
+        !(packed & 0x8000), false, false, {}, unsigned(packed >> 16), owner});
 }
 }

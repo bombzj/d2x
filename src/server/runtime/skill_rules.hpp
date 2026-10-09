@@ -9,7 +9,14 @@
 #include <string>
 #include <set>
 namespace d2x::server {
-struct SkillDefinition { SkillRuleSpec spec; bool allowedInTown{}; MissileCollisionRule collision; };
+struct SkillDefinition {
+    SkillRuleSpec spec;
+    bool allowedInTown{};
+    MissileCollisionRule collision;
+    bool itemTargetDo{};
+    int itemEffect{},itemTarget{};
+    bool itemCheckStart{},itemEffectUsesPreparedProgram{};
+};
 struct SkillRules {
     int poisonState{-1};
     std::set<int> dismissibleSummons;

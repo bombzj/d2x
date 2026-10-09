@@ -15,11 +15,11 @@ enum class ItemAction : uint8_t {
     Put = 4, Take = 5, Equip = 6, IndirectEquip = 7, Unequip = 8, SwapEquipment = 9, Quantity = 10, Shop = 11, Properties = 21,
     SwapStored = 13, PutBelt = 14, TakeBelt = 15, SwapBelt = 16, Cursor = 18, Socket = 19, WeaponSwitch = 23
 };
-Bytes itemStat(EntityId id,unsigned stat,uint32_t number) {
+Bytes itemStat(EntityId id,unsigned stat,uint32_t number,uint16_t layer=0) {
     if(id.value>UINT32_MAX || stat>=511) throw std::runtime_error("Native item stat identity overflow");
     BitWriter bits;
     const auto variable=[&](uint32_t v) {bits.write(v>=256,1);if(v>=256) bits.write(v>=65536,1);bits.write(v,v>=65536?32:v>=256?16:8);};
-    variable(uint32_t(id.value));bits.write(1,1);bits.write(stat,9);variable(number);bits.write(0,1);bits.write(0,8);
+    variable(uint32_t(id.value));bits.write(1,1);bits.write(stat,9);variable(number);bits.write(layer>=256,1);bits.write(layer,layer>=256?16:8);
     auto payload=bits.release();
     return hosting::encodeServerPacket(hosting::ServerMessage::ItemStats,[&](auto &out){out.u8(uint8_t(payload.size()+2));out.append(payload);});
 }
@@ -73,7 +73,14 @@ Bytes packed(const ClassicData &data, const D2sItem &item) {
     else { bits.write(item.body, 4); bits.write(item.x, 4); bits.write(item.y, 4); bits.write(item.page, 3); }
     uint32_t code = 0;
     for (unsigned i = 0; i < 4; ++i) code |= uint32_t(i < item.code.size() ? uint8_t(item.code[i]) : uint8_t(' ')) << (i * 8);
-    bits.write(code, 32);
+    const auto ear = [&] {
+        if (!item.ear) throw std::runtime_error("Missing native ear identity");
+        bits.write(item.ear->characterClass, 3); bits.write(item.ear->level, 7);
+        for (const unsigned char c : item.ear->name) bits.write(c, 7);
+        bits.write(0, 7);
+    };
+    if ((item.flags & (0x200000u | 0x10000u)) == (0x200000u | 0x10000u)) ear();
+    else bits.write(code, 32);
     if (item.flags & (0x200000 | 0x2000000)) {
         if (flag("quest") && flag("questdiffcheck")) value(bits, data, 356, item.questDifficulty);
         if (def->equipment.isType("gold")) { bits.write(item.quantity > 4095, 1); bits.write(item.quantity, item.quantity > 4095 ? 32 : 12); }
@@ -98,10 +105,12 @@ Bytes packed(const ClassicData &data, const D2sItem &item) {
             bits.write(item.suffixes[i] != 0, 1); if (item.suffixes[i]) bits.write(item.suffixes[i], 11);
         }
         break;
+    case 9: if (identified) { bits.write(item.rarePrefix, 8); bits.write(item.rareSuffix, 8); } break;
     default: throw std::runtime_error("Unsupported native item quality");
     }
     if (item.flags & 0x4000000) bits.write(item.runewordId, 16);
-    if (item.flags & 0x1000000) { for (const unsigned char c : item.personalizedName) bits.write(c, 7); bits.write(0, 7); }
+    if (item.flags & 0x10000) ear();
+    else if (item.flags & 0x1000000) { for (const unsigned char c : item.personalizedName) bits.write(c, 7); bits.write(0, 7); }
     if (def->family == ItemFamily::Armor) value(bits, data, 31, item.defense);
     if (def->family != ItemFamily::Misc) {
         value(bits, data, 73, item.maxDurability); if (item.maxDurability) value(bits, data, 72, item.durability);
@@ -233,6 +242,13 @@ std::vector<Bytes> nativeInventoryDelta(const ClassicData &data, const server::I
                 [&](auto &out) { out.u8(4); out.u32(uint32_t(change.item.value)); }));
             continue;
         }
+        if(change.kind==ItemChangeKind::ChargeChanged) {
+            const auto &item=state.inventory.items.at(change.item);std::optional<uint32_t> value;
+            const auto locate=[&](const auto &list){for(const auto &stat:list) if(stat.id==204 && unsigned(stat.parameter)==change.statParameter) {if(value) throw std::logic_error("Ambiguous charge layer");value=uint32_t(stat.value);}};
+            locate(item.savedStats);locate(item.runewordStats);for(const auto &list:item.savedSetStats) locate(list);
+            if(!value || change.statParameter>UINT16_MAX) throw std::logic_error("Missing charge delta");
+            result.push_back(itemStat(item.id,204,*value,uint16_t(change.statParameter)));continue;
+        }
         if (change.kind == ItemChangeKind::QuantityChanged || change.kind == ItemChangeKind::PropertiesChanged || change.kind==ItemChangeKind::DurabilityChanged) {
             if(change.kind==ItemChangeKind::DurabilityChanged) result.push_back(itemStat(change.item,72,state.inventory.items.at(change.item).durability));
             const auto action = change.kind == ItemChangeKind::QuantityChanged ? ItemAction::Quantity : ItemAction::Properties;
@@ -242,8 +258,8 @@ std::vector<Bytes> nativeInventoryDelta(const ClassicData &data, const server::I
         }
         if (change.kind == ItemChangeKind::Created) {
             const auto destination = kind(state, change.after);
-            const auto action = destination == ContainerKind::Cursor ? ItemAction::Cursor : destination == ContainerKind::Belt ? ItemAction::PutBelt : ItemAction::Put;
-            emitItem(result, data, state, state.inventory.items.at(change.item), action, false, 0, 0); continue;
+            const auto action = destination == ContainerKind::Cursor ? ItemAction::Cursor : destination == ContainerKind::Belt ? ItemAction::PutBelt : equipment(destination) ? ItemAction::Equip : ItemAction::Put;
+            emitItem(result, data, state, state.inventory.items.at(change.item), action, equipment(destination), 0, uint32_t(state.player.id.value)); continue;
         }
         if (change.kind != ItemChangeKind::Moved) throw std::logic_error("Unsupported inventory delta");
         const auto from = kind(state, change.before), to = kind(state, change.after);
@@ -285,7 +301,7 @@ std::vector<Bytes> nativeInventoryDelta(const ClassicData &data, const server::I
         for (size_t side = 0; side < 2; ++side)
             result.push_back(hosting::encodeServerPacket(hosting::ServerMessage::SelectedSkill, [&](auto &out) {
                 out.u8(0); out.u32(uint32_t(state.player.id.value)); out.u8(side == 0);
-                out.u16(uint16_t(std::max(0, state.player.selectedSkills[state.player.weaponSet * 2 + side]))); out.u32(UINT32_MAX);
+                out.u16(uint16_t(std::max(0, state.player.selectedSkills[state.player.weaponSet * 2 + side]))); out.u32(state.player.selectedSkillOwners[state.player.weaponSet*2+side]);
             }));
     }
     return result;

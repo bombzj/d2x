@@ -18,6 +18,7 @@ struct PreparedArea { uint64_t request{}; AreaDefinition definition; };
 struct State { std::map<RegionId, AreaLease> residency; std::vector<PrepareArea> preparation; };
 struct Ports { AreaStore &areas; const PlayerStore &players; const GameSettings &settings; EntityIds &ids; };
 class System {
+    friend class travel::System;
     State state_;
     const Ports ports_;
     uint64_t nextRequest_ = 1;

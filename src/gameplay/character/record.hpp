@@ -38,12 +38,15 @@ struct CharacterRecord {
     int unspentAttributes = 0;
     std::map<int, int> skillRanks;
     int unspentSkills = 0;
-    std::array<SkillHotkey, 8> skillHotkeys{};
+    std::array<SkillHotkey, 16> skillHotkeys{}; // Native D2S/0x7B slots; HUD uses the first eight.
     std::array<int, 4> selectedSkills{-1, -1, -1, -1};
     QuestBook quests{};
     std::array<bool, 3> cowKingKilled{}; // Native A1Q4 CUSTOM6, per difficulty.
     // Native A1-A4 act-change records, separate from killing the act boss.
     std::array<std::array<bool, 4>, 3> completedActs{};
     HirelingRecord hireling;
+    // Original owner GUIDs are runtime identities; native D2S encodes the
+    // source as a one-based inventory index alongside each skill ID.
+    std::array<uint32_t,4> selectedSkillOwners{UINT32_MAX,UINT32_MAX,UINT32_MAX,UINT32_MAX};
 };
 } // namespace d2x

@@ -162,7 +162,7 @@ class SceneView {
     void drawWaypointMenu(Vec mouse) const;
     void drawControlPanel() const;
     void drawSkillControls(Vec mouse) const;
-    void drawSkillIcon(std::optional<int> skill, Rectangle bounds, bool picker = false) const;
+    void drawSkillIcon(std::optional<int> skill, Rectangle bounds, bool picker = false, uint32_t owner=UINT32_MAX) const;
     void drawSkillTree(Vec mouse) const;
     void drawQuests(Vec mouse) const;
     void drawQuestNotice() const;
@@ -278,7 +278,7 @@ class SceneView {
     Vec world(Vec position) const;
     void drawInteractionLabel(const std::string &, Vec, int offset = 70) const;
     bool leftSkillAllowed(int skill) const;
-    struct SkillPickerSlot { std::optional<int> skill; Rectangle bounds; };
+    struct SkillPickerSlot { std::optional<int> skill; Rectangle bounds; uint32_t owner=UINT32_MAX; };
     std::vector<SkillPickerSlot> skillPickerSlots(bool right) const;
     std::optional<int> skillAt(Vec mouse) const;
     std::optional<ItemHandle> lootAt(Vec mouse, bool labelsOnly = false) const;

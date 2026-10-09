@@ -28,15 +28,15 @@ bool SceneController::handleSkills(const FrameInput &input) {
             bool right = *ui.skillPicker;
             for (const auto &slot : view_.skillPickerSlots(right))
                 if (CheckCollisionPointRec(rv(input.mouse), slot.bounds)) {
-                    characterClient_.submit(BindSkillHotkey{unsigned(i), slot.skill.value_or(-1), right});
+                    characterClient_.submit(BindSkillHotkey{unsigned(i), slot.skill.value_or(-1), right, slot.owner});
                     break;
                 }
         } else if (hotkeys[i].skill != -2) {
             auto skill = hotkeys[i].skill;
-            if (skill >= 0 && !(view_.characterView().skill(skill) && view_.characterView().skill(skill)->available)) continue;
+            if (skill >= 0 && !(view_.characterView().skill(skill,hotkeys[i].owner) && view_.characterView().skill(skill,hotkeys[i].owner)->available)) continue;
             (hotkeys[i].right ? ui.rightSkill : ui.leftSkill) =
                 skill < 0 ? std::nullopt : std::optional<int>{skill};
-            characterClient_.submit(SelectMouseSkill{skill, hotkeys[i].right});
+            characterClient_.submit(SelectMouseSkill{skill, hotkeys[i].right,hotkeys[i].owner});
             cancelWorldGesture();
             releaseAfterLoad_ = input.leftHeld || input.rightHeld;
         }
@@ -49,7 +49,7 @@ bool SceneController::handleSkills(const FrameInput &input) {
             for (const auto &slot : view_.skillPickerSlots(right))
                 if (CheckCollisionPointRec(rv(input.mouse), slot.bounds)) {
                     (right ? ui.rightSkill : ui.leftSkill) = slot.skill;
-                    characterClient_.submit(SelectMouseSkill{slot.skill.value_or(-1), right});
+                    characterClient_.submit(SelectMouseSkill{slot.skill.value_or(-1), right, slot.owner});
                     break;
                 }
         }

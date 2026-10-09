@@ -86,6 +86,10 @@ void importD2sItem(CharacterSaveData &snapshot, const D2sItem &source, const Cla
     item.nativeAutoAffix = source.autoAffix;
     item.nativeMaxDurability = source.maxDurability;
     item.nativeQuestDifficulty = source.questDifficulty;
+    item.ear = source.ear;
+    item.realmIdentity = source.realmIdentity;
+    if (item.quality == ItemQuality::Normal && definition->equipment.isType("body") &&
+        !definition->equipment.isType("play")) item.nativeBodyPart = source.fileIndex;
     for (const auto &stat : source.runewordStats) {
         require(stat.value >= INT32_MIN && stat.value <= INT32_MAX, "runeword stat range");
         item.runewordStats.push_back({int(stat.id), stat.parameter, int(stat.value)});
@@ -123,17 +127,18 @@ void importD2sItem(CharacterSaveData &snapshot, const D2sItem &source, const Cla
             item.affixes.push_back({prefix, int32_t(index - 1), {}});
             item.requiredLevel = std::max(item.requiredLevel, found->requiredLevel);
         }
-    if ((item.quality == ItemQuality::Rare || item.quality == ItemQuality::Crafted)) {
+    if (item.quality == ItemQuality::Rare || item.quality == ItemQuality::Crafted || item.quality == ItemQuality::Tempered) {
         const auto suffixCount = content.tables.at("raresuffix").rows().size();
-        require(source.rarePrefix > suffixCount && source.rareSuffix > 0 && source.rareSuffix <= suffixCount,
-                "rare name IDs");
-        item.rarePrefixRow = int(source.rarePrefix - suffixCount - 1);
-        item.rareSuffixRow = int(source.rareSuffix - 1);
-        require(std::any_of(content.rarePrefixes.begin(), content.rarePrefixes.end(), [&](const auto &entry) {
+        const bool tempered = item.quality == ItemQuality::Tempered;
+        require((!source.rarePrefix && tempered) || source.rarePrefix > suffixCount, "rare prefix ID");
+        require((!source.rareSuffix && tempered) || (source.rareSuffix > 0 && source.rareSuffix <= suffixCount), "rare suffix ID");
+        item.rarePrefixRow = source.rarePrefix ? int(source.rarePrefix - suffixCount - 1) : -1;
+        item.rareSuffixRow = source.rareSuffix ? int(source.rareSuffix - 1) : -1;
+        require((item.rarePrefixRow < 0 || std::any_of(content.rarePrefixes.begin(), content.rarePrefixes.end(), [&](const auto &entry) {
             return int(entry.row) == item.rarePrefixRow;
-        }) && std::any_of(content.rareSuffixes.begin(), content.rareSuffixes.end(), [&](const auto &entry) {
+        })) && (item.rareSuffixRow < 0 || std::any_of(content.rareSuffixes.begin(), content.rareSuffixes.end(), [&](const auto &entry) {
             return int(entry.row) == item.rareSuffixRow;
-        }), "unknown rare name rows");
+        })), "unknown rare name rows");
     }
     updateCubeRequiredLevel(content, item);
     auto known=item;known.identified=true;
@@ -212,6 +217,9 @@ D2sItem exportD2sItem(const CharacterSaveData &snapshot, const ItemInstance &ite
     output.graphic = item.nativeGraphic;
     output.autoAffix = item.nativeAutoAffix;
     output.questDifficulty = item.nativeQuestDifficulty;
+    output.ear = item.ear;
+    output.realmIdentity = item.realmIdentity;
+    if (item.ear) output.flags |= 0x10000u;
     output.sockets = item.sockets;
     if (item.runewordRow >= 0) {
         const auto *word = matchRuneword(content, item);
@@ -230,14 +238,16 @@ D2sItem exportD2sItem(const CharacterSaveData &snapshot, const ItemInstance &ite
         output.flags |= 0x00200000;
     output.quality = unsigned(std::find(qualities.begin() + 1, qualities.end(), item.quality) - qualities.begin());
     output.fileIndex = unsigned(std::max(0, item.specialRow >= 0 ? item.specialRow : item.gradeRow));
+    if (item.quality == ItemQuality::Normal && definition->equipment.isType("body") &&
+        !definition->equipment.isType("play")) output.fileIndex = item.nativeBodyPart;
     size_t prefix = 0, suffix = 0;
     for (const auto &affix : item.affixes) {
         require(affix.row >= 0 && (affix.prefix ? prefix : suffix) < 3, "affix index");
         (affix.prefix ? output.prefixes[prefix++] : output.suffixes[suffix++]) = unsigned(affix.row + 1);
     }
-    if ((item.quality == ItemQuality::Rare || item.quality == ItemQuality::Crafted)) {
-        output.rarePrefix = unsigned(item.rarePrefixRow + 1 + content.tables.at("raresuffix").rows().size());
-        output.rareSuffix = unsigned(item.rareSuffixRow + 1);
+    if (item.quality == ItemQuality::Rare || item.quality == ItemQuality::Crafted || item.quality == ItemQuality::Tempered) {
+        output.rarePrefix = item.rarePrefixRow < 0 ? 0 : unsigned(item.rarePrefixRow + 1 + content.tables.at("raresuffix").rows().size());
+        output.rareSuffix = item.rareSuffixRow < 0 ? 0 : unsigned(item.rareSuffixRow + 1);
     }
     output.book = item.definition == "ibk" || item.definition == "isc" ? 1 : 0;
     output.defense = unsigned(item.defense);
@@ -275,7 +285,7 @@ D2sItem exportD2sItem(const CharacterSaveData &snapshot, const ItemInstance &ite
             for (const auto &record : content.setItems) {
                 if (int(record.row) != item.specialRow) continue;
                 for (const auto &bonus : record.setBonuses) {
-                    if (!bonus.perItem || record.setAddFunction != 2) continue;
+                    if (!bonus.perItem || (record.setAddFunction != 1 && record.setAddFunction != 2)) continue;
                     require(bonus.pieces >= 2 && bonus.pieces <= 6 &&
                         (!bonus.property.directRoll || bonus.property.minimum == bonus.property.maximum),
                         "random set bonus has no saved roll");

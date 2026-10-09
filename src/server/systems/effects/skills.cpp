@@ -34,16 +34,16 @@ DomainResult<> System::skill(const ActorContext &actor, const SkillCastSpec &ski
     transactions::CharacterEdit edit{targetActor,target->inventoryRevision,target->characterRevision,target->persistent.player};
     edit.transient=projection(recovery.states,actor.tick);
     std::vector<transactions::Plan> plans;
-    if(target==caster) edit.player.mana-=skill.manaCost;
+    if(target==caster) {edit.player.mana-=skill.manaCost;edit.charge=skill.charge;}
     else {
         transactions::CharacterEdit debit{actor,caster->inventoryRevision,caster->characterRevision,caster->persistent.player};
-        debit.player.mana-=skill.manaCost;
+        debit.player.mana-=skill.manaCost;debit.charge=skill.charge;
         auto prepared=ports_.transactions.prepare(std::move(debit));if(!prepared) return {prepared.status,{}};
         plans.push_back(std::move(*prepared.value));
     }
     auto prepared=ports_.transactions.prepare(std::move(edit));if(!prepared) return {prepared.status,{}};
     plans.push_back(std::move(*prepared.value));
-    const auto result=ports_.transactions.commitCharacters(std::move(plans));if(result) state_.players.swap(next.players);
+    const auto result=plans.size()==1?ports_.transactions.commit(std::move(plans.front())):ports_.transactions.commitCharacters(std::move(plans));if(result) state_.players.swap(next.players);
     return result;
 }
 DomainResult<float> System::receive(const ActorContext &actor, int64_t raw, DamageType type) {
@@ -136,9 +136,12 @@ DomainResult<float> System::receiveMonster(const ActorContext &actor, EntityId s
         inventory.character=resource.player;inventory.transient=resource.transient;inventory.publicFacts=resource.publicFacts;inventory.knockback=resource.knockback;
         change=std::move(inventory);
     }
+    auto itemEvents=prepareItemEvents(actor,{ItemSkillEvent::GetHit,ItemSkillEvent::Death},source,source && ports_.monsters.find(source)?ports_.monsters.find(source)->position:p->position);
+    if(!itemEvents) return {itemEvents.status,{}};
     auto plan = ports_.transactions.prepare(std::move(change)); if (!plan) return {plan.status,{}};
     auto result = ports_.transactions.commit(std::move(*plan.value)); if (result) {
         state_.players.swap(next.players);
+        if(dealt>0) commitItemEvents(std::move(*itemEvents.value),p->persistent.player.hp<=0);
         if(hit.knockback && dealt>0) ports_.skills.cancel(actor.player,actor.actor);
     }
     return {result.status,result?std::optional{dealt}:std::nullopt};

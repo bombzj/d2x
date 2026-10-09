@@ -78,8 +78,8 @@ Single Player的online-status仍只读原协议OnlineView；server-status单独�
 | `online-item-action` | action和真实itemId，可选itemRevision／targetRevision；配对动作还需targetId。27种原物品／城镇请求及格子／部位参数见[联网物品操作](#联网物品操作)，accepted仅入队 |
 | `online-item-quote` | action=buy／sell／repair／repair-all；前三者需本局itemId，可选itemRevision。返回known及price，缺数据为null；复用UI报价，不发送询价包或推进待发库存操作。赌博购买报价取当前真实货架模式 |
 | `online-combat` / `online-skills` | 只读同一快照；combat.skills列MPQ技能名、基础／装备加成／有效等级、innate、左右键／城镇资格；combat.states列原服状态和原单位属性；world.itemTargetingSource为原3F来源（null表示无准备，不表示鉴定成功），itemSkillQuantities为原物品技能数量；combat.events为最多256条有序战斗事件，sequence递增，消费者自行检查缺口；0x73首路径点为missileDestination（旧missileOrigin名称已更正），不是飞弹出生点 |
-| `online-select-skill` | skillId（0–65535）、hand（left／right，默认right）；当前MPQ及服务端有效等级校验，原0x3C选择，等combat.request.state=Confirmed再施放。不支持带物品GUID的充能技能 |
-| `online-bind-hotkey` | slot（0–15）、skillId、hand；校验当前MPQ主动技能和原服有效等级，原0x51保存绑定，无即时ACK，request为SentNoAck；重入world.skillHotkeys读取0x7B。UI使用F1–F8，物品GUID技能暂未开放 |
+| `online-select-skill` | skillId（0–65535）、hand（left／right，默认right）；可选ownerId为已装备物品原GUID，省略为普通技能源FFFFFFFF；当前MPQ、原等级或已解码充能校验，原0x3C选择，等combat.request.state=Confirmed再施放 |
+| `online-bind-hotkey` | slot（0–15）、skillId、hand及可选ownerId；校验原普通／充能来源，原0x51保存绑定，无即时ACK，request为SentNoAck；重入world.skillHotkeys读取0x7B。UI使用F1–F8 |
 | `online-cast` | hand；坐标x／y或真实unitId／unitType（默认1）二选一。stationary默认false；单位目标false允许原服靠近，true原地请求。repeat默认false，true发原Hold包一次，调用方负责继续提交／停止，不创建客户端循环。各轴≤50、活动地图及MPQ城镇限制，单位目标按MPQ资格区分PvE敌怪／尸体、Enchant友方、Unsummon本人7A／PetType许可的召唤物及Telekinesis物件／物品；自施技能用本人坐标 |
 | `online-attack` | 同cast目标及stationary／repeat，固定左手；先选择MPQ Attack技能并等确认。伤害、追击与命中由原服处理 |
 | `online-stop-skill` | 发原0x12停止地狱火状态；停止重复提交Hold请求由调用方负责。这不是全部技能的通用撤销包 |
@@ -205,6 +205,10 @@ LAN宿主的server-status新增rooms／participants摘要：实例slot／generat
 ## 验证边界
 
 只使用已有程序／命令／参考服；不新增测试脚本、用例或专用程序。实际观察统一见[联网记录](../modules/NETWORK.md)，最新未入包源码不能引用旧冒烟作认证。Windows管道不能替代原服协议；跨用户ACL拒绝与Linux实际运行未完整验证。
+
+P1源码的healingQueued／manaQueued表示仍有恢复时钟的原药水状态数；连续喝同状态药水合并时长与恢复率，不再按瓶数增长。观察药水须同时核对资源、原state、剩余时长及物品消费；本轮没有运行证据。
+
+P5 server-snapshot增加chargedSkills（item／revision／skill／rank／charges／maximum）、player.selectedSkillOwners及itemTriggers.pending／deferred。deferred是最近暂缓程序原因，pending是未结算事件数；不修改实际技能或次数。正常施法仍经online-*原包，管理快照不能作为原服行为认证。
 
 区域快照的objectDeferred列出尚未实现的原物件预设回调身份（574–582）；这些不是已生成的物件，不参与碰撞或掉落。普通缺失表项仍使内容准备失败。
 

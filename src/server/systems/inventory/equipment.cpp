@@ -94,4 +94,28 @@ DomainStatus Draft::equipment(const EquipItem &command, EquipmentMode mode) {
     if (result != DomainStatus::Applied) return result;
     return belt ? resizeBelt(def->beltRows) : result;
 }
+DomainResult<bool> Draft::autoEquip(EntityId id) {
+    const auto &item = edit.inventory.items.at(id);
+    const auto *definition = catalog.find(item.definition);
+    if (!definition) return {DomainStatus::Unavailable, {}};
+    if (!item.identified || definition->equipment.isType("misl")) return {DomainStatus::Applied, false};
+    // ItemMode::sub_6FC42F20 refuses a quiver unless an equipped weapon uses it.
+    if (!definition->equipment.quiver.empty()) {
+        bool weapon = false;
+        for (bool left : {false,true}) if (const auto equippedId=equipped(weaponHandSlot(left,edit.weaponSet))) {
+            const auto *other=catalog.find(edit.inventory.items.at(equippedId).definition);
+            weapon |= other && definition->equipment.isType(other->equipment.shoots) && other->equipment.isType(definition->equipment.quiver);
+        }
+        if (!weapon) return {DomainStatus::Applied, false};
+    }
+    for (int index=0; index<int(EquipmentSlot::Count); ++index) {
+        const auto slot=EquipmentSlot(index);
+        if (!definition->equipment.fits(slot) || !weaponSlotActive(slot,edit.weaponSet) || equipped(slot)) continue;
+        Draft trial=*this;
+        const auto status=trial.equipment({item.handle(),slot,{}},EquipmentMode::Insert);
+        if (status==DomainStatus::Applied) { edit=std::move(trial.edit); return {status,true}; }
+        if (status==DomainStatus::Capacity || status==DomainStatus::Unavailable) return {status,{}};
+    }
+    return {DomainStatus::Applied,false};
+}
 }

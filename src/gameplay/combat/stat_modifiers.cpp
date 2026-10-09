@@ -66,6 +66,7 @@ void mergeCombatModifiers(CombatModifiers &a, const CombatModifiers &b) {
     for (auto [id, value] : b.singleSkills) add(a.singleSkills[id], value);
     for (auto [id, value] : b.nonClassSkills) add(a.nonClassSkills[id], value);
     for (auto [id, value] : b.tabSkills) add(a.tabSkills[id], value);
+    for(const auto &[key,value]:b.itemTriggers) add(a.itemTriggers[key],value);
     for (const auto &[id, bonus] : b.weapons) {
         auto &target = a.weapons[id];
         mergeAttackTargetModifiers(target.target, bonus.target);

@@ -43,7 +43,7 @@ DomainResult<> System::hydra(const ActorContext &actor,const SkillCastSpec &skil
         const auto *monster=ports_.monsters.find(id);if(!monster) continue;
         pet.removeAt=actor.tick+uint64_t(monster->rule.deathTicks);pet.release=0;retire.push_back(id);--count;
     }
-    const auto debit=ports_.transactions.release(actor,p->characterRevision,skill.manaCost);if(!debit) return debit;
+    const auto debit=ports_.transactions.release(actor,p->characterRevision,skill.manaCost,{},skill.charge);if(!debit) return debit;
     ports_.monsters.commitHydra(std::move(*actors.value));state_.companions.swap(next.companions);ports_.random=random;
     for(const auto id:retire) ports_.monsters.retire(id,actor.tick);
     return {DomainStatus::Applied,std::monostate{}};

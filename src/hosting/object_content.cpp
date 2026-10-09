@@ -35,6 +35,8 @@ void prepareObjects(Archives &archives, const ClassicData &content, PreparedWorl
         const auto &animation=portal.animationRules[1];
         area.portalRule=server::PortalRule{59,int(portal.reach),std::max(1,animation.fps>0?int(std::ceil(animation.frames*25.f/animation.fps)):animation.frames)};
     }
+    WorldObject redPortal;redPortal.appearance.category="objects";redPortal.objectClass=60;configureWorldObject(redPortal,rows);
+    if(portalResources && redPortal.operateFn==15 && redPortal.reach>0) area.specialPortalRule=server::PortalRule{60,int(redPortal.reach),0};
     if(area.town) for(const auto &layer:prepared.terrain.map->terrain.data.walls) for(size_t index=0;index<layer.size();++index) {
         const auto &cell=layer[index]; if(!cell.occupied() || (cell.orientation!=10 && cell.orientation!=11) || ((cell.value>>20)&63)!=33) continue;
         const auto width=prepared.terrain.map->terrain.data.width;

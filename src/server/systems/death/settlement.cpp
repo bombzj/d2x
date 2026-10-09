@@ -13,9 +13,12 @@ DomainResult<> System::settle(const ActorContext &actor) {
     inventory::detail::Draft draft(*player, *player->rules.items, *player->rules.equipment, *player->rules.character);
     auto corpses = player->persistent.corpses;
     auto world = ports_.items.read();
+    if (world.revision == UINT64_MAX || !ports_.transactions.hasOutputCapacity()) return {DomainStatus::Capacity, {}};
     auto equipment = std::make_shared<EquipmentRules>(*player->rules.equipment);
+    std::vector<DomainFact> drops;
     PlayerCorpse corpse; corpse.owner = actor.actor; corpse.region = actor.area; corpse.position = player->position; corpse.look = player->look;
     if (corpses.size() < 16) {
+        if (!ports_.items.identityCapacity(2)) return {DomainStatus::Capacity, {}};
         corpse.id = ports_.items.reserveIdentity(); corpse.items = ports_.items.reserveIdentity();
         draft.edit.inventory.containers.emplace(corpse.items, ContainerState{corpse.items, {actor.actor, ContainerKind::Corpse, int(EquipmentSlot::Count) + 1, 1}});
     }
@@ -25,6 +28,7 @@ DomainResult<> System::settle(const ActorContext &actor) {
         if (!position || item.revision == UINT64_MAX || world.world.items.size() >= 4096) return false;
         draft.edit.changes.push_back({id, item.revision + 1, ItemChangeKind::Removed, item.location, {}, 0});
         item.location = GroundLocation{actor.area, *position}; ++item.revision;
+        drops.emplace_back(GroundDropFact{item});
         world.world.items.emplace(id, item); world.equipment.items.insert_or_assign(id, equipment->items.at(id));
         equipment->items.erase(id); draft.edit.inventory.items.erase(id); return true;
     };
@@ -60,9 +64,11 @@ DomainResult<> System::settle(const ActorContext &actor) {
         while (record.gold) {
             const auto position = ports_.items.placement({actor.area, player->position}, world.world);
             if (!position || !definition.maxStack || world.world.items.size() >= 4096) break;
+            if (!ports_.items.identityCapacity(1)) return {DomainStatus::Capacity, {}};
             ItemInstance item; item.id = ports_.items.reserveIdentity(); item.definition = code;
             item.quantity = std::min(record.gold, definition.maxStack); item.location = GroundLocation{actor.area, *position};
             item.nativeSeed = uint32_t(item.id.value);
+            drops.emplace_back(GroundDropFact{item});
             EquipmentValues values; values.levels.resize(player->rules.character->experience.size());
             record.gold -= item.quantity; world.equipment.items.emplace(item.id, std::move(values)); world.world.items.emplace(item.id, std::move(item));
         }
@@ -80,6 +86,7 @@ DomainResult<> System::settle(const ActorContext &actor) {
     transactions::InventoryEdit edit{actor, player->inventoryRevision, player->characterRevision,
         std::move(draft.edit.inventory), std::move(draft.edit.changes), record.weaponSet};
     edit.character = std::move(record); edit.corpses = std::move(corpses); edit.equipment = std::move(equipment);
+    edit.publicFacts = std::move(drops);
     edit.world = transactions::WorldEdit{world.revision, std::move(world)};
     auto plan = ports_.transactions.prepare(std::move(edit));
     return plan ? ports_.transactions.commit(std::move(*plan.value)) : DomainResult<>{plan.status, {}};

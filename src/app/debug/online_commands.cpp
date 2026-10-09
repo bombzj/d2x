@@ -485,6 +485,7 @@ std::string onlineDebugCommand(const std::string &input, net::RealmSession &sess
             if (command == "online-select-skill" || command == "online-learn-skill" || command == "online-bind-hotkey") {
                 action.action = command == "online-select-skill" ? Action::SelectSkill : command == "online-bind-hotkey" ? Action::BindHotkey : Action::LearnSkill;
                 action.skill = uint16_t(integer("skillId", UINT16_MAX));
+                if(request.contains("ownerId") && action.action!=Action::LearnSkill) action.owner=uint32_t(integer("ownerId",UINT32_MAX));
                 if (action.action == Action::BindHotkey) action.hotkeySlot = uint8_t(integer("slot", 15));
             } else if (command == "online-spend-attribute") {
                 action.action = Action::SpendAttribute; action.attribute = uint8_t(integer("statId", 3));

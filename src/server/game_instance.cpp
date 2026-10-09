@@ -249,6 +249,7 @@ namespace d2x::server {
 std::vector<travel::Portal> GameInstance::visiblePortals(PlayerId player) const {
     const auto areas=visibleAreas(player); std::vector<travel::Portal> result;
     for(const auto &[owner,portal]:systems_.travel.read().portals) { (void)owner; if(std::find(areas.begin(),areas.end(),portal.field)!=areas.end() || std::find(areas.begin(),areas.end(),portal.town)!=areas.end()) result.push_back(portal); }
+    for(const auto &[destination,portal]:systems_.travel.read().specialPortals) {(void)destination;if(std::find(areas.begin(),areas.end(),portal.field)!=areas.end() || std::find(areas.begin(),areas.end(),portal.town)!=areas.end()) result.push_back(portal);}
     return result;
 }
 }

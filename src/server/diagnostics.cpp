@@ -52,6 +52,8 @@ std::optional<DiagnosticSnapshot> GameInstance::diagnostics(PlayerId id, size_t 
         sequence < commandHistoryNext_ && result.commands.size() < limit; ++sequence)
         result.commands.push_back(commandHistory_[(sequence - 1) % commandHistory_.size()]);
     result.lootPending = systems_.loot.read().pending.size(); result.lootDeferred = systems_.loot.read().deferred;
+    result.itemTriggersPending=systems_.effects.pendingItemTriggers();result.itemTriggersDeferred=systems_.effects.read().itemDeferred;
+    result.chargedSkills=player->totals.chargedSkills;
     if (const auto found = systems_.effects.read().players.find(player->actor); found != systems_.effects.read().players.end()) {
         result.healingQueued = found->second.healing.size(); result.manaQueued = found->second.mana.size();
         for (const auto &effect : found->second.states.entries()) result.effects.push_back({effect.spec.state.id, effect.expiresAt.value_or(0)});

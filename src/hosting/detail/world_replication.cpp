@@ -190,7 +190,7 @@ void NativeRealmService::publishPortals() {
             packets.push_back(encodeServerPacket(ServerMessage::AssignObject,[&](auto &out){out.u8(2);out.u32(uint32_t(id.value));out.u16(uint16_t(portal.rule.definition));out.u16(uint16_t(std::lround(position.x)));out.u16(uint16_t(std::lround(position.y)));out.u8(portal.opened?2:1);out.u8(uint8_t(town?portal.field:portal.town));}));
             packets.push_back(encodeServerPacket(ServerMessage::PortalState,[&](auto &out){out.u8(0);out.u8(uint8_t(town?portal.field:portal.town));out.u32(uint32_t(id.value));}));
         }
-        if(changed) packets.push_back(encodeServerPacket(ServerMessage::PortalOwner,[&](auto &out){out.u32(uint32_t(portal.owner.value));for(size_t i=0;i<16;++i) out.u8(i<portal.name.size()?uint8_t(portal.name[i]):0);out.u32(uint32_t(portal.fieldId.value));out.u32(uint32_t(portal.townId.value));}));
+        if(changed && !portal.shared) packets.push_back(encodeServerPacket(ServerMessage::PortalOwner,[&](auto &out){out.u32(uint32_t(portal.owner.value));for(size_t i=0;i<16;++i) out.u8(i<portal.name.size()?uint8_t(portal.name[i]):0);out.u32(uint32_t(portal.fieldId.value));out.u32(uint32_t(portal.townId.value));}));
     }
     for(const auto &[id,revision]:peer.portals) if(!next.contains(id) || (!next.at(id) && revision)) { (void)revision; packets.push_back(encodeServerPacket(ServerMessage::RemoveUnit,[&](auto &out){out.u8(2);out.u32(uint32_t(id.value));})); }
     if(!packets.empty()) sendGameBatch(std::move(packets));

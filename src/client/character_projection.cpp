@@ -236,6 +236,15 @@ CharacterView projectCharacterDisplay(const ClassicData &data, const CharacterPr
         }
         view.skills.emplace(id, std::move(skill));
     }
+    for(const auto &charge:input.chargedSkills) {
+        auto source=input;source.chargedSkills.clear();source.effectiveRanks[charge.skill]=charge.rank;
+        auto projected=projectCharacterDisplay(data,source);
+        if(const auto *entry=projected.skill(charge.skill)) {
+            auto skill=*entry;skill.owner=uint32_t(charge.item.id.value);skill.canAllocate=false;
+            skill.available=skill.available && charge.charges>0;skill.pickerEnabled=skill.pickerEnabled && charge.charges>0;skill.usableNow=skill.usableNow && charge.charges>0;
+            skill.pickerTooltip.push_back(std::to_string(charge.charges)+" / "+std::to_string(charge.maximum)+" Charges");view.chargedSkills.push_back(std::move(skill));
+        }
+    }
     return view;
 }
 } // namespace d2x

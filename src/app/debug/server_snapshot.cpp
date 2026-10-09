@@ -33,6 +33,9 @@ Json debugServerSnapshot(const server::DiagnosticSnapshot &s, uint64_t since, ui
     for (const auto &effect : s.effects) result["effects"].push_back({{"state", effect.state}, {"expires", effect.expires}});
     result["restoration"] = {{"healingQueued", s.healingQueued}, {"manaQueued", s.manaQueued}};
     result["loot"] = {{"pending", s.lootPending}, {"deferred", s.lootDeferred}};
+    result["itemTriggers"]={{"pending",s.itemTriggersPending},{"deferred",s.itemTriggersDeferred}};
+    result["chargedSkills"]=Json::array();
+    for(const auto &charge:s.chargedSkills) result["chargedSkills"].push_back({{"item",charge.item.id.value},{"revision",charge.item.revision},{"skill",charge.skill},{"rank",charge.rank},{"charges",charge.charges},{"maximum",charge.maximum}});
     result["player"] = {{"id", p.actor.id.value}, {"name", p.name}, {"entered", p.entered},
         {"position", point(p.actor.position + origin)}, {"localPosition", point(p.actor.position)},
         {"moving", p.actor.moving}, {"attacking", p.attacking}, {"level", r.level}, {"experience", r.experience}, {"gold", r.gold}, {"bankGold", r.bankGold}, {"states", p.states},
@@ -40,7 +43,7 @@ Json debugServerSnapshot(const server::DiagnosticSnapshot &s, uint64_t since, ui
         {"stamina", r.stamina}, {"maxStamina", a.maxStamina}, {"statPoints", r.unspentAttributes}, {"skillPoints", r.unspentSkills},
         {"strength", a.strength}, {"dexterity", a.dexterity}, {"vitality", a.vitality}, {"energy", a.energy},
         {"defense", a.defense}, {"attackRating", a.attackRating}, {"weaponSet", r.weaponSet},
-        {"selectedSkills", r.selectedSkills}, {"baseSkills", r.skillRanks}, {"effectiveSkills", p.skillRanks},
+        {"selectedSkills", r.selectedSkills},{"selectedSkillOwners",r.selectedSkillOwners}, {"baseSkills", r.skillRanks}, {"effectiveSkills", p.skillRanks},
         {"inventoryRevision", p.inventoryRevision}, {"characterRevision", p.characterRevision}};
     result["containers"] = {{"backpack", s.containers.backpack.value}, {"equipment", s.containers.equipment.value},
         {"belt", s.containers.belt.value}, {"beltEquipment", s.containers.beltEquipment.value}, {"cursor", s.containers.cursor.value},
@@ -91,7 +94,7 @@ Json debugServerSnapshot(const server::DiagnosticSnapshot &s, uint64_t since, ui
         {"gap", since < s.eventFirst - 1}, {"records", Json::array()}};
     // Variant names are maintained beside the domain fact catalog.
     constexpr std::array names{"mana", "reposition", "life", "attack", "hit", "death", "item", "inventory", "character",
-        "quest", "attribute", "travel", "object", "chat", "command", "npc-messages", "merchant", "ui", "waypoint", "state", "missile", "skill-pulse", "sound", "overlay", "item-targeting", "ground-drop"};
+        "quest", "attribute", "travel", "object", "chat", "command", "npc-messages", "merchant", "ui", "waypoint", "state", "missile", "skill-pulse", "sound", "overlay", "item-targeting", "ground-drop", "npc-service", "ground-remove", "item-skill", "ground-restored"};
     static_assert(names.size() == std::variant_size_v<server::DomainFact>);
     result["corpses"]=Json::array();
     for(const auto &corpse:s.corpses) result["corpses"].push_back({{"id",corpse.id.value},{"owner",corpse.owner.value},{"area",int(corpse.region)},{"localPosition",point(corpse.position)},{"container",corpse.items.value},{"recoverableExperience",corpse.recoverableExperience}});

@@ -68,7 +68,7 @@ void loadItemConsumables(ClassicData &data) {
             continue;
         if (potion.kind != PotionKind::Rejuvenation && potion.seconds <= 0)
             throw std::runtime_error("Invalid original potion duration: " + std::string(code));
-        if (*spell == 6 || *spell == 9) {
+        if (*spell == 3 || *spell == 6 || *spell == 9) {
             const auto state = data.states.find(table.value(row, "state"));
             if (state == data.states.end())
                 throw std::runtime_error("Missing original potion state: " + std::string(code));

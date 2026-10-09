@@ -34,6 +34,7 @@ DomainResult<> System::identify(const ActorContext &actor, const IdentifyItem &r
     if (player.persistent.player.hp <= 0 || request.source.id == request.target.id) return {DomainStatus::InvalidRequest, {}};
     detail::Draft draft(player, *ports_.definitions, *player.rules.equipment, *player.rules.character);
     draft.storage = storageAccess(actor.player);
+    const bool cube = cubeAccess(actor.player);
     const auto *source = draft.resolve(request.source), *target = draft.resolve(request.target);
     if (!source || !target) return {DomainStatus::Stale, {}};
     if (source->revision == UINT64_MAX || target->revision == UINT64_MAX) return {DomainStatus::Capacity, {}};
@@ -41,7 +42,7 @@ DomainResult<> System::identify(const ActorContext &actor, const IdentifyItem &r
     const auto &containers = draft.containers();
     if (!from || from->container != containers.backpack || !to || !draft.owned(*to) ||
         (to->container != containers.backpack && to->container != containers.equipment && to->container != containers.beltEquipment &&
-         !(draft.storage && to->container == containers.stash)) || draft.at({containers.cursor, {}}) || target->identified)
+         !(draft.storage && to->container == containers.stash) && !(cube && to->container == containers.cube)) || draft.at({containers.cursor, {}}) || target->identified)
         return {DomainStatus::InvalidRequest, {}};
     const auto rule = player.rules.character->itemSkills.find(source->definition);
     if (rule == player.rules.character->itemSkills.end() || rule->second.action!=ItemSkillAction::Identify || !(rule->second.book ? source->charges : source->quantity))

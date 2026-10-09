@@ -106,7 +106,7 @@ OnlineDecodedItem RemoteInventory::decode(const OnlineItem &wire) const {
             } else if (!item.gamble) {
                 item.filledSockets = uint8_t(bits.read(3)); item.level = uint8_t(bits.read(7));
                 item.quality = uint8_t(bits.read(4));
-                if (!itemQualityFromNative(item.quality, true)) throw std::runtime_error("Unsupported native item quality");
+                if (!itemQualityFromNative(item.quality)) throw std::runtime_error("Unsupported native item quality");
                 item.hasGraphic = bits.read(1) != 0;
                 if (item.hasGraphic) item.graphic = uint8_t(bits.read(3));
                 if (bits.read(1)) item.autoAffix = uint16_t(bits.read(11));
@@ -298,7 +298,13 @@ bool RemoteInventory::submit(net::RealmSession &session, OnlineItemCommand comma
     };
     if (command.action >= OnlineItemAction::TradeOpen) {
         const auto identity = npcIdentity();
-        const bool sellingCursor = command.action == OnlineItemAction::Sell && view_.cursor == command.item;
+        const bool sellingCursor = (command.action == OnlineItemAction::Sell || command.action==OnlineItemAction::QuestService) && view_.cursor == command.item;
+        if(command.action==OnlineItemAction::QuestService) {
+            if((identity!="charsi" && identity!="larzuk" && identity!="drehya") || view_.cursor!=command.item) return reject("Original quest service requires the owned cursor item and reward NPC");
+            const auto wire=world.items.find(command.item);const auto decoded=view_.items.find(command.item);
+            if(wire==world.items.end() || decoded==view_.items.end() || !decoded->second.decoded || (command.itemRevision && command.itemRevision!=wire->second.revision)) return reject("Quest item changed before submission");
+            command.itemRevision=wire->second.revision;return send();
+        }
         if (identity.empty() || (view_.cursor && !sellingCursor)) return reject("NPC service requires an active server conversation and a compatible cursor");
         bool vendor = false;
         const auto &npcs = tables_.at("npc");
@@ -531,7 +537,7 @@ bool RemoteInventory::submit(net::RealmSession &session, OnlineItemCommand comma
     }
     case OnlineItemAction::StorageClose: case OnlineItemAction::Transmute:
     case OnlineItemAction::GoldDeposit: case OnlineItemAction::GoldWithdraw: case OnlineItemAction::GoldDrop:
-    case OnlineItemAction::TradeOpen: case OnlineItemAction::RepairAll: case OnlineItemAction::IdentifyAll:
+    case OnlineItemAction::TradeOpen: case OnlineItemAction::RepairAll: case OnlineItemAction::IdentifyAll: case OnlineItemAction::QuestService:
         return reject("Invalid item command branch");
     }
     if (command.action == OnlineItemAction::Equip && bodyItem(command.body)) {

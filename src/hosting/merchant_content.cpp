@@ -1,4 +1,5 @@
 #include "merchant_content.hpp"
+#include "gameplay/items/charges.hpp"
 #include "character_content.hpp"
 #include "item_content.hpp"
 #include "content/npc/vendor_stock.hpp"
@@ -93,8 +94,7 @@ server::merchant::Prepared prepare(const ClassicData &data,server::merchant::Pre
             const auto price=itemTradePrice(data,item,vendor,true,discounts,result.source.reducedPrices,false,result.source.difficulty);
             if(!price || !*price) continue;
             auto repaired=item; const bool identified=repaired.identified; repaired.identified=true; freezeCubeItem(data,repaired);
-            for(auto *list:{&repaired.savedStats,&repaired.runewordStats}) for(auto &stat:*list)
-                if(stat.id==204) stat.value=(stat.value&~255)|((unsigned(stat.value)>>8)&255);
+            rechargeItemSkills(repaired);
             repaired.identified=identified; result.repairs.emplace(id,std::move(repaired));
         }
         quote(item);

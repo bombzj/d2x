@@ -1,6 +1,7 @@
 #pragma once
 #include "content/classic_data.hpp"
 #include "d2s_stats.hpp"
+#include "gameplay/items/native_identity.hpp"
 #include <span>
 
 namespace d2x {
@@ -19,6 +20,8 @@ struct D2sItem {
     std::vector<D2sItem> socketedItems;
     std::vector<D2sStat> runewordStats;
     std::string personalizedName;
+    std::optional<ItemEarIdentity> ear;
+    std::optional<ItemRealmIdentity> realmIdentity;
     std::vector<D2sStat> stats;
     std::array<std::vector<D2sStat>, 5> setStats;
 };

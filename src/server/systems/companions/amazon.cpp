@@ -75,7 +75,7 @@ DomainResult<> System::amazon(const ActorContext &actor,const SkillCastSpec &ski
         const auto *body=ports_.monsters.find(key);if(!body) continue;
         existing.removeAt=actor.tick+uint64_t(body->rule.deathTicks);existing.release=0;retire.push_back(key);
     }
-    const auto debit=ports_.transactions.release(actor,owner->characterRevision,skill.manaCost);if(!debit) return debit;
+    const auto debit=ports_.transactions.release(actor,owner->characterRevision,skill.manaCost,{},skill.charge);if(!debit) return debit;
     ports_.monsters.commitAmazon(std::move(actors),itemCount);state_.companions.swap(next.companions);
     cancel(actor.actor);
     for(auto key:retire) ports_.monsters.retire(key,actor.tick);

@@ -19,7 +19,7 @@ struct PortalRule { int definition{},range{},openingTicks{}; };
 struct AreaMetadata {
     int waypointIndex = -1;
     std::optional<Vec> portalArrival;
-    std::optional<PortalRule> portalRule;
+    std::optional<PortalRule> portalRule, specialPortalRule;
     RegionId id = RegionId::Encampment;
     Vec spawn, origin;
     RegionId townRegion{};

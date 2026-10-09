@@ -4,6 +4,7 @@
 #include <string_view>
 #include <limits>
 #include <stdexcept>
+#include <optional>
 
 namespace d2x {
 namespace {
@@ -85,6 +86,14 @@ void applyEquipmentStat(const ResolvedItemStat &resolved, EntityId item, bool we
                          CombatModifiers &mods) {
     const auto &stat = resolved.effect;
     const int value = resolved.value;
+    std::optional<ItemSkillEvent> event;
+    if(stat=="item_skillonattack") event=ItemSkillEvent::Attack;
+    else if(stat=="item_skillonhit") event=ItemSkillEvent::Hit;
+    else if(stat=="item_skillonkill") event=ItemSkillEvent::Kill;
+    else if(stat=="item_skillongethit") event=ItemSkillEvent::GetHit;
+    else if(stat=="item_skillondeath") event=ItemSkillEvent::Death;
+    else if(stat=="item_skillonlevelup") event=ItemSkillEvent::LevelUp;
+    if(event) {if(resolved.layer<0 || resolved.layer>65535 || !(resolved.layer&63)) throw std::runtime_error("Invalid original item-trigger layer");add(mods.itemTriggers[{*event,resolved.layer}],value);return;}
     auto &target = weapon ? mods.weapons[item].target : mods.target;
     if (stat == "item_demondamage_percent") { add(target.demonDamage, value); return; }
     if (stat == "item_undeaddamage_percent") { add(target.undeadDamage, value); return; }

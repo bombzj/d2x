@@ -17,7 +17,7 @@ void appendStats(const ClassicData &data, ItemInstance &item, const std::vector<
         else existing->value+=stat.rawValue;
     }
 }
-void innateProperties(const ClassicData &data,const ItemDefinition &base,ItemInstance &item,uint64_t &random) {
+void innateProperties(const ClassicData &data,const ItemDefinition &base,ItemInstance &item,uint64_t &random,int staffmodBias) {
     if(item.quality==ItemQuality::Unique || item.quality==ItemQuality::Set) return;
     const auto &types=data.tables.at("itemtypes"),&skills=data.tables.at("skills");
     std::string staffClass;
@@ -33,7 +33,7 @@ void innateProperties(const ClassicData &data,const ItemDefinition &base,ItemIns
             }
             return false;
         };
-        for(const auto &[skill,rank]:rollStaffmods(int(item.level),first,item.quality==ItemQuality::Inferior,0,eligible,random)) item.savedStats.push_back({107,skill,rank});
+        for(const auto &[skill,rank]:rollStaffmods(int(item.level),first,item.quality==ItemQuality::Inferior,staffmodBias,eligible,random)) item.savedStats.push_back({107,skill,rank});
     }
     const int group=data.tables.at(base.base.sourceTable).number(base.base.sourceRow,"auto prefix").value_or(0);
     if(group) {
@@ -52,10 +52,12 @@ void innateProperties(const ClassicData &data,const ItemDefinition &base,ItemIns
     }
 }
 }
-ItemInstance prepareItem(const ClassicData &data, const LootDrop &drop, uint64_t &random, int difficulty) {
+ItemInstance prepareItem(const ClassicData &data, const LootDrop &drop, uint64_t &random, int difficulty,int staffmodBias) {
     const auto *definition = data.items.find(drop.code);
     if (!definition || !drop.quantity || drop.quantity > definition->maxStack || drop.level < 1 || drop.level > 99)
         throw std::runtime_error("Invalid prepared item generation");
+    if (definition->equipment.isType("body"))
+        throw std::runtime_error("A body part requires its original player/monster identity; generic generation cannot create one");
     // Ported from master's InventoryService::createItem. Placement, ownership
     // and entity allocation deliberately remain in the authority.
     const auto &generation = drop.generation;
@@ -107,7 +109,7 @@ ItemInstance prepareItem(const ClassicData &data, const LootDrop &drop, uint64_t
     const bool visible=item.identified;item.identified=true;
     freezeCubeItem(data,item,&local); // Preserve all rolls, including conditional set lists.
     item.nativeMaxDurability=std::min(255u,item.nativeMaxDurability*generation.durabilityMultiplier);
-    innateProperties(data,*definition,item,local);
+    innateProperties(data,*definition,item,local,staffmodBias);
     const auto complete=resolveItemStats(data,item,int(item.level));
     item.durability=std::min(255u,itemMaximumDurability(data,item,complete));
     updateCubeRequiredLevel(data,item);item.identified=visible;

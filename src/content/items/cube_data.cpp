@@ -193,7 +193,7 @@ void freezeCubeItem(const ClassicData &data, ItemInstance &item, uint64_t *gener
         for (const auto &record : data.setItems) {
             if (int(record.row) != item.specialRow) continue;
             for (const auto &bonus : record.setBonuses) {
-                if (!bonus.perItem || record.setAddFunction != 2) continue;
+                if (!bonus.perItem || (record.setAddFunction != 1 && record.setAddFunction != 2)) continue;
                 if (bonus.pieces < 2 || bonus.pieces > 6) throw std::runtime_error("Invalid original set bonus tier");
                 int value=bonus.property.minimum.value_or(0);
                 if(bonus.property.directRoll && bonus.property.minimum!=bonus.property.maximum) {

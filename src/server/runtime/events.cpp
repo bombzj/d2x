@@ -72,6 +72,10 @@ void EventOutbox::observe(const EventBatch &batch) noexcept {
             else if constexpr (std::is_same_v<T, OverlayFact>) {event.actor=value.actor;event.value=value.overlay;}
             else if constexpr (std::is_same_v<T, StateFact>) { event.actor = value.actor; event.value = value.state; event.secondary = value.enabled; }
             else if constexpr (std::is_same_v<T, SkillPulseFact>) { event.actor=value.owner; event.target=value.target; event.value=value.skill; event.secondary=value.rank; event.position=value.position; }
+            else if constexpr (std::is_same_v<T, ItemSkillFact>) {event.actor=value.owner;event.target=value.target;event.value=value.skill;event.secondary=value.rank;event.position=value.position;}
+            else if constexpr (std::is_same_v<T, GroundRemoveFact>) {event.target=value.item;}
+            else if constexpr (std::is_same_v<T, GroundRestoredFact>) {event.target=value.item;event.secondary=int64_t(value.revision);}
+            else if constexpr (std::is_same_v<T, NpcServiceFact>) {event.target=value.npc;event.value=value.result;}
             else if constexpr (std::is_same_v<T, MissileFact>) { event.actor = value.owner; event.value = value.definition; event.secondary = value.rank; event.position = value.position; }
             else if constexpr (std::is_same_v<T, RepositionFact>) { event.actor = value.actor; event.position = value.position; }
             else if constexpr (std::is_same_v<T, CharacterFact>) {

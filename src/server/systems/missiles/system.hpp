@@ -17,6 +17,7 @@ struct Spawn { ActorContext actor; SkillCastSpec skill; MissileCollisionRule col
     std::optional<WeaponSkillDamage> weapon{};
     std::optional<transactions::Plan> cost{};
     EntityId guidedTarget{};
+    bool deathTrigger{};
 };
 struct MonsterSpawn {
     EntityId source; RegionId area; uint64_t generation{}, tick{};

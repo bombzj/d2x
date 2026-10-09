@@ -97,10 +97,10 @@ void SceneView::drawCharacter(Vec mouse) const {
         }
     }
 
-    const auto actionRows = [&](std::optional<int> id, float damageY, float ratingY) {
-        const auto *skill = player.skill(id.value_or(0));
+    const auto actionRows = [&](std::optional<int> id, uint32_t owner,float damageY, float ratingY) {
+        const auto *skill = player.skill(id.value_or(0),owner);
         const std::string name = skill ? skill->name : "?";
-        const auto action = player.actionDisplay(id);
+        const auto action = player.actionDisplay(id,owner);
         cell(action.damage.empty() ? name : name + '\n' + label("strchrskm"), 160, damageY, 259, true);
         cell(action.damage, 261, damageY + 2, 309);
         if (!action.attackRating.empty()) {
@@ -111,8 +111,8 @@ void SceneView::drawCharacter(Vec mouse) const {
             cell(action.attackRating, 273, ratingY + 2, 308);
         }
     };
-    actionRows(view_.leftSkill, 97, 159);
-    actionRows(view_.rightSkill, 119, 181);
+    actionRows(view_.leftSkill,player.selectedSkillOwners.at(player.weaponSet*2), 97, 159);
+    actionRows(view_.rightSkill,player.selectedSkillOwners.at(player.weaponSet*2+1), 119, 181);
     const auto numberCell = [&](const char *stat, int value, float left, float baseline, float right) {
         const auto text = player.number(stat, value);
         const bool compact = text != "?" &&

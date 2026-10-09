@@ -1,6 +1,7 @@
 #include "system.hpp"
 #include "server/player_store.hpp"
 #include "server/systems/transactions/system.hpp"
+#include "server/systems/effects/system.hpp"
 #include <algorithm>
 #include <limits>
 #include <type_traits>
@@ -86,8 +87,12 @@ DomainResult<> System::award(const Award &award) {
     auto record = std::move(*planned.value);
     const int gained = record.level - player->persistent.player.level;
     const ActorContext actor{player->player, player->actor, player->area, 0, 0, award.tick};
-    return commit(ports_.transactions, *player, actor, std::move(record), gained ? transactions::ResourceRefresh::LevelUp
+    auto events=gained?ports_.effects.prepareItemEvents(actor,{ItemSkillEvent::LevelUp},{},player->position):DomainResult<effects::ItemEventPlan>{DomainStatus::Applied,effects::ItemEventPlan{}};
+    if(!events) return {events.status,{}};
+    const auto result=commit(ports_.transactions, *player, actor, std::move(record), gained ? transactions::ResourceRefresh::LevelUp
         : transactions::ResourceRefresh::Clamp, award.sourceOccurrence);
+    if(result) ports_.effects.commitItemEvents(std::move(*events.value));
+    return result;
 }
 StepStatus System::step(TickContext, FrameFacts &) { return StepStatus::Complete; }
 }

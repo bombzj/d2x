@@ -54,6 +54,7 @@ struct OnlineCombatCommand {
     // MPQ-derived UI expectation for a remote skill interaction; never a wire field.
     std::optional<OnlineObjectIntent> interaction;
     std::optional<OnlineIntentContext> context;
+    uint32_t owner = UINT32_MAX;
 };
 struct OnlineCombatRequest {
     enum class State { Pending, Confirmed, TimedOut, Interrupted, SentNoAck };

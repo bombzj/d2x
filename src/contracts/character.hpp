@@ -23,6 +23,7 @@ struct CharacterSkillView {
     bool pickerEnabled = false; // Selection icon state; independent of town casting permission.
     CharacterActionDisplay action;
     std::vector<std::string> treeTooltip, pickerTooltip;
+    uint32_t owner=UINT32_MAX;
     std::string treeBonusHeading;
     std::vector<std::string> treeBonusTooltip;
 };
@@ -52,17 +53,20 @@ struct CharacterView {
     std::array<std::vector<std::optional<int>>, 2> choices;
     CharacterActionDisplay attack;
     std::map<int, CharacterSkillView> skills;
+    std::vector<CharacterSkillView> chargedSkills;
+    std::array<uint32_t,4> selectedSkillOwners{UINT32_MAX,UINT32_MAX,UINT32_MAX,UINT32_MAX};
     std::set<std::string, std::less<>> unknownStats;
     std::string number(std::string_view stat, int64_t value) const {
         return unknownStats.contains(stat) ? "?" : std::to_string(value);
     }
-    const CharacterSkillView *skill(int id) const {
+    const CharacterSkillView *skill(int id,uint32_t owner=UINT32_MAX) const {
+        if(owner!=UINT32_MAX) {for(const auto &entry:chargedSkills) if(entry.id==id && entry.owner==owner) return &entry;return nullptr;}
         const auto found = skills.find(id);
         return found == skills.end() ? nullptr : &found->second;
     }
-    CharacterActionDisplay actionDisplay(std::optional<int> id) const {
+    CharacterActionDisplay actionDisplay(std::optional<int> id,uint32_t owner=UINT32_MAX) const {
         if (!id) return attack;
-        const auto *entry = skill(*id);
+        const auto *entry = skill(*id,owner);
         return entry ? entry->action : CharacterActionDisplay{};
     }
 };

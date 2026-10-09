@@ -15,4 +15,5 @@ struct PotionDefinition {
     bool curesPoison = false, curesCold = false;
 };
 float potionRestorationAmount(const PotionDefinition &, std::string_view playerClass);
+int64_t rollPotionRestoration(const PotionDefinition &, std::string_view playerClass, int attribute, uint64_t &random);
 } // namespace d2x

@@ -58,6 +58,9 @@ struct DiagnosticSnapshot {
     std::map<RegionId,float> waypoints;
     size_t healingQueued{}, manaQueued{}, lootPending{};
     std::string lootDeferred;
+    size_t itemTriggersPending{};
+    std::string itemTriggersDeferred;
+    std::vector<ChargedSkill> chargedSkills;
     uint64_t tick{}, eventFirst{}, eventLast{}, commandFirst{}, commandLast{};
     size_t commandsQueued{}, eventsQueued{}, monsterCount{}, missileCount{}, itemCount{};
     PlayerSnapshot player;

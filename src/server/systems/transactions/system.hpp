@@ -30,6 +30,7 @@ struct InventoryEdit {
     std::vector<DomainFact> facts{};
     std::vector<DomainFact> publicFacts{};
     std::optional<PointTarget> knockback{};
+    std::optional<SkillCharge> charge{};
 };
 struct CharacterEdit {
     ActorContext actor;
@@ -44,6 +45,8 @@ struct CharacterEdit {
     std::vector<DomainFact> publicFacts{};
     std::vector<DomainFact> facts{};
     std::optional<PointTarget> knockback{};
+    std::optional<SkillCharge> charge{};
+    std::shared_ptr<const EquipmentRules> equipment{};
 };
 using Change = std::variant<ItemTransfer, Reward, Exchange, InventoryEdit, CharacterEdit>;
 struct PreparedPlayer {
@@ -70,7 +73,7 @@ class System {
     DomainResult<> commitCharacters(std::vector<Plan>);
     // Atomic mana debit and optional same-area relocation at the release frame.
     DomainResult<> release(const ActorContext &, uint64_t expectedCharacterRevision, float manaCost,
-                           std::optional<PointTarget> relocation = {});
+                           std::optional<PointTarget> relocation = {}, std::optional<SkillCharge> charge = {});
     // Resource-only commit: no inventory clone or equipment re-evaluation per hit.
     DomainResult<> resources(const ActorContext &, uint64_t expected, float life, float mana, float stamina);
     DomainResult<> damage(const ActorContext &, uint64_t expectedCharacterRevision, int64_t amount);

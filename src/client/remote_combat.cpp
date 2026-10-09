@@ -1,4 +1,6 @@
 #include "remote_combat.hpp"
+#include "remote_inventory.hpp"
+#include "item_skill_sources.hpp"
 #include "content/skills/skill_eligibility.hpp"
 #include "network/protocol/bits.hpp"
 #include <algorithm>
@@ -6,9 +8,9 @@
 #include <stdexcept>
 
 namespace d2x {
-RemoteCombat::RemoteCombat(Archives &archives, RemoteTown &scene, net::RealmSession &session)
-    : scene_(scene), session_(session) {
-    for (const char *name : {"skills", "playerclass", "charstats", "monstats", "monstats2", "pettype", "states", "itemstatcost"})
+RemoteCombat::RemoteCombat(Archives &archives, RemoteTown &scene, net::RealmSession &session, RemoteInventory &inventory)
+    : scene_(scene), inventory_(inventory), session_(session) {
+    for (const char *name : {"skills", "playerclass", "charstats", "monstats", "monstats2", "pettype", "states", "itemstatcost", "setitems"})
         tables_.emplace(name, DataTable(archives.read("data/global/excel/" + std::string(name) + ".txt")));
     for (const auto &[name, column] : {std::pair{"skills", "Id"}, {"itemstatcost", "ID"}}) {
         const auto &table = tables_.at(name);
@@ -151,8 +153,8 @@ bool RemoteCombat::submit(OnlineCombatCommand command) {
     } else if (command.action != Action::Stop) {
         if (command.action == Action::Cast) {
             const auto selected = command.hand == OnlineSkillHand::Left ? world.leftSkill : world.rightSkill;
-            if (!selected || selected->owner != UINT32_MAX) return reject("No confirmed normal skill is selected for this hand");
-            command.skill = selected->skill;
+            if (!selected) return reject("No confirmed skill is selected for this hand");
+            command.skill = selected->skill;command.owner=selected->owner;
         }
         const auto row = skills_.find(command.skill);
         if (row == skills_.end()) return reject("Skill is absent from current MPQ");
@@ -172,6 +174,12 @@ bool RemoteCombat::submit(OnlineCombatCommand command) {
         else if (world.playerBaseSkillsAssigned) facts.baseRank = 0;
         if (const auto rank = world.playerSkills.find(command.skill); rank != world.playerSkills.end())
             facts.effectiveRank = rank->second;
+        if(command.owner!=UINT32_MAX) {
+            inventory_.update(session_.read());const auto charges=nativeChargedSkills(session_.read(),inventory_.read(),tables_.at("setitems"));
+            const auto source=std::find_if(charges.begin(),charges.end(),[&](const auto &c){return c.item.id.value==command.owner && c.skill==command.skill && c.charges>0;});
+            if(source==charges.end() || command.action==Action::LearnSkill) return reject("Charged skill source is unavailable or exhausted");
+            facts.effectiveRank=source->rank;
+        }
         for (const int required : metadata.prerequisites) {
             if (required > UINT16_MAX) continue;
             if (const auto rank = world.playerBaseSkills.find(uint16_t(required)); rank != world.playerBaseSkills.end())

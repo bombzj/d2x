@@ -10,20 +10,24 @@
 namespace d2x::server::death {
 DomainResult<> System::recover(const ActorContext &actor, EntityId target) {
     const auto *player = ports_.players.find(actor.player);
-    if (!player || player->actor != actor.actor || player->persistent.player.hp <= 0) return {DomainStatus::InvalidActor, {}};
+    const auto *area = ports_.areas.find(actor.area);
+    if (!player || !player->entered || player->actor != actor.actor || player->area != actor.area || !area || area->generation != actor.areaGeneration || player->persistent.player.hp <= 0) return {DomainStatus::InvalidActor, {}};
     auto corpses = player->persistent.corpses;
     auto found = std::find_if(corpses.begin(), corpses.end(), [&](const auto &corpse) { return corpse.id == target; });
     if (found == corpses.end() || found->owner != actor.actor || found->region != actor.area ||
         meleeDistance(player->position, 2, found->position, 2) > 8 || !ports_.areas.at(actor.area).definition.collision.collisionSegment(player->position, found->position, 0x0801)) return {DomainStatus::InvalidRequest, {}};
-    inventory::detail::Draft draft(*player, *player->rules.items, *player->rules.equipment, *player->rules.character);
+    auto equipment = std::make_shared<EquipmentRules>(*player->rules.equipment);
+    inventory::detail::Draft draft(*player, *player->rules.items, *equipment, *player->rules.character);
     const ContainerLocation cursor{draft.containers().cursor, {}};
     if (draft.at(cursor)) return {DomainStatus::Conflict, {}};
     const auto storage = found->items;
     const auto carryAllowed = [&](EntityId id) {
         const auto &item = draft.edit.inventory.items.at(id);
-        if (!player->rules.equipment->items.at(id).singleCarry) return true;
+        const auto *definition = player->rules.items->find(item.definition);
+        const bool cube = definition && definition->opensCube;
+        if (!cube && !equipment->items.at(id).singleCarry) return true;
         for (const auto &[otherId, other] : draft.edit.inventory.items) {
-            if (otherId == id || other.quality != ItemQuality::Unique || other.specialRow != item.specialRow) continue;
+            if (otherId == id || (cube ? other.definition != item.definition : other.quality != ItemQuality::Unique || other.specialRow != item.specialRow)) continue;
             const auto *at = std::get_if<ContainerLocation>(&other.location);
             if (at && draft.edit.inventory.containers.at(at->container).spec.kind != ContainerKind::Corpse) return false;
         }
@@ -68,10 +72,19 @@ DomainResult<> System::recover(const ActorContext &actor, EntityId target) {
         if (const auto *at = std::get_if<ContainerLocation>(&item.location); at && at->container == storage) remaining.push_back(id);
     for (const auto id : remaining) {
         if (!carryAllowed(id)) continue;
+        const auto original = draft.edit.inventory.items.at(id).location;
+        draft.edit.inventory.items.at(id).location = cursor;
+        const auto equipped = draft.autoEquip(id);
+        if (!equipped) return {equipped.status,{}};
+        if (*equipped.value) {
+            for (auto &change:draft.edit.changes) if (change.item==id) change.before=original;
+            continue;
+        }
+        draft.edit.inventory.items.at(id).location=original;
         const auto &item = draft.edit.inventory.items.at(id);
         const auto *definition = player->rules.items->find(item.definition);
         std::optional<ContainerLocation> destination;
-        if (definition && definition->autoBelt) destination = draft.space(id, draft.containers().belt);
+        if (definition && definition->beltAllowed) destination = draft.space(id, draft.containers().belt);
         if (!destination) destination = draft.space(id, draft.containers().backpack);
         if (destination) {
             const auto result = draft.move(id, *destination);
@@ -96,7 +109,7 @@ DomainResult<> System::recover(const ActorContext &actor, EntityId target) {
     transactions::InventoryEdit edit{actor, player->inventoryRevision, player->characterRevision,
         std::move(draft.edit.inventory), std::move(draft.edit.changes), record.weaponSet};
     edit.resources = record.level > player->persistent.player.level ? transactions::ResourceRefresh::LevelUp : transactions::ResourceRefresh::Clamp;
-    edit.character = std::move(record); edit.corpses = std::move(corpses);
+    edit.character = std::move(record); edit.corpses = std::move(corpses); edit.equipment = std::move(equipment);
     auto plan = ports_.transactions.prepare(std::move(edit));
     return plan ? ports_.transactions.commit(std::move(*plan.value)) : DomainResult<>{plan.status, {}};
 }

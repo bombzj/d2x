@@ -17,7 +17,8 @@ void prepareSkillRules(server::PreparedRules &rules, const ClassicData &data, co
         prepared->weaponAnimations.emplace(key.substr(character.appearance.size()),server::AttackAnimation{
             animation.frames,animation.speed,animation.actionFrame,attackStartingFrame(character.code,key.substr(character.appearance.size()+2),key.substr(character.appearance.size(),2))});
     for (const auto &[id, skill] : data.skills.skills) {
-        if (skill.classCode != character.code || (character.code != "sor" && character.code != "ama")) continue;
+        // Item grants/charges use the skill's program on any owning class.
+        if (skill.classCode != "sor" && skill.classCode != "ama") continue;
         if (skill.fireMasteryPerRank) prepared->fireMasteries.emplace(id, *skill.fireMasteryPerRank);
         if (skill.lightningMasteryPerRank) prepared->lightningMasteries.emplace(id, *skill.lightningMasteryPerRank);
         if (skill.coldPiercePerRank) prepared->coldMasteries.emplace(id, *skill.coldPiercePerRank);
@@ -74,6 +75,13 @@ void prepareSkillRules(server::PreparedRules &rules, const ClassicData &data, co
         } else if(start==3 && action==4) spec.effect=SkillBehavior::Unsummon;
         else throw std::runtime_error("Unsupported original general skill program");
         prepared->definitions.emplace(id,server::SkillDefinition{std::move(spec),skillTable.number(row,"InTown").value_or(0)!=0,{}});
+    }
+    for(auto &[id,definition]:prepared->definitions) for(size_t row=0;row<skillTable.rows().size();++row) if(skillTable.number(row,"Id")==id) {
+        definition.itemTargetDo=skillTable.number(row,"ItemTgtDo").value_or(0)!=0;
+        definition.itemEffect=skillTable.number(row,"ItemEffect").value_or(0);
+        definition.itemEffectUsesPreparedProgram=definition.itemEffect<=1 || definition.itemEffect==skillTable.number(row,"srvdofunc").value_or(0);
+        definition.itemTarget=skillTable.number(row,"ItemTarget").value_or(0);
+        definition.itemCheckStart=skillTable.number(row,"ItemCheckStart").value_or(0)!=0;break;
     }
     const auto &petTypes=data.tables.at("pettype");
     for(size_t row=0;row<skillTable.rows().size();++row) {

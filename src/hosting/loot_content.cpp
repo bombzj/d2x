@@ -7,6 +7,8 @@
 #include "content/items/item_quality.hpp"
 #include "content/items/object_loot.hpp"
 #include "core/random.hpp"
+#include "persistence/d2s_quests.hpp"
+#include "persistence/d2s_fixed_sections.hpp"
 namespace d2x {
 static void prepareOneLoot(GameHost &host, GameHandle game, Archives &archives, const ClassicData &data, LootContent &cache) {
     // One source per scheduler cycle bounds content work and preserves unique
@@ -35,13 +37,31 @@ static void prepareOneLoot(GameHost &host, GameHandle game, Archives &archives, 
         }
         }
     } else {
-        const auto entry = resolveMonsterLoot(data, *cache.monsters, *world, request.request.source);
+        auto sourceRequest=request.request.source;
+        const auto &monstats=data.tables.at("monstats");
+        for(size_t row=0;row<monstats.rows().size();++row) if(monstats.value(row,"Id")==sourceRequest.identity.monster) {
+            const int slot=monstats.number(row,"TCQuestId").value_or(0),bit=monstats.number(row,"TCQuestCP").value_or(0);
+            if(slot>0 && slot<48 && bit>=0 && bit<16) {
+                D2sFixedSections sections;const auto &record=request.character.player;
+                if(!record.nativeSaveSections.empty()) sections=readD2sFixedSections(std::span(reinterpret_cast<const uint8_t *>(record.nativeSaveSections.data()),record.nativeSaveSections.size()));
+                exportD2sQuests(record,sections,data.npcDialogues);
+                const auto at=10+size_t(sourceRequest.difficulty)*96+size_t(slot)*2;
+                const unsigned flags=sections.quests.at(at)|(unsigned(sections.quests.at(at+1))<<8);
+                // MonsterMode: killer's COMPLETEDBEFORE, REWARDPENDING and TCQuestCP.
+                sourceRequest.questFirstKill=!(flags&((1u<<15)|(1u<<1)|(1u<<bit)));
+            }
+            break;
+        }
+        const auto entry = resolveMonsterLoot(data, *cache.monsters, *world, sourceRequest);
         if (entry.status == LootEntryStatus::Ready)
             plan = planItemLoot(data, data.tables.at("itemratio"), entry.treasureClass, entry.itemLevel,
                 entry.upgradeLevel, request.seed, request.uniques, request.classCode, request.magicFind, request.goldFind,{},request.effectivePlayers);
         else if (entry.status == LootEntryStatus::Deferred) plan.deferred = entry.reason;
     }
     auto character = request.character;
+    // Temporary generation IDs must not alias admitted inventory IDs. Only
+    // this batch is projected into its immutable equipment rules.
+    character.inventory.items.clear();
     auto random = plan.randomState ? plan.randomState : request.seed;
     server::items::PreparedBatch batch;
     uint64_t id = 1;

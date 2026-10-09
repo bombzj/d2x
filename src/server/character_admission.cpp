@@ -19,6 +19,14 @@ PersistentCharacter admitCharacter(PersistentCharacter state, uint64_t nextEntit
     for (const auto &[id, item] : state.inventory.items) allocateItem(item);
     if (state.ironGolem) allocateItem(*state.ironGolem);
     auto remap = [&](EntityId &id) { if (id) id = mapping.at(id); };
+    const auto remapSource=[&](uint32_t &source) {
+        if(source==UINT32_MAX) return;
+        const auto found=mapping.find(EntityId{source});
+        if(found==mapping.end() || found->second.value>UINT32_MAX) throw std::runtime_error("Invalid saved skill source identity");
+        source=uint32_t(found->second.value);
+    };
+    for(auto &key:state.player.skillHotkeys) remapSource(key.owner);
+    for(auto &source:state.player.selectedSkillOwners) remapSource(source);
     remap(state.player.id);
     for (auto *id : {&state.containers.backpack, &state.containers.belt, &state.containers.stash,
         &state.containers.beltEquipment, &state.containers.equipment, &state.containers.cube,

@@ -74,10 +74,17 @@ DomainStatus Draft::resizeBelt(int rows) {
         const auto *location = std::get_if<ContainerLocation>(&item.location);
         if (!location || location->container != belt.id || location->cell.y < rows) continue;
         const auto target = space(id, containers().backpack);
-        if (!target) return DomainStatus::Capacity;
-        const auto result = move(id, *target);
-        if (result != DomainStatus::Applied) return result;
+        if (target) {
+            const auto result = move(id, *target);
+            if (result != DomainStatus::Applied) return result;
+        } else {
+            if (item.revision == UINT64_MAX) return DomainStatus::Capacity;
+            auto copy = item; ++copy.revision;
+            edit.spilled.push_back(std::move(copy));
+            edit.changes.push_back({id, item.revision + 1, ItemChangeKind::Removed, item.location, {}, 0});
+        }
     }
+    for (const auto &item : edit.spilled) edit.inventory.items.erase(item.id);
     return DomainStatus::Applied;
 }
 }

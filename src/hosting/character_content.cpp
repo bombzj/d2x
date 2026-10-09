@@ -56,6 +56,11 @@ void prepareCharacterRules(server::PreparedRules &rules, const ClassicData &data
     auto character = std::make_shared<server::CharacterRules>();
     character->experience = data.experienceByClass.at(saved.player.characterClass);
     character->resistancePenalty = data.resistancePenalty.at(size_t(saved.difficulty));
+    for (const auto &[name, state] : data.states) {
+        if (state.definition.curable || name == "poison" || name == "freeze") character->healerCureStates.insert(state.definition.id);
+        if (name == "nomanaregen") character->noManaRegenState = state.definition.id;
+    }
+    if (character->noManaRegenState < 0) throw std::runtime_error("Missing original no-mana-regeneration state");
     for (const auto &[id, skill] : data.skills.skills)
         character->learning.emplace(id, server::LearningRule{skill.classCode, skill.page, skill.requiredLevel,
             skill.maximumRank, skill.requiredAttributes, skill.prerequisites, skill.passiveContribution, skill.manaRecoveryPerRank, !skill.passive, skill.leftAllowed});
@@ -91,6 +96,12 @@ void prepareCharacterRules(server::PreparedRules &rules, const ClassicData &data
         }
     }
 
+    for(const auto &[code,action]:std::array<std::pair<std::string,server::QuestConsumable>,4>{{
+        {"ass",server::QuestConsumable::SkillBook},{data.goldenBird.potion,server::QuestConsumable::LifePotion},
+        {data.prisonOfIce.scroll,server::QuestConsumable::ResistanceScroll},{"toa",server::QuestConsumable::RespecToken}}}) {
+        if(!data.items.find(code) || !data.items.find(code)->usable) throw std::runtime_error("Missing original quest consumable: "+code);
+        character->questConsumables.emplace(code,action);
+    }
     rules.character = std::move(character);
 }
 }

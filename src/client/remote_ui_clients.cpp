@@ -1,5 +1,6 @@
 #include "gameplay/skills/amazon_passive_spec.hpp"
 #include "remote_ui_clients.hpp"
+#include "item_skill_sources.hpp"
 #include "client/character_projection.hpp"
 #include "client/quest_projection.hpp"
 #include "client/remote_inventory.hpp"
@@ -223,10 +224,10 @@ struct RemoteUiClients::Impl {
                 if constexpr (std::is_same_v<T, BindSkillHotkey>) {
                     if (v.index >= o.hotkeys.size() || v.skill < -1) return;
                     request.action = OnlineCombatCommand::Action::BindHotkey;
-                    request.hotkeySlot = uint8_t(v.index); request.skill = uint16_t(std::max(0,v.skill));
+                    request.owner=v.owner;request.hotkeySlot = uint8_t(v.index); request.skill = uint16_t(std::max(0,v.skill));
                     request.hand = v.right ? OnlineSkillHand::Right : OnlineSkillHand::Left;
                     request.context = o.context;
-                    if (o.combat.submit(request)) o.hotkeys[v.index] = SkillHotkey{v.skill,v.right};
+                    if (o.combat.submit(request)) o.hotkeys[v.index] = SkillHotkey{v.skill,v.right,v.owner};
                     else o.notice = o.combat.reason();
                     return;
                 } else if constexpr (std::is_same_v<T, AllocateAttribute>) {
@@ -237,7 +238,7 @@ struct RemoteUiClients::Impl {
                     request.action = OnlineCombatCommand::Action::LearnSkill; request.skill = uint16_t(v.id);
                 } else {
                     request.action = OnlineCombatCommand::Action::SelectSkill;
-                    request.skill = uint16_t(std::max(0,v.skill));
+                    request.owner=v.owner;request.skill = uint16_t(std::max(0,v.skill));
                     request.hand = v.right ? OnlineSkillHand::Right : OnlineSkillHand::Left;
                 }
                 request.context = o.context;
@@ -309,6 +310,9 @@ struct RemoteUiClients::Impl {
                 } else if constexpr (std::is_same_v<T, RepairVendorItem>) {
                     request.action = v.item.id ? OnlineItemAction::Repair : OnlineItemAction::RepairAll;
                     if (v.item.id) { request.item = guid(v.item.id); request.itemRevision = v.item.revision; }
+                } else if constexpr (std::is_same_v<T, ImbueItem> || std::is_same_v<T, SocketQuestItem> || std::is_same_v<T, PersonalizeQuestItem>) {
+                    request.action=OnlineItemAction::QuestService;request.item=guid(v.item.id);request.itemRevision=v.item.revision;
+                    if(o.items.read().cursor!=request.item) {o.compositeTake(request);return;}
                 } else { o.notice = "This native NPC service is unavailable."; return; }
                 o.enqueue(request);
             }, c);
@@ -611,17 +615,11 @@ struct RemoteUiClients::Impl {
                 [&](const auto &entry) { return int32_t(entry.row) == piece.specialRow; });
             const auto &worn = equippedSets.at(record->set);
             const unsigned count = unsigned(worn.size());
-            std::array<bool, 5> activeLayers{};
-            if (record->setAddFunction == 2) {
-                for (unsigned layer = 0; layer < activeLayers.size(); ++layer) activeLayers[layer] = count > layer + 1;
-            } else if (record->setAddFunction == 1) {
-                unsigned layer = 0;
-                for (const auto &other : data.setItems) {
-                    if (other.set != record->set || other.row == record->row) continue;
-                    if (layer >= activeLayers.size()) return {};
-                    activeLayers[layer++] = worn.contains(int32_t(other.row));
-                }
-            } else if (record->setAddFunction) return {};
+            if(record->setAddFunction<0 || record->setAddFunction>2) return {};
+            std::vector<int32_t> members;
+            for(const auto &other:data.setItems) if(other.set==record->set) members.push_back(int32_t(other.row));
+            const std::vector<int32_t> wornRows(worn.begin(),worn.end());
+            const auto activeLayers=activeSetItemLayers(record->setAddFunction,int32_t(record->row),members,wornRows);
             for (unsigned layer = 0; layer < activeLayers.size(); ++layer) {
                 if (!activeLayers[layer]) continue;
                 bool assigned = false;
@@ -694,13 +692,13 @@ struct RemoteUiClients::Impl {
         input.selectedSkills[weaponSet * 2 + 1] = w.rightSkill ? int(w.rightSkill->skill) : -1;
         for (size_t slot = 0; slot < input.hotkeys.size(); ++slot) {
             if (hotkeys[slot]) input.hotkeys[slot] = *hotkeys[slot];
-            else if (const auto &native = w.skillHotkeys[slot]; native && native->selection && native->selection->owner == UINT32_MAX)
+            else if (const auto &native = w.skillHotkeys[slot]; native && native->selection)
                 input.hotkeys[slot] = {native->selection->skill ? int(native->selection->skill) : -1,
-                    native->hand == OnlineSkillHand::Right};
+                    native->hand == OnlineSkillHand::Right,native->selection->owner};
         }
         input.baseRanks.insert(w.playerBaseSkills.begin(), w.playerBaseSkills.end());
         input.effectiveRanks.insert(w.playerSkills.begin(), w.playerSkills.end());
-        input.baseRanksAssigned = w.playerBaseSkillsAssigned;
+        input.baseRanksAssigned = w.playerBaseSkillsAssigned;input.chargedSkills=nativeChargedSkills(online,items.read(),data.tables.at("setitems"));
         input.difficulty = online.load.difficulty;
         if(const auto level=stat("level")) {
             if(const auto itemPierce=knownSelfEquipmentStat("item_pierce",int(*level));itemPierce && w.playerBaseSkillsAssigned) {
@@ -743,15 +741,20 @@ struct RemoteUiClients::Impl {
         if (const auto level=stat("level"))
             if (const auto faster=knownSelfEquipmentStat("item_fastercastrate",int(*level))) input.stats.insert_or_assign("item_fastercastrate",*faster);
         characterView = projectCharacterDisplay(data, input);
+        characterView.selectedSkillOwners[weaponSet*2]=w.leftSkill?w.leftSkill->owner:UINT32_MAX;
+        characterView.selectedSkillOwners[weaponSet*2+1]=w.rightSkill?w.rightSkill->owner:UINT32_MAX;
     }
     ItemInstance itemInstance(const OnlineItem &native, const OnlineDecodedItem &di, ItemLocation location) const {
         const auto *definition=data.items.find(native.code);
             ItemInstance item; item.id=itemId(native.id); item.revision=native.revision; item.definition=native.code; item.location=location;
             item.quantity=di.gold.value_or(di.quantity.value_or(1)); item.charges=definition->bookCapacity?item.quantity:0; item.durability=di.durability.value_or(0);
-            item.quality=itemQualityFromNative(di.quality, true).value(); item.identified=di.identified; item.level=di.level; item.defense=int(di.defense.value_or(0));
+            item.quality=itemQualityFromNative(di.quality).value(); item.identified=di.identified; item.level=di.level; item.defense=int(di.defense.value_or(0));
             item.nativeProperties=true; item.nativeFlags=native.flags; item.nativeMaxDurability=di.maxDurability.value_or(0);
             item.nativeFormat=di.format; item.nativeGraphic=di.graphic; item.nativeHasGraphic=di.hasGraphic; item.personalizedName=di.personalizedName;
             item.nativeAutoAffix=di.autoAffix;
+            if (native.flags & 0x10000u) item.ear=ItemEarIdentity{di.earClass,di.earLevel,di.earName};
+            if (item.quality==ItemQuality::Normal && definition->equipment.isType("body") &&
+                !definition->equipment.isType("play")) item.nativeBodyPart=di.fileIndex;
             if(di.autoAffix) for(const auto &record:data.autoMagic) if(record.row==unsigned(di.autoAffix-1))
                 item.requiredLevel=std::max(item.requiredLevel,record.requiredLevel);
             item.sockets=di.sockets; item.runewordRow=-1;
@@ -837,17 +840,6 @@ struct RemoteUiClients::Impl {
         if (!repair && (native.flags & 0x20000u)) return 1;
         if (detail.gamble && !detail.format) return itemGamblePrice(data, native.code, 0, detail.format, 0);
         std::optional<int64_t> bodyCost;
-        if (native.flags & 0x10000u) {
-            if (!definition->base.cost) return {};
-            bodyCost = int64_t(*definition->base.cost) * detail.earLevel;
-        } else if (definition->equipment.isType("body")) {
-            const auto &monsters = data.tables.at("monstats");
-            if (!definition->base.cost || detail.fileIndex >= monsters.rows().size()) return {};
-            const auto column = *online.load.difficulty == 0 ? "Level" : *online.load.difficulty == 1 ? "Level(N)" : "Level(H)";
-            const auto level = monsters.number(detail.fileIndex, column);
-            if (!level) return {};
-            bodyCost = *definition->base.cost + int64_t(8) * *level;
-        }
         std::vector<int> factors;
         std::vector<int> repairFactors;
         if (!detail.gamble) for (const auto &price : vendor->second.questPrices) {
@@ -1202,6 +1194,23 @@ struct RemoteUiClients::Impl {
             if(data.vendors.contains(identity) && identity!="nihlathak") add("Trade",NpcMenuAction::Trade);
             if(identity=="gheed" || identity=="elzix" || identity=="alkor" || identity=="jamella" || identity=="drehya" || identity=="nihlathak") add("Gamble",NpcMenuAction::Gamble);
             if(identity.starts_with("cain")) add("Identify Items",NpcMenuAction::Identify);
+            // Original S2C 0x28 personal quest records, never local reward
+            // authority. SUnitNpc accepts the corresponding RewardPending bit.
+            const auto rewardPending=[&](QuestId id) {
+                if(!w.quests.playerFlags) return false;
+                const auto flags=(*w.quests.playerFlags)[questDefinition(id).nativeSlot];
+                return (flags&3u)==2u;
+            };
+            if(identity=="charsi" && characterView.level>=8 && rewardPending(QuestId::ToolsOfTheTrade))
+                add("Imbue",NpcMenuAction::Imbue);
+            if(identity=="larzuk" && rewardPending(QuestId::SiegeOnHarrogath)) {
+                add(data.itemStrings.at("Addsocketsui"),NpcMenuAction::Socket);
+                npcView.serviceHints.emplace(NpcMenuAction::Socket,data.itemStrings.at("Addsocketsui2"));
+            }
+            if(identity=="drehya" && rewardPending(QuestId::BetrayalOfHarrogath)) {
+                add(data.itemStrings.at("Personalizeui"),NpcMenuAction::Personalize);
+                npcView.serviceHints.emplace(NpcMenuAction::Personalize,data.itemStrings.at("Rename Instruct"));
+            }
             if(!d.travelLabel.empty()) add(d.travelLabel,NpcMenuAction::GoEast);
             add("Cancel",NpcMenuAction::Cancel);
         }

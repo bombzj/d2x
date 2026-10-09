@@ -37,6 +37,15 @@ DomainResult<> System::useSpecial(const ActorContext &actor,const Request &reque
         return {DomainStatus::Applied,std::monostate{}};
     }
     if(request.kind!=Kind::Portal) return {};
+    for(const auto &[destination,portal]:state_.specialPortals) {
+        const bool returning=portal.town==actor.area && portal.townId==request.source.id;
+        if(!returning && !(portal.field==actor.area && portal.fieldId==request.source.id)) continue;
+        if(int(destination)==39 && p->persistent.player.cowKingKilled.at(size_t(p->persistent.difficulty))) return {DomainStatus::Unavailable,{}};
+        const auto at=returning?portal.townPosition:portal.fieldPosition;
+        if((at-p->position).length()>portal.rule.range || !area->definition.collision.segment(p->position,at,{},playerMovement)) return {DomainStatus::InvalidRequest,{}};
+        Transition next{actor.area,returning?portal.field:portal.town,0,actor.areaGeneration,actor.sequence,request.source.id,p->position,returning?portal.fieldPosition:portal.townPosition,{},false,false,false,0,0};next.kind=Kind::SpecialPortal;
+        state_.transitions[actor.player]=next;auto &player=ports_.players.players_.at(actor.player);player.route.clear();player.moving=false;return {DomainStatus::Applied,std::monostate{}};
+    }
     for(const auto &[owner,portal]:state_.portals) {
         const bool returning=portal.town==actor.area && portal.townId==request.source.id;
         if(!returning && !(portal.field==actor.area && portal.fieldId==request.source.id)) continue;

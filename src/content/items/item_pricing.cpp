@@ -79,7 +79,20 @@ std::optional<unsigned> itemTradePrice(const ClassicData &data, const ItemInstan
         (missingCharges || (definition->equipment.repairable && (durable || refillable)));
     if (repair && !repairable) return 0;
     if (item.nativeFlags & 0x20000u) return 1;
-    if (definition->equipment.isType("body") && !bodyCost) return {};
+    if (definition->equipment.isType("body") && !bodyCost) {
+        // ITEMS_GetTransactionCost: identity is already decoded from original
+        // fields on either side. The same formula also prices server buyback.
+        if (item.ear) bodyCost = int64_t(*definition->base.cost) * item.ear->level;
+        else {
+            if (definition->equipment.isType("play") || difficulty < 0 || difficulty > 2) return {};
+            const auto &monsters = data.tables.at("monstats");
+            if (item.nativeBodyPart >= monsters.rows().size()) return {};
+            const char *columns[] = {"Level", "Level(N)", "Level(H)"};
+            const auto level = monsters.number(item.nativeBodyPart, columns[difficulty]);
+            if (!level) return {};
+            bodyCost = *definition->base.cost + int64_t(8) * *level;
+        }
+    }
     const bool quiver = !definition->equipment.quiver.empty();
     int chargePrice = int(definition->bookChargeCost);
     if (definition->bookCapacity && item.nativeProperties) {

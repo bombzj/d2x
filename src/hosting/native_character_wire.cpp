@@ -109,18 +109,18 @@ std::vector<Bytes> nativeCharacterDelta(const ClassicData &data, const server::C
     }
     for (size_t slot = 0; slot < fact.after.skillHotkeys.size(); ++slot) {
         const auto &before = fact.before.skillHotkeys[slot], &after = fact.after.skillHotkeys[slot];
-        if (before.skill == after.skill && before.right == after.right) continue;
+        if (before.skill == after.skill && before.right == after.right && before.owner==after.owner) continue;
         result.push_back(hosting::encodeServerPacket(hosting::ServerMessage::Hotkey, [&](auto &out) {
-            out.u8(uint8_t(slot)); out.u16(uint16_t((after.right ? 0 : 0x8000) | (after.skill < -1 ? 0xFFF : std::max(0, after.skill)))); out.u32(UINT32_MAX);
+            out.u8(uint8_t(slot)); out.u16(uint16_t((after.right ? 0 : 0x8000) | (after.skill < -1 ? 0xFFF : std::max(0, after.skill)))); out.u32(after.owner);
         }));
     }
     for (unsigned side = 0; side < 2; ++side) {
         const auto index = fact.after.weaponSet * 2 + side;
         const bool confirm=fact.selectedHand && unsigned(*fact.selectedHand)==side;
-        if(!confirm && (fact.before.weaponSet!=fact.after.weaponSet || fact.before.selectedSkills[index]==fact.after.selectedSkills[index])) continue;
+        if(!confirm && (fact.before.weaponSet!=fact.after.weaponSet || (fact.before.selectedSkills[index]==fact.after.selectedSkills[index] && fact.before.selectedSkillOwners[index]==fact.after.selectedSkillOwners[index]))) continue;
         result.push_back(hosting::encodeServerPacket(hosting::ServerMessage::SelectedSkill, [&](auto &out) {
             out.u8(0); out.u32(uint32_t(fact.after.id.value)); out.u8(side == 0);
-            out.u16(uint16_t(std::max(0, fact.after.selectedSkills[index]))); out.u32(UINT32_MAX);
+            out.u16(uint16_t(std::max(0, fact.after.selectedSkills[index]))); out.u32(fact.after.selectedSkillOwners[index]);
         }));
     }
     return result;

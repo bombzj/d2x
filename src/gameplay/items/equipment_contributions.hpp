@@ -19,6 +19,7 @@ struct EquipmentContributionSource {
     std::function<std::vector<ResolvedItemStat>(const ItemInstance &, int)> itemStats;
     std::function<std::vector<ResolvedItemStat>(size_t, size_t, int)> setStats;
     std::function<std::vector<ResolvedItemStat>(EntityId, size_t, int)> nativeSetStats;
+    std::function<void(EntityId,std::span<const ResolvedItemStat>)> observe{};
 };
 CharacterModifiers deriveEquipmentModifiers(const EquipmentLoadout &loadout,
     const EquipmentActor &baseActor, const EquipmentContributionSource &source, EntityId excludedItem = {},

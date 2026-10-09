@@ -94,10 +94,10 @@ std::vector<Bytes> nativeGameAdmission(const ClassicData &data, const Persistent
     for (auto &packet : items) result.push_back(std::move(packet));
     if (player.weaponSet) emit(ServerMessage::WeaponSet, [](auto &) {});
     for (size_t side = 0; side < 2; ++side)
-        emit(ServerMessage::SelectedSkill, [&](auto &out) { key(out, view); out.u8(side == 0); out.u16(uint16_t(std::max(0, player.selectedSkills[player.weaponSet * 2 + side]))); out.u32(UINT32_MAX); });
+        emit(ServerMessage::SelectedSkill, [&](auto &out) { key(out, view); out.u8(side == 0); out.u16(uint16_t(std::max(0, player.selectedSkills[player.weaponSet * 2 + side]))); out.u32(player.selectedSkillOwners[player.weaponSet*2+side]); });
     for (size_t slot = 0; slot < player.skillHotkeys.size(); ++slot) {
         const auto &hotkey = player.skillHotkeys[slot];
-        emit(ServerMessage::Hotkey, [&](auto &out) { out.u8(uint8_t(slot)); out.u16(uint16_t((hotkey.right ? 0 : 0x8000) | (hotkey.skill < -1 ? 0xFFF : std::max(0, hotkey.skill)))); out.u32(UINT32_MAX); });
+        emit(ServerMessage::Hotkey, [&](auto &out) { out.u8(uint8_t(slot)); out.u16(uint16_t((hotkey.right ? 0 : 0x8000) | (hotkey.skill < -1 ? 0xFFF : std::max(0, hotkey.skill)))); out.u32(hotkey.owner); });
     }
     // Player-private quest initialization and the game quest record are
     // distinct original messages, even in a one-player game.

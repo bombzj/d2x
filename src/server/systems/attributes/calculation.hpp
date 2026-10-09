@@ -4,6 +4,7 @@
 #include "gameplay/character/persistent_character.hpp"
 #include "gameplay/combat/weapon_values.hpp"
 #include "gameplay/items/equipment_loadout.hpp"
+#include "gameplay/items/skill_sources.hpp"
 #include <set>
 namespace d2x::server::attributes {
 struct Totals {
@@ -12,6 +13,7 @@ struct Totals {
     std::map<int, int> skillRanks;
     std::set<EntityId> activeEquipment;
     uint64_t sourceRevision{};
+    std::vector<ChargedSkill> chargedSkills;
 };
 EquipmentLoadout loadout(const PersistentCharacter &, const ItemCatalog &, const EquipmentRules &);
 Totals calculate(const CharacterDefinition &, const PersistentCharacter &, const ItemCatalog &,

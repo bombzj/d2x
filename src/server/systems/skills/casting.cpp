@@ -72,13 +72,17 @@ DomainResult<> System::cast(const ActorContext &actor,const Request &request,int
         const auto cast=state_.casts.find(actor.actor);if(cast!=state_.casts.end() && cast->second.cooldownUntil>actor.tick) return {DomainStatus::Conflict,{}};
     }
     const auto rank=p.totals.skillRanks.find(selected);
-    const int effectiveRank=p.rules.character->innateSkills.contains(selected)?1:(rank==p.totals.skillRanks.end()?0:rank->second);
+    const auto owner=p.persistent.player.selectedSkillOwners.at(p.persistent.player.weaponSet*2+(request.right?1:0));
+    const auto charged=std::find_if(p.totals.chargedSkills.begin(),p.totals.chargedSkills.end(),[&](const auto &c){return c.item.id.value==owner && c.skill==selected && c.charges>0;});
+    if(owner!=UINT32_MAX && charged==p.totals.chargedSkills.end()) return {DomainStatus::Unavailable,{}};
+    const int effectiveRank=owner!=UINT32_MAX?charged->rank:p.rules.character->innateSkills.contains(selected)?1:(rank==p.totals.skillRanks.end()?0:rank->second);
     if(effectiveRank<=0 || effectiveRank>255) return {DomainStatus::InvalidRequest,{}};
     // ObjMode calls PLAYERMODE_Change directly, including barrels in town;
     // it does not apply player-selected spell town eligibility to hidden KK.
     const bool objectKick=definition.spec.effect==SkillBehavior::Kick && type==2;
     if(area.definition.town && !definition.allowedInTown && !objectKick) return {DomainStatus::Unavailable,{}};
     auto skill=evaluate(p,selected,effectiveRank);
+    if(owner!=UINT32_MAX) {skill.charge=SkillCharge{charged->item,charged->layer};skill.manaCost=skill.startMana=0;}
     if(!std::isfinite(skill.manaCost) || skill.manaCost<0 || !std::isfinite(skill.startMana) || skill.startMana<0 ||
         p.persistent.player.mana<std::max(skill.manaCost,skill.startMana)) return {DomainStatus::Unavailable,{}};
     if(skill.effect==SkillBehavior::Teleport && (!area.definition.teleportAllowed || !area.definition.collision.walkable(target.position,playerMovement))) return {DomainStatus::Unavailable,{}};
@@ -116,8 +120,9 @@ DomainResult<> System::cast(const ActorContext &actor,const Request &request,int
         state_.casts[actor.actor]={actor.actor,uint16_t(selected),actor.tick,actor.sequence,actor.tick+uint64_t(timing.duration),actor.area,unit};
         if(saved) state_.casts.at(actor.actor).cooldownUntil=saved->cooldownUntil;
         if(inferno) {
-            const auto debit=ports_.transactions.release(actor,p.characterRevision,releases_.at(actor.actor).skill.manaCost);
-            if(!debit) {rollback();return debit;}releases_.at(actor.actor).manaPaid=true;
+            const auto &castSkill=releases_.at(actor.actor).skill;
+            const auto debit=ports_.transactions.release(actor,p.characterRevision,castSkill.manaCost,{},castSkill.charge);
+            if(!debit) {rollback();return debit;}if(releases_.at(actor.actor).skill.charge) releases_.at(actor.actor).skill.charge->item=p.persistent.inventory.items.at(castSkill.charge->item.id).handle();releases_.at(actor.actor).manaPaid=true;
         }
         const auto output=ports_.events.publish({0,actor.tick,{}, {AudienceKind::Area,{},actor.area},
             {AttackFact{actor.actor,unit,0,type,actor.area,p.position,target.position,actor.sequence,uint16_t(selected),uint8_t(effectiveRank)}}});
@@ -139,7 +144,7 @@ DomainStatus System::activate(Release &pending,const ActorContext &actor,Vec tar
     }
     if(skill.summon && skill.summon->amazon) return ports_.companions.amazon(actor,skill,target).status;
     if(skill.amazonMagic) return ports_.effects.amazonMagic(actor,skill).status;
-    if(skill.effect==SkillBehavior::Teleport) return ports_.travel.teleport(actor,{actor.area,actor.areaGeneration,target},skill.manaCost).status;
+    if(skill.effect==SkillBehavior::Teleport) return ports_.travel.teleport(actor,{actor.area,actor.areaGeneration,target},skill.manaCost,skill.charge).status;
     if(skill.effect==SkillBehavior::Hydra) return ports_.companions.hydra(actor,skill,target).status;
     if(skill.appliedEffect) {
         if(skill.effect==SkillBehavior::Enchant && pending.unit && pending.unitType==1) return ports_.effects.skillUnit(actor,skill,pending.unit).status;
@@ -162,7 +167,7 @@ DomainStatus System::activate(Release &pending,const ActorContext &actor,Vec tar
         }
         if(pending.unitType==2) {
             if(!pending.manaPaid) {
-                const auto debit=ports_.transactions.release(actor,p.characterRevision,skill.manaCost);if(!debit) return debit.status;pending.manaPaid=true;
+                const auto debit=ports_.transactions.release(actor,p.characterRevision,skill.manaCost,{},skill.charge);if(!debit) return debit.status;pending.manaPaid=true;
             }
             if(ports_.travel.portalPosition(actor,pending.unit)) return ports_.travel.useSpecial(actor,{travel::Kind::Portal,{pending.unit,0},{}},skill.telekinesisRange).status;
             return ports_.objects.execute(actor,{{pending.unit,0}},skill.telekinesisRange).status;
@@ -177,6 +182,8 @@ StepStatus System::release(TickContext tick) {
         auto &pending=it->second;if(tick.tick<pending.tick) {++it;continue;}
         auto actor=pending.actor;actor.tick=tick.tick;const auto *p=ports_.players.find(actor.player);const auto *area=ports_.areas.find(actor.area);
         bool valid=p && p->entered && p->actor==actor.actor && p->area==actor.area && p->persistent.player.hp>0 && area && area->generation==actor.areaGeneration;
+        if(valid && pending.skill.charge) valid=std::any_of(p->totals.chargedSkills.begin(),p->totals.chargedSkills.end(),[&](const auto &c){return c.item.id==pending.skill.charge->item.id && c.layer==pending.skill.charge->layer && c.charges>0;});
+        if(valid && !pending.skill.charge && pending.skill.sourceId>=0 && !p->rules.character->innateSkills.contains(pending.skill.sourceId)) valid=p->totals.skillRanks.contains(pending.skill.sourceId);
         Vec target=pending.target.position;
         if(valid && pending.unit && !(pending.skill.weapon && ((pending.skill.weapon->bow && pending.skill.weapon->bow->strafe) || (pending.skill.weapon->spear && pending.skill.weapon->spear->kind==SpearSkillSpec::Kind::Fend)))) {
             const auto position=unitPosition(actor,{pending.unit,0,pending.unitType},pending.skill.effect);valid=position.has_value();if(valid) target=*position;
@@ -186,6 +193,7 @@ StepStatus System::release(TickContext tick) {
         DomainStatus status;
         if(channel) {
             auto skill=evaluate(*p,pending.skill.sourceId,pending.skill.rank);
+            if(pending.skill.charge) {skill.charge=pending.skill.charge;skill.manaCost=skill.startMana=0;}
             const bool consume=pending.pulses%2==0;
             if(consume && p->persistent.player.mana<skill.manaCost) {it=releases_.erase(it);continue;}
             status=ports_.missiles.spawn({actor,skill,pending.collision,target,!consume}).status;
@@ -194,7 +202,7 @@ StepStatus System::release(TickContext tick) {
         if(status==DomainStatus::Applied) {
             auto &cast=state_.casts.at(actor.actor);
             if(pending.skill.delayFrames>0) cast.cooldownUntil=tick.tick+uint64_t(pending.skill.delayFrames);
-            if(channel) {++pending.pulses;pending.tick=tick.tick+1;cast.until=tick.tick+1;++it;continue;}
+            if(channel) {if(pending.skill.charge) pending.skill.charge->item=p->persistent.inventory.items.at(pending.skill.charge->item.id).handle();++pending.pulses;pending.tick=tick.tick+1;cast.until=tick.tick+1;++it;continue;}
             if(pending.weapon) {
                 pending.manaPaid=true;
                 if(++pending.nextWeaponHit<pending.weaponHits.size()) {
@@ -221,4 +229,30 @@ DomainResult<> System::objectKick(const ActorContext &actor, UnitTarget target) 
         }
     return {DomainStatus::Unavailable,{}};
 }
+DomainResult<> System::itemTrigger(const ActorContext &actor,SkillCastSpec skill,MissileCollisionRule collision,EntityId target,Vec position,bool dead,bool itemTargetDo) {
+    const auto *p=ports_.players.find(actor.player);const auto *area=ports_.areas.find(actor.area);
+    if(!p || !p->entered || p->actor!=actor.actor || p->area!=actor.area || !area || area->generation!=actor.areaGeneration || (p->persistent.player.hp<=0 && !dead)) return {DomainStatus::InvalidActor,{}};
+    if(itemTargetDo || skill.weapon || skill.effect==SkillBehavior::ItemSkill || skill.effect==SkillBehavior::Kick || skill.effect==SkillBehavior::Unsummon) return {DomainStatus::NotImplemented,{}};
+    skill.manaCost=skill.startMana=0;skill.delayFrames=0;skill.charge.reset();
+    if(!dead && skill.appliedEffect) {
+        if(skill.effect==SkillBehavior::Enchant && target) {
+            for(const auto &[id,recipient]:ports_.players.all()) if(recipient.actor==target && recipient.entered && recipient.area==actor.area) return ports_.effects.skill(actor,skill,id);
+            return ports_.effects.skillUnit(actor,skill,target);
+        }
+        return ports_.effects.skill(actor,skill);
+    }
+    if(dead && (skill.appliedEffect || skill.summon || skill.effect==SkillBehavior::Teleport || skill.effect==SkillBehavior::Hydra)) return {DomainStatus::Unavailable,{}};
+    if(skill.summon && skill.summon->amazon) return ports_.companions.amazon(actor,skill,position);
+    if(skill.amazonMagic) return ports_.effects.amazonMagic(actor,skill);
+    if(skill.effect==SkillBehavior::Teleport) return ports_.travel.teleport(actor,{actor.area,actor.areaGeneration,position},0);
+    if(skill.effect==SkillBehavior::Hydra) return ports_.companions.hydra(actor,skill,position);
+    missiles::Spawn spawn{actor,std::move(skill),collision,position,true};spawn.deathTrigger=dead;
+    if(spawn.skill.effect==SkillBehavior::StaticField) {
+        std::vector<EntityId> targets;for(const auto &[id,m]:ports_.monsters.read().actors) if(!m.owner && m.life>0 && m.area==actor.area && within(p->position,m.position,int(spawn.skill.staticRadius))) targets.push_back(id);
+        return ports_.missiles.direct(spawn,std::move(targets));
+    }
+    if(spawn.skill.effect==SkillBehavior::Telekinesis) return target?ports_.missiles.direct(spawn,{target}):DomainResult<>{DomainStatus::Unavailable,{}};
+    const auto result=ports_.missiles.spawn(spawn);return {result.status,result?std::optional{std::monostate{}}:std::nullopt};
+}
+
 }

@@ -43,14 +43,17 @@ void addStats(std::span<const ResolvedItemStat> stats, EntityId item, bool weapo
         applyEquipmentStat(stat, item, weapon, mods.combat);
     }
 }
-void addConditionalStats(std::span<const ResolvedItemStat> stats, EntityId item, bool weapon, CharacterModifiers &mods) {
+void addConditionalStats(std::span<const ResolvedItemStat> stats, EntityId item, bool weapon, CharacterModifiers &mods,const EquipmentContributionSource &source) {
     for (const auto &stat : stats)
         if (stat.effect == "item_req_percent") throw std::runtime_error("Conditional set requirements are not implemented");
     addStats(stats, item, weapon, mods);
+    if(source.observe) source.observe(item,stats);
 }
 void addItem(const EquipmentContributionSource &source, const ItemInstance &item, bool weapon,
              int level, CharacterModifiers &mods) {
-    addStats(source.itemStats(item, level), item.id, weapon, mods);
+    const auto stats=source.itemStats(item,level);
+    addStats(stats, item.id, weapon, mods);
+    if(source.observe) source.observe(item.id,stats);
 }
 } // namespace
 CharacterModifiers deriveEquipmentModifiers(const EquipmentLoadout &loadout,
@@ -116,12 +119,16 @@ CharacterModifiers deriveEquipmentModifiers(const EquipmentLoadout &loadout,
                 if (record.row != item.specialRow) continue;
                 const int count = int(pieces[record.set].size());
                 const int full = record.fullPieces;
-                if (item.nativeProperties && record.addFunction == 2) {
+                if (item.nativeProperties && (record.addFunction == 1 || record.addFunction == 2)) {
+                    std::vector<int32_t> members;
+                    for(const auto &member:source.sets) if(member.set==record.set) members.push_back(member.row);
+                    const std::vector<int32_t> worn(pieces[record.set].begin(),pieces[record.set].end());
+                    const auto layers=activeSetItemLayers(record.addFunction,record.row,members,worn);
                     for (size_t index = 0; index < item.savedSetStats.size(); ++index) {
                         const std::string key = record.set + ":native:" + std::to_string(id.value) + ":" + std::to_string(index);
-                        if (count < int(index) + 2 || item.savedSetStats[index].empty() || appliedSetBonuses.contains(key)) continue;
+                        if (!layers[index] || item.savedSetStats[index].empty() || appliedSetBonuses.contains(key)) continue;
                         addConditionalStats(source.nativeSetStats(item.id, index, baseActor.level), item.id,
-                            loadout.find(item.id).definition->equipment.isType("weap"), total);
+                            loadout.find(item.id).definition->equipment.isType("weap"), total,source);
                         appliedSetBonuses.insert(key);
                         changed = true;
                     }
@@ -136,7 +143,7 @@ CharacterModifiers deriveEquipmentModifiers(const EquipmentLoadout &loadout,
                     if (!bonus.fixedValue) throw std::runtime_error("Unresolved variable set bonus");
                     addConditionalStats(source.setStats(record.instruction, bonus.instruction, baseActor.level),
                         bonus.perItem ? id : EntityId{},
-                        bonus.perItem && loadout.find(item.id).definition->equipment.isType("weap"), total);
+                        bonus.perItem && loadout.find(item.id).definition->equipment.isType("weap"), total,source);
                     appliedSetBonuses.insert(key);
                     changed = true;
                 }

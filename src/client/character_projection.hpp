@@ -1,5 +1,6 @@
 #pragma once
 #include "contracts/character.hpp"
+#include "gameplay/items/skill_sources.hpp"
 #include <map>
 #include <optional>
 
@@ -19,6 +20,7 @@ struct CharacterProjectionInput {
     std::array<int, 4> selectedSkills{-1, -1, -1, -1};
     std::array<SkillHotkey, 8> hotkeys{};
     std::map<int, int> baseRanks, effectiveRanks;
+    std::vector<ChargedSkill> chargedSkills;
     bool baseRanksAssigned = false;
     std::array<bool, 2> throwReady{};
     std::optional<int> fireMastery, lightningMastery, coldDamagePercent;

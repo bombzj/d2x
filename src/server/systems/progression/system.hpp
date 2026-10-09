@@ -17,7 +17,7 @@ struct Award { PlayerId player; uint64_t sourceOccurrence{}, experience{}, tick{
 // records the last committed identity atomically; no ever-growing replay set.
 DomainResult<CharacterRecord> addExperience(CharacterRecord, const CharacterDefinition &, const CharacterRules &, uint64_t);
 struct State {};
-struct Ports { const PlayerStore &players; transactions::System &transactions; };
+struct Ports { const PlayerStore &players; transactions::System &transactions; effects::System &effects; };
 class System {
     State state_;
     const Ports ports_;

@@ -54,11 +54,16 @@ Totals calculate(const CharacterDefinition &definition, const PersistentCharacte
     auto view = loadout(state, catalog, equipment);
     const auto base = deriveCharacterAttributes(definition, record.level, record.allocated, temporary);
     EquipmentActor actor{definition.code, base.strength, base.dexterity, record.level, base.blockFactor, record.weaponSet};
+    Totals result;
     EquipmentContributionSource source{equipment.sets,
         [&](const ItemInstance &item, int level) { return equipment.at(item.id, level).stats; },
         [&](size_t set, size_t bonus, int level) { return equipment.setBonuses.at({set, bonus}).at(size_t(level)); },
-        [&](EntityId id, size_t index, int level) { return equipment.at(id, level).setStats.at(index); }};
-    Totals result;
+        [&](EntityId id, size_t index, int level) { return equipment.at(id, level).setStats.at(index); },
+        [&](EntityId id,std::span<const ResolvedItemStat> stats) {
+            if(!id) return; // Full-set properties have no individual charge owner.
+            for(const auto &stat:stats) if(stat.effect=="item_charged_skill")
+                result.chargedSkills.push_back({state.inventory.items.at(id).handle(),stat.layer>>6,stat.layer&63,stat.rawValue&255,(stat.rawValue>>8)&255,stat.layer});
+        }};
     auto modifiers = deriveEquipmentModifiers(view, actor, source, excluded, &result.activeEquipment);
     std::vector<ItemSkillGrant> grants;
     for (auto &entry : view.equipped) {

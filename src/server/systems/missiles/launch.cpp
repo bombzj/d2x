@@ -132,7 +132,7 @@ std::vector<DomainFact> System::visuals(const std::vector<Missile> &missiles) co
 }
 DomainResult<EntityId> System::spawn(const Spawn &r) {
     const auto *p = ports_.players.find(r.actor.player); const auto *a = ports_.areas.find(r.actor.area);
-    if (!p || !p->entered || p->actor != r.actor.actor || p->area != r.actor.area || p->persistent.player.hp <= 0)
+    if (!p || !p->entered || p->actor != r.actor.actor || p->area != r.actor.area || (p->persistent.player.hp <= 0 && !r.deathTrigger))
         return {DomainStatus::InvalidActor,{}};
     if (!a || a->generation != r.actor.areaGeneration || a->definition.town || !p->rules.skills)
         return {DomainStatus::Unavailable,{}};
@@ -148,7 +148,7 @@ DomainResult<EntityId> System::spawn(const Spawn &r) {
     std::map<EntityId,Missile> prepared; auto cursor = ports_.ids.cursor();
     for (auto &m : launched) { m.id=EntityId{cursor++}; prepared.emplace(m.id,std::move(m)); }
     const auto id=prepared.begin()->first;
-    const auto released = r.cost ? ports_.transactions.commit(*r.cost) : r.free ? DomainResult<>{DomainStatus::Applied,std::monostate{}} : ports_.transactions.release(r.actor,p->characterRevision,r.skill.manaCost);
+    const auto released = r.cost ? ports_.transactions.commit(*r.cost) : r.free ? DomainResult<>{DomainStatus::Applied,std::monostate{}} : ports_.transactions.release(r.actor,p->characterRevision,r.skill.manaCost,{},r.skill.charge);
     if (!released) return {released.status,{}};
     if (!facts.empty()) ports_.events.publish({0,r.actor.tick,{}, {AudienceKind::Area,{},r.actor.area},std::move(facts)});
     for (size_t i=0;i<prepared.size();++i) ports_.ids.allocate();

@@ -14,8 +14,8 @@ void imageAt(const Sprite *image, Rectangle bounds, Color tint = WHITE) {
     DrawTexturePro(texture, {0, 0, float(texture.width), float(texture.height)}, bounds, {0, 0}, 0, tint);
 }
 } // namespace
-void SceneView::drawSkillIcon(std::optional<int> skill, Rectangle bounds, bool picker) const {
-    const auto *entry = skill ? characterView_.skill(*skill) : nullptr;
+void SceneView::drawSkillIcon(std::optional<int> skill, Rectangle bounds, bool picker,uint32_t owner) const {
+    const auto *entry = skill ? characterView_.skill(*skill,owner) : nullptr;
     auto icon = skill ? assets_.skillIcons.find(*skill) : assets_.skillIcons.end();
     const auto *image = !skill ? &assets_.attackIcon
                               : icon != assets_.skillIcons.end() ? &icon->second.sprite : nullptr;
@@ -41,8 +41,8 @@ void SceneView::drawControlPanel() const {
     }
     drawClassicHud({assets_.panel, assets_.orbs, assets_.globeOverlap, assets_.runButton,
                     assets_.attributeButtons, assets_.miniPanelToggle}, values);
-    drawSkillIcon(view_.leftSkill, hudSkillSlot(false));
-    drawSkillIcon(view_.rightSkill, hudSkillSlot(true));
+    drawSkillIcon(view_.leftSkill, hudSkillSlot(false),false,player.selectedSkillOwners[player.weaponSet*2]);
+    drawSkillIcon(view_.rightSkill, hudSkillSlot(true),false,player.selectedSkillOwners[player.weaponSet*2+1]);
     if (view_.miniPanelOpen) {
         if (const auto *background = assets_.miniPanel.frame(0, 0))
             imageAt(background, hudMiniPanel(*background));
@@ -96,27 +96,32 @@ std::vector<SceneView::SkillPickerSlot> SceneView::skillPickerSlots(bool right) 
             slots.push_back({skills[column], hudPickerSlot(right, int(column), visibleRow)});
         ++visibleRow;
     }
+    int column=0;
+    for(const auto &skill:characterView_.chargedSkills) if(!skill.passive && (right || skill.leftAllowed) && skill.listRow>=0) {
+        slots.push_back({skill.id,hudPickerSlot(right,column++,visibleRow),skill.owner});
+        if(column>=8) {column=0;++visibleRow;}
+    }
     return slots;
 }
 void SceneView::drawSkillControls(Vec mouse) const {
     if (view_.capturesWorldInput() || view_.inventory.drag || view_.inventory.split ||
         view_.inventory.goldDialog || view_.inventory.identify)
         return;
-    std::optional<std::optional<int>> hovered;
+    std::optional<std::optional<int>> hovered;uint32_t hoveredOwner=UINT32_MAX;
     Vec tooltipAnchor{W / 2.f, H - 55 * hudScale};
     if (view_.skillPicker) {
         bool right = *view_.skillPicker;
         for (const auto &slot : skillPickerSlots(right)) {
             const auto bounds = slot.bounds;
-            drawSkillIcon(slot.skill, bounds, true);
+            drawSkillIcon(slot.skill, bounds, true,slot.owner);
             const auto &hotkeys = characterView_.skillHotkeys;
             for (size_t key = 0; key < hotkeys.size(); ++key)
-                if (hotkeys[key].right == right && hotkeys[key].skill == slot.skill.value_or(-1)) {
+                if (hotkeys[key].right == right && hotkeys[key].skill == slot.skill.value_or(-1) && hotkeys[key].owner==slot.owner) {
                     auto label = "F" + std::to_string(key + 1);
                     painter_.label(label, int(bounds.x + 3), int(bounds.y + bounds.height - 12), 10, gold);
                 }
             if (CheckCollisionPointRec(rv(mouse), bounds)) {
-                hovered.emplace(slot.skill);
+                hovered.emplace(slot.skill);hoveredOwner=slot.owner;
                 tooltipAnchor = {bounds.x + bounds.width / 2, bounds.y};
                 DrawRectangleLinesEx(bounds, 1, gold);
             }
@@ -125,14 +130,14 @@ void SceneView::drawSkillControls(Vec mouse) const {
         for (bool right : {false, true}) {
             const auto bounds = hudSkillSlot(right);
             if (CheckCollisionPointRec(rv(mouse), bounds)) {
-                hovered.emplace(right ? view_.rightSkill : view_.leftSkill);
+                hovered.emplace(right ? view_.rightSkill : view_.leftSkill);hoveredOwner=characterView_.selectedSkillOwners[characterView_.weaponSet*2+unsigned(right)];
                 tooltipAnchor = {bounds.x + bounds.width / 2, bounds.y};
             }
         }
     }
     if (hovered) {
         auto choice = *hovered;
-        const auto *entry = choice ? characterView_.skill(*choice) : nullptr;
+        const auto *entry = choice ? characterView_.skill(*choice,hoveredOwner) : nullptr;
         auto name = entry ? entry->name : "Attack";
         auto lines = std::vector<std::string>{name};
         const auto details = entry ? entry->pickerTooltip : std::vector<std::string>{"Normal weapon attack"};

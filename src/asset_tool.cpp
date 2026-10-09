@@ -183,6 +183,16 @@ int main(int argc, char **argv) {
         } else if (command == "save-info" && argc == 4) {
             auto data = d2x::loadClassicData(a);
             auto snapshot = d2x::loadSave(argv[3], data);
+            size_t ears=0, realms=0, tempered=0, bodyParts=0;
+            const auto countIdentity=[&](auto &&self,const d2x::ItemInstance &item)->void {
+                ears+=item.ear.has_value(); realms+=item.realmIdentity.has_value();
+                tempered+=item.quality==d2x::ItemQuality::Tempered;
+                const auto *base=data.items.find(item.definition);
+                bodyParts+=base && base->equipment.isType("body") && !base->equipment.isType("play");
+                for(const auto &child:item.socketedItems) self(self,child);
+            };
+            for(const auto &[id,item]:snapshot.inventory.items) { (void)id;countIdentity(countIdentity,item); }
+            if(snapshot.ironGolem) countIdentity(countIdentity,*snapshot.ironGolem);
             std::cout << "Save format=D2S-v96 name=" << snapshot.player.name
                       << " lastRegion=" << int(snapshot.lastRegion)
                       << " gold=" << snapshot.player.gold
@@ -195,6 +205,8 @@ int main(int argc, char **argv) {
                       << snapshot.player.allocated.energy
                       << " life=" << snapshot.player.hp
                       << " creationRandom=" << snapshot.inventory.creationRandom << '\n';
+            std::cout << "Native item identities: ears=" << ears << " realm=" << realms
+                      << " tempered=" << tempered << " bodyParts=" << bodyParts << '\n';
             for (const auto &[id, item] : snapshot.inventory.items) {
                 auto location = std::get_if<d2x::ContainerLocation>(&item.location);
                 if (!location || (location->container != snapshot.containers.equipment &&

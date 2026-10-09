@@ -8,6 +8,7 @@
 namespace d2x {
 namespace {
 constexpr uint32_t compact = 0x00200000;
+constexpr uint32_t earFlag = 0x00010000;
 void require(bool value, const char *reason) {
     if (!value) throw std::runtime_error(std::string("Unsupported or invalid D2S item: ") + reason);
 }
@@ -45,11 +46,22 @@ bool flag(const ClassicData &content, const ItemDefinition &item, const char *co
 }
 void validate(const D2sItem &item, const ItemDefinition &definition, const ClassicData &content) {
     require(item.code.size() >= 1 && item.code.size() <= 4, "base code");
-    require((item.flags & (0x2000000u | 0x10000u)) == 0, "ear or gamble item");
+    require((item.flags & 0x2000000u) == 0, "transient gamble item");
     require(item.mode == 0 || item.mode == 1 || item.mode == 2 || item.mode == 4 || item.mode == 6, "location");
     require(bool(item.flags & compact) == flag(content, definition, "compactsave"), "compact flag");
-    require(item.quality >= 1 && item.quality <= 8, "quality");
+    require(item.quality >= 1 && item.quality <= 9, "quality");
     require(item.level >= 1 && item.level <= 99, "item level");
+    require(bool(item.flags & earFlag) == bool(item.ear) &&
+        bool(item.ear) == definition.equipment.isType("play"), "ear flag/base/identity");
+    if (item.ear) {
+        require(item.ear->characterClass < 7 && item.ear->level < 128 &&
+            !item.ear->name.empty() && item.ear->name.size() <= 15, "ear identity range");
+        require(std::all_of(item.ear->name.begin(), item.ear->name.end(), [](unsigned char c) {
+            return c > 0 && c < 128;
+        }), "ear name character");
+    }
+    if (item.quality == 9) require(std::all_of(item.prefixes.begin(), item.prefixes.end(), [](auto v) { return !v; }) &&
+        std::all_of(item.suffixes.begin(), item.suffixes.end(), [](auto v) { return !v; }), "tempered affix identity");
     if(item.autoAffix) {
         const auto &automatic=content.tables.at("automagic");
         require(item.autoAffix<=automatic.rows().size() && item.autoAffix<2048,"automatic affix row");
@@ -58,6 +70,10 @@ void validate(const D2sItem &item, const ItemDefinition &definition, const Class
     }
 }
 void validateAddedProperties(const D2sItem &item, const ItemDefinition &definition) {
+    require(!(item.flags & compact) || (!(item.flags & (0x4000000u | 0x1000000u)) &&
+        item.stats.empty() && item.runewordStats.empty() &&
+        std::all_of(item.setStats.begin(), item.setStats.end(), [](const auto &v) { return v.empty(); })),
+        "properties on compact item");
     require(bool(item.flags & 0x800u) == bool(item.sockets), "socket flag/count mismatch");
     require(item.sockets <= unsigned(std::max(0, definition.base.sockets.value_or(0))) &&
         (!item.sockets || !(item.flags & compact)), "socket count or compact sockets");
@@ -69,6 +85,31 @@ void validateAddedProperties(const D2sItem &item, const ItemDefinition &definiti
     require(bool(item.flags & 0x1000000u) == !item.personalizedName.empty(), "personalization flag/name mismatch");
     require(item.personalizedName.size() <= 15 &&
         (item.personalizedName.empty() || (definition.personalizable && !(item.flags & compact))), "personalized item type/name");
+}
+std::string readName(D2sBitReader &bits) {
+    std::string name;
+    for (unsigned i = 0; i < 16; ++i) {
+        const auto character = bits.read(7);
+        if (!character) return name;
+        require(i < 15, "name length"); name.push_back(char(character));
+    }
+    throw std::runtime_error("Unterminated native item name");
+}
+void writeName(D2sBitWriter &bits, const std::string &name) {
+    require(!name.empty() && name.size() <= 15, "name length");
+    for (unsigned char character : name) {
+        require(character > 0 && character < 128, "name character"); bits.write(character, 7);
+    }
+    bits.write(0, 7);
+}
+void readEar(D2sBitReader &bits, D2sItem &item) {
+    ItemEarIdentity identity;
+    identity.characterClass = bits.read(3); identity.level = bits.read(7);
+    identity.name = readName(bits); item.ear = std::move(identity);
+}
+void writeEar(D2sBitWriter &bits, const D2sItem &item) {
+    bits.write(item.ear->characterClass, 3); bits.write(item.ear->level, 7);
+    writeName(bits, item.ear->name);
 }
 void readStats(D2sBitReader &bits, const ClassicData &content, D2sItem &item) {
     for (size_t count = 0; count < 512; ++count) {
@@ -117,9 +158,13 @@ D2sItemRead readD2sItem(std::span<const uint8_t> bytes, const ClassicData &conte
     item.x = bits.read(4);
     item.y = bits.read(4);
     item.page = bits.read(3);
-    const auto code = bits.read(32);
-    for (unsigned index = 0; index < 4; ++index) item.code.push_back(char(code >> (index * 8)));
-    while (!item.code.empty() && (item.code.back() == ' ' || !item.code.back())) item.code.pop_back();
+    if ((item.flags & (compact | earFlag)) == (compact | earFlag)) {
+        item.code = "ear"; readEar(bits, item);
+    } else {
+        const auto code = bits.read(32);
+        for (unsigned index = 0; index < 4; ++index) item.code.push_back(char(code >> (index * 8)));
+        while (!item.code.empty() && (item.code.back() == ' ' || !item.code.back())) item.code.pop_back();
+    }
     const auto *definition = content.items.find(item.code);
     require(definition != nullptr, "unknown base item");
     validate(item, *definition, content);
@@ -140,7 +185,7 @@ D2sItemRead readD2sItem(std::span<const uint8_t> bytes, const ClassicData &conte
         switch (item.quality) {
         case 1: case 3: item.fileIndex = bits.read(3); break;
         case 2:
-            require(!definition->equipment.isType("body"), "normal body part");
+            if (definition->equipment.isType("body") && !definition->equipment.isType("play")) item.fileIndex = bits.read(10);
             if (definition->equipment.isType("char")) {
                 const bool prefix = bits.read(1) != 0;
                 (prefix ? item.prefixes[0] : item.suffixes[0]) = bits.read(11);
@@ -156,18 +201,17 @@ D2sItemRead readD2sItem(std::span<const uint8_t> bytes, const ClassicData &conte
                 if (bits.read(1)) item.suffixes[index] = bits.read(11);
             }
             break;
+        case 9: item.rarePrefix = bits.read(8); item.rareSuffix = bits.read(8); break;
         }
     }
     if (item.flags & 0x4000000u) item.runewordId = bits.read(16);
-    if (item.flags & 0x1000000u) {
-        for (unsigned i = 0; i < 16; ++i) {
-            const auto character = bits.read(7);
-            if (!character) break;
-            require(i < 15, "personalized name length"); item.personalizedName.push_back(char(character));
-        }
-        require(!item.personalizedName.empty(), "empty personalized name");
+    if (!(item.flags & compact) && (item.flags & earFlag)) readEar(bits, item);
+    else if (item.flags & 0x1000000u) item.personalizedName = readName(bits);
+    if (bits.read(1)) {
+        ItemRealmIdentity identity;
+        for (auto &word : identity) word = bits.read(32);
+        item.realmIdentity = identity;
     }
-    require(bits.read(1) == 0, "realm item data");
     if (!(item.flags & compact)) {
         if (definition->family == ItemFamily::Armor) item.defense = unsigned(readValue(bits, content, 31));
         if (definition->family != ItemFamily::Misc) {
@@ -189,6 +233,7 @@ D2sItemRead readD2sItem(std::span<const uint8_t> bytes, const ClassicData &conte
             item.runewordStats = std::move(bonus.stats);
         }
     }
+    validate(item, *definition, content);
     validateAddedProperties(item, *definition);
     require(children <= item.sockets && children <= 6 && (!children || item.mode != 6), "socket child count");
     size_t consumed = bits.size();
@@ -211,7 +256,8 @@ Bytes writeD2sItem(const D2sItem &item, const ClassicData &content) {
     uint32_t code = 0;
     for (unsigned index = 0; index < 4; ++index)
         code |= uint32_t(index < item.code.size() ? uint8_t(item.code[index]) : uint8_t(' ')) << (index * 8);
-    bits.write(code, 32);
+    if ((item.flags & (compact | earFlag)) == (compact | earFlag)) writeEar(bits, item);
+    else bits.write(code, 32);
     if (item.flags & compact) {
         require(item.stats.empty() && item.quality == 2, "compact properties");
         if (flag(content, *definition, "quest") && flag(content, *definition, "questdiffcheck"))
@@ -224,7 +270,7 @@ Bytes writeD2sItem(const D2sItem &item, const ClassicData &content) {
         switch (item.quality) {
         case 1: case 3: bits.write(item.fileIndex, 3); break;
         case 2:
-            require(!definition->equipment.isType("body"), "normal body part");
+            if (definition->equipment.isType("body") && !definition->equipment.isType("play")) bits.write(item.fileIndex, 10);
             if (definition->equipment.isType("char")) {
                 require(!(item.prefixes[0] && item.suffixes[0]) && !item.prefixes[1] &&
                             !item.prefixes[2] && !item.suffixes[1] && !item.suffixes[2],
@@ -245,15 +291,14 @@ Bytes writeD2sItem(const D2sItem &item, const ClassicData &content) {
                 if (item.suffixes[index]) bits.write(item.suffixes[index], 11);
             }
             break;
+        case 9: bits.write(item.rarePrefix, 8); bits.write(item.rareSuffix, 8); break;
         }
     }
     if (item.flags & 0x4000000u) bits.write(item.runewordId, 16);
-    if (item.flags & 0x1000000u) {
-        require(!item.personalizedName.empty() && item.personalizedName.size() <= 15, "personalized name length");
-        for (unsigned char character : item.personalizedName) { require(character > 0 && character < 128, "personalized name character"); bits.write(character, 7); }
-        bits.write(0, 7);
-    }
-    bits.write(0, 1);
+    if (!(item.flags & compact) && (item.flags & earFlag)) writeEar(bits, item);
+    else if (item.flags & 0x1000000u) writeName(bits, item.personalizedName);
+    bits.write(item.realmIdentity.has_value(), 1);
+    if (item.realmIdentity) for (const auto word : *item.realmIdentity) bits.write(word, 32);
     if (!(item.flags & compact)) {
         if (definition->family == ItemFamily::Armor) writeValue(bits, content, 31, item.defense);
         if (definition->family != ItemFamily::Misc) {

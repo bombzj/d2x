@@ -6,6 +6,7 @@
 #include "gameplay/skills/summon_spec.hpp"
 #include "gameplay/combat/missile_effects.hpp"
 #include "gameplay/effects/spec.hpp"
+#include "gameplay/items/skill_sources.hpp"
 #include <optional>
 #include <memory>
 
@@ -53,5 +54,6 @@ struct SkillCastSpec {
     int castMissileId = -1;
     float castMissileDuration = 0;
     std::optional<CombatEffectSpec> appliedEffect;
+    std::optional<SkillCharge> charge;
 };
 } // namespace d2x

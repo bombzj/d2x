@@ -78,10 +78,10 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
     mutablePlayer.route = std::move(route); mutablePlayer.routeRunning = mutablePlayer.running;
     return {DomainStatus::Applied, std::monostate{}};
 }
-DomainResult<> System::teleport(const ActorContext &actor, PointTarget target, float manaCost) {
+DomainResult<> System::teleport(const ActorContext &actor, PointTarget target, float manaCost,std::optional<SkillCharge> charge) {
     const auto *player = ports_.players.find(actor.player);
     if (!player) return {DomainStatus::InvalidActor, {}};
-    const auto result = ports_.transactions.release(actor, player->characterRevision, manaCost, target);
+    const auto result = ports_.transactions.release(actor, player->characterRevision, manaCost, target,charge);
     if (result) cancel(actor.player);
     return result;
 }
@@ -122,6 +122,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
             if (!crossed) { player.position = next; player.look = delta.unit(); player.moving = true; ++pending; continue; }
             arrival = next + offset;
         }
+        if(transition.kind==Kind::SpecialPortal && std::none_of(state_.specialPortals.begin(),state_.specialPortals.end(),[&](const auto &entry){return entry.second.fieldId==transition.source || entry.second.townId==transition.source;})) {pending=state_.transitions.erase(pending);continue;}
         if (transition.kind==Kind::Portal) {
             const auto portal=state_.portals.find(player.player);
             if(portal==state_.portals.end() || (portal->second.fieldId!=transition.source && portal->second.townId!=transition.source)) { pending=state_.transitions.erase(pending); continue; }

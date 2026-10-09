@@ -93,7 +93,7 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
     }
     if(rule.operation==5 && !ports_.events.hasCapacity(1)) return {DomainStatus::Capacity,{}};
     LootRequest source; source.source = object.id; source.region = object.area; source.difficulty = ports_.settings.difficulty;
-    const auto result = ports_.loot.queue({object.revision, source, actor.player, object.position, loot::ObjectSource{object.definition, rule.operation, rule.chest, key}});
+    const auto result = ports_.loot.queue({object.revision, source, actor.player, object.position, loot::ObjectSource{object.definition, rule.operation, rule.chest, key},{}});
     if (result) {
         object.pending = true;
         if(rule.operation==5) {

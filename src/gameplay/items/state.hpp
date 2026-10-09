@@ -2,6 +2,7 @@
 #include "core/id.hpp"
 #include "gameplay/items/handle.hpp"
 #include "gameplay/items/generation.hpp"
+#include "gameplay/items/native_identity.hpp"
 #include "gameplay/model/definitions.hpp"
 #include <map>
 #include <cstdint>
@@ -61,6 +62,9 @@ struct ItemInstance {
     bool nativeHasGraphic = false;
     unsigned nativeAutoAffix = 0; // Serialized AutoMagic row + 1; values live in savedStats.
     unsigned nativeQuestDifficulty = 0;
+    unsigned nativeBodyPart = 0;
+    std::optional<ItemEarIdentity> ear;
+    std::optional<ItemRealmIdentity> realmIdentity;
     unsigned nativeMaxDurability = 0;
     unsigned sockets = 0;
     // Children are owned only by the host, never also present in InventoryState.items.

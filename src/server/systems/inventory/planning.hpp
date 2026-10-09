@@ -8,6 +8,7 @@ struct Edit {
     InventoryState inventory;
     std::vector<ItemChange> changes;
     unsigned weaponSet{};
+    std::vector<ItemInstance> spilled{};
 };
 DomainResult<Edit> plan(const PlayerState &, const Request &, const ItemCatalog &, const EquipmentRules &, const CharacterRules &, bool storage = false, bool cube = false);
 namespace detail {
@@ -31,10 +32,13 @@ struct Draft {
     DomainStatus move(EntityId, ContainerLocation);
     DomainStatus resizeBelt(int rows);
     DomainStatus equipment(const EquipItem &, EquipmentMode);
+    DomainResult<bool> autoEquip(EntityId);
     DomainStatus qualified(EntityId) const;
     DomainStatus merge(const MergeStacks &);
     unsigned stackSpace(const ItemInstance &,const ItemInstance &) const;
     DomainStatus loadBook(const LoadBook &);
+    DomainStatus mergeCarried(EntityId);
 };
+DomainResult<transactions::WorldEdit> prepareSpill(const PlayerState &, const Edit &, EquipmentRules &, items::System &);
 }
 }
