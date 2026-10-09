@@ -66,7 +66,7 @@ int runGame(int argc, char **argv) {
                      "--mpq <folder|archive> --online-config <file.json>\n"
                      "--host-lan <IPv4 interface> --host-saves <folder>: shared MCP/D2GS host.\n"
                      "--lan <host IPv4>: connect directly to its native character lobby.\n"
-                     "--realm-port <port> --game-port <port>: LAN defaults 6113 / 4001.\n"
+                     "--realm-port <port> --game-port <port>: LAN defaults 6113 / 4000.\n"
                      "--load <character.d2s> | --class <MPQ class>; --save <new character.d2s>\n"
                      "--debug-pipe <name>: opt-in local command interface; starts running.\n"
                      "pause/resume freeze client presentation only; the server and network keep running.\n"

@@ -45,7 +45,7 @@ class RealmSession {
     // Preauthenticated Realm admission (embedded host today). Native MCP/D2GS
     // codecs, state reducer and all public gameplay commands remain unchanged.
     void connect_realm(std::unique_ptr<IByteTransport> mcp, std::unique_ptr<IByteTransport> game,
-                       Endpoint realm, std::string name, uint16_t gamePort = 4001);
+                       Endpoint realm, std::string name, uint16_t gamePort = 4000);
     ~RealmSession();
     RealmSession(const RealmSession &) = delete;
     RealmSession &operator=(const RealmSession &) = delete;

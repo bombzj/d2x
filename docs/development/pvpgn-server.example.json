@@ -1,0 +1,11 @@
+{
+  "mpq": "../../assets/mpq2",
+  "recovery": "../../artifacts/pvpgn-recovery",
+  "stopFile": "../../artifacts/pvpgn-control/stop.request",
+  "realm": "",
+  "version": 0,
+  "maximumGames": 16,
+  "listen": { "host": "0.0.0.0", "port": 4000 },
+  "d2cs": { "host": "127.0.0.1", "port": 6113 },
+  "d2dbs": { "host": "127.0.0.1", "port": 6114 }
+}

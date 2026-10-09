@@ -69,7 +69,7 @@ GS接受TCP后发原AF00；收到68才凭hash／token寻找对应MCP入局会话
 
 人物命中／生命修正沿PlrMsg使用0D动作19和整数生命0..100，不发怪物0C、不把19当GH；怪物0C沿MonsterMsg使用旗标19、0..128原比例大于1时减一及原命中类型。组件池、SH格挡、HitClass准备见[怪物COMMON](../gameplay/monsters/COMMON.md)，两个D2GS普通怪物有限对照见[第一幕证据](../gameplay/monsters/ACT1.md#有限运行证据)。这些修正只改自研权威／hosting投影，本次没有修改客户端或增加自研协议。
 
-玩家兴趣粒度为本人区域及已准备的直接自然邻区；怪物进一步以本区RoomLayout邻室／邻区距离过滤，尚非完整原版房间兴趣。当前没有BNCS账号与独立无图形宿主发行；LAN使用宿主共享角色目录，详见[联网入口](NETWORK.md#局域网自研宿主入口)。历史包有同机TCP双进程有限证据，本轮六项未复验多人／跨机器路径。
+玩家兴趣粒度为本人区域及已准备的直接自然邻区；怪物进一步以本区RoomLayout邻室／邻区距离过滤，尚非完整原版房间兴趣。LAN使用宿主角色目录，独立无图形EXE则经PvPGN D2CS／D2DBS取得票据和角色锁，不自行提供BNCS账号。独立路径复用NativeRealmService的原游戏分派与输出，通过admitExternal／externalSave接入后端，不经过本地MCP选角或CharacterStore租约。部署／后端协议见[PvPGN服务端](../development/PVPGN_SERVER.md)，嵌入入口见[NETWORK](NETWORK.md#局域网自研宿主入口)；历史同机TCP证据不能认证新独立服务的多人／跨机器行为。
 
 ## 新增一个玩法的顺序
 

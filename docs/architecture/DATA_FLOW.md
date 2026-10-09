@@ -1,6 +1,6 @@
 # 数据流与生命周期
 
-更新：2026-10-08。本轮统一原协议客户端与服务端D2S入口，Windows Release构建打包及有限单机冒烟完成，覆盖限制见[基线](../../BASELINE.md#当前运行包与有限冒烟)。范围见[总计划](MULTIPLAYER.md)，库边界见[架构](OVERVIEW.md)。
+更新：2026-10-09。客户端、嵌入宿主与独立PvPGN游戏服务均沿原协议交换状态；构建／运行证据及包身份见[基线](../../BASELINE.md#当前运行包与有限冒烟)。范围见[总计划](MULTIPLAYER.md)，库边界见[架构](OVERVIEW.md)。最新独立服务端只有构建打包证据，未做互通测试。
 
 | 数据 | 流向 | 所有权与限制 |
 | --- | --- | --- |
@@ -8,6 +8,7 @@
 | 角色列表／建删选角 | RealmFrontend ↔ RealmSession原MCP ↔ 原Realm或EmbeddedRealm → CharacterStore | UI只有OnlineCharacter；服务端映射名称到目录身份及版本，客户端不能传路径 |
 | 初始角色 | MPQ CharStats／Items → character_creation → D2S | 真实职业属性、初始物品与原来源技能，不自造参数 |
 | 入局 | 原MCP建房／票据 → 原GS握手 → nativeGameAdmission | 准备碰撞和完整可编码状态后才接受；旧连接及不匹配票据拒绝 |
+| 独立服务入局 | D2CS建房／票据 → D2DBS读取并锁定角色 → admitExternal → 原GS握手 | 账号／选角仍属PvPGN；核对姓名、职业、模式、进度、charinfo身份，不接受客户端上传D2S |
 | 地图 | LOADACT／0x07 → RemoteTown → NativeMapGenerator | 与宿主generateArea使用同一生成器和房间顺序；两侧不共享可变Map |
 | 移动 | SceneController → RemoteControl → 原01／03 → 原协议适配 → GameHost → GameInstance FIFO | 服务端25Hz寻路／碰撞；内部序号和绑定由宿主产生 |
 | 内核命令 | 原包具名处理器 → GameCommand → command_dispatch → 领域System／Ports | 来源区域及代次在入队和执行时核对；新增领域Scaffold返回NotImplemented |
@@ -17,6 +18,7 @@
 | 物品 | PersistentCharacter → 原9D位流 → RemoteInventory → InventoryView | 网络位流与D2S JM记录不同；客户端解码、面板和手势共用原服链 |
 | 技能／任务 | 原属性／技能／任务字 + MPQ → 公共人物／任务投影 | 保存值保留；已支持技能、洞穴奖励和库存事务由独立领域执行，其余范围见对应专题 |
 | 存档 | 服务端租约 → 导出PersistentCharacter → persistence校验 → 原子替换／.bak | 全部写入由宿主发起；存档不含整局AI、路径、弹体等运行态 |
+| 独立服务存档 | 领域导出 → 原D2S编码／恢复副本 → D2DBS charsave与charinfo确认 | 正常角色库在DBS，本地仅恢复副本；两文件无后端原子事务，不自动回写恢复文件 |
 | 退局 | 客户端原69 → 宿主保存成功 → 原B0 → MCP重新列角 | 失败保留实例及租约，客户端不会得到成功确认；可修复后重试 |
 | 单机暂停 | app窗口／菜单策略 → GameHost.pause | 清路径和未执行移动，恢复不补暂停时间；不暂停原服 |
 | 开发保存／重载 | F11／Ctrl+F11或pipe save／load → AdminRequest → 宿主 → 原协议重新入局 | 同一类型化管理接口；重载准备并保留候选实例，校验重新选角的版本后复用 |
@@ -26,3 +28,5 @@
 内存队列有锁和容量限制；MCP／D2GS消费不能假定一次send就是一个完整包。重连清旧字节、递增代次；内核玩家绑定从服务端票据取得。GameHost内部快照只供协议适配读取，可靠服务响应不能由覆盖式邮箱取代。
 
 嵌入宿主当前由窗口帧调度，固定步单次最多补8步；未来共享房间需独立于窗口的宿主线程。客户端始终使用同一个网络worker、地图副本、输入控制、动画、声音和绘制循环。
+
+独立服务端由server_main控制台循环驱动同一NativeRealmHost／GameHost，不创建窗口。停止请求先禁止新入局，等待可保存状态，再保存、排队解锁及离局通知；主动退局确认只在保存成功后发送。D2CS控制、DBS超时和恢复限制见[PvPGN服务端](../development/PVPGN_SERVER.md)，不沿用本地文件租约的故障恢复承诺。

@@ -22,6 +22,36 @@ void issueTicket(NativeRealmService &peer) {
     peer.ticket = true;
 }
 }
+void NativeRealmService::admitExternal(PersistentCharacter saved, HostedGame &room, uint32_t ticketHash, uint16_t gameId) {
+    if (binding || !externalSave || !gameId) throw ProtocolError("Invalid external admission");
+    selectedName = saved.player.name;
+    selected = saved;
+    gameDifficulty = unsigned(room.settings.difficulty);
+    gameName = room.name; gamePassword = room.password;
+    if (!room.handle.generation) {
+        saved.difficulty = room.settings.difficulty;
+        saved.mapSeed = room.settings.mapSeed;
+        auto prepared = prepareGame(std::move(saved), false);
+        room.handle = prepared.binding.game; room.town = RegionId(prepared.terrain.request.level);
+        binding = prepared.binding; terrain = std::move(prepared.terrain); admission = std::move(prepared.admission);
+    } else {
+        if (host.participants(room.handle).size() >= room.capacity) throw ProtocolError("External game is full");
+        const auto &area = shared.terrain.at(room.handle).at(room.town);
+        auto definition = prepareJoiningCharacter(*content, std::move(saved), room.settings, room.town, host.nextEntity(room.handle), rules, shared.items);
+        const auto state = host.area(room.handle, room.town);
+        if (!state) throw ProtocolError("External game area is unavailable");
+        for (auto &corpse : definition.persistent.corpses) { corpse.region = room.town; corpse.position = state->definition.spawn; }
+        const auto staged = host.admit(room.handle, std::move(definition));
+        try {
+            admission = nativeGameAdmission(*content, *host.exportCharacter(staged), area, *host.read(staged), state->definition);
+            for (const auto &packet : admission) validateServerPacket(packet);
+            terrain = area; binding = staged;
+        } catch (...) { host.remove(staged); throw; }
+    }
+    multiplayerEndpoint = true;
+    hash = ticketHash; token = gameId; ticket = true;
+    host.pause(binding->game, false);
+}
 void NativeRealmService::createGame(net::protocol::Reader &in) {
     const auto request = in.u16(); const auto flags = in.u32(); const auto templateId = in.u8(), levelDifference = in.u8(), players = in.u8();
     const auto name = in.string(15), password = in.string(15), description = in.string(31); in.finish();

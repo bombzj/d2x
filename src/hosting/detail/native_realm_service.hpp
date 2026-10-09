@@ -21,6 +21,7 @@ struct NativeRealmService {
     std::filesystem::path &root;
     RealmOutput realmOutput;
     GameOutput gameOutput;
+    std::function<void(const PersistentCharacter &)> externalSave;
     std::shared_ptr<const ClassicData> &content;
     std::unique_ptr<RealmPortraitCatalog> &portraits;
     std::unique_ptr<CharacterStore> store;
@@ -99,6 +100,7 @@ struct NativeRealmService {
     void checkpoint();
     void prepareReload();
     PreparedGame prepareGame(PersistentCharacter, bool singlePlayer = true);
+    void admitExternal(PersistentCharacter, HostedGame &, uint32_t ticketHash, uint16_t gameId);
     void discardReload();
     void close(bool save = true, bool keepReload = false);
     void resetRealm();

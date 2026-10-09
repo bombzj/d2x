@@ -1,10 +1,10 @@
 # 代码结构与依赖
 
-更新：2026-10-08。源码入口以CMake为准；Windows Release已构建打包，有限冒烟及历史证据见[基线](../../BASELINE.md)，功能顺序见[总计划](MULTIPLAYER.md)。
+更新：2026-10-09。源码入口以CMake为准；客户端和独立服务端分别构建／打包，当前产物与历史有限证据见[基线](../../BASELINE.md)，功能顺序见[总计划](MULTIPLAYER.md)。构建完成不代表运行验收。
 
 ## 模块分工
 
-路径相对src/；客户端与自研服务端在同一产品进程组装，库与状态边界分别成立。
+路径相对src/；客户端可组装嵌入宿主，独立控制台进程也可复用同一宿主与内核。两种组合均保持库与状态边界。
 
 | 模块 | 职责 |
 | --- | --- |
@@ -21,6 +21,8 @@
 | hosting/game_host | 多实例槽位、代次、绑定、25Hz固定步、暂停与内部快照 |
 | hosting/game_content、character_creation、character_rules | MPQ输入准备、初始角色／物品、入局规则指纹；不负责客户端绘制 |
 | hosting/embedded_realm | 内存端点、selector、分帧与断开／调度组装，不实现具体玩法 |
+| server_main、hosting/pvpgn_server | 独立控制台组合根；D2CS房间／票据、D2DBS角色锁／保存、游戏监听与停服，不实现另一套玩法 |
+| network/protocol/pvpgn | D2CS／D2DBS八字节头有界分帧，与客户端MCP／D2GS分帧分离 |
 | hosting/detail | 与传输无关的多连接服务组合、MCP角色／游戏、D2GS生命周期和管理接口 |
 | hosting/protocol | C2S／S2C目录、阶段／长度检查、按领域具名分派与显式stub；扩展约定见[服务端协议](../modules/SERVER_PROTOCOL.md) |
 | hosting/native_game_wire、native_item_wire | 原入局／状态／移动／物品包编码；JM磁盘位流不作网络包 |
@@ -38,6 +40,9 @@ flowchart TD
     app[d2x] --> presentation
     app --> remote_client
     app --> character_host
+    dedicated["d2x_pvpgn / d2x_server.exe"] --> character_host
+    dedicated --> d2gs_protocol
+    dedicated --> persistence
     presentation --> remote_scene
     presentation --> client
     remote_scene --> remote_client
@@ -60,13 +65,15 @@ flowchart TD
     content --> resources
 ```
 
-客户端和表现库不链接host、server或persistence；产品可执行文件经嵌入宿主链接存储库。server／host不链接content、resources、raylib或network。C++20／CMake保持Windows／Linux；平台凭据、调试管道与原子替换留外围。当前还没有独立服务器程序或仅服务器的CMake配置。
+客户端和表现库不链接host、server或persistence；客户端EXE经嵌入宿主链接存储库，独立EXE经同一character_host连接权威内核。server／host不链接content、resources、raylib或network；独立目标不链接presentation／raylib，但项目配置仍包含其他客户端目标，尚无仅服务端依赖配置开关。C++20／CMake保留Windows／Linux路径，独立进程目前仅Windows构建，Linux未认证。目标、包目录及部署统一见[PvPGN服务端](../development/PVPGN_SERVER.md)。
 
 ## 生命周期
 
 原服与自研均由FrameInput → SceneController → RemoteUiClients／RemoteControl／Combat／Inventory → RealmSession发送原包。回包进入同一RemoteWorld／RemoteTown／RemoteScene，再由公共UI、动画和声音消费。单机仅在组装入口建立内存字节连接；移除了LocalGame／GameClients／GameScene及其CMake目标。
 
 嵌入宿主在应用帧中泵入字节并调用GameHost.advance；内核命令有界FIFO、绑定玩家、校验实例／区域代次和内部序号。每实例独立时钟／区域／玩家表／随机／ID；代次在槽位复用时递增。未来并发调度由宿主承担，不向GameInstance加入窗口或网络工作。
+
+独立进程由控制台循环泵送后端及游戏字节，调用同一NativeRealmHost.advance。NativeRealmService的admitExternal接受已校验D2CS票据与DBS角色值，externalSave连接DBS保存确认；不创建本地CharacterStore租约。后端等待串行、故障恢复和关闭约束由部署页维护，不与嵌入宿主文件保存保证混为一谈。
 
 角色在原MCP选中时取得整局租约，创建游戏前完成内容和网络入局数据准备；失败不覆盖原档。退局收到原0x69后先保存，再销毁实例并发原0xB0。保存失败保留实例和锁，终止失败的连接并显示原因，应用关闭或重新连接时可重试保存。F11是宿主检查点；Ctrl+F11先完整准备存档，再让同一原协议客户端重新入局。细节与范围见[存档](../modules/SAVES.md)。
 

@@ -78,6 +78,16 @@ struct TcpListener::Impl {
 };
 TcpListener::TcpListener() : impl_(std::make_unique<Impl>()) {}
 TcpListener::~TcpListener() { shutdown(); }
+void TcpListener::listen(Endpoint endpoint) {
+    shutdown();
+    try {
+        if (!endpoint.port) throw std::invalid_argument("Zero listener port");
+        auto acceptor = std::make_unique<asio::ip::tcp::acceptor>(impl_->io);
+        acceptor->open(asio::ip::tcp::v4());
+        acceptor->bind({asio::ip::make_address_v4(endpoint.host), endpoint.port});
+        acceptor->listen(); impl_->listeners[0] = std::move(acceptor); impl_->accept(0);
+    } catch (...) { shutdown(); throw; }
+}
 void TcpListener::listen(std::array<Endpoint, 2> endpoints) {
     shutdown(); auto &p = *impl_;
     try {

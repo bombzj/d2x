@@ -18,6 +18,7 @@ class TcpListener {
     TcpListener();
     ~TcpListener();
     void listen(std::array<Endpoint, 2> endpoints);
+    void listen(Endpoint endpoint);
     std::vector<Event> poll();
     bool send(uint64_t connection, Bytes);
     void close(uint64_t connection);

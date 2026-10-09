@@ -1,6 +1,6 @@
 # 文档目录
 
-修改前阅读[项目基线](../BASELINE.md)与[协作约定](../AGENTS.md)，再读对应模块。当前源码以原MCP／D2GS字节协议统一自研Single Player和原服客户端，并接服务端角色／D2S；Windows Release已构建打包，有限单机冒烟与覆盖限制见基线。历史离线行为或旧冒烟不作为新内核认证。
+修改前阅读[项目基线](../BASELINE.md)与[协作约定](../AGENTS.md)，再读对应模块。Single Player／LAN嵌入宿主与独立PvPGN游戏服务复用权威内核，客户端共用原MCP／D2GS。客户端`dist/current`与服务端`dist/server`分别打包；当前均为Windows Debug产物，已有有限冒烟，完整覆盖仍未认证。包摘要与有限证据只由基线维护，不以旧冒烟认证新功能。
 
 ## 负责页面
 
@@ -13,6 +13,7 @@
 | 原协议、副本、适配与实际有限原服证据 | [联网模块](modules/NETWORK.md) |
 | 消息ID、编码格式、参数、分帧与预留状态 | [消息速查](modules/MESSAGES.md) |
 | 领域处理器、收发所有权、扩展顺序与宿主管理边界 | [服务端协议](modules/SERVER_PROTOCOL.md) |
+| 独立控制台D2GS、PvPGN后端配置、启动／关闭与恢复 | [PvPGN服务端](development/PVPGN_SERVER.md) |
 | 内核子系统、状态所有权、命令／固定步／事务／可靠事件与空实现入口 | [内核子系统](modules/SERVER_SYSTEMS.md) |
 | 原版来源、固定版本与许可 | [资料来源](resources/THIRD_PARTY.md)、[MPQ](resources/MPQ.md)、[原许可](licenses) |
 | 启动、构建、打包与已有诊断 | [开发指南](development/BUILD_AND_RUN.md)、[调试管道](development/DEBUG_PIPE.md)、[崩溃记录](development/CRASH_REPORTS.md) |
